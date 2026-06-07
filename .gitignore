@@ -1,0 +1,11 @@
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*.log
+
+# Local tooling (not part of the app)
+.claude/
+
+# Internal handoff: the spec + RAW customer/parts/work-order CSVs — NOT for the
+# public site (the served app uses the curated demo data in data.js instead).
+JacTec-handoff/
