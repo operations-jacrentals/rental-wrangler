@@ -1313,14 +1313,14 @@ function historySection(card, rec, cs) {
   // Timestamped actions taken this session (logAction) ride at the top, newest-first,
   // above the date-derived history. Single merge point → every card gets action history.
   const acts = (rec.actions || []).slice().sort((a, b) => b.seq - a.seq).map((a) => {
-    const when = fmtShortDate(a.when);
-    return { when, text: a.text, search: `${when} ${a.text}` };
+    const when = fmtShortDate(a.when) + (a.clock ? ` · ${a.clock}` : '');
+    return { when, text: a.text, by: a.by || '', search: `${when} ${a.text} ${a.by || ''}` };
   });
   const all = [...acts, ...historyFor(card, rec)];
   const q = (cs?.historySearch || '').trim().toLowerCase();
   const items = q ? all.filter((h) => (h.search || `${h.when} ${h.text}`).toLowerCase().includes(q)) : all;
   const log = items.length
-    ? items.map((h) => `<div class="hitem"><span class="htime">${esc(h.when)}</span>${h.pill || ''}<span>${esc(h.text)}</span></div>`).join('')
+    ? items.map((h) => `<div class="hitem"><span class="htime">${esc(h.when)}</span>${h.pill || ''}<span>${esc(h.text)}</span>${h.by ? `<span class="hby">${esc(h.by)}</span>` : ''}</div>`).join('')
     : `<div class="muted" style="font-size:12px">${q ? 'No matching history.' : 'No history yet.'}</div>`;
   // History Search (§0.6) — appears once the log has some depth.
   const searchBar = all.length >= 3 ? `<input class="mini-search js-history-search" placeholder="Search history…" value="${esc(cs?.historySearch || '')}" />` : '';
@@ -2412,12 +2412,12 @@ function startInlineEdit(span) {
     const r = IDX.rental.get(recId);
     input.value = r?.deliveryAddress || '';
     input.placeholder = 'City, State';
-    commit = () => { if (done) return; done = true; if (r) r.deliveryAddress = input.value.trim(); render(); };
+    commit = () => { if (done) return; done = true; if (r) { const old = r.deliveryAddress; const v = input.value.trim(); if (String(old ?? '') !== v) { r.deliveryAddress = v; reindex('rentals', r); logAction(r, `Delivery address: ${auditVal(old)} → ${auditVal(v)}`); } } render(); };
   } else if (kind === 'unitHours') {
     const u = IDX.unit.get(recId);
     input.value = u?.currentHours ?? '';
     input.type = 'number'; input.placeholder = 'Hours';
-    commit = () => { if (done) return; done = true; if (u && input.value !== '') u.currentHours = Number(input.value); render(); };
+    commit = () => { if (done) return; done = true; if (u && input.value !== '') { const old = u.currentHours; const v = Number(input.value); if (old !== v) { u.currentHours = v; reindex('units', u); logAction(u, `Hours: ${auditVal(old)} → ${auditVal(v)}`); } } render(); };
   } else if (kind === 'customerName') {
     const c = IDX.customer.get(recId);
     input.value = c?.name || ''; input.placeholder = 'Customer name';
@@ -2425,16 +2425,16 @@ function startInlineEdit(span) {
   } else if (kind === 'invoicePO') {
     const inv = IDX.invoice.get(recId);
     input.value = inv?.po || ''; input.placeholder = 'PO #';
-    commit = () => { if (done) return; done = true; if (inv) inv.po = input.value.trim(); render(); };
+    commit = () => { if (done) return; done = true; if (inv) { const old = inv.po; const v = input.value.trim(); if (String(old ?? '') !== v) { inv.po = v; reindex('invoices', inv); logAction(inv, `PO: ${auditVal(old)} → ${auditVal(v)}`); } } render(); };
   } else if (kind === 'salesAction') {
     const c = IDX.customer.get(recId);
     input.value = c?.salesAction || ''; input.placeholder = 'Next action…';
-    commit = () => { if (done) return; done = true; if (c) c.salesAction = input.value.trim(); render(); };
+    commit = () => { if (done) return; done = true; if (c) { const old = c.salesAction; const v = input.value.trim(); if (String(old ?? '') !== v) { c.salesAction = v; reindex('customers', c); logAction(c, `Sales action: ${auditVal(old)} → ${auditVal(v)}`); } } render(); };
   } else if (kind === 'custField') {
     const c = IDX.customer.get(recId), f = span.dataset.field;
     input.value = (c && c[f]) || ''; input.placeholder = span.dataset.ph || '';
     if (f === 'email') input.type = 'email';
-    commit = () => { if (done) return; done = true; if (c) { c[f] = input.value.trim(); if (f === 'firstName' || f === 'lastName') c.name = fullName(c); reindex('customers', c); } render(); };
+    commit = () => { if (done) return; done = true; if (c) { const old = c[f]; const v = input.value.trim(); if (String(old ?? '') !== v) { c[f] = v; if (f === 'firstName' || f === 'lastName') c.name = fullName(c); reindex('customers', c); logAction(c, `${humanizeField(f)}: ${auditVal(old)} → ${auditVal(v)}`); } } render(); };
   } else if (kind === 'field') {
     // Generic per-card field editor (text / number / date) — routes through recOf+reindex.
     const card = span.dataset.card, f = span.dataset.field, type = span.dataset.type || 'text';
@@ -2443,7 +2443,7 @@ function startInlineEdit(span) {
     input.placeholder = span.dataset.ph || '';
     if (type === 'number') input.type = 'number';
     else if (type === 'date') input.type = 'date';
-    commit = () => { if (done) return; done = true; if (rec) { let v = input.value.trim(); if (type === 'number') v = (v === '' ? null : Number(v)); rec[f] = v; reindex(card, rec); } render(); };
+    commit = () => { if (done) return; done = true; if (rec) { let v = input.value.trim(); if (type === 'number') v = (v === '' ? null : Number(v)); const old = rec[f]; if (String(old ?? '') !== String(v ?? '')) { rec[f] = v; reindex(card, rec); logAction(rec, `${humanizeField(f)}: ${auditVal(old)} → ${auditVal(v)}`); } } render(); };
   } else { return; }
   span.replaceWith(input); input.focus(); input.select();
   input.addEventListener('keydown', (e) => {
@@ -2749,7 +2749,14 @@ function setDraftDate(rentalId, which, val) {
 const reanchorRender = () => { const s = activeSession(); if (s.anchor) setAnchor(s, s.anchor.card, s.anchor.recId, s.anchor.recType); render(); };
 /** Append a timestamped action to a record's log (surfaced in its History section). */
 let actionSeq = 0;
-function logAction(rec, text) { if (!rec) return; rec.actions = rec.actions || []; rec.actions.push({ when: TODAY_ISO, text, seq: actionSeq++ }); saveSoon(); }
+// Audit trail: who's signed in on this device (remembered across sessions). Every
+// logAction stamps the user + clock time so the record History reads "what · when · who".
+let currentUser = (() => { try { return localStorage.getItem('jactec.user') || ''; } catch { return ''; } })();
+function nowClock() { const d = new Date(); let h = d.getHours(); const ap = h < 12 ? 'AM' : 'PM'; h = h % 12 || 12; return `${h}:${String(d.getMinutes()).padStart(2, '0')} ${ap}`; }
+function logAction(rec, text) { if (!rec) return; rec.actions = rec.actions || []; rec.actions.push({ when: TODAY_ISO, clock: nowClock(), text, by: currentUser || '', seq: actionSeq++ }); saveSoon(); }
+// Humanize a field key + format a value for an audit line ("Phone: (337)… → (337)…").
+const humanizeField = (f) => ({ po: 'PO', eta: 'ETA', accountNotes: 'Notes', assignedMechanic: 'Mechanic', gpsType: 'GPS type', gpsPlacement: 'GPS placement', purchasePrice: 'Purchase price', purchaseDate: 'Purchase date', trueCost: 'True cost', purchaseHours: 'Hours at purchase', currentHours: 'Hours', startHours: 'Start hours', returnHours: 'Return hours', rentalName: 'Name', woReport: 'Report', firstName: 'First name', lastName: 'Last name' }[f] || (f.charAt(0).toUpperCase() + f.slice(1).replace(/([A-Z])/g, ' $1')));
+const auditVal = (v) => { const s = String(v ?? '').trim(); return s ? (s.length > 28 ? s.slice(0, 28) + '…' : s) : '(empty)'; };
 
 /* §12.6 — WO phase changes (header pill + per-line journey pills) via a woPhase
    dropdown; reaching Complete reverts a Failed unit to Not Ready (§9). */
@@ -3107,13 +3114,14 @@ function renderLogin(msg) {
   $('#app').innerHTML = `<div class="login-screen"><form class="login-box" id="login-form">
     <img class="login-logo" src="assets/jac-rentals-logo.jpg" alt="Jac Rentals" />
     <div class="login-title">Rental Wrangler</div>
-    <div class="login-sub">Enter the team password to continue.</div>
-    <input id="login-pw" type="password" class="login-input" placeholder="Password" autocomplete="current-password" />
+    <div class="login-sub">Sign in to continue.</div>
+    <input id="login-name" class="login-input" placeholder="Your name" autocomplete="name" value="${esc(currentUser)}" />
+    <input id="login-pw" type="password" class="login-input" placeholder="Team password" autocomplete="current-password" />
     <button type="submit" class="login-btn" id="login-go">Sign in</button>
-    ${msg ? `<div class="login-err">${esc(msg)}</div>` : ''}
+    <div class="login-err" id="login-err">${msg ? esc(msg) : ''}</div>
   </form></div>`;
   document.getElementById('login-form').addEventListener('submit', (e) => { e.preventDefault(); attemptLogin(); });
-  document.getElementById('login-pw').focus();
+  document.getElementById(currentUser ? 'login-pw' : 'login-name').focus();
 }
 function finishLoad() {
   snapshotSaved();                                              // baseline = what the backend currently holds
@@ -3121,8 +3129,11 @@ function finishLoad() {
   if (migrationDirty) { migrationDirty = false; saveSoon(); }   // push parsed first/last names up to the Sheet
 }
 async function attemptLogin() {
+  const name = (document.getElementById('login-name')?.value || '').trim();
   const pw = document.getElementById('login-pw')?.value || '';
+  if (!name) { const errEl = document.getElementById('login-err'); if (errEl) errEl.textContent = 'Please enter your name (edits are logged under it).'; document.getElementById('login-name')?.focus(); return; }
   if (!pw) return;
+  currentUser = name; try { localStorage.setItem('jactec.user', name); } catch {}
   backendPassword = pw;
   const btn = document.getElementById('login-go'); if (btn) { btn.textContent = 'Signing in…'; btn.disabled = true; }
   try {
