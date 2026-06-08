@@ -597,7 +597,7 @@ function toggleFilterNeg(scope, i) { const arr = termsFor(scope); if (arr[i]) ar
 /** A pinned filter-term pill: leading ○ toggle (→ red − = NOT) + label + ✕ remove. */
 function filterTermPill(ft, i, scope) {
   return `<span class="filt-term${ft.neg ? ' neg' : ''}">`
-    + `<button class="ft-neg js-ft-neg" data-scope="${esc(scope)}" data-i="${i}" title="${ft.neg ? 'Excluding — click to include' : 'Including — click to exclude'}">${ft.neg ? '−' : ''}</button>`
+    + `<button class="ft-neg js-ft-neg" data-scope="${esc(scope)}" data-i="${i}" title="${ft.neg ? 'Excluding — click to include' : 'Including — click to exclude'}"></button>`
     + `<span class="lbl">${esc(ft.t)}</span>`
     + `<span class="x js-ft-x" data-scope="${esc(scope)}" data-i="${i}">✕</span>`
     + `</span>`;
