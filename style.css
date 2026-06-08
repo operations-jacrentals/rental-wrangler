@@ -86,7 +86,7 @@ input { font-family: inherit; }
 /* Single-band header: logo + rings on the left, a right column holding the item
    tabs (one row) above the toolbar (New / Dashboard / search). Reclaims the old
    row-2's vertical space — the toolbar now lives beside the rings. */
-.header { flex: 0 0 auto; background: transparent; display: flex; align-items: flex-end; gap: 12px; padding: 12px 12px 10px; }
+.header { flex: 0 0 auto; background: transparent; display: flex; align-items: flex-end; gap: 12px; padding: 12px 12px 0; }
 .header-right { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
 .hr-top { display: flex; align-items: center; gap: 10px; min-height: 0; }
 .hr-top .tabstrip { flex: 1 1 auto; min-width: 0; }
