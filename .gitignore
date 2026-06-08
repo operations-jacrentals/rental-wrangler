@@ -9,3 +9,6 @@ Thumbs.db
 # Internal handoff: the spec + RAW customer/parts/work-order CSVs — NOT for the
 # public site (the served app uses the curated demo data in data.js instead).
 JacTec-handoff/
+
+# Redundant once the live app exists (kept locally, not on the public site)
+JacTec-standalone.html

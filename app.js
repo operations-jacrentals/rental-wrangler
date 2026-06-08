@@ -127,7 +127,7 @@ function searchBlob(card, rec) {
   return p.filter(Boolean).join(' ').toLowerCase();
 }
 /** (Re)build a record's search blob in IDX.search. Call after any create/edit. */
-const reindex = (card, rec) => { const id = idOf(card, rec); if (id != null) IDX.search.set(card + ':' + id, searchBlob(card, rec)); };
+const reindex = (card, rec) => { const id = idOf(card, rec); if (id != null) IDX.search.set(card + ':' + id, searchBlob(card, rec)); saveSoon(); };
 
 /* ════════════════════════════════════════════════════════════════════════
    2. Derivations (SPEC §10) — money, availability, statuses, countdowns
@@ -2611,7 +2611,7 @@ function setDraftDate(rentalId, which, val) {
 const reanchorRender = () => { const s = activeSession(); if (s.anchor) setAnchor(s, s.anchor.card, s.anchor.recId, s.anchor.recType); render(); };
 /** Append a timestamped action to a record's log (surfaced in its History section). */
 let actionSeq = 0;
-function logAction(rec, text) { if (!rec) return; rec.actions = rec.actions || []; rec.actions.push({ when: TODAY_ISO, text, seq: actionSeq++ }); }
+function logAction(rec, text) { if (!rec) return; rec.actions = rec.actions || []; rec.actions.push({ when: TODAY_ISO, text, seq: actionSeq++ }); saveSoon(); }
 
 /* §12.6 — WO phase changes (header pill + per-line journey pills) via a woPhase
    dropdown; reaching Complete reverts a Failed unit to Not Ready (§9). */
@@ -2894,8 +2894,69 @@ function addWOToInvoice(invoiceId, woId) {
 /* ════════════════════════════════════════════════════════════════════════
    15. Boot
    ════════════════════════════════════════════════════════════════════════ */
+/* ════════════════════════════════════════════════════════════════════════
+   16. Backend persistence — Google Sheets via an Apps Script web app
+   ════════════════════════════════════════════════════════════════════════
+   The app loads its data from the Sheet on sign-in, seeds the Sheet from the
+   demo data on first run, and auto-saves (debounced) after every change.
+   Single shared password (sent with every call; the URL alone is useless). */
+const BACKEND_URL = 'https://script.google.com/macros/s/AKfycbzHahzgJqOYe9o4GKlRVGh-A7USRn1k4Dvyy4ajLh8EYCqVxofouM28qs8trNlObZw/exec';
+const PERSIST_KEYS = ['categories', 'units', 'customers', 'invoices', 'rentals', 'workOrders', 'inspections', 'vendors', 'parts', 'companyFiles', 'expenses'];
+let backendPassword = sessionStorage.getItem('jactec.pw') || '';
+let booting = true;                       // suppresses saves during initial load
+let saveTimer = null, saving = false, savePending = false;
+
+async function backendCall(action, extra) {
+  // text/plain avoids a CORS preflight that GAS web apps can't answer
+  const payload = Object.assign({ action, password: backendPassword }, extra || {});
+  const res = await fetch(BACKEND_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload) });
+  return res.json();
+}
+const dataSnapshot = () => { const s = {}; PERSIST_KEYS.forEach((k) => { s[k] = DATA[k] || []; }); return s; };
+async function loadFromBackend() {
+  const r = await backendCall('load');
+  if (!r || !r.ok) throw new Error((r && r.error) || 'load-failed');
+  const data = r.data || {};
+  const empty = PERSIST_KEYS.every((k) => !(data[k] && data[k].length));
+  if (empty) { await backendCall('seed', { data: dataSnapshot() }); }   // first run → push the demo seed up
+  else PERSIST_KEYS.forEach((k) => { if (Array.isArray(data[k])) { DATA[k].length = 0; data[k].forEach((x) => DATA[k].push(x)); } });
+}
+function saveSoon() { if (booting || !backendPassword) return; clearTimeout(saveTimer); saveTimer = setTimeout(flushSave, 1500); }
+async function flushSave() {
+  if (saving) { savePending = true; return; }
+  saving = true;
+  try { await backendCall('seed', { data: dataSnapshot() }); } catch (e) { /* offline → keep local, retry on next change */ }
+  saving = false;
+  if (savePending) { savePending = false; saveSoon(); }
+}
+function renderLogin(msg) {
+  $('#app').innerHTML = `<div class="login-screen"><form class="login-box" id="login-form">
+    <img class="login-logo" src="assets/jac-rentals-logo.jpg" alt="Jac Rentals" />
+    <div class="login-title">Rental Wrangler</div>
+    <div class="login-sub">Enter the team password to continue.</div>
+    <input id="login-pw" type="password" class="login-input" placeholder="Password" autocomplete="current-password" />
+    <button type="submit" class="login-btn" id="login-go">Sign in</button>
+    ${msg ? `<div class="login-err">${esc(msg)}</div>` : ''}
+  </form></div>`;
+  document.getElementById('login-form').addEventListener('submit', (e) => { e.preventDefault(); attemptLogin(); });
+  document.getElementById('login-pw').focus();
+}
+async function attemptLogin() {
+  const pw = document.getElementById('login-pw')?.value || '';
+  if (!pw) return;
+  backendPassword = pw;
+  const btn = document.getElementById('login-go'); if (btn) { btn.textContent = 'Signing in…'; btn.disabled = true; }
+  try {
+    await loadFromBackend();
+    sessionStorage.setItem('jactec.pw', pw);
+    buildIndexes(); state.cascade = createCascade(DATA); booting = false; render();
+  } catch (e) {
+    backendPassword = ''; sessionStorage.removeItem('jactec.pw');
+    renderLogin(/unauthorized/i.test(String(e && e.message)) ? 'Incorrect password — please try again.' : "Couldn't reach the database. Check your connection and try again.");
+  }
+}
+
 function boot() {
-  buildIndexes();
   initTooltip();
   document.addEventListener('click', onClick);
   document.addEventListener('input', onInput);
@@ -2924,8 +2985,15 @@ function boot() {
     if (state.pick || state.winpicker) return;
     goBack(card.dataset.card);
   });
-  render();
-  console.log('[JacTec] booted — units:%d rentals:%d customers:%d', DATA.units.length, DATA.rentals.length, DATA.customers.length);
+  // §16 — gate on the shared password: load from the backend if we already have it
+  // this session, otherwise show the login screen. The app only renders once data is in.
+  if (backendPassword) {
+    loadFromBackend()
+      .then(() => { buildIndexes(); state.cascade = createCascade(DATA); booting = false; render(); })
+      .catch(() => { backendPassword = ''; sessionStorage.removeItem('jactec.pw'); renderLogin('Please sign in again.'); });
+  } else {
+    renderLogin();
+  }
 }
 boot();
 
