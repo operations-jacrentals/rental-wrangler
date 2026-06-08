@@ -1166,15 +1166,16 @@ const DETAIL = {
   invoices: (i, cs) => {
     const t = invoiceTotals(i);
     const cust = IDX.customer.get(i.customerId);
+    const locked = !!i.locked;   // pricing sealed (Option B) — line items frozen + tamper-checked
     const subBy = (kind) => (i.lineItems || []).filter((l) => l.kind === kind).reduce((a, l) => a + (Number(l.amount) || 0), 0);
     const lines = (i.lineItems || []).map((li, idx) => {
       const ref = li.kind === 'rental' ? `data-pill-card="rentals" data-pill-rec="${esc(li.ref)}"` : '';
-      // transport line auto-appears from the rental (no remove); rental/WO/custom carry an X (§12.5)
-      const x = li.kind !== 'transport' ? `<span class="x line-x" data-x="inv-line-remove" data-idx="${idx}">✕</span>` : '';
+      // transport line auto-appears from the rental (no remove); rental/WO/custom carry an X — unless locked (§12.5)
+      const x = (!locked && li.kind !== 'transport') ? `<span class="x line-x" data-x="inv-line-remove" data-idx="${idx}">✕</span>` : '';
       return `<div class="hitem"><span class="pill c-gray" style="min-width:62px;justify-content:center">${esc(li.kind)}</span><span ${ref} class="${li.kind === 'rental' ? 'inv-line-link' : ''}">${esc(li.label)}</span><span class="spacer"></span><b>${money(li.amount)}</b>${x}</div>`;
     }).join('');
     const invoiceSec = `<div class="section"><h4>Invoice</h4><div class="fieldstack">
-      ${kvPills(cust ? refPill('customers', i.customerId, cust.name, { x: 'inv-cust-remove' }) : (i.mock ? `<button class="pill ref js-pick" data-card="invoices" data-rec="${i.invoiceId}" data-slot="customer">+ Pick customer</button>` : '<span class="pill c-gray">No customer</span>'))}
+      ${kvPills(cust ? refPill('customers', i.customerId, cust.name, locked ? {} : { x: 'inv-cust-remove' }) : (i.mock ? `<button class="pill ref js-pick" data-card="invoices" data-rec="${i.invoiceId}" data-slot="customer">+ Pick customer</button>` : '<span class="pill c-gray">No customer</span>'))}
       ${kv(money(t.balance), { sfx: 'due', big: true })}
       ${kv(`${money(t.paid)} / ${money(t.total)}`, { sfx: 'paid' })}
       ${kv(fmtShortDate(i.dueDate), { sfx: 'due date' })}
@@ -1190,9 +1191,13 @@ const DETAIL = {
         : ''}
     </div></div>`;
     const lineForm = `<div class="lineform"><input class="lf-in js-lf-label" placeholder="Custom line description" /><div class="lineform-row"><input class="lf-in js-lf-amt" type="number" min="0" placeholder="Amount $" /></div><div class="pillrow"><button class="pill c-green js-line-save" data-rec="${i.invoiceId}">Add line</button><button class="pill c-gray js-line-cancel">Cancel</button></div></div>`;
+    const addRow = state.invLineForm === i.invoiceId ? lineForm
+      : locked
+        ? `<div class="pillrow" style="margin-top:8px"><span class="muted" style="font-size:12px">🔒 Pricing locked — this is what gets charged.</span>${canMoney() ? `<span class="spacer"></span><button class="pill ref js-unlock-invoice" data-rec="${i.invoiceId}">Unlock to edit</button>` : ''}</div>`
+        : `<div class="pillrow" style="margin-top:8px"><button class="pill ref js-add-line" data-rec="${i.invoiceId}" data-kind="Rental">+ Add Rental</button><button class="pill ref js-add-line" data-rec="${i.invoiceId}" data-kind="WO">+ Add WO</button><button class="pill ref js-add-line" data-rec="${i.invoiceId}" data-kind="Custom">+ Add Custom</button>${canMoney() && (i.lineItems || []).length ? `<span class="spacer"></span><button class="pill ref js-lock-invoice" data-rec="${i.invoiceId}" title="Freeze pricing so it can be charged safely">🔒 Lock price</button>` : ''}</div>`;
     const items = `<div class="section"><h4>Items</h4>
       <div class="hlog">${lines || '<span class="muted" style="font-size:12px">No line items</span>'}</div>
-      ${state.invLineForm === i.invoiceId ? lineForm : `<div class="pillrow" style="margin-top:8px"><button class="pill ref js-add-line" data-rec="${i.invoiceId}" data-kind="Rental">+ Add Rental</button><button class="pill ref js-add-line" data-rec="${i.invoiceId}" data-kind="WO">+ Add WO</button><button class="pill ref js-add-line" data-rec="${i.invoiceId}" data-kind="Custom">+ Add Custom</button></div>`}
+      ${addRow}
     </div>`;
     const totals = `<div class="section"><h4>Totals</h4><div class="fieldstack">
       ${kv(money(subBy('rental')), { sfx: 'rental sub' })}
@@ -1205,7 +1210,7 @@ const DETAIL = {
       ${kv(`${money(t.paid)} / ${money(t.total)}`, { sfx: 'paid' })}
     </div></div>`;
     return `<div class="detail">
-      <div class="detail-head"><span class="d-title">${esc(i.invoiceId)}</span>${statusPill('invoiceStatus', t.status)}</div>
+      <div class="detail-head"><span class="d-title">${esc(i.invoiceId)}</span>${statusPill('invoiceStatus', t.status)}${locked ? '<span class="pill c-gray" style="min-width:0" title="Pricing is locked">🔒 Locked</span>' : ''}</div>
       ${invoiceSec}
       ${items}
       ${totals}
@@ -2411,6 +2416,8 @@ function onClick(e) {
   if (closest('.js-refund-invoice')) { e.stopPropagation(); if (state.overlay) { state.overlay.confirmRefund = true; state.overlay.error = ''; renderOverlay(); } return; }
   if (closest('.js-refund-cancel')) { e.stopPropagation(); if (state.overlay) { state.overlay.confirmRefund = false; renderOverlay(); } return; }
   if (closest('.js-refund-confirm')) { e.stopPropagation(); return refundInvoiceFlow(closest('.js-refund-confirm').dataset.rec); }
+  if (closest('.js-lock-invoice')) { e.stopPropagation(); return lockInvoiceFlow(closest('.js-lock-invoice').dataset.rec, true); }
+  if (closest('.js-unlock-invoice')) { e.stopPropagation(); return lockInvoiceFlow(closest('.js-unlock-invoice').dataset.rec, false); }
   if (closest('.js-ring')) return openOverlay({ kind: 'role', role: closest('.js-ring').dataset.role });
   if (closest('.js-close')) return closeOverlay();
   if (closest('.js-theme')) { state.theme = state.theme === 'dark' ? 'light' : 'dark'; if (state.overlay && state.overlay.kind !== 'addCard') renderOverlay(); render(); return; }
@@ -2912,6 +2919,7 @@ function friendlyPayErr(r) {
     'amount-mismatch': 'Amount changed during payment — flagged for review.', 'customer-mismatch': 'Payment didn’t match this customer.',
     'nothing-to-refund': 'Nothing has been paid on this invoice.', 'no-charge-to-refund': 'No card charge found to refund.',
     'refund-failed': 'The refund didn’t go through — try again.', 'invoice-refunded': 'This invoice was already refunded.',
+    'invoice-integrity': 'This invoice changed since it was locked — unlock, review, and re-lock before charging.',
     'server-error': 'Server error — try again.',
   })[code] || 'Payment failed — try again or use another card.';
 }
@@ -3021,10 +3029,20 @@ function applyPayment(invoiceId, r) {
   if (r.paymentMethod) inv.paymentMethod = r.paymentMethod;
   if (r.refunded != null) inv.refunded = r.refunded;
   if (r.refundedAmount != null) inv.refundedAmount = r.refundedAmount;
+  if (r.locked != null) inv.locked = r.locked;
   reindex('invoices', inv);
   const after = invoiceTotals(inv).status;
   logAction(inv, r.refundedCents != null ? `Refunded ${money((r.refundedCents || 0) / 100)} — ${before} → ${after}` : `Payment — ${before} → ${after} (${r.paymentMethod || 'card'})`);
   render();
+}
+// Lock (seal pricing) or unlock an invoice via the backend (Office/Admin).
+async function lockInvoiceFlow(invoiceId, lock) {
+  const inv = IDX.invoice.get(invoiceId); if (!inv) return;
+  try {
+    const r = await backendCall(lock ? 'stripeLockInvoice' : 'stripeUnlockInvoice', { invoiceId });
+    if (r && r.ok) { inv.locked = !!r.locked; reindex('invoices', inv); logAction(inv, r.locked ? 'Pricing locked' : 'Pricing unlocked'); render(); toast(r.locked ? 'Pricing locked 🔒' : 'Unlocked for editing'); }
+    else toast(friendlyPayErr(r));
+  } catch (e) { toast('Couldn’t reach the backend — try again.'); }
 }
 
 function startNewReceipt() {
