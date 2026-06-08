@@ -393,7 +393,7 @@ function categoryStats(cat) {
    its own anchored main card + cascade. */
 function freshSession() {
   const cards = {};
-  for (const c of GRID_CARDS) cards[c.id] = { mode: 'list', recId: null, recType: null, search: '', historySearch: '', sort: loadSort(c.id), backStack: [], segment: c.id === 'shop' ? 'all' : null };
+  for (const c of GRID_CARDS) cards[c.id] = { mode: 'list', recId: null, recType: null, search: '', filterTerms: [], historySearch: '', sort: loadSort(c.id), backStack: [], segment: c.id === 'shop' ? 'all' : null };
   return { anchor: null, cascade: null, cards };
 }
 /* Per-card sort persists per-device across sessions (localStorage). Store only
@@ -561,12 +561,46 @@ function resetListLimits() { const s = activeSession(); if (s && s.cards) Object
 // and a new query doesn't inherit a previous "Show more" expansion).
 function recomputeSearchMode() { state.searchMode = !!(state.query.trim() || state.filterTerms.length); resetListLimits(); }
 function clearSearch() { state.query = ''; state.filterTerms = []; state.searchMode = false; resetListLimits(); render(); }
-/** A record's search blob matches iff it includes the live query AND every filter term (§5.4). */
-function matchesSearch(blob) {
-  const b = (blob || '');
-  const q = state.query.trim().toLowerCase();
+/** Core matcher (§5.4): blob must include the live query AND satisfy every pinned
+    term — an include term (neg:false) must be present, a NOT term (neg:true) absent. */
+function blobMatches(blob, query, terms) {
+  const b = blob || '';
+  const q = (query || '').trim().toLowerCase();
   if (q && !b.includes(q)) return false;
-  return state.filterTerms.every((t) => b.includes(t));
+  return (terms || []).every((ft) => (ft.neg ? !b.includes(ft.t) : b.includes(ft.t)));
+}
+function matchesSearch(blob) { return blobMatches(blob, state.query, state.filterTerms); }
+
+/* ── filter-term builder, shared by global search and each card's list search.
+   `scope` is 'global' or a card id; a term is { t, neg } where neg means "NOT". */
+function termsFor(scope) {
+  if (scope === 'global') return state.filterTerms;
+  const cs = activeSession().cards[scope];
+  return (cs.filterTerms = cs.filterTerms || []);
+}
+function afterFilterChange(scope) {
+  if (scope === 'global') recomputeSearchMode();           // sets searchMode + resets list limits
+  else activeSession().cards[scope].listLimit = undefined;  // re-window this card from the top
+  render();
+  document.querySelector(scope === 'global' ? '#globalsearch' : `.mini-search[data-card="${scope}"]`)?.focus();
+}
+function addFilterTerm(scope, raw) {
+  const v = (raw || '').trim().toLowerCase(); if (!v) return;
+  const arr = termsFor(scope);
+  if (!arr.some((ft) => ft.t === v)) arr.push({ t: v, neg: false });
+  if (scope === 'global') state.query = ''; else activeSession().cards[scope].search = '';
+  afterFilterChange(scope);
+}
+function removeFilterTerm(scope, i) { const arr = termsFor(scope); if (i >= 0 && i < arr.length) arr.splice(i, 1); afterFilterChange(scope); }
+function toggleFilterNeg(scope, i) { const arr = termsFor(scope); if (arr[i]) arr[i].neg = !arr[i].neg; afterFilterChange(scope); }
+
+/** A pinned filter-term pill: leading ○ toggle (→ red − = NOT) + label + ✕ remove. */
+function filterTermPill(ft, i, scope) {
+  return `<span class="filt-term${ft.neg ? ' neg' : ''}">`
+    + `<button class="ft-neg js-ft-neg" data-scope="${esc(scope)}" data-i="${i}" title="${ft.neg ? 'Excluding — click to include' : 'Including — click to exclude'}">${ft.neg ? '−' : ''}</button>`
+    + `<span class="lbl">${esc(ft.t)}</span>`
+    + `<span class="x js-ft-x" data-scope="${esc(scope)}" data-i="${i}">✕</span>`
+    + `</span>`;
 }
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -1429,8 +1463,12 @@ function listView(cardDef, session) {
   const sf = SORT_FIELDS[card];
   const curField = sf.find((f) => f.field === cs.sort.field) || sf[0];
   const bar = el('div', 'listbar');
+  const cterms = cs.filterTerms || [];
   bar.innerHTML = `
-    <input class="mini-search" placeholder="Search ${esc(cardDef.title.toLowerCase())}…" value="${esc(cs.search)}" data-card="${card}" />
+    <div class="mini-searchwrap${cterms.length ? ' has-terms' : ''}">
+      ${cterms.map((ft, i) => filterTermPill(ft, i, card)).join('')}
+      <input class="mini-search" placeholder="${cterms.length ? 'Add filter — Enter to pin…' : `Search ${esc(cardDef.title.toLowerCase())}…`}" value="${esc(cs.search)}" data-card="${card}" />
+    </div>
     <div class="sort">
       <button class="sortbtn js-sortmenu" data-card="${card}">${esc(curField.label)} ${I.chev}</button>
       <button class="dir js-sortdir" data-card="${card}"><span class="${cs.sort.dir === 'asc' ? 'on' : ''}">▲</span><span class="${cs.sort.dir === 'desc' ? 'on' : ''}">▼</span></button>
@@ -1438,7 +1476,7 @@ function listView(cardDef, session) {
   wrap.appendChild(bar);
 
   let rows = listFor(card, session);
-  if (cs.search.trim()) { const q = cs.search.trim().toLowerCase(); rows = rows.filter((rec) => (IDX.search.get(card + ':' + idOf(card, rec)) || '').includes(q)); }
+  if (cs.search.trim() || (cs.filterTerms || []).length) { rows = rows.filter((rec) => blobMatches(IDX.search.get(card + ':' + idOf(card, rec)), cs.search, cs.filterTerms)); }
   rows = sortRows(card, rows, cs.sort);
   // §10 — surface available units/categories first while a rental window is in scope
   if (availWin && (card === 'units' || card === 'categories')) rows = [...rows].sort((a, b) => (availUnavailable(card, a) ? 1 : 0) - (availUnavailable(card, b) ? 1 : 0));
@@ -1566,8 +1604,12 @@ function shopListView(session, byType) {
   // search + sort (reuses the standard list-bar chrome)
   const sf = SORT_FIELDS.shop; const curField = sf.find((f) => f.field === cs.sort.field) || sf[0];
   const bar = el('div', 'listbar');
+  const sterms = cs.filterTerms || [];
   bar.innerHTML = `
-    <input class="mini-search" placeholder="Search shop…" value="${esc(cs.search)}" data-card="shop" />
+    <div class="mini-searchwrap${sterms.length ? ' has-terms' : ''}">
+      ${sterms.map((ft, i) => filterTermPill(ft, i, 'shop')).join('')}
+      <input class="mini-search" placeholder="${sterms.length ? 'Add filter — Enter to pin…' : 'Search shop…'}" value="${esc(cs.search)}" data-card="shop" />
+    </div>
     <div class="sort">
       <button class="sortbtn js-sortmenu" data-card="shop">${esc(curField.label)} ${I.chev}</button>
       <button class="dir js-sortdir" data-card="shop"><span class="${cs.sort.dir === 'asc' ? 'on' : ''}">▲</span><span class="${cs.sort.dir === 'desc' ? 'on' : ''}">▼</span></button>
@@ -1579,9 +1621,8 @@ function shopListView(session, byType) {
   let items = segActive === 'all'
     ? SHOP_TYPES.flatMap((ty) => byType[ty].map((rec) => ({ type: ty, rec })))
     : byType[segActive].map((rec) => ({ type: segActive, rec }));
-  if (cs.search.trim()) {
-    const q = cs.search.trim().toLowerCase();
-    items = items.filter((it) => (IDX.search.get((it.type === 'serviceOrders' ? 'units' : it.type) + ':' + idOf(it.type, it.rec)) || '').includes(q));
+  if (cs.search.trim() || (cs.filterTerms || []).length) {
+    items = items.filter((it) => blobMatches(IDX.search.get((it.type === 'serviceOrders' ? 'units' : it.type) + ':' + idOf(it.type, it.rec)), cs.search, cs.filterTerms));
   }
   items = shopSort(items, cs.sort);
 
@@ -1744,7 +1785,7 @@ function headerEl() {
     <button class="iconbtn js-qr" title="Share session (QR)">${I.qr}</button>
     <div class="searchwrap ${state.filterTerms.length ? 'has-terms' : ''}">
       <span class="s-icon">${I.search}</span>
-      ${state.filterTerms.map((t, i) => `<span class="filt-term"><span class="lbl">${esc(t)}</span><span class="x js-filter-term-x" data-i="${i}">✕</span></span>`).join('')}
+      ${state.filterTerms.map((ft, i) => filterTermPill(ft, i, 'global')).join('')}
       <input id="globalsearch" class="search" placeholder="${state.filterTerms.length ? 'Add filter — type, Enter to pin…' : 'Search everything…'}" value="${esc(state.query)}" />
       ${(state.query || state.filterTerms.length) ? `<div class="search-tools"><button class="search-tool js-clear" title="Clear">${I.x}</button></div>` : ''}
     </div>
@@ -2190,7 +2231,8 @@ function onClick(e) {
     return;
   }
   if (closest('.js-clear')) return clearSearch();
-  if (closest('.js-filter-term-x')) { e.stopPropagation(); const i = Number(closest('.js-filter-term-x').dataset.i); state.filterTerms.splice(i, 1); recomputeSearchMode(); render(); document.getElementById('globalsearch')?.focus(); return; }
+  if (closest('.js-ft-neg')) { const b = closest('.js-ft-neg'); e.stopPropagation(); return toggleFilterNeg(b.dataset.scope, Number(b.dataset.i)); }
+  if (closest('.js-ft-x')) { const b = closest('.js-ft-x'); e.stopPropagation(); return removeFilterTerm(b.dataset.scope, Number(b.dataset.i)); }
   if (closest('.js-closeall')) return closeAll();
   if (closest('.js-tab')) return switchTab(closest('.js-tab').dataset.tab);
 
@@ -3102,8 +3144,15 @@ function boot() {
     // §5.4 — the search bar IS the filter builder: Enter locks the current text in as
     // an AND-narrowing pill (clearing the input), Backspace-on-empty pops the last pill.
     if (e.target.id === 'globalsearch') {
-      if (e.key === 'Enter') { e.preventDefault(); const v = e.target.value.trim().toLowerCase(); if (v && !state.filterTerms.includes(v)) state.filterTerms.push(v); state.query = ''; recomputeSearchMode(); render(); document.getElementById('globalsearch')?.focus(); return; }
-      if (e.key === 'Backspace' && !e.target.value && state.filterTerms.length) { e.preventDefault(); state.filterTerms.pop(); recomputeSearchMode(); render(); document.getElementById('globalsearch')?.focus(); return; }
+      if (e.key === 'Enter') { e.preventDefault(); addFilterTerm('global', e.target.value); return; }
+      if (e.key === 'Backspace' && !e.target.value && state.filterTerms.length) { e.preventDefault(); removeFilterTerm('global', state.filterTerms.length - 1); return; }
+      return;
+    }
+    // §5.4 (per-card) — same Enter-to-pin / Backspace-to-pop on a card's list search.
+    if (e.target.classList.contains('mini-search') && e.target.dataset.card && !e.target.classList.contains('js-history-search')) {
+      const card = e.target.dataset.card; const cs = activeSession().cards[card];
+      if (e.key === 'Enter') { e.preventDefault(); addFilterTerm(card, e.target.value); return; }
+      if (e.key === 'Backspace' && !e.target.value && (cs.filterTerms || []).length) { e.preventDefault(); removeFilterTerm(card, cs.filterTerms.length - 1); return; }
       return;
     }
     if (e.key === 'Escape') { if (state.winpicker) { closeWinPicker(); } else if (state.overlay) { closeOverlay(); } else if (state.pick) cancelPick(true); }
