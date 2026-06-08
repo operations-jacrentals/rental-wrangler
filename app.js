@@ -139,9 +139,9 @@ function searchBlob(card, rec) {
       const u = un(rec.unitId), cust = cu(rec.customerId);
       p = [rec.woReport, rec.description, rec.assignedMechanic,
         rec.phase, L('woPhase', rec.phase), rec.woType, L('woType', rec.woType),
-        rec.billCustomer, L('billCustomer', rec.billCustomer),
+        rec.billCustomer, L('billCustomer', rec.billCustomer), rec.eta,
         u?.name, cust?.name,
-        ...(rec.lineItems || []).flatMap((li) => [li.part, li.vendor, L('woPhase', li.phase)])];
+        ...(rec.lineItems || []).flatMap((li) => [li.part, li.vendor, li.eta, L('woPhase', li.phase)])];
       break;
     }
     case 'inspections':
@@ -555,8 +555,12 @@ function setQuery(q) {
   recomputeSearchMode();
   render();
 }
-function recomputeSearchMode() { state.searchMode = !!(state.query.trim() || state.filterTerms.length); }
-function clearSearch() { state.query = ''; state.filterTerms = []; state.searchMode = false; render(); }
+/** Clear any "Show more" expansion on every card of the active session. */
+function resetListLimits() { const s = activeSession(); if (s && s.cards) Object.values(s.cards).forEach((cs) => { cs.listLimit = undefined; }); }
+// Any search/filter-set change restarts each card at 60 rows (keeps typing snappy
+// and a new query doesn't inherit a previous "Show more" expansion).
+function recomputeSearchMode() { state.searchMode = !!(state.query.trim() || state.filterTerms.length); resetListLimits(); }
+function clearSearch() { state.query = ''; state.filterTerms = []; state.searchMode = false; resetListLimits(); render(); }
 /** A record's search blob matches iff it includes the live query AND every filter term (§5.4). */
 function matchesSearch(blob) {
   const b = (blob || '');
@@ -1365,7 +1369,23 @@ function sortRows(card, rows, sort) {
   return [...rows].sort((a, b) => { const va = val(a), vb = val(b); return va < vb ? -dir : va > vb ? dir : 0; });
 }
 
-const VIRT_CAP = 60;   // first-paint cap (SPEC §3 windowing — full virtualization later)
+const VIRT_CAP = 60;   // first-paint cap (SPEC §3 windowing)
+const SHOW_MORE_BATCH = 200;   // how many more rows each "Show more" click reveals
+
+/* Windowed list render. Paints up to cs.listLimit rows (default 60 → fast first
+   paint + fast typing while searching) and, when more match, appends a REAL
+   "Show more" button so every match is reachable on demand. Without this the
+   overflow was an inert "+N more" line and rows 61+ could never be reached. */
+function appendWindowed(list, rows, cs, card, renderRow) {
+  const limit = cs.listLimit || VIRT_CAP;
+  rows.slice(0, limit).forEach(renderRow);
+  const remaining = rows.length - limit;
+  if (remaining > 0) {
+    const btn = el('button', 'showmore js-showmore', `↓ Show ${Math.min(SHOW_MORE_BATCH, remaining)} more · ${remaining} hidden`);
+    btn.dataset.card = card;
+    list.appendChild(btn);
+  }
+}
 
 function cardEl(cardDef, session) {
   const card = cardDef.id;
@@ -1429,9 +1449,7 @@ function listView(cardDef, session) {
     const hint = PLUS_NEW.has(card) ? ` — use <b>+ New</b> above` : '';
     list.appendChild(el('div', 'empty', `No ${esc(cardDef.singular)}${session.anchor ? ' related' : hint}.`));
   } else {
-    const shown = rows.slice(0, VIRT_CAP);
-    shown.forEach((rec) => list.appendChild(rowEl(card, rec)));
-    if (rows.length > VIRT_CAP) list.appendChild(el('div', 'empty', `+${rows.length - VIRT_CAP} more — windowed render (full virtualization in the perf pass)`));
+    appendWindowed(list, rows, cs, card, (rec) => list.appendChild(rowEl(card, rec)));
   }
   wrap.appendChild(list);
   return wrap;
@@ -1572,8 +1590,7 @@ function shopListView(session, byType) {
     // creation lives in ONE place — the header + New menu (no per-card +New)
     list.appendChild(el('div', 'empty', `No shop items${session.anchor ? ' related' : ' — use <b>+ New</b> above'}.`));
   } else {
-    items.slice(0, VIRT_CAP).forEach((it) => list.appendChild(shopRowEl(it.type, it.rec)));
-    if (items.length > VIRT_CAP) list.appendChild(el('div', 'empty', `+${items.length - VIRT_CAP} more`));
+    appendWindowed(list, items, cs, 'shop', (it) => list.appendChild(shopRowEl(it.type, it.rec)));
   }
   wrap.appendChild(list);
   return wrap;
@@ -2273,6 +2290,7 @@ function onClick(e) {
     return openInNewTab(card, newtabBtn.dataset.rec || row?.dataset.rec, newtabBtn.dataset.type || row?.dataset.type);
   }
 
+  if (closest('.js-showmore')) { const b = closest('.js-showmore'); e.stopPropagation(); const cs = activeSession().cards[b.dataset.card]; if (cs) { cs.listLimit = (cs.listLimit || VIRT_CAP) + SHOW_MORE_BATCH; render(); } return; }
   if (closest('.js-tolist')) { const card = closest('.card').dataset.card; activeSession().cards[card].mode = 'list'; render(); return; }
 
   // universal pill rule (clicking any pill → its target card to standard)
@@ -2447,7 +2465,7 @@ function onInput(e) {
     return;
   }
   if (e.target.classList.contains('mini-search')) {
-    const card = e.target.dataset.card; activeSession().cards[card].search = e.target.value;
+    const card = e.target.dataset.card; const mcs = activeSession().cards[card]; mcs.search = e.target.value; mcs.listLimit = undefined;
     // light re-render of just that card would be ideal; full render is fine at seed scale
     const sel = e.target.selectionStart; render();
     const ms = document.querySelector(`.mini-search[data-card="${card}"]`); if (ms) { ms.focus(); ms.setSelectionRange(sel, sel); }
