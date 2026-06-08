@@ -568,6 +568,10 @@ input { font-family: inherit; }
 .nc-in { height: 34px; padding: 0 10px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); color: var(--txt); font-size: 13px; width: 100%; }
 .nc-in:focus { outline: none; border-color: var(--accent-line); }
 select.nc-in { cursor: pointer; }
+.nc-pills { display: flex; flex-wrap: wrap; gap: 6px; }
+.nc-pill { padding: 7px 13px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line); color: var(--txt-2); font-size: 12px; font-weight: 700; cursor: pointer; transition: background .12s, border-color .12s, color .12s; }
+.nc-pill:hover { border-color: var(--accent-line); }
+.nc-pill.on { background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent); }
 
 /* role KPI popup */
 .kpi-popup { width: 420px; }

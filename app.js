@@ -1954,8 +1954,8 @@ function renderOverlay() {
     overlay.appendChild(pop);
   } else if (o.kind === 'newCustomer') {
     const d = o.draft;
-    const atOpts = NC_ACCOUNT_TYPES.map((t) => `<option value="${esc(t)}"${t === d.accountType ? ' selected' : ''}>${esc(getStatus('customerAccountType', t).label)}</option>`).join('');
     const indOpts = NC_INDUSTRIES.map((i) => `<option value="${esc(i)}"></option>`).join('');
+    const acctPills = NC_ACCOUNT_TYPES.map((t) => `<button type="button" class="nc-pill js-nc-acct${t === d.accountType ? ' on' : ''}" data-val="${esc(t)}">${esc(getStatus('customerAccountType', t).label)}</button>`).join('');
     const pop = el('div', 'popup'); pop.style.width = '470px';
     pop.innerHTML = `
       <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${CARD_ICON.customers || ''}</span><h3>New Customer</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
@@ -1964,10 +1964,10 @@ function renderOverlay() {
           <label class="nc-field"><span>First name *</span><input class="nc-in" data-f="firstName" value="${esc(d.firstName)}" autocomplete="off" /></label>
           <label class="nc-field"><span>Last name</span><input class="nc-in" data-f="lastName" value="${esc(d.lastName)}" autocomplete="off" /></label>
           <label class="nc-field nc-wide"><span>Company</span><input class="nc-in" data-f="company" value="${esc(d.company)}" autocomplete="off" /></label>
-          <label class="nc-field"><span>Phone</span><input class="nc-in" data-f="phone" value="${esc(d.phone)}" autocomplete="off" /></label>
+          <label class="nc-field"><span>Phone *</span><input class="nc-in" data-f="phone" value="${esc(d.phone)}" autocomplete="off" /></label>
           <label class="nc-field"><span>Email</span><input class="nc-in" data-f="email" type="email" value="${esc(d.email)}" autocomplete="off" /></label>
-          <label class="nc-field"><span>Industry</span><input class="nc-in" data-f="industry" list="nc-industries" value="${esc(d.industry)}" autocomplete="off" /></label>
-          <label class="nc-field"><span>Account type</span><select class="nc-in" data-f="accountType">${atOpts}</select></label>
+          <label class="nc-field nc-wide"><span>Industry</span><input class="nc-in" data-f="industry" list="nc-industries" value="${esc(d.industry)}" autocomplete="off" /></label>
+          <div class="nc-field nc-wide"><span>Account type</span><div class="nc-pills">${acctPills}</div></div>
           <label class="nc-field nc-wide"><span>Notes</span><input class="nc-in" data-f="accountNotes" value="${esc(d.accountNotes)}" autocomplete="off" /></label>
         </div>
         <datalist id="nc-industries">${indOpts}</datalist>
@@ -2273,6 +2273,7 @@ function onClick(e) {
   if (closest('.js-open-settings')) { e.stopPropagation(); return openSettings(); }
   if (closest('.js-settings-save')) { e.stopPropagation(); return saveSettings(); }
   if (closest('.js-nc-save')) { e.stopPropagation(); return saveNewCustomer(); }
+  if (closest('.js-nc-acct')) { const b = closest('.js-nc-acct'); e.stopPropagation(); const root = document.querySelector('.overlay .popup-body'); if (root && state.overlay?.draft) root.querySelectorAll('[data-f]').forEach((i) => { state.overlay.draft[i.dataset.f] = i.value.trim(); }); state.overlay.draft.accountType = b.dataset.val; renderOverlay(); return; }
   if (closest('.js-ring')) return openOverlay({ kind: 'role', role: closest('.js-ring').dataset.role });
   if (closest('.js-close')) return closeOverlay();
   if (closest('.js-theme')) { state.theme = state.theme === 'dark' ? 'light' : 'dark'; renderOverlay(); render(); return; }
@@ -2676,6 +2677,7 @@ function saveNewCustomer() {
   const root = document.querySelector('.overlay .popup-body'); if (!root) return;
   root.querySelectorAll('[data-f]').forEach((i) => { o.draft[i.dataset.f] = i.value.trim(); });
   if (!o.draft.firstName) { o.error = 'First name is required (we use it for marketing).'; renderOverlay(); document.querySelector('.overlay [data-f="firstName"]')?.focus(); return; }
+  if (!o.draft.phone) { o.error = 'A phone number is required.'; renderOverlay(); document.querySelector('.overlay [data-f="phone"]')?.focus(); return; }
   if (o.draft.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(o.draft.email)) { o.error = 'That email doesn’t look valid (or leave it blank).'; renderOverlay(); return; }
   const id = nextCustomerId();
   const c = {
