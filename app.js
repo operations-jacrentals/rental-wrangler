@@ -2950,15 +2950,51 @@ async function loadFromBackend() {
   const r = await backendCall('load');
   if (!r || !r.ok) throw new Error((r && r.error) || 'load-failed');
   const data = r.data || {};
-  const empty = PERSIST_KEYS.every((k) => !(data[k] && data[k].length));
-  if (empty) { await backendCall('seed', { data: dataSnapshot() }); }   // first run → push the demo seed up
-  else PERSIST_KEYS.forEach((k) => { if (Array.isArray(data[k])) { DATA[k].length = 0; data[k].forEach((x) => DATA[k].push(x)); } });
+  // Apply whatever the backend holds. We do NOT auto-seed on empty anymore — that
+  // could overwrite real data on a transient blip. A fresh backend is populated
+  // explicitly via #reseed (admin), never silently from the demo file.
+  PERSIST_KEYS.forEach((k) => { if (Array.isArray(data[k])) { DATA[k].length = 0; data[k].forEach((x) => DATA[k].push(x)); } });
 }
-function saveSoon() { if (booting || !backendPassword) return; clearTimeout(saveTimer); saveTimer = setTimeout(flushSave, 1500); }
+
+// ── Incremental persistence (diff-based sync) ──────────────────────────────
+// Whole-state seed doesn't scale (≈1.7 MB / 10 s at real volume). Instead we keep
+// a snapshot of what the backend last held and, on each flush, send only the
+// records that changed (upserts) or vanished (deletes). A one-field edit becomes
+// a few-hundred-byte, sub-second call.
+const PERSIST_ID = { categories: 'categoryId', units: 'unitId', customers: 'customerId', invoices: 'invoiceId', rentals: 'rentalId', workOrders: 'woId', inspections: 'inspectionId', vendors: 'vendorId', parts: 'partId', companyFiles: 'fileId', expenses: 'expenseId' };
+let lastSaved = null;   // { entity: Map(id → JSON) } — the last successfully-persisted state
+function snapshotSaved() {
+  lastSaved = {};
+  PERSIST_KEYS.forEach((k) => { const m = new Map(); (DATA[k] || []).forEach((r) => m.set(String(r[PERSIST_ID[k]]), JSON.stringify(r))); lastSaved[k] = m; });
+}
+function computeChanges() {
+  const upserts = {}, deletes = {}; let n = 0;
+  PERSIST_KEYS.forEach((k) => {
+    const idf = PERSIST_ID[k]; const prev = (lastSaved && lastSaved[k]) || new Map(); const seen = new Set();
+    const ups = [];
+    (DATA[k] || []).forEach((r) => { const id = String(r[idf]); seen.add(id); const js = JSON.stringify(r); if (prev.get(id) !== js) ups.push({ id, js, rec: r }); });
+    const dels = []; prev.forEach((_, id) => { if (!seen.has(id)) dels.push(id); });
+    if (ups.length) { upserts[k] = ups; n += ups.length; }
+    if (dels.length) { deletes[k] = dels; n += dels.length; }
+  });
+  return { upserts, deletes, n };
+}
+function saveSoon() { if (booting || !backendPassword) return; clearTimeout(saveTimer); saveTimer = setTimeout(flushSave, 1200); }
 async function flushSave() {
   if (saving) { savePending = true; return; }
+  if (!lastSaved) return;                       // never loaded → nothing to diff against
+  const { upserts, deletes, n } = computeChanges();
+  if (!n) return;                               // nothing changed
   saving = true;
-  try { await backendCall('seed', { data: dataSnapshot() }); } catch (e) { /* offline → keep local, retry on next change */ }
+  const wireUp = {}; Object.keys(upserts).forEach((k) => { wireUp[k] = upserts[k].map((u) => u.rec); });
+  try {
+    const r = await backendCall('sync', { upserts: wireUp, deletes });
+    if (r && r.ok) {
+      // Commit ONLY what we sent — edits made mid-flight stay dirty and re-flush.
+      Object.keys(upserts).forEach((k) => upserts[k].forEach((u) => lastSaved[k].set(u.id, u.js)));
+      Object.keys(deletes).forEach((k) => deletes[k].forEach((id) => lastSaved[k].delete(id)));
+    } else { savePending = true; }              // server error → retry
+  } catch (e) { savePending = true; }            // offline → retry on next change
   saving = false;
   if (savePending) { savePending = false; saveSoon(); }
 }
@@ -2975,6 +3011,7 @@ function renderLogin(msg) {
   document.getElementById('login-pw').focus();
 }
 function finishLoad() {
+  snapshotSaved();                                              // baseline = what the backend currently holds
   buildIndexes(); state.cascade = createCascade(DATA); booting = false; render();
   if (migrationDirty) { migrationDirty = false; saveSoon(); }   // push parsed first/last names up to the Sheet
 }
@@ -3079,6 +3116,7 @@ boot();
 // expose for console/debugging + future DATA WIRING
 window.JT = {
   state, DATA, IDX, render, rentalPrice, invoiceTotals, buildIndexes, migrateCustomers, fullName,
+  saveSoon, flushSave, snapshotSaved, computeChanges,   // persistence hooks (debug + wiring)
   // creation / mutation API (the UI calls these; exposed for scripting + wiring)
   startNewRental, startNewInspection, startNewWorkOrder, startNewInvoice, startWashRequest,
   createInvoiceForRental, addRentalLineToInvoice, addWOToInvoice, addCustomLine, addPartToWO,
