@@ -1,0 +1,7 @@
+{
+  "name": "rental-wrangler",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "JacTec Rental Wrangler — vanilla-JS rental-fleet ops SPA (static)."
+}

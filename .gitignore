@@ -12,3 +12,7 @@ JacTec-handoff/
 
 # Redundant once the live app exists (kept locally, not on the public site)
 JacTec-standalone.html
+
+# CI installs these on the runner; never commit them
+node_modules/
+package-lock.json

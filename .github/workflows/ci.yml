@@ -1,0 +1,35 @@
+name: CI — boot check
+
+# Runs on every push/PR to main. Flags a broken version (syntax error or boot crash)
+# so it can be caught before it affects the live site (app.jacrentals.com).
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Syntax-check the JS modules
+        run: |
+          set -e
+          for f in app.js config.js data.js cascade.js service-countdown.js; do
+            node --check "$f" && echo "  ok: $f"
+          done
+
+      - name: Install Playwright (Chromium)
+        run: |
+          npm install --no-save playwright@1.48.0
+          npx playwright install --with-deps chromium
+
+      - name: Boot smoke test
+        run: node ci/smoke.mjs
