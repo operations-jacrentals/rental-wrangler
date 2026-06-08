@@ -1784,13 +1784,10 @@ function kpiTeam() {
 
 function headerEl() {
   const h = el('div', 'header');
-  const roleRing = (id, label, vals, color) => {
-    const score = (() => { const v = vals.filter((x) => x != null); return v.length ? Math.round(v.reduce((a, b) => a + b, 0) / v.length) : 0; })();
-    return `<button class="kpi-ring js-ring" data-role="${id}">
+  const roleRing = (id, label, vals, color) => `<button class="kpi-ring js-ring" data-role="${id}">
       <span class="ring-wrap">${ring3SVG(vals, color, { size: 54 })}</span>
-      <span class="ring-meta"><b>${vals[0] != null ? vals[0] : score}<span class="ring-pctsign">%</span></b><span class="ring-label">${esc(label)}</span></span>
+      <span class="ring-label">${esc(label)}</span>
     </button>`;
-  };
   const rings = ROLES.map((role) => roleRing(role.id, role.label, kpiFor(role.id), role.color)).join('');
   // One band: logo + rings on the left; a right column with the item tabs (single
   // row) above the toolbar (New / Dashboard / theme / QR / search / close-all).
