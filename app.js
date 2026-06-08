@@ -882,6 +882,19 @@ function kv(value, { pfx, sfx, wrap, big, html } = {}) {
 /* A row of adjacent pills, no label (e.g. Unit + Category side by side). */
 const kvPills = (html) => `<div class="kv pillrow">${html}</div>`;
 
+/* Generic click-to-edit field for ANY card (rentals/units/workOrders/…). Mirrors
+   the customer efield but routes through recOf/reindex via the 'field' edit kind,
+   so a one-field change auto-saves per-record. Empty value renders "+ placeholder".
+   opts: { type:'text'|'number'|'date', pfx, sfx, wrap, fmt(value) }. */
+function efld(card, rec, idField, field, ph, opts = {}) {
+  const raw = rec[field];
+  const has = raw !== '' && raw != null;
+  const disp = has ? esc(opts.fmt ? opts.fmt(raw) : String(raw)) : `<span class="add-field">+ ${esc(ph)}</span>`;
+  const pfx = opts.pfx ? `<span class="pfx">${esc(opts.pfx)}</span>` : '';
+  const sfx = (has && opts.sfx) ? `<span class="sfx">${esc(opts.sfx)}</span>` : '';
+  return `<div class="kv${opts.wrap ? ' wrap' : ''}">${pfx}<span class="v inline-edit" data-edit="field" data-card="${card}" data-field="${field}" data-rec="${esc(String(rec[idField]))}" data-ph="${esc(ph)}" data-type="${opts.type || 'text'}"${opts.wrap ? ' style="white-space:normal"' : ''}>${disp}</span>${sfx}</div>`;
+}
+
 const DETAIL = {
   /* ── RENTALS — fully built (§12.2 standard mode) ── */
   rentals: (r, cs) => {
@@ -938,7 +951,7 @@ const DETAIL = {
         ${kvPills(invPill)}
         ${invT ? kv(money(invT.balance), { sfx: 'due', big: true }) : ''}
         ${price ? kv(money(price.price), { sfx: `· ${price.rate}` }) : ''}
-        ${kvPills(`<span class="pill ref">${esc(r.po ? 'PO ' + r.po : 'Add PO')}</span>`)}
+        ${efld('rentals', r, 'rentalId', 'po', 'Add PO', { fmt: (v) => 'PO ' + v })}
       </div></div>`;
 
     // §9 Field Call — a unit breaking mid-rental: flag the rental (red FC), fail the unit,
@@ -950,16 +963,16 @@ const DETAIL = {
     const inspSection = `<div class="section"><h4>Inspection</h4>
       <div class="fieldstack">
         ${kvPills(unit ? statusPill('unitInspectionStatus', unit.inspectionStatus, { card: 'units', recId: unit.unitId }) : '<span class="pill c-gray">—</span>')}
-        <div class="kv"><span class="pfx">Start</span><span class="v">${r.startHours != null ? num(r.startHours) + ' HRS' : '—'}</span><span class="pfx" style="margin-left:8px">Return</span><span class="v">${r.returnHours != null ? num(r.returnHours) + ' HRS' : '—'}</span></div>
+        <div class="kv"><span class="pfx">Start</span><span class="v inline-edit" data-edit="field" data-card="rentals" data-field="startHours" data-rec="${r.rentalId}" data-ph="Start hrs" data-type="number">${r.startHours != null ? num(r.startHours) + ' HRS' : '<span class="add-field">+ set</span>'}</span><span class="pfx" style="margin-left:8px">Return</span><span class="v inline-edit" data-edit="field" data-card="rentals" data-field="returnHours" data-rec="${r.rentalId}" data-ph="Return hrs" data-type="number">${r.returnHours != null ? num(r.returnHours) + ' HRS' : '<span class="add-field">+ set</span>'}</span></div>
         ${kvPills(`<span class="pill ref">${I.video} On-Rent</span><span class="pill ref">${I.video} Returning</span>`)}
         ${fcRow ? kvPills(fcRow) : ''}
       </div></div>`;
 
-    const notes = r.notes ? `<div class="section"><h4>Notes</h4><div class="kv wrap"><span class="v">${esc(r.notes)}</span></div></div>` : '';
+    const notes = `<div class="section"><h4>Notes</h4>${efld('rentals', r, 'rentalId', 'notes', 'Add notes', { wrap: true })}</div>`;
     const history = historySection('rentals', r, cs);
 
     return `<div class="detail">
-      <div class="detail-head"><span class="d-title">${esc(r.rentalName || unit?.name || 'Rental')}</span>${r.fieldCall ? badge('FC', 'red') : ''}</div>
+      <div class="detail-head"><span class="d-title inline-edit" data-edit="field" data-card="rentals" data-field="rentalName" data-rec="${r.rentalId}" data-ph="Rental name">${esc(r.rentalName || unit?.name || 'Rental')}</span>${r.fieldCall ? badge('FC', 'red') : ''}</div>
       ${statusBar}
       ${notes}
       <div class="detail-cols">${rentalCol}${invoiceCol}</div>
@@ -980,28 +993,31 @@ const DETAIL = {
 
     const specs = `<div class="section"><h4>Specs</h4><div class="fieldstack">
       ${kvPills(cat ? refPill('categories', cat.categoryId, cat.name) : '<span class="pill c-gray">No category</span>')}
-      ${u.serial ? kv(u.serial, { pfx: 'S/N' }) : ''}
-      ${makeModel ? kv(makeModel) : ''}
-      ${u.weight ? kv(u.weight) : ''}
+      ${efld('units', u, 'unitId', 'serial', 'Add serial', { pfx: 'S/N' })}
+      ${efld('units', u, 'unitId', 'year', 'Year', { type: 'number' })}
+      ${efld('units', u, 'unitId', 'make', 'Make')}
+      ${efld('units', u, 'unitId', 'model', 'Model')}
+      ${efld('units', u, 'unitId', 'weight', 'Weight')}
+      ${efld('units', u, 'unitId', 'assignedMechanic', 'Assign mechanic', { sfx: 'mechanic' })}
       <div class="kv"><span class="v inline-edit" data-edit="unitHours" data-rec="${u.unitId}">${num(u.currentHours)} HRS</span></div>
     </div></div>`;
     const gps = `<div class="section"><h4>GPS</h4><div class="fieldstack">
       ${kvPills(u.gpsStatus ? statusPill('gpsStatus', u.gpsStatus) : '<span class="pill c-gray">No GPS</span>')}
-      ${u.gpsType ? kv(u.gpsType) : ''}
-      ${u.gpsPlacement ? kv(u.gpsPlacement) : ''}
+      ${efld('units', u, 'unitId', 'gpsType', 'GPS unit/type')}
+      ${efld('units', u, 'unitId', 'gpsPlacement', 'Placement')}
     </div></div>`;
     const investment = `<div class="section"><h4>Investment</h4><div class="fieldstack">
-      ${u.purchasePrice ? kv(money(u.purchasePrice), { sfx: 'paid' }) : ''}
-      ${u.purchaseDate ? kv(yr(u.purchaseDate), { sfx: 'purchased' }) : ''}
-      ${u.trueCost ? kv(money(u.trueCost), { sfx: 'true cost' }) : ''}
-      ${u.purchaseHours != null ? kv(`${num(u.purchaseHours)} HRS`, { sfx: 'at purchase' }) : ''}
+      ${efld('units', u, 'unitId', 'purchasePrice', 'Purchase price', { type: 'number', sfx: 'paid', fmt: money })}
+      ${efld('units', u, 'unitId', 'purchaseDate', 'Purchase date', { type: 'date', sfx: 'purchased', fmt: yr })}
+      ${efld('units', u, 'unitId', 'trueCost', 'True cost', { type: 'number', sfx: 'true cost', fmt: money })}
+      ${efld('units', u, 'unitId', 'purchaseHours', 'Hours at purchase', { type: 'number', sfx: 'at purchase', fmt: (v) => num(v) + ' HRS' })}
       ${kv(money(repair), { sfx: 'repairs' })}
       ${kv(money(avgRevMo), { sfx: '/mo avg' })}
       ${kv(money(totalRev), { sfx: 'total revenue' })}
     </div></div>`;
-    const notes = u.notes ? `<div class="section"><h4>Notes</h4><div class="kv wrap"><span class="v">${esc(u.notes)}</span></div></div>` : '';
+    const notes = `<div class="section"><h4>Notes</h4>${efld('units', u, 'unitId', 'notes', 'Add notes', { wrap: true })}</div>`;
     return `<div class="detail">
-      <div class="detail-head"><span class="d-title">${esc(u.name)}</span>${statusPill('unitFleetStatus', u.fleetStatus)}${statusPill('unitInspectionStatus', u.inspectionStatus)}<button class="pill ref js-wash-request" data-rec="${u.unitId}">${I.video} Request Wash</button><span class="pill c-gray">${I.qr} QR</span></div>
+      <div class="detail-head"><span class="d-title inline-edit" data-edit="field" data-card="units" data-field="name" data-rec="${u.unitId}" data-ph="Unit name">${esc(u.name)}</span><span class="pill c-${getStatus('unitFleetStatus', u.fleetStatus).color} js-fleetstatus" data-rec="${u.unitId}">${esc(getStatus('unitFleetStatus', u.fleetStatus).label)} ${I.chev}</span>${statusPill('unitInspectionStatus', u.inspectionStatus)}<button class="pill ref js-wash-request" data-rec="${u.unitId}">${I.video} Request Wash</button><span class="pill c-gray">${I.qr} QR</span></div>
       <div class="detail-cols">${specs}${gps}</div>
       ${investment}
       ${notes}
@@ -1167,14 +1183,19 @@ const DETAIL = {
       <div class="hlog">${journey || '<span class="muted" style="font-size:12px">No line items</span>'}</div>
       ${state.woPartForm === w.woId ? partForm : `<div class="pillrow" style="margin-top:8px"><button class="pill ref js-add-part" data-rec="${w.woId}">+ Add Part / Labor</button>${billBtn}</div>`}
     </div>`;
+    const billToggle = `<button class="pill ${w.billCustomer === 'Yes' ? 'c-orange' : 'c-gray'} js-wo-bill" data-rec="${w.woId}">Bill customer: ${w.billCustomer === 'Yes' ? 'Yes' : 'No'}</button>`;
     const report = `<div class="section"><h4>Report</h4><div class="fieldstack">
       ${kvPills(`${unit ? unitPill(unit.unitId, { x: 'unit-swap' }) : (w.mock ? `<button class="pill ref js-pick" data-card="shop" data-rec="${w.woId}" data-type="workOrders" data-slot="unit">+ Pick unit</button>` : '<span class="pill c-gray">No unit</span>')}${cat ? refPill('categories', cat.categoryId, cat.name) : ''}${unit ? statusPill('unitInspectionStatus', unit.inspectionStatus, { card: 'units', recId: unit.unitId }) : ''}`)}
       ${kvPills(`${badge(getStatus('woType', w.woType).label, getStatus('woType', w.woType).color)}${cust ? refPill('customers', w.customerId, cust.name) : ''}`)}
+      ${efld('workOrders', w, 'woId', 'woReport', 'Report summary')}
+      ${efld('workOrders', w, 'woId', 'assignedMechanic', 'Assign mechanic', { sfx: 'mechanic' })}
+      ${efld('workOrders', w, 'woId', 'eta', 'Set ETA', { type: 'date', sfx: 'ETA', fmt: fmtShortDate })}
+      ${kvPills(billToggle)}
       ${kv(fmtShortDate(w.date), { sfx: 'opened' })}
       ${kv(`${num(w.unitHoursAtCreation)} HRS`, { sfx: 'at creation' })}
       ${kv(money(partsCost), { sfx: 'parts cost' })}${kv(`${labor} HRS`, { sfx: 'labor' })}
       ${w.billCustomer === 'Yes' ? kv(money(priceIfBilled), { sfx: 'if billed' }) : ''}
-      ${w.description ? kv(w.description, { wrap: true }) : ''}
+      ${efld('workOrders', w, 'woId', 'description', 'Add description', { wrap: true })}
     </div></div>`;
     return `<div class="detail">
       <div class="detail-head"><span class="d-title">${esc(`${unit?.name || '—'} — ${w.woReport}`)}</span>${badge(getStatus('woType', w.woType).label, getStatus('woType', w.woType).color)}<span class="pill c-${getStatus('woPhase', w.phase).color} js-wophase" data-rec="${w.woId}">${esc(getStatus('woPhase', w.phase).label)} ${I.chev}</span></div>
@@ -1976,6 +1997,18 @@ function openTransportDropdown(rentalId, anchorEl) {
     `<button class="dd-item js-settransport" data-rec="${esc(rentalId)}" data-val="${esc(v)}">${statusPill('transportType', v)}</button>`).join('');
   openDropdown(anchorEl, html);
 }
+function openFleetDropdown(unitId, anchorEl) {
+  const html = Object.keys(STATUS.unitFleetStatus).map((v) =>
+    `<button class="dd-item js-setfleet" data-rec="${esc(unitId)}" data-val="${esc(v)}">${statusPill('unitFleetStatus', v)}</button>`).join('');
+  openDropdown(anchorEl, html);
+}
+function setUnitFleet(unitId, val) {
+  const u = IDX.unit.get(unitId); if (!u) return;
+  u.fleetStatus = val; reindex('units', u);
+  logAction(u, `Fleet status → ${getStatus('unitFleetStatus', val).label}`);
+  document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove());
+  render();
+}
 function openFunnelDropdown(custId, which, anchorEl) {
   const cust = IDX.customer.get(custId);
   const cur = which === 'membership' ? cust?.membershipStage : cust?.usedSalesStage;
@@ -2167,6 +2200,7 @@ function onClick(e) {
   if (closest('.js-clear-fc')) { e.stopPropagation(); return clearFieldCall(closest('.js-clear-fc').dataset.rec); }
   if (closest('.js-wash-request')) { e.stopPropagation(); return startWashRequest(closest('.js-wash-request').dataset.rec || null); }
   if (closest('.js-bill-wo')) { e.stopPropagation(); return billWOToInvoice(closest('.js-bill-wo').dataset.rec); }
+  if (closest('.js-wo-bill')) { const b = closest('.js-wo-bill'); e.stopPropagation(); const w = IDX.wo.get(b.dataset.rec); if (w) { w.billCustomer = w.billCustomer === 'Yes' ? 'No' : 'Yes'; reindex('workOrders', w); logAction(w, `Bill customer → ${w.billCustomer}`); render(); } return; }
   if (closest('.js-svc-complete')) { const b = closest('.js-svc-complete'); e.stopPropagation(); state.svcPhoto = null; return openOverlay({ kind: 'service', unitId: b.dataset.unit, taskId: b.dataset.task }); }
   if (closest('.js-svc-save')) { const b = closest('.js-svc-save'); e.stopPropagation(); if (!state.svcPhoto) { toast('Photo / video proof is required to complete a service.'); return; } const root = b.closest('.popup-body'); return recordServiceCompletion(b.dataset.unit, b.dataset.task, root.querySelector('.js-svc-hours')?.value, root.querySelector('.js-svc-date')?.value, root.querySelector('.js-svc-notes')?.value, state.svcPhoto); }
   // invoice line-item add buttons → enter a pick for the source card
@@ -2191,6 +2225,8 @@ function onClick(e) {
   // rental status pill on its own open card → dropdown (pill-rule exception)
   if (closest('.js-status-pill')) return openStatusDropdown(closest('.js-status-pill').dataset.rec, closest('.js-status-pill'));
   if (closest('.js-transport-pill')) { const b = closest('.js-transport-pill'); e.stopPropagation(); return openTransportDropdown(b.dataset.rec, b); }
+  if (closest('.js-fleetstatus')) { const b = closest('.js-fleetstatus'); e.stopPropagation(); return openFleetDropdown(b.dataset.rec, b); }
+  if (closest('.js-setfleet')) { const b = closest('.js-setfleet'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return setUnitFleet(b.dataset.rec, b.dataset.val); }
   if (closest('.js-wophase')) { const b = closest('.js-wophase'); e.stopPropagation(); return openWoPhaseDropdown(b.dataset.rec, b, null); }
   if (closest('.js-wophase-line')) { const b = closest('.js-wophase-line'); e.stopPropagation(); return openWoPhaseDropdown(b.dataset.rec, b, Number(b.dataset.idx)); }
   if (closest('.js-setwophase')) { const b = closest('.js-setwophase'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return setWoPhase(b.dataset.rec, b.dataset.val); }
@@ -2339,6 +2375,15 @@ function startInlineEdit(span) {
     input.value = (c && c[f]) || ''; input.placeholder = span.dataset.ph || '';
     if (f === 'email') input.type = 'email';
     commit = () => { if (done) return; done = true; if (c) { c[f] = input.value.trim(); if (f === 'firstName' || f === 'lastName') c.name = fullName(c); reindex('customers', c); } render(); };
+  } else if (kind === 'field') {
+    // Generic per-card field editor (text / number / date) — routes through recOf+reindex.
+    const card = span.dataset.card, f = span.dataset.field, type = span.dataset.type || 'text';
+    const rec = recOf(card, recId);
+    input.value = (rec && rec[f] != null) ? rec[f] : '';
+    input.placeholder = span.dataset.ph || '';
+    if (type === 'number') input.type = 'number';
+    else if (type === 'date') input.type = 'date';
+    commit = () => { if (done) return; done = true; if (rec) { let v = input.value.trim(); if (type === 'number') v = (v === '' ? null : Number(v)); rec[f] = v; reindex(card, rec); } render(); };
   } else { return; }
   span.replaceWith(input); input.focus(); input.select();
   input.addEventListener('keydown', (e) => {
