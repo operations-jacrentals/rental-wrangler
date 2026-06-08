@@ -592,6 +592,18 @@ select.nc-in { cursor: pointer; }
 .nc-ag-meta { font-size: 12px; font-weight: 700; color: var(--txt-2); margin: 0 0 9px; }
 .nc-ag-sigline { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
 .nc-ag-sigline .nc-thumb.sig { max-height: 72px; }
+.nc-thumb.empty.good { color: var(--good, #1a9f57); font-weight: 700; }
+/* Stripe payment UI */
+.pay-cap { font-size: 11px; font-weight: 700; color: var(--txt-3); text-transform: uppercase; letter-spacing: .3px; margin: 0 0 6px; }
+.pay-card-field { padding: 12px 13px; border: 1px solid var(--accent-line); border-radius: 10px; background: var(--panel); }
+.pay-card-field.StripeElement--focus { border-color: var(--accent); }
+.pay-err { color: var(--red, #ff6b6b); font-size: 12px; min-height: 16px; margin-top: 7px; }
+.pay-amount { display: flex; align-items: baseline; gap: 8px; margin-bottom: 14px; }
+.pay-amount-num { font-size: 30px; font-weight: 800; color: var(--txt); letter-spacing: -.5px; }
+.pay-amount-sfx { font-size: 12px; color: var(--txt-3); }
+.pay-card-on-file { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--txt-2); padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+.pay-card-on-file.warn { color: var(--yellow); border-color: var(--yellow-bg); }
+.pay-card-on-file.good { color: var(--good, #1a9f57); }
 
 /* role KPI popup */
 .kpi-popup { width: 420px; }

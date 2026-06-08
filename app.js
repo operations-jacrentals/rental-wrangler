@@ -1179,6 +1179,11 @@ const DETAIL = {
       ${kv(`${money(t.paid)} / ${money(t.total)}`, { sfx: 'paid' })}
       ${kv(fmtShortDate(i.dueDate), { sfx: 'due date' })}
       ${kvPills(`<span class="pill ref inline-edit" data-edit="invoicePO" data-rec="${i.invoiceId}">${esc(i.po ? 'PO ' + i.po : 'Add PO')}</span>${cust?.requiresPO && !i.po ? badge('PO required', 'yellow') : ''}`)}
+      ${t.status === 'Paid'
+        ? `<div class="pillrow"><span class="pill c-green" style="min-width:0">Paid${i.paymentMethod ? ' · ' + esc(i.paymentMethod) : ''}</span></div>`
+        : (canMoney() && t.balance > 0 && t.status !== 'Refunded' && cust
+            ? `<div class="pillrow" style="margin-top:2px"><button class="pill c-green js-pay-invoice" data-rec="${i.invoiceId}">${hasCardOnFile(cust) ? 'Pay ' + money(t.balance) : 'Take payment'}</button>${hasCardOnFile(cust) ? `<span class="muted" style="font-size:11px">${esc(cardLabel(cust))}</span>` : '<span class="muted" style="font-size:11px">no card on file</span>'}</div>`
+            : '')}
     </div></div>`;
     const lineForm = `<div class="lineform"><input class="lf-in js-lf-label" placeholder="Custom line description" /><div class="lineform-row"><input class="lf-in js-lf-amt" type="number" min="0" placeholder="Amount $" /></div><div class="pillrow"><button class="pill c-green js-line-save" data-rec="${i.invoiceId}">Add line</button><button class="pill c-gray js-line-cancel">Cancel</button></div></div>`;
     const items = `<div class="section"><h4>Items</h4>
@@ -1900,6 +1905,7 @@ function tabBadge(card, rec) {
    ════════════════════════════════════════════════════════════════════════ */
 function renderOverlay() {
   const root = $('#overlay-root');
+  destroyCardElement();        // any re-render/overlay-switch tears down a mounted Stripe element
   root.innerHTML = '';
   if (!state.overlay) return;
   const o = state.overlay;
@@ -1962,7 +1968,9 @@ function renderOverlay() {
     const acctPills = NC_ACCOUNT_TYPES.map((t) => `<button type="button" class="nc-pill js-nc-acct${t === d.accountType ? ' on' : ''}" data-val="${esc(t)}">${esc(getStatus('customerAccountType', t).label)}</button>`).join('');
     const selfieBox = d.selfie ? `<img class="nc-thumb" src="${esc(d.selfie)}" alt="selfie" />` : `<div class="nc-thumb empty">No photo</div>`;
     const sigBox = d.signature ? `<img class="nc-thumb sig" src="${esc(d.signature)}" alt="signature" />` : `<canvas class="nc-sigpad" width="400" height="120"></canvas>`;
-    const cardSaved = !!(IDX.customer.get(o.editId || '')?.stripeId);
+    const custRec = IDX.customer.get(o.editId || '');
+    const cardOnFile = hasCardOnFile(custRec);
+    const cardShort = cardOnFile ? `${brandName(custRec.cardBrand)} ••••${custRec.cardLast4}` : 'No card';
     const agType = /member/i.test(d.accountType || '') ? 'membership' : 'rental';
     const ag = AGREEMENTS[agType];
     const agSigned = d.agreementSignedAt && d.agreementType === agType;
@@ -1987,7 +1995,7 @@ function renderOverlay() {
         <div class="nc-packet">
           <div class="nc-cap"><span class="nc-cap-lbl">Selfie</span>${selfieBox}<div class="pillrow"><label class="pill ref">${d.selfie ? 'Retake' : 'Take photo'}<input type="file" accept="image/*" capture="user" class="js-nc-selfie" hidden /></label>${d.selfie ? '<button class="pill c-gray js-nc-selfie-clear">Remove</button>' : ''}</div></div>
           <div class="nc-cap"><span class="nc-cap-lbl">Signature${agSigned ? '' : ' *'}</span>${sigBox}<div class="pillrow">${d.signature ? '<button class="pill c-gray js-nc-sig-clear">Re-sign</button>' : '<button class="pill c-green js-nc-sig-save">Accept &amp; sign</button><button class="pill c-gray js-nc-sig-clearpad">Clear</button>'}</div></div>
-          <div class="nc-cap"><span class="nc-cap-lbl">Card on file</span><div class="nc-thumb empty">${cardSaved ? 'Card saved ✓' : 'Stripe — Phase 2'}</div><div class="pillrow"><button class="pill ref" disabled style="opacity:.45;cursor:default">＋ Add card</button></div></div>
+          <div class="nc-cap"><span class="nc-cap-lbl">Card on file</span><div class="nc-thumb empty${cardOnFile ? ' good' : ''}">${esc(cardShort)}</div><div class="pillrow">${isEdit ? (d.signature && d.selfie ? `<button class="pill ref js-add-card" data-rec="${o.editId}">${cardOnFile ? 'Replace card' : '＋ Add card'}</button>` : '<span class="muted" style="font-size:11px">Sign first</span>') : '<span class="muted" style="font-size:11px">Save customer first</span>'}</div></div>
         </div>
         ${o.error ? `<div class="login-err" style="text-align:left;margin-top:10px">${esc(o.error)}</div>` : ''}
         <div class="pillrow" style="margin-top:16px;justify-content:flex-end"><button class="pill c-gray js-close">Cancel</button><button class="pill c-green js-nc-save">${isEdit ? 'Save account' : 'Create customer'}</button></div>
@@ -2068,9 +2076,51 @@ function renderOverlay() {
         <div class="pillrow" style="justify-content:flex-end;margin-top:10px"><button class="pill c-green js-schedule-save" data-rec="${c.customerId}">Add to schedule</button></div>
       </div>`;
     overlay.appendChild(pop);
+  } else if (o.kind === 'addCard') {
+    // Stripe Card Element — raw card data stays inside Stripe's iframe.
+    const c = IDX.customer.get(o.customerId);
+    if (!c) { state.overlay = null; return; }
+    const consent = !!(c.signature && c.selfie);
+    const pop = el('div', 'popup'); pop.style.width = '430px';
+    pop.innerHTML = `
+      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${CARD_ICON.customers || ''}</span><h3>Add card — ${esc(c.name)}</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
+      <div class="popup-body">
+        ${consent ? '' : `<div class="login-err" style="text-align:left;margin-bottom:12px">A selfie + signature are required first (card authorization). <button class="pill ref js-edit-customer" data-rec="${c.customerId}" style="margin-left:6px">Complete account</button></div>`}
+        <div class="pay-cap">Card number</div>
+        <div class="pay-card-field" id="sl-card-element"></div>
+        <div class="pay-err" id="sl-card-error"></div>
+        <p class="muted" style="font-size:11px;margin:10px 0 0">Entered securely via Stripe. We store only the brand + last 4 digits — never the full number. The customer's signature + selfie on file authorize future charges.</p>
+        <div class="pillrow" style="justify-content:flex-end;margin-top:14px"><button class="pill c-gray js-close">Cancel</button><button class="pill c-green js-card-save" ${consent ? '' : 'disabled style="opacity:.45;cursor:default"'}>Save card</button></div>
+      </div>`;
+    overlay.appendChild(pop);
+  } else if (o.kind === 'payment') {
+    const inv = IDX.invoice.get(o.invoiceId);
+    if (!inv) { state.overlay = null; return; }
+    const t = invoiceTotals(inv);
+    const c = inv.customerId ? IDX.customer.get(inv.customerId) : null;
+    const card = hasCardOnFile(c);
+    const paid = inv.paid === true || t.status === 'Paid' || t.balance <= 0;
+    const pop = el('div', 'popup'); pop.style.width = '380px';
+    pop.innerHTML = `
+      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${CARD_ICON.invoices || ''}</span><h3>Pay ${esc(inv.invoiceId)}</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
+      <div class="popup-body">
+        <div class="pay-amount"><span class="pay-amount-num">${money(t.balance)}</span><span class="pay-amount-sfx">due${c ? ' · ' + esc(c.name) : ''}</span></div>
+        ${paid ? '<div class="pay-card-on-file good">✓ This invoice is paid.</div>'
+          : card ? `<div class="pay-card-on-file"><span class="pill c-gray" style="min-width:0">${I.qr ? '' : ''}💳</span><span>${esc(cardLabel(c))}</span></div>`
+                 : '<div class="pay-card-on-file warn">No card on file for this customer.</div>'}
+        ${o.error ? `<div class="login-err" style="text-align:left;margin-top:10px">${esc(o.error)}</div>` : ''}
+        <div class="pillrow" style="justify-content:flex-end;margin-top:16px">
+          <button class="pill c-gray js-close">Close</button>
+          ${paid ? '' : card
+            ? `<button class="pill c-green js-charge-invoice" data-rec="${inv.invoiceId}" ${o.busy ? 'disabled' : ''}>${o.busy ? 'Charging…' : 'Charge ' + money(t.balance)}</button>`
+            : `<button class="pill ref js-pay-addcard" data-rec="${inv.customerId || ''}" data-inv="${inv.invoiceId}" ${inv.customerId ? '' : 'disabled style="opacity:.45;cursor:default"'}>Add a card</button>`}
+        </div>
+      </div>`;
+    overlay.appendChild(pop);
   }
   root.appendChild(overlay);
   if (o.kind === 'newCustomer') setupSignaturePad();
+  if (o.kind === 'addCard') { const cc = IDX.customer.get(o.customerId); if (cc && cc.signature && cc.selfie) mountCardElement(); }   // only mount with consent (nothing to orphan otherwise)
 }
 const openOverlay = (o) => { state.overlay = o; renderOverlay(); };
 // Read the customer-form inputs back into the draft (call before any re-render so
@@ -2092,7 +2142,7 @@ function setupSignaturePad() {
   cv.addEventListener('pointerup', () => { drawing = false; });
   cv.addEventListener('pointerleave', () => { drawing = false; });
 }
-const closeOverlay = () => { state.overlay = null; renderOverlay(); };
+const closeOverlay = () => { destroyCardElement(); state.overlay = null; renderOverlay(); };
 
 /* ── Back-office boards (§7.9–7.12): spreadsheet-style tables ─────────────── */
 function vendorTotals(vendorId) {
@@ -2341,9 +2391,14 @@ function onClick(e) {
   if (closest('.js-nc-qr')) { e.stopPropagation(); const id = state.overlay.editId; openOverlay({ kind: 'qr', title: 'Continue on phone', url: location.origin + location.pathname + '#edit=' + id, caption: 'Scan to finish this account on your phone.' }); return; }
   if (closest('.js-edit-customer')) { e.stopPropagation(); return openCustomerForm(closest('.js-edit-customer').dataset.rec); }
   if (closest('.js-view-agreement')) { e.stopPropagation(); const cust = IDX.customer.get(closest('.js-view-agreement').dataset.rec); if (cust) openOverlay({ kind: 'agreement', recId: cust.customerId }); return; }
+  if (closest('.js-add-card')) { e.stopPropagation(); return openAddCard(closest('.js-add-card').dataset.rec); }
+  if (closest('.js-card-save')) { e.stopPropagation(); return saveCardFlow(closest('.js-card-save')); }
+  if (closest('.js-pay-invoice')) { e.stopPropagation(); return openPayInvoice(closest('.js-pay-invoice').dataset.rec); }
+  if (closest('.js-charge-invoice')) { e.stopPropagation(); return chargeInvoiceFlow(closest('.js-charge-invoice').dataset.rec); }
+  if (closest('.js-pay-addcard')) { e.stopPropagation(); const b = closest('.js-pay-addcard'); return openAddCard(b.dataset.rec, { returnTo: 'payment', invoiceId: b.dataset.inv }); }
   if (closest('.js-ring')) return openOverlay({ kind: 'role', role: closest('.js-ring').dataset.role });
   if (closest('.js-close')) return closeOverlay();
-  if (closest('.js-theme')) { state.theme = state.theme === 'dark' ? 'light' : 'dark'; renderOverlay(); render(); return; }
+  if (closest('.js-theme')) { state.theme = state.theme === 'dark' ? 'light' : 'dark'; if (state.overlay && state.overlay.kind !== 'addCard') renderOverlay(); render(); return; }
   if (closest('.js-qr')) return openOverlay({ kind: 'qr' });
   if (closest('.js-board')) { const b = closest('.js-board'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return openOverlay({ kind: 'board', board: b.dataset.board }); }
   if (closest('.js-dashboard')) { state.dashboard = !state.dashboard; state.winpicker = null; state.pick = null; return render(); }
@@ -2812,6 +2867,127 @@ function saveNewCustomer() {
   anchorRecord('customers', id);
   toast(`${c.name} added.`);
 }
+/* ════════════════════════════════════════════════════════════════════════
+ * STRIPE CLIENT (Phase 2) — card-on-file + invoice charging.
+ * Card data is entered ONLY in Stripe's iframe (Card Element) and tokenized in
+ * the browser; raw PAN/CVC never touches our code or the backend. The backend
+ * owns the money math — the client never sends an amount.
+ * ════════════════════════════════════════════════════════════════════════ */
+let _stripe = null, _cardElements = null, _cardElement = null;
+function getStripe() {
+  if (_stripe) return _stripe;
+  if (typeof Stripe === 'undefined' || !CFG.STRIPE_PUBLISHABLE_KEY) { toast('Payment library not ready yet — try again in a moment.'); return null; }
+  try { _stripe = Stripe(CFG.STRIPE_PUBLISHABLE_KEY); } catch (e) { toast('Could not start the payment library.'); return null; }
+  return _stripe;
+}
+// Only Office/Admin take payments. In #local demo (no role) we still show the UI.
+const canMoney = () => !currentRole || currentRole === 'Admin' || currentRole === 'Office';
+const brandName = (b) => (b || 'Card').replace(/^./, (m) => m.toUpperCase());
+const hasCardOnFile = (c) => !!(c && c.stripeId && c.cardLast4);
+const cardLabel = (c) => hasCardOnFile(c) ? `${brandName(c.cardBrand)} ending ${c.cardLast4}${c.cardExpMonth ? ` · exp ${c.cardExpMonth}/${String(c.cardExpYear).slice(-2)}` : ''}` : '';
+function friendlyPayErr(r) {
+  const code = (r && r.error) || 'charge-failed';
+  return ({
+    'no-card-on-file': 'No card on file — add one first.', 'no-stripe-customer': 'No card on file — add one first.',
+    'consent-required': 'Capture a selfie + signature first (card authorization).',
+    'card_declined': 'The card was declined.', 'expired_card': 'That card is expired.', 'insufficient_funds': 'Insufficient funds.',
+    'over-ceiling': 'Amount exceeds the per-charge limit — split it or charge manually.', 'bad-invoice-amount': 'Nothing is due on this invoice.',
+    'forbidden': 'Only Office/Admin can take payments.', 'stripe-not-configured': 'Payments aren’t configured on the backend yet.',
+    'pm-customer-mismatch': 'That card isn’t linked to this customer.', 'setupintent-invalid': 'Card setup didn’t verify — try again.',
+    'amount-mismatch': 'Amount changed during payment — flagged for review.', 'customer-mismatch': 'Payment didn’t match this customer.',
+    'server-error': 'Server error — try again.',
+  })[code] || 'Payment failed — try again or use another card.';
+}
+
+function openAddCard(customerId, opts) { openOverlay({ kind: 'addCard', customerId, returnTo: (opts && opts.returnTo) || '', invoiceId: (opts && opts.invoiceId) || '' }); }
+function openPayInvoice(invoiceId) { openOverlay({ kind: 'payment', invoiceId, busy: false, error: '' }); }
+
+// Mount the Stripe Card Element into the open addCard overlay (called post-append,
+// like setupSignaturePad). Recreated per open; destroyed on close.
+function mountCardElement() {
+  const stripe = getStripe(); if (!stripe) return;
+  const host = document.getElementById('sl-card-element'); if (!host) return;
+  destroyCardElement();
+  _cardElements = stripe.elements();
+  _cardElement = _cardElements.create('card', { hidePostalCode: false, style: { base: { color: '#e8ebf2', fontFamily: 'Geist, system-ui, sans-serif', fontSize: '15px', '::placeholder': { color: '#8a93a6' } }, invalid: { color: '#ff6b6b' } } });
+  _cardElement.mount('#sl-card-element');
+  _cardElement.on('change', (e) => { const b = document.getElementById('sl-card-error'); if (b) b.textContent = e.error ? e.error.message : ''; });
+}
+function destroyCardElement() { if (_cardElement) { try { _cardElement.destroy(); } catch (e) {} } _cardElement = null; _cardElements = null; }
+
+// Save card: SetupIntent (server) → confirmCardSetup (browser) → persist (server).
+// DOM-driven (no renderOverlay) so the Card Element isn't wiped mid-entry.
+async function saveCardFlow(btn) {
+  const o = state.overlay; if (!o || o.kind !== 'addCard') return;
+  const c = IDX.customer.get(o.customerId); if (!c) return;
+  const stripe = getStripe(); if (!stripe || !_cardElement) return;
+  const errBox = document.getElementById('sl-card-error');
+  const setErr = (m) => { if (errBox) errBox.textContent = m || ''; };
+  const reset = () => { btn.disabled = false; btn.textContent = 'Save card'; };
+  if (!c.signature || !c.selfie) { setErr('Capture a selfie + signature first (card authorization).'); return; }
+  const live = () => state.overlay === o;   // bail if the overlay changed/closed mid-await
+  btn.disabled = true; btn.textContent = 'Saving…'; setErr('');
+  try {
+    const r = await backendCall('stripeSetupIntent', { customerId: c.customerId });
+    if (!live()) return;
+    if (!r || !r.ok) { setErr(friendlyPayErr(r)); reset(); return; }
+    const { setupIntent, error } = await stripe.confirmCardSetup(r.clientSecret, { payment_method: { card: _cardElement, billing_details: { name: c.name || undefined, email: c.email || undefined, phone: c.phone || undefined } } });
+    if (!live()) return;
+    if (error) { setErr(error.message); reset(); return; }
+    if (!setupIntent || setupIntent.status !== 'succeeded') { setErr('Card could not be saved — try again.'); reset(); return; }
+    const s = await backendCall('stripeSaveCard', { customerId: c.customerId, paymentMethodId: setupIntent.payment_method, setupIntentId: setupIntent.id });
+    if (!live()) return;
+    if (!s || !s.ok) { setErr(friendlyPayErr(s)); reset(); return; }
+    c.stripeId = r.stripeId || c.stripeId;
+    c.cardBrand = s.card.brand; c.cardLast4 = s.card.last4; c.cardExpMonth = s.card.expMonth; c.cardExpYear = s.card.expYear;
+    reindex('customers', c); logAction(c, `Card on file added — ${brandName(s.card.brand)} ••••${s.card.last4}`);
+    destroyCardElement();
+    toast('Card saved ✓');
+    if (o.returnTo === 'payment' && o.invoiceId) openPayInvoice(o.invoiceId);
+    else closeOverlay();
+    render();
+  } catch (e) { setErr('Network error — try again.'); reset(); }
+}
+
+// Charge an invoice off_session; on 3DS fall back to an on-session confirm, then
+// re-verify server-side before marking paid. The payment overlay has no Card
+// Element, so re-rendering it for busy/error states is safe.
+async function chargeInvoiceFlow(invoiceId) {
+  const o = state.overlay; if (!o || o.kind !== 'payment') return;
+  const live = () => state.overlay === o;   // bail if the overlay changed/closed mid-await
+  o.busy = true; o.error = ''; renderOverlay();
+  const fail = (msg) => { if (!live()) return; o.busy = false; o.error = msg; renderOverlay(); };
+  try {
+    const r = await backendCall('stripeChargeInvoice', { invoiceId });
+    if (!live()) return;
+    if (r && r.ok && (r.status === 'succeeded' || r.alreadyPaid)) { applyInvoicePaid(invoiceId, r); toast('Payment captured ✓'); closeOverlay(); return; }
+    if (r && r.requiresAction && r.clientSecret) {
+      const stripe = getStripe(); if (!stripe) { fail('Payment library not ready.'); return; }
+      const { paymentIntent, error } = await stripe.confirmCardPayment(r.clientSecret);
+      if (!live()) return;
+      if (error) { fail(error.message || 'Authentication failed.'); return; }
+      if (paymentIntent && paymentIntent.status === 'succeeded') {
+        const f = await backendCall('stripeFinalizeInvoice', { invoiceId, paymentIntentId: r.paymentIntentId });
+        if (!live()) return;
+        if (f && f.ok) { applyInvoicePaid(invoiceId, f); toast('Payment captured ✓'); closeOverlay(); return; }
+        fail(friendlyPayErr(f)); return;
+      }
+      fail('Card authentication was not completed.'); return;
+    }
+    fail(friendlyPayErr(r));
+  } catch (e) { fail('Network error — try again.'); }
+}
+function applyInvoicePaid(invoiceId, r) {
+  const inv = IDX.invoice.get(invoiceId); if (!inv) return;
+  inv.paid = true; inv.status = 'Paid'; inv.paidAt = r.paidAt || TODAY_ISO;
+  if (r.paymentIntentId) inv.paymentIntentId = r.paymentIntentId;
+  if (r.chargedAmount != null) inv.chargedAmount = r.chargedAmount;
+  if (r.amountPaid != null) inv.amountPaid = r.amountPaid;
+  if (r.paymentMethod) inv.paymentMethod = r.paymentMethod;
+  reindex('invoices', inv); logAction(inv, `Payment captured — ${r.paymentMethod || 'card on file'}`);
+  render();
+}
+
 function startNewReceipt() {
   const id = 'E-NEW' + (state.seq++);
   const draft = { expenseId: id, vendorId: null, date: TODAY_ISO, amount: 0, reconcile: 'Unreconciled', method: 'Cash', category: 'Parts', woId: null, notes: 'New receipt', mock: true };
