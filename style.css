@@ -572,6 +572,20 @@ select.nc-in { cursor: pointer; }
 .nc-pill { padding: 7px 13px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line); color: var(--txt-2); font-size: 12px; font-weight: 700; cursor: pointer; transition: background .12s, border-color .12s, color .12s; }
 .nc-pill:hover { border-color: var(--accent-line); }
 .nc-pill.on { background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent); }
+/* customer account packet — selfie / signature / card */
+.nc-popup { width: 500px; max-height: 88vh; }
+.nc-popup .popup-body { overflow-y: auto; }
+.nc-sec-title { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .4px; color: var(--txt-3); margin: 16px 0 9px; }
+.nc-packet { display: flex; flex-direction: column; gap: 12px; }
+.nc-cap { display: flex; align-items: center; gap: 12px; }
+.nc-cap-lbl { flex: 0 0 76px; font-size: 11px; font-weight: 700; color: var(--txt-3); text-transform: uppercase; letter-spacing: .3px; }
+.nc-thumb { width: 116px; height: 72px; flex: 0 0 auto; object-fit: cover; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); }
+.nc-thumb.sig { flex: 1 1 auto; width: auto; object-fit: contain; background: #fff; }
+.nc-thumb.empty { display: inline-flex; align-items: center; justify-content: center; color: var(--txt-3); font-size: 11px; }
+.nc-sigpad { flex: 1 1 auto; height: 86px; border-radius: 10px; border: 1px solid var(--accent-line); background: #fff; touch-action: none; cursor: crosshair; }
+.nc-cap .pillrow { margin-left: auto; flex: 0 0 auto; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.nc-cap .pill { font-size: 11px; padding: 6px 11px; }
+.cust-selfie { width: 30px; height: 30px; border-radius: 8px; object-fit: cover; border: 1px solid var(--line); flex: 0 0 auto; }
 
 /* role KPI popup */
 .kpi-popup { width: 420px; }

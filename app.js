@@ -1084,7 +1084,9 @@ const DETAIL = {
     </div></div>`;
     // name → badges → full-width activity bar → sections (Jac 2026-06-07); even .detail gaps
     const title = `<span class="d-title">${esc(fullName(c)) || 'New Customer'}</span>`;
-    const badges = `<div class="detail-badges pillrow">${badge(isBusiness ? 'Business' : 'Non-Business', isBusiness ? 'blue' : 'gray')}${isMember ? badge('Member', 'purple') : ''}${statusPill('customerPayStatus', c.payStatus)}</div>`;
+    const acctDone = !!(c.selfie && c.signature);
+    const selfieThumb = c.selfie ? `<img class="cust-selfie" src="${esc(c.selfie)}" alt="" />` : '';
+    const badges = `<div class="detail-badges pillrow">${selfieThumb}${badge(isBusiness ? 'Business' : 'Non-Business', isBusiness ? 'blue' : 'gray')}${isMember ? badge('Member', 'purple') : ''}${statusPill('customerPayStatus', c.payStatus)}<span class="spacer"></span>${acctDone ? '' : badge('Incomplete', 'yellow')}<button class="pill ref js-edit-customer" data-rec="${c.customerId}">${acctDone ? 'Edit account' : 'Complete account'}</button></div>`;
     const activeBar = `<div class="active-bar wide"><div class="active-spectrum" style="clip-path:inset(0 ${100 - (d.activePct || 0)}% 0 0)"></div><span class="active-lbl">${d.activePct || 0}% Active</span></div>`;
 
     const intCats = (c.interestedCategoryIds || []).map((id) => { const cat = IDX.category.get(id); return cat ? refPill('categories', id, cat.name, { x: 'intcat-remove', xData: id }) : ''; }).join('');
@@ -1903,14 +1905,14 @@ function renderOverlay() {
   overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) closeOverlay(); });
 
   if (o.kind === 'qr') {
-    const url = location.href;
+    const url = o.url || location.href;
     const pop = el('div', 'popup'); pop.style.width = '340px';
     pop.innerHTML = `
-      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${I.qr}</span><h3>Share session</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
+      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${I.qr}</span><h3>${esc(o.title || 'Share session')}</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
       <div class="popup-body" style="text-align:center">
-        <img class="qr-img" alt="session QR" src="https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=8&bgcolor=15171c&color=ff7a1a&data=${encodeURIComponent(url)}" width="220" height="220" style="border-radius:12px;background:var(--panel-2)" />
+        <img class="qr-img" alt="QR code" src="https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=8&bgcolor=15171c&color=ff7a1a&data=${encodeURIComponent(url)}" width="220" height="220" style="border-radius:12px;background:var(--panel-2)" />
         <p class="muted" style="margin-top:10px;font-size:12px;word-break:break-all">${esc(url)}</p>
-        <p class="muted" style="margin-top:6px;font-size:11px">Scan to open this session on another device (single shared login — §1/§4.2).</p>
+        <p class="muted" style="margin-top:6px;font-size:11px">${esc(o.caption || 'Scan to open this session on another device (single shared login — §1/§4.2).')}</p>
       </div>`;
     overlay.appendChild(pop);
   } else if (o.kind === 'role') {
@@ -1953,12 +1955,15 @@ function renderOverlay() {
       </div>`;
     overlay.appendChild(pop);
   } else if (o.kind === 'newCustomer') {
-    const d = o.draft;
+    const d = o.draft; const isEdit = !!o.editId;
     const indOpts = NC_INDUSTRIES.map((i) => `<option value="${esc(i)}"></option>`).join('');
     const acctPills = NC_ACCOUNT_TYPES.map((t) => `<button type="button" class="nc-pill js-nc-acct${t === d.accountType ? ' on' : ''}" data-val="${esc(t)}">${esc(getStatus('customerAccountType', t).label)}</button>`).join('');
-    const pop = el('div', 'popup'); pop.style.width = '470px';
+    const selfieBox = d.selfie ? `<img class="nc-thumb" src="${esc(d.selfie)}" alt="selfie" />` : `<div class="nc-thumb empty">No photo</div>`;
+    const sigBox = d.signature ? `<img class="nc-thumb sig" src="${esc(d.signature)}" alt="signature" />` : `<canvas class="nc-sigpad" width="400" height="120"></canvas>`;
+    const cardSaved = !!(IDX.customer.get(o.editId || '')?.stripeId);
+    const pop = el('div', 'popup nc-popup');
     pop.innerHTML = `
-      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${CARD_ICON.customers || ''}</span><h3>New Customer</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
+      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${CARD_ICON.customers || ''}</span><h3>${isEdit ? 'Edit / Complete Account' : 'New Customer'}</h3><span class="spacer"></span>${isEdit ? `<button class="iconbtn js-nc-qr" title="Open on phone">${I.qr}</button>` : ''}<button class="x js-close">${I.x}</button></div>
       <div class="popup-body">
         <div class="nc-grid">
           <label class="nc-field"><span>First name *</span><input class="nc-in" data-f="firstName" value="${esc(d.firstName)}" autocomplete="off" /></label>
@@ -1971,8 +1976,14 @@ function renderOverlay() {
           <label class="nc-field nc-wide"><span>Notes</span><input class="nc-in" data-f="accountNotes" value="${esc(d.accountNotes)}" autocomplete="off" /></label>
         </div>
         <datalist id="nc-industries">${indOpts}</datalist>
+        <div class="nc-sec-title">Account packet</div>
+        <div class="nc-packet">
+          <div class="nc-cap"><span class="nc-cap-lbl">Selfie</span>${selfieBox}<div class="pillrow"><label class="pill ref">${d.selfie ? 'Retake' : 'Take photo'}<input type="file" accept="image/*" capture="user" class="js-nc-selfie" hidden /></label>${d.selfie ? '<button class="pill c-gray js-nc-selfie-clear">Remove</button>' : ''}</div></div>
+          <div class="nc-cap"><span class="nc-cap-lbl">Signature</span>${sigBox}<div class="pillrow">${d.signature ? '<button class="pill c-gray js-nc-sig-clear">Re-sign</button>' : '<button class="pill c-green js-nc-sig-save">Save</button><button class="pill c-gray js-nc-sig-clearpad">Clear</button>'}</div></div>
+          <div class="nc-cap"><span class="nc-cap-lbl">Card on file</span><div class="nc-thumb empty">${cardSaved ? 'Card saved ✓' : 'Stripe — Phase 2'}</div><div class="pillrow"><button class="pill ref" disabled style="opacity:.45;cursor:default">＋ Add card</button></div></div>
+        </div>
         ${o.error ? `<div class="login-err" style="text-align:left;margin-top:10px">${esc(o.error)}</div>` : ''}
-        <div class="pillrow" style="margin-top:16px;justify-content:flex-end"><button class="pill c-gray js-close">Cancel</button><button class="pill c-green js-nc-save">Create customer</button></div>
+        <div class="pillrow" style="margin-top:16px;justify-content:flex-end"><button class="pill c-gray js-close">Cancel</button><button class="pill c-green js-nc-save">${isEdit ? 'Save account' : 'Create customer'}</button></div>
       </div>`;
     overlay.appendChild(pop);
   } else if (o.kind === 'inspection') {
@@ -2036,8 +2047,28 @@ function renderOverlay() {
     overlay.appendChild(pop);
   }
   root.appendChild(overlay);
+  if (o.kind === 'newCustomer') setupSignaturePad();
 }
 const openOverlay = (o) => { state.overlay = o; renderOverlay(); };
+// Read the customer-form inputs back into the draft (call before any re-render so
+// typed values survive a selfie/signature/pill change).
+function ncSyncInputs() {
+  const o = state.overlay; if (!o || o.kind !== 'newCustomer') return;
+  const root = document.querySelector('.overlay .popup-body'); if (root) root.querySelectorAll('[data-f]').forEach((i) => { o.draft[i.dataset.f] = i.value.trim(); });
+}
+// Wire the signature canvas for finger/stylus/mouse drawing (white bg → JPEG export).
+function setupSignaturePad() {
+  const cv = document.querySelector('.overlay .nc-sigpad'); if (!cv) return;
+  const ctx = cv.getContext('2d');
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);
+  ctx.strokeStyle = '#15171c'; ctx.lineWidth = 2.4; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  let drawing = false, last = null;
+  const pos = (e) => { const r = cv.getBoundingClientRect(); return { x: (e.clientX - r.left) * (cv.width / r.width), y: (e.clientY - r.top) * (cv.height / r.height) }; };
+  cv.addEventListener('pointerdown', (e) => { e.preventDefault(); drawing = true; last = pos(e); cv.dataset.drawn = '1'; cv.setPointerCapture(e.pointerId); });
+  cv.addEventListener('pointermove', (e) => { if (!drawing) return; e.preventDefault(); const p = pos(e); ctx.beginPath(); ctx.moveTo(last.x, last.y); ctx.lineTo(p.x, p.y); ctx.stroke(); last = p; });
+  cv.addEventListener('pointerup', () => { drawing = false; });
+  cv.addEventListener('pointerleave', () => { drawing = false; });
+}
 const closeOverlay = () => { state.overlay = null; renderOverlay(); };
 
 /* ── Back-office boards (§7.9–7.12): spreadsheet-style tables ─────────────── */
@@ -2279,7 +2310,13 @@ function onClick(e) {
   if (closest('.js-open-settings')) { e.stopPropagation(); return openSettings(); }
   if (closest('.js-settings-save')) { e.stopPropagation(); return saveSettings(); }
   if (closest('.js-nc-save')) { e.stopPropagation(); return saveNewCustomer(); }
-  if (closest('.js-nc-acct')) { const b = closest('.js-nc-acct'); e.stopPropagation(); const root = document.querySelector('.overlay .popup-body'); if (root && state.overlay?.draft) root.querySelectorAll('[data-f]').forEach((i) => { state.overlay.draft[i.dataset.f] = i.value.trim(); }); state.overlay.draft.accountType = b.dataset.val; renderOverlay(); return; }
+  if (closest('.js-nc-acct')) { const b = closest('.js-nc-acct'); e.stopPropagation(); ncSyncInputs(); state.overlay.draft.accountType = b.dataset.val; renderOverlay(); return; }
+  if (closest('.js-nc-selfie-clear')) { e.stopPropagation(); ncSyncInputs(); state.overlay.draft.selfie = ''; renderOverlay(); return; }
+  if (closest('.js-nc-sig-save')) { e.stopPropagation(); const cv = document.querySelector('.overlay .nc-sigpad'); if (cv && cv.dataset.drawn) { ncSyncInputs(); state.overlay.draft.signature = cv.toDataURL('image/jpeg', 0.6); renderOverlay(); } else toast('Sign in the box first.'); return; }
+  if (closest('.js-nc-sig-clearpad')) { e.stopPropagation(); const cv = document.querySelector('.overlay .nc-sigpad'); if (cv) { const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height); cv.dataset.drawn = ''; } return; }
+  if (closest('.js-nc-sig-clear')) { e.stopPropagation(); ncSyncInputs(); state.overlay.draft.signature = ''; renderOverlay(); return; }
+  if (closest('.js-nc-qr')) { e.stopPropagation(); const id = state.overlay.editId; openOverlay({ kind: 'qr', title: 'Continue on phone', url: location.origin + location.pathname + '#edit=' + id, caption: 'Scan to finish this account on your phone.' }); return; }
+  if (closest('.js-edit-customer')) { e.stopPropagation(); return openCustomerForm(closest('.js-edit-customer').dataset.rec); }
   if (closest('.js-ring')) return openOverlay({ kind: 'role', role: closest('.js-ring').dataset.role });
   if (closest('.js-close')) return closeOverlay();
   if (closest('.js-theme')) { state.theme = state.theme === 'dark' ? 'light' : 'dark'; renderOverlay(); render(); return; }
@@ -2586,6 +2623,14 @@ function onInput(e) {
 
 /* change events — native <input type="date"> / <select> on draft details. */
 function onChange(e) {
+  // Customer form selfie: capture (phone camera via capture="user", or upload) → compress → store.
+  if (e.target.classList.contains('js-nc-selfie')) {
+    const file = e.target.files && e.target.files[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => { downscaleImage(reader.result, 340, 0.5, (out) => { if (!out) { toast('Could not read that image.'); return; } ncSyncInputs(); if (state.overlay) { state.overlay.draft.selfie = out; renderOverlay(); } }); };
+    reader.readAsDataURL(file);
+    return;
+  }
   // New Customer form: filling Company auto-promotes Non-Business → Business.
   if (e.target.dataset && e.target.dataset.f === 'company' && state.overlay?.kind === 'newCustomer') {
     const o = state.overlay, root = document.querySelector('.overlay .popup-body');
@@ -2674,9 +2719,31 @@ async function saveSettings() {
 }
 const addDays = (iso, n) => { const d = parseISO(iso); d.setDate(d.getDate() + n); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 
-// §7.1 — guided New Customer intake (validated). Replaces the old bare draft.
-function startNewCustomer() {
-  openOverlay({ kind: 'newCustomer', error: '', draft: { firstName: '', lastName: '', company: '', phone: '', email: '', industry: '', accountType: 'Non-Business', accountNotes: '' } });
+// §7.1 — guided customer form (validated). Used for BOTH new intake and editing /
+// completing an existing customer (opened from the customer card → "Complete account").
+function startNewCustomer() { openCustomerForm(null); }
+function openCustomerForm(editId) {
+  const c = editId ? IDX.customer.get(editId) : null;
+  const f = (k, d) => (c && c[k] != null ? c[k] : (d || ''));
+  openOverlay({ kind: 'newCustomer', error: '', editId: editId || null, draft: {
+    firstName: f('firstName'), lastName: f('lastName'), company: f('company'), phone: f('phone'),
+    email: f('email'), industry: f('industry'), accountType: f('accountType', 'Non-Business'),
+    accountNotes: f('accountNotes'), selfie: f('selfie'), signature: f('signature'),
+  } });
+}
+// Downscale + JPEG-compress an image data URL so it fits inside one Sheet cell
+// (Google caps cells at ~50k chars). cb receives the compressed data URL.
+function downscaleImage(dataUrl, maxDim, quality, cb) {
+  const img = new Image();
+  img.onload = () => {
+    let w = img.width, h = img.height; const s = Math.min(1, maxDim / Math.max(w, h));
+    w = Math.max(1, Math.round(w * s)); h = Math.max(1, Math.round(h * s));
+    const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+    cv.getContext('2d').drawImage(img, 0, 0, w, h);
+    cb(cv.toDataURL('image/jpeg', quality));
+  };
+  img.onerror = () => cb('');
+  img.src = dataUrl;
 }
 const NC_INDUSTRIES = ['Construction', 'Concrete', 'Welding', 'Electrical', 'Plumbing', 'Roofing', 'Painting', 'Landscaping', 'Trucking', 'Industrial', 'Oil & Gas', 'Real Estate', 'Entertainment', 'Agriculture'];
 const NC_ACCOUNT_TYPES = ['Non-Business', 'Business', 'Non-Business Member', 'Business Member'];
@@ -2692,13 +2759,21 @@ function saveNewCustomer() {
   if (!o.draft.firstName) { o.error = 'First name is required (we use it for marketing).'; renderOverlay(); document.querySelector('.overlay [data-f="firstName"]')?.focus(); return; }
   if (!o.draft.phone) { o.error = 'A phone number is required.'; renderOverlay(); document.querySelector('.overlay [data-f="phone"]')?.focus(); return; }
   if (o.draft.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(o.draft.email)) { o.error = 'That email doesn’t look valid (or leave it blank).'; renderOverlay(); return; }
-  const id = nextCustomerId();
+  const d = o.draft;
+  if (o.editId) {                                   // ── editing / completing an existing customer ──
+    const c = IDX.customer.get(o.editId); if (!c) { closeOverlay(); return; }
+    Object.assign(c, { firstName: d.firstName, lastName: d.lastName, company: d.company, phone: d.phone, email: d.email, industry: d.industry, accountType: d.accountType || 'Non-Business', accountNotes: d.accountNotes, selfie: d.selfie, signature: d.signature });
+    c.name = `${d.firstName} ${d.lastName}`.trim() || c.name;
+    reindex('customers', c); logAction(c, 'Account details updated');
+    closeOverlay(); anchorRecord('customers', c.customerId); toast(`${c.name} updated.`);
+    return;
+  }
+  const id = nextCustomerId();                       // ── new customer ──
   const c = {
-    customerId: id, firstName: o.draft.firstName, lastName: o.draft.lastName,
-    name: `${o.draft.firstName} ${o.draft.lastName}`.trim(),
-    company: o.draft.company, phone: o.draft.phone, email: o.draft.email, address: '',
-    industry: o.draft.industry, accountType: o.draft.accountType || 'Non-Business', payStatus: 'New Customer',
-    requiresPO: false, accountNotes: o.draft.accountNotes, stripeId: '',
+    customerId: id, firstName: d.firstName, lastName: d.lastName, name: `${d.firstName} ${d.lastName}`.trim(),
+    company: d.company, phone: d.phone, email: d.email, address: '',
+    industry: d.industry, accountType: d.accountType || 'Non-Business', payStatus: 'New Customer',
+    requiresPO: false, accountNotes: d.accountNotes, stripeId: '', selfie: d.selfie || '', signature: d.signature || '',
     interestedCategoryIds: [], activityLog: [], usedSalesStage: 'Inbound Lead', membershipStage: 'Inbound Lead',
     _digest: { activePct: 0, totalPaid: 0, visits: 0, years: 0, avgFrequencyDays: 0, firstInvoice: '', lastInvoice: '' },
   };
@@ -3266,6 +3341,9 @@ function finishLoad() {
   snapshotSaved();                                              // baseline = what the backend currently holds
   buildIndexes(); state.cascade = createCascade(DATA); booting = false; render();
   if (migrationDirty) { migrationDirty = false; saveSoon(); }   // push parsed first/last names up to the Sheet
+  // #edit=<id> — desktop→phone handoff opens that customer's account form (§7.1).
+  const em = (location.hash || '').match(/edit=([\w-]+)/i);
+  if (em && IDX.customer.get(em[1])) { history.replaceState(null, '', location.pathname + location.search); openCustomerForm(em[1]); }
 }
 async function attemptLogin() {
   const name = (document.getElementById('login-name')?.value || '').trim();
