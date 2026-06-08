@@ -86,12 +86,11 @@ input { font-family: inherit; }
 /* Single-band header: logo + rings on the left, a right column holding the item
    tabs (one row) above the toolbar (New / Dashboard / search). Reclaims the old
    row-2's vertical space — the toolbar now lives beside the rings. */
-.header { flex: 0 0 auto; background: transparent; display: flex; align-items: center; gap: 12px; padding: 12px 12px 8px; }
-.header-right { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 8px; }
+.header { flex: 0 0 auto; background: transparent; display: flex; align-items: flex-end; gap: 12px; padding: 12px 12px 10px; }
+.header-right { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
 .hr-top { display: flex; align-items: center; gap: 10px; min-height: 0; }
 .hr-top .tabstrip { flex: 1 1 auto; min-width: 0; }
-.hello-name { margin-left: auto; font-size: 24px; font-weight: 800; color: var(--accent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 46%; letter-spacing: .2px; line-height: 1; padding-right: 4px; }
-.hello-name .hello-greet { font-size: 14px; font-weight: 600; color: var(--txt-3); margin-right: 4px; }
+.hello-name { margin-left: auto; font-size: 24px; font-weight: 800; color: var(--txt); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 46%; letter-spacing: .2px; line-height: 1; padding-right: 4px; }
 .toolbar { display: flex; align-items: center; gap: 10px; }
 .toolbar > .iconbtn, .toolbar .searchwrap { height: 36px; }
 

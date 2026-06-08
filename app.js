@@ -1800,7 +1800,7 @@ function headerEl() {
     <div class="header-right">
       <div class="hr-top">
         ${state.tabs.length ? `<div class="tabstrip">${tabStrip()}</div>` : ''}
-        ${currentUser ? `<span class="hello-name"><span class="hello-greet">Hi,</span> ${esc(currentUser)}</span>` : ''}
+        ${currentUser ? `<span class="hello-name">${esc(currentUser)}</span>` : ''}
       </div>
       <div class="toolbar">
         <button class="iconbtn primary js-newrental">${I.plus}New</button>
