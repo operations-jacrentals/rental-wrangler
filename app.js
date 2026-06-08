@@ -594,12 +594,12 @@ function addFilterTerm(scope, raw) {
 function removeFilterTerm(scope, i) { const arr = termsFor(scope); if (i >= 0 && i < arr.length) arr.splice(i, 1); afterFilterChange(scope); }
 function toggleFilterNeg(scope, i) { const arr = termsFor(scope); if (arr[i]) arr[i].neg = !arr[i].neg; afterFilterChange(scope); }
 
-/** A pinned filter-term pill: leading ○ toggle (→ red − = NOT) + label + ✕ remove. */
+/** A pinned filter-term pill: leading ○ toggle (→ red − = NOT) + label. The whole
+    pill is click-to-remove (js-ft-x); the ○ toggle is checked first so it wins. */
 function filterTermPill(ft, i, scope) {
-  return `<span class="filt-term${ft.neg ? ' neg' : ''}">`
+  return `<span class="filt-term${ft.neg ? ' neg' : ''} js-ft-x" data-scope="${esc(scope)}" data-i="${i}" title="Click to remove">`
     + `<button class="ft-neg js-ft-neg" data-scope="${esc(scope)}" data-i="${i}" title="${ft.neg ? 'Excluding — click to include' : 'Including — click to exclude'}"></button>`
     + `<span class="lbl">${esc(ft.t)}</span>`
-    + `<span class="x js-ft-x" data-scope="${esc(scope)}" data-i="${i}">✕</span>`
     + `</span>`;
 }
 
@@ -1421,6 +1421,20 @@ function appendWindowed(list, rows, cs, card, renderRow) {
   }
 }
 
+// The open record's display title, mirroring each card's old detail-head title.
+function detailTitle(card, rec) {
+  if (!rec) return '';
+  switch (card) {
+    case 'rentals': return rec.rentalName || IDX.unit.get(rec.unitId)?.name || 'Rental';
+    case 'units': return rec.name || 'Unit';
+    case 'customers': return fullName(rec) || rec.name || 'Customer';
+    case 'categories': return rec.name || 'Category';
+    case 'invoices': return rec.invoiceId || 'Invoice';
+    case 'workOrders': return `${IDX.unit.get(rec.unitId)?.name || '—'} — ${rec.woReport || 'Work order'}`;
+    case 'inspections': return `${IDX.unit.get(rec.unitId)?.name || 'Inspection'}`;
+    default: return (ROW_META[card] ? ROW_META[card](rec).title : '') || '';
+  }
+}
 function cardEl(cardDef, session) {
   const card = cardDef.id;
   if (card === 'shop') return shopCardEl(cardDef, session);   // merged WO + Service + Inspections
@@ -1435,9 +1449,17 @@ function cardEl(cardDef, session) {
   const inStandard = !state.searchMode && cs.mode === 'standard' && cs.recId != null;
   // header — floating chips over one continuous surface (no separating line)
   const head = el('div', 'card-head');
+  const stdRec = inStandard ? recOf(card, cs.recId) : null;
   const count = !inStandard ? `<span class="c-count">${listFor(card, session).length}</span>` : '';
+  // §0.6 — in standard mode the open record's NAME rides in the card header (badges
+  // drop just below it); editable in place for rentals/units.
+  const titleHtml = (inStandard && stdRec)
+    ? (card === 'rentals' ? `<span class="c-title inline-edit" data-edit="field" data-card="rentals" data-field="rentalName" data-rec="${esc(cs.recId)}" data-ph="Rental name">${esc(detailTitle(card, stdRec))}</span>`
+      : card === 'units' ? `<span class="c-title inline-edit" data-edit="field" data-card="units" data-field="name" data-rec="${esc(cs.recId)}" data-ph="Unit name">${esc(detailTitle(card, stdRec))}</span>`
+      : `<span class="c-title">${esc(detailTitle(card, stdRec))}</span>`)
+    : `<span class="c-title">${esc(cardDef.title)}</span>`;
   head.innerHTML = `
-    <span class="c-titlecard"><span class="c-icon">${CARD_ICON[card] || ''}</span><span class="c-title">${esc(cardDef.title)}</span>${count}</span>
+    <span class="c-titlecard"><span class="c-icon">${CARD_ICON[card] || ''}</span>${titleHtml}${count}</span>
     <div class="c-head-right">
       ${inStandard ? `<div class="c-actions"><button class="hbtn js-tolist" title="${anchored ? 'Browse list (pick another to anchor)' : 'Back to list'}">${I.list}</button><button class="hbtn js-anchor" data-rec="${esc(cs.recId)}" title="Anchor (⊞)">${I.circle}</button><button class="hbtn js-newtab" data-rec="${esc(cs.recId)}" title="New tab (+)">${I.plus}</button></div>` : ''}
     </div>`;
@@ -1770,27 +1792,27 @@ function headerEl() {
     </button>`;
   };
   const rings = ROLES.map((role) => roleRing(role.id, role.label, kpiFor(role.id), role.color)).join('');
-  // row 1: logo · rings · tabs (tabs populate right after the rings)
-  const r1 = el('div', 'hrow hrow-1');
-  r1.innerHTML = `
+  // One band: logo + rings on the left; a right column with the item tabs (single
+  // row) above the toolbar (New / Dashboard / theme / QR / search / close-all).
+  h.innerHTML = `
     <button class="logo js-logo"><img class="logo-img" src="assets/jac-rentals-logo.jpg" alt="Jac Rentals" /></button>
     <div class="kpis">${rings}</div>
-    <div class="tabstrip">${tabStrip()}</div>`;
-  // row 2: New · Dashboard · stretched search · close-all — all one row, same height
-  const r2 = el('div', 'hrow hrow-2');
-  r2.innerHTML = `
-    <button class="iconbtn primary js-newrental">${I.plus} New</button>
-    <button class="iconbtn js-dashboard">${I.grid} Dashboard</button>
-    <button class="iconbtn js-theme" title="${state.theme === 'dark' ? 'Light' : 'Dark'} mode">${state.theme === 'dark' ? I.sun : I.moon}</button>
-    <button class="iconbtn js-qr" title="Share session (QR)">${I.qr}</button>
-    <div class="searchwrap ${state.filterTerms.length ? 'has-terms' : ''}">
-      <span class="s-icon">${I.search}</span>
-      ${state.filterTerms.map((ft, i) => filterTermPill(ft, i, 'global')).join('')}
-      <input id="globalsearch" class="search" placeholder="${state.filterTerms.length ? 'Add filter — type, Enter to pin…' : 'Search everything…'}" value="${esc(state.query)}" />
-      ${(state.query || state.filterTerms.length) ? `<div class="search-tools"><button class="search-tool js-clear" title="Clear">${I.x}</button></div>` : ''}
-    </div>
-    ${state.tabs.length ? `<button class="iconbtn closeall js-closeall">${I.x} Close all</button>` : ''}`;
-  h.appendChild(r1); h.appendChild(r2);
+    <div class="header-right">
+      ${state.tabs.length ? `<div class="tabstrip">${tabStrip()}</div>` : ''}
+      <div class="toolbar">
+        <button class="iconbtn primary js-newrental">${I.plus}New</button>
+        <button class="iconbtn js-dashboard">${I.grid} Dashboard</button>
+        <button class="iconbtn js-theme" title="${state.theme === 'dark' ? 'Light' : 'Dark'} mode">${state.theme === 'dark' ? I.sun : I.moon}</button>
+        <button class="iconbtn js-qr" title="Share session (QR)">${I.qr}</button>
+        <div class="searchwrap ${state.filterTerms.length ? 'has-terms' : ''}">
+          <span class="s-icon">${I.search}</span>
+          ${state.filterTerms.map((ft, i) => filterTermPill(ft, i, 'global')).join('')}
+          <input id="globalsearch" class="search" placeholder="${state.filterTerms.length ? 'Add filter — type, Enter to pin…' : 'Search everything…'}" value="${esc(state.query)}" />
+          ${(state.query || state.filterTerms.length) ? `<div class="search-tools"><button class="search-tool js-clear" title="Clear">${I.x}</button></div>` : ''}
+        </div>
+        ${state.tabs.length ? `<button class="iconbtn closeall js-closeall">${I.x} Close all</button>` : ''}
+      </div>
+    </div>`;
   return h;
 }
 function tabStrip() {
@@ -1915,6 +1937,20 @@ function renderOverlay() {
     pop.innerHTML = `
       <div class="popup-head">${CARD_ICON[board.id] ? `<span class="c-icon" style="color:var(--accent);display:inline-flex">${CARD_ICON[board.id] || ''}</span>` : ''}<h3>${esc(board.title)}</h3><span class="c-count">${boardRows(board.id).length}</span><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
       <div class="popup-body board-body">${boardTable(board.id)}</div>`;
+    overlay.appendChild(pop);
+  } else if (o.kind === 'settings') {
+    const cfg = o.config || { roles: {}, admin: '' };
+    const roleRows = Object.keys(cfg.roles).map((role) => `<label class="set-row"><span class="set-role">${esc(role)}</span><input class="set-input" data-role="${esc(role)}" value="${esc(cfg.roles[role])}" autocomplete="off" /></label>`).join('');
+    const pop = el('div', 'popup'); pop.style.width = '380px';
+    pop.innerHTML = `
+      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${I.grid}</span><h3>Settings — Logins</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
+      <div class="popup-body">
+        <p class="muted" style="font-size:11px;margin:0 0 10px">Each role signs in with its password (plus their name). Changes apply at next sign-in.</p>
+        ${roleRows}
+        <label class="set-row set-admin"><span class="set-role">Admin</span><input class="set-input" data-admin="1" value="${esc(cfg.admin)}" autocomplete="off" /></label>
+        ${o.error ? `<div class="login-err" style="text-align:left;margin-top:8px">${esc(o.error)}</div>` : ''}
+        <div class="pillrow" style="margin-top:14px;justify-content:flex-end"><button class="pill c-gray js-close">Cancel</button><button class="pill c-green js-settings-save">Save</button></div>
+      </div>`;
     overlay.appendChild(pop);
   } else if (o.kind === 'inspection') {
     // §12.8 Failure report — triggered when an inspection is marked Failed: capture a
@@ -2210,6 +2246,9 @@ function onClick(e) {
 
   // header / chrome
   if (closest('.js-logo')) return openLogoMenu(closest('.js-logo'));
+  if (closest('.js-switch-user')) { e.stopPropagation(); return switchUser(); }
+  if (closest('.js-open-settings')) { e.stopPropagation(); return openSettings(); }
+  if (closest('.js-settings-save')) { e.stopPropagation(); return saveSettings(); }
   if (closest('.js-ring')) return openOverlay({ kind: 'role', role: closest('.js-ring').dataset.role });
   if (closest('.js-close')) return closeOverlay();
   if (closest('.js-theme')) { state.theme = state.theme === 'dark' ? 'light' : 'dark'; renderOverlay(); render(); return; }
@@ -2558,7 +2597,42 @@ function openLogoMenu(anchorEl) {
     return `<div class="kpi-line"><span class="ring-no" style="border-color:var(--${role.color})"></span><span class="k-name">${esc(role.label)}</span><span class="k-val" style="color:var(--${bd.color})">${avg}%</span></div>`;
   }).join('');
   const team = `<div class="menu-sep"></div><div class="menu-team"><div class="menu-team-head">Team KPIs</div><div class="menu-team-ring">${ring3SVG(kpiTeam(), 'accent', { size: 104 })}</div><div class="kpi-list">${teamLines}</div></div>`;
-  openDropdown(anchorEl, boards + team);
+  const userLine = `<div class="menu-user"><span class="mu-name">${esc(currentUser || 'Signed in')}</span>${currentRole ? `<span class="mu-role">${esc(currentRole)}</span>` : ''}</div>
+    <button class="dd-item js-switch-user"><span class="mi-ico" style="display:inline-flex;color:var(--accent)">${I.back}</span>Switch user</button>
+    <button class="dd-item js-open-settings"><span class="mi-ico" style="display:inline-flex;color:var(--accent)">${I.grid}</span>Settings${currentRole === 'Admin' ? '' : ' <span class="muted" style="font-size:10px;margin-left:2px">Admin</span>'}</button>
+    <div class="menu-sep"></div>`;
+  openDropdown(anchorEl, userLine + boards + team);
+}
+// Switch user — clear this session's password/role (name stays remembered) → login.
+function switchUser() {
+  document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove());
+  backendPassword = ''; currentRole = ''; booting = true;
+  sessionStorage.removeItem('jactec.pw'); sessionStorage.removeItem('jactec.role');
+  renderLogin();
+}
+// Settings (Admin-only): manage the role passwords. Admin is already authed with the
+// admin password; a staff role must enter it. Loads the live config, then opens the editor.
+async function openSettings() {
+  document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove());
+  const adminPw = currentRole === 'Admin' ? backendPassword : (window.prompt('Settings is Admin-only.\nEnter the Admin password:') || '');
+  if (!adminPw) return;
+  try {
+    const r = await backendCall('getConfig', { password: adminPw });
+    if (!r || !r.ok) { toast(r && r.error === 'unauthorized' ? 'Wrong Admin password.' : 'Could not open Settings.'); return; }
+    openOverlay({ kind: 'settings', config: r.config, adminPw });
+  } catch (e) { toast('Could not reach the database.'); }
+}
+async function saveSettings() {
+  const o = state.overlay; if (!o || o.kind !== 'settings') return;
+  const root = document.querySelector('.overlay .popup-body'); if (!root) return;
+  const roles = {}; root.querySelectorAll('.set-input[data-role]').forEach((i) => { roles[i.dataset.role] = i.value.trim(); });
+  const admin = root.querySelector('.set-input[data-admin]')?.value.trim() || '';
+  if (!admin || Object.values(roles).some((v) => !v)) { o.error = 'Passwords can\'t be empty.'; renderOverlay(); return; }
+  try {
+    const r = await backendCall('setConfig', { password: o.adminPw, config: { roles, admin } });
+    if (r && r.ok) { if (currentRole === 'Admin') { backendPassword = admin; sessionStorage.setItem('jactec.pw', admin); o.adminPw = admin; } closeOverlay(); toast('Logins updated.'); }
+    else { o.error = 'Save failed.'; renderOverlay(); }
+  } catch (e) { o.error = 'Could not reach the database.'; renderOverlay(); }
 }
 const addDays = (iso, n) => { const d = parseISO(iso); d.setDate(d.getDate() + n); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 
@@ -2752,6 +2826,7 @@ let actionSeq = 0;
 // Audit trail: who's signed in on this device (remembered across sessions). Every
 // logAction stamps the user + clock time so the record History reads "what · when · who".
 let currentUser = (() => { try { return localStorage.getItem('jactec.user') || ''; } catch { return ''; } })();
+let currentRole = (() => { try { return sessionStorage.getItem('jactec.role') || ''; } catch { return ''; } })();
 function nowClock() { const d = new Date(); let h = d.getHours(); const ap = h < 12 ? 'AM' : 'PM'; h = h % 12 || 12; return `${h}:${String(d.getMinutes()).padStart(2, '0')} ${ap}`; }
 function logAction(rec, text) { if (!rec) return; rec.actions = rec.actions || []; rec.actions.push({ when: TODAY_ISO, clock: nowClock(), text, by: currentUser || '', seq: actionSeq++ }); saveSoon(); }
 // Humanize a field key + format a value for an audit line ("Phone: (337)… → (337)…").
@@ -3133,16 +3208,28 @@ async function attemptLogin() {
   const pw = document.getElementById('login-pw')?.value || '';
   if (!name) { const errEl = document.getElementById('login-err'); if (errEl) errEl.textContent = 'Please enter your name (edits are logged under it).'; document.getElementById('login-name')?.focus(); return; }
   if (!pw) return;
-  currentUser = name; try { localStorage.setItem('jactec.user', name); } catch {}
   backendPassword = pw;
   const btn = document.getElementById('login-go'); if (btn) { btn.textContent = 'Signing in…'; btn.disabled = true; }
   try {
-    await loadFromBackend();
+    // Ask the backend for the role. The role-aware backend returns it; an older
+    // backend (pre-roles) replies "unknown action" → we proceed without a role
+    // (single-password mode). loadFromBackend then validates the password either way.
+    let role = '';
+    try {
+      const a = await backendCall('auth');
+      if (a && a.ok) role = a.role || '';
+      else if (a && /unauthorized/i.test(a.error || '')) throw new Error('unauthorized');
+    } catch (e2) { if (/unauthorized/i.test(e2.message || '')) throw e2; }
+    currentRole = role;
+    currentUser = name;
+    try { localStorage.setItem('jactec.user', name); } catch {}
+    try { sessionStorage.setItem('jactec.role', role); } catch {}
     sessionStorage.setItem('jactec.pw', pw);
+    await loadFromBackend();
     finishLoad();
   } catch (e) {
-    backendPassword = ''; sessionStorage.removeItem('jactec.pw');
-    renderLogin(/unauthorized/i.test(String(e && e.message)) ? 'Incorrect password — please try again.' : "Couldn't reach the database. Check your connection and try again.");
+    backendPassword = ''; sessionStorage.removeItem('jactec.pw'); sessionStorage.removeItem('jactec.role');
+    renderLogin(/unauthorized/i.test(String(e && e.message)) ? 'That password wasn’t recognized.' : "Couldn't reach the database. Check your connection and try again.");
   }
 }
 
