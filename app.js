@@ -1077,6 +1077,9 @@ const ROWS = {
 const pillS = (color, label) => `<span class="pill c-${color}">${esc(label)}</span>`;
 function C(key, label, type, get, opts = {}) {
   const o = { key, label, type, get, badge: type === 'badge', set: opts.set, sortField: opts.sortField || key };
+  // `pill` = renders as a pill → belongs in List-View row 2. Status badges are
+  // always pills; numeric/text columns can opt in (e.g. the Service countdown).
+  o.pill = (type === 'badge') || !!opts.pill;
   o.meta = opts.meta || (opts.set ? (k) => getStatus(opts.set, k) : null);
   o.agg = opts.agg || (type === 'money' ? 'sum' : (type === 'num' || type === 'pct') ? 'avg' : 'none');
   o.cell = opts.cell || ((rec) => {
@@ -1094,7 +1097,7 @@ const CARD_COLUMNS = {
   rentals: [
     C('name', 'Rental', 'text', (r) => IDX.unit.get(r.unitId)?.name || r.rentalName || 'Rental'),
     C('category', 'Category', 'text', (r) => IDX.category.get(r.categoryId)?.name || ''),
-    C('customer', 'Customer', 'text', (r) => IDX.customer.get(r.customerId)?.name || ''),
+    C('customer', 'Customer', 'text', (r) => IDX.customer.get(r.customerId)?.name || '', { pill: true, cell: (r) => { const c = IDX.customer.get(r.customerId); return c ? refPill('customers', r.customerId, c.name) : '—'; } }),
     C('price', 'Price', 'money', (r) => rentalPrice(r)?.price ?? null),
     C('status', 'Status', 'badge', (r) => rentalDisplayStatus(r), { set: 'rentalStatus' }),
     C('window', 'Window', 'date', (r) => r.startDate || '', { cell: (r) => (r.startDate || r.endDate) ? esc(fmtWindow(r.startDate, r.endDate)) : '—' }),
@@ -1116,7 +1119,7 @@ const CARD_COLUMNS = {
     C('inspection', 'Inspection', 'badge', (u) => u.inspectionStatus || '', { set: 'unitInspectionStatus' }),
     C('fleet', 'Fleet', 'badge', (u) => u.fleetStatus || '', { set: 'unitFleetStatus' }),
     C('rental', 'Rental', 'badge', (u) => { const ar = activeRentalForUnit(u.unitId); return ar ? rentalDisplayStatus(ar) : ''; }, { set: 'rentalStatus' }),
-    C('service', 'Next service', 'num', (u) => { const s = topServiceForUnit(u); return s ? Math.round(s.remaining) : null; }, { agg: 'avg', cell: (u) => { const s = topServiceForUnit(u); return u.washRequested ? pillS('blue', 'Wash Requested') : (s ? `<span class="pill c-${s.color}">${esc(svcText(s))}</span>` : '—'); } }),
+    C('service', 'Next service', 'num', (u) => { const s = topServiceForUnit(u); return s ? Math.round(s.remaining) : null; }, { pill: true, agg: 'avg', cell: (u) => { const s = topServiceForUnit(u); return u.washRequested ? pillS('blue', 'Wash Requested') : (s ? `<span class="pill c-${s.color}">${esc(svcText(s))}</span>` : '—'); } }),
     C('wash', 'Wash', 'badge', (u) => u.washRequested ? 'Wash Requested' : '', { meta: () => ({ label: 'Wash Requested', color: 'blue' }) }),
   ],
   categories: [
@@ -1126,7 +1129,7 @@ const CARD_COLUMNS = {
     C('rate4', '4-Week', 'money', (c) => c.rate4Wk ?? null),
     C('avgHours', 'Avg hours', 'num', (c) => categoryStats(c).avgHours ?? null, { agg: 'avg' }),
     C('units', 'Units', 'num', (c) => DATA.units.filter((u) => u.categoryId === c.categoryId).length, { agg: 'sum' }),
-    C('roi', 'ROI', 'pct', (c) => { const s = categoryStats(c); return s.roi != null ? s.roi : null; }),
+    C('roi', 'ROI', 'pct', (c) => { const s = categoryStats(c); return s.roi != null ? s.roi : null; }, { pill: true, cell: (c) => { const s = categoryStats(c); return s.roi == null ? '—' : pillS(s.roi >= 0 ? 'green' : 'red', s.roi + '% ROI'); } }),
   ],
   invoices: [
     C('id', 'Invoice', 'text', (i) => i.invoiceId),
@@ -1157,7 +1160,7 @@ const CARD_COLUMNS = {
     C('name', 'Unit', 'text', (u) => u.name),
     C('service', 'Top service', 'text', (u) => (topServiceForUnit(u) || unitServiceRows(u)[0])?.name || 'Service'),
     C('interval', 'Interval', 'num', (u) => (topServiceForUnit(u) || unitServiceRows(u)[0])?.intervalHours ?? null, { agg: 'avg' }),
-    C('countdown', 'Countdown', 'num', (u) => { const s = topServiceForUnit(u); return s ? Math.round(s.remaining) : null; }, { agg: 'avg', cell: (u) => { const s = topServiceForUnit(u); return u.washRequested ? pillS('blue', 'Wash Requested') : (s ? `<span class="pill c-${s.color}">${esc(svcText(s))}</span>` : '—'); } }),
+    C('countdown', 'Countdown', 'num', (u) => { const s = topServiceForUnit(u); return s ? Math.round(s.remaining) : null; }, { pill: true, agg: 'avg', cell: (u) => { const s = topServiceForUnit(u); return u.washRequested ? pillS('blue', 'Wash Requested') : (s ? `<span class="pill c-${s.color}">${esc(svcText(s))}</span>` : '—'); } }),
     C('hours', 'Hours', 'num', (u) => u.currentHours ?? null, { agg: 'avg' }),
   ],
 };
@@ -1224,14 +1227,14 @@ function listTotalsEl(card, rows, session) {
 const LIST_LAYOUT_KEY = (card) => `jactec.listLayout.${card}`;
 const LIST_LAYOUTS = Object.create(null);
 const DEFAULT_LAYOUT = {
-  units:         { row1: ['name', 'category', 'hours'],    row2: ['inspection', 'fleet', 'rental'] },
-  rentals:       { row1: ['name', 'category', 'price'],    row2: ['status', 'invoice'] },
-  customers:     { row1: ['name', 'phone', 'rentals'],     row2: ['account', 'pay'] },
-  categories:    { row1: ['name', 'rate1', 'avgHours'],    row2: [] },
-  invoices:      { row1: ['id', 'customer', 'balance'],    row2: ['status'] },
-  workOrders:    { row1: ['name', 'date', 'price'],        row2: ['type', 'phase', 'bill'] },
-  inspections:   { row1: ['name', 'date'],                 row2: ['result', 'wash', 'bill'] },
-  serviceOrders: { row1: ['name', 'service', 'countdown'], row2: [] },
+  units:         { row1: ['name', 'category', 'hours'],   row2: ['inspection', 'rental', 'service'] },
+  rentals:       { row1: ['name', 'category', 'price'],   row2: ['status', 'customer', 'invoice'] },
+  customers:     { row1: ['name', 'phone', 'rentals'],    row2: ['account', 'pay'] },
+  categories:    { row1: ['name', 'rate1', 'avgHours'],   row2: ['roi'] },
+  invoices:      { row1: ['id', 'customer', 'balance'],   row2: ['status'] },
+  workOrders:    { row1: ['name', 'date', 'price'],       row2: ['type', 'phase', 'bill'] },
+  inspections:   { row1: ['name', 'date'],                row2: ['result', 'wash', 'bill'] },
+  serviceOrders: { row1: ['name', 'service', 'interval'], row2: ['countdown'] },
 };
 function defaultLayoutFor(card) { const d = DEFAULT_LAYOUT[card]; if (d) return { row1: [...d.row1], row2: [...d.row2] }; const c0 = (CARD_COLUMNS[card] || [{ key: 'name' }])[0]; return { row1: [c0.key], row2: [] }; }
 function loadListLayout(card) {
@@ -1255,8 +1258,8 @@ function customRowHTML(card, rec, layout) {
   const cols = CARD_COLUMNS[card] || []; if (!cols.length) return ROWS[card] ? ROWS[card](rec) : genericRow(card, rec);
   const map = Object.create(null); cols.forEach((c) => { map[c.key] = c; });
   const nameCol = cols[0];
-  const rest = (layout.row1 || []).filter((k) => k !== nameCol.key).map((k) => map[k]).filter((c) => c && !c.badge);
-  const r2 = (layout.row2 || []).map((k) => map[k]).filter((c) => c && c.badge);
+  const rest = (layout.row1 || []).filter((k) => k !== nameCol.key).map((k) => map[k]).filter((c) => c && !c.pill);
+  const r2 = (layout.row2 || []).map((k) => map[k]).filter((c) => c && c.pill);
   const row1 = `<div class="row-1"><span class="r-title">${nameCol.cell(rec)}</span>${rest.length ? `<span class="r-fields">${rest.map((c) => `<span${(c.type === 'money' || c.type === 'num' || c.type === 'pct') ? ' class="r-key"' : ''}>${c.cell(rec)}</span>`).join('')}</span>` : ''}</div>`;
   const row2 = r2.length ? `<div class="row-2">${r2.map((c) => c.cell(rec)).join('')}</div>` : '';
   return row1 + row2;
@@ -2785,7 +2788,7 @@ function bvTokenize(s) {
     const ch = s[i];
     if (ch === ' ' || ch === '\t') { i++; continue; }
     if ('+-*/(),'.includes(ch)) { t.push({ t: ch }); i++; continue; }
-    if (/[0-9.]/.test(ch)) { let j = i + 1; while (j < s.length && /[0-9.]/.test(s[j])) j++; t.push({ t: 'num', v: parseFloat(s.slice(i, j)) }); i = j; continue; }
+    if (/[0-9.]/.test(ch)) { let j = i + 1, dot = ch === '.'; while (j < s.length && /[0-9.]/.test(s[j])) { if (s[j] === '.') { if (dot) break; dot = true; } j++; } t.push({ t: 'num', v: parseFloat(s.slice(i, j)) }); i = j; continue; }
     if (/[a-zA-Z_]/.test(ch)) { let j = i + 1; while (j < s.length && /[a-zA-Z0-9_]/.test(s[j])) j++; t.push({ t: 'id', v: s.slice(i, j) }); i = j; continue; }
     throw new Error('char');
   }
@@ -2817,7 +2820,7 @@ function bvEvalAst(a, ctx) {
   if (a.op === '+') return l + r; if (a.op === '-') return l - r; if (a.op === '*') return l * r; if (a.op === '/') return r === 0 ? NaN : l / r;
   return NaN;
 }
-function bvResolver(cols) { const m = Object.create(null); for (const c of cols) { m[c.key.toLowerCase()] = c; m[c.label.toLowerCase().replace(/[^a-z0-9]/g, '')] = c; } return (name) => m[name.toLowerCase()] || m[name.toLowerCase().replace(/[^a-z0-9]/g, '')] || null; }
+function bvResolver(cols) { const m = Object.create(null); for (const c of cols) { const lk = c.label.toLowerCase().replace(/[^a-z0-9]/g, ''); if (!(lk in m)) m[lk] = c; } for (const c of cols) { m[c.key.toLowerCase()] = c; } return (name) => m[name.toLowerCase()] || m[name.toLowerCase().replace(/[^a-z0-9]/g, '')] || null; }
 function bvCompute(formula, cols, rows, rec) {
   let ast; try { ast = bvParse(formula); } catch (e) { return { err: true }; }
   const resolve = bvResolver(cols), cache = Object.create(null);
@@ -2852,6 +2855,7 @@ function boardViewTable(o, session) {
     const label = (co.label || '').trim();
     if (label.startsWith('=')) { const r = bvCompute(label.slice(1), cols, rows, rec); return `<td class="num bv-comp">${r.err ? '<span class="bv-err">ERR</span>' : esc(bvFmtNum(r.val))}</td>`; }
     const v = (o.cellData && o.cellData[recId] && o.cellData[recId][co.id]) || '';
+    if (v.trim().startsWith('=')) { const r = bvCompute(v.trim().slice(1), cols, rows, rec); return `<td class="bv-scratch bv-comp" contenteditable="true" data-row="${esc(recId)}" data-col="${co.id}" data-raw="${esc(v)}">${r.err ? 'ERR' : esc(bvFmtNum(r.val))}</td>`; }
     return `<td class="bv-scratch" contenteditable="true" data-row="${esc(recId)}" data-col="${co.id}">${esc(v)}</td>`;
   };
   const dataRowHTML = (rec, idx) => `<tr><td class="bv-gutter"><button class="bv-rowins js-bv-insrow" data-pos="${idx + 1}" title="Insert row below">${I.plus}</button></td>${order.map((co) => dataCell(co, rec, idOf(entity, rec))).join('')}<td></td></tr>`;
@@ -2866,6 +2870,8 @@ function boardViewTable(o, session) {
   let body = '';
   const extrasAt = (p) => extraRows.filter((er) => (er.pos || 0) === p).map(scratchRowHTML).join('');
   for (let i = 0; i <= rows.length; i++) { body += extrasAt(i); if (i < rows.length) body += dataRowHTML(rows[i], i); }
+  // a scratch row positioned past the (now filtered/sorted) data still renders at the foot
+  body += extraRows.filter((er) => (er.pos || 0) > rows.length).map(scratchRowHTML).join('');
   // summary footer
   const sumCell = (co) => {
     if (co.kind === 'data') {
@@ -2899,8 +2905,8 @@ function bvCustomizePanel(card) {
   const cols = CARD_COLUMNS[card] || []; if (!cols.length) return '';
   const layout = loadListLayout(card) || defaultLayoutFor(card);
   const nameKey = cols[0].key;
-  const nonBadge = cols.filter((c) => !c.badge && c.key !== nameKey);
-  const badges = cols.filter((c) => c.badge);
+  const nonBadge = cols.filter((c) => !c.pill && c.key !== nameKey);
+  const badges = cols.filter((c) => c.pill);
   const box = (c, row, on, locked) => `<label class="bv-pick${locked ? ' locked' : ''}"><input type="checkbox" class="js-bv-pick" data-card="${card}" data-row="${row}" data-col="${c.key}"${on ? ' checked' : ''}${locked ? ' disabled' : ''}/> ${esc(c.label)}</label>`;
   return `<div class="bv-customize">
     <div class="bv-pick-group"><h4>List row 1 — details <span class="muted">(${(layout.row1 || []).length}/6)</span></h4>
@@ -3158,8 +3164,8 @@ function onClick(e) {
   if (closest('.js-boardview')) { e.stopPropagation(); return openBoardView(closest('.js-boardview').dataset.card); }
   if (closest('.js-bv-sort') && !closest('.js-bv-inscol')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview') { const key = closest('.js-bv-sort').dataset.col; if (o.sort?.key === key) o.sort.dir = o.sort.dir === 'asc' ? 'desc' : 'asc'; else o.sort = { key, dir: 'asc' }; renderOverlay(); } return; }
   if (closest('.js-bv-addcol')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview') { o.colOrder = o.colOrder || []; o.colOrder.push({ kind: 'extra', id: 'xc' + (++o.seq), label: '' }); renderOverlay(); } return; }
-  if (closest('.js-bv-inscol')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview') { const after = Number(closest('.js-bv-inscol').dataset.after); o.colOrder.splice(after + 1, 0, { kind: 'extra', id: 'xc' + (++o.seq), label: '' }); renderOverlay(); } return; }
-  if (closest('.js-bv-rmcol')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview') { const id = closest('.js-bv-rmcol').dataset.col; o.colOrder = o.colOrder.filter((c) => !(c.kind === 'extra' && c.id === id)); renderOverlay(); } return; }
+  if (closest('.js-bv-inscol')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview' && o.colOrder) { const after = Number(closest('.js-bv-inscol').dataset.after); o.colOrder.splice(after + 1, 0, { kind: 'extra', id: 'xc' + (++o.seq), label: '' }); renderOverlay(); } return; }
+  if (closest('.js-bv-rmcol')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview' && o.colOrder) { const id = closest('.js-bv-rmcol').dataset.col; o.colOrder = o.colOrder.filter((c) => !(c.kind === 'extra' && c.id === id)); renderOverlay(); } return; }
   if (closest('.js-bv-addrow')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview') { o.extraRows = o.extraRows || []; o.extraRows.push({ id: 'xr' + (++o.seq), pos: boardViewRecords(o, activeSession()).length, cells: {} }); renderOverlay(); } return; }
   if (closest('.js-bv-insrow')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview') { o.extraRows = o.extraRows || []; o.extraRows.push({ id: 'xr' + (++o.seq), pos: Number(closest('.js-bv-insrow').dataset.pos), cells: {} }); renderOverlay(); } return; }
   if (closest('.js-bv-rmrow')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview') { const id = closest('.js-bv-rmrow').dataset.row; o.extraRows = (o.extraRows || []).filter((er) => er.id !== id); renderOverlay(); } return; }
@@ -4477,8 +4483,20 @@ function boot() {
     const t = e.target; if (t && t.classList && t.classList.contains('bv-scratch') && t.dataset.raw) t.textContent = t.dataset.raw;
   });
   document.addEventListener('focusout', (e) => {
-    const t = e.target; if (!t || !t.classList || state.overlay?.kind !== 'boardview') return;
-    if (t.classList.contains('bv-scratch')) { const v = (t.textContent || '').trim(); if (v.startsWith('=') || t.dataset.raw) renderOverlay(); return; }
+    const t = e.target; const o = state.overlay; if (!t || !t.classList || o?.kind !== 'boardview') return;
+    // a scratch/notes cell: compute IN PLACE (no full re-render → focus isn't stolen).
+    if (t.classList.contains('bv-scratch')) {
+      const v = (t.textContent || '').trim();
+      if (v.startsWith('=')) {
+        const session = activeSession(), entity = boardEntity(o.card, session);
+        const cols = cardColumns(o.card, session), recs = boardViewRecords(o, session);
+        const rec = t.dataset.row ? recs.find((r) => String(idOf(entity, r)) === t.dataset.row) || null : null;   // data-row cell → that row; scratch row → aggregate
+        const r = bvCompute(v.slice(1), cols, recs, rec);
+        t.dataset.raw = v; t.classList.add('bv-comp'); t.textContent = r.err ? 'ERR' : bvFmtNum(r.val);
+      } else if (t.dataset.raw) { t.removeAttribute('data-raw'); t.classList.remove('bv-comp'); }
+      return;
+    }
+    // a formula-column header changed → recompute that whole column + footer.
     if (t.classList.contains('bv-colname') && (t.value || '').trim().startsWith('=')) renderOverlay();
   });
   document.addEventListener('keydown', (e) => {
