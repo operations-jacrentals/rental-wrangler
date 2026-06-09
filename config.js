@@ -253,6 +253,23 @@ export const BACKOFFICE_BOARDS = [
   { id: 'files',    title: 'Company Files'        },
 ];
 
+/* ── 3-column layout (display only) ───────────────────────────────────────
+ * Each column shows ONE active "member" at a time; the rest are a tab away.
+ * The 3 shop members (inspections/serviceOrders/workOrders) still render via
+ * the single 'shop' engine card with its segment pinned — the engine, anchor,
+ * cascade, recType, and pick code are NOT aware of columns. 'calendar' is the
+ * Office Dispatch grid relocated into the middle column (never a pill target).
+ * COLUMN_OF maps a member → its column so a link pill can reveal it. */
+export const COLUMNS = [
+  { id: 'left',   default: 'units',     members: ['units', 'categories', 'inspections', 'serviceOrders', 'workOrders'] },
+  { id: 'middle', default: 'rentals',   members: ['rentals', 'calendar'] },
+  { id: 'right',  default: 'customers', members: ['customers', 'invoices'] },
+];
+export const COLUMN_OF = {
+  units: 'left', categories: 'left', inspections: 'left', serviceOrders: 'left', workOrders: 'left',
+  rentals: 'middle', invoices: 'right', customers: 'right',
+};
+
 /* ── In-card sort fields (SPEC §12 locked table) ─────────────────────────── */
 export const SORT_FIELDS = {
   customers:     [{ field: 'activePct', label: 'Active %', dir: 'desc' }, { field: 'name', label: 'Name', dir: 'asc' }, { field: 'totalPaid', label: 'Total Paid', dir: 'desc' }, { field: 'lastInvoice', label: 'Last Invoice', dir: 'desc' }, { field: 'payStatus', label: 'Pay Status', dir: 'asc' }],

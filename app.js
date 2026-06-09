@@ -19,7 +19,7 @@ import * as CFG from './config.js';
 import { AGREEMENTS } from './agreements.js';
 import {
   getStatus, STATUS, ROLES, GRID_CARDS, BACKOFFICE_BOARDS, SORT_FIELDS,
-  SHOP_TYPES, SHOP_SEGMENTS,
+  SHOP_TYPES, SHOP_SEGMENTS, COLUMNS, COLUMN_OF,
   transportPrice, fmtWindow, fmtShortDate, showsTruck, parseISO, TODAY_ISO, invoiceShort,
 } from './config.js';
 
@@ -395,8 +395,13 @@ function categoryStats(cat) {
 function freshSession() {
   const cards = {};
   for (const c of GRID_CARDS) cards[c.id] = { mode: 'list', recId: null, recType: null, search: '', filterTerms: [], historySearch: '', sort: loadSort(c.id), backStack: [], segment: c.id === 'shop' ? 'all' : null };
-  return { anchor: null, cascade: null, cards };
+  // 3-column layout: which member card is visible in each column (display-only;
+  // rides inside the session so item-tabs / pause-resume restore it for free).
+  const cols = {}; for (const col of COLUMNS) cols[col.id] = col.default;
+  return { anchor: null, cascade: null, cards, cols };
 }
+// Resolve a member id (incl. the 3 shop sub-types + 'calendar') to its column.
+const columnOfMember = (m) => COLUMN_OF[m] || null;
 /* Per-card sort persists per-device across sessions (localStorage). Store only
    {field,dir}; the label is re-derived from SORT_FIELDS so it can never drift. */
 const SORT_LS_KEY = (card) => `jactec.sort.${card}`;
@@ -460,6 +465,10 @@ function setAnchor(session, card, recId, recType) {
     session.cards[c.id].recId = c.id === card ? recId : null;
     session.cards[c.id].recType = c.id === card ? recType : null;
   }
+  // 3-column display: make the anchored card the visible member of its column
+  // (shop anchors map to their recType member). Pure display; cascade is unchanged.
+  const m = entityCardOf(card, recType), col = columnOfMember(m);
+  if (col && session.cols) session.cols[col] = m;
 }
 
 function anchorRecord(card, recId, recType) {
@@ -546,8 +555,10 @@ function goBack(card) {
  *  standard mode. WO/Inspection/Service pills now resolve to the Shop card. */
 function pillTo(card, recId) {
   if (recId == null) return;
-  if (SHOP_TYPES.includes(card)) { if (recOf(card, recId)) openStandard('shop', recId, card); return; }
-  if (recOf(card, recId)) openStandard(card, recId);
+  // 3-column display: a link pill forces its column to reveal the target card.
+  const revealCol = (member) => { const cs = activeSession(); const col = COLUMN_OF[member]; if (cs.cols && col) cs.cols[col] = member; };
+  if (SHOP_TYPES.includes(card)) { if (recOf(card, recId)) { revealCol(card); openStandard('shop', recId, card); } return; }
+  if (recOf(card, recId)) { revealCol(card); openStandard(card, recId); }
 }
 
 /* ── global search (§5.4) ────────────────────────────────────────────────── */
@@ -1453,6 +1464,62 @@ function detailTitle(card, rec) {
     default: return (ROW_META[card] ? ROW_META[card](rec).title : '') || '';
   }
 }
+/* ════════════════════════════════════════════════════════════════════════
+ * 3-COLUMN LAYOUT (display-only shell over the existing cards).
+ * Each column paints ONE active "member" card; the rest are a tab/icon away.
+ * The 3 shop members (inspections/serviceOrders/workOrders) still render via the
+ * single 'shop' engine card with its segment pinned — NO engine/anchor/cascade
+ * change. session.cols (set in freshSession) holds the active member per column.
+ * ════════════════════════════════════════════════════════════════════════ */
+const GRID_CARD_BY_ID = Object.fromEntries(GRID_CARDS.map((c) => [c.id, c]));
+const MEMBER_TITLE = (() => {
+  const m = {}; GRID_CARDS.forEach((c) => { m[c.id] = c.title; });
+  SHOP_SEGMENTS.forEach((s) => { m[s.id] = s.label; }); m.calendar = 'Calendar'; return m;
+})();
+const memberIcon = (m) => (m === 'calendar' ? I.grid : (CARD_ICON[m] || ''));
+// Tab row count for a member (search-aware; mirrors the card's own count chip).
+function memberCount(member, session) {
+  if (member === 'calendar') return dispatchEvents().length;
+  if (SHOP_TYPES.includes(member)) { try { return (shopItemsByType(session)[member] || []).length; } catch { return 0; } }
+  try { return listFor(member, session).length; } catch { return 0; }
+}
+// One column = a tab strip + the single active member's card.
+function columnEl(col, session) {
+  const active = (session.cols && session.cols[col.id]) || col.default;
+  const wrap = el('div', 'col'); wrap.dataset.col = col.id;
+  wrap.appendChild(colTabsEl(col, active, session));
+  wrap.appendChild(memberCardEl(active, session));
+  return wrap;
+}
+function colTabsEl(col, active, session) {
+  const bar = el('div', 'col-tabs');
+  bar.innerHTML = col.members.map((m) => {
+    const on = m === active, compact = SHOP_TYPES.includes(m);   // shop sub-types are icon-only
+    const n = memberCount(m, session);
+    return `<button class="coltab js-coltab${on ? ' on' : ''}${compact ? ' compact' : ''}" data-col="${col.id}" data-member="${m}" data-tip="${esc(MEMBER_TITLE[m])}">`
+      + `<span class="ct-ico">${memberIcon(m)}</span>`
+      + (compact ? '' : `<span class="ct-lbl">${esc(MEMBER_TITLE[m])}</span><span class="ct-n">${n}</span>`)
+      + `</button>`;
+  }).join('');
+  return bar;
+}
+function memberCardEl(member, session) {
+  if (member === 'calendar') return calendarCardEl(session);
+  if (SHOP_TYPES.includes(member)) return shopCardEl({ id: 'shop', title: MEMBER_TITLE[member] }, session, member);
+  return cardEl(GRID_CARD_BY_ID[member], session);
+}
+function calendarCardEl(session) {
+  const node = el('div', 'card' + (state.searchMode ? ' search-glow' : ''));
+  node.dataset.card = 'calendar';
+  const head = el('div', 'card-head');
+  head.innerHTML = `<span class="c-titlecard"><span class="c-icon">${I.grid}</span><span class="c-title">Calendar</span><span class="c-count">${dispatchEvents().length}</span></span>`;
+  node.appendChild(head);
+  const body = el('div', 'card-body cal-body');
+  body.innerHTML = dispatchGridBody();
+  node.appendChild(body);
+  return node;
+}
+
 function cardEl(cardDef, session) {
   const card = cardDef.id;
   if (card === 'shop') return shopCardEl(cardDef, session);   // merged WO + Service + Inspections
@@ -1600,11 +1667,11 @@ function shopSort(items, sort) {
   return [...items].sort((a, b) => { const va = val(a), vb = val(b); return va < vb ? -dir : va > vb ? dir : 0; });
 }
 
-function shopCardEl(cardDef, session) {
+function shopCardEl(cardDef, session, forcedSeg) {
   const cs = session.cards.shop;
   const anchored = session.anchor?.card === 'shop';
   const byType = shopItemsByType(session);
-  const total = SHOP_TYPES.reduce((a, ty) => a + byType[ty].length, 0);
+  const total = forcedSeg ? (byType[forcedSeg] || []).length : SHOP_TYPES.reduce((a, ty) => a + byType[ty].length, 0);
   const woPick = state.pick && state.pick.slot === 'wo';
   const node = el('div', 'card' + (anchored ? ' anchored' : '') + (state.searchMode ? ' search-glow' : '') + (state.focusedCard === 'shop' ? ' card-focus' : '') + (woPick ? ' pick-target' : ''));
   node.dataset.card = 'shop';
@@ -1624,22 +1691,24 @@ function shopCardEl(cardDef, session) {
     const rec = recOf(cs.recType, cs.recId);
     body.innerHTML = rec && DETAIL[cs.recType] ? DETAIL[cs.recType](rec, cs) : '<div class="empty">Record not found.</div>';
   } else {
-    body.appendChild(shopListView(session, byType));
+    body.appendChild(shopListView(session, byType, forcedSeg));
   }
   node.appendChild(body);
   return node;
 }
 
-function shopListView(session, byType) {
+function shopListView(session, byType, forcedSeg) {
   const cs = session.cards.shop;
   const wrap = el('div');
   const counts = { all: SHOP_TYPES.reduce((a, ty) => a + byType[ty].length, 0) };
   SHOP_TYPES.forEach((ty) => { counts[ty] = byType[ty].length; });
 
-  // segment control
-  const segbar = el('div', 'shopbar');
-  segbar.innerHTML = SHOP_SEGMENTS.map((s) => `<button class="shop-seg ${cs.segment === s.id ? 'on' : ''} js-shopseg" data-seg="${s.id}">${esc(s.label)}<span class="seg-n">${counts[s.id] || 0}</span></button>`).join('');
-  wrap.appendChild(segbar);
+  // segment control — hidden when the column already pins a single type via its tab
+  if (!forcedSeg) {
+    const segbar = el('div', 'shopbar');
+    segbar.innerHTML = SHOP_SEGMENTS.map((s) => `<button class="shop-seg ${cs.segment === s.id ? 'on' : ''} js-shopseg" data-seg="${s.id}">${esc(s.label)}<span class="seg-n">${counts[s.id] || 0}</span></button>`).join('');
+    wrap.appendChild(segbar);
+  }
 
   // search + sort (reuses the standard list-bar chrome)
   const sf = SORT_FIELDS.shop; const curField = sf.find((f) => f.field === cs.sort.field) || sf[0];
@@ -1656,8 +1725,8 @@ function shopListView(session, byType) {
     </div>`;
   wrap.appendChild(bar);
 
-  // items for the active segment (a WO pick forces the Work Orders segment)
-  const segActive = (state.pick && state.pick.slot === 'wo') ? 'workOrders' : cs.segment;
+  // items for the active segment (a WO pick forces Work Orders; a column tab pins forcedSeg)
+  const segActive = (state.pick && state.pick.slot === 'wo') ? 'workOrders' : (forcedSeg || cs.segment);
   let items = segActive === 'all'
     ? SHOP_TYPES.flatMap((ty) => byType[ty].map((rec) => ({ type: ty, rec })))
     : byType[segActive].map((rec) => ({ type: segActive, rec }));
@@ -1859,8 +1928,9 @@ function dispatchEvents() {
   });
   return out.sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || '')));
 }
-function dashboardEl() {
-  const wrap = el('div', 'dashboard');
+// Body-only dispatch grid (stats + day groups) — rendered inside the Calendar
+// card body in the middle column. Pure derivation; dispatchEvents() unchanged.
+function dispatchGridBody() {
   const events = dispatchEvents();
   const today = TODAY_ISO;
   const byDate = {};
@@ -1884,13 +1954,14 @@ function dashboardEl() {
       </button>`).join('');
     return `<div class="dash-day${isToday ? ' today' : ''}${isPast ? ' past' : ''}"><div class="dash-day-head">${esc(fmtShortDate(d))}${isToday ? ' · Today' : ''}<span class="dash-day-count">${byDate[d].length}</span></div>${rows}</div>`;
   }).join('') : `<div class="empty" style="padding:34px;text-align:center">No dispatches scheduled. Rentals with Delivery / Round-Trip / Recovery transport appear here.</div>`;
+  return `${stats}<div class="dash-grid">${groups}</div>`;
+}
+// (Legacy full-screen dispatch view — retained but no longer wired to a button.)
+function dashboardEl() {
+  const wrap = el('div', 'dashboard');
   wrap.innerHTML = `
-    <div class="dash-head">
-      <div class="dash-title"><span class="c-icon" style="color:var(--accent);display:inline-flex">${I.grid}</span><h2>Office Dispatch — Time Grid</h2></div>
-      <button class="iconbtn js-dashboard">${I.back} Back to cards</button>
-    </div>
-    ${stats}
-    <div class="dash-grid">${groups}</div>`;
+    <div class="dash-head"><div class="dash-title"><span class="c-icon" style="color:var(--accent);display:inline-flex">${I.grid}</span><h2>Office Dispatch — Time Grid</h2></div></div>
+    ${dispatchGridBody()}`;
   return wrap;
 }
 /** The status badge shown on an item tab (replaces the old datapoint sub-text). */
@@ -2293,14 +2364,9 @@ function render() {
   // blank frame between teardown and rebuild — kills the flash on anchor/cascade.
   const header = headerEl();
   const session = activeSession();
-  if (state.dashboard) {
-    $('#app').replaceChildren(header, dashboardEl());
-    document.documentElement.setAttribute('data-theme', state.theme);
-    applyTitles();
-    return;
-  }
+  // 3-column layout: each column paints its one active member card (+ a tab strip).
   const grid = el('div', 'grid');
-  for (const cardDef of GRID_CARDS) grid.appendChild(cardEl(cardDef, session));
+  for (const col of COLUMNS) grid.appendChild(columnEl(col, session));
   const pb = pickBarEl();
   if (pb) $('#app').replaceChildren(header, pb, grid); else $('#app').replaceChildren(header, grid);
   // restore the per-card scroll captured above
@@ -2423,8 +2489,9 @@ function onClick(e) {
   if (closest('.js-theme')) { state.theme = state.theme === 'dark' ? 'light' : 'dark'; if (state.overlay && state.overlay.kind !== 'addCard') renderOverlay(); render(); return; }
   if (closest('.js-qr')) return openOverlay({ kind: 'qr' });
   if (closest('.js-board')) { const b = closest('.js-board'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return openOverlay({ kind: 'board', board: b.dataset.board }); }
-  if (closest('.js-dashboard')) { state.dashboard = !state.dashboard; state.winpicker = null; state.pick = null; return render(); }
-  if (closest('.js-dash-ev')) { e.stopPropagation(); state.dashboard = false; state.pick = null; return anchorRecord('rentals', closest('.js-dash-ev').dataset.rec); }
+  if (closest('.js-coltab')) { const ct = closest('.js-coltab'); e.stopPropagation(); const cs = activeSession(); if (cs.cols) cs.cols[ct.dataset.col] = ct.dataset.member; return render(); }
+  if (closest('.js-dashboard')) { e.stopPropagation(); toast('Dashboard graphs are coming soon.'); return; }   // Phase-2 per-role KPI graphs (G1/G2)
+  if (closest('.js-dash-ev')) { e.stopPropagation(); state.pick = null; return anchorRecord('rentals', closest('.js-dash-ev').dataset.rec); }
   if (closest('.js-newrental')) return openNewMenu(closest('.js-newrental'));
   if (closest('.js-newitem')) {
     const kind = closest('.js-newitem').dataset.new;
