@@ -2707,6 +2707,11 @@ function onClick(e) {
     const kind = closest('.js-newitem').dataset.new;
     const cust = activeSession().anchor?.card === 'customers' ? activeSession().anchor.recId : null;
     document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove());
+    // toggle off: clicking the same +X while already in that mode exits the mode
+    const KIND_ENTITY = { rental: 'rentals', inspection: 'inspections', workOrder: 'workOrders', invoice: 'invoices' };
+    if (state.pick && KIND_ENTITY[kind] && entityCardOf(state.pick.card, state.pick.recType) === KIND_ENTITY[kind]) {
+      cancelPick(true); toast('Exited ' + NEW_MODE[KIND_ENTITY[kind]].name + ' Mode.'); return;
+    }
     if (kind === 'rental') return startNewRental(cust);
     if (kind === 'inspection') return startNewInspection();
     if (kind === 'workOrder') return startNewWorkOrder();
@@ -3413,6 +3418,7 @@ function beginPick(card, recId, recType, slot) {
 function cancelPick(silent) {
   if (!state.pick) return;
   state.pick = null;
+  state.winpicker = null;   // leaving the pick exits the whole +X mode, calendar included
   if (!silent) toast('Picker closed — finish later from the card.');
   render();
 }
@@ -3465,14 +3471,27 @@ function assignPick(srcId) {
 }
 
 /* The pick banner — a floating strip over the grid while in pick mode. */
+// Each "+X" creation mode gets a persistent banner explaining how to leave it:
+// click the same +X button to bail, or finish the listed requirements to commit.
+const NEW_MODE = {
+  rentals:     { name: '+Rental',     btn: '+Rental',     need: 'a Unit, Customer, &amp; Rental Window' },
+  inspections: { name: '+Inspection', btn: '+Inspection', need: 'a Unit' },
+  workOrders:  { name: '+Work Order', btn: '+Work Order', need: 'a Unit' },
+  invoices:    { name: '+Invoice',    btn: '+Invoice',    need: 'a Customer' },
+};
 function pickBarEl() {
   const p = state.pick; if (!p) return null;
-  if (state.winpicker) return null;   // while the window calendar is open, just show the calendar
   const entity = entityCardOf(p.card, p.recType);
-  const rec = recOf(entity, p.recId);
+  const m = NEW_MODE[entity];
   const bar = el('div', 'pickbar');
-  bar.innerHTML = `<span class="pb-dot"></span><span class="pb-text">Pick ${PICK_LABEL[p.slot]} for <b>${esc(draftName(p.card, rec || {}))}</b> — click a row in the highlighted card.</span>
-    <button class="pb-cancel js-cancelpick">Cancel</button>`;
+  if (m) {
+    bar.innerHTML = `<span class="pb-dot"></span><span class="pb-text">You are in <b>${m.name} Mode</b>. Exit by clicking <b>${m.btn}</b> or by adding ${m.need}.</span>
+      <button class="pb-cancel js-cancelpick">Exit</button>`;
+  } else {
+    const rec = recOf(entity, p.recId);   // swaps & other one-off picks keep the original prompt
+    bar.innerHTML = `<span class="pb-dot"></span><span class="pb-text">Pick ${PICK_LABEL[p.slot]} for <b>${esc(draftName(p.card, rec || {}))}</b> — click a row in the highlighted card.</span>
+      <button class="pb-cancel js-cancelpick">Cancel</button>`;
+  }
   return bar;
 }
 
@@ -3969,7 +3988,7 @@ function boot() {
     if (!t || state.pick || state.overlay || state.winpicker) return;
     if (t === hoverEl) return;
     hoverEl = t; hideHoverPreview();
-    hoverTimer = setTimeout(() => { if (hoverEl === t) showHoverPreview(t); }, 480);
+    hoverTimer = setTimeout(() => { if (hoverEl === t) showHoverPreview(t); }, 672);
   });
   document.addEventListener('mouseout', (e) => {
     if (!hoverEl) return;
