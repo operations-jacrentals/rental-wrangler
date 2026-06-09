@@ -93,8 +93,10 @@ input { font-family: inherit; }
 /* wide screens: split +New into individual buttons (+Rental / +Customer + icon-only rest);
    narrower: collapse back to the single +New menu */
 .new-split { display: flex; align-items: center; gap: 8px; }
-@media (max-width: 1500px) { .new-split { display: none; } }
-@media (min-width: 1501px) { .new-menu-btn { display: none; } }
+/* Specificity bumped (.hr-top > …) so these beat the later `.iconbtn { display:inline-flex }`
+   rule — wide screens show ONLY the split buttons, narrow screens show ONLY the +New menu. */
+@media (max-width: 1500px) { .hr-top > .new-split { display: none; } }
+@media (min-width: 1501px) { .hr-top > .new-menu-btn { display: none; } }
 .hello-name { margin-left: auto; font-size: 24px; font-weight: 800; color: var(--txt); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 46%; letter-spacing: .2px; line-height: 1; padding-right: 4px; }
 .toolbar { display: flex; align-items: center; gap: 10px; }
 .toolbar .closeall { flex: 0 0 auto; }
@@ -158,6 +160,8 @@ input { font-family: inherit; }
 .iconbtn:hover { background: var(--panel-2); border-color: var(--accent-line); }
 .iconbtn svg { width: 16px; height: 16px; }
 .iconbtn.primary { background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent); gap: 4px; }
+/* .on = a +X mode is currently active (header split button / Wash button light up). */
+.iconbtn.on { background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent); }
 .toolbar .js-theme, .toolbar .js-qr { width: 38px; padding: 0; color: var(--txt-2); }   /* icon-only chips */
 .toolbar .js-theme:hover, .toolbar .js-qr:hover { color: var(--accent); }
 

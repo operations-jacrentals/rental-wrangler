@@ -127,7 +127,8 @@ function searchBlob(card, rec) {
         rec.gpsType, rec.gpsPlacement, rec.notes,
         rec.inspectionStatus, L('unitInspectionStatus', rec.inspectionStatus),
         rec.fleetStatus, L('unitFleetStatus', rec.fleetStatus),
-        rec.gpsStatus, L('gpsStatus', rec.gpsStatus), ca(rec.categoryId)?.name];
+        rec.gpsStatus, L('gpsStatus', rec.gpsStatus), ca(rec.categoryId)?.name,
+        rec.washRequested ? 'Wash Requested wash' : ''];
       break;
     case 'invoices': {
       const cust = cu(rec.customerId); const t = invoiceTotals(rec);
@@ -299,9 +300,24 @@ const svcText = (s) => (s.status === 'past-due'
   ? `${Math.abs(Math.round(s.remaining))} HRS overdue`
   : `${Math.round(s.remaining)} HRS remaining`);
 
-/** Most-urgent active service order for a unit (derived via the reference module). */
+// Wash is a recurring service interval (every 100 engine-hours), pinned to the TOP of
+// the Services list. Passed via opts.tasks so the reference module stays byte-identical.
+const WASH_TASK = { taskId: 'svc-wash', name: 'Wash / Detail', intervalHours: 100, parts: [] };
+const UNIT_SVC_TASKS = [WASH_TASK, ...SERVICE_TASKS];
+const SVC_OPTS = { tasks: UNIT_SVC_TASKS, hoursField: 'currentHours', baselineField: 'purchaseHours' };
+const unitServiceRows = (u) => serviceOrdersForUnit(u, u.serviceCompletions || {}, SVC_OPTS);
+/** The service pill(s) for a row: a submitted Wash Request overrides the countdown
+ *  language to a single blue "Wash Requested" pill; otherwise status + countdown. */
+function svcPills(s) {
+  if (!s) return '';
+  if (s.washRequested) return `<span class="pill c-blue">Wash Requested</span>`;
+  return `<span class="pill c-${s.color}">${esc(getStatus('serviceStatus', s.status).label)}</span><span class="pill c-${s.color}">${esc(svcText(s))}</span>`;
+}
+/** Most-urgent active service order for a unit (derived via the reference module).
+ *  A pending wash request floats the wash task to the top regardless of its countdown. */
 function topServiceForUnit(unit) {
-  const rows = serviceOrdersForUnit(unit, unit.serviceCompletions || {}, { hoursField: 'currentHours', baselineField: 'purchaseHours' });
+  const rows = unitServiceRows(unit);
+  if (unit.washRequested) { const w = rows.find((s) => s.taskId === 'svc-wash'); if (w) return { ...w, washRequested: true }; }
   const active = rows.filter((s) => s.status !== 'ok');
   return active[0] || null;
 }
@@ -515,7 +531,7 @@ function closeTab(id) {
   if (state.activeTabId === id) state.activeTabId = state.tabs.length ? state.tabs[Math.max(0, i - 1)].id : null;
   render();
 }
-function closeAll() { state.tabs.forEach(discardIfEmptyDraft); state.tabs = []; state.activeTabId = null; state.searchMode = false; state.query = ''; state.winpicker = null; render(); }
+function closeAll() { state.tabs.forEach(discardIfEmptyDraft); state.tabs = []; state.activeTabId = null; state.searchMode = false; state.query = ''; state.winpicker = null; state.pick = null; sweepIncompleteRentalDrafts(); render(); }
 /* Discard a `mock` draft that was abandoned with no meaningful data, so closing
    the tab doesn't leave an empty "New Rental"/blank invoice cluttering the lists. */
 function discardIfEmptyDraft(tab) {
@@ -523,7 +539,7 @@ function discardIfEmptyDraft(tab) {
   const entity = entityCardOf(tab.card, tab.recType);
   const rec = recOf(entity, tab.recId);
   if (!rec || !rec.mock) return;
-  const empty = (entity === 'rentals' && !rec.unitId && !rec.customerId)
+  const empty = (entity === 'rentals' && rentalDraftIncomplete(rec))   // a +Rental draft needs BOTH a unit & a customer to be kept
     || (entity === 'inspections' && !rec.unitId)
     || (entity === 'workOrders' && !rec.unitId && !(rec.lineItems || []).length)
     || (entity === 'invoices' && !rec.customerId && !(rec.lineItems || []).length);
@@ -533,6 +549,42 @@ function discardIfEmptyDraft(tab) {
   if (idx >= 0) coll.splice(idx, 1);
   ({ rentals: IDX.rental, inspections: IDX.insp, workOrders: IDX.wo, invoices: IDX.invoice }[entity])?.delete(tab.recId);
   IDX.search.delete(entity + ':' + tab.recId);
+}
+/* A rental "counts" (is saved) only once it has BOTH a unit and a customer — the
+   window is optional. Half-built drafts are swept whenever +Rental mode is left. */
+function rentalDraftIncomplete(r) { return !!(r && r.rentalId && String(r.rentalId).startsWith('R-NEW') && (!r.unitId || !r.customerId)); }
+function discardRentalDraft(rentalId) {
+  const r = IDX.rental.get(rentalId); if (!r) return;
+  const i = DATA.rentals.indexOf(r); if (i >= 0) DATA.rentals.splice(i, 1);
+  IDX.rental.delete(rentalId); IDX.search.delete('rentals:' + rentalId);
+  state.tabs = state.tabs.filter((t) => !(t.card === 'rentals' && t.recId === rentalId));
+  for (const s of state.tabs.map((t) => t.session).concat([state.defaultSession])) {
+    if (s && s.anchor && s.anchor.card === 'rentals' && s.anchor.recId === rentalId) { s.anchor = null; s.cascade = null; }
+    if (s && s.cards && s.cards.rentals && s.cards.rentals.recId === rentalId) { s.cards.rentals.mode = 'list'; s.cards.rentals.recId = null; }
+  }
+}
+/** Remove every half-built rental draft (optionally sparing the one in `exceptId`). */
+function sweepIncompleteRentalDrafts(exceptId) {
+  DATA.rentals.filter((r) => rentalDraftIncomplete(r) && r.rentalId !== exceptId)
+    .forEach((r) => discardRentalDraft(r.rentalId));
+}
+/** Drop any item tab whose underlying record no longer exists (e.g. its draft was
+ *  just discarded), and re-point activeTabId so nothing renders a dangling record. */
+function pruneOrphanTabs() {
+  const alive = (t) => !!recOf(entityCardOf(t.card, t.recType), t.recId);
+  const before = state.tabs.length;
+  state.tabs = state.tabs.filter(alive);
+  if (before !== state.tabs.length && !state.tabs.find((t) => t.id === state.activeTabId)) {
+    state.activeTabId = state.tabs.length ? state.tabs[state.tabs.length - 1].id : null;
+  }
+}
+/** Bring a card's column to that card in list mode, so its rows can be picked — gives
+ *  every +X mode the same "here's the list to choose from" affordance as +Rental. */
+function revealPickList(member) {
+  const cs = activeSession();
+  const col = COLUMN_OF[member];
+  if (cs.cols && col) cs.cols[col] = member;
+  if (cs.cards && cs.cards[member]) cs.cards[member].mode = 'list';
 }
 
 /** Click a row → standard mode in that card (push back-stack). §0.2 */
@@ -610,7 +662,7 @@ function deferOrAnchor(key, singleFn, anchor) {
 }
 /* Hover preview (#1): a short hover on a list row or a link pill floats a glance at
  * that record's Standard view beside the cursor. Display-only — never anchors/cascades. */
-let hoverTimer = null, hoverEl = null, hoverNode = null;
+let hoverTimer = null, hoverEl = null, hoverNode = null, hoverGrace = null;
 const lastMouse = { x: 0, y: 0 };
 const hoverTarget = (n) => (n && n.closest ? n.closest('.row, [data-pill-card]') : null);
 function recForHover(target) {
@@ -622,21 +674,22 @@ function recForHover(target) {
   const rec = recOf(ec, recId);
   return (rec && DETAIL[ec]) ? { ec, rec } : null;
 }
-function hideHoverPreview() { if (hoverNode) { hoverNode.remove(); hoverNode = null; } clearTimeout(hoverTimer); }
+function hideHoverPreview() { if (hoverNode) { hoverNode.remove(); hoverNode = null; } clearTimeout(hoverTimer); clearTimeout(hoverGrace); }
 function showHoverPreview(target) {
   const info = recForHover(target); if (!info) return;
   hideHoverPreview();
   const node = el('div', 'hover-preview');
   try { node.innerHTML = DETAIL[info.ec](info.rec, { historySearch: '', backStack: [], mode: 'standard' }); } catch (e) { return; }
-  node.addEventListener('mouseleave', () => { hoverEl = null; hideHoverPreview(); });   // leaving the preview closes it
+  node.addEventListener('mouseenter', () => clearTimeout(hoverGrace));                   // arrived on the preview — cancel the close
+  node.addEventListener('mouseleave', () => { hoverEl = null; hideHoverPreview(); });    // leaving the preview closes it
   document.body.appendChild(node); hoverNode = node;
-  // anchor to the TOP-RIGHT of the cursor (preview sits above-right), clamped on-screen.
-  const w = node.offsetWidth, h = node.offsetHeight, pad = 8, off = 14;
+  // Sit just to the RIGHT of the cursor, vertically centred on it, so a small rightward
+  // nudge lands on the preview (paired with the mouseout grace timer — no dead zone).
+  const w = node.offsetWidth, h = node.offsetHeight, pad = 8, off = 10;
   let left = lastMouse.x + off;
-  if (left + w > window.innerWidth - pad) left = lastMouse.x - w - off;   // flip to the cursor's left
+  if (left + w > window.innerWidth - pad) left = lastMouse.x - w - off;   // no room right → flip left
   left = Math.max(pad, Math.min(left, window.innerWidth - w - pad));
-  let top = lastMouse.y - h - off;                                       // above the cursor
-  if (top < pad) top = lastMouse.y + off;                                // no room above → drop below
+  let top = lastMouse.y - h / 2;                                          // centred on the cursor
   top = Math.max(pad, Math.min(top, window.innerHeight - h - pad));
   node.style.left = left + 'px'; node.style.top = top + 'px';
 }
@@ -721,6 +774,7 @@ const I = {
   qr: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h3v3h-3zM20 14v7M14 20h7"/></svg>',
   mouse: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="7"/><path d="M12 6v4"/></svg>',
   video: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="13" height="12" rx="2"/><path d="m15 10 6-3v10l-6-3z"/></svg>',
+  droplet: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3s6 6.4 6 10.5a6 6 0 0 1-12 0C6 9.4 12 3 12 3z"/></svg>',
   box: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7l9-4 9 4-9 4z"/><path d="M3 7v10l9 4 9-4V7"/><path d="M12 11v10"/></svg>',
   doc: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2h8l4 4v16H6z"/><path d="M14 2v4h4"/></svg>',
   chev: '<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 9l6 6 6-6"/></svg>',
@@ -1000,13 +1054,12 @@ const ROWS = {
   },
 
   serviceOrders: (u) => {
-    const top = topServiceForUnit(u) || serviceOrdersForUnit(u, u.serviceCompletions || {}, { hoursField: 'currentHours', baselineField: 'purchaseHours' })[0];
+    const top = topServiceForUnit(u) || unitServiceRows(u)[0];
     const ar = activeRentalForUnit(u.unitId);
     return `<div class="row-1"><span class="r-title">${esc(u.name)}</span><span class="r-fields">
         <span>${esc(top?.name || 'Service')}</span><span>Every ${top?.intervalHours || '—'} HRS</span></span></div>
       <div class="row-2">
-        ${top ? `<span class="pill c-${top.color}">${esc(getStatus('serviceStatus', top.status).label)}</span>` : ''}
-        ${top ? `<span class="pill c-${top.color}">${esc(svcText(top))}</span>` : ''}
+        ${svcPills(top)}
         ${ar ? statusPill('rentalStatus', rentalDisplayStatus(ar), { card: 'rentals', recId: ar.rentalId }) : ''}
       </div>`;
   },
@@ -1160,7 +1213,7 @@ const DETAIL = {
     </div></div>`;
     const notes = `<div class="section"><h4>Notes</h4>${efld('units', u, 'unitId', 'notes', 'Add notes', { wrap: true })}</div>`;
     return `<div class="detail">
-      <div class="detail-head"><span class="d-title inline-edit" data-edit="field" data-card="units" data-field="name" data-rec="${u.unitId}" data-ph="Unit name">${esc(u.name)}</span><span class="pill c-${getStatus('unitFleetStatus', u.fleetStatus).color} js-fleetstatus" data-rec="${u.unitId}">${esc(getStatus('unitFleetStatus', u.fleetStatus).label)} ${I.chev}</span>${statusPill('unitInspectionStatus', u.inspectionStatus)}<button class="pill ref js-wash-request" data-rec="${u.unitId}">${I.video} Request Wash</button><span class="pill c-gray">${I.qr} QR</span></div>
+      <div class="detail-head"><span class="d-title inline-edit" data-edit="field" data-card="units" data-field="name" data-rec="${u.unitId}" data-ph="Unit name">${esc(u.name)}</span><span class="pill c-${getStatus('unitFleetStatus', u.fleetStatus).color} js-fleetstatus" data-rec="${u.unitId}">${esc(getStatus('unitFleetStatus', u.fleetStatus).label)} ${I.chev}</span>${statusPill('unitInspectionStatus', u.inspectionStatus)}<button class="pill ${u.washRequested ? 'c-blue' : 'ref'} js-wash-request" data-rec="${u.unitId}">${I.droplet} ${u.washRequested ? 'Wash Requested' : 'Request Wash'}</button><span class="pill c-gray">${I.qr} QR</span></div>
       <div class="detail-cols">${specs}${gps}</div>
       ${investment}
       ${notes}
@@ -1369,25 +1422,29 @@ const DETAIL = {
        pill + hours live in the title; Reference moved into the completion popup). The
        STATUS pill gates the popup; each task shows its last service date+hours. ── */
   serviceOrders: (u, cs) => {
-    const rows = serviceOrdersForUnit(u, u.serviceCompletions || {}, { hoursField: 'currentHours', baselineField: 'purchaseHours' });
-    const top = rows.find((s) => s.status !== 'ok') || rows[0];
+    const all = unitServiceRows(u);
+    const wash = all.find((s) => s.taskId === 'svc-wash');     // Wash pinned to the top of the list
+    const rows = wash ? [wash, ...all.filter((s) => s.taskId !== 'svc-wash')] : all;
+    const top = topServiceForUnit(u) || rows[0];
     const ar = activeRentalForUnit(u.unitId);
     const lastFor = (taskId) => { const ls = (u.serviceLog || []).filter((l) => l.taskId === taskId); return ls.length ? ls[ls.length - 1] : null; };
     const list = rows.map((s) => {
       const last = lastFor(s.taskId);
+      const washReq = s.taskId === 'svc-wash' && u.washRequested;
       return `<div class="svc-task">
         <div class="svc-task-top">
-          <button class="pill c-${s.color} js-svc-complete" data-unit="${u.unitId}" data-task="${s.taskId}" title="Log a completion" style="min-width:78px;justify-content:center">${esc(getStatus('serviceStatus', s.status).label)}</button>
+          <button class="pill c-${washReq ? 'blue' : s.color} js-svc-complete" data-unit="${u.unitId}" data-task="${s.taskId}" title="${washReq ? 'Log the wash as done' : 'Log a completion'}" style="min-width:78px;justify-content:center">${esc(washReq ? 'Wash Now' : getStatus('serviceStatus', s.status).label)}</button>
           <span class="svc-name">${esc(s.name)}</span>
           <span class="spacer"></span>
-          <b>${esc(svcText(s))}</b>
+          ${washReq ? `<span class="pill c-blue">Wash Requested</span>` : `<b>${esc(svcText(s))}</b>`}
         </div>
         <div class="svc-task-sub muted">Every ${s.intervalHours} HRS${last ? ` · last ${esc(fmtShortDate(last.date))} @ ${num(last.hours)} HRS` : ' · never serviced'}</div>
       </div>`;
     }).join('');
     const tasks = `<div class="section"><h4>Service Tasks</h4><div class="hlog">${list}</div></div>`;
+    const headTop = top ? (top.washRequested ? `<span class="pill c-blue">Wash Requested</span>` : `<span class="pill c-${top.color}">${esc(getStatus('serviceStatus', top.status).label)}</span>`) : '';
     return `<div class="detail">
-      <div class="detail-head">${unitPill(u.unitId)}<span class="muted" style="font-size:13px;font-weight:600">${num(u.currentHours)} HRS</span>${ar ? statusPill('rentalStatus', rentalDisplayStatus(ar), { card: 'rentals', recId: ar.rentalId }) : ''}${top ? `<span class="pill c-${top.color}">${esc(getStatus('serviceStatus', top.status).label)}</span>` : ''}</div>
+      <div class="detail-head">${unitPill(u.unitId)}<span class="muted" style="font-size:13px;font-weight:600">${num(u.currentHours)} HRS</span>${ar ? statusPill('rentalStatus', rentalDisplayStatus(ar), { card: 'rentals', recId: ar.rentalId }) : ''}${headTop}</div>
       ${tasks}
       ${historySection('units', u, cs)}
     </div>`;
@@ -1766,7 +1823,7 @@ function shopUrgency(it) {
   const r = it.rec;
   if (it.type === 'inspections') return r.checklist === 'Fail' ? 90 : 20;
   if (it.type === 'workOrders') return r.phase === 'Complete' ? 10 : (r.woType === 'Failed' ? 95 : 60);
-  if (it.type === 'serviceOrders') { const s = topServiceForUnit(r); return s ? (s.status === 'past-due' ? 100 : 70) : 5; }
+  if (it.type === 'serviceOrders') { if (r.washRequested) return 85; const s = topServiceForUnit(r); return s ? (s.status === 'past-due' ? 100 : 70) : 5; }
   return 0;
 }
 function shopSort(items, sort) {
@@ -1874,7 +1931,7 @@ function shopListView(session, byType, forcedSeg) {
 function shopRowColor(type, rec) {
   if (type === 'inspections') return inspResult(rec).color;
   if (type === 'workOrders') return getStatus('woPhase', rec.phase).color;
-  if (type === 'serviceOrders') { const s = topServiceForUnit(rec); return s ? s.color : 'green'; }
+  if (type === 'serviceOrders') { if (rec.washRequested) return 'blue'; const s = topServiceForUnit(rec); return s ? s.color : 'green'; }
   return 'gray';
 }
 function shopRowEl(type, rec) {
@@ -2015,6 +2072,10 @@ function headerEl() {
       <span class="ring-label">${esc(label)}</span>
     </button>`;
   const rings = ROLES.map((role) => roleRing(role.id, role.label, kpiFor(role.id), role.color)).join('');
+  // Which +X mode is active (if any) — the matching split button lights up orange,
+  // instead of +Rental being permanently primary.
+  const modeEntity = state.pick ? entityCardOf(state.pick.card, state.pick.recType) : null;
+  const newCls = (entity) => 'iconbtn' + (modeEntity === entity ? ' on' : '') + ' js-newitem';
   // One band: logo + rings on the left; a right column with the item tabs (single
   // row) above the toolbar (New / Dashboard / theme / QR / search / close-all).
   h.innerHTML = `
@@ -2023,14 +2084,15 @@ function headerEl() {
     <div class="header-right">
       <div class="hr-top">
         <div class="new-split">
-          <button class="iconbtn primary js-newitem" data-new="rental">${I.plus}Rental</button>
-          <button class="iconbtn js-newitem" data-new="customer">${I.plus}Customer</button>
-          <button class="iconbtn js-newitem" data-new="inspection" data-tip="New Inspection">${CARD_ICON.inspections}</button>
-          <button class="iconbtn js-newitem" data-new="workOrder" data-tip="New Work Order">${CARD_ICON.workOrders}</button>
-          <button class="iconbtn js-newitem" data-new="invoice" data-tip="New Invoice">${CARD_ICON.invoices}</button>
+          <button class="${newCls('rentals')}" data-new="rental">${I.plus}Rental</button>
+          <button class="${newCls('customers')}" data-new="customer">${I.plus}Customer</button>
+          <button class="${newCls('inspections')}" data-new="inspection" data-tip="New Inspection">${CARD_ICON.inspections}</button>
+          <button class="${newCls('workOrders')}" data-new="workOrder" data-tip="New Work Order">${CARD_ICON.workOrders}</button>
+          <button class="${newCls('invoices')}" data-new="invoice" data-tip="New Invoice">${CARD_ICON.invoices}</button>
           <button class="iconbtn js-newitem" data-new="receipt" data-tip="New Receipt">${CARD_ICON.expenses}</button>
         </div>
         <button class="iconbtn primary js-newrental new-menu-btn">${I.plus}New</button>
+        <button class="iconbtn${state.pick?.slot === 'washunit' ? ' on' : ''} js-wash-mode" title="Request a wash for a unit">${I.droplet} Wash</button>
         <button class="iconbtn js-dashboard">${I.grid} Dashboard</button>
         <button class="iconbtn js-theme" title="${state.theme === 'dark' ? 'Light' : 'Dark'} mode">${state.theme === 'dark' ? I.sun : I.moon}</button>
         <button class="iconbtn js-qr" title="Share session (QR)">${I.qr}</button>
@@ -2039,7 +2101,7 @@ function headerEl() {
         ${currentUser ? `<span class="hello-name">${esc(currentUser)}</span>` : ''}
       </div>
       <div class="toolbar">
-        ${state.tabs.length ? `<button class="iconbtn closeall js-closeall">${I.x} Close all</button>` : ''}
+        ${(state.tabs.length || state.searchMode) ? `<button class="iconbtn closeall js-closeall">${I.x} Close all</button>` : ''}
         <div class="searchwrap ${state.filterTerms.length ? 'has-terms' : ''}">
           <span class="s-icon">${I.search}</span>
           ${state.filterTerms.map((ft, i) => filterTermPill(ft, i, 'global')).join('')}
@@ -2311,7 +2373,7 @@ function renderOverlay() {
   } else if (o.kind === 'service') {
     // §7.7/§12.7 service completion — Hours at Completion · Date · Photo · Notes
     const u = IDX.unit.get(o.unitId);
-    const rows = u ? serviceOrdersForUnit(u, u.serviceCompletions || {}, { hoursField: 'currentHours', baselineField: 'purchaseHours' }) : [];
+    const rows = u ? unitServiceRows(u) : [];   // includes the wash task (svc-wash)
     const task = rows.find((s) => s.taskId === o.taskId);
     if (!u || !task) { state.overlay = null; return; }
     const svcVid = (state.svcPhoto || '').startsWith('data:video');
@@ -2663,9 +2725,10 @@ function onClick(e) {
     if (closest('.js-cancelpick')) return cancelPick();
     const prow = closest('.row');
     if (prow) {
-      const want = PICK_SRC[state.pick.slot];
       const rowEntity = prow.dataset.card === 'shop' ? prow.dataset.type : prow.dataset.card;
-      if (rowEntity === want) { e.stopPropagation(); return assignPick(prow.dataset.rec); }
+      if (state.pick.slot === 'washunit') {   // Wash mode — clicking a unit flags its wash, then exits
+        if (rowEntity === 'units') { e.stopPropagation(); const uid = prow.dataset.rec; state.pick = null; setWashRequest(uid, true); anchorRecord('shop', uid, 'serviceOrders'); return; }
+      } else if (rowEntity === PICK_SRC[state.pick.slot]) { e.stopPropagation(); return assignPick(prow.dataset.rec); }
     }
   }
 
@@ -2702,6 +2765,7 @@ function onClick(e) {
   if (closest('.js-coltab')) { const ct = closest('.js-coltab'); e.stopPropagation(); state.fleetFilter = null; const cs = activeSession(); if (cs.cols) cs.cols[ct.dataset.col] = ct.dataset.member; return render(); }
   if (closest('.js-dashboard')) { e.stopPropagation(); toast('Dashboard graphs are coming soon.'); return; }   // Phase-2 per-role KPI graphs (G1/G2)
   if (closest('.js-dash-ev')) { e.stopPropagation(); state.pick = null; return anchorRecord('rentals', closest('.js-dash-ev').dataset.rec); }
+  if (closest('.js-wash-mode')) { e.stopPropagation(); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); if (state.pick?.slot === 'washunit') { cancelPick(true); toast('Exited Wash Mode.'); return; } return startWashRequest(null); }
   if (closest('.js-newrental')) return openNewMenu(closest('.js-newrental'));
   if (closest('.js-newitem')) {
     const kind = closest('.js-newitem').dataset.new;
@@ -2712,6 +2776,7 @@ function onClick(e) {
     if (state.pick && KIND_ENTITY[kind] && entityCardOf(state.pick.card, state.pick.recType) === KIND_ENTITY[kind]) {
       cancelPick(true); toast('Exited ' + NEW_MODE[KIND_ENTITY[kind]].name + ' Mode.'); return;
     }
+    sweepIncompleteRentalDrafts();   // switching to a different +X abandons any half-built rental
     if (kind === 'rental') return startNewRental(cust);
     if (kind === 'inspection') return startNewInspection();
     if (kind === 'workOrder') return startNewWorkOrder();
@@ -2751,7 +2816,7 @@ function onClick(e) {
   if (closest('.js-create-invoice')) { e.stopPropagation(); return createInvoiceForRental(closest('.js-create-invoice').dataset.rec); }
   if (closest('.js-field-call')) { e.stopPropagation(); return markFieldCall(closest('.js-field-call').dataset.rec); }
   if (closest('.js-clear-fc')) { e.stopPropagation(); return clearFieldCall(closest('.js-clear-fc').dataset.rec); }
-  if (closest('.js-wash-request')) { e.stopPropagation(); return startWashRequest(closest('.js-wash-request').dataset.rec || null); }
+  if (closest('.js-wash-request')) { e.stopPropagation(); const uid = closest('.js-wash-request').dataset.rec; const uu = IDX.unit.get(uid); setWashRequest(uid, !(uu && uu.washRequested)); render(); return; }
   if (closest('.js-bill-wo')) { e.stopPropagation(); return billWOToInvoice(closest('.js-bill-wo').dataset.rec); }
   if (closest('.js-wo-bill')) { const b = closest('.js-wo-bill'); e.stopPropagation(); const w = IDX.wo.get(b.dataset.rec); if (w) { w.billCustomer = w.billCustomer === 'Yes' ? 'No' : 'Yes'; reindex('workOrders', w); logAction(w, `Bill customer → ${w.billCustomer}`); render(); } return; }
   if (closest('.js-svc-complete')) { const b = closest('.js-svc-complete'); e.stopPropagation(); state.svcPhoto = null; return openOverlay({ kind: 'service', unitId: b.dataset.unit, taskId: b.dataset.task }); }
@@ -3342,6 +3407,7 @@ function startNewInspection() {
   DATA.inspections.push(draft); IDX.insp.set(id, draft); reindex('inspections', draft);
   logAction(draft, 'Inspection created');
   anchorRecord('shop', id, 'inspections');
+  revealPickList('units');   // show the Units list so there's something to click
   toast('New inspection — pick the unit, then run Wash → Checklist.');
   beginPick('shop', id, 'inspections', 'unit');
 }
@@ -3351,6 +3417,7 @@ function startNewWorkOrder() {
   DATA.workOrders.push(draft); IDX.wo.set(id, draft); reindex('workOrders', draft);
   logAction(draft, 'Work order created');
   anchorRecord('shop', id, 'workOrders');
+  revealPickList('units');   // show the Units list so there's something to click
   toast('New work order — pick the unit, then add parts / labor.');
   beginPick('shop', id, 'workOrders', 'unit');
 }
@@ -3360,6 +3427,7 @@ function startNewInvoice(customerId) {
   const draft = { invoiceId: id, customerId: customerId || null, rentalIds: [], date: TODAY_ISO, dueDate: addDays(TODAY_ISO, 14), po: '', amountPaid: 0, lineItems: [], mock: true };
   DATA.invoices.push(draft); IDX.invoice.set(id, draft); reindex('invoices', draft);
   anchorRecord('invoices', id);
+  if (!customerId) revealPickList('customers');   // show the Customers list so there's something to click
   toast(cust ? `New invoice for ${cust.name} — add rentals / WOs.` : 'New invoice — pick a customer, then add rentals / WOs.');
   if (!customerId) beginPick('invoices', id, undefined, 'customer');
 }
@@ -3382,7 +3450,7 @@ function startNewRental(customerId) {
    A draft (or a swap) puts the app in "pick mode": the source card lists every
    record and a banner prompts the choice. Clicking a row in that card assigns
    it to the draft slot and auto-advances to the next empty required slot. */
-const PICK_SRC = { customer: 'customers', unit: 'units', rental: 'rentals', wo: 'workOrders', intcat: 'categories' };
+const PICK_SRC = { customer: 'customers', unit: 'units', rental: 'rentals', wo: 'workOrders', intcat: 'categories', washunit: 'units' };
 const PICK_LABEL = { customer: 'a customer', unit: 'a unit', rental: 'a rental', wo: 'a work order', intcat: 'an interested category' };
 function draftName(card, rec) {
   const entity = entityCardOf(card, state.pick?.recType);
@@ -3417,8 +3485,12 @@ function beginPick(card, recId, recType, slot) {
 }
 function cancelPick(silent) {
   if (!state.pick) return;
+  const p = state.pick;
   state.pick = null;
   state.winpicker = null;   // leaving the pick exits the whole +X mode, calendar included
+  if (p.slot !== 'washunit') discardIfEmptyDraft(p);   // abandon the half-built draft (inspection/WO/invoice/rental)
+  sweepIncompleteRentalDrafts();   // a rental without BOTH a unit & customer is not saved
+  pruneOrphanTabs();               // drop the tab that was holding a now-discarded draft
   if (!silent) toast('Picker closed — finish later from the card.');
   render();
 }
@@ -3474,13 +3546,19 @@ function assignPick(srcId) {
 // Each "+X" creation mode gets a persistent banner explaining how to leave it:
 // click the same +X button to bail, or finish the listed requirements to commit.
 const NEW_MODE = {
-  rentals:     { name: '+Rental',     btn: '+Rental',     need: 'a Unit, Customer, &amp; Rental Window' },
+  rentals:     { name: '+Rental',     btn: '+Rental',     need: 'a Unit &amp; Customer (the Rental Window is optional)' },
   inspections: { name: '+Inspection', btn: '+Inspection', need: 'a Unit' },
   workOrders:  { name: '+Work Order', btn: '+Work Order', need: 'a Unit' },
   invoices:    { name: '+Invoice',    btn: '+Invoice',    need: 'a Customer' },
 };
 function pickBarEl() {
   const p = state.pick; if (!p) return null;
+  if (p.slot === 'washunit') {   // header "Wash" mode — pick a unit to flag for a wash
+    const bar = el('div', 'pickbar');
+    bar.innerHTML = `<span class="pb-dot"></span><span class="pb-text">You are in <b>Wash Mode</b>. Exit by clicking <b>Wash</b>, or click a <b>Unit</b> to request its wash.</span>
+      <button class="pb-cancel js-cancelpick">Exit</button>`;
+    return bar;
+  }
   const entity = entityCardOf(p.card, p.recType);
   const m = NEW_MODE[entity];
   const bar = el('div', 'pickbar');
@@ -3688,9 +3766,10 @@ function recordServiceCompletion(unitId, taskId, hours, date, note, photo) {
   u.serviceCompletions = completeService(u.serviceCompletions || {}, taskId, hours);
   u.serviceLog = u.serviceLog || [];
   u.serviceLog.push({ taskId, hours: Number(hours) || 0, date: when, note: note || '', photo: photo || '' });
-  const tn = SERVICE_TASKS.find((x) => x.taskId === taskId);
+  if (taskId === 'svc-wash') u.washRequested = false;   // a logged wash clears the request + resets the 100-HR countdown
+  const tn = UNIT_SVC_TASKS.find((x) => x.taskId === taskId);
   logAction(u, `Serviced: ${tn?.name || taskId} @ ${num(hours)} HRS (${fmtShortDate(when)})`);
-  toast('Service completed — countdown reset.');
+  toast(taskId === 'svc-wash' ? 'Wash logged — countdown reset.' : 'Service completed — countdown reset.');
   state.overlay = null;
   const session = activeSession(); if (session.anchor) setAnchor(session, session.anchor.card, session.anchor.recId, session.anchor.recType);
   render(); renderOverlay();
@@ -3765,15 +3844,23 @@ function billWOToInvoice(woId) {
   addWOToInvoice(inv.invoiceId, woId);
   anchorRecord('invoices', inv.invoiceId);   // jump to the invoice we billed to
 }
-/* Wash Request (§9 lightweight) — a No-Part WO flagged as a wash job. */
+/* Wash Request — wash is a recurring Service interval (every 100 HRS, pinned to the top
+   of a unit's Services). A request flags the unit so its wash pill reads "Wash Requested"
+   until the wash is logged complete (which resets the 100-HR countdown). */
+function setWashRequest(unitId, on) {
+  const u = IDX.unit.get(unitId); if (!u) return;
+  u.washRequested = !!on;
+  logAction(u, on ? 'Wash requested' : 'Wash request cleared');
+  reindex('units', u);
+  toast(on ? `Wash requested for ${u.name}.` : `Wash request cleared for ${u.name}.`);
+}
+/* Entry points: a unit-detail button (toggles), or the header "Wash" button (no unit yet
+   → enter a lightweight pick so the user clicks the unit to wash). */
 function startWashRequest(unitId) {
-  const id = 'WO-WASH' + (state.seq++);
-  const u = IDX.unit.get(unitId);
-  const wo = { woId: id, unitId: unitId || null, customerId: null, woReport: 'Wash request', woType: 'Manual', description: 'Wash / detail requested.', phase: 'No Part Needed', billCustomer: 'No', date: TODAY_ISO, eta: '', unitHoursAtCreation: u?.currentHours || 0, assignedMechanic: '', laborHours: 0, lineItems: [], mock: true };
-  DATA.workOrders.push(wo); IDX.wo.set(id, wo); reindex('workOrders', wo);
-  anchorRecord('shop', id, 'workOrders');
-  toast(`Wash request ${id} created.`);
-  if (!unitId) beginPick('shop', id, 'workOrders', 'unit');
+  if (unitId) { setWashRequest(unitId, true); anchorRecord('shop', unitId, 'serviceOrders'); render(); return; }
+  state.pick = { card: 'units', recId: null, recType: undefined, slot: 'washunit' };
+  const cs = activeSession(); if (cs.cols) cs.cols.left = 'units'; if (cs.cards?.units) cs.cards.units.mode = 'list';
+  render(); highlightCard('units'); toast('Wash mode — click a unit to request its wash.');
 }
 /* Add a rental (price + transport) as line items on an invoice. */
 function addRentalLineToInvoice(invoiceId, rentalId) {
@@ -3986,6 +4073,7 @@ function boot() {
   document.addEventListener('mouseover', (e) => {
     const t = hoverTarget(e.target);
     if (!t || state.pick || state.overlay || state.winpicker) return;
+    clearTimeout(hoverGrace);            // re-entering a row cancels a pending close
     if (t === hoverEl) return;
     hoverEl = t; hideHoverPreview();
     hoverTimer = setTimeout(() => { if (hoverEl === t) showHoverPreview(t); }, 672);
@@ -3995,7 +4083,10 @@ function boot() {
     const to = e.relatedTarget;
     // keep it alive if the mouse moved within the row OR onto the preview itself (to scroll it)
     if (to && ((hoverEl.contains && hoverEl.contains(to)) || (hoverNode && hoverNode.contains && hoverNode.contains(to)))) return;
-    hoverEl = null; hideHoverPreview();
+    // grace window: leaving the row toward the preview doesn't kill it instantly — the
+    // preview's own mouseenter (showHoverPreview) cancels this timer once the mouse lands.
+    clearTimeout(hoverGrace);
+    hoverGrace = setTimeout(() => { hoverEl = null; hideHoverPreview(); }, 320);
   });
   // Admin / offline boot modes (opt-in via URL hash) — checked before the login gate.
   const hash = (location.hash || '').toLowerCase();
