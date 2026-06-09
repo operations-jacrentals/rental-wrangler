@@ -569,6 +569,30 @@ function cardRecordAt(target) {
   }
   return null;
 }
+// Right-click = send a card back to its list view (more useful than step-back).
+function cardToList(card) {
+  const cs = activeSession().cards[card]; if (!cs) return;   // 'calendar' has no card state → no-op
+  cs.mode = 'list'; cs.backStack = [];
+  render();
+}
+// Double right-click = drop the session's anchor entirely (anchor-less = no cascade).
+function clearAnchor() {
+  const s = activeSession();
+  if (!s.anchor) return;
+  s.anchor = null; s.cascade = null;
+  for (const c of GRID_CARDS) { const cs = s.cards[c.id]; cs.mode = 'list'; cs.recId = null; cs.recType = null; cs.backStack = []; }
+  render();
+}
+// Double-click-to-anchor discriminator (#10): a row's single-click OPEN is deferred a
+// beat so a 2nd click can anchor instead — the first click never "counts" / never opens.
+const DBL_MS = 220;
+let pendingRowClick = null;
+function rowOpen(card, recId, recType) {
+  if (state.searchMode) { state.searchMode = false; state.query = ''; }
+  const sess = activeSession();
+  if (sess.anchor?.card === card && sess.cards[card].mode === 'list') return anchorRecord(card, recId, recType);  // browsing anchored list → re-anchor
+  return openStandard(card, recId, recType);
+}
 function pillTo(card, recId) {
   if (recId == null) return;
   // 3-column display: a link pill forces its column to reveal the target card.
@@ -665,7 +689,7 @@ const CARD_ICON = {
   invoices:      ico('<path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1-2-1Z"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><path d="M12 17.5v-11"/>'), // receipt
   workOrders:    ico('<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>'), // wrench
   serviceOrders: ico('<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>'),  // heart
-  inspections:   ico('<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>'),                                                          // magnifier
+  inspections:   ico('<rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 14 2 2 4-4"/>'),   // clipboard-check (was a magnifier → looked like search)
   shop:          ico('<path d="m15 12-8.5 8.5a2.12 2.12 0 1 1-3-3L12 9"/><path d="M17.64 15 22 10.64"/><path d="m20.91 11.7-1.25-1.25c-.6-.6-.93-1.4-.93-2.25v-.86L16.01 4.6a5.56 5.56 0 0 0-3.94-1.64H9l.92.82A6.18 6.18 0 0 1 12 8.4v1.56l2 2h2.47l2.26 1.91"/>'), // hammer (Shop)
   parts:         ico('<path d="M16.5 9.4 7.55 4.24"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>'), // package
   vendors:       ico('<path d="M3 9h18v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M3 9l1.5-5h15L21 9"/><path d="M3 9h18"/><path d="M9 22V12h6v10"/>'),  // storefront
@@ -1528,6 +1552,7 @@ function memberCardEl(member, session) {
 function calendarCardEl(session) {
   const node = el('div', 'card' + (state.searchMode ? ' search-glow' : ''));
   node.dataset.card = 'calendar';
+  appendItemTabs(node);                                       // item tabs atop each card (#3)
   const head = el('div', 'card-head');
   head.innerHTML = `<span class="c-titlecard"><span class="c-icon">${I.grid}</span><span class="c-title">Calendar</span><span class="c-count">${dispatchEvents().length}</span></span>`;
   node.appendChild(head);
@@ -1545,6 +1570,7 @@ function cardEl(cardDef, session) {
   const pickTarget = state.pick && PICK_SRC[state.pick.slot] === card;
   const node = el('div', 'card' + (anchored ? ' anchored' : '') + (state.searchMode ? ' search-glow' : '') + (state.focusedCard === card ? ' card-focus' : '') + (pickTarget ? ' pick-target' : ''));
   node.dataset.card = card;
+  appendItemTabs(node);                                       // item tabs ride atop each card (#3)
 
   // §5.4: global search forces EVERY card into list view (the prior standard/anchor
   // state is untouched, so exiting search restores the session for free).
@@ -1692,6 +1718,7 @@ function shopCardEl(cardDef, session, forcedSeg) {
   const woPick = state.pick && state.pick.slot === 'wo';
   const node = el('div', 'card' + (anchored ? ' anchored' : '') + (state.searchMode ? ' search-glow' : '') + (state.focusedCard === 'shop' ? ' card-focus' : '') + (woPick ? ' pick-target' : ''));
   node.dataset.card = 'shop';
+  appendItemTabs(node);                                       // item tabs atop each card (#3)
 
   const inStandard = !state.searchMode && cs.mode === 'standard' && cs.recId != null && cs.recType;
   const head = el('div', 'card-head');
@@ -1880,6 +1907,24 @@ function kpiFor(roleId) {
   }
   return [0, 0, 0];
 }
+// Plain-English explanation of each KPI's formula — shown on hover in the role popup.
+const KPI_HELP = {
+  'Renting Rate':           'Share of your fleet that’s rentable right now (Ready + Not-Ready units ÷ total fleet).',
+  'WO Completion Rate':     'Work orders marked Complete ÷ all work orders. Higher = the shop is keeping up.',
+  'Bill Rate':              'Of the work orders worth billing (have parts or labor), how many you actually charged the customer for.',
+  'Successful Rentals':     'Rentals that went out without a breakdown — 1 minus the share of rentals that got a Field Call.',
+  'Ready Rate':             'Share of the fleet that’s inspected and Ready to rent (Ready units ÷ total fleet).',
+  'WO Rate (≤20%)':         'How few inspections turn into work orders — fewer is better. Full ring at 0%, empty at 20%+.',
+  'On-Time':                'Rentals you actually delivered/handled ÷ rentals scheduled (excludes quotes, cancels, no-shows).',
+  'Wash Completion':        'Of the units flagged for a wash, how many got washed (washed ÷ wash-requested).',
+  'Driving Score':          'Driving-safety score from the GPS backend — placeholder until that’s connected.',
+  'Invoice Collection Rate':'Of all money invoiced, how much you’ve collected (dollars collected ÷ dollars billed).',
+  'Show Rate':              'Of customers who reserved, how many actually showed up (not a No-Show).',
+  'Reputation':             'Reputation score from customer email reviews — placeholder until the email backend is connected.',
+  'Revenue Goal':           'This month’s rental revenue toward the $150k monthly goal (resets on the 1st).',
+  'Active Customer Rate':   'Of your big customers (paid $2k+ lifetime), how many are currently active.',
+  'Pipeline':               'Sales pipeline strength — members signed + leads moved past “Inbound”, toward a target of 10.',
+};
 /** §11 Team ring — per-position average across the 5 roles (skips null placeholders). */
 function kpiTeam() {
   const all = ROLES.map((r) => kpiFor(r.id));
@@ -1900,7 +1945,7 @@ function headerEl() {
     <div class="kpis">${rings}</div>
     <div class="header-right">
       <div class="hr-top">
-        ${state.tabs.length ? `<div class="tabstrip">${tabStrip()}</div>` : ''}
+        <span class="spacer"></span>
         ${currentUser ? `<span class="hello-name">${esc(currentUser)}</span>` : ''}
       </div>
       <div class="toolbar">
@@ -1928,6 +1973,14 @@ function tabStrip() {
     return `<div class="tab ${t.id === state.activeTabId ? 'active' : ''} js-tab" data-tab="${t.id}">
       <span class="tab-name">${esc(t.label)}</span>${b}</div>`;
   }).join('');
+}
+// Item tabs now ride at the TOP of each card (repeated across cards; still global —
+// clicking one switches the whole session). Collapses to nothing when no tabs are open (#3).
+function appendItemTabs(node) {
+  if (!state.tabs.length) return;
+  const it = el('div', 'tabstrip card-itemtabs');
+  it.innerHTML = tabStrip();
+  node.appendChild(it);
 }
 
 /* ── §5.3/§11 Office Dispatch Time Grid ──────────────────────────────────────
@@ -2028,7 +2081,7 @@ function renderOverlay() {
       const raw = vals[i];
       const b = bandColor(raw == null ? 0 : raw);
       const valTxt = raw == null ? '<span class="muted">— backend</span>' : `<span style="color:var(--${b.color})">${raw}%</span>`;
-      return `<div class="kpi-line"><span class="ring-no" style="border-color:var(--${raw == null ? 'line' : b.color});color:var(--${raw == null ? 'txt-3' : b.color})">${i + 1}</span><span class="k-name">${esc(k)}<span class="muted" style="font-size:10px;margin-left:6px">${ringTag[i]}</span></span><span class="k-val">${valTxt}</span></div>`;
+      return `<div class="kpi-line" data-tip="${esc(KPI_HELP[k] || '')}"><span class="ring-no" style="border-color:var(--${raw == null ? 'line' : b.color});color:var(--${raw == null ? 'txt-3' : b.color})">${i + 1}</span><span class="k-name">${esc(k)}<span class="muted" style="font-size:10px;margin-left:6px">${ringTag[i]}</span></span><span class="k-val">${valTxt}</span></div>`;
     }).join('');
     const pop = el('div', 'popup kpi-popup');
     pop.innerHTML = `
@@ -2641,21 +2694,21 @@ function onClick(e) {
     return pillTo(pill.dataset.pillCard, castId(pill.dataset.pillCard, pill.dataset.pillRec));
   }
 
-  // click a row → standard mode (selection highlight handled too)
+  // click a row → open in Standard, BUT deferred a beat so a double-click anchors
+  // instead (the first click never opens — #10). Ctrl/Cmd+click = new tab (instant).
   const row = closest('.row');
   if (row) {
-    // hotkey: Ctrl/Cmd+click opens the row in a new background tab (§0.1)
     if (e.metaKey || e.ctrlKey) { e.preventDefault(); return openInNewTab(row.dataset.card, row.dataset.rec, row.dataset.type); }
-    // clicking a search result drills into it AND leaves search (§5.4)
-    if (state.searchMode) { state.searchMode = false; state.query = ''; }
-    // browsing the anchored card's list (js-tolist) → a row click RE-ANCHORS that item
-    const sess = activeSession();
-    if (sess.anchor?.card === row.dataset.card && sess.cards[row.dataset.card].mode === 'list') {
-      return anchorRecord(row.dataset.card, row.dataset.rec, row.dataset.type);
+    const rc = row.dataset.card, rr = row.dataset.rec, rt = row.dataset.type, rkey = rc + ':' + (rr || '');
+    if (pendingRowClick && pendingRowClick.key === rkey) {            // 2nd click → anchor (first click was cancelled)
+      clearTimeout(pendingRowClick.timer); pendingRowClick = null;
+      return anchorRecord(rc, rr, rt);
     }
+    if (pendingRowClick) clearTimeout(pendingRowClick.timer);
     document.querySelectorAll('.row.selected').forEach((n) => n.classList.remove('selected'));
-    row.classList.add('selected');
-    return openStandard(row.dataset.card, row.dataset.rec, row.dataset.type);
+    row.classList.add('selected');                                   // instant feedback; the open itself is deferred
+    pendingRowClick = { key: rkey, timer: setTimeout(() => { pendingRowClick = null; rowOpen(rc, rr, rt); }, DBL_MS) };
+    return;
   }
 
   // click dead space → exit search mode (§5.4)
@@ -3755,16 +3808,22 @@ function boot() {
   const hotkeyGuard = (e) => e.target.closest('.inline-edit, input, textarea, select, .pill, button, .x') || state.pick || state.winpicker;
   document.addEventListener('dblclick', (e) => {
     if (hotkeyGuard(e)) return;
-    const r = cardRecordAt(e.target); if (!r) return;     // row OR the card's open detail
+    if (e.target.closest('.row')) return;                 // rows are handled by the click discriminator (#10)
+    const r = cardRecordAt(e.target); if (!r) return;     // dbl-click on a card's open detail → anchor it
     e.preventDefault(); window.getSelection()?.removeAllRanges();
     anchorRecord(r.card, r.recId, r.recType);
   });
+  // right-click = send the card to its List View; double right-click = drop the anchor.
+  let lastCtx = { t: 0, card: null };
   document.addEventListener('contextmenu', (e) => {
-    const card = e.target.closest('.card'); if (!card) return;        // right-click anywhere in a card = Back
+    const card = e.target.closest('.card'); if (!card) return;
     if (e.target.closest('input, textarea, .inline-input')) return;   // allow native menu in fields
-    e.preventDefault();                                               // suppress native menu, do Back
+    e.preventDefault();
     if (state.pick || state.winpicker) return;
-    goBack(card.dataset.card);
+    const dc = card.dataset.card, now = performance.now();
+    if (now - lastCtx.t < 450 && lastCtx.card === dc) { lastCtx = { t: 0, card: null }; return clearAnchor(); }   // double right-click
+    lastCtx = { t: now, card: dc };
+    cardToList(dc);                                                   // single right-click → List View
   });
   // Admin / offline boot modes (opt-in via URL hash) — checked before the login gate.
   const hash = (location.hash || '').toLowerCase();
