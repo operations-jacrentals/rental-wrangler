@@ -89,9 +89,11 @@ input { font-family: inherit; }
 .header { flex: 0 0 auto; background: transparent; display: flex; align-items: flex-end; gap: 12px; padding: 12px 12px 0; }
 .header-right { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
 .hr-top { display: flex; align-items: center; gap: 10px; min-height: 0; }
-.hr-top .tabstrip { flex: 1 1 auto; min-width: 0; }
+.hr-top > .iconbtn { height: 34px; }
 .hello-name { margin-left: auto; font-size: 24px; font-weight: 800; color: var(--txt); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 46%; letter-spacing: .2px; line-height: 1; padding-right: 4px; }
 .toolbar { display: flex; align-items: center; gap: 10px; }
+.toolbar .closeall { flex: 0 0 auto; }
+.toolbar .searchwrap { flex: 1 1 auto; min-width: 0; }
 .toolbar > .iconbtn, .toolbar .searchwrap { height: 36px; }
 
 /* logo / menu button (§0.4) */
@@ -214,23 +216,44 @@ input { font-family: inherit; }
 }
 .col { display: flex; flex-direction: column; gap: 8px; min-width: 0; min-height: 0; overflow: visible; }   /* visible so the active-tab glow isn't clipped */
 .col > .card { flex: 1 1 auto; min-height: 0; }                     /* the active card fills under the tab strip */
-.col-tabs { display: flex; gap: 6px; flex: 0 0 auto; flex-wrap: nowrap; justify-content: center; overflow: hidden; }   /* center; never wrap to a 2nd row */
+/* Card tabs = a SEGMENTED NAV BAR (one container, flat segments) — deliberately
+   distinct from the app's individual pills; active = solid accent. No glow to clip. */
+.col-tabs { display: inline-flex; gap: 3px; flex: 0 0 auto; align-self: center; max-width: 100%; overflow: hidden;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 13px; padding: 3px; box-shadow: var(--chip-shadow); }
 .coltab {
-  display: inline-flex; align-items: center; gap: 7px; padding: 7px 12px; border-radius: 11px;
-  background: var(--panel); border: 1px solid var(--line); color: var(--txt-3);
-  font-weight: 700; font-size: 13px; line-height: 1; white-space: nowrap; transition: border-color .12s, color .12s, background .12s;
+  display: inline-flex; align-items: center; gap: 7px; padding: 7px 13px; border-radius: 10px; min-width: 0;
+  background: transparent; border: none; color: var(--txt-3);
+  font-weight: 700; font-size: 13px; line-height: 1; white-space: nowrap; transition: color .12s, background .12s;
 }
 .coltab:hover { color: var(--txt); }
-.coltab.on { background: var(--card); border-color: var(--accent-line); color: var(--accent); box-shadow: 0 0 0 1px var(--accent-line); }
+.coltab.on { background: var(--accent); color: #fff; }
 .coltab.compact { padding: 7px 10px; }
-.coltab { min-width: 0; }
 .coltab .ct-lbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .coltab .ct-ico { display: inline-flex; flex: 0 0 auto; } .coltab .ct-ico svg { width: 16px; height: 16px; }
 .coltab .ct-n { font-size: 11px; font-weight: 700; color: var(--txt-3); background: var(--bg-2); padding: 1px 8px; border-radius: 999px; }
-.coltab.on .ct-n { color: var(--accent); background: var(--accent-soft); }
+.coltab.on .ct-n { color: #fff; background: rgba(255,255,255,.28); }
 /* item tabs hosted at the top of each card (collapses when no tabs are open) */
 .card-itemtabs { padding: 7px 9px 0; flex: 0 0 auto; }
 .card-itemtabs .tab { flex: 0 0 auto; }
+
+/* Mouse-shortcuts popup — animated gesture demos */
+.hk-popup { width: 470px; }
+.hk-body { display: flex; flex-direction: column; gap: 10px; }
+.hk-row { display: flex; align-items: center; gap: 14px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+.hk-demo { position: relative; width: 64px; height: 46px; flex: 0 0 auto; border-radius: 10px; background: var(--bg-2); border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; }
+.hk-cursor { width: 13px; height: 13px; border-radius: 50%; background: var(--accent); position: relative; }
+.hk-cursor::after { content: ''; position: absolute; inset: 0; border-radius: 50%; border: 2px solid var(--accent); opacity: 0; }
+.hk-chip { position: absolute; left: 5px; top: 5px; font-size: 9px; font-weight: 800; color: var(--accent); background: var(--accent-soft); border-radius: 5px; padding: 1px 4px; }
+.hk-name { font-size: 13px; font-weight: 800; color: var(--txt); }
+.hk-desc { font-size: 11.5px; color: var(--txt-3); margin-top: 2px; }
+@keyframes hkRip  { 0% { transform: scale(.5); opacity: .85 } 70%, 100% { transform: scale(2.4); opacity: 0 } }
+@keyframes hkRip2 { 0% { transform: scale(.5); opacity: .85 } 18% { transform: scale(2.1); opacity: 0 } 24% { transform: scale(.5); opacity: .85 } 42%, 100% { transform: scale(2.1); opacity: 0 } }
+.hk-click .hk-cursor::after,
+.hk-ctrl  .hk-cursor::after { animation: hkRip 1.7s ease-out infinite; }
+.hk-dbl   .hk-cursor::after { animation: hkRip2 1.7s ease-out infinite; }
+.hk-right .hk-cursor, .hk-dblright .hk-cursor { background: #18b6ff; }
+.hk-right .hk-cursor::after { border-color: #18b6ff; animation: hkRip 1.7s ease-out infinite; }
+.hk-dblright .hk-cursor::after { border-color: #18b6ff; animation: hkRip2 1.7s ease-out infinite; }
 /* Calendar (dispatch grid) inside the middle column */
 .cal-body { padding: 12px 14px; display: flex; flex-direction: column; gap: 14px; }
 .cal-body .dash-stats { grid-template-columns: repeat(2, 1fr); }

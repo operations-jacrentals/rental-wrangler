@@ -672,6 +672,7 @@ const I = {
   sun: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5 19 19M19 5l-1.5 1.5M6.5 17.5 5 19"/></svg>',
   moon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A8 8 0 1 1 11.2 3 6 6 0 0 0 21 12.8z"/></svg>',
   qr: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h3v3h-3zM20 14v7M14 20h7"/></svg>',
+  mouse: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="7"/><path d="M12 6v4"/></svg>',
   video: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="13" height="12" rx="2"/><path d="m15 10 6-3v10l-6-3z"/></svg>',
   box: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7l9-4 9 4-9 4z"/><path d="M3 7v10l9 4 9-4V7"/><path d="M12 11v10"/></svg>',
   doc: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2h8l4 4v16H6z"/><path d="M14 2v4h4"/></svg>',
@@ -1553,9 +1554,7 @@ function calendarCardEl(session) {
   const node = el('div', 'card' + (state.searchMode ? ' search-glow' : ''));
   node.dataset.card = 'calendar';
   appendItemTabs(node);                                       // item tabs atop each card (#3)
-  const head = el('div', 'card-head');
-  head.innerHTML = `<span class="c-titlecard"><span class="c-icon">${I.grid}</span><span class="c-title">Calendar</span><span class="c-count">${dispatchEvents().length}</span></span>`;
-  node.appendChild(head);
+  // no card title — the column tab already says "Calendar" (#2.3)
   const body = el('div', 'card-body cal-body');
   body.innerHTML = dispatchGridBody();
   node.appendChild(body);
@@ -1575,23 +1574,23 @@ function cardEl(cardDef, session) {
   // §5.4: global search forces EVERY card into list view (the prior standard/anchor
   // state is untouched, so exiting search restores the session for free).
   const inStandard = !state.searchMode && cs.mode === 'standard' && cs.recId != null;
-  // header — floating chips over one continuous surface (no separating line)
-  const head = el('div', 'card-head');
-  const stdRec = inStandard ? recOf(card, cs.recId) : null;
-  const count = !inStandard ? `<span class="c-count">${listFor(card, session).length}</span>` : '';
-  // §0.6 — in standard mode the open record's NAME rides in the card header (badges
-  // drop just below it); editable in place for rentals/units.
-  const titleHtml = (inStandard && stdRec)
-    ? (card === 'rentals' ? `<span class="c-title inline-edit" data-edit="field" data-card="rentals" data-field="rentalName" data-rec="${esc(cs.recId)}" data-ph="Rental name">${esc(detailTitle(card, stdRec))}</span>`
-      : card === 'units' ? `<span class="c-title inline-edit" data-edit="field" data-card="units" data-field="name" data-rec="${esc(cs.recId)}" data-ph="Unit name">${esc(detailTitle(card, stdRec))}</span>`
-      : `<span class="c-title">${esc(detailTitle(card, stdRec))}</span>`)
-    : `<span class="c-title">${esc(cardDef.title)}</span>`;
-  head.innerHTML = `
-    <span class="c-titlecard"><span class="c-icon">${CARD_ICON[card] || ''}</span>${titleHtml}${count}</span>
-    <div class="c-head-right">
-      ${inStandard ? `<div class="c-actions"><button class="hbtn js-tolist" title="${anchored ? 'Browse list (pick another to anchor)' : 'Back to list'}">${I.list}</button><button class="hbtn js-anchor" data-rec="${esc(cs.recId)}" title="Anchor (⊞)">${I.circle}</button><button class="hbtn js-newtab" data-rec="${esc(cs.recId)}" title="New tab (+)">${I.plus}</button></div>` : ''}
-    </div>`;
-  node.appendChild(head);
+  // List mode → NO card header (the column tab already names the card). Standard mode →
+  // a slim header: the record name in the top-left (hidden when an item tab already shows
+  // it, i.e. when anchored) + the row actions. (#2.3 / §0.6)
+  if (inStandard) {
+    const stdRec = recOf(card, cs.recId);
+    const anchoredHere = !!(session.anchor && session.anchor.card === card && String(session.anchor.recId) === String(cs.recId));
+    const titleHtml = stdRec
+      ? (card === 'rentals' ? `<span class="c-title inline-edit" data-edit="field" data-card="rentals" data-field="rentalName" data-rec="${esc(cs.recId)}" data-ph="Rental name">${esc(detailTitle(card, stdRec))}</span>`
+        : card === 'units' ? `<span class="c-title inline-edit" data-edit="field" data-card="units" data-field="name" data-rec="${esc(cs.recId)}" data-ph="Unit name">${esc(detailTitle(card, stdRec))}</span>`
+        : `<span class="c-title">${esc(detailTitle(card, stdRec))}</span>`)
+      : '';
+    const head = el('div', 'card-head');
+    head.innerHTML = `
+      <span class="c-titlecard">${anchoredHere ? '' : `<span class="c-icon">${CARD_ICON[card] || ''}</span>${titleHtml}`}</span>
+      <div class="c-head-right"><div class="c-actions"><button class="hbtn js-tolist" title="${anchored ? 'Browse list (pick another to anchor)' : 'Back to list'}">${I.list}</button><button class="hbtn js-anchor" data-rec="${esc(cs.recId)}" title="Anchor (⊞)">${I.circle}</button><button class="hbtn js-newtab" data-rec="${esc(cs.recId)}" title="New tab (+)">${I.plus}</button></div></div>`;
+    node.appendChild(head);
+  }
 
   // body
   const body = el('div', 'card-body');
@@ -1721,14 +1720,18 @@ function shopCardEl(cardDef, session, forcedSeg) {
   appendItemTabs(node);                                       // item tabs atop each card (#3)
 
   const inStandard = !state.searchMode && cs.mode === 'standard' && cs.recId != null && cs.recType;
-  const head = el('div', 'card-head');
-  const count = !inStandard ? `<span class="c-count">${total}</span>` : '';
-  head.innerHTML = `
-    <span class="c-titlecard"><span class="c-icon">${CARD_ICON.shop}</span><span class="c-title">${esc(cardDef.title)}</span>${count}</span>
-    <div class="c-head-right">
-      ${inStandard ? `<div class="c-actions"><button class="hbtn js-tolist" title="${anchored ? 'Browse list (pick another to anchor)' : 'Back to list'}">${I.list}</button><button class="hbtn js-anchor" data-rec="${esc(cs.recId)}" data-type="${esc(cs.recType)}" title="Anchor (⊞)">${I.circle}</button><button class="hbtn js-newtab" data-rec="${esc(cs.recId)}" data-type="${esc(cs.recType)}" title="New tab (+)">${I.plus}</button></div>` : ''}
-    </div>`;
-  node.appendChild(head);
+  // List mode → no header (column tab names it). Standard → slim header: record name
+  // (hidden when anchored, since the item tab shows it) + actions. (#2.3)
+  if (inStandard) {
+    const rec = recOf(cs.recType, cs.recId);
+    const anchoredHere = !!(session.anchor && session.anchor.card === 'shop' && String(session.anchor.recId) === String(cs.recId));
+    const nm = rec ? esc(detailTitle(cs.recType, rec) || MEMBER_TITLE[cs.recType] || cardDef.title) : '';
+    const head = el('div', 'card-head');
+    head.innerHTML = `
+      <span class="c-titlecard">${anchoredHere ? '' : `<span class="c-icon">${CARD_ICON[cs.recType] || CARD_ICON.shop}</span><span class="c-title">${nm}</span>`}</span>
+      <div class="c-head-right"><div class="c-actions"><button class="hbtn js-tolist" title="${anchored ? 'Browse list (pick another to anchor)' : 'Back to list'}">${I.list}</button><button class="hbtn js-anchor" data-rec="${esc(cs.recId)}" data-type="${esc(cs.recType)}" title="Anchor (⊞)">${I.circle}</button><button class="hbtn js-newtab" data-rec="${esc(cs.recId)}" data-type="${esc(cs.recType)}" title="New tab (+)">${I.plus}</button></div></div>`;
+    node.appendChild(head);
+  }
 
   const body = el('div', 'card-body');
   if (inStandard) {
@@ -1945,21 +1948,22 @@ function headerEl() {
     <div class="kpis">${rings}</div>
     <div class="header-right">
       <div class="hr-top">
-        <span class="spacer"></span>
-        ${currentUser ? `<span class="hello-name">${esc(currentUser)}</span>` : ''}
-      </div>
-      <div class="toolbar">
         <button class="iconbtn primary js-newrental">${I.plus}New</button>
         <button class="iconbtn js-dashboard">${I.grid} Dashboard</button>
         <button class="iconbtn js-theme" title="${state.theme === 'dark' ? 'Light' : 'Dark'} mode">${state.theme === 'dark' ? I.sun : I.moon}</button>
         <button class="iconbtn js-qr" title="Share session (QR)">${I.qr}</button>
+        <button class="iconbtn js-hotkeys" title="Mouse & keyboard shortcuts">${I.mouse}</button>
+        <span class="spacer"></span>
+        ${currentUser ? `<span class="hello-name">${esc(currentUser)}</span>` : ''}
+      </div>
+      <div class="toolbar">
+        ${state.tabs.length ? `<button class="iconbtn closeall js-closeall">${I.x} Close all</button>` : ''}
         <div class="searchwrap ${state.filterTerms.length ? 'has-terms' : ''}">
           <span class="s-icon">${I.search}</span>
           ${state.filterTerms.map((ft, i) => filterTermPill(ft, i, 'global')).join('')}
           <input id="globalsearch" class="search" placeholder="${state.filterTerms.length ? 'Add filter — type, Enter to pin…' : 'Search everything…'}" value="${esc(state.query)}" />
           ${(state.query || state.filterTerms.length) ? `<div class="search-tools"><button class="search-tool js-clear" title="Clear">${I.x}</button></div>` : ''}
         </div>
-        ${state.tabs.length ? `<button class="iconbtn closeall js-closeall">${I.x} Close all</button>` : ''}
       </div>
     </div>`;
   return h;
@@ -2089,6 +2093,22 @@ function renderOverlay() {
       <div class="popup-body">
         <div class="big-ring">${ring3SVG(vals, role.color, { size: 150 })}</div>
         <div class="kpi-list">${lines}</div>
+      </div>`;
+    overlay.appendChild(pop);
+  } else if (o.kind === 'hotkeys') {
+    const rows = [
+      { d: 'click',    n: 'Click',              t: 'Open a record to view it — in its own card, nothing else moves.' },
+      { d: 'dbl',      n: 'Double-click',       t: 'Anchor it — the other two columns cascade to related records.' },
+      { d: 'ctrl',     n: 'Ctrl / ⌘ + click',   t: 'Open it in a new item tab (keeps your current spot).', chip: '⌘' },
+      { d: 'right',    n: 'Right-click',        t: 'Send that card back to its List View.' },
+      { d: 'dblright', n: 'Double right-click', t: 'Drop the anchor — the session goes anchor-less.' },
+    ];
+    const pop = el('div', 'popup hk-popup');
+    pop.innerHTML = `
+      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${I.mouse}</span><h3>Mouse shortcuts</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
+      <div class="popup-body hk-body">
+        ${rows.map((r) => `<div class="hk-row"><div class="hk-demo hk-${r.d}"><span class="hk-cursor"></span>${r.chip ? `<span class="hk-chip">${r.chip}</span>` : ''}</div><div class="hk-text"><div class="hk-name">${esc(r.n)}</div><div class="hk-desc">${esc(r.t)}</div></div></div>`).join('')}
+        <p class="muted" style="font-size:11px;margin:6px 2px 0">These work on a list row or anywhere on a card.</p>
       </div>`;
     overlay.appendChild(pop);
   } else if (o.kind === 'board') {
@@ -2565,6 +2585,7 @@ function onClick(e) {
   if (closest('.js-close')) return closeOverlay();
   if (closest('.js-theme')) { state.theme = state.theme === 'dark' ? 'light' : 'dark'; if (state.overlay && state.overlay.kind !== 'addCard') renderOverlay(); render(); return; }
   if (closest('.js-qr')) return openOverlay({ kind: 'qr' });
+  if (closest('.js-hotkeys')) return openOverlay({ kind: 'hotkeys' });
   if (closest('.js-board')) { const b = closest('.js-board'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return openOverlay({ kind: 'board', board: b.dataset.board }); }
   if (closest('.js-coltab')) { const ct = closest('.js-coltab'); e.stopPropagation(); const cs = activeSession(); if (cs.cols) cs.cols[ct.dataset.col] = ct.dataset.member; return render(); }
   if (closest('.js-dashboard')) { e.stopPropagation(); toast('Dashboard graphs are coming soon.'); return; }   // Phase-2 per-role KPI graphs (G1/G2)
