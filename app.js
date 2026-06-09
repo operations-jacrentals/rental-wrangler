@@ -775,6 +775,7 @@ const I = {
   mouse: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="7"/><path d="M12 6v4"/></svg>',
   video: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="13" height="12" rx="2"/><path d="m15 10 6-3v10l-6-3z"/></svg>',
   droplet: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3s6 6.4 6 10.5a6 6 0 0 1-12 0C6 9.4 12 3 12 3z"/></svg>',
+  table: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9.5h18M3 15h18M9 4v16"/></svg>',
   box: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7l9-4 9 4-9 4z"/><path d="M3 7v10l9 4 9-4V7"/><path d="M12 11v10"/></svg>',
   doc: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2h8l4 4v16H6z"/><path d="M14 2v4h4"/></svg>',
   chev: '<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 9l6 6 6-6"/></svg>',
@@ -1064,6 +1065,157 @@ const ROWS = {
       </div>`;
   },
 };
+
+/* ════════════════════════════════════════════════════════════════════════
+   §13. COLUMN REGISTRY — one source of truth per card for the Board View
+   (spreadsheet popup), the List-View totals row, and (later) the List-View
+   value picker. Each column: { key, label, type, get(rec), cell(rec), badge,
+   set?, meta?, agg }. `get` returns the RAW value (number, or status key for
+   badges) used for sorting + aggregation; `cell` returns display HTML.
+   ════════════════════════════════════════════════════════════════════════ */
+const pillS = (color, label) => `<span class="pill c-${color}">${esc(label)}</span>`;
+function C(key, label, type, get, opts = {}) {
+  const o = { key, label, type, get, badge: type === 'badge', set: opts.set, sortField: opts.sortField || key };
+  o.meta = opts.meta || (opts.set ? (k) => getStatus(opts.set, k) : null);
+  o.agg = opts.agg || (type === 'money' ? 'sum' : (type === 'num' || type === 'pct') ? 'avg' : 'none');
+  o.cell = opts.cell || ((rec) => {
+    const v = get(rec);
+    if (type === 'badge') { if (v == null || v === '') return '—'; const m = o.meta ? o.meta(v) : { label: v, color: 'gray' }; return pillS(m.color, m.label); }
+    if (type === 'money') return v == null ? '—' : money(v);
+    if (type === 'num') return v == null ? '—' : num(v);
+    if (type === 'pct') return v == null ? '—' : num(v) + '%';
+    if (type === 'date') return v ? esc(fmtShortDate(v)) : '—';
+    return v == null || v === '' ? '—' : esc(String(v));
+  });
+  return o;
+}
+const CARD_COLUMNS = {
+  rentals: [
+    C('name', 'Rental', 'text', (r) => IDX.unit.get(r.unitId)?.name || r.rentalName || 'Rental'),
+    C('category', 'Category', 'text', (r) => IDX.category.get(r.categoryId)?.name || ''),
+    C('customer', 'Customer', 'text', (r) => IDX.customer.get(r.customerId)?.name || ''),
+    C('price', 'Price', 'money', (r) => rentalPrice(r)?.price ?? null),
+    C('status', 'Status', 'badge', (r) => rentalDisplayStatus(r), { set: 'rentalStatus' }),
+    C('window', 'Window', 'date', (r) => r.startDate || '', { cell: (r) => (r.startDate || r.endDate) ? esc(fmtWindow(r.startDate, r.endDate)) : '—' }),
+    C('invoice', 'Invoice', 'badge', (r) => { const inv = r.invoiceId && IDX.invoice.get(r.invoiceId); return inv ? invoiceTotals(inv).status : ''; }, { set: 'invoiceStatus' }),
+  ],
+  customers: [
+    C('name', 'Customer', 'text', (c) => c.name),
+    C('company', 'Company', 'text', (c) => c.company || ''),
+    C('phone', 'Phone', 'text', (c) => c.phone || ''),
+    C('account', 'Account', 'badge', (c) => c.accountType || '', { set: 'customerAccountType' }),
+    C('pay', 'Pay status', 'badge', (c) => c.payStatus || '', { set: 'customerPayStatus' }),
+    C('rentals', 'Active rentals', 'num', (c) => DATA.rentals.filter((r) => r.customerId === c.customerId && ACTIVE_RENTAL.has(r.status) && r.status !== 'Quote').length, { agg: 'sum' }),
+    C('email', 'Email', 'text', (c) => c.email || ''),
+  ],
+  units: [
+    C('name', 'Unit', 'text', (u) => u.name),
+    C('category', 'Category', 'text', (u) => IDX.category.get(u.categoryId)?.name || ''),
+    C('hours', 'Hours', 'num', (u) => u.currentHours ?? null, { agg: 'avg' }),
+    C('inspection', 'Inspection', 'badge', (u) => u.inspectionStatus || '', { set: 'unitInspectionStatus' }),
+    C('fleet', 'Fleet', 'badge', (u) => u.fleetStatus || '', { set: 'unitFleetStatus' }),
+    C('rental', 'Rental', 'badge', (u) => { const ar = activeRentalForUnit(u.unitId); return ar ? rentalDisplayStatus(ar) : ''; }, { set: 'rentalStatus' }),
+    C('service', 'Next service', 'num', (u) => { const s = topServiceForUnit(u); return s ? Math.round(s.remaining) : null; }, { agg: 'avg', cell: (u) => { const s = topServiceForUnit(u); return u.washRequested ? pillS('blue', 'Wash Requested') : (s ? `<span class="pill c-${s.color}">${esc(svcText(s))}</span>` : '—'); } }),
+    C('wash', 'Wash', 'badge', (u) => u.washRequested ? 'Wash Requested' : '', { meta: () => ({ label: 'Wash Requested', color: 'blue' }) }),
+  ],
+  categories: [
+    C('name', 'Category', 'text', (c) => c.name),
+    C('rate1', '1-Day', 'money', (c) => c.rate1Day ?? null),
+    C('rate7', '7-Day', 'money', (c) => c.rate7Day ?? null),
+    C('rate4', '4-Week', 'money', (c) => c.rate4Wk ?? null),
+    C('avgHours', 'Avg hours', 'num', (c) => categoryStats(c).avgHours ?? null, { agg: 'avg' }),
+    C('units', 'Units', 'num', (c) => DATA.units.filter((u) => u.categoryId === c.categoryId).length, { agg: 'sum' }),
+    C('roi', 'ROI', 'pct', (c) => { const s = categoryStats(c); return s.roi != null ? s.roi : null; }),
+  ],
+  invoices: [
+    C('id', 'Invoice', 'text', (i) => i.invoiceId),
+    C('customer', 'Customer', 'text', (i) => IDX.customer.get(i.customerId)?.name || ''),
+    C('total', 'Total', 'money', (i) => invoiceTotals(i).total),
+    C('paid', 'Paid', 'money', (i) => invoiceTotals(i).paid),
+    C('balance', 'Balance', 'money', (i) => invoiceTotals(i).balance),
+    C('status', 'Status', 'badge', (i) => invoiceTotals(i).status, { set: 'invoiceStatus' }),
+    C('due', 'Due', 'date', (i) => i.dueDate || ''),
+  ],
+  workOrders: [
+    C('name', 'Work order', 'text', (w) => `${IDX.unit.get(w.unitId)?.name || '—'} — ${w.woReport}`),
+    C('date', 'Date', 'date', (w) => w.date || ''),
+    C('type', 'Type', 'badge', (w) => w.woType || '', { set: 'woType' }),
+    C('phase', 'Phase', 'badge', (w) => w.phase || '', { set: 'woPhase' }),
+    C('bill', 'Bill', 'badge', (w) => w.billCustomer || '', { set: 'billCustomer' }),
+    C('price', 'Price if billed', 'money', (w) => woBillable(w)),
+    C('mechanic', 'Mechanic', 'text', (w) => w.assignedMechanic || ''),
+  ],
+  inspections: [
+    C('name', 'Inspection', 'text', (n) => `${IDX.unit.get(n.unitId)?.name || '—'} — ${fmtShortDate(n.date)}`),
+    C('date', 'Date', 'date', (n) => n.date || ''),
+    C('result', 'Result', 'badge', (n) => inspResult(n).label, { meta: (k) => ({ label: k, color: ({ Pass: 'green', Fail: 'red' }[k] || 'yellow') }) }),
+    C('wash', 'Wash', 'badge', (n) => n.wash ? (n.wash === 'Yes' ? 'Washed' : 'No wash') : 'Pending', { meta: (k) => ({ label: k, color: (k === 'Washed' ? 'blue' : 'gray') }) }),
+    C('bill', 'Bill', 'badge', (n) => n.billCustomer || '', { set: 'billCustomer' }),
+  ],
+  serviceOrders: [
+    C('name', 'Unit', 'text', (u) => u.name),
+    C('service', 'Top service', 'text', (u) => (topServiceForUnit(u) || unitServiceRows(u)[0])?.name || 'Service'),
+    C('interval', 'Interval', 'num', (u) => (topServiceForUnit(u) || unitServiceRows(u)[0])?.intervalHours ?? null, { agg: 'avg' }),
+    C('countdown', 'Countdown', 'num', (u) => { const s = topServiceForUnit(u); return s ? Math.round(s.remaining) : null; }, { agg: 'avg', cell: (u) => { const s = topServiceForUnit(u); return u.washRequested ? pillS('blue', 'Wash Requested') : (s ? `<span class="pill c-${s.color}">${esc(svcText(s))}</span>` : '—'); } }),
+    C('hours', 'Hours', 'num', (u) => u.currentHours ?? null, { agg: 'avg' }),
+  ],
+};
+/** Columns for a card; the Shop card resolves to its active segment's entity. */
+function cardColumns(card, session) {
+  if (card === 'shop') { const seg = boardSegmentFor(session); return CARD_COLUMNS[seg] || []; }
+  return CARD_COLUMNS[card] || [];
+}
+function boardSegmentFor(session) {
+  const cs = session?.cards?.shop; const seg = cs?.segment;
+  return (seg && seg !== 'all') ? seg : 'workOrders';
+}
+/** Aggregate a column over rows → {kind, ...} for the totals + board summary. */
+function aggColumn(col, rows) {
+  if (col.badge) {
+    const counts = {};
+    for (const r of rows) { const v = col.get(r); if (v == null || v === '') continue; counts[v] = (counts[v] || 0) + 1; }
+    return { kind: 'badge', counts };
+  }
+  if (col.type === 'money' || col.type === 'num' || col.type === 'pct') {
+    const vals = [];
+    for (const r of rows) { const v = col.get(r); if (typeof v === 'number' && !isNaN(v)) vals.push(v); }
+    const sum = vals.reduce((a, b) => a + b, 0); const n = vals.length || 1;
+    return { kind: 'num', sum, avg: sum / n, min: vals.length ? Math.min(...vals) : 0, max: vals.length ? Math.max(...vals) : 0, count: vals.length };
+  }
+  return { kind: 'count', count: rows.length };
+}
+const AGG_CALCS = ['sum', 'avg', 'min', 'max', 'count'];
+const AGG_LABEL = { sum: 'Sum', avg: 'Avg', min: 'Min', max: 'Max', count: 'Count' };
+function fmtAggValue(col, a, calc) {
+  if (a.kind !== 'num') return '';
+  if (calc === 'count') return String(a.count);
+  const v = a[calc] != null ? a[calc] : a.sum;
+  return col.type === 'money' ? money(v) : col.type === 'pct' ? num(v) + '%' : num(v);
+}
+/** The highlighted summary row beneath a card's List View: badge value-counts +
+ *  numeric roll-ups (e.g. "6 Tomorrow · 900 HRS avg · 12 Part Needed"). */
+function listTotalsEl(card, rows, session) {
+  if (!rows || !rows.length) return null;
+  const cols = cardColumns(card, session);
+  const chips = [];
+  for (const col of cols) {
+    const a = aggColumn(col, rows);
+    if (a.kind === 'badge') {
+      Object.entries(a.counts).sort((x, y) => y[1] - x[1]).forEach(([key, n]) => {
+        const m = col.meta ? col.meta(key) : { label: key, color: 'gray' };
+        chips.push(`<span class="tot-chip c-${m.color}">${n} ${esc(m.label)}</span>`);
+      });
+    } else if (a.kind === 'num' && a.count) {
+      const calc = col.agg === 'sum' ? 'sum' : 'avg';
+      const val = col.type === 'money' ? money(a[calc]) : num(a[calc]);
+      chips.push(`<span class="tot-chip">${val} ${esc(col.label)} ${calc}</span>`);
+    }
+  }
+  if (!chips.length) return null;
+  const node = el('div', 'list-totals');
+  node.innerHTML = `<span class="tot-count">${rows.length}</span>${chips.join('')}`;
+  return node;
+}
 
 /* ════════════════════════════════════════════════════════════════════════
    8. Standard mode (detail) renderers
@@ -1724,6 +1876,7 @@ function listView(cardDef, session) {
   const bar = el('div', 'listbar');
   const cterms = cs.filterTerms || [];
   bar.innerHTML = `
+    <button class="bv-btn js-boardview" data-card="${card}" title="Open Board View (spreadsheet)">${I.table}</button>
     <div class="mini-searchwrap${cterms.length ? ' has-terms' : ''}">
       ${cterms.map((ft, i) => filterTermPill(ft, i, card)).join('')}
       <input class="mini-search" placeholder="${cterms.length ? 'Add filter — Enter to pin…' : `Search ${esc(cardDef.title.toLowerCase())}…`}" value="${esc(cs.search)}" data-card="${card}" />
@@ -1771,6 +1924,8 @@ function listView(cardDef, session) {
     appendWindowed(list, rows, cs, card, (rec) => list.appendChild(rowEl(card, rec)));
   }
   wrap.appendChild(list);
+  const totals = listTotalsEl(card, rows, session);   // highlighted roll-up row at the card's foot
+  if (totals) wrap.appendChild(totals);
   return wrap;
 }
 const PLUS_NEW = new Set(['rentals', 'invoices', 'customers']);
@@ -1890,9 +2045,13 @@ function shopListView(session, byType, forcedSeg) {
 
   // search + sort (reuses the standard list-bar chrome)
   const sf = SORT_FIELDS.shop; const curField = sf.find((f) => f.field === cs.sort.field) || sf[0];
+  // a Shop sub-type maps straight to a CARD_COLUMNS entity, so its Board View just
+  // opens that entity ('all' has no single shape → default to Work Orders).
+  const boardCard = forcedSeg || (cs.segment !== 'all' ? cs.segment : 'workOrders');
   const bar = el('div', 'listbar');
   const sterms = cs.filterTerms || [];
   bar.innerHTML = `
+    <button class="bv-btn js-boardview" data-card="${boardCard}" title="Open Board View (spreadsheet)">${I.table}</button>
     <div class="mini-searchwrap${sterms.length ? ' has-terms' : ''}">
       ${sterms.map((ft, i) => filterTermPill(ft, i, 'shop')).join('')}
       <input class="mini-search" placeholder="${sterms.length ? 'Add filter — Enter to pin…' : 'Search shop…'}" value="${esc(cs.search)}" data-card="shop" />
@@ -1921,6 +2080,10 @@ function shopListView(session, byType, forcedSeg) {
     appendWindowed(list, items, cs, 'shop', (it) => list.appendChild(shopRowEl(it.type, it.rec)));
   }
   wrap.appendChild(list);
+  if (segActive !== 'all') {   // a single shop segment has one record shape → roll it up
+    const tot = listTotalsEl(segActive, items.map((it) => it.rec), session);
+    if (tot) wrap.appendChild(tot);
+  }
   return wrap;
 }
 
@@ -2092,8 +2255,8 @@ function headerEl() {
           <button class="iconbtn js-newitem" data-new="receipt" data-tip="New Receipt">${CARD_ICON.expenses}</button>
         </div>
         <button class="iconbtn primary js-newrental new-menu-btn">${I.plus}New</button>
-        <button class="iconbtn${state.pick?.slot === 'washunit' ? ' on' : ''} js-wash-mode" title="Request a wash for a unit">${I.droplet} Wash</button>
         <button class="iconbtn js-dashboard">${I.grid} Dashboard</button>
+        <button class="iconbtn${state.pick?.slot === 'washunit' ? ' on' : ''} js-wash-mode" title="Request a wash for a unit">${I.droplet}</button>
         <button class="iconbtn js-theme" title="${state.theme === 'dark' ? 'Light' : 'Dark'} mode">${state.theme === 'dark' ? I.sun : I.moon}</button>
         <button class="iconbtn js-qr" title="Share session (QR)">${I.qr}</button>
         <button class="iconbtn js-hotkeys" title="Mouse & keyboard shortcuts">${I.mouse}</button>
@@ -2278,6 +2441,20 @@ function renderOverlay() {
     pop.innerHTML = `
       <div class="popup-head">${CARD_ICON[board.id] ? `<span class="c-icon" style="color:var(--accent);display:inline-flex">${CARD_ICON[board.id] || ''}</span>` : ''}<h3>${esc(board.title)}</h3><span class="c-count">${boardRows(board.id).length}</span><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
       <div class="popup-body board-body">${boardTable(board.id)}</div>`;
+    overlay.appendChild(pop);
+  } else if (o.kind === 'boardview') {
+    const session = activeSession();
+    const n = boardViewRecords(o, session).length;
+    const pop = el('div', 'popup board-popup bv-popup');
+    pop.innerHTML = `
+      <div class="popup-head bv-head">
+        <span class="c-icon" style="color:var(--accent);display:inline-flex">${I.table}</span>
+        <h3>${esc(boardViewTitle(o.card, session))} — Board View</h3>
+        <span class="c-count">${n}</span>
+        <div class="bv-searchwrap"><span class="s-icon">${I.search}</span><input class="bv-query" placeholder="Search…" value="${esc(o.query || '')}" /></div>
+        <button class="bv-mini js-bv-addrow" title="Add a scratch row for formulas">${I.plus}Row</button>
+        <span class="spacer"></span><button class="x js-close">${I.x}</button></div>
+      <div class="popup-body board-body bv-body">${boardViewTable(o, session)}</div>`;
     overlay.appendChild(pop);
   } else if (o.kind === 'settings') {
     const cfg = o.config || { roles: {}, admin: '' };
@@ -2516,6 +2693,87 @@ function boardTable(boardId) {
   const head = `<tr>${def.cols.map((c) => `<th>${esc(c)}</th>`).join('')}</tr>`;
   const body = rows.map((r) => `<tr>${def.row(r).map((c) => `<td>${c}</td>`).join('')}</tr>`).join('');
   return `<table class="board-table"><thead>${head}</thead><tbody>${body}</tbody></table>`;
+}
+
+/* ── §13.2 BOARD VIEW — a per-card spreadsheet popup (sortable columns, search,
+   a highlighted summary footer with switchable Sum/Avg/…, plus Add-Column /
+   Add-Row scratch space for formulas). Driven by the CARD_COLUMNS registry. ── */
+function boardEntity(card, session) { return card === 'shop' ? boardSegmentFor(session) : card; }
+const ENTITY_LABEL = { inspections: 'Inspections', workOrders: 'Work Orders', serviceOrders: 'Service', units: 'Units', customers: 'Customers', rentals: 'Rentals', categories: 'Categories', invoices: 'Invoices' };
+function boardViewTitle(card, session) {
+  if (card === 'shop') return ENTITY_LABEL[boardSegmentFor(session)] || 'Shop';
+  return (GRID_CARDS.find((g) => g.id === card)?.title) || ENTITY_LABEL[card] || card;
+}
+function boardMatches(cols, rec, q) {
+  if (!q) return true; q = q.toLowerCase();
+  return cols.some((col) => String(col.get(rec) ?? '').toLowerCase().includes(q));
+}
+function boardSortRows(cols, rows, sort) {
+  if (!sort || !sort.key) return rows;
+  const col = cols.find((c) => c.key === sort.key); if (!col) return rows;
+  const dir = sort.dir === 'desc' ? -1 : 1;
+  return [...rows].sort((a, b) => {
+    let va = col.get(a), vb = col.get(b);
+    if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir;
+    va = String(va ?? '').toLowerCase(); vb = String(vb ?? '').toLowerCase();
+    return va < vb ? -dir : va > vb ? dir : 0;
+  });
+}
+function boardViewRecords(o, session) {
+  const entity = boardEntity(o.card, session);
+  const cols = cardColumns(o.card, session);
+  let rows = (collection(entity) || []).filter((r) => boardMatches(cols, r, o.query));
+  return boardSortRows(cols, rows, o.sort);
+}
+function boardViewTable(o, session) {
+  const entity = boardEntity(o.card, session);
+  const cols = cardColumns(o.card, session);
+  const rows = boardViewRecords(o, session);
+  const extraCols = o.extraCols || [], extraRows = o.extraRows || [];
+  const isNum = (c) => c.type === 'money' || c.type === 'num' || c.type === 'pct';
+  const arrow = (key) => (o.sort && o.sort.key === key) ? (o.sort.dir === 'desc' ? ' ▼' : ' ▲') : '';
+  const head = `<tr>
+    ${cols.map((c) => `<th class="js-bv-sort${isNum(c) ? ' num' : ''}" data-col="${c.key}">${esc(c.label)}<span class="bv-arrow">${arrow(c.key)}</span></th>`).join('')}
+    ${extraCols.map((ec) => `<th><input class="bv-colname" data-col="${ec.id}" value="${esc(ec.label || '')}" placeholder="Formula…" /></th>`).join('')}
+    <th class="bv-addcol"><button class="bv-mini js-bv-addcol" title="Add a scratch column for formulas">${I.plus}Col</button></th>
+  </tr>`;
+  const body = rows.map((r) => {
+    const id = idOf(entity, r);
+    const cells = cols.map((c) => `<td${isNum(c) ? ' class="num"' : ''}>${c.cell(r)}</td>`).join('');
+    const extra = extraCols.map((ec) => `<td class="bv-scratch" contenteditable="true" data-row="${esc(id)}" data-col="${ec.id}">${esc((o.cellData?.[id]?.[ec.id]) || '')}</td>`).join('');
+    return `<tr>${cells}${extra}<td></td></tr>`;
+  }).join('');
+  const scratch = extraRows.map((er) => {
+    const cells = cols.map((c, ci) => ci === 0
+      ? `<td class="bv-scratch locked">scratch</td>`
+      : `<td class="bv-scratch" contenteditable="true" data-srow="${er.id}" data-col="${c.key}">${esc(er.cells?.[c.key] || '')}</td>`).join('');
+    const extra = extraCols.map((ec) => `<td class="bv-scratch" contenteditable="true" data-srow="${er.id}" data-col="${ec.id}">${esc(er.cells?.[ec.id] || '')}</td>`).join('');
+    return `<tr class="bv-scratch-row">${cells}${extra}<td></td></tr>`;
+  }).join('');
+  const summary = `<tr class="bv-summary">
+    ${cols.map((c, ci) => {
+      if (ci === 0) return `<td class="bv-sumlabel">Σ ${rows.length} ${rows.length === 1 ? 'row' : 'rows'}</td>`;
+      const a = aggColumn(c, rows);
+      if (a.kind === 'num') {
+        const calc = (o.calc && o.calc[c.key]) || (c.agg !== 'none' ? c.agg : 'sum');
+        return `<td class="num"><select class="bv-calc" data-col="${c.key}">${AGG_CALCS.map((k) => `<option value="${k}"${k === calc ? ' selected' : ''}>${AGG_LABEL[k]}</option>`).join('')}</select> <b>${fmtAggValue(c, a, calc)}</b></td>`;
+      }
+      if (a.kind === 'badge') { const t = Object.values(a.counts).reduce((x, y) => x + y, 0); return `<td><span class="muted">${t} set</span></td>`; }
+      return '<td></td>';
+    }).join('')}
+    ${extraCols.map(() => '<td></td>').join('')}<td></td>
+  </tr>`;
+  return `<table class="board-table bv-table"><thead>${head}</thead><tbody>${body}${scratch}</tbody><tfoot>${summary}</tfoot></table>`;
+}
+/** Seed a Board View from a card's current sort + search, then open the popup. */
+function openBoardView(card) {
+  const session = activeSession();
+  const cs = session.cards[card] || {};
+  const cols = cardColumns(card, session);
+  const seedField = cs.sort?.field;
+  const sortCol = cols.find((c) => c.sortField === seedField || c.key === seedField) || cols[0];
+  const query = (state.searchMode && state.query) ? state.query : (cs.search || '');
+  openOverlay({ kind: 'boardview', card, query, sort: { key: sortCol?.key, dir: cs.sort?.dir || 'asc' }, calc: {}, extraCols: [], extraRows: [], cellData: {}, seq: 0 });
 }
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -2762,6 +3020,10 @@ function onClick(e) {
   if (closest('.js-qr')) return openOverlay({ kind: 'qr' });
   if (closest('.js-hotkeys')) return openOverlay({ kind: 'hotkeys' });
   if (closest('.js-board')) { const b = closest('.js-board'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return openOverlay({ kind: 'board', board: b.dataset.board }); }
+  if (closest('.js-boardview')) { e.stopPropagation(); return openBoardView(closest('.js-boardview').dataset.card); }
+  if (closest('.js-bv-sort')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview') { const key = closest('.js-bv-sort').dataset.col; if (o.sort?.key === key) o.sort.dir = o.sort.dir === 'asc' ? 'desc' : 'asc'; else o.sort = { key, dir: 'asc' }; renderOverlay(); } return; }
+  if (closest('.js-bv-addcol')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview') { o.extraCols = o.extraCols || []; o.seq = (o.seq || 0) + 1; o.extraCols.push({ id: 'xc' + o.seq, label: '' }); renderOverlay(); } return; }
+  if (closest('.js-bv-addrow')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview') { o.extraRows = o.extraRows || []; o.seq = (o.seq || 0) + 1; o.extraRows.push({ id: 'xr' + o.seq, cells: {} }); renderOverlay(); } return; }
   if (closest('.js-coltab')) { const ct = closest('.js-coltab'); e.stopPropagation(); state.fleetFilter = null; const cs = activeSession(); if (cs.cols) cs.cols[ct.dataset.col] = ct.dataset.member; return render(); }
   if (closest('.js-dashboard')) { e.stopPropagation(); toast('Dashboard graphs are coming soon.'); return; }   // Phase-2 per-role KPI graphs (G1/G2)
   if (closest('.js-dash-ev')) { e.stopPropagation(); state.pick = null; return anchorRecord('rentals', closest('.js-dash-ev').dataset.rec); }
@@ -2776,7 +3038,7 @@ function onClick(e) {
     if (state.pick && KIND_ENTITY[kind] && entityCardOf(state.pick.card, state.pick.recType) === KIND_ENTITY[kind]) {
       cancelPick(true); toast('Exited ' + NEW_MODE[KIND_ENTITY[kind]].name + ' Mode.'); return;
     }
-    sweepIncompleteRentalDrafts();   // switching to a different +X abandons any half-built rental
+    sweepIncompleteRentalDrafts(); pruneOrphanTabs();   // switching to a different +X abandons any half-built rental + drops its dangling tab
     if (kind === 'rental') return startNewRental(cust);
     if (kind === 'inspection') return startNewInspection();
     if (kind === 'workOrder') return startNewWorkOrder();
@@ -3067,11 +3329,36 @@ function onInput(e) {
     // light re-render of just that card would be ideal; full render is fine at seed scale
     const sel = e.target.selectionStart; render();
     const ms = document.querySelector(`.mini-search[data-card="${card}"]`); if (ms) { ms.focus(); ms.setSelectionRange(sel, sel); }
+    return;
+  }
+  // Board View live search → re-render the popup and restore the caret.
+  if (e.target.classList.contains('bv-query')) {
+    if (state.overlay?.kind === 'boardview') { state.overlay.query = e.target.value; const sel = e.target.selectionStart; renderOverlay(); const q = document.querySelector('.bv-query'); if (q) { q.focus(); q.setSelectionRange(sel, sel); } }
+    return;
+  }
+  // Board View formula-column header rename (store only — no re-render, keep focus).
+  if (e.target.classList.contains('bv-colname')) {
+    const o = state.overlay; if (o?.kind === 'boardview') { const ec = (o.extraCols || []).find((x) => x.id === e.target.dataset.col); if (ec) ec.label = e.target.value; }
+    return;
+  }
+  // Board View scratch cell (contenteditable) → persist into the overlay's formula store.
+  if (e.target.classList.contains('bv-scratch') && e.target.isContentEditable) {
+    const o = state.overlay; if (o?.kind === 'boardview') {
+      const val = e.target.textContent;
+      if (e.target.dataset.srow) { const er = (o.extraRows || []).find((x) => x.id === e.target.dataset.srow); if (er) { er.cells = er.cells || {}; er.cells[e.target.dataset.col] = val; } }
+      else if (e.target.dataset.row) { o.cellData = o.cellData || {}; (o.cellData[e.target.dataset.row] = o.cellData[e.target.dataset.row] || {})[e.target.dataset.col] = val; }
+    }
+    return;
   }
 }
 
 /* change events — native <input type="date"> / <select> on draft details. */
 function onChange(e) {
+  // Board View summary aggregation calc (Sum/Avg/Min/Max/Count) per column.
+  if (e.target.classList.contains('bv-calc')) {
+    const o = state.overlay; if (o?.kind === 'boardview') { o.calc = o.calc || {}; o.calc[e.target.dataset.col] = e.target.value; renderOverlay(); }
+    return;
+  }
   // Customer form selfie: capture (phone camera via capture="user", or upload) → compress → store.
   if (e.target.classList.contains('js-nc-selfie')) {
     const file = e.target.files && e.target.files[0]; if (!file) return;
