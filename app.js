@@ -559,6 +559,11 @@ function goBack(card) {
 // (the row is gone by the 2nd click, but the card now holds that record), and gives the
 // "works anywhere on a card" behavior.
 function cardRecordAt(target) {
+  const pill = target.closest && target.closest('[data-pill-card]');
+  if (pill && pill.dataset.pillRec != null) {
+    const pc = pill.dataset.pillCard;
+    return SHOP_TYPES.includes(pc) ? { card: 'shop', recId: pill.dataset.pillRec, recType: pc } : { card: pc, recId: pill.dataset.pillRec, recType: null };
+  }
   const row = target.closest && target.closest('.row');
   if (row && row.dataset.rec) return { card: row.dataset.card, recId: row.dataset.rec, recType: row.dataset.type || null };
   const cardNode = target.closest && target.closest('.card');
@@ -593,9 +598,20 @@ function rowOpen(card, recId, recType) {
   if (sess.anchor?.card === card && sess.cards[card].mode === 'list') return anchorRecord(card, recId, recType);  // browsing anchored list → re-anchor
   return openStandard(card, recId, recType);
 }
+// Shared single-vs-double click discriminator: 2nd click within the window anchors the
+// record; otherwise the single action (open / pill-navigate) runs after a short beat.
+function deferOrAnchor(key, singleFn, anchor) {
+  if (pendingRowClick && pendingRowClick.key === key) {
+    clearTimeout(pendingRowClick.timer); pendingRowClick = null;
+    return anchorRecord(anchor.card, anchor.recId, anchor.recType);
+  }
+  if (pendingRowClick) clearTimeout(pendingRowClick.timer);
+  pendingRowClick = { key, timer: setTimeout(() => { pendingRowClick = null; singleFn(); }, DBL_MS) };
+}
 /* Hover preview (#1): a short hover on a list row or a link pill floats a glance at
  * that record's Standard view beside the cursor. Display-only — never anchors/cascades. */
 let hoverTimer = null, hoverEl = null, hoverNode = null;
+const lastMouse = { x: 0, y: 0 };
 const hoverTarget = (n) => (n && n.closest ? n.closest('.row, [data-pill-card]') : null);
 function recForHover(target) {
   let card, recId, recType;
@@ -613,9 +629,14 @@ function showHoverPreview(target) {
   const node = el('div', 'hover-preview');
   try { node.innerHTML = DETAIL[info.ec](info.rec, { historySearch: '', backStack: [], mode: 'standard' }); } catch (e) { return; }
   document.body.appendChild(node); hoverNode = node;
-  const r = target.getBoundingClientRect(), w = node.offsetWidth, h = node.offsetHeight;
-  let left = r.right + 12; if (left + w > window.innerWidth - 8) left = r.left - w - 12; if (left < 8) left = 8;
-  let top = r.top - 6; if (top + h > window.innerHeight - 8) top = Math.max(8, window.innerHeight - h - 8); if (top < 8) top = 8;
+  // anchor to the MOUSE CURSOR, clamped so no part runs off-screen (#2)
+  const w = node.offsetWidth, h = node.offsetHeight, pad = 8, off = 16;
+  let left = lastMouse.x + off;
+  if (left + w > window.innerWidth - pad) left = lastMouse.x - w - off;   // flip to the cursor's left
+  left = Math.max(pad, Math.min(left, window.innerWidth - w - pad));
+  let top = lastMouse.y + off;
+  if (top + h > window.innerHeight - pad) top = lastMouse.y - h - off;    // flip above the cursor
+  top = Math.max(pad, Math.min(top, window.innerHeight - h - pad));
   node.style.left = left + 'px'; node.style.top = top + 'px';
 }
 function pillTo(card, recId) {
@@ -1578,7 +1599,7 @@ function memberCardEl(member, session) {
 function calendarCardEl(session) {
   const node = el('div', 'card' + (state.searchMode ? ' search-glow' : ''));
   node.dataset.card = 'calendar';
-  appendItemTabs(node);                                       // item tabs atop each card (#3)
+  appendItemTabs(node, 'calendar');                           // (calendar has no record tabs)
   // no card title — the column tab already says "Calendar" (#2.3)
   const body = el('div', 'card-body cal-body');
   body.innerHTML = dispatchGridBody();
@@ -1594,7 +1615,7 @@ function cardEl(cardDef, session) {
   const pickTarget = state.pick && PICK_SRC[state.pick.slot] === card;
   const node = el('div', 'card' + (anchored ? ' anchored' : '') + (state.searchMode ? ' search-glow' : '') + (state.focusedCard === card ? ' card-focus' : '') + (pickTarget ? ' pick-target' : ''));
   node.dataset.card = card;
-  appendItemTabs(node);                                       // item tabs ride atop each card (#3)
+  appendItemTabs(node, card);                                 // item tabs ride atop their parent card (#3)
 
   // §5.4: global search forces EVERY card into list view (the prior standard/anchor
   // state is untouched, so exiting search restores the session for free).
@@ -1749,7 +1770,7 @@ function shopCardEl(cardDef, session, forcedSeg) {
   const woPick = state.pick && state.pick.slot === 'wo';
   const node = el('div', 'card' + (anchored ? ' anchored' : '') + (state.searchMode ? ' search-glow' : '') + (state.focusedCard === 'shop' ? ' card-focus' : '') + (woPick ? ' pick-target' : ''));
   node.dataset.card = 'shop';
-  appendItemTabs(node);                                       // item tabs atop each card (#3)
+  appendItemTabs(node, 'shop');                               // item tabs atop their parent card (#3)
 
   const inStandard = !state.searchMode && cs.mode === 'standard' && cs.recId != null && cs.recType;
   // List mode → no header (column tab names it). Standard → slim header: record name
@@ -2000,9 +2021,10 @@ function headerEl() {
     </div>`;
   return h;
 }
-function tabStrip() {
-  if (!state.tabs.length) return '';
-  return state.tabs.map((t) => {
+function tabStrip(tabs) {
+  tabs = tabs || state.tabs;
+  if (!tabs.length) return '';
+  return tabs.map((t) => {
     const ec = entityCardOf(t.card, t.recType);
     const rec = recOf(ec, t.recId);
     const b = rec ? tabBadge(ec, rec) : '';
@@ -2010,12 +2032,15 @@ function tabStrip() {
       <span class="tab-name">${esc(t.label)}</span>${b}</div>`;
   }).join('');
 }
-// Item tabs now ride at the TOP of each card (repeated across cards; still global —
-// clicking one switches the whole session). Collapses to nothing when no tabs are open (#3).
-function appendItemTabs(node) {
-  if (!state.tabs.length) return;
+// Which GRID card an item tab belongs to (shop sub-types → the 'shop' card).
+const tabHomeCard = (t) => ((t.card === 'shop' || SHOP_TYPES.includes(t.card)) ? 'shop' : t.card);
+// Item tabs ride at the top of THEIR PARENT card only (still global — clicking one
+// switches the whole session). Collapses to nothing when that card has no tabs (#3).
+function appendItemTabs(node, cardId) {
+  const tabs = state.tabs.filter((t) => tabHomeCard(t) === cardId);
+  if (!tabs.length) return;
   const it = el('div', 'tabstrip card-itemtabs');
-  it.innerHTML = tabStrip();
+  it.innerHTML = tabStrip(tabs);
   node.appendChild(it);
 }
 
@@ -2744,11 +2769,14 @@ function onClick(e) {
   if (closest('.js-showmore')) { const b = closest('.js-showmore'); e.stopPropagation(); const cs = activeSession().cards[b.dataset.card]; if (cs) { cs.listLimit = (cs.listLimit || VIRT_CAP) + SHOW_MORE_BATCH; render(); } return; }
   if (closest('.js-tolist')) { const card = closest('.card').dataset.card; activeSession().cards[card].mode = 'list'; render(); return; }
 
-  // universal pill rule (clicking any pill → its target card to standard)
+  // universal pill rule — single-click navigates; double-click anchors; ctrl+click = new
+  // tab (handled by the early hotkey branch). Same discriminator as rows (#1).
   const pill = closest('[data-pill-card]');
-  if (pill) {
+  if (pill && pill.dataset.pillRec != null) {
     e.stopPropagation();
-    return pillTo(pill.dataset.pillCard, castId(pill.dataset.pillCard, pill.dataset.pillRec));
+    const pc = pill.dataset.pillCard, prec = castId(pc, pill.dataset.pillRec);
+    const anchor = SHOP_TYPES.includes(pc) ? { card: 'shop', recId: prec, recType: pc } : { card: pc, recId: prec, recType: null };
+    return deferOrAnchor('pill:' + pc + ':' + prec, () => pillTo(pc, prec), anchor);
   }
 
   // click a row → open in Standard, BUT deferred a beat so a double-click anchors
@@ -2756,16 +2784,10 @@ function onClick(e) {
   const row = closest('.row');
   if (row) {
     if (e.metaKey || e.ctrlKey) { e.preventDefault(); return openInNewTab(row.dataset.card, row.dataset.rec, row.dataset.type); }
-    const rc = row.dataset.card, rr = row.dataset.rec, rt = row.dataset.type, rkey = rc + ':' + (rr || '');
-    if (pendingRowClick && pendingRowClick.key === rkey) {            // 2nd click → anchor (first click was cancelled)
-      clearTimeout(pendingRowClick.timer); pendingRowClick = null;
-      return anchorRecord(rc, rr, rt);
-    }
-    if (pendingRowClick) clearTimeout(pendingRowClick.timer);
+    const rc = row.dataset.card, rr = row.dataset.rec, rt = row.dataset.type;
     document.querySelectorAll('.row.selected').forEach((n) => n.classList.remove('selected'));
     row.classList.add('selected');                                   // instant feedback; the open itself is deferred
-    pendingRowClick = { key: rkey, timer: setTimeout(() => { pendingRowClick = null; rowOpen(rc, rr, rt); }, DBL_MS) };
-    return;
+    return deferOrAnchor('row:' + rc + ':' + (rr || ''), () => rowOpen(rc, rr, rt), { card: rc, recId: rr, recType: rt });
   }
 
   // click dead space → exit search mode (§5.4)
@@ -3882,6 +3904,7 @@ function boot() {
     lastCtx = { t: now, card: dc };
     cardToList(dc);                                                   // single right-click → List View
   });
+  document.addEventListener('mousemove', (e) => { lastMouse.x = e.clientX; lastMouse.y = e.clientY; });
   // hover preview (#1): float a record's Standard view after a short hover on a row/pill
   document.addEventListener('mouseover', (e) => {
     const t = hoverTarget(e.target);
