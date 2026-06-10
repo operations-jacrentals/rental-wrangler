@@ -1872,6 +1872,15 @@ function memberCount(member, session) {
   if (SHOP_TYPES.includes(member)) { try { return (shopItemsByType(session)[member] || []).length; } catch { return 0; } }
   try { let r = listFor(member, session); if (member === 'units') r = unitsVisible(r, session.cards.units); return r.length; } catch { return 0; }
 }
+/** How many Shop items in this view NEED work — drives the red alert on the tab:
+ *  pending inspections, open work orders, overdue/wash-requested services. */
+function shopAlertCount(member, session) {
+  let items = []; try { items = shopItemsByType(session)[member] || []; } catch { return 0; }
+  if (member === 'inspections') return items.filter((n) => !inspComplete(n)).length;
+  if (member === 'workOrders') return items.filter((w) => w.phase !== 'Complete').length;
+  if (member === 'serviceOrders') return items.filter((u) => { const s = topServiceForUnit(u); return u.washRequested || (s && s.remaining < 0); }).length;
+  return 0;
+}
 // One column = a tab strip + the single active member's card.
 function columnEl(col, session) {
   const active = (session.cols && session.cols[col.id]) || col.default;
@@ -1885,7 +1894,8 @@ function colTabsEl(col, active, session) {
   bar.innerHTML = col.members.map((m) => {
     const on = m === active, compact = SHOP_TYPES.includes(m);   // shop sub-types are icon-only
     const n = memberCount(m, session);
-    return `<button class="coltab js-coltab${on ? ' on' : ''}${compact ? ' compact' : ''}" data-col="${col.id}" data-member="${m}" data-tip="${esc(MEMBER_TITLE[m])}">`
+    const alert = SHOP_TYPES.includes(m) && shopAlertCount(m, session) > 0;   // red = work needs doing
+    return `<button class="coltab js-coltab${on ? ' on' : ''}${compact ? ' compact' : ''}${alert ? ' alert' : ''}" data-col="${col.id}" data-member="${m}" data-tip="${esc(MEMBER_TITLE[m])}${alert ? ' — needs attention' : ''}">`
       + `<span class="ct-ico">${memberIcon(m)}</span>`
       + (compact ? '' : `<span class="ct-lbl">${esc(MEMBER_TITLE[m])}</span>`)
       + `<span class="ct-n">${n}</span>`
@@ -1982,8 +1992,8 @@ function listView(cardDef, session) {
   // +New Customer is normally header-only, but +Rental mode offers it inline (the app
   // is "in rental mode" and takes some control of the flow).
   if (card === 'customers' && (availWin || state.winpicker)) {
-    const nb = el('div', 'pillrow'); nb.style.margin = '0 0 9px';
-    nb.innerHTML = `<button class="pill ref js-new-cust-rental">${I.plus} New Customer</button>`;
+    const nb = el('div'); nb.style.margin = '0 0 9px';
+    nb.innerHTML = `<button class="bigbtn js-new-cust-rental">${I.plus} New Customer</button>`;
     wrap.appendChild(nb);
   }
   let rows = listFor(card, session);
@@ -2002,9 +2012,16 @@ function listView(cardDef, session) {
 
   const list = el('div', 'list');
   if (!rows.length) {
-    // creation lives in ONE place — the header + New menu (no per-card +New, even when empty)
-    const hint = PLUS_NEW.has(card) ? ` — use <b>+ New</b> above` : '';
-    list.appendChild(el('div', 'empty', `No ${esc(cardDef.singular)}${session.anchor ? ' related' : hint}.`));
+    // a fruitless customer search offers a prefilled +New Customer (typed name/phone carries in)
+    if (card === 'customers' && cs.search.trim() && !session.anchor) {
+      const en = el('div', 'empty-new');
+      en.innerHTML = `<div class="empty">No customer matches “${esc(cs.search.trim())}”.</div><button class="bigbtn js-new-cust-search">${I.plus} New Customer “${esc(cs.search.trim())}”</button>`;
+      list.appendChild(en);
+    } else {
+      // creation lives in ONE place — the header + New menu (no per-card +New, even when empty)
+      const hint = PLUS_NEW.has(card) ? ` — use <b>+ New</b> above` : '';
+      list.appendChild(el('div', 'empty', `No ${esc(cardDef.singular)}${session.anchor ? ' related' : hint}.`));
+    }
   } else {
     appendWindowed(list, rows, cs, card, (rec) => list.appendChild(rowEl(card, rec)));
   }
@@ -3209,6 +3226,7 @@ function onClick(e) {
   if (closest('.js-bv-rmrow')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview') { const id = closest('.js-bv-rmrow').dataset.row; o.extraRows = (o.extraRows || []).filter((er) => er.id !== id); renderOverlay(); } return; }
   if (closest('.js-bv-customize')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview') { o.customize = !o.customize; renderOverlay(); } return; }
   if (closest('.js-bv-resetlayout')) { e.stopPropagation(); const card = closest('.js-bv-resetlayout').dataset.card; saveListLayout(card, null); saveListTotals(card, null); render(); renderOverlay(); return; }
+  if (closest('.js-new-cust-search')) { e.stopPropagation(); const cs = activeSession().cards.customers; return startNewCustomer(parseCustomerSearch(cs.search)); }
   if (closest('.js-coltab')) { const ct = closest('.js-coltab'); e.stopPropagation(); state.fleetFilter = null; const cs = activeSession(); if (cs.cols) cs.cols[ct.dataset.col] = ct.dataset.member; return render(); }
   if (closest('.js-dashboard')) { e.stopPropagation(); toast('Dashboard graphs are coming soon.'); return; }   // Phase-2 per-role KPI graphs (G1/G2)
   if (closest('.js-dash-ev')) { e.stopPropagation(); state.pick = null; return anchorRecord('rentals', closest('.js-dash-ev').dataset.rec); }
@@ -3668,10 +3686,18 @@ const addDays = (iso, n) => { const d = parseISO(iso); d.setDate(d.getDate() + n
 
 // §7.1 — guided customer form (validated). Used for BOTH new intake and editing /
 // completing an existing customer (opened from the customer card → "Complete account").
-function startNewCustomer() { openCustomerForm(null); }
-function openCustomerForm(editId) {
+function startNewCustomer(prefill) { openCustomerForm(null, prefill); }
+/** Turn a customer-search string into prefill: a letterless string → phone, else
+ *  split on the first space into first/last (how staff usually type a name). */
+function parseCustomerSearch(q) {
+  q = (q || '').trim(); if (!q) return {};
+  if (/\d/.test(q) && !/[a-zA-Z]/.test(q)) return { phone: q };
+  const parts = q.split(/\s+/);
+  return parts.length >= 2 ? { firstName: parts[0], lastName: parts.slice(1).join(' ') } : { firstName: q };
+}
+function openCustomerForm(editId, prefill) {
   const c = editId ? IDX.customer.get(editId) : null;
-  const f = (k, d) => (c && c[k] != null ? c[k] : (d || ''));
+  const f = (k, d) => (c && c[k] != null ? c[k] : ((prefill && prefill[k]) || d || ''));
   openOverlay({ kind: 'newCustomer', error: '', editId: editId || null, draft: {
     firstName: f('firstName'), lastName: f('lastName'), company: f('company'), phone: f('phone'),
     email: f('email'), industry: f('industry'), accountType: f('accountType', 'Non-Business'),

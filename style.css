@@ -243,6 +243,17 @@ input { font-family: inherit; }
 .coltab .ct-ico { display: inline-flex; flex: 0 0 auto; } .coltab .ct-ico svg { width: 16px; height: 16px; }
 .coltab .ct-n { font-size: 11px; font-weight: 700; color: var(--txt-3); background: var(--bg-2); padding: 1px 8px; border-radius: 999px; }
 .coltab.on .ct-n { color: #fff; background: rgba(255,255,255,.28); }
+/* red "needs work" alert on a Shop tab (pending inspections / open WOs / overdue service) */
+.coltab.alert:not(.on) { color: var(--red); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--red) 55%, transparent); }
+.coltab.alert:not(.on) .ct-ico { color: var(--red); }
+.coltab.alert .ct-n { color: #fff; background: var(--red); }
+/* prominent orange action button — mirrors the Select-rental-window button */
+.bigbtn { display: flex; align-items: center; justify-content: center; gap: 7px; width: 100%; padding: 13px 16px;
+  border-radius: 12px; background: var(--accent-soft); border: 1px solid var(--accent-line); color: var(--accent);
+  font-weight: 700; font-size: 14px; transition: background .12s, color .12s; }
+.bigbtn:hover { background: var(--accent); color: #fff; }
+.bigbtn svg { width: 16px; height: 16px; }
+.empty-new { display: flex; flex-direction: column; gap: 12px; padding: 18px 6px; align-items: stretch; text-align: center; }
 /* item tabs hosted at the top of each card (collapses when no tabs are open) */
 .card-itemtabs { padding: 7px 9px 0; flex: 0 0 auto; }
 .card-itemtabs .tab { flex: 0 0 auto; }
