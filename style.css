@@ -716,11 +716,9 @@ input { font-family: inherit; }
   border-radius: 9px; background: var(--panel); border: 1px solid var(--line); color: var(--txt-2); }
 .bv-btn:hover { color: var(--accent); border-color: var(--accent-line); background: var(--panel-2); }
 .bv-btn svg { width: 16px; height: 16px; }
-/* solid footer pinned to the card bottom (mirrors the sticky search/sort header up top);
-   the scroll padding keeps the last row from hiding behind it */
-.list-totals { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 9px 12px;
-  background: var(--card-head); border-top: 1px solid var(--accent-line); position: sticky; bottom: 0; z-index: 2;
-  margin: 0 -1px -1px; box-shadow: 0 -6px 12px -6px rgba(0,0,0,.45); }
+/* the value totals, frozen as a real Card Footer below the scrolling body */
+.list-totals { flex: 0 0 auto; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 9px 12px;
+  background: var(--card-head); border-top: 1px solid var(--accent-line); box-shadow: 0 -5px 11px -7px rgba(0,0,0,.45); }
 .list-totals .tot-count { font-weight: 800; font-size: 12px; color: var(--accent); padding-right: 4px; }
 .tot-chip { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: var(--panel); color: var(--txt-2);
   border: 1px solid var(--line); white-space: nowrap; }

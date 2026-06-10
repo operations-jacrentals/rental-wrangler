@@ -1966,6 +1966,8 @@ function columnEl(col, session) {
   const blank = col.id !== 'middle' && rentalDraft() && !rentalEngaged();
   const card = blank ? blankColEl() : memberCardEl(active, session);
   card.insertBefore(colTabsEl(col, active, session), card.firstChild);   // toggles live INSIDE the card top
+  const tot = card.querySelector('.card-body .list-totals');             // freeze the totals as a card FOOTER (out of the scroll)
+  if (tot) card.appendChild(tot);
   wrap.appendChild(card);
   return wrap;
 }
