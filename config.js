@@ -32,7 +32,9 @@ export const colorBgVar = (token) => `var(--${token}-bg)`;
  * The SECRET key (sk_test_…) lives ONLY in the Apps Script backend as a Script
  * Property and is NEVER placed here or in any client file. Swap to the live
  * pk_live_… key at go-live. */
-export const STRIPE_PUBLISHABLE_KEY = 'pk_test_XTWYCxKC2XmOkLqKSs5o6O2Y';
+// LIVE publishable key (public by design). The backend can override this per-mode
+// via Script Property STRIPE_PUBLISHABLE_KEY (e.g. set pk_test_… to run in test).
+export const STRIPE_PUBLISHABLE_KEY = 'pk_live_51TdOu3DEE4GXf0zT7xBP4KQ5vxK21P8n24MwxewyF4awrladyPYTkpiK8SRvUfFpwnFE1i2cITo1UxJ0CQrx30fl00dGxTTpWZ';
 
 /* ── Status registry (SPEC §8 canonical values + §6.2 #7 colors) ──────────
  * STATUS[set][value] = { label, color }. `slug` and `value` are derived.
