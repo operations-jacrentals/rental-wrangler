@@ -88,16 +88,21 @@ input { font-family: inherit; }
    row-2's vertical space — the toolbar now lives beside the rings. */
 .header { flex: 0 0 auto; background: transparent; display: flex; align-items: flex-end; gap: 12px; padding: 12px 12px 0; }
 .header-right { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
-.hr-top { display: flex; align-items: center; gap: 10px; min-height: 0; }
-.hr-top > .iconbtn, .new-split > .iconbtn { height: 34px; }
+.hr-top { display: flex; align-items: center; gap: 10px; min-height: 38px; }
+.header-tabs { display: flex; align-items: center; gap: 8px; flex: 1 1 auto; min-width: 0; overflow-x: auto; overflow-y: hidden; }
+.header-tabs::-webkit-scrollbar { height: 0; }
+.bottombar > .iconbtn, .bottombar .new-split > .iconbtn { height: 36px; }
+.bb-sep { width: 1px; align-self: stretch; margin: 4px 4px; background: var(--line); }
 /* wide screens: split +New into individual buttons (+Rental / +Customer + icon-only rest);
    narrower: collapse back to the single +New menu */
 .new-split { display: flex; align-items: center; gap: 8px; }
 .new-split .iconbtn { gap: 2px; }   /* "+Rental" / "+Customer" read tight, no space after the + */
-/* Specificity bumped (.hr-top > …) so these beat the later `.iconbtn { display:inline-flex }`
-   rule — wide screens show ONLY the split buttons, narrow screens show ONLY the +New menu. */
-@media (max-width: 1500px) { .hr-top > .new-split { display: none; } }
-@media (min-width: 1501px) { .hr-top > .new-menu-btn { display: none; } }
+/* Specificity bumped (.bottombar > …) so these beat the later `.iconbtn { display:inline-flex }`. */
+@media (max-width: 1500px) { .bottombar > .new-split { display: none; } }
+@media (min-width: 1501px) { .bottombar > .new-menu-btn { display: none; } }
+/* the action toolbar, now a centered bottom bar */
+.bottombar { flex: 0 0 auto; display: flex; align-items: center; justify-content: center; gap: 10px; padding: 10px 14px 12px;
+  border-top: 1px solid var(--line); background: color-mix(in srgb, var(--panel) 55%, transparent); }
 .hello-name { margin-left: auto; font-size: 24px; font-weight: 800; color: var(--txt); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 46%; letter-spacing: .2px; line-height: 1; padding-right: 4px; }
 .toolbar { display: flex; align-items: center; gap: 10px; }
 .toolbar .closeall { flex: 0 0 auto; }

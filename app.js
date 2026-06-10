@@ -2417,33 +2417,14 @@ function headerEl() {
       <span class="ring-label">${esc(label)}</span>
     </button>`;
   const rings = ROLES.map((role) => roleRing(role.id, role.label, kpiFor(role.id), role.color)).join('');
-  // Which +X mode is active (if any) — the matching split button lights up orange,
-  // instead of +Rental being permanently primary.
-  const modeEntity = state.pick ? entityCardOf(state.pick.card, state.pick.recType) : null;
-  const newCls = (entity) => 'iconbtn' + (modeEntity === entity ? ' on' : '') + ' js-newitem';
-  // One band: logo + rings on the left; a right column with the item tabs (single
-  // row) above the toolbar (New / Dashboard / theme / QR / search / close-all).
+  // Decluttered top: logo + rings, then the GLOBAL item tabs above the global search.
+  // The action toolbar (New / Dashboard / tools) lives in a bottom bar (bottomBarEl).
   h.innerHTML = `
     <button class="logo js-logo" aria-label="Jac Rentals"></button>
     <div class="kpis">${rings}</div>
     <div class="header-right">
       <div class="hr-top">
-        <button class="iconbtn js-dashboard">${I.grid} Dashboard</button>
-        <div class="new-split">
-          <button class="${newCls('rentals')}" data-new="rental">${I.plus}Rental</button>
-          <button class="${newCls('customers')}" data-new="customer">${I.plus}Customer</button>
-          <button class="${newCls('inspections')}" data-new="inspection" data-tip="New Inspection">${CARD_ICON.inspections}</button>
-          <button class="${newCls('workOrders')}" data-new="workOrder" data-tip="New Work Order">${CARD_ICON.workOrders}</button>
-          <button class="${newCls('invoices')}" data-new="invoice" data-tip="New Invoice">${CARD_ICON.invoices}</button>
-          <button class="iconbtn js-newitem" data-new="receipt" data-tip="New Receipt">${CARD_ICON.expenses}</button>
-        </div>
-        <button class="iconbtn primary js-newrental new-menu-btn">${I.plus}New</button>
-        <button class="iconbtn${state.pick?.slot === 'washunit' ? ' on' : ''} js-wash-mode" data-tip="Request a wash for a unit">${I.droplet}</button>
-        <button class="iconbtn js-theme" data-tip="${state.theme === 'dark' ? 'Light' : 'Dark'} mode">${state.theme === 'dark' ? I.sun : I.moon}</button>
-        <button class="iconbtn js-qr" data-tip="Share session (QR)">${I.qr}</button>
-        <button class="iconbtn${state.previewsOn ? '' : ' off'} js-previews" data-tip="${state.previewsOn ? 'Hover previews: on' : 'Hover previews: off'}">${state.previewsOn ? I.eye : I.eyeOff}</button>
-        <button class="iconbtn js-feedback" data-tip="Report a bug or request">${I.feedback}</button>
-        <button class="iconbtn js-hotkeys" data-tip="Mouse &amp; keyboard shortcuts">${I.mouse}</button>
+        <div class="header-tabs tabstrip">${tabStrip(state.tabs)}</div>
         <span class="spacer"></span>
         ${currentUser ? `<span class="hello-name">${esc(currentUser)}</span>` : ''}
       </div>
@@ -2457,6 +2438,31 @@ function headerEl() {
       </div>
     </div>`;
   return h;
+}
+/** The action toolbar — moved to a fixed bottom bar (Dashboard / +New / tools). */
+function bottomBarEl() {
+  const modeEntity = state.pick ? entityCardOf(state.pick.card, state.pick.recType) : null;
+  const newCls = (entity) => 'iconbtn' + (modeEntity === entity ? ' on' : '') + ' js-newitem';
+  const bar = el('div', 'bottombar');
+  bar.innerHTML = `
+    <button class="iconbtn js-dashboard">${I.grid} Dashboard</button>
+    <div class="new-split">
+      <button class="${newCls('rentals')}" data-new="rental">${I.plus}Rental</button>
+      <button class="${newCls('customers')}" data-new="customer">${I.plus}Customer</button>
+      <button class="${newCls('inspections')}" data-new="inspection" data-tip="New Inspection">${CARD_ICON.inspections}</button>
+      <button class="${newCls('workOrders')}" data-new="workOrder" data-tip="New Work Order">${CARD_ICON.workOrders}</button>
+      <button class="${newCls('invoices')}" data-new="invoice" data-tip="New Invoice">${CARD_ICON.invoices}</button>
+      <button class="iconbtn js-newitem" data-new="receipt" data-tip="New Receipt">${CARD_ICON.expenses}</button>
+    </div>
+    <button class="iconbtn primary js-newrental new-menu-btn">${I.plus}New</button>
+    <span class="bb-sep"></span>
+    <button class="iconbtn${state.pick?.slot === 'washunit' ? ' on' : ''} js-wash-mode" data-tip="Request a wash for a unit">${I.droplet}</button>
+    <button class="iconbtn js-theme" data-tip="${state.theme === 'dark' ? 'Light' : 'Dark'} mode">${state.theme === 'dark' ? I.sun : I.moon}</button>
+    <button class="iconbtn js-qr" data-tip="Share session (QR)">${I.qr}</button>
+    <button class="iconbtn${state.previewsOn ? '' : ' off'} js-previews" data-tip="${state.previewsOn ? 'Hover previews: on' : 'Hover previews: off'}">${state.previewsOn ? I.eye : I.eyeOff}</button>
+    <button class="iconbtn js-feedback" data-tip="Report a bug or request">${I.feedback}</button>
+    <button class="iconbtn js-hotkeys" data-tip="Mouse &amp; keyboard shortcuts">${I.mouse}</button>`;
+  return bar;
 }
 function tabStrip(tabs) {
   tabs = tabs || state.tabs;
@@ -3194,7 +3200,8 @@ function render() {
   const grid = el('div', 'grid');
   for (const col of COLUMNS) grid.appendChild(columnEl(col, session));
   const pb = pickBarEl();
-  if (pb) $('#app').replaceChildren(header, pb, grid); else $('#app').replaceChildren(header, grid);
+  const bottomBar = bottomBarEl();
+  if (pb) $('#app').replaceChildren(header, pb, grid, bottomBar); else $('#app').replaceChildren(header, grid, bottomBar);
   // restore the per-card scroll captured above
   Object.keys(scrollMemo).forEach((card) => { const b = document.querySelector(`.card[data-card="${card}"] .card-body`); if (b) b.scrollTop = scrollMemo[card]; });
   document.documentElement.setAttribute('data-theme', state.theme);
