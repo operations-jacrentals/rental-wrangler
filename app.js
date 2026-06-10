@@ -186,7 +186,7 @@ function searchBlob(card, rec) {
       break;
     }
     case 'categories':
-      p = [rec.name, rec.fuelType, rec.description];
+      p = [rec.name, rec.fuelType, rec.description, rec.notes];
       break;
     case 'units':
       p = [rec.name, rec.assignedMechanic, rec.serial, rec.year, rec.make, rec.model, rec.weight,
@@ -198,14 +198,14 @@ function searchBlob(card, rec) {
       break;
     case 'invoices': {
       const cust = cu(rec.customerId); const t = invoiceTotals(rec);
-      p = [rec.invoiceId, rec.po, cust?.name, cust?.company,
+      p = [rec.invoiceId, rec.po, rec.notes, cust?.name, cust?.company,
         t.status, L('invoiceStatus', t.status),
         ...(rec.lineItems || []).map((li) => li.label)];
       break;
     }
     case 'workOrders': {
       const u = un(rec.unitId), cust = cu(rec.customerId);
-      p = [rec.woReport, rec.description, rec.assignedMechanic,
+      p = [rec.woReport, rec.description, rec.notes, rec.assignedMechanic,
         rec.phase, L('woPhase', rec.phase), rec.woType, L('woType', rec.woType),
         rec.billCustomer, L('billCustomer', rec.billCustomer), rec.eta,
         u?.name, cust?.name,
@@ -215,7 +215,7 @@ function searchBlob(card, rec) {
     case 'inspections':
       p = ['inspection', rec.checklist, L('inspectionChecklist', rec.checklist),
         rec.wash, rec.billCustomer, L('billCustomer', rec.billCustomer),
-        rec.description, un(rec.unitId)?.name];
+        rec.description, rec.notes, un(rec.unitId)?.name];
       break;
   }
   return p.filter(Boolean).join(' ').toLowerCase();
@@ -1453,6 +1453,17 @@ function efld(card, rec, idField, field, ph, opts = {}) {
   return `<div class="kv${opts.wrap ? ' wrap' : ''}">${pfx}<span class="v inline-edit" data-edit="field" data-card="${card}" data-field="${field}" data-rec="${esc(String(rec[idField]))}" data-ph="${esc(ph)}" data-type="${opts.type || 'text'}"${opts.dot ? ' data-dot="1"' : ''}${opts.wrap ? ' style="white-space:normal"' : ''}>${disp}</span>${sfx}</div>`;
 }
 
+/* Card anatomy (Jac 2026-06-10): Section 0 = Notes on EVERY standard view.
+   Filled → the section renders at the TOP of the card; empty → the +Notes
+   affordance renders at the BOTTOM, just above the dotted history line.
+   Build once, place `.top` after the head/status band and `.bottom` right
+   before historySection — exactly one of the two is non-empty. */
+function notesSection(card, rec, idField, field = 'notes') {
+  const has = !(rec[field] === '' || rec[field] == null);
+  const sec = `<div class="section"><h4>Notes</h4>${efld(card, rec, idField, field, 'Add Notes', { wrap: true, dot: true })}</div>`;
+  return { top: has ? sec : '', bottom: has ? '' : sec };
+}
+
 const DETAIL = {
   /* ── RENTALS — fully built (§12.2 standard mode) ── */
   rentals: (r, cs) => {
@@ -1522,15 +1533,16 @@ const DETAIL = {
         ${fcRow ? kvPills(fcRow) : ''}
       </div></div>`;
 
-    const notes = `<div class="section"><h4>Notes</h4>${efld('rentals', r, 'rentalId', 'notes', 'Add notes', { wrap: true, dot: true })}</div>`;
+    const notes = notesSection('rentals', r, 'rentalId');
     const history = historySection('rentals', r, cs);
 
     return `<div class="detail">
       <div class="detail-head"><span class="d-title inline-edit" data-edit="field" data-card="rentals" data-field="rentalName" data-rec="${r.rentalId}" data-ph="Rental name">${esc(r.rentalName || unit?.name || 'Rental')}</span>${r.fieldCall ? badge('FC', 'red') : ''}</div>
       ${statusBar}
-      ${notes}
+      ${notes.top}
       <div class="detail-cols">${rentalCol}${invoiceCol}</div>
       ${inspSection}
+      ${notes.bottom}
       ${history}
     </div>`;
   },
@@ -1569,12 +1581,13 @@ const DETAIL = {
       ${kv(money(avgRevMo), { sfx: '/mo avg', derived: true })}
       ${kv(money(totalRev), { sfx: 'total revenue', derived: true })}
     </div></div>`;
-    const notes = `<div class="section"><h4>Notes</h4>${efld('units', u, 'unitId', 'notes', 'Add notes', { wrap: true, dot: true })}</div>`;
+    const notes = notesSection('units', u, 'unitId');
     return `<div class="detail">
       <div class="detail-head"><span class="d-title inline-edit" data-edit="field" data-card="units" data-field="name" data-rec="${u.unitId}" data-ph="Unit name">${esc(u.name)}</span><span class="pill c-${getStatus('unitFleetStatus', u.fleetStatus).color} js-fleetstatus" data-rec="${u.unitId}">${esc(getStatus('unitFleetStatus', u.fleetStatus).label)} ${I.chev}</span>${statusPill('unitInspectionStatus', u.inspectionStatus)}<button class="pill ${u.washRequested ? 'c-blue' : 'ref'} js-wash-request" data-rec="${u.unitId}">${I.droplet} ${u.washRequested ? 'Wash Requested' : 'Request Wash'}</button><span class="pill c-gray">${I.qr} QR</span></div>
+      ${notes.top}
       <div class="detail-cols">${specs}${gps}</div>
       ${investment}
-      ${notes}
+      ${notes.bottom}
       ${historySection('units', u, cs)}
     </div>`;
   },
@@ -1595,7 +1608,7 @@ const DETAIL = {
     </div></div>`;
     const account = `<div class="section"><h4>Account</h4><div class="fieldstack">
       ${kvPills(`${badge(isBusiness ? 'Business' : 'Non-Business', isBusiness ? 'blue' : 'gray')}${c.requiresPO ? badge('PO Required', 'yellow') : ''}`)}
-      ${efield('industry', 'Add industry')}${efield('accountNotes', 'Add notes', true)}
+      ${efield('industry', 'Add industry')}
       ${kv(`${money(d.totalPaid)} total · ${d.visits || 0} visits · ${d.years || 0} yrs · every ${d.avgFrequencyDays || 0} days`, { wrap: true, derived: true })}
     </div></div>`;
     // name → badges → full-width activity bar → sections (Jac 2026-06-07); even .detail gaps
@@ -1627,19 +1640,22 @@ const DETAIL = {
       </div>
       <div class="hlog">${log || '<span class="muted" style="font-size:12px">No activity yet.</span>'}</div></div>`;
 
+    const notes = notesSection('customers', c, 'customerId', 'accountNotes');
     return `<div class="detail">
       <div class="detail-head">${title}</div>
       ${badges}
       ${activeBar}
+      ${notes.top}
       <div class="detail-cols">${contact}${account}</div>
       ${cardsSection(c)}
       <div class="detail-cols">${usedSales}${membership}</div>
       ${activity}
+      ${notes.bottom}
       ${historySection('customers', c, cs)}
     </div>`;
   },
 
-  /* ── CATEGORIES — fully built (§12.3; no in-app editing) ── */
+  /* ── CATEGORIES — fully built (§12.3; read-only except Notes) ── */
   categories: (c, cs) => {
     const mix = categoryMix(c.categoryId);
     const rmix = categoryRentalMix(c.categoryId);
@@ -1669,11 +1685,14 @@ const DETAIL = {
       ${kv(money(c.msrp), { sfx: 'MSRP' })}${kv(money(c.askPrice), { sfx: 'ask' })}${kv(money(c.bottomDollar), { sfx: 'bottom dollar' })}
       ${kv('—', { sfx: 'time / dollar util (backend)', derived: true })}
     </div></div>`;
+    const notes = notesSection('categories', c, 'categoryId');
     return `<div class="detail">
       <div class="detail-head"><span class="d-title">${esc(c.name)}</span>${c.fuelType ? badge(c.fuelType, 'navy') : ''}${badge(`${mix.total} units`, 'gray')}</div>
       ${bars}
+      ${notes.top}
       <div class="detail-cols">${pricing}${fleet}</div>
       ${investment}
+      ${notes.bottom}
       ${historySection('categories', c, cs)}
     </div>`;
   },
@@ -1727,11 +1746,14 @@ const DETAIL = {
       ${kv(money(t.total), { sfx: 'total', big: true, derived: true })}
       ${kv(`${money(t.paid)} / ${money(t.total)}`, { sfx: 'paid', derived: true })}
     </div></div>`;
+    const notes = notesSection('invoices', i, 'invoiceId');
     return `<div class="detail">
       <div class="detail-head"><span class="d-title">${esc(i.invoiceId)}</span>${statusPill('invoiceStatus', t.status)}${locked ? '<span class="pill c-gray" style="min-width:0" title="Pricing is locked">🔒 Locked</span>' : ''}</div>
+      ${notes.top}
       ${invoiceSec}
       ${items}
       ${totals}
+      ${notes.bottom}
       ${historySection('invoices', i, cs)}
     </div>`;
   },
@@ -1771,10 +1793,13 @@ const DETAIL = {
       ${w.billCustomer === 'Yes' ? kv(money(priceIfBilled), { sfx: 'if billed', derived: true }) : ''}
       ${efld('workOrders', w, 'woId', 'description', 'Add description', { wrap: true })}
     </div></div>`;
+    const notes = notesSection('workOrders', w, 'woId');
     return `<div class="detail">
       <div class="detail-head"><span class="d-title">${esc(`${unit?.name || '—'} — ${w.woReport}`)}</span>${badge(getStatus('woType', w.woType).label, getStatus('woType', w.woType).color)}<span class="pill c-${getStatus('woPhase', w.phase).color} js-wophase" data-rec="${w.woId}">${esc(getStatus('woPhase', w.phase).label)} ${I.chev}</span></div>
+      ${notes.top}
       ${journeySec}
       ${report}
+      ${notes.bottom}
       ${historySection('workOrders', w, cs)}
     </div>`;
   },
@@ -1804,9 +1829,12 @@ const DETAIL = {
     }).join('');
     const tasks = `<div class="section"><h4>Service Tasks</h4><div class="hlog">${list}</div></div>`;
     const headTop = top ? (top.washRequested ? `<span class="pill c-blue">Wash Requested</span>` : `<span class="pill c-${top.color}">${esc(getStatus('serviceStatus', top.status).label)}</span>`) : '';
+    const notes = notesSection('units', u, 'unitId');
     return `<div class="detail">
       <div class="detail-head">${unitPill(u.unitId)}<span class="muted" style="font-size:13px;font-weight:600">${num(u.currentHours)} HRS</span>${ar ? statusPill('rentalStatus', rentalDisplayStatus(ar), { card: 'rentals', recId: ar.rentalId }) : ''}${headTop}</div>
+      ${notes.top}
       ${tasks}
+      ${notes.bottom}
       ${historySection('units', u, cs)}
     </div>`;
   },
@@ -1840,9 +1868,12 @@ const DETAIL = {
       ${gate}
       ${thumb}
     </div></div>`;
+    const notes = notesSection('inspections', n, 'inspectionId');
     return `<div class="detail">
       <div class="detail-head">${unit ? unitPill(unit.unitId) : '<span class="d-title">Inspection</span>'}${resultPill}<span class="muted" style="font-size:12px;margin-left:auto">${esc(fmtShortDate(n.date))}</span></div>
+      ${notes.top}
       ${report}
+      ${notes.bottom}
       ${historySection('inspections', n, cs)}
     </div>`;
   },
@@ -4014,6 +4045,7 @@ function saveNewCustomer() {
     const c = IDX.customer.get(o.editId); if (!c) { closeOverlay(); return; }
     const wasSigned = !!c.agreementSignedAt;
     Object.assign(c, { firstName: d.firstName, lastName: d.lastName, company: d.company, phone: d.phone, email: d.email, industry: d.industry, accountType: d.accountType || 'Non-Business', accountNotes: d.accountNotes, selfie: d.selfie, signature: d.signature, agreementType: d.agreementType || '', agreementSignedAt: d.agreementSignedAt || '' });
+    if (!c.accountNotes) c.accountNotesColor = '';   // popup has no dot picker — don't leave a stale tag on a cleared note
     c.name = `${d.firstName} ${d.lastName}`.trim() || c.name;
     reindex('customers', c);
     if (c.agreementSignedAt && !wasSigned) logAction(c, `${AGREEMENTS[c.agreementType]?.title || 'Agreement'} signed`);

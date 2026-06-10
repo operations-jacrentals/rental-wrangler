@@ -30,6 +30,9 @@
 - **Left vs right inside each section/band:** LEFT = action-focused (the user interacts here). RIGHT = derived/formulaic — or sometimes secondary actions like the left.
 - With only 3 cards there's more horizontal space per card — use it for the left/right split.
 
+**✅ Section 0 Notes = IMPLEMENTED on ALL 8 standard views (2026-06-10, Jac: "Every Standard view should have a +Notes section"):** `notesSection(card, rec, idField, field)` helper (app.js, next to `efld`) returns `{top, bottom}` — filled → section at top, empty → `+Notes` above the dotted history line; every renderer places both. Notes carry the 3-color dot everywhere. serviceOrders shares the UNIT's notes (one fact, one place, two lenses); customers reuses `accountNotes` (the old Account-section entry was removed; the account popup clears `accountNotesColor` when notes are wiped). notes added to categories/invoices/workOrders/inspections searchBlobs.
+**⚠️ BACKEND DEPENDENCY (before relying on notes live):** notes/notesColor are NEW runtime fields for categories/invoices/workOrders/inspections (+notesColor on rentals/units, accountNotesColor on customers). If Code.gs/Sheet tabs use fixed columns, these will silently NOT round-trip — verify with a 30-second live test (note on a Category → sign out/in → still there?) and add the columns / redeploy Code.gs if needed. Also: `tools/import-real-data.ps1` + `#reseed` regenerates records WITHOUT notes — reseeding after go-live wipes typed notes.
+
 ## Done & committed (B1–B5)
 - **B1** token layer (`--on-orange`) + tab/coltab/alert/armed restyles.
 - **B2a** linked pills (`.link`) + tab icons. **B2b** status-badge icons + hover.
