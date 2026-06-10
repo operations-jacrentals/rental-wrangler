@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rental Wrangler — Button System (Draft v2)</title>
+<style>
+:root{
+  /* ── brand + surfaces (from the app) ── */
+  --accent:#ff7a1a; --accent-soft:rgba(255,122,26,.14); --accent-line:rgba(255,122,26,.5);
+  --bg:#0b0c0f; --bg-2:#101216; --panel:#15171c; --panel-2:#1b1e24; --card:#14161b; --card-head:#191c22;
+  --line:#262a31; --line-soft:#1f232a; --txt:#e9edf4; --txt-2:#a7afbc; --txt-3:#838b97; /* promoted from #6b7480 for AA */
+  --green:#34d399; --green-bg:rgba(52,211,153,.16); --green-ink:#04150d;
+  --red:#ff4242; --red-bg:rgba(255,66,66,.16);
+  --shadow:0 18px 50px -24px rgba(0,0,0,.75);
+  --font:"Geist",-apple-system,"Segoe UI",sans-serif;
+
+  /* ── BUTTON TOKEN LAYER (new in v2 — this is what ports into the app) ── */
+  --btn-h-sm:28px; --btn-h-md:34px; --btn-h-lg:44px;     /* MD=34 to match the app's iconbtn/search band */
+  --btn-r-sm:9px;  --btn-r-md:11px; --btn-r-lg:12px;
+  --btn-fw:700; --btn-fs:13px;
+  --btn-pri-bg:#ff7a1a; --btn-pri-hover:#e96b10; --btn-pri-active:#d35f0a; --btn-pri-ink:#1a1205; /* dark ink = AA on orange */
+  --accent-ink:var(--accent);                            /* orange-as-text; light theme darkens it */
+  --focus:var(--accent);
+}
+[data-theme="light"]{
+  --bg:#eef1f6; --bg-2:#e6eaf1; --panel:#ffffff; --panel-2:#eef1f6; --card:#ffffff; --card-head:#eef1f6;
+  --line:#cfd6e1; --line-soft:#e1e6ee; --txt:#141821; --txt-2:#414b5a; --txt-3:#5b6573;
+  --green:#0c8f5f; --green-bg:rgba(12,143,95,.16); --green-ink:#ffffff;
+  --red:#d52a2a; --red-bg:rgba(213,42,42,.14);
+  --shadow:0 18px 40px -26px rgba(20,30,60,.35);
+  --btn-pri-ink:#2a1400; --accent-ink:#b3550a;           /* darker orange ink so it reads on white */
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--txt);font-family:var(--font);font-size:14px;line-height:1.45;-webkit-font-smoothing:antialiased;padding-bottom:90px}
+.wrap{max-width:1080px;margin:0 auto;padding:0 28px}
+.topbar{position:sticky;top:0;z-index:10;display:flex;align-items:center;justify-content:space-between;padding:16px 28px;
+  background:color-mix(in srgb,var(--bg) 86%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--line-soft)}
+.brand{font-size:18px;font-weight:800;letter-spacing:-.2px}
+.brand small{font-weight:600;color:var(--txt-3);margin-left:8px;font-size:12px;letter-spacing:.3px;text-transform:uppercase}
+.lead{color:var(--txt-2);font-size:15px;max-width:780px;margin:26px 0 4px}
+h2{font-size:13px;font-weight:800;letter-spacing:1.2px;text-transform:uppercase;color:var(--txt-3);margin:46px 0 16px;padding-bottom:8px;border-bottom:1px solid var(--line-soft)}
+h3{font-size:15px;font-weight:700;margin:0 0 4px}
+.tiny{font-size:12px;color:var(--txt-3)} .muted{color:var(--txt-2)}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px 22px;box-shadow:var(--shadow)}
+.grid{display:grid;gap:16px}.cols-2{grid-template-columns:1fr 1fr}
+.row{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.state-row{display:flex;gap:22px;flex-wrap:wrap;align-items:flex-end}
+.state{display:flex;flex-direction:column;align-items:center;gap:8px}
+.state .cap{font-size:11px;color:var(--txt-3);text-transform:uppercase;letter-spacing:.4px}
+.note{margin-top:14px;font-size:13px;color:var(--txt-2)}.note b{color:var(--txt)}
+.do{color:var(--green)}.dont{color:var(--red)}
+.tag{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:var(--panel-2);color:var(--txt-2);border:1px solid var(--line);vertical-align:middle}
+.tag.new{background:var(--green-bg);color:var(--green);border-color:transparent}
+.callout{background:var(--accent-soft);border:1px solid var(--accent-line);border-radius:12px;padding:14px 18px}
+.code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;background:var(--bg-2);border:1px solid var(--line-soft);border-radius:10px;padding:14px 16px;color:var(--txt-2);overflow:auto;line-height:1.7;white-space:pre}
+.code b{color:var(--accent)}
+
+/* =====================================================================
+   BUTTON SYSTEM v2  (token-driven)
+   ===================================================================== */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:var(--btn-h-md);padding:0 16px;
+  border-radius:var(--btn-r-md);border:1px solid transparent;font:inherit;font-size:var(--btn-fs);font-weight:var(--btn-fw);
+  line-height:1;cursor:pointer;white-space:nowrap;font-variant-numeric:tabular-nums;
+  transition:background .14s,border-color .14s,color .14s,box-shadow .14s,transform .08s}
+.btn svg{width:16px;height:16px;flex:0 0 auto}
+.btn:focus-visible,.btn.s-focus{outline:2px solid var(--focus);outline-offset:2px}
+
+/* TIER 1 — PRIMARY (dark ink on orange, RAISED) */
+.btn--primary{background:var(--btn-pri-bg);color:var(--btn-pri-ink);box-shadow:0 1px 2px rgba(0,0,0,.45)}
+.btn--primary:hover,.btn--primary.s-hover{background:var(--btn-pri-hover);transform:translateY(-1px);box-shadow:0 3px 9px -4px rgba(255,122,26,.42)}
+.btn--primary:active,.btn--primary.s-active{background:var(--btn-pri-active);transform:translateY(0);box-shadow:0 1px 2px rgba(0,0,0,.45)}
+.btn--primary.s-focus,.btn--primary:focus-visible{outline-offset:3px}
+.btn--primary[disabled],.btn--primary.s-disabled{background:#5a4326;color:#b9a78c;box-shadow:none;cursor:not-allowed;transform:none}
+
+/* TIER 2 — SECONDARY (neutral outline; hover warms border + lifts surface) */
+.btn--secondary{background:var(--panel);color:var(--txt);border-color:var(--line)}
+.btn--secondary:hover,.btn--secondary.s-hover{border-color:var(--accent-line);background:var(--panel-2)}
+.btn--secondary:active,.btn--secondary.s-active{background:var(--bg-2)}
+.btn--secondary[disabled],.btn--secondary.s-disabled{color:var(--txt-3);background:var(--panel);cursor:not-allowed}
+
+/* BRANDED shortcut (the re-skinned "Accent" — orange TEXT + neutral border, NO fill) */
+.btn--branded{background:transparent;color:var(--accent-ink);border-color:var(--line)}
+.btn--branded:hover,.btn--branded.s-hover{border-color:var(--accent-line);background:var(--accent-soft)}
+
+/* TIER 3 — QUIET (text; surface on hover) */
+.btn--quiet{background:transparent;color:var(--txt-2);border-color:transparent}
+.btn--quiet:hover,.btn--quiet.s-hover{background:var(--panel);color:var(--txt)}
+
+/* LINK (inline text action — no box) */
+.btn--link{height:auto;padding:0;background:none;border:none;color:var(--accent-ink);font-weight:700}
+.btn--link:hover,.btn--link.s-hover{text-decoration:underline}
+
+/* TIER 4 — ADD (dashed; full-width empty-field bars) */
+.btn--add{background:transparent;color:var(--txt-2);border:1px dashed var(--line)}
+.btn--add:hover,.btn--add.s-hover{color:var(--accent-ink);border-color:var(--accent-line)}
+
+/* MONEY (green) + DESTRUCTIVE (red) — semantic, NOT primary */
+.btn--money{background:var(--green);color:var(--green-ink);box-shadow:0 1px 2px rgba(0,0,0,.45)}
+.btn--money:hover,.btn--money.s-hover{filter:brightness(1.06);transform:translateY(-1px)}
+.btn--danger{background:transparent;color:var(--red);border-color:transparent}
+.btn--danger:hover,.btn--danger.s-hover{background:var(--red-bg)}
+.btn--danger-solid{background:var(--red);color:#fff;box-shadow:0 1px 2px rgba(0,0,0,.45)}
+
+/* sizes + modifiers */
+.btn--sm{height:var(--btn-h-sm);padding:0 11px;font-size:12px;border-radius:var(--btn-r-sm)}
+.btn--sm svg{width:14px;height:14px}
+.btn--lg{height:var(--btn-h-lg);padding:0 24px;font-size:15px;border-radius:var(--btn-r-lg)}
+.btn--lg svg{width:18px;height:18px}
+.btn--lg.btn--primary{box-shadow:0 4px 18px -6px rgba(255,122,26,.55)}   /* the ONE loud bloom — lonely CTA only */
+.btn--block{width:100%}
+
+/* BUSY / LOADING */
+.btn[aria-busy="true"],.btn.is-busy{pointer-events:none;position:relative;color:transparent!important}
+.btn[aria-busy="true"]::after,.btn.is-busy::after{content:"";position:absolute;width:15px;height:15px;border-radius:50%;
+  border:2px solid currentColor;border-top-color:transparent;animation:spin .7s linear infinite}
+.btn--primary.is-busy::after{border-color:var(--btn-pri-ink);border-top-color:transparent}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ICON button — RENAMED .ghostbtn (the app already owns .iconbtn) */
+.ghostbtn{width:var(--btn-h-md);height:var(--btn-h-md);display:inline-grid;place-items:center;border-radius:var(--btn-r-md);
+  background:transparent;color:var(--txt-2);border:1px solid transparent;cursor:pointer;transition:background .14s,border-color .14s,color .14s}
+.ghostbtn svg{width:18px;height:18px}
+.ghostbtn:hover,.ghostbtn.s-hover{background:var(--panel-2);color:var(--txt);border-color:var(--line)}
+.ghostbtn:focus-visible,.ghostbtn.s-focus{outline:2px solid var(--focus);outline-offset:2px}
+.ghostbtn.is-on{background:var(--accent-soft);color:var(--accent-ink);border-color:var(--accent-line)}   /* armed = soft orange */
+.ghostbtn.is-danger:hover{background:var(--red-bg);color:var(--red)}
+.ghostbtn--sm{width:var(--btn-h-sm);height:var(--btn-h-sm);border-radius:var(--btn-r-sm)}
+
+/* SEGMENTED — selected = FLAT solid orange (no shadow), dark ink */
+.seg{display:inline-flex;gap:3px;padding:3px;background:var(--panel);border:1px solid var(--line);border-radius:13px}
+.seg-item{display:inline-flex;align-items:center;gap:7px;padding:0 13px;height:var(--btn-h-sm);border-radius:9px;background:transparent;
+  color:var(--txt-3);border:none;font:inherit;font-weight:700;font-size:13px;cursor:pointer;transition:color .14s,background .14s}
+.seg-item svg{width:15px;height:15px}
+.seg-item:hover{color:var(--txt)}
+.seg-item.is-on{background:var(--accent);color:var(--btn-pri-ink)}
+.seg-item:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.seg-item .n{font-size:11px;font-weight:800;padding:1px 7px;border-radius:999px;background:var(--bg-2);color:var(--txt-3)}
+.seg-item.is-on .n{background:rgba(26,18,5,.22);color:var(--btn-pri-ink)}
+/* segmented ALERT (work waiting) — preserves the app's .coltab.alert */
+.seg-item.is-alert{color:var(--red);box-shadow:inset 0 0 0 1px var(--red-bg)}
+.seg-item.is-alert .n{background:var(--red);color:#fff}
+
+/* SPLIT button (action + menu caret) */
+.split{display:inline-flex;align-items:stretch;border-radius:var(--btn-r-md);overflow:hidden;border:1px solid var(--line)}
+.split>.btn{border-radius:0;border:none}
+.split>.split-caret{display:inline-grid;place-items:center;width:32px;background:transparent;color:var(--accent-ink);border:none;border-left:1px solid var(--line);cursor:pointer}
+.split>.split-caret svg{transition:transform .16s}
+.split.is-open>.split-caret svg{transform:rotate(180deg)}
+.split:hover{border-color:var(--accent-line)}
+
+/* contract key swatches */
+.keyrow{display:grid;grid-template-columns:auto 1fr;gap:10px 16px;align-items:center}
+.sw{width:54px;height:30px;border-radius:9px;display:grid;place-items:center;font-size:11px;font-weight:800}
+.sw-solid{background:var(--accent);color:var(--btn-pri-ink)}
+.sw-soft{background:var(--accent-soft);color:var(--accent-ink);border:1px solid var(--accent-line)}
+.sw-text{background:transparent;color:var(--accent-ink);border:1px solid var(--line)}
+.sw-warm{background:var(--panel);color:var(--txt-2);border:1px solid var(--accent-line)}
+
+/* elevation demo */
+.plane{display:flex;gap:24px;align-items:center;background:var(--card-head);border:1px solid var(--line);border-radius:12px;padding:18px 20px}
+
+/* table */
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--line-soft);vertical-align:middle}
+th{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--txt-3);font-weight:700}
+td:first-child{white-space:nowrap;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;color:var(--txt)}
+td .pill-ex{display:inline-block;font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;background:var(--green-bg);color:var(--green);border:1px solid transparent}
+
+ul.rules{list-style:none;display:grid;gap:10px}
+ul.rules li{padding-left:26px;position:relative;color:var(--txt-2)}ul.rules li b{color:var(--txt)}
+ul.rules li::before{content:"";position:absolute;left:0;top:7px;width:9px;height:9px;border-radius:3px;background:var(--accent)}
+.delta{display:grid;gap:8px}
+.delta div{padding-left:24px;position:relative;color:var(--txt-2);font-size:13px}
+.delta div::before{content:"→";position:absolute;left:0;color:var(--accent);font-weight:800}
+.delta b{color:var(--txt)}
+.foot{margin-top:50px;padding-top:18px;border-top:1px solid var(--line-soft);color:var(--txt-3);font-size:13px;text-align:center}
+
+@media (prefers-reduced-motion:reduce){
+  *{transition:none!important;animation-duration:.001ms!important;animation-iteration-count:1!important}
+  .btn--primary:hover,.btn--money:hover,.btn--primary.s-hover{transform:none}
+}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">Rental Wrangler — Button System <small>Draft v2 · reconciled with the app</small></div>
+  <button class="btn btn--secondary" onclick="var d=document.documentElement;d.dataset.theme=d.dataset.theme==='dark'?'light':'dark';this.textContent=d.dataset.theme==='dark'?'◐ Light':'◑ Dark';">◐ Light</button>
+</div>
+
+<div class="wrap">
+  <p class="lead">v2 stops inventing a parallel orange ladder. Instead it <b>fixes Primary's contrast</b>, gives <b>every orange treatment exactly one meaning</b>, adds the <b>interaction states production needs</b> (busy · focus · reduced-motion), <b>tokenizes the metrics</b>, and lets <b>money stay green</b>. Everything below is token-driven so it ports cleanly.</p>
+
+  <!-- WHAT CHANGED -->
+  <h2>What changed from v1 <span class="tag new">5-lens critique</span></h2>
+  <div class="panel">
+    <div class="delta">
+      <div><b>Contrast fixed.</b> White-on-orange was ~2.6:1 (fails AA, worse on hover). Primary now uses <b>near-black ink on the brand orange</b>, and hover/active step <b>darker</b> so legibility improves as you interact.</div>
+      <div><b>Orange disambiguated.</b> Solid-orange = Primary or selected · soft-orange = armed/toggled only · orange text = branded shortcut · warm border = hover. One treatment, one meaning.</div>
+      <div><b>Hierarchy by elevation, not hue.</b> Primary is <b>raised</b>; a selected tab/segment is <b>flat</b> — so a lone Primary still wins even when a tab is selected (same color, different plane).</div>
+      <div><b>Money stays green.</b> Charge is green + confirm-gated; Refund is the red ladder. Never the same paint as create-Primary.</div>
+      <div><b>“Accent” tier dropped.</b> Its soft-orange fill collided with the app's “armed/toggled”. <b>＋Rental/＋Customer</b> re-skinned as orange-text + neutral border.</div>
+      <div><b>Missing states added.</b> Busy/loading, a real <code>:focus-visible</code> ring, and a <code>prefers-reduced-motion</code> guard (the app currently ships none).</div>
+      <div><b>Renamed the icon tier <code>.ghostbtn</code></b> — the app already owns <code>.iconbtn</code>; porting as-is would've blanked every toolbar control.</div>
+      <div><b>Metrics tokenized.</b> Heights 28/34/44 · radius 9/11/12, with a migration map (the app actually runs 26–44px / 8–16px today).</div>
+    </div>
+  </div>
+
+  <!-- THE CONTRACT -->
+  <h2>The one rule that makes it readable: one orange, one meaning</h2>
+  <div class="grid cols-2">
+    <div class="panel">
+      <div class="keyrow">
+        <span class="sw sw-solid">SOLID</span><span><b>Solid orange + dark ink</b> = the one Primary action, <i>or</i> the selected item in a set (tab/segment).</span>
+        <span class="sw sw-soft">SOFT</span><span><b>Soft-orange fill</b> = armed / toggled-on only (a mode is active). Never a resting button.</span>
+        <span class="sw sw-text">TEXT</span><span><b>Orange text + neutral border</b> = branded shortcut (＋Rental/＋Customer).</span>
+        <span class="sw sw-warm">WARM</span><span><b>Warm border + surface lift</b> = hover. Transient, never confused with selected.</span>
+      </div>
+    </div>
+    <div class="panel">
+      <h3>Selected is flat · Primary is raised</h3>
+      <p class="tiny">Same hue, different plane — the second channel that keeps a lone Primary winning the page.</p>
+      <div class="plane" style="margin-top:14px">
+        <div class="seg"><button class="seg-item is-on">Rentals <span class="n">6</span></button><button class="seg-item">Calendar <span class="n">5</span></button></div>
+        <span class="tiny">selected = flat</span>
+        <button class="btn btn--primary">＋ New</button>
+        <span class="tiny">primary = raised</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- TIERS + STATES -->
+  <h2>Tiers &amp; every state (now incl. focus + busy)</h2>
+  <div class="grid cols-2">
+    <div class="panel">
+      <h3>1 · Primary <span class="tag">dark ink · raised</span></h3>
+      <p class="tiny">The one commit/create action: <b>＋New · Save · Done</b>. (Money is its own green — see below.)</p>
+      <div class="state-row" style="margin-top:16px">
+        <div class="state"><button class="btn btn--primary">Save</button><span class="cap">Default</span></div>
+        <div class="state"><button class="btn btn--primary s-hover">Save</button><span class="cap">Hover</span></div>
+        <div class="state"><button class="btn btn--primary s-active">Save</button><span class="cap">Active</span></div>
+        <div class="state"><button class="btn btn--primary s-focus">Save</button><span class="cap">Focus</span></div>
+        <div class="state"><button class="btn btn--primary is-busy">Save</button><span class="cap">Busy</span></div>
+        <div class="state"><button class="btn btn--primary s-disabled">Save</button><span class="cap">Disabled</span></div>
+      </div>
+      <div class="note">Hover/active go <b>darker</b> (contrast climbs). Disabled = muted fill, not opacity-into-nothing.</div>
+    </div>
+
+    <div class="panel">
+      <h3>2 · Secondary <span class="tag">neutral outline</span></h3>
+      <p class="tiny">Supporting actions &amp; field dropdowns: <b>Dashboard · Self ▾ · Cancel</b>.</p>
+      <div class="state-row" style="margin-top:16px">
+        <div class="state"><button class="btn btn--secondary">Dashboard</button><span class="cap">Default</span></div>
+        <div class="state"><button class="btn btn--secondary s-hover">Dashboard</button><span class="cap">Hover</span></div>
+        <div class="state"><button class="btn btn--secondary s-active">Dashboard</button><span class="cap">Active</span></div>
+        <div class="state"><button class="btn btn--secondary s-focus">Dashboard</button><span class="cap">Focus</span></div>
+        <div class="state"><button class="btn btn--secondary s-disabled">Dashboard</button><span class="cap">Disabled</span></div>
+      </div>
+      <div class="note">Hover warms the border <b>and</b> lifts the surface to <code>--panel-2</code> — border-color alone was ~2.6:1 (invisible + fails 3:1).</div>
+    </div>
+
+    <div class="panel">
+      <h3>2b · Branded shortcut <span class="tag">orange text, no fill</span></h3>
+      <p class="tiny">Replaces v1's Accent. <b>＋Rental / ＋Customer</b> — branded &amp; clickable, but a shortcut never looks <i>selected</i>.</p>
+      <div class="state-row" style="margin-top:16px">
+        <div class="state"><button class="btn btn--branded">＋ Rental</button><span class="cap">Default</span></div>
+        <div class="state"><button class="btn btn--branded s-hover">＋ Rental</button><span class="cap">Hover</span></div>
+      </div>
+      <div class="note">No fill at rest — that frees soft-orange-fill to mean only “armed/toggled”.</div>
+    </div>
+
+    <div class="panel">
+      <h3>3 · Quiet &amp; Link <span class="tag">text</span></h3>
+      <p class="tiny"><b>Quiet</b> = Exit/Clear/Today/Cancel (gets a hover surface). <b>Link</b> = true inline action (Back to list), no box.</p>
+      <div class="state-row" style="margin-top:16px">
+        <div class="state"><button class="btn btn--quiet">Exit</button><span class="cap">Quiet</span></div>
+        <div class="state"><button class="btn btn--quiet s-hover">Exit</button><span class="cap">Quiet · hover</span></div>
+        <div class="state"><button class="btn btn--link">Back to list</button><span class="cap">Link</span></div>
+        <div class="state"><button class="btn btn--link s-hover">Back to list</button><span class="cap">Link · hover</span></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>4 · Add <span class="tag">dashed · full-width</span></h3>
+      <p class="tiny">Empty-field <b>bars</b> only (＋Add notes / ＋Add card). Inline adders (＋Pick unit) stay <i>pills</i>, not this tier.</p>
+      <div style="margin-top:16px;display:flex;flex-direction:column;gap:10px;max-width:340px">
+        <button class="btn btn--add btn--block">＋ Add notes</button>
+        <button class="btn btn--add btn--block s-hover">＋ Add notes</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>Money &amp; Destructive <span class="tag">semantic, never Primary</span></h3>
+      <p class="tiny"><b>Charge = green</b> (money), <b>Refund = red</b>. Both confirm-gated; color is never the only guard.</p>
+      <div class="state-row" style="margin-top:16px">
+        <div class="state"><button class="btn btn--money">Charge $2,610</button><span class="cap">Money</span></div>
+        <div class="state"><button class="btn btn--money is-busy">Charge $2,610</button><span class="cap">Charging…</span></div>
+        <div class="state"><button class="btn btn--danger">Refund</button><span class="cap">Danger</span></div>
+        <div class="state"><button class="btn btn--danger-solid">Confirm refund</button><span class="cap">In-confirm</span></div>
+      </div>
+      <div class="note">Charge ≠ ＋New (no shared paint) so “orange = go” muscle memory never fires on money.</div>
+    </div>
+  </div>
+
+  <!-- COMPONENT PATTERNS -->
+  <h2>Component patterns (not loudness rungs)</h2>
+  <div class="grid cols-2">
+    <div class="panel">
+      <h3>Icon · <code>.ghostbtn</code> <span class="tag">ghost square</span></h3>
+      <p class="tiny">Bottom-bar utilities + hover/focus-only card controls. Quiet → surface on hover → soft-orange when armed.</p>
+      <div class="state-row" style="margin-top:16px">
+        <div class="state"><button class="ghostbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button><span class="cap">Default</span></div>
+        <div class="state"><button class="ghostbtn s-hover"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button><span class="cap">Hover</span></div>
+        <div class="state"><button class="ghostbtn s-focus"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button><span class="cap">Focus</span></div>
+        <div class="state"><button class="ghostbtn is-on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3c3 4 5 6 5 9a5 5 0 0 1-10 0c0-3 2-5 5-9z"/></svg></button><span class="cap">Armed</span></div>
+        <div class="state"><button class="ghostbtn is-danger s-hover"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 7h14M10 11v6M14 11v6M6 7l1 13h10l1-13"/></svg></button><span class="cap">Danger</span></div>
+      </div>
+      <div class="note">Icon-only ⇒ <code>aria-label</code> + tooltip, always. Hover-only controls also reveal on <code>:focus-within</code> (keyboard).</div>
+    </div>
+
+    <div class="panel">
+      <h3>Segmented <span class="tag">selected = flat orange</span></h3>
+      <p class="tiny">Column toggle / item tabs. One selected (flat solid orange + dark ink); an <b>alert</b> variant keeps the “work waiting” red.</p>
+      <div class="row" style="margin-top:16px;gap:12px">
+        <div class="seg"><button class="seg-item is-on">Rentals <span class="n">6</span></button><button class="seg-item">Calendar <span class="n">5</span></button></div>
+      </div>
+      <div class="row" style="margin-top:12px;gap:12px">
+        <div class="seg"><button class="seg-item is-on">Units <span class="n">11</span></button><button class="seg-item is-alert">Inspections <span class="n">2</span></button><button class="seg-item">WOs <span class="n">3</span></button></div>
+        <span class="tiny">↑ <code>.is-alert</code> = pending work</span>
+      </div>
+      <div class="note">Keyboard: one tab-stop + arrow-key roving + Home/End (<code>role=tablist</code>).</div>
+    </div>
+
+    <div class="panel">
+      <h3>Split button <span class="tag">action + caret</span></h3>
+      <p class="tiny">The app's <code>.new-split</code>: a branded action + a menu caret (rotates on open), independent hit targets.</p>
+      <div class="row" style="margin-top:16px;gap:14px">
+        <div class="split"><button class="btn btn--branded">＋ Rental</button><button class="split-caret"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 9l6 6 6-6"/></svg></button></div>
+        <div class="split is-open"><button class="btn btn--branded">＋ Customer</button><button class="split-caret"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 9l6 6 6-6"/></svg></button></div>
+        <span class="tiny">caret carries <code>aria-haspopup</code> / <code>aria-expanded</code></span>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>Sizes &amp; full-width</h3>
+      <div class="state-row" style="margin-top:8px">
+        <div class="state"><button class="btn btn--primary btn--sm">Small</button><span class="cap">SM · 28</span></div>
+        <div class="state"><button class="btn btn--primary">Medium</button><span class="cap">MD · 34</span></div>
+        <div class="state"><button class="btn btn--primary btn--lg">Large</button><span class="cap">LG · 44 (CTA glow)</span></div>
+      </div>
+      <button class="btn btn--primary btn--lg btn--block" style="margin-top:16px">＋ New Customer</button>
+      <div class="note">LG + <code>.btn--block</code> = the lonely empty-state CTA — the only place the loud bloom is allowed.</div>
+    </div>
+  </div>
+
+  <!-- TOKENS -->
+  <h2>The token layer (this is what ports into <code>style.css</code>)</h2>
+  <div class="panel">
+    <div class="code">:root{
+  <b>--btn-h-sm</b>:28px; <b>--btn-h-md</b>:34px; <b>--btn-h-lg</b>:44px;     /* MD=34 → matches iconbtn/search band */
+  <b>--btn-r-sm</b>:9px;  <b>--btn-r-md</b>:11px; <b>--btn-r-lg</b>:12px;
+  <b>--btn-pri-bg</b>:#ff7a1a; <b>--btn-pri-hover</b>:#e96b10; <b>--btn-pri-active</b>:#d35f0a;
+  <b>--btn-pri-ink</b>:#1a1205;            /* dark ink = AA on orange (was #fff = 2.6:1 FAIL) */
+  <b>--accent-ink</b>:var(--accent);       /* orange-as-text; light theme → #b3550a */
+  <b>--focus</b>:var(--accent);            /* one focus ring, token-driven */
+}
+[data-theme="light"]{ <b>--btn-pri-ink</b>:#2a1400; <b>--accent-ink</b>:#b3550a; --txt-3:#5b6573; }</div>
+    <div class="note">Hover/active are explicit darker steps (not <code>filter:brightness</code>) so the light theme stays correct. Every metric is a variable → the “3 sizes / 2 radii” rule is finally enforceable.</div>
+  </div>
+
+  <!-- MIGRATION MAP -->
+  <h2>Migration map — every app control → its target</h2>
+  <div class="panel" style="padding:8px 22px">
+    <table>
+      <tr><th>App class / control</th><th>→ v2 role</th><th>H / R</th><th>Note</th></tr>
+      <tr><td>+New</td><td>Primary</td><td>34 / 11</td><td>dark ink; raised</td></tr>
+      <tr><td>.new-split (+Rental/+Customer)</td><td>Split · Branded</td><td>34 / 11</td><td>orange text + neutral border + caret</td></tr>
+      <tr><td>.bigbtn (empty-state)</td><td>Primary · LG · block</td><td>44 / 12</td><td>the only loud-bloom; was Accent — deliberate promotion</td></tr>
+      <tr><td>.iconbtn (toolbar utils)</td><td><code>.ghostbtn</code></td><td>34 / 11</td><td>ghost square; <b>rename to avoid collision</b></td></tr>
+      <tr><td>.hbtn (card ⊞ / ＋ / list)</td><td><code>.ghostbtn</code> · SM</td><td>28 / 9</td><td>reveal on hover <i>and</i> focus-within</td></tr>
+      <tr><td>.coltab / .tab.active</td><td>Segmented · selected</td><td>— / 11</td><td>FLAT solid orange + dark ink</td></tr>
+      <tr><td>.coltab.alert</td><td>Segmented · <code>.is-alert</code></td><td>— / 11</td><td>red text + inset ring + red count</td></tr>
+      <tr><td>Charge</td><td>Money (green) + confirm</td><td>34 / 11</td><td><span class="pill-ex">Charge $2,610</span> not Primary</td></tr>
+      <tr><td>Refund · Remove card</td><td>Destructive</td><td>34 / 11</td><td>quiet red → solid only in confirm</td></tr>
+      <tr><td>Dashboard · Lock price · ▾ dropdowns</td><td>Secondary</td><td>34 / 11</td><td>neutral outline</td></tr>
+      <tr><td>Exit · Clear · Today · Cancel</td><td>Quiet</td><td>34 / 11</td><td>—</td></tr>
+      <tr><td>Back to list · inline “Today”</td><td>Link</td><td>— / —</td><td>no box; underline on hover</td></tr>
+      <tr><td>+Add notes / PO / address (full bar)</td><td>Add (dashed · block)</td><td>34 / 11</td><td>—</td></tr>
+      <tr><td>+Pick unit / +Add Rental (inline)</td><td><i>pill — NOT a button</i></td><td>—</td><td>stays in the pill system</td></tr>
+      <tr><td>.tot-chip / .shop-seg / .filt-term</td><td>toggle-pill family</td><td>—</td><td>share the one selected-orange token</td></tr>
+    </table>
+  </div>
+
+  <!-- RULES -->
+  <h2>The rules (v2)</h2>
+  <div class="callout">
+    <ul class="rules">
+      <li><b>One orange, one meaning.</b> Solid = Primary/selected · soft-fill = armed/toggled · text = branded shortcut · warm border = hover. Nothing else gets orange.</li>
+      <li><b>Selected is flat; Primary is raised.</b> Hierarchy rides on elevation, so a lone Primary wins even beside a selected tab.</li>
+      <li><b>Contrast is non-negotiable.</b> ≥4.5:1 text, ≥3:1 fill-edge/focus, in <i>both</i> themes. Interaction makes contrast better, never worse.</li>
+      <li><b>Money is green, destructive is red — never Primary.</b> And both get a real confirm (Cancel-focused, Esc-cancels, busy-on-fire).</li>
+      <li><b>Every interactive thing has a visible focus ring</b> (<code>:focus-visible</code>) and respects <code>prefers-reduced-motion</code>.</li>
+      <li><b>Busy state on anything async</b> — spinner, locked width, no double-fire. (This is what makes the money confirm actually safe.)</li>
+      <li><b>Icon-only ⇒ <code>aria-label</code> + tooltip,</b> ≥36px (28px hover-only card controls get 44px hit-slop).</li>
+      <li><b>Three sizes, token radii.</b> No one-off heights — it's all variables now.</li>
+      <li><b>Pills aren't buttons.</b> Status/reference/inline-add pills keep their own system; don't drag them onto the ladder.</li>
+    </ul>
+  </div>
+
+  <div class="foot">Draft v2 — nothing in the app yet. Open calls B (Soft 11px) &amp; C (rounded-square) are locked in; A is the restrained Lifted; the contrast fix &amp; money-green are the two biggest swings — argue those first.</div>
+</div>
+
+</body>
+</html>

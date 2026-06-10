@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rental Wrangler — Shell Mockup (my ideas, v1)</title>
+<style>
+:root{
+  --accent:#ff7a1a; --accent-soft:rgba(255,122,26,.14); --accent-line:rgba(255,122,26,.5);
+  --bg:#0b0c0f; --bg-2:#101216; --panel:#15171c; --panel-2:#1b1e24; --card:#14161b; --card-head:#191c22;
+  --line:#262a31; --line-soft:#1f232a; --txt:#e9edf4; --txt-2:#a7afbc; --txt-3:#838b97; --track:#22262e;
+  --green:#34d399; --green-bg:rgba(52,211,153,.15); --green-ink:#04150d;
+  --yellow:#f5c542; --yellow-bg:rgba(245,197,66,.15);
+  --red:#ff4242; --red-bg:rgba(255,66,66,.16);
+  --blue:#5b9dff; --blue-bg:rgba(91,157,255,.15);
+  --purple:#b07cf5; --purple-bg:rgba(176,124,245,.16);
+  --gray:#8b94a3; --gray-bg:rgba(139,148,163,.14);
+  --shadow:0 18px 50px -24px rgba(0,0,0,.75);
+  --font:"Geist",-apple-system,"Segoe UI",sans-serif;
+  /* button tokens (v2) */
+  --btn-h-md:34px; --btn-r:11px; --btn-pri-ink:#1a1205;
+  --accent-ink:var(--accent);
+}
+[data-theme="light"]{
+  --bg:#eef1f6; --bg-2:#e6eaf1; --panel:#ffffff; --panel-2:#eef1f6; --card:#ffffff; --card-head:#eef1f6;
+  --line:#cfd6e1; --line-soft:#e1e6ee; --txt:#141821; --txt-2:#414b5a; --txt-3:#5b6573; --track:#d3d9e3;
+  --green:#0c8f5f; --green-bg:rgba(12,143,95,.15); --green-ink:#fff;
+  --yellow:#956f00; --yellow-bg:rgba(149,111,0,.16); --red:#d52a2a; --red-bg:rgba(213,42,42,.13);
+  --blue:#1864d6; --blue-bg:rgba(24,100,214,.13); --purple:#7a37c9; --purple-bg:rgba(122,55,201,.13);
+  --gray:#566072; --gray-bg:rgba(86,96,114,.13);
+  --shadow:0 18px 40px -26px rgba(20,30,60,.30); --btn-pri-ink:#2a1400; --accent-ink:#b3550a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden}
+body{background:var(--bg);color:var(--txt);font-family:var(--font);font-size:14px;-webkit-font-smoothing:antialiased}
+#app{height:100vh;display:flex;flex-direction:column}
+
+/* ---------- HEADER (floating) ---------- */
+.header{flex:0 0 auto;display:flex;align-items:flex-start;gap:12px;padding:12px 14px 0}
+.logo{width:60px;height:60px;flex:0 0 auto;border-radius:13px;background:linear-gradient(135deg,#ff8a2a,#e25c00);display:grid;place-items:center;cursor:pointer;border:1px solid var(--line);font-weight:900;color:#1a1205;font-size:11px;letter-spacing:-.5px;text-align:center;line-height:1.05}
+.logo:hover{border-color:var(--accent-line)}
+.kpis{display:flex;gap:12px;flex:0 0 auto}
+.ring{display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;min-width:54px}
+.ring svg{width:54px;height:54px}.ring .rl{font-size:9px;font-weight:600;color:var(--txt-3);text-transform:uppercase;letter-spacing:.3px}
+.hr-right{flex:1;min-width:0;display:flex;flex-direction:column;gap:8px}
+.hr-top{display:flex;align-items:flex-start;gap:10px;min-height:34px}
+.itemtabs{display:flex;gap:6px;flex:1 1 auto;min-width:0;overflow-x:auto}
+.itemtabs::-webkit-scrollbar{height:0}
+.itab{display:flex;align-items:center;gap:7px;height:30px;padding:0 11px;border-radius:10px;background:var(--panel);border:1px solid var(--line);white-space:nowrap;cursor:pointer;font-size:12px;font-weight:700;flex:0 0 auto}
+.itab:hover{border-color:var(--accent-line)}
+.itab.on{background:var(--accent);border-color:var(--accent);color:var(--btn-pri-ink)}
+.itab.on .pill{background:rgba(26,18,5,.18);color:var(--btn-pri-ink);border-color:transparent}
+.itab .x{margin-left:2px;opacity:.55;font-weight:800}.itab .x:hover{opacity:1;color:var(--red)}
+.hello{align-self:center;margin-left:auto;font-size:22px;font-weight:800;white-space:nowrap;padding-right:4px}
+.gsearch{display:flex;align-items:center;gap:8px;height:34px;padding:0 14px;border-radius:11px;background:var(--panel);border:1px solid var(--line);color:var(--txt-3)}
+.gsearch input{flex:1;background:none;border:none;color:var(--txt);font:inherit;font-size:13px;outline:none}
+.gsearch svg{width:16px;height:16px;opacity:.6}
+
+/* ---------- GRID ---------- */
+.grid{flex:1 1 auto;display:grid;grid-template-columns:repeat(3,1fr);gap:12px;padding:12px 12px 4px;min-height:0}
+.col{display:flex;flex-direction:column;min-height:0}
+.card{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);overflow:hidden}
+.card.anchored{border-color:#18b6ff;box-shadow:0 0 0 2px rgba(24,182,255,.6),0 0 0 4px rgba(24,182,255,.16),0 0 10px -4px rgba(24,182,255,.5)}
+
+/* column toggle (segmented) */
+.coltabs{display:inline-flex;align-self:center;gap:3px;padding:3px;margin:9px auto 6px;background:var(--panel);border:1px solid var(--line);border-radius:13px;max-width:calc(100% - 18px);overflow:auto}
+.coltabs::-webkit-scrollbar{height:0}
+.coltab{display:inline-flex;align-items:center;gap:7px;height:28px;padding:0 13px;border-radius:10px;background:transparent;border:none;color:var(--txt-3);font:inherit;font-weight:700;font-size:13px;cursor:pointer;white-space:nowrap}
+.coltab:hover{color:var(--txt)}
+.coltab.on{background:var(--accent);color:var(--btn-pri-ink)}
+.coltab svg{width:15px;height:15px}
+.coltab .n{font-size:11px;font-weight:800;padding:1px 6px;border-radius:999px;background:var(--bg-2);color:var(--txt-3)}
+.coltab.on .n{background:rgba(26,18,5,.2);color:var(--btn-pri-ink)}
+.coltab.alert{color:var(--red)}.coltab.alert .n{background:var(--red);color:#fff}
+
+/* list bar */
+.listbar{display:flex;align-items:center;gap:8px;padding:0 11px 9px}
+.ghostbtn{width:32px;height:32px;flex:0 0 auto;display:grid;place-items:center;border-radius:10px;background:transparent;border:1px solid transparent;color:var(--txt-2);cursor:pointer}
+.ghostbtn:hover{background:var(--panel-2);color:var(--txt);border-color:var(--line)}
+.ghostbtn.is-on{background:var(--accent-soft);color:var(--accent-ink);border-color:var(--accent-line)}
+.ghostbtn svg{width:17px;height:17px}
+.searchwrap{flex:1;min-width:0;display:flex;align-items:center;gap:8px;height:32px;padding:0 12px;border-radius:10px;background:var(--panel);border:1px solid var(--line)}
+.searchwrap input{flex:1;background:none;border:none;color:var(--txt);font:inherit;font-size:12px;outline:none}
+.searchwrap svg{width:15px;height:15px;opacity:.55}
+.sortbtn{display:flex;align-items:center;gap:6px;height:32px;padding:0 11px;border-radius:10px;background:var(--panel);border:1px solid var(--line);color:var(--txt-2);font:inherit;font-size:12px;font-weight:700;cursor:pointer}
+.sortbtn:hover{border-color:var(--accent-line)}
+
+/* list body */
+.body{flex:1 1 auto;overflow-y:auto;padding:0 11px}
+.rows{display:flex;flex-direction:column;gap:7px;padding-bottom:8px}
+.row{position:relative;border:1px solid var(--line);border-radius:12px;padding:11px 12px;background:var(--card);cursor:pointer;transition:border-color .12s,background .12s;overflow:hidden}
+.row:hover{border-color:var(--accent-line)}
+.row.sel{border-color:var(--accent-line);box-shadow:0 0 0 1px var(--accent-line)}
+.row .viz{position:absolute;inset:0;opacity:.5}
+.row .r1,.row .r2{position:relative}
+.r1{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.r1 .nm{font-weight:700;font-size:13.5px}
+.r1 .sub{color:var(--txt-2);font-size:12.5px}
+.r1 .sub.warn{color:var(--red);font-weight:700}
+.r2{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:7px}
+.rowbtns{position:absolute;top:9px;right:10px;display:none;gap:5px}
+.row:hover .rowbtns{display:flex}
+.rowbtns .ghostbtn{width:26px;height:26px;background:var(--panel-2);border-color:var(--line)}
+.rowbtns .ghostbtn svg{width:14px;height:14px}
+
+/* pills */
+.pill{display:inline-flex;align-items:center;gap:5px;height:19px;padding:0 9px;border-radius:999px;font-size:10px;font-weight:700;letter-spacing:.2px;white-space:nowrap;border:1px solid transparent;box-shadow:0 1px 2px rgba(0,0,0,.2)}
+.pill .dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+.c-green{background:var(--green-bg);color:var(--green)} .c-yellow{background:var(--yellow-bg);color:var(--yellow)}
+.c-red{background:var(--red-bg);color:var(--red)} .c-blue{background:var(--blue-bg);color:var(--blue)}
+.c-purple{background:var(--purple-bg);color:var(--purple)} .c-gray{background:var(--gray-bg);color:var(--gray)}
+.pill.ref{background:var(--panel-2);color:var(--txt);border-color:var(--line)}
+.pill.x{cursor:pointer}.pill .rm{margin-left:2px;opacity:.6;font-weight:800}.pill .rm:hover{opacity:1;color:var(--red)}
+
+/* footer totals */
+.totals{flex:0 0 auto;display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:9px 12px;background:var(--card-head);border-top:1px solid var(--accent-line);box-shadow:0 -5px 11px -7px rgba(0,0,0,.45)}
+.totcount{font-weight:800;font-size:12px;color:var(--accent-ink);padding-right:4px}
+.totchip{font-size:11px;font-weight:700;padding:2px 9px;border-radius:999px;background:var(--panel);border:1px solid var(--line);color:var(--txt-2);cursor:pointer;transition:.12s}
+.totchip:hover{border-color:var(--accent-line)}
+.totchip.c-green{color:var(--green)}.totchip.c-yellow{color:var(--yellow)}.totchip.c-red{color:var(--red)}.totchip.c-blue{color:var(--blue)}.totchip.c-purple{color:var(--purple)}
+.totchip.on{background:var(--accent);border-color:var(--accent);color:var(--btn-pri-ink)}
+
+/* ---------- STANDARD-MODE DETAIL ---------- */
+.cardhead{flex:0 0 auto;display:flex;align-items:center;gap:8px;padding:10px 12px 5px}
+.cardhead .ct{display:inline-flex;align-items:center;gap:7px;font-weight:700;color:var(--accent-ink);font-size:14px}
+.cardhead .ct svg{width:16px;height:16px}
+.cardhead .acts{margin-left:auto;display:flex;gap:5px}
+.detail{padding:12px;display:flex;flex-direction:column;gap:12px;overflow-y:auto}
+.statusbar{position:relative;height:46px;border-radius:12px;border:1px solid var(--line);display:flex;align-items:center;padding:0 14px;gap:10px;overflow:hidden;cursor:pointer}
+.statusbar .fill{position:absolute;inset:0;opacity:.45}
+.statusbar>*{position:relative}
+.statusbar .d1{font-weight:800}.statusbar .d2{margin-left:auto;font-weight:800}.statusbar .tm{color:var(--txt-2);font-size:12px}
+.section{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px}
+.section h4{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--txt-3);margin-bottom:8px}
+.detail-cols{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.fieldstack{display:flex;flex-direction:column;gap:8px}
+.kv{display:flex;align-items:center;gap:7px;flex-wrap:wrap;font-size:13px}
+.kv .lbl-money{font-weight:800;font-size:15px}.kv .mut{color:var(--txt-3);font-size:12px}
+.history{border-top:2px dotted var(--line);background:var(--bg-2);border-radius:0 0 12px 12px;padding:12px;margin:0 -12px -12px}
+.history h4{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--txt-3);margin-bottom:8px}
+.hlog{display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--txt-2)}
+.hlog div span{color:var(--txt-3);margin-right:8px;font-variant-numeric:tabular-nums}
+
+/* ---------- BUTTONS (v2) ---------- */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;height:var(--btn-h-md);padding:0 15px;border-radius:var(--btn-r);border:1px solid transparent;font:inherit;font-size:13px;font-weight:700;line-height:1;cursor:pointer;white-space:nowrap;font-variant-numeric:tabular-nums;transition:.13s}
+.btn svg{width:16px;height:16px}
+.btn--primary{background:var(--accent);color:var(--btn-pri-ink);box-shadow:0 1px 2px rgba(0,0,0,.4)}
+.btn--primary:hover{background:#e96b10;transform:translateY(-1px);box-shadow:0 3px 9px -4px rgba(255,122,26,.42)}
+.btn--secondary{background:var(--panel);color:var(--txt);border-color:var(--line)}
+.btn--secondary:hover{border-color:var(--accent-line);background:var(--panel-2)}
+.btn--branded{background:transparent;color:var(--accent-ink);border-color:var(--line)}
+.btn--branded:hover{border-color:var(--accent-line);background:var(--accent-soft)}
+.btn--quiet{background:transparent;color:var(--txt-2)}.btn--quiet:hover{background:var(--panel);color:var(--txt)}
+.btn--money{background:var(--green);color:var(--green-ink);box-shadow:0 1px 2px rgba(0,0,0,.4)}.btn--money:hover{filter:brightness(1.07);transform:translateY(-1px)}
+.btn--danger{background:transparent;color:var(--red)}.btn--danger:hover{background:var(--red-bg)}
+.btn--add{background:transparent;color:var(--txt-2);border:1px dashed var(--line);width:100%}
+.btn--add:hover{color:var(--accent-ink);border-color:var(--accent-line)}
+.btn--sm{height:28px;padding:0 11px;font-size:12px;border-radius:9px}
+.btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* ---------- BOTTOM BAR ---------- */
+.bottombar{flex:0 0 auto;display:flex;align-items:center;justify-content:center;gap:9px;padding:4px 14px 10px}
+.bb-sep{width:1px;height:24px;background:var(--line);margin:0 3px}
+
+/* ---------- popups/menus ---------- */
+.scrim{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;z-index:50}
+.scrim.open{display:flex}
+.popup{width:380px;max-width:92vw;background:var(--card);border:1px solid var(--accent-line);border-radius:16px;box-shadow:0 0 0 4px var(--accent-soft),var(--shadow);padding:20px 22px}
+.popup h3{font-size:16px;margin-bottom:4px}.popup p.sub{color:var(--txt-2);font-size:13px;margin-bottom:16px}
+.popup .amt{font-size:30px;font-weight:800;margin:4px 0 2px}
+.menu{position:absolute;z-index:60;min-width:190px;background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:6px;display:none}
+.menu.open{display:block}
+.menu button{display:flex;align-items:center;gap:9px;width:100%;height:34px;padding:0 11px;border-radius:9px;background:none;border:none;color:var(--txt);font:inherit;font-size:13px;font-weight:600;cursor:pointer;text-align:left}
+.menu button:hover{background:var(--panel-2)}
+.menu button svg{width:15px;height:15px;color:var(--accent-ink)}
+.toast{position:fixed;bottom:74px;left:50%;transform:translateX(-50%);background:var(--panel-2);border:1px solid var(--line);color:var(--txt);font-size:13px;font-weight:600;padding:9px 16px;border-radius:11px;box-shadow:var(--shadow);opacity:0;transition:opacity .2s;pointer-events:none;z-index:80}
+.toast.show{opacity:1}
+.tag{position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:90;font-size:11px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--accent-ink);background:var(--accent-soft);border:1px solid var(--accent-line);padding:4px 12px;border-radius:999px}
+.empty{padding:30px 12px;text-align:center;color:var(--txt-3);font-size:13px}
+</style>
+</head>
+<body>
+<div class="tag">Shell mockup · my ideas v1 · clickable, not the real app</div>
+<div id="app">
+
+  <!-- HEADER -->
+  <div class="header">
+    <div class="logo" onclick="toast('Logo → back-office menu')">JAC<br>RENTALS</div>
+    <div class="kpis" id="kpis"></div>
+    <div class="hr-right">
+      <div class="hr-top">
+        <div class="itemtabs" id="itemtabs"></div>
+        <div class="hello">Jacob</div>
+      </div>
+      <div class="gsearch"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg><input placeholder="Search everything…"></div>
+    </div>
+  </div>
+
+  <!-- GRID -->
+  <div class="grid">
+    <div class="col" id="col-left"></div>
+    <div class="col" id="col-mid"></div>
+    <div class="col" id="col-right"></div>
+  </div>
+
+  <!-- BOTTOM BAR -->
+  <div class="bottombar">
+    <button class="btn btn--secondary" onclick="toast('Dashboard')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>Dashboard</button>
+    <div style="position:relative">
+      <button class="btn btn--primary" id="newbtn" onclick="toggleNewMenu(event)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>New</button>
+      <div class="menu" id="newmenu" style="bottom:42px;left:0">
+        <button onclick="newItem('Rental')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>New Rental</button>
+        <button onclick="newItem('Customer')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>New Customer</button>
+        <button onclick="newItem('Inspection')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>New Inspection</button>
+        <button onclick="newItem('Work Order')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 7l3 3-8 8H6v-3z"/><path d="M3 21h18"/></svg>New Work Order</button>
+        <button onclick="newItem('Invoice')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2h9l3 3v17l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg>New Invoice</button>
+      </div>
+    </div>
+    <button class="btn btn--branded" onclick="newItem('Rental')">＋ Rental</button>
+    <button class="btn btn--branded" onclick="newItem('Customer')">＋ Customer</button>
+    <div class="bb-sep"></div>
+    <button class="ghostbtn" title="Wash mode" onclick="armWash(this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3c3 4 5 6 5 9a5 5 0 0 1-10 0c0-3 2-5 5-9z"/></svg></button>
+    <button class="ghostbtn" title="Theme" onclick="toggleTheme()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/></svg></button>
+    <button class="ghostbtn" title="QR" onclick="toast('QR codes')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h3v3M20 14v7M14 20h3"/></svg></button>
+    <button class="ghostbtn" title="Previews" onclick="toast('Hover previews')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg></button>
+    <button class="ghostbtn" title="Feedback" onclick="toast('Send feedback')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></button>
+  </div>
+</div>
+
+<!-- MONEY POPUP -->
+<div class="scrim" id="scrim" onclick="if(event.target===this)closePopup()">
+  <div class="popup" id="popup"></div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============ data ============ */
+const RING=[['MECHANIC',82,'green'],['M.TECH',64,'yellow'],['DRIVER',91,'green'],['OFFICE',47,'red'],['SALES',73,'green']];
+const COLORMAP={green:'#34d399',yellow:'#f5c542',red:'#ff4242'};
+const TABS=[['01i · Partial','Invoice','yellow'],['Young (Bobcat)','Reserved','purple'],['Reptar — Failed','Part Ordered','blue']];
+
+const D={
+  units:[
+    {nm:'Beacon',sub:'Light Tower · 480 HRS',p:[['Ready','green'],['QR','gray']]},
+    {nm:'Shrek',sub:'12k Excavator · 3,675 HRS',p:[['On Rent','green'],['Ready','green'],['QR','gray']]},
+    {nm:'Moto Moto',sub:'12k Excavator · 2,953 HRS',sw:'2,853 HRS overdue',p:[['Not Ready','yellow'],['QR','gray']]},
+    {nm:'Highrise',sub:'Lift Scissor · 540 HRS',sw:'440 HRS overdue',p:[['Not Ready','yellow'],['QR','gray']]},
+    {nm:'Brookie',sub:'8k Excavator · 2,060 HRS',p:[['Reserved','purple'],['Ready','green'],['QR','gray']]},
+    {nm:'Reptar',sub:'12k Excavator · 2,125 HRS',p:[['Failed','red'],['Part Ordered','blue'],['QR','gray']]},
+    {nm:'Worm',sub:'12k Excavator · 3,122 HRS',p:[['On Rent','green'],['Ready','green'],['QR','gray']]},
+  ],
+  categories:[
+    {nm:'12k Excavator',sub:'$440/1d · $1,290/7d · 2,575 HRS',p:[['2 Ready','green'],['1 Not Ready','yellow'],['1 Failed','red'],['20% ROI','gray']]},
+    {nm:'8k Excavator',sub:'$320/1d · $990/7d · 2,317 HRS',p:[['3 Ready','green'],['39% ROI','gray']]},
+    {nm:'Lift Scissor 26ft',sub:'$190/1d · $290/7d · 540 HRS',p:[['1 Not Ready','yellow']]},
+    {nm:'Light Tower',sub:'$100/1d · $290/7d · 396 HRS',p:[['2 Ready','green']]},
+  ],
+  rentals:[
+    {nm:'New quote — Richard Brown',sub:'',p:[['Quote','gray'],['Richard Brown','ref']],detail:'quote'},
+    {nm:'Shrek',sub:'12k Excavator · $440',p:[['On Rent','green'],['Devin Lyles','ref'],['Paid','green'],['Ready','green']],detail:'shrek'},
+    {nm:'Young (Bobcat)',sub:'12k Excavator · $2,610',viz:'green',p:[['On Rent','green'],['Devin Lyles','ref'],['Partial','yellow'],['Ready','green']],detail:'young'},
+    {nm:'Dirt Dauber',sub:'Skid Steer 75hp · $720',viz:'purple',p:[['Reserved','purple'],['matthew hazel','ref'],['Not Due','blue'],['Ready','green']],detail:'quote'},
+    {nm:'Brookie',sub:'8k Excavator · $623',viz:'purple',p:[['Reserved','purple'],['Kaleb Guidry','ref'],['Ready','green']],detail:'quote'},
+  ],
+  customers:[
+    {nm:'Kaleb Guidry',sub:'(337) 400-1121',p:[['Business','purple'],['Current','green'],['No Card','red'],['Reserved','purple']]},
+    {nm:'Devin Lyles',sub:'(337) 214-5001',viz:'green',p:[['Business','purple'],['Current','green'],['On Rent','green'],['Tomorrow','purple']]},
+    {nm:'matthew hazel',sub:'(337) 304-0071',p:[['Business','purple'],['Partial','yellow'],['Reserved','purple']]},
+    {nm:'Tucker Fontenot',sub:'(337) 905-2210',p:[['Non-Business','gray'],['Current','green'],['No Card','red']]},
+    {nm:'Chaise Russell',sub:'(409) 781-3344',p:[['Non-Business','gray'],['Unpaid','red'],['No Card','red']]},
+    {nm:'Richard Brown',sub:'(318) 560-9005',p:[['Non-Business','gray'],['New Customer','blue'],['No Card','red']]},
+  ],
+  invoices:[
+    {nm:'01i · 02Ju26',sub:'Devin Lyles · $0 / $2,610',viz:'yellow',p:[['Partial','yellow'],['On Rent','green']],detail:'pay'},
+    {nm:'03i · 28Ju26',sub:'Kaleb Guidry · $0 / $623',p:[['Unpaid','red'],['Reserved','purple']],detail:'pay'},
+    {nm:'02i · 20Ju26',sub:'matthew hazel · $880 / $880',viz:'green',p:[['Paid','green']]},
+  ],
+};
+const ICON={
+  units:'<path d="M20 12l-8-8H4v8l8 8z"/><circle cx="7" cy="7" r="1.4"/>',
+  categories:'<path d="M3 13l4-4 5 3 4-6 5 4v7H3z"/>',
+  rentals:'<rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/>',
+  customers:'<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/>',
+  invoices:'<path d="M6 2h9l3 3v17l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/>',
+  inspections:'<circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/>',
+  calendar:'<rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18"/>',
+};
+const SEG={
+  left:[['units','Units'],['categories','Categories'],['inspections','Insp.','alert'],['workorders','WOs']],
+  mid:[['rentals','Rentals'],['calendar','Calendar']],
+  right:[['customers','Customers'],['invoices','Invoices']],
+};
+const TITLE={units:'Units',categories:'Categories',rentals:'Rentals',customers:'Customers',invoices:'Invoices',inspections:'Inspections',workorders:'Work Orders',calendar:'Calendar'};
+const FOOT={
+  units:[['7','count'],['4 Ready','green'],['2 Not Ready','yellow'],['1 Failed','red']],
+  rentals:[['5','count'],['$4,393 sum','green'],['2 On Rent','green'],['2 Reserved','purple']],
+  customers:[['6','count'],['3 Business','purple'],['4 Current','green'],['4 No Card','red']],
+  categories:[['4','count'],['7 Ready','green'],['1 Failed','red']],
+  invoices:[['3','count'],['$880 paid','green'],['1 Partial','yellow'],['1 Unpaid','red']],
+};
+const state={left:'units',mid:'rentals',right:'customers',anchor:null};
+
+/* ============ render ============ */
+function svg(p,w){return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="'+(w||2)+'">'+p+'</svg>';}
+function ringSVG(pct,color){const r=22,c=2*Math.PI*r,off=c*(1-pct/100);const col=COLORMAP[color];
+ return '<svg viewBox="0 0 54 54"><circle cx="27" cy="27" r="22" stroke="var(--track)" stroke-width="6" fill="none"/><circle cx="27" cy="27" r="22" stroke="'+col+'" stroke-width="6" fill="none" stroke-linecap="round" stroke-dasharray="'+c+'" stroke-dashoffset="'+off+'" transform="rotate(-90 27 27)" style="filter:drop-shadow(0 0 2px '+col+')"/><text x="27" y="31" text-anchor="middle" font-size="13" font-weight="800" fill="var(--txt)">'+pct+'</text></svg>';}
+function pill(text,color){return '<span class="pill '+(color==='ref'?'ref':'c-'+color)+'">'+(color!=='ref'&&color!=='gray'?'<span class="dot"></span>':'')+text+'</span>';}
+
+function renderHeader(){
+  document.getElementById('kpis').innerHTML=RING.map(([l,v,c])=>'<div class="ring" onclick="toast(\''+l+' KPIs\')">'+ringSVG(v,c)+'<span class="rl">'+l+'</span></div>').join('');
+  document.getElementById('itemtabs').innerHTML=TABS.map((t,i)=>'<div class="itab'+(i===0?' on':'')+'" onclick="toast(\'tab: '+t[0]+'\')">'+t[0]+pill(t[1],t[2])+'<span class="x" onclick="event.stopPropagation();this.parentElement.remove()">✕</span></div>').join('');
+}
+function rowHTML(card,rec,i){
+  const viz=rec.viz?'<div class="viz" style="background:linear-gradient(90deg,var(--'+rec.viz+'-bg),transparent 70%)"></div>':'';
+  const sub=rec.sub?'<span class="sub">'+rec.sub+'</span>':'';
+  const sw=rec.sw?'<span class="sub warn">'+rec.sw+'</span>':'';
+  return '<div class="row" onclick="openRec(\''+card+'\','+i+')">'+viz+
+    '<div class="rowbtns"><button class="ghostbtn" title="Anchor" onclick="event.stopPropagation();anchorRec(\''+card+'\','+i+')">'+svg('<circle cx="12" cy="12" r="9"/>')+'</button><button class="ghostbtn" title="New tab" onclick="event.stopPropagation();toast(\'open in new tab\')">'+svg('<path d="M12 5v14M5 12h14"/>',2.4)+'</button></div>'+
+    '<div class="r1"><span class="nm">'+rec.nm+'</span>'+sub+sw+'</div>'+
+    '<div class="r2">'+rec.p.map(([t,c])=>pill(t,c)).join('')+'</div></div>';
+}
+function colHTML(side){
+  const entity=state[side];
+  const segs=SEG[side];
+  const anchored=state.anchor&&state.anchor.side===side;
+  const tabs=segs.map(([id,lbl,al])=>{const n=(D[id]||[]).length;return '<button class="coltab'+(id===entity?' on':'')+(al?' alert':'')+'" onclick="setTab(\''+side+'\',\''+id+'\')">'+svg(ICON[id]||ICON.units)+lbl+(n?'<span class="n">'+n+'</span>':'')+'</button>';}).join('');
+  const list=(D[entity]||[]);
+  const body='<div class="body"><div class="rows">'+(list.length?list.map((r,i)=>rowHTML(entity,r,i)).join(''):'<div class="empty">No records.</div>')+'</div></div>';
+  const foot=FOOT[entity]?'<div class="totals"><span class="totcount">'+FOOT[entity][0][0]+'</span>'+FOOT[entity].slice(1).map(([t,c])=>'<button class="totchip c-'+c+'" onclick="this.classList.toggle(\'on\')">'+t+'</button>').join('')+'</div>':'';
+  const bar='<div class="listbar"><button class="ghostbtn" title="Board view" onclick="toast(\'Board view\')">'+svg('<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/>')+'</button><div class="searchwrap">'+svg('<circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/>')+'<input placeholder="Search '+TITLE[entity].toLowerCase()+'…"></div><button class="sortbtn">Sort '+svg('<path d="M6 9l6 6 6-6"/>')+'</button></div>';
+  return '<div class="card'+(anchored?' anchored':'')+'"><div class="coltabs">'+tabs+'</div>'+bar+body+foot+'</div>';
+}
+function render(){
+  renderHeader();
+  document.getElementById('col-left').innerHTML=colHTML('left');
+  document.getElementById('col-mid').innerHTML=state.anchor&&state.anchor.side==='mid'?detailHTML(state.anchor.detail):colHTML('mid');
+  document.getElementById('col-right').innerHTML=colHTML('right');
+}
+
+/* ============ detail (standard mode) ============ */
+function detailHTML(kind){
+  const head='<div class="cardhead"><span class="ct">'+svg(ICON.rentals)+ (kind==='shrek'?'Shrek — Devin Lyles':kind==='young'?'Young (Bobcat) — Devin Lyles':'New quote — Richard Brown')+'</span><div class="acts"><button class="ghostbtn" title="Back to list" onclick="unanchor()">'+svg('<path d="M3 6h18M3 12h18M3 18h18"/>')+'</button></div></div>';
+  if(kind==='young'){
+    return '<div class="card anchored">'+head+'<div class="detail">'+
+      '<div class="statusbar"><div class="fill" style="background:linear-gradient(90deg,var(--green-bg),transparent)"></div><span class="d1">Tu2</span>'+pill('On Rent','green')+'<span class="tm">8:00 AM</span><span class="d2">Fr12</span></div>'+
+      '<div class="section"><h4>Notes</h4><button class="btn--add btn">＋ Add notes</button></div>'+
+      '<div class="detail-cols">'+
+        '<div class="section"><h4>Rental</h4><div class="fieldstack">'+
+          '<div class="kv"><span class="pill ref x">Young (Bobcat) <span class="rm">✕</span></span><span class="pill ref">12k Excavator</span></div>'+
+          '<div class="kv"><button class="btn btn--secondary btn--sm">Delivery '+svg('<path d="M6 9l6 6 6-6"/>')+'</button><b>$150</b><span class="mut">/one-way</span></div>'+
+          '<div class="kv"><span class="pill ref">265 Callie Ln, Orange, TX</span></div>'+
+          '<div class="kv"><b>30 min</b><span class="mut">/one-way</span></div>'+
+        '</div></div>'+
+        '<div class="section"><h4>Invoice</h4><div class="fieldstack">'+
+          '<div class="kv"><span class="pill ref x">Devin Lyles <span class="rm">✕</span></span></div>'+
+          '<div class="kv"><span class="pill c-yellow"><span class="dot"></span>01i · Partial</span></div>'+
+          '<div class="kv"><span class="lbl-money">$2,057</span><span class="mut">due</span></div>'+
+          '<div class="kv" style="margin-top:4px"><button class="btn btn--money btn--sm" onclick="payPopup()">Charge $2,057</button><button class="btn btn--danger btn--sm" onclick="toast(\'Refund → confirm\')">Refund</button></div>'+
+        '</div></div>'+
+      '</div>'+
+      '<div class="section"><h4>Inspection</h4><div class="fieldstack"><div class="kv">'+pill('Ready','green')+'<span class="mut">Start 3,500 HRS · Return —</span></div>'+
+        '<div class="kv"><button class="btn btn--secondary btn--sm">📹 On-Rent</button><button class="btn btn--secondary btn--sm">📹 Returning</button></div></div></div>'+
+      '<div class="history"><h4>History</h4><div class="hlog"><div><span>Feb 20</span>Invoice partial payment</div><div><span>Feb 18</span>Rental created — On Rent</div></div></div>'+
+      '</div></div>';
+  }
+  // generic quote/shrek detail
+  return '<div class="card anchored">'+head+'<div class="detail">'+
+    '<div class="statusbar" onclick="toast(\'open window picker\')"><span class="d1">Select rental window</span>'+pill('Quote','gray')+'</div>'+
+    '<div class="section"><h4>Notes</h4><div class="kv mut">Asked about a light tower for a weekend event.</div></div>'+
+    '<div class="detail-cols">'+
+      '<div class="section"><h4>Rental</h4><div class="fieldstack"><button class="btn--add btn">＋ Pick unit</button><div class="kv"><button class="btn btn--secondary btn--sm">Self '+svg('<path d="M6 9l6 6 6-6"/>')+'</button></div></div></div>'+
+      '<div class="section"><h4>Invoice</h4><div class="fieldstack"><button class="btn--add btn">＋ Create invoice</button></div></div>'+
+    '</div>'+
+    '<div class="history"><h4>History</h4><div class="hlog"><div><span>Jun 09</span>Rental created — Quote</div></div></div>'+
+    '</div></div>';
+}
+
+/* ============ interactions ============ */
+function setTab(side,id){ state[side]=id; if(state.anchor&&state.anchor.side===side)state.anchor=null; render(); }
+function openRec(card,i){ const rec=D[card][i]; if(rec.detail==='pay'){payPopup();return;} const side=card==='rentals'?'mid':null; if(side){state.anchor={side,detail:rec.detail||'quote'};render();} else {toast('Standard mode → '+rec.nm);} }
+function anchorRec(card,i){ const side=card==='rentals'?'mid':(card==='units'||card==='categories'||card==='inspections'||card==='workorders'?'left':'right'); if(side==='mid'){state.anchor={side,detail:D[card][i].detail||'quote'};} else {toast('Anchored '+D[card][i].nm);} render(); }
+function unanchor(){ state.anchor=null; render(); }
+function toggleTheme(){ const d=document.documentElement; d.dataset.theme=d.dataset.theme==='dark'?'light':'dark'; }
+function armWash(b){ b.classList.toggle('is-on'); toast(b.classList.contains('is-on')?'Wash mode ON':'Wash mode off'); }
+let menuOpen=false;
+function toggleNewMenu(e){ e.stopPropagation(); const m=document.getElementById('newmenu'); menuOpen=!menuOpen; m.classList.toggle('open',menuOpen); }
+function newItem(t){ document.getElementById('newmenu').classList.remove('open');menuOpen=false; toast('+New '+t+' mode'); }
+document.addEventListener('click',()=>{ if(menuOpen){document.getElementById('newmenu').classList.remove('open');menuOpen=false;} });
+function payPopup(){
+  document.getElementById('popup').innerHTML='<h3>Charge card on file</h3><p class="sub">Devin Lyles · Visa ···· 4242</p><div class="amt">$2,057.00</div><p class="sub" style="margin-bottom:18px">Balance due on invoice 01i · incl. 10.75% tax</p><div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn btn--quiet" onclick="closePopup()">Cancel</button><button class="btn btn--money" onclick="charged()">Charge $2,057</button></div>';
+  document.getElementById('scrim').classList.add('open');
+}
+function charged(){ closePopup(); toast('✓ Charged $2,057 — invoice → Paid'); }
+function closePopup(){ document.getElementById('scrim').classList.remove('open'); }
+let toastT;
+function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.classList.add('show'); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('show'),1700); }
+
+render();
+</script>
+</body>
+</html>

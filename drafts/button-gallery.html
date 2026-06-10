@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rental Wrangler — Button System (Draft v1)</title>
+<style>
+:root{
+  --accent:#ff7a1a; --accent-soft:rgba(255,122,26,.14); --accent-line:rgba(255,122,26,.5);
+  --bg:#0b0c0f; --bg-2:#101216; --panel:#15171c; --panel-2:#1b1e24; --card:#14161b; --card-head:#191c22;
+  --line:#262a31; --line-soft:#1f232a; --txt:#e9edf4; --txt-2:#a7afbc; --txt-3:#6b7480; --track:#22262e;
+  --green:#34d399; --green-bg:rgba(52,211,153,.14); --red:#ff4242; --red-bg:rgba(255,66,66,.18);
+  --radius:16px; --chip-radius:12px; --shadow:0 18px 50px -24px rgba(0,0,0,.75);
+  --font:"Geist",-apple-system,"Segoe UI",sans-serif;
+}
+[data-theme="light"]{
+  --bg:#eef1f6; --bg-2:#e6eaf1; --panel:#ffffff; --panel-2:#eef1f6; --card:#ffffff; --card-head:#eef1f6;
+  --line:#cfd6e1; --line-soft:#e1e6ee; --txt:#141821; --txt-2:#414b5a; --txt-3:#69727f; --track:#d3d9e3;
+  --green:#0c8f5f; --red:#d52a2a; --red-bg:rgba(213,42,42,.15); --accent:#ff7a1a; --accent-soft:rgba(255,122,26,.14);
+  --shadow:0 18px 40px -26px rgba(20,30,60,.35);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--txt);font-family:var(--font);font-size:14px;line-height:1.45;-webkit-font-smoothing:antialiased;padding:0 0 80px}
+.wrap{max-width:1080px;margin:0 auto;padding:0 28px}
+
+/* ---- page chrome ---- */
+.topbar{position:sticky;top:0;z-index:10;display:flex;align-items:center;justify-content:space-between;
+  padding:18px 28px;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--line-soft)}
+.brand{font-size:18px;font-weight:800;letter-spacing:-.2px}
+.brand small{font-weight:600;color:var(--txt-3);margin-left:8px;font-size:12px;letter-spacing:.3px;text-transform:uppercase}
+.lead{color:var(--txt-2);font-size:15px;max-width:760px;margin:26px 0 6px}
+h2{font-size:13px;font-weight:800;letter-spacing:1.2px;text-transform:uppercase;color:var(--txt-3);margin:46px 0 16px;padding-bottom:8px;border-bottom:1px solid var(--line-soft)}
+h3{font-size:15px;font-weight:700;margin:0 0 4px}
+.muted{color:var(--txt-2)} .tiny{font-size:12px;color:var(--txt-3)}
+
+/* ---- panels ---- */
+.panel{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:20px 22px;box-shadow:var(--shadow)}
+.grid{display:grid;gap:16px}
+.cols-2{grid-template-columns:1fr 1fr}
+.row{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.state-row{display:flex;gap:22px;flex-wrap:wrap;align-items:flex-end}
+.state{display:flex;flex-direction:column;align-items:center;gap:8px}
+.state .cap{font-size:11px;color:var(--txt-3);text-transform:uppercase;letter-spacing:.4px}
+.note{margin-top:14px;font-size:13px;color:var(--txt-2)}
+.note b{color:var(--txt)}
+.do{color:var(--green)} .dont{color:var(--red)}
+.tag{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:var(--panel-2);color:var(--txt-2);border:1px solid var(--line);vertical-align:middle}
+
+/* =================================================================
+   THE PROPOSED BUTTON SYSTEM  (this is what we're arguing about)
+   ================================================================= */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:36px;padding:0 16px;
+  border-radius:11px;border:1px solid transparent;font:inherit;font-size:13px;font-weight:700;line-height:1;
+  cursor:pointer;white-space:nowrap;transition:background .14s,border-color .14s,color .14s,box-shadow .14s,transform .08s}
+.btn svg{width:16px;height:16px;flex:0 0 auto}
+
+/* TIER 1 — PRIMARY (solid orange) */
+.btn--primary{background:var(--accent);color:#fff}
+.btn--primary:hover,.btn--primary.s-hover{background:#ff8c3a;box-shadow:0 4px 14px -5px rgba(255,122,26,.7);transform:translateY(-1px)}
+.btn--primary:active,.btn--primary.s-active{background:#e96b10;transform:translateY(0);box-shadow:none}
+.btn--primary.s-focus{box-shadow:0 0 0 3px var(--accent-soft),0 0 0 1px var(--accent)}
+.btn--primary.s-disabled,.btn--primary:disabled{background:var(--accent);opacity:.38;cursor:not-allowed;transform:none;box-shadow:none}
+
+/* TIER 2 — SECONDARY (neutral outline) */
+.btn--secondary{background:var(--panel);color:var(--txt);border-color:var(--line)}
+.btn--secondary:hover,.btn--secondary.s-hover{border-color:var(--accent-line);background:var(--panel-2)}
+.btn--secondary:active,.btn--secondary.s-active{background:var(--bg-2)}
+.btn--secondary.s-focus{box-shadow:0 0 0 3px var(--accent-soft);border-color:var(--accent)}
+.btn--secondary.s-disabled{opacity:.4;cursor:not-allowed}
+
+/* TIER 2b — ACCENT (soft-orange fill: a notch above secondary, below primary) */
+.btn--accent{background:var(--accent-soft);color:var(--accent);border-color:var(--accent-line)}
+.btn--accent:hover,.btn--accent.s-hover{background:rgba(255,122,26,.22)}
+
+/* TIER 3 — QUIET (text, hover reveals a surface) */
+.btn--quiet{background:transparent;color:var(--txt-2);border-color:transparent}
+.btn--quiet:hover,.btn--quiet.s-hover{background:var(--panel);color:var(--txt)}
+.btn--quiet.s-disabled{opacity:.4;cursor:not-allowed}
+
+/* TIER 4 — ADD (dashed affordance for "+ Add X" empty fields) */
+.btn--add{background:transparent;color:var(--txt-3);border:1px dashed var(--line)}
+.btn--add:hover,.btn--add.s-hover{color:var(--accent);border-color:var(--accent-line);border-style:dashed}
+
+/* DESTRUCTIVE modifier */
+.btn--danger{background:transparent;color:var(--red);border-color:transparent}
+.btn--danger:hover,.btn--danger.s-hover{background:var(--red-bg)}
+.btn--danger-solid{background:var(--red);color:#fff}
+.btn--danger-solid:hover,.btn--danger-solid.s-hover{background:#ff5a5a;box-shadow:0 4px 14px -5px rgba(255,66,66,.7)}
+
+/* sizes */
+.btn--sm{height:28px;padding:0 11px;font-size:12px;border-radius:9px}
+.btn--sm svg{width:14px;height:14px}
+.btn--lg{height:46px;padding:0 24px;font-size:15px;border-radius:12px}
+.btn--lg svg{width:18px;height:18px}
+
+/* TIER 5 — ICON BUTTON */
+.iconbtn{width:36px;height:36px;display:inline-grid;place-items:center;border-radius:11px;background:transparent;
+  color:var(--txt-2);border:1px solid transparent;cursor:pointer;transition:background .14s,border-color .14s,color .14s}
+.iconbtn svg{width:18px;height:18px}
+.iconbtn:hover,.iconbtn.s-hover{background:var(--panel);color:var(--txt);border-color:var(--line)}
+.iconbtn.is-on{background:var(--accent-soft);color:var(--accent);border-color:var(--accent-line)}
+.iconbtn.is-danger:hover{background:var(--red-bg);color:var(--red)}
+.iconbtn--circle{border-radius:50%}
+
+/* TIER 6 — SEGMENTED / TOGGLE */
+.seg{display:inline-flex;gap:3px;padding:3px;background:var(--panel);border:1px solid var(--line);border-radius:13px}
+.seg-item{display:inline-flex;align-items:center;gap:7px;padding:7px 13px;border-radius:10px;background:transparent;
+  color:var(--txt-3);border:none;font:inherit;font-weight:700;font-size:13px;cursor:pointer;transition:color .14s,background .14s}
+.seg-item svg{width:15px;height:15px}
+.seg-item:hover{color:var(--txt)}
+.seg-item.is-on{background:var(--accent);color:#fff}
+.seg-item .n{font-size:11px;font-weight:800;padding:1px 7px;border-radius:999px;background:var(--bg-2);color:var(--txt-3)}
+.seg-item.is-on .n{background:rgba(255,255,255,.28);color:#fff}
+
+/* ladder visual */
+.ladder{display:flex;align-items:flex-end;gap:0;margin:8px 0 2px}
+.rung{flex:1;text-align:center;padding:0 6px}
+.rung .bar{height:10px;border-radius:6px;margin-bottom:12px}
+.rung .lbl{font-weight:800;font-size:13px}
+.rung .use{font-size:11px;color:var(--txt-3);margin-top:3px;min-height:30px}
+.b1{background:var(--accent)} .b2{background:var(--accent-line)} .b2b{background:rgba(255,122,26,.3)}
+.b3{background:var(--line)} .b4{background:repeating-linear-gradient(90deg,var(--line) 0 6px,transparent 6px 12px)}
+
+/* map table */
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line-soft);vertical-align:middle}
+th{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--txt-3);font-weight:700}
+td:first-child{white-space:nowrap}
+.swatch-btn{transform:scale(.92);transform-origin:left}
+
+/* decision compare */
+.opt{flex:1;min-width:220px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;display:flex;flex-direction:column;align-items:center;gap:12px}
+.opt .lbl{font-weight:800;font-size:13px}
+.opt .desc{font-size:12px;color:var(--txt-2);text-align:center}
+.opt.rec{border-color:var(--accent-line);box-shadow:0 0 0 1px var(--accent-line) inset}
+.rec-pill{font-size:10px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--accent)}
+
+/* gradient + radius option helpers */
+.p-flat{background:var(--accent);color:#fff}
+.p-lift{background:var(--accent);color:#fff;box-shadow:0 4px 14px -5px rgba(255,122,26,.75)}
+.p-grad{background:linear-gradient(180deg,#ff9442,#f06e08);color:#fff;box-shadow:inset 0 1px 0 rgba(255,255,255,.25),0 4px 14px -6px rgba(255,122,26,.7)}
+.r-pill{border-radius:999px} .r-soft{border-radius:11px} .r-sharp{border-radius:6px}
+
+.callout{background:var(--accent-soft);border:1px solid var(--accent-line);border-radius:12px;padding:14px 18px;color:var(--txt)}
+ul.rules{list-style:none;display:grid;gap:10px}
+ul.rules li{padding-left:26px;position:relative;color:var(--txt-2)}
+ul.rules li b{color:var(--txt)}
+ul.rules li::before{content:"";position:absolute;left:0;top:7px;width:9px;height:9px;border-radius:3px;background:var(--accent)}
+.foot{margin-top:50px;padding-top:18px;border-top:1px solid var(--line-soft);color:var(--txt-3);font-size:13px;text-align:center}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">Rental Wrangler — Button System <small>Draft v1 · mockup, not the app</small></div>
+  <button class="btn btn--secondary" id="themeToggle" onclick="document.documentElement.dataset.theme = document.documentElement.dataset.theme==='dark'?'light':'dark'; this.textContent = document.documentElement.dataset.theme==='dark'?'◐ Light':'◑ Dark';">◐ Light</button>
+</div>
+
+<div class="wrap">
+  <p class="lead">A proposed loudness ladder. The principle: <b>visual weight = importance</b>. Exactly one Primary per context; everything supporting it steps down a rung; destructive actions stay quiet until you mean them. Below is the whole vocabulary, every state shown at once, then a map of where each real app button lands — and the open calls for us to fight about.</p>
+
+  <!-- LADDER -->
+  <h2>The hierarchy at a glance</h2>
+  <div class="panel">
+    <div class="ladder">
+      <div class="rung"><div class="bar b1"></div><div class="lbl" style="color:var(--accent)">1 · Primary</div><div class="use">The one commit/create action. Loudest thing on screen.</div></div>
+      <div class="rung"><div class="bar b2b"></div><div class="lbl">2b · Accent</div><div class="use">Important but not THE action (soft-orange).</div></div>
+      <div class="rung"><div class="bar b2"></div><div class="lbl">2 · Secondary</div><div class="use">Supporting actions, dropdowns, neutral outline.</div></div>
+      <div class="rung"><div class="bar b3"></div><div class="lbl">3 · Quiet</div><div class="use">Exit / Cancel / Clear — low stakes, text only.</div></div>
+      <div class="rung"><div class="bar b4"></div><div class="lbl">4 · Add</div><div class="use">"+ Add X" empty-field affordance (dashed).</div></div>
+    </div>
+    <div class="row" style="margin-top:22px;justify-content:center;gap:12px">
+      <button class="btn btn--primary">＋ New</button>
+      <button class="btn btn--accent">＋ Rental</button>
+      <button class="btn btn--secondary">Dashboard</button>
+      <button class="btn btn--quiet">Exit</button>
+      <button class="btn btn--add">＋ Add notes</button>
+    </div>
+    <div class="note">Side by side, weight reads top-to-bottom instantly — you always know what the app wants you to do next, and the quiet stuff doesn't shout.</div>
+  </div>
+
+  <!-- TIER DETAILS -->
+  <h2>Tiers &amp; every state</h2>
+
+  <div class="grid cols-2">
+    <div class="panel">
+      <h3>1 · Primary <span class="tag">solid orange</span></h3>
+      <p class="tiny">The single most important action in a view: <b>＋ New</b>, <b>Save</b>, <b>Done</b>, <b>Charge</b>, empty-state <b>New Customer</b>.</p>
+      <div class="state-row" style="margin-top:16px">
+        <div class="state"><button class="btn btn--primary">Save</button><span class="cap">Default</span></div>
+        <div class="state"><button class="btn btn--primary s-hover">Save</button><span class="cap">Hover</span></div>
+        <div class="state"><button class="btn btn--primary s-active">Save</button><span class="cap">Active</span></div>
+        <div class="state"><button class="btn btn--primary s-focus">Save</button><span class="cap">Focus</span></div>
+        <div class="state"><button class="btn btn--primary s-disabled">Save</button><span class="cap">Disabled</span></div>
+      </div>
+      <div class="note"><span class="do">✓ Do</span> use once per context. <span class="dont">✕ Don't</span> place two solid-orange buttons adjacent — they cancel each other out.</div>
+    </div>
+
+    <div class="panel">
+      <h3>2b · Accent <span class="tag">soft-orange fill</span></h3>
+      <p class="tiny">Clearly actionable but not THE action — e.g. the <b>＋Rental / ＋Customer</b> split that sits beside the primary, or "Add card".</p>
+      <div class="state-row" style="margin-top:16px">
+        <div class="state"><button class="btn btn--accent">＋ Rental</button><span class="cap">Default</span></div>
+        <div class="state"><button class="btn btn--accent s-hover">＋ Rental</button><span class="cap">Hover</span></div>
+        <div class="state"><button class="btn btn--accent" style="opacity:.4">＋ Rental</button><span class="cap">Disabled</span></div>
+      </div>
+      <div class="note">Carries the brand color without the full weight of Primary. Good when 2–3 create shortcuts share a bar.</div>
+    </div>
+
+    <div class="panel">
+      <h3>2 · Secondary <span class="tag">neutral outline</span></h3>
+      <p class="tiny">Supporting actions &amp; field dropdowns: <b>Dashboard</b>, <b>Self ▾</b>, <b>Lock price</b>, <b>Cancel</b> (when paired with a solid confirm).</p>
+      <div class="state-row" style="margin-top:16px">
+        <div class="state"><button class="btn btn--secondary">Dashboard</button><span class="cap">Default</span></div>
+        <div class="state"><button class="btn btn--secondary s-hover">Dashboard</button><span class="cap">Hover</span></div>
+        <div class="state"><button class="btn btn--secondary s-active">Dashboard</button><span class="cap">Active</span></div>
+        <div class="state"><button class="btn btn--secondary s-focus">Dashboard</button><span class="cap">Focus</span></div>
+        <div class="state"><button class="btn btn--secondary s-disabled">Dashboard</button><span class="cap">Disabled</span></div>
+      </div>
+      <div class="note">Hover only warms the <b>border</b> to orange (never a fill) — so hover never gets mistaken for "selected".</div>
+    </div>
+
+    <div class="panel">
+      <h3>3 · Quiet <span class="tag">text</span></h3>
+      <p class="tiny">Low-stakes / escape hatches: <b>Exit</b>, <b>Clear</b>, <b>Today</b>, <b>Back to list</b>.</p>
+      <div class="state-row" style="margin-top:16px">
+        <div class="state"><button class="btn btn--quiet">Exit</button><span class="cap">Default</span></div>
+        <div class="state"><button class="btn btn--quiet s-hover">Exit</button><span class="cap">Hover</span></div>
+        <div class="state"><button class="btn btn--quiet s-disabled">Exit</button><span class="cap">Disabled</span></div>
+      </div>
+      <div class="note">No border at rest; a surface fades in on hover so it still feels clickable.</div>
+    </div>
+
+    <div class="panel">
+      <h3>4 · Add <span class="tag">dashed</span></h3>
+      <p class="tiny">The "this field is empty, fill it" affordance: <b>＋ Add notes</b>, <b>＋ Add PO</b>, <b>＋ Add address</b>, <b>＋ Pick unit</b>, <b>＋ Add Part/Labor</b>.</p>
+      <div class="state-row" style="margin-top:16px">
+        <div class="state"><button class="btn btn--add">＋ Add PO</button><span class="cap">Default</span></div>
+        <div class="state"><button class="btn btn--add s-hover">＋ Add PO</button><span class="cap">Hover</span></div>
+      </div>
+      <div class="note">Dashed = "nothing here yet." Distinct from real buttons so the eye skips them until needed.</div>
+    </div>
+
+    <div class="panel">
+      <h3>Destructive <span class="tag">red modifier</span></h3>
+      <p class="tiny">Remove / Refund / Delete. <b>Never the loudest thing</b> — quiet red that warms on hover; solid red only inside a confirm step.</p>
+      <div class="state-row" style="margin-top:16px">
+        <div class="state"><button class="btn btn--danger">Remove card</button><span class="cap">Default</span></div>
+        <div class="state"><button class="btn btn--danger s-hover">Remove card</button><span class="cap">Hover</span></div>
+        <div class="state"><button class="btn btn--danger-solid">Confirm refund</button><span class="cap">In-confirm</span></div>
+      </div>
+      <div class="note">Money/irreversible actions earn a <b>confirm step</b>, not just a louder color.</div>
+    </div>
+  </div>
+
+  <!-- ICON + SEGMENTED -->
+  <h2>Icon buttons &amp; toggles</h2>
+  <div class="grid cols-2">
+    <div class="panel">
+      <h3>5 · Icon button <span class="tag">ghost by default</span></h3>
+      <p class="tiny">Bottom-bar utilities + hover-only card controls (⊞ / ＋ / list). Quiet at rest, surface on hover, soft-orange when "armed" (a mode is on).</p>
+      <div class="state-row" style="margin-top:16px">
+        <div class="state"><button class="iconbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3c3 4 5 6 5 9a5 5 0 0 1-10 0c0-3 2-5 5-9z"/></svg></button><span class="cap">Default</span></div>
+        <div class="state"><button class="iconbtn s-hover"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button><span class="cap">Hover</span></div>
+        <div class="state"><button class="iconbtn is-on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg></button><span class="cap">On / armed</span></div>
+        <div class="state"><button class="iconbtn is-danger s-hover"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 7h14M10 11v6M14 11v6M6 7l1 13h10l1-13"/></svg></button><span class="cap">Danger</span></div>
+      </div>
+      <div class="note">Icon-only <b>always</b> carries a tooltip. Min 36px hit target.</div>
+    </div>
+
+    <div class="panel">
+      <h3>6 · Segmented / toggle <span class="tag">selected = orange fill</span></h3>
+      <p class="tiny">Column tabs &amp; the Rentals/Calendar toggle. One selected segment, solid orange + white; the rest quiet text.</p>
+      <div class="row" style="margin-top:16px">
+        <div class="seg">
+          <button class="seg-item is-on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>Rentals <span class="n">6</span></button>
+          <button class="seg-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>Calendar <span class="n">5</span></button>
+        </div>
+      </div>
+      <div class="note">Same orange-fill language as the active item tab — so "where am I / what's selected" is one consistent signal app-wide.</div>
+    </div>
+  </div>
+
+  <!-- SIZES -->
+  <h2>Size scale</h2>
+  <div class="panel">
+    <div class="state-row">
+      <div class="state"><button class="btn btn--primary btn--sm">Small</button><span class="cap">SM · 28px · dense rows, inline</span></div>
+      <div class="state"><button class="btn btn--primary">Medium</button><span class="cap">MD · 36px · default</span></div>
+      <div class="state"><button class="btn btn--primary btn--lg">Large</button><span class="cap">LG · 46px · empty-state CTA</span></div>
+    </div>
+    <div class="note">Three sizes only. MD is the default everywhere; SM for inline/dense; LG reserved for a lonely empty-state call to action (e.g. "＋ New Customer").</div>
+  </div>
+
+  <!-- MAP TO APP -->
+  <h2>Every real app button → its tier</h2>
+  <div class="panel" style="padding:8px 22px">
+    <table>
+      <tr><th>App button</th><th>Tier</th><th>Looks like</th><th>Why</th></tr>
+      <tr><td>＋ New (hub)</td><td>Primary</td><td><span class="swatch-btn"><button class="btn btn--primary btn--sm">＋ New</button></span></td><td>The create entry point — the loudest control.</td></tr>
+      <tr><td>＋Rental / ＋Customer split</td><td>Accent</td><td><span class="swatch-btn"><button class="btn btn--accent btn--sm">＋ Rental</button></span></td><td>Shortcuts beside ＋New; branded but secondary.</td></tr>
+      <tr><td>Charge invoice</td><td>Primary + confirm</td><td><span class="swatch-btn"><button class="btn btn--primary btn--sm">Charge $2,610</button></span></td><td>Money = primary, but gated by a confirm step.</td></tr>
+      <tr><td>Refund</td><td>Destructive</td><td><span class="swatch-btn"><button class="btn btn--danger btn--sm">Refund</button></span></td><td>Quiet red until hover; confirm before firing.</td></tr>
+      <tr><td>Save / Done (forms, window picker)</td><td>Primary</td><td><span class="swatch-btn"><button class="btn btn--primary btn--sm">Done</button></span></td><td>Commits the thing you're building.</td></tr>
+      <tr><td>Dashboard · Lock price · dropdowns</td><td>Secondary</td><td><span class="swatch-btn"><button class="btn btn--secondary btn--sm">Self ▾</button></span></td><td>Supporting; neutral outline.</td></tr>
+      <tr><td>Exit · Clear · Today · Cancel</td><td>Quiet</td><td><span class="swatch-btn"><button class="btn btn--quiet btn--sm">Exit</button></span></td><td>Escape hatches; low stakes.</td></tr>
+      <tr><td>＋ Add notes/PO/address · ＋ Pick unit</td><td>Add</td><td><span class="swatch-btn"><button class="btn btn--add btn--sm">＋ Add PO</button></span></td><td>Empty-field affordance, dashed.</td></tr>
+      <tr><td>Empty-state "＋ New Customer"</td><td>Primary · LG</td><td><span class="swatch-btn"><button class="btn btn--primary btn--sm">＋ New Customer</button></span></td><td>The only action on an empty card.</td></tr>
+      <tr><td>Bottom-bar utilities (wash/theme/qr/eye/feedback)</td><td>Icon</td><td><span class="swatch-btn"><button class="iconbtn" style="width:30px;height:30px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button></span></td><td>Ghost icons; tooltips required.</td></tr>
+      <tr><td>Card header ⊞ / ＋ / list (hover)</td><td>Icon · SM</td><td><span class="swatch-btn"><button class="iconbtn" style="width:28px;height:28px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/></svg></button></span></td><td>Quiet, appear on hover only.</td></tr>
+      <tr><td>Column toggle · item tabs · sort ▲▼</td><td>Segmented</td><td><span class="swatch-btn"><span class="seg" style="transform:scale(.8);transform-origin:left"><button class="seg-item is-on">Units</button><button class="seg-item">Cats</button></span></span></td><td>Selected = orange fill (matches active tab).</td></tr>
+      <tr><td>Pill × (remove unit/customer)</td><td>Destructive · icon</td><td><span class="swatch-btn"><button class="iconbtn is-danger s-hover" style="width:24px;height:24px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 6l12 12M18 6L6 18"/></svg></button></span></td><td>Tiny red affordance inside a pill.</td></tr>
+    </table>
+  </div>
+  <p class="tiny" style="margin-top:10px">Note: <b>status / reference pills</b> (On Rent, Reserved, the invoice ID pill) are a <b>separate display system</b> — they happen to be clickable per the universal pill rule, but they're not part of the button hierarchy and keep their own status colors.</p>
+
+  <!-- DECISIONS -->
+  <h2>Open calls — let's fight about these</h2>
+
+  <div class="panel">
+    <h3>A · Primary treatment</h3>
+    <p class="tiny">How much does the loudest button "pop"?</p>
+    <div class="row" style="margin-top:14px;align-items:stretch">
+      <div class="opt"><button class="btn p-flat">＋ New</button><div class="lbl">Flat</div><div class="desc">Pure fill. Calmest, most "spreadsheet-tool". Matches the current app.</div></div>
+      <div class="opt rec"><span class="rec-pill">my pick</span><button class="btn p-lift">＋ New</button><div class="lbl">Lifted</div><div class="desc">Fill + soft colored shadow + 1px hover rise. Reads as clearly clickable without being toy-like.</div></div>
+      <div class="opt"><button class="btn p-grad">＋ New</button><div class="lbl">Gradient</div><div class="desc">Top-lit gradient + inset highlight. Most "premium", but can feel dated / heavier.</div></div>
+    </div>
+  </div>
+
+  <div class="panel" style="margin-top:16px">
+    <h3>B · Corner radius (whole system)</h3>
+    <p class="tiny">Buttons currently sit at ~11px; pills are fully round (999px). Pick the button language:</p>
+    <div class="row" style="margin-top:14px;align-items:stretch">
+      <div class="opt"><button class="btn p-lift r-pill">＋ New</button><div class="lbl">Pill (999px)</div><div class="desc">Fully round. Friendliest; matches the status pills — but buttons + pills start looking the same.</div></div>
+      <div class="opt rec"><span class="rec-pill">my pick</span><button class="btn p-lift r-soft">＋ New</button><div class="lbl">Soft (11px)</div><div class="desc">Rounded rect. Buttons stay visually distinct from pills. Current app value.</div></div>
+      <div class="opt"><button class="btn p-lift r-sharp">＋ New</button><div class="lbl">Sharp (6px)</div><div class="desc">Tighter, more "pro tool". Can feel cold next to the round pills.</div></div>
+    </div>
+  </div>
+
+  <div class="panel" style="margin-top:16px">
+    <h3>C · Icon-button shape</h3>
+    <div class="row" style="margin-top:14px;align-items:stretch">
+      <div class="opt rec"><span class="rec-pill">my pick</span><button class="iconbtn s-hover"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button><div class="lbl">Rounded square</div><div class="desc">Echoes the card/button radius; toolbar reads as a tidy strip.</div></div>
+      <div class="opt"><button class="iconbtn iconbtn--circle s-hover"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button><div class="lbl">Circle</div><div class="desc">Softer, more "app-y"; competes a bit with the round KPI rings.</div></div>
+    </div>
+  </div>
+
+  <div class="panel" style="margin-top:16px">
+    <h3>D · Should "Secondary" hover fill, or just warm its border?</h3>
+    <div class="row" style="margin-top:14px;align-items:stretch">
+      <div class="opt rec"><span class="rec-pill">my pick</span><button class="btn btn--secondary s-hover">Dashboard</button><div class="lbl">Border-warm only</div><div class="desc">Hover ≠ selected. Keeps the orange-fill meaning reserved for "selected/active".</div></div>
+      <div class="opt"><button class="btn" style="background:var(--accent-soft);color:var(--accent);border:1px solid var(--accent-line)">Dashboard</button><div class="lbl">Soft-orange fill on hover</div><div class="desc">More obvious it's hovered — but blurs the line with the Accent tier &amp; selected toggles.</div></div>
+    </div>
+  </div>
+
+  <!-- GUIDELINES -->
+  <h2>The rules (proposed)</h2>
+  <div class="callout">
+    <ul class="rules">
+      <li><b>One Primary per context.</b> A card, a popup, a toolbar — each gets at most one solid-orange button. If two things feel primary, one is actually Accent or Secondary.</li>
+      <li><b>Hover never looks like selected.</b> Selected/active = orange <i>fill</i>. Hover = border/surface warm only. They must never collide.</li>
+      <li><b>Destructive is never the loudest.</b> Red stays quiet (text/ghost) until hover; solid red appears only inside a confirm.</li>
+      <li><b>Money &amp; irreversible actions get a confirm step</b> — Charge, Refund, Remove-with-payment, Admin override. Color alone is not the guard.</li>
+      <li><b>Icon-only ⇒ tooltip,</b> always. And a ≥36px hit target (28px for hover-only card controls).</li>
+      <li><b>"+ Add X" is dashed,</b> not a real button — it signals an empty field, not an action competing for attention.</li>
+      <li><b>Three sizes only</b> (SM / MD / LG). No one-off heights.</li>
+      <li><b>Pills aren't buttons.</b> Status/reference pills keep their own color system; don't restyle them into the button ladder.</li>
+    </ul>
+  </div>
+
+  <div class="foot">Draft v1 — nothing here is in the app yet. Argue freely; I'll revise and we iterate before porting anything.</div>
+</div>
+
+</body>
+</html>

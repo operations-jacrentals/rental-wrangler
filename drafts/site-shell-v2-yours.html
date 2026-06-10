@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rental Wrangler — Shell (YOUR ideas, v2)</title>
+<style>
+:root{
+  --accent:#ff7a1a; --accent-soft:rgba(255,122,26,.14); --accent-line:rgba(255,122,26,.55);
+  --bg:#0b0c0f; --bg-2:#101216; --panel:#15171c; --panel-2:#1b1e24; --card:#14161b; --card-head:#191c22;
+  --line:#262a31; --line-soft:#1f232a; --txt:#e9edf4; --txt-2:#a7afbc; --txt-3:#838b97; --track:#22262e;
+  --green:#34d399; --green-bg:rgba(52,211,153,.15);
+  --yellow:#f5c542; --yellow-bg:rgba(245,197,66,.15);
+  --red:#ff4242; --red-bg:rgba(255,66,66,.14);
+  --blue:#4a90ff; --blue-bg:rgba(74,144,255,.16);
+  --purple:#b07cf5; --purple-bg:rgba(176,124,245,.16);
+  --gray:#8b94a3; --gray-bg:rgba(139,148,163,.14);
+  --shadow:0 18px 50px -24px rgba(0,0,0,.75);
+  --font:"Geist",-apple-system,"Segoe UI",sans-serif;
+  --on-orange:#1a1205;   /* dark ink on orange (SELECTED, rule 2) */
+}
+[data-theme="light"]{
+  --bg:#eef1f6; --bg-2:#e6eaf1; --panel:#fff; --panel-2:#eef1f6; --card:#fff; --card-head:#eef1f6;
+  --line:#cfd6e1; --line-soft:#e1e6ee; --txt:#141821; --txt-2:#414b5a; --txt-3:#5b6573; --track:#d3d9e3;
+  --green:#0c8f5f; --yellow:#956f00; --red:#d52a2a; --blue:#1864d6; --purple:#7a37c9; --gray:#566072;
+  --shadow:0 18px 40px -26px rgba(20,30,60,.30); --on-orange:#2a1400;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden}
+body{background:var(--bg);color:var(--txt);font-family:var(--font);font-size:14px;-webkit-font-smoothing:antialiased}
+#app{height:100vh;display:flex;flex-direction:column}
+svg{flex:0 0 auto}
+
+/* ---------------- HEADER ---------------- */
+.header{flex:0 0 auto;display:flex;align-items:flex-start;gap:13px;padding:11px 16px 0}
+.logo{width:62px;height:62px;border-radius:13px;background:linear-gradient(135deg,#ff8a2a,#e25c00);display:grid;place-items:center;cursor:pointer;color:#1a1205;font-weight:900;font-size:11px;text-align:center;line-height:1.05;border:1px solid var(--line)}
+.kpis{display:flex;gap:14px}
+.ring{display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer;min-width:56px}
+.ring svg{width:56px;height:56px}.ring .rl{font-size:9px;font-weight:600;color:var(--txt-3);text-transform:uppercase;letter-spacing:.3px}
+.hr-right{flex:1;min-width:0;display:flex;flex-direction:column;gap:8px}
+.hello{margin-left:auto;align-self:center;font-size:22px;font-weight:800;white-space:nowrap}
+.gsearch{display:flex;align-items:center;gap:9px;height:34px;padding:0 14px;border-radius:11px;background:var(--panel);border:1px solid var(--line);color:var(--txt-3)}
+.gsearch input{flex:1;background:none;border:none;color:var(--txt);font:inherit;font-size:13px;outline:none}
+
+/* ---------------- GRID ---------------- */
+.grid{flex:1 1 auto;display:grid;grid-template-columns:1fr 1.05fr 1fr;gap:12px;padding:12px 12px 4px;min-height:0}
+.col{display:flex;flex-direction:column;min-height:0}
+.card{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);overflow:hidden}
+
+/* column tab strip */
+.coltabs{display:flex;align-items:center;gap:6px;padding:9px 12px 8px;flex-wrap:wrap}
+.tab{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px;border-radius:11px;background:transparent;border:1px solid transparent;color:var(--txt-2);font:inherit;font-weight:700;font-size:13px;cursor:pointer;white-space:nowrap}
+.tab:hover{color:var(--txt)}
+.tab svg{width:15px;height:15px}
+.tab .n{font-size:11px;font-weight:800;color:var(--txt-3)}
+.tab.on{background:var(--accent);color:var(--on-orange)}                 /* RULE 2: solid orange + dark ink + icon */
+.tab.on .n{color:var(--on-orange);opacity:.7}
+/* RULE 1: alert chips — red border + red icon + light ink + dark bg */
+.alertchip{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 11px;border-radius:11px;background:var(--bg-2);border:1px solid var(--red);color:var(--txt);font-weight:800;font-size:12px;cursor:pointer}
+.alertchip svg{width:15px;height:15px;color:var(--red)}
+.alertchip .n{color:var(--txt)}
+.spacer{flex:1}
+
+/* list bar */
+.listbar{display:flex;align-items:center;gap:8px;padding:0 12px 9px}
+.iconbtn{width:32px;height:32px;display:grid;place-items:center;border-radius:10px;background:transparent;border:1px solid transparent;color:var(--txt-2);cursor:pointer}
+.iconbtn:hover{background:var(--panel-2);color:var(--txt);border-color:var(--line)} .iconbtn svg{width:17px;height:17px}
+.searchwrap{flex:1;display:flex;align-items:center;gap:8px;height:32px;padding:0 12px;border-radius:10px;background:var(--panel);border:1px solid var(--line)}
+.searchwrap input{flex:1;background:none;border:none;color:var(--txt);font:inherit;font-size:12px;outline:none}
+.dd{display:flex;align-items:center;gap:6px;height:32px;padding:0 11px;border-radius:10px;background:var(--panel);border:1px solid var(--line);color:var(--txt-2);font:inherit;font-size:12px;font-weight:700;cursor:pointer}
+
+/* list rows */
+.body{flex:1 1 auto;overflow-y:auto;padding:0 12px}
+.rows{display:flex;flex-direction:column;gap:8px;padding-bottom:8px}
+.row{border:1px solid var(--line);border-radius:12px;padding:11px 12px;background:var(--card);cursor:pointer}
+.row:hover{border-color:var(--accent-line)}
+.r1{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.r1 .nm{font-weight:700;font-size:13.5px}.r1 .sub{color:var(--txt-2);font-size:12.5px}
+.qr{margin-left:auto;color:var(--txt-3)}.qr svg{width:15px;height:15px}
+.r2{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:8px}
+
+/* ---------------- PILLS / BADGES ---------------- */
+/* RULE 3: status badge — keep color + parent icon hugging text + hover highlight+underline */
+.badge{display:inline-flex;align-items:center;gap:4px;height:20px;padding:0 9px;border-radius:999px;font-size:10.5px;font-weight:700;letter-spacing:.2px;white-space:nowrap;border:1px solid transparent;cursor:pointer;transition:filter .12s}
+.badge svg{width:11px;height:11px;margin-right:-1px}
+.badge:hover{filter:brightness(1.18)}.badge:hover .t{text-decoration:underline}
+.c-green{background:var(--green-bg);color:var(--green)}.c-yellow{background:var(--yellow-bg);color:var(--yellow)}
+.c-red{background:var(--red-bg);color:var(--red)}.c-blue{background:var(--blue-bg);color:var(--blue)}
+.c-purple{background:var(--purple-bg);color:var(--purple)}.c-gray{background:var(--gray-bg);color:var(--gray)}
+
+/* RULE 7 (revised → S1): linked item — ORANGE OUTLINE + orange ink + icon (+optional ✕) */
+.link{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 10px;border-radius:999px;background:var(--accent-soft);color:var(--accent);border:1px solid var(--accent-line);font-size:11px;font-weight:700;white-space:nowrap;cursor:pointer}
+.link svg{width:12px;height:12px}
+.link .rm{margin-left:1px;opacity:.7;font-weight:800}.link .rm:hover{opacity:1;color:var(--red)}
+.cardhead .link{height:30px;font-size:13.5px;padding:0 13px}.cardhead .link svg{width:15px;height:15px}
+/* transport journey-picker (Store · Truck · Store) — like the rental-window picker, for transport */
+.transport{display:flex;align-items:center;margin:8px 0 5px;padding:0 2px}
+.tnode{width:40px;height:40px;border-radius:11px;display:grid;place-items:center;background:var(--panel-2);border:1px solid var(--line);color:var(--txt-2);cursor:pointer;flex:0 0 auto;transition:.13s}
+.tnode svg{width:21px;height:21px}
+.tnode:hover{border-color:var(--accent-line);color:var(--txt)}
+.tnode.anchor{border-color:var(--accent);color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.tnode.on{background:var(--accent);border-color:var(--accent);color:var(--on-orange)}
+.tline{flex:1 1 auto;border-top:2px dotted var(--line);margin:0 7px}
+.tline.on{border-top:2px solid var(--accent)}
+
+/* RULE 8/12: dashed "add" affordance (S3) — light ink variant, drop "Add", no space after + */
+.add{display:inline-flex;align-items:center;gap:0;height:30px;padding:0 14px;border-radius:11px;background:transparent;border:1px dashed var(--line);color:var(--txt-2);font:inherit;font-size:13px;font-weight:700;cursor:pointer;width:100%;justify-content:center}
+.add:hover{border-color:var(--accent-line)}
+.add.orange{color:var(--accent)}                 /* S3 default ink (linkable fields, rule 7) */
+.add .plus{font-weight:800;margin-right:1px}
+
+/* RULE 15: required attachment / input — white bg + dark ink until entered */
+.req{display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 13px;border-radius:10px;background:#fff;color:#16181d;border:1px solid #fff;font:inherit;font-size:12.5px;font-weight:700;cursor:pointer}
+.req svg{width:15px;height:15px}
+
+/* RULE 13: derived/formulaic values → italic */
+.derived{font-style:italic;color:var(--txt-2)}
+.boldlight{font-weight:700;color:var(--txt)}      /* rule 12 post-entry */
+/* RULE 25: line-item name → hyperlink */
+.linkname{color:var(--blue);font-weight:700;cursor:pointer}.linkname:hover{text-decoration:underline}
+
+/* RULE 11: select field like account-type (Self / Delivery) — kept as a neutral dropdown for now */
+.selpill{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 11px;border-radius:999px;background:var(--panel-2);border:1px solid var(--line);color:var(--txt);font-size:11px;font-weight:700;cursor:pointer}
+
+/* ---------------- DETAIL ---------------- */
+.cardhead{display:flex;align-items:center;gap:8px;padding:11px 12px 7px}
+.cardhead .acts{margin-left:auto;display:flex;gap:5px}
+.detail{padding:12px;display:flex;flex-direction:column;gap:12px;overflow-y:auto}
+.statusbar{position:relative;height:46px;border-radius:12px;border:1px solid var(--line);display:flex;align-items:center;padding:0 14px;gap:10px;overflow:hidden;cursor:pointer}
+.statusbar .fill{position:absolute;inset:0;opacity:.4}.statusbar>*{position:relative}
+.statusbar .d1{font-weight:800}.statusbar .d2{margin-left:auto;font-weight:800}.statusbar .tm{color:var(--txt-2);font-size:12px}
+.section{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px}
+.section h4{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--txt-3);margin-bottom:9px;display:flex;align-items:center;justify-content:space-between}
+.cols2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.fs{display:flex;flex-direction:column;gap:9px}
+.kv{display:flex;align-items:center;gap:7px;flex-wrap:wrap;font-size:13px}
+.kv .money{font-weight:800;font-size:15px}
+.history{border-top:2px dotted var(--line);background:var(--bg-2);border-radius:0 0 12px 12px;padding:12px;margin:0 -12px -12px}
+.history h4{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--txt-3);margin-bottom:8px}
+.hlog{display:flex;flex-direction:column;gap:7px;font-size:12px;color:var(--txt-2)}
+.hlog div{display:flex;align-items:center;gap:9px}.hlog .when{color:var(--txt-3);font-variant-numeric:tabular-nums}
+.hlog .who{margin-left:auto;font-size:10px;background:var(--panel-2);border:1px solid var(--line);border-radius:999px;padding:1px 8px;color:var(--txt-3)}
+.totline{display:flex;align-items:center;gap:8px;font-size:13px;padding:2px 0}.totline b{min-width:60px}
+
+/* ---------------- BUTTONS ---------------- */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 14px;border-radius:10px;border:1px solid transparent;font:inherit;font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap;font-variant-numeric:tabular-nums}
+.btn svg{width:15px;height:15px}
+/* RULE 17: Done / Save → blue bg + light ink */
+.btn--commit{background:var(--blue);color:#fff}.btn--commit:hover{filter:brightness(1.08)}
+/* RULE 23 / S4: money */
+.btn--money{background:var(--green);color:#04150d}.btn--money:hover{filter:brightness(1.07)}
+.btn--danger{background:transparent;color:var(--red)}.btn--danger:hover{background:var(--red-bg)}
+.btn--quiet{background:transparent;color:var(--txt-2)}.btn--quiet:hover{background:var(--panel);color:var(--txt)}
+.btn--ghost{background:var(--panel);color:var(--txt);border-color:var(--line)}.btn--ghost:hover{border-color:var(--accent-line)}
+
+/* ---------------- BOTTOM BAR (rules 4/5/6) ---------------- */
+.bottombar{flex:0 0 auto;display:flex;align-items:center;justify-content:center;gap:7px;padding:5px 14px 9px;flex-wrap:wrap}
+.tbtn{display:inline-flex;align-items:center;gap:7px;height:34px;padding:0 13px;border-radius:11px;background:var(--panel);border:1px solid var(--line);color:var(--txt);font:inherit;font-size:12.5px;font-weight:700;cursor:pointer}
+.tbtn svg{width:16px;height:16px}
+.tbtn.icononly{width:34px;padding:0;justify-content:center}
+.tbtn:hover{border-color:var(--accent-line)}
+.tbtn.on{background:transparent;border:1.5px solid var(--accent);color:var(--txt)}   /* RULE 4 / S2: armed = orange OUTLINE */
+.bb-sep{width:1px;height:26px;background:var(--line);margin:0 5px}
+
+/* ---------------- popups ---------------- */
+.scrim{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;z-index:60}
+.scrim.open{display:flex}
+.popup{background:var(--card);border:1px solid var(--accent-line);border-radius:16px;box-shadow:0 0 0 4px var(--accent-soft),var(--shadow);padding:18px}
+/* calendar */
+.cal{width:330px}.cal .ch{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.cal .ptime{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;font-size:12px;color:var(--txt-3);text-transform:uppercase;letter-spacing:.4px}
+.cal table{width:100%;border-collapse:collapse}.cal td,.cal th{text-align:center;padding:6px 0;font-size:13px}
+.cal th{color:var(--txt-3);font-size:11px;font-weight:700}
+.cal td{cursor:pointer;border-radius:8px}.cal td.sel{background:var(--accent);color:var(--on-orange);font-weight:800}
+.cal td.rng{background:rgba(255,122,26,.2)}
+.cal .cf{display:flex;align-items:center;justify-content:space-between;margin-top:12px}
+.toast{position:fixed;bottom:70px;left:50%;transform:translateX(-50%);background:var(--panel-2);border:1px solid var(--line);color:var(--txt);font-size:13px;font-weight:600;padding:9px 16px;border-radius:11px;box-shadow:var(--shadow);opacity:0;transition:.2s;pointer-events:none;z-index:80}
+.toast.show{opacity:1}
+.tag{position:fixed;top:9px;left:50%;transform:translateX(-50%);z-index:90;font-size:11px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--accent);background:var(--accent-soft);border:1px solid var(--accent-line);padding:4px 12px;border-radius:999px}
+.totals-foot{flex:0 0 auto;display:flex;flex-wrap:wrap;gap:5px 7px;align-items:center;padding:9px 12px;background:var(--card-head);border-top:1px solid var(--accent-line)}
+.totals-foot .tc{font-size:11px;font-weight:700;color:var(--txt-2)}
+.totals-foot .tc.count{color:var(--accent);font-weight:800}
+.totals-foot .g{color:var(--green)}.totals-foot .y{color:var(--yellow)}.totals-foot .r{color:var(--red)}.totals-foot .p{color:var(--purple)}.totals-foot .b{color:var(--blue)}
+</style>
+</head>
+<body>
+<div class="tag">Shell · YOUR ideas v2 · clickable mockup, not the app</div>
+<div id="app">
+
+  <!-- HEADER -->
+  <div class="header">
+    <div class="logo" onclick="toast('back-office menu')">JAC<br>RENTALS</div>
+    <div class="kpis" id="kpis"></div>
+    <div class="hr-right">
+      <div style="display:flex"><div class="hello">Jacob</div></div>
+      <div class="gsearch"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg><input placeholder="Search everything…"></div>
+    </div>
+  </div>
+
+  <!-- GRID -->
+  <div class="grid">
+
+    <!-- LEFT: Units -->
+    <div class="col"><div class="card">
+      <div class="coltabs">
+        <button class="tab on" onclick="toast('Units')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 12l-8-8H4v8l8 8z"/><circle cx="7" cy="7" r="1.4"/></svg>Units<span class="n">141</span></button>
+        <button class="tab" onclick="toast('Categories')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 13l4-4 5 3 4-6 5 4v7H3z"/></svg>Categories<span class="n">46</span></button>
+        <span class="spacer" style="flex:1"></span>
+        <button class="alertchip" title="Inspections" onclick="toast('Inspections')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg><span class="n">8</span></button>
+        <button class="alertchip" title="Service" onclick="toast('Service')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s-7-4.5-7-10a4 4 0 0 1 7-2.5A4 4 0 0 1 19 11c0 5.5-7 10-7 10z"/></svg><span class="n">155</span></button>
+        <button class="alertchip" title="Work Orders" onclick="toast('Work Orders')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 7l3 3-9 9H5v-3z"/><path d="M3 21h18"/></svg><span class="n">674</span></button>
+      </div>
+      <div class="listbar">
+        <button class="iconbtn" onclick="toast('Board view')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 3v18"/></svg></button>
+        <div class="searchwrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg><input placeholder="Search units…"></div>
+        <button class="dd">Name <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></button>
+      </div>
+      <div class="body"><div class="rows" id="units"></div></div>
+      <div class="totals-foot">
+        <span class="tc count">141</span><span class="tc"><i>1,005.8 Hours avg</i></span><span class="tc g">83 Ready</span><span class="tc y">43 Not Ready</span><span class="tc r">15 Failed</span><span class="tc">139 Active</span><span class="tc">2 For Sale</span><span class="tc g">15 On Rent</span><span class="tc">7 End Rent</span><span class="tc p">1 Tomorrow</span><span class="tc"><i>100 Next service avg</i></span><span class="tc b">2 Wash Requested</span>
+      </div>
+    </div></div>
+
+    <!-- MIDDLE: anchored Rental detail -->
+    <div class="col"><div class="card">
+      <div class="coltabs" style="justify-content:center">
+        <button class="tab on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>Rentals<span class="n">1099</span></button>
+        <button class="tab" onclick="toast('Calendar')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>Calendar<span class="n">11</span></button>
+      </div>
+      <div class="cardhead">
+        <span class="link" onclick="toast('open linked rental')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>May22-12: Lift_Scissor_26ft, Mike Nixon</span>
+        <div class="acts"><button class="iconbtn" onclick="toast('list')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button><button class="iconbtn" onclick="toast('anchor')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/></svg></button><button class="iconbtn" onclick="toast('new tab')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 5v14M5 12h14"/></svg></button></div>
+      </div>
+      <div class="detail">
+        <div class="statusbar"><div class="fill" style="background:linear-gradient(90deg,var(--yellow-bg),transparent)"></div><span class="d1">May 22</span><span class="badge c-yellow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="4" width="18" height="17" rx="2"/></svg><span class="t">End Rent</span></span><span class="tm">4:00 PM</span><span class="d2">Jun 12</span></div>
+
+        <div class="section"><h4>Notes</h4>
+          <!-- RULE 8: dashed light ink, drop "Add" → "+ Notes", + 3 color dots when entering -->
+          <button class="add" onclick="openNote(this)"><span class="plus">+</span>Notes</button>
+        </div>
+
+        <div class="cols2">
+          <div class="section"><h4>Rental</h4><div class="fs">
+            <div class="kv">
+              <!-- RULE 10: linked unit = solid orange + light ink + icon + ✕ -->
+              <span class="link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 12l-8-8H4v8l8 8z"/><circle cx="7" cy="7" r="1.4"/></svg>Updog<span class="rm" onclick="event.stopPropagation();toast('remove unit')">✕</span></span>
+              <!-- RULE 9: linked category -->
+              <span class="link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 13l4-4 5 3 4-6 5 4v7H3z"/></svg>Lift Scissor 26ft</span>
+            </div>
+            <!-- RULE 12: address (empty → dashed light; filling it REVEALS the transport picker) -->
+            <div class="kv" id="addrkv"><button class="add" onclick="fillAddress()"><span class="plus">+</span>Address</button></div>
+            <!-- NEW: transport journey-picker — Our yard · Truck · Customer site. Shown ONLY when an address exists. -->
+            <div id="transportwrap" style="display:none">
+              <div class="transport">
+                <div class="tnode on" data-node="0" onclick="tpick(0)" title="Our yard"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9.5L5.2 5h13.6L20 9.5M5 9.5V20h14V9.5M5 9.5h14"/><path d="M9.5 20v-4.5h5V20"/></svg></div>
+                <div class="tline" data-line="0"></div>
+                <div class="tnode" data-node="1" onclick="tpick(1)" title="Transport (truck)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2.5" y="6.5" width="11" height="9" rx="1"/><path d="M13.5 9.5h3.6l3.4 3.2v2.8h-7z"/><circle cx="7" cy="17.5" r="1.7"/><circle cx="17" cy="17.5" r="1.7"/></svg></div>
+                <div class="tline" data-line="1"></div>
+                <div class="tnode" data-node="2" onclick="tpick(2)" title="Customer site"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9.5L5.2 5h13.6L20 9.5M5 9.5V20h14V9.5M5 9.5h14"/><path d="M9.5 20v-4.5h5V20"/></svg></div>
+              </div>
+              <div class="kv"><b id="ttype">Self</b> · <span class="derived" id="tprice">$0</span></div>
+            </div>
+          </div></div>
+
+          <div class="section"><h4>Inspection</h4><div class="fs">
+            <div class="kv"><span class="badge c-green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg><span class="t">Ready</span></span></div>
+            <div class="kv"><span class="derived">Start —</span> · <span class="derived">Return —</span></div>
+            <!-- RULE 15: required attachments → white bg + dark ink until captured -->
+            <div class="kv"><button class="req" onclick="capture(this,'On-Rent ✓')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 10l5-3v10l-5-3M3 6h12v12H3z"/></svg>On-Rent</button>
+              <button class="req" onclick="capture(this,'Returning ✓')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 10l5-3v10l-5-3M3 6h12v12H3z"/></svg>Returning</button></div>
+            <div class="kv"><button class="req" onclick="capture(this,'Field Call logged')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 10l5-3v10l-5-3M3 6h12v12H3z"/></svg>Mark Field Call</button></div>
+          </div></div>
+        </div>
+
+        <div class="history"><h4>History</h4><div class="hlog"><div><span class="when">May 22</span>Rental created — End Rent</div></div></div>
+      </div>
+    </div></div>
+
+    <!-- RIGHT: Invoice detail -->
+    <div class="col"><div class="card">
+      <div class="coltabs" style="justify-content:flex-end">
+        <button class="tab" onclick="toast('Customers')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>Customers<span class="n">1993</span></button>
+        <button class="tab on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2h9l3 3v17l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg>Invoices<span class="n">5</span></button>
+      </div>
+      <div class="cardhead">
+        <span class="link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2h9l3 3v17l-3-2-3 2-3-2-3 2z"/></svg>07i07Ju26</span>
+        <div class="acts"><button class="iconbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button></div>
+      </div>
+      <div class="detail">
+        <div class="kv"><span class="badge c-blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2h9l3 3v17"/></svg><span class="t">Not Due</span></span></div>
+
+        <div class="section"><h4>Invoice</h4><div class="fs">
+          <!-- RULE 19: linked customer = orange + light + icon + ✕ -->
+          <div class="kv"><span class="link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>Clay Dennis<span class="rm" onclick="event.stopPropagation();toast('remove customer')">✕</span></span></div>
+          <!-- RULE 20/21: derived → italic -->
+          <div class="kv"><span class="money">$210</span> <span class="derived">due</span></div>
+          <div class="kv"><span class="derived">$0 / $210 paid</span></div>
+          <div class="kv"><span class="derived">Jun 21 due date</span></div>
+          <!-- RULE 22: Add PO only if account requires it → required-style (white bg) -->
+          <div class="kv"><button class="req" onclick="this.outerHTML='<span class=\'boldlight\'>PO #44120</span>'"><span style="font-weight:800">+</span>PO <span style="color:var(--txt-3);font-weight:600;font-size:11px">· required</span></button></div>
+          <!-- RULE 23: money → S4 (green). "no card on file" removed — it's flagged on the Customer account. -->
+          <div class="kv" style="margin-top:2px"><button class="btn btn--money" onclick="payPopup()">Take payment</button></div>
+        </div></div>
+
+        <div class="section"><h4>Items <button class="dd" style="height:26px;font-size:11px" onclick="toast('Add Rental / WO / Custom')">+ Add line <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></button></h4>
+          <div class="kv" style="justify-content:space-between">
+            <span><span class="link" style="height:19px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2h9l3 3v17"/></svg>rental</span> <span class="linkname">Updog · 1-Day×1</span></span>
+            <span class="derived">$190</span>
+          </div>
+          <div class="kv" id="transportline" style="display:none;justify-content:space-between;margin-top:8px"><span><span class="link" style="height:19px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2.5" y="6.5" width="11" height="9" rx="1"/><path d="M13.5 9.5h3.6l3.4 3.2v2.8h-7z"/><circle cx="7" cy="17.5" r="1.6"/><circle cx="17" cy="17.5" r="1.6"/></svg>transport</span> <span class="linkname" id="tlinename">Delivery</span></span><span class="derived" id="tlineprice">$150</span></div>
+          <div style="display:flex;justify-content:flex-end;margin-top:8px"><button class="btn btn--ghost" style="height:28px" onclick="toast('Lock price')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="11" width="14" height="9" rx="1"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>Lock price</button></div>
+        </div>
+
+        <!-- RULE 27: totals all derived → italic -->
+        <div class="section"><h4>Totals</h4>
+          <div class="totline"><b class="derived">$190</b><span class="derived">rental sub</span></div>
+          <div class="totline"><b class="derived">$190</b><span class="derived">subtotal</span></div>
+          <div class="totline"><b class="derived">$20</b><span class="derived">tax (10.75%)</span></div>
+          <div class="totline"><b class="derived">$210</b><span class="derived">total</span></div>
+          <div class="totline"><b class="derived">$0 / $210</b><span class="derived">paid</span></div>
+        </div>
+
+        <div class="history"><h4>History</h4><div class="hlog">
+          <div><span class="when">Jun 07 · 5:41 AM</span>Added rental: Updog ($190)<span class="who">Jacob</span></div>
+          <div><span class="when">Jun 07 · 5:40 AM</span>Customer → Clay Dennis<span class="who">Jacob</span></div>
+        </div></div>
+      </div>
+    </div></div>
+
+  </div>
+
+  <!-- BOTTOM BAR (rules 4/5/6) -->
+  <div class="bottombar" id="bottombar"></div>
+</div>
+
+<!-- CALENDAR popup (Done = blue, rule 17; PICKUP TIME = required white, rule 16) -->
+<div class="scrim" id="calscrim" onclick="if(event.target===this)closeCal()">
+  <div class="popup cal">
+    <div class="ptime"><span>Pickup time</span><span class="req" style="height:26px">04:00 PM</span></div>
+    <div class="ch"><b>May 2026</b><span style="color:var(--txt-3)">‹ ›</span></div>
+    <table><tr><th>Su</th><th>Mo</th><th>Tu</th><th>We</th><th>Th</th><th>Fr</th><th>Sa</th></tr>
+      <tr><td></td><td></td><td></td><td></td><td></td><td>1</td><td>2</td></tr>
+      <tr><td>3</td><td>4</td><td>5</td><td>6</td><td>7</td><td>8</td><td>9</td></tr>
+      <tr><td>10</td><td>11</td><td>12</td><td>13</td><td>14</td><td>15</td><td>16</td></tr>
+      <tr><td>17</td><td>18</td><td>19</td><td>20</td><td>21</td><td class="sel">22</td><td>23</td></tr>
+      <tr><td class="rng">24</td><td class="rng">25</td><td class="rng">26</td><td class="rng">27</td><td class="rng">28</td><td class="rng">29</td><td class="rng">30</td></tr>
+      <tr><td class="rng">31</td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+    </table>
+    <div class="cf"><button class="btn btn--quiet" onclick="closeCal()">Clear</button><button class="btn btn--quiet" onclick="closeCal()">Today</button><button class="btn btn--commit" onclick="closeCal()">Done</button></div>
+  </div>
+</div>
+<!-- CHARGE popup (S4) -->
+<div class="scrim" id="payscrim" onclick="if(event.target===this)closePay()">
+  <div class="popup" style="width:360px">
+    <h4 style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--txt-3);margin-bottom:6px">Take payment</h4>
+    <div style="font-size:30px;font-weight:800">$210.00</div>
+    <p style="color:var(--txt-2);font-size:13px;margin:4px 0 16px">Clay Dennis · incl. 10.75% tax</p>
+    <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn btn--quiet" onclick="closePay()">Cancel</button><button class="btn btn--money" onclick="closePay();toast('✓ Charged $210 — Paid')">Charge $210</button></div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const COLORMAP={green:'#34d399',yellow:'#f5c542',red:'#ff4242'};
+const RING=[['MECHANIC',82,'green'],['M.TECH',64,'yellow'],['DRIVER',91,'green'],['OFFICE',47,'red'],['SALES',73,'green']];
+function ringSVG(p,c){const r=23,C=2*Math.PI*r,o=C*(1-p/100),col=COLORMAP[c];return '<svg viewBox="0 0 56 56"><circle cx="28" cy="28" r="23" stroke="var(--track)" stroke-width="6" fill="none"/><circle cx="28" cy="28" r="23" stroke="'+col+'" stroke-width="6" fill="none" stroke-linecap="round" stroke-dasharray="'+C+'" stroke-dashoffset="'+o+'" transform="rotate(-90 28 28)" style="filter:drop-shadow(0 0 2px '+col+')"/><text x="28" y="32" text-anchor="middle" font-size="13" font-weight="800" fill="var(--txt)">'+p+'</text></svg>';}
+document.getElementById('kpis').innerHTML=RING.map(([l,v,c])=>'<div class="ring">'+ringSVG(v,c)+'<span class="rl">'+l+'</span></div>').join('');
+
+// units list — status badges carry the Units icon (rule 3), keep color, hover underline
+const TAG='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20 12l-8-8H4v8l8 8z"/></svg>';
+const UNITS=[
+ ['Annabelle','Stump Grinder 31hp · 201 HRS',[['Available','green'],['Part Needed?','purple'],['Ready','green']]],
+ ['BangBang','6k Excavator · 1,823 HRS',[['Available','green'],['No Part Needed','gray'],['Ready','green']]],
+ ['Barney','4k Excavator · 1,477 HRS',[['Available','green'],['Part Needed','red'],['Ready','green']]],
+ ['Blue','12k Excavator · 1,540 HRS',[['Available','green'],['Part Needed','red'],['Ready','green']]],
+ ['BMT','0 HRS',[['Available','green'],['Ready','green']]],
+ ['Boudin (Kato)','12k Excavator · 1,200 HRS',[['Available','green'],['Part is Local','blue'],['Ready','green']]],
+ ['Brazil','Trailer Gooseneck · 0 HRS',[['Available','green'],['Part is Local','blue'],['Ready','green']]],
+ ['Bullet Proof','Tractor 34hp · 2,326 HRS',[['Available','green'],['No Part Needed','gray'],['Ready','green']]],
+ ['Bush Hog 5','Att Bush Hog Tractor · 0 HRS',[['Available','green'],['Part Needed?','purple'],['Ready','green']]],
+];
+document.getElementById('units').innerHTML=UNITS.map(([nm,sub,b])=>'<div class="row" onclick="toast(\'open '+nm+'\')"><div class="r1"><span class="nm">'+nm+'</span><span class="sub">'+sub+'</span><span class="qr"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg></span></div><div class="r2">'+b.map(([t,c])=>'<span class="badge c-'+c+'">'+TAG+'<span class="t">'+t+'</span></span>').join('')+'</div></div>').join('');
+
+// bottom bar (rules 4/5/6): left = labeled actions + Wash; right = icon-only utilities
+function ic(p){return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">'+p+'</svg>';}
+const LEFT=[
+ ['Dashboard',ic('<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/'),'Dashboard'],
+ ['Rental',ic('<rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/'),'Rental'],
+ ['Customer',ic('<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/'),'Customer'],
+ ['Inspection',ic('<circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/'),'Inspection'],
+ ['Work Order',ic('<path d="M14 7l3 3-9 9H5v-3z"/><path d="M3 21h18"/'),'Work Order'],
+ ['Invoice',ic('<path d="M6 2h9l3 3v17l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/'),'Invoice'],
+ ['Receipt',ic('<path d="M5 3h14v18l-3-2-2 2-2-2-2 2-3-2z"/><path d="M8 8h8M8 12h5"/'),'Receipt'],
+ ['Wash',ic('<path d="M12 3c3 4 5 6 5 9a5 5 0 0 1-10 0c0-3 2-5 5-9z"/'),'Wash'],
+];
+const RIGHT=[
+ ['Theme',ic('<circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/'),toggleTheme],
+ ['QR',ic('<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h7v7h-7z"/'),()=>toast('QR')],
+ ['Previews',ic('<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/'),()=>toast('Previews')],
+ ['Feedback',ic('<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/'),()=>toast('Feedback')],
+ ['Hotkeys',ic('<rect x="5" y="3" width="14" height="18" rx="6"/><path d="M12 7v4"/'),()=>toast('Hotkeys')],
+];
+let bb='';
+LEFT.forEach(([id,icon,lbl])=>{ const armed=(id==='Wash')?' data-arm="1"':''; bb+='<button class="tbtn"'+armed+' onclick="'+(id==='Dashboard'?'armToggle(this);toast(\'Focus\')':id==='Wash'?'armToggle(this)':'newItem(\''+lbl+'\')')+'">'+icon+lbl+'</button>'; });
+bb+='<div class="bb-sep"></div>';
+RIGHT.forEach(([id,icon],i)=>{ bb+='<button class="tbtn icononly" title="'+id+'" data-r="'+i+'">'+icon+'</button>'; });
+document.getElementById('bottombar').innerHTML=bb;
+document.querySelectorAll('.tbtn.icononly').forEach((b,i)=>b.onclick=RIGHT[i][2]);
+
+function armToggle(b){ b.classList.toggle('on'); }                 // rule 4: orange outline when armed
+function newItem(t){ toast('+New '+t+' mode'); }
+function toggleTheme(){ const d=document.documentElement; d.dataset.theme=d.dataset.theme==='dark'?'light':'dark'; }
+function capture(b,msg){ b.style.background='var(--green-bg)';b.style.color='var(--green)';b.style.borderColor='transparent';b.querySelector('svg')?.remove();b.textContent='✓ '+b.textContent.trim(); toast(msg); }
+function openNote(b){ b.outerHTML='<div style="display:flex;align-items:center;gap:8px"><input placeholder="Type a note…" style="flex:1;height:30px;border-radius:9px;background:var(--panel);border:1px solid var(--line);color:var(--txt);padding:0 11px;font:inherit;font-size:13px;outline:none"><span style="display:flex;gap:5px">'+['#e9edf4','#ff4242','#34d399'].map(c=>'<span title="note color" style="width:15px;height:15px;border-radius:50%;background:'+c+';border:1px solid rgba(255,255,255,.25);cursor:pointer"></span>').join('')+'</span></div>'; }
+function payPopup(){document.getElementById('payscrim').classList.add('open');}
+function closePay(){document.getElementById('payscrim').classList.remove('open');}
+function closeCal(){document.getElementById('calscrim').classList.remove('open');}
+// open the calendar when the status bar is clicked
+document.querySelector('.statusbar').onclick=()=>document.getElementById('calscrim').classList.add('open');
+
+// ----- TRANSPORT JOURNEY-PICKER (Store · Truck · Store) -----
+function fillAddress(){ document.getElementById('addrkv').innerHTML='<span class="boldlight">265 Callie Ln, Orange, TX, USA</span>'; document.getElementById('transportwrap').style.display='block'; paintT('Self'); }
+const TMAP={Self:{n:[0],l:[],price:'$0',dt:''},Delivery:{n:[0,1],l:[0],price:'$150',dt:' · 30 min'},Recovery:{n:[1,2],l:[1],price:'$150',dt:' · 30 min'},'Round-Trip':{n:[0,1,2],l:[0,1],price:'$300',dt:' · 30 min ×2'}};
+let tAnchor=null;
+function paintT(type){
+  const ns=document.querySelectorAll('.tnode'),ls=document.querySelectorAll('.tline');
+  ns.forEach((n,i)=>{n.classList.toggle('on',TMAP[type].n.includes(i));n.classList.remove('anchor');});
+  ls.forEach((l,i)=>l.classList.toggle('on',TMAP[type].l.includes(i)));
+  document.getElementById('ttype').textContent=type;
+  document.getElementById('tprice').textContent=TMAP[type].price+TMAP[type].dt;
+  const tl=document.getElementById('transportline');
+  if(type==='Self'){ tl.style.display='none'; }
+  else{ tl.style.display='flex'; document.getElementById('tlinename').textContent=type; document.getElementById('tlineprice').textContent=TMAP[type].price; }
+}
+function tpick(i){
+  if(tAnchor===null){ tAnchor=i; document.querySelectorAll('.tnode').forEach((n,idx)=>n.classList.toggle('anchor',idx===i)); return; }
+  const from=Math.min(tAnchor,i),to=Math.max(tAnchor,i); tAnchor=null;
+  let type='Self';
+  if(from===to)type='Self'; else if(from===0&&to===1)type='Delivery'; else if(from===1&&to===2)type='Recovery'; else if(from===0&&to===2)type='Round-Trip';
+  paintT(type);
+  toast(type==='Self'?'Self pickup · no transport line':type+' '+TMAP[type].price+' → Transport line added to invoice');
+}
+let tt;function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');clearTimeout(tt);tt=setTimeout(()=>t.classList.remove('show'),1600);}
+</script>
+</body>
+</html>
