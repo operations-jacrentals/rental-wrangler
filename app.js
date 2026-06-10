@@ -4896,6 +4896,11 @@ function boot() {
   });
   document.addEventListener('mouseout', (e) => {
     if (!hoverEl) return;
+    // Only react when the mouse actually LEAVES the previewed row (or the preview node).
+    // This is a document-level listener, so unrelated mouseouts bubble up too — and if we
+    // acted on those, each one kept rescheduling the close timer past the preview delay,
+    // so a quick graze of the first row would still pop its preview after the mouse left.
+    if (!((hoverEl.contains && hoverEl.contains(e.target)) || (hoverNode && hoverNode.contains && hoverNode.contains(e.target)))) return;
     const to = e.relatedTarget;
     // keep it alive if the mouse moved within the row OR onto the preview itself (to scroll it)
     if (to && ((hoverEl.contains && hoverEl.contains(to)) || (hoverNode && hoverNode.contains && hoverNode.contains(to)))) return;
