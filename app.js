@@ -3352,7 +3352,7 @@ function onClick(e) {
   if (closest('.js-wophase-line')) { const b = closest('.js-wophase-line'); e.stopPropagation(); return openWoPhaseDropdown(b.dataset.rec, b, Number(b.dataset.idx)); }
   if (closest('.js-setwophase')) { const b = closest('.js-setwophase'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return setWoPhase(b.dataset.rec, b.dataset.val); }
   if (closest('.js-setwolinephase')) { const b = closest('.js-setwolinephase'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return setWoLinePhase(b.dataset.rec, Number(b.dataset.idx), b.dataset.val); }
-  if (closest('.js-settransport')) { const b = closest('.js-settransport'); const r = IDX.rental.get(b.dataset.rec); if (r) r.transportType = b.dataset.val; document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); const s = activeSession(); if (s.anchor) setAnchor(s, s.anchor.card, s.anchor.recId, s.anchor.recType); render(); return; }
+  if (closest('.js-settransport')) { const b = closest('.js-settransport'); const r = IDX.rental.get(b.dataset.rec); if (r && r.transportType !== b.dataset.val) { const old = r.transportType; r.transportType = b.dataset.val; logAction(r, `Transport: ${auditVal(old)} → ${auditVal(b.dataset.val)}`); } document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); const s = activeSession(); if (s.anchor) setAnchor(s, s.anchor.card, s.anchor.recId, s.anchor.recType); render(); return; }
 
   // §12.2 rental-window range picker (calendar popup) — clicking the bar opens it
   if (closest('.js-wp-day')) { e.stopPropagation(); return winPickDay(closest('.js-wp-day').dataset.iso); }
@@ -3480,7 +3480,7 @@ function startInlineEdit(span) {
   } else if (kind === 'customerName') {
     const c = IDX.customer.get(recId);
     input.value = c?.name || ''; input.placeholder = 'Customer name';
-    commit = () => { if (done) return; done = true; if (c && input.value.trim()) { c.name = input.value.trim(); reindex('customers', c); } render(); };
+    commit = () => { if (done) return; done = true; if (c && input.value.trim()) { const old = c.name, v = input.value.trim(); if (old !== v) { c.name = v; reindex('customers', c); logAction(c, `Name: ${auditVal(old)} → ${auditVal(v)}`); } } render(); };
   } else if (kind === 'invoicePO') {
     const inv = IDX.invoice.get(recId);
     input.value = inv?.po || ''; input.placeholder = 'PO #';
@@ -3680,7 +3680,7 @@ function onChange(e) {
   if (e.target.classList.contains('js-draftdate')) { return setDraftDate(e.target.dataset.rec, e.target.dataset.which, e.target.value); }
   if (e.target.classList.contains('js-transport-sel')) {
     const r = IDX.rental.get(e.target.dataset.rec); if (!r) return;
-    r.transportType = e.target.value;
+    if (r.transportType !== e.target.value) { const old = r.transportType; r.transportType = e.target.value; logAction(r, `Transport: ${auditVal(old)} → ${auditVal(e.target.value)}`); }
     const session = activeSession(); if (session.anchor) setAnchor(session, session.anchor.card, session.anchor.recId, session.anchor.recType);
     render();
   }
