@@ -14,6 +14,7 @@
 ## Design source of truth
 - **`drafts/site-shell-v2-yours.html`** — the APPROVED clickable mockup of the new design (Jac's vision). It is the spec for the look + the transport picker + every rule. Open it.
 - `drafts/button-gallery-v2.html` — the button-system reference.
+- **`drafts/units-rentals-v1.html`** (2026-06-10, AWAITING JAC'S REVIEW) — hierarchy reference (colors/buttons/text/navigation) + the whiteboard Units & Rentals cards as clickable mockups. Every element WITHOUT a specific instruction is flagged `GZ-n` (dashed yellow outline) with a verify-or-redline index beside each card. Do NOT build the Units/Rentals reshape until Jac approves/redlines this.
 
 ## The design language (now in the app)
 - **One orange, one meaning:** solid orange + DARK ink (`--on-orange #1a1205`) = SELECTED tab only · orange OUTLINE (`.pill.ref.link`) = LINKED record · soft-orange (`.iconbtn.on` outline) = armed · warm border = hover.

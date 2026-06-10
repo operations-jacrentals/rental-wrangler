@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rental Wrangler — Units & Rentals build v1 + hierarchy</title>
+<style>
+:root{
+  --accent:#ff7a1a; --accent-soft:rgba(255,122,26,.14); --accent-line:rgba(255,122,26,.55);
+  --bg:#0b0c0f; --bg-2:#101216; --panel:#15171c; --panel-2:#1b1e24; --card:#14161b; --card-head:#191c22;
+  --line:#262a31; --line-soft:#1f232a; --txt:#e9edf4; --txt-2:#a7afbc; --txt-3:#838b97; --track:#22262e;
+  --green:#34d399; --green-bg:rgba(52,211,153,.15);
+  --yellow:#f5c542; --yellow-bg:rgba(245,197,66,.15);
+  --red:#ff4242; --red-bg:rgba(255,66,66,.14);
+  --blue:#4a90ff; --blue-bg:rgba(74,144,255,.16);
+  --purple:#b07cf5; --purple-bg:rgba(176,124,245,.16);
+  --gray:#8b94a3; --gray-bg:rgba(139,148,163,.14);
+  --gz:#f5c542;
+  --shadow:0 18px 50px -24px rgba(0,0,0,.75);
+  --font:"Geist",-apple-system,"Segoe UI",sans-serif;
+  --on-orange:#1a1205;
+}
+[data-theme="light"]{
+  --bg:#eef1f6; --bg-2:#e6eaf1; --panel:#fff; --panel-2:#eef1f6; --card:#fff; --card-head:#eef1f6;
+  --line:#cfd6e1; --line-soft:#e1e6ee; --txt:#141821; --txt-2:#414b5a; --txt-3:#5b6573; --track:#d3d9e3;
+  --green:#0c8f5f; --yellow:#956f00; --red:#d52a2a; --blue:#1864d6; --purple:#7a37c9; --gray:#566072;
+  --gz:#956f00;
+  --shadow:0 18px 40px -26px rgba(20,30,60,.30); --on-orange:#2a1400;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--txt);font-family:var(--font);font-size:14px;-webkit-font-smoothing:antialiased;padding:26px 18px 80px}
+svg{flex:0 0 auto}
+main{max-width:1280px;margin:0 auto;display:flex;flex-direction:column;gap:34px}
+
+/* page chrome */
+.tag{position:fixed;top:9px;left:50%;transform:translateX(-50%);z-index:90;font-size:11px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--accent);background:var(--accent-soft);border:1px solid var(--accent-line);padding:4px 12px;border-radius:999px;backdrop-filter:blur(6px)}
+h2{font-size:19px;font-weight:800;display:flex;align-items:center;gap:10px}
+h2 .no{color:var(--accent)}
+.intro{color:var(--txt-2);font-size:13px;max-width:840px;line-height:1.55}
+.lane{display:flex;gap:22px;align-items:flex-start;flex-wrap:wrap}
+
+/* GRAY-ZONE flag — anything inside a .gz had NO specific instruction: it is a proposal to verify */
+.gz{position:relative;border:1.5px dashed var(--gz);border-radius:13px;padding:10px;margin:2px 0}
+.gz::before{content:attr(data-gz);position:absolute;top:-9px;left:10px;font-size:9.5px;font-weight:800;letter-spacing:.5px;color:var(--gz);background:var(--bg);padding:0 7px;border-radius:99px;text-transform:uppercase}
+.gz-inline{border-bottom:2px dotted var(--gz)}
+
+/* ---------- shared design language (identical to site-shell-v2) ---------- */
+.card{display:flex;flex-direction:column;background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);overflow:hidden;width:560px;max-width:100%}
+.cardhead{display:flex;align-items:center;gap:8px;padding:11px 12px 7px;flex-wrap:wrap}
+.cardhead .acts{margin-left:auto;display:flex;gap:5px}
+.detail{padding:12px;display:flex;flex-direction:column;gap:12px}
+.section{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px}
+.section h4{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--txt-3);margin-bottom:9px;display:flex;align-items:center;gap:8px}
+.section h4 .right{margin-left:auto;display:inline-flex;align-items:center;gap:6px;text-transform:none;letter-spacing:0}
+.cols2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.fs{display:flex;flex-direction:column;gap:9px}
+.kv{display:flex;align-items:center;gap:7px;flex-wrap:wrap;font-size:13px}
+.kv .money{font-weight:800;font-size:15px}
+.split{display:flex;align-items:flex-start;gap:14px}
+.split .side{flex:1;display:flex;flex-direction:column;gap:9px}
+.split .side.r{align-items:flex-end;text-align:right}
+.history{border-top:2px dotted var(--line);background:var(--bg-2);padding:12px;margin:0 -12px -12px}
+.history h4{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--txt-3);margin-bottom:8px}
+.hlog{display:flex;flex-direction:column;gap:7px;font-size:12px;color:var(--txt-2)}
+.hlog div{display:flex;align-items:center;gap:9px}.hlog .when{color:var(--txt-3);font-variant-numeric:tabular-nums}
+.hlog .who{margin-left:auto;font-size:10px;background:var(--panel-2);border:1px solid var(--line);border-radius:999px;padding:1px 8px;color:var(--txt-3)}
+
+.badge{display:inline-flex;align-items:center;gap:4px;height:20px;padding:0 9px;border-radius:999px;font-size:10.5px;font-weight:700;letter-spacing:.2px;white-space:nowrap;border:1px solid transparent;cursor:pointer;transition:filter .12s}
+.badge svg{width:11px;height:11px;margin-right:-1px}
+.badge:hover{filter:brightness(1.18)}.badge:hover .t{text-decoration:underline}
+.c-green{background:var(--green-bg);color:var(--green)}.c-yellow{background:var(--yellow-bg);color:var(--yellow)}
+.c-red{background:var(--red-bg);color:var(--red)}.c-blue{background:var(--blue-bg);color:var(--blue)}
+.c-purple{background:var(--purple-bg);color:var(--purple)}.c-gray{background:var(--gray-bg);color:var(--gray)}
+
+.link{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 10px;border-radius:999px;background:var(--accent-soft);color:var(--accent);border:1px solid var(--accent-line);font-size:11px;font-weight:700;white-space:nowrap;cursor:pointer}
+.link svg{width:12px;height:12px}
+.link .rm{margin-left:1px;opacity:.7;font-weight:800}.link .rm:hover{opacity:1;color:var(--red)}
+.cardhead .link{height:30px;font-size:13.5px;padding:0 13px}.cardhead .link svg{width:15px;height:15px}
+
+.add{display:inline-flex;align-items:center;gap:0;height:30px;padding:0 14px;border-radius:11px;background:transparent;border:1px dashed var(--line);color:var(--txt-2);font:inherit;font-size:13px;font-weight:700;cursor:pointer}
+.add:hover{border-color:var(--accent-line)}
+.add.orange{color:var(--accent)}
+.add .plus{font-weight:800;margin-right:1px}
+.add.wide{width:100%;justify-content:center}
+
+.req{display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 13px;border-radius:10px;background:#fff;color:#16181d;border:1px solid #fff;font:inherit;font-size:12.5px;font-weight:700;cursor:pointer}
+.req svg{width:15px;height:15px}
+
+.derived{font-style:italic;color:var(--txt-2)}
+.boldlight{font-weight:700;color:var(--txt)}
+.linkname{color:var(--blue);font-weight:700;cursor:pointer}.linkname:hover{text-decoration:underline}
+.muted{color:var(--txt-3);font-size:12px}
+
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 14px;border-radius:10px;border:1px solid transparent;font:inherit;font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap}
+.btn svg{width:15px;height:15px}
+.btn--commit{background:var(--blue);color:#fff}.btn--commit:hover{filter:brightness(1.08)}
+.btn--money{background:var(--green);color:#04150d}.btn--money:hover{filter:brightness(1.07)}
+.btn--danger{background:transparent;color:var(--red)}.btn--danger:hover{background:var(--red-bg)}
+.btn--quiet{background:transparent;color:var(--txt-2)}.btn--quiet:hover{background:var(--panel);color:var(--txt)}
+.btn--ghost{background:var(--panel);color:var(--txt);border-color:var(--line)}.btn--ghost:hover{border-color:var(--accent-line)}
+.tbtn{display:inline-flex;align-items:center;gap:7px;height:34px;padding:0 13px;border-radius:11px;background:var(--panel);border:1px solid var(--line);color:var(--txt);font:inherit;font-size:12.5px;font-weight:700;cursor:pointer}
+.tbtn svg{width:16px;height:16px}
+.tbtn:hover{border-color:var(--accent-line)}
+.tbtn.on{background:transparent;border:1.5px solid var(--accent);color:var(--txt)}
+.iconbtn{width:32px;height:32px;display:grid;place-items:center;border-radius:10px;background:transparent;border:1px solid transparent;color:var(--txt-2);cursor:pointer}
+.iconbtn:hover{background:var(--panel-2);color:var(--txt);border-color:var(--line)} .iconbtn svg{width:17px;height:17px}
+.tab{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px;border-radius:11px;background:transparent;border:1px solid transparent;color:var(--txt-2);font:inherit;font-weight:700;font-size:13px;cursor:pointer;white-space:nowrap}
+.tab svg{width:15px;height:15px}.tab .n{font-size:11px;font-weight:800;color:var(--txt-3)}
+.tab.on{background:var(--accent);color:var(--on-orange)}.tab.on .n{color:var(--on-orange);opacity:.7}
+.alertchip{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 11px;border-radius:11px;background:var(--bg-2);border:1px solid var(--red);color:var(--txt);font-weight:800;font-size:12px;cursor:pointer}
+.alertchip svg{width:15px;height:15px;color:var(--red)}
+.totals-foot{display:flex;flex-wrap:wrap;gap:5px 7px;align-items:center;padding:9px 12px;background:var(--card-head);border-top:1px solid var(--accent-line)}
+.totals-foot .tc{font-size:11px;font-weight:700;color:var(--txt-2)}
+.totals-foot .tc.count{color:var(--accent);font-weight:800}
+.totals-foot .g{color:var(--green)}.totals-foot .y{color:var(--yellow)}.totals-foot .r{color:var(--red)}.totals-foot .b{color:var(--blue)}
+
+/* ---------- NEW: segmented toggle (Wash|No Wash · Pass|Fail) ---------- */
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--panel-2)}
+.seg button{font:inherit;font-size:11.5px;font-weight:700;padding:0 12px;height:26px;background:transparent;border:none;color:var(--txt-3);cursor:pointer;display:inline-flex;align-items:center;gap:4px}
+.seg button svg{width:12px;height:12px}
+.seg button:not(:last-child){border-right:1px solid var(--line)}
+.seg button.on-blue{background:var(--blue);color:#fff}
+.seg button.on-gray{background:var(--gray-bg);color:var(--txt)}
+.seg button.on-green{background:var(--green);color:#04150d}
+.seg button.on-red{background:var(--red);color:#fff}
+
+/* ---------- NEW: rental-window day timeline ---------- */
+.timeline{position:relative;height:54px;border-radius:12px;border:1px solid var(--line);display:flex;align-items:stretch;overflow:hidden;cursor:pointer;background:var(--panel)}
+.timeline .day{flex:1;position:relative;border-right:1px dashed var(--line-soft)}
+.timeline .day:last-child{border-right:none}
+.timeline .day.past{background:var(--green-bg)}
+.timeline .day.today{background:var(--green-bg);box-shadow:inset 0 0 0 1.5px var(--green)}
+.timeline .day .dnum{position:absolute;bottom:3px;left:0;right:0;text-align:center;font-size:9px;font-weight:700;color:var(--txt-3)}
+.tl-over{position:absolute;inset:0;display:flex;align-items:center;padding:0 12px;gap:9px;pointer-events:none}
+.tl-over .d1,.tl-over .d2{font-weight:800;font-size:13px}
+.tl-over .d2{margin-left:auto}
+.tl-over .tm{color:var(--txt-2);font-size:12px}
+.tl-over .badge,.tl-over .ratechip{pointer-events:auto}
+.ratechip{display:inline-flex;align-items:center;gap:5px;height:21px;padding:0 9px;border-radius:999px;background:var(--panel-2);border:1px solid var(--line);font-size:10.5px;font-weight:800;color:var(--txt);font-style:italic}
+
+/* ---------- NEW: yard journey (+OnRent ···· +FC ···· +Return) ---------- */
+.journey{display:flex;align-items:center;padding:4px 2px 0}
+.jnode{display:flex;flex-direction:column;align-items:center;gap:5px;flex:0 0 auto;cursor:pointer}
+.jbox{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;transition:.13s;background:#fff;color:#16181d;border:1px solid #fff}      /* required-until-captured = WHITE (rule 15) */
+.jbox svg{width:22px;height:22px}
+.jnode:hover .jbox{box-shadow:0 0 0 3px var(--accent-soft)}
+.jnode.done .jbox{background:var(--green-bg);color:var(--green);border-color:transparent}
+.jnode.fc .jbox{background:transparent;border:1.5px dashed var(--line);color:var(--txt-3)}    /* FC = optional, not required */
+.jnode.fc:hover .jbox{border-color:var(--red);color:var(--red)}
+.jnode.fc.done .jbox{background:var(--red-bg);border:1px solid transparent;color:var(--red)}
+.jlbl{font-size:10px;font-weight:700;color:var(--txt-2)}
+.jnode.done .jlbl{color:var(--green)}
+.jnode.fc.done .jlbl{color:var(--red)}
+.jts{font-size:9px;color:var(--txt-3);font-variant-numeric:tabular-nums;min-height:11px}
+.jline{flex:1 1 auto;border-top:2px dotted var(--line);margin:0 8px 26px}
+.jline.on{border-top:2px solid var(--green)}
+
+/* ---------- NEW: work-order line grid ---------- */
+.woline{display:grid;grid-template-columns:96px 1fr auto;align-items:center;gap:9px;font-size:13px;padding:3px 0}
+.woline .stat{justify-self:start}
+.woline .nums{display:flex;gap:10px;font-variant-numeric:tabular-nums;color:var(--txt-2);font-size:12px}
+.woline .nums b{color:var(--txt)}
+.wohead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+.wohead .wnm{font-weight:800;font-size:13.5px}
+.wototals{margin-left:auto;display:inline-flex;gap:10px;font-size:12px}
+
+/* hierarchy panels */
+.hpanel{background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);padding:16px;flex:1;min-width:280px}
+.hpanel h3{font-size:12px;text-transform:uppercase;letter-spacing:.6px;color:var(--txt-3);margin-bottom:12px}
+.hrow{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--line-soft);flex-wrap:wrap}
+.hrow:last-child{border-bottom:none}
+.hrow .demo{flex:0 0 175px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.hrow .why{flex:1;min-width:180px;font-size:12px;color:var(--txt-2);line-height:1.45}
+.hrow .tier{flex:0 0 auto;width:22px;height:22px;border-radius:7px;display:grid;place-items:center;font-size:11px;font-weight:800;background:var(--panel-2);border:1px solid var(--line);color:var(--txt-3)}
+.swatch{width:17px;height:17px;border-radius:6px;flex:0 0 auto}
+
+/* gz index */
+.gzlist{display:flex;flex-direction:column;gap:8px;font-size:13px;color:var(--txt-2);line-height:1.5}
+.gzlist b{color:var(--gz);font-variant-numeric:tabular-nums}
+.gzlist .q{color:var(--txt)}
+
+/* popups */
+.scrim{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;z-index:60}
+.scrim.open{display:flex}
+.popup{background:var(--card);border:1px solid var(--accent-line);border-radius:16px;box-shadow:0 0 0 4px var(--accent-soft),var(--shadow);padding:18px;width:340px}
+.popup h4{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--txt-3);margin-bottom:10px}
+.optrow{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:12px}
+.photo-drop{border:1.5px dashed var(--line);border-radius:12px;height:86px;display:grid;place-items:center;color:var(--txt-3);font-size:12px;cursor:pointer;margin-bottom:10px}
+.photo-drop:hover{border-color:var(--accent-line)}
+.popup textarea{width:100%;background:var(--panel);border:1px solid var(--line);border-radius:10px;color:var(--txt);font:inherit;font-size:13px;padding:9px 11px;outline:none;resize:vertical;min-height:62px;margin-bottom:12px}
+.pf{display:flex;justify-content:flex-end;gap:8px}
+.toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%);background:var(--panel-2);border:1px solid var(--line);color:var(--txt);font-size:13px;font-weight:600;padding:9px 16px;border-radius:11px;box-shadow:var(--shadow);opacity:0;transition:.2s;pointer-events:none;z-index:80}
+.toast.show{opacity:1}
+.themefab{position:fixed;right:16px;top:12px;z-index:90}
+</style>
+</head>
+<body>
+<div class="tag">Units & Rentals — build mockup v1 · not the app · redline anything</div>
+<button class="tbtn themefab" onclick="toggleTheme()">☀/☾ Theme</button>
+
+<main>
+
+<!-- ════════════════ 1 · HIERARCHY ════════════════ -->
+<section>
+  <h2><span class="no">1 ·</span> Hierarchy — colors · buttons · text · navigation</h2>
+  <p class="intro">Everything below is already locked in (HANDOFF rules + your approved shell). Verify it reads the way you intend — this is the vocabulary the Units/Rentals build uses.</p>
+  <div class="lane" style="margin-top:14px">
+
+    <div class="hpanel"><h3>Color = meaning (one orange, one meaning)</h3>
+      <div class="hrow"><span class="demo"><button class="tab on" style="height:26px">Selected</button></span><span class="why"><b>Solid orange + dark ink</b> — the ONE selected thing (active tab / picked option). Never used for anything else.</span></div>
+      <div class="hrow"><span class="demo"><span class="link">⛟ Linked record</span></span><span class="why"><b>Orange outline + orange ink</b> — a LINKED record you can open. Carries the entity icon, optional ✕ unlinks.</span></div>
+      <div class="hrow"><span class="demo"><button class="tbtn on" style="height:26px;font-size:11.5px">Armed</button></span><span class="why"><b>Orange outline on a button</b> — an armed/toggled mode (e.g. Wash mode). Hover anywhere = warm border.</span></div>
+      <div class="hrow"><span class="demo"><button class="btn btn--commit" style="height:26px">Done</button></span><span class="why"><b>Blue</b> = commit/save. Blue text = a navigable name (hyperlink). Blue badge = informational status (Not Due).</span></div>
+      <div class="hrow"><span class="demo"><button class="btn btn--money" style="height:26px">Charge $210</button></span><span class="why"><b>Green</b> = money action; green badge = good/ready/complete.</span></div>
+      <div class="hrow"><span class="demo"><span class="badge c-red"><span class="t">Needed</span></span> <button class="btn btn--danger" style="height:26px">Delete</button></span><span class="why"><b>Red</b> = alert/blocked/needed; solid red button = confirm-destructive only.</span></div>
+      <div class="hrow"><span class="demo"><span class="badge c-yellow"><span class="t">ETA Jun 18</span></span></span><span class="why"><b>Yellow</b> = waiting/caution (End Rent, ETA pending, Incomplete).</span></div>
+      <div class="hrow"><span class="demo"><span class="badge c-purple"><span class="t">Reserved</span></span></span><span class="why"><b>Purple</b> = scheduled/member states.</span></div>
+      <div class="hrow"><span class="demo"><button class="req" style="height:26px">PO #</button></span><span class="why"><b>White + dark ink</b> = REQUIRED until entered/captured. It stays loud until satisfied.</span></div>
+      <div class="hrow"><span class="demo"><span class="derived">$1,000 total</span></span><span class="why"><b>Italic</b> = derived/formulaic — the app computed it; you don't type it.</span></div>
+    </div>
+
+    <div class="hpanel"><h3>Button hierarchy (loudest → quietest)</h3>
+      <div class="hrow"><span class="tier">1</span><span class="demo"><button class="req" style="height:26px">📷 On-Rent</button></span><span class="why">Required capture/input — white. Loudest because the workflow is blocked without it.</span></div>
+      <div class="hrow"><span class="tier">2</span><span class="demo"><button class="btn btn--money" style="height:26px">Take payment</button> <button class="btn btn--commit" style="height:26px">Done</button></span><span class="why">Primary outcomes — money (green) and commit (blue).</span></div>
+      <div class="hrow"><span class="tier">3</span><span class="demo"><button class="tbtn" style="height:26px;font-size:11.5px">⛟ Work Order</button></span><span class="why">Create actions — bottom bar, icon leads label, always visible.</span></div>
+      <div class="hrow"><span class="tier">4</span><span class="demo"><button class="btn btn--ghost" style="height:26px">🔒 Lock price</button></span><span class="why">Secondary tools — ghost buttons, quiet until hovered.</span></div>
+      <div class="hrow"><span class="tier">5</span><span class="demo"><button class="add" style="height:26px"><span class="plus">+</span>Part/Task</button></span><span class="why">Add affordance — dashed, no “Add”, no space after +. Orange ink when it links a record.</span></div>
+      <div class="hrow"><span class="tier">6</span><span class="demo"><button class="iconbtn">⋯</button></span><span class="why">Icon-only utilities — quietest; borders only on hover.</span></div>
+    </div>
+
+    <div class="hpanel"><h3>Text hierarchy</h3>
+      <div class="hrow"><span class="demo"><span class="link" style="height:26px;font-size:13px">⛟ Beacon</span></span><span class="why"><b>L1 · Record title</b> — orange-outline chip in the card head (and the item tab when anchored).</span></div>
+      <div class="hrow"><span class="demo"><span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--txt-3)">SECTION</span></span><span class="why"><b>L2 · Section label</b> — small caps, muted. Structure, not content.</span></div>
+      <div class="hrow"><span class="demo"><span class="money" style="font-weight:800;font-size:15px">$1,000</span> <span style="font-weight:700">Value</span></span><span class="why"><b>L3 · Values</b> — bold; money slightly larger.</span></div>
+      <div class="hrow"><span class="demo"><span class="derived">3.5 hrs · $585 if billed</span></span><span class="why"><b>L4 · Derived</b> — italic, slightly muted.</span></div>
+      <div class="hrow"><span class="demo"><span class="linkname">Updog · 1-Day×1</span></span><span class="why"><b>L5 · Line names</b> — blue hyperlink, underline on hover.</span></div>
+      <div class="hrow"><span class="demo"><span class="muted">suffix / timestamps</span></span><span class="why"><b>L6 · Suffixes & timestamps</b> — smallest, most muted.</span></div>
+    </div>
+
+    <div class="hpanel"><h3>Navigation hierarchy (outer → inner)</h3>
+      <div class="hrow"><span class="tier">1</span><span class="demo"><button class="tab on" style="height:26px">Units <span class="n">141</span></button><button class="tab" style="height:26px">Categories</button></span><span class="why">Column tabs — what each of the 3 cards shows.</span></div>
+      <div class="hrow"><span class="tier">2</span><span class="demo"><button class="alertchip" style="height:26px">🔧 <span class="n">3</span></button></span><span class="why">Alert chips — red-ring counters that jump to needs-attention lists (Inspections / Service / WOs).</span></div>
+      <div class="hrow"><span class="tier">3</span><span class="demo"><span class="link" style="height:24px">⛟ Beacon</span></span><span class="why">Item chip — the open record; anchored = neon-blue card ring + this chip.</span></div>
+      <div class="hrow"><span class="tier">4</span><span class="demo"><span class="badge c-green"><span class="t">Ready</span></span> <span class="link">⛟ linked</span></span><span class="why">In-card hops — status badges (hover = underline) and linked-record pills open related records.</span></div>
+      <div class="hrow"><span class="tier">5</span><span class="demo"><span class="muted">card footer totals</span></span><span class="why">Footer values — live counts; clicking one filters the list to it (incl. the new <b>WO count</b>, GZ-7).</span></div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ════════════════ 2 · UNITS CARD ════════════════ -->
+<section>
+  <h2><span class="no">2 ·</span> Units card — Inspections + Work Orders merged in</h2>
+  <p class="intro">From whiteboard “Units”: Section 1 = latest Inspection (editable toggles — your call #2). Section 2 = one block per open Work Order (multiple WOs stack, your whiteboard 2.1). Then Specs | GPS · Investment · Notes (empty → bottom, above the dotted line) · History. Standalone Inspections/WO tabs go away — only Service remains (your call #1) — so the footer gains a WO count.</p>
+
+  <div class="lane" style="margin-top:14px">
+  <div class="card">
+    <div class="cardhead">
+      <span class="link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 12l-8-8H4v8l8 8z"/><circle cx="7" cy="7" r="1.4"/></svg>Beacon</span>
+      <span class="badge c-green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20 12l-8-8H4v8l8 8z"/></svg><span class="t">Ready</span></span>
+      <span class="badge c-gray"><span class="t">Active</span></span>
+      <div class="acts"><button class="iconbtn" title="list">≡</button><button class="iconbtn" title="anchor">◯</button><button class="iconbtn" title="new tab">+</button></div>
+    </div>
+    <div class="detail">
+
+      <!-- SECTION 1 · INSPECTION (latest, editable) -->
+      <div class="section"><h4>Inspection <span class="right"><span class="muted gz-inline" title="GZ-2">Jun 10 · 7:30 AM</span> <span class="linkname" onclick="toast('opens the inspection report / fail popup')">report</span></span></h4>
+        <div class="fs">
+          <div class="kv">
+            <span class="seg" id="segwash">
+              <button class="on-blue" onclick="segPick(this,'on-blue');toast('Logged: washed — new inspection entry')">💧 Wash</button>
+              <button onclick="segPick(this,'on-gray');toast('Logged: no wash — new inspection entry')">No Wash</button>
+            </span>
+            <span class="seg" id="segpf">
+              <button class="on-green" onclick="segPick(this,'on-green');toast('Logged: PASS — unit Ready')">✓ Pass</button>
+              <button onclick="failPopup(this)">✕ Fail</button>
+            </span>
+          </div>
+          <div class="gz" data-gz="GZ-3 · proposal">
+            <div class="kv"><span class="muted">Latest description:</span> <span style="font-size:12.5px">Tracks fine, bucket pin greased.</span></div>
+            <div class="kv" style="margin-top:4px"><span class="muted">Toggles are LIVE — clicking Wash/Pass logs a NEW inspection (timestamp updates). Fail opens the photo+description popup and spins up the WO below.</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SECTION 2 · WORK ORDER (one per open WO) -->
+      <div class="section" id="wo1"><h4>Work Order <span class="right"><span class="badge c-red"><span class="t">Open</span></span></span></h4>
+        <div class="wohead">
+          <span class="wnm">Seat cushion torn</span>
+          <span class="badge c-blue"><span class="t">Repair</span></span>
+          <span class="muted">Jun 08</span>
+          <span class="wototals gz" data-gz="GZ-4" style="padding:4px 9px;margin:0"><span class="derived">3.5 hrs</span><span class="derived">$145 cost</span><span class="derived">$585 if billed</span></span>
+        </div>
+        <div class="woline"><span class="stat"><span class="badge c-red" onclick="lineStatus(this)"><span class="t">Needed</span></span></span><span>Seat cushion 40×40</span><span class="nums"><b>$85</b><span>0.5h</span></span></div>
+        <div class="woline"><span class="stat"><span class="badge c-yellow" onclick="etaPopup(this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18"/></svg><span class="t">ETA Jun 18</span></span></span><span>Mount bracket</span><span class="nums"><b>$32</b><span>1h</span></span></div>
+        <div class="woline"><span class="stat"><span class="badge c-green" onclick="lineStatus(this)"><span class="t">Complete</span></span></span><span>Clear fault code</span><span class="nums"><b>$28</b><span>2h</span></span></div>
+        <button class="add wide" style="margin-top:7px" onclick="toast('+Part/Task line')"><span class="plus">+</span>Part/Task</button>
+        <div class="kv" style="margin-top:9px;justify-content:space-between">
+          <span class="seg"><button class="on-gray" onclick="segPick(this,'on-gray')">Bill: No</button><button onclick="segPick(this,'on-green');toast('Will bill the customer — price shows on the invoice')">Bill: Yes</button></span>
+          <button class="btn btn--commit" style="height:27px" onclick="toast('WO complete → unit back to inspection')">Complete WO</button>
+        </div>
+      </div>
+
+      <!-- SECTION 2.1 · a second open WO stacks as another section -->
+      <div class="section gz" data-gz="GZ-5 · multiple WOs stack"><h4>Work Order <span class="right"><span class="badge c-yellow"><span class="t">Waiting</span></span></span></h4>
+        <div class="wohead"><span class="wnm">Annual hydraulic service</span><span class="badge c-purple"><span class="t">Service</span></span><span class="muted">Jun 02</span><span class="wototals"><span class="derived">1 hr</span><span class="derived">$60 cost</span></span></div>
+        <div class="woline"><span class="stat"><span class="badge c-yellow" onclick="etaPopup(this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18"/></svg><span class="t">ETA Jun 14</span></span></span><span>Hydraulic filter kit</span><span class="nums"><b>$60</b><span>1h</span></span></div>
+      </div>
+
+      <!-- DETAILS · SPECS | GPS -->
+      <div class="cols2">
+        <div class="section"><h4>Specs</h4><div class="fs">
+          <div class="kv"><span class="link">⛰ Light Tower</span></div>
+          <div class="kv"><button class="add" style="height:26px"><span class="plus">+</span>Serial</button></div>
+          <div class="kv"><button class="add" style="height:26px"><span class="plus">+</span>Year</button> <button class="add" style="height:26px"><span class="plus">+</span>Make</button></div>
+          <div class="kv"><b>480 HRS</b></div>
+        </div></div>
+        <div class="section"><h4>GPS</h4><div class="fs">
+          <div class="kv"><span class="badge c-gray"><span class="t">No GPS</span></span></div>
+          <div class="kv"><button class="add" style="height:26px"><span class="plus">+</span>GPS unit/type</button></div>
+          <div class="kv"><button class="add" style="height:26px"><span class="plus">+</span>Placement</button></div>
+        </div></div>
+      </div>
+
+      <!-- DATA · INVESTMENT (left = entry, right = derived — card-anatomy rule) -->
+      <div class="section gz" data-gz="GZ-6 · left/right applied"><h4>Investment</h4>
+        <div class="split">
+          <div class="side">
+            <div class="kv"><button class="add" style="height:26px"><span class="plus">+</span>Purchase price</button></div>
+            <div class="kv"><button class="add" style="height:26px"><span class="plus">+</span>Purchase date</button></div>
+            <div class="kv"><button class="add" style="height:26px"><span class="plus">+</span>True cost</button></div>
+          </div>
+          <div class="side r">
+            <div class="kv"><span class="derived">$145 repairs</span></div>
+            <div class="kv"><span class="derived">$310 /mo avg</span></div>
+            <div class="kv"><span class="derived">$3,420 total revenue</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- NOTES (empty → bottom, just above the dotted line) -->
+      <div class="section"><h4>Notes</h4><button class="add wide" onclick="openNote(this)"><span class="plus">+</span>Notes</button></div>
+
+      <div class="history"><h4>History</h4><div class="hlog">
+        <div><span class="when">Jun 10 · 7:30 AM</span>Inspection: PASS · washed<span class="who">Jacob</span></div>
+        <div><span class="when">Jun 08</span>WO opened — Seat cushion torn<span class="who">Jacob</span></div>
+      </div></div>
+    </div>
+
+    <!-- footer gains a WO count (your call #1: tabs go away, footer carries the shop) -->
+    <div class="totals-foot gz" data-gz="GZ-7" style="margin:0;border-radius:0">
+      <span class="tc count">141</span><span class="tc g">83 Ready</span><span class="tc y">43 Not Ready</span><span class="tc r">15 Failed</span><span class="tc r">9 WOs Open</span><span class="tc y">4 Parts Ordered</span><span class="tc b">2 Wash Req</span>
+    </div>
+  </div>
+
+  <!-- gray-zone index for Units -->
+  <div class="hpanel" style="max-width:430px"><h3>Gray zones on this card — verify or redline</h3>
+    <div class="gzlist">
+      <div><b>GZ-2</b> <span class="q">Time-stamp</span> sits in the section header (right side) with the blue <i>report</i> hyperlink next to it. The hyperlink ↔ the fail/report popup, per your whiteboard arrows.</div>
+      <div><b>GZ-3</b> Latest <span class="q">description</span> shows read-only under the toggles; toggles LOG a new inspection on click (your call #2: latest + editable). Fail forces photo + description and auto-creates the WO.</div>
+      <div><b>GZ-4</b> <span class="q">WO totals</span> (hrs · cost · if-billed price) ride the WO header row, italic since derived from the lines.</div>
+      <div><b>GZ-5</b> <span class="q">Multiple WOs</span> = stacked full sections, newest first, never collapsed (whiteboard 2.1 says “display as multiple sections”).</div>
+      <div><b>GZ-6</b> <span class="q">Left/right rule</span> applied to Investment: entry fields LEFT, derived stats RIGHT — proposed template for every Details/Data band.</div>
+      <div><b>GZ-7</b> <span class="q">Footer values</span>: “9 WOs Open” + “4 Parts Ordered” added (your call #1) — click filters the list, same as the others.</div>
+      <div><b>GZ-8</b> <span class="q">Part-line status cycle</span>: Needed (red) → ETA Jun 18 (yellow, set via date picker) → Complete (green). Clicking the ETA badge re-opens the picker AND offers “Arrived / Complete” (your call #4). Try clicking the yellow badge.</div>
+    </div>
+  </div>
+  </div>
+</section>
+
+<!-- ════════════════ 3 · RENTALS CARD ════════════════ -->
+<section>
+  <h2><span class="no">3 ·</span> Rentals card — day timeline + yard journey</h2>
+  <p class="intro">From whiteboard “Rentals”: the status bar becomes the rental window split into days with the price/rate marker and live status + time. The Rental section follows the left/right rule (actions left · derived right). The Yard journey (+OnRent ···· +FC ···· +Return) REPLACES the white On-Rent/Returning/Field-Call buttons (your call #3). The note below is FILLED, so Notes rides at the top (Section 0 rule).</p>
+
+  <div class="lane" style="margin-top:14px">
+  <div class="card">
+    <div class="cardhead">
+      <span class="link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>Jun01-07: Updog, Mike Nixon</span>
+      <div class="acts"><button class="iconbtn">≡</button><button class="iconbtn">◯</button><button class="iconbtn">+</button></div>
+    </div>
+    <div class="detail">
+
+      <!-- TIMELINE status bar (GZ-1) -->
+      <div class="gz" data-gz="GZ-1 · day timeline" style="padding:8px">
+        <div class="timeline" onclick="toast('opens the rental-window calendar (same as today)')">
+          <div class="day past"><span class="dnum">Mo 01</span></div>
+          <div class="day past"><span class="dnum">Tu 02</span></div>
+          <div class="day past"><span class="dnum">We 03</span></div>
+          <div class="day today"><span class="dnum">Th 04</span></div>
+          <div class="day"><span class="dnum">Fr 05</span></div>
+          <div class="day"><span class="dnum">Sa 06</span></div>
+          <div class="day"><span class="dnum">Su 07</span></div>
+          <div class="tl-over">
+            <span class="d1">Jun 01</span>
+            <span class="ratechip" title="price · winning rate" onclick="event.stopPropagation();toast('price/rate — derived from the category rates')">$1,000 · 7-Day</span>
+            <span class="badge c-green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="4" width="18" height="17" rx="2"/></svg><span class="t">On Rent</span></span>
+            <span class="tm">4:00 PM</span>
+            <span class="d2">Jun 07</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- NOTES — filled ⇒ Section 0, top -->
+      <div class="section"><h4>Notes</h4>
+        <div class="kv"><span style="width:9px;height:9px;border-radius:50%;background:var(--red);display:inline-block"></span> Customer wants weekend delivery — confirm Friday</div>
+      </div>
+
+      <!-- RENTAL section — LEFT actions · RIGHT derived -->
+      <div class="section"><h4>Rental</h4>
+        <div class="split">
+          <div class="side">
+            <div class="kv"><span class="link">👤 Mike Nixon<span class="rm">✕</span></span></div>
+            <div class="kv"><span class="link">⛟ Updog<span class="rm">✕</span></span> <span class="badge c-green"><span class="t">Ready</span></span></div>
+            <div class="kv" id="addr2"><button class="add orange" style="height:26px" onclick="fillAddress2()"><span class="plus">+</span>Address</button></div>
+            <div id="twrap2" style="display:none">
+              <div class="journey" style="padding-top:0">
+                <div class="jnode done" style="cursor:default"><span class="jbox" style="width:34px;height:34px;border-radius:10px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9.5L5.2 5h13.6L20 9.5M5 9.5V20h14V9.5M5 9.5h14"/></svg></span><span class="jlbl">Yard</span><span class="jts"></span></div>
+                <div class="jline on" style="margin-bottom:30px"></div>
+                <div class="jnode done" style="cursor:default"><span class="jbox" style="width:34px;height:34px;border-radius:10px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2.5" y="6.5" width="11" height="9" rx="1"/><path d="M13.5 9.5h3.6l3.4 3.2v2.8h-7z"/><circle cx="7" cy="17.5" r="1.7"/><circle cx="17" cy="17.5" r="1.7"/></svg></span><span class="jlbl">Truck</span><span class="jts"></span></div>
+                <div class="jline" style="margin-bottom:30px"></div>
+                <div class="jnode" style="cursor:default"><span class="jbox" style="width:34px;height:34px;border-radius:10px;background:var(--panel-2);color:var(--txt-2);border:1px solid var(--line)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9.5L5.2 5h13.6L20 9.5M5 9.5V20h14V9.5M5 9.5h14"/></svg></span><span class="jlbl">Site</span><span class="jts"></span></div>
+              </div>
+              <div class="kv"><b>Delivery</b> · <span class="derived">$150 · 30 min</span></div>
+            </div>
+            <div class="kv"><span class="link">🧾 01i02Ju26</span></div>
+          </div>
+          <div class="side r">
+            <div class="kv"><span class="badge c-yellow"><span class="t">Partial</span></span></div>
+            <div class="kv"><span class="link">⛰ Lift Scissor 26ft</span></div>
+            <div class="kv"><span class="money">$0</span><span class="derived">/ $1,000 paid</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- YARD section — the physical lifecycle journey (replaces the white buttons) -->
+      <div class="section gz" data-gz="GZ-9 · yard journey"><h4>Yard</h4>
+        <div class="journey">
+          <div class="jnode" id="j-onrent" onclick="jCapture(this,'On-Rent video captured · status → On Rent')">
+            <span class="jbox"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 10l5-3v10l-5-3M3 6h12v12H3z"/></svg></span>
+            <span class="jlbl">+OnRent</span><span class="jts"></span>
+          </div>
+          <div class="jline" id="jl1"></div>
+          <div class="jnode fc" id="j-fc" onclick="jFC(this)">
+            <span class="jbox"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 10l5-3v10l-5-3M3 6h12v12H3z"/></svg></span>
+            <span class="jlbl">+FC</span><span class="jts"></span>
+          </div>
+          <div class="jline" id="jl2"></div>
+          <div class="jnode" id="j-return" onclick="jCapture(this,'Return video captured · status → Returned')">
+            <span class="jbox"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 10l5-3v10l-5-3M3 6h12v12H3z"/></svg></span>
+            <span class="jlbl">+Return</span><span class="jts"></span>
+          </div>
+        </div>
+        <div class="kv" style="margin-top:6px"><span class="muted">White = required video still owed (rule 15). Captured → green ✓ + timestamp. +FC is optional (dashed) — tapping it logs a Field Call: fails the unit + auto-creates a WO.</span></div>
+      </div>
+
+      <div class="history"><h4>History</h4><div class="hlog">
+        <div><span class="when">Jun 01 · 4:02 PM</span>On-Rent video captured<span class="who">Jacob</span></div>
+        <div><span class="when">May 30</span>Rental created — Reserved<span class="who">Jacob</span></div>
+      </div></div>
+    </div>
+  </div>
+
+  <!-- gray-zone index for Rentals -->
+  <div class="hpanel" style="max-width:430px"><h3>Gray zones on this card — verify or redline</h3>
+    <div class="gzlist">
+      <div><b>GZ-1</b> <span class="q">Day timeline</span>: one cell per day (weekday + date under each), elapsed days tinted green, TODAY ringed. Start date left · price/rate chip · live status + time · end date right. Long rentals (>14 days) would group into weeks. Clicking it opens the window calendar, same as today.</div>
+      <div><b>GZ-9</b> <span class="q">Yard journey</span>: +OnRent and +Return start WHITE because the videos are required (keeps rule 15 alive inside the journey). +FC is dashed/optional and turns red when logged. Each node stamps its time underneath. This fully replaces the three white buttons.</div>
+      <div><b>GZ-10</b> <span class="q">Transport picker placement</span>: the journey-picker you already built stays inside the Rental section, revealed by +Address (left column, under the address) — compact 34px nodes so the column doesn’t blow up.</div>
+      <div><b>GZ-11</b> <span class="q">Right side</span> of Rental = Pay Status badge, Category link, $paid/$total — all derived/mirrored (category comes from the unit; pay status from the invoice). Only the left column edits the rental.</div>
+    </div>
+  </div>
+  </div>
+</section>
+
+</main>
+
+<!-- ETA / status popup (GZ-8) -->
+<div class="scrim" id="etascrim" onclick="if(event.target===this)this.classList.remove('open')">
+  <div class="popup">
+    <h4>Part status · ETA</h4>
+    <div class="optrow">
+      <button class="btn btn--ghost" style="height:27px" onclick="setEta('Jun 14')">Jun 14</button>
+      <button class="btn btn--ghost" style="height:27px" onclick="setEta('Jun 18')">Jun 18</button>
+      <button class="btn btn--ghost" style="height:27px" onclick="setEta('Jun 25')">Jun 25</button>
+      <button class="btn btn--ghost" style="height:27px" onclick="toast('full date picker here')">📅 Pick date…</button>
+    </div>
+    <div class="optrow">
+      <button class="btn btn--ghost" style="height:27px;color:var(--red)" onclick="setStat('Needed','c-red')">Needed</button>
+      <button class="btn btn--ghost" style="height:27px;color:var(--blue)" onclick="setStat('Arrived','c-blue')">Part Arrived</button>
+      <button class="btn btn--money" style="height:27px" onclick="setStat('Complete','c-green')">Complete</button>
+    </div>
+    <div class="pf"><button class="btn btn--quiet" onclick="document.getElementById('etascrim').classList.remove('open')">Cancel</button></div>
+  </div>
+</div>
+
+<!-- FAIL popup -->
+<div class="scrim" id="failscrim" onclick="if(event.target===this)this.classList.remove('open')">
+  <div class="popup">
+    <h4>Inspection failed — photo + description required</h4>
+    <div class="photo-drop" onclick="this.textContent='✓ photo attached';this.style.color='var(--green)'">📷 Tap to capture photo / video</div>
+    <textarea placeholder="What failed?"></textarea>
+    <div class="pf">
+      <button class="btn btn--quiet" onclick="document.getElementById('failscrim').classList.remove('open')">Cancel</button>
+      <button class="btn btn--commit" onclick="failSave()">Save — creates the WO</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let tt;function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');clearTimeout(tt);tt=setTimeout(()=>t.classList.remove('show'),2100);}
+function toggleTheme(){const d=document.documentElement;d.dataset.theme=d.dataset.theme==='dark'?'light':'dark';}
+
+/* segmented toggles — exactly one side lit, color carries the meaning */
+function segPick(btn,cls){
+  [...btn.parentElement.children].forEach(b=>b.className='');
+  btn.className=cls;
+}
+
+/* inspection FAIL → popup; save spins up a WO */
+let failBtn=null;
+function failPopup(btn){failBtn=btn;document.getElementById('failscrim').classList.add('open');}
+function failSave(){
+  document.getElementById('failscrim').classList.remove('open');
+  if(failBtn)segPick(failBtn,'on-red');
+  toast('Unit → Failed · WO created below ↓');
+}
+
+/* part-line status: click red/green badge cycles via the same popup */
+let curBadge=null;
+function lineStatus(b){curBadge=b;document.getElementById('etascrim').classList.add('open');}
+function etaPopup(b){curBadge=b;document.getElementById('etascrim').classList.add('open');}
+function setEta(d){
+  if(curBadge){curBadge.className='badge c-yellow';curBadge.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18"/></svg><span class="t">ETA '+d+'</span>';}
+  document.getElementById('etascrim').classList.remove('open');
+  toast('Part ordered · ETA '+d+' shows AS the status');
+}
+function setStat(label,cls){
+  if(curBadge){curBadge.className='badge '+cls;curBadge.innerHTML='<span class="t">'+label+'</span>';}
+  document.getElementById('etascrim').classList.remove('open');
+  toast('Status → '+label);
+}
+
+/* yard journey */
+function jCapture(node,msg){
+  if(node.classList.contains('done'))return toast('already captured — tap to review the video');
+  node.classList.add('done');
+  node.querySelector('.jbox').innerHTML='✓';
+  node.querySelector('.jts').textContent=new Date().toLocaleTimeString([], {hour:'numeric',minute:'2-digit'});
+  if(node.id==='j-onrent')document.getElementById('jl1').classList.add('on');
+  if(node.id==='j-return'){document.getElementById('jl2').classList.add('on');}
+  toast(msg);
+}
+function jFC(node){
+  if(node.classList.contains('done'))return toast('Field Call already logged — opens the FC report');
+  node.classList.add('done');
+  node.querySelector('.jts').textContent=new Date().toLocaleTimeString([], {hour:'numeric',minute:'2-digit'});
+  toast('Field Call — unit Failed + WO auto-created');
+}
+
+/* notes entry — input + 3 color dots */
+function openNote(b){
+  b.outerHTML='<div style="display:flex;align-items:center;gap:8px"><input placeholder="Type a note…" style="flex:1;height:30px;border-radius:9px;background:var(--panel-2);border:1px solid var(--line);color:var(--txt);padding:0 11px;font:inherit;font-size:13px;outline:none"><span style="display:flex;gap:5px">'+['#e9edf4','#ff4242','#34d399'].map(c=>'<span title="tag color" onclick="toast(\'note tagged\')" style="width:15px;height:15px;border-radius:50%;background:'+c+';border:1px solid var(--line);cursor:pointer"></span>').join('')+'</span></div>';
+}
+
+/* +Address reveals the compact transport picker (already built in the app) */
+function fillAddress2(){
+  document.getElementById('addr2').innerHTML='<span class="boldlight">265 Callie Ln, Orange, TX</span>';
+  document.getElementById('twrap2').style.display='block';
+  toast('Address set → transport journey-picker appears (already live in the app)');
+}
+</script>
+</body>
+</html>
