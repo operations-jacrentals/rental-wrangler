@@ -1774,7 +1774,7 @@ function listFor(card, session) {
   }
   // §10 — in +Rental mode (window open, even before dates), Categories / Units / Customers
   // list every record so they can be picked, rather than the empty draft cascade.
-  const rentalMode = availWin || state.winpicker;
+  const rentalMode = inRentalMode();
   if (rentalMode && card === 'categories') return collection('categories');
   if (rentalMode && card === 'units') { return state.pick?.catFilter ? collection('units').filter((u) => u.categoryId === state.pick.catFilter) : collection('units'); }
   if (rentalMode && card === 'customers') return collection('customers');
@@ -1881,14 +1881,24 @@ function shopAlertCount(member, session) {
   if (member === 'serviceOrders') return items.filter((u) => { const s = topServiceForUnit(u); return u.washRequested || (s && s.remaining < 0); }).length;
   return 0;
 }
+/* ── +Rental-mode helpers: the draft, whether the user has "engaged" (opened the
+   window or picked anything), and the broad mode flag that keeps Categories/
+   Customers populated for picking even before a window is set. ── */
+function rentalDraft() { return (state.pick && entityCardOf(state.pick.card, state.pick.recType) === 'rentals') ? recOf('rentals', state.pick.recId) : null; }
+function inRentalMode() { return !!(availWin || state.winpicker || rentalDraft()); }
+function rentalEngaged() { const d = rentalDraft(); return !!(d && (state.winpicker || state.pick.catFilter || d.customerId || d.unitId)); }
 // One column = a tab strip + the single active member's card.
 function columnEl(col, session) {
   const active = (session.cols && session.cols[col.id]) || col.default;
   const wrap = el('div', 'col'); wrap.dataset.col = col.id;
   wrap.appendChild(colTabsEl(col, active, session));
-  wrap.appendChild(memberCardEl(active, session));
+  // +Rental, nothing engaged yet → keep the side cards blank so the centered
+  // "Select rental window" button + guide own the screen.
+  const blank = col.id !== 'middle' && rentalDraft() && !rentalEngaged();
+  wrap.appendChild(blank ? blankColEl() : memberCardEl(active, session));
   return wrap;
 }
+function blankColEl() { const n = el('div', 'card blank-col'); return n; }
 function colTabsEl(col, active, session) {
   const bar = el('div', 'col-tabs');
   bar.innerHTML = col.members.map((m) => {
@@ -1991,7 +2001,7 @@ function listView(cardDef, session) {
 
   // +New Customer is normally header-only, but +Rental mode offers it inline (the app
   // is "in rental mode" and takes some control of the flow).
-  if (card === 'customers' && (availWin || state.winpicker)) {
+  if (card === 'customers' && inRentalMode()) {
     const nb = el('div'); nb.style.margin = '0 0 9px';
     nb.innerHTML = `<button class="bigbtn js-new-cust-rental">${I.plus} New Customer</button>`;
     wrap.appendChild(nb);
@@ -3082,6 +3092,8 @@ function render() {
     if (wr) { const fl = el('div', 'winpicker-float'); fl.innerHTML = winPickerEl(wr); $('#app').appendChild(fl); positionWinPicker(fl); }
     else state.winpicker = null;
   }
+  const guide = guidePopupEl();   // the non-dimming +X-mode guide popup (centered in the middle card)
+  if (guide) { $('#app').appendChild(guide); positionGuide(guide); }
   applyTitles();   // full text on hover wherever we truncate (custom ~0.5s tooltip)
   const dt = performance.now() - t0;
   renderCount++;
@@ -3144,9 +3156,9 @@ function onClick(e) {
     if (r) { e.preventDefault(); e.stopPropagation(); return openInNewTab(r.card, r.recId, r.recType); }
   }
 
-  // §0.3 — while a rental window is in scope, clicking a Category filters the Units
-  // (KEEP the calendar open; works whether or not the unit-pick slot is set yet)
-  if (availWin || state.winpicker) {
+  // §0.3 — in +Rental mode, clicking a Category filters the Units; picking a Customer
+  // assigns it. Works whether or not the window is open / dates are set.
+  if (inRentalMode()) {
     if (closest('.js-new-cust-rental')) { e.stopPropagation(); return startNewCustomer(); }   // +New Customer in rental mode
     const draftRid = state.winpicker?.rentalId || (state.pick && state.pick.slot === 'unit' ? state.pick.recId : null) || availWin?.selfId;
     const crow = closest('.row');
@@ -3976,8 +3988,7 @@ function startNewRental(customerId) {
   // +Rental mode columns: left → Categories (pick one to filter Units), right → Customers
   // (all, to pick or add), middle → the new rental + its window.
   const s = activeSession(); if (s.cols) { s.cols.left = 'categories'; s.cols.right = 'customers'; s.cols.middle = 'rentals'; s.cards.categories.mode = 'list'; s.cards.customers.mode = 'list'; }
-  toast('New rental — pick the window + a Category, then a Unit; pick or add a Customer.');
-  beginPick('rentals', id, undefined, 'unit');   // opens the window picker first (customer auto-advances after)
+  beginPick('rentals', id, undefined, 'unit');   // window picker stays closed; the guide popup leads
 }
 
 /* ── §0.3 cascading pickers (pick mode) ──────────────────────────────────────
@@ -4004,14 +4015,11 @@ function nextPickFor(card, rec, recType) {
 function beginPick(card, recId, recType, slot) {
   if (!slot) { state.pick = null; render(); return; }
   state.pick = { card, recId, recType, slot };
-  // §0.3 — auto-open the rental window picker when picking a unit for a window-less
-  // draft, so the user sets the window first and Categories/Units light up live.
+  // §0.3 — the rental window picker stays CLOSED at start; the guide popup points
+  // the user to the big "Select rental window" button (they open it deliberately).
   if (slot === 'unit' && entityCardOf(card, recType) === 'rentals') {
     const r = recOf('rentals', recId);
-    if (r && (!r.startDate || !r.endDate)) {
-      if (!r.startTime) r.startTime = nowHourLabel();
-      state.winpicker = { rentalId: recId, monthISO: firstOfMonthISO(r.startDate || TODAY_ISO), anchor: null };
-    }
+    if (r && !r.startTime) r.startTime = nowHourLabel();
   }
   render();
   // WOs live inside the Shop card, so highlight that for the 'wo' pick
@@ -4094,17 +4102,51 @@ function pickBarEl() {
     return bar;
   }
   const entity = entityCardOf(p.card, p.recType);
-  const m = NEW_MODE[entity];
+  if (NEW_MODE[entity]) return null;   // guided +X modes use the floating guide popup instead
   const bar = el('div', 'pickbar');
-  if (m) {
-    bar.innerHTML = `<span class="pb-dot"></span><span class="pb-text">You are in <b>${m.name} Mode</b>. Exit by clicking <b>${m.btn}</b> or by adding ${m.need}.</span>
-      <button class="pb-cancel js-cancelpick">Exit</button>`;
-  } else {
-    const rec = recOf(entity, p.recId);   // swaps & other one-off picks keep the original prompt
-    bar.innerHTML = `<span class="pb-dot"></span><span class="pb-text">Pick ${PICK_LABEL[p.slot]} for <b>${esc(draftName(p.card, rec || {}))}</b> — click a row in the highlighted card.</span>
-      <button class="pb-cancel js-cancelpick">Cancel</button>`;
-  }
+  const rec = recOf(entity, p.recId);   // swaps & other one-off picks keep the original prompt
+  bar.innerHTML = `<span class="pb-dot"></span><span class="pb-text">Pick ${PICK_LABEL[p.slot]} for <b>${esc(draftName(p.card, rec || {}))}</b> — click a row in the highlighted card.</span>
+    <button class="pb-cancel js-cancelpick">Cancel</button>`;
   return bar;
+}
+/* ── The non-dimming "+X mode" guide popup, centered in the middle card, with arrows
+   pointing at where to click. Stays until the mode is exited. ── */
+const MODE_TITLE = { rentals: '+Rental', inspections: '+Inspection', workOrders: '+Work Order', invoices: '+Invoice' };
+function guideForMode() {
+  const p = state.pick; if (!p) return null;
+  const entity = entityCardOf(p.card, p.recType); if (!NEW_MODE[entity]) return null;
+  if (entity === 'rentals') {
+    const d = rentalDraft(); if (!d) return null;
+    if (!state.winpicker && !rentalEngaged()) return { entity, msg: 'Select a rental window', arrows: ['up'] };
+    const needUnit = !d.unitId, needCust = !d.customerId;
+    if (!needUnit && !needCust) return null;   // both set → workflow done, guide closes
+    const what = [], arrows = [];
+    if (needUnit) { what.push((p.catFilter || d.categoryId) ? 'a unit' : 'a category'); arrows.push('left'); }
+    if (needCust) { what.push('a customer'); arrows.push('right'); }
+    return { entity, msg: 'Select ' + what.join(' and '), arrows };
+  }
+  if (entity === 'inspections' || entity === 'workOrders') return { entity, msg: 'Add a unit', arrows: ['left'] };
+  if (entity === 'invoices') return { entity, msg: 'Select a customer', arrows: ['right'] };
+  return null;
+}
+function guidePopupEl() {
+  const g = guideForMode(); if (!g) return null;
+  const arrow = (d) => `<span class="g-arrow g-${d}">${d === 'up' ? '↑' : d === 'left' ? '←' : '→'}</span>`;
+  const node = el('div', 'guide-pop');
+  node.innerHTML = `${g.arrows.map(arrow).join('')}
+    <div class="g-card"><div class="g-title">${esc(MODE_TITLE[g.entity])} mode</div><div class="g-msg">${esc(g.msg)}</div>
+      <button class="g-exit js-cancelpick">Exit</button></div>`;
+  return node;
+}
+function positionGuide(node) {
+  const mid = document.querySelector('.col[data-col="middle"]'); if (!mid) return;
+  const r = mid.getBoundingClientRect();
+  const left = Math.max(10, Math.round(r.left + r.width / 2 - node.offsetWidth / 2));
+  // when the up-arrow points at the window button, sit just BELOW the button (don't cover it)
+  const btn = (!state.winpicker && rentalDraft()) ? mid.querySelector('.js-open-winpicker') : null;
+  const top = btn ? Math.round(btn.getBoundingClientRect().bottom + 34)
+                  : Math.round(r.top + Math.max(120, r.height * 0.30));
+  node.style.left = left + 'px'; node.style.top = top + 'px';
 }
 
 /* ── draft mutations driven from the detail view ── */
@@ -4255,16 +4297,16 @@ function winPickerEl(r) {
     <div class="wp-foot"><button class="js-wp-clear">Clear</button><button class="js-wp-today">Today</button><button class="js-wp-done">Done</button></div>
   </div>`;
 }
-/** Float the picker beside its trigger, clamped on-screen (opens upward if needed). */
+/** Float the picker anchored to the TOP of its trigger button (opens upward so the
+ *  guide popup below it isn't blocked); drops below only if there's no room above. */
 function positionWinPicker(fl) {
   const trigger = document.querySelector(`.js-open-winpicker[data-rec="${state.winpicker.rentalId}"]`);
   if (!trigger) { fl.style.display = 'none'; return; }       // detail not visible → hide
   const tr = trigger.getBoundingClientRect();
   const pw = fl.offsetWidth || 300, ph = fl.offsetHeight || 360;
-  let left = Math.min(tr.left, window.innerWidth - pw - 10);
-  left = Math.max(10, left);
-  let top = tr.bottom + 6;
-  if (top + ph > window.innerHeight - 10) top = Math.max(10, tr.top - ph - 6);
+  let left = Math.max(10, Math.min(tr.left + tr.width / 2 - pw / 2, window.innerWidth - pw - 10));   // centered on the button
+  let top = tr.top - ph - 6;                                  // ANCHORED ABOVE the button
+  if (top < 10) top = Math.min(tr.bottom + 6, window.innerHeight - ph - 10);   // no room above → drop below
   fl.style.left = Math.round(left) + 'px';
   fl.style.top = Math.round(top) + 'px';
 }
