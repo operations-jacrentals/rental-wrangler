@@ -882,12 +882,15 @@ const RING_ICON = {
 /* ════════════════════════════════════════════════════════════════════════
    5. Pill / badge factories (registry-driven — never hardcode color/label)
    ════════════════════════════════════════════════════════════════════════ */
+// rule 3: each status badge carries the icon of the card the status belongs to
+const SET_CARD = { rentalStatus: 'rentals', unitRentalStatus: 'rentals', invoiceStatus: 'invoices', unitInspectionStatus: 'inspections', inspectionResult: 'inspections', unitFleetStatus: 'units', gpsStatus: 'units', unitOrderStatus: 'workOrders', woPhase: 'workOrders', woType: 'workOrders', customerPayStatus: 'customers', accountType: 'customers', serviceStatus: 'serviceOrders', expenseReconcile: 'expenses' };
 function statusPill(set, value, { card, recId, x, truck } = {}) {
   const st = getStatus(set, value);
   const data = card ? ` data-pill-card="${card}" data-pill-rec="${esc(recId)}"` : '';
   const tk = truck ? `<span class="truck">${I.truck}</span>` : '';
   const xb = x ? `<span class="x" data-x="${esc(x)}">✕</span>` : '';
-  return `<span class="pill c-${st.color}${truck ? ' truck' : ''}"${data}>${tk}${esc(st.label)}${xb}</span>`;
+  const ic = truck ? '' : (CARD_ICON[SET_CARD[set]] || '');   // rule 3: parent-card icon hugs the label
+  return `<span class="pill c-${st.color}${truck ? ' truck' : ''}" data-badge${data}>${tk}${ic}<span class="t">${esc(st.label)}</span>${xb}</span>`;
 }
 function refPill(card, recId, label, { x, xData } = {}) {
   const xb = x ? `<span class="x" data-x="${esc(x)}"${xData != null ? ` data-id="${esc(xData)}"` : ''}>✕</span>` : '';

@@ -561,6 +561,8 @@ input { font-family: inherit; }
 .linkname { color: var(--blue); font-weight: 700; text-decoration: none; cursor: pointer; }                  /* rule 25: line-item name = hyperlink */
 .linkname:hover { text-decoration: underline; }
 .boldlight { font-weight: 700; color: var(--txt); }                                                          /* rule 12: value after entry */
+.pill[data-badge]:hover { filter: brightness(1.16); }                                                        /* rule 3: status badge hover highlight */
+.pill[data-badge]:hover .t { text-decoration: underline; }
 .pill .x { margin-left: 2px; opacity: .6; font-weight: 800; }
 .pill .x:hover { opacity: 1; color: var(--red); }
 .pill svg { width: 12px; height: 12px; flex: 0 0 auto; }
