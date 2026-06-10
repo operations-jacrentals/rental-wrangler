@@ -98,15 +98,9 @@ input { font-family: inherit; }
 .hr-top { display: flex; align-items: flex-start; gap: 10px; min-height: 38px; }
 .header-tabs { display: flex; align-items: center; gap: 8px; flex: 1 1 auto; min-width: 0; overflow-x: auto; overflow-y: hidden; }
 .header-tabs::-webkit-scrollbar { height: 0; }
-.bottombar > .iconbtn, .bottombar .new-split > .iconbtn { height: 36px; }
+.bottombar > .iconbtn { height: 36px; }
 .bb-sep { width: 1px; align-self: stretch; margin: 4px 4px; background: var(--line); }
-/* wide screens: split +New into individual buttons (+Rental / +Customer + icon-only rest);
-   narrower: collapse back to the single +New menu */
-.new-split { display: flex; align-items: center; gap: 8px; }
-.new-split .iconbtn { gap: 2px; }   /* "+Rental" / "+Customer" read tight, no space after the + */
-/* Specificity bumped (.bottombar > …) so these beat the later `.iconbtn { display:inline-flex }`. */
-@media (max-width: 1500px) { .bottombar > .new-split { display: none; } }
-@media (min-width: 1501px) { .bottombar > .new-menu-btn { display: none; } }
+/* the +New split/collapse is gone — every create action is now its own labeled button */
 /* the action toolbar, now a centered bottom bar — no background, floats over the page */
 .bottombar { flex: 0 0 auto; display: flex; align-items: center; justify-content: center; gap: 10px; padding: 4px 14px 10px; background: transparent; }
 .hello-name { margin-left: auto; align-self: center; font-size: 24px; font-weight: 800; color: var(--txt); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 46%; letter-spacing: .2px; line-height: 1; padding-right: 4px; }
@@ -561,6 +555,7 @@ input { font-family: inherit; }
 .pill.ref.link:hover { border-color: var(--accent); filter: brightness(1.06); }
 .pill.c-commit { background: var(--blue); color: #fff; border-color: transparent; }                          /* rule 17: Done/Save = blue */
 .pill.c-money  { background: var(--green); color: #04150d; border-color: transparent; font-weight: 800; }    /* rule 23: charge / take payment = green */
+.pill.c-danger { background: var(--red); color: #fff; border-color: transparent; font-weight: 800; }         /* S4: confirm-refund = solid red */
 .req { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 13px; border-radius: 10px; background: #fff; color: #16181d; border: 1px solid #fff; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }  /* rule 15/16/22: required-until-entered = white bg + dark ink */
 .req svg { width: 15px; height: 15px; }
 .linkname { color: var(--blue); font-weight: 700; text-decoration: none; cursor: pointer; }                  /* rule 25: line-item name = hyperlink */
@@ -617,7 +612,7 @@ input { font-family: inherit; }
 .kv .pfx { color: var(--txt-3); font-size: 12px; font-weight: 600; }     /* leading qualifier: Start, Return */
 .kv .v.big { font-size: 15px; }
 .kv .v.muted { color: var(--txt-3); font-weight: 500; }
-.kv.derived > .v, .kv.derived .sfx, .v.derived { font-style: italic; }   /* rule 13/20/21/27: derived/formulaic values italic */
+.kv.derived > .v, .kv.derived .sfx, .derived { font-style: italic; }   /* rule 13/20/21/27: derived/formulaic values italic */
 /* Active-Status spectrum bar (§6.2 #8) — fill = % active (clipped), same as the
    list-view row background; the % is overlaid on the right. */
 .active-bar { position: relative; width: 100%; height: 16px; border-radius: 8px; background: var(--track); overflow: hidden; margin-top: 2px; }

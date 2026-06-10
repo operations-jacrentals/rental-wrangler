@@ -1395,10 +1395,10 @@ function rowInnerHTML(card, rec) {
    ════════════════════════════════════════════════════════════════════════ */
 /* Label-free stacked field (§6.2 #3): value + optional prefix/suffix qualifier.
  * `value` may be raw text (escaped) or pre-built HTML (pills) via {html:true}. */
-function kv(value, { pfx, sfx, wrap, big, html } = {}) {
+function kv(value, { pfx, sfx, wrap, big, html, derived } = {}) {
   const v = html ? value : esc(value);
   const attach = sfx && sfx[0] === '/';   // unit suffixes (/one-way, /1-day…) attach to the value with no space
-  return `<div class="kv${wrap ? ' wrap' : ''}">${pfx ? `<span class="pfx">${esc(pfx)}</span>` : ''}<span class="v${big ? ' big' : ''}">${v}${attach ? `<span class="sfx">${esc(sfx)}</span>` : ''}</span>${sfx && !attach ? `<span class="sfx">${esc(sfx)}</span>` : ''}</div>`;
+  return `<div class="kv${wrap ? ' wrap' : ''}${derived ? ' derived' : ''}">${pfx ? `<span class="pfx">${esc(pfx)}</span>` : ''}<span class="v${big ? ' big' : ''}">${v}${attach ? `<span class="sfx">${esc(sfx)}</span>` : ''}</span>${sfx && !attach ? `<span class="sfx">${esc(sfx)}</span>` : ''}</div>`;
 }
 /* A row of adjacent pills, no label (e.g. Unit + Category side by side). */
 const kvPills = (html) => `<div class="kv pillrow">${html}</div>`;
@@ -1410,7 +1410,8 @@ const kvPills = (html) => `<div class="kv pillrow">${html}</div>`;
 function efld(card, rec, idField, field, ph, opts = {}) {
   const raw = rec[field];
   const has = raw !== '' && raw != null;
-  const disp = has ? esc(opts.fmt ? opts.fmt(raw) : String(raw)) : `<span class="add-field">+ ${esc(ph)}</span>`;
+  const phDisp = String(ph).replace(/^Add\s+/i, '');   // rule 8/12: drop "Add" + space (data-ph keeps full prompt)
+  const disp = has ? esc(opts.fmt ? opts.fmt(raw) : String(raw)) : `<span class="add-field">+${esc(phDisp)}</span>`;
   const pfx = opts.pfx ? `<span class="pfx">${esc(opts.pfx)}</span>` : '';
   const sfx = (has && opts.sfx) ? `<span class="sfx">${esc(opts.sfx)}</span>` : '';
   return `<div class="kv${opts.wrap ? ' wrap' : ''}">${pfx}<span class="v inline-edit" data-edit="field" data-card="${card}" data-field="${field}" data-rec="${esc(String(rec[idField]))}" data-ph="${esc(ph)}" data-type="${opts.type || 'text'}"${opts.wrap ? ' style="white-space:normal"' : ''}>${disp}</span>${sfx}</div>`;
@@ -1655,13 +1656,13 @@ const DETAIL = {
       const ref = li.kind === 'rental' ? `data-pill-card="rentals" data-pill-rec="${esc(li.ref)}"` : '';
       // transport line auto-appears from the rental (no remove); rental/WO/custom carry an X — unless locked (§12.5)
       const x = (!locked && li.kind !== 'transport') ? `<span class="x line-x" data-x="inv-line-remove" data-idx="${idx}">✕</span>` : '';
-      return `<div class="hitem"><span class="pill c-gray" style="min-width:62px;justify-content:center">${esc(li.kind)}</span><span ${ref} class="${li.kind === 'rental' ? 'inv-line-link' : ''}">${esc(li.label)}</span><span class="spacer"></span><b>${money(li.amount)}</b>${x}</div>`;
+      return `<div class="hitem"><span class="pill ref link" style="min-width:62px;justify-content:center">${esc(li.kind)}</span><span ${ref} class="inv-line-link">${esc(li.label)}</span><span class="spacer"></span><b class="derived">${money(li.amount)}</b>${x}</div>`;
     }).join('');
     const invoiceSec = `<div class="section"><h4>Invoice</h4><div class="fieldstack">
       ${kvPills(cust ? refPill('customers', i.customerId, cust.name, locked ? {} : { x: 'inv-cust-remove' }) : (i.mock ? `<button class="pill ref js-pick" data-card="invoices" data-rec="${i.invoiceId}" data-slot="customer">+ Pick customer</button>` : '<span class="pill c-gray">No customer</span>'))}
-      ${kv(money(t.balance), { sfx: 'due', big: true })}
-      ${kv(`${money(t.paid)} / ${money(t.total)}`, { sfx: 'paid' })}
-      ${kv(fmtShortDate(i.dueDate), { sfx: 'due date' })}
+      ${kv(money(t.balance), { sfx: 'due', big: true, derived: true })}
+      ${kv(`${money(t.paid)} / ${money(t.total)}`, { sfx: 'paid', derived: true })}
+      ${kv(fmtShortDate(i.dueDate), { sfx: 'due date', derived: true })}
       ${kvPills(`<span class="pill ref inline-edit" data-edit="invoicePO" data-rec="${i.invoiceId}">${esc(i.po ? 'PO ' + i.po : 'Add PO')}</span>${cust?.requiresPO && !i.po ? badge('PO required', 'yellow') : ''}`)}
       ${canMoney() && cust
         ? `<div class="pillrow" style="margin-top:2px">${
@@ -1669,11 +1670,11 @@ const DETAIL = {
               ? `<span class="pill c-gray" style="min-width:0">Refunded</span><button class="pill ref js-pay-invoice" data-rec="${i.invoiceId}">Details</button>`
               : t.balance <= 0 && t.paid > 0
                 ? `<span class="pill c-green" style="min-width:0">Paid${i.paymentMethod ? ' · ' + esc(i.paymentMethod) : ''}</span><button class="pill ref js-pay-invoice" data-rec="${i.invoiceId}">Refund</button>`
-                : `<button class="pill c-green js-pay-invoice" data-rec="${i.invoiceId}">${hasCardOnFile(cust) ? (t.paid > 0 ? 'Pay balance ' : 'Pay ') + money(t.balance) : 'Take payment'}</button>${hasCardOnFile(cust) ? `<span class="muted" style="font-size:11px">${esc(cardLabel(cust))}</span>` : '<span class="muted" style="font-size:11px">no card on file</span>'}`
+                : `<button class="pill c-money js-pay-invoice" data-rec="${i.invoiceId}">${hasCardOnFile(cust) ? (t.paid > 0 ? 'Pay balance ' : 'Pay ') + money(t.balance) : 'Take payment'}</button>${hasCardOnFile(cust) ? `<span class="muted" style="font-size:11px">${esc(cardLabel(cust))}</span>` : ''}`
           }</div>`
         : ''}
     </div></div>`;
-    const lineForm = `<div class="lineform"><input class="lf-in js-lf-label" placeholder="Custom line description" /><div class="lineform-row"><input class="lf-in js-lf-amt" type="number" min="0" placeholder="Amount $" /></div><div class="pillrow"><button class="pill c-green js-line-save" data-rec="${i.invoiceId}">Add line</button><button class="pill c-gray js-line-cancel">Cancel</button></div></div>`;
+    const lineForm = `<div class="lineform"><input class="lf-in js-lf-label" placeholder="Custom line description" /><div class="lineform-row"><input class="lf-in js-lf-amt" type="number" min="0" placeholder="Amount $" /></div><div class="pillrow"><button class="pill c-commit js-line-save" data-rec="${i.invoiceId}">Add line</button><button class="pill c-gray js-line-cancel">Cancel</button></div></div>`;
     const addRow = state.invLineForm === i.invoiceId ? lineForm
       : locked
         ? `<div class="pillrow" style="margin-top:8px"><span class="muted" style="font-size:12px">🔒 Pricing locked — this is what gets charged.</span>${canMoney() ? `<span class="spacer"></span><button class="pill ref js-unlock-invoice" data-rec="${i.invoiceId}">Unlock to edit</button>` : ''}</div>`
@@ -1683,14 +1684,14 @@ const DETAIL = {
       ${addRow}
     </div>`;
     const totals = `<div class="section"><h4>Totals</h4><div class="fieldstack">
-      ${kv(money(subBy('rental')), { sfx: 'rental sub' })}
-      ${subBy('transport') ? kv(money(subBy('transport')), { sfx: 'transport sub' }) : ''}
-      ${subBy('parts') ? kv(money(subBy('parts')), { sfx: 'parts sub' }) : ''}
-      ${subBy('labor') ? kv(money(subBy('labor')), { sfx: 'labor sub' }) : ''}
-      ${kv(money(t.subtotal), { sfx: 'subtotal' })}
-      ${kv(t.exempt ? 'Exempt' : money(t.tax), { sfx: `tax (${(TAX_RATE * 100).toFixed(2)}%)` })}
-      ${kv(money(t.total), { sfx: 'total', big: true })}
-      ${kv(`${money(t.paid)} / ${money(t.total)}`, { sfx: 'paid' })}
+      ${kv(money(subBy('rental')), { sfx: 'rental sub', derived: true })}
+      ${subBy('transport') ? kv(money(subBy('transport')), { sfx: 'transport sub', derived: true }) : ''}
+      ${subBy('parts') ? kv(money(subBy('parts')), { sfx: 'parts sub', derived: true }) : ''}
+      ${subBy('labor') ? kv(money(subBy('labor')), { sfx: 'labor sub', derived: true }) : ''}
+      ${kv(money(t.subtotal), { sfx: 'subtotal', derived: true })}
+      ${kv(t.exempt ? 'Exempt' : money(t.tax), { sfx: `tax (${(TAX_RATE * 100).toFixed(2)}%)`, derived: true })}
+      ${kv(money(t.total), { sfx: 'total', big: true, derived: true })}
+      ${kv(`${money(t.paid)} / ${money(t.total)}`, { sfx: 'paid', derived: true })}
     </div></div>`;
     return `<div class="detail">
       <div class="detail-head"><span class="d-title">${esc(i.invoiceId)}</span>${statusPill('invoiceStatus', t.status)}${locked ? '<span class="pill c-gray" style="min-width:0" title="Pricing is locked">🔒 Locked</span>' : ''}</div>
@@ -2477,19 +2478,18 @@ function bottomBarEl() {
   const modeEntity = state.pick ? entityCardOf(state.pick.card, state.pick.recType) : null;
   const newCls = (entity) => 'iconbtn' + (modeEntity === entity ? ' on' : '') + ' js-newitem';
   const bar = el('div', 'bottombar');
+  // rules 5/6: LEFT = labeled actions (icon LEADS label, no "+"), Wash joins them;
+  // RIGHT (after divider) = icon-only utilities. The +New collapse button is dropped (Jac).
   bar.innerHTML = `
     <button class="iconbtn js-dashboard">${I.grid} Dashboard</button>
-    <div class="new-split">
-      <button class="${newCls('rentals')}" data-new="rental">${I.plus}Rental</button>
-      <button class="${newCls('customers')}" data-new="customer">${I.plus}Customer</button>
-      <button class="${newCls('inspections')}" data-new="inspection" data-tip="New Inspection">${CARD_ICON.inspections}</button>
-      <button class="${newCls('workOrders')}" data-new="workOrder" data-tip="New Work Order">${CARD_ICON.workOrders}</button>
-      <button class="${newCls('invoices')}" data-new="invoice" data-tip="New Invoice">${CARD_ICON.invoices}</button>
-      <button class="iconbtn js-newitem" data-new="receipt" data-tip="New Receipt">${CARD_ICON.expenses}</button>
-    </div>
-    <button class="iconbtn primary js-newrental new-menu-btn">${I.plus}New</button>
+    <button class="${newCls('rentals')}" data-new="rental">${CARD_ICON.rentals}Rental</button>
+    <button class="${newCls('customers')}" data-new="customer">${CARD_ICON.customers}Customer</button>
+    <button class="${newCls('inspections')}" data-new="inspection">${CARD_ICON.inspections}Inspection</button>
+    <button class="${newCls('workOrders')}" data-new="workOrder">${CARD_ICON.workOrders}Work Order</button>
+    <button class="${newCls('invoices')}" data-new="invoice">${CARD_ICON.invoices}Invoice</button>
+    <button class="iconbtn js-newitem" data-new="receipt">${CARD_ICON.expenses}Receipt</button>
+    <button class="iconbtn${state.pick?.slot === 'washunit' ? ' on' : ''} js-wash-mode" data-tip="Request a wash for a unit">${I.droplet}Wash</button>
     <span class="bb-sep"></span>
-    <button class="iconbtn${state.pick?.slot === 'washunit' ? ' on' : ''} js-wash-mode" data-tip="Request a wash for a unit">${I.droplet}</button>
     <button class="iconbtn js-theme" data-tip="${state.theme === 'dark' ? 'Light' : 'Dark'} mode">${state.theme === 'dark' ? I.sun : I.moon}</button>
     <button class="iconbtn js-qr" data-tip="Share session (QR)">${I.qr}</button>
     <button class="iconbtn${state.previewsOn ? '' : ' off'} js-previews" data-tip="${state.previewsOn ? 'Hover previews: on' : 'Hover previews: off'}">${state.previewsOn ? I.eye : I.eyeOff}</button>
@@ -2695,7 +2695,7 @@ function renderOverlay() {
         ${roleRows}
         <label class="set-row set-admin"><span class="set-role">Admin</span><input class="set-input" data-admin="1" value="${esc(cfg.admin)}" autocomplete="off" /></label>
         ${o.error ? `<div class="login-err" style="text-align:left;margin-top:8px">${esc(o.error)}</div>` : ''}
-        <div class="pillrow" style="margin-top:14px;justify-content:flex-end"><button class="pill c-gray js-close">Cancel</button><button class="pill c-green js-settings-save">Save</button></div>
+        <div class="pillrow" style="margin-top:14px;justify-content:flex-end"><button class="pill c-gray js-close">Cancel</button><button class="pill c-commit js-settings-save">Save</button></div>
       </div>`;
     overlay.appendChild(pop);
   } else if (o.kind === 'newCustomer') {
@@ -2772,7 +2772,7 @@ function renderOverlay() {
         ${media}
         <textarea class="insp-desc js-insp-desc" data-rec="${n.inspectionId}" placeholder="Describe the failure (what's wrong, parts needed)…">${esc(n.description || '')}</textarea>
         <div class="insp-gate" style="margin-top:12px"><span class="insp-gate-lbl">Charge the customer?</span><button class="pill ${n.billCustomer === 'Yes' ? 'c-green' : 'ref'} js-insp-bill" data-rec="${n.inspectionId}" data-val="Yes">Bill</button><button class="pill ${n.billCustomer === 'No' ? 'c-gray' : 'ref'} js-insp-bill" data-rec="${n.inspectionId}" data-val="No">Don't bill</button></div>
-        <div class="pillrow" style="justify-content:flex-end;margin-top:14px"><button class="pill c-green js-close">Done</button></div>
+        <div class="pillrow" style="justify-content:flex-end;margin-top:14px"><button class="pill c-commit js-close">Done</button></div>
       </div>`;
     overlay.appendChild(pop);
   } else if (o.kind === 'service') {
@@ -2852,11 +2852,11 @@ function renderOverlay() {
         ${o.error ? `<div class="login-err" style="text-align:left;margin-top:10px">${esc(o.error)}</div>` : ''}
         <div class="pillrow" style="justify-content:flex-end;margin-top:16px">
           ${o.confirmRefund
-            ? `<button class="pill c-gray js-refund-cancel">Cancel</button><button class="pill c-red js-refund-confirm" data-rec="${inv.invoiceId}" ${o.busy ? 'disabled' : ''}>${o.busy ? 'Refunding…' : 'Confirm refund'}</button>`
+            ? `<button class="pill c-gray js-refund-cancel">Cancel</button><button class="pill c-danger js-refund-confirm" data-rec="${inv.invoiceId}" ${o.busy ? 'disabled' : ''}>${o.busy ? 'Refunding…' : 'Confirm refund'}</button>`
             : `<button class="pill c-gray js-close">Close</button>
                ${t.paid > 0 && !refunded ? `<button class="pill ref js-refund-invoice" data-rec="${inv.invoiceId}" ${o.busy ? 'disabled' : ''}>Refund</button>` : ''}
                ${t.balance > 0 ? (card
-                 ? `<button class="pill c-green js-charge-invoice" data-rec="${inv.invoiceId}" ${o.busy ? 'disabled' : ''}>${o.busy ? 'Charging…' : 'Charge'}</button>`
+                 ? `<button class="pill c-money js-charge-invoice" data-rec="${inv.invoiceId}" ${o.busy ? 'disabled' : ''}>${o.busy ? 'Charging…' : 'Charge'}</button>`
                  : `<button class="pill ref js-pay-addcard" data-rec="${inv.customerId || ''}" data-inv="${inv.invoiceId}" ${inv.customerId ? '' : 'disabled style="opacity:.45;cursor:default"'}>Add a card</button>`) : ''}`}
         </div>
       </div>`;
