@@ -23,6 +23,13 @@
 - **Bottom bar:** every create action is a labeled button (icon leads label), Wash on the left of the divider; theme/qr/previews/feedback/hotkeys icon-only on the right. No `+New` collapse.
 - Live date: `TODAY_ISO` = real local date.
 
+### Card anatomy (Jac 2026-06-10 — broad guideline for every card's standard view; guidelines, not hard rules)
+- **Section 0 = Notes** — appears at the top ONLY when it has content; when empty, the `+Notes` affordance sits at the bottom, just above the dotted history line.
+- **Section 1 = the high-action zone** (sometimes Section 2 as well) — the primary actions a user takes on the record.
+- **After the action zone(s): Details, then Data.**
+- **Left vs right inside each section/band:** LEFT = action-focused (the user interacts here). RIGHT = derived/formulaic — or sometimes secondary actions like the left.
+- With only 3 cards there's more horizontal space per card — use it for the left/right split.
+
 ## Done & committed (B1–B5)
 - **B1** token layer (`--on-orange`) + tab/coltab/alert/armed restyles.
 - **B2a** linked pills (`.link`) + tab icons. **B2b** status-badge icons + hover.
