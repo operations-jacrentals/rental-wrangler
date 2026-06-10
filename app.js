@@ -1258,8 +1258,9 @@ function customRowHTML(card, rec, layout) {
   const cols = CARD_COLUMNS[card] || []; if (!cols.length) return ROWS[card] ? ROWS[card](rec) : genericRow(card, rec);
   const map = Object.create(null); cols.forEach((c) => { map[c.key] = c; });
   const nameCol = cols[0];
-  const rest = (layout.row1 || []).filter((k) => k !== nameCol.key).map((k) => map[k]).filter((c) => c && !c.pill);
-  const r2 = (layout.row2 || []).map((k) => map[k]).filter((c) => c && c.pill);
+  const nonEmpty = (c) => { const v = c.get(rec); return v != null && v !== ''; };   // drop blank fields entirely (no "—")
+  const rest = (layout.row1 || []).filter((k) => k !== nameCol.key).map((k) => map[k]).filter((c) => c && !c.pill && nonEmpty(c));
+  const r2 = (layout.row2 || []).map((k) => map[k]).filter((c) => c && c.pill && nonEmpty(c));
   const row1 = `<div class="row-1"><span class="r-title">${nameCol.cell(rec)}</span>${rest.length ? `<span class="r-fields">${rest.map((c) => `<span${(c.type === 'money' || c.type === 'num' || c.type === 'pct') ? ' class="r-key"' : ''}>${c.cell(rec)}</span>`).join('')}</span>` : ''}</div>`;
   const row2 = r2.length ? `<div class="row-2">${r2.map((c) => c.cell(rec)).join('')}</div>` : '';
   return row1 + row2;
@@ -2299,6 +2300,7 @@ function headerEl() {
     <div class="kpis">${rings}</div>
     <div class="header-right">
       <div class="hr-top">
+        <button class="iconbtn js-dashboard">${I.grid} Dashboard</button>
         <div class="new-split">
           <button class="${newCls('rentals')}" data-new="rental">${I.plus}Rental</button>
           <button class="${newCls('customers')}" data-new="customer">${I.plus}Customer</button>
@@ -2308,7 +2310,6 @@ function headerEl() {
           <button class="iconbtn js-newitem" data-new="receipt" data-tip="New Receipt">${CARD_ICON.expenses}</button>
         </div>
         <button class="iconbtn primary js-newrental new-menu-btn">${I.plus}New</button>
-        <button class="iconbtn js-dashboard">${I.grid} Dashboard</button>
         <button class="iconbtn${state.pick?.slot === 'washunit' ? ' on' : ''} js-wash-mode" title="Request a wash for a unit">${I.droplet}</button>
         <button class="iconbtn js-theme" title="${state.theme === 'dark' ? 'Light' : 'Dark'} mode">${state.theme === 'dark' ? I.sun : I.moon}</button>
         <button class="iconbtn js-qr" title="Share session (QR)">${I.qr}</button>
@@ -2317,7 +2318,6 @@ function headerEl() {
         ${currentUser ? `<span class="hello-name">${esc(currentUser)}</span>` : ''}
       </div>
       <div class="toolbar">
-        ${(state.tabs.length || state.searchMode) ? `<button class="iconbtn closeall js-closeall">${I.x} Close all</button>` : ''}
         <div class="searchwrap ${state.filterTerms.length ? 'has-terms' : ''}">
           <span class="s-icon">${I.search}</span>
           ${state.filterTerms.map((ft, i) => filterTermPill(ft, i, 'global')).join('')}
