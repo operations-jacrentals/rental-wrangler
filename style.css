@@ -161,6 +161,7 @@ input { font-family: inherit; }
 .iconbtn:hover { background: var(--panel-2); border-color: var(--accent-line); }
 .iconbtn svg { width: 16px; height: 16px; }
 .iconbtn.primary { background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent); gap: 4px; }
+.iconbtn.off { color: var(--txt-3); }   /* previews toggled off */
 /* .on = a +X mode is currently active (header split button / Wash button light up). */
 .iconbtn.on { background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent); }
 .toolbar .js-theme, .toolbar .js-qr { width: 38px; padding: 0; color: var(--txt-2); }   /* icon-only chips */

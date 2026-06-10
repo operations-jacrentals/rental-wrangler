@@ -459,6 +459,7 @@ const state = {
   dashboard: false,           // §5.3/§11 Office Dispatch Time Grid (grid-swap mode)
   seq: 1,
   invoiceSeq: DATA.invoices.length,   // monotonic invoice number (never reused after a discard)
+  previewsOn: (() => { try { return localStorage.getItem('jactec.previewsOff') !== '1'; } catch (e) { return true; } })(),   // hover previews (per device)
 };
 const activeSession = () => (state.activeTabId ? state.tabs.find((t) => t.id === state.activeTabId)?.session : state.defaultSession) || state.defaultSession;
 /** Next unique invoice id — a monotonic counter so discarding a draft can't reuse a number. */
@@ -777,6 +778,8 @@ const I = {
   droplet: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3s6 6.4 6 10.5a6 6 0 0 1-12 0C6 9.4 12 3 12 3z"/></svg>',
   table: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9.5h18M3 15h18M9 4v16"/></svg>',
   sliders: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h10M18 6h2M4 12h2M10 12h10M4 18h12M20 18h0M16 18h4"/><circle cx="16" cy="6" r="2"/><circle cx="8" cy="12" r="2"/><circle cx="14" cy="18" r="2"/></svg>',
+  eye: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>',
+  eyeOff: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.9 4.24A9.1 9.1 0 0 1 12 4c6.5 0 10 7 10 7a13.2 13.2 0 0 1-2 2.6M6.6 6.6A13.2 13.2 0 0 0 2 11s3.5 7 10 7a9.1 9.1 0 0 0 4-.9"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2M2 2l20 20"/></svg>',
   box: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7l9-4 9 4-9 4z"/><path d="M3 7v10l9 4 9-4V7"/><path d="M12 11v10"/></svg>',
   doc: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2h8l4 4v16H6z"/><path d="M14 2v4h4"/></svg>',
   chev: '<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 9l6 6 6-6"/></svg>',
@@ -1075,6 +1078,14 @@ const ROWS = {
    badges) used for sorting + aggregation; `cell` returns display HTML.
    ════════════════════════════════════════════════════════════════════════ */
 const pillS = (color, label) => `<span class="pill c-${color}">${esc(label)}</span>`;
+// Rental-window bar label: within one month → weekday+day (Th23); across months → month+day.
+const DOW2 = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+function winBarDate(iso, otherISO) {
+  if (!iso) return null;
+  const a = iso.split('-').map(Number), b = (otherISO || '').split('-').map(Number);
+  const sameMonth = otherISO && a[0] === b[0] && a[1] === b[1];
+  return sameMonth ? (DOW2[new Date(a[0], a[1] - 1, a[2]).getDay()] + a[2]) : fmtShortDate(iso);
+}
 function C(key, label, type, get, opts = {}) {
   const o = { key, label, type, get, badge: type === 'badge', set: opts.set, sortField: opts.sortField || key };
   // `pill` = renders as a pill → belongs in List-View row 2. Status badges are
@@ -1318,8 +1329,8 @@ const DETAIL = {
       : `<div class="statusbar js-statusbar js-open-winpicker" data-rec="${r.rentalId}">
         <div class="sb-fill" style="background:linear-gradient(90deg, var(--${stColor}-bg) ${Math.round(fill)}%, var(--panel) ${Math.round(fill)}%)"></div>
         <div class="sb-row">
-          <span class="sb-date">${s ? esc(fmtShortDate(r.startDate)) : 'No start'}</span>
-          <span class="sb-date">${e ? esc(fmtShortDate(r.endDate)) : 'No end'}</span>
+          <span class="sb-date">${s ? esc(winBarDate(r.startDate, r.endDate)) : 'No start'}</span>
+          <span class="sb-date">${e ? esc(winBarDate(r.endDate, r.startDate)) : 'No end'}</span>
         </div>
         <div class="sb-center">
           <span class="pill c-${stColor} js-status-pill" data-rec="${r.rentalId}">${truck ? `<span class="truck">${I.truck}</span>` : ''}${esc(getStatus('rentalStatus', rentalDisplayStatus(r)).label)}</span>
@@ -2310,10 +2321,11 @@ function headerEl() {
           <button class="iconbtn js-newitem" data-new="receipt" data-tip="New Receipt">${CARD_ICON.expenses}</button>
         </div>
         <button class="iconbtn primary js-newrental new-menu-btn">${I.plus}New</button>
-        <button class="iconbtn${state.pick?.slot === 'washunit' ? ' on' : ''} js-wash-mode" title="Request a wash for a unit">${I.droplet}</button>
-        <button class="iconbtn js-theme" title="${state.theme === 'dark' ? 'Light' : 'Dark'} mode">${state.theme === 'dark' ? I.sun : I.moon}</button>
-        <button class="iconbtn js-qr" title="Share session (QR)">${I.qr}</button>
-        <button class="iconbtn js-hotkeys" title="Mouse & keyboard shortcuts">${I.mouse}</button>
+        <button class="iconbtn${state.pick?.slot === 'washunit' ? ' on' : ''} js-wash-mode" data-tip="Request a wash for a unit">${I.droplet}</button>
+        <button class="iconbtn js-theme" data-tip="${state.theme === 'dark' ? 'Light' : 'Dark'} mode">${state.theme === 'dark' ? I.sun : I.moon}</button>
+        <button class="iconbtn js-qr" data-tip="Share session (QR)">${I.qr}</button>
+        <button class="iconbtn${state.previewsOn ? '' : ' off'} js-previews" data-tip="${state.previewsOn ? 'Hover previews: on' : 'Hover previews: off'}">${state.previewsOn ? I.eye : I.eyeOff}</button>
+        <button class="iconbtn js-hotkeys" data-tip="Mouse &amp; keyboard shortcuts">${I.mouse}</button>
         <span class="spacer"></span>
         ${currentUser ? `<span class="hello-name">${esc(currentUser)}</span>` : ''}
       </div>
@@ -3159,6 +3171,7 @@ function onClick(e) {
   if (closest('.js-close')) return closeOverlay();
   if (closest('.js-theme')) { state.theme = state.theme === 'dark' ? 'light' : 'dark'; if (state.overlay && state.overlay.kind !== 'addCard') renderOverlay(); render(); return; }
   if (closest('.js-qr')) return openOverlay({ kind: 'qr' });
+  if (closest('.js-previews')) { state.previewsOn = !state.previewsOn; if (!state.previewsOn) hideHoverPreview(); try { localStorage.setItem('jactec.previewsOff', state.previewsOn ? '0' : '1'); } catch (e) {} toast(state.previewsOn ? 'Hover previews on.' : 'Hover previews off.'); return render(); }
   if (closest('.js-hotkeys')) return openOverlay({ kind: 'hotkeys' });
   if (closest('.js-board')) { const b = closest('.js-board'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return openOverlay({ kind: 'board', board: b.dataset.board }); }
   if (closest('.js-boardview')) { e.stopPropagation(); return openBoardView(closest('.js-boardview').dataset.card); }
@@ -4551,6 +4564,7 @@ function boot() {
   document.addEventListener('mousemove', (e) => { lastMouse.x = e.clientX; lastMouse.y = e.clientY; });
   // hover preview (#1): float a record's Standard view after a short hover on a row/pill
   document.addEventListener('mouseover', (e) => {
+    if (!state.previewsOn) return;       // user turned previews off (saved per device)
     const t = hoverTarget(e.target);
     if (!t || state.pick || state.overlay || state.winpicker) return;
     clearTimeout(hoverGrace);            // re-entering a row cancels a pending close
