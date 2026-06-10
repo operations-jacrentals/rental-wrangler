@@ -278,6 +278,18 @@ input { font-family: inherit; }
 .pay-cards { display: flex; flex-direction: column; gap: 6px; margin: 4px 0; }
 .pay-card { display: flex; align-items: center; gap: 6px; padding: 9px 12px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); font-size: 13px; font-weight: 600; text-align: left; }
 .pay-card.on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+/* §15 feedback popup */
+.fb-types { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.fb-types .nc-pill { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 7px 12px; line-height: 1.15; }
+.fb-types .fb-hint { font-size: 9.5px; font-weight: 600; opacity: .7; text-transform: none; }
+.fb-attach { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 10px; padding: 11px; border-radius: 10px;
+  border: 1px dashed var(--accent-line); color: var(--accent); font-size: 13px; font-weight: 600; cursor: pointer; }
+.fb-attach:hover { background: var(--accent-soft); }
+.fb-attach svg { width: 15px; height: 15px; }
+.fb-shot { position: relative; margin-top: 10px; }
+.fb-shot img { width: 100%; max-height: 220px; object-fit: contain; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); }
+.fb-shot-x { position: absolute; top: 6px; right: 6px; width: 26px; height: 26px; border-radius: 50%; background: rgba(0,0,0,.6); color: #fff; }
+.fb-ctx { font-size: 11px; margin-top: 10px; }
 /* item tabs hosted at the top of each card (collapses when no tabs are open) */
 .card-itemtabs { padding: 7px 9px 0; flex: 0 0 auto; }
 .card-itemtabs .tab { flex: 0 0 auto; }

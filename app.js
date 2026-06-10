@@ -846,6 +846,7 @@ const I = {
   sliders: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h10M18 6h2M4 12h2M10 12h10M4 18h12M20 18h0M16 18h4"/><circle cx="16" cy="6" r="2"/><circle cx="8" cy="12" r="2"/><circle cx="14" cy="18" r="2"/></svg>',
   eye: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>',
   eyeOff: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.9 4.24A9.1 9.1 0 0 1 12 4c6.5 0 10 7 10 7a13.2 13.2 0 0 1-2 2.6M6.6 6.6A13.2 13.2 0 0 0 2 11s3.5 7 10 7a9.1 9.1 0 0 0 4-.9"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2M2 2l20 20"/></svg>',
+  feedback: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M9.5 9.5h5M9.5 12.7h3"/></svg>',
   box: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7l9-4 9 4-9 4z"/><path d="M3 7v10l9 4 9-4V7"/><path d="M12 11v10"/></svg>',
   doc: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2h8l4 4v16H6z"/><path d="M14 2v4h4"/></svg>',
   chev: '<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 9l6 6 6-6"/></svg>',
@@ -2441,6 +2442,7 @@ function headerEl() {
         <button class="iconbtn js-theme" data-tip="${state.theme === 'dark' ? 'Light' : 'Dark'} mode">${state.theme === 'dark' ? I.sun : I.moon}</button>
         <button class="iconbtn js-qr" data-tip="Share session (QR)">${I.qr}</button>
         <button class="iconbtn${state.previewsOn ? '' : ' off'} js-previews" data-tip="${state.previewsOn ? 'Hover previews: on' : 'Hover previews: off'}">${state.previewsOn ? I.eye : I.eyeOff}</button>
+        <button class="iconbtn js-feedback" data-tip="Report a bug or request">${I.feedback}</button>
         <button class="iconbtn js-hotkeys" data-tip="Mouse &amp; keyboard shortcuts">${I.mouse}</button>
         <span class="spacer"></span>
         ${currentUser ? `<span class="hello-name">${esc(currentUser)}</span>` : ''}
@@ -2614,6 +2616,23 @@ function renderOverlay() {
       <div class="popup-body hk-body">
         ${rows.map((r) => `<div class="hk-row"><div class="hk-demo hk-${r.d}">${hkDemoInner(r.d)}</div><div class="hk-text"><div class="hk-name">${esc(r.n)}</div><div class="hk-desc">${esc(r.t)}</div></div></div>`).join('')}
         <p class="muted" style="font-size:11px;margin:6px 2px 0">These work on a list row or anywhere on a card.</p>
+      </div>`;
+    overlay.appendChild(pop);
+  } else if (o.kind === 'feedback') {
+    const ctx = feedbackContext();
+    const TYPES = [['Bug', 'Claude fixes it'], ['Improvement', 'needs your OK'], ['Idea', 'needs your OK'], ['Change', 'needs your OK']];
+    const pop = el('div', 'popup'); pop.style.width = '470px';
+    pop.innerHTML = `
+      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${I.feedback}</span><h3>Report a bug or request</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
+      <div class="popup-body">
+        <div class="fb-types">${TYPES.map(([t, h]) => `<button class="nc-pill js-fb-type${(o.fbType || 'Bug') === t ? ' on' : ''}" data-val="${t}">${t}<span class="fb-hint">${h}</span></button>`).join('')}</div>
+        <textarea class="insp-desc js-fb-text" placeholder="What happened, or what would you like? The more specific, the better.">${esc(o.text || '')}</textarea>
+        ${o.shot
+          ? `<div class="fb-shot"><img src="${esc(o.shot)}" alt="screenshot"><button class="fb-shot-x js-fb-shot-x" title="Remove">${I.x}</button></div>`
+          : `<label class="fb-attach"><span>${I.plus} Add a screenshot (recommended)</span><input type="file" accept="image/*" class="js-fb-shot" hidden></label>`}
+        <div class="fb-ctx muted">Auto-attached so Claude can reproduce it: <b>${esc(ctx.view)}</b> · ${esc(ctx.role || 'no role')} · ${esc(ctx.viewport)}</div>
+        ${o.error ? `<div class="login-err" style="text-align:left;margin-top:8px">${esc(o.error)}</div>` : ''}
+        <div class="pillrow" style="justify-content:flex-end;margin-top:14px"><button class="pill c-gray js-close">Cancel</button><button class="pill c-green js-fb-send" ${o.busy ? 'disabled' : ''}>${o.busy ? 'Sending…' : 'Send report'}</button></div>
       </div>`;
     overlay.appendChild(pop);
   } else if (o.kind === 'board') {
@@ -2821,6 +2840,30 @@ function renderOverlay() {
   if (o.kind === 'addCard') { const cc = IDX.customer.get(o.customerId); if (cc && cc.signature && cc.selfie) mountCardElement(); }   // only mount with consent (nothing to orphan otherwise)
 }
 const openOverlay = (o) => { state.overlay = o; renderOverlay(); };
+/* ── §15 in-app feedback: bug/request → queued to the backend Feedback tab ── */
+function feedbackContext() {
+  const s = activeSession(), a = s && s.anchor;
+  return {
+    view: a ? `${a.card}${a.recType ? '/' + a.recType : ''}:${a.recId}` : 'list view',
+    cols: (s && s.cols) ? `${s.cols.left}|${s.cols.middle}|${s.cols.right}` : '',
+    user: currentUser || '', role: currentRole || '', url: location.href,
+    viewport: `${window.innerWidth}×${window.innerHeight}`, ua: navigator.userAgent,
+  };
+}
+async function sendFeedback() {
+  const o = state.overlay; if (!o || o.kind !== 'feedback') return;
+  const ta = document.querySelector('.overlay .js-fb-text'); if (ta) o.text = ta.value;
+  const text = (o.text || '').trim();
+  if (!text) { o.error = 'Add a short description first.'; return renderOverlay(); }
+  o.busy = true; o.error = ''; renderOverlay();
+  const payload = { type: o.fbType || 'Bug', text, screenshot: o.shot || '', context: feedbackContext() };
+  try {
+    if (typeof backendPassword !== 'undefined' && backendPassword) { const r = await backendCall('feedback', payload); if (!r || !r.ok) throw new Error(r && r.error || 'fail'); }
+    else { const q = JSON.parse(localStorage.getItem('jactec.feedback') || '[]'); q.push(payload); localStorage.setItem('jactec.feedback', JSON.stringify(q)); }   // demo fallback
+    closeOverlay();
+    toast(o.fbType === 'Bug' ? 'Bug report sent — thanks. Claude will reproduce + fix it.' : `${o.fbType || 'Request'} sent — Claude will run it by you before changing anything.`);
+  } catch (e) { o.busy = false; o.error = 'Couldn’t send — check your connection and try again.'; renderOverlay(); }
+}
 // Read the customer-form inputs back into the draft (call before any re-render so
 // typed values survive a selfie/signature/pill change).
 function ncSyncInputs() {
@@ -3299,6 +3342,10 @@ function onClick(e) {
   if (closest('.js-qr')) return openOverlay({ kind: 'qr' });
   if (closest('.js-previews')) { state.previewsOn = !state.previewsOn; if (!state.previewsOn) hideHoverPreview(); try { localStorage.setItem('jactec.previewsOff', state.previewsOn ? '0' : '1'); } catch (e) {} toast(state.previewsOn ? 'Hover previews on.' : 'Hover previews off.'); return render(); }
   if (closest('.js-hotkeys')) return openOverlay({ kind: 'hotkeys' });
+  if (closest('.js-feedback')) { e.stopPropagation(); return openOverlay({ kind: 'feedback', fbType: 'Bug', text: '', shot: '', error: '', busy: false }); }
+  if (closest('.js-fb-type')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'feedback') { const ta = document.querySelector('.overlay .js-fb-text'); if (ta) o.text = ta.value; o.fbType = closest('.js-fb-type').dataset.val; renderOverlay(); } return; }
+  if (closest('.js-fb-shot-x')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'feedback') { const ta = document.querySelector('.overlay .js-fb-text'); if (ta) o.text = ta.value; o.shot = ''; renderOverlay(); } return; }
+  if (closest('.js-fb-send')) { e.stopPropagation(); return sendFeedback(); }
   if (closest('.js-board')) { const b = closest('.js-board'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return openOverlay({ kind: 'board', board: b.dataset.board }); }
   if (closest('.js-boardview')) { e.stopPropagation(); return openBoardView(closest('.js-boardview').dataset.card); }
   if (closest('.js-bv-sort') && !closest('.js-bv-inscol')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview') { const key = closest('.js-bv-sort').dataset.col; if (o.sort?.key === key) o.sort.dir = o.sort.dir === 'asc' ? 'desc' : 'asc'; else o.sort = { key, dir: 'asc' }; renderOverlay(); } return; }
@@ -3648,6 +3695,8 @@ function onInput(e) {
     const ms = document.querySelector(`.mini-search[data-card="${card}"]`); if (ms) { ms.focus(); ms.setSelectionRange(sel, sel); }
     return;
   }
+  // Feedback description → store as they type (so a re-render keeps it).
+  if (e.target.classList.contains('js-fb-text')) { if (state.overlay?.kind === 'feedback') state.overlay.text = e.target.value; return; }
   // Board View live search → re-render the popup and restore the caret.
   if (e.target.classList.contains('bv-query')) {
     if (state.overlay?.kind === 'boardview') { state.overlay.query = e.target.value; const sel = e.target.selectionStart; renderOverlay(); const q = document.querySelector('.bv-query'); if (q) { q.focus(); q.setSelectionRange(sel, sel); } }
@@ -3671,6 +3720,14 @@ function onInput(e) {
 
 /* change events — native <input type="date"> / <select> on draft details. */
 function onChange(e) {
+  // Feedback screenshot attach → downscale → store on the overlay.
+  if (e.target.classList.contains('js-fb-shot')) {
+    const file = e.target.files && e.target.files[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => { downscaleImage(reader.result, 1000, 0.6, (out) => { if (!out) { toast('Could not read that image.'); return; } if (state.overlay?.kind === 'feedback') { state.overlay.shot = out; renderOverlay(); } }); };
+    reader.readAsDataURL(file);
+    return;
+  }
   // Board View summary aggregation calc (Sum/Avg/Min/Max/Count) per column.
   if (e.target.classList.contains('bv-calc')) {
     const o = state.overlay; if (o?.kind === 'boardview') { o.calc = o.calc || {}; o.calc[e.target.dataset.col] = e.target.value; renderOverlay(); }
