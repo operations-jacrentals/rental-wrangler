@@ -796,7 +796,8 @@ const CARD_ICON = {
   invoices:      ico('<path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1-2-1Z"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><path d="M12 17.5v-11"/>'), // receipt
   workOrders:    ico('<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>'), // wrench
   serviceOrders: ico('<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>'),  // heart
-  inspections:   ico('<rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 14 2 2 4-4"/>'),   // clipboard-check (was a magnifier → looked like search)
+  inspections:   ico('<rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 14 2 2 4-4"/>'),   // clipboard-check (done)
+  inspectionsPending: ico('<rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M10 12.3a2 2 0 1 1 2.7 1.9c-.6.3-1 .7-1 1.4"/><path d="M11.7 17.8h.01"/>'),   // clipboard-question (Not Ready / pending)
   shop:          ico('<path d="m15 12-8.5 8.5a2.12 2.12 0 1 1-3-3L12 9"/><path d="M17.64 15 22 10.64"/><path d="m20.91 11.7-1.25-1.25c-.6-.6-.93-1.4-.93-2.25v-.86L16.01 4.6a5.56 5.56 0 0 0-3.94-1.64H9l.92.82A6.18 6.18 0 0 1 12 8.4v1.56l2 2h2.47l2.26 1.91"/>'), // hammer (Shop)
   parts:         ico('<path d="M16.5 9.4 7.55 4.24"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>'), // package
   vendors:       ico('<path d="M3 9h18v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M3 9l1.5-5h15L21 9"/><path d="M3 9h18"/><path d="M9 22V12h6v10"/>'),  // storefront
@@ -1212,8 +1213,11 @@ function fmtAggValue(col, a, calc) {
 function listTotalsEl(card, rows, session) {
   if (!rows || !rows.length) return null;
   const cols = cardColumns(card, session);
+  const sel = loadListTotals(card);                 // null = every aggregatable column
+  const allowed = sel ? new Set(sel) : null;
   const chips = [];
   for (const col of cols) {
+    if (allowed && !allowed.has(col.key)) continue;
     const a = aggColumn(col, rows);
     if (a.kind === 'badge') {
       Object.entries(a.counts).sort((x, y) => y[1] - x[1]).forEach(([key, n]) => {
@@ -1262,6 +1266,22 @@ function loadListLayout(card) {
 function saveListLayout(card, layout) {
   LIST_LAYOUTS[card] = layout || undefined;
   try { if (layout) localStorage.setItem(LIST_LAYOUT_KEY(card), JSON.stringify(layout)); else localStorage.removeItem(LIST_LAYOUT_KEY(card)); } catch (e) { /* private mode */ }
+}
+/* Which columns roll up in the card's totals footer — chosen per device, independent
+   of the row layout. null = the default (every aggregatable column). */
+const LIST_TOTALS_KEY = (card) => `jactec.listTotals.${card}`;
+const LIST_TOTALS = Object.create(null);
+const isAggCol = (c) => c.badge || c.type === 'money' || c.type === 'num' || c.type === 'pct';
+function loadListTotals(card) {
+  if (card in LIST_TOTALS) return LIST_TOTALS[card];
+  let v = null;
+  try { const raw = localStorage.getItem(LIST_TOTALS_KEY(card)); if (raw) v = JSON.parse(raw); } catch (e) { v = null; }
+  if (Array.isArray(v)) { const keys = new Set((CARD_COLUMNS[card] || []).map((c) => c.key)); v = v.filter((k) => keys.has(k)); } else v = null;
+  LIST_TOTALS[card] = v; return v;
+}
+function saveListTotals(card, keys) {
+  LIST_TOTALS[card] = keys || undefined;
+  try { if (keys) localStorage.setItem(LIST_TOTALS_KEY(card), JSON.stringify(keys)); else localStorage.removeItem(LIST_TOTALS_KEY(card)); } catch (e) {}
 }
 /** A list row's inner HTML from a saved layout: Name is the locked title, the
  *  rest of row 1 are non-badge values, row 2 are badge pills. */
@@ -2168,7 +2188,7 @@ function shopRowEl(type, rec) {
   const node = el('div', 'row shop-row');
   node.dataset.card = 'shop'; node.dataset.type = type; node.dataset.rec = id;
   node.innerHTML = `<div class="row-viz" style="background:linear-gradient(90deg, var(--${color}-bg), transparent 62%)"></div>
-    <div class="shop-type" style="color:var(--${color})" title="${esc(SHOP_SEGMENTS.find((s) => s.id === type)?.label || type)}">${CARD_ICON[type]}</div>
+    <div class="shop-type" style="color:var(--${color})" title="${esc(SHOP_SEGMENTS.find((s) => s.id === type)?.label || type)}">${(type === 'inspections' && !inspComplete(rec)) ? CARD_ICON.inspectionsPending : CARD_ICON[type]}</div>
     <div class="r-actions">
       <button class="rbtn js-anchor" data-type="${type}" data-rec="${id}" title="Anchor (⊞)">${I.circle}</button>
       <button class="rbtn js-newtab" data-type="${type}" data-rec="${id}" title="Open in new tab (+)">${I.plus}</button>
@@ -2920,12 +2940,17 @@ function bvCustomizePanel(card) {
   const nonBadge = cols.filter((c) => !c.pill && c.key !== nameKey);
   const badges = cols.filter((c) => c.pill);
   const box = (c, row, on, locked) => `<label class="bv-pick${locked ? ' locked' : ''}"><input type="checkbox" class="js-bv-pick" data-card="${card}" data-row="${row}" data-col="${c.key}"${on ? ' checked' : ''}${locked ? ' disabled' : ''}/> ${esc(c.label)}</label>`;
+  const aggCols = cols.filter(isAggCol);
+  const totSel = loadListTotals(card);                  // null = all
+  const totBox = (c) => `<label class="bv-pick"><input type="checkbox" class="js-bv-tot" data-card="${card}" data-col="${c.key}"${(totSel ? totSel.includes(c.key) : true) ? ' checked' : ''}/> ${esc(c.label)}</label>`;
   return `<div class="bv-customize">
     <div class="bv-pick-group"><h4>List row 1 — details <span class="muted">(${(layout.row1 || []).length}/6)</span></h4>
       ${box(cols[0], 'row1', true, true)}${nonBadge.map((c) => box(c, 'row1', layout.row1.includes(c.key), false)).join('')}</div>
     <div class="bv-pick-group"><h4>List row 2 — badges <span class="muted">(${(layout.row2 || []).length}/6)</span></h4>
       ${badges.length ? badges.map((c) => box(c, 'row2', layout.row2.includes(c.key), false)).join('') : '<span class="muted">No badge columns on this card.</span>'}</div>
-    <button class="bv-mini js-bv-resetlayout" data-card="${card}">Reset to default rows</button>
+    <div class="bv-pick-group"><h4>Card totals <span class="muted">(footer)</span></h4>
+      ${aggCols.length ? aggCols.map(totBox).join('') : '<span class="muted">Nothing to total.</span>'}</div>
+    <button class="bv-mini js-bv-resetlayout" data-card="${card}">Reset to defaults</button>
   </div>`;
 }
 
@@ -3183,7 +3208,7 @@ function onClick(e) {
   if (closest('.js-bv-insrow')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview') { o.extraRows = o.extraRows || []; o.extraRows.push({ id: 'xr' + (++o.seq), pos: Number(closest('.js-bv-insrow').dataset.pos), cells: {} }); renderOverlay(); } return; }
   if (closest('.js-bv-rmrow')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview') { const id = closest('.js-bv-rmrow').dataset.row; o.extraRows = (o.extraRows || []).filter((er) => er.id !== id); renderOverlay(); } return; }
   if (closest('.js-bv-customize')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview') { o.customize = !o.customize; renderOverlay(); } return; }
-  if (closest('.js-bv-resetlayout')) { e.stopPropagation(); const card = closest('.js-bv-resetlayout').dataset.card; saveListLayout(card, null); render(); renderOverlay(); return; }
+  if (closest('.js-bv-resetlayout')) { e.stopPropagation(); const card = closest('.js-bv-resetlayout').dataset.card; saveListLayout(card, null); saveListTotals(card, null); render(); renderOverlay(); return; }
   if (closest('.js-coltab')) { const ct = closest('.js-coltab'); e.stopPropagation(); state.fleetFilter = null; const cs = activeSession(); if (cs.cols) cs.cols[ct.dataset.col] = ct.dataset.member; return render(); }
   if (closest('.js-dashboard')) { e.stopPropagation(); toast('Dashboard graphs are coming soon.'); return; }   // Phase-2 per-role KPI graphs (G1/G2)
   if (closest('.js-dash-ev')) { e.stopPropagation(); state.pick = null; return anchorRecord('rentals', closest('.js-dash-ev').dataset.rec); }
@@ -3531,6 +3556,17 @@ function onChange(e) {
     const nameKey = (CARD_COLUMNS[card] || [])[0]?.key;   // Name stays as the locked title
     if (nameKey && !layout.row1.includes(nameKey)) layout.row1.unshift(nameKey);
     saveListLayout(card, layout);
+    render(); renderOverlay();
+    return;
+  }
+  // Board View "Card totals" picker → toggle a column in/out of the footer roll-up.
+  if (e.target.classList.contains('js-bv-tot')) {
+    const card = e.target.dataset.card, col = e.target.dataset.col;
+    const aggKeys = (CARD_COLUMNS[card] || []).filter(isAggCol).map((c) => c.key);
+    let sel = loadListTotals(card); sel = (sel ? sel.slice() : aggKeys.slice());   // start from "all"
+    if (e.target.checked) { if (!sel.includes(col)) sel.push(col); }
+    else { const i = sel.indexOf(col); if (i >= 0) sel.splice(i, 1); }
+    saveListTotals(card, sel);
     render(); renderOverlay();
     return;
   }
