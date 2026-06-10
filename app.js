@@ -62,8 +62,32 @@ function migrateCustomers() {
       c.name = fullName(c);
       migrationDirty = true;
     }
+    // multi-card: fold a legacy single card into the cards[] array (each card carries
+    // its own signed rental agreement + selfie + signature).
+    if (!Array.isArray(c.cards)) {
+      c.cards = [];
+      if (c.stripeId && c.cardLast4) {
+        c.cards.push({ id: 'CARD-' + c.customerId, stripePmId: c.stripePmId || '', brand: c.cardBrand || 'card', last4: c.cardLast4,
+          expMonth: c.cardExpMonth || null, expYear: c.cardExpYear || null, nickname: '', notes: '', isDefault: true, status: 'active',
+          agreement: c.signature ? { signedAt: c.agreementSignedAt || '', version: c.agreementType || 'rental', signature: c.signature, selfie: c.selfie } : null });
+      }
+      migrationDirty = true;
+    }
   });
 }
+/* ── §14 multi-card helpers ── */
+const customerCards = (c) => (c && Array.isArray(c.cards)) ? c.cards.filter((k) => k.status !== 'removed') : [];
+const defaultCard = (c) => { const ks = customerCards(c); return ks.find((k) => k.isDefault) || ks[0] || null; };
+function cardExpired(k) { if (!k || !k.expYear) return false; const n = new Date(); const y = n.getFullYear(), m = n.getMonth() + 1; return k.expYear < y || (k.expYear === y && (k.expMonth || 12) < m); }
+function cardExpiringSoon(k) { if (!k || !k.expYear) return false; const n = new Date(); const mo = (k.expYear - n.getFullYear()) * 12 + ((k.expMonth || 12) - (n.getMonth() + 1)); return mo >= 0 && mo <= 1; }
+const validCards = (c) => customerCards(c).filter((k) => !cardExpired(k));
+const hasValidCard = (c) => validCards(c).length > 0;
+/** 'ok' | 'expiring' | 'none' — drives the customer pill + the block-new-rental gate. */
+function cardFlag(c) {
+  if (!hasValidCard(c)) return 'none';
+  const def = defaultCard(c); return (def && cardExpiringSoon(def)) ? 'expiring' : 'ok';
+}
+const CARD_FLAG_META = { ok: { label: 'Card OK', color: 'green' }, expiring: { label: 'Card Expiring', color: 'yellow' }, none: { label: 'No Card', color: 'red' } };
 
 function buildIndexes() {
   migrateCustomers();
@@ -966,6 +990,7 @@ const ROWS = {
         ${badge(isBusiness ? 'Business' : 'Non-Business', isBusiness ? 'blue' : 'gray')}
         ${isMember ? badge('Member', 'purple') : ''}
         ${statusPill('customerPayStatus', c.payStatus, { card: 'customers', recId: c.customerId })}
+        ${cardFlag(c) !== 'ok' ? badge(CARD_FLAG_META[cardFlag(c)].label, CARD_FLAG_META[cardFlag(c)].color) : ''}
         ${unitPills}
       </div>`;
   },
@@ -3799,8 +3824,9 @@ function getStripe() {
 // Only Office/Admin take payments. In #local demo (no role) we still show the UI.
 const canMoney = () => !currentRole || currentRole === 'Admin' || currentRole === 'Owner' || currentRole === 'Office';
 const brandName = (b) => (b || 'Card').replace(/^./, (m) => m.toUpperCase());
-const hasCardOnFile = (c) => !!(c && c.stripeId && c.cardLast4);
-const cardLabel = (c) => hasCardOnFile(c) ? `${brandName(c.cardBrand)} ending ${c.cardLast4}${c.cardExpMonth ? ` · exp ${c.cardExpMonth}/${String(c.cardExpYear).slice(-2)}` : ''}` : '';
+const hasCardOnFile = (c) => customerCards(c).length > 0;
+const cardOneLabel = (k) => k ? `${brandName(k.brand)} ••${k.last4}${k.expMonth ? ` · ${k.expMonth}/${String(k.expYear).slice(-2)}` : ''}${k.nickname ? ` · ${k.nickname}` : ''}` : '';
+const cardLabel = (c) => { const k = defaultCard(c); return k ? cardOneLabel(k) : ''; };
 function friendlyPayErr(r) {
   const code = (r && r.error) || 'charge-failed';
   return ({
@@ -3858,8 +3884,13 @@ async function saveCardFlow(btn) {
     if (!live()) return;
     if (!s || !s.ok) { setErr(friendlyPayErr(s)); reset(); return; }
     c.stripeId = r.stripeId || c.stripeId;
-    c.cardBrand = s.card.brand; c.cardLast4 = s.card.last4; c.cardExpMonth = s.card.expMonth; c.cardExpYear = s.card.expYear;
-    reindex('customers', c); logAction(c, `Card on file added — ${brandName(s.card.brand)} ••••${s.card.last4}`);
+    if (!Array.isArray(c.cards)) c.cards = [];
+    const firstCard = customerCards(c).length === 0;
+    c.cards.push({ id: 'CARD-' + (state.seq++), stripePmId: setupIntent.payment_method, brand: s.card.brand, last4: s.card.last4,
+      expMonth: s.card.expMonth, expYear: s.card.expYear, nickname: o.nickname || '', notes: '', isDefault: firstCard, status: 'active',
+      agreement: c.signature ? { signedAt: TODAY_ISO, version: 'rental', signature: c.signature, selfie: c.selfie } : null });
+    c.cardBrand = s.card.brand; c.cardLast4 = s.card.last4; c.cardExpMonth = s.card.expMonth; c.cardExpYear = s.card.expYear;   // legacy mirror (default card)
+    reindex('customers', c); logAction(c, `Card added — ${brandName(s.card.brand)} ••••${s.card.last4} (signed agreement)`);
     destroyCardElement();
     toast('Card saved ✓');
     if (o.returnTo === 'payment' && o.invoiceId) openPayInvoice(o.invoiceId);
