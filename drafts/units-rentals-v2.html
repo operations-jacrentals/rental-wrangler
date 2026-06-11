@@ -65,9 +65,38 @@ h2 .no{color:var(--accent)}
 .nsec .ndot{width:9px;height:9px;border-radius:50%;display:inline-block;flex:0 0 auto}
 
 /* YARD JOURNEY = boxless floating TOOL at the top of the UNITS card —
-   the unit's QR code lands mechanics here, so captures live on the unit. */
+   the unit's QR code lands mechanics here, so captures live on the unit.
+   No header label (v2.2). Node 0 = the reservation (status + start stamp);
+   +Start → On Rent (green, auto-sets the rental) · +End → Returned → restart. */
 .jtool{display:flex;flex-direction:column;gap:1px;padding:2px 2px 0}
-.jtool .jhead{display:flex;align-items:center;gap:10px}
+/* line segments that carry content ON TOP of the line (rental link, +Log labels) */
+.jseg{flex:1 1 auto;display:flex;flex-direction:column;align-items:center;gap:2px;padding-top:9px;min-width:0}
+.jseg .jover{font-size:9px;font-weight:700;color:var(--txt-2);white-space:nowrap;display:inline-flex;align-items:center;gap:3px;min-height:12px;max-width:100%}
+.jseg .jover.loglink{color:var(--blue);cursor:pointer}
+.jseg .jover.loglink:hover{text-decoration:underline}
+.jseg .jover.done{color:var(--green);cursor:pointer}
+.jseg .jline2{width:100%;border-top:2px dotted var(--line)}
+.jseg .jline2.on{border-top:2px solid var(--green)}
+.jnode.done.green .jbox{background:var(--green-bg);color:var(--green);border-color:transparent}
+.jnode.done.green .jlbl{color:var(--green)}
+.jnode.done.yellow .jbox{background:var(--yellow-bg);color:var(--yellow);border-color:transparent}
+.jnode.done.yellow .jlbl{color:var(--yellow)}
+/* mini transport journey under each invoice rental line (Jac ─ Site ─ Jac) */
+.journey.mini .jbox{width:26px;height:26px;border-radius:8px;background:var(--panel-2);color:var(--txt-2);border:1px solid var(--line)}
+.journey.mini .jbox svg{width:14px;height:14px}
+.journey.mini .jbox.site:hover{border-color:var(--accent);color:var(--accent)}
+.journey.mini .jbox.site.set{background:var(--accent-soft);border-color:var(--accent-line);color:var(--accent)}
+.journey.mini .jlbl{font-size:8.5px}
+.journey.mini .jseg{padding-top:3px}
+.invitem{width:100%;display:flex;flex-direction:column;gap:2px;align-items:flex-start}
+
+/* SECTION STATUS COLORS (v2.2 redline 6): header + border follow the live status */
+.section.sec-green{border-color:rgba(52,211,153,.45)}
+.section.sec-green>h4{color:var(--green)}
+.section.sec-yellow{border-color:rgba(245,197,66,.45)}
+.section.sec-yellow>h4{color:var(--yellow)}
+.section.sec-red{border-color:rgba(255,66,66,.45)}
+.section.sec-red>h4{color:var(--red)}
 
 /* history — footer values anchored ABOVE the search bar; record-backed entries are links */
 .history{border-top:2px dotted var(--line);background:var(--bg-2);padding:12px;margin:0 -12px -12px}
@@ -267,7 +296,7 @@ h2 .no{color:var(--accent)}
       <div class="hrow"><span class="tier">1</span><span class="demo"><button class="gate c-green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="4" width="18" height="17" rx="2"/></svg><span class="t">On Rent</span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg></button></span><span class="why"><b>Gate pill</b> — a status DROPDOWN that moves the record forward. Big button shape + chevron. Chevron ONLY when it actually drops down.</span></div>
       <div class="hrow"><span class="tier">2</span><span class="demo"><span class="link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 12l-8-8H4v8l8 8z"/><circle cx="7" cy="7" r="1.4"/></svg>Updog<span class="rm">✕</span></span></span><span class="why"><b>Linked pill</b> — orange outline; opens the record. Leads with the destination card's icon.</span></div>
       <div class="hrow"><span class="tier">3</span><span class="demo"><span class="badge c-yellow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="4" width="18" height="17" rx="2"/></svg><span class="t">ETA Jun 18</span></span></span><span class="why"><b>Status badge</b> — informational status, NOT a dropdown. One font size (11px) everywhere.</span></div>
-      <div class="hrow"><span class="tier">4</span><span class="demo"><span class="dpill c-green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20 12l-8-8H4v8l8 8z"/></svg><span class="t">Ready</span></span> <span class="dpill c-yellow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2h9l3 3v17l-3-2-3 2-3-2-3 2z"/></svg><span class="t">Partial</span></span></span><span class="why"><b>Derived pill</b> — rides on ANOTHER pill in the same section (Ready ← Updog · Partial ← invoice). No background, no border; keeps color + icon + hover underline.</span></div>
+      <div class="hrow"><span class="tier">4</span><span class="demo"><span class="dpill c-green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20 12l-8-8H4v8l8 8z"/></svg><span class="t">Ready</span></span> <span class="dpill c-orange"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 13l4-4 5 3 4-6 5 4v7H3z"/></svg><span class="t">Lift Scissor 26ft</span></span></span><span class="why"><b>Derived pill</b> — rides on ANOTHER pill in the same section (Ready ← Updog · category ← Updog). No background, no border; keeps color + icon + hover underline, and sits directly to the RIGHT of its parent.</span></div>
       <div class="hrow"><span class="tier">5</span><span class="demo"><span class="flags"><span class="flag c-green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20 12l-8-8H4v8l8 8z"/></svg>Ready</span><span class="flag c-yellow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="4" width="18" height="17" rx="2"/></svg>ETA Jun 18</span></span></span><span class="why"><b>Title flags</b> — two stacked rows exactly matching the title chip's height: live condition + the biggest open-WO bottleneck.</span></div>
     </div>
 
@@ -276,6 +305,7 @@ h2 .no{color:var(--accent)}
       <div class="hrow"><span class="demo"><span class="link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>Field Call</span></span><span class="why"><b>Destination icon</b> — anything that navigates leads with the icon of the card it takes you TO (this FC pill sits on a Unit, so it carries the Rentals icon). No spacer between icon and text.</span></div>
       <div class="hrow"><span class="demo"><span class="linkname">Updog · 1-Day×1</span></span><span class="why"><b>Hyperlinks</b> — blue, italic, NOT bold. Underline on hover.</span></div>
       <div class="hrow"><span class="demo"><span class="muted">Jun 10 · 7:30 AM</span></span><span class="why"><b>L6 = timestamps</b> — smallest, most muted. (Suffixes dropped from the text hierarchy.)</span></div>
+      <div class="hrow"><span class="demo"><span class="link" style="height:22px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 12l-8-8H4v8l8 8z"/><circle cx="7" cy="7" r="1.4"/></svg>Updog</span> <span class="dpill c-green"><span class="t">Ready</span></span> <span class="dpill c-orange"><span class="t">Lift Scissor 26ft</span></span></span><span class="why"><b>Derived placement</b> — a derived pill sits directly to the RIGHT of the pill it derives from. Typical case across the whole app unless stated otherwise.</span></div>
     </div>
 
   </div>
@@ -303,25 +333,28 @@ h2 .no{color:var(--accent)}
     </div>
     <div class="detail">
 
-      <!-- YARD JOURNEY — boxless floating tool at the TOP of the UNITS card.
-           The unit's printed QR code lands mechanics exactly here (Jac 2026-06-11). -->
+      <!-- YARD JOURNEY — boxless floating tool at the TOP of the UNITS card (no header).
+           The unit's printed QR code lands mechanics exactly here (Jac 2026-06-11).
+           Node 0 = the reservation (status label + start stamp); the rental link rides
+           the first line; +Start→On Rent(green, auto-sets the rental)·+End→Returned→restart. -->
       <div class="jtool">
-        <div class="jhead">
-          <span class="nlbl">Yard</span>
-          <span class="dpill c-orange" style="margin-left:auto" title="the active rental these captures belong to — navigates to it"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg><span class="t">Jun01-07: Mike Nixon</span></span>
-        </div>
-        <div class="journey">
-          <div class="jnode" id="j-start" onclick="jCapture(this,'Start video captured · rental → On Rent')">
+        <div class="journey" style="align-items:flex-start">
+          <div class="jnode" id="j-pre" style="cursor:default">
+            <span class="jbox" style="background:var(--panel-2);color:var(--purple);border:1px solid var(--line)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg></span>
+            <span class="jlbl" style="color:var(--purple)">Reserved</span><span class="jts">Jun 01 · 4:00 PM</span>
+          </div>
+          <div class="jseg"><span class="jover" id="jseg0pill"><span class="dpill c-orange" title="the rental these captures feed — navigates to it"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg><span class="t">Jun01-07: Mike Nixon</span></span></span><span class="jline2" id="jl0"></span></div>
+          <div class="jnode" id="j-start" onclick="jStart()">
             <span class="jbox"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 10l5-3v10l-5-3M3 6h12v12H3z"/></svg></span>
             <span class="jlbl">+Start</span><span class="jts"></span>
           </div>
-          <div class="jline" id="jl1"></div>
+          <div class="jseg"><span class="jover"></span><span class="jline2" id="jl1"></span></div>
           <div class="jnode fc" id="j-fc" onclick="jFC(this)">
             <span class="jbox"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 10l5-3v10l-5-3M3 6h12v12H3z"/></svg></span>
             <span class="jlbl">+FC</span><span class="jts"></span>
           </div>
-          <div class="jline" id="jl2"></div>
-          <div class="jnode" id="j-end" onclick="jCapture(this,'End video captured · rental → Returned · Complete Rental unlocks on the Rentals card')">
+          <div class="jseg"><span class="jover"></span><span class="jline2" id="jl2"></span></div>
+          <div class="jnode" id="j-end" onclick="jEnd()">
             <span class="jbox"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 10l5-3v10l-5-3M3 6h12v12H3z"/></svg></span>
             <span class="jlbl">+End</span><span class="jts"></span>
           </div>
@@ -329,7 +362,7 @@ h2 .no{color:var(--accent)}
       </div>
 
       <!-- SECTION 1 · INSPECTION — condition toggle first, wash second, centered, timestamp above (redlines 2/4/5) -->
-      <div class="section"><h4>Inspection</h4>
+      <div class="section sec-green"><h4>Inspection</h4>
         <div style="text-align:center" class="fs">
           <div class="muted" style="text-align:center">Jun 10 · 7:30 AM</div>
           <div class="kv" style="justify-content:center">
@@ -349,8 +382,8 @@ h2 .no{color:var(--accent)}
       </div>
 
       <!-- WO section — the WO's NAME is the title; flags stack right with destination icons (redline 9) -->
-      <div class="section" id="wo1">
-        <h4 style="text-transform:none;letter-spacing:0;font-size:13.5px;color:var(--txt)">Seat cushion torn
+      <div class="section sec-red" id="wo1">
+        <h4 style="text-transform:none;letter-spacing:0;font-size:13.5px"><span style="color:var(--red);font-weight:800;margin-right:1px">WO:</span> Seat cushion torn
           <span class="right">
             <span class="flags" style="height:24px">
               <span class="flag c-red" title="navigates to the rental (destination icon)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18"/></svg>Field Call</span>
@@ -375,8 +408,8 @@ h2 .no{color:var(--accent)}
       </div>
 
       <!-- second OPEN WO stacks the same way -->
-      <div class="section">
-        <h4 style="text-transform:none;letter-spacing:0;font-size:13.5px;color:var(--txt)">Annual hydraulic service
+      <div class="section sec-yellow">
+        <h4 style="text-transform:none;letter-spacing:0;font-size:13.5px"><span style="color:var(--red);font-weight:800;margin-right:1px">WO:</span> Annual hydraulic service
           <span class="right"><span class="flag c-gray">Jun 02</span></span>
         </h4>
         <button class="add wide" style="margin-bottom:8px"><span class="plus">+</span>Part/Task</button>
@@ -423,7 +456,7 @@ h2 .no{color:var(--accent)}
       </div>
 
       <!-- NOTES — heading-only, no box (redline 14); empty ⇒ bottom -->
-      <div class="nsec"><span class="nlbl">Notes</span><button class="add" style="height:26px" onclick="openNote(this)"><span class="plus">+</span>Notes</button></div>
+      <div class="nsec"><button class="add" style="height:26px" onclick="openNote(this)"><span class="plus">+</span>Notes</button></div>
 
       <!-- HISTORY — clickable values anchored ABOVE the search bar (redline 13);
            record-backed entries are LINKS, plain edits are text (your call → my rule) -->
@@ -474,7 +507,7 @@ h2 .no{color:var(--accent)}
 <!-- ════════════════ 3 · RENTALS CARD v2 ════════════════ -->
 <section>
   <h2><span class="no">3 ·</span> Rentals card — v2</h2>
-  <p class="intro">Notes (filled) rides above the day timeline as a heading-only line. Timeline keeps day cells but only labels the first/last; price · status · time are centered. Derived pills (Ready, category, Partial) lost their backgrounds. Invoice link moved to the right column above Partial. The Yard journey MOVED to the Units card (QR scans land there) — capturing +End over there still unlocks Complete Rental here.</p>
+  <p class="intro">Transport now lives under the INVOICE's rental line items (right side) — each rental on the invoice gets its own Jac ─ Site ─ Jac journey, so multi-rental deliveries to one site are managed in one place. +Log Delivery / +Log Recovery ride the lines and ARE the same captures as +Start / +End on the Units card (one event, synced both ways, shared video). Tap a Site node for the smart address finder + map pin. Partial is gone — the balance itself wears the pay-status color with the due date beneath. Section color follows the rental status.</p>
 
   <div class="lane" style="margin-top:14px">
   <div class="card">
@@ -489,7 +522,7 @@ h2 .no{color:var(--accent)}
     <div class="detail">
 
       <!-- NOTES — filled ⇒ Section 0, heading-only, ABOVE the timeline (redline 14) -->
-      <div class="nsec"><span class="nlbl">Notes</span><span class="ndot" style="background:var(--red)"></span><span style="font-size:13px">Customer wants weekend delivery — confirm Friday</span></div>
+      <div class="nsec"><span class="ndot" style="background:var(--red)"></span><span style="font-size:13px">Customer wants weekend delivery — confirm Friday</span></div>
 
       <!-- DAY TIMELINE — no wrapper box; labels only first/last; centered values (redlines 15/16) -->
       <div class="timeline" onclick="toast('opens the rental-window calendar (same as today)')">
@@ -510,29 +543,42 @@ h2 .no{color:var(--accent)}
         </div>
       </div>
 
-      <!-- RENTAL — left actions · right derived; invoice above Partial on the right (redlines 17/19) -->
-      <div class="section"><h4>Rental</h4>
+      <!-- RENTAL (v2.2) — left actions · right = invoice + pay-colored balance + the
+           invoice's RENTAL LINE ITEMS, each with its own Jac─Site─Jac transport journey.
+           Section color follows the rental status (On Rent = green). -->
+      <div class="section sec-green"><h4>Rental</h4>
         <div class="split">
           <div class="side">
             <div class="kv"><span class="link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>Mike Nixon<span class="rm">✕</span></span></div>
-            <div class="kv"><span class="link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 12l-8-8H4v8l8 8z"/><circle cx="7" cy="7" r="1.4"/></svg>Updog<span class="rm">✕</span></span> <span class="dpill c-green" title="derived from Updog"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20 12l-8-8H4v8l8 8z"/></svg><span class="t">Ready</span></span></div>
-            <div class="kv" id="addr2"><button class="add" style="height:26px" onclick="fillAddress2()"><span class="plus">+</span>Address</button></div>
-            <div id="twrap2" style="display:none">
-              <div class="journey" style="padding-top:0">
-                <div class="jnode done" style="cursor:default"><span class="jbox" style="width:34px;height:34px;border-radius:10px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9.5L5.2 5h13.6L20 9.5M5 9.5V20h14V9.5M5 9.5h14"/></svg></span><span class="jlbl">Yard</span><span class="jts"></span></div>
-                <div class="jline on" style="margin-bottom:30px"></div>
-                <div class="jnode done" style="cursor:default"><span class="jbox" style="width:34px;height:34px;border-radius:10px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2.5" y="6.5" width="11" height="9" rx="1"/><path d="M13.5 9.5h3.6l3.4 3.2v2.8h-7z"/><circle cx="7" cy="17.5" r="1.7"/><circle cx="17" cy="17.5" r="1.7"/></svg></span><span class="jlbl">Truck</span><span class="jts"></span></div>
-                <div class="jline" style="margin-bottom:30px"></div>
-                <div class="jnode" style="cursor:default"><span class="jbox" style="width:34px;height:34px;border-radius:10px;background:var(--panel-2);color:var(--txt-2);border:1px solid var(--line)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9.5L5.2 5h13.6L20 9.5M5 9.5V20h14V9.5M5 9.5h14"/></svg></span><span class="jlbl">Site</span><span class="jts"></span></div>
-              </div>
-              <div class="kv"><b>Delivery</b> · <span class="derived">$150 · 30 min</span></div>
-            </div>
+            <div class="kv"><span class="link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 12l-8-8H4v8l8 8z"/><circle cx="7" cy="7" r="1.4"/></svg>Updog<span class="rm">✕</span></span> <span class="dpill c-green" title="derived from Updog"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20 12l-8-8H4v8l8 8z"/></svg><span class="t">Ready</span></span> <span class="dpill c-orange" title="derived from Updog — sits right of Ready (derived pills cluster right of their parent)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 13l4-4 5 3 4-6 5 4v7H3z"/></svg><span class="t">Lift Scissor 26ft</span></span></div>
           </div>
           <div class="side r">
-            <div class="kv"><span class="dpill c-orange" title="derived from Updog"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 13l4-4 5 3 4-6 5 4v7H3z"/></svg><span class="t">Lift Scissor 26ft</span></span></div>
             <div class="kv"><span class="link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2h9l3 3v17l-3-2-3 2-3-2-3 2z"/></svg>01i02Ju26</span></div>
-            <div class="kv"><span class="dpill c-yellow" title="derived from the linked invoice"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2h9l3 3v17l-3-2-3 2-3-2-3 2z"/></svg><span class="t">Partial</span></span></div>
-            <div class="kv"><span class="money">$0</span><span class="derived">/ $1,000 paid</span></div>
+            <div class="kv"><span class="money" style="color:var(--red)" title="pay-status coloring: red = unpaid &amp; due · blue = not due">$0</span><span class="derived">/ $1,000</span></div>
+            <div class="kv"><span class="derived" style="font-size:11px">due Jun 07</span></div>
+            <div style="border-top:1px dashed var(--line);margin-top:4px;padding-top:7px;width:100%;display:flex;flex-direction:column;gap:7px">
+              <span class="muted" style="font-size:9.5px;text-transform:uppercase;letter-spacing:.4px">Invoice rentals · transport</span>
+              <div class="invitem">
+                <span class="linkname">Updog · Jun01-07 — this rental</span>
+                <div class="journey mini" style="align-items:flex-start;width:100%">
+                  <div class="jnode" style="cursor:default"><span class="jbox"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9.5L5.2 5h13.6L20 9.5M5 9.5V20h14V9.5M5 9.5h14"/></svg></span><span class="jlbl">Jac</span></div>
+                  <div class="jseg"><span class="jover loglink" id="logdel" onclick="jStart()">+Log Delivery</span><span class="jline2" id="ldl"></span></div>
+                  <div class="jnode" onclick="sitePopup(this)"><span class="jbox site"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9.5L5.2 5h13.6L20 9.5M5 9.5V20h14V9.5M5 9.5h14"/><path d="M9.5 20v-4.5h5V20"/></svg></span><span class="jlbl">Site</span></div>
+                  <div class="jseg"><span class="jover loglink" id="logrec" onclick="jEnd()">+Log Recovery</span><span class="jline2" id="lrl"></span></div>
+                  <div class="jnode" style="cursor:default"><span class="jbox"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9.5L5.2 5h13.6L20 9.5M5 9.5V20h14V9.5M5 9.5h14"/></svg></span><span class="jlbl">Jac</span></div>
+                </div>
+              </div>
+              <div class="invitem">
+                <span class="linkname">Shrek · Jun02-09</span>
+                <div class="journey mini" style="align-items:flex-start;width:100%">
+                  <div class="jnode" style="cursor:default"><span class="jbox"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9.5L5.2 5h13.6L20 9.5M5 9.5V20h14V9.5M5 9.5h14"/></svg></span><span class="jlbl">Jac</span></div>
+                  <div class="jseg"><span class="jover loglink" onclick="toast('logs Shrek\'s delivery — same +Start capture, on its own rental')">+Log Delivery</span><span class="jline2"></span></div>
+                  <div class="jnode" onclick="sitePopup(this)"><span class="jbox site set" title="265 Callie Ln — same site"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9.5L5.2 5h13.6L20 9.5M5 9.5V20h14V9.5M5 9.5h14"/><path d="M9.5 20v-4.5h5V20"/></svg></span><span class="jlbl">Site</span></div>
+                  <div class="jseg"><span class="jover loglink" onclick="toast('logs Shrek\'s recovery — same +End capture, on its own rental')">+Log Recovery</span><span class="jline2"></span></div>
+                  <div class="jnode" style="cursor:default"><span class="jbox"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9.5L5.2 5h13.6L20 9.5M5 9.5V20h14V9.5M5 9.5h14"/></svg></span><span class="jlbl">Jac</span></div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
         <!-- Complete Rental gate (redline 19): blue only when status = Returned; red Cancel Rental on Cancel/No Show -->
@@ -559,19 +605,18 @@ h2 .no{color:var(--accent)}
 
   <div class="hpanel" style="max-width:430px"><h3>What changed here + open gray zones</h3>
     <div class="donelist" style="margin-bottom:12px">
-      <div><b>✓14</b> Notes is a one-line heading section ABOVE the timeline.</div>
-      <div><b>✓15/16</b> GZ box gone; only Mo 01 / Su 07 labeled; today-highlight removed; status is now the gate pill (On Rent ▾) with the naked price·rate tucked under it; 4:00 PM stacks above Jun 07.</div>
-      <div><b>✓17</b> Ready / Lift Scissor / Partial = derived pills, no background; invoice link sits above Partial on the right.</div>
-      <div><b>✓18</b> Journey captures = blue; +FC red outline → red fill — now living on the UNITS card as a boxless top tool (+Start/+FC/+End), since unit QR codes land mechanics there.</div>
-      <div><b>✓19</b> Complete Rental bottom-right — locked until Returned (capture +End on the Units card to watch it unlock); Cancel/No Show flips it to red Cancel Rental.</div>
-      <div><b>✓A2</b> Every pill leads with its DESTINATION card icon.</div>
+      <div><b>✓v2.2-1</b> Yard header removed · node 0 = the reservation (Reserved + start stamp) · rental link rides the first line · +Start → <b>On Rent</b> green + auto-sets the rental · +End → <b>Returned</b>, then the journey restarts (try it on the Units card).</div>
+      <div><b>✓v2.2-2</b> Category sits to the RIGHT of Ready (derived pills cluster right of their parent — now a global rule).</div>
+      <div><b>✓v2.2-3</b> Partial deleted — the balance wears the pay-status color ($0 red = unpaid &amp; due · blue = not due) with the due date beneath.</div>
+      <div><b>✓v2.2-4</b> Jac ─ Site ─ Jac transport under each invoice rental line (right side); +Log Delivery/+Log Recovery on the lines ARE +Start/+End (same capture, same video, synced with the Units card — click one and watch the yard journey above). Site node opens the smart address finder + map pin popup. +Address is gone.</div>
+      <div><b>✓v2.2-5</b> NOTES label removed — just the dot + note (or the bare +Notes).</div>
+      <div><b>✓v2.2-6</b> Section colors: INSPECTION follows inspection status · WO follows its bottleneck + bold red "WO:" prefix · RENTAL follows rental status.</div>
     </div>
     <div class="gzlist">
-      <div><b>GZ-12</b> <span class="q">History links (my call)</span>: only record-backed entries get a link (completed WOs, inspection reports, video captures, invoices). Plain field edits stay text — keeps History fast and un-cluttered.</div>
-      <div><b>GZ-13</b> <span class="q">History filter</span>: the value chips anchor above the search bar; clicking one filters the log in place (no popup) and highlights the chip orange. Click again to clear.</div>
-      <div><b>GZ-14</b> <span class="q">Worst-bottleneck flag</span>: severity order = Part Needed → Part Ordered/ETA (earliest date) → In Progress. The title flag shows the single worst one across all open WOs.</div>
-      <div><b>GZ-15</b> <span class="q">Complete Rental</span> stays visible-but-locked (gray) before Returned so users learn the gate exists. Alternative: hidden until Returned — say the word.</div>
-      <div><b>GZ-16</b> <span class="q">Yard tool scope</span>: the floating journey on the Units card shows a derived pill naming the ACTIVE rental its captures feed (navigates to it, rentals icon). When the unit has no active rental, the tool hides entirely. +Start/+End stay white-required; +FC red-optional.</div>
+      <div><b>GZ-17</b> <span class="q">+Invoice/+Transport</span>: when a rental has NO invoice yet, the combined pill <button class="add orange" style="height:24px;font-size:11px;pointer-events:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2h9l3 3v17l-3-2-3 2-3-2-3 2z"/></svg><span class="plus">+</span>Invoice/+Transport</button> sits where the invoice link is now — it links an invoice exactly like +Invoice does today, and transport unlocks once linked.</div>
+      <div><b>GZ-18</b> <span class="q">Address popup</span>: typed address + autocomplete suggestions + a Google Map with a tap-to-drop pin; both the address AND the exact pin go to dispatch. (Map is a placeholder graphic here — the build uses the real Maps embed.)</div>
+      <div><b>GZ-19</b> <span class="q">Returned color</span> = yellow on the +End node (matches the Returned status color); journey restart delay ~3s in this mock — instant in the app, with the completed journey logged to History.</div>
+      <div><b>GZ-12/13/14/15</b> from last round stand: record-backed history links only · chips filter inline · bottleneck severity = Needed → earliest ETA → In Progress · Complete Rental visible-but-locked.</div>
     </div>
   </div>
   </div>
@@ -595,6 +640,28 @@ h2 .no{color:var(--accent)}
       <button class="btn btn--money" style="height:27px" onclick="setStat('Complete','c-green')">Complete</button>
     </div>
     <div class="pf"><button class="btn btn--quiet" onclick="document.getElementById('etascrim').classList.remove('open')">Cancel</button></div>
+  </div>
+</div>
+
+<!-- SITE ADDRESS popup (v2.2 redline 4): smart finder + map pin for dispatch -->
+<div class="scrim" id="sitescrim" onclick="if(event.target===this)this.classList.remove('open')">
+  <div class="popup" style="width:420px">
+    <h4>Site address</h4>
+    <input id="addrin" placeholder="Start typing an address…" oninput="addrSuggest(this.value)" style="width:100%;height:34px;border-radius:10px;background:var(--panel);border:1px solid var(--line);color:var(--txt);padding:0 12px;font:inherit;font-size:13px;outline:none;margin-bottom:4px">
+    <div id="addrsug" style="display:none;flex-direction:column;border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:10px"></div>
+    <div id="map" onclick="dropPin(event)" style="position:relative;height:170px;border-radius:12px;border:1px solid var(--line);margin-bottom:12px;cursor:crosshair;overflow:hidden;background:
+      repeating-linear-gradient(0deg,transparent 0 34px,rgba(139,148,163,.18) 34px 35px),
+      repeating-linear-gradient(90deg,transparent 0 44px,rgba(139,148,163,.18) 44px 45px),
+      linear-gradient(135deg,#17251c 0%,#1a2030 55%,#16281f 100%)">
+      <div style="position:absolute;left:18%;top:10%;width:28%;height:24%;background:rgba(52,211,153,.12);border-radius:8px"></div>
+      <div style="position:absolute;right:12%;bottom:14%;width:22%;height:30%;background:rgba(74,144,255,.10);border-radius:8px"></div>
+      <span id="pin" style="position:absolute;left:50%;top:50%;transform:translate(-50%,-90%);font-size:22px;transition:.12s">📍</span>
+      <span style="position:absolute;right:8px;bottom:6px;font-size:9.5px;color:var(--txt-3)">Google Map here — tap to drop the EXACT pin for the driver</span>
+    </div>
+    <div class="pf">
+      <button class="btn btn--quiet" onclick="document.getElementById('sitescrim').classList.remove('open')">Cancel</button>
+      <button class="btn btn--commit" onclick="siteSave()">Save site</button>
+    </div>
   </div>
 </div>
 
@@ -677,24 +744,85 @@ function completeWO(btn){
   document.getElementById('wodonescrim').classList.add('open');
 }
 
-/* yard journey — BLUE captures; FC red (redline 18) */
-function jCapture(node,msg){
-  if(node.classList.contains('done'))return toast('already captured — tap to review the video');
-  node.classList.add('done');
-  node.querySelector('.jbox').innerHTML='✓';
-  node.querySelector('.jts').textContent=new Date().toLocaleTimeString([], {hour:'numeric',minute:'2-digit'});
-  if(node.id==='j-start')document.getElementById('jl1').classList.add('on');
-  if(node.id==='j-end'){
-    document.getElementById('jl2').classList.add('on');
-    const b=document.getElementById('crbtn');b.className='btn btn--commit';b.onclick=()=>toast('Rental completed ✓');
-  }
-  toast(msg);
+/* YARD JOURNEY v2.2 — +Start/+End ARE +Log Delivery/+Log Recovery (one capture,
+   two views, kept in sync incl. video access). Start→On Rent(green)+auto-status;
+   End→Returned(yellow), Complete Rental unlocks, then the journey restarts. */
+const VID='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 10l5-3v10l-5-3M3 6h12v12H3z"/></svg>';
+const stamp=()=>new Date().toLocaleTimeString([], {hour:'numeric',minute:'2-digit'});
+function jStart(){
+  const n=document.getElementById('j-start');
+  if(n.classList.contains('done'))return toast('already captured — tap to review the Start/Delivery video');
+  n.classList.add('done','green');
+  n.querySelector('.jbox').innerHTML='✓';
+  n.querySelector('.jlbl').textContent='On Rent';
+  n.querySelector('.jts').textContent=stamp();
+  document.getElementById('jl0').classList.add('on');
+  const d=document.getElementById('logdel');
+  if(d){d.classList.remove('loglink');d.classList.add('done');d.innerHTML='✓ Delivered · video';d.onclick=()=>toast('plays the Start/Delivery video');}
+  document.getElementById('ldl')?.classList.add('on');
+  toast('Start video logged → rental status AUTO → On Rent (synced on both cards)');
+}
+function jEnd(){
+  const n=document.getElementById('j-end');
+  if(n.classList.contains('done'))return toast('already captured — tap to review the End/Recovery video');
+  if(!document.getElementById('j-start').classList.contains('done'))return toast('Log the Start/Delivery first');
+  n.classList.add('done','yellow');
+  n.querySelector('.jbox').innerHTML='✓';
+  n.querySelector('.jlbl').textContent='Returned';
+  n.querySelector('.jts').textContent=stamp();
+  document.getElementById('jl1').classList.add('on');
+  document.getElementById('jl2').classList.add('on');
+  const r=document.getElementById('logrec');
+  if(r){r.classList.remove('loglink');r.classList.add('done');r.innerHTML='✓ Recovered · video';r.onclick=()=>toast('plays the End/Recovery video');}
+  document.getElementById('lrl')?.classList.add('on');
+  const b=document.getElementById('crbtn');b.className='btn btn--commit';b.onclick=()=>toast('Rental completed ✓');
+  toast('End video → rental → Returned · Complete Rental unlocked · journey restarts…');
+  setTimeout(resetJourney,2800);
+}
+function resetJourney(){
+  const pre=document.getElementById('j-pre');
+  pre.querySelector('.jlbl').textContent='Available';
+  pre.querySelector('.jlbl').style.color='var(--gray)';
+  pre.querySelector('.jbox').style.color='var(--gray)';
+  pre.querySelector('.jts').textContent='';
+  document.getElementById('jseg0pill').innerHTML='';
+  [['j-start','+Start'],['j-end','+End']].forEach(([id,lbl])=>{
+    const n=document.getElementById(id);n.className='jnode';
+    n.querySelector('.jbox').innerHTML=VID;
+    n.querySelector('.jlbl').textContent=lbl;n.querySelector('.jts').textContent='';
+  });
+  const fc=document.getElementById('j-fc');fc.className='jnode fc';fc.querySelector('.jbox').innerHTML=VID;fc.querySelector('.jts').textContent='';
+  ['jl0','jl1','jl2'].forEach(id=>document.getElementById(id).classList.remove('on'));
+  toast('Yard journey reset — waiting on the next rental');
 }
 function jFC(node){
   if(node.classList.contains('done'))return toast('Field Call already logged — opens the FC report');
   node.classList.add('done');
-  node.querySelector('.jts').textContent=new Date().toLocaleTimeString([], {hour:'numeric',minute:'2-digit'});
+  node.querySelector('.jts').textContent=stamp();
   toast('Field Call — unit Failed + WO auto-created');
+}
+
+/* SITE popup — smart address finder + map pin (v2.2 redline 4) */
+let curSite=null;
+function sitePopup(node){curSite=node;document.getElementById('sitescrim').classList.add('open');}
+const SUGS=['265 Callie Ln, Orange, TX 77630','267 Callie Ln, Orange, TX 77630','2650 Callaghan Rd, Vidor, TX 77662'];
+function addrSuggest(v){
+  const box=document.getElementById('addrsug');
+  if(!v){box.style.display='none';return;}
+  box.style.display='flex';
+  box.innerHTML=SUGS.filter(s=>s.toLowerCase().includes(v.toLowerCase())).map(s=>'<button style="all:unset;cursor:pointer;padding:8px 12px;font-size:12.5px;color:var(--txt);border-bottom:1px solid var(--line-soft)" onmouseover="this.style.background=\'var(--panel-2)\'" onmouseout="this.style.background=\'none\'" onclick="document.getElementById(\'addrin\').value=this.textContent;this.parentElement.style.display=\'none\'">'+s+'</button>').join('')||'<span style="padding:8px 12px;font-size:12px;color:var(--txt-3)">no matches</span>';
+}
+function dropPin(e){
+  const m=document.getElementById('map').getBoundingClientRect();
+  const p=document.getElementById('pin');
+  p.style.left=((e.clientX-m.left)/m.width*100)+'%';
+  p.style.top=((e.clientY-m.top)/m.height*100)+'%';
+  toast('exact drop-pin set for the driver');
+}
+function siteSave(){
+  document.getElementById('sitescrim').classList.remove('open');
+  if(curSite){curSite.querySelector('.jbox').classList.add('set');curSite.title=document.getElementById('addrin').value||'site set';}
+  toast('Site saved — address + exact pin go to dispatch');
 }
 
 /* history filter chips (redline 13) — really filters the log rows in place */
@@ -711,11 +839,6 @@ function openNote(b){
   b.outerHTML='<div style="display:flex;align-items:center;gap:8px;flex:1"><input placeholder="Type a note…" style="flex:1;height:26px;border-radius:9px;background:var(--panel-2);border:1px solid var(--line);color:var(--txt);padding:0 11px;font:inherit;font-size:13px;outline:none"><span style="display:flex;gap:5px">'+['#e9edf4','#ff4242','#34d399'].map(c=>'<span title="tag color" onclick="toast(\'note tagged\')" style="width:15px;height:15px;border-radius:50%;background:'+c+';border:1px solid var(--line);cursor:pointer"></span>').join('')+'</span></div>';
 }
 
-function fillAddress2(){
-  document.getElementById('addr2').innerHTML='<span class="boldlight">265 Callie Ln, Orange, TX</span>';
-  document.getElementById('twrap2').style.display='block';
-  toast('Address set → transport journey-picker appears (already live in the app)');
-}
 </script>
 </body>
 </html>
