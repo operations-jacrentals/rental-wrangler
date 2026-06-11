@@ -77,6 +77,14 @@ h2 .no{color:var(--accent)}
 .jseg .jover.done{color:var(--green);cursor:pointer}
 .jseg .jline2{width:100%;border-top:2px dotted var(--line)}
 .jseg .jline2.on{border-top:2px solid var(--green)}
+/* compact rental context riding the first yard line (v2.4): truncated customer
+   above · rental window below · site icon (address popup) under that */
+.jseg .jover .t{max-width:84px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block}
+.jseg .junder{font-size:8.5px;font-weight:700;color:var(--txt-2);font-variant-numeric:tabular-nums}
+.jseg .jsite{width:22px;height:22px;border-radius:7px;display:grid;place-items:center;background:var(--panel-2);border:1px solid var(--line);color:var(--txt-2);cursor:pointer;margin-top:1px}
+.jseg .jsite svg{width:12px;height:12px}
+.jseg .jsite:hover{border-color:var(--accent);color:var(--accent)}
+.jseg .jsite.set{background:var(--accent-soft);border-color:var(--accent-line);color:var(--accent)}
 .jnode.done.green .jbox{background:var(--green-bg);color:var(--green);border-color:transparent}
 .jnode.done.green .jlbl{color:var(--green)}
 .jnode.done.yellow .jbox{background:var(--yellow-bg);color:var(--yellow);border-color:transparent}
@@ -160,10 +168,10 @@ h2 .no{color:var(--accent)}
 
 .add{display:inline-flex;align-items:center;gap:0;height:30px;padding:0 14px;border-radius:11px;background:transparent;border:1px dashed var(--line);color:var(--txt-2);font:inherit;font-size:13px;font-weight:700;cursor:pointer}
 .add:hover{border-color:var(--accent-line)}
-/* +Part/Task gets the ANCHOR treatment (v2.3): neon-blue ink + ring glow,
-   same blue as the anchored-card ring — size and font unchanged */
-.add.anchor{color:#18b6ff;border-color:rgba(24,182,255,.55);box-shadow:0 0 0 1px rgba(24,182,255,.25),0 0 9px -3px rgba(24,182,255,.55)}
-.add.anchor:hover{border-color:#18b6ff;box-shadow:0 0 0 2px rgba(24,182,255,.45),0 0 11px -3px rgba(24,182,255,.65)}
+/* +Part/Task gets the ANCHOR treatment (v2.3/v2.4): neon-blue ink + blue dashed
+   border, NO glow — size and font unchanged */
+.add.anchor{color:#18b6ff;border-color:rgba(24,182,255,.55)}
+.add.anchor:hover{border-color:#18b6ff}
 .add.orange{color:var(--accent)}
 .add .plus{font-weight:800;margin-right:1px}
 .add.wide{width:100%;justify-content:center}
@@ -347,10 +355,15 @@ h2 .no{color:var(--accent)}
             <span class="jbox" style="background:var(--panel-2);color:var(--purple);border:1px solid var(--line)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg></span>
             <span class="jlbl" style="color:var(--purple)">Reserved</span><span class="jts">Jun 01 · 4:00 PM</span>
           </div>
-          <div class="jseg"><span class="jover" id="jseg0pill"><span class="dpill c-orange" title="the rental these captures feed — navigates to it"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg><span class="t">Jun01-07: Mike Nixon</span></span></span><span class="jline2" id="jl0"></span></div>
+          <div class="jseg">
+            <span class="jover" id="jseg0pill"><span class="dpill c-orange" title="Mike Nixon — opens the rental"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg><span class="t">Mike Nixon</span></span></span>
+            <span class="jline2" id="jl0"></span>
+            <span class="junder" id="junder0">Jun 01 – Jun 07</span>
+            <span class="jsite" id="jsite0" onclick="sitePopup(this)" title="site address — same as the Rental card's Site"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9.5L5.2 5h13.6L20 9.5M5 9.5V20h14V9.5M5 9.5h14"/><path d="M9.5 20v-4.5h5V20"/></svg></span>
+          </div>
           <div class="jnode" id="j-start" onclick="jStart()">
             <span class="jbox"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 10l5-3v10l-5-3M3 6h12v12H3z"/></svg></span>
-            <span class="jlbl">+Start</span><span class="jts"></span>
+            <span class="jlbl">+Log Delivery</span><span class="jts"></span>
           </div>
           <div class="jseg"><span class="jover"></span><span class="jline2" id="jl1"></span></div>
           <div class="jnode fc" id="j-fc" onclick="jFC(this)">
@@ -360,7 +373,7 @@ h2 .no{color:var(--accent)}
           <div class="jseg"><span class="jover"></span><span class="jline2" id="jl2"></span></div>
           <div class="jnode" id="j-end" onclick="jEnd()">
             <span class="jbox"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 10l5-3v10l-5-3M3 6h12v12H3z"/></svg></span>
-            <span class="jlbl">+End</span><span class="jts"></span>
+            <span class="jlbl">+Log Recovery</span><span class="jts"></span>
           </div>
         </div>
       </div>
@@ -615,6 +628,7 @@ h2 .no{color:var(--accent)}
       <div><b>✓v2.2-4</b> Jac ─ Site ─ Jac transport under each invoice rental line (right side); +Log Delivery/+Log Recovery on the lines ARE +Start/+End (same capture, same video, synced with the Units card — click one and watch the yard journey above). Site node opens the smart address finder + map pin popup. +Address is gone.</div>
       <div><b>✓v2.2-5</b> NOTES label removed — just the dot + note (or the bare +Notes).</div>
       <div><b>✓v2.2-6</b> Section colors: INSPECTION follows inspection status · WO follows its bottleneck + bold red "WO:" prefix · RENTAL follows rental status.</div>
+      <div><b>✓v2.4</b> Yard line context compacted: truncated customer ABOVE the line · rental window BELOW · site icon under that (same address popup as the Rental card). Delivery rentals say +Log Delivery / +Log Recovery instead of +Start / +End. Every log opens the capture popup with the ADDRESS + MAP on top when there's transport. +Part/Task glow removed.</div>
     </div>
     <div class="gzlist">
       <div><b>GZ-17</b> <span class="q">+Invoice/+Transport</span>: when a rental has NO invoice yet, the combined pill <button class="add orange" style="height:24px;font-size:11px;pointer-events:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2h9l3 3v17l-3-2-3 2-3-2-3 2z"/></svg><span class="plus">+</span>Invoice/+Transport</button> sits where the invoice link is now — it links an invoice exactly like +Invoice does today, and transport unlocks once linked.</div>
@@ -644,6 +658,29 @@ h2 .no{color:var(--accent)}
       <button class="btn btn--money" style="height:27px" onclick="setStat('Complete','c-green')">Complete</button>
     </div>
     <div class="pf"><button class="btn btn--quiet" onclick="document.getElementById('etascrim').classList.remove('open')">Cancel</button></div>
+  </div>
+</div>
+
+<!-- LOG VIDEO popup (v2.4): when the rental has transport, the address + map
+     ride the top so the driver/mechanic sees the destination while logging -->
+<div class="scrim" id="logscrim" onclick="if(event.target===this)this.classList.remove('open')">
+  <div class="popup" style="width:400px">
+    <h4 id="logtitle">Log Delivery</h4>
+    <div style="border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-bottom:10px">
+      <div style="padding:8px 11px;font-size:12.5px;display:flex;align-items:center;gap:7px"><span>📍</span><b>265 Callie Ln, Orange, TX 77630</b></div>
+      <div style="position:relative;height:104px;background:
+        repeating-linear-gradient(0deg,transparent 0 34px,rgba(139,148,163,.18) 34px 35px),
+        repeating-linear-gradient(90deg,transparent 0 44px,rgba(139,148,163,.18) 44px 45px),
+        linear-gradient(135deg,#17251c 0%,#1a2030 55%,#16281f 100%)">
+        <span style="position:absolute;left:58%;top:46%;transform:translate(-50%,-90%);font-size:20px">📍</span>
+        <span style="position:absolute;right:8px;bottom:6px;font-size:9.5px;color:var(--txt-3)">exact drop-pin — driver destination</span>
+      </div>
+    </div>
+    <div class="photo-drop" id="logdrop" onclick="this.textContent='✓ video captured';this.style.color='var(--green)'">🎥 Tap to capture the video</div>
+    <div class="pf">
+      <button class="btn btn--quiet" onclick="document.getElementById('logscrim').classList.remove('open')">Cancel</button>
+      <button class="btn btn--commit" onclick="logSave()">Log it</button>
+    </div>
   </div>
 </div>
 
@@ -753,9 +790,22 @@ function completeWO(btn){
    End→Returned(yellow), Complete Rental unlocks, then the journey restarts. */
 const VID='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 10l5-3v10l-5-3M3 6h12v12H3z"/></svg>';
 const stamp=()=>new Date().toLocaleTimeString([], {hour:'numeric',minute:'2-digit'});
+/* the capture popup gates every log; with transport, address+map ride its top (v2.4) */
+let logCb=null;
+function openLog(title,cb){
+  logCb=cb;
+  document.getElementById('logtitle').textContent=title;
+  const d=document.getElementById('logdrop');d.textContent='🎥 Tap to capture the video';d.style.color='';
+  document.getElementById('logscrim').classList.add('open');
+}
+function logSave(){document.getElementById('logscrim').classList.remove('open');if(logCb)logCb();logCb=null;}
 function jStart(){
   const n=document.getElementById('j-start');
   if(n.classList.contains('done'))return toast('already captured — tap to review the Start/Delivery video');
+  openLog('Log Delivery',doStart);
+}
+function doStart(){
+  const n=document.getElementById('j-start');
   n.classList.add('done','green');
   n.querySelector('.jbox').innerHTML='✓';
   n.querySelector('.jlbl').textContent='On Rent';
@@ -770,6 +820,10 @@ function jEnd(){
   const n=document.getElementById('j-end');
   if(n.classList.contains('done'))return toast('already captured — tap to review the End/Recovery video');
   if(!document.getElementById('j-start').classList.contains('done'))return toast('Log the Start/Delivery first');
+  openLog('Log Recovery',doEnd);
+}
+function doEnd(){
+  const n=document.getElementById('j-end');
   n.classList.add('done','yellow');
   n.querySelector('.jbox').innerHTML='✓';
   n.querySelector('.jlbl').textContent='Returned';
@@ -790,6 +844,8 @@ function resetJourney(){
   pre.querySelector('.jbox').style.color='var(--gray)';
   pre.querySelector('.jts').textContent='';
   document.getElementById('jseg0pill').innerHTML='';
+  document.getElementById('junder0').textContent='';
+  document.getElementById('jsite0').style.display='none';
   [['j-start','+Start'],['j-end','+End']].forEach(([id,lbl])=>{
     const n=document.getElementById(id);n.className='jnode';
     n.querySelector('.jbox').innerHTML=VID;
@@ -825,7 +881,7 @@ function dropPin(e){
 }
 function siteSave(){
   document.getElementById('sitescrim').classList.remove('open');
-  if(curSite){curSite.querySelector('.jbox').classList.add('set');curSite.title=document.getElementById('addrin').value||'site set';}
+  if(curSite){(curSite.querySelector('.jbox')||curSite).classList.add('set');curSite.title=document.getElementById('addrin').value||'site set';}
   toast('Site saved — address + exact pin go to dispatch');
 }
 
