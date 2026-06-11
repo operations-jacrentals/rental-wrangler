@@ -4186,7 +4186,11 @@ function yardCapture(rentalId, cap) {
 function saveYardCapture() {
   const o = state.overlay; if (!o || o.kind !== 'capture') return;
   const r = IDX.rental.get(o.rentalId); if (!r) return closeOverlay();
-  const stamp = { date: TODAY_ISO, clock: nowClock(), video: state.capFile || '' };
+  // The media NEVER rides the record (a Sheets cell caps at 50k chars) — the
+  // stamp persists immediately; the video uploads to Drive and only its URL
+  // lands on the stamp afterwards (uploadCapture backend action).
+  const file = state.capFile;
+  const stamp = { date: TODAY_ISO, clock: nowClock(), video: '' };
   if (o.cap === 'start') {
     setRentalStatus(o.rentalId, 'On Rent');
     if (r.status !== 'On Rent') return;            // a §9 gate blocked it — popup stays
@@ -4199,9 +4203,21 @@ function saveYardCapture() {
     r.fcCapture = stamp;
     markFieldCall(o.rentalId);
   }
+  uploadCaptureMedia(r, o.cap, file);
   state.capFile = null; state.overlay = null;
   const session = activeSession(); if (session.anchor) setAnchor(session, session.anchor.card, session.anchor.recId, session.anchor.recType);
   render(); renderOverlay();
+}
+function uploadCaptureMedia(r, cap, dataUrl) {
+  if (!dataUrl) return;
+  const key = cap === 'start' ? 'startCapture' : cap === 'end' ? 'endCapture' : 'fcCapture';
+  if (!backendPassword) { if (r[key]) r[key].videoNote = 'demo mode — video not stored'; return; }
+  backendCall('uploadCapture', { dataUrl, name: cap + '_' + r.rentalId })
+    .then((res) => {
+      if (res && res.ok && r[key]) { r[key].video = res.url; reindex('rentals', r); toast('Capture video uploaded to Drive.'); }
+      else toast('Video upload failed — the log stamp is saved without it.');
+    })
+    .catch(() => toast('Video upload failed — the log stamp is saved without it.'));
 }
 function saveSiteAddress() {
   const o = state.overlay; if (!o || o.kind !== 'site') return;
