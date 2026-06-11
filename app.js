@@ -274,20 +274,8 @@ function rentalTransport(r) {
    Delivery, truck→store = Recovery, store→store = Round-Trip, a single store = Self.
    Shown only when a delivery address exists; setting it syncs the invoice line. ── */
 const ICO_STORE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9.5L5.2 5h13.6L20 9.5M5 9.5V20h14V9.5M5 9.5h14"/><path d="M9.5 20v-4.5h5V20"/></svg>';
-const ICO_TRUCK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2.5" y="6.5" width="11" height="9" rx="1"/><path d="M13.5 9.5h3.6l3.4 3.2v2.8h-7z"/><circle cx="7" cy="17.5" r="1.7"/><circle cx="17" cy="17.5" r="1.7"/></svg>';
-const TRANSPORT_NODES = { Self: [0], Delivery: [0, 1], Recovery: [1, 2], 'Round-Trip': [0, 1, 2] };
-const TRANSPORT_LINES = { Self: [], Delivery: [0], Recovery: [1], 'Round-Trip': [0, 1] };
-function transportPicker(r, tr) {
-  const type = r.transportType || 'Self';
-  const onN = TRANSPORT_NODES[type] || [0];
-  const onL = TRANSPORT_LINES[type] || [];
-  const isAnchor = (i) => state.tAnchor && state.tAnchor.rec === r.rentalId && state.tAnchor.node === i;
-  const node = (i, ic, title) => `<button class="tnode${onN.includes(i) ? ' on' : ''}${isAnchor(i) ? ' anchor' : ''} js-tnode" data-node="${i}" data-rec="${esc(r.rentalId)}" title="${title}">${ic}</button>`;
-  const line = (i) => `<span class="tline${onL.includes(i) ? ' on' : ''}"></span>`;
-  const priceTxt = type === 'Self' ? '$0' : (tr.price == null ? '— (city not found)' : money(tr.price) + (type === 'Round-Trip' ? ' · round-trip' : ' · one-way'));
-  return `<div class="transport">${node(0, ICO_STORE, 'Our yard')}${line(0)}${node(1, ICO_TRUCK, 'Transport')}${line(1)}${node(2, ICO_STORE, 'Customer site')}</div>
-    <div class="kv"><b>${esc(type)}</b> · <span class="v derived">${priceTxt}</span></div>`;
-}
+// (the old 3-node transport picker + ICO_TRUCK/TRANSPORT_NODES/LINES were
+//  removed in the streamline sweep — superseded by miniJourneyHtml, R15)
 /** Keep the invoice's auto Transport line in sync with the rental's transport type/address.
  *  (Also fixes a latent bug: transport was only set at invoice creation, never re-synced.) */
 function syncTransportLine(r) {
@@ -688,17 +676,7 @@ function revealPickList(member) {
 /** Click a row → standard mode in that card (push back-stack). §0.2 */
 function openStandard(card, recId, recType) {
   const cs = activeSession().cards[card];
-  if (cs.mode === 'standard' && cs.recId != null) cs.backStack.push({ mode: cs.mode, recId: cs.recId, recType: cs.recType });
   cs.mode = 'standard'; cs.recId = recId; cs.recType = recType || null;
-  render();
-}
-function goBack(card) {
-  const cs = activeSession().cards[card];
-  const prev = cs.backStack.pop();
-  const session = activeSession();
-  if (prev) { cs.mode = prev.mode; cs.recId = prev.recId; cs.recType = prev.recType ?? null; }
-  else if (session.anchor?.card === card) { cs.mode = 'standard'; cs.recId = session.anchor.recId; cs.recType = session.anchor.recType ?? null; }
-  else { cs.mode = 'list'; cs.recId = null; cs.recType = null; }
   render();
 }
 /** Universal pill rule (§0.2): clicking any pill forces its target card into
@@ -1705,7 +1683,6 @@ const DETAIL = {
     const truck = showsTruck(r.status, r.transportType);
     const stColor = getStatus('rentalStatus', rentalDisplayStatus(r)).color;
     const s = parseISO(r.startDate), e = parseISO(r.endDate);
-    let fill = 0; if (s && e) { const total = Math.max(1, e - s); fill = Math.max(0, Math.min(1, (TODAY - s) / total)) * 100; }
 
     const hasWin = s && e;
     /* DAY TIMELINE (v2) — the window split into day cells (weeks past 14 days);
@@ -2720,15 +2697,6 @@ function shopRowEl(type, rec) {
 /* ════════════════════════════════════════════════════════════════════════
    10. Header (KPI rings, tabs, search, buttons) + dashboard placeholder
    ════════════════════════════════════════════════════════════════════════ */
-function ringSVG(pct, color, { size = 40, center } = {}) {
-  const sw = size >= 100 ? 9 : 4;
-  const r = size / 2 - sw, c = 2 * Math.PI * r, off = c * (1 - Math.min(1, pct / 100));
-  return `<svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}">
-    <circle class="ring-track" cx="${size / 2}" cy="${size / 2}" r="${r}" fill="none" stroke-width="${sw}"/>
-    <circle class="ring-fill" cx="${size / 2}" cy="${size / 2}" r="${r}" fill="none" stroke="var(--${color})" stroke-width="${sw}" stroke-dasharray="${c}" stroke-dashoffset="${off}" transform="rotate(-90 ${size / 2} ${size / 2})"/>
-    ${center != null ? `<text class="ring-pct" x="50%" y="54%" text-anchor="middle">${center}</text>` : ''}
-  </svg>`;
-}
 /** Apple-style band coloring (§11): 0-25 red · 25-50 orange · 50-75 yellow ·
  *  75-100 green · 95-100 glowing green. */
 function bandColor(pct) {
@@ -2953,14 +2921,6 @@ function dispatchGridBody() {
     return `<div class="dash-day${isToday ? ' today' : ''}${isPast ? ' past' : ''}"><div class="dash-day-head">${esc(fmtShortDate(d))}${isToday ? ' · Today' : ''}<span class="dash-day-count">${byDate[d].length}</span></div>${rows}</div>`;
   }).join('') : `<div class="empty" style="padding:34px;text-align:center">No dispatches scheduled. Rentals with Delivery / Round-Trip / Recovery transport appear here.</div>`;
   return `${stats}<div class="dash-grid">${groups}</div>`;
-}
-// (Legacy full-screen dispatch view — retained but no longer wired to a button.)
-function dashboardEl() {
-  const wrap = el('div', 'dashboard');
-  wrap.innerHTML = `
-    <div class="dash-head"><div class="dash-title"><span class="c-icon" style="color:var(--accent);display:inline-flex">${I.grid}</span><h2>Office Dispatch — Time Grid</h2></div></div>
-    ${dispatchGridBody()}`;
-  return wrap;
 }
 /** The status badge shown on an item tab (replaces the old datapoint sub-text). */
 function tabBadge(card, rec) {
@@ -3598,11 +3558,6 @@ function openStatusDropdown(rentalId, anchorEl) {
     `<button class="dd-item js-setstatus" data-rec="${esc(rentalId)}" data-val="${esc(v)}">${statusPill('rentalStatus', v)}</button>`).join('');
   openDropdown(anchorEl, html);
 }
-function openTransportDropdown(rentalId, anchorEl) {
-  const html = Object.keys(STATUS.transportType).map((v) =>
-    `<button class="dd-item js-settransport" data-rec="${esc(rentalId)}" data-val="${esc(v)}">${statusPill('transportType', v)}</button>`).join('');
-  openDropdown(anchorEl, html);
-}
 function openFleetDropdown(unitId, anchorEl) {
   const html = Object.keys(STATUS.unitFleetStatus).map((v) =>
     `<button class="dd-item js-setfleet" data-rec="${esc(unitId)}" data-val="${esc(v)}">${statusPill('unitFleetStatus', v)}</button>`).join('');
@@ -3840,7 +3795,6 @@ function onClick(e) {
   if (closest('.js-dashboard')) { e.stopPropagation(); toast('Dashboard graphs are coming soon.'); return; }   // Phase-2 per-role KPI graphs (G1/G2)
   if (closest('.js-dash-ev')) { e.stopPropagation(); state.pick = null; return anchorRecord('rentals', closest('.js-dash-ev').dataset.rec); }
   if (closest('.js-wash-mode')) { e.stopPropagation(); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); if (state.pick?.slot === 'washunit') { cancelPick(true); toast('Exited Wash Mode.'); return; } return startWashRequest(null); }
-  if (closest('.js-newrental')) return openNewMenu(closest('.js-newrental'));
   if (closest('.js-newitem')) {
     const kind = closest('.js-newitem').dataset.new;
     const cust = activeSession().anchor?.card === 'customers' ? activeSession().anchor.recId : null;
@@ -3888,9 +3842,7 @@ function onClick(e) {
   // draft pickers / creation affordances (§0.3)
   if (closest('.js-pick')) { const b = closest('.js-pick'); e.stopPropagation(); return beginPick(b.dataset.card, b.dataset.rec, b.dataset.type || undefined, b.dataset.slot); }
   if (closest('.js-create-invoice')) { e.stopPropagation(); return createInvoiceForRental(closest('.js-create-invoice').dataset.rec); }
-  if (closest('.js-field-call')) { e.stopPropagation(); return markFieldCall(closest('.js-field-call').dataset.rec); }
   if (closest('.js-clear-fc')) { e.stopPropagation(); return clearFieldCall(closest('.js-clear-fc').dataset.rec); }
-  if (closest('.js-wash-request')) { e.stopPropagation(); const uid = closest('.js-wash-request').dataset.rec; const uu = IDX.unit.get(uid); setWashRequest(uid, !(uu && uu.washRequested)); render(); return; }
   if (closest('.js-bill-wo')) { e.stopPropagation(); return billWOToInvoice(closest('.js-bill-wo').dataset.rec); }
   if (closest('.js-wo-bill')) { const b = closest('.js-wo-bill'); e.stopPropagation(); const w = IDX.wo.get(b.dataset.rec); if (w) { w.billCustomer = w.billCustomer === 'Yes' ? 'No' : 'Yes'; reindex('workOrders', w); logAction(w, `Bill customer → ${w.billCustomer}`); render(); } return; }
   if (closest('.js-svc-complete')) { const b = closest('.js-svc-complete'); e.stopPropagation(); state.svcPhoto = null; return openOverlay({ kind: 'service', unitId: b.dataset.unit, taskId: b.dataset.task }); }
@@ -3945,26 +3897,12 @@ function onClick(e) {
 
   // rental status pill on its own open card → dropdown (pill-rule exception)
   if (closest('.js-status-pill')) return openStatusDropdown(closest('.js-status-pill').dataset.rec, closest('.js-status-pill'));
-  if (closest('.js-transport-pill')) { const b = closest('.js-transport-pill'); e.stopPropagation(); return openTransportDropdown(b.dataset.rec, b); }
-  // transport journey-picker: click an endpoint then a second to set the type
-  if (closest('.js-tnode')) {
-    const b = closest('.js-tnode'); e.stopPropagation();
-    const i = Number(b.dataset.node), rec = b.dataset.rec, r = IDX.rental.get(rec); if (!r) return;
-    const a = state.tAnchor;
-    if (!a || a.rec !== rec) { state.tAnchor = { rec, node: i }; return render(); }   // first click (anchor)
-    const from = Math.min(a.node, i), to = Math.max(a.node, i); state.tAnchor = null;
-    const type = from === to ? 'Self' : (from === 0 && to === 1) ? 'Delivery' : (from === 1 && to === 2) ? 'Recovery' : 'Round-Trip';
-    if (r.transportType !== type) { const old = r.transportType; r.transportType = type; logAction(r, `Transport: ${auditVal(old)} → ${auditVal(type)}`); syncTransportLine(r); }
-    const s = activeSession(); if (s.anchor) setAnchor(s, s.anchor.card, s.anchor.recId, s.anchor.recType);
-    return render();
-  }
   if (closest('.js-fleetstatus')) { const b = closest('.js-fleetstatus'); e.stopPropagation(); return openFleetDropdown(b.dataset.rec, b); }
   if (closest('.js-setfleet')) { const b = closest('.js-setfleet'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return setUnitFleet(b.dataset.rec, b.dataset.val); }
   if (closest('.js-wophase')) { const b = closest('.js-wophase'); e.stopPropagation(); return openWoPhaseDropdown(b.dataset.rec, b, null); }
   if (closest('.js-wophase-line')) { const b = closest('.js-wophase-line'); e.stopPropagation(); return openWoPhaseDropdown(b.dataset.rec, b, Number(b.dataset.idx)); }
   if (closest('.js-setwophase')) { const b = closest('.js-setwophase'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return setWoPhase(b.dataset.rec, b.dataset.val); }
   if (closest('.js-setwolinephase')) { const b = closest('.js-setwolinephase'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return setWoLinePhase(b.dataset.rec, Number(b.dataset.idx), b.dataset.val); }
-  if (closest('.js-settransport')) { const b = closest('.js-settransport'); const r = IDX.rental.get(b.dataset.rec); if (r && r.transportType !== b.dataset.val) { const old = r.transportType; r.transportType = b.dataset.val; logAction(r, `Transport: ${auditVal(old)} → ${auditVal(b.dataset.val)}`); } document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); const s = activeSession(); if (s.anchor) setAnchor(s, s.anchor.card, s.anchor.recId, s.anchor.recType); render(); return; }
 
   // §12.2 rental-window range picker (calendar popup) — clicking the bar opens it
   if (closest('.js-wp-day')) { e.stopPropagation(); return winPickDay(closest('.js-wp-day').dataset.iso); }
@@ -4448,27 +4386,9 @@ function onChange(e) {
   if (e.target.classList.contains('js-svc-photo')) { const file = e.target.files && e.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = () => { state.svcPhoto = reader.result; renderOverlay(); }; reader.readAsDataURL(file); return; }
   if (e.target.classList.contains('js-wp-time')) { return setWinTime(e.target.value); }
   if (e.target.classList.contains('js-draftdate')) { return setDraftDate(e.target.dataset.rec, e.target.dataset.which, e.target.value); }
-  if (e.target.classList.contains('js-transport-sel')) {
-    const r = IDX.rental.get(e.target.dataset.rec); if (!r) return;
-    if (r.transportType !== e.target.value) { const old = r.transportType; r.transportType = e.target.value; logAction(r, `Transport: ${auditVal(old)} → ${auditVal(e.target.value)}`); }
-    const session = activeSession(); if (session.anchor) setAnchor(session, session.anchor.card, session.anchor.recId, session.anchor.recType);
-    render();
-  }
 }
 
 /* +New Rental (§0.3 flow, basic): open a draft rental tab + highlight Category→Unit */
-/** The +New menu (header) — opens the create-flow for each entity (§0.3). */
-function openNewMenu(anchorEl) {
-  const items = [
-    { id: 'rental', label: 'New Rental', ico: CARD_ICON.rentals },
-    { id: 'customer', label: 'New Customer', ico: CARD_ICON.customers },
-    { id: 'inspection', label: 'New Inspection', ico: CARD_ICON.inspections },
-    { id: 'workOrder', label: 'New Work Order', ico: CARD_ICON.workOrders },
-    { id: 'invoice', label: 'New Invoice', ico: CARD_ICON.invoices },
-    { id: 'receipt', label: 'New Receipt', ico: CARD_ICON.expenses },
-  ];
-  openDropdown(anchorEl, items.map((it) => `<button class="dd-item js-newitem" data-new="${it.id}"><span class="mi-ico" style="color:var(--accent);display:inline-flex">${it.ico}</span>${it.label}</button>`).join(''));
-}
 /** Logo menu — anchored to the logo (like +New): back-office boards + the Team KPI block. */
 function openLogoMenu(anchorEl) {
   const boards = BACKOFFICE_BOARDS.map((b) => `<button class="dd-item js-board" data-board="${b.id}"><span class="mi-ico" style="color:var(--accent);display:inline-flex">${CARD_ICON[b.id] || I.box}</span>${esc(b.title)}<span class="c-count" style="margin-left:auto">${boardRows(b.id).length}</span></button>`).join('');

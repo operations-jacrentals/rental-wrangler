@@ -118,7 +118,6 @@ input { font-family: inherit; }
   transition: border-color .15s;
 }
 .logo:hover { border-color: var(--accent-line); }
-.logo-img { height: 71px; width: 71px; object-fit: cover; display: block; }   /* (login screen still uses an <img>) */
 
 /* KPI rings (§5.2/§11) — Apple-style concentric progress rings, each colored by
    its own value band; number + role label below. */
@@ -138,9 +137,6 @@ input { font-family: inherit; }
 .ring-fill { transition: stroke-dashoffset .5s ease; }
 .ring-fill.ring-glow { filter: drop-shadow(0 0 1.2px var(--green)) drop-shadow(0 0 2.4px var(--green)); }   /* toned 40%, then another 20% */
 .big-ring .ring-fill.ring-glow { filter: drop-shadow(0 0 2.4px var(--green)) drop-shadow(0 0 5.2px var(--green)); }
-.ring-meta { display: flex; flex-direction: column; align-items: center; line-height: 1; gap: 2px; }
-.ring-meta b { font-size: 12px; font-weight: 800; color: var(--txt); }
-.ring-pctsign { font-size: 8px; font-weight: 700; color: var(--txt-3); margin-left: 1px; }
 .kpi-ring .ring-label { font-size: 10px; color: var(--txt-3); font-weight: 600; text-transform: uppercase; letter-spacing: .3px; }
 .kpi-ring .ring-pct { font-size: 28px; font-weight: 700; fill: var(--txt); }   /* big popup ring only */
 
@@ -202,8 +198,6 @@ input { font-family: inherit; }
 .search-tool:hover { background: var(--panel-2); color: var(--txt); }
 .search-tool svg { width: 15px; height: 15px; }
 /* §5.4 search filter bar — AND-narrowing term builder (type + Enter) */
-.filterbar { padding-top: 10px; gap: 8px; align-items: center; flex-wrap: wrap; }
-.filterbar-lbl { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: var(--txt-3); }
 .filt-term { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 11px 0 5px; border-radius: 999px; background: var(--green-bg); border: 1px solid color-mix(in srgb, var(--green) 30%, transparent); color: var(--green); font-size: 12px; font-weight: 700; cursor: pointer; transition: filter .12s; }
 .filt-term:hover { filter: brightness(1.12); }
 .filt-term .lbl { pointer-events: none; }
@@ -221,11 +215,6 @@ input { font-family: inherit; }
 .mini-searchwrap .filt-term .lbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mini-searchwrap .ft-neg { width: 14px; height: 14px; }
 .mini-searchwrap .filt-term.neg .ft-neg::before { width: 7px; }
-.filter-input { flex: 1; min-width: 180px; height: 30px; border-radius: var(--chip-radius); background: var(--panel); border: 1px solid var(--line); color: var(--txt); font-size: 12px; padding: 0 12px; }
-.filter-input:focus { outline: none; border-color: var(--accent-line); }
-.filtchip { height: 28px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel); color: var(--txt-2); font-size: 12px; font-weight: 700; cursor: pointer; }
-.filtchip.ghost { color: var(--txt-3); }
-.filtchip:hover { border-color: var(--accent-line); }
 
 .closeall { background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent); }
 .closeall:hover { background: rgba(255,122,26,.22); }
@@ -384,11 +373,6 @@ input { font-family: inherit; }
 .cal-body .dash-cust { flex: 1 1 auto; }
 .cal-body .dash-addr { flex: 1 1 100%; }
 /* §5.3/§11 Office Dispatch Time Grid (grid-swap dashboard) */
-.dashboard { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 14px; }
-.dash-head { display: flex; align-items: center; justify-content: space-between; }
-.dash-title { display: flex; align-items: center; gap: 10px; }
-.dash-title h2 { font-size: 18px; font-weight: 800; letter-spacing: .2px; }
-.dash-title .c-icon svg { width: 20px; height: 20px; }
 .dash-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
 .dash-stat { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 3px; box-shadow: var(--chip-shadow); }
 .dash-stat b { font-size: 28px; font-weight: 800; line-height: 1; }
@@ -536,13 +520,9 @@ input { font-family: inherit; }
 .rbtn svg { width: 14px; height: 14px; }
 
 .empty { padding: 22px 14px; text-align: center; color: var(--txt-3); font-size: 12px; display: flex; flex-direction: column; align-items: center; gap: 9px; }
-.empty .newbtn { height: 30px; padding: 0 12px; border-radius: 9px; background: var(--accent-soft); border: 1px solid var(--accent-line); color: var(--accent); font-size: 12px; font-weight: 700; }
 .showmore { display: block; width: 100%; margin: 6px 0 2px; padding: 9px 12px; border-radius: 9px; background: var(--accent-soft); border: 1px solid var(--accent-line); color: var(--accent); font-size: 12px; font-weight: 700; cursor: pointer; text-align: center; transition: background .12s ease; }
 .showmore:hover { background: var(--accent-line); }
 /* contextual "+New" at the top of a list (e.g. add a rental for an anchored customer) */
-.list .add-new { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; height: 32px; border-radius: var(--chip-radius); background: var(--accent-soft); border: 1px dashed var(--accent-line); color: var(--accent); font-size: 12px; font-weight: 700; box-shadow: var(--chip-shadow); }
-.list .add-new:hover { background: rgba(255,122,26,.18); }
-.list .add-new svg { width: 14px; height: 14px; }
 
 /* ── §6.2 #6 Pills (registry-driven; never hardcoded) ────────────────────── */
 .pill {
@@ -576,18 +556,9 @@ input { font-family: inherit; }
 /* rule 25 (v2): hyperlinks = blue · italic · NOT bold · 12px · PERMANENT underline */
 .linkname, .inv-line-link { color: var(--blue); font-weight: 400; font-style: italic; font-size: 12px; text-decoration: underline; cursor: pointer; }
 .linkname:hover, .inv-line-link:hover { filter: brightness(1.15); }
-.boldlight { font-weight: 700; color: var(--txt); }                                                          /* rule 12: value after entry */
 .pill[data-badge]:hover { filter: brightness(1.16); }                                                        /* rule 3: status badge hover highlight */
 .pill[data-badge]:hover .t { text-decoration: underline; }
 /* transport journey-picker (Our yard · Truck · Customer site) */
-.transport { display: flex; align-items: center; margin: 8px 0 4px; padding: 0 2px; }
-.tnode { width: 40px; height: 40px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 11px; background: var(--panel-2); border: 1px solid var(--line); color: var(--txt-2); cursor: pointer; transition: background .13s, border-color .13s, color .13s, box-shadow .13s; }
-.tnode svg { width: 21px; height: 21px; }
-.tnode:hover { border-color: var(--accent-line); color: var(--txt); }
-.tnode.anchor { border-color: var(--accent); color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-.tnode.on { background: var(--accent); border-color: var(--accent); color: var(--on-orange); }
-.tline { flex: 1 1 auto; border-top: 2px dotted var(--line); margin: 0 7px; }
-.tline.on { border-top: 2px solid var(--accent); }
 .pill .x { margin-left: 2px; opacity: .6; font-weight: 800; }
 .pill .x:hover { opacity: 1; color: var(--red); }
 .pill svg { width: 12px; height: 12px; flex: 0 0 auto; }
@@ -672,10 +643,6 @@ input { font-family: inherit; }
 
 /* §12.2 rental status bar (window timeline) */
 .statusbar { position: relative; height: 46px; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); cursor: pointer; }
-.statusbar .sb-fill { position: absolute; inset: 0; z-index: 0; }
-.statusbar .sb-row { position: relative; z-index: 1; height: 100%; display: flex; align-items: center; justify-content: space-between; padding: 0 12px; }
-.statusbar .sb-date { font-size: 12px; font-weight: 700; }
-.statusbar .sb-center { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%); z-index: 1; display: flex; align-items: center; gap: 8px; }
 /* §12.2 rental-window picker — a trigger bar that opens a single calendar popup */
 .statusbar.draftwin.wintrigger { height: 46px; cursor: pointer; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; gap: 10px; background: var(--panel); border-style: dashed; border-color: var(--accent-line); color: var(--accent); }
 .statusbar.draftwin.wintrigger .wt-label { font-size: 13px; font-weight: 700; }
@@ -719,10 +686,6 @@ input { font-family: inherit; }
 .card.pick-target .list .row:hover { background: var(--accent-soft); }
 @keyframes pbpulse { 0%,100% { opacity: 1; } 50% { opacity: .45; } }
 
-/* gated inspection stepper (§9) */
-.gated { border: 1px dashed var(--accent-line); border-radius: 10px; padding: 8px 10px; background: var(--accent-soft); }
-.gated .gated-step { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .5px; color: var(--accent); margin-bottom: 6px; }
-.gated .pill { cursor: pointer; }
 
 /* inline add-line / add-part forms (replace OS prompts) */
 .lineform { margin-top: 8px; display: flex; flex-direction: column; gap: 7px; padding: 9px; border: 1px solid var(--accent-line); border-radius: 10px; background: var(--accent-soft); }
@@ -775,7 +738,6 @@ input { font-family: inherit; }
 /* the value totals, frozen as a real Card Footer below the scrolling body */
 .list-totals { flex: 0 0 auto; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 9px 12px;
   background: var(--card-head); border-top: 1px solid var(--accent-line); box-shadow: 0 -5px 11px -7px rgba(0,0,0,.45); }
-.list-totals .tot-count { font-weight: 800; font-size: 12px; color: var(--accent); padding-right: 4px; }
 .tot-chip { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: var(--panel); color: var(--txt-2);
   border: 1px solid var(--line); white-space: nowrap; }
 .tot-chip.c-green { color: var(--green); } .tot-chip.c-red { color: var(--red); } .tot-chip.c-yellow { color: var(--yellow); }
@@ -845,11 +807,6 @@ button.tot-chip.on { background: var(--accent); border-color: var(--accent); col
 .bv-table tfoot .bv-summary .bv-sumlabel { text-align: center; }
 
 /* logo menu popup (§0.4) */
-.menu { width: 300px; align-self: flex-start; margin: 60px 0 0 16px; }
-.menu .menu-item { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px; border-radius: 10px; font-size: 13px; font-weight: 600; text-align: left; }
-.menu .menu-item:hover { background: var(--panel-2); }
-.menu .menu-item svg { width: 17px; height: 17px; color: var(--txt-2); }
-.menu .menu-sep { height: 1px; background: var(--line); margin: 8px 0; }
 /* logo-menu signed-in line + Settings login editor */
 .menu-user { display: flex; align-items: center; gap: 8px; padding: 4px 10px 8px; }
 .menu-user .mu-name { font-weight: 800; font-size: 13px; color: var(--txt); }
@@ -936,11 +893,6 @@ select.nc-in { cursor: pointer; }
 .insp-photo svg { width: 18px; height: 18px; }
 .insp-photo img, .insp-photo video { width: 100%; max-height: 220px; object-fit: cover; display: block; background: #000; }
 .insp-rephoto { position: absolute; right: 8px; bottom: 8px; background: rgba(0,0,0,.6); color: #fff; padding: 4px 10px; border-radius: 8px; font-size: 11px; cursor: pointer; }
-.insp-step { padding: 12px 0 4px; border-top: 1px solid var(--line-soft); margin-top: 8px; }
-.insp-step.locked { opacity: .55; }
-.insp-step-h { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; margin-bottom: 9px; }
-.insp-step-no { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; border: 1.5px solid var(--line); font-size: 11px; font-weight: 800; color: var(--txt-3); }
-.insp-step-no.done { background: var(--green); border-color: var(--green); color: #fff; }
 .insp-popup .pill { cursor: pointer; }
 .insp-desc { width: 100%; min-height: 84px; margin-top: 12px; resize: vertical; border-radius: 10px; border: 1px solid var(--line); background: var(--panel-2); color: var(--txt); font: inherit; font-size: 13px; padding: 10px; line-height: 1.4; }
 .insp-desc:focus { outline: none; border-color: var(--accent-line); }
@@ -964,10 +916,9 @@ select.nc-in { cursor: pointer; }
 .insp-gate .pill { cursor: pointer; }
 
 /* pill-styled transport <select> (editable, §7.4) */
-.transport-sel { appearance: none; border: 1px solid; border-radius: 999px; padding: 3px 22px 3px 10px; font: inherit; font-size: 11px; font-weight: 700; cursor: pointer; background-position: right 7px center; background-repeat: no-repeat; background-size: 9px; background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238a93a1' stroke-width='3'><path d='M6 9l6 6 6-6'/></svg>"); }
-.transport-sel:focus { outline: none; }
 /* menu / dropdown item icons */
-.menu .menu-item .mi-ico, .dropdown-menu .dd-item .mi-ico { display: inline-flex; align-items: center; }
+.dropdown-menu .menu-sep { height: 1px; background: var(--line); margin: 6px 0; }
+.dropdown-menu .dd-item .mi-ico { display: inline-flex; align-items: center; }
 .dropdown-menu .dd-item .mi-ico svg { width: 15px; height: 15px; }
 .dropdown-menu .dd-item { gap: 9px; }
 
