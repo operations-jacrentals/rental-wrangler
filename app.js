@@ -1562,6 +1562,33 @@ function woSectionHtml(w) {
     </div>
   </div>`;
 }
+/* ITEM BALANCE — every invoice line item carries its own balance. A partial
+   payment must be assigned per line item (inv.allocations = {ref: amount});
+   a fully-paid invoice counts every item as fully allocated. */
+function itemPaid(inv, ref) {
+  const t = invoiceTotals(inv);
+  if (t.paid <= 0) return 0;
+  if (inv.allocations && inv.allocations[ref] != null) return Number(inv.allocations[ref]) || 0;
+  if (t.balance <= 0) { const li = (inv.lineItems || []).find((l) => l.ref === ref); return Number(li?.amount) || 0; }
+  return 0;
+}
+/* Jac ─ Site ─ Jac transport journey under an invoice rental line. +Log Delivery /
+   +Log Recovery ARE the same captures as the yard tool's +Start/+End (one event,
+   shared fields, so both views stay in sync). Self-pickup collapses to one line. */
+function miniJourneyHtml(r2) {
+  if (!r2.transportType || r2.transportType === 'Self') {
+    return `<div class="kv" style="justify-content:center;gap:9px"><span class="muted" style="font-size:10.5px">Self pickup · no transport</span><span class="add-field js-site-go" data-rec="${esc(r2.rentalId)}" style="height:24px;font-size:11px;cursor:pointer">+Transport</span></div>`;
+  }
+  const addr = r2.deliveryAddress ? esc(r2.deliveryAddress) : '+Address';
+  const sd = !!r2.startCapture, ed = !!r2.endCapture;
+  return `<div class="journey mini">
+    <div class="jnode" style="cursor:default"><span class="jbox">${ICO_STORE}</span><span class="jlbl">Jac</span></div>
+    <div class="jseg"><span class="jover ${sd ? 'done' : 'loglink'} js-yard" data-cap="start" data-rec="${esc(r2.rentalId)}">${sd ? '✓ Delivered · video' : '+Log Delivery'}</span><span class="jline2 ${sd ? 'on' : ''}"></span><span class="jaddr js-site-go" data-rec="${esc(r2.rentalId)}">${addr}</span></div>
+    <div class="jnode js-site-go" data-rec="${esc(r2.rentalId)}"><span class="jbox site ${r2.deliveryAddress ? 'set' : ''}">${ICO_STORE}</span><span class="jlbl">Site</span></div>
+    <div class="jseg"><span class="jover ${ed ? 'done' : 'loglink'} js-yard" data-cap="end" data-rec="${esc(r2.rentalId)}">${ed ? '✓ Recovered · video' : '+Log Recovery'}</span><span class="jline2 ${ed ? 'on' : ''}"></span><span class="jaddr js-site-go" data-rec="${esc(r2.rentalId)}">${addr}</span></div>
+    <div class="jnode" style="cursor:default"><span class="jbox">${ICO_STORE}</span><span class="jlbl">Jac</span></div>
+  </div>`;
+}
 /* card-head title flags: live condition + worst-WO bottleneck (units);
    rental status + pay status (rentals). Two stacked 14px rows = title height. */
 function headFlagsHtml(card, rec) {
@@ -1599,70 +1626,110 @@ const DETAIL = {
     let fill = 0; if (s && e) { const total = Math.max(1, e - s); fill = Math.max(0, Math.min(1, (TODAY - s) / total)) * 100; }
 
     const hasWin = s && e;
-    const statusBar = (r.mock && !hasWin)
-      ? `<button class="statusbar draftwin wintrigger js-open-winpicker" data-rec="${r.rentalId}"><span class="wt-label">${r.startDate ? esc(fmtShortDate(r.startDate)) + ' → pick end' : 'Select rental window'}</span><span class="pill c-${stColor}">${esc(getStatus('rentalStatus', rentalDisplayStatus(r)).label)}</span></button>`
-      : `<div class="statusbar js-statusbar js-open-winpicker" data-rec="${r.rentalId}">
-        <div class="sb-fill" style="background:linear-gradient(90deg, var(--${stColor}-bg) ${Math.round(fill)}%, var(--panel) ${Math.round(fill)}%)"></div>
-        <div class="sb-row">
-          <span class="sb-date">${s ? esc(winBarDate(r.startDate, r.endDate)) : 'No start'}</span>
-          <span class="sb-date">${e ? esc(winBarDate(r.endDate, r.startDate)) : 'No end'}</span>
-        </div>
-        <div class="sb-center">
-          <span class="pill gate c-${stColor} js-status-pill" data-rec="${r.rentalId}">${truck ? `<span class="truck">${I.truck}</span>` : ''}${esc(getStatus('rentalStatus', rentalDisplayStatus(r)).label)} ${I.chev}</span>
-          ${r.startTime ? `<span class="muted" style="font-size:11px">${esc(r.startTime)}</span>` : ''}
+    /* DAY TIMELINE (v2) — the window split into day cells (weeks past 14 days);
+       gate status + naked price·rate centered; time stacks above the end date.
+       Clicking it opens the window calendar exactly like the old status bar. */
+    let timeline;
+    if (r.mock && !hasWin) {
+      timeline = `<button class="statusbar draftwin wintrigger js-open-winpicker" data-rec="${r.rentalId}"><span class="wt-label">${r.startDate ? esc(fmtShortDate(r.startDate)) + ' → pick end' : 'Select rental window'}</span><span class="pill c-${stColor}">${esc(getStatus('rentalStatus', rentalDisplayStatus(r)).label)}</span></button>`;
+    } else {
+      const dayMs = 86400000;
+      const total = hasWin ? Math.max(1, Math.round((e - s) / dayMs)) : 1;
+      const weekly = total > 14;
+      const cells = weekly ? Math.ceil(total / 7) : total;
+      const cellHtml = Array.from({ length: cells }, (_, i) => {
+        const cellEnd = new Date(s.getTime() + (weekly ? (i + 1) * 7 : i + 1) * dayMs);
+        const past = TODAY >= cellEnd;
+        const lbl = i === 0 ? winBarDate(r.startDate, r.endDate) : i === cells - 1 ? winBarDate(r.endDate, r.startDate) : '';
+        return `<div class="day ${past ? 'past' : ''}">${lbl ? `<span class="dnum">${esc(lbl)}</span>` : ''}</div>`;
+      }).join('');
+      timeline = `<div class="timeline js-statusbar js-open-winpicker" data-rec="${r.rentalId}">
+        ${cellHtml}
+        <div class="tl-over">
+          <span class="d1">${esc(fmtShortDate(r.startDate))}</span>
+          <span class="mid">
+            <span class="pill gate c-${stColor} js-status-pill" data-rec="${r.rentalId}">${truck ? `<span class="truck">${I.truck}</span>` : ''}${esc(getStatus('rentalStatus', rentalDisplayStatus(r)).label)} ${I.chev}</span>
+            ${price ? `<span class="rate">${money(price.price)} · ${esc(price.rate)}</span>` : ''}
+          </span>
+          <span class="d2">${r.startTime ? `<span class="tm">${esc(r.startTime)}</span>` : ''}${esc(fmtShortDate(r.endDate))}</span>
         </div>
       </div>`;
+    }
     const pickUnitBtn = `<button class="pill ref js-pick" data-card="${cs?.recType ? 'shop' : 'rentals'}" data-rec="${r.rentalId}" data-slot="unit">+ Pick unit</button>`;
     const pickCustBtn = `<button class="pill ref js-pick" data-card="rentals" data-rec="${r.rentalId}" data-slot="customer">+ Pick customer</button>`;
 
-    // Label-free, stacked (§6.2 #3): Unit + Category pills sit adjacent; transport
-    // pill carries its cost as a /one-way (or /round-trip) suffix; address + drive
-    // time need no labels.
-    const rentalCol = `<div class="section"><h4>Rental</h4>
-      <div class="fieldstack">
-        ${kvPills(`${unit ? unitPill(unit.unitId, { x: 'unit-swap' }) : (r.mock ? pickUnitBtn : '<span class="pill c-gray">No unit</span>')}${cat ? refPill('categories', cat.categoryId, cat.name) : ''}`)}
-        ${kvPills(`<span class="pill ref inline-edit" data-edit="rentalAddress" data-rec="${r.rentalId}">${r.deliveryAddress ? esc(r.deliveryAddress) : '+Address'}</span>`)}
-        ${r.deliveryAddress ? transportPicker(r, tr) : ''}
-        ${(r.deliveryAddress && tr.driveMin != null) ? kv(`${tr.driveMin} min`, { sfx: '/one-way', derived: true }) : ''}
-      </div></div>`;
-
+    /* invoice pill: ✕ unlink ONLY while $0 is assigned to this rental's line item
+       (after any assigned payment, removal requires refunding first — Jac's rule).
+       No invoice → the combined +Invoice/+Transport pill (transport lives under
+       the invoice's rental line items, so no invoice = no transport yet). */
+    const paidForThis = inv ? itemPaid(inv, r.rentalId) : 0;
     const invPill = inv
-      ? `<span class="pill c-${getStatus('invoiceStatus', invT.status).color}" data-pill-card="invoices" data-pill-rec="${esc(inv.invoiceId)}">${esc(invoiceShort(inv.invoiceId))} · ${esc(invT.status)}<span class="x" data-x="inv-remove">✕</span></span>`
-      : (r.mock && cust && s && e ? `<button class="pill ref js-create-invoice" data-rec="${r.rentalId}">+ Create invoice</button>` : '<span class="pill c-gray">No invoice</span>');
-    const invoiceCol = `<div class="section"><h4>Invoice</h4>
-      <div class="fieldstack">
-        ${kvPills(cust ? refPill('customers', r.customerId, cust.name, { x: 'cust-swap' }) : (r.mock ? pickCustBtn : '<span class="pill c-gray">No customer</span>'))}
-        ${kvPills(invPill)}
-        ${invT ? kv(money(invT.balance), { sfx: 'due', big: true, derived: true }) : ''}
-        ${price ? kv(money(price.price), { sfx: `· ${price.rate}`, derived: true }) : ''}
-        ${efld('rentals', r, 'rentalId', 'po', 'Add PO', { fmt: (v) => 'PO ' + v })}
-      </div></div>`;
+      ? `<span class="pill ref link" data-pill-card="invoices" data-pill-rec="${esc(inv.invoiceId)}">${CARD_ICON.invoices}${esc(invoiceShort(inv.invoiceId))}${paidForThis <= 0 ? `<span class="x" data-x="inv-remove" title="unlink — allowed while $0 is assigned to this rental; afterwards refund first">✕</span>` : ''}</span>`
+      : (r.mock && cust && s && e ? `<button class="pill ref js-create-invoice" data-rec="${r.rentalId}">${CARD_ICON.invoices} +Invoice/+Transport</button>` : '<span class="pill c-gray">No invoice — link one to set transport</span>');
 
-    // §9 Field Call — a unit breaking mid-rental: flag the rental (red FC), fail the unit,
-    // auto-open a Field-Call WO. Offered while a unit is attached and the rental is live.
-    const fcLive = unit && ACTIVE_RENTAL.has(r.status) && r.status !== 'Quote';
-    const fcRow = r.fieldCall
-      ? `<button class="pill c-red js-clear-fc" data-rec="${r.rentalId}">Field Call active — clear</button>`
-      : (fcLive ? `<button class="req js-field-call" data-rec="${r.rentalId}">${I.video} Mark Field Call</button>` : '');
-    const inspSection = `<div class="section"><h4>Inspection</h4>
-      <div class="fieldstack">
-        ${kvPills(unit ? statusPill('unitInspectionStatus', unit.inspectionStatus, { card: 'units', recId: unit.unitId }) : '<span class="pill c-gray">—</span>')}
-        <div class="kv"><span class="pfx">Start</span><span class="v inline-edit" data-edit="field" data-card="rentals" data-field="startHours" data-rec="${r.rentalId}" data-ph="Start hrs" data-type="number">${r.startHours != null ? num(r.startHours) + ' HRS' : '<span class="add-field">+ set</span>'}</span><span class="pfx" style="margin-left:8px">Return</span><span class="v inline-edit" data-edit="field" data-card="rentals" data-field="returnHours" data-rec="${r.rentalId}" data-ph="Return hrs" data-type="number">${r.returnHours != null ? num(r.returnHours) + ' HRS' : '<span class="add-field">+ set</span>'}</span></div>
-        ${kvPills(`<button class="req">${I.video} On-Rent</button><button class="req">${I.video} Returning</button>`)}
-        ${fcRow ? kvPills(fcRow) : ''}
-      </div></div>`;
+    const balColor = invT ? (invT.balance <= 0 && invT.paid > 0 ? 'green' : invT.status === 'Not Due' ? 'blue' : 'red') : null;
+
+    /* invoice rental line items, each with its own transport journey + ITEM BALANCE */
+    const itemsHtml = (inv ? (inv.lineItems || []).filter((li) => li.kind === 'rental') : []).map((li) => {
+      const r2 = IDX.rental.get(li.ref); if (!r2) return '';
+      const u2 = IDX.unit.get(r2.unitId);
+      const paid = itemPaid(inv, li.ref);
+      const amt = Number(li.amount) || 0;
+      const ibColor = paid >= amt && amt > 0 ? 'green' : invT.status === 'Not Due' ? 'blue' : 'red';
+      return `<div class="invitem">
+        <span><span class="linkname" data-pill-card="rentals" data-pill-rec="${esc(r2.rentalId)}">${esc(u2?.name || r2.rentalName || 'Rental')} · ${esc(fmtShortDate(r2.startDate))}–${esc(fmtShortDate(r2.endDate))}${li.ref === r.rentalId ? ' — this rental' : ''}</span><b style="color:var(--${ibColor});font-size:12.5px;margin-left:8px" title="ITEM BALANCE — partial payments are assigned per line item">${money(paid)}</b><span class="derived" style="font-size:11px"> / ${money(amt)}</span></span>
+        ${miniJourneyHtml(r2)}
+      </div>`;
+    }).join('');
+
+    /* Complete Rental gate — blue only once Returned; Cancelled/No Show → red Cancel Rental */
+    const cancelish = ['Cancelled', 'No Show'].includes(r.status);
+    const canComplete = r.status === 'Returned';
+    const crBtn = cancelish
+      ? `<button class="pill c-danger js-cancel-rental" data-rec="${r.rentalId}" style="height:26px;font-size:11px">Cancel Rental</button>`
+      : `<button class="pill ${canComplete ? 'c-commit' : 'ref'} js-complete-rental" data-rec="${r.rentalId}" style="height:26px;font-size:11px${canComplete ? '' : ';opacity:.55'}">Complete Rental</button>`;
+
+    const fcRow = r.fieldCall ? `<button class="pill c-red js-clear-fc" data-rec="${r.rentalId}">Field Call active — clear</button>` : '';
+
+    /* RENTAL section (v2): NO header — the timeline opens the section; the border
+       carries the rental-status color. Left = actions · right = pay-colored balance. */
+    const rentalSec = `<div class="section sec-${stColor === 'green' ? 'green' : stColor === 'red' ? 'red' : 'yellow'}">
+      ${timeline}
+      <div class="split" style="margin-top:11px">
+        <div class="side">
+          ${kvPills(cust ? refPill('customers', r.customerId, cust.name, { x: 'cust-swap' }) : (r.mock ? pickCustBtn : '<span class="pill c-gray">No customer</span>'))}
+          ${kvPills(`${unit ? unitPill(unit.unitId, { x: 'unit-swap' }) : (r.mock ? pickUnitBtn : '<span class="pill c-gray">No unit</span>')}${unit ? `<span class="pill dvd c-${getStatus('unitInspectionStatus', unit.inspectionStatus).color}" data-pill-card="units" data-pill-rec="${esc(unit.unitId)}">${CARD_ICON.units}${esc(getStatus('unitInspectionStatus', unit.inspectionStatus).label)}</span>` : ''}${cat ? `<span class="pill dvd c-orange" data-pill-card="categories" data-pill-rec="${esc(cat.categoryId)}">${CARD_ICON.categories}${esc(cat.name)}</span>` : ''}`)}
+          ${kvPills(invPill)}
+          ${efld('rentals', r, 'rentalId', 'po', 'Add PO', { fmt: (v) => 'PO ' + v })}
+          ${fcRow ? kvPills(fcRow) : ''}
+        </div>
+        <div class="side r">
+          ${invT ? `<div class="kv"><span class="v big" style="color:var(--${balColor});font-weight:800">${money(invT.paid)}</span><span class="derived">/ ${money(invT.total)}</span></div>` : (price ? kv(money(price.price), { sfx: `· ${price.rate}`, derived: true }) : '')}
+          ${invT && inv.dueDate ? `<div class="kv"><span class="derived" style="font-size:11px">due ${fmtShortDate(inv.dueDate)}</span></div>` : ''}
+          ${(r.deliveryAddress && tr.driveMin != null) ? kv(`${tr.driveMin} min`, { sfx: '/one-way', derived: true }) : ''}
+        </div>
+      </div>
+      ${itemsHtml ? `<div style="border-top:1px dashed var(--line);margin-top:10px;padding-top:9px;display:flex;flex-direction:column;gap:10px;align-items:center">
+        <span class="muted" style="font-size:9.5px;text-transform:uppercase;letter-spacing:.4px">Invoice rentals · transport</span>
+        ${itemsHtml}
+      </div>` : ''}
+      <div style="display:flex;justify-content:flex-end;margin-top:9px">${crBtn}</div>
+    </div>`;
 
     const notes = notesSection('rentals', r, 'rentalId');
-    const history = historySection('rentals', r, cs);
+    const acts = r.actions || [];
+    const hchips = [
+      { kind: 'cap', label: `${[r.startCapture, r.endCapture, r.fcCapture].filter(Boolean).length} Captures`, cls: 'b', re: /video|captur/i },
+      { kind: 'pay', label: `${acts.filter((a) => /paid|charge|payment|deposit|refund|invoice/i.test(a.text)).length} Payments`, cls: 'g', re: /paid|charge|payment|deposit|refund|invoice/i },
+      { kind: 'edit', label: `${acts.filter((a) => /→/.test(a.text)).length} Edits`, cls: 'y', re: /→/ },
+    ];
 
     return `<div class="detail">
       <div class="detail-head"><span class="d-title inline-edit" data-edit="field" data-card="rentals" data-field="rentalName" data-rec="${r.rentalId}" data-ph="Rental name">${esc(r.rentalName || unit?.name || 'Rental')}</span>${r.fieldCall ? badge('FC', 'red') : ''}</div>
-      ${statusBar}
       ${notes.top}
-      <div class="detail-cols">${rentalCol}${invoiceCol}</div>
-      ${inspSection}
+      ${rentalSec}
       ${notes.bottom}
-      ${history}
+      ${historySection('rentals', r, cs, hchips)}
     </div>`;
   },
 
@@ -3769,6 +3836,15 @@ function onClick(e) {
   if (closest('.js-wo-complete')) { const b = closest('.js-wo-complete'); return completeWOAttempt(b.dataset.rec); }
   if (closest('.js-wodone-confirm')) { const b = closest('.js-wodone-confirm'); state.overlay = null; setWoPhase(b.dataset.rec, 'Complete'); renderOverlay(); return; }
   if (closest('.js-hchip')) { const b = closest('.js-hchip'); const session = activeSession(); const cs = session.cards[b.dataset.card] || session.cards.shop; cs.histKind = cs.histKind === b.dataset.kind ? null : b.dataset.kind; return render(); }
+  if (closest('.js-complete-rental')) {
+    const b = closest('.js-complete-rental'); const r = IDX.rental.get(b.dataset.rec); if (!r) return;
+    if (r.status !== 'Returned') return toast('🔒 Available once the rental is Returned — log the End/Recovery video on the unit.');
+    r.completed = true; reindex('rentals', r); logAction(r, 'Rental completed'); toast('Rental completed ✓'); return reanchorRender();
+  }
+  if (closest('.js-cancel-rental')) {
+    const b = closest('.js-cancel-rental'); const r = IDX.rental.get(b.dataset.rec); if (!r) return;
+    r.completed = true; reindex('rentals', r); logAction(r, 'Rental cancelled — closed'); toast('Rental closed (cancelled).'); return reanchorRender();
+  }
   if (closest('.js-insp-wash')) { const b = closest('.js-insp-wash'); e.stopPropagation(); return setInspWash(b.dataset.rec, b.dataset.val); }
   if (closest('.js-insp-result')) { const b = closest('.js-insp-result'); e.stopPropagation(); return setInspResult(b.dataset.rec, b.dataset.val); }
   if (closest('.js-insp-bill')) { const b = closest('.js-insp-bill'); e.stopPropagation(); return setInspBill(b.dataset.rec, b.dataset.val); }
