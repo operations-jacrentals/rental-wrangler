@@ -14,7 +14,7 @@
 ## Design source of truth
 - **`drafts/site-shell-v2-yours.html`** — the APPROVED clickable mockup of the new design (Jac's vision). It is the spec for the look + the transport picker + every rule. Open it.
 - `drafts/button-gallery-v2.html` — the button-system reference.
-- **`drafts/units-rentals-v2.html`** (2026-06-11, AWAITING JAC'S REVIEW) — v1 + ALL of Jac's redlines applied. v1 kept for diffing only. New BINDING rules from the redline session:
+- **`drafts/units-rentals-v2.html`** (2026-06-11, **DIRECTION APPROVED** — Jac iterated ~10 redline rounds through v2.9 and signed off "loving this". NEXT STEP = build this into the real app on this branch. Any GZ-n notes Jac never overruled stand as decided.) — v1 + ALL of Jac's redlines applied. v1 kept for diffing only. New BINDING rules from the redline session:
   - ONE font size for all status badges (11px). **Gate pills**: any status DROPDOWN takes the big button shape (30px/10px-radius/12.5px bold) + chevron (chevron only on real dropdowns) — applies to WO line statuses etc.
   - **Destination icon**: anything that navigates leads with the icon of the card it goes TO (FC pill on a Unit wears the Rentals icon and vice-versa). No spacer.
   - **Derived pills** (depend on another pill in the same section, e.g. Ready←unit, Partial←invoice): NO background/border; keep color+icon+hover underline. Hyperlinks: blue, italic, NOT bold.
