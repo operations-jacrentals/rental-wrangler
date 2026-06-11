@@ -72,7 +72,7 @@ h2 .no{color:var(--accent)}
 /* line segments that carry content ON TOP of the line (rental link, +Log labels) */
 .jseg{flex:1 1 auto;display:flex;flex-direction:column;align-items:center;gap:2px;padding-top:9px;min-width:0}
 .jseg .jover{font-size:9px;font-weight:700;color:var(--txt-2);white-space:nowrap;display:inline-flex;align-items:center;gap:3px;min-height:12px;max-width:100%}
-.jseg .jover.loglink{color:var(--blue);cursor:pointer}
+.jseg .jover.loglink{color:var(--txt);font-weight:800;cursor:pointer}
 .jseg .jover.loglink:hover{text-decoration:underline}
 .jseg .jover.done{color:var(--green);cursor:pointer}
 .jseg .jline2{width:100%;border-top:2px dotted var(--line)}
@@ -89,14 +89,17 @@ h2 .no{color:var(--accent)}
 .jnode.done.green .jlbl{color:var(--green)}
 .jnode.done.yellow .jbox{background:var(--yellow-bg);color:var(--yellow);border-color:transparent}
 .jnode.done.yellow .jlbl{color:var(--yellow)}
-/* mini transport journey under each invoice rental line (Jac ─ Site ─ Jac) */
-.journey.mini .jbox{width:26px;height:26px;border-radius:8px;background:var(--panel-2);color:var(--txt-2);border:1px solid var(--line)}
-.journey.mini .jbox svg{width:14px;height:14px}
+/* transport journey under each invoice rental line (Jac ─ Site ─ Jac) —
+   full-width + centered + sized up (v2.5): the line items carry the section */
+.journey.mini .jbox{width:34px;height:34px;border-radius:10px;background:var(--panel-2);color:var(--txt-2);border:1px solid var(--line)}
+.journey.mini .jbox svg{width:17px;height:17px}
 .journey.mini .jbox.site:hover{border-color:var(--accent);color:var(--accent)}
 .journey.mini .jbox.site.set{background:var(--accent-soft);border-color:var(--accent-line);color:var(--accent)}
-.journey.mini .jlbl{font-size:8.5px}
-.journey.mini .jseg{padding-top:3px}
-.invitem{width:100%;display:flex;flex-direction:column;gap:2px;align-items:flex-start}
+.journey.mini .jlbl{font-size:9.5px}
+.journey.mini .jseg{padding-top:2px}
+.journey.mini .jover{font-size:10px}
+.invitem{width:100%;display:flex;flex-direction:column;gap:4px;align-items:center}
+.invitem>.linkname{font-size:13.5px}
 
 /* SECTION STATUS COLORS (v2.2 redline 6): header + border follow the live status */
 .section.sec-green{border-color:rgba(52,211,153,.45)}
@@ -573,11 +576,14 @@ h2 .no{color:var(--accent)}
             <div class="kv"><span class="link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2h9l3 3v17l-3-2-3 2-3-2-3 2z"/></svg>01i02Ju26</span></div>
             <div class="kv"><span class="money" style="color:var(--red)" title="pay-status coloring: red = unpaid &amp; due · blue = not due">$0</span><span class="derived">/ $1,000</span></div>
             <div class="kv"><span class="derived" style="font-size:11px">due Jun 07</span></div>
-            <div style="border-top:1px dashed var(--line);margin-top:4px;padding-top:7px;width:100%;display:flex;flex-direction:column;gap:7px">
-              <span class="muted" style="font-size:9.5px;text-transform:uppercase;letter-spacing:.4px">Invoice rentals · transport</span>
+          </div>
+        </div>
+        <!-- full-width, CENTERED line items — they carry the section now (v2.5) -->
+        <div style="border-top:1px dashed var(--line);margin-top:10px;padding-top:10px;display:flex;flex-direction:column;gap:12px;align-items:center">
+          <span class="muted" style="font-size:9.5px;text-transform:uppercase;letter-spacing:.4px">Invoice rentals · transport</span>
               <div class="invitem">
                 <span class="linkname">Updog · Jun01-07 — this rental</span>
-                <div class="journey mini" style="align-items:flex-start;width:100%">
+                <div class="journey mini" style="align-items:flex-start;width:100%;max-width:440px">
                   <div class="jnode" style="cursor:default"><span class="jbox"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9.5L5.2 5h13.6L20 9.5M5 9.5V20h14V9.5M5 9.5h14"/></svg></span><span class="jlbl">Jac</span></div>
                   <div class="jseg"><span class="jover loglink" id="logdel" onclick="jStart()">+Log Delivery</span><span class="jline2" id="ldl"></span></div>
                   <div class="jnode" onclick="sitePopup(this)"><span class="jbox site"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9.5L5.2 5h13.6L20 9.5M5 9.5V20h14V9.5M5 9.5h14"/><path d="M9.5 20v-4.5h5V20"/></svg></span><span class="jlbl">Site</span></div>
@@ -587,7 +593,7 @@ h2 .no{color:var(--accent)}
               </div>
               <div class="invitem">
                 <span class="linkname">Shrek · Jun02-09</span>
-                <div class="journey mini" style="align-items:flex-start;width:100%">
+                <div class="journey mini" style="align-items:flex-start;width:100%;max-width:440px">
                   <div class="jnode" style="cursor:default"><span class="jbox"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9.5L5.2 5h13.6L20 9.5M5 9.5V20h14V9.5M5 9.5h14"/></svg></span><span class="jlbl">Jac</span></div>
                   <div class="jseg"><span class="jover loglink" onclick="toast('logs Shrek\'s delivery — same +Start capture, on its own rental')">+Log Delivery</span><span class="jline2"></span></div>
                   <div class="jnode" onclick="sitePopup(this)"><span class="jbox site set" title="265 Callie Ln — same site"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9.5L5.2 5h13.6L20 9.5M5 9.5V20h14V9.5M5 9.5h14"/><path d="M9.5 20v-4.5h5V20"/></svg></span><span class="jlbl">Site</span></div>
@@ -595,8 +601,6 @@ h2 .no{color:var(--accent)}
                   <div class="jnode" style="cursor:default"><span class="jbox"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9.5L5.2 5h13.6L20 9.5M5 9.5V20h14V9.5M5 9.5h14"/></svg></span><span class="jlbl">Jac</span></div>
                 </div>
               </div>
-            </div>
-          </div>
         </div>
         <!-- Complete Rental gate (redline 19): blue only when status = Returned; red Cancel Rental on Cancel/No Show -->
         <div style="display:flex;justify-content:flex-end;margin-top:10px">
