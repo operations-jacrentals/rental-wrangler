@@ -942,7 +942,7 @@ const badge = (label, color = 'gray') => `<span class="pill c-${color}">${esc(la
 /** A funnel-stage pill (§7.1) — clickable to change stage via a dropdown. */
 function funnelPill(custId, which, stage) {
   const st = getStatus('funnelStage', stage);
-  return `<span class="pill c-${st.color} js-funnel" data-rec="${esc(custId)}" data-which="${which}">${esc(st.label)}</span>`;
+  return `<span class="pill gate c-${st.color} js-funnel" data-rec="${esc(custId)}" data-which="${which}">${esc(st.label)} ${I.chev}</span>`;
 }
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -1460,7 +1460,8 @@ function efld(card, rec, idField, field, ph, opts = {}) {
    before historySection — exactly one of the two is non-empty. */
 function notesSection(card, rec, idField, field = 'notes') {
   const has = !(rec[field] === '' || rec[field] == null);
-  const sec = `<div class="section"><h4>Notes</h4>${efld(card, rec, idField, field, 'Add Notes', { wrap: true, dot: true })}</div>`;
+  // v2: heading-only line — no panel box, no NOTES label (Jac 2026-06-11)
+  const sec = `<div class="nsec">${efld(card, rec, idField, field, 'Add Notes', { wrap: true, dot: true })}</div>`;
   return { top: has ? sec : '', bottom: has ? '' : sec };
 }
 
@@ -1489,7 +1490,7 @@ const DETAIL = {
           <span class="sb-date">${e ? esc(winBarDate(r.endDate, r.startDate)) : 'No end'}</span>
         </div>
         <div class="sb-center">
-          <span class="pill c-${stColor} js-status-pill" data-rec="${r.rentalId}">${truck ? `<span class="truck">${I.truck}</span>` : ''}${esc(getStatus('rentalStatus', rentalDisplayStatus(r)).label)}</span>
+          <span class="pill gate c-${stColor} js-status-pill" data-rec="${r.rentalId}">${truck ? `<span class="truck">${I.truck}</span>` : ''}${esc(getStatus('rentalStatus', rentalDisplayStatus(r)).label)} ${I.chev}</span>
           ${r.startTime ? `<span class="muted" style="font-size:11px">${esc(r.startTime)}</span>` : ''}
         </div>
       </div>`;
@@ -1583,7 +1584,7 @@ const DETAIL = {
     </div></div>`;
     const notes = notesSection('units', u, 'unitId');
     return `<div class="detail">
-      <div class="detail-head"><span class="d-title inline-edit" data-edit="field" data-card="units" data-field="name" data-rec="${u.unitId}" data-ph="Unit name">${esc(u.name)}</span><span class="pill c-${getStatus('unitFleetStatus', u.fleetStatus).color} js-fleetstatus" data-rec="${u.unitId}">${esc(getStatus('unitFleetStatus', u.fleetStatus).label)} ${I.chev}</span>${statusPill('unitInspectionStatus', u.inspectionStatus)}<button class="pill ${u.washRequested ? 'c-blue' : 'ref'} js-wash-request" data-rec="${u.unitId}">${I.droplet} ${u.washRequested ? 'Wash Requested' : 'Request Wash'}</button><span class="pill c-gray">${I.qr} QR</span></div>
+      <div class="detail-head"><span class="d-title inline-edit" data-edit="field" data-card="units" data-field="name" data-rec="${u.unitId}" data-ph="Unit name">${esc(u.name)}</span><span class="pill gate c-${getStatus('unitFleetStatus', u.fleetStatus).color} js-fleetstatus" data-rec="${u.unitId}">${esc(getStatus('unitFleetStatus', u.fleetStatus).label)} ${I.chev}</span>${statusPill('unitInspectionStatus', u.inspectionStatus)}<button class="pill ${u.washRequested ? 'c-blue' : 'ref'} js-wash-request" data-rec="${u.unitId}">${I.droplet} ${u.washRequested ? 'Wash Requested' : 'Request Wash'}</button><span class="pill c-gray">${I.qr} QR</span></div>
       ${notes.top}
       <div class="detail-cols">${specs}${gps}</div>
       ${investment}
@@ -1766,7 +1767,7 @@ const DETAIL = {
     const partsCost = (w.lineItems || []).reduce((a, li) => a + (Number(li.cost) || 0), 0);
     const labor = (w.lineItems || []).reduce((a, li) => a + (Number(li.hours) || 0), 0) || w.laborHours || 0;
     const priceIfBilled = woBillable(w);   // §7.6 tiered parts markup + $150/hr labor
-    const journey = (w.lineItems || []).map((li, idx) => `<div class="hitem"><span class="pill c-${getStatus('woPhase', li.phase).color} js-wophase-line" data-rec="${w.woId}" data-idx="${idx}" style="min-width:88px;justify-content:center">${esc(getStatus('woPhase', li.phase).label)} ${I.chev}</span><span>${esc(li.part)}</span><span class="spacer"></span><span class="muted">${li.eta ? fmtShortDate(li.eta) + ' · ' : ''}${li.hours || 0}h${li.vendor ? ' · ' + esc(li.vendor) : ''}</span><b>${money(li.cost)}</b></div>`).join('');
+    const journey = (w.lineItems || []).map((li, idx) => `<div class="hitem"><span class="pill gate c-${getStatus('woPhase', li.phase).color} js-wophase-line" data-rec="${w.woId}" data-idx="${idx}" style="min-width:88px;justify-content:center">${esc(getStatus('woPhase', li.phase).label)} ${I.chev}</span><span>${esc(li.part)}</span><span class="spacer"></span><span class="muted">${li.eta ? fmtShortDate(li.eta) + ' · ' : ''}${li.hours || 0}h${li.vendor ? ' · ' + esc(li.vendor) : ''}</span><b>${money(li.cost)}</b></div>`).join('');
     const billable = partsCost > 0 || labor > 0;
     const alreadyBilled = DATA.invoices.some((i) => (i.lineItems || []).some((li) => li.kind === 'WO' && li.ref === w.woId));
     const billBtn = billable && !alreadyBilled ? `<button class="pill ref js-bill-wo" data-rec="${w.woId}">Bill to invoice →</button>` : (alreadyBilled ? badge('Billed', 'green') : '');
@@ -1795,7 +1796,7 @@ const DETAIL = {
     </div></div>`;
     const notes = notesSection('workOrders', w, 'woId');
     return `<div class="detail">
-      <div class="detail-head"><span class="d-title">${esc(`${unit?.name || '—'} — ${w.woReport}`)}</span>${badge(getStatus('woType', w.woType).label, getStatus('woType', w.woType).color)}<span class="pill c-${getStatus('woPhase', w.phase).color} js-wophase" data-rec="${w.woId}">${esc(getStatus('woPhase', w.phase).label)} ${I.chev}</span></div>
+      <div class="detail-head"><span class="d-title">${esc(`${unit?.name || '—'} — ${w.woReport}`)}</span>${badge(getStatus('woType', w.woType).label, getStatus('woType', w.woType).color)}<span class="pill gate c-${getStatus('woPhase', w.phase).color} js-wophase" data-rec="${w.woId}">${esc(getStatus('woPhase', w.phase).label)} ${I.chev}</span></div>
       ${notes.top}
       ${journeySec}
       ${report}
