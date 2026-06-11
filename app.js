@@ -118,7 +118,7 @@ function cardsSection(c) {
     return `<div class="card-row">
       <span class="cr-brand">${esc(brandName(k.brand))} ••${esc(k.last4)}</span>
       <span class="cr-exp${exp ? ' bad' : soon ? ' warn' : ''}">${k.expMonth ? esc(k.expMonth + '/' + String(k.expYear).slice(-2)) : ''}${exp ? ' · expired' : ''}</span>
-      <span class="cr-nick inline-edit" data-edit="cardNick" data-rec="${c.customerId}" data-card="${k.id}">${k.nickname ? esc(k.nickname) : '<span class="add-field" data-r="R5">+Nickname</span>'}</span>
+      <span class="cr-nick inline-edit" data-edit="cardNick" data-rec="${c.customerId}" data-card="${k.id}">${k.nickname ? esc(k.nickname) : '<span class="add-field" data-r="R5c">+Nickname</span>'}</span>
       ${k.agreement ? badge('Agreement ✓', 'green') : ''}
       ${k.isDefault ? badge('Default', 'blue') : actionPill('commit', 'Make default', { js: 'js-card-default', data: { rec: c.customerId, card: k.id } })}
       <button class="x js-card-remove" data-rec="${c.customerId}" data-card="${k.id}" title="Remove card">${I.x}</button>
@@ -931,7 +931,8 @@ function unitPill(unitId, { x } = {}) {
   const xb = x ? `<span class="x" data-x="${esc(x)}">✕</span>` : '';
   return `<span class="pill ref link" data-r="R2" data-pill-card="units" data-pill-rec="${esc(unitId)}">${CARD_ICON.units}${esc(u.name)}${xb}</span>`;
 }
-const badge = (label, color = 'gray') => `<span class="pill c-${color}" data-r="R3"><span class="t">${esc(label)}</span></span>`;
+/** R3b: a DATA CHIP — a plain fact (480 HRS, No GPS), independent of R3. */
+const badge = (label, color = 'gray') => `<span class="pill c-${color}" data-r="R3b"><span class="t">${esc(label)}</span></span>`;
 /** R1: a GATE pill — a status DROPDOWN that moves the record forward. */
 function gatePill(set, value, js, data, { truck } = {}) {
   const st = getStatus(set, value);
@@ -957,9 +958,13 @@ function dPill(label, color, { card, recId, icon, title } = {}) {
 /** R5: the ADD affordance — dashed, "+Thing" (never the word "Add", never a
  *  space after +). `link:true` = orange ink (creates/links a record);
  *  `anchor:true` = the neon-blue +Part/Task variant. */
-function addBtn(label, { js, data, link, anchor, h, icon } = {}) {
-  const cls = `add-field${link ? ' link-ink' : ''}${anchor ? ' anchor' : ''}${js ? ' ' + js : ''}`;
-  return `<button class="${cls}" data-r="R5"${dataAttrs(data)}${h ? ` style="height:${h}px"` : ''}>${icon || ''}+${esc(label.replace(/^\+?\s*(Add\s+)?/i, ''))}</button>`;
+function addBtn(label, { js, data, link, line, anchor, h, icon } = {}) {
+  // R5 = ORANGE (links/creates a MAIN record) · R5b = BLUE (creates a LINE ITEM
+  // within a section) · R5c = GRAY (a normal empty field)
+  const blue = line || anchor;
+  const cls = `add-field${link ? ' link-ink' : ''}${blue ? ' anchor' : ''}${js ? ' ' + js : ''}`;
+  const rule = link ? 'R5' : blue ? 'R5b' : 'R5c';
+  return `<button class="${cls}" data-r="${rule}"${dataAttrs(data)}${h ? ` style="height:${h}px"` : ''}>${icon || ''}+${esc(label.replace(/^\+?\s*(Add\s+)?/i, ''))}</button>`;
 }
 /** R6: required-until-entered — white bg + dark ink, stays loud until satisfied. */
 function reqBtn(label, { js, data, icon } = {}) {
@@ -984,6 +989,11 @@ function segCtl(buttons, cls) {
  *  replacing error messages wherever possible (Jac 2026-06-11). */
 function attnFlash(sel) {
   document.querySelectorAll(sel).forEach((n) => { n.classList.remove('attn'); void n.offsetWidth; n.classList.add('attn'); setTimeout(() => n.classList.remove('attn'), 2000); });
+}
+/** R19 fallback: glow the fix when it's ON SCREEN; only use words when it isn't. */
+function flashOr(sel, msg) {
+  if (document.querySelector(sel)) return attnFlash(sel);
+  toast(msg);
 }
 /** R20: the Wrangler CONTEXT MENU — right-click any element.
  *  Cut/Copy/Paste/Clear act on the field · Search/Global Search use the text ·
@@ -1064,9 +1074,12 @@ const RULE_META = {
   R0:  ['Flash-lint', 'body.rw-lint (CSS)', 'un-stamped UI pulses red — it bypassed the builders'],
   R1:  ['Gate pill', 'gatePill / gatePillRaw / funnelPill', 'a status DROPDOWN that moves the record forward — big shape + chevron'],
   R2:  ['Linked pill', 'refPill / unitPill', 'orange outline + DESTINATION-card icon — opens a record; optional ✕'],
-  R3:  ['Status badge', 'statusPill / badge', 'informational status, parent-card icon, one font size — never an action'],
-  R4:  ['Derived pill', 'dPill', 'rides another pill: no bg/border, ink+icon only, sits RIGHT of its parent'],
-  R5:  ['Add affordance', 'addBtn / efld empty state', 'dashed “+Thing” (no “Add”, no space) — orange ink when it links/creates'],
+  R3:  ['Status badge', 'statusPill', 'informational STATUS: registry color, parent-card icon, hover underline — never an action'],
+  R3b: ['Data chip', 'badge', 'a plain FACT (480 HRS, No GPS): gray, no icon, no hover — independent of R3'],
+  R4:  ['Derived pill', 'dPill', 'rides another pill: no bg/border, ink+icon only — sits RIGHT of its parent (LEFT when the parent is right-aligned)'],
+  R5:  ['Main-item add', 'addBtn({link})', 'ORANGE dashed “+Thing” — links/creates a MAIN record (Customer, Invoice, Unit…)'],
+  R5b: ['Line-item add', 'addBtn({line})', 'BLUE dashed “+Thing” — creates a LINE ITEM within a section (+Part/Task, invoice lines)'],
+  R5c: ['Empty field', 'addBtn() / efld empty state', 'GRAY dashed “+Thing” — a normal empty field (+Serial, +Email, +PO)'],
   R6:  ['Required', 'reqBtn / .req', 'white + dark ink until entered/captured — stays loud'],
   R7:  ['Hyperlink', 'linkName / .inv-line-link', 'blue · italic · NOT bold · permanent underline'],
   R8:  ['Derived value', 'kv({derived}) / .derived', 'italic = the app computed it; you don’t type it'],
@@ -1637,7 +1650,7 @@ function efld(card, rec, idField, field, ph, opts = {}) {
   const phDisp = String(ph).replace(/^Add\s+/i, '');   // rule 8/12: drop "Add" + space (data-ph keeps full prompt)
   const dotColor = opts.dot ? rec[field + 'Color'] : '';   // rule 8: notes carry a 3-color dot tag
   const dot = (has && dotColor) ? `<span class="note-dot nd-${esc(dotColor)}"></span>` : '';
-  const disp = has ? dot + esc(opts.fmt ? opts.fmt(raw) : String(raw)) : `<span class="add-field" data-r="R5">+${esc(phDisp)}</span>`;
+  const disp = has ? dot + esc(opts.fmt ? opts.fmt(raw) : String(raw)) : `<span class="add-field" data-r="R5c">+${esc(phDisp)}</span>`;
   const pfx = opts.pfx ? `<span class="pfx">${esc(opts.pfx)}</span>` : '';
   const sfx = (has && opts.sfx) ? `<span class="sfx">${esc(opts.sfx)}</span>` : '';
   return `<div class="kv${opts.wrap ? ' wrap' : ''}">${pfx}<span class="v inline-edit" data-edit="field" data-card="${card}" data-field="${field}" data-rec="${esc(String(rec[idField]))}" data-ph="${esc(ph)}" data-type="${opts.type || 'text'}"${opts.dot ? ' data-dot="1"' : ''}${opts.wrap ? ' style="white-space:normal"' : ''}>${disp}</span>${sfx}</div>`;
@@ -1702,7 +1715,7 @@ function yardToolHtml(u) {
   return `<div class="jtool"><div class="journey">
     <div class="jnode pre" style="cursor:default"><span class="jbox" style="color:var(--${st.color})">${CARD_ICON.rentals}</span><span class="jlbl" style="color:var(--${st.color})">${esc(st.label)}</span><span class="jts">${fmtShortDate(r.startDate)}${r.startTime ? ' · ' + esc(r.startTime) : ''}</span></div>
     <div class="jseg">
-      <span class="jover"><span class="pill dvd c-orange" data-pill-card="rentals" data-pill-rec="${esc(r.rentalId)}">${CARD_ICON.rentals}<span class="t">${esc(cust?.name || r.rentalName || 'Rental')}</span></span></span>
+      <span class="jover"><span class="pill dvd c-orange" data-r="R4" data-pill-card="rentals" data-pill-rec="${esc(r.rentalId)}">${CARD_ICON.rentals}<span class="t">${esc(cust?.name || r.rentalName || 'Rental')}</span></span></span>
       <span class="jline2 ${r.startCapture ? 'on' : ''}"></span>
       <span class="junder">${fmtShortDate(r.startDate)} – ${fmtShortDate(r.endDate)}</span>
       ${r.deliveryAddress ? `<span class="jaddr js-site-go" data-rec="${esc(r.rentalId)}">${esc(r.deliveryAddress)}</span>` : isDel ? `<span class="jaddr js-site-go" data-rec="${esc(r.rentalId)}">+Address</span>` : ''}
@@ -1765,7 +1778,7 @@ function itemPaid(inv, ref) {
    shared fields, so both views stay in sync). Self-pickup collapses to one line. */
 function miniJourneyHtml(r2) {
   if (!r2.transportType || r2.transportType === 'Self') {
-    return `<div class="kv" style="justify-content:center;gap:9px"><span class="muted" style="font-size:10.5px">Self pickup · no transport</span><span class="add-field js-site-go" data-rec="${esc(r2.rentalId)}" style="height:24px;font-size:11px;cursor:pointer">+Transport</span></div>`;
+    return `<div class="kv" style="justify-content:center;gap:9px"><span class="muted" style="font-size:10.5px">Self pickup · no transport</span><span class="add-field anchor js-site-go" data-r="R5b" data-rec="${esc(r2.rentalId)}" style="height:24px;font-size:11px;cursor:pointer">+Transport</span></div>`;
   }
   const addr = r2.deliveryAddress ? esc(r2.deliveryAddress) : '+Address';
   const recAddr = r2.recoveryAddress ? esc(r2.recoveryAddress) : addr;   // recovery may differ from delivery
@@ -1838,7 +1851,7 @@ const DETAIL = {
         <div class="tl-over">
           <span class="d1">${esc(fmtShortDate(r.startDate))}</span>
           <span class="mid">
-            <span class="pill gate c-${stColor} js-status-pill" data-rec="${r.rentalId}">${truck ? `<span class="truck">${I.truck}</span>` : ''}${esc(getStatus('rentalStatus', rentalDisplayStatus(r)).label)} ${I.chev}</span>
+            <span class="pill gate c-${stColor} js-status-pill" data-r="R1" data-rec="${r.rentalId}">${truck ? `<span class="truck">${I.truck}</span>` : ''}${esc(getStatus('rentalStatus', rentalDisplayStatus(r)).label)} ${I.chev}</span>
             ${price ? `<span class="rate">${money(price.price)} · ${esc(price.rate)}</span>` : ''}
           </span>
           <span class="d2">${r.startTime ? `<span class="tm">${esc(r.startTime)}</span>` : ''}${esc(fmtShortDate(r.endDate))}</span>
@@ -1854,7 +1867,7 @@ const DETAIL = {
        the invoice's rental line items, so no invoice = no transport yet). */
     const paidForThis = inv ? itemPaid(inv, r.rentalId) : 0;
     const invPill = inv
-      ? `<span class="pill ref link" data-pill-card="invoices" data-pill-rec="${esc(inv.invoiceId)}">${CARD_ICON.invoices}${esc(invoiceShort(inv.invoiceId))}${paidForThis <= 0 ? `<span class="x" data-x="inv-remove" title="unlink — allowed while $0 is assigned to this rental; afterwards refund first">✕</span>` : ''}</span>`
+      ? `<span class="pill ref link" data-r="R2" data-pill-card="invoices" data-pill-rec="${esc(inv.invoiceId)}">${CARD_ICON.invoices}${esc(invoiceShort(inv.invoiceId))}${paidForThis <= 0 ? `<span class="x" data-x="inv-remove" title="unlink — allowed while $0 is assigned to this rental; afterwards refund first">✕</span>` : ''}</span>`
       : (r.mock && cust && s && e ? addBtn('Invoice/+Transport', { link: true, js: 'js-create-invoice', h: 26, icon: CARD_ICON.invoices, data: { rec: r.rentalId } }) : badge('No invoice — link one to set transport'));
 
     const balColor = invT ? (invT.balance <= 0 && invT.paid > 0 ? 'green' : invT.status === 'Not Due' ? 'blue' : 'red') : null;
@@ -1867,7 +1880,7 @@ const DETAIL = {
       const amt = Number(li.amount) || 0;
       const ibColor = paid >= amt && amt > 0 ? 'green' : invT.status === 'Not Due' ? 'blue' : 'red';
       return `<div class="invitem">
-        <span><span class="linkname" data-pill-card="rentals" data-pill-rec="${esc(r2.rentalId)}">${esc(u2?.name || r2.rentalName || 'Rental')} · ${esc(fmtShortDate(r2.startDate))}–${esc(fmtShortDate(r2.endDate))}${li.ref === r.rentalId ? ' — this rental' : ''}</span><span class="balline" style="margin-left:8px" title="ITEM BALANCE — partial payments are assigned per line item"><b style="color:var(--${ibColor});font-size:12.5px">${money(paid)}</b> <span class="tot" style="font-size:11px">/ ${money(amt)}</span></span></span>
+        <span><span class="linkname" data-r="R7" data-pill-card="rentals" data-pill-rec="${esc(r2.rentalId)}">${esc(u2?.name || r2.rentalName || 'Rental')} · ${esc(fmtShortDate(r2.startDate))}–${esc(fmtShortDate(r2.endDate))}${li.ref === r.rentalId ? ' — this rental' : ''}</span><span class="balline" style="margin-left:8px" title="ITEM BALANCE — partial payments are assigned per line item"><b style="color:var(--${ibColor});font-size:12.5px">${money(paid)}</b> <span class="tot" style="font-size:11px">/ ${money(amt)}</span></span></span>
         ${miniJourneyHtml(r2)}
       </div>`;
     }).join('');
@@ -1887,8 +1900,8 @@ const DETAIL = {
       ${timeline}
       <div class="split" style="margin-top:11px">
         <div class="side">
-          ${kvPills(cust ? refPill('customers', r.customerId, cust.name, { x: 'cust-swap' }) : (r.mock ? pickCustBtn : '<span class="pill c-gray">No customer</span>'))}
-          ${kvPills(`${unit ? unitPill(unit.unitId, { x: 'unit-swap' }) : (r.mock ? pickUnitBtn : '<span class="pill c-gray">No unit</span>')}${unit ? `<span class="pill dvd c-${getStatus('unitInspectionStatus', unit.inspectionStatus).color}" data-pill-card="units" data-pill-rec="${esc(unit.unitId)}">${CARD_ICON.units}${esc(getStatus('unitInspectionStatus', unit.inspectionStatus).label)}</span>` : ''}${cat ? `<span class="pill dvd c-orange" data-pill-card="categories" data-pill-rec="${esc(cat.categoryId)}">${CARD_ICON.categories}${esc(cat.name)}</span>` : ''}`)}
+          ${kvPills(cust ? refPill('customers', r.customerId, cust.name, { x: 'cust-swap' }) : (r.mock ? pickCustBtn : badge('No customer')))}
+          ${kvPills(`${unit ? unitPill(unit.unitId, { x: 'unit-swap' }) : (r.mock ? pickUnitBtn : '<span class="pill c-gray" data-r="R3b"><span class="t">No unit</span></span>')}${unit ? `<span class="pill dvd c-${getStatus('unitInspectionStatus', unit.inspectionStatus).color}" data-r="R4" data-pill-card="units" data-pill-rec="${esc(unit.unitId)}">${CARD_ICON.units}${esc(getStatus('unitInspectionStatus', unit.inspectionStatus).label)}</span>` : ''}${cat ? `<span class="pill dvd c-orange" data-r="R4" data-pill-card="categories" data-pill-rec="${esc(cat.categoryId)}">${CARD_ICON.categories}${esc(cat.name)}</span>` : ''}`)}
           ${kvPills(invPill)}
           ${efld('rentals', r, 'rentalId', 'po', 'Add PO', { fmt: (v) => 'PO ' + v })}
           ${fcRow ? kvPills(fcRow) : ''}
@@ -1934,7 +1947,7 @@ const DETAIL = {
     const makeModel = [u.year, u.make, u.model].filter(Boolean).join(' ');
 
     const specs = `<div class="section"><h4>Specs</h4><div class="fieldstack">
-      ${kvPills(cat ? refPill('categories', cat.categoryId, cat.name) : '<span class="pill c-gray">No category</span>')}
+      ${kvPills(cat ? refPill('categories', cat.categoryId, cat.name) : badge('No category'))}
       ${efld('units', u, 'unitId', 'serial', 'Add serial', { pfx: 'S/N' })}
       ${efld('units', u, 'unitId', 'year', 'Year', { type: 'number' })}
       ${efld('units', u, 'unitId', 'make', 'Make')}
@@ -1943,7 +1956,7 @@ const DETAIL = {
       <div class="kv"><span class="v inline-edit" data-edit="unitHours" data-rec="${u.unitId}">${num(u.currentHours)} HRS</span></div>
     </div></div>`;
     const gps = `<div class="section"><h4>GPS</h4><div class="fieldstack">
-      ${kvPills(u.gpsStatus ? statusPill('gpsStatus', u.gpsStatus) : '<span class="pill c-gray">No GPS</span>')}
+      ${kvPills(u.gpsStatus ? statusPill('gpsStatus', u.gpsStatus) : badge('No GPS'))}
       ${efld('units', u, 'unitId', 'gpsType', 'GPS unit/type')}
       ${efld('units', u, 'unitId', 'gpsPlacement', 'Placement')}
     </div></div>`;
@@ -2022,7 +2035,7 @@ const DETAIL = {
 
     // §7.1 — every contact/account detail is click-to-edit (auto-saves via the persist hook)
     // R5: empty fields render the dashed "+Thing" add (no "Add", no space after +)
-    const efield = (f, ph, wrap) => { const val = c[f]; const thing = ph.replace(/^Add\s+/i, ''); const lbl = thing.charAt(0).toUpperCase() + thing.slice(1); return `<div class="kv"><span class="v inline-edit" data-edit="custField" data-field="${f}" data-rec="${c.customerId}" data-ph="${esc(ph)}"${wrap ? ' style="white-space:normal"' : ''}>${val ? esc(val) : `<span class="add-field" data-r="R5">+${esc(lbl)}</span>`}</span></div>`; };
+    const efield = (f, ph, wrap) => { const val = c[f]; const thing = ph.replace(/^Add\s+/i, ''); const lbl = thing.charAt(0).toUpperCase() + thing.slice(1); return `<div class="kv"><span class="v inline-edit" data-edit="custField" data-field="${f}" data-rec="${c.customerId}" data-ph="${esc(ph)}"${wrap ? ' style="white-space:normal"' : ''}>${val ? esc(val) : `<span class="add-field" data-r="R5c">+${esc(lbl)}</span>`}</span></div>`; };
     const contact = `<div class="section"><h4>Contact</h4><div class="fieldstack">
       ${efield('firstName', 'First name')}${efield('lastName', 'Last name')}
       ${efield('phone', 'Add phone')}${efield('email', 'Add email')}
@@ -2056,7 +2069,7 @@ const DETAIL = {
     // §12.1 — the action entry + Record/Schedule lead the Activity Log (they're related)
     const activity = `<div class="section"><h4>Activity Log</h4>
       <div class="pillrow" style="margin-bottom:10px">
-        <span class="${c.salesAction ? 'pill ghost' : 'add-field'} inline-edit" data-r="${c.salesAction ? 'R18' : 'R5'}" data-edit="salesAction" data-rec="${c.customerId}"${c.salesAction ? '' : ' style="height:26px"'}>${c.salesAction ? esc(c.salesAction) : '+Action'}</span>
+        <span class="${c.salesAction ? 'pill ghost' : 'add-field'} inline-edit" data-r="${c.salesAction ? 'R18' : 'R5c'}" data-edit="salesAction" data-rec="${c.customerId}"${c.salesAction ? '' : ' style="height:26px"'}>${c.salesAction ? esc(c.salesAction) : '+Action'}</span>
         ${actionPill('commit', 'Record', { js: 'js-funnel-record', data: { rec: c.customerId } })}
         ${actionPill('commit', 'Schedule', { js: 'js-funnel-schedule', data: { rec: c.customerId } })}
       </div>
@@ -2138,7 +2151,7 @@ const DETAIL = {
       ${kv(fmtShortDate(i.dueDate), { sfx: 'due date', derived: true })}
       ${kvPills(cust?.requiresPO && !i.po
         ? `<span class="req inline-edit" data-r="R6" data-edit="invoicePO" data-rec="${i.invoiceId}">PO #</span>`
-        : `<span class="${i.po ? 'pill ghost' : 'add-field'} inline-edit" data-r="${i.po ? 'R18' : 'R5'}" data-edit="invoicePO" data-rec="${i.invoiceId}"${i.po ? '' : ' style="height:26px"'}>${esc(i.po ? 'PO ' + i.po : '+PO')}</span>`)}
+        : `<span class="${i.po ? 'pill ghost' : 'add-field'} inline-edit" data-r="${i.po ? 'R18' : 'R5c'}" data-edit="invoicePO" data-rec="${i.invoiceId}"${i.po ? '' : ' style="height:26px"'}>${esc(i.po ? 'PO ' + i.po : '+PO')}</span>`)}
       ${canMoney() && cust
         ? `<div class="pillrow" style="margin-top:2px">${
             t.status === 'Refunded'
@@ -2153,7 +2166,7 @@ const DETAIL = {
     const addRow = state.invLineForm === i.invoiceId ? lineForm
       : locked
         ? `<div class="pillrow" style="margin-top:8px"><span class="muted" style="font-size:12px">🔒 Pricing locked — this is what gets charged.</span>${canMoney() ? `<span class="spacer"></span>${actionPill('commit', 'Unlock to edit', { js: 'js-unlock-invoice', data: { rec: i.invoiceId } })}` : ''}</div>`
-        : `<div class="pillrow" style="margin-top:8px">${addBtn('Rental', { link: true, js: 'js-add-line', h: 26, data: { rec: i.invoiceId, kind: 'Rental' } })}${addBtn('WO', { link: true, js: 'js-add-line', h: 26, data: { rec: i.invoiceId, kind: 'WO' } })}${addBtn('Custom', { js: 'js-add-line', h: 26, data: { rec: i.invoiceId, kind: 'Custom' } })}${canMoney() && (i.lineItems || []).length ? `<span class="spacer"></span>${actionPill('commit', '🔒 Lock price', { js: 'js-lock-invoice', data: { rec: i.invoiceId } })}` : ''}</div>`;
+        : `<div class="pillrow" style="margin-top:8px">${addBtn('Rental', { line: true, js: 'js-add-line', h: 26, data: { rec: i.invoiceId, kind: 'Rental' } })}${addBtn('WO', { line: true, js: 'js-add-line', h: 26, data: { rec: i.invoiceId, kind: 'WO' } })}${addBtn('Custom', { line: true, js: 'js-add-line', h: 26, data: { rec: i.invoiceId, kind: 'Custom' } })}${canMoney() && (i.lineItems || []).length ? `<span class="spacer"></span>${actionPill('commit', '🔒 Lock price', { js: 'js-lock-invoice', data: { rec: i.invoiceId } })}` : ''}</div>`;
     const items = `<div class="section"><h4>Items</h4>
       <div class="hlog">${lines || '<span class="muted" style="font-size:12px">No line items</span>'}</div>
       ${addRow}
@@ -2188,7 +2201,7 @@ const DETAIL = {
     const partsCost = (w.lineItems || []).reduce((a, li) => a + (Number(li.cost) || 0), 0);
     const labor = (w.lineItems || []).reduce((a, li) => a + (Number(li.hours) || 0), 0) || w.laborHours || 0;
     const priceIfBilled = woBillable(w);   // §7.6 tiered parts markup + $150/hr labor
-    const journey = (w.lineItems || []).map((li, idx) => `<div class="hitem"><span class="pill gate c-${getStatus('woPhase', li.phase).color} js-wophase-line" data-rec="${w.woId}" data-idx="${idx}" style="min-width:88px;justify-content:center">${esc(getStatus('woPhase', li.phase).label)} ${I.chev}</span><span>${esc(li.part)}</span><span class="spacer"></span><span class="muted">${li.eta ? fmtShortDate(li.eta) + ' · ' : ''}${li.hours || 0}h${li.vendor ? ' · ' + esc(li.vendor) : ''}</span><b>${money(li.cost)}</b></div>`).join('');
+    const journey = (w.lineItems || []).map((li, idx) => `<div class="hitem"><span data-r="R1" class="pill gate c-${getStatus('woPhase', li.phase).color} js-wophase-line" data-rec="${w.woId}" data-idx="${idx}" style="min-width:88px;justify-content:center">${esc(getStatus('woPhase', li.phase).label)} ${I.chev}</span><span>${esc(li.part)}</span><span class="spacer"></span><span class="muted">${li.eta ? fmtShortDate(li.eta) + ' · ' : ''}${li.hours || 0}h${li.vendor ? ' · ' + esc(li.vendor) : ''}</span><b>${money(li.cost)}</b></div>`).join('');
     const billable = partsCost > 0 || labor > 0;
     const alreadyBilled = DATA.invoices.some((i) => (i.lineItems || []).some((li) => li.kind === 'WO' && li.ref === w.woId));
     const billBtn = billable && !alreadyBilled ? `<button class="pill ref js-bill-wo" data-rec="${w.woId}">Bill to invoice →</button>` : (alreadyBilled ? badge('Billed', 'green') : '');
@@ -2244,7 +2257,7 @@ const DETAIL = {
           <button class="pill c-${washReq ? 'blue' : s.color} js-svc-complete" data-unit="${u.unitId}" data-task="${s.taskId}" title="${washReq ? 'Log the wash as done' : 'Log a completion'}" style="min-width:78px;justify-content:center">${esc(washReq ? 'Wash Now' : getStatus('serviceStatus', s.status).label)}</button>
           <span class="svc-name">${esc(s.name)}</span>
           <span class="spacer"></span>
-          ${washReq ? `<span class="pill c-blue">Wash Requested</span>` : `<b>${esc(svcText(s))}</b>`}
+          ${washReq ? `<span class="pill c-blue" data-r="R3b"><span class="t">Wash Requested</span></span>` : `<b>${esc(svcText(s))}</b>`}
         </div>
         <div class="svc-task-sub muted">Every ${s.intervalHours} HRS${last ? ` · last ${esc(fmtShortDate(last.date))} @ ${num(last.hours)} HRS` : ' · never serviced'}</div>
       </div>`;
@@ -2280,7 +2293,7 @@ const DETAIL = {
     } else if (n.checklist === 'Fail') {
       gate = kvPills(`${n.woId ? refPill('workOrders', n.woId, 'WO') : ''}<button class="pill ref js-open-insp" data-rec="${n.inspectionId}">Failure report →</button>`);
     } else {
-      gate = kvPills(`<span class="pill c-green">Ready</span>${washSet ? badge(n.wash === 'Yes' ? 'Washed' : 'No wash', n.wash === 'Yes' ? 'blue' : 'gray') : ''}`);
+      gate = kvPills(`<span class="pill c-green" data-r="R3b"><span class="t">Ready</span></span>${washSet ? badge(n.wash === 'Yes' ? 'Washed' : 'No wash', n.wash === 'Yes' ? 'blue' : 'gray') : ''}`);
     }
     const isVideo = (n.photo || '').startsWith('data:video');
     const thumb = n.photo ? (isVideo
@@ -3053,7 +3066,7 @@ function dispatchGridBody() {
         <span class="dash-unit">${esc(ev.unit)}</span>
         <span class="dash-cust">${esc(ev.cust)}</span>
         <span class="dash-addr">${esc(ev.addr || '—')}</span>
-        <span class="pill c-gray dash-ttype">${esc(ev.ttype)}</span>
+        <span class="pill c-gray dash-ttype" data-r="R3b">${esc(ev.ttype)}</span>
       </button>`).join('');
     return `<div class="dash-day${isToday ? ' today' : ''}${isPast ? ' past' : ''}"><div class="dash-day-head">${esc(fmtShortDate(d))}${isToday ? ' · Today' : ''}<span class="dash-day-count">${byDate[d].length}</span></div>${rows}</div>`;
   }).join('') : `<div class="empty" style="padding:34px;text-align:center">No dispatches scheduled. Rentals with Delivery / Round-Trip / Recovery transport appear here.</div>`;
@@ -3105,16 +3118,19 @@ function renderOverlay() {
       R0: '<span class="pill c-gray" style="outline:2px dashed var(--red);outline-offset:2px;animation:rwLint 2.2s ease-in-out infinite"><span class="t">unstamped</span></span>',
       R1: gatePill('rentalStatus', 'On Rent', '', {}),
       R2: refPill('units', '', 'Shrek') + refPill('customers', '', 'Devin Lyles'),
-      R3: statusPill('unitInspectionStatus', 'Ready') + badge('480 HRS'),
-      R4: dPill('Lift Scissor 26ft', 'orange', { icon: CARD_ICON.categories }) + dPill('Partial', 'yellow', { icon: CARD_ICON.invoices }),
-      R5: addBtn('Customer', { link: true, h: 26 }) + addBtn('Serial', { h: 26 }) + addBtn('Part/Task', { anchor: true, h: 26 }),
+      R3: statusPill('unitInspectionStatus', 'Ready') + statusPill('rentalStatus', 'On Rent'),
+      R3b: badge('480 HRS') + badge('No GPS'),
+      R4: dPill('Lift Scissor 26ft', 'orange', { icon: CARD_ICON.categories }) + dPill('Ready', 'green', { icon: CARD_ICON.inspections }),
+      R5: addBtn('Customer', { link: true, h: 26 }) + addBtn('Invoice/+Transport', { link: true, h: 26 }),
+      R5b: addBtn('Part/Task', { line: true, h: 26 }) + addBtn('Rental', { line: true, h: 26 }),
+      R5c: addBtn('Serial', { h: 26 }) + addBtn('Email', { h: 26 }),
       R6: reqBtn('PO #'),
       R7: linkName('Shrek · Jun 02–Jun 12'),
       R8: '<span class="derived">$2,610 · 7-Day×1 + 1-Day×3</span>',
       R9: flagsStack([flagEl('Ready', 'green', { icon: CARD_ICON.inspections }), flagEl('ETA Jun 18', 'yellow', { icon: CARD_ICON.workOrders })]),
       R10: '<span class="c-titlecard"><span class="c-icon">' + CARD_ICON.units + '</span><span class="c-title">Beacon</span></span>',
       R11: '<span style="display:inline-block;border:1px solid color-mix(in srgb, var(--green) 45%, transparent);border-radius:9px;padding:4px 14px;font-size:10px;font-weight:700;letter-spacing:.5px;color:var(--green)">INSPECTION</span>',
-      R12: '<span class="add-field" data-r="R5" style="height:24px;font-size:11px">+Notes</span><span class="muted" style="font-size:11px"> (boxless line)</span>',
+      R12: '<span class="add-field" data-r="R5c" style="height:24px;font-size:11px">+Notes</span><span class="muted" style="font-size:11px"> (boxless line)</span>',
       R13: '<button class="hv g on" style="font-size:11px;font-weight:700;border:1px solid var(--accent);border-radius:99px;padding:2px 8px;background:none;color:var(--accent)">12 Inspections</button>',
       R14: segCtl([{ label: '✓ Pass', on: 'green' }, { label: 'Not Ready' }, { label: '✕ Fail' }]),
       R15: '<span style="display:inline-grid;place-items:center;width:26px;height:26px;border-radius:8px;background:#fff;color:#16181d">' + I.video + '</span><span style="border-top:2px dotted var(--line);width:34px;display:inline-block;vertical-align:middle;margin:0 4px"></span><span style="display:inline-grid;place-items:center;width:26px;height:26px;border-radius:8px;background:var(--green-bg);color:var(--green)">✓</span>',
@@ -4071,7 +4087,7 @@ function onClick(e) {
   }
   if (closest('.js-clear-fleet')) { e.stopPropagation(); state.fleetFilter = null; render(); return; }
   if (closest('.js-addcat')) { e.stopPropagation(); return beginPick('customers', closest('.js-addcat').dataset.rec, undefined, 'intcat'); }
-  if (closest('.js-funnel-record')) { e.stopPropagation(); const c = IDX.customer.get(closest('.js-funnel-record').dataset.rec); if (c && c.salesAction) { c.activityLog = c.activityLog || []; c.activityLog.push({ when: TODAY_ISO, text: c.salesAction }); c.salesAction = ''; toast('Logged to the Activity Log.'); render(); } else toast('Type an action in the chip first.'); return; }
+  if (closest('.js-funnel-record')) { e.stopPropagation(); const c = IDX.customer.get(closest('.js-funnel-record').dataset.rec); if (c && c.salesAction) { c.activityLog = c.activityLog || []; c.activityLog.push({ when: TODAY_ISO, text: c.salesAction }); c.salesAction = ''; toast('Logged to the Activity Log.'); render(); } else attnFlash('[data-edit="salesAction"]'); return; }
   if (closest('.js-funnel-schedule')) { e.stopPropagation(); return openOverlay({ kind: 'schedule', customerId: closest('.js-funnel-schedule').dataset.rec }); }
   if (closest('.js-schedule-save')) { const b = closest('.js-schedule-save'); e.stopPropagation(); const root = b.closest('.popup-body'); const c = IDX.customer.get(b.dataset.rec); const when = root.querySelector('.js-sch-when')?.value; const note = (root.querySelector('.js-sch-note')?.value || '').trim(); if (!c || !when) { toast('Pick a date & time first.'); return; } c.activityLog = c.activityLog || []; c.activityLog.push({ when: when.slice(0, 10), text: `Scheduled: ${note || 'follow-up'} @ ${when.replace('T', ' ')}` }); reindex('customers', c); toast('Scheduled — added to the Activity Log.'); closeOverlay(); }
   // draft pickers / creation affordances (§0.3)
@@ -4081,12 +4097,12 @@ function onClick(e) {
   if (closest('.js-bill-wo')) { e.stopPropagation(); return billWOToInvoice(closest('.js-bill-wo').dataset.rec); }
   if (closest('.js-wo-bill')) { const b = closest('.js-wo-bill'); e.stopPropagation(); const w = IDX.wo.get(b.dataset.rec); if (w) { w.billCustomer = w.billCustomer === 'Yes' ? 'No' : 'Yes'; reindex('workOrders', w); logAction(w, `Bill customer → ${w.billCustomer}`); render(); } return; }
   if (closest('.js-svc-complete')) { const b = closest('.js-svc-complete'); e.stopPropagation(); state.svcPhoto = null; return openOverlay({ kind: 'service', unitId: b.dataset.unit, taskId: b.dataset.task }); }
-  if (closest('.js-svc-save')) { const b = closest('.js-svc-save'); e.stopPropagation(); if (!state.svcPhoto) { toast('Photo / video proof is required to complete a service.'); return; } const root = b.closest('.popup-body'); return recordServiceCompletion(b.dataset.unit, b.dataset.task, root.querySelector('.js-svc-hours')?.value, root.querySelector('.js-svc-date')?.value, root.querySelector('.js-svc-notes')?.value, state.svcPhoto); }
+  if (closest('.js-svc-save')) { const b = closest('.js-svc-save'); e.stopPropagation(); if (!state.svcPhoto) { flashOr('.overlay .insp-photo, .overlay .insp-rephoto, .overlay .cap-drop', 'Photo / video proof is required to complete a service.'); return; } const root = b.closest('.popup-body'); return recordServiceCompletion(b.dataset.unit, b.dataset.task, root.querySelector('.js-svc-hours')?.value, root.querySelector('.js-svc-date')?.value, root.querySelector('.js-svc-notes')?.value, state.svcPhoto); }
   // invoice line-item add buttons → enter a pick for the source card
   if (closest('.js-add-line')) {
     const b = closest('.js-add-line'); e.stopPropagation();
     const inv = IDX.invoice.get(b.dataset.rec);
-    if (b.dataset.kind === 'Rental') { if (inv && !inv.customerId) { toast('Pick a customer first.'); return beginPick('invoices', b.dataset.rec, undefined, 'customer'); } return beginPick('invoices', b.dataset.rec, undefined, 'rental'); }
+    if (b.dataset.kind === 'Rental') { if (inv && !inv.customerId) { attnFlash('[data-slot="customer"]'); return beginPick('invoices', b.dataset.rec, undefined, 'customer'); } return beginPick('invoices', b.dataset.rec, undefined, 'rental'); }
     if (b.dataset.kind === 'WO') return beginPick('invoices', b.dataset.rec, undefined, 'wo');
     state.invLineForm = b.dataset.rec; return render();   // inline custom-line form
   }
@@ -4370,7 +4386,7 @@ function setRentalStatus(rentalId, val) {
   if (!r) return;
   const cust = r.customerId ? IDX.customer.get(r.customerId) : null;
   // §9 hard gates
-  if (val === 'On Rent' && !r.invoiceId) { toast('Blocked: "On Rent" requires a linked invoice (§9).'); return; }
+  if (val === 'On Rent' && !r.invoiceId) { flashOr('.js-create-invoice', 'Blocked: "On Rent" requires a linked invoice (§9).'); return; }
   if (['On Rent', 'Reserved'].includes(val) && cust && /Blacklist/i.test(cust.accountType || '')) { toast('Blocked: customer is blacklisted (§9).'); return; }
   // §14 — a booking requires a valid card on file by default; an Admin can override.
   if (BOOKING_STATUSES.includes(val) && cust && !hasValidCard(cust) && !r.cardOverride) {
@@ -4392,7 +4408,7 @@ function setRentalStatus(rentalId, val) {
 /* §9 Field Call — a unit breaks mid-rental: flag the rental (red FC), fail the unit,
    and auto-open a Field-Call work order so the M.Tech can dispatch parts/swap. */
 function markFieldCall(rentalId) {
-  const r = IDX.rental.get(rentalId); if (!r || !r.unitId) { toast('No unit on this rental.'); return; }
+  const r = IDX.rental.get(rentalId); if (!r || !r.unitId) { flashOr('[data-slot="unit"]', 'No unit on this rental.'); return; }
   r.fieldCall = true; reindex('rentals', r);
   const u = IDX.unit.get(r.unitId);
   if (u) { u.inspectionStatus = 'Failed'; reindex('units', u); logAction(u, `Field Call on rental ${r.rentalName || rentalId}`); }
@@ -4446,7 +4462,7 @@ function yardCapture(rentalId, cap) {
   const r = IDX.rental.get(rentalId); if (!r) return;
   if (cap === 'start' && r.startCapture) return toast('Start already captured — video on file.');
   if (cap === 'end' && r.endCapture) return toast('End already captured — video on file.');
-  if (cap === 'end' && !r.startCapture) return toast('Log the Start/Delivery first.');
+  if (cap === 'end' && !r.startCapture) return flashOr('.js-yard[data-cap="start"]', 'Log the Start/Delivery first.');
   if (cap === 'fc' && (r.fcCapture || r.fieldCall)) return toast('Field Call already logged.');
   state.capFile = null;
   openOverlay({ kind: 'capture', rentalId, cap });
@@ -5212,8 +5228,8 @@ function positionGuide(node) {
 /* ── draft mutations driven from the detail view ── */
 function createInvoiceForRental(rentalId) {
   const r = IDX.rental.get(rentalId); if (!r) return;
-  if (!r.customerId) { toast('Pick a customer first.'); return beginPick('rentals', rentalId, undefined, 'customer'); }
-  if (!r.startDate || !r.endDate) { toast('Set the rental window first.'); return; }
+  if (!r.customerId) { attnFlash('[data-slot="customer"]'); return beginPick('rentals', rentalId, undefined, 'customer'); }
+  if (!r.startDate || !r.endDate) { flashOr('.timeline, .statusbar.draftwin', 'Set the rental window first.'); return; }
   const id = nextInvoiceId();
   const inv = { invoiceId: id, customerId: r.customerId, rentalIds: [rentalId], date: TODAY_ISO, dueDate: addDays(TODAY_ISO, 14), po: '', amountPaid: 0, lineItems: [], mock: true };
   const price = rentalPrice(r);
@@ -5467,7 +5483,7 @@ function billWOToInvoice(woId) {
   if (!custId) { const ar = activeRentalForUnit(w.unitId); custId = ar?.customerId || null; }
   if (!custId) {
     // no bill-to-customer yet → pick one, then auto-bill (see assignPick)
-    toast('Pick the customer to bill this work order to.');
+    flashOr('[data-slot="customer"]', 'Pick the customer to bill this work order to.');
     state.pendingBillWO = woId;
     return beginPick('shop', woId, 'workOrders', 'customer');
   }
