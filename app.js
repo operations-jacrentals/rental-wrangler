@@ -911,38 +911,100 @@ const RING_ICON = {
 };
 
 /* ════════════════════════════════════════════════════════════════════════
-   5. Pill / badge factories (registry-driven — never hardcode color/label)
+   §5 UI BUILDERS — ONE function per design rule (the SPEC v7 rulebook).
+   Every builder stamps its output with data-r="Rn". The flash-lint (R0)
+   slowly pulses anything WITHOUT a stamp: if it flashes, it bypassed the
+   system. Debug language: "that violates R4" → fix the builder, fixed
+   everywhere. Registry-driven — never hardcode a color/label.
+   ──────────────────────────────────────────────────────────────────────
+   R1 gatePill / funnelPill  status DROPDOWN, big shape + chevron
+   R2 refPill / unitPill     LINKED record: orange outline + dest icon + ✕
+   R3 statusPill / badge     informational status, parent-card icon
+   R4 dPill                  DERIVED pill: no bg/border, right of its parent
+   R5 addBtn                 dashed add: "+Thing", orange when it links
+   R6 reqBtn                 required-until-entered: white + dark ink
+   R7 linkName               hyperlink: blue italic, permanent underline
+   R9 flagEl / flagsStack    ≤2 stacked mini-flags beside a title
+   R14 segCtl                3-state segmented toggle
+   R17 actionPill            commit (blue) / money (green) / danger (red)
    ════════════════════════════════════════════════════════════════════════ */
-// rule 3: each status badge carries the icon of the card the status belongs to
+// R3: each status badge carries the icon of the card the status belongs to
 const SET_CARD = { rentalStatus: 'rentals', unitRentalStatus: 'rentals', invoiceStatus: 'invoices', unitInspectionStatus: 'inspections', inspectionResult: 'inspections', unitFleetStatus: 'units', gpsStatus: 'units', unitOrderStatus: 'workOrders', woPhase: 'workOrders', woType: 'workOrders', customerPayStatus: 'customers', accountType: 'customers', serviceStatus: 'serviceOrders', expenseReconcile: 'expenses' };
+const dataAttrs = (data) => Object.entries(data || {}).map(([k, v]) => ` data-${k}="${esc(String(v))}"`).join('');
 function statusPill(set, value, { card, recId, x, truck } = {}) {
   const st = getStatus(set, value);
   const data = card ? ` data-pill-card="${card}" data-pill-rec="${esc(recId)}"` : '';
   const tk = truck ? `<span class="truck">${I.truck}</span>` : '';
   const xb = x ? `<span class="x" data-x="${esc(x)}">✕</span>` : '';
-  const ic = truck ? '' : (CARD_ICON[SET_CARD[set]] || '');   // rule 3: parent-card icon hugs the label
-  return `<span class="pill c-${st.color}${truck ? ' truck' : ''}" data-badge${data}>${tk}${ic}<span class="t">${esc(st.label)}</span>${xb}</span>`;
+  const ic = truck ? '' : (CARD_ICON[SET_CARD[set]] || '');   // R3: parent-card icon hugs the label
+  return `<span class="pill c-${st.color}${truck ? ' truck' : ''}" data-r="R3" data-badge${data}>${tk}${ic}<span class="t">${esc(st.label)}</span>${xb}</span>`;
 }
 function refPill(card, recId, label, { x, xData } = {}) {
   const xb = x ? `<span class="x" data-x="${esc(x)}"${xData != null ? ` data-id="${esc(xData)}"` : ''}>✕</span>` : '';
   // customer-name pills get long — clip to ~9 chars (full name stays in the tooltip)
   const tip = (card === 'customers' && label && label.length > 9) ? ` data-tip="${esc(label)}"` : '';
   const shown = (card === 'customers' && label && label.length > 9) ? label.slice(0, 9).trimEnd() + '…' : label;
-  return `<span class="pill ref link" data-pill-card="${card}" data-pill-rec="${esc(recId)}"${tip}>${CARD_ICON[card] || ''}${esc(shown)}${xb}</span>`;
+  return `<span class="pill ref link" data-r="R2" data-pill-card="${card}" data-pill-rec="${esc(recId)}"${tip}>${CARD_ICON[card] || ''}${esc(shown)}${xb}</span>`;
 }
-/** A Unit pill — a LINKED record: orange outline + tag icon (rule 10). The Ready/Failed
- *  signal now lives in the adjacent inspection-status badge, not on this pill. */
+/** R2: a Unit pill — LINKED record, orange outline + units icon. */
 function unitPill(unitId, { x } = {}) {
   const u = IDX.unit.get(unitId);
-  if (!u) return '<span class="pill c-gray">No unit</span>';
+  if (!u) return badge('No unit');
   const xb = x ? `<span class="x" data-x="${esc(x)}">✕</span>` : '';
-  return `<span class="pill ref link" data-pill-card="units" data-pill-rec="${esc(unitId)}">${CARD_ICON.units}${esc(u.name)}${xb}</span>`;
+  return `<span class="pill ref link" data-r="R2" data-pill-card="units" data-pill-rec="${esc(unitId)}">${CARD_ICON.units}${esc(u.name)}${xb}</span>`;
 }
-const badge = (label, color = 'gray') => `<span class="pill c-${color}">${esc(label)}</span>`;
-/** A funnel-stage pill (§7.1) — clickable to change stage via a dropdown. */
+const badge = (label, color = 'gray') => `<span class="pill c-${color}" data-r="R3"><span class="t">${esc(label)}</span></span>`;
+/** R1: a GATE pill — a status DROPDOWN that moves the record forward. */
+function gatePill(set, value, js, data, { truck } = {}) {
+  const st = getStatus(set, value);
+  const tk = truck ? `<span class="truck">${I.truck}</span>` : '';
+  return `<span class="pill gate c-${st.color} ${js}" data-r="R1"${dataAttrs(data)}>${tk}${esc(st.label)} ${I.chev}</span>`;
+}
+/** R1: a gate with a custom label (e.g. ETA-as-status on WO lines). */
+function gatePillRaw(label, color, js, data) {
+  return `<span class="pill gate c-${color} ${js}" data-r="R1"${dataAttrs(data)}>${esc(label)} ${I.chev}</span>`;
+}
+/** R1: funnel-stage gate (§7.1). */
 function funnelPill(custId, which, stage) {
   const st = getStatus('funnelStage', stage);
-  return `<span class="pill gate c-${st.color} js-funnel" data-rec="${esc(custId)}" data-which="${which}">${esc(st.label)} ${I.chev}</span>`;
+  return `<span class="pill gate c-${st.color} js-funnel" data-r="R1" data-rec="${esc(custId)}" data-which="${which}">${esc(st.label)} ${I.chev}</span>`;
+}
+/** R4: a DERIVED pill — rides another pill in the same section; no bg/border,
+ *  destination icon + ink color only; sits directly RIGHT of its parent. */
+function dPill(label, color, { card, recId, icon, title } = {}) {
+  const nav = card ? ` data-pill-card="${card}" data-pill-rec="${esc(recId)}"` : '';
+  const ic = icon || (card ? CARD_ICON[card] : '') || '';
+  return `<span class="pill dvd c-${color}" data-r="R4"${nav}${title ? ` data-tip="${esc(title)}"` : ''}>${ic}<span class="t">${esc(label)}</span></span>`;
+}
+/** R5: the ADD affordance — dashed, "+Thing" (never the word "Add", never a
+ *  space after +). `link:true` = orange ink (creates/links a record);
+ *  `anchor:true` = the neon-blue +Part/Task variant. */
+function addBtn(label, { js, data, link, anchor, h } = {}) {
+  const cls = `add-field${link ? ' link-ink' : ''}${anchor ? ' anchor' : ''}${js ? ' ' + js : ''}`;
+  return `<button class="${cls}" data-r="R5"${dataAttrs(data)}${h ? ` style="height:${h}px"` : ''}>+${esc(label.replace(/^\+?\s*(Add\s+)?/i, ''))}</button>`;
+}
+/** R6: required-until-entered — white bg + dark ink, stays loud until satisfied. */
+function reqBtn(label, { js, data, icon } = {}) {
+  return `<button class="req${js ? ' ' + js : ''}" data-r="R6"${dataAttrs(data)}>${icon || ''}${esc(label)}</button>`;
+}
+/** R7: a hyperlink — blue, italic, permanent underline; navigates when card/rec given. */
+function linkName(label, { card, recId, js, data } = {}) {
+  const nav = card ? ` data-pill-card="${card}" data-pill-rec="${esc(recId)}"` : '';
+  return `<span class="linkname${js ? ' ' + js : ''}" data-r="R7"${nav}${dataAttrs(data)}>${esc(label)}</span>`;
+}
+/** R9: a title mini-flag + the ≤2-row stack that matches the 30px title chip. */
+function flagEl(label, color, { icon, card, recId, title } = {}) {
+  const nav = card ? ` data-pill-card="${card}" data-pill-rec="${esc(recId)}"` : '';
+  return `<span class="flag c-${color}" data-r="R9"${nav}${title ? ` title="${esc(title)}"` : ''}>${icon || ''}${esc(label)}</span>`;
+}
+const flagsStack = (flags, h) => `<span class="flags" data-r="R9"${h ? ` style="height:${h}px"` : ''}>${flags.filter(Boolean).join('')}</span>`;
+/** R14: a 3-state segmented toggle. opts: [{label, js, data, on:'green'|'yellow'|...}] */
+function segCtl(buttons) {
+  return `<span class="seg" data-r="R14">${buttons.map((b) => `<button class="${b.js || ''}${b.on ? ` on-${b.on}` : ''}"${dataAttrs(b.data)}>${b.label}</button>`).join('')}</span>`;
+}
+/** R17: forward-action pills — commit (blue) / money (green) / danger (solid red). */
+function actionPill(kind, label, { js, data, h } = {}) {
+  return `<button class="pill c-${kind}${js ? ' ' + js : ''}" data-r="R17"${dataAttrs(data)}${h ? ` style="height:${h}px;font-size:11px"` : ''}>${esc(label)}</button>`;
 }
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -2815,7 +2877,8 @@ function bottomBarEl() {
     <button class="iconbtn js-qr" data-tip="Share session (QR)">${I.qr}</button>
     <button class="iconbtn${state.previewsOn ? '' : ' off'} js-previews" data-tip="${state.previewsOn ? 'Hover previews: on' : 'Hover previews: off'}">${state.previewsOn ? I.eye : I.eyeOff}</button>
     <button class="iconbtn js-feedback" data-tip="Report a bug or request">${I.feedback}</button>
-    <button class="iconbtn js-hotkeys" data-tip="Mouse &amp; keyboard shortcuts">${I.mouse}</button>`;
+    <button class="iconbtn js-hotkeys" data-tip="Mouse &amp; keyboard shortcuts">${I.mouse}</button>
+    <button class="iconbtn js-lint${document.body.classList.contains('rw-lint') ? ' on' : ''}" data-tip="Design lint — flash anything that bypassed the UI builders (R0)">${I.eye}</button>`;
   return bar;
 }
 function tabStrip(tabs) {
@@ -3745,6 +3808,12 @@ function onClick(e) {
   if (closest('.js-qr')) return openOverlay({ kind: 'qr' });
   if (closest('.js-previews')) { state.previewsOn = !state.previewsOn; if (!state.previewsOn) hideHoverPreview(); try { localStorage.setItem('jactec.previewsOff', state.previewsOn ? '0' : '1'); } catch (e) {} toast(state.previewsOn ? 'Hover previews on.' : 'Hover previews off.'); return render(); }
   if (closest('.js-hotkeys')) return openOverlay({ kind: 'hotkeys' });
+  if (closest('.js-lint')) {   // R0 flash-lint toggle — persists per device
+    const on = document.body.classList.toggle('rw-lint');
+    try { localStorage.setItem('jactec.lint', on ? '1' : '0'); } catch (err) {}
+    toast(on ? 'Design lint ON — anything flashing bypassed the UI builders.' : 'Design lint off.');
+    return render();
+  }
   if (closest('.js-feedback')) { e.stopPropagation(); return openOverlay({ kind: 'feedback', fbType: 'Bug', text: '', shot: '', error: '', busy: false }); }
   if (closest('.js-fb-type')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'feedback') { const ta = document.querySelector('.overlay .js-fb-text'); if (ta) o.text = ta.value; o.fbType = closest('.js-fb-type').dataset.val; renderOverlay(); } return; }
   if (closest('.js-fb-shot-x')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'feedback') { const ta = document.querySelector('.overlay .js-fb-text'); if (ta) o.text = ta.value; o.shot = ''; renderOverlay(); } return; }
@@ -5369,6 +5438,8 @@ async function attemptLogin() {
 
 function boot() {
   initTooltip();
+  // R0 flash-lint: ON by default — violations self-report by pulsing (SPEC v7)
+  try { if (localStorage.getItem('jactec.lint') !== '0') document.body.classList.add('rw-lint'); } catch (err) {}
   document.addEventListener('click', onClick);
   document.addEventListener('input', onInput);
   document.addEventListener('change', onChange);

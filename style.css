@@ -991,10 +991,26 @@ select.nc-in { cursor: pointer; }
 .login-btn:disabled { opacity: .65; cursor: default; }
 .login-err { font-size: 12px; font-weight: 600; color: var(--red); text-align: center; }
 
-/* §7.1 — "+ Add phone/email/…" placeholder for an empty click-to-edit field */
-.add-field { color: var(--txt-2); font-weight: 700; border: 1px dashed var(--line); border-radius: 11px; padding: 0 12px; height: 30px; display: inline-flex; align-items: center; }   /* rule 8/12: dashed light add-affordance */
+/* §7.1 — R5 ADD affordance: dashed "+Thing" (no word "Add", no space after +) */
+.add-field { color: var(--txt-2); font-weight: 700; border: 1px dashed var(--line); border-radius: 11px; padding: 0 12px; height: 30px; display: inline-flex; align-items: center; background: transparent; font-family: inherit; font-size: 13px; cursor: pointer; }
 .add-field:hover { border-color: var(--accent-line); }
+.add-field.link-ink { color: var(--accent); }            /* R5: orange ink = creates/links a record */
 .inline-edit:hover .add-field { color: var(--accent); }
+
+/* ── R0 FLASH-LINT — any pill/button/add/link WITHOUT a data-r rule stamp
+   pulses slowly: it bypassed the UI builders (SPEC v7). Toggle = bottom bar;
+   once the streamline sweep is complete NOTHING should flash. ── */
+body.rw-lint .pill:not([data-r]),
+body.rw-lint .add-field:not([data-r]),
+body.rw-lint .flag:not([data-r]),
+body.rw-lint .linkname:not([data-r]),
+body.rw-lint .inv-line-link:not([data-r]),
+body.rw-lint .req:not([data-r]),
+body.rw-lint .seg:not([data-r]) {
+  outline: 2px dashed var(--red); outline-offset: 2px;
+  animation: rwLint 2.2s ease-in-out infinite;
+}
+@keyframes rwLint { 50% { outline-color: transparent; } }
 
 /* ── §13 v2 BUILD: gate pills · derived pills · flags · section colors ·
       timeline · yard/transport journeys · history chips · WO grid · toggles
