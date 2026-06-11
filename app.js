@@ -407,8 +407,8 @@ const unitServiceRows = (u) => serviceOrdersForUnit(u, u.serviceCompletions || {
  *  language to a single blue "Wash Requested" pill; otherwise status + countdown. */
 function svcPills(s) {
   if (!s) return '';
-  if (s.washRequested) return `<span class="pill c-blue">Wash Requested</span>`;
-  return `<span class="pill c-${s.color}">${esc(getStatus('serviceStatus', s.status).label)}</span><span class="pill c-${s.color}">${esc(svcText(s))}</span>`;
+  if (s.washRequested) return badge('Wash Requested', 'blue');                 // R3
+  return badge(getStatus('serviceStatus', s.status).label, s.color) + badge(svcText(s), s.color);   // R3
 }
 /** Most-urgent active service order for a unit (derived via the reference module).
  *  A pending wash request floats the wash task to the top regardless of its countdown. */
@@ -1147,19 +1147,19 @@ const ROWS = {
     // verdict for THAT window (green Available / fleet / Failed / conflicting rental).
     let availLead = '';
     if (availWin) {
-      if (isUnitAvailableFor(u, availWin.start, availWin.end, availWin.selfId)) availLead = `<span class="pill c-green">Available</span>`;
+      if (isUnitAvailableFor(u, availWin.start, availWin.end, availWin.selfId)) availLead = badge('Available', 'green');
       else if (u.fleetStatus !== 'Active') availLead = statusPill('unitFleetStatus', u.fleetStatus);
-      else if (u.inspectionStatus === 'Failed') availLead = `<span class="pill c-red">Failed</span>`;
-      else { const cf = rentalsOverlappingUnit(u.unitId, availWin.start, availWin.end, availWin.selfId)[0]; availLead = cf ? statusPill('rentalStatus', rentalDisplayStatus(cf), { card: 'rentals', recId: cf.rentalId }) : `<span class="pill c-red">Unavailable</span>`; }
+      else if (u.inspectionStatus === 'Failed') availLead = badge('Failed', 'red');
+      else { const cf = rentalsOverlappingUnit(u.unitId, availWin.start, availWin.end, availWin.selfId)[0]; availLead = cf ? statusPill('rentalStatus', rentalDisplayStatus(cf), { card: 'rentals', recId: cf.rentalId }) : badge('Unavailable', 'red'); }
     }
     // §12.4: QR badge on Row 1; Inspection Status pill lives on Row 2 with the other
     // status badges. Fleet Status is conveyed by the ROW BACKGROUND (when not Active).
     return `<div class="row-1"><span class="r-title">${esc(u.name)}</span><span class="r-fields">
         ${cat ? `<span>${esc(cat.name)}</span>` : ''}<span class="r-key">${num(u.currentHours)} HRS</span></span>
-        <span class="pill c-gray" title="QR code">${I.qr}</span></div>
+        <span class="pill c-gray" data-r="R3" title="QR code">${I.qr}</span></div>
       <div class="row-2">
         ${availWin ? availLead : (ar ? statusPill('rentalStatus', rentalDisplayStatus(ar), { card: 'rentals', recId: ar.rentalId }) : '')}
-        ${svc ? `<span class="pill c-${svc.color}">${esc(svcText(svc))}</span>` : ''}
+        ${svc ? badge(svcText(svc), svc.color) : ''}
         ${wo ? statusPill('woPhase', wo.phase, { card: 'workOrders', recId: wo.woId }) : ''}
         ${statusPill('unitInspectionStatus', u.inspectionStatus, { card: 'units', recId: u.unitId })}
       </div>`;
@@ -1680,14 +1680,14 @@ function headFlagsHtml(card, rec) {
     const fleet = getStatus('unitFleetStatus', rec.fleetStatus);
     const wos = openWOsForUnit(rec.unitId);
     const bn = unitWorstBottleneck(rec.unitId);
-    return `<span class="flags"><span class="flag c-${insp.color}">${CARD_ICON.inspections}${esc(insp.label)}</span><span class="flag c-gray">${esc(fleet.label)}</span></span>`
-      + (wos.length && bn ? `<span class="flags"><span class="flag c-${bn.color}">${CARD_ICON.workOrders}${esc(bn.label)}</span><span class="flag c-red">${wos.length} WO${wos.length > 1 ? 's' : ''} Open</span></span>` : '');
+    return flagsStack([flagEl(insp.label, insp.color, { icon: CARD_ICON.inspections }), flagEl(fleet.label, 'gray')])
+      + (wos.length && bn ? flagsStack([flagEl(bn.label, bn.color, { icon: CARD_ICON.workOrders }), flagEl(`${wos.length} WO${wos.length > 1 ? 's' : ''} Open`, 'red')]) : '');
   }
   if (card === 'rentals') {
     const st = getStatus('rentalStatus', rentalDisplayStatus(rec));
     const inv = rec.invoiceId ? IDX.invoice.get(rec.invoiceId) : null;
     const payst = inv ? getStatus('invoiceStatus', invoiceTotals(inv).status) : null;
-    return `<span class="flags"><span class="flag c-${st.color}">${CARD_ICON.rentals}${esc(st.label)}</span>${payst ? `<span class="flag c-${payst.color}">${CARD_ICON.invoices}${esc(payst.label)}</span>` : ''}</span>`;
+    return flagsStack([flagEl(st.label, st.color, { icon: CARD_ICON.rentals }), payst ? flagEl(payst.label, payst.color, { icon: CARD_ICON.invoices }) : '']);
   }
   return '';
 }
