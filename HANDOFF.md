@@ -14,7 +14,15 @@
 ## Design source of truth
 - **`drafts/site-shell-v2-yours.html`** — the APPROVED clickable mockup of the new design (Jac's vision). It is the spec for the look + the transport picker + every rule. Open it.
 - `drafts/button-gallery-v2.html` — the button-system reference.
-- **`drafts/units-rentals-v1.html`** (2026-06-10, AWAITING JAC'S REVIEW) — hierarchy reference (colors/buttons/text/navigation) + the whiteboard Units & Rentals cards as clickable mockups. Every element WITHOUT a specific instruction is flagged `GZ-n` (dashed yellow outline) with a verify-or-redline index beside each card. Do NOT build the Units/Rentals reshape until Jac approves/redlines this.
+- **`drafts/units-rentals-v2.html`** (2026-06-11, AWAITING JAC'S REVIEW) — v1 + ALL of Jac's redlines applied. v1 kept for diffing only. New BINDING rules from the redline session:
+  - ONE font size for all status badges (11px). **Gate pills**: any status DROPDOWN takes the big button shape (30px/10px-radius/12.5px bold) + chevron (chevron only on real dropdowns) — applies to WO line statuses etc.
+  - **Destination icon**: anything that navigates leads with the icon of the card it goes TO (FC pill on a Unit wears the Rentals icon and vice-versa). No spacer.
+  - **Derived pills** (depend on another pill in the same section, e.g. Ready←unit, Partial←invoice): NO background/border; keep color+icon+hover underline. Hyperlinks: blue, italic, NOT bold.
+  - **Title flags**: ≤2 stacked mini-flags (14px) matching the 30px title chip height; show live condition + worst open-WO bottleneck. WO type/Open/Waiting pills are DELETED (date-only flag remains).
+  - Units: condition toggle (Pass/Not Ready/Fail) FIRST then wash (Wash=yellow/Don't Wash=blue/Washed=green), centered, timestamp above; condition is LIVE but locked-with-explainer while an inspection-born WO is open; completed WOs = History links, open WOs = sections titled by WO NAME; +Part/Task above lines; totals right-aligned "$145 parts + 3.5 hrs"; +Invoice replaces Bill toggle with "Parts $x + Hrs $x = $y" beside it; Complete WO blocks until all lines Complete. Investment right column: Total Revenue/Monthly/Work Orders/Profit·(ROI%).
+  - Notes = heading-only line (no boxed section), filled→top (above the rentals timeline), empty→bottom above the dotted line.
+  - History: clickable count values anchored ABOVE a history search bar, filtering inline (no popups); only record-backed entries are links. List footers lose the total count.
+  - Rentals: timeline labels only on first/last day, price·status·time centered; right column = category/invoice link/Partial(derived)/$paid; Complete Rental gate bottom-right (locked until Returned; Cancel/No Show → red Cancel Rental). Yard journey captures = BLUE; +FC red-outline→red-fill.
 
 ## The design language (now in the app)
 - **One orange, one meaning:** solid orange + DARK ink (`--on-orange #1a1205`) = SELECTED tab only · orange OUTLINE (`.pill.ref.link`) = LINKED record · soft-orange (`.iconbtn.on` outline) = armed · warm border = hover.

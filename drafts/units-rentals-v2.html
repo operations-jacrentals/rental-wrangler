@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rental Wrangler — Units & Rentals build v2 (redlined)</title>
+<style>
+:root{
+  --accent:#ff7a1a; --accent-soft:rgba(255,122,26,.14); --accent-line:rgba(255,122,26,.55);
+  --bg:#0b0c0f; --bg-2:#101216; --panel:#15171c; --panel-2:#1b1e24; --card:#14161b; --card-head:#191c22;
+  --line:#262a31; --line-soft:#1f232a; --txt:#e9edf4; --txt-2:#a7afbc; --txt-3:#838b97; --track:#22262e;
+  --green:#34d399; --green-bg:rgba(52,211,153,.15);
+  --yellow:#f5c542; --yellow-bg:rgba(245,197,66,.15);
+  --red:#ff4242; --red-bg:rgba(255,66,66,.14);
+  --blue:#4a90ff; --blue-bg:rgba(74,144,255,.16);
+  --purple:#b07cf5; --purple-bg:rgba(176,124,245,.16);
+  --gray:#8b94a3; --gray-bg:rgba(139,148,163,.14);
+  --gz:#f5c542;
+  --shadow:0 18px 50px -24px rgba(0,0,0,.75);
+  --font:"Geist",-apple-system,"Segoe UI",sans-serif;
+  --on-orange:#1a1205;
+}
+[data-theme="light"]{
+  --bg:#eef1f6; --bg-2:#e6eaf1; --panel:#fff; --panel-2:#eef1f6; --card:#fff; --card-head:#eef1f6;
+  --line:#cfd6e1; --line-soft:#e1e6ee; --txt:#141821; --txt-2:#414b5a; --txt-3:#5b6573; --track:#d3d9e3;
+  --green:#0c8f5f; --yellow:#956f00; --red:#d52a2a; --blue:#1864d6; --purple:#7a37c9; --gray:#566072;
+  --gz:#956f00;
+  --shadow:0 18px 40px -26px rgba(20,30,60,.30); --on-orange:#2a1400;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--txt);font-family:var(--font);font-size:14px;-webkit-font-smoothing:antialiased;padding:26px 18px 80px}
+svg{flex:0 0 auto}
+main{max-width:1280px;margin:0 auto;display:flex;flex-direction:column;gap:34px}
+
+.tag{position:fixed;top:9px;left:50%;transform:translateX(-50%);z-index:90;font-size:11px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--accent);background:var(--accent-soft);border:1px solid var(--accent-line);padding:4px 12px;border-radius:999px;backdrop-filter:blur(6px)}
+h2{font-size:19px;font-weight:800;display:flex;align-items:center;gap:10px}
+h2 .no{color:var(--accent)}
+.intro{color:var(--txt-2);font-size:13px;max-width:840px;line-height:1.55}
+.lane{display:flex;gap:22px;align-items:flex-start;flex-wrap:wrap}
+
+/* GRAY-ZONE flag — proposals without a specific instruction; verify or redline */
+.gz{position:relative;border:1.5px dashed var(--gz);border-radius:13px;padding:10px;margin:2px 0}
+.gz::before{content:attr(data-gz);position:absolute;top:-9px;left:10px;font-size:9.5px;font-weight:800;letter-spacing:.5px;color:var(--gz);background:var(--bg);padding:0 7px;border-radius:99px;text-transform:uppercase}
+.gz-inline{border-bottom:2px dotted var(--gz)}
+
+/* ---------- shared design language ---------- */
+.card{display:flex;flex-direction:column;background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);overflow:hidden;width:560px;max-width:100%}
+.cardhead{display:flex;align-items:center;gap:8px;padding:11px 12px 7px;flex-wrap:wrap}
+.cardhead .acts{margin-left:auto;display:flex;gap:5px}
+.detail{padding:12px;display:flex;flex-direction:column;gap:12px}
+.section{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px}
+.section h4{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--txt-3);margin-bottom:9px;display:flex;align-items:center;gap:8px}
+.section h4 .right{margin-left:auto;display:inline-flex;align-items:center;gap:6px;text-transform:none;letter-spacing:0}
+.cols2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.fs{display:flex;flex-direction:column;gap:9px}
+.kv{display:flex;align-items:center;gap:7px;flex-wrap:wrap;font-size:13px}
+.kv .money{font-weight:800;font-size:15px}
+.split{display:flex;align-items:flex-start;gap:14px}
+.split .side{flex:1;display:flex;flex-direction:column;gap:9px}
+.split .side.r{align-items:flex-end;text-align:right}
+
+/* NOTES = a heading-only "section": no panel box, minimal height (redline 14/15) */
+.nsec{display:flex;align-items:center;gap:10px;padding:1px 2px}
+.nsec .nlbl{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--txt-3)}
+.nsec .ndot{width:9px;height:9px;border-radius:50%;display:inline-block;flex:0 0 auto}
+
+/* history — footer values anchored ABOVE the search bar; record-backed entries are links */
+.history{border-top:2px dotted var(--line);background:var(--bg-2);padding:12px;margin:0 -12px -12px}
+.history h4{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--txt-3);margin-bottom:8px}
+.hvals{display:flex;flex-wrap:wrap;gap:5px 7px;align-items:center;margin-bottom:8px}
+.hvals .tc{font-size:11px;font-weight:700;color:var(--txt-2);cursor:pointer;border-radius:99px;padding:2px 8px;border:1px solid transparent}
+.hvals .tc:hover{border-color:var(--accent-line);color:var(--txt)}
+.hvals .tc.on{border-color:var(--accent);color:var(--accent)}
+.hvals .g{color:var(--green)}.hvals .y{color:var(--yellow)}.hvals .r{color:var(--red)}.hvals .b{color:var(--blue)}
+.hsearch{display:flex;align-items:center;gap:8px;height:28px;padding:0 10px;border-radius:9px;background:var(--panel);border:1px solid var(--line);margin-bottom:9px}
+.hsearch input{flex:1;background:none;border:none;color:var(--txt);font:inherit;font-size:12px;outline:none}
+.hsearch svg{width:13px;height:13px;color:var(--txt-3)}
+.hlog{display:flex;flex-direction:column;gap:7px;font-size:12px;color:var(--txt-2)}
+.hlog>div{display:flex;align-items:center;gap:9px;flex-wrap:wrap}.hlog .when{color:var(--txt-3);font-variant-numeric:tabular-nums}
+.hlog .who{margin-left:auto;font-size:10px;background:var(--panel-2);border:1px solid var(--line);border-radius:999px;padding:1px 8px;color:var(--txt-3)}
+.hlink{color:var(--accent);font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:4px}
+.hlink svg{width:11px;height:11px}
+.hlink:hover{text-decoration:underline}
+
+/* STATUS BADGES — ONE font size everywhere (redline A1) */
+.badge{display:inline-flex;align-items:center;gap:4px;height:20px;padding:0 9px;border-radius:999px;font-size:11px;font-weight:700;letter-spacing:.2px;white-space:nowrap;border:1px solid transparent;cursor:pointer;transition:filter .12s}
+.badge svg{width:11px;height:11px;margin-right:-1px}
+.badge:hover{filter:brightness(1.18)}.badge:hover .t{text-decoration:underline}
+.c-green{background:var(--green-bg);color:var(--green)}.c-yellow{background:var(--yellow-bg);color:var(--yellow)}
+.c-red{background:var(--red-bg);color:var(--red)}.c-blue{background:var(--blue-bg);color:var(--blue)}
+.c-purple{background:var(--purple-bg);color:var(--purple)}.c-gray{background:var(--gray-bg);color:var(--gray)}
+
+/* GATE pills (redline 20): dropdown statuses take the BIG button shape + chevron.
+   Same colors/underline/highlight as badges — bigger silhouette = "moving-forward gate". */
+.gate{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px;border-radius:10px;font:inherit;font-size:12.5px;font-weight:700;white-space:nowrap;border:1px solid transparent;cursor:pointer;transition:filter .12s;background:var(--gray-bg);color:var(--gray)}
+.gate svg{width:13px;height:13px}
+.gate .chev{width:11px;height:11px;opacity:.75;margin-left:-1px}
+.gate:hover{filter:brightness(1.18)}.gate:hover .t{text-decoration:underline}
+.gate.c-green{background:var(--green-bg);color:var(--green)}.gate.c-yellow{background:var(--yellow-bg);color:var(--yellow)}
+.gate.c-red{background:var(--red-bg);color:var(--red)}.gate.c-blue{background:var(--blue-bg);color:var(--blue)}
+.gate.c-purple{background:var(--purple-bg);color:var(--purple)}
+
+/* LINKED pill — orange outline + DESTINATION-card icon leading the text (redline A2/9) */
+.link{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 10px;border-radius:999px;background:var(--accent-soft);color:var(--accent);border:1px solid var(--accent-line);font-size:11px;font-weight:700;white-space:nowrap;cursor:pointer}
+.link svg{width:12px;height:12px}
+.link .rm{margin-left:1px;opacity:.7;font-weight:800}.link .rm:hover{opacity:1;color:var(--red)}
+.cardhead .link{height:30px;font-size:13.5px;padding:0 13px}.cardhead .link svg{width:15px;height:15px}
+
+/* DERIVED pill (redline 17): rides on another pill in the same section →
+   NO background, NO border. Keeps font, color, destination icon, hover underline. */
+.dpill{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;white-space:nowrap;cursor:pointer;background:none;border:none;padding:0}
+.dpill svg{width:11px;height:11px}
+.dpill:hover .t{text-decoration:underline}
+.dpill.c-green{background:none;color:var(--green)}.dpill.c-yellow{background:none;color:var(--yellow)}
+.dpill.c-orange{color:var(--accent)}.dpill.c-blue{background:none;color:var(--blue)}.dpill.c-red{background:none;color:var(--red)}
+
+/* TITLE FLAGS (redline 6/7): two stacked rows whose total height = the title chip (30px).
+   14px tall each + 2px gap. Shows live condition + the WORST open-WO bottleneck. */
+.flags{display:flex;flex-direction:column;justify-content:space-between;height:30px}
+.flag{display:inline-flex;align-items:center;gap:3px;height:14px;padding:0 7px;border-radius:999px;font-size:9px;font-weight:800;letter-spacing:.2px;white-space:nowrap;cursor:pointer}
+.flag svg{width:9px;height:9px}
+.flag:hover{filter:brightness(1.2)}
+
+.add{display:inline-flex;align-items:center;gap:0;height:30px;padding:0 14px;border-radius:11px;background:transparent;border:1px dashed var(--line);color:var(--txt-2);font:inherit;font-size:13px;font-weight:700;cursor:pointer}
+.add:hover{border-color:var(--accent-line)}
+.add.orange{color:var(--accent)}
+.add .plus{font-weight:800;margin-right:1px}
+.add.wide{width:100%;justify-content:center}
+.add svg{width:13px;height:13px;margin-right:4px}
+
+.req{display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 13px;border-radius:10px;background:#fff;color:#16181d;border:1px solid #fff;font:inherit;font-size:12.5px;font-weight:700;cursor:pointer}
+.req svg{width:15px;height:15px}
+
+.derived{font-style:italic;color:var(--txt-2)}
+.boldlight{font-weight:700;color:var(--txt)}
+/* hyperlinks: NOT bold, italic (redline A3) */
+.linkname{color:var(--blue);font-weight:400;font-style:italic;cursor:pointer}.linkname:hover{text-decoration:underline}
+.muted{color:var(--txt-3);font-size:12px}
+
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 14px;border-radius:10px;border:1px solid transparent;font:inherit;font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap}
+.btn svg{width:15px;height:15px}
+.btn--commit{background:var(--blue);color:#fff}.btn--commit:hover{filter:brightness(1.08)}
+.btn--money{background:var(--green);color:#04150d}.btn--money:hover{filter:brightness(1.07)}
+.btn--danger-solid{background:var(--red);color:#fff}
+.btn--danger{background:transparent;color:var(--red)}.btn--danger:hover{background:var(--red-bg)}
+.btn--quiet{background:transparent;color:var(--txt-2)}.btn--quiet:hover{background:var(--panel);color:var(--txt)}
+.btn--ghost{background:var(--panel);color:var(--txt);border-color:var(--line)}.btn--ghost:hover{border-color:var(--accent-line)}
+.btn--locked{background:var(--panel);color:var(--txt-3);border-color:var(--line);cursor:not-allowed}
+.tbtn{display:inline-flex;align-items:center;gap:7px;height:34px;padding:0 13px;border-radius:11px;background:var(--panel);border:1px solid var(--line);color:var(--txt);font:inherit;font-size:12.5px;font-weight:700;cursor:pointer}
+.tbtn svg{width:16px;height:16px}
+.tbtn:hover{border-color:var(--accent-line)}
+.tbtn.on{background:transparent;border:1.5px solid var(--accent);color:var(--txt)}
+.iconbtn{width:32px;height:32px;display:grid;place-items:center;border-radius:10px;background:transparent;border:1px solid transparent;color:var(--txt-2);cursor:pointer}
+.iconbtn:hover{background:var(--panel-2);color:var(--txt);border-color:var(--line)} .iconbtn svg{width:17px;height:17px}
+.tab{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px;border-radius:11px;background:transparent;border:1px solid transparent;color:var(--txt-2);font:inherit;font-weight:700;font-size:13px;cursor:pointer;white-space:nowrap}
+.tab svg{width:15px;height:15px}.tab .n{font-size:11px;font-weight:800;color:var(--txt-3)}
+.tab.on{background:var(--accent);color:var(--on-orange)}.tab.on .n{color:var(--on-orange);opacity:.7}
+.alertchip{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 11px;border-radius:11px;background:var(--bg-2);border:1px solid var(--red);color:var(--txt);font-weight:800;font-size:12px;cursor:pointer}
+.alertchip svg{width:15px;height:15px;color:var(--red)}
+/* list-view footer: NO total count (redline 13) */
+.totals-foot{display:flex;flex-wrap:wrap;gap:5px 7px;align-items:center;padding:9px 12px;background:var(--card-head);border-top:1px solid var(--accent-line)}
+.totals-foot .tc{font-size:11px;font-weight:700;color:var(--txt-2);cursor:pointer}
+.totals-foot .tc:hover{text-decoration:underline}
+.totals-foot .g{color:var(--green)}.totals-foot .y{color:var(--yellow)}.totals-foot .r{color:var(--red)}.totals-foot .b{color:var(--blue)}
+
+/* segmented toggles — 3-state (redline 2/4) */
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--panel-2)}
+.seg button{font:inherit;font-size:11.5px;font-weight:700;padding:0 12px;height:26px;background:transparent;border:none;color:var(--txt-3);cursor:pointer;display:inline-flex;align-items:center;gap:4px}
+.seg button svg{width:12px;height:12px}
+.seg button:not(:last-child){border-right:1px solid var(--line)}
+.seg button.on-blue{background:var(--blue);color:#fff}
+.seg button.on-gray{background:var(--gray-bg);color:var(--txt)}
+.seg button.on-green{background:var(--green);color:#04150d}
+.seg button.on-red{background:var(--red);color:#fff}
+.seg button.on-yellow{background:var(--yellow);color:#1a1205}
+
+/* day timeline (redlines 15/16): labels only on first/last day; values centered */
+.timeline{position:relative;height:54px;border-radius:12px;border:1px solid var(--line);display:flex;align-items:stretch;overflow:hidden;cursor:pointer;background:var(--panel)}
+.timeline .day{flex:1;position:relative;border-right:1px dashed var(--line-soft)}
+.timeline .day:last-child{border-right:none}
+.timeline .day.past{background:var(--green-bg)}
+.timeline .day.today{background:var(--green-bg);box-shadow:inset 0 0 0 1.5px var(--green)}
+.timeline .day .dnum{position:absolute;bottom:3px;left:0;right:0;text-align:center;font-size:9px;font-weight:700;color:var(--txt-3)}
+.tl-over{position:absolute;inset:0;display:flex;align-items:center;padding:0 12px;pointer-events:none}
+.tl-over .d1,.tl-over .d2{font-weight:800;font-size:13px}
+.tl-over .d2{margin-left:auto}
+.tl-over .mid{position:absolute;left:0;right:0;display:flex;align-items:center;justify-content:center;gap:9px}
+.tl-over .tm{color:var(--txt-2);font-size:12px}
+.tl-over .badge,.tl-over .ratechip{pointer-events:auto}
+.ratechip{display:inline-flex;align-items:center;gap:5px;height:21px;padding:0 9px;border-radius:999px;background:var(--panel-2);border:1px solid var(--line);font-size:10.5px;font-weight:800;color:var(--txt);font-style:italic}
+
+/* yard journey (redline 18): captured = BLUE; FC = red outline empty → red fill used */
+.journey{display:flex;align-items:center;padding:4px 2px 0}
+.jnode{display:flex;flex-direction:column;align-items:center;gap:5px;flex:0 0 auto;cursor:pointer}
+.jbox{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;transition:.13s;background:#fff;color:#16181d;border:1px solid #fff}
+.jbox svg{width:22px;height:22px}
+.jnode:hover .jbox{box-shadow:0 0 0 3px var(--accent-soft)}
+.jnode.done .jbox{background:var(--blue-bg);color:var(--blue);border-color:transparent}
+.jnode.fc .jbox{background:transparent;border:1.5px dashed var(--red);color:var(--red)}
+.jnode.fc:hover .jbox{border-style:solid}
+.jnode.fc.done .jbox{background:var(--red);border:1px solid var(--red);color:#fff}
+.jlbl{font-size:10px;font-weight:700;color:var(--txt-2)}
+.jnode.done .jlbl{color:var(--blue)}
+.jnode.fc .jlbl{color:var(--red)}
+.jts{font-size:9px;color:var(--txt-3);font-variant-numeric:tabular-nums;min-height:11px}
+.jline{flex:1 1 auto;border-top:2px dotted var(--line);margin:0 8px 26px}
+.jline.on{border-top:2px solid var(--blue)}
+
+/* work-order section (redlines 1/7/9/10/8/11) */
+.woline{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:9px;font-size:13px;padding:3px 0}
+.woline .nums{display:flex;gap:10px;font-variant-numeric:tabular-nums;color:var(--txt-2);font-size:12px}
+.woline .nums b{color:var(--txt)}
+.wototals{display:flex;justify-content:flex-end;font-size:12px;margin-bottom:2px}
+.wofoot{display:flex;align-items:center;gap:9px;margin-top:10px;flex-wrap:wrap}
+
+/* hierarchy panels */
+.hpanel{background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);padding:16px;flex:1;min-width:280px}
+.hpanel h3{font-size:12px;text-transform:uppercase;letter-spacing:.6px;color:var(--txt-3);margin-bottom:12px}
+.hrow{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--line-soft);flex-wrap:wrap}
+.hrow:last-child{border-bottom:none}
+.hrow .demo{flex:0 0 185px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.hrow .why{flex:1;min-width:180px;font-size:12px;color:var(--txt-2);line-height:1.45}
+.hrow .tier{flex:0 0 auto;width:22px;height:22px;border-radius:7px;display:grid;place-items:center;font-size:11px;font-weight:800;background:var(--panel-2);border:1px solid var(--line);color:var(--txt-3)}
+
+.gzlist{display:flex;flex-direction:column;gap:8px;font-size:13px;color:var(--txt-2);line-height:1.5}
+.gzlist b{color:var(--gz);font-variant-numeric:tabular-nums}
+.gzlist .q{color:var(--txt)}
+.donelist{display:flex;flex-direction:column;gap:6px;font-size:12.5px;color:var(--txt-2);line-height:1.45}
+.donelist b{color:var(--green)}
+
+/* popups */
+.scrim{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;z-index:60}
+.scrim.open{display:flex}
+.popup{background:var(--card);border:1px solid var(--accent-line);border-radius:16px;box-shadow:0 0 0 4px var(--accent-soft),var(--shadow);padding:18px;width:340px}
+.popup h4{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--txt-3);margin-bottom:10px}
+.optrow{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:12px}
+.photo-drop{border:1.5px dashed var(--line);border-radius:12px;height:86px;display:grid;place-items:center;color:var(--txt-3);font-size:12px;cursor:pointer;margin-bottom:10px}
+.photo-drop:hover{border-color:var(--accent-line)}
+.popup textarea{width:100%;background:var(--panel);border:1px solid var(--line);border-radius:10px;color:var(--txt);font:inherit;font-size:13px;padding:9px 11px;outline:none;resize:vertical;min-height:62px;margin-bottom:12px}
+.pf{display:flex;justify-content:flex-end;gap:8px}
+.toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%);background:var(--panel-2);border:1px solid var(--line);color:var(--txt);font-size:13px;font-weight:600;padding:9px 16px;border-radius:11px;box-shadow:var(--shadow);opacity:0;transition:.2s;pointer-events:none;z-index:80;max-width:520px;text-align:center}
+.toast.show{opacity:1}
+.themefab{position:fixed;right:16px;top:12px;z-index:90}
+</style>
+</head>
+<body>
+<div class="tag">Units & Rentals — build mockup v2 · redlines applied · not the app</div>
+<button class="tbtn themefab" onclick="toggleTheme()">☀/☾ Theme</button>
+
+<main>
+
+<!-- ════════════════ 1 · HIERARCHY (updated) ════════════════ -->
+<section>
+  <h2><span class="no">1 ·</span> Hierarchy — updated per your redlines</h2>
+  <p class="intro">Changes from v1: one badge font size everywhere · every navigating element leads with its DESTINATION card's icon · hyperlinks are italic, not bold · dropdown statuses became big <b>gate pills</b> with chevrons · derived pills lost their backgrounds.</p>
+  <div class="lane" style="margin-top:14px">
+
+    <div class="hpanel"><h3>Pill hierarchy (new — loudest → quietest)</h3>
+      <div class="hrow"><span class="tier">1</span><span class="demo"><button class="gate c-green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="4" width="18" height="17" rx="2"/></svg><span class="t">On Rent</span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg></button></span><span class="why"><b>Gate pill</b> — a status DROPDOWN that moves the record forward. Big button shape + chevron. Chevron ONLY when it actually drops down.</span></div>
+      <div class="hrow"><span class="tier">2</span><span class="demo"><span class="link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 12l-8-8H4v8l8 8z"/><circle cx="7" cy="7" r="1.4"/></svg>Updog<span class="rm">✕</span></span></span><span class="why"><b>Linked pill</b> — orange outline; opens the record. Leads with the destination card's icon.</span></div>
+      <div class="hrow"><span class="tier">3</span><span class="demo"><span class="badge c-yellow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="4" width="18" height="17" rx="2"/></svg><span class="t">ETA Jun 18</span></span></span><span class="why"><b>Status badge</b> — informational status, NOT a dropdown. One font size (11px) everywhere.</span></div>
+      <div class="hrow"><span class="tier">4</span><span class="demo"><span class="dpill c-green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20 12l-8-8H4v8l8 8z"/></svg><span class="t">Ready</span></span> <span class="dpill c-yellow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2h9l3 3v17l-3-2-3 2-3-2-3 2z"/></svg><span class="t">Partial</span></span></span><span class="why"><b>Derived pill</b> — rides on ANOTHER pill in the same section (Ready ← Updog · Partial ← invoice). No background, no border; keeps color + icon + hover underline.</span></div>
+      <div class="hrow"><span class="tier">5</span><span class="demo"><span class="flags"><span class="flag c-green" style="background:var(--green-bg)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20 12l-8-8H4v8l8 8z"/></svg>Ready</span><span class="flag c-yellow" style="background:var(--yellow-bg)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="4" width="18" height="17" rx="2"/></svg>ETA Jun 18</span></span></span><span class="why"><b>Title flags</b> — two stacked rows exactly matching the title chip's height: live condition + the biggest open-WO bottleneck.</span></div>
+    </div>
+
+    <div class="hpanel"><h3>Updated rules</h3>
+      <div class="hrow"><span class="demo"><span class="badge c-red"><span class="t">Needed</span></span><span class="badge c-yellow"><span class="t">ETA Jun 18</span></span><span class="badge c-purple"><span class="t">Reserved</span></span></span><span class="why"><b>One font size</b> for every status pill — 11px, no exceptions.</span></div>
+      <div class="hrow"><span class="demo"><span class="link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>Field Call</span></span><span class="why"><b>Destination icon</b> — anything that navigates leads with the icon of the card it takes you TO (this FC pill sits on a Unit, so it carries the Rentals icon). No spacer between icon and text.</span></div>
+      <div class="hrow"><span class="demo"><span class="linkname">Updog · 1-Day×1</span></span><span class="why"><b>Hyperlinks</b> — blue, italic, NOT bold. Underline on hover.</span></div>
+      <div class="hrow"><span class="demo"><span class="muted">Jun 10 · 7:30 AM</span></span><span class="why"><b>L6 = timestamps</b> — smallest, most muted. (Suffixes dropped from the text hierarchy.)</span></div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ════════════════ 2 · UNITS CARD v2 ════════════════ -->
+<section>
+  <h2><span class="no">2 ·</span> Units card — v2</h2>
+  <p class="intro">Inspection toggles swapped (condition first, wash second), centered, 3-state, timestamp above. Inspection Status is a LIVE condition — while a WO created from an inspection is open, changing it is blocked with an explainer. Completed WOs live in History as links, not sections. The WO's own name is the section title; flags stack to its right with destination icons.</p>
+
+  <div class="lane" style="margin-top:14px">
+  <div class="card">
+    <div class="cardhead">
+      <span class="link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 12l-8-8H4v8l8 8z"/><circle cx="7" cy="7" r="1.4"/></svg>Beacon</span>
+      <!-- title flags: 2 stacked rows = exactly the title chip height (redline 6) -->
+      <span class="flags">
+        <span class="flag c-green" style="background:var(--green-bg)" title="live condition"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20 12l-8-8H4v8l8 8z"/></svg>Ready</span>
+        <span class="flag c-gray" style="background:var(--gray-bg)">Active</span>
+      </span>
+      <span class="flags">
+        <span class="flag c-yellow" style="background:var(--yellow-bg)" title="biggest bottleneck across open WOs (redline 7)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="4" width="18" height="17" rx="2"/></svg>ETA Jun 18</span>
+        <span class="flag c-red" style="background:var(--red-bg)">2 WOs Open</span>
+      </span>
+      <div class="acts"><button class="iconbtn" title="list">≡</button><button class="iconbtn" title="anchor">◯</button><button class="iconbtn" title="new tab">+</button></div>
+    </div>
+    <div class="detail">
+
+      <!-- SECTION 1 · INSPECTION — condition toggle first, wash second, centered, timestamp above (redlines 2/4/5) -->
+      <div class="section"><h4>Inspection <span class="right"><span class="linkname" onclick="toast('opens the inspection report / fail popup')">report</span></span></h4>
+        <div style="text-align:center" class="fs">
+          <div class="muted" style="text-align:center">Jun 10 · 7:30 AM</div>
+          <div class="kv" style="justify-content:center">
+            <span class="seg" id="segpf">
+              <button class="on-green" onclick="condTry(this,'on-green','Pass')">✓ Pass</button>
+              <button onclick="condTry(this,'on-yellow','Not Ready')">Not Ready</button>
+              <button onclick="condTry(this,'on-red','Fail')">✕ Fail</button>
+            </span>
+            <span class="seg" id="segwash">
+              <button class="on-yellow" onclick="segPick(this,'on-yellow');toast('Wash queued — shows in Wash list')">💧 Wash</button>
+              <button onclick="segPick(this,'on-blue');toast('Marked: don\'t wash')">Don't Wash</button>
+              <button onclick="segPick(this,'on-green');toast('Logged: washed ✓')">Washed</button>
+            </span>
+          </div>
+          <div class="kv" style="justify-content:center"><span class="muted">Latest:</span> <span style="font-size:12.5px">Tracks fine, bucket pin greased.</span></div>
+        </div>
+      </div>
+
+      <!-- WO section — the WO's NAME is the title; flags stack right with destination icons (redline 9) -->
+      <div class="section" id="wo1">
+        <h4 style="text-transform:none;letter-spacing:0;font-size:13.5px;color:var(--txt)">Seat cushion torn
+          <span class="right">
+            <span class="flags" style="height:24px">
+              <span class="flag c-red" style="background:var(--red-bg)" title="navigates to the rental (destination icon)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18"/></svg>Field Call</span>
+              <span class="flag c-gray" style="background:var(--gray-bg)">Jun 08</span>
+            </span>
+          </span>
+        </h4>
+        <!-- +Part/Task ABOVE the line items (redline 9) -->
+        <button class="add wide" style="margin-bottom:8px" onclick="toast('+Part/Task line')"><span class="plus">+</span>Part/Task</button>
+        <!-- totals right-aligned ABOVE the value column (redline 10) -->
+        <div class="wototals"><span class="derived">$145 parts + 3.5 hrs</span></div>
+        <div class="woline"><button class="gate c-red" onclick="lineStatus(this)"><span class="t">Needed</span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg></button><span>Seat cushion 40×40</span><span class="nums"><b>$85</b><span>0.5h</span></span></div>
+        <div class="woline"><button class="gate c-yellow" onclick="etaPopup(this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18"/></svg><span class="t">ETA Jun 18</span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg></button><span>Mount bracket</span><span class="nums"><b>$32</b><span>1h</span></span></div>
+        <div class="woline"><button class="gate c-green" onclick="lineStatus(this)"><span class="t">Complete</span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg></button><span>Clear fault code</span><span class="nums"><b>$28</b><span>2h</span></span></div>
+        <!-- +Invoice replaces the bill toggle; formulaic if-billed total to its right (redline 8) -->
+        <div class="wofoot">
+          <button class="add orange" style="height:27px" onclick="toast('link an invoice — billing this WO to the customer')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2h9l3 3v17l-3-2-3 2-3-2-3 2z"/></svg><span class="plus">+</span>Invoice</button>
+          <span class="derived">Parts $160 + Hrs $425 = $585</span>
+          <span style="flex:1"></span>
+          <button class="btn btn--commit" style="height:27px" onclick="completeWO()">Complete WO</button>
+        </div>
+      </div>
+
+      <!-- second OPEN WO stacks the same way -->
+      <div class="section">
+        <h4 style="text-transform:none;letter-spacing:0;font-size:13.5px;color:var(--txt)">Annual hydraulic service
+          <span class="right"><span class="flag c-gray" style="background:var(--gray-bg)">Jun 02</span></span>
+        </h4>
+        <button class="add wide" style="margin-bottom:8px"><span class="plus">+</span>Part/Task</button>
+        <div class="wototals"><span class="derived">$60 parts + 1 hr</span></div>
+        <div class="woline"><button class="gate c-yellow" onclick="etaPopup(this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18"/></svg><span class="t">ETA Jun 14</span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg></button><span>Hydraulic filter kit</span><span class="nums"><b>$60</b><span>1h</span></span></div>
+        <div class="wofoot">
+          <button class="add orange" style="height:27px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2h9l3 3v17l-3-2-3 2-3-2-3 2z"/></svg><span class="plus">+</span>Invoice</button>
+          <span class="derived">Parts $66 + Hrs $150 = $216</span>
+          <span style="flex:1"></span>
+          <button class="btn btn--commit" style="height:27px" onclick="toast('🔒 1 line item not complete — finish “ETA Jun 14” first')">Complete WO</button>
+        </div>
+      </div>
+
+      <!-- DETAILS · SPECS | GPS -->
+      <div class="cols2">
+        <div class="section"><h4>Specs</h4><div class="fs">
+          <div class="kv"><span class="link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 13l4-4 5 3 4-6 5 4v7H3z"/></svg>Light Tower</span></div>
+          <div class="kv"><button class="add" style="height:26px"><span class="plus">+</span>Serial</button></div>
+          <div class="kv"><button class="add" style="height:26px"><span class="plus">+</span>Year</button> <button class="add" style="height:26px"><span class="plus">+</span>Make</button></div>
+          <div class="kv"><b>480 HRS</b></div>
+        </div></div>
+        <div class="section"><h4>GPS</h4><div class="fs">
+          <div class="kv"><span class="badge c-gray"><span class="t">No GPS</span></span></div>
+          <div class="kv"><button class="add" style="height:26px"><span class="plus">+</span>GPS unit/type</button></div>
+          <div class="kv"><button class="add" style="height:26px"><span class="plus">+</span>Placement</button></div>
+        </div></div>
+      </div>
+
+      <!-- INVESTMENT — right side reordered (redline 12) -->
+      <div class="section"><h4>Investment</h4>
+        <div class="split">
+          <div class="side">
+            <div class="kv"><button class="add" style="height:26px"><span class="plus">+</span>Purchase price</button></div>
+            <div class="kv"><button class="add" style="height:26px"><span class="plus">+</span>Purchase date</button></div>
+            <div class="kv"><button class="add" style="height:26px"><span class="plus">+</span>True cost</button></div>
+          </div>
+          <div class="side r">
+            <div class="kv"><span class="derived">Total Revenue: $3,420</span></div>
+            <div class="kv"><span class="derived">Monthly: $310</span></div>
+            <div class="kv"><span class="derived">Work Orders: $145</span></div>
+            <div class="kv"><span class="derived">Profit: $1,890 · (55%)</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- NOTES — heading-only, no box (redline 14); empty ⇒ bottom -->
+      <div class="nsec"><span class="nlbl">Notes</span><button class="add" style="height:26px" onclick="openNote(this)"><span class="plus">+</span>Notes</button></div>
+
+      <!-- HISTORY — clickable values anchored ABOVE the search bar (redline 13);
+           record-backed entries are LINKS, plain edits are text (your call → my rule) -->
+      <div class="history"><h4>History</h4>
+        <div class="hvals">
+          <span class="tc g" onclick="hfilter(this,'inspections')">12 Inspections</span>
+          <span class="tc r" onclick="hfilter(this,'wos')">5 WOs</span>
+          <span class="tc b" onclick="hfilter(this,'rentals')">9 Rentals</span>
+          <span class="tc y" onclick="hfilter(this,'washes')">7 Washes</span>
+        </div>
+        <div class="hsearch"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg><input placeholder="Search history…"></div>
+        <div class="hlog">
+          <div data-kind="inspections washes"><span class="when">Jun 10 · 7:30 AM</span>Inspection: PASS · washed<span class="hlink" onclick="toast('opens that inspection report')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>view</span><span class="who">Jacob</span></div>
+          <div data-kind="wos"><span class="when">Jun 05</span>WO completed — <span class="hlink" onclick="toast('opens the completed WO (read-only)')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 7l3 3-9 9H5v-3z"/><path d="M3 21h18"/></svg>Door latch replace</span> · $74 · 1.5h<span class="who">Jacob</span></div>
+          <div data-kind="rentals"><span class="when">May 28</span>Rental returned — <span class="hlink" onclick="toast('opens that rental')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18"/></svg>May22-12, Mike Nixon</span><span class="who">Jacob</span></div>
+          <div data-kind="edits"><span class="when">Jun 02</span>Hours set → 480 HRS<span class="who">Jacob</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- list-view footer: total count removed (redline 13) -->
+    <div class="totals-foot" style="margin:0;border-radius:0">
+      <span class="tc g">83 Ready</span><span class="tc y">43 Not Ready</span><span class="tc r">15 Failed</span><span class="tc r">9 WOs Open</span><span class="tc y">4 Parts Ordered</span><span class="tc b">2 Wash Req</span>
+    </div>
+  </div>
+
+  <div class="hpanel" style="max-width:430px"><h3>What changed here (your redlines)</h3>
+    <div class="donelist">
+      <div><b>✓1</b> Completed WOs are History links now (see “Door latch replace”) — open WOs are the only sections.</div>
+      <div><b>✓2</b> “Not Ready” sits between Pass and Fail.</div>
+      <div><b>✓4</b> Condition toggle first, Wash second, centered, timestamp above. Wash=yellow · Don't Wash=blue · Washed=green.</div>
+      <div><b>✓5</b> Try clicking Pass/Fail — this unit has an open WO born from an inspection, so every attempt explains the block.</div>
+      <div><b>✓6/7</b> Title flags stack ×2 matching the title height: condition + worst-WO bottleneck. Open/Waiting AND the Repair/Service type pills deleted — only the date flag remains on a WO.</div>
+      <div><b>✓8</b> Bill toggle → <b>+Invoice</b> with the if-billed formula beside it.</div>
+      <div><b>✓9</b> WO name IS the section title; FC flag stacks right and wears the RENTALS icon (destination).</div>
+      <div><b>✓10</b> Totals right-aligned above the $/h column: “$145 parts + 3.5 hrs”.</div>
+      <div><b>✓11</b> Complete WO blocks with a reason until every line is Complete (try the 2nd WO).</div>
+      <div><b>✓12</b> Investment right side: Total Revenue → Monthly → Work Orders → Profit · (ROI%).</div>
+      <div><b>✓13</b> Footer count gone; values clickable → filter History; they anchor above the History search bar.</div>
+      <div><b>✓14</b> Notes = heading-only line, no box.</div>
+      <div><b>✓20</b> Line statuses are gate pills with chevrons.</div>
+    </div>
+  </div>
+  </div>
+</section>
+
+<!-- ════════════════ 3 · RENTALS CARD v2 ════════════════ -->
+<section>
+  <h2><span class="no">3 ·</span> Rentals card — v2</h2>
+  <p class="intro">Notes (filled) rides above the day timeline as a heading-only line. Timeline keeps day cells but only labels the first/last; price · status · time are centered. Derived pills (Ready, category, Partial) lost their backgrounds. Invoice link moved to the right column above Partial. Yard journey captures turn BLUE; +FC is red. Complete Rental gates the bottom-right.</p>
+
+  <div class="lane" style="margin-top:14px">
+  <div class="card">
+    <div class="cardhead">
+      <span class="link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>Jun01-07: Updog, Mike Nixon</span>
+      <span class="flags">
+        <span class="flag c-green" style="background:var(--green-bg)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="4" width="18" height="17" rx="2"/></svg>On Rent</span>
+        <span class="flag c-yellow" style="background:var(--yellow-bg)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M6 2h9l3 3v17l-3-2-3 2-3-2-3 2z"/></svg>Partial</span>
+      </span>
+      <div class="acts"><button class="iconbtn">≡</button><button class="iconbtn">◯</button><button class="iconbtn">+</button></div>
+    </div>
+    <div class="detail">
+
+      <!-- NOTES — filled ⇒ Section 0, heading-only, ABOVE the timeline (redline 14) -->
+      <div class="nsec"><span class="nlbl">Notes</span><span class="ndot" style="background:var(--red)"></span><span style="font-size:13px">Customer wants weekend delivery — confirm Friday</span></div>
+
+      <!-- DAY TIMELINE — no wrapper box; labels only first/last; centered values (redlines 15/16) -->
+      <div class="timeline" onclick="toast('opens the rental-window calendar (same as today)')">
+        <div class="day past"><span class="dnum">Mo 01</span></div>
+        <div class="day past"></div>
+        <div class="day past"></div>
+        <div class="day today"></div>
+        <div class="day"></div>
+        <div class="day"></div>
+        <div class="day"><span class="dnum">Su 07</span></div>
+        <div class="tl-over">
+          <span class="d1">Jun 01</span>
+          <span class="mid">
+            <span class="ratechip" onclick="event.stopPropagation();toast('price/rate — derived from the category rates')">$1,000 · 7-Day</span>
+            <span class="badge c-green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="4" width="18" height="17" rx="2"/></svg><span class="t">On Rent</span></span>
+            <span class="tm">4:00 PM</span>
+          </span>
+          <span class="d2">Jun 07</span>
+        </div>
+      </div>
+
+      <!-- RENTAL — left actions · right derived; invoice above Partial on the right (redlines 17/19) -->
+      <div class="section"><h4>Rental</h4>
+        <div class="split">
+          <div class="side">
+            <div class="kv"><span class="link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>Mike Nixon<span class="rm">✕</span></span></div>
+            <div class="kv"><span class="link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 12l-8-8H4v8l8 8z"/><circle cx="7" cy="7" r="1.4"/></svg>Updog<span class="rm">✕</span></span> <span class="dpill c-green" title="derived from Updog"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20 12l-8-8H4v8l8 8z"/></svg><span class="t">Ready</span></span></div>
+            <div class="kv" id="addr2"><button class="add orange" style="height:26px" onclick="fillAddress2()"><span class="plus">+</span>Address</button></div>
+            <div id="twrap2" style="display:none">
+              <div class="journey" style="padding-top:0">
+                <div class="jnode done" style="cursor:default"><span class="jbox" style="width:34px;height:34px;border-radius:10px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9.5L5.2 5h13.6L20 9.5M5 9.5V20h14V9.5M5 9.5h14"/></svg></span><span class="jlbl">Yard</span><span class="jts"></span></div>
+                <div class="jline on" style="margin-bottom:30px"></div>
+                <div class="jnode done" style="cursor:default"><span class="jbox" style="width:34px;height:34px;border-radius:10px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2.5" y="6.5" width="11" height="9" rx="1"/><path d="M13.5 9.5h3.6l3.4 3.2v2.8h-7z"/><circle cx="7" cy="17.5" r="1.7"/><circle cx="17" cy="17.5" r="1.7"/></svg></span><span class="jlbl">Truck</span><span class="jts"></span></div>
+                <div class="jline" style="margin-bottom:30px"></div>
+                <div class="jnode" style="cursor:default"><span class="jbox" style="width:34px;height:34px;border-radius:10px;background:var(--panel-2);color:var(--txt-2);border:1px solid var(--line)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9.5L5.2 5h13.6L20 9.5M5 9.5V20h14V9.5M5 9.5h14"/></svg></span><span class="jlbl">Site</span><span class="jts"></span></div>
+              </div>
+              <div class="kv"><b>Delivery</b> · <span class="derived">$150 · 30 min</span></div>
+            </div>
+          </div>
+          <div class="side r">
+            <div class="kv"><span class="dpill c-orange" title="derived from Updog"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 13l4-4 5 3 4-6 5 4v7H3z"/></svg><span class="t">Lift Scissor 26ft</span></span></div>
+            <div class="kv"><span class="link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2h9l3 3v17l-3-2-3 2-3-2-3 2z"/></svg>01i02Ju26</span></div>
+            <div class="kv"><span class="dpill c-yellow" title="derived from the linked invoice"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2h9l3 3v17l-3-2-3 2-3-2-3 2z"/></svg><span class="t">Partial</span></span></div>
+            <div class="kv"><span class="money">$0</span><span class="derived">/ $1,000 paid</span></div>
+          </div>
+        </div>
+        <!-- Complete Rental gate (redline 19): blue only when status = Returned; red Cancel Rental on Cancel/No Show -->
+        <div style="display:flex;justify-content:flex-end;margin-top:10px">
+          <button class="btn btn--locked" id="crbtn" onclick="toast('🔒 Available when the rental status becomes Returned. (Cancel / No Show turns this into a red Cancel Rental.)')">Complete Rental</button>
+        </div>
+      </div>
+
+      <!-- YARD — captures turn BLUE; +FC red outline → red fill (redline 18) -->
+      <div class="section"><h4>Yard</h4>
+        <div class="journey">
+          <div class="jnode" id="j-onrent" onclick="jCapture(this,'On-Rent video captured · status → On Rent')">
+            <span class="jbox"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 10l5-3v10l-5-3M3 6h12v12H3z"/></svg></span>
+            <span class="jlbl">+OnRent</span><span class="jts"></span>
+          </div>
+          <div class="jline" id="jl1"></div>
+          <div class="jnode fc" id="j-fc" onclick="jFC(this)">
+            <span class="jbox"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 10l5-3v10l-5-3M3 6h12v12H3z"/></svg></span>
+            <span class="jlbl">+FC</span><span class="jts"></span>
+          </div>
+          <div class="jline" id="jl2"></div>
+          <div class="jnode" id="j-return" onclick="jCapture(this,'Return video captured · status → Returned · Complete Rental unlocks')">
+            <span class="jbox"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 10l5-3v10l-5-3M3 6h12v12H3z"/></svg></span>
+            <span class="jlbl">+Return</span><span class="jts"></span>
+          </div>
+        </div>
+        <div class="kv" style="margin-top:6px"><span class="muted">White = required video still owed. Captured → blue ✓ + timestamp. +FC = red outline (optional); logging it fills red, fails the unit + auto-creates a WO.</span></div>
+      </div>
+
+      <div class="history"><h4>History</h4>
+        <div class="hvals">
+          <span class="tc b" onclick="hfilter(this,'captures')">2 Captures</span>
+          <span class="tc g" onclick="hfilter(this,'payments')">1 Payment</span>
+          <span class="tc y" onclick="hfilter(this,'edits')">4 Edits</span>
+        </div>
+        <div class="hsearch"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg><input placeholder="Search history…"></div>
+        <div class="hlog">
+          <div data-kind="captures"><span class="when">Jun 01 · 4:02 PM</span>On-Rent video — <span class="hlink" onclick="toast('plays the capture')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 10l5-3v10l-5-3M3 6h12v12H3z"/></svg>watch</span><span class="who">Jacob</span></div>
+          <div data-kind="payments"><span class="when">Jun 01</span>Deposit charged $0 — <span class="hlink" onclick="toast('opens the invoice')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2h9l3 3v17l-3-2-3 2-3-2-3 2z"/></svg>01i02Ju26</span><span class="who">Jacob</span></div>
+          <div data-kind="edits"><span class="when">May 30</span>Rental created — Reserved<span class="who">Jacob</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="hpanel" style="max-width:430px"><h3>What changed here + open gray zones</h3>
+    <div class="donelist" style="margin-bottom:12px">
+      <div><b>✓14</b> Notes is a one-line heading section ABOVE the timeline.</div>
+      <div><b>✓15/16</b> GZ box gone; only Mo 01 / Su 07 labeled; price · status · time centered.</div>
+      <div><b>✓17</b> Ready / Lift Scissor / Partial = derived pills, no background; invoice link sits above Partial on the right.</div>
+      <div><b>✓18</b> Journey captures = blue; +FC red outline → red fill.</div>
+      <div><b>✓19</b> Complete Rental bottom-right — locked until Returned; Cancel/No Show flips it to red Cancel Rental.</div>
+      <div><b>✓A2</b> Every pill leads with its DESTINATION card icon.</div>
+    </div>
+    <div class="gzlist">
+      <div><b>GZ-12</b> <span class="q">History links (my call)</span>: only record-backed entries get a link (completed WOs, inspection reports, video captures, invoices). Plain field edits stay text — keeps History fast and un-cluttered.</div>
+      <div><b>GZ-13</b> <span class="q">History filter</span>: the value chips anchor above the search bar; clicking one filters the log in place (no popup) and highlights the chip orange. Click again to clear.</div>
+      <div><b>GZ-14</b> <span class="q">Worst-bottleneck flag</span>: severity order = Part Needed → Part Ordered/ETA (earliest date) → In Progress. The title flag shows the single worst one across all open WOs.</div>
+      <div><b>GZ-15</b> <span class="q">Complete Rental</span> stays visible-but-locked (gray) before Returned so users learn the gate exists. Alternative: hidden until Returned — say the word.</div>
+    </div>
+  </div>
+  </div>
+</section>
+
+</main>
+
+<!-- ETA / status popup -->
+<div class="scrim" id="etascrim" onclick="if(event.target===this)this.classList.remove('open')">
+  <div class="popup">
+    <h4>Part status · ETA</h4>
+    <div class="optrow">
+      <button class="btn btn--ghost" style="height:27px" onclick="setEta('Jun 14')">Jun 14</button>
+      <button class="btn btn--ghost" style="height:27px" onclick="setEta('Jun 18')">Jun 18</button>
+      <button class="btn btn--ghost" style="height:27px" onclick="setEta('Jun 25')">Jun 25</button>
+      <button class="btn btn--ghost" style="height:27px" onclick="toast('full date picker here')">📅 Pick date…</button>
+    </div>
+    <div class="optrow">
+      <button class="btn btn--ghost" style="height:27px;color:var(--red)" onclick="setStat('Needed','c-red')">Needed</button>
+      <button class="btn btn--ghost" style="height:27px;color:var(--blue)" onclick="setStat('Arrived','c-blue')">Part Arrived</button>
+      <button class="btn btn--money" style="height:27px" onclick="setStat('Complete','c-green')">Complete</button>
+    </div>
+    <div class="pf"><button class="btn btn--quiet" onclick="document.getElementById('etascrim').classList.remove('open')">Cancel</button></div>
+  </div>
+</div>
+
+<!-- FAIL popup -->
+<div class="scrim" id="failscrim" onclick="if(event.target===this)this.classList.remove('open')">
+  <div class="popup">
+    <h4>Inspection failed — photo + description required</h4>
+    <div class="photo-drop" onclick="this.textContent='✓ photo attached';this.style.color='var(--green)'">📷 Tap to capture photo / video</div>
+    <textarea placeholder="What failed?"></textarea>
+    <div class="pf">
+      <button class="btn btn--quiet" onclick="document.getElementById('failscrim').classList.remove('open')">Cancel</button>
+      <button class="btn btn--commit" onclick="failSave()">Save — creates the WO</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let tt;function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');clearTimeout(tt);tt=setTimeout(()=>t.classList.remove('show'),2600);}
+function toggleTheme(){const d=document.documentElement;d.dataset.theme=d.dataset.theme==='dark'?'light':'dark';}
+
+function segPick(btn,cls){[...btn.parentElement.children].forEach(b=>b.className='');btn.className=cls;}
+
+/* LIVE condition (redline 5): this unit has an open WO created from an inspection,
+   so EVERY attempt to change the condition explains the block. */
+const woOpenFromInspection=true;
+function condTry(btn,cls,label){
+  if(woOpenFromInspection){
+    toast('🔒 Condition locked — WO “Seat cushion torn” was created from this inspection. Complete that WO to update the condition.');
+    return;
+  }
+  if(label==='Fail'){failPopup(btn);return;}
+  segPick(btn,cls);
+  toast('Condition → '+label+(label==='Fail'?' · Field Call if rented':''));
+}
+
+let failBtn=null;
+function failPopup(btn){failBtn=btn;document.getElementById('failscrim').classList.add('open');}
+function failSave(){
+  document.getElementById('failscrim').classList.remove('open');
+  if(failBtn)segPick(failBtn,'on-red');
+  toast('Unit → Failed · WO created · if On Rent this runs the Field Call flow');
+}
+
+let curBadge=null;
+function lineStatus(b){curBadge=b;document.getElementById('etascrim').classList.add('open');}
+function etaPopup(b){curBadge=b;document.getElementById('etascrim').classList.add('open');}
+const CHEV='<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>';
+const CAL='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18"/></svg>';
+function setEta(d){
+  if(curBadge){curBadge.className='gate c-yellow';curBadge.innerHTML=CAL+'<span class="t">ETA '+d+'</span>'+CHEV;}
+  document.getElementById('etascrim').classList.remove('open');
+  toast('Part ordered · ETA '+d+' shows AS the status');
+}
+function setStat(label,cls){
+  if(curBadge){curBadge.className='gate '+cls;curBadge.innerHTML='<span class="t">'+label+'</span>'+CHEV;}
+  document.getElementById('etascrim').classList.remove('open');
+  toast('Status → '+label);
+}
+
+/* Complete WO blocks until every line is Complete (redline 11) */
+function completeWO(){
+  const open=[...document.querySelectorAll('#wo1 .gate')].filter(g=>!/Complete/.test(g.textContent));
+  if(open.length)return toast('🔒 '+open.length+' line item'+(open.length>1?'s':'')+' not complete — finish '+open.map(g=>'“'+g.textContent.trim()+'”').join(', '));
+  toast('WO complete → moves to History as a link');
+}
+
+/* yard journey — BLUE captures; FC red (redline 18) */
+function jCapture(node,msg){
+  if(node.classList.contains('done'))return toast('already captured — tap to review the video');
+  node.classList.add('done');
+  node.querySelector('.jbox').innerHTML='✓';
+  node.querySelector('.jts').textContent=new Date().toLocaleTimeString([], {hour:'numeric',minute:'2-digit'});
+  if(node.id==='j-onrent')document.getElementById('jl1').classList.add('on');
+  if(node.id==='j-return'){
+    document.getElementById('jl2').classList.add('on');
+    const b=document.getElementById('crbtn');b.className='btn btn--commit';b.onclick=()=>toast('Rental completed ✓');
+  }
+  toast(msg);
+}
+function jFC(node){
+  if(node.classList.contains('done'))return toast('Field Call already logged — opens the FC report');
+  node.classList.add('done');
+  node.querySelector('.jts').textContent=new Date().toLocaleTimeString([], {hour:'numeric',minute:'2-digit'});
+  toast('Field Call — unit Failed + WO auto-created');
+}
+
+/* history filter chips (redline 13) — really filters the log rows in place */
+function hfilter(chip,kind){
+  const on=chip.classList.toggle('on');
+  [...chip.parentElement.children].forEach(c=>{if(c!==chip)c.classList.remove('on');});
+  chip.closest('.history').querySelectorAll('.hlog>div').forEach(r=>{
+    r.style.display=(!on||(r.dataset.kind||'').split(' ').includes(kind))?'':'none';
+  });
+  toast(on?('History filtered → '+kind):'Filter cleared');
+}
+
+function openNote(b){
+  b.outerHTML='<div style="display:flex;align-items:center;gap:8px;flex:1"><input placeholder="Type a note…" style="flex:1;height:26px;border-radius:9px;background:var(--panel-2);border:1px solid var(--line);color:var(--txt);padding:0 11px;font:inherit;font-size:13px;outline:none"><span style="display:flex;gap:5px">'+['#e9edf4','#ff4242','#34d399'].map(c=>'<span title="tag color" onclick="toast(\'note tagged\')" style="width:15px;height:15px;border-radius:50%;background:'+c+';border:1px solid var(--line);cursor:pointer"></span>').join('')+'</span></div>';
+}
+
+function fillAddress2(){
+  document.getElementById('addr2').innerHTML='<span class="boldlight">265 Callie Ln, Orange, TX</span>';
+  document.getElementById('twrap2').style.display='block';
+  toast('Address set → transport journey-picker appears (already live in the app)');
+}
+</script>
+</body>
+</html>
