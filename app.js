@@ -20,7 +20,7 @@ import { AGREEMENTS } from './agreements.js';
 import {
   getStatus, STATUS, ROLES, GRID_CARDS, BACKOFFICE_BOARDS, SORT_FIELDS,
   SHOP_TYPES, SHOP_SEGMENTS, COLUMNS, COLUMN_OF,
-  transportPrice, fmtWindow, fmtShortDate, showsTruck, parseISO, TODAY_ISO, invoiceShort,
+  transportPrice, fmtWindow, fmtShortDate, showsTruck, parseISO, TODAY_ISO, invoiceShort, TRANSPORT_MAP,
 } from './config.js';
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -977,8 +977,77 @@ function flagEl(label, color, { icon, card, recId, title } = {}) {
 }
 const flagsStack = (flags, h) => `<span class="flags" data-r="R9"${h ? ` style="height:${h}px"` : ''}>${flags.filter(Boolean).join('')}</span>`;
 /** R14: a 3-state segmented toggle. opts: [{label, js, data, on:'green'|'yellow'|...}] */
-function segCtl(buttons) {
-  return `<span class="seg" data-r="R14">${buttons.map((b) => `<button class="${b.js || ''}${b.on ? ` on-${b.on}` : ''}"${dataAttrs(b.data)}>${b.label}</button>`).join('')}</span>`;
+function segCtl(buttons, cls) {
+  return `<span class="seg${cls ? ' ' + cls : ''}" data-r="R14">${buttons.map((b) => `<button class="${b.js || ''}${b.on ? ` on-${b.on}` : ''}"${dataAttrs(b.data)}>${b.label}</button>`).join('')}</span>`;
+}
+/** R19: the ATTENTION FLASH — a glow that points AT what the user must do,
+ *  replacing error messages wherever possible (Jac 2026-06-11). */
+function attnFlash(sel) {
+  document.querySelectorAll(sel).forEach((n) => { n.classList.remove('attn'); void n.offsetWidth; n.classList.add('attn'); setTimeout(() => n.classList.remove('attn'), 2000); });
+}
+/** R20: the Wrangler CONTEXT MENU — right-click any element.
+ *  Cut/Copy/Paste/Clear act on the field · Search/Global Search use the text ·
+ *  Replace opens the inline editor · Add Comment logs to History ·
+ *  Ask Mr. Wrangler copies a debug reference for Claude. */
+let ctxTarget = null;
+function closeCtxMenu() { const m = document.getElementById('rw-ctx'); if (m) m.remove(); }
+function openCtxMenu(e, hit) {
+  closeCtxMenu();
+  ctxTarget = hit;
+  const m = document.createElement('div');
+  m.className = 'ctx-menu'; m.id = 'rw-ctx';
+  const item = (act, label) => `<button class="dd-item" data-ctx="${act}">${label}</button>`;
+  m.innerHTML = [
+    item('cut', '✂️ Cut'), item('copy', '📋 Copy'), item('paste', '📥 Paste'), item('clear', '🧹 Clear'),
+    '<div class="menu-sep"></div>',
+    item('search', '🔎 Search'), item('gsearch', '🌐 Global Search'), item('replace', '✏️ Replace'),
+    '<div class="menu-sep"></div>',
+    item('comment', '💬 Add Comment'), item('wrangler', '🤠 Ask Mr. Wrangler'),
+  ].join('');
+  document.body.appendChild(m);
+  m.style.left = Math.min(e.clientX, window.innerWidth - 205) + 'px';
+  m.style.top = Math.min(e.clientY, window.innerHeight - m.offsetHeight - 8) + 'px';
+  setTimeout(() => document.addEventListener('mousedown', ctxOutside), 0);
+}
+function ctxOutside(e) {
+  if (e.target.closest && e.target.closest('#rw-ctx')) return;
+  document.removeEventListener('mousedown', ctxOutside);
+  closeCtxMenu();
+}
+function runCtxAction(act) {
+  const tg = ctxTarget; closeCtxMenu(); document.removeEventListener('mousedown', ctxOutside);
+  if (!tg) return;
+  const el = tg.el;
+  const text = (el.textContent || '').replace(/\s+/g, ' ').trim();
+  const editSpan = el.classList?.contains('inline-edit') ? el : (el.closest('.inline-edit') || el.querySelector?.('.inline-edit'));
+  const f = editSpan && editSpan.dataset.edit === 'field' ? editSpan.dataset : null;
+  const setField = (v) => {
+    if (!f) { attnFlash('.inline-edit'); return toast('Not an editable field.'); }
+    const rec = recOf(f.card, castId(f.rec)); if (!rec) return;
+    const old = rec[f.field]; rec[f.field] = v;
+    reindex(f.card, rec); logAction(rec, `${f.field}: ${auditVal(old)} → ${auditVal(v)}`); render();
+  };
+  if (act === 'copy') { try { navigator.clipboard.writeText(text); } catch (err) {} return toast('📋 Copied.'); }
+  if (act === 'cut') { try { navigator.clipboard.writeText(text); } catch (err) {} return setField(''); }
+  if (act === 'clear') return setField('');
+  if (act === 'paste') { navigator.clipboard.readText().then((v) => setField(v)).catch(() => toast('Clipboard unavailable — paste into the field directly.')); return; }
+  if (act === 'search') { const card = el.closest('[data-card]')?.dataset.card; const cs = card && activeSession().cards[card]; if (cs) { cs.mode = 'list'; cs.search = text; render(); } return; }
+  if (act === 'gsearch') return setQuery(text);
+  if (act === 'replace') { if (editSpan) return startInlineEdit(editSpan); return toast('Not an editable field.'); }
+  if (act === 'comment') {
+    const card = el.closest('[data-card]')?.dataset.card; const cs = card && activeSession().cards[card];
+    const rec = cs && cs.recId != null ? recOf(cs.recType || card, cs.recId) : null;
+    const c = (typeof prompt === 'function') ? prompt('Comment (logs to History):', '') : '';
+    if (rec && c) { logAction(rec, `💬 ${c}`); toast('Comment logged to History.'); render(); }
+    else if (!rec) toast('Open the record first (comments log to its History).');
+    return;
+  }
+  if (act === 'wrangler') {
+    const meta = tg.r ? RULE_META[tg.r] : null;
+    const ref = `Ask Mr. Wrangler — ${tg.r ? `${tg.r} · ${meta[0]}` : 'element'} — ${refPath(el)}: `;
+    try { navigator.clipboard.writeText(ref); } catch (err) {}
+    return toast('🤠 Reference copied — paste it to Claude with your question.');
+  }
 }
 /** R17: forward-action pills — commit (blue) / money (green) / danger (solid red). */
 function actionPill(kind, label, { js, data, h } = {}) {
@@ -1464,6 +1533,7 @@ function applyTotalFilter(card, rows, session) {
     const ids = new Set(DATA.workOrders.filter((w) => w.phase !== 'Complete' && (want === 'open' || w.phase === 'Part Ordered' || (w.lineItems || []).some((l) => l.phase === 'Part Ordered'))).map((w) => w.unitId));
     return rows.filter((rec) => ids.has(rec.unitId));
   }
+  if (cs.totalFilter.col === '__cond') return rows.filter((rec) => rec.inspectionStatus === cs.totalFilter.value);   // the Not Ready tab chip
   const col = cardColumns(card, session).find((c) => c.key === cs.totalFilter.col);
   return col ? rows.filter((rec) => String(col.get(rec)) === String(cs.totalFilter.value)) : rows;
 }
@@ -1663,19 +1733,16 @@ function woSectionHtml(w) {
   const lines = (w.lineItems || []).map((li, idx) => {
     const ph = getStatus('woPhase', li.phase);
     const lbl = li.eta && (li.phase === 'Part Ordered' || li.phase === 'Part is Local') ? `ETA ${fmtShortDate(li.eta)}` : ph.label;
-    return `<div class="woline">${gatePillRaw(lbl, ph.color, 'js-wophase-line', { rec: w.woId, idx })}<span>${esc(li.part)}</span><span class="nums"><b>${money(li.cost)}</b><span>${li.hours || 0}h</span></span></div>`;
+    const ven = li.vendorId ? IDX.vendor?.get?.(li.vendorId) || DATA.vendors.find((v) => v.vendorId === li.vendorId) : null;
+    const tip = [ven ? `Vendor: ${ven.name}` : '', li.url ? li.url : '', li.aiPending ? '🤠 Mr. Wrangler will fill the empty fields' : ''].filter(Boolean).join(' · ');
+    // the description re-opens the part popup; vendor/url live in its tooltip
+    return `<div class="woline">${gatePillRaw(lbl, ph.color, 'js-wophase-line', { rec: w.woId, idx })}<span class="js-partedit" data-rec="${w.woId}" data-idx="${idx}" style="cursor:pointer"${tip ? ` data-tip="${esc(tip)}"` : ''}>${li.aiPending ? '✨ ' : ''}${esc(li.part)}</span><span class="nums"><b>${money(li.cost)}</b><span>${li.hours || 0}h</span></span></div>`;
   }).join('');
-  const partForm = `<div class="lineform">
-    <input class="lf-in js-pf-part" placeholder="Part / labor description" />
-    <div class="lineform-row"><input class="lf-in js-pf-cost" type="number" min="0" placeholder="Part $ (0 for labor)" /><input class="lf-in js-pf-hours" type="number" min="0" placeholder="Labor hrs" /></div>
-    <div class="pillrow">${actionPill('commit', 'Add line', { js: 'js-part-save', data: { rec: w.woId } })}${ghostPill('Cancel', { js: 'js-part-cancel' })}</div>
-  </div>`;
   return `<div class="section sec-${secColor}">
     <h4 class="h-name"><span style="font-weight:800;margin-right:1px">WO:</span> <span class="inline-edit" data-edit="field" data-card="workOrders" data-field="woReport" data-rec="${w.woId}" data-ph="Report">${esc(w.woReport)}</span>
       <span class="right">${flagsStack([typeFlag, flagEl(fmtShortDate(w.date), 'gray')], 24)}</span></h4>
     <div class="wototals">${addBtn('Part/Task', { anchor: true, js: 'js-add-part', h: 26, data: { rec: w.woId } })}<span class="derived">${money(parts)} parts + ${hrs} hrs</span></div>
     ${lines || '<div class="kv"><span class="muted" style="font-size:12px">No line items yet</span></div>'}
-    ${state.woPartForm === w.woId ? partForm : ''}
     <div class="wofoot">
       <span class="derived">Parts ${money(Math.max(0, billed - laborBilled))} + Hrs ${money(laborBilled)} = ${money(billed)}</span>
       ${addBtn('Invoice', { link: true, icon: CARD_ICON.invoices, js: 'js-bill-wo', h: 26, data: { rec: w.woId } })}
@@ -1701,12 +1768,13 @@ function miniJourneyHtml(r2) {
     return `<div class="kv" style="justify-content:center;gap:9px"><span class="muted" style="font-size:10.5px">Self pickup · no transport</span><span class="add-field js-site-go" data-rec="${esc(r2.rentalId)}" style="height:24px;font-size:11px;cursor:pointer">+Transport</span></div>`;
   }
   const addr = r2.deliveryAddress ? esc(r2.deliveryAddress) : '+Address';
+  const recAddr = r2.recoveryAddress ? esc(r2.recoveryAddress) : addr;   // recovery may differ from delivery
   const sd = !!r2.startCapture, ed = !!r2.endCapture;
   return `<div class="journey mini">
     <div class="jnode" style="cursor:default"><span class="jbox">${ICO_STORE}</span><span class="jlbl">Jac</span></div>
     <div class="jseg"><span class="jover ${sd ? 'done' : 'loglink'} js-yard" data-cap="start" data-rec="${esc(r2.rentalId)}">${sd ? '✓ Delivered · video' : '+Log Delivery'}</span><span class="jline2 ${sd ? 'on' : ''}"></span><span class="jaddr js-site-go" data-rec="${esc(r2.rentalId)}">${addr}</span></div>
     <div class="jnode js-site-go" data-rec="${esc(r2.rentalId)}"><span class="jbox site ${r2.deliveryAddress ? 'set' : ''}">${ICO_STORE}</span><span class="jlbl">Site</span></div>
-    <div class="jseg"><span class="jover ${ed ? 'done' : 'loglink'} js-yard" data-cap="end" data-rec="${esc(r2.rentalId)}">${ed ? '✓ Recovered · video' : '+Log Recovery'}</span><span class="jline2 ${ed ? 'on' : ''}"></span><span class="jaddr js-site-go" data-rec="${esc(r2.rentalId)}">${addr}</span></div>
+    <div class="jseg"><span class="jover ${ed ? 'done' : 'loglink'} js-yard" data-cap="end" data-rec="${esc(r2.rentalId)}">${ed ? '✓ Recovered · video' : '+Log Recovery'}</span><span class="jline2 ${ed ? 'on' : ''}"></span><span class="jaddr js-site-go" data-rec="${esc(r2.rentalId)}">${recAddr}</span></div>
     <div class="jnode" style="cursor:default"><span class="jbox">${ICO_STORE}</span><span class="jlbl">Jac</span></div>
   </div>`;
 }
@@ -1719,7 +1787,9 @@ function headFlagsHtml(card, rec) {
     const fleet = getStatus('unitFleetStatus', rec.fleetStatus);
     const wos = openWOsForUnit(rec.unitId);
     const bn = unitWorstBottleneck(rec.unitId);
-    return flagsStack([flagEl(insp.label, insp.color, { icon: CARD_ICON.inspections }), flagEl(fleet.label, 'gray')])
+    // QR is just a flag with the others; fleet flags the title ONLY when not Active
+    return flagsStack([flagEl(insp.label, insp.color, { icon: CARD_ICON.inspections }), flagEl('QR', 'gray', { icon: I.qr })])
+      + (rec.fleetStatus !== 'Active' ? flagsStack([flagEl(fleet.label, fleet.color)]) : '')
       + (wos.length && bn ? flagsStack([flagEl(bn.label, bn.color, { icon: CARD_ICON.workOrders }), flagEl(`${wos.length} WO${wos.length > 1 ? 's' : ''} Open`, 'red')]) : '');
   }
   if (card === 'rentals') {
@@ -1797,7 +1867,7 @@ const DETAIL = {
       const amt = Number(li.amount) || 0;
       const ibColor = paid >= amt && amt > 0 ? 'green' : invT.status === 'Not Due' ? 'blue' : 'red';
       return `<div class="invitem">
-        <span><span class="linkname" data-pill-card="rentals" data-pill-rec="${esc(r2.rentalId)}">${esc(u2?.name || r2.rentalName || 'Rental')} · ${esc(fmtShortDate(r2.startDate))}–${esc(fmtShortDate(r2.endDate))}${li.ref === r.rentalId ? ' — this rental' : ''}</span><b style="color:var(--${ibColor});font-size:12.5px;margin-left:8px" title="ITEM BALANCE — partial payments are assigned per line item">${money(paid)}</b><span class="derived" style="font-size:11px"> / ${money(amt)}</span></span>
+        <span><span class="linkname" data-pill-card="rentals" data-pill-rec="${esc(r2.rentalId)}">${esc(u2?.name || r2.rentalName || 'Rental')} · ${esc(fmtShortDate(r2.startDate))}–${esc(fmtShortDate(r2.endDate))}${li.ref === r.rentalId ? ' — this rental' : ''}</span><span class="balline" style="margin-left:8px" title="ITEM BALANCE — partial payments are assigned per line item"><b style="color:var(--${ibColor});font-size:12.5px">${money(paid)}</b> <span class="tot" style="font-size:11px">/ ${money(amt)}</span></span></span>
         ${miniJourneyHtml(r2)}
       </div>`;
     }).join('');
@@ -1813,7 +1883,7 @@ const DETAIL = {
 
     /* RENTAL section (v2): NO header — the timeline opens the section; the border
        carries the rental-status color. Left = actions · right = pay-colored balance. */
-    const rentalSec = `<div class="section sec-${stColor === 'green' ? 'green' : stColor === 'red' ? 'red' : 'yellow'}">
+    const rentalSec = `<div class="section sec-${stColor}">
       ${timeline}
       <div class="split" style="margin-top:11px">
         <div class="side">
@@ -1824,7 +1894,7 @@ const DETAIL = {
           ${fcRow ? kvPills(fcRow) : ''}
         </div>
         <div class="side r">
-          ${invT ? `<div class="kv"><span class="v big" style="color:var(--${balColor});font-weight:800">${money(invT.paid)}</span><span class="derived">/ ${money(invT.total)}</span></div>` : (price ? kv(money(price.price), { sfx: `· ${price.rate}`, derived: true }) : '')}
+          ${invT ? `<div class="kv"><span class="balline"><b style="color:var(--${balColor})">${money(invT.paid)}</b> <span class="tot">/ ${money(invT.total)}</span></span></div>` : (price ? kv(money(price.price), { sfx: `· ${price.rate}`, derived: true }) : '')}
           ${invT && inv.dueDate ? `<div class="kv"><span class="derived" style="font-size:11px">due ${fmtShortDate(inv.dueDate)}</span></div>` : ''}
           ${(r.deliveryAddress && tr.driveMin != null) ? kv(`${tr.driveMin} min`, { sfx: '/one-way', derived: true }) : ''}
         </div>
@@ -1870,7 +1940,6 @@ const DETAIL = {
       ${efld('units', u, 'unitId', 'make', 'Make')}
       ${efld('units', u, 'unitId', 'model', 'Model')}
       ${efld('units', u, 'unitId', 'weight', 'Weight')}
-      ${efld('units', u, 'unitId', 'assignedMechanic', 'Assign mechanic', { sfx: 'mechanic' })}
       <div class="kv"><span class="v inline-edit" data-edit="unitHours" data-rec="${u.unitId}">${num(u.currentHours)} HRS</span></div>
     </div></div>`;
     const gps = `<div class="section"><h4>GPS</h4><div class="fieldstack">
@@ -1897,7 +1966,8 @@ const DETAIL = {
           ${kv(money(repair), { pfx: 'Work Orders', derived: true })}
           ${kv(`${money(profit)}${roi != null ? ` · (${roi}%)` : ''}`, { pfx: 'Profit', derived: true })}
         </div>
-      </div></div>`;
+      </div>
+      <div style="display:flex;justify-content:flex-end;margin-top:8px">${gatePill('unitFleetStatus', u.fleetStatus, 'js-fleetstatus', { rec: u.unitId })}</div></div>`;
     /* INSPECTION — live condition + wash toggles, timestamp in the header */
     const li2 = latestInspForUnit(u.unitId);
     const stampDate = u.condAt || li2?.date || '';
@@ -1913,9 +1983,9 @@ const DETAIL = {
             <button class="js-cond ${cond === 'Not Ready' ? 'on-yellow' : ''}" data-rec="${u.unitId}" data-val="Not Ready">Not Ready</button>
             <button class="js-cond ${cond === 'Failed' ? 'on-red' : ''}" data-rec="${u.unitId}" data-val="Fail">✕ Fail</button>
           </span>
-          <span class="seg">
-            <button class="js-washseg ${u.washRequested ? 'on-yellow' : ''}" data-rec="${u.unitId}" data-val="Wash">${I.droplet} Wash</button>
-            <button class="js-washseg" data-rec="${u.unitId}" data-val="DontWash">Don't Wash</button>
+          <span class="seg seg-wash">
+            <button class="js-washseg ${u.washChoice === 'Wash' || u.washRequested ? 'on-yellow' : ''}" data-rec="${u.unitId}" data-val="Wash">${I.droplet} Wash</button>
+            <button class="js-washseg ${u.washChoice === 'DontWash' && !u.washRequested && !washedToday ? 'on-blue' : ''}" data-rec="${u.unitId}" data-val="DontWash">Don't Wash</button>
             <button class="js-washseg ${washedToday ? 'on-green' : ''}" data-rec="${u.unitId}" data-val="Washed">Washed</button>
           </span>
         </div>
@@ -1932,7 +2002,7 @@ const DETAIL = {
     ];
     return `<div class="detail">
       ${yardToolHtml(u)}
-      <div class="detail-head"><span class="d-title inline-edit" data-edit="field" data-card="units" data-field="name" data-rec="${u.unitId}" data-ph="Unit name">${esc(u.name)}</span><span class="pill gate c-${getStatus('unitFleetStatus', u.fleetStatus).color} js-fleetstatus" data-rec="${u.unitId}">${esc(getStatus('unitFleetStatus', u.fleetStatus).label)} ${I.chev}</span><span class="pill c-gray">${I.qr} QR</span></div>
+      <div class="detail-head"><span class="d-title inline-edit" data-edit="field" data-card="units" data-field="name" data-rec="${u.unitId}" data-ph="Unit name">${esc(u.name)}</span></div>
       ${notes.top}
       ${inspSec}
       ${woSecs}
@@ -2079,7 +2149,7 @@ const DETAIL = {
           }</div>`
         : ''}
     </div></div>`;
-    const lineForm = `<div class="lineform"><input class="lf-in js-lf-label" placeholder="Custom line description" /><div class="lineform-row"><input class="lf-in js-lf-amt" type="number" min="0" placeholder="Amount $" /></div><div class="pillrow">${actionPill('commit', 'Add line', { js: 'js-line-save', data: { rec: i.invoiceId } })}${ghostPill('Cancel', { js: 'js-line-cancel' })}</div></div>`;
+    const lineForm = `<div class="lineform"><input class="lf-in js-lf-label" placeholder="Custom line description" /><div class="lineform-row"><input class="lf-in js-lf-amt" type="number" min="0" placeholder="Amount $" /></div><div class="pillrow" style="justify-content:flex-end">${ghostPill('Cancel', { js: 'js-line-cancel' })}${actionPill('commit', 'Add line', { js: 'js-line-save', data: { rec: i.invoiceId } })}</div></div>`;
     const addRow = state.invLineForm === i.invoiceId ? lineForm
       : locked
         ? `<div class="pillrow" style="margin-top:8px"><span class="muted" style="font-size:12px">🔒 Pricing locked — this is what gets charged.</span>${canMoney() ? `<span class="spacer"></span>${actionPill('commit', 'Unlock to edit', { js: 'js-unlock-invoice', data: { rec: i.invoiceId } })}` : ''}</div>`
@@ -2420,6 +2490,10 @@ function colTabsEl(col, active, session) {
   // they live INSIDE the Unit card now; only Service keeps a tab. The hidden
   // tab still renders while its member is ACTIVE so deep links navigate home.
   const HIDDEN_TABS = new Set(['inspections', 'workOrders']);
+  // "Not Ready" filter chip (Jac 2026-06-11): rides with the Service heart on the
+  // units column — clipboard-? icon + count; hidden when zero; it's just a filter.
+  const notReady = col.members.includes('units') ? DATA.units.filter((u) => u.inspectionStatus === 'Not Ready').length : 0;
+  const nrChip = notReady ? `<button class="coltab js-notready compact alert" data-tip="${notReady} Not Ready — filter the Units list"><span class="ct-ico">${CARD_ICON.inspectionsPending || CARD_ICON.inspections}</span><span class="ct-n">${notReady}</span></button>` : '';
   bar.innerHTML = col.members.filter((m) => !HIDDEN_TABS.has(m) || m === active).map((m) => {
     const on = m === active, compact = SHOP_TYPES.includes(m);   // shop sub-types are icon-only
     const n = memberCount(m, session);
@@ -2429,7 +2503,7 @@ function colTabsEl(col, active, session) {
       + (compact ? '' : `<span class="ct-lbl">${esc(MEMBER_TITLE[m])}</span>`)
       + `<span class="ct-n">${n}</span>`
       + `</button>`;
-  }).join('');
+  }).join('') + nrChip;
   return bar;
 }
 function memberCardEl(member, session) {
@@ -3062,6 +3136,33 @@ function renderOverlay() {
         ${rows}
       </div>`;
     overlay.appendChild(pop);
+  } else if (o.kind === 'partform') {
+    // Part/Task popup (Jac 2026-06-11): photo + every field optional — anything
+    // left empty gets filled by Mr. Wrangler (photo review · cost/url lookup ·
+    // hours estimated from the category + industry install standards).
+    const w = IDX.wo.get(o.woId);
+    const li = o.idx != null ? (w?.lineItems || [])[o.idx] : null;
+    const ven = li?.vendorId ? DATA.vendors.find((v) => v.vendorId === li.vendorId) : null;
+    const AI = 'Filled by AI if left empty';
+    const pop = el('div', 'popup'); pop.style.width = '400px';
+    pop.innerHTML = `
+      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${CARD_ICON.parts || CARD_ICON.workOrders}</span><h3>${li ? 'Edit' : 'Add'} Part / Task</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
+      <div class="popup-body">
+        <label class="cap-drop" style="margin-bottom:9px">${I.video}<span>${state.partPhoto || li?.photo ? '✓ photo attached' : 'Tap to add a photo'}</span><input type="file" accept="image/*" capture="environment" class="js-pf2-file" style="display:none"></label>
+        <input class="lf-in js-pf2-desc" placeholder="Description — ${AI}" value="${esc(li?.part || '')}" style="width:100%;margin-bottom:7px">
+        <div style="display:flex;gap:7px;margin-bottom:7px">
+          <input class="lf-in js-pf2-cost" type="number" min="0" placeholder="Cost $ — ${AI}" value="${li?.cost ?? ''}" style="flex:1">
+          <input class="lf-in js-pf2-hours" type="number" min="0" step="0.5" placeholder="Hours — ${AI}" value="${li?.hours ?? ''}" style="flex:1">
+        </div>
+        <input class="lf-in js-pf2-url" placeholder="URL link — ${AI}" value="${esc(li?.url || '')}" style="width:100%;margin-bottom:7px">
+        <input class="lf-in js-pf2-vendor" placeholder="Vendor — ${AI} (added to the Vendors board if new)" value="${esc(ven?.name || '')}" style="width:100%;margin-bottom:4px">
+        <p class="muted" style="font-size:11px;margin:4px 0 12px">✨ Empty fields are filled by Mr. Wrangler after saving: the photo is reviewed for the description/cost/url, and hours are estimated from the category + industry standards.</p>
+        <div class="pillrow" style="justify-content:flex-end">
+          ${ghostPill('Cancel', { js: 'js-close' })}
+          ${actionPill('commit', li ? 'Save' : 'Add line', { js: 'js-pf2-save' })}
+        </div>
+      </div>`;
+    overlay.appendChild(pop);
   } else if (o.kind === 'capture') {
     // v2 yard journey: every log opens this popup; with transport, the address
     // + map pin ride the top so the driver sees the destination while logging.
@@ -3085,18 +3186,27 @@ function renderOverlay() {
       </div>`;
     overlay.appendChild(pop);
   } else if (o.kind === 'site') {
-    // v2 transport: smart address finder + map with a tap-to-drop pin for dispatch
+    // Transport setup: WHICH journey (Jac+Site = Delivery · Site+Jac = Recovery ·
+    // Jac+Jac = Round-Trip) + smart address finder + map pin. Save sets BOTH
+    // addresses; the optional second field lets recovery differ from delivery.
     const r = IDX.rental.get(o.rentalId);
-    const pop = el('div', 'popup'); pop.style.width = '400px';
+    const ty = state.siteType || (r?.transportType && r.transportType !== 'Self' ? r.transportType : 'Delivery');
+    const pop = el('div', 'popup'); pop.style.width = '410px';
     pop.innerHTML = `
-      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${CARD_ICON.rentals}</span><h3>Site address</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
+      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${CARD_ICON.rentals}</span><h3>Transport · Site</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
       <div class="popup-body">
-        <input class="js-site-addr lf-in" placeholder="Start typing an address…" value="${esc(r?.deliveryAddress || '')}" style="width:100%;margin-bottom:6px">
-        <div class="js-site-sug" style="display:flex;flex-direction:column;border-radius:10px;overflow:hidden;margin-bottom:8px"></div>
+        <div class="kv" style="justify-content:center;margin-bottom:10px">${segCtl([
+          { label: 'Jac → Site', js: 'js-site-type', data: { val: 'Delivery' }, on: ty === 'Delivery' ? 'green' : null },
+          { label: 'Site → Jac', js: 'js-site-type', data: { val: 'Recovery' }, on: ty === 'Recovery' ? 'green' : null },
+          { label: 'Jac → Site → Jac', js: 'js-site-type', data: { val: 'Round-Trip' }, on: ty === 'Round-Trip' ? 'green' : null },
+        ], 'seg-sitetype')}</div>
+        <input class="js-site-addr lf-in" placeholder="Site address — start typing…" value="${esc(r?.deliveryAddress || '')}" style="width:100%;margin-bottom:6px">
+        <div class="js-site-sug" style="display:flex;flex-direction:column;border-radius:10px;overflow:hidden;margin-bottom:6px"></div>
+        <input class="js-site-addr2 lf-in" placeholder="Recovery address — same as above if left empty" value="${esc(r?.recoveryAddress || '')}" style="width:100%;margin-bottom:8px">
         <div class="site-map js-site-map" style="height:150px;cursor:crosshair">${r?.sitePin ? `<span class="site-pin" style="left:${r.sitePin.x}%;top:${r.sitePin.y}%">📍</span>` : ''}<span class="map-tag">Google Map here — tap to drop the EXACT pin for the driver</span></div>
         <div class="pillrow" style="justify-content:flex-end;margin-top:12px">
-          <button class="pill ref js-close">Cancel</button>
-          <button class="pill c-commit js-site-save" style="height:26px;font-size:11px">Save site</button>
+          ${ghostPill('Cancel', { js: 'js-close' })}
+          ${actionPill('commit', 'Save site', { js: 'js-site-save' })}
         </div>
       </div>`;
     overlay.appendChild(pop);
@@ -3982,17 +4092,29 @@ function onClick(e) {
   }
   if (closest('.js-line-save')) { const b = closest('.js-line-save'); e.stopPropagation(); const root = b.closest('.lineform'); const label = root.querySelector('.js-lf-label')?.value; const amt = Number(root.querySelector('.js-lf-amt')?.value) || 0; state.invLineForm = null; return addCustomLine(b.dataset.rec, label || 'Custom', amt); }
   if (closest('.js-line-cancel')) { e.stopPropagation(); state.invLineForm = null; return render(); }
-  if (closest('.js-add-part')) { const b = closest('.js-add-part'); e.stopPropagation(); state.woPartForm = b.dataset.rec; return render(); }
+  if (closest('.js-add-part')) { const b = closest('.js-add-part'); e.stopPropagation(); state.partPhoto = null; return openOverlay({ kind: 'partform', woId: b.dataset.rec, idx: null }); }
+  if (closest('.js-partedit')) { const b = closest('.js-partedit'); e.stopPropagation(); state.partPhoto = null; return openOverlay({ kind: 'partform', woId: b.dataset.rec, idx: Number(b.dataset.idx) }); }
+  if (closest('.js-pf2-save')) { e.stopPropagation(); return savePartForm(); }
   if (closest('.js-part-save')) { const b = closest('.js-part-save'); e.stopPropagation(); const root = b.closest('.lineform'); const part = root.querySelector('.js-pf-part')?.value; const cost = Number(root.querySelector('.js-pf-cost')?.value) || 0; const hours = Number(root.querySelector('.js-pf-hours')?.value) || 0; state.woPartForm = null; return addPartToWO(b.dataset.rec, part || 'Part', cost, hours); }
   if (closest('.js-part-cancel')) { e.stopPropagation(); state.woPartForm = null; return render(); }
   // inspection gated flow (§9): Wash → Checklist → result
   if (closest('.js-open-insp')) { e.stopPropagation(); return openOverlay({ kind: 'inspection', recId: closest('.js-open-insp').dataset.rec }); }
+  if (closest('[data-ctx]')) return runCtxAction(closest('[data-ctx]').dataset.ctx);   // R20 context menu
+  if (closest('.js-notready')) {   // the units "Not Ready" filter chip — it's just a filter
+    e.stopPropagation();
+    const s = activeSession();
+    if (s.cols && s.cols.left) s.cols.left = 'units';
+    s.cards.units.mode = 'list'; s.cards.units.recId = null;
+    s.cards.units.totalFilter = { col: '__cond', value: 'Not Ready' };
+    return render();
+  }
   // ── v2 build: condition/wash segs · yard captures · site popup · WO complete · history chips ──
   if (closest('.js-cond')) { const b = closest('.js-cond'); return setUnitCondition(b.dataset.rec, b.dataset.val); }
   if (closest('.js-washseg')) { const b = closest('.js-washseg'); return setUnitWash(b.dataset.rec, b.dataset.val); }
   if (closest('.js-yard')) { const b = closest('.js-yard'); return yardCapture(b.dataset.rec, b.dataset.cap); }
   if (closest('.js-cap-save')) return saveYardCapture();
-  if (closest('.js-site-go')) { const b = closest('.js-site-go'); state.sitePin = null; return openOverlay({ kind: 'site', rentalId: b.dataset.rec }); }
+  if (closest('.js-site-go')) { const b = closest('.js-site-go'); state.sitePin = null; state.siteType = null; return openOverlay({ kind: 'site', rentalId: b.dataset.rec }); }
+  if (closest('.js-site-type')) { const b = closest('.js-site-type'); e.stopPropagation(); state.siteType = b.dataset.val; return renderOverlay(); }
   if (closest('.js-site-save')) return saveSiteAddress();
   if (closest('.js-site-pick')) { const b = closest('.js-site-pick'); const inp = document.querySelector('.js-site-addr'); if (inp) inp.value = b.textContent; const box = document.querySelector('.js-site-sug'); if (box) box.innerHTML = ''; return; }
   if (closest('.js-site-map')) {
@@ -4295,6 +4417,9 @@ function setUnitCondition(unitId, val) {
   const u = IDX.unit.get(unitId); if (!u) return;
   const lock = unitCondLock(u);
   if (lock) return toast(`🔒 Condition locked — WO “${lock.woReport}” is open from a ${lock.woType === 'Field Call' ? 'field call' : 'failed inspection'}. Complete it to update the condition.`);
+  // R19: Pass needs a wash decision first — glow the wash toggle instead of an error
+  const washedToday = (u.serviceLog || []).some((l) => l.taskId === 'svc-wash' && l.date === TODAY_ISO);
+  if (val === 'Pass' && !u.washChoice && !u.washRequested && !washedToday) return attnFlash('.seg-wash');
   u.condAt = TODAY_ISO; u.condClock = nowClock();
   if (val === 'Pass' || val === 'Fail') {
     const n = newInspectionForUnit(u);
@@ -4307,6 +4432,7 @@ function setUnitCondition(unitId, val) {
 }
 function setUnitWash(unitId, val) {
   const u = IDX.unit.get(unitId); if (!u) return;
+  u.washChoice = val;                     // a decision was made — unlocks Pass (R19 gate)
   if (val === 'Washed') return recordServiceCompletion(unitId, 'svc-wash', u.currentHours, TODAY_ISO, 'Washed (condition toggle)', '');
   u.washRequested = val === 'Wash';
   reindex('units', u);
@@ -4365,16 +4491,51 @@ function saveSiteAddress() {
   const o = state.overlay; if (!o || o.kind !== 'site') return;
   const r = IDX.rental.get(o.rentalId); if (!r) return closeOverlay();
   const v = (document.querySelector('.js-site-addr')?.value || '').trim();
-  if (!v) return toast('Type or pick an address first.');
+  if (!v) return attnFlash('.js-site-addr');                        // R19: glow the field, no error message
+  const v2 = (document.querySelector('.js-site-addr2')?.value || '').trim();
   r.deliveryAddress = v;
+  r.recoveryAddress = v2 && v2 !== v ? v2 : '';                     // optional different recovery address
   if (state.sitePin) r.sitePin = state.sitePin;
-  if (!r.transportType || r.transportType === 'Self') r.transportType = 'Delivery';
+  r.transportType = state.siteType || (r.transportType && r.transportType !== 'Self' ? r.transportType : 'Delivery');
+  state.siteType = null;
   syncTransportLine(r);
   reindex('rentals', r); logAction(r, `Site address → ${auditVal(v)}`);
   toast('Site saved — address + exact pin go to dispatch.');
   state.overlay = null; state.sitePin = null;
   const session = activeSession(); if (session.anchor) setAnchor(session, session.anchor.card, session.anchor.recId, session.anchor.recType);
   render(); renderOverlay();
+}
+/* Part/Task popup save: creates the WO line + Parts/Vendors board records when
+   new; empty fields are flagged aiPending for Mr. Wrangler review (backend TODO). */
+function savePartForm() {
+  const o = state.overlay; if (!o || o.kind !== 'partform') return;
+  const w = IDX.wo.get(o.woId); if (!w) return closeOverlay();
+  const g = (c) => (document.querySelector(c)?.value || '').trim();
+  const desc = g('.js-pf2-desc'), cost = g('.js-pf2-cost'), hours = g('.js-pf2-hours'), url = g('.js-pf2-url'), vendor = g('.js-pf2-vendor');
+  if (!desc && !state.partPhoto) return attnFlash('.js-pf2-desc, .cap-drop');   // R19: need a description OR a photo for the AI
+  w.lineItems = w.lineItems || [];
+  const li = o.idx != null ? w.lineItems[o.idx] : { phase: 'Part Needed?', eta: '' };
+  li.part = desc || li.part || '📷 Awaiting Mr. Wrangler review';
+  li.cost = cost !== '' ? Number(cost) || 0 : (li.cost || 0);
+  li.hours = hours !== '' ? Number(hours) || 0 : (li.hours || 0);
+  li.url = url || li.url || '';
+  if (state.partPhoto) li.photo = state.partPhoto;
+  li.aiPending = !desc || cost === '' || hours === '';
+  if (vendor) {
+    let v = DATA.vendors.find((x) => (x.name || '').toLowerCase() === vendor.toLowerCase());
+    if (!v) { v = { vendorId: 'VEN-C' + (state.seq++), name: vendor, mock: true }; DATA.vendors.push(v); reindex('vendors', v); }
+    li.vendorId = v.vendorId;
+  }
+  if (desc && !DATA.parts.find((p) => (p.name || '').toLowerCase() === desc.toLowerCase())) {
+    const p = { partId: 'PRT-C' + (state.seq++), name: desc, cost: Number(cost) || 0, url: url || '', vendorId: li.vendorId || null, woId: w.woId, mock: true };
+    DATA.parts.push(p); reindex('parts', p);
+  }
+  if (o.idx == null) w.lineItems.push(li);
+  if (w.phase === 'Complete') w.phase = 'Part Needed?';
+  reindex('workOrders', w); logAction(w, `${o.idx != null ? 'Edited' : 'Added'} line: ${auditVal(li.part)}`);
+  state.partPhoto = null; state.overlay = null;
+  toast(li.aiPending ? '✨ Saved — Mr. Wrangler fills the empty fields (photo review + estimated hours).' : 'Line saved.');
+  reanchorRender(); renderOverlay();
 }
 function completeWOAttempt(woId) {
   const w = IDX.wo.get(woId); if (!w) return;
@@ -4400,7 +4561,7 @@ function onInput(e) {
     const street = v.replace(/,.*$/, '');
     const hits = cities.filter((c) => v.toLowerCase().includes(c.toLowerCase()));
     const pool = (hits.length ? hits : cities).slice(0, 3);
-    box.innerHTML = pool.map((c) => `<button class="dd-item js-site-pick" type="button">${esc(`${street}, ${c.replace(/\b\w/g, (m) => m.toUpperCase())}, TX`)}</button>`).join('');
+    box.innerHTML = pool.map((c) => { const city = c.replace(/\b\w/g, (m) => m.toUpperCase()); return `<button class="dd-item js-site-pick" type="button">${esc(street.toLowerCase() === c.toLowerCase() ? `${city}, TX` : `${street}, ${city}, TX`)}</button>`; }).join('');
     return;
   }
   if (e.target.classList.contains('js-history-search')) {
@@ -4442,6 +4603,14 @@ function onInput(e) {
 
 /* change events — native <input type="date"> / <select> on draft details. */
 function onChange(e) {
+  // Part/Task popup photo
+  if (e.target.classList.contains('js-pf2-file')) {
+    const f = e.target.files && e.target.files[0]; if (!f) return;
+    const rd = new FileReader();
+    rd.onload = () => { state.partPhoto = rd.result; renderOverlay(); };
+    rd.readAsDataURL(f);
+    return;
+  }
   // v2 yard capture: attach the video/photo, re-render the popup to show ✓
   if (e.target.classList.contains('js-cap-file')) {
     const f = e.target.files && e.target.files[0]; if (!f) return;
@@ -5560,6 +5729,10 @@ function boot() {
     if (e.target.closest('input, textarea, .inline-input')) return;   // allow native menu in fields
     e.preventDefault();
     if (state.pick || state.winpicker) return;
+    // R20: right-clicking an ELEMENT opens the Wrangler context menu;
+    // right-clicking dead space keeps the old card-to-List / clear-anchor.
+    const hit = ruleOf(e.target) || (e.target.closest('.inline-edit, .row') ? { r: null, el: e.target.closest('.inline-edit, .row') } : null);
+    if (hit) return openCtxMenu(e, hit);
     const dc = card.dataset.card, now = performance.now();
     if (now - lastCtx.t < 450 && lastCtx.card === dc) { lastCtx = { t: 0, card: null }; return clearAnchor(); }   // double right-click
     lastCtx = { t: now, card: dc };

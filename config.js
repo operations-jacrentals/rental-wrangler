@@ -312,7 +312,7 @@ const TRANSPORT_TIERS = [
   [325, 100, ['Ville Platte']],
   [340, 105, ['Woodville']],
 ];
-const TRANSPORT_MAP = {};
+export const TRANSPORT_MAP = {};
 for (const [price, driveMin, cities] of TRANSPORT_TIERS) {
   for (const c of cities) TRANSPORT_MAP[c.toLowerCase()] = { price, driveMin };
 }
