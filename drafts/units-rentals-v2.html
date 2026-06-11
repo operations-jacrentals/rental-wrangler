@@ -418,7 +418,7 @@ h2 .no{color:var(--accent)}
         <h4 style="text-transform:none;letter-spacing:0;font-size:13.5px"><span style="font-weight:800;margin-right:1px">WO:</span> Seat cushion torn
           <span class="right">
             <span class="flags" style="height:24px">
-              <span class="flag c-red" title="navigates to the rental (destination icon)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18"/></svg>Field Call</span>
+              <span class="flag c-red" title="WO TYPE: Field Call — navigates to the rental (destination icon)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18"/></svg>Field Call</span>
               <span class="flag c-gray">Jun 08</span>
             </span>
           </span>
@@ -439,7 +439,7 @@ h2 .no{color:var(--accent)}
       <!-- second OPEN WO stacks the same way -->
       <div class="section sec-yellow">
         <h4 style="text-transform:none;letter-spacing:0;font-size:13.5px"><span style="font-weight:800;margin-right:1px">WO:</span> Annual hydraulic service
-          <span class="right"><span class="flag c-gray">Jun 02</span></span>
+          <span class="right"><span class="flags" style="height:24px"><span class="flag c-gray" title="WO TYPE: opened by mechanic Jacob"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>Jacob</span><span class="flag c-gray">Jun 02</span></span></span>
         </h4>
         <div class="wototals" style="justify-content:space-between;align-items:center;margin-bottom:5px"><button class="add anchor" style="height:27px"><span class="plus">+</span>Part/Task</button><span class="derived">$60 parts + 1 hr</span></div>
         <div class="woline"><button class="gate c-yellow" onclick="etaPopup(this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18"/></svg><span class="t">ETA Jun 14</span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg></button><span>Hydraulic filter kit</span><span class="nums"><b>$60</b><span>1h</span></span></div>
@@ -639,6 +639,7 @@ h2 .no{color:var(--accent)}
       <div><b>✓v2.7</b> Timeline lives inside RENTAL under its header · invoice link moved below Updog (left) · every hyperlinked line item shows its <b>ITEM BALANCE</b> · WO footer: formula → +Invoice → Complete WO · WO red border brighter · title chip: no icon ring, permanent orange border.</div>
       <div><b>GZ-20</b> <span class="q">Item Balance rule</span>: taking a PARTIAL payment forces an assignment popup — the user picks which line items the funds land on and how much; these per-item balances are what you see here. Unassigned partials are not allowed.</div>
       <div><b>✓v2.4</b> Yard line context compacted: truncated customer ABOVE the line · rental window BELOW · site icon under that (same address popup as the Rental card). Delivery rentals say +Log Delivery / +Log Recovery instead of +Start / +End. Every log opens the capture popup with the ADDRESS + MAP on top when there's transport. +Part/Task glow removed.</div>
+      <div><b>✓v2.9</b> Every WO carries its <b>WO TYPE</b> flag in the top-right stack: <b>Field Call</b> (red, rentals icon → the rental), <b>Failed Inspection</b> (red, inspection icon → the report), or the <b>mechanic's name</b> (gray, person icon) — see "Field Call" on WO 1 and "Jacob" on WO 2.</div>
       <div><b>✓v2.6</b> Title chip = S1 style (dark chip · white bold · orange-ringed icon) · inspection timestamp rides the section header (one row shorter) · "WO:" follows the bottleneck color · +Part/Task shares the totals row above the line statuses · truncated address under the +Log lines (Rentals) and on the yard line (Units, replacing the site icon) with the Delivery · Recovery label beneath.</div>
     </div>
     <div class="gzlist">
