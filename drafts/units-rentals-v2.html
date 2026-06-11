@@ -596,7 +596,7 @@ h2 .no{color:var(--accent)}
                 </div>
               </div>
               <div class="invitem">
-                <span><span class="linkname">Shrek · Jun02-09</span><b style="color:var(--red);font-size:12.5px;margin-left:8px" title="ITEM BALANCE — partial payments are assigned per line item">$0</b><span class="derived" style="font-size:11px"> / $300</span></span>
+                <span><span class="linkname">Shrek · Jun02-09</span><b style="color:var(--red);font-size:12.5px;margin-left:8px" title="ITEM BALANCE — partial payments are assigned per line item">$0</b><span class="derived" style="font-size:11px"> / $200</span></span>
                 <div class="journey mini" style="align-items:flex-start;width:100%;max-width:440px">
                   <div class="jnode" style="cursor:default"><span class="jbox"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9.5L5.2 5h13.6L20 9.5M5 9.5V20h14V9.5M5 9.5h14"/></svg></span><span class="jlbl">Jac</span></div>
                   <div class="jseg"><span class="jover loglink" onclick="toast('logs Shrek\'s delivery — same +Start capture, on its own rental')">+Log Delivery</span><span class="jline2"></span><span class="jaddr" onclick="sitePopup(this)">265 Callie Ln, Orange, TX</span></div>
@@ -604,6 +604,11 @@ h2 .no{color:var(--accent)}
                   <div class="jseg"><span class="jover loglink" onclick="toast('logs Shrek\'s recovery — same +End capture, on its own rental')">+Log Recovery</span><span class="jline2"></span><span class="jaddr" onclick="sitePopup(this)">265 Callie Ln, Orange, TX</span></div>
                   <div class="jnode" style="cursor:default"><span class="jbox"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9.5L5.2 5h13.6L20 9.5M5 9.5V20h14V9.5M5 9.5h14"/></svg></span><span class="jlbl">Jac</span></div>
                 </div>
+              </div>
+              <!-- a line item WITHOUT transport (self pickup) -->
+              <div class="invitem">
+                <span><span class="linkname">Highrise · Jun03-05</span><b style="color:var(--red);font-size:12.5px;margin-left:8px" title="ITEM BALANCE — partial payments are assigned per line item">$0</b><span class="derived" style="font-size:11px"> / $100</span></span>
+                <div class="kv" style="justify-content:center;gap:9px"><span class="muted" style="font-size:10.5px">Self pickup · no transport</span><button class="add" style="height:24px;font-size:11px" onclick="toast('adds the Jac ─ Site ─ Jac journey — asks for the site address first')"><span class="plus">+</span>Transport</button></div>
               </div>
         </div>
         <!-- Complete Rental gate (redline 19): blue only when status = Returned; red Cancel Rental on Cancel/No Show -->
