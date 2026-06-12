@@ -445,7 +445,7 @@ function relDate(iso) {
   return n === 0 ? 'Today' : n === 1 ? 'Tomorrow' : fmtShortDate(iso);
 }
 function activeRentalForUnit(unitId) {
-  return DATA.rentals.filter((r) => r.unitId === unitId && ACTIVE_RENTAL.has(r.status) && r.status !== 'Quote')
+  return DATA.rentals.filter((r) => rentalHasUnit(r, unitId) && ACTIVE_RENTAL.has(r.status) && r.status !== 'Quote')
     .sort((a, b) => (parseISO(a.startDate) || 0) - (parseISO(b.startDate) || 0))[0] || null;
 }
 
@@ -463,7 +463,7 @@ function rentalOverlaps(r, selS, selE) {
 function rentalsOverlappingUnit(unitId, startISO, endISO, selfId) {
   const selS = parseISO(startISO), selE = parseISO(endISO);
   if (!selS || !selE) return [];
-  return DATA.rentals.filter((r) => r.unitId === unitId && r.rentalId !== selfId
+  return DATA.rentals.filter((r) => rentalHasUnit(r, unitId) && r.rentalId !== selfId
     && ACTIVE_RENTAL.has(r.status) && r.status !== 'Quote' && rentalOverlaps(r, selS, selE));
 }
 /* §10 OVERBOOKED (drag build, Jac) — DERIVED LIVE, never stored. A rental is
@@ -476,7 +476,7 @@ function rentalOverbooked(r) {
   return rentalsOverlappingUnit(r.unitId, r.startDate, r.endDate, r.rentalId)[0] || null;
 }
 function unitOverbooked(unitId) {
-  return DATA.rentals.find((r) => r.unitId === unitId && rentalOverbooked(r)) || null;
+  return DATA.rentals.find((r) => rentalHasUnit(r, unitId) && rentalOverbooked(r)) || null;
 }
 /** §7.6 — the unit's latest OPEN work order not yet billed to ANY invoice
  *  (the unit↔invoice drop resolver; the bill-once test mirrors addWOToInvoice).
@@ -557,8 +557,8 @@ function woBillable(w) {
 }
 /** Total revenue a unit has earned = Σ its rentals' derived prices (SPEC §12.4). */
 function unitTotalRevenue(unitId) {
-  return DATA.rentals.filter((r) => r.unitId === unitId)
-    .reduce((a, r) => { const p = rentalPrice(r); return a + (p ? p.price : 0); }, 0);
+  return DATA.rentals.filter((r) => rentalHasUnit(r, unitId))
+    .reduce((a, r) => { const p = unitRentalPrice(r, unitId); return a + (p ? p.price : 0); }, 0);   // §20 this unit's own line
 }
 
 /** Inspection result (handles the pending state: no checklist yet = Not Ready). */
@@ -579,7 +579,9 @@ function categoryMix(categoryId) {
 /** A unit's current rental bucket (mirrors §12.4 Rental Status into 3 buckets). */
 function unitRentalBucket(u) {
   const r = activeRentalForUnit(u.unitId);
-  return r ? rentalDisplayStatus(r) : 'Available';   // granular display status, or Available
+  if (!r) return 'Available';
+  const eu = (r.units || []).find((e) => e.unitId === u.unitId);   // §20 this unit's OWN status, not the rental roll-up
+  return eu ? unitStatus(r, eu) : rentalDisplayStatus(r);
 }
 /** The order rental-status segments appear in the §12.3 second bar (birds-eye renting). */
 const RENTAL_BAR_ORDER = ['Available', 'Tomorrow', 'Today', 'Reserved', 'On Rent', 'End Rent', 'Off Rent', 'Returned', 'Cancelled', 'No Show'];
@@ -1278,7 +1280,7 @@ function onInspectMove(e) {
    §6 LIST ROWS — row meta + the universal row template
    ════════════════════════════════════════════════════════════════════════ */
 const ROW_META = {
-  rentals:    (r) => ({ title: rentalDisplayName(r), sub: IDX.customer.get(r.customerId)?.name || '', color: getStatus('rentalStatus', rentalDisplayStatus(r)).color }),
+  rentals:    (r) => ({ title: rentalDisplayName(r), sub: IDX.customer.get(r.customerId)?.name || '', color: rentalStatusDisplay(r).color }),
   customers:  (c) => ({ title: c.name, sub: c.phone || c.company || '', color: getStatus('customerPayStatus', c.payStatus).color }),
   units:      (u) => ({ title: u.name, sub: IDX.category.get(u.categoryId)?.name || '', color: getStatus('unitInspectionStatus', u.inspectionStatus).color }),
   categories: (c) => ({ title: c.name, sub: c.fuelType || '', color: 'orange' }),
@@ -1886,7 +1888,8 @@ function yardToolHtml(u) {
   const r = activeRentalForUnit(u.unitId);
   if (!r) return '';
   const cust = r.customerId ? IDX.customer.get(r.customerId) : null;
-  const st = getStatus('rentalStatus', rentalDisplayStatus(r));
+  const euT = (r.units || []).find((e) => e.unitId === u.unitId);   // §20 this unit's own status on its journey
+  const st = getStatus('rentalStatus', euT ? unitStatus(r, euT) : rentalDisplayStatus(r));
   const isDel = r.transportType && r.transportType !== 'Self';
   const startLbl = r.startCapture ? 'On Rent' : isDel ? '+Log Delivery' : '+Start';
   const endLbl = r.endCapture ? 'Returned' : isDel ? '+Log Recovery' : '+End';
@@ -2009,7 +2012,7 @@ function headFlagsHtml(card, rec) {
       + (unitOverbooked(rec.unitId) ? flagsStack([flagEl('Overbooked', 'red', { icon: CARD_ICON.rentals, alert: true, card: 'rentals', recId: unitOverbooked(rec.unitId).rentalId, title: 'Two active rentals overlap on this unit — click to view' })]) : '');
   }
   if (card === 'rentals') {
-    const st = getStatus('rentalStatus', rentalDisplayStatus(rec));
+    const st = rentalStatusDisplay(rec);   // §20 mix label when units diverge
     const inv = rec.invoiceId ? IDX.invoice.get(rec.invoiceId) : null;
     const payst = inv ? getStatus('invoiceStatus', invoiceTotals(inv).status) : null;
     const cust = rec.customerId ? IDX.customer.get(rec.customerId) : null;   // §20: customer rides as a FLAG (not in the name)
@@ -2055,7 +2058,7 @@ const DETAIL = {
     const inv = r.invoiceId ? IDX.invoice.get(r.invoiceId) : null;
     const invT = inv ? invoiceTotals(inv) : null;
     const truck = showsTruck(r.status, r.transportType);
-    const stColor = getStatus('rentalStatus', rentalDisplayStatus(r)).color;
+    const stColor = rentalStatusDisplay(r).color;   // §20 section/timeline color follows the roll-up (gray when mixed)
     const s = parseISO(r.startDate), e = parseISO(r.endDate);
 
     const hasWin = s && e;
@@ -2248,7 +2251,7 @@ const DETAIL = {
     const hchips = [
       { kind: 'insp', label: `${DATA.inspections.filter((n) => n.unitId === u.unitId).length} Inspections`, cls: 'g', re: /inspect/i },
       { kind: 'wo', label: `${DATA.workOrders.filter((w) => w.unitId === u.unitId).length} WOs`, cls: 'r', re: /\bWO\b|work order|part |field call|serviced/i },
-      { kind: 'rent', label: `${DATA.rentals.filter((r) => r.unitId === u.unitId).length} Rentals`, cls: 'b', re: /rent/i },
+      { kind: 'rent', label: `${DATA.rentals.filter((r) => rentalHasUnit(r, u.unitId)).length} Rentals`, cls: 'b', re: /rent/i },
       { kind: 'wash', label: `${(u.serviceLog || []).filter((l) => l.taskId === 'svc-wash').length} Washes`, cls: 'y', re: /wash/i },
     ];
     return `<div class="detail">
