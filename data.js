@@ -56,7 +56,7 @@ const units = [
  *    DERIVED in production; seeded here so the Customers list can render its
  *    Active-Status spectrum + digest while Customers stays a basic card this slice. ── */
 const customers = [
-  m({ customerId: 'C0009', name: 'Devin Lyles (bayou games)', company: 'bayou games', phone: '(337) 214-5001', email: 'manager@bayougames.com', address: 'Lake Charles, LA, USA', accountType: 'Business', payStatus: 'Current', industry: 'Entertainment', requiresPO: false, accountNotes: 'Recurring event-equipment renter.', stripeId: 'cus_demo009', _digest: { totalPaid: 18400, visits: 14, years: 2, avgFrequencyDays: 26, activePct: 82, firstInvoice: '2024-05-10', lastInvoice: '2026-06-02' },
+  m({ customerId: 'C0009', name: 'Devin Lyles (bayou games)', company: 'bayou games', phone: '(337) 214-5001', email: 'manager@bayougames.com', address: 'Lake Charles, LA, USA', accountType: 'Business', payStatus: 'Current', industry: 'Entertainment', requiresPO: false, accountNotes: 'Recurring event-equipment renter.', stripeId: 'cus_demo009', cards: [{ id: 'CARD-D009', stripePmId: 'pm_demo009', brand: 'visa', last4: '4242', expMonth: 8, expYear: 2031, nickname: '', notes: '', isDefault: true, status: 'active' }], cardBrand: 'visa', cardLast4: '4242', cardExpMonth: 8, cardExpYear: 2031, _digest: { totalPaid: 18400, visits: 14, years: 2, avgFrequencyDays: 26, activePct: 82, firstInvoice: '2024-05-10', lastInvoice: '2026-06-02' },
       usedSalesStage: 'Contacted', interestedCategoryIds: ['CAT001', 'CAT008'], salesAction: 'Send weekend light-tower package quote',
       membershipStage: 'Inbound Lead',
       activityLog: [ { when: '2026-05-20', text: 'Quoted weekend light-tower package' }, { when: '2026-04-02', text: 'Inbound lead via website form' } ] }),
@@ -77,6 +77,7 @@ const customers = [
  *    show its Invoice pill + balance. Subtotal/balance/status derived in app. ── */
 const invoices = [
   m({ invoiceId: '01i02Ju26', customerId: 'C0009', rentalIds: ['R-A'], date: '2026-06-02', dueDate: '2026-06-16', po: '', amountPaid: 1000,
+      allocations: { '0:rental:R-A': 753, '1:transport:R-A': 150 },   // §19 partial split: $903 pre-tax (+$97 tax = the $1,000 paid)
       lineItems: [
         { kind: 'rental',    ref: 'R-A', label: 'Shrek — 12k Excavator (7-Day×1 + 1-Day×3)', amount: 2610 },
         { kind: 'transport', ref: 'R-A', label: 'Delivery — Orange, TX', amount: 150 },
