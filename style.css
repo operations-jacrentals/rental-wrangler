@@ -1086,6 +1086,9 @@ body.rw-inspect .c-titlecard:hover { outline: 2px solid #18b6ff; outline-offset:
 .journey.mini .jnode { min-width: 36px; }
 .journey.mini .jseg { padding-top: 2px; }
 .unitchip { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.unitchip.voided { opacity: .55; }
+.unitchip.voided .pill { position: relative; }
+.unitchip.voided .pill::after { content: ""; position: absolute; left: 3px; right: 3px; top: 50%; height: 1.5px; background: currentColor; opacity: .85; pointer-events: none; }
 .pill.gate.locked { cursor: default; opacity: .85; }
 .invitem { width: 100%; display: flex; flex-direction: column; gap: 3px; align-items: center; }
 .invitem .journey { width: 100%; max-width: 420px; }
