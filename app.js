@@ -1520,12 +1520,12 @@ function listTotalsEl(card, rows, session) {
       Object.entries(a.counts).sort((x, y) => y[1] - x[1]).forEach(([key, n]) => {
         const m = col.meta ? col.meta(key) : { label: key, color: 'gray' };
         const on = tf && tf.col === col.key && String(tf.value) === String(key);
-        chips.push(`<button class="tot-chip c-${m.color} js-tot-chip${on ? ' on' : ''}" data-tot-card="${totCard}" data-tot-col="${col.key}" data-tot-val="${esc(String(key))}">${n} ${esc(m.label)}</button>`);
+        chips.push(`<button class="tot-chip c-${m.color} js-tot-chip${on ? ' on' : ''}" data-r="R4" data-tot-card="${totCard}" data-tot-col="${col.key}" data-tot-val="${esc(String(key))}">${n} ${esc(m.label)}</button>`);
       });
     } else if (a.kind === 'num' && a.count) {
       const calc = col.agg === 'sum' ? 'sum' : 'avg';
       const val = col.type === 'money' ? money(a[calc]) : num(a[calc]);
-      chips.push(`<span class="tot-chip">${val} ${esc(col.label)} ${calc}</span>`);
+      chips.push(`<span class="tot-chip" data-r="R4">${val} ${esc(col.label)} ${calc}</span>`);
     }
   }
   // v2: the units footer carries the SHOP — open-WO + parts-ordered counts
@@ -1535,8 +1535,8 @@ function listTotalsEl(card, rows, session) {
     const ordBy = new Set(DATA.workOrders.filter((w) => w.phase !== 'Complete' && (w.phase === 'Part Ordered' || (w.lineItems || []).some((l) => l.phase === 'Part Ordered'))).map((w) => w.unitId));
     const nOpen = rows.filter((u) => openBy.has(u.unitId)).length;
     const nOrd = rows.filter((u) => ordBy.has(u.unitId)).length;
-    if (nOpen) { const on = tf && tf.col === '__wo' && tf.value === 'open'; chips.push(`<button class="tot-chip c-red js-tot-chip${on ? ' on' : ''}" data-tot-card="units" data-tot-col="__wo" data-tot-val="open">${nOpen} WOs Open</button>`); }
-    if (nOrd) { const on = tf && tf.col === '__wo' && tf.value === 'ordered'; chips.push(`<button class="tot-chip c-yellow js-tot-chip${on ? ' on' : ''}" data-tot-card="units" data-tot-col="__wo" data-tot-val="ordered">${nOrd} Parts Ordered</button>`); }
+    if (nOpen) { const on = tf && tf.col === '__wo' && tf.value === 'open'; chips.push(`<button class="tot-chip c-red js-tot-chip${on ? ' on' : ''}" data-r="R4" data-tot-card="units" data-tot-col="__wo" data-tot-val="open">${nOpen} WOs Open</button>`); }
+    if (nOrd) { const on = tf && tf.col === '__wo' && tf.value === 'ordered'; chips.push(`<button class="tot-chip c-yellow js-tot-chip${on ? ' on' : ''}" data-r="R4" data-tot-card="units" data-tot-col="__wo" data-tot-val="ordered">${nOrd} Parts Ordered</button>`); }
   }
   if (!chips.length) return null;
   const node = el('div', 'list-totals');

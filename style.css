@@ -730,16 +730,17 @@ input { font-family: inherit; }
 /* the value totals, frozen as a real Card Footer below the scrolling body */
 .list-totals { flex: 0 0 auto; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 9px 12px;
   background: var(--card-head); border-top: 1px solid var(--accent-line); box-shadow: 0 -5px 11px -7px rgba(0,0,0,.45); }
-.tot-chip { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: var(--panel); color: var(--txt-2);
-  border: 1px solid var(--line); white-space: nowrap; }
+/* R4 (Jac 2026-06-12): footer chips wear the DERIVED-pill treatment — no
+   background, no border, no icon; colored ink + underline on hover/active. */
+.tot-chip { font-size: 11px; font-weight: 700; padding: 2px 2px; background: none; color: var(--txt-2);
+  border: none; white-space: nowrap; }
 .tot-chip.c-green { color: var(--green); } .tot-chip.c-red { color: var(--red); } .tot-chip.c-yellow { color: var(--yellow); }
 .tot-chip.c-blue { color: var(--blue); } .tot-chip.c-purple { color: var(--purple); } .tot-chip.c-orange { color: var(--orange); }
 .tot-chip.c-navy { color: var(--navy); } .tot-chip.c-pink { color: var(--pink); } .tot-chip.c-brown { color: var(--brown); }
 /* badge-value chips are clickable → filter the list to that value */
-button.tot-chip { cursor: pointer; font-family: inherit; transition: transform .08s ease, box-shadow .12s ease, background .12s ease, border-color .12s ease; }
-button.tot-chip:hover { background: var(--accent-soft); border-color: var(--accent-line); transform: translateY(-1px); }
-button.tot-chip:active { transform: translateY(0); }
-button.tot-chip.on { background: var(--accent); border-color: var(--accent); color: #fff; box-shadow: 0 2px 8px -2px var(--accent); }
+button.tot-chip { cursor: pointer; font-family: inherit; }
+button.tot-chip:hover { text-decoration: underline; text-underline-offset: 3px; }
+button.tot-chip.on { text-decoration: underline; text-underline-offset: 3px; filter: brightness(1.18); }
 
 /* §13.2 — Board View spreadsheet popup */
 .bv-popup { width: 92vw; height: 86vh; max-width: 1400px; }
