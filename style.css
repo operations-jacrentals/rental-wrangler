@@ -1172,3 +1172,15 @@ input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
 .woline > .pill, .hitem > .pill { min-width: 88px; justify-content: center; }
 /* Machined numbers: every digit the same width, so money/hour columns align. */
 body { font-variant-numeric: tabular-nums; }
+
+/* R9 ALERT FLAGS (Jac 2026-06-12): big-deal flags pulse — No Card, an active
+   rental, pay status that isn't Paid/Current. Slow + gentle, not the lint alarm. */
+@keyframes flagPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+.flag.alert { animation: flagPulse 1.6s ease-in-out infinite; }
+/* §12.1 rapid action entry: field left, R14 mode toggle right, under the active bar */
+.act-entry { display: flex; gap: 8px; align-items: center; }
+.act-entry .act-in { flex: 1; height: 28px; background: var(--bg-2); border: 1px solid var(--line);
+  border-radius: 8px; color: var(--ink); font: inherit; font-size: 12.5px; padding: 0 10px; }
+.act-entry .act-in:focus { outline: none; border-color: var(--accent-line); }
+.act-entry .act-in::placeholder { color: var(--muted); }
+.hlog.actlog { padding: 0 2px; }

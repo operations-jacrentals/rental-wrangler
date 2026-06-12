@@ -992,9 +992,10 @@ function linkName(label, { card, recId, js, data } = {}) {
   return `<span class="linkname${js ? ' ' + js : ''}" data-r="R7"${nav}${dataAttrs(data)}>${esc(label)}</span>`;
 }
 /** R9: a title mini-flag + the ≤2-row stack that matches the 30px title chip. */
-function flagEl(label, color, { icon, card, recId, title } = {}) {
+function flagEl(label, color, { icon, card, recId, title, alert } = {}) {
+  // alert: big-deal flags pulse (No Card, active rental, bad pay status — Jac 2026-06-12)
   const nav = card ? ` data-pill-card="${card}" data-pill-rec="${esc(recId)}"` : '';
-  return `<span class="flag c-${color}" data-r="R9"${nav}${title ? ` title="${esc(title)}"` : ''}>${icon || ''}${esc(label)}</span>`;
+  return `<span class="flag c-${color}${alert ? ' alert' : ''}" data-r="R9"${nav}${title ? ` title="${esc(title)}"` : ''}>${icon || ''}${esc(label)}</span>`;
 }
 const flagsStack = (flags, h) => `<span class="flags" data-r="R9"${h ? ` style="height:${h}px"` : ''}>${flags.filter(Boolean).join('')}</span>`;
 /** R14: a 3-state segmented toggle. opts: [{label, js, data, on:'green'|'yellow'|...}] */
@@ -1831,11 +1832,17 @@ function headFlagsHtml(card, rec) {
   }
   if (card === 'customers') {
     // Jac 2026-06-12: flags, not badges — and "Incomplete" IS the account gate
-    // (R1, no chevron, opens the account popup; stays as a green Account gate after)
+    // (R1, no chevron, opens the account popup; stays as a green Account gate after).
+    // BIG-DEAL flags PULSE: No Card · active rental · pay status not Paid/Current.
     const acct = getStatus('customerAccountType', rec.accountType || 'Non-Business');
     const pay = rec.payStatus ? getStatus('customerPayStatus', rec.payStatus) : null;
+    const payBad = pay && !/^(Paid|Current)$/i.test(rec.payStatus);
+    const activeR = DATA.rentals.find((r) => r.customerId === rec.customerId && ACTIVE_RENTAL.has(r.status));
+    const rSt = activeR ? getStatus('rentalStatus', rentalDisplayStatus(activeR)) : null;
+    const noCard = cardFlag(rec) === 'none';
     const acctDone = !!(rec.selfie && rec.signature);
-    return flagsStack([flagEl(acct.label, acct.color, { icon: CARD_ICON.customers }), pay ? flagEl(pay.label, pay.color, { icon: CARD_ICON.invoices }) : ''])
+    return flagsStack([flagEl(acct.label, acct.color, { icon: CARD_ICON.customers }), pay ? flagEl(pay.label, pay.color, { icon: CARD_ICON.invoices, alert: payBad }) : ''])
+      + (rSt || noCard ? flagsStack([rSt ? flagEl(rSt.label, rSt.color, { icon: CARD_ICON.rentals, card: 'rentals', recId: activeR.rentalId, alert: true }) : '', noCard ? flagEl('No Card', 'red', { alert: true }) : '']) : '')
       + `<span style="margin-left:auto">${gatePillRaw(acctDone ? 'Account' : 'Incomplete', acctDone ? 'green' : 'yellow', 'js-edit-customer', { rec: rec.customerId }, true)}</span>`;
   }
   return '';
@@ -2176,19 +2183,24 @@ const DETAIL = {
       ${c.paidFees ? kv(money(c.paidFees), { sfx: 'paid fees' }) : ''}
     </div></div>`;
     const log = (c.activityLog || []).map((a) => `<div class="hitem"><span class="htime">${esc(fmtShortDate(a.when))}</span><span>${esc(a.text)}</span></div>`).join('');
-    // §12.1 — the action entry + Record/Schedule lead the Activity Log (they're related)
-    const activity = `<div class="section"><h4>Activity Log</h4>
-      <div class="pillrow" style="margin-bottom:10px">
-        <span class="${c.salesAction ? 'pill ghost' : 'add-field'} inline-edit" data-r="${c.salesAction ? 'R18' : 'R5c'}" data-edit="salesAction" data-rec="${c.customerId}"${c.salesAction ? '' : ' style="height:26px"'}>${c.salesAction ? esc(c.salesAction) : '+Action'}</span>
-        ${actionPill('commit', 'Record', { js: 'js-funnel-record', data: { rec: c.customerId } })}
-        ${actionPill('commit', 'Schedule', { js: 'js-funnel-schedule', data: { rec: c.customerId } })}
-      </div>
-      <div class="hlog">${log || '<span class="muted" style="font-size:12px">No activity yet.</span>'}</div></div>`;
+    /* §12.1 RAPID ACTION ENTRY (Jac 2026-06-12): no Activity Log section — the field
+       rides just under the active bar with the R14 Record/Schedule mode toggle on its
+       right. Enter logs + clears + stays focused; clicking away logs + clears. */
+    const mode = state.actMode || 'record';
+    const actEntry = `<div class="act-entry">
+      <input class="act-in js-act-in" data-rec="${c.customerId}" placeholder="+Action" />
+      ${segCtl([
+        { label: 'Record', js: 'js-actmode', data: { rec: c.customerId, val: 'record' }, on: mode === 'record' ? 'blue' : null },
+        { label: 'Schedule', js: 'js-actmode', data: { rec: c.customerId, val: 'schedule' }, on: mode === 'schedule' ? 'purple' : null },
+      ], 'seg-act')}
+    </div>`;
+    const activity = `<div class="hlog actlog">${log || '<span class="muted" style="font-size:12px">No activity yet.</span>'}</div>`;
 
     const notes = notesSection('customers', c, 'customerId', 'accountNotes');
     return `<div class="detail">
       <div class="detail-head">${title}</div>
       ${activeBar}
+      ${actEntry}
       ${notes.top}
       <div class="detail-cols">${contact}${account}</div>
       ${cardsSection(c)}
@@ -3602,7 +3614,7 @@ function renderOverlay() {
       <div class="popup-head"><span class="c-icon" style="color:var(--accent);display:inline-flex">${CARD_ICON.customers}</span><h3>Schedule — ${esc(c.name)}</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
       <div class="popup-body">
         <label class="svc-field"><span>Date &amp; time</span><input type="datetime-local" class="js-sch-when" value="${def}"></label>
-        <textarea class="insp-desc js-sch-note" placeholder="What's the follow-up? (quote call, pickup, demo…)"></textarea>
+        <textarea class="insp-desc js-sch-note" placeholder="What's the follow-up? (quote call, pickup, demo…)">${esc(o.note || '')}</textarea>
         <div class="pillrow" style="justify-content:flex-end;margin-top:10px"><button class="pill c-commit js-schedule-save" data-r="R17" data-rec="${c.customerId}">Add to schedule</button></div>
       </div>`;
     overlay.appendChild(pop);
@@ -4275,9 +4287,8 @@ function onClick(e) {
   }
   if (closest('.js-clear-fleet')) { e.stopPropagation(); state.fleetFilter = null; render(); return; }
   if (closest('.js-addcat')) { e.stopPropagation(); return beginPick('customers', closest('.js-addcat').dataset.rec, undefined, 'intcat'); }
-  if (closest('.js-funnel-record')) { e.stopPropagation(); const c = IDX.customer.get(closest('.js-funnel-record').dataset.rec); if (c && c.salesAction) { c.activityLog = c.activityLog || []; c.activityLog.push({ when: TODAY_ISO, text: c.salesAction }); c.salesAction = ''; toast('Logged to the Activity Log.'); render(); } else attnFlash('[data-edit="salesAction"]'); return; }
-  if (closest('.js-funnel-schedule')) { e.stopPropagation(); return openOverlay({ kind: 'schedule', customerId: closest('.js-funnel-schedule').dataset.rec }); }
-  if (closest('.js-schedule-save')) { const b = closest('.js-schedule-save'); e.stopPropagation(); const root = b.closest('.popup-body'); const c = IDX.customer.get(b.dataset.rec); const when = root.querySelector('.js-sch-when')?.value; const note = (root.querySelector('.js-sch-note')?.value || '').trim(); if (!c || !when) { flashOr('.js-sch-when', 'Pick a date & time first.'); return; } c.activityLog = c.activityLog || []; c.activityLog.push({ when: when.slice(0, 10), text: `Scheduled: ${note || 'follow-up'} @ ${when.replace('T', ' ')}` }); reindex('customers', c); toast('Scheduled — added to the Activity Log.'); closeOverlay(); }
+  if (closest('.js-actmode')) { const b = closest('.js-actmode'); e.stopPropagation(); state.actMode = b.dataset.val; const rec = b.dataset.rec; render(); document.querySelector(`.js-act-in[data-rec="${rec}"]`)?.focus(); return; }
+  if (closest('.js-schedule-save')) { const b = closest('.js-schedule-save'); e.stopPropagation(); const root = b.closest('.popup-body'); const c = IDX.customer.get(b.dataset.rec); const when = root.querySelector('.js-sch-when')?.value; const note = (root.querySelector('.js-sch-note')?.value || '').trim(); if (!c || !when) { flashOr('.js-sch-when', 'Pick a date & time first.'); return; } c.activityLog = c.activityLog || []; c.activityLog.push({ when: when.slice(0, 10), text: `Scheduled: ${note || 'follow-up'} @ ${when.replace('T', ' ')}` }); reindex('customers', c); toast('Scheduled — added to the Activity Log.'); closeOverlay(); render(); }
   // draft pickers / creation affordances (§0.3)
   if (closest('.js-pick')) { const b = closest('.js-pick'); e.stopPropagation(); return beginPick(b.dataset.card, b.dataset.rec, b.dataset.type || undefined, b.dataset.slot); }
   if (closest('.js-create-invoice')) { e.stopPropagation(); return createInvoiceForRental(closest('.js-create-invoice').dataset.rec); }
@@ -4512,10 +4523,6 @@ function startInlineEdit(span) {
     const inv = IDX.invoice.get(recId);
     input.value = inv?.po || ''; input.placeholder = 'PO #';
     commit = () => { if (done) return; done = true; if (inv) { const old = inv.po; const v = input.value.trim(); if (String(old ?? '') !== v) { inv.po = v; reindex('invoices', inv); logAction(inv, `PO: ${auditVal(old)} → ${auditVal(v)}`); } } render(); };
-  } else if (kind === 'salesAction') {
-    const c = IDX.customer.get(recId);
-    input.value = c?.salesAction || ''; input.placeholder = 'Next action…';
-    commit = () => { if (done) return; done = true; if (c) { const old = c.salesAction; const v = input.value.trim(); if (String(old ?? '') !== v) { c.salesAction = v; reindex('customers', c); logAction(c, `Sales action: ${auditVal(old)} → ${auditVal(v)}`); } } render(); };
   } else if (kind === 'custField') {
     const c = IDX.customer.get(recId), f = span.dataset.field;
     input.value = (c && c[f]) || ''; input.placeholder = span.dataset.ph || '';
@@ -5144,6 +5151,18 @@ function getStripe() {
 const canMoney = () => !currentRole || currentRole === 'Admin' || currentRole === 'Owner' || currentRole === 'Office';
 const brandName = (b) => (b || 'Card').replace(/^./, (m) => m.toUpperCase());
 const hasCardOnFile = (c) => customerCards(c).length > 0;
+/* §12.1 rapid action entry (Jac 2026-06-12): commit per the R14 mode toggle —
+   Record logs straight to the Activity Log; Schedule opens the date popup with
+   the typed action as the note. The field clears on the next render. */
+function commitAction(custId, text) {
+  const c = IDX.customer.get(custId); if (!c) return;
+  const v = (text || '').trim(); if (!v) return;
+  if ((state.actMode || 'record') === 'schedule') return openOverlay({ kind: 'schedule', customerId: custId, note: v });
+  c.activityLog = c.activityLog || [];
+  c.activityLog.push({ when: TODAY_ISO, text: v });
+  reindex('customers', c);
+  render();
+}
 const cardOneLabel = (k) => k ? `${brandName(k.brand)} ••${k.last4}${k.expMonth ? ` · ${k.expMonth}/${String(k.expYear).slice(-2)}` : ''}${k.nickname ? ` · ${k.nickname}` : ''}` : '';
 const cardLabel = (c) => { const k = defaultCard(c); return k ? cardOneLabel(k) : ''; };
 function friendlyPayErr(r) {
@@ -5974,6 +5993,22 @@ function boot() {
   document.addEventListener('click', onClick);
   document.addEventListener('input', onInput);
   document.addEventListener('change', onChange);
+  // §12.1 rapid action entry — Enter logs + clears + keeps focus; click-away logs + clears.
+  // Clicking the Record/Schedule toggle is NOT "away" (focus stays inside .act-entry).
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.target.classList?.contains('js-act-in')) {
+      e.preventDefault();
+      const rec = e.target.dataset.rec;
+      commitAction(rec, e.target.value);
+      const f = document.querySelector(`.js-act-in[data-rec="${rec}"]`);
+      if (f) { f.value = ''; f.focus(); }
+    }
+  });
+  document.addEventListener('focusout', (e) => {
+    if (!e.target.classList?.contains('js-act-in') || !e.target.value.trim()) return;
+    if (e.relatedTarget?.closest?.('.act-entry')) return;
+    commitAction(e.target.dataset.rec, e.target.value);
+  });
   document.addEventListener('mousemove', onInspectMove);   // Design Inspector hover tag (no-op unless state.inspect)
   // Board View formula cells: reveal the raw "=…" on focus, recompute on blur.
   document.addEventListener('focusin', (e) => {
