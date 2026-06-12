@@ -3678,6 +3678,11 @@ function renderOverlay() {
         <div class="nc-agreement" tabindex="0">${esc(ag.text)}</div>
         <div class="nc-sec-title">Account packet</div>
         <div class="nc-packet">
+          <div class="nc-tile nc-tile-sig${d.signature ? ' done' : ''}">
+            <div class="nc-tile-head"><span class="nc-cap-lbl">Signature${agSigned ? '' : ' *'}</span>${d.signature ? '<span class="nc-ok">✓</span>' : ''}</div>
+            ${sigBox}
+            <div class="nc-tile-act">${d.signature ? '<button class="pill ghost js-nc-sig-clear" data-r="R18">Re-sign</button>' : '<button class="pill c-green js-nc-sig-save" data-r="R17">Accept &amp; sign</button><button class="pill ghost js-nc-sig-clearpad" data-r="R18">Clear</button>'}</div>
+          </div>
           <div class="nc-tiles">
             <div class="nc-tile${d.selfie ? ' done' : ''}">
               <div class="nc-tile-head"><span class="nc-cap-lbl">Selfie</span>${d.selfie ? '<span class="nc-ok">✓</span>' : ''}</div>
@@ -3687,13 +3692,12 @@ function renderOverlay() {
             <div class="nc-tile${cardOnFile ? ' done' : ''}">
               <div class="nc-tile-head"><span class="nc-cap-lbl">Card on file</span>${cardOnFile ? '<span class="nc-ok">✓</span>' : ''}</div>
               <div class="nc-thumb empty${cardOnFile ? ' good' : ''}">${esc(cardShort)}</div>
-              <div class="nc-tile-act">${isEdit ? (d.signature && d.selfie ? `<button class="pill c-commit js-add-card" data-rec="${o.editId}">${cardOnFile ? 'Replace card' : 'Add card'}</button>` : '<span class="muted" style="font-size:11px">Sign first</span>') : '<span class="muted" style="font-size:11px">Save customer first</span>'}</div>
+              <div class="nc-tile-act">${
+                !(d.signature && d.selfie) ? '<span class="muted" style="font-size:11px">Sign first</span>'
+                  : !o.editId ? '<span class="muted" style="font-size:11px">Add name &amp; phone</span>'
+                    : `<button class="pill c-commit js-add-card" data-rec="${o.editId}" data-r="R17">${cardOnFile ? 'Replace card' : 'Add card'}</button>`
+              }</div>
             </div>
-          </div>
-          <div class="nc-tile nc-tile-sig${d.signature ? ' done' : ''}">
-            <div class="nc-tile-head"><span class="nc-cap-lbl">Signature${agSigned ? '' : ' *'}</span>${d.signature ? '<span class="nc-ok">✓</span>' : ''}</div>
-            ${sigBox}
-            <div class="nc-tile-act">${d.signature ? '<button class="pill ghost js-nc-sig-clear" data-r="R18">Re-sign</button>' : '<button class="pill c-green js-nc-sig-save" data-r="R17">Accept &amp; sign</button><button class="pill ghost js-nc-sig-clearpad" data-r="R18">Clear</button>'}</div>
           </div>
         </div>
         ${o.error ? `<div class="login-err" style="text-align:left;margin-top:10px">${esc(o.error)}</div>` : ''}
@@ -5181,9 +5185,13 @@ function onChange(e) {
     return;
   }
   // New Customer form: filling Company auto-promotes Non-Business → Business.
-  if (e.target.dataset && e.target.dataset.f === 'company' && state.overlay?.kind === 'newCustomer') {
+  if (e.target.dataset && e.target.dataset.f && state.overlay?.kind === 'newCustomer') {
     const o = state.overlay, root = document.querySelector('.overlay .popup-body');
     if (root) root.querySelectorAll('[data-f]').forEach((i) => { o.draft[i.dataset.f] = i.value.trim(); });
+    // quick-add: First + Phone present → persist behind the scenes (no render, keeps focus)
+    if (!o.editId) quickSaveCustomer(o);
+    // already saved → keep the record live as they keep typing (no render)
+    if (o.editId) { const c = IDX.customer.get(o.editId); if (c) { const d = o.draft; Object.assign(c, { firstName: d.firstName, lastName: d.lastName, name: `${d.firstName} ${d.lastName}`.trim(), company: d.company, phone: d.phone, email: d.email, industry: d.industry, accountNotes: d.accountNotes }); reindex('customers', c); } }
     if (o.draft.company && o.draft.accountType === 'Non-Business') { o.draft.accountType = 'Business'; renderOverlay(); }
     return;
   }
@@ -5301,6 +5309,27 @@ const NC_ACCOUNT_TYPES = ['Non-Business', 'Business', 'Non-Business Member', 'Bu
 function nextCustomerId() {
   const max = DATA.customers.reduce((m, c) => { const n = /^C(\d+)$/.exec(c.customerId || ''); return n ? Math.max(m, +n[1]) : m; }, 0);
   return 'C' + String(max + 1).padStart(4, '0');
+}
+/* QUICK ADD (Jac 2026-06-12): the moment First + Phone exist, persist the customer
+   behind the scenes and flip the popup to edit mode IN PLACE (no render → typing
+   focus kept) so the card-on-file can be attached without a separate Save step. */
+function quickSaveCustomer(o) {
+  if (!o || o.kind !== 'newCustomer' || o.editId) return null;
+  const d = o.draft; if (!d.firstName || !d.phone) return null;
+  const id = nextCustomerId();
+  const c = {
+    customerId: id, firstName: d.firstName, lastName: d.lastName, name: `${d.firstName} ${d.lastName}`.trim(),
+    company: d.company, phone: d.phone, email: d.email, address: '',
+    industry: d.industry, accountType: d.accountType || 'Non-Business', payStatus: 'New Customer',
+    requiresPO: false, accountNotes: d.accountNotes, stripeId: '', selfie: d.selfie || '', signature: d.signature || '',
+    agreementType: d.agreementType || '', agreementSignedAt: d.agreementSignedAt || '',
+    interestedCategoryIds: [], activityLog: [], usedSalesStage: 'Inbound Lead', membershipStage: 'Inbound Lead',
+    _digest: { activePct: 0, totalPaid: 0, visits: 0, years: 0, avgFrequencyDays: 0, firstInvoice: '', lastInvoice: '' },
+  };
+  DATA.customers.push(c); IDX.customer.set(id, c); reindex('customers', c);
+  logAction(c, 'Customer quick-added');
+  o.editId = id;
+  return id;
 }
 function saveNewCustomer() {
   const o = state.overlay; if (!o || o.kind !== 'newCustomer') return;
