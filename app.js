@@ -2272,28 +2272,36 @@ const DETAIL = {
       ${c.paidCadence ? kvPills(`${badge('Paid ' + c.paidCadence, 'green')}${c.unlimitedTransport ? badge('Unlimited Transport', 'purple') : ''}`) : ''}
       ${c.paidFees ? kv(money(c.paidFees), { sfx: 'paid fees' }) : ''}
     </div></div>`;
-    const log = (c.activityLog || []).map((a) => `<div class="hitem"><span class="htime">${esc(fmtShortDate(a.when))}</span><span>${esc(a.text)}</span></div>`).join('');
-    /* §12.1 ACTION ENTRY v3 (Jac 2026-06-12): two R5b adds above the active bar —
-       +Log Action / +Schedule Action. Either opens the entry field UNDER the bar,
-       which is the TOP of the Activity Log. Enter commits + stays open (rapid);
-       click-away commits + closes; Esc closes. */
-    const actBtns = `<div class="pillrow" style="justify-content:center">${addBtn('Log Actions', { line: true, js: 'js-act-open', h: 26, data: { rec: c.customerId, val: 'record' } })}${addBtn('Schedule Actions', { line: true, js: 'js-act-open', h: 26, data: { rec: c.customerId, val: 'schedule' } })}</div>`;
+    /* §12.1 ACTION BOARD v4 (Jac 2026-06-12): header row = "Actions" label +
+       +Log Actions · +Schedule Actions + "Schedule" label; under them, TWO
+       columns — logged actions LEFT, scheduled RIGHT. No empty-state text;
+       sections below flow down as the columns grow. Entry opens under the row. */
+    const actHead = `<div class="act-head">
+      <span class="act-col-lbl">Actions</span>
+      ${addBtn('Log Actions', { line: true, js: 'js-act-open', h: 26, data: { rec: c.customerId, val: 'record' } })}
+      <span class="spacer"></span>
+      ${addBtn('Schedule Actions', { line: true, js: 'js-act-open', h: 26, data: { rec: c.customerId, val: 'schedule' } })}
+      <span class="act-col-lbl">Schedule</span>
+    </div>`;
     const actEntry = state.actOpen === c.customerId
       ? `<div class="act-entry"><input class="act-in js-act-in" data-rec="${c.customerId}" placeholder="${state.actMode === 'schedule' ? 'Schedule an action…' : 'Log an action…'}" /></div>`
       : '';
-    const activity = `<div class="hlog actlog">${log || '<span class="muted" style="font-size:12px">No activity yet.</span>'}</div>`;
+    const hit = (a, strip) => `<div class="hitem"><span class="htime">${esc(fmtShortDate(a.when))}</span><span>${esc(strip ? a.text.replace(/^Scheduled:\s*/, '') : a.text)}</span></div>`;
+    const acts = (c.activityLog || []).filter((a) => !/^Scheduled:/.test(a.text)).map((a) => hit(a)).join('');
+    const scheds = (c.activityLog || []).filter((a) => /^Scheduled:/.test(a.text)).map((a) => hit(a, true)).join('');
+    const activity = acts || scheds ? `<div class="act-cols"><div class="act-col">${acts}</div><div class="act-col">${scheds}</div></div>` : '';
 
     const notes = notesSection('customers', c, 'customerId', 'accountNotes');
-    /* Jac 2026-06-12 order: action buttons → active bar → entry field + Activity Log
-       (the log tops out under the bar) → funnels → merged Account → Cards → Notes → History */
+    /* Jac 2026-06-12 order: funnels ABOVE the active bar → action header row →
+       entry → the two action columns → Account → Cards → Notes → History */
     return `<div class="detail">
       <div class="detail-head">${title}</div>
+      <div class="detail-cols">${usedSales}${membership}</div>
       ${activeBar}
-      ${actBtns}
+      ${actHead}
       ${actEntry}
       ${activity}
       ${notes.top}
-      <div class="detail-cols">${usedSales}${membership}</div>
       ${account}
       ${cardsSection(c)}
       ${notes.bottom}

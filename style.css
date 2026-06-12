@@ -1211,3 +1211,10 @@ body { font-variant-numeric: tabular-nums; }
 .file-drop.done { border-style: solid; border-color: var(--green); color: var(--green); }
 .file-drop svg { width: 18px; height: 18px; }
 .popup .file-drop { margin-bottom: 9px; }
+
+/* §12.1 ACTION BOARD v4 (Jac 2026-06-12): label + add | add + label header row,
+   then logged actions LEFT / scheduled RIGHT in two columns */
+.act-head { display: flex; align-items: center; gap: 10px; }
+.act-col-lbl { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: var(--txt-3); }
+.act-cols { display: flex; gap: 14px; align-items: flex-start; }
+.act-col { flex: 1; min-width: 0; }
