@@ -1889,25 +1889,27 @@ function yardToolHtml(u) {
   if (!r) return '';
   const cust = r.customerId ? IDX.customer.get(r.customerId) : null;
   const euT = (r.units || []).find((e) => e.unitId === u.unitId);   // §20 this unit's own status on its journey
+  const C = euT || r;   // §20 this unit's OWN captures (mirrors r.* for the primary)
   const st = getStatus('rentalStatus', euT ? unitStatus(r, euT) : rentalDisplayStatus(r));
   const isDel = r.transportType && r.transportType !== 'Self';
-  const startLbl = r.startCapture ? 'On Rent' : isDel ? '+Log Delivery' : '+Start';
-  const endLbl = r.endCapture ? 'Returned' : isDel ? '+Log Recovery' : '+End';
+  const startLbl = C.startCapture ? 'On Rent' : isDel ? '+Log Delivery' : '+Start';
+  const endLbl = C.endCapture ? 'Returned' : isDel ? '+Log Recovery' : '+End';
   const kindLbl = isDel ? getStatus('transportType', r.transportType).label : '';
+  const du = `data-unit="${esc(u.unitId)}"`;
   return `<div class="jtool"><div class="journey">
     <div class="jnode pre" style="cursor:default"><span class="jbox" style="color:var(--${st.color})">${CARD_ICON.rentals}</span><span class="jlbl" style="color:var(--${st.color})">${esc(st.label)}</span><span class="jts">${fmtShortDate(r.startDate)}${r.startTime ? ' · ' + esc(r.startTime) : ''}</span></div>
     <div class="jseg">
       <span class="jover"><span class="pill dvd c-orange" data-r="R4" data-pill-card="rentals" data-pill-rec="${esc(r.rentalId)}">${CARD_ICON.rentals}<span class="t">${esc(cust?.name || r.rentalName || 'Rental')}</span></span></span>
-      <span class="jline2 ${r.startCapture ? 'on' : ''}"></span>
+      <span class="jline2 ${C.startCapture ? 'on' : ''}"></span>
       <span class="junder">${fmtShortDate(r.startDate)} – ${fmtShortDate(r.endDate)}</span>
       ${r.deliveryAddress ? `<span class="jaddr js-site-go" data-rec="${esc(r.rentalId)}">${esc(r.deliveryAddress)}</span>` : isDel ? `<span class="jaddr js-site-go" data-rec="${esc(r.rentalId)}">+Address</span>` : ''}
       ${kindLbl ? `<span class="jkind">${esc(kindLbl)}</span>` : ''}
     </div>
-    <div class="jnode ${r.startCapture ? 'done green' : ''} js-yard" data-cap="start" data-rec="${esc(r.rentalId)}"><span class="jbox">${r.startCapture ? '✓' : I.video}</span><span class="jlbl">${esc(startLbl)}</span><span class="jts">${esc(r.startCapture?.clock || '')}</span></div>
-    <div class="jseg"><span class="jover"></span><span class="jline2 ${r.endCapture || r.fcCapture ? 'on' : ''}"></span></div>
-    <div class="jnode fc ${r.fcCapture || r.fieldCall ? 'done' : ''} js-yard" data-cap="fc" data-rec="${esc(r.rentalId)}"><span class="jbox">${I.video}</span><span class="jlbl">+FC</span><span class="jts">${esc(r.fcCapture?.clock || '')}</span></div>
-    <div class="jseg"><span class="jover"></span><span class="jline2 ${r.endCapture ? 'on' : ''}"></span></div>
-    <div class="jnode ${r.endCapture ? 'done yellow' : ''} js-yard" data-cap="end" data-rec="${esc(r.rentalId)}"><span class="jbox">${r.endCapture ? '✓' : I.video}</span><span class="jlbl">${esc(endLbl)}</span><span class="jts">${esc(r.endCapture?.clock || '')}</span></div>
+    <div class="jnode ${C.startCapture ? 'done green' : ''} js-yard" data-cap="start" data-rec="${esc(r.rentalId)}" ${du}><span class="jbox">${C.startCapture ? '✓' : I.video}</span><span class="jlbl">${esc(startLbl)}</span><span class="jts">${esc(C.startCapture?.clock || '')}</span></div>
+    <div class="jseg"><span class="jover"></span><span class="jline2 ${C.endCapture || C.fcCapture ? 'on' : ''}"></span></div>
+    <div class="jnode fc ${C.fcCapture || r.fieldCall ? 'done' : ''} js-yard" data-cap="fc" data-rec="${esc(r.rentalId)}" ${du}><span class="jbox">${I.video}</span><span class="jlbl">+FC</span><span class="jts">${esc(C.fcCapture?.clock || '')}</span></div>
+    <div class="jseg"><span class="jover"></span><span class="jline2 ${C.endCapture ? 'on' : ''}"></span></div>
+    <div class="jnode ${C.endCapture ? 'done yellow' : ''} js-yard" data-cap="end" data-rec="${esc(r.rentalId)}" ${du}><span class="jbox">${C.endCapture ? '✓' : I.video}</span><span class="jlbl">${esc(endLbl)}</span><span class="jts">${esc(C.endCapture?.clock || '')}</span></div>
   </div></div>`;
 }
 /* one open-WO section on the Units card: WO name = the title, type+date flags right,
@@ -2126,7 +2128,7 @@ const DETAIL = {
 
     /* Complete Rental gate — blue only once Returned; Cancelled/No Show → red Cancel Rental */
     const cancelish = ['Cancelled', 'No Show'].includes(r.status);
-    const canComplete = r.status === 'Returned';
+    const canComplete = allUnitsTerminal(r);   // §20 every unit terminal (Returned / Cancelled / No Show)
     const crBtn = cancelish
       ? actionPill('danger', 'Cancel Rental', { js: 'js-cancel-rental', h: 26, data: { rec: r.rentalId } })
       : actionPill('commit', 'Complete Rental', { js: `js-complete-rental${canComplete ? '' : ' locked'}`, h: 26, data: { rec: r.rentalId } });
@@ -4959,7 +4961,7 @@ function onClick(e) {
   // ── v2 build: condition/wash segs · yard captures · site popup · WO complete · history chips ──
   if (closest('.js-cond')) { const b = closest('.js-cond'); return setUnitCondition(b.dataset.rec, b.dataset.val); }
   if (closest('.js-washseg')) { const b = closest('.js-washseg'); return setUnitWash(b.dataset.rec, b.dataset.val); }
-  if (closest('.js-yard')) { const b = closest('.js-yard'); return yardCapture(b.dataset.rec, b.dataset.cap); }
+  if (closest('.js-yard')) { const b = closest('.js-yard'); return yardCapture(b.dataset.rec, b.dataset.cap, b.dataset.unit); }
   if (closest('.js-cap-save')) return saveYardCapture();
   if (closest('.js-site-go')) { const b = closest('.js-site-go'); state.sitePin = null; state.siteType = null; return openOverlay({ kind: 'site', rentalId: b.dataset.rec }); }
   if (closest('.js-site-type')) { const b = closest('.js-site-type'); e.stopPropagation(); state.siteType = b.dataset.val; return renderOverlay(); }
@@ -4979,7 +4981,7 @@ function onClick(e) {
   if (closest('.js-hchip')) { const b = closest('.js-hchip'); const o = state.overlay; if (o?.kind === 'board') { o.histKind = o.histKind === b.dataset.kind ? null : b.dataset.kind; return renderOverlay(); } const session = activeSession(); const cs = session.cards[b.dataset.card] || session.cards.shop; cs.histKind = cs.histKind === b.dataset.kind ? null : b.dataset.kind; return render(); }
   if (closest('.js-complete-rental')) {
     const b = closest('.js-complete-rental'); const r = IDX.rental.get(b.dataset.rec); if (!r) return;
-    if (r.status !== 'Returned') return flashOr(`.js-yard[data-cap="end"][data-rec="${r.rentalId}"]`, '🔒 Available once the rental is Returned — log the End/Recovery video on the unit.');
+    if (!allUnitsTerminal(r)) return flashOr(`.js-yard[data-cap="end"][data-rec="${r.rentalId}"]`, '🔒 Every unit must be terminal first — return each one (or mark No Show / Cancel).');
     r.completed = true; reindex('rentals', r); logAction(r, 'Rental completed'); toast('Rental completed ✓'); return reanchorRender();
   }
   if (closest('.js-cancel-rental')) {
@@ -5283,10 +5285,24 @@ function setUnitStatus(rentalId, unitId, val) {
   if (['On Rent', 'Reserved'].includes(val) && cust && /Blacklist/i.test(cust.accountType || '')) { toast('Blocked: customer is blacklisted (§9).'); return; }
   if (BOOKING_STATUSES.includes(val) && cust && !hasValidCard(cust) && !r.cardOverride) { toast(`${cust.name} has no valid card on file — Admin override required.`); return; }
   eu.status = val;
+  // §20 No-Show / Cancel: the unit STAYS on the rental record but its invoice line
+  // is removed (not billed). Returned keeps its line.
+  if ((val === 'No Show' || val === 'Cancelled') && r.invoiceId) removeUnitInvoiceLine(r, unitId);
   syncRentalPrimary(r);            // mirror the aggregate back onto r.status for back-compat readers
   reindex('rentals', r);
   logAction(r, `${IDX.unit.get(unitId)?.name || unitId} → ${getStatus('rentalStatus', val).label}`);
   render();
+}
+/* drop a unit's rental line from its invoice (No Show / Cancel — not billed).
+   Keeps the §7.4 guard: a line with an assigned payment stays (refund first). */
+function removeUnitInvoiceLine(r, unitId) {
+  const inv = IDX.invoice.get(r.invoiceId); if (!inv) return;
+  const idx = (inv.lineItems || []).findIndex((li) => li.kind === 'rental' && li.ref === r.rentalId && li.unitId === unitId);
+  if (idx < 0) return;
+  if (itemPaid(inv, inv.lineItems[idx], idx) > 0) { toast('Line has an assigned payment — refund it before No Show/Cancel.'); return; }
+  inv.lineItems.splice(idx, 1);
+  reindex('invoices', inv);
+  logAction(inv, `${IDX.unit.get(unitId)?.name || unitId} line removed — No Show / Cancel (not billed)`);
 }
 function openUnitStatusDropdown(rentalId, unitId, anchorEl) {
   const html = Object.keys(STATUS.rentalStatus).filter((v) => v !== 'Tomorrow' && v !== 'Today').map((v) =>
@@ -5346,47 +5362,62 @@ function setUnitWash(unitId, val) {
 }
 /* yard journey: +Start/+Log Delivery and +End/+Log Recovery are the SAME capture
    either way (one event, shared video); +FC = markFieldCall. Popup gates every log. */
-function yardCapture(rentalId, cap) {
+/* §20 a capture is PER UNIT: cur = that unit's entry (fallback to the rental for
+   safety). Logging a delivery/recovery moves just that unit's status. */
+const captureUnit = (r, unitId) => (unitId ? (r.units || []).find((u) => u.unitId === unitId) : (r.units || [])[0]) || null;
+function setUnitCapture(r, eu, key, stamp) {
+  if (eu) eu[key] = stamp;
+  if (!eu || eu === (r.units || [])[0]) r[key] = stamp;   // mirror the primary onto r.* for pre-#20 readers
+}
+function yardCapture(rentalId, cap, unitId) {
   const r = IDX.rental.get(rentalId); if (!r) return;
-  if (cap === 'start' && r.startCapture) return toast('Start already captured — video on file.');
-  if (cap === 'end' && r.endCapture) return toast('End already captured — video on file.');
-  if (cap === 'end' && !r.startCapture) return flashOr('.js-yard[data-cap="start"]', 'Log the Start/Delivery first.');
-  if (cap === 'fc' && (r.fcCapture || r.fieldCall)) return toast('Field Call already logged.');
+  const cur = captureUnit(r, unitId) || r;
+  if (cap === 'start' && cur.startCapture) return toast('Start already captured — video on file.');
+  if (cap === 'end' && cur.endCapture) return toast('End already captured — video on file.');
+  if (cap === 'end' && !cur.startCapture) return flashOr('.js-yard[data-cap="start"]', 'Log the Start/Delivery first.');
+  if (cap === 'fc' && (cur.fcCapture || r.fieldCall)) return toast('Field Call already logged.');
   state.capFile = null;
-  openOverlay({ kind: 'capture', rentalId, cap });
+  openOverlay({ kind: 'capture', rentalId, cap, unitId: unitId || null });
 }
 function saveYardCapture() {
   const o = state.overlay; if (!o || o.kind !== 'capture') return;
   const r = IDX.rental.get(o.rentalId); if (!r) return closeOverlay();
+  const eu = captureUnit(r, o.unitId);
+  const uname = IDX.unit.get(o.unitId)?.name || '';
   // The media NEVER rides the record (a Sheets cell caps at 50k chars) — the
   // stamp persists immediately; the video uploads to Drive and only its URL
   // lands on the stamp afterwards (uploadCapture backend action).
   const file = state.capFile;
   const stamp = { date: TODAY_ISO, clock: nowClock(), video: '' };
+  // move just this unit's status (or the whole rental when no unit context); a §9
+  // gate may block it, in which case the popup stays open.
+  const moveStatus = (val) => {
+    if (o.unitId && eu) { setUnitStatus(o.rentalId, o.unitId, val); return unitStatus(r, eu) === val; }
+    setRentalStatus(o.rentalId, val); return r.status === val;
+  };
   if (o.cap === 'start') {
-    setRentalStatus(o.rentalId, 'On Rent');
-    if (r.status !== 'On Rent') return;            // a §9 gate blocked it — popup stays
-    r.startCapture = stamp; logAction(r, 'Start/Delivery video captured');
+    if (!moveStatus('On Rent')) return;
+    setUnitCapture(r, eu, 'startCapture', stamp); logAction(r, `${uname ? uname + ' — ' : ''}Start/Delivery video captured`);
   } else if (o.cap === 'end') {
-    setRentalStatus(o.rentalId, 'Returned');
-    if (r.status !== 'Returned') return;
-    r.endCapture = stamp; logAction(r, 'End/Recovery video captured');
+    if (!moveStatus('Returned')) return;
+    setUnitCapture(r, eu, 'endCapture', stamp); logAction(r, `${uname ? uname + ' — ' : ''}End/Recovery video captured`);
   } else if (o.cap === 'fc') {
-    r.fcCapture = stamp;
+    setUnitCapture(r, eu, 'fcCapture', stamp);
     markFieldCall(o.rentalId);
   }
-  uploadCaptureMedia(r, o.cap, file);
+  uploadCaptureMedia(r, eu, o.cap, file);
   state.capFile = null; state.overlay = null;
   const session = activeSession(); if (session.anchor) setAnchor(session, session.anchor.card, session.anchor.recId, session.anchor.recType);
   render(); renderOverlay();
 }
-function uploadCaptureMedia(r, cap, dataUrl) {
+function uploadCaptureMedia(r, eu, cap, dataUrl) {
   if (!dataUrl) return;
   const key = cap === 'start' ? 'startCapture' : cap === 'end' ? 'endCapture' : 'fcCapture';
-  if (!backendPassword) { if (r[key]) r[key].videoNote = 'demo mode — video not stored'; return; }
-  backendCall('uploadCapture', { dataUrl, name: cap + '_' + r.rentalId })
+  const tgt = eu || r;
+  if (!backendPassword) { if (tgt[key]) tgt[key].videoNote = 'demo mode — video not stored'; return; }
+  backendCall('uploadCapture', { dataUrl, name: cap + '_' + r.rentalId + (eu ? '_' + eu.unitId : '') })
     .then((res) => {
-      if (res && res.ok && r[key]) { r[key].video = res.url; reindex('rentals', r); toast('Capture video uploaded to Drive.'); }
+      if (res && res.ok && tgt[key]) { tgt[key].video = res.url; if (eu && eu === (r.units || [])[0] && r[key]) r[key].video = res.url; reindex('rentals', r); toast('Capture video uploaded to Drive.'); }
       else toast('Video upload failed — the log stamp is saved without it.');
     })
     .catch(() => toast('Video upload failed — the log stamp is saved without it.'));
