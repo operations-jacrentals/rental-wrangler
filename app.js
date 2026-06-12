@@ -152,7 +152,7 @@ function buildIndexes() {
   DATA.workOrders.forEach((w) => reindex('workOrders', w));
   DATA.inspections.forEach((n) => reindex('inspections', n));
 }
-const idOf   = (card, rec) => rec[{ customers: 'customerId', rentals: 'rentalId', categories: 'categoryId', units: 'unitId', invoices: 'invoiceId', workOrders: 'woId', inspections: 'inspectionId', serviceOrders: 'unitId' }[card]];
+const idOf   = (card, rec) => rec[{ customers: 'customerId', rentals: 'rentalId', categories: 'categoryId', units: 'unitId', invoices: 'invoiceId', workOrders: 'woId', inspections: 'inspectionId', serviceOrders: 'unitId', vendors: 'vendorId', parts: 'partId' }[card]];
 const recOf  = (card, id) => ({ customers: IDX.customer, rentals: IDX.rental, categories: IDX.category, units: IDX.unit, invoices: IDX.invoice, workOrders: IDX.wo, inspections: IDX.insp, serviceOrders: IDX.unit }[card])?.get(id);
 
 /* ── §5 comprehensive search blob — ONE source of truth for what's searchable.
@@ -164,6 +164,7 @@ function searchBlob(card, rec) {
   const cu = (id) => IDX.customer.get(id);
   const un = (id) => IDX.unit.get(id);
   const ca = (id) => IDX.category.get(id);
+  const ve = (id) => IDX.vendor.get(id) || DATA.vendors.find((v) => v.vendorId === id);   // popup-created vendors aren't in IDX.vendor until rebuild
   let p = [];
   switch (card) {
     case 'customers':
@@ -209,7 +210,7 @@ function searchBlob(card, rec) {
         rec.phase, L('woPhase', rec.phase), rec.woType, L('woType', rec.woType),
         rec.billCustomer, L('billCustomer', rec.billCustomer), rec.eta,
         u?.name, cust?.name,
-        ...(rec.lineItems || []).flatMap((li) => [li.part, li.vendor, li.eta, L('woPhase', li.phase)])];
+        ...(rec.lineItems || []).flatMap((li) => [li.part, (li.vendorId && ve(li.vendorId)?.name) || li.vendor, li.eta, L('woPhase', li.phase)])];
       break;
     }
     case 'inspections':
@@ -220,8 +221,10 @@ function searchBlob(card, rec) {
   }
   return p.filter(Boolean).join(' ').toLowerCase();
 }
-/** (Re)build a record's search blob in IDX.search. Call after any create/edit. */
-const reindex = (card, rec) => { const id = idOf(card, rec); if (id != null) IDX.search.set(card + ':' + id, searchBlob(card, rec)); saveSoon(); };
+/** (Re)build a record's search blob in IDX.search. Call after any create/edit.
+    Vendors are auto-created mid-session (savePartForm) with no IDX set at the
+    call site, so reindex also keeps the IDX.vendor identity map in sync. */
+const reindex = (card, rec) => { const id = idOf(card, rec); if (id != null) { IDX.search.set(card + ':' + id, searchBlob(card, rec)); if (card === 'vendors') IDX.vendor.set(id, rec); } saveSoon(); };
 
 /* ════════════════════════════════════════════════════════════════════════
    §3 DERIVATIONS (SPEC §10) — money, availability, statuses, countdowns
@@ -1030,18 +1033,25 @@ function runCtxAction(act) {
   const el = tg.el;
   const text = (el.textContent || '').replace(/\s+/g, ' ').trim();
   const editSpan = el.classList?.contains('inline-edit') ? el : (el.closest('.inline-edit') || el.querySelector?.('.inline-edit'));
-  const f = editSpan && editSpan.dataset.edit === 'field' ? editSpan.dataset : null;
   const setField = (v) => {
-    if (!f) { attnFlash('.inline-edit'); return toast('Not an editable field.'); }
-    const rec = recOf(f.card, castId(f.rec)); if (!rec) return;
-    const old = rec[f.field]; rec[f.field] = v;
-    reindex(f.card, rec); logAction(rec, `${f.field}: ${auditVal(old)} → ${auditVal(v)}`); render();
+    if (!editSpan) return attnFlash('.inline-edit');
+    // route through startInlineEdit's commit so every data-edit kind keeps its own casts/side-effects/audit log
+    startInlineEdit(editSpan);
+    const input = document.activeElement;
+    if (!input || !input.classList || !input.classList.contains('inline-input')) return attnFlash('.inline-edit');
+    input.value = v == null ? '' : String(v);
+    input.blur();
   };
   if (act === 'copy') { try { navigator.clipboard.writeText(text); } catch (err) {} return toast('📋 Copied.'); }
   if (act === 'cut') { try { navigator.clipboard.writeText(text); } catch (err) {} return setField(''); }
   if (act === 'clear') return setField('');
   if (act === 'paste') { navigator.clipboard.readText().then((v) => setField(v)).catch(() => toast('Clipboard unavailable — paste into the field directly.')); return; }
-  if (act === 'search') { const card = el.closest('[data-card]')?.dataset.card; const cs = card && activeSession().cards[card]; if (cs) { cs.mode = 'list'; cs.search = text; render(); } return; }
+  if (act === 'search') {
+    const card = el.closest('.card')?.dataset.card;   // the grid card id — nearest [data-card] can be an entity span (workOrders/inspections) with no session card
+    const cs = card && activeSession().cards[card];
+    if (!cs) return setQuery(text);
+    cs.mode = 'list'; cs.search = text; cs.listLimit = undefined; render(); return;
+  }
   if (act === 'gsearch') return setQuery(text);
   if (act === 'replace') { if (editSpan) return startInlineEdit(editSpan); return toast('Not an editable field.'); }
   if (act === 'comment') {
@@ -1054,7 +1064,7 @@ function runCtxAction(act) {
   }
   if (act === 'wrangler') {
     const meta = tg.r ? RULE_META[tg.r] : null;
-    const ref = `Ask Mr. Wrangler — ${tg.r ? `${tg.r} · ${meta[0]}` : 'element'} — ${refPath(el)}: `;
+    const ref = `Ask Mr. Wrangler — ${tg.r ? `${tg.r}${meta ? ` · ${meta[0]}` : ''}` : 'element'} — ${refPath(el)}: `;
     try { navigator.clipboard.writeText(ref); } catch (err) {}
     return toast('🤠 Reference copied — paste it to Claude with your question.');
   }
@@ -1146,9 +1156,6 @@ const ROW_META = {
 };
 
 /* row-background visualization layers (§6.2 #8) → returns inline-style div */
-/* Fleet status → row-background tint (units out of active service). Active = none.
-   Sold is GREEN (out of inventory, revenue realized) per Jac. */
-const FLEET_ROW_TINT = { 'Sold': 'green', 'For Sale': 'purple', 'Inactive': 'gray', 'Onboard': 'blue', 'Purchased': 'navy' };
 // Sold + Inactive units are hidden from the Units list & searches; the "Sold/Inactive"
 // sort surfaces ONLY them. (#2)
 const isSoldInactive = (u) => u.fleetStatus === 'Sold' || u.fleetStatus === 'Inactive';
@@ -1246,12 +1253,10 @@ const ROWS = {
   customers: (c) => {
     const active = DATA.rentals.filter((r) => r.customerId === c.customerId && ACTIVE_RENTAL.has(r.status) && r.status !== 'Quote');
     const unitPills = active.map((r) => { const u = IDX.unit.get(r.unitId); return u ? statusPill('rentalStatus', rentalDisplayStatus(r), { card: 'rentals', recId: r.rentalId }) : ''; }).join('');
-    const isMember = /Member/.test(c.accountType || '') && c.accountType !== 'Member Incomplete';
-    const isBusiness = /business/i.test(c.accountType || '') && !/non-?business/i.test(c.accountType || '');   // "Non-Business" must NOT match
+    const acct = getStatus('customerAccountType', c.accountType || 'Non-Business');
     return `<div class="row-1"><span class="r-title">${esc(c.name)}</span><span class="r-fields"><span>${esc(c.phone || '')}</span></span></div>
       <div class="row-2">
-        ${badge(isBusiness ? 'Business' : 'Non-Business', isBusiness ? 'blue' : 'gray')}
-        ${isMember ? badge('Member', 'purple') : ''}
+        ${badge(acct.label, acct.color)}
         ${statusPill('customerPayStatus', c.payStatus, { card: 'customers', recId: c.customerId })}
         ${cardFlag(c) !== 'ok' ? badge(CARD_FLAG_META[cardFlag(c)].label, CARD_FLAG_META[cardFlag(c)].color) : ''}
         ${unitPills}
@@ -1846,7 +1851,7 @@ const DETAIL = {
         const lbl = i === 0 ? winBarDate(r.startDate, r.endDate) : i === cells - 1 ? winBarDate(r.endDate, r.startDate) : '';
         return `<div class="day ${past ? 'past' : ''}">${lbl ? `<span class="dnum">${esc(lbl)}</span>` : ''}</div>`;
       }).join('');
-      timeline = `<div class="timeline js-statusbar js-open-winpicker" data-rec="${r.rentalId}">
+      timeline = `<div class="timeline js-open-winpicker" data-rec="${r.rentalId}">
         ${cellHtml}
         <div class="tl-over">
           <span class="d1">${esc(fmtShortDate(r.startDate))}</span>
@@ -1991,16 +1996,16 @@ const DETAIL = {
       <h4>Inspection <span class="hmuted">· ${esc(stamp)}</span></h4>
       <div class="fieldstack">
         <div class="kv" style="justify-content:center">
-          <span class="seg">
-            <button class="js-cond ${cond === 'Ready' ? 'on-green' : ''}" data-rec="${u.unitId}" data-val="Pass">✓ Pass</button>
-            <button class="js-cond ${cond === 'Not Ready' ? 'on-yellow' : ''}" data-rec="${u.unitId}" data-val="Not Ready">Not Ready</button>
-            <button class="js-cond ${cond === 'Failed' ? 'on-red' : ''}" data-rec="${u.unitId}" data-val="Fail">✕ Fail</button>
-          </span>
-          <span class="seg seg-wash">
-            <button class="js-washseg ${u.washChoice === 'Wash' || u.washRequested ? 'on-yellow' : ''}" data-rec="${u.unitId}" data-val="Wash">${I.droplet} Wash</button>
-            <button class="js-washseg ${u.washChoice === 'DontWash' && !u.washRequested && !washedToday ? 'on-blue' : ''}" data-rec="${u.unitId}" data-val="DontWash">Don't Wash</button>
-            <button class="js-washseg ${washedToday ? 'on-green' : ''}" data-rec="${u.unitId}" data-val="Washed">Washed</button>
-          </span>
+          ${segCtl([
+            { label: '✓ Pass', js: 'js-cond', data: { rec: u.unitId, val: 'Pass' }, on: cond === 'Ready' ? 'green' : null },
+            { label: 'Not Ready', js: 'js-cond', data: { rec: u.unitId, val: 'Not Ready' }, on: cond === 'Not Ready' ? 'yellow' : null },
+            { label: '✕ Fail', js: 'js-cond', data: { rec: u.unitId, val: 'Fail' }, on: cond === 'Failed' ? 'red' : null },
+          ])}
+          ${segCtl([
+            { label: `${I.droplet} Wash`, js: 'js-washseg', data: { rec: u.unitId, val: 'Wash' }, on: u.washChoice === 'Wash' || u.washRequested ? 'yellow' : null },
+            { label: "Don't Wash", js: 'js-washseg', data: { rec: u.unitId, val: 'DontWash' }, on: u.washChoice === 'DontWash' && !u.washRequested && !washedToday ? 'blue' : null },
+            { label: 'Washed', js: 'js-washseg', data: { rec: u.unitId, val: 'Washed' }, on: washedToday ? 'green' : null },
+          ], 'seg-wash')}
         </div>
         ${li2?.description ? `<div class="kv" style="justify-content:center"><span class="muted">Latest:</span> <span style="font-size:12.5px">${esc(li2.description)}</span></div>` : ''}
       </div>
@@ -2030,7 +2035,7 @@ const DETAIL = {
   customers: (c, cs) => {
     const d = c._digest || {};
     const isMember = /Member/.test(c.accountType || '') && c.accountType !== 'Member Incomplete';
-    const isBusiness = /business/i.test(c.accountType || '') && !/non-?business/i.test(c.accountType || '');   // "Non-Business" must NOT match
+    const acct = getStatus('customerAccountType', c.accountType || 'Non-Business');
     const yr = (iso) => `${fmtShortDate(iso)}, ${parseISO(iso).getFullYear()}`;
 
     // §7.1 — every contact/account detail is click-to-edit (auto-saves via the persist hook)
@@ -2042,7 +2047,7 @@ const DETAIL = {
       ${efield('company', 'Add company')}${efield('address', 'Add address', true)}
     </div></div>`;
     const account = `<div class="section"><h4>Account</h4><div class="fieldstack">
-      ${kvPills(`${badge(isBusiness ? 'Business' : 'Non-Business', isBusiness ? 'blue' : 'gray')}${c.requiresPO ? badge('PO Required', 'yellow') : ''}`)}
+      ${kvPills(`${badge(acct.label, acct.color)}${c.requiresPO ? badge('PO Required', 'yellow') : ''}`)}
       ${efield('industry', 'Add industry')}
       ${kv(`${money(d.totalPaid)} total · ${d.visits || 0} visits · ${d.years || 0} yrs · every ${d.avgFrequencyDays || 0} days`, { wrap: true, derived: true })}
     </div></div>`;
@@ -2051,7 +2056,7 @@ const DETAIL = {
     const acctDone = !!(c.selfie && c.signature);
     const selfieThumb = c.selfie ? `<img class="cust-selfie" src="${esc(c.selfie)}" alt="" />` : '';
     const agPill = c.agreementSignedAt ? `<button class="pill c-green js-view-agreement" data-rec="${c.customerId}" title="View signed agreement">${esc(AGREEMENTS[c.agreementType]?.title || 'Agreement')} ✓</button>` : '';
-    const badges = `<div class="detail-badges pillrow">${selfieThumb}${badge(isBusiness ? 'Business' : 'Non-Business', isBusiness ? 'blue' : 'gray')}${isMember ? badge('Member', 'purple') : ''}${statusPill('customerPayStatus', c.payStatus)}${agPill}<span class="spacer"></span>${acctDone ? '' : badge('Incomplete', 'yellow')}${actionPill('commit', acctDone ? 'Edit account' : 'Complete account', { js: 'js-edit-customer', data: { rec: c.customerId } })}</div>`;
+    const badges = `<div class="detail-badges pillrow">${selfieThumb}${badge(acct.label, acct.color)}${statusPill('customerPayStatus', c.payStatus)}${agPill}<span class="spacer"></span>${acctDone ? '' : badge('Incomplete', 'yellow')}${actionPill('commit', acctDone ? 'Edit account' : 'Complete account', { js: 'js-edit-customer', data: { rec: c.customerId } })}</div>`;
     const activeBar = `<div class="active-bar wide"><div class="active-spectrum" style="clip-path:inset(0 ${100 - (d.activePct || 0)}% 0 0)"></div><span class="active-lbl">${d.activePct || 0}% Active</span></div>`;
 
     const intCats = (c.interestedCategoryIds || []).map((id) => { const cat = IDX.category.get(id); return cat ? refPill('categories', id, cat.name, { x: 'intcat-remove', xData: id }) : ''; }).join('');
@@ -2139,9 +2144,10 @@ const DETAIL = {
     const locked = !!i.locked;   // pricing sealed (Option B) — line items frozen + tamper-checked
     const subBy = (kind) => (i.lineItems || []).filter((l) => l.kind === kind).reduce((a, l) => a + (Number(l.amount) || 0), 0);
     const lines = (i.lineItems || []).map((li, idx) => {
-      const ref = li.kind === 'rental' ? `data-pill-card="rentals" data-pill-rec="${esc(li.ref)}"` : '';
-      // transport line auto-appears from the rental (no remove); rental/WO/custom carry an X — unless locked (§12.5)
-      const x = (!locked && li.kind !== 'transport') ? `<span class="x line-x" data-x="inv-line-remove" data-idx="${idx}">✕</span>` : '';
+      const ref = li.kind === 'rental' ? `data-pill-card="rentals" data-pill-rec="${esc(li.ref)}"`
+        : li.kind === 'WO' ? `data-pill-card="workOrders" data-pill-rec="${esc(li.ref)}"` : '';
+      // transport line auto-appears from the rental (no remove); rental/WO/custom carry an X — unless locked or $-allocated (§12.5)
+      const x = (!locked && li.kind !== 'transport' && itemPaid(i, li.ref) <= 0) ? `<span class="x line-x" data-x="inv-line-remove" data-idx="${idx}">✕</span>` : '';
       return `<div class="hitem">${badge(li.kind)}<span ${ref} class="inv-line-link" data-r="R7">${esc(li.label)}</span><span class="spacer"></span><b class="derived">${money(li.amount)}</b>${x}</div>`;
     }).join('');
     const invoiceSec = `<div class="section"><h4>Invoice</h4><div class="fieldstack">
@@ -2201,7 +2207,11 @@ const DETAIL = {
     const partsCost = (w.lineItems || []).reduce((a, li) => a + (Number(li.cost) || 0), 0);
     const labor = (w.lineItems || []).reduce((a, li) => a + (Number(li.hours) || 0), 0) || w.laborHours || 0;
     const priceIfBilled = woBillable(w);   // §7.6 tiered parts markup + $150/hr labor
-    const journey = (w.lineItems || []).map((li, idx) => `<div class="hitem"><span data-r="R1" class="pill gate c-${getStatus('woPhase', li.phase).color} js-wophase-line" data-rec="${w.woId}" data-idx="${idx}" style="min-width:88px;justify-content:center">${esc(getStatus('woPhase', li.phase).label)} ${I.chev}</span><span>${esc(li.part)}</span><span class="spacer"></span><span class="muted">${li.eta ? fmtShortDate(li.eta) + ' · ' : ''}${li.hours || 0}h${li.vendor ? ' · ' + esc(li.vendor) : ''}</span><b>${money(li.cost)}</b></div>`).join('');
+    const journey = (w.lineItems || []).map((li, idx) => {
+      const ven = li.vendorId ? IDX.vendor?.get?.(li.vendorId) || DATA.vendors.find((v) => v.vendorId === li.vendorId) : null;
+      const venName = ven?.name || li.vendor || '';
+      return `<div class="hitem"><span data-r="R1" class="pill gate c-${getStatus('woPhase', li.phase).color} js-wophase-line" data-rec="${w.woId}" data-idx="${idx}" style="min-width:88px;justify-content:center">${esc(getStatus('woPhase', li.phase).label)} ${I.chev}</span><span>${esc(li.part)}</span><span class="spacer"></span><span class="muted">${li.eta ? fmtShortDate(li.eta) + ' · ' : ''}${li.hours || 0}h${venName ? ' · ' + esc(venName) : ''}</span><b>${money(li.cost)}</b></div>`;
+    }).join('');
     const billable = partsCost > 0 || labor > 0;
     const alreadyBilled = DATA.invoices.some((i) => (i.lineItems || []).some((li) => li.kind === 'WO' && li.ref === w.woId));
     const billBtn = billable && !alreadyBilled ? `<button class="pill ref js-bill-wo" data-rec="${w.woId}">Bill to invoice →</button>` : (alreadyBilled ? badge('Billed', 'green') : '');
@@ -2408,6 +2418,9 @@ function sortRows(card, rows, sort) {
       case 'activePct': return rec._digest?.activePct || 0;
       case 'totalPaid': return rec._digest?.totalPaid || 0;
       case 'rate1Day': return rec.rate1Day || 0;
+      case 'roi': return categoryStats(rec).roi || 0;
+      case 'unitCount': return categoryMix(rec.categoryId).total;
+      case 'avgHours': return categoryStats(rec).avgHours || 0;
       case 'countdown': { const s = topServiceForUnit(rec); return s ? s.remaining : 1e9; }
       default: return ROW_META[card](rec).title.toLowerCase();
     }
@@ -3414,8 +3427,8 @@ function renderOverlay() {
     if (!u || !task) { state.overlay = null; return; }
     const svcVid = (state.svcPhoto || '').startsWith('data:video');
     const media = state.svcPhoto
-      ? `<div class="insp-photo">${svcVid ? `<video src="${esc(state.svcPhoto)}" controls></video>` : `<img src="${esc(state.svcPhoto)}" alt="service photo">`}<label class="insp-rephoto">Replace<input type="file" accept="image/*,video/*" class="js-svc-photo" hidden></label></div>`
-      : `<label class="insp-photo empty req"><span>${I.video} Add photo / video (required)</span><input type="file" accept="image/*,video/*" class="js-svc-photo" hidden></label>`;
+      ? `<div class="insp-photo">${svcVid ? `<video src="${esc(state.svcPhoto)}" controls></video>` : `<img src="${esc(state.svcPhoto)}" alt="service photo">`}<label class="insp-rephoto">Replace<input type="file" accept="image/*" class="js-svc-photo" hidden></label></div>`
+      : `<label class="insp-photo empty req"><span>${I.video} Add photo (required)</span><input type="file" accept="image/*" class="js-svc-photo" hidden></label>`;
     const pop = el('div', 'popup insp-popup');
     pop.innerHTML = `
       <div class="popup-head"><span class="c-icon" style="color:var(--accent);display:inline-flex">${CARD_ICON.serviceOrders || ''}</span><h3>Complete service — ${esc(u.name)}</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
@@ -3563,11 +3576,11 @@ const BOARD_DEF = {
   },
   expenses: {
     cols: ['Vendor', 'Date', 'Amount', 'Reconcile', 'Method', 'Category', 'WO'],
-    row: (e) => [esc(IDX.vendor.get(e.vendorId)?.name || '—'), esc(fmtShortDate(e.date)), money(e.amount), statusPill('expenseReconcile', e.reconcile), badge(e.method, getStatus('paymentMethod', e.method).color), badge(e.category, getStatus('expenseCategory', e.category).color), e.woId ? `<span class="pill ref">${esc(e.woId)}</span>` : '—'],
+    row: (e) => [esc(IDX.vendor.get(e.vendorId)?.name || '—'), esc(fmtShortDate(e.date)), money(e.amount), gatePill('expenseReconcile', e.reconcile, 'js-reconcile', { rec: e.expenseId }), badge(e.method, getStatus('paymentMethod', e.method).color), badge(e.category, getStatus('expenseCategory', e.category).color), e.woId ? `<span class="pill ref">${esc(e.woId)}</span>` : '—'],
   },
   files: {
     cols: ['Title', 'Type', 'Group', 'Review-By'],
-    row: (f) => [esc(f.name), badge(getStatus('companyFileType', f.type).label, getStatus('companyFileType', f.type).color), esc(f.group || '—'), f.reviewByDate ? esc(fmtShortDate(f.reviewByDate)) + (reviewSoon(f.reviewByDate) ? ' <span class="pill c-yellow">review soon</span>' : '') : '—'],
+    row: (f) => [f.link ? linkName(f.name, { js: 'js-open-link', data: { url: f.link } }) : esc(f.name), badge(getStatus('companyFileType', f.type).label, getStatus('companyFileType', f.type).color), esc(f.group || '—'), f.reviewByDate ? esc(fmtShortDate(f.reviewByDate)) + (reviewSoon(f.reviewByDate) ? ' <span class="pill c-yellow">review soon</span>' : '') : '—'],
   },
 };
 function boardTable(boardId) {
@@ -3797,6 +3810,18 @@ function setUnitFleet(unitId, val) {
   document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove());
   render();
 }
+function openReconcileDropdown(expenseId, anchorEl) {
+  const html = Object.keys(STATUS.expenseReconcile).map((v) =>
+    `<button class="dd-item js-setreconcile" data-rec="${esc(expenseId)}" data-val="${esc(v)}">${statusPill('expenseReconcile', v)}</button>`).join('');
+  openDropdown(anchorEl, html);
+}
+function setExpenseReconcile(expenseId, val) {
+  const x = DATA.expenses.find((r) => r.expenseId === expenseId); if (!x) return;   // expenses have no IDX map — resolve straight from DATA
+  x.reconcile = val;
+  logAction(x, `Reconcile → ${getStatus('expenseReconcile', val).label}`);
+  document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove());
+  render(); renderOverlay();
+}
 function openFunnelDropdown(custId, which, anchorEl) {
   const cust = IDX.customer.get(custId);
   const cur = which === 'membership' ? cust?.membershipStage : cust?.usedSalesStage;
@@ -3987,7 +4012,7 @@ function onClick(e) {
   if (closest('.js-nc-save')) { e.stopPropagation(); return saveNewCustomer(); }
   if (closest('.js-nc-acct')) { const b = closest('.js-nc-acct'); e.stopPropagation(); ncSyncInputs(); state.overlay.draft.accountType = b.dataset.val; renderOverlay(); return; }
   if (closest('.js-nc-selfie-clear')) { e.stopPropagation(); ncSyncInputs(); state.overlay.draft.selfie = ''; renderOverlay(); return; }
-  if (closest('.js-nc-sig-save')) { e.stopPropagation(); const cv = document.querySelector('.overlay .nc-sigpad'); if (cv && cv.dataset.drawn) { ncSyncInputs(); const dr = state.overlay.draft; dr.signature = cv.toDataURL('image/jpeg', 0.6); dr.agreementType = /member/i.test(dr.accountType || '') ? 'membership' : 'rental'; dr.agreementSignedAt = TODAY_ISO; renderOverlay(); } else toast('Sign in the box first.'); return; }
+  if (closest('.js-nc-sig-save')) { e.stopPropagation(); const cv = document.querySelector('.overlay .nc-sigpad'); if (cv && cv.dataset.drawn) { ncSyncInputs(); const dr = state.overlay.draft; dr.signature = cv.toDataURL('image/jpeg', 0.6); dr.agreementType = /member/i.test(dr.accountType || '') ? 'membership' : 'rental'; dr.agreementSignedAt = TODAY_ISO; renderOverlay(); } else flashOr('.overlay .nc-sigpad', 'Sign in the box first.'); return; }
   if (closest('.js-nc-sig-clearpad')) { e.stopPropagation(); const cv = document.querySelector('.overlay .nc-sigpad'); if (cv) { const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height); cv.dataset.drawn = ''; } return; }
   if (closest('.js-nc-sig-clear')) { e.stopPropagation(); ncSyncInputs(); const dr = state.overlay.draft; dr.signature = ''; dr.agreementType = ''; dr.agreementSignedAt = ''; renderOverlay(); return; }
   if (closest('.js-nc-qr')) { e.stopPropagation(); const id = state.overlay.editId; openOverlay({ kind: 'qr', title: 'Continue on phone', url: location.origin + location.pathname + '#edit=' + id, caption: 'Scan to finish this account on your phone.' }); return; }
@@ -4030,6 +4055,7 @@ function onClick(e) {
   if (closest('.js-fb-type')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'feedback') { const ta = document.querySelector('.overlay .js-fb-text'); if (ta) o.text = ta.value; o.fbType = closest('.js-fb-type').dataset.val; renderOverlay(); } return; }
   if (closest('.js-fb-shot-x')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'feedback') { const ta = document.querySelector('.overlay .js-fb-text'); if (ta) o.text = ta.value; o.shot = ''; renderOverlay(); } return; }
   if (closest('.js-fb-send')) { e.stopPropagation(); return sendFeedback(); }
+  if (closest('.js-open-link')) { e.stopPropagation(); const url = closest('.js-open-link').dataset.url || ''; if (/^https?:\/\//i.test(url)) window.open(url, '_blank', 'noopener'); return; }
   if (closest('.js-board')) { const b = closest('.js-board'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return openOverlay({ kind: 'board', board: b.dataset.board }); }
   if (closest('.js-boardview')) { e.stopPropagation(); return openBoardView(closest('.js-boardview').dataset.card); }
   if (closest('.js-bv-sort') && !closest('.js-bv-inscol')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview') { const key = closest('.js-bv-sort').dataset.col; if (o.sort?.key === key) o.sort.dir = o.sort.dir === 'asc' ? 'desc' : 'asc'; else o.sort = { key, dir: 'asc' }; renderOverlay(); } return; }
@@ -4089,7 +4115,7 @@ function onClick(e) {
   if (closest('.js-addcat')) { e.stopPropagation(); return beginPick('customers', closest('.js-addcat').dataset.rec, undefined, 'intcat'); }
   if (closest('.js-funnel-record')) { e.stopPropagation(); const c = IDX.customer.get(closest('.js-funnel-record').dataset.rec); if (c && c.salesAction) { c.activityLog = c.activityLog || []; c.activityLog.push({ when: TODAY_ISO, text: c.salesAction }); c.salesAction = ''; toast('Logged to the Activity Log.'); render(); } else attnFlash('[data-edit="salesAction"]'); return; }
   if (closest('.js-funnel-schedule')) { e.stopPropagation(); return openOverlay({ kind: 'schedule', customerId: closest('.js-funnel-schedule').dataset.rec }); }
-  if (closest('.js-schedule-save')) { const b = closest('.js-schedule-save'); e.stopPropagation(); const root = b.closest('.popup-body'); const c = IDX.customer.get(b.dataset.rec); const when = root.querySelector('.js-sch-when')?.value; const note = (root.querySelector('.js-sch-note')?.value || '').trim(); if (!c || !when) { toast('Pick a date & time first.'); return; } c.activityLog = c.activityLog || []; c.activityLog.push({ when: when.slice(0, 10), text: `Scheduled: ${note || 'follow-up'} @ ${when.replace('T', ' ')}` }); reindex('customers', c); toast('Scheduled — added to the Activity Log.'); closeOverlay(); }
+  if (closest('.js-schedule-save')) { const b = closest('.js-schedule-save'); e.stopPropagation(); const root = b.closest('.popup-body'); const c = IDX.customer.get(b.dataset.rec); const when = root.querySelector('.js-sch-when')?.value; const note = (root.querySelector('.js-sch-note')?.value || '').trim(); if (!c || !when) { flashOr('.js-sch-when', 'Pick a date & time first.'); return; } c.activityLog = c.activityLog || []; c.activityLog.push({ when: when.slice(0, 10), text: `Scheduled: ${note || 'follow-up'} @ ${when.replace('T', ' ')}` }); reindex('customers', c); toast('Scheduled — added to the Activity Log.'); closeOverlay(); }
   // draft pickers / creation affordances (§0.3)
   if (closest('.js-pick')) { const b = closest('.js-pick'); e.stopPropagation(); return beginPick(b.dataset.card, b.dataset.rec, b.dataset.type || undefined, b.dataset.slot); }
   if (closest('.js-create-invoice')) { e.stopPropagation(); return createInvoiceForRental(closest('.js-create-invoice').dataset.rec); }
@@ -4097,7 +4123,7 @@ function onClick(e) {
   if (closest('.js-bill-wo')) { e.stopPropagation(); return billWOToInvoice(closest('.js-bill-wo').dataset.rec); }
   if (closest('.js-wo-bill')) { const b = closest('.js-wo-bill'); e.stopPropagation(); const w = IDX.wo.get(b.dataset.rec); if (w) { w.billCustomer = w.billCustomer === 'Yes' ? 'No' : 'Yes'; reindex('workOrders', w); logAction(w, `Bill customer → ${w.billCustomer}`); render(); } return; }
   if (closest('.js-svc-complete')) { const b = closest('.js-svc-complete'); e.stopPropagation(); state.svcPhoto = null; return openOverlay({ kind: 'service', unitId: b.dataset.unit, taskId: b.dataset.task }); }
-  if (closest('.js-svc-save')) { const b = closest('.js-svc-save'); e.stopPropagation(); if (!state.svcPhoto) { flashOr('.overlay .insp-photo, .overlay .insp-rephoto, .overlay .cap-drop', 'Photo / video proof is required to complete a service.'); return; } const root = b.closest('.popup-body'); return recordServiceCompletion(b.dataset.unit, b.dataset.task, root.querySelector('.js-svc-hours')?.value, root.querySelector('.js-svc-date')?.value, root.querySelector('.js-svc-notes')?.value, state.svcPhoto); }
+  if (closest('.js-svc-save')) { const b = closest('.js-svc-save'); e.stopPropagation(); if (!state.svcPhoto) { flashOr('.overlay .insp-photo, .overlay .insp-rephoto, .overlay .cap-drop', 'Photo proof is required to complete a service.'); return; } const root = b.closest('.popup-body'); return recordServiceCompletion(b.dataset.unit, b.dataset.task, root.querySelector('.js-svc-hours')?.value, root.querySelector('.js-svc-date')?.value, root.querySelector('.js-svc-notes')?.value, state.svcPhoto); }
   // invoice line-item add buttons → enter a pick for the source card
   if (closest('.js-add-line')) {
     const b = closest('.js-add-line'); e.stopPropagation();
@@ -4147,7 +4173,7 @@ function onClick(e) {
   if (closest('.js-hchip')) { const b = closest('.js-hchip'); const session = activeSession(); const cs = session.cards[b.dataset.card] || session.cards.shop; cs.histKind = cs.histKind === b.dataset.kind ? null : b.dataset.kind; return render(); }
   if (closest('.js-complete-rental')) {
     const b = closest('.js-complete-rental'); const r = IDX.rental.get(b.dataset.rec); if (!r) return;
-    if (r.status !== 'Returned') return toast('🔒 Available once the rental is Returned — log the End/Recovery video on the unit.');
+    if (r.status !== 'Returned') return flashOr(`.js-yard[data-cap="end"][data-rec="${r.rentalId}"]`, '🔒 Available once the rental is Returned — log the End/Recovery video on the unit.');
     r.completed = true; reindex('rentals', r); logAction(r, 'Rental completed'); toast('Rental completed ✓'); return reanchorRender();
   }
   if (closest('.js-cancel-rental')) {
@@ -4166,6 +4192,8 @@ function onClick(e) {
   if (closest('.js-wophase-line')) { const b = closest('.js-wophase-line'); e.stopPropagation(); return openWoPhaseDropdown(b.dataset.rec, b, Number(b.dataset.idx)); }
   if (closest('.js-setwophase')) { const b = closest('.js-setwophase'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return setWoPhase(b.dataset.rec, b.dataset.val); }
   if (closest('.js-setwolinephase')) { const b = closest('.js-setwolinephase'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return setWoLinePhase(b.dataset.rec, Number(b.dataset.idx), b.dataset.val); }
+  if (closest('.js-reconcile')) { const b = closest('.js-reconcile'); e.stopPropagation(); return openReconcileDropdown(b.dataset.rec, b); }
+  if (closest('.js-setreconcile')) { const b = closest('.js-setreconcile'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return setExpenseReconcile(b.dataset.rec, b.dataset.val); }
 
   // §12.2 rental-window range picker (calendar popup) — clicking the bar opens it
   if (closest('.js-wp-day')) { e.stopPropagation(); return winPickDay(closest('.js-wp-day').dataset.iso); }
@@ -4276,7 +4304,20 @@ function handlePillX(xEl) {
     rec.customerId = null; toast('Customer removed — pick a replacement.'); return beginPick(card, recId, recType, 'customer');
   } else if (kind === 'inv-line-remove') {
     const idx = Number(xEl.dataset.idx);
-    if (rec.lineItems && rec.lineItems[idx]) { rec.lineItems.splice(idx, 1); toast('Line item removed.'); render(); }
+    const li = rec.lineItems && rec.lineItems[idx];
+    if (!li) return;
+    if (itemPaid(rec, li.ref) > 0) { toast('Blocked: payment is assigned to this line — refund first (§7.4).'); return; }
+    rec.lineItems.splice(idx, 1);
+    if (li.kind === 'rental') {
+      // drop the paired transport line AND the link — while r.invoiceId is set, syncTransportLine re-adds it
+      rec.lineItems = rec.lineItems.filter((l) => !(l.kind === 'transport' && l.ref === li.ref));
+      rec.rentalIds = (rec.rentalIds || []).filter((id) => id !== li.ref);
+      const r2 = IDX.rental.get(li.ref);
+      if (r2 && r2.invoiceId === rec.invoiceId) { r2.invoiceId = null; reindex('rentals', r2); logAction(r2, `Removed from invoice ${invoiceShort(rec.invoiceId)}`); }
+    }
+    logAction(rec, `Removed ${li.kind === 'rental' ? 'rental' : 'line'}: ${li.label} (${money(li.amount)})`);
+    reindex('invoices', rec);
+    toast('Line item removed.'); render();
   } else if (kind === 'intcat-remove') {
     const cid = xEl.dataset.id;
     rec.interestedCategoryIds = (rec.interestedCategoryIds || []).filter((x) => x !== cid);
@@ -4292,20 +4333,11 @@ function startInlineEdit(span) {
   const kind = span.dataset.edit, recId = span.dataset.rec;
   const input = el('input', 'inline-input');
   let done = false, commit;
-  if (kind === 'rentalAddress') {
-    const r = IDX.rental.get(recId);
-    input.value = r?.deliveryAddress || '';
-    input.placeholder = 'City, State';
-    commit = () => { if (done) return; done = true; if (r) { const old = r.deliveryAddress; const v = input.value.trim(); if (String(old ?? '') !== v) { r.deliveryAddress = v; reindex('rentals', r); logAction(r, `Delivery address: ${auditVal(old)} → ${auditVal(v)}`); } } render(); };
-  } else if (kind === 'unitHours') {
+  if (kind === 'unitHours') {
     const u = IDX.unit.get(recId);
     input.value = u?.currentHours ?? '';
     input.type = 'number'; input.placeholder = 'Hours';
     commit = () => { if (done) return; done = true; if (u && input.value !== '') { const old = u.currentHours; const v = Number(input.value); if (old !== v) { u.currentHours = v; reindex('units', u); logAction(u, `Hours: ${auditVal(old)} → ${auditVal(v)}`); } } render(); };
-  } else if (kind === 'customerName') {
-    const c = IDX.customer.get(recId);
-    input.value = c?.name || ''; input.placeholder = 'Customer name';
-    commit = () => { if (done) return; done = true; if (c && input.value.trim()) { const old = c.name, v = input.value.trim(); if (old !== v) { c.name = v; reindex('customers', c); logAction(c, `Name: ${auditVal(old)} → ${auditVal(v)}`); } } render(); };
   } else if (kind === 'invoicePO') {
     const inv = IDX.invoice.get(recId);
     input.value = inv?.po || ''; input.placeholder = 'PO #';
@@ -4432,7 +4464,7 @@ function clearFieldCall(rentalId) {
 function setUnitCondition(unitId, val) {
   const u = IDX.unit.get(unitId); if (!u) return;
   const lock = unitCondLock(u);
-  if (lock) return toast(`🔒 Condition locked — WO “${lock.woReport}” is open from a ${lock.woType === 'Field Call' ? 'field call' : 'failed inspection'}. Complete it to update the condition.`);
+  if (lock) return flashOr(`.js-wo-complete[data-rec="${lock.woId}"]`, `🔒 Condition locked — WO “${lock.woReport}” is open from a ${lock.woType === 'Field Call' ? 'field call' : 'failed inspection'}. Complete it to update the condition.`);
   // R19: Pass needs a wash decision first — glow the wash toggle instead of an error
   const washedToday = (u.serviceLog || []).some((l) => l.taskId === 'svc-wash' && l.date === TODAY_ISO);
   if (val === 'Pass' && !u.washChoice && !u.washRequested && !washedToday) return attnFlash('.seg-wash');
@@ -4531,6 +4563,7 @@ function savePartForm() {
   if (!desc && !state.partPhoto) return attnFlash('.js-pf2-desc, .cap-drop');   // R19: need a description OR a photo for the AI
   w.lineItems = w.lineItems || [];
   const li = o.idx != null ? w.lineItems[o.idx] : { phase: 'Part Needed?', eta: '' };
+  if (!li) return closeOverlay();                  // stale edit index — the line was removed after the popup opened
   li.part = desc || li.part || '📷 Awaiting Mr. Wrangler review';
   li.cost = cost !== '' ? Number(cost) || 0 : (li.cost || 0);
   li.hours = hours !== '' ? Number(hours) || 0 : (li.hours || 0);
@@ -4543,14 +4576,14 @@ function savePartForm() {
     li.vendorId = v.vendorId;
   }
   if (desc && !DATA.parts.find((p) => (p.name || '').toLowerCase() === desc.toLowerCase())) {
-    const p = { partId: 'PRT-C' + (state.seq++), name: desc, cost: Number(cost) || 0, url: url || '', vendorId: li.vendorId || null, woId: w.woId, mock: true };
+    const p = { partId: 'PRT-C' + (state.seq++), name: desc, priceEach: cost !== '' ? Number(cost) || 0 : null, website: url || '', vendorId: li.vendorId || null, woId: w.woId, mock: true };
     DATA.parts.push(p); reindex('parts', p);
   }
   if (o.idx == null) w.lineItems.push(li);
   if (w.phase === 'Complete') w.phase = 'Part Needed?';
   reindex('workOrders', w); logAction(w, `${o.idx != null ? 'Edited' : 'Added'} line: ${auditVal(li.part)}`);
   state.partPhoto = null; state.overlay = null;
-  toast(li.aiPending ? '✨ Saved — Mr. Wrangler fills the empty fields (photo review + estimated hours).' : 'Line saved.');
+  toast(li.aiPending ? '✨ Saved — Mr. Wrangler will fill the blanks when he comes online.' : 'Line saved.');
   reanchorRender(); renderOverlay();
 }
 function completeWOAttempt(woId) {
@@ -4623,7 +4656,8 @@ function onChange(e) {
   if (e.target.classList.contains('js-pf2-file')) {
     const f = e.target.files && e.target.files[0]; if (!f) return;
     const rd = new FileReader();
-    rd.onload = () => { state.partPhoto = rd.result; renderOverlay(); };
+    rd.onload = () => { downscaleImage(rd.result, 600, 0.5, (out) => { if (!out) { toast('Could not read that image.'); return; } state.partPhoto = out; renderOverlay(); }); };
+    rd.onerror = () => toast('Could not read that image.');
     rd.readAsDataURL(f);
     return;
   }
@@ -4632,6 +4666,7 @@ function onChange(e) {
     const f = e.target.files && e.target.files[0]; if (!f) return;
     const rd = new FileReader();
     rd.onload = () => { state.capFile = rd.result; renderOverlay(); };
+    rd.onerror = () => toast('Could not read that file.');
     rd.readAsDataURL(f);
     return;
   }
@@ -4692,12 +4727,21 @@ function onChange(e) {
   if (e.target.classList.contains('js-insp-photo')) {
     const file = e.target.files && e.target.files[0]; if (!file) return;
     const reader = new FileReader();
-    reader.onload = () => { const n = IDX.insp.get(e.target.dataset.rec); if (n) { n.photo = reader.result; render(); if (state.overlay?.kind === 'inspection') renderOverlay(); } };
+    reader.onload = () => { downscaleImage(reader.result, 600, 0.5, (out) => { if (!out) { toast('Could not read that image.'); return; } const n = IDX.insp.get(e.target.dataset.rec); if (n) { n.photo = out; render(); if (state.overlay?.kind === 'inspection') renderOverlay(); } }); };
+    reader.onerror = () => toast('Could not read that image.');
     reader.readAsDataURL(file);
     return;
   }
   if (e.target.classList.contains('js-insp-desc')) { const n = IDX.insp.get(e.target.dataset.rec); if (n) { n.description = e.target.value; render(); } return; }
-  if (e.target.classList.contains('js-svc-photo')) { const file = e.target.files && e.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = () => { state.svcPhoto = reader.result; renderOverlay(); }; reader.readAsDataURL(file); return; }
+  if (e.target.classList.contains('js-svc-photo')) {
+    const file = e.target.files && e.target.files[0]; if (!file) return;
+    if ((file.type || '').startsWith('video/')) { toast('Videos can’t be stored on the record — attach a photo instead.'); return; }
+    const reader = new FileReader();
+    reader.onload = () => { downscaleImage(reader.result, 600, 0.5, (out) => { if (!out) { toast('Could not read that image.'); return; } state.svcPhoto = out; renderOverlay(); }); };
+    reader.onerror = () => toast('Could not read that image.');
+    reader.readAsDataURL(file);
+    return;
+  }
   if (e.target.classList.contains('js-wp-time')) { return setWinTime(e.target.value); }
   if (e.target.classList.contains('js-draftdate')) { return setDraftDate(e.target.dataset.rec, e.target.dataset.which, e.target.value); }
 }
@@ -5520,7 +5564,7 @@ function addRentalLineToInvoice(invoiceId, rentalId) {
   if (!inv || !r) return;
   // a rental bills to ONE invoice — block double-billing onto a second (§7.5)
   if (r.invoiceId && r.invoiceId !== invoiceId) { toast(`Already on invoice ${invoiceShort(r.invoiceId)} — remove it there first.`); return; }
-  if ((inv.lineItems || []).some((li) => li.kind === 'rental' && li.ref === rentalId)) { toast('That rental is already on this invoice.'); return; }
+  if ((inv.lineItems || []).some((li) => li.kind === 'rental' && li.ref === rentalId)) { flashOr(`.inv-line-link[data-pill-rec="${rentalId}"]`, 'That rental is already on this invoice.'); return; }
   const price = rentalPrice(r);
   inv.lineItems.push({ kind: 'rental', ref: rentalId, label: `${IDX.unit.get(r.unitId)?.name || 'Rental'} · ${price ? price.rate : '—'}`, amount: price ? price.price : 0 });
   const tr = rentalTransport(r);
