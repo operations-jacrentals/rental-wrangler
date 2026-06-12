@@ -1214,8 +1214,14 @@ body { font-variant-numeric: tabular-nums; }
 
 /* §12.1 ACTION BOARD v4 (Jac 2026-06-12): label + add | add + label header row,
    then logged actions LEFT / scheduled RIGHT in two columns */
+/* two equal halves → the button gap straddles the SECTION center regardless of
+   the label widths; labels bottom-align to the row (Jac 2026-06-12) */
 .act-head { display: flex; align-items: flex-end; gap: 10px; }
-.act-head .add-field { flex: 1; justify-content: center; }   /* the blue adds meet at the center — no dead space (Jac) */
-.act-col-lbl { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: var(--txt-3); padding-bottom: 5px; }
+.act-half { flex: 1; min-width: 0; display: flex; align-items: flex-end; gap: 8px; }
+.act-half .add-field { flex: 1; justify-content: center; }
+.act-col-lbl { font-size: 13px; font-weight: 700; line-height: 1; text-transform: uppercase; letter-spacing: .4px; color: var(--txt-3); padding-bottom: 7px; white-space: nowrap; }
 .act-cols { display: flex; gap: 14px; align-items: flex-start; }
 .act-col { flex: 1; min-width: 0; }
+/* Rented categories — R9 flags wrapping right (Jac 2026-06-12) */
+.rented-cats { display: flex; align-items: baseline; gap: 8px; width: 100%; justify-content: flex-end; margin-top: 2px; }
+.rented-cats .rc-flags { display: flex; flex-wrap: wrap; gap: 4px 10px; justify-content: flex-end; }

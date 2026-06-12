@@ -2240,6 +2240,10 @@ const DETAIL = {
     const efield = (f, ph, wrap) => { const val = c[f]; const thing = ph.replace(/^Add\s+/i, ''); const lbl = thing.charAt(0).toUpperCase() + thing.slice(1); return `<div class="kv"><span class="v inline-edit" data-edit="custField" data-field="${f}" data-rec="${c.customerId}" data-ph="${esc(ph)}"${wrap ? ' style="white-space:normal"' : ''}>${val ? esc(val) : `<span class="add-field" data-r="R5c">+${esc(lbl)}</span>`}</span></div>`; };
     const selfieThumb = c.selfie ? `<img class="cust-selfie" src="${esc(c.selfie)}" alt="" />` : '';
     const agPill = c.agreementSignedAt ? `<button class="pill c-green js-view-agreement" data-r="R3" data-rec="${c.customerId}" title="View signed agreement">${esc(AGREEMENTS[c.agreementType]?.title || 'Agreement')} ✓</button>` : '';
+    // every category this customer has EVER rented → R9 flags (ink+icon, no badge) — Jac 2026-06-12
+    const rentedCatIds = [...new Set(DATA.rentals.filter((r) => r.customerId === c.customerId)
+      .map((r) => r.categoryId || IDX.unit.get(r.unitId)?.categoryId).filter(Boolean))];
+    const rentedFlags = rentedCatIds.map((id) => { const cat = IDX.category.get(id); return cat ? flagEl(cat.name, 'gray', { icon: CARD_ICON.categories, card: 'categories', recId: id }) : ''; }).filter(Boolean).join('');
     /* Jac 2026-06-12: Contact + Account MERGED — LEFT = entered fields, RIGHT = facts + derived (card anatomy) */
     const account = `<div class="section"><h4>Account</h4>
       <div class="split">
@@ -2255,6 +2259,7 @@ const DETAIL = {
           ${kv(`${d.visits || 0}`, { pfx: 'Visits', derived: true })}
           ${kv(`${d.years || 0} yrs`, { pfx: 'Customer for', derived: true })}
           ${kv(`every ${d.avgFrequencyDays || 0} days`, { pfx: 'Rents', derived: true })}
+          ${rentedFlags ? `<div class="rented-cats"><span class="pfx">Rented</span><span class="rc-flags">${rentedFlags}</span></div>` : ''}
         </div>
       </div></div>`;
     // Jac 2026-06-12: NO badge row — account type + pay status are R9 title flags,
@@ -2277,11 +2282,11 @@ const DETAIL = {
        +Log Actions · +Schedule Actions + "Schedule" label; under them, TWO
        columns — logged actions LEFT, scheduled RIGHT. No empty-state text;
        sections below flow down as the columns grow. Entry opens under the row. */
+    // two halves so the button gap centers on the SECTION center regardless of the
+    // label widths (Jac 2026-06-12); labels bottom-align to the row.
     const actHead = `<div class="act-head">
-      <span class="act-col-lbl">Actions</span>
-      ${addBtn('Log Actions', { line: true, js: 'js-act-open', h: 26, data: { rec: c.customerId, val: 'record' } })}
-      ${addBtn('Schedule Actions', { line: true, js: 'js-act-open', h: 26, data: { rec: c.customerId, val: 'schedule' } })}
-      <span class="act-col-lbl">Schedule</span>
+      <div class="act-half"><span class="act-col-lbl">Actions</span>${addBtn('Log Actions', { line: true, js: 'js-act-open', h: 26, data: { rec: c.customerId, val: 'record' } })}</div>
+      <div class="act-half">${addBtn('Schedule Actions', { line: true, js: 'js-act-open', h: 26, data: { rec: c.customerId, val: 'schedule' } })}<span class="act-col-lbl">Schedule</span></div>
     </div>`;
     const actEntry = state.actOpen === c.customerId
       ? `<div class="act-entry"><input class="act-in js-act-in" data-rec="${c.customerId}" placeholder="${state.actMode === 'schedule' ? 'Schedule an action…' : 'Log an action…'}" /></div>`
