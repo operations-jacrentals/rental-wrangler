@@ -2280,7 +2280,6 @@ const DETAIL = {
     const actHead = `<div class="act-head">
       <span class="act-col-lbl">Actions</span>
       ${addBtn('Log Actions', { line: true, js: 'js-act-open', h: 26, data: { rec: c.customerId, val: 'record' } })}
-      <span class="spacer"></span>
       ${addBtn('Schedule Actions', { line: true, js: 'js-act-open', h: 26, data: { rec: c.customerId, val: 'schedule' } })}
       <span class="act-col-lbl">Schedule</span>
     </div>`;
