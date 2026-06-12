@@ -3851,6 +3851,11 @@ function renderOverlay() {
     const card = hasCardOnFile(c);
     const refunded = t.status === 'Refunded';
     const refAmt = Number(inv.refundedAmount) || 0;
+    // §19 partial-payment allocation: when there's a live balance + a card, every
+    // line carrying a balance gets a row. Lazy-init o.alloc to "pay in full" so
+    // the popup opens charge-ready; partials are made by dialing lines down.
+    const lines = (!refunded && t.balance > 0 && card) ? allocLines(inv) : [];
+    if (lines.length && !o.alloc) { o.alloc = {}; lines.forEach((L) => { o.alloc[L.key] = L.remaining; }); }
     const pop = el('div', 'popup'); pop.style.width = '380px';
     pop.innerHTML = `
       <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${CARD_ICON.invoices || ''}</span><h3>${esc(inv.invoiceId)}</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
@@ -3861,7 +3866,8 @@ function renderOverlay() {
           : t.balance <= 0 ? `<div class="pay-card-on-file good">✓ Paid in full${inv.paymentMethod ? ' · ' + esc(inv.paymentMethod) : ''}</div>`
             : card ? `<div class="pay-cards">${customerCards(c).map((k) => `<button class="pay-card${(o.selectedCardId || defaultCard(c)?.id) === k.id ? ' on' : ''} js-pay-pick" data-card="${k.id}" ${o.busy ? 'disabled' : ''}>💳 ${esc(cardOneLabel(k))}${k.isDefault ? ' · default' : ''}${cardExpired(k) ? ' · expired' : ''}</button>`).join('')}</div>`
                    : '<div class="pay-card-on-file warn">No card on file for this customer.</div>'}
-        ${t.balance > 0 && card ? `<label class="pay-field"><span>Amount to charge</span><input class="pay-amt-in" type="number" min="0.01" max="${t.balance}" step="0.01" value="${t.balance.toFixed(2)}" ${o.busy ? 'disabled' : ''}></label>` : ''}
+        ${lines.length ? allocSectionHtml(lines, o)
+          : (t.balance > 0 && card ? `<label class="pay-field"><span>Amount to charge</span><input class="pay-amt-in" type="number" min="0.01" max="${t.balance}" step="0.01" value="${t.balance.toFixed(2)}" ${o.busy ? 'disabled' : ''}></label>` : '')}
         ${o.confirmRefund ? `<div class="pay-confirm">Refund ${money(t.paid)} to ${esc(inv.paymentMethod || 'the card')}?</div>` : ''}
         ${o.error ? `<div class="login-err" style="text-align:left;margin-top:10px">${esc(o.error)}</div>` : ''}
         <div class="pillrow" style="justify-content:flex-end;margin-top:16px">
@@ -3878,6 +3884,7 @@ function renderOverlay() {
   }
   root.appendChild(overlay);
   if (o.kind === 'newCustomer') setupSignaturePad();
+  if (o.kind === 'payment') setupPayAlloc();   // live counter for the §19 allocation rows
   if (o.kind === 'addCard') { const cc = IDX.customer.get(o.customerId); if (cc && cc.signature && cc.selfie) mountCardElement(); }   // only mount with consent (nothing to orphan otherwise)
 }
 const openOverlay = (o) => { state.datepick = null; state.overlay = o; renderOverlay(); };
@@ -5800,6 +5807,75 @@ function friendlyPayErr(r) {
 async function openAddCard(customerId, opts) { await ensurePubKey(); openOverlay({ kind: 'addCard', customerId, returnTo: (opts && opts.returnTo) || '', invoiceId: (opts && opts.invoiceId) || '' }); }
 async function openPayInvoice(invoiceId) { await ensurePubKey(); openOverlay({ kind: 'payment', invoiceId, busy: false, error: '' }); }
 
+/* §19 ALLOCATION POPUP — the user splits a payment across the invoice's line
+   items (pre-tax). Because the charge total is BUILT from these per-line inputs,
+   there is never an "unassigned" partial — every dollar lands on a line. Tax
+   rides on top of the taxable lines and the gross is shown before charging. */
+function allocSectionHtml(lines, o) {
+  const rows = lines.map((L) => `
+    <div class="alloc-row">
+      <span class="alloc-name" data-tip="${esc(L.label)}">${esc(L.label)}</span>
+      <span class="alloc-rem">/ ${money(L.remaining)}${L.taxable ? '' : ' · no tax'}</span>
+      <span class="alloc-dollar">$<input class="alloc-in" data-key="${esc(L.key)}" data-taxable="${L.taxable ? '1' : '0'}" data-max="${L.remaining}" type="number" min="0" max="${L.remaining}" step="0.01" value="${(Number(o.alloc[L.key]) || 0).toFixed(2)}" ${o.busy ? 'disabled' : ''}></span>
+    </div>`).join('');
+  return `<div class="alloc-sec">
+    <div class="alloc-head"><span>Apply to line items</span>${lines.length > 1 ? `<button class="add-field js-alloc-auto" data-r="R5" type="button" ${o.busy ? 'disabled' : ''}>Pay in full</button>` : ''}</div>
+    ${rows}
+    <div class="alloc-foot"><span class="js-alloc-counter"></span><span class="alloc-charge js-alloc-charge"></span></div>
+  </div>`;
+}
+/* Live, DOM-driven recompute (no re-render → inputs keep focus, like the card
+   element). Updates o.alloc, the "balance after" counter, the pre-tax+tax=gross
+   read-out, and the Charge button label/enabled state. */
+function setupPayAlloc() {
+  const o = state.overlay; if (!o || o.kind !== 'payment') return;
+  const body = document.querySelector('.overlay .popup-body'); if (!body) return;
+  const ins = [...body.querySelectorAll('.alloc-in')]; if (!ins.length) return;
+  const inv = IDX.invoice.get(o.invoiceId); if (!inv) return;
+  const cust = inv.customerId ? IDX.customer.get(inv.customerId) : null;
+  const exempt = !!(inv.taxExempt || cust?.salesTaxExempt);
+  const recompute = () => {
+    const bal = invoiceTotals(inv).balance;
+    let taxable = 0, plain = 0;
+    ins.forEach((inp) => {
+      const max = Number(inp.dataset.max) || 0;
+      let v = Number(inp.value); if (!(v >= 0)) v = 0; if (v > max + 0.005) { v = max; inp.value = max.toFixed(2); }
+      o.alloc[inp.dataset.key] = v;
+      if (inp.dataset.taxable === '1') taxable += v; else plain += v;
+    });
+    const pre = taxable + plain;
+    const tax = exempt ? 0 : Math.round(taxable * TAX_RATE);
+    const gross = Math.min(pre + tax, bal);
+    const after = Math.max(0, bal - gross);
+    const counter = body.querySelector('.js-alloc-counter');
+    const charge = body.querySelector('.js-alloc-charge');
+    const btn = body.querySelector('.js-charge-invoice');
+    if (counter) counter.innerHTML = after <= 0.005 ? `<b style="color:var(--good,#1a9f57)">Pays in full ✓</b>` : `Balance after <b>${money(after)}</b>`;
+    if (charge) charge.innerHTML = pre > 0 ? `${money(pre)}${tax ? ` + ${money(tax)} tax` : ''} = <b>${money(gross)}</b>` : '<span class="muted">nothing assigned</span>';
+    if (btn) { btn.disabled = !(gross > 0) || !!o.busy; if (!o.busy) btn.textContent = gross > 0 ? `Charge ${money(gross)}` : 'Charge'; }
+  };
+  ins.forEach((inp) => inp.addEventListener('input', recompute));
+  const auto = body.querySelector('.js-alloc-auto');
+  if (auto) auto.addEventListener('click', () => { ins.forEach((inp) => { inp.value = (Number(inp.dataset.max) || 0).toFixed(2); }); recompute(); });
+  recompute();
+}
+/* Resolve the gross charge + the per-line allocations from o.alloc (pre-tax),
+   capped at each line's remaining and the invoice balance. */
+function allocCharge(inv, o) {
+  const cust = inv.customerId ? IDX.customer.get(inv.customerId) : null;
+  const exempt = !!(inv.taxExempt || cust?.salesTaxExempt);
+  let taxable = 0, plain = 0; const alloc = {};
+  allocLines(inv).forEach((L) => {
+    const v = Math.min(Number(o.alloc?.[L.key]) || 0, L.remaining);
+    if (v <= 0.005) return;
+    alloc[L.key] = v;
+    if (L.taxable) taxable += v; else plain += v;
+  });
+  const tax = exempt ? 0 : Math.round(taxable * TAX_RATE);
+  const gross = Math.min(taxable + plain + tax, invoiceTotals(inv).balance);
+  return { gross, alloc };
+}
+
 // Mount the Stripe Card Element into the open addCard overlay (called post-append,
 // like setupSignaturePad). Recreated per open; destroyed on close.
 function mountCardElement() {
@@ -5858,12 +5934,22 @@ async function saveCardFlow(btn) {
 async function chargeInvoiceFlow(invoiceId) {
   const o = state.overlay; if (!o || o.kind !== 'payment') return;
   const live = () => state.overlay === o;   // bail if the overlay changed/closed mid-await
-  const amtEl = document.querySelector('.overlay .pay-amt-in');
-  const dollars = amtEl ? Number(amtEl.value) : NaN;
-  const amountCents = dollars > 0 ? Math.round(dollars * 100) : null;   // null = full balance; server caps at balance
+  // §19: when the allocation rows are present, the gross + per-line split come
+  // from o.alloc (pre-tax inputs). Otherwise fall back to the free amount field.
+  let amountCents, alloc = null;
+  if (o.alloc) {
+    const inv0 = IDX.invoice.get(invoiceId); if (!inv0) return;
+    const ch = allocCharge(inv0, o); alloc = ch.alloc;
+    if (ch.gross <= 0) { o.error = 'Assign an amount to at least one line.'; return renderOverlay(); }
+    amountCents = Math.round(ch.gross * 100);
+  } else {
+    const amtEl = document.querySelector('.overlay .pay-amt-in');
+    const dollars = amtEl ? Number(amtEl.value) : NaN;
+    amountCents = dollars > 0 ? Math.round(dollars * 100) : null;   // null = full balance; server caps at balance
+  }
   o.busy = true; o.error = ''; renderOverlay();
   const fail = (msg) => { if (!live()) return; o.busy = false; o.error = msg; renderOverlay(); };
-  const done = (r) => { if (!live()) return; applyPayment(invoiceId, r); o.busy = false; o.error = ''; toast(r.fullyPaid || r.alreadyPaid ? 'Paid in full ✓' : 'Payment captured ✓'); renderOverlay(); };
+  const done = (r) => { if (!live()) return; applyPayment(invoiceId, r, alloc); o.alloc = null; o.busy = false; o.error = ''; toast(r.fullyPaid || r.alreadyPaid ? 'Paid in full ✓' : 'Payment captured ✓'); renderOverlay(); };
   try {
     const c = IDX.customer.get(IDX.invoice.get(invoiceId)?.customerId);
     const pick = (o.selectedCardId && customerCards(c).find((k) => k.id === o.selectedCardId)) || defaultCard(c);
@@ -5900,7 +5986,8 @@ async function refundInvoiceFlow(invoiceId) {
   } catch (e) { if (live()) { o.busy = false; o.error = 'Network error — try again.'; renderOverlay(); } }
 }
 // Apply a server charge/refund result to the local invoice; status is derived from amountPaid.
-function applyPayment(invoiceId, r) {
+// alloc (§19) = the pre-tax per-line split just charged; accumulate it into inv.allocations.
+function applyPayment(invoiceId, r, alloc) {
   const inv = IDX.invoice.get(invoiceId); if (!inv) return;
   const before = invoiceTotals(inv).status;
   if (r.amountPaid != null) inv.amountPaid = r.amountPaid;
@@ -5910,6 +5997,8 @@ function applyPayment(invoiceId, r) {
   if (r.refunded != null) inv.refunded = r.refunded;
   if (r.refundedAmount != null) inv.refundedAmount = r.refundedAmount;
   if (r.locked != null) inv.locked = r.locked;
+  if (alloc) { inv.allocations = inv.allocations || {}; Object.entries(alloc).forEach(([k, v]) => { inv.allocations[k] = (Number(inv.allocations[k]) || 0) + v; }); }
+  if (inv.refunded) inv.allocations = {};   // a full refund releases every line assignment
   reindex('invoices', inv);
   const after = invoiceTotals(inv).status;
   logAction(inv, r.refundedCents != null ? `Refunded ${money((r.refundedCents || 0) / 100)} — ${before} → ${after}` : `Payment — ${before} → ${after} (${r.paymentMethod || 'card'})`);

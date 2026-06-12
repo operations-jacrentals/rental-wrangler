@@ -852,6 +852,17 @@ select.nc-in { cursor: pointer; }
 .pay-field > span { font-size: 11px; font-weight: 700; color: var(--txt-3); text-transform: uppercase; letter-spacing: .3px; }
 .pay-amt-in { width: 100%; box-sizing: border-box; padding: 9px 11px; border: 1px solid var(--accent-line); border-radius: 9px; background: var(--panel); color: var(--txt); font: inherit; font-size: 15px; }
 .pay-confirm { margin-top: 12px; padding: 10px 12px; border: 1px solid var(--red); border-radius: 9px; background: var(--red-bg); color: var(--txt); font-size: 13px; }
+/* §19 partial-payment allocation rows */
+.alloc-sec { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 12px; }
+.alloc-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; font-size: 11px; font-weight: 700; color: var(--txt-3); text-transform: uppercase; letter-spacing: .3px; }
+.alloc-head .add-field { text-transform: none; }
+.alloc-row { display: flex; align-items: center; gap: 8px; margin: 6px 0; font-size: 12.5px; }
+.alloc-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--txt-2); }
+.alloc-rem { flex: 0 0 auto; font-size: 11px; color: var(--txt-3); }
+.alloc-dollar { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 2px; color: var(--txt-3); }
+.alloc-in { width: 80px; box-sizing: border-box; padding: 6px 8px; border: 1px solid var(--accent-line); border-radius: 8px; background: var(--panel); color: var(--txt); font: inherit; font-size: 13px; text-align: right; }
+.alloc-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; font-size: 12.5px; color: var(--txt-2); }
+.alloc-foot b { color: var(--txt); }
 
 /* role KPI popup */
 .kpi-popup { width: 420px; }
