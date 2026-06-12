@@ -1158,3 +1158,9 @@ input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
 
 /* +Work Order on the Units card — floats alone, centered, no card backing (Jac 2026-06-12) */
 .add-row { display: flex; justify-content: center; margin: 2px 0 4px; }
+
+/* R1/R3 STACK LAW (Jac 2026-06-12): pills opening line rows share one min-width
+   so the column edges align down the stack (WO lines, invoice lines, history). */
+.woline > .pill, .hitem > .pill { min-width: 88px; justify-content: center; }
+/* Machined numbers: every digit the same width, so money/hour columns align. */
+body { font-variant-numeric: tabular-nums; }

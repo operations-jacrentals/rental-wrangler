@@ -5796,7 +5796,10 @@ function boot() {
     if (state.pick || state.winpicker) return;
     // R20: right-clicking an ELEMENT opens the Wrangler context menu;
     // right-clicking dead space keeps the old card-to-List / clear-anchor.
-    const hit = ruleOf(e.target) || (e.target.closest('.inline-edit, .row') ? { r: null, el: e.target.closest('.inline-edit, .row') } : null);
+    // menu ONLY on real tools (pills/buttons/text/fields/rows) — section + card
+    // dead space stays reserved for card-to-List / clear-anchor (Jac 2026-06-12)
+    const leaf = e.target.closest('.pill, .add-field, .flag, .linkname, .inv-line-link, .req, .seg, button, .inline-edit, .jnode, .hvals, .x, a, .d-title, .derived, .row');
+    const hit = leaf ? (ruleOf(leaf) || { r: null, el: leaf }) : null;
     if (hit) return openCtxMenu(e, hit);
     const dc = card.dataset.card, now = performance.now();
     if (now - lastCtx.t < 450 && lastCtx.card === dc) { lastCtx = { t: 0, card: null }; return clearAnchor(); }   // double right-click
