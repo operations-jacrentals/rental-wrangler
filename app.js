@@ -3678,12 +3678,26 @@ function renderOverlay() {
         <div class="nc-agreement" tabindex="0">${esc(ag.text)}</div>
         <div class="nc-sec-title">Account packet</div>
         <div class="nc-packet">
-          <div class="nc-cap"><span class="nc-cap-lbl">Selfie</span>${selfieBox}<div class="pillrow"><label class="pill ref">${d.selfie ? 'Retake' : 'Take photo'}<input type="file" accept="image/*" capture="user" class="js-nc-selfie" hidden /></label>${d.selfie ? '<button class="pill c-gray js-nc-selfie-clear">Remove</button>' : ''}</div></div>
-          <div class="nc-cap"><span class="nc-cap-lbl">Signature${agSigned ? '' : ' *'}</span>${sigBox}<div class="pillrow">${d.signature ? '<button class="pill c-gray js-nc-sig-clear">Re-sign</button>' : '<button class="pill c-green js-nc-sig-save">Accept &amp; sign</button><button class="pill c-gray js-nc-sig-clearpad">Clear</button>'}</div></div>
-          <div class="nc-cap"><span class="nc-cap-lbl">Card on file</span><div class="nc-thumb empty${cardOnFile ? ' good' : ''}">${esc(cardShort)}</div><div class="pillrow">${isEdit ? (d.signature && d.selfie ? `<button class="pill ref js-add-card" data-rec="${o.editId}">${cardOnFile ? 'Replace card' : '＋ Add card'}</button>` : '<span class="muted" style="font-size:11px">Sign first</span>') : '<span class="muted" style="font-size:11px">Save customer first</span>'}</div></div>
+          <div class="nc-tiles">
+            <div class="nc-tile${d.selfie ? ' done' : ''}">
+              <div class="nc-tile-head"><span class="nc-cap-lbl">Selfie</span>${d.selfie ? '<span class="nc-ok">✓</span>' : ''}</div>
+              ${selfieBox}
+              <div class="nc-tile-act"><label class="pill c-commit" data-r="R17">${d.selfie ? 'Retake' : 'Take photo'}<input type="file" accept="image/*" capture="user" class="js-nc-selfie" hidden /></label>${d.selfie ? '<button class="pill ghost js-nc-selfie-clear" data-r="R18">Remove</button>' : ''}</div>
+            </div>
+            <div class="nc-tile${cardOnFile ? ' done' : ''}">
+              <div class="nc-tile-head"><span class="nc-cap-lbl">Card on file</span>${cardOnFile ? '<span class="nc-ok">✓</span>' : ''}</div>
+              <div class="nc-thumb empty${cardOnFile ? ' good' : ''}">${esc(cardShort)}</div>
+              <div class="nc-tile-act">${isEdit ? (d.signature && d.selfie ? `<button class="pill c-commit js-add-card" data-rec="${o.editId}">${cardOnFile ? 'Replace card' : 'Add card'}</button>` : '<span class="muted" style="font-size:11px">Sign first</span>') : '<span class="muted" style="font-size:11px">Save customer first</span>'}</div>
+            </div>
+          </div>
+          <div class="nc-tile nc-tile-sig${d.signature ? ' done' : ''}">
+            <div class="nc-tile-head"><span class="nc-cap-lbl">Signature${agSigned ? '' : ' *'}</span>${d.signature ? '<span class="nc-ok">✓</span>' : ''}</div>
+            ${sigBox}
+            <div class="nc-tile-act">${d.signature ? '<button class="pill ghost js-nc-sig-clear" data-r="R18">Re-sign</button>' : '<button class="pill c-green js-nc-sig-save" data-r="R17">Accept &amp; sign</button><button class="pill ghost js-nc-sig-clearpad" data-r="R18">Clear</button>'}</div>
+          </div>
         </div>
         ${o.error ? `<div class="login-err" style="text-align:left;margin-top:10px">${esc(o.error)}</div>` : ''}
-        <div class="pillrow" style="margin-top:16px;justify-content:flex-end"><button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill c-green js-nc-save">${isEdit ? 'Save account' : 'Create customer'}</button></div>
+        <div class="pillrow" style="margin-top:16px;justify-content:flex-end"><button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill c-green js-nc-save" data-r="R17">${isEdit ? 'Save account' : 'Create customer'}</button></div>
       </div>`;
     overlay.appendChild(pop);
   } else if (o.kind === 'agreement') {

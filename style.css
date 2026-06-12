@@ -838,15 +838,21 @@ select.nc-in { cursor: pointer; }
 .nc-popup { width: 500px; max-height: 88vh; }
 .nc-popup .popup-body { overflow-y: auto; }
 .nc-sec-title { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .4px; color: var(--txt-3); margin: 16px 0 9px; }
-.nc-packet { display: flex; flex-direction: column; gap: 12px; }
-.nc-cap { display: flex; align-items: center; gap: 12px; }
-.nc-cap-lbl { flex: 0 0 76px; font-size: 11px; font-weight: 700; color: var(--txt-3); text-transform: uppercase; letter-spacing: .3px; }
-.nc-thumb { width: 116px; height: 72px; flex: 0 0 auto; object-fit: cover; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); }
-.nc-thumb.sig { flex: 1 1 auto; width: auto; object-fit: contain; background: #fff; }
+/* Account packet (Jac 2026-06-12): uniform tiles — selfie + card side by side,
+   signature full width; each = header (+✓ when done) · preview · action. */
+.nc-packet { display: flex; flex-direction: column; gap: 10px; }
+.nc-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.nc-tile { background: var(--bg-2); border: 1px solid var(--line-soft); border-radius: 12px; padding: 11px 12px; display: flex; flex-direction: column; gap: 9px; }
+.nc-tile.done { border-color: color-mix(in srgb, var(--good, #1a9f57) 45%, var(--line-soft)); }
+.nc-tile-head { display: flex; align-items: center; }
+.nc-cap-lbl { font-size: 11px; font-weight: 700; color: var(--txt-3); text-transform: uppercase; letter-spacing: .3px; }
+.nc-ok { margin-left: auto; color: var(--good, #1a9f57); font-weight: 800; font-size: 13px; }
+.nc-thumb { width: 100%; height: 84px; object-fit: cover; border-radius: 9px; border: 1px solid var(--line); background: var(--panel); }
+.nc-thumb.sig { object-fit: contain; background: #fff; }
 .nc-thumb.empty { display: inline-flex; align-items: center; justify-content: center; color: var(--txt-3); font-size: 11px; }
-.nc-sigpad { flex: 1 1 auto; height: 86px; border-radius: 10px; border: 1px solid var(--accent-line); background: #fff; touch-action: none; cursor: crosshair; }
-.nc-cap .pillrow { margin-left: auto; flex: 0 0 auto; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
-.nc-cap .pill { font-size: 11px; padding: 6px 11px; }
+.nc-sigpad { width: 100%; height: 96px; border-radius: 9px; border: 1px solid var(--accent-line); background: #fff; touch-action: none; cursor: crosshair; }
+.nc-tile-act { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.nc-tile-act .pill, .nc-tile-act label.pill { font-size: 11px; padding: 6px 11px; cursor: pointer; }
 .cust-selfie { width: 30px; height: 30px; border-radius: 8px; object-fit: cover; border: 1px solid var(--line); flex: 0 0 auto; }
 .nc-ag-note { font-weight: 600; text-transform: none; letter-spacing: 0; color: var(--txt-3); }
 .nc-ag-ok { font-weight: 700; text-transform: none; letter-spacing: 0; color: var(--good, #1a9f57); }
