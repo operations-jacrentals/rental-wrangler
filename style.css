@@ -231,9 +231,11 @@ input { font-family: inherit; }
    the card at its top, centered, so the card's height/glow includes the toggles. */
 .col-tabs { display: inline-flex; gap: 3px; flex: 0 0 auto; align-self: center; max-width: calc(100% - 16px); overflow: hidden;
   background: var(--panel); border: 1px solid var(--line); border-radius: 13px; padding: 3px; box-shadow: var(--chip-shadow); }
-/* Jac 2026-06-12: .tabrow = the toggle row — chip centered, nav cluster OUTSIDE
-   the chip at the right edge */
-.card > .tabrow { position: relative; display: flex; justify-content: center; align-items: center; margin: 9px 8px 5px; flex: 0 0 auto; }
+/* Jac 2026-06-12: .tabrow = the toggle row — the chip centers in the free space,
+   the nav cluster is a real flex sibling (it can never overlap the chip) and
+   stretches to the SAME height as the toggle. */
+.card > .tabrow { display: flex; align-items: stretch; margin: 9px 8px 5px; flex: 0 0 auto; min-width: 0; }
+.tabrow .col-tabs { margin: 0 auto; min-width: 0; }
 .coltab {
   display: inline-flex; align-items: center; gap: 7px; padding: 7px 13px; border-radius: 10px; min-width: 0;
   background: transparent; border: none; color: var(--txt-3);
@@ -241,8 +243,9 @@ input { font-family: inherit; }
 }
 .coltab:hover { color: var(--txt); }
 .coltab.on { background: var(--accent); color: var(--on-orange); }   /* selected = solid orange + DARK ink (rule 2) */
-.coltab.compact { padding: 7px 10px; }
+.coltab.compact { padding: 7px 8px; gap: 3px; }   /* icon hugs its counter (Jac) */
 .coltab .ct-lbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.coltab:not(.on) .ct-lbl { max-width: 74px; }     /* inactive labels truncate (Jac: "Categories…") */
 .coltab .ct-ico { display: inline-flex; flex: 0 0 auto; } .coltab .ct-ico svg { width: 16px; height: 16px; }
 .coltab .ct-n { font-size: 11px; font-weight: 700; color: var(--txt-3); background: var(--bg-2); padding: 1px 8px; border-radius: 999px; }
 .coltab.on .ct-n { color: var(--on-orange); background: rgba(0,0,0,.16); }
@@ -1188,8 +1191,9 @@ body { font-variant-numeric: tabular-nums; }
 .act-entry .act-in::placeholder { color: var(--muted); }
 .hlog.actlog { padding: 0 2px; }
 
-/* Jac 2026-06-12: the nav cluster rides the toggle row — OUTSIDE the chip, right edge */
-.tabrow .c-actions { position: absolute; right: 2px; top: 50%; transform: translateY(-50%); display: flex; gap: 4px; }
+/* Jac 2026-06-12: the nav cluster rides the toggle row — OUTSIDE the chip,
+   right edge, SAME height as the toggle (align-self stretch on the row) */
+.tabrow .c-actions { display: flex; align-items: center; gap: 4px; margin-left: 8px; flex: 0 0 auto; }
 
 /* right-side split columns: row CONTENTS hug the right edge too (Jac 2026-06-12) */
 .split .side.r .kv { justify-content: flex-end; width: 100%; }
