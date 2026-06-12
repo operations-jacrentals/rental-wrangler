@@ -1873,6 +1873,14 @@ function headFlagsHtml(card, rec) {
       + (noCard ? flagsStack([flagEl('No Card', 'red', { alert: true, sect: 'sec-cards' })]) : '')
       + `<span style="margin-left:auto">${gatePillRaw(acctDone ? 'Account' : 'Incomplete', acctDone ? 'green' : 'yellow', 'js-edit-customer', { rec: rec.customerId }, true)}</span>`;
   }
+  if (card === 'categories') {
+    // Jac 2026-06-12: fuel type + unit count as title flags (was a body badge row);
+    // fleet-health flag (any failed → red · any not-ready → yellow · else green).
+    const mix = categoryMix(rec.categoryId);
+    const health = mix.Failed ? { l: `${mix.Failed} Failed`, c: 'red' } : mix['Not Ready'] ? { l: `${mix['Not Ready']} Not Ready`, c: 'yellow' } : { l: 'Fleet Ready', c: 'green' };
+    return flagsStack([rec.fuelType ? flagEl(rec.fuelType, 'navy') : '', flagEl(`${mix.total} units`, 'gray', { icon: CARD_ICON.units })])
+      + flagsStack([flagEl(health.l, health.c, { icon: CARD_ICON.inspections })]);
+  }
   return '';
 }
 
@@ -2338,15 +2346,26 @@ const DETAIL = {
       ${kv(`${num(st.avgHours)} HRS`, { sfx: 'avg hours', derived: true })}
       ${c.description ? kv(c.description, { wrap: true }) : ''}
     </div></div>`;
-    const investment = `<div class="section"><h4>Investment</h4><div class="fieldstack">
-      ${st.roi != null ? kv(`${st.roi}%`, { sfx: 'ROI', derived: true }) : ''}
-      ${kv(money(st.avgRevUnit), { sfx: '/unit revenue', derived: true })}${kv(money(st.avgExpUnit), { sfx: '/unit expenses', derived: true })}
-      ${kv(money(c.msrp), { sfx: 'MSRP' })}${kv(money(c.askPrice), { sfx: 'ask' })}${kv(money(c.bottomDollar), { sfx: 'bottom dollar' })}
-      ${kv('—', { sfx: 'time / dollar util (backend)', derived: true })}
-    </div></div>`;
+    // every unit in the category — R2 linked pill + R4 derived status pill (Jac 2026-06-12)
+    const catUnits = DATA.units.filter((u) => u.categoryId === c.categoryId);
+    const unitRows = catUnits.map((u) => {
+      const ar = activeRentalForUnit(u.unitId);
+      const st2 = ar ? getStatus('rentalStatus', rentalDisplayStatus(ar)) : getStatus('unitInspectionStatus', u.inspectionStatus);
+      return `<div class="kv unit-line">${unitPill(u.unitId)}${dPill(st2.label, st2.color, ar ? { card: 'rentals', recId: ar.rentalId } : { card: 'inspections' })}</div>`;
+    }).join('');
+    const investment = `<div class="section"><h4>Investment</h4>
+      <div class="split">
+        <div class="side">
+          ${st.roi != null ? kv(`${st.roi}%`, { sfx: 'ROI', derived: true }) : ''}
+          ${kv(money(st.avgRevUnit), { sfx: '/unit revenue', derived: true })}${kv(money(st.avgExpUnit), { sfx: '/unit expenses', derived: true })}
+          ${kv(money(c.msrp), { sfx: 'MSRP' })}${kv(money(c.askPrice), { sfx: 'ask' })}${kv(money(c.bottomDollar), { sfx: 'bottom dollar' })}
+          ${kv('—', { sfx: 'time / dollar util (backend)', derived: true })}
+        </div>
+        <div class="side r">${unitRows || '<span class="muted" style="font-size:12px">No units</span>'}</div>
+      </div></div>`;
     const notes = notesSection('categories', c, 'categoryId');
     return `<div class="detail">
-      <div class="detail-head"><span class="d-title">${esc(c.name)}</span>${c.fuelType ? badge(c.fuelType, 'navy') : ''}${badge(`${mix.total} units`, 'gray')}</div>
+      <div class="detail-head"><span class="d-title">${esc(c.name)}</span></div>
       ${bars}
       ${notes.top}
       <div class="detail-cols">${pricing}${fleet}</div>
