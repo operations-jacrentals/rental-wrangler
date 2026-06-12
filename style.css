@@ -1199,8 +1199,8 @@ body { font-variant-numeric: tabular-nums; }
 .split .side.r .kv { justify-content: flex-end; width: 100%; }
 
 /* Jac 2026-06-12: first+last name share a row; funnel section contents centered */
-.kv2 { display: flex; gap: 10px; }
-.kv2 .kv { flex: 1; min-width: 0; }
+.kv2 { display: flex; gap: 8px; }
+.kv2 .kv { flex: 0 1 auto; min-width: 0; }   /* the names sit TOGETHER, not half a row apart */
 .fieldstack.centered .kv { justify-content: center; }
 
 /* R21 FILE DROP (Jac 2026-06-12) — the massive popup add-file zone wearing
