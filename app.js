@@ -968,10 +968,10 @@ function refPill(card, recId, label, { x, xData } = {}) {
   return `<span class="pill ref link" data-r="R2" data-pill-card="${card}" data-pill-rec="${esc(recId)}"${tip}>${CARD_ICON[card] || ''}${esc(shown)}${xb}</span>`;
 }
 /** R2: a Unit pill — LINKED record, orange outline + units icon. */
-function unitPill(unitId, { x } = {}) {
+function unitPill(unitId, { x, xData } = {}) {
   const u = IDX.unit.get(unitId);
   if (!u) return badge('No unit');
-  const xb = x ? `<span class="x" data-x="${esc(x)}">✕</span>` : '';
+  const xb = x ? `<span class="x" data-x="${esc(x)}"${xData != null ? ` data-id="${esc(xData)}"` : ''}>✕</span>` : '';
   return `<span class="pill ref link" data-r="R2" data-pill-card="units" data-pill-rec="${esc(unitId)}">${CARD_ICON.units}${esc(u.name)}${xb}</span>`;
 }
 /** R3b: a DATA CHIP — a plain fact (480 HRS, No GPS), independent of R3. */
@@ -2061,7 +2061,9 @@ const DETAIL = {
       <div class="split" style="margin-top:11px">
         <div class="side">
           ${kvPills(cust ? refPill('customers', r.customerId, cust.name, { x: 'cust-swap' }) : (r.mock ? pickCustBtn : badge('No customer')))}
-          ${kvPills(`${unit ? unitPill(unit.unitId, { x: 'unit-swap' }) : (r.mock ? pickUnitBtn : '<span class="pill c-gray" data-r="R3b"><span class="t">No unit</span></span>')}${unit ? `<span class="pill dvd c-${getStatus('unitInspectionStatus', unit.inspectionStatus).color}" data-r="R4" data-pill-card="units" data-pill-rec="${esc(unit.unitId)}">${CARD_ICON.units}${esc(getStatus('unitInspectionStatus', unit.inspectionStatus).label)}</span>` : ''}${cat ? `<span class="pill dvd c-orange" data-r="R4" data-pill-card="categories" data-pill-rec="${esc(cat.categoryId)}">${CARD_ICON.categories}${esc(cat.name)}</span>` : ''}`)}
+          ${kvPills(`${rentalUnits(r).length
+              ? rentalUnits(r).map((eu) => { const u2 = IDX.unit.get(eu.unitId); if (!u2) return ''; const insp = getStatus('unitInspectionStatus', u2.inspectionStatus); return `${unitPill(u2.unitId, { x: 'unit-remove', xData: u2.unitId })}<span class="pill dvd c-${insp.color}" data-r="R4" data-pill-card="units" data-pill-rec="${esc(u2.unitId)}">${CARD_ICON.units}${esc(insp.label)}</span>`; }).join('')
+              : (r.mock ? pickUnitBtn : '<span class="pill c-gray" data-r="R3b"><span class="t">No unit</span></span>')}${rentalUnits(r).length && r.mock ? pickUnitBtn : ''}${cat ? `<span class="pill dvd c-orange" data-r="R4" data-pill-card="categories" data-pill-rec="${esc(cat.categoryId)}">${CARD_ICON.categories}${esc(cat.name)}</span>` : ''}`)}
           ${kvPills(invPill)}
           ${efld('rentals', r, 'rentalId', 'po', 'Add PO', { fmt: (v) => 'PO ' + v })}
           ${fcRow ? kvPills(fcRow) : ''}
@@ -4616,14 +4618,14 @@ function endDrag({ keepSwap, rerender } = {}) {
 function dropFlash(sel, fallbackSel) { if (document.querySelector(sel)) attnFlash(sel); else if (fallbackSel && document.querySelector(fallbackSel)) attnFlash(fallbackSel); }
 function dispatchDrop(p, t) {
   const pair = `${p.entity}>${t.entity}`;
-  // UNIT ↔ RENTAL — SET when empty, SWAP when safe (ONE unit per rental today;
-  // the multi-unit refactor upgrades this drop to ADD — see linkUnitToRental).
+  // UNIT ↔ RENTAL — ADD the unit to the rental (a Rental is an EVENT, §20);
+  // gates fire per unit inside linkUnitToRental.
   if (pair === 'units>rentals' || pair === 'rentals>units') {
     const r = pair === 'units>rentals' ? t.rec : p.rec, u = pair === 'units>rentals' ? p.rec : t.rec;
     const res = linkUnitToRental(r.rentalId, u.unitId);
     if (!res) return;
     render();
-    toast(`Unit ${u.name} → ${r.startDate && r.endDate ? 'rental ' + fmtWindow(r.startDate, r.endDate) : 'Quote'}${res.swapped ? ` (replaced ${res.swapped.name})` : ''}${res.overbooked ? ' — ⚠ OVERBOOKED' : ''}`);
+    toast(`Unit ${u.name} → ${r.startDate && r.endDate ? 'rental ' + fmtWindow(r.startDate, r.endDate) : 'Quote'}${res.overbooked ? ' — ⚠ OVERBOOKED' : ''}`);
     dropFlash(`.card[data-card="rentals"] [data-pill-card="units"][data-pill-rec="${u.unitId}"]`, `.row[data-card="rentals"][data-rec="${r.rentalId}"], .card[data-card="rentals"]`);
     return;
   }
@@ -5043,7 +5045,15 @@ function handlePillX(xEl) {
   const rec = recId != null ? recOf(entity, recId) : null;
   if (!rec) return;
 
-  if (kind === 'unit-swap') {
+  if (kind === 'unit-remove') {
+    // §20 per-unit removal: pull just this unit off the rental event
+    const uid = xEl.dataset.id;
+    const u = uid ? IDX.unit.get(uid) : null;
+    removeUnitFromRental(rec, uid);
+    logAction(rec, `Unit − ${u?.name || uid}`);
+    reindexDraft('rentals', rec);
+    toast(rentalUnitIds(rec).length ? `${u?.name || 'Unit'} removed.` : 'Unit removed — drag one on.'); return render();
+  } else if (kind === 'unit-swap') {
     rec.unitId = null; if (entity === 'rentals') rec.categoryId = null;
     toast(entity === 'rentals' ? 'Unit removed — drag a replacement on.' : 'Unit removed.'); return render();
   } else if (kind === 'cust-swap') {
@@ -6407,14 +6417,33 @@ function addPartToWO(woId, part, cost, hours, phase) {
  *  ⚠ MULTI-UNIT SWITCH POINT: when rentals grow `unitIds[]` (the multi-unit
  *  refactor, DRAGDROP-DESIGN.md §2), this drop becomes an ADD — push the unitId
  *  instead of overwriting, and drop the swap branch. Change it HERE only. */
+/* keep r.unitId + r.categoryId mirrored to the PRIMARY unit (units[0]) so every
+   pre-#20 single-unit read stays correct as units are added/removed. */
+function syncRentalPrimary(r) {
+  // read r.units DIRECTLY (not rentalUnits, whose legacy fallback would resurrect
+  // a removed unit from the stale r.unitId mirror — emptying must stick).
+  const ids = (Array.isArray(r.units) ? r.units : []).map((u) => u.unitId).filter(Boolean);
+  r.unitId = ids[0] || null;
+  const u0 = r.unitId ? IDX.unit.get(r.unitId) : null;
+  r.categoryId = u0 ? u0.categoryId : null;
+}
+function addUnitToRental(r, unitId) {
+  if (!Array.isArray(r.units)) r.units = [];
+  if (!r.units.length && r.unitId) r.units.push({ unitId: r.unitId, startHours: r.startHours ?? null, returnHours: r.returnHours ?? null, startCapture: r.startCapture || null, endCapture: r.endCapture || null });
+  r.units.push({ unitId, startHours: null, returnHours: null, startCapture: null, endCapture: null });
+  syncRentalPrimary(r);
+}
+function removeUnitFromRental(r, unitId) {
+  r.units = rentalUnits(r).filter((u) => u.unitId !== unitId);
+  syncRentalPrimary(r);
+}
+/* §20 — dropping a unit on a rental ADDS it (a Rental is an EVENT); the §9 fleet
+   gate, the "already on" guard, and the §10 overbooking gate all fire per unit. */
 function linkUnitToRental(rentalId, unitId) {
   const r = IDX.rental.get(rentalId), u = IDX.unit.get(unitId);
   if (!r || !u) return null;
   if (u.fleetStatus !== 'Active') { toast(`Blocked: ${u.name} is ${u.fleetStatus} — not rentable (§9).`); return null; }   // the §9 fleet gate
-  if (r.unitId === unitId) { toast(`${u.name} is already on this rental.`); return null; }
-  const prev = r.unitId ? IDX.unit.get(r.unitId) : null;
-  // swap safety: On Rent with logged captures = the old unit is physically out — block
-  if (prev && r.status === 'On Rent' && (r.startCapture || r.endCapture || r.fcCapture)) { toast(`Blocked: ${prev.name} is On Rent with logged captures — return it before swapping units.`); return null; }
+  if (rentalHasUnit(r, unitId)) { toast(`${u.name} is already on this rental.`); return null; }
   // §10 overbooking gate — derived live via rentalsOverlappingUnit, never stored
   const conflicts = (r.startDate && r.endDate) ? rentalsOverlappingUnit(unitId, r.startDate, r.endDate, r.rentalId) : [];
   if (conflicts.length && !state.overbookOn) {
@@ -6422,11 +6451,10 @@ function linkUnitToRental(rentalId, unitId) {
     toast(`Blocked: ${u.name} is already booked ${fmtWindow(c0.startDate, c0.endDate)} (${IDX.customer.get(c0.customerId)?.name || c0.rentalName || c0.rentalId}). Allow overbooking in Settings to force it.`);
     return null;
   }
-  r.unitId = unitId;
-  r.categoryId = u.categoryId;   // category syncs with the unit (assignPick parity)
-  logAction(r, `Unit → ${u.name}${prev ? ` (was ${prev.name})` : ''}${conflicts.length ? ' — OVERBOOKED' : ''}`);
+  addUnitToRental(r, unitId);
+  logAction(r, `Unit + ${u.name}${conflicts.length ? ' — OVERBOOKED' : ''}`);
   reindexDraft('rentals', r);
-  return { swapped: prev || null, overbooked: conflicts.length > 0 };
+  return { added: u, overbooked: conflicts.length > 0 };
 }
 /** Link a customer to a rental — with the §9 blacklist gate pulled up-front
  *  (it otherwise only fires later, in setRentalStatus). */
