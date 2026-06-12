@@ -6435,8 +6435,9 @@ function boot() {
     clearTimeout(hoverGrace);            // re-entering a row cancels a pending close
     if (t === hoverEl) return;
     hoverEl = t; hideHoverPreview();
-    // the row EYE is a deliberate "show me" target → fast; pills keep the long fuse
-    hoverTimer = setTimeout(() => { if (hoverEl === t) showHoverPreview(t); }, t.classList?.contains('js-roweye') ? 380 : 1008);
+    // the row EYE is a deliberate "show me" target → fast; pills keep the longer fuse.
+    // Halved 2026-06-12 (Jac: "I feel more in control of it now").
+    hoverTimer = setTimeout(() => { if (hoverEl === t) showHoverPreview(t); }, t.classList?.contains('js-roweye') ? 190 : 500);
   });
   document.addEventListener('mouseout', (e) => {
     if (!hoverEl) return;
