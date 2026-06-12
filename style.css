@@ -231,7 +231,9 @@ input { font-family: inherit; }
    the card at its top, centered, so the card's height/glow includes the toggles. */
 .col-tabs { display: inline-flex; gap: 3px; flex: 0 0 auto; align-self: center; max-width: calc(100% - 16px); overflow: hidden;
   background: var(--panel); border: 1px solid var(--line); border-radius: 13px; padding: 3px; box-shadow: var(--chip-shadow); }
-.card > .col-tabs { margin: 9px auto 5px; }
+/* Jac 2026-06-12: .tabrow = the toggle row — chip centered, nav cluster OUTSIDE
+   the chip at the right edge */
+.card > .tabrow { position: relative; display: flex; justify-content: center; align-items: center; margin: 9px 8px 5px; flex: 0 0 auto; }
 .coltab {
   display: inline-flex; align-items: center; gap: 7px; padding: 7px 13px; border-radius: 10px; min-width: 0;
   background: transparent; border: none; color: var(--txt-3);
@@ -1185,8 +1187,8 @@ body { font-variant-numeric: tabular-nums; }
 .act-entry .act-in::placeholder { color: var(--muted); }
 .hlog.actlog { padding: 0 2px; }
 
-/* Jac 2026-06-12: the nav cluster rides the toggle row, right-aligned */
-.col-tabs .c-actions { margin-left: auto; display: flex; gap: 4px; }
+/* Jac 2026-06-12: the nav cluster rides the toggle row — OUTSIDE the chip, right edge */
+.tabrow .c-actions { position: absolute; right: 2px; top: 50%; transform: translateY(-50%); display: flex; gap: 4px; }
 
 /* right-side split columns: row CONTENTS hug the right edge too (Jac 2026-06-12) */
 .split .side.r .kv { justify-content: flex-end; width: 100%; }

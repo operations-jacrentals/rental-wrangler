@@ -2716,7 +2716,9 @@ function columnEl(col, session) {
 }
 function blankColEl() { const n = el('div', 'card blank-col'); return n; }
 function colTabsEl(col, active, session) {
-  const bar = el('div', 'col-tabs');
+  // Jac 2026-06-12: the toggle CHIP stays centered; the nav cluster sits OUTSIDE
+  // it, parked at the row's right edge (.tabrow wraps both).
+  const bar = el('div', 'tabrow');
   // v2 (Jac call #1): the standalone Inspections + Work Orders tabs go away —
   // they live INSIDE the Unit card now; only Service keeps a tab. The hidden
   // tab still renders while its member is ACTIVE so deep links navigate home.
@@ -2725,7 +2727,7 @@ function colTabsEl(col, active, session) {
   // units column — clipboard-? icon + count; hidden when zero; it's just a filter.
   const notReady = col.members.includes('units') ? DATA.units.filter((u) => u.inspectionStatus === 'Not Ready').length : 0;
   const nrChip = notReady ? `<button class="coltab js-notready compact alert" data-tip="${notReady} Not Ready — filter the Units list"><span class="ct-ico">${CARD_ICON.inspectionsPending || CARD_ICON.inspections}</span><span class="ct-n">${notReady}</span></button>` : '';
-  bar.innerHTML = col.members.filter((m) => !HIDDEN_TABS.has(m) || m === active).map((m) => {
+  bar.innerHTML = `<div class="col-tabs">` + col.members.filter((m) => !HIDDEN_TABS.has(m) || m === active).map((m) => {
     const on = m === active, compact = SHOP_TYPES.includes(m);   // shop sub-types are icon-only
     const n = memberCount(m, session);
     const alert = SHOP_TYPES.includes(m) && shopAlertCount(m, session) > 0;   // red = work needs doing
@@ -2734,7 +2736,7 @@ function colTabsEl(col, active, session) {
       + (compact ? '' : `<span class="ct-lbl">${esc(MEMBER_TITLE[m])}</span>`)
       + `<span class="ct-n">${n}</span>`
       + `</button>`;
-  }).join('') + nrChip + colActionsHtml(active, session);
+  }).join('') + nrChip + `</div>` + colActionsHtml(active, session);
   return bar;
 }
 /* Jac 2026-06-12: the nav cluster (List / Anchor / New tab) rides the TOGGLE row,
