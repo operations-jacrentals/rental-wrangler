@@ -1085,6 +1085,8 @@ body.rw-inspect .c-titlecard:hover { outline: 2px solid #18b6ff; outline-offset:
 .journey.mini .jlbl { font-size: 8.5px; }
 .journey.mini .jnode { min-width: 36px; }
 .journey.mini .jseg { padding-top: 2px; }
+.unitchip { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.pill.gate.locked { cursor: default; opacity: .85; }
 .invitem { width: 100%; display: flex; flex-direction: column; gap: 3px; align-items: center; }
 .invitem .journey { width: 100%; max-width: 420px; }
 

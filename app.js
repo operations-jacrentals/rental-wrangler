@@ -1043,6 +1043,22 @@ function gatePillRaw(label, color, js, data, noChev) {
   // R1: chevron ONLY on real dropdowns — popup-opening gates pass noChev
   return `<span class="pill gate c-${color} ${js}" data-r="R1"${dataAttrs(data)}>${esc(label)}${noChev ? '' : ' ' + I.chev}</span>`;
 }
+/* §20 MASTER GATE — the rental-status dropdown in the Day Timeline / row. Usable
+   (bulk-sets every unit) only while units are UNIFORM; one diverging unit LOCKS it
+   to the read-only mix label, and it frees up again once every unit re-converges. */
+function masterGate(r, { truck } = {}) {
+  const d = rentalStatusDisplay(r);
+  const tk = truck ? `<span class="truck">${I.truck}</span>` : '';
+  if (d.mixed) {
+    return `<span class="pill gate c-gray locked" data-r="R1" data-tip="Units have mixed statuses — match them all, or use each unit's own gate below">${tk}${esc(d.label)}</span>`;
+  }
+  return `<span class="pill gate c-${d.color} js-status-pill" data-r="R1" data-rec="${esc(r.rentalId)}">${tk}${esc(d.label)} ${I.chev}</span>`;
+}
+/* §20 per-unit status gate — shown on each unit chip when a rental holds >1 unit. */
+function unitStatusGate(r, eu) {
+  const st = getStatus('rentalStatus', unitStatus(r, eu));
+  return `<span class="pill gate c-${st.color} js-unit-status" data-r="R1" data-rec="${esc(r.rentalId)}" data-unit="${esc(eu.unitId)}">${esc(st.label)} ${I.chev}</span>`;
+}
 /** R1: funnel-stage gate (§7.1). */
 function funnelPill(custId, which, stage) {
   const st = getStatus('funnelStage', stage);
@@ -1348,7 +1364,7 @@ const ROWS = {
     const dispStatus = rentalDisplayStatus(r);
     const truck = showsTruck(r.status, r.transportType);
     const name = rentalUnitsLabel(r) || 'Quote';   // the row IS the window timeline; show just the unit(s)
-    const gate = gatePill('rentalStatus', dispStatus, 'js-status-pill', { rec: r.rentalId }, { truck });
+    const gate = masterGate(r, { truck });
     const s = parseISO(r.startDate), e = parseISO(r.endDate);
 
     // no window yet (a Quote) → a simple bar to set the window
@@ -2066,7 +2082,7 @@ const DETAIL = {
         <div class="tl-over">
           <span class="d1">${esc(relDate(r.startDate))}</span>
           <span class="mid">
-            <span class="pill gate c-${stColor} js-status-pill" data-r="R1" data-rec="${r.rentalId}">${truck ? `<span class="truck">${I.truck}</span>` : ''}${esc(getStatus('rentalStatus', rentalDisplayStatus(r)).label)} ${I.chev}</span>
+            ${masterGate(r, { truck })}
             ${price ? `<span class="rate">${money(price.price)} · ${esc(price.rate)}</span>` : ''}
           </span>
           <span class="d2">${r.startTime ? `<span class="tm">${esc(r.startTime)}</span>` : ''}${esc(relDate(r.endDate))}</span>
@@ -2122,7 +2138,7 @@ const DETAIL = {
         <div class="side">
           ${kvPills(cust ? refPill('customers', r.customerId, cust.name, { x: 'cust-swap' }) : (r.mock ? pickCustBtn : badge('No customer')))}
           ${kvPills(`${rentalUnits(r).length
-              ? rentalUnits(r).map((eu) => { const u2 = IDX.unit.get(eu.unitId); if (!u2) return ''; const insp = getStatus('unitInspectionStatus', u2.inspectionStatus); return `${unitPill(u2.unitId, { x: 'unit-remove', xData: u2.unitId })}<span class="pill dvd c-${insp.color}" data-r="R4" data-pill-card="units" data-pill-rec="${esc(u2.unitId)}">${CARD_ICON.units}${esc(insp.label)}</span>`; }).join('')
+              ? rentalUnits(r).map((eu) => { const u2 = IDX.unit.get(eu.unitId); if (!u2) return ''; const insp = getStatus('unitInspectionStatus', u2.inspectionStatus); const multi = rentalUnits(r).length > 1; return `<span class="unitchip">${unitPill(u2.unitId, { x: 'unit-remove', xData: u2.unitId })}<span class="pill dvd c-${insp.color}" data-r="R4" data-pill-card="units" data-pill-rec="${esc(u2.unitId)}">${CARD_ICON.units}${esc(insp.label)}</span>${multi ? unitStatusGate(r, eu) : ''}</span>`; }).join('')
               : (r.mock ? pickUnitBtn : '<span class="pill c-gray" data-r="R3b"><span class="t">No unit</span></span>')}${rentalUnits(r).length && r.mock ? pickUnitBtn : ''}${cat ? `<span class="pill dvd c-orange" data-r="R4" data-pill-card="categories" data-pill-rec="${esc(cat.categoryId)}">${CARD_ICON.categories}${esc(cat.name)}</span>` : ''}`)}
           ${kvPills(invPill)}
           ${efld('rentals', r, 'rentalId', 'po', 'Add PO', { fmt: (v) => 'PO ' + v })}
@@ -4868,6 +4884,7 @@ function onClick(e) {
 
   // status dropdown set
   if (closest('.js-setstatus')) { const b = closest('.js-setstatus'); setRentalStatus(b.dataset.rec, b.dataset.val); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return; }
+  if (closest('.js-setunitstatus')) { const b = closest('.js-setunitstatus'); setUnitStatus(b.dataset.rec, b.dataset.unit, b.dataset.val); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return; }
   // funnel stage pill → stage dropdown; set; +Add Category / Record / Schedule
   if (closest('.js-setfunnel')) { const b = closest('.js-setfunnel'); return setFunnelStage(b.dataset.rec, b.dataset.which, b.dataset.val); }
   if (closest('.js-funnel')) { const b = closest('.js-funnel'); e.stopPropagation(); return openFunnelDropdown(b.dataset.rec, b.dataset.which, b); }
@@ -4972,6 +4989,7 @@ function onClick(e) {
 
   // rental status pill on its own open card → dropdown (pill-rule exception)
   if (closest('.js-status-pill')) return openStatusDropdown(closest('.js-status-pill').dataset.rec, closest('.js-status-pill'));
+  if (closest('.js-unit-status')) { const b = closest('.js-unit-status'); e.stopPropagation(); return openUnitStatusDropdown(b.dataset.rec, b.dataset.unit, b); }
   if (closest('.js-fleetstatus')) { const b = closest('.js-fleetstatus'); e.stopPropagation(); return openFleetDropdown(b.dataset.rec, b); }
   if (closest('.js-setfleet')) { const b = closest('.js-setfleet'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return setUnitFleet(b.dataset.rec, b.dataset.val); }
   if (closest('.js-wophase')) { const b = closest('.js-wophase'); e.stopPropagation(); return openWoPhaseDropdown(b.dataset.rec, b, null); }
@@ -5240,6 +5258,7 @@ function setRentalStatus(rentalId, val) {
     return cardOverrideRental(rentalId, val);
   }
   r.status = val;
+  (r.units || []).forEach((eu) => { eu.status = val; });   // §20 master gate: bulk-set every unit
   reindex('rentals', r);
   logAction(r, `Status → ${getStatus('rentalStatus', val).label}`);
   // §9 non-blocking warnings on go-live (warning, not block — Phase 1)
@@ -5250,6 +5269,26 @@ function setRentalStatus(rentalId, val) {
   }
   toast(warn || `Status → ${getStatus('rentalStatus', val).label}`);
   render();
+}
+/* §20 set ONE unit's status (the per-unit gate). Diverging from its siblings locks
+   the master gate to the mix label; re-converging frees it. Same §9 gates per unit. */
+function setUnitStatus(rentalId, unitId, val) {
+  const r = IDX.rental.get(rentalId); if (!r) return;
+  const eu = (r.units || []).find((u) => u.unitId === unitId); if (!eu) return;
+  const cust = r.customerId ? IDX.customer.get(r.customerId) : null;
+  if (val === 'On Rent' && !r.invoiceId) { flashOr('.js-create-invoice', 'Blocked: "On Rent" requires a linked invoice (§9).'); return; }
+  if (['On Rent', 'Reserved'].includes(val) && cust && /Blacklist/i.test(cust.accountType || '')) { toast('Blocked: customer is blacklisted (§9).'); return; }
+  if (BOOKING_STATUSES.includes(val) && cust && !hasValidCard(cust) && !r.cardOverride) { toast(`${cust.name} has no valid card on file — Admin override required.`); return; }
+  eu.status = val;
+  syncRentalPrimary(r);            // mirror the aggregate back onto r.status for back-compat readers
+  reindex('rentals', r);
+  logAction(r, `${IDX.unit.get(unitId)?.name || unitId} → ${getStatus('rentalStatus', val).label}`);
+  render();
+}
+function openUnitStatusDropdown(rentalId, unitId, anchorEl) {
+  const html = Object.keys(STATUS.rentalStatus).filter((v) => v !== 'Tomorrow' && v !== 'Today').map((v) =>
+    `<button class="dd-item js-setunitstatus" data-rec="${esc(rentalId)}" data-unit="${esc(unitId)}" data-val="${esc(v)}">${statusPill('rentalStatus', v)}</button>`).join('');
+  openDropdown(anchorEl, html);
 }
 /* §9 Field Call — a unit breaks mid-rental: flag the rental (red FC), fail the unit,
    and auto-open a Field-Call work order so the M.Tech can dispatch parts/swap. */
@@ -6479,10 +6518,22 @@ function addPartToWO(woId, part, cost, hours, phase) {
 function syncRentalPrimary(r) {
   // read r.units DIRECTLY (not rentalUnits, whose legacy fallback would resurrect
   // a removed unit from the stale r.unitId mirror — emptying must stick).
-  const ids = (Array.isArray(r.units) ? r.units : []).map((u) => u.unitId).filter(Boolean);
+  const arr = Array.isArray(r.units) ? r.units : [];
+  const ids = arr.map((u) => u.unitId).filter(Boolean);
   r.unitId = ids[0] || null;
   const u0 = r.unitId ? IDX.unit.get(r.unitId) : null;
   r.categoryId = u0 ? u0.categoryId : null;
+  if (arr.length) r.status = rentalMirrorStatus(r);   // §20 keep r.status a valid single value for back-compat readers
+}
+/* the single status mirrored onto r.status so pre-#20 readers (ACTIVE_RENTAL,
+   dispatch, overbooking) stay correct: the most-progressed ACTIVE unit status if
+   any unit is still active, else the primary's terminal status. */
+function rentalMirrorStatus(r) {
+  const arr = Array.isArray(r.units) ? r.units : [];
+  if (!arr.length) return r.status;
+  const active = arr.map((eu) => eu.status).filter((s) => s && !TERMINAL_UNIT.has(s));
+  if (active.length) return active.sort((a, b) => STATUS_ORDER.indexOf(b) - STATUS_ORDER.indexOf(a))[0];
+  return arr[0].status || r.status;
 }
 function addUnitToRental(r, unitId) {
   if (!Array.isArray(r.units)) r.units = [];
