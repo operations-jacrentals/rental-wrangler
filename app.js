@@ -76,17 +76,21 @@ function migrateCustomers() {
   });
 }
 /* ── §20 multi-unit rentals — "a Rental is an EVENT" ──
-   A rental dispatches one OR MANY units; each unit carries its own hours +
-   delivery/recovery captures in r.units[]. Legacy single-unit rentals fold their
-   top-level fields into units[0]; r.unitId stays a synced mirror of the PRIMARY
-   unit so every pre-#20 read keeps working untouched. (Phase 1: model + helpers.) */
+   A rental dispatches one OR MANY units; each unit carries its OWN status,
+   transport, hours, and delivery/recovery captures in r.units[]. Legacy
+   single-unit rentals fold their top-level fields into units[0]; r.unitId stays a
+   synced mirror of the PRIMARY unit so every pre-#20 read keeps working. */
+function legacyUnitEntry(r) {
+  return { unitId: r.unitId, legacyUnitName: r.legacyUnitName || '', status: r.status,
+    startHours: r.startHours != null ? r.startHours : null,
+    returnHours: r.returnHours != null ? r.returnHours : null,
+    startCapture: r.startCapture || null, endCapture: r.endCapture || null, fcCapture: r.fcCapture || null,
+    transportType: r.transportType || null, deliveryAddress: r.deliveryAddress || '', recoveryAddress: r.recoveryAddress || '' };
+}
 function migrateRentals() {
   DATA.rentals.forEach((r) => {
     if (!Array.isArray(r.units)) {
-      r.units = r.unitId ? [{ unitId: r.unitId, legacyUnitName: r.legacyUnitName || '',
-        startHours: r.startHours != null ? r.startHours : null,
-        returnHours: r.returnHours != null ? r.returnHours : null,
-        startCapture: r.startCapture || null, endCapture: r.endCapture || null }] : [];
+      r.units = r.unitId ? [legacyUnitEntry(r)] : [];
       migrationDirty = true;
     }
   });
@@ -95,10 +99,7 @@ function migrateRentals() {
    canonical going forward; r.unitId remains the primary mirror during the rollout. */
 function rentalUnits(r) {
   if (r && Array.isArray(r.units) && r.units.length) return r.units;
-  return (r && r.unitId) ? [{ unitId: r.unitId, legacyUnitName: r.legacyUnitName || '',
-    startHours: r.startHours != null ? r.startHours : null,
-    returnHours: r.returnHours != null ? r.returnHours : null,
-    startCapture: r.startCapture || null, endCapture: r.endCapture || null }] : [];
+  return (r && r.unitId) ? [legacyUnitEntry(r)] : [];
 }
 const rentalUnitIds = (r) => rentalUnits(r).map((u) => u.unitId).filter(Boolean);
 const primaryUnit = (r) => (r && r.unitId) || (rentalUnits(r)[0] || {}).unitId || null;
@@ -115,6 +116,33 @@ function rentalDisplayName(r) {
   if (win && units) return `${win}: ${units}`;
   return units || win || 'Quote';
 }
+/* §20 per-unit status — each unit's place in the rental, derived from its stored
+   status + the shared window (Reserved → Today/Tomorrow). The master gate in the
+   Day Timeline is usable only while units are UNIFORM; one diverging unit locks it
+   to the mix label, and it frees up again once every unit re-converges. */
+const STATUS_ORDER = ['Quote', 'Reserved', 'Tomorrow', 'Today', 'On Rent', 'End Rent', 'Off Rent', 'Returned', 'Cancelled', 'No Show'];
+function unitStatus(r, eu) {
+  const base = (eu && eu.status) || r.status || 'Reserved';
+  if (base === 'Reserved') { const s = parseISO(r.startDate); if (s) { const d = dayDiff(TODAY, s); if (d === 0) return 'Today'; if (d === 1) return 'Tomorrow'; } }
+  return base;
+}
+function rentalUnitStatuses(r) {
+  return [...new Set(rentalUnits(r).map((eu) => unitStatus(r, eu)))].sort((a, b) => STATUS_ORDER.indexOf(a) - STATUS_ORDER.indexOf(b));
+}
+const unitsUniform = (r) => rentalUnitStatuses(r).length <= 1;
+/* the rental's app-wide status: the single status when uniform, else the mix
+   label ("Today/On Rent", lifecycle-ordered) with a neutral color. */
+function rentalStatusDisplay(r) {
+  const ss = rentalUnitStatuses(r);
+  if (ss.length <= 1) { const k = ss[0] || rentalDisplayStatus(r); const st = getStatus('rentalStatus', k); return { label: st.label, color: st.color, key: k, mixed: false }; }
+  return { label: ss.join('/'), color: 'gray', key: null, mixed: true };
+}
+/* TERMINAL = the unit has reached an end state; Complete Rental unlocks only when
+   EVERY unit is terminal (Returned, or Cancelled/No Show — those stay on the
+   rental record but their invoice line is removed). */
+const TERMINAL_UNIT = new Set(['Returned', 'Cancelled', 'No Show']);
+const unitTerminal = (r, eu) => TERMINAL_UNIT.has(unitStatus(r, eu));
+const allUnitsTerminal = (r) => rentalUnits(r).length > 0 && rentalUnits(r).every((eu) => unitTerminal(r, eu));
 /* ── §14 multi-card helpers ── */
 const customerCards = (c) => (c && Array.isArray(c.cards)) ? c.cards.filter((k) => k.status !== 'removed') : [];
 const defaultCard = (c) => { const ks = customerCards(c); return ks.find((k) => k.isDefault) || ks[0] || null; };
@@ -6458,9 +6486,20 @@ function syncRentalPrimary(r) {
 }
 function addUnitToRental(r, unitId) {
   if (!Array.isArray(r.units)) r.units = [];
-  if (!r.units.length && r.unitId) r.units.push({ unitId: r.unitId, startHours: r.startHours ?? null, returnHours: r.returnHours ?? null, startCapture: r.startCapture || null, endCapture: r.endCapture || null });
-  r.units.push({ unitId, startHours: null, returnHours: null, startCapture: null, endCapture: null });
+  if (!r.units.length && r.unitId) r.units.push(legacyUnitEntry(r));
+  // a new unit inherits the rental's master status (keeps the units uniform so the
+  // master gate stays usable) + the existing transport settings as its default.
+  const proto = unitTransportProto(r);
+  r.units.push({ unitId, status: r.status || 'Reserved', startHours: null, returnHours: null, startCapture: null, endCapture: null, fcCapture: null,
+    transportType: proto.transportType || null, deliveryAddress: proto.deliveryAddress || '', recoveryAddress: proto.recoveryAddress || '' });
   syncRentalPrimary(r);
+}
+/* the transport settings a newly-added unit inherits as its default (the first
+   transport-bearing unit on the rental, primary mirror included). */
+function unitTransportProto(r) {
+  if (r.transportType && r.transportType !== 'Self') return { transportType: r.transportType, deliveryAddress: r.deliveryAddress, recoveryAddress: r.recoveryAddress };
+  const u = rentalUnits(r).find((eu) => eu.transportType && eu.transportType !== 'Self');
+  return u ? { transportType: u.transportType, deliveryAddress: u.deliveryAddress, recoveryAddress: u.recoveryAddress } : {};
 }
 function removeUnitFromRental(r, unitId) {
   r.units = rentalUnits(r).filter((u) => u.unitId !== unitId);
