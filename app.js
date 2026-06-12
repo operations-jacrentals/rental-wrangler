@@ -1024,6 +1024,16 @@ const flagsStack = (flags, h) => `<span class="flags" data-r="R9"${h ? ` style="
 function fileDrop(label, { js, accept = 'image/*', capture, done, icon } = {}) {
   return `<label class="file-drop${done ? ' done' : ''}" data-r="R21">${icon || I.video}<span>${esc(label)}</span><input type="file" accept="${accept}"${capture ? ` capture="${capture}"` : ''} class="${js}" style="display:none"></label>`;
 }
+/** R22: the ONE date (+optional time) picker — same app-styled calendar everywhere
+    a single date/datetime is entered. (The rental WINDOW uses the timeline winpicker,
+    not this.) `field` = the state.overlay key it reads/writes; clicking toggles the
+    inline calendar below it via datePickerInline(). */
+function dateField(field, value, { withTime, time, ph = 'Pick a date' } = {}) {
+  const open = state.datepick?.field === field;
+  const lbl = value ? (withTime ? `${fmtShortDate(value)}${time ? ' · ' + to12(time) : ''}` : fmtShortDate(value)) : ph;
+  return `<button class="datefield js-datepick${value ? '' : ' empty'}${open ? ' on' : ''}" data-r="R22" data-field="${esc(field)}" data-withtime="${withTime ? 1 : ''}">${CARD_ICON.rentals}<span>${esc(lbl)}</span></button>`
+    + (open ? datePickerInline() : '');
+}
 /** R14: a 3-state segmented toggle. opts: [{label, js, data, on:'green'|'yellow'|...}] */
 function segCtl(buttons, cls) {
   return `<span class="seg${cls ? ' ' + cls : ''}" data-r="R14">${buttons.map((b) => `<button class="${b.js || ''}${b.on ? ` on-${b.on}` : ''}"${dataAttrs(b.data)}>${b.label}</button>`).join('')}</span>`;
@@ -1144,12 +1154,13 @@ const RULE_META = {
   R17: ['Action pill', 'actionPill', 'commit = blue · money = green · danger = solid red; .locked = gated'],
   R18: ['Ghost', 'ghostPill', 'the ONE quiet action — Cancel / Close / Exit / Clear'],
   R21: ['File drop', 'fileDrop', 'the MASSIVE popup add-file zone — R5b blue dashed at full size'],
+  R22: ['Date picker', 'dateField', 'the ONE app-styled calendar for a single date/time (NOT the rental-window timeline)'],
 };
 /* structural fallbacks so hovering containers also names their rule */
 const CLASS_RULE = [
   ['.c-titlecard', 'R10'], ['.nsec', 'R12'], ['.hvals', 'R13'], ['.history', 'R13'],
   ['.timeline', 'R16'], ['.jnode', 'R15'], ['.jseg', 'R15'], ['.journey', 'R15'],
-  ['.seg', 'R14'], ['.kv.derived', 'R8'], ['.derived', 'R8'], ['.file-drop', 'R21'], ['.section', 'R11'],
+  ['.seg', 'R14'], ['.kv.derived', 'R8'], ['.derived', 'R8'], ['.file-drop', 'R21'], ['.datefield', 'R22'], ['.section', 'R11'],
 ];
 function ruleOf(target) {
   if (!target || !target.closest) return null;
@@ -3447,6 +3458,7 @@ function renderOverlay() {
     // partform anatomy: photo + every field optional, ✨ Mr. Wrangler fills the blanks.
     const x = o.expenseId != null ? (IDX.expense.get(o.expenseId) || DATA.expenses.find((r) => r.expenseId === o.expenseId)) : null;
     const ven = x?.vendorId ? (IDX.vendor.get(x.vendorId) || DATA.vendors.find((v) => v.vendorId === x.vendorId)) : null;
+    if (o.date === undefined) o.date = x?.date || TODAY_ISO;
     const pop = el('div', 'popup'); pop.style.width = '400px';
     pop.innerHTML = `
       <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${CARD_ICON.expenses}</span><h3>${x ? 'Edit' : 'New'} Receipt</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
@@ -3455,7 +3467,7 @@ function renderOverlay() {
         <input class="lf-in js-rf-vendor" placeholder="Vendor" value="${esc(ven?.name || '')}" style="width:100%;margin-bottom:7px">
         <div style="display:flex;gap:7px;margin-bottom:7px">
           <input class="lf-in js-rf-amount" type="number" min="0" step="0.01" placeholder="$Cost" value="${x && x.amount ? x.amount : ''}" style="flex:1">
-          <input class="lf-in js-rf-date" type="date" value="${esc(x?.date || TODAY_ISO)}" style="flex:1">
+          ${dateField('date', o.date)}
         </div>
         <input class="lf-in js-rf-part" placeholder="Part Name" value="" style="width:100%;margin-bottom:4px">
         <p class="muted" style="font-size:11px;margin:4px 0 12px">✨ Empty fields are filled by Mr. Wrangler after saving: the photo is read for the vendor, amount, date and category.</p>
@@ -3736,12 +3748,12 @@ function renderOverlay() {
     // §12.1 Schedule — a single date+time follow-up logged to the customer Activity Log
     const c = IDX.customer.get(o.customerId);
     if (!c) { state.overlay = null; return; }
-    const def = `${TODAY_ISO}T${to24(nowHourLabel()) || '09:00'}`;
+    if (o.when === undefined) { o.when = TODAY_ISO; o.whenTime = to24(nowHourLabel()) || '09:00'; }
     const pop = el('div', 'popup'); pop.style.width = '340px';
     pop.innerHTML = `
       <div class="popup-head"><span class="c-icon" style="color:var(--accent);display:inline-flex">${CARD_ICON.customers}</span><h3>Schedule — ${esc(c.name)}</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
       <div class="popup-body">
-        <label class="svc-field"><span>Date &amp; time</span><input type="datetime-local" class="js-sch-when" value="${def}"></label>
+        <label class="svc-field"><span>Date &amp; time</span>${dateField('when', o.when, { withTime: true, time: o.whenTime })}</label>
         <textarea class="insp-desc js-sch-note" placeholder="What's the follow-up? (quote call, pickup, demo…)">${esc(o.note || '')}</textarea>
         <div class="pillrow" style="justify-content:flex-end;margin-top:10px"><button class="pill c-commit js-schedule-save" data-r="R17" data-rec="${c.customerId}">Add to schedule</button></div>
       </div>`;
@@ -3800,7 +3812,7 @@ function renderOverlay() {
   if (o.kind === 'newCustomer') setupSignaturePad();
   if (o.kind === 'addCard') { const cc = IDX.customer.get(o.customerId); if (cc && cc.signature && cc.selfie) mountCardElement(); }   // only mount with consent (nothing to orphan otherwise)
 }
-const openOverlay = (o) => { state.overlay = o; renderOverlay(); };
+const openOverlay = (o) => { state.datepick = null; state.overlay = o; renderOverlay(); };
 /* ── §15 in-app feedback: bug/request → queued to the backend Feedback tab ── */
 function feedbackContext() {
   const s = activeSession(), a = s && s.anchor;
@@ -3844,7 +3856,7 @@ function setupSignaturePad() {
   cv.addEventListener('pointerup', () => { drawing = false; });
   cv.addEventListener('pointerleave', () => { drawing = false; });
 }
-const closeOverlay = () => { destroyCardElement(); state.overlay = null; renderOverlay(); };
+const closeOverlay = () => { destroyCardElement(); state.datepick = null; state.overlay = null; renderOverlay(); };
 
 /* ── Back-office boards (§7.9–7.12): spreadsheet-style tables ─────────────── */
 function vendorTotals(vendorId) {
@@ -4420,7 +4432,7 @@ function onClick(e) {
   if (closest('.js-clear-fleet')) { e.stopPropagation(); state.fleetFilter = null; render(); return; }
   if (closest('.js-addcat')) { e.stopPropagation(); return beginPick('customers', closest('.js-addcat').dataset.rec, undefined, 'intcat'); }
   if (closest('.js-act-open')) { const b = closest('.js-act-open'); e.stopPropagation(); state.actMode = b.dataset.val; state.actOpen = b.dataset.rec; const rec = b.dataset.rec; render(); document.querySelector(`.js-act-in[data-rec="${rec}"]`)?.focus(); return; }
-  if (closest('.js-schedule-save')) { const b = closest('.js-schedule-save'); e.stopPropagation(); const root = b.closest('.popup-body'); const c = IDX.customer.get(b.dataset.rec); const when = root.querySelector('.js-sch-when')?.value; const note = (root.querySelector('.js-sch-note')?.value || '').trim(); if (!c || !when) { flashOr('.js-sch-when', 'Pick a date & time first.'); return; } c.activityLog = c.activityLog || []; c.activityLog.push({ when: when.slice(0, 10), text: `Scheduled: ${note || 'follow-up'} @ ${when.replace('T', ' ')}` }); reindex('customers', c); toast('Scheduled — added to the Activity Log.'); closeOverlay(); render(); }
+  if (closest('.js-schedule-save')) { const b = closest('.js-schedule-save'); e.stopPropagation(); const o = state.overlay; const root = b.closest('.popup-body'); const c = IDX.customer.get(b.dataset.rec); const date = o?.when, time = o?.whenTime || '09:00'; const note = (root.querySelector('.js-sch-note')?.value || '').trim(); if (!c || !date) { flashOr('.datefield', 'Pick a date first.'); return; } c.activityLog = c.activityLog || []; c.activityLog.push({ when: date, text: `Scheduled: ${note || 'follow-up'} @ ${date} ${to12(time)}` }); reindex('customers', c); toast('Scheduled — added to the Activity Log.'); state.datepick = null; closeOverlay(); render(); }
   // draft pickers / creation affordances (§0.3)
   if (closest('.js-pick')) { const b = closest('.js-pick'); e.stopPropagation(); return beginPick(b.dataset.card, b.dataset.rec, b.dataset.type || undefined, b.dataset.slot); }
   if (closest('.js-create-invoice')) { e.stopPropagation(); return createInvoiceForRental(closest('.js-create-invoice').dataset.rec); }
@@ -4508,6 +4520,14 @@ function onClick(e) {
   if (closest('.js-unlink-part')) { const b = closest('.js-unlink-part'); e.stopPropagation(); return unlinkReceiptPart(b.dataset.rec, b.dataset.part); }
 
   // §12.2 rental-window range picker (calendar popup) — clicking the bar opens it
+  // R22 date picker (schedule / receipt popups)
+  if (closest('.js-datepick')) { const b = closest('.js-datepick'); e.stopPropagation(); const f = b.dataset.field; state.datepick = (state.datepick?.field === f) ? null : { field: f, withTime: !!b.dataset.withtime, monthISO: firstOfMonthISO(state.overlay?.[f] || TODAY_ISO) }; return renderOverlay(); }
+  if (closest('.js-dp-day')) { e.stopPropagation(); return dpPick(closest('.js-dp-day').dataset.iso); }
+  if (closest('.js-dp-prev')) { e.stopPropagation(); return dpMonth(-1); }
+  if (closest('.js-dp-next')) { e.stopPropagation(); return dpMonth(1); }
+  if (closest('.js-dp-today')) { e.stopPropagation(); const dp = state.datepick; if (dp) { dp.monthISO = firstOfMonthISO(TODAY_ISO); if (state.overlay) state.overlay[dp.field] = TODAY_ISO; } return renderOverlay(); }
+  if (closest('.js-dp-clear')) { e.stopPropagation(); const dp = state.datepick; if (dp && state.overlay) { state.overlay[dp.field] = ''; state.overlay[dp.field + 'Time'] = ''; } return renderOverlay(); }
+  if (closest('.js-dp-done')) { e.stopPropagation(); state.datepick = null; return renderOverlay(); }
   if (closest('.js-wp-day')) { e.stopPropagation(); return winPickDay(closest('.js-wp-day').dataset.iso); }
   if (closest('.js-wp-prev')) { e.stopPropagation(); return winPickMonth(-1); }
   if (closest('.js-wp-next')) { e.stopPropagation(); return winPickMonth(1); }
@@ -4925,7 +4945,7 @@ function savePartForm() {
 function saveReceiptForm() {
   const o = state.overlay; if (!o || o.kind !== 'receiptform') return;
   const g = (c) => (document.querySelector(c)?.value || '').trim();
-  const venName = g('.js-rf-vendor'), amt = g('.js-rf-amount'), date = g('.js-rf-date'), partName = g('.js-rf-part');
+  const venName = g('.js-rf-vendor'), amt = g('.js-rf-amount'), date = o.date || TODAY_ISO, partName = g('.js-rf-part');
   const existing = o.expenseId != null ? (IDX.expense.get(o.expenseId) || DATA.expenses.find((r) => r.expenseId === o.expenseId)) : null;
   if (amt === '' && !state.receiptPhoto && !existing?.photo) return attnFlash('.js-rf-amount, .file-drop');   // R19: need a $cost OR a photo for the AI
   const rec = existing || { expenseId: 'E-NEW' + (state.seq++), vendorId: null, date: TODAY_ISO, amount: 0, reconcile: 'Unreconciled', method: 'Cash', category: 'Parts', woId: null, notes: '', mock: true };
@@ -5169,6 +5189,7 @@ function onChange(e) {
     return;
   }
   if (e.target.classList.contains('js-wp-time')) { return setWinTime(e.target.value); }
+  if (e.target.classList.contains('js-dp-time')) { return dpTime(e.target.value); }
   if (e.target.classList.contains('js-draftdate')) { return setDraftDate(e.target.dataset.rec, e.target.dataset.which, e.target.value); }
 }
 
@@ -5330,14 +5351,17 @@ const hasCardOnFile = (c) => customerCards(c).length > 0;
 /* §12.1 rapid action entry (Jac 2026-06-12): commit per the R14 mode toggle —
    Record logs straight to the Activity Log; Schedule opens the date popup with
    the typed action as the note. The field clears on the next render. */
-function commitAction(custId, text) {
+function commitAction(custId, text, keepOpen) {
   const c = IDX.customer.get(custId); if (!c) return;
-  const v = (text || '').trim(); if (!v) return;
-  if ((state.actMode || 'record') === 'schedule') return openOverlay({ kind: 'schedule', customerId: custId, note: v });
+  const v = (text || '').trim();
+  if (!v) { if (!keepOpen && state.actOpen) { state.actOpen = null; render(); } return; }
+  if ((state.actMode || 'record') === 'schedule') { state.actOpen = null; return openOverlay({ kind: 'schedule', customerId: custId, note: v }); }
   c.activityLog = c.activityLog || [];
   c.activityLog.push({ when: TODAY_ISO, text: v });
   reindex('customers', c);
+  if (!keepOpen) state.actOpen = null;
   render();
+  if (keepOpen) document.querySelector(`.js-act-in[data-rec="${custId}"]`)?.focus();
 }
 const cardOneLabel = (k) => k ? `${brandName(k.brand)} ••${k.last4}${k.expMonth ? ` · ${k.expMonth}/${String(k.expYear).slice(-2)}` : ''}${k.nickname ? ` · ${k.nickname}` : ''}` : '';
 const cardLabel = (c) => { const k = defaultCard(c); return k ? cardOneLabel(k) : ''; };
@@ -5829,6 +5853,36 @@ function setWinTime(hhmm) { const wp = state.winpicker; if (!wp) return; const r
 function winPickClear() { const wp = state.winpicker; if (!wp) return; const r = IDX.rental.get(wp.rentalId); if (r) { r.startDate = ''; r.endDate = ''; wp.anchor = null; } reanchorRender(); }
 function winPickToday() { const wp = state.winpicker; if (!wp) return; wp.monthISO = firstOfMonthISO(TODAY_ISO); const r = IDX.rental.get(wp.rentalId); if (r) { r.startDate = TODAY_ISO; r.endDate = ''; wp.anchor = TODAY_ISO; } reanchorRender(); }
 
+/* ── R22 DATE PICKER — single date/datetime, reuses the .wp-* calendar styling.
+   state.datepick = { field, withTime, monthISO }; writes state.overlay[field]
+   (+ [field+'Time'] when withTime). Used by the schedule + receipt popups. ── */
+function dpMonth(delta) { const dp = state.datepick; if (!dp) return; const d = parseISO(dp.monthISO); d.setMonth(d.getMonth() + delta); dp.monthISO = isoOf(new Date(d.getFullYear(), d.getMonth(), 1)); renderOverlay(); }
+function dpPick(iso) { const dp = state.datepick, o = state.overlay; if (!dp || !o) return; o[dp.field] = iso; if (!dp.withTime) state.datepick = null; renderOverlay(); }
+function dpTime(hhmm) { const dp = state.datepick, o = state.overlay; if (!dp || !o) return; o[dp.field + 'Time'] = hhmm; renderOverlay(); }
+function datePickerInline() {
+  const dp = state.datepick, o = state.overlay; if (!dp || !o) return '';
+  const cur = o[dp.field] || '';
+  const md = parseISO(dp.monthISO); const y = md.getFullYear(), m = md.getMonth();
+  const startDow = new Date(y, m, 1).getDay();
+  const daysIn = new Date(y, m + 1, 0).getDate();
+  let cells = '';
+  for (let i = 0; i < startDow; i++) cells += `<button class="wp-day empty" tabindex="-1"></button>`;
+  for (let day = 1; day <= daysIn; day++) {
+    const iso = isoOf(new Date(y, m, day));
+    let cls = 'wp-day js-dp-day';
+    if (iso === cur) cls += ' range-start range-end';
+    if (iso === TODAY_ISO) cls += ' today';
+    cells += `<button class="${cls}" data-iso="${iso}">${day}</button>`;
+  }
+  const dows = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((d) => `<span class="wp-dow">${d}</span>`).join('');
+  return `<div class="winpicker datepick">
+    <div class="wp-head"><span class="wp-month">${MONTH_NAMES[m]} ${y}</span>
+      <span class="wp-nav"><button class="js-dp-prev" title="Previous month">‹</button><button class="js-dp-next" title="Next month">›</button></span></div>
+    <div class="wp-grid">${dows}${cells}</div>
+    ${dp.withTime ? `<div class="wp-time"><label>Time</label><input type="time" class="js-dp-time" value="${esc(o[dp.field + 'Time'] || '09:00')}"></div>` : ''}
+    <div class="wp-foot"><button class="pill ghost js-dp-clear" data-r="R18">Clear</button><button class="pill ghost js-dp-today" data-r="R18">Today</button><button class="pill c-commit js-dp-done" data-r="R17">Done</button></div>
+  </div>`;
+}
 /** Render the inline calendar popup for the rental whose picker is open. */
 function winPickerEl(r) {
   const wp = state.winpicker;
@@ -6170,25 +6224,26 @@ function boot() {
   document.addEventListener('input', onInput);
   document.addEventListener('change', onChange);
   // §12.1 action entry v3 — Enter commits + field stays open (rapid entry);
-  // click-away commits + closes; Esc closes without committing.
+  // click-away commits + closes; Esc closes without committing. The render()
+  // inside a commit detaches the focused input → fires focusout; actBusy guards
+  // that programmatic blur so it can't double-commit (the old crash).
+  let actBusy = false;
   document.addEventListener('keydown', (e) => {
     if (!e.target.classList?.contains('js-act-in')) return;
     const rec = e.target.dataset.rec;
     if (e.key === 'Enter') {
       e.preventDefault();
-      commitAction(rec, e.target.value);
-      const f = document.querySelector(`.js-act-in[data-rec="${rec}"]`);
-      if (f) { f.value = ''; f.focus(); }
+      const val = e.target.value; e.target.value = '';   // clear BEFORE commit so the blur sees empty
+      actBusy = true; commitAction(rec, val, true); actBusy = false;   // keepOpen
     } else if (e.key === 'Escape') {
       e.preventDefault(); e.stopPropagation();
-      state.actOpen = null; render();
+      e.target.value = ''; actBusy = true; state.actOpen = null; render(); actBusy = false;
     }
   });
   document.addEventListener('focusout', (e) => {
-    if (!e.target.classList?.contains('js-act-in')) return;
+    if (actBusy || !e.target.classList?.contains('js-act-in')) return;
     const v = e.target.value.trim();
-    state.actOpen = null;
-    if (v) commitAction(e.target.dataset.rec, v); else render();
+    actBusy = true; commitAction(e.target.dataset.rec, v, false); actBusy = false;
   });
   document.addEventListener('mousemove', onInspectMove);   // Design Inspector hover tag (no-op unless state.inspect)
   // Board View formula cells: reveal the raw "=…" on focus, recompute on blur.
