@@ -25,9 +25,22 @@ await new Promise((r) => server.listen(8000, r));
 
 const browser = await chromium.launch();
 const page = await browser.newPage();
+// Local files that may legitimately 404 in CI and must NOT fail the boot check:
+// dev-version.txt (the localhost-only dev-reload poller fetches it; it's gitignored).
+const ALLOW_404 = ['/dev-version.txt', '/favicon.ico'];
 const errors = [];
-page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+const badResources = [];
+// Skip the generic "Failed to load resource" console line — it carries no URL, so
+// 404s are judged with URL granularity by the response listener below instead.
+page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/i.test(m.text())) errors.push(m.text()); });
 page.on('pageerror', (e) => errors.push(String(e && e.message || e)));
+page.on('response', (r) => {
+  const url = r.url();
+  if (!url.startsWith('http://localhost:8000/')) return;     // ignore external CDNs (Stripe/fonts) — not part of the boot check
+  if (r.status() < 400) return;
+  const path = new URL(url).pathname;
+  if (!ALLOW_404.some((a) => path.endsWith(a))) badResources.push(`${r.status()} ${path}`);
+});
 
 let failed = false;
 try {
@@ -36,6 +49,7 @@ try {
   const hasLogin = await page.locator('.login-screen').count();
   const appExists = await page.locator('#app').count();
   if (errors.length) { console.error('❌ Console/page errors on boot:\n  - ' + errors.join('\n  - ')); failed = true; }
+  if (badResources.length) { console.error('❌ Missing resources on boot:\n  - ' + badResources.join('\n  - ')); failed = true; }
   if (!appExists) { console.error('❌ #app mount point missing'); failed = true; }
   if (!hasLogin) { console.error('❌ Login screen did not render (boot may have crashed)'); failed = true; }
   if (!failed) console.log('✅ Smoke test passed — app boots clean and the login screen renders.');
