@@ -1291,3 +1291,30 @@ body { font-variant-numeric: tabular-nums; }
 
 /* No-Preview Mode (Jac 2026-06-12): every eye — row chips + the toolbar — runs RED */
 .rbtn.js-roweye.off, .iconbtn.js-previews.off { color: var(--red); opacity: 1; }
+
+/* ════ §15c DRAG & DROP LINK ENGINE (DRAGDROP-DESIGN.md) ════ */
+:root { --arc-apex: 110px; }   /* cancel-arc apex — JS sets ≈20% of the middle card per drag; this is the fallback. Tune me (Jac). */
+#drag-layer { position: fixed; inset: 0; z-index: 9400; pointer-events: none; }   /* above .hover-preview (9000); children inherit pointer-events:none */
+.drag-ghost { position: fixed; left: 0; top: 0; z-index: 9500; display: flex; align-items: center; gap: 7px; max-width: 240px; padding: 7px 12px; border-radius: 999px; background: var(--panel); border: 1px solid var(--accent); box-shadow: 0 0 0 2px var(--accent-line), 0 14px 34px -10px rgba(0,0,0,.65); color: var(--accent); font-size: 12.5px; font-weight: 700; pointer-events: none; will-change: transform; }
+.drag-ghost svg { width: 14px; height: 14px; flex: 0 0 auto; }
+.drag-ghost .dg-t { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+/* THE CANCEL ARC — dark half-ellipse rising from the bottom, above the toolbar;
+   apex height = --arc-apex (≈20% of the middle card, measured per drag). */
+.cancel-arc { position: fixed; left: -20vw; bottom: 48px; width: 140vw; height: var(--arc-apex); border-radius: 100% 100% 0 0; background: rgba(8, 9, 12, .94); border-top: 1px solid var(--accent-line); display: flex; align-items: flex-start; justify-content: center; padding-top: calc(var(--arc-apex) * .25); transform: translateY(150%); transition: transform .22s ease, background .12s ease; }
+.cancel-arc.show { transform: translateY(0); }
+.cancel-arc.hot { background: rgba(46, 10, 10, .96); border-top-color: var(--red); }
+.cancel-arc .ca-label { font-size: 16px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase; color: #fff; opacity: .92; }
+.cancel-arc.hot .ca-label { color: var(--red); }
+/* drop targeting — the pick-target neon language (R0/R19 palette); the rest dims */
+body.dragging { cursor: grabbing; user-select: none; -webkit-user-select: none; }
+body.dragging .card .row { opacity: .42; }
+body.dragging .row.drop-ok { opacity: 1; }
+.row.drop-ok { border-color: var(--accent-line); box-shadow: 0 0 0 1px var(--accent-line); cursor: copy; }
+.card.drop-ok { border-color: var(--accent-line); box-shadow: 0 0 0 1px var(--accent-line); }
+.row.drop-hot, .card.drop-hot { border-color: var(--accent) !important; box-shadow: 0 0 0 2px var(--accent-line), 0 0 26px -4px rgba(255,122,26,.5) !important; }
+/* touch: vertical scroll stays native — the 400ms long-press lifts the row
+   (touch-action must be in place BEFORE the gesture starts; once lifted, the
+   engine's passive:false touchmove guard keeps the browser pan from firing) */
+.row { touch-action: pan-y; }
+/* settings overlay — the Allow-overbooking R14 toggle rides the row's right edge */
+.set-row .seg { margin-left: auto; }

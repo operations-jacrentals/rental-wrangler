@@ -381,6 +381,26 @@ function rentalsOverlappingUnit(unitId, startISO, endISO, selfId) {
   return DATA.rentals.filter((r) => r.unitId === unitId && r.rentalId !== selfId
     && ACTIVE_RENTAL.has(r.status) && r.status !== 'Quote' && rentalOverlaps(r, selS, selE));
 }
+/* §10 OVERBOOKED (drag build, Jac) — DERIVED LIVE, never stored. A rental is
+   overbooked when another active rental occupies its unit for an overlapping
+   window; a unit is overbooked when any of its active rentals is. Surfaces as
+   a pulsing red R9 flag (headFlagsHtml) for as long as the overlap exists. */
+function rentalOverbooked(r) {
+  if (!r || !r.unitId || !r.startDate || !r.endDate) return null;
+  if (!ACTIVE_RENTAL.has(r.status) || r.status === 'Quote') return null;
+  return rentalsOverlappingUnit(r.unitId, r.startDate, r.endDate, r.rentalId)[0] || null;
+}
+function unitOverbooked(unitId) {
+  return DATA.rentals.find((r) => r.unitId === unitId && rentalOverbooked(r)) || null;
+}
+/** §7.6 — the unit's latest OPEN work order not yet billed to ANY invoice
+ *  (the unit↔invoice drop resolver; the bill-once test mirrors addWOToInvoice).
+ *  No billable open WO → the unit/invoice pair is simply not a drop target. */
+function unbilledOpenWOForUnit(unitId) {
+  const billed = (woId) => DATA.invoices.some((i) => (i.lineItems || []).some((li) => li.kind === 'WO' && li.ref === woId));
+  return DATA.workOrders.filter((w) => w.unitId === unitId && w.phase !== 'Complete' && !billed(w.woId))
+    .sort((a, b) => (parseISO(b.date) || 0) - (parseISO(a.date) || 0))[0] || null;
+}
 function isUnitAvailableFor(u, startISO, endISO, selfId) {
   if (!u || u.fleetStatus !== 'Active') return false;
   if (u.inspectionStatus === 'Failed') return false;
@@ -576,6 +596,7 @@ const state = {
   seq: 1,
   invoiceSeq: DATA.invoices.length,   // monotonic invoice number (never reused after a discard)
   previewsOn: (() => { try { return localStorage.getItem('jactec.previewsOff') !== '1'; } catch (e) { return true; } })(),   // hover previews (per device)
+  overbookOn: (() => { try { return localStorage.getItem('jactec.overbook') === '1'; } catch (e) { return false; } })(),   // §10 allow-overbooking policy (per device, default OFF — drag build)
 };
 const activeSession = () => (state.activeTabId ? state.tabs.find((t) => t.id === state.activeTabId)?.session : state.defaultSession) || state.defaultSession;
 /** Next unique invoice id — a monotonic counter so discarding a draft can't reuse a number. */
@@ -1915,13 +1936,15 @@ function headFlagsHtml(card, rec) {
     // QR is just a flag with the others; fleet flags the title ONLY when not Active
     return flagsStack([flagEl(insp.label, insp.color, { icon: CARD_ICON.inspections }), flagEl('QR', 'gray', { icon: I.qr })])
       + (rec.fleetStatus !== 'Active' ? flagsStack([flagEl(fleet.label, fleet.color)]) : '')
-      + (wos.length && bn ? flagsStack([flagEl(bn.label, bn.color, { icon: CARD_ICON.workOrders }), flagEl(`${wos.length} WO${wos.length > 1 ? 's' : ''} Open`, 'red')]) : '');
+      + (wos.length && bn ? flagsStack([flagEl(bn.label, bn.color, { icon: CARD_ICON.workOrders }), flagEl(`${wos.length} WO${wos.length > 1 ? 's' : ''} Open`, 'red')]) : '')
+      + (unitOverbooked(rec.unitId) ? flagsStack([flagEl('Overbooked', 'red', { icon: CARD_ICON.rentals, alert: true, card: 'rentals', recId: unitOverbooked(rec.unitId).rentalId, title: 'Two active rentals overlap on this unit — click to view' })]) : '');
   }
   if (card === 'rentals') {
     const st = getStatus('rentalStatus', rentalDisplayStatus(rec));
     const inv = rec.invoiceId ? IDX.invoice.get(rec.invoiceId) : null;
     const payst = inv ? getStatus('invoiceStatus', invoiceTotals(inv).status) : null;
-    return flagsStack([flagEl(st.label, st.color, { icon: CARD_ICON.rentals }), payst ? flagEl(payst.label, payst.color, { icon: CARD_ICON.invoices }) : '']);
+    return flagsStack([flagEl(st.label, st.color, { icon: CARD_ICON.rentals }), payst ? flagEl(payst.label, payst.color, { icon: CARD_ICON.invoices }) : ''])
+      + (rentalOverbooked(rec) ? flagsStack([flagEl('Overbooked', 'red', { icon: CARD_ICON.rentals, alert: true, card: 'rentals', recId: rentalOverbooked(rec).rentalId, title: `Overlaps another rental on ${IDX.unit.get(rec.unitId)?.name || 'this unit'} — click to view` })]) : '');
   }
   if (card === 'customers') {
     // Jac 2026-06-12: flags, not badges — and "Incomplete" IS the account gate
@@ -3699,6 +3722,8 @@ function renderOverlay() {
         <p class="muted" style="font-size:11px;margin:0 0 10px">Each role signs in with its password (plus their name). Changes apply at next sign-in.</p>
         ${roleRows}
         <label class="set-row set-admin"><span class="set-role">Admin</span><input class="set-input" data-admin="1" value="${esc(cfg.admin)}" autocomplete="off" /></label>
+        <div class="set-row" style="margin-top:12px;align-items:center"><span class="set-role" style="flex:0 0 auto" data-tip="ON: dropping a unit onto a conflicting rental links anyway — both sides get a pulsing red 'Overbooked' flag while the overlap exists. OFF: the drop is blocked, naming the conflict.">Allow overbooking</span>${segCtl([{ label: 'Off', js: 'js-overbook', data: { val: '0' }, on: state.overbookOn ? null : 'red' }, { label: 'On', js: 'js-overbook', data: { val: '1' }, on: state.overbookOn ? 'green' : null }])}</div>
+        <p class="muted" style="font-size:10.5px;margin:4px 0 0">Drag &amp; drop policy — saved on this device.</p>
         ${o.error ? `<div class="login-err" style="text-align:left;margin-top:8px">${esc(o.error)}</div>` : ''}
         <div class="pillrow" style="margin-top:14px;justify-content:flex-end"><button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill c-commit js-settings-save">Save</button></div>
       </div>`;
@@ -4273,6 +4298,7 @@ function render() {
   const guide = guidePopupEl();   // the non-dimming +X-mode guide popup (centered in the middle card)
   if (guide) { $('#app').appendChild(guide); positionGuide(guide); }
   applyTitles();   // full text on hover wherever we truncate (custom ~0.5s tooltip)
+  if (DRAG.active) reapplyDragDecor();   // §15c — re-stamp drop targets after ANY mid-drag rebuild (the card swap IS a render)
   const dt = performance.now() - t0;
   renderCount++;
   if (dt > CFG.PERF_BUDGET_MS) console.warn(`[perf] render ${renderCount} took ${dt.toFixed(1)}ms (budget ${CFG.PERF_BUDGET_MS}ms)`);
@@ -4292,6 +4318,7 @@ let tipTimer, tipEl;
 function initTooltip() {
   tipEl = el('div', 'tooltip'); document.body.appendChild(tipEl);
   document.addEventListener('mouseover', (e) => {
+    if (DRAG.active) return;   // §15c — no tooltips mid-drag
     const t = e.target.closest('[data-tip]');
     if (!t) return;
     clearTimeout(tipTimer);
@@ -4319,6 +4346,319 @@ function toast(msg) {
    §15 EVENT HANDLERS — onClick/onInput/onChange (single listener tree)
    ⚠ §16 ACTIONS/MUTATIONS interleave from here to §17 — see the SPEC v7 map
    ════════════════════════════════════════════════════════════════════════ */
+/* ════════════════════════════════════════════════════════════════════════
+   §15c DRAG & DROP LINK ENGINE (DRAGDROP-DESIGN.md) — custom pointer engine.
+   Native HTML5 DnD rejected: the mid-drag column swap re-renders the source
+   row, which silently kills native drags (and draggable breaks inline-edit).
+   Everything drag-critical (ghost chip + cancel arc) lives in #drag-layer on
+   document.body — OUTSIDE #app — so render() mid-drag is SAFE (the same
+   survives-render precedent as the hover preview / ctx menu / tooltip).
+   Drops dispatch into the EXISTING §16 mutations — no money/safety logic here.
+   Pick mode is untouched: it stays as the fallback link path (drag is additive).
+   ════════════════════════════════════════════════════════════════════════ */
+const DRAG = { active: false, armed: null, payload: null, point: { x: 0, y: 0 }, ghost: null, restoreCols: null, swappedTo: null, suppressClick: false, raf: null, hot: null };
+const DRAG_SOURCES = new Set(['units', 'rentals', 'customers', 'invoices']);   // shop/categories rows are NOT drag sources (for now)
+let dragLayer = null, dragArc = null;
+
+/* DROP_MATRIX — payload entity → { target entity: validator(srcRec, tgtRec) }.
+   Validators are the cheap VISUAL gate (which rows/cards glow .drop-ok); the
+   hard money/safety gates live in the §16 mutations and re-fire on drop. */
+const DROP_MATRIX = {
+  units: {
+    rentals: (u, r) => u.fleetStatus === 'Active' && r.unitId !== u.unitId,                       // §9 — non-Active units aren't rentable
+    invoices: (u, i) => !i.locked && !!unbilledOpenWOForUnit(u.unitId),                           // §7.6 — needs a billable open WO
+  },
+  rentals: {
+    units: (r, u) => u.fleetStatus === 'Active' && r.unitId !== u.unitId,
+    invoices: (r, i) => !i.locked && !r.invoiceId && (!i.customerId || !r.customerId || i.customerId === r.customerId),   // §7.5 — one invoice per rental + customer scoping
+    customers: (r, c) => r.customerId !== c.customerId && !/Blacklist/i.test(c.accountType || ''),                        // §9 blacklist
+  },
+  customers: {
+    rentals: (c, r) => r.customerId !== c.customerId && !/Blacklist/i.test(c.accountType || ''),
+    invoices: (c, i) => i.customerId !== c.customerId && !i.locked && invoiceTotals(i).paid <= 0,  // §7.5 — paid/locked invoice freezes its customer
+  },
+  invoices: {
+    rentals: (i, r) => !i.locked && !r.invoiceId && (!i.customerId || !r.customerId || i.customerId === r.customerId),
+    customers: (i, c) => i.customerId !== c.customerId && !i.locked && invoiceTotals(i).paid <= 0,
+    units: (i, u) => !i.locked && !!unbilledOpenWOForUnit(u.unitId),
+  },
+};
+
+/** Called from boot() — builds the #drag-layer singleton (ghost + cancel arc)
+ *  on document.body and wires the document-level pointer listeners. */
+function initDrag() {
+  dragLayer = el('div');
+  dragLayer.id = 'drag-layer';
+  dragArc = el('div', 'cancel-arc', '<span class="ca-label">Cancel</span>');
+  dragLayer.appendChild(dragArc);
+  document.body.appendChild(dragLayer);
+  document.addEventListener('pointerdown', dragDown);
+  document.addEventListener('pointermove', dragMove);
+  document.addEventListener('pointerup', dragUp);
+  document.addEventListener('pointercancel', () => cancelDrag());                       // touch scroll stole the gesture = clean cancel, never a drop
+  window.addEventListener('blur', () => cancelDrag());                                  // tab/window switch can eat pointerup — never leave a stuck drag
+  document.addEventListener('visibilitychange', () => { if (document.hidden) cancelDrag(); });
+  // Esc cancels a live drag AHEAD of the winpicker/overlay/pick chain — capture
+  // phase, so it fires even when focus sits in a card mini-search (whose keydown
+  // branch bare-returns before the boot chain's Esc line ever runs).
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && DRAG.active) { e.preventDefault(); e.stopPropagation(); cancelDrag(); } }, true);
+  // a real drag must not click-through on release — swallow exactly ONE click (capture phase, before the §15 ladder)
+  document.addEventListener('click', (e) => { if (DRAG.suppressClick) { e.preventDefault(); e.stopPropagation(); DRAG.suppressClick = false; } }, true);
+  // a touch long-press must not pop a menu mid-drag — stopPropagation too, or the
+  // app's own document contextmenu handler still runs cardToList / the ctx menu
+  document.addEventListener('contextmenu', (e) => { if (DRAG.active || DRAG.armed) { e.preventDefault(); e.stopPropagation(); } }, true);
+  // .row is touch-action:pan-y so scrolling stays native — but once the long-press
+  // LIFTS a row, the first touchmove must not let the browser start that pan (it
+  // would pointercancel the drag). passive:false, and gated on DRAG.active ONLY,
+  // so it is a no-op for every normal scroll.
+  document.addEventListener('touchmove', (e) => { if (DRAG.active) e.preventDefault(); }, { passive: false });
+}
+
+/* ── arming: mouse lifts after 6px of travel; touch lifts on a 400ms long-press
+   (>10px of travel first = scroll intent → the browser keeps the scroll). A plain
+   press-and-release never arms, so the §15 click discriminator runs untouched. ── */
+function dragDown(e) {
+  DRAG.suppressClick = false;                                            // any NEW gesture re-enables clicks (a pointercancel can never strand a stuck eater)
+  if (DRAG.active || e.button !== 0) return;
+  if (state.pick || state.winpicker || state.overlay) return;            // modes own their clicks (pick stays the fallback linker)
+  if (e.target.closest('.inline-edit, .inline-input, input, textarea, select, button, .x, .pill, .seg, .add-field, .linkname, .flag, .jnode, .dropdown-menu, .overlay, .hover-preview, .winpicker-float, .ctx-menu')) return;
+  const row = e.target.closest('.row');
+  if (!row || !DRAG_SOURCES.has(row.dataset.card) || row.dataset.rec == null) return;   // .rtl rentals rows still carry card/rec on the .row wrapper
+  DRAG.point.x = e.clientX; DRAG.point.y = e.clientY;                    // seed the ghost/hit-test point — a touch long-press may fire with NO move first
+  const armed = { card: row.dataset.card, rec: row.dataset.rec, x: e.clientX, y: e.clientY, pointerId: e.pointerId, touch: e.pointerType === 'touch', lp: null };
+  if (armed.touch) armed.lp = setTimeout(() => { if (DRAG.armed === armed) startDrag(); }, 400);
+  DRAG.armed = armed;
+}
+function disarmDrag() { if (DRAG.armed && DRAG.armed.lp) clearTimeout(DRAG.armed.lp); DRAG.armed = null; }
+
+function dragMove(e) {
+  if (!DRAG.active) {
+    const a = DRAG.armed; if (!a || e.pointerId !== a.pointerId) return;
+    DRAG.point.x = e.clientX; DRAG.point.y = e.clientY;
+    const dist = Math.hypot(e.clientX - a.x, e.clientY - a.y);
+    if (a.touch) { if (dist > 10) disarmDrag(); return; }                // moved before the long-press popped = the user is scrolling
+    if (dist > 6) startDrag();
+    return;
+  }
+  if (e.pointerId !== DRAG.payload.pointerId) return;                    // a second finger must not steer the drag
+  DRAG.point.x = e.clientX; DRAG.point.y = e.clientY;
+  DRAG.ghost.style.transform = `translate(${e.clientX + 12}px, ${e.clientY - 14}px)`;   // transform-only (compositor) — ALL hit-testing lives in the rAF loop
+}
+
+function startDrag() {
+  const a = DRAG.armed; if (!a) return;
+  const rec = recOf(a.card, a.rec); if (!rec) { disarmDrag(); return; }
+  if (a.lp) clearTimeout(a.lp);
+  DRAG.armed = null;
+  DRAG.active = true;
+  DRAG.payload = { entity: a.card, id: a.rec, rec, pointerId: a.pointerId };
+  // nothing pending may fire mid-drag: the deferred row-click, hover preview, tooltip
+  if (pendingRowClick) { clearTimeout(pendingRowClick.timer); pendingRowClick = null; }
+  hideHoverPreview(); hideTip();
+  try { window.getSelection().removeAllRanges(); } catch (err) {}        // pre-threshold mouse travel may have selected text (the dblclick idiom, §16)
+  document.querySelectorAll('.row.selected').forEach((n) => n.classList.remove('selected'));
+  // the ghost is a compact chip (entity icon + row title) — never the full row
+  const meta = ROW_META[a.card](rec);
+  DRAG.ghost = el('div', 'drag-ghost', `${CARD_ICON[a.card] || ''}<span class="dg-t">${esc(meta.title)}</span>`);
+  DRAG.ghost.style.transform = `translate(${DRAG.point.x + 12}px, ${DRAG.point.y - 14}px)`;
+  dragLayer.appendChild(DRAG.ghost);
+  try { dragLayer.setPointerCapture(a.pointerId); } catch (err) {}       // the stream survives the source row re-rendering away (sig-pad precedent)
+  document.body.classList.add('dragging');
+  document.body.dataset.drag = a.card;
+  // CANCEL ARC — apex ≈20% of the middle card, Jac-tunable via --arc-apex
+  const mid = document.querySelector('.col[data-col="middle"] .card');
+  if (mid) dragLayer.style.setProperty('--arc-apex', Math.round(mid.getBoundingClientRect().height * 0.2) + 'px');
+  dragArc.classList.add('show');
+  // THE CARD-SWAP TRICK — reveal the column member the matrix needs; the
+  // pre-drag member is restored on cancel / drop-elsewhere (endDrag).
+  const cs = activeSession();
+  DRAG.restoreCols = null; DRAG.swappedTo = null;
+  if (cs.cols) {
+    if (a.card === 'customers' && (cs.cols.right || 'customers') === 'customers') { DRAG.restoreCols = { col: 'right', member: cs.cols.right || 'customers' }; cs.cols.right = 'invoices'; DRAG.swappedTo = 'invoices'; }
+    else if (a.card === 'invoices' && cs.cols.right === 'invoices') { DRAG.restoreCols = { col: 'right', member: 'invoices' }; cs.cols.right = 'customers'; DRAG.swappedTo = 'customers'; }
+    else if (a.card === 'units' && cs.cols.middle && cs.cols.middle !== 'rentals') { DRAG.restoreCols = { col: 'middle', member: cs.cols.middle }; cs.cols.middle = 'rentals'; DRAG.swappedTo = 'rentals'; }   // unit drags need the rentals card
+    if (DRAG.restoreCols) render();                                      // SAFE mid-drag: ghost + capture live in #drag-layer; decor re-stamps via the render() hook
+  }
+  reapplyDragDecor();
+  dragFrameLoop();
+}
+
+/* ── targeting ──────────────────────────────────────────────────────────── */
+function arcHit(x, y) {
+  if (!dragArc || !dragArc.classList.contains('show')) return false;
+  const r = dragArc.getBoundingClientRect();
+  return y >= r.top && x >= r.left && x <= r.right;
+}
+/** The drop target under the pointer: a list ROW, or an OPEN standard-view CARD
+ *  (a card body in standard mode targets its open record — cardRecordAt-style).
+ *  `under` = a pre-resolved elementFromPoint hit (the rAF loop shares ONE per frame). */
+function dropTargetAt(x, y, under) {
+  if (arcHit(x, y)) return { cancel: true };
+  const n = under !== undefined ? under : document.elementFromPoint(x, y);   // ghost + layer are pointer-events:none
+  if (!n || !n.closest) return null;
+  if (n.closest('.winpicker-float, .guide-pop, .overlay, .dropdown-menu, .ctx-menu')) return null;   // floaters are dead zones
+  const accept = DROP_MATRIX[DRAG.payload.entity] || {};
+  const row = n.closest('.row');
+  if (row && row.dataset.rec != null) {
+    const ent = row.dataset.card;                                        // shop rows (card='shop') simply miss the matrix
+    if (accept[ent] && !(ent === DRAG.payload.entity && row.dataset.rec === DRAG.payload.id)) {
+      const rec = recOf(ent, row.dataset.rec);
+      if (rec && accept[ent](DRAG.payload.rec, rec)) return { entity: ent, id: row.dataset.rec, rec, node: row };
+    }
+    return null;
+  }
+  const cardNode = n.closest('.card');
+  if (cardNode && accept[cardNode.dataset.card]) {
+    const dc = cardNode.dataset.card;
+    const cs = activeSession().cards[dc];
+    if (cs && cs.mode === 'standard' && cs.recId != null && !(dc === DRAG.payload.entity && cs.recId === DRAG.payload.id)) {
+      const rec = recOf(dc, cs.recId);
+      if (rec && accept[dc](DRAG.payload.rec, rec)) return { entity: dc, id: cs.recId, rec, node: cardNode };
+    }
+  }
+  return null;
+}
+function updateHot(under) {
+  const t = dropTargetAt(DRAG.point.x, DRAG.point.y, under);
+  const hot = t && !t.cancel ? t.node : null;
+  if (DRAG.hot && DRAG.hot !== hot) DRAG.hot.classList.remove('drop-hot');
+  if (hot && DRAG.hot !== hot) hot.classList.add('drop-hot');
+  DRAG.hot = hot;
+  dragArc.classList.toggle('hot', !!(t && t.cancel));
+}
+/** Stamp .drop-ok on every valid visible target. Re-run by render() after ANY
+ *  mid-drag rebuild (lists are windowed ≤60 rows, so this stays in budget). */
+function reapplyDragDecor() {
+  if (!DRAG.active) return;
+  const accept = DROP_MATRIX[DRAG.payload.entity] || {};
+  document.querySelectorAll('.drop-ok').forEach((n) => n.classList.remove('drop-ok'));
+  document.querySelectorAll('.row').forEach((row) => {
+    const ent = row.dataset.card;
+    if (!accept[ent] || row.dataset.rec == null) return;
+    if (ent === DRAG.payload.entity && row.dataset.rec === DRAG.payload.id) return;
+    const rec = recOf(ent, row.dataset.rec);
+    if (rec && accept[ent](DRAG.payload.rec, rec)) row.classList.add('drop-ok');
+  });
+  document.querySelectorAll('.card[data-card]').forEach((cardNode) => {
+    const dc = cardNode.dataset.card;
+    if (!accept[dc]) return;
+    const cs = activeSession().cards[dc];
+    if (!cs || cs.mode !== 'standard' || cs.recId == null) return;
+    if (dc === DRAG.payload.entity && cs.recId === DRAG.payload.id) return;
+    const rec = recOf(dc, cs.recId);
+    if (rec && accept[dc](DRAG.payload.rec, rec)) cardNode.classList.add('drop-ok');
+  });
+}
+/* ONE rAF loop per drag: a single elementFromPoint per frame feeds BOTH the
+   hot-target highlight and the edge auto-scroll — pointermove never hit-tests,
+   so there is no per-move layout work beyond the ghost's transform write. */
+function dragFrameLoop() {
+  cancelAnimationFrame(DRAG.raf);
+  const EDGE = 36;
+  const step = () => {
+    if (!DRAG.active) return;
+    const n = document.elementFromPoint(DRAG.point.x, DRAG.point.y);
+    updateHot(n);
+    const body = n && n.closest ? n.closest('.card-body') : null;
+    if (body) {
+      const r = body.getBoundingClientRect();
+      if (DRAG.point.y < r.top + EDGE) body.scrollTop -= Math.ceil((r.top + EDGE - DRAG.point.y) / 3);
+      else if (DRAG.point.y > r.bottom - EDGE) body.scrollTop += Math.ceil((DRAG.point.y - (r.bottom - EDGE)) / 3);
+    }
+    DRAG.raf = requestAnimationFrame(step);
+  };
+  DRAG.raf = requestAnimationFrame(step);
+}
+
+/* ── release / cancel ───────────────────────────────────────────────────── */
+function dragUp(e) {
+  if (!DRAG.active) { disarmDrag(); return; }
+  if (e.pointerId !== DRAG.payload.pointerId) return;
+  DRAG.point.x = e.clientX; DRAG.point.y = e.clientY;
+  const t = dropTargetAt(e.clientX, e.clientY);
+  if (!t || t.cancel) return cancelDrag();                               // arc, dead space, invalid target → no mutation
+  const payload = DRAG.payload;
+  endDrag({ keepSwap: DRAG.swappedTo === t.entity });                    // never restore a swap that's showing the drop result
+  dispatchDrop(payload, t);                                              // §16 mutations re-run every hard gate, then render
+}
+function cancelDrag() { if (DRAG.active) endDrag({ rerender: true }); else disarmDrag(); }
+function endDrag({ keepSwap, rerender } = {}) {
+  cancelAnimationFrame(DRAG.raf);
+  try { dragLayer.releasePointerCapture(DRAG.payload.pointerId); } catch (err) {}
+  if (DRAG.ghost) DRAG.ghost.remove();
+  dragArc.classList.remove('show', 'hot');
+  document.querySelectorAll('.drop-ok, .drop-hot').forEach((n) => n.classList.remove('drop-ok', 'drop-hot'));
+  document.body.classList.remove('dragging');
+  delete document.body.dataset.drag;
+  if (DRAG.restoreCols && !keepSwap) { const cs = activeSession(); if (cs.cols) cs.cols[DRAG.restoreCols.col] = DRAG.restoreCols.member; }
+  const needRender = !!rerender || !!(DRAG.restoreCols && !keepSwap);
+  DRAG.active = false; DRAG.payload = null; DRAG.ghost = null; DRAG.hot = null; DRAG.restoreCols = null; DRAG.swappedTo = null; DRAG.armed = null;
+  DRAG.suppressClick = true;   // the trailing click is swallowed once; the NEXT pointerdown clears it (no timer — see dragDown)
+  if (needRender) render();
+}
+
+/* ── DROP DISPATCH — route into §16, then say exactly what happened (toast) +
+   R19-flash the newly linked pill on whatever card shows it (row/card fallback). ── */
+function dropFlash(sel, fallbackSel) { if (document.querySelector(sel)) attnFlash(sel); else if (fallbackSel && document.querySelector(fallbackSel)) attnFlash(fallbackSel); }
+function dispatchDrop(p, t) {
+  const pair = `${p.entity}>${t.entity}`;
+  // UNIT ↔ RENTAL — SET when empty, SWAP when safe (ONE unit per rental today;
+  // the multi-unit refactor upgrades this drop to ADD — see linkUnitToRental).
+  if (pair === 'units>rentals' || pair === 'rentals>units') {
+    const r = pair === 'units>rentals' ? t.rec : p.rec, u = pair === 'units>rentals' ? p.rec : t.rec;
+    const res = linkUnitToRental(r.rentalId, u.unitId);
+    if (!res) return;
+    render();
+    toast(`Unit ${u.name} → rental ${fmtWindow(r.startDate, r.endDate)}${res.swapped ? ` (replaced ${res.swapped.name})` : ''}${res.overbooked ? ' — ⚠ OVERBOOKED' : ''}`);
+    dropFlash(`.card[data-card="rentals"] [data-pill-card="units"][data-pill-rec="${u.unitId}"]`, `.row[data-card="rentals"][data-rec="${r.rentalId}"], .card[data-card="rentals"]`);
+    return;
+  }
+  // RENTAL ↔ INVOICE — addRentalLineToInvoice as-is (double-billing + duplicate
+  // line gates live inside it); the locked / customer-scoping gates fire here (§7.5).
+  if (pair === 'rentals>invoices' || pair === 'invoices>rentals') {
+    const r = pair === 'rentals>invoices' ? p.rec : t.rec, inv = pair === 'rentals>invoices' ? t.rec : p.rec;
+    if (inv.locked) { toast(`Blocked: invoice ${invoiceShort(inv.invoiceId)} is locked — unlock it first (§7.5).`); return; }
+    if (!inv.customerId) { flashOr('.js-pick[data-slot="customer"]', 'Blocked: the invoice needs a customer first (§7.5).'); return; }
+    if (r.customerId && inv.customerId !== r.customerId) { toast(`Blocked: that rental belongs to ${IDX.customer.get(r.customerId)?.name || 'another customer'}, not ${IDX.customer.get(inv.customerId)?.name || 'this invoice’s customer'} (§7.5).`); return; }
+    addRentalLineToInvoice(inv.invoiceId, r.rentalId);
+    if (r.invoiceId === inv.invoiceId) {                                 // the mutation toasts its own failures
+      toast(`Rental ${fmtWindow(r.startDate, r.endDate)} → invoice ${invoiceShort(inv.invoiceId)}.`);
+      dropFlash(`.inv-line-link[data-pill-rec="${r.rentalId}"]`, `.card[data-card="invoices"]`);
+    }
+    return;
+  }
+  // CUSTOMER ↔ RENTAL — blacklist-gated up front (§9)
+  if (pair === 'customers>rentals' || pair === 'rentals>customers') {
+    const r = pair === 'customers>rentals' ? t.rec : p.rec, c = pair === 'customers>rentals' ? p.rec : t.rec;
+    const res = linkCustomerToRental(r.rentalId, c.customerId);
+    if (!res) return;
+    render();
+    toast(`Customer ${c.name} → rental ${fmtWindow(r.startDate, r.endDate)}${res.swapped ? ` (replaced ${res.swapped.name})` : ''}`);
+    dropFlash(`.card[data-card="rentals"] [data-pill-card="customers"][data-pill-rec="${c.customerId}"]`, `.row[data-card="rentals"][data-rec="${r.rentalId}"], .card[data-card="rentals"]`);
+    return;
+  }
+  // CUSTOMER ↔ INVOICE — a paid or locked invoice freezes its customer (§7.5)
+  if (pair === 'customers>invoices' || pair === 'invoices>customers') {
+    const inv = pair === 'customers>invoices' ? t.rec : p.rec, c = pair === 'customers>invoices' ? p.rec : t.rec;
+    const res = setInvoiceCustomer(inv.invoiceId, c.customerId);
+    if (!res) return;
+    render();
+    toast(`Customer ${c.name} → invoice ${invoiceShort(inv.invoiceId)}${res.swapped ? ` (replaced ${res.swapped.name})` : ''}`);
+    dropFlash(`.card[data-card="invoices"] [data-pill-card="customers"][data-pill-rec="${c.customerId}"]`, `.card[data-card="invoices"]`);
+    return;
+  }
+  // UNIT ↔ INVOICE — bill the unit's open un-billed WO to THAT invoice (§7.6)
+  if (pair === 'units>invoices' || pair === 'invoices>units') {
+    const u = pair === 'units>invoices' ? p.rec : t.rec, inv = pair === 'units>invoices' ? t.rec : p.rec;
+    const w = unbilledOpenWOForUnit(u.unitId);
+    if (!w) { toast(`${u.name} has no billable open work order.`); return; }
+    if (!billWOToInvoiceExplicit(w.woId, inv.invoiceId)) return;
+    toast(`WO "${w.woReport}" (${u.name}) → invoice ${invoiceShort(inv.invoiceId)} (${money(woBillable(w))}).`);
+    dropFlash(`.inv-line-link[data-pill-rec="${w.woId}"]`, `.card[data-card="invoices"]`);
+    return;
+  }
+}
+
 function onClick(e) {
   const t = e.target;
   const closest = (sel) => t.closest(sel);
@@ -4396,6 +4736,7 @@ function onClick(e) {
   if (closest('.js-switch-user')) { e.stopPropagation(); return switchUser(); }
   if (closest('.js-open-settings')) { e.stopPropagation(); return openSettings(); }
   if (closest('.js-settings-save')) { e.stopPropagation(); return saveSettings(); }
+  if (closest('.js-overbook')) { e.stopPropagation(); const on = closest('.js-overbook').dataset.val === '1'; state.overbookOn = on; try { localStorage.setItem('jactec.overbook', on ? '1' : '0'); } catch (err) {} toast(on ? 'Overbooking allowed — conflicting links get a pulsing red Overbooked flag.' : 'Overbooking blocked — a conflicting unit drop is refused.'); renderOverlay(); return; }
   if (closest('.js-nc-save')) { e.stopPropagation(); return saveNewCustomer(); }
   if (closest('.js-nc-acct')) { const b = closest('.js-nc-acct'); e.stopPropagation(); ncSyncInputs(); state.overlay.draft.accountType = b.dataset.val; renderOverlay(); return; }
   if (closest('.js-nc-selfie-clear')) { e.stopPropagation(); ncSyncInputs(); state.overlay.draft.selfie = ''; renderOverlay(); return; }
@@ -6117,6 +6458,75 @@ function addPartToWO(woId, part, cost, hours, phase) {
   // the current card view (the WO may be open via its pill, not as the anchor).
   render();
 }
+/* ── §16 DROP-CALLABLE LINK WRAPPERS (§15c drag engine) — the slot-assignment
+   bodies extracted from assignPick so a drop can run them WITHOUT pick-state
+   plumbing. assignPick itself is unchanged (pick mode stays the fallback). ── */
+/** Link a unit to a rental — SET when empty, SWAP when safe.
+ *  ⚠ MULTI-UNIT SWITCH POINT: when rentals grow `unitIds[]` (the multi-unit
+ *  refactor, DRAGDROP-DESIGN.md §2), this drop becomes an ADD — push the unitId
+ *  instead of overwriting, and drop the swap branch. Change it HERE only. */
+function linkUnitToRental(rentalId, unitId) {
+  const r = IDX.rental.get(rentalId), u = IDX.unit.get(unitId);
+  if (!r || !u) return null;
+  if (u.fleetStatus !== 'Active') { toast(`Blocked: ${u.name} is ${u.fleetStatus} — not rentable (§9).`); return null; }   // assignPick's §9 gate, verbatim (app.js:5746)
+  if (r.unitId === unitId) { toast(`${u.name} is already on this rental.`); return null; }
+  const prev = r.unitId ? IDX.unit.get(r.unitId) : null;
+  // swap safety: On Rent with logged captures = the old unit is physically out — block
+  if (prev && r.status === 'On Rent' && (r.startCapture || r.endCapture || r.fcCapture)) { toast(`Blocked: ${prev.name} is On Rent with logged captures — return it before swapping units.`); return null; }
+  // §10 overbooking gate — derived live via rentalsOverlappingUnit, never stored
+  const conflicts = (r.startDate && r.endDate) ? rentalsOverlappingUnit(unitId, r.startDate, r.endDate, r.rentalId) : [];
+  if (conflicts.length && !state.overbookOn) {
+    const c0 = conflicts[0];
+    toast(`Blocked: ${u.name} is already booked ${fmtWindow(c0.startDate, c0.endDate)} (${IDX.customer.get(c0.customerId)?.name || c0.rentalName || c0.rentalId}). Allow overbooking in Settings to force it.`);
+    return null;
+  }
+  r.unitId = unitId;
+  r.categoryId = u.categoryId;   // category syncs with the unit (assignPick parity)
+  logAction(r, `Unit → ${u.name}${prev ? ` (was ${prev.name})` : ''}${conflicts.length ? ' — OVERBOOKED' : ''}`);
+  reindexDraft('rentals', r);
+  return { swapped: prev || null, overbooked: conflicts.length > 0 };
+}
+/** Link a customer to a rental — assignPick's customer path + the §9 blacklist
+ *  gate pulled up-front (today it only fires later, in setRentalStatus). */
+function linkCustomerToRental(rentalId, customerId) {
+  const r = IDX.rental.get(rentalId), c = IDX.customer.get(customerId);
+  if (!r || !c) return null;
+  if (/Blacklist/i.test(c.accountType || '')) { toast(`Blocked: ${c.name} is blacklisted (§9).`); return null; }
+  if (r.customerId === customerId) { toast(`${c.name} is already on this rental.`); return null; }
+  const prev = r.customerId ? IDX.customer.get(r.customerId) : null;
+  r.customerId = customerId;
+  logAction(r, `Customer → ${c.name}${prev ? ` (was ${prev.name})` : ''}`);
+  reindexDraft('rentals', r);
+  return { swapped: prev || null };
+}
+/** Set an invoice's customer — guarded: ANY payment OR a locked invoice freezes
+ *  it (§7.5 — the same tests as 'inv-cust-remove', applied on SET too). */
+function setInvoiceCustomer(invoiceId, customerId) {
+  const inv = IDX.invoice.get(invoiceId), c = IDX.customer.get(customerId);
+  if (!inv || !c) return null;
+  if (inv.customerId === customerId) { toast(`${c.name} is already on this invoice.`); return null; }
+  if (invoiceTotals(inv).paid > 0) { toast('Blocked: invoice has a payment — customer locked (§7.5).'); return null; }
+  if (inv.locked) { toast('Blocked: invoice pricing is locked — unlock it first (§7.5).'); return null; }
+  const prev = inv.customerId ? IDX.customer.get(inv.customerId) : null;
+  inv.customerId = customerId;
+  logAction(inv, `Customer → ${c.name}${prev ? ` (was ${prev.name})` : ''}`);
+  reindex('invoices', inv);
+  return { swapped: prev || null };
+}
+/** Bill a WO to an EXPLICIT invoice — billWOToInvoice's ending without the
+ *  auto-pick or the pendingBillWO customer detour (the user chose the invoice).
+ *  Adds the customer-mismatch + locked guards the auto path never needed;
+ *  addWOToInvoice still enforces bill-once (§7.6) + logs + renders. */
+function billWOToInvoiceExplicit(woId, invoiceId) {
+  const w = IDX.wo.get(woId), inv = IDX.invoice.get(invoiceId);
+  if (!w || !inv) return false;
+  if (inv.locked) { toast(`Blocked: invoice ${invoiceShort(invoiceId)} is locked — unlock it first (§7.5).`); return false; }
+  if (!inv.customerId) { toast('Blocked: the invoice needs a customer before billing a WO (§7.6).'); return false; }
+  if (w.customerId && w.customerId !== inv.customerId) { toast(`Blocked: that WO bills to ${IDX.customer.get(w.customerId)?.name || 'another customer'}, not ${IDX.customer.get(inv.customerId)?.name || 'this invoice’s customer'} (§7.6).`); return false; }
+  const before = (inv.lineItems || []).length;
+  addWOToInvoice(invoiceId, woId);
+  return (inv.lineItems || []).length > before;
+}
 /* Bill a WO from the work-order side: find the customer's open invoice (or make
    one) and add the WO to it, then jump to that invoice. */
 function billWOToInvoice(woId) {
@@ -6320,6 +6730,7 @@ async function attemptLogin() {
 
 function boot() {
   initTooltip();
+  initDrag();   // §15c drag & drop link engine — #drag-layer singleton + document pointer listeners
   // R0 flash-lint: ON by default — violations self-report by pulsing (SPEC v7)
   try { if (localStorage.getItem('jactec.lint') !== '0') document.body.classList.add('rw-lint'); } catch (err) {}
   document.addEventListener('click', onClick);
@@ -6425,7 +6836,7 @@ function boot() {
   document.addEventListener('mousemove', (e) => { lastMouse.x = e.clientX; lastMouse.y = e.clientY; });
   // hover preview (#1): float a record's Standard view after a short hover on a row/pill
   document.addEventListener('mouseover', (e) => {
-    if (!state.previewsOn) return;       // user turned previews off (saved per device)
+    if (!state.previewsOn || DRAG.active) return;       // previews off (per device) — and NEVER mid-drag (§15c)
     // interactive controls are CLICK targets, not preview triggers — the popup kept
     // landing under the cursor while aiming at the status dropdown (Jac 2026-06-12).
     // The row EYE is the one button that IS a preview trigger.
