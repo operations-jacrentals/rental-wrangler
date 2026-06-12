@@ -17,24 +17,19 @@
   <div id="toast" class="toast"></div>
 
   <script type="module" src="app.js"></script>
-  <!-- DEV ONLY (localhost): auto-reload when app.js/style.css/index.html change on disk,
-       so Jac sees edits near real-time. Never runs on app.jacrentals.com.
-       Pauses while typing (focused input/textarea) so a reload can't eat a half-typed note. -->
+  <!-- DEV ONLY (localhost): reload when Claude bumps dev-version.txt — i.e. only
+       when a FINISHED, verified edit batch lands (Jac: no mid-edit reloads).
+       Never runs on app.jacrentals.com. Pauses while typing in a field. -->
   <script>
     if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) (() => {
-      const FILES = ['app.js', 'style.css', 'index.html'];
-      const stamp = {};
-      // the dev server is GET-only with no Last-Modified — checksum the body instead
-      const sum = (t) => { let h = t.length; for (let i = 0; i < t.length; i += 512) h = (h * 31 + t.charCodeAt(i)) >>> 0; return h; };
+      let seen;
       const tick = async () => {
         if (/^(INPUT|TEXTAREA)$/.test(document.activeElement?.tagName || '')) return;
-        for (const f of FILES) {
-          try {
-            const h = sum(await (await fetch(f, { cache: 'no-store' })).text());
-            if (stamp[f] !== undefined && stamp[f] !== h) { location.reload(); return; }
-            stamp[f] = h;
-          } catch (e) { /* server momentarily down — keep polling */ }
-        }
+        try {
+          const v = await (await fetch('dev-version.txt', { cache: 'no-store' })).text();
+          if (seen !== undefined && seen !== v) { location.reload(); return; }
+          seen = v;
+        } catch (e) { /* server momentarily down — keep polling */ }
       };
       setInterval(tick, 3000); tick();
     })();

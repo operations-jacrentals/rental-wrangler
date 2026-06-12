@@ -21,3 +21,4 @@ JacTec-standalone.html
 # CI installs these on the runner; never commit them
 node_modules/
 package-lock.json
+dev-version.txt

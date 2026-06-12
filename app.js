@@ -2154,18 +2154,22 @@ const DETAIL = {
     // §7.1 — every contact/account detail is click-to-edit (auto-saves via the persist hook)
     // R5: empty fields render the dashed "+Thing" add (no "Add", no space after +)
     const efield = (f, ph, wrap) => { const val = c[f]; const thing = ph.replace(/^Add\s+/i, ''); const lbl = thing.charAt(0).toUpperCase() + thing.slice(1); return `<div class="kv"><span class="v inline-edit" data-edit="custField" data-field="${f}" data-rec="${c.customerId}" data-ph="${esc(ph)}"${wrap ? ' style="white-space:normal"' : ''}>${val ? esc(val) : `<span class="add-field" data-r="R5c">+${esc(lbl)}</span>`}</span></div>`; };
-    const contact = `<div class="section"><h4>Contact</h4><div class="fieldstack">
-      ${efield('firstName', 'First name')}${efield('lastName', 'Last name')}
-      ${efield('phone', 'Add phone')}${efield('email', 'Add email')}
-      ${efield('company', 'Add company')}${efield('address', 'Add address', true)}
-    </div></div>`;
     const selfieThumb = c.selfie ? `<img class="cust-selfie" src="${esc(c.selfie)}" alt="" />` : '';
     const agPill = c.agreementSignedAt ? `<button class="pill c-green js-view-agreement" data-r="R3" data-rec="${c.customerId}" title="View signed agreement">${esc(AGREEMENTS[c.agreementType]?.title || 'Agreement')} ✓</button>` : '';
-    const account = `<div class="section"><h4>Account</h4><div class="fieldstack">
-      ${kvPills(`${selfieThumb}${badge(acct.label, acct.color)}${c.requiresPO ? badge('PO Required', 'yellow') : ''}${agPill}`)}
-      ${efield('industry', 'Add industry')}
-      ${kv(`${money(d.totalPaid)} total · ${d.visits || 0} visits · ${d.years || 0} yrs · every ${d.avgFrequencyDays || 0} days`, { wrap: true, derived: true })}
-    </div></div>`;
+    /* Jac 2026-06-12: Contact + Account MERGED — LEFT = entered fields, RIGHT = facts + derived (card anatomy) */
+    const account = `<div class="section"><h4>Account</h4>
+      <div class="split">
+        <div class="side">
+          ${efield('firstName', 'First name')}${efield('lastName', 'Last name')}
+          ${efield('phone', 'Add phone')}${efield('email', 'Add email')}
+          ${efield('company', 'Add company')}${efield('industry', 'Add industry')}
+          ${efield('address', 'Add address', true)}
+        </div>
+        <div class="side r">
+          ${kvPills(`${selfieThumb}${badge(acct.label, acct.color)}${c.requiresPO ? badge('PO Required', 'yellow') : ''}${agPill}`)}
+          ${kv(`${money(d.totalPaid)} total · ${d.visits || 0} visits · ${d.years || 0} yrs · every ${d.avgFrequencyDays || 0} days`, { wrap: true, derived: true })}
+        </div>
+      </div></div>`;
     // Jac 2026-06-12: NO badge row — account type + pay status are R9 title flags,
     // the account gate (R1) rides the title row. Selfie + agreement live in ACCOUNT.
     const title = `<span class="d-title">${esc(fullName(c)) || 'New Customer'}</span>`;
@@ -2197,16 +2201,18 @@ const DETAIL = {
     const activity = `<div class="hlog actlog">${log || '<span class="muted" style="font-size:12px">No activity yet.</span>'}</div>`;
 
     const notes = notesSection('customers', c, 'customerId', 'accountNotes');
+    /* Jac 2026-06-12 order: actions row → active bar → funnels → merged Account →
+       Cards on File → +Notes → Action Log (log rides under Cards when notes sit top) */
     return `<div class="detail">
       <div class="detail-head">${title}</div>
-      ${activeBar}
       ${actEntry}
+      ${activeBar}
       ${notes.top}
-      <div class="detail-cols">${contact}${account}</div>
-      ${cardsSection(c)}
       <div class="detail-cols">${usedSales}${membership}</div>
-      ${activity}
+      ${account}
+      ${cardsSection(c)}
       ${notes.bottom}
+      ${activity}
       ${historySection('customers', c, cs)}
     </div>`;
   },
@@ -2330,7 +2336,7 @@ const DETAIL = {
     }).join('');
     const billable = partsCost > 0 || labor > 0;
     const alreadyBilled = DATA.invoices.some((i) => (i.lineItems || []).some((li) => li.kind === 'WO' && li.ref === w.woId));
-    const billBtn = billable && !alreadyBilled ? `<button class="pill ref js-bill-wo" data-rec="${w.woId}">Bill to invoice →</button>` : (alreadyBilled ? badge('Billed', 'green') : '');
+    const billBtn = billable && !alreadyBilled ? addBtn('Invoice', { link: true, icon: CARD_ICON.invoices, js: 'js-bill-wo', h: 26, data: { rec: w.woId } }) : (alreadyBilled ? badge('Billed', 'green') : '');
     const partForm = `<div class="lineform">
       <input class="lf-in js-pf-part" placeholder="Part / labor description" />
       <div class="lineform-row"><input class="lf-in js-pf-cost" type="number" min="0" placeholder="Part $ (0 for labor)" /><input class="lf-in js-pf-hours" type="number" min="0" placeholder="Labor hrs" /></div>
@@ -2338,9 +2344,9 @@ const DETAIL = {
     </div>`;
     const journeySec = `<div class="section"><h4>Journey</h4>
       <div class="hlog">${journey || '<span class="muted" style="font-size:12px">No line items</span>'}</div>
-      ${state.woPartForm === w.woId ? partForm : `<div class="pillrow" style="margin-top:8px"><button class="pill ref js-add-part" data-rec="${w.woId}">+ Add Part / Labor</button>${billBtn}</div>`}
+      ${state.woPartForm === w.woId ? partForm : `<div class="pillrow" style="margin-top:8px">${addBtn('Part/Task', { anchor: true, js: 'js-add-part', h: 26, data: { rec: w.woId } })}${billBtn}</div>`}
     </div>`;
-    const billToggle = `<button class="pill ${w.billCustomer === 'Yes' ? 'c-orange' : 'c-gray'} js-wo-bill" data-rec="${w.woId}">Bill customer: ${w.billCustomer === 'Yes' ? 'Yes' : 'No'}</button>`;
+    const billToggle = gatePillRaw(`Bill customer: ${w.billCustomer === 'Yes' ? 'Yes' : 'No'}`, w.billCustomer === 'Yes' ? 'orange' : 'gray', 'js-wo-bill', { rec: w.woId }, true);
     const report = `<div class="section"><h4>Report</h4><div class="fieldstack">
       ${kvPills(`${unit ? unitPill(unit.unitId, { x: 'unit-swap' }) : (w.mock ? `<button class="pill ref js-pick" data-card="shop" data-rec="${w.woId}" data-type="workOrders" data-slot="unit">+ Pick unit</button>` : '<span class="pill c-gray">No unit</span>')}${cat ? refPill('categories', cat.categoryId, cat.name) : ''}${unit ? statusPill('unitInspectionStatus', unit.inspectionStatus, { card: 'units', recId: unit.unitId }) : ''}`)}
       ${kvPills(`${badge(getStatus('woType', w.woType).label, getStatus('woType', w.woType).color)}${cust ? refPill('customers', w.customerId, cust.name) : ''}`)}
@@ -2356,7 +2362,7 @@ const DETAIL = {
     </div></div>`;
     const notes = notesSection('workOrders', w, 'woId');
     return `<div class="detail">
-      <div class="detail-head"><span class="d-title">${esc(`${unit?.name || '—'} — ${w.woReport}`)}</span>${badge(getStatus('woType', w.woType).label, getStatus('woType', w.woType).color)}<span class="pill gate c-${getStatus('woPhase', w.phase).color} js-wophase" data-rec="${w.woId}">${esc(getStatus('woPhase', w.phase).label)} ${I.chev}</span></div>
+      <div class="detail-head"><span class="d-title">${esc(`${unit?.name || '—'} — ${w.woReport}`)}</span>${badge(getStatus('woType', w.woType).label, getStatus('woType', w.woType).color)}${gatePillRaw(getStatus('woPhase', w.phase).label, getStatus('woPhase', w.phase).color, 'js-wophase', { rec: w.woId })}</div>
       ${notes.top}
       ${journeySec}
       ${report}
@@ -2650,8 +2656,19 @@ function colTabsEl(col, active, session) {
       + (compact ? '' : `<span class="ct-lbl">${esc(MEMBER_TITLE[m])}</span>`)
       + `<span class="ct-n">${n}</span>`
       + `</button>`;
-  }).join('') + nrChip;
+  }).join('') + nrChip + colActionsHtml(active, session);
   return bar;
+}
+/* Jac 2026-06-12: the nav cluster (List / Anchor / New tab) rides the TOGGLE row,
+   not the title row — the item header gets room to breathe and head gates align right. */
+function colActionsHtml(active, session) {
+  if (active === 'calendar' || state.searchMode) return '';
+  const ec = SHOP_TYPES.includes(active) ? 'shop' : active;
+  const cs = session.cards[ec];
+  if (!cs || cs.mode !== 'standard' || cs.recId == null || (ec === 'shop' && !cs.recType)) return '';
+  const anchored = session.anchor?.card === ec;
+  const dt = ec === 'shop' ? ` data-type="${esc(cs.recType)}"` : '';
+  return `<div class="c-actions"><button class="hbtn js-tolist" title="${anchored ? 'Browse list (pick another to anchor)' : 'Back to list'}">${I.list}</button><button class="hbtn js-anchor" data-rec="${esc(cs.recId)}"${dt} title="Anchor (⊞)">${I.circle}</button><button class="hbtn js-newtab" data-rec="${esc(cs.recId)}"${dt} title="New tab (+)">${I.plus}</button></div>`;
 }
 function memberCardEl(member, session) {
   if (member === 'calendar') return calendarCardEl(session);
@@ -2693,8 +2710,7 @@ function cardEl(cardDef, session) {
     const head = el('div', 'card-head');
     head.innerHTML = `
       <span class="c-titlecard"><span class="c-icon">${CARD_ICON[card] || ''}</span>${titleHtml}</span>
-      ${headFlagsHtml(card, stdRec)}
-      <div class="c-head-right"><div class="c-actions"><button class="hbtn js-tolist" title="${anchored ? 'Browse list (pick another to anchor)' : 'Back to list'}">${I.list}</button><button class="hbtn js-anchor" data-rec="${esc(cs.recId)}" title="Anchor (⊞)">${I.circle}</button><button class="hbtn js-newtab" data-rec="${esc(cs.recId)}" title="New tab (+)">${I.plus}</button></div></div>`;
+      ${headFlagsHtml(card, stdRec)}`;
     node.appendChild(head);
   }
 
@@ -2866,8 +2882,7 @@ function shopCardEl(cardDef, session, forcedSeg) {
     const nm = rec ? esc(detailTitle(cs.recType, rec) || MEMBER_TITLE[cs.recType] || cardDef.title) : '';
     const head = el('div', 'card-head');
     head.innerHTML = `
-      <span class="c-titlecard"><span class="c-icon">${CARD_ICON[cs.recType] || CARD_ICON.shop}</span><span class="c-title">${nm}</span></span>
-      <div class="c-head-right"><div class="c-actions"><button class="hbtn js-tolist" title="${anchored ? 'Browse list (pick another to anchor)' : 'Back to list'}">${I.list}</button><button class="hbtn js-anchor" data-rec="${esc(cs.recId)}" data-type="${esc(cs.recType)}" title="Anchor (⊞)">${I.circle}</button><button class="hbtn js-newtab" data-rec="${esc(cs.recId)}" data-type="${esc(cs.recType)}" title="New tab (+)">${I.plus}</button></div></div>`;
+      <span class="c-titlecard"><span class="c-icon">${CARD_ICON[cs.recType] || CARD_ICON.shop}</span><span class="c-title">${nm}</span></span>`;
     node.appendChild(head);
   }
 

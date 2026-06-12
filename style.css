@@ -1184,3 +1184,6 @@ body { font-variant-numeric: tabular-nums; }
 .act-entry .act-in:focus { outline: none; border-color: var(--accent-line); }
 .act-entry .act-in::placeholder { color: var(--muted); }
 .hlog.actlog { padding: 0 2px; }
+
+/* Jac 2026-06-12: the nav cluster rides the toggle row, right-aligned */
+.col-tabs .c-actions { margin-left: auto; display: flex; gap: 4px; }
