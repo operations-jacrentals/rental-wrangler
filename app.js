@@ -1217,7 +1217,7 @@ const unitsVisible = (rows, cs) => (cs && cs.sort && cs.sort.field === 'soldInac
 function rowViz(card, rec) {
   // §10 availability tint takes precedence while a rental window is in scope
   if (availWin && availUnavailable(card, rec)) return `<div class="row-viz" style="background:var(--red-bg)"></div>`;
-  if (card === 'rentals') return rentalTimelineViz(rec);
+  if (card === 'rentals') return '';   // Jac 2026-06-12: the wash is dead — the row IS a timeline now
   if (card === 'customers') return customerSpectrumViz(rec);
   if (card === 'categories') return categoryMixViz(rec.categoryId);
   if (card === 'serviceOrders') { const s = topServiceForUnit(rec); if (s) return `<div class="row-viz" style="background:linear-gradient(90deg, var(--${s.color}-bg), transparent 60%)"></div>`; }
@@ -1229,13 +1229,6 @@ function rowViz(card, rec) {
   }
   if (card === 'invoices') { const s = invoiceTotals(rec).status; return `<div class="row-viz" style="background:linear-gradient(90deg, var(--${getStatus('invoiceStatus', s).color}-bg), transparent 70%)"></div>`; }
   return '';
-}
-function rentalTimelineViz(r) {
-  const color = getStatus('rentalStatus', rentalDisplayStatus(r)).color;
-  const s = parseISO(r.startDate), e = parseISO(r.endDate);
-  let fill = 0;
-  if (s && e) { const total = Math.max(1, e - s); fill = Math.max(0, Math.min(1, (TODAY - s) / total)); }
-  return `<div class="row-viz" style="background:linear-gradient(90deg, var(--${color}-bg) ${Math.round(fill * 100)}%, transparent ${Math.round(fill * 100)}%)"></div>`;
 }
 function customerSpectrumViz(c) {
   const pct = c._digest?.activePct ?? 0;
@@ -1277,29 +1270,78 @@ function genericRow(card, rec) {
 }
 
 const ROWS = {
-  /* ── RENTALS — fully built (§12.2 list view) ── */
+  /* ── RENTALS — the DISPATCHER ROW (Jac 2026-06-12): every row IS a row-sized
+     day-timeline. The elapsed-tint cells are the (meaningful) background — the old
+     colored status wash is gone. A TODAY marker shows urgency spatially (red, off
+     the right end = overdue). Center = the R1 status GATE (live dropdown) carrying
+     the truck when it's a transport rental — that's the whole dispatch signal.
+     Right = the derived Balance with due-context (R8). Triage without clicking. ── */
   rentals: (r) => {
     const unit = IDX.unit.get(r.unitId);
-    const cat = IDX.category.get(r.categoryId);
     const cust = IDX.customer.get(r.customerId);
-    const price = rentalPrice(r);
     const inv = r.invoiceId ? IDX.invoice.get(r.invoiceId) : null;
+    const price = rentalPrice(r);
+    const dispStatus = rentalDisplayStatus(r);
     const truck = showsTruck(r.status, r.transportType);
     const name = unit?.name || r.legacyUnitName || r.rentalName || 'Rental';
-    // row 1 shows just the price — rows are date-ordered, so the per-row window is redundant
-    const row1 = `<div class="row-1">
-      <span class="r-title">${esc(name)}</span>
-      <span class="r-fields">
-        ${cat ? `<span>${esc(cat.name)}</span>` : ''}
-        ${price ? `<span class="r-key">${money(price.price)}</span>` : ''}
-      </span></div>`;
-    const row2 = `<div class="row-2">
-      ${statusPill('rentalStatus', rentalDisplayStatus(r), { card: 'rentals', recId: r.rentalId, truck })}
-      ${cust ? refPill('customers', r.customerId, cust.name) : ''}
-      ${inv ? statusPill('invoiceStatus', invoiceTotals(inv).status, { card: 'invoices', recId: inv.invoiceId }) : ''}
-      ${unit ? statusPill('unitInspectionStatus', unit.inspectionStatus, { card: 'units', recId: unit.unitId }) : ''}
+    const gate = gatePill('rentalStatus', dispStatus, 'js-status-pill', { rec: r.rentalId }, { truck });
+    const s = parseISO(r.startDate), e = parseISO(r.endDate);
+
+    // no window yet (draft) → a simple bar to set the window
+    if (!(s && e)) {
+      return `<div class="rtl"><div class="rtl-over">
+        <div class="rtl-l"><span class="rtl-name">${esc(name)}</span><span class="rtl-sub">${cust ? refPill('customers', r.customerId, cust.name) : ''}</span></div>
+        <div class="rtl-mid">${gate}</div>
+        <div class="rtl-r"><span class="rtl-set">Set window</span></div>
+      </div></div>`;
+    }
+
+    // elapsed-tint cells (reused from the R16 day-timeline math)
+    const dayMs = 86400000;
+    const total = Math.max(1, Math.round((e - s) / dayMs));
+    const weekly = total > 14, cells = weekly ? Math.ceil(total / 7) : total;
+    const cellHtml = Array.from({ length: cells }, (_, i) => {
+      const cellEnd = new Date(s.getTime() + (weekly ? (i + 1) * 7 : i + 1) * dayMs);
+      return `<div class="day ${TODAY >= cellEnd ? 'past' : ''}"></div>`;
+    }).join('');
+
+    // TODAY marker — calm accent mid-rental · blue pinned-left pre-start · red off-the-end = overdue.
+    // Overdue = the unit is physically OUT (On/End/Off Rent) past its end date — NOT a stale reservation.
+    const overdue = e < TODAY && (r.status === 'On Rent' || r.status === 'End Rent' || r.status === 'Off Rent');
+    const pre = TODAY < s;
+    const frac = Math.max(0, Math.min(1, (TODAY - s) / Math.max(1, e - s)));
+    const markerCls = overdue ? 'over' : pre ? 'pre' : '';
+    const markerLeft = overdue ? 100 : pre ? 0 : Math.round(frac * 100);
+    const nOver = overdue ? dayDiff(e, TODAY) : 0;
+
+    // R8 BALANCE with due-context (Jac): Paid · "$X · Due Jun18" (not due) · bare red "$X" (overdue —
+    // the MISSING "Due" qualifier IS the signal; no "Past Due"/"Late" word). No invoice → nothing.
+    let bal = '';
+    if (inv) {
+      const t = invoiceTotals(inv);
+      if (t.refunded || t.status === 'Refunded') bal = `<span class="rtl-bal muted">Refunded</span>`;
+      else if (t.balance <= 0 && t.paid > 0) bal = `<span class="rtl-bal" style="color:var(--green)">Paid</span>`;
+      else if (parseISO(inv.dueDate) > TODAY) bal = `<span class="rtl-bal" style="color:var(--blue)">${money(t.balance)} <span class="rtl-due">· Due ${esc(fmtShortDate(inv.dueDate))}</span></span>`;
+      else bal = `<span class="rtl-bal" style="color:var(--red)">${money(t.balance)}</span>`;
+    }
+    // a customer who OWES but has no card on file → call-don't-charge (the one extra billing signal)
+    const noCard = cust && inv && cardFlag(cust) === 'none' && invoiceTotals(inv).balance > 0 ? flagEl('No Card', 'red', { alert: true }) : '';
+
+    return `<div class="rtl">
+      <div class="rtl-cells">${cellHtml}</div>
+      <div class="rtl-today ${markerCls}" style="left:${markerLeft}%"></div>
+      <div class="rtl-over">
+        <div class="rtl-l">
+          <span class="rtl-name">${esc(name)}</span>
+          <span class="rtl-sub">${cust ? refPill('customers', r.customerId, cust.name) : ''}<span class="rtl-start">${esc(fmtShortDate(r.startDate))}</span></span>
+        </div>
+        <div class="rtl-mid">${gate}${price ? `<span class="rate">${money(price.price)} · ${esc(price.rate)}</span>` : ''}</div>
+        <div class="rtl-r">
+          ${noCard}${bal}
+          <span class="rtl-when">${r.startTime ? `<span class="tm">${esc(r.startTime)}</span>` : ''}<span class="rtl-end${overdue ? ' over' : ''}">${overdue ? `${nOver}d over` : esc(fmtShortDate(r.endDate))}</span></span>
+        </div>
+      </div>
     </div>`;
-    return row1 + row2;
   },
 
   customers: (c) => {
@@ -1671,6 +1713,7 @@ function customRowHTML(card, rec, layout) {
 }
 /** Inner HTML for a list row — custom layout if the user set one, else the ROWS default. */
 function rowInnerHTML(card, rec) {
+  if (card === 'rentals') return ROWS.rentals(rec);   // the dispatcher timeline row always wins over custom layouts
   const layout = loadListLayout(card);
   return layout ? customRowHTML(card, rec, layout) : (ROWS[card] ? ROWS[card](rec) : genericRow(card, rec));
 }

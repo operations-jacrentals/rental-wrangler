@@ -1253,3 +1253,34 @@ body { font-variant-numeric: tabular-nums; }
 .inv-div { height: 1px; background: var(--line-soft); margin: 5px 0; }
 .inv-tot.big b { font-size: 14px; }
 .inv-tot.due b { color: var(--accent); }
+
+/* ── RENTALS DISPATCHER ROW (Jac 2026-06-12): the row IS a living day-timeline.
+   Elapsed-tint cells = the only background; a TODAY marker shows urgency; the R1
+   gate (with truck) centers; the derived Balance rides the right. ── */
+.row[data-card="rentals"] .row-content { padding: 0; height: 52px; }
+.rtl { position: relative; height: 52px; overflow: hidden; }
+.rtl-cells { position: absolute; inset: 0; display: flex; }
+.rtl-cells .day { flex: 1; border-right: 1px solid var(--line); }
+.rtl-cells .day:last-child { border-right: none; }
+.rtl-cells .day.past { background: var(--green-bg); }
+.rtl-today { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--accent); z-index: 1; pointer-events: none; }
+.rtl-today.pre { background: var(--blue); }
+.rtl-today.over { width: 3px; background: var(--red); box-shadow: 0 0 9px 1px rgba(255,66,66,.65); }
+/* overlay — clicks fall THROUGH to the row (opens the rental) except the re-enabled pills */
+.rtl-over { position: absolute; inset: 0; z-index: 2; display: flex; align-items: center; gap: 10px; padding: 0 13px; pointer-events: none; }
+.rtl-over .pill, .rtl-over .flag, .rtl-over [data-pill-card] { pointer-events: auto; }
+.rtl-l { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 1px; overflow: hidden; }
+.rtl-l .rtl-name { font-weight: 700; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rtl-l .rtl-sub { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.rtl-l .rtl-start { font-size: 10.5px; color: var(--txt-3); white-space: nowrap; }
+.rtl-mid { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 1px; }
+.rtl-mid .rate { font-size: 10px; font-weight: 700; font-style: italic; color: var(--txt-2); white-space: nowrap; }
+.rtl-r { flex: 1 1 0; min-width: 0; display: flex; align-items: center; justify-content: flex-end; gap: 9px; }
+.rtl-bal { font-style: italic; font-weight: 700; font-size: 12px; white-space: nowrap; }
+.rtl-bal.muted { color: var(--txt-3); font-style: normal; font-weight: 600; }
+.rtl-bal .rtl-due { font-weight: 600; font-size: 11px; }
+.rtl-when { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.15; }
+.rtl-when .tm { color: var(--txt-2); font-size: 10px; font-weight: 600; }
+.rtl-when .rtl-end { font-size: 11.5px; font-weight: 700; }
+.rtl-when .rtl-end.over { color: var(--red); }
+.rtl-set { font-size: 11px; color: var(--txt-3); font-style: italic; }
