@@ -1951,8 +1951,13 @@ function latestInspForUnit(unitId) {
 /* worst open bottleneck across a WO (GZ-14 severity: Needed → ? → ETA → local) */
 const WO_SEV = { 'Part Needed': 0, 'Part Needed?': 1, 'Part Ordered': 2, 'Part is Local': 3, 'No Part Needed': 4 };
 function woBottleneck(w) {
-  const open = (w.lineItems || []).filter((l) => l.phase !== 'Complete').map((l) => ({ ph: l.phase, eta: l.eta }));
-  if (w.phase !== 'Complete') open.push({ ph: w.phase, eta: w.eta });
+  if (w.phase === 'Complete') return { label: 'Complete', color: 'green' };
+  const lines = w.lineItems || [];
+  const open = lines.filter((l) => l.phase !== 'Complete').map((l) => ({ ph: l.phase, eta: l.eta }));
+  // no lines yet → the WO shows its own header phase; with lines, the bottleneck is
+  // the worst OPEN line, and "Ready to complete" once every line is done (the WO
+  // stays open until the blue Complete WO button — never auto-completes).
+  if (!lines.length) { const s = getStatus('woPhase', w.phase); return { label: s.label, color: s.color === 'red' ? 'red' : s.color === 'green' ? 'green' : 'yellow' }; }
   if (!open.length) return { label: 'Ready to complete', color: 'green' };
   open.sort((a, b) => ((WO_SEV[a.ph] ?? 9) - (WO_SEV[b.ph] ?? 9)) || String(a.eta || '~').localeCompare(String(b.eta || '~')));
   const t = open[0];
@@ -6489,14 +6494,15 @@ function setWoPhase(woId, val) {
 function setWoLinePhase(woId, idx, val) {
   const w = IDX.wo.get(woId); if (!w || !w.lineItems || !w.lineItems[idx]) return;
   w.lineItems[idx].phase = val;
+  // Line statuses drive the WO's displayed bottleneck, but they NEVER complete the
+  // WO — only the blue "Complete WO" button does (Jac 2026-06-13). When every line
+  // is done, woBottleneck shows "Ready to complete" and the WO stays open until the
+  // button is clicked; no auto-complete, no cascade here.
   const open = w.lineItems.filter((li) => li.phase !== 'Complete');
-  const newPhase = open.length ? open[open.length - 1].phase : 'Complete';
-  let note = '';
-  if (newPhase === 'Complete' && w.phase !== 'Complete') note = woCompleteCascade(w);
-  w.phase = newPhase;
+  if (w.phase !== 'Complete' && open.length) w.phase = open[open.length - 1].phase;
   reindex('workOrders', w);
   logAction(w, `${w.lineItems[idx].part} → ${getStatus('woPhase', val).label}`);
-  toast(`Line → ${getStatus('woPhase', val).label}${note}`);
+  toast(`Line → ${getStatus('woPhase', val).label}`);
   reanchorRender();
 }
 function openWoPhaseDropdown(woId, anchorEl, lineIdx) {
@@ -7218,7 +7224,7 @@ function exposeTestApi() {
       unitStatus, rentalUnitStatuses, unitsUniform, rentalStatusDisplay, rentalMirrorStatus, rentalDisplayStatus,
       allUnitsTerminal, unitTerminal, unitVoided, rentalLineItems, transportLineItems, syncRentalPrimary,
       addUnitToRental, removeUnitFromRental, removeUnitInvoiceLine, unitLinePaid, invoiceTotals, allocLines,
-      rentalAllocated, unitRentalPrice, rentalDisplayName };
+      rentalAllocated, unitRentalPrice, rentalDisplayName, setWoLinePhase, setWoPhase, woBottleneck };
   } catch (e) { /* no window (non-browser) */ }
 }
 

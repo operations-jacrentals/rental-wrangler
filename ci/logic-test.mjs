@@ -96,6 +96,18 @@ try {
     ok(T.unitEntry(rmu, 'U007').unitId === 'U007' && T.unitEntry(rmu, 'NOPE') === null, 'unitEntry finds the entry / null when absent');
     ok(T.isPrimaryUnit(rmu, T.unitEntry(rmu, 'U007')) === true && T.isPrimaryUnit(rmu, T.unitEntry(rmu, 'U023')) === false, 'isPrimaryUnit by unitId');
 
+    // 11) completing a WO's LINES never completes the WO — only the blue button does
+    const wo = T.IDX.wo.get('WO0002');
+    if (wo && (wo.lineItems || []).length) {
+      const sp = wo.phase, sl = wo.lineItems.map((l) => l.phase);
+      wo.lineItems.forEach((l, i) => T.setWoLinePhase(wo.woId, i, 'Complete'));
+      ok(wo.phase !== 'Complete', 'all lines Complete does NOT complete the WO');
+      ok(T.woBottleneck(wo).label === 'Ready to complete', 'WO reads "Ready to complete" when all lines done');
+      T.setWoPhase(wo.woId, 'Complete');
+      ok(wo.phase === 'Complete', 'the blue Complete-WO button completes it');
+      wo.phase = sp; wo.lineItems.forEach((l, i) => { l.phase = sl[i]; });
+    } else ok(false, 'WO0002 fixture missing');
+
     return out;
   });
 
