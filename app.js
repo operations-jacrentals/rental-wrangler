@@ -4841,7 +4841,7 @@ const DROP_MATRIX = {
 function initDrag() {
   dragLayer = el('div');
   dragLayer.id = 'drag-layer';
-  dragArc = el('div', 'cancel-arc', '<span class="ca-label">Cancel</span>');
+  dragArc = el('div', 'cancel-arc', '<div class="ca-inner"><svg class="ca-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h9a6 6 0 1 1 0 12H7"/><path d="M8 5 4 9l4 4"/></svg><span class="ca-label">Cancel</span></div>');
   dragLayer.appendChild(dragArc);
   document.body.appendChild(dragLayer);
   document.addEventListener('pointerdown', dragDown);
@@ -4976,7 +4976,12 @@ function updateHot(under) {
   if (DRAG.hot && DRAG.hot !== hot) DRAG.hot.classList.remove('drop-hot');
   if (hot && DRAG.hot !== hot) hot.classList.add('drop-hot');
   DRAG.hot = hot;
-  dragArc.classList.toggle('hot', !!(t && t.cancel));
+  const arcHot = !!(t && t.cancel);
+  if (arcHot !== dragArc.classList.contains('hot')) {        // only on the transition — no per-frame text churn in the rAF loop
+    dragArc.classList.toggle('hot', arcHot);
+    const lbl = dragArc.querySelector('.ca-label');
+    if (lbl) lbl.textContent = arcHot ? 'Release to cancel' : 'Cancel';   // tell the operator exactly what releasing does
+  }
 }
 /** Stamp .drop-ok on every valid visible target. Re-run by render() after ANY
  *  mid-drag rebuild (lists are windowed ≤60 rows, so this stays in budget). */
@@ -5039,6 +5044,7 @@ function endDrag({ keepSwap, rerender } = {}) {
   try { dragLayer.releasePointerCapture(DRAG.payload.pointerId); } catch (err) {}
   if (DRAG.ghost) DRAG.ghost.remove();
   dragArc.classList.remove('show', 'hot');
+  const arcLbl = dragArc.querySelector('.ca-label'); if (arcLbl) arcLbl.textContent = 'Cancel';   // reset copy so the next drag opens idle, not "Release to cancel"
   document.querySelectorAll('.drop-ok, .drop-hot').forEach((n) => n.classList.remove('drop-ok', 'drop-hot'));
   document.body.classList.remove('dragging');
   delete document.body.dataset.drag;
@@ -7317,13 +7323,22 @@ async function flushSave() {
 }
 function renderLogin(msg) {
   $('#app').innerHTML = `<div class="login-screen"><form class="login-box" id="login-form">
-    <img class="login-logo" src="assets/jac-rentals-logo.jpg" alt="Jac Rentals" />
-    <div class="login-title">Rental Wrangler</div>
-    <div class="login-sub">Sign in to continue.</div>
-    <input id="login-name" class="login-input" placeholder="Your name" autocomplete="name" value="${esc(currentUser)}" />
-    <input id="login-pw" type="password" class="login-input" placeholder="Team password" autocomplete="current-password" />
-    <button type="submit" class="login-btn" data-r="R17" id="login-go">Sign in</button>
-    <div class="login-err" id="login-err">${msg ? esc(msg) : ''}</div>
+    <span class="rivet tl"></span><span class="rivet tr"></span><span class="rivet bl"></span><span class="rivet br"></span>
+    <div class="login-plate">
+      <img class="login-logo" src="assets/jac-rentals-logo.jpg" alt="Jac Rentals" />
+      <div class="login-title">Rental Wrangler</div>
+      <div class="login-sub">JacRentals · Sulphur, LA</div>
+      <div class="login-field">
+        <label class="login-lbl" for="login-name">Operator</label>
+        <input id="login-name" class="login-input" placeholder="Your name" autocomplete="name" value="${esc(currentUser)}" />
+      </div>
+      <div class="login-field">
+        <label class="login-lbl" for="login-pw">Team password</label>
+        <input id="login-pw" type="password" class="login-input" placeholder="••••••••" autocomplete="current-password" />
+      </div>
+      <button type="submit" class="login-btn" data-r="R17" id="login-go">Clock In</button>
+      <div class="login-err" id="login-err">${msg ? esc(msg) : ''}</div>
+    </div>
   </form></div>`;
   document.getElementById('login-form').addEventListener('submit', (e) => { e.preventDefault(); attemptLogin(); });
   document.getElementById(currentUser ? 'login-pw' : 'login-name').focus();

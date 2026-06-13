@@ -964,17 +964,61 @@ select.nc-in { cursor: pointer; }
 .tooltip.show { opacity: 1; }
 
 /* §16 — sign-in screen (shared-password gate for the Sheets backend) */
-.login-screen { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
-.login-box { display: flex; flex-direction: column; align-items: center; gap: 11px; width: 320px; padding: 34px 30px; background: var(--panel); border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow), 0 0 60px -20px var(--accent-line); }
-.login-logo { width: 76px; height: 76px; border-radius: 17px; object-fit: cover; }
-.login-title { font-size: 21px; font-weight: 800; letter-spacing: .2px; }
-.login-sub { font-size: 13px; color: var(--txt-3); margin-bottom: 6px; text-align: center; }
-.login-input { width: 100%; height: 42px; padding: 0 13px; border-radius: 11px; background: var(--panel-2); border: 1px solid var(--line); color: var(--txt); font-size: 14px; transition: border-color .12s, box-shadow .12s; }
-.login-input:focus { outline: none; border-color: var(--accent-line); box-shadow: 0 0 0 3px var(--accent-soft); }
-.login-btn { width: 100%; height: 42px; border-radius: 11px; background: var(--blue); color: #fff; font-weight: 700; font-size: 14px; cursor: pointer; border: none; transition: filter .12s; }
-.login-btn:hover { filter: brightness(1.07); }
-.login-btn:disabled { opacity: .65; cursor: default; }
-.login-err { font-size: 12px; font-weight: 600; color: var(--red); text-align: center; }
+/* ── LOGIN — "the yard data-plate" (frontend-design pass, Jac 2026-06-13) ──────
+   Sign-in framed as clocking into the yard: a rugged equipment ID plate with a
+   hi-vis HAZARD-STRIPE header (the signature), stamped condensed labels, corner
+   rivets, and a safety-orange ignition button. Built FROM the brand (orange is
+   already the system accent — earned), deliberately none of the AI-default looks. */
+.login-screen {
+  min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px;
+  background:
+    radial-gradient(130% 90% at 50% -15%, rgba(255, 122, 26, .10), transparent 55%),
+    repeating-linear-gradient(135deg, rgba(255, 255, 255, .012) 0 2px, transparent 2px 10px),
+    #0c0e11;
+}
+.login-box {
+  position: relative; width: 344px; padding: 0 0 26px; overflow: hidden;
+  display: flex; flex-direction: column; align-items: center;
+  background: linear-gradient(180deg, #1b2129, #13171d);
+  border: 1px solid #2a313b; border-radius: 16px;
+  box-shadow: 0 34px 90px -34px #000, inset 0 1px 0 rgba(255, 255, 255, .05);
+}
+.login-box::before {   /* the SIGNATURE — hi-vis caution band */
+  content: ''; height: 10px; width: 100%;
+  background: repeating-linear-gradient(135deg, var(--yellow, #f5c542) 0 13px, #14181d 13px 26px);
+  border-bottom: 1px solid #000;
+}
+.login-box .rivet { position: absolute; width: 6px; height: 6px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #434c58, #0f1318); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .55); }
+.login-box .rivet.tl { top: 20px; left: 14px; } .login-box .rivet.tr { top: 20px; right: 14px; }
+.login-box .rivet.bl { bottom: 13px; left: 14px; } .login-box .rivet.br { bottom: 13px; right: 14px; }
+.login-plate { display: flex; flex-direction: column; align-items: center; width: 100%; padding: 24px 30px 0; }
+.login-logo { width: 62px; height: 62px; border-radius: 14px; object-fit: cover; box-shadow: 0 5px 16px -5px #000, 0 0 0 1px rgba(255, 255, 255, .06); }
+.login-title { font-family: 'Saira Condensed', system-ui, sans-serif; font-weight: 800; font-size: 31px;
+  letter-spacing: 1.4px; text-transform: uppercase; color: #eef2f6; line-height: 1; margin-top: 13px; }
+.login-sub { font-family: 'Saira Condensed', system-ui, sans-serif; font-size: 11px; font-weight: 600;
+  letter-spacing: 2px; text-transform: uppercase; white-space: nowrap; color: var(--txt-3, #8b94a3); margin: 5px 0 20px; }
+.login-field { width: 100%; }
+.login-lbl { display: block; font-family: 'Saira Condensed', system-ui, sans-serif; font-size: 10.5px; font-weight: 600;
+  letter-spacing: 1.8px; text-transform: uppercase; color: var(--txt-3, #8b94a3); margin: 0 0 5px 2px; }
+.login-input { width: 100%; height: 44px; padding: 0 13px; border-radius: 9px;
+  background: #0e1217; border: 1px solid #2a313b; color: var(--txt, #e8edf2); font-size: 14px;
+  transition: border-color .12s, box-shadow .12s; margin-bottom: 13px; }
+.login-input::placeholder { color: #5a6573; }
+.login-input:focus { outline: none; border-color: var(--accent, #ff7a1a); box-shadow: 0 0 0 3px rgba(255, 122, 26, .17); }
+.login-btn {   /* the ignition — hi-vis orange, dark ink */
+  width: 100%; height: 47px; border-radius: 9px; border: none; cursor: pointer; margin-top: 5px;
+  background: linear-gradient(180deg, #ff9038, var(--accent, #ff7a1a)); color: #1a1205;
+  font-family: 'Saira Condensed', system-ui, sans-serif; font-weight: 800; font-size: 16px; letter-spacing: 2.2px; text-transform: uppercase;
+  box-shadow: 0 7px 20px -7px rgba(255, 122, 26, .65), inset 0 1px 0 rgba(255, 255, 255, .35);
+  transition: filter .12s, transform .04s; }
+.login-btn:hover { filter: brightness(1.06); } .login-btn:active { transform: translateY(1px); }
+.login-btn:disabled { opacity: .6; cursor: default; }
+.login-err { font-size: 12px; font-weight: 600; color: var(--red, #ff4242); text-align: center; margin-top: 11px; min-height: 14px; }
+@media (prefers-reduced-motion: no-preference) {
+  .login-box { animation: plateIn .5s cubic-bezier(.2, .7, .2, 1) both; }
+  @keyframes plateIn { from { opacity: 0; transform: translateY(11px) scale(.985); } to { opacity: 1; transform: none; } }
+}
 
 /* §7.1 — R5 ADD affordance: dashed "+Thing" (no word "Add", no space after +) */
 .add-field { color: var(--txt-2); font-weight: 700; border: 1px dashed var(--line); border-radius: 11px; padding: 0 12px; height: 30px; display: inline-flex; align-items: center; background: transparent; font-family: inherit; font-size: 13px; cursor: pointer; }
@@ -1333,13 +1377,25 @@ body { font-variant-numeric: tabular-nums; }
 .drag-ghost { position: fixed; left: 0; top: 0; z-index: 9500; display: flex; align-items: center; gap: 7px; max-width: 240px; padding: 7px 12px; border-radius: 999px; background: var(--panel); border: 1px solid var(--accent); box-shadow: 0 0 0 2px var(--accent-line), 0 14px 34px -10px rgba(0,0,0,.65); color: var(--accent); font-size: 12.5px; font-weight: 700; pointer-events: none; will-change: transform; }
 .drag-ghost svg { width: 14px; height: 14px; flex: 0 0 auto; }
 .drag-ghost .dg-t { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-/* THE CANCEL ARC — dark half-ellipse rising from the bottom, above the toolbar;
-   apex height = --arc-apex (≈20% of the middle card, measured per drag). */
-.cancel-arc { position: fixed; left: -20vw; bottom: 48px; width: 140vw; height: var(--arc-apex); border-radius: 100% 100% 0 0; background: rgba(8, 9, 12, .94); border-top: 1px solid var(--accent-line); display: flex; align-items: flex-start; justify-content: center; padding-top: calc(var(--arc-apex) * .25); transform: translateY(150%); transition: transform .22s ease, background .12s ease; }
+/* THE CANCEL ARC — "the abort bay" (frontend-design pass, Jac 2026-06-13).
+   A heavy steel half-ellipse rising from the bottom: drop the dragged chip in
+   here to ABORT the link. Idle = steel bay with a caution HAZARD-STRIPE lip (the
+   same signature as the login data-plate, so the two reads as one yard system);
+   HOT (chip over it, release = cancel) snaps to a red DANGER state with red
+   chevrons + an armed inset glow. apex height = --arc-apex (≈20% of middle card). */
+.cancel-arc { position: fixed; left: -20vw; bottom: 48px; width: 140vw; height: var(--arc-apex); border-radius: 100% 100% 0 0; overflow: hidden; background: linear-gradient(180deg, #1b2129, #0c0e11 72%); display: flex; align-items: flex-start; justify-content: center; padding-top: calc(var(--arc-apex) * .22); transform: translateY(150%); transition: transform .22s cubic-bezier(.2, .7, .2, 1); box-shadow: 0 -22px 52px -28px #000; }
+.cancel-arc::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 8px; background: repeating-linear-gradient(135deg, var(--yellow, #f5c542) 0 13px, #14181d 13px 26px); }
 .cancel-arc.show { transform: translateY(0); }
-.cancel-arc.hot { background: rgba(46, 10, 10, .96); border-top-color: var(--red); }
-.cancel-arc .ca-label { font-size: 16px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase; color: #fff; opacity: .92; }
-.cancel-arc.hot .ca-label { color: var(--red); }
+.cancel-arc.hot { background: linear-gradient(180deg, #2c0f0f, #150707 72%); box-shadow: 0 -22px 52px -28px #000, inset 0 13px 46px -18px rgba(255, 66, 66, .55); }
+.cancel-arc.hot::before { background: repeating-linear-gradient(135deg, var(--red, #ff4242) 0 13px, #1a0808 13px 26px); }
+.cancel-arc .ca-inner { display: flex; align-items: center; gap: 9px; color: #e7ebf0; transition: color .12s ease; }
+.cancel-arc.hot .ca-inner { color: #ff6b6b; }
+.cancel-arc .ca-ico { width: 20px; height: 20px; flex: 0 0 auto; }
+.cancel-arc .ca-label { font-family: 'Saira Condensed', system-ui, sans-serif; font-size: 17px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; }
+@media (prefers-reduced-motion: no-preference) {
+  .cancel-arc.hot .ca-inner { animation: arcArm .9s ease-in-out infinite; }
+  @keyframes arcArm { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.06); } }
+}
 /* drop targeting — the pick-target neon language (R0/R19 palette); the rest dims */
 body.dragging { cursor: grabbing; user-select: none; -webkit-user-select: none; }
 body.dragging .card .row { opacity: .42; }
