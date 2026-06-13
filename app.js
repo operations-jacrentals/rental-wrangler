@@ -1180,6 +1180,22 @@ function addBtn(label, { js, data, link, line, anchor, h, icon } = {}) {
   const rule = blue ? 'R5b' : 'R5c';
   return `<button class="${cls}" data-r="${rule}"${dataAttrs(data)}${h ? ` style="height:${h}px"` : ''}>${icon || ''}+${esc(label.replace(/^\+?\s*(Add\s+)?/i, ''))}</button>`;
 }
+/* Rulebook ORPHANS (Jac 2026-06-13): live-DOM elements the lint flags — a control
+   class with NO data-r, i.e. no rule yet. Live (not source) because rule attrs are
+   interpolated, so a static scan can't tell ruled from un-ruled. De-duped by label;
+   excludes the rulebook overlay itself. Lists what's in the CURRENT view. */
+function unruledElements() {
+  const sel = '.pill:not([data-r]), .add-field:not([data-r]), .flag:not([data-r]), .linkname:not([data-r]), .inv-line-link:not([data-r]), .req:not([data-r]), .file-drop:not([data-r]), .datefield:not([data-r]), .seg:not([data-r])';
+  const seen = new Set(), out = [];
+  Array.from(document.querySelectorAll(sel)).forEach((e) => {
+    if (e.closest('.overlay')) return;
+    const cls = String(e.className || '').split(' ')[0] || e.tagName.toLowerCase();
+    let txt = (e.textContent || '').trim().replace(/\s+/g, ' '); txt = txt.length > 36 ? txt.slice(0, 36) + '…' : (txt || '·');
+    const key = cls + '|' + txt; if (seen.has(key)) return; seen.add(key);
+    out.push({ cls, txt });
+  });
+  return out;
+}
 /** R6: required-until-entered — white bg + dark ink, stays loud until satisfied. */
 function reqBtn(label, { js, data, icon } = {}) {
   return `<button class="req${js ? ' ' + js : ''}" data-r="R6"${dataAttrs(data)}>${icon || ''}${esc(label)}</button>`;
@@ -3745,12 +3761,23 @@ function renderOverlay() {
         <div class="rb-info"><b>${esc(RULE_META[r][0])}</b> · <code>${esc(RULE_META[r][1])}</code><div class="muted" style="font-size:11px">${esc(RULE_META[r][2])}</div>${idxHtml}</div>
       </div>`;
     }).join('');
+    // ORPHANS at the bottom — lint-flagged controls with no rule yet, to home or rule (Jac)
+    const orphans = unruledElements();
+    const orphanRows = orphans.length
+      ? orphans.map((o) => `<div class="rb-idx-row"><span class="rb-idx-loc">.${esc(o.cls)}</span><span>${esc(o.txt)}</span></div>`).join('')
+      : `<div class="rb-idx-row muted">None in this view — nothing lint-flagged here. 🎉</div>`;
+    const orphanBlock = `
+      <div class="rb-row rb-orphans" style="grid-template-columns:1fr">
+        <div class="rb-info"><b>⚠ Un-ruled elements</b> <span class="muted">— lint-flagged controls with no rule yet · current view (navigate to surface more)</span>
+        <details class="rb-idx"${orphans.length ? ' open' : ''}><summary>${orphans.length} element${orphans.length === 1 ? '' : 's'}</summary>${orphanRows}</details></div>
+      </div>`;
     const pop = el('div', 'popup'); pop.style.width = '620px';
     pop.innerHTML = `
       <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${I.doc}</span><h3>The R-Rulebook — SPEC v7</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
       <div class="popup-body" style="max-height:70vh;overflow-y:auto">
         <p class="muted" style="font-size:12px;margin-bottom:10px">Every example below is rendered by the REAL builder function — this reference can't drift from the app. Debug by rule: <b>“the X on the customer card violates R5.”</b> Use the 🔍 Inspector (bottom bar) to hover any element and copy its reference.</p>
         ${rows}
+        ${orphanBlock}
       </div>`;
     overlay.appendChild(pop);
   } else if (o.kind === 'partform') {
