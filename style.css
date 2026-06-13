@@ -470,6 +470,12 @@ input { font-family: inherit; }
 .dropdown-menu .dd-item.on { color: var(--accent); }
 .dropdown-menu .dd-item .tick { margin-left: auto; opacity: 0; }
 .dropdown-menu .dd-item.on .tick { opacity: 1; }
+/* §5.5 Views menu: section headers + a per-view delete ✕ */
+.dropdown-menu .dd-sec { font-size: 9.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .5px; color: var(--txt-3); padding: 8px 10px 3px; }
+.dropdown-menu .dd-item.js-applyview.on .tick { margin-left: 0; }
+.dropdown-menu .dd-item .x { margin-left: auto; opacity: .45; font-size: 12px; padding: 0 2px; }
+.dropdown-menu .dd-item .x:hover { opacity: 1; color: var(--red); }
+.sortbtn.viewing { color: var(--accent); border-color: var(--accent-line); }
 
 /* ── Shop card (merged Work Orders + Service Orders + Inspections) ───────── */
 .shopbar { display: flex; align-items: center; gap: 6px; padding: 6px 10px 4px; flex-wrap: wrap; }

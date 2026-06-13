@@ -3140,6 +3140,7 @@ function listView(cardDef, session) {
   // sort/search bar
   const sf = SORT_FIELDS[card];
   const curField = sf.find((f) => f.field === cs.sort.field) || sf[0];
+  const av = activeView(card, cs);   // §5.5 the View button shows the active view's name, else the sort field
   const bar = el('div', 'listbar');
   const cterms = cs.filterTerms || [];
   bar.innerHTML = `
@@ -3149,7 +3150,7 @@ function listView(cardDef, session) {
       <input class="mini-search" placeholder="${cterms.length ? 'Add filter — Enter to pin…' : `Search ${esc(cardDef.title.toLowerCase())}…`}" value="${esc(cs.search)}" data-card="${card}" />
     </div>
     <div class="sort">
-      <button class="sortbtn js-sortmenu" data-card="${card}">${esc(curField.label)} ${I.chev}</button>
+      <button class="sortbtn js-sortmenu${av ? ' viewing' : ''}" data-card="${card}" data-tip="Views &amp; sort">${esc(av ? av.name : curField.label)} ${I.chev}</button>
       <button class="dir js-sortdir" data-card="${card}"><span class="${cs.sort.dir === 'asc' ? 'on' : ''}">▲</span><span class="${cs.sort.dir === 'desc' ? 'on' : ''}">▼</span></button>
     </div>`;
   wrap.appendChild(bar);
@@ -4497,10 +4498,33 @@ function addInterestedCategory(custId, catId) {
   document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove());
   reanchorRender();
 }
-function openSortMenu(card, anchorEl) {
+/* §5.5 VIEWS (Jac 2026-06-13) — saved per-card searches in localStorage. A view
+   just drops its search into the card's search bar (visible + clearable like any
+   search), replacing bespoke filter "modes". The View menu = Add-view (when the
+   current search isn't already a view) + Views + Sort. */
+const VIEWS_LS = (card) => `jactec.views.${card}`;
+function loadViews(card) { try { return JSON.parse(localStorage.getItem(VIEWS_LS(card)) || '[]'); } catch (e) { return []; } }
+function saveViews(card, views) { try { localStorage.setItem(VIEWS_LS(card), JSON.stringify(views)); } catch (e) {} }
+const sameSearch = (a, b) => (a || '').trim().toLowerCase() === (b || '').trim().toLowerCase();
+function activeView(card, cs) { return loadViews(card).find((v) => sameSearch(v.search, cs.search)) || null; }
+function applyView(card, search) {
   const cs = activeSession().cards[card];
-  const html = SORT_FIELDS[card].map((f) =>
-    `<button class="dd-item js-sortfield ${f.field === cs.sort.field ? 'on' : ''}" data-card="${card}" data-field="${f.field}">${esc(f.label)}<span class="tick">✓</span></button>`).join('');
+  cs.search = search; cs.mode = 'list'; cs.recId = null; cs.listLimit = undefined;
+  render();
+}
+function openViewMenu(card, anchorEl) {
+  const cs = activeSession().cards[card];
+  const views = loadViews(card);
+  const cur = (cs.search || '').trim();
+  const onView = views.some((v) => sameSearch(v.search, cur));
+  let html = '';
+  if (cur && !onView) html += `<button class="dd-item js-addview" data-card="${card}">${I.plus} Add view “${esc(cur.length > 22 ? cur.slice(0, 22) + '…' : cur)}”</button>`;
+  if (views.length) {
+    html += `<div class="dd-sec">Views</div>`;
+    html += views.map((v) => `<button class="dd-item js-applyview${sameSearch(v.search, cur) ? ' on' : ''}" data-card="${card}" data-search="${esc(v.search)}">${esc(v.name)}<span class="tick">✓</span><span class="x js-delview" data-card="${card}" data-name="${esc(v.name)}" data-tip="Delete view">${I.x}</span></button>`).join('');
+  }
+  html += `<div class="dd-sec">Sort</div>`;
+  html += SORT_FIELDS[card].map((f) => `<button class="dd-item js-sortfield${f.field === cs.sort.field ? ' on' : ''}" data-card="${card}" data-field="${f.field}">${esc(f.label)}<span class="tick">✓</span></button>`).join('');
   openDropdown(anchorEl, html, { align: 'right' });
 }
 /** Clicked card → orange border (§0.1 visual feedback; not an anchor). */
@@ -5181,7 +5205,10 @@ function onClick(e) {
   if (closest('.js-open-winpicker')) { e.stopPropagation(); const rec = closest('.js-open-winpicker').dataset.rec; return state.winpicker?.rentalId === rec ? closeWinPicker() : openWinPicker(rec); }
 
   // sort menu + direction toggle
-  if (closest('.js-sortmenu')) { const b = closest('.js-sortmenu'); return openSortMenu(b.dataset.card, b); }
+  if (closest('.js-sortmenu')) { const b = closest('.js-sortmenu'); return openViewMenu(b.dataset.card, b); }
+  if (closest('.js-delview')) { e.stopPropagation(); const b = closest('.js-delview'); const card = b.dataset.card; saveViews(card, loadViews(card).filter((v) => v.name !== b.dataset.name)); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); const anchor = document.querySelector(`.js-sortmenu[data-card="${card}"]`); if (anchor) openViewMenu(card, anchor); else render(); return; }
+  if (closest('.js-applyview')) { const b = closest('.js-applyview'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return applyView(b.dataset.card, b.dataset.search); }
+  if (closest('.js-addview')) { const b = closest('.js-addview'); const card = b.dataset.card; const cs = activeSession().cards[card]; const cur = (cs.search || '').trim(); const name = (typeof prompt === 'function' ? prompt('Name this view:', cur) : cur); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); if (name && name.trim()) { const views = loadViews(card); if (!views.some((v) => v.name.toLowerCase() === name.trim().toLowerCase())) { views.push({ name: name.trim(), search: cur }); saveViews(card, views); } } render(); return; }
   if (closest('.js-sortfield')) { const b = closest('.js-sortfield'); const cs = activeSession().cards[b.dataset.card]; const f = SORT_FIELDS[b.dataset.card].find((x) => x.field === b.dataset.field); if (f) { cs.sort = { ...f }; saveSort(b.dataset.card, cs.sort); } document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); render(); return; }
   if (closest('.js-sortdir')) { const card = closest('.js-sortdir').dataset.card; const cs = activeSession().cards[card]; cs.sort.dir = cs.sort.dir === 'asc' ? 'desc' : 'asc'; saveSort(card, cs.sort); render(); return; }
 
