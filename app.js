@@ -561,6 +561,9 @@ function activeDraftWindow() {
   const win = (r) => (r && r.startDate && r.endDate) ? { start: r.startDate, end: r.endDate, time: r.startTime, selfId: r.rentalId } : null;
   // live while the window is being PICKED (Categories/Units update before "Done")
   if (state.winpicker) { const w = win(IDX.rental.get(state.winpicker.rentalId)); if (w) return w; }
+  // persists after the picker closes via the "available" search; a manually-typed
+  // "available" with no picked window defaults to "available now" (today → tomorrow)
+  if (availSearchActive()) return state.availWin || { start: TODAY_ISO, end: addDays(TODAY_ISO, 1), time: '', selfId: null };
   return null;
 }
 /** True when, under the active window, this row's record is unavailable (red tint). */
@@ -734,6 +737,7 @@ const state = {
   overlay: null,       // { kind, ... } for popups
   focusedCard: null,   // clicked card → orange border (§0.1 visual feedback, no anchor)
   winpicker: null,     // { rentalId, monthISO, anchor } — the rental-window range picker
+  availWin: null,      // §10 persistent window scope for the "available" search (set by the picker; outlives it)
   filterTerms: [],            // §5.4 — AND-narrowing filter terms (type + Enter)
   fleetFilter: null,          // { categoryId, status } — fleet-summary badge → units by status
   woPartForm: null,           // woId whose "+ Add Part/Labor" inline form is open
@@ -960,6 +964,33 @@ function blobMatches(blob, query, terms) {
   return (terms || []).every((ft) => (ft.neg ? !b.includes(ft.t) : b.includes(ft.t)));
 }
 function matchesSearch(blob) { return blobMatches(blob, state.query, state.filterTerms); }
+/* §10 — "available" / "unavailable" are LIVE search tokens: they filter Units +
+   Categories by the real availability lens for the in-scope window (availWin), not
+   by static blob text. So it's a valid search you can type anytime; the rental-
+   window picker just fills it in for you. The token is stripped from the text
+   query so the rest still matches normally, and it's a no-op on other cards. */
+const AVAIL_RE = /\b(?:un)?available\b/i;
+function availSearchActive() {
+  const s = activeSession();
+  return ['units', 'categories'].some((c) => s.cards[c] && AVAIL_RE.test(s.cards[c].search || ''))
+    || AVAIL_RE.test(state.query || '') || (state.filterTerms || []).some((t) => /^(?:un)?available$/.test(t.t));
+}
+function rowMatches(card, rec, query, terms) {
+  const ql = (query || '').toLowerCase();
+  const tl = (terms || []).map((t) => t.t);
+  const wantUnavail = /\bunavailable\b/.test(ql) || tl.includes('unavailable');
+  const wantAvail = !wantUnavail && (/\bavailable\b/.test(ql) || tl.includes('available'));
+  if ((wantAvail || wantUnavail) && availWin && (card === 'units' || card === 'categories')) {
+    const avail = card === 'units'
+      ? isUnitAvailableFor(rec, availWin.start, availWin.end, availWin.selfId)
+      : categoryAvailableCount(rec.categoryId, availWin.start, availWin.end, availWin.selfId) > 0;
+    if (wantAvail && !avail) return false;
+    if (wantUnavail && avail) return false;
+  }
+  const q2 = (query || '').replace(/\b(?:un)?available\b/gi, '').replace(/\s+/g, ' ').trim();
+  const terms2 = (terms || []).filter((t) => !/^(?:un)?available$/.test(t.t));
+  return blobMatches(IDX.search.get(card + ':' + idOf(card, rec)), q2, terms2);
+}
 
 /* ── filter-term builder, shared by global search and each card's list search.
    `scope` is 'global' or a card id; a term is { t, neg } where neg means "NOT". */
@@ -2860,7 +2891,7 @@ function historyFor(card, rec) {
 function listFor(card, session) {
   // search mode → filtered across all; anchored (cascade) → cascade subset; else → all
   if (state.searchMode) {
-    return collection(card).filter((rec) => matchesSearch(IDX.search.get(card + ':' + idOf(card, rec))));
+    return collection(card).filter((rec) => rowMatches(card, rec, state.query, state.filterTerms));
   }
   // §12.3 — a Category fleet-bar segment click filters the UNITS list to that category
   // + status, decoupled from anchoring so it lands you straight on the Units list view.
@@ -3126,7 +3157,7 @@ function listView(cardDef, session) {
 
   let rows = listFor(card, session);
   if (card === 'units') rows = unitsVisible(rows, cs);   // hide Sold/Inactive (or show only them via the sort) (#2)
-  if (cs.search.trim() || (cs.filterTerms || []).length) { rows = rows.filter((rec) => blobMatches(IDX.search.get(card + ':' + idOf(card, rec)), cs.search, cs.filterTerms)); }
+  if (cs.search.trim() || (cs.filterTerms || []).length) { rows = rows.filter((rec) => rowMatches(card, rec, cs.search, cs.filterTerms)); }
   rows = sortRows(card, rows, cs.sort);
   // §10 — while a rental window is in scope, order Units: available+Ready, available+Not
   // Ready, available+Failed, then anything unavailable. Categories: available first.
@@ -6457,6 +6488,24 @@ function winPickMonth(delta) {
   const d = parseISO(wp.monthISO); d.setMonth(d.getMonth() + delta);
   wp.monthISO = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`; render();
 }
+/* §10 entering a rental window pushes the "available" search onto the Units +
+   Categories cards (scoped per-card so the half-built rental stays put) and pins
+   the window, so the availability lens persists after the picker closes — until
+   the user clears the search. Manually typing "available" works too (Slice 1). */
+function enterAvailabilitySearch(r) {
+  if (!r || !r.startDate || !r.endDate) return;
+  state.availWin = { start: r.startDate, end: r.endDate, time: r.startTime, selfId: r.rentalId };
+  const s = activeSession();
+  ['units', 'categories'].forEach((card) => {
+    const cs = s.cards[card]; if (!cs) return;
+    cs.search = 'available'; cs.mode = 'list'; cs.recId = null; cs.listLimit = undefined;
+  });
+}
+function exitAvailabilitySearch() {
+  state.availWin = null;
+  const s = activeSession();
+  ['units', 'categories'].forEach((card) => { const cs = s.cards[card]; if (cs && /^available$/i.test((cs.search || '').trim())) cs.search = ''; });
+}
 function winPickDay(iso) {
   const wp = state.winpicker; if (!wp) return;
   const r = IDX.rental.get(wp.rentalId); if (!r) return;
@@ -6468,11 +6517,12 @@ function winPickDay(iso) {
     else { r.startDate = iso; r.endDate = a; }
     wp.anchor = null;
     if (r.startDate && r.endDate && r.status === 'Quote') r.status = 'Reserved';
+    enterAvailabilitySearch(r);                          // §10 push the "available" search onto Units + Categories
   }
   reanchorRender();
 }
 function setWinTime(hhmm) { const wp = state.winpicker; if (!wp) return; const r = IDX.rental.get(wp.rentalId); if (!r) return; r.startTime = to12(hhmm); reanchorRender(); }
-function winPickClear() { const wp = state.winpicker; if (!wp) return; const r = IDX.rental.get(wp.rentalId); if (r) { r.startDate = ''; r.endDate = ''; wp.anchor = null; } reanchorRender(); }
+function winPickClear() { const wp = state.winpicker; if (!wp) return; const r = IDX.rental.get(wp.rentalId); if (r) { r.startDate = ''; r.endDate = ''; wp.anchor = null; } exitAvailabilitySearch(); reanchorRender(); }
 function winPickToday() { const wp = state.winpicker; if (!wp) return; wp.monthISO = firstOfMonthISO(TODAY_ISO); const r = IDX.rental.get(wp.rentalId); if (r) { r.startDate = TODAY_ISO; r.endDate = ''; wp.anchor = TODAY_ISO; } reanchorRender(); }
 
 /* ── R22 DATE PICKER — single date/datetime, reuses the .wp-* calendar styling.
