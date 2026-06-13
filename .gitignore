@@ -3,8 +3,10 @@
 Thumbs.db
 *.log
 
-# Local tooling (not part of the app)
-.claude/
+# Local tooling (not part of the app) — but COMMIT shared skills so they travel + work
+# in Claude Code web sessions (local settings like settings.local.json stay ignored).
+.claude/*
+!.claude/skills/
 
 # Internal handoff: the spec + RAW customer/parts/work-order CSVs — NOT for the
 # public site (the served app uses the curated demo data in data.js instead).
