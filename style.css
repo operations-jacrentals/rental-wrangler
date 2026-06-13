@@ -653,6 +653,9 @@ input { font-family: inherit; }
 .winpicker .wp-day { height: 30px; border: none; background: transparent; color: var(--txt); font: inherit; font-size: 12px; border-radius: 7px; cursor: pointer; }
 .winpicker .wp-day:hover { background: var(--bg-2); }
 .winpicker .wp-day.empty { visibility: hidden; cursor: default; }
+.winpicker .wp-day.wp-blocked { color: var(--txt-3); opacity: .4; text-decoration: line-through; cursor: not-allowed; }
+.winpicker .wp-day.wp-blocked:hover { background: transparent; }
+.winpicker .wp-blocknote { font-size: 10.5px; color: var(--txt-3); text-align: center; margin: 6px 2px 0; }
 .winpicker .wp-day.today { box-shadow: inset 0 0 0 1px var(--accent-line); }
 .winpicker .wp-day.in-range { background: var(--accent-soft); border-radius: 0; }
 .winpicker .wp-day.range-start { background: var(--accent); color: #fff; border-radius: 7px 0 0 7px; }

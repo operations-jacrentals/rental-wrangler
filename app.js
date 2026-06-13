@@ -6509,6 +6509,10 @@ function exitAvailabilitySearch() {
 function winPickDay(iso) {
   const wp = state.winpicker; if (!wp) return;
   const r = IDX.rental.get(wp.rentalId); if (!r) return;
+  const subject = winPickSubject();
+  if (dayBlocked(subject, iso, r.rentalId)) {            // §10 can't pick a day the anchored unit/category can't honor
+    toast(`That day is unavailable for the selected ${subject.kind}.`); return;
+  }
   if (!wp.anchor || (r.startDate && r.endDate)) {        // begin a fresh range
     wp.anchor = iso; r.startDate = iso; r.endDate = '';
   } else {                                               // close the range
@@ -6555,6 +6559,21 @@ function datePickerInline() {
     <div class="wp-foot"><button class="pill ghost js-dp-clear" data-r="R18">Clear</button><button class="pill ghost js-dp-today" data-r="R18">Today</button><button class="pill c-commit js-dp-done" data-r="R17">Done</button></div>
   </div>`;
 }
+/* §10 while the picker is open, an anchored Unit / Category (clicked into Standard
+   view on a side card) becomes the "subject" — the calendar blocks out the days
+   that subject is unavailable, so you can't pick a window it can't honor. */
+function winPickSubject() {
+  const s = activeSession(); if (!s || !s.cards) return null;
+  const u = s.cards.units; if (u && u.mode === 'standard' && u.recId) return { kind: 'unit', id: u.recId };
+  const c = s.cards.categories; if (c && c.mode === 'standard' && c.recId) return { kind: 'category', id: c.recId };
+  return null;
+}
+function dayBlocked(subject, iso, selfId) {
+  if (!subject) return false;
+  const nxt = addDays(iso, 1);
+  if (subject.kind === 'unit') { const u = IDX.unit.get(subject.id); return u ? !isUnitAvailableFor(u, iso, nxt, selfId) : false; }
+  return categoryAvailableCount(subject.id, iso, nxt, selfId) === 0;
+}
 /** Render the inline calendar popup for the rental whose picker is open. */
 function winPickerEl(r) {
   const wp = state.winpicker;
@@ -6564,24 +6583,28 @@ function winPickerEl(r) {
   const s = r.startDate, e = r.endDate, a = wp.anchor;
   const lo = s && e ? (s < e ? s : e) : (s || a);
   const hi = s && e ? (s < e ? e : s) : null;
+  const subject = winPickSubject();
   let cells = '';
   for (let i = 0; i < startDow; i++) cells += `<button class="wp-day empty" tabindex="-1"></button>`;
   for (let day = 1; day <= daysIn; day++) {
     const iso = isoOf(new Date(y, m, day));
-    let cls = 'wp-day js-wp-day';
+    const blocked = dayBlocked(subject, iso, r.rentalId);
+    let cls = 'wp-day js-wp-day' + (blocked ? ' wp-blocked' : '');
     if (iso === lo) cls += ' range-start';
     if (hi && iso === hi) cls += ' range-end';
     if (hi && iso > lo && iso < hi) cls += ' in-range';
     if (a && iso === a && !hi) cls += ' range-start range-end';
     if (iso === TODAY_ISO) cls += ' today';
-    cells += `<button class="${cls}" data-iso="${iso}">${day}</button>`;
+    cells += `<button class="${cls}" data-iso="${iso}"${blocked ? ' aria-disabled="true"' : ''}>${day}</button>`;
   }
+  const subjName = subject && (subject.kind === 'unit' ? IDX.unit.get(subject.id)?.name : IDX.category.get(subject.id)?.name);
   const dows = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((d) => `<span class="wp-dow">${d}</span>`).join('');
   return `<div class="winpicker">
     <div class="wp-time"><label>Pickup time</label><input type="time" class="js-wp-time" value="${esc(to24(r.startTime) || '09:00')}"></div>
     <div class="wp-head"><span class="wp-month">${MONTH_NAMES[m]} ${y}</span>
       <span class="wp-nav"><button class="js-wp-prev" data-tip="Previous month">‹</button><button class="js-wp-next" data-tip="Next month">›</button></span></div>
     <div class="wp-grid">${dows}${cells}</div>
+    ${subjName ? `<div class="wp-blocknote">Greyed days are unavailable for <b>${esc(subjName)}</b></div>` : ''}
     <div class="wp-foot"><button class="pill ghost js-wp-clear" data-r="R18">Clear</button><button class="pill ghost js-wp-today" data-r="R18">Today</button><button class="pill c-commit js-wp-done" data-r="R17">Done</button></div>
   </div>`;
 }
