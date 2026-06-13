@@ -1231,7 +1231,7 @@ function unruledElements() {
 /** R22: the deliberate close/remove ✕ — a red circle, white ✕. `hover:true` reveals
  *  it only on the container's hover (tabs/rows); otherwise always on. Reusable. */
 function closeX(js, { data, hover } = {}) {
-  return `<button class="close-x${hover ? ' hoveronly' : ''}${js ? ' ' + js : ''}" data-r="R22"${dataAttrs(data)} data-tip="Close">${I.x}</button>`;
+  return `<button class="close-x${hover ? ' hoveronly' : ''}${js ? ' ' + js : ''}" data-r="R24"${dataAttrs(data)} data-tip="Close">${I.x}</button>`;
 }
 /** R6: required-until-entered — white bg + dark ink, stays loud until satisfied. */
 function reqBtn(label, { js, data, icon } = {}) {
@@ -1387,8 +1387,8 @@ const RULE_META = {
   R17: ['Action pill', 'actionPill', 'commit = blue · money = green · danger = solid red; .locked = gated'],
   R18: ['Ghost', 'ghostPill', 'the ONE quiet action — Cancel / Close / Exit / Clear'],
   R21: ['File drop', 'fileDrop', 'the MASSIVE popup add-file zone — R5b blue dashed at full size'],
-  R22: ['Close ✕', 'closeX', 'red circle · white ✕ — the deliberate close/remove; hover-reveal variant on tabs'],
   R22: ['Date picker', 'dateField', 'the ONE app-styled calendar for a single date/time (NOT the rental-window timeline)'],
+  R24: ['Close ✕', 'closeX', 'red circle · white ✕ — the deliberate close/remove; hover-reveal variant on tabs'],
   R23: ['Tooltip', 'data-tip → the one styled tip', 'every hover hint goes through data-tip — a native title attribute is a violation'],
 };
 /* structural fallbacks so hovering containers also names their rule */
@@ -3806,7 +3806,8 @@ function renderOverlay() {
       R18: ghostPill('Cancel'),
       R4b: dPill('Overbooked', 'red', { icon: CARD_ICON.rentals, alert: true }),
       R9b: flagsStack([flagEl('No Card', 'red', { alert: true })]),
-      R22: closeX('', {}),
+      R22: dateField('exampleDate', ''),
+      R24: closeX('', {}),
     };
     const rows = Object.keys(RULE_META).map((r) => {
       // the distinct fields/elements that use this rule, app-wide (scanned from source
@@ -5140,12 +5141,12 @@ function onClick(e) {
   // keep the window open while the user works the side cards; close it only when
   // they click the Rentals card itself (and continue handling that click) or Done.
   if (state.winpicker && !closest('.winpicker') && !closest('.js-open-winpicker')) {
-    // §2 — click-away CLOSES the picker (discards a fragile rental's staged change;
-    // a normal rental's window already committed live). Jac 2026-06-13.
+    // §2 — ANY click outside the picker CLOSES it + re-renders (removes the float) +
+    // stops here. Must always render or the float lingers as a dead, frozen overlay
+    // (state closed, DOM open). Discards a fragile rental's staged change. Jac 2026-06-13.
     state.winpicker = null;
-    const onRentalCard = closest('.card') && closest('.card').dataset.card === 'rentals';
-    if (!onRentalCard) { render(); return; }   // off the rentals card → just close
-    // on the rentals card → fall through to also handle that click
+    render();
+    return;
   }
 
   // header / chrome

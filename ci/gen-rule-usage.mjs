@@ -3,6 +3,17 @@
 // what's on screen). `--check` compares instead of writing (CI guard vs drift). (Jac)
 import { readFile, writeFile } from 'fs/promises';
 const src = await readFile(new URL('../app.js', import.meta.url), 'utf8');
+// GUARD (SPEC v8 §9.4): no duplicate rule numbers in RULE_META — the R22 closeX/
+// dateField collision must never recur. Fails CI on any repeated key.
+{
+  const block = src.match(/const RULE_META\s*=\s*\{([\s\S]*?)\n\s*\};/);
+  if (block) {
+    const keys = [...block[1].matchAll(/^\s*(R\d+[a-z]*)\s*:/gm)].map((m) => m[1]);
+    const seen = new Set(), dupes = new Set();
+    for (const k of keys) { if (seen.has(k)) dupes.add(k); seen.add(k); }
+    if (dupes.size) { console.error('✗ DUPLICATE rule numbers in RULE_META: ' + [...dupes].join(', ')); process.exit(1); }
+  }
+}
 const usage = {};
 const add = (rule, label) => { if (!label || !label.trim()) return; (usage[rule] = usage[rule] || new Set()).add(label.trim()); };
 const clean = (s) => '+' + s.replace(/^\+?\s*(Add\s+)?/i, '');
@@ -14,7 +25,8 @@ for (const m of src.matchAll(/flagEl\(\s*'([^']+)'(?:\s*,\s*'[^']*'\s*,\s*\{([^}
 for (const m of src.matchAll(/dPill\(\s*'([^']+)'(?:\s*,\s*'[^']*'\s*,\s*\{([^}]*)\})?/g)) add(/\balert\b/.test(m[2] || '') ? 'R4b' : 'R4', m[1]);
 for (const m of src.matchAll(/actionPill\(\s*'[^']*'\s*,\s*'([^']+)'/g)) add('R17', m[1]);
 for (const m of src.matchAll(/ghostPill\(\s*'([^']+)'/g)) add('R18', m[1]);
-for (const m of src.matchAll(/closeX\(\s*'([^']*)'/g)) add('R22', m[1] || '✕ (example)');
+for (const m of src.matchAll(/closeX\(\s*'([^']*)'/g)) add('R24', m[1] || '✕ (example)');
+for (const m of src.matchAll(/dateField\(\s*'([^']*)'/g)) add('R22', m[1] || 'date');
 // status pills/gates: the "field" is the status SET they render
 for (const m of src.matchAll(/(?:statusPill|gatePill|gatePillRaw)\(\s*'([^']+)'/g)) add('R2', m[1] + ' (status set)');
 if (/fileDrop\(/.test(src)) add('R21', 'popup file-drop zones');
