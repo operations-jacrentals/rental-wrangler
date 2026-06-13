@@ -2216,7 +2216,7 @@ const DETAIL = {
     const paidForThis = inv ? rentalAllocated(inv, r.rentalId) : 0;
     const invPill = inv
       ? `<span class="pill ref link" data-r="R2" data-pill-card="invoices" data-pill-rec="${esc(inv.invoiceId)}">${CARD_ICON.invoices}${esc(invoiceShort(inv.invoiceId))}${paidForThis <= 0 ? `<span class="x" data-x="inv-remove" data-tip="unlink — allowed while $0 is assigned to this rental; afterwards refund first">✕</span>` : ''}</span>`
-      : (r.mock && cust && s && e ? addBtn('Invoice/+Transport', { link: true, js: 'js-create-invoice', h: 26, icon: CARD_ICON.invoices, data: { rec: r.rentalId } }) : badge('No invoice — link one to set transport'));
+      : (r.mock ? addBtn('Invoice/+Transport', { link: true, js: 'js-create-invoice', h: 26, icon: CARD_ICON.invoices, data: { rec: r.rentalId } }) : badge('No invoice — link one to set transport'));   // R5b blue always; createInvoiceForRental guides if a customer/window is missing
 
     const balColor = invT ? (invT.balance <= 0 && invT.paid > 0 ? 'green' : invT.status === 'Not Due' ? 'blue' : 'red') : null;
 
@@ -3156,6 +3156,14 @@ function listView(cardDef, session) {
       <button class="dir js-sortdir" data-card="${card}"><span class="${cs.sort.dir === 'asc' ? 'on' : ''}">▲</span><span class="${cs.sort.dir === 'desc' ? 'on' : ''}">▼</span></button>
     </div>`;
   wrap.appendChild(bar);
+  // §0.2 — Rentals always lead with a +New Rental row (no matter the search), which
+  // obsoletes the old toolbar Rental button (Jac 2026-06-13). New customers come from
+  // the empty-search "+New Customer", new invoices ride a rental — so no toolbar adds.
+  if (card === 'rentals') {
+    const nr = el('div', 'newrow'); nr.style.marginBottom = '8px';
+    nr.innerHTML = `<button class="bigbtn js-newitem" data-new="rental">${I.plus} New Rental</button>`;
+    wrap.appendChild(nr);
+  }
   // active Category fleet-bar filter → a removable chip so the list isn't mysteriously narrowed
   if (card === 'units' && state.fleetFilter) {
     const cat = IDX.category.get(state.fleetFilter.categoryId);
@@ -3571,9 +3579,6 @@ function bottomBarEl() {
   // RIGHT (after divider) = icon-only utilities. The +New collapse button is dropped (Jac).
   bar.innerHTML = `
     <button class="iconbtn js-dashboard">${I.grid} Dashboard</button>
-    <button class="iconbtn js-newitem" data-new="rental">${CARD_ICON.rentals}Rental</button>
-    <button class="iconbtn js-newitem" data-new="customer">${CARD_ICON.customers}Customer</button>
-    <button class="iconbtn js-newitem" data-new="invoice">${CARD_ICON.invoices}Invoice</button>
     <button class="iconbtn js-newitem" data-new="receipt">${CARD_ICON.expenses}Receipt</button>
     <span class="bb-sep"></span>
     <button class="iconbtn js-theme" data-tip="${state.theme === 'dark' ? 'Light' : 'Dark'} mode">${state.theme === 'dark' ? I.sun : I.moon}</button>

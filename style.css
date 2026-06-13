@@ -263,10 +263,12 @@ input { font-family: inherit; }
 .coltab.alert:not(.on) .ct-ico { color: var(--red); }
 .coltab.alert .ct-n { color: var(--txt); background: transparent; }
 /* prominent orange action button — mirrors the Select-rental-window button */
+/* R5b at CTA size: empty-search "+New X" + the persistent +New Rental row wear the
+   same BLUE create/link language as every other +Thing add (Jac 2026-06-13). */
 .bigbtn { display: flex; align-items: center; justify-content: center; gap: 7px; width: 100%; padding: 13px 16px;
-  border-radius: 12px; background: var(--accent-soft); border: 1px solid var(--accent-line); color: var(--accent);
+  border-radius: 12px; background: var(--blue-bg); border: 1px dashed var(--blue); color: var(--blue);
   font-weight: 700; font-size: 14px; transition: background .12s, color .12s; }
-.bigbtn:hover { background: var(--accent); color: #fff; }
+.bigbtn:hover { background: var(--blue); color: #fff; }
 .bigbtn svg { width: 16px; height: 16px; }
 .empty-new { display: flex; flex-direction: column; gap: 12px; padding: 18px 6px; align-items: stretch; text-align: center; }
 /* (Wave 2) guide popup + blank-col CSS removed with pick mode */
@@ -944,8 +946,8 @@ select.nc-in { cursor: pointer; }
 .hidden { display: none !important; }
 .spacer { flex: 1; }
 .muted { color: var(--txt-3); }
-.toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); z-index: 80; background: var(--panel); border: 1px solid var(--accent-line); color: var(--txt); padding: 10px 16px; border-radius: 11px; box-shadow: var(--shadow); font-size: 13px; font-weight: 600; opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; }
-.toast.show { opacity: 1; transform: translateX(-50%) translateY(-4px); }
+.toast { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%) scale(.94); z-index: 80; background: var(--accent); border: 1px solid var(--accent); color: #1a1305; padding: 15px 24px; border-radius: 14px; box-shadow: 0 12px 44px rgba(0, 0, 0, .5); font-size: 15px; font-weight: 800; opacity: 0; pointer-events: none; transition: opacity .18s, transform .18s; text-align: center; max-width: 78vw; }
+.toast.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
 
 /* custom tooltip (app-styled, replaces the native browser title) */
 .tooltip { position: fixed; z-index: 90; max-width: 340px; padding: 6px 10px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 9px; box-shadow: var(--shadow); font-size: 12px; font-weight: 500; color: var(--txt); pointer-events: none; opacity: 0; transition: opacity .12s; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
