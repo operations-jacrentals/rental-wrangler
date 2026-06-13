@@ -1,11 +1,13 @@
 # JacTec / Rental Wrangler — SPEC v8
-**v8 — reconciled to code 2026-06-13 after the remote session · supersedes v7
-(frozen 2026-06-12 morning) · lives in `JacTec-handoff/` (gitignored — repo is public)**
+**v8 — reconciled to code 2026-06-13, updated through session-2 (pm) · supersedes v7
+(frozen 2026-06-12 morning) · lives in `JacTec-handoff/` — ✅ NOW COMMITTED, travels
+with the repo (the anti-drift fix is in place)**
 
-> ⚠ **Why v8 exists:** a remote session (phone/other desktop) shipped ~38 commits
-> WITHOUT this gitignored doc, so v7 went stale and started CONTRADICTING the code.
-> v8 is reconciled cell-by-cell against the live source. Where v7 and the code
-> disagreed, **the code won** and v8 now says what the code says.
+> ⚠ **Why v8 exists:** a remote session (phone/other desktop) shipped many commits
+> WITHOUT this doc, so v7 went stale and started CONTRADICTING the code. v8 is
+> reconciled cell-by-cell against the live source. Where v7 and the code disagreed,
+> **the code won** and v8 now says what the code says. **v8 is now committed** (it was
+> uploaded to the repo on 2026-06-13) so it can no longer go stale on one machine.
 
 ### How this stays true
 **The CODE is the source of truth. This document is its committed mirror.** Every
@@ -36,16 +38,15 @@ file in the SAME commit.
 
 ## 1 · THE RULEBOOK (R0–R24)
 
-This is the FULL current table, **exactly as `RULE_META` defines it** (app.js:1344),
-with the **R22 collision resolved**: R22 = Date picker (it shipped wired into
-`CLASS_RULE .datefield` + the lint selector), and **closeX is renumbered to R24**
-(a code fix to apply — patch returned separately). The collision is in TWO places,
-not one: (a) `RULE_META` literally double-defines the `R22:` key (app.js:1368-1369)
-so the closeX row is silently shadowed by dateField, AND (b) the **builders
-themselves both stamp `data-r="R22"`** — `closeX` at app.js:1214 and `dateField` at
-app.js:1245 — so the fix must retarget closeX's STAMP too, not just the metadata
-key. R19/R20 exist as builders/behaviors but were never in `RULE_META` and carry no
-`data-r` stamp; v8 documents them as real rules.
+This is the FULL current table, **exactly as `RULE_META` defines it**. The **R22
+collision is now RESOLVED in code** (2026-06-13, eaceeb5): `closeX` was renumbered to
+**R24** — its builder `data-r` stamp, the `RULE_META` key, the EX example, and the
+`rule-usage.js` generator were all retargeted — and **R22 belongs solely to the date
+picker** (`dateField`). A CI **duplicate-key guard** in `ci/gen-rule-usage.mjs` now
+fails the build on ANY repeated `RULE_META` number, so "two rules, one number" can
+never ship again. **R4b/R9b** (the FLASHING `.alert` variants of R4/R9) are now their
+own rules. R19/R20 exist as builders/behaviors but were never in `RULE_META` and carry
+no `data-r` stamp; v8 documents them as real rules.
 
 | R | Name | Builder (app.js §5) | What it is (one line, as in code) |
 |---|------|--------------------|-----------------------------------|
@@ -55,13 +56,15 @@ key. R19/R20 exist as builders/behaviors but were never in `RULE_META` and carry
 | **R3** | Status badge | `statusPill` | Informational STATUS: registry color, parent-card icon, hover underline — never an action. |
 | **R3b** | Data chip | `badge` | A plain FACT (480 HRS, No GPS): gray, no icon, no hover — independent of R3. |
 | **R4** | Derived pill | `dPill` | Rides another pill: no bg/border, ink+icon only — sits RIGHT of its parent (LEFT when the parent is right-aligned). |
+| **R4b** | Flashing pill | `dPill({alert})` | A derived pill that PULSES for attention — the `.pill.alert` flashing variant of R4. |
 | **R5** | _(retired → R5b)_ | `addBtn({link})` | **RETIRED (Jac 2026-06-13)** — record-linking adds now wear R5b. Tombstone row only; NOTHING stamps `data-r="R5"`. |
 | **R5b** | Blue add | `addBtn({link\|line\|anchor})` | BLUE dashed “+Thing” — links/creates a record (Customer/Invoice/Unit/WO/Card/Col) **OR** adds a line item (+Part/Task). One blue add language. |
 | **R5c** | Empty field | `addBtn()` / efld empty state | GRAY dashed “+Thing” — a normal empty field (+Serial, +Email, +PO). |
 | **R6** | Required | `reqBtn` / `.req` | White + dark ink until entered/captured — stays loud. |
 | **R7** | Hyperlink | `linkName` / `.inv-line-link` | Blue · italic · NOT bold · permanent underline. |
 | **R8** | Derived value | `kv({derived})` / `.derived` | Italic = the app computed it; you don’t type it. (No builder fn — `.derived` CLASS_RULE fallback.) |
-| **R9** | Title flags | `flagEl` / `flagsStack` | ≤2 stacked 14px mini-flags beside a title — no backgrounds. `alert` pulses; `sect` scrolls to a section. |
+| **R9** | Title flags | `flagEl` / `flagsStack` | ≤2 stacked 14px mini-flags beside a title — no backgrounds. `sect` scrolls to a section. |
+| **R9b** | Flashing flag | `flagEl({alert})` | A title flag that PULSES (`.flag.alert`) for attention: No Card, Overbooked, active-rental, bad pay status. |
 | **R10** | S1 title chip | `.c-titlecard` (`cardEl`) | Dark chip · white bold label · plain orange icon · permanent orange border. |
 | **R11** | Section | `.section` + `sec-green/yellow/red` | Centered header; header+border follow the LIVE status. |
 | **R12** | Notes line | `notesSection` (app.js:1976) | Boxless, label-less; filled→top of the card, empty→bottom above history. |
@@ -76,7 +79,7 @@ key. R19/R20 exist as builders/behaviors but were never in `RULE_META` and carry
 | **R21** | File drop | `fileDrop` (app.js:1235) | The MASSIVE popup add-file zone — R5b blue dashed at full size. |
 | **R22** | Date picker | `dateField` (app.js:1242) | The ONE app-styled calendar for a single date/time (NOT the rental-window timeline). Class `.datefield`; toggles `datePickerInline()`. |
 | **R23** | Tooltip | `data-tip` → the one styled tip | Every hover hint goes through `data-tip` — a native `title` attribute is a violation (caught by `body.rw-lint [title]` at style.css:996). |
-| **R24** | Close ✕ | `closeX` (app.js:1213) | Red circle · white ✕ — the deliberate close/remove; hover-reveal variant on tabs. **Renumbered from R22** (collision fix — patch separate). |
+| **R24** | Close ✕ | `closeX` | Red circle · white ✕ — the deliberate close/remove; hover-reveal variant on tabs. **Renumbered from R22 (collision RESOLVED, eaceeb5).** |
 
 **Placement laws:** derived pills sit right of their parent (R4, left when the
 parent is right-aligned) · left side of a section = actions, right side = derived ·
@@ -330,16 +333,29 @@ GAMIFICATION 3561; Dispatch Time Grid 3673) · §12 Overlays & boards (3737) ·
 - ✅ **#20 Multi-unit rentals** — DONE end-to-end (Phases 1-3, 4a, slices 1-5) +
   9-bug audit + lid fix + helper consolidation + demo R-MU. (Was the drag&drop
   prereq — now unblocked, and drag IS shipped.)
+- ✅ **R22→R24 collision fix + CI dupe-guard** (eaceeb5) — the doc's #1 carry-forward.
+- ✅ **Session-2 UI batch (2026-06-13 pm):** rental-window picker now stages+Save for
+  FRAGILE rentals (billed / On Rent / End Rent / Off Rent / Returned) and commits-live /
+  no-Save / click-away-closes for the rest; `available` re-pinned as a real Entry chip
+  (#2). Quick Add = compact name+phone customer create (#3). R4b/R9b flashing rules (#4).
+  Link flash 3×→2× (#5). Team KPI = one-ring-per-role + Sulphur Team (#6). +X equal width
+  per section (#7). +Invoice opens on the Invoice card + empty mock drafts self-delete on
+  click-away (#8). PAY bottom-right (#11). History logs the gaps — Clear Unit, draft dates
+  (#1). **Bugfixes:** window-picker click-away no longer freezes the app (always
+  re-renders); dragging a unit onto a buildable rental no longer empties the units list
+  (wave2 now keeps candidates full past the first unit).
 
 **Carry forward (real remaining work):**
-1. **APPLY the R22→R24 collision fix** — `closeX` must get its own number (patch
-   returned separately). The only known live bug. It has TWO sites: the duplicate
-   `R22:` key in `RULE_META` (app.js:1368-1369) AND the `data-r="R22"` stamp inside
-   the `closeX` builder itself (app.js:1214). The patch retargets both to R24 and
-   adds the R24 row to `RULE_META`; `dateField` (app.js:1245) keeps R22.
+1. **Drag bugs #9/#10** (awaiting Jac's repro): (#9) dragging customers/rentals
+   "resetting" the source card — likely the deliberate customer↔invoice column swap;
+   (#10) linking by dropping on a Standard View's empty space. Code paths exist + look
+   correct by analysis (DROP_MATRIX symmetric; `dropTargetAt` handles standard cards) —
+   need the exact failing case before touching the engine.
 2. **Backend `getViews`/`setViews`** Apps Script handlers — Views are per-device
-   until these land (true cross-device sync pending).
-3. **Real Google Maps embed** in the site popup (placeholder grid now).
+   until these land (true cross-device sync pending). (Client + paste-in Code.gs ready.)
+3. **Claude-API proxy** — the "Ask Mr. Wrangler" AI surfaces need a backend endpoint to
+   the Claude API (key in Script Properties) + an `aiPending` queue. Saved for next.
+4. **Real Google Maps embed** in the site popup (placeholder grid now).
 4. **“Ask Mr. Wrangler” = Claude inside Rental Wrangler** — the context-menu entry
    + Part/Task AI-fill + photo review are its first surfaces; needs a backend
    endpoint to the Claude API (key in Script Properties), an `aiPending` queue, and
@@ -351,7 +367,17 @@ GAMIFICATION 3561; Dispatch Time Grid 3673) · §12 Overlays & boards (3737) ·
 
 ---
 
-## 8 · Changelog v7 → v8 (38 commits, 575e237..HEAD, 2026-06-12→13)
+## 8 · Changelog v7 → v8 (2026-06-12→13)
+
+**Session 2 (2026-06-13 pm) — UI batch + fixes:** R22→R24 collision resolved + CI
+dupe-guard (eaceeb5); R4b/R9b flashing rules; rental-window staging+Save for fragile
+rentals, click-away closes, `available` re-pinned as an Entry chip; Quick-Add
+name+phone; +Invoice opens on the Invoice card + empty-draft self-delete; +X equal
+widths; PAY bottom-right; history logs Clear-Unit + draft dates; flash 3×→2×; Team KPI
+per-role rings + Sulphur Team. **Two bugfixes:** window-picker click-away froze the app
+(now always re-renders); dragging a unit emptied the units list (wave2 keeps candidates
+full for buildable rentals). Anchored-card nav: clearable cascade chip + Item-Tab reset;
+admin gate; gamification score pops; global Views; availability tool.
 
 **Rules:** R5 RETIRED → one blue add (R5b) for BOTH record-links and line-items
 (f73e12d); orange survives ONLY as “Select rental window” = a required gate
@@ -403,9 +429,7 @@ gitignored (f3215a9).
 3. **`ci/logic-test.mjs`** (22 `ok()` checks via the `#local`-only `window.__rw` seam) is
    the executable spec for the money + multi-unit invariants (#13-#15 above).
    Treat those assertions as canonical behavior.
-4. **NEW recommended guard — DUPLICATE rule-number check.** The current CI does NOT
-   catch the R22 double-key (it only checks usage-catalog drift, not metadata
-   uniqueness), which is exactly why the collision passed CI silently. Add a tiny
-   check that parses `RULE_META`'s keys from app.js source and fails on ANY repeat
-   (see the patch payload for the exact guard). This makes “two rules, one number”
-   impossible to ship again.
+4. **DUPLICATE rule-number guard — ✅ DONE (eaceeb5).** `ci/gen-rule-usage.mjs` now
+   parses `RULE_META`'s keys from app.js source and `process.exit(1)`s on ANY repeated
+   number (runs in both write + `--check` modes). “Two rules, one number” can no longer
+   ship — it would have caught the R22 collision the moment it landed.
