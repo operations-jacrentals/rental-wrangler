@@ -1170,11 +1170,12 @@ function dPill(label, color, { card, recId, icon, title } = {}) {
  *  space after +). `link:true` = orange ink (creates/links a record);
  *  `anchor:true` = the neon-blue +Part/Task variant. */
 function addBtn(label, { js, data, link, line, anchor, h, icon } = {}) {
-  // R5 = ORANGE (links/creates a MAIN record) · R5b = BLUE (creates a LINE ITEM
-  // within a section) · R5c = GRAY (a normal empty field)
-  const blue = line || anchor;
-  const cls = `add-field${link ? ' link-ink' : ''}${blue ? ' anchor' : ''}${js ? ' ' + js : ''}`;
-  const rule = link ? 'R5' : blue ? 'R5b' : 'R5c';
+  // R5 RETIRED (Jac 2026-06-13): record-linking adds now wear R5b's BLUE anchor too.
+  // R5b = BLUE dashed “+Thing” (links/creates a record OR adds a line item) ·
+  // R5c = GRAY dashed “+Thing” (a normal empty field).
+  const blue = link || line || anchor;
+  const cls = `add-field${blue ? ' anchor' : ''}${js ? ' ' + js : ''}`;
+  const rule = blue ? 'R5b' : 'R5c';
   return `<button class="${cls}" data-r="${rule}"${dataAttrs(data)}${h ? ` style="height:${h}px"` : ''}>${icon || ''}+${esc(label.replace(/^\+?\s*(Add\s+)?/i, ''))}</button>`;
 }
 /** R6: required-until-entered — white bg + dark ink, stays loud until satisfied. */
@@ -1312,8 +1313,8 @@ const RULE_META = {
   R3:  ['Status badge', 'statusPill', 'informational STATUS: registry color, parent-card icon, hover underline — never an action'],
   R3b: ['Data chip', 'badge', 'a plain FACT (480 HRS, No GPS): gray, no icon, no hover — independent of R3'],
   R4:  ['Derived pill', 'dPill', 'rides another pill: no bg/border, ink+icon only — sits RIGHT of its parent (LEFT when the parent is right-aligned)'],
-  R5:  ['Main-item add', 'addBtn({link})', 'ORANGE dashed “+Thing” — links/creates a MAIN record (Customer, Invoice, Unit…)'],
-  R5b: ['Line-item add', 'addBtn({line})', 'BLUE dashed “+Thing” — creates a LINE ITEM within a section (+Part/Task, invoice lines)'],
+  R5:  ['(retired → R5b)', 'addBtn({link})', 'RETIRED (Jac 2026-06-13) — record-linking adds now use R5b too'],
+  R5b: ['Blue add', 'addBtn({link|line})', 'BLUE dashed “+Thing” — links/creates a record (Customer, Invoice, Unit, Work Order…) OR adds a line item (+Part/Task)'],
   R5c: ['Empty field', 'addBtn() / efld empty state', 'GRAY dashed “+Thing” — a normal empty field (+Serial, +Email, +PO)'],
   R6:  ['Required', 'reqBtn / .req', 'white + dark ink until entered/captured — stays loud'],
   R7:  ['Hyperlink', 'linkName / .inv-line-link', 'blue · italic · NOT bold · permanent underline'],
@@ -4136,7 +4137,7 @@ function renderOverlay() {
                ${t.paid > 0 && !refunded ? `<button class="pill c-danger js-refund-invoice" data-r="R17" data-rec="${inv.invoiceId}" ${o.busy ? 'disabled' : ''}>Refund</button>` : ''}
                ${t.balance > 0 ? (card
                  ? `<button class="pill c-money js-charge-invoice" data-rec="${inv.invoiceId}" ${o.busy ? 'disabled' : ''}>${o.busy ? 'Charging…' : 'Charge'}</button>`
-                 : `<button class="add-field link-ink js-pay-addcard" data-r="R5" data-rec="${inv.customerId || ''}" data-inv="${inv.invoiceId}" ${inv.customerId ? '' : 'disabled style="opacity:.45;cursor:default"'}>+Card</button>`) : ''}`}
+                 : `<button class="add-field anchor js-pay-addcard" data-r="R5b" data-rec="${inv.customerId || ''}" data-inv="${inv.invoiceId}" ${inv.customerId ? '' : 'disabled style="opacity:.45;cursor:default"'}>+Card</button>`) : ''}`}
         </div>
       </div>`;
     overlay.appendChild(pop);
@@ -4333,7 +4334,7 @@ function boardViewTable(o, session) {
     if (co.kind === 'data') { const c = byKey[co.key]; if (!c) return ''; return `<th class="js-bv-sort${isNum(c) ? ' num' : ''}" data-col="${c.key}">${esc(c.label)}<span class="bv-arrow">${arrow(c.key)}</span>${insBtn(ci)}</th>`; }
     return `<th class="bv-xcol"><input class="bv-colname" data-col="${co.id}" value="${esc(co.label || '')}" placeholder="=price*2 or note" /><button class="bv-xrm js-bv-rmcol" data-col="${co.id}" data-tip="Remove column">×</button>${insBtn(ci)}</th>`;
   }).join('');
-  const head = `<tr><th class="bv-gutter"></th>${headCells}<th class="bv-addcol"><button class="bv-mini js-bv-addcol" data-r="R5" data-tip="Add a column">+Col</button></th></tr>`;
+  const head = `<tr><th class="bv-gutter"></th>${headCells}<th class="bv-addcol"><button class="bv-mini js-bv-addcol" data-r="R5b" data-tip="Add a column">+Col</button></th></tr>`;
   // body cells
   const dataCell = (co, rec, recId) => {
     if (co.kind === 'data') { const c = byKey[co.key]; return `<td${isNum(c) ? ' class="num"' : ''}>${c.cell(rec)}</td>`; }
@@ -6161,7 +6162,7 @@ function allocSectionHtml(lines, o) {
       <span class="alloc-dollar">$<input class="alloc-in" data-key="${esc(L.key)}" data-taxable="${L.taxable ? '1' : '0'}" data-max="${L.remaining}" type="number" min="0" max="${L.remaining}" step="0.01" value="${(Number(o.alloc[L.key]) || 0).toFixed(2)}" ${o.busy ? 'disabled' : ''}></span>
     </div>`).join('');
   return `<div class="alloc-sec">
-    <div class="alloc-head"><span>Apply to line items</span>${lines.length > 1 ? `<button class="add-field js-alloc-auto" data-r="R5" type="button" ${o.busy ? 'disabled' : ''}>Pay in full</button>` : ''}</div>
+    <div class="alloc-head"><span>Apply to line items</span>${lines.length > 1 ? `<button class="add-field anchor js-alloc-auto" data-r="R5b" type="button" ${o.busy ? 'disabled' : ''}>Pay in full</button>` : ''}</div>
     ${rows}
     <div class="alloc-foot"><span class="js-alloc-counter"></span><span class="alloc-charge js-alloc-charge"></span></div>
   </div>`;
