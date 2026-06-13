@@ -13,6 +13,7 @@ for (const m of src.matchAll(/linkName\(\s*'([^']+)'/g)) add('R7', m[1]);
 for (const m of src.matchAll(/flagEl\(\s*'([^']+)'/g)) add('R9', m[1]);
 for (const m of src.matchAll(/actionPill\(\s*'[^']*'\s*,\s*'([^']+)'/g)) add('R17', m[1]);
 for (const m of src.matchAll(/ghostPill\(\s*'([^']+)'/g)) add('R18', m[1]);
+for (const m of src.matchAll(/closeX\(\s*'([^']*)'/g)) add('R22', m[1] || '✕ (example)');
 // status pills/gates: the "field" is the status SET they render
 for (const m of src.matchAll(/(?:statusPill|gatePill|gatePillRaw)\(\s*'([^']+)'/g)) add('R2', m[1] + ' (status set)');
 if (/fileDrop\(/.test(src)) add('R21', 'popup file-drop zones');

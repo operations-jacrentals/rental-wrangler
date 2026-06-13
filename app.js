@@ -764,10 +764,13 @@ function setAnchor(session, card, recId, recType) {
   session.cascade = state.cascade.cascadeAll(type, rec);
   // anchored card → standard; others → list (cascade)
   for (const c of GRID_CARDS) {
-    session.cards[c.id].backStack = [];
-    session.cards[c.id].mode = c.id === card ? 'standard' : 'list';
-    session.cards[c.id].recId = c.id === card ? recId : null;
-    session.cards[c.id].recType = c.id === card ? recType : null;
+    const ccs = session.cards[c.id];
+    ccs.backStack = [];
+    ccs.mode = c.id === card ? 'standard' : 'list';
+    ccs.recId = c.id === card ? recId : null;
+    ccs.recType = c.id === card ? recType : null;
+    ccs.released = false;                                       // re-cascade clears any per-card "browse all" release
+    if (c.id !== card) { ccs.search = ''; ccs.filterTerms = []; }   // cascaded cards reset to the clean anchored view
   }
   // 3-column display: make the anchored card the visible member of its column
   // (shop anchors map to their recType member). Pure display; cascade is unchanged.
@@ -808,8 +811,14 @@ function tabMeta(card, recId, rec, recType) {
   return { card, recId, recType, label: meta.title, sub: meta.sub, color: meta.color };
 }
 function switchTab(id) {
-  if (state.activeTabId === id) { closeTab(id); return; }     // clicking active (orange) tab closes it
+  if (state.activeTabId === id) { resetToAnchor(id); return; }   // active tab = RESET to the anchored view (Jac), not close
   state.activeTabId = id; state.searchMode = false; state.query = ''; render();
+}
+// Item Tab as a reset: re-cascade every card + reopen the anchored item's detail.
+function resetToAnchor(id) {
+  const tab = state.tabs.find((t) => t.id === id);
+  if (tab && tab.session.anchor) { const a = tab.session.anchor; setAnchor(tab.session, a.card, a.recId, a.recType); }   // clears releases/searches too
+  state.searchMode = false; state.query = ''; render();
 }
 function closeTab(id) {
   const i = state.tabs.findIndex((t) => t.id === id);
@@ -1196,6 +1205,11 @@ function unruledElements() {
   });
   return out;
 }
+/** R22: the deliberate close/remove ✕ — a red circle, white ✕. `hover:true` reveals
+ *  it only on the container's hover (tabs/rows); otherwise always on. Reusable. */
+function closeX(js, { data, hover } = {}) {
+  return `<button class="close-x${hover ? ' hoveronly' : ''}${js ? ' ' + js : ''}" data-r="R22"${dataAttrs(data)} data-tip="Close">${I.x}</button>`;
+}
 /** R6: required-until-entered — white bg + dark ink, stays loud until satisfied. */
 function reqBtn(label, { js, data, icon } = {}) {
   return `<button class="req${js ? ' ' + js : ''}" data-r="R6"${dataAttrs(data)}>${icon || ''}${esc(label)}</button>`;
@@ -1348,6 +1362,7 @@ const RULE_META = {
   R17: ['Action pill', 'actionPill', 'commit = blue · money = green · danger = solid red; .locked = gated'],
   R18: ['Ghost', 'ghostPill', 'the ONE quiet action — Cancel / Close / Exit / Clear'],
   R21: ['File drop', 'fileDrop', 'the MASSIVE popup add-file zone — R5b blue dashed at full size'],
+  R22: ['Close ✕', 'closeX', 'red circle · white ✕ — the deliberate close/remove; hover-reveal variant on tabs'],
   R22: ['Date picker', 'dateField', 'the ONE app-styled calendar for a single date/time (NOT the rental-window timeline)'],
   R23: ['Tooltip', 'data-tip → the one styled tip', 'every hover hint goes through data-tip — a native title attribute is a violation'],
 };
@@ -2932,7 +2947,7 @@ function listFor(card, session) {
   if (w2) return w2;
   // anchored card in list mode (js-tolist "browse") → show every item so a different one can be anchored
   if (session.anchor?.card === card && session.cards[card].mode === 'list') return collection(card);
-  if (session.anchor && session.cascade) return session.cascade[card] || [];
+  if (session.anchor && session.cascade) return session.cards[card].released ? collection(card) : (session.cascade[card] || []);
   return collection(card);
 }
 function collection(card) {
@@ -3161,10 +3176,15 @@ function listView(cardDef, session) {
   const av = activeView(card, cs);   // §5.5 the View button shows the active view's name, else the sort field
   const bar = el('div', 'listbar');
   const cterms = cs.filterTerms || [];
+  // §0.1 — a cascaded card shows the cascade as a clearable chip at the front of its
+  // search bar; the ✕ "releases" it to its full list so a new item can be added (Jac).
+  const cascaded = session.anchor && card !== session.anchor.card && session.cascade && !cs.released;
+  const anchorName = cascaded ? (state.tabs.find((t) => t.session === session)?.label || 'anchor') : '';
+  const cascChip = cascaded ? `<span class="casc-chip" data-tip="Cascaded from ${esc(anchorName)} — clear to browse all & add">🔗<span class="cc-name">${esc(anchorName)}</span>${closeX('js-uncascade', { data: { card } })}</span>` : '';
   bar.innerHTML = `
     <button class="bv-btn js-boardview" data-card="${card}" data-tip="Open Board View (spreadsheet)">${I.table}</button>
-    <div class="mini-searchwrap${cterms.length ? ' has-terms' : ''}">
-      ${cterms.map((ft, i) => filterTermPill(ft, i, card)).join('')}
+    <div class="mini-searchwrap${cterms.length || cascChip ? ' has-terms' : ''}">
+      ${cascChip}${cterms.map((ft, i) => filterTermPill(ft, i, card)).join('')}
       <input class="mini-search" placeholder="${cterms.length ? 'Add filter — Enter to pin…' : `Search ${esc(cardDef.title.toLowerCase())}…`}" value="${esc(cs.search)}" data-card="${card}" />
     </div>
     <div class="sort">
@@ -3615,8 +3635,9 @@ function tabStrip(tabs) {
     const ec = entityCardOf(t.card, t.recType);
     const rec = recOf(ec, t.recId);
     const b = rec ? tabBadge(ec, rec) : '';
-    return `<div class="tab ${t.id === state.activeTabId ? 'active' : ''} js-tab" data-tab="${t.id}">
-      <span class="tab-ico">${CARD_ICON[ec] || ''}</span><span class="tab-name">${esc(t.label)}</span>${b}</div>`;
+    const active = t.id === state.activeTabId;
+    return `<div class="tab ${active ? 'active' : ''} js-tab has-closex" data-tab="${t.id}" data-tip="${active ? 'Reset every card to this item' : 'Switch to this item'}">
+      <span class="tab-ico">${CARD_ICON[ec] || ''}</span><span class="tab-name">${esc(t.label)}</span>${b}${closeX('js-closetab', { data: { tab: t.id }, hover: true })}</div>`;
   }).join('');
 }
 // Inner markup for a Mouse-shortcuts gesture demo (mock cards/rows + cursor/mouse + rings).
@@ -3744,6 +3765,7 @@ function renderOverlay() {
       R16: '<span style="display:inline-flex;height:22px;width:120px;border:1px solid var(--line);border-radius:7px;overflow:hidden"><span style="flex:1;background:var(--green-bg);border-right:1px dashed var(--line-soft)"></span><span style="flex:1;background:var(--green-bg);border-right:1px dashed var(--line-soft)"></span><span style="flex:1;border-right:1px dashed var(--line-soft)"></span><span style="flex:1"></span></span>',
       R17: actionPill('commit', 'Done') + actionPill('money', 'Pay $210') + actionPill('danger', 'Refund'),
       R18: ghostPill('Cancel'),
+      R22: closeX('', {}),
     };
     const rows = Object.keys(RULE_META).map((r) => {
       // the distinct fields/elements that use this rule, app-wide (scanned from source
@@ -5154,6 +5176,8 @@ function onClick(e) {
   if (closest('.js-ft-neg')) { const b = closest('.js-ft-neg'); e.stopPropagation(); return toggleFilterNeg(b.dataset.scope, Number(b.dataset.i)); }
   if (closest('.js-ft-x')) { const b = closest('.js-ft-x'); e.stopPropagation(); return removeFilterTerm(b.dataset.scope, Number(b.dataset.i)); }
   if (closest('.js-closeall')) return closeAll();
+  if (closest('.js-closetab')) { e.stopPropagation(); return closeTab(closest('.js-closetab').dataset.tab); }
+  if (closest('.js-uncascade')) { e.stopPropagation(); const cs = activeSession().cards[closest('.js-uncascade').dataset.card]; if (cs) cs.released = true; return render(); }
   if (closest('.js-tab')) return switchTab(closest('.js-tab').dataset.tab);
 
   // status dropdown set

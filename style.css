@@ -156,6 +156,16 @@ input { font-family: inherit; }
   cursor: pointer; transition: background .12s, border-color .12s;
 }
 .tab:hover { border-color: var(--accent-line); }
+/* R22: the deliberate close ✕ — red circle, white ✕. hover-reveal on its container. (Jac) */
+.close-x { display: inline-flex; align-items: center; justify-content: center; width: 17px; height: 17px; padding: 0; border: none; border-radius: 50%; background: var(--red); color: #fff; cursor: pointer; flex-shrink: 0; }
+.close-x svg { width: 10px; height: 10px; stroke-width: 3; }
+.close-x.hoveronly { opacity: 0; transition: opacity .12s; }
+.has-closex:hover .close-x.hoveronly, .close-x.hoveronly:hover { opacity: 1; }
+.tab.active .close-x { background: rgba(0,0,0,.28); }
+/* cascade chip — the anchor's cascade made visible + clearable at the front of a cascaded card's search bar */
+.casc-chip { display: inline-flex; align-items: center; gap: 5px; padding: 2px 4px 2px 8px; border-radius: 8px; background: var(--accent-soft); border: 1px solid var(--accent-line); color: var(--accent); font-size: 11.5px; font-weight: 700; white-space: nowrap; flex-shrink: 0; }
+.casc-chip .cc-name { max-width: 130px; overflow: hidden; text-overflow: ellipsis; }
+.casc-chip .close-x { width: 15px; height: 15px; }
 /* active item tab — solid orange + white, matching the .coltab.on card toggle */
 .tab.active { background: var(--accent); border-color: var(--accent); color: var(--on-orange); }   /* selected = solid orange + DARK ink (rule 2) */
 .tab.active .tab-name { color: var(--on-orange); }
