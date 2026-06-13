@@ -126,7 +126,15 @@ input { font-family: inherit; }
   display: flex; flex-direction: column; align-items: center; gap: 3px;
   padding: 4px 6px 0; border-radius: 11px; border: 1px solid transparent; min-width: 64px;
   transition: background .15s, border-color .15s; background: none; cursor: pointer;
+  position: relative;   /* §11 anchor for the floating +X score pop */
 }
+/* §11 GAMIFICATION — green ×3 ring flash + a video-game "+X" that floats up and fades */
+@keyframes ringScoreFlash { 0%, 100% { filter: none; } 50% { stroke: var(--green); filter: drop-shadow(0 0 5px var(--green)); } }
+.ring-fill.ring-score-flash { animation: ringScoreFlash .22s ease-in-out 3; }
+@keyframes scorePopFloat { 0% { transform: translate(-50%, 2px); opacity: 0; } 18% { opacity: 1; } 100% { transform: translate(-50%, -26px); opacity: 0; } }
+.score-pop { position: absolute; left: 50%; top: 2px; transform: translate(-50%, 2px); font-weight: 800; font-size: 13.5px;
+  color: var(--green); white-space: nowrap; pointer-events: none; z-index: 60; text-shadow: 0 1px 3px rgba(0, 0, 0, .5);
+  animation: scorePopFloat .72s ease-out forwards; }
 .kpi-ring:hover { background: var(--panel); border-color: var(--line); }
 .ring-wrap { position: relative; display: grid; place-items: center; }
 .ring-wrap svg, .big-ring svg { display: block; overflow: visible; flex: 0 0 auto; aspect-ratio: 1 / 1; shape-rendering: geometricPrecision; }   /* never stretch in a flex/grid parent; lock to a circle; glow still bleeds past the viewBox */

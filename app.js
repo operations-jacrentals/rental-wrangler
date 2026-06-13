@@ -3488,6 +3488,44 @@ function kpiTeam() {
   return [0, 1, 2].map((i) => { const vals = all.map((v) => v[i]).filter((x) => x != null); return vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null; });
 }
 
+/* §11 GAMIFICATION (Jac 2026-06-13) — when an action raises a ring's underlying
+   metric, pop the raw delta over that ring (natural unit: +$X on money rings, +N
+   on counts) and flash the ring green ×3, video-game style. Detected by diffing
+   the metrics each render, so it covers EVERY action — present and future —
+   without per-action hooks. kpiRaw mirrors kpiFor's numerators, higher = better. */
+function kpiRaw(roleId) {
+  const R = DATA.rentals, W = DATA.workOrders, N = DATA.inspections, INV = DATA.invoices, C = DATA.customers;
+  const f = fleetInsp();
+  const c = (v) => ({ v, unit: '' }), usd = (v) => ({ v, unit: '$' });
+  if (roleId === 'mechanic') return [c(f.Ready + f['Not Ready']), c(W.filter((w) => w.phase === 'Complete').length), c(W.filter((w) => (w.lineItems || []).some((li) => (li.cost || 0) > 0 || (li.hours || 0) > 0) && w.billCustomer === 'Yes').length)];
+  if (roleId === 'mtech') return [c(R.length - R.filter((r) => r.fieldCall).length), c(f.Ready), c(N.filter((n) => !n.woId).length)];
+  if (roleId === 'driver') return [c(R.filter((r) => ['On Rent', 'End Rent', 'Off Rent', 'Returned'].includes(r.status)).length), c(N.filter((n) => n.wash === 'Yes').length), c(0)];
+  if (roleId === 'office') return [usd(INV.reduce((a, i) => a + invoiceTotals(i).paid, 0)), c(R.filter((r) => ['On Rent', 'End Rent', 'Off Rent', 'Returned'].includes(r.status)).length), c(0)];
+  if (roleId === 'sales') {
+    const ym = TODAY_ISO.slice(0, 7);
+    const rev = R.reduce((a, r) => ((r.startDate || '').slice(0, 7) !== ym ? a : a + ((rentalPrice(r) || {}).price || 0)), 0);
+    return [usd(rev), c(C.filter((x) => (x._digest?.totalPaid || 0) > 1999 && (x._digest?.activePct || 0) > 0).length), c(C.filter((x) => /Member/.test(x.accountType || '') && x.accountType !== 'Member Incomplete').length + C.filter((x) => x.usedSalesStage && x.usedSalesStage !== 'Inbound Lead').length)];
+  }
+  return [c(0), c(0), c(0)];
+}
+function kpiSnapshot() { const out = []; ROLES.forEach((role) => kpiRaw(role.id).forEach((m, i) => out.push({ role: role.id, i, v: m.v, unit: m.unit }))); return out; }
+let _kpiSnap = null;
+function scoreTick() {
+  const snap = kpiSnapshot();
+  if (_kpiSnap && _kpiSnap.length === snap.length) {
+    snap.forEach((m, idx) => { const p = _kpiSnap[idx]; if (p && m.v > p.v + 1e-9) scorePop(m.role, m.i, m.v - p.v, m.unit); });
+  }
+  _kpiSnap = snap;
+}
+function scorePop(roleId, ringIdx, delta, unit) {
+  const btn = document.querySelector(`.kpi-ring[data-role="${roleId}"]`); if (!btn) return;
+  const fill = btn.querySelectorAll('.ring-fill')[ringIdx];
+  if (fill) fill.classList.add('ring-score-flash');               // green ×3 flash on the exact ring
+  const pop = el('div', 'score-pop');
+  pop.textContent = unit === '$' ? '+' + money(delta) : '+' + (Math.round(delta * 10) / 10);
+  btn.appendChild(pop);                                            // floats up + fades (CSS), then removed
+  setTimeout(() => pop.remove(), 760);
+}
 function headerEl() {
   const h = el('div', 'header');
   const roleRing = (id, label, vals, color) => `<button class="kpi-ring js-ring" data-role="${id}">
@@ -4499,6 +4537,7 @@ function render() {
     else state.winpicker = null;
   }
   applyTitles();   // full text on hover wherever we truncate (custom ~0.5s tooltip)
+  scoreTick();     // §11 gamification — pop +X over any ring whose metric just rose
   if (DRAG.active) reapplyDragDecor();   // §15c — re-stamp drop targets after ANY mid-drag rebuild (the card swap IS a render)
   const dt = performance.now() - t0;
   renderCount++;
