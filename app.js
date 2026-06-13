@@ -4505,23 +4505,40 @@ function addInterestedCategory(custId, catId) {
 const VIEWS_LS = (card) => `jactec.views.${card}`;
 function loadViews(card) { try { return JSON.parse(localStorage.getItem(VIEWS_LS(card)) || '[]'); } catch (e) { return []; } }
 function saveViews(card, views) { try { localStorage.setItem(VIEWS_LS(card), JSON.stringify(views)); } catch (e) {} }
-const sameSearch = (a, b) => (a || '').trim().toLowerCase() === (b || '').trim().toLowerCase();
-function activeView(card, cs) { return loadViews(card).find((v) => sameSearch(v.search, cs.search)) || null; }
-function applyView(card, search) {
+// A view captures the WHOLE filter state — the live search text AND the pinned
+// filter chips (cs.filterTerms) — so ANY filter you build is saveable (Jac 2026-06-13).
+function viewSig(search, terms) {
+  return JSON.stringify([(search || '').trim().toLowerCase(), (terms || []).map((t) => (t.neg ? '!' : '') + (t.t || '').toLowerCase()).sort()]);
+}
+function viewLabel(search, terms) {
+  const parts = [];
+  if ((search || '').trim()) parts.push(search.trim());
+  (terms || []).forEach((t) => parts.push((t.neg ? '−' : '') + t.t));
+  return parts.join(' + ') || 'view';
+}
+function activeView(card, cs) {
+  const sig = viewSig(cs.search, cs.filterTerms);
+  return loadViews(card).find((v) => viewSig(v.search, v.terms) === sig) || null;
+}
+function applyView(card, v) {
+  if (!v) return;
   const cs = activeSession().cards[card];
-  cs.search = search; cs.mode = 'list'; cs.recId = null; cs.listLimit = undefined;
+  cs.search = v.search || '';
+  cs.filterTerms = (v.terms || []).map((t) => ({ ...t }));   // restore the pinned chips too
+  cs.mode = 'list'; cs.recId = null; cs.listLimit = undefined;
   render();
 }
 function openViewMenu(card, anchorEl) {
   const cs = activeSession().cards[card];
   const views = loadViews(card);
-  const cur = (cs.search || '').trim();
-  const onView = views.some((v) => sameSearch(v.search, cur));
+  const curSig = viewSig(cs.search, cs.filterTerms);
+  const hasFilter = (cs.search || '').trim() || (cs.filterTerms || []).length;   // search text OR pinned chips
+  const onView = views.some((v) => viewSig(v.search, v.terms) === curSig);
   let html = '';
-  if (cur && !onView) html += `<button class="dd-item js-addview" data-card="${card}">${I.plus} Add view “${esc(cur.length > 22 ? cur.slice(0, 22) + '…' : cur)}”</button>`;
+  if (hasFilter && !onView) { const lbl = viewLabel(cs.search, cs.filterTerms); html += `<button class="dd-item js-addview" data-card="${card}">${I.plus} Add view “${esc(lbl.length > 22 ? lbl.slice(0, 22) + '…' : lbl)}”</button>`; }
   if (views.length) {
     html += `<div class="dd-sec">Views</div>`;
-    html += views.map((v) => `<button class="dd-item js-applyview${sameSearch(v.search, cur) ? ' on' : ''}" data-card="${card}" data-search="${esc(v.search)}">${esc(v.name)}<span class="tick">✓</span><span class="x js-delview" data-card="${card}" data-name="${esc(v.name)}" data-tip="Delete view">${I.x}</span></button>`).join('');
+    html += views.map((v, i) => `<button class="dd-item js-applyview${viewSig(v.search, v.terms) === curSig ? ' on' : ''}" data-card="${card}" data-idx="${i}">${esc(v.name)}<span class="tick">✓</span><span class="x js-delview" data-card="${card}" data-name="${esc(v.name)}" data-tip="Delete view">${I.x}</span></button>`).join('');
   }
   html += `<div class="dd-sec">Sort</div>`;
   html += SORT_FIELDS[card].map((f) => `<button class="dd-item js-sortfield${f.field === cs.sort.field ? ' on' : ''}" data-card="${card}" data-field="${f.field}">${esc(f.label)}<span class="tick">✓</span></button>`).join('');
@@ -5207,8 +5224,8 @@ function onClick(e) {
   // sort menu + direction toggle
   if (closest('.js-sortmenu')) { const b = closest('.js-sortmenu'); return openViewMenu(b.dataset.card, b); }
   if (closest('.js-delview')) { e.stopPropagation(); const b = closest('.js-delview'); const card = b.dataset.card; saveViews(card, loadViews(card).filter((v) => v.name !== b.dataset.name)); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); const anchor = document.querySelector(`.js-sortmenu[data-card="${card}"]`); if (anchor) openViewMenu(card, anchor); else render(); return; }
-  if (closest('.js-applyview')) { const b = closest('.js-applyview'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return applyView(b.dataset.card, b.dataset.search); }
-  if (closest('.js-addview')) { const b = closest('.js-addview'); const card = b.dataset.card; const cs = activeSession().cards[card]; const cur = (cs.search || '').trim(); const name = (typeof prompt === 'function' ? prompt('Name this view:', cur) : cur); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); if (name && name.trim()) { const views = loadViews(card); if (!views.some((v) => v.name.toLowerCase() === name.trim().toLowerCase())) { views.push({ name: name.trim(), search: cur }); saveViews(card, views); } } render(); return; }
+  if (closest('.js-applyview')) { const b = closest('.js-applyview'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return applyView(b.dataset.card, loadViews(b.dataset.card)[Number(b.dataset.idx)]); }
+  if (closest('.js-addview')) { const b = closest('.js-addview'); const card = b.dataset.card; const cs = activeSession().cards[card]; const search = (cs.search || '').trim(); const terms = (cs.filterTerms || []).map((t) => ({ ...t })); const suggested = viewLabel(search, terms); const name = (typeof prompt === 'function' ? prompt('Name this view:', suggested) : suggested); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); if (name && name.trim()) { const views = loadViews(card); if (!views.some((v) => v.name.toLowerCase() === name.trim().toLowerCase())) { views.push({ name: name.trim(), search, terms }); saveViews(card, views); } } render(); return; }
   if (closest('.js-sortfield')) { const b = closest('.js-sortfield'); const cs = activeSession().cards[b.dataset.card]; const f = SORT_FIELDS[b.dataset.card].find((x) => x.field === b.dataset.field); if (f) { cs.sort = { ...f }; saveSort(b.dataset.card, cs.sort); } document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); render(); return; }
   if (closest('.js-sortdir')) { const card = closest('.js-sortdir').dataset.card; const cs = activeSession().cards[card]; cs.sort.dir = cs.sort.dir === 'asc' ? 'desc' : 'asc'; saveSort(card, cs.sort); render(); return; }
 
