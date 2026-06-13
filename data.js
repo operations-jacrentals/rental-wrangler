@@ -91,6 +91,14 @@ const invoices = [
       lineItems: [
         { kind: 'rental', ref: 'R-D', label: 'Shrek — 12k Excavator (1-Day×1)', amount: 440 },
       ] }),
+  m({ invoiceId: '04i13Ju26', customerId: 'C0009', rentalIds: ['R-MU'], date: '2026-06-13', dueDate: '2026-06-27', po: '', amountPaid: 1772,
+      allocations: { '0:rental:R-MU': 1450, '1:transport:R-MU': 150 },   // §20 demo: Moto Moto's lines paid ($1,600 pre-tax + $172 tax = $1,772); Eileen still due
+      lineItems: [
+        { kind: 'rental',    ref: 'R-MU', unitId: 'U007', label: 'Moto Moto — 12k Excavator (1-Day×5)', amount: 1450 },
+        { kind: 'transport', ref: 'R-MU', unitId: 'U007', label: 'Transport · Moto Moto · Delivery', amount: 150 },
+        { kind: 'rental',    ref: 'R-MU', unitId: 'U023', label: 'Eileen — 8k Excavator (1-Day×5)', amount: 1250 },
+        { kind: 'transport', ref: 'R-MU', unitId: 'U023', label: 'Transport · Eileen · Delivery', amount: 150 },
+      ] }),
 ];
 
 /* ── Rentals (SPEC §7.4) — THE reference card this slice. Source fields only;
@@ -103,6 +111,15 @@ const rentals = [
   m({ rentalId: 'R-D', customerId: 'C0008', unitId: 'U004', legacyUnitName: '', categoryId: 'CAT011', rentalName: 'Shrek — Tucker Fontenot', startDate: '2026-02-19', endDate: '2026-02-20', startTime: '3:00 PM', status: 'Returned', transportType: 'Self', deliveryAddress: '', po: '', invoiceId: '03i20Fe26', startHours: 3500, returnHours: 3520, refunded: false, notes: '' }),
   m({ rentalId: 'R-E', customerId: 'C0001', unitId: null, legacyUnitName: '', categoryId: null, rentalName: 'New quote — Richard Brown', startDate: '', endDate: '', startTime: '', status: 'Quote', transportType: 'Self', deliveryAddress: '', po: '', invoiceId: null, startHours: null, returnHours: null, refunded: false, notes: 'Asked about a light tower for a weekend event.' }),
   m({ rentalId: 'R-F', customerId: 'C0009', unitId: 'U006', legacyUnitName: '', categoryId: 'CAT011', rentalName: 'Young (Bobcat) — Devin Lyles', startDate: '2026-06-08', endDate: '2026-06-10', startTime: '10:00 AM', status: 'Reserved', transportType: 'Delivery', deliveryAddress: 'Lake Charles, LA, USA', po: '', invoiceId: null, startHours: null, returnHours: null, refunded: false, notes: '' }),
+  // §20 MULTI-UNIT DEMO — "a Rental is an EVENT": two excavators on one job, one
+  // delivered (On Rent) + one still Reserved → the master gate locks to the mix,
+  // each unit carries its own journey/address, and the invoice bills per unit.
+  m({ rentalId: 'R-MU', customerId: 'C0009', unitId: 'U007', legacyUnitName: '', categoryId: 'CAT011', rentalName: 'Moto Moto, Eileen — Devin Lyles (multi-unit)', startDate: '2026-06-13', endDate: '2026-06-18', startTime: '8:00 AM', status: 'On Rent', transportType: 'Delivery', deliveryAddress: '1200 Ryan St, Lake Charles, LA, USA', po: '', invoiceId: '04i13Ju26', startHours: 2780, returnHours: null, refunded: false, notes: 'Two-machine job — the excavator pair went to two staging areas.',
+      startCapture: { date: '2026-06-13', clock: '8:42 AM', video: '' },
+      units: [
+        { unitId: 'U007', status: 'On Rent', startHours: 2780, returnHours: null, startCapture: { date: '2026-06-13', clock: '8:42 AM', video: '' }, endCapture: null, fcCapture: null, transportType: 'Delivery', deliveryAddress: '1200 Ryan St, Lake Charles, LA, USA', recoveryAddress: '', sitePin: null },
+        { unitId: 'U023', status: 'Reserved', startHours: null, returnHours: null, startCapture: null, endCapture: null, fcCapture: null, transportType: 'Delivery', deliveryAddress: '4500 Common St, Lake Charles, LA, USA', recoveryAddress: '', sitePin: null },
+      ] }),
 ];
 
 /* ── Work Orders (SPEC §7.6) — real-ish rows from work_orders.csv + the auto-WOs
