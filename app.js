@@ -759,6 +759,7 @@ const nextInvoiceId = () => CFG.invoiceId(TODAY_ISO, ++state.invoiceSeq);
    `recType` is only meaningful for the Shop card (which holds inspections /
    workOrders / serviceOrders); it's undefined for the 5 normal cards. */
 function setAnchor(session, card, recId, recType) {
+  sweepEmptyDrafts(recId);   // #8 — anchoring elsewhere deletes an abandoned empty draft
   if (state.fleetFilter && !(card === 'categories' && recId === state.fleetFilter.categoryId)) state.fleetFilter = null;
   const entityCard = entityCardOf(card, recType);
   const type = SINGULAR[entityCard];
@@ -837,7 +838,26 @@ function closeAll() { state.tabs = []; state.activeTabId = null; state.searchMod
    (slot buttons, window trigger) — the §18b sync persists mock records as-is. */
 
 /** Click a row → standard mode in that card (push back-stack). §0.2 */
+// #8 — an abandoned empty draft self-destructs the moment you leave it: a mock invoice
+// with no line items, or a mock rental still totally blank. keepId = the record you're
+// navigating TO (never swept). Called from every record-open + anchor. Jac 2026-06-13.
+function sweepEmptyDrafts(keepId) {
+  for (let i = DATA.invoices.length - 1; i >= 0; i--) {
+    const inv = DATA.invoices[i];
+    if (inv.mock && inv.invoiceId !== keepId && !(inv.lineItems || []).length && !(Number(inv.amountPaid) || 0)) {
+      (inv.rentalIds || []).forEach((rid) => { const r = IDX.rental.get(rid); if (r && r.invoiceId === inv.invoiceId) r.invoiceId = ''; });
+      IDX.invoice.delete(inv.invoiceId); DATA.invoices.splice(i, 1);
+    }
+  }
+  for (let i = DATA.rentals.length - 1; i >= 0; i--) {
+    const r = DATA.rentals[i];
+    if (r.mock && r.rentalId !== keepId && !(rentalUnits(r) || []).length && !r.customerId && !r.startDate && !r.invoiceId) {
+      IDX.rental.delete(r.rentalId); DATA.rentals.splice(i, 1);
+    }
+  }
+}
 function openStandard(card, recId, recType) {
+  sweepEmptyDrafts(recId);   // #8 — leaving an empty draft deletes it
   const cs = activeSession().cards[card];
   cs.mode = 'standard'; cs.recId = recId; cs.recType = recType || null;
   render();
@@ -6684,7 +6704,11 @@ function createInvoiceForRental(rentalId) {
   logAction(inv, `Created for ${rentalUnitsLabel(r) || 'rental'}`);
   logAction(r, `Invoice ${invoiceShort(id)} created`);
   toast(`Invoice ${invoiceShort(id)} created and linked.`);
-  const session = activeSession(); if (session.anchor) setAnchor(session, session.anchor.card, session.anchor.recId, session.anchor.recType);
+  // #8 — open the new invoice ON the Invoice card (Jac 2026-06-13)
+  const session = activeSession();
+  if (session.anchor) setAnchor(session, session.anchor.card, session.anchor.recId, session.anchor.recType);
+  const ics = session.cards.invoices; ics.mode = 'standard'; ics.recId = id; ics.recType = null; ics.released = false;
+  const col = columnOfMember('invoices'); if (col && session.cols) session.cols[col] = 'invoices';
   render();
 }
 function setDraftDate(rentalId, which, val) {
