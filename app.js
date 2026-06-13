@@ -2727,13 +2727,12 @@ const DETAIL = {
     const manageRow = state.invLineForm === i.invoiceId ? lineForm
       : locked
         ? `<div class="pillrow"><span class="muted" style="font-size:12px">🔒 Pricing locked.</span>${canMoney() ? actionPill('commit', 'Unlock to edit', { js: 'js-unlock-invoice', data: { rec: i.invoiceId } }) : ''}</div>`
-        : `<div class="pillrow">${addBtn('Rental', { line: true, js: 'js-add-line', h: 26, data: { rec: i.invoiceId, kind: 'Rental' } })}${addBtn('WO', { line: true, js: 'js-add-line', h: 26, data: { rec: i.invoiceId, kind: 'WO' } })}${addBtn('Custom', { line: true, js: 'js-add-line', h: 26, data: { rec: i.invoiceId, kind: 'Custom' } })}</div>${canMoney() && (i.lineItems || []).length ? `<div class="pillrow">${actionPill('commit', '🔒 Lock price', { js: 'js-lock-invoice', data: { rec: i.invoiceId } })}</div>` : ''}`;
+        : `<div class="pillrow eqw">${addBtn('Rental', { line: true, js: 'js-add-line', h: 26, data: { rec: i.invoiceId, kind: 'Rental' } })}${addBtn('WO', { line: true, js: 'js-add-line', h: 26, data: { rec: i.invoiceId, kind: 'WO' } })}${addBtn('Custom', { line: true, js: 'js-add-line', h: 26, data: { rec: i.invoiceId, kind: 'Custom' } })}</div>${canMoney() && (i.lineItems || []).length ? `<div class="pillrow">${actionPill('commit', '🔒 Lock price', { js: 'js-lock-invoice', data: { rec: i.invoiceId } })}</div>` : ''}`;
     const invoiceSec = `<div class="section"><h4>Invoice</h4>
       <div class="inv-split">
         <div class="inv-actions">
           ${kvPills(custCell)}
           ${kvPills(poCell)}
-          ${payCell ? `<div class="pillrow">${payCell}</div>` : ''}
           ${manageRow}
         </div>
         <div class="inv-data">
@@ -2745,6 +2744,7 @@ const DETAIL = {
           ${ledgerRow('Total', money(t.total), 'big')}
           ${ledgerRow('Paid', `${money(t.paid)} / ${money(t.total)}`)}
           ${ledgerRow(`Due${i.dueDate ? ' · ' + fmtShortDate(i.dueDate) : ''}`, money(t.balance), 'due')}
+          ${payCell ? `<div class="pillrow" style="justify-content:flex-end;margin-top:9px">${payCell}</div>` : ''}
         </div>
       </div></div>`;
     const notes = notesSection('invoices', i, 'invoiceId');
