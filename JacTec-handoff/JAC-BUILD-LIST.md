@@ -9,11 +9,13 @@ We walk this **task by task via poll**; decisions get recorded inline.
 - 🔧 **#9/#10 drag bugs** — awaiting Jac's repro (what was grabbed, where dropped, what happened). Overlaps Phase 3.
 
 ## Phase 1 — Navigation & Tabs
-- 🆕 **Back buttons** — a way to retreat through navigation.
-- 🔧 **Right-click → list view when anchored** — return cascaded cards to list view on right-click, even in anchored-cascade mode.
-- 🆕 **Anchoring creates a new item tab** — only the tab's "X" overrides/clears it; no click/selection/nav silently replaces or closes it. (Following new tabs keeps the cards' searches.)
-- 🆕 **Global Search + select opens a new tab.**
-- 🆕 **Overtaking an open card → new tab** — clicking an element whose standard view is already open freezes that session and opens a new item tab duplicating the session with the new card in standard view. Includes +Rental (new). (Same principle as anchoring.)
+- 🆕 **Back buttons** — DECISION (Jac): hosted **per-card**, not global/tab. A back/forward **chevron** appears on a card *only* when that card has changed this session, and the chevrons walk **that card's own view history** (its sequence of records/views shown this session).
+- 🔧 **Right-click → list view when anchored** — DECISION (Jac): right-click on a card = **equivalent to that card's Back chevron** (step that single card back one in its own history; works even in anchored-cascade mode).
+- 🆕 **Anchoring creates a new item tab** — DECISION (Jac): tab strip already exists (above global search). Anchoring must **ALWAYS open a NEW tab** (duplicates allowed), freezing the current; only the tab **X** clears it. New tab **inherits the current cards' searches** (don't reset them). CODE: today `anchorRecord` overwrites the active tab via `Object.assign` → change to create+switch (like `openInNewTab`); per-card `ccs.backStack` already exists (feeds Task 1 chevrons); `setAnchor` currently clears cascaded-card searches (line ~777) → must preserve them for the new tab.
+- 🆕 **Global Search + select opens a new tab** — DECISION (Jac): same model as anchoring — selecting a global-search result freezes the current session and opens a **new tab (foreground)**.
+- 🆕 **Overtaking an open card → new tab** — DECISION (Jac): same model. Clicking an element whose standard view would overtake a card already open in standard (different record) freezes the session and opens a **new tab (foreground)** with the new card in standard view. Includes +Rental (new).
+
+**Phase 1 cross-cutting:** new tabs always open **foreground (switch to it)**. One shared "freeze current session → makeTab → switch" code path serves anchor / search-pick / overtake / +Rental.
 
 ## Phase 2 — Rental Window & picker
 - 🔧✅ **Click-away should not force Save** — shipped `rentalFragile` (force-save only when billed/On Rent/End/Off/Returned). VERIFY it matches "remove forced save except fragile," make fragile feel deliberate.
