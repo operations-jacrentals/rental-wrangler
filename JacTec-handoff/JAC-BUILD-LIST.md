@@ -18,11 +18,14 @@ We walk this **task by task via poll**; decisions get recorded inline.
 **Phase 1 cross-cutting:** new tabs always open **foreground (switch to it)**. One shared "freeze current session → makeTab → switch" code path serves anchor / search-pick / overtake / +Rental.
 
 ## Phase 2 — Rental Window & picker
-- 🔧✅ **Click-away should not force Save** — shipped `rentalFragile` (force-save only when billed/On Rent/End/Off/Returned). VERIFY it matches "remove forced save except fragile," make fragile feel deliberate.
-- 🆕 **Clear vs Save buttons** — show "Clear" (R17) until something changes; once changed, show "Save" just left of "Clear."
-- 🔧 **"Available" entry behavior** — make "available" a REAL availability entry (through the Rental Window's lens), not plain text. [Open Q: does the picker still need to stay open given the search-bar "available" entry + drag engine? Does click-away-close break Rental Mode?]
-- 🆕 **Center the picker pill** — "Select a rental window" pill is left-aligned; center it.
-- 🆕 **Can't drag while the Rental Picker is open** — should be able to.
+- ✅ **Click-away should not force Save** — VERIFIED (Jac): `rentalFragile` rule (billed OR On/End/Off Rent/Returned) is correct. Normal = live-commit + click-away close; fragile = stage + explicit Save. Keep as-is.
+- 🆕 **Clear vs Save buttons** — DECISION (Jac): **restyle only** (keep live-commit). Footer `Clear` becomes a primary **R17** button; `Save` (commit) appears just **left of Clear** only when a staged/fragile change exists (`wp.staged && winStagedChanged()`). Today Clear is `danger`-styled → change to R17.
+- 🔧 **"Available" entry behavior + non-modal picker** — DECISION (Jac): make auto-entered "available" the **real structured token** (filtered through the picked window via `availWin`), not plain text. The picker becomes a **non-modal overlay, no modes**:
+  - **On open** → default to the **Categories card, list view, availability lens** applied.
+  - **Stays open** while interacting with the Units/Categories/Customers cards: category↔unit **toggles**, and **clicking a unit/cat/customer opens it in standard view** to inspect (learn before selecting). Selecting = **dragging** it into the rental (drag also keeps it open).
+  - **Click-away** = any click *outside* those card interactions → closes the picker. (Implementation: click-away close skips clicks within `.card[data-card=units|categories|customers]`, the picker, and the trigger; drags never close it.)
+- 🆕 **Center the picker pill** — DECISION (Jac): trivial style fix, center the left-aligned "Select a rental window" pill. No decision needed.
+- 🆕 **Can't drag while the Rental Picker is open** — DECISION (Jac): ALLOW it. Today `dragDown` bails if `state.winpicker` is set (line ~4875) → let unit/customer/category drags arm & run while the picker is open; the drag must NOT trigger the click-away close. Core to the non-modal picker above.
 
 ## Phase 3 — Drag-to-link engine
 - 🔧 **Dragging Customers/Rentals resets/closes the source card** — it shouldn't. (Units→buildable-rentals already fixed; this is the customers/rentals case = #9/#10.)
