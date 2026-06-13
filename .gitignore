@@ -22,3 +22,6 @@ JacTec-standalone.html
 node_modules/
 package-lock.json
 dev-version.txt
+
+# Backend Apps Script — worked on here, deployed via copy/paste; never published by Pages
+backend/
