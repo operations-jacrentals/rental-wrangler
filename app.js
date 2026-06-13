@@ -491,8 +491,13 @@ function relDate(iso) {
   return n === 0 ? 'Today' : n === 1 ? 'Tomorrow' : fmtShortDate(iso);
 }
 function activeRentalForUnit(unitId) {
-  return DATA.rentals.filter((r) => rentalHasUnit(r, unitId) && ACTIVE_RENTAL.has(r.status) && r.status !== 'Quote')
-    .sort((a, b) => (parseISO(a.startDate) || 0) - (parseISO(b.startDate) || 0))[0] || null;
+  // §20 judge by the UNIT's OWN status, not the rental roll-up — a No-Show /
+  // Returned unit on an otherwise-active rental is NOT actively renting.
+  return DATA.rentals.filter((r) => {
+    if (!rentalHasUnit(r, unitId) || r.status === 'Quote') return false;
+    const eu = (r.units || []).find((e) => e.unitId === unitId);
+    return ACTIVE_RENTAL.has(eu ? unitStatus(r, eu) : r.status);
+  }).sort((a, b) => (parseISO(a.startDate) || 0) - (parseISO(b.startDate) || 0))[0] || null;
 }
 
 /* ── §10 Availability Tool (derived, never stored) ──────────────────────────
@@ -5045,6 +5050,7 @@ function onClick(e) {
   if (closest('.js-hchip')) { const b = closest('.js-hchip'); const o = state.overlay; if (o?.kind === 'board') { o.histKind = o.histKind === b.dataset.kind ? null : b.dataset.kind; return renderOverlay(); } const session = activeSession(); const cs = session.cards[b.dataset.card] || session.cards.shop; cs.histKind = cs.histKind === b.dataset.kind ? null : b.dataset.kind; return render(); }
   if (closest('.js-complete-rental')) {
     const b = closest('.js-complete-rental'); const r = IDX.rental.get(b.dataset.rec); if (!r) return;
+    if (!rentalUnits(r).length) return flashOr('[data-slot="unit"], .add-field', '🔒 No units on this rental — drag one on (or cancel the rental).');
     if (!allUnitsTerminal(r)) return flashOr(`.js-yard[data-cap="end"][data-rec="${r.rentalId}"]`, '🔒 Every unit must be terminal first — return each one (or mark No Show / Cancel).');
     r.completed = true; reindex('rentals', r); logAction(r, 'Rental completed'); toast('Rental completed ✓'); return reanchorRender();
   }
