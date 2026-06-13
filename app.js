@@ -5094,8 +5094,12 @@ function onClick(e) {
   // keep the window open while the user works the side cards; close it only when
   // they click the Rentals card itself (and continue handling that click) or Done.
   if (state.winpicker && !closest('.winpicker') && !closest('.js-open-winpicker')) {
+    // §2 — click-away CLOSES the picker (discards a fragile rental's staged change;
+    // a normal rental's window already committed live). Jac 2026-06-13.
+    state.winpicker = null;
     const onRentalCard = closest('.card') && closest('.card').dataset.card === 'rentals';
-    if (onRentalCard) state.winpicker = null;   // fall through to handle the rental-card click
+    if (!onRentalCard) { render(); return; }   // off the rentals card → just close
+    // on the rentals card → fall through to also handle that click
   }
 
   // header / chrome
@@ -5335,6 +5339,7 @@ function onClick(e) {
   if (closest('.js-wp-prev')) { e.stopPropagation(); return winPickMonth(-1); }
   if (closest('.js-wp-next')) { e.stopPropagation(); return winPickMonth(1); }
   if (closest('.js-wp-clear')) { e.stopPropagation(); return winPickClear(); }
+  if (closest('.js-wp-save')) { e.stopPropagation(); return winPickSave(); }
   if (closest('.js-wp-today')) { e.stopPropagation(); return winPickToday(); }
   if (closest('.js-wp-done')) { e.stopPropagation(); return closeWinPicker(); }
   if (closest('.js-open-winpicker')) { e.stopPropagation(); const rec = closest('.js-open-winpicker').dataset.rec; return state.winpicker?.rentalId === rec ? closeWinPicker() : openWinPicker(rec); }
@@ -6703,11 +6708,32 @@ function nowHourLabel() { const d = new Date(); let h = d.getHours(); const ap =
 function to24(label) { if (!label) return ''; const m = String(label).match(/(\d+):(\d+)\s*(AM|PM)/i); if (!m) return ''; let h = Number(m[1]) % 12; if (/PM/i.test(m[3])) h += 12; return `${String(h).padStart(2, '0')}:${m[2]}`; }
 function to12(hhmm) { if (!hhmm) return ''; const [H, M] = hhmm.split(':').map(Number); const ap = H < 12 ? 'AM' : 'PM'; let h12 = H % 12; if (h12 === 0) h12 = 12; return `${h12}:${String(M || 0).padStart(2, '0')} ${ap}`; }
 
+// §2 — a rental window is "fragile" once it's billed or out (changing it has money/
+// dispatch consequences) → it STAGES + requires an explicit Save; everything else
+// commits live and closes on click-away, no Save needed (Jac 2026-06-13).
+function rentalFragile(r) { return !!r && (!!r.invoiceId || ['On Rent', 'End Rent', 'Off Rent', 'Returned'].includes(r.status)); }
+function winTarget() { const wp = state.winpicker; if (!wp) return null; return wp.staged || IDX.rental.get(wp.rentalId); }
+function winStagedChanged() {
+  const wp = state.winpicker; if (!wp || !wp.staged) return false;
+  const r = IDX.rental.get(wp.rentalId); if (!r) return false;
+  return wp.staged.startDate !== (r.startDate || '') || wp.staged.endDate !== (r.endDate || '') || wp.staged.startTime !== (r.startTime || '');
+}
 function openWinPicker(rentalId) {
   const r = IDX.rental.get(rentalId); if (!r) return;
   if (!r.startTime) r.startTime = nowHourLabel();   // default to the current hour (user spec)
   state.winpicker = { rentalId, monthISO: firstOfMonthISO(r.startDate || TODAY_ISO), anchor: null };
+  if (rentalFragile(r)) state.winpicker.staged = { rentalId, startDate: r.startDate || '', endDate: r.endDate || '', startTime: r.startTime || '' };
   render();
+}
+function winPickSave() {
+  const wp = state.winpicker; if (!wp) return;
+  const r = IDX.rental.get(wp.rentalId);
+  if (r && wp.staged) {
+    r.startDate = wp.staged.startDate; r.endDate = wp.staged.endDate; r.startTime = wp.staged.startTime;
+    if (r.startDate && r.endDate && r.status === 'Quote') r.status = 'Reserved';
+    logAction(r, `Rental window → ${r.startDate && r.endDate ? fmtShortDate(r.startDate) + '–' + fmtShortDate(r.endDate) : 'cleared'}`);
+  }
+  state.winpicker = null; render();
 }
 function closeWinPicker() { state.winpicker = null; render(); }
 function winPickMonth(delta) {
@@ -6725,36 +6751,48 @@ function enterAvailabilitySearch(r) {
   const s = activeSession();
   ['units', 'categories'].forEach((card) => {
     const cs = s.cards[card]; if (!cs) return;
-    cs.search = 'available'; cs.mode = 'list'; cs.recId = null; cs.listLimit = undefined;
+    // pin "available" as a real Entry (chip), not plain search text — so it reads as the
+    // Availability Tool and keeps the rental-window lens (rowMatches routes the term
+    // through availWin → window-scoped availability). Jac 2026-06-13.
+    cs.search = '';
+    if (!(cs.filterTerms || []).some((t) => /^available$/i.test(t.t))) cs.filterTerms = [{ t: 'available', neg: false }, ...(cs.filterTerms || []).filter((t) => !/^(?:un)?available$/i.test(t.t))];
+    cs.mode = 'list'; cs.recId = null; cs.listLimit = undefined;
   });
 }
 function exitAvailabilitySearch() {
   state.availWin = null;
   const s = activeSession();
-  ['units', 'categories'].forEach((card) => { const cs = s.cards[card]; if (cs && /^available$/i.test((cs.search || '').trim())) cs.search = ''; });
+  ['units', 'categories'].forEach((card) => {
+    const cs = s.cards[card]; if (!cs) return;
+    cs.filterTerms = (cs.filterTerms || []).filter((t) => !/^(?:un)?available$/i.test(t.t));
+    if (/^available$/i.test((cs.search || '').trim())) cs.search = '';   // legacy plain-text form
+  });
 }
 function winPickDay(iso) {
   const wp = state.winpicker; if (!wp) return;
   const r = IDX.rental.get(wp.rentalId); if (!r) return;
+  const t = winTarget();                                 // staged (fragile) or the rental itself (live)
   const subject = winPickSubject();
   if (dayBlocked(subject, iso, r.rentalId) && !state.overbookOn) {   // §10 hard-block only while overbooking is OFF
     toast(`That day is unavailable for the selected ${subject.kind}. Allow overbooking in Settings to force it.`); return;
   }
-  if (!wp.anchor || (r.startDate && r.endDate)) {        // begin a fresh range
-    wp.anchor = iso; r.startDate = iso; r.endDate = '';
+  if (!wp.anchor || (t.startDate && t.endDate)) {        // begin a fresh range
+    wp.anchor = iso; t.startDate = iso; t.endDate = '';
   } else {                                               // close the range
     const a = wp.anchor;
-    if (parseISO(iso) - parseISO(a) >= 0) { r.startDate = a; r.endDate = iso; }
-    else { r.startDate = iso; r.endDate = a; }
+    if (parseISO(iso) - parseISO(a) >= 0) { t.startDate = a; t.endDate = iso; }
+    else { t.startDate = iso; t.endDate = a; }
     wp.anchor = null;
-    if (r.startDate && r.endDate && r.status === 'Quote') r.status = 'Reserved';
-    enterAvailabilitySearch(r);                          // §10 push the "available" search onto Units + Categories
+    if (!wp.staged) {                                    // live (non-fragile): commit status + availability now
+      if (t.startDate && t.endDate && r.status === 'Quote') r.status = 'Reserved';
+      enterAvailabilitySearch(r);                        // §10 push the "available" search onto Units + Categories
+    }
   }
   reanchorRender();
 }
-function setWinTime(hhmm) { const wp = state.winpicker; if (!wp) return; const r = IDX.rental.get(wp.rentalId); if (!r) return; r.startTime = to12(hhmm); reanchorRender(); }
-function winPickClear() { const wp = state.winpicker; if (!wp) return; const r = IDX.rental.get(wp.rentalId); if (r) { r.startDate = ''; r.endDate = ''; wp.anchor = null; } exitAvailabilitySearch(); reanchorRender(); }
-function winPickToday() { const wp = state.winpicker; if (!wp) return; wp.monthISO = firstOfMonthISO(TODAY_ISO); const r = IDX.rental.get(wp.rentalId); if (r) { r.startDate = TODAY_ISO; r.endDate = ''; wp.anchor = TODAY_ISO; } reanchorRender(); }
+function setWinTime(hhmm) { const wp = state.winpicker; if (!wp) return; const t = winTarget(); if (!t) return; t.startTime = to12(hhmm); reanchorRender(); }
+function winPickClear() { const wp = state.winpicker; if (!wp) return; const t = winTarget(); if (t) { t.startDate = ''; t.endDate = ''; wp.anchor = null; } if (!wp.staged) exitAvailabilitySearch(); reanchorRender(); }
+function winPickToday() { const wp = state.winpicker; if (!wp) return; wp.monthISO = firstOfMonthISO(TODAY_ISO); const t = winTarget(); if (t) { t.startDate = TODAY_ISO; t.endDate = ''; wp.anchor = TODAY_ISO; } reanchorRender(); }
 
 /* ── R22 DATE PICKER — single date/datetime, reuses the .wp-* calendar styling.
    state.datepick = { field, withTime, monthISO }; writes state.overlay[field]
@@ -6807,7 +6845,8 @@ function winPickerEl(r) {
   const md = parseISO(wp.monthISO); const y = md.getFullYear(), m = md.getMonth();
   const startDow = new Date(y, m, 1).getDay();
   const daysIn = new Date(y, m + 1, 0).getDate();
-  const s = r.startDate, e = r.endDate, a = wp.anchor;
+  const t = winTarget() || r;
+  const s = t.startDate, e = t.endDate, a = wp.anchor;
   const lo = s && e ? (s < e ? s : e) : (s || a);
   const hi = s && e ? (s < e ? e : s) : null;
   const subject = winPickSubject();
@@ -6828,12 +6867,12 @@ function winPickerEl(r) {
   const subjName = subject && (subject.kind === 'unit' ? IDX.unit.get(subject.id)?.name : IDX.category.get(subject.id)?.name);
   const dows = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((d) => `<span class="wp-dow">${d}</span>`).join('');
   return `<div class="winpicker">
-    <div class="wp-time"><label>Pickup time</label><input type="time" class="js-wp-time" value="${esc(to24(r.startTime) || '09:00')}"></div>
+    <div class="wp-time"><label>Pickup time</label><input type="time" class="js-wp-time" value="${esc(to24(t.startTime) || '09:00')}"></div>
     <div class="wp-head"><span class="wp-month">${MONTH_NAMES[m]} ${y}</span>
       <span class="wp-nav"><button class="js-wp-prev" data-tip="Previous month">‹</button><button class="js-wp-next" data-tip="Next month">›</button></span></div>
     <div class="wp-grid">${dows}${cells}</div>
     ${subjName ? `<div class="wp-blocknote">Greyed days are ${state.overbookOn ? 'booked' : 'unavailable'} for <b>${esc(subjName)}</b>${state.overbookOn ? ' — overbooking is on, pick to force' : ''}</div>` : ''}
-    <div class="wp-foot"><button class="pill ghost js-wp-clear" data-r="R18">Clear</button><button class="pill ghost js-wp-today" data-r="R18">Today</button><button class="pill c-commit js-wp-done" data-r="R17">Done</button></div>
+    <div class="wp-foot"><button class="pill ghost js-wp-today" data-r="R18">Today</button>${wp.staged && winStagedChanged() ? actionPill('commit', 'Save', { js: 'js-wp-save' }) : ''}${actionPill('danger', 'Clear', { js: 'js-wp-clear' })}</div>
   </div>`;
 }
 /** Float the picker anchored to the TOP of its trigger button (opens upward so the
