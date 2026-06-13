@@ -3074,7 +3074,11 @@ function wave2ListOverride(card, session) {
   const a = session && session.anchor; if (!a) return null;
   if (a.card === 'rentals') {
     const r = recOf('rentals', a.recId); if (!r) return null;
-    if (!r.unitId && (card === 'units' || card === 'categories')) return collection(card);
+    // multi-unit: a still-buildable rental (mock / Quote / Reserved) keeps the Units +
+    // Categories lists FULL so you can drag MORE units on — it no longer collapses to
+    // linked-only the moment it has one unit (was `!r.unitId`). Jac 2026-06-13.
+    const buildable = r.mock || r.status === 'Quote' || r.status === 'Reserved';
+    if (buildable && (card === 'units' || card === 'categories')) return collection(card);
     if (!r.customerId && card === 'customers') return collection('customers');
     return null;
   }
@@ -3204,7 +3208,7 @@ function listView(cardDef, session) {
   const cterms = cs.filterTerms || [];
   // §0.1 — a cascaded card shows the cascade as a clearable chip at the front of its
   // search bar; the ✕ "releases" it to its full list so a new item can be added (Jac).
-  const cascaded = session.anchor && card !== session.anchor.card && session.cascade && !cs.released;
+  const cascaded = session.anchor && card !== session.anchor.card && session.cascade && !cs.released && !wave2ListOverride(card, session);
   const anchorName = cascaded ? (state.tabs.find((t) => t.session === session)?.label || 'anchor') : '';
   const cascChip = cascaded ? `<span class="casc-chip" data-tip="Cascaded from ${esc(anchorName)} — clear to browse all & add">🔗<span class="cc-name">${esc(anchorName)}</span>${closeX('js-uncascade', { data: { card } })}</span>` : '';
   bar.innerHTML = `
