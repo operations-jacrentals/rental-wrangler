@@ -112,6 +112,12 @@ function rentalUnits(r) {
 const rentalUnitIds = (r) => rentalUnits(r).map((u) => u.unitId).filter(Boolean);
 const primaryUnit = (r) => (r && r.unitId) || (rentalUnits(r)[0] || {}).unitId || null;
 const rentalHasUnit = (r, unitId) => rentalUnitIds(r).includes(unitId);
+/* §20 the units[] entry for a unitId (or the PRIMARY when unitId is falsy), else null.
+   ONE source for "this unit's entry" — replaces ~9 inlined (r.units||[]).find copies. */
+const unitEntry = (r, unitId) => (r && Array.isArray(r.units)) ? (unitId ? (r.units.find((u) => u.unitId === unitId) || null) : (r.units[0] || null)) : null;
+/* is this entry the rental's PRIMARY unit? (compared by unitId, never by object
+   identity — a legacy fallback array would be a fresh clone). */
+const isPrimaryUnit = (r, eu) => !!(eu && r && Array.isArray(r.units) && r.units[0] && r.units[0].unitId === eu.unitId);
 /* §20 derived rental name — "Window: Unit, Unit" (the customer rides as a FLAG,
    not in the name). Rental/Invoice/Unit/Category titles are READ-ONLY (Jac). */
 function rentalUnitsLabel(r) {
@@ -495,7 +501,7 @@ function activeRentalForUnit(unitId) {
   // Returned unit on an otherwise-active rental is NOT actively renting.
   return DATA.rentals.filter((r) => {
     if (!rentalHasUnit(r, unitId) || r.status === 'Quote') return false;
-    const eu = (r.units || []).find((e) => e.unitId === unitId);
+    const eu = unitEntry(r, unitId);
     return ACTIVE_RENTAL.has(eu ? unitStatus(r, eu) : r.status);
   }).sort((a, b) => (parseISO(a.startDate) || 0) - (parseISO(b.startDate) || 0))[0] || null;
 }
@@ -636,7 +642,7 @@ function categoryMix(categoryId) {
 function unitRentalBucket(u) {
   const r = activeRentalForUnit(u.unitId);
   if (!r) return 'Available';
-  const eu = (r.units || []).find((e) => e.unitId === u.unitId);   // §20 this unit's OWN status, not the rental roll-up
+  const eu = unitEntry(r, u.unitId);   // §20 this unit's OWN status, not the rental roll-up
   return eu ? unitStatus(r, eu) : rentalDisplayStatus(r);
 }
 /** The order rental-status segments appear in the §12.3 second bar (birds-eye renting). */
@@ -1944,7 +1950,7 @@ function yardToolHtml(u) {
   const r = activeRentalForUnit(u.unitId);
   if (!r) return '';
   const cust = r.customerId ? IDX.customer.get(r.customerId) : null;
-  const euT = (r.units || []).find((e) => e.unitId === u.unitId);   // §20 this unit's own status on its journey
+  const euT = unitEntry(r, u.unitId);   // §20 this unit's own status on its journey
   const C = euT || r;   // §20 this unit's OWN captures (mirrors r.* for the primary)
   const st = getStatus('rentalStatus', euT ? unitStatus(r, euT) : rentalDisplayStatus(r));
   const isDel = r.transportType && r.transportType !== 'Self';
@@ -2180,7 +2186,7 @@ const DETAIL = {
       if (li.kind !== 'rental') return '';
       const r2 = IDX.rental.get(li.ref); if (!r2) return '';
       const u2 = IDX.unit.get(li.unitId || r2.unitId);
-      const euLine = (r2.units || []).find((e) => e.unitId === (li.unitId || r2.unitId));   // §20 this line's unit → its own journey
+      const euLine = unitEntry(r2, li.unitId || r2.unitId);   // §20 this line's unit → its own journey
       const paid = itemPaid(inv, li, idx);
       const amt = Number(li.amount) || 0;
       const ibColor = paid >= amt && amt > 0 ? 'green' : invT.status === 'Not Due' ? 'blue' : 'red';
@@ -3730,7 +3736,7 @@ function renderOverlay() {
     // Jac+Jac = Round-Trip) + smart address finder + map pin. Save sets BOTH
     // addresses; the optional second field lets recovery differ from delivery.
     const r = IDX.rental.get(o.rentalId);
-    const T = (o.unitId && r ? (r.units || []).find((u) => u.unitId === o.unitId) : null) || r || {};   // §20 the unit's own transport
+    const T = (o.unitId ? unitEntry(r, o.unitId) : null) || r || {};   // §20 the unit's own transport
     const ty = state.siteType || (T.transportType && T.transportType !== 'Self' ? T.transportType : 'Delivery');
     const pop = el('div', 'popup'); pop.style.width = '410px';
     pop.innerHTML = `
@@ -5202,7 +5208,7 @@ function handlePillX(xEl) {
     const u = uid ? IDX.unit.get(uid) : null;
     // swap-safety (carried over from the old swap path): a unit that's physically
     // out — On Rent with a logged delivery/FC capture — can't just be pulled off.
-    const eu = (rec.units || []).find((x) => x.unitId === uid);
+    const eu = unitEntry(rec, uid);
     if (eu && unitStatus(rec, eu) === 'On Rent' && (eu.startCapture || eu.fcCapture)) {
       toast(`Blocked: ${u?.name || 'that unit'} is On Rent with a logged capture — recover it (or mark No Show) before removing.`); return;
     }
@@ -5356,7 +5362,7 @@ function setRentalStatus(rentalId, val) {
    the master gate to the mix label; re-converging frees it. Same §9 gates per unit. */
 function setUnitStatus(rentalId, unitId, val) {
   const r = IDX.rental.get(rentalId); if (!r) return;
-  const eu = (r.units || []).find((u) => u.unitId === unitId); if (!eu) return;
+  const eu = unitEntry(r, unitId); if (!eu) return;
   const cust = r.customerId ? IDX.customer.get(r.customerId) : null;
   if (val === 'On Rent' && !r.invoiceId) { flashOr('.js-create-invoice', 'Blocked: "On Rent" requires a linked invoice (§9).'); return; }
   if (['On Rent', 'Reserved'].includes(val) && cust && /Blacklist/i.test(cust.accountType || '')) { toast('Blocked: customer is blacklisted (§9).'); return; }
@@ -5452,10 +5458,10 @@ function setUnitWash(unitId, val) {
    either way (one event, shared video); +FC = markFieldCall. Popup gates every log. */
 /* §20 a capture is PER UNIT: cur = that unit's entry (fallback to the rental for
    safety). Logging a delivery/recovery moves just that unit's status. */
-const captureUnit = (r, unitId) => (unitId ? (r.units || []).find((u) => u.unitId === unitId) : (r.units || [])[0]) || null;
+const captureUnit = (r, unitId) => unitEntry(r, unitId);
 function setUnitCapture(r, eu, key, stamp) {
   if (eu) eu[key] = stamp;
-  if (!eu || eu === (r.units || [])[0]) r[key] = stamp;   // mirror the primary onto r.* for pre-#20 readers
+  if (!eu || isPrimaryUnit(r, eu)) r[key] = stamp;   // mirror the primary onto r.* for pre-#20 readers
 }
 function yardCapture(rentalId, cap, unitId) {
   const r = IDX.rental.get(rentalId); if (!r) return;
@@ -5505,7 +5511,7 @@ function uploadCaptureMedia(r, eu, cap, dataUrl) {
   if (!backendPassword) { if (tgt[key]) tgt[key].videoNote = 'demo mode — video not stored'; return; }
   backendCall('uploadCapture', { dataUrl, name: cap + '_' + r.rentalId + (eu ? '_' + eu.unitId : '') })
     .then((res) => {
-      if (res && res.ok && tgt[key]) { tgt[key].video = res.url; if (eu && eu === (r.units || [])[0] && r[key]) r[key].video = res.url; reindex('rentals', r); toast('Capture video uploaded to Drive.'); }
+      if (res && res.ok && tgt[key]) { tgt[key].video = res.url; if (eu && isPrimaryUnit(r, eu) && r[key]) r[key].video = res.url; reindex('rentals', r); toast('Capture video uploaded to Drive.'); }
       else toast('Video upload failed — the log stamp is saved without it.');
     })
     .catch(() => toast('Video upload failed — the log stamp is saved without it.'));
@@ -5517,12 +5523,12 @@ function saveSiteAddress() {
   if (!v) return attnFlash('.js-site-addr');                        // R19: glow the field, no error message
   const v2 = (document.querySelector('.js-site-addr2')?.value || '').trim();
   // §20 write to THIS unit's transport (mirror onto r.* for the primary / legacy readers)
-  const eu = o.unitId ? (r.units || []).find((u) => u.unitId === o.unitId) : (r.units || [])[0];
+  const eu = unitEntry(r, o.unitId);
   const tgt = eu || r;
   const tt = state.siteType || (tgt.transportType && tgt.transportType !== 'Self' ? tgt.transportType : 'Delivery');
   const recov = v2 && v2 !== v ? v2 : '';
   tgt.deliveryAddress = v; tgt.recoveryAddress = recov; tgt.transportType = tt; if (state.sitePin) tgt.sitePin = state.sitePin;
-  if (!eu || eu === (r.units || [])[0]) { r.deliveryAddress = v; r.recoveryAddress = recov; r.transportType = tt; if (state.sitePin) r.sitePin = state.sitePin; }
+  if (!eu || isPrimaryUnit(r, eu)) { r.deliveryAddress = v; r.recoveryAddress = recov; r.transportType = tt; if (state.sitePin) r.sitePin = state.sitePin; }
   state.siteType = null;
   syncTransportLine(r);
   reindex('rentals', r); logAction(r, `${IDX.unit.get(o.unitId)?.name ? IDX.unit.get(o.unitId).name + ' — ' : ''}Site address → ${auditVal(v)}`);
