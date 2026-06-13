@@ -36,3 +36,6 @@ jobs:
 
       - name: Logic regression suite (money + multi-unit)
         run: node ci/logic-test.mjs
+
+      - name: Rulebook field catalog is current
+        run: node ci/gen-rule-usage.mjs --check
