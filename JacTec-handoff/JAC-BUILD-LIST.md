@@ -28,9 +28,9 @@ We walk this **task by task via poll**; decisions get recorded inline.
 - 🆕 **Can't drag while the Rental Picker is open** — DECISION (Jac): ALLOW it. Today `dragDown` bails if `state.winpicker` is set (line ~4875) → let unit/customer/category drags arm & run while the picker is open; the drag must NOT trigger the click-away close. Core to the non-modal picker above.
 
 ## Phase 3 — Drag-to-link engine
-- 🔧 **Dragging Customers/Rentals resets/closes the source card** — it shouldn't. (Units→buildable-rentals already fixed; this is the customers/rentals case = #9/#10.)
-- 🆕 **Link by dragging empty space on a Standard View.**
-- 🆕 **Drag the WO section onto an Invoice** (to link).
+- 🔧 **Dragging Customers/Rentals resets/closes the source card** — DECISION (Jac): **remove the mid-drag card-swap trick** (`startDrag` lines ~4928–4933 + `DRAG.restoreCols`/`swappedTo` + the `keepSwap` plumbing). Source card stays exactly as-is. Drop onto valid targets visible in OTHER columns; same-column links (customer↔invoice, which share the right column) use the **reverse drag direction**. Resolves the #9/#10 drag bug (no repro needed).
+- 🆕 **Link by dragging empty space on a Standard View** — DECISION (Jac): a standard-view card becomes a drag SOURCE; grab **anywhere empty on the card** (body / padding / header), excluding interactive elements (buttons, pills, inputs, fields, links, rows). Payload = that card's open record. Drop side already handles standard-view cards.
+- 🆕 **Drag the WO section onto an Invoice** — DECISION (Jac): make the WO section (`.section.wo-<woId>`) a drag SOURCE (entity `workOrders`, grab empty space per Task 2). Add `DROP_MATRIX.workOrders.invoices` (+ reverse `invoices.workOrders`); dropping on an invoice (row or open card) **bills immediately** via `billWOToInvoiceExplicit` (same bill-once + customer-scoping gates as the `+Invoice` / `js-bill-wo` button).
 
 ## Phase 4 — Invoices & Work Orders
 - ✅ **+Invoice/+Transport opens the new invoice on the Invoice card** — shipped (`createInvoiceForRental`). VERIFY.
