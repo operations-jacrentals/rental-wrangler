@@ -1225,7 +1225,7 @@ body { font-variant-numeric: tabular-nums; }
 /* R9 ALERT FLAGS (Jac 2026-06-12): big-deal flags pulse — No Card, an active
    rental, pay status that isn't Paid/Current. Slow + gentle, not the lint alarm. */
 @keyframes flagPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
-.flag.alert { animation: flagPulse 1.6s ease-in-out infinite; }
+.flag.alert, .pill.alert { animation: flagPulse 1.6s ease-in-out infinite; }   /* R9b flashing flags · R4b flashing pills */
 /* §12.1 rapid action entry: field left, R14 mode toggle right, under the active bar */
 .act-entry { display: flex; gap: 8px; align-items: center; }
 .act-entry .act-in { flex: 1; height: 28px; background: var(--bg-2); border: 1px solid var(--line);

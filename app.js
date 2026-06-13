@@ -1195,10 +1195,10 @@ function funnelPill(custId, which, stage) {
 }
 /** R4: a DERIVED pill — rides another pill in the same section; no bg/border,
  *  destination icon + ink color only; sits directly RIGHT of its parent. */
-function dPill(label, color, { card, recId, icon, title } = {}) {
+function dPill(label, color, { card, recId, icon, title, alert } = {}) {
   const nav = card ? ` data-pill-card="${card}" data-pill-rec="${esc(recId)}"` : '';
   const ic = icon || (card ? CARD_ICON[card] : '') || '';
-  return `<span class="pill dvd c-${color}" data-r="R4"${nav}${title ? ` data-tip="${esc(title)}"` : ''}>${ic}<span class="t">${esc(label)}</span></span>`;
+  return `<span class="pill dvd c-${color}${alert ? ' alert' : ''}" data-r="${alert ? 'R4b' : 'R4'}"${nav}${title ? ` data-tip="${esc(title)}"` : ''}>${ic}<span class="t">${esc(label)}</span></span>`;
 }
 /** R5: the ADD affordance — dashed, "+Thing" (never the word "Add", never a
  *  space after +). `link:true` = orange ink (creates/links a record);
@@ -1247,7 +1247,7 @@ function flagEl(label, color, { icon, card, recId, title, alert, sect } = {}) {
   // alert: big-deal flags pulse (No Card, active rental, bad pay status — Jac 2026-06-12)
   // sect: clicking also SCROLLS to that section (class) — same card or after nav
   const nav = card ? ` data-pill-card="${card}" data-pill-rec="${esc(recId)}"` : '';
-  return `<span class="flag c-${color}${alert ? ' alert' : ''}" data-r="R9"${nav}${sect ? ` data-sect="${sect}"` : ''}${title ? ` data-tip="${esc(title)}"` : ''}>${icon || ''}${esc(label)}</span>`;
+  return `<span class="flag c-${color}${alert ? ' alert' : ''}" data-r="${alert ? 'R9b' : 'R9'}"${nav}${sect ? ` data-sect="${sect}"` : ''}${title ? ` data-tip="${esc(title)}"` : ''}>${icon || ''}${esc(label)}</span>`;
 }
 const flagsStack = (flags, h) => `<span class="flags" data-r="R9"${h ? ` style="height:${h}px"` : ''}>${flags.filter(Boolean).join('')}</span>`;
 /** R21: FILE DROP — the massive add-file zone in popups (Jac 2026-06-12):
@@ -1368,6 +1368,7 @@ const RULE_META = {
   R3:  ['Status badge', 'statusPill', 'informational STATUS: registry color, parent-card icon, hover underline — never an action'],
   R3b: ['Data chip', 'badge', 'a plain FACT (480 HRS, No GPS): gray, no icon, no hover — independent of R3'],
   R4:  ['Derived pill', 'dPill', 'rides another pill: no bg/border, ink+icon only — sits RIGHT of its parent (LEFT when the parent is right-aligned)'],
+  R4b: ['Flashing pill', 'dPill({alert})', 'a DERIVED pill that PULSES for attention — the flashing variant of R4'],
   R5:  ['(retired → R5b)', 'addBtn({link})', 'RETIRED (Jac 2026-06-13) — record-linking adds now use R5b too'],
   R5b: ['Blue add', 'addBtn({link|line})', 'BLUE dashed “+Thing” — links/creates a record (Customer, Invoice, Unit, Work Order…) OR adds a line item (+Part/Task)'],
   R5c: ['Empty field', 'addBtn() / efld empty state', 'GRAY dashed “+Thing” — a normal empty field (+Serial, +Email, +PO)'],
@@ -1375,6 +1376,7 @@ const RULE_META = {
   R7:  ['Hyperlink', 'linkName / .inv-line-link', 'blue · italic · NOT bold · permanent underline'],
   R8:  ['Derived value', 'kv({derived}) / .derived', 'italic = the app computed it; you don’t type it'],
   R9:  ['Title flags', 'flagEl / flagsStack', '≤2 stacked 14px mini-flags beside a title — no backgrounds'],
+  R9b: ['Flashing flag', 'flagEl({alert})', 'a title flag that PULSES for attention (No Card, Overbooked, active rental, bad pay status)'],
   R10: ['S1 title chip', '.c-titlecard (cardEl)', 'dark chip · white bold label · plain orange icon · permanent orange border'],
   R11: ['Section', '.section + sec-green/yellow/red', 'centered header; header+border follow the LIVE status'],
   R12: ['Notes line', 'notesSection', 'boxless, label-less; filled→top of the card, empty→bottom above history'],
@@ -3802,6 +3804,8 @@ function renderOverlay() {
       R16: '<span style="display:inline-flex;height:22px;width:120px;border:1px solid var(--line);border-radius:7px;overflow:hidden"><span style="flex:1;background:var(--green-bg);border-right:1px dashed var(--line-soft)"></span><span style="flex:1;background:var(--green-bg);border-right:1px dashed var(--line-soft)"></span><span style="flex:1;border-right:1px dashed var(--line-soft)"></span><span style="flex:1"></span></span>',
       R17: actionPill('commit', 'Done') + actionPill('money', 'Pay $210') + actionPill('danger', 'Refund'),
       R18: ghostPill('Cancel'),
+      R4b: dPill('Overbooked', 'red', { icon: CARD_ICON.rentals, alert: true }),
+      R9b: flagsStack([flagEl('No Card', 'red', { alert: true })]),
       R22: closeX('', {}),
     };
     const rows = Object.keys(RULE_META).map((r) => {
