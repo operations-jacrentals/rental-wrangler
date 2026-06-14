@@ -452,6 +452,28 @@ input { font-family: inherit; }
 .hbtn:hover { background: var(--panel-2); color: var(--accent); }
 .hbtn svg { width: 16px; height: 16px; }
 
+/* Per-card view-history JOG (Phase 1) — a stamped steel two-way stepper. Shows
+   only when a card carries its own back/forward history this session. The seam
+   between the arms is a saddle-stitch (the ranch twist, used as a divider). */
+.card-jog {
+  display: inline-flex; align-items: stretch; flex: 0 0 auto; height: 26px;
+  border-radius: var(--chip-radius); overflow: hidden;
+  background: var(--panel); border: 1px solid var(--line); box-shadow: var(--chip-shadow);
+}
+.card-jog .jog-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 25px; padding: 0; border: 0; background: transparent;
+  color: var(--txt-2); cursor: pointer; transition: background .12s, color .12s;
+}
+.card-jog .jog-btn svg { width: 15px; height: 15px; }
+.card-jog .jog-btn + .jog-btn { border-left: 1px dashed rgba(194,146,90,.55); }   /* saddle-stitch seam */
+.card-jog .jog-btn:not([disabled]):hover { background: var(--accent-soft); color: var(--accent); }
+.card-jog .jog-btn:not([disabled]):active { background: var(--accent-line); color: #1a1205; }
+.card-jog .jog-btn[disabled] { color: var(--txt-3); opacity: .32; cursor: default; }
+.card-jog .jog-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* in the list-bar the jog sits flush at the front, before the board-view button */
+.listbar .card-jog { margin-right: 2px; }
+
 .card-body { position: relative; flex: 1 1 auto; overflow-y: auto; overflow-x: hidden; min-height: 0; }
 /* a sticky top fade so content dissolves under the floating title chip as it
    scrolls (the chip floats cleanly above the scroll). Sits below the sticky

@@ -699,7 +699,7 @@ function categoryStats(cat) {
    its own anchored main card + cascade. */
 function freshSession() {
   const cards = {};
-  for (const c of GRID_CARDS) cards[c.id] = { mode: 'list', recId: null, recType: null, search: '', filterTerms: [], historySearch: '', sort: loadSort(c.id), backStack: [], segment: c.id === 'shop' ? 'all' : null };
+  for (const c of GRID_CARDS) cards[c.id] = { mode: 'list', recId: null, recType: null, search: '', filterTerms: [], historySearch: '', sort: loadSort(c.id), backStack: [], fwdStack: [], segment: c.id === 'shop' ? 'all' : null };
   // 3-column layout: which member card is visible in each column (display-only;
   // rides inside the session so item-tabs / pause-resume restore it for free).
   const cols = {}; for (const col of COLUMNS) cols[col.id] = col.default;
@@ -769,7 +769,7 @@ function setAnchor(session, card, recId, recType) {
   // anchored card → standard; others → list (cascade)
   for (const c of GRID_CARDS) {
     const ccs = session.cards[c.id];
-    ccs.backStack = [];
+    ccs.backStack = []; ccs.fwdStack = [];
     ccs.mode = c.id === card ? 'standard' : 'list';
     ccs.recId = c.id === card ? recId : null;
     ccs.recType = c.id === card ? recType : null;
@@ -868,13 +868,14 @@ function sweepEmptyDrafts(keepId) {
 }
 function openStandard(card, recId, recType) {
   const cs = activeSession().cards[card];
-  // Task 5 — overtaking a DIFFERENT record already open in this card's Standard
-  // view freezes the session and opens a NEW foreground tab instead of swapping
-  // the record in place. (Same record / coming from list → open in place.)
-  if (cs && cs.mode === 'standard' && cs.recId != null && String(cs.recId) !== String(recId)) {
+  if (cs && cs.mode === 'standard' && cs.recId != null) {
+    if (String(cs.recId) === String(recId)) { render(); return; }            // already showing it — no-op
+    // Task 5 — overtaking a DIFFERENT record already open in Standard freezes the
+    // session and opens a NEW foreground tab instead of swapping in place.
     return openInTab(card, recId, recType, { inheritFrom: activeSession() });
   }
   sweepEmptyDrafts(recId);   // #8 — leaving an empty draft deletes it
+  pushCardHistory(cs);       // Task 1 — record the prior (list) view so Back can return
   cs.mode = 'standard'; cs.recId = recId; cs.recType = recType || null;
   render();
 }
@@ -901,19 +902,63 @@ function cardRecordAt(target) {
   }
   return null;
 }
-// Right-click = send a card back to its list view (more useful than step-back).
+// The .js-tolist header button — send a card straight to its list view, recording
+// the prior view so the Back chevron can return to it.
 function cardToList(card) {
   const cs = activeSession().cards[card]; if (!cs) return;   // 'calendar' has no card state → no-op
-  cs.mode = 'list'; cs.backStack = [];
-  render();
+  if (cs.mode === 'standard' && cs.recId != null) { pushCardHistory(cs); cs.mode = 'list'; cs.recId = null; cs.recType = null; render(); return; }
+  cs.mode = 'list'; render();
 }
 // Double right-click = drop the session's anchor entirely (anchor-less = no cascade).
 function clearAnchor() {
   const s = activeSession();
   if (!s.anchor) return;
   s.anchor = null; s.cascade = null;
-  for (const c of GRID_CARDS) { const cs = s.cards[c.id]; cs.mode = 'list'; cs.recId = null; cs.recType = null; cs.backStack = []; }
+  for (const c of GRID_CARDS) { const cs = s.cards[c.id]; cs.mode = 'list'; cs.recId = null; cs.recType = null; cs.backStack = []; cs.fwdStack = []; }
   render();
+}
+/* ── Per-card view history (Phase 1, Task 1) ───────────────────────────────────
+   Each card walks its OWN sequence of views shown this session — independent of
+   the other cards and the tab anchor. A view is a {mode,recId,recType} snapshot.
+   Back/forward chevrons (and right-click = Back) step through it. */
+const cardSnap = (cs) => ({ mode: cs.mode, recId: cs.recId, recType: cs.recType || null });
+const sameSnap = (a, b) => a && b && a.mode === b.mode && String(a.recId) === String(b.recId);
+const HIST_CAP = 50;
+// Record the card's CURRENT view before we change it; opening a new view clears the
+// forward branch (standard back/forward semantics).
+function pushCardHistory(cs) {
+  if (!cs) return;
+  const snap = cardSnap(cs);
+  const top = cs.backStack[cs.backStack.length - 1];
+  if (!sameSnap(top, snap)) cs.backStack.push(snap);
+  if (cs.backStack.length > HIST_CAP) cs.backStack.shift();
+  cs.fwdStack = [];
+}
+function applySnap(cs, snap) { cs.mode = snap.mode; cs.recId = snap.recId; cs.recType = snap.recType || null; }
+// Step this one card back / forward through its own history (other cards untouched).
+function cardBack(card) {
+  const cs = activeSession().cards[card]; if (!cs || !cs.backStack.length) return;
+  cs.fwdStack.push(cardSnap(cs));
+  applySnap(cs, cs.backStack.pop());
+  render();
+}
+function cardFwd(card) {
+  const cs = activeSession().cards[card]; if (!cs || !cs.fwdStack.length) return;
+  cs.backStack.push(cardSnap(cs));
+  applySnap(cs, cs.fwdStack.pop());
+  render();
+}
+// The stamped two-way "jog" — renders ONLY when this card has its own history this
+// session; back/forward enable independently. Lives in the standard header and the
+// list-bar. Right-click on the card mirrors the Back arm (Task 2).
+function cardJog(card, cs) {
+  if (!cs || (!cs.backStack.length && !cs.fwdStack.length)) return '';
+  const arm = (dir, on, ico, tip) =>
+    `<button class="jog-btn js-card${dir}" data-card="${esc(card)}" ${on ? '' : 'disabled'} data-tip="${tip}" aria-label="${tip}">${ico}</button>`;
+  return `<div class="card-jog" role="group" aria-label="View history">`
+    + arm('back', cs.backStack.length, I.chevL, 'Back')
+    + arm('fwd', cs.fwdStack.length, I.chevR, 'Forward')
+    + `</div>`;
 }
 // Double-click-to-anchor discriminator (#10): a row's single-click OPEN is deferred a
 // beat so a 2nd click can anchor instead — the first click never "counts" / never opens.
@@ -1105,6 +1150,8 @@ const I = {
   lock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>',
   lockOpen: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.5-2"/></svg>',
   chev: '<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 9l6 6 6-6"/></svg>',
+  chevL: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>',
+  chevR: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>',
 };
 
 /* Card + KPI-ring glyphs — sourced from free libraries (Lucide MIT; the excavator
@@ -3197,6 +3244,7 @@ function cardEl(cardDef, session) {
       : '';
     const head = el('div', 'card-head');
     head.innerHTML = `
+      ${cardJog(card, cs)}
       <span class="c-titlecard"><span class="c-icon">${CARD_ICON[card] || ''}</span>${titleHtml}</span>
       ${headFlagsHtml(card, stdRec)}`;
     node.appendChild(head);
@@ -3230,6 +3278,7 @@ function listView(cardDef, session) {
   const anchorName = cascaded ? (state.tabs.find((t) => t.session === session)?.label || 'anchor') : '';
   const cascChip = cascaded ? `<span class="casc-chip" data-tip="Cascaded from ${esc(anchorName)} — clear to browse all & add">🔗<span class="cc-name">${esc(anchorName)}</span>${closeX('js-uncascade', { data: { card } })}</span>` : '';
   bar.innerHTML = `
+    ${cardJog(card, cs)}
     <button class="bv-btn js-boardview" data-card="${card}" data-tip="Open Board View (spreadsheet)">${I.table}</button>
     <div class="mini-searchwrap${cterms.length || cascChip ? ' has-terms' : ''}">
       ${cascChip}${cterms.map((ft, i) => filterTermPill(ft, i, card)).join('')}
@@ -5288,7 +5337,7 @@ function onClick(e) {
     state.fleetFilter = same ? null : { categoryId: b.dataset.cat, status: b.dataset.status, kind: b.dataset.kind };
     // §12.3 — take the user to the Units LIST filtered to those units (left column),
     // not the anchored category. No cascade of the other columns.
-    const s = activeSession(); if (s.cols) s.cols.left = 'units'; s.cards.units.mode = 'list'; s.cards.units.backStack = [];
+    const s = activeSession(); if (s.cols) s.cols.left = 'units'; s.cards.units.mode = 'list'; s.cards.units.backStack = []; s.cards.units.fwdStack = [];
     render();
     return;
   }
@@ -5467,8 +5516,12 @@ function onClick(e) {
     return openInNewTab(card, newtabBtn.dataset.rec || row?.dataset.rec, newtabBtn.dataset.type || row?.dataset.type);
   }
 
+  // per-card view-history jog (Task 1) — step this one card back / forward
+  if (closest('.js-cardback')) { e.stopPropagation(); return cardBack(closest('.js-cardback').dataset.card); }
+  if (closest('.js-cardfwd')) { e.stopPropagation(); return cardFwd(closest('.js-cardfwd').dataset.card); }
+
   if (closest('.js-showmore')) { const b = closest('.js-showmore'); e.stopPropagation(); const cs = activeSession().cards[b.dataset.card]; if (cs) { cs.listLimit = (cs.listLimit || VIRT_CAP) + SHOW_MORE_BATCH; render(); } return; }
-  if (closest('.js-tolist')) { const card = closest('.card').dataset.card; activeSession().cards[card].mode = 'list'; render(); return; }
+  if (closest('.js-tolist')) { e.stopPropagation(); return cardToList(closest('.card').dataset.card); }
 
   // a flag naming a section WITHOUT a nav target scrolls within its own card
   // (e.g. "No Card" → Cards on File — Jac 2026-06-12)
@@ -7506,7 +7559,7 @@ function boot() {
     const dc = card.dataset.card, now = performance.now();
     if (now - lastCtx.t < 450 && lastCtx.card === dc) { lastCtx = { t: 0, card: null }; return clearAnchor(); }   // double right-click
     lastCtx = { t: now, card: dc };
-    cardToList(dc);                                                   // single right-click → List View
+    cardBack(dc);   // Task 2 — single right-click = this card's Back chevron (step back one in its own history)
   });
   document.addEventListener('mousemove', (e) => { lastMouse.x = e.clientX; lastMouse.y = e.clientY; });
   // hover preview (#1): float a record's Standard view after a short hover on a row/pill
