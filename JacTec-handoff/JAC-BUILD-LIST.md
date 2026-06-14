@@ -4,6 +4,14 @@ Master queue. Status flags: 🆕 new · 🔧 partial/refine (some shipped) ·
 ✅ shipped last session (verify, don't rebuild) · ❓ decision/define needed.
 We walk this **task by task via poll**; decisions get recorded inline.
 
+## 📱 MOBILE (adaptive reflow) — ✅ M0–M3 SHIPPED + LIVE (2026-06-14)
+Spec: `docs/superpowers/specs/2026-06-14-mobile-adaptive-design.md`. Field-ready goal; desktop untouched.
+- **M0** — responsive columns 3→2→1 by width; viewport meta → device-width; body never side-scrolls; `is-phone`/`is-narrow` classes.
+- **M1** — swipe between columns (scroll-snap) + 3-dot indicator; phone-only per-column bottom strips: Yard→internal chat · Rentals→tool bar · Customers→external-chats **shell** (awaits messaging backend).
+- **M2** — drag on touch: dwell at L/R edge switches columns mid-drag; **bottom edge = start-a-chat** drop zone (cancel-arc hidden on phone).
+- **M3** — touch gesture model: hold-still→context menu, horizontal→drag, vertical→scroll, tap→action (`openCtxMenuAt` shared mouse/touch). Desktop right-click unchanged.
+- ⬜ Optional follow-ups (not built, "functional" scope): touch haptics, per-screen polish passes, external-chat backend.
+
 ## Phase 0 — Carry-over ("cute items")
 - 🆕 **Ask Mr. Wrangler** — Claude-API proxy so the app can call Claude (e.g. auto-suggest WO parts; the "Mr. Wrangler will add the parts for you" hook is already wired in copy).
 - 🔧 **#9/#10 drag bugs** — awaiting Jac's repro (what was grabbed, where dropped, what happened). Overlaps Phase 3.
