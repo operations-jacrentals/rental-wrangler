@@ -4800,7 +4800,8 @@ function openFunnelDropdown(custId, which, anchorEl) {
 function setFunnelStage(custId, which, val) {
   const c = IDX.customer.get(custId);
   if (!c) return;
-  if (which === 'membership') c.membershipStage = val; else c.usedSalesStage = val;
+  const field = which === 'membership' ? 'membershipStage' : 'usedSalesStage';
+  if (c[field] !== val) { c[field] = val; logAction(c, `${which === 'membership' ? 'Membership' : 'Sales'} stage → ${getStatus('funnelStage', val).label}`); }   // audit: funnel moves were unlogged (Jac, Phase 7)
   reindex('customers', c);
   document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove());
   render();
@@ -5792,8 +5793,9 @@ function handlePillX(xEl) {
     toast('Line item removed.'); render();
   } else if (kind === 'intcat-remove') {
     const cid = xEl.dataset.id;
+    const catName = IDX.category.get(cid)?.name || 'category';
     rec.interestedCategoryIds = (rec.interestedCategoryIds || []).filter((x) => x !== cid);
-    reindex('customers', rec); toast('Interested category removed.'); render();
+    reindex('customers', rec); logAction(rec, `No longer interested in ${catName}`); toast('Interested category removed.'); render();   // audit: removal was unlogged (add logged "Interested in")
   }
 }
 
