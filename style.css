@@ -1212,7 +1212,7 @@ select.nc-in { cursor: pointer; }
 /* (orange hover on plain adds removed — Jac 2026-06-11: only LINK adds are orange) */
 
 /* ── R0 FLASH-LINT — any pill/button/add/link WITHOUT a data-r rule stamp
-   pulses slowly: it bypassed the UI builders (SPEC v7). Toggle = bottom bar;
+   pulses slowly: it bypassed the UI builders (SPEC v8). Toggle = bottom bar;
    once the streamline sweep is complete NOTHING should flash. ── */
 body.rw-lint .pill:not([data-r]),
 body.rw-lint .add-field:not([data-r]),
@@ -1229,7 +1229,7 @@ body.rw-lint .seg:not([data-r]) {
 }
 @keyframes rwLint { 50% { outline-color: transparent; } }
 
-/* ── DESIGN INSPECTOR (SPEC v7) — hover names the rule, click copies the
+/* ── DESIGN INSPECTOR (SPEC v8) — hover names the rule, click copies the
    reference. #rw-tip = the floating rule tag; .rb-* = the Rulebook overlay. ── */
 #rw-tip { position: fixed; z-index: 200; display: none; pointer-events: none; max-width: 240px;
   background: var(--card); border: 1px solid var(--accent-line); border-radius: 10px;

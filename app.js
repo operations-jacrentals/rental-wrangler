@@ -1198,7 +1198,7 @@ const RING_ICON = {
 };
 
 /* ════════════════════════════════════════════════════════════════════════
-   §5 UI BUILDERS — ONE function per design rule (the SPEC v7 rulebook).
+   §5 UI BUILDERS — ONE function per design rule (the SPEC v8 rulebook).
    Every builder stamps its output with data-r="Rn". The flash-lint (R0)
    slowly pulses anything WITHOUT a stamp: if it flashes, it bypassed the
    system. Debug language: "that violates R4" → fix the builder, fixed
@@ -1464,7 +1464,7 @@ function ghostPill(label, { js, data } = {}) {
   return `<button class="pill ghost${js ? ' ' + js : ''}" data-r="R18"${dataAttrs(data)}>${esc(label)}</button>`;
 }
 
-/* ── THE RULEBOOK METADATA (SPEC v7) — feeds the Design Inspector + the
+/* ── THE RULEBOOK METADATA (SPEC v8) — feeds the Design Inspector + the
    visual Rulebook overlay. One row per rule: [name, builder, one-liner]. ── */
 const RULE_META = {
   R0:  ['Flash-lint', 'body.rw-lint (CSS)', 'un-stamped UI pulses red — it bypassed the builders'],
@@ -3887,7 +3887,7 @@ function bottomBarInner() {
     <button class="iconbtn js-adminlock${adminUnlocked() ? ' on' : ''}" data-tip="${adminUnlocked() ? 'Admin tools unlocked — click to lock' : 'Admin tools — click to unlock'}">${adminUnlocked() ? I.lockOpen : I.lock}</button>
     ${adminUnlocked() ? `<button class="iconbtn js-lint${document.body.classList.contains('rw-lint') ? ' on' : ''}" data-tip="Design lint — flash anything that bypassed the UI builders (R0)">${I.eye}</button>
     <button class="iconbtn js-inspect${state.inspect ? ' on' : ''}" data-tip="Design Inspector — hover names the rule, click copies the reference">${I.search}</button>
-    <button class="iconbtn js-rulebook" data-tip="The R-Rulebook — visual design reference (SPEC v7)">${I.doc}</button>` : ''}`;
+    <button class="iconbtn js-rulebook" data-tip="The R-Rulebook — visual design reference (SPEC v8)">${I.doc}</button>` : ''}`;
 }
 function bottomBarEl() { const bar = el('div', 'bottombar'); bar.innerHTML = bottomBarInner(); return bar; }
 // §M1 — phone-only per-column bottom strip: Yard→internal chat · Rentals→tool bar · Customers→external chats (shell).
@@ -4155,7 +4155,7 @@ function renderOverlay() {
     overlay.appendChild(pop);
     setTimeout(() => pop.querySelector('.cmt-input')?.focus(), 0);
   } else if (o.kind === 'rulebook') {
-    // THE VISUAL RULEBOOK (SPEC v7) — every example is emitted by the REAL
+    // THE VISUAL RULEBOOK (SPEC v8) — every example is emitted by the REAL
     // builder, so this reference can never drift from the code.
     const EX = {
       R0: '<span class="pill c-gray" style="outline:2px dashed var(--red);outline-offset:2px;animation:rwLint 2.2s ease-in-out infinite"><span class="t">unstamped</span></span>',
@@ -4216,7 +4216,7 @@ function renderOverlay() {
       </div>`;
     const pop = el('div', 'popup'); pop.style.width = '620px';
     pop.innerHTML = `
-      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${I.doc}</span><h3>The R-Rulebook — SPEC v7</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
+      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${I.doc}</span><h3>The R-Rulebook — SPEC v8</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
       <div class="popup-body" style="max-height:70vh;overflow-y:auto">
         <p class="muted" style="font-size:12px;margin-bottom:10px">Every example below is rendered by the REAL builder function — this reference can't drift from the app. Debug by rule: <b>“the X on the customer card violates R5.”</b> Use the 🔍 Inspector (bottom bar) to hover any element and copy its reference.</p>
         ${rows}
@@ -5180,7 +5180,7 @@ function toast(msg) {
 
 /* ════════════════════════════════════════════════════════════════════════
    §15 EVENT HANDLERS — onClick/onInput/onChange (single listener tree)
-   ⚠ §16 ACTIONS/MUTATIONS interleave from here to §17 — see the SPEC v7 map
+   ⚠ §16 ACTIONS/MUTATIONS interleave from here to §17 — see the SPEC v8 map
    ════════════════════════════════════════════════════════════════════════ */
 /* ════════════════════════════════════════════════════════════════════════
    §15c DRAG & DROP LINK ENGINE (DRAGDROP-DESIGN.md) — custom pointer engine.
@@ -5622,7 +5622,7 @@ function onClick(e) {
   const t = e.target;
   const closest = (sel) => t.closest(sel);
 
-  // ── DESIGN INSPECTOR intercept (SPEC v7): while inspecting, clicking any
+  // ── DESIGN INSPECTOR intercept (SPEC v8): while inspecting, clicking any
   // rule-bearing element COPIES its reference instead of acting — the exact
   // string Jac pastes to debug ("R4 · Derived pill — RENTALS › RENTAL › …").
   if (state.inspect && !closest('.js-inspect, .js-lint, .js-rulebook, .js-theme, .overlay, #rw-tip')) {
@@ -7946,7 +7946,7 @@ function boot() {
     }, 130);
   }, true);
   initDrag();   // §15c drag & drop link engine — #drag-layer singleton + document pointer listeners
-  // R0 flash-lint: ON by default — violations self-report by pulsing (SPEC v7)
+  // R0 flash-lint: ON by default — violations self-report by pulsing (SPEC v8)
   try { if (localStorage.getItem('jactec.lint') !== '0') document.body.classList.add('rw-lint'); } catch (err) {}
   document.addEventListener('click', onClick);
   document.addEventListener('input', onInput);
@@ -7996,7 +7996,7 @@ function boot() {
     if (t.classList.contains('bv-colname') && (t.value || '').trim().startsWith('=')) renderOverlay();
   });
   document.addEventListener('keydown', (e) => {
-    // Esc exits the Design Inspector first (SPEC v7)
+    // Esc exits the Design Inspector first (SPEC v8)
     if (e.key === 'Escape' && state.inspect) {
       state.inspect = false; document.body.classList.remove('rw-inspect');
       const tip = document.getElementById('rw-tip'); if (tip) tip.style.display = 'none';
