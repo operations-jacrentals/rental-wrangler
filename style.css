@@ -721,6 +721,8 @@ input { font-family: inherit; }
 .chat-head { display: flex; align-items: center; padding: 10px 12px; border-bottom: 1px solid var(--line); flex: 0 0 auto; }
 .chat-head .chat-title { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.6px; font-weight: 700; font-size: 13px; color: var(--txt); }
 .chat-head .spacer { flex: 1; }
+.chat-leave { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; margin-left: 4px; border: none; background: none; color: var(--txt-3); cursor: pointer; padding: 0; }
+.chat-leave svg { width: 16px; height: 16px; } .chat-leave:hover { color: var(--accent); }
 .chat-rail { display: flex; gap: 6px; flex-wrap: wrap; padding: 8px 10px; border-bottom: 1px solid var(--line); background: rgba(0,0,0,.18); flex: 0 0 auto; }
 .chat-rail.empty { font-size: 11px; color: var(--txt-3); font-style: italic; }
 .chat-tag { display: inline-flex; align-items: center; gap: 5px; max-width: 150px; padding: 3px 4px 3px 9px; border-radius: 7px; font-size: 11px; font-weight: 700;
