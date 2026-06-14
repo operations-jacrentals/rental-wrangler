@@ -882,7 +882,7 @@ input { font-family: inherit; }
 /* §12.2 rental status bar (window timeline) */
 .statusbar { position: relative; height: 46px; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); cursor: pointer; }
 /* §12.2 rental-window picker — a trigger bar that opens a single calendar popup */
-.statusbar.draftwin.wintrigger { height: 46px; cursor: pointer; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; gap: 10px; background: var(--panel); border-style: dashed; border-color: var(--accent-line); color: var(--accent); }
+.statusbar.draftwin.wintrigger { width: 100%; box-sizing: border-box; height: 46px; cursor: pointer; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; gap: 10px; background: var(--panel); border-style: dashed; border-color: var(--accent-line); color: var(--accent); }
 .statusbar.draftwin.wintrigger .wt-label { flex: 1; text-align: center; font-size: 13px; font-weight: 700; }
 .statusbar.draftwin.wintrigger:hover { background: var(--accent-soft); }
 .statusbar.js-open-winpicker { cursor: pointer; }
