@@ -92,6 +92,13 @@ We walk this **task by task via poll**; decisions get recorded inline.
 - ✅ **Team KPI → one "Sulphur Team" row + ring layout matches role count** — shipped (Team KPI redesign + N-ring). VERIFY.
 
 ## Phase 7 — Layout, entry & open decisions
+> **Progress this session** — ✅ LIVE: Notes moved above the funnels; Logins comment-ack
+> wired to the signed-in user (done in Phase 6); History/logging audit (funnel moves +
+> interested-category removal now log). ✅ already settled: +Customer Quick Add, Membership
+> monthly+yearly. ⬜ REMAINING: **Schedule → surface when due** (+ the future Company/Sales
+> Calendar + dashboard it feeds); **Tabbed message dock** — internal side buildable now, the
+> external customer/vendor SMS/email side is BLOCKED on a backend messaging integration that
+> doesn't exist in this repo.
 - 🆕 **Move Notes above the Funnel sections** — DECISION (Jac): on the **customer** card, render **filled** Notes directly under the title, ABOVE both funnel columns (`detail-cols`, `app.js:2649`); **empty** Notes keep their current bottom slot (above History) per R12. (Move `notes.top` ahead of `detail-cols`.)
 - ✅ **Equal-width +X buttons** — shipped (#12). VERIFY.
 - 🆕 **Tabbed message convos in the bottom tool bar** — DECISION (Jac): a tabbed conversation dock along the bottom tool bar, split by side:
