@@ -743,6 +743,7 @@ const state = {
   availWin: null,      // §10 persistent window scope for the "available" search (set by the picker; outlives it)
   filterTerms: [],            // §5.4 — AND-narrowing filter terms (type + Enter)
   fleetFilter: null,          // { categoryId, status } — fleet-summary badge → units by status
+  unitPick: null,             // { ids, from } — Invoice +WO narrows the Units list to the invoice's linked units (Phase 4)
   woPartForm: null,           // woId whose "+ Add Part/Labor" inline form is open
   invLineForm: null,          // invoiceId whose "+ Add Custom" inline form is open
   dashboard: false,           // §5.3/§11 Office Dispatch Time Grid (grid-swap mode)
@@ -761,6 +762,7 @@ const nextInvoiceId = () => CFG.invoiceId(TODAY_ISO, ++state.invoiceSeq);
 function setAnchor(session, card, recId, recType) {
   sweepEmptyDrafts(recId);   // #8 — anchoring elsewhere deletes an abandoned empty draft
   if (state.fleetFilter && !(card === 'categories' && recId === state.fleetFilter.categoryId)) state.fleetFilter = null;
+  if (state.unitPick && !(card === 'units' && state.unitPick.ids.includes(recId))) state.unitPick = null;   // leaving the picker clears it
   const entityCard = entityCardOf(card, recType);
   const type = SINGULAR[entityCard];
   const rec = recOf(entityCard, recId);
@@ -3037,6 +3039,12 @@ function listFor(card, session) {
       ? units.filter((u) => unitRentalBucket(u) === state.fleetFilter.status)
       : units.filter((u) => u.inspectionStatus === state.fleetFilter.status);
   }
+  // Phase 4 — Invoice +WO narrows the Units list to just the invoice's linked units
+  // (the list IS the picker; the operator opens one and uses its own + Work Order).
+  if (card === 'units' && state.unitPick) {
+    const set = new Set(state.unitPick.ids);
+    return collection('units').filter((u) => set.has(u.unitId));
+  }
   // Wave 2 (the modes died): while the anchored Quote/invoice still needs links,
   // the cards you DRAG FROM list every candidate — an empty Quote cascades to
   // nothing, and there'd be nothing to drag onto it.
@@ -3300,6 +3308,13 @@ function listView(cardDef, session) {
     const cat = IDX.category.get(state.fleetFilter.categoryId);
     const chip = el('div', 'fleet-chip');
     chip.innerHTML = `<span class="muted">Showing</span> <b>${esc(state.fleetFilter.status)}</b> <span class="muted">in</span> ${esc(cat?.name || 'category')} <button class="x js-clear-fleet" data-tip="Clear filter">${I.x}</button>`;
+    wrap.appendChild(chip);
+  }
+  // Phase 4 — Units narrowed to an invoice's linked units (Invoice +WO) → removable chip
+  if (card === 'units' && state.unitPick) {
+    const n = state.unitPick.ids.length;
+    const chip = el('div', 'fleet-chip');
+    chip.innerHTML = `<span class="muted">${n === 1 ? 'Linked unit on' : `${n} linked units on`} invoice</span> <b>${esc(invoiceShort(state.unitPick.from))}</b> <span class="muted">— open one to add a work order</span> <button class="x js-clear-unitpick" data-tip="Clear filter">${I.x}</button>`;
     wrap.appendChild(chip);
   }
 
@@ -4920,6 +4935,14 @@ function woDroppableToInvoice(w, i) {
     && (!w.customerId || !i.customerId || w.customerId === i.customerId)
     && !(i.lineItems || []).some((li) => li.kind === 'WO' && li.ref === w.woId);
 }
+/** The units linked to an invoice — via its rentals' units and any line-item unitId.
+ *  Feeds the Phase 4 Invoice +WO picker (narrows the Units list to these). */
+function invoiceUnitIds(inv) {
+  const ids = new Set();
+  (inv.rentalIds || []).forEach((rid) => { const r = IDX.rental.get(rid); if (r) rentalUnits(r).forEach((eu) => { if (eu.unitId) ids.add(eu.unitId); }); });
+  (inv.lineItems || []).forEach((li) => { if (li.unitId) ids.add(li.unitId); });
+  return [...ids];
+}
 
 /** Called from boot() — builds the #drag-layer singleton (ghost + cancel arc)
  *  on document.body and wires the document-level pointer listeners. */
@@ -5386,6 +5409,7 @@ function onClick(e) {
     return;
   }
   if (closest('.js-clear-fleet')) { e.stopPropagation(); state.fleetFilter = null; render(); return; }
+  if (closest('.js-clear-unitpick')) { e.stopPropagation(); state.unitPick = null; render(); return; }
   if (closest('.js-addcat')) { const b = closest('.js-addcat'); e.stopPropagation(); return openIntCatDropdown(b.dataset.rec, b); }
   if (closest('.js-setintcat')) { const b = closest('.js-setintcat'); e.stopPropagation(); return addInterestedCategory(b.dataset.rec, b.dataset.val); }
   if (closest('.js-act-open')) { const b = closest('.js-act-open'); e.stopPropagation(); state.actMode = b.dataset.val; state.actOpen = b.dataset.rec; const rec = b.dataset.rec; render(); document.querySelector(`.js-act-in[data-rec="${rec}"]`)?.focus(); return; }
@@ -5418,9 +5442,14 @@ function onClick(e) {
       render(); attnFlash('.card[data-card="rentals"] .list'); toast('Drag a rental onto this invoice.'); return;
     }
     if (b.dataset.kind === 'WO') {
-      if (inv && !inv.customerId) { flashOr('[data-slot="customer"]', 'The invoice needs a customer first (§7.6) — drag or quick-add one.'); return; }
-      const s = activeSession(); if (s.cols) s.cols.left = 'units'; s.cards.units.mode = 'list';
-      render(); attnFlash('.card[data-card="units"] .list'); toast('Drag the unit with the open work order onto this invoice (it bills the WO).'); return;
+      // Phase 4 (Jac) — open the invoice's LINKED unit(s) in a filtered Units list; the
+      // list IS the picker. The operator opens a unit and uses its own + Work Order.
+      const ids = inv ? invoiceUnitIds(inv) : [];
+      if (!ids.length) { toast('No units on this invoice yet — add a rental first, then open its unit to start a work order.'); return; }
+      state.unitPick = { ids, from: inv.invoiceId }; state.fleetFilter = null;
+      const s = activeSession(); if (s.cols) s.cols.left = 'units'; const ucs = s.cards.units; ucs.mode = 'list'; ucs.recId = null; ucs.listLimit = undefined;
+      render(); attnFlash('.card[data-card="units"] .list');
+      toast(ids.length === 1 ? 'Open the unit and use its + Work Order.' : `Open one of the ${ids.length} linked units and use its + Work Order.`); return;
     }
     state.invLineForm = b.dataset.rec; return render();   // inline custom-line form
   }
