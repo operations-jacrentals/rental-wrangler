@@ -1283,7 +1283,8 @@ function funnelPill(custId, which, stage) {
 function dPill(label, color, { card, recId, icon, title, alert } = {}) {
   const nav = card ? ` data-pill-card="${card}" data-pill-rec="${esc(recId)}"` : '';
   const ic = icon || (card ? CARD_ICON[card] : '') || '';
-  return `<span class="pill dvd c-${color}${alert ? ' alert' : ''}" data-r="${alert ? 'R4b' : 'R4'}"${nav}${title ? ` data-tip="${esc(title)}"` : ''}>${ic}<span class="t">${esc(label)}</span></span>`;
+  const chat = (card && recId != null) ? ` data-chat-el data-chat-label="${esc(label)}" data-chat-color="${esc(color)}" data-chat-card="${esc(card)}" data-chat-rec="${esc(recId)}"` : '';   // §17 — category/derived pill → chat-draggable
+  return `<span class="pill dvd c-${color}${alert ? ' alert' : ''}" data-r="${alert ? 'R4b' : 'R4'}"${nav}${chat}${title ? ` data-tip="${esc(title)}"` : ''}>${ic}<span class="t">${esc(label)}</span></span>`;
 }
 /** R5: the ADD affordance — dashed, "+Thing" (never the word "Add", never a
  *  space after +). `link:true` = orange ink (creates/links a record);
@@ -2474,7 +2475,7 @@ const DETAIL = {
           ${kvPills(cust ? refPill('customers', r.customerId, cust.name, { x: 'cust-swap' }) : (r.mock ? pickCustBtn : badge('No customer')))}
           ${kvPills(`${rentalUnits(r).length
               ? rentalUnits(r).map((eu) => { const u2 = IDX.unit.get(eu.unitId); if (!u2) return ''; const insp = getStatus('unitInspectionStatus', u2.inspectionStatus); const multi = rentalUnits(r).length > 1; const voided = ['No Show', 'Cancelled'].includes(unitStatus(r, eu)); return `<span class="unitchip${voided ? ' voided' : ''}">${unitPill(u2.unitId, { x: 'unit-remove', xData: u2.unitId })}<span class="pill dvd c-${insp.color}" data-r="R4" data-pill-card="units" data-pill-rec="${esc(u2.unitId)}">${CARD_ICON.units}${esc(insp.label)}</span>${multi ? unitStatusGate(r, eu) : ''}</span>`; }).join('')
-              : (r.mock ? pickUnitBtn : '<span class="pill c-gray" data-r="R3b"><span class="t">No unit</span></span>')}${rentalUnits(r).length && r.mock ? pickUnitBtn : ''}${cat ? `<span class="pill dvd c-orange" data-r="R4" data-pill-card="categories" data-pill-rec="${esc(cat.categoryId)}">${CARD_ICON.categories}${esc(cat.name)}</span>` : ''}`)}
+              : (r.mock ? pickUnitBtn : '<span class="pill c-gray" data-r="R3b"><span class="t">No unit</span></span>')}${rentalUnits(r).length && r.mock ? pickUnitBtn : ''}${cat ? `<span class="pill dvd c-orange" data-r="R4" data-pill-card="categories" data-pill-rec="${esc(cat.categoryId)}" data-chat-el data-chat-label="${esc(cat.name)}" data-chat-color="orange" data-chat-card="categories" data-chat-rec="${esc(cat.categoryId)}">${CARD_ICON.categories}${esc(cat.name)}</span>` : ''}`)}
           ${kvPills(invPill)}
           ${efld('rentals', r, 'rentalId', 'po', 'Add PO', { fmt: (v) => 'PO ' + v })}
           ${fcRow ? kvPills(fcRow) : ''}
@@ -5143,7 +5144,9 @@ function toast(msg) {
    Wave 2: pick mode is GONE — drag (+ customer quick-add-link) IS the link path.
    ════════════════════════════════════════════════════════════════════════ */
 const DRAG = { active: false, armed: null, payload: null, point: { x: 0, y: 0 }, ghost: null, suppressClick: false, raf: null, hot: null };
-const DRAG_SOURCES = new Set(['units', 'rentals', 'customers', 'invoices']);   // shop/categories rows are NOT drag sources (for now)
+// units/rentals/customers/invoices link via DROP_MATRIX; categories + serviceOrders are
+// drag sources ONLY for chat-tagging (they're not in DROP_MATRIX, so no record links). §17
+const DRAG_SOURCES = new Set(['units', 'rentals', 'customers', 'invoices', 'categories', 'serviceOrders']);
 let dragLayer = null, dragArc = null, chatDropPad = null;
 
 /* DROP_MATRIX — payload entity → { target entity: validator(srcRec, tgtRec) }.
