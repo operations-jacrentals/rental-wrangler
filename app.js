@@ -730,7 +730,7 @@ const entityCardOf = (card, recType) => (card === 'shop' ? recType : card);
 
 const state = {
   data: DATA,
-  theme: (() => { try { const t = localStorage.getItem('jactec.theme'); return (t === 'light' || t === 'yard') ? t : 'dark'; } catch (e) { return 'dark'; } })(),   // dark | yard | light (per device)
+  theme: (() => { try { const t = localStorage.getItem('jactec.theme'); return (t === 'light' || t === 'yard' || t === 'ranch') ? t : 'dark'; } catch (e) { return 'dark'; } })(),   // dark | yard | ranch | light (per device)
   query: '',
   searchMode: false,
   tabs: [],            // [{ id, card, recId, label, sub, color, session }]
@@ -1150,6 +1150,7 @@ const I = {
   sun: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5 19 19M19 5l-1.5 1.5M6.5 17.5 5 19"/></svg>',
   moon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A8 8 0 1 1 11.2 3 6 6 0 0 0 21 12.8z"/></svg>',
   hardhat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M3 18a9 9 0 0 1 18 0z"/><path d="M2 18h20"/><path d="M10 9V6a2 2 0 0 1 2-2 2 2 0 0 1 2 2v3"/><path d="M5 14V12M19 14V12"/></svg>',
+  horseshoe: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3.5C3.5 6 3 11 5 15.5 6.2 18.3 9 20 12 20s5.8-1.7 7-4.5C21 11 20.5 6 17 3.5"/><path d="M6.5 19.5l-.5 1.5M17.5 19.5l.5 1.5"/></svg>',
   qr: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h3v3h-3zM20 14v7M14 20h7"/></svg>',
   mouse: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="7"/><path d="M12 6v4"/></svg>',
   video: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="13" height="12" rx="2"/><path d="m15 10 6-3v10l-6-3z"/></svg>',
@@ -3992,9 +3993,10 @@ function headerEl() {
 /* Theme cycle: dark → yard → light → dark. The bottom-bar button shows the icon
    + tooltip of the theme you'll switch TO next (matching the old sun/moon convention). */
 const THEME_NEXT = {
-  dark:  { next: 'yard',  icon: I.hardhat, tip: 'Yard mode' },
-  yard:  { next: 'light', icon: I.sun,     tip: 'Light mode' },
-  light: { next: 'dark',  icon: I.moon,    tip: 'Dark mode' },
+  dark:  { next: 'yard',  icon: I.hardhat,   tip: 'Yard mode' },
+  yard:  { next: 'ranch', icon: I.horseshoe, tip: 'Ranch mode' },
+  ranch: { next: 'light', icon: I.sun,       tip: 'Light mode' },
+  light: { next: 'dark',  icon: I.moon,      tip: 'Dark mode' },
 };
 /** The action toolbar — moved to a fixed bottom bar (Dashboard / +New / tools). */
 function bottomBarInner() {
