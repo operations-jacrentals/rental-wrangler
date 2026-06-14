@@ -9,6 +9,13 @@ We walk this **task by task via poll**; decisions get recorded inline.
 - 🔧 **#9/#10 drag bugs** — awaiting Jac's repro (what was grabbed, where dropped, what happened). Overlaps Phase 3.
 
 ## Phase 1 — Navigation & Tabs
+> ✅ **BUILT this session** (branch `claude/handoff-continuation-q442qm`): (a) one shared
+> `openInTab` foreground-new-tab path now serves anchor / global-search pick / standard-view
+> overtake — explicit +newtab/ctrl-click stays background; (b) a real per-card view-history
+> engine (`backStack`/`fwdStack` — was a stub) with a stamped-steel back/forward **jog** in
+> the standard header + list-bar; (c) single right-click = that card's Back. Gates green
+> (smoke + rule-usage; the 20/21 logic failure is pre-existing on main). Pending Jac's
+> live review.
 - 🆕 **Back buttons** — DECISION (Jac): hosted **per-card**, not global/tab. A back/forward **chevron** appears on a card *only* when that card has changed this session, and the chevrons walk **that card's own view history** (its sequence of records/views shown this session).
 - 🔧 **Right-click → list view when anchored** — DECISION (Jac): right-click on a card = **equivalent to that card's Back chevron** (step that single card back one in its own history; works even in anchored-cascade mode).
 - 🆕 **Anchoring creates a new item tab** — DECISION (Jac): tab strip already exists (above global search). Anchoring must **ALWAYS open a NEW tab** (duplicates allowed), freezing the current; only the tab **X** clears it. New tab **inherits the current cards' searches** (don't reset them). CODE: today `anchorRecord` overwrites the active tab via `Object.assign` → change to create+switch (like `openInNewTab`); per-card `ccs.backStack` already exists (feeds Task 1 chevrons); `setAnchor` currently clears cascaded-card searches (line ~777) → must preserve them for the new tab.
