@@ -4939,7 +4939,7 @@ function initDrag() {
 function dragDown(e) {
   DRAG.suppressClick = false;                                            // any NEW gesture re-enables clicks (a pointercancel can never strand a stuck eater)
   if (DRAG.active || e.button !== 0) return;
-  if (state.winpicker || state.overlay) return;                          // the calendar / overlays own their clicks
+  if (state.overlay) return;                                             // overlays own their clicks; the winpicker is non-modal (Task E — drag to select)
   if (e.target.closest('.inline-edit, .inline-input, input, textarea, select, button, .x, .pill, .seg, .add-field, .linkname, .flag, .jnode, .dropdown-menu, .overlay, .hover-preview, .winpicker-float, .ctx-menu')) return;
   const row = e.target.closest('.row');
   if (!row || !DRAG_SOURCES.has(row.dataset.card) || row.dataset.rec == null) return;   // .rtl rentals rows still carry card/rec on the .row wrapper
@@ -5215,12 +5215,18 @@ function onClick(e) {
     if (r) { e.preventDefault(); e.stopPropagation(); return openInNewTab(r.card, r.recId, r.recType); }
   }
 
-  // keep the window open while the user works the side cards; close it only when
-  // they click the Rentals card itself (and continue handling that click) or Done.
-  if (state.winpicker && !closest('.winpicker') && !closest('.js-open-winpicker')) {
-    // §2 — ANY click outside the picker CLOSES it + re-renders (removes the float) +
-    // stops here. Must always render or the float lingers as a dead, frozen overlay
-    // (state closed, DOM open). Discards a fragile rental's staged change. Jac 2026-06-13.
+  // Task C — the picker is NON-MODAL: it stays open while the operator works the
+  // Units / Categories / Customers cards (browse, toggle, open-to-inspect, drag-to-
+  // select). It closes only on a click truly OUTSIDE those cards, the picker, and the
+  // trigger. (Drags never reach here — their trailing click is swallowed at 4925.)
+  if (state.winpicker
+      && !closest('.winpicker')
+      && !closest('.js-open-winpicker')
+      && !closest('.card[data-card="units"]')
+      && !closest('.card[data-card="categories"]')
+      && !closest('.card[data-card="customers"]')) {
+    // Must always render or the float lingers as a dead, frozen overlay (state closed,
+    // DOM open). Discards a fragile rental's staged change. Jac 2026-06-13.
     state.winpicker = null;
     render();
     return;
@@ -6883,6 +6889,13 @@ function openWinPicker(rentalId) {
   if (!r.startTime) r.startTime = nowHourLabel();   // default to the current hour (user spec)
   state.winpicker = { rentalId, monthISO: firstOfMonthISO(r.startDate || TODAY_ISO), anchor: null };
   if (rentalFragile(r)) state.winpicker.staged = { rentalId, startDate: r.startDate || '', endDate: r.endDate || '', startTime: r.startTime || '' };
+  // Task C — frame the yard on open: reveal Categories (list view) in the left column
+  // so the operator can browse what's free for this window. If the rental already has a
+  // window, light the availability lens right away (live rentals only — staged commits on Save).
+  const s = activeSession();
+  if (s.cols) s.cols.left = 'categories';
+  const cc = s.cards.categories; if (cc) { cc.mode = 'list'; cc.recId = null; cc.listLimit = undefined; }
+  if (!rentalFragile(r) && r.startDate && r.endDate) enterAvailabilitySearch(r);
   render();
 }
 function winPickSave() {
@@ -7032,7 +7045,7 @@ function winPickerEl(r) {
       <span class="wp-nav"><button class="js-wp-prev" data-tip="Previous month">‹</button><button class="js-wp-next" data-tip="Next month">›</button></span></div>
     <div class="wp-grid">${dows}${cells}</div>
     ${subjName ? `<div class="wp-blocknote">Greyed days are ${state.overbookOn ? 'booked' : 'unavailable'} for <b>${esc(subjName)}</b>${state.overbookOn ? ' — overbooking is on, pick to force' : ''}</div>` : ''}
-    <div class="wp-foot"><button class="pill ghost js-wp-today" data-r="R18">Today</button>${wp.staged && winStagedChanged() ? actionPill('commit', 'Save', { js: 'js-wp-save' }) : ''}${actionPill('danger', 'Clear', { js: 'js-wp-clear' })}</div>
+    <div class="wp-foot"><button class="pill ghost js-wp-today" data-r="R18">Today</button>${wp.staged && winStagedChanged() ? actionPill('commit', 'Save', { js: 'js-wp-save' }) : ''}${actionPill('commit', 'Clear', { js: 'js-wp-clear' })}</div>
   </div>`;
 }
 /** Float the picker anchored to the TOP of its trigger button (opens upward so the
