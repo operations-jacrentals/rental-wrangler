@@ -4,6 +4,20 @@ Master queue. Status flags: 🆕 new · 🔧 partial/refine (some shipped) ·
 ✅ shipped last session (verify, don't rebuild) · ❓ decision/define needed.
 We walk this **task by task via poll**; decisions get recorded inline.
 
+## ✅ VERIFIED-LIVE AUDIT (2026-06-14) — git + live-code cross-check
+Every "✅ shipped" item below was confirmed present in the **deployed `main`** code
+(24/24 checks, Phases 1–7). Nothing claimed-done is missing from production.
+- **CI is 21/21 green** now — the long-standing `rentalLineItems` logic-test was a
+  *stale test* (R-MU's start date passed → Reserved U023 auto-No-Shows); fixed.
+- **Mr. Wrangler v1** was found **built but un-deployed** on branch `claude/mr-wrangler`
+  (front-end only; needs the Code.gs Claude proxy) — **parked** by Jac for a dedicated pass.
+- `design-overhaul` (126 commits) = the OLD line, fully superseded by `main` — nothing pending.
+- **Genuinely open:** Mr. Wrangler (parked) · external messaging (backend-blocked) ·
+  History/logging audit (in progress) · "Schedule" spec (undefined) · #9/#10 drag (likely
+  fixed by Phase 3, unverified).
+- **Regression fixed (2026-06-14):** right-click (menu/back/un-anchor) — `lastCtx` was
+  function-scoped → ReferenceError; hoisted to module scope.
+
 ## 📱 MOBILE (adaptive reflow) — ✅ M0–M3 SHIPPED + LIVE (2026-06-14)
 Spec: `docs/superpowers/specs/2026-06-14-mobile-adaptive-design.md`. Field-ready goal; desktop untouched.
 - **M0** — responsive columns 3→2→1 by width; viewport meta → device-width; body never side-scrolls; `is-phone`/`is-narrow` classes.
