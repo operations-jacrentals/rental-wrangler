@@ -2195,7 +2195,7 @@ function commentMarkerHtml(card, rec) {
   const id = card ? idOf(card, rec) : null;
   const chatFlash = id != null && chatUnseenForRec(card, id);   // §17 — re-flash on unseen chat updates for a tagged element
   if (!m && !chatFlash) return '';
-  const tagColor = chatFlash ? (state.chat.tags.find((t) => t.ref && t.ref.card === card && String(t.ref.recId) === String(id))?.color) : null;
+  const tagColor = chatFlash ? (chatsTagging(card, id).flatMap((c) => c.tags).find((t) => t.ref && t.ref.card === card && String(t.ref.recId) === String(id))?.color) : null;
   const color = m ? m.color : (tagColor || 'yellow');
   const flash = (m && m.flash) || chatFlash;
   const parts = [];
