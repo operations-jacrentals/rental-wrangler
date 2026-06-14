@@ -5165,7 +5165,7 @@ const DRAG = { active: false, armed: null, payload: null, point: { x: 0, y: 0 },
 // units/rentals/customers/invoices link via DROP_MATRIX; categories + serviceOrders are
 // drag sources ONLY for chat-tagging (they're not in DROP_MATRIX, so no record links). §17
 const DRAG_SOURCES = new Set(['units', 'rentals', 'customers', 'invoices', 'categories', 'serviceOrders']);
-let dragLayer = null, dragArc = null, chatDropPad = null;
+let dragLayer = null, dragArc = null, chatDropPad = null, dragEdgeDwell = null;
 
 /* DROP_MATRIX — payload entity → { target entity: validator(srcRec, tgtRec) }.
    Validators are the cheap VISUAL gate (which rows/cards glow .drop-ok); the
@@ -5452,9 +5452,24 @@ function dragFrameLoop() {
       if (DRAG.point.y < r.top + EDGE) body.scrollTop -= Math.ceil((r.top + EDGE - DRAG.point.y) / 3);
       else if (DRAG.point.y > r.bottom - EDGE) body.scrollTop += Math.ceil((DRAG.point.y - (r.bottom - EDGE)) / 3);
     }
+    if (document.body.classList.contains('is-phone')) phoneDragEdge();   // §M2 — dwell at L/R edge = switch column
     DRAG.raf = requestAnimationFrame(step);
   };
   DRAG.raf = requestAnimationFrame(step);
+}
+// §M2 — while dragging on a phone, holding the pointer at the left/right screen edge
+// switches to the adjacent column (one column per dwell), so an item can be carried
+// across columns. The bottom edge is the chat zone (handled by the drop-pad, §17).
+function phoneDragEdge() {
+  const EDGE = 30, DWELL = 350, w = window.innerWidth, x = DRAG.point.x;
+  const side = x <= EDGE ? -1 : x >= w - EDGE ? 1 : 0;
+  if (!side) { dragEdgeDwell = null; return; }
+  const now = performance.now();
+  if (!dragEdgeDwell || dragEdgeDwell.side !== side) { dragEdgeDwell = { side, at: now }; return; }
+  if (now - dragEdgeDwell.at < DWELL) return;
+  const next = Math.max(0, Math.min(2, state.mobileCol + side));
+  dragEdgeDwell.at = now;                                    // re-arm the dwell for a possible further hop
+  if (next !== state.mobileCol) { state.mobileCol = next; render(); }   // render re-stamps drop targets mid-drag (§15c) + restores scroll to the new column
 }
 
 /* ── release / cancel ───────────────────────────────────────────────────── */
@@ -5479,7 +5494,7 @@ function endDrag({ rerender } = {}) {
   document.querySelectorAll('.drop-ok, .drop-hot').forEach((n) => n.classList.remove('drop-ok', 'drop-hot'));
   document.body.classList.remove('dragging');
   delete document.body.dataset.drag;
-  DRAG.active = false; DRAG.payload = null; DRAG.ghost = null; DRAG.hot = null; DRAG.armed = null;
+  DRAG.active = false; DRAG.payload = null; DRAG.ghost = null; DRAG.hot = null; DRAG.armed = null; dragEdgeDwell = null;
   DRAG.suppressClick = true;   // the trailing click is swallowed once; the NEXT pointerdown clears it (no timer — see dragDown)
   if (rerender) render();
 }

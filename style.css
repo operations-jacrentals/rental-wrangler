@@ -280,6 +280,13 @@ input { font-family: inherit; }
 .mdock-tools { display: flex; align-items: center; gap: 4px; overflow-x: auto; padding: 3px 8px 5px; scrollbar-width: none; }
 .mdock-tools::-webkit-scrollbar { display: none; }
 .mdock-tools .iconbtn { flex: 0 0 auto; min-height: 42px; }
+/* ── §M2 Mobile drag — the chat drop-zone is the BOTTOM EDGE (full width) on phones,
+   mirroring the L/R edges used to switch columns. The cancel-arc is hidden (release in
+   empty space cancels). */
+.is-phone .cancel-arc { display: none; }
+.is-phone .chat-drop { left: 0; right: 0; bottom: 0; width: auto; height: 94px; border-radius: 16px 16px 0 0; border-width: 1.5px 0 0 0; }
+.is-phone .chat-drop .cd-inner { flex-direction: row; gap: 12px; }
+.is-phone .chat-drop .cd-ico { width: 24px; height: 24px; }
 /* Card tabs = a SEGMENTED NAV BAR (one container, flat segments) — now sit INSIDE
    the card at its top, centered, so the card's height/glow includes the toggles. */
 .col-tabs { display: inline-flex; gap: 3px; flex: 0 0 auto; align-self: center; max-width: calc(100% - 16px); overflow: hidden;
