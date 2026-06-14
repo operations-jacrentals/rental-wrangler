@@ -1222,7 +1222,11 @@ function statusPill(set, value, { card, recId, x, truck } = {}) {
   const tk = truck ? `<span class="truck">${I.truck}</span>` : '';
   const xb = x ? `<span class="x" data-x="${esc(x)}">✕</span>` : '';
   const ic = truck ? '' : (CARD_ICON[SET_CARD[set]] || '');   // R3: parent-card icon hugs the label
-  return `<span class="pill c-${st.color}${truck ? ' truck' : ''}" data-r="R3" data-badge${data}>${tk}${ic}<span class="t">${esc(st.label)}</span>${xb}</span>`;
+  // §17 — a status badge is draggable into a chat (drag/long-press; tap is unaffected)
+  const crec = card ? recOf(card, recId) : null;
+  const chatLbl = st.label + (crec ? ' — ' + (detailTitle(card, crec) || recId) : '');
+  const chat = card ? ` data-chat-el data-chat-label="${esc(chatLbl)}" data-chat-color="${esc(st.color)}" data-chat-card="${esc(card)}" data-chat-rec="${esc(recId)}"` : '';
+  return `<span class="pill c-${st.color}${truck ? ' truck' : ''}" data-r="R3" data-badge${data}${chat}>${tk}${ic}<span class="t">${esc(st.label)}</span>${xb}</span>`;
 }
 function refPill(card, recId, label, { x, xData } = {}) {
   const xb = x ? `<span class="x" data-x="${esc(x)}"${xData != null ? ` data-id="${esc(xData)}"` : ''}>✕</span>` : '';
@@ -3966,6 +3970,15 @@ function chatTagFromPayload(p) {
   chatAddTag({ id: 'TAG:' + ec + ':' + p.id, label, color: m ? m.color : 'gray', ref: { card: ec, recId: p.id } });
   toast(`Tagged “${label}” into the team chat.`);
 }
+// Drop on the bottom-right pad → spin up a NEW chat seeded with the dragged thing
+// (a granular element OR a whole record).
+function chatStartFromDrop(p) {
+  let tag;
+  if (p.chatEl) tag = { id: p.chatEl.id || ('TAG' + (state.seq++)), label: p.chatEl.label, color: p.chatEl.color || 'gray', ref: p.chatEl.ref || null };
+  else { const ec = p.entity, rec = p.rec; const label = ROW_META[ec] ? ROW_META[ec](rec).title : (idOf(ec, rec) || 'Item'); const m = commentMarker(rec); tag = { id: 'TAG:' + ec + ':' + p.id, label, color: m ? m.color : 'gray', ref: { card: ec, recId: p.id } }; }
+  newChat(tag); state.chat.open = true; render();
+  toast(`New chat started from “${tag.label}”.`);
+}
 // Tag an element into the chat (drag-drop) — records OR granular elements (line/pill/price).
 function chatAddTag(tag) {
   if (!tag || !tag.label) return;
@@ -5129,7 +5142,7 @@ function toast(msg) {
    ════════════════════════════════════════════════════════════════════════ */
 const DRAG = { active: false, armed: null, payload: null, point: { x: 0, y: 0 }, ghost: null, suppressClick: false, raf: null, hot: null };
 const DRAG_SOURCES = new Set(['units', 'rentals', 'customers', 'invoices']);   // shop/categories rows are NOT drag sources (for now)
-let dragLayer = null, dragArc = null;
+let dragLayer = null, dragArc = null, chatDropPad = null;
 
 /* DROP_MATRIX — payload entity → { target entity: validator(srcRec, tgtRec) }.
    Validators are the cheap VISUAL gate (which rows/cards glow .drop-ok); the
@@ -5182,6 +5195,11 @@ function initDrag() {
   dragLayer.id = 'drag-layer';
   dragArc = el('div', 'cancel-arc', '<div class="ca-inner"><svg class="ca-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h9a6 6 0 1 1 0 12H7"/><path d="M8 5 4 9l4 4"/></svg><span class="ca-label">Cancel</span></div>');
   dragLayer.appendChild(dragArc);
+  // §17 — "drop to start a chat" pad: a cancel-arc sibling pinned to the bottom-right
+  // footer. Appears during any drag; release a record OR a granular element on it to
+  // spin up a brand-new chat seeded with that thing.
+  chatDropPad = el('div', 'chat-drop', '<div class="cd-inner"><svg class="cd-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg><span class="cd-label">Drop to start a chat</span></div>');
+  dragLayer.appendChild(chatDropPad);
   document.body.appendChild(dragLayer);
   document.addEventListener('pointerdown', dragDown);
   document.addEventListener('pointermove', dragMove);
@@ -5212,6 +5230,15 @@ function dragDown(e) {
   DRAG.suppressClick = false;                                            // any NEW gesture re-enables clicks (a pointercancel can never strand a stuck eater)
   if (DRAG.active || e.button !== 0) return;
   if (state.overlay) return;                                             // overlays own their clicks; the winpicker is non-modal (Task E — drag to select)
+  // §17 — a granular element marked [data-chat-el] (a pill/price/line/person) arms a
+  // CHAT-TAG drag (tap still does its own thing; drag/long-press tags it into a chat).
+  const chatEl = e.target.closest('[data-chat-el]');
+  if (chatEl) {
+    DRAG.point.x = e.clientX; DRAG.point.y = e.clientY;
+    const arm = { chatEl: chatElPayload(chatEl), x: e.clientX, y: e.clientY, pointerId: e.pointerId, touch: e.pointerType === 'touch', lp: null };
+    if (arm.touch) arm.lp = setTimeout(() => { if (DRAG.armed === arm) startDrag(); }, 400);
+    DRAG.armed = arm; return;
+  }
   if (e.target.closest('.inline-edit, .inline-input, input, textarea, select, button, .x, .pill, .seg, .add-field, .linkname, .flag, .jnode, .dropdown-menu, .overlay, .hover-preview, .winpicker-float, .ctx-menu')) return;
   const src = dragSourceAt(e.target);
   if (!src) return;
@@ -5240,6 +5267,11 @@ function dragSourceAt(target) {
   return null;
 }
 function disarmDrag() { if (DRAG.armed && DRAG.armed.lp) clearTimeout(DRAG.armed.lp); DRAG.armed = null; }
+// Read a granular chat-taggable element's payload from its data-* stamps (§17).
+function chatElPayload(node) {
+  return { id: node.dataset.chatId || null, label: (node.dataset.chatLabel || node.textContent || '').trim().slice(0, 48) || 'Item',
+    color: node.dataset.chatColor || 'gray', ref: node.dataset.chatCard ? { card: node.dataset.chatCard, recId: node.dataset.chatRec } : null };
+}
 
 function dragMove(e) {
   if (!DRAG.active) {
@@ -5257,24 +5289,28 @@ function dragMove(e) {
 
 function startDrag() {
   const a = DRAG.armed; if (!a) return;
-  const rec = recOf(a.card, a.rec); if (!rec) { disarmDrag(); return; }
   if (a.lp) clearTimeout(a.lp);
-  DRAG.armed = null;
-  DRAG.active = true;
-  DRAG.payload = { entity: a.card, id: a.rec, rec, pointerId: a.pointerId };
-  // nothing pending may fire mid-drag: the deferred row-click, hover preview, tooltip
-  if (pendingRowClick) { clearTimeout(pendingRowClick.timer); pendingRowClick = null; }
+  if (pendingRowClick) { clearTimeout(pendingRowClick.timer); pendingRowClick = null; }   // nothing pending may fire mid-drag
   hideHoverPreview(); hideTip();
   try { window.getSelection().removeAllRanges(); } catch (err) {}        // pre-threshold mouse travel may have selected text (the dblclick idiom, §16)
-  document.querySelectorAll('.row.selected').forEach((n) => n.classList.remove('selected'));
-  // the ghost is a compact chip (entity icon + row title) — never the full row
-  const meta = ROW_META[a.card](rec);
-  DRAG.ghost = el('div', 'drag-ghost', `${CARD_ICON[a.card] || ''}<span class="dg-t">${esc(meta.title)}</span>`);
+  if (a.chatEl) {                                                        // §17 — a granular element drag (only drops into the chat zones)
+    DRAG.armed = null; DRAG.active = true;
+    DRAG.payload = { chatEl: a.chatEl, pointerId: a.pointerId };
+    DRAG.ghost = el('div', 'drag-ghost chatel-ghost', `<span class="dg-dot c-${esc(a.chatEl.color)}"></span><span class="dg-t">${esc(a.chatEl.label)}</span>`);
+  } else {
+    const rec = recOf(a.card, a.rec); if (!rec) { disarmDrag(); return; }
+    DRAG.armed = null; DRAG.active = true;
+    DRAG.payload = { entity: a.card, id: a.rec, rec, pointerId: a.pointerId };
+    document.querySelectorAll('.row.selected').forEach((n) => n.classList.remove('selected'));
+    const meta = ROW_META[a.card](rec);                                 // the ghost is a compact chip (entity icon + row title) — never the full row
+    DRAG.ghost = el('div', 'drag-ghost', `${CARD_ICON[a.card] || ''}<span class="dg-t">${esc(meta.title)}</span>`);
+  }
   DRAG.ghost.style.transform = `translate(${DRAG.point.x + 12}px, ${DRAG.point.y - 14}px)`;
   dragLayer.appendChild(DRAG.ghost);
   try { dragLayer.setPointerCapture(a.pointerId); } catch (err) {}       // the stream survives the source row re-rendering away (sig-pad precedent)
   document.body.classList.add('dragging');
-  document.body.dataset.drag = a.card;
+  document.body.dataset.drag = a.card || 'chatel';
+  if (!state.chat.open) chatDropPad.classList.add('show');               // §17 — pad rides a drag only when the dock is closed (open dock = drop in to tag)
   // CANCEL ARC — apex ≈20% of the middle card, Jac-tunable via --arc-apex
   const mid = document.querySelector('.col[data-col="middle"] .card');
   if (mid) dragLayer.style.setProperty('--arc-apex', Math.round(mid.getBoundingClientRect().height * 0.2) + 'px');
@@ -5293,10 +5329,16 @@ function arcHit(x, y) {
   const r = dragArc.getBoundingClientRect();
   return y >= r.top && x >= r.left && x <= r.right;
 }
+function chatDropHit(x, y) {
+  if (!chatDropPad || !chatDropPad.classList.contains('show')) return false;
+  const r = chatDropPad.getBoundingClientRect();
+  return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+}
 /** The drop target under the pointer: a list ROW, or an OPEN standard-view CARD
  *  (a card body in standard mode targets its open record — cardRecordAt-style).
  *  `under` = a pre-resolved elementFromPoint hit (the rAF loop shares ONE per frame). */
 function dropTargetAt(x, y, under) {
+  if (chatDropHit(x, y)) return { newChat: true };                       // §17 — bottom-right pad: start a NEW chat (takes the corner ahead of the arc)
   if (arcHit(x, y)) return { cancel: true };
   const n = under !== undefined ? under : document.elementFromPoint(x, y);   // ghost + layer are pointer-events:none
   if (!n || !n.closest) return null;
@@ -5304,6 +5346,7 @@ function dropTargetAt(x, y, under) {
   // §17 — dropping ANY dragged element into the team dock (or its launcher) tags it
   const chatHit = n.closest('.chat-dock, .js-chat-toggle');
   if (chatHit) return { chat: true, node: chatHit };
+  if (DRAG.payload.chatEl) return null;                                  // a granular chat-element only drops on chat zones (pad/dock)
   const accept = DROP_MATRIX[DRAG.payload.entity] || {};
   const row = n.closest('.row');
   if (row && row.dataset.rec != null) {
@@ -5331,6 +5374,11 @@ function updateHot(under) {
   if (DRAG.hot && DRAG.hot !== hot) DRAG.hot.classList.remove('drop-hot');
   if (hot && DRAG.hot !== hot) hot.classList.add('drop-hot');
   DRAG.hot = hot;
+  const padHot = !!(t && t.newChat);
+  if (padHot !== chatDropPad.classList.contains('hot')) {    // §17 — light the pad only on the transition
+    chatDropPad.classList.toggle('hot', padHot);
+    const cl = chatDropPad.querySelector('.cd-label'); if (cl) cl.textContent = padHot ? 'Release to start' : 'Drop to start a chat';
+  }
   const arcHot = !!(t && t.cancel);
   if (arcHot !== dragArc.classList.contains('hot')) {        // only on the transition — no per-frame text churn in the rAF loop
     dragArc.classList.toggle('hot', arcHot);
@@ -5399,6 +5447,7 @@ function endDrag({ rerender } = {}) {
   try { dragLayer.releasePointerCapture(DRAG.payload.pointerId); } catch (err) {}
   if (DRAG.ghost) DRAG.ghost.remove();
   dragArc.classList.remove('show', 'hot');
+  chatDropPad.classList.remove('show', 'hot');
   const arcLbl = dragArc.querySelector('.ca-label'); if (arcLbl) arcLbl.textContent = 'Cancel';   // reset copy so the next drag opens idle, not "Release to cancel"
   document.querySelectorAll('.drop-ok, .drop-hot').forEach((n) => n.classList.remove('drop-ok', 'drop-hot'));
   document.body.classList.remove('dragging');
@@ -5412,7 +5461,8 @@ function endDrag({ rerender } = {}) {
    R19-flash the newly linked pill on whatever card shows it (row/card fallback). ── */
 function dropFlash(sel, fallbackSel) { if (document.querySelector(sel)) attnFlash(sel); else if (fallbackSel && document.querySelector(fallbackSel)) attnFlash(fallbackSel); }
 function dispatchDrop(p, t) {
-  if (t.chat) return chatTagFromPayload(p);   // §17 — drop into the team dock = tag it into the chat
+  if (t.newChat) return chatStartFromDrop(p);                        // §17 — bottom-right pad = start a NEW chat
+  if (t.chat) return p.chatEl ? chatAddTag({ ...p.chatEl }) : chatTagFromPayload(p);   // dock = tag into the active chat
   const pair = `${p.entity}>${t.entity}`;
   // UNIT ↔ RENTAL — ADD the unit to the rental (a Rental is an EVENT, §20);
   // gates fire per unit inside linkUnitToRental.

@@ -763,6 +763,24 @@ input { font-family: inherit; }
 .rtab.on .rtab-l { color: var(--rc); }
 .rtab:hover { background: rgba(255,255,255,.05); }
 .chat-dock.drop-hot { outline: 2px dashed var(--accent); outline-offset: -4px; }
+/* "drop to start a chat" pad — a cancel-arc sibling pinned bottom-right (Jac) */
+.chat-drop { position: fixed; right: 16px; bottom: 64px; width: 190px; height: 116px; z-index: 9400;
+  display: flex; align-items: center; justify-content: center; border-radius: 14px; overflow: hidden;
+  background: linear-gradient(180deg, #1b2129, #0c0e11 78%); border: 1.5px dashed var(--leather, #c2925a);
+  box-shadow: 0 18px 44px -18px #000; transform: translateY(150%); opacity: 0;
+  transition: transform .22s cubic-bezier(.2,.7,.2,1), opacity .18s ease, border-color .15s, box-shadow .15s, border-style .15s; }
+.chat-drop::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 7px; background: repeating-linear-gradient(135deg, var(--yellow,#f5c542) 0 13px, #14181d 13px 26px); }
+.chat-drop.show { transform: translateY(0); opacity: 1; }
+.chat-drop.hot { border-style: solid; border-color: var(--accent, #ff7a1a); box-shadow: 0 18px 44px -18px #000, inset 0 0 42px -12px rgba(255,122,26,.6), 0 0 0 2px var(--accent-line); }
+.chat-drop.hot::before { background: repeating-linear-gradient(135deg, var(--accent,#ff7a1a) 0 13px, #1a1205 13px 26px); }
+.chat-drop .cd-inner { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 10px 12px; text-align: center; color: #e7ebf0; transition: color .12s ease; }
+.chat-drop.hot .cd-inner { color: var(--accent, #ff7a1a); }
+.chat-drop .cd-ico { width: 30px; height: 30px; }
+.chat-drop .cd-label { font-family: 'Saira Condensed', system-ui, sans-serif; font-size: 13px; font-weight: 800; letter-spacing: 1.3px; text-transform: uppercase; line-height: 1.1; max-width: 140px; }
+.drag-ghost.chatel-ghost { color: var(--txt); }
+.drag-ghost .dg-dot { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; background: var(--txt-3); }
+.drag-ghost .dg-dot.c-red { background: var(--red); } .drag-ghost .dg-dot.c-yellow { background: var(--yellow); } .drag-ghost .dg-dot.c-green { background: var(--green); }
+@media (prefers-reduced-motion: reduce) { .chat-drop { transition: opacity .18s ease; transform: none; } }
 @media (max-width: 560px) { .chat-dock { right: 8px; left: 8px; width: auto; bottom: 56px; max-height: 76vh; } }
 @media (prefers-reduced-motion: reduce) { .cmt-marker.flash { animation: none !important; } }
 
