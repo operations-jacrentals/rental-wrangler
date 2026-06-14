@@ -1390,6 +1390,24 @@ function openCtxMenu(e, hit) {
   m.style.top = Math.min(e.clientY, window.innerHeight - m.offsetHeight - 8) + 'px';
   setTimeout(() => document.addEventListener('mousedown', ctxOutside), 0);
 }
+// §M3 — open the right-click/long-press menu for the element at (x,y). Shared by the
+// contextmenu handler (mouse) and the touch long-press timer (phone). Mirrors the §R20
+// logic: a real "leaf" tool opens the Wrangler menu; card dead-space → card-to-List.
+let lastTouchCtx = 0;
+function openCtxMenuAt(target, x, y) {
+  if (!target || !target.closest) return;
+  if (target.closest('input, textarea, .inline-input')) return;
+  const card = target.closest('.card'); if (!card && !target.closest('.overlay .popup')) return;
+  if (state.winpicker) return;
+  const leaf = target.closest('.pill, .add-field, .flag, .linkname, .inv-line-link, .req, .seg, button, .inline-edit, .jnode, .x, a, .d-title, .derived');
+  const hit = leaf ? (ruleOf(leaf) || { r: null, el: leaf }) : null;
+  if (hit) return openCtxMenu({ clientX: x, clientY: y }, hit);
+  if (!card) return;
+  const dc = card.dataset.card, now = performance.now();
+  if (now - lastCtx.t < 450 && lastCtx.card === dc) { lastCtx = { t: 0, card: null }; return clearAnchor(); }   // double right-click
+  lastCtx = { t: now, card: dc };
+  cardBack(dc);
+}
 function ctxOutside(e) {
   if (e.target.closest && e.target.closest('#rw-ctx')) return;
   document.removeEventListener('mousedown', ctxOutside);
@@ -5246,9 +5264,19 @@ function initDrag() {
   document.addEventListener('touchmove', (e) => { if (DRAG.active) e.preventDefault(); }, { passive: false });
 }
 
-/* ── arming: mouse lifts after 6px of travel; touch lifts on a 400ms long-press
-   (>10px of travel first = scroll intent → the browser keeps the scroll). A plain
-   press-and-release never arms, so the §15 click discriminator runs untouched. ── */
+/* ── arming (§M3 touch model): a press arms; then —
+   • a HORIZONTAL move lifts the drag (mouse: >6px; touch: horizontal-dominant >8px),
+   • a VERTICAL move on touch = scroll intent → disarm, the list scrolls natively,
+   • holding STILL ~500ms = the right-click/context menu (armMenuTimer),
+   • a quick press-and-release never arms past the click discriminator (= tap/action). ── */
+function armMenuTimer(arm) {   // §M3 — touch hold-still opens the context menu (not a drag)
+  return setTimeout(() => {
+    if (DRAG.armed !== arm) return;
+    const t = document.elementFromPoint(arm.x, arm.y);
+    DRAG.armed = null;
+    if (t) { DRAG.suppressClick = true; lastTouchCtx = performance.now(); openCtxMenuAt(t, arm.x, arm.y); }
+  }, 500);
+}
 function dragDown(e) {
   DRAG.suppressClick = false;                                            // any NEW gesture re-enables clicks (a pointercancel can never strand a stuck eater)
   if (DRAG.active || e.button !== 0) return;
@@ -5259,7 +5287,7 @@ function dragDown(e) {
   if (chatEl) {
     DRAG.point.x = e.clientX; DRAG.point.y = e.clientY;
     const arm = { chatEl: chatElPayload(chatEl), x: e.clientX, y: e.clientY, pointerId: e.pointerId, touch: e.pointerType === 'touch', lp: null };
-    if (arm.touch) arm.lp = setTimeout(() => { if (DRAG.armed === arm) startDrag(); }, 400);
+    if (arm.touch) arm.lp = armMenuTimer(arm);
     DRAG.armed = arm; return;
   }
   if (e.target.closest('.inline-edit, .inline-input, input, textarea, select, button, .x, .pill, .seg, .add-field, .linkname, .flag, .jnode, .dropdown-menu, .overlay, .hover-preview, .winpicker-float, .ctx-menu')) return;
@@ -5267,7 +5295,7 @@ function dragDown(e) {
   if (!src) return;
   DRAG.point.x = e.clientX; DRAG.point.y = e.clientY;                    // seed the ghost/hit-test point — a touch long-press may fire with NO move first
   const armed = { card: src.card, rec: src.rec, x: e.clientX, y: e.clientY, pointerId: e.pointerId, touch: e.pointerType === 'touch', lp: null };
-  if (armed.touch) armed.lp = setTimeout(() => { if (DRAG.armed === armed) startDrag(); }, 400);
+  if (armed.touch) armed.lp = armMenuTimer(armed);
   DRAG.armed = armed;
 }
 /* Resolve what a press grabs, in priority order:
@@ -5305,7 +5333,12 @@ function dragMove(e) {
     const a = DRAG.armed; if (!a || e.pointerId !== a.pointerId) return;
     DRAG.point.x = e.clientX; DRAG.point.y = e.clientY;
     const dist = Math.hypot(e.clientX - a.x, e.clientY - a.y);
-    if (a.touch) { if (dist > 10) disarmDrag(); return; }                // moved before the long-press popped = the user is scrolling
+    if (a.touch) {                                                       // §M3 — direction decides: horizontal lifts a drag, vertical lets the list scroll
+      const adx = Math.abs(e.clientX - a.x), ady = Math.abs(e.clientY - a.y);
+      if (adx < 8 && ady < 8) return;                                    // still inside the slop — a hold here becomes the menu
+      if (ady >= adx) { disarmDrag(); return; }                         // vertical intent → native scroll
+      return startDrag();                                                // horizontal intent → drag the element
+    }
     if (dist > 6) startDrag();
     return;
   }
@@ -7986,25 +8019,11 @@ function boot() {
   // right-click = send the card to its List View; double right-click = drop the anchor.
   let lastCtx = { t: 0, card: null };
   document.addEventListener('contextmenu', (e) => {
-    const card = e.target.closest('.card'), bpop = e.target.closest('.overlay .popup'); if (!card && !bpop) return;
-    if (e.target.closest('input, textarea, .inline-input')) return;   // allow native menu in fields
+    if (e.target.closest('input, textarea, .inline-input')) return;            // allow native menu in fields
+    if (!e.target.closest('.card') && !e.target.closest('.overlay .popup')) return;
     e.preventDefault();
-    if (state.winpicker) return;
-    // R20: right-clicking an ELEMENT opens the Wrangler context menu;
-    // right-clicking dead space keeps the old card-to-List / clear-anchor.
-    // menu ONLY on real tools (pills/buttons/text/fields/rows) — section + card
-    // dead space stays reserved for card-to-List / clear-anchor (Jac 2026-06-12)
-    // §R20 — menu ONLY on tight, real tools. `.row` was a WIDE container: its dead
-    // space (e.g. the empty left of a right-aligned value row) wrongly counted as a
-    // hit. Dropped, so row dead-space falls through to card-to-List (Jac 2026-06-13).
-    const leaf = e.target.closest('.pill, .add-field, .flag, .linkname, .inv-line-link, .req, .seg, button, .inline-edit, .jnode, .x, a, .d-title, .derived');
-    const hit = leaf ? (ruleOf(leaf) || { r: null, el: leaf }) : null;
-    if (hit) return openCtxMenu(e, hit);
-    if (!card) return;   // popup dead space — no card-to-List / clear-anchor
-    const dc = card.dataset.card, now = performance.now();
-    if (now - lastCtx.t < 450 && lastCtx.card === dc) { lastCtx = { t: 0, card: null }; return clearAnchor(); }   // double right-click
-    lastCtx = { t: now, card: dc };
-    cardBack(dc);   // Task 2 — single right-click = this card's Back chevron (step back one in its own history)
+    if (performance.now() - lastTouchCtx < 700) return;                        // §M3 — our touch long-press already opened it; swallow the trailing native event
+    openCtxMenuAt(e.target, e.clientX, e.clientY);                             // §R20 leaf → Wrangler menu; card dead-space → card-to-List (single) / clear-anchor (double)
   });
   document.addEventListener('mousemove', (e) => { lastMouse.x = e.clientX; lastMouse.y = e.clientY; });
   // hover preview (#1): float a record's Standard view after a short hover on a row/pill
