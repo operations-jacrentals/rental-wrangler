@@ -730,7 +730,7 @@ const entityCardOf = (card, recType) => (card === 'shop' ? recType : card);
 
 const state = {
   data: DATA,
-  theme: 'dark',
+  theme: (() => { try { const t = localStorage.getItem('jactec.theme'); return (t === 'light' || t === 'yard') ? t : 'dark'; } catch (e) { return 'dark'; } })(),   // dark | yard | light (per device)
   query: '',
   searchMode: false,
   tabs: [],            // [{ id, card, recId, label, sub, color, session }]
@@ -1149,6 +1149,7 @@ const I = {
   mark: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l5-12 4 8 3-5 6 9z"/></svg>',
   sun: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5 19 19M19 5l-1.5 1.5M6.5 17.5 5 19"/></svg>',
   moon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A8 8 0 1 1 11.2 3 6 6 0 0 0 21 12.8z"/></svg>',
+  hardhat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M3 18a9 9 0 0 1 18 0z"/><path d="M2 18h20"/><path d="M10 9V6a2 2 0 0 1 2-2 2 2 0 0 1 2 2v3"/><path d="M5 14V12M19 14V12"/></svg>',
   qr: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h3v3h-3zM20 14v7M14 20h7"/></svg>',
   mouse: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="7"/><path d="M12 6v4"/></svg>',
   video: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="13" height="12" rx="2"/><path d="m15 10 6-3v10l-6-3z"/></svg>',
@@ -3860,6 +3861,13 @@ function headerEl() {
     </div>`;
   return h;
 }
+/* Theme cycle: dark → yard → light → dark. The bottom-bar button shows the icon
+   + tooltip of the theme you'll switch TO next (matching the old sun/moon convention). */
+const THEME_NEXT = {
+  dark:  { next: 'yard',  icon: I.hardhat, tip: 'Yard mode' },
+  yard:  { next: 'light', icon: I.sun,     tip: 'Light mode' },
+  light: { next: 'dark',  icon: I.moon,    tip: 'Dark mode' },
+};
 /** The action toolbar — moved to a fixed bottom bar (Dashboard / +New / tools). */
 function bottomBarInner() {
   // rules 5/6: LEFT = labeled actions (icon LEADS label, no "+"), Wash joins them;
@@ -3868,7 +3876,7 @@ function bottomBarInner() {
     <button class="iconbtn js-dashboard">${I.grid} Dashboard</button>
     <button class="iconbtn js-newitem" data-new="receipt">${CARD_ICON.expenses}Receipt</button>
     <span class="bb-sep"></span>
-    <button class="iconbtn js-theme" data-tip="${state.theme === 'dark' ? 'Light' : 'Dark'} mode">${state.theme === 'dark' ? I.sun : I.moon}</button>
+    <button class="iconbtn js-theme" data-tip="${THEME_NEXT[state.theme].tip}">${THEME_NEXT[state.theme].icon}</button>
     <button class="iconbtn js-qr" data-tip="Share session (QR)">${I.qr}</button>
     <button class="iconbtn${state.previewsOn ? '' : ' off'} js-previews" data-tip="${state.previewsOn ? 'Hover previews: on' : 'Hover previews: off'}">${state.previewsOn ? I.eye : I.eyeOff}</button>
     <button class="iconbtn js-feedback" data-tip="Report a bug or request">${I.feedback}</button>
@@ -5683,7 +5691,7 @@ function onClick(e) {
   if (closest('.js-unlock-invoice')) { e.stopPropagation(); return lockInvoiceFlow(closest('.js-unlock-invoice').dataset.rec, false); }
   if (closest('.js-ring')) return openOverlay({ kind: 'role', role: closest('.js-ring').dataset.role });
   if (closest('.js-close')) return closeOverlay();
-  if (closest('.js-theme')) { state.theme = state.theme === 'dark' ? 'light' : 'dark'; if (state.overlay && state.overlay.kind !== 'addCard') renderOverlay(); render(); return; }
+  if (closest('.js-theme')) { state.theme = (THEME_NEXT[state.theme] || THEME_NEXT.dark).next; try { localStorage.setItem('jactec.theme', state.theme); } catch (e) {} if (state.overlay && state.overlay.kind !== 'addCard') renderOverlay(); render(); return; }
   if (closest('.js-qr')) return openOverlay({ kind: 'qr' });
   if (closest('.js-previews') || closest('.js-roweye')) { e.stopPropagation(); state.previewsOn = !state.previewsOn; if (!state.previewsOn) hideHoverPreview(); try { localStorage.setItem('jactec.previewsOff', state.previewsOn ? '0' : '1'); } catch (e) {} toast(state.previewsOn ? 'Hover previews on.' : 'Hover previews off — every eye runs red.'); return render(); }
   if (closest('.js-hotkeys')) return openOverlay({ kind: 'hotkeys' });

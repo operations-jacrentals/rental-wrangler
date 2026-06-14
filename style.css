@@ -1594,3 +1594,91 @@ body.dragging .row.drop-ok { opacity: 1; }
 .row { touch-action: pan-y; }
 /* settings overlay — the Allow-overbooking R14 toggle rides the row's right edge */
 .set-row .seg { margin-left: auto; }
+
+/* ════════════════════════════════════════════════════════════════════════════
+   THEME — "THE YARD" (data-theme="yard")   ·  frontend-design pass, 2026-06-14
+   ────────────────────────────────────────────────────────────────────────────
+   A PARALLEL, opt-in theme alongside dark/light — the whole app reframed as
+   walking the JacRentals yard: each of the three columns becomes a rugged
+   equipment ID PLATE bolted to the steel wall — hi-vis HAZARD-STRIPE header
+   (the signature, carried over from the login plate), corner RIVETS, stamped
+   Saira-Condensed tabs/labels, ignition-orange active tab. A light wrangler
+   seasoning rides on top: a worn leather-tan SADDLE-STITCH divider under the
+   bottom bar. Industrial steel stays dominant; the ranch read stays a whisper.
+
+   REVERSIBLE BY DESIGN: every rule here is scoped under [data-theme="yard"] and
+   is purely ADDITIVE (token overrides + scoped surfaces + pseudo-elements that
+   never touch the .anchored/.search-glow border+ring). Flip the theme toggle
+   and the original look returns untouched — nothing above this line changed.
+   Layout, the M0–M3 reflow, the drag engine and the chat dock are NOT touched.
+   ════════════════════════════════════════════════════════════════════════════ */
+[data-theme="yard"] {
+  /* steel-yard core — gunmetal panels, deeper plate shadows */
+  --bg:#0a0d11; --bg-2:#0f1318; --panel:#171d25; --panel-2:#1d242d;
+  --card:#12171e; --card-head:#1a212b;
+  --line:#2c343f; --line-soft:#212834;
+  --txt:#eef2f7; --txt-2:#aab4c1; --txt-3:#717b89; --track:#232b35; --on-orange:#1a1205;
+  /* the brand orange is the ignition accent — earned, a hair punchier here */
+  --accent:#ff7e1f; --accent-soft:rgba(255,126,31,.16); --accent-line:rgba(255,126,31,.55);
+  --orange:#ff7e1f; --orange-bg:rgba(255,126,31,.16);
+  --anchor-section:#222932;
+  --radius:14px; --chip-radius:11px;
+  --shadow:0 24px 64px -30px rgba(0,0,0,.85); --chip-shadow:0 6px 16px -10px rgba(0,0,0,.78);
+  /* yard-only helpers (steel gradients + the wrangler leather-tan seasoning) */
+  --steel-1:#1b222c; --steel-2:#0d1116;
+  --rivet:#4a525e; --rivet-pit:#0b0f14;
+  --tan:#c2925a; --tan-deep:#8a5a2b;
+}
+/* the yard floor — faint orange dawn-glow + a brushed diagonal mill texture */
+[data-theme="yard"] body {
+  background:
+    radial-gradient(120% 80% at 50% -12%, rgba(255,122,26,.06), transparent 55%),
+    repeating-linear-gradient(135deg, rgba(255,255,255,.010) 0 2px, transparent 2px 11px),
+    var(--bg);
+}
+
+/* ── THE SIGNATURE — each column is an equipment ID plate ──────────────────── */
+/* background gradient + position only: never sets border/box-shadow, so the
+   .anchored neon ring and .search-glow keep working untouched. */
+[data-theme="yard"] .col > .card {
+  position: relative;
+  background: linear-gradient(180deg, var(--steel-1), var(--steel-2));
+}
+[data-theme="yard"] .col > .card::before {       /* hi-vis hazard stripe — the signature band */
+  content:''; position:absolute; top:0; left:0; right:0; height:6px; z-index:5;
+  background: repeating-linear-gradient(135deg, var(--yellow,#f5c542) 0 13px, #14181d 13px 26px);
+  border-bottom:1px solid rgba(0,0,0,.6); pointer-events:none;
+}
+[data-theme="yard"] .col > .card::after {        /* four corner rivets bolting the plate down */
+  content:''; position:absolute; inset:0; z-index:5; pointer-events:none; border-radius:inherit;
+  background:
+    radial-gradient(circle at 12px 15px, var(--rivet) 0 1.4px, var(--rivet-pit) 1.7px 3px, transparent 3.4px),
+    radial-gradient(circle at calc(100% - 12px) 15px, var(--rivet) 0 1.4px, var(--rivet-pit) 1.7px 3px, transparent 3.4px),
+    radial-gradient(circle at 12px calc(100% - 12px), var(--rivet) 0 1.4px, var(--rivet-pit) 1.7px 3px, transparent 3.4px),
+    radial-gradient(circle at calc(100% - 12px) calc(100% - 12px), var(--rivet) 0 1.4px, var(--rivet-pit) 1.7px 3px, transparent 3.4px);
+}
+
+/* ── Stamped type — condensed steel labels on the plate ────────────────────── */
+[data-theme="yard"] .coltab {
+  font-family:'Saira Condensed', system-ui, sans-serif;
+  text-transform:uppercase; letter-spacing:1.1px; font-weight:700;
+}
+[data-theme="yard"] .coltab.on {                 /* the ignition tab — lit orange, dark ink */
+  background: linear-gradient(180deg, #ff9038, var(--accent));
+  box-shadow: 0 5px 14px -6px rgba(255,122,26,.6), inset 0 1px 0 rgba(255,255,255,.32);
+}
+[data-theme="yard"] .ring-label,
+[data-theme="yard"] .section > h4 {
+  font-family:'Saira Condensed', system-ui, sans-serif; letter-spacing:1.2px;
+}
+[data-theme="yard"] .c-titlecard .c-title {
+  font-family:'Saira Condensed', system-ui, sans-serif;
+  text-transform:uppercase; letter-spacing:.8px; font-weight:800; font-size:14.5px;
+}
+
+/* ── The wrangler seasoning — a worn leather-tan saddle-stitch under the deck ─ */
+[data-theme="yard"] .bottombar {
+  border-top: 1.5px dashed var(--tan);
+  border-image: repeating-linear-gradient(90deg, var(--tan) 0 7px, transparent 7px 13px) 1;
+  margin-top: 2px;
+}
