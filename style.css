@@ -201,7 +201,9 @@ input { font-family: inherit; }
   background: var(--panel); border: 1px solid var(--line);
   transition: border-color .12s, box-shadow .12s; overflow: hidden;
 }
-.searchwrap:focus-within { border-color: var(--accent-line); box-shadow: 0 0 0 3px var(--accent-soft); }
+/* in use = focused, OR carrying typed text / a pinned filter term — the glow persists
+   after focus leaves and clears only when emptied (Jac, Phase 5). */
+.searchwrap:focus-within, .searchwrap.has-query { border-color: var(--accent-line); box-shadow: 0 0 0 3px var(--accent-soft); }
 .searchwrap .s-icon { position: absolute; left: 11px; width: 16px; height: 16px; color: var(--txt-3); pointer-events: none; }
 .searchwrap .filt-term { flex: 0 0 auto; height: 24px; max-width: 160px; }
 .searchwrap .filt-term .lbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -227,7 +229,7 @@ input { font-family: inherit; }
 .filt-term.neg .ft-neg::before { content: ''; width: 8px; height: 2px; border-radius: 1px; background: #fff; }
 /* per-card list search bar — pinned pills + borderless input, mirrors .searchwrap */
 .mini-searchwrap { flex: 1; min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 5px; padding: 4px 6px; border-radius: var(--chip-radius); background: var(--panel); border: 1px solid var(--line); box-shadow: var(--chip-shadow); }
-.mini-searchwrap:focus-within { border-color: var(--accent-line); }
+.mini-searchwrap:focus-within, .mini-searchwrap.has-query { border-color: var(--accent-line); box-shadow: var(--chip-shadow), 0 0 0 3px var(--accent-soft); }
 .listbar .mini-searchwrap .mini-search { flex: 1; min-width: 70px; height: 24px; padding: 0 5px; border: none; background: transparent; box-shadow: none; }
 .mini-searchwrap .filt-term { height: 23px; max-width: 140px; font-size: 11px; }
 .mini-searchwrap .filt-term .lbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

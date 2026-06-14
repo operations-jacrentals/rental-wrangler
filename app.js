@@ -3294,7 +3294,7 @@ function listView(cardDef, session) {
   bar.innerHTML = `
     ${cardJog(card, cs)}
     <button class="bv-btn js-boardview" data-card="${card}" data-tip="Open Board View (spreadsheet)">${I.table}</button>
-    <div class="mini-searchwrap${cterms.length || cascChip ? ' has-terms' : ''}">
+    <div class="mini-searchwrap${cterms.length || cascChip ? ' has-terms' : ''}${cs.search.trim() || cterms.length ? ' has-query' : ''}">
       ${cascChip}${cterms.map((ft, i) => filterTermPill(ft, i, card)).join('')}
       <input class="mini-search" placeholder="${cterms.length ? 'Add filter — Enter to pin…' : `Search ${esc(cardDef.title.toLowerCase())}…`}" value="${esc(cs.search)}" data-card="${card}" />
     </div>
@@ -3480,7 +3480,7 @@ function shopListView(session, byType, forcedSeg) {
   const sterms = cs.filterTerms || [];
   bar.innerHTML = `
     <button class="bv-btn js-boardview" data-card="${boardCard}" data-tip="Open Board View (spreadsheet)">${I.table}</button>
-    <div class="mini-searchwrap${sterms.length ? ' has-terms' : ''}">
+    <div class="mini-searchwrap${sterms.length ? ' has-terms' : ''}${cs.search.trim() || sterms.length ? ' has-query' : ''}">
       ${sterms.map((ft, i) => filterTermPill(ft, i, 'shop')).join('')}
       <input class="mini-search" placeholder="${sterms.length ? 'Add filter — Enter to pin…' : 'Search shop…'}" value="${esc(cs.search)}" data-card="shop" />
     </div>
@@ -3729,7 +3729,7 @@ function headerEl() {
         ${currentUser ? `<span class="hello-name">${esc(currentUser)}</span>` : ''}
       </div>
       <div class="toolbar">
-        <div class="searchwrap ${state.filterTerms.length ? 'has-terms' : ''}">
+        <div class="searchwrap ${state.filterTerms.length ? 'has-terms' : ''}${state.query.trim() || state.filterTerms.length ? ' has-query' : ''}">
           <span class="s-icon">${I.search}</span>
           ${state.filterTerms.map((ft, i) => filterTermPill(ft, i, 'global')).join('')}
           <input id="globalsearch" class="search" placeholder="${state.filterTerms.length ? 'Add filter — type, Enter to pin…' : 'Search everything…'}" value="${esc(state.query)}" />
