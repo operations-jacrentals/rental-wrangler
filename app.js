@@ -783,24 +783,34 @@ function setAnchor(session, card, recId, recType) {
 }
 
 function anchorRecord(card, recId, recType) {
-  // ⊞ : anchor in current session. No active tab → create a tab and switch.
+  // ⊞ : anchoring ALWAYS opens a NEW FOREGROUND tab (Jac, Phase 1) — duplicates
+  // allowed, only the tab X clears it. The new tab inherits the current session's
+  // per-card searches (don't reset them).
+  openInTab(card, recId, recType, { inheritFrom: activeSession() });
+}
+
+/* Phase 1 shared path — freeze the current session and open card/recId in a NEW
+   FOREGROUND tab. Serves anchor / global-search pick / standard-view overtake /
+   +Rental. The new tab inherits `inheritFrom`'s per-card searches so the cascade
+   doesn't wipe what the operator was filtering. */
+function openInTab(card, recId, recType, opts = {}) {
   const rec = recOf(entityCardOf(card, recType), recId);
-  if (state.activeTabId) {
-    const tab = state.tabs.find((t) => t.id === state.activeTabId);
-    Object.assign(tab, tabMeta(card, recId, rec, recType));
-    setAnchor(tab.session, card, recId, recType);
-  } else {
-    const tab = makeTab(card, recId, rec, recType);
-    setAnchor(tab.session, card, recId, recType);
-    state.tabs.push(tab);
-    state.activeTabId = tab.id;
+  const tab = makeTab(card, recId, rec, recType);
+  setAnchor(tab.session, card, recId, recType);   // setAnchor clears cascaded searches…
+  const from = opts.inheritFrom;
+  if (from && from.cards) for (const c of GRID_CARDS) {      // …so re-apply the ones we're carrying over
+    const src = from.cards[c.id], dst = tab.session.cards[c.id];
+    if (src && dst) { dst.search = src.search || ''; dst.filterTerms = [...(src.filterTerms || [])]; }
   }
+  state.tabs.push(tab);
+  state.activeTabId = tab.id;                       // FOREGROUND — switch to it
   state.searchMode = false; state.query = '';
   render();
 }
 
 function openInNewTab(card, recId, recType) {
-  // + : new background tab, do NOT disturb the current session/anchor.
+  // + : explicit new BACKGROUND tab (ctrl/cmd-click, +newtab button) — do NOT
+  // disturb the current session/anchor or steal focus.
   const rec = recOf(entityCardOf(card, recType), recId);
   const tab = makeTab(card, recId, rec, recType);
   setAnchor(tab.session, card, recId, recType);
@@ -857,8 +867,14 @@ function sweepEmptyDrafts(keepId) {
   }
 }
 function openStandard(card, recId, recType) {
-  sweepEmptyDrafts(recId);   // #8 — leaving an empty draft deletes it
   const cs = activeSession().cards[card];
+  // Task 5 — overtaking a DIFFERENT record already open in this card's Standard
+  // view freezes the session and opens a NEW foreground tab instead of swapping
+  // the record in place. (Same record / coming from list → open in place.)
+  if (cs && cs.mode === 'standard' && cs.recId != null && String(cs.recId) !== String(recId)) {
+    return openInTab(card, recId, recType, { inheritFrom: activeSession() });
+  }
+  sweepEmptyDrafts(recId);   // #8 — leaving an empty draft deletes it
   cs.mode = 'standard'; cs.recId = recId; cs.recType = recType || null;
   render();
 }
@@ -904,9 +920,11 @@ function clearAnchor() {
 const DBL_MS = 220;
 let pendingRowClick = null;
 function rowOpen(card, recId, recType) {
-  if (state.searchMode) { state.searchMode = false; state.query = ''; }
   const sess = activeSession();
-  if (sess.anchor?.card === card && sess.cards[card].mode === 'list') return anchorRecord(card, recId, recType);  // browsing anchored list → re-anchor
+  // Task 4 — picking a GLOBAL-SEARCH result freezes the current session and opens
+  // the record in a NEW foreground tab (inheriting the session's per-card searches).
+  if (state.searchMode) return openInTab(card, recId, recType, { inheritFrom: sess });
+  if (sess.anchor?.card === card && sess.cards[card].mode === 'list') return anchorRecord(card, recId, recType);  // browsing anchored list → re-anchor (new tab)
   return openStandard(card, recId, recType);
 }
 // Shared single-vs-double click discriminator: 2nd click within the window anchors the
