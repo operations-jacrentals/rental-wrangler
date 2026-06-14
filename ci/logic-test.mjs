@@ -73,14 +73,19 @@ try {
     // 7) unitVoided — only No Show / Cancelled (Returned is terminal but billed)
     ok(T.unitVoided({}, { status: 'No Show' }) && T.unitVoided({}, { status: 'Cancelled' }) && !T.unitVoided({}, { status: 'Returned' }), 'voided = No Show / Cancelled only');
 
-    // 8) rentalLineItems / transportLineItems skip a voided unit (real multi-unit R-MU)
+    // 8) rentalLineItems / transportLineItems skip a voided unit (real multi-unit R-MU).
+    // R-MU's start date has passed, so a *Reserved* U023 now auto-derives to No Show
+    // (the "reservation past start = No Show" rule) — force it billable first so the base
+    // case measures 2 real lines, independent of the demo clock. PRODUCTION logic is correct.
     const rmu = T.IDX.rental.get('R-MU');
+    const u023 = T.unitEntry(rmu, 'U023'); const saved = u023.status;
+    u023.status = 'On Rent';
     const baseLines = T.rentalLineItems(rmu).length;
-    const u023 = T.unitEntry(rmu, 'U023'); const saved = u023.status; u023.status = 'No Show';
+    u023.status = 'No Show';
     const voidedLines = T.rentalLineItems(rmu).length;
     const voidedTransport = T.transportLineItems(rmu).length;
     u023.status = saved;                                                                // restore
-    ok(baseLines === 2 && voidedLines === 1, `rentalLineItems skips voided unit (2 → ${voidedLines})`);
+    ok(baseLines === 2 && voidedLines === 1, `rentalLineItems skips voided unit (${baseLines} → ${voidedLines})`);
     ok(voidedTransport === 1, `transportLineItems skips voided unit (→ ${voidedTransport})`);
 
     // 9) removeUnitInvoiceLine drops BOTH the unit's rental + transport lines (keeps siblings)
