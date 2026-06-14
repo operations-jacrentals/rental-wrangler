@@ -45,8 +45,14 @@ We walk this **task by task via poll**; decisions get recorded inline.
 ## Phase 6 — Indicators (flags, flashes, comments, status)
 - ✅ **Rulebook R4b + R9b** (which elements flash) — shipped. VERIFY.
 - ✅ **Two flashes on linking** (was 3 → 2) — shipped. VERIFY.
-- 🆕 **Comment feature: flash until toggled.**
-- 🆕 **Active bar = tiered messages** — change the text per activity-% tier, not just "Active 92%."
+- 🆕 **Comment feature: flash until acknowledged (per-user)** — DECISION (Jac): a comment drops a **flashing colored marker** on the record AND still logs to History (today's behavior, `app.js:1338`). When entering the comment the user **picks a color — red / yellow / green** (the marker + flash use it). The marker flashes until the **viewing user has acknowledged/viewed** it; acknowledgment is **per-user** (NOT global) — store an `acknowledgedBy` user-id list on the comment so it's ready for the upcoming password/multi-user system (Phase 7 Logins). The comment/marker **stays** after acknowledgment (static colored marker, still readable) — only the flashing stops. Flashes again for any user who hasn't viewed it. NOTE: with a single shared user today, key the seen-state by the active user id so it carries forward when logins land.
+- 🆕 **Active bar → bipolar "in pattern / out of pattern" gauge** — DECISION (Jac): replace the single `"X% Active"` label (`app.js:2615`, `activePct` 0–100) with a **two-directional bar centered at 0**, range **−100% … +100%**, tracking how long the customer is **in pattern** (right, positive) vs **out of pattern** (left, negative). Color sweep: **green (high +) → yellow (→0) → orange (just −) → red (deep −)**. Five labeled stages:
+  - **Active** — +50% … +100% (green)
+  - **Renting Soon** — 0% … +50% (yellow)
+  - **Action Required** — 0% … −50% (orange)
+  - **Inactive** — −50% … −80% (red)  *(Jac said −50→−100; the deep end is taken by Lost Customer below — confirm at build)*
+  - **Lost Customer** — −80% … −100% (deep red)
+  - OPEN (confirm at build): how ± % is computed from the customer's rental cadence — proposed: `activePct` derives from days-since-last-rental vs `_digest.avgFrequencyDays` (within window → positive share remaining; overdue → negative overage). Needs its own small spec.
 - ✅ **Team KPI → one "Sulphur Team" row + ring layout matches role count** — shipped (Team KPI redesign + N-ring). VERIFY.
 
 ## Phase 7 — Layout, entry & open decisions
