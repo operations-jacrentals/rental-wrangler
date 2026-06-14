@@ -23,6 +23,48 @@ file in the SAME commit.
 
 ---
 
+## v8.1 — Built-State Delta (2026-06-14 session · code is truth, this records what shipped)
+
+Branch `claude/handoff-continuation-q442qm` @ `08f9da8`; live `main` @ `d11e1e3`.
+
+**§17 Internal team dock (Phase 7) — LIVE.** A bottom-bar team chat built on the
+Phase-6 record comments.
+- **Comment composer** = a simple **color-flooded card**: three traffic-light dots pick
+  red/yellow/green, the whole card floods that color, the selected dot glows.
+- **Headerless floating dock** (bottom-right): a tagged-element **pill rail** on top,
+  **chat bubbles** (steel incoming w/ avatar+name, safety-orange "you"), flagged comments
+  threaded in, a **role participant tab-bar** at the bottom, compose.
+- **PERSISTENT multi-chat** (`state.chat.chats`): never deleted; "everyone leaves" → the
+  chat goes **dormant**; reopen it through a tagged element (**right-click → 🧵 Start
+  chat**) rejoining with your role. A tagged element **re-flashes** on unseen messages
+  (per-user `seen`).
+- **Drag-to-chat:** drop a record OR a granular element on the **bottom-right drop pad**
+  (a cancel-arc sibling) → new chat; drop into the dock → tag the active chat. Granular
+  sources are stamped `[data-chat-el]`: status badges (statusPill), people/links
+  (refPill/unitPill), prices (rate + invoice balance), line items, categories (dPill +
+  inline), services (serviceOrders resolved via the shop segment).
+
+**§M0–M3 Mobile adaptive reflow — LIVE.** Full spec:
+`docs/superpowers/specs/2026-06-14-mobile-adaptive-design.md`. Field-ready; desktop untouched.
+- **M0:** viewport meta → `device-width`; `.grid` reflows **3→2→1** by width (scroll-snap
+  track); the `body{min-width:1180}` floor drops ≤1024px; `is-phone`/`is-narrow` classes.
+- **M1:** **swipe** between columns + 3-dot indicator; phone-only **per-column bottom
+  strips** (Yard→internal chat · Rentals→tool bar · Customers→external-chats **shell**).
+- **M2:** touch drag dwells at the **L/R edge to switch columns**; the **bottom edge** is
+  the start-a-chat drop zone; cancel-arc hidden on phone.
+- **M3:** touch gesture model — **hold-still→context menu** (`openCtxMenuAt`, shared with
+  the mouse handler), **horizontal→drag, vertical→scroll, tap→action**. Mouse/desktop
+  right-click unchanged.
+
+**Skills added** (`.claude/skills/`): `webapp-testing` (vendored official, Apache-2.0),
+`mobile-viewport`, `mobile-navigation`, `mobile-touch`.
+
+**Caveats:** mobile verified via Playwright **synthetic touch**, not a physical device —
+do a real-device pass (iOS long-press/scroll, safe-area) before leaning on it. The
+external-chats strip is a **shell** pending the backend messaging integration.
+
+---
+
 ## 0 · How to debug with this spec
 
 1. **The flash-lint (R0)** is the alarm. Toggle = the eye icon in the bottom bar

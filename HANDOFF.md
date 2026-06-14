@@ -1,9 +1,56 @@
-# HANDOFF — continue here (`design-overhaul` branch)
+# HANDOFF — continue here
 
 > For the next Claude Code session (another machine, the web, or Jac's phone).
 > **Read this first.**
 
-## ▶▶ STATE AS OF 2026-06-12 EVENING (supersedes everything below)
+## ▶▶▶ STATE AS OF 2026-06-14 (supersedes everything below)
+
+**Baseline (known-good):** branch `claude/handoff-continuation-q442qm` @ **`08f9da8`**
+(code + the SPEC v8.1 delta + the mobile spec + the build-list tracker); live **`main`**
+@ **`d11e1e3`**. Working tree clean, everything pushed. Gates: `node ci/smoke.mjs`,
+`node ci/logic-test.mjs` (a long-standing 20/21 — pre-existing, unrelated), and
+`node ci/gen-rule-usage.mjs --check`.
+
+**Shipped this session (all LIVE, details in `JacTec-handoff/JacTec-SPEC-v8.md` §v8.1):**
+1. **§17 Internal team dock (Phase 7)** — color-flooded comment composer; headerless
+   floating chat dock (tagged-element pill rail · chat bubbles · role tab-bar); PERSISTENT
+   multi-chat (never lost, reopen via a tagged element, re-flash on unseen); drag-to-chat
+   via the bottom-right drop pad; all four granular element types + categories + services
+   stamped `[data-chat-el]`.
+2. **§M0–M3 Mobile adaptive reflow** — responsive 3→2→1 columns; swipe nav + per-column
+   bottom strips; touch drag edge-switch + bottom-edge chat; long-press = context menu.
+   Spec: `docs/superpowers/specs/2026-06-14-mobile-adaptive-design.md`. Desktop untouched.
+3. **Skills added** (`.claude/skills/`): `webapp-testing`, `mobile-viewport`,
+   `mobile-navigation`, `mobile-touch`.
+
+### ▶ START HERE — the UI DESIGN OVERHAUL (this is the next session's job)
+**Goal:** overhaul how the design ELEMENTS *look* — colors, surfaces, type, texture —
+**NOT the layout or where anything lives.** The 3-column structure, the M0–M3 mobile
+reflow, the drag engine, and the chat dock plumbing all STAY PUT. Restyle, don't relayout.
+
+**1. Branch from the known-good baseline:**
+```sh
+git fetch origin
+# branch tip has the code + these updated docs (SPEC v8.1, mobile spec, this handoff):
+git checkout -b claude/ui-overhaul origin/claude/handoff-continuation-q442qm
+# (or branch from origin/main for just the deployed code — docs are on the branch)
+```
+**2. Do it the REVERSIBLE way — build the new look as a PARALLEL THEME.** The app already
+has a dark/light toggle (`data-theme`); add the new look as another selectable theme / CSS
+token-set ALONGSIDE the current one. The current look stays one tap away, so "if I hate
+it" = flip the toggle back. Do NOT overwrite the existing tokens; do NOT merge to `main`
+until Jac signs off.
+**3. Tools:** run every visual change through the vendored **`frontend` skill** (CLAUDE.md
+requires it), working in the CSS **design-token layer** in `style.css` (`--accent`,
+`--panel`, the data-plate vars). Screenshot + self-critique before showing Jac.
+**4. Don't touch:** the column grid/reflow (§M0–M3), the drag/cancel-arc/drop-pad engine,
+the chat dock structure. Those are layout/behavior, not look.
+**5. Gates before any push** (same as above). Keep the R-rulebook `data-r` stamps intact;
+regenerate `rule-usage.js` (drop `--check`) only if rule USAGE changes.
+
+---
+
+## ▶▶ STATE AS OF 2026-06-12 EVENING (historical — superseded above)
 
 **Everything is LIVE on app.jacrentals.com** (main = design-overhaul; the standing
 rule: every VERIFIED batch merges → main → Pages, no per-merge ask).
