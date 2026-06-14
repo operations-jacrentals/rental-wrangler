@@ -802,6 +802,10 @@ function openInTab(card, recId, recType, opts = {}) {
     const src = from.cards[c.id], dst = tab.session.cards[c.id];
     if (src && dst) { dst.search = src.search || ''; dst.filterTerms = [...(src.filterTerms || [])]; }
   }
+  // Overtake chain (Jac) — seed the overtaken card's history into the new tab so the
+  // Back/forward jog can step back through the records you overtook (C→B→A), in place.
+  // The jog is the ONLY thing that overtakes a card without spawning another tab.
+  if (opts.seedHistory) { const dst = tab.session.cards[opts.seedHistory.card]; if (dst) { dst.backStack = opts.seedHistory.stack.slice(-HIST_CAP); dst.fwdStack = []; } }
   state.tabs.push(tab);
   state.activeTabId = tab.id;                       // FOREGROUND — switch to it
   state.searchMode = false; state.query = '';
@@ -871,8 +875,10 @@ function openStandard(card, recId, recType) {
   if (cs && cs.mode === 'standard' && cs.recId != null) {
     if (String(cs.recId) === String(recId)) { render(); return; }            // already showing it — no-op
     // Task 5 — overtaking a DIFFERENT record already open in Standard freezes the
-    // session and opens a NEW foreground tab instead of swapping in place.
-    return openInTab(card, recId, recType, { inheritFrom: activeSession() });
+    // session and opens a NEW foreground tab. The new tab carries this card's history
+    // PLUS the record we're leaving, so the jog can walk the overtake chain back.
+    const stack = [...cs.backStack, cardSnap(cs)];
+    return openInTab(card, recId, recType, { inheritFrom: activeSession(), seedHistory: { card, stack } });
   }
   sweepEmptyDrafts(recId);   // #8 — leaving an empty draft deletes it
   pushCardHistory(cs);       // Task 1 — record the prior (list) view so Back can return
