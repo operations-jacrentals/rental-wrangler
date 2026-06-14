@@ -744,6 +744,7 @@ const state = {
   filterTerms: [],            // §5.4 — AND-narrowing filter terms (type + Enter)
   fleetFilter: null,          // { categoryId, status } — fleet-summary badge → units by status
   unitPick: null,             // { ids, from } — Invoice +WO narrows the Units list to the invoice's linked units (Phase 4)
+  chat: { open: false, tags: [], roles: null, draft: '', messages: [] },   // §17 internal team dock (Phase 7): tagged-element rail + comment feed + role participants
   woPartForm: null,           // woId whose "+ Add Part/Labor" inline form is open
   invLineForm: null,          // invoiceId whose "+ Add Custom" inline form is open
   dashboard: false,           // §5.3/§11 Office Dispatch Time Grid (grid-swap mode)
@@ -1164,6 +1165,7 @@ const I = {
   chev: '<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 9l6 6 6-6"/></svg>',
   chevL: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>',
   chevR: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>',
+  chat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>',
 };
 
 /* Card + KPI-ring glyphs — sourced from free libraries (Lucide MIT; the excavator
@@ -2195,7 +2197,7 @@ function commentMarkerHtml(rec) {
 function addRecComment(rec, text, color) {
   if (!rec || !text) return;
   rec.comments = rec.comments || [];
-  rec.comments.push({ id: 'CM' + (state.seq++), text, color: color || 'yellow', by: commentUserKey(), when: TODAY_ISO, ack: [commentUserKey()] });   // the author has already seen it
+  rec.comments.push({ id: 'CM' + (state.seq++), text, color: color || 'yellow', by: commentUserKey(), when: TODAY_ISO, at: Date.now(), ack: [commentUserKey()] });   // the author has already seen it
   logAction(rec, `💬 ${text}`);   // still logs to History
   saveSoon();
 }
@@ -3835,12 +3837,82 @@ function bottomBarEl() {
     <button class="iconbtn js-qr" data-tip="Share session (QR)">${I.qr}</button>
     <button class="iconbtn${state.previewsOn ? '' : ' off'} js-previews" data-tip="${state.previewsOn ? 'Hover previews: on' : 'Hover previews: off'}">${state.previewsOn ? I.eye : I.eyeOff}</button>
     <button class="iconbtn js-feedback" data-tip="Report a bug or request">${I.feedback}</button>
+    <button class="iconbtn js-chat-toggle${state.chat.open ? ' on' : ''}" data-tip="Team chat — flagged comments + tagged context">${I.chat}${(() => { const n = chatUnreadCount(); return n ? `<span class="bb-badge">${n > 9 ? '9+' : n}</span>` : ''; })()}</button>
     <button class="iconbtn js-hotkeys" data-tip="Mouse &amp; keyboard shortcuts">${I.mouse}</button>
     <button class="iconbtn js-adminlock${adminUnlocked() ? ' on' : ''}" data-tip="${adminUnlocked() ? 'Admin tools unlocked — click to lock' : 'Admin tools — click to unlock'}">${adminUnlocked() ? I.lockOpen : I.lock}</button>
     ${adminUnlocked() ? `<button class="iconbtn js-lint${document.body.classList.contains('rw-lint') ? ' on' : ''}" data-tip="Design lint — flash anything that bypassed the UI builders (R0)">${I.eye}</button>
     <button class="iconbtn js-inspect${state.inspect ? ' on' : ''}" data-tip="Design Inspector — hover names the rule, click copies the reference">${I.search}</button>
     <button class="iconbtn js-rulebook" data-tip="The R-Rulebook — visual design reference (SPEC v7)">${I.doc}</button>` : ''}`;
   return bar;
+}
+/* ════════════════════════════════════════════════════════════════════════
+   §17 INTERNAL TEAM DOCK (Jac, Phase 7) — a bottom-bar chat built on the Phase-6
+   record comments: a live "what's flagged" feed, a rail of TAGGED elements
+   (records / lines / pills / prices) shown as colored tabs you add + remove so a
+   thread carries its own context, and role buttons that toggle who's included.
+   ════════════════════════════════════════════════════════════════════════ */
+// every record comment across the data, with its source record, for the feed.
+function chatComments() {
+  const out = [];
+  const grab = (card, rec) => (rec.comments || []).forEach((c) => out.push({ ...c, kind: 'comment', card, recId: idOf(card, rec), recName: detailTitle(card, rec) }));
+  ['customers', 'rentals', 'units', 'invoices', 'workOrders', 'categories'].forEach((card) => (collection(card) || []).forEach((rec) => grab(card, rec)));
+  return out;
+}
+function chatUnreadCount() { const u = commentUserKey(); return chatComments().filter((c) => !(c.ack || []).includes(u)).length; }
+function chatFeed() {
+  const items = [...chatComments(), ...state.chat.messages.map((m) => ({ ...m, kind: 'msg' }))];
+  return items.sort((a, b) => (a.at || 0) - (b.at || 0));
+}
+function chatRoleOn(id) { const r = state.chat.roles; return !r || r.includes(id); }
+function chatDockEl() {
+  const ch = state.chat;
+  const roleBtns = ROLES.map((r) => `<button class="chat-role${chatRoleOn(r.id) ? ' on' : ''}" data-chat-role="${esc(r.id)}" style="--rc:var(--${r.color})" data-tip="${esc(r.label)} — ${chatRoleOn(r.id) ? 'in the chat' : 'left out'}">${esc(r.label)}</button>`).join('');
+  const rail = ch.tags.length
+    ? `<div class="chat-rail">${ch.tags.map((t) => `<span class="chat-tag c-${t.color || 'gray'}" data-tip="${esc(t.label)}"><span class="ct-lbl">${esc(t.label)}</span><button class="x" data-chat-untag="${esc(t.id)}" aria-label="Remove">${I.x}</button></span>`).join('')}</div>`
+    : `<div class="chat-rail empty">Drag a record, line, pill or price up here to tag the chat</div>`;
+  const u = commentUserKey();
+  const feed = chatFeed().map((it) => {
+    if (it.kind === 'msg') return `<div class="chat-msg"><span class="cm-by">${esc(it.by || 'Team')}</span> <span class="cm-text">${esc(it.text)}</span></div>`;
+    const unread = !(it.ack || []).includes(u);
+    return `<button class="chat-fitem${unread ? ' unread' : ''}" data-chat-open="${esc(it.card)}|${esc(it.recId)}"><span class="cmt-marker c-${it.color}"></span><span class="cf-body"><span class="cf-text">${esc(it.text)}</span><span class="cf-meta">${esc(it.by || '—')} · on <b>${esc(it.recName)}</b></span></span></button>`;
+  }).join('') || '<div class="chat-empty">No flags yet — comments you leave on records land here.</div>';
+  return `<div class="chat-head"><span class="chat-title">Team</span><span class="spacer"></span><button class="x js-chat-close" aria-label="Close">${I.x}</button></div>
+    ${rail}
+    <div class="chat-feed">${feed}</div>
+    <div class="chat-roles" data-tip="Toggle which roles are in this chat">${roleBtns}</div>
+    <div class="chat-compose"><input class="chat-input" placeholder="Message the team…" value="${esc(ch.draft || '')}" /><button class="chat-send js-chat-send" aria-label="Send">${I.chev}</button></div>`;
+}
+function chatSend() {
+  const inp = document.querySelector('.chat-input');
+  const text = ((inp ? inp.value : state.chat.draft) || '').trim();
+  if (!text) { if (inp) inp.focus(); return; }
+  state.chat.messages.push({ id: 'MSG' + (state.seq++), by: commentUserKey(), when: TODAY_ISO, at: Date.now(), text });
+  state.chat.draft = ''; saveSoon(); render();
+  setTimeout(() => { const i = document.querySelector('.chat-input'); if (i) i.focus(); const f = document.querySelector('.chat-feed'); if (f) f.scrollTop = f.scrollHeight; }, 0);
+}
+function chatToggleRole(id) {
+  const ch = state.chat;
+  if (ch.roles == null) ch.roles = ROLES.map((r) => r.id);   // first toggle materializes the "all included" set
+  ch.roles = ch.roles.includes(id) ? ch.roles.filter((x) => x !== id) : [...ch.roles, id];
+  render();
+}
+// Resolve a dragged payload into a chat tag — label from the record, color inherited
+// from any flag it already carries (else neutral). Granular-element sources (line/pill/
+// price) ride the same path once they're wired as drag sources.
+function chatTagFromPayload(p) {
+  const rec = p.rec, ec = p.entity;
+  const label = ROW_META[ec] ? ROW_META[ec](rec).title : (idOf(ec, rec) || 'Item');
+  const m = commentMarker(rec);
+  chatAddTag({ id: 'TAG:' + ec + ':' + p.id, label, color: m ? m.color : 'gray', ref: { card: ec, recId: p.id } });
+  toast(`Tagged “${label}” into the team chat.`);
+}
+// Tag an element into the chat (drag-drop) — records OR granular elements (line/pill/price).
+function chatAddTag(tag) {
+  if (!tag || !tag.label) return;
+  state.chat.tags = state.chat.tags || [];
+  if (tag.id && state.chat.tags.some((t) => t.id === tag.id)) return;   // no dupes
+  state.chat.tags.push({ id: tag.id || 'TAG' + (state.seq++), label: tag.label, color: tag.color || 'gray', ref: tag.ref || null });
+  state.chat.open = true; render();
 }
 function tabStrip(tabs) {
   tabs = tabs || state.tabs;
@@ -4933,6 +5005,8 @@ function render() {
     if (wr) { const fl = el('div', 'winpicker-float'); fl.innerHTML = winPickerEl(wr); $('#app').appendChild(fl); positionWinPicker(fl); }
     else state.winpicker = null;
   }
+  // §17 — the internal team dock floats bottom-right above the bar when open
+  if (state.chat.open) { const d = el('div', 'chat-dock', ''); d.dataset.drop = 'chat'; d.innerHTML = chatDockEl(); $('#app').appendChild(d); }
   applyTitles();   // full text on hover wherever we truncate (custom ~0.5s tooltip)
   scoreTick();     // §11 gamification — pop +X over any ring whose metric just rose
   if (DRAG.active) reapplyDragDecor();   // §15c — re-stamp drop targets after ANY mid-drag rebuild (the card swap IS a render)
@@ -5167,6 +5241,9 @@ function dropTargetAt(x, y, under) {
   const n = under !== undefined ? under : document.elementFromPoint(x, y);   // ghost + layer are pointer-events:none
   if (!n || !n.closest) return null;
   if (n.closest('.winpicker-float, .overlay, .dropdown-menu, .ctx-menu')) return null;   // floaters are dead zones
+  // §17 — dropping ANY dragged element into the team dock (or its launcher) tags it
+  const chatHit = n.closest('.chat-dock, .js-chat-toggle');
+  if (chatHit) return { chat: true, node: chatHit };
   const accept = DROP_MATRIX[DRAG.payload.entity] || {};
   const row = n.closest('.row');
   if (row && row.dataset.rec != null) {
@@ -5275,6 +5352,7 @@ function endDrag({ rerender } = {}) {
    R19-flash the newly linked pill on whatever card shows it (row/card fallback). ── */
 function dropFlash(sel, fallbackSel) { if (document.querySelector(sel)) attnFlash(sel); else if (fallbackSel && document.querySelector(fallbackSel)) attnFlash(fallbackSel); }
 function dispatchDrop(p, t) {
+  if (t.chat) return chatTagFromPayload(p);   // §17 — drop into the team dock = tag it into the chat
   const pair = `${p.entity}>${t.entity}`;
   // UNIT ↔ RENTAL — ADD the unit to the rental (a Rental is an EVENT, §20);
   // gates fire per unit inside linkUnitToRental.
@@ -5441,6 +5519,13 @@ function onClick(e) {
   }
   if (closest('.js-rulebook')) return openOverlay({ kind: 'rulebook' });
   if (closest('.js-feedback')) { e.stopPropagation(); return openOverlay({ kind: 'feedback', fbType: 'Bug', text: '', shot: '', error: '', busy: false }); }
+  // §17 internal team dock
+  if (closest('.js-chat-toggle')) { e.stopPropagation(); state.chat.open = !state.chat.open; return render(); }
+  if (closest('.js-chat-close')) { e.stopPropagation(); state.chat.open = false; return render(); }
+  if (closest('.js-chat-send')) { e.stopPropagation(); return chatSend(); }
+  if (closest('[data-chat-untag]')) { e.stopPropagation(); const id = closest('[data-chat-untag]').dataset.chatUntag; state.chat.tags = state.chat.tags.filter((t) => t.id !== id); return render(); }
+  if (closest('[data-chat-role]')) { e.stopPropagation(); return chatToggleRole(closest('[data-chat-role]').dataset.chatRole); }
+  if (closest('[data-chat-open]')) { e.stopPropagation(); const [card, recId] = closest('[data-chat-open]').dataset.chatOpen.split('|'); return anchorRecord(SHOP_TYPES.includes(card) ? 'shop' : card, recId, SHOP_TYPES.includes(card) ? card : null); }
   if (closest('.js-fb-type')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'feedback') { const ta = document.querySelector('.overlay .js-fb-text'); if (ta) o.text = ta.value; o.fbType = closest('.js-fb-type').dataset.val; renderOverlay(); } return; }
   if (closest('.js-fb-shot-x')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'feedback') { const ta = document.querySelector('.overlay .js-fb-text'); if (ta) o.text = ta.value; o.shot = ''; renderOverlay(); } return; }
   if (closest('[data-cmt-color]')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'comment') { const ta = document.querySelector('.overlay .js-cmt-text'); if (ta) o.text = ta.value; o.color = closest('[data-cmt-color]').dataset.cmtColor; renderOverlay(); } return; }
@@ -6277,6 +6362,7 @@ function onInput(e) {
   // Feedback description → store as they type (so a re-render keeps it).
   if (e.target.classList.contains('js-fb-text')) { if (state.overlay?.kind === 'feedback') state.overlay.text = e.target.value; return; }
   if (e.target.classList.contains('js-cmt-text')) { if (state.overlay?.kind === 'comment') state.overlay.text = e.target.value; return; }
+  if (e.target.classList.contains('chat-input')) { state.chat.draft = e.target.value; return; }
   // Board View live search → re-render the popup and restore the caret.
   if (e.target.classList.contains('bv-query')) {
     if (state.overlay?.kind === 'boardview') { state.overlay.query = e.target.value; const sel = e.target.selectionStart; renderOverlay(); const q = document.querySelector('.bv-query'); if (q) { q.focus(); q.setSelectionRange(sel, sel); } }
@@ -7708,6 +7794,7 @@ function boot() {
       return;
     }
     if (e.target.classList.contains('nc-in') && e.key === 'Enter' && e.target.tagName !== 'SELECT') { e.preventDefault(); return saveNewCustomer(); }
+    if (e.target.classList.contains('chat-input') && e.key === 'Enter') { e.preventDefault(); return chatSend(); }
     if (e.key === 'Escape') { if (state.winpicker) { closeWinPicker(); } else if (state.overlay) { closeOverlay(); } }
   });
   // mouse hotkeys (§0.1): double-click a row = anchor; right-click = Back

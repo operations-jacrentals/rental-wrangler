@@ -711,6 +711,45 @@ input { font-family: inherit; }
   font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.2px; font-weight: 700; font-size: 12.5px; }
 .cmt-post:hover { background: rgba(0,0,0,.28); }
 
+/* §17 INTERNAL TEAM DOCK (Jac, Phase 7) — flagged-comment feed + tagged-element rail
+   + role participants, floating bottom-right above the bar. Yard data-plate steel. */
+.bottombar .iconbtn { position: relative; }
+.bb-badge { position: absolute; top: 1px; right: 1px; min-width: 15px; height: 15px; padding: 0 3px; border-radius: 8px; background: var(--accent); color: #1a1205; font-size: 9px; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; }
+.chat-dock { position: fixed; right: 14px; bottom: 60px; width: 360px; max-height: min(72vh, 640px); z-index: 60;
+  display: flex; flex-direction: column; border-radius: 14px; overflow: hidden;
+  background: linear-gradient(180deg,#1b2129,#0c0e11); border: 1px solid var(--line); box-shadow: 0 26px 64px -18px rgba(0,0,0,.72); }
+.chat-head { display: flex; align-items: center; padding: 10px 12px; border-bottom: 1px solid var(--line); flex: 0 0 auto; }
+.chat-head .chat-title { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.6px; font-weight: 700; font-size: 13px; color: var(--txt); }
+.chat-head .spacer { flex: 1; }
+.chat-rail { display: flex; gap: 6px; flex-wrap: wrap; padding: 8px 10px; border-bottom: 1px solid var(--line); background: rgba(0,0,0,.18); flex: 0 0 auto; }
+.chat-rail.empty { font-size: 11px; color: var(--txt-3); font-style: italic; }
+.chat-tag { display: inline-flex; align-items: center; gap: 5px; max-width: 150px; padding: 3px 4px 3px 9px; border-radius: 7px; font-size: 11px; font-weight: 700;
+  background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--tagc, var(--txt-3)); color: var(--txt); }
+.chat-tag.c-red { --tagc: var(--red); } .chat-tag.c-yellow { --tagc: var(--yellow); } .chat-tag.c-green { --tagc: var(--green); }
+.chat-tag .ct-lbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-tag .x { display: inline-flex; width: 14px; height: 14px; opacity: .55; cursor: pointer; border: none; background: none; color: inherit; padding: 0; }
+.chat-tag .x:hover { opacity: 1; }
+.chat-feed { flex: 1 1 auto; overflow-y: auto; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; min-height: 96px; }
+.chat-empty { color: var(--txt-3); font-size: 12px; text-align: center; padding: 26px 10px; }
+.chat-fitem { display: flex; gap: 8px; align-items: flex-start; text-align: left; width: 100%; background: var(--panel); border: 1px solid var(--line); border-radius: 9px; padding: 7px 9px; cursor: pointer; }
+.chat-fitem:hover { border-color: var(--accent-line); }
+.chat-fitem.unread { box-shadow: inset 2px 0 0 var(--accent); }
+.chat-fitem .cmt-marker { margin-top: 3px; flex: 0 0 auto; }
+.chat-fitem .cf-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.cf-text { font-size: 12.5px; color: var(--txt); line-height: 1.35; }
+.cf-meta { font-size: 10.5px; color: var(--txt-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chat-msg { font-size: 12.5px; color: var(--txt-2); padding: 2px 4px; line-height: 1.4; }
+.chat-msg .cm-by { font-weight: 700; color: var(--accent); }
+.chat-roles { display: flex; flex-wrap: wrap; gap: 5px; padding: 8px 10px; border-top: 1px solid var(--line); flex: 0 0 auto; }
+.chat-role { font-size: 10.5px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; padding: 4px 9px; border-radius: 99px; cursor: pointer; background: transparent; border: 1px solid var(--line); color: var(--txt-3); }
+.chat-role.on { color: #0c0e11; background: var(--rc); border-color: var(--rc); }
+.chat-compose { display: flex; gap: 7px; padding: 9px 10px; border-top: 1px solid var(--line); flex: 0 0 auto; }
+.chat-input { flex: 1; height: 34px; border-radius: 9px; background: var(--bg-2); border: 1px solid var(--line); color: var(--txt); padding: 0 11px; font: inherit; font-size: 13px; outline: none; }
+.chat-input:focus { border-color: var(--accent-line); box-shadow: 0 0 0 3px var(--accent-soft); }
+.chat-send { width: 34px; height: 34px; flex: 0 0 auto; border-radius: 9px; border: none; cursor: pointer; background: var(--accent); color: #1a1205; display: inline-flex; align-items: center; justify-content: center; }
+.chat-send svg { width: 17px; height: 17px; transform: rotate(-90deg); }
+.chat-dock.drop-hot { outline: 2px dashed var(--accent); outline-offset: -4px; }
+
 /* §6.2 #11 inline edit */
 .inline-edit { cursor: text; border-radius: 4px; }
 .inline-edit:hover { box-shadow: inset 0 -1px 0 var(--accent-line); }
