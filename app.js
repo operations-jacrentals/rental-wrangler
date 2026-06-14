@@ -2145,6 +2145,30 @@ function yardToolHtml(u) {
 }
 /* one open-WO section on the Units card: WO name = the title, type+date flags right,
    +Part/Task shares the totals row, gate line statuses, +Invoice + if-billed formula */
+/* §12.1 — the customer Activity gauge (Jac, Phase 6): a bipolar −100…+100 read of
+   where a customer sits in their OWN rental cadence. Just rented = +100%; it eases to
+   0 across their avgFrequencyDays, then swings negative once overdue, hitting −100% at
+   ~2× the interval (rents every 10 days → −100% by day 20). Five stages. */
+function activityStage(pct) {
+  if (pct >= 50) return { label: 'Active', color: 'green' };
+  if (pct >= 0) return { label: 'Renting Soon', color: 'yellow' };
+  if (pct > -50) return { label: 'Action Required', color: 'orange' };
+  if (pct > -80) return { label: 'Inactive', color: 'red' };
+  return { label: 'Lost Customer', color: 'red', deep: true };
+}
+function customerActivity(c) {
+  const d = c._digest || {};
+  const f = Number(d.avgFrequencyDays) || 0;
+  let pct;
+  if (f > 0 && d.lastInvoice) {
+    const since = Math.max(0, Math.round((parseISO(TODAY_ISO) - parseISO(d.lastInvoice)) / 86400000));
+    pct = since <= f ? 100 * (f - since) / f : -100 * (since - f) / f;   // +100 just-rented → 0 at the interval → −100 at 2× overdue
+  } else {
+    pct = d.activePct || 0;                                              // no cadence yet (new / one-off) → legacy positive measure
+  }
+  pct = Math.max(-100, Math.min(100, Math.round(pct)));
+  return { pct, ...activityStage(pct) };
+}
 function woSectionHtml(w) {
   const bn = woBottleneck(w);
   const secColor = bn.color === 'red' ? 'red' : bn.color === 'green' ? 'green' : 'yellow';
@@ -2685,7 +2709,15 @@ const DETAIL = {
     // Jac 2026-06-12: NO badge row — account type + pay status are R9 title flags,
     // the account gate (R1) rides the title row. Selfie + agreement live in ACCOUNT.
     const title = `<span class="d-title">${esc(fullName(c)) || 'New Customer'}</span>`;
-    const activeBar = `<div class="active-bar wide"><div class="active-spectrum" style="clip-path:inset(0 ${100 - (d.activePct || 0)}% 0 0)"></div><span class="active-lbl">${d.activePct || 0}% Active</span></div>`;
+    const act = customerActivity(c);
+    const aFill = `left:${act.pct >= 0 ? 50 : 50 + act.pct / 2}%;width:${Math.abs(act.pct) / 2}%`;   // grow out from the center zero
+    const aTicks = [-80, -50, 50, 80].map((v) => `<span class="ab-tick" style="left:${50 + v / 2}%"></span>`).join('');
+    const activeBar = `<div class="active-bar bipolar wide" data-tip="Where this customer sits in their rental pattern (in-pattern → out-of-pattern)">
+      ${aTicks}<span class="ab-zero"></span>
+      <div class="ab-fill${act.deep ? ' deep' : ''}" style="${aFill};background:var(--${act.color})"></div>
+      <span class="ab-stage">${act.label}</span>
+      <span class="active-lbl">${act.pct > 0 ? '+' : ''}${act.pct}%</span>
+    </div>`;
 
     const intCats = (c.interestedCategoryIds || []).map((id) => { const cat = IDX.category.get(id); return cat ? refPill('categories', id, cat.name, { x: 'intcat-remove', xData: id }) : ''; }).join('');
     const usedSales = `<div class="section"><h4>Used Sales</h4><div class="fieldstack centered">
