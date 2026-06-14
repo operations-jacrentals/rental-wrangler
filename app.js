@@ -730,7 +730,7 @@ const entityCardOf = (card, recType) => (card === 'shop' ? recType : card);
 
 const state = {
   data: DATA,
-  theme: (() => { try { const t = localStorage.getItem('jactec.theme'); return (t === 'light' || t === 'yard' || t === 'ranch') ? t : 'dark'; } catch (e) { return 'dark'; } })(),   // dark | yard | ranch | light (per device)
+  theme: 'yard',   // LOCKED to Yard for now — dark/ranch/light hidden (toggle removed); Jac 2026-06-14. Revive: restore the per-device read + the bottom-bar js-theme button.
   query: '',
   searchMode: false,
   tabs: [],            // [{ id, card, recId, label, sub, color, session }]
@@ -4006,7 +4006,6 @@ function bottomBarInner() {
     <button class="iconbtn js-dashboard">${I.grid} Dashboard</button>
     <button class="iconbtn js-newitem" data-new="receipt">${CARD_ICON.expenses}Receipt</button>
     <span class="bb-sep"></span>
-    <button class="iconbtn js-theme" data-tip="${THEME_NEXT[state.theme].tip}">${THEME_NEXT[state.theme].icon}</button>
     <button class="iconbtn js-qr" data-tip="Share session (QR)">${I.qr}</button>
     <button class="iconbtn${state.previewsOn ? '' : ' off'} js-previews" data-tip="${state.previewsOn ? 'Hover previews: on' : 'Hover previews: off'}">${state.previewsOn ? I.eye : I.eyeOff}</button>
     <button class="iconbtn js-feedback" data-tip="Report a bug or request">${I.feedback}</button>
