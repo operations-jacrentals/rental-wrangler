@@ -1450,10 +1450,8 @@ function runCtxAction(act) {
   }
   if (act === 'startchat') return startChatFromEl(el);   // §17 — start a team chat seeded from this element
   if (act === 'wrangler') {
-    const meta = tg.r ? RULE_META[tg.r] : null;
-    const ref = `Ask Mr. Wrangler — ${tg.r ? `${tg.r}${meta ? ` · ${meta[0]}` : ''}` : 'element'} — ${refPath(el)}: `;
-    try { navigator.clipboard.writeText(ref); } catch (err) {}
-    return toast('🤠 Reference copied — paste it to Claude with your question.');
+    const hit = cardRecordAt(el);   // §18 — open Mr. Wrangler, record-aware when a record is under the cursor
+    return openOverlay({ kind: 'wrangler', card: hit ? hit.card : null, recId: hit ? hit.recId : null, recType: hit ? hit.recType : null, messages: [], busy: false, error: '', draft: '' });
   }
 }
 /** R17: forward-action pills — commit (blue) / money (green) / danger (solid red). */
@@ -4010,6 +4008,7 @@ function bottomBarInner() {
     <button class="iconbtn${state.previewsOn ? '' : ' off'} js-previews" data-tip="${state.previewsOn ? 'Hover previews: on' : 'Hover previews: off'}">${state.previewsOn ? I.eye : I.eyeOff}</button>
     <button class="iconbtn js-feedback" data-tip="Report a bug or request">${I.feedback}</button>
     <button class="iconbtn js-chat-toggle${state.chat.open ? ' on' : ''}" data-tip="Team chat — flagged comments + tagged context">${I.chat}${(() => { const n = chatUnreadCount(); return n ? `<span class="bb-badge">${n > 9 ? '9+' : n}</span>` : ''; })()}</button>
+    <button class="iconbtn js-wrangler" data-tip="Ask Mr. Wrangler — the in-app AI" style="font-size:16px">🤠</button>
     <button class="iconbtn js-hotkeys" data-tip="Mouse &amp; keyboard shortcuts">${I.mouse}</button>
     <button class="iconbtn js-adminlock${adminUnlocked() ? ' on' : ''}" data-tip="${adminUnlocked() ? 'Admin tools unlocked — click to lock' : 'Admin tools — click to unlock'}">${adminUnlocked() ? I.lockOpen : I.lock}</button>
     ${adminUnlocked() ? `<button class="iconbtn js-lint${document.body.classList.contains('rw-lint') ? ' on' : ''}" data-tip="Design lint — flash anything that bypassed the UI builders (R0)">${I.eye}</button>
@@ -4268,6 +4267,21 @@ function renderOverlay() {
         <p class="muted" style="margin-top:6px;font-size:11px">${esc(o.caption || 'Scan to open this session on another device (single shared login — §1/§4.2).')}</p>
       </div>`;
     overlay.appendChild(pop);
+  } else if (o.kind === 'wrangler') {
+    // §18 — Mr. Wrangler: an in-app AI chat (Claude via the backend).
+    const rec = (o.card && o.recId != null) ? recOf(entityCardOf(o.card, o.recType), o.recId) : null;
+    const chip = rec ? `<span class="wr-chip">${CARD_ICON[entityCardOf(o.card, o.recType)] || ''}${esc(detailTitle(entityCardOf(o.card, o.recType), rec))}</span>` : '<span class="wr-chip muted">Whole yard</span>';
+    const turns = o.messages.length
+      ? o.messages.map((m) => `<div class="wr-msg ${m.role}">${m.role === 'assistant' ? '<span class="wr-av">🤠</span>' : ''}<div class="wr-bub">${esc(m.content).replace(/\n/g, '<br>')}</div></div>`).join('')
+      : '<div class="wr-empty">Ask about this record or the whole yard — service due, balances, what needs attention…</div>';
+    const pop = el('div', 'popup wr-pop'); pop.style.width = '440px';
+    pop.innerHTML = `
+      <div class="popup-head"><span class="mark" style="font-size:18px">🤠</span><h3>Mr. Wrangler</h3>${chip}<span class="spacer"></span><button class="x js-close" aria-label="Close">${I.x}</button></div>
+      <div class="wr-feed">${turns}${o.busy ? '<div class="wr-msg assistant"><span class="wr-av">🤠</span><div class="wr-bub wr-think">…wrangling an answer</div></div>' : ''}</div>
+      ${o.error ? `<div class="wr-err">${esc(o.error)}</div>` : ''}
+      <div class="wr-compose"><input class="wr-in js-wr-in" placeholder="Ask Mr. Wrangler…" value="${esc(o.draft || '')}" ${o.busy ? 'disabled' : ''} /><button class="wr-send js-wr-send" ${o.busy ? 'disabled' : ''} aria-label="Ask">${I.chev}</button></div>`;
+    overlay.appendChild(pop);
+    setTimeout(() => { const i = pop.querySelector('.js-wr-in'); if (i) i.focus(); const f = pop.querySelector('.wr-feed'); if (f) f.scrollTop = f.scrollHeight; }, 0);
   } else if (o.kind === 'comment') {
     // Phase 6 (Jac redesign) — a SIMPLE comment card that floods with the picked color.
     // Traffic-light dots top-left pick the color; the card body becomes that solid color.
@@ -4826,6 +4840,56 @@ async function sendFeedback() {
     closeOverlay();
     toast(o.fbType === 'Bug' ? 'Bug report sent — thanks. Claude will reproduce + fix it.' : `${o.fbType || 'Request'} sent — Claude will run it by you before changing anything.`);
   } catch (e) { o.busy = false; o.error = 'Couldn’t send — check your connection and try again.'; renderOverlay(); }
+}
+/* ════════════════════════════════════════════════════════════════════════
+   §18 MR. WRANGLER — the in-app AI (Claude via the Apps Script backend).
+   The API key NEVER touches this public repo: the frontend POSTs to BACKEND_URL
+   (action 'wrangler'); Code.gs calls api.anthropic.com with the key from a Script
+   Property. Carries a compact data digest + (when opened from a record) its detail.
+   ════════════════════════════════════════════════════════════════════════ */
+const WRANGLER_SYSTEM = "You are Mr. Wrangler, the in-app AI for JacRentals — a heavy-equipment rental yard in Sulphur, Louisiana. You help the team make sense of their units, rentals, customers, invoices, work orders, and service. Speak plainly and helpfully with a light wrangler/ranch flavor — never campy. Answer directly and concisely using ONLY the data provided below; if it isn't there, say so plainly. Never invent records, names, or numbers.";
+function wranglerDigest() {
+  const u = DATA.units || [], r = DATA.rentals || [], c = DATA.customers || [], inv = DATA.invoices || [], wo = DATA.workOrders || [];
+  let owed = 0, overdue = [];
+  inv.forEach((i) => { try { const t = invoiceTotals(i); owed += t.balance || 0; if ((t.balance || 0) > 0 && i.dueDate && i.dueDate < TODAY_ISO) overdue.push(`${i.invoiceId} (${money(t.balance)})`); } catch (e) {} });
+  const notActive = u.filter((x) => x.fleetStatus && x.fleetStatus !== 'Active').map((x) => `${x.name} [${x.fleetStatus}]`);
+  const needSvc = u.filter((x) => { try { const s = topServiceForUnit(x); return s && s.remaining != null && s.remaining <= 0; } catch (e) { return false; } }).map((x) => x.name);
+  const lines = [
+    `JacRentals yard snapshot — ${TODAY_ISO}.`,
+    `Units: ${u.length}. Rentals: ${r.length}. Customers: ${c.length}. Invoices: ${inv.length}. Work orders: ${wo.length}.`,
+    `Outstanding balance across invoices: ${money(owed)}.`,
+  ];
+  if (needSvc.length) lines.push(`Units at/over service: ${needSvc.slice(0, 12).join(', ')}${needSvc.length > 12 ? '…' : ''}.`);
+  if (notActive.length) lines.push(`Units not active: ${notActive.slice(0, 12).join(', ')}${notActive.length > 12 ? '…' : ''}.`);
+  if (overdue.length) lines.push(`Overdue invoices: ${overdue.slice(0, 12).join(', ')}${overdue.length > 12 ? '…' : ''}.`);
+  return lines.join('\n');
+}
+function wranglerContext(o) {
+  let ctx = 'CURRENT DATA SNAPSHOT:\n' + wranglerDigest();
+  if (o.card && o.recId != null) {
+    const ec = entityCardOf(o.card, o.recType), rec = recOf(ec, o.recId);
+    if (rec) ctx += `\n\nFOCUSED RECORD — ${ec}: ${detailTitle(ec, rec)}\n` + JSON.stringify(rec).slice(0, 4000);
+  }
+  return ctx;
+}
+async function wranglerSend() {
+  const o = state.overlay; if (!o || o.kind !== 'wrangler') return;
+  const inp = document.querySelector('.overlay .js-wr-in');
+  const text = ((inp ? inp.value : o.draft) || '').trim();
+  if (!text || o.busy) { if (inp) inp.focus(); return; }
+  o.messages.push({ role: 'user', content: text });
+  o.draft = ''; o.busy = true; o.error = ''; renderOverlay();
+  const system = WRANGLER_SYSTEM + '\n\n' + wranglerContext(o);
+  try {
+    if (typeof backendPassword !== 'undefined' && backendPassword) {
+      const r = await backendCall('wrangler', { system, messages: o.messages.map((m) => ({ role: m.role, content: m.content })) });
+      if (!r || r.error) throw new Error((r && r.error) || 'no response');
+      o.messages.push({ role: 'assistant', content: (r.text || '').trim() || '(no answer)' });
+    } else {
+      o.messages.push({ role: 'assistant', content: "🤠 Demo mode — sign in to ask the real Mr. Wrangler (the live AI runs through the backend). Here's the snapshot I'd reason over:\n\n" + wranglerDigest() });
+    }
+    o.busy = false; renderOverlay();
+  } catch (e) { o.busy = false; o.error = 'Mr. Wrangler couldn’t answer — check the connection / backend.'; renderOverlay(); }
 }
 // Read the customer-form inputs back into the draft (call before any re-render so
 // typed values survive a selfie/signature/pill change).
@@ -5876,6 +5940,8 @@ function onClick(e) {
   if (closest('[data-cmt-color]')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'comment') { const ta = document.querySelector('.overlay .js-cmt-text'); if (ta) o.text = ta.value; o.color = closest('[data-cmt-color]').dataset.cmtColor; renderOverlay(); } return; }
   if (closest('.js-cmt-save')) { e.stopPropagation(); return saveCommentOverlay(); }
   if (closest('.js-fb-send')) { e.stopPropagation(); return sendFeedback(); }
+  if (closest('.js-wr-send')) { e.stopPropagation(); return wranglerSend(); }   // §18 Mr. Wrangler
+  if (closest('.js-wrangler')) { e.stopPropagation(); return openOverlay({ kind: 'wrangler', card: null, recId: null, recType: null, messages: [], busy: false, error: '', draft: '' }); }
   if (closest('.js-open-link')) { e.stopPropagation(); const url = closest('.js-open-link').dataset.url || ''; if (/^(https?:\/\/|mailto:)/i.test(url)) window.open(url, '_blank', 'noopener'); return; }
   if (closest('.js-board')) { const b = closest('.js-board'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return openOverlay({ kind: 'board', board: b.dataset.board }); }
   if (closest('.js-vendor-open')) { e.stopPropagation(); return openOverlay({ kind: 'board', board: 'vendors', recId: closest('.js-vendor-open').dataset.rec }); }   // WO-line vendor names → vendor detail in the board popup
@@ -6707,6 +6773,7 @@ function onInput(e) {
   // Feedback description → store as they type (so a re-render keeps it).
   if (e.target.classList.contains('js-fb-text')) { if (state.overlay?.kind === 'feedback') state.overlay.text = e.target.value; return; }
   if (e.target.classList.contains('js-cmt-text')) { if (state.overlay?.kind === 'comment') state.overlay.text = e.target.value; return; }
+  if (e.target.classList.contains('js-wr-in')) { if (state.overlay?.kind === 'wrangler') state.overlay.draft = e.target.value; return; }
   if (e.target.classList.contains('chat-input')) { state.chat.draft = e.target.value; return; }
   // Board View live search → re-render the popup and restore the caret.
   if (e.target.classList.contains('bv-query')) {
@@ -8161,6 +8228,7 @@ function boot() {
       return;
     }
     if (e.target.classList.contains('nc-in') && e.key === 'Enter' && e.target.tagName !== 'SELECT') { e.preventDefault(); return saveNewCustomer(); }
+    if (e.target.classList.contains('js-wr-in') && e.key === 'Enter') { e.preventDefault(); return wranglerSend(); }   // §18
     if (e.target.classList.contains('chat-input') && e.key === 'Enter') { e.preventDefault(); return chatSend(); }
     if (e.key === 'Escape') { if (state.winpicker) { closeWinPicker(); } else if (state.overlay) { closeOverlay(); } }
   });
