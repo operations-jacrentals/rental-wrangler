@@ -2164,7 +2164,7 @@ function woSectionHtml(w) {
     // the description re-opens the part popup; vendor/url live in its tooltip
     return `<div class="woline">${gatePillRaw(lbl, ph.color, 'js-wophase-line', { rec: w.woId, idx })}<span class="js-partedit" data-rec="${w.woId}" data-idx="${idx}" style="cursor:pointer"${tip ? ` data-tip="${esc(tip)}"` : ''}>${li.aiPending ? '✨ ' : ''}${esc(li.part)}${ven ? ' ' + linkName(ven.name, { js: 'js-vendor-open', data: { rec: ven.vendorId } }) : ''}</span><span class="nums"><b>${money(li.cost)}</b><span>${li.hours || 0}h</span></span></div>`;
   }).join('');
-  return `<div class="section sec-${secColor} wo-${w.woId}">
+  return `<div class="section sec-${secColor} wo-${w.woId}" data-wo="${w.woId}">
     <h4 class="h-name"><span style="font-weight:800;margin-right:1px">WO:</span> <span class="inline-edit" data-edit="field" data-card="workOrders" data-field="woReport" data-rec="${w.woId}" data-ph="Report">${esc(w.woReport)}</span>
       <span class="right">${flagsStack([typeFlag, flagEl(fmtShortDate(w.date), 'gray')], 24)}</span></h4>
     <div class="wototals">${addBtn('Part/Task', { anchor: true, js: 'js-add-part', h: 26, data: { rec: w.woId } })}<span class="derived">${money(parts)} parts + ${hrs} hrs</span></div>
@@ -4881,7 +4881,7 @@ function toast(msg) {
    Drops dispatch into the EXISTING §16 mutations — no money/safety logic here.
    Wave 2: pick mode is GONE — drag (+ customer quick-add-link) IS the link path.
    ════════════════════════════════════════════════════════════════════════ */
-const DRAG = { active: false, armed: null, payload: null, point: { x: 0, y: 0 }, ghost: null, restoreCols: null, swappedTo: null, suppressClick: false, raf: null, hot: null };
+const DRAG = { active: false, armed: null, payload: null, point: { x: 0, y: 0 }, ghost: null, suppressClick: false, raf: null, hot: null };
 const DRAG_SOURCES = new Set(['units', 'rentals', 'customers', 'invoices']);   // shop/categories rows are NOT drag sources (for now)
 let dragLayer = null, dragArc = null;
 
@@ -4906,8 +4906,20 @@ const DROP_MATRIX = {
     rentals: (i, r) => !i.locked && !r.invoiceId && (!i.customerId || !r.customerId || i.customerId === r.customerId),
     customers: (i, c) => i.customerId !== c.customerId && !i.locked && invoiceTotals(i).paid <= 0,
     units: (i, u) => !i.locked && !!unbilledOpenWOForUnit(u.unitId),
+    workOrders: (i, w) => woDroppableToInvoice(w, i),
+  },
+  workOrders: {                                                                                  // §7.6 — drag a WO section straight onto an invoice (Jac, Phase 3)
+    invoices: (w, i) => woDroppableToInvoice(w, i),
   },
 };
+/** §7.6 visual gate — a WO can drop on an invoice if the invoice is unlocked, the WO
+ *  is billable, the customers don't conflict, and it isn't already on that invoice.
+ *  The hard gate re-fires in billWOToInvoiceExplicit on drop. */
+function woDroppableToInvoice(w, i) {
+  return !!w && !!i && !i.locked && woBillable(w) > 0
+    && (!w.customerId || !i.customerId || w.customerId === i.customerId)
+    && !(i.lineItems || []).some((li) => li.kind === 'WO' && li.ref === w.woId);
+}
 
 /** Called from boot() — builds the #drag-layer singleton (ghost + cancel arc)
  *  on document.body and wires the document-level pointer listeners. */
@@ -4947,12 +4959,31 @@ function dragDown(e) {
   if (DRAG.active || e.button !== 0) return;
   if (state.overlay) return;                                             // overlays own their clicks; the winpicker is non-modal (Task E — drag to select)
   if (e.target.closest('.inline-edit, .inline-input, input, textarea, select, button, .x, .pill, .seg, .add-field, .linkname, .flag, .jnode, .dropdown-menu, .overlay, .hover-preview, .winpicker-float, .ctx-menu')) return;
-  const row = e.target.closest('.row');
-  if (!row || !DRAG_SOURCES.has(row.dataset.card) || row.dataset.rec == null) return;   // .rtl rentals rows still carry card/rec on the .row wrapper
+  const src = dragSourceAt(e.target);
+  if (!src) return;
   DRAG.point.x = e.clientX; DRAG.point.y = e.clientY;                    // seed the ghost/hit-test point — a touch long-press may fire with NO move first
-  const armed = { card: row.dataset.card, rec: row.dataset.rec, x: e.clientX, y: e.clientY, pointerId: e.pointerId, touch: e.pointerType === 'touch', lp: null };
+  const armed = { card: src.card, rec: src.rec, x: e.clientX, y: e.clientY, pointerId: e.pointerId, touch: e.pointerType === 'touch', lp: null };
   if (armed.touch) armed.lp = setTimeout(() => { if (DRAG.armed === armed) startDrag(); }, 400);
   DRAG.armed = armed;
+}
+/* Resolve what a press grabs, in priority order:
+   1. a WO section (Task 3) → a workOrders payload (grab its empty space);
+   2. a list ROW of a draggable entity;
+   3. empty space on a STANDARD-view card (Task 2) → that card's open record. */
+function dragSourceAt(target) {
+  const woSect = target.closest('.section[data-wo]');
+  if (woSect && woSect.dataset.wo) return { card: 'workOrders', rec: woSect.dataset.wo };
+  const row = target.closest('.row');                                   // .rtl rentals rows still carry card/rec on the .row wrapper
+  if (row && DRAG_SOURCES.has(row.dataset.card) && row.dataset.rec != null) return { card: row.dataset.card, rec: row.dataset.rec };
+  const cardNode = target.closest('.card[data-card]');
+  if (cardNode) {
+    const dc = cardNode.dataset.card, cs = activeSession().cards[dc];
+    if (cs && cs.mode === 'standard' && cs.recId != null) {
+      const ent = entityCardOf(dc, cs.recType);
+      if (DRAG_SOURCES.has(ent)) return { card: ent, rec: cs.recId };
+    }
+  }
+  return null;
 }
 function disarmDrag() { if (DRAG.armed && DRAG.armed.lp) clearTimeout(DRAG.armed.lp); DRAG.armed = null; }
 
@@ -4994,16 +5025,10 @@ function startDrag() {
   const mid = document.querySelector('.col[data-col="middle"] .card');
   if (mid) dragLayer.style.setProperty('--arc-apex', Math.round(mid.getBoundingClientRect().height * 0.2) + 'px');
   dragArc.classList.add('show');
-  // THE CARD-SWAP TRICK — reveal the column member the matrix needs; the
-  // pre-drag member is restored on cancel / drop-elsewhere (endDrag).
-  const cs = activeSession();
-  DRAG.restoreCols = null; DRAG.swappedTo = null;
-  if (cs.cols) {
-    if (a.card === 'customers' && (cs.cols.right || 'customers') === 'customers') { DRAG.restoreCols = { col: 'right', member: cs.cols.right || 'customers' }; cs.cols.right = 'invoices'; DRAG.swappedTo = 'invoices'; }
-    else if (a.card === 'invoices' && cs.cols.right === 'invoices') { DRAG.restoreCols = { col: 'right', member: 'invoices' }; cs.cols.right = 'customers'; DRAG.swappedTo = 'customers'; }
-    else if (a.card === 'units' && cs.cols.middle && cs.cols.middle !== 'rentals') { DRAG.restoreCols = { col: 'middle', member: cs.cols.middle }; cs.cols.middle = 'rentals'; DRAG.swappedTo = 'rentals'; }   // unit drags need the rentals card
-    if (DRAG.restoreCols) render();                                      // SAFE mid-drag: ghost + capture live in #drag-layer; decor re-stamps via the render() hook
-  }
+  // Jac (Phase 3) — the mid-drag card-swap trick is GONE: the source card stays
+  // exactly as-is. Drop onto valid targets visible in OTHER columns; same-column
+  // links (e.g. customer↔invoice, which share the right column) use the reverse
+  // drag direction (the DROP_MATRIX is bidirectional).
   reapplyDragDecor();
   dragFrameLoop();
 }
@@ -5108,11 +5133,11 @@ function dragUp(e) {
   const t = dropTargetAt(e.clientX, e.clientY);
   if (!t || t.cancel) return cancelDrag();                               // arc, dead space, invalid target → no mutation
   const payload = DRAG.payload;
-  endDrag({ keepSwap: DRAG.swappedTo === t.entity });                    // never restore a swap that's showing the drop result
+  endDrag();
   dispatchDrop(payload, t);                                              // §16 mutations re-run every hard gate, then render
 }
 function cancelDrag() { if (DRAG.active) endDrag({ rerender: true }); else disarmDrag(); }
-function endDrag({ keepSwap, rerender } = {}) {
+function endDrag({ rerender } = {}) {
   cancelAnimationFrame(DRAG.raf);
   try { dragLayer.releasePointerCapture(DRAG.payload.pointerId); } catch (err) {}
   if (DRAG.ghost) DRAG.ghost.remove();
@@ -5121,11 +5146,9 @@ function endDrag({ keepSwap, rerender } = {}) {
   document.querySelectorAll('.drop-ok, .drop-hot').forEach((n) => n.classList.remove('drop-ok', 'drop-hot'));
   document.body.classList.remove('dragging');
   delete document.body.dataset.drag;
-  if (DRAG.restoreCols && !keepSwap) { const cs = activeSession(); if (cs.cols) cs.cols[DRAG.restoreCols.col] = DRAG.restoreCols.member; }
-  const needRender = !!rerender || !!(DRAG.restoreCols && !keepSwap);
-  DRAG.active = false; DRAG.payload = null; DRAG.ghost = null; DRAG.hot = null; DRAG.restoreCols = null; DRAG.swappedTo = null; DRAG.armed = null;
+  DRAG.active = false; DRAG.payload = null; DRAG.ghost = null; DRAG.hot = null; DRAG.armed = null;
   DRAG.suppressClick = true;   // the trailing click is swallowed once; the NEXT pointerdown clears it (no timer — see dragDown)
-  if (needRender) render();
+  if (rerender) render();
 }
 
 /* ── DROP DISPATCH — route into §16, then say exactly what happened (toast) +
@@ -5185,6 +5208,15 @@ function dispatchDrop(p, t) {
     if (!w) { toast(`${u.name} has no billable open work order.`); return; }
     if (!billWOToInvoiceExplicit(w.woId, inv.invoiceId)) return;
     toast(`WO "${w.woReport}" (${u.name}) → invoice ${invoiceShort(inv.invoiceId)} (${money(woBillable(w))}).`);
+    dropFlash(`.inv-line-link[data-pill-rec="${w.woId}"]`, `.card[data-card="invoices"]`);
+    return;
+  }
+  // WORK ORDER ↔ INVOICE — bill THIS work order to the invoice directly (§7.6). Jac, Phase 3.
+  if (pair === 'workOrders>invoices' || pair === 'invoices>workOrders') {
+    const w = pair === 'workOrders>invoices' ? p.rec : t.rec, inv = pair === 'workOrders>invoices' ? t.rec : p.rec;
+    if (!billWOToInvoiceExplicit(w.woId, inv.invoiceId)) return;
+    const u = IDX.unit.get(w.unitId);
+    toast(`WO "${w.woReport}"${u ? ` (${u.name})` : ''} → invoice ${invoiceShort(inv.invoiceId)} (${money(woBillable(w))}).`);
     dropFlash(`.inv-line-link[data-pill-rec="${w.woId}"]`, `.card[data-card="invoices"]`);
     return;
   }
