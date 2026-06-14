@@ -40,7 +40,7 @@ We walk this **task by task via poll**; decisions get recorded inline.
 
 ## Phase 5 — Search & filters
 - ✅ **Replace persisting footer filters with search entries** — shipped ("dropped the modes"). VERIFY.
-- 🆕 **Persist the orange glow behind Search while it's in use.**
+- 🆕 **Persist the orange glow behind Search while it's in use** — DECISION (Jac): applies to **BOTH** the global top Search (`.searchwrap`, line 204) AND the per-card mini-search (`.mini-searchwrap`, line 230). "In use" = **any text typed OR any pinned filter term** (even an unsubmitted half-typed query) — glow stays even after focus leaves, clears only when emptied. Today the orange glow is `:focus-within`-only on `.searchwrap`; add a state class (e.g. `.has-query`) toggled on input/terms and give both wraps the same `box-shadow: 0 0 0 3px var(--accent-soft)` glow.
 
 ## Phase 6 — Indicators (flags, flashes, comments, status)
 - ✅ **Rulebook R4b + R9b** (which elements flash) — shipped. VERIFY.
