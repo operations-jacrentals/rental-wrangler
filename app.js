@@ -1192,6 +1192,7 @@ const I = {
   table: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9.5h18M3 15h18M9 4v16"/></svg>',
   graph: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 3v17h17"/><rect x="7.5" y="11" width="2.6" height="6" rx="0.6" fill="currentColor" stroke="none"/><rect x="12" y="7.5" width="2.6" height="9.5" rx="0.6" fill="currentColor" stroke="none"/><rect x="16.5" y="13" width="2.6" height="4" rx="0.6" fill="currentColor" stroke="none"/></svg>',
   sliders: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h10M18 6h2M4 12h2M10 12h10M4 18h12M20 18h0M16 18h4"/><circle cx="16" cy="6" r="2"/><circle cx="8" cy="12" r="2"/><circle cx="14" cy="18" r="2"/></svg>',
+  inbox: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>',
   eye: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>',
   eyeOff: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.9 4.24A9.1 9.1 0 0 1 12 4c6.5 0 10 7 10 7a13.2 13.2 0 0 1-2 2.6M6.6 6.6A13.2 13.2 0 0 0 2 11s3.5 7 10 7a9.1 9.1 0 0 0 4-.9"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2M2 2l20 20"/></svg>',
   feedback: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M9.5 9.5h5M9.5 12.7h3"/></svg>',
@@ -4125,6 +4126,7 @@ function bottomBarInner() {
     <button class="iconbtn${state.previewsOn ? '' : ' off'} js-previews" data-tip="${state.previewsOn ? 'Hover previews: on' : 'Hover previews: off'}">${state.previewsOn ? I.eye : I.eyeOff}</button>
     <button class="iconbtn js-chat-toggle${state.chat.open ? ' on' : ''}" data-tip="Team chat — flagged comments + tagged context">${I.chat}${(() => { const n = chatUnreadCount(); return n ? `<span class="bb-badge">${n > 9 ? '9+' : n}</span>` : ''; })()}</button>
     <button class="iconbtn js-wrangler" data-tip="Mr. Wrangler — ask the yard AI, or report a bug to fix" style="font-size:16px">🤠</button>
+    <button class="iconbtn js-requests" data-tip="Requests for your OK — review what Mr. Wrangler filed">${I.inbox}${wranglerRequests.length ? `<span class="bb-badge">${wranglerRequests.length > 9 ? '9+' : wranglerRequests.length}</span>` : ''}</button>
     <button class="iconbtn js-hotkeys" data-tip="Mouse &amp; keyboard shortcuts">${I.mouse}</button>
     <button class="iconbtn js-adminlock${adminUnlocked() ? ' on' : ''}" data-tip="${adminUnlocked() ? 'Admin tools unlocked — click to lock' : 'Admin tools — click to unlock'}">${adminUnlocked() ? I.lockOpen : I.lock}</button>
     ${adminUnlocked() ? `<button class="iconbtn js-lint${document.body.classList.contains('rw-lint') ? ' on' : ''}" data-tip="Design lint — flash anything that bypassed the UI builders (R0)">${I.eye}</button>
@@ -4787,6 +4789,27 @@ function renderOverlay() {
         <div class="kpi-list">${lines}</div>
       </div>`;
     overlay.appendChild(pop);
+  } else if (o.kind === 'requests') {
+    // §18e the in-app approval inbox for Mr. Wrangler's "Filed for Jac's OK" requests.
+    const can = canApproveRequests();
+    const cleanBody = (b) => esc(String(b || '').split(/###|_Filed/)[0].replace(/^_.*?_\s*/s, '').trim()).replace(/\n+/g, '<br>').slice(0, 600);
+    const list = wranglerRequests;
+    const inner = !backendPassword
+      ? '<div class="req-empty">Sign in to review requests.</div>'
+      : (!reqLoaded && reqLoading ? '<div class="req-empty">Loading…</div>'
+        : (!list.length ? '<div class="req-empty"><span class="req-empty-ic">📭</span><p>No requests waiting.</p><span>When Mr. Wrangler files one “for Jac’s OK”, it lands here for you to approve.</span></div>'
+          : list.map((rq) => `<div class="req-card">
+              <div class="req-head"><span class="req-num">#${rq.number}</span><span class="req-title">${esc(rq.title)}</span></div>
+              <div class="req-text">${cleanBody(rq.body)}</div>
+              <div class="req-acts">${can
+                ? `<button class="pill ghost js-req-dismiss" data-r="R18" data-n="${rq.number}">Dismiss</button><button class="pill c-commit js-req-approve" data-r="R17" data-n="${rq.number}">✓ Approve → build it</button>`
+                : '<span class="req-await">Awaiting Jac’s OK</span>'}<a class="req-link" href="${esc(rq.url)}" target="_blank" rel="noopener">GitHub ↗</a></div>
+            </div>`).join('')));
+    const pop = el('div', 'popup'); pop.style.width = '480px';
+    pop.innerHTML = `
+      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${I.inbox}</span><h3>Requests${list.length ? ` · ${list.length}` : ''}</h3><span class="spacer"></span><button class="iconbtn js-req-refresh" data-tip="Refresh">${I.refresh || '⟳'}</button><button class="x js-close">${I.x}</button></div>
+      <div class="popup-body req-wrap">${inner}</div>`;
+    overlay.appendChild(pop);
   } else if (o.kind === 'hotkeys') {
     const rows = [
       { d: 'click',    n: 'Click',              t: 'Open a record to view it — in its own card, nothing else moves.' },
@@ -5316,6 +5339,35 @@ async function wranglerFileAction(mi) {
   toast(label === 'wrangler-request'
     ? 'Opening a request — tap “Submit new issue” and it lands in Jac’s queue. 🤠'
     : 'Opening a fix ticket — tap “Submit new issue” and Mr. Wrangler wrangles the rest. 🤠');
+}
+/* §18e IN-APP REQUESTS INBOX — Mr. Wrangler's "Filed for Jac's OK" reviewed + approved
+   IN THE APP (never GitHub). Approve flips the issue to wrangler-fix → the auto-fix
+   engine builds + ships it. Owner/Admin only acts; everyone can see what's pending. */
+let wranglerRequests = [];
+let reqLoaded = false, reqLoading = false;
+const canApproveRequests = () => currentRole === 'Owner' || currentRole === 'Admin';
+async function refreshWranglerRequests() {
+  if (typeof backendPassword === 'undefined' || !backendPassword || reqLoading) return;   // demo/offline → no inbox
+  reqLoading = true;
+  try { const r = await backendCall('wranglerRequests', {}); if (r && r.ok && Array.isArray(r.requests)) { wranglerRequests = r.requests; reqLoaded = true; } } catch (e) {}
+  reqLoading = false;
+  render(); if (state.overlay?.kind === 'requests') renderOverlay();
+}
+async function approveRequest(n) {
+  try {
+    const r = await backendCall('wranglerApprove', { number: n });
+    if (r && r.ok) { wranglerRequests = wranglerRequests.filter((x) => x.number !== n); toast(`Approved #${n} — Mr. Wrangler’s building it now. 🤠`); }
+    else toast(`Couldn’t approve — ${(r && r.error) || 'try again'}.`);
+  } catch (e) { toast('Couldn’t approve — check the connection.'); }
+  render(); if (state.overlay?.kind === 'requests') renderOverlay();
+}
+async function dismissRequest(n) {
+  try {
+    const r = await backendCall('wranglerDismiss', { number: n });
+    if (r && r.ok) { wranglerRequests = wranglerRequests.filter((x) => x.number !== n); toast(`Dismissed #${n}.`); }
+    else toast(`Couldn’t dismiss — ${(r && r.error) || 'try again'}.`);
+  } catch (e) { toast('Couldn’t dismiss — check the connection.'); }
+  render(); if (state.overlay?.kind === 'requests') renderOverlay();
 }
 // Read the customer-form inputs back into the draft (call before any re-render so
 // typed values survive a selfie/signature/pill change).
@@ -6382,6 +6434,10 @@ function onClick(e) {
   if (closest('.js-wr-act')) { e.stopPropagation(); return wranglerFileAction(Number(closest('.js-wr-act').dataset.mi)); }   // §18d file the fix/request Mr. Wrangler proposed inline
   if (closest('.js-wr-unattach')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'wrangler' && o.attach) { o.attach.splice(Number(closest('.js-wr-unattach').dataset.i), 1); renderOverlay(); } return; }   // §18d drop a pending image attachment
   if (closest('.js-wrangler')) { e.stopPropagation(); return openOverlay({ kind: 'wrangler', card: null, recId: null, recType: null, messages: [], busy: false, error: '', draft: '' }); }
+  if (closest('.js-requests')) { e.stopPropagation(); openOverlay({ kind: 'requests' }); refreshWranglerRequests(); return; }   // §18e approval inbox
+  if (closest('.js-req-refresh')) { e.stopPropagation(); return refreshWranglerRequests(); }
+  if (closest('.js-req-approve')) { e.stopPropagation(); return approveRequest(Number(closest('.js-req-approve').dataset.n)); }
+  if (closest('.js-req-dismiss')) { e.stopPropagation(); return dismissRequest(Number(closest('.js-req-dismiss').dataset.n)); }
   if (closest('.js-open-link')) { e.stopPropagation(); const url = closest('.js-open-link').dataset.url || ''; if (/^(https?:\/\/|mailto:)/i.test(url)) window.open(url, '_blank', 'noopener'); return; }
   if (closest('.js-board')) { const b = closest('.js-board'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return openOverlay({ kind: 'board', board: b.dataset.board }); }
   if (closest('.js-vendor-open')) { e.stopPropagation(); return openOverlay({ kind: 'board', board: 'vendors', recId: closest('.js-vendor-open').dataset.rec }); }   // WO-line vendor names → vendor detail in the board popup
@@ -8662,6 +8718,7 @@ function finishLoad() {
   buildIndexes(); state.cascade = createCascade(DATA); booting = false; render();
   loadGlobalViews();                                            // pull the shared, company-wide view set
   loadChats();                                                  // pull the shared team-chat threads (§ team-chat sync)
+  refreshWranglerRequests();                                    // §18e populate the approval-inbox badge
   startRefreshPoll();                                           // live multi-user: poll for others' changes (§ refreshFromBackend)
   if (migrationDirty) { migrationDirty = false; saveSoon(); }   // push parsed first/last names up to the Sheet
   // #edit=<id> — desktop→phone handoff opens that customer's account form (§7.1).
