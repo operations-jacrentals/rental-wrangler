@@ -1218,7 +1218,7 @@ function openStandard(card, recId, recType) {
   }
   sweepEmptyDrafts(recId);   // #8 — leaving an empty draft deletes it
   pushCardHistory(cs);       // Task 1 — record the prior (list) view so Back can return
-  cs.mode = 'standard'; cs.recId = recId; cs.recType = recType || null;
+  cs.mode = 'standard'; cs.recId = recId; cs.recType = recType || null; cs.graphView = false;   // opening a record exits the in-column graph view
   ackComments(recOf(entityCardOf(card, recType), recId));   // viewing = acknowledged (Phase 6)
   render();
 }
@@ -4038,7 +4038,7 @@ function cardEl(cardDef, session) {
 
   // §5.4: global search forces EVERY card into list view (the prior standard/anchor
   // state is untouched, so exiting search restores the session for free).
-  const inStandard = !state.searchMode && cs.mode === 'standard' && cs.recId != null;
+  const inStandard = !state.searchMode && cs.mode === 'standard' && cs.recId != null && !cs.graphView;
   // List mode → NO card header (the column tab already names the card). Standard mode →
   // a slim header: the record name in the top-left (hidden when an item tab already shows
   // it, i.e. when anchored) + the row actions. (#2.3 / §0.6)
@@ -4085,7 +4085,7 @@ function listView(cardDef, session) {
   const cascChip = cascaded ? `<span class="casc-chip" data-tip="Cascaded from ${esc(anchorName)} — clear to browse all & add">🔗<span class="cc-name">${esc(anchorName)}</span>${closeX('js-uncascade', { data: { card } })}</span>` : '';
   bar.innerHTML = `
     ${cardJog(card, cs)}
-    <button class="bv-btn js-cardgraph" data-card="${card}" data-tip="Open the Graph view">${I.graph}</button>
+    <button class="bv-btn js-cardgraph${cs.graphView ? ' on' : ''}" data-card="${card}" data-tip="${cs.graphView ? 'Back to list' : 'Graph view'}">${I.graph}</button>
     <button class="bv-btn js-boardview" data-card="${card}" data-tip="Open Board View (spreadsheet)">${I.table}</button>
     <div class="mini-searchwrap${cterms.length || cascChip ? ' has-terms' : ''}${cs.search.trim() || cterms.length ? ' has-query' : ''}">
       ${cascChip}${cterms.map((ft, i) => filterTermPill(ft, i, card)).join('')}
@@ -4096,6 +4096,8 @@ function listView(cardDef, session) {
       <button class="dir js-sortdir" data-card="${card}"><span class="${cs.sort.dir === 'asc' ? 'on' : ''}">▲</span><span class="${cs.sort.dir === 'desc' ? 'on' : ''}">▼</span></button>
     </div>`;
   wrap.appendChild(bar);
+  // Phase 4 — Graph view is an IN-COLUMN toggle (sibling to the list), not a popup.
+  if (cs.graphView && !state.searchMode) { const g = el('div', 'gv-card'); g.innerHTML = cardGraphBody(card); wrap.appendChild(g); return wrap; }
   // Phase 4 — Units narrowed to an invoice's linked units (Invoice +WO) → removable chip
   if (card === 'units' && state.unitPick) {
     const n = state.unitPick.ids.length;
@@ -4230,7 +4232,7 @@ function shopCardEl(cardDef, session, forcedSeg) {
   const node = el('div', 'card' + (anchored ? ' anchored' : '') + (state.searchMode ? ' search-glow' : '') + (state.focusedCard === 'shop' ? ' card-focus' : ''));
   node.dataset.card = 'shop';
 
-  const inStandard = !state.searchMode && cs.mode === 'standard' && cs.recId != null && cs.recType;
+  const inStandard = !state.searchMode && cs.mode === 'standard' && cs.recId != null && cs.recType && !cs.graphView;
   // List mode → no header (column tab names it). Standard → slim header: record name
   // (hidden when anchored, since the item tab shows it) + actions. (#2.3)
   if (inStandard) {
@@ -4274,6 +4276,7 @@ function shopListView(session, byType, forcedSeg) {
   const bar = el('div', 'listbar');
   const sterms = cs.filterTerms || [];
   bar.innerHTML = `
+    <button class="bv-btn js-cardgraph${cs.graphView ? ' on' : ''}" data-card="shop" data-tip="${cs.graphView ? 'Back to list' : 'Graph view'}">${I.graph}</button>
     <button class="bv-btn js-boardview" data-card="${boardCard}" data-tip="Open Board View (spreadsheet)">${I.table}</button>
     <div class="mini-searchwrap${sterms.length ? ' has-terms' : ''}${cs.search.trim() || sterms.length ? ' has-query' : ''}">
       ${sterms.map((ft, i) => filterTermPill(ft, i, 'shop')).join('')}
@@ -4284,6 +4287,13 @@ function shopListView(session, byType, forcedSeg) {
       <button class="dir js-sortdir" data-card="shop"><span class="${cs.sort.dir === 'asc' ? 'on' : ''}">▲</span><span class="${cs.sort.dir === 'desc' ? 'on' : ''}">▼</span></button>
     </div>`;
   wrap.appendChild(bar);
+
+  // Phase 4 — Graph view is an IN-COLUMN toggle. Keep the bar + segment tabs visible;
+  // the active segment picks which graph shows ('all' → combined shop overview).
+  if (cs.graphView && !state.searchMode) {
+    const seg = (forcedSeg || cs.segment); const gseg = (seg && seg !== 'all') ? seg : 'shop';
+    const g = el('div', 'gv-card'); g.innerHTML = cardGraphBody(gseg); wrap.appendChild(g); return wrap;
+  }
 
   // items for the active segment (a column tab pins forcedSeg)
   const segActive = forcedSeg || cs.segment;
@@ -5049,6 +5059,59 @@ function cardGraphBody(card) {
     const rows = detail.slice().sort((a, b) => b.t.balance - a.t.balance).slice(0, 50).map((r) => `<tr><td>${esc(IDX.customer.get(r.i.customerId)?.name || r.i.customerId || '—')}</td><td>${money(r.t.total)}</td><td>${money(r.t.paid)}</td><td>${esc(fmtShortDate(r.i.dueDate) || '—')}</td></tr>`).join('');
     return `<div class="gv-grid">${gvNumTile(money(outstanding), 'Outstanding')}${gvNumTile(unpaid + partial, 'Open invoices')}${gvNumTile(money(collected), 'Collected')}${gvPieTile('Payment status', statusPie)}${gvLeadTile('Biggest balances', topBal)}</div>${gvTableTile('Invoices', INV.length, ['Customer', 'Total', 'Paid', 'Due'], rows)}`;
   }
+  if (card === 'serviceOrders') {
+    const U = DATA.units;
+    // per-unit most-urgent active service (svc-wash floats to top on a wash request)
+    const detail = U.map((u) => ({ u, s: topServiceForUnit(u) }));
+    const due = detail.filter((d) => d.u.washRequested || (d.s && d.s.remaining < 0)).length;
+    let overdue = 0, soon = 0, ok = 0, wash = 0;
+    detail.forEach((d) => {
+      if (d.u.washRequested) { wash++; return; }
+      if (!d.s) { ok++; return; }
+      if (d.s.status === 'past-due') overdue++; else if (d.s.status === 'due-soon') soon++; else ok++;
+    });
+    const statusPie = [{ label: 'Overdue', value: overdue, color: 'red' }, { label: 'Due soon', value: soon, color: 'yellow' }, { label: 'On schedule', value: ok, color: 'green' }, { label: 'Wash', value: wash, color: 'blue' }];
+    const mostOverdue = detail.filter((d) => d.s).sort((a, b) => a.s.remaining - b.s.remaining).slice(0, 6)
+      .map((d) => ({ name: d.u.name, meta: d.s.name, val: svcText(d.s) }));
+    const rows = detail.filter((d) => d.s).sort((a, b) => a.s.remaining - b.s.remaining).slice(0, 50)
+      .map((d) => `<tr><td>${esc(d.u.name)}</td><td>${esc(d.s.name)}</td><td>${d.u.washRequested ? badge('Wash Requested', 'blue') : `<span class="pill c-${d.s.color}">${esc(svcText(d.s))}</span>`}</td></tr>`).join('');
+    return `<div class="gv-grid">${gvNumTile(U.length, 'Units tracked')}${gvNumTile(due, 'Service-due')}${gvPieTile('Service status', statusPie)}${gvLeadTile('Most overdue', mostOverdue)}</div>${gvTableTile('Services', U.length, ['Unit', 'Next service', 'Remaining'], rows)}`;
+  }
+  if (card === 'inspections') {
+    const N = DATA.inspections;
+    const pending = N.filter((n) => !inspComplete(n)).length;
+    const byRes = {}; N.forEach((n) => { const r = inspResult(n); (byRes[r.label] = byRes[r.label] || { label: r.label, value: 0, color: r.color }).value++; });
+    const resPie = Object.values(byRes);
+    const hist = gvMonths6().map((m) => ({ label: m.label, value: N.filter((n) => (n.date || '').slice(0, 7) === m.key).length }));
+    const failByUnit = {}; N.filter((n) => inspResult(n).label === 'Fail').forEach((n) => { if (n.unitId) failByUnit[n.unitId] = (failByUnit[n.unitId] || 0) + 1; });
+    const mostFailed = Object.entries(failByUnit).map(([uid, v]) => ({ name: IDX.unit.get(uid)?.name || uid, val: v })).sort((a, b) => b.val - a.val).slice(0, 6);
+    const rows = N.slice().sort((a, b) => (b.date || '').localeCompare(a.date || '')).slice(0, 50)
+      .map((n) => { const r = inspResult(n); return `<tr><td>${esc(IDX.unit.get(n.unitId)?.name || '—')}</td><td>${esc(fmtShortDate(n.date) || '—')}</td><td>${badge(r.label, r.color)}</td></tr>`; }).join('');
+    return `<div class="gv-grid">${gvNumTile(N.length, 'Inspections')}${gvNumTile(pending, 'Pending')}${gvPieTile('Results', resPie)}${gvLeadTile('Most failed', mostFailed)}${gvBarTile('Inspections / month', hist, 'accent')}</div>${gvTableTile('Inspections', N.length, ['Unit', 'Date', 'Result'], rows)}`;
+  }
+  if (card === 'workOrders') {
+    const W = DATA.workOrders;
+    const open = W.filter((w) => w.phase !== 'Complete' && !w.cancelled);
+    const done = W.filter((w) => w.phase === 'Complete' && !w.cancelled).length;
+    const byPhase = {}; open.forEach((w) => { const ph = w.phase || '—'; (byPhase[ph] = byPhase[ph] || { label: getStatus('woPhase', ph).label || ph, value: 0, color: getStatus('woPhase', ph).color || 'gray' }).value++; });
+    const phasePie = Object.values(byPhase);
+    const hist = gvMonths6().map((m) => ({ label: m.label, value: W.filter((w) => (w.date || '').slice(0, 7) === m.key).length }));
+    const rows = W.slice().sort((a, b) => (b.date || '').localeCompare(a.date || '')).slice(0, 50)
+      .map((w) => `<tr><td>${esc(IDX.unit.get(w.unitId)?.name || '—')}</td><td>${esc(w.woReport || '—')}</td><td>${w.cancelled ? badge('Cancelled', 'gray') : badge(getStatus('woPhase', w.phase).label, getStatus('woPhase', w.phase).color)}</td></tr>`).join('');
+    return `<div class="gv-grid">${gvNumTile(open.length, 'Open WOs')}${gvNumTile(done, 'Complete')}${gvPieTile('Open by phase', phasePie)}${gvBarTile('Work orders / month', hist, 'accent')}</div>${gvTableTile('Work Orders', W.length, ['Unit', 'WO', 'Phase'], rows)}`;
+  }
+  if (card === 'shop') {
+    const openWOs = DATA.workOrders.filter((w) => w.phase !== 'Complete' && !w.cancelled).length;
+    const pendInsp = DATA.inspections.filter((n) => !inspComplete(n)).length;
+    const svcDue = DATA.units.filter((u) => { const s = topServiceForUnit(u); return u.washRequested || (s && s.remaining < 0); }).length;
+    const pie = [{ label: 'Open WOs', value: openWOs, color: 'blue' }, { label: 'Pending insp.', value: pendInsp, color: 'yellow' }, { label: 'Services due', value: svcDue, color: 'red' }];
+    const lead = [
+      { name: 'Open work orders', val: openWOs },
+      { name: 'Pending inspections', val: pendInsp },
+      { name: 'Services due', val: svcDue },
+    ];
+    return `<div class="gv-grid">${gvNumTile(openWOs, 'Open WOs')}${gvNumTile(pendInsp, 'Pending inspections')}${gvNumTile(svcDue, 'Services due')}${gvPieTile('Shop workload', pie)}${gvLeadTile('Backlog', lead)}</div>`;
+  }
   return `<div class="gv-soon"><span class="gv-soon-ic">${I.graph}</span><p>Graphs for <b>${esc(GRID_CARD_BY_ID[card]?.title || ENTITY_LABEL[card] || card)}</b> are coming next.</p></div>`;
 }
 
@@ -5460,13 +5523,6 @@ function renderOverlay() {
         <button class="bv-mini${o.customize ? ' on' : ''} js-bv-customize" data-tip="Choose which values show in the card's List View">${I.sliders} List rows</button>
         <span class="spacer"></span><button class="x js-close">${I.x}</button></div>
       <div class="popup-body board-body bv-body">${o.customize ? bvCustomizePanel(o.card) : ''}${boardViewTable(o, session)}</div>`;
-    overlay.appendChild(pop);
-  } else if (o.kind === 'cardgraph') {
-    const title = GRID_CARD_BY_ID[o.card]?.title || ENTITY_LABEL[o.card] || o.card;
-    const pop = el('div', 'popup board-popup gv-popup');
-    pop.innerHTML = `
-      <div class="popup-head"><span class="c-icon" style="color:var(--accent);display:inline-flex">${I.graph}</span><h3>${esc(title)} — Graph</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
-      <div class="popup-body board-body gv-body">${cardGraphBody(o.card)}</div>`;
     overlay.appendChild(pop);
   } else if (o.kind === 'settings') {
     const cfg = o.config || { roles: {}, admin: '' };
@@ -7095,7 +7151,7 @@ function onClick(e) {
   if (closest('.js-ff-save')) { e.stopPropagation(); return saveFileForm(); }
   if (closest('.js-vendor-tax')) { e.stopPropagation(); const b = closest('.js-vendor-tax'); const v = recOf('vendors', b.dataset.rec); if (v) { const ex = b.dataset.val === '1'; if (!!v.salesTaxExempt !== ex) { v.salesTaxExempt = ex; reindex('vendors', v); logAction(v, `Sales tax → ${ex ? 'Exempt' : 'Taxed'}`); } if (state.overlay?.kind === 'board') renderOverlay(); render(); } return; }
   if (closest('.js-boardview')) { e.stopPropagation(); return openBoardView(closest('.js-boardview').dataset.card); }
-  if (closest('.js-cardgraph')) { e.stopPropagation(); return openOverlay({ kind: 'cardgraph', card: closest('.js-cardgraph').dataset.card }); }   // Phase 4 per-card Graph view
+  if (closest('.js-cardgraph')) { e.stopPropagation(); const card = closest('.js-cardgraph').dataset.card; const cs = activeSession().cards[card]; cs.graphView = !cs.graphView; return render(); }   // Phase 4 per-card Graph view — in-column toggle (sibling to the list)
   if (closest('.js-bv-sort') && !closest('.js-bv-inscol')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview') { const key = closest('.js-bv-sort').dataset.col; if (o.sort?.key === key) o.sort.dir = o.sort.dir === 'asc' ? 'desc' : 'asc'; else o.sort = { key, dir: 'asc' }; renderOverlay(); } return; }
   if (closest('.js-bv-addcol')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview') { o.colOrder = o.colOrder || []; o.colOrder.push({ kind: 'extra', id: 'xc' + (++o.seq), label: '' }); renderOverlay(); } return; }
   if (closest('.js-bv-inscol')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview' && o.colOrder) { const after = Number(closest('.js-bv-inscol').dataset.after); o.colOrder.splice(after + 1, 0, { kind: 'extra', id: 'xc' + (++o.seq), label: '' }); renderOverlay(); } return; }
@@ -8723,7 +8779,7 @@ function createInvoiceForRental(rentalId) {
   // #8 — open the new invoice ON the Invoice card (Jac 2026-06-13)
   const session = activeSession();
   if (session.anchor) setAnchor(session, session.anchor.card, session.anchor.recId, session.anchor.recType);
-  const ics = session.cards.invoices; ics.mode = 'standard'; ics.recId = id; ics.recType = null; ics.released = false;
+  const ics = session.cards.invoices; ics.mode = 'standard'; ics.recId = id; ics.recType = null; ics.released = false; ics.graphView = false;   // surfacing an invoice exits graph view
   const col = columnOfMember('invoices'); if (col && session.cols) session.cols[col] = 'invoices';
   render();
 }

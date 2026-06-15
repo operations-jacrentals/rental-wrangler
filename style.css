@@ -1078,6 +1078,11 @@ input { font-family: inherit; }
 /* §13.3 Card Graph view — data-plate analytics (Phase 4) */
 .gv-popup { width: 780px; max-width: 94vw; height: auto; max-height: 88vh; }
 .gv-body { display: flex; flex-direction: column; gap: 12px; padding: 14px 16px; }
+/* In-column graph view (toggled inside a card column, not a popup). The column is
+   narrow, so the 4-col tile grid collapses to 2 and the wide/lead tiles span full. */
+.gv-card { display: flex; flex-direction: column; gap: 12px; padding: 10px 12px; overflow: auto; }
+.gv-card .gv-grid { grid-template-columns: repeat(2, 1fr); }
+.gv-card .gv-lead, .gv-card .gv-wide, .gv-card .gv-units { grid-column: span 2; }
 .gv-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
 .gv-tile { background: linear-gradient(180deg, var(--card-head), var(--card)); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; min-width: 0; }
 .gv-tile-h { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1px; font-weight: 700; font-size: 11.5px; color: var(--txt-3); margin-bottom: 10px; }
