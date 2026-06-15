@@ -1878,7 +1878,7 @@ body.dragging .row.drop-ok { opacity: 1; }
 }
 /* Each card type stamps its own hazard color, always paired with black. */
 [data-theme="yard"] .col > .card[data-card="customers"]  { --stripe: var(--blue,  #5b9dff); }
-[data-theme="yard"] .col > .card[data-card="rentals"]    { --stripe: var(--green, #34d399); }
+[data-theme="yard"] .col > .card[data-card="rentals"]    { --stripe: #147a47; }   /* deep green (darkened from the bright #34d399 per #26) */
 [data-theme="yard"] .col > .card[data-card="units"]      { --stripe: var(--yellow,#f5c542); }
 [data-theme="yard"] .col > .card[data-card="categories"] { --stripe: var(--accent,#ff7a1a); }
 [data-theme="yard"] .col > .card[data-card="invoices"]   { --stripe: var(--red,   #ff4242); }
