@@ -1190,6 +1190,7 @@ const I = {
   camera: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.5 4h-5L7.5 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3.5z"/><circle cx="12" cy="13" r="3"/></svg>',
   droplet: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3s6 6.4 6 10.5a6 6 0 0 1-12 0C6 9.4 12 3 12 3z"/></svg>',
   table: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9.5h18M3 15h18M9 4v16"/></svg>',
+  graph: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 3v17h17"/><rect x="7.5" y="11" width="2.6" height="6" rx="0.6" fill="currentColor" stroke="none"/><rect x="12" y="7.5" width="2.6" height="9.5" rx="0.6" fill="currentColor" stroke="none"/><rect x="16.5" y="13" width="2.6" height="4" rx="0.6" fill="currentColor" stroke="none"/></svg>',
   sliders: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h10M18 6h2M4 12h2M10 12h10M4 18h12M20 18h0M16 18h4"/><circle cx="16" cy="6" r="2"/><circle cx="8" cy="12" r="2"/><circle cx="14" cy="18" r="2"/></svg>',
   eye: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>',
   eyeOff: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.9 4.24A9.1 9.1 0 0 1 12 4c6.5 0 10 7 10 7a13.2 13.2 0 0 1-2 2.6M6.6 6.6A13.2 13.2 0 0 0 2 11s3.5 7 10 7a9.1 9.1 0 0 0 4-.9"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2M2 2l20 20"/></svg>',
@@ -3645,6 +3646,7 @@ function listView(cardDef, session) {
   const cascChip = cascaded ? `<span class="casc-chip" data-tip="Cascaded from ${esc(anchorName)} — clear to browse all & add">🔗<span class="cc-name">${esc(anchorName)}</span>${closeX('js-uncascade', { data: { card } })}</span>` : '';
   bar.innerHTML = `
     ${cardJog(card, cs)}
+    <button class="bv-btn js-cardgraph" data-card="${card}" data-tip="Open the Graph view">${I.graph}</button>
     <button class="bv-btn js-boardview" data-card="${card}" data-tip="Open Board View (spreadsheet)">${I.table}</button>
     <div class="mini-searchwrap${cterms.length || cascChip ? ' has-terms' : ''}${cs.search.trim() || cterms.length ? ' has-query' : ''}">
       ${cascChip}${cterms.map((ft, i) => filterTermPill(ft, i, card)).join('')}
@@ -4356,6 +4358,74 @@ function tabBadge(card, rec) {
 }
 
 /* ════════════════════════════════════════════════════════════════════════
+   §13.3 CARD GRAPH VIEW (Phase 4) — a per-card charts overlay, sibling to the
+   Board View. Units first: Field-Call stats, an inspection donut, a parts donut,
+   and the unit roster. Pure SVG/CSS — no chart lib. (FC = Field Call.)
+   ════════════════════════════════════════════════════════════════════════ */
+// Donut from [{label,value,color}] — color is a palette token name (green/red/…).
+function pieSVG(segments, size = 128) {
+  const total = segments.reduce((a, s) => a + (s.value || 0), 0);
+  const r = size / 2, cx = r, cy = r, inner = r * 0.6;
+  if (!total) return `<svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}"><circle cx="${cx}" cy="${cy}" r="${r - 1}" fill="none" stroke="var(--line)" stroke-width="2" stroke-dasharray="3 4"/><circle cx="${cx}" cy="${cy}" r="${inner}" fill="var(--bg)"/></svg>`;
+  const arc = (a) => [cx + (r - 1) * Math.cos(a), cy + (r - 1) * Math.sin(a)];
+  let a0 = -Math.PI / 2, paths = '';
+  segments.forEach((s) => {
+    if (!s.value) return;
+    const a1 = a0 + (s.value / total) * Math.PI * 2;
+    const [x0, y0] = arc(a0), [x1, y1] = arc(a1), large = (a1 - a0) > Math.PI ? 1 : 0;
+    paths += `<path d="M${cx},${cy} L${x0.toFixed(1)},${y0.toFixed(1)} A${r - 1},${r - 1} 0 ${large} 1 ${x1.toFixed(1)},${y1.toFixed(1)} Z" fill="var(--${s.color})" stroke="var(--card)" stroke-width="1.5"/>`;
+    a0 = a1;
+  });
+  paths += `<circle cx="${cx}" cy="${cy}" r="${inner}" fill="var(--bg)"/><text x="${cx}" y="${cy + 5}" text-anchor="middle" fill="var(--txt)" font-size="20" font-weight="800">${total}</text>`;
+  return `<svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}">${paths}</svg>`;
+}
+const gvLegend = (segs) => `<div class="gv-legend">${segs.map((s) => `<span class="gv-leg"><i style="background:var(--${s.color})"></i>${esc(s.label)} <b>${s.value}</b></span>`).join('')}</div>`;
+// Vertical bar chart from [{label,value}].
+function gvBars(data, color = 'accent') {
+  const max = Math.max(1, ...data.map((d) => d.value));
+  return `<div class="gv-bars">${data.map((d) => `<div class="gv-barcol" data-tip="${esc(d.label)}: ${d.value}"><div class="gv-bar-n">${d.value || ''}</div><div class="gv-bar-track"><div class="gv-bar-fill" style="height:${Math.round((d.value / max) * 100)}%;background:var(--${color})"></div></div><div class="gv-bar-x">${esc(d.label)}</div></div>`).join('')}</div>`;
+}
+function unitGraphData() {
+  const fcWOs = DATA.workOrders.filter((w) => w.woType === 'Field Call');
+  const dates = fcWOs.map((w) => w.date).filter(Boolean).sort();
+  const lastFC = dates[dates.length - 1];
+  const daysSinceFC = lastFC ? Math.max(0, dayDiff(parseISO(lastFC), TODAY)) : null;
+  const byUnit = {};
+  fcWOs.forEach((w) => { if (w.unitId) (byUnit[w.unitId] = byUnit[w.unitId] || []).push(w); });
+  const mostFCs = Object.entries(byUnit).map(([uid, ws]) => {
+    const u = IDX.unit.get(uid), mechs = {};
+    ws.forEach((w) => { if (w.assignedMechanic) mechs[w.assignedMechanic] = (mechs[w.assignedMechanic] || 0) + 1; });
+    const top = Object.entries(mechs).sort((a, b) => b[1] - a[1])[0];
+    return { name: u ? u.name : uid, count: ws.length, mech: top ? top[0] : '' };
+  }).sort((a, b) => b.count - a.count).slice(0, 6);
+  const months = [];
+  for (let i = 5; i >= 0; i--) { const d = new Date(TODAY.getFullYear(), TODAY.getMonth() - i, 1); months.push({ key: d.toISOString().slice(0, 7), label: d.toLocaleString('en-US', { month: 'short' }) }); }
+  const fcHist = months.map((m) => ({ label: m.label, value: fcWOs.filter((w) => (w.date || '').slice(0, 7) === m.key).length }));
+  const f = fleetInsp();
+  const readyPie = [{ label: 'Ready', value: f.Ready, color: 'green' }, { label: 'Not Ready', value: f['Not Ready'], color: 'yellow' }, { label: 'Failed', value: f.Failed, color: 'red' }];
+  let need = 0, ordered = 0, none = 0;
+  DATA.workOrders.filter((w) => w.phase !== 'Complete' && !w.cancelled).forEach((w) => {
+    if (/Ordered|Local/.test(w.phase)) ordered++; else if (/No Part Needed/.test(w.phase)) none++; else if (/Needed/.test(w.phase)) need++; else none++;
+  });
+  const partsPie = [{ label: 'Need Parts', value: need, color: 'red' }, { label: 'Parts Ordered', value: ordered, color: 'blue' }, { label: 'Not Needed', value: none, color: 'green' }];
+  return { daysSinceFC, mostFCs, fcHist, readyPie, partsPie };
+}
+function cardGraphBody(card) {
+  if (card !== 'units') return `<div class="gv-soon"><span class="gv-soon-ic">${I.graph}</span><p>Graphs for <b>${esc(GRID_CARD_BY_ID[card]?.title || ENTITY_LABEL[card] || card)}</b> are coming next. The <b>Units</b> graph is live now.</p></div>`;
+  const g = unitGraphData();
+  const unitRows = DATA.units.map((u) => `<tr><td>${esc(u.name)}</td><td>${badge(u.fleetStatus || '—', getStatus('unitFleetStatus', u.fleetStatus).color || 'gray')}</td><td>${statusPill('unitInspectionStatus', u.inspectionStatus)}</td><td>${u.currentHours != null ? num(u.currentHours) : '—'}</td><td>${openWOsForUnit(u.unitId).length || ''}</td></tr>`).join('');
+  return `
+    <div class="gv-grid">
+      <div class="gv-tile gv-num"><div class="gv-num-v">${g.daysSinceFC == null ? '—' : g.daysSinceFC}</div><div class="gv-num-l">Days Since FC</div></div>
+      <div class="gv-tile gv-lead"><div class="gv-tile-h">Most Field Calls</div>${g.mostFCs.length ? g.mostFCs.map((m, i) => `<div class="gv-lead-row"><span class="gv-lead-n">${i + 1}</span><span class="gv-lead-name">${esc(m.name)}</span>${m.mech ? `<span class="gv-lead-mech">${esc(m.mech)}</span>` : ''}<span class="gv-lead-c">${m.count}</span></div>`).join('') : '<div class="muted" style="font-size:12px">No field calls logged.</div>'}</div>
+      <div class="gv-tile gv-pie"><div class="gv-tile-h">Inspection</div>${pieSVG(g.readyPie)}${gvLegend(g.readyPie)}</div>
+      <div class="gv-tile gv-pie"><div class="gv-tile-h">Parts · open WOs</div>${pieSVG(g.partsPie)}${gvLegend(g.partsPie)}</div>
+      <div class="gv-tile gv-wide"><div class="gv-tile-h">Field Call History</div>${gvBars(g.fcHist, 'red')}</div>
+    </div>
+    <div class="gv-tile gv-units"><div class="gv-tile-h">Units <span class="gv-count">${DATA.units.length}</span></div><div class="gv-units-scroll"><table class="board-table"><thead><tr><th>Unit</th><th>Fleet</th><th>Inspection</th><th>Hours</th><th>Open WOs</th></tr></thead><tbody>${unitRows}</tbody></table></div></div>`;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
    §12 OVERLAYS & BOARDS — renderOverlay kinds + back-office board popups
    ════════════════════════════════════════════════════════════════════════ */
 function renderOverlay() {
@@ -4721,6 +4791,13 @@ function renderOverlay() {
         <button class="bv-mini${o.customize ? ' on' : ''} js-bv-customize" data-tip="Choose which values show in the card's List View">${I.sliders} List rows</button>
         <span class="spacer"></span><button class="x js-close">${I.x}</button></div>
       <div class="popup-body board-body bv-body">${o.customize ? bvCustomizePanel(o.card) : ''}${boardViewTable(o, session)}</div>`;
+    overlay.appendChild(pop);
+  } else if (o.kind === 'cardgraph') {
+    const title = GRID_CARD_BY_ID[o.card]?.title || ENTITY_LABEL[o.card] || o.card;
+    const pop = el('div', 'popup board-popup gv-popup');
+    pop.innerHTML = `
+      <div class="popup-head"><span class="c-icon" style="color:var(--accent);display:inline-flex">${I.graph}</span><h3>${esc(title)} — Graph</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
+      <div class="popup-body board-body gv-body">${cardGraphBody(o.card)}</div>`;
     overlay.appendChild(pop);
   } else if (o.kind === 'settings') {
     const cfg = o.config || { roles: {}, admin: '' };
@@ -6239,6 +6316,7 @@ function onClick(e) {
   if (closest('.js-ff-save')) { e.stopPropagation(); return saveFileForm(); }
   if (closest('.js-vendor-tax')) { e.stopPropagation(); const b = closest('.js-vendor-tax'); const v = recOf('vendors', b.dataset.rec); if (v) { const ex = b.dataset.val === '1'; if (!!v.salesTaxExempt !== ex) { v.salesTaxExempt = ex; reindex('vendors', v); logAction(v, `Sales tax → ${ex ? 'Exempt' : 'Taxed'}`); } if (state.overlay?.kind === 'board') renderOverlay(); render(); } return; }
   if (closest('.js-boardview')) { e.stopPropagation(); return openBoardView(closest('.js-boardview').dataset.card); }
+  if (closest('.js-cardgraph')) { e.stopPropagation(); return openOverlay({ kind: 'cardgraph', card: closest('.js-cardgraph').dataset.card }); }   // Phase 4 per-card Graph view
   if (closest('.js-bv-sort') && !closest('.js-bv-inscol')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview') { const key = closest('.js-bv-sort').dataset.col; if (o.sort?.key === key) o.sort.dir = o.sort.dir === 'asc' ? 'desc' : 'asc'; else o.sort = { key, dir: 'asc' }; renderOverlay(); } return; }
   if (closest('.js-bv-addcol')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview') { o.colOrder = o.colOrder || []; o.colOrder.push({ kind: 'extra', id: 'xc' + (++o.seq), label: '' }); renderOverlay(); } return; }
   if (closest('.js-bv-inscol')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview' && o.colOrder) { const after = Number(closest('.js-bv-inscol').dataset.after); o.colOrder.splice(after + 1, 0, { kind: 'extra', id: 'xc' + (++o.seq), label: '' }); renderOverlay(); } return; }
