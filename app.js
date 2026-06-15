@@ -549,10 +549,15 @@ let _mapsKey = null, _mapsKeyLoaded = false, _mapsPromise = null;
 async function ensureMapsKey() {
   if (_mapsKeyLoaded) return _mapsKey;
   _mapsKeyLoaded = true;
+  // The committed, referrer-locked GOOGLE_MAPS_KEY is the source of truth — use it
+  // directly. No backend round-trip: the backend never served a `mapsKey` action, and
+  // awaiting it on the logged-in app pays an Apps Script cold-start (seconds) before
+  // falling back here — which left the map stuck on "Loading dispatch map…".
+  // The backend lookup stays ONLY as a fallback when config has no key.
+  if (GOOGLE_MAPS_KEY) { _mapsKey = GOOGLE_MAPS_KEY; return _mapsKey; }
   if (typeof backendPassword !== 'undefined' && backendPassword) {
-    try { const r = await backendCall('mapsKey'); if (r && r.ok && r.key) _mapsKey = r.key; } catch (e) { /* offline → config fallback */ }
+    try { const r = await backendCall('mapsKey'); if (r && r.ok && r.key) _mapsKey = r.key; } catch (e) { /* offline → no key */ }
   }
-  if (!_mapsKey && GOOGLE_MAPS_KEY) _mapsKey = GOOGLE_MAPS_KEY;
   return _mapsKey;
 }
 function loadGoogleMaps() {
@@ -1037,7 +1042,6 @@ const state = {
   winpicker: null,     // { rentalId, monthISO, anchor } — the rental-window range picker
   availWin: null,      // §10 persistent window scope for the "available" search (set by the picker; outlives it)
   filterTerms: [],            // §5.4 — AND-narrowing filter terms (type + Enter)
-  fleetFilter: null,          // { categoryId, status } — fleet-summary badge → units by status
   unitPick: null,             // { ids, from } — Invoice +WO narrows the Units list to the invoice's linked units (Phase 4)
   chat: { open: false, activeId: null, draft: '', chats: [] },   // §17 internal team dock (Phase 7): PERSISTENT chats (never deleted). Each = { id, tags, participants, messages, seen{userKey:lastViewedAt} }. Empty participants = dormant; reopen via a tagged element.
   mobileCol: 0,               // §M1 — which column the phone shows (0 Yard · 1 Rentals · 2 Customers); drives swipe position + the per-column bottom strip
@@ -1058,7 +1062,6 @@ const nextInvoiceId = () => CFG.invoiceId(TODAY_ISO, ++state.invoiceSeq);
    workOrders / serviceOrders); it's undefined for the 5 normal cards. */
 function setAnchor(session, card, recId, recType) {
   sweepEmptyDrafts(recId);   // #8 — anchoring elsewhere deletes an abandoned empty draft
-  if (state.fleetFilter && !(card === 'categories' && recId === state.fleetFilter.categoryId)) state.fleetFilter = null;
   if (state.unitPick && !(card === 'units' && state.unitPick.ids.includes(recId))) state.unitPick = null;   // leaving the picker clears it
   const entityCard = entityCardOf(card, recType);
   const type = SINGULAR[entityCard];
@@ -1403,6 +1406,7 @@ function totColMatch(card, rec, col, value) {
   if (col === '__wo') return DATA.workOrders.some((w) => w.unitId === rec.unitId && w.phase !== 'Complete' && !w.cancelled && (value === 'open' || w.phase === 'Part Ordered' || (w.lineItems || []).some((l) => l.phase === 'Part Ordered')));
   if (col === '__cond') return rec.inspectionStatus === value;
   if (col === '__svc') { const s = topServiceForUnit(rec); return !!rec.washRequested || !!(s && s.remaining < 0); }   // service-due: overdue service or wash requested
+  if (col === '__fleet') { const [cat, status, kind] = String(value).split('|'); if (rec.categoryId !== cat) return false; return kind === 'rental' ? unitRentalBucket(rec) === status : rec.inspectionStatus === status; }   // A1 — fleet-bar segment = category + inspection/rental status
   const c = cardColumns(card, activeSession()).find((x) => x.key === col);
   return c ? String(c.get(rec)) === String(value) : true;
 }
@@ -1430,6 +1434,7 @@ function addColFilter(scope, col, value) {
 function colFilterLabel(card, col, value) {
   if (col === '__wo') return value === 'open' ? 'WOs Open' : 'Parts Ordered';
   if (col === '__svc') return 'Service Due';
+  if (col === '__fleet') { const [cat, status] = String(value).split('|'); return `${status} · ${IDX.category.get(cat)?.name || 'category'}`; }
   const c = cardColumns(card, activeSession()).find((x) => x.key === col);
   const m = (c && c.meta) ? c.meta(value) : null;
   return (m && m.label) || String(value);
@@ -3499,7 +3504,7 @@ const DETAIL = {
     // §12.3 proportional bars — each segment is clickable (filters Units to that status),
     // count+label inside, colored by the status. `kind` = which field it filters by;
     // `truck` shows a transport glyph for rental segments being delivered.
-    const mixSeg = (count, total, label, color, status, kind, truck) => { const p = pct(count, total); if (p <= 0) return ''; const on = state.fleetFilter?.categoryId === c.categoryId && state.fleetFilter?.status === status && state.fleetFilter?.kind === kind ? ' on' : ''; const tk = truck ? `<span class="seg-truck">${I.truck}</span>` : ''; return `<button class="mixseg js-fleet-filter${on}" data-cat="${c.categoryId}" data-status="${esc(status)}" data-kind="${kind}" style="width:${p}%;background:var(--mix-${color})"><span class="mixseg-lbl" style="color:var(--${color})">${count} ${esc(label)}${tk}</span></button>`; };
+    const mixSeg = (count, total, label, color, status, kind, truck) => { const p = pct(count, total); if (p <= 0) return ''; const on = (activeSession().cards.units.filterTerms || []).some((ft) => ft.col === '__fleet' && ft.value === c.categoryId + '|' + status + '|' + kind) ? ' on' : ''; const tk = truck ? `<span class="seg-truck">${I.truck}</span>` : ''; return `<button class="mixseg js-fleet-filter${on}" data-cat="${c.categoryId}" data-status="${esc(status)}" data-kind="${kind}" style="width:${p}%;background:var(--mix-${color})"><span class="mixseg-lbl" style="color:var(--${color})">${count} ${esc(label)}${tk}</span></button>`; };
     const mixBar = mix.total ? `<div class="mixbar tall">${mixSeg(mix.Ready, mix.total, 'Ready', 'green', 'Ready', 'inspection')}${mixSeg(mix['Not Ready'], mix.total, 'Not Ready', 'yellow', 'Not Ready', 'inspection')}${mixSeg(mix.Failed, mix.total, 'Failed', 'red', 'Failed', 'inspection')}</div>` : '';
     // §12.3 second bar — birds-eye RENTAL status: Available + each active status
     // (Tomorrow/Today/Reserved/On Rent/…) in order, with a truck icon for transport.
@@ -3788,14 +3793,6 @@ function listFor(card, session) {
   if (state.searchMode) {
     return collection(card).filter((rec) => rowMatches(card, rec, state.query, state.filterTerms));
   }
-  // §12.3 — a Category fleet-bar segment click filters the UNITS list to that category
-  // + status, decoupled from anchoring so it lands you straight on the Units list view.
-  if (card === 'units' && state.fleetFilter) {
-    const units = collection('units').filter((u) => u.categoryId === state.fleetFilter.categoryId);
-    return state.fleetFilter.kind === 'rental'
-      ? units.filter((u) => unitRentalBucket(u) === state.fleetFilter.status)
-      : units.filter((u) => u.inspectionStatus === state.fleetFilter.status);
-  }
   // Phase 4 — Invoice +WO narrows the Units list to just the invoice's linked units
   // (the list IS the picker; the operator opens one and uses its own + Work Order).
   if (card === 'units' && state.unitPick) {
@@ -4065,13 +4062,6 @@ function listView(cardDef, session) {
       <button class="dir js-sortdir" data-card="${card}"><span class="${cs.sort.dir === 'asc' ? 'on' : ''}">▲</span><span class="${cs.sort.dir === 'desc' ? 'on' : ''}">▼</span></button>
     </div>`;
   wrap.appendChild(bar);
-  // active Category fleet-bar filter → a removable chip so the list isn't mysteriously narrowed
-  if (card === 'units' && state.fleetFilter) {
-    const cat = IDX.category.get(state.fleetFilter.categoryId);
-    const chip = el('div', 'fleet-chip');
-    chip.innerHTML = `<span class="muted">Showing</span> <b>${esc(state.fleetFilter.status)}</b> <span class="muted">in</span> ${esc(cat?.name || 'category')} <button class="x js-clear-fleet" data-tip="Clear filter">${I.x}</button>`;
-    wrap.appendChild(chip);
-  }
   // Phase 4 — Units narrowed to an invoice's linked units (Invoice +WO) → removable chip
   if (card === 'units' && state.unitPick) {
     const n = state.unitPick.ids.length;
@@ -6980,7 +6970,7 @@ function onClick(e) {
     // A1 — the Services (heart) tab filters the Units list to service-due as a removable
     // pill, instead of switching to a stuck Service view you can't clear. (Jac 2026-06-15)
     if (ct.dataset.member === 'serviceOrders') { const s = activeSession(); if (s.cols) s.cols.left = 'units'; s.cards.units.mode = 'list'; s.cards.units.recId = null; s.cards.units.recType = null; addColFilter('units', '__svc', 'due'); return; }
-    state.fleetFilter = null; const cs = activeSession(); if (cs.cols) cs.cols[ct.dataset.col] = ct.dataset.member; return render();
+    const cs = activeSession(); if (cs.cols) cs.cols[ct.dataset.col] = ct.dataset.member; return render();
   }
   // §2.3 dispatch timeline — day nav + open a stop's rental (Phase 6)
   if (closest('.js-disp-day')) { e.stopPropagation(); state.dispArm = null; state.dispatchDay = addDaysISO(state.dispatchDay || TODAY_ISO, Number(closest('.js-disp-day').dataset.dir)); return render(); }
@@ -7020,15 +7010,12 @@ function onClick(e) {
   if (closest('.js-funnel')) { const b = closest('.js-funnel'); e.stopPropagation(); return openFunnelDropdown(b.dataset.rec, b.dataset.which, b); }
   if (closest('.js-fleet-filter')) {
     const b = closest('.js-fleet-filter'); e.stopPropagation();
-    const same = state.fleetFilter?.categoryId === b.dataset.cat && state.fleetFilter?.status === b.dataset.status && state.fleetFilter?.kind === b.dataset.kind;
-    state.fleetFilter = same ? null : { categoryId: b.dataset.cat, status: b.dataset.status, kind: b.dataset.kind };
-    // §12.3 — take the user to the Units LIST filtered to those units (left column),
-    // not the anchored category. No cascade of the other columns.
-    const s = activeSession(); if (s.cols) s.cols.left = 'units'; s.cards.units.mode = 'list'; s.cards.units.backStack = []; s.cards.units.fwdStack = [];
-    render();
+    // A1 — the fleet-bar segment routes through the search bar as a removable pill (one
+    // filtering pathway, cleared from the search bar) — like the Not-Ready / Services tabs. (Jac 2026-06-15)
+    const s = activeSession(); if (s.cols) s.cols.left = 'units'; const u = s.cards.units; u.mode = 'list'; u.recId = null; u.recType = null; u.backStack = []; u.fwdStack = [];
+    addColFilter('units', '__fleet', `${b.dataset.cat}|${b.dataset.status}|${b.dataset.kind}`);
     return;
   }
-  if (closest('.js-clear-fleet')) { e.stopPropagation(); state.fleetFilter = null; render(); return; }
   if (closest('.js-clear-unitpick')) { e.stopPropagation(); state.unitPick = null; render(); return; }
   if (closest('.js-addcat')) { const b = closest('.js-addcat'); e.stopPropagation(); return openIntCatDropdown(b.dataset.rec, b); }
   if (closest('.js-setintcat')) { const b = closest('.js-setintcat'); e.stopPropagation(); return addInterestedCategory(b.dataset.rec, b.dataset.val); }
@@ -7066,7 +7053,7 @@ function onClick(e) {
       // list IS the picker. The operator opens a unit and uses its own + Work Order.
       const ids = inv ? invoiceUnitIds(inv) : [];
       if (!ids.length) { toast('No units on this invoice yet — add a rental first, then open its unit to start a work order.'); return; }
-      state.unitPick = { ids, from: inv.invoiceId }; state.fleetFilter = null;
+      state.unitPick = { ids, from: inv.invoiceId };
       const s = activeSession(); if (s.cols) s.cols.left = 'units'; const ucs = s.cards.units; ucs.mode = 'list'; ucs.recId = null; ucs.listLimit = undefined;
       render(); attnFlash('.card[data-card="units"] .list');
       toast(ids.length === 1 ? 'Open the unit and use its + Work Order.' : `Open one of the ${ids.length} linked units and use its + Work Order.`); return;
