@@ -6459,7 +6459,7 @@ function onClick(e) {
   if (closest('.js-ring')) return openOverlay({ kind: 'role', role: closest('.js-ring').dataset.role });
   if (closest('.js-close')) return closeOverlay();
   if (closest('.js-theme')) { state.theme = (THEME_NEXT[state.theme] || THEME_NEXT.dark).next; try { localStorage.setItem('jactec.theme', state.theme); } catch (e) {} if (state.overlay && state.overlay.kind !== 'addCard') renderOverlay(); render(); return; }
-  if (closest('.js-qr')) return openOverlay({ kind: 'qr' });
+  if (closest('.js-qr')) return shareSession();
   if (closest('.js-previews') || closest('.js-roweye')) { e.stopPropagation(); state.previewsOn = !state.previewsOn; if (!state.previewsOn) hideHoverPreview(); try { localStorage.setItem('jactec.previewsOff', state.previewsOn ? '0' : '1'); } catch (e) {} toast(state.previewsOn ? 'Hover previews on.' : 'Hover previews off — every eye runs red.'); return render(); }
   if (closest('.js-hotkeys')) return openOverlay({ kind: 'hotkeys' });
   if (closest('.js-adminlock')) { e.stopPropagation(); return toggleAdminLock(); }
@@ -8838,6 +8838,31 @@ function finishLoad() {
     history.replaceState(null, '', location.pathname + location.search);   // self-clear so a refresh can't re-fire
     if (adminUnlocked()) openMigrationPreview(); else toast('Admin unlock required to round up missing units.');
   }
+  // #s=<id> — H1 session sharing: restore the open tabs saved by another device's QR.
+  const sm = (location.hash || '').match(/[#&]s=([\w-]+)/i);
+  if (sm) {
+    history.replaceState(null, '', location.pathname + location.search);
+    backendCall('getSession', { sid: sm[1] }).then((r) => {
+      let p; try { p = r && r.ok && r.data ? JSON.parse(r.data) : null; } catch (e) { p = null; }
+      if (!p || !Array.isArray(p.tabs)) { toast('That shared session has expired.'); return; }
+      p.tabs.forEach((t) => { if (recOf(entityCardOf(t.card, t.recType), t.recId)) openInNewTab(t.card, t.recId, t.recType); });
+      if (state.tabs.length) { state.activeTabId = state.tabs[Math.min(p.activeIdx || 0, state.tabs.length - 1)].id; render(); toast(`Opened ${state.tabs.length} shared tab${state.tabs.length === 1 ? '' : 's'}.`); }
+    }).catch(() => toast('Could not load the shared session.'));
+  }
+}
+// H1 — Share session: stash the open tabs in the backend and show a QR that carries the id,
+// so another device (signed in with the shared password) restores the same open records.
+async function shareSession() {
+  const tabs = state.tabs.map((t) => ({ card: t.card, recId: t.recId, recType: t.recType || null }));
+  let url = location.origin + location.pathname;
+  if (typeof backendPassword !== 'undefined' && backendPassword && tabs.length) {
+    const sid = 'S' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    try { const r = await backendCall('saveSession', { sid, data: JSON.stringify({ tabs, activeIdx: Math.max(0, state.tabs.findIndex((t) => t.id === state.activeTabId)) }) });
+      if (r && r.ok) url += '#s=' + sid; } catch (e) { /* fall back to the plain app URL */ }
+  }
+  openOverlay({ kind: 'qr', title: 'Open on another device', url,
+    caption: tabs.length ? `Scan to open your ${tabs.length} open tab${tabs.length === 1 ? '' : 's'} on another device — sign in with the shared password.`
+      : 'Scan to open Rental Wrangler on another device — sign in with the shared password.' });
 }
 async function attemptLogin() {
   const name = (document.getElementById('login-name')?.value || '').trim();
