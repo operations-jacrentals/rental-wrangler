@@ -580,7 +580,7 @@ function loadGoogleMaps() {
 const mapsReady = () => !!(window.google && window.google.maps && google.maps.places && google.maps.DistanceMatrixService);
 const YARD_CENTER = { lat: 30.2366, lng: -93.3774 };   // Sulphur, LA — map default before a pin is set
 
-let _teMap = null, _teMarker = null, _teAuto = null, _teGeo = null, _teDist = null, _teDebounce = null;
+let _teMap = null, _teMarker = null, _teAuto = null, _teGeo = null, _teDist = null, _tePlaces = null, _teDebounce = null;
 /** Open the inline editor for a unit's transport leg (delivery|recovery). */
 function openTransportEdit(rentalId, unitId, leg) {
   const r = IDX.rental.get(rentalId); if (!r) return;
@@ -594,7 +594,7 @@ function openTransportEdit(rentalId, unitId, leg) {
     driveMin: T.transportDriveMin != null ? T.transportDriveMin : null,
     type: (T.transportType && T.transportType !== 'Self') ? T.transportType : 'Delivery',
     sel: -1, items: [] };
-  _teMap = _teMarker = _teAuto = _teGeo = _teDist = null;
+  _teMap = _teMarker = _teAuto = _teGeo = _teDist = _tePlaces = null;
   loadGoogleMaps();
   render();
 }
@@ -645,6 +645,7 @@ function mountTransportEditor() {
     _teMap.addListener('click', (ev) => { te.pin = { lat: ev.latLng.lat(), lng: ev.latLng.lng() }; _teMarker.setPosition(ev.latLng); _teMarker.setVisible(true); teFetchDistance(); });
     _teAuto = new google.maps.places.AutocompleteService();
     _teGeo = new google.maps.Geocoder();
+    _tePlaces = new google.maps.places.PlacesService(_teMap);   // resolve picks by place-id via Places (the key has Places, not Geocoding)
     _teDist = new google.maps.DistanceMatrixService();
   }
 }
@@ -685,14 +686,19 @@ function tePick(i) {
   const it = (te.items || [])[i]; if (!it) return;
   const input = document.querySelector('.js-taddr');
   te.items = []; te.sel = -1; teRenderSug();
-  if (mapsReady() && it.placeId && _teGeo) {
-    _teGeo.geocode({ placeId: it.placeId }, (res, status) => {
-      if (status === 'OK' && res && res[0]) {
-        te.addr = res[0].formatted_address; if (input) input.value = te.addr;
-        const loc = res[0].geometry.location; te.pin = { lat: loc.lat(), lng: loc.lng() };
+  if (mapsReady() && it.placeId && _tePlaces) {
+    // resolve via the Places API (the key has Places, not Geocoding — Geocoder silently failed,
+    // which is why Enter did nothing). getDetails returns geometry + a formatted address.
+    _tePlaces.getDetails({ placeId: it.placeId, fields: ['geometry', 'formatted_address'] }, (place, status) => {
+      if (state.transportEdit !== te) return;
+      if (status === google.maps.places.PlacesServiceStatus.OK && place && place.geometry) {
+        te.addr = place.formatted_address || it.label; if (input) input.value = te.addr;
+        const loc = place.geometry.location; te.pin = { lat: loc.lat(), lng: loc.lng() };
         if (_teMap) { _teMap.setCenter(loc); _teMap.setZoom(14); }
         if (_teMarker) { _teMarker.setPosition(loc); _teMarker.setVisible(true); }
         teFetchDistance();
+      } else {
+        te.addr = it.label; if (input) input.value = te.addr;   // couldn't resolve → keep the typed text so Enter still commits something
       }
     });
   } else {
@@ -6480,6 +6486,7 @@ function dragDown(e) {
   DRAG.suppressClick = false;                                            // any NEW gesture re-enables clicks (a pointercancel can never strand a stuck eater)
   if (DRAG.active || e.button !== 0) return;
   if (state.overlay) return;                                             // overlays own their clicks; the winpicker is non-modal (Task E — drag to select)
+  if (e.target.closest('.tedit')) return;                                // the inline transport editor owns its pointers — let Google pan the map + drag the site pin (never arm an app/chat drag here)
   // §17 — a granular element marked [data-chat-el] (a pill/price/line/person) arms a
   // CHAT-TAG drag (tap still does its own thing; drag/long-press tags it into a chat).
   const chatEl = e.target.closest('[data-chat-el]');
