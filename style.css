@@ -1694,7 +1694,8 @@ input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
 .pillrow.eqw .add-field { flex: 1; justify-content: center; }
 .pillrow.pillcol { flex-direction: column; align-items: stretch; }
 .pillrow.pillcol .add-field, .pillrow.pillcol .pill { width: 100%; justify-content: center; }
-.js-slot-unit, .js-quickadd-cust, .js-create-invoice { min-width: 150px; justify-content: center; }
+.js-slot-unit, .js-quickadd-cust, .js-create-invoice,
+.pillrow .add-field.js-tedit-open { min-width: 150px; justify-content: center; }   /* +Transport joined the slot stack when it de-fused (2026-06-15) */
 
 /* R1/R3 STACK LAW (Jac 2026-06-12): pills opening line rows share one min-width
    so the column edges align down the stack (WO lines, invoice lines, history). */
