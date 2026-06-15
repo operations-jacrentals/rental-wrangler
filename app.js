@@ -1950,15 +1950,16 @@ const ROW_META = {
 };
 
 /* row-background visualization layers (§6.2 #8) → returns inline-style div */
-// Sold + Inactive units are hidden from the Units list & searches by default; the
-// "Sold/Inactive" sort surfaces ONLY them, and "All Units (any status)" shows every
-// fleet status together (Active/For Sale/Sold/Inactive). (#2)
-const isSoldInactive = (u) => u.fleetStatus === 'Sold' || u.fleetStatus === 'Inactive';
+// Anything that isn't 'Active' is out of the active fleet (§9 — non-Active units aren't
+// rentable), so the default Units list & searches show ONLY Active; the "Sold/Inactive"
+// sort surfaces every non-Active unit (Sold/Inactive/For Sale), and "All Units (any
+// status)" shows every fleet status together (Active/For Sale/Sold/Inactive). (#2/#34)
+const isOutOfActive = (u) => u.fleetStatus !== 'Active';
 const unitsVisible = (rows, cs) => {
   const f = cs && cs.sort && cs.sort.field;
   if (f === 'allFleet') return rows;                            // show everything, any fleet status
-  if (f === 'soldInactive') return rows.filter(isSoldInactive); // only Sold/Inactive
-  return rows.filter((u) => !isSoldInactive(u));                // default: hide Sold + Inactive
+  if (f === 'soldInactive') return rows.filter(isOutOfActive); // only non-Active (Sold/Inactive/For Sale)
+  return rows.filter((u) => !isOutOfActive(u));                // default: Active only
 };
 function rowViz(card, rec) {
   // §10 availability tint takes precedence while a rental window is in scope
