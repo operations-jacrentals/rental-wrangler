@@ -2058,9 +2058,10 @@ body.dragging .row.drop-ok { opacity: 1; }
 /* ════════════════════════════════════════════════════════════════════════════
    THEME — "BLUED STEEL" (data-theme="bluedsteel")  ·  2026-06-15 (Jac)
    ────────────────────────────────────────────────────────────────────────────
-   A PARALLEL, opt-in theme: IDENTICAL to "The Yard" in every way EXCEPT the card
-   faces become a real blued-steel plate (ambientCG Metal027, CC0). Only the card
-   SURFACE changes — chips, data, sections, layout, type are untouched. Reversible:
+   A PARALLEL, opt-in theme: like "The Yard", but the floating-card CONTENT surfaces
+   (sections + rows + inputs) become a real blued-steel plate (ambientCG Metal027,
+   CC0). The column container cards KEEP the Yard steel plate; chips, data, layout,
+   type are untouched. Reversible:
    the bottom-bar toggle flips Yard ⇄ Blued Steel; Yard returns untouched.
    ════════════════════════════════════════════════════════════════════════════ */
 [data-theme="bluedsteel"] {
@@ -2083,14 +2084,11 @@ body.dragging .row.drop-ok { opacity: 1; }
     repeating-linear-gradient(135deg, rgba(255,255,255,.010) 0 2px, transparent 2px 11px),
     var(--bg);
 }
-/* THE ONE CHANGE — each card face is a blued-steel equipment plate (Metal027) */
+/* Column container = the flat-steel Yard plate (NOT blued — the blued lives on
+   the floating-card sections + rows below, per Jac). */
 [data-theme="bluedsteel"] .col > .card {
   position: relative;
-  background:
-    linear-gradient(180deg, rgba(52,70,100,.28), rgba(9,12,18,.62)),
-    url('assets/tex-metal-blued.jpg');
-  background-size: cover, 330px;
-  background-repeat: no-repeat, repeat;
+  background: linear-gradient(180deg, var(--steel-1), var(--steel-2));
   --stripe: var(--yellow, #f5c542);
 }
 [data-theme="bluedsteel"] .col > .card[data-card="customers"]  { --stripe: var(--blue,  #5b9dff); }
@@ -2112,6 +2110,25 @@ body.dragging .row.drop-ok { opacity: 1; }
     radial-gradient(circle at 12px calc(100% - 12px), var(--rivet) 0 1.4px, var(--rivet-pit) 1.7px 3px, transparent 3.4px),
     radial-gradient(circle at calc(100% - 12px) calc(100% - 12px), var(--rivet) 0 1.4px, var(--rivet-pit) 1.7px 3px, transparent 3.4px);
 }
+
+/* THE BLUED PLATE = the floating (anchored) card's whole face — ONE cohesive
+   sheet, like the mockup. The list/column cards stay the Yard plate. .card-body
+   + .detail are transparent, so the plate reads straight through to the sections. */
+[data-theme="bluedsteel"] .col > .card.anchored {
+  background:
+    linear-gradient(180deg, rgba(58,76,106,.24), rgba(8,11,18,.64)),
+    url('assets/tex-metal-blued.jpg');
+  background-size: cover, 340px;
+  background-repeat: no-repeat, repeat;
+}
+/* sections sit ON the plate as milled-in panels — a subtle recess (darker fill +
+   cool inset highlight + lift shadow) gives them clear definition while the blued
+   steel still reads through; their header + status accent carry the rest. */
+[data-theme="bluedsteel"] .col > .card.anchored .section {
+  background: rgba(11,15,24,.36);
+  box-shadow: inset 0 1px 0 rgba(150,178,222,.12), 0 2px 8px -3px rgba(0,0,0,.55);
+}
+
 [data-theme="bluedsteel"] .coltab {               /* same stamped type as Yard */
   font-family:'Saira Condensed', system-ui, sans-serif;
   text-transform:uppercase; letter-spacing:1.1px; font-weight:700;
