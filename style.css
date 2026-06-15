@@ -2052,17 +2052,17 @@ body.dragging .row.drop-ok { opacity: 1; }
    + .detail are transparent, so the plate reads straight through to the sections. */
 [data-theme="bluedsteel"] .col > .card.anchored {
   background:
-    linear-gradient(180deg, rgba(58,76,106,.24), rgba(8,11,18,.64)),
+    linear-gradient(180deg, rgba(44,98,175,.62), rgba(11,26,50,.82)),
     url('assets/tex-metal-blued.jpg');
   background-size: cover, 340px;
   background-repeat: no-repeat, repeat;
 }
-/* sections sit ON the plate as milled-in panels — a subtle recess (darker fill +
-   cool inset highlight + lift shadow) gives them clear definition while the blued
-   steel still reads through; their header + status accent carry the rest. */
+/* sections sit ON the plate as milled-in panels — a clear recess (darker fill +
+   cool inset highlight + lift shadow) so they read distinctly against the now
+   strongly-blue plate; their header + status accent carry the rest. */
 [data-theme="bluedsteel"] .col > .card.anchored .section {
-  background: rgba(11,15,24,.36);
-  box-shadow: inset 0 1px 0 rgba(150,178,222,.12), 0 2px 8px -3px rgba(0,0,0,.55);
+  background: rgba(7,12,22,.46);
+  box-shadow: inset 0 1px 0 rgba(160,195,240,.16), 0 2px 9px -3px rgba(0,0,0,.6);
 }
 
 [data-theme="bluedsteel"] .coltab {               /* same stamped type as Yard */
