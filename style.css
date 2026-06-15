@@ -2089,6 +2089,35 @@ body.dragging .row.drop-ok { opacity: 1; }
    texture never bleeds through the controls (Jac) */
 [data-theme="bluedsteel"] .listbar { background: linear-gradient(180deg, #0c1320 80%, transparent); }
 
+/* global search bar (.searchwrap, the top "Search everything…") — was a flat panel;
+   now a milled blued-steel nameplate: the same plate material + two end rivets as the
+   cards, a machined top lip, and the orange ignition glow it already lights on focus.
+   The search icon + clear tools shift inboard so the rivets read as corner screws. (Jac) */
+[data-theme="bluedsteel"] .searchwrap {
+  background:
+    linear-gradient(180deg, rgba(58,80,118,.30), rgba(8,11,18,.64)),
+    url('assets/tex-metal-blued.jpg');
+  background-size: cover, 300px;
+  background-repeat: no-repeat, repeat;
+  border-color: rgba(150,178,222,.20);
+  padding: 0 54px 0 42px;
+  box-shadow: inset 0 1px 0 rgba(150,178,222,.14), 0 2px 8px -3px rgba(0,0,0,.55);
+}
+[data-theme="bluedsteel"] .searchwrap:focus-within,
+[data-theme="bluedsteel"] .searchwrap.has-query {
+  border-color: var(--accent-line);
+  box-shadow: inset 0 1px 0 rgba(150,178,222,.14), 0 2px 8px -3px rgba(0,0,0,.55), 0 0 0 3px var(--accent-soft);
+}
+[data-theme="bluedsteel"] .searchwrap .s-icon       { left: 22px; }
+[data-theme="bluedsteel"] .searchwrap .search-tools { right: 20px; }
+/* two mounting rivets — the exact card recipe, one at each end, vertically centered */
+[data-theme="bluedsteel"] .searchwrap::after {
+  content:''; position:absolute; inset:0; z-index:3; pointer-events:none; border-radius:inherit;
+  background:
+    radial-gradient(circle at 11px 50%, var(--rivet) 0 1.4px, var(--rivet-pit) 1.7px 3px, transparent 3.4px),
+    radial-gradient(circle at calc(100% - 11px) 50%, var(--rivet) 0 1.4px, var(--rivet-pit) 1.7px 3px, transparent 3.4px);
+}
+
 [data-theme="bluedsteel"] .coltab {               /* same stamped type as Yard */
   font-family:'Saira Condensed', system-ui, sans-serif;
   text-transform:uppercase; letter-spacing:1.1px; font-weight:700;
