@@ -805,7 +805,23 @@ input { font-family: inherit; }
 .wr-msg.user .wr-bub { background: var(--accent); color: #1a1205; font-weight: 500; border-bottom-right-radius: 4px; }
 .wr-bub.wr-think { color: var(--txt-3); font-style: italic; }
 .wr-err { color: var(--red); font-size: 12px; padding: 0 16px 6px; }
-.wr-compose { display: flex; gap: 8px; padding: 11px 14px; border-top: 1px solid var(--line); }
+.wr-compose { display: flex; align-items: center; gap: 8px; padding: 11px 14px; border-top: 1px solid var(--line); }
+/* §18d attach/paste images — paperclip stamp + pending thumbnails + sent-in-bubble.
+   The chat takes a paste or a dropped file, Claude-style. */
+.wr-attach { width: 38px; height: 38px; flex: 0 0 auto; border-radius: 10px; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; font-size: 17px;
+  background: var(--bg-2, var(--panel)); border: 1px solid var(--line); color: var(--txt-2, var(--txt)); }
+.wr-attach:hover { border-color: color-mix(in srgb, #c2925a 60%, var(--line)); color: var(--txt); }
+.wr-attach svg { width: 18px; height: 18px; }
+.wr-attach-row { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 14px 0; }
+.wr-thumb { position: relative; width: 54px; height: 54px; border-radius: 8px; overflow: hidden; border: 1px solid var(--line); }
+.wr-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.wr-thumb-x { position: absolute; top: 2px; right: 2px; width: 18px; height: 18px; border: none; border-radius: 50%;
+  background: rgba(12, 14, 17, .82); color: #fff; font-size: 13px; line-height: 1; cursor: pointer; display: grid; place-items: center; }
+.wr-bub-imgs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.wr-bub-imgs:last-child { margin-bottom: 0; }
+.wr-bub-imgs img { max-width: 160px; max-height: 160px; border-radius: 8px; display: block; }
+.wr-pop.wr-drag { outline: 2px dashed var(--accent, #ff7a1a); outline-offset: -6px; }
 .wr-in { flex: 1; height: 38px; border-radius: 10px; background: var(--bg-2, var(--panel)); border: 1px solid var(--line); color: var(--txt); padding: 0 13px; font: inherit; font-size: 13.5px; outline: none; }
 .wr-in:focus { border-color: var(--accent-line); box-shadow: 0 0 0 3px var(--accent-soft); }
 .wr-send { width: 38px; height: 38px; flex: 0 0 auto; border-radius: 10px; border: none; cursor: pointer; background: var(--accent); color: #1a1205; display: inline-flex; align-items: center; justify-content: center; }

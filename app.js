@@ -4378,17 +4378,37 @@ function renderOverlay() {
           if (m.action) act = m.filed
             ? `<span class="wr-actdone">✓ ${m.action.action === 'request' ? 'Filed for Jac’s OK' : 'Sent to the fixer'}</span>`
             : `<button class="wr-actbtn js-wr-act" data-mi="${i}">${m.action.action === 'request' ? '💡 File this for Jac’s OK' : '🔧 Send this to get fixed'}</button>`;
-          return `<div class="wr-msg ${m.role}">${m.role === 'assistant' ? '<span class="wr-av">🤠</span>' : ''}<div class="wr-bub">${esc(m.content).replace(/\n/g, '<br>')}${act}</div></div>`;
+          const imgs = (m.images && m.images.length) ? `<div class="wr-bub-imgs">${m.images.map((s) => `<img src="${esc(s)}" alt="attached image">`).join('')}</div>` : '';
+          const txt = m.content ? `${esc(m.content).replace(/\n/g, '<br>')}` : '';
+          return `<div class="wr-msg ${m.role}">${m.role === 'assistant' ? '<span class="wr-av">🤠</span>' : ''}<div class="wr-bub">${imgs}${txt}${act}</div></div>`;
         }).join('')
-      : '<div class="wr-empty">Ask about this record or the whole yard — service due, balances, what needs attention… or just tell me what’s broken and I’ll get it fixed.</div>';
+      : '<div class="wr-empty">Ask about this record or the whole yard — service due, balances, what needs attention… or just tell me what’s broken (paste or attach a screenshot) and I’ll get it fixed.</div>';
+    const attachRow = (o.attach && o.attach.length)
+      ? `<div class="wr-attach-row">${o.attach.map((s, i) => `<div class="wr-thumb"><img src="${esc(s)}" alt="attachment"><button class="wr-thumb-x js-wr-unattach" data-i="${i}" aria-label="Remove">×</button></div>`).join('')}</div>`
+      : '';
     const pop = el('div', 'popup wr-pop'); pop.style.width = '440px';
     pop.innerHTML = `
       <div class="popup-head"><span class="mark" style="font-size:18px">🤠</span><h3>Mr. Wrangler</h3>${chip}<span class="spacer"></span><button class="x js-close" aria-label="Close">${I.x}</button></div>
       <div class="wr-feed">${turns}${o.busy ? '<div class="wr-msg assistant"><span class="wr-av">🤠</span><div class="wr-bub wr-think">…wrangling an answer</div></div>' : ''}</div>
       ${o.error ? `<div class="wr-err">${esc(o.error)}</div>` : ''}
-      <div class="wr-compose"><input class="wr-in js-wr-in" placeholder="Ask Mr. Wrangler, or tell him what’s broken…" value="${esc(o.draft || '')}" ${o.busy ? 'disabled' : ''} /><button class="wr-send js-wr-send" ${o.busy ? 'disabled' : ''} aria-label="Ask">${I.chev}</button></div>`;
+      ${attachRow}
+      <div class="wr-compose"><label class="wr-attach js-wr-attach" data-tip="Attach or paste an image"><input type="file" accept="image/*" class="js-wr-file" hidden multiple>${I.paperclip || '📎'}</label><input class="wr-in js-wr-in" placeholder="Ask Mr. Wrangler, or tell him what’s broken…" value="${esc(o.draft || '')}" ${o.busy ? 'disabled' : ''} /><button class="wr-send js-wr-send" ${o.busy ? 'disabled' : ''} aria-label="Ask">${I.chev}</button></div>`;
     overlay.appendChild(pop);
-    setTimeout(() => { const i = pop.querySelector('.js-wr-in'); if (i) i.focus(); const f = pop.querySelector('.wr-feed'); if (f) f.scrollTop = f.scrollHeight; }, 0);
+    setTimeout(() => {
+      const i = pop.querySelector('.js-wr-in'); if (i) i.focus();
+      const f = pop.querySelector('.wr-feed'); if (f) f.scrollTop = f.scrollHeight;
+      // Paste an image straight into the chat (Claude-style). New input each render → no dup listeners.
+      if (i) i.addEventListener('paste', (ev) => {
+        const items = (ev.clipboardData && ev.clipboardData.items) || [];
+        for (const it of items) { if (it.type && it.type.startsWith('image/')) { const file = it.getAsFile(); if (file) { ev.preventDefault(); wranglerAttachFile(file); } } }
+      });
+      // Drag-drop an image file onto the chat.
+      if (pop) {
+        pop.addEventListener('dragover', (ev) => { if (ev.dataTransfer && [...ev.dataTransfer.types].includes('Files')) { ev.preventDefault(); pop.classList.add('wr-drag'); } });
+        pop.addEventListener('dragleave', (ev) => { if (ev.target === pop) pop.classList.remove('wr-drag'); });
+        pop.addEventListener('drop', (ev) => { const files = ev.dataTransfer && ev.dataTransfer.files; if (files && files.length) { ev.preventDefault(); pop.classList.remove('wr-drag'); [...files].forEach((f) => { if (f.type.startsWith('image/')) wranglerAttachFile(f); }); } });
+      }
+    }, 0);
   } else if (o.kind === 'comment') {
     // Phase 6 (Jac redesign) — a SIMPLE comment card that floods with the picked color.
     // Traffic-light dots top-left pick the color; the card body becomes that solid color.
@@ -5009,17 +5029,46 @@ function wranglerContext(o) {
   }
   return ctx;
 }
+// Attach an image to the next Wrangler message (file picker, paste, or drop). The
+// backend wranglerReply_ accepts image content blocks; we downscale first to keep
+// the payload light. "Add files" = images for now (what a glitch report needs).
+function wranglerAttachFile(file) {
+  const o = state.overlay; if (!o || o.kind !== 'wrangler' || !file || !file.type.startsWith('image/')) return;
+  const reader = new FileReader();
+  reader.onload = () => downscaleImage(reader.result, 1200, 0.7, (out) => {
+    if (!out) { toast('Could not read that image.'); return; }
+    o.attach = o.attach || []; if (o.attach.length >= 4) { toast('Up to 4 images per message.'); return; }
+    o.attach.push(out); renderOverlay();
+  });
+  reader.readAsDataURL(file);
+}
+// data URL → an Anthropic image content block.
+function wranglerImageBlock(dataUrl) {
+  const m = /^data:(image\/[a-z.+-]+);base64,(.*)$/i.exec(dataUrl || '');
+  return m ? { type: 'image', source: { type: 'base64', media_type: m[1], data: m[2] } } : null;
+}
 async function wranglerSend() {
   const o = state.overlay; if (!o || o.kind !== 'wrangler') return;
   const inp = document.querySelector('.overlay .js-wr-in');
   const text = ((inp ? inp.value : o.draft) || '').trim();
-  if (!text || o.busy) { if (inp) inp.focus(); return; }
-  o.messages.push({ role: 'user', content: text });
-  o.draft = ''; o.busy = true; o.error = ''; renderOverlay();
+  const imgs = (o.attach && o.attach.length) ? o.attach.slice() : null;
+  if ((!text && !imgs) || o.busy) { if (inp) inp.focus(); return; }
+  o.messages.push({ role: 'user', content: text, images: imgs });
+  o.draft = ''; o.attach = []; o.busy = true; o.error = ''; renderOverlay();
   const system = WRANGLER_SYSTEM + '\n\n' + wranglerContext(o);
+  // Build the payload: a message with images becomes a content-block array.
+  const payloadMsgs = o.messages.map((m) => {
+    if (m.images && m.images.length) {
+      const blocks = [];
+      if (m.content) blocks.push({ type: 'text', text: m.content });
+      m.images.forEach((s) => { const b = wranglerImageBlock(s); if (b) blocks.push(b); });
+      return { role: m.role, content: blocks };
+    }
+    return { role: m.role, content: m.content };
+  });
   try {
     if (typeof backendPassword !== 'undefined' && backendPassword) {
-      const r = await backendCall('wrangler', { system, messages: o.messages.map((m) => ({ role: m.role, content: m.content })) });
+      const r = await backendCall('wrangler', { system, messages: payloadMsgs });
       if (!r || r.error) throw new Error((r && r.error) || 'no response');
       const raw = (r.text || '').trim();
       const act = parseWranglerAction(raw);
@@ -6163,6 +6212,7 @@ function onClick(e) {
   if (closest('.js-fb-send')) { e.stopPropagation(); return sendFeedback(); }
   if (closest('.js-wr-send')) { e.stopPropagation(); return wranglerSend(); }   // §18 Mr. Wrangler
   if (closest('.js-wr-act')) { e.stopPropagation(); return wranglerFileAction(Number(closest('.js-wr-act').dataset.mi)); }   // §18d file the fix/request Mr. Wrangler proposed inline
+  if (closest('.js-wr-unattach')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'wrangler' && o.attach) { o.attach.splice(Number(closest('.js-wr-unattach').dataset.i), 1); renderOverlay(); } return; }   // §18d drop a pending image attachment
   if (closest('.js-wrangler')) { e.stopPropagation(); return openOverlay({ kind: 'wrangler', card: null, recId: null, recType: null, messages: [], busy: false, error: '', draft: '' }); }
   if (closest('.js-open-link')) { e.stopPropagation(); const url = closest('.js-open-link').dataset.url || ''; if (/^(https?:\/\/|mailto:)/i.test(url)) window.open(url, '_blank', 'noopener'); return; }
   if (closest('.js-board')) { const b = closest('.js-board'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return openOverlay({ kind: 'board', board: b.dataset.board }); }
@@ -7053,6 +7103,11 @@ function onChange(e) {
     const reader = new FileReader();
     reader.onload = () => { downscaleImage(reader.result, 1000, 0.6, (out) => { if (!out) { toast('Could not read that image.'); return; } if (state.overlay?.kind === 'feedback') { state.overlay.shot = out; renderOverlay(); } }); };
     reader.readAsDataURL(file);
+    return;
+  }
+  if (e.target.classList.contains('js-wr-file')) {   // §18d Mr. Wrangler image attach
+    [...(e.target.files || [])].forEach((f) => wranglerAttachFile(f));
+    e.target.value = '';
     return;
   }
   // Board View summary aggregation calc (Sum/Avg/Min/Max/Count) per column.
