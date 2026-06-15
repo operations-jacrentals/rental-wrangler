@@ -65,6 +65,73 @@ external-chats strip is a **shell** pending the backend messaging integration.
 
 ---
 
+## v8.2 — Built-State Delta (2026-06-15 session · self-healing pipeline + Jac's 6-phase dump)
+
+Branch `claude/ui-overhaul-w55upw`. Two bodies of work, both gated (smoke · logic 21/21
+· `gen-rule-usage --check`) and screenshot-checked; **nothing auto-shipped to live** — all
+on the branch (PR #7).
+
+**Mr. Wrangler — ONE chat: ask + fix + report (LIVE).**
+- The chat is the single surface (the old bug/request form folded in). You type or paste;
+  **he** decides. On a fixable glitch he emits a hidden ` ```wrangler-action ` block; the
+  frontend strips it and shows a single inline stamp — **🔧 Send this to get fixed**
+  (`wrangler-fix`) or **💡 File for Jac's OK** (`wrangler-request`). The browser can't hold a
+  token, so it opens a **pre-filled GitHub issue** (one Submit tap).
+- **§18d image attach** — 📎 button + clipboard **paste** + **drag-drop** (≤4), sent as
+  Anthropic image content blocks (needs the image-capable `Code.gs`).
+- **§0.7 glitch capture** — a ring buffer of recent JS errors (window error +
+  unhandledrejection + console.error) rides along in every report.
+- **Track B engine** — `.github/workflows/wrangler-fix.yml` (on `main`): a `wrangler-fix`
+  issue wakes `claude-code-action` → patches the frontend → runs the 3 gates → opens a PR →
+  **auto-merge on green** → Pages deploys. Needs `ANTHROPIC_API_KEY` + a fine-grained
+  `WRANGLER_PAT` (so the PR triggers CI) + Allow-auto-merge + a `main` ruleset requiring the
+  `smoke` check. Full switch-on in `docs/wrangler-pipeline.md`. Wiring verified live (issue
+  #8 run #2: **0 permission denials** after granting `--allowedTools`).
+
+**Jac's 7-note dump, worked as 6 phases** (every decision pinned in `docs/wrangler-backlog.md`):
+- **① Bugs:** right-click now WINS over the hover preview (it lives on `<body>`, z-9000, and
+  stole the event); Complete-Rental locked gates always toast; Bill/Don't-bill is a segCtl
+  (R14) toggle; status dropdowns dismiss the preview + sit at **z-9100**; **Cancel/Reopen WO**
+  (reversible `w.cancelled` flag, terminal like Complete, woven through every WO-level
+  open-filter); footer total-chips no longer force `cs.mode='list'` (Yard Mode preserved).
+- **② Card chrome:** the yard hazard stripe is now **per-card** via a `--stripe` var —
+  Customers **blue** · Rentals **green** · Units **yellow** · Categories **orange** ·
+  Invoices **red** · Calendar **pink** (all over `#14181d`); Dashboard button + footer
+  saddle-stitch line removed; Membership↔Used-Sales swapped; +Unit pill hidden after unit 1.
+- **③ KPIs:** "Renting Rate"→**Healthy Fleet**; "Bill Rate"→**Parts Breakeven** (parts cost
+  recovered by billed-WO earnings, goal-ring); **Ready Rate** denominator drops
+  Failed/Inactive/Sold/For-Sale; **WO-Rate** is now a goal-ring toward 20% of the last
+  rolling-30-day inspections (was full-at-0%/empty-at-20%).
+- **④ §13.3 Card Graph view (NEW):** a Board-View sibling — a `graph` icon in every card's
+  listbar opens it; the **Units** graph is full (Days-Since-FC, Most-FCs leaderboard,
+  Inspection + Parts donuts via `pieSVG`, 6-mo FC-history bars via `gvBars`, unit roster);
+  other cards show a "coming next" placeholder. (This is the Graph icon from Phase 2.)
+- **⑤ WO/Parts:** **Part in Stock** woPhase (after Part is Local, severity 3.5); +Part/Task
+  field autofocus + **Enter-to-add**; failed-inspection WO back-links to its inspection
+  (`wo.inspectionId` → the Failed-Inspection flag opens it); a failed unit re-opens for
+  inspection only once **every** blocking failure/field-call WO is closed (`woCompleteCascade`).
+- **⑥ §2.3 Dispatch = DAILY DRIVER TIMELINE (rebuilt):** the Calendar card shows one day's
+  run, auto-filled from rentals — `‹ today ›` nav, 🏠 roll-out/return anchors, ordered
+  **draggable** stops (**D**=Deliver blue / **R**=Recover brown), per-stop editable time, the
+  date as a bold-red **LATE**/**TODAY** deadline, ▼ route arrows. Order + times persist
+  per-device (localStorage `jactec.dispatchOrder` / `…Times`).
+
+**New code §banners:** §0.7 Glitch capture (top of app.js) · §13.3 Card Graph view
+(`pieSVG`/`gvBars`/`cardGraphBody`, before §12) · §18c/d Mr. Wrangler actions + image attach ·
+§2.3 dispatch timeline (`dispatchGridBody` rebuilt). New icon `I.graph`.
+
+**Rulebook (R0–R24): NO new rules.** The new surfaces (per-card stripes, Graph view,
+dispatch timeline) are bespoke feature views, not stamped design primitives — they reuse
+R3/R4/R5b/R9/**R14**/R17/R18. `rule-usage.js` was regenerated after each change; the `--check`
+drift guard + duplicate-key guard stay green.
+
+**📌 Pinned (need Jac / a live repro — not guessed):** the two units-list scroll bugs;
+"For-Sale in Category Availability" (`isUnitAvailableFor`/`categoryAvailableCount` already
+exclude every non-Active fleetStatus, so the offending view must be identified live);
+Phase-6 free-form "click-icon-to-icon" arrows (built as the sequential drag-ordered route).
+
+---
+
 ## 0 · How to debug with this spec
 
 1. **The flash-lint (R0)** is the alarm. Toggle = the eye icon in the bottom bar
@@ -364,6 +431,11 @@ GAMIFICATION 3561; Dispatch Time Grid 3673) · §12 Overlays & boards (3737) ·
 > is threaded through §3/§16 via inline `// §20` comments (no own banner); §5.5 and
 > §5a are lettered sub-banners. `exposeTestApi` (7407, offlineBoot-only) is the
 > `window.__rw` CI test seam.
+>
+> **v8.2 added banners** (line numbers drift — grep the tag): **§0.7** Glitch capture
+> (top) · **§13.3** Card Graph view (`pieSVG`/`gvBars`/`cardGraphBody`, just before §12) ·
+> **§18c/d** Mr. Wrangler actions + image attach · **§2.3** dispatch driver-timeline
+> (`dispatchGridBody`). Line numbers above are pre-v8.2 and have all shifted.
 
 ---
 
@@ -387,7 +459,18 @@ GAMIFICATION 3561; Dispatch Time Grid 3673) · §12 Overlays & boards (3737) ·
   re-renders); dragging a unit onto a buildable rental no longer empties the units list
   (wave2 now keeps candidates full past the first unit).
 
+- ✅ **v8.2 (2026-06-15) — Mr. Wrangler pipeline + Jac's 6-phase dump** — see the v8.2
+  Built-State Delta above. This closes **#4 "Ask Mr. Wrangler = Claude inside Rental
+  Wrangler"** (one chat: ask + fix + report, with the Track B auto-fix engine) and the
+  **KPI rework** half of #6; and adds the Card Graph view (§13.3), the daily driver-timeline
+  dispatch (§2.3), per-card stripe colors, and Cancel-WO.
+
 **Carry forward (real remaining work):**
+0. **📌 Pinned from v8.2** — two units-list scroll bugs; For-Sale showing in Category
+   Availability (availability math already excludes non-Active — identify the view live);
+   Phase-6 free-form icon-to-icon route arrows; the image-capable `Code.gs` paste (so chat
+   image attachments reach the AI); and the **fully-seamless** in-app issue filing (backend
+   `GITHUB_TOKEN` so Mr. Wrangler files without the one GitHub tap).
 1. **Drag bugs #9/#10** (awaiting Jac's repro): (#9) dragging customers/rentals
    "resetting" the source card — likely the deliberate customer↔invoice column swap;
    (#10) linking by dropping on a Standard View's empty space. Code paths exist + look

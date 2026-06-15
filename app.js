@@ -24,6 +24,39 @@ import {
 } from './config.js';
 
 /* ════════════════════════════════════════════════════════════════════════
+   §0.7 GLITCH CAPTURE — a small ring buffer of recent JS errors, so when you
+   hand a glitch to Mr. Wrangler the repro packet carries what actually broke
+   (the single most useful clue for the auto-fixer). Installed first thing so it
+   catches boot-time errors too. Kept tiny + best-effort — never throws itself.
+   ════════════════════════════════════════════════════════════════════════ */
+const ERR_LOG = [];
+function logErr(kind, msg) {
+  try {
+    const t = new Date().toTimeString().slice(0, 8);
+    ERR_LOG.push(`[${t}] ${kind}: ${String(msg).replace(/\s+/g, ' ').slice(0, 300)}`);
+    if (ERR_LOG.length > 30) ERR_LOG.shift();
+  } catch (_) {}
+}
+window.addEventListener('error', (e) => logErr('error', (e.message || 'error') + (e.filename ? ` @ ${String(e.filename).split('/').pop()}:${e.lineno || '?'}` : '')));
+window.addEventListener('unhandledrejection', (e) => logErr('promise', (e.reason && (e.reason.message || e.reason)) || 'unhandled rejection'));
+{ const _ce = console.error; console.error = function (...a) { try { logErr('console', a.map((x) => (x && x.message) || x).join(' ')); } catch (_) {} return _ce.apply(this, a); }; }
+
+/* The public repo this app fixes itself through (Track B — see docs/wrangler-pipeline.md).
+   A glitch handed to Mr. Wrangler becomes a `wrangler-fix` GitHub issue that the
+   Action engine reproduces, patches, gate-checks, and auto-merges to live. The
+   browser can't hold a token, so we open a PRE-FILLED issue (one Submit tap). */
+const WRANGLER_REPO = 'operations-jacrentals/rental-wrangler';
+// label 'wrangler-fix' → the auto-fix Action runs (glitches). 'wrangler-request'
+// → filed for Jac's OK, NOT auto-implemented (he can add the fix label to greenlight).
+function wranglerIssueUrl(title, body, label = 'wrangler-fix') {
+  const u = new URL(`https://github.com/${WRANGLER_REPO}/issues/new`);
+  u.searchParams.set('title', String(title || 'Reported glitch').slice(0, 120));
+  u.searchParams.set('labels', label);
+  u.searchParams.set('body', String(body || '').slice(0, 6000));   // GitHub URL body cap headroom
+  return u.toString();
+}
+
+/* ════════════════════════════════════════════════════════════════════════
    §1 UTILITIES & FORMATTING — $, el, esc, money, num, dates
    ════════════════════════════════════════════════════════════════════════ */
 const $  = (sel, root = document) => root.querySelector(sel);
@@ -548,7 +581,7 @@ function unitOverbooked(unitId) {
  *  No billable open WO → the unit/invoice pair is simply not a drop target. */
 function unbilledOpenWOForUnit(unitId) {
   const billed = (woId) => DATA.invoices.some((i) => (i.lineItems || []).some((li) => li.kind === 'WO' && li.ref === woId));
-  return DATA.workOrders.filter((w) => w.unitId === unitId && w.phase !== 'Complete' && !billed(w.woId))
+  return DATA.workOrders.filter((w) => w.unitId === unitId && w.phase !== 'Complete' && !w.cancelled && !billed(w.woId))
     .sort((a, b) => (parseISO(b.date) || 0) - (parseISO(a.date) || 0))[0] || null;
 }
 function isUnitAvailableFor(u, startISO, endISO, selfId) {
@@ -578,7 +611,7 @@ function availUnavailable(card, rec) {
 }
 /** Open WO bottleneck (latest non-Complete) for a unit (§7.3 Order Status). */
 function openWOForUnit(unitId) {
-  return DATA.workOrders.filter((w) => w.unitId === unitId && w.phase !== 'Complete')
+  return DATA.workOrders.filter((w) => w.unitId === unitId && w.phase !== 'Complete' && !w.cancelled)
     .sort((a, b) => (parseISO(b.date) || 0) - (parseISO(a.date) || 0))[0] || null;
 }
 /** Rounded countdown text for display (the reference module returns exact
@@ -1157,6 +1190,7 @@ const I = {
   camera: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.5 4h-5L7.5 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3.5z"/><circle cx="12" cy="13" r="3"/></svg>',
   droplet: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3s6 6.4 6 10.5a6 6 0 0 1-12 0C6 9.4 12 3 12 3z"/></svg>',
   table: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9.5h18M3 15h18M9 4v16"/></svg>',
+  graph: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 3v17h17"/><rect x="7.5" y="11" width="2.6" height="6" rx="0.6" fill="currentColor" stroke="none"/><rect x="12" y="7.5" width="2.6" height="9.5" rx="0.6" fill="currentColor" stroke="none"/><rect x="16.5" y="13" width="2.6" height="4" rx="0.6" fill="currentColor" stroke="none"/></svg>',
   sliders: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h10M18 6h2M4 12h2M10 12h10M4 18h12M20 18h0M16 18h4"/><circle cx="16" cy="6" r="2"/><circle cx="8" cy="12" r="2"/><circle cx="14" cy="18" r="2"/></svg>',
   eye: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>',
   eyeOff: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.9 4.24A9.1 9.1 0 0 1 12 4c6.5 0 10 7 10 7a13.2 13.2 0 0 1-2 2.6M6.6 6.6A13.2 13.2 0 0 0 2 11s3.5 7 10 7a9.1 9.1 0 0 0 4-.9"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2M2 2l20 20"/></svg>',
@@ -2087,8 +2121,8 @@ function listTotalsEl(card, rows, session) {
   // v2: the units footer carries the SHOP — open-WO + parts-ordered counts
   // (the standalone Inspections/WO tabs went away; Jac call #1)
   if (card === 'units') {
-    const openBy = new Set(DATA.workOrders.filter((w) => w.phase !== 'Complete').map((w) => w.unitId));
-    const ordBy = new Set(DATA.workOrders.filter((w) => w.phase !== 'Complete' && (w.phase === 'Part Ordered' || (w.lineItems || []).some((l) => l.phase === 'Part Ordered'))).map((w) => w.unitId));
+    const openBy = new Set(DATA.workOrders.filter((w) => w.phase !== 'Complete' && !w.cancelled).map((w) => w.unitId));
+    const ordBy = new Set(DATA.workOrders.filter((w) => w.phase !== 'Complete' && !w.cancelled && (w.phase === 'Part Ordered' || (w.lineItems || []).some((l) => l.phase === 'Part Ordered'))).map((w) => w.unitId));
     const nOpen = rows.filter((u) => openBy.has(u.unitId)).length;
     const nOrd = rows.filter((u) => ordBy.has(u.unitId)).length;
     if (nOpen) { const on = tf && tf.col === '__wo' && tf.value === 'open'; chips.push({ k: '__wo', html: `<button class="tot-chip c-red js-tot-chip${on ? ' on' : ''}" data-r="R4" data-tot-card="units" data-tot-col="__wo" data-tot-val="open">${nOpen} WOs Open</button>` }); }
@@ -2113,7 +2147,7 @@ function applyTotalFilter(card, rows, session) {
   const cs = session.cards[card]; if (!cs || !cs.totalFilter) return rows;
   if (cs.totalFilter.col === '__wo') {           // v2 synthetic footer chips: units with shop work
     const want = cs.totalFilter.value;
-    const ids = new Set(DATA.workOrders.filter((w) => w.phase !== 'Complete' && (want === 'open' || w.phase === 'Part Ordered' || (w.lineItems || []).some((l) => l.phase === 'Part Ordered'))).map((w) => w.unitId));
+    const ids = new Set(DATA.workOrders.filter((w) => w.phase !== 'Complete' && !w.cancelled && (want === 'open' || w.phase === 'Part Ordered' || (w.lineItems || []).some((l) => l.phase === 'Part Ordered'))).map((w) => w.unitId));
     return rows.filter((rec) => ids.has(rec.unitId));
   }
   if (cs.totalFilter.col === '__cond') return rows.filter((rec) => rec.inspectionStatus === cs.totalFilter.value);   // the Not Ready tab chip
@@ -2240,14 +2274,15 @@ function notesSection(card, rec, idField, field = 'notes') {
 }
 
 /* ── §12.4v2 BUILD helpers (spec: drafts/units-rentals-v2.html + HANDOFF) ── */
-function openWOsForUnit(unitId) { return DATA.workOrders.filter((w) => w.unitId === unitId && w.phase !== 'Complete'); }
+function openWOsForUnit(unitId) { return DATA.workOrders.filter((w) => w.unitId === unitId && w.phase !== 'Complete' && !w.cancelled); }
 function latestInspForUnit(unitId) {
   const ls = DATA.inspections.filter((n) => n.unitId === unitId).sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
   return ls[0] || null;
 }
 /* worst open bottleneck across a WO (GZ-14 severity: Needed → ? → ETA → local) */
-const WO_SEV = { 'Part Needed': 0, 'Part Needed?': 1, 'Part Ordered': 2, 'Part is Local': 3, 'No Part Needed': 4 };
+const WO_SEV = { 'Part Needed': 0, 'Part Needed?': 1, 'Part Ordered': 2, 'Part is Local': 3, 'Part in Stock': 3.5, 'No Part Needed': 4 };
 function woBottleneck(w) {
+  if (w.cancelled) return { label: 'Cancelled', color: 'gray' };
   if (w.phase === 'Complete') return { label: 'Complete', color: 'green' };
   const lines = w.lineItems || [];
   const open = lines.filter((l) => l.phase !== 'Complete').map((l) => ({ ph: l.phase, eta: l.eta }));
@@ -2472,7 +2507,7 @@ function woSectionHtml(w) {
   const typeFlag = w.woType === 'Field Call'
     ? flagEl('Field Call', 'red', { icon: CARD_ICON.rentals, card: w.customerId ? 'customers' : null, recId: w.customerId, title: 'WO type: Field Call' })
     : w.woType === 'Failed'
-      ? flagEl('Failed Inspection', 'red', { icon: CARD_ICON.inspections, title: 'WO type: failed inspection' })
+      ? flagEl('Failed Inspection', 'red', { icon: CARD_ICON.inspections, card: w.inspectionId ? 'inspections' : null, recId: w.inspectionId || null, title: w.inspectionId ? 'Open the failed inspection' : 'WO type: failed inspection' })
       : flagEl(w.assignedMechanic || 'Mechanic', 'gray', { icon: CARD_ICON.customers, title: 'WO type: opened by a mechanic' });
   const lines = (w.lineItems || []).map((li, idx) => {
     const ph = getStatus('woPhase', li.phase);
@@ -2489,8 +2524,9 @@ function woSectionHtml(w) {
     ${lines || '<div class="kv"><span class="muted" style="font-size:12px">No line items yet</span></div>'}
     <div class="wofoot">
       <span class="derived">Parts ${money(Math.max(0, billed - laborBilled))} + Hrs ${money(laborBilled)} = ${money(billed)}</span>
-      ${addBtn('Invoice', { link: true, icon: CARD_ICON.invoices, js: 'js-bill-wo', h: 26, data: { rec: w.woId } })}
-      ${actionPill('commit', 'Complete WO', { js: 'js-wo-complete', h: 26, data: { rec: w.woId } })}
+      ${w.cancelled
+        ? `<span class="pill c-gray" style="height:26px;font-size:11px" data-tip="This work order is cancelled">Cancelled</span>${actionPill('commit', 'Reopen WO', { js: 'js-wo-reopen', h: 26, data: { rec: w.woId } })}`
+        : `${addBtn('Invoice', { link: true, icon: CARD_ICON.invoices, js: 'js-bill-wo', h: 26, data: { rec: w.woId } })}<button class="pill ghost js-wo-cancel" data-r="R18" data-rec="${esc(w.woId)}" style="height:26px;font-size:11px">Cancel WO</button>${actionPill('commit', 'Complete WO', { js: 'js-wo-complete', h: 26, data: { rec: w.woId } })}`}
     </div>
   </div>`;
 }
@@ -2699,7 +2735,7 @@ const DETAIL = {
           ${kvPills(cust ? refPill('customers', r.customerId, cust.name, { x: 'cust-swap' }) : (r.mock ? pickCustBtn : badge('No customer')))}
           ${kvPills(`${rentalUnits(r).length
               ? rentalUnits(r).map((eu) => { const u2 = IDX.unit.get(eu.unitId); if (!u2) return ''; const insp = getStatus('unitInspectionStatus', u2.inspectionStatus); const multi = rentalUnits(r).length > 1; const voided = ['No Show', 'Cancelled'].includes(unitStatus(r, eu)); return `<span class="unitchip${voided ? ' voided' : ''}">${unitPill(u2.unitId, { x: 'unit-remove', xData: u2.unitId })}<span class="pill dvd c-${insp.color}" data-r="R4" data-pill-card="units" data-pill-rec="${esc(u2.unitId)}">${CARD_ICON.units}${esc(insp.label)}</span>${multi ? unitStatusGate(r, eu) : ''}</span>`; }).join('')
-              : (r.mock ? pickUnitBtn : '<span class="pill c-gray" data-r="R3b"><span class="t">No unit</span></span>')}${rentalUnits(r).length && r.mock ? pickUnitBtn : ''}${cat ? `<span class="pill dvd c-orange" data-r="R4" data-pill-card="categories" data-pill-rec="${esc(cat.categoryId)}" data-chat-el data-chat-label="${esc(cat.name)}" data-chat-color="orange" data-chat-card="categories" data-chat-rec="${esc(cat.categoryId)}">${CARD_ICON.categories}${esc(cat.name)}</span>` : ''}`)}
+              : (r.mock ? pickUnitBtn : '<span class="pill c-gray" data-r="R3b"><span class="t">No unit</span></span>')}${cat ? `<span class="pill dvd c-orange" data-r="R4" data-pill-card="categories" data-pill-rec="${esc(cat.categoryId)}" data-chat-el data-chat-label="${esc(cat.name)}" data-chat-color="orange" data-chat-card="categories" data-chat-rec="${esc(cat.categoryId)}">${CARD_ICON.categories}${esc(cat.name)}</span>` : ''}`)}
           ${kvPills(invPill)}
           ${efld('rentals', r, 'rentalId', 'po', 'Add PO', { fmt: (v) => 'PO ' + v })}
           ${fcRow ? kvPills(fcRow) : ''}
@@ -3039,7 +3075,7 @@ const DETAIL = {
     return `<div class="detail">
       <div class="detail-head">${title}</div>
       ${notes.top}
-      <div class="detail-cols">${usedSales}${membership}</div>
+      <div class="detail-cols">${membership}${usedSales}</div>
       ${actHead}
       ${actEntry}
       ${activity}
@@ -3457,7 +3493,7 @@ function memberCount(member, session) {
 function shopAlertCount(member, session) {
   let items = []; try { items = shopItemsByType(session)[member] || []; } catch { return 0; }
   if (member === 'inspections') return items.filter((n) => !inspComplete(n)).length;
-  if (member === 'workOrders') return items.filter((w) => w.phase !== 'Complete').length;
+  if (member === 'workOrders') return items.filter((w) => w.phase !== 'Complete' && !w.cancelled).length;
   if (member === 'serviceOrders') return items.filter((u) => { const s = topServiceForUnit(u); return u.washRequested || (s && s.remaining < 0); }).length;
   return 0;
 }
@@ -3614,6 +3650,7 @@ function listView(cardDef, session) {
   const cascChip = cascaded ? `<span class="casc-chip" data-tip="Cascaded from ${esc(anchorName)} — clear to browse all & add">🔗<span class="cc-name">${esc(anchorName)}</span>${closeX('js-uncascade', { data: { card } })}</span>` : '';
   bar.innerHTML = `
     ${cardJog(card, cs)}
+    <button class="bv-btn js-cardgraph" data-card="${card}" data-tip="Open the Graph view">${I.graph}</button>
     <button class="bv-btn js-boardview" data-card="${card}" data-tip="Open Board View (spreadsheet)">${I.table}</button>
     <div class="mini-searchwrap${cterms.length || cascChip ? ' has-terms' : ''}${cs.search.trim() || cterms.length ? ' has-query' : ''}">
       ${cascChip}${cterms.map((ft, i) => filterTermPill(ft, i, card)).join('')}
@@ -3698,7 +3735,7 @@ const PLUS_NEW = new Set(['rentals', 'invoices', 'customers']);
  *  archive: resolved inspections + completed WOs (services aren't archived here). */
 function shopItemMode(ty, rec, complete) {
   if (ty === 'inspections') return complete ? inspComplete(rec) : !inspComplete(rec);
-  if (ty === 'workOrders') return complete ? rec.phase === 'Complete' : rec.phase !== 'Complete';
+  if (ty === 'workOrders') return complete ? (rec.phase === 'Complete' || rec.cancelled) : (rec.phase !== 'Complete' && !rec.cancelled);   // cancelled = terminal: lives in the "done" list (findable + reopenable), out of "open"
   if (ty === 'serviceOrders') return !complete;
   return true;
 }
@@ -3926,18 +3963,27 @@ function kpiFor(roleId) {
   const R = DATA.rentals, W = DATA.workOrders, N = DATA.inspections, INV = DATA.invoices, C = DATA.customers;
   const f = fleetInsp();
   if (roleId === 'mechanic') {
-    const renting = pctOf(f.Ready + f['Not Ready'], f.total);                 // rentable ÷ fleet
-    const woComplete = pctOf(W.filter((w) => w.phase === 'Complete').length, W.length);
-    const billable = W.filter((w) => (w.lineItems || []).some((li) => (li.cost || 0) > 0 || (li.hours || 0) > 0));
-    const billRate = pctOf(billable.filter((w) => w.billCustomer === 'Yes').length, billable.length);
-    return [renting, woComplete, billRate];
+    const healthyFleet = pctOf(f.Ready + f['Not Ready'], f.total);            // rentable ÷ fleet ("Healthy Fleet", was Renting Rate)
+    const liveWO = W.filter((w) => !w.cancelled);                             // cancelled WOs are void — out of the completion ratio
+    const woComplete = pctOf(liveWO.filter((w) => w.phase === 'Complete').length, liveWO.length);
+    // Parts Breakeven (was Bill Rate) — share of parts cost recovered by earnings from billed WOs; goal-ring, 100% = covered.
+    const partsCostTotal = liveWO.reduce((a, w) => a + (w.lineItems || []).reduce((s, li) => s + (Number(li.cost) || 0), 0), 0);
+    const billedEarnings = liveWO.filter((w) => w.billCustomer === 'Yes').reduce((a, w) => a + (woBillable(w) || 0), 0);
+    const breakeven = partsCostTotal > 0 ? Math.round(Math.min(billedEarnings / partsCostTotal, 1) * 100) : 100;
+    return [healthyFleet, woComplete, breakeven];
   }
   if (roleId === 'mtech') {
     const fc = R.filter((r) => r.fieldCall).length;
     const successful = R.length ? Math.round((1 - fc / R.length) * 100) : 100;
-    const readyRate = pctOf(f.Ready, f.total);
-    const woRate = N.length ? N.filter((n) => n.woId).length / N.length : 0;   // lower is better; full ring = ≤0%, empty = ≥20%
-    const woRing = Math.round(Math.max(0, 1 - Math.min(woRate, 0.2) / 0.2) * 100);
+    // Ready Rate — Ready ÷ rentable fleet, excluding Failed inspections + Inactive/Sold/For-Sale fleetStatus (Jac).
+    const skipFleet = new Set(['Inactive', 'Sold', 'For Sale']);
+    const eligible = DATA.units.filter((u) => !skipFleet.has(u.fleetStatus) && u.inspectionStatus !== 'Failed');
+    const readyRate = pctOf(eligible.filter((u) => u.inspectionStatus === 'Ready').length, eligible.length);
+    // WO Rate — progress toward the GOAL of 20% of the last rolling-30-day inspections spawning a WO (full ring at 20%).
+    const cutoff = new Date(TODAY.getTime() - 30 * 86400000).toISOString().slice(0, 10);
+    const recent = N.filter((n) => (n.date || '') >= cutoff);
+    const woRate = recent.length ? recent.filter((n) => n.woId).length / recent.length : 0;
+    const woRing = Math.round(Math.min(woRate / 0.2, 1) * 100);
     return [successful, readyRate, woRing];
   }
   if (roleId === 'driver') {
@@ -3971,12 +4017,12 @@ function kpiFor(roleId) {
 }
 // Plain-English explanation of each KPI's formula — shown on hover in the role popup.
 const KPI_HELP = {
-  'Renting Rate':           'Share of your fleet that’s rentable right now (Ready + Not-Ready units ÷ total fleet).',
-  'WO Completion Rate':     'Work orders marked Complete ÷ all work orders. Higher = the shop is keeping up.',
-  'Bill Rate':              'Of the work orders worth billing (have parts or labor), how many you actually charged the customer for.',
+  'Healthy Fleet':          'Share of your fleet that’s rentable right now (Ready + Not-Ready units ÷ total fleet).',
+  'WO Completion Rate':     'Work orders marked Complete ÷ all live work orders (cancelled ones excluded). Higher = the shop is keeping up.',
+  'Parts Breakeven':        'How much of your parts cost is recovered by earnings from billed work orders. Full ring = billed WOs cover the parts.',
   'Successful Rentals':     'Rentals that went out without a breakdown — 1 minus the share of rentals that got a Field Call.',
-  'Ready Rate':             'Share of the fleet that’s inspected and Ready to rent (Ready units ÷ total fleet).',
-  'WO Rate (≤20%)':         'How few inspections turn into work orders — fewer is better. Full ring at 0%, empty at 20%+.',
+  'Ready Rate':             'Share of the rentable fleet that’s Ready to rent — Ready ÷ eligible units (Failed, Inactive, Sold & For-Sale excluded).',
+  'WO Rate (20% goal)':     'Progress toward the goal: 20% of the last 30 days’ inspections spawning a work order is healthy (catching problems). Full ring at 20%.',
   'On-Time':                'Rentals you actually delivered/handled ÷ rentals scheduled (excludes quotes, cancels, no-shows).',
   'Wash Completion':        'Of the units flagged for a wash, how many got washed (washed ÷ wash-requested).',
   'Driving Score':          'Driving-safety score from the GPS backend — placeholder until that’s connected.',
@@ -4074,14 +4120,12 @@ function bottomBarInner() {
   // rules 5/6: LEFT = labeled actions (icon LEADS label, no "+"), Wash joins them;
   // RIGHT (after divider) = icon-only utilities. The +New collapse button is dropped (Jac).
   return `
-    <button class="iconbtn js-dashboard">${I.grid} Dashboard</button>
     <button class="iconbtn js-newitem" data-new="receipt">${CARD_ICON.expenses}Receipt</button>
     <span class="bb-sep"></span>
     <button class="iconbtn js-qr" data-tip="Share session (QR)">${I.qr}</button>
     <button class="iconbtn${state.previewsOn ? '' : ' off'} js-previews" data-tip="${state.previewsOn ? 'Hover previews: on' : 'Hover previews: off'}">${state.previewsOn ? I.eye : I.eyeOff}</button>
-    <button class="iconbtn js-feedback" data-tip="Report a bug or request">${I.feedback}</button>
     <button class="iconbtn js-chat-toggle${state.chat.open ? ' on' : ''}" data-tip="Team chat — flagged comments + tagged context">${I.chat}${(() => { const n = chatUnreadCount(); return n ? `<span class="bb-badge">${n > 9 ? '9+' : n}</span>` : ''; })()}</button>
-    <button class="iconbtn js-wrangler" data-tip="Ask Mr. Wrangler — the in-app AI" style="font-size:16px">🤠</button>
+    <button class="iconbtn js-wrangler" data-tip="Mr. Wrangler — ask the yard AI, or report a bug to fix" style="font-size:16px">🤠</button>
     <button class="iconbtn js-hotkeys" data-tip="Mouse &amp; keyboard shortcuts">${I.mouse}</button>
     <button class="iconbtn js-adminlock${adminUnlocked() ? ' on' : ''}" data-tip="${adminUnlocked() ? 'Admin tools unlocked — click to lock' : 'Admin tools — click to unlock'}">${adminUnlocked() ? I.lockOpen : I.lock}</button>
     ${adminUnlocked() ? `<button class="iconbtn js-lint${document.body.classList.contains('rw-lint') ? ' on' : ''}" data-tip="Design lint — flash anything that bypassed the UI builders (R0)">${I.eye}</button>
@@ -4128,7 +4172,7 @@ function chatUnseenForRec(card, recId) {
 }
 function newChat(tag) {
   const c = { id: 'CHAT' + (state.seq++), tags: tag ? [tag] : [], participants: ROLES.map((r) => r.id), messages: [], seen: { [commentUserKey()]: Date.now() } };
-  state.chat.chats.push(c); state.chat.activeId = c.id; return c;
+  state.chat.chats.push(c); state.chat.activeId = c.id; pushChatsSoon(); return c;
 }
 // Reopen a dormant/existing chat through one of its tagged elements — the chat is never lost;
 // the current user rejoins (their role selected) and the dock opens to it.
@@ -4139,6 +4183,7 @@ function openChat(id, msg) {
   if (myRole) { if (!c.participants.includes(myRole)) c.participants.push(myRole); }
   else if (!c.participants.length) c.participants = ROLES.map((r) => r.id);   // demo (no role) → everyone rejoins
   c.seen[commentUserKey()] = Date.now();
+  pushChatsSoon();                                  // a rejoin/participant change syncs to the team
   state.chat.open = true; render();
   if (msg) toast(msg);
 }
@@ -4179,14 +4224,14 @@ function chatSend() {
   let c = activeChat(); if (!c) c = newChat();                          // typing with no active chat opens one to the team
   c.messages.push({ id: 'MSG' + (state.seq++), by: commentUserKey(), when: TODAY_ISO, at: Date.now(), text });
   c.seen[commentUserKey()] = Date.now();                                // author has seen their own update
-  state.chat.draft = ''; saveSoon(); render();
+  state.chat.draft = ''; saveSoon(); pushChatsSoon(); render();
   setTimeout(() => { const i = document.querySelector('.chat-input'); if (i) i.focus(); const f = document.querySelector('.chat-feed'); if (f) f.scrollTop = f.scrollHeight; }, 0);
 }
 function chatToggleRole(id) {
   const c = activeChat(); if (!c) return;
   c.participants = c.participants.includes(id) ? c.participants.filter((x) => x !== id) : [...c.participants, id];
   // never deleted — at 0 participants the chat goes dormant; reopen it via a tagged element (Jac)
-  render();
+  pushChatsSoon(); render();
 }
 // Right-click → Start chat: OPEN the element's existing chat (rejoin) if it has one, else start fresh.
 function startChatFromEl(el) {
@@ -4227,7 +4272,7 @@ function chatAddTag(tag) {
   let c = activeChat(); if (!c) c = newChat();                          // dragging context in with no active chat opens one
   if (tag.id && c.tags.some((t) => t.id === tag.id)) return;            // no dupes
   c.tags.push({ id: tag.id || 'TAG' + (state.seq++), label: tag.label, color: tag.color || 'gray', ref: tag.ref || null });
-  state.chat.open = true; render();
+  state.chat.open = true; pushChatsSoon(); render();
 }
 function tabStrip(tabs) {
   tabs = tabs || state.tabs;
@@ -4266,7 +4311,7 @@ function dispatchEvents() {
     rentalUnits(r).forEach((eu) => {
       if (!eu.unitId || SKIP.has(unitStatus(r, eu)) || !eu.transportType || eu.transportType === 'Self') return;
       const unit = IDX.unit.get(eu.unitId);
-      const base = { rentalId: r.rentalId, unit: unit?.name || '—', cust: cust?.name || cust?.company || '—', addr: eu.deliveryAddress || '', ttype: eu.transportType };
+      const base = { rentalId: r.rentalId, unitId: eu.unitId, unit: unit?.name || '—', cust: cust?.name || cust?.company || '—', addr: eu.deliveryAddress || '', ttype: eu.transportType };
       if (['Delivery', 'Round-Trip'].includes(eu.transportType) && r.startDate) out.push({ ...base, date: r.startDate, time: r.startTime || '', task: 'Deliver', color: 'blue' });
       if (['Round-Trip', 'Recovery'].includes(eu.transportType) && r.endDate) out.push({ ...base, date: r.endDate, time: '', task: 'Pick up', color: 'brown' });
     });
@@ -4275,31 +4320,59 @@ function dispatchEvents() {
 }
 // Body-only dispatch grid (stats + day groups) — rendered inside the Calendar
 // card body in the middle column. Pure derivation; dispatchEvents() unchanged.
+/* §2.3 DISPATCH — the Calendar card is a DAILY DRIVER TIMELINE (Phase 6, Jac):
+   the day's transports, auto-filled from rentals, as an ordered route from the
+   yard and back. D = Deliver, R = Recover, 🏠 = JAC. Drag a stop to reorder the
+   run; type a time; the date rides as a bold-red deadline. Order + times are
+   per-device (localStorage). */
+const DISPATCH_HOME = 'JAC · 102 S Huntington';
+const dispatchStopId = (ev) => `${ev.rentalId}|${ev.unitId || ''}|${ev.task}`;
+const _lsJSON = (k) => { try { return JSON.parse(localStorage.getItem(k) || '{}'); } catch (e) { return {}; } };
+const _lsSave = (k, o) => { try { localStorage.setItem(k, JSON.stringify(o)); } catch (e) {} };
+const dispatchOrderLS = () => _lsJSON('jactec.dispatchOrder');
+const dispatchTimesLS = () => _lsJSON('jactec.dispatchTimes');
+const addDaysISO = (iso, n) => { const d = parseISO(iso); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
+const dispatchDayLabel = (iso) => { const d = parseISO(iso); return d ? d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : iso; };
+function dispatchDayStops(day) {
+  const times = dispatchTimesLS();
+  const stops = dispatchEvents().filter((ev) => ev.date === day).map((ev) => ({ ...ev, id: dispatchStopId(ev), time: times[dispatchStopId(ev)] ?? ev.time ?? '' }));
+  const order = dispatchOrderLS()[day] || [];
+  return stops.sort((a, b) => {
+    const ia = order.indexOf(a.id), ib = order.indexOf(b.id);
+    if (ia !== -1 || ib !== -1) return (ia === -1 ? 1e9 : ia) - (ib === -1 ? 1e9 : ib);
+    return (a.time || '~').localeCompare(b.time || '~');
+  });
+}
 function dispatchGridBody() {
-  const events = dispatchEvents();
-  const today = TODAY_ISO;
-  const byDate = {};
-  events.forEach((ev) => { (byDate[ev.date] = byDate[ev.date] || []).push(ev); });
-  const dates = Object.keys(byDate).sort();
-  const stat = (n, label, color) => `<div class="dash-stat"><b style="color:var(--${color})">${n}</b><span>${esc(label)}</span></div>`;
-  const stats = `<div class="dash-stats">
-    ${stat(events.filter((e) => e.date === today && e.task === 'Deliver').length, 'Deliveries today', 'blue')}
-    ${stat(events.filter((e) => e.date === today && e.task === 'Pick up').length, 'Pickups today', 'brown')}
-    ${stat(events.filter((e) => e.date >= today).length, 'Upcoming dispatches', 'green')}
-    ${stat(events.length, 'Total scheduled', 'gray')}</div>`;
-  const groups = dates.length ? dates.map((d) => {
-    const isToday = d === today, isPast = d < today;
-    const rows = byDate[d].map((ev) => `<button class="dash-ev js-dash-ev" data-rec="${esc(ev.rentalId)}">
-        <span class="dash-time">${esc(ev.time || (ev.task === 'Pick up' ? 'EOD' : '—'))}</span>
-        <span class="pill c-${ev.color}"><span class="truck">${I.truck}</span>${esc(ev.task)}</span>
-        <span class="dash-unit">${esc(ev.unit)}</span>
-        <span class="dash-cust">${esc(ev.cust)}</span>
-        <span class="dash-addr">${esc(ev.addr || '—')}</span>
-        <span class="pill c-gray dash-ttype" data-r="R3b">${esc(ev.ttype)}</span>
-      </button>`).join('');
-    return `<div class="dash-day${isToday ? ' today' : ''}${isPast ? ' past' : ''}"><div class="dash-day-head">${esc(fmtShortDate(d))}${isToday ? ' · Today' : ''}<span class="dash-day-count">${byDate[d].length}</span></div>${rows}</div>`;
-  }).join('') : `<div class="empty" style="padding:34px;text-align:center">No dispatches scheduled. Rentals with Delivery / Round-Trip / Recovery transport appear here.</div>`;
-  return `${stats}<div class="dash-grid">${groups}</div>`;
+  const day = state.dispatchDay || TODAY_ISO;
+  const stops = dispatchDayStops(day);
+  const isToday = day === TODAY_ISO;
+  const allUpcoming = dispatchEvents().filter((e) => e.date >= TODAY_ISO).length;
+  const head = `<div class="disp-head">
+    <button class="disp-nav js-disp-day" data-dir="-1" data-tip="Previous day">‹</button>
+    <div class="disp-date"><b>${esc(dispatchDayLabel(day))}</b>${isToday ? '<span class="disp-today">Today</span>' : '<button class="disp-jump js-disp-today">Today</button>'}</div>
+    <button class="disp-nav js-disp-day" data-dir="1" data-tip="Next day">›</button>
+    <span class="spacer"></span>
+    <span class="disp-count">${stops.length} stop${stops.length === 1 ? '' : 's'}${allUpcoming ? ` · ${allUpcoming} upcoming` : ''}</span>
+  </div>`;
+  if (!stops.length) return `${head}<div class="disp-empty">${I.truck}<p>No transports on this day.</p><span>Rentals with Delivery / Round-Trip / Recovery land here automatically — flip days with ‹ ›.</span></div>`;
+  const home = (sub) => `<div class="disp-stop disp-home"><span class="disp-ico home">🏠</span><div class="disp-bd"><div class="disp-unit">${DISPATCH_HOME}</div><div class="disp-sub">${esc(sub)}</div></div></div>`;
+  const rows = stops.map((ev, i) => {
+    const deliver = ev.task === 'Deliver';
+    const overdue = ev.date < TODAY_ISO, dueToday = ev.date === TODAY_ISO;
+    return `<div class="disp-stop js-disp-stop" draggable="true" data-id="${esc(ev.id)}" data-rec="${esc(ev.rentalId)}">
+      <span class="disp-grip" data-tip="Drag to reorder the run">⠿</span>
+      <span class="disp-seq">${i + 1}</span>
+      <input class="disp-time js-disp-time" data-id="${esc(ev.id)}" value="${esc(ev.time || '')}" placeholder="—:—" maxlength="5" data-tip="Set the stop time" />
+      <span class="disp-ico c-${deliver ? 'blue' : 'brown'}" data-tip="${deliver ? 'Deliver' : 'Recover'}">${deliver ? 'D' : 'R'}</span>
+      <div class="disp-bd">
+        <div class="disp-unit">${esc(ev.unit)} <span class="disp-task">${deliver ? 'Deliver' : 'Recover'}</span></div>
+        <div class="disp-sub">${esc(ev.cust)}${ev.addr ? ` · <span class="disp-addr js-site-go" data-rec="${esc(ev.rentalId)}">${esc(ev.addr)}</span>` : ''}</div>
+      </div>
+      <span class="disp-deadline${overdue ? ' over' : dueToday ? ' today' : ''}">${esc(fmtShortDate(ev.date))}${overdue ? ' · LATE' : dueToday ? ' · TODAY' : ''}</span>
+    </div>`;
+  }).join('');
+  return `${head}<div class="disp-route js-disp-route" data-day="${esc(day)}">${home('Roll out')}${rows}${home('Return to yard')}</div>`;
 }
 /** The status badge shown on an item tab (replaces the old datapoint sub-text). */
 function tabBadge(card, rec) {
@@ -4315,6 +4388,80 @@ function tabBadge(card, rec) {
     case 'serviceOrders': { const s = topServiceForUnit(rec); return s ? badge(getStatus('serviceStatus', s.status).label, s.color) : badge('On Schedule', 'green'); }
     default: return '';
   }
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   §13.3 CARD GRAPH VIEW (Phase 4) — a per-card charts overlay, sibling to the
+   Board View. Units first: Field-Call stats, an inspection donut, a parts donut,
+   and the unit roster. Pure SVG/CSS — no chart lib. (FC = Field Call.)
+   ════════════════════════════════════════════════════════════════════════ */
+// Donut from [{label,value,color}] — color is a palette token name (green/red/…).
+function pieSVG(segments, size = 128) {
+  const total = segments.reduce((a, s) => a + (s.value || 0), 0);
+  const r = size / 2, cx = r, cy = r, inner = r * 0.6;
+  if (!total) return `<svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}"><circle cx="${cx}" cy="${cy}" r="${r - 1}" fill="none" stroke="var(--line)" stroke-width="2" stroke-dasharray="3 4"/><circle cx="${cx}" cy="${cy}" r="${inner}" fill="var(--bg)"/></svg>`;
+  const nonzero = segments.filter((s) => s.value > 0);
+  let paths = '';
+  if (nonzero.length === 1) {                          // 100% one slice — draw a full ring (a single arc is degenerate)
+    paths = `<circle cx="${cx}" cy="${cy}" r="${r - 1}" fill="var(--${nonzero[0].color})" stroke="var(--card)" stroke-width="1.5"/>`;
+  } else {
+    const arc = (a) => [cx + (r - 1) * Math.cos(a), cy + (r - 1) * Math.sin(a)];
+    let a0 = -Math.PI / 2;
+    segments.forEach((s) => {
+      if (!s.value) return;
+      const a1 = a0 + (s.value / total) * Math.PI * 2;
+      const [x0, y0] = arc(a0), [x1, y1] = arc(a1), large = (a1 - a0) > Math.PI ? 1 : 0;
+      paths += `<path d="M${cx},${cy} L${x0.toFixed(1)},${y0.toFixed(1)} A${r - 1},${r - 1} 0 ${large} 1 ${x1.toFixed(1)},${y1.toFixed(1)} Z" fill="var(--${s.color})" stroke="var(--card)" stroke-width="1.5"/>`;
+      a0 = a1;
+    });
+  }
+  paths += `<circle cx="${cx}" cy="${cy}" r="${inner}" fill="var(--bg)"/><text x="${cx}" y="${cy + 5}" text-anchor="middle" fill="var(--txt)" font-size="20" font-weight="800">${total}</text>`;
+  return `<svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}">${paths}</svg>`;
+}
+const gvLegend = (segs) => `<div class="gv-legend">${segs.map((s) => `<span class="gv-leg"><i style="background:var(--${s.color})"></i>${esc(s.label)} <b>${s.value}</b></span>`).join('')}</div>`;
+// Vertical bar chart from [{label,value}].
+function gvBars(data, color = 'accent') {
+  const max = Math.max(1, ...data.map((d) => d.value));
+  return `<div class="gv-bars">${data.map((d) => `<div class="gv-barcol" data-tip="${esc(d.label)}: ${d.value}"><div class="gv-bar-n">${d.value || ''}</div><div class="gv-bar-track"><div class="gv-bar-fill" style="height:${Math.round((d.value / max) * 100)}%;background:var(--${color})"></div></div><div class="gv-bar-x">${esc(d.label)}</div></div>`).join('')}</div>`;
+}
+function unitGraphData() {
+  const fcWOs = DATA.workOrders.filter((w) => w.woType === 'Field Call');
+  const dates = fcWOs.map((w) => w.date).filter(Boolean).sort();
+  const lastFC = dates[dates.length - 1];
+  const daysSinceFC = lastFC ? Math.max(0, dayDiff(parseISO(lastFC), TODAY)) : null;
+  const byUnit = {};
+  fcWOs.forEach((w) => { if (w.unitId) (byUnit[w.unitId] = byUnit[w.unitId] || []).push(w); });
+  const mostFCs = Object.entries(byUnit).map(([uid, ws]) => {
+    const u = IDX.unit.get(uid), mechs = {};
+    ws.forEach((w) => { if (w.assignedMechanic) mechs[w.assignedMechanic] = (mechs[w.assignedMechanic] || 0) + 1; });
+    const top = Object.entries(mechs).sort((a, b) => b[1] - a[1])[0];
+    return { name: u ? u.name : uid, count: ws.length, mech: top ? top[0] : '' };
+  }).sort((a, b) => b.count - a.count).slice(0, 6);
+  const months = [];
+  for (let i = 5; i >= 0; i--) { const d = new Date(TODAY.getFullYear(), TODAY.getMonth() - i, 1); months.push({ key: d.toISOString().slice(0, 7), label: d.toLocaleString('en-US', { month: 'short' }) }); }
+  const fcHist = months.map((m) => ({ label: m.label, value: fcWOs.filter((w) => (w.date || '').slice(0, 7) === m.key).length }));
+  const f = fleetInsp();
+  const readyPie = [{ label: 'Ready', value: f.Ready, color: 'green' }, { label: 'Not Ready', value: f['Not Ready'], color: 'yellow' }, { label: 'Failed', value: f.Failed, color: 'red' }];
+  let need = 0, ordered = 0, none = 0;
+  DATA.workOrders.filter((w) => w.phase !== 'Complete' && !w.cancelled).forEach((w) => {
+    if (/Ordered|Local/.test(w.phase)) ordered++; else if (/No Part Needed/.test(w.phase)) none++; else if (/Needed/.test(w.phase)) need++; else none++;
+  });
+  const partsPie = [{ label: 'Need Parts', value: need, color: 'red' }, { label: 'Parts Ordered', value: ordered, color: 'blue' }, { label: 'Not Needed', value: none, color: 'green' }];
+  return { daysSinceFC, mostFCs, fcHist, readyPie, partsPie };
+}
+function cardGraphBody(card) {
+  if (card !== 'units') return `<div class="gv-soon"><span class="gv-soon-ic">${I.graph}</span><p>Graphs for <b>${esc(GRID_CARD_BY_ID[card]?.title || ENTITY_LABEL[card] || card)}</b> are coming next. The <b>Units</b> graph is live now.</p></div>`;
+  const g = unitGraphData();
+  const unitRows = DATA.units.map((u) => `<tr><td>${esc(u.name)}</td><td>${badge(u.fleetStatus || '—', getStatus('unitFleetStatus', u.fleetStatus).color || 'gray')}</td><td>${statusPill('unitInspectionStatus', u.inspectionStatus)}</td><td>${u.currentHours != null ? num(u.currentHours) : '—'}</td><td>${openWOsForUnit(u.unitId).length || ''}</td></tr>`).join('');
+  return `
+    <div class="gv-grid">
+      <div class="gv-tile gv-num"><div class="gv-num-v">${g.daysSinceFC == null ? '—' : g.daysSinceFC}</div><div class="gv-num-l">Days Since FC</div></div>
+      <div class="gv-tile gv-lead"><div class="gv-tile-h">Most Field Calls</div>${g.mostFCs.length ? g.mostFCs.map((m, i) => `<div class="gv-lead-row"><span class="gv-lead-n">${i + 1}</span><span class="gv-lead-name">${esc(m.name)}</span>${m.mech ? `<span class="gv-lead-mech">${esc(m.mech)}</span>` : ''}<span class="gv-lead-c">${m.count}</span></div>`).join('') : '<div class="muted" style="font-size:12px">No field calls logged.</div>'}</div>
+      <div class="gv-tile gv-pie"><div class="gv-tile-h">Inspection</div>${pieSVG(g.readyPie)}${gvLegend(g.readyPie)}</div>
+      <div class="gv-tile gv-pie"><div class="gv-tile-h">Parts · open WOs</div>${pieSVG(g.partsPie)}${gvLegend(g.partsPie)}</div>
+      <div class="gv-tile gv-wide"><div class="gv-tile-h">Field Call History</div>${gvBars(g.fcHist, 'red')}</div>
+    </div>
+    <div class="gv-tile gv-units"><div class="gv-tile-h">Units <span class="gv-count">${DATA.units.length}</span></div><div class="gv-units-scroll"><table class="board-table"><thead><tr><th>Unit</th><th>Fleet</th><th>Inspection</th><th>Hours</th><th>Open WOs</th></tr></thead><tbody>${unitRows}</tbody></table></div></div>`;
 }
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -4345,16 +4492,44 @@ function renderOverlay() {
     const rec = (o.card && o.recId != null) ? recOf(entityCardOf(o.card, o.recType), o.recId) : null;
     const chip = rec ? `<span class="wr-chip">${CARD_ICON[entityCardOf(o.card, o.recType)] || ''}${esc(detailTitle(entityCardOf(o.card, o.recType), rec))}</span>` : '<span class="wr-chip muted">Whole yard</span>';
     const turns = o.messages.length
-      ? o.messages.map((m) => `<div class="wr-msg ${m.role}">${m.role === 'assistant' ? '<span class="wr-av">🤠</span>' : ''}<div class="wr-bub">${esc(m.content).replace(/\n/g, '<br>')}</div></div>`).join('')
-      : '<div class="wr-empty">Ask about this record or the whole yard — service due, balances, what needs attention…</div>';
+      ? o.messages.map((m, i) => {
+          let act = '';
+          if (m.action) act = m.filed
+            ? `<span class="wr-actdone">✓ ${m.action.action === 'request' ? 'Filed for Jac’s OK' : 'Sent to the fixer'}${m.issue ? ` · #${m.issue}` : ''}</span>`
+            : m.filing
+              ? `<span class="wr-actdone" style="color:var(--txt-3)">…filing</span>`
+              : `<button class="wr-actbtn js-wr-act" data-mi="${i}">${m.action.action === 'request' ? '💡 File this for Jac’s OK' : '🔧 Send this to get fixed'}</button>`;
+          const imgs = (m.images && m.images.length) ? `<div class="wr-bub-imgs">${m.images.map((s) => `<img src="${esc(s)}" alt="attached image">`).join('')}</div>` : '';
+          const txt = m.content ? `${esc(m.content).replace(/\n/g, '<br>')}` : '';
+          return `<div class="wr-msg ${m.role}">${m.role === 'assistant' ? '<span class="wr-av">🤠</span>' : ''}<div class="wr-bub">${imgs}${txt}${act}</div></div>`;
+        }).join('')
+      : '<div class="wr-empty">Ask about this record or the whole yard — service due, balances, what needs attention… or just tell me what’s broken (paste or attach a screenshot) and I’ll get it fixed.</div>';
+    const attachRow = (o.attach && o.attach.length)
+      ? `<div class="wr-attach-row">${o.attach.map((s, i) => `<div class="wr-thumb"><img src="${esc(s)}" alt="attachment"><button class="wr-thumb-x js-wr-unattach" data-i="${i}" aria-label="Remove">×</button></div>`).join('')}</div>`
+      : '';
     const pop = el('div', 'popup wr-pop'); pop.style.width = '440px';
     pop.innerHTML = `
       <div class="popup-head"><span class="mark" style="font-size:18px">🤠</span><h3>Mr. Wrangler</h3>${chip}<span class="spacer"></span><button class="x js-close" aria-label="Close">${I.x}</button></div>
       <div class="wr-feed">${turns}${o.busy ? '<div class="wr-msg assistant"><span class="wr-av">🤠</span><div class="wr-bub wr-think">…wrangling an answer</div></div>' : ''}</div>
       ${o.error ? `<div class="wr-err">${esc(o.error)}</div>` : ''}
-      <div class="wr-compose"><input class="wr-in js-wr-in" placeholder="Ask Mr. Wrangler…" value="${esc(o.draft || '')}" ${o.busy ? 'disabled' : ''} /><button class="wr-send js-wr-send" ${o.busy ? 'disabled' : ''} aria-label="Ask">${I.chev}</button></div>`;
+      ${attachRow}
+      <div class="wr-compose"><label class="wr-attach js-wr-attach" data-tip="Attach or paste an image"><input type="file" accept="image/*" class="js-wr-file" hidden multiple>${I.paperclip || '📎'}</label><input class="wr-in js-wr-in" placeholder="Ask Mr. Wrangler, or tell him what’s broken…" value="${esc(o.draft || '')}" ${o.busy ? 'disabled' : ''} /><button class="wr-send js-wr-send" ${o.busy ? 'disabled' : ''} aria-label="Ask">${I.chev}</button></div>`;
     overlay.appendChild(pop);
-    setTimeout(() => { const i = pop.querySelector('.js-wr-in'); if (i) i.focus(); const f = pop.querySelector('.wr-feed'); if (f) f.scrollTop = f.scrollHeight; }, 0);
+    setTimeout(() => {
+      const i = pop.querySelector('.js-wr-in'); if (i) i.focus();
+      const f = pop.querySelector('.wr-feed'); if (f) f.scrollTop = f.scrollHeight;
+      // Paste an image straight into the chat (Claude-style). New input each render → no dup listeners.
+      if (i) i.addEventListener('paste', (ev) => {
+        const items = (ev.clipboardData && ev.clipboardData.items) || [];
+        for (const it of items) { if (it.type && it.type.startsWith('image/')) { const file = it.getAsFile(); if (file) { ev.preventDefault(); wranglerAttachFile(file); } } }
+      });
+      // Drag-drop an image file onto the chat.
+      if (pop) {
+        pop.addEventListener('dragover', (ev) => { if (ev.dataTransfer && [...ev.dataTransfer.types].includes('Files')) { ev.preventDefault(); pop.classList.add('wr-drag'); } });
+        pop.addEventListener('dragleave', (ev) => { if (ev.target === pop) pop.classList.remove('wr-drag'); });
+        pop.addEventListener('drop', (ev) => { const files = ev.dataTransfer && ev.dataTransfer.files; if (files && files.length) { ev.preventDefault(); pop.classList.remove('wr-drag'); [...files].forEach((f) => { if (f.type.startsWith('image/')) wranglerAttachFile(f); }); } });
+      }
+    }, 0);
   } else if (o.kind === 'migrateUnits') {
     // Round up missing units — preview the create/link plan before writing anything.
     const creates = o.plan.filter((p) => p.action === 'create').length;
@@ -4685,6 +4860,13 @@ function renderOverlay() {
         <span class="spacer"></span><button class="x js-close">${I.x}</button></div>
       <div class="popup-body board-body bv-body">${o.customize ? bvCustomizePanel(o.card) : ''}${boardViewTable(o, session)}</div>`;
     overlay.appendChild(pop);
+  } else if (o.kind === 'cardgraph') {
+    const title = GRID_CARD_BY_ID[o.card]?.title || ENTITY_LABEL[o.card] || o.card;
+    const pop = el('div', 'popup board-popup gv-popup');
+    pop.innerHTML = `
+      <div class="popup-head"><span class="c-icon" style="color:var(--accent);display:inline-flex">${I.graph}</span><h3>${esc(title)} — Graph</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
+      <div class="popup-body board-body gv-body">${cardGraphBody(o.card)}</div>`;
+    overlay.appendChild(pop);
   } else if (o.kind === 'settings') {
     const cfg = o.config || { roles: {}, admin: '' };
     const roleRows = Object.keys(cfg.roles).map((role) => `<label class="set-row"><span class="set-role">${esc(role)}</span><input class="set-input" data-role="${esc(role)}" value="${esc(cfg.roles[role])}" autocomplete="off" /></label>`).join('');
@@ -4813,7 +4995,10 @@ function renderOverlay() {
         <div class="pillrow" style="margin-bottom:12px">${unit ? unitPill(unit.unitId) : ''}<span class="pill c-${ir.color}">${esc(ir.label)}</span>${n.woId ? refPill('workOrders', n.woId, 'Work Order') : ''}<span class="muted" style="font-size:12px;margin-left:auto">${esc(fmtShortDate(n.date))}</span></div>
         ${media}
         <textarea class="insp-desc js-insp-desc" data-rec="${n.inspectionId}" placeholder="Describe the failure (what's wrong, parts needed)…">${esc(n.description || '')}</textarea>
-        <div class="insp-gate" style="margin-top:12px"><span class="insp-gate-lbl">Charge the customer?</span><button class="pill ${n.billCustomer === 'Yes' ? 'c-green' : 'ref'} js-insp-bill" data-rec="${n.inspectionId}" data-val="Yes">Bill</button><button class="pill ${n.billCustomer === 'No' ? 'c-gray' : 'ref'} js-insp-bill" data-rec="${n.inspectionId}" data-val="No">Don't bill</button></div>
+        <div class="insp-gate" style="margin-top:12px"><span class="insp-gate-lbl">Charge the customer?</span>${segCtl([
+          { label: 'Bill', js: 'js-insp-bill', data: { rec: n.inspectionId, val: 'Yes' }, on: n.billCustomer === 'Yes' ? 'green' : null },
+          { label: 'Don’t bill', js: 'js-insp-bill', data: { rec: n.inspectionId, val: 'No' }, on: n.billCustomer === 'No' ? 'gray' : null },
+        ], 'seg-bill')}</div>
         <div class="pillrow" style="justify-content:flex-end;margin-top:14px"><button class="pill c-commit js-close">Done</button></div>
       </div>`;
     overlay.appendChild(pop);
@@ -4912,6 +5097,7 @@ function renderOverlay() {
   }
   root.appendChild(overlay);
   if (o.kind === 'quickCust') document.querySelector('.overlay .js-qc-first')?.focus();
+  if (o.kind === 'partform') document.querySelector('.overlay .js-pf2-desc')?.focus();   // Jac: Part/Task field focused by default
   if (o.kind === 'newCustomer') setupSignaturePad();
   if (o.kind === 'payment') setupPayAlloc();   // live counter for the §19 allocation rows
   if (o.kind === 'addCard') { const cc = IDX.customer.get(o.customerId); if (cc && cc.signature && cc.selfie) mountCardElement(); }   // only mount with consent (nothing to orphan otherwise)
@@ -4947,21 +5133,51 @@ async function sendFeedback() {
    (action 'wrangler'); Code.gs calls api.anthropic.com with the key from a Script
    Property. Carries a compact data digest + (when opened from a record) its detail.
    ════════════════════════════════════════════════════════════════════════ */
-const WRANGLER_SYSTEM = "You are Mr. Wrangler, the in-app AI for JacRentals — a heavy-equipment rental yard in Sulphur, Louisiana. You help the team make sense of their units, rentals, customers, invoices, work orders, and service. Speak plainly and helpfully with a light wrangler/ranch flavor — never campy. Answer directly and concisely using ONLY the data provided below; if it isn't there, say so plainly. Never invent records, names, or numbers.";
+const WRANGLER_SYSTEM = "You are Mr. Wrangler, the in-app AI for JacRentals — a heavy-equipment rental yard in Sulphur, Louisiana. You help the team make sense of their units, rentals, customers, invoices, work orders, and service, and you help triage bugs they report.\n\nSTYLE — keep it tight: answer in 1–3 sentences by default. Lead with the direct answer first; add at most one short supporting clause. Use a bullet list ONLY when enumerating multiple records, one line each. Don't restate the question, don't pad, and don't over-explain what you can't do — just answer.\n\nDATA — the snapshot below holds the LIVE records: every category with its rates, every fleet unit with its type and status, every rental with its date window and customer, customers with balances owed, and the open invoices and work orders. Reason over it directly. Only say a fact is missing if it truly isn't in the snapshot. Never invent records, names, or numbers.\n\nHELPING & FIXING — you're the assistant living inside the app (think Claude, but for this yard). The user might ask a question, describe a problem, or paste something — work out what they need and help. If they describe a BUG or glitch in the app itself (something not working, a dead control, a wrong layout or behavior), reproduce it in your head; if you're missing a detail, ask ONE quick follow-up (what they tapped + what they expected). Once you can state a clear repro, FILE A FIX by ending your reply with this exact fenced block:\n```wrangler-action\n{\"action\":\"fix\",\"title\":\"<short title>\",\"report\":\"<clear repro: steps, expected vs actual, any element involved>\"}\n```\nIf it's an IMPROVEMENT or change request rather than a bug, use \"action\":\"request\" (that routes to Jac for his OK instead of auto-shipping). Emit the block ONLY when you're actually ready to file — never while still gathering detail — and keep your visible words short and natural; never mention JSON, blocks, labels, or buttons.\n\nA light wrangler/ranch flavor in voice is welcome — never campy.";
+// The digest is Mr. Wrangler's whole window into the yard, so it carries the ACTUAL
+// records (not just counts): category rates, each unit's type/status, each rental's
+// date window + customer, customer balances, and open invoices/WOs. Sections cap at
+// 200 rows so a huge yard can't blow the context; the cap note tells him there's more.
 function wranglerDigest() {
-  const u = DATA.units || [], r = DATA.rentals || [], c = DATA.customers || [], inv = DATA.invoices || [], wo = DATA.workOrders || [];
-  let owed = 0, overdue = [];
-  inv.forEach((i) => { try { const t = invoiceTotals(i); owed += t.balance || 0; if ((t.balance || 0) > 0 && i.dueDate && i.dueDate < TODAY_ISO) overdue.push(`${i.invoiceId} (${money(t.balance)})`); } catch (e) {} });
-  const notActive = u.filter((x) => x.fleetStatus && x.fleetStatus !== 'Active').map((x) => `${x.name} [${x.fleetStatus}]`);
-  const needSvc = u.filter((x) => { try { const s = topServiceForUnit(x); return s && s.remaining != null && s.remaining <= 0; } catch (e) { return false; } }).map((x) => x.name);
+  const cats = DATA.categories || [], u = DATA.units || [], r = DATA.rentals || [], c = DATA.customers || [], inv = DATA.invoices || [], wo = DATA.workOrders || [];
+  const CAP = 200;
+  const more = (arr, label) => arr.length > CAP ? `\n  …(+${arr.length - CAP} more ${label} not shown — ask to narrow)` : '';
   const lines = [
     `JacRentals yard snapshot — ${TODAY_ISO}.`,
-    `Units: ${u.length}. Rentals: ${r.length}. Customers: ${c.length}. Invoices: ${inv.length}. Work orders: ${wo.length}.`,
-    `Outstanding balance across invoices: ${money(owed)}.`,
+    `Totals — Units ${u.length} · Rentals ${r.length} · Customers ${c.length} · Invoices ${inv.length} · Work orders ${wo.length} · Categories ${cats.length}.`,
   ];
-  if (needSvc.length) lines.push(`Units at/over service: ${needSvc.slice(0, 12).join(', ')}${needSvc.length > 12 ? '…' : ''}.`);
-  if (notActive.length) lines.push(`Units not active: ${notActive.slice(0, 12).join(', ')}${notActive.length > 12 ? '…' : ''}.`);
-  if (overdue.length) lines.push(`Overdue invoices: ${overdue.slice(0, 12).join(', ')}${overdue.length > 12 ? '…' : ''}.`);
+
+  if (cats.length) lines.push('\nCATEGORIES & RATES:\n' + cats.map((x) =>
+    `  ${x.name}: 1-day ${money(x.rate1Day)} · 7-day ${money(x.rate7Day)} · 4-wk ${money(x.rate4Wk)} · weekend ${money(x.weekend)} · member/day ${money(x.memberDaily)}${x.fuelType ? ' · ' + x.fuelType : ''}`).join('\n'));
+
+  if (u.length) lines.push('\nFLEET UNITS (name [type] · fleet status · inspection · hours):\n' + u.slice(0, CAP).map((x) => {
+    const cat = IDX.category.get(x.categoryId); let svc = '';
+    try { const s = topServiceForUnit(x); if (s && s.remaining != null && s.remaining <= 0) svc = ' · SERVICE DUE'; } catch (e) {}
+    return `  ${x.name} [${cat ? cat.name : (x.categoryId || '—')}] · ${x.fleetStatus || '—'} · ${x.inspectionStatus || '—'} · ${x.currentHours != null ? x.currentHours + 'h' : '—'}${svc}`;
+  }).join('\n') + more(u, 'units'));
+
+  if (r.length) lines.push('\nRENTALS (id · customer · units · window · status):\n' + r.slice(0, CAP).map((x) => {
+    const cust = IDX.customer.get(x.customerId); const win = (x.startDate || '') + (x.endDate ? '→' + x.endDate : '');
+    return `  ${x.rentalId} · ${cust ? cust.name : (x.customerId || '—')} · ${rentalUnitsLabel(x) || '—'} · ${win || '—'} · ${x.status || '—'}`;
+  }).join('\n') + more(r, 'rentals'));
+
+  if (c.length) {
+    const balBy = {}; inv.forEach((i) => { try { const t = invoiceTotals(i); if (i.customerId) balBy[i.customerId] = (balBy[i.customerId] || 0) + (t.balance || 0); } catch (e) {} });
+    lines.push('\nCUSTOMERS (name · type · balance owed · phone):\n' + c.slice(0, CAP).map((x) =>
+      `  ${x.name} · ${x.accountType || '—'} · owes ${money(balBy[x.customerId] || 0)} · ${x.phone || '—'}`).join('\n') + more(c, 'customers'));
+  }
+
+  const open = inv.map((i) => { try { return { i, t: invoiceTotals(i) }; } catch (e) { return null; } }).filter((o) => o && (o.t.balance || 0) > 0);
+  if (open.length) lines.push('\nOPEN INVOICES (id · customer · balance · due):\n' + open.slice(0, CAP).map(({ i, t }) => {
+    const cust = IDX.customer.get(i.customerId); const od = i.dueDate && i.dueDate < TODAY_ISO ? ' · OVERDUE' : '';
+    return `  ${i.invoiceId} · ${cust ? cust.name : (i.customerId || '—')} · ${money(t.balance)} · due ${i.dueDate || '—'}${od}`;
+  }).join('\n') + more(open, 'open invoices'));
+
+  const owos = wo.filter((x) => x.phase !== 'Complete' && !x.cancelled);
+  if (owos.length) lines.push('\nOPEN WORK ORDERS (id · unit · phase · report):\n' + owos.slice(0, CAP).map((x) => {
+    const un = IDX.unit.get(x.unitId); return `  ${x.woId} · ${un ? un.name : (x.unitId || '—')} · ${x.phase || '—'} · ${x.woReport || x.description || '—'}`;
+  }).join('\n') + more(owos, 'work orders'));
+
   return lines.join('\n');
 }
 function wranglerContext(o) {
@@ -4972,24 +5188,135 @@ function wranglerContext(o) {
   }
   return ctx;
 }
+// Attach an image to the next Wrangler message (file picker, paste, or drop). The
+// backend wranglerReply_ accepts image content blocks; we downscale first to keep
+// the payload light. "Add files" = images for now (what a glitch report needs).
+function wranglerAttachFile(file) {
+  const o = state.overlay; if (!o || o.kind !== 'wrangler' || !file || !file.type.startsWith('image/')) return;
+  const reader = new FileReader();
+  reader.onload = () => downscaleImage(reader.result, 1200, 0.7, (out) => {
+    if (!out) { toast('Could not read that image.'); return; }
+    o.attach = o.attach || []; if (o.attach.length >= 4) { toast('Up to 4 images per message.'); return; }
+    o.attach.push(out); renderOverlay();
+  });
+  reader.readAsDataURL(file);
+}
+// data URL → an Anthropic image content block.
+function wranglerImageBlock(dataUrl) {
+  const m = /^data:(image\/[a-z.+-]+);base64,(.*)$/i.exec(dataUrl || '');
+  return m ? { type: 'image', source: { type: 'base64', media_type: m[1], data: m[2] } } : null;
+}
 async function wranglerSend() {
   const o = state.overlay; if (!o || o.kind !== 'wrangler') return;
   const inp = document.querySelector('.overlay .js-wr-in');
   const text = ((inp ? inp.value : o.draft) || '').trim();
-  if (!text || o.busy) { if (inp) inp.focus(); return; }
-  o.messages.push({ role: 'user', content: text });
-  o.draft = ''; o.busy = true; o.error = ''; renderOverlay();
+  const imgs = (o.attach && o.attach.length) ? o.attach.slice() : null;
+  if ((!text && !imgs) || o.busy) { if (inp) inp.focus(); return; }
+  o.messages.push({ role: 'user', content: text, images: imgs });
+  o.draft = ''; o.attach = []; o.busy = true; o.error = ''; renderOverlay();
   const system = WRANGLER_SYSTEM + '\n\n' + wranglerContext(o);
+  // Build the payload: a message with images becomes a content-block array.
+  const payloadMsgs = o.messages.map((m) => {
+    if (m.images && m.images.length) {
+      const blocks = [];
+      if (m.content) blocks.push({ type: 'text', text: m.content });
+      m.images.forEach((s) => { const b = wranglerImageBlock(s); if (b) blocks.push(b); });
+      return { role: m.role, content: blocks };
+    }
+    return { role: m.role, content: m.content };
+  });
   try {
     if (typeof backendPassword !== 'undefined' && backendPassword) {
-      const r = await backendCall('wrangler', { system, messages: o.messages.map((m) => ({ role: m.role, content: m.content })) });
+      const r = await backendCall('wrangler', { system, messages: payloadMsgs });
       if (!r || r.error) throw new Error((r && r.error) || 'no response');
-      o.messages.push({ role: 'assistant', content: (r.text || '').trim() || '(no answer)' });
+      const raw = (r.text || '').trim();
+      const act = parseWranglerAction(raw);
+      let shown = stripWranglerAction(raw);
+      if (!shown) shown = act ? (act.action === 'request' ? 'Got it — I’ll file this as a request for Jac to OK.' : 'On it — I’ll send this to get fixed.') : '(no answer)';
+      o.messages.push({ role: 'assistant', content: shown, action: act || null, filed: false });
     } else {
       o.messages.push({ role: 'assistant', content: "🤠 Demo mode — sign in to ask the real Mr. Wrangler (the live AI runs through the backend). Here's the snapshot I'd reason over:\n\n" + wranglerDigest() });
     }
     o.busy = false; renderOverlay();
   } catch (e) { o.busy = false; o.error = 'Mr. Wrangler couldn’t answer — check the connection / backend.'; renderOverlay(); }
+}
+// §18d "Send to the fixer" — turn the current Wrangler chat into a `wrangler-fix`
+// GitHub issue (the Track B repro packet). Carries the transcript, the view/role/
+// record context, and the recent console errors so the auto-fix Action has a real
+// repro. Opens a pre-filled issue → one Submit tap → the engine takes it from there.
+// Mr. Wrangler decides when something is fixable and emits a hidden action block;
+// we parse it out of his reply (and strip it from what the user sees).
+function parseWranglerAction(text) {
+  const m = String(text || '').match(/```wrangler-action\s*([\s\S]*?)```/);
+  if (!m) return null;
+  try { const j = JSON.parse(m[1].trim()); if (j && (j.action === 'fix' || j.action === 'request') && j.title) return j; } catch (e) {}
+  return null;
+}
+const stripWranglerAction = (text) => String(text || '').replace(/```wrangler-action\s*[\s\S]*?```/g, '').trim();
+
+// Build the GitHub repro packet from Mr. Wrangler's structured report + the live
+// context + the captured console errors. The chat conversation rides along too.
+function wranglerActionPacket(o, act) {
+  const ctx = feedbackContext();
+  const isReq = act.action === 'request';
+  const transcript = (o.messages || [])
+    .filter((m) => m.content)
+    .map((m) => `${m.role === 'user' ? '**Reporter**' : '**Mr. Wrangler**'}: ${m.content}`)
+    .join('\n\n') || '(no message)';
+  const focus = (o.card && o.recId != null) ? `${entityCardOf(o.card, o.recType)}:${o.recId}` : '—';
+  const errs = ERR_LOG.length ? ERR_LOG.slice(-12).join('\n') : '(none captured this session)';
+  const footer = isReq
+    ? '_A request for Jac\'s OK — NOT auto-implemented. Jac can add the `wrangler-fix` label to greenlight it._'
+    : '_A Claude agent will reproduce + patch this; the CI gates guard it before it ships to live._';
+  const body = [
+    `_Filed by Mr. Wrangler from in-app chat._`,
+    '',
+    `### ${isReq ? 'Requested change' : 'The glitch'} (Mr. Wrangler's write-up)`,
+    act.report || '(see conversation below)',
+    '',
+    '> 📎 You can paste or drag a screenshot right here before submitting.',
+    '',
+    '### Conversation',
+    transcript,
+    '',
+    '### Repro context',
+    `- **View:** ${ctx.view}`,
+    `- **Focused record:** ${focus}`,
+    `- **Role:** ${ctx.role || '—'}`,
+    `- **Viewport:** ${ctx.viewport}`,
+    `- **URL:** ${ctx.url}`,
+    `- **Browser:** ${ctx.ua}`,
+    '',
+    '### Recent console errors',
+    '```',
+    errs,
+    '```',
+    '',
+    footer,
+  ].join('\n');
+  return { title: String(act.title).replace(/\s+/g, ' ').slice(0, 80), body, label: isReq ? 'wrangler-request' : 'wrangler-fix' };
+}
+// Send the fix/request Mr. Wrangler proposed on message #mi. Preferred path: the
+// backend files the GitHub issue itself (GITHUB_TOKEN in Script Properties) — no tab,
+// no token in the browser. Falls back to a pre-filled issue (one Submit tap) if the
+// backend can't file (no token / offline / demo).
+async function wranglerFileAction(mi) {
+  const o = state.overlay; if (!o || o.kind !== 'wrangler') return;
+  const m = o.messages[mi]; if (!m || !m.action || m.filed) return;
+  const { title, body, label } = wranglerActionPacket(o, m.action);
+  if (typeof backendPassword !== 'undefined' && backendPassword) {
+    m.filing = true; renderOverlay();
+    try {
+      const r = await backendCall('wranglerFile', { title, body, label });
+      if (r && r.ok && r.number) { m.filed = true; m.filing = false; m.issue = r.number; renderOverlay(); toast(label === 'wrangler-request' ? `Filed #${r.number} — in Jac’s queue for the OK. 🤠` : `Filed #${r.number} — Mr. Wrangler’s on it. 🤠`); return; }
+    } catch (e) {}
+    m.filing = false;   // backend couldn't file (no GITHUB_TOKEN / offline) → pre-filled fallback
+  }
+  window.open(wranglerIssueUrl(title, body, label), '_blank', 'noopener');
+  m.filed = true; renderOverlay();
+  toast(label === 'wrangler-request'
+    ? 'Opening a request — tap “Submit new issue” and it lands in Jac’s queue. 🤠'
+    : 'Opening a fix ticket — tap “Submit new issue” and Mr. Wrangler wrangles the rest. 🤠');
 }
 // Read the customer-form inputs back into the draft (call before any re-render so
 // typed values survive a selfie/signature/pill change).
@@ -5235,6 +5562,7 @@ function bvCustomizePanel(card) {
 /** Shared floating dropdown (matches board chrome) — used by the status pill
  *  dropdown and the in-card Sort menu. */
 function openDropdown(anchorEl, html, { align = 'left' } = {}) {
+  hideHoverPreview();   // a floated preview (z-9000) buried the menu — clear it on open (Jac: fleet-status box hidden behind hover)
   // re-clicking the SAME trigger toggles the menu shut (the anchor is excluded from the
   // outside-close handler below, so its mousedown doesn't pre-close before this runs).
   const existing = document.querySelector('.dropdown-menu');
@@ -6037,7 +6365,7 @@ function onClick(e) {
   }
   if (closest('.js-rbtab')) { e.stopPropagation(); if (state.overlay) state.overlay.rbTab = closest('.js-rbtab').dataset.tab; return renderOverlay(); }
   if (closest('.js-rulebook')) return openOverlay({ kind: 'rulebook' });
-  if (closest('.js-feedback')) { e.stopPropagation(); return openOverlay({ kind: 'feedback', fbType: 'Bug', text: '', shot: '', error: '', busy: false }); }
+  if (closest('.js-feedback')) { e.stopPropagation(); return openOverlay({ kind: 'wrangler', card: null, recId: null, recType: null, messages: [], busy: false, error: '', draft: '' }); }   // §18d folded: the old bug/request form is now the one Mr. Wrangler chat
   // §17 internal team dock
   if (closest('[data-mcol]')) { e.stopPropagation(); state.mobileCol = +closest('[data-mcol]').dataset.mcol; return render(); }   // §M1 dot nav
   if (closest('.js-ext-chat')) { e.stopPropagation(); return toast('External customer & vendor chats arrive with the messaging backend.'); }
@@ -6045,7 +6373,7 @@ function onClick(e) {
   if (closest('.js-chat-close')) { e.stopPropagation(); state.chat.open = false; return render(); }
   if (closest('.js-chat-back')) { e.stopPropagation(); state.chat.activeId = null; return render(); }   // back to the all-flags overview (chat persists)
   if (closest('.js-chat-send')) { e.stopPropagation(); return chatSend(); }
-  if (closest('[data-chat-untag]')) { e.stopPropagation(); const id = closest('[data-chat-untag]').dataset.chatUntag; const c = activeChat(); if (c) c.tags = c.tags.filter((t) => t.id !== id); return render(); }
+  if (closest('[data-chat-untag]')) { e.stopPropagation(); const id = closest('[data-chat-untag]').dataset.chatUntag; const c = activeChat(); if (c) c.tags = c.tags.filter((t) => t.id !== id); pushChatsSoon(); return render(); }
   if (closest('[data-chat-role]')) { e.stopPropagation(); return chatToggleRole(closest('[data-chat-role]').dataset.chatRole); }
   if (closest('[data-chat-open]')) { e.stopPropagation(); const [card, recId] = closest('[data-chat-open]').dataset.chatOpen.split('|'); return anchorRecord(SHOP_TYPES.includes(card) ? 'shop' : card, recId, SHOP_TYPES.includes(card) ? card : null); }
   if (closest('.js-fb-type')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'feedback') { const ta = document.querySelector('.overlay .js-fb-text'); if (ta) o.text = ta.value; o.fbType = closest('.js-fb-type').dataset.val; renderOverlay(); } return; }
@@ -6054,6 +6382,8 @@ function onClick(e) {
   if (closest('.js-cmt-save')) { e.stopPropagation(); return saveCommentOverlay(); }
   if (closest('.js-fb-send')) { e.stopPropagation(); return sendFeedback(); }
   if (closest('.js-wr-send')) { e.stopPropagation(); return wranglerSend(); }   // §18 Mr. Wrangler
+  if (closest('.js-wr-act')) { e.stopPropagation(); return wranglerFileAction(Number(closest('.js-wr-act').dataset.mi)); }   // §18d file the fix/request Mr. Wrangler proposed inline
+  if (closest('.js-wr-unattach')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'wrangler' && o.attach) { o.attach.splice(Number(closest('.js-wr-unattach').dataset.i), 1); renderOverlay(); } return; }   // §18d drop a pending image attachment
   if (closest('.js-wrangler')) { e.stopPropagation(); return openOverlay({ kind: 'wrangler', card: null, recId: null, recType: null, messages: [], busy: false, error: '', draft: '' }); }
   if (closest('.js-open-link')) { e.stopPropagation(); const url = closest('.js-open-link').dataset.url || ''; if (/^(https?:\/\/|mailto:)/i.test(url)) window.open(url, '_blank', 'noopener'); return; }
   if (closest('.js-board')) { const b = closest('.js-board'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return openOverlay({ kind: 'board', board: b.dataset.board }); }
@@ -6066,6 +6396,7 @@ function onClick(e) {
   if (closest('.js-ff-save')) { e.stopPropagation(); return saveFileForm(); }
   if (closest('.js-vendor-tax')) { e.stopPropagation(); const b = closest('.js-vendor-tax'); const v = recOf('vendors', b.dataset.rec); if (v) { const ex = b.dataset.val === '1'; if (!!v.salesTaxExempt !== ex) { v.salesTaxExempt = ex; reindex('vendors', v); logAction(v, `Sales tax → ${ex ? 'Exempt' : 'Taxed'}`); } if (state.overlay?.kind === 'board') renderOverlay(); render(); } return; }
   if (closest('.js-boardview')) { e.stopPropagation(); return openBoardView(closest('.js-boardview').dataset.card); }
+  if (closest('.js-cardgraph')) { e.stopPropagation(); return openOverlay({ kind: 'cardgraph', card: closest('.js-cardgraph').dataset.card }); }   // Phase 4 per-card Graph view
   if (closest('.js-bv-sort') && !closest('.js-bv-inscol')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview') { const key = closest('.js-bv-sort').dataset.col; if (o.sort?.key === key) o.sort.dir = o.sort.dir === 'asc' ? 'desc' : 'asc'; else o.sort = { key, dir: 'asc' }; renderOverlay(); } return; }
   if (closest('.js-bv-addcol')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview') { o.colOrder = o.colOrder || []; o.colOrder.push({ kind: 'extra', id: 'xc' + (++o.seq), label: '' }); renderOverlay(); } return; }
   if (closest('.js-bv-inscol')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview' && o.colOrder) { const after = Number(closest('.js-bv-inscol').dataset.after); o.colOrder.splice(after + 1, 0, { kind: 'extra', id: 'xc' + (++o.seq), label: '' }); renderOverlay(); } return; }
@@ -6077,8 +6408,10 @@ function onClick(e) {
   if (closest('.js-bv-resetlayout')) { e.stopPropagation(); const card = closest('.js-bv-resetlayout').dataset.card; saveListLayout(card, null); saveListTotals(card, null); render(); renderOverlay(); return; }
   if (closest('.js-new-cust-search')) { e.stopPropagation(); const cs = activeSession().cards.customers; return startNewCustomer(parseCustomerSearch(cs.search)); }
   if (closest('.js-coltab')) { const ct = closest('.js-coltab'); e.stopPropagation(); state.fleetFilter = null; const cs = activeSession(); if (cs.cols) cs.cols[ct.dataset.col] = ct.dataset.member; return render(); }
-  if (closest('.js-dashboard')) { e.stopPropagation(); toast('Dashboard graphs are coming soon.'); return; }   // Phase-2 per-role KPI graphs (G1/G2)
-  if (closest('.js-dash-ev')) { e.stopPropagation(); return anchorRecord('rentals', closest('.js-dash-ev').dataset.rec); }
+  // §2.3 dispatch timeline — day nav + open a stop's rental (Phase 6)
+  if (closest('.js-disp-day')) { e.stopPropagation(); state.dispatchDay = addDaysISO(state.dispatchDay || TODAY_ISO, Number(closest('.js-disp-day').dataset.dir)); return render(); }
+  if (closest('.js-disp-today')) { e.stopPropagation(); state.dispatchDay = TODAY_ISO; return render(); }
+  if (closest('.js-disp-stop') && !closest('.js-disp-time') && !closest('.disp-grip') && !closest('.js-site-go')) { e.stopPropagation(); return anchorRecord('rentals', closest('.js-disp-stop').dataset.rec); }
   if (closest('.js-new-wo-unit')) { e.stopPropagation(); return startNewWorkOrder(closest('.js-new-wo-unit').dataset.rec); }
   if (closest('.js-newitem')) {
     const kind = closest('.js-newitem').dataset.new;
@@ -6198,13 +6531,17 @@ function onClick(e) {
     return;
   }
   if (closest('.js-wo-complete')) { const b = closest('.js-wo-complete'); return completeWOAttempt(b.dataset.rec); }
+  if (closest('.js-wo-cancel')) { const b = closest('.js-wo-cancel'); const w = IDX.wo.get(b.dataset.rec); if (w) { w.cancelled = true; reindex('workOrders', w); logAction(w, 'Work order cancelled'); toast('Work order cancelled — find it in the done list to reopen.'); reanchorRender(); } return; }   // Jac: can't cancel WOs (reversible flag, terminal like Complete)
+  if (closest('.js-wo-reopen')) { const b = closest('.js-wo-reopen'); const w = IDX.wo.get(b.dataset.rec); if (w) { w.cancelled = false; reindex('workOrders', w); logAction(w, 'Work order reopened'); toast('Work order reopened.'); reanchorRender(); } return; }
   if (closest('.js-wodone-confirm')) { const b = closest('.js-wodone-confirm'); state.overlay = null; setWoPhase(b.dataset.rec, 'Complete'); renderOverlay(); return; }
   if (closest('.js-migrate-go')) { const o = state.overlay; if (!o || o.kind !== 'migrateUnits') return; const res = applyUnitMigration(o.plan); state.overlay = null; renderOverlay(); render(); toast(`Rounded up ${res.created} unit${res.created === 1 ? '' : 's'} and linked ${res.linked} rental${res.linked === 1 ? '' : 's'}.`); return; }
   if (closest('.js-hchip')) { const b = closest('.js-hchip'); const o = state.overlay; if (o?.kind === 'board') { o.histKind = o.histKind === b.dataset.kind ? null : b.dataset.kind; return renderOverlay(); } const session = activeSession(); const cs = session.cards[b.dataset.card] || session.cards.shop; cs.histKind = cs.histKind === b.dataset.kind ? null : b.dataset.kind; return render(); }
   if (closest('.js-complete-rental')) {
     const b = closest('.js-complete-rental'); const r = IDX.rental.get(b.dataset.rec); if (!r) return;
-    if (!rentalUnits(r).length) return flashOr('[data-slot="unit"], .add-field', '🔒 No units on this rental — drag one on (or cancel the rental).');
-    if (!allUnitsTerminal(r)) return flashOr(`.js-yard[data-cap="end"][data-rec="${r.rentalId}"]`, '🔒 Every unit must be terminal first — return each one (or mark No Show / Cancel).');
+    // Locked gates ALWAYS speak (Jac: "Complete Rental doesn't do anything") — the old
+    // flashOr stayed silent whenever its on-screen target existed, so a locked click read as dead.
+    if (!rentalUnits(r).length) { attnFlash('[data-slot="unit"], .add-field'); return toast('🔒 No units on this rental — drag one on, or cancel the rental.'); }
+    if (!allUnitsTerminal(r)) { attnFlash(`.js-yard[data-cap="end"][data-rec="${r.rentalId}"]`); return toast('🔒 Return every unit first (or mark No Show / Cancel) to complete the rental.'); }
     r.completed = true; reindex('rentals', r); logAction(r, 'Rental completed'); toast('Rental completed ✓'); return reanchorRender();
   }
   if (closest('.js-cancel-rental')) {
@@ -6266,7 +6603,7 @@ function onClick(e) {
     if (cs) {
       const same = cs.totalFilter && cs.totalFilter.col === b.dataset.totCol && String(cs.totalFilter.value) === String(b.dataset.totVal);
       cs.totalFilter = same ? null : { col: b.dataset.totCol, value: b.dataset.totVal };
-      cs.mode = 'list';
+      if (cs.mode === 'standard') cs.mode = 'list';   // Jac: footers shouldn't yank you out of Yard Mode — only leave a record-detail view to show the filtered list
     }
     render(); return;
   }
@@ -6952,6 +7289,14 @@ function onChange(e) {
     reader.readAsDataURL(file);
     return;
   }
+  if (e.target.classList.contains('js-disp-time')) {   // §2.3 dispatch stop time (per-device)
+    const t = dispatchTimesLS(); t[e.target.dataset.id] = e.target.value.trim(); _lsSave('jactec.dispatchTimes', t); return;
+  }
+  if (e.target.classList.contains('js-wr-file')) {   // §18d Mr. Wrangler image attach
+    [...(e.target.files || [])].forEach((f) => wranglerAttachFile(f));
+    e.target.value = '';
+    return;
+  }
   // Board View summary aggregation calc (Sum/Avg/Min/Max/Count) per column.
   if (e.target.classList.contains('bv-calc')) {
     const o = state.overlay; if (o?.kind === 'boardview') { o.calc = o.calc || {}; o.calc[e.target.dataset.col] = e.target.value; renderOverlay(); }
@@ -7612,10 +7957,16 @@ const auditVal = (v) => { const s = String(v ?? '').trim(); return s ? (s.length
 /* §12.6 — WO phase changes (header pill + per-line journey pills) via a woPhase
    dropdown; reaching Complete reverts a Failed unit to Not Ready (§9). */
 function woCompleteCascade(w) {
-  // a completed Failed-inspection OR Field-Call WO re-opens the unit for inspection
+  // a completed Failed-inspection OR Field-Call WO re-opens the unit for inspection —
+  // but ONLY once every blocking failure/field-call WO is done (Jac: a failed unit can't
+  // move to Not Ready until THAT failure's WO is complete; other completed WOs don't count).
   if ((w.woType === 'Failed' || w.woType === 'Field Call') && w.unitId) {
     const u = IDX.unit.get(w.unitId);
-    if (u && u.inspectionStatus === 'Failed') { u.inspectionStatus = 'Not Ready'; reindex('units', u); logAction(u, `Re-inspect needed — repairs complete (${w.woReport})`); return ' — unit → Not Ready (re-inspect)'; }
+    if (u && u.inspectionStatus === 'Failed') {
+      const stillBlocking = openWOsForUnit(u.unitId).some((o) => o.woType === 'Failed' || o.woType === 'Field Call');   // w is already Complete here, so it's excluded
+      if (stillBlocking) return '';
+      u.inspectionStatus = 'Not Ready'; reindex('units', u); logAction(u, `Re-inspect needed — repairs complete (${w.woReport})`); return ' — unit → Not Ready (re-inspect)';
+    }
   }
   return '';
 }
@@ -7637,7 +7988,7 @@ function setWoLinePhase(woId, idx, val) {
   // is done, woBottleneck shows "Ready to complete" and the WO stays open until the
   // button is clicked; no auto-complete, no cascade here.
   const open = w.lineItems.filter((li) => li.phase !== 'Complete');
-  if (w.phase !== 'Complete' && open.length) w.phase = open[open.length - 1].phase;
+  if (w.phase !== 'Complete' && !w.cancelled && open.length) w.phase = open[open.length - 1].phase;
   reindex('workOrders', w);
   logAction(w, `${w.lineItems[idx].part} → ${getStatus('woPhase', val).label}`);
   toast(`Line → ${getStatus('woPhase', val).label}`);
@@ -7900,7 +8251,7 @@ function setInspBill(id, val) {
 function autoWOFromInspection(n) {
   const id = 'WO-INS' + (state.seq++);
   const u = IDX.unit.get(n.unitId);
-  const wo = { woId: id, unitId: n.unitId, customerId: n.billCustomer === 'Yes' ? n.customerId : null, woReport: 'From failed inspection', woType: 'Failed', description: `Auto-created from inspection ${n.inspectionId}.`, phase: 'Part Needed?', billCustomer: n.billCustomer || 'No', date: TODAY_ISO, eta: '', unitHoursAtCreation: u?.currentHours || 0, assignedMechanic: '', laborHours: 0, lineItems: [], mock: true };
+  const wo = { woId: id, unitId: n.unitId, inspectionId: n.inspectionId, customerId: n.billCustomer === 'Yes' ? n.customerId : null, woReport: 'From failed inspection', woType: 'Failed', description: `Auto-created from inspection ${n.inspectionId}.`, phase: 'Part Needed?', billCustomer: n.billCustomer || 'No', date: TODAY_ISO, eta: '', unitHoursAtCreation: u?.currentHours || 0, assignedMechanic: '', laborHours: 0, lineItems: [], mock: true };
   DATA.workOrders.push(wo); IDX.wo.set(id, wo); reindex('workOrders', wo);
   n.woId = id;
   return wo;
@@ -8205,11 +8556,74 @@ async function refreshFromBackend() {
         }                              // else: local has unsaved edits → keep local; it'll push on next save
       });
     });
+    // also pull the shared team-chat threads so messages from other users land live
+    try {
+      const cr = await backendCall('getChats');
+      if (cr && cr.ok && Array.isArray(cr.chats)) {
+        const m = mergeChats(cr.chats);
+        if (m.localAhead) pushChats(); else lastChatsJson = JSON.stringify(state.chat.chats);
+        if (m.changed) applied++;
+      }
+    } catch (e) { /* chat sync is best-effort */ }
     if (applied && !state.overlay && !DRAG.active && !hoverNode) { state.cascade = createCascade(DATA); render(); }
   } catch (e) { /* offline / blip → retry next tick */ }
   finally { refreshing = false; }
 }
 function startRefreshPoll() { clearInterval(refreshTimer); refreshTimer = setInterval(refreshFromBackend, 18000); }
+
+// ── Team-chat sync (Jac 2026-06-15) ────────────────────────────────────────
+// Chat threads were browser-local, so one user's chat never reached another (a
+// comment on a record stayed invisible until the other user reloaded). Mirror them
+// through the backend `_chats` cell: load on login, push (debounced) on every change,
+// and pull in the refresh poll. Threads AND messages UNION by id, so two people
+// posting to the same thread never clobber each other (matches "chats are never lost").
+let chatPushTimer = null, lastChatsJson = null;
+function normalizeChat(c) { return { id: c.id, tags: c.tags || [], participants: c.participants || [], messages: c.messages || [], seen: c.seen || {} }; }
+function mergeChats(remoteChats) {
+  if (!Array.isArray(remoteChats)) return { changed: false, localAhead: false };
+  let changed = false, localAhead = false;
+  const remoteById = new Map(remoteChats.filter((c) => c && c.id).map((c) => [c.id, c]));
+  const localById = new Map(state.chat.chats.map((c) => [c.id, c]));
+  remoteChats.forEach((rc) => {
+    if (!rc || !rc.id) return;
+    const lc = localById.get(rc.id);
+    if (!lc) { state.chat.chats.push(normalizeChat(rc)); changed = true; return; }   // a whole thread from another user
+    const haveMsg = new Set((lc.messages || []).map((m) => m.id));
+    (rc.messages || []).forEach((m) => { if (m && m.id && !haveMsg.has(m.id)) { lc.messages.push(m); changed = true; } });
+    lc.messages.sort((a, b) => (a.at || 0) - (b.at || 0));
+    const haveTag = new Set((lc.tags || []).map((t) => t.id));
+    (rc.tags || []).forEach((t) => { if (t && t.id && !haveTag.has(t.id)) { lc.tags.push(t); changed = true; } });
+    (rc.participants || []).forEach((p) => { if (!lc.participants.includes(p)) { lc.participants.push(p); changed = true; } });
+    Object.keys(rc.seen || {}).forEach((k) => { if ((rc.seen[k] || 0) > (lc.seen[k] || 0)) lc.seen[k] = rc.seen[k]; });   // latest-seen wins (view state)
+  });
+  state.chat.chats.forEach((lc) => {   // does local hold anything the server lacks? → we should push
+    const rc = remoteById.get(lc.id);
+    if (!rc) { localAhead = true; return; }
+    const rMsg = new Set((rc.messages || []).map((m) => m.id));
+    if ((lc.messages || []).some((m) => !rMsg.has(m.id))) localAhead = true;
+    const rTag = new Set((rc.tags || []).map((t) => t.id));
+    if ((lc.tags || []).some((t) => !rTag.has(t.id))) localAhead = true;
+    if ((lc.participants || []).some((p) => !(rc.participants || []).includes(p))) localAhead = true;
+  });
+  return { changed, localAhead };
+}
+async function pushChats() {
+  if (!backendPassword) return;
+  const js = JSON.stringify(state.chat.chats);
+  if (js === lastChatsJson) return;                 // nothing new since the last successful push
+  try { const r = await backendCall('setChats', { chats: state.chat.chats }); if (r && r.ok) lastChatsJson = js; } catch (e) { /* offline → retries on next change/poll */ }
+}
+function pushChatsSoon() { if (booting || !backendPassword) return; clearTimeout(chatPushTimer); chatPushTimer = setTimeout(pushChats, 1200); }
+async function loadChats() {
+  if (!backendPassword) return;
+  try {
+    const r = await backendCall('getChats');
+    if (!r || !r.ok || !Array.isArray(r.chats)) return;
+    const { changed, localAhead } = mergeChats(r.chats);
+    if (localAhead) pushChats(); else lastChatsJson = JSON.stringify(state.chat.chats);   // mark synced (or send local-only threads up)
+    if (changed) render();
+  } catch (e) { /* offline → the refresh poll retries */ }
+}
 function saveSoon() { if (booting || !backendPassword) return; clearTimeout(saveTimer); saveTimer = setTimeout(flushSave, 1200); }
 async function flushSave() {
   if (saving) { savePending = true; return; }
@@ -8255,6 +8669,7 @@ function finishLoad() {
   snapshotSaved();                                              // baseline = what the backend currently holds
   buildIndexes(); state.cascade = createCascade(DATA); booting = false; render();
   loadGlobalViews();                                            // pull the shared, company-wide view set
+  loadChats();                                                  // pull the shared team-chat threads (§ team-chat sync)
   startRefreshPoll();                                           // live multi-user: poll for others' changes (§ refreshFromBackend)
   if (migrationDirty) { migrationDirty = false; saveSoon(); }   // push parsed first/last names up to the Sheet
   // #edit=<id> — desktop→phone handoff opens that customer's account form (§7.1).
@@ -8348,6 +8763,27 @@ function boot() {
     const v = e.target.value.trim();
     actBusy = true; commitAction(e.target.dataset.rec, v, false); actBusy = false;
   });
+  // Jac: pressing Enter in the +Part/Task box confirms "Add line".
+  document.addEventListener('keydown', (e) => {
+    if (state.overlay?.kind !== 'partform') return;
+    if (e.key === 'Enter' && e.target.matches && e.target.matches('.js-pf2-desc, .js-pf2-cost, .js-pf2-hours, .js-pf2-url, .js-pf2-vendor')) { e.preventDefault(); savePartForm(); }
+  });
+  // §2.3 dispatch route reorder — native drag, self-contained (re-render only on drop,
+  // so the grid's custom pointer engine isn't involved). Reorders the day's run.
+  let dispDragId = null;
+  document.addEventListener('dragstart', (e) => { const s = e.target.closest && e.target.closest('.js-disp-stop'); if (s) { dispDragId = s.dataset.id; if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'; s.classList.add('disp-dragging'); } });
+  document.addEventListener('dragover', (e) => { if (dispDragId && e.target.closest && e.target.closest('.js-disp-route')) e.preventDefault(); });
+  document.addEventListener('drop', (e) => {
+    const route = e.target.closest && e.target.closest('.js-disp-route'); if (!dispDragId || !route) return; e.preventDefault();
+    const ids = [...route.querySelectorAll('.js-disp-stop')].map((n) => n.dataset.id);
+    const over = e.target.closest('.js-disp-stop');
+    const from = ids.indexOf(dispDragId); if (from !== -1) ids.splice(from, 1);
+    const to = over && over.dataset.id !== dispDragId ? ids.indexOf(over.dataset.id) : ids.length;
+    ids.splice(to < 0 ? ids.length : to, 0, dispDragId);
+    const ord = dispatchOrderLS(); ord[route.dataset.day] = ids; _lsSave('jactec.dispatchOrder', ord);
+    dispDragId = null; render();
+  });
+  document.addEventListener('dragend', () => { dispDragId = null; document.querySelectorAll('.disp-dragging').forEach((n) => n.classList.remove('disp-dragging')); });
   document.addEventListener('mousemove', onInspectMove);   // Design Inspector hover tag (no-op unless state.inspect)
   // Board View formula cells: reveal the raw "=…" on focus, recompute on blur.
   document.addEventListener('focusin', (e) => {
@@ -8408,10 +8844,16 @@ function boot() {
   // right-click = send the card to its List View; double right-click = drop the anchor.
   document.addEventListener('contextmenu', (e) => {
     if (e.target.closest('input, textarea, .inline-input')) return;            // allow native menu in fields
-    if (!e.target.closest('.card') && !e.target.closest('.overlay .popup')) return;
+    // Right-click WINS over the hover preview (Jac): a floated preview sits under the
+    // cursor and stole the event (it lives on <body>, outside .card), so the menu /
+    // card-to-List never fired. Dismiss it and re-resolve the row beneath the cursor.
+    let target = e.target;
+    if (target.closest('.hover-preview')) { hideHoverPreview(); target = document.elementFromPoint(e.clientX, e.clientY) || target; }
+    if (!target.closest('.card') && !target.closest('.overlay .popup')) return;
     e.preventDefault();
     if (performance.now() - lastTouchCtx < 700) return;                        // §M3 — our touch long-press already opened it; swallow the trailing native event
-    openCtxMenuAt(e.target, e.clientX, e.clientY);                             // §R20 leaf → Wrangler menu; card dead-space → card-to-List (single) / clear-anchor (double)
+    hideHoverPreview();                                                        // clear any preview still mid-fuse so it can't reappear over the menu
+    openCtxMenuAt(target, e.clientX, e.clientY);                               // §R20 leaf → Wrangler menu; card dead-space → card-to-List (single) / clear-anchor (double)
   });
   document.addEventListener('mousemove', (e) => { lastMouse.x = e.clientX; lastMouse.y = e.clientY; });
   // hover preview (#1): float a record's Standard view after a short hover on a row/pill

@@ -110,6 +110,7 @@ const RAW_STATUS = {
     'No Part Needed': { label: 'No Part Needed', color: 'yellow' },
     'Part Needed':    { label: 'Part Needed',    color: 'red'    },
     'Part is Local':  { label: 'Part is Local',  color: 'yellow' },
+    'Part in Stock':  { label: 'Part in Stock',  color: 'green'  },
     'Part Ordered':   { label: 'Part Ordered',   color: 'blue'   },
     'Complete':       { label: 'Complete',       color: 'green'  },
   },
@@ -220,9 +221,9 @@ export function showsTruck(rentalStatus, transportType) {
 /* ── Roles, KPIs & dashboards (SPEC §11) ─────────────────────────────────── */
 export const ROLES = [
   { id: 'mechanic', label: 'Mechanic', color: 'blue',
-    kpis: ['Renting Rate', 'WO Completion Rate', 'Bill Rate'] },
+    kpis: ['Healthy Fleet', 'WO Completion Rate', 'Parts Breakeven'] },
   { id: 'mtech', label: 'M.Tech', color: 'purple',
-    kpis: ['Successful Rentals', 'Ready Rate', 'WO Rate (≤20%)'] },
+    kpis: ['Successful Rentals', 'Ready Rate', 'WO Rate (20% goal)'] },
   { id: 'driver', label: 'Driver', color: 'green',
     kpis: ['On-Time', 'Wash Completion', 'Driving Score'] },
   { id: 'office', label: 'Office', color: 'orange',
