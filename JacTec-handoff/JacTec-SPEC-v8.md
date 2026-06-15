@@ -171,6 +171,49 @@ one repo).
 
 ---
 
+## v8.4 — Built-State Delta (2026-06-15, evening · pinned-backlog cleanup, shipped live via #29)
+
+The four pinned Phase-1/Phase-6 items, each run through the `wrangler-fix` **prove-then-fix**
+protocol (proven against the canon before any code changed).
+
+**§2.3 Dispatch — free-form route arrows (Phase 6 completion).** The Calendar daily-driver
+timeline already had a sequential, drag-orderable run (🏠→stops→🏠). It now also supports
+**arbitrary directional route legs**: click any stop's D/R/🏠 icon to **arm** it, click a second
+icon to **draw** a "from here → there" arrow. Legs are kept **per-day in `localStorage`**
+(`jactec.dispatchArrows` = `{ [day]: [[fromNode, toNode], …] }`; node = a stop id or
+`home:in`/`home:out`) and painted as an **SVG overlay in the route's left rail** (transit-map
+style — never crosses the rows; bows scale with reach so stacked legs stay legible). Re-drawing a
+leg or clicking it **removes** it; the header **"× N arrows"** pill clears the day; **Esc** cancels
+a draw. Keyboard parity (Enter/Space arm/land, Esc cancel), visible focus, reduced-motion honored.
+New functions: `dispatchArrowsLS` / `dispatchArrowClick` / `removeDispatchArrow` (near the other
+`dispatch*` helpers) + `drawDispatchArrows()` (called at the end of `render()`, after the DOM
+lands, since it needs live geometry). State: transient `state.dispArm` (the armed node).
+
+**§10 Availability — For-Sale machines no longer leak into "Category Availability."** `§9` says
+non-Active units aren't rentable, and `isUnitAvailableFor`/`categoryAvailableCount` already drop
+**every** non-Active `fleetStatus`, so the availability *count* excluded a For-Sale machine — but
+`unitsVisible` only hid **Sold/Inactive**, so the unit still **listed** under an availability
+window while the count said it was gone. Fix (in the §13.2 Units list build): while an availability
+window is in scope (`availWin`), the Units list shows **only the Active (rentable) fleet**, matching
+the count. The **all-fleet / sold-inactive sorts still reveal them**, and normal management views
+(no window) are untouched.
+
+**Two scroll bugs — proven already fixed (no change).** "Units list scrolls to a different spot
+on Back" and "Unit opens scrolled all the way down" **could not be reproduced at HEAD** (Playwright
+on the real app: button-Back, right-click-Back, and the back/forward jog all restore the exact
+saved scroll; a fresh open lands at top). The Phase-2a/2b interaction rework (#16/#17) had already
+fixed them; shipping a speculative scroll edit would only risk the working path.
+
+**Legibility.** The dispatch **D/R icon letter** was blue-on-blue (the generic `.c-blue` text
+color out-specified `.disp-ico`) — now explicitly white on the colored disc.
+
+**R-Rulebook:** **unchanged.** The route-arrow icons are bespoke timeline controls, consistent
+with the rest of the unstamped `disp-*` elements (the dispatch grid is not part of the general
+pill/badge/add `data-r` system), so no new rule and `rule-usage.js` is undisturbed
+(`gen-rule-usage.mjs --check` stays green).
+
+---
+
 ## 0 · How to debug with this spec
 
 1. **The flash-lint (R0)** is the alarm. Toggle = the eye icon in the bottom bar
