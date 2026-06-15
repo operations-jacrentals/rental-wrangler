@@ -1609,6 +1609,37 @@ body.rw-inspect .c-titlecard:hover { outline: 2px solid #18b6ff; outline-offset:
 .seg button.on-red { background: var(--red); color: #fff; }
 .seg button.on-yellow { background: var(--yellow); color: #1a1205; }
 
+/* ── Inline transport editor (Jac 2026-06-15) — replaces the Transport·Site popup ── */
+.tedit { display: flex; flex-direction: column; gap: 8px; padding: 11px; border-radius: 13px;
+  background: linear-gradient(180deg, var(--panel-2), var(--panel)); border: 1px solid var(--accent-line);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.03), 0 6px 20px rgba(0,0,0,.28); width: 100%; }
+.tedit-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.stamp { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 800; font-size: 12px; color: var(--accent); }
+.tedit-map { height: 168px; border-radius: 11px; overflow: hidden; position: relative; border: 1px solid var(--line);
+  background: repeating-linear-gradient(135deg, rgba(245,197,66,.06) 0 13px, rgba(20,24,29,.45) 13px 26px), var(--panel-2);
+  display: grid; place-items: center; }
+.tedit-map .map-tag { position: static; max-width: 82%; text-align: center; line-height: 1.4; }
+.tedit .lf-in { width: 100%; height: 34px; border-radius: 9px; border: 1px solid var(--line); background: var(--panel); color: var(--txt); font: inherit; font-size: 13px; padding: 0 11px; }
+.tedit .lf-in:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.tedit-sug { display: flex; flex-direction: column; gap: 2px; }
+.tedit-sug:empty { display: none; }
+.tedit-sug .dd-item { display: flex; align-items: center; width: 100%; padding: 8px 11px; border-radius: 9px; font-size: 12.5px; font-weight: 600; text-align: left; color: var(--txt-2); border: 1px solid transparent; }
+.tedit-sug .dd-item:hover { background: var(--panel-2); color: var(--txt); }
+.tedit-sug .dd-item.on { background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent); }
+.tedit-foot { display: flex; align-items: center; gap: 8px; }
+.tedit-foot .spacer { flex: 1; }
+.tedit-hint { font-size: 10px; color: var(--txt-3); letter-spacing: .2px; }
+
+/* ── Journey as the transport control (type segs + per-leg price) ── */
+.journeywrap { display: flex; flex-direction: column; gap: 6px; width: 100%; align-items: center; }
+.jtype { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: center; }
+.jtype .seg-ttype button { font-size: 10px; padding: 0 9px; height: 22px; }
+.jprice { font-size: 12px; font-weight: 800; color: var(--accent); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.jprice .sfx { font-size: 9.5px; font-weight: 600; color: var(--txt-3); }
+.tsec { display: flex; flex-direction: column; gap: 9px; align-items: center; margin-top: 10px; padding-top: 9px; border-top: 1px dashed var(--line); }
+.tsec-label { font-size: 9.5px; text-transform: uppercase; letter-spacing: .5px; }
+.tjrow { display: flex; flex-direction: column; gap: 4px; align-items: center; width: 100%; }
+.tjname { font-size: 10px; }
 /* ── post-build redlines (Jac 2026-06-11 evening) ── */
 /* full status-color coverage for section borders (RENTAL border = rental status) */
 .section.sec-blue { border-color: color-mix(in srgb, var(--blue) 45%, transparent); }

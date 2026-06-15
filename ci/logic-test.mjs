@@ -132,6 +132,23 @@ try {
     ok(T.DATA.units.length === unitsBefore + 1, 'exactly ONE unit was created for the two Phantom rentals');
     ok(T.planUnitMigration().length === 0, 'migration is idempotent — a second run finds nothing');
 
+    // 13) Transport pricing v2 — $3.50/mile + $50 load + $20 fuel (fueled), per leg.
+    const tp = (a) => T.computeTransportPrice(a).price;
+    // 10 mi Delivery, fueled: (3.5*10 + 50 + 20) * 1 = 105
+    ok(tp({ transportType: 'Delivery', oneWayMiles: 10, fueled: true }) === 105, 'Delivery 10mi fueled → $105');
+    // 10 mi Round-Trip, fueled: 105 * 2 = 210
+    ok(tp({ transportType: 'Round-Trip', oneWayMiles: 10, fueled: true }) === 210, 'Round-Trip 10mi fueled → $210 (2 legs)');
+    // 10 mi Delivery, NOT fueled: (35 + 50) * 1 = 85
+    ok(tp({ transportType: 'Delivery', oneWayMiles: 10, fueled: false }) === 85, 'Delivery 10mi electric → $85 (no fuel)');
+    // Recovery = 1 leg like Delivery
+    ok(tp({ transportType: 'Recovery', oneWayMiles: 10, fueled: true }) === 105, 'Recovery 10mi fueled → $105 (1 leg)');
+    // Self / unlimited / unknown miles
+    ok(tp({ transportType: 'Self', oneWayMiles: 10, fueled: true }) === 0, 'Self → $0');
+    ok(tp({ transportType: 'Round-Trip', oneWayMiles: 10, fueled: true, unlimitedTransport: true }) === 0, 'Unlimited member → $0');
+    ok(T.computeTransportPrice({ transportType: 'Delivery', oneWayMiles: null, fueled: true }).price === null, 'no miles yet → price unknown (null)');
+    // fuel-type detection
+    ok(T.isFueledType('Diesel') && T.isFueledType('Gas') && !T.isFueledType('Electric') && !T.isFueledType(''), 'isFueledType: Diesel/Gas yes, Electric/empty no');
+
     return out;
   });
 

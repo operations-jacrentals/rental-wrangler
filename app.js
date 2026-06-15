@@ -20,7 +20,8 @@ import { AGREEMENTS } from './agreements.js';
 import {
   getStatus, STATUS, ROLES, GRID_CARDS, BACKOFFICE_BOARDS, SORT_FIELDS,
   SHOP_TYPES, SHOP_SEGMENTS, COLUMNS, COLUMN_OF,
-  transportPrice, fmtWindow, fmtShortDate, showsTruck, parseISO, TODAY_ISO, invoiceShort, TRANSPORT_MAP,
+  legacyTransportPrice, computeTransportPrice, isFueledType, legsForType, YARD_ORIGIN, GOOGLE_MAPS_KEY,
+  fmtWindow, fmtShortDate, showsTruck, parseISO, TODAY_ISO, invoiceShort, TRANSPORT_MAP,
 } from './config.js';
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -118,7 +119,8 @@ function legacyUnitEntry(r) {
     startHours: r.startHours != null ? r.startHours : null,
     returnHours: r.returnHours != null ? r.returnHours : null,
     startCapture: r.startCapture || null, endCapture: r.endCapture || null, fcCapture: r.fcCapture || null,
-    transportType: r.transportType || null, deliveryAddress: r.deliveryAddress || '', recoveryAddress: r.recoveryAddress || '', sitePin: r.sitePin || null };
+    transportType: r.transportType || null, deliveryAddress: r.deliveryAddress || '', recoveryAddress: r.recoveryAddress || '', sitePin: r.sitePin || null,
+    transportMiles: r.transportMiles != null ? r.transportMiles : null, transportDriveMin: r.transportDriveMin != null ? r.transportDriveMin : null };
 }
 function migrateRentals() {
   DATA.rentals.forEach((r) => {
@@ -444,17 +446,28 @@ function rentalLineItems(r) {
     return { kind: 'rental', ref: r.rentalId, unitId: eu.unitId, lid: lineLid(), label: `${u?.name || 'Rental'} · ${p ? p.rate : '—'}`, amount: p ? p.price : 0 };
   });
 }
+/** Is the unit fueled (gets the $20/leg fuel-fill)? Reads its category's fuelType. */
+function unitFueled(unitId) {
+  return isFueledType(IDX.category.get(IDX.unit.get(unitId)?.categoryId)?.fuelType);
+}
+/** Transport cost from cached Google miles/drive-time when present, else the
+ *  legacy city-tier estimate (un-geocoded demo data / offline). */
+function transportCost({ transportType, miles, driveMin, address, fueled, unlimited }) {
+  if (miles != null) {
+    const p = computeTransportPrice({ transportType, oneWayMiles: miles, fueled, unlimitedTransport: unlimited });
+    return { ...p, driveMin: driveMin != null ? driveMin : p.driveMin };
+  }
+  return legacyTransportPrice(transportType, address, { unlimitedTransport: unlimited });
+}
 /** Transport cost + drive time for a rental (SPEC §10) — primary unit / legacy. */
 function rentalTransport(r) {
-  const cust = IDX.customer.get(r.customerId);
-  const unlimited = !!cust?.unlimitedTransport;
-  return transportPrice(r.transportType, r.deliveryAddress, { unlimitedTransport: unlimited });
+  const unlimited = !!IDX.customer.get(r.customerId)?.unlimitedTransport;
+  return transportCost({ transportType: r.transportType, miles: r.transportMiles, driveMin: r.transportDriveMin, address: r.deliveryAddress, fueled: unitFueled(r.unitId), unlimited });
 }
-/** §20 transport cost for ONE unit (its own type + address). */
+/** §20 transport cost for ONE unit (its own type + address + cached distance). */
 function unitTransport(r, eu) {
-  const cust = IDX.customer.get(r.customerId);
-  const unlimited = !!cust?.unlimitedTransport;
-  return transportPrice(eu.transportType, eu.deliveryAddress, { unlimitedTransport: unlimited });
+  const unlimited = !!IDX.customer.get(r.customerId)?.unlimitedTransport;
+  return transportCost({ transportType: eu.transportType, miles: eu.transportMiles, driveMin: eu.transportDriveMin, address: eu.deliveryAddress, fueled: unitFueled(eu.unitId), unlimited });
 }
 /** §20 one invoice 'transport' line per unit that has transport (ref=rentalId,
    li.unitId identifies it; the unit name is shown only on multi-unit rentals). */
@@ -483,6 +496,205 @@ function syncTransportLine(r) {
   inv.lineItems = (inv.lineItems || []).filter((li) => !(li.kind === 'transport' && li.ref === r.rentalId));
   transportLineItems(r).forEach((li) => inv.lineItems.push(li));   // §20 one transport line per unit
   reindex('invoices', inv);
+}
+
+/* ════════════ INLINE TRANSPORT EDITOR + GOOGLE MAPS (Jac 2026-06-15) ═════════
+   Replaces the old `site` popup. An inline panel — minimap on top, address field,
+   keyboard-navigable suggestions below — lets you set a site address in place.
+   Progressive enhancement: real Google (Places + Map + Distance Matrix) when a
+   referrer-restricted key is served by the backend; an offline city list +
+   placeholder map otherwise. The chosen address is geocoded to lat/lng + cached
+   one-way miles/drive-time on the unit entry, so pricing/billing never call
+   Google (keeps ci/logic-test deterministic). */
+let _mapsKey = null, _mapsKeyLoaded = false, _mapsPromise = null;
+async function ensureMapsKey() {
+  if (_mapsKeyLoaded) return _mapsKey;
+  _mapsKeyLoaded = true;
+  if (typeof backendPassword !== 'undefined' && backendPassword) {
+    try { const r = await backendCall('mapsKey'); if (r && r.ok && r.key) _mapsKey = r.key; } catch (e) { /* offline → config fallback */ }
+  }
+  if (!_mapsKey && GOOGLE_MAPS_KEY) _mapsKey = GOOGLE_MAPS_KEY;
+  return _mapsKey;
+}
+function loadGoogleMaps() {
+  if (_mapsPromise) return _mapsPromise;
+  _mapsPromise = (async () => {
+    const key = await ensureMapsKey();
+    if (!key) return null;                                          // offline / mock mode
+    if (window.google && window.google.maps && google.maps.places) return google.maps;
+    await new Promise((res, rej) => {
+      const s = document.createElement('script');
+      s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&libraries=places&loading=async`;
+      s.async = true; s.onload = res; s.onerror = () => rej(new Error('maps-load'));
+      document.head.appendChild(s);
+    });
+    if (window.google && google.maps && google.maps.importLibrary) { try { await Promise.all([google.maps.importLibrary('maps'), google.maps.importLibrary('places'), google.maps.importLibrary('marker')]); } catch (e) {} }
+    return (window.google && window.google.maps) || null;
+  })().then((g) => { if (g && state.transportEdit) render(); return g; }).catch(() => null);
+  return _mapsPromise;
+}
+const mapsReady = () => !!(window.google && window.google.maps && google.maps.places && google.maps.DistanceMatrixService);
+const YARD_CENTER = { lat: 30.2366, lng: -93.3774 };   // Sulphur, LA — map default before a pin is set
+
+let _teMap = null, _teMarker = null, _teAuto = null, _teGeo = null, _teDist = null, _teDebounce = null;
+/** Open the inline editor for a unit's transport leg (delivery|recovery). */
+function openTransportEdit(rentalId, unitId, leg) {
+  const r = IDX.rental.get(rentalId); if (!r) return;
+  const eu = unitId ? unitEntry(r, unitId) : null;
+  const T = eu || r;
+  leg = leg || 'delivery';
+  const cur = leg === 'recovery' ? (T.recoveryAddress || T.deliveryAddress || '') : (T.deliveryAddress || '');
+  const pin = (T.sitePin && T.sitePin.lat != null) ? T.sitePin : null;   // back-compat: ignore old {x,y} mock pins
+  state.transportEdit = { rentalId, unitId: unitId || null, leg, addr: cur, pin,
+    miles: T.transportMiles != null ? T.transportMiles : null,
+    driveMin: T.transportDriveMin != null ? T.transportDriveMin : null,
+    type: (T.transportType && T.transportType !== 'Self') ? T.transportType : 'Delivery',
+    sel: -1, items: [] };
+  _teMap = _teMarker = _teAuto = _teGeo = _teDist = null;
+  loadGoogleMaps();
+  render();
+}
+function closeTransportEdit() { state.transportEdit = null; _teMap = _teMarker = null; render(); }
+
+/** Inline editor markup — rendered full-width below the rental split so the map has room. */
+function transportEditorHtml() {
+  const te = state.transportEdit; if (!te) return '';
+  const r = IDX.rental.get(te.rentalId);
+  const u = te.unitId ? IDX.unit.get(te.unitId) : null;
+  const live = mapsReady();
+  const who = u ? esc(u.name) + ' · ' : '';
+  return `<div class="tedit sec" data-r="R5b">
+    <div class="tedit-head"><span class="stamp">Set ${te.leg === 'recovery' ? 'recovery' : 'delivery'} site</span><span class="muted" style="font-size:10.5px">${who}drag the pin for the exact driver drop</span></div>
+    <div class="tedit-map js-tmap">${live ? '' : `<span class="map-tag">${GOOGLE_MAPS_KEY || _mapsKey ? 'loading map…' : 'live map appears once the dispatch key is set'}</span>`}</div>
+    <input class="lf-in js-taddr" placeholder="Site address — start typing…" value="${esc(te.addr || '')}" autocomplete="off" spellcheck="false" aria-label="Site address">
+    <div class="js-tsug tedit-sug" role="listbox"></div>
+    <div class="tedit-foot">
+      <span class="muted tedit-hint">↑↓ choose · Tab/Enter set · Esc cancel</span>
+      <span class="spacer"></span>
+      ${ghostPill('Cancel', { js: 'js-tedit-cancel' })}
+      ${actionPill('commit', 'Set address', { js: 'js-tedit-save' })}
+    </div>
+  </div>`;
+}
+/** Post-render: mount the live map + wire the input (called from render()). */
+function mountTransportEditor() {
+  const te = state.transportEdit; if (!te) return;
+  const input = document.querySelector('.js-taddr');
+  if (input && !input.dataset.wired) {
+    input.dataset.wired = '1';
+    setTimeout(() => { try { input.focus(); const n = input.value.length; input.setSelectionRange(n, n); } catch (e) {} }, 0);
+    input.addEventListener('input', () => teQuery(input.value));
+    input.addEventListener('keydown', teKeydown);
+  }
+  const mapEl = document.querySelector('.js-tmap');
+  if (mapsReady() && mapEl && !mapEl.dataset.mounted) {
+    mapEl.dataset.mounted = '1';
+    const center = te.pin || YARD_CENTER;
+    _teMap = new google.maps.Map(mapEl, { center, zoom: te.pin ? 14 : 9, disableDefaultUI: true, zoomControl: true, gestureHandling: 'greedy', clickableIcons: false });
+    _teMarker = new google.maps.Marker({ map: _teMap, position: center, draggable: true, visible: !!te.pin });
+    _teMarker.addListener('dragend', () => { const p = _teMarker.getPosition(); te.pin = { lat: p.lat(), lng: p.lng() }; teFetchDistance(); });
+    _teMap.addListener('click', (ev) => { te.pin = { lat: ev.latLng.lat(), lng: ev.latLng.lng() }; _teMarker.setPosition(ev.latLng); _teMarker.setVisible(true); teFetchDistance(); });
+    _teAuto = new google.maps.places.AutocompleteService();
+    _teGeo = new google.maps.Geocoder();
+    _teDist = new google.maps.DistanceMatrixService();
+  }
+}
+function teQuery(v) {
+  const te = state.transportEdit; if (!te) return;
+  te.addr = v; te.sel = -1;
+  clearTimeout(_teDebounce);
+  if (!v.trim()) { te.items = []; return teRenderSug(); }
+  _teDebounce = setTimeout(() => {
+    if (mapsReady() && _teAuto) {
+      _teAuto.getPlacePredictions({ input: v, componentRestrictions: { country: 'us' } }, (preds) => {
+        te.items = (preds || []).slice(0, 5).map((p) => ({ label: p.description, placeId: p.place_id })); teRenderSug();
+      });
+    } else {
+      const cities = Object.keys(TRANSPORT_MAP || {});
+      const street = v.replace(/,.*$/, '').trim();
+      const hits = cities.filter((c) => v.toLowerCase().includes(c.toLowerCase()));
+      const pool = (hits.length ? hits : cities).slice(0, 5);
+      te.items = pool.map((c) => { const city = c.replace(/\b\w/g, (m) => m.toUpperCase()); return { label: street && street.toLowerCase() !== c.toLowerCase() ? `${street}, ${city}, LA` : `${city}, LA` }; });
+      teRenderSug();
+    }
+  }, 180);
+}
+function teRenderSug() {
+  const te = state.transportEdit; const box = document.querySelector('.js-tsug'); if (!box || !te) return;
+  box.innerHTML = (te.items || []).map((it, i) => `<button class="dd-item js-tsug-pick${i === te.sel ? ' on' : ''}" type="button" role="option" data-i="${i}">${esc(it.label)}</button>`).join('');
+}
+function teKeydown(e) {
+  const te = state.transportEdit; if (!te) return;
+  const n = (te.items || []).length;
+  if (e.key === 'ArrowDown') { e.preventDefault(); te.sel = n ? Math.min(n - 1, te.sel + 1) : -1; teRenderSug(); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); te.sel = Math.max(0, te.sel - 1); teRenderSug(); }
+  else if (e.key === 'Enter' || e.key === 'Tab') { if (n) { e.preventDefault(); tePick(te.sel >= 0 ? te.sel : 0); } }
+  else if (e.key === 'Escape') { e.preventDefault(); closeTransportEdit(); }
+}
+function tePick(i) {
+  const te = state.transportEdit; if (!te) return;
+  const it = (te.items || [])[i]; if (!it) return;
+  const input = document.querySelector('.js-taddr');
+  te.items = []; te.sel = -1; teRenderSug();
+  if (mapsReady() && it.placeId && _teGeo) {
+    _teGeo.geocode({ placeId: it.placeId }, (res, status) => {
+      if (status === 'OK' && res && res[0]) {
+        te.addr = res[0].formatted_address; if (input) input.value = te.addr;
+        const loc = res[0].geometry.location; te.pin = { lat: loc.lat(), lng: loc.lng() };
+        if (_teMap) { _teMap.setCenter(loc); _teMap.setZoom(14); }
+        if (_teMarker) { _teMarker.setPosition(loc); _teMarker.setVisible(true); }
+        teFetchDistance();
+      }
+    });
+  } else {
+    te.addr = it.label; if (input) input.value = te.addr; te.miles = null; te.driveMin = null;
+  }
+}
+function teFetchDistance() {
+  const te = state.transportEdit; if (!te || !te.pin || !mapsReady() || !_teDist) return;
+  _teDist.getDistanceMatrix({ origins: [YARD_ORIGIN], destinations: [te.pin], travelMode: 'DRIVING', unitSystem: google.maps.UnitSystem.IMPERIAL }, (resp, status) => {
+    if (status !== 'OK' || !resp.rows[0]) return;
+    const cell = resp.rows[0].elements[0]; if (!cell || cell.status !== 'OK') return;
+    te.miles = +(cell.distance.value / 1609.344).toFixed(1);
+    te.driveMin = Math.round(cell.duration.value / 60);
+    const lbl = document.querySelector('.js-te-dist'); if (lbl) lbl.textContent = `${te.miles} mi · ${te.driveMin} min one-way`;
+  });
+}
+function saveTransportEdit() {
+  const te = state.transportEdit; if (!te) return;
+  const r = IDX.rental.get(te.rentalId); if (!r) return closeTransportEdit();
+  const v = (document.querySelector('.js-taddr')?.value || te.addr || '').trim();
+  if (!v) return attnFlash('.js-taddr');
+  const eu = unitEntry(r, te.unitId);
+  const tgt = eu || r;
+  if (te.leg === 'recovery') {
+    tgt.recoveryAddress = v;
+  } else {
+    tgt.deliveryAddress = v;
+    tgt.transportMiles = te.miles != null ? te.miles : null;
+    tgt.transportDriveMin = te.driveMin != null ? te.driveMin : null;
+    if (te.pin) tgt.sitePin = te.pin;
+    if (!tgt.transportType || tgt.transportType === 'Self') tgt.transportType = te.type || 'Delivery';
+  }
+  if (!eu || isPrimaryUnit(r, eu)) {
+    if (te.leg === 'recovery') r.recoveryAddress = tgt.recoveryAddress;
+    else { r.deliveryAddress = tgt.deliveryAddress; r.transportMiles = tgt.transportMiles; r.transportDriveMin = tgt.transportDriveMin; r.transportType = tgt.transportType; if (te.pin) r.sitePin = te.pin; }
+  }
+  syncTransportLine(r);
+  reindex('rentals', r);
+  logAction(r, `${IDX.unit.get(te.unitId)?.name ? IDX.unit.get(te.unitId).name + ' — ' : ''}Transport ${te.leg} → ${auditVal(v)}`);
+  toast('Site saved — address + pin go to dispatch.');
+  state.transportEdit = null; _teMap = _teMarker = null;
+  const session = activeSession(); if (session.anchor) setAnchor(session, session.anchor.card, session.anchor.recId, session.anchor.recType);
+  render();
+}
+/** Click a journey type segment → set this unit's transport type + re-bill. */
+function setTransportType(rentalId, unitId, type) {
+  const r = IDX.rental.get(rentalId); if (!r) return;
+  const eu = unitEntry(r, unitId); const tgt = eu || r;
+  tgt.transportType = type;
+  if (!eu || isPrimaryUnit(r, eu)) r.transportType = type;
+  syncTransportLine(r); reindex('rentals', r); logAction(r, `Transport type → ${type}`); render();
 }
 
 /** Invoice subtotal / tax / total / paid / balance / derived status (§10 + aging). */
@@ -2600,22 +2812,69 @@ function allocLines(inv) {
 /* Jac ─ Site ─ Jac transport journey under an invoice rental line. +Log Delivery /
    +Log Recovery ARE the same captures as the yard tool's +Start/+End (one event,
    shared fields, so both views stay in sync). Self-pickup collapses to one line. */
+/** Action-column transport affordance (under +Unit): a blue +Transport button
+ *  when none is set, or a compact type+price chip (per unit on multi-unit). */
+function transportActionHtml(r) {
+  const units = rentalUnits(r);
+  const one = (eu, u) => {
+    const du = eu ? ` data-unit="${esc(eu.unitId)}"` : '';
+    const T = eu || r;
+    const hasT = T.transportType && T.transportType !== 'Self';
+    const nameSfx = (units.length > 1 && u) ? ` · ${esc(u.name)}` : '';
+    if (!hasT) return `<button class="add-field anchor js-tedit-open" data-r="R5b" data-rec="${esc(r.rentalId)}"${du} data-leg="delivery" style="height:26px">+Transport${nameSfx}</button>`;
+    const st = getStatus('transportType', T.transportType);
+    const tr = eu ? unitTransport(r, eu) : rentalTransport(r);
+    const oneWay = (tr && tr.perLeg != null) ? tr.perLeg : (tr && tr.price != null ? tr.price : null);
+    return `<span class="pill c-${st.color} js-tedit-open" data-r="R4" data-rec="${esc(r.rentalId)}"${du} data-leg="delivery" style="cursor:pointer">${CARD_ICON.rentals}${esc(st.label)}${nameSfx}${oneWay ? ` · ${money(oneWay)}` : ''}</span>`;
+  };
+  if (!units.length) return one(null, null);
+  return units.map((eu) => { const u = IDX.unit.get(eu.unitId); return u ? one(eu, u) : ''; }).join('');
+}
+/** The Transport section shown on rentals with no invoice yet (with an invoice,
+ *  the per-unit journeys ride the invoice lines). Renders a journey per unit that
+ *  has transport, plus the inline editor for whichever leg is being edited. */
+function transportSectionHtml(r) {
+  const te = state.transportEdit;
+  const units = rentalUnits(r);
+  const list = units.length ? units : [null];
+  const rows = list.map((eu) => {
+    const hasT = (eu || r).transportType && (eu || r).transportType !== 'Self';
+    const editing = te && te.rentalId === r.rentalId && (te.unitId || null) === (eu ? eu.unitId : null);
+    if (!hasT && !editing) return '';
+    const u = eu ? IDX.unit.get(eu.unitId) : null; if (eu && !u) return '';
+    return `<div class="tjrow">${units.length > 1 && u ? `<span class="stamp tjname">${esc(u.name)}</span>` : ''}${miniJourneyHtml(r, eu)}</div>`;
+  }).filter(Boolean).join('');
+  if (!rows) return '';
+  return `<div class="tsec"><span class="muted tsec-label">Transport</span>${rows}</div>`;
+}
 function miniJourneyHtml(r2, eu) {
   const T = eu || r2;   // §20 per-unit transport + captures (fallback to the rental for legacy)
-  const du = eu ? ` data-unit="${esc(eu.unitId)}"` : '';
-  if (!T.transportType || T.transportType === 'Self') {
-    return `<div class="kv" style="justify-content:center;gap:9px"><span class="muted" style="font-size:10.5px">Self pickup · no transport</span><span class="add-field anchor js-site-go" data-r="R5b" data-rec="${esc(r2.rentalId)}"${du} style="height:24px;font-size:11px;cursor:pointer">+Transport</span></div>`;
+  const uId = eu ? eu.unitId : (r2.unitId || '');
+  const du = uId ? ` data-unit="${esc(uId)}"` : '';
+  const te = state.transportEdit;
+  if (te && te.rentalId === r2.rentalId && (te.unitId || null) === (eu ? eu.unitId : null)) return transportEditorHtml();
+  const type = (T.transportType && T.transportType !== 'Self') ? T.transportType : null;
+  if (!type) {
+    return `<div class="kv" style="justify-content:center;gap:9px"><span class="muted" style="font-size:10.5px">Self pickup · no transport</span><button class="add-field anchor js-tedit-open" data-r="R5b" data-rec="${esc(r2.rentalId)}"${du} data-leg="delivery" style="height:24px;font-size:11px">+Transport</button></div>`;
   }
-  const addr = T.deliveryAddress ? esc(T.deliveryAddress) : '+Address';
-  const recAddr = T.recoveryAddress ? esc(T.recoveryAddress) : addr;   // recovery may differ from delivery
   const sd = !!T.startCapture, ed = !!T.endCapture;
-  return `<div class="journey mini">
-    <div class="jnode" style="cursor:default"><span class="jbox">${ICO_STORE}</span><span class="jlbl">Jac</span></div>
-    <div class="jseg"><span class="jover ${sd ? 'done' : 'loglink'} js-yard" data-cap="start" data-rec="${esc(r2.rentalId)}"${du}>${sd ? '✓ Delivered · video' : '+Log Delivery'}</span><span class="jline2 ${sd ? 'on' : ''}"></span><span class="jaddr js-site-go" data-rec="${esc(r2.rentalId)}"${du}>${addr}</span></div>
-    <div class="jnode js-site-go" data-rec="${esc(r2.rentalId)}"${du}><span class="jbox site ${T.deliveryAddress ? 'set' : ''}">${ICO_STORE}</span><span class="jlbl">Site</span></div>
-    <div class="jseg"><span class="jover ${ed ? 'done' : 'loglink'} js-yard" data-cap="end" data-rec="${esc(r2.rentalId)}"${du}>${ed ? '✓ Recovered · video' : '+Log Recovery'}</span><span class="jline2 ${ed ? 'on' : ''}"></span><span class="jaddr js-site-go" data-rec="${esc(r2.rentalId)}"${du}>${recAddr}</span></div>
-    <div class="jnode" style="cursor:default"><span class="jbox">${ICO_STORE}</span><span class="jlbl">Jac</span></div>
-  </div>`;
+  const delAddr = T.deliveryAddress ? esc(T.deliveryAddress) : '+Address';
+  const recAddr = T.recoveryAddress ? esc(T.recoveryAddress) : (T.deliveryAddress ? esc(T.deliveryAddress) : '+Address');
+  const tr = eu ? unitTransport(r2, eu) : rentalTransport(r2);
+  const oneWay = (tr && tr.perLeg != null) ? tr.perLeg : (tr && tr.price != null ? tr.price : null);
+  const seg = segCtl([
+    { label: 'Jac→Site', js: 'js-ttype', data: { rec: r2.rentalId, unit: uId, val: 'Delivery' }, on: type === 'Delivery' ? 'green' : null },
+    { label: 'Site→Jac', js: 'js-ttype', data: { rec: r2.rentalId, unit: uId, val: 'Recovery' }, on: type === 'Recovery' ? 'green' : null },
+    { label: 'Round-Trip', js: 'js-ttype', data: { rec: r2.rentalId, unit: uId, val: 'Round-Trip' }, on: type === 'Round-Trip' ? 'green' : null },
+  ], 'seg-ttype');
+  const jacNode = `<div class="jnode" style="cursor:default"><span class="jbox">${ICO_STORE}</span><span class="jlbl">Jac</span></div>`;
+  const siteNode = `<div class="jnode js-tedit-open" data-rec="${esc(r2.rentalId)}"${du} data-leg="delivery"><span class="jbox site ${T.deliveryAddress ? 'set' : ''}">${ICO_STORE}</span><span class="jlbl">Site</span></div>`;
+  const logSeg = (cap, done, label, leg, addrTxt) => `<div class="jseg"><span class="jover ${done ? 'done' : 'loglink'} js-yard" data-cap="${cap}" data-rec="${esc(r2.rentalId)}"${du}>${done ? '✓ ' + label.replace('+Log ', '') + ' · video' : label}</span><span class="jline2 ${done ? 'on' : ''}"></span><span class="jaddr js-tedit-open" data-rec="${esc(r2.rentalId)}"${du} data-leg="${leg}">${addrTxt}</span></div>`;
+  let body;
+  if (type === 'Delivery') body = jacNode + logSeg('start', sd, '+Log Delivery', 'delivery', delAddr) + siteNode;
+  else if (type === 'Recovery') body = siteNode + logSeg('end', ed, '+Log Recovery', 'delivery', delAddr) + jacNode;
+  else body = jacNode + logSeg('start', sd, '+Log Delivery', 'delivery', delAddr) + siteNode + logSeg('end', ed, '+Log Recovery', 'recovery', recAddr) + jacNode;
+  return `<div class="journeywrap"><div class="jtype">${seg}${oneWay ? `<span class="jprice">${money(oneWay)}<span class="sfx"> /one-way</span></span>` : ''}</div><div class="journey mini">${body}</div></div>`;
 }
 /* card-head title flags: live condition + worst-WO bottleneck (units);
    rental status + pay status (rentals). Two stacked 14px rows = title height. */
@@ -2725,7 +2984,7 @@ const DETAIL = {
     const paidForThis = inv ? rentalAllocated(inv, r.rentalId) : 0;
     const invPill = inv
       ? `<span class="pill ref link" data-r="R2" data-pill-card="invoices" data-pill-rec="${esc(inv.invoiceId)}">${CARD_ICON.invoices}${esc(invoiceShort(inv.invoiceId))}${paidForThis <= 0 ? `<span class="x" data-x="inv-remove" data-tip="unlink — allowed while $0 is assigned to this rental; afterwards refund first">✕</span>` : ''}</span>`
-      : (r.mock ? addBtn('Invoice/+Transport', { link: true, js: 'js-create-invoice', h: 26, icon: CARD_ICON.invoices, data: { rec: r.rentalId } }) : badge('No invoice — link one to set transport'));   // R5b blue always; createInvoiceForRental guides if a customer/window is missing
+      : addBtn('Invoice', { link: true, js: 'js-create-invoice', h: 26, data: { rec: r.rentalId } });   // R5b blue action button; transport is now its own +Transport affordance (de-fused 2026-06-15). createInvoiceForRental guides if a customer/window is missing
 
     const balColor = invT ? (invT.balance <= 0 && invT.paid > 0 ? 'green' : invT.status === 'Not Due' ? 'blue' : 'red') : null;
 
@@ -2762,7 +3021,8 @@ const DETAIL = {
           ${kvPills(cust ? refPill('customers', r.customerId, cust.name, { x: 'cust-swap' }) : (r.mock ? pickCustBtn : badge('No customer')))}
           ${kvPills(`${rentalUnits(r).length
               ? rentalUnits(r).map((eu) => { const u2 = IDX.unit.get(eu.unitId); if (!u2) return ''; const insp = getStatus('unitInspectionStatus', u2.inspectionStatus); const multi = rentalUnits(r).length > 1; const voided = ['No Show', 'Cancelled'].includes(unitStatus(r, eu)); return `<span class="unitchip${voided ? ' voided' : ''}">${unitPill(u2.unitId, { x: 'unit-remove', xData: u2.unitId })}<span class="pill dvd c-${insp.color}" data-r="R4" data-pill-card="units" data-pill-rec="${esc(u2.unitId)}">${CARD_ICON.units}${esc(insp.label)}</span>${multi ? unitStatusGate(r, eu) : ''}</span>`; }).join('')
-              : (r.mock ? pickUnitBtn : '<span class="pill c-gray" data-r="R3b"><span class="t">No unit</span></span>')}${cat ? `<span class="pill dvd c-orange" data-r="R4" data-pill-card="categories" data-pill-rec="${esc(cat.categoryId)}" data-chat-el data-chat-label="${esc(cat.name)}" data-chat-color="orange" data-chat-card="categories" data-chat-rec="${esc(cat.categoryId)}">${CARD_ICON.categories}${esc(cat.name)}</span>` : ''}`)}
+              : pickUnitBtn}${cat ? `<span class="pill dvd c-orange" data-r="R4" data-pill-card="categories" data-pill-rec="${esc(cat.categoryId)}" data-chat-el data-chat-label="${esc(cat.name)}" data-chat-color="orange" data-chat-card="categories" data-chat-rec="${esc(cat.categoryId)}">${CARD_ICON.categories}${esc(cat.name)}</span>` : ''}`)}
+          ${kvPills(transportActionHtml(r))}
           ${kvPills(invPill)}
           ${efld('rentals', r, 'rentalId', 'po', 'Add PO', { fmt: (v) => 'PO ' + v })}
           ${fcRow ? kvPills(fcRow) : ''}
@@ -2770,13 +3030,14 @@ const DETAIL = {
         <div class="side r">
           ${invT ? `<div class="kv"><span class="balline" data-chat-el data-chat-label="${esc('Balance ' + money(invT.paid) + ' / ' + money(invT.total))}" data-chat-color="${esc(balColor)}" data-chat-card="invoices" data-chat-rec="${esc(inv.invoiceId)}"><b style="color:var(--${balColor})">${money(invT.paid)}</b> <span class="tot">/ ${money(invT.total)}</span></span></div>` : (price ? kv(money(price.price), { sfx: `· ${price.rate}`, derived: true }) : '')}
           ${invT && inv.dueDate ? `<div class="kv"><span class="derived" style="font-size:11px">due ${fmtShortDate(inv.dueDate)}</span></div>` : ''}
+          ${(tr && tr.price != null && tr.price > 0) ? kv(money(tr.perLeg != null ? tr.perLeg : tr.price), { sfx: '/one-way transport', derived: true }) : ''}
           ${(r.deliveryAddress && tr.driveMin != null) ? kv(`${tr.driveMin} min`, { sfx: '/one-way', derived: true }) : ''}
         </div>
       </div>
       ${itemsHtml ? `<div style="border-top:1px dashed var(--line);margin-top:10px;padding-top:9px;display:flex;flex-direction:column;gap:10px;align-items:center">
         <span class="muted" style="font-size:9.5px;text-transform:uppercase;letter-spacing:.4px">Invoice rentals · transport</span>
         ${itemsHtml}
-      </div>` : ''}
+      </div>` : transportSectionHtml(r)}
       <div style="display:flex;justify-content:flex-end;margin-top:9px">${crBtn}</div>
     </div>`;
 
@@ -4749,38 +5010,12 @@ function renderOverlay() {
         ${r && r.deliveryAddress && o.cap !== 'fc' ? `
         <div style="border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-bottom:10px">
           <div style="padding:8px 11px;font-size:12.5px;display:flex;align-items:center;gap:7px"><span>📍</span><b>${esc(r.deliveryAddress)}</b></div>
-          <div class="site-map" style="height:96px">${r.sitePin ? `<span class="site-pin" style="left:${r.sitePin.x}%;top:${r.sitePin.y}%">📍</span>` : ''}<span class="map-tag">driver destination${r.sitePin ? ' — exact pin set' : ''}</span></div>
+          <div class="site-map" style="height:96px">${r.sitePin && r.sitePin.lat != null ? '<span class="site-pin" style="left:50%;top:50%">📍</span>' : ''}<span class="map-tag">driver destination${r.sitePin && r.sitePin.lat != null ? ' — exact pin set' : ''}</span></div>
         </div>` : ''}
         <label class="cap-drop">${I.video} <span>${state.capFile ? '✓ video attached' : 'Tap to capture / attach the video'}</span><input type="file" accept="video/*,image/*" capture="environment" class="js-cap-file" style="display:none"></label>
         <div class="pillrow" style="justify-content:flex-end;margin-top:12px">
           <button class="pill ref js-close">Cancel</button>
           <button class="pill c-commit js-cap-save" style="height:26px;font-size:11px">${o.cap === 'fc' ? 'Log Field Call' : 'Log it'}</button>
-        </div>
-      </div>`;
-    overlay.appendChild(pop);
-  } else if (o.kind === 'site') {
-    // Transport setup: WHICH journey (Jac+Site = Delivery · Site+Jac = Recovery ·
-    // Jac+Jac = Round-Trip) + smart address finder + map pin. Save sets BOTH
-    // addresses; the optional second field lets recovery differ from delivery.
-    const r = IDX.rental.get(o.rentalId);
-    const T = (o.unitId ? unitEntry(r, o.unitId) : null) || r || {};   // §20 the unit's own transport
-    const ty = state.siteType || (T.transportType && T.transportType !== 'Self' ? T.transportType : 'Delivery');
-    const pop = el('div', 'popup'); pop.style.width = '410px';
-    pop.innerHTML = `
-      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${CARD_ICON.rentals}</span><h3>Transport · Site</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
-      <div class="popup-body">
-        <div class="kv" style="justify-content:center;margin-bottom:10px">${segCtl([
-          { label: 'Jac → Site', js: 'js-site-type', data: { val: 'Delivery' }, on: ty === 'Delivery' ? 'green' : null },
-          { label: 'Site → Jac', js: 'js-site-type', data: { val: 'Recovery' }, on: ty === 'Recovery' ? 'green' : null },
-          { label: 'Jac → Site → Jac', js: 'js-site-type', data: { val: 'Round-Trip' }, on: ty === 'Round-Trip' ? 'green' : null },
-        ], 'seg-sitetype')}</div>
-        <input class="js-site-addr lf-in" placeholder="Site address — start typing…" value="${esc(T.deliveryAddress || '')}" style="width:100%;margin-bottom:6px">
-        <div class="js-site-sug" style="display:flex;flex-direction:column;border-radius:10px;overflow:hidden;margin-bottom:6px"></div>
-        <input class="js-site-addr2 lf-in" placeholder="Recovery address — same as above if left empty" value="${esc(T.recoveryAddress || '')}" style="width:100%;margin-bottom:8px">
-        <div class="site-map js-site-map" style="height:150px;cursor:crosshair">${T.sitePin ? `<span class="site-pin" style="left:${T.sitePin.x}%;top:${T.sitePin.y}%">📍</span>` : ''}<span class="map-tag">Google Map here — tap to drop the EXACT pin for the driver</span></div>
-        <div class="pillrow" style="justify-content:flex-end;margin-top:12px">
-          ${ghostPill('Cancel', { js: 'js-close' })}
-          ${actionPill('commit', 'Save site', { js: 'js-site-save' })}
         </div>
       </div>`;
     overlay.appendChild(pop);
@@ -5879,6 +6114,7 @@ function render() {
   // §18e — floating bottom-right cluster: notification bell + the Requests inbox.
   // Hidden while the team dock owns that corner (Jac 2026-06-15).
   if (!state.chat.open) $('#app').appendChild(fabStackEl());
+  mountTransportEditor();   // inline transport editor: mount the live map + wire the address field
   applyTitles();   // full text on hover wherever we truncate (custom ~0.5s tooltip)
   scoreTick();     // §11 gamification — pop +X over any ring whose metric just rose
   if (DRAG.active) reapplyDragDecor();   // §15c — re-stamp drop targets after ANY mid-drag rebuild (the card swap IS a render)
@@ -6580,7 +6816,7 @@ function onClick(e) {
     e.stopPropagation();
     const s = activeSession(); if (s.cols) s.cols.left = 'units'; s.cards.units.mode = 'list';
     render(); attnFlash('.card[data-card="units"] .list');   // R19 — point AT the list
-    toast('Drag a unit from the Units card onto this Quote.');
+    toast('Drag a unit from the Units card onto this rental.');
     return;
   }
   if (closest('.js-quickadd-cust')) { const b = closest('.js-quickadd-cust'); e.stopPropagation(); return openQuickCust({ card: b.dataset.card, recId: b.dataset.rec }); }
@@ -6636,19 +6872,13 @@ function onClick(e) {
   if (closest('.js-washseg')) { const b = closest('.js-washseg'); return setUnitWash(b.dataset.rec, b.dataset.val); }
   if (closest('.js-yard')) { const b = closest('.js-yard'); return yardCapture(b.dataset.rec, b.dataset.cap, b.dataset.unit); }
   if (closest('.js-cap-save')) return saveYardCapture();
-  if (closest('.js-site-go')) { const b = closest('.js-site-go'); state.sitePin = null; state.siteType = null; return openOverlay({ kind: 'site', rentalId: b.dataset.rec, unitId: b.dataset.unit || null }); }
-  if (closest('.js-site-type')) { const b = closest('.js-site-type'); e.stopPropagation(); state.siteType = b.dataset.val; return renderOverlay(); }
-  if (closest('.js-site-save')) return saveSiteAddress();
-  if (closest('.js-site-pick')) { const b = closest('.js-site-pick'); const inp = document.querySelector('.js-site-addr'); if (inp) inp.value = b.textContent; const box = document.querySelector('.js-site-sug'); if (box) box.innerHTML = ''; return; }
-  if (closest('.js-site-map')) {
-    const m = closest('.js-site-map'); const rect = m.getBoundingClientRect();
-    const x = Math.round(((e.clientX - rect.left) / rect.width) * 100), y = Math.round(((e.clientY - rect.top) / rect.height) * 100);
-    state.sitePin = { x, y };
-    let p = m.querySelector('.site-pin');
-    if (!p) { p = document.createElement('span'); p.className = 'site-pin'; p.textContent = '📍'; m.prepend(p); }
-    p.style.left = x + '%'; p.style.top = y + '%';
-    return;
-  }
+  // ── inline transport editor (replaces the old `site` popup) ──
+  if (closest('.js-site-go')) { const b = closest('.js-site-go'); e.stopPropagation(); return openTransportEdit(b.dataset.rec, b.dataset.unit || null, 'delivery'); }   // legacy dispatch links still open the editor
+  if (closest('.js-tedit-open')) { const b = closest('.js-tedit-open'); e.stopPropagation(); return openTransportEdit(b.dataset.rec, b.dataset.unit || null, b.dataset.leg || 'delivery'); }
+  if (closest('.js-ttype')) { const b = closest('.js-ttype'); e.stopPropagation(); return setTransportType(b.dataset.rec, b.dataset.unit || null, b.dataset.val); }
+  if (closest('.js-tedit-save')) { e.stopPropagation(); return saveTransportEdit(); }
+  if (closest('.js-tedit-cancel')) { e.stopPropagation(); return closeTransportEdit(); }
+  if (closest('.js-tsug-pick')) { const b = closest('.js-tsug-pick'); e.stopPropagation(); return tePick(Number(b.dataset.i)); }
   if (closest('.js-wo-complete')) { const b = closest('.js-wo-complete'); return completeWOAttempt(b.dataset.rec); }
   if (closest('.js-wo-cancel')) { const b = closest('.js-wo-cancel'); const w = IDX.wo.get(b.dataset.rec); if (w) { w.cancelled = true; reindex('workOrders', w); logAction(w, 'Work order cancelled'); toast('Work order cancelled — find it in the done list to reopen.'); reanchorRender(); } return; }   // Jac: can't cancel WOs (reversible flag, terminal like Complete)
   if (closest('.js-wo-reopen')) { const b = closest('.js-wo-reopen'); const w = IDX.wo.get(b.dataset.rec); if (w) { w.cancelled = false; reindex('workOrders', w); logAction(w, 'Work order reopened'); toast('Work order reopened.'); reanchorRender(); } return; }
@@ -7148,27 +7378,6 @@ function uploadCaptureMedia(r, eu, cap, dataUrl) {
     })
     .catch(() => toast('Video upload failed — the log stamp is saved without it.'));
 }
-function saveSiteAddress() {
-  const o = state.overlay; if (!o || o.kind !== 'site') return;
-  const r = IDX.rental.get(o.rentalId); if (!r) return closeOverlay();
-  const v = (document.querySelector('.js-site-addr')?.value || '').trim();
-  if (!v) return attnFlash('.js-site-addr');                        // R19: glow the field, no error message
-  const v2 = (document.querySelector('.js-site-addr2')?.value || '').trim();
-  // §20 write to THIS unit's transport (mirror onto r.* for the primary / legacy readers)
-  const eu = unitEntry(r, o.unitId);
-  const tgt = eu || r;
-  const tt = state.siteType || (tgt.transportType && tgt.transportType !== 'Self' ? tgt.transportType : 'Delivery');
-  const recov = v2 && v2 !== v ? v2 : '';
-  tgt.deliveryAddress = v; tgt.recoveryAddress = recov; tgt.transportType = tt; if (state.sitePin) tgt.sitePin = state.sitePin;
-  if (!eu || isPrimaryUnit(r, eu)) { r.deliveryAddress = v; r.recoveryAddress = recov; r.transportType = tt; if (state.sitePin) r.sitePin = state.sitePin; }
-  state.siteType = null;
-  syncTransportLine(r);
-  reindex('rentals', r); logAction(r, `${IDX.unit.get(o.unitId)?.name ? IDX.unit.get(o.unitId).name + ' — ' : ''}Site address → ${auditVal(v)}`);
-  toast('Site saved — address + exact pin go to dispatch.');
-  state.overlay = null; state.sitePin = null;
-  const session = activeSession(); if (session.anchor) setAnchor(session, session.anchor.card, session.anchor.recId, session.anchor.recType);
-  render(); renderOverlay();
-}
 /* Part/Task popup save: creates the WO line + Parts/Vendors board records when
    new; empty fields are flagged aiPending for Mr. Wrangler review (backend TODO). */
 function savePartForm() {
@@ -7324,18 +7533,6 @@ function onInput(e) {
     setQuery(e.target.value);                      // re-renders; the input is recreated
     const gs = document.getElementById('globalsearch');
     if (gs) { gs.focus(); gs.setSelectionRange(sel, sel); }
-    return;
-  }
-  // v2 site popup: live address suggestions (typed street + known transport cities)
-  if (e.target.classList.contains('js-site-addr')) {
-    const box = document.querySelector('.js-site-sug'); if (!box) return;
-    const v = e.target.value.trim();
-    if (!v) { box.innerHTML = ''; return; }
-    const cities = Object.keys(TRANSPORT_MAP || {});
-    const street = v.replace(/,.*$/, '');
-    const hits = cities.filter((c) => v.toLowerCase().includes(c.toLowerCase()));
-    const pool = (hits.length ? hits : cities).slice(0, 3);
-    box.innerHTML = pool.map((c) => { const city = c.replace(/\b\w/g, (m) => m.toUpperCase()); return `<button class="dd-item js-site-pick" type="button">${esc(street.toLowerCase() === c.toLowerCase() ? `${city}, TX` : `${street}, ${city}, TX`)}</button>`; }).join('');
     return;
   }
   if (e.target.classList.contains('js-history-search')) {
@@ -9100,7 +9297,8 @@ function exposeTestApi() {
       allUnitsTerminal, unitTerminal, unitVoided, rentalLineItems, transportLineItems, syncRentalPrimary,
       addUnitToRental, removeUnitFromRental, removeUnitInvoiceLine, unitLinePaid, invoiceTotals, allocLines,
       rentalAllocated, unitRentalPrice, rentalDisplayName, setWoLinePhase, setWoPhase, woBottleneck,
-      cleanUnitName, planUnitMigration, applyUnitMigration, openMigrationPreview };
+      cleanUnitName, planUnitMigration, applyUnitMigration, openMigrationPreview,
+      computeTransportPrice, isFueledType, unitTransport, rentalTransport };
   } catch (e) { /* no window (non-browser) */ }
 }
 

@@ -36,6 +36,14 @@ export const colorBgVar = (token) => `var(--${token}-bg)`;
 // via Script Property STRIPE_PUBLISHABLE_KEY (e.g. set pk_test_… to run in test).
 export const STRIPE_PUBLISHABLE_KEY = 'pk_live_51TdOu3DEE4GXf0zT7xBP4KQ5vxK21P8n24MwxewyF4awrladyPYTkpiK8SRvUfFpwnFE1i2cITo1UxJ0CQrx30fl00dGxTTpWZ';
 
+/* ── Google Maps key (Places autocomplete · map · drive distance) ─────────────
+ * A REFERRER-RESTRICTED browser key (locked to app.jacrentals.com) — never a
+ * true secret, but per the no-secrets-in-repo rule we DON'T commit it. The live
+ * key is served at runtime by the backend (Script Property GOOGLE_MAPS_KEY) via
+ * backendCall('mapsKey'), exactly like the Stripe publishable key. Empty here →
+ * the transport editor runs in offline/mock mode until the backend serves a key. */
+export const GOOGLE_MAPS_KEY = '';
+
 /* ── Status registry (SPEC §8 canonical values + §6.2 #7 colors) ──────────
  * STATUS[set][value] = { label, color }. `slug` and `value` are derived.
  * Every set the app renders a pill for lives here. Legacy→canonical import
@@ -336,14 +344,51 @@ export function lookupTransport(address) {
   return null;
 }
 
-/** Transport price for a rental given its type + destination + member perk. */
-export function transportPrice(transportType, address, { unlimitedTransport = false } = {}) {
+/** LEGACY transport price (city-tier table). Kept as the offline/no-key fallback
+ *  for addresses that have never been geocoded (seeded demo data, CI). The live
+ *  app prices via computeTransportPrice using Google drive distance (see below). */
+export function legacyTransportPrice(transportType, address, { unlimitedTransport = false } = {}) {
   if (!transportType || transportType === 'Self') return { price: 0, driveMin: 0, label: 'Self' };
   if (unlimitedTransport) return { price: 0, driveMin: 0, label: 'Unlimited' };
   const hit = lookupTransport(address);
   if (!hit) return { price: null, driveMin: null, label: '-' };
   const mult = transportType === 'Round-Trip' ? 2 : 1;
   return { price: hit.price * mult, driveMin: hit.driveMin, label: `$${hit.price * mult}` };
+}
+
+/* ── Transport pricing v2 (Jac 2026-06-15) — real per-mile formula ────────────
+ * Per unit, per transport leg:  $3.50/mile + $50 load + ($20 fuel if fueled).
+ * legs = Delivery|Recovery → 1 ; Round-Trip → 2 ; Self|none → 0. One-way miles
+ * and drive minutes come from Google (origin = the yard) and are CACHED on the
+ * unit entry at save time, so render/billing never calls Google. */
+export const TRANSPORT_RATES = { perMile: 3.5, loadPerLeg: 50, fuelPerLeg: 20 };
+
+/** The dispatch origin for every transport distance lookup (Google Distance Matrix). */
+export const YARD_ORIGIN = 'JacRentals, Sulphur, LA, USA';
+
+/** A unit is "fueled" (gets the $20/leg fuel-fill) when its category runs on a
+ *  combustion fuel. Electric / battery / unknown → no fuel charge. */
+export function isFueledType(fuelType) {
+  return /diesel|gas(oline)?|petrol|propane|\blp\b/i.test(String(fuelType || ''));
+}
+
+/** Trip legs billed for a transport type. */
+export function legsForType(transportType) {
+  if (transportType === 'Round-Trip') return 2;
+  if (transportType === 'Delivery' || transportType === 'Recovery') return 1;
+  return 0;
+}
+
+/** PURE transport price from cached inputs (testable, no Google).
+ *  @param oneWayMiles  yard↔site one-way driving miles (null → price unknown). */
+export function computeTransportPrice({ transportType, oneWayMiles, fueled = false, unlimitedTransport = false } = {}) {
+  const legs = legsForType(transportType);
+  if (!legs) return { price: 0, driveMin: 0, label: 'Self', legs: 0 };
+  if (unlimitedTransport) return { price: 0, driveMin: 0, label: 'Unlimited', legs };
+  if (oneWayMiles == null || !isFinite(oneWayMiles)) return { price: null, driveMin: null, label: '—', legs };
+  const perLeg = TRANSPORT_RATES.perMile * oneWayMiles + TRANSPORT_RATES.loadPerLeg + (fueled ? TRANSPORT_RATES.fuelPerLeg : 0);
+  const price = Math.round(perLeg * legs);
+  return { price, driveMin: null, label: `$${price}`, legs, perLeg: Math.round(perLeg) };
 }
 
 /* ── Locked date formats (SPEC §12.2) ────────────────────────────────────
