@@ -2022,8 +2022,8 @@ body.dragging .row.drop-ok { opacity: 1; }
 [data-theme="bluedsteel"] body {                  /* the FLOOR = a dark version of the blued steel (Jac):
                                                      the Metal027 plate under a heavy dark wash + a soft blue dawn-glow */
   background:
-    radial-gradient(110% 80% at 32% -14%, rgba(46,78,128,.20), transparent 60%),
-    linear-gradient(rgba(8,11,18,.82), rgba(8,11,18,.82)),
+    radial-gradient(110% 80% at 32% -14%, rgba(40,68,116,.13), transparent 58%),
+    linear-gradient(rgba(8,11,17,.88), rgba(8,11,17,.88)),
     url('assets/tex-metal-blued.jpg');
   background-size: auto, auto, 520px;
   background-repeat: no-repeat, no-repeat, repeat;
@@ -2079,9 +2079,15 @@ body.dragging .row.drop-ok { opacity: 1; }
    cool inset highlight + lift shadow) so they read distinctly against the now
    strongly-blue plate; their header + status accent carry the rest. */
 [data-theme="bluedsteel"] .col > .card.anchored .section {
-  background: rgba(11,15,24,.36);
+  background:
+    linear-gradient(rgba(8,11,18,.74), rgba(8,11,18,.74)),
+    url('assets/tex-metal-blued.jpg');
+  background-size: auto, 300px;
   box-shadow: inset 0 1px 0 rgba(150,178,222,.12), 0 2px 8px -3px rgba(0,0,0,.55);
 }
+/* search/sort sub-header (.listbar) — a clean solid dark strip so the floor/card
+   texture never bleeds through the controls (Jac) */
+[data-theme="bluedsteel"] .listbar { background: linear-gradient(180deg, #0c1320 80%, transparent); }
 
 [data-theme="bluedsteel"] .coltab {               /* same stamped type as Yard */
   font-family:'Saira Condensed', system-ui, sans-serif;
