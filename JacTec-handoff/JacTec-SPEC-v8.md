@@ -214,6 +214,58 @@ pill/badge/add `data-r` system), so no new rule and `rule-usage.js` is undisturb
 
 ---
 
+## v8.5 — Built-State Delta (2026-06-15, evening · Jac's interaction sweep + units import repair)
+
+A long session against Jac's live-walkthrough backlog (~19 items) plus an import-repair tool.
+All shipped to `main` via squash-merged PRs — **`main` is now branch-protected** (a required
+`smoke` check), so deploys go **branch → PR → squash-merge**, NOT a direct `git push main`.
+Code is truth; this records what landed.
+
+**Round up missing units (`#migrate-units`, admin).** Imported rentals carried the machine as a
+free-text `legacyUnitName` (unitId null), so ~48 units were never real records and were invisible
+in the Units list. The migration cleans the names (drops `❌` / dates / `BMT ONLY` / underscores),
+dedupes, **LINKS** to an existing unit of the same name (no dup), creates the rest, and relinks
+every referencing rental (→ its customers, categories, invoices). Preview-first + idempotent.
+`cleanUnitName` / `planUnitMigration` / `applyUnitMigration` + the `migrateUnits` overlay; +7 CI
+checks. There's also a new **"All Units (any status)"** units sort/view that shows every fleet
+status at once (Sold/Inactive are otherwise hidden).
+
+**A1 — no more sticky filters; everything routes through the search bar (Jac's rule).** A card's
+**footer summary chips**, the **"Not Ready"** tab chip, and the **Services (heart)** tab each used
+to set their own sticky filter (`cs.totalFilter` / a stuck column view) you couldn't clear from the
+search bar. Now each adds an **exact, removable pill** to that card's search bar — structured
+col-scoped terms matched by `totColMatch` so "Ready" can't also catch "Not Ready". New:
+`addColFilter` / `colFilterLabel`; synthetic cols `__cond` (inspection status), `__svc`
+(service-due), `__wo` (open/ordered WOs). *Remaining sticky filter:* the Categories fleet-bar
+(`state.fleetFilter`).
+
+**Interaction fixes (Jac's B-list).** Right-click now opens the record menu on **list-row names**
+(`.r-title`, R20) and **survives the window picker** (B5); **hover preview** on list-row names (B2);
+**comment markers are clickable** — open the note, dedup-guarded (B6); **drag a unit pill → rental**
+from anywhere incl. the Investment list (B4, via a unit-pill exception in the drag-bail); the locked
+**Complete-Rental** flash points at the missing **unit slot**, not +PO/+notes (B7). *Verified
+not-bugs:* Investment-pill hover preview works (B3); there is no 2-entry search cap (C2).
+
+**Quick UI.** Customer activity graph moved below the action row, above Account (D1) — and is now
+**interactive**: a 2nd leather-tan "days rented" line + a cursor-scrub tooltip (that month's spend
++ days), via `caScrub` (D2). Invoice action buttons stack vertically (E1); the **invoice due date
+is editable** inline (E2). View-delete ✕ ungated for any operator (G1). A close-all ✕ at the START
+of the global search once >1 term (C1). The **Company Files board** got a live search bar (F1) and
+**+File takes a photo/document** upload (F2, frontend).
+
+**Session sharing (H1, frontend).** The Share QR (top bar) now stashes the operator's open tabs in
+the backend and encodes `#s=<id>`; another device that opens it (and signs in) restores the same
+tabs via `openInNewTab`. `shareSession` + the `#s=` branch in `finishLoad`.
+
+**Backend pending — Mr. Wrangler model (frontends live, handlers spec'd in the handoff doc):**
+`uploadFile` (F2 → Google Drive) and `saveSession` / `getSession` (H1). Until pasted into `Code.gs`,
+both fall back gracefully (demo keeps a downscaled image inline / the QR is the plain app URL).
+
+**Convention.** `CLAUDE.md` now records Jac's standing preference — **always ask via popups**
+(the AskUserQuestion tool), never inline in chat.
+
+---
+
 ## 0 · How to debug with this spec
 
 1. **The flash-lint (R0)** is the alarm. Toggle = the eye icon in the bottom bar
@@ -266,7 +318,7 @@ no `data-r` stamp; v8 documents them as real rules.
 | **R17** | Action pill | `actionPill` | commit = blue · money = green · danger = solid red; `.locked` = gated. |
 | **R18** | Ghost | `ghostPill` | The ONE quiet action — Cancel / Close / Exit / Clear. |
 | **R19** | Attention flash | `attnFlash(sel)` / `flashOr(sel,msg)` (app.js:1254) | A glow that points AT the fix instead of an error message. **Flash is 2×** now (was 3×). |
-| **R20** | Wrangler menu | `openCtxMenu` / `runCtxAction` (app.js:1268) | Right-click any **real control** → Cut/Copy/Paste/Clear/Search/Replace/Add Comment/Ask Mr. Wrangler. NEVER fires on bare `.row`/dead space. |
+| **R20** | Wrangler menu | `openCtxMenu` / `runCtxAction` / `openCtxMenuAt` | Right-click any **real control** — now incl. a list-row **name** (`.r-title`, Jac 2026-06-15) — → Cut/Copy/Paste/Clear/Search/Replace/Add Comment/Ask Mr. Wrangler. Bare `.row`/dead space → card-**Back** instead, and that Back **now works even while the rental-window picker is open** (only the element menu is suppressed during a pick). |
 | **R21** | File drop | `fileDrop` (app.js:1235) | The MASSIVE popup add-file zone — R5b blue dashed at full size. |
 | **R22** | Date picker | `dateField` (app.js:1242) | The ONE app-styled calendar for a single date/time (NOT the rental-window timeline). Class `.datefield`; toggles `datePickerInline()`. |
 | **R23** | Tooltip | `data-tip` → the one styled tip | Every hover hint goes through `data-tip` — a native `title` attribute is a violation (caught by `body.rw-lint [title]` at style.css:996). |
@@ -547,7 +599,17 @@ GAMIFICATION 3561; Dispatch Time Grid 3673) · §12 Overlays & boards (3737) ·
   **KPI rework** half of #6; and adds the Card Graph view (§13.3), the daily driver-timeline
   dispatch (§2.3), per-card stripe colors, and Cancel-WO.
 
+- ✅ **v8.5 (2026-06-15 eve) — Jac's interaction sweep + units import repair** — see the v8.5
+  Built-State Delta above. `#migrate-units` (unrecorded-unit repair) + "All Units" view; **A1**
+  (footer / "Not Ready" / Services sticky filters → removable search-bar pills); 11 UI/interaction
+  fixes (B1/B2/B4/B5/B6/B7, D1/D2/E1/E2, C1, F1, G1); F2/H1 **frontends** (backend handlers pending).
+
 **Carry forward (real remaining work):**
+0. **📌 Pinned from v8.5** — TWO backend Apps Script handlers (frontends shipped + spec'd in the
+   handoff doc §9/§10): **`uploadFile`** (F2 — file → Google Drive, returns a share link) and
+   **`saveSession`/`getSession`** (H1 — session sharing, a Script-Property store). Also **A1's last
+   sticky filter** — the Categories fleet-bar (`state.fleetFilter`) — still needs routing into a
+   search pill like the footer chips / Not-Ready / Services did.
 0. **📌 Pinned from v8.2** — two units-list scroll bugs; For-Sale showing in Category
    Availability (availability math already excludes non-Active — identify the view live);
    Phase-6 free-form icon-to-icon route arrows; the image-capable `Code.gs` paste (so chat
