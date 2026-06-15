@@ -1800,9 +1800,7 @@ body.dragging .row.drop-ok { opacity: 1; }
 
 /* ── The wrangler seasoning — a worn leather-tan saddle-stitch under the deck ─ */
 [data-theme="yard"] .bottombar {
-  border-top: 1.5px dashed var(--tan);
-  border-image: repeating-linear-gradient(90deg, var(--tan) 0 7px, transparent 7px 13px) 1;
-  margin-top: 2px;
+  margin-top: 2px;   /* Jac: removed the tan/yellow dashed saddle-stitch line atop the footer toolbar */
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
