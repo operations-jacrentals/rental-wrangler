@@ -1035,7 +1035,7 @@ let hoverTimer = null, hoverEl = null, hoverNode = null, hoverGrace = null;
 const lastMouse = { x: 0, y: 0 };
 /* previews arm ONLY on real pills/badges/flags ([data-pill-card]) or the row EYE —
    never the row body / empty space (Jac 2026-06-12) */
-const hoverTarget = (n) => (n && n.closest ? n.closest('[data-pill-card], .js-roweye') : null);
+const hoverTarget = (n) => (n && n.closest ? n.closest('[data-pill-card], .js-roweye, .r-title') : null);
 function recForHover(target) {
   let card, recId, recType;
   if (target.classList && target.classList.contains('js-roweye')) {
@@ -1043,7 +1043,7 @@ function recForHover(target) {
     card = row.dataset.card; recId = row.dataset.rec; recType = row.dataset.type;
   }
   else if (target.dataset.pillCard) { card = target.dataset.pillCard; recId = target.dataset.pillRec; }
-  else { card = target.dataset.card; recId = target.dataset.rec; recType = target.dataset.type; }
+  else { const src = (target.closest && target.closest('.row')) || target; card = src.dataset.card; recId = src.dataset.rec; recType = src.dataset.type; }   // .r-title (list-view name) → resolve via its row (Jac B2)
   if (recId == null) return null;
   const ec = SHOP_TYPES.includes(card) ? card : (card === 'shop' ? recType : card);
   const rec = recOf(ec, recId);
@@ -1436,8 +1436,9 @@ function openCtxMenuAt(target, x, y) {
   if (!target || !target.closest) return;
   if (target.closest('input, textarea, .inline-input')) return;
   const card = target.closest('.card'); if (!card && !target.closest('.overlay .popup')) return;
-  if (state.winpicker) return;
-  const leaf = target.closest('.pill, .add-field, .flag, .linkname, .inv-line-link, .req, .seg, button, .inline-edit, .jnode, .x, a, .d-title, .derived');
+  // While the rental-window picker is open, keep right-click → BACK working; just suppress
+  // the element context menu (it gets in the way of picking). (Jac B5, 2026-06-15)
+  const leaf = state.winpicker ? null : target.closest('.pill, .add-field, .flag, .linkname, .inv-line-link, .req, .seg, button, .inline-edit, .jnode, .x, a, .d-title, .derived');
   const hit = leaf ? (ruleOf(leaf) || { r: null, el: leaf }) : null;
   if (hit) return openCtxMenu({ clientX: x, clientY: y }, hit);
   if (!card) return;
@@ -2493,6 +2494,7 @@ function saveCommentOverlay() {
   if (!text) { if (ta) ta.focus(); return; }
   const rec = recOf(entityCardOf(o.card, o.recType), o.recId);
   if (!rec) { toast('Record not found.'); closeOverlay(); return; }
+  if ((rec.comments || []).some((c) => c.text === text && c.color === (o.color || 'yellow'))) { closeOverlay(); return; }   // opened to READ an existing note → don't duplicate it on close
   addRecComment(rec, text, o.color || 'yellow');
   closeOverlay(); render();
   toast('Comment posted — marker set.');
@@ -6335,6 +6337,16 @@ function onClick(e) {
       toast(`📋 Copied: ${ref}`);
       return;
     }
+  }
+
+  // §B6 — a comment marker (yellow dot) is now clickable: open the comment overlay
+  // seeded with the record's latest note so it can actually be read (it had no handler).
+  if (closest('.cmt-marker')) {
+    e.stopPropagation();
+    const hit = cardRecordAt(t); if (!hit) return;
+    const rec = recOf(entityCardOf(hit.card, hit.recType), hit.recId);
+    const all = rec ? recComments(rec) : []; const last = all.length ? all[all.length - 1] : null;
+    return openOverlay({ kind: 'comment', card: hit.card, recId: hit.recId, recType: hit.recType, color: (last && last.color) || 'yellow', text: last ? last.text : '' });
   }
 
   // clicked card → orange-border focus (§0.1 visual feedback; applied immediately,
