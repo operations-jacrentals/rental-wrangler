@@ -7704,6 +7704,73 @@ function uploadCaptureMedia(r, eu, cap, dataUrl) {
 }
 /* Part/Task popup save: creates the WO line + Parts/Vendors board records when
    new; empty fields are flagged aiPending for Mr. Wrangler review (backend TODO). */
+/* ── §18g — Mr. Wrangler PHOTO AUTOFILL (I1, Jac 2026-06-15): after a receipt/part is
+   saved with a photo + empty fields, the live AI reads the photo and fills the still-
+   blank fields, then clears the ✨ aiPending flag. Fire-and-forget + best-effort: on any
+   failure the record keeps its ✨ so nothing is silently wrong. Reuses the §18 `wrangler`
+   backend (image content block via wranglerImageBlock); no-ops in demo/offline mode. ── */
+const RW_EXPENSE_CATS = ['Parts', 'Fuel', 'Tools', 'Service', 'Shipping', 'Supplies', 'Other'];
+function vendorIdByName(name) {
+  const n = String(name || '').trim(); if (!n) return null;
+  let v = DATA.vendors.find((x) => (x.name || '').toLowerCase() === n.toLowerCase());
+  if (!v) { v = { vendorId: 'VEN-C' + (state.seq++), name: n, mock: true }; DATA.vendors.push(v); reindex('vendors', v); }
+  return v.vendorId;
+}
+async function wranglerExtract(photo, system) {
+  if (typeof backendPassword === 'undefined' || !backendPassword) return null;   // demo/offline → no AI
+  const block = wranglerImageBlock(photo); if (!block) return null;
+  try {
+    const r = await backendCall('wrangler', { system, messages: [{ role: 'user', content: [block, { type: 'text', text: 'Extract the fields from this image. Respond with ONLY the JSON object.' }] }] });
+    if (!r || r.error || !r.text) return null;
+    return JSON.parse(String(r.text).replace(/```(?:json)?/gi, '').trim());
+  } catch (e) { return null; }
+}
+async function autofillReceipt(rec, photo) {
+  const sys = `You are Mr. Wrangler reading a vendor receipt or invoice for a heavy-equipment rental shop. Extract these fields: vendor (the seller's business name), amount (the GRAND TOTAL paid — a number in dollars, no symbol), date (the receipt date as YYYY-MM-DD), category (exactly one of: ${RW_EXPENSE_CATS.join(', ')}). Respond with ONLY a JSON object using those exact keys; omit any key you cannot read confidently. No prose, no code fences.`;
+  const d = await wranglerExtract(photo, sys); if (!d || typeof d !== 'object') return;
+  let changed = false;
+  if (!(rec.amount > 0) && d.amount != null && !isNaN(Number(d.amount))) { rec.amount = Number(d.amount); changed = true; }
+  if (!rec.vendorId && d.vendor) { rec.vendorId = vendorIdByName(d.vendor); changed = true; }
+  if ((!rec.date || rec.date === TODAY_ISO) && typeof d.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d.date)) { rec.date = d.date; changed = true; }
+  if (d.category) { const c = RW_EXPENSE_CATS.find((x) => x.toLowerCase() === String(d.category).toLowerCase()); if (c && (!rec.category || rec.category === 'Parts')) { rec.category = c; changed = true; } }
+  if (!changed) return;
+  rec.aiPending = !rec.vendorId || !(rec.amount > 0);
+  reindex('expenses', rec); logAction(rec, '✨ Mr. Wrangler filled fields from the receipt photo'); saveSoon();
+  render(); if (state.overlay?.kind === 'board') renderOverlay();
+  toast('✨ Mr. Wrangler filled in the receipt.');
+}
+async function autofillPartLine(w, li, photo) {
+  if (!w || !li) return;
+  const sys = `You are Mr. Wrangler reading a photo of an equipment part, tool, or repair item for a heavy-equipment rental shop. Extract these fields: description (a short part or task name), cost (price each — a number in dollars, no symbol), hours (labor hours to install or complete it — a number), url (a product or order link if one is visible), vendor (the supplier's business name). Respond with ONLY a JSON object using those exact keys; omit any key you cannot read confidently. No prose, no code fences.`;
+  const d = await wranglerExtract(photo, sys); if (!d || typeof d !== 'object') return;
+  const ph = '📷 Awaiting Mr. Wrangler review';
+  let changed = false;
+  if ((!li.part || li.part === ph) && d.description) { li.part = String(d.description); changed = true; }
+  if (!(li.cost > 0) && d.cost != null && !isNaN(Number(d.cost))) { li.cost = Number(d.cost); changed = true; }
+  if (!(li.hours > 0) && d.hours != null && !isNaN(Number(d.hours))) { li.hours = Number(d.hours); changed = true; }
+  if (!li.url && d.url) { li.url = String(d.url); changed = true; }
+  if (!li.vendorId && d.vendor) { li.vendorId = vendorIdByName(d.vendor); changed = true; }
+  if (!changed) return;
+  li.aiPending = !li.part || li.part === ph || !(li.cost > 0) || !(li.hours > 0);
+  // sync to / create the catalog part (mirror savePartForm: link → name-match → create)
+  let p = li.partId ? DATA.parts.find((r) => r.partId === li.partId) : null;
+  if (!p && li.part && li.part !== ph) p = DATA.parts.find((r) => (r.name || '').toLowerCase() === li.part.toLowerCase());   // name-match before create (no dup)
+  if (p) {
+    if (li.part && li.part !== ph) p.name = li.part;
+    if (li.cost > 0) p.priceEach = li.cost;
+    if (li.url) p.website = li.url;
+    if (li.vendorId) p.vendorId = li.vendorId;
+    if (!li.aiPending) p.aiPending = false;
+    li.partId = p.partId; reindex('parts', p);
+  } else if (li.part && li.part !== ph) {
+    p = { partId: 'PRT-C' + (state.seq++), name: li.part, status: 'Catalog', priceEach: li.cost > 0 ? li.cost : null, qtyOnHand: null, website: li.url || '', orderEmail: '', productNumber: '', vendorId: li.vendorId || null, imageUrl: '', notes: '', woId: w.woId, aiPending: li.aiPending, mock: true };
+    DATA.parts.push(p); li.partId = p.partId; reindex('parts', p);
+  }
+  reindex('workOrders', w); logAction(w, '✨ Mr. Wrangler filled a part line from the photo'); saveSoon();
+  reanchorRender(); if (state.overlay?.kind === 'board') renderOverlay();
+  toast('✨ Mr. Wrangler filled in the part.');
+}
+
 function savePartForm() {
   const o = state.overlay; if (!o || o.kind !== 'partform') return;
   const w = IDX.wo.get(o.woId); if (!w) return closeOverlay();
@@ -7744,9 +7811,12 @@ function savePartForm() {
   if (o.idx == null) w.lineItems.push(li);
   if (w.phase === 'Complete') w.phase = 'Part Needed?';
   reindex('workOrders', w); logAction(w, `${o.idx != null ? 'Edited' : 'Added'} line: ${auditVal(li.part)}`);
+  const photo = li.photo || null;   // §18g — capture for the AI photo-autofill before state clears
   state.partPhoto = null; state.overlay = null;
-  toast(li.aiPending ? '✨ Saved — Mr. Wrangler will fill the blanks when he comes online.' : 'Line saved.');
+  const willFill = li.aiPending && photo && typeof backendPassword !== 'undefined' && backendPassword;
+  toast(willFill ? '✨ Saved — Mr. Wrangler is reading the photo to fill the blanks…' : li.aiPending ? '✨ Saved — add a photo and Mr. Wrangler can fill the blanks.' : 'Line saved.');
   reanchorRender(); renderOverlay();
+  if (willFill) autofillPartLine(w, li, photo);   // §18g fire-and-forget photo autofill
 }
 /* Receipt popup save (§7.11): creates/updates the expense; vendor name-match or
    auto-create (the savePartForm idiom); empty AI-fillable fields flag aiPending ✨;
@@ -7777,11 +7847,14 @@ function saveReceiptForm() {
     reindex('parts', p); logAction(rec, `Linked part: ${partName}`);
   }
   reindex('expenses', rec); logAction(rec, existing ? 'Receipt edited' : 'Receipt created');
+  const photo = rec.photo || null;   // §18g — capture for the AI photo-autofill before state clears
   state.receiptPhoto = null;
   openOverlay({ kind: 'board', board: 'expenses', recId: rec.expenseId });   // save lands ON the detail
-  toast(rec.aiPending ? '✨ Saved — Mr. Wrangler will fill the blanks when he comes online.' : 'Receipt saved.');
+  const willFill = rec.aiPending && photo && typeof backendPassword !== 'undefined' && backendPassword;
+  toast(willFill ? '✨ Saved — Mr. Wrangler is reading the photo to fill the blanks…' : rec.aiPending ? '✨ Saved — add a receipt photo and Mr. Wrangler can fill the blanks.' : 'Receipt saved.');
   render();
   attnFlash('.board-detail .detail-head');   // R19: glow the fresh receipt
+  if (willFill) autofillReceipt(rec, photo);   // §18g fire-and-forget photo autofill
 }
 /* Reconcile link (§7.11): name-match an existing part or create one, then stamp
    part.receiptId/receiptQty (the part points at the receipt — ONE SOURCE, ONE HOME).
