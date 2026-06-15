@@ -1572,6 +1572,49 @@ body.rw-inspect .c-titlecard:hover { outline: 2px solid #18b6ff; outline-offset:
 .journey.mini .jlbl { font-size: 8.5px; }
 .journey.mini .jnode { min-width: 36px; }
 .journey.mini .jseg { padding-top: 2px; }
+/* ── Rentals Stall Board (Jac 2026-06-15): day-timeline blocker · event strip ·
+   per-unit stalls · the connected Home—Site—Home route rail. ── */
+.tl-over .d1, .tl-over .d2 { position: absolute; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; line-height: 1.05; z-index: 1; }
+.tl-over .d1 { left: 11px; }
+.tl-over .d2 { right: 11px; align-items: flex-end; }
+.tl-over .dlab { font-weight: 800; font-size: 12.5px; }
+.tl-over .midwrap { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap; padding: 0 78px; pointer-events: none; }
+.tl-over .midwrap > * { pointer-events: auto; }
+.rentalsec .timeline { height: 60px; }
+.tl-blocker { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: var(--yellow-bg); border: 1px solid color-mix(in srgb, var(--yellow) 38%, transparent); color: var(--yellow); border-radius: 8px; padding: 3px 9px; font-size: 11px; font-weight: 700; cursor: pointer; }
+.tl-blocker svg { width: 13px; height: 13px; flex: 0 0 auto; }
+.tl-blocker:hover { filter: brightness(1.12); }
+.estrip { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 11px; }
+.estrip-l { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.estrip-r { margin-left: auto; }
+.stalls { display: flex; flex-direction: column; margin-top: 4px; }
+.stall { border-top: 1px solid var(--line); padding: 9px 2px; }
+.stall:first-child { border-top: 1px dashed var(--line); }
+.stall.voided { opacity: .55; }
+.stall.voided .stall-amt, .stall.voided .pill.ref { text-decoration: line-through; }
+.stall-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.stall-id { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.stall-amt { font-weight: 800; color: var(--green); font-variant-numeric: tabular-nums; }
+.stall-sub { font-size: 11.5px; color: var(--txt-3); font-style: italic; margin-top: 6px; }
+.stall-empty { display: flex; align-items: center; gap: 9px; padding: 11px 2px; }
+.rentalsec-foot { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 10px; }
+.rtrail { display: grid; align-items: center; justify-items: center; column-gap: 7px; row-gap: 4px; margin-top: 8px; }
+.rtrail.rt { grid-template-columns: auto minmax(48px, 1fr) auto minmax(48px, 1fr) auto; }
+.rtrail.one { grid-template-columns: auto minmax(48px, 1fr) auto; }
+.rtbox { width: 34px; height: 34px; border-radius: 9px; background: var(--panel-2); border: 1px solid var(--line); display: grid; place-items: center; color: var(--txt-2); }
+.rtbox svg { width: 18px; height: 18px; }
+.rtbox.site { color: #c2925a; border-color: rgba(194, 146, 90, .5); background: rgba(194, 146, 90, .14); cursor: pointer; }
+.rtbox.site:hover { filter: brightness(1.12); }
+.rtbox.done { color: var(--green); border-color: var(--green); background: var(--green-bg); }
+.rtbar { width: 100%; }
+.rtbar.done { height: 6px; border-radius: 3px; background: var(--green); }
+.rtbar.pending { height: 0; border-top: 2px dashed var(--line); }
+.rtover { font-size: 11px; font-weight: 700; align-self: end; white-space: nowrap; }
+.rtover.log { color: var(--txt); cursor: pointer; }
+.rtover.log:hover { text-decoration: underline; }
+.rtover.done { color: var(--green); cursor: pointer; }
+.rtlbl { font-size: 11px; color: var(--txt-2); align-self: start; text-align: center; line-height: 1.15; }
+.rtaddr { display: block; color: #c2925a; text-decoration: underline; cursor: pointer; max-width: 118px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .unitchip { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .unitchip.voided { opacity: .55; }
 .unitchip.voided .pill { position: relative; }

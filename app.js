@@ -2901,6 +2901,46 @@ function miniJourneyHtml(r2, eu) {
   else body = jacNode + logSeg('start', sd, '+Log Delivery', 'delivery', delAddr) + siteNode + logSeg('end', ed, '+Log Recovery', 'recovery', recAddr) + jacNode;
   return `<div class="journeywrap"><div class="jtype">${seg}${oneWay ? `<span class="jprice">${money(oneWay)}<span class="sfx"> /one-way</span></span>` : ''}</div><div class="journey mini">${body}</div></div>`;
 }
+const ICO_PIN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s7-6.5 7-12a7 7 0 1 0-14 0c0 5.5 7 12 7 12z"/><circle cx="12" cy="9" r="2.5"/></svg>';
+/* §20 STALL ROUTE RAIL (Jac 2026-06-15) — the per-unit Home—Site—Home journey as a
+   CONNECTED rail in the day-timeline's grammar: enlarged node medallions joined by
+   thick segment legs that FILL GREEN as each capture is logged (matching the day-cell
+   elapsed tint) and stay hollow-dashed while pending. +Log Delivery/+Log Recovery and
+   the ✓-done state ride the legs; the site address sits ONCE under the shared Site
+   node. Replaces the old smeared transport chip + right-column + bottom section. */
+function stallRouteHtml(r, eu) {
+  const te = state.transportEdit;
+  const uId = eu.unitId;
+  const du = ` data-unit="${esc(uId)}"`;
+  if (te && te.rentalId === r.rentalId && (te.unitId || null) === uId) return `<div class="stall-edit">${transportEditorHtml()}</div>`;
+  const type = (eu.transportType && eu.transportType !== 'Self') ? eu.transportType : null;
+  if (!type) {
+    return `<div class="stall-sub"><button class="add-field anchor js-tedit-open" data-r="R5b" data-rec="${esc(r.rentalId)}"${du} data-leg="delivery" style="height:24px;font-size:11px">+Transport</button></div>`;
+  }
+  const tr = unitTransport(r, eu);
+  const oneWay = (tr && tr.perLeg != null) ? tr.perLeg : (tr && tr.price != null ? tr.price : null);
+  const drive = (tr && tr.driveMin != null) ? `~${tr.driveMin} min` : '';
+  const addr = eu.deliveryAddress ? esc(eu.deliveryAddress) : '+Address';
+  const sd = !!eu.startCapture, ed = !!eu.endCapture;
+  const sub = `<div class="stall-sub">⇄ ${esc(type)}${oneWay ? ` · ${money(oneWay)}/one-way` : ''}</div>`;
+  const home = `<span class="rtbox">${ICO_STORE}</span>`;
+  const site = (done) => `<span class="rtbox site${eu.deliveryAddress ? ' set' : ''}${done ? ' done' : ''} js-tedit-open" data-rec="${esc(r.rentalId)}"${du} data-leg="delivery">${ICO_PIN}</span>`;
+  const over = (cap, done, label) => `<span class="rtover ${done ? 'done' : 'log'} js-yard" data-cap="${cap}" data-rec="${esc(r.rentalId)}"${du}>${done ? '✓ ' + esc(label.replace('+Log ', '')) : esc(label)}</span>`;
+  const bar = (done) => `<span class="rtbar ${done ? 'done' : 'pending'}"></span>`;
+  const sp = '<span></span>';
+  const lblJac = '<span class="rtlbl">Jac</span>';
+  const lblSite = `<span class="rtlbl">Site<span class="rtaddr js-tedit-open" data-rec="${esc(r.rentalId)}"${du} data-leg="delivery">${addr}</span></span>`;
+  const lblDrive = drive ? `<span class="rtlbl">${esc(drive)}</span>` : sp;
+  let rail;
+  if (type === 'Round-Trip') {
+    rail = `<div class="rtrail rt">${sp}${over('start', sd, '+Log Delivery')}${sp}${over('end', ed, '+Log Recovery')}${sp}${home}${bar(sd)}${site(sd)}${bar(ed)}${home}${lblJac}${lblDrive}${lblSite}${sp}${lblJac}</div>`;
+  } else if (type === 'Delivery') {
+    rail = `<div class="rtrail one">${sp}${over('start', sd, '+Log Delivery')}${sp}${home}${bar(sd)}${site(sd)}${lblJac}${lblDrive}${lblSite}</div>`;
+  } else {
+    rail = `<div class="rtrail one">${sp}${over('end', ed, '+Log Recovery')}${sp}${site(ed)}${bar(ed)}${home}${lblSite}${lblDrive}${lblJac}</div>`;
+  }
+  return sub + rail;
+}
 /* card-head title flags: live condition + worst-WO bottleneck (units);
    rental status + pay status (rentals). Two stacked 14px rows = title height. */
 function headFlagsHtml(card, rec) {
@@ -2955,11 +2995,8 @@ function headFlagsHtml(card, rec) {
 const DETAIL = {
   /* ── RENTALS — fully built (§12.2 standard mode) ── */
   rentals: (r, cs) => {
-    const unit = IDX.unit.get(r.unitId);
     const cat = IDX.category.get(r.categoryId);
     const cust = IDX.customer.get(r.customerId);
-    const price = rentalPrice(r);
-    const tr = rentalTransport(r);
     const inv = r.invoiceId ? IDX.invoice.get(r.invoiceId) : null;
     const invT = inv ? invoiceTotals(inv) : null;
     const truck = showsTruck(r.status, r.transportType);
@@ -2967,20 +3004,22 @@ const DETAIL = {
     const s = parseISO(r.startDate), e = parseISO(r.endDate);
 
     const hasWin = s && e;
-    /* DAY TIMELINE (v2) — the window split into day cells (weeks past 14 days);
-       gate status + naked price·rate centered; time stacks above the end date.
-       Clicking it opens the window calendar exactly like the old status bar. */
+    const units = rentalUnits(r);
+    /* DAY TIMELINE — the shared window as day cells; the master gate rides it and
+       the "N Not Ready" BLOCKER folds in beside it (Jac 2026-06-15). The rate is
+       GONE from here — money now lives in the event-strip balance below. Clicking
+       the bare track opens the window calendar. */
+    const blockN = units.filter((eu) => { const bu = IDX.unit.get(eu.unitId); return bu && bu.inspectionStatus !== 'Ready' && !unitVoided(r, eu); }).length;
+    const blocker = blockN ? `<button class="tl-blocker js-tl-blocker" data-rec="${esc(r.rentalId)}" data-tip="Jump to the machines that aren't ready"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>${blockN} machine${blockN > 1 ? 's' : ''} Not Ready →</button>` : '';
     let timeline;
     if (r.mock && !hasWin) {
-      timeline = `<button class="statusbar draftwin wintrigger js-open-winpicker" data-rec="${r.rentalId}"><span class="wt-label">${r.startDate ? esc(fmtShortDate(r.startDate)) + ' → pick end' : 'Select rental window'}</span>${badge(getStatus('rentalStatus', rentalDisplayStatus(r)).label, stColor)}</button>`;
+      timeline = `<button class="statusbar draftwin wintrigger js-open-winpicker" data-rec="${r.rentalId}"><span class="wt-label">${r.startDate ? esc(fmtShortDate(r.startDate)) + ' → pick end' : 'Select rental window'}</span>${masterGate(r, { truck })}</button>`;
     } else {
       const dayMs = 86400000;
       const total = hasWin ? Math.max(1, Math.round((e - s) / dayMs)) : 1;
       const weekly = total > 14;
       const cells = weekly ? Math.ceil(total / 7) : total;
-      // the cells are just the elapsed-tint track now; the dates live in the
-      // overlay (d1/d2) — the old per-cell .dnum label conflicted with the
-      // centered rate, so it's gone (Jac 2026-06-12).
+      const durLabel = (total >= 7 && total % 7 === 0) ? `${total / 7}-Wk` : `${total}-Day`;
       const cellHtml = Array.from({ length: cells }, (_, i) => {
         const cellEnd = new Date(s.getTime() + (weekly ? (i + 1) * 7 : i + 1) * dayMs);
         return `<div class="day ${TODAY >= cellEnd ? 'past' : ''}"></div>`;
@@ -2988,12 +3027,9 @@ const DETAIL = {
       timeline = `<div class="timeline js-open-winpicker" data-rec="${r.rentalId}" style="--tint:var(--${stColor}-bg)">
         ${cellHtml}
         <div class="tl-over">
-          <span class="d1">${esc(relDate(r.startDate))}</span>
-          <span class="mid">
-            ${masterGate(r, { truck })}
-            ${price ? `<span class="rate" data-chat-el data-chat-label="${esc('Rate ' + money(price.price) + ' · ' + price.rate)}" data-chat-color="green" data-chat-card="rentals" data-chat-rec="${esc(r.rentalId)}">${money(price.price)} · ${esc(price.rate)}</span>` : ''}
-          </span>
-          <span class="d2">${r.startTime ? `<span class="tm">${esc(r.startTime)}</span>` : ''}${esc(relDate(r.endDate))}</span>
+          <span class="d1"><span class="dlab">${esc(relDate(r.startDate))}</span>${r.startTime ? `<span class="tm">${esc(r.startTime)}</span>` : ''}</span>
+          <span class="midwrap">${blocker}${masterGate(r, { truck })}</span>
+          <span class="d2"><span class="dlab">${esc(relDate(r.endDate))}</span><span class="tm">${esc(durLabel)}</span></span>
         </div>
       </div>`;
     }
@@ -3003,32 +3039,53 @@ const DETAIL = {
     const pickCustBtn = addBtn('Customer', { link: true, js: 'js-quickadd-cust', h: 26, data: { card: 'rentals', rec: r.rentalId, slot: 'customer' } });
 
     /* invoice pill: ✕ unlink ONLY while $0 is assigned to this rental's line item
-       (after any assigned payment, removal requires refunding first — Jac's rule).
-       No invoice → the combined +Invoice/+Transport pill (transport lives under
-       the invoice's rental line items, so no invoice = no transport yet). */
+       (after any assigned payment, removal requires refunding first — Jac's rule). */
     const paidForThis = inv ? rentalAllocated(inv, r.rentalId) : 0;
     const invPill = inv
       ? `<span class="pill ref link" data-r="R2" data-pill-card="invoices" data-pill-rec="${esc(inv.invoiceId)}">${CARD_ICON.invoices}${esc(invoiceShort(inv.invoiceId))}${paidForThis <= 0 ? `<span class="x" data-x="inv-remove" data-tip="unlink — allowed while $0 is assigned to this rental; afterwards refund first">✕</span>` : ''}</span>`
-      : addBtn('Invoice', { link: true, js: 'js-create-invoice', h: 26, data: { rec: r.rentalId } });   // R5b blue action button; transport is now its own +Transport affordance (de-fused 2026-06-15). createInvoiceForRental guides if a customer/window is missing
+      : addBtn('Invoice', { link: true, js: 'js-create-invoice', h: 26, data: { rec: r.rentalId } });
 
-    const balColor = invT ? (invT.balance <= 0 && invT.paid > 0 ? 'green' : invT.status === 'Not Due' ? 'blue' : 'red') : null;
+    /* EVENT STRIP — adds on the LEFT, the pay-status balance on the RIGHT (Jac
+       2026-06-15). The $480 reads as a balance ($0 / $480 = paid over total); the
+       $0 wears the pay-status color (red unpaid / blue Not Due / green paid). */
+    const rentLines = rentalLineItems(r);
+    const eventTotal = invT ? invT.total : rentLines.reduce((a, li) => a + (Number(li.amount) || 0), 0);
+    const eventPaid = invT ? invT.paid : 0;
+    const balColor = (eventPaid > 0 && eventPaid >= eventTotal) ? 'green' : (invT && invT.status === 'Not Due') ? 'blue' : 'red';
+    const balance = `<span class="balline" data-chat-el data-chat-label="${esc('Balance ' + money(eventPaid) + ' / ' + money(eventTotal))}" data-chat-color="${esc(balColor)}"${inv ? ` data-chat-card="invoices" data-chat-rec="${esc(inv.invoiceId)}"` : ''}><b style="color:var(--${balColor})">${money(eventPaid)}</b> <span class="tot">/ ${money(eventTotal)}</span></span>`;
+    const eventStrip = `<div class="estrip">
+      <div class="estrip-l">
+        ${cust ? refPill('customers', r.customerId, cust.name, { x: 'cust-swap' }) : (r.mock ? pickCustBtn : addBtn('Customer', { link: true, js: 'js-quickadd-cust', h: 26, data: { card: 'rentals', rec: r.rentalId, slot: 'customer' } }))}
+        ${cat ? dPill(cat.name, 'orange', { card: 'categories', recId: cat.categoryId, icon: CARD_ICON.categories }) : ''}
+        ${invPill}
+        ${efld('rentals', r, 'rentalId', 'po', 'Add PO', { fmt: (v) => 'PO ' + v })}
+      </div>
+      <div class="estrip-r">${balance}</div>
+    </div>`;
 
-    /* invoice rental line items, each with its own transport journey + ITEM BALANCE */
-    const itemsHtml = (inv ? (inv.lineItems || []) : []).map((li, idx) => {
-      if (li.kind !== 'rental') return '';
-      const r2 = IDX.rental.get(li.ref); if (!r2) return '';
-      const u2 = IDX.unit.get(li.unitId || r2.unitId);
-      const euLine = unitEntry(r2, li.unitId || r2.unitId);   // §20 this line's unit → its own journey
-      const paid = itemPaid(inv, li, idx);
-      const amt = Number(li.amount) || 0;
-      const ibColor = paid >= amt && amt > 0 ? 'green' : invT.status === 'Not Due' ? 'blue' : 'red';
-      return `<div class="invitem">
-        <span><span class="linkname" data-r="R7" data-pill-card="rentals" data-pill-rec="${esc(r2.rentalId)}" data-chat-el data-chat-label="${esc('Line · ' + (u2?.name || r2.rentalName || 'Rental') + ' · ' + money(amt))}" data-chat-color="${esc(ibColor)}" data-chat-card="rentals" data-chat-rec="${esc(r2.rentalId)}">${esc(u2?.name || r2.rentalName || 'Rental')} · ${esc(fmtShortDate(r2.startDate))}–${esc(fmtShortDate(r2.endDate))}${li.ref === r.rentalId ? ' — this rental' : ''}</span><span class="balline" style="margin-left:8px" data-tip="ITEM BALANCE — partial payments are assigned per line item"><b style="color:var(--${ibColor});font-size:12.5px">${money(paid)}</b> <span class="tot" style="font-size:11px">/ ${money(amt)}</span></span></span>
-        ${miniJourneyHtml(r2, euLine)}
-      </div>`;
-    }).join('');
+    /* PER-UNIT STALLS — each machine is one self-contained block: identity + its
+       inspection + (multi-unit) its own gate + line amount, sitting on its
+       connected Home—Site—Home route rail (transport folded in, captures not
+       tracked — Jac 2026-06-15). */
+    const stallsHtml = units.length
+      ? units.map((eu) => {
+          const u = IDX.unit.get(eu.unitId); if (!u) return '';
+          const insp = getStatus('unitInspectionStatus', u.inspectionStatus);
+          const voided = unitVoided(r, eu);
+          const multi = units.length > 1;
+          const up = unitRentalPrice(r, eu.unitId);
+          return `<div class="stall${voided ? ' voided' : ''}">
+            <div class="stall-head">
+              <div class="stall-id">${unitPill(u.unitId, { x: 'unit-remove', xData: u.unitId })}${dPill(insp.label, insp.color, { card: 'units', recId: u.unitId, icon: CARD_ICON.inspections })}${multi ? unitStatusGate(r, eu) : ''}</div>
+              <span class="stall-amt">${money(up ? up.price : 0)}</span>
+            </div>
+            ${stallRouteHtml(r, eu)}
+          </div>`;
+        }).join('')
+      : `<div class="stall stall-empty">${pickUnitBtn}<span class="muted" style="font-size:12px">drag a unit on, or cancel the quote</span></div>`;
 
-    /* Complete Rental gate — blue only once Returned; Cancelled/No Show → red Cancel Rental */
+    /* Complete Rental gate — commit only once every unit is terminal; Cancelled/No
+       Show → red Cancel Rental. */
     const cancelish = ['Cancelled', 'No Show'].includes(r.status);
     const canComplete = allUnitsTerminal(r);   // §20 every unit terminal (Returned / Cancelled / No Show)
     const crBtn = cancelish
@@ -3037,39 +3094,20 @@ const DETAIL = {
 
     const fcRow = r.fieldCall ? actionPill('danger', 'Field Call active — clear', { js: 'js-clear-fc', data: { rec: r.rentalId } }) : '';
 
-    /* RENTAL section (v2): NO header — the timeline opens the section; the border
-       carries the rental-status color. Left = actions · right = pay-colored balance. */
-    const rentalSec = `<div class="section sec-${stColor}">
+    /* RENTAL section: NO header — the day timeline opens it; the border carries the
+       rental-status color. Day timeline → event strip → per-unit stalls → footer. */
+    const rentalSec = `<div class="section sec-${stColor} rentalsec">
       ${timeline}
-      <div class="split" style="margin-top:11px">
-        <div class="side">
-          ${kvPills(cust ? refPill('customers', r.customerId, cust.name, { x: 'cust-swap' }) : (r.mock ? pickCustBtn : badge('No customer')))}
-          ${kvPills(`${rentalUnits(r).length
-              ? rentalUnits(r).map((eu) => { const u2 = IDX.unit.get(eu.unitId); if (!u2) return ''; const insp = getStatus('unitInspectionStatus', u2.inspectionStatus); const multi = rentalUnits(r).length > 1; const voided = ['No Show', 'Cancelled'].includes(unitStatus(r, eu)); return `<span class="unitchip${voided ? ' voided' : ''}">${unitPill(u2.unitId, { x: 'unit-remove', xData: u2.unitId })}<span class="pill dvd c-${insp.color}" data-r="R4" data-pill-card="units" data-pill-rec="${esc(u2.unitId)}">${CARD_ICON.units}${esc(insp.label)}</span>${multi ? unitStatusGate(r, eu) : ''}</span>`; }).join('')
-              : pickUnitBtn}${cat ? `<span class="pill dvd c-orange" data-r="R4" data-pill-card="categories" data-pill-rec="${esc(cat.categoryId)}" data-chat-el data-chat-label="${esc(cat.name)}" data-chat-color="orange" data-chat-card="categories" data-chat-rec="${esc(cat.categoryId)}">${CARD_ICON.categories}${esc(cat.name)}</span>` : ''}`)}
-          ${kvPills(transportActionHtml(r))}
-          ${kvPills(invPill)}
-          ${efld('rentals', r, 'rentalId', 'po', 'Add PO', { fmt: (v) => 'PO ' + v })}
-          ${fcRow ? kvPills(fcRow) : ''}
-        </div>
-        <div class="side r">
-          ${invT ? `<div class="kv"><span class="balline" data-chat-el data-chat-label="${esc('Balance ' + money(invT.paid) + ' / ' + money(invT.total))}" data-chat-color="${esc(balColor)}" data-chat-card="invoices" data-chat-rec="${esc(inv.invoiceId)}"><b style="color:var(--${balColor})">${money(invT.paid)}</b> <span class="tot">/ ${money(invT.total)}</span></span></div>` : (price ? kv(money(price.price), { sfx: `· ${price.rate}`, derived: true }) : '')}
-          ${invT && inv.dueDate ? `<div class="kv"><span class="derived" style="font-size:11px">due ${fmtShortDate(inv.dueDate)}</span></div>` : ''}
-          ${(tr && tr.price != null && tr.price > 0) ? kv(money(tr.perLeg != null ? tr.perLeg : tr.price), { sfx: '/one-way transport', derived: true }) : ''}
-          ${(r.deliveryAddress && tr.driveMin != null) ? kv(`${tr.driveMin} min`, { sfx: '/one-way', derived: true }) : ''}
-        </div>
-      </div>
-      ${itemsHtml ? `<div style="border-top:1px dashed var(--line);margin-top:10px;padding-top:9px;display:flex;flex-direction:column;gap:10px;align-items:center">
-        <span class="muted" style="font-size:9.5px;text-transform:uppercase;letter-spacing:.4px">Invoice rentals · transport</span>
-        ${itemsHtml}
-      </div>` : transportSectionHtml(r)}
-      <div style="display:flex;justify-content:flex-end;margin-top:9px">${crBtn}</div>
+      ${eventStrip}
+      <div class="stalls">${stallsHtml}</div>
+      <div class="rentalsec-foot">${fcRow}${crBtn}</div>
     </div>`;
 
     const notes = notesSection('rentals', r, 'rentalId');
     const acts = r.actions || [];
+    // Captures are no longer tracked anywhere (Jac 2026-06-15) — the +Log capture
+    // ACTIONS stay on the route rail; only the count/owed nag is gone.
     const hchips = [
-      { kind: 'cap', label: `${[r.startCapture, r.endCapture, r.fcCapture].filter(Boolean).length} Captures`, cls: 'b', re: /video|captur/i },
       { kind: 'pay', label: `${acts.filter((a) => /paid|charge|payment|deposit|refund|invoice/i.test(a.text)).length} Payments`, cls: 'g', re: /paid|charge|payment|deposit|refund|invoice/i },
       { kind: 'edit', label: `${acts.filter((a) => /→/.test(a.text)).length} Edits`, cls: 'y', re: /→/ },
     ];
@@ -7056,6 +7094,7 @@ function onClick(e) {
   if (closest('.js-wp-save')) { e.stopPropagation(); return winPickSave(); }
   if (closest('.js-wp-today')) { e.stopPropagation(); return winPickToday(); }
   if (closest('.js-wp-done')) { e.stopPropagation(); return closeWinPicker(); }
+  if (closest('.js-tl-blocker')) { e.stopPropagation(); const st = document.querySelector('.stalls'); if (st) st.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); attnFlash('.stall .pill.dvd'); return; }
   if (closest('.js-open-winpicker')) { e.stopPropagation(); const rec = closest('.js-open-winpicker').dataset.rec; return state.winpicker?.rentalId === rec ? closeWinPicker() : openWinPicker(rec); }
 
   // sort menu + direction toggle
