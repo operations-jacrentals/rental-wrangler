@@ -2698,7 +2698,7 @@ const DETAIL = {
     const paidForThis = inv ? rentalAllocated(inv, r.rentalId) : 0;
     const invPill = inv
       ? `<span class="pill ref link" data-r="R2" data-pill-card="invoices" data-pill-rec="${esc(inv.invoiceId)}">${CARD_ICON.invoices}${esc(invoiceShort(inv.invoiceId))}${paidForThis <= 0 ? `<span class="x" data-x="inv-remove" data-tip="unlink — allowed while $0 is assigned to this rental; afterwards refund first">✕</span>` : ''}</span>`
-      : (r.mock ? addBtn('Invoice/+Transport', { link: true, js: 'js-create-invoice', h: 26, icon: CARD_ICON.invoices, data: { rec: r.rentalId } }) : badge('No invoice — link one to set transport'));   // R5b blue always; createInvoiceForRental guides if a customer/window is missing
+      : addBtn('Invoice/+Transport', { link: true, js: 'js-create-invoice', h: 26, icon: CARD_ICON.invoices, data: { rec: r.rentalId } });   // R5b blue action button (was a gray "No invoice" pill on real rentals — #12); createInvoiceForRental guides if a customer/window is missing
 
     const balColor = invT ? (invT.balance <= 0 && invT.paid > 0 ? 'green' : invT.status === 'Not Due' ? 'blue' : 'red') : null;
 
@@ -2735,7 +2735,7 @@ const DETAIL = {
           ${kvPills(cust ? refPill('customers', r.customerId, cust.name, { x: 'cust-swap' }) : (r.mock ? pickCustBtn : badge('No customer')))}
           ${kvPills(`${rentalUnits(r).length
               ? rentalUnits(r).map((eu) => { const u2 = IDX.unit.get(eu.unitId); if (!u2) return ''; const insp = getStatus('unitInspectionStatus', u2.inspectionStatus); const multi = rentalUnits(r).length > 1; const voided = ['No Show', 'Cancelled'].includes(unitStatus(r, eu)); return `<span class="unitchip${voided ? ' voided' : ''}">${unitPill(u2.unitId, { x: 'unit-remove', xData: u2.unitId })}<span class="pill dvd c-${insp.color}" data-r="R4" data-pill-card="units" data-pill-rec="${esc(u2.unitId)}">${CARD_ICON.units}${esc(insp.label)}</span>${multi ? unitStatusGate(r, eu) : ''}</span>`; }).join('')
-              : (r.mock ? pickUnitBtn : '<span class="pill c-gray" data-r="R3b"><span class="t">No unit</span></span>')}${cat ? `<span class="pill dvd c-orange" data-r="R4" data-pill-card="categories" data-pill-rec="${esc(cat.categoryId)}" data-chat-el data-chat-label="${esc(cat.name)}" data-chat-color="orange" data-chat-card="categories" data-chat-rec="${esc(cat.categoryId)}">${CARD_ICON.categories}${esc(cat.name)}</span>` : ''}`)}
+              : pickUnitBtn}${cat ? `<span class="pill dvd c-orange" data-r="R4" data-pill-card="categories" data-pill-rec="${esc(cat.categoryId)}" data-chat-el data-chat-label="${esc(cat.name)}" data-chat-color="orange" data-chat-card="categories" data-chat-rec="${esc(cat.categoryId)}">${CARD_ICON.categories}${esc(cat.name)}</span>` : ''}`)}
           ${kvPills(invPill)}
           ${efld('rentals', r, 'rentalId', 'po', 'Add PO', { fmt: (v) => 'PO ' + v })}
           ${fcRow ? kvPills(fcRow) : ''}
@@ -6458,7 +6458,7 @@ function onClick(e) {
     e.stopPropagation();
     const s = activeSession(); if (s.cols) s.cols.left = 'units'; s.cards.units.mode = 'list';
     render(); attnFlash('.card[data-card="units"] .list');   // R19 — point AT the list
-    toast('Drag a unit from the Units card onto this Quote.');
+    toast('Drag a unit from the Units card onto this rental.');
     return;
   }
   if (closest('.js-quickadd-cust')) { const b = closest('.js-quickadd-cust'); e.stopPropagation(); return openQuickCust({ card: b.dataset.card, recId: b.dataset.rec }); }
