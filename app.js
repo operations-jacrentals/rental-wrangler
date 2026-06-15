@@ -4123,7 +4123,7 @@ function chatUnseenForRec(card, recId) {
 }
 function newChat(tag) {
   const c = { id: 'CHAT' + (state.seq++), tags: tag ? [tag] : [], participants: ROLES.map((r) => r.id), messages: [], seen: { [commentUserKey()]: Date.now() } };
-  state.chat.chats.push(c); state.chat.activeId = c.id; return c;
+  state.chat.chats.push(c); state.chat.activeId = c.id; pushChatsSoon(); return c;
 }
 // Reopen a dormant/existing chat through one of its tagged elements — the chat is never lost;
 // the current user rejoins (their role selected) and the dock opens to it.
@@ -4134,6 +4134,7 @@ function openChat(id, msg) {
   if (myRole) { if (!c.participants.includes(myRole)) c.participants.push(myRole); }
   else if (!c.participants.length) c.participants = ROLES.map((r) => r.id);   // demo (no role) → everyone rejoins
   c.seen[commentUserKey()] = Date.now();
+  pushChatsSoon();                                  // a rejoin/participant change syncs to the team
   state.chat.open = true; render();
   if (msg) toast(msg);
 }
@@ -4174,14 +4175,14 @@ function chatSend() {
   let c = activeChat(); if (!c) c = newChat();                          // typing with no active chat opens one to the team
   c.messages.push({ id: 'MSG' + (state.seq++), by: commentUserKey(), when: TODAY_ISO, at: Date.now(), text });
   c.seen[commentUserKey()] = Date.now();                                // author has seen their own update
-  state.chat.draft = ''; saveSoon(); render();
+  state.chat.draft = ''; saveSoon(); pushChatsSoon(); render();
   setTimeout(() => { const i = document.querySelector('.chat-input'); if (i) i.focus(); const f = document.querySelector('.chat-feed'); if (f) f.scrollTop = f.scrollHeight; }, 0);
 }
 function chatToggleRole(id) {
   const c = activeChat(); if (!c) return;
   c.participants = c.participants.includes(id) ? c.participants.filter((x) => x !== id) : [...c.participants, id];
   // never deleted — at 0 participants the chat goes dormant; reopen it via a tagged element (Jac)
-  render();
+  pushChatsSoon(); render();
 }
 // Right-click → Start chat: OPEN the element's existing chat (rejoin) if it has one, else start fresh.
 function startChatFromEl(el) {
@@ -4222,7 +4223,7 @@ function chatAddTag(tag) {
   let c = activeChat(); if (!c) c = newChat();                          // dragging context in with no active chat opens one
   if (tag.id && c.tags.some((t) => t.id === tag.id)) return;            // no dupes
   c.tags.push({ id: tag.id || 'TAG' + (state.seq++), label: tag.label, color: tag.color || 'gray', ref: tag.ref || null });
-  state.chat.open = true; render();
+  state.chat.open = true; pushChatsSoon(); render();
 }
 function tabStrip(tabs) {
   tabs = tabs || state.tabs;
@@ -4915,21 +4916,51 @@ async function sendFeedback() {
    (action 'wrangler'); Code.gs calls api.anthropic.com with the key from a Script
    Property. Carries a compact data digest + (when opened from a record) its detail.
    ════════════════════════════════════════════════════════════════════════ */
-const WRANGLER_SYSTEM = "You are Mr. Wrangler, the in-app AI for JacRentals — a heavy-equipment rental yard in Sulphur, Louisiana. You help the team make sense of their units, rentals, customers, invoices, work orders, and service. Speak plainly and helpfully with a light wrangler/ranch flavor — never campy. Answer directly and concisely using ONLY the data provided below; if it isn't there, say so plainly. Never invent records, names, or numbers.";
+const WRANGLER_SYSTEM = "You are Mr. Wrangler, the in-app AI for JacRentals — a heavy-equipment rental yard in Sulphur, Louisiana. You help the team make sense of their units, rentals, customers, invoices, work orders, and service, and you help triage bugs they report.\n\nSTYLE — keep it tight: answer in 1–3 sentences by default. Lead with the direct answer first; add at most one short supporting clause. Use a bullet list ONLY when enumerating multiple records, one line each. Don't restate the question, don't pad, and don't over-explain what you can't do — just answer.\n\nDATA — the snapshot below holds the LIVE records: every category with its rates, every fleet unit with its type and status, every rental with its date window and customer, customers with balances owed, and the open invoices and work orders. Reason over it directly. Only say a fact is missing if it truly isn't in the snapshot. Never invent records, names, or numbers.\n\nA light wrangler/ranch flavor in voice is welcome — never campy.";
+// The digest is Mr. Wrangler's whole window into the yard, so it carries the ACTUAL
+// records (not just counts): category rates, each unit's type/status, each rental's
+// date window + customer, customer balances, and open invoices/WOs. Sections cap at
+// 200 rows so a huge yard can't blow the context; the cap note tells him there's more.
 function wranglerDigest() {
-  const u = DATA.units || [], r = DATA.rentals || [], c = DATA.customers || [], inv = DATA.invoices || [], wo = DATA.workOrders || [];
-  let owed = 0, overdue = [];
-  inv.forEach((i) => { try { const t = invoiceTotals(i); owed += t.balance || 0; if ((t.balance || 0) > 0 && i.dueDate && i.dueDate < TODAY_ISO) overdue.push(`${i.invoiceId} (${money(t.balance)})`); } catch (e) {} });
-  const notActive = u.filter((x) => x.fleetStatus && x.fleetStatus !== 'Active').map((x) => `${x.name} [${x.fleetStatus}]`);
-  const needSvc = u.filter((x) => { try { const s = topServiceForUnit(x); return s && s.remaining != null && s.remaining <= 0; } catch (e) { return false; } }).map((x) => x.name);
+  const cats = DATA.categories || [], u = DATA.units || [], r = DATA.rentals || [], c = DATA.customers || [], inv = DATA.invoices || [], wo = DATA.workOrders || [];
+  const CAP = 200;
+  const more = (arr, label) => arr.length > CAP ? `\n  …(+${arr.length - CAP} more ${label} not shown — ask to narrow)` : '';
   const lines = [
     `JacRentals yard snapshot — ${TODAY_ISO}.`,
-    `Units: ${u.length}. Rentals: ${r.length}. Customers: ${c.length}. Invoices: ${inv.length}. Work orders: ${wo.length}.`,
-    `Outstanding balance across invoices: ${money(owed)}.`,
+    `Totals — Units ${u.length} · Rentals ${r.length} · Customers ${c.length} · Invoices ${inv.length} · Work orders ${wo.length} · Categories ${cats.length}.`,
   ];
-  if (needSvc.length) lines.push(`Units at/over service: ${needSvc.slice(0, 12).join(', ')}${needSvc.length > 12 ? '…' : ''}.`);
-  if (notActive.length) lines.push(`Units not active: ${notActive.slice(0, 12).join(', ')}${notActive.length > 12 ? '…' : ''}.`);
-  if (overdue.length) lines.push(`Overdue invoices: ${overdue.slice(0, 12).join(', ')}${overdue.length > 12 ? '…' : ''}.`);
+
+  if (cats.length) lines.push('\nCATEGORIES & RATES:\n' + cats.map((x) =>
+    `  ${x.name}: 1-day ${money(x.rate1Day)} · 7-day ${money(x.rate7Day)} · 4-wk ${money(x.rate4Wk)} · weekend ${money(x.weekend)} · member/day ${money(x.memberDaily)}${x.fuelType ? ' · ' + x.fuelType : ''}`).join('\n'));
+
+  if (u.length) lines.push('\nFLEET UNITS (name [type] · fleet status · inspection · hours):\n' + u.slice(0, CAP).map((x) => {
+    const cat = IDX.category.get(x.categoryId); let svc = '';
+    try { const s = topServiceForUnit(x); if (s && s.remaining != null && s.remaining <= 0) svc = ' · SERVICE DUE'; } catch (e) {}
+    return `  ${x.name} [${cat ? cat.name : (x.categoryId || '—')}] · ${x.fleetStatus || '—'} · ${x.inspectionStatus || '—'} · ${x.currentHours != null ? x.currentHours + 'h' : '—'}${svc}`;
+  }).join('\n') + more(u, 'units'));
+
+  if (r.length) lines.push('\nRENTALS (id · customer · units · window · status):\n' + r.slice(0, CAP).map((x) => {
+    const cust = IDX.customer.get(x.customerId); const win = (x.startDate || '') + (x.endDate ? '→' + x.endDate : '');
+    return `  ${x.rentalId} · ${cust ? cust.name : (x.customerId || '—')} · ${rentalUnitsLabel(x) || '—'} · ${win || '—'} · ${x.status || '—'}`;
+  }).join('\n') + more(r, 'rentals'));
+
+  if (c.length) {
+    const balBy = {}; inv.forEach((i) => { try { const t = invoiceTotals(i); if (i.customerId) balBy[i.customerId] = (balBy[i.customerId] || 0) + (t.balance || 0); } catch (e) {} });
+    lines.push('\nCUSTOMERS (name · type · balance owed · phone):\n' + c.slice(0, CAP).map((x) =>
+      `  ${x.name} · ${x.accountType || '—'} · owes ${money(balBy[x.customerId] || 0)} · ${x.phone || '—'}`).join('\n') + more(c, 'customers'));
+  }
+
+  const open = inv.map((i) => { try { return { i, t: invoiceTotals(i) }; } catch (e) { return null; } }).filter((o) => o && (o.t.balance || 0) > 0);
+  if (open.length) lines.push('\nOPEN INVOICES (id · customer · balance · due):\n' + open.slice(0, CAP).map(({ i, t }) => {
+    const cust = IDX.customer.get(i.customerId); const od = i.dueDate && i.dueDate < TODAY_ISO ? ' · OVERDUE' : '';
+    return `  ${i.invoiceId} · ${cust ? cust.name : (i.customerId || '—')} · ${money(t.balance)} · due ${i.dueDate || '—'}${od}`;
+  }).join('\n') + more(open, 'open invoices'));
+
+  const owos = wo.filter((x) => x.phase !== 'Complete');
+  if (owos.length) lines.push('\nOPEN WORK ORDERS (id · unit · phase · report):\n' + owos.slice(0, CAP).map((x) => {
+    const un = IDX.unit.get(x.unitId); return `  ${x.woId} · ${un ? un.name : (x.unitId || '—')} · ${x.phase || '—'} · ${x.woReport || x.description || '—'}`;
+  }).join('\n') + more(owos, 'work orders'));
+
   return lines.join('\n');
 }
 function wranglerContext(o) {
@@ -6011,7 +6042,7 @@ function onClick(e) {
   if (closest('.js-chat-close')) { e.stopPropagation(); state.chat.open = false; return render(); }
   if (closest('.js-chat-back')) { e.stopPropagation(); state.chat.activeId = null; return render(); }   // back to the all-flags overview (chat persists)
   if (closest('.js-chat-send')) { e.stopPropagation(); return chatSend(); }
-  if (closest('[data-chat-untag]')) { e.stopPropagation(); const id = closest('[data-chat-untag]').dataset.chatUntag; const c = activeChat(); if (c) c.tags = c.tags.filter((t) => t.id !== id); return render(); }
+  if (closest('[data-chat-untag]')) { e.stopPropagation(); const id = closest('[data-chat-untag]').dataset.chatUntag; const c = activeChat(); if (c) c.tags = c.tags.filter((t) => t.id !== id); pushChatsSoon(); return render(); }
   if (closest('[data-chat-role]')) { e.stopPropagation(); return chatToggleRole(closest('[data-chat-role]').dataset.chatRole); }
   if (closest('[data-chat-open]')) { e.stopPropagation(); const [card, recId] = closest('[data-chat-open]').dataset.chatOpen.split('|'); return anchorRecord(SHOP_TYPES.includes(card) ? 'shop' : card, recId, SHOP_TYPES.includes(card) ? card : null); }
   if (closest('.js-fb-type')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'feedback') { const ta = document.querySelector('.overlay .js-fb-text'); if (ta) o.text = ta.value; o.fbType = closest('.js-fb-type').dataset.val; renderOverlay(); } return; }
@@ -8165,11 +8196,74 @@ async function refreshFromBackend() {
         }                              // else: local has unsaved edits → keep local; it'll push on next save
       });
     });
+    // also pull the shared team-chat threads so messages from other users land live
+    try {
+      const cr = await backendCall('getChats');
+      if (cr && cr.ok && Array.isArray(cr.chats)) {
+        const m = mergeChats(cr.chats);
+        if (m.localAhead) pushChats(); else lastChatsJson = JSON.stringify(state.chat.chats);
+        if (m.changed) applied++;
+      }
+    } catch (e) { /* chat sync is best-effort */ }
     if (applied && !state.overlay && !DRAG.active && !hoverNode) { state.cascade = createCascade(DATA); render(); }
   } catch (e) { /* offline / blip → retry next tick */ }
   finally { refreshing = false; }
 }
 function startRefreshPoll() { clearInterval(refreshTimer); refreshTimer = setInterval(refreshFromBackend, 18000); }
+
+// ── Team-chat sync (Jac 2026-06-15) ────────────────────────────────────────
+// Chat threads were browser-local, so one user's chat never reached another (a
+// comment on a record stayed invisible until the other user reloaded). Mirror them
+// through the backend `_chats` cell: load on login, push (debounced) on every change,
+// and pull in the refresh poll. Threads AND messages UNION by id, so two people
+// posting to the same thread never clobber each other (matches "chats are never lost").
+let chatPushTimer = null, lastChatsJson = null;
+function normalizeChat(c) { return { id: c.id, tags: c.tags || [], participants: c.participants || [], messages: c.messages || [], seen: c.seen || {} }; }
+function mergeChats(remoteChats) {
+  if (!Array.isArray(remoteChats)) return { changed: false, localAhead: false };
+  let changed = false, localAhead = false;
+  const remoteById = new Map(remoteChats.filter((c) => c && c.id).map((c) => [c.id, c]));
+  const localById = new Map(state.chat.chats.map((c) => [c.id, c]));
+  remoteChats.forEach((rc) => {
+    if (!rc || !rc.id) return;
+    const lc = localById.get(rc.id);
+    if (!lc) { state.chat.chats.push(normalizeChat(rc)); changed = true; return; }   // a whole thread from another user
+    const haveMsg = new Set((lc.messages || []).map((m) => m.id));
+    (rc.messages || []).forEach((m) => { if (m && m.id && !haveMsg.has(m.id)) { lc.messages.push(m); changed = true; } });
+    lc.messages.sort((a, b) => (a.at || 0) - (b.at || 0));
+    const haveTag = new Set((lc.tags || []).map((t) => t.id));
+    (rc.tags || []).forEach((t) => { if (t && t.id && !haveTag.has(t.id)) { lc.tags.push(t); changed = true; } });
+    (rc.participants || []).forEach((p) => { if (!lc.participants.includes(p)) { lc.participants.push(p); changed = true; } });
+    Object.keys(rc.seen || {}).forEach((k) => { if ((rc.seen[k] || 0) > (lc.seen[k] || 0)) lc.seen[k] = rc.seen[k]; });   // latest-seen wins (view state)
+  });
+  state.chat.chats.forEach((lc) => {   // does local hold anything the server lacks? → we should push
+    const rc = remoteById.get(lc.id);
+    if (!rc) { localAhead = true; return; }
+    const rMsg = new Set((rc.messages || []).map((m) => m.id));
+    if ((lc.messages || []).some((m) => !rMsg.has(m.id))) localAhead = true;
+    const rTag = new Set((rc.tags || []).map((t) => t.id));
+    if ((lc.tags || []).some((t) => !rTag.has(t.id))) localAhead = true;
+    if ((lc.participants || []).some((p) => !(rc.participants || []).includes(p))) localAhead = true;
+  });
+  return { changed, localAhead };
+}
+async function pushChats() {
+  if (!backendPassword) return;
+  const js = JSON.stringify(state.chat.chats);
+  if (js === lastChatsJson) return;                 // nothing new since the last successful push
+  try { const r = await backendCall('setChats', { chats: state.chat.chats }); if (r && r.ok) lastChatsJson = js; } catch (e) { /* offline → retries on next change/poll */ }
+}
+function pushChatsSoon() { if (booting || !backendPassword) return; clearTimeout(chatPushTimer); chatPushTimer = setTimeout(pushChats, 1200); }
+async function loadChats() {
+  if (!backendPassword) return;
+  try {
+    const r = await backendCall('getChats');
+    if (!r || !r.ok || !Array.isArray(r.chats)) return;
+    const { changed, localAhead } = mergeChats(r.chats);
+    if (localAhead) pushChats(); else lastChatsJson = JSON.stringify(state.chat.chats);   // mark synced (or send local-only threads up)
+    if (changed) render();
+  } catch (e) { /* offline → the refresh poll retries */ }
+}
 function saveSoon() { if (booting || !backendPassword) return; clearTimeout(saveTimer); saveTimer = setTimeout(flushSave, 1200); }
 async function flushSave() {
   if (saving) { savePending = true; return; }
@@ -8215,6 +8309,7 @@ function finishLoad() {
   snapshotSaved();                                              // baseline = what the backend currently holds
   buildIndexes(); state.cascade = createCascade(DATA); booting = false; render();
   loadGlobalViews();                                            // pull the shared, company-wide view set
+  loadChats();                                                  // pull the shared team-chat threads (§ team-chat sync)
   startRefreshPoll();                                           // live multi-user: poll for others' changes (§ refreshFromBackend)
   if (migrationDirty) { migrationDirty = false; saveSoon(); }   // push parsed first/last names up to the Sheet
   // #edit=<id> — desktop→phone handoff opens that customer's account form (§7.1).
