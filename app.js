@@ -1438,7 +1438,7 @@ function openCtxMenuAt(target, x, y) {
   const card = target.closest('.card'); if (!card && !target.closest('.overlay .popup')) return;
   // While the rental-window picker is open, keep right-click → BACK working; just suppress
   // the element context menu (it gets in the way of picking). (Jac B5, 2026-06-15)
-  const leaf = state.winpicker ? null : target.closest('.pill, .add-field, .flag, .linkname, .inv-line-link, .req, .seg, button, .inline-edit, .jnode, .x, a, .d-title, .derived');
+  const leaf = state.winpicker ? null : target.closest('.pill, .add-field, .flag, .linkname, .inv-line-link, .req, .seg, button, .inline-edit, .jnode, .x, a, .d-title, .r-title, .derived');
   const hit = leaf ? (ruleOf(leaf) || { r: null, el: leaf }) : null;
   if (hit) return openCtxMenu({ clientX: x, clientY: y }, hit);
   if (!card) return;
@@ -6608,7 +6608,7 @@ function onClick(e) {
     const b = closest('.js-complete-rental'); const r = IDX.rental.get(b.dataset.rec); if (!r) return;
     // Locked gates ALWAYS speak (Jac: "Complete Rental doesn't do anything") — the old
     // flashOr stayed silent whenever its on-screen target existed, so a locked click read as dead.
-    if (!rentalUnits(r).length) { attnFlash('[data-slot="unit"], .add-field'); return toast('🔒 No units on this rental — drag one on, or cancel the rental.'); }
+    if (!rentalUnits(r).length) { attnFlash('[data-slot="unit"]'); return toast('🔒 No units on this rental — drag one on, or cancel the rental.'); }
     if (!allUnitsTerminal(r)) { attnFlash(`.js-yard[data-cap="end"][data-rec="${r.rentalId}"]`); return toast('🔒 Return every unit first (or mark No Show / Cancel) to complete the rental.'); }
     r.completed = true; reindex('rentals', r); logAction(r, 'Rental completed'); toast('Rental completed ✓'); return reanchorRender();
   }
