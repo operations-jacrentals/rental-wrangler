@@ -4490,8 +4490,10 @@ function renderOverlay() {
       ? o.messages.map((m, i) => {
           let act = '';
           if (m.action) act = m.filed
-            ? `<span class="wr-actdone">✓ ${m.action.action === 'request' ? 'Filed for Jac’s OK' : 'Sent to the fixer'}</span>`
-            : `<button class="wr-actbtn js-wr-act" data-mi="${i}">${m.action.action === 'request' ? '💡 File this for Jac’s OK' : '🔧 Send this to get fixed'}</button>`;
+            ? `<span class="wr-actdone">✓ ${m.action.action === 'request' ? 'Filed for Jac’s OK' : 'Sent to the fixer'}${m.issue ? ` · #${m.issue}` : ''}</span>`
+            : m.filing
+              ? `<span class="wr-actdone" style="color:var(--txt-3)">…filing</span>`
+              : `<button class="wr-actbtn js-wr-act" data-mi="${i}">${m.action.action === 'request' ? '💡 File this for Jac’s OK' : '🔧 Send this to get fixed'}</button>`;
           const imgs = (m.images && m.images.length) ? `<div class="wr-bub-imgs">${m.images.map((s) => `<img src="${esc(s)}" alt="attached image">`).join('')}</div>` : '';
           const txt = m.content ? `${esc(m.content).replace(/\n/g, '<br>')}` : '';
           return `<div class="wr-msg ${m.role}">${m.role === 'assistant' ? '<span class="wr-av">🤠</span>' : ''}<div class="wr-bub">${imgs}${txt}${act}</div></div>`;
@@ -5262,13 +5264,22 @@ function wranglerActionPacket(o, act) {
   ].join('\n');
   return { title: String(act.title).replace(/\s+/g, ' ').slice(0, 80), body, label: isReq ? 'wrangler-request' : 'wrangler-fix' };
 }
-// Send the fix/request Mr. Wrangler proposed on message #mi. The browser can't hold
-// a GitHub token, so this opens a pre-filled issue (one Submit tap) — the lone, in-
-// context confirmation, fired by the user's tap so the new tab isn't popup-blocked.
-function wranglerFileAction(mi) {
+// Send the fix/request Mr. Wrangler proposed on message #mi. Preferred path: the
+// backend files the GitHub issue itself (GITHUB_TOKEN in Script Properties) — no tab,
+// no token in the browser. Falls back to a pre-filled issue (one Submit tap) if the
+// backend can't file (no token / offline / demo).
+async function wranglerFileAction(mi) {
   const o = state.overlay; if (!o || o.kind !== 'wrangler') return;
   const m = o.messages[mi]; if (!m || !m.action || m.filed) return;
   const { title, body, label } = wranglerActionPacket(o, m.action);
+  if (typeof backendPassword !== 'undefined' && backendPassword) {
+    m.filing = true; renderOverlay();
+    try {
+      const r = await backendCall('wranglerFile', { title, body, label });
+      if (r && r.ok && r.number) { m.filed = true; m.filing = false; m.issue = r.number; renderOverlay(); toast(label === 'wrangler-request' ? `Filed #${r.number} — in Jac’s queue for the OK. 🤠` : `Filed #${r.number} — Mr. Wrangler’s on it. 🤠`); return; }
+    } catch (e) {}
+    m.filing = false;   // backend couldn't file (no GITHUB_TOKEN / offline) → pre-filled fallback
+  }
   window.open(wranglerIssueUrl(title, body, label), '_blank', 'noopener');
   m.filed = true; renderOverlay();
   toast(label === 'wrangler-request'
