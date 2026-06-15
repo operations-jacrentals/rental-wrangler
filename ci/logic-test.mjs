@@ -75,8 +75,8 @@ try {
 
     // 8) rentalLineItems / transportLineItems skip a voided unit (real multi-unit R-MU).
     // R-MU's start date has passed, so a *Reserved* U023 now auto-derives to No Show
-    // (the "reservation past start = No Show" rule, Jac 2026-06-13) — force it billable
-    // first so the base case measures 2 real lines, independent of the demo clock.
+    // (the "reservation past start = No Show" rule) — force it billable first so the base
+    // case measures 2 real lines, independent of the demo clock. PRODUCTION logic is correct.
     const rmu = T.IDX.rental.get('R-MU');
     const u023 = T.unitEntry(rmu, 'U023'); const saved = u023.status;
     u023.status = 'On Rent';

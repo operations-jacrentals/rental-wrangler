@@ -1396,6 +1396,7 @@ function openCtxMenu(e, hit) {
 // contextmenu handler (mouse) and the touch long-press timer (phone). Mirrors the §R20
 // logic: a real "leaf" tool opens the Wrangler menu; card dead-space → card-to-List.
 let lastTouchCtx = 0;
+let lastCtx = { t: 0, card: null };   // §R20 single vs double right-click tracker — MODULE-level so openCtxMenuAt (below) can read it
 function openCtxMenuAt(target, x, y) {
   if (!target || !target.closest) return;
   if (target.closest('input, textarea, .inline-input')) return;
@@ -2304,29 +2305,101 @@ function yardToolHtml(u) {
 }
 /* one open-WO section on the Units card: WO name = the title, type+date flags right,
    +Part/Task shares the totals row, gate line statuses, +Invoice + if-billed formula */
-/* §12.1 — the customer Activity gauge (Jac, Phase 6): a bipolar −100…+100 read of
-   where a customer sits in their OWN rental cadence. Just rented = +100%; it eases to
-   0 across their avgFrequencyDays, then swings negative once overdue, hitting −100% at
-   ~2× the interval (rents every 10 days → −100% by day 20). Five stages. */
-function activityStage(pct) {
-  if (pct >= 50) return { label: 'Active', color: 'green' };
-  if (pct >= 0) return { label: 'Renting Soon', color: 'yellow' };
-  if (pct > -50) return { label: 'Action Required', color: 'orange' };
-  if (pct > -80) return { label: 'Inactive', color: 'red' };
-  return { label: 'Lost Customer', color: 'red', deep: true };
-}
+/* §12.1 — CUSTOMER ACTIVITY (Jac 2026-06-14, redesigned): a spend-by-month chart
+   over a five-stage cadence track keyed on NEXT EXPECTED (last rental + the
+   customer's avg interval). Stages by % PAST expected:
+   Active (before) · Check-in (≤25%) · Action Required (>25%) · Inactive (>50%) · Lost (>100%).
+   The track axis runs signed −100%…+150% past → 0…100% of the bar, so Expected
+   lands at 40% and the overdue zones fill the rest. */
+const ACT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 function customerActivity(c) {
   const d = c._digest || {};
   const f = Number(d.avgFrequencyDays) || 0;
-  let pct;
-  if (f > 0 && d.lastInvoice) {
-    const since = Math.max(0, Math.round((parseISO(TODAY_ISO) - parseISO(d.lastInvoice)) / 86400000));
-    pct = since <= f ? 100 * (f - since) / f : -100 * (since - f) / f;   // +100 just-rented → 0 at the interval → −100 at 2× overdue
+  const last = d.lastInvoice || '';
+  if (!(f > 0) || !last) return { stage: 'New', color: 'gray', pos: 6, pastPct: null, lastDate: last, expDate: '' };
+  const lastT = parseISO(last), today = parseISO(TODAY_ISO);
+  const expT = new Date(lastT.getTime() + f * 86400000);
+  const since = Math.max(0, Math.round((today - lastT) / 86400000));
+  const past = since - f;                                  // days past expected (negative = before)
+  const pastPct = Math.round(100 * past / f);              // signed % past expected
+  let stage, color, deep = false;
+  if (past < 0) { stage = 'Active'; color = 'green'; }
+  else if (pastPct <= 25) { stage = 'Check-in'; color = 'yellow'; }
+  else if (pastPct <= 50) { stage = 'Action Required'; color = 'orange'; }
+  else if (pastPct <= 100) { stage = 'Inactive'; color = 'red'; }
+  else { stage = 'Lost'; color = 'red'; deep = true; }
+  const pos = Math.max(2, Math.min(100, (pastPct + 100) / 250 * 100));   // signed −100…+150 → 0…100
+  return { stage, color, deep, pastPct, pos, since, f, lastDate: last, expDate: isoOf(expT) };
+}
+/* best-effort dollar value for one rental (sum per-unit price, else the carried price) */
+function rentalAmt(r) {
+  let sum = 0;
+  (rentalUnits(r) || []).forEach((eu) => {
+    const u = IDX.unit.get(eu.unitId);
+    if (u) { const p = rentalPrice({ categoryId: u.categoryId, startDate: r.startDate, endDate: r.endDate, customerId: r.customerId }); if (p) sum += p.price; }
+  });
+  if (!sum) { const t = rentalPrice(r); if (t && t.price) sum = t.price; }
+  return sum;
+}
+/* spend bucketed by month for the last n months (ending this month) */
+function customerMonthly(c, n = 9) {
+  const today = parseISO(TODAY_ISO), out = [];
+  for (let i = n - 1; i >= 0; i--) { const dt = new Date(today.getFullYear(), today.getMonth() - i, 1); out.push({ y: dt.getFullYear(), m: dt.getMonth(), label: ACT_MONTHS[dt.getMonth()], total: 0 }); }
+  DATA.rentals.filter((r) => r.customerId === c.customerId && r.startDate).forEach((r) => {
+    const s = parseISO(r.startDate); if (!s) return;
+    const b = out.find((x) => x.y === s.getFullYear() && x.m === s.getMonth());
+    if (b) b.total += rentalAmt(r) || 0;
+  });
+  return out;
+}
+/* the activity panel — spend-by-month area chart + the five-stage cadence track */
+function customerActivityChart(c) {
+  const a = customerActivity(c);
+  const months = customerMonthly(c, 9);
+  const max = Math.max(1, ...months.map((b) => b.total));
+  const H = 150, padT = 30, baseY = 124;
+  const today = parseISO(TODAY_ISO);
+  const startMs = new Date(months[0].y, months[0].m, 1).getTime();
+  const lastD = a.lastDate ? parseISO(a.lastDate) : null;
+  const expD = a.expDate ? parseISO(a.expDate) : null;
+  const endMs = Math.max(today.getTime(), expD ? expD.getTime() : today.getTime()) + 9 * 86400000;
+  const span = Math.max(1, endMs - startMs);
+  const fx = (ms) => 4 + (ms - startMs) / span * 92;                       // date(ms) → x %
+  const clamp = (x) => Math.max(13, Math.min(87, x));
+  const py = (v) => baseY - (v / max) * (baseY - padT);
+  const pts = months.map((b) => ({ x: fx(new Date(b.y, b.m, 15).getTime()), y: py(b.total) }));
+  const sm = (p) => { let d = `M${p[0].x.toFixed(1)},${p[0].y.toFixed(1)}`; for (let i = 0; i < p.length - 1; i++) { const p0 = p[i - 1] || p[i], p1 = p[i], p2 = p[i + 1], p3 = p[i + 2] || p2; const c1x = p1.x + (p2.x - p0.x) / 6, c1y = p1.y + (p2.y - p0.y) / 6, c2x = p2.x - (p3.x - p1.x) / 6, c2y = p2.y - (p3.y - p1.y) / 6; d += ` C${c1x.toFixed(1)},${c1y.toFixed(1)} ${c2x.toFixed(1)},${c2y.toFixed(1)} ${p2.x.toFixed(1)},${p2.y.toFixed(1)}`; } return d; };
+  const line = sm(pts), area = `${line} L${pts[pts.length - 1].x.toFixed(1)},${baseY} L${pts[0].x.toFixed(1)},${baseY} Z`;
+  const peakI = months.reduce((bi, b, i, arr) => (b.total > arr[bi].total ? i : bi), 0);
+  const peak = months[peakI];
+  const dots = pts.map((p, i) => `<span class="ca-dot${i === peakI ? ' big' : ''}" style="left:${p.x.toFixed(1)}%;top:${p.y.toFixed(1)}px"></span>`).join('');
+  // Best-Month callout only when the peak ISN'T in the crowded recent edge (else the spike speaks for itself)
+  const peakCo = (peak.total > 0 && peakI < months.length - 2) ? `<span class="ca-co" style="left:${clamp(pts[peakI].x).toFixed(1)}%;top:${Math.max(0, pts[peakI].y - 44).toFixed(1)}px"><span class="ca-bag">💰</span><span class="ca-cc"><span class="ca-cv">${money(peak.total)}</span><span class="ca-cl">Best · ${peak.label}</span></span></span>` : '';
+  const labels = months.map((b) => `<span style="left:${fx(new Date(b.y, b.m, 15).getTime()).toFixed(1)}%">${b.label}</span>`).join('');
+  // cadence on the timeline: a Today line (stage-colored) + a dashed Next-Expected line, a
+  // band between them (green runway when active, stage color when overdue); dates in the caption.
+  let markers = '', caption;
+  if (expD && a.pastPct !== null) {
+    const tx = fx(today.getTime()), ex = fx(expD.getTime()), lo = Math.min(tx, ex), hi = Math.max(tx, ex);
+    const bandCol = a.pastPct > 0 ? a.color : 'green';
+    markers = `<span class="ca-band" style="left:${lo.toFixed(1)}%;width:${(hi - lo).toFixed(1)}%;background:linear-gradient(180deg, color-mix(in srgb, var(--${bandCol}) 22%, transparent), transparent)"></span>`
+      + `<span class="ca-vline ca-exp" style="left:${ex.toFixed(1)}%"></span>`
+      + `<span class="ca-vline ca-tdy" style="left:${tx.toFixed(1)}%;background:var(--${a.color});box-shadow:0 0 8px color-mix(in srgb, var(--${a.color}) 55%, transparent)"></span>`;
+    const days = Math.abs(a.since - a.f);
+    const rel = a.pastPct <= 0 ? `${days}d out` : `${days}d past`;
+    caption = `<div class="ca-cap"><span>Last <b>${lastD ? fmtShortDate(a.lastDate) : '—'}</b></span><span>Today <b style="color:var(--${a.color})">${fmtShortDate(TODAY_ISO)}</b></span><span>Next <b>${fmtShortDate(a.expDate)}</b> · <b style="color:var(--${a.color})">${rel}</b></span></div>`;
   } else {
-    pct = d.activePct || 0;                                              // no cadence yet (new / one-off) → legacy positive measure
+    caption = `<div class="ca-cap"><span class="muted">No rental cadence yet — needs a few rentals to read the pattern.</span></div>`;
   }
-  pct = Math.max(-100, Math.min(100, Math.round(pct)));
-  return { pct, ...activityStage(pct) };
+  return `<div class="ca-panel" data-tip="Customer activity — spend by month, with last rental, next expected, and where today sits in their cadence">
+    <div class="ca-stage c-${a.color}${a.deep ? ' deep' : ''}">${esc(a.stage)}</div>
+    <div class="ca-chart">
+      <svg class="ca-svg" viewBox="0 0 100 ${H}" preserveAspectRatio="none"><defs><linearGradient id="caFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--accent)" stop-opacity=".5"/><stop offset="1" stop-color="var(--accent)" stop-opacity=".02"/></linearGradient></defs><path d="${area}" fill="url(#caFill)"/><path d="${line}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" vector-effect="non-scaling-stroke"/></svg>
+      ${markers}${dots}${peakCo}
+      <div class="ca-lbls">${labels}</div>
+    </div>
+    ${caption}
+  </div>`;
 }
 
 /* ── COMMENTS (Jac, Phase 6) — a structured note with a color (red/yellow/green) that
@@ -2924,15 +2997,7 @@ const DETAIL = {
     // Jac 2026-06-12: NO badge row — account type + pay status are R9 title flags,
     // the account gate (R1) rides the title row. Selfie + agreement live in ACCOUNT.
     const title = `<span class="d-title">${esc(fullName(c)) || 'New Customer'}</span>`;
-    const act = customerActivity(c);
-    const aFill = `left:${act.pct >= 0 ? 50 : 50 + act.pct / 2}%;width:${Math.abs(act.pct) / 2}%`;   // grow out from the center zero
-    const aTicks = [-80, -50, 50, 80].map((v) => `<span class="ab-tick" style="left:${50 + v / 2}%"></span>`).join('');
-    const activeBar = `<div class="active-bar bipolar wide" data-tip="Where this customer sits in their rental pattern (in-pattern → out-of-pattern)">
-      ${aTicks}<span class="ab-zero"></span>
-      <div class="ab-fill${act.deep ? ' deep' : ''}" style="${aFill};background:var(--${act.color})"></div>
-      <span class="ab-stage">${act.label}</span>
-      <span class="active-lbl">${act.pct > 0 ? '+' : ''}${act.pct}%</span>
-    </div>`;
+    const activeBar = customerActivityChart(c);
 
     const intCats = (c.interestedCategoryIds || []).map((id) => { const cat = IDX.category.get(id); return cat ? refPill('categories', id, cat.name, { x: 'intcat-remove', xData: id }) : ''; }).join('');
     const usedSales = `<div class="section"><h4>Used Sales</h4><div class="fieldstack centered">
@@ -3429,6 +3494,9 @@ function columnEl(col, session) {
   const active = (session.cols && session.cols[col.id]) || col.default;
   const wrap = el('div', 'col'); wrap.dataset.col = col.id;
   const card = memberCardEl(active, session);
+  // stamp the VIEW identity (list vs which record) so render() keys scroll memory by it
+  const cs = card.dataset.card && session.cards ? session.cards[card.dataset.card] : null;
+  card.dataset.view = (cs && cs.mode === 'standard' && cs.recId != null) ? `${cs.recType || ''}:${cs.recId}` : 'list';
   card.insertBefore(colTabsEl(col, active, session), card.firstChild);   // toggles live INSIDE the card top
   const tot = card.querySelector('.card-body .list-totals');             // freeze the totals as a card FOOTER (out of the scroll)
   if (tot) card.appendChild(tot);
@@ -5305,13 +5373,18 @@ function setFocusedCard(cardId) {
    §14 RENDER PIPELINE + toast
    ════════════════════════════════════════════════════════════════════════ */
 let renderCount = 0;
+const scrollMemo = {};   // persistent scroll positions, keyed `card|view` (list vs which record)
 function render() {
   const t0 = performance.now();
   hideTip(); hideHoverPreview();
   // Preserve each card's scroll position across the DOM swap, so recording an action
   // or editing a field doesn't dump you back at the top of a scrolled card (§0.6).
-  const scrollMemo = {};
-  document.querySelectorAll('.card[data-card]').forEach((c) => { const b = c.querySelector('.card-body'); if (b && b.scrollTop) scrollMemo[c.dataset.card] = b.scrollTop; });
+  const scrollOld = {};
+  document.querySelectorAll('.card[data-card]').forEach((c) => {
+    const b = c.querySelector('.card-body'); if (!b) return;
+    const v = c.dataset.view || 'list'; scrollOld[c.dataset.card] = v;
+    scrollMemo[c.dataset.card + '|' + v] = b.scrollTop;   // remember where THIS view was scrolled
+  });
   availWin = activeDraftWindow();   // §10 — recompute window availability each render
   // Build off-screen, then swap in ONE operation (replaceChildren) so there's no
   // blank frame between teardown and rebuild — kills the flash on anchor/cascade.
@@ -5328,8 +5401,14 @@ function render() {
     $('#app').appendChild(mobileDockEl());
     grid.scrollLeft = state.mobileCol * (grid.clientWidth || window.innerWidth);
   }
-  // restore the per-card scroll captured above
-  Object.keys(scrollMemo).forEach((card) => { const b = document.querySelector(`.card[data-card="${card}"] .card-body`); if (b) b.scrollTop = scrollMemo[card]; });
+  // restore scroll by VIEW: same view → keep your spot; back to a list → return to the
+  // row you left; opened a record → top of Standard view (a targeted link scrolls itself after).
+  document.querySelectorAll('.card[data-card]').forEach((c) => {
+    const b = c.querySelector('.card-body'); if (!b) return;
+    const cardId = c.dataset.card, v = c.dataset.view || 'list', key = cardId + '|' + v;
+    if (v === scrollOld[cardId] || v === 'list') b.scrollTop = scrollMemo[key] || 0;
+    else b.scrollTop = 0;
+  });
   document.documentElement.setAttribute('data-theme', state.theme);
   // the rental-window picker floats above the grid, anchored to its trigger (§12.2)
   if (state.winpicker) {
@@ -8242,7 +8321,6 @@ function boot() {
     anchorRecord(r.card, r.recId, r.recType);
   });
   // right-click = send the card to its List View; double right-click = drop the anchor.
-  let lastCtx = { t: 0, card: null };
   document.addEventListener('contextmenu', (e) => {
     if (e.target.closest('input, textarea, .inline-input')) return;            // allow native menu in fields
     if (!e.target.closest('.card') && !e.target.closest('.overlay .popup')) return;
@@ -8254,6 +8332,7 @@ function boot() {
   // hover preview (#1): float a record's Standard view after a short hover on a row/pill
   document.addEventListener('mouseover', (e) => {
     if (!state.previewsOn || DRAG.active) return;       // previews off (per device) — and NEVER mid-drag (§15c)
+    if (e.target.closest('.hover-preview')) return;     // hovering INSIDE the open preview must NOT re-trigger/close it — let it persist so you can scroll/interact (the preview's own mouseenter/leave manage it)
     // interactive controls are CLICK targets, not preview triggers — the popup kept
     // landing under the cursor while aiming at the status dropdown (Jac 2026-06-12).
     // The row EYE is the one button that IS a preview trigger.
