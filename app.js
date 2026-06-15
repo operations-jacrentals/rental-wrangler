@@ -561,11 +561,12 @@ async function ensureMapsKey() {
   return _mapsKey;
 }
 function loadGoogleMaps() {
+  if (mapsReady()) return Promise.resolve(google.maps);            // already live — let the caller mount instantly
   if (_mapsPromise) return _mapsPromise;
   _mapsPromise = (async () => {
     const key = await ensureMapsKey();
     if (!key) return null;                                          // offline / mock mode
-    if (window.google && window.google.maps && google.maps.places) return google.maps;
+    if (mapsReady()) return google.maps;
     await new Promise((res, rej) => {
       const s = document.createElement('script');
       s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&libraries=places&loading=async`;
@@ -573,11 +574,25 @@ function loadGoogleMaps() {
       document.head.appendChild(s);
     });
     if (window.google && google.maps && google.maps.importLibrary) { try { await Promise.all([google.maps.importLibrary('maps'), google.maps.importLibrary('places'), google.maps.importLibrary('marker')]); } catch (e) {} }
-    return (window.google && window.google.maps) || null;
-  })().then((g) => { if (g && state.transportEdit) render(); return g; }).catch(() => null);
+    return mapsReady() ? google.maps : null;                       // only "loaded" if the services we actually use are up
+  })().then((g) => { afterMapsLoad(g); return g; }).catch(() => { afterMapsLoad(null); return null; });
   return _mapsPromise;
 }
-const mapsReady = () => !!(window.google && window.google.maps && google.maps.places && google.maps.DistanceMatrixService);
+// Post-load hook. CRITICAL: a failed/empty load clears _mapsPromise so the NEXT editor open retries —
+// caching the failure (the old `.catch(()=>null)`) left one transient hiccup hanging the map on
+// "Loading dispatch map…" for the rest of the session. On success, (re)mount the open editor.
+function afterMapsLoad(g) {
+  const ready = !!g || mapsReady();                                // tolerate the load race: g may be null if a service global lagged the resolve
+  if (!ready) _mapsPromise = null;                                 // genuine failure → don't cache it; the next open retries
+  const te = state.transportEdit; if (!te) return;
+  te.mapFailed = !ready;                                           // ready → the render below mounts; not ready → usable offline editor
+  try { render(); } catch (e) { try { mountTransportEditor(); } catch (e2) {} }
+}
+// "Ready" = the CORE needed to mount the editor (Map) + drive autocomplete/picks (Places).
+// DistanceMatrixService deliberately NOT required here: under loading=async it comes up a beat
+// after the map library, so gating mount/live on it stranded the editor on the placeholder.
+// Live mileage handles its own readiness in teFetchDistance (lazy DMS, city-tier fallback).
+const mapsReady = () => !!(window.google && window.google.maps && google.maps.Map && google.maps.places);
 const YARD_CENTER = { lat: 30.2366, lng: -93.3774 };   // Sulphur, LA — map default before a pin is set
 
 let _teMap = null, _teMarker = null, _teAuto = null, _teGeo = null, _teDist = null, _tePlaces = null, _teDebounce = null;
@@ -609,9 +624,9 @@ function transportEditorHtml() {
   const who = u ? esc(u.name) + ' · ' : '';
   return `<div class="tedit sec" data-r="R5b">
     <div class="tedit-head"><span class="stamp">Set ${te.leg === 'recovery' ? 'recovery' : 'delivery'} site</span><span class="muted" style="font-size:10.5px">${who}drag the pin for the exact driver drop</span></div>
-    <div class="tedit-map js-tmap${live ? '' : ' ph'}">${live ? '' : ((GOOGLE_MAPS_KEY || _mapsKey)
+    <div class="tedit-map js-tmap${live ? '' : ' ph'}">${live ? '' : (((GOOGLE_MAPS_KEY || _mapsKey) && !te.mapFailed)
       ? `<span class="map-spin" aria-hidden="true"></span><span class="map-tag">Loading dispatch map…</span>`
-      : `<span class="map-pin" aria-hidden="true">${ICO_PIN}</span><span class="map-tag stamp" style="font-size:11px;color:var(--accent)">Offline · city-tier pricing</span><span class="map-sub">Type the site address below — the live map &amp; exact mileage come online once the dispatch key is set.</span>`)}</div>
+      : `<span class="map-pin" aria-hidden="true">${ICO_PIN}</span><span class="map-tag stamp" style="font-size:11px;color:var(--accent)">${te.mapFailed ? 'Live map unavailable' : 'Offline'} · city-tier pricing</span><span class="map-sub">${te.mapFailed ? 'Type the site address below — pricing falls back to city tiers. Reopen the editor to retry the live map.' : 'Type the site address below — the live map &amp; exact mileage come online once the dispatch key is set.'}</span>`)}</div>
     <input class="lf-in js-taddr" placeholder="Site address — start typing…" value="${esc(te.addr || '')}" autocomplete="off" spellcheck="false" aria-label="Site address">
     <div class="js-tsug tedit-sug" role="listbox"></div>
     <div class="tedit-foot">
@@ -633,20 +648,30 @@ function mountTransportEditor() {
     input.addEventListener('input', () => teQuery(input.value));
     input.addEventListener('keydown', teKeydown);
   }
+  // Mount when the SDK is up and this div has no live map yet (`.gm-style` = Google's injected root).
+  // Keying off the live DOM (not a one-shot flag) means ANY render after load self-heals a stuck editor.
   const mapEl = document.querySelector('.js-tmap');
-  if (mapsReady() && mapEl && !mapEl.dataset.mounted) {
-    mapEl.dataset.mounted = '1';
-    const center = te.pin || YARD_CENTER;
-    _teMap = new google.maps.Map(mapEl, { center, zoom: te.pin ? 14 : 9, disableDefaultUI: true, zoomControl: true, gestureHandling: 'greedy', clickableIcons: false });
-    _teMarker = new google.maps.Marker({ map: _teMap, position: center, draggable: true, visible: !!te.pin });
-    _teMarker.addListener('dragend', () => { const p = _teMarker.getPosition(); te.pin = { lat: p.lat(), lng: p.lng() }; teFetchDistance(); });
-    new google.maps.Marker({ map: _teMap, position: YARD_CENTER, clickable: false, title: 'JacRentals Yard · Sulphur, LA',   // the dispatch origin, grounds the route
-      icon: { path: google.maps.SymbolPath.CIRCLE, scale: 6, fillColor: '#ff7a1a', fillOpacity: 1, strokeColor: '#1a1205', strokeWeight: 2 } });
-    _teMap.addListener('click', (ev) => { te.pin = { lat: ev.latLng.lat(), lng: ev.latLng.lng() }; _teMarker.setPosition(ev.latLng); _teMarker.setVisible(true); teFetchDistance(); });
-    _teAuto = new google.maps.places.AutocompleteService();
-    _teGeo = new google.maps.Geocoder();
-    _tePlaces = new google.maps.places.PlacesService(_teMap);   // resolve picks by place-id via Places (the key has Places, not Geocoding)
-    _teDist = new google.maps.DistanceMatrixService();
+  if (mapsReady() && mapEl && !mapEl.querySelector('.gm-style')) {
+    // Only trust a pin with finite numeric coords — a legacy/garbled sitePin would crash new Map() and
+    // leave the editor hanging on the placeholder. Existing addresses are the only ones that carry a pin.
+    const p = te.pin, validPin = !!(p && Number.isFinite(p.lat) && Number.isFinite(p.lng));
+    if (p && !validPin) te.pin = null;
+    const center = validPin ? { lat: p.lat, lng: p.lng } : YARD_CENTER;
+    try {
+      mapEl.classList.remove('ph');
+      mapEl.dataset.mounted = '1';
+      _teMap = new google.maps.Map(mapEl, { center, zoom: validPin ? 14 : 9, disableDefaultUI: true, zoomControl: true, gestureHandling: 'greedy', clickableIcons: false });
+      _teMarker = new google.maps.Marker({ map: _teMap, position: center, draggable: true, visible: validPin });
+      _teMarker.addListener('dragend', () => { const q = _teMarker.getPosition(); te.pin = { lat: q.lat(), lng: q.lng() }; teFetchDistance(); });
+      new google.maps.Marker({ map: _teMap, position: YARD_CENTER, clickable: false, title: 'JacRentals Yard · Sulphur, LA',   // the dispatch origin, grounds the route
+        icon: { path: google.maps.SymbolPath.CIRCLE, scale: 6, fillColor: '#ff7a1a', fillOpacity: 1, strokeColor: '#1a1205', strokeWeight: 2 } });
+      _teMap.addListener('click', (ev) => { te.pin = { lat: ev.latLng.lat(), lng: ev.latLng.lng() }; _teMarker.setPosition(ev.latLng); _teMarker.setVisible(true); teFetchDistance(); });
+      _teAuto = new google.maps.places.AutocompleteService();
+      _teGeo = new google.maps.Geocoder();
+      _tePlaces = new google.maps.places.PlacesService(_teMap);   // resolve picks by place-id via Places (the key has Places, not Geocoding)
+      _teDist = google.maps.DistanceMatrixService ? new google.maps.DistanceMatrixService() : null;   // DMS may lag the core lib — teFetchDistance lazily retries
+      te.mapFailed = false;                                        // the live map is up — clear any stale offline-fallback flag
+    } catch (e) { delete mapEl.dataset.mounted; te.mapFailed = true; mapEl.classList.add('ph'); }   // never strand the editor on a half-mount
   }
 }
 function teQuery(v) {
@@ -706,7 +731,9 @@ function tePick(i) {
   }
 }
 function teFetchDistance() {
-  const te = state.transportEdit; if (!te || !te.pin || !mapsReady() || !_teDist) return;
+  const te = state.transportEdit; if (!te || !te.pin) return;
+  if (!_teDist && window.google && google.maps && google.maps.DistanceMatrixService) _teDist = new google.maps.DistanceMatrixService();   // DMS finished loading after mount
+  if (!_teDist) return;   // still no DistanceMatrixService → pricing stays on the city-tier estimate
   _teDist.getDistanceMatrix({ origins: [YARD_ORIGIN], destinations: [te.pin], travelMode: 'DRIVING', unitSystem: google.maps.UnitSystem.IMPERIAL }, (resp, status) => {
     if (state.transportEdit !== te) return;   // editor closed / switched units mid-flight — don't toast or mutate a stale te
     const cell = (status === 'OK' && resp && resp.rows[0]) ? resp.rows[0].elements[0] : null;
