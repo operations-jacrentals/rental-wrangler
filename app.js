@@ -3683,6 +3683,15 @@ function listView(cardDef, session) {
 
   let rows = listFor(card, session);
   if (card === 'units') rows = unitsVisible(rows, cs);   // hide Sold/Inactive (or show only them via the sort) (#2)
+  // §10 — under an availability window the Units list IS the rentable fleet, so it must
+  // match the availability COUNT, which already drops every non-Active unit (§9 via
+  // isUnitAvailableFor/categoryAvailableCount). Hide For-Sale/Sold/Inactive here too, or a
+  // For-Sale machine "shows up in Category Availability" while the count says it's gone (Jac).
+  // The all-fleet / sold-inactive sorts still reveal them as an escape hatch.
+  if (card === 'units' && availWin) {
+    const reveal = cs && cs.sort && (cs.sort.field === 'allFleet' || cs.sort.field === 'soldInactive');
+    if (!reveal) rows = rows.filter((u) => u.fleetStatus === 'Active');
+  }
   if (cs.search.trim() || (cs.filterTerms || []).length) { rows = rows.filter((rec) => rowMatches(card, rec, cs.search, cs.filterTerms)); }
   rows = sortRows(card, rows, cs.sort);
   // §10 — while a rental window is in scope, order Units: available+Ready, available+Not
@@ -4337,6 +4346,27 @@ const _lsJSON = (k) => { try { return JSON.parse(localStorage.getItem(k) || '{}'
 const _lsSave = (k, o) => { try { localStorage.setItem(k, JSON.stringify(o)); } catch (e) {} };
 const dispatchOrderLS = () => _lsJSON('jactec.dispatchOrder');
 const dispatchTimesLS = () => _lsJSON('jactec.dispatchTimes');
+// §2.3 free-form route arrows (Jac): the dispatcher can draw arbitrary directional
+// "from here → there" legs between any two stop icons, on TOP of the top-to-bottom run
+// order. Stored per-day as [fromNode, toNode] pairs (node = a stop id or 'home:in'/'home:out').
+const dispatchArrowsLS = () => _lsJSON('jactec.dispatchArrows');
+const HOME_IN = 'home:in', HOME_OUT = 'home:out';   // the yard, start-of-day and end-of-day nodes
+// Click an icon to arm it (the leg's "from"); click a second to draw the arrow; click the
+// same one again — or Esc — to cancel; re-drawing an existing leg removes it (toggle).
+function dispatchArrowClick(day, node) {
+  if (state.dispArm == null) { state.dispArm = node; return render(); }
+  if (state.dispArm === node) { state.dispArm = null; return render(); }      // tapped self → cancel
+  const all = dispatchArrowsLS(); const legs = all[day] || [];
+  const i = legs.findIndex(([a, b]) => a === state.dispArm && b === node);
+  if (i !== -1) legs.splice(i, 1); else legs.push([state.dispArm, node]);      // toggle the leg
+  all[day] = legs; _lsSave('jactec.dispatchArrows', all);
+  state.dispArm = null; render();
+}
+function removeDispatchArrow(day, from, to) {
+  const all = dispatchArrowsLS(); const legs = all[day] || [];
+  const i = legs.findIndex(([a, b]) => a === from && b === to); if (i === -1) return;
+  legs.splice(i, 1); all[day] = legs; _lsSave('jactec.dispatchArrows', all); render();
+}
 const addDaysISO = (iso, n) => { const d = parseISO(iso); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
 const dispatchDayLabel = (iso) => { const d = parseISO(iso); return d ? d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : iso; };
 function dispatchDayStops(day) {
@@ -4354,15 +4384,22 @@ function dispatchGridBody() {
   const stops = dispatchDayStops(day);
   const isToday = day === TODAY_ISO;
   const allUpcoming = dispatchEvents().filter((e) => e.date >= TODAY_ISO).length;
+  const armed = state.dispArm != null;
+  const legCount = (dispatchArrowsLS()[day] || []).length;
   const head = `<div class="disp-head">
     <button class="disp-nav js-disp-day" data-dir="-1" data-tip="Previous day">‹</button>
     <div class="disp-date"><b>${esc(dispatchDayLabel(day))}</b>${isToday ? '<span class="disp-today">Today</span>' : '<button class="disp-jump js-disp-today">Today</button>'}</div>
     <button class="disp-nav js-disp-day" data-dir="1" data-tip="Next day">›</button>
     <span class="spacer"></span>
+    ${legCount ? `<button class="disp-clearleg js-disp-clearlegs" data-tip="Clear every route arrow on this day">${I.x} ${legCount} arrow${legCount === 1 ? '' : 's'}</button>` : ''}
     <span class="disp-count">${stops.length} stop${stops.length === 1 ? '' : 's'}${allUpcoming ? ` · ${allUpcoming} upcoming` : ''}</span>
   </div>`;
   if (!stops.length) return `${head}<div class="disp-empty">${I.truck}<p>No transports on this day.</p><span>Rentals with Delivery / Round-Trip / Recovery land here automatically — flip days with ‹ ›.</span></div>`;
-  const home = (sub) => `<div class="disp-stop disp-home"><span class="disp-ico home">🏠</span><div class="disp-bd"><div class="disp-unit">${DISPATCH_HOME}</div><div class="disp-sub">${esc(sub)}</div></div></div>`;
+  // Each icon is a route node: click one then another to draw a "from → there" leg.
+  const ico = (node, cls, body, tip) =>
+    `<span class="disp-ico js-disp-arrowpt ${cls}" data-node="${esc(node)}" data-tip="${esc(tip)}" role="button" tabindex="0" aria-label="${esc(tip)}">${body}</span>`;
+  const armTip = armed ? 'Click to draw the route leg to here (Esc cancels)' : 'Click to start a route arrow from here';
+  const home = (node, sub) => `<div class="disp-stop disp-home">${ico(node, 'home', '🏠', armTip)}<div class="disp-bd"><div class="disp-unit">${DISPATCH_HOME}</div><div class="disp-sub">${esc(sub)}</div></div></div>`;
   const rows = stops.map((ev, i) => {
     const deliver = ev.task === 'Deliver';
     const overdue = ev.date < TODAY_ISO, dueToday = ev.date === TODAY_ISO;
@@ -4370,7 +4407,7 @@ function dispatchGridBody() {
       <span class="disp-grip" data-tip="Drag to reorder the run">⠿</span>
       <span class="disp-seq">${i + 1}</span>
       <input class="disp-time js-disp-time" data-id="${esc(ev.id)}" value="${esc(ev.time || '')}" placeholder="—:—" maxlength="5" data-tip="Set the stop time" />
-      <span class="disp-ico c-${deliver ? 'blue' : 'brown'}" data-tip="${deliver ? 'Deliver' : 'Recover'}">${deliver ? 'D' : 'R'}</span>
+      ${ico(ev.id, 'c-' + (deliver ? 'blue' : 'brown'), deliver ? 'D' : 'R', armTip)}
       <div class="disp-bd">
         <div class="disp-unit">${esc(ev.unit)} <span class="disp-task">${deliver ? 'Deliver' : 'Recover'}</span></div>
         <div class="disp-sub">${esc(ev.cust)}${ev.addr ? ` · <span class="disp-addr js-site-go" data-rec="${esc(ev.rentalId)}">${esc(ev.addr)}</span>` : ''}</div>
@@ -4378,7 +4415,53 @@ function dispatchGridBody() {
       <span class="disp-deadline${overdue ? ' over' : dueToday ? ' today' : ''}">${esc(fmtShortDate(ev.date))}${overdue ? ' · LATE' : dueToday ? ' · TODAY' : ''}</span>
     </div>`;
   }).join('');
-  return `${head}<div class="disp-route js-disp-route" data-day="${esc(day)}">${home('Roll out')}${rows}${home('Return to yard')}</div>`;
+  const arm = armed ? `<div class="disp-arm" role="status">${I.truck} Drawing a route leg — click the next stop to land the arrow. <button class="disp-arm-x js-disp-arm-cancel">Cancel</button></div>` : '';
+  return `${head}${arm}<div class="disp-route js-disp-route${armed ? ' arming' : ''}" data-day="${esc(day)}">${home(HOME_IN, 'Roll out')}${rows}${home(HOME_OUT, 'Return to yard')}</div>`;
+}
+/* §2.3 — paint the free-form route legs as an SVG overlay in the route's left gutter,
+   AFTER the DOM lands (we need each icon's real geometry). Pure post-render decor: each
+   leg bows into the gutter so non-adjacent / backtracking legs stay legible, with an
+   arrowhead at the destination. The armed icon is highlighted via the .armed class. */
+function drawDispatchArrows() {
+  const route = document.querySelector('.js-disp-route'); if (!route) return;
+  route.querySelector('.disp-arrows')?.remove();
+  const day = route.dataset.day, arm = state.dispArm;
+  route.querySelectorAll('.js-disp-arrowpt').forEach((n) => n.classList.toggle('armed', arm != null && n.dataset.node === arm));
+  const legs = dispatchArrowsLS()[day] || [];
+  if (!legs.length) return;
+  const rr = route.getBoundingClientRect(), top = route.scrollTop;
+  const RAIL = 19;   // legs live in the route's left rail (its padding-left), clear of the rows
+  // node anchor = rail-x, aligned to the icon's vertical center (content coords so it scrolls)
+  const yOf = (node) => {
+    const i = route.querySelector(`.js-disp-arrowpt[data-node="${CSS.escape(node)}"]`); if (!i) return null;
+    const r = i.getBoundingClientRect(); return r.top - rr.top + top + r.height / 2;
+  };
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('class', 'disp-arrows');
+  svg.setAttribute('width', rr.width); svg.setAttribute('height', route.scrollHeight);
+  svg.setAttribute('viewBox', `0 0 ${rr.width} ${route.scrollHeight}`);
+  svg.innerHTML = `<defs><marker id="dispArrowHead" markerWidth="7" markerHeight="7" refX="5.2" refY="3" orient="auto-start-reverse"><path d="M0,0 L6,3 L0,6 Z" fill="var(--accent)"/></marker></defs>`;
+  legs.forEach(([a, b], idx) => {
+    const ya = yOf(a), yb = yOf(b); if (ya == null || yb == null) return;
+    // bow left within the rail, deeper for longer legs / stacked legs so they don't overlap
+    const bow = Math.min(13, 4 + Math.abs(yb - ya) * 0.03) + (idx % 3) * 2;
+    const cx = RAIL - bow;
+    const d = `M ${RAIL} ${ya.toFixed(1)} C ${cx.toFixed(1)} ${ya.toFixed(1)}, ${cx.toFixed(1)} ${yb.toFixed(1)}, ${RAIL} ${yb.toFixed(1)}`;
+    // a fat invisible hit-path makes the thin leg easy to click away
+    const hit = document.createElementNS(NS, 'path');
+    hit.setAttribute('d', d); hit.setAttribute('class', 'disp-arrow-hit js-disp-arrow');
+    hit.setAttribute('data-from', a); hit.setAttribute('data-to', b);
+    hit.setAttribute('fill', 'none'); hit.setAttribute('stroke', 'transparent'); hit.setAttribute('stroke-width', '13');
+    const line = document.createElementNS(NS, 'path');
+    line.setAttribute('d', d); line.setAttribute('class', 'disp-arrow-line');
+    line.setAttribute('fill', 'none'); line.setAttribute('marker-end', 'url(#dispArrowHead)');
+    const dot = document.createElementNS(NS, 'circle');   // the leg's origin
+    dot.setAttribute('cx', RAIL); dot.setAttribute('cy', ya.toFixed(1)); dot.setAttribute('r', '2.6');
+    dot.setAttribute('class', 'disp-arrow-dot');
+    svg.appendChild(hit); svg.appendChild(line); svg.appendChild(dot);
+  });
+  route.appendChild(svg);
 }
 /** The status badge shown on an item tab (replaces the old datapoint sub-text). */
 function tabBadge(card, rec) {
@@ -5856,6 +5939,7 @@ function render() {
   // Hidden while the team dock owns that corner (Jac 2026-06-15).
   if (!state.chat.open) $('#app').appendChild(fabStackEl());
   applyTitles();   // full text on hover wherever we truncate (custom ~0.5s tooltip)
+  drawDispatchArrows();   // §2.3 — paint free-form route legs over the dispatch run (needs live geometry)
   scoreTick();     // §11 gamification — pop +X over any ring whose metric just rose
   if (DRAG.active) reapplyDragDecor();   // §15c — re-stamp drop targets after ANY mid-drag rebuild (the card swap IS a render)
   const dt = performance.now() - t0;
@@ -6504,8 +6588,13 @@ function onClick(e) {
   if (closest('.js-new-cust-search')) { e.stopPropagation(); const cs = activeSession().cards.customers; return startNewCustomer(parseCustomerSearch(cs.search)); }
   if (closest('.js-coltab')) { const ct = closest('.js-coltab'); e.stopPropagation(); state.fleetFilter = null; const cs = activeSession(); if (cs.cols) cs.cols[ct.dataset.col] = ct.dataset.member; return render(); }
   // §2.3 dispatch timeline — day nav + open a stop's rental (Phase 6)
-  if (closest('.js-disp-day')) { e.stopPropagation(); state.dispatchDay = addDaysISO(state.dispatchDay || TODAY_ISO, Number(closest('.js-disp-day').dataset.dir)); return render(); }
-  if (closest('.js-disp-today')) { e.stopPropagation(); state.dispatchDay = TODAY_ISO; return render(); }
+  if (closest('.js-disp-day')) { e.stopPropagation(); state.dispArm = null; state.dispatchDay = addDaysISO(state.dispatchDay || TODAY_ISO, Number(closest('.js-disp-day').dataset.dir)); return render(); }
+  if (closest('.js-disp-today')) { e.stopPropagation(); state.dispArm = null; state.dispatchDay = TODAY_ISO; return render(); }
+  // §2.3 free-form route arrows — these win over the stop-open below (the icon lives inside the row)
+  if (closest('.js-disp-arrow')) { e.stopPropagation(); const a = closest('.js-disp-arrow'); return removeDispatchArrow(state.dispatchDay || TODAY_ISO, a.dataset.from, a.dataset.to); }
+  if (closest('.js-disp-arrowpt')) { e.stopPropagation(); const route = closest('.js-disp-route'); return dispatchArrowClick(route ? route.dataset.day : (state.dispatchDay || TODAY_ISO), closest('.js-disp-arrowpt').dataset.node); }
+  if (closest('.js-disp-arm-cancel')) { e.stopPropagation(); state.dispArm = null; return render(); }
+  if (closest('.js-disp-clearlegs')) { e.stopPropagation(); const all = dispatchArrowsLS(); delete all[state.dispatchDay || TODAY_ISO]; _lsSave('jactec.dispatchArrows', all); state.dispArm = null; return render(); }
   if (closest('.js-disp-stop') && !closest('.js-disp-time') && !closest('.disp-grip') && !closest('.js-site-go')) { e.stopPropagation(); return anchorRecord('rentals', closest('.js-disp-stop').dataset.rec); }
   if (closest('.js-new-wo-unit')) { e.stopPropagation(); return startNewWorkOrder(closest('.js-new-wo-unit').dataset.rec); }
   if (closest('.js-newitem')) {
@@ -8886,6 +8975,15 @@ function boot() {
     dispDragId = null; render();
   });
   document.addEventListener('dragend', () => { dispDragId = null; document.querySelectorAll('.disp-dragging').forEach((n) => n.classList.remove('disp-dragging')); });
+  // §2.3 route arrows — keyboard parity: Enter/Space arms or lands a leg; Escape cancels the draw.
+  document.addEventListener('keydown', (e) => {
+    const pt = e.target.closest && e.target.closest('.js-disp-arrowpt');
+    if (pt && (e.key === 'Enter' || e.key === ' ')) {
+      e.preventDefault(); const route = pt.closest('.js-disp-route');
+      return dispatchArrowClick(route ? route.dataset.day : (state.dispatchDay || TODAY_ISO), pt.dataset.node);
+    }
+    if (e.key === 'Escape' && state.dispArm != null) { e.preventDefault(); e.stopPropagation(); state.dispArm = null; render(); }
+  });
   document.addEventListener('mousemove', onInspectMove);   // Design Inspector hover tag (no-op unless state.inspect)
   // Board View formula cells: reveal the raw "=…" on focus, recompute on blur.
   document.addEventListener('focusin', (e) => {
