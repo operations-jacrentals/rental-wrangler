@@ -113,6 +113,25 @@ try {
       wo.phase = sp; wo.lineItems.forEach((l, i) => { l.phase = sl[i]; });
     } else ok(false, 'WO0002 fixture missing');
 
+    // 12) Round up missing units — imported rentals that carry only a free-text legacyUnitName
+    // (unitId null) become real unit records, and every referencing rental is linked. Dedupe by
+    // cleaned name; an existing unit by name is LINKED not duplicated; the run is idempotent.
+    ok(T.cleanUnitName('(❌)Phantom') === 'Phantom' && T.cleanUnitName('❌Yaga Feb 22-23') === 'Yaga' && T.cleanUnitName('Landslide_BMT ONLY') === 'Landslide', 'cleanUnitName strips ❌ / dates / BMT-ONLY / underscores');
+    const seedR = (id, legacy, cat) => { const r = { rentalId: id, customerId: 'C0009', unitId: null, legacyUnitName: legacy, categoryId: cat, rentalName: legacy, startDate: T.TODAY_ISO, endDate: T.TODAY_ISO, status: 'On Rent', transportType: 'Self', units: [], invoiceId: null, startHours: null, returnHours: null, refunded: false, notes: '' }; T.DATA.rentals.push(r); T.IDX.rental.set(id, r); return r; };
+    seedR('R-MIG1', '(❌)Phantom', 'CAT011'); seedR('R-MIG2', 'Phantom', 'CAT011'); seedR('R-MIG3', 'Worm', 'CAT011');
+    const unitsBefore = T.DATA.units.length;
+    const plan = T.planUnitMigration();
+    const pPhantom = plan.find((p) => p.name === 'Phantom');
+    const pWorm = plan.find((p) => p.name === 'Worm');
+    ok(!!pPhantom && pPhantom.action === 'create' && pPhantom.count === 2, `two legacy names → one new "Phantom" unit (×2 rentals)`);
+    ok(!!pWorm && pWorm.action === 'link' && pWorm.unitId === 'U003', 'an existing unit by name is LINKED, not duplicated (Worm → U003)');
+    const res = T.applyUnitMigration(plan);
+    const newPhantom = T.DATA.units.find((u) => u.name === 'Phantom');
+    ok(!!newPhantom && newPhantom.fleetStatus === 'Active', 'the new unit is a normal Active record');
+    ok(T.IDX.rental.get('R-MIG1').unitId === newPhantom.unitId && T.IDX.rental.get('R-MIG3').unitId === 'U003', 'rentals now point at the resolved unitIds');
+    ok(T.DATA.units.length === unitsBefore + 1, 'exactly ONE unit was created for the two Phantom rentals');
+    ok(T.planUnitMigration().length === 0, 'migration is idempotent — a second run finds nothing');
+
     return out;
   });
 

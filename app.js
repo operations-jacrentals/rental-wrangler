@@ -4354,6 +4354,33 @@ function renderOverlay() {
       <div class="wr-compose"><input class="wr-in js-wr-in" placeholder="Ask Mr. Wrangler…" value="${esc(o.draft || '')}" ${o.busy ? 'disabled' : ''} /><button class="wr-send js-wr-send" ${o.busy ? 'disabled' : ''} aria-label="Ask">${I.chev}</button></div>`;
     overlay.appendChild(pop);
     setTimeout(() => { const i = pop.querySelector('.js-wr-in'); if (i) i.focus(); const f = pop.querySelector('.wr-feed'); if (f) f.scrollTop = f.scrollHeight; }, 0);
+  } else if (o.kind === 'migrateUnits') {
+    // Round up missing units — preview the create/link plan before writing anything.
+    const creates = o.plan.filter((p) => p.action === 'create').length;
+    const links = o.plan.filter((p) => p.action === 'link').length;
+    const rentals = o.plan.reduce((n, p) => n + p.count, 0);
+    const rows = o.plan.map((p) => `<tr style="border-top:1px solid rgba(255,255,255,.06)">
+        <td style="padding:5px 8px">${esc(p.name)}</td>
+        <td style="padding:5px 8px"><span class="pill ${p.action === 'create' ? 'c-commit' : 'ref'}" style="height:20px;font-size:10px">${p.action === 'create' ? 'New · ' + p.unitId : 'Link · ' + p.unitId}</span></td>
+        <td style="padding:5px 8px;color:var(--muted)">${esc(IDX.category.get(p.categoryId)?.name || p.categoryId || '—')}</td>
+        <td style="padding:5px 8px;color:var(--muted);text-align:right">${p.count}</td></tr>`).join('');
+    const pop = el('div', 'popup'); pop.style.width = '560px';
+    pop.innerHTML = `
+      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${CARD_ICON.units || ''}</span><h3>Round up missing units</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
+      <div class="popup-body">
+        <p style="font-size:13px;margin-bottom:10px"><b>${o.plan.length}</b> unit${o.plan.length === 1 ? '' : 's'} were referenced on rentals but never recorded. This will <b>create ${creates}</b> new record${creates === 1 ? '' : 's'}${links ? ` and <b>link ${links}</b> to existing units` : ''}, then connect <b>${rentals}</b> rental${rentals === 1 ? '' : 's'} (and their customers, categories &amp; invoices) to them.</p>
+        <div style="max-height:46vh;overflow:auto;border:1px solid rgba(255,255,255,.1);border-radius:8px">
+          <table style="width:100%;border-collapse:collapse;font-size:12px">
+            <thead><tr style="position:sticky;top:0;background:var(--panel-2)"><th style="text-align:left;padding:6px 8px">Unit</th><th style="text-align:left;padding:6px 8px">Action</th><th style="text-align:left;padding:6px 8px">Category</th><th style="text-align:right;padding:6px 8px">Rentals</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+        <div class="pillrow" style="justify-content:flex-end;margin-top:12px">
+          <button class="pill ref js-close">Cancel</button>
+          <button class="pill c-commit js-migrate-go" style="height:26px;font-size:11px">Create &amp; link ${o.plan.length}</button>
+        </div>
+      </div>`;
+    overlay.appendChild(pop);
   } else if (o.kind === 'comment') {
     // Phase 6 (Jac redesign) — a SIMPLE comment card that floods with the picked color.
     // Traffic-light dots top-left pick the color; the card body becomes that solid color.
@@ -6169,6 +6196,7 @@ function onClick(e) {
   }
   if (closest('.js-wo-complete')) { const b = closest('.js-wo-complete'); return completeWOAttempt(b.dataset.rec); }
   if (closest('.js-wodone-confirm')) { const b = closest('.js-wodone-confirm'); state.overlay = null; setWoPhase(b.dataset.rec, 'Complete'); renderOverlay(); return; }
+  if (closest('.js-migrate-go')) { const o = state.overlay; if (!o || o.kind !== 'migrateUnits') return; const res = applyUnitMigration(o.plan); state.overlay = null; renderOverlay(); render(); toast(`Rounded up ${res.created} unit${res.created === 1 ? '' : 's'} and linked ${res.linked} rental${res.linked === 1 ? '' : 's'}.`); return; }
   if (closest('.js-hchip')) { const b = closest('.js-hchip'); const o = state.overlay; if (o?.kind === 'board') { o.histKind = o.histKind === b.dataset.kind ? null : b.dataset.kind; return renderOverlay(); } const session = activeSession(); const cs = session.cards[b.dataset.card] || session.cards.shop; cs.histKind = cs.histKind === b.dataset.kind ? null : b.dataset.kind; return render(); }
   if (closest('.js-complete-rental')) {
     const b = closest('.js-complete-rental'); const r = IDX.rental.get(b.dataset.rec); if (!r) return;
@@ -8224,6 +8252,11 @@ function finishLoad() {
   // #edit=<id> — desktop→phone handoff opens that customer's account form (§7.1).
   const em = (location.hash || '').match(/edit=([\w-]+)/i);
   if (em && IDX.customer.get(em[1])) { history.replaceState(null, '', location.pathname + location.search); openCustomerForm(em[1]); }
+  // #migrate-units — admin: round up rentals' free-text legacy unit names into real records.
+  if ((location.hash || '').toLowerCase().includes('migrate-units')) {
+    history.replaceState(null, '', location.pathname + location.search);   // self-clear so a refresh can't re-fire
+    if (adminUnlocked()) openMigrationPreview(); else toast('Admin unlock required to round up missing units.');
+  }
 }
 async function attemptLogin() {
   const name = (document.getElementById('login-name')?.value || '').trim();
@@ -8432,8 +8465,84 @@ function exposeTestApi() {
       unitStatus, rentalUnitStatuses, unitsUniform, rentalStatusDisplay, rentalMirrorStatus, rentalDisplayStatus,
       allUnitsTerminal, unitTerminal, unitVoided, rentalLineItems, transportLineItems, syncRentalPrimary,
       addUnitToRental, removeUnitFromRental, removeUnitInvoiceLine, unitLinePaid, invoiceTotals, allocLines,
-      rentalAllocated, unitRentalPrice, rentalDisplayName, setWoLinePhase, setWoPhase, woBottleneck };
+      rentalAllocated, unitRentalPrice, rentalDisplayName, setWoLinePhase, setWoPhase, woBottleneck,
+      cleanUnitName, planUnitMigration, applyUnitMigration, openMigrationPreview };
   } catch (e) { /* no window (non-browser) */ }
+}
+
+// ── Round up missing units (import repair, Jac 2026-06-15) ──────────────────
+// Some rentals were imported with the machine recorded only as a free-text
+// `legacyUnitName` (unitId null), so the unit never became a real record and
+// can't be seen or managed in the Units list. This builds those missing units
+// as NORMAL records and links every referencing rental to them — which in turn
+// connects them to their customers (via the rental), categories, and invoices.
+// Admin-gated, preview-first, and idempotent: a second run finds nothing because
+// the names now resolve to real units.
+function cleanUnitName(raw) {
+  let s = String(raw || '');
+  s = s.replace(/\(?❌\)?/g, ' ');                                  // drop ❌ / (❌) markers
+  s = s.replace(/_/g, ' ');                                             // underscores → spaces FIRST so the \b tags below match
+  s = s.replace(/\s*\([^)]*\)\s*/g, ' ');                               // drop "(exc/skid combo)" notes
+  s = s.replace(/\bBMT ONLY\b/gi, ' ');                                 // drop "BMT ONLY" tags
+  s = s.replace(/\b[A-Z][a-z]{2}\.?\s*\d{1,2}\s*-\s*\d{1,2}\b/g, ' ');  // drop "Feb 22-23" date ranges
+  s = s.replace(/^Tool\s+/i, '');                                       // drop a leading "Tool" classifier
+  s = s.replace(/^[\s?]+/, '');                                         // strip leading ? / space
+  return s.replace(/\s+/g, ' ').trim();
+}
+const unitByName = (name) => { const k = name.toLowerCase(); return DATA.units.find((u) => String(u.name || '').toLowerCase() === k) || null; };
+
+// Build the plan WITHOUT mutating anything (so it can be previewed/tested).
+function planUnitMigration() {
+  const groups = new Map();   // cleanedName(lower) → { name, cats:Map, rentals:[] }
+  DATA.rentals.forEach((r) => {
+    const raw = (r.legacyUnitName || '').trim();
+    if (!raw) return;
+    if (r.unitId && IDX.unit.get(r.unitId)) return;                              // already a real unit (top-level)
+    if (rentalUnits(r).some((u) => u.unitId && IDX.unit.get(u.unitId))) return;  // …or in the units[] array
+    const name = cleanUnitName(raw);
+    if (!name || !/[A-Za-z]/.test(name)) return;                                 // skip empties / pure-junk like "46\"
+    const key = name.toLowerCase();
+    if (!groups.has(key)) groups.set(key, { name, cats: new Map(), rentals: [] });
+    const g = groups.get(key); g.rentals.push(r);
+    if (r.categoryId) g.cats.set(r.categoryId, (g.cats.get(r.categoryId) || 0) + 1);
+  });
+  let seed = DATA.units.reduce((m, u) => { const n = Number(String(u.unitId).match(/^U(\d+)$/)?.[1]); return n > m ? n : m; }, 0);
+  return [...groups.values()].sort((a, b) => b.rentals.length - a.rentals.length).map((g) => {
+    const existing = unitByName(g.name);
+    const cat = [...g.cats.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || existing?.categoryId || '';
+    return existing
+      ? { name: g.name, action: 'link',   unitId: existing.unitId, categoryId: existing.categoryId || cat, rentals: g.rentals.map((r) => r.rentalId), count: g.rentals.length }
+      : { name: g.name, action: 'create', unitId: 'U' + String(++seed).padStart(3, '0'), categoryId: cat, rentals: g.rentals.map((r) => r.rentalId), count: g.rentals.length };
+  });
+}
+
+// Apply a plan: create the new units, link the rentals (+ any billed invoices), persist via the diff sync.
+function applyUnitMigration(plan) {
+  let created = 0, linked = 0;
+  plan.forEach((p) => {
+    if (p.action === 'create' && !IDX.unit.get(p.unitId)) {
+      const u = { unitId: p.unitId, name: p.name, categoryId: p.categoryId, assignedMechanic: '',
+        currentHours: 0, inspectionStatus: 'Not Ready', fleetStatus: 'Active', purchaseHours: 0, serviceCompletions: {} };
+      DATA.units.push(u); IDX.unit.set(u.unitId, u); reindex('units', u); created++;
+    }
+    p.rentals.forEach((rid) => {
+      const r = IDX.rental.get(rid); if (!r) return;
+      r.unitId = p.unitId;                                                       // top-level mirror (legacy single-unit shape)
+      if (!r.categoryId) r.categoryId = p.categoryId;
+      (r.units || []).forEach((eu) => { if (!eu.unitId) eu.unitId = p.unitId; }); // any unitId-less units[] entry
+      if (r.invoiceId) { const inv = IDX.invoice.get(r.invoiceId);              // relink billed lines, if any
+        if (inv) { (inv.lineItems || []).forEach((li) => { if (li.ref === rid && !li.unitId && (li.kind === 'rental' || li.kind === 'transport')) li.unitId = p.unitId; }); reindex('invoices', inv); } }
+      reindex('rentals', r); linked++;
+    });
+  });
+  saveSoon();
+  return { created, linked };
+}
+// Admin entry point — preview, then the operator confirms before anything is written.
+function openMigrationPreview() {
+  const plan = planUnitMigration();
+  if (!plan.length) { toast('No unrecorded units found — every rental is already linked to a real unit.'); return; }
+  openOverlay({ kind: 'migrateUnits', plan });
 }
 
 // #reseed — one-time admin: REPLACE the entire live database with the imported file (data.js).
