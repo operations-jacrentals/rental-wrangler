@@ -424,7 +424,7 @@ input { font-family: inherit; }
 .disp-today { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .6px; color: var(--accent); background: var(--accent-soft); padding: 2px 7px; border-radius: 99px; }
 .disp-jump { font-size: 11px; color: var(--accent); background: none; border: none; cursor: pointer; text-decoration: underline; }
 .disp-count { font-size: 11px; color: var(--txt-3); white-space: nowrap; }
-.disp-route { padding: 6px 12px 18px; overflow-y: auto; }
+.disp-route { position: relative; padding: 6px 12px 18px 34px; overflow-y: auto; }
 .disp-stop { position: relative; display: flex; align-items: center; gap: 9px; }
 .js-disp-stop { background: linear-gradient(180deg, var(--card-head), var(--card)); border: 1px solid var(--line); border-radius: 11px; padding: 9px 11px; margin: 7px 0; cursor: pointer; }
 .js-disp-stop:hover { border-color: var(--accent-line); }
@@ -436,7 +436,8 @@ input { font-family: inherit; }
 .disp-time { width: 50px; flex: 0 0 auto; height: 28px; text-align: center; border: 1px solid var(--line); border-radius: 7px; background: var(--bg-2, var(--panel)); color: var(--txt); font: inherit; font-size: 12px; font-weight: 700; }
 .disp-time:focus { border-color: var(--accent-line); outline: none; }
 .disp-ico { width: 30px; height: 30px; flex: 0 0 auto; border-radius: 50%; display: grid; place-items: center; font-weight: 800; font-family: 'Saira Condensed', system-ui, sans-serif; font-size: 14px; color: #fff; }
-.disp-ico.c-blue { background: var(--blue); } .disp-ico.c-brown { background: var(--brown, #9a6a3a); }
+/* the D/R letter must stay white on the colored disc — beat the generic .c-blue/.c-brown text color (style.css §pills) */
+.disp-ico.c-blue { background: var(--blue); color: #fff; } .disp-ico.c-brown { background: var(--brown, #9a6a3a); color: #fff; }
 .disp-ico.home { background: var(--bg-2, var(--panel)); border: 1px solid var(--line); font-size: 15px; }
 .disp-bd { flex: 1; min-width: 0; }
 .disp-unit { font-weight: 700; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -453,6 +454,25 @@ input { font-family: inherit; }
 .disp-empty svg { width: 30px; height: 30px; opacity: .5; }
 .disp-empty p { font-size: 14px; color: var(--txt-2); margin: 10px 0 4px; }
 .disp-empty span { font-size: 12px; }
+/* ── §2.3 free-form route arrows: click an icon to start a leg, click another to land it ── */
+.js-disp-arrowpt { cursor: pointer; transition: box-shadow .12s, transform .12s; }
+.js-disp-arrowpt:hover { box-shadow: 0 0 0 2px var(--accent-line); }
+.js-disp-arrowpt:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.disp-route.arming .js-disp-arrowpt { box-shadow: 0 0 0 1px var(--accent-line); }   /* every icon is a target while drawing */
+.js-disp-arrowpt.armed { box-shadow: 0 0 0 2px var(--accent), 0 0 9px var(--accent); transform: scale(1.06); }
+.disp-arm { display: flex; align-items: center; gap: 7px; margin: 0 12px 4px; padding: 7px 10px; font-size: 11.5px; color: var(--accent);
+  background: var(--accent-soft); border: 1px solid var(--accent-line); border-radius: 9px; }
+.disp-arm svg { width: 15px; height: 15px; flex: 0 0 auto; }
+.disp-arm-x { margin-left: auto; font-size: 11px; font-weight: 700; color: var(--txt-2); background: none; border: none; cursor: pointer; text-decoration: underline; }
+.disp-clearleg { display: inline-flex; align-items: center; gap: 3px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px;
+  color: var(--accent); background: var(--accent-soft); border: 1px solid var(--accent-line); border-radius: 99px; padding: 2px 8px; cursor: pointer; white-space: nowrap; }
+.disp-clearleg svg { width: 11px; height: 11px; }
+.disp-clearleg:hover { border-color: var(--accent); }
+.disp-arrows { position: absolute; top: 0; left: 0; pointer-events: none; z-index: 2; }
+.disp-arrow-line { stroke: var(--accent); stroke-width: 2; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.disp-arrow-dot { fill: var(--accent); }
+.disp-arrow-hit { pointer-events: stroke; cursor: pointer; }
+@media (prefers-reduced-motion: reduce) { .js-disp-arrowpt { transition: none; } .js-disp-arrowpt.armed { transform: none; } }
 
 /* ── Card (each is the detail view; scrolls internally) ──────────────────── */
 .card {

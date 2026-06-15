@@ -7,20 +7,20 @@ Pinned backlog from the sticky-note photos, grouped into like-minded phases.
 Worked all 6 phases end-to-end. Every commit passed the 3 gates; each UI piece was
 screenshot-checked. **All on the branch (PR #7)** — nothing auto-shipped to live.
 
-- **Phase 1 — bugs:** ✅ right-click-over-preview · Complete-Rental feedback · Bill/Don't-bill toggle · fleet-dropdown z-index · Cancel/Reopen WO · footers-no-longer-change-mode. 📌 3 still pinned (need live repro): the 2 units-list scroll bugs + For-Sale-in-availability.
+- **Phase 1 — bugs:** ✅ right-click-over-preview · Complete-Rental feedback · Bill/Don't-bill toggle · fleet-dropdown z-index · Cancel/Reopen WO · footers-no-longer-change-mode · ✅ **For-Sale-in-availability** (units list now hides non-Active fleet under an availability window). The 2 units-list scroll bugs: **proven resolved at HEAD** (Playwright repro — Back/right-click-back/jog all restore the saved scroll; fresh opens land at top) — fixed by the Phase 2a/2b interaction work (#16/#17).
 - **Phase 2 — chrome:** ✅ per-card striped-header colors · removed Dashboard · removed footer dashed line · Membership/Used-Sales swapped · +Unit pill hidden after first unit · Yard Mode already locked. (Graph icon delivered with Phase 4.)
 - **Phase 3 — KPIs:** ✅ all four (Healthy Fleet, Parts Breakeven, Ready-Rate denominator, WO-Rate 20%/30-day goal-ring).
 - **Phase 4 — graphs:** ✅ per-card Graph icon + the full Units graph (FC stats, leaderboard, FC-history bars, Inspection & Parts donuts, unit roster).
 - **Phase 5 — WO/parts:** ✅ Part-in-Stock status · Part/Task autofocus + Enter-to-add · WO→failed-inspection link · failed-unit re-inspection gated on the last blocking WO.
-- **Phase 6 — transport:** ✅ Calendar = daily driver timeline (D/R/🏠, times, deadlines, drag-reorder, route arrows, day nav). 📌 manual "click-icon-to-icon" arbitrary arrows interpreted as the sequential route order (drag to reorder) — revisit if you want free-form arrows.
+- **Phase 6 — transport:** ✅ Calendar = daily driver timeline (D/R/🏠, times, deadlines, drag-reorder, sequential route order, day nav). ✅ **free-form route arrows** — click any stop icon then another to draw an arbitrary directional "from here → there" leg (kept per-day in localStorage, drawn in the route's left rail; re-draw a leg or click it to remove, "× N arrows" clears the day, Esc cancels a draw).
 
 ## Phase 1 — Bugs / broken controls (auto-fixer candidates)
 > **Decision:** fix all on the feature branch (PR #7), batched with the redesign — not via the live engine (would collide with the branch).
 >
 > **Status (2026-06-15):** ✅ right-click-over-preview · ✅ Complete-Rental locked feedback · ✅ Bill/Don't-bill toggle · ✅ fleet dropdown z-index/preview · ✅ Cancel WO · ✅ footers no longer yank you out of Yard Mode.
-> **📌 PINNED — need live repro to fix safely (don't guess):**
-> - *Units list scrolls to a different spot on Back* + *Unit opens scrolled all the way down* — the per-view scroll-memo logic (render() ~L5600) already lands fresh opens at top; the bug is likely list-height change after back-nav or memo clobbering mid-render. Needs to be watched live to confirm the trigger.
-> - *For-Sale machines in Category Availability* — `isUnitAvailableFor`/`categoryAvailableCount` ALREADY exclude every non-Active fleetStatus (incl. For Sale), so the count is correct. Need to know exactly WHICH view still shows them (category roster list? a calendar? the availability search?) before filtering, so I don't hide units somewhere they should appear.
+> **✅ PINNED ITEMS — RESOLVED (2026-06-15, dogfooded the `wrangler-fix` prove-then-fix protocol):**
+> - *Units list scrolls to a different spot on Back* + *Unit opens scrolled all the way down* — **could not reproduce at HEAD.** Playwright repro on the real app: scroll the list, open a unit (lands at top — correct), then Back via the button, right-click, and the back/forward jog — every path restores the exact saved scroll (e.g. 229/200/150). The Phase 2a/2b interaction rework (#16/#17) fixed it. **No code change** — shipping a speculative scroll edit would risk the working path.
+> - *For-Sale machines in Category Availability* — **fixed.** Proof: §9 says non-Active units aren't rentable, and `isUnitAvailableFor`/`categoryAvailableCount` already drop *every* non-Active fleetStatus, so the count excludes them — but `unitsVisible` only hid Sold/Inactive, so a For-Sale machine still *listed* under an availability window while the count said it was gone. Fix: under an active availability window (`availWin`), the Units list shows only the Active (rentable) fleet — matching the count. The all-fleet / sold-inactive sorts still reveal them, and normal management views (no window) are untouched. (`app.js` §13.2 list build.)
 - [ ] Right-click not working
 - [ ] Right-click should win over the hover Preview
 - [ ] "Complete Rental" button does nothing
