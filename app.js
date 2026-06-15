@@ -493,9 +493,48 @@ const ICO_STORE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" st
 function syncTransportLine(r) {
   if (!r || !r.invoiceId) return;
   const inv = IDX.invoice.get(r.invoiceId); if (!inv) return;
-  inv.lineItems = (inv.lineItems || []).filter((li) => !(li.kind === 'transport' && li.ref === r.rentalId));
-  transportLineItems(r).forEach((li) => inv.lineItems.push(li));   // §20 one transport line per unit
-  reindex('invoices', inv);
+  // LID-PRESERVING + order-independent: re-price an existing unpaid transport line IN PLACE
+  // (keeps its lid → its payment allocation survives), never touches a PAID line (refund-
+  // before-reprice, §7.4), drops a line whose unit no longer has transport (unless paid),
+  // and appends a brand-new unit's line. Does NOT depend on the running balance, so it's
+  // safe to call before/after syncRentalLines on a paid-in-full invoice.
+  const want = new Map(transportLineItems(r).map((li) => [li.unitId, li]));   // desired transport line per live unit
+  let changed = false;
+  inv.lineItems = (inv.lineItems || []).filter((li) => {
+    if (!(li.kind === 'transport' && li.ref === r.rentalId)) return true;
+    const w = want.get(li.unitId);
+    if (!w) return itemPaid(inv, li) > 0;                 // unit no longer billed transport → drop (keep if paid)
+    want.delete(li.unitId);                               // matched an existing line → keep its lid
+    if (itemPaid(inv, li) <= 0 && (li.amount !== w.amount || li.label !== w.label)) { li.amount = w.amount; li.label = w.label; changed = true; }   // re-price unpaid in place
+    return true;
+  });
+  want.forEach((w) => { inv.lineItems.push(w); changed = true; });   // brand-new units' transport lines
+  if (changed) reindex('invoices', inv);
+}
+/* §20 ADD any MISSING per-unit rental line to the linked invoice. Never regenerates an
+   existing line (its payment allocation is keyed by lid — regeneration would orphan it);
+   removal is handled by removeUnitInvoiceLine. Used when a unit is added to an
+   already-invoiced rental (drag-on / split). */
+function syncRentalLines(r) {
+  if (!r || !r.invoiceId) return;
+  const inv = IDX.invoice.get(r.invoiceId); if (!inv) return;
+  const have = new Set((inv.lineItems || []).filter((li) => li.kind === 'rental' && li.ref === r.rentalId).map((li) => li.unitId));
+  let changed = false;
+  rentalLineItems(r).forEach((li) => { if (!have.has(li.unitId)) { inv.lineItems.push(li); changed = true; } });
+  if (changed) reindex('invoices', inv);
+}
+/* sweep ORPHANED invoice lines — a rental/transport line for THIS rental whose unit is no
+   longer on it (and isn't paid) is dropped. Belt-and-suspenders after add/remove/split. */
+function healInvoiceLines(r) {
+  if (!r || !r.invoiceId) return;
+  const inv = IDX.invoice.get(r.invoiceId); if (!inv) return;
+  const live = new Set(rentalUnitIds(r));
+  const before = (inv.lineItems || []).length;
+  inv.lineItems = (inv.lineItems || []).filter((li) => {
+    const orphan = (li.kind === 'rental' || li.kind === 'transport') && li.ref === r.rentalId && li.unitId && !live.has(li.unitId);
+    return !orphan || itemPaid(inv, li) > 0;
+  });
+  if ((inv.lineItems || []).length !== before) reindex('invoices', inv);
 }
 
 /* ════════════ INLINE TRANSPORT EDITOR + GOOGLE MAPS (Jac 2026-06-15) ═════════
@@ -565,11 +604,14 @@ function transportEditorHtml() {
   const who = u ? esc(u.name) + ' · ' : '';
   return `<div class="tedit sec" data-r="R5b">
     <div class="tedit-head"><span class="stamp">Set ${te.leg === 'recovery' ? 'recovery' : 'delivery'} site</span><span class="muted" style="font-size:10.5px">${who}drag the pin for the exact driver drop</span></div>
-    <div class="tedit-map js-tmap">${live ? '' : `<span class="map-tag">${GOOGLE_MAPS_KEY || _mapsKey ? 'loading map…' : 'live map appears once the dispatch key is set'}</span>`}</div>
+    <div class="tedit-map js-tmap${live ? '' : ' ph'}">${live ? '' : ((GOOGLE_MAPS_KEY || _mapsKey)
+      ? `<span class="map-spin" aria-hidden="true"></span><span class="map-tag">Loading dispatch map…</span>`
+      : `<span class="map-pin" aria-hidden="true">${ICO_PIN}</span><span class="map-tag stamp" style="font-size:11px;color:var(--accent)">Offline · city-tier pricing</span><span class="map-sub">Type the site address below — the live map &amp; exact mileage come online once the dispatch key is set.</span>`)}</div>
     <input class="lf-in js-taddr" placeholder="Site address — start typing…" value="${esc(te.addr || '')}" autocomplete="off" spellcheck="false" aria-label="Site address">
     <div class="js-tsug tedit-sug" role="listbox"></div>
     <div class="tedit-foot">
       <span class="muted tedit-hint">↑↓ choose · Tab/Enter set · Esc cancel</span>
+      <span class="muted js-te-dist" style="font-size:10.5px;margin-left:8px"></span>
       <span class="spacer"></span>
       ${ghostPill('Cancel', { js: 'js-tedit-cancel' })}
       ${actionPill('commit', 'Set address', { js: 'js-tedit-save' })}
@@ -593,6 +635,8 @@ function mountTransportEditor() {
     _teMap = new google.maps.Map(mapEl, { center, zoom: te.pin ? 14 : 9, disableDefaultUI: true, zoomControl: true, gestureHandling: 'greedy', clickableIcons: false });
     _teMarker = new google.maps.Marker({ map: _teMap, position: center, draggable: true, visible: !!te.pin });
     _teMarker.addListener('dragend', () => { const p = _teMarker.getPosition(); te.pin = { lat: p.lat(), lng: p.lng() }; teFetchDistance(); });
+    new google.maps.Marker({ map: _teMap, position: YARD_CENTER, clickable: false, title: 'JacRentals Yard · Sulphur, LA',   // the dispatch origin, grounds the route
+      icon: { path: google.maps.SymbolPath.CIRCLE, scale: 6, fillColor: '#ff7a1a', fillOpacity: 1, strokeColor: '#1a1205', strokeWeight: 2 } });
     _teMap.addListener('click', (ev) => { te.pin = { lat: ev.latLng.lat(), lng: ev.latLng.lng() }; _teMarker.setPosition(ev.latLng); _teMarker.setVisible(true); teFetchDistance(); });
     _teAuto = new google.maps.places.AutocompleteService();
     _teGeo = new google.maps.Geocoder();
@@ -653,8 +697,14 @@ function tePick(i) {
 function teFetchDistance() {
   const te = state.transportEdit; if (!te || !te.pin || !mapsReady() || !_teDist) return;
   _teDist.getDistanceMatrix({ origins: [YARD_ORIGIN], destinations: [te.pin], travelMode: 'DRIVING', unitSystem: google.maps.UnitSystem.IMPERIAL }, (resp, status) => {
-    if (status !== 'OK' || !resp.rows[0]) return;
-    const cell = resp.rows[0].elements[0]; if (!cell || cell.status !== 'OK') return;
+    if (state.transportEdit !== te) return;   // editor closed / switched units mid-flight — don't toast or mutate a stale te
+    const cell = (status === 'OK' && resp && resp.rows[0]) ? resp.rows[0].elements[0] : null;
+    if (!cell || cell.status !== 'OK') {   // API down / no route → leave miles null so pricing falls back to the city-tier estimate
+      te.miles = null; te.driveMin = null;
+      const l = document.querySelector('.js-te-dist'); if (l) l.textContent = 'city-tier estimate';
+      toast('Google distance unavailable — using a city-tier estimate.');
+      return;
+    }
     te.miles = +(cell.distance.value / 1609.344).toFixed(1);
     te.driveMin = Math.round(cell.duration.value / 60);
     const lbl = document.querySelector('.js-te-dist'); if (lbl) lbl.textContent = `${te.miles} mi · ${te.driveMin} min one-way`;
@@ -2561,10 +2611,10 @@ function yardToolHtml(u) {
   const euT = unitEntry(r, u.unitId);   // §20 this unit's own status on its journey
   const C = euT || r;   // §20 this unit's OWN captures (mirrors r.* for the primary)
   const st = getStatus('rentalStatus', euT ? unitStatus(r, euT) : rentalDisplayStatus(r));
-  const isDel = r.transportType && r.transportType !== 'Self';
+  const isDel = !!(euT && euT.transportType && euT.transportType !== 'Self');   // §20 per-unit (was rental-level — diverged on multi-unit)
   const startLbl = C.startCapture ? 'On Rent' : isDel ? '+Log Delivery' : '+Start';
   const endLbl = C.endCapture ? 'Returned' : isDel ? '+Log Recovery' : '+End';
-  const kindLbl = isDel ? getStatus('transportType', r.transportType).label : '';
+  const kindLbl = isDel ? getStatus('transportType', euT.transportType).label : '';
   const du = `data-unit="${esc(u.unitId)}"`;
   return `<div class="jtool"><div class="journey">
     <div class="jnode pre" style="cursor:default"><span class="jbox" style="color:var(--${st.color})">${CARD_ICON.rentals}</span><span class="jlbl" style="color:var(--${st.color})">${esc(st.label)}</span><span class="jts">${fmtShortDate(r.startDate)}${r.startTime ? ' · ' + esc(r.startTime) : ''}</span></div>
@@ -2572,7 +2622,7 @@ function yardToolHtml(u) {
       <span class="jover"><span class="pill dvd c-orange" data-r="R4" data-pill-card="rentals" data-pill-rec="${esc(r.rentalId)}">${CARD_ICON.rentals}<span class="t">${esc(cust?.name || r.rentalName || 'Rental')}</span></span></span>
       <span class="jline2 ${C.startCapture ? 'on' : ''}"></span>
       <span class="junder">${fmtShortDate(r.startDate)} – ${fmtShortDate(r.endDate)}</span>
-      ${r.deliveryAddress ? `<span class="jaddr js-site-go" data-rec="${esc(r.rentalId)}">${esc(r.deliveryAddress)}</span>` : isDel ? `<span class="jaddr js-site-go" data-rec="${esc(r.rentalId)}">+Address</span>` : ''}
+      ${(() => { const addr = (euT && euT.deliveryAddress) || (isPrimaryUnit(r, euT) ? r.deliveryAddress : ''); return addr ? `<span class="jaddr js-site-go" data-rec="${esc(r.rentalId)}" ${du}>${esc(addr)}</span>` : (isDel ? `<span class="jaddr js-site-go" data-rec="${esc(r.rentalId)}" ${du}>+Address</span>` : ''); })()}
       ${kindLbl ? `<span class="jkind">${esc(kindLbl)}</span>` : ''}
     </div>
     <div class="jnode ${C.startCapture ? 'done green' : ''} js-yard" data-cap="start" data-rec="${esc(r.rentalId)}" ${du}><span class="jbox">${C.startCapture ? '✓' : I.video}</span><span class="jlbl">${esc(startLbl)}</span><span class="jts">${esc(C.startCapture?.clock || '')}</span></div>
@@ -2920,7 +2970,8 @@ function stallRouteHtml(r, eu) {
   const tr = unitTransport(r, eu);
   const oneWay = (tr && tr.perLeg != null) ? tr.perLeg : (tr && tr.price != null ? tr.price : null);
   const drive = (tr && tr.driveMin != null) ? `~${tr.driveMin} min` : '';
-  const addr = eu.deliveryAddress ? esc(eu.deliveryAddress) : '+Address';
+  const addrRaw = eu.deliveryAddress || (isPrimaryUnit(r, eu) ? r.deliveryAddress : '');   // mirror yardToolHtml's primary fallback so the two journeys never diverge
+  const addr = addrRaw ? esc(addrRaw) : '+Address';
   const sd = !!eu.startCapture, ed = !!eu.endCapture;
   const sub = `<div class="stall-sub">⇄ ${esc(type)}${oneWay ? ` · ${money(oneWay)}/one-way` : ''}</div>`;
   const home = `<span class="rtbox">${ICO_STORE}</span>`;
@@ -3077,7 +3128,7 @@ const DETAIL = {
           return `<div class="stall${voided ? ' voided' : ''}">
             <div class="stall-head">
               <div class="stall-id">${unitPill(u.unitId, { x: 'unit-remove', xData: u.unitId })}${dPill(insp.label, insp.color, { card: 'units', recId: u.unitId, icon: CARD_ICON.inspections })}${multi ? unitStatusGate(r, eu) : ''}</div>
-              <span class="stall-amt">${money(up ? up.price : 0)}</span>
+              <span class="stall-right">${multi ? `<button class="stall-split js-split-open" data-rec="${esc(r.rentalId)}" data-unit="${esc(u.unitId)}" data-tip="Give ${esc(u.name)} its own dates — splits to a separate rental on the same invoice"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>dates</button>` : ''}<span class="stall-amt">${money(up ? up.price : 0)}</span></span>
             </div>
             ${stallRouteHtml(r, eu)}
           </div>`;
@@ -5478,6 +5529,21 @@ function renderOverlay() {
         <div class="pillrow" style="justify-content:flex-end;margin-top:10px"><button class="pill c-commit js-schedule-save" data-r="R17" data-rec="${c.customerId}">Add to schedule</button></div>
       </div>`;
     overlay.appendChild(pop);
+  } else if (o.kind === 'splitUnit') {
+    // §20 split — give one unit its own window on a NEW sibling rental, same invoice.
+    const r = IDX.rental.get(o.rentalId), u = IDX.unit.get(o.unitId);
+    if (!r || !u) { state.overlay = null; return; }
+    const inv = r.invoiceId ? IDX.invoice.get(r.invoiceId) : null;
+    const pop = el('div', 'popup'); pop.style.width = '360px';
+    pop.innerHTML = `
+      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${CARD_ICON.rentals}</span><h3>Different dates — ${esc(u.name)}</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
+      <div class="popup-body">
+        <p style="font-size:12.5px;margin-bottom:12px">The other machines stay on <b>${esc(fmtWindow(r.startDate, r.endDate) || 'this window')}</b>. This makes a <b>separate rental</b> for ${esc(u.name)}${inv ? ` on the same invoice (${esc(invoiceShort(inv.invoiceId))})` : ''}, moving its journey + lines over.</p>
+        <label class="svc-field"><span>Start</span>${dateField('splitStart', o.splitStart)}</label>
+        <label class="svc-field" style="margin-top:8px"><span>End</span>${dateField('splitEnd', o.splitEnd)}</label>
+        <div class="pillrow" style="justify-content:flex-end;margin-top:14px"><button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill c-commit js-split-go" data-r="R17">Make separate rental</button></div>
+      </div>`;
+    overlay.appendChild(pop);
   } else if (o.kind === 'addCard') {
     // Stripe Card Element — raw card data stays inside Stripe's iframe.
     const c = IDX.customer.get(o.customerId);
@@ -7042,6 +7108,8 @@ function onClick(e) {
   if (closest('.js-wo-reopen')) { const b = closest('.js-wo-reopen'); const w = IDX.wo.get(b.dataset.rec); if (w) { w.cancelled = false; reindex('workOrders', w); logAction(w, 'Work order reopened'); toast('Work order reopened.'); reanchorRender(); } return; }
   if (closest('.js-wodone-confirm')) { const b = closest('.js-wodone-confirm'); state.overlay = null; setWoPhase(b.dataset.rec, 'Complete'); renderOverlay(); return; }
   if (closest('.js-migrate-go')) { const o = state.overlay; if (!o || o.kind !== 'migrateUnits') return; const res = applyUnitMigration(o.plan); state.overlay = null; renderOverlay(); render(); toast(`Rounded up ${res.created} unit${res.created === 1 ? '' : 's'} and linked ${res.linked} rental${res.linked === 1 ? '' : 's'}.`); return; }
+  if (closest('.js-split-open')) { const b = closest('.js-split-open'); e.stopPropagation(); const r = IDX.rental.get(b.dataset.rec); if (r) openOverlay({ kind: 'splitUnit', rentalId: b.dataset.rec, unitId: b.dataset.unit, splitStart: r.startDate, splitEnd: r.endDate }); return; }
+  if (closest('.js-split-go')) { const o = state.overlay; if (!o || o.kind !== 'splitUnit') return; const sib = splitUnitToNewRental(o.rentalId, o.unitId, o.splitStart, o.splitEnd); if (sib) { closeOverlay(); try { anchorRecord('rentals', sib.rentalId); } catch (err) { render(); } } return; }
   if (closest('.js-hchip')) { const b = closest('.js-hchip'); const o = state.overlay; if (o?.kind === 'board') { o.histKind = o.histKind === b.dataset.kind ? null : b.dataset.kind; return renderOverlay(); } const session = activeSession(); const cs = session.cards[b.dataset.card] || session.cards.shop; cs.histKind = cs.histKind === b.dataset.kind ? null : b.dataset.kind; return render(); }
   if (closest('.js-complete-rental')) {
     const b = closest('.js-complete-rental'); const r = IDX.rental.get(b.dataset.rec); if (!r) return;
@@ -7232,13 +7300,20 @@ function handlePillX(xEl) {
     const li = rec.lineItems && rec.lineItems[idx];
     if (!li) return;
     if (itemPaid(rec, li, idx) > 0) { toast('Blocked: payment is assigned to this line — refund first (§7.4).'); return; }
-    rec.lineItems.splice(idx, 1);
-    if (li.kind === 'rental') {
-      // drop the paired transport line AND the link — while r.invoiceId is set, syncTransportLine re-adds it
-      rec.lineItems = rec.lineItems.filter((l) => !(l.kind === 'transport' && l.ref === li.ref));
-      rec.rentalIds = (rec.rentalIds || []).filter((id) => id !== li.ref);
-      const r2 = IDX.rental.get(li.ref);
-      if (r2 && r2.invoiceId === rec.invoiceId) { r2.invoiceId = null; reindex('rentals', r2); logAction(r2, `Removed from invoice ${invoiceShort(rec.invoiceId)}`); }
+    const r2 = IDX.rental.get(li.ref);
+    if (li.kind === 'rental' && r2 && rentalUnits(r2).length > 1) {
+      // §20 multi-unit: this ✕ removes JUST this unit (its rental + transport line) and takes
+      // it off the rental — siblings stay billed and the rental stays linked. removeUnitFromRental
+      // re-syncs the invoice + relabels survivors; it already dropped this unit's lines.
+      removeUnitFromRental(r2, li.unitId);
+    } else {
+      rec.lineItems.splice(idx, 1);
+      if (li.kind === 'rental') {
+        // last unit on the rental → detach the whole rental from the invoice (legacy single-unit path)
+        rec.lineItems = rec.lineItems.filter((l) => !(l.kind === 'transport' && l.ref === li.ref));
+        rec.rentalIds = (rec.rentalIds || []).filter((id) => id !== li.ref);
+        if (r2 && r2.invoiceId === rec.invoiceId) { r2.invoiceId = null; reindex('rentals', r2); logAction(r2, `Removed from invoice ${invoiceShort(rec.invoiceId)}`); }
+      }
     }
     logAction(rec, `Removed ${li.kind === 'rental' ? 'rental' : 'line'}: ${li.label} (${money(li.amount)})`);
     reindex('invoices', rec);
@@ -7364,9 +7439,11 @@ function setRentalStatus(rentalId, val) {
     toast(`${cust.name} has no valid card on file — Admin override required.`);
     return cardOverrideRental(rentalId, val);
   }
+  const wasVoided = ['No Show', 'Cancelled'].includes(r.status);
   r.status = val;
   (r.units || []).forEach((eu) => { eu.status = val; });   // §20 master gate: bulk-set every unit
   if ((val === 'No Show' || val === 'Cancelled') && r.invoiceId) (r.units || []).forEach((eu) => removeUnitInvoiceLine(r, eu.unitId));   // §20 voided units aren't billed (symmetric with the per-unit gate)
+  else if (wasVoided && r.invoiceId) { syncRentalLines(r); syncTransportLine(r); }   // un-void the rental → restore every unit's billing
   reindex('rentals', r);
   logAction(r, `Status → ${getStatus('rentalStatus', val).label}`);
   // §9 non-blocking warnings on go-live (warning, not block — Phase 1)
@@ -7390,9 +7467,11 @@ function setUnitStatus(rentalId, unitId, val) {
   // §20 No-Show / Cancel: don't commit the terminal status while a payment is
   // assigned to the unit (it would count toward Complete yet stay billed) — block first.
   if ((val === 'No Show' || val === 'Cancelled') && unitLinePaid(r, unitId)) { toast('That unit has an assigned payment — refund it before No Show/Cancel.'); return; }
+  const wasVoided = ['No Show', 'Cancelled'].includes(unitStatus(r, eu));
   eu.status = val;
   // the unit STAYS on the rental record but its invoice line(s) are removed (not billed). Returned keeps its line.
   if ((val === 'No Show' || val === 'Cancelled') && r.invoiceId) removeUnitInvoiceLine(r, unitId);
+  else if (wasVoided && r.invoiceId) { syncRentalLines(r); syncTransportLine(r); }   // un-void → restore the unit's billing (was silently un-billed)
   syncRentalPrimary(r);            // mirror the aggregate back onto r.status for back-compat readers
   reindex('rentals', r);
   logAction(r, `${IDX.unit.get(unitId)?.name || unitId} → ${getStatus('rentalStatus', val).label}`);
@@ -8429,6 +8508,7 @@ function createInvoiceForRental(rentalId) {
   const r = IDX.rental.get(rentalId); if (!r) return;
   if (!r.customerId) { flashOr('[data-slot="customer"]', 'The Quote needs a customer first — drag one on (or quick-add).'); return; }
   if (!r.startDate || !r.endDate) { flashOr('.timeline, .statusbar.draftwin', 'Set the rental window first.'); return; }
+  if (!rentalUnitIds(r).length) { flashOr('.stall-empty, [data-slot="unit"]', 'Add at least one unit before invoicing.'); return; }
   const id = nextInvoiceId();
   const inv = { invoiceId: id, customerId: r.customerId, rentalIds: [rentalId], date: TODAY_ISO, dueDate: addDays(TODAY_ISO, 14), po: '', amountPaid: 0, lineItems: [], mock: true };
   rentalLineItems(r).forEach((li) => inv.lineItems.push(li));      // one rental line per unit (§20)
@@ -8844,21 +8924,24 @@ function addUnitToRental(r, unitId) {
   // and dispatch won't skip an undelivered unit as if it were already out.
   const newStatus = (r.status === 'Quote') ? 'Quote' : 'Reserved';
   r.units.push({ unitId, legacyUnitName: '', status: newStatus, startHours: null, returnHours: null, startCapture: null, endCapture: null, fcCapture: null,
-    transportType: proto.transportType || null, deliveryAddress: proto.deliveryAddress || '', recoveryAddress: proto.recoveryAddress || '', sitePin: null });
+    transportType: proto.transportType || null, deliveryAddress: proto.deliveryAddress || '', recoveryAddress: proto.recoveryAddress || '',
+    transportMiles: proto.transportMiles != null ? proto.transportMiles : null, transportDriveMin: proto.transportDriveMin != null ? proto.transportDriveMin : null, sitePin: null });
   syncRentalPrimary(r);
 }
 /* the transport settings a newly-added unit inherits as its default (the first
    transport-bearing unit on the rental, primary mirror included). */
 function unitTransportProto(r) {
-  if (r.transportType && r.transportType !== 'Self') return { transportType: r.transportType, deliveryAddress: r.deliveryAddress, recoveryAddress: r.recoveryAddress };
+  if (r.transportType && r.transportType !== 'Self') return { transportType: r.transportType, deliveryAddress: r.deliveryAddress, recoveryAddress: r.recoveryAddress, transportMiles: r.transportMiles, transportDriveMin: r.transportDriveMin };
   const u = rentalUnits(r).find((eu) => eu.transportType && eu.transportType !== 'Self');
-  return u ? { transportType: u.transportType, deliveryAddress: u.deliveryAddress, recoveryAddress: u.recoveryAddress } : {};
+  return u ? { transportType: u.transportType, deliveryAddress: u.deliveryAddress, recoveryAddress: u.recoveryAddress, transportMiles: u.transportMiles, transportDriveMin: u.transportDriveMin } : {};
 }
-function removeUnitFromRental(r, unitId) {
+function removeUnitFromRental(r, unitId, opts = {}) {
   const removed = IDX.unit.get(unitId);
+  if (r.invoiceId) removeUnitInvoiceLine(r, unitId);   // drop this unit's rental + transport lines (keeps any PAID line — refund first)
   r.units = rentalUnits(r).filter((u) => u.unitId !== unitId);
   syncRentalPrimary(r);
-  logAction(r, `Unit cleared: ${removed?.name || unitId}`);   // #1 — was unlogged (Jac's Clear Unit)
+  if (r.invoiceId) { syncTransportLine(r); healInvoiceLines(r); }   // relabel survivors (multi→single) + sweep any orphan
+  if (!opts.silent) logAction(r, `Unit cleared: ${removed?.name || unitId}`);   // split passes silent (the Split entry is the single log)
 }
 /* §20 — dropping a unit on a rental ADDS it (a Rental is an EVENT); the §9 fleet
    gate, the "already on" guard, and the §10 overbooking gate all fire per unit. */
@@ -8875,6 +8958,7 @@ function linkUnitToRental(rentalId, unitId) {
     return null;
   }
   addUnitToRental(r, unitId);
+  if (r.invoiceId) { syncRentalLines(r); syncTransportLine(r); }   // bill the newly-added unit (rental + transport lines) onto the existing invoice
   logAction(r, `Unit + ${u.name}${conflicts.length ? ' — OVERBOOKED' : ''}`);
   reindexDraft('rentals', r);
   return { added: u, overbooked: conflicts.length > 0 };
@@ -8891,6 +8975,44 @@ function linkCustomerToRental(rentalId, customerId) {
   logAction(r, `Customer → ${c.name}${prev ? ` (was ${prev.name})` : ''}`);
   reindexDraft('rentals', r);
   return { swapped: prev || null };
+}
+/* §20 SPLIT — give ONE unit its own window by moving it to a NEW sibling rental on the
+   SAME invoice (Jac 2026-06-15). The rest of the rental keeps its window. The unit's
+   entry (status + captures + transport + addresses + pin) travels with it; its invoice
+   lines move from the old rental's ref to the new one. Blocked if its line is paid. */
+function splitUnitToNewRental(rentalId, unitId, start, end) {
+  const r = IDX.rental.get(rentalId), u = IDX.unit.get(unitId);
+  if (!r || !u) return null;
+  if (rentalUnits(r).length < 2) { toast(`${u.name} is the only machine — change the rental's window instead.`); return null; }
+  const eu0 = unitEntry(r, unitId);
+  if (eu0 && unitVoided(r, eu0)) { toast(`${u.name} is ${unitStatus(r, eu0)} — nothing to split.`); return null; }   // a voided unit has no lines → would make an empty sibling
+  if (start && end && parseISO(end) < parseISO(start)) { toast('End date is before the start date.'); return null; }
+  const inv = r.invoiceId ? IDX.invoice.get(r.invoiceId) : null;
+  if (inv && inv.locked) { toast('Blocked: invoice pricing is locked — unlock it first (§7.5).'); return null; }   // never re-price a sealed invoice
+  if (inv && (inv.lineItems || []).some((li) => li.ref === rentalId && li.unitId === unitId && itemPaid(inv, li) > 0)) {
+    toast(`Refund ${u.name}'s line first — it carries a payment (§7.4).`); return null;
+  }
+  const eu = { ...(eu0 || legacyUnitEntry(r)) };   // copy carries captures + transport + address
+  const nid = 'R-SPLIT' + Date.now().toString(36) + '-' + (state.seq++);
+  const sib = { rentalId: nid, customerId: r.customerId, categoryId: u.categoryId || r.categoryId, unitId,
+    rentalName: '', startDate: start || r.startDate, endDate: end || r.endDate, startTime: r.startTime || '',
+    status: eu.status || r.status, transportType: eu.transportType || 'Self', deliveryAddress: eu.deliveryAddress || '',
+    recoveryAddress: eu.recoveryAddress || '', invoiceId: r.invoiceId || null, po: '', notes: '', actions: [],
+    units: [eu], mock: !!r.mock };
+  removeUnitFromRental(r, unitId, { silent: true });   // drops the unit + its OLD invoice lines (ref = rentalId)
+  syncRentalPrimary(sib);
+  DATA.rentals.push(sib); IDX.rental.set(nid, sib); reindex('rentals', sib);
+  if (sib.invoiceId && inv) {                   // re-attach the unit's lines under the NEW ref, same invoice
+    if (!Array.isArray(inv.rentalIds)) inv.rentalIds = [];
+    if (!inv.rentalIds.includes(nid)) inv.rentalIds.push(nid);
+    syncRentalLines(sib); syncTransportLine(sib);
+  }
+  reindexDraft('rentals', r);
+  logAction(r, `Split ${u.name} → its own rental (${fmtWindow(sib.startDate, sib.endDate)})`);
+  logAction(sib, `Split off from ${r.rentalName || rentalId} — ${u.name}`);
+  if (inv) logAction(inv, `${u.name} moved to a separate rental (same invoice)`);
+  toast(`${u.name} split to its own rental${sib.invoiceId ? ` on invoice ${invoiceShort(sib.invoiceId)}` : ''}.`);
+  return sib;
 }
 /** Set an invoice's customer — guarded: ANY payment OR a locked invoice freezes
  *  it (§7.5 — the same tests as 'inv-cust-remove', applied on SET too). */
@@ -9589,4 +9711,6 @@ window.JT = {
   setInspWash, setInspResult, setDraftDate,
   linkUnitToRental, linkCustomerToRental, setInvoiceCustomer, billWOToInvoiceExplicit,   // Wave 2: the surviving link paths
   billWOToInvoice, anchorRecord, startNewCustomer, startNewReceipt, openOverlay,
+  addUnitToRental, removeUnitFromRental, syncTransportLine, syncRentalLines, healInvoiceLines,   // §20 sync + test harness
+  removeUnitInvoiceLine, rentalLineItems, transportLineItems, splitUnitToNewRental, setUnitStatus, setRentalStatus,
 };

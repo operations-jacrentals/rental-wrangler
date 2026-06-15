@@ -1595,6 +1595,10 @@ body.rw-inspect .c-titlecard:hover { outline: 2px solid #18b6ff; outline-offset:
 .stall-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .stall-id { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
 .stall-amt { font-weight: 800; color: var(--green); font-variant-numeric: tabular-nums; }
+.stall-right { display: inline-flex; align-items: center; gap: 9px; }
+.stall-split { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; color: var(--txt-3); background: transparent; border: 1px solid var(--line); border-radius: 7px; padding: 2px 7px; cursor: pointer; }
+.stall-split:hover { color: var(--accent); border-color: var(--accent-line); }
+.stall-split svg { flex: 0 0 auto; }
 .stall-sub { font-size: 11.5px; color: var(--txt-3); font-style: italic; margin-top: 6px; }
 .stall-empty { display: flex; align-items: center; gap: 9px; padding: 11px 2px; }
 .rentalsec-foot { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 10px; }
@@ -1682,6 +1686,12 @@ body.rw-inspect .c-titlecard:hover { outline: 2px solid #18b6ff; outline-offset:
   background: repeating-linear-gradient(135deg, rgba(245,197,66,.06) 0 13px, rgba(20,24,29,.45) 13px 26px), var(--panel-2);
   display: grid; place-items: center; }
 .tedit-map .map-tag { position: static; max-width: 82%; text-align: center; line-height: 1.4; }
+.tedit-map.ph { gap: 6px; padding: 0 18px; background: repeating-linear-gradient(135deg, rgba(245,197,66,.05) 0 13px, rgba(20,24,29,.5) 13px 26px), radial-gradient(circle at 50% 40%, rgba(255,122,26,.10), transparent 62%), var(--panel-2); }
+.map-pin { color: var(--accent); display: inline-flex; }
+.map-pin svg { width: 30px; height: 30px; }
+.map-sub { font-size: 10.5px; color: var(--txt-3); text-align: center; max-width: 88%; line-height: 1.45; }
+.map-spin { width: 22px; height: 22px; border-radius: 50%; border: 3px solid rgba(255,122,26,.25); border-top-color: var(--accent); animation: mapspin .8s linear infinite; }
+@keyframes mapspin { to { transform: rotate(360deg); } }
 .tedit .lf-in { width: 100%; height: 34px; border-radius: 9px; border: 1px solid var(--line); background: var(--panel); color: var(--txt); font: inherit; font-size: 13px; padding: 0 11px; }
 .tedit .lf-in:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .tedit-sug { display: flex; flex-direction: column; gap: 2px; }
