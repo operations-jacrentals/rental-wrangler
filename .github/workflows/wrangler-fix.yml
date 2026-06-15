@@ -1,0 +1,120 @@
+name: Wrangler Fix — auto-patch a reported glitch
+
+# ── Mr. Wrangler's Track B engine ─────────────────────────────────────────────
+# When a glitch is filed as an issue labelled "wrangler-fix", a Claude coding
+# agent reproduces it, patches the FRONTEND (app.js / style.css / index.html /
+# config.js), runs the 3 CI gates, opens a PR, and auto-merges it the moment CI
+# is green. Pages then deploys `main` to app.jacrentals.com. The one step the
+# browser can't do — rewriting app.js and redeploying — happens here.
+#
+# ── SWITCH-ON (one-time, in the repo's GitHub settings) ───────────────────────
+#   1. Settings → Secrets and variables → Actions → New repository secret:
+#        ANTHROPIC_API_KEY = <your Anthropic API key>
+#        WRANGLER_PAT      = <a fine-grained PAT scoped to THIS repo, with:
+#                             Contents: Read & write · Pull requests: Read & write
+#                             · Issues: Read & write · Actions: Read>
+#      Why a PAT and not the built-in GITHUB_TOKEN? A PR opened by GITHUB_TOKEN
+#      does NOT trigger the CI workflow — so it could never go green and could
+#      never auto-merge. The PAT opens the PR as you, so CI runs normally.
+#      (Alternative: run `/install-github-app` to use the Claude GitHub App
+#       token instead of a PAT — same effect.)
+#   2. Settings → General → Pull Requests → ✓ Allow auto-merge.
+#   3. Settings → Branches → Add branch protection rule for `main`:
+#        ✓ Require status checks to pass before merging
+#        → add the "smoke" check (from the "CI — boot check" workflow).
+#      This is the safety net: a fix reaches live ONLY after all 3 gates pass.
+#
+# Until those are set, this workflow is inert (it just no-ops / errors on the
+# missing secret) — nothing ships without the switch-on above.
+
+on:
+  issues:
+    # `labeled` covers a glitch tagged after the fact; `opened` covers the in-app
+    # reporter, which files a pre-filled issue that already carries the label.
+    types: [opened, labeled]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  fix:
+    # Fire only for the trigger label, on either entry path.
+    if: >
+      (github.event.action == 'labeled' && github.event.label.name == 'wrangler-fix') ||
+      (github.event.action == 'opened' && contains(github.event.issue.labels.*.name, 'wrangler-fix'))
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.WRANGLER_PAT }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # Pre-install the gate deps so the agent spends its turns fixing, not setup.
+      - name: Install gate deps (Playwright + Chromium)
+        run: |
+          npm install --no-save playwright@1.48.0
+          npx playwright install --with-deps chromium
+
+      - name: Mr. Wrangler patches the glitch
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # PAT (not GITHUB_TOKEN) so the PR it opens actually triggers CI.
+          github_token: ${{ secrets.WRANGLER_PAT }}
+          claude_args: "--max-turns 60"
+          prompt: |
+            A glitch was reported in the Rental Wrangler app — GitHub issue
+            #${{ github.event.issue.number }}.
+
+            TITLE: ${{ github.event.issue.title }}
+
+            REPORT + REPRO PACKET (from the in-app reporter — may include the
+            view, role, viewport, the element's R-rule stamp, console errors,
+            and a screenshot link):
+            ---
+            ${{ github.event.issue.body }}
+            ---
+
+            YOUR JOB — fix the ROOT CAUSE of this glitch in the frontend, then
+            ship it autonomously. The user wants this fixed end-to-end:
+
+              1. Read CLAUDE.md first and follow it EXACTLY (deploy/gates, the
+                 design language, and the "Don't" list). Keep the change MINIMAL
+                 and targeted — fix THIS glitch and nothing else. Match the style
+                 and density of the surrounding code.
+              2. Reproduce the bug from the packet (the console errors and the
+                 R-rule stamp usually point straight at the culprit handler /
+                 selector). Fix the underlying cause, not the symptom.
+              3. If the fix changes or adds UI, run it through the design language
+                 in CLAUDE.md (the "yard data-plate": steel panels, rivets, the
+                 hazard-stripe motif, Saira Condensed stamps, the light ranch
+                 twist in copy). Do NOT restyle unrelated UI.
+              4. Run ALL three gates locally and make every one pass:
+                   node ci/smoke.mjs
+                   node ci/logic-test.mjs
+                   node ci/gen-rule-usage.mjs --check
+                 If rule usage legitimately changed, regenerate it
+                 (run `node ci/gen-rule-usage.mjs` WITHOUT --check) and commit the
+                 updated rule-usage.js too.
+              5. SAFETY: never edit money / card / payment / refund / invoice-total
+                 logic to "fix" a glitch unless the bug is genuinely in that path
+                 and you are certain of the fix — and if so, call it out loudly in
+                 the PR body. Never weaken the login/password gate. Honor the rule
+                 that only the Complete-WO button completes a work order.
+              6. Commit on a new branch `wrangler-fix/issue-${{ github.event.issue.number }}`
+                 and open a pull request to `main`. Title:
+                 "Wrangler fix: <short glitch summary>". Body: 2-3 plain-English
+                 sentences on the root cause + the fix, and the line
+                 "Closes #${{ github.event.issue.number }}".
+              7. Then turn on auto-merge so it ships the instant CI is green:
+                   gh pr merge --auto --squash <the PR number you just opened>
+              8. If you genuinely CANNOT reproduce or safely fix it, do NOT open a
+                 PR. Instead post a comment on issue
+                 #${{ github.event.issue.number }} explaining what you found and
+                 what you'd need to proceed, and stop.
