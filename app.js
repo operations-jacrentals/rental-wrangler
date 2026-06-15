@@ -2798,7 +2798,7 @@ function transportActionHtml(r) {
     const st = getStatus('transportType', T.transportType);
     const tr = eu ? unitTransport(r, eu) : rentalTransport(r);
     const oneWay = (tr && tr.perLeg != null) ? tr.perLeg : (tr && tr.price != null ? tr.price : null);
-    return `<span class="pill c-${st.color} js-tedit-open" data-r="R4" data-rec="${esc(r.rentalId)}"${du} data-leg="delivery" style="cursor:pointer">${CARD_ICON.rentals}${esc(st.label)}${nameSfx}${oneWay != null ? ` · ${money(oneWay)}` : ''}</span>`;
+    return `<span class="pill c-${st.color} js-tedit-open" data-r="R4" data-rec="${esc(r.rentalId)}"${du} data-leg="delivery" style="cursor:pointer">${CARD_ICON.rentals}${esc(st.label)}${nameSfx}${oneWay ? ` · ${money(oneWay)}` : ''}</span>`;
   };
   if (!units.length) return one(null, null);
   return units.map((eu) => { const u = IDX.unit.get(eu.unitId); return u ? one(eu, u) : ''; }).join('');
@@ -2847,7 +2847,7 @@ function miniJourneyHtml(r2, eu) {
   if (type === 'Delivery') body = jacNode + logSeg('start', sd, '+Log Delivery', 'delivery', delAddr) + siteNode;
   else if (type === 'Recovery') body = siteNode + logSeg('end', ed, '+Log Recovery', 'delivery', delAddr) + jacNode;
   else body = jacNode + logSeg('start', sd, '+Log Delivery', 'delivery', delAddr) + siteNode + logSeg('end', ed, '+Log Recovery', 'recovery', recAddr) + jacNode;
-  return `<div class="journeywrap"><div class="jtype">${seg}${oneWay != null ? `<span class="jprice">${money(oneWay)}<span class="sfx"> /one-way</span></span>` : ''}</div><div class="journey mini">${body}</div></div>`;
+  return `<div class="journeywrap"><div class="jtype">${seg}${oneWay ? `<span class="jprice">${money(oneWay)}<span class="sfx"> /one-way</span></span>` : ''}</div><div class="journey mini">${body}</div></div>`;
 }
 /* card-head title flags: live condition + worst-WO bottleneck (units);
    rental status + pay status (rentals). Two stacked 14px rows = title height. */
