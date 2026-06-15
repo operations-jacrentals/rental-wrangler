@@ -4395,15 +4395,21 @@ function pieSVG(segments, size = 128) {
   const total = segments.reduce((a, s) => a + (s.value || 0), 0);
   const r = size / 2, cx = r, cy = r, inner = r * 0.6;
   if (!total) return `<svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}"><circle cx="${cx}" cy="${cy}" r="${r - 1}" fill="none" stroke="var(--line)" stroke-width="2" stroke-dasharray="3 4"/><circle cx="${cx}" cy="${cy}" r="${inner}" fill="var(--bg)"/></svg>`;
-  const arc = (a) => [cx + (r - 1) * Math.cos(a), cy + (r - 1) * Math.sin(a)];
-  let a0 = -Math.PI / 2, paths = '';
-  segments.forEach((s) => {
-    if (!s.value) return;
-    const a1 = a0 + (s.value / total) * Math.PI * 2;
-    const [x0, y0] = arc(a0), [x1, y1] = arc(a1), large = (a1 - a0) > Math.PI ? 1 : 0;
-    paths += `<path d="M${cx},${cy} L${x0.toFixed(1)},${y0.toFixed(1)} A${r - 1},${r - 1} 0 ${large} 1 ${x1.toFixed(1)},${y1.toFixed(1)} Z" fill="var(--${s.color})" stroke="var(--card)" stroke-width="1.5"/>`;
-    a0 = a1;
-  });
+  const nonzero = segments.filter((s) => s.value > 0);
+  let paths = '';
+  if (nonzero.length === 1) {                          // 100% one slice — draw a full ring (a single arc is degenerate)
+    paths = `<circle cx="${cx}" cy="${cy}" r="${r - 1}" fill="var(--${nonzero[0].color})" stroke="var(--card)" stroke-width="1.5"/>`;
+  } else {
+    const arc = (a) => [cx + (r - 1) * Math.cos(a), cy + (r - 1) * Math.sin(a)];
+    let a0 = -Math.PI / 2;
+    segments.forEach((s) => {
+      if (!s.value) return;
+      const a1 = a0 + (s.value / total) * Math.PI * 2;
+      const [x0, y0] = arc(a0), [x1, y1] = arc(a1), large = (a1 - a0) > Math.PI ? 1 : 0;
+      paths += `<path d="M${cx},${cy} L${x0.toFixed(1)},${y0.toFixed(1)} A${r - 1},${r - 1} 0 ${large} 1 ${x1.toFixed(1)},${y1.toFixed(1)} Z" fill="var(--${s.color})" stroke="var(--card)" stroke-width="1.5"/>`;
+      a0 = a1;
+    });
+  }
   paths += `<circle cx="${cx}" cy="${cy}" r="${inner}" fill="var(--bg)"/><text x="${cx}" y="${cy + 5}" text-anchor="middle" fill="var(--txt)" font-size="20" font-weight="800">${total}</text>`;
   return `<svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}">${paths}</svg>`;
 }
@@ -6357,7 +6363,6 @@ function onClick(e) {
   if (closest('.js-bv-resetlayout')) { e.stopPropagation(); const card = closest('.js-bv-resetlayout').dataset.card; saveListLayout(card, null); saveListTotals(card, null); render(); renderOverlay(); return; }
   if (closest('.js-new-cust-search')) { e.stopPropagation(); const cs = activeSession().cards.customers; return startNewCustomer(parseCustomerSearch(cs.search)); }
   if (closest('.js-coltab')) { const ct = closest('.js-coltab'); e.stopPropagation(); state.fleetFilter = null; const cs = activeSession(); if (cs.cols) cs.cols[ct.dataset.col] = ct.dataset.member; return render(); }
-  if (closest('.js-dash-ev')) { e.stopPropagation(); return anchorRecord('rentals', closest('.js-dash-ev').dataset.rec); }
   // §2.3 dispatch timeline — day nav + open a stop's rental (Phase 6)
   if (closest('.js-disp-day')) { e.stopPropagation(); state.dispatchDay = addDaysISO(state.dispatchDay || TODAY_ISO, Number(closest('.js-disp-day').dataset.dir)); return render(); }
   if (closest('.js-disp-today')) { e.stopPropagation(); state.dispatchDay = TODAY_ISO; return render(); }

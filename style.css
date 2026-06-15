@@ -453,34 +453,6 @@ input { font-family: inherit; }
 .disp-empty svg { width: 30px; height: 30px; opacity: .5; }
 .disp-empty p { font-size: 14px; color: var(--txt-2); margin: 10px 0 4px; }
 .disp-empty span { font-size: 12px; }
-.cal-body .dash-stat { padding: 10px 13px; }
-.cal-body .dash-stat b { font-size: 22px; }
-.cal-body .dash-ev { flex-wrap: wrap; gap: 5px 10px; }
-.cal-body .dash-time { min-width: 0; }
-.cal-body .dash-unit { min-width: 0; flex: 1 1 auto; }
-.cal-body .dash-cust { flex: 1 1 auto; }
-.cal-body .dash-addr { flex: 1 1 100%; }
-/* §5.3/§11 Office Dispatch Time Grid (grid-swap dashboard) */
-.dash-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
-.dash-stat { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 3px; box-shadow: var(--chip-shadow); }
-.dash-stat b { font-size: 28px; font-weight: 800; line-height: 1; }
-.dash-stat span { font-size: 12px; color: var(--txt-3); font-weight: 600; }
-.dash-grid { display: flex; flex-direction: column; gap: 12px; }
-.dash-day { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
-.dash-day.today { border-color: var(--accent-line); box-shadow: 0 0 0 1px var(--accent-line); }
-.dash-day.past { opacity: .55; }
-.dash-day-head { display: flex; align-items: center; gap: 8px; padding: 8px 14px; font-size: 13px; font-weight: 800; background: var(--panel-2); border-bottom: 1px solid var(--line); }
-.dash-day.today .dash-day-head { color: var(--accent); }
-.dash-day-count { margin-left: auto; font-size: 11px; font-weight: 700; color: var(--txt-3); background: var(--bg-2); padding: 1px 9px; border-radius: 999px; }
-.dash-ev { display: flex; align-items: center; gap: 12px; width: 100%; padding: 9px 14px; text-align: left; border-bottom: 1px solid var(--line-soft); font-size: 13px; transition: background .1s; }
-.dash-ev:last-child { border-bottom: none; }
-.dash-ev:hover { background: var(--panel-2); }
-.dash-ev .truck { display: inline-flex; } .dash-ev .truck svg { width: 12px; height: 12px; }
-.dash-time { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--txt-2); min-width: 64px; }
-.dash-unit { font-weight: 700; min-width: 90px; }
-.dash-cust { color: var(--txt-2); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 0 1 160px; }
-.dash-addr { color: var(--txt-3); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1 1 auto; }
-.dash-ttype { flex: 0 0 auto; }
 
 /* ── Card (each is the detail view; scrolls internally) ──────────────────── */
 .card {
