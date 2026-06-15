@@ -2386,11 +2386,11 @@ function rentalAmt(r) {
 /* spend bucketed by month for the last n months (ending this month) */
 function customerMonthly(c, n = 9) {
   const today = parseISO(TODAY_ISO), out = [];
-  for (let i = n - 1; i >= 0; i--) { const dt = new Date(today.getFullYear(), today.getMonth() - i, 1); out.push({ y: dt.getFullYear(), m: dt.getMonth(), label: ACT_MONTHS[dt.getMonth()], total: 0 }); }
+  for (let i = n - 1; i >= 0; i--) { const dt = new Date(today.getFullYear(), today.getMonth() - i, 1); out.push({ y: dt.getFullYear(), m: dt.getMonth(), label: ACT_MONTHS[dt.getMonth()], total: 0, days: 0 }); }
   DATA.rentals.filter((r) => r.customerId === c.customerId && r.startDate).forEach((r) => {
     const s = parseISO(r.startDate); if (!s) return;
     const b = out.find((x) => x.y === s.getFullYear() && x.m === s.getMonth());
-    if (b) b.total += rentalAmt(r) || 0;
+    if (b) { b.total += rentalAmt(r) || 0; const e = parseISO(r.endDate); b.days += e ? Math.max(1, Math.round((e - s) / 86400000) + 1) : 1; }   // D2 — days the customer held equipment (a 7-day rental = 7)
   });
   return out;
 }
@@ -2412,6 +2412,12 @@ function customerActivityChart(c) {
   const pts = months.map((b) => ({ x: fx(new Date(b.y, b.m, 15).getTime()), y: py(b.total) }));
   const sm = (p) => { let d = `M${p[0].x.toFixed(1)},${p[0].y.toFixed(1)}`; for (let i = 0; i < p.length - 1; i++) { const p0 = p[i - 1] || p[i], p1 = p[i], p2 = p[i + 1], p3 = p[i + 2] || p2; const c1x = p1.x + (p2.x - p0.x) / 6, c1y = p1.y + (p2.y - p0.y) / 6, c2x = p2.x - (p3.x - p1.x) / 6, c2y = p2.y - (p3.y - p1.y) / 6; d += ` C${c1x.toFixed(1)},${c1y.toFixed(1)} ${c2x.toFixed(1)},${c2y.toFixed(1)} ${p2.x.toFixed(1)},${p2.y.toFixed(1)}`; } return d; };
   const line = sm(pts), area = `${line} L${pts[pts.length - 1].x.toFixed(1)},${baseY} L${pts[0].x.toFixed(1)},${baseY} Z`;
+  // D2 — a 2nd series: days-rented per month (own scale), plus per-point data for cursor scrub.
+  const maxDays = Math.max(1, ...months.map((b) => b.days));
+  const ptsD = months.map((b, i) => ({ x: pts[i].x, y: baseY - (b.days / maxDays) * (baseY - padT) }));
+  const lineD = sm(ptsD);
+  const dotsD = ptsD.map((p) => `<span class="ca-dot d" style="left:${p.x.toFixed(1)}%;top:${p.y.toFixed(1)}px"></span>`).join('');
+  const caData = JSON.stringify(months.map((b, i) => ({ l: b.label, t: b.total, d: b.days, x: +pts[i].x.toFixed(1) })));
   const peakI = months.reduce((bi, b, i, arr) => (b.total > arr[bi].total ? i : bi), 0);
   const peak = months[peakI];
   const dots = pts.map((p, i) => `<span class="ca-dot${i === peakI ? ' big' : ''}" style="left:${p.x.toFixed(1)}%;top:${p.y.toFixed(1)}px"></span>`).join('');
@@ -2435,13 +2441,30 @@ function customerActivityChart(c) {
   }
   return `<div class="ca-panel" data-tip="Customer activity — spend by month, with last rental, next expected, and where today sits in their cadence">
     <div class="ca-stage c-${a.color}${a.deep ? ' deep' : ''}">${esc(a.stage)}</div>
-    <div class="ca-chart">
-      <svg class="ca-svg" viewBox="0 0 100 ${H}" preserveAspectRatio="none"><defs><linearGradient id="caFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--accent)" stop-opacity=".5"/><stop offset="1" stop-color="var(--accent)" stop-opacity=".02"/></linearGradient></defs><path d="${area}" fill="url(#caFill)"/><path d="${line}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" vector-effect="non-scaling-stroke"/></svg>
-      ${markers}${dots}${peakCo}
+    <div class="ca-chart" data-ca='${caData}'>
+      <svg class="ca-svg" viewBox="0 0 100 ${H}" preserveAspectRatio="none"><defs><linearGradient id="caFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--accent)" stop-opacity=".5"/><stop offset="1" stop-color="var(--accent)" stop-opacity=".02"/></linearGradient></defs><path d="${area}" fill="url(#caFill)"/><path d="${line}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" vector-effect="non-scaling-stroke"/><path d="${lineD}" fill="none" stroke="#c2925a" stroke-width="1.8" stroke-dasharray="4 3" stroke-linecap="round" vector-effect="non-scaling-stroke"/></svg>
+      <div class="ca-legend"><span><i style="background:var(--accent)"></i>Spend</span><span><i style="background:#c2925a"></i>Days rented</span></div>
+      ${markers}${dots}${dotsD}${peakCo}
+      <span class="ca-scrub"></span><div class="ca-tip"></div>
       <div class="ca-lbls">${labels}</div>
     </div>
     ${caption}
   </div>`;
+}
+// D2 — cursor scrub for the customer activity chart: follow the cursor, snap to the nearest
+// month, and float that month's spend + days-rented in a tooltip with a guide line.
+function caScrub(e) {
+  const chart = e.target.closest && e.target.closest('.ca-chart');
+  document.querySelectorAll('.ca-chart').forEach((ch) => { if (ch !== chart) { ch.querySelector('.ca-tip')?.classList.remove('on'); ch.querySelector('.ca-scrub')?.classList.remove('on'); } });
+  if (!chart) return;
+  let data; try { data = JSON.parse(chart.dataset.ca || '[]'); } catch (err) { return; }
+  if (!data.length) return;
+  const rect = chart.getBoundingClientRect(); if (!rect.width) return;
+  const xpct = Math.max(0, Math.min(100, (e.clientX - rect.left) / rect.width * 100));
+  let best = data[0], bd = Infinity; data.forEach((d) => { const dd = Math.abs(d.x - xpct); if (dd < bd) { bd = dd; best = d; } });
+  const scrub = chart.querySelector('.ca-scrub'), tip = chart.querySelector('.ca-tip');
+  if (scrub) { scrub.style.left = best.x + '%'; scrub.classList.add('on'); }
+  if (tip) { tip.innerHTML = `<b>${esc(best.l)}</b><span class="ca-tip-s">${best.t ? money(best.t) : '$0'}</span><span class="ca-tip-d">${best.d} day${best.d === 1 ? '' : 's'}</span>`; tip.style.left = Math.max(9, Math.min(91, best.x)) + '%'; tip.classList.add('on'); }
 }
 
 /* ── COMMENTS (Jac, Phase 6) — a structured note with a color (red/yellow/green) that
@@ -8920,6 +8943,7 @@ function boot() {
   });
   document.addEventListener('dragend', () => { dispDragId = null; document.querySelectorAll('.disp-dragging').forEach((n) => n.classList.remove('disp-dragging')); });
   document.addEventListener('mousemove', onInspectMove);   // Design Inspector hover tag (no-op unless state.inspect)
+  document.addEventListener('mousemove', caScrub);          // D2 — customer activity chart cursor scrub
   // Board View formula cells: reveal the raw "=…" on focus, recompute on blur.
   document.addEventListener('focusin', (e) => {
     const t = e.target; if (t && t.classList && t.classList.contains('bv-scratch') && t.dataset.raw) t.textContent = t.dataset.raw;
