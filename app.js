@@ -2997,6 +2997,7 @@ const DETAIL = {
     const notes = notesSection('files', f, 'fileId');
     return `<div class="detail">
       <div class="detail-head"><span class="d-title inline-edit" data-edit="field" data-card="files" data-field="name" data-rec="${esc(f.fileId)}" data-ph="File name">${esc(f.name || 'New File')}</span>${f.link ? linkName('Open file', { js: 'js-open-link', data: { url: webUrl(f.link) } }) : ''}</div>
+      ${f.photo ? `<div class="kv" style="margin:8px 0"><img src="${f.photo}" alt="${esc(f.name)}" style="max-width:100%;border-radius:10px"></div>` : ''}
       ${notes.top}
       ${details}
       ${notes.bottom}
@@ -4876,7 +4877,7 @@ function renderOverlay() {
     } else {
     pop.innerHTML = `
       <div class="popup-head">${CARD_ICON[board.id] ? `<span class="c-icon" style="color:var(--accent);display:inline-flex">${CARD_ICON[board.id] || ''}</span>` : ''}<h3>${esc(board.title)}</h3><span class="c-count">${boardRows(board.id).length}</span>${board.id === 'files' ? addBtn('File', { link: true, js: 'js-file-add' }) : ''}${board.id === 'files' ? `<div class="bv-searchwrap"><span class="s-icon">${I.search}</span><input class="bv-query js-files-query" placeholder="Search files…" value="${esc(o.fileSearch || '')}" /></div>` : ''}<span class="spacer"></span><button class="x js-close">${I.x}</button></div>
-      <div class="popup-body board-body">${board.id === 'files' && o.fileForm ? `<div class="kv pillrow" style="gap:7px;margin:0 0 10px"><input class="lf-in js-ff-name" placeholder="File name" style="flex:2;min-width:140px"><input class="lf-in js-ff-link" placeholder="Link (URL)" style="flex:2;min-width:140px">${ghostPill('Cancel', { js: 'js-ff-cancel' })}${actionPill('commit', 'Add file', { js: 'js-ff-save' })}</div>` : ''}${boardTable(board.id, o.fileSearch)}</div>`;
+      <div class="popup-body board-body">${board.id === 'files' && o.fileForm ? `<div class="kv pillrow" style="gap:7px;margin:0 0 10px"><input class="lf-in js-ff-name" placeholder="File name" style="flex:2;min-width:140px"><input class="lf-in js-ff-link" placeholder="Link (URL)" style="flex:2;min-width:140px">${fileDrop(o.fileUpload ? '✓ ' + esc(o.fileUpload.name) : 'Upload photo / document', { js: 'js-ff-file', accept: 'image/*,application/pdf,.doc,.docx,.xls,.xlsx,.csv,.txt', done: !!o.fileUpload, icon: I.camera })}${ghostPill('Cancel', { js: 'js-ff-cancel' })}${actionPill('commit', 'Add file', { js: 'js-ff-save' })}</div>` : ''}${boardTable(board.id, o.fileSearch)}</div>`;
     }
     overlay.appendChild(pop);
   } else if (o.kind === 'boardview') {
@@ -6486,8 +6487,8 @@ function onClick(e) {
   if (closest('.js-expense-open')) { e.stopPropagation(); return openOverlay({ kind: 'board', board: 'expenses', recId: closest('.js-expense-open').dataset.rec }); }   // part-detail receipt link → expense detail in the board popup
   if (closest('.js-board-row') && !closest('.js-reconcile') && !closest('[data-pill-card]')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'board') { o.recId = closest('.js-board-row').dataset.rec; o.historySearch = ''; o.histKind = null; o.partForm = false; renderOverlay(); } return; }   // in-row gates/ref-pills fall through to their own handlers below
   if (closest('.js-board-back')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'board') { o.recId = null; o.partForm = false; renderOverlay(); } return; }
-  if (closest('.js-file-add')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'board') { o.fileForm = !o.fileForm; renderOverlay(); } return; }   // §7.13: +File inline create (toggle)
-  if (closest('.js-ff-cancel')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'board') { o.fileForm = false; renderOverlay(); } return; }
+  if (closest('.js-file-add')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'board') { o.fileForm = !o.fileForm; o.fileUpload = null; renderOverlay(); } return; }   // §7.13: +File inline create (toggle)
+  if (closest('.js-ff-cancel')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'board') { o.fileForm = false; o.fileUpload = null; renderOverlay(); } return; }
   if (closest('.js-ff-save')) { e.stopPropagation(); return saveFileForm(); }
   if (closest('.js-vendor-tax')) { e.stopPropagation(); const b = closest('.js-vendor-tax'); const v = recOf('vendors', b.dataset.rec); if (v) { const ex = b.dataset.val === '1'; if (!!v.salesTaxExempt !== ex) { v.salesTaxExempt = ex; reindex('vendors', v); logAction(v, `Sales tax → ${ex ? 'Exempt' : 'Taxed'}`); } if (state.overlay?.kind === 'board') renderOverlay(); render(); } return; }
   if (closest('.js-boardview')) { e.stopPropagation(); return openBoardView(closest('.js-boardview').dataset.card); }
@@ -7257,15 +7258,33 @@ function unlinkReceiptPart(expenseId, partId) {
 /* +File inline create (§7.13): name + optional link, every other field deferred to
    inline edit on the detail. The saveReceiptForm idiom: save lands ON the new
    detail + R19 glow; Cancel leaves no stub. */
-function saveFileForm() {
+async function saveFileForm() {
   const o = state.overlay; if (!o || o.kind !== 'board' || o.board !== 'files') return;
   const g = (c) => (document.querySelector(c)?.value || '').trim();
   const name = g('.js-ff-name'), link = g('.js-ff-link');
-  if (!name) return attnFlash('.js-ff-name');   // R19
-  const f = { fileId: 'FIL-C' + (state.seq++), name, group: '', type: link ? 'Link' : 'Note', reviewByDate: '', link, notes: '', mock: true };
+  const up = o.fileUpload;
+  if (!name && !up && !link) return attnFlash('.js-ff-name');   // R19 — need at least a name, a file, or a link
+  const fname = name || (up && up.name) || 'File';
+  const isImg = !!(up && (up.mimeType || '').startsWith('image/'));
+  let fileLink = link, inlinePhoto = '', driveId = '';
+  if (up) {
+    if (typeof backendPassword !== 'undefined' && backendPassword) {
+      // live → the backend stores the file in Drive and returns a shareable link (§F2)
+      try {
+        const r = await backendCall('uploadFile', { name: fname, mimeType: up.mimeType, data: up.data });
+        if (r && r.ok && r.url) { fileLink = r.url; driveId = r.fileId || ''; }
+        else { toast('Upload failed: ' + ((r && r.error) || 'backend not ready')); return; }
+      } catch (err) { toast('Upload failed — check the connection.'); return; }
+    } else if (isImg) {
+      inlinePhoto = up.data;   // demo (#local): keep the downscaled image inline so the flow is reviewable
+    } else {
+      toast('Demo mode — document uploads land in Drive on the live site.');
+    }
+  }
+  const f = { fileId: 'FIL-C' + (state.seq++), name: fname, group: '', type: up ? (isImg ? 'Photo' : 'Document') : (link ? 'Link' : 'Note'), reviewByDate: '', link: fileLink, photo: inlinePhoto, driveId, notes: '', mock: true };
   DATA.companyFiles.push(f); reindex('files', f);   // reindex also sets IDX.file (sync clause)
   logAction(f, 'File created');
-  o.fileForm = false; o.recId = f.fileId;   // save lands ON the new detail
+  o.fileForm = false; o.fileUpload = null; o.recId = f.fileId;   // save lands ON the new detail
   render(); renderOverlay();
   attnFlash('.board-detail .detail-head');  // R19: glow the fresh file
 }
@@ -7349,6 +7368,20 @@ function onInput(e) {
 
 /* change events — native <input type="date"> / <select> on draft details. */
 function onChange(e) {
+  // F2 — +File upload: read the chosen photo/document; images are downscaled, others kept
+  // as-is. Held in state.overlay.fileUpload until "Add file" (which sends it to Drive).
+  if (e.target.classList.contains('js-ff-file')) {
+    const f = e.target.files && e.target.files[0]; if (!f) return;
+    if (f.size > 12 * 1024 * 1024) { toast('That file is over 12 MB — use a smaller file or paste a link.'); return; }
+    const rd = new FileReader();
+    rd.onload = () => {
+      const hold = (data) => { if (state.overlay) state.overlay.fileUpload = { name: f.name, mimeType: f.type || 'application/octet-stream', data }; renderOverlay(); };
+      if ((f.type || '').startsWith('image/')) downscaleImage(rd.result, 1400, 0.72, (out) => hold(out || rd.result));
+      else hold(rd.result);
+    };
+    rd.onerror = () => toast('Could not read that file.');
+    rd.readAsDataURL(f); return;
+  }
   // E2 — set/change an invoice's due date inline on the card
   if (e.target.classList.contains('js-due-date')) {
     const inv = IDX.invoice.get(e.target.dataset.rec);

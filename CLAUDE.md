@@ -5,6 +5,11 @@ Vanilla-JS single-file app (`app.js`), `style.css`, `index.html`, `config.js`,
 `data.js`; Google Apps Script backend (schema-less Sheets, deployed by paste —
 `backend/` is gitignored, never served by Pages).
 
+## Interaction (Jac, 2026-06-15)
+
+- **Always ask questions via popups** — use the AskUserQuestion tool for any
+  question or decision, never inline in the chat text.
+
 ## Design language — RUN ALL NEW/CHANGED UI THROUGH THIS (Jac, 2026-06-13)
 
 Jac loves the "yard data-plate" direction from the login + cancel-arc redesign
