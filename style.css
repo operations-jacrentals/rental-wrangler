@@ -1690,11 +1690,13 @@ input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
 /* +Work Order on the Units card — floats alone, centered, no card backing (Jac 2026-06-12) */
 .add-row { display: flex; justify-content: center; margin: 2px 0 4px; }
 /* #7 — +X buttons match width within a section: equal in a row, common width in the
-   rental slot stack (Customer/Unit/Invoice). (Jac 2026-06-13) */
+   rental slot stack (Customer/Unit/Transport/Invoice). (Jac 2026-06-13;
+   +Transport joined the stack when it de-fused from +Invoice, 2026-06-15) */
 .pillrow.eqw .add-field { flex: 1; justify-content: center; }
 .pillrow.pillcol { flex-direction: column; align-items: stretch; }
 .pillrow.pillcol .add-field, .pillrow.pillcol .pill { width: 100%; justify-content: center; }
-.js-slot-unit, .js-quickadd-cust, .js-create-invoice { min-width: 150px; justify-content: center; }
+.js-slot-unit, .js-quickadd-cust, .js-create-invoice,
+.pillrow > .add-field.js-tedit-open { min-width: 150px; justify-content: center; }
 
 /* R1/R3 STACK LAW (Jac 2026-06-12): pills opening line rows share one min-width
    so the column edges align down the stack (WO lines, invoice lines, history). */
