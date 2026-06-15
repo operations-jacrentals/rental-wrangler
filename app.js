@@ -4752,9 +4752,10 @@ function dispatchEvents() {
     rentalUnits(r).forEach((eu) => {
       if (!eu.unitId || SKIP.has(unitStatus(r, eu)) || !eu.transportType || eu.transportType === 'Self') return;
       const unit = IDX.unit.get(eu.unitId);
-      const base = { rentalId: r.rentalId, unitId: eu.unitId, unit: unit?.name || '—', cust: cust?.name || cust?.company || '—', addr: eu.deliveryAddress || '', ttype: eu.transportType };
+      const pin = eu.sitePin || (isPrimaryUnit(r, eu) ? r.sitePin : null) || null;   // §2.3 map: the geocoded drop, if set
+      const base = { rentalId: r.rentalId, unitId: eu.unitId, unit: unit?.name || '—', cust: cust?.name || cust?.company || '—', addr: eu.deliveryAddress || '', ttype: eu.transportType, pin };
       if (['Delivery', 'Round-Trip'].includes(eu.transportType) && r.startDate) out.push({ ...base, date: r.startDate, time: r.startTime || '', task: 'Deliver', color: 'blue' });
-      if (['Round-Trip', 'Recovery'].includes(eu.transportType) && r.endDate) out.push({ ...base, date: r.endDate, time: '', task: 'Pick up', color: 'brown' });
+      if (['Round-Trip', 'Recovery'].includes(eu.transportType) && r.endDate) out.push({ ...base, date: r.endDate, time: '', task: 'Pick up', color: 'brown', addr: eu.recoveryAddress || eu.deliveryAddress || '' });
     });
   });
   return out.sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || '')));
@@ -4805,44 +4806,73 @@ function dispatchDayStops(day) {
     return (a.time || '~').localeCompare(b.time || '~');
   });
 }
+// §2.3 map cockpit helpers — a stop's kind, whether its leg is logged (done), the
+// "next" (first not-done) stop, and the truck's v1 position (last done pin, else yard).
+const dispatchKind = (ev) => (ev.task === 'Deliver' ? 'deliver' : 'recover');
+function stopDone(ev) {
+  const r = IDX.rental.get(ev.rentalId); if (!r) return false;
+  const src = unitEntry(r, ev.unitId) || r;
+  return ev.task === 'Deliver' ? !!src.startCapture : !!src.endCapture;
+}
+const dispatchNextId = (stops) => { const n = stops.find((s) => !stopDone(s)); return n ? n.id : null; };
+function dispatchTruckPos(stops) {   // v1 seam — swapped for live telematics (~next week, Jac)
+  const done = stops.filter(stopDone);
+  const last = done[done.length - 1];
+  return (last && last.pin) ? last.pin : YARD_CENTER;
+}
+// "HH:MM" (24h) → minutes (blanks → null, sort last); + a friendly "9:00a" stamp.
+function timeToMin(t) { const m = /^(\d{1,2}):(\d{2})$/.exec((t || '').trim()); return m ? (+m[1]) * 60 + (+m[2]) : null; }
+function fmtClock(t) { const mn = timeToMin(t); if (mn == null) return '—:—'; let h = Math.floor(mn / 60); const m = mn % 60; const ap = h < 12 ? 'a' : 'p'; h = h % 12 || 12; return `${h}:${String(m).padStart(2, '0')}${ap}`; }
+/* §2.3 DISPATCH = the OFFICE COCKPIT (Phase 1, Jac 2026-06-15): a live map of the
+   day's run + a welded TIME-RAIL. Stops auto-fill from rentals; the rail places each
+   on a time axis (retime = reorder, Phase 1b drag); the map draws the route + truck.
+   Every stop reads its KIND (deliver=blue / recover=tan) and the NEXT stop is marked,
+   on BOTH the map and the rail. The board is live — no "send"; edits auto-notify. */
 function dispatchGridBody() {
   const day = state.dispatchDay || TODAY_ISO;
   const stops = dispatchDayStops(day);
   const isToday = day === TODAY_ISO;
   const allUpcoming = dispatchEvents().filter((e) => e.date >= TODAY_ISO).length;
-  const armed = state.dispArm != null;
-  const legCount = (dispatchArrowsLS()[day] || []).length;
   const head = `<div class="disp-head">
     <button class="disp-nav js-disp-day" data-dir="-1" data-tip="Previous day">‹</button>
     <div class="disp-date"><b>${esc(dispatchDayLabel(day))}</b>${isToday ? '<span class="disp-today">Today</span>' : '<button class="disp-jump js-disp-today">Today</button>'}</div>
     <button class="disp-nav js-disp-day" data-dir="1" data-tip="Next day">›</button>
     <span class="spacer"></span>
-    ${legCount ? `<button class="disp-clearleg js-disp-clearlegs" data-tip="Clear every route arrow on this day">${I.x} ${legCount} arrow${legCount === 1 ? '' : 's'}</button>` : ''}
     <span class="disp-count">${stops.length} stop${stops.length === 1 ? '' : 's'}${allUpcoming ? ` · ${allUpcoming} upcoming` : ''}</span>
   </div>`;
   if (!stops.length) return `${head}<div class="disp-empty">${I.truck}<p>No transports on this day.</p><span>Rentals with Delivery / Round-Trip / Recovery land here automatically — flip days with ‹ ›.</span></div>`;
-  // Each icon is a route node: click one then another to draw a "from → there" leg.
-  const ico = (node, cls, body, tip) =>
-    `<span class="disp-ico js-disp-arrowpt ${cls}" data-node="${esc(node)}" data-tip="${esc(tip)}" role="button" tabindex="0" aria-label="${esc(tip)}">${body}</span>`;
-  const armTip = armed ? 'Click to draw the route leg to here (Esc cancels)' : 'Click to start a route arrow from here';
-  const home = (node, sub) => `<div class="disp-stop disp-home">${ico(node, 'home', '🏠', armTip)}<div class="disp-bd"><div class="disp-unit">${DISPATCH_HOME}</div><div class="disp-sub">${esc(sub)}</div></div></div>`;
-  const rows = stops.map((ev, i) => {
-    const deliver = ev.task === 'Deliver';
-    const overdue = ev.date < TODAY_ISO, dueToday = ev.date === TODAY_ISO;
-    return `<div class="disp-stop js-disp-stop" draggable="true" data-id="${esc(ev.id)}" data-rec="${esc(ev.rentalId)}">
-      <span class="disp-grip" data-tip="Drag to reorder the run">⠿</span>
-      <span class="disp-seq">${i + 1}</span>
-      <input class="disp-time js-disp-time" data-id="${esc(ev.id)}" value="${esc(ev.time || '')}" placeholder="—:—" maxlength="5" data-tip="Set the stop time" />
-      ${ico(ev.id, 'c-' + (deliver ? 'blue' : 'brown'), deliver ? 'D' : 'R', armTip)}
-      <div class="disp-bd">
-        <div class="disp-unit">${esc(ev.unit)} <span class="disp-task">${deliver ? 'Deliver' : 'Recover'}</span></div>
-        <div class="disp-sub">${esc(ev.cust)}${ev.addr ? ` · <span class="disp-addr js-site-go" data-rec="${esc(ev.rentalId)}">${esc(ev.addr)}</span>` : ''}</div>
-      </div>
-      <span class="disp-deadline${overdue ? ' over' : dueToday ? ' today' : ''}">${esc(fmtShortDate(ev.date))}${overdue ? ' · LATE' : dueToday ? ' · TODAY' : ''}</span>
+
+  const nextId = dispatchNextId(stops);
+  // time window for the rail axis (pad 30m; floor of 2h so a one-stop day still spreads)
+  const mins = stops.map((s) => timeToMin(s.time)).filter((m) => m != null);
+  const winA = mins.length ? Math.min(...mins) - 30 : 7 * 60;
+  let winB = mins.length ? Math.max(...mins) + 30 : 15 * 60;
+  if (winB - winA < 120) winB = winA + 120;
+  const pctOf = (mn) => Math.max(3, Math.min(97, ((mn - winA) / (winB - winA)) * 100));
+  let ticks = '';
+  for (let h = Math.ceil(winA / 60); h * 60 <= winB; h++) { const ap = h < 12 ? 'a' : 'p'; const hh = h % 12 || 12; ticks += `<span class="disp-tick" style="top:${pctOf(h * 60)}%">${hh}${ap}</span>`; }
+
+  const scheduled = stops.filter((s) => timeToMin(s.time) != null);
+  const unscheduled = stops.filter((s) => timeToMin(s.time) == null);
+  const tokenEl = (s, axis) => {
+    const kind = dispatchKind(s);
+    const done = stopDone(s), isNext = s.id === nextId;
+    const top = axis ? ` style="top:${pctOf(timeToMin(s.time))}%"` : '';
+    const flag = done ? `<span class="dt-flag ok">✓ done</span>` : (isNext ? `<span class="dt-flag next">${I.truck} next</span>` : '');
+    return `<div class="disp-tok js-disp-tok${done ? ' done' : ''}${isNext ? ' next' : ''}${s.pin ? '' : ' nopin'}" data-id="${esc(s.id)}" data-rec="${esc(s.rentalId)}" data-unit="${esc(s.unitId || '')}"${top}>
+      <div class="dt-r1"><span class="dt-grip" data-tip="Drag to retime — that reorders the run">⠿</span><b class="dt-time">${esc(fmtClock(s.time))}</b><span class="spacer"></span>${flag}</div>
+      <div class="dt-r2"><span class="dt-kind k-${kind}">${kind === 'deliver' ? '▾' : '▴'} ${kind}</span><span class="dt-who">${esc(s.cust)} · ${esc(s.unit)}</span></div>
+      ${s.addr ? `<div class="dt-addr js-site-go" data-rec="${esc(s.rentalId)}" data-unit="${esc(s.unitId || '')}" data-tip="Open the site / set the map pin">${s.pin ? '' : '⚠ '}${esc(s.addr)}</div>` : ''}
     </div>`;
-  }).join('');
-  const arm = armed ? `<div class="disp-arm" role="status">${I.truck} Drawing a route leg — click the next stop to land the arrow. <button class="disp-arm-x js-disp-arm-cancel">Cancel</button></div>` : '';
-  return `${head}${arm}<div class="disp-route js-disp-route${armed ? ' arming' : ''}" data-day="${esc(day)}">${home(HOME_IN, 'Roll out')}${rows}${home(HOME_OUT, 'Return to yard')}</div>`;
+  };
+  const rail = `<div class="disprail js-disprail" data-day="${esc(day)}">
+    <div class="disp-bookend">${ICO_STORE} <span>Roll out</span></div>
+    <div class="disp-axis">${ticks}<span class="disp-axisline"></span>${scheduled.map((s) => tokenEl(s, true)).join('')}</div>
+    ${unscheduled.length ? `<div class="disp-tray"><div class="disp-tray-h">${unscheduled.length} no set time</div>${unscheduled.map((s) => tokenEl(s, false)).join('')}</div>` : ''}
+    <div class="disp-bookend">${ICO_STORE} <span>Return to yard</span></div>
+  </div>`;
+  const foot = `<div class="disp-foot"><span class="disp-livedot"></span><span class="disp-live">Live · auto-notifies the driver on change</span></div>`;
+  return `${head}<div class="disp-cockpit"><div class="dispm js-dispmount" data-day="${esc(day)}"></div>${rail}</div>${foot}`;
 }
 /* §2.3 — paint the free-form route legs as an SVG overlay in the route's left gutter,
    AFTER the DOM lands (we need each icon's real geometry). Pure post-render decor: each
@@ -4888,6 +4918,65 @@ function drawDispatchArrows() {
     svg.appendChild(hit); svg.appendChild(line); svg.appendChild(dot);
   });
   route.appendChild(svg);
+}
+/* §2.3 OFFICE COCKPIT MAP. The Map is a SINGLETON (_dispMapEl) RE-PARENTED into the
+   fresh mount point each render (render() rebuilds the DOM) so it never reloads/flickers;
+   only pins/route/truck refresh. Stops without a stored sitePin are geocoded via Places
+   (the key has Places, not Geocoding) and cached. */
+let _dispMap = null, _dispView = null, _dispMarkers = [], _dispRoute = null, _dispGeo = {}, _dispGeoPending = {};
+function mountDispatchMap() {
+  const mount = document.querySelector('.js-dispmount'); if (!mount) return;
+  if (mount.querySelector('.gm-style')) return;                 // already mounted in this DOM
+  if (!mapsReady()) { loadGoogleMaps().then((g) => { if (g) render(); }); return; }
+  // render() rebuilds the DOM, so mount fresh into the new node each render (the proven
+  // transport-editor pattern); remember the user's pan/zoom so a re-render never resets it.
+  const first = !_dispView;
+  _dispMap = new google.maps.Map(mount, { center: (_dispView && _dispView.center) || YARD_CENTER, zoom: (_dispView && _dispView.zoom) || 11, disableDefaultUI: true, zoomControl: true, gestureHandling: 'greedy', clickableIcons: false });
+  _dispMap.addListener('idle', () => { const c = _dispMap.getCenter(); if (c) _dispView = { center: { lat: c.lat(), lng: c.lng() }, zoom: _dispMap.getZoom() }; });
+  refreshDispatchMap(mount.dataset.day || state.dispatchDay || TODAY_ISO, first);
+}
+function refreshDispatchMap(day, fit) {
+  if (!_dispMap) return;
+  const stops = dispatchDayStops(day), nextId = dispatchNextId(stops);
+  _dispMarkers.forEach((m) => m.setMap(null)); _dispMarkers = [];
+  if (_dispRoute) { _dispRoute.setMap(null); _dispRoute = null; }
+  const bounds = new google.maps.LatLngBounds(); bounds.extend(YARD_CENTER);
+  _dispMarkers.push(new google.maps.Marker({ map: _dispMap, position: YARD_CENTER, title: 'JAC Yard · Sulphur', zIndex: 5,
+    icon: { path: google.maps.SymbolPath.BACKWARD_CLOSED_ARROW, scale: 5, fillColor: '#ff7a1a', fillOpacity: 1, strokeColor: '#1a1205', strokeWeight: 2 } }));
+  const path = [YARD_CENTER], need = []; let placed = 0;
+  stops.forEach((s) => {
+    const p = (s.pin && Number.isFinite(s.pin.lat)) ? s.pin : _dispGeo[s.addr];
+    if (p) { placeDispatchPin(s, p, s.id === nextId, stopDone(s)); bounds.extend(p); path.push(p); placed++; }
+    else if (s.addr) need.push(s);
+  });
+  path.push(YARD_CENTER);
+  _dispRoute = new google.maps.Polyline({ map: _dispMap, path, strokeColor: '#ff7a1a', strokeOpacity: .9, strokeWeight: 3 });   // straight legs — no Directions/quota
+  _dispMarkers.push(new google.maps.Marker({ map: _dispMap, position: dispatchTruckPos(stops), title: 'Driver', zIndex: 999,
+    icon: { path: google.maps.SymbolPath.CIRCLE, scale: 9, fillColor: '#18b6ff', fillOpacity: .22, strokeColor: '#18b6ff', strokeWeight: 2 } }));
+  if (fit && placed) _dispMap.fitBounds(bounds, 46);   // only fit once a real stop is located (single-point fit zooms absurdly)
+  need.forEach((s) => dispGeocode(s.addr, day));   // resolve pinless stops, then refresh once each lands
+}
+function placeDispatchPin(s, pos, isNext, done) {
+  const fill = done ? '#46c06a' : (dispatchKind(s) === 'deliver' ? '#18b6ff' : '#c79366');
+  const mk = new google.maps.Marker({ map: _dispMap, position: pos, zIndex: isNext ? 900 : 10,
+    title: `${fmtClock(s.time)} · ${s.cust} · ${s.unit} · ${dispatchKind(s)}`,
+    label: isNext ? { text: fmtClock(s.time), color: '#1a1205', fontFamily: 'Saira Condensed', fontWeight: '700', fontSize: '11px' } : undefined,
+    icon: isNext
+      ? { path: google.maps.SymbolPath.CIRCLE, scale: 13, fillColor: '#ff7a1a', fillOpacity: 1, strokeColor: '#1a1205', strokeWeight: 2 }
+      : { path: google.maps.SymbolPath.CIRCLE, scale: done ? 7 : 6, fillColor: fill, fillOpacity: 1, strokeColor: '#0e1318', strokeWeight: 2 } });
+  mk.addListener('click', () => anchorRecord('rentals', s.rentalId));
+  _dispMarkers.push(mk);
+}
+function dispGeocode(addr, day) {
+  if (!addr || _dispGeo[addr] || _dispGeoPending[addr] || !mapsReady()) return;
+  _dispGeoPending[addr] = true;
+  new google.maps.places.PlacesService(_dispMap).findPlaceFromQuery({ query: addr, fields: ['geometry'] }, (res, status) => {
+    delete _dispGeoPending[addr];
+    if (status === google.maps.places.PlacesServiceStatus.OK && res && res[0] && res[0].geometry) {
+      const l = res[0].geometry.location; _dispGeo[addr] = { lat: l.lat(), lng: l.lng() };
+      if ((state.dispatchDay || TODAY_ISO) === day && document.querySelector('.js-dispmount')) refreshDispatchMap(day, true);
+    }
+  });
 }
 /** The status badge shown on an item tab (replaces the old datapoint sub-text). */
 function tabBadge(card, rec) {
@@ -6354,6 +6443,7 @@ function render() {
   // Hidden while the team dock owns that corner (Jac 2026-06-15).
   if (!state.chat.open) $('#app').appendChild(fabStackEl());
   mountTransportEditor();   // inline transport editor: mount the live map + wire the address field
+  mountDispatchMap();   // §2.3 office cockpit: re-parent the singleton dispatch map + refresh pins/route/truck
   applyTitles();   // full text on hover wherever we truncate (custom ~0.5s tooltip)
   drawDispatchArrows();   // §2.3 — paint free-form route legs over the dispatch run (needs live geometry)
   scoreTick();     // §11 gamification — pop +X over any ring whose metric just rose

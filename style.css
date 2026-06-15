@@ -473,6 +473,41 @@ input { font-family: inherit; }
 .disp-arrow-dot { fill: var(--accent); }
 .disp-arrow-hit { pointer-events: stroke; cursor: pointer; }
 @media (prefers-reduced-motion: reduce) { .js-disp-arrowpt { transition: none; } .js-disp-arrowpt.armed { transform: none; } }
+/* ── §2.3 OFFICE COCKPIT (Phase 1): live map + welded time-rail ───────────────── */
+.disp-cockpit { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.dispm { flex: 0 0 46%; min-height: 200px; position: relative; border-bottom: 1px solid var(--line); background: var(--bg-2); }
+.js-dispmount { position: absolute; inset: 0; }
+.disprail { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 10px 12px; }
+.disp-bookend { display: flex; align-items: center; gap: 7px; font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.2px; font-size: 10.5px; font-weight: 700; color: var(--txt-2); padding: 5px 9px; border-radius: 7px; background: var(--accent-soft); }
+.disp-bookend svg { width: 13px; height: 13px; color: var(--accent); flex: 0 0 auto; }
+.disp-axis { position: relative; min-height: 360px; margin: 10px 0 10px 32px; }
+.disp-axisline { position: absolute; left: -14px; top: 0; bottom: 0; width: 2px; background: var(--line); }
+.disp-tick { position: absolute; left: -32px; transform: translateY(-50%); font-family: 'Saira Condensed', system-ui, sans-serif; font-size: 10px; letter-spacing: .5px; color: var(--txt-3); }
+.disp-tok { background: linear-gradient(180deg, var(--card-head), var(--card)); border: 1px solid var(--line); border-radius: 10px; padding: 6px 9px; cursor: grab; }
+.disp-axis .disp-tok { position: absolute; left: 0; right: 0; transform: translateY(-50%); }
+.disp-tok:hover { border-color: var(--accent-line); }
+.disp-tok.next { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.disp-tok.done { opacity: .82; }
+.disp-tok.nopin { border-style: dashed; }
+.dt-r1 { display: flex; align-items: center; gap: 6px; }
+.dt-grip { color: var(--txt-3); cursor: grab; font-size: 12px; }
+.dt-time { font-size: 13.5px; font-weight: 800; }
+.dt-flag { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .6px; font-size: 9px; font-weight: 700; display: inline-flex; align-items: center; gap: 3px; }
+.dt-flag.ok { color: var(--green); }
+.dt-flag.next { color: var(--accent); }
+.dt-flag.next svg { width: 12px; height: 12px; }
+.dt-r2 { display: flex; align-items: center; gap: 6px; margin-top: 3px; }
+.dt-kind { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .6px; font-size: 9px; font-weight: 700; border-radius: 4px; padding: 1px 5px; flex: 0 0 auto; }
+.dt-kind.k-deliver { color: var(--blue); background: var(--blue-bg); }
+.dt-kind.k-recover { color: var(--brown); background: var(--brown-bg); }
+.dt-who { font-size: 11.5px; color: var(--txt-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dt-addr { font-size: 10.5px; color: var(--blue); cursor: pointer; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.disp-tok.nopin .dt-addr { color: var(--yellow); }
+.disp-tray { margin: 10px 0; padding: 8px; border: 1px dashed var(--line); border-radius: 9px; display: flex; flex-direction: column; gap: 7px; }
+.disp-tray-h { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .6px; font-size: 9.5px; color: var(--txt-3); }
+.disp-foot { flex: 0 0 auto; display: flex; align-items: center; gap: 7px; padding: 7px 12px; border-top: 1px solid var(--line); font-size: 10.5px; color: var(--txt-3); }
+.disp-live { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .8px; }
+.disp-livedot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 3px var(--green-bg); flex: 0 0 auto; }
 
 /* ── Card (each is the detail view; scrolls internally) ──────────────────── */
 .card {
