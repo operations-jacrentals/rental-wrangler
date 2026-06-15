@@ -4373,15 +4373,20 @@ function renderOverlay() {
     const rec = (o.card && o.recId != null) ? recOf(entityCardOf(o.card, o.recType), o.recId) : null;
     const chip = rec ? `<span class="wr-chip">${CARD_ICON[entityCardOf(o.card, o.recType)] || ''}${esc(detailTitle(entityCardOf(o.card, o.recType), rec))}</span>` : '<span class="wr-chip muted">Whole yard</span>';
     const turns = o.messages.length
-      ? o.messages.map((m) => `<div class="wr-msg ${m.role}">${m.role === 'assistant' ? '<span class="wr-av">🤠</span>' : ''}<div class="wr-bub">${esc(m.content).replace(/\n/g, '<br>')}</div></div>`).join('')
-      : '<div class="wr-empty">Ask about this record or the whole yard — service due, balances, what needs attention… or tell me about a glitch and I’ll get it fixed.</div>';
+      ? o.messages.map((m, i) => {
+          let act = '';
+          if (m.action) act = m.filed
+            ? `<span class="wr-actdone">✓ ${m.action.action === 'request' ? 'Filed for Jac’s OK' : 'Sent to the fixer'}</span>`
+            : `<button class="wr-actbtn js-wr-act" data-mi="${i}">${m.action.action === 'request' ? '💡 File this for Jac’s OK' : '🔧 Send this to get fixed'}</button>`;
+          return `<div class="wr-msg ${m.role}">${m.role === 'assistant' ? '<span class="wr-av">🤠</span>' : ''}<div class="wr-bub">${esc(m.content).replace(/\n/g, '<br>')}${act}</div></div>`;
+        }).join('')
+      : '<div class="wr-empty">Ask about this record or the whole yard — service due, balances, what needs attention… or just tell me what’s broken and I’ll get it fixed.</div>';
     const pop = el('div', 'popup wr-pop'); pop.style.width = '440px';
     pop.innerHTML = `
       <div class="popup-head"><span class="mark" style="font-size:18px">🤠</span><h3>Mr. Wrangler</h3>${chip}<span class="spacer"></span><button class="x js-close" aria-label="Close">${I.x}</button></div>
       <div class="wr-feed">${turns}${o.busy ? '<div class="wr-msg assistant"><span class="wr-av">🤠</span><div class="wr-bub wr-think">…wrangling an answer</div></div>' : ''}</div>
       ${o.error ? `<div class="wr-err">${esc(o.error)}</div>` : ''}
-      ${o.messages.some((m) => m.role === 'user') ? `<div class="wr-fixbar"><span class="wr-fixbar-txt">Hand it to Mr. Wrangler:</span><button class="wr-fix js-wr-fix" data-kind="fix" data-tip="A glitch/bug — the auto-fixer patches it, gates it, ships it to live">🔧 Fix a glitch</button><button class="wr-fix wr-fix-req js-wr-fix" data-kind="request" data-tip="An improvement/idea/change — filed for Jac’s OK, not auto-shipped">💡 Request a change</button></div>` : ''}
-      <div class="wr-compose"><input class="wr-in js-wr-in" placeholder="Ask Mr. Wrangler…" value="${esc(o.draft || '')}" ${o.busy ? 'disabled' : ''} /><button class="wr-send js-wr-send" ${o.busy ? 'disabled' : ''} aria-label="Ask">${I.chev}</button></div>`;
+      <div class="wr-compose"><input class="wr-in js-wr-in" placeholder="Ask Mr. Wrangler, or tell him what’s broken…" value="${esc(o.draft || '')}" ${o.busy ? 'disabled' : ''} /><button class="wr-send js-wr-send" ${o.busy ? 'disabled' : ''} aria-label="Ask">${I.chev}</button></div>`;
     overlay.appendChild(pop);
     setTimeout(() => { const i = pop.querySelector('.js-wr-in'); if (i) i.focus(); const f = pop.querySelector('.wr-feed'); if (f) f.scrollTop = f.scrollHeight; }, 0);
   } else if (o.kind === 'comment') {
@@ -4949,7 +4954,7 @@ async function sendFeedback() {
    (action 'wrangler'); Code.gs calls api.anthropic.com with the key from a Script
    Property. Carries a compact data digest + (when opened from a record) its detail.
    ════════════════════════════════════════════════════════════════════════ */
-const WRANGLER_SYSTEM = "You are Mr. Wrangler, the in-app AI for JacRentals — a heavy-equipment rental yard in Sulphur, Louisiana. You help the team make sense of their units, rentals, customers, invoices, work orders, and service, and you help triage bugs they report.\n\nSTYLE — keep it tight: answer in 1–3 sentences by default. Lead with the direct answer first; add at most one short supporting clause. Use a bullet list ONLY when enumerating multiple records, one line each. Don't restate the question, don't pad, and don't over-explain what you can't do — just answer.\n\nDATA — the snapshot below holds the LIVE records: every category with its rates, every fleet unit with its type and status, every rental with its date window and customer, customers with balances owed, and the open invoices and work orders. Reason over it directly. Only say a fact is missing if it truly isn't in the snapshot. Never invent records, names, or numbers.\n\nGLITCHES & REQUESTS — this chat is also the ONE place to report problems. If the user reports a BUG/glitch in the app (something not working, a dead button, a broken layout), acknowledge it briefly, ask for the one detail you still need to reproduce it (what they tapped + what they expected), and tell them to hit “🔧 Fix a glitch” below to ship it to the auto-fixer. If instead they want an IMPROVEMENT, idea, or change (not a bug), tell them to hit “💡 Request a change” — that goes to Jac for his OK rather than shipping automatically.\n\nA light wrangler/ranch flavor in voice is welcome — never campy.";
+const WRANGLER_SYSTEM = "You are Mr. Wrangler, the in-app AI for JacRentals — a heavy-equipment rental yard in Sulphur, Louisiana. You help the team make sense of their units, rentals, customers, invoices, work orders, and service, and you help triage bugs they report.\n\nSTYLE — keep it tight: answer in 1–3 sentences by default. Lead with the direct answer first; add at most one short supporting clause. Use a bullet list ONLY when enumerating multiple records, one line each. Don't restate the question, don't pad, and don't over-explain what you can't do — just answer.\n\nDATA — the snapshot below holds the LIVE records: every category with its rates, every fleet unit with its type and status, every rental with its date window and customer, customers with balances owed, and the open invoices and work orders. Reason over it directly. Only say a fact is missing if it truly isn't in the snapshot. Never invent records, names, or numbers.\n\nHELPING & FIXING — you're the assistant living inside the app (think Claude, but for this yard). The user might ask a question, describe a problem, or paste something — work out what they need and help. If they describe a BUG or glitch in the app itself (something not working, a dead control, a wrong layout or behavior), reproduce it in your head; if you're missing a detail, ask ONE quick follow-up (what they tapped + what they expected). Once you can state a clear repro, FILE A FIX by ending your reply with this exact fenced block:\n```wrangler-action\n{\"action\":\"fix\",\"title\":\"<short title>\",\"report\":\"<clear repro: steps, expected vs actual, any element involved>\"}\n```\nIf it's an IMPROVEMENT or change request rather than a bug, use \"action\":\"request\" (that routes to Jac for his OK instead of auto-shipping). Emit the block ONLY when you're actually ready to file — never while still gathering detail — and keep your visible words short and natural; never mention JSON, blocks, labels, or buttons.\n\nA light wrangler/ranch flavor in voice is welcome — never campy.";
 // The digest is Mr. Wrangler's whole window into the yard, so it carries the ACTUAL
 // records (not just counts): category rates, each unit's type/status, each rental's
 // date window + customer, customer balances, and open invoices/WOs. Sections cap at
@@ -5016,7 +5021,11 @@ async function wranglerSend() {
     if (typeof backendPassword !== 'undefined' && backendPassword) {
       const r = await backendCall('wrangler', { system, messages: o.messages.map((m) => ({ role: m.role, content: m.content })) });
       if (!r || r.error) throw new Error((r && r.error) || 'no response');
-      o.messages.push({ role: 'assistant', content: (r.text || '').trim() || '(no answer)' });
+      const raw = (r.text || '').trim();
+      const act = parseWranglerAction(raw);
+      let shown = stripWranglerAction(raw);
+      if (!shown) shown = act ? (act.action === 'request' ? 'Got it — I’ll file this as a request for Jac to OK.' : 'On it — I’ll send this to get fixed.') : '(no answer)';
+      o.messages.push({ role: 'assistant', content: shown, action: act || null, filed: false });
     } else {
       o.messages.push({ role: 'assistant', content: "🤠 Demo mode — sign in to ask the real Mr. Wrangler (the live AI runs through the backend). Here's the snapshot I'd reason over:\n\n" + wranglerDigest() });
     }
@@ -5027,32 +5036,46 @@ async function wranglerSend() {
 // GitHub issue (the Track B repro packet). Carries the transcript, the view/role/
 // record context, and the recent console errors so the auto-fix Action has a real
 // repro. Opens a pre-filled issue → one Submit tap → the engine takes it from there.
-function wranglerFixPacket(o, kind) {
+// Mr. Wrangler decides when something is fixable and emits a hidden action block;
+// we parse it out of his reply (and strip it from what the user sees).
+function parseWranglerAction(text) {
+  const m = String(text || '').match(/```wrangler-action\s*([\s\S]*?)```/);
+  if (!m) return null;
+  try { const j = JSON.parse(m[1].trim()); if (j && (j.action === 'fix' || j.action === 'request') && j.title) return j; } catch (e) {}
+  return null;
+}
+const stripWranglerAction = (text) => String(text || '').replace(/```wrangler-action\s*[\s\S]*?```/g, '').trim();
+
+// Build the GitHub repro packet from Mr. Wrangler's structured report + the live
+// context + the captured console errors. The chat conversation rides along too.
+function wranglerActionPacket(o, act) {
   const ctx = feedbackContext();
+  const isReq = act.action === 'request';
   const transcript = (o.messages || [])
+    .filter((m) => m.content)
     .map((m) => `${m.role === 'user' ? '**Reporter**' : '**Mr. Wrangler**'}: ${m.content}`)
-    .join('\n\n') || '(no message typed)';
+    .join('\n\n') || '(no message)';
   const focus = (o.card && o.recId != null) ? `${entityCardOf(o.card, o.recType)}:${o.recId}` : '—';
   const errs = ERR_LOG.length ? ERR_LOG.slice(-12).join('\n') : '(none captured this session)';
-  const firstUser = ((o.messages || []).find((m) => m.role === 'user') || {}).content || (kind === 'request' ? 'Requested change' : 'Reported glitch');
-  const title = firstUser.replace(/\s+/g, ' ').slice(0, 80);
-  const footer = kind === 'request'
+  const footer = isReq
     ? '_A request for Jac\'s OK — NOT auto-implemented. Jac can add the `wrangler-fix` label to greenlight it._'
     : '_A Claude agent will reproduce + patch this; the CI gates guard it before it ships to live._';
   const body = [
-    `_Filed straight from the in-app Mr. Wrangler ${kind === 'request' ? 'request' : 'reporter'}._`,
+    `_Filed by Mr. Wrangler from in-app chat._`,
     '',
-    `### What was ${kind === 'request' ? 'requested' : 'reported'}`,
-    transcript,
+    `### ${isReq ? 'Requested change' : 'The glitch'} (Mr. Wrangler's write-up)`,
+    act.report || '(see conversation below)',
     '',
     '> 📎 You can paste or drag a screenshot right here before submitting.',
+    '',
+    '### Conversation',
+    transcript,
     '',
     '### Repro context',
     `- **View:** ${ctx.view}`,
     `- **Focused record:** ${focus}`,
     `- **Role:** ${ctx.role || '—'}`,
     `- **Viewport:** ${ctx.viewport}`,
-    `- **Columns:** ${ctx.cols || '—'}`,
     `- **URL:** ${ctx.url}`,
     `- **Browser:** ${ctx.ua}`,
     '',
@@ -5063,17 +5086,19 @@ function wranglerFixPacket(o, kind) {
     '',
     footer,
   ].join('\n');
-  return { title, body };
+  return { title: String(act.title).replace(/\s+/g, ' ').slice(0, 80), body, label: isReq ? 'wrangler-request' : 'wrangler-fix' };
 }
-// One chat, two outbound paths: a glitch → the auto-fix engine; a request → Jac's
-// queue. The browser can't hold a token, so each opens a pre-filled GitHub issue.
-function wranglerFile(kind) {
+// Send the fix/request Mr. Wrangler proposed on message #mi. The browser can't hold
+// a GitHub token, so this opens a pre-filled issue (one Submit tap) — the lone, in-
+// context confirmation, fired by the user's tap so the new tab isn't popup-blocked.
+function wranglerFileAction(mi) {
   const o = state.overlay; if (!o || o.kind !== 'wrangler') return;
-  const { title, body } = wranglerFixPacket(o, kind);
-  const label = kind === 'request' ? 'wrangler-request' : 'wrangler-fix';
+  const m = o.messages[mi]; if (!m || !m.action || m.filed) return;
+  const { title, body, label } = wranglerActionPacket(o, m.action);
   window.open(wranglerIssueUrl(title, body, label), '_blank', 'noopener');
-  toast(kind === 'request'
-    ? 'Opening a request — tap “Submit new issue” and it lands in Jac’s queue for the OK. 🤠'
+  m.filed = true; renderOverlay();
+  toast(label === 'wrangler-request'
+    ? 'Opening a request — tap “Submit new issue” and it lands in Jac’s queue. 🤠'
     : 'Opening a fix ticket — tap “Submit new issue” and Mr. Wrangler wrangles the rest. 🤠');
 }
 // Read the customer-form inputs back into the draft (call before any re-render so
@@ -6137,7 +6162,7 @@ function onClick(e) {
   if (closest('.js-cmt-save')) { e.stopPropagation(); return saveCommentOverlay(); }
   if (closest('.js-fb-send')) { e.stopPropagation(); return sendFeedback(); }
   if (closest('.js-wr-send')) { e.stopPropagation(); return wranglerSend(); }   // §18 Mr. Wrangler
-  if (closest('.js-wr-fix')) { e.stopPropagation(); return wranglerFile(closest('.js-wr-fix').dataset.kind); }   // §18d hand a glitch (fix) or request (needs-OK) to Mr. Wrangler
+  if (closest('.js-wr-act')) { e.stopPropagation(); return wranglerFileAction(Number(closest('.js-wr-act').dataset.mi)); }   // §18d file the fix/request Mr. Wrangler proposed inline
   if (closest('.js-wrangler')) { e.stopPropagation(); return openOverlay({ kind: 'wrangler', card: null, recId: null, recType: null, messages: [], busy: false, error: '', draft: '' }); }
   if (closest('.js-open-link')) { e.stopPropagation(); const url = closest('.js-open-link').dataset.url || ''; if (/^(https?:\/\/|mailto:)/i.test(url)) window.open(url, '_blank', 'noopener'); return; }
   if (closest('.js-board')) { const b = closest('.js-board'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return openOverlay({ kind: 'board', board: b.dataset.board }); }
