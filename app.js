@@ -3559,7 +3559,7 @@ const DETAIL = {
       const ar = activeRentalForUnit(u.unitId);
       const st2 = ar ? getStatus('rentalStatus', rentalDisplayStatus(ar)) : getStatus('unitInspectionStatus', u.inspectionStatus);
       // R4 mirror law: parent (unit pill) is RIGHT-aligned → derived sits on its LEFT
-      return `<div class="kv unit-line">${dPill(st2.label, st2.color, ar ? { card: 'rentals', recId: ar.rentalId } : { card: 'inspections' })}${unitPill(u.unitId)}</div>`;
+      return `<div class="kv unit-line">${dPill(st2.label, st2.color, ar ? { card: 'rentals', recId: ar.rentalId } : { card: 'units', recId: u.unitId })}${unitPill(u.unitId)}</div>`;
     }).join('');
     const investment = `<div class="section"><h4>Investment</h4>
       <div class="split">
@@ -4794,6 +4794,17 @@ function removeDispatchArrow(day, from, to) {
   legs.splice(i, 1); all[day] = legs; _lsSave('jactec.dispatchArrows', all); render();
 }
 const addDaysISO = (iso, n) => { const d = parseISO(iso); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
+// §2.3 — Auto-route: draw the legs connecting the yard → every stop in its run order → yard,
+// so a driver sees the whole route in one click instead of clicking icon-to-icon. (Jac follow-up)
+function autoDispatchRoute(day) {
+  const stops = dispatchDayStops(day);
+  if (!stops.length) return;
+  const chain = [HOME_IN, ...stops.map((s) => s.id), HOME_OUT];
+  const legs = [];
+  for (let i = 0; i < chain.length - 1; i++) legs.push([chain[i], chain[i + 1]]);
+  const all = dispatchArrowsLS(); all[day] = legs; _lsSave('jactec.dispatchArrows', all);
+  state.dispArm = null; render();
+}
 const dispatchDayLabel = (iso) => { const d = parseISO(iso); return d ? d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : iso; };
 function dispatchDayStops(day) {
   const times = dispatchTimesLS();
@@ -4817,6 +4828,7 @@ function dispatchGridBody() {
     <div class="disp-date"><b>${esc(dispatchDayLabel(day))}</b>${isToday ? '<span class="disp-today">Today</span>' : '<button class="disp-jump js-disp-today">Today</button>'}</div>
     <button class="disp-nav js-disp-day" data-dir="1" data-tip="Next day">›</button>
     <span class="spacer"></span>
+    <button class="disp-clearleg js-disp-autoroute" data-tip="Auto-draw the route: yard → every stop in order → yard">${I.truck || '↧'} Auto-route</button>
     ${legCount ? `<button class="disp-clearleg js-disp-clearlegs" data-tip="Clear every route arrow on this day">${I.x} ${legCount} arrow${legCount === 1 ? '' : 's'}</button>` : ''}
     <span class="disp-count">${stops.length} stop${stops.length === 1 ? '' : 's'}${allUpcoming ? ` · ${allUpcoming} upcoming` : ''}</span>
   </div>`;
@@ -7109,6 +7121,7 @@ function onClick(e) {
   if (closest('.js-disp-arrow')) { e.stopPropagation(); const a = closest('.js-disp-arrow'); return removeDispatchArrow(state.dispatchDay || TODAY_ISO, a.dataset.from, a.dataset.to); }
   if (closest('.js-disp-arrowpt')) { e.stopPropagation(); const route = closest('.js-disp-route'); return dispatchArrowClick(route ? route.dataset.day : (state.dispatchDay || TODAY_ISO), closest('.js-disp-arrowpt').dataset.node); }
   if (closest('.js-disp-arm-cancel')) { e.stopPropagation(); state.dispArm = null; return render(); }
+  if (closest('.js-disp-autoroute')) { e.stopPropagation(); return autoDispatchRoute(state.dispatchDay || TODAY_ISO); }
   if (closest('.js-disp-clearlegs')) { e.stopPropagation(); const all = dispatchArrowsLS(); delete all[state.dispatchDay || TODAY_ISO]; _lsSave('jactec.dispatchArrows', all); state.dispArm = null; return render(); }
   if (closest('.js-disp-stop') && !closest('.js-disp-time') && !closest('.disp-grip') && !closest('.js-site-go')) { e.stopPropagation(); return anchorRecord('rentals', closest('.js-disp-stop').dataset.rec); }
   if (closest('.js-new-wo-unit')) { e.stopPropagation(); return startNewWorkOrder(closest('.js-new-wo-unit').dataset.rec); }
