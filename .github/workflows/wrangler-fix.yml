@@ -63,11 +63,19 @@ jobs:
 
       - name: Mr. Wrangler patches the glitch
         uses: anthropics/claude-code-action@v1
+        env:
+          # gh uses this for PR/comment/merge ops. The PAT (not GITHUB_TOKEN) means
+          # the PR it opens actually triggers CI, so auto-merge can go green.
+          GH_TOKEN: ${{ secrets.WRANGLER_PAT }}
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           # PAT (not GITHUB_TOKEN) so the PR it opens actually triggers CI.
           github_token: ${{ secrets.WRANGLER_PAT }}
-          claude_args: "--max-turns 60"
+          # Autonomous CI agent needs its hands free: Bash (gates + git + gh) and
+          # file edits. Without this the action denies Bash and the agent can't run
+          # the gates, commit, or open a PR. The runner is ephemeral and main is
+          # gate-protected, so broad Bash here is safe — CI is the real backstop.
+          claude_args: "--max-turns 60 --allowedTools 'Bash,Edit,Write,Read,Glob,Grep'"
           prompt: |
             A glitch was reported in the Rental Wrangler app — GitHub issue
             #${{ github.event.issue.number }}.
