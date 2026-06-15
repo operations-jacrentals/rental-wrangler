@@ -6025,7 +6025,10 @@ function dragDown(e) {
     if (arm.touch) arm.lp = armMenuTimer(arm);
     DRAG.armed = arm; return;
   }
-  if (e.target.closest('.inline-edit, .inline-input, input, textarea, select, button, .x, .pill, .seg, .add-field, .linkname, .flag, .jnode, .dropdown-menu, .overlay, .hover-preview, .winpicker-float, .ctx-menu')) return;
+  const bail = e.target.closest('.inline-edit, .inline-input, input, textarea, select, button, .x, .pill, .seg, .add-field, .linkname, .flag, .jnode, .dropdown-menu, .overlay, .hover-preview, .winpicker-float, .ctx-menu');
+  // …but a UNIT pill is itself a valid drag source — drag it (e.g. from a category's
+  // Investment list) onto a rental to link the unit. A click still navigates (6px threshold). (Jac B4)
+  if (bail && !(bail.classList && bail.classList.contains('pill') && bail.dataset.pillCard === 'units' && bail.dataset.pillRec)) return;
   const src = dragSourceAt(e.target);
   if (!src) return;
   DRAG.point.x = e.clientX; DRAG.point.y = e.clientY;                    // seed the ghost/hit-test point — a touch long-press may fire with NO move first
@@ -6038,6 +6041,8 @@ function dragDown(e) {
    2. a list ROW of a draggable entity;
    3. empty space on a STANDARD-view card (Task 2) → that card's open record. */
 function dragSourceAt(target) {
+  const upill = target.closest('[data-pill-card="units"]');                  // a unit pill drags as that unit → link to a rental (Jac B4)
+  if (upill && upill.dataset.pillRec) return { card: 'units', rec: upill.dataset.pillRec };
   const woSect = target.closest('.section[data-wo]');
   if (woSect && woSect.dataset.wo) return { card: 'workOrders', rec: woSect.dataset.wo };
   const row = target.closest('.row');                                   // .rtl rentals rows still carry card/rec on the .row wrapper
