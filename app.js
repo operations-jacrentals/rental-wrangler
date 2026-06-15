@@ -3196,6 +3196,7 @@ const DETAIL = {
           ${ledgerRow('Total', money(t.total), 'big')}
           ${ledgerRow('Paid', `${money(t.paid)} / ${money(t.total)}`)}
           ${ledgerRow(`Due${i.dueDate ? ' · ' + fmtShortDate(i.dueDate) : ''}`, money(t.balance), 'due')}
+          ${!locked ? `<div class="kv" style="justify-content:flex-end;align-items:center;gap:7px;margin-top:2px"><span class="derived" style="font-size:11px">Set due date</span><input type="date" class="js-due-date" data-rec="${esc(i.invoiceId)}" value="${esc(i.dueDate || '')}" style="font-size:11px;color:var(--txt);background:var(--panel-2);border:1px solid var(--line);border-radius:6px;padding:3px 7px;color-scheme:dark"></div>` : ''}
           ${payCell ? `<div class="pillrow" style="justify-content:flex-end;margin-top:9px">${payCell}</div>` : ''}
         </div>
       </div></div>`;
@@ -7348,6 +7349,12 @@ function onInput(e) {
 
 /* change events — native <input type="date"> / <select> on draft details. */
 function onChange(e) {
+  // E2 — set/change an invoice's due date inline on the card
+  if (e.target.classList.contains('js-due-date')) {
+    const inv = IDX.invoice.get(e.target.dataset.rec);
+    if (inv) { inv.dueDate = e.target.value || ''; reindex('invoices', inv); toast(inv.dueDate ? `Due date set to ${fmtShortDate(inv.dueDate)}.` : 'Due date cleared.'); render(); }
+    return;
+  }
   // Part/Task popup photo
   if (e.target.classList.contains('js-pf2-file')) {
     const f = e.target.files && e.target.files[0]; if (!f) return;
