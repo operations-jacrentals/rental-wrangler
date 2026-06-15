@@ -1343,7 +1343,17 @@ function rowMatches(card, rec, query, terms) {
   }
   const q2 = (query || '').replace(/\b(?:un)?available\b/gi, '').replace(/\s+/g, ' ').trim();
   const terms2 = (terms || []).filter((t) => !/^(?:un)?available$/.test(t.t));
-  return blobMatches(IDX.search.get(card + ':' + idOf(card, rec)), q2, terms2);
+  // A1 — col-scoped terms (from footer chips) do an EXACT column match so "Ready" can't also
+  // catch "Not Ready"; plain text terms fall through to the blob substring match.
+  for (const t of terms2) { if (!t.col) continue; const m = totColMatch(card, rec, t.col, t.value); if (t.neg ? m : !m) return false; }
+  return blobMatches(IDX.search.get(card + ':' + idOf(card, rec)), q2, terms2.filter((t) => !t.col));
+}
+// A1 — exact match for a footer-chip's {col, value}, per record (mirrors applyTotalFilter).
+function totColMatch(card, rec, col, value) {
+  if (col === '__wo') return DATA.workOrders.some((w) => w.unitId === rec.unitId && w.phase !== 'Complete' && !w.cancelled && (value === 'open' || w.phase === 'Part Ordered' || (w.lineItems || []).some((l) => l.phase === 'Part Ordered')));
+  if (col === '__cond') return rec.inspectionStatus === value;
+  const c = cardColumns(card, activeSession()).find((x) => x.key === col);
+  return c ? String(c.get(rec)) === String(value) : true;
 }
 
 /* ── filter-term builder, shared by global search and each card's list search.
@@ -1358,6 +1368,19 @@ function afterFilterChange(scope) {
   else activeSession().cards[scope].listLimit = undefined;  // re-window this card from the top
   render();
   document.querySelector(scope === 'global' ? '#globalsearch' : `.mini-search[data-card="${scope}"]`)?.focus();
+}
+// A1 — a footer chip adds an EXACT, removable filter pill to the card's search bar (one
+// filtering pathway, cleared from the search bar) instead of a separate sticky footer filter.
+function addColFilter(scope, col, value) {
+  const arr = termsFor(scope);
+  if (!arr.some((ft) => ft.col === col && String(ft.value) === String(value))) arr.push({ t: colFilterLabel(scope, col, value), value, col, neg: false });
+  afterFilterChange(scope);
+}
+function colFilterLabel(card, col, value) {
+  if (col === '__wo') return value === 'open' ? 'WOs Open' : 'Parts Ordered';
+  const c = cardColumns(card, activeSession()).find((x) => x.key === col);
+  const m = (c && c.meta) ? c.meta(value) : null;
+  return (m && m.label) || String(value);
 }
 function addFilterTerm(scope, raw) {
   const v = (raw || '').trim().toLowerCase(); if (!v) return;
@@ -6948,13 +6971,12 @@ function onClick(e) {
 
   // footer-totals badge → filter the list to that value (click the active chip to clear)
   if (closest('.js-tot-chip')) {
-    const b = closest('.js-tot-chip'); const cs = activeSession().cards[b.dataset.totCard];
+    const b = closest('.js-tot-chip'); const card = b.dataset.totCard; const cs = activeSession().cards[card];
     if (cs) {
-      const same = cs.totalFilter && cs.totalFilter.col === b.dataset.totCol && String(cs.totalFilter.value) === String(b.dataset.totVal);
-      cs.totalFilter = same ? null : { col: b.dataset.totCol, value: b.dataset.totVal };
-      if (cs.mode === 'standard') cs.mode = 'list';   // Jac: footers shouldn't yank you out of Yard Mode — only leave a record-detail view to show the filtered list
+      if (cs.mode === 'standard') { cs.mode = 'list'; cs.recId = null; cs.recType = null; }   // footers show the filtered list, not a record detail
+      addColFilter(card, b.dataset.totCol, b.dataset.totVal);   // A1 — route into the card's search bar as a removable, exact-match pill
     }
-    render(); return;
+    return;
   }
   if (closest('.js-clear-totfilter')) { e.stopPropagation(); const cs = activeSession().cards[closest('.js-clear-totfilter').dataset.card]; if (cs) cs.totalFilter = null; render(); return; }
 
