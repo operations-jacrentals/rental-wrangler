@@ -4840,7 +4840,10 @@ function renderOverlay() {
         <div class="pillrow" style="margin-bottom:12px">${unit ? unitPill(unit.unitId) : ''}<span class="pill c-${ir.color}">${esc(ir.label)}</span>${n.woId ? refPill('workOrders', n.woId, 'Work Order') : ''}<span class="muted" style="font-size:12px;margin-left:auto">${esc(fmtShortDate(n.date))}</span></div>
         ${media}
         <textarea class="insp-desc js-insp-desc" data-rec="${n.inspectionId}" placeholder="Describe the failure (what's wrong, parts needed)…">${esc(n.description || '')}</textarea>
-        <div class="insp-gate" style="margin-top:12px"><span class="insp-gate-lbl">Charge the customer?</span><button class="pill ${n.billCustomer === 'Yes' ? 'c-green' : 'ref'} js-insp-bill" data-rec="${n.inspectionId}" data-val="Yes">Bill</button><button class="pill ${n.billCustomer === 'No' ? 'c-gray' : 'ref'} js-insp-bill" data-rec="${n.inspectionId}" data-val="No">Don't bill</button></div>
+        <div class="insp-gate" style="margin-top:12px"><span class="insp-gate-lbl">Charge the customer?</span>${segCtl([
+          { label: 'Bill', js: 'js-insp-bill', data: { rec: n.inspectionId, val: 'Yes' }, on: n.billCustomer === 'Yes' ? 'green' : null },
+          { label: 'Don’t bill', js: 'js-insp-bill', data: { rec: n.inspectionId, val: 'No' }, on: n.billCustomer === 'No' ? 'gray' : null },
+        ], 'seg-bill')}</div>
         <div class="pillrow" style="justify-content:flex-end;margin-top:14px"><button class="pill c-commit js-close">Done</button></div>
       </div>`;
     overlay.appendChild(pop);
@@ -5392,6 +5395,7 @@ function bvCustomizePanel(card) {
 /** Shared floating dropdown (matches board chrome) — used by the status pill
  *  dropdown and the in-card Sort menu. */
 function openDropdown(anchorEl, html, { align = 'left' } = {}) {
+  hideHoverPreview();   // a floated preview (z-9000) buried the menu — clear it on open (Jac: fleet-status box hidden behind hover)
   // re-clicking the SAME trigger toggles the menu shut (the anchor is excluded from the
   // outside-close handler below, so its mousedown doesn't pre-close before this runs).
   const existing = document.querySelector('.dropdown-menu');
@@ -6361,8 +6365,10 @@ function onClick(e) {
   if (closest('.js-hchip')) { const b = closest('.js-hchip'); const o = state.overlay; if (o?.kind === 'board') { o.histKind = o.histKind === b.dataset.kind ? null : b.dataset.kind; return renderOverlay(); } const session = activeSession(); const cs = session.cards[b.dataset.card] || session.cards.shop; cs.histKind = cs.histKind === b.dataset.kind ? null : b.dataset.kind; return render(); }
   if (closest('.js-complete-rental')) {
     const b = closest('.js-complete-rental'); const r = IDX.rental.get(b.dataset.rec); if (!r) return;
-    if (!rentalUnits(r).length) return flashOr('[data-slot="unit"], .add-field', '🔒 No units on this rental — drag one on (or cancel the rental).');
-    if (!allUnitsTerminal(r)) return flashOr(`.js-yard[data-cap="end"][data-rec="${r.rentalId}"]`, '🔒 Every unit must be terminal first — return each one (or mark No Show / Cancel).');
+    // Locked gates ALWAYS speak (Jac: "Complete Rental doesn't do anything") — the old
+    // flashOr stayed silent whenever its on-screen target existed, so a locked click read as dead.
+    if (!rentalUnits(r).length) { attnFlash('[data-slot="unit"], .add-field'); return toast('🔒 No units on this rental — drag one on, or cancel the rental.'); }
+    if (!allUnitsTerminal(r)) { attnFlash(`.js-yard[data-cap="end"][data-rec="${r.rentalId}"]`); return toast('🔒 Return every unit first (or mark No Show / Cancel) to complete the rental.'); }
     r.completed = true; reindex('rentals', r); logAction(r, 'Rental completed'); toast('Rental completed ✓'); return reanchorRender();
   }
   if (closest('.js-cancel-rental')) {
@@ -8625,10 +8631,16 @@ function boot() {
   // right-click = send the card to its List View; double right-click = drop the anchor.
   document.addEventListener('contextmenu', (e) => {
     if (e.target.closest('input, textarea, .inline-input')) return;            // allow native menu in fields
-    if (!e.target.closest('.card') && !e.target.closest('.overlay .popup')) return;
+    // Right-click WINS over the hover preview (Jac): a floated preview sits under the
+    // cursor and stole the event (it lives on <body>, outside .card), so the menu /
+    // card-to-List never fired. Dismiss it and re-resolve the row beneath the cursor.
+    let target = e.target;
+    if (target.closest('.hover-preview')) { hideHoverPreview(); target = document.elementFromPoint(e.clientX, e.clientY) || target; }
+    if (!target.closest('.card') && !target.closest('.overlay .popup')) return;
     e.preventDefault();
     if (performance.now() - lastTouchCtx < 700) return;                        // §M3 — our touch long-press already opened it; swallow the trailing native event
-    openCtxMenuAt(e.target, e.clientX, e.clientY);                             // §R20 leaf → Wrangler menu; card dead-space → card-to-List (single) / clear-anchor (double)
+    hideHoverPreview();                                                        // clear any preview still mid-fuse so it can't reappear over the menu
+    openCtxMenuAt(target, e.clientX, e.clientY);                               // §R20 leaf → Wrangler menu; card dead-space → card-to-List (single) / clear-anchor (double)
   });
   document.addEventListener('mousemove', (e) => { lastMouse.x = e.clientX; lastMouse.y = e.clientY; });
   // hover preview (#1): float a record's Standard view after a short hover on a row/pill

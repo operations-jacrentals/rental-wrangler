@@ -540,7 +540,7 @@ input { font-family: inherit; }
 .sort .dir span.on { color: var(--accent); }
 
 /* reusable floating dropdown menu (sort fields, status options) — matches board chrome */
-.dropdown-menu { position: fixed; z-index: 60; min-width: 170px; padding: 6px; background: var(--panel); border: 1px solid var(--accent); border-radius: var(--chip-radius); box-shadow: var(--shadow), 0 0 0 2px var(--accent-line), 0 0 26px -8px rgba(255,122,26,.5); }
+.dropdown-menu { position: fixed; z-index: 9100; min-width: 170px; padding: 6px; background: var(--panel); border: 1px solid var(--accent); border-radius: var(--chip-radius); box-shadow: var(--shadow), 0 0 0 2px var(--accent-line), 0 0 26px -8px rgba(255,122,26,.5); }
 .dropdown-menu .dd-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 10px; border-radius: 9px; font-size: 12px; font-weight: 600; text-align: left; color: var(--txt-2); }
 .dropdown-menu .dd-item:hover { background: var(--panel-2); color: var(--txt); }
 .dropdown-menu .dd-item.on { color: var(--accent); }
