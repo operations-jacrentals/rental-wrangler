@@ -1035,7 +1035,7 @@ let hoverTimer = null, hoverEl = null, hoverNode = null, hoverGrace = null;
 const lastMouse = { x: 0, y: 0 };
 /* previews arm ONLY on real pills/badges/flags ([data-pill-card]) or the row EYE —
    never the row body / empty space (Jac 2026-06-12) */
-const hoverTarget = (n) => (n && n.closest ? n.closest('[data-pill-card], .js-roweye') : null);
+const hoverTarget = (n) => (n && n.closest ? n.closest('[data-pill-card], .js-roweye, .r-title') : null);
 function recForHover(target) {
   let card, recId, recType;
   if (target.classList && target.classList.contains('js-roweye')) {
@@ -1043,7 +1043,7 @@ function recForHover(target) {
     card = row.dataset.card; recId = row.dataset.rec; recType = row.dataset.type;
   }
   else if (target.dataset.pillCard) { card = target.dataset.pillCard; recId = target.dataset.pillRec; }
-  else { card = target.dataset.card; recId = target.dataset.rec; recType = target.dataset.type; }
+  else { const src = (target.closest && target.closest('.row')) || target; card = src.dataset.card; recId = src.dataset.rec; recType = src.dataset.type; }   // .r-title (list-view name) → resolve via its row (Jac B2)
   if (recId == null) return null;
   const ec = SHOP_TYPES.includes(card) ? card : (card === 'shop' ? recType : card);
   const rec = recOf(ec, recId);
@@ -1437,8 +1437,9 @@ function openCtxMenuAt(target, x, y) {
   if (!target || !target.closest) return;
   if (target.closest('input, textarea, .inline-input')) return;
   const card = target.closest('.card'); if (!card && !target.closest('.overlay .popup')) return;
-  if (state.winpicker) return;
-  const leaf = target.closest('.pill, .add-field, .flag, .linkname, .inv-line-link, .req, .seg, button, .inline-edit, .jnode, .x, a, .d-title, .derived');
+  // While the rental-window picker is open, keep right-click → BACK working; just suppress
+  // the element context menu (it gets in the way of picking). (Jac B5, 2026-06-15)
+  const leaf = state.winpicker ? null : target.closest('.pill, .add-field, .flag, .linkname, .inv-line-link, .req, .seg, button, .inline-edit, .jnode, .x, a, .d-title, .r-title, .derived');
   const hit = leaf ? (ruleOf(leaf) || { r: null, el: leaf }) : null;
   if (hit) return openCtxMenu({ clientX: x, clientY: y }, hit);
   if (!card) return;
@@ -2494,6 +2495,7 @@ function saveCommentOverlay() {
   if (!text) { if (ta) ta.focus(); return; }
   const rec = recOf(entityCardOf(o.card, o.recType), o.recId);
   if (!rec) { toast('Record not found.'); closeOverlay(); return; }
+  if ((rec.comments || []).some((c) => c.text === text && c.color === (o.color || 'yellow'))) { closeOverlay(); return; }   // opened to READ an existing note → don't duplicate it on close
   addRecComment(rec, text, o.color || 'yellow');
   closeOverlay(); render();
   toast('Comment posted — marker set.');
@@ -3078,10 +3080,10 @@ const DETAIL = {
       <div class="detail-head">${title}</div>
       ${notes.top}
       <div class="detail-cols">${membership}${usedSales}</div>
-      ${activeBar}
       ${actHead}
       ${actEntry}
       ${activity}
+      ${activeBar}
       ${account}
       ${cardsSection(c)}
       ${notes.bottom}
@@ -3177,7 +3179,7 @@ const DETAIL = {
     const manageRow = state.invLineForm === i.invoiceId ? lineForm
       : locked
         ? `<div class="pillrow"><span class="muted" style="font-size:12px">🔒 Pricing locked.</span>${canMoney() ? actionPill('commit', 'Unlock to edit', { js: 'js-unlock-invoice', data: { rec: i.invoiceId } }) : ''}</div>`
-        : `<div class="pillrow eqw">${addBtn('Rental', { line: true, js: 'js-add-line', h: 26, data: { rec: i.invoiceId, kind: 'Rental' } })}${addBtn('WO', { line: true, js: 'js-add-line', h: 26, data: { rec: i.invoiceId, kind: 'WO' } })}${addBtn('Custom', { line: true, js: 'js-add-line', h: 26, data: { rec: i.invoiceId, kind: 'Custom' } })}</div>${canMoney() && (i.lineItems || []).length ? `<div class="pillrow">${actionPill('commit', '🔒 Lock price', { js: 'js-lock-invoice', data: { rec: i.invoiceId } })}</div>` : ''}`;
+        : `<div class="pillrow pillcol">${addBtn('Rental', { line: true, js: 'js-add-line', h: 26, data: { rec: i.invoiceId, kind: 'Rental' } })}${addBtn('WO', { line: true, js: 'js-add-line', h: 26, data: { rec: i.invoiceId, kind: 'WO' } })}${addBtn('Custom', { line: true, js: 'js-add-line', h: 26, data: { rec: i.invoiceId, kind: 'Custom' } })}</div>${canMoney() && (i.lineItems || []).length ? `<div class="pillrow pillcol">${actionPill('commit', '🔒 Lock price', { js: 'js-lock-invoice', data: { rec: i.invoiceId } })}</div>` : ''}`;
     const invoiceSec = `<div class="section"><h4>Invoice</h4>
       <div class="inv-split">
         <div class="inv-actions">
@@ -4099,6 +4101,7 @@ function headerEl() {
       </div>
       <div class="toolbar">
         <div class="searchwrap ${state.filterTerms.length ? 'has-terms' : ''}${state.query.trim() || state.filterTerms.length ? ' has-query' : ''}">
+          ${state.filterTerms.length > 1 ? closeX('js-clear') : ''}
           <span class="s-icon">${I.search}</span>
           ${state.filterTerms.map((ft, i) => filterTermPill(ft, i, 'global')).join('')}
           <input id="globalsearch" class="search" placeholder="${state.filterTerms.length ? 'Add filter — type, Enter to pin…' : 'Search everything…'}" value="${esc(state.query)}" />
@@ -4127,6 +4130,7 @@ function bottomBarInner() {
     <button class="iconbtn${state.previewsOn ? '' : ' off'} js-previews" data-tip="${state.previewsOn ? 'Hover previews: on' : 'Hover previews: off'}">${state.previewsOn ? I.eye : I.eyeOff}</button>
     <button class="iconbtn js-chat-toggle${state.chat.open ? ' on' : ''}" data-tip="Team chat — flagged comments + tagged context">${I.chat}${(() => { const n = chatUnreadCount(); return n ? `<span class="bb-badge">${n > 9 ? '9+' : n}</span>` : ''; })()}</button>
     <button class="iconbtn js-wrangler" data-tip="Mr. Wrangler — ask the yard AI, or report a bug to fix" style="font-size:16px">🤠</button>
+    <button class="iconbtn js-requests" data-tip="Requests for your OK — review what Mr. Wrangler filed">${I.inbox}${wranglerRequests.length ? `<span class="bb-badge">${wranglerRequests.length > 9 ? '9+' : wranglerRequests.length}</span>` : ''}</button>
     <button class="iconbtn js-hotkeys" data-tip="Mouse &amp; keyboard shortcuts">${I.mouse}</button>
     <button class="iconbtn js-adminlock${adminUnlocked() ? ' on' : ''}" data-tip="${adminUnlocked() ? 'Admin tools unlocked — click to lock' : 'Admin tools — click to unlock'}">${adminUnlocked() ? I.lockOpen : I.lock}</button>
     ${adminUnlocked() ? `<button class="iconbtn js-lint${document.body.classList.contains('rw-lint') ? ' on' : ''}" data-tip="Design lint — flash anything that bypassed the UI builders (R0)">${I.eye}</button>
@@ -4870,8 +4874,8 @@ function renderOverlay() {
       <div class="popup-body"><div class="board-detail">${DETAIL[o.board](vrec, { historySearch: o.historySearch || '', histKind: o.histKind || null, partForm: o.partForm || false, backStack: [], mode: 'standard' })}</div></div>`;
     } else {
     pop.innerHTML = `
-      <div class="popup-head">${CARD_ICON[board.id] ? `<span class="c-icon" style="color:var(--accent);display:inline-flex">${CARD_ICON[board.id] || ''}</span>` : ''}<h3>${esc(board.title)}</h3><span class="c-count">${boardRows(board.id).length}</span>${board.id === 'files' ? addBtn('File', { link: true, js: 'js-file-add' }) : ''}<span class="spacer"></span><button class="x js-close">${I.x}</button></div>
-      <div class="popup-body board-body">${board.id === 'files' && o.fileForm ? `<div class="kv pillrow" style="gap:7px;margin:0 0 10px"><input class="lf-in js-ff-name" placeholder="File name" style="flex:2;min-width:140px"><input class="lf-in js-ff-link" placeholder="Link (URL)" style="flex:2;min-width:140px">${ghostPill('Cancel', { js: 'js-ff-cancel' })}${actionPill('commit', 'Add file', { js: 'js-ff-save' })}</div>` : ''}${boardTable(board.id)}</div>`;
+      <div class="popup-head">${CARD_ICON[board.id] ? `<span class="c-icon" style="color:var(--accent);display:inline-flex">${CARD_ICON[board.id] || ''}</span>` : ''}<h3>${esc(board.title)}</h3><span class="c-count">${boardRows(board.id).length}</span>${board.id === 'files' ? addBtn('File', { link: true, js: 'js-file-add' }) : ''}${board.id === 'files' ? `<div class="bv-searchwrap"><span class="s-icon">${I.search}</span><input class="bv-query js-files-query" placeholder="Search files…" value="${esc(o.fileSearch || '')}" /></div>` : ''}<span class="spacer"></span><button class="x js-close">${I.x}</button></div>
+      <div class="popup-body board-body">${board.id === 'files' && o.fileForm ? `<div class="kv pillrow" style="gap:7px;margin:0 0 10px"><input class="lf-in js-ff-name" placeholder="File name" style="flex:2;min-width:140px"><input class="lf-in js-ff-link" placeholder="Link (URL)" style="flex:2;min-width:140px">${ghostPill('Cancel', { js: 'js-ff-cancel' })}${actionPill('commit', 'Add file', { js: 'js-ff-save' })}</div>` : ''}${boardTable(board.id, o.fileSearch)}</div>`;
     }
     overlay.appendChild(pop);
   } else if (o.kind === 'boardview') {
@@ -5437,9 +5441,11 @@ const BOARD_DEF = {
     row: (f) => [f.link ? linkName(f.name, { js: 'js-open-link', data: { url: f.link } }) : esc(f.name), statusPill('companyFileType', f.type), esc(f.group || '—'), f.reviewByDate ? esc(fmtShortDate(f.reviewByDate)) + (reviewState(f.reviewByDate) ? ' ' + reviewState(f.reviewByDate) : '') : '—'],
   },
 };
-function boardTable(boardId) {
-  const def = BOARD_DEF[boardId]; const rows = boardRows(boardId);
+function boardTable(boardId, query) {
+  const def = BOARD_DEF[boardId]; let rows = boardRows(boardId);
   if (!def) return '<p class="muted">—</p>';
+  const q = (query || '').trim().toLowerCase();
+  if (q) rows = rows.filter((r) => Object.values(r).some((v) => v != null && String(v).toLowerCase().includes(q)));
   const head = `<tr>${def.cols.map((c) => `<th>${esc(c)}</th>`).join('')}</tr>`;
   // §7.10–§7.13 v2 — every board row opens the record's detail inside the popup
   const ROW_ID = { vendors: 'vendorId', expenses: 'expenseId', parts: 'partId', files: 'fileId' };
@@ -5781,7 +5787,7 @@ function openViewMenu(card, anchorEl) {
   if (hasFilter && !onView && admin) { const lbl = viewLabel(cs.search, cs.filterTerms); html += `<button class="dd-item js-addview" data-card="${card}">${I.plus} Add view “${esc(lbl.length > 22 ? lbl.slice(0, 22) + '…' : lbl)}”</button>`; }
   if (views.length) {
     html += `<div class="dd-sec">Views</div>`;
-    html += views.map((v, i) => `<button class="dd-item js-applyview${viewSig(v.search, v.terms) === curSig ? ' on' : ''}" data-card="${card}" data-idx="${i}">${esc(v.name)}<span class="tick">✓</span>${admin ? `<span class="x js-delview" data-card="${card}" data-name="${esc(v.name)}" data-tip="Delete view">${I.x}</span>` : ''}</button>`).join('');
+    html += views.map((v, i) => `<button class="dd-item js-applyview${viewSig(v.search, v.terms) === curSig ? ' on' : ''}" data-card="${card}" data-idx="${i}">${esc(v.name)}<span class="tick">✓</span><span class="x js-delview" data-card="${card}" data-name="${esc(v.name)}" data-tip="Delete view">${I.x}</span></button>`).join('');
   }
   html += `<div class="dd-sec">Sort</div>`;
   html += SORT_FIELDS[card].map((f) => `<button class="dd-item js-sortfield${f.field === cs.sort.field ? ' on' : ''}" data-card="${card}" data-field="${f.field}">${esc(f.label)}<span class="tick">✓</span></button>`).join('');
@@ -6353,6 +6359,16 @@ function onClick(e) {
     }
   }
 
+  // §B6 — a comment marker (yellow dot) is now clickable: open the comment overlay
+  // seeded with the record's latest note so it can actually be read (it had no handler).
+  if (closest('.cmt-marker')) {
+    e.stopPropagation();
+    const hit = cardRecordAt(t); if (!hit) return;
+    const rec = recOf(entityCardOf(hit.card, hit.recType), hit.recId);
+    const all = rec ? recComments(rec) : []; const last = all.length ? all[all.length - 1] : null;
+    return openOverlay({ kind: 'comment', card: hit.card, recId: hit.recId, recType: hit.recType, color: (last && last.color) || 'yellow', text: last ? last.text : '' });
+  }
+
   // clicked card → orange-border focus (§0.1 visual feedback; applied immediately,
   // independent of whatever else this click does — anchor stays a separate action)
   const fc = closest('.card');
@@ -6613,7 +6629,7 @@ function onClick(e) {
     const b = closest('.js-complete-rental'); const r = IDX.rental.get(b.dataset.rec); if (!r) return;
     // Locked gates ALWAYS speak (Jac: "Complete Rental doesn't do anything") — the old
     // flashOr stayed silent whenever its on-screen target existed, so a locked click read as dead.
-    if (!rentalUnits(r).length) { attnFlash('[data-slot="unit"], .add-field'); return toast('🔒 No units on this rental — drag one on, or cancel the rental.'); }
+    if (!rentalUnits(r).length) { attnFlash('[data-slot="unit"]'); return toast('🔒 No units on this rental — drag one on, or cancel the rental.'); }
     if (!allUnitsTerminal(r)) { attnFlash(`.js-yard[data-cap="end"][data-rec="${r.rentalId}"]`); return toast('🔒 Return every unit first (or mark No Show / Cancel) to complete the rental.'); }
     r.completed = true; reindex('rentals', r); logAction(r, 'Rental completed'); toast('Rental completed ✓'); return reanchorRender();
   }
@@ -6664,7 +6680,7 @@ function onClick(e) {
 
   // sort menu + direction toggle
   if (closest('.js-sortmenu')) { const b = closest('.js-sortmenu'); return openViewMenu(b.dataset.card, b); }
-  if (closest('.js-delview')) { e.stopPropagation(); if (!adminUnlocked()) return; const b = closest('.js-delview'); const card = b.dataset.card; saveViews(card, loadViews(card).filter((v) => v.name !== b.dataset.name)); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); const anchor = document.querySelector(`.js-sortmenu[data-card="${card}"]`); if (anchor) openViewMenu(card, anchor); else render(); return; }
+  if (closest('.js-delview')) { e.stopPropagation(); const b = closest('.js-delview'); const card = b.dataset.card; saveViews(card, loadViews(card).filter((v) => v.name !== b.dataset.name)); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); const anchor = document.querySelector(`.js-sortmenu[data-card="${card}"]`); if (anchor) openViewMenu(card, anchor); else render(); return; }
   if (closest('.js-applyview')) { const b = closest('.js-applyview'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return applyView(b.dataset.card, loadViews(b.dataset.card)[Number(b.dataset.idx)]); }
   if (closest('.js-addview')) { if (!adminUnlocked()) { document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return; } const b = closest('.js-addview'); const card = b.dataset.card; const cs = activeSession().cards[card]; const search = (cs.search || '').trim(); const terms = (cs.filterTerms || []).map((t) => ({ ...t })); const suggested = viewLabel(search, terms); const name = (typeof prompt === 'function' ? prompt('Name this view:', suggested) : suggested); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); if (name && name.trim()) { const views = loadViews(card); if (!views.some((v) => v.name.toLowerCase() === name.trim().toLowerCase())) { views.push({ name: name.trim(), search, terms }); saveViews(card, views); } } render(); return; }
   if (closest('.js-sortfield')) { const b = closest('.js-sortfield'); const cs = activeSession().cards[b.dataset.card]; const f = SORT_FIELDS[b.dataset.card].find((x) => x.field === b.dataset.field); if (f) { cs.sort = { ...f }; saveSort(b.dataset.card, cs.sort); } document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); render(); return; }
@@ -7299,6 +7315,11 @@ function onInput(e) {
   if (e.target.classList.contains('js-cmt-text')) { if (state.overlay?.kind === 'comment') state.overlay.text = e.target.value; return; }
   if (e.target.classList.contains('js-wr-in')) { if (state.overlay?.kind === 'wrangler') state.overlay.draft = e.target.value; return; }
   if (e.target.classList.contains('chat-input')) { state.chat.draft = e.target.value; return; }
+  // Company Files live search → re-render the board popup and restore the caret.
+  if (e.target.classList.contains('js-files-query')) {
+    if (state.overlay?.kind === 'board') { state.overlay.fileSearch = e.target.value; const sel = e.target.selectionStart; renderOverlay(); const q = document.querySelector('.js-files-query'); if (q) { q.focus(); q.setSelectionRange(sel, sel); } }
+    return;
+  }
   // Board View live search → re-render the popup and restore the caret.
   if (e.target.classList.contains('bv-query')) {
     if (state.overlay?.kind === 'boardview') { state.overlay.query = e.target.value; const sel = e.target.selectionStart; renderOverlay(); const q = document.querySelector('.bv-query'); if (q) { q.focus(); q.setSelectionRange(sel, sel); } }

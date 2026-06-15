@@ -1631,6 +1631,8 @@ input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
 /* #7 — +X buttons match width within a section: equal in a row, common width in the
    rental slot stack (Customer/Unit/Invoice). (Jac 2026-06-13) */
 .pillrow.eqw .add-field { flex: 1; justify-content: center; }
+.pillrow.pillcol { flex-direction: column; align-items: stretch; }
+.pillrow.pillcol .add-field, .pillrow.pillcol .pill { width: 100%; justify-content: center; }
 .js-slot-unit, .js-quickadd-cust, .js-create-invoice { min-width: 150px; justify-content: center; }
 
 /* R1/R3 STACK LAW (Jac 2026-06-12): pills opening line rows share one min-width
