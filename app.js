@@ -4964,11 +4964,22 @@ function unitGraphData() {
   const partsPie = [{ label: 'Need Parts', value: need, color: 'red' }, { label: 'Parts Ordered', value: ordered, color: 'blue' }, { label: 'Not Needed', value: none, color: 'green' }];
   return { daysSinceFC, mostFCs, fcHist, readyPie, partsPie };
 }
+// Phase 4 graph tile + month helpers (shared by every card's graph).
+const gvNumTile = (val, label) => `<div class="gv-tile gv-num"><div class="gv-num-v">${esc(String(val))}</div><div class="gv-num-l">${esc(label)}</div></div>`;
+const gvPieTile = (title, segs) => `<div class="gv-tile gv-pie"><div class="gv-tile-h">${esc(title)}</div>${pieSVG(segs)}${gvLegend(segs)}</div>`;
+const gvBarTile = (title, data, color) => `<div class="gv-tile gv-wide"><div class="gv-tile-h">${esc(title)}</div>${gvBars(data, color)}</div>`;
+const gvLeadTile = (title, rows) => `<div class="gv-tile gv-lead"><div class="gv-tile-h">${esc(title)}</div>${rows.length ? rows.map((m, i) => `<div class="gv-lead-row"><span class="gv-lead-n">${i + 1}</span><span class="gv-lead-name">${esc(m.name)}</span>${m.meta ? `<span class="gv-lead-mech">${esc(m.meta)}</span>` : ''}<span class="gv-lead-c">${esc(String(m.val))}</span></div>`).join('') : '<div class="muted" style="font-size:12px">No data yet.</div>'}</div>`;
+const gvTableTile = (title, count, heads, rows) => `<div class="gv-tile gv-units"><div class="gv-tile-h">${esc(title)} <span class="gv-count">${count}</span></div><div class="gv-units-scroll"><table class="board-table"><thead><tr>${heads.map((h) => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div></div>`;
+function gvMonths6() {
+  const out = [];
+  for (let i = 5; i >= 0; i--) { const d = new Date(TODAY.getFullYear(), TODAY.getMonth() - i, 1); out.push({ key: d.toISOString().slice(0, 7), label: d.toLocaleString('en-US', { month: 'short' }) }); }
+  return out;
+}
 function cardGraphBody(card) {
-  if (card !== 'units') return `<div class="gv-soon"><span class="gv-soon-ic">${I.graph}</span><p>Graphs for <b>${esc(GRID_CARD_BY_ID[card]?.title || ENTITY_LABEL[card] || card)}</b> are coming next. The <b>Units</b> graph is live now.</p></div>`;
-  const g = unitGraphData();
-  const unitRows = DATA.units.map((u) => `<tr><td>${esc(u.name)}</td><td>${badge(u.fleetStatus || '—', getStatus('unitFleetStatus', u.fleetStatus).color || 'gray')}</td><td>${statusPill('unitInspectionStatus', u.inspectionStatus)}</td><td>${u.currentHours != null ? num(u.currentHours) : '—'}</td><td>${openWOsForUnit(u.unitId).length || ''}</td></tr>`).join('');
-  return `
+  if (card === 'units') {
+    const g = unitGraphData();
+    const unitRows = DATA.units.map((u) => `<tr><td>${esc(u.name)}</td><td>${badge(u.fleetStatus || '—', getStatus('unitFleetStatus', u.fleetStatus).color || 'gray')}</td><td>${statusPill('unitInspectionStatus', u.inspectionStatus)}</td><td>${u.currentHours != null ? num(u.currentHours) : '—'}</td><td>${openWOsForUnit(u.unitId).length || ''}</td></tr>`).join('');
+    return `
     <div class="gv-grid">
       <div class="gv-tile gv-num"><div class="gv-num-v">${g.daysSinceFC == null ? '—' : g.daysSinceFC}</div><div class="gv-num-l">Days Since FC</div></div>
       <div class="gv-tile gv-lead"><div class="gv-tile-h">Most Field Calls</div>${g.mostFCs.length ? g.mostFCs.map((m, i) => `<div class="gv-lead-row"><span class="gv-lead-n">${i + 1}</span><span class="gv-lead-name">${esc(m.name)}</span>${m.mech ? `<span class="gv-lead-mech">${esc(m.mech)}</span>` : ''}<span class="gv-lead-c">${m.count}</span></div>`).join('') : '<div class="muted" style="font-size:12px">No field calls logged.</div>'}</div>
@@ -4977,6 +4988,57 @@ function cardGraphBody(card) {
       <div class="gv-tile gv-wide"><div class="gv-tile-h">Field Call History</div>${gvBars(g.fcHist, 'red')}</div>
     </div>
     <div class="gv-tile gv-units"><div class="gv-tile-h">Units <span class="gv-count">${DATA.units.length}</span></div><div class="gv-units-scroll"><table class="board-table"><thead><tr><th>Unit</th><th>Fleet</th><th>Inspection</th><th>Hours</th><th>Open WOs</th></tr></thead><tbody>${unitRows}</tbody></table></div></div>`;
+  }
+  if (card === 'rentals') {
+    const R = DATA.rentals, ym = TODAY_ISO.slice(0, 7);
+    const onRent = R.filter((r) => rentalDisplayStatus(r) === 'On Rent').length;
+    const revMonth = R.reduce((a, r) => ((r.startDate || '').slice(0, 7) === ym ? a + ((rentalPrice(r) || {}).price || 0) : a), 0);
+    const counts = {}; R.forEach((r) => { const s = rentalDisplayStatus(r); counts[s] = (counts[s] || 0) + 1; });
+    const ordIdx = (s) => { const k = RENTAL_BAR_ORDER.indexOf(s); return k < 0 ? 99 : k; };   // unknown statuses (e.g. Quote) sort last but are NOT dropped
+    const statusPie = Object.keys(counts).sort((a, b) => ordIdx(a) - ordIdx(b)).map((s) => ({ label: s, value: counts[s], color: s === 'Available' ? 'gray' : (getStatus('rentalStatus', s).color || 'gray') }));
+    const hist = gvMonths6().map((m) => ({ label: m.label, value: R.filter((r) => (r.startDate || '').slice(0, 7) === m.key).length }));
+    const byUnit = {}; R.forEach((r) => rentalUnits(r).forEach((eu) => { const u = IDX.unit.get(eu.unitId); if (u) byUnit[u.name] = (byUnit[u.name] || 0) + 1; }));
+    const topUnits = Object.entries(byUnit).map(([name, v]) => ({ name, val: v })).sort((a, b) => b.val - a.val).slice(0, 6);
+    const rows = R.slice().sort((a, b) => (b.startDate || '').localeCompare(a.startDate || '')).slice(0, 50).map((r) => `<tr><td>${esc(rentalDisplayName(r))}</td><td>${statusPill('rentalStatus', rentalDisplayStatus(r))}</td><td>${esc(fmtShortDate(r.startDate) || '—')}</td><td>${money((rentalPrice(r) || {}).price || 0)}</td></tr>`).join('');
+    return `<div class="gv-grid">${gvNumTile(onRent, 'On Rent now')}${gvNumTile(money(revMonth), 'Revenue this month')}${gvPieTile('Status mix', statusPie)}${gvLeadTile('Most-rented units', topUnits)}${gvBarTile('Rentals / month', hist, 'accent')}</div>${gvTableTile('Rentals', R.length, ['Rental', 'Status', 'Start', 'Price'], rows)}`;
+  }
+  if (card === 'customers') {
+    const C = DATA.customers;
+    const members = C.filter((c) => /Member/.test(c.accountType || '') && c.accountType !== 'Member Incomplete').length;
+    const active = C.filter((c) => (c._digest?.activePct || 0) > 0).length;
+    const byAcct = {}; C.forEach((c) => { const t = c.accountType || 'Non-Business'; byAcct[t] = (byAcct[t] || 0) + 1; });
+    const acctPie = Object.entries(byAcct).sort((a, b) => b[1] - a[1]).map(([t, v]) => ({ label: t, value: v, color: getStatus('customerAccountType', t).color || 'gray' }));
+    const topSpend = C.map((c) => ({ c, paid: c._digest?.totalPaid || 0 })).filter((x) => x.paid > 0).sort((a, b) => b.paid - a.paid).slice(0, 6).map((x) => ({ name: x.c.name, val: money(x.paid) }));
+    const rows = C.map((c) => ({ c, paid: c._digest?.totalPaid || 0 })).sort((a, b) => b.paid - a.paid).slice(0, 50).map(({ c }) => `<tr><td>${esc(c.name)}</td><td>${badge(getStatus('customerAccountType', c.accountType || 'Non-Business').label, getStatus('customerAccountType', c.accountType || 'Non-Business').color || 'gray')}</td><td>${money(c._digest?.totalPaid || 0)}</td><td>${esc(c.phone || '—')}</td></tr>`).join('');
+    return `<div class="gv-grid">${gvNumTile(C.length, 'Customers')}${gvNumTile(members, 'Members')}${gvNumTile(active, 'Active patterns')}${gvPieTile('Account types', acctPie)}${gvLeadTile('Top customers by spend', topSpend)}</div>${gvTableTile('Customers', C.length, ['Customer', 'Account', 'Spend', 'Phone'], rows)}`;
+  }
+  if (card === 'categories') {
+    const cats = DATA.categories;
+    const byFleet = {}; DATA.units.forEach((u) => { const s = u.fleetStatus || '—'; byFleet[s] = (byFleet[s] || 0) + 1; });
+    const fleetPie = Object.entries(byFleet).sort((a, b) => b[1] - a[1]).map(([s, v]) => ({ label: s, value: v, color: getStatus('unitFleetStatus', s).color || 'gray' }));
+    const byCat = {}; DATA.units.forEach((u) => { if (u.categoryId) byCat[u.categoryId] = (byCat[u.categoryId] || 0) + 1; });
+    const ranked = Object.entries(byCat).map(([cid, v]) => ({ name: IDX.category.get(cid)?.name || cid, val: v })).sort((a, b) => b.val - a.val);
+    const bars = ranked.slice(0, 8).map((c) => ({ label: c.name.length > 9 ? c.name.slice(0, 9) : c.name, value: c.val }));
+    const rows = cats.slice().map((cat) => `<tr><td>${esc(cat.name)}</td><td>${byCat[cat.categoryId] || 0}</td></tr>`).join('');
+    return `<div class="gv-grid">${gvNumTile(cats.length, 'Categories')}${gvNumTile(DATA.units.length, 'Total units')}${gvPieTile('Fleet status', fleetPie)}${gvLeadTile('Largest categories', ranked.slice(0, 6))}${gvBarTile('Units per category', bars, 'accent')}</div>${gvTableTile('Categories', cats.length, ['Category', 'Units'], rows)}`;
+  }
+  if (card === 'invoices') {
+    const INV = DATA.invoices;
+    let paid = 0, partial = 0, unpaid = 0, refunded = 0, outstanding = 0, collected = 0;
+    const detail = INV.map((i) => {
+      const t = invoiceTotals(i); collected += t.paid;
+      const isRefunded = !!i.refunded || t.status === 'Refunded';
+      if (isRefunded) refunded++;
+      else if (t.total > 0) { outstanding += t.balance; if (t.balance <= 0) paid++; else if (t.paid > 0) partial++; else unpaid++; }   // empty ($0) drafts are excluded from the buckets
+      return { i, t, isRefunded };
+    });
+    const statusPie = [{ label: 'Paid', value: paid, color: 'green' }, { label: 'Partial', value: partial, color: 'yellow' }, { label: 'Unpaid', value: unpaid, color: 'red' }];
+    if (refunded) statusPie.push({ label: 'Refunded', value: refunded, color: 'gray' });
+    const topBal = detail.filter((r) => r.t.balance > 0 && !r.isRefunded).sort((a, b) => b.t.balance - a.t.balance).slice(0, 6).map((r) => ({ name: IDX.customer.get(r.i.customerId)?.name || r.i.invoiceId, val: money(r.t.balance) }));
+    const rows = detail.slice().sort((a, b) => b.t.balance - a.t.balance).slice(0, 50).map((r) => `<tr><td>${esc(IDX.customer.get(r.i.customerId)?.name || r.i.customerId || '—')}</td><td>${money(r.t.total)}</td><td>${money(r.t.paid)}</td><td>${esc(fmtShortDate(r.i.dueDate) || '—')}</td></tr>`).join('');
+    return `<div class="gv-grid">${gvNumTile(money(outstanding), 'Outstanding')}${gvNumTile(unpaid + partial, 'Open invoices')}${gvNumTile(money(collected), 'Collected')}${gvPieTile('Payment status', statusPie)}${gvLeadTile('Biggest balances', topBal)}</div>${gvTableTile('Invoices', INV.length, ['Customer', 'Total', 'Paid', 'Due'], rows)}`;
+  }
+  return `<div class="gv-soon"><span class="gv-soon-ic">${I.graph}</span><p>Graphs for <b>${esc(GRID_CARD_BY_ID[card]?.title || ENTITY_LABEL[card] || card)}</b> are coming next.</p></div>`;
 }
 
 /* ════════════════════════════════════════════════════════════════════════
