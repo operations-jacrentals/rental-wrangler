@@ -2001,9 +2001,9 @@ body.dragging .row.drop-ok { opacity: 1; }
    the bottom-bar toggle flips Yard ⇄ Blued Steel; Yard returns untouched.
    ════════════════════════════════════════════════════════════════════════════ */
 [data-theme="bluedsteel"] {
-  --bg:#0a0d11; --bg-2:#0f1318; --panel:#171d25; --panel-2:#1d242d;
-  --card:#12171e; --card-head:#1a212b;
-  --line:#2c343f; --line-soft:#212834;
+  --bg:#080b12; --bg-2:#0c1320; --panel:#141d2c; --panel-2:#1a2536;
+  --card:#10161f; --card-head:#172234;
+  --line:#283446; --line-soft:#1b2536;
   --txt:#eef2f7; --txt-2:#aab4c1; --txt-3:#717b89; --track:#232b35; --on-orange:#1a1205;
   --accent:#ff7e1f; --accent-soft:rgba(255,126,31,.16); --accent-line:rgba(255,126,31,.55);
   --orange:#ff7e1f; --orange-bg:rgba(255,126,31,.16);
@@ -2014,11 +2014,14 @@ body.dragging .row.drop-ok { opacity: 1; }
   --rivet:#9fb6d6; --rivet-pit:#0b0f14;          /* the one tweak: rivets pick up the blue */
   --tan:#c2925a; --tan-deep:#8a5a2b;
 }
-[data-theme="bluedsteel"] body {                  /* same yard floor — neutral, unchanged */
+[data-theme="bluedsteel"] body {                  /* the FLOOR = a dark version of the blued steel (Jac):
+                                                     the Metal027 plate under a heavy dark wash + a soft blue dawn-glow */
   background:
-    radial-gradient(120% 80% at 50% -12%, rgba(255,122,26,.06), transparent 55%),
-    repeating-linear-gradient(135deg, rgba(255,255,255,.010) 0 2px, transparent 2px 11px),
-    var(--bg);
+    radial-gradient(110% 80% at 32% -14%, rgba(46,78,128,.20), transparent 60%),
+    linear-gradient(rgba(8,11,18,.82), rgba(8,11,18,.82)),
+    url('assets/tex-metal-blued.jpg');
+  background-size: auto, auto, 520px;
+  background-repeat: no-repeat, no-repeat, repeat;
 }
 /* APP-WIDE (Jac): the column container cards are blued plates too, and the list
    rows sit on them as light regions (not opaque tiles). The anchored card below

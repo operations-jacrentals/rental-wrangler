@@ -1063,7 +1063,7 @@ const entityCardOf = (card, recType) => (card === 'shop' ? recType : card);
 
 const state = {
   data: DATA,
-  theme: (() => { try { const t = localStorage.getItem('jactec.theme'); return (t === 'bluedsteel' || t === 'yard') ? t : 'yard'; } catch (e) { return 'yard'; } })(),   // Yard default; the bottom-bar toggle flips Yard ⇄ Blued Steel, per device (Jac 2026-06-15)
+  theme: 'bluedsteel',   // Blued Steel is the only theme now — Yard mode removed (Jac 2026-06-15)
   query: '',
   searchMode: false,
   tabs: [],            // [{ id, card, recId, label, sub, color, session }]
@@ -4561,7 +4561,6 @@ function bottomBarInner() {
   return `
     <button class="iconbtn js-newitem" data-new="receipt">${CARD_ICON.expenses}Receipt</button>
     <span class="bb-sep"></span>
-    <button class="iconbtn js-theme" data-tip="${(THEME_NEXT[state.theme] || THEME_NEXT.yard).tip}">${(THEME_NEXT[state.theme] || THEME_NEXT.yard).icon}</button>
     <button class="iconbtn js-qr" data-tip="Share session (QR)">${I.qr}</button>
     <button class="iconbtn${state.previewsOn ? '' : ' off'} js-previews" data-tip="${state.previewsOn ? 'Hover previews: on' : 'Hover previews: off'}">${state.previewsOn ? I.eye : I.eyeOff}</button>
     <button class="iconbtn js-chat-toggle${state.chat.open ? ' on' : ''}" data-tip="Team chat — flagged comments + tagged context">${I.chat}${(() => { const n = chatUnreadCount(); return n ? `<span class="bb-badge">${n > 9 ? '9+' : n}</span>` : ''; })()}</button>
