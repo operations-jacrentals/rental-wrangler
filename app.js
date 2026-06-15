@@ -5361,11 +5361,22 @@ function renderOverlay() {
       <div class="popup-body req-wrap">${inner}</div>`;
     overlay.appendChild(pop);
   } else if (o.kind === 'notifications') {
-    // §18f Notifications — stubbed scaffold; Jac will spec the contents. Empty for now.
-    const pop = el('div', 'popup'); pop.style.width = '420px';
+    // §18f Notifications — recently-RESOLVED Mr. Wrangler fixes, surfaced in-app so a reporter
+    // sees their glitch got fixed (with the verdict) without ever opening GitHub.
+    const list = wranglerNotifs;
+    const inner = !backendPassword
+      ? '<div class="req-empty">Sign in to see notifications.</div>'
+      : (!notifLoaded && notifLoading ? '<div class="req-empty">Loading…</div>'
+        : (!list.length ? '<div class="req-empty"><span class="req-empty-ic">🔔</span><p>Nothing new.</p><span>When Mr. Wrangler finishes a fix you reported, it shows here — refresh the app to see the change.</span></div>'
+          : list.map((n) => `<div class="req-card">
+              <div class="req-head"><span class="req-num">${n.merged ? '✅' : 'ⓘ'} #${n.number}</span><span class="req-title">${esc(n.title)}</span></div>
+              ${n.verdict ? `<div class="req-text">${esc(n.verdict).replace(/\n+/g, '<br>')}</div>` : '<div class="req-text muted">Resolved — refresh the app to see the change.</div>'}
+              <div class="req-acts"><span class="req-await">${n.closedAt ? 'Resolved ' + esc(fmtShortDate(String(n.closedAt).slice(0, 10))) : 'Resolved'}</span><a class="req-link" href="${esc(n.url)}" target="_blank" rel="noopener">GitHub ↗</a></div>
+            </div>`).join('')));
+    const pop = el('div', 'popup'); pop.style.width = '460px';
     pop.innerHTML = `
-      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${I.bell}</span><h3>Notifications</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
-      <div class="popup-body req-wrap"><div class="req-empty"><span class="req-empty-ic">🔔</span><p>No notifications yet.</p><span>This is where alerts will land (service due, overdue invoices, approvals…). Coming soon.</span></div></div>`;
+      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${I.bell}</span><h3>Notifications${list.length ? ` · ${list.length}` : ''}</h3><span class="spacer"></span><button class="iconbtn js-notif-refresh" data-tip="Refresh">${I.refresh || '⟳'}</button><button class="x js-close">${I.x}</button></div>
+      <div class="popup-body req-wrap">${inner}</div>`;
     overlay.appendChild(pop);
   } else if (o.kind === 'hotkeys') {
     const rows = [
@@ -5925,6 +5936,22 @@ async function refreshWranglerRequests() {
   reqLoading = false;
   render(); if (state.overlay?.kind === 'requests') renderOverlay();
 }
+// §18f Notifications — the in-app feed of recently-RESOLVED Mr. Wrangler fixes (read-only
+// mirror of the Requests inbox). Badge = unseen count; opening the bell marks them seen.
+let wranglerNotifs = [];
+let notifLoaded = false, notifLoading = false;
+const NOTIF_SEEN_KEY = 'jactec.notifsSeen';
+const notifsSeenMax = () => { try { return Number(localStorage.getItem(NOTIF_SEEN_KEY)) || 0; } catch (e) { return 0; } };
+const unseenNotifs = () => { const s = notifsSeenMax(); return wranglerNotifs.filter((n) => (n.number || 0) > s).length; };
+function markNotifsSeen() { const mx = wranglerNotifs.reduce((a, n) => Math.max(a, n.number || 0), notifsSeenMax()); try { localStorage.setItem(NOTIF_SEEN_KEY, String(mx)); } catch (e) {} }
+async function refreshWranglerNotifications() {
+  if (typeof backendPassword === 'undefined' || !backendPassword || notifLoading) return;   // demo/offline → no feed
+  notifLoading = true;
+  try { const r = await backendCall('wranglerNotifications', {}); if (r && r.ok && Array.isArray(r.notifications)) { wranglerNotifs = r.notifications; notifLoaded = true; } } catch (e) {}
+  notifLoading = false;
+  if (state.overlay?.kind === 'notifications') { markNotifsSeen(); renderOverlay(); }   // seen once displayed → badge clears
+  render();
+}
 async function approveRequest(n) {
   try {
     const r = await backendCall('wranglerApprove', { number: n });
@@ -5945,8 +5972,10 @@ async function dismissRequest(n) {
 function fabStackEl() {
   const stack = el('div', 'fab-stack');
   const reqBadge = wranglerRequests.length ? `<span class="fab-badge">${wranglerRequests.length > 9 ? '9+' : wranglerRequests.length}</span>` : '';
+  const nu = unseenNotifs();
+  const notifBadge = nu ? `<span class="fab-badge">${nu > 9 ? '9+' : nu}</span>` : '';
   stack.innerHTML = `
-    <button class="fab js-notifications" data-tip="Notifications">${I.bell}</button>
+    <button class="fab js-notifications" data-tip="Notifications">${I.bell}${notifBadge}</button>
     <button class="fab js-requests" data-tip="Requests for your OK — review what Mr. Wrangler filed">${I.inbox}${reqBadge}</button>`;
   return stack;
 }
@@ -7038,7 +7067,8 @@ function onClick(e) {
   if (closest('.js-wr-act')) { e.stopPropagation(); return wranglerFileAction(Number(closest('.js-wr-act').dataset.mi)); }   // §18d file the fix/request Mr. Wrangler proposed inline
   if (closest('.js-wr-unattach')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'wrangler' && o.attach) { o.attach.splice(Number(closest('.js-wr-unattach').dataset.i), 1); renderOverlay(); } return; }   // §18d drop a pending image attachment
   if (closest('.js-wrangler')) { e.stopPropagation(); return openOverlay({ kind: 'wrangler', card: null, recId: null, recType: null, messages: [], busy: false, error: '', draft: '' }); }
-  if (closest('.js-notifications')) { e.stopPropagation(); return openOverlay({ kind: 'notifications' }); }   // §18f notification bell (stub — spec pending)
+  if (closest('.js-notifications')) { e.stopPropagation(); openOverlay({ kind: 'notifications' }); markNotifsSeen(); refreshWranglerNotifications(); return; }   // §18f notification bell — in-app resolved-fix feed
+  if (closest('.js-notif-refresh')) { e.stopPropagation(); return refreshWranglerNotifications(); }
   if (closest('.js-requests')) { e.stopPropagation(); openOverlay({ kind: 'requests' }); refreshWranglerRequests(); return; }   // §18e approval inbox
   if (closest('.js-req-refresh')) { e.stopPropagation(); return refreshWranglerRequests(); }
   if (closest('.js-req-approve')) { e.stopPropagation(); return approveRequest(Number(closest('.js-req-approve').dataset.n)); }
@@ -9465,6 +9495,7 @@ function finishLoad() {
   loadGlobalViews();                                            // pull the shared, company-wide view set
   loadChats();                                                  // pull the shared team-chat threads (§ team-chat sync)
   refreshWranglerRequests();                                    // §18e populate the approval-inbox badge
+  refreshWranglerNotifications();                               // §18f populate the notification-bell badge
   startRefreshPoll();                                           // live multi-user: poll for others' changes (§ refreshFromBackend)
   if (migrationDirty) { migrationDirty = false; saveSoon(); }   // push parsed first/last names up to the Sheet
   // #edit=<id> — desktop→phone handoff opens that customer's account form (§7.1).
