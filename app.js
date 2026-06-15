@@ -6434,7 +6434,7 @@ function onClick(e) {
     if (cs) {
       const same = cs.totalFilter && cs.totalFilter.col === b.dataset.totCol && String(cs.totalFilter.value) === String(b.dataset.totVal);
       cs.totalFilter = same ? null : { col: b.dataset.totCol, value: b.dataset.totVal };
-      cs.mode = 'list';
+      if (cs.mode === 'standard') cs.mode = 'list';   // Jac: footers shouldn't yank you out of Yard Mode — only leave a record-detail view to show the filtered list
     }
     render(); return;
   }

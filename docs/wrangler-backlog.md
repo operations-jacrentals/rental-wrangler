@@ -5,6 +5,11 @@ Pinned backlog from the 5 sticky-note photos, grouped into like-minded phases.
 
 ## Phase 1 — Bugs / broken controls (auto-fixer candidates)
 > **Decision:** fix all on the feature branch (PR #7), batched with the redesign — not via the live engine (would collide with the branch).
+>
+> **Status (2026-06-15):** ✅ right-click-over-preview · ✅ Complete-Rental locked feedback · ✅ Bill/Don't-bill toggle · ✅ fleet dropdown z-index/preview · ✅ Cancel WO · ✅ footers no longer yank you out of Yard Mode.
+> **📌 PINNED — need live repro to fix safely (don't guess):**
+> - *Units list scrolls to a different spot on Back* + *Unit opens scrolled all the way down* — the per-view scroll-memo logic (render() ~L5600) already lands fresh opens at top; the bug is likely list-height change after back-nav or memo clobbering mid-render. Needs to be watched live to confirm the trigger.
+> - *For-Sale machines in Category Availability* — `isUnitAvailableFor`/`categoryAvailableCount` ALREADY exclude every non-Active fleetStatus (incl. For Sale), so the count is correct. Need to know exactly WHICH view still shows them (category roster list? a calendar? the availability search?) before filtering, so I don't hide units somewhere they should appear.
 - [ ] Right-click not working
 - [ ] Right-click should win over the hover Preview
 - [ ] "Complete Rental" button does nothing
