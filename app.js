@@ -581,7 +581,7 @@ function unitOverbooked(unitId) {
  *  No billable open WO → the unit/invoice pair is simply not a drop target. */
 function unbilledOpenWOForUnit(unitId) {
   const billed = (woId) => DATA.invoices.some((i) => (i.lineItems || []).some((li) => li.kind === 'WO' && li.ref === woId));
-  return DATA.workOrders.filter((w) => w.unitId === unitId && w.phase !== 'Complete' && !billed(w.woId))
+  return DATA.workOrders.filter((w) => w.unitId === unitId && w.phase !== 'Complete' && !w.cancelled && !billed(w.woId))
     .sort((a, b) => (parseISO(b.date) || 0) - (parseISO(a.date) || 0))[0] || null;
 }
 function isUnitAvailableFor(u, startISO, endISO, selfId) {
@@ -611,7 +611,7 @@ function availUnavailable(card, rec) {
 }
 /** Open WO bottleneck (latest non-Complete) for a unit (§7.3 Order Status). */
 function openWOForUnit(unitId) {
-  return DATA.workOrders.filter((w) => w.unitId === unitId && w.phase !== 'Complete')
+  return DATA.workOrders.filter((w) => w.unitId === unitId && w.phase !== 'Complete' && !w.cancelled)
     .sort((a, b) => (parseISO(b.date) || 0) - (parseISO(a.date) || 0))[0] || null;
 }
 /** Rounded countdown text for display (the reference module returns exact
@@ -2116,8 +2116,8 @@ function listTotalsEl(card, rows, session) {
   // v2: the units footer carries the SHOP — open-WO + parts-ordered counts
   // (the standalone Inspections/WO tabs went away; Jac call #1)
   if (card === 'units') {
-    const openBy = new Set(DATA.workOrders.filter((w) => w.phase !== 'Complete').map((w) => w.unitId));
-    const ordBy = new Set(DATA.workOrders.filter((w) => w.phase !== 'Complete' && (w.phase === 'Part Ordered' || (w.lineItems || []).some((l) => l.phase === 'Part Ordered'))).map((w) => w.unitId));
+    const openBy = new Set(DATA.workOrders.filter((w) => w.phase !== 'Complete' && !w.cancelled).map((w) => w.unitId));
+    const ordBy = new Set(DATA.workOrders.filter((w) => w.phase !== 'Complete' && !w.cancelled && (w.phase === 'Part Ordered' || (w.lineItems || []).some((l) => l.phase === 'Part Ordered'))).map((w) => w.unitId));
     const nOpen = rows.filter((u) => openBy.has(u.unitId)).length;
     const nOrd = rows.filter((u) => ordBy.has(u.unitId)).length;
     if (nOpen) { const on = tf && tf.col === '__wo' && tf.value === 'open'; chips.push({ k: '__wo', html: `<button class="tot-chip c-red js-tot-chip${on ? ' on' : ''}" data-r="R4" data-tot-card="units" data-tot-col="__wo" data-tot-val="open">${nOpen} WOs Open</button>` }); }
@@ -2142,7 +2142,7 @@ function applyTotalFilter(card, rows, session) {
   const cs = session.cards[card]; if (!cs || !cs.totalFilter) return rows;
   if (cs.totalFilter.col === '__wo') {           // v2 synthetic footer chips: units with shop work
     const want = cs.totalFilter.value;
-    const ids = new Set(DATA.workOrders.filter((w) => w.phase !== 'Complete' && (want === 'open' || w.phase === 'Part Ordered' || (w.lineItems || []).some((l) => l.phase === 'Part Ordered'))).map((w) => w.unitId));
+    const ids = new Set(DATA.workOrders.filter((w) => w.phase !== 'Complete' && !w.cancelled && (want === 'open' || w.phase === 'Part Ordered' || (w.lineItems || []).some((l) => l.phase === 'Part Ordered'))).map((w) => w.unitId));
     return rows.filter((rec) => ids.has(rec.unitId));
   }
   if (cs.totalFilter.col === '__cond') return rows.filter((rec) => rec.inspectionStatus === cs.totalFilter.value);   // the Not Ready tab chip
@@ -2269,7 +2269,7 @@ function notesSection(card, rec, idField, field = 'notes') {
 }
 
 /* ── §12.4v2 BUILD helpers (spec: drafts/units-rentals-v2.html + HANDOFF) ── */
-function openWOsForUnit(unitId) { return DATA.workOrders.filter((w) => w.unitId === unitId && w.phase !== 'Complete'); }
+function openWOsForUnit(unitId) { return DATA.workOrders.filter((w) => w.unitId === unitId && w.phase !== 'Complete' && !w.cancelled); }
 function latestInspForUnit(unitId) {
   const ls = DATA.inspections.filter((n) => n.unitId === unitId).sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
   return ls[0] || null;
@@ -2277,6 +2277,7 @@ function latestInspForUnit(unitId) {
 /* worst open bottleneck across a WO (GZ-14 severity: Needed → ? → ETA → local) */
 const WO_SEV = { 'Part Needed': 0, 'Part Needed?': 1, 'Part Ordered': 2, 'Part is Local': 3, 'No Part Needed': 4 };
 function woBottleneck(w) {
+  if (w.cancelled) return { label: 'Cancelled', color: 'gray' };
   if (w.phase === 'Complete') return { label: 'Complete', color: 'green' };
   const lines = w.lineItems || [];
   const open = lines.filter((l) => l.phase !== 'Complete').map((l) => ({ ph: l.phase, eta: l.eta }));
@@ -2518,8 +2519,9 @@ function woSectionHtml(w) {
     ${lines || '<div class="kv"><span class="muted" style="font-size:12px">No line items yet</span></div>'}
     <div class="wofoot">
       <span class="derived">Parts ${money(Math.max(0, billed - laborBilled))} + Hrs ${money(laborBilled)} = ${money(billed)}</span>
-      ${addBtn('Invoice', { link: true, icon: CARD_ICON.invoices, js: 'js-bill-wo', h: 26, data: { rec: w.woId } })}
-      ${actionPill('commit', 'Complete WO', { js: 'js-wo-complete', h: 26, data: { rec: w.woId } })}
+      ${w.cancelled
+        ? `<span class="pill c-gray" style="height:26px;font-size:11px" data-tip="This work order is cancelled">Cancelled</span>${actionPill('commit', 'Reopen WO', { js: 'js-wo-reopen', h: 26, data: { rec: w.woId } })}`
+        : `${addBtn('Invoice', { link: true, icon: CARD_ICON.invoices, js: 'js-bill-wo', h: 26, data: { rec: w.woId } })}<button class="pill ghost js-wo-cancel" data-r="R18" data-rec="${esc(w.woId)}" style="height:26px;font-size:11px">Cancel WO</button>${actionPill('commit', 'Complete WO', { js: 'js-wo-complete', h: 26, data: { rec: w.woId } })}`}
     </div>
   </div>`;
 }
@@ -3486,7 +3488,7 @@ function memberCount(member, session) {
 function shopAlertCount(member, session) {
   let items = []; try { items = shopItemsByType(session)[member] || []; } catch { return 0; }
   if (member === 'inspections') return items.filter((n) => !inspComplete(n)).length;
-  if (member === 'workOrders') return items.filter((w) => w.phase !== 'Complete').length;
+  if (member === 'workOrders') return items.filter((w) => w.phase !== 'Complete' && !w.cancelled).length;
   if (member === 'serviceOrders') return items.filter((u) => { const s = topServiceForUnit(u); return u.washRequested || (s && s.remaining < 0); }).length;
   return 0;
 }
@@ -3727,7 +3729,7 @@ const PLUS_NEW = new Set(['rentals', 'invoices', 'customers']);
  *  archive: resolved inspections + completed WOs (services aren't archived here). */
 function shopItemMode(ty, rec, complete) {
   if (ty === 'inspections') return complete ? inspComplete(rec) : !inspComplete(rec);
-  if (ty === 'workOrders') return complete ? rec.phase === 'Complete' : rec.phase !== 'Complete';
+  if (ty === 'workOrders') return complete ? (rec.phase === 'Complete' || rec.cancelled) : (rec.phase !== 'Complete' && !rec.cancelled);   // cancelled = terminal: lives in the "done" list (findable + reopenable), out of "open"
   if (ty === 'serviceOrders') return !complete;
   return true;
 }
@@ -5017,7 +5019,7 @@ function wranglerDigest() {
     return `  ${i.invoiceId} · ${cust ? cust.name : (i.customerId || '—')} · ${money(t.balance)} · due ${i.dueDate || '—'}${od}`;
   }).join('\n') + more(open, 'open invoices'));
 
-  const owos = wo.filter((x) => x.phase !== 'Complete');
+  const owos = wo.filter((x) => x.phase !== 'Complete' && !x.cancelled);
   if (owos.length) lines.push('\nOPEN WORK ORDERS (id · unit · phase · report):\n' + owos.slice(0, CAP).map((x) => {
     const un = IDX.unit.get(x.unitId); return `  ${x.woId} · ${un ? un.name : (x.unitId || '—')} · ${x.phase || '—'} · ${x.woReport || x.description || '—'}`;
   }).join('\n') + more(owos, 'work orders'));
@@ -6361,6 +6363,8 @@ function onClick(e) {
     return;
   }
   if (closest('.js-wo-complete')) { const b = closest('.js-wo-complete'); return completeWOAttempt(b.dataset.rec); }
+  if (closest('.js-wo-cancel')) { const b = closest('.js-wo-cancel'); const w = IDX.wo.get(b.dataset.rec); if (w) { w.cancelled = true; reindex('workOrders', w); logAction(w, 'Work order cancelled'); toast('Work order cancelled — find it in the done list to reopen.'); reanchorRender(); } return; }   // Jac: can't cancel WOs (reversible flag, terminal like Complete)
+  if (closest('.js-wo-reopen')) { const b = closest('.js-wo-reopen'); const w = IDX.wo.get(b.dataset.rec); if (w) { w.cancelled = false; reindex('workOrders', w); logAction(w, 'Work order reopened'); toast('Work order reopened.'); reanchorRender(); } return; }
   if (closest('.js-wodone-confirm')) { const b = closest('.js-wodone-confirm'); state.overlay = null; setWoPhase(b.dataset.rec, 'Complete'); renderOverlay(); return; }
   if (closest('.js-hchip')) { const b = closest('.js-hchip'); const o = state.overlay; if (o?.kind === 'board') { o.histKind = o.histKind === b.dataset.kind ? null : b.dataset.kind; return renderOverlay(); } const session = activeSession(); const cs = session.cards[b.dataset.card] || session.cards.shop; cs.histKind = cs.histKind === b.dataset.kind ? null : b.dataset.kind; return render(); }
   if (closest('.js-complete-rental')) {
@@ -7801,7 +7805,7 @@ function setWoLinePhase(woId, idx, val) {
   // is done, woBottleneck shows "Ready to complete" and the WO stays open until the
   // button is clicked; no auto-complete, no cascade here.
   const open = w.lineItems.filter((li) => li.phase !== 'Complete');
-  if (w.phase !== 'Complete' && open.length) w.phase = open[open.length - 1].phase;
+  if (w.phase !== 'Complete' && !w.cancelled && open.length) w.phase = open[open.length - 1].phase;
   reindex('workOrders', w);
   logAction(w, `${w.lineItems[idx].part} → ${getStatus('woPhase', val).label}`);
   toast(`Line → ${getStatus('woPhase', val).label}`);
