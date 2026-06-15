@@ -1193,6 +1193,7 @@ const I = {
   graph: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 3v17h17"/><rect x="7.5" y="11" width="2.6" height="6" rx="0.6" fill="currentColor" stroke="none"/><rect x="12" y="7.5" width="2.6" height="9.5" rx="0.6" fill="currentColor" stroke="none"/><rect x="16.5" y="13" width="2.6" height="4" rx="0.6" fill="currentColor" stroke="none"/></svg>',
   sliders: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h10M18 6h2M4 12h2M10 12h10M4 18h12M20 18h0M16 18h4"/><circle cx="16" cy="6" r="2"/><circle cx="8" cy="12" r="2"/><circle cx="14" cy="18" r="2"/></svg>',
   inbox: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>',
+  bell: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>',
   eye: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>',
   eyeOff: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.9 4.24A9.1 9.1 0 0 1 12 4c6.5 0 10 7 10 7a13.2 13.2 0 0 1-2 2.6M6.6 6.6A13.2 13.2 0 0 0 2 11s3.5 7 10 7a9.1 9.1 0 0 0 4-.9"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2M2 2l20 20"/></svg>',
   feedback: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M9.5 9.5h5M9.5 12.7h3"/></svg>',
@@ -4126,7 +4127,6 @@ function bottomBarInner() {
     <button class="iconbtn${state.previewsOn ? '' : ' off'} js-previews" data-tip="${state.previewsOn ? 'Hover previews: on' : 'Hover previews: off'}">${state.previewsOn ? I.eye : I.eyeOff}</button>
     <button class="iconbtn js-chat-toggle${state.chat.open ? ' on' : ''}" data-tip="Team chat — flagged comments + tagged context">${I.chat}${(() => { const n = chatUnreadCount(); return n ? `<span class="bb-badge">${n > 9 ? '9+' : n}</span>` : ''; })()}</button>
     <button class="iconbtn js-wrangler" data-tip="Mr. Wrangler — ask the yard AI, or report a bug to fix" style="font-size:16px">🤠</button>
-    <button class="iconbtn js-requests" data-tip="Requests for your OK — review what Mr. Wrangler filed">${I.inbox}${wranglerRequests.length ? `<span class="bb-badge">${wranglerRequests.length > 9 ? '9+' : wranglerRequests.length}</span>` : ''}</button>
     <button class="iconbtn js-hotkeys" data-tip="Mouse &amp; keyboard shortcuts">${I.mouse}</button>
     <button class="iconbtn js-adminlock${adminUnlocked() ? ' on' : ''}" data-tip="${adminUnlocked() ? 'Admin tools unlocked — click to lock' : 'Admin tools — click to unlock'}">${adminUnlocked() ? I.lockOpen : I.lock}</button>
     ${adminUnlocked() ? `<button class="iconbtn js-lint${document.body.classList.contains('rw-lint') ? ' on' : ''}" data-tip="Design lint — flash anything that bypassed the UI builders (R0)">${I.eye}</button>
@@ -4810,6 +4810,13 @@ function renderOverlay() {
       <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${I.inbox}</span><h3>Requests${list.length ? ` · ${list.length}` : ''}</h3><span class="spacer"></span><button class="iconbtn js-req-refresh" data-tip="Refresh">${I.refresh || '⟳'}</button><button class="x js-close">${I.x}</button></div>
       <div class="popup-body req-wrap">${inner}</div>`;
     overlay.appendChild(pop);
+  } else if (o.kind === 'notifications') {
+    // §18f Notifications — stubbed scaffold; Jac will spec the contents. Empty for now.
+    const pop = el('div', 'popup'); pop.style.width = '420px';
+    pop.innerHTML = `
+      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${I.bell}</span><h3>Notifications</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
+      <div class="popup-body req-wrap"><div class="req-empty"><span class="req-empty-ic">🔔</span><p>No notifications yet.</p><span>This is where alerts will land (service due, overdue invoices, approvals…). Coming soon.</span></div></div>`;
+    overlay.appendChild(pop);
   } else if (o.kind === 'hotkeys') {
     const rows = [
       { d: 'click',    n: 'Click',              t: 'Open a record to view it — in its own card, nothing else moves.' },
@@ -5369,6 +5376,15 @@ async function dismissRequest(n) {
   } catch (e) { toast('Couldn’t dismiss — check the connection.'); }
   render(); if (state.overlay?.kind === 'requests') renderOverlay();
 }
+// The floating bottom-right cluster — notification bell (stub for now) + Requests inbox.
+function fabStackEl() {
+  const stack = el('div', 'fab-stack');
+  const reqBadge = wranglerRequests.length ? `<span class="fab-badge">${wranglerRequests.length > 9 ? '9+' : wranglerRequests.length}</span>` : '';
+  stack.innerHTML = `
+    <button class="fab js-notifications" data-tip="Notifications">${I.bell}</button>
+    <button class="fab js-requests" data-tip="Requests for your OK — review what Mr. Wrangler filed">${I.inbox}${reqBadge}</button>`;
+  return stack;
+}
 // Read the customer-form inputs back into the draft (call before any re-render so
 // typed values survive a selfie/signature/pill change).
 function ncSyncInputs() {
@@ -5829,6 +5845,9 @@ function render() {
   }
   // §17 — the internal team dock floats bottom-right above the bar when open
   if (state.chat.open) { const d = el('div', 'chat-dock', ''); d.dataset.drop = 'chat'; d.innerHTML = chatDockEl(); $('#app').appendChild(d); }
+  // §18e — floating bottom-right cluster: notification bell + the Requests inbox.
+  // Hidden while the team dock owns that corner (Jac 2026-06-15).
+  if (!state.chat.open) $('#app').appendChild(fabStackEl());
   applyTitles();   // full text on hover wherever we truncate (custom ~0.5s tooltip)
   scoreTick();     // §11 gamification — pop +X over any ring whose metric just rose
   if (DRAG.active) reapplyDragDecor();   // §15c — re-stamp drop targets after ANY mid-drag rebuild (the card swap IS a render)
@@ -6434,6 +6453,7 @@ function onClick(e) {
   if (closest('.js-wr-act')) { e.stopPropagation(); return wranglerFileAction(Number(closest('.js-wr-act').dataset.mi)); }   // §18d file the fix/request Mr. Wrangler proposed inline
   if (closest('.js-wr-unattach')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'wrangler' && o.attach) { o.attach.splice(Number(closest('.js-wr-unattach').dataset.i), 1); renderOverlay(); } return; }   // §18d drop a pending image attachment
   if (closest('.js-wrangler')) { e.stopPropagation(); return openOverlay({ kind: 'wrangler', card: null, recId: null, recType: null, messages: [], busy: false, error: '', draft: '' }); }
+  if (closest('.js-notifications')) { e.stopPropagation(); return openOverlay({ kind: 'notifications' }); }   // §18f notification bell (stub — spec pending)
   if (closest('.js-requests')) { e.stopPropagation(); openOverlay({ kind: 'requests' }); refreshWranglerRequests(); return; }   // §18e approval inbox
   if (closest('.js-req-refresh')) { e.stopPropagation(); return refreshWranglerRequests(); }
   if (closest('.js-req-approve')) { e.stopPropagation(); return approveRequest(Number(closest('.js-req-approve').dataset.n)); }

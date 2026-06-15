@@ -868,6 +868,19 @@ input { font-family: inherit; }
 .req-empty p { font-size: 14px; color: var(--txt-2); margin: 8px 0 4px; }
 .req-empty span { font-size: 12px; }
 
+/* §18e/f floating bottom-right cluster — notification bell + Requests inbox */
+.fab-stack { position: fixed; right: 16px; bottom: 16px; z-index: 70; display: flex; flex-direction: column; gap: 10px; }
+.fab { position: relative; width: 46px; height: 46px; border-radius: 50%; cursor: pointer; border: 1px solid var(--line);
+  background: linear-gradient(180deg, var(--card-head), var(--card)); color: var(--txt-2, var(--txt));
+  display: grid; place-items: center; box-shadow: 0 6px 18px -6px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.08); transition: transform .1s, border-color .1s; }
+.fab:hover { border-color: var(--accent-line); color: var(--txt); transform: translateY(-1px); }
+.fab:focus-visible { outline: 2px solid var(--accent-line); outline-offset: 2px; }
+.fab svg { width: 21px; height: 21px; }
+.fab-badge { position: absolute; top: -3px; right: -3px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 99px;
+  background: var(--accent); color: #1a1205; font-size: 11px; font-weight: 800; display: grid; place-items: center; box-shadow: 0 0 0 2px var(--bg); }
+.is-phone .fab-stack { bottom: 76px; }   /* clear the mobile dock */
+@media (prefers-reduced-motion: reduce) { .fab:hover { transform: none; } }
+
 /* §17 INTERNAL TEAM DOCK (Jac, Phase 7) — headerless: tagged-element pill rail on top,
    chat bubbles, role tab-bar at the bottom. Floats bottom-right. Yard data-plate steel. */
 .bottombar .iconbtn { position: relative; }
