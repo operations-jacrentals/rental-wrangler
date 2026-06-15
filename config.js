@@ -110,6 +110,7 @@ const RAW_STATUS = {
     'No Part Needed': { label: 'No Part Needed', color: 'yellow' },
     'Part Needed':    { label: 'Part Needed',    color: 'red'    },
     'Part is Local':  { label: 'Part is Local',  color: 'yellow' },
+    'Part in Stock':  { label: 'Part in Stock',  color: 'green'  },
     'Part Ordered':   { label: 'Part Ordered',   color: 'blue'   },
     'Complete':       { label: 'Complete',       color: 'green'  },
   },

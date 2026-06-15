@@ -2276,7 +2276,7 @@ function latestInspForUnit(unitId) {
   return ls[0] || null;
 }
 /* worst open bottleneck across a WO (GZ-14 severity: Needed → ? → ETA → local) */
-const WO_SEV = { 'Part Needed': 0, 'Part Needed?': 1, 'Part Ordered': 2, 'Part is Local': 3, 'No Part Needed': 4 };
+const WO_SEV = { 'Part Needed': 0, 'Part Needed?': 1, 'Part Ordered': 2, 'Part is Local': 3, 'Part in Stock': 3.5, 'No Part Needed': 4 };
 function woBottleneck(w) {
   if (w.cancelled) return { label: 'Cancelled', color: 'gray' };
   if (w.phase === 'Complete') return { label: 'Complete', color: 'green' };
@@ -2503,7 +2503,7 @@ function woSectionHtml(w) {
   const typeFlag = w.woType === 'Field Call'
     ? flagEl('Field Call', 'red', { icon: CARD_ICON.rentals, card: w.customerId ? 'customers' : null, recId: w.customerId, title: 'WO type: Field Call' })
     : w.woType === 'Failed'
-      ? flagEl('Failed Inspection', 'red', { icon: CARD_ICON.inspections, title: 'WO type: failed inspection' })
+      ? flagEl('Failed Inspection', 'red', { icon: CARD_ICON.inspections, card: w.inspectionId ? 'inspections' : null, recId: w.inspectionId || null, title: w.inspectionId ? 'Open the failed inspection' : 'WO type: failed inspection' })
       : flagEl(w.assignedMechanic || 'Mechanic', 'gray', { icon: CARD_ICON.customers, title: 'WO type: opened by a mechanic' });
   const lines = (w.lineItems || []).map((li, idx) => {
     const ph = getStatus('woPhase', li.phase);
@@ -5029,6 +5029,7 @@ function renderOverlay() {
   }
   root.appendChild(overlay);
   if (o.kind === 'quickCust') document.querySelector('.overlay .js-qc-first')?.focus();
+  if (o.kind === 'partform') document.querySelector('.overlay .js-pf2-desc')?.focus();   // Jac: Part/Task field focused by default
   if (o.kind === 'newCustomer') setupSignaturePad();
   if (o.kind === 'payment') setupPayAlloc();   // live counter for the §19 allocation rows
   if (o.kind === 'addCard') { const cc = IDX.customer.get(o.customerId); if (cc && cc.signature && cc.selfie) mountCardElement(); }   // only mount with consent (nothing to orphan otherwise)
@@ -7865,10 +7866,16 @@ const auditVal = (v) => { const s = String(v ?? '').trim(); return s ? (s.length
 /* §12.6 — WO phase changes (header pill + per-line journey pills) via a woPhase
    dropdown; reaching Complete reverts a Failed unit to Not Ready (§9). */
 function woCompleteCascade(w) {
-  // a completed Failed-inspection OR Field-Call WO re-opens the unit for inspection
+  // a completed Failed-inspection OR Field-Call WO re-opens the unit for inspection —
+  // but ONLY once every blocking failure/field-call WO is done (Jac: a failed unit can't
+  // move to Not Ready until THAT failure's WO is complete; other completed WOs don't count).
   if ((w.woType === 'Failed' || w.woType === 'Field Call') && w.unitId) {
     const u = IDX.unit.get(w.unitId);
-    if (u && u.inspectionStatus === 'Failed') { u.inspectionStatus = 'Not Ready'; reindex('units', u); logAction(u, `Re-inspect needed — repairs complete (${w.woReport})`); return ' — unit → Not Ready (re-inspect)'; }
+    if (u && u.inspectionStatus === 'Failed') {
+      const stillBlocking = openWOsForUnit(u.unitId).some((o) => o.woType === 'Failed' || o.woType === 'Field Call');   // w is already Complete here, so it's excluded
+      if (stillBlocking) return '';
+      u.inspectionStatus = 'Not Ready'; reindex('units', u); logAction(u, `Re-inspect needed — repairs complete (${w.woReport})`); return ' — unit → Not Ready (re-inspect)';
+    }
   }
   return '';
 }
@@ -8153,7 +8160,7 @@ function setInspBill(id, val) {
 function autoWOFromInspection(n) {
   const id = 'WO-INS' + (state.seq++);
   const u = IDX.unit.get(n.unitId);
-  const wo = { woId: id, unitId: n.unitId, customerId: n.billCustomer === 'Yes' ? n.customerId : null, woReport: 'From failed inspection', woType: 'Failed', description: `Auto-created from inspection ${n.inspectionId}.`, phase: 'Part Needed?', billCustomer: n.billCustomer || 'No', date: TODAY_ISO, eta: '', unitHoursAtCreation: u?.currentHours || 0, assignedMechanic: '', laborHours: 0, lineItems: [], mock: true };
+  const wo = { woId: id, unitId: n.unitId, inspectionId: n.inspectionId, customerId: n.billCustomer === 'Yes' ? n.customerId : null, woReport: 'From failed inspection', woType: 'Failed', description: `Auto-created from inspection ${n.inspectionId}.`, phase: 'Part Needed?', billCustomer: n.billCustomer || 'No', date: TODAY_ISO, eta: '', unitHoursAtCreation: u?.currentHours || 0, assignedMechanic: '', laborHours: 0, lineItems: [], mock: true };
   DATA.workOrders.push(wo); IDX.wo.set(id, wo); reindex('workOrders', wo);
   n.woId = id;
   return wo;
@@ -8659,6 +8666,11 @@ function boot() {
     if (actBusy || !e.target.classList?.contains('js-act-in')) return;
     const v = e.target.value.trim();
     actBusy = true; commitAction(e.target.dataset.rec, v, false); actBusy = false;
+  });
+  // Jac: pressing Enter in the +Part/Task box confirms "Add line".
+  document.addEventListener('keydown', (e) => {
+    if (state.overlay?.kind !== 'partform') return;
+    if (e.key === 'Enter' && e.target.matches && e.target.matches('.js-pf2-desc, .js-pf2-cost, .js-pf2-hours, .js-pf2-url, .js-pf2-vendor')) { e.preventDefault(); savePartForm(); }
   });
   document.addEventListener('mousemove', onInspectMove);   // Design Inspector hover tag (no-op unless state.inspect)
   // Board View formula cells: reveal the raw "=…" on focus, recompute on blur.
