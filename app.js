@@ -1676,12 +1676,16 @@ const ROW_META = {
 };
 
 /* row-background visualization layers (§6.2 #8) → returns inline-style div */
-// Sold + Inactive units are hidden from the Units list & searches; the "Sold/Inactive"
-// sort surfaces ONLY them. (#2)
+// Sold + Inactive units are hidden from the Units list & searches by default; the
+// "Sold/Inactive" sort surfaces ONLY them, and "All Units (any status)" shows every
+// fleet status together (Active/For Sale/Sold/Inactive). (#2)
 const isSoldInactive = (u) => u.fleetStatus === 'Sold' || u.fleetStatus === 'Inactive';
-const unitsVisible = (rows, cs) => (cs && cs.sort && cs.sort.field === 'soldInactive')
-  ? rows.filter(isSoldInactive)
-  : rows.filter((u) => !isSoldInactive(u));
+const unitsVisible = (rows, cs) => {
+  const f = cs && cs.sort && cs.sort.field;
+  if (f === 'allFleet') return rows;                            // show everything, any fleet status
+  if (f === 'soldInactive') return rows.filter(isSoldInactive); // only Sold/Inactive
+  return rows.filter((u) => !isSoldInactive(u));                // default: hide Sold + Inactive
+};
 function rowViz(card, rec) {
   // §10 availability tint takes precedence while a rental window is in scope
   if (availWin && availUnavailable(card, rec)) return `<div class="row-viz" style="background:var(--red-bg)"></div>`;
