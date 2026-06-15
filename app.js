@@ -6882,13 +6882,13 @@ function onClick(e) {
   // inspection gated flow (§9): Wash → Checklist → result
   if (closest('.js-open-insp')) { e.stopPropagation(); return openOverlay({ kind: 'inspection', recId: closest('.js-open-insp').dataset.rec }); }
   if (closest('[data-ctx]')) return runCtxAction(closest('[data-ctx]').dataset.ctx);   // R20 context menu
-  if (closest('.js-notready')) {   // the units "Not Ready" filter chip — it's just a filter
+  if (closest('.js-notready')) {   // the units "Not Ready" chip — A1: route into the Units search bar as a removable pill, not a sticky mode
     e.stopPropagation();
     const s = activeSession();
     if (s.cols && s.cols.left) s.cols.left = 'units';
-    s.cards.units.mode = 'list'; s.cards.units.recId = null;
-    s.cards.units.totalFilter = { col: '__cond', value: 'Not Ready' };
-    return render();
+    s.cards.units.mode = 'list'; s.cards.units.recId = null; s.cards.units.recType = null;
+    addColFilter('units', '__cond', 'Not Ready');
+    return;
   }
   // ── v2 build: condition/wash segs · yard captures · site popup · WO complete · history chips ──
   if (closest('.js-cond')) { const b = closest('.js-cond'); return setUnitCondition(b.dataset.rec, b.dataset.val); }
