@@ -1036,7 +1036,7 @@ const entityCardOf = (card, recType) => (card === 'shop' ? recType : card);
 
 const state = {
   data: DATA,
-  theme: 'yard',   // LOCKED to Yard for now — dark/ranch/light hidden (toggle removed); Jac 2026-06-14. Revive: restore the per-device read + the bottom-bar js-theme button.
+  theme: (() => { try { const t = localStorage.getItem('jactec.theme'); return (t === 'bluedsteel' || t === 'yard') ? t : 'yard'; } catch (e) { return 'yard'; } })(),   // Yard default; the bottom-bar toggle flips Yard ⇄ Blued Steel, per device (Jac 2026-06-15)
   query: '',
   searchMode: false,
   tabs: [],            // [{ id, card, recId, label, sub, color, session }]
@@ -1482,6 +1482,7 @@ const I = {
   moon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A8 8 0 1 1 11.2 3 6 6 0 0 0 21 12.8z"/></svg>',
   hardhat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M3 18a9 9 0 0 1 18 0z"/><path d="M2 18h20"/><path d="M10 9V6a2 2 0 0 1 2-2 2 2 0 0 1 2 2v3"/><path d="M5 14V12M19 14V12"/></svg>',
   horseshoe: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3.5C3.5 6 3 11 5 15.5 6.2 18.3 9 20 12 20s5.8-1.7 7-4.5C21 11 20.5 6 17 3.5"/><path d="M6.5 19.5l-.5 1.5M17.5 19.5l.5 1.5"/></svg>',
+  bluesteel: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/><circle cx="6.4" cy="6.5" r=".7" fill="currentColor" stroke="none"/><circle cx="17.6" cy="6.5" r=".7" fill="currentColor" stroke="none"/></svg>',
   qr: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h3v3h-3zM20 14v7M14 20h7"/></svg>',
   mouse: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="7"/><path d="M12 6v4"/></svg>',
   video: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="13" height="12" rx="2"/><path d="m15 10 6-3v10l-6-3z"/></svg>',
@@ -4519,10 +4520,12 @@ function headerEl() {
 /* Theme cycle: dark → yard → light → dark. The bottom-bar button shows the icon
    + tooltip of the theme you'll switch TO next (matching the old sun/moon convention). */
 const THEME_NEXT = {
-  dark:  { next: 'yard',  icon: I.hardhat,   tip: 'Yard mode' },
-  yard:  { next: 'ranch', icon: I.horseshoe, tip: 'Ranch mode' },
-  ranch: { next: 'light', icon: I.sun,       tip: 'Light mode' },
-  light: { next: 'dark',  icon: I.moon,      tip: 'Dark mode' },
+  yard:       { next: 'bluedsteel', icon: I.bluesteel, tip: 'Blued Steel' },
+  bluedsteel: { next: 'yard',       icon: I.hardhat,   tip: 'Yard mode' },
+  // dormant fallbacks — the live toggle is the Yard ⇄ Blued Steel flip; any stale stored theme recovers to Yard
+  dark:  { next: 'yard', icon: I.hardhat, tip: 'Yard mode' },
+  ranch: { next: 'yard', icon: I.hardhat, tip: 'Yard mode' },
+  light: { next: 'yard', icon: I.hardhat, tip: 'Yard mode' },
 };
 /** The action toolbar — moved to a fixed bottom bar (Dashboard / +New / tools). */
 function bottomBarInner() {
@@ -4531,6 +4534,7 @@ function bottomBarInner() {
   return `
     <button class="iconbtn js-newitem" data-new="receipt">${CARD_ICON.expenses}Receipt</button>
     <span class="bb-sep"></span>
+    <button class="iconbtn js-theme" data-tip="${(THEME_NEXT[state.theme] || THEME_NEXT.yard).tip}">${(THEME_NEXT[state.theme] || THEME_NEXT.yard).icon}</button>
     <button class="iconbtn js-qr" data-tip="Share session (QR)">${I.qr}</button>
     <button class="iconbtn${state.previewsOn ? '' : ' off'} js-previews" data-tip="${state.previewsOn ? 'Hover previews: on' : 'Hover previews: off'}">${state.previewsOn ? I.eye : I.eyeOff}</button>
     <button class="iconbtn js-chat-toggle${state.chat.open ? ' on' : ''}" data-tip="Team chat — flagged comments + tagged context">${I.chat}${(() => { const n = chatUnreadCount(); return n ? `<span class="bb-badge">${n > 9 ? '9+' : n}</span>` : ''; })()}</button>
