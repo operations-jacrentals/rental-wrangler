@@ -1247,7 +1247,7 @@ let hoverTimer = null, hoverEl = null, hoverNode = null, hoverGrace = null;
 const lastMouse = { x: 0, y: 0 };
 /* previews arm ONLY on real pills/badges/flags ([data-pill-card]) or the row EYE —
    never the row body / empty space (Jac 2026-06-12) */
-const hoverTarget = (n) => (n && n.closest ? n.closest('[data-pill-card], .js-roweye') : null);
+const hoverTarget = (n) => (n && n.closest ? n.closest('[data-pill-card], .js-roweye, .r-title') : null);
 function recForHover(target) {
   let card, recId, recType;
   if (target.classList && target.classList.contains('js-roweye')) {
@@ -1255,7 +1255,7 @@ function recForHover(target) {
     card = row.dataset.card; recId = row.dataset.rec; recType = row.dataset.type;
   }
   else if (target.dataset.pillCard) { card = target.dataset.pillCard; recId = target.dataset.pillRec; }
-  else { card = target.dataset.card; recId = target.dataset.rec; recType = target.dataset.type; }
+  else { const src = (target.closest && target.closest('.row')) || target; card = src.dataset.card; recId = src.dataset.rec; recType = src.dataset.type; }   // .r-title (list-view name) → resolve via its row (Jac B2)
   if (recId == null) return null;
   const ec = SHOP_TYPES.includes(card) ? card : (card === 'shop' ? recType : card);
   const rec = recOf(ec, recId);
@@ -1404,6 +1404,8 @@ const I = {
   table: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9.5h18M3 15h18M9 4v16"/></svg>',
   graph: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 3v17h17"/><rect x="7.5" y="11" width="2.6" height="6" rx="0.6" fill="currentColor" stroke="none"/><rect x="12" y="7.5" width="2.6" height="9.5" rx="0.6" fill="currentColor" stroke="none"/><rect x="16.5" y="13" width="2.6" height="4" rx="0.6" fill="currentColor" stroke="none"/></svg>',
   sliders: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h10M18 6h2M4 12h2M10 12h10M4 18h12M20 18h0M16 18h4"/><circle cx="16" cy="6" r="2"/><circle cx="8" cy="12" r="2"/><circle cx="14" cy="18" r="2"/></svg>',
+  inbox: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>',
+  bell: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>',
   eye: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>',
   eyeOff: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.9 4.24A9.1 9.1 0 0 1 12 4c6.5 0 10 7 10 7a13.2 13.2 0 0 1-2 2.6M6.6 6.6A13.2 13.2 0 0 0 2 11s3.5 7 10 7a9.1 9.1 0 0 0 4-.9"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2M2 2l20 20"/></svg>',
   feedback: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M9.5 9.5h5M9.5 12.7h3"/></svg>',
@@ -1647,8 +1649,9 @@ function openCtxMenuAt(target, x, y) {
   if (!target || !target.closest) return;
   if (target.closest('input, textarea, .inline-input')) return;
   const card = target.closest('.card'); if (!card && !target.closest('.overlay .popup')) return;
-  if (state.winpicker) return;
-  const leaf = target.closest('.pill, .add-field, .flag, .linkname, .inv-line-link, .req, .seg, button, .inline-edit, .jnode, .x, a, .d-title, .derived');
+  // While the rental-window picker is open, keep right-click → BACK working; just suppress
+  // the element context menu (it gets in the way of picking). (Jac B5, 2026-06-15)
+  const leaf = state.winpicker ? null : target.closest('.pill, .add-field, .flag, .linkname, .inv-line-link, .req, .seg, button, .inline-edit, .jnode, .x, a, .d-title, .r-title, .derived');
   const hit = leaf ? (ruleOf(leaf) || { r: null, el: leaf }) : null;
   if (hit) return openCtxMenu({ clientX: x, clientY: y }, hit);
   if (!card) return;
@@ -2595,11 +2598,11 @@ function rentalAmt(r) {
 /* spend bucketed by month for the last n months (ending this month) */
 function customerMonthly(c, n = 9) {
   const today = parseISO(TODAY_ISO), out = [];
-  for (let i = n - 1; i >= 0; i--) { const dt = new Date(today.getFullYear(), today.getMonth() - i, 1); out.push({ y: dt.getFullYear(), m: dt.getMonth(), label: ACT_MONTHS[dt.getMonth()], total: 0 }); }
+  for (let i = n - 1; i >= 0; i--) { const dt = new Date(today.getFullYear(), today.getMonth() - i, 1); out.push({ y: dt.getFullYear(), m: dt.getMonth(), label: ACT_MONTHS[dt.getMonth()], total: 0, days: 0 }); }
   DATA.rentals.filter((r) => r.customerId === c.customerId && r.startDate).forEach((r) => {
     const s = parseISO(r.startDate); if (!s) return;
     const b = out.find((x) => x.y === s.getFullYear() && x.m === s.getMonth());
-    if (b) b.total += rentalAmt(r) || 0;
+    if (b) { b.total += rentalAmt(r) || 0; const e = parseISO(r.endDate); b.days += e ? Math.max(1, Math.round((e - s) / 86400000) + 1) : 1; }   // D2 — days the customer held equipment (a 7-day rental = 7)
   });
   return out;
 }
@@ -2621,6 +2624,12 @@ function customerActivityChart(c) {
   const pts = months.map((b) => ({ x: fx(new Date(b.y, b.m, 15).getTime()), y: py(b.total) }));
   const sm = (p) => { let d = `M${p[0].x.toFixed(1)},${p[0].y.toFixed(1)}`; for (let i = 0; i < p.length - 1; i++) { const p0 = p[i - 1] || p[i], p1 = p[i], p2 = p[i + 1], p3 = p[i + 2] || p2; const c1x = p1.x + (p2.x - p0.x) / 6, c1y = p1.y + (p2.y - p0.y) / 6, c2x = p2.x - (p3.x - p1.x) / 6, c2y = p2.y - (p3.y - p1.y) / 6; d += ` C${c1x.toFixed(1)},${c1y.toFixed(1)} ${c2x.toFixed(1)},${c2y.toFixed(1)} ${p2.x.toFixed(1)},${p2.y.toFixed(1)}`; } return d; };
   const line = sm(pts), area = `${line} L${pts[pts.length - 1].x.toFixed(1)},${baseY} L${pts[0].x.toFixed(1)},${baseY} Z`;
+  // D2 — a 2nd series: days-rented per month (own scale), plus per-point data for cursor scrub.
+  const maxDays = Math.max(1, ...months.map((b) => b.days));
+  const ptsD = months.map((b, i) => ({ x: pts[i].x, y: baseY - (b.days / maxDays) * (baseY - padT) }));
+  const lineD = sm(ptsD);
+  const dotsD = ptsD.map((p) => `<span class="ca-dot d" style="left:${p.x.toFixed(1)}%;top:${p.y.toFixed(1)}px"></span>`).join('');
+  const caData = JSON.stringify(months.map((b, i) => ({ l: b.label, t: b.total, d: b.days, x: +pts[i].x.toFixed(1) })));
   const peakI = months.reduce((bi, b, i, arr) => (b.total > arr[bi].total ? i : bi), 0);
   const peak = months[peakI];
   const dots = pts.map((p, i) => `<span class="ca-dot${i === peakI ? ' big' : ''}" style="left:${p.x.toFixed(1)}%;top:${p.y.toFixed(1)}px"></span>`).join('');
@@ -2644,13 +2653,30 @@ function customerActivityChart(c) {
   }
   return `<div class="ca-panel" data-tip="Customer activity — spend by month, with last rental, next expected, and where today sits in their cadence">
     <div class="ca-stage c-${a.color}${a.deep ? ' deep' : ''}">${esc(a.stage)}</div>
-    <div class="ca-chart">
-      <svg class="ca-svg" viewBox="0 0 100 ${H}" preserveAspectRatio="none"><defs><linearGradient id="caFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--accent)" stop-opacity=".5"/><stop offset="1" stop-color="var(--accent)" stop-opacity=".02"/></linearGradient></defs><path d="${area}" fill="url(#caFill)"/><path d="${line}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" vector-effect="non-scaling-stroke"/></svg>
-      ${markers}${dots}${peakCo}
+    <div class="ca-chart" data-ca='${caData}'>
+      <svg class="ca-svg" viewBox="0 0 100 ${H}" preserveAspectRatio="none"><defs><linearGradient id="caFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--accent)" stop-opacity=".5"/><stop offset="1" stop-color="var(--accent)" stop-opacity=".02"/></linearGradient></defs><path d="${area}" fill="url(#caFill)"/><path d="${line}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" vector-effect="non-scaling-stroke"/><path d="${lineD}" fill="none" stroke="#c2925a" stroke-width="1.8" stroke-dasharray="4 3" stroke-linecap="round" vector-effect="non-scaling-stroke"/></svg>
+      <div class="ca-legend"><span><i style="background:var(--accent)"></i>Spend</span><span><i style="background:#c2925a"></i>Days rented</span></div>
+      ${markers}${dots}${dotsD}${peakCo}
+      <span class="ca-scrub"></span><div class="ca-tip"></div>
       <div class="ca-lbls">${labels}</div>
     </div>
     ${caption}
   </div>`;
+}
+// D2 — cursor scrub for the customer activity chart: follow the cursor, snap to the nearest
+// month, and float that month's spend + days-rented in a tooltip with a guide line.
+function caScrub(e) {
+  const chart = e.target.closest && e.target.closest('.ca-chart');
+  document.querySelectorAll('.ca-chart').forEach((ch) => { if (ch !== chart) { ch.querySelector('.ca-tip')?.classList.remove('on'); ch.querySelector('.ca-scrub')?.classList.remove('on'); } });
+  if (!chart) return;
+  let data; try { data = JSON.parse(chart.dataset.ca || '[]'); } catch (err) { return; }
+  if (!data.length) return;
+  const rect = chart.getBoundingClientRect(); if (!rect.width) return;
+  const xpct = Math.max(0, Math.min(100, (e.clientX - rect.left) / rect.width * 100));
+  let best = data[0], bd = Infinity; data.forEach((d) => { const dd = Math.abs(d.x - xpct); if (dd < bd) { bd = dd; best = d; } });
+  const scrub = chart.querySelector('.ca-scrub'), tip = chart.querySelector('.ca-tip');
+  if (scrub) { scrub.style.left = best.x + '%'; scrub.classList.add('on'); }
+  if (tip) { tip.innerHTML = `<b>${esc(best.l)}</b><span class="ca-tip-s">${best.t ? money(best.t) : '$0'}</span><span class="ca-tip-d">${best.d} day${best.d === 1 ? '' : 's'}</span>`; tip.style.left = Math.max(9, Math.min(91, best.x)) + '%'; tip.classList.add('on'); }
 }
 
 /* ── COMMENTS (Jac, Phase 6) — a structured note with a color (red/yellow/green) that
@@ -2704,6 +2730,7 @@ function saveCommentOverlay() {
   if (!text) { if (ta) ta.focus(); return; }
   const rec = recOf(entityCardOf(o.card, o.recType), o.recId);
   if (!rec) { toast('Record not found.'); closeOverlay(); return; }
+  if ((rec.comments || []).some((c) => c.text === text && c.color === (o.color || 'yellow'))) { closeOverlay(); return; }   // opened to READ an existing note → don't duplicate it on close
   addRecComment(rec, text, o.color || 'yellow');
   closeOverlay(); render();
   toast('Comment posted — marker set.');
@@ -3254,6 +3281,7 @@ const DETAIL = {
     const notes = notesSection('files', f, 'fileId');
     return `<div class="detail">
       <div class="detail-head"><span class="d-title inline-edit" data-edit="field" data-card="files" data-field="name" data-rec="${esc(f.fileId)}" data-ph="File name">${esc(f.name || 'New File')}</span>${f.link ? linkName('Open file', { js: 'js-open-link', data: { url: webUrl(f.link) } }) : ''}</div>
+      ${f.photo ? `<div class="kv" style="margin:8px 0"><img src="${f.photo}" alt="${esc(f.name)}" style="max-width:100%;border-radius:10px"></div>` : ''}
       ${notes.top}
       ${details}
       ${notes.bottom}
@@ -3337,10 +3365,10 @@ const DETAIL = {
       <div class="detail-head">${title}</div>
       ${notes.top}
       <div class="detail-cols">${membership}${usedSales}</div>
-      ${activeBar}
       ${actHead}
       ${actEntry}
       ${activity}
+      ${activeBar}
       ${account}
       ${cardsSection(c)}
       ${notes.bottom}
@@ -3436,7 +3464,7 @@ const DETAIL = {
     const manageRow = state.invLineForm === i.invoiceId ? lineForm
       : locked
         ? `<div class="pillrow"><span class="muted" style="font-size:12px">🔒 Pricing locked.</span>${canMoney() ? actionPill('commit', 'Unlock to edit', { js: 'js-unlock-invoice', data: { rec: i.invoiceId } }) : ''}</div>`
-        : `<div class="pillrow eqw">${addBtn('Rental', { line: true, js: 'js-add-line', h: 26, data: { rec: i.invoiceId, kind: 'Rental' } })}${addBtn('WO', { line: true, js: 'js-add-line', h: 26, data: { rec: i.invoiceId, kind: 'WO' } })}${addBtn('Custom', { line: true, js: 'js-add-line', h: 26, data: { rec: i.invoiceId, kind: 'Custom' } })}</div>${canMoney() && (i.lineItems || []).length ? `<div class="pillrow">${actionPill('commit', '🔒 Lock price', { js: 'js-lock-invoice', data: { rec: i.invoiceId } })}</div>` : ''}`;
+        : `<div class="pillrow pillcol">${addBtn('Rental', { line: true, js: 'js-add-line', h: 26, data: { rec: i.invoiceId, kind: 'Rental' } })}${addBtn('WO', { line: true, js: 'js-add-line', h: 26, data: { rec: i.invoiceId, kind: 'WO' } })}${addBtn('Custom', { line: true, js: 'js-add-line', h: 26, data: { rec: i.invoiceId, kind: 'Custom' } })}</div>${canMoney() && (i.lineItems || []).length ? `<div class="pillrow pillcol">${actionPill('commit', '🔒 Lock price', { js: 'js-lock-invoice', data: { rec: i.invoiceId } })}</div>` : ''}`;
     const invoiceSec = `<div class="section"><h4>Invoice</h4>
       <div class="inv-split">
         <div class="inv-actions">
@@ -3453,6 +3481,7 @@ const DETAIL = {
           ${ledgerRow('Total', money(t.total), 'big')}
           ${ledgerRow('Paid', `${money(t.paid)} / ${money(t.total)}`)}
           ${ledgerRow(`Due${i.dueDate ? ' · ' + fmtShortDate(i.dueDate) : ''}`, money(t.balance), 'due')}
+          ${!locked ? `<div class="kv" style="justify-content:flex-end;align-items:center;gap:7px;margin-top:2px"><span class="derived" style="font-size:11px">Set due date</span><input type="date" class="js-due-date" data-rec="${esc(i.invoiceId)}" value="${esc(i.dueDate || '')}" style="font-size:11px;color:var(--txt);background:var(--panel-2);border:1px solid var(--line);border-radius:6px;padding:3px 7px;color-scheme:dark"></div>` : ''}
           ${payCell ? `<div class="pillrow" style="justify-content:flex-end;margin-top:9px">${payCell}</div>` : ''}
         </div>
       </div></div>`;
@@ -4358,6 +4387,7 @@ function headerEl() {
       </div>
       <div class="toolbar">
         <div class="searchwrap ${state.filterTerms.length ? 'has-terms' : ''}${state.query.trim() || state.filterTerms.length ? ' has-query' : ''}">
+          ${state.filterTerms.length > 1 ? closeX('js-clear') : ''}
           <span class="s-icon">${I.search}</span>
           ${state.filterTerms.map((ft, i) => filterTermPill(ft, i, 'global')).join('')}
           <input id="globalsearch" class="search" placeholder="${state.filterTerms.length ? 'Add filter — type, Enter to pin…' : 'Search everything…'}" value="${esc(state.query)}" />
@@ -4386,6 +4416,7 @@ function bottomBarInner() {
     <button class="iconbtn${state.previewsOn ? '' : ' off'} js-previews" data-tip="${state.previewsOn ? 'Hover previews: on' : 'Hover previews: off'}">${state.previewsOn ? I.eye : I.eyeOff}</button>
     <button class="iconbtn js-chat-toggle${state.chat.open ? ' on' : ''}" data-tip="Team chat — flagged comments + tagged context">${I.chat}${(() => { const n = chatUnreadCount(); return n ? `<span class="bb-badge">${n > 9 ? '9+' : n}</span>` : ''; })()}</button>
     <button class="iconbtn js-wrangler" data-tip="Mr. Wrangler — ask the yard AI, or report a bug to fix" style="font-size:16px">🤠</button>
+    <button class="iconbtn js-requests" data-tip="Requests for your OK — review what Mr. Wrangler filed">${I.inbox}${wranglerRequests.length ? `<span class="bb-badge">${wranglerRequests.length > 9 ? '9+' : wranglerRequests.length}</span>` : ''}</button>
     <button class="iconbtn js-hotkeys" data-tip="Mouse &amp; keyboard shortcuts">${I.mouse}</button>
     <button class="iconbtn js-adminlock${adminUnlocked() ? ' on' : ''}" data-tip="${adminUnlocked() ? 'Admin tools unlocked — click to lock' : 'Admin tools — click to unlock'}">${adminUnlocked() ? I.lockOpen : I.lock}</button>
     ${adminUnlocked() ? `<button class="iconbtn js-lint${document.body.classList.contains('rw-lint') ? ' on' : ''}" data-tip="Design lint — flash anything that bypassed the UI builders (R0)">${I.eye}</button>
@@ -5022,6 +5053,34 @@ function renderOverlay() {
         <div class="kpi-list">${lines}</div>
       </div>`;
     overlay.appendChild(pop);
+  } else if (o.kind === 'requests') {
+    // §18e the in-app approval inbox for Mr. Wrangler's "Filed for Jac's OK" requests.
+    const can = canApproveRequests();
+    const cleanBody = (b) => esc(String(b || '').split(/###|_Filed/)[0].replace(/^_.*?_\s*/s, '').trim()).replace(/\n+/g, '<br>').slice(0, 600);
+    const list = wranglerRequests;
+    const inner = !backendPassword
+      ? '<div class="req-empty">Sign in to review requests.</div>'
+      : (!reqLoaded && reqLoading ? '<div class="req-empty">Loading…</div>'
+        : (!list.length ? '<div class="req-empty"><span class="req-empty-ic">📭</span><p>No requests waiting.</p><span>When Mr. Wrangler files one “for Jac’s OK”, it lands here for you to approve.</span></div>'
+          : list.map((rq) => `<div class="req-card">
+              <div class="req-head"><span class="req-num">#${rq.number}</span><span class="req-title">${esc(rq.title)}</span></div>
+              <div class="req-text">${cleanBody(rq.body)}</div>
+              <div class="req-acts">${can
+                ? `<button class="pill ghost js-req-dismiss" data-r="R18" data-n="${rq.number}">Dismiss</button><button class="pill c-commit js-req-approve" data-r="R17" data-n="${rq.number}">✓ Approve → build it</button>`
+                : '<span class="req-await">Awaiting Jac’s OK</span>'}<a class="req-link" href="${esc(rq.url)}" target="_blank" rel="noopener">GitHub ↗</a></div>
+            </div>`).join('')));
+    const pop = el('div', 'popup'); pop.style.width = '480px';
+    pop.innerHTML = `
+      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${I.inbox}</span><h3>Requests${list.length ? ` · ${list.length}` : ''}</h3><span class="spacer"></span><button class="iconbtn js-req-refresh" data-tip="Refresh">${I.refresh || '⟳'}</button><button class="x js-close">${I.x}</button></div>
+      <div class="popup-body req-wrap">${inner}</div>`;
+    overlay.appendChild(pop);
+  } else if (o.kind === 'notifications') {
+    // §18f Notifications — stubbed scaffold; Jac will spec the contents. Empty for now.
+    const pop = el('div', 'popup'); pop.style.width = '420px';
+    pop.innerHTML = `
+      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${I.bell}</span><h3>Notifications</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
+      <div class="popup-body req-wrap"><div class="req-empty"><span class="req-empty-ic">🔔</span><p>No notifications yet.</p><span>This is where alerts will land (service due, overdue invoices, approvals…). Coming soon.</span></div></div>`;
+    overlay.appendChild(pop);
   } else if (o.kind === 'hotkeys') {
     const rows = [
       { d: 'click',    n: 'Click',              t: 'Open a record to view it — in its own card, nothing else moves.' },
@@ -5075,8 +5134,8 @@ function renderOverlay() {
       <div class="popup-body"><div class="board-detail">${DETAIL[o.board](vrec, { historySearch: o.historySearch || '', histKind: o.histKind || null, partForm: o.partForm || false, backStack: [], mode: 'standard' })}</div></div>`;
     } else {
     pop.innerHTML = `
-      <div class="popup-head">${CARD_ICON[board.id] ? `<span class="c-icon" style="color:var(--accent);display:inline-flex">${CARD_ICON[board.id] || ''}</span>` : ''}<h3>${esc(board.title)}</h3><span class="c-count">${boardRows(board.id).length}</span>${board.id === 'files' ? addBtn('File', { link: true, js: 'js-file-add' }) : ''}<span class="spacer"></span><button class="x js-close">${I.x}</button></div>
-      <div class="popup-body board-body">${board.id === 'files' && o.fileForm ? `<div class="kv pillrow" style="gap:7px;margin:0 0 10px"><input class="lf-in js-ff-name" placeholder="File name" style="flex:2;min-width:140px"><input class="lf-in js-ff-link" placeholder="Link (URL)" style="flex:2;min-width:140px">${ghostPill('Cancel', { js: 'js-ff-cancel' })}${actionPill('commit', 'Add file', { js: 'js-ff-save' })}</div>` : ''}${boardTable(board.id)}</div>`;
+      <div class="popup-head">${CARD_ICON[board.id] ? `<span class="c-icon" style="color:var(--accent);display:inline-flex">${CARD_ICON[board.id] || ''}</span>` : ''}<h3>${esc(board.title)}</h3><span class="c-count">${boardRows(board.id).length}</span>${board.id === 'files' ? addBtn('File', { link: true, js: 'js-file-add' }) : ''}${board.id === 'files' ? `<div class="bv-searchwrap"><span class="s-icon">${I.search}</span><input class="bv-query js-files-query" placeholder="Search files…" value="${esc(o.fileSearch || '')}" /></div>` : ''}<span class="spacer"></span><button class="x js-close">${I.x}</button></div>
+      <div class="popup-body board-body">${board.id === 'files' && o.fileForm ? `<div class="kv pillrow" style="gap:7px;margin:0 0 10px"><input class="lf-in js-ff-name" placeholder="File name" style="flex:2;min-width:140px"><input class="lf-in js-ff-link" placeholder="Link (URL)" style="flex:2;min-width:140px">${fileDrop(o.fileUpload ? '✓ ' + esc(o.fileUpload.name) : 'Upload photo / document', { js: 'js-ff-file', accept: 'image/*,application/pdf,.doc,.docx,.xls,.xlsx,.csv,.txt', done: !!o.fileUpload, icon: I.camera })}${ghostPill('Cancel', { js: 'js-ff-cancel' })}${actionPill('commit', 'Add file', { js: 'js-ff-save' })}</div>` : ''}${boardTable(board.id, o.fileSearch)}</div>`;
     }
     overlay.appendChild(pop);
   } else if (o.kind === 'boardview') {
@@ -5552,6 +5611,44 @@ async function wranglerFileAction(mi) {
     ? 'Opening a request — tap “Submit new issue” and it lands in Jac’s queue. 🤠'
     : 'Opening a fix ticket — tap “Submit new issue” and Mr. Wrangler wrangles the rest. 🤠');
 }
+/* §18e IN-APP REQUESTS INBOX — Mr. Wrangler's "Filed for Jac's OK" reviewed + approved
+   IN THE APP (never GitHub). Approve flips the issue to wrangler-fix → the auto-fix
+   engine builds + ships it. Owner/Admin only acts; everyone can see what's pending. */
+let wranglerRequests = [];
+let reqLoaded = false, reqLoading = false;
+const canApproveRequests = () => currentRole === 'Owner' || currentRole === 'Admin';
+async function refreshWranglerRequests() {
+  if (typeof backendPassword === 'undefined' || !backendPassword || reqLoading) return;   // demo/offline → no inbox
+  reqLoading = true;
+  try { const r = await backendCall('wranglerRequests', {}); if (r && r.ok && Array.isArray(r.requests)) { wranglerRequests = r.requests; reqLoaded = true; } } catch (e) {}
+  reqLoading = false;
+  render(); if (state.overlay?.kind === 'requests') renderOverlay();
+}
+async function approveRequest(n) {
+  try {
+    const r = await backendCall('wranglerApprove', { number: n });
+    if (r && r.ok) { wranglerRequests = wranglerRequests.filter((x) => x.number !== n); toast(`Approved #${n} — Mr. Wrangler’s building it now. 🤠`); }
+    else toast(`Couldn’t approve — ${(r && r.error) || 'try again'}.`);
+  } catch (e) { toast('Couldn’t approve — check the connection.'); }
+  render(); if (state.overlay?.kind === 'requests') renderOverlay();
+}
+async function dismissRequest(n) {
+  try {
+    const r = await backendCall('wranglerDismiss', { number: n });
+    if (r && r.ok) { wranglerRequests = wranglerRequests.filter((x) => x.number !== n); toast(`Dismissed #${n}.`); }
+    else toast(`Couldn’t dismiss — ${(r && r.error) || 'try again'}.`);
+  } catch (e) { toast('Couldn’t dismiss — check the connection.'); }
+  render(); if (state.overlay?.kind === 'requests') renderOverlay();
+}
+// The floating bottom-right cluster — notification bell (stub for now) + Requests inbox.
+function fabStackEl() {
+  const stack = el('div', 'fab-stack');
+  const reqBadge = wranglerRequests.length ? `<span class="fab-badge">${wranglerRequests.length > 9 ? '9+' : wranglerRequests.length}</span>` : '';
+  stack.innerHTML = `
+    <button class="fab js-notifications" data-tip="Notifications">${I.bell}</button>
+    <button class="fab js-requests" data-tip="Requests for your OK — review what Mr. Wrangler filed">${I.inbox}${reqBadge}</button>`;
+  return stack;
+}
 // Read the customer-form inputs back into the draft (call before any re-render so
 // typed values survive a selfie/signature/pill change).
 function ncSyncInputs() {
@@ -5604,9 +5701,11 @@ const BOARD_DEF = {
     row: (f) => [f.link ? linkName(f.name, { js: 'js-open-link', data: { url: f.link } }) : esc(f.name), statusPill('companyFileType', f.type), esc(f.group || '—'), f.reviewByDate ? esc(fmtShortDate(f.reviewByDate)) + (reviewState(f.reviewByDate) ? ' ' + reviewState(f.reviewByDate) : '') : '—'],
   },
 };
-function boardTable(boardId) {
-  const def = BOARD_DEF[boardId]; const rows = boardRows(boardId);
+function boardTable(boardId, query) {
+  const def = BOARD_DEF[boardId]; let rows = boardRows(boardId);
   if (!def) return '<p class="muted">—</p>';
+  const q = (query || '').trim().toLowerCase();
+  if (q) rows = rows.filter((r) => Object.values(r).some((v) => v != null && String(v).toLowerCase().includes(q)));
   const head = `<tr>${def.cols.map((c) => `<th>${esc(c)}</th>`).join('')}</tr>`;
   // §7.10–§7.13 v2 — every board row opens the record's detail inside the popup
   const ROW_ID = { vendors: 'vendorId', expenses: 'expenseId', parts: 'partId', files: 'fileId' };
@@ -5948,7 +6047,7 @@ function openViewMenu(card, anchorEl) {
   if (hasFilter && !onView && admin) { const lbl = viewLabel(cs.search, cs.filterTerms); html += `<button class="dd-item js-addview" data-card="${card}">${I.plus} Add view “${esc(lbl.length > 22 ? lbl.slice(0, 22) + '…' : lbl)}”</button>`; }
   if (views.length) {
     html += `<div class="dd-sec">Views</div>`;
-    html += views.map((v, i) => `<button class="dd-item js-applyview${viewSig(v.search, v.terms) === curSig ? ' on' : ''}" data-card="${card}" data-idx="${i}">${esc(v.name)}<span class="tick">✓</span>${admin ? `<span class="x js-delview" data-card="${card}" data-name="${esc(v.name)}" data-tip="Delete view">${I.x}</span>` : ''}</button>`).join('');
+    html += views.map((v, i) => `<button class="dd-item js-applyview${viewSig(v.search, v.terms) === curSig ? ' on' : ''}" data-card="${card}" data-idx="${i}">${esc(v.name)}<span class="tick">✓</span><span class="x js-delview" data-card="${card}" data-name="${esc(v.name)}" data-tip="Delete view">${I.x}</span></button>`).join('');
   }
   html += `<div class="dd-sec">Sort</div>`;
   html += SORT_FIELDS[card].map((f) => `<button class="dd-item js-sortfield${f.field === cs.sort.field ? ' on' : ''}" data-card="${card}" data-field="${f.field}">${esc(f.label)}<span class="tick">✓</span></button>`).join('');
@@ -6012,6 +6111,9 @@ function render() {
   }
   // §17 — the internal team dock floats bottom-right above the bar when open
   if (state.chat.open) { const d = el('div', 'chat-dock', ''); d.dataset.drop = 'chat'; d.innerHTML = chatDockEl(); $('#app').appendChild(d); }
+  // §18e — floating bottom-right cluster: notification bell + the Requests inbox.
+  // Hidden while the team dock owns that corner (Jac 2026-06-15).
+  if (!state.chat.open) $('#app').appendChild(fabStackEl());
   mountTransportEditor();   // inline transport editor: mount the live map + wire the address field
   applyTitles();   // full text on hover wherever we truncate (custom ~0.5s tooltip)
   scoreTick();     // §11 gamification — pop +X over any ring whose metric just rose
@@ -6184,7 +6286,10 @@ function dragDown(e) {
     if (arm.touch) arm.lp = armMenuTimer(arm);
     DRAG.armed = arm; return;
   }
-  if (e.target.closest('.inline-edit, .inline-input, input, textarea, select, button, .x, .pill, .seg, .add-field, .linkname, .flag, .jnode, .dropdown-menu, .overlay, .hover-preview, .winpicker-float, .ctx-menu')) return;
+  const bail = e.target.closest('.inline-edit, .inline-input, input, textarea, select, button, .x, .pill, .seg, .add-field, .linkname, .flag, .jnode, .dropdown-menu, .overlay, .hover-preview, .winpicker-float, .ctx-menu');
+  // …but a UNIT pill is itself a valid drag source — drag it (e.g. from a category's
+  // Investment list) onto a rental to link the unit. A click still navigates (6px threshold). (Jac B4)
+  if (bail && !(bail.classList && bail.classList.contains('pill') && bail.dataset.pillCard === 'units' && bail.dataset.pillRec)) return;
   const src = dragSourceAt(e.target);
   if (!src) return;
   DRAG.point.x = e.clientX; DRAG.point.y = e.clientY;                    // seed the ghost/hit-test point — a touch long-press may fire with NO move first
@@ -6197,6 +6302,8 @@ function dragDown(e) {
    2. a list ROW of a draggable entity;
    3. empty space on a STANDARD-view card (Task 2) → that card's open record. */
 function dragSourceAt(target) {
+  const upill = target.closest('[data-pill-card="units"]');                  // a unit pill drags as that unit → link to a rental (Jac B4)
+  if (upill && upill.dataset.pillRec) return { card: 'units', rec: upill.dataset.pillRec };
   const woSect = target.closest('.section[data-wo]');
   if (woSect && woSect.dataset.wo) return { card: 'workOrders', rec: woSect.dataset.wo };
   const row = target.closest('.row');                                   // .rtl rentals rows still carry card/rec on the .row wrapper
@@ -6518,6 +6625,16 @@ function onClick(e) {
     }
   }
 
+  // §B6 — a comment marker (yellow dot) is now clickable: open the comment overlay
+  // seeded with the record's latest note so it can actually be read (it had no handler).
+  if (closest('.cmt-marker')) {
+    e.stopPropagation();
+    const hit = cardRecordAt(t); if (!hit) return;
+    const rec = recOf(entityCardOf(hit.card, hit.recType), hit.recId);
+    const all = rec ? recComments(rec) : []; const last = all.length ? all[all.length - 1] : null;
+    return openOverlay({ kind: 'comment', card: hit.card, recId: hit.recId, recType: hit.recType, color: (last && last.color) || 'yellow', text: last ? last.text : '' });
+  }
+
   // clicked card → orange-border focus (§0.1 visual feedback; applied immediately,
   // independent of whatever else this click does — anchor stays a separate action)
   const fc = closest('.card');
@@ -6578,7 +6695,7 @@ function onClick(e) {
   if (closest('.js-ring')) return openOverlay({ kind: 'role', role: closest('.js-ring').dataset.role });
   if (closest('.js-close')) return closeOverlay();
   if (closest('.js-theme')) { state.theme = (THEME_NEXT[state.theme] || THEME_NEXT.dark).next; try { localStorage.setItem('jactec.theme', state.theme); } catch (e) {} if (state.overlay && state.overlay.kind !== 'addCard') renderOverlay(); render(); return; }
-  if (closest('.js-qr')) return openOverlay({ kind: 'qr' });
+  if (closest('.js-qr')) return shareSession();
   if (closest('.js-previews') || closest('.js-roweye')) { e.stopPropagation(); state.previewsOn = !state.previewsOn; if (!state.previewsOn) hideHoverPreview(); try { localStorage.setItem('jactec.previewsOff', state.previewsOn ? '0' : '1'); } catch (e) {} toast(state.previewsOn ? 'Hover previews on.' : 'Hover previews off — every eye runs red.'); return render(); }
   if (closest('.js-hotkeys')) return openOverlay({ kind: 'hotkeys' });
   if (closest('.js-adminlock')) { e.stopPropagation(); return toggleAdminLock(); }
@@ -6618,14 +6735,19 @@ function onClick(e) {
   if (closest('.js-wr-act')) { e.stopPropagation(); return wranglerFileAction(Number(closest('.js-wr-act').dataset.mi)); }   // §18d file the fix/request Mr. Wrangler proposed inline
   if (closest('.js-wr-unattach')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'wrangler' && o.attach) { o.attach.splice(Number(closest('.js-wr-unattach').dataset.i), 1); renderOverlay(); } return; }   // §18d drop a pending image attachment
   if (closest('.js-wrangler')) { e.stopPropagation(); return openOverlay({ kind: 'wrangler', card: null, recId: null, recType: null, messages: [], busy: false, error: '', draft: '' }); }
+  if (closest('.js-notifications')) { e.stopPropagation(); return openOverlay({ kind: 'notifications' }); }   // §18f notification bell (stub — spec pending)
+  if (closest('.js-requests')) { e.stopPropagation(); openOverlay({ kind: 'requests' }); refreshWranglerRequests(); return; }   // §18e approval inbox
+  if (closest('.js-req-refresh')) { e.stopPropagation(); return refreshWranglerRequests(); }
+  if (closest('.js-req-approve')) { e.stopPropagation(); return approveRequest(Number(closest('.js-req-approve').dataset.n)); }
+  if (closest('.js-req-dismiss')) { e.stopPropagation(); return dismissRequest(Number(closest('.js-req-dismiss').dataset.n)); }
   if (closest('.js-open-link')) { e.stopPropagation(); const url = closest('.js-open-link').dataset.url || ''; if (/^(https?:\/\/|mailto:)/i.test(url)) window.open(url, '_blank', 'noopener'); return; }
   if (closest('.js-board')) { const b = closest('.js-board'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return openOverlay({ kind: 'board', board: b.dataset.board }); }
   if (closest('.js-vendor-open')) { e.stopPropagation(); return openOverlay({ kind: 'board', board: 'vendors', recId: closest('.js-vendor-open').dataset.rec }); }   // WO-line vendor names → vendor detail in the board popup
   if (closest('.js-expense-open')) { e.stopPropagation(); return openOverlay({ kind: 'board', board: 'expenses', recId: closest('.js-expense-open').dataset.rec }); }   // part-detail receipt link → expense detail in the board popup
   if (closest('.js-board-row') && !closest('.js-reconcile') && !closest('[data-pill-card]')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'board') { o.recId = closest('.js-board-row').dataset.rec; o.historySearch = ''; o.histKind = null; o.partForm = false; renderOverlay(); } return; }   // in-row gates/ref-pills fall through to their own handlers below
   if (closest('.js-board-back')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'board') { o.recId = null; o.partForm = false; renderOverlay(); } return; }
-  if (closest('.js-file-add')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'board') { o.fileForm = !o.fileForm; renderOverlay(); } return; }   // §7.13: +File inline create (toggle)
-  if (closest('.js-ff-cancel')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'board') { o.fileForm = false; renderOverlay(); } return; }
+  if (closest('.js-file-add')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'board') { o.fileForm = !o.fileForm; o.fileUpload = null; renderOverlay(); } return; }   // §7.13: +File inline create (toggle)
+  if (closest('.js-ff-cancel')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'board') { o.fileForm = false; o.fileUpload = null; renderOverlay(); } return; }
   if (closest('.js-ff-save')) { e.stopPropagation(); return saveFileForm(); }
   if (closest('.js-vendor-tax')) { e.stopPropagation(); const b = closest('.js-vendor-tax'); const v = recOf('vendors', b.dataset.rec); if (v) { const ex = b.dataset.val === '1'; if (!!v.salesTaxExempt !== ex) { v.salesTaxExempt = ex; reindex('vendors', v); logAction(v, `Sales tax → ${ex ? 'Exempt' : 'Taxed'}`); } if (state.overlay?.kind === 'board') renderOverlay(); render(); } return; }
   if (closest('.js-boardview')) { e.stopPropagation(); return openBoardView(closest('.js-boardview').dataset.card); }
@@ -6767,7 +6889,7 @@ function onClick(e) {
     const b = closest('.js-complete-rental'); const r = IDX.rental.get(b.dataset.rec); if (!r) return;
     // Locked gates ALWAYS speak (Jac: "Complete Rental doesn't do anything") — the old
     // flashOr stayed silent whenever its on-screen target existed, so a locked click read as dead.
-    if (!rentalUnits(r).length) { attnFlash('[data-slot="unit"], .add-field'); return toast('🔒 No units on this rental — drag one on, or cancel the rental.'); }
+    if (!rentalUnits(r).length) { attnFlash('[data-slot="unit"]'); return toast('🔒 No units on this rental — drag one on, or cancel the rental.'); }
     if (!allUnitsTerminal(r)) { attnFlash(`.js-yard[data-cap="end"][data-rec="${r.rentalId}"]`); return toast('🔒 Return every unit first (or mark No Show / Cancel) to complete the rental.'); }
     r.completed = true; reindex('rentals', r); logAction(r, 'Rental completed'); toast('Rental completed ✓'); return reanchorRender();
   }
@@ -6818,7 +6940,7 @@ function onClick(e) {
 
   // sort menu + direction toggle
   if (closest('.js-sortmenu')) { const b = closest('.js-sortmenu'); return openViewMenu(b.dataset.card, b); }
-  if (closest('.js-delview')) { e.stopPropagation(); if (!adminUnlocked()) return; const b = closest('.js-delview'); const card = b.dataset.card; saveViews(card, loadViews(card).filter((v) => v.name !== b.dataset.name)); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); const anchor = document.querySelector(`.js-sortmenu[data-card="${card}"]`); if (anchor) openViewMenu(card, anchor); else render(); return; }
+  if (closest('.js-delview')) { e.stopPropagation(); const b = closest('.js-delview'); const card = b.dataset.card; saveViews(card, loadViews(card).filter((v) => v.name !== b.dataset.name)); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); const anchor = document.querySelector(`.js-sortmenu[data-card="${card}"]`); if (anchor) openViewMenu(card, anchor); else render(); return; }
   if (closest('.js-applyview')) { const b = closest('.js-applyview'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return applyView(b.dataset.card, loadViews(b.dataset.card)[Number(b.dataset.idx)]); }
   if (closest('.js-addview')) { if (!adminUnlocked()) { document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return; } const b = closest('.js-addview'); const card = b.dataset.card; const cs = activeSession().cards[card]; const search = (cs.search || '').trim(); const terms = (cs.filterTerms || []).map((t) => ({ ...t })); const suggested = viewLabel(search, terms); const name = (typeof prompt === 'function' ? prompt('Name this view:', suggested) : suggested); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); if (name && name.trim()) { const views = loadViews(card); if (!views.some((v) => v.name.toLowerCase() === name.trim().toLowerCase())) { views.push({ name: name.trim(), search, terms }); saveViews(card, views); } } render(); return; }
   if (closest('.js-sortfield')) { const b = closest('.js-sortfield'); const cs = activeSession().cards[b.dataset.card]; const f = SORT_FIELDS[b.dataset.card].find((x) => x.field === b.dataset.field); if (f) { cs.sort = { ...f }; saveSort(b.dataset.card, cs.sort); } document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); render(); return; }
@@ -7368,15 +7490,33 @@ function unlinkReceiptPart(expenseId, partId) {
 /* +File inline create (§7.13): name + optional link, every other field deferred to
    inline edit on the detail. The saveReceiptForm idiom: save lands ON the new
    detail + R19 glow; Cancel leaves no stub. */
-function saveFileForm() {
+async function saveFileForm() {
   const o = state.overlay; if (!o || o.kind !== 'board' || o.board !== 'files') return;
   const g = (c) => (document.querySelector(c)?.value || '').trim();
   const name = g('.js-ff-name'), link = g('.js-ff-link');
-  if (!name) return attnFlash('.js-ff-name');   // R19
-  const f = { fileId: 'FIL-C' + (state.seq++), name, group: '', type: link ? 'Link' : 'Note', reviewByDate: '', link, notes: '', mock: true };
+  const up = o.fileUpload;
+  if (!name && !up && !link) return attnFlash('.js-ff-name');   // R19 — need at least a name, a file, or a link
+  const fname = name || (up && up.name) || 'File';
+  const isImg = !!(up && (up.mimeType || '').startsWith('image/'));
+  let fileLink = link, inlinePhoto = '', driveId = '';
+  if (up) {
+    if (typeof backendPassword !== 'undefined' && backendPassword) {
+      // live → the backend stores the file in Drive and returns a shareable link (§F2)
+      try {
+        const r = await backendCall('uploadFile', { name: fname, mimeType: up.mimeType, data: up.data });
+        if (r && r.ok && r.url) { fileLink = r.url; driveId = r.fileId || ''; }
+        else { toast('Upload failed: ' + ((r && r.error) || 'backend not ready')); return; }
+      } catch (err) { toast('Upload failed — check the connection.'); return; }
+    } else if (isImg) {
+      inlinePhoto = up.data;   // demo (#local): keep the downscaled image inline so the flow is reviewable
+    } else {
+      toast('Demo mode — document uploads land in Drive on the live site.');
+    }
+  }
+  const f = { fileId: 'FIL-C' + (state.seq++), name: fname, group: '', type: up ? (isImg ? 'Photo' : 'Document') : (link ? 'Link' : 'Note'), reviewByDate: '', link: fileLink, photo: inlinePhoto, driveId, notes: '', mock: true };
   DATA.companyFiles.push(f); reindex('files', f);   // reindex also sets IDX.file (sync clause)
   logAction(f, 'File created');
-  o.fileForm = false; o.recId = f.fileId;   // save lands ON the new detail
+  o.fileForm = false; o.fileUpload = null; o.recId = f.fileId;   // save lands ON the new detail
   render(); renderOverlay();
   attnFlash('.board-detail .detail-head');  // R19: glow the fresh file
 }
@@ -7420,6 +7560,11 @@ function onInput(e) {
   if (e.target.classList.contains('js-cmt-text')) { if (state.overlay?.kind === 'comment') state.overlay.text = e.target.value; return; }
   if (e.target.classList.contains('js-wr-in')) { if (state.overlay?.kind === 'wrangler') state.overlay.draft = e.target.value; return; }
   if (e.target.classList.contains('chat-input')) { state.chat.draft = e.target.value; return; }
+  // Company Files live search → re-render the board popup and restore the caret.
+  if (e.target.classList.contains('js-files-query')) {
+    if (state.overlay?.kind === 'board') { state.overlay.fileSearch = e.target.value; const sel = e.target.selectionStart; renderOverlay(); const q = document.querySelector('.js-files-query'); if (q) { q.focus(); q.setSelectionRange(sel, sel); } }
+    return;
+  }
   // Board View live search → re-render the popup and restore the caret.
   if (e.target.classList.contains('bv-query')) {
     if (state.overlay?.kind === 'boardview') { state.overlay.query = e.target.value; const sel = e.target.selectionStart; renderOverlay(); const q = document.querySelector('.bv-query'); if (q) { q.focus(); q.setSelectionRange(sel, sel); } }
@@ -7443,6 +7588,26 @@ function onInput(e) {
 
 /* change events — native <input type="date"> / <select> on draft details. */
 function onChange(e) {
+  // F2 — +File upload: read the chosen photo/document; images are downscaled, others kept
+  // as-is. Held in state.overlay.fileUpload until "Add file" (which sends it to Drive).
+  if (e.target.classList.contains('js-ff-file')) {
+    const f = e.target.files && e.target.files[0]; if (!f) return;
+    if (f.size > 12 * 1024 * 1024) { toast('That file is over 12 MB — use a smaller file or paste a link.'); return; }
+    const rd = new FileReader();
+    rd.onload = () => {
+      const hold = (data) => { if (state.overlay) state.overlay.fileUpload = { name: f.name, mimeType: f.type || 'application/octet-stream', data }; renderOverlay(); };
+      if ((f.type || '').startsWith('image/')) downscaleImage(rd.result, 1400, 0.72, (out) => hold(out || rd.result));
+      else hold(rd.result);
+    };
+    rd.onerror = () => toast('Could not read that file.');
+    rd.readAsDataURL(f); return;
+  }
+  // E2 — set/change an invoice's due date inline on the card
+  if (e.target.classList.contains('js-due-date')) {
+    const inv = IDX.invoice.get(e.target.dataset.rec);
+    if (inv) { inv.dueDate = e.target.value || ''; reindex('invoices', inv); toast(inv.dueDate ? `Due date set to ${fmtShortDate(inv.dueDate)}.` : 'Due date cleared.'); render(); }
+    return;
+  }
   // Part/Task popup photo
   if (e.target.classList.contains('js-pf2-file')) {
     const f = e.target.files && e.target.files[0]; if (!f) return;
@@ -8859,6 +9024,7 @@ function finishLoad() {
   buildIndexes(); state.cascade = createCascade(DATA); booting = false; render();
   loadGlobalViews();                                            // pull the shared, company-wide view set
   loadChats();                                                  // pull the shared team-chat threads (§ team-chat sync)
+  refreshWranglerRequests();                                    // §18e populate the approval-inbox badge
   startRefreshPoll();                                           // live multi-user: poll for others' changes (§ refreshFromBackend)
   if (migrationDirty) { migrationDirty = false; saveSoon(); }   // push parsed first/last names up to the Sheet
   // #edit=<id> — desktop→phone handoff opens that customer's account form (§7.1).
@@ -8869,6 +9035,31 @@ function finishLoad() {
     history.replaceState(null, '', location.pathname + location.search);   // self-clear so a refresh can't re-fire
     if (adminUnlocked()) openMigrationPreview(); else toast('Admin unlock required to round up missing units.');
   }
+  // #s=<id> — H1 session sharing: restore the open tabs saved by another device's QR.
+  const sm = (location.hash || '').match(/[#&]s=([\w-]+)/i);
+  if (sm) {
+    history.replaceState(null, '', location.pathname + location.search);
+    backendCall('getSession', { sid: sm[1] }).then((r) => {
+      let p; try { p = r && r.ok && r.data ? JSON.parse(r.data) : null; } catch (e) { p = null; }
+      if (!p || !Array.isArray(p.tabs)) { toast('That shared session has expired.'); return; }
+      p.tabs.forEach((t) => { if (recOf(entityCardOf(t.card, t.recType), t.recId)) openInNewTab(t.card, t.recId, t.recType); });
+      if (state.tabs.length) { state.activeTabId = state.tabs[Math.min(p.activeIdx || 0, state.tabs.length - 1)].id; render(); toast(`Opened ${state.tabs.length} shared tab${state.tabs.length === 1 ? '' : 's'}.`); }
+    }).catch(() => toast('Could not load the shared session.'));
+  }
+}
+// H1 — Share session: stash the open tabs in the backend and show a QR that carries the id,
+// so another device (signed in with the shared password) restores the same open records.
+async function shareSession() {
+  const tabs = state.tabs.map((t) => ({ card: t.card, recId: t.recId, recType: t.recType || null }));
+  let url = location.origin + location.pathname;
+  if (typeof backendPassword !== 'undefined' && backendPassword && tabs.length) {
+    const sid = 'S' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    try { const r = await backendCall('saveSession', { sid, data: JSON.stringify({ tabs, activeIdx: Math.max(0, state.tabs.findIndex((t) => t.id === state.activeTabId)) }) });
+      if (r && r.ok) url += '#s=' + sid; } catch (e) { /* fall back to the plain app URL */ }
+  }
+  openOverlay({ kind: 'qr', title: 'Open on another device', url,
+    caption: tabs.length ? `Scan to open your ${tabs.length} open tab${tabs.length === 1 ? '' : 's'} on another device — sign in with the shared password.`
+      : 'Scan to open Rental Wrangler on another device — sign in with the shared password.' });
 }
 async function attemptLogin() {
   const name = (document.getElementById('login-name')?.value || '').trim();
@@ -8974,6 +9165,7 @@ function boot() {
   });
   document.addEventListener('dragend', () => { dispDragId = null; document.querySelectorAll('.disp-dragging').forEach((n) => n.classList.remove('disp-dragging')); });
   document.addEventListener('mousemove', onInspectMove);   // Design Inspector hover tag (no-op unless state.inspect)
+  document.addEventListener('mousemove', caScrub);          // D2 — customer activity chart cursor scrub
   // Board View formula cells: reveal the raw "=…" on focus, recompute on blur.
   document.addEventListener('focusin', (e) => {
     const t = e.target; if (t && t.classList && t.classList.contains('bv-scratch') && t.dataset.raw) t.textContent = t.dataset.raw;

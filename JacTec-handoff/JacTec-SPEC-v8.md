@@ -132,6 +132,45 @@ Phase-6 free-form "click-icon-to-icon" arrows (built as the sequential drag-orde
 
 ---
 
+## v8.3 — Built-State Delta (2026-06-15, later same day · the self-healing loop closes)
+
+Mr. Wrangler now runs the full **report → prove → fix → report-back** loop, with a human
+gate only where proof is impossible.
+
+**In-app Requests inbox + bottom-right cluster.**
+- The bug/request form is folded into the **one Mr. Wrangler chat**; you can **paste / attach /
+  drag images** (sent as Anthropic image content blocks; backend `@15`).
+- A floating **bottom-right FAB cluster**: a **notification bell** (stub — the future in-app
+  feed for engine updates) over the **Requests inbox** (pending-count badge). Hidden while the
+  team-chat dock owns that corner; lifts above the mobile dock on phones.
+- The inbox lists `wrangler-request` issues; Owner/Admin **Approve** (→ relabels `wrangler-fix`)
+  or **Dismiss** (→ closes). Other roles see "Awaiting Jac's OK".
+
+**The `wrangler-fix` skill (`.claude/skills/wrangler-fix/`) — proof replaces approval.**
+- The auto-fix engine (and Claude triaging) must **ground every report in the canon** — the
+  R-Rulebook (`RULE_META`/`CLASS_RULE` + §1 here), this SPEC, `docs/`, and the code — and
+  **PROVE it right or wrong with citations** before acting.
+- **Proven correct → fix it immediately, no approval** (even a suggestion). Can't prove /
+  contradicts the canon / ambiguous → don't ship; comment the verdict and kick it to the inbox
+  (`wrangler-request`) for Jac. Always report **verdict + proof + "refresh to see it"** on the issue.
+- The engine workflow now **triggers on both `wrangler-fix` and `wrangler-request`**, so
+  suggestions are proven (not parked); only the unprovable ones reach the inbox.
+
+**Backend (Apps Script, deployed via clasp — `@16`).** Three new actions, all via a
+`GITHUB_TOKEN` Script Property (Issues RW): `wranglerFile` (seamless no-tab filing),
+`wranglerRequests` (list), `wranglerApprove` (relabel→fix, admin), `wranglerDismiss` (close,
+admin). `wranglerReply_` upgraded to accept image content blocks + an allowlisted model.
+**clasp is wired** (`backend/` is gitignored; `clasp pull`→edit→`clasp push`→`clasp deploy -i`)
+so the backend can be deployed from a session — re-auth needed each session (ephemeral creds).
+
+**Next (the "few days" item):** the notification bell becomes the **in-app feed** that surfaces
+the engine's verdict/proof/"refresh" comments back to you — closing the loop without GitHub.
+
+**Security to-do:** rotate the `GITHUB_TOKEN` that was pasted in chat (minimal scope: Issues RW,
+one repo).
+
+---
+
 ## 0 · How to debug with this spec
 
 1. **The flash-lint (R0)** is the alarm. Toggle = the eye icon in the bottom bar
