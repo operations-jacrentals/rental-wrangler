@@ -40,10 +40,11 @@ permissions:
 
 jobs:
   fix:
-    # Fire only for the trigger label, on either entry path.
+    # Fire for either Wrangler label, on either entry path. wrangler-fix = build it;
+    # wrangler-request = PROVE it first (fix if proven — no approval — else leave for Jac).
     if: >
-      (github.event.action == 'labeled' && github.event.label.name == 'wrangler-fix') ||
-      (github.event.action == 'opened' && contains(github.event.issue.labels.*.name, 'wrangler-fix'))
+      (github.event.action == 'labeled' && (github.event.label.name == 'wrangler-fix' || github.event.label.name == 'wrangler-request')) ||
+      (github.event.action == 'opened' && (contains(github.event.issue.labels.*.name, 'wrangler-fix') || contains(github.event.issue.labels.*.name, 'wrangler-request')))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -77,52 +78,38 @@ jobs:
           # gate-protected, so broad Bash here is safe — CI is the real backstop.
           claude_args: "--max-turns 60 --allowedTools 'Bash,Edit,Write,Read,Glob,Grep'"
           prompt: |
-            A glitch was reported in the Rental Wrangler app — GitHub issue
+            A report came in via the in-app Mr. Wrangler — GitHub issue
             #${{ github.event.issue.number }}.
 
             TITLE: ${{ github.event.issue.title }}
+            LABELS: ${{ join(github.event.issue.labels.*.name, ', ') }}
 
-            REPORT + REPRO PACKET (from the in-app reporter — may include the
-            view, role, viewport, the element's R-rule stamp, console errors,
-            and a screenshot link):
+            REPORT + REPRO PACKET (view, role, viewport, the element's R-rule stamp,
+            console errors, maybe a screenshot):
             ---
             ${{ github.event.issue.body }}
             ---
 
-            YOUR JOB — fix the ROOT CAUSE of this glitch in the frontend, then
-            ship it autonomously. The user wants this fixed end-to-end:
+            Use the `wrangler-fix` skill (.claude/skills/wrangler-fix/SKILL.md) and follow
+            it EXACTLY. In short:
 
-              1. Read CLAUDE.md first and follow it EXACTLY (deploy/gates, the
-                 design language, and the "Don't" list). Keep the change MINIMAL
-                 and targeted — fix THIS glitch and nothing else. Match the style
-                 and density of the surrounding code.
-              2. Reproduce the bug from the packet (the console errors and the
-                 R-rule stamp usually point straight at the culprit handler /
-                 selector). Fix the underlying cause, not the symptom.
-              3. If the fix changes or adds UI, run it through the design language
-                 in CLAUDE.md (the "yard data-plate": steel panels, rivets, the
-                 hazard-stripe motif, Saira Condensed stamps, the light ranch
-                 twist in copy). Do NOT restyle unrelated UI.
-              4. Run ALL three gates locally and make every one pass:
-                   node ci/smoke.mjs
-                   node ci/logic-test.mjs
-                   node ci/gen-rule-usage.mjs --check
-                 If rule usage legitimately changed, regenerate it
-                 (run `node ci/gen-rule-usage.mjs` WITHOUT --check) and commit the
-                 updated rule-usage.js too.
-              5. SAFETY: never edit money / card / payment / refund / invoice-total
-                 logic to "fix" a glitch unless the bug is genuinely in that path
-                 and you are certain of the fix — and if so, call it out loudly in
-                 the PR body. Never weaken the login/password gate. Honor the rule
-                 that only the Complete-WO button completes a work order.
-              6. Commit on a new branch `wrangler-fix/issue-${{ github.event.issue.number }}`
-                 and open a pull request to `main`. Title:
-                 "Wrangler fix: <short glitch summary>". Body: 2-3 plain-English
-                 sentences on the root cause + the fix, and the line
-                 "Closes #${{ github.event.issue.number }}".
-              7. Then turn on auto-merge so it ships the instant CI is green:
-                   gh pr merge --auto --squash <the PR number you just opened>
-              8. If you genuinely CANNOT reproduce or safely fix it, do NOT open a
-                 PR. Instead post a comment on issue
-                 #${{ github.event.issue.number }} explaining what you found and
-                 what you'd need to proceed, and stop.
+              • GROUND your judgment in the canon first — CLAUDE.md, the R-Rulebook
+                (RULE_META/CLASS_RULE in app.js + §1 of JacTec-handoff/JacTec-SPEC-v8.md),
+                the SPEC, docs/, and the actual code. Then PROVE the report right or wrong
+                with SPECIFIC citations (rule number / SPEC section / code).
+              • If this issue is `wrangler-fix` (a confirmed bug, or a request Jac already
+                approved) → fix it. If it's `wrangler-request` (a suggestion) → fix it ONLY
+                if you can PROVE it correct. A proven request is fixed RIGHT NOW — no
+                approval, it does not wait in the inbox.
+              • Proven → make the MINIMAL fix that satisfies the cited rule (match the code +
+                the design language). Run all 3 gates (node ci/smoke.mjs · node ci/logic-test.mjs
+                · node ci/gen-rule-usage.mjs --check; regenerate rule-usage.js if usage changed).
+                Open a PR to `main` titled "Wrangler fix: <summary>" with body incl.
+                "Closes #${{ github.event.issue.number }}", then `gh pr merge --auto --squash <pr>`.
+              • Can't prove it / it contradicts the canon / it's ambiguous → do NOT ship.
+                Comment your verdict + why on #${{ github.event.issue.number }}; if it's a
+                `wrangler-fix` you couldn't justify, relabel it `wrangler-request` so it lands
+                in Jac's inbox for his call.
+              • ALWAYS leave a closing comment on the issue in Mr. Wrangler's voice: the
+                verdict + the proof, what changed, and "refresh the page to see it" once it ships.
+              • NEVER weaken money / card / auth / WO-completion logic.
