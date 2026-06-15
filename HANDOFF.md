@@ -3,7 +3,69 @@
 > For the next Claude Code session (another machine, the web, or Jac's phone).
 > **Read this first.**
 
-## ▶▶▶ STATE AS OF 2026-06-14 (supersedes everything below)
+## ▶▶▶ STATE AS OF 2026-06-15 (pm — supersedes everything below)
+
+> Handoff for an incoming **local Claude Code session** doing live updates. `main` is moving
+> FAST today (parallel sessions + the wrangler-fix pipeline merged several PRs within minutes),
+> so always `git fetch origin && git log --oneline origin/main` for the TRUE tip — the SHAs
+> below are a snapshot.
+
+**Live `main` @ `445511b`** = app.jacrentals.com. All three gates green (smoke · logic
+**36/36** · `gen-rule-usage --check`). This session's branch `claude/exciting-goldberg-htri6w`
+is cut off `main` and is the live-update branch: develop here → push branch + draft PR →
+`git push origin HEAD:main` to ship to Pages.
+
+### What's LIVE now (built-state detail in `JacTec-handoff/JacTec-SPEC-v8.md` §v8.1–v8.4)
+- **v8.1** — §17 internal team chat dock + §M0–M3 mobile adaptive reflow.
+- **v8.2 (PR #7, now MERGED + LIVE)** — the UI overhaul + Jac's 6-phase dump (per-card hazard
+  stripes, KPI rework, Card Graph view, WO/Parts workflow, daily driver-timeline dispatch) +
+  the **Mr. Wrangler self-healing pipeline** (Track B: a `wrangler-fix`/`wrangler-request`
+  issue → coding agent grounds it in the canon, PROVES it, fixes if proven → 3 gates →
+  auto-merge → Pages).
+- **v8.3** — Mr. Wrangler **in-app Requests inbox** + **bottom-right FAB cluster**
+  (notification-bell stub over the inbox); chat image attach; the **`wrangler-fix` skill**
+  (prove-then-fix — proof replaces approval); backend `wranglerFile`/`Requests`/`Approve`/
+  `Dismiss` deployed via **clasp** (`@16`).
+- **#29** — Phase-6 **free-form route arrows** on the dispatch timeline + the
+  **For-Sale-in-availability** list fix + D/R icon legibility (the two scroll bugs were proven
+  already fixed by #16/#17).
+- **#31 / #32 (A1)** — the "Not Ready" tab chip and the Services (heart) tab no longer set a
+  stuck mode; each now drops a **removable search-bar pill** (Not Ready / Service Due).
+
+### Docs in flight + open PRs — coordinate, don't duplicate
+- **#36 (open)** — the **"SPEC v8.4"** delta records this evening's A1 / B-list / D-E-C-F-G-H
+  work + the two pending backend handlers. **It owns the SPEC v8.4 narrative — don't write a
+  second one.** (This branch's PR #33 only refreshes the HANDOFF, corrects the stale
+  logic-count, and fixes the backlog summary line.)
+- **#1 (open)** — CI bump checkout/setup-node v4→v5 (Node 24). ⏰ **GitHub forces Node-24 on
+  2026-06-16 (tomorrow)** — merge it.
+
+### START HERE (local session)
+1. **Gates — install Playwright first** (the repo ships no `node_modules`):
+   ```sh
+   npm install --no-save playwright@1.48.0 && npx playwright install chromium
+   node ci/smoke.mjs && node ci/logic-test.mjs && node ci/gen-rule-usage.mjs --check
+   ```
+   `logic-test` is now **36** checks. Regenerate `rule-usage.js` (drop `--check`) ONLY when
+   rule USAGE changes.
+2. **Live-update workflow:** develop on this branch → push branch + draft PR →
+   `git push origin HEAD:main` to deploy. Gates MUST pass before any push.
+3. **New/changed UI → run it through the `frontend` skill** in the yard data-plate language
+   (CLAUDE.md is binding); touch only what an edit already touches.
+4. **Backend `Code.gs` is gitignored but now deployable from a session via clasp**
+   (`clasp pull` → edit → `clasp push` → `clasp deploy -i <id>`; re-auth each session). Still
+   TODO there: **`uploadFile`** and **`saveSession`/`getSession`** handlers (per #36), the
+   Claude-API proxy for the AI surfaces, and the image-capable paste so chat image attachments
+   reach the model.
+5. **🔐 Security to-do (from §v8.3):** rotate the `GITHUB_TOKEN` that was pasted in chat —
+   minimal scope (Issues RW, this one repo).
+6. **Remaining product work:** SPEC §7 "Carry forward" (after #36 merges) — the backend
+   handlers, the Claude-API proxy, the Categories fleet-bar (A1's last sticky filter), and the
+   notification-bell → in-app feed.
+
+---
+
+## ▶▶▶ STATE AS OF 2026-06-14 (historical — superseded above)
 
 **Baseline (known-good):** branch `claude/handoff-continuation-q442qm` @ **`08f9da8`**
 (code + the SPEC v8.1 delta + the mobile spec + the build-list tracker); live **`main`**
