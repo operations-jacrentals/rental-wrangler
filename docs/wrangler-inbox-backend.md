@@ -93,4 +93,25 @@ redeploy the web app, and the inbox is fully wired.
   can go back and forth live (the AI runs through your existing `wrangler` action).
 - **After the paste:** photos appear in the inbox + chat, and the back-and-forth
   is recorded on the GitHub issue (so it survives across sessions/devices).
-</content>
+
+## Discuss-before-build + mid-build "needs you" (2026-06-16)
+
+Three small deltas light up the lifecycle states (see
+`docs/superpowers/specs/2026-06-16-discuss-before-build-flow.md`). All optional —
+the chat plan-gate + inbox work without them.
+
+1. **Return each issue's labels** in `wranglerRequests` so the inbox can tag state
+   (`Needs your OK` = `wrangler-request`, `Needs your answer` = `wrangler-needs-jac`,
+   `Building` = `wrangler-fix`). Just add `labels: issue.labels.map(l => l.name)` to
+   each returned request.
+
+2. **Resume on answer.** When `wranglerComment` posts to an issue currently labelled
+   `wrangler-needs-jac`, also **relabel it `wrangler-fix`** (remove `wrangler-needs-jac`)
+   so the engine re-fires and resumes from the full thread. (The engine already
+   sets `wrangler-needs-jac` + posts its question when it pauses.)
+
+3. **Ring the bell.** Have `wranglerNotifications` also include open
+   `wrangler-needs-jac` issues (e.g. `{ kind: 'needs', number, title, question }`)
+   so the notification bell alerts when Mr. Wrangler is waiting on you — not just
+   the inbox badge.
+

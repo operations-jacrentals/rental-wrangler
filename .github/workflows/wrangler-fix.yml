@@ -101,6 +101,13 @@ jobs:
                 approved) → fix it. If it's `wrangler-request` (a suggestion) → fix it ONLY
                 if you can PROVE it correct. A proven request is fixed RIGHT NOW — no
                 approval, it does not wait in the inbox.
+              • If the issue has an "### Approved plan (build to this)" section, Jac already
+                OK'd that plan in chat — build EXACTLY to it; do not redesign or second-guess it.
+              • If you hit a real decision you can't make safely mid-build (genuine ambiguity,
+                or it would touch money / card / auth / WO-completion), STOP — do NOT guess.
+                Post your ONE specific question as a comment and relabel the issue
+                `wrangler-needs-jac` (so it pings Jac in-app), then end. When Jac answers and it's
+                relabeled back to `wrangler-fix`, you'll resume from the full thread.
               • Proven → make the MINIMAL fix that satisfies the cited rule (match the code +
                 the design language). Run all 3 gates (node ci/smoke.mjs · node ci/logic-test.mjs
                 · node ci/gen-rule-usage.mjs --check; regenerate rule-usage.js if usage changed).

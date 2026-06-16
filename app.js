@@ -5303,11 +5303,16 @@ function renderOverlay() {
     const turns = o.messages.length
       ? o.messages.map((m, i) => {
           let act = '';
-          if (m.action) act = m.filed
-            ? `<span class="wr-actdone">✓ ${m.action.action === 'request' ? 'Filed for Jac’s OK' : 'Sent to the fixer'}${m.issue ? ` · #${m.issue}` : ''}</span>`
-            : m.filing
-              ? `<span class="wr-actdone" style="color:var(--txt-3)">…filing</span>`
-              : `<button class="wr-actbtn js-wr-act" data-mi="${i}">${m.action.action === 'request' ? '💡 File this for Jac’s OK' : '🔧 Send this to get fixed'}</button>`;
+          if (m.action) {
+            const ak = m.action.action;
+            const doneLbl = ak === 'plan' ? 'Building to your plan' : ak === 'request' ? 'Filed for Jac’s OK' : 'Sent to the fixer';
+            const btnLbl = ak === 'plan' ? '✓ Build this plan' : ak === 'request' ? '💡 File this for Jac’s OK' : '🔧 Send this to get fixed';
+            act = m.filed
+              ? `<span class="wr-actdone">✓ ${doneLbl}${m.issue ? ` · #${m.issue}` : ''}</span>`
+              : m.filing
+                ? `<span class="wr-actdone" style="color:var(--txt-3)">…filing</span>`
+                : `<button class="wr-actbtn${ak === 'plan' ? ' wr-actbtn-build' : ''} js-wr-act" data-mi="${i}">${btnLbl}</button>`;
+          }
           const imgs = (m.images && m.images.length) ? `<div class="wr-bub-imgs">${m.images.map((s) => `<img src="${esc(s)}" alt="attached image">`).join('')}</div>` : '';
           const txt = m.content ? `${esc(m.content).replace(/\n/g, '<br>')}` : '';
           return `<div class="wr-msg ${m.role}">${m.role === 'assistant' ? '<span class="wr-av">🤠</span>' : ''}<div class="wr-bub">${imgs}${txt}${act}</div></div>`;
@@ -5576,22 +5581,35 @@ function renderOverlay() {
     // §18e the in-app approval inbox for Mr. Wrangler's "Filed for Jac's OK" requests.
     const can = canApproveRequests();
     const list = wranglerRequests;
+    const reqState = (rq) => {
+      const labels = rq.labels || (rq.label ? [rq.label] : []);
+      if (labels.includes('wrangler-needs-jac')) return { key: 'needs', label: 'Needs your answer', color: 'red' };
+      if (labels.includes('wrangler-fix')) return { key: 'building', label: 'Building', color: 'blue' };
+      return { key: 'ok', label: 'Needs your OK', color: 'yellow' };
+    };
     const reqCard = (rq) => {
       const p = parseWranglerIssue(rq.body);
+      const st = reqState(rq);
       const report = p.report ? `<div class="req-text">${esc(p.report).replace(/\n+/g, '<br>')}</div>` : '';
       const photos = (rq.images && rq.images.length)
         ? `<div class="req-photos">${rq.images.map((s) => `<img class="req-photo" src="${esc(s)}" alt="attached photo" loading="lazy">`).join('')}</div>` : '';
       const convo = p.messages.length
         ? `<div class="req-convo">${p.messages.map((m) => `<div class="req-line ${m.role === 'user' ? 'them' : 'wr'}"><span class="req-who">${m.role === 'user' ? 'Reporter' : '🤠 Wrangler'}</span><span class="req-msg">${esc(m.content).replace(/\n/g, '<br>')}</span></div>`).join('')}</div>` : '';
-      return `<div class="req-card">
-        <div class="req-head"><span class="req-num">#${rq.number}</span><span class="req-title">${esc(rq.title)}</span></div>
+      const chatLbl = st.key === 'needs' ? '💬 Answer Mr. Wrangler' : st.key === 'building' ? '💬 Talk it over' : '💬 Talk to Mr. Wrangler';
+      const right = st.key === 'building'
+        ? '<span class="req-await">Building…</span>'
+        : (can
+            ? (st.key === 'needs'
+                ? `<button class="pill ghost js-req-dismiss" data-r="R18" data-n="${rq.number}">Dismiss</button>`
+                : `<button class="pill ghost js-req-dismiss" data-r="R18" data-n="${rq.number}">Dismiss</button><button class="pill c-commit js-req-approve" data-r="R17" data-n="${rq.number}">✓ Approve → build it</button>`)
+            : '<span class="req-await">Awaiting Jac’s OK</span>');
+      return `<div class="req-card req-${st.key}">
+        <div class="req-head"><span class="req-num">#${rq.number}</span><span class="req-title">${esc(rq.title)}</span><span class="spacer"></span><span class="pill c-${st.color} req-state" data-r="R3b">${st.label}</span></div>
         ${report}${photos}${convo}
         <div class="req-acts">
-          <button class="pill c-blue js-req-chat" data-r="R17" data-n="${rq.number}">💬 Talk to Mr. Wrangler</button>
+          <button class="pill ${st.key === 'needs' ? 'c-commit' : 'c-blue'} js-req-chat" data-r="R17" data-n="${rq.number}">${chatLbl}</button>
           <span class="spacer"></span>
-          ${can
-            ? `<button class="pill ghost js-req-dismiss" data-r="R18" data-n="${rq.number}">Dismiss</button><button class="pill c-commit js-req-approve" data-r="R17" data-n="${rq.number}">✓ Approve → build it</button>`
-            : '<span class="req-await">Awaiting Jac’s OK</span>'}
+          ${right}
           <a class="req-link" href="${esc(rq.url)}" target="_blank" rel="noopener">GitHub ↗</a>
         </div>
       </div>`;
@@ -5955,7 +5973,7 @@ async function sendFeedback() {
    (action 'wrangler'); Code.gs calls api.anthropic.com with the key from a Script
    Property. Carries a compact data digest + (when opened from a record) its detail.
    ════════════════════════════════════════════════════════════════════════ */
-const WRANGLER_SYSTEM = "You are Mr. Wrangler, the in-app AI for JacRentals — a heavy-equipment rental yard in Sulphur, Louisiana. You help the team make sense of their units, rentals, customers, invoices, work orders, and service, and you help triage bugs they report.\n\nSTYLE — keep it tight: answer in 1–3 sentences by default. Lead with the direct answer first; add at most one short supporting clause. Use a bullet list ONLY when enumerating multiple records, one line each. Don't restate the question, don't pad, and don't over-explain what you can't do — just answer.\n\nDATA — the snapshot below holds the LIVE records: every category with its rates, every fleet unit with its type and status, every rental with its date window and customer, customers with balances owed, and the open invoices and work orders. Reason over it directly. Only say a fact is missing if it truly isn't in the snapshot. Never invent records, names, or numbers.\n\nHELPING & FIXING — you're the assistant living inside the app (think Claude, but for this yard). The user might ask a question, describe a problem, or paste something — work out what they need and help. If they describe a BUG or glitch in the app itself (something not working, a dead control, a wrong layout or behavior), reproduce it in your head; if you're missing a detail, ask ONE quick follow-up (what they tapped + what they expected). Once you can state a clear repro, FILE A FIX by ending your reply with this exact fenced block:\n```wrangler-action\n{\"action\":\"fix\",\"title\":\"<short title>\",\"report\":\"<clear repro: steps, expected vs actual, any element involved>\"}\n```\nIf it's an IMPROVEMENT or change request rather than a bug, use \"action\":\"request\" (that routes to Jac for his OK instead of auto-shipping). Emit the block ONLY when you're actually ready to file — never while still gathering detail — and keep your visible words short and natural; never mention JSON, blocks, labels, or buttons.\n\nA light wrangler/ranch flavor in voice is welcome — never campy.";
+const WRANGLER_SYSTEM = "You are Mr. Wrangler, the in-app AI for JacRentals — a heavy-equipment rental yard in Sulphur, Louisiana. You help the team make sense of their units, rentals, customers, invoices, work orders, and service, and you help triage bugs they report.\n\nSTYLE — keep it tight: answer in 1–3 sentences by default. Lead with the direct answer first; add at most one short supporting clause. Use a bullet list ONLY when enumerating multiple records, one line each. Don't restate the question, don't pad, and don't over-explain what you can't do — just answer.\n\nDATA — the snapshot below holds the LIVE records: every category with its rates, every fleet unit with its type and status, every rental with its date window and customer, customers with balances owed, and the open invoices and work orders. Reason over it directly. Only say a fact is missing if it truly isn't in the snapshot. Never invent records, names, or numbers.\n\nHELPING & FIXING — you're the assistant living inside the app (think Claude, but for this yard). The user might ask a question, describe a problem, or paste something — work out what they need and help. If they describe a BUG or glitch in the app itself (something not working, a dead control, a wrong layout or behavior), reproduce it in your head; if you're missing a detail, ask ONE quick follow-up (what they tapped + what they expected). Once you can state a clear repro, FILE A FIX by ending your reply with this exact fenced block:\n```wrangler-action\n{\"action\":\"fix\",\"title\":\"<short title>\",\"report\":\"<clear repro: steps, expected vs actual, any element involved>\"}\n```\nThat auto-ships obvious bugs (a dead control, a typo, a plainly wrong value).\nBut if it's a CHANGE or improvement (not an obvious bug), do NOT file it blind — talk it through first: lay out a SHORT, concrete PLAN of exactly what you'd change and where, then ask if that's good or needs adjusting. When you put a concrete plan on the table, end with:\n```wrangler-action\n{\"action\":\"plan\",\"title\":\"<short title>\",\"plan\":\"<numbered steps: what changes, where, and the resulting UX>\"}\n```\nJac reviews that plan and taps Build only when it's right — so take his tweaks and re-propose the plan until he's happy. Emit a block ONLY when ready — a clear repro for a fix, or a concrete plan for a change — never while still gathering detail; keep your visible words short and natural and never mention JSON, blocks, labels, or buttons.\n\nA light wrangler/ranch flavor in voice is welcome — never campy.";
 // The digest is Mr. Wrangler's whole window into the yard, so it carries the ACTUAL
 // records (not just counts): category rates, each unit's type/status, each rental's
 // date window + customer, customer balances, and open invoices/WOs. Sections cap at
@@ -6073,7 +6091,7 @@ async function wranglerSend() {
 function parseWranglerAction(text) {
   const m = String(text || '').match(/```wrangler-action\s*([\s\S]*?)```/);
   if (!m) return null;
-  try { const j = JSON.parse(m[1].trim()); if (j && (j.action === 'fix' || j.action === 'request') && j.title) return j; } catch (e) {}
+  try { const j = JSON.parse(m[1].trim()); if (j && (j.action === 'fix' || j.action === 'request' || j.action === 'plan') && j.title) return j; } catch (e) {}
   return null;
 }
 const stripWranglerAction = (text) => String(text || '').replace(/```wrangler-action\s*[\s\S]*?```/g, '').trim();
@@ -6083,20 +6101,24 @@ const stripWranglerAction = (text) => String(text || '').replace(/```wrangler-ac
 function wranglerActionPacket(o, act) {
   const ctx = feedbackContext();
   const isReq = act.action === 'request';
+  const isPlan = act.action === 'plan';   // a change Jac OK'd in chat — build EXACTLY to this plan
   const transcript = (o.messages || [])
     .filter((m) => m.content)
     .map((m) => `${m.role === 'user' ? '**Reporter**' : '**Mr. Wrangler**'}: ${m.content}`)
     .join('\n\n') || '(no message)';
   const focus = (o.card && o.recId != null) ? `${entityCardOf(o.card, o.recType)}:${o.recId}` : '—';
   const errs = ERR_LOG.length ? ERR_LOG.slice(-12).join('\n') : '(none captured this session)';
-  const footer = isReq
-    ? '_A request for Jac\'s OK — NOT auto-implemented. Jac can add the `wrangler-fix` label to greenlight it._'
-    : '_A Claude agent will reproduce + patch this; the CI gates guard it before it ships to live._';
+  const footer = isPlan
+    ? '_Build EXACTLY to the Approved plan above — Jac OK\'d it in chat. A Claude agent implements it; the CI gates guard it before it ships to live._'
+    : isReq
+      ? '_A request for Jac\'s OK — NOT auto-implemented. Jac can add the `wrangler-fix` label to greenlight it._'
+      : '_A Claude agent will reproduce + patch this; the CI gates guard it before it ships to live._';
+  const heading = isPlan ? 'Approved plan (build to this)' : isReq ? 'Requested change' : 'The glitch';
   const body = [
     `_Filed by Mr. Wrangler from in-app chat._`,
     '',
-    `### ${isReq ? 'Requested change' : 'The glitch'} (Mr. Wrangler's write-up)`,
-    act.report || '(see conversation below)',
+    `### ${heading} (Mr. Wrangler's write-up)`,
+    (isPlan ? (act.plan || act.report) : act.report) || '(see conversation below)',
     '',
     '> 📎 You can paste or drag a screenshot right here before submitting.',
     '',
@@ -6127,21 +6149,25 @@ function wranglerActionPacket(o, act) {
 async function wranglerFileAction(mi) {
   const o = state.overlay; if (!o || o.kind !== 'wrangler') return;
   const m = o.messages[mi]; if (!m || !m.action || m.filed) return;
+  const isPlan = m.action.action === 'plan';
   const { title, body, label } = wranglerActionPacket(o, m.action);
   const images = []; (o.messages || []).forEach((mm) => (mm.images || []).forEach((s) => { if (images.length < 8) images.push(s); }));   // §18e carry the chat's photos onto the issue
+  const okToast = (n) => isPlan ? `Building to your plan — #${n}. 🤠` : label === 'wrangler-request' ? `Filed #${n} — in Jac’s queue for the OK. 🤠` : `Filed #${n} — Mr. Wrangler’s on it. 🤠`;
   if (typeof backendPassword !== 'undefined' && backendPassword) {
     m.filing = true; renderOverlay();
     try {
       const r = await backendCall('wranglerFile', { title, body, label, images });
-      if (r && r.ok && r.number) { m.filed = true; m.filing = false; m.issue = r.number; renderOverlay(); toast(label === 'wrangler-request' ? `Filed #${r.number} — in Jac’s queue for the OK. 🤠` : `Filed #${r.number} — Mr. Wrangler’s on it. 🤠`); return; }
+      if (r && r.ok && r.number) { m.filed = true; m.filing = false; m.issue = r.number; renderOverlay(); toast(okToast(r.number)); return; }
     } catch (e) {}
     m.filing = false;   // backend couldn't file (no GITHUB_TOKEN / offline) → pre-filled fallback
   }
   window.open(wranglerIssueUrl(title, body, label), '_blank', 'noopener');
   m.filed = true; renderOverlay();
-  toast(label === 'wrangler-request'
-    ? 'Opening a request — tap “Submit new issue” and it lands in Jac’s queue. 🤠'
-    : 'Opening a fix ticket — tap “Submit new issue” and Mr. Wrangler wrangles the rest. 🤠');
+  toast(isPlan
+    ? 'Opening the build ticket — tap “Submit new issue” and Mr. Wrangler builds to your plan. 🤠'
+    : label === 'wrangler-request'
+      ? 'Opening a request — tap “Submit new issue” and it lands in Jac’s queue. 🤠'
+      : 'Opening a fix ticket — tap “Submit new issue” and Mr. Wrangler wrangles the rest. 🤠');
 }
 /* §18e IN-APP REQUESTS INBOX — Mr. Wrangler's "Filed for Jac's OK" reviewed + approved
    IN THE APP (never GitHub). Approve flips the issue to wrangler-fix → the auto-fix
@@ -10053,6 +10079,7 @@ function seedDemoRequests() {
   const ph = (label, c) => `data:image/svg+xml;utf8,${encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><rect width='160' height='160' fill='${c}'/><rect x='14' y='14' width='132' height='30' rx='6' fill='rgba(255,255,255,.18)'/><rect x='14' y='58' width='96' height='14' rx='4' fill='rgba(255,255,255,.28)'/><rect x='14' y='80' width='120' height='14' rx='4' fill='rgba(255,255,255,.2)'/><text x='14' y='140' fill='rgba(255,255,255,.7)' font-family='sans-serif' font-size='13'>${label}</text></svg>`)}`;
   wranglerRequests.push({
     number: 41, url: '#', title: 'Inspection “Ready” pill clashes with “On Rent” green',
+    labels: ['wrangler-request'],   // Needs your OK
     images: [ph('screenshot.png', '#1f5f48'), ph('zoomed.png', '#2a4d6e')],
     body: [
       '_Filed by Mr. Wrangler from in-app chat._', '',
@@ -10064,6 +10091,21 @@ function seedDemoRequests() {
       '**Mr. Wrangler**: Good eye — “Ready” (inspection) and “On Rent” (rental) both come out green, so they run together. I’ll propose a distinct tone for inspection-Ready and keep On Rent as the rental green.', '',
       '### Repro context', '- **View:** list view', '- **Role:** Admin', '',
       "_A request for Jac's OK — NOT auto-implemented._",
+    ].join('\n'),
+  });
+  wranglerRequests.push({
+    number: 43, url: '#', title: 'Add a “snooze service” button on the unit card',
+    labels: ['wrangler-needs-jac'],   // build paused — Mr. Wrangler needs an answer
+    body: [
+      '_Filed by Mr. Wrangler from in-app chat._', '',
+      '### Approved plan (build to this) (Mr. Wrangler\'s write-up)',
+      '1. Add a “Snooze 7 days” button to the service-due banner on the unit card.\n2. Push the service countdown out by the snoozed days.\n3. Show a small “snoozed” note until the new date.', '',
+      '### Conversation',
+      '**Reporter**: Let’s let me snooze a service reminder for a week.', '',
+      '**Mr. Wrangler**: Here’s the plan — a “Snooze 7 days” button on the service banner that pushes the countdown out. Build it?', '',
+      '**Reporter**: Yes, build it.', '',
+      '**Mr. Wrangler**: One thing before I ship — should a snooze also pause the “Past Due” red flag, or keep the flag and just move the date? It changes how overdue units read on the board.', '',
+      '### Repro context', '- **View:** units', '- **Role:** Admin',
     ].join('\n'),
   });
   reqLoaded = true;
