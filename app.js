@@ -2467,6 +2467,13 @@ function fmtAggValue(col, a, calc) {
   const v = a[calc] != null ? a[calc] : a.sum;
   return col.type === 'money' ? money(v) : col.type === 'pct' ? num(v) + '%' : num(v);
 }
+/* Footer chips Jac pruned as noise (2026-06-16): whole numeric roll-ups dropped
+   per card, plus a few badge VALUES. No Show is a rental-card-only signal. */
+const FOOT_DROP_NUM = { units: ['service'], rentals: ['price'], customers: ['rentals'] };
+const footDropNum = (card, key) => (FOOT_DROP_NUM[card] || []).includes(key);
+const footDropBadge = (card, value) =>
+  (value === 'No Show' && card !== 'rentals') ||   // No Show = rental card only
+  value === 'Returned' || value === 'Refunded' || value === 'Card OK';
 /** The highlighted summary row beneath a card's List View: badge value-counts +
  *  numeric roll-ups (e.g. "6 Tomorrow · 900 HRS avg · 12 Part Needed"). */
 function listTotalsEl(card, rows, session) {
@@ -2479,6 +2486,7 @@ function listTotalsEl(card, rows, session) {
   const chips = [];   // { k: col.key, html } — buckets let rentals split Billing/Status rows
   for (const col of cols) {
     if (allowed && !allowed.has(col.key)) continue;
+    if (footDropNum(card, col.key)) continue;            // Jac-pruned numeric roll-up
     const a = aggColumn(col, rows);
     if (a.kind === 'badge') {
       // each value-count is a button → filters the list to that value.
@@ -2486,6 +2494,7 @@ function listTotalsEl(card, rows, session) {
       // ad-hoc badges keep count-desc.
       const ord = col.set ? Object.keys(STATUS[col.set] || {}) : null;
       Object.entries(a.counts).sort((x, y) => ord ? ord.indexOf(x[0]) - ord.indexOf(y[0]) : y[1] - x[1]).forEach(([key, n]) => {
+        if (footDropBadge(card, key)) return;            // Jac-pruned badge value
         const m = col.meta ? col.meta(key) : { label: key, color: 'gray' };
         const on = tf && tf.col === col.key && String(tf.value) === String(key);
         chips.push({ k: col.key, html: `<button class="tot-chip c-${m.color} js-tot-chip${on ? ' on' : ''}" data-r="R4" data-tot-card="${totCard}" data-tot-col="${col.key}" data-tot-val="${esc(String(key))}">${n} ${esc(m.label)}</button>` });
