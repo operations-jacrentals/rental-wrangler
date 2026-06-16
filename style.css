@@ -1215,6 +1215,7 @@ input { font-family: inherit; }
 .gv-bars .gv-barcol.on .gv-bar-fill { background: var(--accent) !important; }
 .gv-bars .gv-barcol.on .gv-bar-x { color: var(--accent); }
 .gv-bars .gv-barcol:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+.gv-bars .gv-barcol .gv-bar-x { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }   /* long category names */
 /* clickable leaderboard */
 .gv-lead-list { display: flex; flex-direction: column; }
 .gv-lead-list .gv-lead-row { grid-template-columns: 18px 1fr auto; width: 100%; cursor: pointer; border: none; border-bottom: 1px solid var(--line); background: transparent; color: var(--txt); text-align: left; font: inherit; }
