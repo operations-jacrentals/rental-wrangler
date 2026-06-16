@@ -5167,6 +5167,7 @@ function renderOverlay() {
     const pop = el('div', 'popup wr-pop'); pop.style.width = '440px';
     pop.innerHTML = `
       <div class="popup-head"><span class="mark" style="font-size:18px">🤠</span><h3>Mr. Wrangler</h3>${chip}<span class="spacer"></span><button class="x js-close" aria-label="Close">${I.x}</button></div>
+      ${o.reqNumber ? `<div class="wr-reqbar"><span class="wr-reqnum">Request #${o.reqNumber}</span>${o.reqTitle ? `<span class="wr-reqttl">${esc(o.reqTitle)}</span>` : ''}<span class="spacer"></span>${canApproveRequests() ? `<button class="pill ghost js-req-dismiss" data-r="R18" data-n="${o.reqNumber}">Dismiss</button><button class="pill c-commit js-req-approve" data-r="R17" data-n="${o.reqNumber}">✓ Approve</button>` : ''}</div>` : ''}
       <div class="wr-feed">${turns}${o.busy ? '<div class="wr-msg assistant"><span class="wr-av">🤠</span><div class="wr-bub wr-think">…wrangling an answer</div></div>' : ''}</div>
       ${o.error ? `<div class="wr-err">${esc(o.error)}</div>` : ''}
       ${attachRow}
@@ -5422,19 +5423,32 @@ function renderOverlay() {
   } else if (o.kind === 'requests') {
     // §18e the in-app approval inbox for Mr. Wrangler's "Filed for Jac's OK" requests.
     const can = canApproveRequests();
-    const cleanBody = (b) => esc(String(b || '').split(/###|_Filed/)[0].replace(/^_.*?_\s*/s, '').trim()).replace(/\n+/g, '<br>').slice(0, 600);
     const list = wranglerRequests;
-    const inner = !backendPassword
-      ? '<div class="req-empty">Sign in to review requests.</div>'
-      : (!reqLoaded && reqLoading ? '<div class="req-empty">Loading…</div>'
-        : (!list.length ? '<div class="req-empty"><span class="req-empty-ic">📭</span><p>No requests waiting.</p><span>When Mr. Wrangler files one “for Jac’s OK”, it lands here for you to approve.</span></div>'
-          : list.map((rq) => `<div class="req-card">
-              <div class="req-head"><span class="req-num">#${rq.number}</span><span class="req-title">${esc(rq.title)}</span></div>
-              <div class="req-text">${cleanBody(rq.body)}</div>
-              <div class="req-acts">${can
-                ? `<button class="pill ghost js-req-dismiss" data-r="R18" data-n="${rq.number}">Dismiss</button><button class="pill c-commit js-req-approve" data-r="R17" data-n="${rq.number}">✓ Approve → build it</button>`
-                : '<span class="req-await">Awaiting Jac’s OK</span>'}<a class="req-link" href="${esc(rq.url)}" target="_blank" rel="noopener">GitHub ↗</a></div>
-            </div>`).join('')));
+    const reqCard = (rq) => {
+      const p = parseWranglerIssue(rq.body);
+      const report = p.report ? `<div class="req-text">${esc(p.report).replace(/\n+/g, '<br>')}</div>` : '';
+      const photos = (rq.images && rq.images.length)
+        ? `<div class="req-photos">${rq.images.map((s) => `<img class="req-photo" src="${esc(s)}" alt="attached photo" loading="lazy">`).join('')}</div>` : '';
+      const convo = p.messages.length
+        ? `<div class="req-convo">${p.messages.map((m) => `<div class="req-line ${m.role === 'user' ? 'them' : 'wr'}"><span class="req-who">${m.role === 'user' ? 'Reporter' : '🤠 Wrangler'}</span><span class="req-msg">${esc(m.content).replace(/\n/g, '<br>')}</span></div>`).join('')}</div>` : '';
+      return `<div class="req-card">
+        <div class="req-head"><span class="req-num">#${rq.number}</span><span class="req-title">${esc(rq.title)}</span></div>
+        ${report}${photos}${convo}
+        <div class="req-acts">
+          <button class="pill c-blue js-req-chat" data-r="R17" data-n="${rq.number}">💬 Talk to Mr. Wrangler</button>
+          <span class="spacer"></span>
+          ${can
+            ? `<button class="pill ghost js-req-dismiss" data-r="R18" data-n="${rq.number}">Dismiss</button><button class="pill c-commit js-req-approve" data-r="R17" data-n="${rq.number}">✓ Approve → build it</button>`
+            : '<span class="req-await">Awaiting Jac’s OK</span>'}
+          <a class="req-link" href="${esc(rq.url)}" target="_blank" rel="noopener">GitHub ↗</a>
+        </div>
+      </div>`;
+    };
+    const inner = list.length
+      ? list.map(reqCard).join('')
+      : (!backendPassword ? '<div class="req-empty">Sign in to review requests.</div>'
+        : (!reqLoaded && reqLoading ? '<div class="req-empty">Loading…</div>'
+          : '<div class="req-empty"><span class="req-empty-ic">📭</span><p>No requests waiting.</p><span>When Mr. Wrangler files one “for Jac’s OK”, it lands here for you to review.</span></div>'));
     const pop = el('div', 'popup'); pop.style.width = '480px';
     pop.innerHTML = `
       <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${I.inbox}</span><h3>Requests${list.length ? ` · ${list.length}` : ''}</h3><span class="spacer"></span><button class="iconbtn js-req-refresh" data-tip="Refresh">${I.refresh || '⟳'}</button><button class="x js-close">${I.x}</button></div>
@@ -5891,6 +5905,7 @@ async function wranglerSend() {
   const imgs = (o.attach && o.attach.length) ? o.attach.slice() : null;
   if ((!text && !imgs) || o.busy) { if (inp) inp.focus(); return; }
   o.messages.push({ role: 'user', content: text, images: imgs });
+  syncWranglerComment(o, 'user', text, imgs);   // §18e mirror the turn onto the issue thread
   o.draft = ''; o.attach = []; o.busy = true; o.error = ''; renderOverlay();
   const system = WRANGLER_SYSTEM + '\n\n' + wranglerContext(o);
   // Build the payload: a message with images becomes a content-block array.
@@ -5912,6 +5927,7 @@ async function wranglerSend() {
       let shown = stripWranglerAction(raw);
       if (!shown) shown = act ? (act.action === 'request' ? 'Got it — I’ll file this as a request for Jac to OK.' : 'On it — I’ll send this to get fixed.') : '(no answer)';
       o.messages.push({ role: 'assistant', content: shown, action: act || null, filed: false });
+      syncWranglerComment(o, 'assistant', shown);   // §18e mirror Mr. Wrangler's reply onto the issue thread
     } else {
       o.messages.push({ role: 'assistant', content: "🤠 Demo mode — sign in to ask the real Mr. Wrangler (the live AI runs through the backend). Here's the snapshot I'd reason over:\n\n" + wranglerDigest() });
     }
@@ -5982,10 +5998,11 @@ async function wranglerFileAction(mi) {
   const o = state.overlay; if (!o || o.kind !== 'wrangler') return;
   const m = o.messages[mi]; if (!m || !m.action || m.filed) return;
   const { title, body, label } = wranglerActionPacket(o, m.action);
+  const images = []; (o.messages || []).forEach((mm) => (mm.images || []).forEach((s) => { if (images.length < 8) images.push(s); }));   // §18e carry the chat's photos onto the issue
   if (typeof backendPassword !== 'undefined' && backendPassword) {
     m.filing = true; renderOverlay();
     try {
-      const r = await backendCall('wranglerFile', { title, body, label });
+      const r = await backendCall('wranglerFile', { title, body, label, images });
       if (r && r.ok && r.number) { m.filed = true; m.filing = false; m.issue = r.number; renderOverlay(); toast(label === 'wrangler-request' ? `Filed #${r.number} — in Jac’s queue for the OK. 🤠` : `Filed #${r.number} — Mr. Wrangler’s on it. 🤠`); return; }
     } catch (e) {}
     m.filing = false;   // backend couldn't file (no GITHUB_TOKEN / offline) → pre-filled fallback
@@ -6031,6 +6048,7 @@ async function approveRequest(n) {
     if (r && r.ok) { wranglerRequests = wranglerRequests.filter((x) => x.number !== n); toast(`Approved #${n} — Mr. Wrangler’s building it now. 🤠`); }
     else toast(`Couldn’t approve — ${(r && r.error) || 'try again'}.`);
   } catch (e) { toast('Couldn’t approve — check the connection.'); }
+  if (state.overlay?.kind === 'wrangler' && state.overlay.reqNumber === n) state.overlay = null;
   render(); if (state.overlay?.kind === 'requests') renderOverlay();
 }
 async function dismissRequest(n) {
@@ -6039,7 +6057,51 @@ async function dismissRequest(n) {
     if (r && r.ok) { wranglerRequests = wranglerRequests.filter((x) => x.number !== n); toast(`Dismissed #${n}.`); }
     else toast(`Couldn’t dismiss — ${(r && r.error) || 'try again'}.`);
   } catch (e) { toast('Couldn’t dismiss — check the connection.'); }
+  if (state.overlay?.kind === 'wrangler' && state.overlay.reqNumber === n) state.overlay = null;
   render(); if (state.overlay?.kind === 'requests') renderOverlay();
+}
+/* §18e — reconstruct a filed request's write-up + conversation from its issue body
+   so the inbox can SHOW what Mr. Wrangler wants, and re-seed the chat to continue it. */
+function parseWranglerIssue(body) {
+  const b = String(body || '').replace(/\r/g, '');
+  const slice = (startRe, endRe) => {
+    const s = b.match(startRe); if (!s) return '';
+    const rest = b.slice(s.index + s[0].length);
+    const e = rest.match(endRe);
+    return (e ? rest.slice(0, e.index) : rest).trim();
+  };
+  const report = slice(/###[^\n]*(?:Requested change|glitch)[^\n]*\n/i, /\n>|\n###/);
+  const convo = slice(/###\s*Conversation[^\n]*\n/i, /\n###/);
+  const messages = [];
+  convo.split(/\n\n(?=\*\*)/).forEach((chunk) => {
+    const m = chunk.match(/^\*\*(Reporter|Mr\.? ?Wrangler)\*\*:\s*([\s\S]*)$/);
+    if (m && m[2].trim()) messages.push({ role: /Reporter/i.test(m[1]) ? 'user' : 'assistant', content: m[2].trim() });
+  });
+  return { report, messages };
+}
+/* Re-open the Mr. Wrangler chat seeded from a filed request, so Jac can keep
+   talking it through (same live AI). Each new turn syncs back to the issue. */
+function openWranglerFromRequest(n) {
+  const rq = wranglerRequests.find((x) => x.number === n); if (!rq) return;
+  const { report, messages } = parseWranglerIssue(rq.body);
+  const msgs = messages.length ? messages.map((m) => ({ ...m })) : (report ? [{ role: 'user', content: report }] : []);
+  if (rq.images && rq.images.length) { const fu = msgs.find((m) => m.role === 'user'); if (fu) fu.images = rq.images.slice(); }
+  state.overlay = { kind: 'wrangler', messages: msgs, draft: '', attach: [], reqNumber: rq.number, reqTitle: rq.title, reqUrl: rq.url };
+  renderOverlay();
+  if (typeof backendPassword !== 'undefined' && backendPassword) {
+    backendCall('wranglerThread', { number: n }).then((r) => {
+      if (r && r.ok && Array.isArray(r.messages) && r.messages.length && state.overlay && state.overlay.reqNumber === n) {
+        r.messages.forEach((m) => state.overlay.messages.push({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.text || m.content || '', images: m.images || null }));
+        renderOverlay();
+      }
+    }).catch(() => {});
+  }
+}
+/* Mirror a chat turn onto the GitHub issue as a comment (the thread is the record).
+   Fire-and-forget + graceful: the in-app conversation still works if the backend lacks it. */
+function syncWranglerComment(o, role, text, images) {
+  if (!o || !o.reqNumber || typeof backendPassword === 'undefined' || !backendPassword) return;
+  try { backendCall('wranglerComment', { number: o.reqNumber, role, text: text || '', images: images || [] }).catch(() => {}); } catch (e) {}
 }
 // The floating bottom-right cluster — notification bell (stub for now) + Requests inbox.
 function fabStackEl() {
@@ -7144,6 +7206,7 @@ function onClick(e) {
   if (closest('.js-notif-refresh')) { e.stopPropagation(); return refreshWranglerNotifications(); }
   if (closest('.js-requests')) { e.stopPropagation(); openOverlay({ kind: 'requests' }); refreshWranglerRequests(); return; }   // §18e approval inbox
   if (closest('.js-req-refresh')) { e.stopPropagation(); return refreshWranglerRequests(); }
+  if (closest('.js-req-chat')) { e.stopPropagation(); return openWranglerFromRequest(Number(closest('.js-req-chat').dataset.n)); }   // §18e continue the conversation
   if (closest('.js-req-approve')) { e.stopPropagation(); return approveRequest(Number(closest('.js-req-approve').dataset.n)); }
   if (closest('.js-req-dismiss')) { e.stopPropagation(); return dismissRequest(Number(closest('.js-req-dismiss').dataset.n)); }
   if (closest('.js-open-link')) { e.stopPropagation(); const url = closest('.js-open-link').dataset.url || ''; if (/^(https?:\/\/|mailto:)/i.test(url)) window.open(url, '_blank', 'noopener'); return; }
@@ -9840,7 +9903,29 @@ function boot() {
 
 // #local — render straight from data.js with NO backend (offline/demo + dev smoke test).
 // saveSoon() already no-ops without a password, so edits stay in-memory only.
-function offlineBoot() { buildIndexes(); state.cascade = createCascade(DATA); booting = false; render(); exposeTestApi(); }
+function offlineBoot() { buildIndexes(); state.cascade = createCascade(DATA); seedDemoRequests(); booting = false; render(); exposeTestApi(); }
+/* #local demo only: a sample Requests-inbox entry so the review/continue flow is
+   visible without a backend. Real installs fetch live requests via the backend. */
+function seedDemoRequests() {
+  if (wranglerRequests.length) return;
+  const ph = (label, c) => `data:image/svg+xml;utf8,${encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><rect width='160' height='160' fill='${c}'/><rect x='14' y='14' width='132' height='30' rx='6' fill='rgba(255,255,255,.18)'/><rect x='14' y='58' width='96' height='14' rx='4' fill='rgba(255,255,255,.28)'/><rect x='14' y='80' width='120' height='14' rx='4' fill='rgba(255,255,255,.2)'/><text x='14' y='140' fill='rgba(255,255,255,.7)' font-family='sans-serif' font-size='13'>${label}</text></svg>`)}`;
+  wranglerRequests.push({
+    number: 41, url: '#', title: 'Inspection “Ready” pill clashes with “On Rent” green',
+    images: [ph('screenshot.png', '#1f5f48'), ph('zoomed.png', '#2a4d6e')],
+    body: [
+      '_Filed by Mr. Wrangler from in-app chat._', '',
+      "### Requested change (Mr. Wrangler's write-up)",
+      'On the Units card the inspection “Ready” pill renders the same green as a rental’s “On Rent” status, so at a glance they blur together. Request: give inspection-Ready its own distinct tone so it doesn’t read like a rental status.', '',
+      '> 📎 You can paste or drag a screenshot right here before submitting.', '',
+      '### Conversation',
+      '**Reporter**: The green Ready tag looks exactly like On Rent. Can we make them different so I can tell them apart?', '',
+      '**Mr. Wrangler**: Good eye — “Ready” (inspection) and “On Rent” (rental) both come out green, so they run together. I’ll propose a distinct tone for inspection-Ready and keep On Rent as the rental green.', '',
+      '### Repro context', '- **View:** list view', '- **Role:** Admin', '',
+      "_A request for Jac's OK — NOT auto-implemented._",
+    ].join('\n'),
+  });
+  reqLoaded = true;
+}
 /* test seam — #local (demo) ONLY: a read-mostly logic surface so ci/logic-test.mjs
    can exercise the REAL money + multi-unit functions (not copies). Never reached in
    the backend-backed production path. */
