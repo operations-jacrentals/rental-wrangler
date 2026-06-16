@@ -1513,6 +1513,16 @@ function totColMatch(card, rec, col, value) {
   if (col === '__fc') return DATA.workOrders.some((w) => w.unitId === rec.unitId && w.woType === 'Field Call');   // §13.4 — unit has any Field Call WO
   if (col === '__fcmonth') return DATA.workOrders.some((w) => w.unitId === rec.unitId && w.woType === 'Field Call' && (w.date || '').slice(0, 7) === value);   // §13.4 — Field Call in month YYYY-MM
   if (col === '__rentmonth') return (rec.startDate || '').slice(0, 7) === value;   // §13.4 — rental starting in month YYYY-MM
+  if (col === '__datemonth') return (rec.date || '').slice(0, 7) === value;   // §13.4 — inspections / work orders dated in month YYYY-MM
+  if (col === '__svcstat') {   // §13.4 — a unit's service urgency (mirrors the serviceOrders status pie)
+    if (value === 'wash') return !!rec.washRequested;
+    if (rec.washRequested) return false;
+    const s = topServiceForUnit(rec);
+    if (value === 'past-due') return !!s && s.status === 'past-due';
+    if (value === 'due-soon') return !!s && s.status === 'due-soon';
+    if (value === 'on-schedule') return !s || (s.status !== 'past-due' && s.status !== 'due-soon');
+    return false;
+  }
   const c = cardColumns(card, activeSession()).find((x) => x.key === col);
   return c ? String(c.get(rec)) === String(value) : true;
 }
@@ -1544,6 +1554,8 @@ function colFilterLabel(card, col, value) {
   if (col === '__fc') return 'Field Calls';
   if (col === '__fcmonth') { const d = parseISO(value + '-01'); return 'FC · ' + (d ? d.toLocaleString('en-US', { month: 'short' }) : value); }
   if (col === '__rentmonth') { const d = parseISO(value + '-01'); return d ? d.toLocaleString('en-US', { month: 'short' }) : value; }
+  if (col === '__datemonth') { const d = parseISO(value + '-01'); return d ? d.toLocaleString('en-US', { month: 'short' }) : value; }
+  if (col === '__svcstat') return ({ 'past-due': 'Overdue', 'due-soon': 'Due Soon', 'on-schedule': 'On Schedule', wash: 'Wash' }[value] || value);
   const c = cardColumns(card, activeSession()).find((x) => x.key === col);
   const m = (c && c.meta) ? c.meta(value) : null;
   return (m && m.label) || String(value);
@@ -4186,7 +4198,7 @@ function listView(cardDef, session) {
   // §13.4 — Graph carousel: an interactive panel ABOVE the list (the list renders below,
   // filtered by the chart's g-tagged search terms). Legacy cards still full-replace the list.
   if (cs.graphView && !state.searchMode) {
-    if (graphViewsFor(card)) { const g = el('div', 'gv-panel'); g.innerHTML = graphPanelHtml(card, cs); wrap.appendChild(g); }
+    if (graphViewsFor(card)) { const g = el('div', 'gv-panel'); g.innerHTML = graphPanelHtml(card, card, cs); wrap.appendChild(g); }
     else { const g = el('div', 'gv-card'); g.innerHTML = cardGraphBody(card); wrap.appendChild(g); return wrap; }
   }
   // Phase 4 — Units narrowed to an invoice's linked units (Invoice +WO) → removable chip
@@ -4355,8 +4367,22 @@ function shopCardEl(cardDef, session, forcedSeg) {
   return node;
 }
 
+// §13.4 — a shop row matches like rowMatches (col terms OR within a column, AND across
+// columns, NOT excludes) but resolves each item by its own shop type + the
+// serviceOrders→units search blob. Lets the graph carousel's col-tagged terms filter the
+// shop list (the old path was blob-only and ignored col terms).
+function shopItemMatches(it, query, terms) {
+  const card = it.type, rec = it.rec, terms2 = terms || [];
+  const byCol = {};
+  for (const t of terms2) { if (!t.col) continue; if (t.neg) { if (totColMatch(card, rec, t.col, t.value)) return false; } else (byCol[t.col] = byCol[t.col] || []).push(t.value); }
+  for (const col in byCol) { if (!byCol[col].some((v) => totColMatch(card, rec, col, v))) return false; }
+  return blobMatches(IDX.search.get((card === 'serviceOrders' ? 'units' : card) + ':' + idOf(card, rec)), query, terms2.filter((t) => !t.col));
+}
+
 function shopListView(session, byType, forcedSeg) {
   const cs = session.cards.shop;
+  const gsrc = forcedSeg || (cs.segment && cs.segment !== 'all' ? cs.segment : 'shop');   // §13.4 the view source: a pinned tab or the active segment ('shop' = combined 'all')
+  gvSyncClosed(gsrc, cs);   // graph closed but g-terms linger → save + drop before the bar's pills render
   const wrap = el('div');
   const counts = { all: SHOP_TYPES.reduce((a, ty) => a + byType[ty].length, 0) };
   SHOP_TYPES.forEach((ty) => { counts[ty] = byType[ty].length; });
@@ -4376,7 +4402,7 @@ function shopListView(session, byType, forcedSeg) {
   const bar = el('div', 'listbar');
   const sterms = cs.filterTerms || [];
   bar.innerHTML = `
-    <button class="bv-btn js-cardgraph${cs.graphView ? ' on' : ''}" data-card="shop" data-tip="${cs.graphView ? 'Back to list' : 'Graph view'}">${I.graph}</button>
+    <button class="bv-btn js-cardgraph${cs.graphView ? ' on' : ''}" data-card="shop" data-src="${esc(gsrc)}" data-tip="${cs.graphView ? 'Back to list' : 'Graph view'}">${I.graph}</button>
     <button class="bv-btn js-boardview" data-card="${boardCard}" data-tip="Open Board View (spreadsheet)">${I.table}</button>
     <div class="mini-searchwrap${sterms.length ? ' has-terms' : ''}${cs.search.trim() || sterms.length ? ' has-query' : ''}">
       ${sterms.map((ft, i) => filterTermPill(ft, i, 'shop')).join('')}
@@ -4388,11 +4414,12 @@ function shopListView(session, byType, forcedSeg) {
     </div>`;
   wrap.appendChild(bar);
 
-  // Phase 4 — Graph view is an IN-COLUMN toggle. Keep the bar + segment tabs visible;
-  // the active segment picks which graph shows ('all' → combined shop overview).
+  // §13.4 — Graph carousel. Segment tabs stay visible; a specific segment shows its
+  // interactive carousel ABOVE the list (list filters to the graph terms below); the
+  // 'all' overview (and column-pinned shop tabs) keep the legacy combined dashboard.
   if (cs.graphView && !state.searchMode) {
-    const seg = (forcedSeg || cs.segment); const gseg = (seg && seg !== 'all') ? seg : 'shop';
-    const g = el('div', 'gv-card'); g.innerHTML = cardGraphBody(gseg); wrap.appendChild(g); return wrap;
+    if (graphViewsFor(gsrc)) { const g = el('div', 'gv-panel'); g.innerHTML = graphPanelHtml('shop', gsrc, cs); wrap.appendChild(g); }   // a specific segment → carousel above the list
+    else { const g = el('div', 'gv-card'); g.innerHTML = cardGraphBody('shop'); wrap.appendChild(g); return wrap; }   // 'all' → legacy combined dashboard
   }
 
   // items for the active segment (a column tab pins forcedSeg)
@@ -4401,7 +4428,7 @@ function shopListView(session, byType, forcedSeg) {
     ? SHOP_TYPES.flatMap((ty) => byType[ty].map((rec) => ({ type: ty, rec })))
     : byType[segActive].map((rec) => ({ type: segActive, rec }));
   if (cs.search.trim() || (cs.filterTerms || []).length) {
-    items = items.filter((it) => blobMatches(IDX.search.get((it.type === 'serviceOrders' ? 'units' : it.type) + ':' + idOf(it.type, it.rec)), cs.search, cs.filterTerms));
+    items = items.filter((it) => shopItemMatches(it, cs.search, cs.filterTerms));
   }
   items = shopSort(items, cs.sort);
 
@@ -5299,73 +5326,114 @@ function graphViewsFor(card) {
       { key: 'nums', title: 'By the Numbers', kind: 'nums', segs: status.map((s) => ({ ...s })) },
     ];
   }
+  if (card === 'inspections') {
+    const N = DATA.inspections.filter((n) => shopItemMode('inspections', n, false));   // the open queue — same population the shop list shows
+    const rc = {}; N.forEach((n) => { const r = inspResult(n); (rc[r.label] = rc[r.label] || { label: r.label, color: r.color, count: 0 }).count++; });
+    const result = Object.values(rc).map((x) => ({ col: 'result', value: x.label, label: x.label, count: x.count, color: x.color }));
+    const imonth = gvMonths6().map((m) => ({ col: '__datemonth', value: m.key, label: m.label, count: N.filter((n) => (n.date || '').slice(0, 7) === m.key).length, color: 'blue' }));
+    return [
+      { key: 'result', title: 'Results', kind: 'pie', segs: result },
+      { key: 'imonth', title: 'Inspections / Month', kind: 'bars', color: 'blue', segs: imonth },
+      { key: 'nums', title: 'By the Numbers', kind: 'nums', segs: result.map((s) => ({ ...s })) },
+    ];
+  }
+  if (card === 'workOrders') {
+    const W = DATA.workOrders.filter((w) => shopItemMode('workOrders', w, false));   // the open queue — same population the shop list shows
+    const pc = {}; W.forEach((w) => { const ph = w.phase || '—'; pc[ph] = (pc[ph] || 0) + 1; });
+    const phase = Object.entries(pc).sort((a, b) => b[1] - a[1]).map(([ph, n]) => ({ col: 'phase', value: ph, label: getStatus('woPhase', ph).label || ph, count: n, color: getStatus('woPhase', ph).color || 'gray' }));
+    const tc = {}; W.forEach((w) => { const t = w.woType || '—'; tc[t] = (tc[t] || 0) + 1; });
+    const type = Object.entries(tc).sort((a, b) => b[1] - a[1]).map(([t, n]) => ({ col: 'type', value: t, label: t, count: n, color: getStatus('woType', t).color || 'gray' }));
+    const wmonth = gvMonths6().map((m) => ({ col: '__datemonth', value: m.key, label: m.label, count: W.filter((w) => (w.date || '').slice(0, 7) === m.key).length, color: 'blue' }));
+    return [
+      { key: 'phase', title: 'Open by Phase', kind: 'pie', segs: phase },
+      { key: 'type', title: 'By Type', kind: 'pie', segs: type },
+      { key: 'wmonth', title: 'Work Orders / Month', kind: 'bars', color: 'blue', segs: wmonth },
+    ];
+  }
+  if (card === 'serviceOrders') {
+    let overdue = 0, soon = 0, ok = 0, wash = 0;
+    DATA.units.forEach((u) => { if (u.washRequested) { wash++; return; } const s = topServiceForUnit(u); if (!s) { ok++; return; } if (s.status === 'past-due') overdue++; else if (s.status === 'due-soon') soon++; else ok++; });
+    const status = [
+      { col: '__svcstat', value: 'past-due', label: 'Overdue', count: overdue, color: 'red' },
+      { col: '__svcstat', value: 'due-soon', label: 'Due Soon', count: soon, color: 'yellow' },
+      { col: '__svcstat', value: 'on-schedule', label: 'On Schedule', count: ok, color: 'green' },
+      { col: '__svcstat', value: 'wash', label: 'Wash', count: wash, color: 'blue' },
+    ];
+    return [
+      { key: 'status', title: 'Service Status', kind: 'pie', segs: status },
+      { key: 'nums', title: 'By the Numbers', kind: 'nums', segs: status.map((s) => ({ ...s })) },
+    ];
+  }
   return null;
 }
-// ── state transitions (the active view's selection lives in cs.filterTerms as g-tagged
-//    terms = visible search pills; inactive views are remembered in cs.graphSel) ──
-function gvSaveCurrent(card, cs) {
-  const views = graphViewsFor(card); if (!views) return;
-  const k = gvKey(card, views[gvClampIdx(cs.graphIdx, views.length)]);
+// ── state transitions. The active view's selection lives in cs.filterTerms as g-tagged
+//    terms (= visible search pills); inactive views are remembered in cs.graphSel.
+//    `src` = the view SOURCE: a grid card is its own id; a Shop column is its segment
+//    (forcedSeg or cs.segment), so each shop segment carries its own carousel + memory.
+//    `card` = where the session (cs) lives ('shop' for every shop segment).
+function gvSaveCurrent(src, cs) {
+  const views = graphViewsFor(src); if (!views) return;
+  const k = gvKey(src, views[gvClampIdx(cs.graphIdx, views.length)]);
   cs.graphSel = cs.graphSel || {};
   cs.graphSel[k] = (cs.filterTerms || []).filter((t) => t.g === k).map((t) => ({ col: t.col, value: t.value, t: t.t }));
 }
 const gvStripTerms = (cs) => { cs.filterTerms = (cs.filterTerms || []).filter((t) => !t.g); };
-function gvRestore(card, cs, idx) {
-  const views = graphViewsFor(card); if (!views) return;
-  gvStripTerms(cs);
+function gvRestore(src, cs, idx) {
+  gvStripTerms(cs);   // clear graph terms first (covers a switch to a no-carousel source, e.g. Shop 'all')
+  const views = graphViewsFor(src); if (!views) return;
   cs.graphIdx = gvClampIdx(idx, views.length);
-  const nv = views[cs.graphIdx], k = gvKey(card, nv);
+  const nv = views[cs.graphIdx], k = gvKey(src, nv);
   cs.graphSel = cs.graphSel || {};
   let sel = cs.graphSel[k];
   if (sel === undefined) { const sm = (nv.kind === 'pie' || nv.kind === 'bars') ? gvSmallest(nv) : null; sel = sm ? [{ col: sm.col, value: sm.value, t: sm.label }] : []; }   // first open of a slice view → smallest slice
   cs.filterTerms = cs.filterTerms || [];
   for (const s of sel) cs.filterTerms.push({ t: s.t, col: s.col, value: s.value, neg: false, g: k });
 }
-function gvOpen(card) { const cs = activeSession().cards[card]; cs.graphView = true; gvRestore(card, cs, cs.graphIdx || 0); cs.listLimit = undefined; render(); }
-function gvChevron(card, dir) { const cs = activeSession().cards[card]; gvSaveCurrent(card, cs); gvRestore(card, cs, (cs.graphIdx || 0) + dir); cs.listLimit = undefined; render(); }
-// Idempotent close-sync: any path that flips graphView off (record open, invoice surface)
-// leaves the g-terms behind — save them to memory + strip before the next list renders.
-function gvSyncClosed(card, cs) { if (cs.graphView) return; if (!graphViewsFor(card)) return; if (!(cs.filterTerms || []).some((t) => t.g)) return; gvSaveCurrent(card, cs); gvStripTerms(cs); }
-function toggleGraphSeg(card, col, value, label) {
-  const cs = activeSession().cards[card]; const views = graphViewsFor(card); if (!views) return;
-  const k = gvKey(card, views[gvClampIdx(cs.graphIdx, views.length)]);
+function gvOpen(card, src) { const cs = activeSession().cards[card]; cs.graphView = true; gvRestore(src, cs, cs.graphIdx || 0); cs.listLimit = undefined; render(); }
+function gvChevron(card, src, dir) { const cs = activeSession().cards[card]; gvSaveCurrent(src, cs); gvRestore(src, cs, (cs.graphIdx || 0) + dir); cs.listLimit = undefined; render(); }
+// Idempotent close-sync: any path that flips graphView off (record open, invoice surface,
+// switch to Shop 'all') leaves g-terms behind — save them to memory + strip them.
+function gvSyncClosed(src, cs) { if (cs.graphView) return; if (!(cs.filterTerms || []).some((t) => t.g)) return; gvSaveCurrent(src, cs); gvStripTerms(cs); }
+function toggleGraphSeg(card, src, col, value, label) {
+  const cs = activeSession().cards[card]; const views = graphViewsFor(src); if (!views) return;
+  const k = gvKey(src, views[gvClampIdx(cs.graphIdx, views.length)]);
   const i = (cs.filterTerms || []).findIndex((t) => t.g === k && t.col === col && String(t.value) === String(value));
   if (i >= 0) cs.filterTerms.splice(i, 1); else (cs.filterTerms = cs.filterTerms || []).push({ t: label, col, value, neg: false, g: k });
-  gvSaveCurrent(card, cs); cs.listLimit = undefined; render();
+  gvSaveCurrent(src, cs); cs.listLimit = undefined; render();
 }
 // ── renderers ──
 const GV_CHEV_L = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>';
 const GV_CHEV_R = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg>';
-function gvSegBtn(cs, card, s, inner, cls) {
+function gvSegBtn(cs, card, src, s, inner, cls) {
   const on = gvSegOn(cs, s.col, s.value);
-  return `<button class="${cls} js-gv-seg${on ? ' on' : ''}" data-card="${card}" data-col="${esc(s.col)}" data-value="${esc(String(s.value))}" data-label="${esc(s.label)}" data-tip="${on ? 'Remove filter' : 'Filter to ' + esc(s.label)}">${inner}</button>`;
+  return `<button class="${cls} js-gv-seg${on ? ' on' : ''}" data-card="${card}" data-src="${esc(src)}" data-col="${esc(s.col)}" data-value="${esc(String(s.value))}" data-label="${esc(s.label)}" data-tip="${on ? 'Remove filter' : 'Filter to ' + esc(s.label)}">${inner}</button>`;
 }
-function gvRenderView(card, cs, v) {
+function gvRenderView(card, src, cs, v) {
   if (v.kind === 'pie') {
-    const legend = v.segs.map((s) => gvSegBtn(cs, card, s, `<i style="background:var(--${s.color})"></i><span class="gl-lbl">${esc(s.label)}</span> <b>${s.count}</b>`, 'gv-leg')).join('');
+    const legend = v.segs.map((s) => gvSegBtn(cs, card, src, s, `<i style="background:var(--${s.color})"></i><span class="gl-lbl">${esc(s.label)}</span> <b>${s.count}</b>`, 'gv-leg')).join('');
     return `<div class="gv-pie">${pieSVG(v.segs.map((s) => ({ label: s.label, value: s.count, color: s.color })), 116)}<div class="gv-legend gv-legend-click">${legend}</div></div>`;
   }
   if (v.kind === 'bars') {
     const max = Math.max(1, ...v.segs.map((s) => s.count));
-    return `<div class="gv-bars">${v.segs.map((s) => gvSegBtn(cs, card, s, `<div class="gv-bar-n">${s.count || ''}</div><div class="gv-bar-track"><div class="gv-bar-fill" style="height:${Math.round((s.count / max) * 100)}%;background:var(--${s.color || v.color || 'accent'})"></div></div><div class="gv-bar-x">${esc(s.label)}</div>`, 'gv-barcol')).join('')}</div>`;
+    return `<div class="gv-bars">${v.segs.map((s) => gvSegBtn(cs, card, src, s, `<div class="gv-bar-n">${s.count || ''}</div><div class="gv-bar-track"><div class="gv-bar-fill" style="height:${Math.round((s.count / max) * 100)}%;background:var(--${s.color || v.color || 'accent'})"></div></div><div class="gv-bar-x">${esc(s.label)}</div>`, 'gv-barcol')).join('')}</div>`;
   }
   if (v.kind === 'lead') {
     if (!v.segs.length) return '<div class="gv-empty">No data yet.</div>';
-    return `<div class="gv-lead-list">${v.segs.map((s, i) => gvSegBtn(cs, card, s, `<span class="gv-lead-n">${i + 1}</span><span class="gv-lead-name">${esc(s.label)}</span><span class="gv-lead-c">${esc(String(s.disp != null ? s.disp : s.count))}</span>`, 'gv-lead-row')).join('')}</div>`;
+    return `<div class="gv-lead-list">${v.segs.map((s, i) => gvSegBtn(cs, card, src, s, `<span class="gv-lead-n">${i + 1}</span><span class="gv-lead-name">${esc(s.label)}</span><span class="gv-lead-c">${esc(String(s.disp != null ? s.disp : s.count))}</span>`, 'gv-lead-row')).join('')}</div>`;
   }
-  if (v.kind === 'nums') return `<div class="gv-numrow">${v.segs.map((s) => gvSegBtn(cs, card, s, `<div class="gv-num-v">${esc(String(s.disp != null ? s.disp : s.count))}</div><div class="gv-num-l">${esc(s.label)}</div>`, 'gv-numtile')).join('')}</div>`;
+  if (v.kind === 'nums') return `<div class="gv-numrow">${v.segs.map((s) => gvSegBtn(cs, card, src, s, `<div class="gv-num-v">${esc(String(s.disp != null ? s.disp : s.count))}</div><div class="gv-num-l">${esc(s.label)}</div>`, 'gv-numtile')).join('')}</div>`;
   return '';
 }
-function graphPanelHtml(card, cs) {
-  const views = graphViewsFor(card); if (!views) return '';
+function graphPanelHtml(card, src, cs) {
+  const views = graphViewsFor(src); if (!views) return '';
   const idx = gvClampIdx(cs.graphIdx, views.length), v = views[idx];
   const dots = views.map((_, i) => `<i class="${i === idx ? 'on' : ''}"></i>`).join('');
   return `<div class="gv-head">
-      <button class="gv-chev js-gv-chev" data-card="${card}" data-dir="-1" data-tip="Previous graph">${GV_CHEV_L}</button>
+      <button class="gv-chev js-gv-chev" data-card="${card}" data-src="${esc(src)}" data-dir="-1" data-tip="Previous graph">${GV_CHEV_L}</button>
       <div class="gv-head-mid"><div class="gv-title">${esc(v.title)}</div><div class="gv-dots">${dots}</div></div>
-      <button class="gv-chev js-gv-chev" data-card="${card}" data-dir="1" data-tip="Next graph">${GV_CHEV_R}</button>
+      <button class="gv-chev js-gv-chev" data-card="${card}" data-src="${esc(src)}" data-dir="1" data-tip="Next graph">${GV_CHEV_R}</button>
     </div>
-    <div class="gv-view gv-view-${v.kind}">${gvRenderView(card, cs, v)}</div>`;
+    <div class="gv-view gv-view-${v.kind}">${gvRenderView(card, src, cs, v)}</div>`;
 }
 function cardGraphBody(card) {
   if (card === 'units') {
@@ -7591,9 +7659,9 @@ function onClick(e) {
   if (closest('.js-ff-save')) { e.stopPropagation(); return saveFileForm(); }
   if (closest('.js-vendor-tax')) { e.stopPropagation(); const b = closest('.js-vendor-tax'); const v = recOf('vendors', b.dataset.rec); if (v) { const ex = b.dataset.val === '1'; if (!!v.salesTaxExempt !== ex) { v.salesTaxExempt = ex; reindex('vendors', v); logAction(v, `Sales tax → ${ex ? 'Exempt' : 'Taxed'}`); } if (state.overlay?.kind === 'board') renderOverlay(); render(); } return; }
   if (closest('.js-boardview')) { e.stopPropagation(); return openBoardView(closest('.js-boardview').dataset.card); }
-  if (closest('.js-cardgraph')) { e.stopPropagation(); const card = closest('.js-cardgraph').dataset.card; const cs = activeSession().cards[card]; if (!cs.graphView) { if (graphViewsFor(card)) return gvOpen(card); cs.graphView = true; return render(); } cs.graphView = false; return render(); }   // §13.4 per-card Graph carousel toggle (legacy cards: dashboard)
-  if (closest('.js-gv-chev')) { e.stopPropagation(); const b = closest('.js-gv-chev'); return gvChevron(b.dataset.card, Number(b.dataset.dir)); }   // §13.4 cycle the active graph view
-  if (closest('.js-gv-seg')) { e.stopPropagation(); const b = closest('.js-gv-seg'); return toggleGraphSeg(b.dataset.card, b.dataset.col, b.dataset.value, b.dataset.label); }   // §13.4 toggle a slice/bar/row/number → search entry
+  if (closest('.js-cardgraph')) { e.stopPropagation(); const b = closest('.js-cardgraph'); const card = b.dataset.card, src = b.dataset.src || card; const cs = activeSession().cards[card]; if (!cs.graphView) { if (graphViewsFor(src)) return gvOpen(card, src); cs.graphView = true; return render(); } cs.graphView = false; return render(); }   // §13.4 per-card Graph carousel toggle (legacy / Shop-'all': dashboard)
+  if (closest('.js-gv-chev')) { e.stopPropagation(); const b = closest('.js-gv-chev'); return gvChevron(b.dataset.card, b.dataset.src || b.dataset.card, Number(b.dataset.dir)); }   // §13.4 cycle the active graph view
+  if (closest('.js-gv-seg')) { e.stopPropagation(); const b = closest('.js-gv-seg'); return toggleGraphSeg(b.dataset.card, b.dataset.src || b.dataset.card, b.dataset.col, b.dataset.value, b.dataset.label); }   // §13.4 toggle a slice/bar/row/number → search entry
   if (closest('.js-bv-sort') && !closest('.js-bv-inscol')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview') { const key = closest('.js-bv-sort').dataset.col; if (o.sort?.key === key) o.sort.dir = o.sort.dir === 'asc' ? 'desc' : 'asc'; else o.sort = { key, dir: 'asc' }; renderOverlay(); } return; }
   if (closest('.js-bv-addcol')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview') { o.colOrder = o.colOrder || []; o.colOrder.push({ kind: 'extra', id: 'xc' + (++o.seq), label: '' }); renderOverlay(); } return; }
   if (closest('.js-bv-inscol')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview' && o.colOrder) { const after = Number(closest('.js-bv-inscol').dataset.after); o.colOrder.splice(after + 1, 0, { kind: 'extra', id: 'xc' + (++o.seq), label: '' }); renderOverlay(); } return; }
@@ -7827,7 +7895,7 @@ function onClick(e) {
   if (xEl) { e.stopPropagation(); return handlePillX(xEl); }
 
   // shop segment switch — clicking the active segment toggles back to All
-  if (closest('.js-shopseg')) { const seg = closest('.js-shopseg').dataset.seg; const cs = activeSession().cards.shop; cs.segment = (cs.segment === seg) ? 'all' : seg; render(); return; }
+  if (closest('.js-shopseg')) { const seg = closest('.js-shopseg').dataset.seg; const cs = activeSession().cards.shop; const next = (cs.segment === seg) ? 'all' : seg; if (cs.graphView) { const oldSrc = (cs.segment && cs.segment !== 'all') ? cs.segment : 'shop'; const newSrc = (next !== 'all') ? next : 'shop'; gvSaveCurrent(oldSrc, cs); cs.segment = next; gvRestore(newSrc, cs, cs.graphIdx || 0); cs.listLimit = undefined; return render(); } cs.segment = next; render(); return; }   // §13.4 — segment switch re-sources the open carousel
 
   // row / header action buttons (anchor / new tab) — recType is set for Shop items
   const anchorBtn = closest('.js-anchor');
