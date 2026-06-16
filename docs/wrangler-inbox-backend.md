@@ -1,5 +1,22 @@
 # Requests inbox — backend handlers to paste (Code.gs)
 
+> **✅ DEPLOYED — 2026-06-16 (web app @22).** All of the handlers below are now
+> live in production `Code.gs` (the script bound to the *Rental Wrangler — Live
+> Database* Sheet): `wranglerFile` photos, `wranglerRequests` photos + state
+> labels, `wranglerComment`, `wranglerThread`, and the needs-you bell. **You do
+> not need to paste anything** — this file is now a *reference*, not a to-do.
+> Re-pasting these snippets verbatim would overwrite the live versions, which
+> deviate intentionally in a few spots:
+> - Chat turns are tagged with a hidden `<!-- wrangler-turn:user|assistant -->`
+>   marker so `wranglerThread` replays only real turns and skips the engine's
+>   audit/verdict comments (the doc's `slice(0,40)` heuristic would re-include them).
+> - `wranglerRequests` queries **both** `wrangler-request` and `wrangler-needs-jac`
+>   (open) so "Needs your answer" cards appear in the inbox, and returns each
+>   issue's `labels` for `reqState()` tagging.
+> - The needs-you bell rides the **existing** notifications renderer: an open
+>   `wrangler-needs-jac` issue is returned with its question in `verdict` and
+>   `merged:false` (the renderer has no `question`/`kind` field).
+
 The richer inbox (see what Mr. Wrangler wants, the photos, and continue the
 conversation) is **live in the app today**. The text + conversation already work
 from the issue body. Two things light up once you paste these `Code.gs` handlers
