@@ -107,6 +107,13 @@ function migrateCustomers() {
       }
       migrationDirty = true;
     }
+    // §7.1 'Inbound Lead' was the de-facto default for EVERY customer — reset those to the new
+    // 'N/A' default ONCE per customer (the flag keeps a deliberate future 'Inbound Lead' picked).
+    if (!c.funnelNAApplied) {
+      if (c.usedSalesStage === 'Inbound Lead') c.usedSalesStage = 'N/A';
+      if (c.membershipStage === 'Inbound Lead') c.membershipStage = 'N/A';
+      c.funnelNAApplied = true; migrationDirty = true;
+    }
   });
 }
 /* ── §20 multi-unit rentals — "a Rental is an EVENT" ──
@@ -3581,11 +3588,11 @@ const DETAIL = {
 
     const intCats = (c.interestedCategoryIds || []).map((id) => { const cat = IDX.category.get(id); return cat ? refPill('categories', id, cat.name, { x: 'intcat-remove', xData: id }) : ''; }).join('');
     const usedSales = `<div class="section"><h4>Used Sales</h4><div class="fieldstack centered">
-      ${kvPills(funnelPill(c.customerId, 'usedSales', c.usedSalesStage || 'Inbound Lead'))}
+      ${kvPills(funnelPill(c.customerId, 'usedSales', c.usedSalesStage || 'N/A'))}
       <div class="kv pillrow">${intCats}${addBtn('Category', { link: true, js: 'js-addcat', h: 26, data: { rec: c.customerId } })}</div>
     </div></div>`;
     const membership = `<div class="section"><h4>Membership</h4><div class="fieldstack centered">
-      ${kvPills(funnelPill(c.customerId, 'membership', c.membershipStage || 'Inbound Lead'))}
+      ${kvPills(funnelPill(c.customerId, 'membership', c.membershipStage || 'N/A'))}
       ${isMember && c.paidUntil ? kv(yr(c.paidUntil), { sfx: 'paid until' }) : ''}
       ${c.paidCadence ? kvPills(`${badge('Paid ' + c.paidCadence, 'green')}${c.unlimitedTransport ? badge('Unlimited Transport', 'purple') : ''}`) : ''}
       ${c.paidFees ? kv(money(c.paidFees), { sfx: 'paid fees' }) : ''}
@@ -4583,7 +4590,7 @@ function kpiFor(roleId) {
     const big = C.filter((c) => (c._digest?.totalPaid || 0) > 1999);
     const activeRate = pctOf(big.filter((c) => (c._digest?.activePct || 0) > 0).length, big.length);
     const members = C.filter((c) => /Member/.test(c.accountType || '') && c.accountType !== 'Member Incomplete').length;
-    const leads = C.filter((c) => c.usedSalesStage && c.usedSalesStage !== 'Inbound Lead').length;
+    const leads = C.filter((c) => c.usedSalesStage && c.usedSalesStage !== 'Inbound Lead' && c.usedSalesStage !== 'N/A').length;
     const pipeline = pctOf(members + leads, 10);
     return [revGoal, activeRate, pipeline];
   }
@@ -4629,7 +4636,7 @@ function kpiRaw(roleId) {
   if (roleId === 'sales') {
     const ym = TODAY_ISO.slice(0, 7);
     const rev = R.reduce((a, r) => ((r.startDate || '').slice(0, 7) !== ym ? a : a + ((rentalPrice(r) || {}).price || 0)), 0);
-    return [usd(rev), c(C.filter((x) => (x._digest?.totalPaid || 0) > 1999 && (x._digest?.activePct || 0) > 0).length), c(C.filter((x) => /Member/.test(x.accountType || '') && x.accountType !== 'Member Incomplete').length + C.filter((x) => x.usedSalesStage && x.usedSalesStage !== 'Inbound Lead').length)];
+    return [usd(rev), c(C.filter((x) => (x._digest?.totalPaid || 0) > 1999 && (x._digest?.activePct || 0) > 0).length), c(C.filter((x) => /Member/.test(x.accountType || '') && x.accountType !== 'Member Incomplete').length + C.filter((x) => x.usedSalesStage && x.usedSalesStage !== 'Inbound Lead' && x.usedSalesStage !== 'N/A').length)];
   }
   return [c(0), c(0), c(0)];
 }
@@ -8810,7 +8817,7 @@ function parseQuickCustomer(q) {
 function quickAddCustomerFromSearch(value) {
   const p = parseQuickCustomer(value); if (!p) return false;
   const id = nextCustomerId();
-  const c = { customerId: id, firstName: p.firstName, lastName: p.lastName, name: `${p.firstName} ${p.lastName}`.trim(), company: '', phone: p.phone, email: '', address: '', industry: '', accountType: 'Non-Business', payStatus: 'New Customer', requiresPO: false, accountNotes: '', stripeId: '', selfie: '', signature: '', agreementType: '', agreementSignedAt: '', interestedCategoryIds: [], activityLog: [], usedSalesStage: 'Inbound Lead', membershipStage: 'Inbound Lead', _digest: { activePct: 0, totalPaid: 0, visits: 0, years: 0, avgFrequencyDays: 0, firstInvoice: '', lastInvoice: '' } };
+  const c = { customerId: id, firstName: p.firstName, lastName: p.lastName, name: `${p.firstName} ${p.lastName}`.trim(), company: '', phone: p.phone, email: '', address: '', industry: '', accountType: 'Non-Business', payStatus: 'New Customer', requiresPO: false, accountNotes: '', stripeId: '', selfie: '', signature: '', agreementType: '', agreementSignedAt: '', interestedCategoryIds: [], activityLog: [], usedSalesStage: 'N/A', membershipStage: 'N/A', _digest: { activePct: 0, totalPaid: 0, visits: 0, years: 0, avgFrequencyDays: 0, firstInvoice: '', lastInvoice: '' } };
   DATA.customers.push(c); IDX.customer.set(id, c); reindex('customers', c);
   logAction(c, 'Customer quick-added');
   const s = activeSession();
@@ -8909,7 +8916,7 @@ function quickSaveCustomer(o) {
     industry: d.industry, accountType: d.accountType || 'Non-Business', payStatus: 'New Customer',
     requiresPO: false, accountNotes: d.accountNotes, stripeId: '', selfie: d.selfie || '', signature: d.signature || '',
     agreementType: d.agreementType || '', agreementSignedAt: d.agreementSignedAt || '',
-    interestedCategoryIds: [], activityLog: [], usedSalesStage: 'Inbound Lead', membershipStage: 'Inbound Lead',
+    interestedCategoryIds: [], activityLog: [], usedSalesStage: 'N/A', membershipStage: 'N/A',
     _digest: { activePct: 0, totalPaid: 0, visits: 0, years: 0, avgFrequencyDays: 0, firstInvoice: '', lastInvoice: '' },
   };
   DATA.customers.push(c); IDX.customer.set(id, c); reindex('customers', c);
@@ -8960,7 +8967,7 @@ function saveNewCustomer() {
     industry: d.industry, accountType: d.accountType || 'Non-Business', payStatus: 'New Customer',
     requiresPO: false, accountNotes: d.accountNotes, stripeId: '', selfie: d.selfie || '', signature: d.signature || '',
     agreementType: d.agreementType || '', agreementSignedAt: d.agreementSignedAt || '',
-    interestedCategoryIds: [], activityLog: [], usedSalesStage: 'Inbound Lead', membershipStage: 'Inbound Lead',
+    interestedCategoryIds: [], activityLog: [], usedSalesStage: 'N/A', membershipStage: 'N/A',
     _digest: { activePct: 0, totalPaid: 0, visits: 0, years: 0, avgFrequencyDays: 0, firstInvoice: '', lastInvoice: '' },
   };
   DATA.customers.push(c); IDX.customer.set(id, c); reindex('customers', c);
