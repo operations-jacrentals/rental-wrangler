@@ -6213,11 +6213,13 @@ function renderOverlay() {
     const refAmt = Number(inv.refundedAmount) || 0;
     // §14b ACH in the charge picker: verified banks are selectable; unverified ones are shown
     // but not chargeable yet ("store now, verify later"). Cards still drive allocation/amount.
-    const banks = customerBanks(c);   // §14b shown as a note in the picker — ACH charging is a tested follow-up (backend needs async-settlement handling), not selectable yet
+    const banks = customerBanks(c), vbanks = verifiedBanks(c), ubanks = banks.filter((b) => !b.verified);   // §14b verified banks are chargeable
+    const payOk = card || vbanks.length > 0;
+    const dsel = o.selectedCardId || (defaultCard(c) && defaultCard(c).id) || (vbanks[0] && vbanks[0].id) || '';   // pre-selected method (card default, else first verified bank)
     // §19 partial-payment allocation: when there's a live balance + a card, every
     // line carrying a balance gets a row. Lazy-init o.alloc to "pay in full" so
     // the popup opens charge-ready; partials are made by dialing lines down.
-    const lines = (!refunded && t.balance > 0 && card) ? allocLines(inv) : [];
+    const lines = (!refunded && t.balance > 0 && payOk) ? allocLines(inv) : [];
     if (lines.length && !o.alloc) { o.alloc = {}; lines.forEach((L) => { o.alloc[L.key] = L.remaining; }); }
     const pop = el('div', 'popup'); pop.style.width = '380px';
     pop.innerHTML = `
@@ -6225,12 +6227,13 @@ function renderOverlay() {
       <div class="popup-body">
         <div class="pay-amount"><span class="pay-amount-num">${money(t.balance)}</span><span class="pay-amount-sfx">${t.balance > 0 ? 'balance due' : 'balance'}${c ? ' · ' + esc(c.name) : ''}</span></div>
         <div class="pay-status-line">${statusPill('invoiceStatus', t.status)}<span class="muted">${money(t.paid)} of ${money(t.total)} paid${refAmt ? ` · ${money(refAmt)} refunded` : ''}</span></div>
+        ${inv.achProcessing && inv.pendingPaymentIntentId ? `<div class="pay-card-on-file warn" style="flex-direction:column;align-items:flex-start;gap:7px"><span>🏦 ACH payment processing — it settles in a few business days.</span><button class="pill c-commit js-ach-check" data-rec="${esc(inv.invoiceId)}" data-pi="${esc(inv.pendingPaymentIntentId)}" data-r="R17" ${o.busy ? 'disabled' : ''}>Check ACH status</button></div>` : ''}
         ${refunded ? '<div class="pay-card-on-file">↩ This invoice was refunded.</div>'
           : t.balance <= 0 ? `<div class="pay-card-on-file good">✓ Paid in full${inv.paymentMethod ? ' · ' + esc(inv.paymentMethod) : ''}</div>`
-            : card ? `<div class="pay-cards">${customerCards(c).map((k) => `<button class="pay-card${(o.selectedCardId || defaultCard(c)?.id) === k.id ? ' on' : ''} js-pay-pick" data-card="${k.id}" ${o.busy ? 'disabled' : ''}>💳 ${esc(cardOneLabel(k))}${k.isDefault ? ' · default' : ''}${cardExpired(k) ? ' · expired' : ''}</button>`).join('')}</div>${banks.length ? `<div class="pay-pm-note">${banks.map((b) => `🏦 ${esc(b.bankName)} ••${esc(b.last4)}${b.verified ? ' · verified' : ' · needs verification'} — ACH charging coming`).join('<br>')}</div>` : ''}`
-                   : (banks.length ? '<div class="pay-card-on-file warn">Bank account on file — ACH charging is coming; add a card to charge now.</div>' : '<div class="pay-card-on-file warn">No payment method on file for this customer.</div>')}
+            : payOk ? `<div class="pay-cards">${customerCards(c).map((k) => `<button class="pay-card${dsel === k.id ? ' on' : ''} js-pay-pick" data-card="${k.id}" ${o.busy ? 'disabled' : ''}>💳 ${esc(cardOneLabel(k))}${k.isDefault ? ' · default' : ''}${cardExpired(k) ? ' · expired' : ''}</button>`).join('')}${vbanks.map((k) => `<button class="pay-card${dsel === k.id ? ' on' : ''} js-pay-pick" data-bank="${k.id}" ${o.busy ? 'disabled' : ''}>🏦 ${esc(bankOneLabel(k))}</button>`).join('')}</div>${ubanks.length ? `<div class="pay-pm-note">${ubanks.map((b) => `🏦 ${esc(b.bankName)} ••${esc(b.last4)} · needs verification`).join('<br>')}</div>` : ''}`
+                   : (banks.length ? '<div class="pay-card-on-file warn">Bank account on file — verify it before charging, or add a card.</div>' : '<div class="pay-card-on-file warn">No payment method on file for this customer.</div>')}
         ${lines.length ? allocSectionHtml(lines, o)
-          : (t.balance > 0 && card ? `<label class="pay-field"><span>Amount to charge</span><input class="pay-amt-in" type="number" min="0.01" max="${t.balance}" step="0.01" value="${t.balance.toFixed(2)}" ${o.busy ? 'disabled' : ''}></label>` : '')}
+          : (t.balance > 0 && payOk ? `<label class="pay-field"><span>Amount to charge</span><input class="pay-amt-in" type="number" min="0.01" max="${t.balance}" step="0.01" value="${t.balance.toFixed(2)}" ${o.busy ? 'disabled' : ''}></label>` : '')}
         ${o.confirmRefund ? `<div class="pay-confirm">Refund ${money(t.paid)} to ${esc(inv.paymentMethod || 'the card')}?</div>` : ''}
         ${o.error ? `<div class="login-err" style="text-align:left;margin-top:10px">${esc(o.error)}</div>` : ''}
         <div class="pillrow" style="justify-content:flex-end;margin-top:16px">
@@ -7624,6 +7627,7 @@ function onClick(e) {
   if (closest('.js-ach-save')) { e.stopPropagation(); return saveAchFlow(closest('.js-ach-save')); }
   if (closest('.js-bank-verify')) { e.stopPropagation(); const b = closest('.js-bank-verify'); return openVerifyBank(b.dataset.rec, b.dataset.bank); }
   if (closest('.js-ach-verify-save')) { e.stopPropagation(); return verifyAchFlow(closest('.js-ach-verify-save')); }
+  if (closest('.js-ach-check')) { e.stopPropagation(); const b = closest('.js-ach-check'); return checkAchStatus(b.dataset.rec, b.dataset.pi); }
   if (closest('.js-pay-invoice')) { e.stopPropagation(); return openPayInvoice(closest('.js-pay-invoice').dataset.rec); }
   if (closest('.js-pay-pick')) { e.stopPropagation(); if (state.overlay) { const b = closest('.js-pay-pick'); state.overlay.selectedCardId = b.dataset.card || b.dataset.bank; renderOverlay(); } return; }
   if (closest('.js-charge-invoice')) { e.stopPropagation(); return chargeInvoiceFlow(closest('.js-charge-invoice').dataset.rec); }
@@ -9062,6 +9066,10 @@ function friendlyPayErr(r) {
     'nothing-to-refund': 'Nothing has been paid on this invoice.', 'no-charge-to-refund': 'No card charge found to refund.',
     'refund-failed': 'The refund didn’t go through — try again.', 'invoice-refunded': 'This invoice was already refunded.',
     'invoice-integrity': 'This invoice changed since it was locked — unlock, review, and re-lock before charging.',
+    'ach-failed': 'The ACH debit was returned (e.g. insufficient funds or closed account) — try another method.',
+    'verify-incomplete': 'That code didn’t verify the account yet — double-check the customer’s statement.',
+    'verify-failed': 'Verification didn’t go through — re-check the code on the customer’s statement.',
+    'missing-verify': 'Enter the verification code from the customer’s statement.',
     'server-error': 'Server error — try again.',
   })[code] || 'Payment failed — try again or use another card.';
 }
@@ -9261,6 +9269,17 @@ async function verifyAchFlow(btn) {
   } catch (e) { setErr('Network error — try again.'); reset(); }
 }
 
+// §14b reconcile a processing ACH — poll the PaymentIntent. The server settles it
+// (records the charge) if it succeeded, or clears it if it bounced. Reuses finalize.
+async function checkAchStatus(invoiceId, piId) {
+  try {
+    const f = await backendCall('stripeFinalizeInvoice', { invoiceId, paymentIntentId: piId });
+    if (f && f.ok) { applyPayment(invoiceId, f, null); const inv = IDX.invoice.get(invoiceId); if (inv) delete inv.achProcessing; toast('ACH cleared — payment received ✓'); render(); return; }
+    if (f && f.error === 'ach-failed') { const inv = IDX.invoice.get(invoiceId); if (inv) { delete inv.achProcessing; delete inv.pendingPaymentIntentId; } toast('ACH was returned — charge another way.'); render(); return; }
+    toast('Still processing — ACH usually settles in 3–5 business days.');
+  } catch (e) { toast('Couldn’t check status — try again.'); }
+}
+
 // Charge an invoice off_session; on 3DS fall back to an on-session confirm, then
 // re-verify server-side before marking paid. The payment overlay has no Card
 // Element, so re-rendering it for busy/error states is safe.
@@ -9285,10 +9304,14 @@ async function chargeInvoiceFlow(invoiceId) {
   const done = (r) => { if (!live()) return; applyPayment(invoiceId, r, alloc); o.alloc = null; o.busy = false; o.error = ''; toast(r.fullyPaid || r.alreadyPaid ? 'Paid in full ✓' : 'Payment captured ✓'); renderOverlay(); };
   try {
     const c = IDX.customer.get(IDX.invoice.get(invoiceId)?.customerId);
-    const pick = (o.selectedCardId && customerCards(c).find((k) => k.id === o.selectedCardId)) || defaultCard(c);   // §14b cards only for now — ACH charging is a tested follow-up
+    const pick = (o.selectedCardId && (customerCards(c).find((k) => k.id === o.selectedCardId) || verifiedBanks(c).find((k) => k.id === o.selectedCardId))) || defaultCard(c) || verifiedBanks(c)[0];   // §14b card or verified bank
     const r = await backendCall('stripeChargeInvoice', { invoiceId, amountCents, paymentMethodId: pick?.stripePmId || undefined });
     if (!live()) return;
     if (r && r.ok && (r.status === 'succeeded' || r.alreadyPaid)) { done(r); return; }
+    if (r && r.ok && r.processing) {   // §14b ACH initiated — NOT paid yet; the invoice shows "processing" until it settles (check status to settle)
+      const inv2 = IDX.invoice.get(invoiceId); if (inv2) { inv2.achProcessing = true; if (r.paymentIntentId) inv2.pendingPaymentIntentId = r.paymentIntentId; }
+      o.alloc = null; o.busy = false; o.error = ''; toast('ACH payment initiated — it settles in a few business days.'); closeOverlay(); render(); return;
+    }
     if (r && r.requiresAction && r.clientSecret) {
       const stripe = getStripe(); if (!stripe) { fail('Payment library not ready.'); return; }
       const { paymentIntent, error } = await stripe.confirmCardPayment(r.clientSecret);
