@@ -1056,6 +1056,17 @@ input { font-family: inherit; }
 @media (prefers-reduced-motion: reduce) { .chat-drop { transition: opacity .18s ease; transform: none; } }
 @media (max-width: 560px) { .chat-dock { right: 8px; left: 8px; width: auto; bottom: 56px; max-height: 76vh; } }
 @media (prefers-reduced-motion: reduce) { .cmt-marker.flash { animation: none !important; } }
+/* §18 Mr. Wrangler dock — floats bottom-right alongside or instead of the team chat dock */
+.wrangler-dock { position: fixed; right: 14px; bottom: 60px; width: 400px; max-height: min(74vh, 660px); z-index: 60;
+  display: flex; flex-direction: column; border-radius: 16px; overflow: hidden;
+  background: linear-gradient(180deg,#1b2129,#0c0e11); border: 1px solid var(--line); box-shadow: 0 26px 64px -18px rgba(0,0,0,.72); }
+.wrangler-dock.wr-beside-chat { right: 394px; }
+.wr-dock-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px 10px 14px; border-bottom: 1px solid var(--line); flex: 0 0 auto; background: rgba(0,0,0,.22); }
+.wr-dock-title { font-family: 'Saira Condensed', system-ui, sans-serif; font-size: 14px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--txt); }
+.wrangler-dock .wr-feed { flex: 1 1 auto; overflow-y: auto; min-height: 80px; }
+.wrangler-dock .wr-compose { flex: 0 0 auto; }
+.wrangler-dock.wr-drag { outline: 2px dashed var(--accent); outline-offset: -4px; }
+@media (max-width: 760px) { .wrangler-dock { right: 8px; left: 8px; width: auto; bottom: 56px; max-height: 76vh; } .wrangler-dock.wr-beside-chat { right: 8px; } }
 
 /* §6.2 #11 inline edit */
 .inline-edit { cursor: text; border-radius: 4px; }
