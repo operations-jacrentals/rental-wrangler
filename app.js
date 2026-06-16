@@ -1081,7 +1081,7 @@ function categoryStats(cat) {
    its own anchored main card + cascade. */
 function freshSession() {
   const cards = {};
-  for (const c of GRID_CARDS) cards[c.id] = { mode: 'list', recId: null, recType: null, search: '', filterTerms: [], historySearch: '', sort: loadSort(c.id), backStack: [], fwdStack: [], segment: c.id === 'shop' ? 'all' : null };
+  for (const c of GRID_CARDS) cards[c.id] = { mode: 'list', recId: null, recType: null, search: '', filterTerms: [], historySearch: '', sort: loadSort(c.id), backStack: [], fwdStack: [], segment: c.id === 'shop' ? 'all' : null, graphIdx: 0, graphSel: {} };   // §13.4 graphIdx = active carousel view; graphSel = remembered selection per view
   // 3-column layout: which member card is visible in each column (display-only;
   // rides inside the session so item-tabs / pause-resume restore it for free).
   const cols = {}; for (const col of COLUMNS) cols[col.id] = col.default;
@@ -1329,7 +1329,18 @@ function pushCardHistory(cs) {
 function applySnap(cs, snap) { cs.mode = snap.mode; cs.recId = snap.recId; cs.recType = snap.recType || null; }
 // Step this one card back / forward through its own history (other cards untouched).
 function cardBack(card) {
-  const cs = activeSession().cards[card]; if (!cs || !cs.backStack.length) return;
+  const cs = activeSession().cards[card]; if (!cs) return;
+  if (!cs.backStack.length) {
+    // Nothing recorded to go back to — but a record always sits on its List view, so one
+    // more Back drops to the List (Jac: quick-add etc. jump straight into Standard without
+    // recording the list). Push the record to fwdStack so Forward returns to it.
+    if (cs.mode === 'standard' && cs.recId != null) {
+      cs.fwdStack.push(cardSnap(cs));
+      cs.mode = 'list'; cs.recId = null; cs.recType = null; cs.graphView = false;
+      render();
+    }
+    return;
+  }
   cs.fwdStack.push(cardSnap(cs));
   applySnap(cs, cs.backStack.pop());
   if (cs.mode === 'standard' && cs.recId != null) ackComments(recOf(entityCardOf(card, cs.recType), cs.recId));
@@ -1342,15 +1353,17 @@ function cardFwd(card) {
   if (cs.mode === 'standard' && cs.recId != null) ackComments(recOf(entityCardOf(card, cs.recType), cs.recId));
   render();
 }
-// The stamped two-way "jog" — renders ONLY when this card has its own history this
-// session; back/forward enable independently. Lives in the standard header and the
+// The stamped two-way "jog" — renders when this card has its own history this session,
+// OR whenever it's showing a record (Standard view): a record can always step Back to its
+// List view even with no recorded history (Jac). Lives in the standard header and the
 // list-bar. Right-click on the card mirrors the Back arm (Task 2).
 function cardJog(card, cs) {
-  if (!cs || (!cs.backStack.length && !cs.fwdStack.length)) return '';
+  const inRecord = !!(cs && cs.mode === 'standard' && cs.recId != null);
+  if (!cs || (!cs.backStack.length && !cs.fwdStack.length && !inRecord)) return '';
   const arm = (dir, on, ico, tip) =>
     `<button class="jog-btn js-card${dir}" data-card="${esc(card)}" ${on ? '' : 'disabled'} data-tip="${tip}" aria-label="${tip}">${ico}</button>`;
   return `<div class="card-jog" role="group" aria-label="View history">`
-    + arm('back', cs.backStack.length, I.chevL, 'Back')
+    + arm('back', cs.backStack.length || inRecord, I.chevL, 'Back')
     + arm('fwd', cs.fwdStack.length, I.chevR, 'Forward')
     + `</div>`;
 }
@@ -1478,9 +1491,17 @@ function rowMatches(card, rec, query, terms) {
   }
   const q2 = (query || '').replace(/\b(?:un)?available\b/gi, '').replace(/\s+/g, ' ').trim();
   const terms2 = (terms || []).filter((t) => !/^(?:un)?available$/.test(t.t));
-  // A1 — col-scoped terms (from footer chips) do an EXACT column match so "Ready" can't also
-  // catch "Not Ready"; plain text terms fall through to the blob substring match.
-  for (const t of terms2) { if (!t.col) continue; const m = totColMatch(card, rec, t.col, t.value); if (t.neg ? m : !m) return false; }
+  // A1 — col-scoped terms (from footer chips / graph slices) do an EXACT column match so
+  // "Ready" can't also catch "Not Ready"; plain text terms fall to the blob substring match.
+  // §13.4 — a NOT term excludes on its own; positive terms of the SAME column OR together
+  // (toggle several graph slices = match any), while different columns still AND.
+  const byCol = {};
+  for (const t of terms2) {
+    if (!t.col) continue;
+    if (t.neg) { if (totColMatch(card, rec, t.col, t.value)) return false; }
+    else (byCol[t.col] = byCol[t.col] || []).push(t.value);
+  }
+  for (const col in byCol) { if (!byCol[col].some((v) => totColMatch(card, rec, col, v))) return false; }
   return blobMatches(IDX.search.get(card + ':' + idOf(card, rec)), q2, terms2.filter((t) => !t.col));
 }
 // A1 — exact match for a footer-chip's {col, value}, per record (mirrors applyTotalFilter).
@@ -1489,6 +1510,9 @@ function totColMatch(card, rec, col, value) {
   if (col === '__cond') return rec.inspectionStatus === value;
   if (col === '__svc') { const s = topServiceForUnit(rec); return !!rec.washRequested || !!(s && s.remaining < 0); }   // service-due: overdue service or wash requested
   if (col === '__fleet') { const [cat, status, kind] = String(value).split('|'); if (rec.categoryId !== cat) return false; return kind === 'rental' ? unitRentalBucket(rec) === status : rec.inspectionStatus === status; }   // A1 — fleet-bar segment = category + inspection/rental status
+  if (col === '__fc') return DATA.workOrders.some((w) => w.unitId === rec.unitId && w.woType === 'Field Call');   // §13.4 — unit has any Field Call WO
+  if (col === '__fcmonth') return DATA.workOrders.some((w) => w.unitId === rec.unitId && w.woType === 'Field Call' && (w.date || '').slice(0, 7) === value);   // §13.4 — Field Call in month YYYY-MM
+  if (col === '__rentmonth') return (rec.startDate || '').slice(0, 7) === value;   // §13.4 — rental starting in month YYYY-MM
   const c = cardColumns(card, activeSession()).find((x) => x.key === col);
   return c ? String(c.get(rec)) === String(value) : true;
 }
@@ -1517,6 +1541,9 @@ function colFilterLabel(card, col, value) {
   if (col === '__wo') return value === 'open' ? 'WOs Open' : 'Parts Ordered';
   if (col === '__svc') return 'Service Due';
   if (col === '__fleet') { const [cat, status] = String(value).split('|'); return `${status} · ${IDX.category.get(cat)?.name || 'category'}`; }
+  if (col === '__fc') return 'Field Calls';
+  if (col === '__fcmonth') { const d = parseISO(value + '-01'); return 'FC · ' + (d ? d.toLocaleString('en-US', { month: 'short' }) : value); }
+  if (col === '__rentmonth') { const d = parseISO(value + '-01'); return d ? d.toLocaleString('en-US', { month: 'short' }) : value; }
   const c = cardColumns(card, activeSession()).find((x) => x.key === col);
   const m = (c && c.meta) ? c.meta(value) : null;
   return (m && m.label) || String(value);
@@ -4130,6 +4157,7 @@ function cardEl(cardDef, session) {
 function listView(cardDef, session) {
   const card = cardDef.id;
   const cs = session.cards[card];
+  gvSyncClosed(card, cs);   // §13.4 — graph closed but g-terms linger (record open / invoice surface) → save + drop them before the bar's pills render
   const wrap = el('div');
   // sort/search bar
   const sf = SORT_FIELDS[card];
@@ -4155,8 +4183,12 @@ function listView(cardDef, session) {
       <button class="dir js-sortdir" data-card="${card}"><span class="${cs.sort.dir === 'asc' ? 'on' : ''}">▲</span><span class="${cs.sort.dir === 'desc' ? 'on' : ''}">▼</span></button>
     </div>`;
   wrap.appendChild(bar);
-  // Phase 4 — Graph view is an IN-COLUMN toggle (sibling to the list), not a popup.
-  if (cs.graphView && !state.searchMode) { const g = el('div', 'gv-card'); g.innerHTML = cardGraphBody(card); wrap.appendChild(g); return wrap; }
+  // §13.4 — Graph carousel: an interactive panel ABOVE the list (the list renders below,
+  // filtered by the chart's g-tagged search terms). Legacy cards still full-replace the list.
+  if (cs.graphView && !state.searchMode) {
+    if (graphViewsFor(card)) { const g = el('div', 'gv-panel'); g.innerHTML = graphPanelHtml(card, cs); wrap.appendChild(g); }
+    else { const g = el('div', 'gv-card'); g.innerHTML = cardGraphBody(card); wrap.appendChild(g); return wrap; }
+  }
   // Phase 4 — Units narrowed to an invoice's linked units (Invoice +WO) → removable chip
   if (card === 'units' && state.unitPick) {
     const n = state.unitPick.ids.length;
@@ -4204,6 +4236,15 @@ function listView(cardDef, session) {
     if (card === 'customers' && cs.search.trim() && !session.anchor) {
       const en = el('div', 'empty-new');
       en.innerHTML = `<div class="empty">No customer matches “${esc(cs.search.trim())}”.</div><button class="bigbtn js-new-cust-search">${I.plus} New Customer “${esc(cs.search.trim())}”</button>`;
+      list.appendChild(en);
+    } else if ((card === 'units' || card === 'categories') && cs.search.trim() && !session.anchor) {
+      // a fruitless Units/Categories search offers a prefilled +New one — the typed name carries
+      // straight into the new record, which opens in Standard view to fill in inline (Jac).
+      const q = cs.search.trim();
+      const en = el('div', 'empty-new');
+      const js = card === 'units' ? 'js-new-unit-search' : 'js-new-cat-search';
+      const label = card === 'units' ? 'Unit' : 'Category';
+      en.innerHTML = `<div class="empty">No ${esc(cardDef.singular)} matches “${esc(q)}”.</div><button class="bigbtn ${js}">${I.plus} New ${label} “${esc(q)}”</button>`;
       list.appendChild(en);
     } else {
       // creation lives in ONE place — the header + New menu (no per-card +New, even when empty)
@@ -4902,11 +4943,12 @@ function dispatchTruckPos(stops) {   // v1 seam — swapped for live telematics 
 // "HH:MM" (24h) → minutes (blanks → null, sort last); + a friendly "9:00a" stamp.
 function timeToMin(t) { const m = /^(\d{1,2}):(\d{2})$/.exec((t || '').trim()); return m ? (+m[1]) * 60 + (+m[2]) : null; }
 function fmtClock(t) { const mn = timeToMin(t); if (mn == null) return '—:—'; let h = Math.floor(mn / 60); const m = mn % 60; const ap = h < 12 ? 'a' : 'p'; h = h % 12 || 12; return `${h}:${String(m).padStart(2, '0')}${ap}`; }
-/* §2.3 DISPATCH = the OFFICE COCKPIT (Phase 1, Jac 2026-06-15): a live map of the
-   day's run + a welded TIME-RAIL. Stops auto-fill from rentals; the rail places each
-   on a time axis (retime = reorder, Phase 1b drag); the map draws the route + truck.
-   Every stop reads its KIND (deliver=blue / recover=tan) and the NEXT stop is marked,
-   on BOTH the map and the rail. The board is live — no "send"; edits auto-notify. */
+/* §2.3 DISPATCH = the OFFICE COCKPIT (Phase 1, Jac): a FULL-PANE live map of the day's
+   run + a minimal schedule rail floating on the right that widens on hover/focus to
+   adjust the run ("No set time" pinned on top). Stops auto-fill from rentals; the map
+   draws the route + truck; every stop reads its KIND (deliver=blue / recover=brown) and
+   the NEXT stop is marked, on BOTH map + rail. Live board — no "send"; edits auto-notify.
+   Phase 1b: drag a token to retime (today it's type-the-time). */
 function dispatchGridBody() {
   const day = state.dispatchDay || TODAY_ISO;
   const stops = dispatchDayStops(day);
@@ -4922,33 +4964,29 @@ function dispatchGridBody() {
   if (!stops.length) return `${head}<div class="disp-empty">${I.truck}<p>No transports on this day.</p><span>Rentals with Delivery / Round-Trip / Recovery land here automatically — flip days with ‹ ›.</span></div>`;
 
   const nextId = dispatchNextId(stops);
-  // time window for the rail axis (pad 30m; floor of 2h so a one-stop day still spreads)
-  const mins = stops.map((s) => timeToMin(s.time)).filter((m) => m != null);
-  const winA = mins.length ? Math.min(...mins) - 30 : 7 * 60;
-  let winB = mins.length ? Math.max(...mins) + 30 : 15 * 60;
-  if (winB - winA < 120) winB = winA + 120;
-  const pctOf = (mn) => Math.max(3, Math.min(97, ((mn - winA) / (winB - winA)) * 100));
-  let ticks = '';
-  for (let h = Math.ceil(winA / 60); h * 60 <= winB; h++) { const ap = h < 12 ? 'a' : 'p'; const hh = h % 12 || 12; ticks += `<span class="disp-tick" style="top:${pctOf(h * 60)}%">${hh}${ap}</span>`; }
-
   const scheduled = stops.filter((s) => timeToMin(s.time) != null);
-  const unscheduled = stops.filter((s) => timeToMin(s.time) == null);
-  const tokenEl = (s, axis) => {
+  const unscheduled = stops.filter((s) => timeToMin(s.time) == null);   // §2.3 "No set time" pinned to the TOP of the rail (Jac)
+  const tokenEl = (s) => {
     const kind = dispatchKind(s);
     const done = stopDone(s), isNext = s.id === nextId;
-    const top = axis ? ` style="top:${pctOf(timeToMin(s.time))}%"` : '';
     const flag = done ? `<span class="dt-flag ok">✓ done</span>` : (isNext ? `<span class="dt-flag next">${I.truck} next</span>` : '');
-    return `<div class="disp-tok js-disp-tok${done ? ' done' : ''}${isNext ? ' next' : ''}${s.pin ? '' : ' nopin'}" data-id="${esc(s.id)}" data-rec="${esc(s.rentalId)}" data-unit="${esc(s.unitId || '')}"${top}>
-      <div class="dt-r1"><span class="dt-grip" data-tip="Type a time to retime/reorder this stop (drag coming soon)">⠿</span><input class="dt-time js-disp-time" data-id="${esc(s.id)}" value="${esc(s.time || '')}" placeholder="—:—" maxlength="5" aria-label="Stop time" data-tip="Set the stop time — reorders the run" /><span class="spacer"></span>${flag}</div>
-      <div class="dt-r2"><span class="dt-kind k-${kind}">${kind === 'deliver' ? '▾' : '▴'} ${kind}</span><span class="dt-who">${esc(s.cust)} · ${esc(s.unit)}</span></div>
-      ${s.addr ? `<div class="dt-addr js-site-go" data-rec="${esc(s.rentalId)}" data-unit="${esc(s.unitId || '')}" data-tip="Open the site / set the map pin">${s.pin ? '' : '⚠ '}${esc(s.addr)}</div>` : ''}
+    return `<div class="disp-tok js-disp-tok kind-${kind}${done ? ' done' : ''}${isNext ? ' next' : ''}${s.pin ? '' : ' nopin'}" data-id="${esc(s.id)}" data-rec="${esc(s.rentalId)}" data-unit="${esc(s.unitId || '')}">
+      <div class="dt-rail"><span class="dt-dot"></span><b class="dt-mini">${timeToMin(s.time) != null ? esc(fmtClock(s.time)) : '—'}</b></div>
+      <div class="dt-full">
+        <div class="dt-r1"><span class="dt-grip" data-tip="Type a time to retime/reorder (drag coming soon)">⠿</span><input class="dt-time js-disp-time" data-id="${esc(s.id)}" value="${esc(s.time || '')}" placeholder="—:—" maxlength="5" aria-label="Stop time" data-tip="Set the stop time — reorders the run" /><span class="spacer"></span>${flag}</div>
+        <div class="dt-r2"><span class="dt-kind k-${kind}">${kind === 'deliver' ? '▾' : '▴'} ${kind}</span><span class="dt-who">${esc(s.cust)} · ${esc(s.unit)}</span></div>
+        ${s.addr ? `<div class="dt-addr js-site-go" data-rec="${esc(s.rentalId)}" data-unit="${esc(s.unitId || '')}" data-tip="Open the site / set the map pin">${s.pin ? '' : '⚠ '}${esc(s.addr)}</div>` : ''}
+      </div>
     </div>`;
   };
-  const rail = `<div class="disprail js-disprail" data-day="${esc(day)}">
-    <div class="disp-bookend">${ICO_STORE} <span>Roll out</span></div>
-    <div class="disp-axis">${ticks}<span class="disp-axisline"></span>${scheduled.map((s) => tokenEl(s, true)).join('')}</div>
-    ${unscheduled.length ? `<div class="disp-tray"><div class="disp-tray-h">${unscheduled.length} no set time</div>${unscheduled.map((s) => tokenEl(s, false)).join('')}</div>` : ''}
-    <div class="disp-bookend">${ICO_STORE} <span>Return to yard</span></div>
+  const sec = (t) => `<div class="dr-sec">${t}</div>`;
+  const railRows = (unscheduled.length ? sec('No set time') + unscheduled.map(tokenEl).join('') : '')
+    + (scheduled.length ? (unscheduled.length ? sec('Scheduled') : '') + scheduled.map(tokenEl).join('') : '');
+  // The map is the full pane; the rail is a minimal time strip floating on the right that
+  // widens on hover/focus to let the office adjust the run. "No set time" sits up top.
+  const rail = `<div class="disprail js-disprail" data-day="${esc(day)}" tabindex="0" data-tip="Hover to adjust the run">
+    <div class="dr-head"><span class="dr-chev">‹</span><span class="dr-title">Run · ${stops.length} stop${stops.length === 1 ? '' : 's'}</span></div>
+    <div class="dr-list">${railRows}</div>
   </div>`;
   const foot = `<div class="disp-foot"><span class="disp-livedot"></span><span class="disp-live">Live · auto-notifies the driver on change</span></div>`;
   return `${head}<div class="disp-cockpit"><div class="dispm js-dispmount" data-day="${esc(day)}"></div>${rail}</div>${foot}`;
@@ -5153,6 +5191,181 @@ function gvMonths6() {
   const out = [];
   for (let i = 5; i >= 0; i--) { const d = new Date(TODAY.getFullYear(), TODAY.getMonth() - i, 1); out.push({ key: d.toISOString().slice(0, 7), label: d.toLocaleString('en-US', { month: 'short' }) }); }
   return out;
+}
+/* ════════════════════════════════════════════════════════════════════════
+   §13.4 GRAPH CAROUSEL (Jac 2026-06-16) — the per-card Graph is a deck of
+   INTERACTIVE views stacked ABOVE the list. Chevrons cycle the view; clicking a
+   slice / bar / row / number TOGGLES a search entry (the one filtering pathway),
+   so the chart drives the rows. Same-column toggles OR together. Each view
+   remembers its selection (cs.graphSel); first open of a pie/bars view defaults to
+   its smallest non-empty slice. Cards without a view set fall back to the legacy
+   cardGraphBody dashboard. ════════════════════════════════════════════════════ */
+const gvClampIdx = (idx, n) => (n ? ((((idx || 0) % n) + n) % n) : 0);
+const gvKey = (card, v) => card + ':' + v.key;
+const gvSegOn = (cs, col, value) => (cs.filterTerms || []).some((t) => t.g && t.col === col && String(t.value) === String(value));
+function gvSmallest(view) { const live = (view.segs || []).filter((s) => s.count > 0); return live.length ? live.reduce((a, b) => (b.count < a.count ? b : a)) : null; }
+// A graph view = { key, title, kind:'pie'|'bars'|'lead'|'nums', color?, segs:[{col,value,label,count,color}] }.
+// Each seg's {col,value} is exactly a filter term, so a click maps straight to the list.
+function graphViewsFor(card) {
+  if (card === 'units') {
+    const f = fleetInsp();
+    const insp = [['Ready', 'green'], ['Not Ready', 'yellow'], ['Failed', 'red']].map(([v, c]) => ({ col: 'inspection', value: v, label: v, count: f[v] || 0, color: c }));
+    const fleetN = {}; DATA.units.forEach((u) => { const s = u.fleetStatus || '—'; fleetN[s] = (fleetN[s] || 0) + 1; });
+    const fleet = Object.entries(fleetN).sort((a, b) => b[1] - a[1]).map(([s, n]) => ({ col: 'fleet', value: s, label: s, count: n, color: getStatus('unitFleetStatus', s).color || 'gray' }));
+    const openSet = new Set(DATA.workOrders.filter((w) => w.phase !== 'Complete' && !w.cancelled).map((w) => w.unitId));
+    const ordSet = new Set(DATA.workOrders.filter((w) => w.phase !== 'Complete' && !w.cancelled && (w.phase === 'Part Ordered' || (w.lineItems || []).some((l) => l.phase === 'Part Ordered'))).map((w) => w.unitId));
+    const nUnits = (set) => DATA.units.filter((u) => set.has(u.unitId)).length;
+    const shop = [{ col: '__wo', value: 'open', label: 'WOs Open', count: nUnits(openSet), color: 'red' }, { col: '__wo', value: 'ordered', label: 'Parts Ordered', count: nUnits(ordSet), color: 'yellow' }];
+    const fc = DATA.workOrders.filter((w) => w.woType === 'Field Call');
+    const fcMonth = gvMonths6().map((m) => ({ col: '__fcmonth', value: m.key, label: m.label, count: new Set(fc.filter((w) => (w.date || '').slice(0, 7) === m.key).map((w) => w.unitId)).size, color: 'red' }));
+    const fcByUnit = {}; fc.forEach((w) => { if (w.unitId) fcByUnit[w.unitId] = (fcByUnit[w.unitId] || 0) + 1; });
+    const fcLead = Object.entries(fcByUnit).map(([uid, n]) => ({ col: 'name', value: IDX.unit.get(uid)?.name || uid, label: IDX.unit.get(uid)?.name || uid, count: n, color: 'red' })).sort((a, b) => b.count - a.count).slice(0, 8);
+    const nums = [
+      { col: '__fc', value: '1', label: 'Field Calls', count: new Set(fc.map((w) => w.unitId)).size, color: 'red' },
+      { col: '__wo', value: 'open', label: 'Open WOs', count: nUnits(openSet), color: 'yellow' },
+      { col: '__wo', value: 'ordered', label: 'Parts Ordered', count: nUnits(ordSet), color: 'blue' },
+      { col: 'wash', value: 'Wash Requested', label: 'Wash', count: DATA.units.filter((u) => u.washRequested).length, color: 'blue' },
+      { col: 'fleet', value: 'For Sale', label: 'For Sale', count: fleetN['For Sale'] || 0, color: 'green' },
+    ];
+    return [
+      { key: 'inspection', title: 'Inspection', kind: 'pie', segs: insp },
+      { key: 'fleet', title: 'Fleet', kind: 'pie', segs: fleet },
+      { key: 'shop', title: 'Shop · Open WOs', kind: 'pie', segs: shop },
+      { key: 'fcmonth', title: 'Field Calls / Month', kind: 'bars', color: 'red', segs: fcMonth },
+      { key: 'fclead', title: 'Most Field Calls', kind: 'lead', segs: fcLead },
+      { key: 'nums', title: 'By the Numbers', kind: 'nums', segs: nums },
+    ];
+  }
+  if (card === 'rentals') {
+    const R = DATA.rentals, ym = TODAY_ISO.slice(0, 7);
+    const sc = {}; R.forEach((r) => { const s = rentalDisplayStatus(r); sc[s] = (sc[s] || 0) + 1; });
+    const ordIdx = (s) => { const k = RENTAL_BAR_ORDER.indexOf(s); return k < 0 ? 99 : k; };
+    const status = Object.keys(sc).sort((a, b) => ordIdx(a) - ordIdx(b)).map((s) => ({ col: 'status', value: s, label: s, count: sc[s], color: s === 'Available' ? 'gray' : (getStatus('rentalStatus', s).color || 'gray') }));
+    const ic = {}; R.forEach((r) => { const inv = r.invoiceId && IDX.invoice.get(r.invoiceId); const s = inv ? invoiceTotals(inv).status : 'No invoice'; ic[s] = (ic[s] || 0) + 1; });
+    const invoice = Object.entries(ic).sort((a, b) => b[1] - a[1]).map(([s, n]) => ({ col: 'invoice', value: s === 'No invoice' ? '' : s, label: s, count: n, color: s === 'No invoice' ? 'gray' : (getStatus('invoiceStatus', s).color || 'gray') }));
+    const rmonth = gvMonths6().map((m) => ({ col: '__rentmonth', value: m.key, label: m.label, count: R.filter((r) => (r.startDate || '').slice(0, 7) === m.key).length, color: 'blue' }));
+    const byUnit = {}; R.forEach((r) => rentalUnits(r).forEach((eu) => { const u = IDX.unit.get(eu.unitId); if (u) byUnit[u.name] = (byUnit[u.name] || 0) + 1; }));
+    const topUnits = Object.entries(byUnit).map(([name, n]) => ({ col: 'name', value: name, label: name, count: n, color: 'blue' })).sort((a, b) => b.count - a.count).slice(0, 8);
+    const nums = [
+      { col: 'status', value: 'On Rent', label: 'On Rent', count: sc['On Rent'] || 0, color: 'green' },
+      { col: 'status', value: 'Quote', label: 'Quotes', count: sc['Quote'] || 0, color: 'gray' },
+      { col: 'status', value: 'No Show', label: 'No Show', count: sc['No Show'] || 0, color: 'red' },
+      { col: '__rentmonth', value: ym, label: 'This Month', count: R.filter((r) => (r.startDate || '').slice(0, 7) === ym).length, color: 'blue' },
+    ];
+    return [
+      { key: 'status', title: 'Status Mix', kind: 'pie', segs: status },
+      { key: 'invoice', title: 'Invoice Status', kind: 'pie', segs: invoice },
+      { key: 'rmonth', title: 'Rentals / Month', kind: 'bars', color: 'blue', segs: rmonth },
+      { key: 'units', title: 'Most-Rented Units', kind: 'lead', segs: topUnits },
+      { key: 'nums', title: 'By the Numbers', kind: 'nums', segs: nums },
+    ];
+  }
+  if (card === 'customers') {
+    const C = DATA.customers;
+    const ac = {}; C.forEach((c) => { const t = c.accountType || 'Non-Business'; ac[t] = (ac[t] || 0) + 1; });
+    const account = Object.entries(ac).sort((a, b) => b[1] - a[1]).map(([t, n]) => ({ col: 'account', value: t, label: t, count: n, color: getStatus('customerAccountType', t).color || 'gray' }));
+    const pcN = {}; C.forEach((c) => { const p = c.payStatus || ''; pcN[p] = (pcN[p] || 0) + 1; });
+    const pay = Object.entries(pcN).sort((a, b) => b[1] - a[1]).map(([p, n]) => ({ col: 'pay', value: p, label: p || 'None', count: n, color: getStatus('customerPayStatus', p).color || 'gray' }));
+    const topSpend = C.map((c) => ({ c, paid: c._digest?.totalPaid || 0 })).filter((x) => x.paid > 0).sort((a, b) => b.paid - a.paid).slice(0, 8).map((x) => ({ col: 'name', value: x.c.name, label: x.c.name, count: Math.round(x.paid), disp: money(x.paid), color: 'green' }));
+    const nums = [
+      { col: 'account', value: 'Business', label: 'Business', count: ac['Business'] || 0, color: 'blue' },
+      { col: 'account', value: 'Non-Business', label: 'Non-Business', count: ac['Non-Business'] || 0, color: 'gray' },
+      { col: 'card', value: 'No Card', label: 'No Card', count: C.filter((c) => cardFlag(c) === 'none').length, color: 'red' },
+    ];
+    return [
+      { key: 'account', title: 'Account Types', kind: 'pie', segs: account },
+      { key: 'pay', title: 'Pay Status', kind: 'pie', segs: pay },
+      { key: 'spend', title: 'Top Customers', kind: 'lead', segs: topSpend },
+      { key: 'nums', title: 'By the Numbers', kind: 'nums', segs: nums },
+    ];
+  }
+  if (card === 'categories') {
+    const byCat = {}; DATA.units.forEach((u) => { if (u.categoryId) byCat[u.categoryId] = (byCat[u.categoryId] || 0) + 1; });
+    const ranked = DATA.categories.map((c) => ({ col: 'name', value: c.name, label: c.name, count: byCat[c.categoryId] || 0, color: 'blue' })).sort((a, b) => b.count - a.count);
+    return [
+      { key: 'unitsper', title: 'Units per Category', kind: 'bars', color: 'blue', segs: ranked.slice(0, 8) },
+      { key: 'largest', title: 'Largest Categories', kind: 'lead', segs: ranked.slice(0, 8) },
+    ];
+  }
+  if (card === 'invoices') {
+    const INV = DATA.invoices;
+    const sc = {}; INV.forEach((i) => { const s = invoiceTotals(i).status; sc[s] = (sc[s] || 0) + 1; });
+    const status = Object.entries(sc).sort((a, b) => b[1] - a[1]).map(([s, n]) => ({ col: 'status', value: s, label: s, count: n, color: getStatus('invoiceStatus', s).color || 'gray' }));
+    const byCust = {}; INV.forEach((i) => { const t = invoiceTotals(i); if (t.balance > 0 && t.status !== 'Refunded') { const n = IDX.customer.get(i.customerId)?.name || i.customerId || '—'; byCust[n] = (byCust[n] || 0) + t.balance; } });
+    const topBal = Object.entries(byCust).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([n, bal]) => ({ col: 'customer', value: n, label: n, count: Math.round(bal), disp: money(bal), color: 'red' }));
+    return [
+      { key: 'status', title: 'Payment Status', kind: 'pie', segs: status },
+      { key: 'balances', title: 'Biggest Balances', kind: 'lead', segs: topBal },
+      { key: 'nums', title: 'By the Numbers', kind: 'nums', segs: status.map((s) => ({ ...s })) },
+    ];
+  }
+  return null;
+}
+// ── state transitions (the active view's selection lives in cs.filterTerms as g-tagged
+//    terms = visible search pills; inactive views are remembered in cs.graphSel) ──
+function gvSaveCurrent(card, cs) {
+  const views = graphViewsFor(card); if (!views) return;
+  const k = gvKey(card, views[gvClampIdx(cs.graphIdx, views.length)]);
+  cs.graphSel = cs.graphSel || {};
+  cs.graphSel[k] = (cs.filterTerms || []).filter((t) => t.g === k).map((t) => ({ col: t.col, value: t.value, t: t.t }));
+}
+const gvStripTerms = (cs) => { cs.filterTerms = (cs.filterTerms || []).filter((t) => !t.g); };
+function gvRestore(card, cs, idx) {
+  const views = graphViewsFor(card); if (!views) return;
+  gvStripTerms(cs);
+  cs.graphIdx = gvClampIdx(idx, views.length);
+  const nv = views[cs.graphIdx], k = gvKey(card, nv);
+  cs.graphSel = cs.graphSel || {};
+  let sel = cs.graphSel[k];
+  if (sel === undefined) { const sm = (nv.kind === 'pie' || nv.kind === 'bars') ? gvSmallest(nv) : null; sel = sm ? [{ col: sm.col, value: sm.value, t: sm.label }] : []; }   // first open of a slice view → smallest slice
+  cs.filterTerms = cs.filterTerms || [];
+  for (const s of sel) cs.filterTerms.push({ t: s.t, col: s.col, value: s.value, neg: false, g: k });
+}
+function gvOpen(card) { const cs = activeSession().cards[card]; cs.graphView = true; gvRestore(card, cs, cs.graphIdx || 0); cs.listLimit = undefined; render(); }
+function gvChevron(card, dir) { const cs = activeSession().cards[card]; gvSaveCurrent(card, cs); gvRestore(card, cs, (cs.graphIdx || 0) + dir); cs.listLimit = undefined; render(); }
+// Idempotent close-sync: any path that flips graphView off (record open, invoice surface)
+// leaves the g-terms behind — save them to memory + strip before the next list renders.
+function gvSyncClosed(card, cs) { if (cs.graphView) return; if (!graphViewsFor(card)) return; if (!(cs.filterTerms || []).some((t) => t.g)) return; gvSaveCurrent(card, cs); gvStripTerms(cs); }
+function toggleGraphSeg(card, col, value, label) {
+  const cs = activeSession().cards[card]; const views = graphViewsFor(card); if (!views) return;
+  const k = gvKey(card, views[gvClampIdx(cs.graphIdx, views.length)]);
+  const i = (cs.filterTerms || []).findIndex((t) => t.g === k && t.col === col && String(t.value) === String(value));
+  if (i >= 0) cs.filterTerms.splice(i, 1); else (cs.filterTerms = cs.filterTerms || []).push({ t: label, col, value, neg: false, g: k });
+  gvSaveCurrent(card, cs); cs.listLimit = undefined; render();
+}
+// ── renderers ──
+const GV_CHEV_L = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>';
+const GV_CHEV_R = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg>';
+function gvSegBtn(cs, card, s, inner, cls) {
+  const on = gvSegOn(cs, s.col, s.value);
+  return `<button class="${cls} js-gv-seg${on ? ' on' : ''}" data-card="${card}" data-col="${esc(s.col)}" data-value="${esc(String(s.value))}" data-label="${esc(s.label)}" data-tip="${on ? 'Remove filter' : 'Filter to ' + esc(s.label)}">${inner}</button>`;
+}
+function gvRenderView(card, cs, v) {
+  if (v.kind === 'pie') {
+    const legend = v.segs.map((s) => gvSegBtn(cs, card, s, `<i style="background:var(--${s.color})"></i><span class="gl-lbl">${esc(s.label)}</span> <b>${s.count}</b>`, 'gv-leg')).join('');
+    return `<div class="gv-pie">${pieSVG(v.segs.map((s) => ({ label: s.label, value: s.count, color: s.color })), 116)}<div class="gv-legend gv-legend-click">${legend}</div></div>`;
+  }
+  if (v.kind === 'bars') {
+    const max = Math.max(1, ...v.segs.map((s) => s.count));
+    return `<div class="gv-bars">${v.segs.map((s) => gvSegBtn(cs, card, s, `<div class="gv-bar-n">${s.count || ''}</div><div class="gv-bar-track"><div class="gv-bar-fill" style="height:${Math.round((s.count / max) * 100)}%;background:var(--${s.color || v.color || 'accent'})"></div></div><div class="gv-bar-x">${esc(s.label)}</div>`, 'gv-barcol')).join('')}</div>`;
+  }
+  if (v.kind === 'lead') {
+    if (!v.segs.length) return '<div class="gv-empty">No data yet.</div>';
+    return `<div class="gv-lead-list">${v.segs.map((s, i) => gvSegBtn(cs, card, s, `<span class="gv-lead-n">${i + 1}</span><span class="gv-lead-name">${esc(s.label)}</span><span class="gv-lead-c">${esc(String(s.disp != null ? s.disp : s.count))}</span>`, 'gv-lead-row')).join('')}</div>`;
+  }
+  if (v.kind === 'nums') return `<div class="gv-numrow">${v.segs.map((s) => gvSegBtn(cs, card, s, `<div class="gv-num-v">${esc(String(s.disp != null ? s.disp : s.count))}</div><div class="gv-num-l">${esc(s.label)}</div>`, 'gv-numtile')).join('')}</div>`;
+  return '';
+}
+function graphPanelHtml(card, cs) {
+  const views = graphViewsFor(card); if (!views) return '';
+  const idx = gvClampIdx(cs.graphIdx, views.length), v = views[idx];
+  const dots = views.map((_, i) => `<i class="${i === idx ? 'on' : ''}"></i>`).join('');
+  return `<div class="gv-head">
+      <button class="gv-chev js-gv-chev" data-card="${card}" data-dir="-1" data-tip="Previous graph">${GV_CHEV_L}</button>
+      <div class="gv-head-mid"><div class="gv-title">${esc(v.title)}</div><div class="gv-dots">${dots}</div></div>
+      <button class="gv-chev js-gv-chev" data-card="${card}" data-dir="1" data-tip="Next graph">${GV_CHEV_R}</button>
+    </div>
+    <div class="gv-view gv-view-${v.kind}">${gvRenderView(card, cs, v)}</div>`;
 }
 function cardGraphBody(card) {
   if (card === 'units') {
@@ -7474,7 +7687,9 @@ function onClick(e) {
   if (closest('.js-ff-save')) { e.stopPropagation(); return saveFileForm(); }
   if (closest('.js-vendor-tax')) { e.stopPropagation(); const b = closest('.js-vendor-tax'); const v = recOf('vendors', b.dataset.rec); if (v) { const ex = b.dataset.val === '1'; if (!!v.salesTaxExempt !== ex) { v.salesTaxExempt = ex; reindex('vendors', v); logAction(v, `Sales tax → ${ex ? 'Exempt' : 'Taxed'}`); } if (state.overlay?.kind === 'board') renderOverlay(); render(); } return; }
   if (closest('.js-boardview')) { e.stopPropagation(); return openBoardView(closest('.js-boardview').dataset.card); }
-  if (closest('.js-cardgraph')) { e.stopPropagation(); const card = closest('.js-cardgraph').dataset.card; const cs = activeSession().cards[card]; cs.graphView = !cs.graphView; return render(); }   // Phase 4 per-card Graph view — in-column toggle (sibling to the list)
+  if (closest('.js-cardgraph')) { e.stopPropagation(); const card = closest('.js-cardgraph').dataset.card; const cs = activeSession().cards[card]; if (!cs.graphView) { if (graphViewsFor(card)) return gvOpen(card); cs.graphView = true; return render(); } cs.graphView = false; return render(); }   // §13.4 per-card Graph carousel toggle (legacy cards: dashboard)
+  if (closest('.js-gv-chev')) { e.stopPropagation(); const b = closest('.js-gv-chev'); return gvChevron(b.dataset.card, Number(b.dataset.dir)); }   // §13.4 cycle the active graph view
+  if (closest('.js-gv-seg')) { e.stopPropagation(); const b = closest('.js-gv-seg'); return toggleGraphSeg(b.dataset.card, b.dataset.col, b.dataset.value, b.dataset.label); }   // §13.4 toggle a slice/bar/row/number → search entry
   if (closest('.js-bv-sort') && !closest('.js-bv-inscol')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview') { const key = closest('.js-bv-sort').dataset.col; if (o.sort?.key === key) o.sort.dir = o.sort.dir === 'asc' ? 'desc' : 'asc'; else o.sort = { key, dir: 'asc' }; renderOverlay(); } return; }
   if (closest('.js-bv-addcol')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview') { o.colOrder = o.colOrder || []; o.colOrder.push({ kind: 'extra', id: 'xc' + (++o.seq), label: '' }); renderOverlay(); } return; }
   if (closest('.js-bv-inscol')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview' && o.colOrder) { const after = Number(closest('.js-bv-inscol').dataset.after); o.colOrder.splice(after + 1, 0, { kind: 'extra', id: 'xc' + (++o.seq), label: '' }); renderOverlay(); } return; }
@@ -7485,6 +7700,8 @@ function onClick(e) {
   if (closest('.js-bv-customize')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview') { o.customize = !o.customize; renderOverlay(); } return; }
   if (closest('.js-bv-resetlayout')) { e.stopPropagation(); const card = closest('.js-bv-resetlayout').dataset.card; saveListLayout(card, null); saveListTotals(card, null); render(); renderOverlay(); return; }
   if (closest('.js-new-cust-search')) { e.stopPropagation(); const cs = activeSession().cards.customers; return startNewCustomer(parseCustomerSearch(cs.search)); }
+  if (closest('.js-new-unit-search')) { e.stopPropagation(); return quickAddUnitFromSearch(activeSession().cards.units.search); }
+  if (closest('.js-new-cat-search')) { e.stopPropagation(); return quickAddCategoryFromSearch(activeSession().cards.categories.search); }
   if (closest('.js-coltab')) {
     const ct = closest('.js-coltab'); e.stopPropagation();
     // A1 — the Services (heart) tab filters the Units list to service-due as a removable
@@ -8629,6 +8846,40 @@ function quickAddCustomerFromSearch(value) {
   const ccs = s.cards.customers; ccs.search = ''; ccs.filterTerms = []; ccs.mode = 'standard'; ccs.recId = id; ccs.recType = null; ccs.graphView = false;   // surface the new customer in Standard View — unlinked
   render();
   toast(`${c.name || 'Customer'} added — drag it onto a rental or invoice to link.`);
+  return true;
+}
+/* QUICK ADD — a fruitless Units/Categories search offers a +New button (the empty state).
+   It creates the record with the typed text as its name and drops you into its Standard
+   view to fill in the rest inline — units/categories are edited inline (no separate form).
+   Routed through openStandard so the prior list view is recorded and Back returns to it. */
+function nextUnitId() {
+  const max = DATA.units.reduce((m, u) => { const n = /^U(\d+)$/.exec(u.unitId || ''); return n ? Math.max(m, +n[1]) : m; }, 0);
+  return 'U' + String(max + 1).padStart(3, '0');
+}
+function quickAddUnitFromSearch(value) {
+  const name = (value || '').trim(); if (!name) return false;
+  const id = nextUnitId();
+  const u = { unitId: id, name, categoryId: '', assignedMechanic: '', currentHours: 0, inspectionStatus: 'Not Ready', fleetStatus: 'Active', purchaseHours: 0, serviceCompletions: {} };
+  DATA.units.push(u); IDX.unit.set(id, u); reindex('units', u);
+  logAction(u, 'Unit added');
+  const cs = activeSession().cards.units; cs.search = ''; cs.filterTerms = [];
+  openStandard('units', id);
+  toast(`${name} added — set its category, hours, and inspection.`);
+  return true;
+}
+function nextCategoryId() {
+  const max = DATA.categories.reduce((m, c) => { const n = /^CAT(\d+)$/.exec(c.categoryId || ''); return n ? Math.max(m, +n[1]) : m; }, 0);
+  return 'CAT' + String(max + 1).padStart(3, '0');
+}
+function quickAddCategoryFromSearch(value) {
+  const name = (value || '').trim(); if (!name) return false;
+  const id = nextCategoryId();
+  const c = { categoryId: id, name, memberDaily: 0, rate1Day: 0, rate7Day: 0, rate4Wk: 0, weekend: 0, msrp: 0, askPrice: 0, bottomDollar: 0, fuelType: '', description: '' };
+  DATA.categories.push(c); IDX.category.set(id, c); reindex('categories', c);
+  logAction(c, 'Category added');
+  const cs = activeSession().cards.categories; cs.search = ''; cs.filterTerms = [];
+  openStandard('categories', id);
+  toast(`${name} added — set its day/week/month rates.`);
   return true;
 }
 /** Turn a customer-search string into prefill: a letterless string → phone, else
