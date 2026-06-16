@@ -939,6 +939,10 @@ select.lf-in { appearance: none; cursor: pointer; }
 .wr-actbtn:focus-visible { outline: 2px solid var(--accent-line, #ff7a1a); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) { .wr-actbtn:active { transform: none; } }
 .wr-actbtn-build { background: linear-gradient(180deg, #43d07f, #2faa63); color: #04140c; }   /* the plan-OK "go build it" commit */
+.wr-apply { margin-top: 9px; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.wr-apply-sum { font-size: 12px; font-weight: 700; color: var(--txt); }
+.wr-apply-skip { font-size: 10.5px; color: var(--yellow); }
+.wr-apply-none { font-size: 11.5px; color: var(--txt-3); font-style: italic; }
 .wr-actdone { display: inline-block; margin-top: 8px; font-size: 11.5px; font-weight: 600;
   color: var(--green, #46c46a); letter-spacing: .3px; }
 
@@ -1063,6 +1067,17 @@ select.lf-in { appearance: none; cursor: pointer; }
 @media (prefers-reduced-motion: reduce) { .chat-drop { transition: opacity .18s ease; transform: none; } }
 @media (max-width: 560px) { .chat-dock { right: 8px; left: 8px; width: auto; bottom: 56px; max-height: 76vh; } }
 @media (prefers-reduced-motion: reduce) { .cmt-marker.flash { animation: none !important; } }
+/* §18 Mr. Wrangler dock — floats bottom-right alongside or instead of the team chat dock */
+.wrangler-dock { position: fixed; right: 14px; bottom: 60px; width: 400px; max-height: min(74vh, 660px); z-index: 60;
+  display: flex; flex-direction: column; border-radius: 16px; overflow: hidden;
+  background: linear-gradient(180deg,#1b2129,#0c0e11); border: 1px solid var(--line); box-shadow: 0 26px 64px -18px rgba(0,0,0,.72); }
+.wrangler-dock.wr-beside-chat { right: 394px; }
+.wr-dock-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px 10px 14px; border-bottom: 1px solid var(--line); flex: 0 0 auto; background: rgba(0,0,0,.22); }
+.wr-dock-title { font-family: 'Saira Condensed', system-ui, sans-serif; font-size: 14px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--txt); }
+.wrangler-dock .wr-feed { flex: 1 1 auto; overflow-y: auto; min-height: 80px; }
+.wrangler-dock .wr-compose { flex: 0 0 auto; }
+.wrangler-dock.wr-drag { outline: 2px dashed var(--accent); outline-offset: -4px; }
+@media (max-width: 760px) { .wrangler-dock { right: 8px; left: 8px; width: auto; bottom: 56px; max-height: 76vh; } .wrangler-dock.wr-beside-chat { right: 8px; } }
 
 /* §6.2 #11 inline edit */
 .inline-edit { cursor: text; border-radius: 4px; }
@@ -1213,6 +1228,10 @@ select.lf-in { appearance: none; cursor: pointer; }
 .gv-chev:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .gv-view { margin-top: 8px; }
 .gv-empty { color: var(--txt-3); font-size: 12px; padding: 8px 2px; text-align: center; }
+/* clickable donut slices (pie) — the legend chips stay the keyboard path */
+.gv-pie-svg .gv-slice { cursor: pointer; stroke: var(--card); stroke-width: 1.5; }
+.gv-pie-svg .gv-slice:hover { filter: brightness(1.12); }
+.gv-pie-svg .gv-slice.on { stroke: var(--accent); stroke-width: 3; }
 /* clickable legend chips (pie) */
 .gv-legend-click { gap: 6px; }
 .gv-legend-click .gv-leg { cursor: pointer; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel); color: var(--txt-2); font-size: 11px; }

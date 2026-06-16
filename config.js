@@ -132,6 +132,7 @@ const RAW_STATUS = {
     'No':    { label: 'Bill: No',    color: 'gray'   },
   },
   funnelStage: {
+    'N/A':               { label: 'N/A',               color: 'gray'   },
     'Inbound Lead':      { label: 'Inbound Lead',      color: 'blue'   },
     'Outbound Lead':     { label: 'Outbound Lead',     color: 'navy'   },
     "Don't Contact":     { label: "Don't Contact",     color: 'red'    },
