@@ -331,9 +331,20 @@ input { font-family: inherit; }
 .card-row .cr-exp { font-size: 11px; color: var(--txt-3); } .card-row .cr-exp.warn { color: var(--yellow); } .card-row .cr-exp.bad { color: var(--red); }
 .card-row .cr-nick { font-size: 12px; color: var(--txt-2); }
 .card-row .x { margin-left: auto; color: var(--txt-3); } .card-row .x:hover { color: var(--red); }
+/* §14b Payment Methods — Cards | ACH tabs + the ACH form */
+.pm-tabs { display: flex; gap: 5px; margin: 0 0 10px; }
+.pm-tab { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1px; font-size: 11px; font-weight: 700; color: var(--txt-3); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 5px 13px; cursor: pointer; }
+.pm-tab:hover { color: var(--txt-2); border-color: var(--accent-line); }
+.pm-tab.on { color: var(--on-orange); background: var(--accent); border-color: var(--accent); }
+.pm-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ach-row { display: flex; gap: 10px; margin-top: 10px; }
+.ach-col { flex: 1; min-width: 0; }
+.ach-col .pay-cap { margin-bottom: 5px; }
+select.lf-in { appearance: none; cursor: pointer; }
 .pay-cards { display: flex; flex-direction: column; gap: 6px; margin: 4px 0; }
 .pay-card { display: flex; align-items: center; gap: 6px; padding: 9px 12px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); font-size: 13px; font-weight: 600; text-align: left; }
 .pay-card.on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.pay-pm-note { font-size: 11.5px; color: var(--txt-3); margin: 6px 0 0; padding: 6px 10px; border: 1px dashed var(--line); border-radius: 8px; }
 /* §15 feedback popup */
 .fb-types { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
 .fb-types .nc-pill { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 7px 12px; line-height: 1.15; }

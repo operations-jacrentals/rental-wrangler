@@ -107,6 +107,9 @@ function migrateCustomers() {
       }
       migrationDirty = true;
     }
+    // §14b ACH bank accounts on file — parallel to cards[]; tokenized via Stripe (us_bank_account),
+    // we store only last4 + bankName + type + the Stripe pm id (never the raw routing/account).
+    if (!Array.isArray(c.achAccounts)) { c.achAccounts = []; migrationDirty = true; }
   });
 }
 /* ── §20 multi-unit rentals — "a Rental is an EVENT" ──
@@ -229,9 +232,44 @@ function removeCard(custId, cardId) {
   if (backendPassword && k.stripePmId) backendCall('stripeRemoveCard', { customerId: custId, paymentMethodId: k.stripePmId }).catch(() => {});
   render();
 }
+/* ── §14b multi-ACH helpers (parallel to the multi-card helpers above) ── */
+const customerBanks = (c) => (c && Array.isArray(c.achAccounts)) ? c.achAccounts.filter((k) => k.status !== 'removed') : [];
+const defaultBank = (c) => { const ks = customerBanks(c); return ks.find((k) => k.isDefault) || ks[0] || null; };
+const verifiedBanks = (c) => customerBanks(c).filter((k) => k.verified);
+const hasChargeableBank = (c) => verifiedBanks(c).length > 0;
+const bankTypeLabel = (t) => (t === 'savings' ? 'Savings' : 'Checking');
+const bankOneLabel = (k) => k ? `${k.bankName || 'Bank'} ••${k.last4} · ${bankTypeLabel(k.accountType)}${k.verified ? '' : ' · unverified'}` : '';
+function setBankDefault(custId, bankId) {   // app-level default among banks (NOT Stripe's single default PM — that stays the card's, for auto-charge)
+  const c = IDX.customer.get(custId); if (!c) return;
+  const k = customerBanks(c).find((x) => x.id === bankId); if (!k) return;
+  customerBanks(c).forEach((x) => { x.isDefault = x.id === bankId; });
+  reindex('customers', c); logAction(c, `Default ACH → ${k.bankName || 'Bank'} ••${k.last4}`);
+  render();
+}
+function removeBank(custId, bankId) {
+  const c = IDX.customer.get(custId); if (!c) return;
+  const k = (c.achAccounts || []).find((x) => x.id === bankId); if (!k) return;
+  k.status = 'removed'; if (k.isDefault) { k.isDefault = false; const next = customerBanks(c)[0]; if (next) next.isDefault = true; }
+  reindex('customers', c); logAction(c, `ACH removed — ${k.bankName || 'Bank'} ••${k.last4}`);
+  if (backendPassword && k.stripePmId) backendCall('stripeRemoveCard', { customerId: custId, paymentMethodId: k.stripePmId }).catch(() => {});   // detach the bank PM from Stripe (same endpoint)
+  render();
+}
 /** The "Cards on File" section in a customer's standard view: list each card with
  *  default / nickname / remove + an Add-card button (which runs the consent packet). */
-function cardsSection(c) {
+/** Payment Methods — Cards | ACH tabs in a customer's standard view. Both follow the
+ *  same secure pattern: tokenized via Stripe, only last4 + the Stripe pm id stored. */
+function paymentMethodsSection(c) {
+  const tab = (state.pmTab === 'ach') ? 'ach' : 'cards';
+  const flag = cardFlag(c), fm = CARD_FLAG_META[flag];
+  const cn = customerCards(c).length, bn = customerBanks(c).length;
+  const tabs = `<div class="pm-tabs">
+    <button class="pm-tab${tab === 'cards' ? ' on' : ''} js-pm-tab" data-tab="cards">Cards${cn ? ` · ${cn}` : ''}</button>
+    <button class="pm-tab${tab === 'ach' ? ' on' : ''} js-pm-tab" data-tab="ach">ACH${bn ? ` · ${bn}` : ''}</button>
+  </div>`;
+  return `<div class="section sec-cards"><h4>Payment Methods${(tab === 'cards' && flag !== 'ok') ? `<span class="right">${flagEl(fm.label, fm.color)}</span>` : ''}</h4>
+    ${tabs}<div class="pm-body">${tab === 'ach' ? achTabBody(c) : cardTabBody(c)}</div></div>`;
+}
+function cardTabBody(c) {
   const cards = customerCards(c);
   const consent = !!(c.signature && c.selfie);
   const rows = cards.length ? cards.map((k) => {
@@ -245,11 +283,23 @@ function cardsSection(c) {
       <button class="x js-card-remove" data-rec="${c.customerId}" data-card="${k.id}" data-tip="Remove card">${I.x}</button>
     </div>`;
   }).join('') : '<span class="muted" style="font-size:12px">No cards on file.</span>';
-  const flag = cardFlag(c), fm = CARD_FLAG_META[flag];
-  return `<div class="section sec-cards"><h4>Cards on File${flag !== 'ok' ? `<span class="right">${flagEl(fm.label, fm.color)}</span>` : ''}</h4>
-    <div class="cards-list">${rows}</div>
+  return `<div class="cards-list">${rows}</div>
     ${consent ? `<div style="margin-top:10px">${addBtn('Card', { link: true, js: 'js-add-card', data: { rec: c.customerId } })}</div>`
-              : '<span class="muted" style="font-size:11px">Capture a selfie + signature (Edit account) before adding a card.</span>'}</div>`;
+              : '<span class="muted" style="font-size:11px">Capture a selfie + signature (Edit account) before adding a card.</span>'}`;
+}
+function achTabBody(c) {
+  const banks = customerBanks(c);
+  const consent = !!(c.signature && c.selfie);
+  const rows = banks.length ? banks.map((k) => `<div class="card-row">
+      <span class="cr-brand">${esc(k.bankName || 'Bank')} ••${esc(k.last4)}</span>
+      <span class="cr-exp">${esc(bankTypeLabel(k.accountType))}</span>
+      ${k.verified ? badge('Verified', 'green') : badge('Verify pending', 'yellow')}
+      ${k.isDefault ? badge('Default', 'blue') : actionPill('commit', 'Make default', { js: 'js-bank-default', data: { rec: c.customerId, bank: k.id } })}
+      <button class="x js-bank-remove" data-rec="${c.customerId}" data-bank="${k.id}" data-tip="Remove bank account">${I.x}</button>
+    </div>`).join('') : '<span class="muted" style="font-size:12px">No bank accounts on file.</span>';
+  return `<div class="cards-list">${rows}</div>
+    ${consent ? `<div style="margin-top:10px">${addBtn('ACH', { link: true, js: 'js-add-ach', data: { rec: c.customerId } })}</div>`
+              : '<span class="muted" style="font-size:11px">Capture a selfie + signature (Edit account) before adding a bank account.</span>'}`;
 }
 
 /* §19 stable-key migration: give every existing invoice line a `lid` and remap
@@ -3595,7 +3645,7 @@ const DETAIL = {
       ${activity}
       ${activeBar}
       ${account}
-      ${cardsSection(c)}
+      ${paymentMethodsSection(c)}
       ${notes.bottom}
       ${historySection('customers', c, cs)}
     </div>`;
@@ -5907,6 +5957,32 @@ function renderOverlay() {
         <div class="pillrow" style="justify-content:flex-end;margin-top:14px"><button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill c-commit js-card-save" data-r="R17" ${consent ? '' : 'disabled style="opacity:.45;cursor:default"'}>Save card</button></div>
       </div>`;
     overlay.appendChild(pop);
+  } else if (o.kind === 'addAch') {
+    // §14b ACH — raw routing/account live ONLY in these inputs → straight to Stripe
+    // (confirmUsBankAccountSetup); never stored, never sent to our backend.
+    const c = IDX.customer.get(o.customerId);
+    if (!c) { state.overlay = null; return; }
+    const consent = !!(c.signature && c.selfie);
+    const pop = el('div', 'popup'); pop.style.width = '430px';
+    pop.innerHTML = `
+      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${CARD_ICON.customers || ''}</span><h3>Add bank account — ${esc(c.name)}</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
+      <div class="popup-body">
+        ${consent ? '' : `<div class="login-err" style="text-align:left;margin-bottom:12px">A selfie + signature are required first (ACH authorization). <button class="pill c-commit js-edit-customer" data-r="R17" data-rec="${c.customerId}" style="margin-left:6px">Complete account</button></div>`}
+        <div class="pay-cap">Account holder name</div>
+        <input class="lf-in" id="sl-ach-holder" value="${esc(c.name || '')}" autocomplete="off" spellcheck="false" placeholder="Name on the account">
+        <div class="ach-row">
+          <div class="ach-col"><div class="pay-cap">Routing number</div><input class="lf-in" id="sl-ach-routing" inputmode="numeric" autocomplete="off" maxlength="9" placeholder="9 digits"></div>
+          <div class="ach-col"><div class="pay-cap">Account number</div><input class="lf-in" id="sl-ach-account" inputmode="numeric" autocomplete="off" maxlength="17" placeholder="Account #"></div>
+        </div>
+        <div class="ach-row">
+          <div class="ach-col"><div class="pay-cap">Account type</div><select class="lf-in" id="sl-ach-type"><option value="checking">Checking</option><option value="savings">Savings</option></select></div>
+          <div class="ach-col"><div class="pay-cap">Holder type</div><select class="lf-in" id="sl-ach-holdertype"><option value="individual">Individual</option><option value="company">Company</option></select></div>
+        </div>
+        <div class="pay-err" id="sl-ach-error"></div>
+        <p class="muted" style="font-size:11px;margin:10px 0 0">Entered securely via Stripe. We store only the bank name + last 4 digits — never the full routing or account number. The signature + selfie on file authorize ACH debits. The account must be verified before it can be charged.</p>
+        <div class="pillrow" style="justify-content:flex-end;margin-top:14px"><button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill c-commit js-ach-save" data-r="R17" ${consent ? '' : 'disabled style="opacity:.45;cursor:default"'}>Save ACH</button></div>
+      </div>`;
+    overlay.appendChild(pop);
   } else if (o.kind === 'payment') {
     const inv = IDX.invoice.get(o.invoiceId);
     if (!inv) { state.overlay = null; return; }
@@ -5915,6 +5991,10 @@ function renderOverlay() {
     const card = hasCardOnFile(c);
     const refunded = t.status === 'Refunded';
     const refAmt = Number(inv.refundedAmount) || 0;
+    // §14b ACH in the charge picker: verified banks are selectable; unverified ones are shown
+    // but not chargeable yet ("store now, verify later"). Cards still drive allocation/amount.
+    const banks = customerBanks(c), vbanks = verifiedBanks(c), ubanks = banks.filter((b) => !b.verified);
+    const anyMethod = card || vbanks.length > 0;
     // §19 partial-payment allocation: when there's a live balance + a card, every
     // line carrying a balance gets a row. Lazy-init o.alloc to "pay in full" so
     // the popup opens charge-ready; partials are made by dialing lines down.
@@ -5928,8 +6008,8 @@ function renderOverlay() {
         <div class="pay-status-line">${statusPill('invoiceStatus', t.status)}<span class="muted">${money(t.paid)} of ${money(t.total)} paid${refAmt ? ` · ${money(refAmt)} refunded` : ''}</span></div>
         ${refunded ? '<div class="pay-card-on-file">↩ This invoice was refunded.</div>'
           : t.balance <= 0 ? `<div class="pay-card-on-file good">✓ Paid in full${inv.paymentMethod ? ' · ' + esc(inv.paymentMethod) : ''}</div>`
-            : card ? `<div class="pay-cards">${customerCards(c).map((k) => `<button class="pay-card${(o.selectedCardId || defaultCard(c)?.id) === k.id ? ' on' : ''} js-pay-pick" data-card="${k.id}" ${o.busy ? 'disabled' : ''}>💳 ${esc(cardOneLabel(k))}${k.isDefault ? ' · default' : ''}${cardExpired(k) ? ' · expired' : ''}</button>`).join('')}</div>`
-                   : '<div class="pay-card-on-file warn">No card on file for this customer.</div>'}
+            : anyMethod ? `<div class="pay-cards">${customerCards(c).map((k) => `<button class="pay-card${(o.selectedCardId || defaultCard(c)?.id) === k.id ? ' on' : ''} js-pay-pick" data-card="${k.id}" ${o.busy ? 'disabled' : ''}>💳 ${esc(cardOneLabel(k))}${k.isDefault ? ' · default' : ''}${cardExpired(k) ? ' · expired' : ''}</button>`).join('')}${vbanks.map((k) => `<button class="pay-card${o.selectedCardId === k.id ? ' on' : ''} js-pay-pick" data-bank="${k.id}" ${o.busy ? 'disabled' : ''}>🏦 ${esc(bankOneLabel(k))}</button>`).join('')}</div>${ubanks.length ? `<div class="pay-pm-note">${ubanks.map((b) => `🏦 ${esc(b.bankName)} ••${esc(b.last4)} · needs verification before charging`).join('<br>')}</div>` : ''}`
+                   : (banks.length ? '<div class="pay-card-on-file warn">Bank account on file — verify it before charging, or add a card.</div>' : '<div class="pay-card-on-file warn">No payment method on file for this customer.</div>')}
         ${lines.length ? allocSectionHtml(lines, o)
           : (t.balance > 0 && card ? `<label class="pay-field"><span>Amount to charge</span><input class="pay-amt-in" type="number" min="0.01" max="${t.balance}" step="0.01" value="${t.balance.toFixed(2)}" ${o.busy ? 'disabled' : ''}></label>` : '')}
         ${o.confirmRefund ? `<div class="pay-confirm">Refund ${money(t.paid)} to ${esc(inv.paymentMethod || 'the card')}?</div>` : ''}
@@ -7317,9 +7397,14 @@ function onClick(e) {
   if (closest('.js-add-card')) { e.stopPropagation(); return openAddCard(closest('.js-add-card').dataset.rec); }
   if (closest('.js-card-default')) { e.stopPropagation(); const b = closest('.js-card-default'); return setCardDefault(b.dataset.rec, b.dataset.card); }
   if (closest('.js-card-remove')) { e.stopPropagation(); const b = closest('.js-card-remove'); return removeCard(b.dataset.rec, b.dataset.card); }
+  if (closest('.js-pm-tab')) { e.stopPropagation(); state.pmTab = closest('.js-pm-tab').dataset.tab; return render(); }   // §14b Cards | ACH toggle
+  if (closest('.js-add-ach')) { e.stopPropagation(); return openAddBank(closest('.js-add-ach').dataset.rec); }
+  if (closest('.js-bank-default')) { e.stopPropagation(); const b = closest('.js-bank-default'); return setBankDefault(b.dataset.rec, b.dataset.bank); }
+  if (closest('.js-bank-remove')) { e.stopPropagation(); const b = closest('.js-bank-remove'); return removeBank(b.dataset.rec, b.dataset.bank); }
   if (closest('.js-card-save')) { e.stopPropagation(); return saveCardFlow(closest('.js-card-save')); }
+  if (closest('.js-ach-save')) { e.stopPropagation(); return saveAchFlow(closest('.js-ach-save')); }
   if (closest('.js-pay-invoice')) { e.stopPropagation(); return openPayInvoice(closest('.js-pay-invoice').dataset.rec); }
-  if (closest('.js-pay-pick')) { e.stopPropagation(); if (state.overlay) { state.overlay.selectedCardId = closest('.js-pay-pick').dataset.card; renderOverlay(); } return; }
+  if (closest('.js-pay-pick')) { e.stopPropagation(); if (state.overlay) { const b = closest('.js-pay-pick'); state.overlay.selectedCardId = b.dataset.card || b.dataset.bank; renderOverlay(); } return; }
   if (closest('.js-charge-invoice')) { e.stopPropagation(); return chargeInvoiceFlow(closest('.js-charge-invoice').dataset.rec); }
   if (closest('.js-pay-addcard')) { e.stopPropagation(); const b = closest('.js-pay-addcard'); return openAddCard(b.dataset.rec, { returnTo: 'payment', invoiceId: b.dataset.inv }); }
   if (closest('.js-refund-invoice')) { e.stopPropagation(); if (state.overlay) { state.overlay.confirmRefund = true; state.overlay.error = ''; renderOverlay(); } return; }
@@ -8723,6 +8808,7 @@ function friendlyPayErr(r) {
 }
 
 async function openAddCard(customerId, opts) { await ensurePubKey(); openOverlay({ kind: 'addCard', customerId, returnTo: (opts && opts.returnTo) || '', invoiceId: (opts && opts.invoiceId) || '' }); }
+async function openAddBank(customerId, opts) { await ensurePubKey(); openOverlay({ kind: 'addAch', customerId, returnTo: (opts && opts.returnTo) || '', invoiceId: (opts && opts.invoiceId) || '' }); }
 async function openPayInvoice(invoiceId) { await ensurePubKey(); openOverlay({ kind: 'payment', invoiceId, busy: false, error: '' }); }
 
 /* §19 ALLOCATION POPUP — the user splits a payment across the invoice's line
@@ -8846,6 +8932,53 @@ async function saveCardFlow(btn) {
   } catch (e) { setErr('Network error — try again.'); reset(); }
 }
 
+// Save ACH: bank SetupIntent (server) → confirmUsBankAccountSetup (browser; raw
+// routing/account go straight to Stripe, never to us) → persist (server). Stored
+// verified:false until the micro-deposit verification flow ships ("store now, verify
+// later", Jac). No Stripe Element — ACH is plain fields handed to Stripe at confirm.
+async function saveAchFlow(btn) {
+  const o = state.overlay; if (!o || o.kind !== 'addAch') return;
+  const c = IDX.customer.get(o.customerId); if (!c) return;
+  const stripe = getStripe(); if (!stripe) return;
+  const setErr = (m) => { const b = document.getElementById('sl-ach-error'); if (b) b.textContent = m || ''; };
+  const reset = () => { btn.disabled = false; btn.textContent = 'Save ACH'; };
+  if (!c.signature || !c.selfie) { setErr('Capture a selfie + signature first (ACH authorization).'); return; }
+  const holder = (document.getElementById('sl-ach-holder')?.value || '').trim();
+  const routing = (document.getElementById('sl-ach-routing')?.value || '').replace(/\D/g, '');
+  const account = (document.getElementById('sl-ach-account')?.value || '').replace(/\D/g, '');
+  const acctType = document.getElementById('sl-ach-type')?.value || 'checking';
+  const holderType = document.getElementById('sl-ach-holdertype')?.value || 'individual';
+  if (!holder) return setErr('Enter the account holder name.');
+  if (routing.length !== 9) return setErr('Routing number must be 9 digits.');
+  if (account.length < 4) return setErr('Enter the account number.');
+  const live = () => state.overlay === o;   // bail if the overlay changed/closed mid-await
+  btn.disabled = true; btn.textContent = 'Saving…'; setErr('');
+  try {
+    const r = await backendCall('stripeBankSetupIntent', { customerId: c.customerId });
+    if (!live()) return;
+    if (!r || !r.ok) { setErr(friendlyPayErr(r)); reset(); return; }
+    const { setupIntent, error } = await stripe.confirmUsBankAccountSetup(r.clientSecret, {
+      payment_method: { us_bank_account: { routing_number: routing, account_number: account, account_holder_type: holderType, account_type: acctType }, billing_details: { name: holder, email: c.email || undefined } },
+    });
+    if (!live()) return;
+    if (error) { setErr(error.message); reset(); return; }
+    if (!setupIntent || !setupIntent.payment_method) { setErr('Bank account could not be saved — try again.'); reset(); return; }
+    const s = await backendCall('stripeSaveBank', { customerId: c.customerId, paymentMethodId: setupIntent.payment_method, setupIntentId: setupIntent.id });
+    if (!live()) return;
+    if (!s || !s.ok) { setErr(friendlyPayErr(s)); reset(); return; }
+    c.stripeId = r.stripeId || c.stripeId;
+    if (!Array.isArray(c.achAccounts)) c.achAccounts = [];
+    const firstBank = customerBanks(c).length === 0;
+    const verified = setupIntent.status === 'succeeded';   // microdeposit/instant pending → requires_action → verified:false
+    c.achAccounts.push({ id: 'ACH-' + (state.seq++), stripePmId: setupIntent.payment_method, bankName: s.bank.bankName, last4: s.bank.last4,
+      accountType: s.bank.accountType || acctType, holder, isDefault: firstBank, verified, status: 'active',
+      mandate: { signedAt: TODAY_ISO, version: 'ach', signature: c.signature, selfie: c.selfie } });
+    reindex('customers', c); logAction(c, `ACH added — ${s.bank.bankName} ••••${s.bank.last4}${verified ? '' : ' (verification pending)'}`);
+    toast(verified ? 'Bank account saved ✓' : 'Bank account saved — verification pending');
+    closeOverlay(); render();
+  } catch (e) { setErr('Network error — try again.'); reset(); }
+}
+
 // Charge an invoice off_session; on 3DS fall back to an on-session confirm, then
 // re-verify server-side before marking paid. The payment overlay has no Card
 // Element, so re-rendering it for busy/error states is safe.
@@ -8870,7 +9003,7 @@ async function chargeInvoiceFlow(invoiceId) {
   const done = (r) => { if (!live()) return; applyPayment(invoiceId, r, alloc); o.alloc = null; o.busy = false; o.error = ''; toast(r.fullyPaid || r.alreadyPaid ? 'Paid in full ✓' : 'Payment captured ✓'); renderOverlay(); };
   try {
     const c = IDX.customer.get(IDX.invoice.get(invoiceId)?.customerId);
-    const pick = (o.selectedCardId && customerCards(c).find((k) => k.id === o.selectedCardId)) || defaultCard(c);
+    const pick = (o.selectedCardId && (customerCards(c).find((k) => k.id === o.selectedCardId) || verifiedBanks(c).find((k) => k.id === o.selectedCardId))) || defaultCard(c);   // §14b only VERIFIED banks are chargeable
     const r = await backendCall('stripeChargeInvoice', { invoiceId, amountCents, paymentMethodId: pick?.stripePmId || undefined });
     if (!live()) return;
     if (r && r.ok && (r.status === 'succeeded' || r.alreadyPaid)) { done(r); return; }
