@@ -473,8 +473,7 @@ input { font-family: inherit; }
 @media (prefers-reduced-motion: reduce) { .js-disp-arrowpt { transition: none; } .js-disp-arrowpt.armed { transform: none; } }
 /* ── §2.3 OFFICE COCKPIT (Phase 1): live map + welded time-rail ───────────────── */
 .disp-cockpit { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.dispm { flex: 0 0 46%; min-height: 200px; position: relative; border-bottom: 1px solid var(--line); background: var(--bg-2); }
-.js-dispmount { position: absolute; inset: 0; }
+.dispm { flex: 0 0 46%; min-height: 200px; position: relative; overflow: hidden; border-bottom: 1px solid var(--line); background: var(--bg-2); }
 .disprail { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 10px 12px; }
 .disp-bookend { display: flex; align-items: center; gap: 7px; font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.2px; font-size: 10.5px; font-weight: 700; color: var(--txt-2); padding: 5px 9px; border-radius: 7px; background: var(--accent-soft); }
 .disp-bookend svg { width: 13px; height: 13px; color: var(--accent); flex: 0 0 auto; }
@@ -2140,8 +2139,9 @@ body.dragging .row.drop-ok { opacity: 1; }
 }
 /* sections sit ON the plate as milled-in panels — a LIGHT recess (a soft dark tint
    that lets the blued plate read through) + cool inset highlight + lift shadow. The
-   header + status accent carry the rest. (Reverted the heavy dark wash — Jac.) */
-[data-theme="bluedsteel"] .col > .card.anchored .section {
+   header + status accent carry the rest. Applies to EVERY record's Standard view —
+   anchored or not — so the non-anchored Standard view matches the anchor card (Jac). */
+[data-theme="bluedsteel"] .col > .card .section {
   background: rgba(11,15,24,.36);
   box-shadow: inset 0 1px 0 rgba(150,178,222,.12), 0 2px 8px -3px rgba(0,0,0,.55);
 }
