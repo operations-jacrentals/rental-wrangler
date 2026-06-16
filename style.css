@@ -877,6 +877,22 @@ input { font-family: inherit; }
 .req-empty-ic { font-size: 30px; }
 .req-empty p { font-size: 14px; color: var(--txt-2); margin: 8px 0 4px; }
 .req-empty span { font-size: 12px; }
+/* §18e richer request card — the ask + photos + the filed conversation */
+.req-acts { flex-wrap: wrap; }
+.req-acts .spacer { flex: 1 1 auto; }
+.req-photos { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
+.req-photo { width: 72px; height: 72px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); cursor: zoom-in; }
+.req-convo { display: flex; flex-direction: column; gap: 7px; margin: 0 0 11px; padding: 9px 11px; border-radius: 10px; background: var(--bg-2); border: 1px solid var(--line-soft); max-height: 210px; overflow-y: auto; }
+.req-line { display: flex; flex-direction: column; gap: 1px; }
+.req-who { font-size: 9.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .4px; color: var(--txt-3); }
+.req-line.wr .req-who { color: var(--accent); }
+.req-msg { font-size: 12px; color: var(--txt-2); line-height: 1.42; }
+/* the request bar inside the Mr. Wrangler chat (continuing a filed request) */
+.wr-reqbar { display: flex; align-items: center; gap: 8px; padding: 7px 14px; background: var(--accent-soft); border-bottom: 1px solid var(--accent-line); flex-wrap: wrap; }
+.wr-reqnum { font-family: 'Saira Condensed', system-ui, sans-serif; font-weight: 800; font-size: 12px; color: var(--accent); letter-spacing: .5px; flex: 0 0 auto; }
+.wr-reqttl { font-size: 12px; color: var(--txt-2); font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wr-reqbar .spacer { flex: 1 1 auto; }
+.wr-reqbar .pill { height: 26px; font-size: 11.5px; }
 
 /* §18e/f floating bottom-right cluster — notification bell + Requests inbox */
 .fab-stack { position: fixed; right: 16px; bottom: 16px; z-index: 70; display: flex; flex-direction: column; gap: 10px; }
