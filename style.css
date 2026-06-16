@@ -2091,14 +2091,11 @@ body.dragging .row.drop-ok { opacity: 1; }
   background-size: cover, 340px;
   background-repeat: no-repeat, repeat;
 }
-/* sections sit ON the plate as milled-in panels — a clear recess (darker fill +
-   cool inset highlight + lift shadow) so they read distinctly against the now
-   strongly-blue plate; their header + status accent carry the rest. */
+/* sections sit ON the plate as milled-in panels — a LIGHT recess (a soft dark tint
+   that lets the blued plate read through) + cool inset highlight + lift shadow. The
+   header + status accent carry the rest. (Reverted the heavy dark wash — Jac.) */
 [data-theme="bluedsteel"] .col > .card.anchored .section {
-  background:
-    linear-gradient(rgba(8,11,18,.74), rgba(8,11,18,.74)),
-    url('assets/tex-metal-blued.jpg');
-  background-size: auto, 300px;
+  background: rgba(11,15,24,.36);
   box-shadow: inset 0 1px 0 rgba(150,178,222,.12), 0 2px 8px -3px rgba(0,0,0,.55);
 }
 /* search/sort sub-header (.listbar) — a clean solid dark strip so the floor/card
