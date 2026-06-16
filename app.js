@@ -2472,8 +2472,9 @@ function fmtAggValue(col, a, calc) {
 const FOOT_DROP_NUM = { units: ['service'], rentals: ['price'], customers: ['rentals'] };
 const footDropNum = (card, key) => (FOOT_DROP_NUM[card] || []).includes(key);
 const footDropBadge = (card, value) =>
-  (value === 'No Show' && card !== 'rentals') ||   // No Show = rental card only
-  value === 'Returned' || value === 'Refunded' || value === 'Card OK';
+  (value === 'No Show' && card !== 'rentals') ||      // No Show = rental card only
+  (value === 'Refunded' && card !== 'invoices') ||    // Refunded = invoice card only
+  value === 'Returned' || value === 'Card OK';
 /** The highlighted summary row beneath a card's List View: badge value-counts +
  *  numeric roll-ups (e.g. "6 Tomorrow · 900 HRS avg · 12 Part Needed"). */
 function listTotalsEl(card, rows, session) {
