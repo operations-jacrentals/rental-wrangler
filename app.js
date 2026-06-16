@@ -1329,7 +1329,18 @@ function pushCardHistory(cs) {
 function applySnap(cs, snap) { cs.mode = snap.mode; cs.recId = snap.recId; cs.recType = snap.recType || null; }
 // Step this one card back / forward through its own history (other cards untouched).
 function cardBack(card) {
-  const cs = activeSession().cards[card]; if (!cs || !cs.backStack.length) return;
+  const cs = activeSession().cards[card]; if (!cs) return;
+  if (!cs.backStack.length) {
+    // Nothing recorded to go back to — but a record always sits on its List view, so one
+    // more Back drops to the List (Jac: quick-add etc. jump straight into Standard without
+    // recording the list). Push the record to fwdStack so Forward returns to it.
+    if (cs.mode === 'standard' && cs.recId != null) {
+      cs.fwdStack.push(cardSnap(cs));
+      cs.mode = 'list'; cs.recId = null; cs.recType = null; cs.graphView = false;
+      render();
+    }
+    return;
+  }
   cs.fwdStack.push(cardSnap(cs));
   applySnap(cs, cs.backStack.pop());
   if (cs.mode === 'standard' && cs.recId != null) ackComments(recOf(entityCardOf(card, cs.recType), cs.recId));
@@ -1342,15 +1353,17 @@ function cardFwd(card) {
   if (cs.mode === 'standard' && cs.recId != null) ackComments(recOf(entityCardOf(card, cs.recType), cs.recId));
   render();
 }
-// The stamped two-way "jog" — renders ONLY when this card has its own history this
-// session; back/forward enable independently. Lives in the standard header and the
+// The stamped two-way "jog" — renders when this card has its own history this session,
+// OR whenever it's showing a record (Standard view): a record can always step Back to its
+// List view even with no recorded history (Jac). Lives in the standard header and the
 // list-bar. Right-click on the card mirrors the Back arm (Task 2).
 function cardJog(card, cs) {
-  if (!cs || (!cs.backStack.length && !cs.fwdStack.length)) return '';
+  const inRecord = !!(cs && cs.mode === 'standard' && cs.recId != null);
+  if (!cs || (!cs.backStack.length && !cs.fwdStack.length && !inRecord)) return '';
   const arm = (dir, on, ico, tip) =>
     `<button class="jog-btn js-card${dir}" data-card="${esc(card)}" ${on ? '' : 'disabled'} data-tip="${tip}" aria-label="${tip}">${ico}</button>`;
   return `<div class="card-jog" role="group" aria-label="View history">`
-    + arm('back', cs.backStack.length, I.chevL, 'Back')
+    + arm('back', cs.backStack.length || inRecord, I.chevL, 'Back')
     + arm('fwd', cs.fwdStack.length, I.chevR, 'Forward')
     + `</div>`;
 }
