@@ -293,7 +293,7 @@ function achTabBody(c) {
   const rows = banks.length ? banks.map((k) => `<div class="card-row">
       <span class="cr-brand">${esc(k.bankName || 'Bank')} ••${esc(k.last4)}</span>
       <span class="cr-exp">${esc(bankTypeLabel(k.accountType))}</span>
-      ${k.verified ? badge('Verified', 'green') : badge('Verify pending', 'yellow')}
+      ${k.verified ? badge('Verified', 'green') : actionPill('commit', 'Verify', { js: 'js-bank-verify', data: { rec: c.customerId, bank: k.id } })}
       ${k.isDefault ? badge('Default', 'blue') : actionPill('commit', 'Make default', { js: 'js-bank-default', data: { rec: c.customerId, bank: k.id } })}
       <button class="x js-bank-remove" data-rec="${c.customerId}" data-bank="${k.id}" data-tip="Remove bank account">${I.x}</button>
     </div>`).join('') : '<span class="muted" style="font-size:12px">No bank accounts on file.</span>';
@@ -6186,6 +6186,23 @@ function renderOverlay() {
         <div class="pillrow" style="justify-content:flex-end;margin-top:14px"><button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill c-commit js-ach-save" data-r="R17" ${consent ? '' : 'disabled style="opacity:.45;cursor:default"'}>Save ACH</button></div>
       </div>`;
     overlay.appendChild(pop);
+  } else if (o.kind === 'verifyAch') {
+    // §14b verify a pending ACH via the micro-deposit descriptor code the customer
+    // reads off their bank statement (a $0.01 deposit described "...SMxxxx").
+    const c = IDX.customer.get(o.customerId);
+    const k = c && customerBanks(c).find((x) => x.id === o.bankId);
+    if (!c || !k) { state.overlay = null; return; }
+    const pop = el('div', 'popup'); pop.style.width = '400px';
+    pop.innerHTML = `
+      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${CARD_ICON.customers || ''}</span><h3>Verify ${esc(k.bankName || 'bank')} ••${esc(k.last4)}</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
+      <div class="popup-body">
+        <p class="muted" style="font-size:12px;margin:0 0 12px">Stripe sent a small deposit (about $0.01) to this account. Once it lands (1–2 business days), the customer sees a 6-character code on their statement starting with <b>SM</b>. Enter it here to verify the account for charging.</p>
+        <div class="pay-cap">Verification code</div>
+        <input class="lf-in" id="sl-vach-code" autocomplete="off" maxlength="6" placeholder="SM____" style="text-transform:uppercase;letter-spacing:2px">
+        <div class="pay-err" id="sl-vach-error"></div>
+        <div class="pillrow" style="justify-content:flex-end;margin-top:14px"><button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill c-commit js-ach-verify-save" data-r="R17">Verify account</button></div>
+      </div>`;
+    overlay.appendChild(pop);
   } else if (o.kind === 'payment') {
     const inv = IDX.invoice.get(o.invoiceId);
     if (!inv) { state.overlay = null; return; }
@@ -6196,8 +6213,7 @@ function renderOverlay() {
     const refAmt = Number(inv.refundedAmount) || 0;
     // §14b ACH in the charge picker: verified banks are selectable; unverified ones are shown
     // but not chargeable yet ("store now, verify later"). Cards still drive allocation/amount.
-    const banks = customerBanks(c), vbanks = verifiedBanks(c), ubanks = banks.filter((b) => !b.verified);
-    const anyMethod = card || vbanks.length > 0;
+    const banks = customerBanks(c);   // §14b shown as a note in the picker — ACH charging is a tested follow-up (backend needs async-settlement handling), not selectable yet
     // §19 partial-payment allocation: when there's a live balance + a card, every
     // line carrying a balance gets a row. Lazy-init o.alloc to "pay in full" so
     // the popup opens charge-ready; partials are made by dialing lines down.
@@ -6211,8 +6227,8 @@ function renderOverlay() {
         <div class="pay-status-line">${statusPill('invoiceStatus', t.status)}<span class="muted">${money(t.paid)} of ${money(t.total)} paid${refAmt ? ` · ${money(refAmt)} refunded` : ''}</span></div>
         ${refunded ? '<div class="pay-card-on-file">↩ This invoice was refunded.</div>'
           : t.balance <= 0 ? `<div class="pay-card-on-file good">✓ Paid in full${inv.paymentMethod ? ' · ' + esc(inv.paymentMethod) : ''}</div>`
-            : anyMethod ? `<div class="pay-cards">${customerCards(c).map((k) => `<button class="pay-card${(o.selectedCardId || defaultCard(c)?.id) === k.id ? ' on' : ''} js-pay-pick" data-card="${k.id}" ${o.busy ? 'disabled' : ''}>💳 ${esc(cardOneLabel(k))}${k.isDefault ? ' · default' : ''}${cardExpired(k) ? ' · expired' : ''}</button>`).join('')}${vbanks.map((k) => `<button class="pay-card${o.selectedCardId === k.id ? ' on' : ''} js-pay-pick" data-bank="${k.id}" ${o.busy ? 'disabled' : ''}>🏦 ${esc(bankOneLabel(k))}</button>`).join('')}</div>${ubanks.length ? `<div class="pay-pm-note">${ubanks.map((b) => `🏦 ${esc(b.bankName)} ••${esc(b.last4)} · needs verification before charging`).join('<br>')}</div>` : ''}`
-                   : (banks.length ? '<div class="pay-card-on-file warn">Bank account on file — verify it before charging, or add a card.</div>' : '<div class="pay-card-on-file warn">No payment method on file for this customer.</div>')}
+            : card ? `<div class="pay-cards">${customerCards(c).map((k) => `<button class="pay-card${(o.selectedCardId || defaultCard(c)?.id) === k.id ? ' on' : ''} js-pay-pick" data-card="${k.id}" ${o.busy ? 'disabled' : ''}>💳 ${esc(cardOneLabel(k))}${k.isDefault ? ' · default' : ''}${cardExpired(k) ? ' · expired' : ''}</button>`).join('')}</div>${banks.length ? `<div class="pay-pm-note">${banks.map((b) => `🏦 ${esc(b.bankName)} ••${esc(b.last4)}${b.verified ? ' · verified' : ' · needs verification'} — ACH charging coming`).join('<br>')}</div>` : ''}`
+                   : (banks.length ? '<div class="pay-card-on-file warn">Bank account on file — ACH charging is coming; add a card to charge now.</div>' : '<div class="pay-card-on-file warn">No payment method on file for this customer.</div>')}
         ${lines.length ? allocSectionHtml(lines, o)
           : (t.balance > 0 && card ? `<label class="pay-field"><span>Amount to charge</span><input class="pay-amt-in" type="number" min="0.01" max="${t.balance}" step="0.01" value="${t.balance.toFixed(2)}" ${o.busy ? 'disabled' : ''}></label>` : '')}
         ${o.confirmRefund ? `<div class="pay-confirm">Refund ${money(t.paid)} to ${esc(inv.paymentMethod || 'the card')}?</div>` : ''}
@@ -7606,6 +7622,8 @@ function onClick(e) {
   if (closest('.js-bank-remove')) { e.stopPropagation(); const b = closest('.js-bank-remove'); return removeBank(b.dataset.rec, b.dataset.bank); }
   if (closest('.js-card-save')) { e.stopPropagation(); return saveCardFlow(closest('.js-card-save')); }
   if (closest('.js-ach-save')) { e.stopPropagation(); return saveAchFlow(closest('.js-ach-save')); }
+  if (closest('.js-bank-verify')) { e.stopPropagation(); const b = closest('.js-bank-verify'); return openVerifyBank(b.dataset.rec, b.dataset.bank); }
+  if (closest('.js-ach-verify-save')) { e.stopPropagation(); return verifyAchFlow(closest('.js-ach-verify-save')); }
   if (closest('.js-pay-invoice')) { e.stopPropagation(); return openPayInvoice(closest('.js-pay-invoice').dataset.rec); }
   if (closest('.js-pay-pick')) { e.stopPropagation(); if (state.overlay) { const b = closest('.js-pay-pick'); state.overlay.selectedCardId = b.dataset.card || b.dataset.bank; renderOverlay(); } return; }
   if (closest('.js-charge-invoice')) { e.stopPropagation(); return chargeInvoiceFlow(closest('.js-charge-invoice').dataset.rec); }
@@ -9050,6 +9068,7 @@ function friendlyPayErr(r) {
 
 async function openAddCard(customerId, opts) { await ensurePubKey(); openOverlay({ kind: 'addCard', customerId, returnTo: (opts && opts.returnTo) || '', invoiceId: (opts && opts.invoiceId) || '' }); }
 async function openAddBank(customerId, opts) { await ensurePubKey(); openOverlay({ kind: 'addAch', customerId, returnTo: (opts && opts.returnTo) || '', invoiceId: (opts && opts.invoiceId) || '' }); }
+async function openVerifyBank(customerId, bankId) { await ensurePubKey(); openOverlay({ kind: 'verifyAch', customerId, bankId }); }
 async function openPayInvoice(invoiceId) { await ensurePubKey(); openOverlay({ kind: 'payment', invoiceId, busy: false, error: '' }); }
 
 /* §19 ALLOCATION POPUP — the user splits a payment across the invoice's line
@@ -9211,12 +9230,34 @@ async function saveAchFlow(btn) {
     if (!Array.isArray(c.achAccounts)) c.achAccounts = [];
     const firstBank = customerBanks(c).length === 0;
     const verified = setupIntent.status === 'succeeded';   // microdeposit/instant pending → requires_action → verified:false
-    c.achAccounts.push({ id: 'ACH-' + (state.seq++), stripePmId: setupIntent.payment_method, bankName: s.bank.bankName, last4: s.bank.last4,
+    c.achAccounts.push({ id: 'ACH-' + (state.seq++), stripePmId: setupIntent.payment_method, setupIntentId: setupIntent.id, bankName: s.bank.bankName, last4: s.bank.last4,
       accountType: s.bank.accountType || acctType, holder, isDefault: firstBank, verified, status: 'active',
       mandate: { signedAt: TODAY_ISO, version: 'ach', signature: c.signature, selfie: c.selfie } });
     reindex('customers', c); logAction(c, `ACH added — ${s.bank.bankName} ••••${s.bank.last4}${verified ? '' : ' (verification pending)'}`);
     toast(verified ? 'Bank account saved ✓' : 'Bank account saved — verification pending');
     closeOverlay(); render();
+  } catch (e) { setErr('Network error — try again.'); reset(); }
+}
+
+// §14b verify a pending ACH with the micro-deposit descriptor code (server does the
+// Stripe verify_microdeposits call). On success the bank flips to verified → chargeable.
+async function verifyAchFlow(btn) {
+  const o = state.overlay; if (!o || o.kind !== 'verifyAch') return;
+  const c = IDX.customer.get(o.customerId); if (!c) return;
+  const k = customerBanks(c).find((x) => x.id === o.bankId); if (!k) return;
+  const setErr = (m) => { const b = document.getElementById('sl-vach-error'); if (b) b.textContent = m || ''; };
+  const reset = () => { btn.disabled = false; btn.textContent = 'Verify account'; };
+  const code = (document.getElementById('sl-vach-code')?.value || '').trim().toUpperCase();
+  if (!/^SM[0-9A-Z]{4}$/.test(code)) { setErr('Enter the 6-character code from the statement (starts with SM).'); return; }
+  const live = () => state.overlay === o;
+  btn.disabled = true; btn.textContent = 'Verifying…'; setErr('');
+  try {
+    const r = await backendCall('stripeVerifyBank', { customerId: c.customerId, setupIntentId: k.setupIntentId, descriptorCode: code });
+    if (!live()) return;
+    if (!r || !r.ok) { setErr(friendlyPayErr(r)); reset(); return; }
+    k.verified = true;
+    reindex('customers', c); logAction(c, `ACH verified — ${k.bankName || 'Bank'} ••••${k.last4}`);
+    toast('Bank account verified ✓'); closeOverlay(); render();
   } catch (e) { setErr('Network error — try again.'); reset(); }
 }
 
@@ -9244,7 +9285,7 @@ async function chargeInvoiceFlow(invoiceId) {
   const done = (r) => { if (!live()) return; applyPayment(invoiceId, r, alloc); o.alloc = null; o.busy = false; o.error = ''; toast(r.fullyPaid || r.alreadyPaid ? 'Paid in full ✓' : 'Payment captured ✓'); renderOverlay(); };
   try {
     const c = IDX.customer.get(IDX.invoice.get(invoiceId)?.customerId);
-    const pick = (o.selectedCardId && (customerCards(c).find((k) => k.id === o.selectedCardId) || verifiedBanks(c).find((k) => k.id === o.selectedCardId))) || defaultCard(c);   // §14b only VERIFIED banks are chargeable
+    const pick = (o.selectedCardId && customerCards(c).find((k) => k.id === o.selectedCardId)) || defaultCard(c);   // §14b cards only for now — ACH charging is a tested follow-up
     const r = await backendCall('stripeChargeInvoice', { invoiceId, amountCents, paymentMethodId: pick?.stripePmId || undefined });
     if (!live()) return;
     if (r && r.ok && (r.status === 'succeeded' || r.alreadyPaid)) { done(r); return; }
