@@ -928,6 +928,10 @@ input { font-family: inherit; }
 .wr-actbtn:focus-visible { outline: 2px solid var(--accent-line, #ff7a1a); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) { .wr-actbtn:active { transform: none; } }
 .wr-actbtn-build { background: linear-gradient(180deg, #43d07f, #2faa63); color: #04140c; }   /* the plan-OK "go build it" commit */
+.wr-apply { margin-top: 9px; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.wr-apply-sum { font-size: 12px; font-weight: 700; color: var(--txt); }
+.wr-apply-skip { font-size: 10.5px; color: var(--yellow); }
+.wr-apply-none { font-size: 11.5px; color: var(--txt-3); font-style: italic; }
 .wr-actdone { display: inline-block; margin-top: 8px; font-size: 11.5px; font-weight: 600;
   color: var(--green, #46c46a); letter-spacing: .3px; }
 

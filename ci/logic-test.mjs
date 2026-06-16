@@ -192,6 +192,24 @@ try {
     const vRestored = invV.lineItems.filter((li) => li.unitId === ue.unitId).length;
     ok(vBase >= 1 && vVoid === 0 && vRestored >= 1, `un-void restores billing (base ${vBase} → No-Show ${vVoid} → reactivated ${vRestored})`);
 
+    // Mr. Wrangler data-actions — add/update/import safe fields only, never money, never delete
+    ok(T.wrFunnel('payment discussed') === 'Payment Discussed' && T.wrFunnel('contacted') === 'Contacted', 'wrFunnel maps stage words → canonical funnel');
+    const wrPlan = T.wrValidatePlan({ action: 'data', title: 'test', ops: [
+      { op: 'import', entity: 'customers', rows: [{ firstName: 'Lead', lastName: 'One', phone: '337-555-0001', membershipStage: 'contacted' }, { firstName: 'Lead', lastName: 'Two', phone: '337-555-0002' }] },
+      { op: 'update', entity: 'units', id: 'U003', fields: { notes: 'WR test note', currentHours: 99999 } },   // currentHours NOT allowlisted → dropped
+      { op: 'update', entity: 'invoices', id: '01i02Ju26', fields: { amountPaid: 999999 } },                  // invoices not editable at all → refused
+    ] });
+    const wrImp = wrPlan.ops.find((o) => o.op === 'import');
+    const wrUpd = wrPlan.ops.find((o) => o.op === 'update' && o.entity === 'units');
+    ok(wrImp && wrImp.rows.length === 2 && wrImp.rows[0].membershipStage === 'Contacted', 'import keeps 2 rows + maps the stage');
+    ok(wrUpd && wrUpd.fields.notes === 'WR test note' && !('currentHours' in wrUpd.fields), 'update keeps allowlisted notes, DROPS currentHours');
+    ok(!wrPlan.ops.some((o) => o.entity === 'invoices'), 'invoices edit is REFUSED entirely (never touch money)');
+    const custBefore = T.DATA.customers.length; const u3 = T.IDX.unit.get('U003'); const noteBefore = u3.notes, hoursBefore = u3.currentHours;
+    T.applyWranglerData(wrPlan);
+    ok(T.DATA.customers.length === custBefore + 2, 'applyWranglerData added exactly the 2 imported customers');
+    ok(T.IDX.unit.get('U003').notes === 'WR test note' && T.IDX.unit.get('U003').currentHours === hoursBefore, 'applied the safe note, did NOT write the money/ops field');
+    T.DATA.customers.length = custBefore; u3.notes = noteBefore;   // restore
+
     return out;
   });
 

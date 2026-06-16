@@ -5618,7 +5618,14 @@ function renderOverlay() {
     const turns = o.messages.length
       ? o.messages.map((m, i) => {
           let act = '';
-          if (m.action) {
+          if (m.action && m.action.action === 'data') {
+            const plan = m.action._plan || (m.action._plan = wrValidatePlan(m.action));
+            const sum = wrPlanSummary(plan);
+            const skip = plan.issues.length ? `<div class="wr-apply-skip">skipped (not allowed): ${esc(plan.issues.join('; '))}</div>` : '';
+            act = m.filed
+              ? `<span class="wr-actdone">✓ Applied — ${esc(sum)}</span>`
+              : `<div class="wr-apply"><div class="wr-apply-sum">Preview: ${esc(sum)}</div>${skip}${plan.ops.length ? `<button class="wr-actbtn wr-actbtn-build js-wr-apply" data-mi="${i}">✓ Apply these changes</button>` : '<span class="wr-apply-none">Nothing here I can safely apply.</span>'}</div>`;
+          } else if (m.action) {
             const ak = m.action.action;
             const doneLbl = ak === 'plan' ? 'Building to your plan' : ak === 'request' ? 'Filed for Jac’s OK' : 'Sent to the fixer';
             const btnLbl = ak === 'plan' ? '✓ Build this plan' : ak === 'request' ? '💡 File this for Jac’s OK' : '🔧 Send this to get fixed';
@@ -6290,7 +6297,7 @@ async function sendFeedback() {
    (action 'wrangler'); Code.gs calls api.anthropic.com with the key from a Script
    Property. Carries a compact data digest + (when opened from a record) its detail.
    ════════════════════════════════════════════════════════════════════════ */
-const WRANGLER_SYSTEM = "You are Mr. Wrangler, the in-app AI for JacRentals — a heavy-equipment rental yard in Sulphur, Louisiana. You help the team make sense of their units, rentals, customers, invoices, work orders, and service, and you help triage bugs they report.\n\nSTYLE — keep it tight: answer in 1–3 sentences by default. Lead with the direct answer first; add at most one short supporting clause. Use a bullet list ONLY when enumerating multiple records, one line each. Don't restate the question, don't pad, and don't over-explain what you can't do — just answer.\n\nDATA — the snapshot below holds the LIVE records: every category with its rates, every fleet unit with its type and status, every rental with its date window and customer, customers with balances owed, and the open invoices and work orders. Reason over it directly. Only say a fact is missing if it truly isn't in the snapshot. Never invent records, names, or numbers.\n\nHELPING & FIXING — you're the assistant living inside the app (think Claude, but for this yard). The user might ask a question, describe a problem, or paste something — work out what they need and help. If they describe a BUG or glitch in the app itself (something not working, a dead control, a wrong layout or behavior), reproduce it in your head; if you're missing a detail, ask ONE quick follow-up (what they tapped + what they expected). Once you can state a clear repro, FILE A FIX by ending your reply with this exact fenced block:\n```wrangler-action\n{\"action\":\"fix\",\"title\":\"<short title>\",\"report\":\"<clear repro: steps, expected vs actual, any element involved>\"}\n```\nThat auto-ships obvious bugs (a dead control, a typo, a plainly wrong value).\nBut if it's a CHANGE or improvement (not an obvious bug), do NOT file it blind — talk it through first: lay out a SHORT, concrete PLAN of exactly what you'd change and where, then ask if that's good or needs adjusting. When you put a concrete plan on the table, end with:\n```wrangler-action\n{\"action\":\"plan\",\"title\":\"<short title>\",\"plan\":\"<numbered steps: what changes, where, and the resulting UX>\"}\n```\nJac reviews that plan and taps Build only when it's right — so take his tweaks and re-propose the plan until he's happy. Emit a block ONLY when ready — a clear repro for a fix, or a concrete plan for a change — never while still gathering detail; keep your visible words short and natural and never mention JSON, blocks, labels, or buttons.\n\nA light wrangler/ranch flavor in voice is welcome — never campy.";
+const WRANGLER_SYSTEM = "You are Mr. Wrangler, the in-app AI for JacRentals — a heavy-equipment rental yard in Sulphur, Louisiana. You help the team make sense of their units, rentals, customers, invoices, work orders, and service, and you help triage bugs they report.\n\nSTYLE — keep it tight: answer in 1–3 sentences by default. Lead with the direct answer first; add at most one short supporting clause. Use a bullet list ONLY when enumerating multiple records, one line each. Don't restate the question, don't pad, and don't over-explain what you can't do — just answer.\n\nDATA — the snapshot below holds the LIVE records: every category with its rates, every fleet unit with its type and status, every rental with its date window and customer, customers with balances owed, and the open invoices and work orders. Reason over it directly. Only say a fact is missing if it truly isn't in the snapshot. Never invent records, names, or numbers.\n\nHELPING & FIXING — you're the assistant living inside the app (think Claude, but for this yard). The user might ask a question, describe a problem, or paste something — work out what they need and help. If they describe a BUG or glitch in the app itself (something not working, a dead control, a wrong layout or behavior), reproduce it in your head; if you're missing a detail, ask ONE quick follow-up (what they tapped + what they expected). Once you can state a clear repro, FILE A FIX by ending your reply with this exact fenced block:\n```wrangler-action\n{\"action\":\"fix\",\"title\":\"<short title>\",\"report\":\"<clear repro: steps, expected vs actual, any element involved>\"}\n```\nThat auto-ships obvious bugs (a dead control, a typo, a plainly wrong value).\nBut if it's a CHANGE or improvement (not an obvious bug), do NOT file it blind — talk it through first: lay out a SHORT, concrete PLAN of exactly what you'd change and where, then ask if that's good or needs adjusting. When you put a concrete plan on the table, end with:\n```wrangler-action\n{\"action\":\"plan\",\"title\":\"<short title>\",\"plan\":\"<numbered steps: what changes, where, and the resulting UX>\"}\n```\nJac reviews that plan and taps Build only when it's right — so take his tweaks and re-propose the plan until he's happy. Emit a block ONLY when ready — a clear repro for a fix, or a concrete plan for a change — never while still gathering detail; keep your visible words short and natural and never mention JSON, blocks, labels, or buttons.\n\nACTING ON DATA — you can DO things, not just answer. You can ADD, UPDATE, or BULK-IMPORT items for the user: customers, units, categories, rentals. NEVER delete anything, and NEVER touch money, card, payment, pricing, balances, auth, or work-order-completion fields. If the user asks to add/change something, or hands you lead/customer data to import (pasted rows, a list, a spreadsheet they paste in), DO IT — never say you can't or that Jac has to build it. Ask any quick follow-up you genuinely need first (which field, how their columns map, what membership stage), then end your reply with:\n```wrangler-action\n{\"action\":\"data\",\"title\":\"<what this does>\",\"ops\":[{\"op\":\"import\",\"entity\":\"customers\",\"rows\":[{\"firstName\":\"..\",\"lastName\":\"..\",\"phone\":\"..\",\"email\":\"..\",\"membershipStage\":\"..\"}]},{\"op\":\"create\",\"entity\":\"customers\",\"fields\":{}},{\"op\":\"update\",\"entity\":\"units\",\"id\":\"U003\",\"fields\":{\"notes\":\"..\"}}]}\n```\nThe user ALWAYS sees a preview and taps Apply before anything is written, so propose freely. Map their funnel/membership words to one of: Inbound Lead, Outbound Lead, Contacted, Not A No!, Payment Discussed, Paid. Editable fields are name/contact/address/industry/notes/account-type/membership+sales stage (customers), name/mechanic/notes/specs (units), name/description/fuel (categories), notes/po (rentals) — anything else (prices, balances, payments) you must decline and explain you can't touch money.\n\nA light wrangler/ranch flavor in voice is welcome — never campy.";
 // The digest is Mr. Wrangler's whole window into the yard, so it carries the ACTUAL
 // records (not just counts): category rates, each unit's type/status, each rental's
 // date window + customer, customer balances, and open invoices/WOs. Sections cap at
@@ -6390,7 +6397,7 @@ async function wranglerSend() {
       const raw = (r.text || '').trim();
       const act = parseWranglerAction(raw);
       let shown = stripWranglerAction(raw);
-      if (!shown) shown = act ? (act.action === 'request' ? 'Got it — I’ll file this as a request for Jac to OK.' : 'On it — I’ll send this to get fixed.') : '(no answer)';
+      if (!shown) shown = act ? (act.action === 'data' ? 'Here’s what I’ll change — preview it and hit apply when it looks right.' : act.action === 'request' ? 'Got it — I’ll file this as a request for Jac to OK.' : act.action === 'plan' ? 'Here’s the plan — tap Build when it’s right.' : 'On it — I’ll send this to get fixed.') : '(no answer)';
       o.messages.push({ role: 'assistant', content: shown, action: act || null, filed: false });
       syncWranglerComment(o, 'assistant', shown);   // §18e mirror Mr. Wrangler's reply onto the issue thread
     } else {
@@ -6408,10 +6415,98 @@ async function wranglerSend() {
 function parseWranglerAction(text) {
   const m = String(text || '').match(/```wrangler-action\s*([\s\S]*?)```/);
   if (!m) return null;
-  try { const j = JSON.parse(m[1].trim()); if (j && (j.action === 'fix' || j.action === 'request' || j.action === 'plan') && j.title) return j; } catch (e) {}
+  try { const j = JSON.parse(m[1].trim()); if (j && ((['fix', 'request', 'plan'].includes(j.action) && j.title) || (j.action === 'data' && Array.isArray(j.ops)))) return j; } catch (e) {}
   return null;
 }
 const stripWranglerAction = (text) => String(text || '').replace(/```wrangler-action\s*[\s\S]*?```/g, '').trim();
+
+/* ════════════ Mr. Wrangler ACTS on your data (Jac 2026-06-16) ════════════════
+   add / update / bulk-import items — NEVER delete, NEVER money/card/auth/WO. Only
+   safe, allowlisted fields. Every op previews in the chat before it writes. */
+const WR_FUNNEL = ['Inbound Lead', 'Outbound Lead', "Don't Contact", 'Contacted', 'Not A No!', 'Payment Discussed', 'Paid'];
+function wrFunnel(v) {
+  if (!v) return '';
+  const norm = (s) => String(s).toLowerCase().replace(/[^a-z]/g, '');
+  const n = norm(v);
+  return WR_FUNNEL.find((f) => norm(f) === n) || WR_FUNNEL.find((f) => norm(f).includes(n) || n.includes(norm(f))) || '';
+}
+const WR_ACCT = ['Non-Business', 'Business', 'Non-Business Member', 'Business Member', 'Member Incomplete'];
+function wrAccount(v) {
+  if (!v) return '';
+  const n = String(v).toLowerCase();
+  return WR_ACCT.find((a) => a.toLowerCase() === n) || (/member/.test(n) ? (/business/.test(n) ? 'Business Member' : 'Non-Business Member') : /business/.test(n) ? 'Business' : '');
+}
+const WR_EDITABLE = {   // safe fields only — money / card / payment / pricing / auth / WO-completion are deliberately absent
+  customers: { label: 'customer', create: true, importable: true, fields: ['firstName', 'lastName', 'company', 'phone', 'email', 'address', 'industry', 'accountNotes', 'accountType', 'membershipStage', 'usedSalesStage'] },
+  units: { label: 'unit', create: false, fields: ['name', 'assignedMechanic', 'notes', 'serial', 'make', 'model', 'year', 'weight', 'gpsType', 'gpsPlacement'] },
+  categories: { label: 'category', create: false, fields: ['name', 'description', 'fuelType'] },
+  rentals: { label: 'rental', create: false, fields: ['notes', 'po'] },
+};
+const WR_IDX = { customers: () => IDX.customer, units: () => IDX.unit, categories: () => IDX.category, rentals: () => IDX.rental };
+const wrGet = (entity, id) => (WR_IDX[entity] ? WR_IDX[entity]().get(id) : null);
+function wrCleanFields(entity, obj) {
+  const ent = WR_EDITABLE[entity]; const out = {}; const skipped = [];
+  Object.keys(obj || {}).forEach((k) => {
+    if (!ent.fields.includes(k)) { skipped.push(k); return; }   // outside the allowlist → refused
+    let v = obj[k];
+    if (k === 'membershipStage' || k === 'usedSalesStage') v = wrFunnel(v) || v;
+    if (k === 'accountType') v = wrAccount(v) || 'Non-Business';
+    out[k] = typeof v === 'string' ? v.trim() : v;
+  });
+  return { out, skipped };
+}
+/** Validate a `data` action into a safe preview plan (drops anything off the allowlist). */
+function wrValidatePlan(act) {
+  const ops = []; const issues = [];
+  (Array.isArray(act.ops) ? act.ops : []).forEach((raw) => {
+    const ent = WR_EDITABLE[raw.entity];
+    if (!ent) { issues.push(`can’t touch “${raw.entity}”`); return; }
+    const opn = raw.op === 'import' ? 'import' : raw.op === 'update' ? 'update' : 'create';
+    if (opn === 'import') {
+      if (!ent.importable) { issues.push(`can’t bulk-import ${ent.label}s`); return; }
+      const rows = (raw.rows || []).map((r) => wrCleanFields(raw.entity, r).out).filter((r) => Object.keys(r).length);
+      if (rows.length) ops.push({ op: 'import', entity: raw.entity, rows });
+    } else if (opn === 'update') {
+      const t = wrGet(raw.entity, raw.id);
+      if (!t) { issues.push(`no ${ent.label} “${raw.id}”`); return; }
+      const c = wrCleanFields(raw.entity, raw.fields);
+      if (Object.keys(c.out).length) ops.push({ op: 'update', entity: raw.entity, id: raw.id, fields: c.out, target: t });
+    } else {
+      if (!ent.create) { issues.push(`${ent.label}s can’t be created this way`); return; }
+      const c = wrCleanFields(raw.entity, raw.fields);
+      if (Object.keys(c.out).length) ops.push({ op: 'create', entity: raw.entity, fields: c.out });
+    }
+  });
+  return { title: act.title || 'Apply changes', ops, issues };
+}
+function wrPlanSummary(plan) {
+  const add = {}, upd = {};
+  plan.ops.forEach((op) => { const l = WR_EDITABLE[op.entity].label; if (op.op === 'update') upd[l] = (upd[l] || 0) + 1; else add[l] = (add[l] || 0) + (op.op === 'import' ? op.rows.length : 1); });
+  const seg = (m, verb) => Object.entries(m).map(([l, n]) => `${verb} ${n} ${l}${n > 1 ? 's' : ''}`);
+  return [...seg(add, 'add'), ...seg(upd, 'update')].join(' · ') || 'no safe changes';
+}
+function wrCreateCustomer(f) {
+  const id = nextCustomerId();
+  const c = { customerId: id, firstName: f.firstName || '', lastName: f.lastName || '', name: `${f.firstName || ''} ${f.lastName || ''}`.trim() || (f.company || 'New lead'), company: f.company || '', phone: f.phone || '', email: f.email || '', address: f.address || '', industry: f.industry || '', accountType: f.accountType || 'Non-Business', payStatus: 'New Customer', requiresPO: false, accountNotes: f.accountNotes || '', stripeId: '', selfie: '', signature: '', agreementType: '', agreementSignedAt: '', interestedCategoryIds: [], activityLog: [], usedSalesStage: f.usedSalesStage || 'Inbound Lead', membershipStage: f.membershipStage || 'Inbound Lead', _digest: { activePct: 0, totalPaid: 0, visits: 0, years: 0, avgFrequencyDays: 0, firstInvoice: '', lastInvoice: '' } };
+  DATA.customers.push(c); IDX.customer.set(id, c); reindex('customers', c); logAction(c, 'Added by Mr. Wrangler');
+  return c;
+}
+function applyWranglerData(plan) {
+  let created = 0, updated = 0, first = null;
+  plan.ops.forEach((op) => {
+    if (op.op === 'update') {
+      const t = op.target || wrGet(op.entity, op.id); if (!t) return;
+      Object.assign(t, op.fields);
+      if (op.entity === 'customers') t.name = `${t.firstName || ''} ${t.lastName || ''}`.trim() || t.name;
+      reindex(op.entity, t); logAction(t, `Mr. Wrangler updated ${Object.keys(op.fields).join(', ')}`); updated++;
+    } else {
+      (op.op === 'import' ? op.rows : [op.fields]).forEach((f) => { if (op.entity === 'customers') { const c = wrCreateCustomer(f); created++; first = first || c.customerId; } });
+    }
+  });
+  if (first) { const s = activeSession(); if (s.cols) s.cols.right = 'customers'; const ccs = s.cards.customers; if (created === 1) { ccs.mode = 'standard'; ccs.recId = first; } else { ccs.mode = 'list'; ccs.recId = null; ccs.search = ''; } ccs.graphView = false; }
+  render();
+  toast(`Mr. Wrangler ${[created ? `added ${created}` : '', updated ? `updated ${updated}` : ''].filter(Boolean).join(' · ') || 'made no changes'}. 🤠`);
+}
 
 // Build the GitHub repro packet from Mr. Wrangler's structured report + the live
 // context + the captured console errors. The chat conversation rides along too.
@@ -7682,6 +7777,7 @@ function onClick(e) {
   if (closest('.js-fb-send')) { e.stopPropagation(); return sendFeedback(); }
   if (closest('.js-wr-send')) { e.stopPropagation(); return wranglerSend(); }   // §18 Mr. Wrangler
   if (closest('.js-wr-act')) { e.stopPropagation(); return wranglerFileAction(Number(closest('.js-wr-act').dataset.mi)); }   // §18d file the fix/request Mr. Wrangler proposed inline
+  if (closest('.js-wr-apply')) { e.stopPropagation(); const o = state.overlay; if (o?.kind !== 'wrangler') return; const m = o.messages[Number(closest('.js-wr-apply').dataset.mi)]; if (!m || !m.action || m.filed) return; const plan = m.action._plan || wrValidatePlan(m.action); if (!plan.ops.length) return; m.filed = true; applyWranglerData(plan); return; }   // Mr. Wrangler applies the previewed add/update/import
   if (closest('.js-wr-unattach')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'wrangler' && o.attach) { o.attach.splice(Number(closest('.js-wr-unattach').dataset.i), 1); renderOverlay(); } return; }   // §18d drop a pending image attachment
   if (closest('.js-wrangler')) { e.stopPropagation(); return openOverlay({ kind: 'wrangler', card: null, recId: null, recType: null, messages: [], busy: false, error: '', draft: '' }); }
   if (closest('.js-notifications')) { e.stopPropagation(); openOverlay({ kind: 'notifications' }); markNotifsSeen(); refreshWranglerNotifications(); return; }   // §18f notification bell — in-app resolved-fix feed
@@ -10499,7 +10595,8 @@ function exposeTestApi() {
       addUnitToRental, removeUnitFromRental, removeUnitInvoiceLine, unitLinePaid, invoiceTotals, allocLines,
       rentalAllocated, unitRentalPrice, rentalDisplayName, setWoLinePhase, setWoPhase, woBottleneck,
       cleanUnitName, planUnitMigration, applyUnitMigration, openMigrationPreview,
-      computeTransportPrice, isFueledType, unitTransport, rentalTransport };
+      computeTransportPrice, isFueledType, unitTransport, rentalTransport,
+      wrValidatePlan, applyWranglerData, wrFunnel };
   } catch (e) { /* no window (non-browser) */ }
 }
 
