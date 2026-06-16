@@ -1512,6 +1512,7 @@ function totColMatch(card, rec, col, value) {
   if (col === '__fleet') { const [cat, status, kind] = String(value).split('|'); if (rec.categoryId !== cat) return false; return kind === 'rental' ? unitRentalBucket(rec) === status : rec.inspectionStatus === status; }   // A1 — fleet-bar segment = category + inspection/rental status
   if (col === '__fc') return DATA.workOrders.some((w) => w.unitId === rec.unitId && w.woType === 'Field Call');   // §13.4 — unit has any Field Call WO
   if (col === '__fcmonth') return DATA.workOrders.some((w) => w.unitId === rec.unitId && w.woType === 'Field Call' && (w.date || '').slice(0, 7) === value);   // §13.4 — Field Call in month YYYY-MM
+  if (col === '__rentmonth') return (rec.startDate || '').slice(0, 7) === value;   // §13.4 — rental starting in month YYYY-MM
   const c = cardColumns(card, activeSession()).find((x) => x.key === col);
   return c ? String(c.get(rec)) === String(value) : true;
 }
@@ -1542,6 +1543,7 @@ function colFilterLabel(card, col, value) {
   if (col === '__fleet') { const [cat, status] = String(value).split('|'); return `${status} · ${IDX.category.get(cat)?.name || 'category'}`; }
   if (col === '__fc') return 'Field Calls';
   if (col === '__fcmonth') { const d = parseISO(value + '-01'); return 'FC · ' + (d ? d.toLocaleString('en-US', { month: 'short' }) : value); }
+  if (col === '__rentmonth') { const d = parseISO(value + '-01'); return d ? d.toLocaleString('en-US', { month: 'short' }) : value; }
   const c = cardColumns(card, activeSession()).find((x) => x.key === col);
   const m = (c && c.meta) ? c.meta(value) : null;
   return (m && m.label) || String(value);
@@ -5234,6 +5236,69 @@ function graphViewsFor(card) {
       { key: 'nums', title: 'By the Numbers', kind: 'nums', segs: nums },
     ];
   }
+  if (card === 'rentals') {
+    const R = DATA.rentals, ym = TODAY_ISO.slice(0, 7);
+    const sc = {}; R.forEach((r) => { const s = rentalDisplayStatus(r); sc[s] = (sc[s] || 0) + 1; });
+    const ordIdx = (s) => { const k = RENTAL_BAR_ORDER.indexOf(s); return k < 0 ? 99 : k; };
+    const status = Object.keys(sc).sort((a, b) => ordIdx(a) - ordIdx(b)).map((s) => ({ col: 'status', value: s, label: s, count: sc[s], color: s === 'Available' ? 'gray' : (getStatus('rentalStatus', s).color || 'gray') }));
+    const ic = {}; R.forEach((r) => { const inv = r.invoiceId && IDX.invoice.get(r.invoiceId); const s = inv ? invoiceTotals(inv).status : 'No invoice'; ic[s] = (ic[s] || 0) + 1; });
+    const invoice = Object.entries(ic).sort((a, b) => b[1] - a[1]).map(([s, n]) => ({ col: 'invoice', value: s === 'No invoice' ? '' : s, label: s, count: n, color: s === 'No invoice' ? 'gray' : (getStatus('invoiceStatus', s).color || 'gray') }));
+    const rmonth = gvMonths6().map((m) => ({ col: '__rentmonth', value: m.key, label: m.label, count: R.filter((r) => (r.startDate || '').slice(0, 7) === m.key).length, color: 'blue' }));
+    const byUnit = {}; R.forEach((r) => rentalUnits(r).forEach((eu) => { const u = IDX.unit.get(eu.unitId); if (u) byUnit[u.name] = (byUnit[u.name] || 0) + 1; }));
+    const topUnits = Object.entries(byUnit).map(([name, n]) => ({ col: 'name', value: name, label: name, count: n, color: 'blue' })).sort((a, b) => b.count - a.count).slice(0, 8);
+    const nums = [
+      { col: 'status', value: 'On Rent', label: 'On Rent', count: sc['On Rent'] || 0, color: 'green' },
+      { col: 'status', value: 'Quote', label: 'Quotes', count: sc['Quote'] || 0, color: 'gray' },
+      { col: 'status', value: 'No Show', label: 'No Show', count: sc['No Show'] || 0, color: 'red' },
+      { col: '__rentmonth', value: ym, label: 'This Month', count: R.filter((r) => (r.startDate || '').slice(0, 7) === ym).length, color: 'blue' },
+    ];
+    return [
+      { key: 'status', title: 'Status Mix', kind: 'pie', segs: status },
+      { key: 'invoice', title: 'Invoice Status', kind: 'pie', segs: invoice },
+      { key: 'rmonth', title: 'Rentals / Month', kind: 'bars', color: 'blue', segs: rmonth },
+      { key: 'units', title: 'Most-Rented Units', kind: 'lead', segs: topUnits },
+      { key: 'nums', title: 'By the Numbers', kind: 'nums', segs: nums },
+    ];
+  }
+  if (card === 'customers') {
+    const C = DATA.customers;
+    const ac = {}; C.forEach((c) => { const t = c.accountType || 'Non-Business'; ac[t] = (ac[t] || 0) + 1; });
+    const account = Object.entries(ac).sort((a, b) => b[1] - a[1]).map(([t, n]) => ({ col: 'account', value: t, label: t, count: n, color: getStatus('customerAccountType', t).color || 'gray' }));
+    const pcN = {}; C.forEach((c) => { const p = c.payStatus || ''; pcN[p] = (pcN[p] || 0) + 1; });
+    const pay = Object.entries(pcN).sort((a, b) => b[1] - a[1]).map(([p, n]) => ({ col: 'pay', value: p, label: p || 'None', count: n, color: getStatus('customerPayStatus', p).color || 'gray' }));
+    const topSpend = C.map((c) => ({ c, paid: c._digest?.totalPaid || 0 })).filter((x) => x.paid > 0).sort((a, b) => b.paid - a.paid).slice(0, 8).map((x) => ({ col: 'name', value: x.c.name, label: x.c.name, count: Math.round(x.paid), disp: money(x.paid), color: 'green' }));
+    const nums = [
+      { col: 'account', value: 'Business', label: 'Business', count: ac['Business'] || 0, color: 'blue' },
+      { col: 'account', value: 'Non-Business', label: 'Non-Business', count: ac['Non-Business'] || 0, color: 'gray' },
+      { col: 'card', value: 'No Card', label: 'No Card', count: C.filter((c) => cardFlag(c) === 'none').length, color: 'red' },
+    ];
+    return [
+      { key: 'account', title: 'Account Types', kind: 'pie', segs: account },
+      { key: 'pay', title: 'Pay Status', kind: 'pie', segs: pay },
+      { key: 'spend', title: 'Top Customers', kind: 'lead', segs: topSpend },
+      { key: 'nums', title: 'By the Numbers', kind: 'nums', segs: nums },
+    ];
+  }
+  if (card === 'categories') {
+    const byCat = {}; DATA.units.forEach((u) => { if (u.categoryId) byCat[u.categoryId] = (byCat[u.categoryId] || 0) + 1; });
+    const ranked = DATA.categories.map((c) => ({ col: 'name', value: c.name, label: c.name, count: byCat[c.categoryId] || 0, color: 'blue' })).sort((a, b) => b.count - a.count);
+    return [
+      { key: 'unitsper', title: 'Units per Category', kind: 'bars', color: 'blue', segs: ranked.slice(0, 8) },
+      { key: 'largest', title: 'Largest Categories', kind: 'lead', segs: ranked.slice(0, 8) },
+    ];
+  }
+  if (card === 'invoices') {
+    const INV = DATA.invoices;
+    const sc = {}; INV.forEach((i) => { const s = invoiceTotals(i).status; sc[s] = (sc[s] || 0) + 1; });
+    const status = Object.entries(sc).sort((a, b) => b[1] - a[1]).map(([s, n]) => ({ col: 'status', value: s, label: s, count: n, color: getStatus('invoiceStatus', s).color || 'gray' }));
+    const byCust = {}; INV.forEach((i) => { const t = invoiceTotals(i); if (t.balance > 0 && t.status !== 'Refunded') { const n = IDX.customer.get(i.customerId)?.name || i.customerId || '—'; byCust[n] = (byCust[n] || 0) + t.balance; } });
+    const topBal = Object.entries(byCust).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([n, bal]) => ({ col: 'customer', value: n, label: n, count: Math.round(bal), disp: money(bal), color: 'red' }));
+    return [
+      { key: 'status', title: 'Payment Status', kind: 'pie', segs: status },
+      { key: 'balances', title: 'Biggest Balances', kind: 'lead', segs: topBal },
+      { key: 'nums', title: 'By the Numbers', kind: 'nums', segs: status.map((s) => ({ ...s })) },
+    ];
+  }
   return null;
 }
 // ── state transitions (the active view's selection lives in cs.filterTerms as g-tagged
@@ -5286,9 +5351,9 @@ function gvRenderView(card, cs, v) {
   }
   if (v.kind === 'lead') {
     if (!v.segs.length) return '<div class="gv-empty">No data yet.</div>';
-    return `<div class="gv-lead-list">${v.segs.map((s, i) => gvSegBtn(cs, card, s, `<span class="gv-lead-n">${i + 1}</span><span class="gv-lead-name">${esc(s.label)}</span><span class="gv-lead-c">${s.count}</span>`, 'gv-lead-row')).join('')}</div>`;
+    return `<div class="gv-lead-list">${v.segs.map((s, i) => gvSegBtn(cs, card, s, `<span class="gv-lead-n">${i + 1}</span><span class="gv-lead-name">${esc(s.label)}</span><span class="gv-lead-c">${esc(String(s.disp != null ? s.disp : s.count))}</span>`, 'gv-lead-row')).join('')}</div>`;
   }
-  if (v.kind === 'nums') return `<div class="gv-numrow">${v.segs.map((s) => gvSegBtn(cs, card, s, `<div class="gv-num-v">${esc(String(s.count))}</div><div class="gv-num-l">${esc(s.label)}</div>`, 'gv-numtile')).join('')}</div>`;
+  if (v.kind === 'nums') return `<div class="gv-numrow">${v.segs.map((s) => gvSegBtn(cs, card, s, `<div class="gv-num-v">${esc(String(s.disp != null ? s.disp : s.count))}</div><div class="gv-num-l">${esc(s.label)}</div>`, 'gv-numtile')).join('')}</div>`;
   return '';
 }
 function graphPanelHtml(card, cs) {
