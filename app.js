@@ -4902,11 +4902,12 @@ function dispatchTruckPos(stops) {   // v1 seam — swapped for live telematics 
 // "HH:MM" (24h) → minutes (blanks → null, sort last); + a friendly "9:00a" stamp.
 function timeToMin(t) { const m = /^(\d{1,2}):(\d{2})$/.exec((t || '').trim()); return m ? (+m[1]) * 60 + (+m[2]) : null; }
 function fmtClock(t) { const mn = timeToMin(t); if (mn == null) return '—:—'; let h = Math.floor(mn / 60); const m = mn % 60; const ap = h < 12 ? 'a' : 'p'; h = h % 12 || 12; return `${h}:${String(m).padStart(2, '0')}${ap}`; }
-/* §2.3 DISPATCH = the OFFICE COCKPIT (Phase 1, Jac 2026-06-15): a live map of the
-   day's run + a welded TIME-RAIL. Stops auto-fill from rentals; the rail places each
-   on a time axis (retime = reorder, Phase 1b drag); the map draws the route + truck.
-   Every stop reads its KIND (deliver=blue / recover=tan) and the NEXT stop is marked,
-   on BOTH the map and the rail. The board is live — no "send"; edits auto-notify. */
+/* §2.3 DISPATCH = the OFFICE COCKPIT (Phase 1, Jac): a FULL-PANE live map of the day's
+   run + a minimal schedule rail floating on the right that widens on hover/focus to
+   adjust the run ("No set time" pinned on top). Stops auto-fill from rentals; the map
+   draws the route + truck; every stop reads its KIND (deliver=blue / recover=brown) and
+   the NEXT stop is marked, on BOTH map + rail. Live board — no "send"; edits auto-notify.
+   Phase 1b: drag a token to retime (today it's type-the-time). */
 function dispatchGridBody() {
   const day = state.dispatchDay || TODAY_ISO;
   const stops = dispatchDayStops(day);
@@ -4922,33 +4923,29 @@ function dispatchGridBody() {
   if (!stops.length) return `${head}<div class="disp-empty">${I.truck}<p>No transports on this day.</p><span>Rentals with Delivery / Round-Trip / Recovery land here automatically — flip days with ‹ ›.</span></div>`;
 
   const nextId = dispatchNextId(stops);
-  // time window for the rail axis (pad 30m; floor of 2h so a one-stop day still spreads)
-  const mins = stops.map((s) => timeToMin(s.time)).filter((m) => m != null);
-  const winA = mins.length ? Math.min(...mins) - 30 : 7 * 60;
-  let winB = mins.length ? Math.max(...mins) + 30 : 15 * 60;
-  if (winB - winA < 120) winB = winA + 120;
-  const pctOf = (mn) => Math.max(3, Math.min(97, ((mn - winA) / (winB - winA)) * 100));
-  let ticks = '';
-  for (let h = Math.ceil(winA / 60); h * 60 <= winB; h++) { const ap = h < 12 ? 'a' : 'p'; const hh = h % 12 || 12; ticks += `<span class="disp-tick" style="top:${pctOf(h * 60)}%">${hh}${ap}</span>`; }
-
   const scheduled = stops.filter((s) => timeToMin(s.time) != null);
-  const unscheduled = stops.filter((s) => timeToMin(s.time) == null);
-  const tokenEl = (s, axis) => {
+  const unscheduled = stops.filter((s) => timeToMin(s.time) == null);   // §2.3 "No set time" pinned to the TOP of the rail (Jac)
+  const tokenEl = (s) => {
     const kind = dispatchKind(s);
     const done = stopDone(s), isNext = s.id === nextId;
-    const top = axis ? ` style="top:${pctOf(timeToMin(s.time))}%"` : '';
     const flag = done ? `<span class="dt-flag ok">✓ done</span>` : (isNext ? `<span class="dt-flag next">${I.truck} next</span>` : '');
-    return `<div class="disp-tok js-disp-tok${done ? ' done' : ''}${isNext ? ' next' : ''}${s.pin ? '' : ' nopin'}" data-id="${esc(s.id)}" data-rec="${esc(s.rentalId)}" data-unit="${esc(s.unitId || '')}"${top}>
-      <div class="dt-r1"><span class="dt-grip" data-tip="Type a time to retime/reorder this stop (drag coming soon)">⠿</span><input class="dt-time js-disp-time" data-id="${esc(s.id)}" value="${esc(s.time || '')}" placeholder="—:—" maxlength="5" aria-label="Stop time" data-tip="Set the stop time — reorders the run" /><span class="spacer"></span>${flag}</div>
-      <div class="dt-r2"><span class="dt-kind k-${kind}">${kind === 'deliver' ? '▾' : '▴'} ${kind}</span><span class="dt-who">${esc(s.cust)} · ${esc(s.unit)}</span></div>
-      ${s.addr ? `<div class="dt-addr js-site-go" data-rec="${esc(s.rentalId)}" data-unit="${esc(s.unitId || '')}" data-tip="Open the site / set the map pin">${s.pin ? '' : '⚠ '}${esc(s.addr)}</div>` : ''}
+    return `<div class="disp-tok js-disp-tok kind-${kind}${done ? ' done' : ''}${isNext ? ' next' : ''}${s.pin ? '' : ' nopin'}" data-id="${esc(s.id)}" data-rec="${esc(s.rentalId)}" data-unit="${esc(s.unitId || '')}">
+      <div class="dt-rail"><span class="dt-dot"></span><b class="dt-mini">${timeToMin(s.time) != null ? esc(fmtClock(s.time)) : '—'}</b></div>
+      <div class="dt-full">
+        <div class="dt-r1"><span class="dt-grip" data-tip="Type a time to retime/reorder (drag coming soon)">⠿</span><input class="dt-time js-disp-time" data-id="${esc(s.id)}" value="${esc(s.time || '')}" placeholder="—:—" maxlength="5" aria-label="Stop time" data-tip="Set the stop time — reorders the run" /><span class="spacer"></span>${flag}</div>
+        <div class="dt-r2"><span class="dt-kind k-${kind}">${kind === 'deliver' ? '▾' : '▴'} ${kind}</span><span class="dt-who">${esc(s.cust)} · ${esc(s.unit)}</span></div>
+        ${s.addr ? `<div class="dt-addr js-site-go" data-rec="${esc(s.rentalId)}" data-unit="${esc(s.unitId || '')}" data-tip="Open the site / set the map pin">${s.pin ? '' : '⚠ '}${esc(s.addr)}</div>` : ''}
+      </div>
     </div>`;
   };
-  const rail = `<div class="disprail js-disprail" data-day="${esc(day)}">
-    <div class="disp-bookend">${ICO_STORE} <span>Roll out</span></div>
-    <div class="disp-axis">${ticks}<span class="disp-axisline"></span>${scheduled.map((s) => tokenEl(s, true)).join('')}</div>
-    ${unscheduled.length ? `<div class="disp-tray"><div class="disp-tray-h">${unscheduled.length} no set time</div>${unscheduled.map((s) => tokenEl(s, false)).join('')}</div>` : ''}
-    <div class="disp-bookend">${ICO_STORE} <span>Return to yard</span></div>
+  const sec = (t) => `<div class="dr-sec">${t}</div>`;
+  const railRows = (unscheduled.length ? sec('No set time') + unscheduled.map(tokenEl).join('') : '')
+    + (scheduled.length ? (unscheduled.length ? sec('Scheduled') : '') + scheduled.map(tokenEl).join('') : '');
+  // The map is the full pane; the rail is a minimal time strip floating on the right that
+  // widens on hover/focus to let the office adjust the run. "No set time" sits up top.
+  const rail = `<div class="disprail js-disprail" data-day="${esc(day)}" tabindex="0" data-tip="Hover to adjust the run">
+    <div class="dr-head"><span class="dr-chev">‹</span><span class="dr-title">Run · ${stops.length} stop${stops.length === 1 ? '' : 's'}</span></div>
+    <div class="dr-list">${railRows}</div>
   </div>`;
   const foot = `<div class="disp-foot"><span class="disp-livedot"></span><span class="disp-live">Live · auto-notifies the driver on change</span></div>`;
   return `${head}<div class="disp-cockpit"><div class="dispm js-dispmount" data-day="${esc(day)}"></div>${rail}</div>${foot}`;

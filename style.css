@@ -471,21 +471,36 @@ input { font-family: inherit; }
 .disp-arrow-dot { fill: var(--accent); }
 .disp-arrow-hit { pointer-events: stroke; cursor: pointer; }
 @media (prefers-reduced-motion: reduce) { .js-disp-arrowpt { transition: none; } .js-disp-arrowpt.armed { transform: none; } }
-/* ── §2.3 OFFICE COCKPIT (Phase 1): live map + welded time-rail ───────────────── */
-.disp-cockpit { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.dispm { flex: 0 0 46%; min-height: 200px; position: relative; overflow: hidden; border-bottom: 1px solid var(--line); background: var(--bg-2); }
-.disprail { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 10px 12px; }
-.disp-bookend { display: flex; align-items: center; gap: 7px; font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.2px; font-size: 10.5px; font-weight: 700; color: var(--txt-2); padding: 5px 9px; border-radius: 7px; background: var(--accent-soft); }
-.disp-bookend svg { width: 13px; height: 13px; color: var(--accent); flex: 0 0 auto; }
-.disp-axis { position: relative; min-height: 360px; margin: 10px 0 10px 32px; }
-.disp-axisline { position: absolute; left: -14px; top: 0; bottom: 0; width: 2px; background: var(--line); }
-.disp-tick { position: absolute; left: -32px; transform: translateY(-50%); font-family: 'Saira Condensed', system-ui, sans-serif; font-size: 10px; letter-spacing: .5px; color: var(--txt-3); }
-.disp-tok { background: linear-gradient(180deg, var(--card-head), var(--card)); border: 1px solid var(--line); border-radius: 10px; padding: 6px 9px; cursor: grab; }
-.disp-axis .disp-tok { position: absolute; left: 0; right: 0; transform: translateY(-50%); }
-.disp-tok:hover { border-color: var(--accent-line); }
+/* ── §2.3 OFFICE COCKPIT (Phase 1): FULL-PANE map + hover-expand schedule rail ──── */
+.disp-cockpit { flex: 1; min-height: 0; position: relative; }
+.dispm { position: absolute; inset: 0; }                                   /* the map is the whole pane */
+/* the rail floats over the map's right edge: a minimal time strip that widens on hover/focus */
+.disprail { position: absolute; top: 8px; right: 8px; bottom: 8px; width: 90px; z-index: 3; display: flex; flex-direction: column;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; box-shadow: var(--chip-shadow); transition: width .16s ease, box-shadow .16s ease; }
+.disprail:hover, .disprail:focus-within { width: 256px; box-shadow: var(--shadow); }
+.dr-head { display: flex; align-items: center; gap: 6px; padding: 7px 9px; border-bottom: 1px solid var(--line); flex: 0 0 auto; }
+.dr-chev { color: var(--txt-3); font-size: 13px; flex: 0 0 auto; transition: transform .16s ease; }
+.disprail:hover .dr-chev, .disprail:focus-within .dr-chev { transform: rotate(180deg); }
+.dr-title { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1px; font-size: 10.5px; font-weight: 700; color: var(--txt-2); white-space: nowrap; opacity: 0; transition: opacity .16s ease; }
+.disprail:hover .dr-title, .disprail:focus-within .dr-title { opacity: 1; }
+.dr-list { flex: 1; min-height: 0; overflow-y: auto; padding: 6px; display: flex; flex-direction: column; gap: 5px; }
+.dr-sec { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .8px; font-size: 9px; font-weight: 700; color: var(--txt-3); padding: 3px 2px 0; display: none; }
+.disprail:hover .dr-sec, .disprail:focus-within .dr-sec { display: block; }
+.disp-tok { border: 1px solid var(--line); border-left: 3px solid var(--gray); border-radius: 8px; background: linear-gradient(180deg, var(--card-head), var(--card)); cursor: pointer; overflow: hidden; }
+.disp-tok.kind-deliver { border-left-color: var(--blue); }
+.disp-tok.kind-recover { border-left-color: var(--brown); }
 .disp-tok.next { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .disp-tok.done { opacity: .82; }
 .disp-tok.nopin { border-style: dashed; }
+.dt-rail { display: flex; align-items: center; gap: 7px; padding: 6px 8px; }                 /* collapsed view: kind dot + time */
+.disprail:hover .dt-rail, .disprail:focus-within .dt-rail { display: none; }
+.dt-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex: 0 0 auto; color: var(--gray); }
+.disp-tok.kind-deliver .dt-dot { color: var(--blue); }
+.disp-tok.kind-recover .dt-dot { color: var(--brown); }
+.disp-tok.next .dt-dot { color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+.dt-mini { font-size: 11px; font-weight: 800; color: var(--txt); white-space: nowrap; }
+.dt-full { display: none; padding: 6px 8px; }                                                /* expanded view: editable detail */
+.disprail:hover .dt-full, .disprail:focus-within .dt-full { display: block; }
 .dt-r1 { display: flex; align-items: center; gap: 6px; }
 .dt-grip { color: var(--txt-3); cursor: grab; font-size: 12px; }
 .dt-time { width: 52px; flex: 0 0 auto; font-size: 13px; font-weight: 800; color: var(--txt); font-family: inherit; background: transparent; border: 1px solid transparent; border-radius: 6px; padding: 1px 4px; }
@@ -503,8 +518,6 @@ input { font-family: inherit; }
 .dt-who { font-size: 11.5px; color: var(--txt-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dt-addr { font-size: 10.5px; color: var(--blue); cursor: pointer; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .disp-tok.nopin .dt-addr { color: var(--yellow); }
-.disp-tray { margin: 10px 0; padding: 8px; border: 1px dashed var(--line); border-radius: 9px; display: flex; flex-direction: column; gap: 7px; }
-.disp-tray-h { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .6px; font-size: 9.5px; color: var(--txt-3); }
 .disp-foot { flex: 0 0 auto; display: flex; align-items: center; gap: 7px; padding: 7px 12px; border-top: 1px solid var(--line); font-size: 10.5px; color: var(--txt-3); }
 .disp-live { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .8px; }
 .disp-livedot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 3px var(--green-bg); flex: 0 0 auto; }
