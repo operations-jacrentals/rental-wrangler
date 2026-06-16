@@ -671,6 +671,12 @@ function mountTransportEditor() {
       _tePlaces = new google.maps.places.PlacesService(_teMap);   // resolve picks by place-id via Places (the key has Places, not Geocoding)
       _teDist = google.maps.DistanceMatrixService ? new google.maps.DistanceMatrixService() : null;   // DMS may lag the core lib — teFetchDistance lazily retries
       te.mapFailed = false;                                        // the live map is up — clear any stale offline-fallback flag
+      // First-open paint fix: the map div is created the same frame it's inserted, before the
+      // browser lays its box out, so Google paints it at 0×0 and it stays blank until the NEXT
+      // open ("appeared only after opening twice"). Nudge it once the box has real size — rAF for
+      // the common case, a short timeout as a backstop for the editor's slide-in.
+      const repaint = () => { try { google.maps.event.trigger(_teMap, 'resize'); _teMap.setCenter(center); } catch (e2) {} };
+      requestAnimationFrame(repaint); setTimeout(repaint, 250);
     } catch (e) { delete mapEl.dataset.mounted; te.mapFailed = true; mapEl.classList.add('ph'); }   // never strand the editor on a half-mount
   }
 }
