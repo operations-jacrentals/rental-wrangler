@@ -7617,7 +7617,14 @@ function onClick(e) {
   if (closest('.js-nc-qr')) { e.stopPropagation(); const id = state.overlay.editId; openOverlay({ kind: 'qr', title: 'Continue on phone', url: location.origin + location.pathname + '#edit=' + id, caption: 'Scan to finish this account on your phone.' }); return; }
   if (closest('.js-edit-customer')) { e.stopPropagation(); return openCustomerForm(closest('.js-edit-customer').dataset.rec); }
   if (closest('.js-view-agreement')) { e.stopPropagation(); const cust = IDX.customer.get(closest('.js-view-agreement').dataset.rec); if (cust) openOverlay({ kind: 'agreement', recId: cust.customerId }); return; }
-  if (closest('.js-add-card')) { e.stopPropagation(); return openAddCard(closest('.js-add-card').dataset.rec); }
+  if (closest('.js-add-card')) {
+    e.stopPropagation();
+    const rec = closest('.js-add-card').dataset.rec;
+    // From the onboarding form: persist the draft (incl. signature/selfie) first, add the card,
+    // then RETURN to the form (card now on file) — no save-close-reopen. Elsewhere: normal add.
+    if (state.overlay && state.overlay.kind === 'newCustomer') { ncSyncDraftToCustomer(state.overlay); return openAddCard(rec, { returnTo: 'customerForm' }); }
+    return openAddCard(rec);
+  }
   if (closest('.js-card-default')) { e.stopPropagation(); const b = closest('.js-card-default'); return setCardDefault(b.dataset.rec, b.dataset.card); }
   if (closest('.js-card-remove')) { e.stopPropagation(); const b = closest('.js-card-remove'); return removeCard(b.dataset.rec, b.dataset.card); }
   if (closest('.js-card-save')) { e.stopPropagation(); return saveCardFlow(closest('.js-card-save')); }
@@ -8962,6 +8969,19 @@ function applyCustomerLink(o, customerId) {
   o.linked = lt;
   return lt;
 }
+/* Persist the current onboarding-form draft (fields + signature + selfie + agreement) onto the
+   customer record WITHOUT closing the form — used before the card flow so a return loses nothing. */
+function ncSyncDraftToCustomer(o) {
+  if (!o || o.kind !== 'newCustomer') return;
+  ncSyncInputs();
+  if (!o.editId) quickSaveCustomer(o);
+  const c = o.editId && IDX.customer.get(o.editId); if (!c) return;
+  const d = o.draft;
+  Object.assign(c, { firstName: d.firstName, lastName: d.lastName, name: `${d.firstName} ${d.lastName}`.trim(),
+    company: d.company, phone: d.phone, email: d.email, industry: d.industry, accountType: d.accountType || 'Non-Business',
+    accountNotes: d.accountNotes, selfie: d.selfie, signature: d.signature, agreementType: d.agreementType || '', agreementSignedAt: d.agreementSignedAt || '' });
+  reindex('customers', c);
+}
 function saveNewCustomer() {
   const o = state.overlay; if (!o || o.kind !== 'newCustomer') return;
   const root = document.querySelector('.overlay .popup-body'); if (!root) return;
@@ -9182,6 +9202,7 @@ async function saveCardFlow(btn) {
     destroyCardElement();
     toast('Card saved ✓');
     if (o.returnTo === 'payment' && o.invoiceId) openPayInvoice(o.invoiceId);
+    else if (o.returnTo === 'customerForm') openCustomerForm(o.customerId);   // back to the onboarding form, card now on file + draft intact
     else closeOverlay();
     render();
   } catch (e) { setErr('Network error — try again.'); reset(); }
