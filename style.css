@@ -400,8 +400,6 @@ input { font-family: inherit; }
 /* active fleet-bar filter chip on the Units list */
 .fleet-chip { display: flex; align-items: center; gap: 6px; margin: 0 0 9px; padding: 6px 10px; font-size: 12px; background: var(--panel); border: 1px solid var(--accent-line); border-radius: 9px; color: var(--txt-2); }
 .fleet-chip b { color: var(--txt); }
-.fleet-chip .js-clear-fleet { margin-left: auto; display: inline-flex; }
-.fleet-chip .js-clear-fleet svg { width: 12px; height: 12px; }
 /* clickable pills highlight on hover (#1.1) */
 .pill[data-pill-card], .pill.ref { cursor: pointer; }
 .pill[data-pill-card]:hover, .pill.ref:hover { filter: brightness(1.18); }
@@ -424,7 +422,7 @@ input { font-family: inherit; }
 .disp-today { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .6px; color: var(--accent); background: var(--accent-soft); padding: 2px 7px; border-radius: 99px; }
 .disp-jump { font-size: 11px; color: var(--accent); background: none; border: none; cursor: pointer; text-decoration: underline; }
 .disp-count { font-size: 11px; color: var(--txt-3); white-space: nowrap; }
-.disp-route { padding: 6px 12px 18px; overflow-y: auto; }
+.disp-route { position: relative; padding: 6px 12px 18px 34px; overflow-y: auto; }
 .disp-stop { position: relative; display: flex; align-items: center; gap: 9px; }
 .js-disp-stop { background: linear-gradient(180deg, var(--card-head), var(--card)); border: 1px solid var(--line); border-radius: 11px; padding: 9px 11px; margin: 7px 0; cursor: pointer; }
 .js-disp-stop:hover { border-color: var(--accent-line); }
@@ -436,7 +434,8 @@ input { font-family: inherit; }
 .disp-time { width: 50px; flex: 0 0 auto; height: 28px; text-align: center; border: 1px solid var(--line); border-radius: 7px; background: var(--bg-2, var(--panel)); color: var(--txt); font: inherit; font-size: 12px; font-weight: 700; }
 .disp-time:focus { border-color: var(--accent-line); outline: none; }
 .disp-ico { width: 30px; height: 30px; flex: 0 0 auto; border-radius: 50%; display: grid; place-items: center; font-weight: 800; font-family: 'Saira Condensed', system-ui, sans-serif; font-size: 14px; color: #fff; }
-.disp-ico.c-blue { background: var(--blue); } .disp-ico.c-brown { background: var(--brown, #9a6a3a); }
+/* the D/R letter must stay white on the colored disc — beat the generic .c-blue/.c-brown text color (style.css §pills) */
+.disp-ico.c-blue { background: var(--blue); color: #fff; } .disp-ico.c-brown { background: var(--brown, #9a6a3a); color: #fff; }
 .disp-ico.home { background: var(--bg-2, var(--panel)); border: 1px solid var(--line); font-size: 15px; }
 .disp-bd { flex: 1; min-width: 0; }
 .disp-unit { font-weight: 700; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -453,6 +452,25 @@ input { font-family: inherit; }
 .disp-empty svg { width: 30px; height: 30px; opacity: .5; }
 .disp-empty p { font-size: 14px; color: var(--txt-2); margin: 10px 0 4px; }
 .disp-empty span { font-size: 12px; }
+/* ── §2.3 free-form route arrows: click an icon to start a leg, click another to land it ── */
+.js-disp-arrowpt { cursor: pointer; transition: box-shadow .12s, transform .12s; }
+.js-disp-arrowpt:hover { box-shadow: 0 0 0 2px var(--accent-line); }
+.js-disp-arrowpt:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.disp-route.arming .js-disp-arrowpt { box-shadow: 0 0 0 1px var(--accent-line); }   /* every icon is a target while drawing */
+.js-disp-arrowpt.armed { box-shadow: 0 0 0 2px var(--accent), 0 0 9px var(--accent); transform: scale(1.06); }
+.disp-arm { display: flex; align-items: center; gap: 7px; margin: 0 12px 4px; padding: 7px 10px; font-size: 11.5px; color: var(--accent);
+  background: var(--accent-soft); border: 1px solid var(--accent-line); border-radius: 9px; }
+.disp-arm svg { width: 15px; height: 15px; flex: 0 0 auto; }
+.disp-arm-x { margin-left: auto; font-size: 11px; font-weight: 700; color: var(--txt-2); background: none; border: none; cursor: pointer; text-decoration: underline; }
+.disp-clearleg { display: inline-flex; align-items: center; gap: 3px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px;
+  color: var(--accent); background: var(--accent-soft); border: 1px solid var(--accent-line); border-radius: 99px; padding: 2px 8px; cursor: pointer; white-space: nowrap; }
+.disp-clearleg svg { width: 11px; height: 11px; }
+.disp-clearleg:hover { border-color: var(--accent); }
+.disp-arrows { position: absolute; top: 0; left: 0; pointer-events: none; z-index: 2; }
+.disp-arrow-line { stroke: var(--accent); stroke-width: 2; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.disp-arrow-dot { fill: var(--accent); }
+.disp-arrow-hit { pointer-events: stroke; cursor: pointer; }
+@media (prefers-reduced-motion: reduce) { .js-disp-arrowpt { transition: none; } .js-disp-arrowpt.armed { transform: none; } }
 
 /* ── Card (each is the detail view; scrolls internally) ──────────────────── */
 .card {
@@ -1076,6 +1094,11 @@ input { font-family: inherit; }
 /* §13.3 Card Graph view — data-plate analytics (Phase 4) */
 .gv-popup { width: 780px; max-width: 94vw; height: auto; max-height: 88vh; }
 .gv-body { display: flex; flex-direction: column; gap: 12px; padding: 14px 16px; }
+/* In-column graph view (toggled inside a card column, not a popup). The column is
+   narrow, so the 4-col tile grid collapses to 2 and the wide/lead tiles span full. */
+.gv-card { display: flex; flex-direction: column; gap: 12px; padding: 10px 12px; overflow: auto; }
+.gv-card .gv-grid { grid-template-columns: repeat(2, 1fr); }
+.gv-card .gv-lead, .gv-card .gv-wide, .gv-card .gv-units { grid-column: span 2; }
 .gv-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
 .gv-tile { background: linear-gradient(180deg, var(--card-head), var(--card)); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; min-width: 0; }
 .gv-tile-h { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1px; font-weight: 700; font-size: 11.5px; color: var(--txt-3); margin-bottom: 10px; }
@@ -1568,6 +1591,53 @@ body.rw-inspect .c-titlecard:hover { outline: 2px solid #18b6ff; outline-offset:
 .journey.mini .jlbl { font-size: 8.5px; }
 .journey.mini .jnode { min-width: 36px; }
 .journey.mini .jseg { padding-top: 2px; }
+/* ── Rentals Stall Board (Jac 2026-06-15): day-timeline blocker · event strip ·
+   per-unit stalls · the connected Home—Site—Home route rail. ── */
+.tl-over .d1, .tl-over .d2 { position: absolute; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; line-height: 1.05; z-index: 1; }
+.tl-over .d1 { left: 11px; }
+.tl-over .d2 { right: 11px; align-items: flex-end; }
+.tl-over .dlab { font-weight: 800; font-size: 12.5px; }
+.tl-over .midwrap { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap; padding: 0 78px; pointer-events: none; }
+.tl-over .midwrap > * { pointer-events: auto; }
+.rentalsec .timeline { height: 60px; }
+.tl-blocker { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: var(--yellow-bg); border: 1px solid color-mix(in srgb, var(--yellow) 38%, transparent); color: var(--yellow); border-radius: 8px; padding: 3px 9px; font-size: 11px; font-weight: 700; cursor: pointer; }
+.tl-blocker svg { width: 13px; height: 13px; flex: 0 0 auto; }
+.tl-blocker:hover { filter: brightness(1.12); }
+.estrip { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 11px; }
+.estrip-l { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.estrip-r { margin-left: auto; }
+.stalls { display: flex; flex-direction: column; margin-top: 4px; }
+.stall { border-top: 1px solid var(--line); padding: 9px 2px; }
+.stall:first-child { border-top: 1px dashed var(--line); }
+.stall.voided { opacity: .55; }
+.stall.voided .stall-amt, .stall.voided .pill.ref { text-decoration: line-through; }
+.stall-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.stall-id { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.stall-amt { font-weight: 800; color: var(--green); font-variant-numeric: tabular-nums; }
+.stall-right { display: inline-flex; align-items: center; gap: 9px; }
+.stall-split { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; color: var(--txt-3); background: transparent; border: 1px solid var(--line); border-radius: 7px; padding: 2px 7px; cursor: pointer; }
+.stall-split:hover { color: var(--accent); border-color: var(--accent-line); }
+.stall-split svg { flex: 0 0 auto; }
+.stall-sub { font-size: 11.5px; color: var(--txt-3); font-style: italic; margin-top: 6px; }
+.stall-empty { display: flex; align-items: center; gap: 9px; padding: 11px 2px; }
+.rentalsec-foot { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 10px; }
+.rtrail { display: grid; align-items: center; justify-items: center; column-gap: 7px; row-gap: 4px; margin-top: 8px; }
+.rtrail.rt { grid-template-columns: auto minmax(48px, 1fr) auto minmax(48px, 1fr) auto; }
+.rtrail.one { grid-template-columns: auto minmax(48px, 1fr) auto; }
+.rtbox { width: 34px; height: 34px; border-radius: 9px; background: var(--panel-2); border: 1px solid var(--line); display: grid; place-items: center; color: var(--txt-2); }
+.rtbox svg { width: 18px; height: 18px; }
+.rtbox.site { color: #c2925a; border-color: rgba(194, 146, 90, .5); background: rgba(194, 146, 90, .14); cursor: pointer; }
+.rtbox.site:hover { filter: brightness(1.12); }
+.rtbox.done { color: var(--green); border-color: var(--green); background: var(--green-bg); }
+.rtbar { width: 100%; }
+.rtbar.done { height: 6px; border-radius: 3px; background: var(--green); }
+.rtbar.pending { height: 0; border-top: 2px dashed var(--line); }
+.rtover { font-size: 11px; font-weight: 700; align-self: end; white-space: nowrap; }
+.rtover.log { color: var(--txt); cursor: pointer; }
+.rtover.log:hover { text-decoration: underline; }
+.rtover.done { color: var(--green); cursor: pointer; }
+.rtlbl { font-size: 11px; color: var(--txt-2); align-self: start; text-align: center; line-height: 1.15; }
+.rtaddr { display: block; color: #c2925a; text-decoration: underline; cursor: pointer; max-width: 118px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .unitchip { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .unitchip.voided { opacity: .55; }
 .unitchip.voided .pill { position: relative; }
@@ -1635,6 +1705,12 @@ body.rw-inspect .c-titlecard:hover { outline: 2px solid #18b6ff; outline-offset:
   background: repeating-linear-gradient(135deg, rgba(245,197,66,.06) 0 13px, rgba(20,24,29,.45) 13px 26px), var(--panel-2);
   display: grid; place-items: center; }
 .tedit-map .map-tag { position: static; max-width: 82%; text-align: center; line-height: 1.4; }
+.tedit-map.ph { gap: 6px; padding: 0 18px; background: repeating-linear-gradient(135deg, rgba(245,197,66,.05) 0 13px, rgba(20,24,29,.5) 13px 26px), radial-gradient(circle at 50% 40%, rgba(255,122,26,.10), transparent 62%), var(--panel-2); }
+.map-pin { color: var(--accent); display: inline-flex; }
+.map-pin svg { width: 30px; height: 30px; }
+.map-sub { font-size: 10.5px; color: var(--txt-3); text-align: center; max-width: 88%; line-height: 1.45; }
+.map-spin { width: 22px; height: 22px; border-radius: 50%; border: 3px solid rgba(255,122,26,.25); border-top-color: var(--accent); animation: mapspin .8s linear infinite; }
+@keyframes mapspin { to { transform: rotate(360deg); } }
 .tedit .lf-in { width: 100%; height: 34px; border-radius: 9px; border: 1px solid var(--line); background: var(--panel); color: var(--txt); font: inherit; font-size: 13px; padding: 0 11px; }
 .tedit .lf-in:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .tedit-sug { display: flex; flex-direction: column; gap: 2px; }
@@ -1935,6 +2011,136 @@ body.dragging .row.drop-ok { opacity: 1; }
 [data-theme="yard"] .bottombar {
   margin-top: 2px;   /* Jac: removed the tan/yellow dashed saddle-stitch line atop the footer toolbar */
 }
+
+/* ════════════════════════════════════════════════════════════════════════════
+   THEME — "BLUED STEEL" (data-theme="bluedsteel")  ·  2026-06-15 (Jac)
+   ────────────────────────────────────────────────────────────────────────────
+   A PARALLEL, opt-in theme: like "The Yard", but the floating-card CONTENT surfaces
+   (sections + rows + inputs) become a real blued-steel plate (ambientCG Metal027,
+   CC0). The column container cards KEEP the Yard steel plate; chips, data, layout,
+   type are untouched. Reversible:
+   the bottom-bar toggle flips Yard ⇄ Blued Steel; Yard returns untouched.
+   ════════════════════════════════════════════════════════════════════════════ */
+[data-theme="bluedsteel"] {
+  --bg:#080b12; --bg-2:#0c1320; --panel:#141d2c; --panel-2:#1a2536;
+  --card:#10161f; --card-head:#172234;
+  --line:#283446; --line-soft:#1b2536;
+  --txt:#eef2f7; --txt-2:#aab4c1; --txt-3:#717b89; --track:#232b35; --on-orange:#1a1205;
+  --accent:#ff7e1f; --accent-soft:rgba(255,126,31,.16); --accent-line:rgba(255,126,31,.55);
+  --orange:#ff7e1f; --orange-bg:rgba(255,126,31,.16);
+  --anchor-section:#222932;
+  --radius:14px; --chip-radius:11px;
+  --shadow:0 24px 64px -30px rgba(0,0,0,.85); --chip-shadow:0 6px 16px -10px rgba(0,0,0,.78);
+  --steel-1:#1b222c; --steel-2:#0d1116;
+  --rivet:#9fb6d6; --rivet-pit:#0b0f14;          /* the one tweak: rivets pick up the blue */
+  --tan:#c2925a; --tan-deep:#8a5a2b;
+}
+[data-theme="bluedsteel"] body {                  /* the FLOOR = a dark version of the blued steel (Jac):
+                                                     the Metal027 plate under a heavy dark wash + a soft blue dawn-glow */
+  background:
+    radial-gradient(110% 80% at 32% -14%, rgba(40,68,116,.13), transparent 58%),
+    linear-gradient(rgba(8,11,17,.88), rgba(8,11,17,.88)),
+    url('assets/tex-metal-blued.jpg');
+  background-size: auto, auto, 520px;
+  background-repeat: no-repeat, no-repeat, repeat;
+}
+/* APP-WIDE (Jac): the column container cards are blued plates too, and the list
+   rows sit on them as light regions (not opaque tiles). The anchored card below
+   is a touch stronger so it still stands out. */
+[data-theme="bluedsteel"] .col > .card {
+  position: relative;
+  background:
+    linear-gradient(180deg, rgba(52,72,108,.26), rgba(8,11,18,.66)),
+    url('assets/tex-metal-blued.jpg');
+  background-size: cover, 340px;
+  background-repeat: no-repeat, repeat;
+  --stripe: var(--yellow, #f5c542);
+}
+[data-theme="bluedsteel"] .row {
+  background: rgba(7,12,22,.30);
+  border-color: rgba(150,178,222,.16);
+}
+[data-theme="bluedsteel"] .row:hover { border-color: var(--accent-line); }
+[data-theme="bluedsteel"] .col > .card[data-card="customers"]  { --stripe: var(--blue,  #5b9dff); }
+[data-theme="bluedsteel"] .col > .card[data-card="rentals"]    { --stripe: #147a47; }
+[data-theme="bluedsteel"] .col > .card[data-card="units"]      { --stripe: var(--yellow,#f5c542); }
+[data-theme="bluedsteel"] .col > .card[data-card="categories"] { --stripe: var(--accent,#ff7a1a); }
+[data-theme="bluedsteel"] .col > .card[data-card="invoices"]   { --stripe: var(--red,   #ff4242); }
+[data-theme="bluedsteel"] .col > .card[data-card="calendar"]   { --stripe: var(--pink,  #f06fb0); }
+[data-theme="bluedsteel"] .col > .card::before {  /* hi-vis hazard band — same signature as Yard */
+  content:''; position:absolute; top:0; left:0; right:0; height:6px; z-index:5;
+  background: repeating-linear-gradient(135deg, var(--stripe) 0 13px, #14181d 13px 26px);
+  border-bottom:1px solid rgba(0,0,0,.6); pointer-events:none;
+}
+[data-theme="bluedsteel"] .col > .card::after {   /* four corner rivets — same as Yard, blued */
+  content:''; position:absolute; inset:0; z-index:5; pointer-events:none; border-radius:inherit;
+  background:
+    radial-gradient(circle at 12px 15px, var(--rivet) 0 1.4px, var(--rivet-pit) 1.7px 3px, transparent 3.4px),
+    radial-gradient(circle at calc(100% - 12px) 15px, var(--rivet) 0 1.4px, var(--rivet-pit) 1.7px 3px, transparent 3.4px),
+    radial-gradient(circle at 12px calc(100% - 12px), var(--rivet) 0 1.4px, var(--rivet-pit) 1.7px 3px, transparent 3.4px),
+    radial-gradient(circle at calc(100% - 12px) calc(100% - 12px), var(--rivet) 0 1.4px, var(--rivet-pit) 1.7px 3px, transparent 3.4px);
+}
+
+/* THE BLUED PLATE = the floating (anchored) card's whole face — ONE cohesive
+   sheet, like the mockup. The list/column cards stay the Yard plate. .card-body
+   + .detail are transparent, so the plate reads straight through to the sections. */
+[data-theme="bluedsteel"] .col > .card.anchored {
+  background:
+    linear-gradient(180deg, rgba(58,80,118,.34), rgba(8,11,18,.68)),
+    url('assets/tex-metal-blued.jpg');
+  background-size: cover, 340px;
+  background-repeat: no-repeat, repeat;
+}
+/* sections sit ON the plate as milled-in panels — a clear recess (darker fill +
+   cool inset highlight + lift shadow) so they read distinctly against the now
+   strongly-blue plate; their header + status accent carry the rest. */
+[data-theme="bluedsteel"] .col > .card.anchored .section {
+  background:
+    linear-gradient(rgba(8,11,18,.74), rgba(8,11,18,.74)),
+    url('assets/tex-metal-blued.jpg');
+  background-size: auto, 300px;
+  box-shadow: inset 0 1px 0 rgba(150,178,222,.12), 0 2px 8px -3px rgba(0,0,0,.55);
+}
+/* search/sort sub-header (.listbar) — a clean solid dark strip so the floor/card
+   texture never bleeds through the controls (Jac) */
+[data-theme="bluedsteel"] .listbar { background: linear-gradient(180deg, #0c1320 80%, transparent); }
+
+/* global search bar (.searchwrap, the top "Search everything…") — was a flat panel;
+   now a blued-steel plate: the same plate material + a machined top lip as the cards,
+   with the orange ignition glow it already lights on focus. Icon + clear ✕ sit in their
+   normal spots — no rivets crowding them (Jac). */
+[data-theme="bluedsteel"] .searchwrap {
+  background:
+    linear-gradient(180deg, rgba(58,80,118,.30), rgba(8,11,18,.64)),
+    url('assets/tex-metal-blued.jpg');
+  background-size: cover, 300px;
+  background-repeat: no-repeat, repeat;
+  border-color: rgba(150,178,222,.20);
+  box-shadow: inset 0 1px 0 rgba(150,178,222,.14), 0 2px 8px -3px rgba(0,0,0,.55);
+}
+[data-theme="bluedsteel"] .searchwrap:focus-within,
+[data-theme="bluedsteel"] .searchwrap.has-query {
+  border-color: var(--accent-line);
+  box-shadow: inset 0 1px 0 rgba(150,178,222,.14), 0 2px 8px -3px rgba(0,0,0,.55), 0 0 0 3px var(--accent-soft);
+}
+
+[data-theme="bluedsteel"] .coltab {               /* same stamped type as Yard */
+  font-family:'Saira Condensed', system-ui, sans-serif;
+  text-transform:uppercase; letter-spacing:1.1px; font-weight:700;
+}
+[data-theme="bluedsteel"] .coltab.on {
+  background: linear-gradient(180deg, #ff9038, var(--accent));
+  box-shadow: 0 5px 14px -6px rgba(255,122,26,.6), inset 0 1px 0 rgba(255,255,255,.32);
+}
+[data-theme="bluedsteel"] .ring-label,
+[data-theme="bluedsteel"] .section > h4 {
+  font-family:'Saira Condensed', system-ui, sans-serif; letter-spacing:1.2px;
+}
+[data-theme="bluedsteel"] .c-titlecard .c-title {
+  font-family:'Saira Condensed', system-ui, sans-serif;
+  text-transform:uppercase; letter-spacing:.8px; font-weight:800; font-size:14.5px;
+}
+[data-theme="bluedsteel"] .bottombar { margin-top: 2px; }
 
 /* ════════════════════════════════════════════════════════════════════════════
    THEME — "RANCH" (data-theme="ranch")  ·  real-leather western, 2026-06-14

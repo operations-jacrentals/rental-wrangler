@@ -149,6 +149,49 @@ try {
     // fuel-type detection
     ok(T.isFueledType('Diesel') && T.isFueledType('Gas') && !T.isFueledType('Electric') && !T.isFueledType(''), 'isFueledType: Diesel/Gas yes, Electric/empty no');
 
+    // 14) §20 invoice SYNC — adding a unit to an invoiced rental bills it; removing un-bills +
+    // restores the total; splitting moves the unit + its lines to a sibling on the SAME invoice.
+    const JT = window.JT;
+    const af = T.DATA.units.filter((u) => u.fleetStatus === 'Active');
+    const [ua, ub, uc] = af;
+    const mk = (u) => ({ unitId: u.unitId, status: 'On Rent', transportType: 'Delivery', deliveryAddress: 'X', recoveryAddress: '', transportMiles: 10, startCapture: null, endCapture: null, fcCapture: null });
+    const rS = { rentalId: 'R-SYNCTEST', customerId: 'C0009', unitId: ua.unitId, categoryId: ua.categoryId, startDate: '2099-02-01', endDate: '2099-02-08', startTime: '', status: 'On Rent', transportType: 'Delivery', deliveryAddress: 'X', transportMiles: 10, invoiceId: null, units: [mk(ua), mk(ub)], notes: '', actions: [], mock: true };
+    T.DATA.rentals.push(rS); T.IDX.rental.set('R-SYNCTEST', rS);
+    const invS = { invoiceId: 'I-SYNCTEST', customerId: 'C0009', rentalIds: ['R-SYNCTEST'], date: T.TODAY_ISO, dueDate: T.TODAY_ISO, po: '', amountPaid: 0, lineItems: [], mock: true };
+    T.rentalLineItems(rS).forEach((li) => invS.lineItems.push(li));
+    T.transportLineItems(rS).forEach((li) => invS.lineItems.push(li));
+    T.DATA.invoices.push(invS); T.IDX.invoice.set('I-SYNCTEST', invS); rS.invoiceId = 'I-SYNCTEST';
+    const sumS = () => invS.lineItems.reduce((s, li) => s + (+li.amount || 0), 0);
+    const baseSum = sumS();
+    const wasOB = JT.state.overbookOn; JT.state.overbookOn = true;
+    JT.linkUnitToRental('R-SYNCTEST', uc.unitId);
+    // a freshly-added unit inherits the transport TYPE but not miles/address, so it gets its
+    // rental line immediately (+ a transport line once its own site is set) — assert the rental line + total bump.
+    ok(invS.lineItems.filter((li) => li.unitId === uc.unitId && li.kind === 'rental').length === 1 && sumS() > baseSum, `add unit → rental line billed onto the invoice (+$${sumS() - baseSum})`);
+    JT.removeUnitFromRental(rS, uc.unitId);
+    ok(invS.lineItems.filter((li) => li.unitId === uc.unitId).length === 0 && sumS() === baseSum, 'remove unit → both lines dropped + invoice total restored');
+    const sibS = JT.splitUnitToNewRental('R-SYNCTEST', ub.unitId, '2099-03-01', '2099-03-05');
+    ok(!!sibS && sibS.invoiceId === 'I-SYNCTEST', 'split → sibling rental on the SAME invoice');
+    ok(!!sibS && invS.lineItems.some((li) => li.ref === sibS.rentalId && li.unitId === ub.unitId), 'split → moved unit lines re-homed to the sibling ref');
+    ok(!T.rentalUnits(rS).some((eu) => eu.unitId === ub.unitId), 'split → unit removed from the original rental');
+    JT.state.overbookOn = wasOB;
+
+    // 15) §20 un-void restores billing — No-Show drops the unit's lines; reactivating re-adds them
+    // (regression guard for the silent-under-billing bug found in the self-audit).
+    const ud = af[3], ue = af[4];
+    const rV = { rentalId: 'R-VOIDTEST', customerId: 'C0009', unitId: ud.unitId, categoryId: ud.categoryId, startDate: '2099-04-01', endDate: '2099-04-08', startTime: '', status: 'On Rent', transportType: 'Delivery', deliveryAddress: 'X', transportMiles: 10, invoiceId: null, units: [mk(ud), mk(ue)], notes: '', actions: [], mock: true };
+    T.DATA.rentals.push(rV); T.IDX.rental.set('R-VOIDTEST', rV);
+    const invV = { invoiceId: 'I-VOIDTEST', customerId: 'C0009', rentalIds: ['R-VOIDTEST'], date: T.TODAY_ISO, dueDate: T.TODAY_ISO, po: '', amountPaid: 0, lineItems: [], mock: true };
+    T.rentalLineItems(rV).forEach((li) => invV.lineItems.push(li));
+    T.transportLineItems(rV).forEach((li) => invV.lineItems.push(li));
+    T.DATA.invoices.push(invV); T.IDX.invoice.set('I-VOIDTEST', invV); rV.invoiceId = 'I-VOIDTEST';
+    const vBase = invV.lineItems.filter((li) => li.unitId === ue.unitId).length;
+    JT.setUnitStatus('R-VOIDTEST', ue.unitId, 'No Show');
+    const vVoid = invV.lineItems.filter((li) => li.unitId === ue.unitId).length;
+    JT.setUnitStatus('R-VOIDTEST', ue.unitId, 'Returned');
+    const vRestored = invV.lineItems.filter((li) => li.unitId === ue.unitId).length;
+    ok(vBase >= 1 && vVoid === 0 && vRestored >= 1, `un-void restores billing (base ${vBase} → No-Show ${vVoid} → reactivated ${vRestored})`);
+
     return out;
   });
 

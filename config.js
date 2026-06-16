@@ -37,12 +37,11 @@ export const colorBgVar = (token) => `var(--${token}-bg)`;
 export const STRIPE_PUBLISHABLE_KEY = 'pk_live_51TdOu3DEE4GXf0zT7xBP4KQ5vxK21P8n24MwxewyF4awrladyPYTkpiK8SRvUfFpwnFE1i2cITo1UxJ0CQrx30fl00dGxTTpWZ';
 
 /* ── Google Maps key (Places autocomplete · map · drive distance) ─────────────
- * A REFERRER-RESTRICTED browser key (locked to app.jacrentals.com) — never a
- * true secret, but per the no-secrets-in-repo rule we DON'T commit it. The live
- * key is served at runtime by the backend (Script Property GOOGLE_MAPS_KEY) via
- * backendCall('mapsKey'), exactly like the Stripe publishable key. Empty here →
- * the transport editor runs in offline/mock mode until the backend serves a key. */
-export const GOOGLE_MAPS_KEY = '';
+ * A REFERRER-RESTRICTED browser key (locked to app.jacrentals.com) — public by
+ * design, like the Stripe publishable key above: only usable from our domain, so
+ * it's safe to commit. The backend can still override it at runtime (Script
+ * Property GOOGLE_MAPS_KEY via backendCall('mapsKey')); empty → offline/mock map. */
+export const GOOGLE_MAPS_KEY = 'AIzaSyBDI79RRj31RTWfHFUNWQZ5AO4wHLihIc8';
 
 /* ── Status registry (SPEC §8 canonical values + §6.2 #7 colors) ──────────
  * STATUS[set][value] = { label, color }. `slug` and `value` are derived.
