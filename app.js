@@ -671,6 +671,12 @@ function mountTransportEditor() {
       _tePlaces = new google.maps.places.PlacesService(_teMap);   // resolve picks by place-id via Places (the key has Places, not Geocoding)
       _teDist = google.maps.DistanceMatrixService ? new google.maps.DistanceMatrixService() : null;   // DMS may lag the core lib — teFetchDistance lazily retries
       te.mapFailed = false;                                        // the live map is up — clear any stale offline-fallback flag
+      // First-open paint fix: the map div is created the same frame it's inserted, before the
+      // browser lays its box out, so Google paints it at 0×0 and it stays blank until the NEXT
+      // open ("appeared only after opening twice"). Nudge it once the box has real size — rAF for
+      // the common case, a short timeout as a backstop for the editor's slide-in.
+      const repaint = () => { try { google.maps.event.trigger(_teMap, 'resize'); _teMap.setCenter(center); } catch (e2) {} };
+      requestAnimationFrame(repaint); setTimeout(repaint, 250);
     } catch (e) { delete mapEl.dataset.mounted; te.mapFailed = true; mapEl.classList.add('ph'); }   // never strand the editor on a half-mount
   }
 }
@@ -1063,7 +1069,7 @@ const entityCardOf = (card, recType) => (card === 'shop' ? recType : card);
 
 const state = {
   data: DATA,
-  theme: (() => { try { const t = localStorage.getItem('jactec.theme'); return (t === 'bluedsteel' || t === 'yard') ? t : 'yard'; } catch (e) { return 'yard'; } })(),   // Yard default; the bottom-bar toggle flips Yard ⇄ Blued Steel, per device (Jac 2026-06-15)
+  theme: 'bluedsteel',   // Blued Steel is the only theme now — Yard mode removed (Jac 2026-06-15)
   query: '',
   searchMode: false,
   tabs: [],            // [{ id, card, recId, label, sub, color, session }]
@@ -1218,7 +1224,7 @@ function openStandard(card, recId, recType) {
   }
   sweepEmptyDrafts(recId);   // #8 — leaving an empty draft deletes it
   pushCardHistory(cs);       // Task 1 — record the prior (list) view so Back can return
-  cs.mode = 'standard'; cs.recId = recId; cs.recType = recType || null;
+  cs.mode = 'standard'; cs.recId = recId; cs.recType = recType || null; cs.graphView = false;   // opening a record exits the in-column graph view
   ackComments(recOf(entityCardOf(card, recType), recId));   // viewing = acknowledged (Phase 6)
   render();
 }
@@ -3559,7 +3565,7 @@ const DETAIL = {
       const ar = activeRentalForUnit(u.unitId);
       const st2 = ar ? getStatus('rentalStatus', rentalDisplayStatus(ar)) : getStatus('unitInspectionStatus', u.inspectionStatus);
       // R4 mirror law: parent (unit pill) is RIGHT-aligned → derived sits on its LEFT
-      return `<div class="kv unit-line">${dPill(st2.label, st2.color, ar ? { card: 'rentals', recId: ar.rentalId } : { card: 'inspections' })}${unitPill(u.unitId)}</div>`;
+      return `<div class="kv unit-line">${dPill(st2.label, st2.color, ar ? { card: 'rentals', recId: ar.rentalId } : { card: 'units', recId: u.unitId })}${unitPill(u.unitId)}</div>`;
     }).join('');
     const investment = `<div class="section"><h4>Investment</h4>
       <div class="split">
@@ -4038,7 +4044,7 @@ function cardEl(cardDef, session) {
 
   // §5.4: global search forces EVERY card into list view (the prior standard/anchor
   // state is untouched, so exiting search restores the session for free).
-  const inStandard = !state.searchMode && cs.mode === 'standard' && cs.recId != null;
+  const inStandard = !state.searchMode && cs.mode === 'standard' && cs.recId != null && !cs.graphView;
   // List mode → NO card header (the column tab already names the card). Standard mode →
   // a slim header: the record name in the top-left (hidden when an item tab already shows
   // it, i.e. when anchored) + the row actions. (#2.3 / §0.6)
@@ -4085,7 +4091,7 @@ function listView(cardDef, session) {
   const cascChip = cascaded ? `<span class="casc-chip" data-tip="Cascaded from ${esc(anchorName)} — clear to browse all & add">🔗<span class="cc-name">${esc(anchorName)}</span>${closeX('js-uncascade', { data: { card } })}</span>` : '';
   bar.innerHTML = `
     ${cardJog(card, cs)}
-    <button class="bv-btn js-cardgraph" data-card="${card}" data-tip="Open the Graph view">${I.graph}</button>
+    <button class="bv-btn js-cardgraph${cs.graphView ? ' on' : ''}" data-card="${card}" data-tip="${cs.graphView ? 'Back to list' : 'Graph view'}">${I.graph}</button>
     <button class="bv-btn js-boardview" data-card="${card}" data-tip="Open Board View (spreadsheet)">${I.table}</button>
     <div class="mini-searchwrap${cterms.length || cascChip ? ' has-terms' : ''}${cs.search.trim() || cterms.length ? ' has-query' : ''}">
       ${cascChip}${cterms.map((ft, i) => filterTermPill(ft, i, card)).join('')}
@@ -4096,6 +4102,8 @@ function listView(cardDef, session) {
       <button class="dir js-sortdir" data-card="${card}"><span class="${cs.sort.dir === 'asc' ? 'on' : ''}">▲</span><span class="${cs.sort.dir === 'desc' ? 'on' : ''}">▼</span></button>
     </div>`;
   wrap.appendChild(bar);
+  // Phase 4 — Graph view is an IN-COLUMN toggle (sibling to the list), not a popup.
+  if (cs.graphView && !state.searchMode) { const g = el('div', 'gv-card'); g.innerHTML = cardGraphBody(card); wrap.appendChild(g); return wrap; }
   // Phase 4 — Units narrowed to an invoice's linked units (Invoice +WO) → removable chip
   if (card === 'units' && state.unitPick) {
     const n = state.unitPick.ids.length;
@@ -4230,7 +4238,7 @@ function shopCardEl(cardDef, session, forcedSeg) {
   const node = el('div', 'card' + (anchored ? ' anchored' : '') + (state.searchMode ? ' search-glow' : '') + (state.focusedCard === 'shop' ? ' card-focus' : ''));
   node.dataset.card = 'shop';
 
-  const inStandard = !state.searchMode && cs.mode === 'standard' && cs.recId != null && cs.recType;
+  const inStandard = !state.searchMode && cs.mode === 'standard' && cs.recId != null && cs.recType && !cs.graphView;
   // List mode → no header (column tab names it). Standard → slim header: record name
   // (hidden when anchored, since the item tab shows it) + actions. (#2.3)
   if (inStandard) {
@@ -4274,6 +4282,7 @@ function shopListView(session, byType, forcedSeg) {
   const bar = el('div', 'listbar');
   const sterms = cs.filterTerms || [];
   bar.innerHTML = `
+    <button class="bv-btn js-cardgraph${cs.graphView ? ' on' : ''}" data-card="shop" data-tip="${cs.graphView ? 'Back to list' : 'Graph view'}">${I.graph}</button>
     <button class="bv-btn js-boardview" data-card="${boardCard}" data-tip="Open Board View (spreadsheet)">${I.table}</button>
     <div class="mini-searchwrap${sterms.length ? ' has-terms' : ''}${cs.search.trim() || sterms.length ? ' has-query' : ''}">
       ${sterms.map((ft, i) => filterTermPill(ft, i, 'shop')).join('')}
@@ -4284,6 +4293,13 @@ function shopListView(session, byType, forcedSeg) {
       <button class="dir js-sortdir" data-card="shop"><span class="${cs.sort.dir === 'asc' ? 'on' : ''}">▲</span><span class="${cs.sort.dir === 'desc' ? 'on' : ''}">▼</span></button>
     </div>`;
   wrap.appendChild(bar);
+
+  // Phase 4 — Graph view is an IN-COLUMN toggle. Keep the bar + segment tabs visible;
+  // the active segment picks which graph shows ('all' → combined shop overview).
+  if (cs.graphView && !state.searchMode) {
+    const seg = (forcedSeg || cs.segment); const gseg = (seg && seg !== 'all') ? seg : 'shop';
+    const g = el('div', 'gv-card'); g.innerHTML = cardGraphBody(gseg); wrap.appendChild(g); return wrap;
+  }
 
   // items for the active segment (a column tab pins forcedSeg)
   const segActive = forcedSeg || cs.segment;
@@ -4561,7 +4577,6 @@ function bottomBarInner() {
   return `
     <button class="iconbtn js-newitem" data-new="receipt">${CARD_ICON.expenses}Receipt</button>
     <span class="bb-sep"></span>
-    <button class="iconbtn js-theme" data-tip="${(THEME_NEXT[state.theme] || THEME_NEXT.yard).tip}">${(THEME_NEXT[state.theme] || THEME_NEXT.yard).icon}</button>
     <button class="iconbtn js-qr" data-tip="Share session (QR)">${I.qr}</button>
     <button class="iconbtn${state.previewsOn ? '' : ' off'} js-previews" data-tip="${state.previewsOn ? 'Hover previews: on' : 'Hover previews: off'}">${state.previewsOn ? I.eye : I.eyeOff}</button>
     <button class="iconbtn js-chat-toggle${state.chat.open ? ' on' : ''}" data-tip="Team chat — flagged comments + tagged context">${I.chat}${(() => { const n = chatUnreadCount(); return n ? `<span class="bb-badge">${n > 9 ? '9+' : n}</span>` : ''; })()}</button>
@@ -4795,6 +4810,17 @@ function removeDispatchArrow(day, from, to) {
   legs.splice(i, 1); all[day] = legs; _lsSave('jactec.dispatchArrows', all); render();
 }
 const addDaysISO = (iso, n) => { const d = parseISO(iso); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
+// §2.3 — Auto-route: draw the legs connecting the yard → every stop in its run order → yard,
+// so a driver sees the whole route in one click instead of clicking icon-to-icon. (Jac follow-up)
+function autoDispatchRoute(day) {
+  const stops = dispatchDayStops(day);
+  if (!stops.length) return;
+  const chain = [HOME_IN, ...stops.map((s) => s.id), HOME_OUT];
+  const legs = [];
+  for (let i = 0; i < chain.length - 1; i++) legs.push([chain[i], chain[i + 1]]);
+  const all = dispatchArrowsLS(); all[day] = legs; _lsSave('jactec.dispatchArrows', all);
+  state.dispArm = null; render();
+}
 const dispatchDayLabel = (iso) => { const d = parseISO(iso); return d ? d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : iso; };
 function dispatchDayStops(day) {
   const times = dispatchTimesLS();
@@ -5053,11 +5079,22 @@ function unitGraphData() {
   const partsPie = [{ label: 'Need Parts', value: need, color: 'red' }, { label: 'Parts Ordered', value: ordered, color: 'blue' }, { label: 'Not Needed', value: none, color: 'green' }];
   return { daysSinceFC, mostFCs, fcHist, readyPie, partsPie };
 }
+// Phase 4 graph tile + month helpers (shared by every card's graph).
+const gvNumTile = (val, label) => `<div class="gv-tile gv-num"><div class="gv-num-v">${esc(String(val))}</div><div class="gv-num-l">${esc(label)}</div></div>`;
+const gvPieTile = (title, segs) => `<div class="gv-tile gv-pie"><div class="gv-tile-h">${esc(title)}</div>${pieSVG(segs)}${gvLegend(segs)}</div>`;
+const gvBarTile = (title, data, color) => `<div class="gv-tile gv-wide"><div class="gv-tile-h">${esc(title)}</div>${gvBars(data, color)}</div>`;
+const gvLeadTile = (title, rows) => `<div class="gv-tile gv-lead"><div class="gv-tile-h">${esc(title)}</div>${rows.length ? rows.map((m, i) => `<div class="gv-lead-row"><span class="gv-lead-n">${i + 1}</span><span class="gv-lead-name">${esc(m.name)}</span>${m.meta ? `<span class="gv-lead-mech">${esc(m.meta)}</span>` : ''}<span class="gv-lead-c">${esc(String(m.val))}</span></div>`).join('') : '<div class="muted" style="font-size:12px">No data yet.</div>'}</div>`;
+const gvTableTile = (title, count, heads, rows) => `<div class="gv-tile gv-units"><div class="gv-tile-h">${esc(title)} <span class="gv-count">${count}</span></div><div class="gv-units-scroll"><table class="board-table"><thead><tr>${heads.map((h) => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div></div>`;
+function gvMonths6() {
+  const out = [];
+  for (let i = 5; i >= 0; i--) { const d = new Date(TODAY.getFullYear(), TODAY.getMonth() - i, 1); out.push({ key: d.toISOString().slice(0, 7), label: d.toLocaleString('en-US', { month: 'short' }) }); }
+  return out;
+}
 function cardGraphBody(card) {
-  if (card !== 'units') return `<div class="gv-soon"><span class="gv-soon-ic">${I.graph}</span><p>Graphs for <b>${esc(GRID_CARD_BY_ID[card]?.title || ENTITY_LABEL[card] || card)}</b> are coming next. The <b>Units</b> graph is live now.</p></div>`;
-  const g = unitGraphData();
-  const unitRows = DATA.units.map((u) => `<tr><td>${esc(u.name)}</td><td>${badge(u.fleetStatus || '—', getStatus('unitFleetStatus', u.fleetStatus).color || 'gray')}</td><td>${statusPill('unitInspectionStatus', u.inspectionStatus)}</td><td>${u.currentHours != null ? num(u.currentHours) : '—'}</td><td>${openWOsForUnit(u.unitId).length || ''}</td></tr>`).join('');
-  return `
+  if (card === 'units') {
+    const g = unitGraphData();
+    const unitRows = DATA.units.map((u) => `<tr><td>${esc(u.name)}</td><td>${badge(u.fleetStatus || '—', getStatus('unitFleetStatus', u.fleetStatus).color || 'gray')}</td><td>${statusPill('unitInspectionStatus', u.inspectionStatus)}</td><td>${u.currentHours != null ? num(u.currentHours) : '—'}</td><td>${openWOsForUnit(u.unitId).length || ''}</td></tr>`).join('');
+    return `
     <div class="gv-grid">
       <div class="gv-tile gv-num"><div class="gv-num-v">${g.daysSinceFC == null ? '—' : g.daysSinceFC}</div><div class="gv-num-l">Days Since FC</div></div>
       <div class="gv-tile gv-lead"><div class="gv-tile-h">Most Field Calls</div>${g.mostFCs.length ? g.mostFCs.map((m, i) => `<div class="gv-lead-row"><span class="gv-lead-n">${i + 1}</span><span class="gv-lead-name">${esc(m.name)}</span>${m.mech ? `<span class="gv-lead-mech">${esc(m.mech)}</span>` : ''}<span class="gv-lead-c">${m.count}</span></div>`).join('') : '<div class="muted" style="font-size:12px">No field calls logged.</div>'}</div>
@@ -5066,6 +5103,110 @@ function cardGraphBody(card) {
       <div class="gv-tile gv-wide"><div class="gv-tile-h">Field Call History</div>${gvBars(g.fcHist, 'red')}</div>
     </div>
     <div class="gv-tile gv-units"><div class="gv-tile-h">Units <span class="gv-count">${DATA.units.length}</span></div><div class="gv-units-scroll"><table class="board-table"><thead><tr><th>Unit</th><th>Fleet</th><th>Inspection</th><th>Hours</th><th>Open WOs</th></tr></thead><tbody>${unitRows}</tbody></table></div></div>`;
+  }
+  if (card === 'rentals') {
+    const R = DATA.rentals, ym = TODAY_ISO.slice(0, 7);
+    const onRent = R.filter((r) => rentalDisplayStatus(r) === 'On Rent').length;
+    const revMonth = R.reduce((a, r) => ((r.startDate || '').slice(0, 7) === ym ? a + ((rentalPrice(r) || {}).price || 0) : a), 0);
+    const counts = {}; R.forEach((r) => { const s = rentalDisplayStatus(r); counts[s] = (counts[s] || 0) + 1; });
+    const ordIdx = (s) => { const k = RENTAL_BAR_ORDER.indexOf(s); return k < 0 ? 99 : k; };   // unknown statuses (e.g. Quote) sort last but are NOT dropped
+    const statusPie = Object.keys(counts).sort((a, b) => ordIdx(a) - ordIdx(b)).map((s) => ({ label: s, value: counts[s], color: s === 'Available' ? 'gray' : (getStatus('rentalStatus', s).color || 'gray') }));
+    const hist = gvMonths6().map((m) => ({ label: m.label, value: R.filter((r) => (r.startDate || '').slice(0, 7) === m.key).length }));
+    const byUnit = {}; R.forEach((r) => rentalUnits(r).forEach((eu) => { const u = IDX.unit.get(eu.unitId); if (u) byUnit[u.name] = (byUnit[u.name] || 0) + 1; }));
+    const topUnits = Object.entries(byUnit).map(([name, v]) => ({ name, val: v })).sort((a, b) => b.val - a.val).slice(0, 6);
+    const rows = R.slice().sort((a, b) => (b.startDate || '').localeCompare(a.startDate || '')).slice(0, 50).map((r) => `<tr><td>${esc(rentalDisplayName(r))}</td><td>${statusPill('rentalStatus', rentalDisplayStatus(r))}</td><td>${esc(fmtShortDate(r.startDate) || '—')}</td><td>${money((rentalPrice(r) || {}).price || 0)}</td></tr>`).join('');
+    return `<div class="gv-grid">${gvNumTile(onRent, 'On Rent now')}${gvNumTile(money(revMonth), 'Revenue this month')}${gvPieTile('Status mix', statusPie)}${gvLeadTile('Most-rented units', topUnits)}${gvBarTile('Rentals / month', hist, 'accent')}</div>${gvTableTile('Rentals', R.length, ['Rental', 'Status', 'Start', 'Price'], rows)}`;
+  }
+  if (card === 'customers') {
+    const C = DATA.customers;
+    const members = C.filter((c) => /Member/.test(c.accountType || '') && c.accountType !== 'Member Incomplete').length;
+    const active = C.filter((c) => (c._digest?.activePct || 0) > 0).length;
+    const byAcct = {}; C.forEach((c) => { const t = c.accountType || 'Non-Business'; byAcct[t] = (byAcct[t] || 0) + 1; });
+    const acctPie = Object.entries(byAcct).sort((a, b) => b[1] - a[1]).map(([t, v]) => ({ label: t, value: v, color: getStatus('customerAccountType', t).color || 'gray' }));
+    const topSpend = C.map((c) => ({ c, paid: c._digest?.totalPaid || 0 })).filter((x) => x.paid > 0).sort((a, b) => b.paid - a.paid).slice(0, 6).map((x) => ({ name: x.c.name, val: money(x.paid) }));
+    const rows = C.map((c) => ({ c, paid: c._digest?.totalPaid || 0 })).sort((a, b) => b.paid - a.paid).slice(0, 50).map(({ c }) => `<tr><td>${esc(c.name)}</td><td>${badge(getStatus('customerAccountType', c.accountType || 'Non-Business').label, getStatus('customerAccountType', c.accountType || 'Non-Business').color || 'gray')}</td><td>${money(c._digest?.totalPaid || 0)}</td><td>${esc(c.phone || '—')}</td></tr>`).join('');
+    return `<div class="gv-grid">${gvNumTile(C.length, 'Customers')}${gvNumTile(members, 'Members')}${gvNumTile(active, 'Active patterns')}${gvPieTile('Account types', acctPie)}${gvLeadTile('Top customers by spend', topSpend)}</div>${gvTableTile('Customers', C.length, ['Customer', 'Account', 'Spend', 'Phone'], rows)}`;
+  }
+  if (card === 'categories') {
+    const cats = DATA.categories;
+    const byFleet = {}; DATA.units.forEach((u) => { const s = u.fleetStatus || '—'; byFleet[s] = (byFleet[s] || 0) + 1; });
+    const fleetPie = Object.entries(byFleet).sort((a, b) => b[1] - a[1]).map(([s, v]) => ({ label: s, value: v, color: getStatus('unitFleetStatus', s).color || 'gray' }));
+    const byCat = {}; DATA.units.forEach((u) => { if (u.categoryId) byCat[u.categoryId] = (byCat[u.categoryId] || 0) + 1; });
+    const ranked = Object.entries(byCat).map(([cid, v]) => ({ name: IDX.category.get(cid)?.name || cid, val: v })).sort((a, b) => b.val - a.val);
+    const bars = ranked.slice(0, 8).map((c) => ({ label: c.name.length > 9 ? c.name.slice(0, 9) : c.name, value: c.val }));
+    const rows = cats.slice().map((cat) => `<tr><td>${esc(cat.name)}</td><td>${byCat[cat.categoryId] || 0}</td></tr>`).join('');
+    return `<div class="gv-grid">${gvNumTile(cats.length, 'Categories')}${gvNumTile(DATA.units.length, 'Total units')}${gvPieTile('Fleet status', fleetPie)}${gvLeadTile('Largest categories', ranked.slice(0, 6))}${gvBarTile('Units per category', bars, 'accent')}</div>${gvTableTile('Categories', cats.length, ['Category', 'Units'], rows)}`;
+  }
+  if (card === 'invoices') {
+    const INV = DATA.invoices;
+    let paid = 0, partial = 0, unpaid = 0, refunded = 0, outstanding = 0, collected = 0;
+    const detail = INV.map((i) => {
+      const t = invoiceTotals(i); collected += t.paid;
+      const isRefunded = !!i.refunded || t.status === 'Refunded';
+      if (isRefunded) refunded++;
+      else if (t.total > 0) { outstanding += t.balance; if (t.balance <= 0) paid++; else if (t.paid > 0) partial++; else unpaid++; }   // empty ($0) drafts are excluded from the buckets
+      return { i, t, isRefunded };
+    });
+    const statusPie = [{ label: 'Paid', value: paid, color: 'green' }, { label: 'Partial', value: partial, color: 'yellow' }, { label: 'Unpaid', value: unpaid, color: 'red' }];
+    if (refunded) statusPie.push({ label: 'Refunded', value: refunded, color: 'gray' });
+    const topBal = detail.filter((r) => r.t.balance > 0 && !r.isRefunded).sort((a, b) => b.t.balance - a.t.balance).slice(0, 6).map((r) => ({ name: IDX.customer.get(r.i.customerId)?.name || r.i.invoiceId, val: money(r.t.balance) }));
+    const rows = detail.slice().sort((a, b) => b.t.balance - a.t.balance).slice(0, 50).map((r) => `<tr><td>${esc(IDX.customer.get(r.i.customerId)?.name || r.i.customerId || '—')}</td><td>${money(r.t.total)}</td><td>${money(r.t.paid)}</td><td>${esc(fmtShortDate(r.i.dueDate) || '—')}</td></tr>`).join('');
+    return `<div class="gv-grid">${gvNumTile(money(outstanding), 'Outstanding')}${gvNumTile(unpaid + partial, 'Open invoices')}${gvNumTile(money(collected), 'Collected')}${gvPieTile('Payment status', statusPie)}${gvLeadTile('Biggest balances', topBal)}</div>${gvTableTile('Invoices', INV.length, ['Customer', 'Total', 'Paid', 'Due'], rows)}`;
+  }
+  if (card === 'serviceOrders') {
+    const U = DATA.units;
+    // per-unit most-urgent active service (svc-wash floats to top on a wash request)
+    const detail = U.map((u) => ({ u, s: topServiceForUnit(u) }));
+    const due = detail.filter((d) => d.u.washRequested || (d.s && d.s.remaining < 0)).length;
+    let overdue = 0, soon = 0, ok = 0, wash = 0;
+    detail.forEach((d) => {
+      if (d.u.washRequested) { wash++; return; }
+      if (!d.s) { ok++; return; }
+      if (d.s.status === 'past-due') overdue++; else if (d.s.status === 'due-soon') soon++; else ok++;
+    });
+    const statusPie = [{ label: 'Overdue', value: overdue, color: 'red' }, { label: 'Due soon', value: soon, color: 'yellow' }, { label: 'On schedule', value: ok, color: 'green' }, { label: 'Wash', value: wash, color: 'blue' }];
+    const mostOverdue = detail.filter((d) => d.s).sort((a, b) => a.s.remaining - b.s.remaining).slice(0, 6)
+      .map((d) => ({ name: d.u.name, meta: d.s.name, val: svcText(d.s) }));
+    const rows = detail.filter((d) => d.s).sort((a, b) => a.s.remaining - b.s.remaining).slice(0, 50)
+      .map((d) => `<tr><td>${esc(d.u.name)}</td><td>${esc(d.s.name)}</td><td>${d.u.washRequested ? badge('Wash Requested', 'blue') : `<span class="pill c-${d.s.color}">${esc(svcText(d.s))}</span>`}</td></tr>`).join('');
+    return `<div class="gv-grid">${gvNumTile(U.length, 'Units tracked')}${gvNumTile(due, 'Service-due')}${gvPieTile('Service status', statusPie)}${gvLeadTile('Most overdue', mostOverdue)}</div>${gvTableTile('Services', U.length, ['Unit', 'Next service', 'Remaining'], rows)}`;
+  }
+  if (card === 'inspections') {
+    const N = DATA.inspections;
+    const pending = N.filter((n) => !inspComplete(n)).length;
+    const byRes = {}; N.forEach((n) => { const r = inspResult(n); (byRes[r.label] = byRes[r.label] || { label: r.label, value: 0, color: r.color }).value++; });
+    const resPie = Object.values(byRes);
+    const hist = gvMonths6().map((m) => ({ label: m.label, value: N.filter((n) => (n.date || '').slice(0, 7) === m.key).length }));
+    const failByUnit = {}; N.filter((n) => inspResult(n).label === 'Fail').forEach((n) => { if (n.unitId) failByUnit[n.unitId] = (failByUnit[n.unitId] || 0) + 1; });
+    const mostFailed = Object.entries(failByUnit).map(([uid, v]) => ({ name: IDX.unit.get(uid)?.name || uid, val: v })).sort((a, b) => b.val - a.val).slice(0, 6);
+    const rows = N.slice().sort((a, b) => (b.date || '').localeCompare(a.date || '')).slice(0, 50)
+      .map((n) => { const r = inspResult(n); return `<tr><td>${esc(IDX.unit.get(n.unitId)?.name || '—')}</td><td>${esc(fmtShortDate(n.date) || '—')}</td><td>${badge(r.label, r.color)}</td></tr>`; }).join('');
+    return `<div class="gv-grid">${gvNumTile(N.length, 'Inspections')}${gvNumTile(pending, 'Pending')}${gvPieTile('Results', resPie)}${gvLeadTile('Most failed', mostFailed)}${gvBarTile('Inspections / month', hist, 'accent')}</div>${gvTableTile('Inspections', N.length, ['Unit', 'Date', 'Result'], rows)}`;
+  }
+  if (card === 'workOrders') {
+    const W = DATA.workOrders;
+    const open = W.filter((w) => w.phase !== 'Complete' && !w.cancelled);
+    const done = W.filter((w) => w.phase === 'Complete' && !w.cancelled).length;
+    const byPhase = {}; open.forEach((w) => { const ph = w.phase || '—'; (byPhase[ph] = byPhase[ph] || { label: getStatus('woPhase', ph).label || ph, value: 0, color: getStatus('woPhase', ph).color || 'gray' }).value++; });
+    const phasePie = Object.values(byPhase);
+    const hist = gvMonths6().map((m) => ({ label: m.label, value: W.filter((w) => (w.date || '').slice(0, 7) === m.key).length }));
+    const rows = W.slice().sort((a, b) => (b.date || '').localeCompare(a.date || '')).slice(0, 50)
+      .map((w) => `<tr><td>${esc(IDX.unit.get(w.unitId)?.name || '—')}</td><td>${esc(w.woReport || '—')}</td><td>${w.cancelled ? badge('Cancelled', 'gray') : badge(getStatus('woPhase', w.phase).label, getStatus('woPhase', w.phase).color)}</td></tr>`).join('');
+    return `<div class="gv-grid">${gvNumTile(open.length, 'Open WOs')}${gvNumTile(done, 'Complete')}${gvPieTile('Open by phase', phasePie)}${gvBarTile('Work orders / month', hist, 'accent')}</div>${gvTableTile('Work Orders', W.length, ['Unit', 'WO', 'Phase'], rows)}`;
+  }
+  if (card === 'shop') {
+    const openWOs = DATA.workOrders.filter((w) => w.phase !== 'Complete' && !w.cancelled).length;
+    const pendInsp = DATA.inspections.filter((n) => !inspComplete(n)).length;
+    const svcDue = DATA.units.filter((u) => { const s = topServiceForUnit(u); return u.washRequested || (s && s.remaining < 0); }).length;
+    const pie = [{ label: 'Open WOs', value: openWOs, color: 'blue' }, { label: 'Pending insp.', value: pendInsp, color: 'yellow' }, { label: 'Services due', value: svcDue, color: 'red' }];
+    const lead = [
+      { name: 'Open work orders', val: openWOs },
+      { name: 'Pending inspections', val: pendInsp },
+      { name: 'Services due', val: svcDue },
+    ];
+    return `<div class="gv-grid">${gvNumTile(openWOs, 'Open WOs')}${gvNumTile(pendInsp, 'Pending inspections')}${gvNumTile(svcDue, 'Services due')}${gvPieTile('Shop workload', pie)}${gvLeadTile('Backlog', lead)}</div>`;
+  }
+  return `<div class="gv-soon"><span class="gv-soon-ic">${I.graph}</span><p>Graphs for <b>${esc(GRID_CARD_BY_ID[card]?.title || ENTITY_LABEL[card] || card)}</b> are coming next.</p></div>`;
 }
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -5388,11 +5529,22 @@ function renderOverlay() {
       <div class="popup-body req-wrap">${inner}</div>`;
     overlay.appendChild(pop);
   } else if (o.kind === 'notifications') {
-    // §18f Notifications — stubbed scaffold; Jac will spec the contents. Empty for now.
-    const pop = el('div', 'popup'); pop.style.width = '420px';
+    // §18f Notifications — recently-RESOLVED Mr. Wrangler fixes, surfaced in-app so a reporter
+    // sees their glitch got fixed (with the verdict) without ever opening GitHub.
+    const list = wranglerNotifs;
+    const inner = !backendPassword
+      ? '<div class="req-empty">Sign in to see notifications.</div>'
+      : (!notifLoaded && notifLoading ? '<div class="req-empty">Loading…</div>'
+        : (!list.length ? '<div class="req-empty"><span class="req-empty-ic">🔔</span><p>Nothing new.</p><span>When Mr. Wrangler finishes a fix you reported, it shows here — refresh the app to see the change.</span></div>'
+          : list.map((n) => `<div class="req-card">
+              <div class="req-head"><span class="req-num">${n.merged ? '✅' : 'ⓘ'} #${n.number}</span><span class="req-title">${esc(n.title)}</span></div>
+              ${n.verdict ? `<div class="req-text">${esc(n.verdict).replace(/\n+/g, '<br>')}</div>` : '<div class="req-text muted">Resolved — refresh the app to see the change.</div>'}
+              <div class="req-acts"><span class="req-await">${n.closedAt ? 'Resolved ' + esc(fmtShortDate(String(n.closedAt).slice(0, 10))) : 'Resolved'}</span><a class="req-link" href="${esc(n.url)}" target="_blank" rel="noopener">GitHub ↗</a></div>
+            </div>`).join('')));
+    const pop = el('div', 'popup'); pop.style.width = '460px';
     pop.innerHTML = `
-      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${I.bell}</span><h3>Notifications</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
-      <div class="popup-body req-wrap"><div class="req-empty"><span class="req-empty-ic">🔔</span><p>No notifications yet.</p><span>This is where alerts will land (service due, overdue invoices, approvals…). Coming soon.</span></div></div>`;
+      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${I.bell}</span><h3>Notifications${list.length ? ` · ${list.length}` : ''}</h3><span class="spacer"></span><button class="iconbtn js-notif-refresh" data-tip="Refresh">${I.refresh || '⟳'}</button><button class="x js-close">${I.x}</button></div>
+      <div class="popup-body req-wrap">${inner}</div>`;
     overlay.appendChild(pop);
   } else if (o.kind === 'hotkeys') {
     const rows = [
@@ -5465,13 +5617,6 @@ function renderOverlay() {
         <button class="bv-mini${o.customize ? ' on' : ''} js-bv-customize" data-tip="Choose which values show in the card's List View">${I.sliders} List rows</button>
         <span class="spacer"></span><button class="x js-close">${I.x}</button></div>
       <div class="popup-body board-body bv-body">${o.customize ? bvCustomizePanel(o.card) : ''}${boardViewTable(o, session)}</div>`;
-    overlay.appendChild(pop);
-  } else if (o.kind === 'cardgraph') {
-    const title = GRID_CARD_BY_ID[o.card]?.title || ENTITY_LABEL[o.card] || o.card;
-    const pop = el('div', 'popup board-popup gv-popup');
-    pop.innerHTML = `
-      <div class="popup-head"><span class="c-icon" style="color:var(--accent);display:inline-flex">${I.graph}</span><h3>${esc(title)} — Graph</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
-      <div class="popup-body board-body gv-body">${cardGraphBody(o.card)}</div>`;
     overlay.appendChild(pop);
   } else if (o.kind === 'settings') {
     const cfg = o.config || { roles: {}, admin: '' };
@@ -5952,6 +6097,22 @@ async function refreshWranglerRequests() {
   reqLoading = false;
   render(); if (state.overlay?.kind === 'requests') renderOverlay();
 }
+// §18f Notifications — the in-app feed of recently-RESOLVED Mr. Wrangler fixes (read-only
+// mirror of the Requests inbox). Badge = unseen count; opening the bell marks them seen.
+let wranglerNotifs = [];
+let notifLoaded = false, notifLoading = false;
+const NOTIF_SEEN_KEY = 'jactec.notifsSeen';
+const notifsSeenMax = () => { try { return Number(localStorage.getItem(NOTIF_SEEN_KEY)) || 0; } catch (e) { return 0; } };
+const unseenNotifs = () => { const s = notifsSeenMax(); return wranglerNotifs.filter((n) => (n.number || 0) > s).length; };
+function markNotifsSeen() { const mx = wranglerNotifs.reduce((a, n) => Math.max(a, n.number || 0), notifsSeenMax()); try { localStorage.setItem(NOTIF_SEEN_KEY, String(mx)); } catch (e) {} }
+async function refreshWranglerNotifications() {
+  if (typeof backendPassword === 'undefined' || !backendPassword || notifLoading) return;   // demo/offline → no feed
+  notifLoading = true;
+  try { const r = await backendCall('wranglerNotifications', {}); if (r && r.ok && Array.isArray(r.notifications)) { wranglerNotifs = r.notifications; notifLoaded = true; } } catch (e) {}
+  notifLoading = false;
+  if (state.overlay?.kind === 'notifications') { markNotifsSeen(); renderOverlay(); }   // seen once displayed → badge clears
+  render();
+}
 async function approveRequest(n) {
   try {
     const r = await backendCall('wranglerApprove', { number: n });
@@ -5972,8 +6133,10 @@ async function dismissRequest(n) {
 function fabStackEl() {
   const stack = el('div', 'fab-stack');
   const reqBadge = wranglerRequests.length ? `<span class="fab-badge">${wranglerRequests.length > 9 ? '9+' : wranglerRequests.length}</span>` : '';
+  const nu = unseenNotifs();
+  const notifBadge = nu ? `<span class="fab-badge">${nu > 9 ? '9+' : nu}</span>` : '';
   stack.innerHTML = `
-    <button class="fab js-notifications" data-tip="Notifications">${I.bell}</button>
+    <button class="fab js-notifications" data-tip="Notifications">${I.bell}${notifBadge}</button>
     <button class="fab js-requests" data-tip="Requests for your OK — review what Mr. Wrangler filed">${I.inbox}${reqBadge}</button>`;
   return stack;
 }
@@ -7066,7 +7229,8 @@ function onClick(e) {
   if (closest('.js-wr-act')) { e.stopPropagation(); return wranglerFileAction(Number(closest('.js-wr-act').dataset.mi)); }   // §18d file the fix/request Mr. Wrangler proposed inline
   if (closest('.js-wr-unattach')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'wrangler' && o.attach) { o.attach.splice(Number(closest('.js-wr-unattach').dataset.i), 1); renderOverlay(); } return; }   // §18d drop a pending image attachment
   if (closest('.js-wrangler')) { e.stopPropagation(); return openOverlay({ kind: 'wrangler', card: null, recId: null, recType: null, messages: [], busy: false, error: '', draft: '' }); }
-  if (closest('.js-notifications')) { e.stopPropagation(); return openOverlay({ kind: 'notifications' }); }   // §18f notification bell (stub — spec pending)
+  if (closest('.js-notifications')) { e.stopPropagation(); openOverlay({ kind: 'notifications' }); markNotifsSeen(); refreshWranglerNotifications(); return; }   // §18f notification bell — in-app resolved-fix feed
+  if (closest('.js-notif-refresh')) { e.stopPropagation(); return refreshWranglerNotifications(); }
   if (closest('.js-requests')) { e.stopPropagation(); openOverlay({ kind: 'requests' }); refreshWranglerRequests(); return; }   // §18e approval inbox
   if (closest('.js-req-refresh')) { e.stopPropagation(); return refreshWranglerRequests(); }
   if (closest('.js-req-approve')) { e.stopPropagation(); return approveRequest(Number(closest('.js-req-approve').dataset.n)); }
@@ -7082,7 +7246,7 @@ function onClick(e) {
   if (closest('.js-ff-save')) { e.stopPropagation(); return saveFileForm(); }
   if (closest('.js-vendor-tax')) { e.stopPropagation(); const b = closest('.js-vendor-tax'); const v = recOf('vendors', b.dataset.rec); if (v) { const ex = b.dataset.val === '1'; if (!!v.salesTaxExempt !== ex) { v.salesTaxExempt = ex; reindex('vendors', v); logAction(v, `Sales tax → ${ex ? 'Exempt' : 'Taxed'}`); } if (state.overlay?.kind === 'board') renderOverlay(); render(); } return; }
   if (closest('.js-boardview')) { e.stopPropagation(); return openBoardView(closest('.js-boardview').dataset.card); }
-  if (closest('.js-cardgraph')) { e.stopPropagation(); return openOverlay({ kind: 'cardgraph', card: closest('.js-cardgraph').dataset.card }); }   // Phase 4 per-card Graph view
+  if (closest('.js-cardgraph')) { e.stopPropagation(); const card = closest('.js-cardgraph').dataset.card; const cs = activeSession().cards[card]; cs.graphView = !cs.graphView; return render(); }   // Phase 4 per-card Graph view — in-column toggle (sibling to the list)
   if (closest('.js-bv-sort') && !closest('.js-bv-inscol')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview') { const key = closest('.js-bv-sort').dataset.col; if (o.sort?.key === key) o.sort.dir = o.sort.dir === 'asc' ? 'desc' : 'asc'; else o.sort = { key, dir: 'asc' }; renderOverlay(); } return; }
   if (closest('.js-bv-addcol')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview') { o.colOrder = o.colOrder || []; o.colOrder.push({ kind: 'extra', id: 'xc' + (++o.seq), label: '' }); renderOverlay(); } return; }
   if (closest('.js-bv-inscol')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview' && o.colOrder) { const after = Number(closest('.js-bv-inscol').dataset.after); o.colOrder.splice(after + 1, 0, { kind: 'extra', id: 'xc' + (++o.seq), label: '' }); renderOverlay(); } return; }
@@ -7107,6 +7271,7 @@ function onClick(e) {
   if (closest('.js-disp-arrow')) { e.stopPropagation(); const a = closest('.js-disp-arrow'); return removeDispatchArrow(state.dispatchDay || TODAY_ISO, a.dataset.from, a.dataset.to); }
   if (closest('.js-disp-arrowpt')) { e.stopPropagation(); const route = closest('.js-disp-route'); return dispatchArrowClick(route ? route.dataset.day : (state.dispatchDay || TODAY_ISO), closest('.js-disp-arrowpt').dataset.node); }
   if (closest('.js-disp-arm-cancel')) { e.stopPropagation(); state.dispArm = null; return render(); }
+  if (closest('.js-disp-autoroute')) { e.stopPropagation(); return autoDispatchRoute(state.dispatchDay || TODAY_ISO); }
   if (closest('.js-disp-clearlegs')) { e.stopPropagation(); const all = dispatchArrowsLS(); delete all[state.dispatchDay || TODAY_ISO]; _lsSave('jactec.dispatchArrows', all); state.dispArm = null; return render(); }
   if (closest('.js-disp-stop') && !closest('.js-disp-time') && !closest('.disp-grip') && !closest('.js-site-go')) { e.stopPropagation(); return anchorRecord('rentals', closest('.js-disp-stop').dataset.rec); }
   if (closest('.js-new-wo-unit')) { e.stopPropagation(); return startNewWorkOrder(closest('.js-new-wo-unit').dataset.rec); }
@@ -7732,6 +7897,73 @@ function uploadCaptureMedia(r, eu, cap, dataUrl) {
 }
 /* Part/Task popup save: creates the WO line + Parts/Vendors board records when
    new; empty fields are flagged aiPending for Mr. Wrangler review (backend TODO). */
+/* ── §18g — Mr. Wrangler PHOTO AUTOFILL (I1, Jac 2026-06-15): after a receipt/part is
+   saved with a photo + empty fields, the live AI reads the photo and fills the still-
+   blank fields, then clears the ✨ aiPending flag. Fire-and-forget + best-effort: on any
+   failure the record keeps its ✨ so nothing is silently wrong. Reuses the §18 `wrangler`
+   backend (image content block via wranglerImageBlock); no-ops in demo/offline mode. ── */
+const RW_EXPENSE_CATS = ['Parts', 'Fuel', 'Tools', 'Service', 'Shipping', 'Supplies', 'Other'];
+function vendorIdByName(name) {
+  const n = String(name || '').trim(); if (!n) return null;
+  let v = DATA.vendors.find((x) => (x.name || '').toLowerCase() === n.toLowerCase());
+  if (!v) { v = { vendorId: 'VEN-C' + (state.seq++), name: n, mock: true }; DATA.vendors.push(v); reindex('vendors', v); }
+  return v.vendorId;
+}
+async function wranglerExtract(photo, system) {
+  if (typeof backendPassword === 'undefined' || !backendPassword) return null;   // demo/offline → no AI
+  const block = wranglerImageBlock(photo); if (!block) return null;
+  try {
+    const r = await backendCall('wrangler', { system, messages: [{ role: 'user', content: [block, { type: 'text', text: 'Extract the fields from this image. Respond with ONLY the JSON object.' }] }] });
+    if (!r || r.error || !r.text) return null;
+    return JSON.parse(String(r.text).replace(/```(?:json)?/gi, '').trim());
+  } catch (e) { return null; }
+}
+async function autofillReceipt(rec, photo) {
+  const sys = `You are Mr. Wrangler reading a vendor receipt or invoice for a heavy-equipment rental shop. Extract these fields: vendor (the seller's business name), amount (the GRAND TOTAL paid — a number in dollars, no symbol), date (the receipt date as YYYY-MM-DD), category (exactly one of: ${RW_EXPENSE_CATS.join(', ')}). Respond with ONLY a JSON object using those exact keys; omit any key you cannot read confidently. No prose, no code fences.`;
+  const d = await wranglerExtract(photo, sys); if (!d || typeof d !== 'object') return;
+  let changed = false;
+  if (!(rec.amount > 0) && d.amount != null && !isNaN(Number(d.amount))) { rec.amount = Number(d.amount); changed = true; }
+  if (!rec.vendorId && d.vendor) { rec.vendorId = vendorIdByName(d.vendor); changed = true; }
+  if ((!rec.date || rec.date === TODAY_ISO) && typeof d.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d.date)) { rec.date = d.date; changed = true; }
+  if (d.category) { const c = RW_EXPENSE_CATS.find((x) => x.toLowerCase() === String(d.category).toLowerCase()); if (c && (!rec.category || rec.category === 'Parts')) { rec.category = c; changed = true; } }
+  if (!changed) return;
+  rec.aiPending = !rec.vendorId || !(rec.amount > 0);
+  reindex('expenses', rec); logAction(rec, '✨ Mr. Wrangler filled fields from the receipt photo'); saveSoon();
+  render(); if (state.overlay?.kind === 'board') renderOverlay();
+  toast('✨ Mr. Wrangler filled in the receipt.');
+}
+async function autofillPartLine(w, li, photo) {
+  if (!w || !li) return;
+  const sys = `You are Mr. Wrangler reading a photo of an equipment part, tool, or repair item for a heavy-equipment rental shop. Extract these fields: description (a short part or task name), cost (price each — a number in dollars, no symbol), hours (labor hours to install or complete it — a number), url (a product or order link if one is visible), vendor (the supplier's business name). Respond with ONLY a JSON object using those exact keys; omit any key you cannot read confidently. No prose, no code fences.`;
+  const d = await wranglerExtract(photo, sys); if (!d || typeof d !== 'object') return;
+  const ph = '📷 Awaiting Mr. Wrangler review';
+  let changed = false;
+  if ((!li.part || li.part === ph) && d.description) { li.part = String(d.description); changed = true; }
+  if (!(li.cost > 0) && d.cost != null && !isNaN(Number(d.cost))) { li.cost = Number(d.cost); changed = true; }
+  if (!(li.hours > 0) && d.hours != null && !isNaN(Number(d.hours))) { li.hours = Number(d.hours); changed = true; }
+  if (!li.url && d.url) { li.url = String(d.url); changed = true; }
+  if (!li.vendorId && d.vendor) { li.vendorId = vendorIdByName(d.vendor); changed = true; }
+  if (!changed) return;
+  li.aiPending = !li.part || li.part === ph || !(li.cost > 0) || !(li.hours > 0);
+  // sync to / create the catalog part (mirror savePartForm: link → name-match → create)
+  let p = li.partId ? DATA.parts.find((r) => r.partId === li.partId) : null;
+  if (!p && li.part && li.part !== ph) p = DATA.parts.find((r) => (r.name || '').toLowerCase() === li.part.toLowerCase());   // name-match before create (no dup)
+  if (p) {
+    if (li.part && li.part !== ph) p.name = li.part;
+    if (li.cost > 0) p.priceEach = li.cost;
+    if (li.url) p.website = li.url;
+    if (li.vendorId) p.vendorId = li.vendorId;
+    if (!li.aiPending) p.aiPending = false;
+    li.partId = p.partId; reindex('parts', p);
+  } else if (li.part && li.part !== ph) {
+    p = { partId: 'PRT-C' + (state.seq++), name: li.part, status: 'Catalog', priceEach: li.cost > 0 ? li.cost : null, qtyOnHand: null, website: li.url || '', orderEmail: '', productNumber: '', vendorId: li.vendorId || null, imageUrl: '', notes: '', woId: w.woId, aiPending: li.aiPending, mock: true };
+    DATA.parts.push(p); li.partId = p.partId; reindex('parts', p);
+  }
+  reindex('workOrders', w); logAction(w, '✨ Mr. Wrangler filled a part line from the photo'); saveSoon();
+  reanchorRender(); if (state.overlay?.kind === 'board') renderOverlay();
+  toast('✨ Mr. Wrangler filled in the part.');
+}
+
 function savePartForm() {
   const o = state.overlay; if (!o || o.kind !== 'partform') return;
   const w = IDX.wo.get(o.woId); if (!w) return closeOverlay();
@@ -7772,9 +8004,12 @@ function savePartForm() {
   if (o.idx == null) w.lineItems.push(li);
   if (w.phase === 'Complete') w.phase = 'Part Needed?';
   reindex('workOrders', w); logAction(w, `${o.idx != null ? 'Edited' : 'Added'} line: ${auditVal(li.part)}`);
+  const photo = li.photo || null;   // §18g — capture for the AI photo-autofill before state clears
   state.partPhoto = null; state.overlay = null;
-  toast(li.aiPending ? '✨ Saved — Mr. Wrangler will fill the blanks when he comes online.' : 'Line saved.');
+  const willFill = li.aiPending && photo && typeof backendPassword !== 'undefined' && backendPassword;
+  toast(willFill ? '✨ Saved — Mr. Wrangler is reading the photo to fill the blanks…' : li.aiPending ? '✨ Saved — add a photo and Mr. Wrangler can fill the blanks.' : 'Line saved.');
   reanchorRender(); renderOverlay();
+  if (willFill) autofillPartLine(w, li, photo);   // §18g fire-and-forget photo autofill
 }
 /* Receipt popup save (§7.11): creates/updates the expense; vendor name-match or
    auto-create (the savePartForm idiom); empty AI-fillable fields flag aiPending ✨;
@@ -7805,11 +8040,14 @@ function saveReceiptForm() {
     reindex('parts', p); logAction(rec, `Linked part: ${partName}`);
   }
   reindex('expenses', rec); logAction(rec, existing ? 'Receipt edited' : 'Receipt created');
+  const photo = rec.photo || null;   // §18g — capture for the AI photo-autofill before state clears
   state.receiptPhoto = null;
   openOverlay({ kind: 'board', board: 'expenses', recId: rec.expenseId });   // save lands ON the detail
-  toast(rec.aiPending ? '✨ Saved — Mr. Wrangler will fill the blanks when he comes online.' : 'Receipt saved.');
+  const willFill = rec.aiPending && photo && typeof backendPassword !== 'undefined' && backendPassword;
+  toast(willFill ? '✨ Saved — Mr. Wrangler is reading the photo to fill the blanks…' : rec.aiPending ? '✨ Saved — add a receipt photo and Mr. Wrangler can fill the blanks.' : 'Receipt saved.');
   render();
   attnFlash('.board-detail .detail-head');   // R19: glow the fresh receipt
+  if (willFill) autofillReceipt(rec, photo);   // §18g fire-and-forget photo autofill
 }
 /* Reconcile link (§7.11): name-match an existing part or create one, then stamp
    part.receiptId/receiptQty (the part points at the receipt — ONE SOURCE, ONE HOME).
@@ -8636,7 +8874,7 @@ function createInvoiceForRental(rentalId) {
   // #8 — open the new invoice ON the Invoice card (Jac 2026-06-13)
   const session = activeSession();
   if (session.anchor) setAnchor(session, session.anchor.card, session.anchor.recId, session.anchor.recType);
-  const ics = session.cards.invoices; ics.mode = 'standard'; ics.recId = id; ics.recType = null; ics.released = false;
+  const ics = session.cards.invoices; ics.mode = 'standard'; ics.recId = id; ics.recType = null; ics.released = false; ics.graphView = false;   // surfacing an invoice exits graph view
   const col = columnOfMember('invoices'); if (col && session.cols) session.cols[col] = 'invoices';
   render();
 }
@@ -9420,6 +9658,7 @@ function finishLoad() {
   loadGlobalViews();                                            // pull the shared, company-wide view set
   loadChats();                                                  // pull the shared team-chat threads (§ team-chat sync)
   refreshWranglerRequests();                                    // §18e populate the approval-inbox badge
+  refreshWranglerNotifications();                               // §18f populate the notification-bell badge
   startRefreshPoll();                                           // live multi-user: poll for others' changes (§ refreshFromBackend)
   if (migrationDirty) { migrationDirty = false; saveSoon(); }   // push parsed first/last names up to the Sheet
   // #edit=<id> — desktop→phone handoff opens that customer's account form (§7.1).
