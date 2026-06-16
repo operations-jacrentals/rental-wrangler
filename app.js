@@ -4235,6 +4235,15 @@ function listView(cardDef, session) {
       const en = el('div', 'empty-new');
       en.innerHTML = `<div class="empty">No customer matches “${esc(cs.search.trim())}”.</div><button class="bigbtn js-new-cust-search">${I.plus} New Customer “${esc(cs.search.trim())}”</button>`;
       list.appendChild(en);
+    } else if ((card === 'units' || card === 'categories') && cs.search.trim() && !session.anchor) {
+      // a fruitless Units/Categories search offers a prefilled +New one — the typed name carries
+      // straight into the new record, which opens in Standard view to fill in inline (Jac).
+      const q = cs.search.trim();
+      const en = el('div', 'empty-new');
+      const js = card === 'units' ? 'js-new-unit-search' : 'js-new-cat-search';
+      const label = card === 'units' ? 'Unit' : 'Category';
+      en.innerHTML = `<div class="empty">No ${esc(cardDef.singular)} matches “${esc(q)}”.</div><button class="bigbtn ${js}">${I.plus} New ${label} “${esc(q)}”</button>`;
+      list.appendChild(en);
     } else {
       // creation lives in ONE place — the header + New menu (no per-card +New, even when empty)
       const hint = PLUS_NEW.has(card) ? ` — use <b>+ New</b> above` : '';
@@ -7530,6 +7539,8 @@ function onClick(e) {
   if (closest('.js-bv-customize')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview') { o.customize = !o.customize; renderOverlay(); } return; }
   if (closest('.js-bv-resetlayout')) { e.stopPropagation(); const card = closest('.js-bv-resetlayout').dataset.card; saveListLayout(card, null); saveListTotals(card, null); render(); renderOverlay(); return; }
   if (closest('.js-new-cust-search')) { e.stopPropagation(); const cs = activeSession().cards.customers; return startNewCustomer(parseCustomerSearch(cs.search)); }
+  if (closest('.js-new-unit-search')) { e.stopPropagation(); return quickAddUnitFromSearch(activeSession().cards.units.search); }
+  if (closest('.js-new-cat-search')) { e.stopPropagation(); return quickAddCategoryFromSearch(activeSession().cards.categories.search); }
   if (closest('.js-coltab')) {
     const ct = closest('.js-coltab'); e.stopPropagation();
     // A1 — the Services (heart) tab filters the Units list to service-due as a removable
@@ -8674,6 +8685,40 @@ function quickAddCustomerFromSearch(value) {
   const ccs = s.cards.customers; ccs.search = ''; ccs.filterTerms = []; ccs.mode = 'standard'; ccs.recId = id; ccs.recType = null; ccs.graphView = false;   // surface the new customer in Standard View — unlinked
   render();
   toast(`${c.name || 'Customer'} added — drag it onto a rental or invoice to link.`);
+  return true;
+}
+/* QUICK ADD — a fruitless Units/Categories search offers a +New button (the empty state).
+   It creates the record with the typed text as its name and drops you into its Standard
+   view to fill in the rest inline — units/categories are edited inline (no separate form).
+   Routed through openStandard so the prior list view is recorded and Back returns to it. */
+function nextUnitId() {
+  const max = DATA.units.reduce((m, u) => { const n = /^U(\d+)$/.exec(u.unitId || ''); return n ? Math.max(m, +n[1]) : m; }, 0);
+  return 'U' + String(max + 1).padStart(3, '0');
+}
+function quickAddUnitFromSearch(value) {
+  const name = (value || '').trim(); if (!name) return false;
+  const id = nextUnitId();
+  const u = { unitId: id, name, categoryId: '', assignedMechanic: '', currentHours: 0, inspectionStatus: 'Not Ready', fleetStatus: 'Active', purchaseHours: 0, serviceCompletions: {} };
+  DATA.units.push(u); IDX.unit.set(id, u); reindex('units', u);
+  logAction(u, 'Unit added');
+  const cs = activeSession().cards.units; cs.search = ''; cs.filterTerms = [];
+  openStandard('units', id);
+  toast(`${name} added — set its category, hours, and inspection.`);
+  return true;
+}
+function nextCategoryId() {
+  const max = DATA.categories.reduce((m, c) => { const n = /^CAT(\d+)$/.exec(c.categoryId || ''); return n ? Math.max(m, +n[1]) : m; }, 0);
+  return 'CAT' + String(max + 1).padStart(3, '0');
+}
+function quickAddCategoryFromSearch(value) {
+  const name = (value || '').trim(); if (!name) return false;
+  const id = nextCategoryId();
+  const c = { categoryId: id, name, memberDaily: 0, rate1Day: 0, rate7Day: 0, rate4Wk: 0, weekend: 0, msrp: 0, askPrice: 0, bottomDollar: 0, fuelType: '', description: '' };
+  DATA.categories.push(c); IDX.category.set(id, c); reindex('categories', c);
+  logAction(c, 'Category added');
+  const cs = activeSession().cards.categories; cs.search = ''; cs.filterTerms = [];
+  openStandard('categories', id);
+  toast(`${name} added — set its day/week/month rates.`);
   return true;
 }
 /** Turn a customer-search string into prefill: a letterless string → phone, else
