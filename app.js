@@ -1133,6 +1133,7 @@ const state = {
   filterTerms: [],            // §5.4 — AND-narrowing filter terms (type + Enter)
   unitPick: null,             // { ids, from } — Invoice +WO narrows the Units list to the invoice's linked units (Phase 4)
   chat: { open: false, activeId: null, draft: '', chats: [] },   // §17 internal team dock (Phase 7): PERSISTENT chats (never deleted). Each = { id, tags, participants, messages, seen{userKey:lastViewedAt} }. Empty participants = dormant; reopen via a tagged element.
+  wrangler: { open: false, messages: [], busy: false, error: '', draft: '', attach: [], card: null, recId: null, recType: null, reqNumber: null, reqTitle: null, reqUrl: null },   // §18 Mr. Wrangler dock — survives minimize, restores conversation on reopen
   mobileCol: 0,               // §M1 — which column the phone shows (0 Yard · 1 Rentals · 2 Customers); drives swipe position + the per-column bottom strip
   woPartForm: null,           // woId whose "+ Add Part/Labor" inline form is open
   invLineForm: null,          // invoiceId whose "+ Add Custom" inline form is open
@@ -1909,8 +1910,8 @@ function runCtxAction(act) {
   }
   if (act === 'startchat') return startChatFromEl(el);   // §17 — start a team chat seeded from this element
   if (act === 'wrangler') {
-    const hit = cardRecordAt(el);   // §18 — open Mr. Wrangler, record-aware when a record is under the cursor
-    return openOverlay({ kind: 'wrangler', card: hit ? hit.card : null, recId: hit ? hit.recId : null, recType: hit ? hit.recType : null, messages: [], busy: false, error: '', draft: '' });
+    const hit = cardRecordAt(el);   // §18 — open Mr. Wrangler dock, record-aware when a record is under the cursor
+    return openWranglerDock({ messages: [], draft: '', attach: [], card: hit ? hit.card : null, recId: hit ? hit.recId : null, recType: hit ? hit.recType : null, reqNumber: null, reqTitle: null, reqUrl: null });
   }
 }
 /** R17: forward-action pills — commit (blue) / money (green) / danger (solid red). */
@@ -4801,6 +4802,84 @@ function chatDockEl() {
     <div class="chat-compose"><input class="chat-input" placeholder="${c ? 'Message the team…' : 'Type to start a team chat…'}" value="${esc(state.chat.draft || '')}" aria-label="Message the team" /><button class="chat-send js-chat-send" aria-label="Send">${I.chev}</button></div>
     ${roles}`;
 }
+// §18 Mr. Wrangler dock — renders the floating dock HTML (mirrors wrangler overlay but as a dock).
+function wranglerDockEl() {
+  const o = state.wrangler;
+  const rec = (o.card && o.recId != null) ? recOf(entityCardOf(o.card, o.recType), o.recId) : null;
+  const chip = rec ? `<span class="wr-chip">${CARD_ICON[entityCardOf(o.card, o.recType)] || ''}${esc(detailTitle(entityCardOf(o.card, o.recType), rec))}</span>` : '';
+  const turns = o.messages.length
+    ? o.messages.map((m, i) => {
+        let act = '';
+        if (m.action && m.action.action === 'data') {
+          const plan = m.action._plan || (m.action._plan = wrValidatePlan(m.action));
+          const sum = wrPlanSummary(plan);
+          const skip = plan.issues.length ? `<div class="wr-apply-skip">skipped: ${esc(plan.issues.join('; '))}</div>` : '';
+          act = m.filed
+            ? `<span class="wr-actdone">✓ Applied — ${esc(sum)}</span>`
+            : `<div class="wr-apply"><div class="wr-apply-sum">Preview: ${esc(sum)}</div>${skip}${plan.ops.length ? `<button class="wr-actbtn wr-actbtn-build js-wr-apply" data-mi="${i}">✓ Apply these changes</button>` : '<span class="wr-apply-none">Nothing here I can safely apply.</span>'}</div>`;
+        } else if (m.action) {
+          const ak = m.action.action;
+          const doneLbl = ak === 'plan' ? 'Building to your plan' : ak === 'request' ? 'Filed for Jac’s OK' : 'Sent to the fixer';
+          const btnLbl = ak === 'plan' ? '✓ Build this plan' : ak === 'request' ? '💡 File this for Jac’s OK' : '🔧 Send this to get fixed';
+          act = m.filed
+            ? `<span class="wr-actdone">✓ ${doneLbl}${m.issue ? ` · #${m.issue}` : ''}</span>`
+            : m.filing
+              ? `<span class="wr-actdone" style="color:var(--txt-3)">…filing</span>`
+              : `<button class="wr-actbtn${ak === 'plan' ? ' wr-actbtn-build' : ''} js-wr-act" data-mi="${i}">${btnLbl}</button>`;
+        }
+        const imgs = (m.images && m.images.length) ? `<div class="wr-bub-imgs">${m.images.map((s) => `<img src="${esc(s)}" alt="attached image">`).join('')}</div>` : '';
+        const txt = m.content ? `${esc(m.content).replace(/\n/g, '<br>')}` : '';
+        return `<div class="wr-msg ${m.role}">${m.role === 'assistant' ? '<span class="wr-av">🤠</span>' : ''}<div class="wr-bub">${imgs}${txt}${act}</div></div>`;
+      }).join('')
+    : '<div class="wr-empty">Ask about this record or the whole yard — service due, balances, what needs attention… or just tell me what’s broken (paste or attach a screenshot) and I’ll get it fixed.</div>';
+  const attachRow = (o.attach && o.attach.length)
+    ? `<div class="wr-attach-row">${o.attach.map((s, i) => `<div class="wr-thumb"><img src="${esc(s)}" alt="attachment"><button class="wr-thumb-x js-wr-unattach" data-i="${i}" aria-label="Remove">×</button></div>`).join('')}</div>`
+    : '';
+  const reqBar = o.reqNumber
+    ? `<div class="wr-reqbar"><span class="wr-reqnum">Request #${o.reqNumber}</span>${o.reqTitle ? `<span class="wr-reqttl">${esc(o.reqTitle)}</span>` : ''}<span class="spacer"></span>${canApproveRequests() ? `<button class="pill ghost js-req-dismiss" data-r="R18" data-n="${o.reqNumber}">Dismiss</button><button class="pill c-commit js-req-approve" data-r="R17" data-n="${o.reqNumber}">✓ Approve</button>` : ''}</div>`
+    : '';
+  return `
+    <div class="wr-dock-head">
+      <span style="font-size:18px">🤠</span>
+      <span class="wr-dock-title">Mr. Wrangler</span>
+      ${chip}
+      <span class="spacer"></span>
+      <button class="iconbtn js-wr-close" aria-label="Minimize" data-tip="Minimize">×</button>
+    </div>
+    ${reqBar}
+    <div class="wr-feed">${turns}${o.busy ? '<div class="wr-msg assistant"><span class="wr-av">🤠</span><div class="wr-bub wr-think">…wrangling an answer</div></div>' : ''}</div>
+    ${o.error ? `<div class="wr-err">${esc(o.error)}</div>` : ''}
+    ${attachRow}
+    <div class="wr-compose"><label class="wr-attach js-wr-attach" data-tip="Attach or paste an image"><input type="file" accept="image/*" class="js-wr-file" hidden multiple>${I.paperclip || '📎'}</label><input class="wr-in js-wr-in" placeholder="Ask Mr. Wrangler, or tell him what's broken…" value="${esc(o.draft || '')}" ${o.busy ? 'disabled' : ''} /><button class="wr-send js-wr-send" ${o.busy ? 'disabled' : ''} aria-label="Ask">${I.chev}</button></div>`;
+}
+function mountWranglerDock() {
+  const d = document.querySelector('.wrangler-dock'); if (!d) return;
+  const inp = d.querySelector('.js-wr-in');
+  if (inp) inp.addEventListener('paste', (ev) => {
+    const items = (ev.clipboardData && ev.clipboardData.items) || [];
+    for (const it of items) { if (it.type && it.type.startsWith('image/')) { const file = it.getAsFile(); if (file) { ev.preventDefault(); wranglerAttachFile(file); } } }
+  });
+  d.addEventListener('dragover', (ev) => { if (ev.dataTransfer && [...ev.dataTransfer.types].includes('Files')) { ev.preventDefault(); d.classList.add('wr-drag'); } });
+  d.addEventListener('dragleave', (ev) => { if (ev.target === d) d.classList.remove('wr-drag'); });
+  d.addEventListener('drop', (ev) => { const files = ev.dataTransfer && ev.dataTransfer.files; if (files && files.length) { ev.preventDefault(); d.classList.remove('wr-drag'); [...files].forEach((f) => { if (f.type.startsWith('image/')) wranglerAttachFile(f); }); } });
+}
+function openWranglerDock(opts) {
+  const w = state.wrangler;
+  w.open = true;
+  if (opts.messages !== undefined) w.messages = opts.messages;
+  if (opts.busy !== undefined) w.busy = opts.busy; else w.busy = false;
+  if (opts.error !== undefined) w.error = opts.error; else w.error = '';
+  if (opts.draft !== undefined) w.draft = opts.draft;
+  if (opts.attach !== undefined) w.attach = opts.attach; else w.attach = [];
+  if (opts.card !== undefined) w.card = opts.card;
+  if (opts.recId !== undefined) w.recId = opts.recId;
+  if (opts.recType !== undefined) w.recType = opts.recType;
+  if (opts.reqNumber !== undefined) w.reqNumber = opts.reqNumber;
+  if (opts.reqTitle !== undefined) w.reqTitle = opts.reqTitle;
+  if (opts.reqUrl !== undefined) w.reqUrl = opts.reqUrl;
+  render();
+  setTimeout(() => { const i = document.querySelector('.wrangler-dock .js-wr-in'); if (i) i.focus(); const f = document.querySelector('.wrangler-dock .wr-feed'); if (f) f.scrollTop = f.scrollHeight; }, 0);
+}
 function chatSend() {
   const inp = document.querySelector('.chat-input');
   const text = ((inp ? inp.value : state.chat.draft) || '').trim();
@@ -5611,62 +5690,6 @@ function renderOverlay() {
         <p class="muted" style="margin-top:6px;font-size:11px">${esc(o.caption || 'Scan to open this session on another device (single shared login — §1/§4.2).')}</p>
       </div>`;
     overlay.appendChild(pop);
-  } else if (o.kind === 'wrangler') {
-    // §18 — Mr. Wrangler: an in-app AI chat (Claude via the backend).
-    const rec = (o.card && o.recId != null) ? recOf(entityCardOf(o.card, o.recType), o.recId) : null;
-    const chip = rec ? `<span class="wr-chip">${CARD_ICON[entityCardOf(o.card, o.recType)] || ''}${esc(detailTitle(entityCardOf(o.card, o.recType), rec))}</span>` : '<span class="wr-chip muted">Whole yard</span>';
-    const turns = o.messages.length
-      ? o.messages.map((m, i) => {
-          let act = '';
-          if (m.action && m.action.action === 'data') {
-            const plan = m.action._plan || (m.action._plan = wrValidatePlan(m.action));
-            const sum = wrPlanSummary(plan);
-            const skip = plan.issues.length ? `<div class="wr-apply-skip">skipped (not allowed): ${esc(plan.issues.join('; '))}</div>` : '';
-            act = m.filed
-              ? `<span class="wr-actdone">✓ Applied — ${esc(sum)}</span>`
-              : `<div class="wr-apply"><div class="wr-apply-sum">Preview: ${esc(sum)}</div>${skip}${plan.ops.length ? `<button class="wr-actbtn wr-actbtn-build js-wr-apply" data-mi="${i}">✓ Apply these changes</button>` : '<span class="wr-apply-none">Nothing here I can safely apply.</span>'}</div>`;
-          } else if (m.action) {
-            const ak = m.action.action;
-            const doneLbl = ak === 'plan' ? 'Building to your plan' : ak === 'request' ? 'Filed for Jac’s OK' : 'Sent to the fixer';
-            const btnLbl = ak === 'plan' ? '✓ Build this plan' : ak === 'request' ? '💡 File this for Jac’s OK' : '🔧 Send this to get fixed';
-            act = m.filed
-              ? `<span class="wr-actdone">✓ ${doneLbl}${m.issue ? ` · #${m.issue}` : ''}</span>`
-              : m.filing
-                ? `<span class="wr-actdone" style="color:var(--txt-3)">…filing</span>`
-                : `<button class="wr-actbtn${ak === 'plan' ? ' wr-actbtn-build' : ''} js-wr-act" data-mi="${i}">${btnLbl}</button>`;
-          }
-          const imgs = (m.images && m.images.length) ? `<div class="wr-bub-imgs">${m.images.map((s) => `<img src="${esc(s)}" alt="attached image">`).join('')}</div>` : '';
-          const txt = m.content ? `${esc(m.content).replace(/\n/g, '<br>')}` : '';
-          return `<div class="wr-msg ${m.role}">${m.role === 'assistant' ? '<span class="wr-av">🤠</span>' : ''}<div class="wr-bub">${imgs}${txt}${act}</div></div>`;
-        }).join('')
-      : '<div class="wr-empty">Ask about this record or the whole yard — service due, balances, what needs attention… or just tell me what’s broken (paste or attach a screenshot) and I’ll get it fixed.</div>';
-    const attachRow = (o.attach && o.attach.length)
-      ? `<div class="wr-attach-row">${o.attach.map((s, i) => `<div class="wr-thumb"><img src="${esc(s)}" alt="attachment"><button class="wr-thumb-x js-wr-unattach" data-i="${i}" aria-label="Remove">×</button></div>`).join('')}</div>`
-      : '';
-    const pop = el('div', 'popup wr-pop'); pop.style.width = '440px';
-    pop.innerHTML = `
-      <div class="popup-head"><span class="mark" style="font-size:18px">🤠</span><h3>Mr. Wrangler</h3>${chip}<span class="spacer"></span><button class="x js-close" aria-label="Close">${I.x}</button></div>
-      ${o.reqNumber ? `<div class="wr-reqbar"><span class="wr-reqnum">Request #${o.reqNumber}</span>${o.reqTitle ? `<span class="wr-reqttl">${esc(o.reqTitle)}</span>` : ''}<span class="spacer"></span>${canApproveRequests() ? `<button class="pill ghost js-req-dismiss" data-r="R18" data-n="${o.reqNumber}">Dismiss</button><button class="pill c-commit js-req-approve" data-r="R17" data-n="${o.reqNumber}">✓ Approve</button>` : ''}</div>` : ''}
-      <div class="wr-feed">${turns}${o.busy ? '<div class="wr-msg assistant"><span class="wr-av">🤠</span><div class="wr-bub wr-think">…wrangling an answer</div></div>' : ''}</div>
-      ${o.error ? `<div class="wr-err">${esc(o.error)}</div>` : ''}
-      ${attachRow}
-      <div class="wr-compose"><label class="wr-attach js-wr-attach" data-tip="Attach or paste an image"><input type="file" accept="image/*" class="js-wr-file" hidden multiple>${I.paperclip || '📎'}</label><input class="wr-in js-wr-in" placeholder="Ask Mr. Wrangler, or tell him what’s broken…" value="${esc(o.draft || '')}" ${o.busy ? 'disabled' : ''} /><button class="wr-send js-wr-send" ${o.busy ? 'disabled' : ''} aria-label="Ask">${I.chev}</button></div>`;
-    overlay.appendChild(pop);
-    setTimeout(() => {
-      const i = pop.querySelector('.js-wr-in'); if (i) i.focus();
-      const f = pop.querySelector('.wr-feed'); if (f) f.scrollTop = f.scrollHeight;
-      // Paste an image straight into the chat (Claude-style). New input each render → no dup listeners.
-      if (i) i.addEventListener('paste', (ev) => {
-        const items = (ev.clipboardData && ev.clipboardData.items) || [];
-        for (const it of items) { if (it.type && it.type.startsWith('image/')) { const file = it.getAsFile(); if (file) { ev.preventDefault(); wranglerAttachFile(file); } } }
-      });
-      // Drag-drop an image file onto the chat.
-      if (pop) {
-        pop.addEventListener('dragover', (ev) => { if (ev.dataTransfer && [...ev.dataTransfer.types].includes('Files')) { ev.preventDefault(); pop.classList.add('wr-drag'); } });
-        pop.addEventListener('dragleave', (ev) => { if (ev.target === pop) pop.classList.remove('wr-drag'); });
-        pop.addEventListener('drop', (ev) => { const files = ev.dataTransfer && ev.dataTransfer.files; if (files && files.length) { ev.preventDefault(); pop.classList.remove('wr-drag'); [...files].forEach((f) => { if (f.type.startsWith('image/')) wranglerAttachFile(f); }); } });
-      }
-    }, 0);
   } else if (o.kind === 'migrateUnits') {
     // Round up missing units — preview the create/link plan before writing anything.
     const creates = o.plan.filter((p) => p.action === 'create').length;
@@ -6356,12 +6379,12 @@ function wranglerContext(o) {
 // backend wranglerReply_ accepts image content blocks; we downscale first to keep
 // the payload light. "Add files" = images for now (what a glitch report needs).
 function wranglerAttachFile(file) {
-  const o = state.overlay; if (!o || o.kind !== 'wrangler' || !file || !file.type.startsWith('image/')) return;
+  const o = state.wrangler; if (!o.open || !file || !file.type.startsWith('image/')) return;
   const reader = new FileReader();
   reader.onload = () => downscaleImage(reader.result, 1200, 0.7, (out) => {
     if (!out) { toast('Could not read that image.'); return; }
     o.attach = o.attach || []; if (o.attach.length >= 4) { toast('Up to 4 images per message.'); return; }
-    o.attach.push(out); renderOverlay();
+    o.attach.push(out); render();
   });
   reader.readAsDataURL(file);
 }
@@ -6371,14 +6394,14 @@ function wranglerImageBlock(dataUrl) {
   return m ? { type: 'image', source: { type: 'base64', media_type: m[1], data: m[2] } } : null;
 }
 async function wranglerSend() {
-  const o = state.overlay; if (!o || o.kind !== 'wrangler') return;
-  const inp = document.querySelector('.overlay .js-wr-in');
+  const o = state.wrangler; if (!o.open) return;
+  const inp = document.querySelector('.wrangler-dock .js-wr-in');
   const text = ((inp ? inp.value : o.draft) || '').trim();
   const imgs = (o.attach && o.attach.length) ? o.attach.slice() : null;
   if ((!text && !imgs) || o.busy) { if (inp) inp.focus(); return; }
   o.messages.push({ role: 'user', content: text, images: imgs });
   syncWranglerComment(o, 'user', text, imgs);   // §18e mirror the turn onto the issue thread
-  o.draft = ''; o.attach = []; o.busy = true; o.error = ''; renderOverlay();
+  o.draft = ''; o.attach = []; o.busy = true; o.error = ''; render();
   const system = WRANGLER_SYSTEM + '\n\n' + wranglerContext(o);
   // Build the payload: a message with images becomes a content-block array.
   const payloadMsgs = o.messages.map((m) => {
@@ -6403,8 +6426,8 @@ async function wranglerSend() {
     } else {
       o.messages.push({ role: 'assistant', content: "🤠 Demo mode — sign in to ask the real Mr. Wrangler (the live AI runs through the backend). Here's the snapshot I'd reason over:\n\n" + wranglerDigest() });
     }
-    o.busy = false; renderOverlay();
-  } catch (e) { o.busy = false; o.error = 'Mr. Wrangler couldn’t answer — check the connection / backend.'; renderOverlay(); }
+    o.busy = false; render(); setTimeout(() => { const f = document.querySelector('.wrangler-dock .wr-feed'); if (f) f.scrollTop = f.scrollHeight; }, 0);
+  } catch (e) { o.busy = false; o.error = "Mr. Wrangler couldn't answer — check the connection / backend."; render(); }
 }
 // §18d "Send to the fixer" — turn the current Wrangler chat into a `wrangler-fix`
 // GitHub issue (the Track B repro packet). Carries the transcript, the view/role/
@@ -6559,22 +6582,22 @@ function wranglerActionPacket(o, act) {
 // no token in the browser. Falls back to a pre-filled issue (one Submit tap) if the
 // backend can't file (no token / offline / demo).
 async function wranglerFileAction(mi) {
-  const o = state.overlay; if (!o || o.kind !== 'wrangler') return;
+  const o = state.wrangler; if (!o.open) return;
   const m = o.messages[mi]; if (!m || !m.action || m.filed) return;
   const isPlan = m.action.action === 'plan';
   const { title, body, label } = wranglerActionPacket(o, m.action);
-  const images = []; (o.messages || []).forEach((mm) => (mm.images || []).forEach((s) => { if (images.length < 8) images.push(s); }));   // §18e carry the chat's photos onto the issue
+  const images = []; (o.messages || []).forEach((mm) => (mm.images || []).forEach((s) => { if (images.length < 8) images.push(s); }));   // §18e carry the chat’s photos onto the issue
   const okToast = (n) => isPlan ? `Building to your plan — #${n}. 🤠` : label === 'wrangler-request' ? `Filed #${n} — in Jac’s queue for the OK. 🤠` : `Filed #${n} — Mr. Wrangler’s on it. 🤠`;
   if (typeof backendPassword !== 'undefined' && backendPassword) {
-    m.filing = true; renderOverlay();
+    m.filing = true; render();
     try {
       const r = await backendCall('wranglerFile', { title, body, label, images });
-      if (r && r.ok && r.number) { m.filed = true; m.filing = false; m.issue = r.number; renderOverlay(); toast(okToast(r.number)); return; }
+      if (r && r.ok && r.number) { m.filed = true; m.filing = false; m.issue = r.number; render(); toast(okToast(r.number)); return; }
     } catch (e) {}
-    m.filing = false;   // backend couldn't file (no GITHUB_TOKEN / offline) → pre-filled fallback
+    m.filing = false;   // backend couldn’t file (no GITHUB_TOKEN / offline) → pre-filled fallback
   }
   window.open(wranglerIssueUrl(title, body, label), '_blank', 'noopener');
-  m.filed = true; renderOverlay();
+  m.filed = true; render();
   toast(isPlan
     ? 'Opening the build ticket — tap “Submit new issue” and Mr. Wrangler builds to your plan. 🤠'
     : label === 'wrangler-request'
@@ -6616,7 +6639,7 @@ async function approveRequest(n) {
     if (r && r.ok) { wranglerRequests = wranglerRequests.filter((x) => x.number !== n); toast(`Approved #${n} — Mr. Wrangler’s building it now. 🤠`); }
     else toast(`Couldn’t approve — ${(r && r.error) || 'try again'}.`);
   } catch (e) { toast('Couldn’t approve — check the connection.'); }
-  if (state.overlay?.kind === 'wrangler' && state.overlay.reqNumber === n) state.overlay = null;
+  if (state.wrangler.open && state.wrangler.reqNumber === n) state.wrangler.open = false;
   render(); if (state.overlay?.kind === 'requests') renderOverlay();
 }
 async function dismissRequest(n) {
@@ -6625,7 +6648,7 @@ async function dismissRequest(n) {
     if (r && r.ok) { wranglerRequests = wranglerRequests.filter((x) => x.number !== n); toast(`Dismissed #${n}.`); }
     else toast(`Couldn’t dismiss — ${(r && r.error) || 'try again'}.`);
   } catch (e) { toast('Couldn’t dismiss — check the connection.'); }
-  if (state.overlay?.kind === 'wrangler' && state.overlay.reqNumber === n) state.overlay = null;
+  if (state.wrangler.open && state.wrangler.reqNumber === n) state.wrangler.open = false;
   render(); if (state.overlay?.kind === 'requests') renderOverlay();
 }
 /* §18e — reconstruct a filed request's write-up + conversation from its issue body
@@ -6654,13 +6677,13 @@ function openWranglerFromRequest(n) {
   const { report, messages } = parseWranglerIssue(rq.body);
   const msgs = messages.length ? messages.map((m) => ({ ...m })) : (report ? [{ role: 'user', content: report }] : []);
   if (rq.images && rq.images.length) { const fu = msgs.find((m) => m.role === 'user'); if (fu) fu.images = rq.images.slice(); }
-  state.overlay = { kind: 'wrangler', messages: msgs, draft: '', attach: [], reqNumber: rq.number, reqTitle: rq.title, reqUrl: rq.url };
-  renderOverlay();
+  openWranglerDock({ messages: msgs, draft: '', attach: [], reqNumber: rq.number, reqTitle: rq.title, reqUrl: rq.url });
+  if (state.overlay?.kind === 'requests') closeOverlay();   // close the inbox overlay so the dock is visible
   if (typeof backendPassword !== 'undefined' && backendPassword) {
     backendCall('wranglerThread', { number: n }).then((r) => {
-      if (r && r.ok && Array.isArray(r.messages) && r.messages.length && state.overlay && state.overlay.reqNumber === n) {
-        r.messages.forEach((m) => state.overlay.messages.push({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.text || m.content || '', images: m.images || null }));
-        renderOverlay();
+      if (r && r.ok && Array.isArray(r.messages) && r.messages.length && state.wrangler.reqNumber === n) {
+        r.messages.forEach((m) => state.wrangler.messages.push({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.text || m.content || '', images: m.images || null }));
+        render();
       }
     }).catch(() => {});
   }
@@ -7144,10 +7167,13 @@ function render() {
   }
   // §17 — the internal team dock floats bottom-right above the bar when open
   if (state.chat.open) { const d = el('div', 'chat-dock', ''); d.dataset.drop = 'chat'; d.innerHTML = chatDockEl(); $('#app').appendChild(d); }
+  // §18 — Mr. Wrangler dock floats alongside the team chat (or alone at bottom-right)
+  if (state.wrangler.open) { const d = el('div', 'wrangler-dock' + (state.chat.open ? ' wr-beside-chat' : '')); d.innerHTML = wranglerDockEl(); $('#app').appendChild(d); }
   // §18e — floating bottom-right cluster: notification bell + the Requests inbox.
-  // Hidden while the team dock owns that corner (Jac 2026-06-15).
-  if (!state.chat.open) $('#app').appendChild(fabStackEl());
+  // Hidden while a dock owns that corner.
+  if (!state.chat.open && !state.wrangler.open) $('#app').appendChild(fabStackEl());
   mountTransportEditor();   // inline transport editor: mount the live map + wire the address field
+  mountWranglerDock();   // §18 wire paste + drag-drop image input on the wrangler dock after each render
   mountDispatchMap();   // §2.3 office cockpit: re-parent the singleton dispatch map + refresh pins/route/truck
   applyTitles();   // full text on hover wherever we truncate (custom ~0.5s tooltip)
   drawDispatchArrows();   // §2.3 — paint free-form route legs over the dispatch run (needs live geometry)
@@ -7759,7 +7785,7 @@ function onClick(e) {
   }
   if (closest('.js-rbtab')) { e.stopPropagation(); if (state.overlay) state.overlay.rbTab = closest('.js-rbtab').dataset.tab; return renderOverlay(); }
   if (closest('.js-rulebook')) return openOverlay({ kind: 'rulebook' });
-  if (closest('.js-feedback')) { e.stopPropagation(); return openOverlay({ kind: 'wrangler', card: null, recId: null, recType: null, messages: [], busy: false, error: '', draft: '' }); }   // §18d folded: the old bug/request form is now the one Mr. Wrangler chat
+  if (closest('.js-feedback')) { e.stopPropagation(); return openWranglerDock({ messages: [], draft: '', attach: [], card: null, recId: null, recType: null, reqNumber: null, reqTitle: null, reqUrl: null }); }   // §18d folded: the old bug/request form is now the one Mr. Wrangler chat
   // §17 internal team dock
   if (closest('[data-mcol]')) { e.stopPropagation(); state.mobileCol = +closest('[data-mcol]').dataset.mcol; return render(); }   // §M1 dot nav
   if (closest('.js-ext-chat')) { e.stopPropagation(); return toast('External customer & vendor chats arrive with the messaging backend.'); }
@@ -7776,10 +7802,11 @@ function onClick(e) {
   if (closest('.js-cmt-save')) { e.stopPropagation(); return saveCommentOverlay(); }
   if (closest('.js-fb-send')) { e.stopPropagation(); return sendFeedback(); }
   if (closest('.js-wr-send')) { e.stopPropagation(); return wranglerSend(); }   // §18 Mr. Wrangler
+  if (closest('.js-wr-close')) { e.stopPropagation(); state.wrangler.open = false; return render(); }   // §18 minimize the wrangler dock
   if (closest('.js-wr-act')) { e.stopPropagation(); return wranglerFileAction(Number(closest('.js-wr-act').dataset.mi)); }   // §18d file the fix/request Mr. Wrangler proposed inline
-  if (closest('.js-wr-apply')) { e.stopPropagation(); const o = state.overlay; if (o?.kind !== 'wrangler') return; const m = o.messages[Number(closest('.js-wr-apply').dataset.mi)]; if (!m || !m.action || m.filed) return; const plan = m.action._plan || wrValidatePlan(m.action); if (!plan.ops.length) return; m.filed = true; applyWranglerData(plan); return; }   // Mr. Wrangler applies the previewed add/update/import
-  if (closest('.js-wr-unattach')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'wrangler' && o.attach) { o.attach.splice(Number(closest('.js-wr-unattach').dataset.i), 1); renderOverlay(); } return; }   // §18d drop a pending image attachment
-  if (closest('.js-wrangler')) { e.stopPropagation(); return openOverlay({ kind: 'wrangler', card: null, recId: null, recType: null, messages: [], busy: false, error: '', draft: '' }); }
+  if (closest('.js-wr-apply')) { e.stopPropagation(); const o = state.wrangler; if (!o.open) return; const m = o.messages[Number(closest('.js-wr-apply').dataset.mi)]; if (!m || !m.action || m.filed) return; const plan = m.action._plan || wrValidatePlan(m.action); if (!plan.ops.length) return; m.filed = true; applyWranglerData(plan); return; }   // Mr. Wrangler applies the previewed add/update/import
+  if (closest('.js-wr-unattach')) { e.stopPropagation(); const o = state.wrangler; if (o.open && o.attach) { o.attach.splice(Number(closest('.js-wr-unattach').dataset.i), 1); render(); } return; }   // §18d drop a pending image attachment
+  if (closest('.js-wrangler')) { e.stopPropagation(); if (state.wrangler.open) { state.wrangler.open = false; return render(); } return openWranglerDock(state.wrangler.messages.length ? { open: true } : { messages: [], draft: '', attach: [], card: null, recId: null, recType: null, reqNumber: null, reqTitle: null, reqUrl: null }); }   // §18 toggle Mr. Wrangler dock
   if (closest('.js-notifications')) { e.stopPropagation(); openOverlay({ kind: 'notifications' }); markNotifsSeen(); refreshWranglerNotifications(); return; }   // §18f notification bell — in-app resolved-fix feed
   if (closest('.js-notif-refresh')) { e.stopPropagation(); return refreshWranglerNotifications(); }
   if (closest('.js-requests')) { e.stopPropagation(); openOverlay({ kind: 'requests' }); refreshWranglerRequests(); return; }   // §18e approval inbox
@@ -8710,7 +8737,7 @@ function onInput(e) {
   // Feedback description → store as they type (so a re-render keeps it).
   if (e.target.classList.contains('js-fb-text')) { if (state.overlay?.kind === 'feedback') state.overlay.text = e.target.value; return; }
   if (e.target.classList.contains('js-cmt-text')) { if (state.overlay?.kind === 'comment') state.overlay.text = e.target.value; return; }
-  if (e.target.classList.contains('js-wr-in')) { if (state.overlay?.kind === 'wrangler') state.overlay.draft = e.target.value; return; }
+  if (e.target.classList.contains('js-wr-in')) { if (state.wrangler.open) state.wrangler.draft = e.target.value; return; }
   if (e.target.classList.contains('chat-input')) { state.chat.draft = e.target.value; return; }
   // Company Files live search → re-render the board popup and restore the caret.
   if (e.target.classList.contains('js-files-query')) {
