@@ -5712,27 +5712,6 @@ function renderOverlay() {
         <div class="pillrow" style="margin-top:14px;justify-content:flex-end"><button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill c-commit js-settings-save">Save</button></div>
       </div>`;
     overlay.appendChild(pop);
-  } else if (o.kind === 'quickCust') {
-    // #3 QUICK ADD (Jac 2026-06-13): name + phone to get the rental moving; the full
-    // account is finished later. "Full intake →" hands off to the complete form.
-    const d = o.draft;
-    const pop = el('div', 'popup'); pop.style.width = '360px';
-    pop.innerHTML = `
-      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${CARD_ICON.customers || ''}</span><h3>Quick Add Customer</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
-      <div class="popup-body">
-        ${o.error ? `<div class="login-err" style="margin-bottom:8px">${esc(o.error)}</div>` : ''}
-        <div style="display:flex;gap:7px;margin-bottom:7px">
-          <input class="lf-in js-qc-first" placeholder="First name" value="${esc(d.firstName || '')}" style="flex:1">
-          <input class="lf-in js-qc-last" placeholder="Last name" value="${esc(d.lastName || '')}" style="flex:1">
-        </div>
-        <input class="lf-in js-qc-phone" type="tel" placeholder="Phone" value="${esc(d.phone || '')}" style="width:100%">
-        <p class="muted" style="font-size:11px;margin:8px 0 12px">Just the basics to get the rental moving — finish the full account anytime.</p>
-        <div class="pillrow" style="justify-content:space-between;align-items:center">
-          <button class="linkname js-qc-full" data-r="R7">Full intake →</button>
-          ${actionPill('commit', 'Add &amp; link', { js: 'js-qc-save' })}
-        </div>
-      </div>`;
-    overlay.appendChild(pop);
   } else if (o.kind === 'newCustomer') {
     const d = o.draft; const isEdit = !!o.editId;
     const indOpts = NC_INDUSTRIES.map((i) => `<option value="${esc(i)}"></option>`).join('');
@@ -5940,7 +5919,6 @@ function renderOverlay() {
     overlay.appendChild(pop);
   }
   root.appendChild(overlay);
-  if (o.kind === 'quickCust') document.querySelector('.overlay .js-qc-first')?.focus();
   if (o.kind === 'partform') document.querySelector('.overlay .js-pf2-desc')?.focus();   // Jac: Part/Task field focused by default
   if (o.kind === 'newCustomer') setupSignaturePad();
   if (o.kind === 'payment') setupPayAlloc();   // live counter for the §19 allocation rows
@@ -7450,9 +7428,14 @@ function onClick(e) {
     toast('Drag a unit from the Units card onto this rental.');
     return;
   }
-  if (closest('.js-quickadd-cust')) { const b = closest('.js-quickadd-cust'); e.stopPropagation(); return openQuickCust({ card: b.dataset.card, recId: b.dataset.rec }); }
-  if (closest('.js-qc-save')) { e.stopPropagation(); return saveQuickCust(); }
-  if (closest('.js-qc-full')) { e.stopPropagation(); return quickCustToFull(); }
+  if (closest('.js-quickadd-cust')) {   // §quick-add hint — point AT the Customers search bar (no popup, Jac 2026-06-16)
+    e.stopPropagation();
+    const s = activeSession(); if (s.cols) s.cols.right = 'customers';
+    const ccs = s.cards.customers; ccs.mode = 'list'; ccs.recId = null;
+    render(); attnFlash('.card[data-card="customers"] .mini-searchwrap');   // R19 — guide them to the search
+    toast('Type a name + phone in the Customers search and press Enter — then drag the new customer here.');
+    return;
+  }
   if (closest('.js-create-invoice')) { e.stopPropagation(); return createInvoiceForRental(closest('.js-create-invoice').dataset.rec); }
   if (closest('.js-clear-fc')) { e.stopPropagation(); return clearFieldCall(closest('.js-clear-fc').dataset.rec); }
   if (closest('.js-bill-wo')) { e.stopPropagation(); return billWOToInvoice(closest('.js-bill-wo').dataset.rec); }
@@ -8497,29 +8480,33 @@ const addDays = (iso, n) => { const d = parseISO(iso); d.setDate(d.getDate() + n
 function startNewCustomer(prefill) { openCustomerForm(null, prefill); }
 /* #3 Quick Add — a compact name+phone create that links straight onto the Quote/
    invoice; "Full intake" hands the typed values to the complete form. (Jac 2026-06-13) */
-function openQuickCust(linkTo, prefill) {
-  openOverlay({ kind: 'quickCust', error: '', linkTo: linkTo || null, draft: { firstName: (prefill && prefill.firstName) || '', lastName: (prefill && prefill.lastName) || '', phone: (prefill && prefill.phone) || '' } });
+/* QUICK ADD lives in the Customers search bar (Jac 2026-06-16): a search that
+   carries BOTH a name and a phone, on Enter, instantly creates the customer and
+   opens it in Standard View — NOT linked to anything (you drag it where it goes). */
+function parseQuickCustomer(q) {
+  q = (q || '').trim(); if (!q) return null;
+  const pm = q.match(/(\+?\d[\d\s().+-]{6,}\d)/);   // a phone-like run (≥8 chars, ends in a digit)
+  if (!pm) return null;
+  const phone = pm[1].trim();
+  if (phone.replace(/\D/g, '').length < 7) return null;   // needs to actually look like a phone
+  const name = q.replace(pm[1], ' ').replace(/\s+/g, ' ').trim();
+  if (!/[a-zA-Z]/.test(name)) return null;                // …and an actual name
+  const parts = name.split(/\s+/);
+  return { firstName: parts[0], lastName: parts.slice(1).join(' '), phone };
 }
-function qcDraft() {
-  const root = document.querySelector('.overlay .popup-body');
-  return { firstName: root?.querySelector('.js-qc-first')?.value.trim() || '', lastName: root?.querySelector('.js-qc-last')?.value.trim() || '', phone: root?.querySelector('.js-qc-phone')?.value.trim() || '' };
-}
-function saveQuickCust() {
-  const o = state.overlay; if (!o || o.kind !== 'quickCust') return;
-  const d = qcDraft(); o.draft = d;
-  if (!d.firstName) { o.error = 'First name is required.'; renderOverlay(); return; }
-  if (!d.phone) { o.error = 'A phone number is required.'; renderOverlay(); return; }
+function quickAddCustomerFromSearch(value) {
+  const p = parseQuickCustomer(value); if (!p) return false;
   const id = nextCustomerId();
-  const c = { customerId: id, firstName: d.firstName, lastName: d.lastName, name: `${d.firstName} ${d.lastName}`.trim(), company: '', phone: d.phone, email: '', address: '', industry: '', accountType: 'Non-Business', payStatus: 'New Customer', requiresPO: false, accountNotes: '', stripeId: '', selfie: '', signature: '', agreementType: '', agreementSignedAt: '', interestedCategoryIds: [], activityLog: [], usedSalesStage: 'Inbound Lead', membershipStage: 'Inbound Lead', _digest: { activePct: 0, totalPaid: 0, visits: 0, years: 0, avgFrequencyDays: 0, firstInvoice: '', lastInvoice: '' } };
+  const c = { customerId: id, firstName: p.firstName, lastName: p.lastName, name: `${p.firstName} ${p.lastName}`.trim(), company: '', phone: p.phone, email: '', address: '', industry: '', accountType: 'Non-Business', payStatus: 'New Customer', requiresPO: false, accountNotes: '', stripeId: '', selfie: '', signature: '', agreementType: '', agreementSignedAt: '', interestedCategoryIds: [], activityLog: [], usedSalesStage: 'Inbound Lead', membershipStage: 'Inbound Lead', _digest: { activePct: 0, totalPaid: 0, visits: 0, years: 0, avgFrequencyDays: 0, firstInvoice: '', lastInvoice: '' } };
   DATA.customers.push(c); IDX.customer.set(id, c); reindex('customers', c);
   logAction(c, 'Customer quick-added');
-  const lt = o.linkTo;
-  const linked = lt ? (lt.card === 'rentals' ? linkCustomerToRental(lt.recId, id) : lt.card === 'invoices' ? setInvoiceCustomer(lt.recId, id) : null) : null;
-  closeOverlay();
-  if (linked) { anchorRecord(lt.card, lt.recId); toast(`${c.name} quick-added & linked.`); }
-  else { anchorRecord('customers', id); toast(`${c.name} quick-added.`); }
+  const s = activeSession();
+  if (s.cols) s.cols.right = 'customers';
+  const ccs = s.cards.customers; ccs.search = ''; ccs.filterTerms = []; ccs.mode = 'standard'; ccs.recId = id; ccs.recType = null; ccs.graphView = false;   // surface the new customer in Standard View — unlinked
+  render();
+  toast(`${c.name || 'Customer'} added — drag it onto a rental or invoice to link.`);
+  return true;
 }
-function quickCustToFull() { const o = state.overlay; if (!o || o.kind !== 'quickCust') return; const prefill = qcDraft(); const lt = o.linkTo; openCustomerForm(null, prefill, lt); }
 /** Turn a customer-search string into prefill: a letterless string → phone, else
  *  split on the first space into first/last (how staff usually type a name). */
 function parseCustomerSearch(q) {
@@ -9976,7 +9963,7 @@ function boot() {
     // §5.4 (per-card) — same Enter-to-pin / Backspace-to-pop on a card's list search.
     if (e.target.classList.contains('mini-search') && e.target.dataset.card && !e.target.classList.contains('js-history-search')) {
       const card = e.target.dataset.card; const cs = activeSession().cards[card];
-      if (e.key === 'Enter') { e.preventDefault(); addFilterTerm(card, e.target.value); return; }
+      if (e.key === 'Enter') { e.preventDefault(); if (card === 'customers' && quickAddCustomerFromSearch(e.target.value)) return; addFilterTerm(card, e.target.value); return; }
       if (e.key === 'Backspace' && !e.target.value && (cs.filterTerms || []).length) { e.preventDefault(); removeFilterTerm(card, cs.filterTerms.length - 1); return; }
       return;
     }
