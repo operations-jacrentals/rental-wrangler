@@ -588,14 +588,14 @@ function afterMapsLoad(g) {
   te.mapFailed = !ready;                                           // ready → the render below mounts; not ready → usable offline editor
   try { render(); } catch (e) { try { mountTransportEditor(); } catch (e2) {} }
 }
-// "Ready" = the CORE needed to mount the editor (Map) + drive autocomplete/picks (Places).
-// DistanceMatrixService deliberately NOT required here: under loading=async it comes up a beat
-// after the map library, so gating mount/live on it stranded the editor on the placeholder.
-// Live mileage handles its own readiness in teFetchDistance (lazy DMS, city-tier fallback).
+// "Ready" = the CORE needed to mount the editor (Map) + drive autocomplete/picks (Places). The new
+// AutocompleteSuggestion / Place classes both live under google.maps.places, so this single gate
+// covers them once the 'places' library is up. The Routes library (mileage) is NOT required here:
+// teFetchDistance lazily importLibrary('routes')s it on demand and falls back to the city-tier estimate.
 const mapsReady = () => !!(window.google && window.google.maps && google.maps.Map && google.maps.places);
 const YARD_CENTER = { lat: 30.2366, lng: -93.3774 };   // Sulphur, LA — map default before a pin is set
 
-let _teMap = null, _teMarker = null, _teAuto = null, _teGeo = null, _teDist = null, _tePlaces = null, _teDebounce = null;
+let _teMap = null, _teMarker = null, _teSession = null, _teDebounce = null;
 /** Open the inline editor for a unit's transport leg (delivery|recovery). */
 function openTransportEdit(rentalId, unitId, leg) {
   const r = IDX.rental.get(rentalId); if (!r) return;
@@ -609,7 +609,7 @@ function openTransportEdit(rentalId, unitId, leg) {
     driveMin: T.transportDriveMin != null ? T.transportDriveMin : null,
     type: (T.transportType && T.transportType !== 'Self') ? T.transportType : 'Delivery',
     sel: -1, items: [] };
-  _teMap = _teMarker = _teAuto = _teGeo = _teDist = _tePlaces = null;
+  _teMap = _teMarker = null; _teSession = null;
   loadGoogleMaps();
   render();
 }
@@ -666,10 +666,8 @@ function mountTransportEditor() {
       new google.maps.Marker({ map: _teMap, position: YARD_CENTER, clickable: false, title: 'JacRentals Yard · Sulphur, LA',   // the dispatch origin, grounds the route
         icon: { path: google.maps.SymbolPath.CIRCLE, scale: 6, fillColor: '#ff7a1a', fillOpacity: 1, strokeColor: '#1a1205', strokeWeight: 2 } });
       _teMap.addListener('click', (ev) => { te.pin = { lat: ev.latLng.lat(), lng: ev.latLng.lng() }; _teMarker.setPosition(ev.latLng); _teMarker.setVisible(true); teFetchDistance(); });
-      _teAuto = new google.maps.places.AutocompleteService();
-      _teGeo = new google.maps.Geocoder();
-      _tePlaces = new google.maps.places.PlacesService(_teMap);   // resolve picks by place-id via Places (the key has Places, not Geocoding)
-      _teDist = google.maps.DistanceMatrixService ? new google.maps.DistanceMatrixService() : null;   // DMS may lag the core lib — teFetchDistance lazily retries
+      // Autocomplete, place-details and route-matrix are all static/lazy in the new Places & Routes
+      // libraries — nothing to instantiate at mount (see teQuery / tePick / teFetchDistance).
       te.mapFailed = false;                                        // the live map is up — clear any stale offline-fallback flag
       // First-open paint fix: the map div is created the same frame it's inserted, before the
       // browser lays its box out, so Google paints it at 0×0 and it stays blank until the NEXT
@@ -685,20 +683,39 @@ function teQuery(v) {
   te.addr = v; te.sel = -1;
   clearTimeout(_teDebounce);
   if (!v.trim()) { te.items = []; return teRenderSug(); }
-  _teDebounce = setTimeout(() => {
-    if (mapsReady() && _teAuto) {
-      _teAuto.getPlacePredictions({ input: v, componentRestrictions: { country: 'us' } }, (preds) => {
-        te.items = (preds || []).slice(0, 5).map((p) => ({ label: p.description, placeId: p.place_id })); teRenderSug();
-      });
+  _teDebounce = setTimeout(async () => {
+    if (mapsReady() && google.maps.places.AutocompleteSuggestion) {
+      try {
+        // New Places API: one AutocompleteSessionToken spans this search's keystrokes AND the
+        // follow-up place-details fetch in tePick, so Google bills the pair as a single session.
+        if (!_teSession) _teSession = new google.maps.places.AutocompleteSessionToken();
+        const { suggestions } = await google.maps.places.AutocompleteSuggestion.fetchAutocompleteSuggestions({
+          input: v, includedRegionCodes: ['us'], sessionToken: _teSession,
+        });
+        if (state.transportEdit !== te) return;   // editor closed / switched units mid-flight
+        te.items = (suggestions || [])
+          .map((s) => s.placePrediction).filter(Boolean)   // drop query-only suggestions — we need a place to geocode
+          .slice(0, 5)
+          .map((p) => ({ label: p.text.text, placeId: p.placeId, prediction: p }));
+        teRenderSug();
+      } catch (e) {
+        if (state.transportEdit !== te) return;
+        teCityFallback(v, te);   // live Places call failed (referrer / API-not-enabled / offline) → city tiers
+      }
     } else {
-      const cities = Object.keys(TRANSPORT_MAP || {});
-      const street = v.replace(/,.*$/, '').trim();
-      const hits = cities.filter((c) => v.toLowerCase().includes(c.toLowerCase()));
-      const pool = (hits.length ? hits : cities).slice(0, 5);
-      te.items = pool.map((c) => { const city = c.replace(/\b\w/g, (m) => m.toUpperCase()); return { label: street && street.toLowerCase() !== c.toLowerCase() ? `${street}, ${city}, LA` : `${city}, LA` }; });
-      teRenderSug();
+      teCityFallback(v, te);
     }
   }, 180);
+}
+// Offline / no-live-Places suggestion list: best-effort city matches from the transport tier table,
+// so the editor still proposes something typeable when Google autocomplete isn't available.
+function teCityFallback(v, te) {
+  const cities = Object.keys(TRANSPORT_MAP || {});
+  const street = v.replace(/,.*$/, '').trim();
+  const hits = cities.filter((c) => v.toLowerCase().includes(c.toLowerCase()));
+  const pool = (hits.length ? hits : cities).slice(0, 5);
+  te.items = pool.map((c) => { const city = c.replace(/\b\w/g, (m) => m.toUpperCase()); return { label: street && street.toLowerCase() !== c.toLowerCase() ? `${street}, ${city}, LA` : `${city}, LA` }; });
+  teRenderSug();
 }
 function teRenderSug() {
   const te = state.transportEdit; const box = document.querySelector('.js-tsug'); if (!box || !te) return;
@@ -712,47 +729,73 @@ function teKeydown(e) {
   else if (e.key === 'Enter' || e.key === 'Tab') { if (n) { e.preventDefault(); tePick(te.sel >= 0 ? te.sel : 0); } }
   else if (e.key === 'Escape') { e.preventDefault(); closeTransportEdit(); }
 }
-function tePick(i) {
+async function tePick(i) {
   const te = state.transportEdit; if (!te) return;
   const it = (te.items || [])[i]; if (!it) return;
   const input = document.querySelector('.js-taddr');
   te.items = []; te.sel = -1; teRenderSug();
-  if (mapsReady() && it.placeId && _tePlaces) {
-    // resolve via the Places API (the key has Places, not Geocoding — Geocoder silently failed,
-    // which is why Enter did nothing). getDetails returns geometry + a formatted address.
-    _tePlaces.getDetails({ placeId: it.placeId, fields: ['geometry', 'formatted_address'] }, (place, status) => {
+  if (mapsReady() && it.placeId && google.maps.places.Place) {
+    // Resolve the pick via the new Places API. Prefer the prediction's own Place so it carries the
+    // autocomplete session token (billed as one session); else build a Place from the bare id.
+    try {
+      const place = it.prediction ? it.prediction.toPlace() : new google.maps.places.Place({ id: it.placeId });
+      await place.fetchFields({ fields: ['location', 'formattedAddress'] });
+      _teSession = null;   // the details fetch closes the autocomplete session — next search starts a new one
       if (state.transportEdit !== te) return;
-      if (status === google.maps.places.PlacesServiceStatus.OK && place && place.geometry) {
-        te.addr = place.formatted_address || it.label; if (input) input.value = te.addr;
-        const loc = place.geometry.location; te.pin = { lat: loc.lat(), lng: loc.lng() };
+      const loc = place.location;
+      if (loc) {
+        te.addr = place.formattedAddress || it.label; if (input) input.value = te.addr;
+        te.pin = { lat: loc.lat(), lng: loc.lng() };
         if (_teMap) { _teMap.setCenter(loc); _teMap.setZoom(14); }
         if (_teMarker) { _teMarker.setPosition(loc); _teMarker.setVisible(true); }
         teFetchDistance();
       } else {
-        te.addr = it.label; if (input) input.value = te.addr;   // couldn't resolve → keep the typed text so Enter still commits something
+        te.addr = it.label; if (input) input.value = te.addr;   // no geometry → keep the typed text so Enter still commits
       }
-    });
+    } catch (e) {
+      if (state.transportEdit !== te) return;
+      te.addr = it.label; if (input) input.value = te.addr;   // resolve failed → keep typed text so Enter still commits something
+    }
   } else {
     te.addr = it.label; if (input) input.value = te.addr; te.miles = null; te.driveMin = null;
   }
 }
-function teFetchDistance() {
+async function teFetchDistance() {
   const te = state.transportEdit; if (!te || !te.pin) return;
-  if (!_teDist && window.google && google.maps && google.maps.DistanceMatrixService) _teDist = new google.maps.DistanceMatrixService();   // DMS finished loading after mount
-  if (!_teDist) return;   // still no DistanceMatrixService → pricing stays on the city-tier estimate
-  _teDist.getDistanceMatrix({ origins: [YARD_ORIGIN], destinations: [te.pin], travelMode: 'DRIVING', unitSystem: google.maps.UnitSystem.IMPERIAL }, (resp, status) => {
+  if (!(window.google && google.maps && google.maps.importLibrary)) return;   // no SDK up → pricing stays on the city-tier estimate
+  const pin = te.pin;
+  const failToEstimate = () => {
+    if (state.transportEdit !== te) return;
+    te.miles = null; te.driveMin = null;
+    const l = document.querySelector('.js-te-dist'); if (l) l.textContent = 'city-tier estimate';
+    toast('Google distance unavailable — using a city-tier estimate.');
+  };
+  let RouteMatrix;
+  try { ({ RouteMatrix } = await google.maps.importLibrary('routes')); }   // Routes library loads lazily; importLibrary caches it
+  catch (e) { return; }   // Routes library/API unavailable → silently keep the city-tier estimate (the load itself isn't a route failure)
+  if (state.transportEdit !== te) return;   // editor closed / switched units while the routes lib loaded
+  try {
+    // RouteMatrix replaces the deprecated DistanceMatrixService. distanceMeters/durationMillis are
+    // raw numbers (no nested distance.value); condition gates a usable route (ROUTE_EXISTS).
+    const { matrix } = await RouteMatrix.computeRouteMatrix({
+      origins: [YARD_ORIGIN],
+      destinations: [{ lat: pin.lat, lng: pin.lng }],
+      travelMode: 'DRIVING',
+      units: google.maps.UnitSystem.IMPERIAL,
+      fields: ['distanceMeters', 'durationMillis', 'condition'],
+    });
     if (state.transportEdit !== te) return;   // editor closed / switched units mid-flight — don't toast or mutate a stale te
-    const cell = (status === 'OK' && resp && resp.rows[0]) ? resp.rows[0].elements[0] : null;
-    if (!cell || cell.status !== 'OK') {   // API down / no route → leave miles null so pricing falls back to the city-tier estimate
-      te.miles = null; te.driveMin = null;
-      const l = document.querySelector('.js-te-dist'); if (l) l.textContent = 'city-tier estimate';
-      toast('Google distance unavailable — using a city-tier estimate.');
+    const item = matrix && matrix.rows && matrix.rows[0] && matrix.rows[0].items && matrix.rows[0].items[0];
+    if (!item || item.condition !== 'ROUTE_EXISTS' || item.distanceMeters == null) {   // no route → leave miles null so pricing falls back to the city-tier estimate
+      failToEstimate();
       return;
     }
-    te.miles = +(cell.distance.value / 1609.344).toFixed(1);
-    te.driveMin = Math.round(cell.duration.value / 60);
+    te.miles = +(item.distanceMeters / 1609.344).toFixed(1);
+    te.driveMin = Math.round((item.durationMillis || 0) / 60000);
     const lbl = document.querySelector('.js-te-dist'); if (lbl) lbl.textContent = `${te.miles} mi · ${te.driveMin} min one-way`;
-  });
+  } catch (e) {   // API down / referrer / quota → city-tier estimate
+    failToEstimate();
+  }
 }
 function saveTransportEdit() {
   const te = state.transportEdit; if (!te) return;
@@ -2424,6 +2467,14 @@ function fmtAggValue(col, a, calc) {
   const v = a[calc] != null ? a[calc] : a.sum;
   return col.type === 'money' ? money(v) : col.type === 'pct' ? num(v) + '%' : num(v);
 }
+/* Footer chips Jac pruned as noise (2026-06-16): whole numeric roll-ups dropped
+   per card, plus a few badge VALUES. No Show is a rental-card-only signal. */
+const FOOT_DROP_NUM = { units: ['service'], rentals: ['price'], customers: ['rentals'] };
+const footDropNum = (card, key) => (FOOT_DROP_NUM[card] || []).includes(key);
+const footDropBadge = (card, value) =>
+  (value === 'No Show' && card !== 'rentals') ||      // No Show = rental card only
+  (value === 'Refunded' && card !== 'invoices') ||    // Refunded = invoice card only
+  value === 'Returned' || value === 'Card OK';
 /** The highlighted summary row beneath a card's List View: badge value-counts +
  *  numeric roll-ups (e.g. "6 Tomorrow · 900 HRS avg · 12 Part Needed"). */
 function listTotalsEl(card, rows, session) {
@@ -2436,6 +2487,7 @@ function listTotalsEl(card, rows, session) {
   const chips = [];   // { k: col.key, html } — buckets let rentals split Billing/Status rows
   for (const col of cols) {
     if (allowed && !allowed.has(col.key)) continue;
+    if (footDropNum(card, col.key)) continue;            // Jac-pruned numeric roll-up
     const a = aggColumn(col, rows);
     if (a.kind === 'badge') {
       // each value-count is a button → filters the list to that value.
@@ -2443,6 +2495,7 @@ function listTotalsEl(card, rows, session) {
       // ad-hoc badges keep count-desc.
       const ord = col.set ? Object.keys(STATUS[col.set] || {}) : null;
       Object.entries(a.counts).sort((x, y) => ord ? ord.indexOf(x[0]) - ord.indexOf(y[0]) : y[1] - x[1]).forEach(([key, n]) => {
+        if (footDropBadge(card, key)) return;            // Jac-pruned badge value
         const m = col.meta ? col.meta(key) : { label: key, color: 'gray' };
         const on = tf && tf.col === col.key && String(tf.value) === String(key);
         chips.push({ k: col.key, html: `<button class="tot-chip c-${m.color} js-tot-chip${on ? ' on' : ''}" data-r="R4" data-tot-card="${totCard}" data-tot-col="${col.key}" data-tot-val="${esc(String(key))}">${n} ${esc(m.label)}</button>` });
@@ -4767,9 +4820,10 @@ function dispatchEvents() {
     rentalUnits(r).forEach((eu) => {
       if (!eu.unitId || SKIP.has(unitStatus(r, eu)) || !eu.transportType || eu.transportType === 'Self') return;
       const unit = IDX.unit.get(eu.unitId);
-      const base = { rentalId: r.rentalId, unitId: eu.unitId, unit: unit?.name || '—', cust: cust?.name || cust?.company || '—', addr: eu.deliveryAddress || '', ttype: eu.transportType };
+      const pin = eu.sitePin || (isPrimaryUnit(r, eu) ? r.sitePin : null) || null;   // §2.3 map: the geocoded drop, if set
+      const base = { rentalId: r.rentalId, unitId: eu.unitId, unit: unit?.name || '—', cust: cust?.name || cust?.company || '—', addr: eu.deliveryAddress || '', ttype: eu.transportType, pin };
       if (['Delivery', 'Round-Trip'].includes(eu.transportType) && r.startDate) out.push({ ...base, date: r.startDate, time: r.startTime || '', task: 'Deliver', color: 'blue' });
-      if (['Round-Trip', 'Recovery'].includes(eu.transportType) && r.endDate) out.push({ ...base, date: r.endDate, time: '', task: 'Pick up', color: 'brown' });
+      if (['Round-Trip', 'Recovery'].includes(eu.transportType) && r.endDate) out.push({ ...base, date: r.endDate, time: '', task: 'Pick up', color: 'brown', addr: eu.recoveryAddress || eu.deliveryAddress || '' });
     });
   });
   return out.sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || '')));
@@ -4831,45 +4885,73 @@ function dispatchDayStops(day) {
     return (a.time || '~').localeCompare(b.time || '~');
   });
 }
+// §2.3 map cockpit helpers — a stop's kind, whether its leg is logged (done), the
+// "next" (first not-done) stop, and the truck's v1 position (last done pin, else yard).
+const dispatchKind = (ev) => (ev.task === 'Deliver' ? 'deliver' : 'recover');
+function stopDone(ev) {
+  const r = IDX.rental.get(ev.rentalId); if (!r) return false;
+  const src = unitEntry(r, ev.unitId) || r;
+  return ev.task === 'Deliver' ? !!src.startCapture : !!src.endCapture;
+}
+const dispatchNextId = (stops) => { const n = stops.find((s) => !stopDone(s)); return n ? n.id : null; };
+function dispatchTruckPos(stops) {   // v1 seam — swapped for live telematics (~next week, Jac)
+  const done = stops.filter(stopDone);
+  const last = done[done.length - 1];
+  return (last && last.pin) ? last.pin : YARD_CENTER;
+}
+// "HH:MM" (24h) → minutes (blanks → null, sort last); + a friendly "9:00a" stamp.
+function timeToMin(t) { const m = /^(\d{1,2}):(\d{2})$/.exec((t || '').trim()); return m ? (+m[1]) * 60 + (+m[2]) : null; }
+function fmtClock(t) { const mn = timeToMin(t); if (mn == null) return '—:—'; let h = Math.floor(mn / 60); const m = mn % 60; const ap = h < 12 ? 'a' : 'p'; h = h % 12 || 12; return `${h}:${String(m).padStart(2, '0')}${ap}`; }
+/* §2.3 DISPATCH = the OFFICE COCKPIT (Phase 1, Jac 2026-06-15): a live map of the
+   day's run + a welded TIME-RAIL. Stops auto-fill from rentals; the rail places each
+   on a time axis (retime = reorder, Phase 1b drag); the map draws the route + truck.
+   Every stop reads its KIND (deliver=blue / recover=tan) and the NEXT stop is marked,
+   on BOTH the map and the rail. The board is live — no "send"; edits auto-notify. */
 function dispatchGridBody() {
   const day = state.dispatchDay || TODAY_ISO;
   const stops = dispatchDayStops(day);
   const isToday = day === TODAY_ISO;
   const allUpcoming = dispatchEvents().filter((e) => e.date >= TODAY_ISO).length;
-  const armed = state.dispArm != null;
-  const legCount = (dispatchArrowsLS()[day] || []).length;
   const head = `<div class="disp-head">
     <button class="disp-nav js-disp-day" data-dir="-1" data-tip="Previous day">‹</button>
     <div class="disp-date"><b>${esc(dispatchDayLabel(day))}</b>${isToday ? '<span class="disp-today">Today</span>' : '<button class="disp-jump js-disp-today">Today</button>'}</div>
     <button class="disp-nav js-disp-day" data-dir="1" data-tip="Next day">›</button>
     <span class="spacer"></span>
-    <button class="disp-clearleg js-disp-autoroute" data-tip="Auto-draw the route: yard → every stop in order → yard">${I.truck || '↧'} Auto-route</button>
-    ${legCount ? `<button class="disp-clearleg js-disp-clearlegs" data-tip="Clear every route arrow on this day">${I.x} ${legCount} arrow${legCount === 1 ? '' : 's'}</button>` : ''}
     <span class="disp-count">${stops.length} stop${stops.length === 1 ? '' : 's'}${allUpcoming ? ` · ${allUpcoming} upcoming` : ''}</span>
   </div>`;
   if (!stops.length) return `${head}<div class="disp-empty">${I.truck}<p>No transports on this day.</p><span>Rentals with Delivery / Round-Trip / Recovery land here automatically — flip days with ‹ ›.</span></div>`;
-  // Each icon is a route node: click one then another to draw a "from → there" leg.
-  const ico = (node, cls, body, tip) =>
-    `<span class="disp-ico js-disp-arrowpt ${cls}" data-node="${esc(node)}" data-tip="${esc(tip)}" role="button" tabindex="0" aria-label="${esc(tip)}">${body}</span>`;
-  const armTip = armed ? 'Click to draw the route leg to here (Esc cancels)' : 'Click to start a route arrow from here';
-  const home = (node, sub) => `<div class="disp-stop disp-home">${ico(node, 'home', '🏠', armTip)}<div class="disp-bd"><div class="disp-unit">${DISPATCH_HOME}</div><div class="disp-sub">${esc(sub)}</div></div></div>`;
-  const rows = stops.map((ev, i) => {
-    const deliver = ev.task === 'Deliver';
-    const overdue = ev.date < TODAY_ISO, dueToday = ev.date === TODAY_ISO;
-    return `<div class="disp-stop js-disp-stop" draggable="true" data-id="${esc(ev.id)}" data-rec="${esc(ev.rentalId)}">
-      <span class="disp-grip" data-tip="Drag to reorder the run">⠿</span>
-      <span class="disp-seq">${i + 1}</span>
-      <input class="disp-time js-disp-time" data-id="${esc(ev.id)}" value="${esc(ev.time || '')}" placeholder="—:—" maxlength="5" data-tip="Set the stop time" />
-      ${ico(ev.id, 'c-' + (deliver ? 'blue' : 'brown'), deliver ? 'D' : 'R', armTip)}
-      <div class="disp-bd">
-        <div class="disp-unit">${esc(ev.unit)} <span class="disp-task">${deliver ? 'Deliver' : 'Recover'}</span></div>
-        <div class="disp-sub">${esc(ev.cust)}${ev.addr ? ` · <span class="disp-addr js-site-go" data-rec="${esc(ev.rentalId)}">${esc(ev.addr)}</span>` : ''}</div>
-      </div>
-      <span class="disp-deadline${overdue ? ' over' : dueToday ? ' today' : ''}">${esc(fmtShortDate(ev.date))}${overdue ? ' · LATE' : dueToday ? ' · TODAY' : ''}</span>
+
+  const nextId = dispatchNextId(stops);
+  // time window for the rail axis (pad 30m; floor of 2h so a one-stop day still spreads)
+  const mins = stops.map((s) => timeToMin(s.time)).filter((m) => m != null);
+  const winA = mins.length ? Math.min(...mins) - 30 : 7 * 60;
+  let winB = mins.length ? Math.max(...mins) + 30 : 15 * 60;
+  if (winB - winA < 120) winB = winA + 120;
+  const pctOf = (mn) => Math.max(3, Math.min(97, ((mn - winA) / (winB - winA)) * 100));
+  let ticks = '';
+  for (let h = Math.ceil(winA / 60); h * 60 <= winB; h++) { const ap = h < 12 ? 'a' : 'p'; const hh = h % 12 || 12; ticks += `<span class="disp-tick" style="top:${pctOf(h * 60)}%">${hh}${ap}</span>`; }
+
+  const scheduled = stops.filter((s) => timeToMin(s.time) != null);
+  const unscheduled = stops.filter((s) => timeToMin(s.time) == null);
+  const tokenEl = (s, axis) => {
+    const kind = dispatchKind(s);
+    const done = stopDone(s), isNext = s.id === nextId;
+    const top = axis ? ` style="top:${pctOf(timeToMin(s.time))}%"` : '';
+    const flag = done ? `<span class="dt-flag ok">✓ done</span>` : (isNext ? `<span class="dt-flag next">${I.truck} next</span>` : '');
+    return `<div class="disp-tok js-disp-tok${done ? ' done' : ''}${isNext ? ' next' : ''}${s.pin ? '' : ' nopin'}" data-id="${esc(s.id)}" data-rec="${esc(s.rentalId)}" data-unit="${esc(s.unitId || '')}"${top}>
+      <div class="dt-r1"><span class="dt-grip" data-tip="Type a time to retime/reorder this stop (drag coming soon)">⠿</span><input class="dt-time js-disp-time" data-id="${esc(s.id)}" value="${esc(s.time || '')}" placeholder="—:—" maxlength="5" aria-label="Stop time" data-tip="Set the stop time — reorders the run" /><span class="spacer"></span>${flag}</div>
+      <div class="dt-r2"><span class="dt-kind k-${kind}">${kind === 'deliver' ? '▾' : '▴'} ${kind}</span><span class="dt-who">${esc(s.cust)} · ${esc(s.unit)}</span></div>
+      ${s.addr ? `<div class="dt-addr js-site-go" data-rec="${esc(s.rentalId)}" data-unit="${esc(s.unitId || '')}" data-tip="Open the site / set the map pin">${s.pin ? '' : '⚠ '}${esc(s.addr)}</div>` : ''}
     </div>`;
-  }).join('');
-  const arm = armed ? `<div class="disp-arm" role="status">${I.truck} Drawing a route leg — click the next stop to land the arrow. <button class="disp-arm-x js-disp-arm-cancel">Cancel</button></div>` : '';
-  return `${head}${arm}<div class="disp-route js-disp-route${armed ? ' arming' : ''}" data-day="${esc(day)}">${home(HOME_IN, 'Roll out')}${rows}${home(HOME_OUT, 'Return to yard')}</div>`;
+  };
+  const rail = `<div class="disprail js-disprail" data-day="${esc(day)}">
+    <div class="disp-bookend">${ICO_STORE} <span>Roll out</span></div>
+    <div class="disp-axis">${ticks}<span class="disp-axisline"></span>${scheduled.map((s) => tokenEl(s, true)).join('')}</div>
+    ${unscheduled.length ? `<div class="disp-tray"><div class="disp-tray-h">${unscheduled.length} no set time</div>${unscheduled.map((s) => tokenEl(s, false)).join('')}</div>` : ''}
+    <div class="disp-bookend">${ICO_STORE} <span>Return to yard</span></div>
+  </div>`;
+  const foot = `<div class="disp-foot"><span class="disp-livedot"></span><span class="disp-live">Live · auto-notifies the driver on change</span></div>`;
+  return `${head}<div class="disp-cockpit"><div class="dispm js-dispmount" data-day="${esc(day)}"></div>${rail}</div>${foot}`;
 }
 /* §2.3 — paint the free-form route legs as an SVG overlay in the route's left gutter,
    AFTER the DOM lands (we need each icon's real geometry). Pure post-render decor: each
@@ -4915,6 +4997,76 @@ function drawDispatchArrows() {
     svg.appendChild(hit); svg.appendChild(line); svg.appendChild(dot);
   });
   route.appendChild(svg);
+}
+/* §2.3 OFFICE COCKPIT MAP. The Map is a SINGLETON (_dispMapEl) RE-PARENTED into the
+   fresh mount point each render (render() rebuilds the DOM) so it never reloads/flickers;
+   only pins/route/truck refresh. Stops without a stored sitePin are geocoded via Places
+   (the key has Places, not Geocoding) and cached. */
+let _dispMap = null, _dispView = null, _dispMarkers = [], _dispRoute = null, _dispGeo = {}, _dispGeoPending = {};
+function mountDispatchMap() {
+  const mount = document.querySelector('.js-dispmount'); if (!mount) return;
+  if (mount.querySelector('.gm-style')) return;                 // already mounted in this DOM
+  if (!mapsReady()) { loadGoogleMaps().then((g) => { if (g) render(); }); return; }
+  // render() rebuilds the DOM, so mount fresh into the new node each render (the proven
+  // transport-editor pattern); remember the user's pan/zoom so a re-render never resets it.
+  const first = !_dispView;
+  _dispMap = new google.maps.Map(mount, { center: (_dispView && _dispView.center) || YARD_CENTER, zoom: (_dispView && _dispView.zoom) || 11, disableDefaultUI: true, zoomControl: true, gestureHandling: 'greedy', clickableIcons: false });
+  _dispMap.addListener('idle', () => { const c = _dispMap.getCenter(); if (c) _dispView = { center: { lat: c.lat(), lng: c.lng() }, zoom: _dispMap.getZoom() }; });
+  // First-open 0×0 paint fix (same as the transport editor): the map is built the frame its
+  // box is inserted, before layout — nudge a resize once it has real size. No setCenter here so
+  // the fitBounds in refreshDispatchMap stands.
+  const repaint = () => { try { google.maps.event.trigger(_dispMap, 'resize'); } catch (e) {} };
+  requestAnimationFrame(repaint); setTimeout(repaint, 250);
+  refreshDispatchMap(mount.dataset.day || state.dispatchDay || TODAY_ISO, first);
+}
+function refreshDispatchMap(day, fit) {
+  if (!_dispMap) return;
+  const stops = dispatchDayStops(day), nextId = dispatchNextId(stops);
+  _dispMarkers.forEach((m) => m.setMap(null)); _dispMarkers = [];
+  if (_dispRoute) { _dispRoute.setMap(null); _dispRoute = null; }
+  const bounds = new google.maps.LatLngBounds(); bounds.extend(YARD_CENTER);
+  _dispMarkers.push(new google.maps.Marker({ map: _dispMap, position: YARD_CENTER, title: 'JAC Yard · Sulphur', zIndex: 5,
+    icon: { path: google.maps.SymbolPath.BACKWARD_CLOSED_ARROW, scale: 5, fillColor: '#ff7a1a', fillOpacity: 1, strokeColor: '#1a1205', strokeWeight: 2 } }));
+  const path = [YARD_CENTER], need = []; let placed = 0;
+  stops.forEach((s) => {
+    const p = (s.pin && Number.isFinite(s.pin.lat)) ? s.pin : _dispGeo[s.addr];
+    if (p) { placeDispatchPin(s, p, s.id === nextId, stopDone(s)); bounds.extend(p); path.push(p); placed++; }
+    else if (s.addr) need.push(s);
+  });
+  path.push(YARD_CENTER);
+  _dispRoute = new google.maps.Polyline({ map: _dispMap, path, strokeColor: '#ff7a1a', strokeOpacity: .9, strokeWeight: 3 });   // straight legs — no Directions/quota
+  _dispMarkers.push(new google.maps.Marker({ map: _dispMap, position: dispatchTruckPos(stops), title: 'Driver', zIndex: 999,
+    icon: { path: google.maps.SymbolPath.CIRCLE, scale: 9, fillColor: '#18b6ff', fillOpacity: .22, strokeColor: '#18b6ff', strokeWeight: 2 } }));
+  if (fit && placed) _dispMap.fitBounds(bounds, 46);   // only fit once a real stop is located (single-point fit zooms absurdly)
+  need.forEach((s) => dispGeocode(s.addr, day));   // resolve pinless stops, then refresh once each lands
+}
+function placeDispatchPin(s, pos, isNext, done) {
+  const fill = done ? '#46c06a' : (dispatchKind(s) === 'deliver' ? '#18b6ff' : '#c79366');
+  const mk = new google.maps.Marker({ map: _dispMap, position: pos, zIndex: isNext ? 900 : 10,
+    title: `${fmtClock(s.time)} · ${s.cust} · ${s.unit} · ${dispatchKind(s)}`,
+    label: isNext ? { text: fmtClock(s.time), color: '#1a1205', fontFamily: 'Saira Condensed', fontWeight: '700', fontSize: '11px' } : undefined,
+    icon: isNext
+      ? { path: google.maps.SymbolPath.CIRCLE, scale: 13, fillColor: '#ff7a1a', fillOpacity: 1, strokeColor: '#1a1205', strokeWeight: 2 }
+      : { path: google.maps.SymbolPath.CIRCLE, scale: done ? 7 : 6, fillColor: fill, fillOpacity: 1, strokeColor: '#0e1318', strokeWeight: 2 } });
+  mk.addListener('click', () => anchorRecord('rentals', s.rentalId));
+  _dispMarkers.push(mk);
+}
+async function dispGeocode(addr, day) {
+  if (!addr || _dispGeo[addr] || _dispGeoPending[addr] || !mapsReady() || !google.maps.places.Place) return;
+  _dispGeoPending[addr] = true;
+  try {
+    // New Places API text search — replaces the deprecated PlacesService.findPlaceFromQuery. Bias to
+    // the yard so a bare street name resolves to the local stop (every route is within ~100mi of Sulphur).
+    const { places } = await google.maps.places.Place.searchByText({
+      textQuery: addr, fields: ['location'], maxResultCount: 1, region: 'us', locationBias: YARD_CENTER,
+    });
+    const loc = places && places[0] && places[0].location;
+    if (loc) {
+      _dispGeo[addr] = { lat: loc.lat(), lng: loc.lng() };
+      if ((state.dispatchDay || TODAY_ISO) === day && document.querySelector('.js-dispmount')) refreshDispatchMap(day, true);
+    }
+  } catch (e) { /* geocode failed → the stop stays unplaced this pass; pinned/known stops still render, and a later refresh retries */ }
+  finally { delete _dispGeoPending[addr]; }   // always clear pending so a failed lookup can retry
 }
 /** The status badge shown on an item tab (replaces the old datapoint sub-text). */
 function tabBadge(card, rec) {
@@ -6558,6 +6710,7 @@ function render() {
   // Hidden while the team dock owns that corner (Jac 2026-06-15).
   if (!state.chat.open) $('#app').appendChild(fabStackEl());
   mountTransportEditor();   // inline transport editor: mount the live map + wire the address field
+  mountDispatchMap();   // §2.3 office cockpit: re-parent the singleton dispatch map + refresh pins/route/truck
   applyTitles();   // full text on hover wherever we truncate (custom ~0.5s tooltip)
   drawDispatchArrows();   // §2.3 — paint free-form route legs over the dispatch run (needs live geometry)
   scoreTick();     // §11 gamification — pop +X over any ring whose metric just rose
@@ -8191,7 +8344,9 @@ function onChange(e) {
     return;
   }
   if (e.target.classList.contains('js-disp-time')) {   // §2.3 dispatch stop time (per-device)
-    const t = dispatchTimesLS(); t[e.target.dataset.id] = e.target.value.trim(); _lsSave('jactec.dispatchTimes', t); return;
+    const t = dispatchTimesLS(); const v = e.target.value.trim(); t[e.target.dataset.id] = v; _lsSave('jactec.dispatchTimes', t);
+    if (e.target.closest('.disprail') && /^\d{1,2}:\d{2}$/.test(v)) render();   // cockpit: a complete time repositions the token on the rail = retime/reorder
+    return;
   }
   if (e.target.classList.contains('js-wr-file')) {   // §18d Mr. Wrangler image attach
     [...(e.target.files || [])].forEach((f) => wranglerAttachFile(f));
