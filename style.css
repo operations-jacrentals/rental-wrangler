@@ -2135,8 +2135,9 @@ body.dragging .row.drop-ok { opacity: 1; }
 }
 /* sections sit ON the plate as milled-in panels — a LIGHT recess (a soft dark tint
    that lets the blued plate read through) + cool inset highlight + lift shadow. The
-   header + status accent carry the rest. (Reverted the heavy dark wash — Jac.) */
-[data-theme="bluedsteel"] .col > .card.anchored .section {
+   header + status accent carry the rest. Applies to EVERY record's Standard view —
+   anchored or not — so the non-anchored Standard view matches the anchor card (Jac). */
+[data-theme="bluedsteel"] .col > .card .section {
   background: rgba(11,15,24,.36);
   box-shadow: inset 0 1px 0 rgba(150,178,222,.12), 0 2px 8px -3px rgba(0,0,0,.55);
 }
