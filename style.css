@@ -489,7 +489,10 @@ input { font-family: inherit; }
 .disp-tok.nopin { border-style: dashed; }
 .dt-r1 { display: flex; align-items: center; gap: 6px; }
 .dt-grip { color: var(--txt-3); cursor: grab; font-size: 12px; }
-.dt-time { font-size: 13.5px; font-weight: 800; }
+.dt-time { width: 52px; flex: 0 0 auto; font-size: 13px; font-weight: 800; color: var(--txt); font-family: inherit; background: transparent; border: 1px solid transparent; border-radius: 6px; padding: 1px 4px; }
+.dt-time::placeholder { color: var(--txt-3); font-weight: 600; }
+.dt-time:hover { border-color: var(--line); }
+.dt-time:focus { border-color: var(--accent-line); background: var(--bg-2); outline: none; }
 .dt-flag { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .6px; font-size: 9px; font-weight: 700; display: inline-flex; align-items: center; gap: 3px; }
 .dt-flag.ok { color: var(--green); }
 .dt-flag.next { color: var(--accent); }

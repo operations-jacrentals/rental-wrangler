@@ -588,14 +588,14 @@ function afterMapsLoad(g) {
   te.mapFailed = !ready;                                           // ready → the render below mounts; not ready → usable offline editor
   try { render(); } catch (e) { try { mountTransportEditor(); } catch (e2) {} }
 }
-// "Ready" = the CORE needed to mount the editor (Map) + drive autocomplete/picks (Places).
-// DistanceMatrixService deliberately NOT required here: under loading=async it comes up a beat
-// after the map library, so gating mount/live on it stranded the editor on the placeholder.
-// Live mileage handles its own readiness in teFetchDistance (lazy DMS, city-tier fallback).
+// "Ready" = the CORE needed to mount the editor (Map) + drive autocomplete/picks (Places). The new
+// AutocompleteSuggestion / Place classes both live under google.maps.places, so this single gate
+// covers them once the 'places' library is up. The Routes library (mileage) is NOT required here:
+// teFetchDistance lazily importLibrary('routes')s it on demand and falls back to the city-tier estimate.
 const mapsReady = () => !!(window.google && window.google.maps && google.maps.Map && google.maps.places);
 const YARD_CENTER = { lat: 30.2366, lng: -93.3774 };   // Sulphur, LA — map default before a pin is set
 
-let _teMap = null, _teMarker = null, _teAuto = null, _teGeo = null, _teDist = null, _tePlaces = null, _teDebounce = null;
+let _teMap = null, _teMarker = null, _teSession = null, _teDebounce = null;
 /** Open the inline editor for a unit's transport leg (delivery|recovery). */
 function openTransportEdit(rentalId, unitId, leg) {
   const r = IDX.rental.get(rentalId); if (!r) return;
@@ -609,7 +609,7 @@ function openTransportEdit(rentalId, unitId, leg) {
     driveMin: T.transportDriveMin != null ? T.transportDriveMin : null,
     type: (T.transportType && T.transportType !== 'Self') ? T.transportType : 'Delivery',
     sel: -1, items: [] };
-  _teMap = _teMarker = _teAuto = _teGeo = _teDist = _tePlaces = null;
+  _teMap = _teMarker = null; _teSession = null;
   loadGoogleMaps();
   render();
 }
@@ -666,10 +666,8 @@ function mountTransportEditor() {
       new google.maps.Marker({ map: _teMap, position: YARD_CENTER, clickable: false, title: 'JacRentals Yard · Sulphur, LA',   // the dispatch origin, grounds the route
         icon: { path: google.maps.SymbolPath.CIRCLE, scale: 6, fillColor: '#ff7a1a', fillOpacity: 1, strokeColor: '#1a1205', strokeWeight: 2 } });
       _teMap.addListener('click', (ev) => { te.pin = { lat: ev.latLng.lat(), lng: ev.latLng.lng() }; _teMarker.setPosition(ev.latLng); _teMarker.setVisible(true); teFetchDistance(); });
-      _teAuto = new google.maps.places.AutocompleteService();
-      _teGeo = new google.maps.Geocoder();
-      _tePlaces = new google.maps.places.PlacesService(_teMap);   // resolve picks by place-id via Places (the key has Places, not Geocoding)
-      _teDist = google.maps.DistanceMatrixService ? new google.maps.DistanceMatrixService() : null;   // DMS may lag the core lib — teFetchDistance lazily retries
+      // Autocomplete, place-details and route-matrix are all static/lazy in the new Places & Routes
+      // libraries — nothing to instantiate at mount (see teQuery / tePick / teFetchDistance).
       te.mapFailed = false;                                        // the live map is up — clear any stale offline-fallback flag
       // First-open paint fix: the map div is created the same frame it's inserted, before the
       // browser lays its box out, so Google paints it at 0×0 and it stays blank until the NEXT
@@ -685,20 +683,39 @@ function teQuery(v) {
   te.addr = v; te.sel = -1;
   clearTimeout(_teDebounce);
   if (!v.trim()) { te.items = []; return teRenderSug(); }
-  _teDebounce = setTimeout(() => {
-    if (mapsReady() && _teAuto) {
-      _teAuto.getPlacePredictions({ input: v, componentRestrictions: { country: 'us' } }, (preds) => {
-        te.items = (preds || []).slice(0, 5).map((p) => ({ label: p.description, placeId: p.place_id })); teRenderSug();
-      });
+  _teDebounce = setTimeout(async () => {
+    if (mapsReady() && google.maps.places.AutocompleteSuggestion) {
+      try {
+        // New Places API: one AutocompleteSessionToken spans this search's keystrokes AND the
+        // follow-up place-details fetch in tePick, so Google bills the pair as a single session.
+        if (!_teSession) _teSession = new google.maps.places.AutocompleteSessionToken();
+        const { suggestions } = await google.maps.places.AutocompleteSuggestion.fetchAutocompleteSuggestions({
+          input: v, includedRegionCodes: ['us'], sessionToken: _teSession,
+        });
+        if (state.transportEdit !== te) return;   // editor closed / switched units mid-flight
+        te.items = (suggestions || [])
+          .map((s) => s.placePrediction).filter(Boolean)   // drop query-only suggestions — we need a place to geocode
+          .slice(0, 5)
+          .map((p) => ({ label: p.text.text, placeId: p.placeId, prediction: p }));
+        teRenderSug();
+      } catch (e) {
+        if (state.transportEdit !== te) return;
+        teCityFallback(v, te);   // live Places call failed (referrer / API-not-enabled / offline) → city tiers
+      }
     } else {
-      const cities = Object.keys(TRANSPORT_MAP || {});
-      const street = v.replace(/,.*$/, '').trim();
-      const hits = cities.filter((c) => v.toLowerCase().includes(c.toLowerCase()));
-      const pool = (hits.length ? hits : cities).slice(0, 5);
-      te.items = pool.map((c) => { const city = c.replace(/\b\w/g, (m) => m.toUpperCase()); return { label: street && street.toLowerCase() !== c.toLowerCase() ? `${street}, ${city}, LA` : `${city}, LA` }; });
-      teRenderSug();
+      teCityFallback(v, te);
     }
   }, 180);
+}
+// Offline / no-live-Places suggestion list: best-effort city matches from the transport tier table,
+// so the editor still proposes something typeable when Google autocomplete isn't available.
+function teCityFallback(v, te) {
+  const cities = Object.keys(TRANSPORT_MAP || {});
+  const street = v.replace(/,.*$/, '').trim();
+  const hits = cities.filter((c) => v.toLowerCase().includes(c.toLowerCase()));
+  const pool = (hits.length ? hits : cities).slice(0, 5);
+  te.items = pool.map((c) => { const city = c.replace(/\b\w/g, (m) => m.toUpperCase()); return { label: street && street.toLowerCase() !== c.toLowerCase() ? `${street}, ${city}, LA` : `${city}, LA` }; });
+  teRenderSug();
 }
 function teRenderSug() {
   const te = state.transportEdit; const box = document.querySelector('.js-tsug'); if (!box || !te) return;
@@ -712,47 +729,73 @@ function teKeydown(e) {
   else if (e.key === 'Enter' || e.key === 'Tab') { if (n) { e.preventDefault(); tePick(te.sel >= 0 ? te.sel : 0); } }
   else if (e.key === 'Escape') { e.preventDefault(); closeTransportEdit(); }
 }
-function tePick(i) {
+async function tePick(i) {
   const te = state.transportEdit; if (!te) return;
   const it = (te.items || [])[i]; if (!it) return;
   const input = document.querySelector('.js-taddr');
   te.items = []; te.sel = -1; teRenderSug();
-  if (mapsReady() && it.placeId && _tePlaces) {
-    // resolve via the Places API (the key has Places, not Geocoding — Geocoder silently failed,
-    // which is why Enter did nothing). getDetails returns geometry + a formatted address.
-    _tePlaces.getDetails({ placeId: it.placeId, fields: ['geometry', 'formatted_address'] }, (place, status) => {
+  if (mapsReady() && it.placeId && google.maps.places.Place) {
+    // Resolve the pick via the new Places API. Prefer the prediction's own Place so it carries the
+    // autocomplete session token (billed as one session); else build a Place from the bare id.
+    try {
+      const place = it.prediction ? it.prediction.toPlace() : new google.maps.places.Place({ id: it.placeId });
+      await place.fetchFields({ fields: ['location', 'formattedAddress'] });
+      _teSession = null;   // the details fetch closes the autocomplete session — next search starts a new one
       if (state.transportEdit !== te) return;
-      if (status === google.maps.places.PlacesServiceStatus.OK && place && place.geometry) {
-        te.addr = place.formatted_address || it.label; if (input) input.value = te.addr;
-        const loc = place.geometry.location; te.pin = { lat: loc.lat(), lng: loc.lng() };
+      const loc = place.location;
+      if (loc) {
+        te.addr = place.formattedAddress || it.label; if (input) input.value = te.addr;
+        te.pin = { lat: loc.lat(), lng: loc.lng() };
         if (_teMap) { _teMap.setCenter(loc); _teMap.setZoom(14); }
         if (_teMarker) { _teMarker.setPosition(loc); _teMarker.setVisible(true); }
         teFetchDistance();
       } else {
-        te.addr = it.label; if (input) input.value = te.addr;   // couldn't resolve → keep the typed text so Enter still commits something
+        te.addr = it.label; if (input) input.value = te.addr;   // no geometry → keep the typed text so Enter still commits
       }
-    });
+    } catch (e) {
+      if (state.transportEdit !== te) return;
+      te.addr = it.label; if (input) input.value = te.addr;   // resolve failed → keep typed text so Enter still commits something
+    }
   } else {
     te.addr = it.label; if (input) input.value = te.addr; te.miles = null; te.driveMin = null;
   }
 }
-function teFetchDistance() {
+async function teFetchDistance() {
   const te = state.transportEdit; if (!te || !te.pin) return;
-  if (!_teDist && window.google && google.maps && google.maps.DistanceMatrixService) _teDist = new google.maps.DistanceMatrixService();   // DMS finished loading after mount
-  if (!_teDist) return;   // still no DistanceMatrixService → pricing stays on the city-tier estimate
-  _teDist.getDistanceMatrix({ origins: [YARD_ORIGIN], destinations: [te.pin], travelMode: 'DRIVING', unitSystem: google.maps.UnitSystem.IMPERIAL }, (resp, status) => {
+  if (!(window.google && google.maps && google.maps.importLibrary)) return;   // no SDK up → pricing stays on the city-tier estimate
+  const pin = te.pin;
+  const failToEstimate = () => {
+    if (state.transportEdit !== te) return;
+    te.miles = null; te.driveMin = null;
+    const l = document.querySelector('.js-te-dist'); if (l) l.textContent = 'city-tier estimate';
+    toast('Google distance unavailable — using a city-tier estimate.');
+  };
+  let RouteMatrix;
+  try { ({ RouteMatrix } = await google.maps.importLibrary('routes')); }   // Routes library loads lazily; importLibrary caches it
+  catch (e) { return; }   // Routes library/API unavailable → silently keep the city-tier estimate (the load itself isn't a route failure)
+  if (state.transportEdit !== te) return;   // editor closed / switched units while the routes lib loaded
+  try {
+    // RouteMatrix replaces the deprecated DistanceMatrixService. distanceMeters/durationMillis are
+    // raw numbers (no nested distance.value); condition gates a usable route (ROUTE_EXISTS).
+    const { matrix } = await RouteMatrix.computeRouteMatrix({
+      origins: [YARD_ORIGIN],
+      destinations: [{ lat: pin.lat, lng: pin.lng }],
+      travelMode: 'DRIVING',
+      units: google.maps.UnitSystem.IMPERIAL,
+      fields: ['distanceMeters', 'durationMillis', 'condition'],
+    });
     if (state.transportEdit !== te) return;   // editor closed / switched units mid-flight — don't toast or mutate a stale te
-    const cell = (status === 'OK' && resp && resp.rows[0]) ? resp.rows[0].elements[0] : null;
-    if (!cell || cell.status !== 'OK') {   // API down / no route → leave miles null so pricing falls back to the city-tier estimate
-      te.miles = null; te.driveMin = null;
-      const l = document.querySelector('.js-te-dist'); if (l) l.textContent = 'city-tier estimate';
-      toast('Google distance unavailable — using a city-tier estimate.');
+    const item = matrix && matrix.rows && matrix.rows[0] && matrix.rows[0].items && matrix.rows[0].items[0];
+    if (!item || item.condition !== 'ROUTE_EXISTS' || item.distanceMeters == null) {   // no route → leave miles null so pricing falls back to the city-tier estimate
+      failToEstimate();
       return;
     }
-    te.miles = +(cell.distance.value / 1609.344).toFixed(1);
-    te.driveMin = Math.round(cell.duration.value / 60);
+    te.miles = +(item.distanceMeters / 1609.344).toFixed(1);
+    te.driveMin = Math.round((item.durationMillis || 0) / 60000);
     const lbl = document.querySelector('.js-te-dist'); if (lbl) lbl.textContent = `${te.miles} mi · ${te.driveMin} min one-way`;
-  });
+  } catch (e) {   // API down / referrer / quota → city-tier estimate
+    failToEstimate();
+  }
 }
 function saveTransportEdit() {
   const te = state.transportEdit; if (!te) return;
@@ -4886,7 +4929,7 @@ function dispatchGridBody() {
     const top = axis ? ` style="top:${pctOf(timeToMin(s.time))}%"` : '';
     const flag = done ? `<span class="dt-flag ok">✓ done</span>` : (isNext ? `<span class="dt-flag next">${I.truck} next</span>` : '');
     return `<div class="disp-tok js-disp-tok${done ? ' done' : ''}${isNext ? ' next' : ''}${s.pin ? '' : ' nopin'}" data-id="${esc(s.id)}" data-rec="${esc(s.rentalId)}" data-unit="${esc(s.unitId || '')}"${top}>
-      <div class="dt-r1"><span class="dt-grip" data-tip="Drag to retime — that reorders the run">⠿</span><b class="dt-time">${esc(fmtClock(s.time))}</b><span class="spacer"></span>${flag}</div>
+      <div class="dt-r1"><span class="dt-grip" data-tip="Type a time to retime/reorder this stop (drag coming soon)">⠿</span><input class="dt-time js-disp-time" data-id="${esc(s.id)}" value="${esc(s.time || '')}" placeholder="—:—" maxlength="5" aria-label="Stop time" data-tip="Set the stop time — reorders the run" /><span class="spacer"></span>${flag}</div>
       <div class="dt-r2"><span class="dt-kind k-${kind}">${kind === 'deliver' ? '▾' : '▴'} ${kind}</span><span class="dt-who">${esc(s.cust)} · ${esc(s.unit)}</span></div>
       ${s.addr ? `<div class="dt-addr js-site-go" data-rec="${esc(s.rentalId)}" data-unit="${esc(s.unitId || '')}" data-tip="Open the site / set the map pin">${s.pin ? '' : '⚠ '}${esc(s.addr)}</div>` : ''}
     </div>`;
@@ -4959,6 +5002,11 @@ function mountDispatchMap() {
   const first = !_dispView;
   _dispMap = new google.maps.Map(mount, { center: (_dispView && _dispView.center) || YARD_CENTER, zoom: (_dispView && _dispView.zoom) || 11, disableDefaultUI: true, zoomControl: true, gestureHandling: 'greedy', clickableIcons: false });
   _dispMap.addListener('idle', () => { const c = _dispMap.getCenter(); if (c) _dispView = { center: { lat: c.lat(), lng: c.lng() }, zoom: _dispMap.getZoom() }; });
+  // First-open 0×0 paint fix (same as the transport editor): the map is built the frame its
+  // box is inserted, before layout — nudge a resize once it has real size. No setCenter here so
+  // the fitBounds in refreshDispatchMap stands.
+  const repaint = () => { try { google.maps.event.trigger(_dispMap, 'resize'); } catch (e) {} };
+  requestAnimationFrame(repaint); setTimeout(repaint, 250);
   refreshDispatchMap(mount.dataset.day || state.dispatchDay || TODAY_ISO, first);
 }
 function refreshDispatchMap(day, fit) {
@@ -4993,16 +5041,22 @@ function placeDispatchPin(s, pos, isNext, done) {
   mk.addListener('click', () => anchorRecord('rentals', s.rentalId));
   _dispMarkers.push(mk);
 }
-function dispGeocode(addr, day) {
-  if (!addr || _dispGeo[addr] || _dispGeoPending[addr] || !mapsReady()) return;
+async function dispGeocode(addr, day) {
+  if (!addr || _dispGeo[addr] || _dispGeoPending[addr] || !mapsReady() || !google.maps.places.Place) return;
   _dispGeoPending[addr] = true;
-  new google.maps.places.PlacesService(_dispMap).findPlaceFromQuery({ query: addr, fields: ['geometry'] }, (res, status) => {
-    delete _dispGeoPending[addr];
-    if (status === google.maps.places.PlacesServiceStatus.OK && res && res[0] && res[0].geometry) {
-      const l = res[0].geometry.location; _dispGeo[addr] = { lat: l.lat(), lng: l.lng() };
+  try {
+    // New Places API text search — replaces the deprecated PlacesService.findPlaceFromQuery. Bias to
+    // the yard so a bare street name resolves to the local stop (every route is within ~100mi of Sulphur).
+    const { places } = await google.maps.places.Place.searchByText({
+      textQuery: addr, fields: ['location'], maxResultCount: 1, region: 'us', locationBias: YARD_CENTER,
+    });
+    const loc = places && places[0] && places[0].location;
+    if (loc) {
+      _dispGeo[addr] = { lat: loc.lat(), lng: loc.lng() };
       if ((state.dispatchDay || TODAY_ISO) === day && document.querySelector('.js-dispmount')) refreshDispatchMap(day, true);
     }
-  });
+  } catch (e) { /* geocode failed → the stop stays unplaced this pass; pinned/known stops still render, and a later refresh retries */ }
+  finally { delete _dispGeoPending[addr]; }   // always clear pending so a failed lookup can retry
 }
 /** The status badge shown on an item tab (replaces the old datapoint sub-text). */
 function tabBadge(card, rec) {
@@ -8234,7 +8288,9 @@ function onChange(e) {
     return;
   }
   if (e.target.classList.contains('js-disp-time')) {   // §2.3 dispatch stop time (per-device)
-    const t = dispatchTimesLS(); t[e.target.dataset.id] = e.target.value.trim(); _lsSave('jactec.dispatchTimes', t); return;
+    const t = dispatchTimesLS(); const v = e.target.value.trim(); t[e.target.dataset.id] = v; _lsSave('jactec.dispatchTimes', t);
+    if (e.target.closest('.disprail') && /^\d{1,2}:\d{2}$/.test(v)) render();   // cockpit: a complete time repositions the token on the rail = retime/reorder
+    return;
   }
   if (e.target.classList.contains('js-wr-file')) {   // §18d Mr. Wrangler image attach
     [...(e.target.files || [])].forEach((f) => wranglerAttachFile(f));
