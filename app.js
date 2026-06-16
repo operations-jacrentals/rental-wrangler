@@ -5589,11 +5589,13 @@ function cardGraphBody(card) {
 /* ════════════════════════════════════════════════════════════════════════
    §12 OVERLAYS & BOARDS — renderOverlay kinds + back-office board popups
    ════════════════════════════════════════════════════════════════════════ */
+let _ovScroll = {}, _ovLastKind = null;   // keep a popup-body's scroll across its OWN re-renders (sign/selfie)
 function renderOverlay() {
   const root = $('#overlay-root');
+  if (_ovLastKind) { const _pb = root.querySelector('.popup-body'); if (_pb) _ovScroll[_ovLastKind] = _pb.scrollTop; }
   destroyCardElement();        // any re-render/overlay-switch tears down a mounted Stripe element
   root.innerHTML = '';
-  if (!state.overlay) return;
+  if (!state.overlay) { _ovLastKind = null; return; }
   const o = state.overlay;
   const overlay = el('div', 'overlay');
   overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) closeOverlay(); });
@@ -6250,12 +6252,14 @@ function renderOverlay() {
     overlay.appendChild(pop);
   }
   root.appendChild(overlay);
+  { const _nb = overlay.querySelector('.popup-body'); if (_nb && _ovScroll[o.kind]) _nb.scrollTop = _ovScroll[o.kind]; }   // restore scroll on a same-overlay re-render (sign/selfie no longer jump to top)
+  _ovLastKind = o.kind;
   if (o.kind === 'partform') document.querySelector('.overlay .js-pf2-desc')?.focus();   // Jac: Part/Task field focused by default
   if (o.kind === 'newCustomer') setupSignaturePad();
   if (o.kind === 'payment') setupPayAlloc();   // live counter for the §19 allocation rows
   if (o.kind === 'addCard') { const cc = IDX.customer.get(o.customerId); if (cc && cc.signature && cc.selfie) mountCardElement(); }   // only mount with consent (nothing to orphan otherwise)
 }
-const openOverlay = (o) => { state.datepick = null; state.overlay = o; renderOverlay(); };
+const openOverlay = (o) => { state.datepick = null; _ovScroll[o.kind] = 0; state.overlay = o; renderOverlay(); };   // fresh open starts at top
 /* ── §15 in-app feedback: bug/request → queued to the backend Feedback tab ── */
 function feedbackContext() {
   const s = activeSession(), a = s && s.anchor;
