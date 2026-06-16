@@ -5415,10 +5415,35 @@ function gvSegBtn(cs, card, src, s, inner, cls) {
   const on = gvSegOn(cs, s.col, s.value);
   return `<button class="${cls} js-gv-seg${on ? ' on' : ''}" data-card="${card}" data-src="${esc(src)}" data-col="${esc(s.col)}" data-value="${esc(String(s.value))}" data-label="${esc(s.label)}" data-tip="${on ? 'Remove filter' : 'Filter to ' + esc(s.label)}">${inner}</button>`;
 }
+// §13.4 — a donut whose SLICES are themselves toggle controls (.js-gv-seg), mirroring the
+// legend chips. The legend stays the keyboard-accessible path; slices are a pointer add-on.
+function gvPieClickable(card, src, cs, segs, size = 116) {
+  const total = segs.reduce((a, s) => a + (s.count || 0), 0);
+  const r = size / 2, cx = r, cy = r, inner = r * 0.6;
+  if (!total) return `<svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}"><circle cx="${cx}" cy="${cy}" r="${r - 1}" fill="none" stroke="var(--line)" stroke-width="2" stroke-dasharray="3 4"/><circle cx="${cx}" cy="${cy}" r="${inner}" fill="var(--bg)"/></svg>`;
+  const sliceAttrs = (s) => { const on = gvSegOn(cs, s.col, s.value); return `class="gv-slice js-gv-seg${on ? ' on' : ''}" data-card="${card}" data-src="${esc(src)}" data-col="${esc(s.col)}" data-value="${esc(String(s.value))}" data-label="${esc(s.label)}" data-tip="${on ? 'Remove filter' : 'Filter to ' + esc(s.label)}"`; };
+  const nonzero = segs.filter((s) => s.count > 0);
+  let paths = '';
+  if (nonzero.length === 1) {
+    paths = `<circle ${sliceAttrs(nonzero[0])} cx="${cx}" cy="${cy}" r="${r - 1}" fill="var(--${nonzero[0].color})"/>`;
+  } else {
+    const arc = (a) => [cx + (r - 1) * Math.cos(a), cy + (r - 1) * Math.sin(a)];
+    let a0 = -Math.PI / 2;
+    for (const s of segs) {
+      if (!s.count) continue;
+      const a1 = a0 + (s.count / total) * Math.PI * 2;
+      const [x0, y0] = arc(a0), [x1, y1] = arc(a1), large = (a1 - a0) > Math.PI ? 1 : 0;
+      paths += `<path ${sliceAttrs(s)} d="M${cx},${cy} L${x0.toFixed(1)},${y0.toFixed(1)} A${r - 1},${r - 1} 0 ${large} 1 ${x1.toFixed(1)},${y1.toFixed(1)} Z" fill="var(--${s.color})"/>`;
+      a0 = a1;
+    }
+  }
+  paths += `<circle cx="${cx}" cy="${cy}" r="${inner}" fill="var(--bg)" pointer-events="none"/><text x="${cx}" y="${cy + 5}" text-anchor="middle" fill="var(--txt)" font-size="20" font-weight="800" pointer-events="none">${total}</text>`;
+  return `<svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" class="gv-pie-svg">${paths}</svg>`;
+}
 function gvRenderView(card, src, cs, v) {
   if (v.kind === 'pie') {
     const legend = v.segs.map((s) => gvSegBtn(cs, card, src, s, `<i style="background:var(--${s.color})"></i><span class="gl-lbl">${esc(s.label)}</span> <b>${s.count}</b>`, 'gv-leg')).join('');
-    return `<div class="gv-pie">${pieSVG(v.segs.map((s) => ({ label: s.label, value: s.count, color: s.color })), 116)}<div class="gv-legend gv-legend-click">${legend}</div></div>`;
+    return `<div class="gv-pie">${gvPieClickable(card, src, cs, v.segs)}<div class="gv-legend gv-legend-click">${legend}</div></div>`;
   }
   if (v.kind === 'bars') {
     const max = Math.max(1, ...v.segs.map((s) => s.count));

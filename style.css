@@ -1202,6 +1202,10 @@ input { font-family: inherit; }
 .gv-chev:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .gv-view { margin-top: 8px; }
 .gv-empty { color: var(--txt-3); font-size: 12px; padding: 8px 2px; text-align: center; }
+/* clickable donut slices (pie) — the legend chips stay the keyboard path */
+.gv-pie-svg .gv-slice { cursor: pointer; stroke: var(--card); stroke-width: 1.5; }
+.gv-pie-svg .gv-slice:hover { filter: brightness(1.12); }
+.gv-pie-svg .gv-slice.on { stroke: var(--accent); stroke-width: 3; }
 /* clickable legend chips (pie) */
 .gv-legend-click { gap: 6px; }
 .gv-legend-click .gv-leg { cursor: pointer; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel); color: var(--txt-2); font-size: 11px; }
