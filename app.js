@@ -7355,7 +7355,6 @@ function render() {
   const dt = performance.now() - t0;
   renderCount++;
   if (dt > CFG.PERF_BUDGET_MS) console.warn(`[perf] render ${renderCount} took ${dt.toFixed(1)}ms (budget ${CFG.PERF_BUDGET_MS}ms)`);
-  else console.log(`[perf] render ${renderCount}: ${dt.toFixed(1)}ms`);
 }
 /** Flag any element that's actually truncated with data-tip (full text) so the
  *  custom app-styled tooltip can show it on hover. Nothing lost to ellipsis. */
