@@ -41,7 +41,7 @@ permissions:
 jobs:
   fix:
     # Fire for either Wrangler label, on either entry path. wrangler-fix = build it;
-    # wrangler-request = PROVE it first (fix if proven — no approval — else leave for Jac).
+    # wrangler-request = PROVE it first (fix if proven — no approval — else leave for the developer).
     if: >
       (github.event.action == 'labeled' && (github.event.label.name == 'wrangler-fix' || github.event.label.name == 'wrangler-request')) ||
       (github.event.action == 'opened' && (contains(github.event.issue.labels.*.name, 'wrangler-fix') || contains(github.event.issue.labels.*.name, 'wrangler-request')))
@@ -97,17 +97,24 @@ jobs:
                 (RULE_META/CLASS_RULE in app.js + §1 of JacTec-handoff/JacTec-SPEC-v8.md),
                 the SPEC, docs/, and the actual code. Then PROVE the report right or wrong
                 with SPECIFIC citations (rule number / SPEC section / code).
-              • If this issue is `wrangler-fix` (a confirmed bug, or a request Jac already
-                approved) → fix it. If it's `wrangler-request` (a suggestion) → fix it ONLY
-                if you can PROVE it correct. A proven request is fixed RIGHT NOW — no
+              • ALWAYS ask yourself first: "Should I use one of our skills for this?" Check the
+                available skills and reach for the one that fits BEFORE you freehand —
+                `jactec-ui` for ANY UI (a screen, column, card, pill, flag, button, field,
+                popup, menu); the `mobile-*` skills for phone layout / touch / viewport;
+                `frontend` for new visual design; `webapp-testing` to verify in a real browser.
+                Skip a skill only when none genuinely apply.
+              • If this issue is `wrangler-fix` (a confirmed bug, or a request the developer
+                already approved) → fix it. If it's `wrangler-request` (a suggestion) → fix it
+                ONLY if you can PROVE it correct. A proven request is fixed RIGHT NOW — no
                 approval, it does not wait in the inbox.
-              • If the issue has an "### Approved plan (build to this)" section, Jac already
-                OK'd that plan in chat — build EXACTLY to it; do not redesign or second-guess it.
+              • If the issue has an "### Approved plan (build to this)" section, the developer
+                already OK'd that plan in chat — build EXACTLY to it; do not redesign or second-guess it.
               • If you hit a real decision you can't make safely mid-build (genuine ambiguity,
                 or it would touch money / card / auth / WO-completion), STOP — do NOT guess.
                 Post your ONE specific question as a comment and relabel the issue
-                `wrangler-needs-jac` (so it pings Jac in-app), then end. When Jac answers and it's
-                relabeled back to `wrangler-fix`, you'll resume from the full thread.
+                `wrangler-needs-jac` (so it reaches the developer in-app), then end. When the
+                developer answers and it's relabeled back to `wrangler-fix`, you'll resume from
+                the full thread.
               • Proven → make the MINIMAL fix that satisfies the cited rule (match the code +
                 the design language). Run all 3 gates (node ci/smoke.mjs · node ci/logic-test.mjs
                 · node ci/gen-rule-usage.mjs --check; regenerate rule-usage.js if usage changed).
@@ -116,7 +123,7 @@ jobs:
               • Can't prove it / it contradicts the canon / it's ambiguous → do NOT ship.
                 Comment your verdict + why on #${{ github.event.issue.number }}; if it's a
                 `wrangler-fix` you couldn't justify, relabel it `wrangler-request` so it lands
-                in Jac's inbox for his call.
+                in the developer's inbox for their call.
               • ALWAYS leave a closing comment on the issue in Mr. Wrangler's voice: the
                 verdict + the proof, what changed, and "refresh the page to see it" once it ships.
               • NEVER weaken money / card / auth / WO-completion logic.
