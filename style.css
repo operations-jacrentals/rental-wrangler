@@ -2469,3 +2469,8 @@ body.dragging .row.drop-ok { opacity: 1; }
 .pr-tot .pr-big { font-weight: 800; font-size: 15px; border-bottom: 2px solid #14181d; }
 .pr-tot .pr-due { font-family: 'Saira Condensed', sans-serif; text-transform: uppercase; letter-spacing: 1px; font-weight: 800; font-size: 15px; border-bottom: none; padding-top: 8px; }
 .pr-foot { margin-top: 28px; padding-top: 10px; border-top: 1px solid #e4e8ee; font-size: 11.5px; color: #5a626e; }
+
+/* ── KPI MASK — remove this block to restore real band colors (Jac) ── */
+.ring-fill { stroke: var(--blue) !important; }
+.ring-fill.ring-glow { filter: none !important; }
+/* ── END KPI MASK ── */
