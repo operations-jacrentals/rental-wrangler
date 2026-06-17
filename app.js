@@ -9658,6 +9658,19 @@ async function chargeInvoiceFlow(invoiceId) {
 // refund flips the invoice to Refunded. The server is authoritative.
 async function refundInvoiceFlow(invoiceId) {
   const o = state.overlay; if (!o || o.kind !== 'payment') return;
+  const inv = IDX.invoice.get(invoiceId); if (!inv) return;
+  // Cash/Check payments (#109) never touched Stripe, so there's no charge to reverse —
+  // refund them BY HAND, client-side, exactly as they were recorded (#117). Flip the
+  // invoice to Refunded (status derives from inv.refunded) and keep amountPaid so the
+  // balance reads $0; release line assignments per the full-refund invariant (§4).
+  if (/^cash$/i.test(inv.paymentMethod || '') || /^check/i.test(inv.paymentMethod || '')) {
+    const t = invoiceTotals(inv); const before = t.status;
+    inv.refunded = true; inv.refundedAmount = t.paid; inv.allocations = {};
+    o.confirmRefund = false; o.busy = false; o.error = '';
+    reindex('invoices', inv);
+    logAction(inv, `Refunded ${money(t.paid)} (${inv.paymentMethod}) — ${before} → Refunded`);
+    toast('Refunded ✓'); render(); renderOverlay(); return;
+  }
   const live = () => state.overlay === o;
   o.busy = true; o.error = ''; o.confirmRefund = false; renderOverlay();
   try {
