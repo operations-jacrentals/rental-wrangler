@@ -9654,10 +9654,22 @@ async function chargeInvoiceFlow(invoiceId) {
     fail(friendlyPayErr(r));
   } catch (e) { fail('Network error — try again.'); }
 }
+// A manual (#109) payment is one recorded by hand — Cash or Check — with no Stripe charge.
+const isManualMethod = (m) => m === 'Cash' || /^Check\b/.test(m || '');
 // Refund the captured amount back to the card (full). Reduces amountPaid; a full
 // refund flips the invoice to Refunded. The server is authoritative.
 async function refundInvoiceFlow(invoiceId) {
   const o = state.overlay; if (!o || o.kind !== 'payment') return;
+  // Cash / Check (#109) never hit Stripe, so there's nothing for stripeRefundInvoice to
+  // reverse — apply the full refund locally through the SAME applyPayment path a card
+  // refund uses, so the invoice flips to Refunded with a refund record (#117).
+  const minv = IDX.invoice.get(invoiceId);
+  if (minv && isManualMethod(minv.paymentMethod)) {
+    const paid = invoiceTotals(minv).paid;
+    o.confirmRefund = false;
+    applyPayment(invoiceId, { amountPaid: 0, refunded: true, refundedAmount: paid, refundedCents: Math.round(paid * 100) });
+    toast('Refunded ✓'); renderOverlay(); return;
+  }
   const live = () => state.overlay === o;
   o.busy = true; o.error = ''; o.confirmRefund = false; renderOverlay();
   try {
@@ -10964,7 +10976,7 @@ function exposeTestApi() {
       rentalAllocated, unitRentalPrice, rentalDisplayName, setWoLinePhase, setWoPhase, woBottleneck,
       cleanUnitName, planUnitMigration, applyUnitMigration, openMigrationPreview,
       computeTransportPrice, isFueledType, unitTransport, rentalTransport,
-      wrValidatePlan, applyWranglerData, wrFunnel };
+      wrValidatePlan, applyWranglerData, wrFunnel, isManualMethod, applyPayment };
   } catch (e) { /* no window (non-browser) */ }
 }
 

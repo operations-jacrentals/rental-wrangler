@@ -210,6 +210,16 @@ try {
     ok(T.IDX.unit.get('U003').notes === 'WR test note' && T.IDX.unit.get('U003').currentHours === hoursBefore, 'applied the safe note, did NOT write the money/ops field');
     T.DATA.customers.length = custBefore; u3.notes = noteBefore;   // restore
 
+    // #117 — a Cash/Check refund must flip the invoice to Refunded locally (no Stripe),
+    // not just reverse amountPaid and leave it looking unpaid.
+    ok(T.isManualMethod('Cash') && T.isManualMethod('Check #1042') && !T.isManualMethod('Visa ••4242') && !T.isManualMethod(''), 'isManualMethod: Cash/Check yes, card/empty no');
+    const invR = { invoiceId: 'I-REFUNDTEST', customerId: 'C0009', rentalIds: [], date: T.TODAY_ISO, dueDate: T.TODAY_ISO, po: '', lineItems: [{ kind: 'custom', lid: 'RFL', ref: null, amount: 100 }], amountPaid: 110.75, paymentMethod: 'Cash', mock: true };
+    T.DATA.invoices.push(invR); T.IDX.invoice.set(invR.invoiceId, invR);
+    const paidR = T.invoiceTotals(invR).paid;
+    T.applyPayment(invR.invoiceId, { amountPaid: 0, refunded: true, refundedAmount: paidR, refundedCents: Math.round(paidR * 100) });
+    ok(T.invoiceTotals(invR).status === 'Refunded' && invR.refunded === true && Number(invR.refundedAmount) === paidR, 'Cash refund → status Refunded with a refund record (not Unpaid)');
+    T.DATA.invoices.pop(); T.IDX.invoice.delete(invR.invoiceId);   // restore
+
     return out;
   });
 
