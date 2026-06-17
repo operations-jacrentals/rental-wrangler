@@ -1996,7 +1996,12 @@ body { font-variant-numeric: tabular-nums; }
 .inv-split { display: flex; gap: 16px; align-items: flex-start; }
 .inv-actions { flex: 0 0 auto; display: flex; flex-direction: column; gap: 7px; align-items: flex-start; min-width: 0; }
 .inv-data { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
-.inv-data .hitem { gap: 8px; }
+/* Compact ledger (Mr. Wrangler #39): label sits just left of its right-aligned
+   figure instead of spanning the full width — kill the spacer's push, anchor the
+   label+value pair to the right, and column-align the figures. */
+.inv-data .hitem { gap: 8px; justify-content: flex-end; }
+.inv-data .hitem .spacer { display: none; }
+.inv-data .inv-tot > b, .inv-data .inv-line > b { min-width: 84px; text-align: right; flex: 0 0 auto; }
 .inv-div { height: 1px; background: var(--line-soft); margin: 5px 0; }
 .inv-tot.big b { font-size: 14px; }
 .inv-tot.due b { color: var(--accent); }
