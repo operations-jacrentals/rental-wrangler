@@ -9654,10 +9654,29 @@ async function chargeInvoiceFlow(invoiceId) {
     fail(friendlyPayErr(r));
   } catch (e) { fail('Network error — try again.'); }
 }
-// Refund the captured amount back to the card (full). Reduces amountPaid; a full
-// refund flips the invoice to Refunded. The server is authoritative.
+// Refund the captured amount (full). Reduces amountPaid; a full refund flips the
+// invoice to Refunded. CASH/CHECK payments (#109) carry no Stripe charge, so their
+// refund is a bookkeeping record handled CLIENT-SIDE — exactly like recordManualPayment
+// recorded it — never through stripeRefundInvoice (no charge to reverse → the invoice
+// would just reset to "unpaid" with no Refunded status). CARD/bank refunds go through
+// the authoritative server.
 async function refundInvoiceFlow(invoiceId) {
   const o = state.overlay; if (!o || o.kind !== 'payment') return;
+  const inv = IDX.invoice.get(invoiceId); if (!inv) return;
+  if (/^(cash|check)/i.test(inv.paymentMethod || '')) {
+    const before = invoiceTotals(inv).status;
+    const refunded = Number(inv.amountPaid) || 0;
+    inv.amountPaid = 0;
+    inv.refunded = true;
+    inv.refundedAmount = refunded;
+    inv.allocations = {};   // a full refund releases every line assignment (§7.4)
+    o.confirmRefund = false; o.busy = false;
+    reindex('invoices', inv);
+    const after = invoiceTotals(inv).status;
+    logAction(inv, `Refunded ${money(refunded)} to ${inv.paymentMethod} — ${before} → ${after}`);
+    toast('Refunded ✓'); renderOverlay(); render();
+    return;
+  }
   const live = () => state.overlay === o;
   o.busy = true; o.error = ''; o.confirmRefund = false; renderOverlay();
   try {
