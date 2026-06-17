@@ -63,7 +63,7 @@ function wranglerIssueUrl(title, body, label = 'wrangler-fix') {
 const $  = (sel, root = document) => root.querySelector(sel);
 const el = (tag, cls, html) => { const n = document.createElement(tag); if (cls) n.className = cls; if (html != null) n.innerHTML = html; return n; };
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const money = (n) => (n == null ? '—' : '$' + Number(n).toLocaleString('en-US', { maximumFractionDigits: 0 }));
+const money = (n) => { if (n == null) return '—'; const v = Math.round(Number(n) * 100) / 100; return '$' + v.toLocaleString('en-US', { minimumFractionDigits: Number.isInteger(v) ? 0 : 2, maximumFractionDigits: 2 }); };   // cents shown only when present, so exact tax ($53.75) reads true while whole-dollar figures stay clean
 const num = (n) => (n == null ? '—' : Number(n).toLocaleString('en-US', { maximumFractionDigits: 1 }));
 const TODAY = parseISO(TODAY_ISO);
 const dayDiff = (a, b) => Math.round((b - a) / 86400000);
@@ -899,7 +899,7 @@ function invoiceTotals(inv) {
   const exempt = !!(inv.taxExempt || cust?.salesTaxExempt);
   // transport + custom lines can be flagged li.taxExempt; rentals/parts/labor are taxable
   const taxBase = exempt ? 0 : (inv.lineItems || []).reduce((a, li) => a + (li.taxExempt ? 0 : (Number(li.amount) || 0)), 0);
-  const tax = Math.round(taxBase * TAX_RATE);
+  const tax = Math.round(taxBase * TAX_RATE * 100) / 100;   // §10 exact-cent tax — never round to the whole dollar (that overcharges, e.g. $500 @ 10.75% = $53.75 not $54)
   const total = subtotal + tax;
   const paid = Number(inv.amountPaid) || 0;
   const balance = total - paid;
@@ -9421,7 +9421,7 @@ function setupPayAlloc() {
       if (inp.dataset.taxable === '1') taxable += v; else plain += v;
     });
     const pre = taxable + plain;
-    const tax = exempt ? 0 : Math.round(taxable * TAX_RATE);
+    const tax = exempt ? 0 : Math.round(taxable * TAX_RATE * 100) / 100;   // §10 exact-cent tax (matches invoiceTotals — no whole-dollar overcharge)
     const gross = Math.min(pre + tax, bal);
     const after = Math.max(0, bal - gross);
     const counter = body.querySelector('.js-alloc-counter');
@@ -9448,7 +9448,7 @@ function allocCharge(inv, o) {
     alloc[L.key] = v;
     if (L.taxable) taxable += v; else plain += v;
   });
-  const tax = exempt ? 0 : Math.round(taxable * TAX_RATE);
+  const tax = exempt ? 0 : Math.round(taxable * TAX_RATE * 100) / 100;   // §10 exact-cent tax — the charged gross must use real cents, not a rounded-up dollar
   const gross = Math.min(taxable + plain + tax, invoiceTotals(inv).balance);
   return { gross, alloc };
 }
