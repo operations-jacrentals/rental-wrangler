@@ -1190,6 +1190,7 @@ const state = {
   mobileCol: 0,               // §M1 — which column the phone shows (0 Yard · 1 Rentals · 2 Customers); drives swipe position + the per-column bottom strip
   woPartForm: null,           // woId whose "+ Add Part/Labor" inline form is open
   invLineForm: null,          // invoiceId whose "+ Add Custom" inline form is open
+  invMergePick: null,         // invoiceId whose "Merge invoice" picker is open (consolidate unpaid bills)
   dashboard: false,           // §5.3/§11 Office Dispatch Time Grid (grid-swap mode)
   seq: 1,
   invoiceSeq: DATA.invoices.length,   // monotonic invoice number (never reused after a discard)
@@ -3802,10 +3803,15 @@ const DETAIL = {
             : `${actionPill('money', hasCardOnFile(cust) ? (t.paid > 0 ? 'Pay balance ' : 'Pay ') + money2(t.balance) : 'Take payment', { js: 'js-pay-invoice', data: { rec: i.invoiceId } })}${hasCardOnFile(cust) ? `<span class="muted" style="font-size:11px">${esc(cardLabel(cust))}</span>` : ''}`)
       : '';
     const lineForm = `<div class="lineform"><input class="lf-in js-lf-label" placeholder="Custom line description" /><div class="lineform-row"><input class="lf-in js-lf-amt" type="number" min="0" placeholder="Amount $" /></div><div class="pillrow" style="justify-content:flex-end">${ghostPill('Cancel', { js: 'js-line-cancel' })}${actionPill('commit', 'Add line', { js: 'js-line-save', data: { rec: i.invoiceId } })}</div></div>`;
+    // Merge (#64): a customer's other UNPAID invoices can fold into this one. Money-safe
+    // by construction — only $0-paid, unlocked, un-refunded bills qualify (invoiceMergeable).
+    const mergeables = (canMoney() && invoiceMergeable(i)) ? DATA.invoices.filter((o) => o.invoiceId !== i.invoiceId && o.customerId === i.customerId && invoiceMergeable(o)) : [];
+    const mergePicker = `<div class="lineform"><div class="muted" style="font-size:12px;margin-bottom:7px">Fold another unpaid invoice for ${esc(cust ? cust.name : 'this customer')} into ${esc(i.invoiceId)} — its lines move over and the original is removed.</div>${mergeables.map((o) => { const ot = invoiceTotals(o); const n = (o.lineItems || []).length; return `<div class="hitem"><b class="derived">${esc(invoiceShort(o.invoiceId))}</b><span class="muted" style="font-size:11px">${n} line${n === 1 ? '' : 's'} · ${money2(ot.total)}</span><span class="spacer"></span>${actionPill('commit', 'Merge in', { js: 'js-merge-pick', h: 24, data: { keep: i.invoiceId, rec: o.invoiceId } })}</div>`; }).join('')}<div class="pillrow" style="justify-content:flex-end;margin-top:7px">${ghostPill('Done', { js: 'js-merge-cancel' })}</div></div>`;
     const manageRow = state.invLineForm === i.invoiceId ? lineForm
+      : (state.invMergePick === i.invoiceId && mergeables.length) ? mergePicker
       : locked
         ? `<div class="pillrow"><span class="muted" style="font-size:12px">🔒 Pricing locked.</span>${canMoney() ? actionPill('commit', 'Unlock to edit', { js: 'js-unlock-invoice', data: { rec: i.invoiceId } }) : ''}</div>`
-        : `<div class="pillrow pillcol">${addBtn('Rental', { line: true, js: 'js-add-line', h: 26, data: { rec: i.invoiceId, kind: 'Rental' } })}${addBtn('WO', { line: true, js: 'js-add-line', h: 26, data: { rec: i.invoiceId, kind: 'WO' } })}${addBtn('Custom', { line: true, js: 'js-add-line', h: 26, data: { rec: i.invoiceId, kind: 'Custom' } })}</div>${canMoney() && (i.lineItems || []).length ? `<div class="pillrow pillcol">${actionPill('commit', '🔒 Lock price', { js: 'js-lock-invoice', data: { rec: i.invoiceId } })}</div>` : ''}`;
+        : `<div class="pillrow pillcol">${addBtn('Rental', { line: true, js: 'js-add-line', h: 26, data: { rec: i.invoiceId, kind: 'Rental' } })}${addBtn('WO', { line: true, js: 'js-add-line', h: 26, data: { rec: i.invoiceId, kind: 'WO' } })}${addBtn('Custom', { line: true, js: 'js-add-line', h: 26, data: { rec: i.invoiceId, kind: 'Custom' } })}</div>${canMoney() && (i.lineItems || []).length ? `<div class="pillrow pillcol">${actionPill('commit', '🔒 Lock price', { js: 'js-lock-invoice', data: { rec: i.invoiceId } })}</div>` : ''}${mergeables.length ? `<div class="pillrow pillcol">${addBtn('Merge invoice', { line: true, js: 'js-merge-open', h: 26, data: { rec: i.invoiceId } })}</div>` : ''}`;
     const invoiceSec = `<div class="section"><h4>Invoice</h4>
       <div class="inv-split">
         <div class="inv-actions">
@@ -8141,6 +8147,9 @@ function onClick(e) {
   }
   if (closest('.js-line-save')) { const b = closest('.js-line-save'); e.stopPropagation(); const root = b.closest('.lineform'); const label = root.querySelector('.js-lf-label')?.value; const amt = Number(root.querySelector('.js-lf-amt')?.value) || 0; state.invLineForm = null; return addCustomLine(b.dataset.rec, label || 'Custom', amt); }
   if (closest('.js-line-cancel')) { e.stopPropagation(); state.invLineForm = null; return render(); }
+  if (closest('.js-merge-open')) { e.stopPropagation(); state.invMergePick = closest('.js-merge-open').dataset.rec; state.invLineForm = null; return render(); }   // #64 open the merge-invoice picker
+  if (closest('.js-merge-pick')) { const b = closest('.js-merge-pick'); e.stopPropagation(); return mergeInvoiceInto(b.dataset.keep, b.dataset.rec); }
+  if (closest('.js-merge-cancel')) { e.stopPropagation(); state.invMergePick = null; return render(); }
   if (closest('.js-add-part')) { const b = closest('.js-add-part'); e.stopPropagation(); state.partPhoto = null; return openOverlay({ kind: 'partform', woId: b.dataset.rec, idx: null }); }
   if (closest('.js-partedit')) { const b = closest('.js-partedit'); e.stopPropagation(); state.partPhoto = null; return openOverlay({ kind: 'partform', woId: b.dataset.rec, idx: Number(b.dataset.idx) }); }
   if (closest('.js-pf2-save')) { e.stopPropagation(); return savePartForm(); }
@@ -10471,6 +10480,46 @@ function addWOToInvoice(invoiceId, woId) {
   render();
 }
 
+/* ── MERGE INVOICES (Jac, in-app request #64) — consolidate a customer's bills.
+   MONEY-SAFE BY CONSTRUCTION: only invoices with $0 paid, no lock, no refund, no
+   ACH-in-flight are mergeable, so this NEVER touches a payment, allocation, lock,
+   or refund. It only ever removes a $0-paid invoice — exactly what sweepEmptyDrafts
+   already does for empty drafts. Same customer only. */
+function invoiceMergeable(i) {
+  return !!i && !!i.customerId && !i.locked && !i.refunded && !i.achProcessing && (Number(i.amountPaid) || 0) === 0;
+}
+/* Fold the absorbed invoice's lines into the keeper, relink its rentals, then delete
+   it. (The 1.2s sync diff sees the vanished id and pushes a backend delete — §18b.) */
+function mergeInvoiceInto(keepId, absorbId) {
+  const keep = IDX.invoice.get(keepId), src = IDX.invoice.get(absorbId);
+  if (!keep || !src || keepId === absorbId) return;
+  if (!invoiceMergeable(keep)) { toast(`Blocked: invoice ${invoiceShort(keepId)} has a payment or lock — can't merge into it (refund/unlock first).`); return; }
+  if (!invoiceMergeable(src)) { toast(`Blocked: invoice ${invoiceShort(absorbId)} has a payment or lock — refund/unlock it before merging.`); return; }
+  if (keep.customerId !== src.customerId) { toast('Blocked: those invoices belong to different customers.'); return; }
+  // move every line over, re-minting lids so allocations can never collide on the keeper
+  const moved = (src.lineItems || []).map((li) => Object.assign({}, li, { lid: lineLid() }));
+  moved.forEach((li) => keep.lineItems.push(li));
+  // union rentalIds + relink the absorbed invoice's rentals to the keeper (§7.5: one invoice per rental)
+  (src.rentalIds || []).forEach((rid) => {
+    if (!keep.rentalIds.includes(rid)) keep.rentalIds.push(rid);
+    const r = IDX.rental.get(rid); if (r && r.invoiceId === absorbId) r.invoiceId = keepId;
+  });
+  if (!keep.po && src.po) keep.po = src.po;                 // carry a PO if the keeper has none
+  const movedTotal = moved.reduce((a, li) => a + (Number(li.amount) || 0), 0);
+  // delete the absorbed invoice (IDX + array — the sync diff handles the backend)
+  const idx = DATA.invoices.indexOf(src); if (idx >= 0) DATA.invoices.splice(idx, 1);
+  IDX.invoice.delete(absorbId);
+  if (keep.mock && keep.lineItems.length) delete keep.mock;   // a merged-into invoice is a real bill now, not a throwaway draft
+  logAction(keep, `Merged in invoice ${invoiceShort(absorbId)} — ${moved.length} line${moved.length === 1 ? '' : 's'} (${money(movedTotal)})`);
+  reindex('invoices', keep);                                  // → saveSoon() flushes the merge + the delete
+  toast(`Invoice ${invoiceShort(absorbId)} merged into ${invoiceShort(keepId)}.`);
+  // keep the picker open if more bills remain to merge, else close it
+  const more = DATA.invoices.some((o) => o.invoiceId !== keepId && o.customerId === keep.customerId && invoiceMergeable(o));
+  state.invMergePick = more ? keepId : null;
+  const session = activeSession(); if (session.anchor) setAnchor(session, session.anchor.card, session.anchor.recId, session.anchor.recType);
+  render();
+}
+
 /* ════════════════════════════════════════════════════════════════════════
    §18 PERSISTENCE & BOOT
    ════════════════════════════════════════════════════════════════════════ */
@@ -11009,7 +11058,7 @@ function exposeTestApi() {
       rentalAllocated, unitRentalPrice, rentalDisplayName, setWoLinePhase, setWoPhase, woBottleneck,
       cleanUnitName, planUnitMigration, applyUnitMigration, openMigrationPreview,
       computeTransportPrice, isFueledType, unitTransport, rentalTransport,
-      wrValidatePlan, applyWranglerData, wrFunnel };
+      wrValidatePlan, applyWranglerData, wrFunnel, invoiceMergeable, mergeInvoiceInto };
   } catch (e) { /* no window (non-browser) */ }
 }
 
