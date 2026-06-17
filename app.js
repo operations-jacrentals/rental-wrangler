@@ -64,6 +64,9 @@ const $  = (sel, root = document) => root.querySelector(sel);
 const el = (tag, cls, html) => { const n = document.createElement(tag); if (cls) n.className = cls; if (html != null) n.innerHTML = html; return n; };
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const money = (n) => (n == null ? '—' : '$' + Number(n).toLocaleString('en-US', { maximumFractionDigits: 0 }));
+// money2 — exact-to-the-cent money for the invoice ledger + payment flow (#109): a
+// printed/paid figure must read what's actually owed, not a whole-dollar round.
+const money2 = (n) => (n == null ? '—' : '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 const num = (n) => (n == null ? '—' : Number(n).toLocaleString('en-US', { maximumFractionDigits: 1 }));
 const TODAY = parseISO(TODAY_ISO);
 const dayDiff = (a, b) => Math.round((b - a) / 86400000);
@@ -3771,11 +3774,11 @@ const DETAIL = {
         : li.kind === 'WO' ? `data-pill-card="workOrders" data-pill-rec="${esc(li.ref)}"` : '';
       const x = (!locked && li.kind !== 'transport' && itemPaid(i, li, idx) <= 0) ? `<span class="x line-x" data-x="inv-line-remove" data-idx="${idx}">✕</span>` : '';
       const bal = itemPaid(i, li, idx);   // partial-payment item balance (when assigned)
-      return `<div class="hitem inv-line"><span ${ref} class="inv-line-link" data-r="R7">${esc(li.label)}</span><span class="spacer"></span>${bal > 0 ? `<span class="dvd c-green derived" data-r="R4" data-tip="paid on this line">${money(bal)}✓</span>` : ''}<b class="derived">${money(li.amount)}</b>${x}</div>`;
+      return `<div class="hitem inv-line"><span ${ref} class="inv-line-link" data-r="R7">${esc(li.label)}</span><span class="spacer"></span>${bal > 0 ? `<span class="dvd c-green derived" data-r="R4" data-tip="paid on this line">${money2(bal)}✓</span>` : ''}<b class="derived">${money2(li.amount)}</b>${x}</div>`;
     }).join('');
     const ledgerRow = (label, val, cls) => `<div class="hitem inv-tot${cls ? ' ' + cls : ''}"><span class="muted">${esc(label)}</span><span class="spacer"></span><b class="derived">${val}</b></div>`;
     const kinds = ['rental', 'transport', 'parts', 'labor'].filter((k) => subBy(k) > 0);
-    const subRows = kinds.length > 1 ? kinds.map((k) => ledgerRow(`${k[0].toUpperCase()}${k.slice(1)} subtotal`, money(subBy(k)))).join('') : '';
+    const subRows = kinds.length > 1 ? kinds.map((k) => ledgerRow(`${k[0].toUpperCase()}${k.slice(1)} subtotal`, money2(subBy(k)))).join('') : '';
     // LEFT — customer · PO · payment · the line-management row (adds / lock / unlock / form)
     const custCell = cust ? refPill('customers', i.customerId, cust.name, locked ? {} : { x: 'inv-cust-remove' }) : (i.mock ? addBtn('Customer', { link: true, js: 'js-quickadd-cust', h: 26, data: { card: 'invoices', rec: i.invoiceId, slot: 'customer' } }) : badge('No customer'));
     const poCell = cust?.requiresPO && !i.po
@@ -3786,7 +3789,7 @@ const DETAIL = {
           ? `${badge('Refunded')}${actionPill('commit', 'Details', { js: 'js-pay-invoice', data: { rec: i.invoiceId } })}`
           : t.balance <= 0 && t.paid > 0
             ? `${badge(`Paid${i.paymentMethod ? ' · ' + i.paymentMethod : ''}`, 'green')}${actionPill('danger', 'Refund', { js: 'js-pay-invoice', data: { rec: i.invoiceId } })}`
-            : `${actionPill('money', hasCardOnFile(cust) ? (t.paid > 0 ? 'Pay balance ' : 'Pay ') + money(t.balance) : 'Take payment', { js: 'js-pay-invoice', data: { rec: i.invoiceId } })}${hasCardOnFile(cust) ? `<span class="muted" style="font-size:11px">${esc(cardLabel(cust))}</span>` : ''}`)
+            : `${actionPill('money', hasCardOnFile(cust) ? (t.paid > 0 ? 'Pay balance ' : 'Pay ') + money2(t.balance) : 'Take payment', { js: 'js-pay-invoice', data: { rec: i.invoiceId } })}${hasCardOnFile(cust) ? `<span class="muted" style="font-size:11px">${esc(cardLabel(cust))}</span>` : ''}`)
       : '';
     const lineForm = `<div class="lineform"><input class="lf-in js-lf-label" placeholder="Custom line description" /><div class="lineform-row"><input class="lf-in js-lf-amt" type="number" min="0" placeholder="Amount $" /></div><div class="pillrow" style="justify-content:flex-end">${ghostPill('Cancel', { js: 'js-line-cancel' })}${actionPill('commit', 'Add line', { js: 'js-line-save', data: { rec: i.invoiceId } })}</div></div>`;
     const manageRow = state.invLineForm === i.invoiceId ? lineForm
@@ -3804,13 +3807,14 @@ const DETAIL = {
           ${lines || '<span class="muted" style="font-size:12px">No line items yet</span>'}
           ${(i.lineItems || []).length ? '<div class="inv-div"></div>' : ''}
           ${subRows}
-          ${ledgerRow('Subtotal', money(t.subtotal))}
-          ${ledgerRow(`Tax (${(TAX_RATE * 100).toFixed(2)}%)`, t.exempt ? 'Exempt' : money(t.tax))}
-          ${ledgerRow('Total', money(t.total), 'big')}
-          ${ledgerRow('Paid', `${money(t.paid)} / ${money(t.total)}`)}
-          ${ledgerRow(`Due${i.dueDate ? ' · ' + fmtShortDate(i.dueDate) : ''}`, money(t.balance), 'due')}
+          ${ledgerRow('Subtotal', money2(t.subtotal))}
+          ${ledgerRow(`Tax (${(TAX_RATE * 100).toFixed(2)}%)`, t.exempt ? 'Exempt' : money2(t.tax))}
+          ${ledgerRow('Total', money2(t.total), 'big')}
+          ${ledgerRow('Paid', `${money2(t.paid)} / ${money2(t.total)}`)}
+          ${ledgerRow(`Due${i.dueDate ? ' · ' + fmtShortDate(i.dueDate) : ''}`, money2(t.balance), 'due')}
           ${!locked ? `<div class="kv" style="justify-content:flex-end;align-items:center;gap:7px;margin-top:2px"><span class="derived" style="font-size:11px">Set due date</span><input type="date" class="js-due-date" data-rec="${esc(i.invoiceId)}" value="${esc(i.dueDate || '')}" style="font-size:11px;color:var(--txt);background:var(--panel-2);border:1px solid var(--line);border-radius:6px;padding:3px 7px;color-scheme:dark"></div>` : ''}
           ${payCell ? `<div class="pillrow" style="justify-content:flex-end;margin-top:9px">${payCell}</div>` : ''}
+          <div class="pillrow" style="justify-content:flex-end;margin-top:9px">${ghostPill('🖨 Print', { js: 'js-print-invoice', data: { rec: i.invoiceId } })}</div>
         </div>
       </div></div>`;
     const notes = notesSection('invoices', i, 'invoiceId');
@@ -6404,34 +6408,47 @@ function renderOverlay() {
     const banks = customerBanks(c), vbanks = verifiedBanks(c), ubanks = banks.filter((b) => !b.verified);   // §14b verified banks are chargeable
     const payOk = card || vbanks.length > 0;
     const dsel = o.selectedCardId || (defaultCard(c) && defaultCard(c).id) || (vbanks[0] && vbanks[0].id) || '';   // pre-selected method (card default, else first verified bank)
-    // §19 partial-payment allocation: when there's a live balance + a card, every
-    // line carrying a balance gets a row. Lazy-init o.alloc to "pay in full" so
-    // the popup opens charge-ready; partials are made by dialing lines down.
-    const lines = (!refunded && t.balance > 0 && payOk) ? allocLines(inv) : [];
+    // Payment method (#109, Jac-approved): Cash · Check · Card. Cash + Check are
+    // recorded by hand (no Stripe) and persist through the normal record sync; Card
+    // runs the EXISTING §14/§19 Stripe charge flow untouched. Default to Card when a
+    // card's on file (keeps the charge-first flow), else Cash. Only when there's a
+    // live balance to take.
+    const canPay = !refunded && t.balance > 0;
+    const method = canPay ? (o.method || (payOk ? 'card' : 'cash')) : null;
+    // §19 partial-payment allocation (CARD method only): each line carrying a balance
+    // gets a row. Lazy-init o.alloc to "pay in full" so the card popup opens charge-ready.
+    const lines = (method === 'card' && payOk) ? allocLines(inv) : [];
     if (lines.length && !o.alloc) { o.alloc = {}; lines.forEach((L) => { o.alloc[L.key] = L.remaining; }); }
+    const methodBtn = (m, label) => `<button class="pay-method${method === m ? ' on' : ''} js-pay-method" data-method="${m}" ${o.busy ? 'disabled' : ''}>${label}</button>`;
+    const methodSel = canPay ? `<div class="pay-methods">${methodBtn('cash', '💵 Cash')}${methodBtn('check', '🧾 Check')}${methodBtn('card', '💳 Card')}</div>` : '';
+    // CARD sub-panel — the existing picker + §19 allocation / free amount (logic unchanged).
+    const cardPanel = payOk
+      ? `<div class="pay-cards">${customerCards(c).map((k) => `<button class="pay-card${dsel === k.id ? ' on' : ''} js-pay-pick" data-card="${k.id}" ${o.busy ? 'disabled' : ''}>💳 ${esc(cardOneLabel(k))}${k.isDefault ? ' · default' : ''}${cardExpired(k) ? ' · expired' : ''}</button>`).join('')}${vbanks.map((k) => `<button class="pay-card${dsel === k.id ? ' on' : ''} js-pay-pick" data-bank="${k.id}" ${o.busy ? 'disabled' : ''}>🏦 ${esc(bankOneLabel(k))}</button>`).join('')}</div>${ubanks.length ? `<div class="pay-pm-note">${ubanks.map((b) => `🏦 ${esc(b.bankName)} ••${esc(b.last4)} · needs verification`).join('<br>')}</div>` : ''}${lines.length ? allocSectionHtml(lines, o) : `<label class="pay-field"><span>Amount to charge</span><input class="pay-amt-in" type="number" min="0.01" max="${t.balance}" step="0.01" value="${t.balance.toFixed(2)}" ${o.busy ? 'disabled' : ''}></label>`}`
+      : (banks.length ? '<div class="pay-card-on-file warn">Bank account on file — verify it before charging, or take Cash/Check above.</div>' : '<div class="pay-card-on-file warn">No card on file — a card charge needs one, or take Cash/Check above.</div>');
+    // CASH / CHECK sub-panel — one editable amount (defaults to the full balance,
+    // capped at it; dial it down for a partial), saved to the exact cent. Check adds a #.
+    const manualPanel = `<label class="pay-field"><span>Amount ${method === 'check' ? 'on check' : 'received'}</span><input class="pay-amt-in js-manual-amt" type="number" min="0.01" max="${t.balance}" step="0.01" value="${t.balance.toFixed(2)}" ${o.busy ? 'disabled' : ''}></label>${method === 'check' ? `<label class="pay-field"><span>Check #</span><input class="pay-amt-in js-check-num" type="text" inputmode="numeric" autocomplete="off" placeholder="e.g. 1042" value="${esc(o.checkNum || '')}" ${o.busy ? 'disabled' : ''}></label>` : ''}`;
     const pop = el('div', 'popup'); pop.style.width = '380px';
     pop.innerHTML = `
       <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${CARD_ICON.invoices || ''}</span><h3>${esc(inv.invoiceId)}</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
       <div class="popup-body">
-        <div class="pay-amount"><span class="pay-amount-num">${money(t.balance)}</span><span class="pay-amount-sfx">${t.balance > 0 ? 'balance due' : 'balance'}${c ? ' · ' + esc(c.name) : ''}</span></div>
-        <div class="pay-status-line">${statusPill('invoiceStatus', t.status)}<span class="muted">${money(t.paid)} of ${money(t.total)} paid${refAmt ? ` · ${money(refAmt)} refunded` : ''}</span></div>
+        <div class="pay-amount"><span class="pay-amount-num">${money2(t.balance)}</span><span class="pay-amount-sfx">${t.balance > 0 ? 'balance due' : 'balance'}${c ? ' · ' + esc(c.name) : ''}</span></div>
+        <div class="pay-status-line">${statusPill('invoiceStatus', t.status)}<span class="muted">${money2(t.paid)} of ${money2(t.total)} paid${refAmt ? ` · ${money2(refAmt)} refunded` : ''}</span></div>
         ${inv.achProcessing && inv.pendingPaymentIntentId ? `<div class="pay-card-on-file warn" style="flex-direction:column;align-items:flex-start;gap:7px"><span>🏦 ACH payment processing — it settles in a few business days.</span><button class="pill c-commit js-ach-check" data-rec="${esc(inv.invoiceId)}" data-pi="${esc(inv.pendingPaymentIntentId)}" data-r="R17" ${o.busy ? 'disabled' : ''}>Check ACH status</button></div>` : ''}
         ${refunded ? '<div class="pay-card-on-file">↩ This invoice was refunded.</div>'
           : t.balance <= 0 ? `<div class="pay-card-on-file good">✓ Paid in full${inv.paymentMethod ? ' · ' + esc(inv.paymentMethod) : ''}</div>`
-            : payOk ? `<div class="pay-cards">${customerCards(c).map((k) => `<button class="pay-card${dsel === k.id ? ' on' : ''} js-pay-pick" data-card="${k.id}" ${o.busy ? 'disabled' : ''}>💳 ${esc(cardOneLabel(k))}${k.isDefault ? ' · default' : ''}${cardExpired(k) ? ' · expired' : ''}</button>`).join('')}${vbanks.map((k) => `<button class="pay-card${dsel === k.id ? ' on' : ''} js-pay-pick" data-bank="${k.id}" ${o.busy ? 'disabled' : ''}>🏦 ${esc(bankOneLabel(k))}</button>`).join('')}</div>${ubanks.length ? `<div class="pay-pm-note">${ubanks.map((b) => `🏦 ${esc(b.bankName)} ••${esc(b.last4)} · needs verification`).join('<br>')}</div>` : ''}`
-                   : (banks.length ? '<div class="pay-card-on-file warn">Bank account on file — verify it before charging, or add a card.</div>' : '<div class="pay-card-on-file warn">No payment method on file for this customer.</div>')}
-        ${lines.length ? allocSectionHtml(lines, o)
-          : (t.balance > 0 && payOk ? `<label class="pay-field"><span>Amount to charge</span><input class="pay-amt-in" type="number" min="0.01" max="${t.balance}" step="0.01" value="${t.balance.toFixed(2)}" ${o.busy ? 'disabled' : ''}></label>` : '')}
-        ${o.confirmRefund ? `<div class="pay-confirm">Refund ${money(t.paid)} to ${esc(inv.paymentMethod || 'the card')}?</div>` : ''}
+            : `${methodSel}${method === 'card' ? cardPanel : manualPanel}`}
+        ${o.confirmRefund ? `<div class="pay-confirm">Refund ${money2(t.paid)} to ${esc(inv.paymentMethod || 'the card')}?</div>` : ''}
         ${o.error ? `<div class="login-err" style="text-align:left;margin-top:10px">${esc(o.error)}</div>` : ''}
         <div class="pillrow" style="justify-content:flex-end;margin-top:16px">
           ${o.confirmRefund
             ? `<button class="pill ghost js-refund-cancel" data-r="R18">Cancel</button><button class="pill c-danger js-refund-confirm" data-r="R17" data-rec="${inv.invoiceId}" ${o.busy ? 'disabled' : ''}>${o.busy ? 'Refunding…' : 'Confirm refund'}</button>`
             : `<button class="pill ghost js-close" data-r="R18">Close</button>
                ${t.paid > 0 && !refunded ? `<button class="pill c-danger js-refund-invoice" data-r="R17" data-rec="${inv.invoiceId}" ${o.busy ? 'disabled' : ''}>Refund</button>` : ''}
-               ${t.balance > 0 ? (card
-                 ? `<button class="pill c-money js-charge-invoice" data-rec="${inv.invoiceId}" ${o.busy ? 'disabled' : ''}>${o.busy ? 'Charging…' : 'Charge'}</button>`
-                 : `<button class="add-field anchor js-pay-addcard" data-r="R5b" data-rec="${inv.customerId || ''}" data-inv="${inv.invoiceId}" ${inv.customerId ? '' : 'disabled style="opacity:.45;cursor:default"'}>+Card</button>`) : ''}`}
+               ${canPay ? (method === 'card'
+                 ? (card ? `<button class="pill c-money js-charge-invoice" data-rec="${inv.invoiceId}" ${o.busy ? 'disabled' : ''}>${o.busy ? 'Charging…' : 'Charge'}</button>`
+                         : `<button class="add-field anchor js-pay-addcard" data-r="R5b" data-rec="${inv.customerId || ''}" data-inv="${inv.invoiceId}" ${inv.customerId ? '' : 'disabled style="opacity:.45;cursor:default"'}>+Card</button>`)
+                 : `<button class="pill c-money js-record-payment" data-rec="${inv.invoiceId}" ${o.busy ? 'disabled' : ''}>${o.busy ? 'Recording…' : 'Record payment'}</button>`) : ''}`}
         </div>
       </div>`;
     overlay.appendChild(pop);
@@ -7920,7 +7937,10 @@ function onClick(e) {
   if (closest('.js-ach-check')) { e.stopPropagation(); const b = closest('.js-ach-check'); return checkAchStatus(b.dataset.rec, b.dataset.pi); }
   if (closest('.js-pay-invoice')) { e.stopPropagation(); return openPayInvoice(closest('.js-pay-invoice').dataset.rec); }
   if (closest('.js-pay-pick')) { e.stopPropagation(); if (state.overlay) { const b = closest('.js-pay-pick'); state.overlay.selectedCardId = b.dataset.card || b.dataset.bank; renderOverlay(); } return; }
+  if (closest('.js-pay-method')) { e.stopPropagation(); if (state.overlay) { const nb = document.querySelector('.overlay .js-check-num'); if (nb) state.overlay.checkNum = nb.value.trim(); state.overlay.method = closest('.js-pay-method').dataset.method; state.overlay.error = ''; renderOverlay(); } return; }
   if (closest('.js-charge-invoice')) { e.stopPropagation(); return chargeInvoiceFlow(closest('.js-charge-invoice').dataset.rec); }
+  if (closest('.js-record-payment')) { e.stopPropagation(); return recordManualPayment(closest('.js-record-payment').dataset.rec); }
+  if (closest('.js-print-invoice')) { e.stopPropagation(); return printInvoice(closest('.js-print-invoice').dataset.rec); }
   if (closest('.js-pay-addcard')) { e.stopPropagation(); const b = closest('.js-pay-addcard'); return openAddCard(b.dataset.rec, { returnTo: 'payment', invoiceId: b.dataset.inv }); }
   if (closest('.js-refund-invoice')) { e.stopPropagation(); if (state.overlay) { state.overlay.confirmRefund = true; state.overlay.error = ''; renderOverlay(); } return; }
   if (closest('.js-refund-cancel')) { e.stopPropagation(); if (state.overlay) { state.overlay.confirmRefund = false; renderOverlay(); } return; }
@@ -9427,9 +9447,9 @@ function setupPayAlloc() {
     const counter = body.querySelector('.js-alloc-counter');
     const charge = body.querySelector('.js-alloc-charge');
     const btn = body.querySelector('.js-charge-invoice');
-    if (counter) counter.innerHTML = after <= 0.005 ? `<b style="color:var(--good,#1a9f57)">Pays in full ✓</b>` : `Balance after <b>${money(after)}</b>`;
-    if (charge) charge.innerHTML = pre > 0 ? `${money(pre)}${tax ? ` + ${money(tax)} tax` : ''} = <b>${money(gross)}</b>` : '<span class="muted">nothing assigned</span>';
-    if (btn) { btn.disabled = !(gross > 0) || !!o.busy; if (!o.busy) btn.textContent = gross > 0 ? `Charge ${money(gross)}` : 'Charge'; }
+    if (counter) counter.innerHTML = after <= 0.005 ? `<b style="color:var(--good,#1a9f57)">Pays in full ✓</b>` : `Balance after <b>${money2(after)}</b>`;
+    if (charge) charge.innerHTML = pre > 0 ? `${money2(pre)}${tax ? ` + ${money2(tax)} tax` : ''} = <b>${money2(gross)}</b>` : '<span class="muted">nothing assigned</span>';
+    if (btn) { btn.disabled = !(gross > 0) || !!o.busy; if (!o.busy) btn.textContent = gross > 0 ? `Charge ${money2(gross)}` : 'Charge'; }
   };
   ins.forEach((inp) => inp.addEventListener('input', recompute));
   const auto = body.querySelector('.js-alloc-auto');
@@ -9666,6 +9686,71 @@ function applyPayment(invoiceId, r, alloc) {
   const after = invoiceTotals(inv).status;
   logAction(inv, r.refundedCents != null ? `Refunded ${money((r.refundedCents || 0) / 100)} — ${before} → ${after}` : `Payment — ${before} → ${after} (${r.paymentMethod || 'card'})`);
   render();
+}
+// Record a manual CASH / CHECK payment (#109) — no Stripe. The figure is captured to
+// the exact cent (no ceiling/rounding) and clamped at the outstanding balance so a
+// payment can never overpay; partials just dial the amount down. amountPaid persists
+// through the normal record sync, exactly like every other invoice field.
+function recordManualPayment(invoiceId) {
+  const o = state.overlay; if (!o || o.kind !== 'payment') return;
+  const inv = IDX.invoice.get(invoiceId); if (!inv) return;
+  const numEl = document.querySelector('.overlay .js-check-num'); if (numEl) o.checkNum = numEl.value.trim();   // survive the error re-render
+  const t = invoiceTotals(inv);
+  const amtEl = document.querySelector('.overlay .js-manual-amt');
+  const entered = amtEl ? Number(amtEl.value) : NaN;
+  if (!(entered > 0)) { o.error = 'Enter an amount greater than $0.'; return renderOverlay(); }
+  const balCents = Math.round(t.balance * 100);
+  if (balCents <= 0) { o.error = 'Nothing left to pay on this invoice.'; return renderOverlay(); }
+  const payCents = Math.min(Math.round(entered * 100), balCents);   // exact cents, never over the balance
+  const isCheck = o.method === 'check';
+  let label = 'Cash';
+  if (isCheck) { const num = (o.checkNum || '').trim(); if (!num) { o.error = 'Enter the check number.'; return renderOverlay(); } label = 'Check #' + num; }
+  const before = t.status;
+  inv.amountPaid = (Math.round((Number(inv.amountPaid) || 0) * 100) + payCents) / 100;
+  inv.paymentMethod = label;
+  inv.paidAt = TODAY_ISO;
+  reindex('invoices', inv);
+  const after = invoiceTotals(inv).status;
+  logAction(inv, `${label} payment ${money2(payCents / 100)} — ${before} → ${after}`);
+  closeOverlay();
+  render();
+  toast(invoiceTotals(inv).balance <= 0.005 ? 'Paid in full ✓' : `${label} payment recorded ✓`);
+}
+// Print / PDF a customer-facing invoice (#109) — a clean white document (not the dark
+// yard UI) rendered into #print-root; the @media print rules hide everything else and
+// the browser's print dialog handles paper or "Save as PDF".
+function printInvoice(invoiceId) {
+  const inv = IDX.invoice.get(invoiceId); if (!inv) return;
+  const t = invoiceTotals(inv);
+  const cust = inv.customerId ? IDX.customer.get(inv.customerId) : null;
+  const rows = (inv.lineItems || []).map((li) => `<tr><td>${esc(li.label)}</td><td class="r">${money2(Number(li.amount) || 0)}</td></tr>`).join('')
+    || '<tr><td colspan="2" class="pr-empty">No line items.</td></tr>';
+  let host = document.getElementById('print-root');
+  if (!host) { host = document.createElement('div'); host.id = 'print-root'; document.body.appendChild(host); }
+  host.innerHTML = `
+    <div class="pr-doc">
+      <div class="pr-head"><div class="pr-brand">JacRentals</div><div class="pr-sub">Heavy-Equipment Rental · Sulphur, LA</div></div>
+      <div class="pr-meta">
+        <div><span class="pr-k">Invoice</span><span class="pr-v">${esc(inv.invoiceId)}</span></div>
+        <div><span class="pr-k">Bill to</span><span class="pr-v">${esc(cust ? cust.name : '—')}</span></div>
+        <div><span class="pr-k">Date</span><span class="pr-v">${esc(fmtShortDate(inv.date) || '—')}</span></div>
+        <div><span class="pr-k">Due</span><span class="pr-v">${esc(inv.dueDate ? fmtShortDate(inv.dueDate) : '—')}</span></div>
+        ${inv.po ? `<div><span class="pr-k">PO</span><span class="pr-v">${esc(inv.po)}</span></div>` : ''}
+      </div>
+      <table class="pr-lines"><thead><tr><th>Description</th><th class="r">Amount</th></tr></thead><tbody>${rows}</tbody></table>
+      <div class="pr-tot">
+        <div><span>Subtotal</span><span>${money2(t.subtotal)}</span></div>
+        <div><span>Tax${t.exempt ? ' (exempt)' : ` (${(TAX_RATE * 100).toFixed(2)}%)`}</span><span>${t.exempt ? '—' : money2(t.tax)}</span></div>
+        <div class="pr-big"><span>Total</span><span>${money2(t.total)}</span></div>
+        <div><span>Paid${inv.paymentMethod ? ' · ' + esc(inv.paymentMethod) : ''}</span><span>${money2(t.paid)}</span></div>
+        <div class="pr-due"><span>Balance due</span><span>${money2(t.balance)}</span></div>
+      </div>
+      <div class="pr-foot">Thank you for your business — much obliged. Questions on this ticket? Give the yard a holler.</div>
+    </div>`;
+  document.body.classList.add('printing');
+  const cleanup = () => { document.body.classList.remove('printing'); window.removeEventListener('afterprint', cleanup); };
+  window.addEventListener('afterprint', cleanup);
+  window.print();
 }
 // Lock (seal pricing) or unlock an invoice via the backend (Office/Admin).
 async function lockInvoiceFlow(invoiceId, lock) {
