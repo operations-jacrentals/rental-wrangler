@@ -9145,7 +9145,12 @@ function startNewCustomer(prefill) { openCustomerForm(null, prefill); }
    invoice; "Full intake" hands the typed values to the complete form. (Jac 2026-06-13) */
 /* QUICK ADD lives in the Customers search bar (Jac 2026-06-16): a search that
    carries BOTH a name and a phone, on Enter, instantly creates the customer and
-   opens it in Standard View — NOT linked to anything (you drag it where it goes). */
+   opens it in Standard View — NOT linked to anything (you drag it where it goes).
+   Two-entry flow (Jac 2026-06-17, #62): type the name → Enter stages it as a pill
+   (no customer yet) → type the phone → Enter combines staged name + phone → create. */
+function titleCaseName(s) {
+  return (s || '').split(/\s+/).map((w) => (w ? w.charAt(0).toUpperCase() + w.slice(1) : w)).join(' ');
+}
 function parseQuickCustomer(q) {
   q = (q || '').trim(); if (!q) return null;
   const pm = q.match(/(\+?\d[\d\s().+-]{6,}\d)/);   // a phone-like run (≥8 chars, ends in a digit)
@@ -10844,7 +10849,18 @@ function boot() {
     // §5.4 (per-card) — same Enter-to-pin / Backspace-to-pop on a card's list search.
     if (e.target.classList.contains('mini-search') && e.target.dataset.card && !e.target.classList.contains('js-history-search')) {
       const card = e.target.dataset.card; const cs = activeSession().cards[card];
-      if (e.key === 'Enter') { e.preventDefault(); if (card === 'customers' && quickAddCustomerFromSearch(e.target.value)) return; addFilterTerm(card, e.target.value); return; }
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (card === 'customers') {
+          // #62 two-entry quick-add: fold any staged name pill(s) into this entry (the
+          // phone) so name+phone across two Enters creates the customer. Staged terms are
+          // lowercased by addFilterTerm, so title-case the name half before parsing.
+          const staged = (cs.filterTerms || []).map((ft) => ft.t).join(' ').trim();
+          const combined = staged ? `${titleCaseName(staged)} ${e.target.value}`.trim() : e.target.value;
+          if (quickAddCustomerFromSearch(combined)) return;
+        }
+        addFilterTerm(card, e.target.value); return;
+      }
       if (e.key === 'Backspace' && !e.target.value && (cs.filterTerms || []).length) { e.preventDefault(); removeFilterTerm(card, cs.filterTerms.length - 1); return; }
       return;
     }
