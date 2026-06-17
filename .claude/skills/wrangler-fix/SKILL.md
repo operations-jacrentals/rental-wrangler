@@ -7,19 +7,19 @@ description: How the Wrangler auto-fix engine — and Claude triaging any in-app
 
 A reported glitch or suggestion is a *claim*. Don't implement it on faith and don't
 dismiss it on a hunch — **check it against the project's own canon, prove the verdict,
-and let the proof drive what you do.** Jac was right about the R5b buttons because the
-Rulebook said so; that's the bar.
+and let the proof drive what you do.** The reporter was right about the R5b buttons because
+the Rulebook said so; that's the bar.
 
 ## When to use
 - The auto-fix engine implementing a `wrangler-fix` issue (the issue body is the report).
 - Claude triaging any in-app report (bug or suggestion) before touching code.
 
 ## Two triggers, two starting points
-- **`wrangler-fix`** (a clear bug, or a request Jac already approved) → it's a **go**:
+- **`wrangler-fix`** (a clear bug, or a request the developer already approved) → it's a **go**:
   fix it.
 - **`wrangler-request`** (a suggestion / opinion) → it's a **claim to test**: PROVE it
   first. **If you prove it correct, fix it right then — no approval needed.** Only if
-  you *can't* prove it does it stay in Jac's inbox for his call.
+  you *can't* prove it does it stay in the developer's inbox for their call.
 
 ## Do it in this order
 
@@ -42,19 +42,19 @@ Rulebook said so; that's the bar.
    Never hand-wave. If you can't cite something, you haven't proven it.
 
 4. **Decide from the proof:**
-   - **Proven correct → fix it NOW. Proof replaces approval — do NOT wait for Jac.**
+   - **Proven correct → fix it NOW. Proof replaces approval — do NOT wait for the developer.**
      Implement the **minimal** fix that satisfies the cited rule (match the surrounding
      code + the design language), run all 3 gates (`node ci/smoke.mjs`,
      `node ci/logic-test.mjs`, `node ci/gen-rule-usage.mjs --check`), regenerate
      `rule-usage.js` if rule usage changed, and ship. This holds even for a
      `wrangler-request` — a proven request gets fixed immediately; it does NOT sit in the
      inbox.
-   - **Can't prove it (subjective, no rule backing) →** it needs Jac. If the issue is a
-     `wrangler-request`, leave it as-is (it stays in his inbox) and comment what you found
-     + what you'd need. If it's a `wrangler-fix`, relabel it `wrangler-request` to move it
-     into the inbox.
+   - **Can't prove it (subjective, no rule backing) →** it needs the developer. If the issue
+     is a `wrangler-request`, leave it as-is (it stays in their inbox) and comment what you
+     found + what you'd need. If it's a `wrangler-fix`, relabel it `wrangler-request` to move
+     it into the inbox.
    - **Contradicts the canon →** do NOT implement. Comment the conflict, cite the rule it
-     would break + the trade-off, move it to `wrangler-request` for Jac, and stop.
+     would break + the trade-off, move it to `wrangler-request` for the developer, and stop.
    - **Ambiguous / underspecified →** ask ONE specific question in a comment; don't guess.
    - **Touches money / card / auth / WO-completion →** extra caution; never weaken those;
      flag loudly in the PR if the fix genuinely must touch them.
@@ -72,9 +72,14 @@ Rulebook said so; that's the bar.
    goes live when CI is green.
 
 ## Guardrails
+- **Ask yourself first: "Should I use one of our skills for this?"** Reach for the fitting
+  skill before you freehand — `jactec-ui` for ANY UI element (screen, column, card, pill,
+  flag, button, field, popup, menu), the `mobile-*` skills for phone layout/touch/viewport,
+  `frontend` for new visual design, `webapp-testing` to verify in a real browser. Skip only
+  when none genuinely apply.
 - One report, one targeted fix — don't refactor adjacent code.
 - If the fix changes UI, run it through the design language (yard data-plate; the
   per-card stripe palette; Saira stamps; the light ranch twist) — see CLAUDE.md.
-- **Proof is the gate, not Jac's tap.** If you can cite the canon to prove a report
+- **Proof is the gate, not the developer's tap.** If you can cite the canon to prove a report
   correct, fix it immediately — the inbox is only for the things you genuinely *cannot*
-  prove and that need his judgment.
+  prove and that need their judgment.
