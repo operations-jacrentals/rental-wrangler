@@ -1186,7 +1186,7 @@ const state = {
   filterTerms: [],            // §5.4 — AND-narrowing filter terms (type + Enter)
   unitPick: null,             // { ids, from } — Invoice +WO narrows the Units list to the invoice's linked units (Phase 4)
   chat: { open: false, activeId: null, draft: '', chats: [] },   // §17 internal team dock (Phase 7): PERSISTENT chats (never deleted). Each = { id, tags, participants, messages, seen{userKey:lastViewedAt} }. Empty participants = dormant; reopen via a tagged element.
-  wrangler: { open: false, min: false, messages: [], busy: false, error: '', draft: '', attach: [], files: [], card: null, recId: null, recType: null, reqNumber: null, reqTitle: null, reqUrl: null },   // §18 Mr. Wrangler dock — min collapses it to the header bar; survives minimize, restores conversation on reopen
+  wrangler: { open: false, min: false, id: null, messages: [], busy: false, error: '', draft: '', attach: [], files: [], card: null, recId: null, recType: null, reqNumber: null, reqTitle: null, reqUrl: null },   // §18 Mr. Wrangler dock — id ties the live chat to its §18g rail snapshot; min collapses it to the header bar; survives minimize, restores conversation on reopen
   mobileCol: 0,               // §M1 — which column the phone shows (0 Yard · 1 Rentals · 2 Customers); drives swipe position + the per-column bottom strip
   woPartForm: null,           // woId whose "+ Add Part/Labor" inline form is open
   invLineForm: null,          // invoiceId whose "+ Add Custom" inline form is open
@@ -1196,6 +1196,7 @@ const state = {
   invoiceSeq: DATA.invoices.length,   // monotonic invoice number (never reused after a discard)
   previewsOn: (() => { try { return localStorage.getItem('jactec.previewsOff') !== '1'; } catch (e) { return true; } })(),   // hover previews (per device)
   overbookOn: (() => { try { return localStorage.getItem('jactec.overbook') === '1'; } catch (e) { return false; } })(),   // §10 allow-overbooking policy (per device, default OFF — drag build)
+  wranglerRail: (() => { try { return JSON.parse(localStorage.getItem('jactec.wranglerRail') || '[]'); } catch (e) { return []; } })(),   // §18g the bottom-right rail of past Mr. Wrangler conversations (per device); each = a snapshot { id, title, ts, card, recId, recType, reqNumber, reqTitle, reqUrl, messages }
 };
 const activeSession = () => (state.activeTabId ? state.tabs.find((t) => t.id === state.activeTabId)?.session : state.defaultSession) || state.defaultSession;
 /** Next unique invoice id — a monotonic counter so deleting a Quote-stage invoice can't reuse a number. */
@@ -4952,10 +4953,48 @@ function mountWranglerDock() {
   d.addEventListener('dragleave', (ev) => { if (ev.target === d) d.classList.remove('wr-drag'); });
   d.addEventListener('drop', (ev) => { const files = ev.dataTransfer && ev.dataTransfer.files; if (files && files.length) { ev.preventDefault(); d.classList.remove('wr-drag'); [...files].forEach((f) => wranglerAttachAny(f)); } });
 }
+// §18g Conversation rail — the bottom-right strip of past Mr. Wrangler chats.
+// Opening Mr. Wrangler always starts a NEW chat; the one you leave is snapshotted
+// here so you can hop back in. A `needs-jac` chat (Mr. Wrangler is waiting on you)
+// rides the rail flashing until you answer it.
+const WR_RAIL_MAX = 8;   // how many stored chats the rail keeps (newest win)
+function wranglerNewId() { return 'wc' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+function wranglerRailSave() { try { localStorage.setItem('jactec.wranglerRail', JSON.stringify(state.wranglerRail.slice(0, WR_RAIL_MAX))); } catch (e) {} }
+// A short, human title for a conversation: its first thing-said, else the request title.
+function wranglerConvoTitle(o) {
+  const fu = (o.messages || []).find((m) => m.role === 'user' && m.content && m.content.trim());
+  let t = ((fu && fu.content) || o.reqTitle || '').replace(/\s+/g, ' ').trim();
+  return t ? (t.length > 40 ? t.slice(0, 39) + '…' : t) : 'New chat';
+}
+// Upsert the LIVE conversation into the rail (no-op for an empty chat). Called
+// whenever we're about to leave a chat — close, new, or hop to another.
+function wranglerRailSnapshot() {
+  const o = state.wrangler;
+  if (!o.id || !(o.messages && o.messages.length)) return;
+  const snap = { id: o.id, title: wranglerConvoTitle(o), ts: Date.now(), card: o.card, recId: o.recId, recType: o.recType, reqNumber: o.reqNumber, reqTitle: o.reqTitle, reqUrl: o.reqUrl,
+    messages: o.messages.map((m) => ({ role: m.role, content: m.content, images: m.images || null, files: m.files || null, action: m.action || null, filed: m.filed || false, issue: m.issue || null })) };
+  const i = state.wranglerRail.findIndex((c) => c.id === snap.id);
+  if (i >= 0) state.wranglerRail[i] = snap; else state.wranglerRail.unshift(snap);
+  state.wranglerRail = state.wranglerRail.slice(0, WR_RAIL_MAX);
+  wranglerRailSave();
+}
+// Start a fresh conversation (snapshotting whatever was open first).
+function wranglerNewChat(seed) {
+  openWranglerDock(Object.assign({ messages: [], draft: '', attach: [], files: [], card: null, recId: null, recType: null, reqNumber: null, reqTitle: null, reqUrl: null, id: wranglerNewId() }, seed || {}));
+}
+// Re-open a stored conversation from the rail.
+function wranglerRailOpen(id) {
+  if (id === state.wrangler.id && state.wrangler.open && !state.wrangler.min) return;
+  const snap = state.wranglerRail.find((c) => c.id === id); if (!snap) return;
+  openWranglerDock({ id: snap.id, messages: snap.messages.map((m) => ({ ...m })), draft: '', attach: [], files: [], card: snap.card, recId: snap.recId, recType: snap.recType, reqNumber: snap.reqNumber, reqTitle: snap.reqTitle, reqUrl: snap.reqUrl });
+}
 function openWranglerDock(opts) {
   const w = state.wrangler;
+  // §18g loading a DIFFERENT conversation? snapshot the outgoing one onto the rail first.
+  if (opts.messages !== undefined && opts.id !== w.id && w.messages && w.messages.length) wranglerRailSnapshot();
   w.open = true;
   w.min = false;   // an explicit open always expands the dock
+  if (opts.id !== undefined) w.id = opts.id; else if (opts.messages !== undefined) w.id = wranglerNewId();   // fresh messages = a new conversation gets its own rail id
   if (opts.messages !== undefined) w.messages = opts.messages;
   if (opts.busy !== undefined) w.busy = opts.busy; else w.busy = false;
   if (opts.error !== undefined) w.error = opts.error; else w.error = '';
@@ -6911,7 +6950,7 @@ function openWranglerFromRequest(n) {
   const { report, messages } = parseWranglerIssue(rq.body);
   const msgs = messages.length ? messages.map((m) => ({ ...m })) : (report ? [{ role: 'user', content: report }] : []);
   if (rq.images && rq.images.length) { const fu = msgs.find((m) => m.role === 'user'); if (fu) fu.images = rq.images.slice(); }
-  openWranglerDock({ messages: msgs, draft: '', attach: [], reqNumber: rq.number, reqTitle: rq.title, reqUrl: rq.url });
+  openWranglerDock({ id: 'req' + rq.number, messages: msgs, draft: '', attach: [], reqNumber: rq.number, reqTitle: rq.title, reqUrl: rq.url });
   if (state.overlay?.kind === 'requests') closeOverlay();   // close the inbox overlay so the dock is visible
   if (typeof backendPassword !== 'undefined' && backendPassword) {
     backendCall('wranglerThread', { number: n }).then((r) => {
@@ -6929,12 +6968,24 @@ function syncWranglerComment(o, role, text, images) {
   try { backendCall('wranglerComment', { number: o.reqNumber, role, text: text || '', images: images || [] }).catch(() => {}); } catch (e) {}
 }
 // The floating bottom-right cluster — notification bell (stub for now) + Requests inbox.
+// §18g The conversation rail: stored chats (newest first) + any chat where Mr.
+// Wrangler is waiting on you (those flash). Renders above the bell/inbox FABs.
+function wranglerRailEl() {
+  const needs = (wranglerRequests || []).filter((rq) => (rq.labels || []).includes('wrangler-needs-jac'));
+  const needsNums = new Set(needs.map((rq) => rq.number));
+  const snaps = (state.wranglerRail || []).filter((c) => !(c.reqNumber && needsNums.has(c.reqNumber))).slice(0, 6);
+  if (!needs.length && !snaps.length) return '';
+  const trim = (t) => { t = String(t || '').replace(/\s+/g, ' ').trim(); return esc(t.length > 40 ? t.slice(0, 39) + '…' : t); };
+  const needsChips = needs.map((rq) => `<button class="wr-railchip wr-rc-needs wr-flash" data-wrc-needs="${rq.number}" data-tip="Mr. Wrangler needs your answer — #${rq.number}"><span class="wr-rc-dot"></span><span class="wr-rc-t">${trim(rq.title || ('Request #' + rq.number))}</span></button>`).join('');
+  const snapChips = snaps.map((c) => `<button class="wr-railchip" data-wrc-open="${esc(c.id)}" data-tip="Reopen this chat with Mr. Wrangler"><span class="wr-rc-dot"></span><span class="wr-rc-t">${trim(c.title || 'Chat')}</span></button>`).join('');
+  return `<div class="wr-rail" role="list" aria-label="Mr. Wrangler conversations">${needsChips}${snapChips}</div>`;
+}
 function fabStackEl() {
   const stack = el('div', 'fab-stack');
   const reqBadge = wranglerRequests.length ? `<span class="fab-badge">${wranglerRequests.length > 9 ? '9+' : wranglerRequests.length}</span>` : '';
   const nu = unseenNotifs();
   const notifBadge = nu ? `<span class="fab-badge">${nu > 9 ? '9+' : nu}</span>` : '';
-  stack.innerHTML = `
+  stack.innerHTML = `${wranglerRailEl()}
     <button class="fab js-notifications" data-tip="Notifications">${I.bell}${notifBadge}</button>
     <button class="fab js-requests" data-tip="Requests for your OK — review what Mr. Wrangler filed">${I.inbox}${reqBadge}</button>`;
   return stack;
@@ -8030,7 +8081,7 @@ function onClick(e) {
   }
   if (closest('.js-rbtab')) { e.stopPropagation(); if (state.overlay) state.overlay.rbTab = closest('.js-rbtab').dataset.tab; return renderOverlay(); }
   if (closest('.js-rulebook')) return openOverlay({ kind: 'rulebook' });
-  if (closest('.js-feedback')) { e.stopPropagation(); return openWranglerDock({ messages: [], draft: '', attach: [], card: null, recId: null, recType: null, reqNumber: null, reqTitle: null, reqUrl: null }); }   // §18d folded: the old bug/request form is now the one Mr. Wrangler chat
+  if (closest('.js-feedback')) { e.stopPropagation(); return wranglerNewChat(); }   // §18d folded: the old bug/request form is now the one Mr. Wrangler chat
   // §17 internal team dock
   if (closest('[data-mcol]')) { e.stopPropagation(); state.mobileCol = +closest('[data-mcol]').dataset.mcol; return render(); }   // §M1 dot nav
   if (closest('.js-ext-chat')) { e.stopPropagation(); return toast('External customer & vendor chats arrive with the messaging backend.'); }
@@ -8048,12 +8099,14 @@ function onClick(e) {
   if (closest('.js-fb-send')) { e.stopPropagation(); return sendFeedback(); }
   if (closest('.js-wr-send')) { e.stopPropagation(); return wranglerSend(); }   // §18 Mr. Wrangler
   if (closest('.js-wr-min')) { e.stopPropagation(); state.wrangler.min = !state.wrangler.min; return render(); }   // §18 collapse/expand the wrangler dock to its header bar, in place
-  if (closest('.js-wr-close')) { e.stopPropagation(); state.wrangler.open = false; return render(); }   // §18 close the wrangler dock back to the launcher (conversation is preserved)
+  if (closest('.js-wr-close')) { e.stopPropagation(); wranglerRailSnapshot(); state.wrangler.open = false; return render(); }   // §18 close the dock back to the launcher; the chat lands on the §18g rail
   if (closest('.js-wr-act')) { e.stopPropagation(); return wranglerFileAction(Number(closest('.js-wr-act').dataset.mi)); }   // §18d file the fix/request Mr. Wrangler proposed inline
   if (closest('.js-wr-apply')) { e.stopPropagation(); const o = state.wrangler; if (!o.open) return; const m = o.messages[Number(closest('.js-wr-apply').dataset.mi)]; if (!m || !m.action || m.filed) return; const plan = m.action._plan || wrValidatePlan(m.action); if (!plan.ops.length) return; m.filed = true; applyWranglerData(plan); return; }   // Mr. Wrangler applies the previewed add/update/import
   if (closest('.js-wr-unattach')) { e.stopPropagation(); const o = state.wrangler; if (o.open && o.attach) { o.attach.splice(Number(closest('.js-wr-unattach').dataset.i), 1); render(); } return; }   // §18d drop a pending image attachment
   if (closest('.js-wr-unfile')) { e.stopPropagation(); const o = state.wrangler; if (o.open && o.files) { o.files.splice(Number(closest('.js-wr-unfile').dataset.i), 1); render(); } return; }   // §18d drop a pending file attachment
-  if (closest('.js-wrangler')) { e.stopPropagation(); if (state.wrangler.open) { state.wrangler.open = false; return render(); } return openWranglerDock(state.wrangler.messages.length ? { open: true } : { messages: [], draft: '', attach: [], card: null, recId: null, recType: null, reqNumber: null, reqTitle: null, reqUrl: null }); }   // §18 toggle Mr. Wrangler dock
+  if (closest('.js-wrangler')) { e.stopPropagation(); if (state.wrangler.open) { wranglerRailSnapshot(); state.wrangler.open = false; return render(); } return wranglerNewChat(); }   // §18 toggle Mr. Wrangler dock — opening always starts a fresh chat (the last one waits on the §18g rail)
+  if (closest('[data-wrc-needs]')) { e.stopPropagation(); return openWranglerFromRequest(Number(closest('[data-wrc-needs]').dataset.wrcNeeds)); }   // §18g rail: a flashing "needs you" chat → reopen it seeded from the request
+  if (closest('[data-wrc-open]')) { e.stopPropagation(); return wranglerRailOpen(closest('[data-wrc-open]').dataset.wrcOpen); }   // §18g rail: reopen a stored conversation
   if (closest('.js-notifications')) { e.stopPropagation(); openOverlay({ kind: 'notifications' }); markNotifsSeen(); refreshWranglerNotifications(); return; }   // §18f notification bell — in-app resolved-fix feed
   if (closest('.js-notif-refresh')) { e.stopPropagation(); return refreshWranglerNotifications(); }
   if (closest('.js-requests')) { e.stopPropagation(); openOverlay({ kind: 'requests' }); refreshWranglerRequests(); return; }   // §18e approval inbox

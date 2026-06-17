@@ -1013,6 +1013,21 @@ select.lf-in { appearance: none; cursor: pointer; }
   background: var(--accent); color: #1a1205; font-size: 11px; font-weight: 800; display: grid; place-items: center; box-shadow: 0 0 0 2px var(--bg); }
 .is-phone .fab-stack { bottom: 76px; }   /* clear the mobile dock */
 @media (prefers-reduced-motion: reduce) { .fab:hover { transform: none; } }
+/* §18g Mr. Wrangler conversation rail — stamped data-plate chips above the FABs */
+.wr-rail { display: flex; flex-direction: column; align-items: flex-end; gap: 7px; margin-bottom: 4px; max-width: 240px; }
+.wr-railchip { display: inline-flex; align-items: center; gap: 7px; max-width: 100%; padding: 6px 12px; border-radius: 99px; cursor: pointer;
+  background: linear-gradient(180deg, var(--card-head), var(--card)); border: 1px solid var(--line); color: var(--txt-2, var(--txt));
+  box-shadow: 0 6px 18px -6px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.08);
+  font: inherit; font-size: 12.5px; font-weight: 600;
+  transition: transform .1s, border-color .1s; }
+.wr-railchip:hover { border-color: var(--accent-line); color: var(--txt); transform: translateY(-1px); }
+.wr-railchip:focus-visible { outline: 2px solid var(--accent-line); outline-offset: 2px; }
+.wr-rc-dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; background: var(--txt-3); }
+.wr-rc-t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wr-rc-needs .wr-rc-dot { background: var(--red); }
+.wr-railchip.wr-flash { animation: attnGlow 1.6s ease-in-out infinite; border-color: var(--accent-line); }
+.is-phone .wr-rail { max-width: 62vw; }
+@media (prefers-reduced-motion: reduce) { .wr-railchip:hover { transform: none; } .wr-railchip.wr-flash { animation: none; box-shadow: 0 0 0 2px var(--accent-soft), 0 6px 18px -6px rgba(0,0,0,.6); } }
 
 /* §17 INTERNAL TEAM DOCK (Jac, Phase 7) — headerless: tagged-element pill rail on top,
    chat bubbles, role tab-bar at the bottom. Floats bottom-right. Yard data-plate steel. */
