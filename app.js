@@ -1972,6 +1972,25 @@ function actionPill(kind, label, { js, data, h } = {}) {
 function ghostPill(label, { js, data } = {}) {
   return `<button class="pill ghost${js ? ' ' + js : ''}" data-r="R18"${dataAttrs(data)}>${esc(label)}</button>`;
 }
+/** The popup PLATE — every overlay's shell, so they all read as one bolted data-plate.
+ *  Hazard cap (red `danger` variant for abort/destroy) + corner rivets + stamped Saira
+ *  head (ignition icon · uppercase title · micro tag) + scrollable body + optional sticky
+ *  foot. Pure chrome, composed from already-stamped parts (the muted close, R17/R18 in
+ *  the foot) — no own data-r. `icon` = an `I.*`/`CARD_ICON.*` glyph; `headRight` =
+ *  extra head buttons (e.g. the phone-QR); `body`/`foot` = innerHTML strings. */
+function popupShell({ icon, title, tag, danger, headRight = '', body = '', foot = '', closeJs = 'js-close' } = {}) {
+  return `
+    <div class="pl-cap${danger ? ' danger' : ''}"></div>
+    <span class="pl-rivet tl"></span><span class="pl-rivet tr"></span><span class="pl-rivet bl"></span><span class="pl-rivet br"></span>
+    <div class="popup-head">
+      ${icon ? `<span class="pl-ic">${icon}</span>` : ''}
+      <div class="pl-title"><h3>${esc(title || '')}</h3>${tag ? `<span class="pl-tag">${esc(tag)}</span>` : ''}</div>
+      <span class="spacer"></span>${headRight}
+      <button class="x ${closeJs}" aria-label="Close">${I.x}</button>
+    </div>
+    <div class="popup-body">${body}</div>
+    ${foot ? `<div class="popup-foot">${foot}</div>` : ''}`;
+}
 
 /* ── THE RULEBOOK METADATA (SPEC v8) — feeds the Design Inspector + the
    visual Rulebook overlay. One row per rule: [name, builder, one-liner]. ── */
@@ -6157,9 +6176,12 @@ function renderOverlay() {
     const ag = AGREEMENTS[agType];
     const agSigned = d.agreementSignedAt && d.agreementType === agType;
     const pop = el('div', 'popup nc-popup');
-    pop.innerHTML = `
-      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${CARD_ICON.customers || ''}</span><h3>${isEdit ? 'Edit / Complete Account' : 'New Customer'}</h3><span class="spacer"></span>${isEdit ? `<button class="iconbtn js-nc-qr" data-tip="Open on phone">${I.qr}</button>` : ''}<button class="x js-close">${I.x}</button></div>
-      <div class="popup-body">
+    const ncFoot = `<button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill ignition js-nc-save" data-r="R17">${isEdit ? 'Save account' : 'Create customer'}</button>`;
+    pop.innerHTML = popupShell({
+      icon: CARD_ICON.customers || '', title: isEdit ? 'Edit / Complete Account' : 'New Customer', tag: 'Customer · Account packet',
+      headRight: isEdit ? `<button class="iconbtn js-nc-qr" data-tip="Open on phone">${I.qr}</button>` : '',
+      foot: ncFoot,
+      body: `
         <div class="nc-grid">
           <label class="nc-field"><span>First name *</span><input class="nc-in" data-f="firstName" value="${esc(d.firstName)}" autocomplete="off" /></label>
           <label class="nc-field"><span>Last name</span><input class="nc-in" data-f="lastName" value="${esc(d.lastName)}" autocomplete="off" /></label>
@@ -6197,23 +6219,22 @@ function renderOverlay() {
             </div>
           </div>
         </div>
-        ${o.error ? `<div class="login-err" style="text-align:left;margin-top:10px">${esc(o.error)}</div>` : ''}
-        <div class="pillrow" style="margin-top:16px;justify-content:flex-end"><button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill c-green js-nc-save" data-r="R17">${isEdit ? 'Save account' : 'Create customer'}</button></div>
-      </div>`;
+        ${o.error ? `<div class="login-err" style="text-align:left;margin-top:10px">${esc(o.error)}</div>` : ''}`,
+    });
     overlay.appendChild(pop);
     if (o.cardSub) {   // §14 the "Add card" panel rendered BESIDE the form (not replacing it)
       const cc = IDX.customer.get(o.editId);
       if (cc) {
         const cp = el('div', 'popup'); cp.style.width = '400px';
-        cp.innerHTML = `
-          <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${CARD_ICON.customers || ''}</span><h3>Add card</h3><span class="spacer"></span><button class="x js-cardsub-cancel">${I.x}</button></div>
-          <div class="popup-body">
+        cp.innerHTML = popupShell({
+          icon: CARD_ICON.customers || '', title: 'Add card', tag: 'Customer · Card on file', closeJs: 'js-cardsub-cancel',
+          body: `
             <div class="pay-cap">Card number</div>
             <div class="pay-card-field" id="sl-card-element"></div>
             <div class="pay-err" id="sl-card-error"></div>
-            <p class="muted" style="font-size:11px;margin:10px 0 0">Entered securely via Stripe — we store only the brand + last 4 digits. The signature + selfie on file authorize future charges.</p>
-            <div class="pillrow" style="justify-content:flex-end;margin-top:14px"><button class="pill ghost js-cardsub-cancel" data-r="R18">Cancel</button><button class="pill c-commit js-card-save" data-r="R17">Save card</button></div>
-          </div>`;
+            <p class="muted" style="font-size:11px;margin:10px 0 0">Entered securely via Stripe — we store only the brand + last 4 digits. The signature + selfie on file authorize future charges.</p>`,
+          foot: `<button class="pill ghost js-cardsub-cancel" data-r="R18">Cancel</button><button class="pill c-commit js-card-save" data-r="R17">Save card</button>`,
+        });
         overlay.appendChild(cp);
       }
     }
