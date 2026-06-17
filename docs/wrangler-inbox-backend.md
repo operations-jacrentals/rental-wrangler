@@ -1,6 +1,6 @@
 # Requests inbox — backend handlers to paste (Code.gs)
 
-> **✅ DEPLOYED — 2026-06-16 (web app @22).** All of the handlers below are now
+> **✅ DEPLOYED — 2026-06-16 (web app @23).** All of the handlers below are now
 > live in production `Code.gs` (the script bound to the *Rental Wrangler — Live
 > Database* Sheet): `wranglerFile` photos, `wranglerRequests` photos + state
 > labels, `wranglerComment`, `wranglerThread`, and the needs-you bell. **You do
