@@ -1,5 +1,22 @@
 # Requests inbox — backend handlers to paste (Code.gs)
 
+> **✅ DEPLOYED — 2026-06-16 (web app @23).** All of the handlers below are now
+> live in production `Code.gs` (the script bound to the *Rental Wrangler — Live
+> Database* Sheet): `wranglerFile` photos, `wranglerRequests` photos + state
+> labels, `wranglerComment`, `wranglerThread`, and the needs-you bell. **You do
+> not need to paste anything** — this file is now a *reference*, not a to-do.
+> Re-pasting these snippets verbatim would overwrite the live versions, which
+> deviate intentionally in a few spots:
+> - Chat turns are tagged with a hidden `<!-- wrangler-turn:user|assistant -->`
+>   marker so `wranglerThread` replays only real turns and skips the engine's
+>   audit/verdict comments (the doc's `slice(0,40)` heuristic would re-include them).
+> - `wranglerRequests` queries **both** `wrangler-request` and `wrangler-needs-jac`
+>   (open) so "Needs your answer" cards appear in the inbox, and returns each
+>   issue's `labels` for `reqState()` tagging.
+> - The needs-you bell rides the **existing** notifications renderer: an open
+>   `wrangler-needs-jac` issue is returned with its question in `verdict` and
+>   `merged:false` (the renderer has no `question`/`kind` field).
+
 The richer inbox (see what Mr. Wrangler wants, the photos, and continue the
 conversation) is **live in the app today**. The text + conversation already work
 from the issue body. Two things light up once you paste these `Code.gs` handlers
@@ -155,6 +172,15 @@ the chat plan-gate + inbox work without them.
    `wrangler-needs-jac`, also **relabel it `wrangler-fix`** (remove `wrangler-needs-jac`)
    so the engine re-fires and resumes from the full thread. (The engine already
    sets `wrangler-needs-jac` + posts its question when it pauses.)
+
+   > ⚠️ **Deployed drift (2026-06-17).** The live web app (`@23`) ADDs `wrangler-fix`
+   > on an answer but does **not** remove `wrangler-needs-jac`, so answered cards stay
+   > stuck on "Needs your answer" in the inbox (seen on #125). The `wranglerComment`
+   > resume path must call **both** `addLabelsToIssue('wrangler-fix')` **and**
+   > `removeLabelFromIssue('wrangler-needs-jac')`. Until `Code.gs` is redeployed, the
+   > frontend (`wranglerClearNeedsAnswer`, app.js) drops the stale tag locally on send
+   > as a stopgap — it does NOT fix the GitHub label, so a hard refresh re-surfaces the
+   > card until the backend is corrected.
 
 3. **Ring the bell.** Have `wranglerNotifications` also include open
    `wrangler-needs-jac` issues (e.g. `{ kind: 'needs', number, title, question }`)

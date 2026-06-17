@@ -929,6 +929,15 @@ select.lf-in { appearance: none; cursor: pointer; }
 .wr-bub-imgs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
 .wr-bub-imgs:last-child { margin-bottom: 0; }
 .wr-bub-imgs img { max-width: 160px; max-height: 160px; border-radius: 8px; display: block; }
+/* §18d CSV/text attachment chips — pending (compose) + sent (bubble) */
+.wr-fileatt { position: relative; display: inline-flex; align-items: center; max-width: 180px; padding: 6px 9px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); }
+.wr-fileatt-n, .wr-file-chip { display: inline-flex; align-items: center; gap: 5px; min-width: 0; font-size: 11px; font-weight: 700; color: var(--txt-2); }
+.wr-fileatt-n svg, .wr-file-chip svg { width: 13px; height: 13px; flex: 0 0 auto; color: var(--tan, #c2925a); }
+.wr-file-n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wr-fileatt-x.wr-thumb-x { position: static; margin-left: 6px; flex: 0 0 auto; }
+.wr-bub-files { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.wr-bub-files:last-child { margin-bottom: 0; }
+.wr-bub-files .wr-file-chip { max-width: 200px; padding: 4px 9px; border-radius: 99px; background: var(--bg-2, var(--panel)); border: 1px solid var(--line); }
 .wr-pop.wr-drag { outline: 2px dashed var(--accent, #ff7a1a); outline-offset: -6px; }
 .wr-in { flex: 1; height: 38px; border-radius: 10px; background: var(--bg-2, var(--panel)); border: 1px solid var(--line); color: var(--txt); padding: 0 13px; font: inherit; font-size: 13.5px; outline: none; }
 .wr-in:focus { border-color: var(--accent-line); box-shadow: 0 0 0 3px var(--accent-soft); }
