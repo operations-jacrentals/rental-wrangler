@@ -5113,6 +5113,18 @@ function timeToMin(t) {
   return m ? (+m[1]) * 60 + (+m[2]) : null;
 }
 function fmtClock(t) { const mn = timeToMin(t); if (mn == null) return '—:—'; let h = Math.floor(mn / 60); const m = mn % 60; const ap = h < 12 ? 'a' : 'p'; h = h % 12 || 12; return `${h}:${String(m).padStart(2, '0')}${ap}`; }
+// §2.3 cockpit: tapping a stop FOCUSES it on the map (pan + highlight) — never leaves the
+// cockpit. Opening the full rental is the customer link inside the stop (refPill). No flicker
+// (pan + a class toggle, not a full render).
+function dispatchFocusStop(stopId) {
+  const day = state.dispatchDay || TODAY_ISO;
+  const s = dispatchDayStops(day).find((x) => x.id === stopId); if (!s) return;
+  const pos = (s.pin && Number.isFinite(s.pin.lat)) ? s.pin : _dispGeo[s.addr];
+  if (_dispMap && pos) { _dispMap.panTo(pos); if (_dispMap.getZoom() < 14) _dispMap.setZoom(14); }
+  document.querySelectorAll('.disp-tok.focus').forEach((n) => n.classList.remove('focus'));
+  const esc1 = (window.CSS && CSS.escape) ? CSS.escape(stopId) : stopId.replace(/["\\]/g, '\\$&');
+  const tok = document.querySelector(`.disp-tok[data-id="${esc1}"]`); if (tok) tok.classList.add('focus');
+}
 /* §2.3 DISPATCH = the OFFICE COCKPIT (Phase 1, Jac): a FULL-PANE live map of the day's
    run + a minimal schedule rail floating on the right that widens on hover/focus to
    adjust the run ("No set time" pinned on top). Stops auto-fill from rentals; the map
@@ -5144,7 +5156,7 @@ function dispatchGridBody() {
       <div class="dt-rail"><span class="dt-dot"></span><b class="dt-mini">${timeToMin(s.time) != null ? esc(fmtClock(s.time)) : '—'}</b></div>
       <div class="dt-full">
         <div class="dt-r1"><span class="dt-grip" data-tip="Drag to reorder · or type a time">⠿</span><input class="dt-time js-disp-time" data-id="${esc(s.id)}" value="${esc(s.time || '')}" placeholder="—:—" maxlength="8" aria-label="Stop time" data-tip="Set the stop time — reorders the run" /><span class="spacer"></span>${flag}</div>
-        <div class="dt-r2">${badge(kind === 'deliver' ? 'Deliver' : 'Recover', kind === 'deliver' ? 'blue' : 'brown')}<span class="dt-who">${esc(s.cust)} · ${esc(s.unit)}</span></div>
+        <div class="dt-r2">${badge(kind === 'deliver' ? 'Deliver' : 'Recover', kind === 'deliver' ? 'blue' : 'brown')}${refPill('rentals', s.rentalId, s.cust)}${s.unitId ? unitPill(s.unitId) : ''}</div>
         ${s.addr ? `<div class="dt-addr js-site-go" data-rec="${esc(s.rentalId)}" data-unit="${esc(s.unitId || '')}" data-tip="Open the site / set the map pin">${s.pin ? '' : '⚠ '}${esc(s.addr)}</div>` : ''}
       </div>
     </div>`;
@@ -5256,7 +5268,7 @@ function placeDispatchPin(s, pos, isNext, done) {
     icon: isNext
       ? { path: google.maps.SymbolPath.CIRCLE, scale: 13, fillColor: '#ff7a1a', fillOpacity: 1, strokeColor: '#1a1205', strokeWeight: 2 }
       : { path: google.maps.SymbolPath.CIRCLE, scale: done ? 7 : 6, fillColor: fill, fillOpacity: 1, strokeColor: '#0e1318', strokeWeight: 2 } });
-  mk.addListener('click', () => anchorRecord('rentals', s.rentalId));
+  mk.addListener('click', () => dispatchFocusStop(s.id));   // focus on the map, don't leave the cockpit
   _dispMarkers.push(mk);
 }
 async function dispGeocode(addr, day) {
@@ -7989,7 +8001,7 @@ function onClick(e) {
   if (closest('.js-disp-autoroute')) { e.stopPropagation(); return autoDispatchRoute(state.dispatchDay || TODAY_ISO); }
   if (closest('.js-disp-clearlegs')) { e.stopPropagation(); const all = dispatchArrowsLS(); delete all[state.dispatchDay || TODAY_ISO]; _lsSave('jactec.dispatchArrows', all); state.dispArm = null; return render(); }
   if (closest('.js-disp-stop') && !closest('.js-disp-time') && !closest('.disp-grip') && !closest('.js-site-go')) { e.stopPropagation(); return anchorRecord('rentals', closest('.js-disp-stop').dataset.rec); }
-  if (closest('.js-disp-tok') && !closest('.dt-time') && !closest('.dt-grip') && !closest('.js-site-go')) { e.stopPropagation(); return anchorRecord('rentals', closest('.js-disp-tok').dataset.rec); }   // §2.3 cockpit: tap a rail stop → open its rental (parity with the map pins)
+  if (closest('.js-disp-tok') && !closest('.dt-time') && !closest('.dt-grip') && !closest('.js-site-go') && !closest('.pill')) { e.stopPropagation(); return dispatchFocusStop(closest('.js-disp-tok').dataset.id); }   // §2.3 cockpit: tap a rail stop → focus it on the map (the customer pill opens the rental)
   if (closest('.js-new-wo-unit')) { e.stopPropagation(); return startNewWorkOrder(closest('.js-new-wo-unit').dataset.rec); }
   if (closest('.js-newitem')) {
     const kind = closest('.js-newitem').dataset.new;
