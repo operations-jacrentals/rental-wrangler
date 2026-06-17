@@ -295,7 +295,7 @@ input { font-family: inherit; }
    centered on the CARD (not just the free space); the nav cluster pins right and
    never overlaps. Equal 1fr rails keep the chip dead-center; when cramped the
    inactive tab label truncates (below) to make room. */
-.card > .tabrow { display: grid; grid-template-columns: 1fr auto 1fr; align-items: stretch; margin: 9px 8px 5px; flex: 0 0 auto; min-width: 0; }
+.card > .tabrow { display: grid; grid-template-columns: 1fr auto 1fr; align-items: stretch; margin: 13px 8px 8px; flex: 0 0 auto; min-width: 0; }  /* +5 to clear 6px hazard stripe → equal ~8px gap above/below the toggle (Jac) */
 .tabrow .col-tabs { grid-column: 2; justify-self: center; margin: 0; min-width: 0; }
 .coltab {
   display: inline-flex; align-items: center; gap: 7px; padding: 7px 13px; border-radius: 10px; min-width: 0;
@@ -2222,6 +2222,16 @@ body.dragging .row.drop-ok { opacity: 1; }
   background:
     linear-gradient(180deg, rgba(58,80,118,.34), rgba(8,11,18,.68)),
     url('assets/tex-metal-blued.jpg');
+  background-size: cover, 340px;
+  background-repeat: no-repeat, repeat;
+}
+/* center column uses the horizontally-mirrored plate so the texture reads differently
+   across all three columns — breaks the visual repetition for frequent users (Jac) */
+[data-theme="bluedsteel"] .col[data-col="middle"] > .card,
+[data-theme="bluedsteel"] .col[data-col="middle"] > .card.anchored {
+  background:
+    linear-gradient(180deg, rgba(58,80,118,.34), rgba(8,11,18,.68)),
+    url('assets/tex-metal-blued-flip.jpg');
   background-size: cover, 340px;
   background-repeat: no-repeat, repeat;
 }
