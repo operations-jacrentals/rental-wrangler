@@ -5103,8 +5103,15 @@ function dispatchTruckPos(stops) {   // v1 seam — swapped for live telematics 
   const last = done[done.length - 1];
   return (last && last.pin) ? last.pin : YARD_CENTER;
 }
-// "HH:MM" (24h) → minutes (blanks → null, sort last); + a friendly "9:00a" stamp.
-function timeToMin(t) { const m = /^(\d{1,2}):(\d{2})$/.exec((t || '').trim()); return m ? (+m[1]) * 60 + (+m[2]) : null; }
+// Parse a stop time → minutes. Handles the data's 12h "9:00 AM"/"9:00 A" AND 24h "09:00".
+// blanks → null (sort/flag as "no set time"). + a friendly "9:00a" stamp.
+function timeToMin(t) {
+  t = (t || '').trim();
+  let m = /^(\d{1,2}):(\d{2})\s*([ap])\.?m?\.?$/i.exec(t);   // 12-hour: "9:00 AM", "9:00 A", "9:00am"
+  if (m) { let h = (+m[1]) % 12; if (/p/i.test(m[3])) h += 12; return h * 60 + (+m[2]); }
+  m = /^(\d{1,2}):(\d{2})$/.exec(t);                          // 24-hour: "09:00"
+  return m ? (+m[1]) * 60 + (+m[2]) : null;
+}
 function fmtClock(t) { const mn = timeToMin(t); if (mn == null) return '—:—'; let h = Math.floor(mn / 60); const m = mn % 60; const ap = h < 12 ? 'a' : 'p'; h = h % 12 || 12; return `${h}:${String(m).padStart(2, '0')}${ap}`; }
 /* §2.3 DISPATCH = the OFFICE COCKPIT (Phase 1, Jac): a FULL-PANE live map of the day's
    run + a minimal schedule rail floating on the right that widens on hover/focus to
@@ -5132,12 +5139,12 @@ function dispatchGridBody() {
   const tokenEl = (s) => {
     const kind = dispatchKind(s);
     const done = stopDone(s), isNext = s.id === nextId;
-    const flag = done ? `<span class="dt-flag ok">✓ done</span>` : (isNext ? `<span class="dt-flag next">${I.truck} next</span>` : '');
-    return `<div class="disp-tok js-disp-tok kind-${kind}${done ? ' done' : ''}${isNext ? ' next' : ''}${s.pin ? '' : ' nopin'}" data-id="${esc(s.id)}" data-rec="${esc(s.rentalId)}" data-unit="${esc(s.unitId || '')}">
+    const flag = done ? badge('Done', 'green') : (isNext ? `<span class="dt-next">${I.truck} Next</span>` : '');
+    return `<div class="disp-tok js-disp-tok kind-${kind}${done ? ' done' : ''}${isNext ? ' next' : ''}${s.pin ? '' : ' nopin'}" draggable="true" data-id="${esc(s.id)}" data-rec="${esc(s.rentalId)}" data-unit="${esc(s.unitId || '')}">
       <div class="dt-rail"><span class="dt-dot"></span><b class="dt-mini">${timeToMin(s.time) != null ? esc(fmtClock(s.time)) : '—'}</b></div>
       <div class="dt-full">
-        <div class="dt-r1"><span class="dt-grip" data-tip="Type a time to retime/reorder (drag coming soon)">⠿</span><input class="dt-time js-disp-time" data-id="${esc(s.id)}" value="${esc(s.time || '')}" placeholder="—:—" maxlength="5" aria-label="Stop time" data-tip="Set the stop time — reorders the run" /><span class="spacer"></span>${flag}</div>
-        <div class="dt-r2"><span class="dt-kind k-${kind}">${kind === 'deliver' ? '▾' : '▴'} ${kind}</span><span class="dt-who">${esc(s.cust)} · ${esc(s.unit)}</span></div>
+        <div class="dt-r1"><span class="dt-grip" data-tip="Drag to reorder · or type a time">⠿</span><input class="dt-time js-disp-time" data-id="${esc(s.id)}" value="${esc(s.time || '')}" placeholder="—:—" maxlength="8" aria-label="Stop time" data-tip="Set the stop time — reorders the run" /><span class="spacer"></span>${flag}</div>
+        <div class="dt-r2">${badge(kind === 'deliver' ? 'Deliver' : 'Recover', kind === 'deliver' ? 'blue' : 'brown')}<span class="dt-who">${esc(s.cust)} · ${esc(s.unit)}</span></div>
         ${s.addr ? `<div class="dt-addr js-site-go" data-rec="${esc(s.rentalId)}" data-unit="${esc(s.unitId || '')}" data-tip="Open the site / set the map pin">${s.pin ? '' : '⚠ '}${esc(s.addr)}</div>` : ''}
       </div>
     </div>`;
@@ -8949,7 +8956,7 @@ function onChange(e) {
   }
   if (e.target.classList.contains('js-disp-time')) {   // §2.3 dispatch stop time (per-device)
     const t = dispatchTimesLS(); const v = e.target.value.trim(); t[e.target.dataset.id] = v; _lsSave('jactec.dispatchTimes', t);
-    if (e.target.closest('.disprail') && /^\d{1,2}:\d{2}$/.test(v)) render();   // cockpit: a complete time repositions the token on the rail = retime/reorder
+    if (e.target.closest('.disprail') && timeToMin(v) != null) render();   // cockpit: a complete time re-sorts the token on the rail = retime/reorder
     return;
   }
   if (e.target.classList.contains('js-wr-file')) {   // §18d Mr. Wrangler image attach
@@ -10609,6 +10616,7 @@ function boot() {
     }, 130);
   }, true);
   initDrag();   // §15c drag & drop link engine — #drag-layer singleton + document pointer listeners
+  try { loadGoogleMaps(); } catch (e) {}   // §2.3 warm the Maps SDK at boot so the dispatch cockpit + transport editor open instantly (no first-open wait / "load it twice")
   // R0 flash-lint: ON by default — violations self-report by pulsing (SPEC v8)
   try { if (localStorage.getItem('jactec.lint') !== '0') document.body.classList.add('rw-lint'); } catch (err) {}
   document.addEventListener('click', onClick);
@@ -10643,17 +10651,17 @@ function boot() {
   });
   // §2.3 dispatch route reorder — native drag, self-contained (re-render only on drop,
   // so the grid's custom pointer engine isn't involved). Reorders the day's run.
-  let dispDragId = null;
-  document.addEventListener('dragstart', (e) => { const s = e.target.closest && e.target.closest('.js-disp-stop'); if (s) { dispDragId = s.dataset.id; if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'; s.classList.add('disp-dragging'); } });
-  document.addEventListener('dragover', (e) => { if (dispDragId && e.target.closest && e.target.closest('.js-disp-route')) e.preventDefault(); });
+  let dispDragId = null;   // §2.3 cockpit rail: drag a stop token up/down to set the run order (overrides time-sort)
+  document.addEventListener('dragstart', (e) => { const s = e.target.closest && e.target.closest('.js-disp-tok'); if (s) { dispDragId = s.dataset.id; if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', s.dataset.id); } catch (x) {} } s.classList.add('disp-dragging'); } });
+  document.addEventListener('dragover', (e) => { if (dispDragId && e.target.closest && e.target.closest('.disprail')) e.preventDefault(); });
   document.addEventListener('drop', (e) => {
-    const route = e.target.closest && e.target.closest('.js-disp-route'); if (!dispDragId || !route) return; e.preventDefault();
-    const ids = [...route.querySelectorAll('.js-disp-stop')].map((n) => n.dataset.id);
-    const over = e.target.closest('.js-disp-stop');
+    const rail = e.target.closest && e.target.closest('.disprail'); if (!dispDragId || !rail) return; e.preventDefault();
+    const ids = [...rail.querySelectorAll('.js-disp-tok')].map((n) => n.dataset.id);
+    const over = e.target.closest('.js-disp-tok');
     const from = ids.indexOf(dispDragId); if (from !== -1) ids.splice(from, 1);
     const to = over && over.dataset.id !== dispDragId ? ids.indexOf(over.dataset.id) : ids.length;
     ids.splice(to < 0 ? ids.length : to, 0, dispDragId);
-    const ord = dispatchOrderLS(); ord[route.dataset.day] = ids; _lsSave('jactec.dispatchOrder', ord);
+    const ord = dispatchOrderLS(); ord[rail.dataset.day] = ids; _lsSave('jactec.dispatchOrder', ord);
     dispDragId = null; render();
   });
   document.addEventListener('dragend', () => { dispDragId = null; document.querySelectorAll('.disp-dragging').forEach((n) => n.classList.remove('disp-dragging')); });

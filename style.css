@@ -503,6 +503,7 @@ select.lf-in { appearance: none; cursor: pointer; }
 .disp-tok.next { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .disp-tok.done { opacity: .82; }
 .disp-tok.nopin { border-style: dashed; }
+.disp-tok.disp-dragging { opacity: .45; }
 .dt-rail { display: flex; align-items: center; gap: 7px; padding: 6px 8px; }                 /* collapsed view: kind dot + time */
 .disprail:hover .dt-rail, .disprail:focus-within .dt-rail { display: none; }
 .dt-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex: 0 0 auto; color: var(--gray); }
@@ -518,14 +519,10 @@ select.lf-in { appearance: none; cursor: pointer; }
 .dt-time::placeholder { color: var(--txt-3); font-weight: 600; }
 .dt-time:hover { border-color: var(--line); }
 .dt-time:focus { border-color: var(--accent-line); background: var(--bg-2); outline: none; }
-.dt-flag { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .6px; font-size: 9px; font-weight: 700; display: inline-flex; align-items: center; gap: 3px; }
-.dt-flag.ok { color: var(--green); }
-.dt-flag.next { color: var(--accent); }
-.dt-flag.next svg { width: 12px; height: 12px; }
-.dt-r2 { display: flex; align-items: center; gap: 6px; margin-top: 3px; }
-.dt-kind { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .6px; font-size: 9px; font-weight: 700; border-radius: 4px; padding: 1px 5px; flex: 0 0 auto; }
-.dt-kind.k-deliver { color: var(--blue); background: var(--blue-bg); }
-.dt-kind.k-recover { color: var(--brown); background: var(--brown-bg); }
+.dt-next { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .6px; font-size: 9px; font-weight: 700; color: var(--accent); display: inline-flex; align-items: center; gap: 3px; }
+.dt-next svg { width: 12px; height: 12px; }
+.dt-r2 { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+.dt-r1 .pill, .dt-r2 .pill { font-size: 9.5px; }   /* compact stamped badges (R3b) in the tight rail */
 .dt-who { font-size: 11.5px; color: var(--txt-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dt-addr { font-size: 10.5px; color: var(--blue); cursor: pointer; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .disp-tok.nopin .dt-addr { color: var(--yellow); }
