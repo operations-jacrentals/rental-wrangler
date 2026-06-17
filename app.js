@@ -4282,7 +4282,6 @@ function listView(cardDef, session) {
   bar.innerHTML = `
     ${cardJog(card, cs)}
     <button class="bv-btn js-cardgraph${cs.graphView ? ' on' : ''}" data-card="${card}" data-tip="${cs.graphView ? 'Back to list' : 'Graph view'}">${I.graph}</button>
-    <button class="bv-btn js-boardview" data-card="${card}" data-tip="Open Board View (spreadsheet)">${I.table}</button>
     <div class="mini-searchwrap${cterms.length || cascChip ? ' has-terms' : ''}${cs.search.trim() || cterms.length ? ' has-query' : ''}">
       ${cascChip}${cterms.map((ft, i) => filterTermPill(ft, i, card)).join('')}
       <input class="mini-search" placeholder="${cterms.length ? 'Add filter — Enter to pin…' : `Search ${esc(cardDef.title.toLowerCase())}…`}" value="${esc(cs.search)}" data-card="${card}" />
@@ -4500,7 +4499,6 @@ function shopListView(session, byType, forcedSeg) {
   const sterms = cs.filterTerms || [];
   bar.innerHTML = `
     <button class="bv-btn js-cardgraph${cs.graphView ? ' on' : ''}" data-card="shop" data-src="${esc(gsrc)}" data-tip="${cs.graphView ? 'Back to list' : 'Graph view'}">${I.graph}</button>
-    <button class="bv-btn js-boardview" data-card="${boardCard}" data-tip="Open Board View (spreadsheet)">${I.table}</button>
     <div class="mini-searchwrap${sterms.length ? ' has-terms' : ''}${cs.search.trim() || sterms.length ? ' has-query' : ''}">
       ${sterms.map((ft, i) => filterTermPill(ft, i, 'shop')).join('')}
       <input class="mini-search" placeholder="${sterms.length ? 'Add filter — Enter to pin…' : 'Search shop…'}" value="${esc(cs.search)}" data-card="shop" />
@@ -8028,7 +8026,6 @@ function onClick(e) {
   if (closest('.js-ff-cancel')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'board') { o.fileForm = false; o.fileUpload = null; renderOverlay(); } return; }
   if (closest('.js-ff-save')) { e.stopPropagation(); return saveFileForm(); }
   if (closest('.js-vendor-tax')) { e.stopPropagation(); const b = closest('.js-vendor-tax'); const v = recOf('vendors', b.dataset.rec); if (v) { const ex = b.dataset.val === '1'; if (!!v.salesTaxExempt !== ex) { v.salesTaxExempt = ex; reindex('vendors', v); logAction(v, `Sales tax → ${ex ? 'Exempt' : 'Taxed'}`); } if (state.overlay?.kind === 'board') renderOverlay(); render(); } return; }
-  if (closest('.js-boardview')) { e.stopPropagation(); return openBoardView(closest('.js-boardview').dataset.card); }
   if (closest('.js-cardgraph')) { e.stopPropagation(); const b = closest('.js-cardgraph'); const card = b.dataset.card, src = b.dataset.src || card; const cs = activeSession().cards[card]; if (!cs.graphView) { if (graphViewsFor(src)) return gvOpen(card, src); cs.graphView = true; return render(); } cs.graphView = false; return render(); }   // §13.4 per-card Graph carousel toggle (legacy / Shop-'all': dashboard)
   if (closest('.js-gv-chev')) { e.stopPropagation(); const b = closest('.js-gv-chev'); return gvChevron(b.dataset.card, b.dataset.src || b.dataset.card, Number(b.dataset.dir)); }   // §13.4 cycle the active graph view
   if (closest('.js-gv-seg')) { e.stopPropagation(); const b = closest('.js-gv-seg'); return toggleGraphSeg(b.dataset.card, b.dataset.src || b.dataset.card, b.dataset.col, b.dataset.value, b.dataset.label); }   // §13.4 toggle a slice/bar/row/number → search entry
