@@ -1158,7 +1158,7 @@ select.lf-in { appearance: none; cursor: pointer; }
 .hitem .line-x:hover { opacity: 1; color: var(--red); }
 
 /* ── Popups / sheetpops (§0.5, §6.2 #14) ─────────────────────────────────── */
-.overlay { position: fixed; inset: 0; z-index: 50; background: rgba(0,0,0,.5); display: flex; align-items: center; justify-content: center; padding: 40px; }
+.overlay { position: fixed; inset: 0; z-index: 50; background: rgba(0,0,0,.5); display: flex; align-items: center; justify-content: center; gap: 16px; padding: 40px; }
 .overlay.hidden { display: none; }
 .popup { background: var(--panel); border: 1px solid var(--accent); border-radius: var(--radius); box-shadow: var(--shadow), 0 0 0 2px var(--accent-line), 0 0 32px -6px rgba(255,122,26,.5); max-width: 92vw; max-height: 86vh; overflow: hidden; display: flex; flex-direction: column; }
 .popup-head { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--line); }

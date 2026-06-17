@@ -6182,6 +6182,22 @@ function renderOverlay() {
         <div class="pillrow" style="margin-top:16px;justify-content:flex-end"><button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill c-green js-nc-save" data-r="R17">${isEdit ? 'Save account' : 'Create customer'}</button></div>
       </div>`;
     overlay.appendChild(pop);
+    if (o.cardSub) {   // §14 the "Add card" panel rendered BESIDE the form (not replacing it)
+      const cc = IDX.customer.get(o.editId);
+      if (cc) {
+        const cp = el('div', 'popup'); cp.style.width = '400px';
+        cp.innerHTML = `
+          <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${CARD_ICON.customers || ''}</span><h3>Add card</h3><span class="spacer"></span><button class="x js-cardsub-cancel">${I.x}</button></div>
+          <div class="popup-body">
+            <div class="pay-cap">Card number</div>
+            <div class="pay-card-field" id="sl-card-element"></div>
+            <div class="pay-err" id="sl-card-error"></div>
+            <p class="muted" style="font-size:11px;margin:10px 0 0">Entered securely via Stripe — we store only the brand + last 4 digits. The signature + selfie on file authorize future charges.</p>
+            <div class="pillrow" style="justify-content:flex-end;margin-top:14px"><button class="pill ghost js-cardsub-cancel" data-r="R18">Cancel</button><button class="pill c-commit js-card-save" data-r="R17">Save card</button></div>
+          </div>`;
+        overlay.appendChild(cp);
+      }
+    }
   } else if (o.kind === 'agreement') {
     // Read-only signed-agreement viewer (from the customer card). Shows the exact
     // agreement the customer accepted plus their signature + the date.
@@ -6387,6 +6403,7 @@ function renderOverlay() {
   if (o.kind === 'newCustomer') setupSignaturePad();
   if (o.kind === 'payment') setupPayAlloc();   // live counter for the §19 allocation rows
   if (o.kind === 'addCard') { const cc = IDX.customer.get(o.customerId); if (cc && cc.signature && cc.selfie) mountCardElement(); }   // only mount with consent (nothing to orphan otherwise)
+  if (o.kind === 'newCustomer' && o.cardSub) { const cc = IDX.customer.get(o.editId); if (cc && cc.signature && cc.selfie) mountCardElement(); }   // §14 the side-by-side Add-card panel
 }
 const openOverlay = (o) => { state.datepick = null; _ovScroll[o.kind] = 0; state.overlay = o; renderOverlay(); };   // fresh open starts at top
 /* ── §15 in-app feedback: bug/request → queued to the backend Feedback tab ── */
@@ -7846,9 +7863,10 @@ function onClick(e) {
     const rec = closest('.js-add-card').dataset.rec;
     // From the onboarding form: persist the draft (incl. signature/selfie) first, add the card,
     // then RETURN to the form (card now on file) — no save-close-reopen. Elsewhere: normal add.
-    if (state.overlay && state.overlay.kind === 'newCustomer') { ncSyncDraftToCustomer(state.overlay); return openAddCard(rec, { returnTo: 'customerForm' }); }
+    if (state.overlay && state.overlay.kind === 'newCustomer') { ncSyncDraftToCustomer(state.overlay); state.overlay.cardSub = true; renderOverlay(); return; }   // §14 open the card panel BESIDE the form
     return openAddCard(rec);
   }
+  if (closest('.js-cardsub-cancel')) { e.stopPropagation(); if (state.overlay && state.overlay.kind === 'newCustomer') { state.overlay.cardSub = false; renderOverlay(); } return; }   // §14 close just the card panel, keep the form
   if (closest('.js-card-default')) { e.stopPropagation(); const b = closest('.js-card-default'); return setCardDefault(b.dataset.rec, b.dataset.card); }
   if (closest('.js-card-remove')) { e.stopPropagation(); const b = closest('.js-card-remove'); return removeCard(b.dataset.rec, b.dataset.card); }
   if (closest('.js-pm-tab')) { e.stopPropagation(); state.pmTab = closest('.js-pm-tab').dataset.tab; return render(); }   // §14b Cards | ACH toggle
@@ -9411,8 +9429,9 @@ function destroyCardElement() { if (_cardElement) { try { _cardElement.destroy()
 // Save card: SetupIntent (server) → confirmCardSetup (browser) → persist (server).
 // DOM-driven (no renderOverlay) so the Card Element isn't wiped mid-entry.
 async function saveCardFlow(btn) {
-  const o = state.overlay; if (!o || o.kind !== 'addCard') return;
-  const c = IDX.customer.get(o.customerId); if (!c) return;
+  const o = state.overlay; const sub = !!(o && o.kind === 'newCustomer' && o.cardSub);   // §14 card panel beside the onboarding form
+  if (!o || (o.kind !== 'addCard' && !sub)) return;
+  const c = IDX.customer.get(sub ? o.editId : o.customerId); if (!c) return;
   const stripe = getStripe(); if (!stripe || !_cardElement) return;
   const errBox = document.getElementById('sl-card-error');
   const setErr = (m) => { if (errBox) errBox.textContent = m || ''; };
@@ -9441,8 +9460,8 @@ async function saveCardFlow(btn) {
     reindex('customers', c); logAction(c, `Card added — ${brandName(s.card.brand)} ••••${s.card.last4} (signed agreement)`);
     destroyCardElement();
     toast('Card saved ✓');
-    if (o.returnTo === 'payment' && o.invoiceId) openPayInvoice(o.invoiceId);
-    else if (o.returnTo === 'customerForm') openCustomerForm(o.customerId);   // back to the onboarding form, card now on file + draft intact
+    if (sub) { o.cardSub = false; renderOverlay(); }   // §14 close the card panel in place, refresh the form (card now on file)
+    else if (o.returnTo === 'payment' && o.invoiceId) openPayInvoice(o.invoiceId);
     else closeOverlay();
     render();
   } catch (e) { setErr('Network error — try again.'); reset(); }
