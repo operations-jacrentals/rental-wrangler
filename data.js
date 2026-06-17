@@ -58,7 +58,7 @@ const units = [
 const customers = [
   m({ customerId: 'C0009', name: 'Devin Lyles (bayou games)', company: 'bayou games', phone: '(337) 214-5001', email: 'manager@bayougames.com', address: 'Lake Charles, LA, USA', accountType: 'Business', payStatus: 'Current', industry: 'Entertainment', requiresPO: false, accountNotes: 'Recurring event-equipment renter.', stripeId: 'cus_demo009', cards: [{ id: 'CARD-D009', stripePmId: 'pm_demo009', brand: 'visa', last4: '4242', expMonth: 8, expYear: 2031, nickname: '', notes: '', isDefault: true, status: 'active' }], cardBrand: 'visa', cardLast4: '4242', cardExpMonth: 8, cardExpYear: 2031, _digest: { totalPaid: 18400, visits: 14, years: 2, avgFrequencyDays: 26, activePct: 82, firstInvoice: '2024-05-10', lastInvoice: '2026-06-02' },
       usedSalesStage: 'Contacted', interestedCategoryIds: ['CAT001', 'CAT008'], salesAction: 'Send weekend light-tower package quote',
-      membershipStage: 'Inbound Lead',
+      membershipStage: 'N/A',
       activityLog: [ { when: '2026-05-20', text: 'Quoted weekend light-tower package' }, { when: '2026-04-02', text: 'Inbound lead via website form' } ] }),
   m({ customerId: 'C0016', name: 'Kaleb Guidry (Industrial Thermal Services)', company: 'Industrial Thermal Services', phone: '(337) 400-1121', email: 'gracie.manuel@its-thermal.com', address: 'Sulphur, LA, USA', accountType: 'Business Member', payStatus: 'Current', industry: 'Industrial', requiresPO: true, accountNotes: 'PO required on every invoice.', stripeId: 'cus_demo016', _digest: { totalPaid: 41250, visits: 22, years: 3, avgFrequencyDays: 19, activePct: 91, firstInvoice: '2023-09-01', lastInvoice: '2026-05-28' },
       usedSalesStage: 'Not A No!', interestedCategoryIds: ['CAT011'], salesAction: 'Pitch a second excavator for Q3',
@@ -66,7 +66,7 @@ const customers = [
       activityLog: [ { when: '2026-01-15', text: 'Membership renewed — Yearly, Unlimited Transport' }, { when: '2025-11-30', text: 'Payment discussed for renewal' } ] }),
   m({ customerId: 'C0033', name: 'matthew hazel (HD Services)', company: 'HD Services', phone: '(337) 304-0071', email: 'Hdservices2409@gmail.com', address: 'Sulphur, LA, USA', accountType: 'Business', payStatus: 'Partial', industry: 'Construction', requiresPO: true, accountNotes: '', stripeId: 'cus_demo033', _digest: { totalPaid: 7600, visits: 6, years: 1, avgFrequencyDays: 41, activePct: 58, firstInvoice: '2025-08-15', lastInvoice: '2026-06-07' },
       usedSalesStage: 'Payment Discussed', interestedCategoryIds: ['CAT008'], salesAction: 'Follow up on used skid-steer purchase',
-      membershipStage: 'Inbound Lead',
+      membershipStage: 'N/A',
       activityLog: [ { when: '2026-06-07', text: 'Discussed buying a used skid steer' } ] }),
   m({ customerId: 'C0008', name: 'Tucker Fontenot', company: '', phone: '(337) 905-2210', email: '', accountType: 'Non-Business', payStatus: 'Current', industry: '', requiresPO: false, accountNotes: '', stripeId: 'cus_demo008', _digest: { totalPaid: 2320, visits: 4, years: 1, avgFrequencyDays: 63, activePct: 34, firstInvoice: '2025-11-02', lastInvoice: '2026-02-20' } }),
   m({ customerId: 'C0007', name: 'Chaise Russell', company: '', phone: '(409) 781-3344', email: '', accountType: 'Non-Business', payStatus: 'Unpaid', industry: '', requiresPO: false, accountNotes: 'Outstanding balance on last delivery.', stripeId: '', _digest: { totalPaid: 990, visits: 2, years: 1, avgFrequencyDays: 88, activePct: 21, firstInvoice: '2026-01-12', lastInvoice: '2026-03-13' } }),

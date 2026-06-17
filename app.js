@@ -63,7 +63,10 @@ function wranglerIssueUrl(title, body, label = 'wrangler-fix') {
 const $  = (sel, root = document) => root.querySelector(sel);
 const el = (tag, cls, html) => { const n = document.createElement(tag); if (cls) n.className = cls; if (html != null) n.innerHTML = html; return n; };
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const money = (n) => (n == null ? '—' : '$' + Number(n).toLocaleString('en-US', { maximumFractionDigits: 0 }));
+const money = (n) => { if (n == null) return '—'; const v = Math.round(Number(n) * 100) / 100; return '$' + v.toLocaleString('en-US', { minimumFractionDigits: Number.isInteger(v) ? 0 : 2, maximumFractionDigits: 2 }); };   // cents shown only when present, so exact tax ($53.75) reads true while whole-dollar figures stay clean
+// money2 — always-two-decimal money for the invoice ledger + payment flow (#109): a
+// printed/paid figure reads what's actually owed, to the cent, even on whole dollars.
+const money2 = (n) => (n == null ? '—' : '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 const num = (n) => (n == null ? '—' : Number(n).toLocaleString('en-US', { maximumFractionDigits: 1 }));
 const TODAY = parseISO(TODAY_ISO);
 const dayDiff = (a, b) => Math.round((b - a) / 86400000);
@@ -106,6 +109,16 @@ function migrateCustomers() {
           agreement: c.signature ? { signedAt: c.agreementSignedAt || '', version: c.agreementType || 'rental', signature: c.signature, selfie: c.selfie } : null });
       }
       migrationDirty = true;
+    }
+    // §14b ACH bank accounts on file — parallel to cards[]; tokenized via Stripe (us_bank_account),
+    // we store only last4 + bankName + type + the Stripe pm id (never the raw routing/account).
+    if (!Array.isArray(c.achAccounts)) { c.achAccounts = []; migrationDirty = true; }
+    // §7.1 'Inbound Lead' was the de-facto default for EVERY customer — reset those to the new
+    // 'N/A' default ONCE per customer (the flag keeps a deliberate future 'Inbound Lead' picked).
+    if (!c.funnelNAApplied) {
+      if (c.usedSalesStage === 'Inbound Lead') c.usedSalesStage = 'N/A';
+      if (c.membershipStage === 'Inbound Lead') c.membershipStage = 'N/A';
+      c.funnelNAApplied = true; migrationDirty = true;
     }
   });
 }
@@ -229,9 +242,44 @@ function removeCard(custId, cardId) {
   if (backendPassword && k.stripePmId) backendCall('stripeRemoveCard', { customerId: custId, paymentMethodId: k.stripePmId }).catch(() => {});
   render();
 }
+/* ── §14b multi-ACH helpers (parallel to the multi-card helpers above) ── */
+const customerBanks = (c) => (c && Array.isArray(c.achAccounts)) ? c.achAccounts.filter((k) => k.status !== 'removed') : [];
+const defaultBank = (c) => { const ks = customerBanks(c); return ks.find((k) => k.isDefault) || ks[0] || null; };
+const verifiedBanks = (c) => customerBanks(c).filter((k) => k.verified);
+const hasChargeableBank = (c) => verifiedBanks(c).length > 0;
+const bankTypeLabel = (t) => (t === 'savings' ? 'Savings' : 'Checking');
+const bankOneLabel = (k) => k ? `${k.bankName || 'Bank'} ••${k.last4} · ${bankTypeLabel(k.accountType)}${k.verified ? '' : ' · unverified'}` : '';
+function setBankDefault(custId, bankId) {   // app-level default among banks (NOT Stripe's single default PM — that stays the card's, for auto-charge)
+  const c = IDX.customer.get(custId); if (!c) return;
+  const k = customerBanks(c).find((x) => x.id === bankId); if (!k) return;
+  customerBanks(c).forEach((x) => { x.isDefault = x.id === bankId; });
+  reindex('customers', c); logAction(c, `Default ACH → ${k.bankName || 'Bank'} ••${k.last4}`);
+  render();
+}
+function removeBank(custId, bankId) {
+  const c = IDX.customer.get(custId); if (!c) return;
+  const k = (c.achAccounts || []).find((x) => x.id === bankId); if (!k) return;
+  k.status = 'removed'; if (k.isDefault) { k.isDefault = false; const next = customerBanks(c)[0]; if (next) next.isDefault = true; }
+  reindex('customers', c); logAction(c, `ACH removed — ${k.bankName || 'Bank'} ••${k.last4}`);
+  if (backendPassword && k.stripePmId) backendCall('stripeRemoveCard', { customerId: custId, paymentMethodId: k.stripePmId }).catch(() => {});   // detach the bank PM from Stripe (same endpoint)
+  render();
+}
 /** The "Cards on File" section in a customer's standard view: list each card with
  *  default / nickname / remove + an Add-card button (which runs the consent packet). */
-function cardsSection(c) {
+/** Payment Methods — Cards | ACH tabs in a customer's standard view. Both follow the
+ *  same secure pattern: tokenized via Stripe, only last4 + the Stripe pm id stored. */
+function paymentMethodsSection(c) {
+  const tab = (state.pmTab === 'ach') ? 'ach' : 'cards';
+  const flag = cardFlag(c), fm = CARD_FLAG_META[flag];
+  const cn = customerCards(c).length, bn = customerBanks(c).length;
+  const tabs = `<div class="pm-tabs">
+    <button class="pm-tab${tab === 'cards' ? ' on' : ''} js-pm-tab" data-tab="cards">Cards${cn ? ` · ${cn}` : ''}</button>
+    <button class="pm-tab${tab === 'ach' ? ' on' : ''} js-pm-tab" data-tab="ach">ACH${bn ? ` · ${bn}` : ''}</button>
+  </div>`;
+  return `<div class="section sec-cards"><h4>Payment Methods${(tab === 'cards' && flag !== 'ok') ? `<span class="right">${flagEl(fm.label, fm.color)}</span>` : ''}</h4>
+    ${tabs}<div class="pm-body">${tab === 'ach' ? achTabBody(c) : cardTabBody(c)}</div></div>`;
+}
+function cardTabBody(c) {
   const cards = customerCards(c);
   const consent = !!(c.signature && c.selfie);
   const rows = cards.length ? cards.map((k) => {
@@ -245,11 +293,23 @@ function cardsSection(c) {
       <button class="x js-card-remove" data-rec="${c.customerId}" data-card="${k.id}" data-tip="Remove card">${I.x}</button>
     </div>`;
   }).join('') : '<span class="muted" style="font-size:12px">No cards on file.</span>';
-  const flag = cardFlag(c), fm = CARD_FLAG_META[flag];
-  return `<div class="section sec-cards"><h4>Cards on File${flag !== 'ok' ? `<span class="right">${flagEl(fm.label, fm.color)}</span>` : ''}</h4>
-    <div class="cards-list">${rows}</div>
+  return `<div class="cards-list">${rows}</div>
     ${consent ? `<div style="margin-top:10px">${addBtn('Card', { link: true, js: 'js-add-card', data: { rec: c.customerId } })}</div>`
-              : '<span class="muted" style="font-size:11px">Capture a selfie + signature (Edit account) before adding a card.</span>'}</div>`;
+              : '<span class="muted" style="font-size:11px">Capture a selfie + signature (Edit account) before adding a card.</span>'}`;
+}
+function achTabBody(c) {
+  const banks = customerBanks(c);
+  const consent = !!(c.signature && c.selfie);
+  const rows = banks.length ? banks.map((k) => `<div class="card-row">
+      <span class="cr-brand">${esc(k.bankName || 'Bank')} ••${esc(k.last4)}</span>
+      <span class="cr-exp">${esc(bankTypeLabel(k.accountType))}</span>
+      ${k.verified ? badge('Verified', 'green') : actionPill('commit', 'Verify', { js: 'js-bank-verify', data: { rec: c.customerId, bank: k.id } })}
+      ${k.isDefault ? badge('Default', 'blue') : actionPill('commit', 'Make default', { js: 'js-bank-default', data: { rec: c.customerId, bank: k.id } })}
+      <button class="x js-bank-remove" data-rec="${c.customerId}" data-bank="${k.id}" data-tip="Remove bank account">${I.x}</button>
+    </div>`).join('') : '<span class="muted" style="font-size:12px">No bank accounts on file.</span>';
+  return `<div class="cards-list">${rows}</div>
+    ${consent ? `<div style="margin-top:10px">${addBtn('ACH', { link: true, js: 'js-add-ach', data: { rec: c.customerId } })}</div>`
+              : '<span class="muted" style="font-size:11px">Capture a selfie + signature (Edit account) before adding a bank account.</span>'}`;
 }
 
 /* §19 stable-key migration: give every existing invoice line a `lid` and remap
@@ -842,7 +902,7 @@ function invoiceTotals(inv) {
   const exempt = !!(inv.taxExempt || cust?.salesTaxExempt);
   // transport + custom lines can be flagged li.taxExempt; rentals/parts/labor are taxable
   const taxBase = exempt ? 0 : (inv.lineItems || []).reduce((a, li) => a + (li.taxExempt ? 0 : (Number(li.amount) || 0)), 0);
-  const tax = Math.round(taxBase * TAX_RATE);
+  const tax = Math.round(taxBase * TAX_RATE * 100) / 100;   // §10 exact-cent tax — never round to the whole dollar (that overcharges, e.g. $500 @ 10.75% = $53.75 not $54)
   const total = subtotal + tax;
   const paid = Number(inv.amountPaid) || 0;
   const balance = total - paid;
@@ -1126,10 +1186,11 @@ const state = {
   filterTerms: [],            // §5.4 — AND-narrowing filter terms (type + Enter)
   unitPick: null,             // { ids, from } — Invoice +WO narrows the Units list to the invoice's linked units (Phase 4)
   chat: { open: false, activeId: null, draft: '', chats: [] },   // §17 internal team dock (Phase 7): PERSISTENT chats (never deleted). Each = { id, tags, participants, messages, seen{userKey:lastViewedAt} }. Empty participants = dormant; reopen via a tagged element.
-  wrangler: { open: false, messages: [], busy: false, error: '', draft: '', attach: [], files: [], card: null, recId: null, recType: null, reqNumber: null, reqTitle: null, reqUrl: null },   // §18 Mr. Wrangler dock — survives minimize, restores conversation on reopen
+  wrangler: { open: false, min: false, messages: [], busy: false, error: '', draft: '', attach: [], files: [], card: null, recId: null, recType: null, reqNumber: null, reqTitle: null, reqUrl: null },   // §18 Mr. Wrangler dock — min collapses it to the header bar; survives minimize, restores conversation on reopen
   mobileCol: 0,               // §M1 — which column the phone shows (0 Yard · 1 Rentals · 2 Customers); drives swipe position + the per-column bottom strip
   woPartForm: null,           // woId whose "+ Add Part/Labor" inline form is open
   invLineForm: null,          // invoiceId whose "+ Add Custom" inline form is open
+  invMergePick: null,         // invoiceId whose "Merge invoice" picker is open (consolidate unpaid bills)
   dashboard: false,           // §5.3/§11 Office Dispatch Time Grid (grid-swap mode)
   seq: 1,
   invoiceSeq: DATA.invoices.length,   // monotonic invoice number (never reused after a discard)
@@ -1270,6 +1331,15 @@ function openStandard(card, recId, recType) {
   pushCardHistory(cs);       // Task 1 — record the prior (list) view so Back can return
   cs.mode = 'standard'; cs.recId = recId; cs.recType = recType || null; cs.graphView = false;   // opening a record exits the in-column graph view
   ackComments(recOf(entityCardOf(card, recType), recId));   // viewing = acknowledged (Phase 6)
+  // §10 + #54 — opening a Category while the rental-window picker is live (a window's
+  // picked, so availWin is set) pivots the left column to Units, pre-filled with the
+  // category name so Units narrows to that category's window-available units (the
+  // 'available' chip is already pinned by enterAvailabilitySearch). The category stays
+  // in standard mode, so it remains the calendar's availability subject (greyed days).
+  if (card === 'categories' && state.winpicker && availWin) {
+    const cat = IDX.category.get(recId), s = activeSession(), us = s.cards.units;
+    if (cat && us) { us.search = cat.name; us.listLimit = undefined; if (s.cols && s.cols.left) s.cols.left = 'units'; }
+  }
   render();
 }
 /** Universal pill rule (§0.2): clicking any pill forces its target card into
@@ -1514,6 +1584,16 @@ function totColMatch(card, rec, col, value) {
   if (col === '__fc') return DATA.workOrders.some((w) => w.unitId === rec.unitId && w.woType === 'Field Call');   // §13.4 — unit has any Field Call WO
   if (col === '__fcmonth') return DATA.workOrders.some((w) => w.unitId === rec.unitId && w.woType === 'Field Call' && (w.date || '').slice(0, 7) === value);   // §13.4 — Field Call in month YYYY-MM
   if (col === '__rentmonth') return (rec.startDate || '').slice(0, 7) === value;   // §13.4 — rental starting in month YYYY-MM
+  if (col === '__datemonth') return (rec.date || '').slice(0, 7) === value;   // §13.4 — inspections / work orders dated in month YYYY-MM
+  if (col === '__svcstat') {   // §13.4 — a unit's service urgency (mirrors the serviceOrders status pie)
+    if (value === 'wash') return !!rec.washRequested;
+    if (rec.washRequested) return false;
+    const s = topServiceForUnit(rec);
+    if (value === 'past-due') return !!s && s.status === 'past-due';
+    if (value === 'due-soon') return !!s && s.status === 'due-soon';
+    if (value === 'on-schedule') return !s || (s.status !== 'past-due' && s.status !== 'due-soon');
+    return false;
+  }
   const c = cardColumns(card, activeSession()).find((x) => x.key === col);
   return c ? String(c.get(rec)) === String(value) : true;
 }
@@ -1545,6 +1625,8 @@ function colFilterLabel(card, col, value) {
   if (col === '__fc') return 'Field Calls';
   if (col === '__fcmonth') { const d = parseISO(value + '-01'); return 'FC · ' + (d ? d.toLocaleString('en-US', { month: 'short' }) : value); }
   if (col === '__rentmonth') { const d = parseISO(value + '-01'); return d ? d.toLocaleString('en-US', { month: 'short' }) : value; }
+  if (col === '__datemonth') { const d = parseISO(value + '-01'); return d ? d.toLocaleString('en-US', { month: 'short' }) : value; }
+  if (col === '__svcstat') return ({ 'past-due': 'Overdue', 'due-soon': 'Due Soon', 'on-schedule': 'On Schedule', wash: 'Wash' }[value] || value);
   const c = cardColumns(card, activeSession()).find((x) => x.key === col);
   const m = (c && c.meta) ? c.meta(value) : null;
   return (m && m.label) || String(value);
@@ -1903,6 +1985,25 @@ function actionPill(kind, label, { js, data, h } = {}) {
 function ghostPill(label, { js, data } = {}) {
   return `<button class="pill ghost${js ? ' ' + js : ''}" data-r="R18"${dataAttrs(data)}>${esc(label)}</button>`;
 }
+/** The popup PLATE — every overlay's shell, so they all read as one bolted data-plate.
+ *  Hazard cap (red `danger` variant for abort/destroy) + corner rivets + stamped Saira
+ *  head (ignition icon · uppercase title · micro tag) + scrollable body + optional sticky
+ *  foot. Pure chrome, composed from already-stamped parts (the muted close, R17/R18 in
+ *  the foot) — no own data-r. `icon` = an `I.*`/`CARD_ICON.*` glyph; `headRight` =
+ *  extra head buttons (e.g. the phone-QR); `body`/`foot` = innerHTML strings. */
+function popupShell({ icon, title, tag, danger, headRight = '', body = '', foot = '', closeJs = 'js-close' } = {}) {
+  return `
+    <div class="pl-cap${danger ? ' danger' : ''}"></div>
+    <span class="pl-rivet tl"></span><span class="pl-rivet tr"></span><span class="pl-rivet bl"></span><span class="pl-rivet br"></span>
+    <div class="popup-head">
+      ${icon ? `<span class="pl-ic">${icon}</span>` : ''}
+      <div class="pl-title"><h3>${esc(title || '')}</h3>${tag ? `<span class="pl-tag">${esc(tag)}</span>` : ''}</div>
+      <span class="spacer"></span>${headRight}
+      <button class="x ${closeJs}" aria-label="Close">${I.x}</button>
+    </div>
+    <div class="popup-body">${body}</div>
+    ${foot ? `<div class="popup-foot">${foot}</div>` : ''}`;
+}
 
 /* ── THE RULEBOOK METADATA (SPEC v8) — feeds the Design Inspector + the
    visual Rulebook overlay. One row per rule: [name, builder, one-liner]. ── */
@@ -2116,15 +2217,16 @@ const ROW_META = {
 };
 
 /* row-background visualization layers (§6.2 #8) → returns inline-style div */
-// Sold + Inactive units are hidden from the Units list & searches by default; the
-// "Sold/Inactive" sort surfaces ONLY them, and "All Units (any status)" shows every
-// fleet status together (Active/For Sale/Sold/Inactive). (#2)
+// Only ACTIVE (rentable, §9) units show in the Units list & searches by default; any
+// non-Active fleet status (For Sale/Sold/Inactive) is hidden. The "Sold/Inactive" sort
+// surfaces ONLY Sold/Inactive, and "All Units (any status)" shows every fleet status
+// together (Active/For Sale/Sold/Inactive). (#2 / #34)
 const isSoldInactive = (u) => u.fleetStatus === 'Sold' || u.fleetStatus === 'Inactive';
 const unitsVisible = (rows, cs) => {
   const f = cs && cs.sort && cs.sort.field;
   if (f === 'allFleet') return rows;                            // show everything, any fleet status
   if (f === 'soldInactive') return rows.filter(isSoldInactive); // only Sold/Inactive
-  return rows.filter((u) => !isSoldInactive(u));                // default: hide Sold + Inactive
+  return rows.filter((u) => u.fleetStatus === 'Active');        // default: Active only (For Sale/Sold/Inactive hidden)
 };
 function rowViz(card, rec) {
   // §10 availability tint takes precedence while a rental window is in scope
@@ -3570,11 +3672,11 @@ const DETAIL = {
 
     const intCats = (c.interestedCategoryIds || []).map((id) => { const cat = IDX.category.get(id); return cat ? refPill('categories', id, cat.name, { x: 'intcat-remove', xData: id }) : ''; }).join('');
     const usedSales = `<div class="section"><h4>Used Sales</h4><div class="fieldstack centered">
-      ${kvPills(funnelPill(c.customerId, 'usedSales', c.usedSalesStage || 'Inbound Lead'))}
+      ${kvPills(funnelPill(c.customerId, 'usedSales', c.usedSalesStage || 'N/A'))}
       <div class="kv pillrow">${intCats}${addBtn('Category', { link: true, js: 'js-addcat', h: 26, data: { rec: c.customerId } })}</div>
     </div></div>`;
     const membership = `<div class="section"><h4>Membership</h4><div class="fieldstack centered">
-      ${kvPills(funnelPill(c.customerId, 'membership', c.membershipStage || 'Inbound Lead'))}
+      ${kvPills(funnelPill(c.customerId, 'membership', c.membershipStage || 'N/A'))}
       ${isMember && c.paidUntil ? kv(yr(c.paidUntil), { sfx: 'paid until' }) : ''}
       ${c.paidCadence ? kvPills(`${badge('Paid ' + c.paidCadence, 'green')}${c.unlimitedTransport ? badge('Unlimited Transport', 'purple') : ''}`) : ''}
       ${c.paidFees ? kv(money(c.paidFees), { sfx: 'paid fees' }) : ''}
@@ -3610,7 +3712,7 @@ const DETAIL = {
       ${activity}
       ${activeBar}
       ${account}
-      ${cardsSection(c)}
+      ${paymentMethodsSection(c)}
       ${notes.bottom}
       ${historySection('customers', c, cs)}
     </div>`;
@@ -3683,11 +3785,11 @@ const DETAIL = {
         : li.kind === 'WO' ? `data-pill-card="workOrders" data-pill-rec="${esc(li.ref)}"` : '';
       const x = (!locked && li.kind !== 'transport' && itemPaid(i, li, idx) <= 0) ? `<span class="x line-x" data-x="inv-line-remove" data-idx="${idx}">✕</span>` : '';
       const bal = itemPaid(i, li, idx);   // partial-payment item balance (when assigned)
-      return `<div class="hitem inv-line"><span ${ref} class="inv-line-link" data-r="R7">${esc(li.label)}</span><span class="spacer"></span>${bal > 0 ? `<span class="dvd c-green derived" data-r="R4" data-tip="paid on this line">${money(bal)}✓</span>` : ''}<b class="derived">${money(li.amount)}</b>${x}</div>`;
+      return `<div class="hitem inv-line"><span ${ref} class="inv-line-link" data-r="R7">${esc(li.label)}</span><span class="spacer"></span>${bal > 0 ? `<span class="dvd c-green derived" data-r="R4" data-tip="paid on this line">${money2(bal)}✓</span>` : ''}<b class="derived">${money2(li.amount)}</b>${x}</div>`;
     }).join('');
     const ledgerRow = (label, val, cls) => `<div class="hitem inv-tot${cls ? ' ' + cls : ''}"><span class="muted">${esc(label)}</span><span class="spacer"></span><b class="derived">${val}</b></div>`;
     const kinds = ['rental', 'transport', 'parts', 'labor'].filter((k) => subBy(k) > 0);
-    const subRows = kinds.length > 1 ? kinds.map((k) => ledgerRow(`${k[0].toUpperCase()}${k.slice(1)} subtotal`, money(subBy(k)))).join('') : '';
+    const subRows = kinds.length > 1 ? kinds.map((k) => ledgerRow(`${k[0].toUpperCase()}${k.slice(1)} subtotal`, money2(subBy(k)))).join('') : '';
     // LEFT — customer · PO · payment · the line-management row (adds / lock / unlock / form)
     const custCell = cust ? refPill('customers', i.customerId, cust.name, locked ? {} : { x: 'inv-cust-remove' }) : (i.mock ? addBtn('Customer', { link: true, js: 'js-quickadd-cust', h: 26, data: { card: 'invoices', rec: i.invoiceId, slot: 'customer' } }) : badge('No customer'));
     const poCell = cust?.requiresPO && !i.po
@@ -3698,13 +3800,18 @@ const DETAIL = {
           ? `${badge('Refunded')}${actionPill('commit', 'Details', { js: 'js-pay-invoice', data: { rec: i.invoiceId } })}`
           : t.balance <= 0 && t.paid > 0
             ? `${badge(`Paid${i.paymentMethod ? ' · ' + i.paymentMethod : ''}`, 'green')}${actionPill('danger', 'Refund', { js: 'js-pay-invoice', data: { rec: i.invoiceId } })}`
-            : `${actionPill('money', hasCardOnFile(cust) ? (t.paid > 0 ? 'Pay balance ' : 'Pay ') + money(t.balance) : 'Take payment', { js: 'js-pay-invoice', data: { rec: i.invoiceId } })}${hasCardOnFile(cust) ? `<span class="muted" style="font-size:11px">${esc(cardLabel(cust))}</span>` : ''}`)
+            : `${actionPill('money', hasCardOnFile(cust) ? (t.paid > 0 ? 'Pay balance ' : 'Pay ') + money2(t.balance) : 'Take payment', { js: 'js-pay-invoice', data: { rec: i.invoiceId } })}${hasCardOnFile(cust) ? `<span class="muted" style="font-size:11px">${esc(cardLabel(cust))}</span>` : ''}`)
       : '';
     const lineForm = `<div class="lineform"><input class="lf-in js-lf-label" placeholder="Custom line description" /><div class="lineform-row"><input class="lf-in js-lf-amt" type="number" min="0" placeholder="Amount $" /></div><div class="pillrow" style="justify-content:flex-end">${ghostPill('Cancel', { js: 'js-line-cancel' })}${actionPill('commit', 'Add line', { js: 'js-line-save', data: { rec: i.invoiceId } })}</div></div>`;
+    // Merge (#64): a customer's other UNPAID invoices can fold into this one. Money-safe
+    // by construction — only $0-paid, unlocked, un-refunded bills qualify (invoiceMergeable).
+    const mergeables = (canMoney() && invoiceMergeable(i)) ? DATA.invoices.filter((o) => o.invoiceId !== i.invoiceId && o.customerId === i.customerId && invoiceMergeable(o)) : [];
+    const mergePicker = `<div class="lineform"><div class="muted" style="font-size:12px;margin-bottom:7px">Fold another unpaid invoice for ${esc(cust ? cust.name : 'this customer')} into ${esc(i.invoiceId)} — its lines move over and the original is removed.</div>${mergeables.map((o) => { const ot = invoiceTotals(o); const n = (o.lineItems || []).length; return `<div class="hitem"><b class="derived">${esc(invoiceShort(o.invoiceId))}</b><span class="muted" style="font-size:11px">${n} line${n === 1 ? '' : 's'} · ${money2(ot.total)}</span><span class="spacer"></span>${actionPill('commit', 'Merge in', { js: 'js-merge-pick', h: 24, data: { keep: i.invoiceId, rec: o.invoiceId } })}</div>`; }).join('')}<div class="pillrow" style="justify-content:flex-end;margin-top:7px">${ghostPill('Done', { js: 'js-merge-cancel' })}</div></div>`;
     const manageRow = state.invLineForm === i.invoiceId ? lineForm
+      : (state.invMergePick === i.invoiceId && mergeables.length) ? mergePicker
       : locked
         ? `<div class="pillrow"><span class="muted" style="font-size:12px">🔒 Pricing locked.</span>${canMoney() ? actionPill('commit', 'Unlock to edit', { js: 'js-unlock-invoice', data: { rec: i.invoiceId } }) : ''}</div>`
-        : `<div class="pillrow pillcol">${addBtn('Rental', { line: true, js: 'js-add-line', h: 26, data: { rec: i.invoiceId, kind: 'Rental' } })}${addBtn('WO', { line: true, js: 'js-add-line', h: 26, data: { rec: i.invoiceId, kind: 'WO' } })}${addBtn('Custom', { line: true, js: 'js-add-line', h: 26, data: { rec: i.invoiceId, kind: 'Custom' } })}</div>${canMoney() && (i.lineItems || []).length ? `<div class="pillrow pillcol">${actionPill('commit', '🔒 Lock price', { js: 'js-lock-invoice', data: { rec: i.invoiceId } })}</div>` : ''}`;
+        : `<div class="pillrow pillcol">${addBtn('Rental', { line: true, js: 'js-add-line', h: 26, data: { rec: i.invoiceId, kind: 'Rental' } })}${addBtn('WO', { line: true, js: 'js-add-line', h: 26, data: { rec: i.invoiceId, kind: 'WO' } })}${addBtn('Custom', { line: true, js: 'js-add-line', h: 26, data: { rec: i.invoiceId, kind: 'Custom' } })}</div>${canMoney() && (i.lineItems || []).length ? `<div class="pillrow pillcol">${actionPill('commit', '🔒 Lock price', { js: 'js-lock-invoice', data: { rec: i.invoiceId } })}</div>` : ''}${mergeables.length ? `<div class="pillrow pillcol">${addBtn('Merge invoice', { line: true, js: 'js-merge-open', h: 26, data: { rec: i.invoiceId } })}</div>` : ''}`;
     const invoiceSec = `<div class="section"><h4>Invoice</h4>
       <div class="inv-split">
         <div class="inv-actions">
@@ -3716,13 +3823,14 @@ const DETAIL = {
           ${lines || '<span class="muted" style="font-size:12px">No line items yet</span>'}
           ${(i.lineItems || []).length ? '<div class="inv-div"></div>' : ''}
           ${subRows}
-          ${ledgerRow('Subtotal', money(t.subtotal))}
-          ${ledgerRow(`Tax (${(TAX_RATE * 100).toFixed(2)}%)`, t.exempt ? 'Exempt' : money(t.tax))}
-          ${ledgerRow('Total', money(t.total), 'big')}
-          ${ledgerRow('Paid', `${money(t.paid)} / ${money(t.total)}`)}
-          ${ledgerRow(`Due${i.dueDate ? ' · ' + fmtShortDate(i.dueDate) : ''}`, money(t.balance), 'due')}
+          ${ledgerRow('Subtotal', money2(t.subtotal))}
+          ${ledgerRow(`Tax (${(TAX_RATE * 100).toFixed(2)}%)`, t.exempt ? 'Exempt' : money2(t.tax))}
+          ${ledgerRow('Total', money2(t.total), 'big')}
+          ${ledgerRow('Paid', `${money2(t.paid)} / ${money2(t.total)}`)}
+          ${ledgerRow(`Due${i.dueDate ? ' · ' + fmtShortDate(i.dueDate) : ''}`, money2(t.balance), 'due')}
           ${!locked ? `<div class="kv" style="justify-content:flex-end;align-items:center;gap:7px;margin-top:2px"><span class="derived" style="font-size:11px">Set due date</span><input type="date" class="js-due-date" data-rec="${esc(i.invoiceId)}" value="${esc(i.dueDate || '')}" style="font-size:11px;color:var(--txt);background:var(--panel-2);border:1px solid var(--line);border-radius:6px;padding:3px 7px;color-scheme:dark"></div>` : ''}
           ${payCell ? `<div class="pillrow" style="justify-content:flex-end;margin-top:9px">${payCell}</div>` : ''}
+          <div class="pillrow" style="justify-content:flex-end;margin-top:9px">${ghostPill('🖨 Print', { js: 'js-print-invoice', data: { rec: i.invoiceId } })}</div>
         </div>
       </div></div>`;
     const notes = notesSection('invoices', i, 'invoiceId');
@@ -4174,7 +4282,6 @@ function listView(cardDef, session) {
   bar.innerHTML = `
     ${cardJog(card, cs)}
     <button class="bv-btn js-cardgraph${cs.graphView ? ' on' : ''}" data-card="${card}" data-tip="${cs.graphView ? 'Back to list' : 'Graph view'}">${I.graph}</button>
-    <button class="bv-btn js-boardview" data-card="${card}" data-tip="Open Board View (spreadsheet)">${I.table}</button>
     <div class="mini-searchwrap${cterms.length || cascChip ? ' has-terms' : ''}${cs.search.trim() || cterms.length ? ' has-query' : ''}">
       ${cascChip}${cterms.map((ft, i) => filterTermPill(ft, i, card)).join('')}
       <input class="mini-search" placeholder="${cterms.length ? 'Add filter — Enter to pin…' : `Search ${esc(cardDef.title.toLowerCase())}…`}" value="${esc(cs.search)}" data-card="${card}" />
@@ -4187,7 +4294,7 @@ function listView(cardDef, session) {
   // §13.4 — Graph carousel: an interactive panel ABOVE the list (the list renders below,
   // filtered by the chart's g-tagged search terms). Legacy cards still full-replace the list.
   if (cs.graphView && !state.searchMode) {
-    if (graphViewsFor(card)) { const g = el('div', 'gv-panel'); g.innerHTML = graphPanelHtml(card, cs); wrap.appendChild(g); }
+    if (graphViewsFor(card)) { const g = el('div', 'gv-panel'); g.innerHTML = graphPanelHtml(card, card, cs); wrap.appendChild(g); }
     else { const g = el('div', 'gv-card'); g.innerHTML = cardGraphBody(card); wrap.appendChild(g); return wrap; }
   }
   // Phase 4 — Units narrowed to an invoice's linked units (Invoice +WO) → removable chip
@@ -4199,7 +4306,7 @@ function listView(cardDef, session) {
   }
 
   let rows = listFor(card, session);
-  if (card === 'units') rows = unitsVisible(rows, cs);   // hide Sold/Inactive (or show only them via the sort) (#2)
+  if (card === 'units') rows = unitsVisible(rows, cs);   // default: Active only — hide non-Active fleet (or reveal via the sort) (#2/#34)
   // §10 — under an availability window the Units list IS the rentable fleet, so it must
   // match the availability COUNT, which already drops every non-Active unit (§9 via
   // isUnitAvailableFor/categoryAvailableCount). Hide For-Sale/Sold/Inactive here too, or a
@@ -4356,8 +4463,22 @@ function shopCardEl(cardDef, session, forcedSeg) {
   return node;
 }
 
+// §13.4 — a shop row matches like rowMatches (col terms OR within a column, AND across
+// columns, NOT excludes) but resolves each item by its own shop type + the
+// serviceOrders→units search blob. Lets the graph carousel's col-tagged terms filter the
+// shop list (the old path was blob-only and ignored col terms).
+function shopItemMatches(it, query, terms) {
+  const card = it.type, rec = it.rec, terms2 = terms || [];
+  const byCol = {};
+  for (const t of terms2) { if (!t.col) continue; if (t.neg) { if (totColMatch(card, rec, t.col, t.value)) return false; } else (byCol[t.col] = byCol[t.col] || []).push(t.value); }
+  for (const col in byCol) { if (!byCol[col].some((v) => totColMatch(card, rec, col, v))) return false; }
+  return blobMatches(IDX.search.get((card === 'serviceOrders' ? 'units' : card) + ':' + idOf(card, rec)), query, terms2.filter((t) => !t.col));
+}
+
 function shopListView(session, byType, forcedSeg) {
   const cs = session.cards.shop;
+  const gsrc = forcedSeg || (cs.segment && cs.segment !== 'all' ? cs.segment : 'shop');   // §13.4 the view source: a pinned tab or the active segment ('shop' = combined 'all')
+  gvSyncClosed(gsrc, cs);   // graph closed but g-terms linger → save + drop before the bar's pills render
   const wrap = el('div');
   const counts = { all: SHOP_TYPES.reduce((a, ty) => a + byType[ty].length, 0) };
   SHOP_TYPES.forEach((ty) => { counts[ty] = byType[ty].length; });
@@ -4377,8 +4498,7 @@ function shopListView(session, byType, forcedSeg) {
   const bar = el('div', 'listbar');
   const sterms = cs.filterTerms || [];
   bar.innerHTML = `
-    <button class="bv-btn js-cardgraph${cs.graphView ? ' on' : ''}" data-card="shop" data-tip="${cs.graphView ? 'Back to list' : 'Graph view'}">${I.graph}</button>
-    <button class="bv-btn js-boardview" data-card="${boardCard}" data-tip="Open Board View (spreadsheet)">${I.table}</button>
+    <button class="bv-btn js-cardgraph${cs.graphView ? ' on' : ''}" data-card="shop" data-src="${esc(gsrc)}" data-tip="${cs.graphView ? 'Back to list' : 'Graph view'}">${I.graph}</button>
     <div class="mini-searchwrap${sterms.length ? ' has-terms' : ''}${cs.search.trim() || sterms.length ? ' has-query' : ''}">
       ${sterms.map((ft, i) => filterTermPill(ft, i, 'shop')).join('')}
       <input class="mini-search" placeholder="${sterms.length ? 'Add filter — Enter to pin…' : 'Search shop…'}" value="${esc(cs.search)}" data-card="shop" />
@@ -4389,11 +4509,12 @@ function shopListView(session, byType, forcedSeg) {
     </div>`;
   wrap.appendChild(bar);
 
-  // Phase 4 — Graph view is an IN-COLUMN toggle. Keep the bar + segment tabs visible;
-  // the active segment picks which graph shows ('all' → combined shop overview).
+  // §13.4 — Graph carousel. Segment tabs stay visible; a specific segment shows its
+  // interactive carousel ABOVE the list (list filters to the graph terms below); the
+  // 'all' overview (and column-pinned shop tabs) keep the legacy combined dashboard.
   if (cs.graphView && !state.searchMode) {
-    const seg = (forcedSeg || cs.segment); const gseg = (seg && seg !== 'all') ? seg : 'shop';
-    const g = el('div', 'gv-card'); g.innerHTML = cardGraphBody(gseg); wrap.appendChild(g); return wrap;
+    if (graphViewsFor(gsrc)) { const g = el('div', 'gv-panel'); g.innerHTML = graphPanelHtml('shop', gsrc, cs); wrap.appendChild(g); }   // a specific segment → carousel above the list
+    else { const g = el('div', 'gv-card'); g.innerHTML = cardGraphBody('shop'); wrap.appendChild(g); return wrap; }   // 'all' → legacy combined dashboard
   }
 
   // items for the active segment (a column tab pins forcedSeg)
@@ -4402,7 +4523,7 @@ function shopListView(session, byType, forcedSeg) {
     ? SHOP_TYPES.flatMap((ty) => byType[ty].map((rec) => ({ type: ty, rec })))
     : byType[segActive].map((rec) => ({ type: segActive, rec }));
   if (cs.search.trim() || (cs.filterTerms || []).length) {
-    items = items.filter((it) => blobMatches(IDX.search.get((it.type === 'serviceOrders' ? 'units' : it.type) + ':' + idOf(it.type, it.rec)), cs.search, cs.filterTerms));
+    items = items.filter((it) => shopItemMatches(it, cs.search, cs.filterTerms));
   }
   items = shopSort(items, cs.sort);
 
@@ -4557,7 +4678,7 @@ function kpiFor(roleId) {
     const big = C.filter((c) => (c._digest?.totalPaid || 0) > 1999);
     const activeRate = pctOf(big.filter((c) => (c._digest?.activePct || 0) > 0).length, big.length);
     const members = C.filter((c) => /Member/.test(c.accountType || '') && c.accountType !== 'Member Incomplete').length;
-    const leads = C.filter((c) => c.usedSalesStage && c.usedSalesStage !== 'Inbound Lead').length;
+    const leads = C.filter((c) => c.usedSalesStage && c.usedSalesStage !== 'Inbound Lead' && c.usedSalesStage !== 'N/A').length;
     const pipeline = pctOf(members + leads, 10);
     return [revGoal, activeRate, pipeline];
   }
@@ -4603,7 +4724,7 @@ function kpiRaw(roleId) {
   if (roleId === 'sales') {
     const ym = TODAY_ISO.slice(0, 7);
     const rev = R.reduce((a, r) => ((r.startDate || '').slice(0, 7) !== ym ? a : a + ((rentalPrice(r) || {}).price || 0)), 0);
-    return [usd(rev), c(C.filter((x) => (x._digest?.totalPaid || 0) > 1999 && (x._digest?.activePct || 0) > 0).length), c(C.filter((x) => /Member/.test(x.accountType || '') && x.accountType !== 'Member Incomplete').length + C.filter((x) => x.usedSalesStage && x.usedSalesStage !== 'Inbound Lead').length)];
+    return [usd(rev), c(C.filter((x) => (x._digest?.totalPaid || 0) > 1999 && (x._digest?.activePct || 0) > 0).length), c(C.filter((x) => /Member/.test(x.accountType || '') && x.accountType !== 'Member Incomplete').length + C.filter((x) => x.usedSalesStage && x.usedSalesStage !== 'Inbound Lead' && x.usedSalesStage !== 'N/A').length)];
   }
   return [c(0), c(0), c(0)];
 }
@@ -4811,7 +4932,8 @@ function wranglerDockEl() {
       <span class="wr-dock-title">Mr. Wrangler</span>
       ${chip}
       <span class="spacer"></span>
-      <button class="iconbtn js-wr-close" aria-label="Minimize" data-tip="Minimize">×</button>
+      <button class="iconbtn js-wr-min" aria-label="${o.min ? 'Expand' : 'Minimize'}" data-tip="${o.min ? 'Expand' : 'Minimize'}">${I.chev}</button>
+      <button class="iconbtn js-wr-close" aria-label="Close" data-tip="Close">×</button>
     </div>
     ${reqBar}
     <div class="wr-feed">${turns}${o.busy ? '<div class="wr-msg assistant"><span class="wr-av">🤠</span><div class="wr-bub wr-think">…wrangling an answer</div></div>' : ''}</div>
@@ -4833,6 +4955,7 @@ function mountWranglerDock() {
 function openWranglerDock(opts) {
   const w = state.wrangler;
   w.open = true;
+  w.min = false;   // an explicit open always expands the dock
   if (opts.messages !== undefined) w.messages = opts.messages;
   if (opts.busy !== undefined) w.busy = opts.busy; else w.busy = false;
   if (opts.error !== undefined) w.error = opts.error; else w.error = '';
@@ -5021,9 +5144,29 @@ function dispatchTruckPos(stops) {   // v1 seam — swapped for live telematics 
   const last = done[done.length - 1];
   return (last && last.pin) ? last.pin : YARD_CENTER;
 }
-// "HH:MM" (24h) → minutes (blanks → null, sort last); + a friendly "9:00a" stamp.
-function timeToMin(t) { const m = /^(\d{1,2}):(\d{2})$/.exec((t || '').trim()); return m ? (+m[1]) * 60 + (+m[2]) : null; }
+// Parse a stop time → minutes. Handles the data's 12h "9:00 AM"/"9:00 A" AND 24h "09:00".
+// blanks → null (sort/flag as "no set time"). + a friendly "9:00a" stamp.
+function timeToMin(t) {
+  t = (t || '').trim();
+  let m = /^(\d{1,2}):(\d{2})\s*([ap])\.?m?\.?$/i.exec(t);   // 12-hour: "9:00 AM", "9:00 A", "9:00am"
+  if (m) { let h = (+m[1]) % 12; if (/p/i.test(m[3])) h += 12; return h * 60 + (+m[2]); }
+  m = /^(\d{1,2}):(\d{2})$/.exec(t);                          // 24-hour: "09:00"
+  return m ? (+m[1]) * 60 + (+m[2]) : null;
+}
 function fmtClock(t) { const mn = timeToMin(t); if (mn == null) return '—:—'; let h = Math.floor(mn / 60); const m = mn % 60; const ap = h < 12 ? 'a' : 'p'; h = h % 12 || 12; return `${h}:${String(m).padStart(2, '0')}${ap}`; }
+// §2.3 cockpit: tapping a stop FOCUSES it on the map (pan + highlight) — never leaves the
+// cockpit. Opening the full rental is the customer link inside the stop (refPill). No flicker
+// (pan + a class toggle, not a full render).
+function dispatchFocusStop(stopId) {
+  const day = state.dispatchDay || TODAY_ISO;
+  const s = dispatchDayStops(day).find((x) => x.id === stopId); if (!s) return;
+  state.dispFocusId = stopId;   // remember the focused stop so the highlight survives a re-render
+  const pos = (s.pin && Number.isFinite(s.pin.lat)) ? s.pin : _dispGeo[s.addr];
+  if (_dispMap && pos) { _dispMap.panTo(pos); if (_dispMap.getZoom() < 14) _dispMap.setZoom(14); }
+  document.querySelectorAll('.disp-tok.focus').forEach((n) => n.classList.remove('focus'));
+  const esc1 = (window.CSS && CSS.escape) ? CSS.escape(stopId) : stopId.replace(/["\\]/g, '\\$&');
+  const tok = document.querySelector(`.disp-tok[data-id="${esc1}"]`); if (tok) tok.classList.add('focus');
+}
 /* §2.3 DISPATCH = the OFFICE COCKPIT (Phase 1, Jac): a FULL-PANE live map of the day's
    run + a minimal schedule rail floating on the right that widens on hover/focus to
    adjust the run ("No set time" pinned on top). Stops auto-fill from rentals; the map
@@ -5050,12 +5193,12 @@ function dispatchGridBody() {
   const tokenEl = (s) => {
     const kind = dispatchKind(s);
     const done = stopDone(s), isNext = s.id === nextId;
-    const flag = done ? `<span class="dt-flag ok">✓ done</span>` : (isNext ? `<span class="dt-flag next">${I.truck} next</span>` : '');
-    return `<div class="disp-tok js-disp-tok kind-${kind}${done ? ' done' : ''}${isNext ? ' next' : ''}${s.pin ? '' : ' nopin'}" data-id="${esc(s.id)}" data-rec="${esc(s.rentalId)}" data-unit="${esc(s.unitId || '')}">
+    const flag = done ? badge('Done', 'green') : (isNext ? `<span class="dt-next">${I.truck} Next</span>` : '');
+    return `<div class="disp-tok js-disp-tok kind-${kind}${done ? ' done' : ''}${isNext ? ' next' : ''}${s.id === state.dispFocusId ? ' focus' : ''}${s.pin ? '' : ' nopin'}" draggable="true" data-id="${esc(s.id)}" data-rec="${esc(s.rentalId)}" data-unit="${esc(s.unitId || '')}">
       <div class="dt-rail"><span class="dt-dot"></span><b class="dt-mini">${timeToMin(s.time) != null ? esc(fmtClock(s.time)) : '—'}</b></div>
       <div class="dt-full">
-        <div class="dt-r1"><span class="dt-grip" data-tip="Type a time to retime/reorder (drag coming soon)">⠿</span><input class="dt-time js-disp-time" data-id="${esc(s.id)}" value="${esc(s.time || '')}" placeholder="—:—" maxlength="5" aria-label="Stop time" data-tip="Set the stop time — reorders the run" /><span class="spacer"></span>${flag}</div>
-        <div class="dt-r2"><span class="dt-kind k-${kind}">${kind === 'deliver' ? '▾' : '▴'} ${kind}</span><span class="dt-who">${esc(s.cust)} · ${esc(s.unit)}</span></div>
+        <div class="dt-r1"><span class="dt-grip" data-tip="Drag to reorder · or type a time">⠿</span><input class="dt-time js-disp-time" data-id="${esc(s.id)}" value="${esc(s.time || '')}" placeholder="—:—" maxlength="8" aria-label="Stop time" data-tip="Set the stop time — reorders the run" /><span class="spacer"></span>${flag}</div>
+        <div class="dt-r2">${badge(kind === 'deliver' ? 'Deliver' : 'Recover', kind === 'deliver' ? 'blue' : 'brown')}${refPill('rentals', s.rentalId, s.cust)}${s.unitId ? unitPill(s.unitId) : ''}</div>
         ${s.addr ? `<div class="dt-addr js-site-go" data-rec="${esc(s.rentalId)}" data-unit="${esc(s.unitId || '')}" data-tip="Open the site / set the map pin">${s.pin ? '' : '⚠ '}${esc(s.addr)}</div>` : ''}
       </div>
     </div>`;
@@ -5167,7 +5310,7 @@ function placeDispatchPin(s, pos, isNext, done) {
     icon: isNext
       ? { path: google.maps.SymbolPath.CIRCLE, scale: 13, fillColor: '#ff7a1a', fillOpacity: 1, strokeColor: '#1a1205', strokeWeight: 2 }
       : { path: google.maps.SymbolPath.CIRCLE, scale: done ? 7 : 6, fillColor: fill, fillOpacity: 1, strokeColor: '#0e1318', strokeWeight: 2 } });
-  mk.addListener('click', () => anchorRecord('rentals', s.rentalId));
+  mk.addListener('click', () => dispatchFocusStop(s.id));   // focus on the map, don't leave the cockpit
   _dispMarkers.push(mk);
 }
 async function dispGeocode(addr, day) {
@@ -5380,73 +5523,139 @@ function graphViewsFor(card) {
       { key: 'nums', title: 'By the Numbers', kind: 'nums', segs: status.map((s) => ({ ...s })) },
     ];
   }
+  if (card === 'inspections') {
+    const N = DATA.inspections.filter((n) => shopItemMode('inspections', n, false));   // the open queue — same population the shop list shows
+    const rc = {}; N.forEach((n) => { const r = inspResult(n); (rc[r.label] = rc[r.label] || { label: r.label, color: r.color, count: 0 }).count++; });
+    const result = Object.values(rc).map((x) => ({ col: 'result', value: x.label, label: x.label, count: x.count, color: x.color }));
+    const imonth = gvMonths6().map((m) => ({ col: '__datemonth', value: m.key, label: m.label, count: N.filter((n) => (n.date || '').slice(0, 7) === m.key).length, color: 'blue' }));
+    return [
+      { key: 'result', title: 'Results', kind: 'pie', segs: result },
+      { key: 'imonth', title: 'Inspections / Month', kind: 'bars', color: 'blue', segs: imonth },
+      { key: 'nums', title: 'By the Numbers', kind: 'nums', segs: result.map((s) => ({ ...s })) },
+    ];
+  }
+  if (card === 'workOrders') {
+    const W = DATA.workOrders.filter((w) => shopItemMode('workOrders', w, false));   // the open queue — same population the shop list shows
+    const pc = {}; W.forEach((w) => { const ph = w.phase || '—'; pc[ph] = (pc[ph] || 0) + 1; });
+    const phase = Object.entries(pc).sort((a, b) => b[1] - a[1]).map(([ph, n]) => ({ col: 'phase', value: ph, label: getStatus('woPhase', ph).label || ph, count: n, color: getStatus('woPhase', ph).color || 'gray' }));
+    const tc = {}; W.forEach((w) => { const t = w.woType || '—'; tc[t] = (tc[t] || 0) + 1; });
+    const type = Object.entries(tc).sort((a, b) => b[1] - a[1]).map(([t, n]) => ({ col: 'type', value: t, label: t, count: n, color: getStatus('woType', t).color || 'gray' }));
+    const wmonth = gvMonths6().map((m) => ({ col: '__datemonth', value: m.key, label: m.label, count: W.filter((w) => (w.date || '').slice(0, 7) === m.key).length, color: 'blue' }));
+    return [
+      { key: 'phase', title: 'Open by Phase', kind: 'pie', segs: phase },
+      { key: 'type', title: 'By Type', kind: 'pie', segs: type },
+      { key: 'wmonth', title: 'Work Orders / Month', kind: 'bars', color: 'blue', segs: wmonth },
+    ];
+  }
+  if (card === 'serviceOrders') {
+    let overdue = 0, soon = 0, ok = 0, wash = 0;
+    DATA.units.forEach((u) => { if (u.washRequested) { wash++; return; } const s = topServiceForUnit(u); if (!s) { ok++; return; } if (s.status === 'past-due') overdue++; else if (s.status === 'due-soon') soon++; else ok++; });
+    const status = [
+      { col: '__svcstat', value: 'past-due', label: 'Overdue', count: overdue, color: 'red' },
+      { col: '__svcstat', value: 'due-soon', label: 'Due Soon', count: soon, color: 'yellow' },
+      { col: '__svcstat', value: 'on-schedule', label: 'On Schedule', count: ok, color: 'green' },
+      { col: '__svcstat', value: 'wash', label: 'Wash', count: wash, color: 'blue' },
+    ];
+    return [
+      { key: 'status', title: 'Service Status', kind: 'pie', segs: status },
+      { key: 'nums', title: 'By the Numbers', kind: 'nums', segs: status.map((s) => ({ ...s })) },
+    ];
+  }
   return null;
 }
-// ── state transitions (the active view's selection lives in cs.filterTerms as g-tagged
-//    terms = visible search pills; inactive views are remembered in cs.graphSel) ──
-function gvSaveCurrent(card, cs) {
-  const views = graphViewsFor(card); if (!views) return;
-  const k = gvKey(card, views[gvClampIdx(cs.graphIdx, views.length)]);
+// ── state transitions. The active view's selection lives in cs.filterTerms as g-tagged
+//    terms (= visible search pills); inactive views are remembered in cs.graphSel.
+//    `src` = the view SOURCE: a grid card is its own id; a Shop column is its segment
+//    (forcedSeg or cs.segment), so each shop segment carries its own carousel + memory.
+//    `card` = where the session (cs) lives ('shop' for every shop segment).
+function gvSaveCurrent(src, cs) {
+  const views = graphViewsFor(src); if (!views) return;
+  const k = gvKey(src, views[gvClampIdx(cs.graphIdx, views.length)]);
   cs.graphSel = cs.graphSel || {};
   cs.graphSel[k] = (cs.filterTerms || []).filter((t) => t.g === k).map((t) => ({ col: t.col, value: t.value, t: t.t }));
 }
 const gvStripTerms = (cs) => { cs.filterTerms = (cs.filterTerms || []).filter((t) => !t.g); };
-function gvRestore(card, cs, idx) {
-  const views = graphViewsFor(card); if (!views) return;
-  gvStripTerms(cs);
+function gvRestore(src, cs, idx) {
+  gvStripTerms(cs);   // clear graph terms first (covers a switch to a no-carousel source, e.g. Shop 'all')
+  const views = graphViewsFor(src); if (!views) return;
   cs.graphIdx = gvClampIdx(idx, views.length);
-  const nv = views[cs.graphIdx], k = gvKey(card, nv);
+  const nv = views[cs.graphIdx], k = gvKey(src, nv);
   cs.graphSel = cs.graphSel || {};
   let sel = cs.graphSel[k];
   if (sel === undefined) { const sm = (nv.kind === 'pie' || nv.kind === 'bars') ? gvSmallest(nv) : null; sel = sm ? [{ col: sm.col, value: sm.value, t: sm.label }] : []; }   // first open of a slice view → smallest slice
   cs.filterTerms = cs.filterTerms || [];
   for (const s of sel) cs.filterTerms.push({ t: s.t, col: s.col, value: s.value, neg: false, g: k });
 }
-function gvOpen(card) { const cs = activeSession().cards[card]; cs.graphView = true; gvRestore(card, cs, cs.graphIdx || 0); cs.listLimit = undefined; render(); }
-function gvChevron(card, dir) { const cs = activeSession().cards[card]; gvSaveCurrent(card, cs); gvRestore(card, cs, (cs.graphIdx || 0) + dir); cs.listLimit = undefined; render(); }
-// Idempotent close-sync: any path that flips graphView off (record open, invoice surface)
-// leaves the g-terms behind — save them to memory + strip before the next list renders.
-function gvSyncClosed(card, cs) { if (cs.graphView) return; if (!graphViewsFor(card)) return; if (!(cs.filterTerms || []).some((t) => t.g)) return; gvSaveCurrent(card, cs); gvStripTerms(cs); }
-function toggleGraphSeg(card, col, value, label) {
-  const cs = activeSession().cards[card]; const views = graphViewsFor(card); if (!views) return;
-  const k = gvKey(card, views[gvClampIdx(cs.graphIdx, views.length)]);
+function gvOpen(card, src) { const cs = activeSession().cards[card]; cs.graphView = true; gvRestore(src, cs, cs.graphIdx || 0); cs.listLimit = undefined; render(); }
+function gvChevron(card, src, dir) { const cs = activeSession().cards[card]; gvSaveCurrent(src, cs); gvRestore(src, cs, (cs.graphIdx || 0) + dir); cs.listLimit = undefined; render(); }
+// Idempotent close-sync: any path that flips graphView off (record open, invoice surface,
+// switch to Shop 'all') leaves g-terms behind — save them to memory + strip them.
+function gvSyncClosed(src, cs) { if (cs.graphView) return; if (!(cs.filterTerms || []).some((t) => t.g)) return; gvSaveCurrent(src, cs); gvStripTerms(cs); }
+function toggleGraphSeg(card, src, col, value, label) {
+  const cs = activeSession().cards[card]; const views = graphViewsFor(src); if (!views) return;
+  const k = gvKey(src, views[gvClampIdx(cs.graphIdx, views.length)]);
   const i = (cs.filterTerms || []).findIndex((t) => t.g === k && t.col === col && String(t.value) === String(value));
   if (i >= 0) cs.filterTerms.splice(i, 1); else (cs.filterTerms = cs.filterTerms || []).push({ t: label, col, value, neg: false, g: k });
-  gvSaveCurrent(card, cs); cs.listLimit = undefined; render();
+  gvSaveCurrent(src, cs); cs.listLimit = undefined; render();
 }
 // ── renderers ──
 const GV_CHEV_L = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>';
 const GV_CHEV_R = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg>';
-function gvSegBtn(cs, card, s, inner, cls) {
+function gvSegBtn(cs, card, src, s, inner, cls) {
   const on = gvSegOn(cs, s.col, s.value);
-  return `<button class="${cls} js-gv-seg${on ? ' on' : ''}" data-card="${card}" data-col="${esc(s.col)}" data-value="${esc(String(s.value))}" data-label="${esc(s.label)}" data-tip="${on ? 'Remove filter' : 'Filter to ' + esc(s.label)}">${inner}</button>`;
+  return `<button class="${cls} js-gv-seg${on ? ' on' : ''}" data-card="${card}" data-src="${esc(src)}" data-col="${esc(s.col)}" data-value="${esc(String(s.value))}" data-label="${esc(s.label)}" data-tip="${on ? 'Remove filter' : 'Filter to ' + esc(s.label)}">${inner}</button>`;
 }
-function gvRenderView(card, cs, v) {
+// §13.4 — a donut whose SLICES are themselves toggle controls (.js-gv-seg), mirroring the
+// legend chips. The legend stays the keyboard-accessible path; slices are a pointer add-on.
+function gvPieClickable(card, src, cs, segs, size = 116) {
+  const total = segs.reduce((a, s) => a + (s.count || 0), 0);
+  const r = size / 2, cx = r, cy = r, inner = r * 0.6;
+  if (!total) return `<svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}"><circle cx="${cx}" cy="${cy}" r="${r - 1}" fill="none" stroke="var(--line)" stroke-width="2" stroke-dasharray="3 4"/><circle cx="${cx}" cy="${cy}" r="${inner}" fill="var(--bg)"/></svg>`;
+  const sliceAttrs = (s) => { const on = gvSegOn(cs, s.col, s.value); return `class="gv-slice js-gv-seg${on ? ' on' : ''}" data-card="${card}" data-src="${esc(src)}" data-col="${esc(s.col)}" data-value="${esc(String(s.value))}" data-label="${esc(s.label)}" data-tip="${on ? 'Remove filter' : 'Filter to ' + esc(s.label)}"`; };
+  const nonzero = segs.filter((s) => s.count > 0);
+  let paths = '';
+  if (nonzero.length === 1) {
+    paths = `<circle ${sliceAttrs(nonzero[0])} cx="${cx}" cy="${cy}" r="${r - 1}" fill="var(--${nonzero[0].color})"/>`;
+  } else {
+    const arc = (a) => [cx + (r - 1) * Math.cos(a), cy + (r - 1) * Math.sin(a)];
+    let a0 = -Math.PI / 2;
+    for (const s of segs) {
+      if (!s.count) continue;
+      const a1 = a0 + (s.count / total) * Math.PI * 2;
+      const [x0, y0] = arc(a0), [x1, y1] = arc(a1), large = (a1 - a0) > Math.PI ? 1 : 0;
+      paths += `<path ${sliceAttrs(s)} d="M${cx},${cy} L${x0.toFixed(1)},${y0.toFixed(1)} A${r - 1},${r - 1} 0 ${large} 1 ${x1.toFixed(1)},${y1.toFixed(1)} Z" fill="var(--${s.color})"/>`;
+      a0 = a1;
+    }
+  }
+  paths += `<circle cx="${cx}" cy="${cy}" r="${inner}" fill="var(--bg)" pointer-events="none"/><text x="${cx}" y="${cy + 5}" text-anchor="middle" fill="var(--txt)" font-size="20" font-weight="800" pointer-events="none">${total}</text>`;
+  return `<svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" class="gv-pie-svg">${paths}</svg>`;
+}
+function gvRenderView(card, src, cs, v) {
   if (v.kind === 'pie') {
-    const legend = v.segs.map((s) => gvSegBtn(cs, card, s, `<i style="background:var(--${s.color})"></i><span class="gl-lbl">${esc(s.label)}</span> <b>${s.count}</b>`, 'gv-leg')).join('');
-    return `<div class="gv-pie">${pieSVG(v.segs.map((s) => ({ label: s.label, value: s.count, color: s.color })), 116)}<div class="gv-legend gv-legend-click">${legend}</div></div>`;
+    const legend = v.segs.map((s) => gvSegBtn(cs, card, src, s, `<i style="background:var(--${s.color})"></i><span class="gl-lbl">${esc(s.label)}</span> <b>${s.count}</b>`, 'gv-leg')).join('');
+    return `<div class="gv-pie">${gvPieClickable(card, src, cs, v.segs)}<div class="gv-legend gv-legend-click">${legend}</div></div>`;
   }
   if (v.kind === 'bars') {
     const max = Math.max(1, ...v.segs.map((s) => s.count));
-    return `<div class="gv-bars">${v.segs.map((s) => gvSegBtn(cs, card, s, `<div class="gv-bar-n">${s.count || ''}</div><div class="gv-bar-track"><div class="gv-bar-fill" style="height:${Math.round((s.count / max) * 100)}%;background:var(--${s.color || v.color || 'accent'})"></div></div><div class="gv-bar-x">${esc(s.label)}</div>`, 'gv-barcol')).join('')}</div>`;
+    return `<div class="gv-bars">${v.segs.map((s) => gvSegBtn(cs, card, src, s, `<div class="gv-bar-n">${s.count || ''}</div><div class="gv-bar-track"><div class="gv-bar-fill" style="height:${Math.round((s.count / max) * 100)}%;background:var(--${s.color || v.color || 'accent'})"></div></div><div class="gv-bar-x">${esc(s.label)}</div>`, 'gv-barcol')).join('')}</div>`;
   }
   if (v.kind === 'lead') {
     if (!v.segs.length) return '<div class="gv-empty">No data yet.</div>';
-    return `<div class="gv-lead-list">${v.segs.map((s, i) => gvSegBtn(cs, card, s, `<span class="gv-lead-n">${i + 1}</span><span class="gv-lead-name">${esc(s.label)}</span><span class="gv-lead-c">${esc(String(s.disp != null ? s.disp : s.count))}</span>`, 'gv-lead-row')).join('')}</div>`;
+    return `<div class="gv-lead-list">${v.segs.map((s, i) => gvSegBtn(cs, card, src, s, `<span class="gv-lead-n">${i + 1}</span><span class="gv-lead-name">${esc(s.label)}</span><span class="gv-lead-c">${esc(String(s.disp != null ? s.disp : s.count))}</span>`, 'gv-lead-row')).join('')}</div>`;
   }
-  if (v.kind === 'nums') return `<div class="gv-numrow">${v.segs.map((s) => gvSegBtn(cs, card, s, `<div class="gv-num-v">${esc(String(s.disp != null ? s.disp : s.count))}</div><div class="gv-num-l">${esc(s.label)}</div>`, 'gv-numtile')).join('')}</div>`;
+  if (v.kind === 'nums') return `<div class="gv-numrow">${v.segs.map((s) => gvSegBtn(cs, card, src, s, `<div class="gv-num-v">${esc(String(s.disp != null ? s.disp : s.count))}</div><div class="gv-num-l">${esc(s.label)}</div>`, 'gv-numtile')).join('')}</div>`;
   return '';
 }
-function graphPanelHtml(card, cs) {
-  const views = graphViewsFor(card); if (!views) return '';
+function graphPanelHtml(card, src, cs) {
+  const views = graphViewsFor(src); if (!views) return '';
   const idx = gvClampIdx(cs.graphIdx, views.length), v = views[idx];
   const dots = views.map((_, i) => `<i class="${i === idx ? 'on' : ''}"></i>`).join('');
   return `<div class="gv-head">
-      <button class="gv-chev js-gv-chev" data-card="${card}" data-dir="-1" data-tip="Previous graph">${GV_CHEV_L}</button>
+      <button class="gv-chev js-gv-chev" data-card="${card}" data-src="${esc(src)}" data-dir="-1" data-tip="Previous graph">${GV_CHEV_L}</button>
       <div class="gv-head-mid"><div class="gv-title">${esc(v.title)}</div><div class="gv-dots">${dots}</div></div>
-      <button class="gv-chev js-gv-chev" data-card="${card}" data-dir="1" data-tip="Next graph">${GV_CHEV_R}</button>
+      <button class="gv-chev js-gv-chev" data-card="${card}" data-src="${esc(src)}" data-dir="1" data-tip="Next graph">${GV_CHEV_R}</button>
     </div>
-    <div class="gv-view gv-view-${v.kind}">${gvRenderView(card, cs, v)}</div>`;
+    <div class="gv-view gv-view-${v.kind}">${gvRenderView(card, src, cs, v)}</div>`;
 }
 function cardGraphBody(card) {
   if (card === 'units') {
@@ -5570,11 +5779,13 @@ function cardGraphBody(card) {
 /* ════════════════════════════════════════════════════════════════════════
    §12 OVERLAYS & BOARDS — renderOverlay kinds + back-office board popups
    ════════════════════════════════════════════════════════════════════════ */
+let _ovScroll = {}, _ovLastKind = null;   // keep a popup-body's scroll across its OWN re-renders (sign/selfie)
 function renderOverlay() {
   const root = $('#overlay-root');
+  if (_ovLastKind) { const _pb = root.querySelector('.popup-body'); if (_pb) _ovScroll[_ovLastKind] = _pb.scrollTop; }
   destroyCardElement();        // any re-render/overlay-switch tears down a mounted Stripe element
   root.innerHTML = '';
-  if (!state.overlay) return;
+  if (!state.overlay) { _ovLastKind = null; return; }
   const o = state.overlay;
   const overlay = el('div', 'overlay');
   overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) closeOverlay(); });
@@ -5988,9 +6199,12 @@ function renderOverlay() {
     const ag = AGREEMENTS[agType];
     const agSigned = d.agreementSignedAt && d.agreementType === agType;
     const pop = el('div', 'popup nc-popup');
-    pop.innerHTML = `
-      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${CARD_ICON.customers || ''}</span><h3>${isEdit ? 'Edit / Complete Account' : 'New Customer'}</h3><span class="spacer"></span>${isEdit ? `<button class="iconbtn js-nc-qr" data-tip="Open on phone">${I.qr}</button>` : ''}<button class="x js-close">${I.x}</button></div>
-      <div class="popup-body">
+    const ncFoot = `<button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill ignition js-nc-save" data-r="R17">${isEdit ? 'Save account' : 'Create customer'}</button>`;
+    pop.innerHTML = popupShell({
+      icon: CARD_ICON.customers || '', title: isEdit ? 'Edit / Complete Account' : 'New Customer', tag: 'Customer · Account packet',
+      headRight: isEdit ? `<button class="iconbtn js-nc-qr" data-tip="Open on phone">${I.qr}</button>` : '',
+      foot: ncFoot,
+      body: `
         <div class="nc-grid">
           <label class="nc-field"><span>First name *</span><input class="nc-in" data-f="firstName" value="${esc(d.firstName)}" autocomplete="off" /></label>
           <label class="nc-field"><span>Last name</span><input class="nc-in" data-f="lastName" value="${esc(d.lastName)}" autocomplete="off" /></label>
@@ -6028,10 +6242,25 @@ function renderOverlay() {
             </div>
           </div>
         </div>
-        ${o.error ? `<div class="login-err" style="text-align:left;margin-top:10px">${esc(o.error)}</div>` : ''}
-        <div class="pillrow" style="margin-top:16px;justify-content:flex-end"><button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill c-green js-nc-save" data-r="R17">${isEdit ? 'Save account' : 'Create customer'}</button></div>
-      </div>`;
+        ${o.error ? `<div class="login-err" style="text-align:left;margin-top:10px">${esc(o.error)}</div>` : ''}`,
+    });
     overlay.appendChild(pop);
+    if (o.cardSub) {   // §14 the "Add card" panel rendered BESIDE the form (not replacing it)
+      const cc = IDX.customer.get(o.editId);
+      if (cc) {
+        const cp = el('div', 'popup'); cp.style.width = '400px';
+        cp.innerHTML = popupShell({
+          icon: CARD_ICON.customers || '', title: 'Add card', tag: 'Customer · Card on file', closeJs: 'js-cardsub-cancel',
+          body: `
+            <div class="pay-cap">Card number</div>
+            <div class="pay-card-field" id="sl-card-element"></div>
+            <div class="pay-err" id="sl-card-error"></div>
+            <p class="muted" style="font-size:11px;margin:10px 0 0">Entered securely via Stripe — we store only the brand + last 4 digits. The signature + selfie on file authorize future charges.</p>`,
+          foot: `<button class="pill ghost js-cardsub-cancel" data-r="R18">Cancel</button><button class="pill c-commit js-card-save" data-r="R17">Save card</button>`,
+        });
+        overlay.appendChild(cp);
+      }
+    }
   } else if (o.kind === 'agreement') {
     // Read-only signed-agreement viewer (from the customer card). Shows the exact
     // agreement the customer accepted plus their signature + the date.
@@ -6142,6 +6371,49 @@ function renderOverlay() {
         <div class="pillrow" style="justify-content:flex-end;margin-top:14px"><button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill c-commit js-card-save" data-r="R17" ${consent ? '' : 'disabled style="opacity:.45;cursor:default"'}>Save card</button></div>
       </div>`;
     overlay.appendChild(pop);
+  } else if (o.kind === 'addAch') {
+    // §14b ACH — raw routing/account live ONLY in these inputs → straight to Stripe
+    // (confirmUsBankAccountSetup); never stored, never sent to our backend.
+    const c = IDX.customer.get(o.customerId);
+    if (!c) { state.overlay = null; return; }
+    const consent = !!(c.signature && c.selfie);
+    const pop = el('div', 'popup'); pop.style.width = '430px';
+    pop.innerHTML = `
+      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${CARD_ICON.customers || ''}</span><h3>Add bank account — ${esc(c.name)}</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
+      <div class="popup-body">
+        ${consent ? '' : `<div class="login-err" style="text-align:left;margin-bottom:12px">A selfie + signature are required first (ACH authorization). <button class="pill c-commit js-edit-customer" data-r="R17" data-rec="${c.customerId}" style="margin-left:6px">Complete account</button></div>`}
+        <div class="pay-cap">Account holder name</div>
+        <input class="lf-in" id="sl-ach-holder" value="${esc(c.name || '')}" autocomplete="off" spellcheck="false" placeholder="Name on the account">
+        <div class="ach-row">
+          <div class="ach-col"><div class="pay-cap">Routing number</div><input class="lf-in" id="sl-ach-routing" inputmode="numeric" autocomplete="off" maxlength="9" placeholder="9 digits"></div>
+          <div class="ach-col"><div class="pay-cap">Account number</div><input class="lf-in" id="sl-ach-account" inputmode="numeric" autocomplete="off" maxlength="17" placeholder="Account #"></div>
+        </div>
+        <div class="ach-row">
+          <div class="ach-col"><div class="pay-cap">Account type</div><select class="lf-in" id="sl-ach-type"><option value="checking">Checking</option><option value="savings">Savings</option></select></div>
+          <div class="ach-col"><div class="pay-cap">Holder type</div><select class="lf-in" id="sl-ach-holdertype"><option value="individual">Individual</option><option value="company">Company</option></select></div>
+        </div>
+        <div class="pay-err" id="sl-ach-error"></div>
+        <p class="muted" style="font-size:11px;margin:10px 0 0">Entered securely via Stripe. We store only the bank name + last 4 digits — never the full routing or account number. The signature + selfie on file authorize ACH debits. The account must be verified before it can be charged.</p>
+        <div class="pillrow" style="justify-content:flex-end;margin-top:14px"><button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill c-commit js-ach-save" data-r="R17" ${consent ? '' : 'disabled style="opacity:.45;cursor:default"'}>Save ACH</button></div>
+      </div>`;
+    overlay.appendChild(pop);
+  } else if (o.kind === 'verifyAch') {
+    // §14b verify a pending ACH via the micro-deposit descriptor code the customer
+    // reads off their bank statement (a $0.01 deposit described "...SMxxxx").
+    const c = IDX.customer.get(o.customerId);
+    const k = c && customerBanks(c).find((x) => x.id === o.bankId);
+    if (!c || !k) { state.overlay = null; return; }
+    const pop = el('div', 'popup'); pop.style.width = '400px';
+    pop.innerHTML = `
+      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${CARD_ICON.customers || ''}</span><h3>Verify ${esc(k.bankName || 'bank')} ••${esc(k.last4)}</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
+      <div class="popup-body">
+        <p class="muted" style="font-size:12px;margin:0 0 12px">Stripe sent a small deposit (about $0.01) to this account. Once it lands (1–2 business days), the customer sees a 6-character code on their statement starting with <b>SM</b>. Enter it here to verify the account for charging.</p>
+        <div class="pay-cap">Verification code</div>
+        <input class="lf-in" id="sl-vach-code" autocomplete="off" maxlength="6" placeholder="SM____" style="text-transform:uppercase;letter-spacing:2px">
+        <div class="pay-err" id="sl-vach-error"></div>
+        <div class="pillrow" style="justify-content:flex-end;margin-top:14px"><button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill c-commit js-ach-verify-save" data-r="R17">Verify account</button></div>
+      </div>`;
+    overlay.appendChild(pop);
   } else if (o.kind === 'payment') {
     const inv = IDX.invoice.get(o.invoiceId);
     if (!inv) { state.overlay = null; return; }
@@ -6150,44 +6422,66 @@ function renderOverlay() {
     const card = hasCardOnFile(c);
     const refunded = t.status === 'Refunded';
     const refAmt = Number(inv.refundedAmount) || 0;
-    // §19 partial-payment allocation: when there's a live balance + a card, every
-    // line carrying a balance gets a row. Lazy-init o.alloc to "pay in full" so
-    // the popup opens charge-ready; partials are made by dialing lines down.
-    const lines = (!refunded && t.balance > 0 && card) ? allocLines(inv) : [];
+    // §14b ACH in the charge picker: verified banks are selectable; unverified ones are shown
+    // but not chargeable yet ("store now, verify later"). Cards still drive allocation/amount.
+    const banks = customerBanks(c), vbanks = verifiedBanks(c), ubanks = banks.filter((b) => !b.verified);   // §14b verified banks are chargeable
+    const payOk = card || vbanks.length > 0;
+    const dsel = o.selectedCardId || (defaultCard(c) && defaultCard(c).id) || (vbanks[0] && vbanks[0].id) || '';   // pre-selected method (card default, else first verified bank)
+    // Payment method (#109, Jac-approved): Cash · Check · Card. Cash + Check are
+    // recorded by hand (no Stripe) and persist through the normal record sync; Card
+    // runs the EXISTING §14/§19 Stripe charge flow untouched. Default to Card when a
+    // card's on file (keeps the charge-first flow), else Cash. Only when there's a
+    // live balance to take.
+    const canPay = !refunded && t.balance > 0;
+    const method = canPay ? (o.method || (payOk ? 'card' : 'cash')) : null;
+    // §19 partial-payment allocation (CARD method only): each line carrying a balance
+    // gets a row. Lazy-init o.alloc to "pay in full" so the card popup opens charge-ready.
+    const lines = (method === 'card' && payOk) ? allocLines(inv) : [];
     if (lines.length && !o.alloc) { o.alloc = {}; lines.forEach((L) => { o.alloc[L.key] = L.remaining; }); }
+    const methodBtn = (m, label) => `<button class="pay-method${method === m ? ' on' : ''} js-pay-method" data-method="${m}" ${o.busy ? 'disabled' : ''}>${label}</button>`;
+    const methodSel = canPay ? `<div class="pay-methods">${methodBtn('cash', '💵 Cash')}${methodBtn('check', '🧾 Check')}${methodBtn('card', '💳 Card')}</div>` : '';
+    // CARD sub-panel — the existing picker + §19 allocation / free amount (logic unchanged).
+    const cardPanel = payOk
+      ? `<div class="pay-cards">${customerCards(c).map((k) => `<button class="pay-card${dsel === k.id ? ' on' : ''} js-pay-pick" data-card="${k.id}" ${o.busy ? 'disabled' : ''}>💳 ${esc(cardOneLabel(k))}${k.isDefault ? ' · default' : ''}${cardExpired(k) ? ' · expired' : ''}</button>`).join('')}${vbanks.map((k) => `<button class="pay-card${dsel === k.id ? ' on' : ''} js-pay-pick" data-bank="${k.id}" ${o.busy ? 'disabled' : ''}>🏦 ${esc(bankOneLabel(k))}</button>`).join('')}</div>${ubanks.length ? `<div class="pay-pm-note">${ubanks.map((b) => `🏦 ${esc(b.bankName)} ••${esc(b.last4)} · needs verification`).join('<br>')}</div>` : ''}${lines.length ? allocSectionHtml(lines, o) : `<label class="pay-field"><span>Amount to charge</span><input class="pay-amt-in" type="number" min="0.01" max="${t.balance}" step="0.01" value="${t.balance.toFixed(2)}" ${o.busy ? 'disabled' : ''}></label>`}`
+      : (banks.length ? '<div class="pay-card-on-file warn">Bank account on file — verify it before charging, or take Cash/Check above.</div>' : '<div class="pay-card-on-file warn">No card on file — a card charge needs one, or take Cash/Check above.</div>');
+    // CASH / CHECK sub-panel — one editable amount (defaults to the full balance,
+    // capped at it; dial it down for a partial), saved to the exact cent. Check adds a #.
+    const manualPanel = `<label class="pay-field"><span>Amount ${method === 'check' ? 'on check' : 'received'}</span><input class="pay-amt-in js-manual-amt" type="number" min="0.01" max="${t.balance}" step="0.01" value="${t.balance.toFixed(2)}" ${o.busy ? 'disabled' : ''}></label>${method === 'check' ? `<label class="pay-field"><span>Check #</span><input class="pay-amt-in js-check-num" type="text" inputmode="numeric" autocomplete="off" placeholder="e.g. 1042" value="${esc(o.checkNum || '')}" ${o.busy ? 'disabled' : ''}></label>` : ''}`;
     const pop = el('div', 'popup'); pop.style.width = '380px';
     pop.innerHTML = `
       <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${CARD_ICON.invoices || ''}</span><h3>${esc(inv.invoiceId)}</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
       <div class="popup-body">
-        <div class="pay-amount"><span class="pay-amount-num">${money(t.balance)}</span><span class="pay-amount-sfx">${t.balance > 0 ? 'balance due' : 'balance'}${c ? ' · ' + esc(c.name) : ''}</span></div>
-        <div class="pay-status-line">${statusPill('invoiceStatus', t.status)}<span class="muted">${money(t.paid)} of ${money(t.total)} paid${refAmt ? ` · ${money(refAmt)} refunded` : ''}</span></div>
+        <div class="pay-amount"><span class="pay-amount-num">${money2(t.balance)}</span><span class="pay-amount-sfx">${t.balance > 0 ? 'balance due' : 'balance'}${c ? ' · ' + esc(c.name) : ''}</span></div>
+        <div class="pay-status-line">${statusPill('invoiceStatus', t.status)}<span class="muted">${money2(t.paid)} of ${money2(t.total)} paid${refAmt ? ` · ${money2(refAmt)} refunded` : ''}</span></div>
+        ${inv.achProcessing && inv.pendingPaymentIntentId ? `<div class="pay-card-on-file warn" style="flex-direction:column;align-items:flex-start;gap:7px"><span>🏦 ACH payment processing — it settles in a few business days.</span><button class="pill c-commit js-ach-check" data-rec="${esc(inv.invoiceId)}" data-pi="${esc(inv.pendingPaymentIntentId)}" data-r="R17" ${o.busy ? 'disabled' : ''}>Check ACH status</button></div>` : ''}
         ${refunded ? '<div class="pay-card-on-file">↩ This invoice was refunded.</div>'
           : t.balance <= 0 ? `<div class="pay-card-on-file good">✓ Paid in full${inv.paymentMethod ? ' · ' + esc(inv.paymentMethod) : ''}</div>`
-            : card ? `<div class="pay-cards">${customerCards(c).map((k) => `<button class="pay-card${(o.selectedCardId || defaultCard(c)?.id) === k.id ? ' on' : ''} js-pay-pick" data-card="${k.id}" ${o.busy ? 'disabled' : ''}>💳 ${esc(cardOneLabel(k))}${k.isDefault ? ' · default' : ''}${cardExpired(k) ? ' · expired' : ''}</button>`).join('')}</div>`
-                   : '<div class="pay-card-on-file warn">No card on file for this customer.</div>'}
-        ${lines.length ? allocSectionHtml(lines, o)
-          : (t.balance > 0 && card ? `<label class="pay-field"><span>Amount to charge</span><input class="pay-amt-in" type="number" min="0.01" max="${t.balance}" step="0.01" value="${t.balance.toFixed(2)}" ${o.busy ? 'disabled' : ''}></label>` : '')}
-        ${o.confirmRefund ? `<div class="pay-confirm">Refund ${money(t.paid)} to ${esc(inv.paymentMethod || 'the card')}?</div>` : ''}
+            : `${methodSel}${method === 'card' ? cardPanel : manualPanel}`}
+        ${o.confirmRefund ? `<div class="pay-confirm">Refund ${money2(t.paid)} to ${esc(inv.paymentMethod || 'the card')}?</div>` : ''}
         ${o.error ? `<div class="login-err" style="text-align:left;margin-top:10px">${esc(o.error)}</div>` : ''}
         <div class="pillrow" style="justify-content:flex-end;margin-top:16px">
           ${o.confirmRefund
             ? `<button class="pill ghost js-refund-cancel" data-r="R18">Cancel</button><button class="pill c-danger js-refund-confirm" data-r="R17" data-rec="${inv.invoiceId}" ${o.busy ? 'disabled' : ''}>${o.busy ? 'Refunding…' : 'Confirm refund'}</button>`
             : `<button class="pill ghost js-close" data-r="R18">Close</button>
                ${t.paid > 0 && !refunded ? `<button class="pill c-danger js-refund-invoice" data-r="R17" data-rec="${inv.invoiceId}" ${o.busy ? 'disabled' : ''}>Refund</button>` : ''}
-               ${t.balance > 0 ? (card
-                 ? `<button class="pill c-money js-charge-invoice" data-rec="${inv.invoiceId}" ${o.busy ? 'disabled' : ''}>${o.busy ? 'Charging…' : 'Charge'}</button>`
-                 : `<button class="add-field anchor js-pay-addcard" data-r="R5b" data-rec="${inv.customerId || ''}" data-inv="${inv.invoiceId}" ${inv.customerId ? '' : 'disabled style="opacity:.45;cursor:default"'}>+Card</button>`) : ''}`}
+               ${canPay ? (method === 'card'
+                 ? (card ? `<button class="pill c-money js-charge-invoice" data-rec="${inv.invoiceId}" ${o.busy ? 'disabled' : ''}>${o.busy ? 'Charging…' : 'Charge'}</button>`
+                         : `<button class="add-field anchor js-pay-addcard" data-r="R5b" data-rec="${inv.customerId || ''}" data-inv="${inv.invoiceId}" ${inv.customerId ? '' : 'disabled style="opacity:.45;cursor:default"'}>+Card</button>`)
+                 : `<button class="pill c-money js-record-payment" data-rec="${inv.invoiceId}" ${o.busy ? 'disabled' : ''}>${o.busy ? 'Recording…' : 'Record payment'}</button>`) : ''}`}
         </div>
       </div>`;
     overlay.appendChild(pop);
   }
   root.appendChild(overlay);
+  { const _nb = overlay.querySelector('.popup-body'); if (_nb && _ovScroll[o.kind]) _nb.scrollTop = _ovScroll[o.kind]; }   // restore scroll on a same-overlay re-render (sign/selfie no longer jump to top)
+  _ovLastKind = o.kind;
   if (o.kind === 'partform') document.querySelector('.overlay .js-pf2-desc')?.focus();   // Jac: Part/Task field focused by default
   if (o.kind === 'newCustomer') setupSignaturePad();
   if (o.kind === 'payment') setupPayAlloc();   // live counter for the §19 allocation rows
   if (o.kind === 'addCard') { const cc = IDX.customer.get(o.customerId); if (cc && cc.signature && cc.selfie) mountCardElement(); }   // only mount with consent (nothing to orphan otherwise)
+  if (o.kind === 'newCustomer' && o.cardSub) { const cc = IDX.customer.get(o.editId); if (cc && cc.signature && cc.selfie) mountCardElement(); }   // §14 the side-by-side Add-card panel
 }
-const openOverlay = (o) => { state.datepick = null; state.overlay = o; renderOverlay(); };
+const openOverlay = (o) => { state.datepick = null; _ovScroll[o.kind] = 0; state.overlay = o; renderOverlay(); };   // fresh open starts at top
 /* ── §15 in-app feedback: bug/request → queued to the backend Feedback tab ── */
 function feedbackContext() {
   const s = activeSession(), a = s && s.anchor;
@@ -7108,7 +7402,7 @@ function render() {
   // §17 — the internal team dock floats bottom-right above the bar when open
   if (state.chat.open) { const d = el('div', 'chat-dock', ''); d.dataset.drop = 'chat'; d.innerHTML = chatDockEl(); $('#app').appendChild(d); }
   // §18 — Mr. Wrangler dock floats alongside the team chat (or alone at bottom-right)
-  if (state.wrangler.open) { const d = el('div', 'wrangler-dock' + (state.chat.open ? ' wr-beside-chat' : '')); d.innerHTML = wranglerDockEl(); $('#app').appendChild(d); }
+  if (state.wrangler.open) { const d = el('div', 'wrangler-dock' + (state.chat.open ? ' wr-beside-chat' : '') + (state.wrangler.min ? ' wr-min' : '')); d.innerHTML = wranglerDockEl(); $('#app').appendChild(d); }
   // §18e — floating bottom-right cluster: notification bell + the Requests inbox.
   // Hidden while a dock owns that corner.
   if (!state.chat.open && !state.wrangler.open) $('#app').appendChild(fabStackEl());
@@ -7122,7 +7416,6 @@ function render() {
   const dt = performance.now() - t0;
   renderCount++;
   if (dt > CFG.PERF_BUDGET_MS) console.warn(`[perf] render ${renderCount} took ${dt.toFixed(1)}ms (budget ${CFG.PERF_BUDGET_MS}ms)`);
-  else console.log(`[perf] render ${renderCount}: ${dt.toFixed(1)}ms`);
 }
 /** Flag any element that's actually truncated with data-tip (full text) so the
  *  custom app-styled tooltip can show it on hover. Nothing lost to ellipsis. */
@@ -7682,13 +7975,32 @@ function onClick(e) {
   if (closest('.js-nc-qr')) { e.stopPropagation(); const id = state.overlay.editId; openOverlay({ kind: 'qr', title: 'Continue on phone', url: location.origin + location.pathname + '#edit=' + id, caption: 'Scan to finish this account on your phone.' }); return; }
   if (closest('.js-edit-customer')) { e.stopPropagation(); return openCustomerForm(closest('.js-edit-customer').dataset.rec); }
   if (closest('.js-view-agreement')) { e.stopPropagation(); const cust = IDX.customer.get(closest('.js-view-agreement').dataset.rec); if (cust) openOverlay({ kind: 'agreement', recId: cust.customerId }); return; }
-  if (closest('.js-add-card')) { e.stopPropagation(); return openAddCard(closest('.js-add-card').dataset.rec); }
+  if (closest('.js-add-card')) {
+    e.stopPropagation();
+    const rec = closest('.js-add-card').dataset.rec;
+    // From the onboarding form: persist the draft (incl. signature/selfie) first, add the card,
+    // then RETURN to the form (card now on file) — no save-close-reopen. Elsewhere: normal add.
+    if (state.overlay && state.overlay.kind === 'newCustomer') { ncSyncDraftToCustomer(state.overlay); state.overlay.cardSub = true; renderOverlay(); return; }   // §14 open the card panel BESIDE the form
+    return openAddCard(rec);
+  }
+  if (closest('.js-cardsub-cancel')) { e.stopPropagation(); if (state.overlay && state.overlay.kind === 'newCustomer') { state.overlay.cardSub = false; renderOverlay(); } return; }   // §14 close just the card panel, keep the form
   if (closest('.js-card-default')) { e.stopPropagation(); const b = closest('.js-card-default'); return setCardDefault(b.dataset.rec, b.dataset.card); }
   if (closest('.js-card-remove')) { e.stopPropagation(); const b = closest('.js-card-remove'); return removeCard(b.dataset.rec, b.dataset.card); }
+  if (closest('.js-pm-tab')) { e.stopPropagation(); state.pmTab = closest('.js-pm-tab').dataset.tab; return render(); }   // §14b Cards | ACH toggle
+  if (closest('.js-add-ach')) { e.stopPropagation(); return openAddBank(closest('.js-add-ach').dataset.rec); }
+  if (closest('.js-bank-default')) { e.stopPropagation(); const b = closest('.js-bank-default'); return setBankDefault(b.dataset.rec, b.dataset.bank); }
+  if (closest('.js-bank-remove')) { e.stopPropagation(); const b = closest('.js-bank-remove'); return removeBank(b.dataset.rec, b.dataset.bank); }
   if (closest('.js-card-save')) { e.stopPropagation(); return saveCardFlow(closest('.js-card-save')); }
+  if (closest('.js-ach-save')) { e.stopPropagation(); return saveAchFlow(closest('.js-ach-save')); }
+  if (closest('.js-bank-verify')) { e.stopPropagation(); const b = closest('.js-bank-verify'); return openVerifyBank(b.dataset.rec, b.dataset.bank); }
+  if (closest('.js-ach-verify-save')) { e.stopPropagation(); return verifyAchFlow(closest('.js-ach-verify-save')); }
+  if (closest('.js-ach-check')) { e.stopPropagation(); const b = closest('.js-ach-check'); return checkAchStatus(b.dataset.rec, b.dataset.pi); }
   if (closest('.js-pay-invoice')) { e.stopPropagation(); return openPayInvoice(closest('.js-pay-invoice').dataset.rec); }
-  if (closest('.js-pay-pick')) { e.stopPropagation(); if (state.overlay) { state.overlay.selectedCardId = closest('.js-pay-pick').dataset.card; renderOverlay(); } return; }
+  if (closest('.js-pay-pick')) { e.stopPropagation(); if (state.overlay) { const b = closest('.js-pay-pick'); state.overlay.selectedCardId = b.dataset.card || b.dataset.bank; renderOverlay(); } return; }
+  if (closest('.js-pay-method')) { e.stopPropagation(); if (state.overlay) { const nb = document.querySelector('.overlay .js-check-num'); if (nb) state.overlay.checkNum = nb.value.trim(); state.overlay.method = closest('.js-pay-method').dataset.method; state.overlay.error = ''; renderOverlay(); } return; }
   if (closest('.js-charge-invoice')) { e.stopPropagation(); return chargeInvoiceFlow(closest('.js-charge-invoice').dataset.rec); }
+  if (closest('.js-record-payment')) { e.stopPropagation(); return recordManualPayment(closest('.js-record-payment').dataset.rec); }
+  if (closest('.js-print-invoice')) { e.stopPropagation(); return printInvoice(closest('.js-print-invoice').dataset.rec); }
   if (closest('.js-pay-addcard')) { e.stopPropagation(); const b = closest('.js-pay-addcard'); return openAddCard(b.dataset.rec, { returnTo: 'payment', invoiceId: b.dataset.inv }); }
   if (closest('.js-refund-invoice')) { e.stopPropagation(); if (state.overlay) { state.overlay.confirmRefund = true; state.overlay.error = ''; renderOverlay(); } return; }
   if (closest('.js-refund-cancel')) { e.stopPropagation(); if (state.overlay) { state.overlay.confirmRefund = false; renderOverlay(); } return; }
@@ -7735,7 +8047,8 @@ function onClick(e) {
   if (closest('.js-cmt-save')) { e.stopPropagation(); return saveCommentOverlay(); }
   if (closest('.js-fb-send')) { e.stopPropagation(); return sendFeedback(); }
   if (closest('.js-wr-send')) { e.stopPropagation(); return wranglerSend(); }   // §18 Mr. Wrangler
-  if (closest('.js-wr-close')) { e.stopPropagation(); state.wrangler.open = false; return render(); }   // §18 minimize the wrangler dock
+  if (closest('.js-wr-min')) { e.stopPropagation(); state.wrangler.min = !state.wrangler.min; return render(); }   // §18 collapse/expand the wrangler dock to its header bar, in place
+  if (closest('.js-wr-close')) { e.stopPropagation(); state.wrangler.open = false; return render(); }   // §18 close the wrangler dock back to the launcher (conversation is preserved)
   if (closest('.js-wr-act')) { e.stopPropagation(); return wranglerFileAction(Number(closest('.js-wr-act').dataset.mi)); }   // §18d file the fix/request Mr. Wrangler proposed inline
   if (closest('.js-wr-apply')) { e.stopPropagation(); const o = state.wrangler; if (!o.open) return; const m = o.messages[Number(closest('.js-wr-apply').dataset.mi)]; if (!m || !m.action || m.filed) return; const plan = m.action._plan || wrValidatePlan(m.action); if (!plan.ops.length) return; m.filed = true; applyWranglerData(plan); return; }   // Mr. Wrangler applies the previewed add/update/import
   if (closest('.js-wr-unattach')) { e.stopPropagation(); const o = state.wrangler; if (o.open && o.attach) { o.attach.splice(Number(closest('.js-wr-unattach').dataset.i), 1); render(); } return; }   // §18d drop a pending image attachment
@@ -7758,10 +8071,9 @@ function onClick(e) {
   if (closest('.js-ff-cancel')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'board') { o.fileForm = false; o.fileUpload = null; renderOverlay(); } return; }
   if (closest('.js-ff-save')) { e.stopPropagation(); return saveFileForm(); }
   if (closest('.js-vendor-tax')) { e.stopPropagation(); const b = closest('.js-vendor-tax'); const v = recOf('vendors', b.dataset.rec); if (v) { const ex = b.dataset.val === '1'; if (!!v.salesTaxExempt !== ex) { v.salesTaxExempt = ex; reindex('vendors', v); logAction(v, `Sales tax → ${ex ? 'Exempt' : 'Taxed'}`); } if (state.overlay?.kind === 'board') renderOverlay(); render(); } return; }
-  if (closest('.js-boardview')) { e.stopPropagation(); return openBoardView(closest('.js-boardview').dataset.card); }
-  if (closest('.js-cardgraph')) { e.stopPropagation(); const card = closest('.js-cardgraph').dataset.card; const cs = activeSession().cards[card]; if (!cs.graphView) { if (graphViewsFor(card)) return gvOpen(card); cs.graphView = true; return render(); } cs.graphView = false; return render(); }   // §13.4 per-card Graph carousel toggle (legacy cards: dashboard)
-  if (closest('.js-gv-chev')) { e.stopPropagation(); const b = closest('.js-gv-chev'); return gvChevron(b.dataset.card, Number(b.dataset.dir)); }   // §13.4 cycle the active graph view
-  if (closest('.js-gv-seg')) { e.stopPropagation(); const b = closest('.js-gv-seg'); return toggleGraphSeg(b.dataset.card, b.dataset.col, b.dataset.value, b.dataset.label); }   // §13.4 toggle a slice/bar/row/number → search entry
+  if (closest('.js-cardgraph')) { e.stopPropagation(); const b = closest('.js-cardgraph'); const card = b.dataset.card, src = b.dataset.src || card; const cs = activeSession().cards[card]; if (!cs.graphView) { if (graphViewsFor(src)) return gvOpen(card, src); cs.graphView = true; return render(); } cs.graphView = false; return render(); }   // §13.4 per-card Graph carousel toggle (legacy / Shop-'all': dashboard)
+  if (closest('.js-gv-chev')) { e.stopPropagation(); const b = closest('.js-gv-chev'); return gvChevron(b.dataset.card, b.dataset.src || b.dataset.card, Number(b.dataset.dir)); }   // §13.4 cycle the active graph view
+  if (closest('.js-gv-seg')) { e.stopPropagation(); const b = closest('.js-gv-seg'); return toggleGraphSeg(b.dataset.card, b.dataset.src || b.dataset.card, b.dataset.col, b.dataset.value, b.dataset.label); }   // §13.4 toggle a slice/bar/row/number → search entry
   if (closest('.js-bv-sort') && !closest('.js-bv-inscol')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview') { const key = closest('.js-bv-sort').dataset.col; if (o.sort?.key === key) o.sort.dir = o.sort.dir === 'asc' ? 'desc' : 'asc'; else o.sort = { key, dir: 'asc' }; renderOverlay(); } return; }
   if (closest('.js-bv-addcol')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview') { o.colOrder = o.colOrder || []; o.colOrder.push({ kind: 'extra', id: 'xc' + (++o.seq), label: '' }); renderOverlay(); } return; }
   if (closest('.js-bv-inscol')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview' && o.colOrder) { const after = Number(closest('.js-bv-inscol').dataset.after); o.colOrder.splice(after + 1, 0, { kind: 'extra', id: 'xc' + (++o.seq), label: '' }); renderOverlay(); } return; }
@@ -7791,7 +8103,7 @@ function onClick(e) {
   if (closest('.js-disp-autoroute')) { e.stopPropagation(); return autoDispatchRoute(state.dispatchDay || TODAY_ISO); }
   if (closest('.js-disp-clearlegs')) { e.stopPropagation(); const all = dispatchArrowsLS(); delete all[state.dispatchDay || TODAY_ISO]; _lsSave('jactec.dispatchArrows', all); state.dispArm = null; return render(); }
   if (closest('.js-disp-stop') && !closest('.js-disp-time') && !closest('.disp-grip') && !closest('.js-site-go')) { e.stopPropagation(); return anchorRecord('rentals', closest('.js-disp-stop').dataset.rec); }
-  if (closest('.js-disp-tok') && !closest('.dt-time') && !closest('.dt-grip') && !closest('.js-site-go')) { e.stopPropagation(); return anchorRecord('rentals', closest('.js-disp-tok').dataset.rec); }   // §2.3 cockpit: tap a rail stop → open its rental (parity with the map pins)
+  if (closest('.js-disp-tok') && !closest('.dt-time') && !closest('.dt-grip') && !closest('.js-site-go') && !closest('.pill')) { e.stopPropagation(); return dispatchFocusStop(closest('.js-disp-tok').dataset.id); }   // §2.3 cockpit: tap a rail stop → focus it on the map (the customer pill opens the rental)
   if (closest('.js-new-wo-unit')) { e.stopPropagation(); return startNewWorkOrder(closest('.js-new-wo-unit').dataset.rec); }
   if (closest('.js-newitem')) {
     const kind = closest('.js-newitem').dataset.new;
@@ -7878,6 +8190,9 @@ function onClick(e) {
   }
   if (closest('.js-line-save')) { const b = closest('.js-line-save'); e.stopPropagation(); const root = b.closest('.lineform'); const label = root.querySelector('.js-lf-label')?.value; const amt = Number(root.querySelector('.js-lf-amt')?.value) || 0; state.invLineForm = null; return addCustomLine(b.dataset.rec, label || 'Custom', amt); }
   if (closest('.js-line-cancel')) { e.stopPropagation(); state.invLineForm = null; return render(); }
+  if (closest('.js-merge-open')) { e.stopPropagation(); state.invMergePick = closest('.js-merge-open').dataset.rec; state.invLineForm = null; return render(); }   // #64 open the merge-invoice picker
+  if (closest('.js-merge-pick')) { const b = closest('.js-merge-pick'); e.stopPropagation(); return mergeInvoiceInto(b.dataset.keep, b.dataset.rec); }
+  if (closest('.js-merge-cancel')) { e.stopPropagation(); state.invMergePick = null; return render(); }
   if (closest('.js-add-part')) { const b = closest('.js-add-part'); e.stopPropagation(); state.partPhoto = null; return openOverlay({ kind: 'partform', woId: b.dataset.rec, idx: null }); }
   if (closest('.js-partedit')) { const b = closest('.js-partedit'); e.stopPropagation(); state.partPhoto = null; return openOverlay({ kind: 'partform', woId: b.dataset.rec, idx: Number(b.dataset.idx) }); }
   if (closest('.js-pf2-save')) { e.stopPropagation(); return savePartForm(); }
@@ -7995,7 +8310,7 @@ function onClick(e) {
   if (xEl) { e.stopPropagation(); return handlePillX(xEl); }
 
   // shop segment switch — clicking the active segment toggles back to All
-  if (closest('.js-shopseg')) { const seg = closest('.js-shopseg').dataset.seg; const cs = activeSession().cards.shop; cs.segment = (cs.segment === seg) ? 'all' : seg; render(); return; }
+  if (closest('.js-shopseg')) { const seg = closest('.js-shopseg').dataset.seg; const cs = activeSession().cards.shop; const next = (cs.segment === seg) ? 'all' : seg; if (cs.graphView) { const oldSrc = (cs.segment && cs.segment !== 'all') ? cs.segment : 'shop'; const newSrc = (next !== 'all') ? next : 'shop'; gvSaveCurrent(oldSrc, cs); cs.segment = next; gvRestore(newSrc, cs, cs.graphIdx || 0); cs.listLimit = undefined; return render(); } cs.segment = next; render(); return; }   // §13.4 — segment switch re-sources the open carousel
 
   // row / header action buttons (anchor / new tab) — recType is set for Shop items
   const anchorBtn = closest('.js-anchor');
@@ -8758,7 +9073,7 @@ function onChange(e) {
   }
   if (e.target.classList.contains('js-disp-time')) {   // §2.3 dispatch stop time (per-device)
     const t = dispatchTimesLS(); const v = e.target.value.trim(); t[e.target.dataset.id] = v; _lsSave('jactec.dispatchTimes', t);
-    if (e.target.closest('.disprail') && /^\d{1,2}:\d{2}$/.test(v)) render();   // cockpit: a complete time repositions the token on the rail = retime/reorder
+    if (e.target.closest('.disprail') && timeToMin(v) != null) render();   // cockpit: a complete time re-sorts the token on the rail = retime/reorder
     return;
   }
   if (e.target.classList.contains('js-wr-file')) {   // §18d Mr. Wrangler attach — image or CSV/text
@@ -8895,7 +9210,12 @@ function startNewCustomer(prefill) { openCustomerForm(null, prefill); }
    invoice; "Full intake" hands the typed values to the complete form. (Jac 2026-06-13) */
 /* QUICK ADD lives in the Customers search bar (Jac 2026-06-16): a search that
    carries BOTH a name and a phone, on Enter, instantly creates the customer and
-   opens it in Standard View — NOT linked to anything (you drag it where it goes). */
+   opens it in Standard View — NOT linked to anything (you drag it where it goes).
+   Two-entry flow (Jac 2026-06-17, #62): type the name → Enter stages it as a pill
+   (no customer yet) → type the phone → Enter combines staged name + phone → create. */
+function titleCaseName(s) {
+  return (s || '').split(/\s+/).map((w) => (w ? w.charAt(0).toUpperCase() + w.slice(1) : w)).join(' ');
+}
 function parseQuickCustomer(q) {
   q = (q || '').trim(); if (!q) return null;
   const pm = q.match(/(\+?\d[\d\s().+-]{6,}\d)/);   // a phone-like run (≥8 chars, ends in a digit)
@@ -8910,7 +9230,7 @@ function parseQuickCustomer(q) {
 function quickAddCustomerFromSearch(value) {
   const p = parseQuickCustomer(value); if (!p) return false;
   const id = nextCustomerId();
-  const c = { customerId: id, firstName: p.firstName, lastName: p.lastName, name: `${p.firstName} ${p.lastName}`.trim(), company: '', phone: p.phone, email: '', address: '', industry: '', accountType: 'Non-Business', payStatus: 'New Customer', requiresPO: false, accountNotes: '', stripeId: '', selfie: '', signature: '', agreementType: '', agreementSignedAt: '', interestedCategoryIds: [], activityLog: [], usedSalesStage: 'Inbound Lead', membershipStage: 'Inbound Lead', _digest: { activePct: 0, totalPaid: 0, visits: 0, years: 0, avgFrequencyDays: 0, firstInvoice: '', lastInvoice: '' } };
+  const c = { customerId: id, firstName: p.firstName, lastName: p.lastName, name: `${p.firstName} ${p.lastName}`.trim(), company: '', phone: p.phone, email: '', address: '', industry: '', accountType: 'Non-Business', payStatus: 'New Customer', requiresPO: false, accountNotes: '', stripeId: '', selfie: '', signature: '', agreementType: '', agreementSignedAt: '', interestedCategoryIds: [], activityLog: [], usedSalesStage: 'N/A', membershipStage: 'N/A', _digest: { activePct: 0, totalPaid: 0, visits: 0, years: 0, avgFrequencyDays: 0, firstInvoice: '', lastInvoice: '' } };
   DATA.customers.push(c); IDX.customer.set(id, c); reindex('customers', c);
   logAction(c, 'Customer quick-added');
   const s = activeSession();
@@ -9009,7 +9329,7 @@ function quickSaveCustomer(o) {
     industry: d.industry, accountType: d.accountType || 'Non-Business', payStatus: 'New Customer',
     requiresPO: false, accountNotes: d.accountNotes, stripeId: '', selfie: d.selfie || '', signature: d.signature || '',
     agreementType: d.agreementType || '', agreementSignedAt: d.agreementSignedAt || '',
-    interestedCategoryIds: [], activityLog: [], usedSalesStage: 'Inbound Lead', membershipStage: 'Inbound Lead',
+    interestedCategoryIds: [], activityLog: [], usedSalesStage: 'N/A', membershipStage: 'N/A',
     _digest: { activePct: 0, totalPaid: 0, visits: 0, years: 0, avgFrequencyDays: 0, firstInvoice: '', lastInvoice: '' },
   };
   DATA.customers.push(c); IDX.customer.set(id, c); reindex('customers', c);
@@ -9029,6 +9349,19 @@ function applyCustomerLink(o, customerId) {
   if (!res) return null;   // blocked (the wrapper already toasted why) — fall back to a plain create
   o.linked = lt;
   return lt;
+}
+/* Persist the current onboarding-form draft (fields + signature + selfie + agreement) onto the
+   customer record WITHOUT closing the form — used before the card flow so a return loses nothing. */
+function ncSyncDraftToCustomer(o) {
+  if (!o || o.kind !== 'newCustomer') return;
+  ncSyncInputs();
+  if (!o.editId) quickSaveCustomer(o);
+  const c = o.editId && IDX.customer.get(o.editId); if (!c) return;
+  const d = o.draft;
+  Object.assign(c, { firstName: d.firstName, lastName: d.lastName, name: `${d.firstName} ${d.lastName}`.trim(),
+    company: d.company, phone: d.phone, email: d.email, industry: d.industry, accountType: d.accountType || 'Non-Business',
+    accountNotes: d.accountNotes, selfie: d.selfie, signature: d.signature, agreementType: d.agreementType || '', agreementSignedAt: d.agreementSignedAt || '' });
+  reindex('customers', c);
 }
 function saveNewCustomer() {
   const o = state.overlay; if (!o || o.kind !== 'newCustomer') return;
@@ -9060,7 +9393,7 @@ function saveNewCustomer() {
     industry: d.industry, accountType: d.accountType || 'Non-Business', payStatus: 'New Customer',
     requiresPO: false, accountNotes: d.accountNotes, stripeId: '', selfie: d.selfie || '', signature: d.signature || '',
     agreementType: d.agreementType || '', agreementSignedAt: d.agreementSignedAt || '',
-    interestedCategoryIds: [], activityLog: [], usedSalesStage: 'Inbound Lead', membershipStage: 'Inbound Lead',
+    interestedCategoryIds: [], activityLog: [], usedSalesStage: 'N/A', membershipStage: 'N/A',
     _digest: { activePct: 0, totalPaid: 0, visits: 0, years: 0, avgFrequencyDays: 0, firstInvoice: '', lastInvoice: '' },
   };
   DATA.customers.push(c); IDX.customer.set(id, c); reindex('customers', c);
@@ -9127,11 +9460,17 @@ function friendlyPayErr(r) {
     'nothing-to-refund': 'Nothing has been paid on this invoice.', 'no-charge-to-refund': 'No card charge found to refund.',
     'refund-failed': 'The refund didn’t go through — try again.', 'invoice-refunded': 'This invoice was already refunded.',
     'invoice-integrity': 'This invoice changed since it was locked — unlock, review, and re-lock before charging.',
+    'ach-failed': 'The ACH debit was returned (e.g. insufficient funds or closed account) — try another method.',
+    'verify-incomplete': 'That code didn’t verify the account yet — double-check the customer’s statement.',
+    'verify-failed': 'Verification didn’t go through — re-check the code on the customer’s statement.',
+    'missing-verify': 'Enter the verification code from the customer’s statement.',
     'server-error': 'Server error — try again.',
   })[code] || 'Payment failed — try again or use another card.';
 }
 
 async function openAddCard(customerId, opts) { await ensurePubKey(); openOverlay({ kind: 'addCard', customerId, returnTo: (opts && opts.returnTo) || '', invoiceId: (opts && opts.invoiceId) || '' }); }
+async function openAddBank(customerId, opts) { await ensurePubKey(); openOverlay({ kind: 'addAch', customerId, returnTo: (opts && opts.returnTo) || '', invoiceId: (opts && opts.invoiceId) || '' }); }
+async function openVerifyBank(customerId, bankId) { await ensurePubKey(); openOverlay({ kind: 'verifyAch', customerId, bankId }); }
 async function openPayInvoice(invoiceId) { await ensurePubKey(); openOverlay({ kind: 'payment', invoiceId, busy: false, error: '' }); }
 
 /* §19 ALLOCATION POPUP — the user splits a payment across the invoice's line
@@ -9171,15 +9510,15 @@ function setupPayAlloc() {
       if (inp.dataset.taxable === '1') taxable += v; else plain += v;
     });
     const pre = taxable + plain;
-    const tax = exempt ? 0 : Math.round(taxable * TAX_RATE);
+    const tax = exempt ? 0 : Math.round(taxable * TAX_RATE * 100) / 100;   // §10 exact-cent tax (matches invoiceTotals — no whole-dollar overcharge)
     const gross = Math.min(pre + tax, bal);
     const after = Math.max(0, bal - gross);
     const counter = body.querySelector('.js-alloc-counter');
     const charge = body.querySelector('.js-alloc-charge');
     const btn = body.querySelector('.js-charge-invoice');
-    if (counter) counter.innerHTML = after <= 0.005 ? `<b style="color:var(--good,#1a9f57)">Pays in full ✓</b>` : `Balance after <b>${money(after)}</b>`;
-    if (charge) charge.innerHTML = pre > 0 ? `${money(pre)}${tax ? ` + ${money(tax)} tax` : ''} = <b>${money(gross)}</b>` : '<span class="muted">nothing assigned</span>';
-    if (btn) { btn.disabled = !(gross > 0) || !!o.busy; if (!o.busy) btn.textContent = gross > 0 ? `Charge ${money(gross)}` : 'Charge'; }
+    if (counter) counter.innerHTML = after <= 0.005 ? `<b style="color:var(--good,#1a9f57)">Pays in full ✓</b>` : `Balance after <b>${money2(after)}</b>`;
+    if (charge) charge.innerHTML = pre > 0 ? `${money2(pre)}${tax ? ` + ${money2(tax)} tax` : ''} = <b>${money2(gross)}</b>` : '<span class="muted">nothing assigned</span>';
+    if (btn) { btn.disabled = !(gross > 0) || !!o.busy; if (!o.busy) btn.textContent = gross > 0 ? `Charge ${money2(gross)}` : 'Charge'; }
   };
   ins.forEach((inp) => inp.addEventListener('input', recompute));
   const auto = body.querySelector('.js-alloc-auto');
@@ -9198,7 +9537,7 @@ function allocCharge(inv, o) {
     alloc[L.key] = v;
     if (L.taxable) taxable += v; else plain += v;
   });
-  const tax = exempt ? 0 : Math.round(taxable * TAX_RATE);
+  const tax = exempt ? 0 : Math.round(taxable * TAX_RATE * 100) / 100;   // §10 exact-cent tax — the charged gross must use real cents, not a rounded-up dollar
   const gross = Math.min(taxable + plain + tax, invoiceTotals(inv).balance);
   return { gross, alloc };
 }
@@ -9219,8 +9558,9 @@ function destroyCardElement() { if (_cardElement) { try { _cardElement.destroy()
 // Save card: SetupIntent (server) → confirmCardSetup (browser) → persist (server).
 // DOM-driven (no renderOverlay) so the Card Element isn't wiped mid-entry.
 async function saveCardFlow(btn) {
-  const o = state.overlay; if (!o || o.kind !== 'addCard') return;
-  const c = IDX.customer.get(o.customerId); if (!c) return;
+  const o = state.overlay; const sub = !!(o && o.kind === 'newCustomer' && o.cardSub);   // §14 card panel beside the onboarding form
+  if (!o || (o.kind !== 'addCard' && !sub)) return;
+  const c = IDX.customer.get(sub ? o.editId : o.customerId); if (!c) return;
   const stripe = getStripe(); if (!stripe || !_cardElement) return;
   const errBox = document.getElementById('sl-card-error');
   const setErr = (m) => { if (errBox) errBox.textContent = m || ''; };
@@ -9249,10 +9589,91 @@ async function saveCardFlow(btn) {
     reindex('customers', c); logAction(c, `Card added — ${brandName(s.card.brand)} ••••${s.card.last4} (signed agreement)`);
     destroyCardElement();
     toast('Card saved ✓');
-    if (o.returnTo === 'payment' && o.invoiceId) openPayInvoice(o.invoiceId);
+    if (sub) { o.cardSub = false; renderOverlay(); }   // §14 close the card panel in place, refresh the form (card now on file)
+    else if (o.returnTo === 'payment' && o.invoiceId) openPayInvoice(o.invoiceId);
     else closeOverlay();
     render();
   } catch (e) { setErr('Network error — try again.'); reset(); }
+}
+
+// Save ACH: bank SetupIntent (server) → confirmUsBankAccountSetup (browser; raw
+// routing/account go straight to Stripe, never to us) → persist (server). Stored
+// verified:false until the micro-deposit verification flow ships ("store now, verify
+// later", Jac). No Stripe Element — ACH is plain fields handed to Stripe at confirm.
+async function saveAchFlow(btn) {
+  const o = state.overlay; if (!o || o.kind !== 'addAch') return;
+  const c = IDX.customer.get(o.customerId); if (!c) return;
+  const stripe = getStripe(); if (!stripe) return;
+  const setErr = (m) => { const b = document.getElementById('sl-ach-error'); if (b) b.textContent = m || ''; };
+  const reset = () => { btn.disabled = false; btn.textContent = 'Save ACH'; };
+  if (!c.signature || !c.selfie) { setErr('Capture a selfie + signature first (ACH authorization).'); return; }
+  const holder = (document.getElementById('sl-ach-holder')?.value || '').trim();
+  const routing = (document.getElementById('sl-ach-routing')?.value || '').replace(/\D/g, '');
+  const account = (document.getElementById('sl-ach-account')?.value || '').replace(/\D/g, '');
+  const acctType = document.getElementById('sl-ach-type')?.value || 'checking';
+  const holderType = document.getElementById('sl-ach-holdertype')?.value || 'individual';
+  if (!holder) return setErr('Enter the account holder name.');
+  if (routing.length !== 9) return setErr('Routing number must be 9 digits.');
+  if (account.length < 4) return setErr('Enter the account number.');
+  const live = () => state.overlay === o;   // bail if the overlay changed/closed mid-await
+  btn.disabled = true; btn.textContent = 'Saving…'; setErr('');
+  try {
+    const r = await backendCall('stripeBankSetupIntent', { customerId: c.customerId });
+    if (!live()) return;
+    if (!r || !r.ok) { setErr(friendlyPayErr(r)); reset(); return; }
+    const { setupIntent, error } = await stripe.confirmUsBankAccountSetup(r.clientSecret, {
+      payment_method: { us_bank_account: { routing_number: routing, account_number: account, account_holder_type: holderType, account_type: acctType }, billing_details: { name: holder, email: c.email || undefined } },
+    });
+    if (!live()) return;
+    if (error) { setErr(error.message); reset(); return; }
+    if (!setupIntent || !setupIntent.payment_method) { setErr('Bank account could not be saved — try again.'); reset(); return; }
+    const s = await backendCall('stripeSaveBank', { customerId: c.customerId, paymentMethodId: setupIntent.payment_method, setupIntentId: setupIntent.id });
+    if (!live()) return;
+    if (!s || !s.ok) { setErr(friendlyPayErr(s)); reset(); return; }
+    c.stripeId = r.stripeId || c.stripeId;
+    if (!Array.isArray(c.achAccounts)) c.achAccounts = [];
+    const firstBank = customerBanks(c).length === 0;
+    const verified = setupIntent.status === 'succeeded';   // microdeposit/instant pending → requires_action → verified:false
+    c.achAccounts.push({ id: 'ACH-' + (state.seq++), stripePmId: setupIntent.payment_method, setupIntentId: setupIntent.id, bankName: s.bank.bankName, last4: s.bank.last4,
+      accountType: s.bank.accountType || acctType, holder, isDefault: firstBank, verified, status: 'active',
+      mandate: { signedAt: TODAY_ISO, version: 'ach', signature: c.signature, selfie: c.selfie } });
+    reindex('customers', c); logAction(c, `ACH added — ${s.bank.bankName} ••••${s.bank.last4}${verified ? '' : ' (verification pending)'}`);
+    toast(verified ? 'Bank account saved ✓' : 'Bank account saved — verification pending');
+    closeOverlay(); render();
+  } catch (e) { setErr('Network error — try again.'); reset(); }
+}
+
+// §14b verify a pending ACH with the micro-deposit descriptor code (server does the
+// Stripe verify_microdeposits call). On success the bank flips to verified → chargeable.
+async function verifyAchFlow(btn) {
+  const o = state.overlay; if (!o || o.kind !== 'verifyAch') return;
+  const c = IDX.customer.get(o.customerId); if (!c) return;
+  const k = customerBanks(c).find((x) => x.id === o.bankId); if (!k) return;
+  const setErr = (m) => { const b = document.getElementById('sl-vach-error'); if (b) b.textContent = m || ''; };
+  const reset = () => { btn.disabled = false; btn.textContent = 'Verify account'; };
+  const code = (document.getElementById('sl-vach-code')?.value || '').trim().toUpperCase();
+  if (!/^SM[0-9A-Z]{4}$/.test(code)) { setErr('Enter the 6-character code from the statement (starts with SM).'); return; }
+  const live = () => state.overlay === o;
+  btn.disabled = true; btn.textContent = 'Verifying…'; setErr('');
+  try {
+    const r = await backendCall('stripeVerifyBank', { customerId: c.customerId, setupIntentId: k.setupIntentId, descriptorCode: code });
+    if (!live()) return;
+    if (!r || !r.ok) { setErr(friendlyPayErr(r)); reset(); return; }
+    k.verified = true;
+    reindex('customers', c); logAction(c, `ACH verified — ${k.bankName || 'Bank'} ••••${k.last4}`);
+    toast('Bank account verified ✓'); closeOverlay(); render();
+  } catch (e) { setErr('Network error — try again.'); reset(); }
+}
+
+// §14b reconcile a processing ACH — poll the PaymentIntent. The server settles it
+// (records the charge) if it succeeded, or clears it if it bounced. Reuses finalize.
+async function checkAchStatus(invoiceId, piId) {
+  try {
+    const f = await backendCall('stripeFinalizeInvoice', { invoiceId, paymentIntentId: piId });
+    if (f && f.ok) { applyPayment(invoiceId, f, null); const inv = IDX.invoice.get(invoiceId); if (inv) delete inv.achProcessing; toast('ACH cleared — payment received ✓'); render(); return; }
+    if (f && f.error === 'ach-failed') { const inv = IDX.invoice.get(invoiceId); if (inv) { delete inv.achProcessing; delete inv.pendingPaymentIntentId; } toast('ACH was returned — charge another way.'); render(); return; }
+    toast('Still processing — ACH usually settles in 3–5 business days.');
+  } catch (e) { toast('Couldn’t check status — try again.'); }
 }
 
 // Charge an invoice off_session; on 3DS fall back to an on-session confirm, then
@@ -9279,10 +9700,14 @@ async function chargeInvoiceFlow(invoiceId) {
   const done = (r) => { if (!live()) return; applyPayment(invoiceId, r, alloc); o.alloc = null; o.busy = false; o.error = ''; toast(r.fullyPaid || r.alreadyPaid ? 'Paid in full ✓' : 'Payment captured ✓'); renderOverlay(); };
   try {
     const c = IDX.customer.get(IDX.invoice.get(invoiceId)?.customerId);
-    const pick = (o.selectedCardId && customerCards(c).find((k) => k.id === o.selectedCardId)) || defaultCard(c);
+    const pick = (o.selectedCardId && (customerCards(c).find((k) => k.id === o.selectedCardId) || verifiedBanks(c).find((k) => k.id === o.selectedCardId))) || defaultCard(c) || verifiedBanks(c)[0];   // §14b card or verified bank
     const r = await backendCall('stripeChargeInvoice', { invoiceId, amountCents, paymentMethodId: pick?.stripePmId || undefined });
     if (!live()) return;
     if (r && r.ok && (r.status === 'succeeded' || r.alreadyPaid)) { done(r); return; }
+    if (r && r.ok && r.processing) {   // §14b ACH initiated — NOT paid yet; the invoice shows "processing" until it settles (check status to settle)
+      const inv2 = IDX.invoice.get(invoiceId); if (inv2) { inv2.achProcessing = true; if (r.paymentIntentId) inv2.pendingPaymentIntentId = r.paymentIntentId; }
+      o.alloc = null; o.busy = false; o.error = ''; toast('ACH payment initiated — it settles in a few business days.'); closeOverlay(); render(); return;
+    }
     if (r && r.requiresAction && r.clientSecret) {
       const stripe = getStripe(); if (!stripe) { fail('Payment library not ready.'); return; }
       const { paymentIntent, error } = await stripe.confirmCardPayment(r.clientSecret);
@@ -9303,6 +9728,19 @@ async function chargeInvoiceFlow(invoiceId) {
 // refund flips the invoice to Refunded. The server is authoritative.
 async function refundInvoiceFlow(invoiceId) {
   const o = state.overlay; if (!o || o.kind !== 'payment') return;
+  const inv = IDX.invoice.get(invoiceId); if (!inv) return;
+  // Cash/Check payments (#109) never touched Stripe, so there's no charge to reverse —
+  // refund them BY HAND, client-side, exactly as they were recorded (#117). Flip the
+  // invoice to Refunded (status derives from inv.refunded) and keep amountPaid so the
+  // balance reads $0; release line assignments per the full-refund invariant (§4).
+  if (/^cash$/i.test(inv.paymentMethod || '') || /^check/i.test(inv.paymentMethod || '')) {
+    const t = invoiceTotals(inv); const before = t.status;
+    inv.refunded = true; inv.refundedAmount = t.paid; inv.allocations = {};
+    o.confirmRefund = false; o.busy = false; o.error = '';
+    reindex('invoices', inv);
+    logAction(inv, `Refunded ${money(t.paid)} (${inv.paymentMethod}) — ${before} → Refunded`);
+    toast('Refunded ✓'); render(); renderOverlay(); return;
+  }
   const live = () => state.overlay === o;
   o.busy = true; o.error = ''; o.confirmRefund = false; renderOverlay();
   try {
@@ -9330,6 +9768,71 @@ function applyPayment(invoiceId, r, alloc) {
   const after = invoiceTotals(inv).status;
   logAction(inv, r.refundedCents != null ? `Refunded ${money((r.refundedCents || 0) / 100)} — ${before} → ${after}` : `Payment — ${before} → ${after} (${r.paymentMethod || 'card'})`);
   render();
+}
+// Record a manual CASH / CHECK payment (#109) — no Stripe. The figure is captured to
+// the exact cent (no ceiling/rounding) and clamped at the outstanding balance so a
+// payment can never overpay; partials just dial the amount down. amountPaid persists
+// through the normal record sync, exactly like every other invoice field.
+function recordManualPayment(invoiceId) {
+  const o = state.overlay; if (!o || o.kind !== 'payment') return;
+  const inv = IDX.invoice.get(invoiceId); if (!inv) return;
+  const numEl = document.querySelector('.overlay .js-check-num'); if (numEl) o.checkNum = numEl.value.trim();   // survive the error re-render
+  const t = invoiceTotals(inv);
+  const amtEl = document.querySelector('.overlay .js-manual-amt');
+  const entered = amtEl ? Number(amtEl.value) : NaN;
+  if (!(entered > 0)) { o.error = 'Enter an amount greater than $0.'; return renderOverlay(); }
+  const balCents = Math.round(t.balance * 100);
+  if (balCents <= 0) { o.error = 'Nothing left to pay on this invoice.'; return renderOverlay(); }
+  const payCents = Math.min(Math.round(entered * 100), balCents);   // exact cents, never over the balance
+  const isCheck = o.method === 'check';
+  let label = 'Cash';
+  if (isCheck) { const num = (o.checkNum || '').trim(); if (!num) { o.error = 'Enter the check number.'; return renderOverlay(); } label = 'Check #' + num; }
+  const before = t.status;
+  inv.amountPaid = (Math.round((Number(inv.amountPaid) || 0) * 100) + payCents) / 100;
+  inv.paymentMethod = label;
+  inv.paidAt = TODAY_ISO;
+  reindex('invoices', inv);
+  const after = invoiceTotals(inv).status;
+  logAction(inv, `${label} payment ${money2(payCents / 100)} — ${before} → ${after}`);
+  closeOverlay();
+  render();
+  toast(invoiceTotals(inv).balance <= 0.005 ? 'Paid in full ✓' : `${label} payment recorded ✓`);
+}
+// Print / PDF a customer-facing invoice (#109) — a clean white document (not the dark
+// yard UI) rendered into #print-root; the @media print rules hide everything else and
+// the browser's print dialog handles paper or "Save as PDF".
+function printInvoice(invoiceId) {
+  const inv = IDX.invoice.get(invoiceId); if (!inv) return;
+  const t = invoiceTotals(inv);
+  const cust = inv.customerId ? IDX.customer.get(inv.customerId) : null;
+  const rows = (inv.lineItems || []).map((li) => `<tr><td>${esc(li.label)}</td><td class="r">${money2(Number(li.amount) || 0)}</td></tr>`).join('')
+    || '<tr><td colspan="2" class="pr-empty">No line items.</td></tr>';
+  let host = document.getElementById('print-root');
+  if (!host) { host = document.createElement('div'); host.id = 'print-root'; document.body.appendChild(host); }
+  host.innerHTML = `
+    <div class="pr-doc">
+      <div class="pr-head"><div class="pr-brand">JacRentals</div><div class="pr-sub">Heavy-Equipment Rental · Sulphur, LA</div></div>
+      <div class="pr-meta">
+        <div><span class="pr-k">Invoice</span><span class="pr-v">${esc(inv.invoiceId)}</span></div>
+        <div><span class="pr-k">Bill to</span><span class="pr-v">${esc(cust ? cust.name : '—')}</span></div>
+        <div><span class="pr-k">Date</span><span class="pr-v">${esc(fmtShortDate(inv.date) || '—')}</span></div>
+        <div><span class="pr-k">Due</span><span class="pr-v">${esc(inv.dueDate ? fmtShortDate(inv.dueDate) : '—')}</span></div>
+        ${inv.po ? `<div><span class="pr-k">PO</span><span class="pr-v">${esc(inv.po)}</span></div>` : ''}
+      </div>
+      <table class="pr-lines"><thead><tr><th>Description</th><th class="r">Amount</th></tr></thead><tbody>${rows}</tbody></table>
+      <div class="pr-tot">
+        <div><span>Subtotal</span><span>${money2(t.subtotal)}</span></div>
+        <div><span>Tax${t.exempt ? ' (exempt)' : ` (${(TAX_RATE * 100).toFixed(2)}%)`}</span><span>${t.exempt ? '—' : money2(t.tax)}</span></div>
+        <div class="pr-big"><span>Total</span><span>${money2(t.total)}</span></div>
+        <div><span>Paid${inv.paymentMethod ? ' · ' + esc(inv.paymentMethod) : ''}</span><span>${money2(t.paid)}</span></div>
+        <div class="pr-due"><span>Balance due</span><span>${money2(t.balance)}</span></div>
+      </div>
+      <div class="pr-foot">Thank you for your business — much obliged. Questions on this ticket? Give the yard a holler.</div>
+    </div>`;
+  document.body.classList.add('printing');
+  const cleanup = () => { document.body.classList.remove('printing'); window.removeEventListener('afterprint', cleanup); };
+  window.addEventListener('afterprint', cleanup);
+  window.print();
 }
 // Lock (seal pricing) or unlock an invoice via the backend (Office/Admin).
 async function lockInvoiceFlow(invoiceId, lock) {
@@ -9584,6 +10087,9 @@ function exitAvailabilitySearch() {
     cs.filterTerms = (cs.filterTerms || []).filter((t) => !/^(?:un)?available$/i.test(t.t));
     if (/^available$/i.test((cs.search || '').trim())) cs.search = '';   // legacy plain-text form
   });
+  // #54 — drop the category-name seed the picker shortcut pushed onto Units
+  const us = s.cards.units, seed = (us && us.search || '').trim().toLowerCase();
+  if (seed && DATA.categories.some((c) => (c.name || '').toLowerCase() === seed)) us.search = '';
 }
 function winPickDay(iso) {
   const wp = state.winpicker; if (!wp) return;
@@ -10017,6 +10523,46 @@ function addWOToInvoice(invoiceId, woId) {
   render();
 }
 
+/* ── MERGE INVOICES (Jac, in-app request #64) — consolidate a customer's bills.
+   MONEY-SAFE BY CONSTRUCTION: only invoices with $0 paid, no lock, no refund, no
+   ACH-in-flight are mergeable, so this NEVER touches a payment, allocation, lock,
+   or refund. It only ever removes a $0-paid invoice — exactly what sweepEmptyDrafts
+   already does for empty drafts. Same customer only. */
+function invoiceMergeable(i) {
+  return !!i && !!i.customerId && !i.locked && !i.refunded && !i.achProcessing && (Number(i.amountPaid) || 0) === 0;
+}
+/* Fold the absorbed invoice's lines into the keeper, relink its rentals, then delete
+   it. (The 1.2s sync diff sees the vanished id and pushes a backend delete — §18b.) */
+function mergeInvoiceInto(keepId, absorbId) {
+  const keep = IDX.invoice.get(keepId), src = IDX.invoice.get(absorbId);
+  if (!keep || !src || keepId === absorbId) return;
+  if (!invoiceMergeable(keep)) { toast(`Blocked: invoice ${invoiceShort(keepId)} has a payment or lock — can't merge into it (refund/unlock first).`); return; }
+  if (!invoiceMergeable(src)) { toast(`Blocked: invoice ${invoiceShort(absorbId)} has a payment or lock — refund/unlock it before merging.`); return; }
+  if (keep.customerId !== src.customerId) { toast('Blocked: those invoices belong to different customers.'); return; }
+  // move every line over, re-minting lids so allocations can never collide on the keeper
+  const moved = (src.lineItems || []).map((li) => Object.assign({}, li, { lid: lineLid() }));
+  moved.forEach((li) => keep.lineItems.push(li));
+  // union rentalIds + relink the absorbed invoice's rentals to the keeper (§7.5: one invoice per rental)
+  (src.rentalIds || []).forEach((rid) => {
+    if (!keep.rentalIds.includes(rid)) keep.rentalIds.push(rid);
+    const r = IDX.rental.get(rid); if (r && r.invoiceId === absorbId) r.invoiceId = keepId;
+  });
+  if (!keep.po && src.po) keep.po = src.po;                 // carry a PO if the keeper has none
+  const movedTotal = moved.reduce((a, li) => a + (Number(li.amount) || 0), 0);
+  // delete the absorbed invoice (IDX + array — the sync diff handles the backend)
+  const idx = DATA.invoices.indexOf(src); if (idx >= 0) DATA.invoices.splice(idx, 1);
+  IDX.invoice.delete(absorbId);
+  if (keep.mock && keep.lineItems.length) delete keep.mock;   // a merged-into invoice is a real bill now, not a throwaway draft
+  logAction(keep, `Merged in invoice ${invoiceShort(absorbId)} — ${moved.length} line${moved.length === 1 ? '' : 's'} (${money(movedTotal)})`);
+  reindex('invoices', keep);                                  // → saveSoon() flushes the merge + the delete
+  toast(`Invoice ${invoiceShort(absorbId)} merged into ${invoiceShort(keepId)}.`);
+  // keep the picker open if more bills remain to merge, else close it
+  const more = DATA.invoices.some((o) => o.invoiceId !== keepId && o.customerId === keep.customerId && invoiceMergeable(o));
+  state.invMergePick = more ? keepId : null;
+  const session = activeSession(); if (session.anchor) setAnchor(session, session.anchor.card, session.anchor.recId, session.anchor.recType);
+  render();
+}
+
 /* ════════════════════════════════════════════════════════════════════════
    §18 PERSISTENCE & BOOT
    ════════════════════════════════════════════════════════════════════════ */
@@ -10313,6 +10859,7 @@ function boot() {
     }, 130);
   }, true);
   initDrag();   // §15c drag & drop link engine — #drag-layer singleton + document pointer listeners
+  try { loadGoogleMaps(); } catch (e) {}   // §2.3 warm the Maps SDK at boot so the dispatch cockpit + transport editor open instantly (no first-open wait / "load it twice")
   // R0 flash-lint: ON by default — violations self-report by pulsing (SPEC v8)
   try { if (localStorage.getItem('jactec.lint') !== '0') document.body.classList.add('rw-lint'); } catch (err) {}
   document.addEventListener('click', onClick);
@@ -10347,20 +10894,20 @@ function boot() {
   });
   // §2.3 dispatch route reorder — native drag, self-contained (re-render only on drop,
   // so the grid's custom pointer engine isn't involved). Reorders the day's run.
-  let dispDragId = null;
-  document.addEventListener('dragstart', (e) => { const s = e.target.closest && e.target.closest('.js-disp-stop'); if (s) { dispDragId = s.dataset.id; if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'; s.classList.add('disp-dragging'); } });
-  document.addEventListener('dragover', (e) => { if (dispDragId && e.target.closest && e.target.closest('.js-disp-route')) e.preventDefault(); });
+  let dispDragId = null;   // §2.3 cockpit rail: drag a stop token up/down to set the run order (overrides time-sort)
+  document.addEventListener('dragstart', (e) => { const s = e.target.closest && e.target.closest('.js-disp-tok'); if (s) { dispDragId = s.dataset.id; if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', s.dataset.id); } catch (x) {} } s.classList.add('disp-dragging'); const rail = s.closest('.disprail'); if (rail) rail.classList.add('dragging'); } });   // pin the rail OPEN for the whole drag (hover is lost mid-drag)
+  document.addEventListener('dragover', (e) => { if (dispDragId && e.target.closest && e.target.closest('.disprail')) e.preventDefault(); });
   document.addEventListener('drop', (e) => {
-    const route = e.target.closest && e.target.closest('.js-disp-route'); if (!dispDragId || !route) return; e.preventDefault();
-    const ids = [...route.querySelectorAll('.js-disp-stop')].map((n) => n.dataset.id);
-    const over = e.target.closest('.js-disp-stop');
+    const rail = e.target.closest && e.target.closest('.disprail'); if (!dispDragId || !rail) return; e.preventDefault();
+    const ids = [...rail.querySelectorAll('.js-disp-tok')].map((n) => n.dataset.id);
+    const over = e.target.closest('.js-disp-tok');
     const from = ids.indexOf(dispDragId); if (from !== -1) ids.splice(from, 1);
     const to = over && over.dataset.id !== dispDragId ? ids.indexOf(over.dataset.id) : ids.length;
     ids.splice(to < 0 ? ids.length : to, 0, dispDragId);
-    const ord = dispatchOrderLS(); ord[route.dataset.day] = ids; _lsSave('jactec.dispatchOrder', ord);
-    dispDragId = null; render();
+    const ord = dispatchOrderLS(); ord[rail.dataset.day] = ids; _lsSave('jactec.dispatchOrder', ord);
+    state.dispFocusId = dispDragId; dispDragId = null; render();   // keep the moved stop highlighted so it stays trackable after the reorder
   });
-  document.addEventListener('dragend', () => { dispDragId = null; document.querySelectorAll('.disp-dragging').forEach((n) => n.classList.remove('disp-dragging')); });
+  document.addEventListener('dragend', () => { dispDragId = null; document.querySelectorAll('.disp-dragging').forEach((n) => n.classList.remove('disp-dragging')); document.querySelectorAll('.disprail.dragging').forEach((n) => n.classList.remove('dragging')); });
   // §2.3 route arrows — keyboard parity: Enter/Space arms or lands a leg; Escape cancels the draw.
   document.addEventListener('keydown', (e) => {
     const pt = e.target.closest && e.target.closest('.js-disp-arrowpt');
@@ -10410,7 +10957,18 @@ function boot() {
     // §5.4 (per-card) — same Enter-to-pin / Backspace-to-pop on a card's list search.
     if (e.target.classList.contains('mini-search') && e.target.dataset.card && !e.target.classList.contains('js-history-search')) {
       const card = e.target.dataset.card; const cs = activeSession().cards[card];
-      if (e.key === 'Enter') { e.preventDefault(); if (card === 'customers' && quickAddCustomerFromSearch(e.target.value)) return; addFilterTerm(card, e.target.value); return; }
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (card === 'customers') {
+          // #62 two-entry quick-add: fold any staged name pill(s) into this entry (the
+          // phone) so name+phone across two Enters creates the customer. Staged terms are
+          // lowercased by addFilterTerm, so title-case the name half before parsing.
+          const staged = (cs.filterTerms || []).map((ft) => ft.t).join(' ').trim();
+          const combined = staged ? `${titleCaseName(staged)} ${e.target.value}`.trim() : e.target.value;
+          if (quickAddCustomerFromSearch(combined)) return;
+        }
+        addFilterTerm(card, e.target.value); return;
+      }
       if (e.key === 'Backspace' && !e.target.value && (cs.filterTerms || []).length) { e.preventDefault(); removeFilterTerm(card, cs.filterTerms.length - 1); return; }
       return;
     }
@@ -10543,7 +11101,7 @@ function exposeTestApi() {
       rentalAllocated, unitRentalPrice, rentalDisplayName, setWoLinePhase, setWoPhase, woBottleneck,
       cleanUnitName, planUnitMigration, applyUnitMigration, openMigrationPreview,
       computeTransportPrice, isFueledType, unitTransport, rentalTransport,
-      wrValidatePlan, applyWranglerData, wrFunnel };
+      wrValidatePlan, applyWranglerData, wrFunnel, invoiceMergeable, mergeInvoiceInto };
   } catch (e) { /* no window (non-browser) */ }
 }
 

@@ -210,6 +210,25 @@ try {
     ok(T.IDX.unit.get('U003').notes === 'WR test note' && T.IDX.unit.get('U003').currentHours === hoursBefore, 'applied the safe note, did NOT write the money/ops field');
     T.DATA.customers.length = custBefore; u3.notes = noteBefore;   // restore
 
+    // 13) MERGE INVOICES (#64) — consolidate a customer's UNPAID bills; money-safe by construction
+    const mC = 'C0009';
+    const mA = { invoiceId: 'TST-KEEP', customerId: mC, rentalIds: [], date: T.TODAY_ISO, dueDate: T.TODAY_ISO, po: '', amountPaid: 0, lineItems: [{ kind: 'custom', ref: null, lid: 'LMA1', label: 'A line', amount: 100 }] };
+    const mB = { invoiceId: 'TST-SRC', customerId: mC, rentalIds: [], date: T.TODAY_ISO, dueDate: T.TODAY_ISO, po: 'PO-9', amountPaid: 0, lineItems: [{ kind: 'custom', ref: null, lid: 'LMB1', label: 'B line', amount: 50 }, { kind: 'custom', ref: null, lid: 'LMB2', label: 'B line 2', amount: 25 }] };
+    T.DATA.invoices.push(mA, mB); T.IDX.invoice.set(mA.invoiceId, mA); T.IDX.invoice.set(mB.invoiceId, mB);
+    ok(T.invoiceMergeable(mA) && T.invoiceMergeable(mB), 'two unpaid same-customer invoices are mergeable');
+    ok(!T.invoiceMergeable(T.IDX.invoice.get('01i02Ju26')), 'a PAID invoice is NOT mergeable (money guard)');
+    T.mergeInvoiceInto('TST-KEEP', 'TST-SRC');
+    const mKeep = T.IDX.invoice.get('TST-KEEP');
+    ok(mKeep && mKeep.lineItems.length === 3, `merge folded all lines onto the keeper (3 → got ${mKeep ? mKeep.lineItems.length : 'gone'})`);
+    ok(mKeep && Math.round(T.invoiceTotals(mKeep).subtotal) === 175, 'merged subtotal = 100 + 50 + 25');
+    ok(!T.IDX.invoice.get('TST-SRC') && !T.DATA.invoices.some((o) => o.invoiceId === 'TST-SRC'), 'absorbed invoice deleted (IDX + array)');
+    ok(mKeep && mKeep.po === 'PO-9', 'keeper inherited the absorbed PO (had none)');
+    const mLids = (mKeep ? mKeep.lineItems : []).map((l) => l.lid); ok(new Set(mLids).size === mLids.length, 'merged line lids are unique (no allocation collision)');
+    T.mergeInvoiceInto('TST-KEEP', '01i02Ju26');   // money guard: refuse to absorb a PAID invoice
+    const mPaid = T.IDX.invoice.get('01i02Ju26');
+    ok(mPaid && (Number(mPaid.amountPaid) || 0) === 1000 && mPaid.lineItems.length === 2, 'blocked merge left the PAID invoice fully intact');
+    const mki = T.DATA.invoices.findIndex((o) => o.invoiceId === 'TST-KEEP'); if (mki >= 0) T.DATA.invoices.splice(mki, 1); T.IDX.invoice.delete('TST-KEEP');   // restore
+
     return out;
   });
 
