@@ -1186,7 +1186,7 @@ const state = {
   filterTerms: [],            // §5.4 — AND-narrowing filter terms (type + Enter)
   unitPick: null,             // { ids, from } — Invoice +WO narrows the Units list to the invoice's linked units (Phase 4)
   chat: { open: false, activeId: null, draft: '', chats: [] },   // §17 internal team dock (Phase 7): PERSISTENT chats (never deleted). Each = { id, tags, participants, messages, seen{userKey:lastViewedAt} }. Empty participants = dormant; reopen via a tagged element.
-  wrangler: { open: false, messages: [], busy: false, error: '', draft: '', attach: [], card: null, recId: null, recType: null, reqNumber: null, reqTitle: null, reqUrl: null },   // §18 Mr. Wrangler dock — survives minimize, restores conversation on reopen
+  wrangler: { open: false, min: false, messages: [], busy: false, error: '', draft: '', attach: [], card: null, recId: null, recType: null, reqNumber: null, reqTitle: null, reqUrl: null },   // §18 Mr. Wrangler dock — min collapses it to the header bar; survives minimize, restores conversation on reopen
   mobileCol: 0,               // §M1 — which column the phone shows (0 Yard · 1 Rentals · 2 Customers); drives swipe position + the per-column bottom strip
   woPartForm: null,           // woId whose "+ Add Part/Labor" inline form is open
   invLineForm: null,          // invoiceId whose "+ Add Custom" inline form is open
@@ -4917,7 +4917,8 @@ function wranglerDockEl() {
       <span class="wr-dock-title">Mr. Wrangler</span>
       ${chip}
       <span class="spacer"></span>
-      <button class="iconbtn js-wr-close" aria-label="Minimize" data-tip="Minimize">×</button>
+      <button class="iconbtn js-wr-min" aria-label="${o.min ? 'Expand' : 'Minimize'}" data-tip="${o.min ? 'Expand' : 'Minimize'}">${I.chev}</button>
+      <button class="iconbtn js-wr-close" aria-label="Close" data-tip="Close">×</button>
     </div>
     ${reqBar}
     <div class="wr-feed">${turns}${o.busy ? '<div class="wr-msg assistant"><span class="wr-av">🤠</span><div class="wr-bub wr-think">…wrangling an answer</div></div>' : ''}</div>
@@ -4939,6 +4940,7 @@ function mountWranglerDock() {
 function openWranglerDock(opts) {
   const w = state.wrangler;
   w.open = true;
+  w.min = false;   // an explicit open always expands the dock
   if (opts.messages !== undefined) w.messages = opts.messages;
   if (opts.busy !== undefined) w.busy = opts.busy; else w.busy = false;
   if (opts.error !== undefined) w.error = opts.error; else w.error = '';
@@ -7341,7 +7343,7 @@ function render() {
   // §17 — the internal team dock floats bottom-right above the bar when open
   if (state.chat.open) { const d = el('div', 'chat-dock', ''); d.dataset.drop = 'chat'; d.innerHTML = chatDockEl(); $('#app').appendChild(d); }
   // §18 — Mr. Wrangler dock floats alongside the team chat (or alone at bottom-right)
-  if (state.wrangler.open) { const d = el('div', 'wrangler-dock' + (state.chat.open ? ' wr-beside-chat' : '')); d.innerHTML = wranglerDockEl(); $('#app').appendChild(d); }
+  if (state.wrangler.open) { const d = el('div', 'wrangler-dock' + (state.chat.open ? ' wr-beside-chat' : '') + (state.wrangler.min ? ' wr-min' : '')); d.innerHTML = wranglerDockEl(); $('#app').appendChild(d); }
   // §18e — floating bottom-right cluster: notification bell + the Requests inbox.
   // Hidden while a dock owns that corner.
   if (!state.chat.open && !state.wrangler.open) $('#app').appendChild(fabStackEl());
@@ -7986,7 +7988,8 @@ function onClick(e) {
   if (closest('.js-cmt-save')) { e.stopPropagation(); return saveCommentOverlay(); }
   if (closest('.js-fb-send')) { e.stopPropagation(); return sendFeedback(); }
   if (closest('.js-wr-send')) { e.stopPropagation(); return wranglerSend(); }   // §18 Mr. Wrangler
-  if (closest('.js-wr-close')) { e.stopPropagation(); state.wrangler.open = false; return render(); }   // §18 minimize the wrangler dock
+  if (closest('.js-wr-min')) { e.stopPropagation(); state.wrangler.min = !state.wrangler.min; return render(); }   // §18 collapse/expand the wrangler dock to its header bar, in place
+  if (closest('.js-wr-close')) { e.stopPropagation(); state.wrangler.open = false; return render(); }   // §18 close the wrangler dock back to the launcher (conversation is preserved)
   if (closest('.js-wr-act')) { e.stopPropagation(); return wranglerFileAction(Number(closest('.js-wr-act').dataset.mi)); }   // §18d file the fix/request Mr. Wrangler proposed inline
   if (closest('.js-wr-apply')) { e.stopPropagation(); const o = state.wrangler; if (!o.open) return; const m = o.messages[Number(closest('.js-wr-apply').dataset.mi)]; if (!m || !m.action || m.filed) return; const plan = m.action._plan || wrValidatePlan(m.action); if (!plan.ops.length) return; m.filed = true; applyWranglerData(plan); return; }   // Mr. Wrangler applies the previewed add/update/import
   if (closest('.js-wr-unattach')) { e.stopPropagation(); const o = state.wrangler; if (o.open && o.attach) { o.attach.splice(Number(closest('.js-wr-unattach').dataset.i), 1); render(); } return; }   // §18d drop a pending image attachment

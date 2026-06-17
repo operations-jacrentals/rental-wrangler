@@ -1082,6 +1082,13 @@ select.lf-in { appearance: none; cursor: pointer; }
 .wrangler-dock .wr-feed { flex: 1 1 auto; overflow-y: auto; min-height: 80px; }
 .wrangler-dock .wr-compose { flex: 0 0 auto; }
 .wrangler-dock.wr-drag { outline: 2px dashed var(--accent); outline-offset: -4px; }
+/* Minimized → collapse to just the header bar so it stops blocking content; one click on the chevron restores it. */
+.wrangler-dock.wr-min { max-height: none; }
+.wrangler-dock.wr-min > :not(.wr-dock-head) { display: none; }
+.wrangler-dock.wr-min .wr-dock-head { border-bottom: 0; }
+.js-wr-min .chev { transition: transform .12s; }
+.wrangler-dock.wr-min .js-wr-min .chev { transform: rotate(180deg); }   /* chevron flips up = expand */
+@media (prefers-reduced-motion: reduce) { .js-wr-min .chev { transition: none; } }
 @media (max-width: 760px) { .wrangler-dock { right: 8px; left: 8px; width: auto; bottom: 56px; max-height: 76vh; } .wrangler-dock.wr-beside-chat { right: 8px; } }
 
 /* §6.2 #11 inline edit */
