@@ -504,6 +504,7 @@ select.lf-in { appearance: none; cursor: pointer; }
 .disp-tok.done { opacity: .82; }
 .disp-tok.nopin { border-style: dashed; }
 .disp-tok.disp-dragging { opacity: .45; }
+.disp-tok.focus { box-shadow: 0 0 0 2px #18b6ff; }   /* tapped → focused on the map (the "you are here" blue) */
 .dt-rail { display: flex; align-items: center; gap: 7px; padding: 6px 8px; }                 /* collapsed view: kind dot + time */
 .disprail:hover .dt-rail, .disprail:focus-within .dt-rail { display: none; }
 .dt-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex: 0 0 auto; color: var(--gray); }
