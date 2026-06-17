@@ -5160,6 +5160,7 @@ function fmtClock(t) { const mn = timeToMin(t); if (mn == null) return '—:—'
 function dispatchFocusStop(stopId) {
   const day = state.dispatchDay || TODAY_ISO;
   const s = dispatchDayStops(day).find((x) => x.id === stopId); if (!s) return;
+  state.dispFocusId = stopId;   // remember the focused stop so the highlight survives a re-render
   const pos = (s.pin && Number.isFinite(s.pin.lat)) ? s.pin : _dispGeo[s.addr];
   if (_dispMap && pos) { _dispMap.panTo(pos); if (_dispMap.getZoom() < 14) _dispMap.setZoom(14); }
   document.querySelectorAll('.disp-tok.focus').forEach((n) => n.classList.remove('focus'));
@@ -5193,7 +5194,7 @@ function dispatchGridBody() {
     const kind = dispatchKind(s);
     const done = stopDone(s), isNext = s.id === nextId;
     const flag = done ? badge('Done', 'green') : (isNext ? `<span class="dt-next">${I.truck} Next</span>` : '');
-    return `<div class="disp-tok js-disp-tok kind-${kind}${done ? ' done' : ''}${isNext ? ' next' : ''}${s.pin ? '' : ' nopin'}" draggable="true" data-id="${esc(s.id)}" data-rec="${esc(s.rentalId)}" data-unit="${esc(s.unitId || '')}">
+    return `<div class="disp-tok js-disp-tok kind-${kind}${done ? ' done' : ''}${isNext ? ' next' : ''}${s.id === state.dispFocusId ? ' focus' : ''}${s.pin ? '' : ' nopin'}" draggable="true" data-id="${esc(s.id)}" data-rec="${esc(s.rentalId)}" data-unit="${esc(s.unitId || '')}">
       <div class="dt-rail"><span class="dt-dot"></span><b class="dt-mini">${timeToMin(s.time) != null ? esc(fmtClock(s.time)) : '—'}</b></div>
       <div class="dt-full">
         <div class="dt-r1"><span class="dt-grip" data-tip="Drag to reorder · or type a time">⠿</span><input class="dt-time js-disp-time" data-id="${esc(s.id)}" value="${esc(s.time || '')}" placeholder="—:—" maxlength="8" aria-label="Stop time" data-tip="Set the stop time — reorders the run" /><span class="spacer"></span>${flag}</div>
@@ -10852,7 +10853,7 @@ function boot() {
   // §2.3 dispatch route reorder — native drag, self-contained (re-render only on drop,
   // so the grid's custom pointer engine isn't involved). Reorders the day's run.
   let dispDragId = null;   // §2.3 cockpit rail: drag a stop token up/down to set the run order (overrides time-sort)
-  document.addEventListener('dragstart', (e) => { const s = e.target.closest && e.target.closest('.js-disp-tok'); if (s) { dispDragId = s.dataset.id; if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', s.dataset.id); } catch (x) {} } s.classList.add('disp-dragging'); } });
+  document.addEventListener('dragstart', (e) => { const s = e.target.closest && e.target.closest('.js-disp-tok'); if (s) { dispDragId = s.dataset.id; if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', s.dataset.id); } catch (x) {} } s.classList.add('disp-dragging'); const rail = s.closest('.disprail'); if (rail) rail.classList.add('dragging'); } });   // pin the rail OPEN for the whole drag (hover is lost mid-drag)
   document.addEventListener('dragover', (e) => { if (dispDragId && e.target.closest && e.target.closest('.disprail')) e.preventDefault(); });
   document.addEventListener('drop', (e) => {
     const rail = e.target.closest && e.target.closest('.disprail'); if (!dispDragId || !rail) return; e.preventDefault();
@@ -10862,9 +10863,9 @@ function boot() {
     const to = over && over.dataset.id !== dispDragId ? ids.indexOf(over.dataset.id) : ids.length;
     ids.splice(to < 0 ? ids.length : to, 0, dispDragId);
     const ord = dispatchOrderLS(); ord[rail.dataset.day] = ids; _lsSave('jactec.dispatchOrder', ord);
-    dispDragId = null; render();
+    state.dispFocusId = dispDragId; dispDragId = null; render();   // keep the moved stop highlighted so it stays trackable after the reorder
   });
-  document.addEventListener('dragend', () => { dispDragId = null; document.querySelectorAll('.disp-dragging').forEach((n) => n.classList.remove('disp-dragging')); });
+  document.addEventListener('dragend', () => { dispDragId = null; document.querySelectorAll('.disp-dragging').forEach((n) => n.classList.remove('disp-dragging')); document.querySelectorAll('.disprail.dragging').forEach((n) => n.classList.remove('dragging')); });
   // §2.3 route arrows — keyboard parity: Enter/Space arms or lands a leg; Escape cancels the draw.
   document.addEventListener('keydown', (e) => {
     const pt = e.target.closest && e.target.closest('.js-disp-arrowpt');

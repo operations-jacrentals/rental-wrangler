@@ -495,7 +495,12 @@ select.lf-in { appearance: none; cursor: pointer; }
 /* the rail floats over the map's right edge: a minimal time strip that widens on hover/focus */
 .disprail { position: absolute; top: 8px; right: 8px; bottom: 8px; width: 90px; z-index: 3; display: flex; flex-direction: column;
   background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; box-shadow: var(--chip-shadow); transition: width .16s ease, box-shadow .16s ease; }
-.disprail:hover, .disprail:focus-within { width: 256px; box-shadow: var(--shadow); }
+.disprail:hover, .disprail:focus-within, .disprail.dragging { width: 256px; box-shadow: var(--shadow); }   /* .dragging pins it open while reordering (hover drops mid-drag) */
+.disprail.dragging .dr-chev { transform: rotate(180deg); }
+.disprail.dragging .dr-title { opacity: 1; }
+.disprail.dragging .dr-sec { display: block; }
+.disprail.dragging .dt-rail { display: none; }
+.disprail.dragging .dt-full { display: block; }
 .dr-head { display: flex; align-items: center; gap: 6px; padding: 7px 9px; border-bottom: 1px solid var(--line); flex: 0 0 auto; }
 .dr-chev { color: var(--txt-3); font-size: 13px; flex: 0 0 auto; transition: transform .16s ease; }
 .disprail:hover .dr-chev, .disprail:focus-within .dr-chev { transform: rotate(180deg); }
