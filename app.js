@@ -4892,8 +4892,8 @@ function wranglerDockEl() {
             : `<div class="wr-apply"><div class="wr-apply-sum">Preview: ${esc(sum)}</div>${skip}${plan.ops.length ? `<button class="wr-actbtn wr-actbtn-build js-wr-apply" data-mi="${i}">✓ Apply these changes</button>` : '<span class="wr-apply-none">Nothing here I can safely apply.</span>'}</div>`;
         } else if (m.action) {
           const ak = m.action.action;
-          const doneLbl = ak === 'plan' ? 'Building to your plan' : ak === 'request' ? 'Filed for Jac’s OK' : 'Sent to the fixer';
-          const btnLbl = ak === 'plan' ? '✓ Build this plan' : ak === 'request' ? '💡 File this for Jac’s OK' : '🔧 Send this to get fixed';
+          const doneLbl = ak === 'plan' ? 'Building to your plan' : ak === 'request' ? 'Sent to the developer for OK' : 'Fixing now — I’ll let you know when it’s done';
+          const btnLbl = ak === 'plan' ? '✓ Build this plan' : ak === 'request' ? '💡 Send to the developer' : '🔧 Fix it now';
           act = m.filed
             ? `<span class="wr-actdone">✓ ${doneLbl}${m.issue ? ` · #${m.issue}` : ''}</span>`
             : m.filing
@@ -6039,7 +6039,7 @@ function renderOverlay() {
             ? (st.key === 'needs'
                 ? `<button class="pill ghost js-req-dismiss" data-r="R18" data-n="${rq.number}">Dismiss</button>`
                 : `<button class="pill ghost js-req-dismiss" data-r="R18" data-n="${rq.number}">Dismiss</button><button class="pill c-commit js-req-approve" data-r="R17" data-n="${rq.number}">✓ Approve → build it</button>`)
-            : '<span class="req-await">Awaiting Jac’s OK</span>');
+            : '<span class="req-await">Awaiting the developer’s OK</span>');
       return `<div class="req-card req-${st.key}">
         <div class="req-head"><span class="req-num">#${rq.number}</span><span class="req-title">${esc(rq.title)}</span><span class="spacer"></span><span class="pill c-${st.color} req-state" data-r="R3b">${st.label}</span></div>
         ${report}${photos}${convo}
@@ -6055,7 +6055,7 @@ function renderOverlay() {
       ? list.map(reqCard).join('')
       : (!backendPassword ? '<div class="req-empty">Sign in to review requests.</div>'
         : (!reqLoaded && reqLoading ? '<div class="req-empty">Loading…</div>'
-          : '<div class="req-empty"><span class="req-empty-ic">📭</span><p>No requests waiting.</p><span>When Mr. Wrangler files one “for Jac’s OK”, it lands here for you to review.</span></div>'));
+          : '<div class="req-empty"><span class="req-empty-ic">📭</span><p>No requests waiting.</p><span>When Mr. Wrangler sends one to the developer, it lands here for review.</span></div>'));
     const pop = el('div', 'popup'); pop.style.width = '480px';
     pop.innerHTML = `
       <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${I.inbox}</span><h3>Requests${list.length ? ` · ${list.length}` : ''}</h3><span class="spacer"></span><button class="iconbtn js-req-refresh" data-tip="Refresh">${I.refresh || '⟳'}</button><button class="x js-close">${I.x}</button></div>
@@ -6593,7 +6593,7 @@ async function wranglerSend() {
       const raw = (r.text || '').trim();
       const act = parseWranglerAction(raw);
       let shown = stripWranglerAction(raw);
-      if (!shown) shown = act ? (act.action === 'data' ? 'Here’s what I’ll change — preview it and hit apply when it looks right.' : act.action === 'request' ? 'Got it — I’ll file this as a request for Jac to OK.' : act.action === 'plan' ? 'Here’s the plan — tap Build when it’s right.' : 'On it — I’ll send this to get fixed.') : '(no answer)';
+      if (!shown) shown = act ? (act.action === 'data' ? 'Here’s what I’ll change — preview it and hit apply when it looks right.' : act.action === 'request' ? 'Got it — I’ll send this to the developer to OK.' : act.action === 'plan' ? 'Here’s the plan — tap Build when it’s right.' : 'On it — I’ll fix this right now and let you know when I’m done.') : '(no answer)';
       o.messages.push({ role: 'assistant', content: shown, action: act || null, filed: false });
       syncWranglerComment(o, 'assistant', shown);   // §18e mirror Mr. Wrangler's reply onto the issue thread
     } else {
@@ -6717,9 +6717,9 @@ function wranglerActionPacket(o, act) {
   const focus = (o.card && o.recId != null) ? `${entityCardOf(o.card, o.recType)}:${o.recId}` : '—';
   const errs = ERR_LOG.length ? ERR_LOG.slice(-12).join('\n') : '(none captured this session)';
   const footer = isPlan
-    ? '_Build EXACTLY to the Approved plan above — Jac OK\'d it in chat. A Claude agent implements it; the CI gates guard it before it ships to live._'
+    ? '_Build EXACTLY to the Approved plan above — the developer OK\'d it in chat. A Claude agent implements it; the CI gates guard it before it ships to live._'
     : isReq
-      ? '_A request for Jac\'s OK — NOT auto-implemented. Jac can add the `wrangler-fix` label to greenlight it._'
+      ? '_A request for the developer\'s OK — NOT auto-implemented. The developer can add the `wrangler-fix` label to greenlight it._'
       : '_A Claude agent will reproduce + patch this; the CI gates guard it before it ships to live._';
   const heading = isPlan ? 'Approved plan (build to this)' : isReq ? 'Requested change' : 'The glitch';
   const body = [
@@ -6760,7 +6760,7 @@ async function wranglerFileAction(mi) {
   const isPlan = m.action.action === 'plan';
   const { title, body, label } = wranglerActionPacket(o, m.action);
   const images = []; (o.messages || []).forEach((mm) => (mm.images || []).forEach((s) => { if (images.length < 8) images.push(s); }));   // §18e carry the chat’s photos onto the issue
-  const okToast = (n) => isPlan ? `Building to your plan — #${n}. 🤠` : label === 'wrangler-request' ? `Filed #${n} — in Jac’s queue for the OK. 🤠` : `Filed #${n} — Mr. Wrangler’s on it. 🤠`;
+  const okToast = (n) => isPlan ? `Building to your plan — #${n}. 🤠` : label === 'wrangler-request' ? `Sent #${n} to the developer for the OK. 🤠` : `Filed #${n} — Mr. Wrangler’s on it. 🤠`;
   if (typeof backendPassword !== 'undefined' && backendPassword) {
     m.filing = true; render();
     try {
@@ -6774,7 +6774,7 @@ async function wranglerFileAction(mi) {
   toast(isPlan
     ? 'Opening the build ticket — tap “Submit new issue” and Mr. Wrangler builds to your plan. 🤠'
     : label === 'wrangler-request'
-      ? 'Opening a request — tap “Submit new issue” and it lands in Jac’s queue. 🤠'
+      ? 'Opening a request — tap “Submit new issue” and it goes to the developer. 🤠'
       : 'Opening a fix ticket — tap “Submit new issue” and Mr. Wrangler wrangles the rest. 🤠');
 }
 /* §18e IN-APP REQUESTS INBOX — Mr. Wrangler's "Filed for Jac's OK" reviewed + approved
@@ -10932,7 +10932,7 @@ function seedDemoRequests() {
       '**Reporter**: The green Ready tag looks exactly like On Rent. Can we make them different so I can tell them apart?', '',
       '**Mr. Wrangler**: Good eye — “Ready” (inspection) and “On Rent” (rental) both come out green, so they run together. I’ll propose a distinct tone for inspection-Ready and keep On Rent as the rental green.', '',
       '### Repro context', '- **View:** list view', '- **Role:** Admin', '',
-      "_A request for Jac's OK — NOT auto-implemented._",
+      "_A request for the developer's OK — NOT auto-implemented._",
     ].join('\n'),
   });
   wranglerRequests.push({
