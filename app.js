@@ -1126,7 +1126,7 @@ const state = {
   filterTerms: [],            // §5.4 — AND-narrowing filter terms (type + Enter)
   unitPick: null,             // { ids, from } — Invoice +WO narrows the Units list to the invoice's linked units (Phase 4)
   chat: { open: false, activeId: null, draft: '', chats: [] },   // §17 internal team dock (Phase 7): PERSISTENT chats (never deleted). Each = { id, tags, participants, messages, seen{userKey:lastViewedAt} }. Empty participants = dormant; reopen via a tagged element.
-  wrangler: { open: false, messages: [], busy: false, error: '', draft: '', attach: [], card: null, recId: null, recType: null, reqNumber: null, reqTitle: null, reqUrl: null },   // §18 Mr. Wrangler dock — survives minimize, restores conversation on reopen
+  wrangler: { open: false, messages: [], busy: false, error: '', draft: '', attach: [], files: [], card: null, recId: null, recType: null, reqNumber: null, reqTitle: null, reqUrl: null },   // §18 Mr. Wrangler dock — survives minimize, restores conversation on reopen
   mobileCol: 0,               // §M1 — which column the phone shows (0 Yard · 1 Rentals · 2 Customers); drives swipe position + the per-column bottom strip
   woPartForm: null,           // woId whose "+ Add Part/Labor" inline form is open
   invLineForm: null,          // invoiceId whose "+ Add Custom" inline form is open
@@ -4794,12 +4794,13 @@ function wranglerDockEl() {
               : `<button class="wr-actbtn${ak === 'plan' ? ' wr-actbtn-build' : ''} js-wr-act" data-mi="${i}">${btnLbl}</button>`;
         }
         const imgs = (m.images && m.images.length) ? `<div class="wr-bub-imgs">${m.images.map((s) => `<img src="${esc(s)}" alt="attached image">`).join('')}</div>` : '';
+        const files = (m.files && m.files.length) ? `<div class="wr-bub-files">${m.files.map((f) => `<span class="wr-file-chip" data-tip="${esc(f.name)}">${I.paperclip || '📎'}<span class="wr-file-n">${esc(f.name)}</span></span>`).join('')}</div>` : '';
         const txt = m.content ? `${esc(m.content).replace(/\n/g, '<br>')}` : '';
-        return `<div class="wr-msg ${m.role}">${m.role === 'assistant' ? '<span class="wr-av">🤠</span>' : ''}<div class="wr-bub">${imgs}${txt}${act}</div></div>`;
+        return `<div class="wr-msg ${m.role}">${m.role === 'assistant' ? '<span class="wr-av">🤠</span>' : ''}<div class="wr-bub">${imgs}${files}${txt}${act}</div></div>`;
       }).join('')
     : '<div class="wr-empty">Ask about this record or the whole yard — service due, balances, what needs attention… or just tell me what’s broken (paste or attach a screenshot) and I’ll get it fixed.</div>';
-  const attachRow = (o.attach && o.attach.length)
-    ? `<div class="wr-attach-row">${o.attach.map((s, i) => `<div class="wr-thumb"><img src="${esc(s)}" alt="attachment"><button class="wr-thumb-x js-wr-unattach" data-i="${i}" aria-label="Remove">×</button></div>`).join('')}</div>`
+  const attachRow = ((o.attach && o.attach.length) || (o.files && o.files.length))
+    ? `<div class="wr-attach-row">${(o.attach || []).map((s, i) => `<div class="wr-thumb"><img src="${esc(s)}" alt="attachment"><button class="wr-thumb-x js-wr-unattach" data-i="${i}" aria-label="Remove">×</button></div>`).join('')}${(o.files || []).map((f, i) => `<div class="wr-fileatt"><span class="wr-fileatt-n">${I.paperclip || '📎'}<span class="wr-file-n">${esc(f.name)}</span></span><button class="wr-thumb-x wr-fileatt-x js-wr-unfile" data-i="${i}" aria-label="Remove">×</button></div>`).join('')}</div>`
     : '';
   const reqBar = o.reqNumber
     ? `<div class="wr-reqbar"><span class="wr-reqnum">Request #${o.reqNumber}</span>${o.reqTitle ? `<span class="wr-reqttl">${esc(o.reqTitle)}</span>` : ''}<span class="spacer"></span>${canApproveRequests() ? `<button class="pill ghost js-req-dismiss" data-r="R18" data-n="${o.reqNumber}">Dismiss</button><button class="pill c-commit js-req-approve" data-r="R17" data-n="${o.reqNumber}">✓ Approve</button>` : ''}</div>`
@@ -4816,18 +4817,18 @@ function wranglerDockEl() {
     <div class="wr-feed">${turns}${o.busy ? '<div class="wr-msg assistant"><span class="wr-av">🤠</span><div class="wr-bub wr-think">…wrangling an answer</div></div>' : ''}</div>
     ${o.error ? `<div class="wr-err">${esc(o.error)}</div>` : ''}
     ${attachRow}
-    <div class="wr-compose"><label class="wr-attach js-wr-attach" data-tip="Attach or paste an image"><input type="file" accept="image/*" class="js-wr-file" hidden multiple>${I.paperclip || '📎'}</label><input class="wr-in js-wr-in" placeholder="Ask Mr. Wrangler, or tell him what's broken…" value="${esc(o.draft || '')}" ${o.busy ? 'disabled' : ''} /><button class="wr-send js-wr-send" ${o.busy ? 'disabled' : ''} aria-label="Ask">${I.chev}</button></div>`;
+    <div class="wr-compose"><label class="wr-attach js-wr-attach" data-tip="Attach a screenshot or a CSV/text file"><input type="file" accept="image/*,.csv,.tsv,.txt,.md,.log,text/csv,text/plain" class="js-wr-file" hidden multiple>${I.paperclip || '📎'}</label><input class="wr-in js-wr-in" placeholder="Ask Mr. Wrangler, or tell him what's broken…" value="${esc(o.draft || '')}" ${o.busy ? 'disabled' : ''} /><button class="wr-send js-wr-send" ${o.busy ? 'disabled' : ''} aria-label="Ask">${I.chev}</button></div>`;
 }
 function mountWranglerDock() {
   const d = document.querySelector('.wrangler-dock'); if (!d) return;
   const inp = d.querySelector('.js-wr-in');
   if (inp) inp.addEventListener('paste', (ev) => {
     const items = (ev.clipboardData && ev.clipboardData.items) || [];
-    for (const it of items) { if (it.type && it.type.startsWith('image/')) { const file = it.getAsFile(); if (file) { ev.preventDefault(); wranglerAttachFile(file); } } }
+    for (const it of items) { if (it.kind === 'file') { const file = it.getAsFile(); if (file) { ev.preventDefault(); wranglerAttachAny(file); } } }
   });
   d.addEventListener('dragover', (ev) => { if (ev.dataTransfer && [...ev.dataTransfer.types].includes('Files')) { ev.preventDefault(); d.classList.add('wr-drag'); } });
   d.addEventListener('dragleave', (ev) => { if (ev.target === d) d.classList.remove('wr-drag'); });
-  d.addEventListener('drop', (ev) => { const files = ev.dataTransfer && ev.dataTransfer.files; if (files && files.length) { ev.preventDefault(); d.classList.remove('wr-drag'); [...files].forEach((f) => { if (f.type.startsWith('image/')) wranglerAttachFile(f); }); } });
+  d.addEventListener('drop', (ev) => { const files = ev.dataTransfer && ev.dataTransfer.files; if (files && files.length) { ev.preventDefault(); d.classList.remove('wr-drag'); [...files].forEach((f) => wranglerAttachAny(f)); } });
 }
 function openWranglerDock(opts) {
   const w = state.wrangler;
@@ -4837,6 +4838,7 @@ function openWranglerDock(opts) {
   if (opts.error !== undefined) w.error = opts.error; else w.error = '';
   if (opts.draft !== undefined) w.draft = opts.draft;
   if (opts.attach !== undefined) w.attach = opts.attach; else w.attach = [];
+  if (opts.files !== undefined) w.files = opts.files; else w.files = [];
   if (opts.card !== undefined) w.card = opts.card;
   if (opts.recId !== undefined) w.recId = opts.recId;
   if (opts.recType !== undefined) w.recType = opts.recType;
@@ -6274,6 +6276,13 @@ function wranglerContext(o) {
 // Attach an image to the next Wrangler message (file picker, paste, or drop). The
 // backend wranglerReply_ accepts image content blocks; we downscale first to keep
 // the payload light. "Add files" = images for now (what a glitch report needs).
+// §18d route a dropped/pasted/picked file: images become vision attachments,
+// CSV/text files get read as text so Mr. Wrangler can actually read their rows.
+function wranglerAttachAny(file) {
+  if (!file) return;
+  if (file.type && file.type.startsWith('image/')) return wranglerAttachFile(file);
+  return wranglerAttachTextFile(file);
+}
 function wranglerAttachFile(file) {
   const o = state.wrangler; if (!o.open || !file || !file.type.startsWith('image/')) return;
   const reader = new FileReader();
@@ -6283,6 +6292,22 @@ function wranglerAttachFile(file) {
     o.attach.push(out); render();
   });
   reader.readAsDataURL(file);
+}
+// §18d CSV/text attachment — read the file as text and carry it with the next turn
+// (Mr. Wrangler reads it as a text block; images still ride the vision path above).
+function wranglerAttachTextFile(file) {
+  const o = state.wrangler; if (!o.open || !file) return;
+  const name = (file.name || 'file').toLowerCase();
+  const okType = (file.type && (file.type.startsWith('text/') || /csv/.test(file.type))) || /\.(csv|tsv|txt|md|log)$/.test(name);
+  if (!okType) { toast('I can read screenshots and CSV/text files — that file type isn’t supported.'); return; }
+  if (file.size > 256 * 1024) { toast('That file is over 256 KB — trim it or paste just the rows you need.'); return; }
+  const reader = new FileReader();
+  reader.onload = () => {
+    o.files = o.files || []; if (o.files.length >= 3) { toast('Up to 3 files per message.'); return; }
+    o.files.push({ name: file.name || 'file', text: String(reader.result || '') }); render();
+  };
+  reader.onerror = () => toast('Could not read that file.');
+  reader.readAsText(file);
 }
 // data URL → an Anthropic image content block.
 function wranglerImageBlock(dataUrl) {
@@ -6294,20 +6319,27 @@ async function wranglerSend() {
   const inp = document.querySelector('.wrangler-dock .js-wr-in');
   const text = ((inp ? inp.value : o.draft) || '').trim();
   const imgs = (o.attach && o.attach.length) ? o.attach.slice() : null;
-  if ((!text && !imgs) || o.busy) { if (inp) inp.focus(); return; }
-  o.messages.push({ role: 'user', content: text, images: imgs });
+  const files = (o.files && o.files.length) ? o.files.slice() : null;
+  if ((!text && !imgs && !files) || o.busy) { if (inp) inp.focus(); return; }
+  o.messages.push({ role: 'user', content: text, images: imgs, files });
   syncWranglerComment(o, 'user', text, imgs);   // §18e mirror the turn onto the issue thread
-  o.draft = ''; o.attach = []; o.busy = true; o.error = ''; render();
+  wranglerClearNeedsAnswer(o.reqNumber);        // §18e answering a "Needs your answer" request clears it from the inbox
+  o.draft = ''; o.attach = []; o.files = []; o.busy = true; o.error = ''; render();
   const system = WRANGLER_SYSTEM + '\n\n' + wranglerContext(o);
-  // Build the payload: a message with images becomes a content-block array.
+  // Build the payload: images become a content-block array; CSV/text files fold
+  // into the message text so Mr. Wrangler reads their rows.
+  const fileBlock = (m) => (m.files && m.files.length)
+    ? m.files.map((f) => `\n\nAttached file "${f.name}":\n\`\`\`\n${f.text}\n\`\`\``).join('')
+    : '';
   const payloadMsgs = o.messages.map((m) => {
+    const body = (m.content || '') + fileBlock(m);
     if (m.images && m.images.length) {
       const blocks = [];
-      if (m.content) blocks.push({ type: 'text', text: m.content });
+      if (body) blocks.push({ type: 'text', text: body });
       m.images.forEach((s) => { const b = wranglerImageBlock(s); if (b) blocks.push(b); });
       return { role: m.role, content: blocks };
     }
-    return { role: m.role, content: m.content };
+    return { role: m.role, content: body };
   });
   try {
     if (typeof backendPassword !== 'undefined' && backendPassword) {
@@ -6512,6 +6544,18 @@ async function refreshWranglerRequests() {
   try { const r = await backendCall('wranglerRequests', {}); if (r && r.ok && Array.isArray(r.requests)) { wranglerRequests = r.requests; reqLoaded = true; } } catch (e) {}
   reqLoading = false;
   render(); if (state.overlay?.kind === 'requests') renderOverlay();
+}
+// §18e Answering a paused "Needs your answer" request resumes it: locally drop the
+// `wrangler-needs-jac` tag (→ "Building") so the card clears from the inbox the moment
+// you reply, mirroring the backend's resume-on-answer relabel (docs/wrangler-inbox-backend.md
+// §2) — which guards against the deployed handler not removing the stale label.
+function wranglerClearNeedsAnswer(n) {
+  if (n == null) return;
+  const rq = wranglerRequests.find((x) => x.number === n);
+  if (!rq) return;
+  const labels = (rq.labels || []).filter((l) => l !== 'wrangler-needs-jac');
+  if (!labels.includes('wrangler-fix')) labels.push('wrangler-fix');
+  rq.labels = labels;
 }
 // §18f Notifications — the in-app feed of recently-RESOLVED Mr. Wrangler fixes (read-only
 // mirror of the Requests inbox). Badge = unseen count; opening the bell marks them seen.
@@ -7695,6 +7739,7 @@ function onClick(e) {
   if (closest('.js-wr-act')) { e.stopPropagation(); return wranglerFileAction(Number(closest('.js-wr-act').dataset.mi)); }   // §18d file the fix/request Mr. Wrangler proposed inline
   if (closest('.js-wr-apply')) { e.stopPropagation(); const o = state.wrangler; if (!o.open) return; const m = o.messages[Number(closest('.js-wr-apply').dataset.mi)]; if (!m || !m.action || m.filed) return; const plan = m.action._plan || wrValidatePlan(m.action); if (!plan.ops.length) return; m.filed = true; applyWranglerData(plan); return; }   // Mr. Wrangler applies the previewed add/update/import
   if (closest('.js-wr-unattach')) { e.stopPropagation(); const o = state.wrangler; if (o.open && o.attach) { o.attach.splice(Number(closest('.js-wr-unattach').dataset.i), 1); render(); } return; }   // §18d drop a pending image attachment
+  if (closest('.js-wr-unfile')) { e.stopPropagation(); const o = state.wrangler; if (o.open && o.files) { o.files.splice(Number(closest('.js-wr-unfile').dataset.i), 1); render(); } return; }   // §18d drop a pending file attachment
   if (closest('.js-wrangler')) { e.stopPropagation(); if (state.wrangler.open) { state.wrangler.open = false; return render(); } return openWranglerDock(state.wrangler.messages.length ? { open: true } : { messages: [], draft: '', attach: [], card: null, recId: null, recType: null, reqNumber: null, reqTitle: null, reqUrl: null }); }   // §18 toggle Mr. Wrangler dock
   if (closest('.js-notifications')) { e.stopPropagation(); openOverlay({ kind: 'notifications' }); markNotifsSeen(); refreshWranglerNotifications(); return; }   // §18f notification bell — in-app resolved-fix feed
   if (closest('.js-notif-refresh')) { e.stopPropagation(); return refreshWranglerNotifications(); }
@@ -8716,8 +8761,8 @@ function onChange(e) {
     if (e.target.closest('.disprail') && /^\d{1,2}:\d{2}$/.test(v)) render();   // cockpit: a complete time repositions the token on the rail = retime/reorder
     return;
   }
-  if (e.target.classList.contains('js-wr-file')) {   // §18d Mr. Wrangler image attach
-    [...(e.target.files || [])].forEach((f) => wranglerAttachFile(f));
+  if (e.target.classList.contains('js-wr-file')) {   // §18d Mr. Wrangler attach — image or CSV/text
+    [...(e.target.files || [])].forEach((f) => wranglerAttachAny(f));
     e.target.value = '';
     return;
   }

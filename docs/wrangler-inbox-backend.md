@@ -127,6 +127,15 @@ the chat plan-gate + inbox work without them.
    so the engine re-fires and resumes from the full thread. (The engine already
    sets `wrangler-needs-jac` + posts its question when it pauses.)
 
+   > ⚠️ **Deployed drift (2026-06-17).** The live web app (`@22`) ADDs `wrangler-fix`
+   > on an answer but does **not** remove `wrangler-needs-jac`, so answered cards stay
+   > stuck on "Needs your answer" in the inbox (seen on #125). The `wranglerComment`
+   > resume path must call **both** `addLabelsToIssue('wrangler-fix')` **and**
+   > `removeLabelFromIssue('wrangler-needs-jac')`. Until `Code.gs` is redeployed, the
+   > frontend (`wranglerClearNeedsAnswer`, app.js) drops the stale tag locally on send
+   > as a stopgap — it does NOT fix the GitHub label, so a hard refresh re-surfaces the
+   > card until the backend is corrected.
+
 3. **Ring the bell.** Have `wranglerNotifications` also include open
    `wrangler-needs-jac` issues (e.g. `{ kind: 'needs', number, title, question }`)
    so the notification bell alerts when Mr. Wrangler is waiting on you — not just
