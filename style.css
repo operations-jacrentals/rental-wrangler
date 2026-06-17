@@ -1983,6 +1983,12 @@ body { font-variant-numeric: tabular-nums; }
 .act-col-lbl { font-size: 13px; font-weight: 700; line-height: 1; text-transform: uppercase; letter-spacing: .4px; color: var(--txt-3); padding-bottom: 7px; white-space: nowrap; }
 .act-cols { display: flex; gap: 14px; align-items: flex-start; }
 .act-col { flex: 1; min-width: 0; }
+/* Mr. Wrangler #129: keep each activity row's date in its gutter and let ONLY the
+   text wrap. The shared .hitem flex-wrap orphaned a long entry's date onto its own
+   line above the text (the longest entry — often the first — broke first); pin the
+   row to one line and wrap the text within its own cell instead. */
+.act-col .hitem { flex-wrap: nowrap; align-items: baseline; }
+.act-col .hitem > span:not(.htime) { flex: 1 1 auto; min-width: 0; }
 /* Rented categories — R9 flags wrapping right (Jac 2026-06-12) */
 .rented-cats { display: flex; align-items: baseline; gap: 8px; width: 100%; justify-content: flex-end; margin-top: 2px; }
 .rented-cats .rc-flags { display: flex; flex-wrap: wrap; gap: 4px 10px; justify-content: flex-end; }
