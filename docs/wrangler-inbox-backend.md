@@ -86,13 +86,59 @@ You already have `githubCreateIssue_` (the existing `wranglerFile`) and the
 `githubListComments_` are the same REST surface (`/issues/{n}/comments`). Paste,
 redeploy the web app, and the inbox is fully wired.
 
+## 5. `wranglerNotifications` — ring the bell when a fix the user reported ships
+
+The §18f notification bell + feed is **already live in the frontend** (the bottom-right
+bell FAB, its unseen badge, and the Notifications popup). It's the in-app answer to
+"how do I know when you fixed it?" — but it stays empty until this handler feeds it.
+The app polls `wranglerNotifications` on boot and renders each entry the moment a fix
+the user reported is resolved, **no GitHub trip required**.
+
+A fix "ships" when its issue is **closed-as-completed** (the auto-fixer's merged PR
+says `Closes #n`). The **verdict** shown in the bell is Mr. Wrangler's closing comment
+— the last comment on the issue. Return the most recent resolved fixes:
+
+```js
+case 'wranglerNotifications': {
+  const SINCE = new Date(Date.now() - 30 * 864e5).toISOString();   // last 30 days
+  // Same REST surface as the others: GET /issues?state=closed&labels=wrangler-fix
+  //   &since=<iso>&sort=updated&direction=desc&per_page=20  (githubListIssues_ is your
+  //   thin wrapper, just like githubListComments_).
+  const issues = githubListIssues_({ state: 'closed', labels: 'wrangler-fix', since: SINCE, per_page: 20 });
+  const notifications = (issues || [])
+    .filter((is) => !is.pull_request && is.state_reason !== 'not_planned')   // shipped (not dismissed), skip PRs
+    .slice(0, 15)
+    .map((is) => {
+      const comments = githubListComments_(is.number) || [];
+      const last = comments.length ? comments[comments.length - 1].body : '';
+      const verdict = String(last)
+        .replace(/^[^:\n]*Mr\.?\s*Wrangler[^:\n]*:\s*/i, '')   // drop a "🤠 Mr. Wrangler:" prefix if present
+        .replace(/!\[[^\]]*\]\([^)]+\)/g, '')                  // strip image markdown
+        .trim();
+      return { number: is.number, title: is.title, verdict, merged: true, closedAt: is.closed_at, url: is.html_url };
+    });
+  return json({ ok: true, notifications });
+}
+```
+
+The shape matches exactly what §18f renders: `{ number, title, verdict, merged,
+closedAt, url }`. `merged: true` flags the ✅ (a shipped fix vs. an ⓘ note); a
+dismissed (`not_planned`) issue is filtered out so the bell only ever celebrates
+real ships. The frontend tracks "seen" by max issue number in `localStorage`, so the
+unseen-count badge clears itself once the user opens the bell — nothing to do here.
+
+> Optional (from the 2026-06-16 addendum below): also fold in open
+> `wrangler-needs-jac` issues as `{ kind: 'needs', … }` so the same bell alerts when
+> Mr. Wrangler is waiting on *you*, not just when a fix ships.
+
 ## Until you paste these
 
 - **Now (no paste):** every request shows its full write-up + the original
   conversation; **Talk to Mr. Wrangler** reopens the chat seeded from it and you
   can go back and forth live (the AI runs through your existing `wrangler` action).
-- **After the paste:** photos appear in the inbox + chat, and the back-and-forth
-  is recorded on the GitHub issue (so it survives across sessions/devices).
+- **After the paste:** photos appear in the inbox + chat, the back-and-forth is
+  recorded on the GitHub issue (so it survives across sessions/devices), and the
+  **notification bell lights up** when a fix the user reported ships (#5).
 
 ## Discuss-before-build + mid-build "needs you" (2026-06-16)
 
