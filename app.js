@@ -1330,6 +1330,15 @@ function openStandard(card, recId, recType) {
   pushCardHistory(cs);       // Task 1 — record the prior (list) view so Back can return
   cs.mode = 'standard'; cs.recId = recId; cs.recType = recType || null; cs.graphView = false;   // opening a record exits the in-column graph view
   ackComments(recOf(entityCardOf(card, recType), recId));   // viewing = acknowledged (Phase 6)
+  // §10 + #54 — opening a Category while the rental-window picker is live (a window's
+  // picked, so availWin is set) pivots the left column to Units, pre-filled with the
+  // category name so Units narrows to that category's window-available units (the
+  // 'available' chip is already pinned by enterAvailabilitySearch). The category stays
+  // in standard mode, so it remains the calendar's availability subject (greyed days).
+  if (card === 'categories' && state.winpicker && availWin) {
+    const cat = IDX.category.get(recId), s = activeSession(), us = s.cards.units;
+    if (cat && us) { us.search = cat.name; us.listLimit = undefined; if (s.cols && s.cols.left) s.cols.left = 'units'; }
+  }
   render();
 }
 /** Universal pill rule (§0.2): clicking any pill forces its target card into
@@ -10026,6 +10035,9 @@ function exitAvailabilitySearch() {
     cs.filterTerms = (cs.filterTerms || []).filter((t) => !/^(?:un)?available$/i.test(t.t));
     if (/^available$/i.test((cs.search || '').trim())) cs.search = '';   // legacy plain-text form
   });
+  // #54 — drop the category-name seed the picker shortcut pushed onto Units
+  const us = s.cards.units, seed = (us && us.search || '').trim().toLowerCase();
+  if (seed && DATA.categories.some((c) => (c.name || '').toLowerCase() === seed)) us.search = '';
 }
 function winPickDay(iso) {
   const wp = state.winpicker; if (!wp) return;
