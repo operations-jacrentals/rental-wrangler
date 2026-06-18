@@ -5034,9 +5034,10 @@ function wranglerDockEl() {
           const plan = m.action._plan || (m.action._plan = wrValidatePlan(m.action));
           const sum = wrPlanSummary(plan);
           const skip = plan.issues.length ? `<div class="wr-apply-skip">skipped: ${esc(plan.issues.join('; '))}</div>` : '';
+          const trunc = m.action._truncated ? `<div class="wr-apply-skip">⚠️ This batch was cut off mid-send — only the rows that fully arrived are here. Apply these, then ask me to send the rest in a smaller batch.</div>` : '';
           act = m.filed
             ? `<span class="wr-actdone">✓ Applied — ${esc(sum)}</span>`
-            : `<div class="wr-apply"><div class="wr-apply-sum">Preview: ${esc(sum)}</div>${skip}${plan.ops.length ? `<button class="wr-actbtn wr-actbtn-build js-wr-apply" data-mi="${i}">✓ Apply these changes</button>` : '<span class="wr-apply-none">Nothing here I can safely apply.</span>'}</div>`;
+            : `<div class="wr-apply"><div class="wr-apply-sum">Preview: ${esc(sum)}</div>${trunc}${skip}${plan.ops.length ? `<button class="wr-actbtn wr-actbtn-build js-wr-apply" data-mi="${i}">✓ Apply these changes</button>` : '<span class="wr-apply-none">Nothing here I can safely apply.</span>'}</div>`;
         } else if (m.action) {
           const ak = m.action.action;
           const doneLbl = ak === 'plan' ? 'Building to your plan' : ak === 'request' ? 'Sent to the developer for OK' : 'Fixing now — I’ll let you know when it’s done';
@@ -6795,6 +6796,10 @@ async function wranglerSend() {
       const raw = (r.text || '').trim();
       const act = parseWranglerAction(raw);
       let shown = stripWranglerAction(raw);
+      // An action fence was present but nothing parsed/salvaged → the reply was cut
+      // off before a single complete row arrived. Don't leave the user with no preview
+      // and no explanation — tell them to retry smaller (#152).
+      if (!act && /```wrangler-action/.test(raw)) shown += (shown ? '\n\n' : '') + '⚠️ That action got cut off before it finished sending — likely too big for one go. Ask me to send it in smaller batches and the preview will pop right up.';
       if (!shown) shown = act ? (act.action === 'data' ? 'Here’s what I’ll change — preview it and hit apply when it looks right.' : act.action === 'request' ? 'Got it — I’ll send this to the developer to OK.' : act.action === 'plan' ? 'Here’s the plan — tap Build when it’s right.' : 'On it — I’ll fix this right now and let you know when I’m done.') : '(no answer)';
       o.messages.push({ role: 'assistant', content: shown, action: act || null, filed: false });
       syncWranglerComment(o, 'assistant', shown);   // §18e mirror Mr. Wrangler's reply onto the issue thread
@@ -6810,13 +6815,49 @@ async function wranglerSend() {
 // repro. Opens a pre-filled issue → one Submit tap → the engine takes it from there.
 // Mr. Wrangler decides when something is fixable and emits a hidden action block;
 // we parse it out of his reply (and strip it from what the user sees).
+// The closing fence is OPTIONAL (`(?:```|$)`): a big import (e.g. 168 rows) can
+// blow past the model's output-token limit and get cut off mid-JSON, leaving the
+// opening ```wrangler-action with no closer. We still strip + parse what arrived
+// rather than dumping raw JSON in the bubble with no preview (#152).
+const WR_ACTION_RE = /```wrangler-action\s*([\s\S]*?)(?:```|$)/;
 function parseWranglerAction(text) {
-  const m = String(text || '').match(/```wrangler-action\s*([\s\S]*?)```/);
+  const m = String(text || '').match(WR_ACTION_RE);
   if (!m) return null;
-  try { const j = JSON.parse(m[1].trim()); if (j && ((['fix', 'request', 'plan'].includes(j.action) && j.title) || (j.action === 'data' && Array.isArray(j.ops)))) return j; } catch (e) {}
+  const src = m[1].trim();
+  let j = null;
+  try { j = JSON.parse(src); } catch (e) { j = salvageWranglerAction(src); }   // truncated stream → recover the rows that fully arrived
+  if (j && ((['fix', 'request', 'plan'].includes(j.action) && j.title) || (j.action === 'data' && Array.isArray(j.ops)))) return j;
   return null;
 }
-const stripWranglerAction = (text) => String(text || '').replace(/```wrangler-action\s*[\s\S]*?```/g, '').trim();
+const stripWranglerAction = (text) => String(text || '').replace(/```wrangler-action\s*[\s\S]*?(?:```|$)/g, '').trim();
+// Best-effort recovery of a truncated `data`/import action (#152): the reply was
+// cut off mid-JSON so it won't parse whole, but the rows that DID arrive are
+// complete objects. Pull the action shell + every fully-closed row (brace-matched)
+// so the preview can still open with what made it through; flag it as _truncated.
+function salvageWranglerAction(src) {
+  if (!/"action"\s*:\s*"data"/.test(src)) return null;   // only the row-structured import is salvageable
+  const title = (src.match(/"title"\s*:\s*"((?:[^"\\]|\\.)*)"/) || [])[1] || '';
+  const entity = (src.match(/"entity"\s*:\s*"((?:[^"\\]|\\.)*)"/) || [])[1] || '';
+  const rowsAt = src.indexOf('"rows"');
+  if (rowsAt < 0 || !entity) return null;
+  let start = src.indexOf('[', rowsAt);
+  if (start < 0) return null;
+  const rows = [];
+  for (let i = start + 1; i < src.length; i++) {
+    if (src[i] !== '{') continue;
+    let depth = 0, inStr = false, esc = false, objStart = i;
+    for (; i < src.length; i++) {
+      const ch = src[i];
+      if (inStr) { if (esc) esc = false; else if (ch === '\\') esc = true; else if (ch === '"') inStr = false; continue; }
+      if (ch === '"') inStr = true;
+      else if (ch === '{') depth++;
+      else if (ch === '}' && --depth === 0) { try { rows.push(JSON.parse(src.slice(objStart, i + 1))); } catch (e) {} break; }
+    }
+    if (depth > 0) break;   // last object was cut off mid-way → keep the complete ones, stop
+  }
+  if (!rows.length) return null;
+  return { action: 'data', title, ops: [{ op: 'import', entity, rows }], _truncated: true };
+}
 
 /* ════════════ Mr. Wrangler ACTS on your data (Jac 2026-06-16) ════════════════
    add / update / bulk-import items — NEVER delete, NEVER money/card/auth/WO. Only
@@ -11447,7 +11488,8 @@ function exposeTestApi() {
       rentalAllocated, unitRentalPrice, rentalDisplayName, setWoLinePhase, setWoPhase, woBottleneck,
       cleanUnitName, planUnitMigration, applyUnitMigration, openMigrationPreview,
       computeTransportPrice, isFueledType, unitTransport, rentalTransport,
-      wrValidatePlan, applyWranglerData, wrFunnel, invoiceMergeable, mergeInvoiceInto };
+      wrValidatePlan, applyWranglerData, wrFunnel, invoiceMergeable, mergeInvoiceInto,
+      parseWranglerAction, stripWranglerAction };
   } catch (e) { /* no window (non-browser) */ }
 }
 

@@ -204,6 +204,15 @@ try {
     ok(wrImp && wrImp.rows.length === 2 && wrImp.rows[0].membershipStage === 'Contacted', 'import keeps 2 rows + maps the stage');
     ok(wrUpd && wrUpd.fields.notes === 'WR test note' && !('currentHours' in wrUpd.fields), 'update keeps allowlisted notes, DROPS currentHours');
     ok(!wrPlan.ops.some((o) => o.entity === 'invoices'), 'invoices edit is REFUSED entirely (never touch money)');
+    // #152 — a big import truncated mid-JSON (no closing fence) must STILL strip from the
+    // bubble and open a preview from the rows that fully arrived (not dump raw JSON, no Apply).
+    const truncReply = 'Here’s the import:\n\n```wrangler-action\n{"action":"data","title":"Import leads","ops":[{"op":"import","entity":"customers","rows":[\n{"firstName":"Ann","lastName":"One","phone":"337-555-0009"},\n{"firstName":"Bo","lastName":"Two","phone":"337-555-0010"},\n{"firstName":"Cut","lastName":"Off","phone":"337-555';
+    const truncAct = T.parseWranglerAction(truncReply);
+    ok(truncAct && truncAct.action === 'data' && truncAct._truncated, 'truncated import block still parses into a data action (#152)');
+    ok(truncAct && truncAct.ops[0].rows.length === 2, 'salvage keeps the 2 complete rows, drops the cut-off one');
+    ok(!/wrangler-action/.test(T.stripWranglerAction(truncReply)), 'truncated action block is stripped from the visible bubble (no raw JSON dump)');
+    const truncPlan = T.wrValidatePlan(truncAct);
+    ok(truncPlan.ops.length === 1 && truncPlan.ops[0].rows.length === 2, 'salvaged action validates into an applyable preview plan');
     const custBefore = T.DATA.customers.length; const u3 = T.IDX.unit.get('U003'); const noteBefore = u3.notes, hoursBefore = u3.currentHours;
     T.applyWranglerData(wrPlan);
     ok(T.DATA.customers.length === custBefore + 2, 'applyWranglerData added exactly the 2 imported customers');
