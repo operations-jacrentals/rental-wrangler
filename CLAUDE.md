@@ -1,34 +1,34 @@
-# Rental Wrangler — project notes for Claude
+﻿# Rental Wrangler â€” project notes for Claude
 
 Heavy-equipment rental management SPA for **JacRentals** (Sulphur, LA).
 Vanilla-JS single-file app (`app.js`), `style.css`, `index.html`, `config.js`,
-`data.js`; Google Apps Script backend (schema-less Sheets, deployed by paste —
+`data.js`; Google Apps Script backend (schema-less Sheets, deployed by paste â€”
 `backend/` is gitignored, never served by Pages).
 
 ## Interaction (Jac, 2026-06-15)
 
-- **Always ask questions via popups** — use the AskUserQuestion tool for any
+- **Always ask questions via popups** â€” use the AskUserQuestion tool for any
   question or decision, never inline in the chat text.
 
-## Design language — RUN ALL NEW/CHANGED UI THROUGH THIS (Jac, 2026-06-13)
+## Design language â€” RUN ALL NEW/CHANGED UI THROUGH THIS (Jac, 2026-06-13)
 
 Jac loves the "yard data-plate" direction from the login + cancel-arc redesign
 and wants **every future UI edit run through the `frontend` skill** in this same
 language. Scope: apply to **new or reshaped UI going forward**. Do **NOT**
-retroactively restyle the whole existing site yet — only touch what an edit
+retroactively restyle the whole existing site yet â€” only touch what an edit
 already touches, unless Jac asks for a site-wide pass.
 
-**The system — "the JacRentals yard, with a light wrangler/ranch twist":**
+**The system â€” "the JacRentals yard, with a light wrangler/ranch twist":**
 ground every surface in the heavy-equipment-rental world so screens read as one
 shop. The industrial steel-yard core below is the **foundation and stays
 dominant**; the ranch twist is a light seasoning on top (see "Ranch twist"),
 never a full western theme.
 
-- **Signature motif:** hi-vis **hazard stripe** — `repeating-linear-gradient(135deg,
+- **Signature motif:** hi-vis **hazard stripe** â€” `repeating-linear-gradient(135deg,
   var(--yellow,#f5c542) 0 13px, #14181d 13px 26px)`. Red variant
   (`var(--red,#ff4242)`) for danger/abort states.
 - **Type:** **Saira Condensed** for stamped labels, wordmarks, and primary
-  buttons (uppercase, letter-spaced ~2px, weight 600–800). **Geist** for body.
+  buttons (uppercase, letter-spaced ~2px, weight 600â€“800). **Geist** for body.
   Both loaded in `index.html`.
 - **Palette:** industrial steel panels (`linear-gradient(180deg,#1b2129,#0c0e11)`),
   **safety-orange** accent (`--accent #ff7a1a`) for primary/ignition actions,
@@ -36,9 +36,9 @@ never a full western theme.
 - **Devices:** corner **rivets**, stamped condensed labels, ignition-style
   primary buttons (orange gradient, dark `#1a1205` ink), yard/operator copy
   ("Clock In", "Operator", "Release to cancel").
-- **Ranch twist (SUBTLE — a seasoning, never the meal):** "Rental Wrangler"
+- **Ranch twist (SUBTLE â€” a seasoning, never the meal):** "Rental Wrangler"
   earns a light cowboy/ranch flavor on top of the steel yard. Lean on it mostly
-  through **voice/copy** — wrangler/ranch vernacular used naturally, never campy
+  through **voice/copy** â€” wrangler/ranch vernacular used naturally, never campy
   ("Wrangle", "Round up", "Corral", "Brand" (great double meaning for a stamp/
   logo), "Saddle up", "Tack", "Rein in"); operator copy may lean "hand/wrangler".
   Restrained **visual** cues only: a worn-**leather tan** tertiary accent
@@ -56,15 +56,18 @@ Reference implementations: `.login-*` and `.cancel-arc` blocks in `style.css`.
 
 ## Deploy & gates
 
-- **Deploy to live** (app.jacrentals.com via Pages): `git push origin HEAD:main`.
-  Also develop on the session's feature branch and open a **draft PR**.
+- **Deploy to live** (app.jacrentals.com via Pages): `main` is **branch-protected**
+  (required `smoke` CI check). Deploy path: feature branch -> PR -> squash-merge.
+  NEVER `git push origin HEAD:main` directly -- it will be rejected.
 - **Gates (must pass before push):** `node ci/smoke.mjs`,
   `node ci/logic-test.mjs`, `node ci/gen-rule-usage.mjs --check`.
+  Port 8000 is reserved on this machine -- swap to 9147 before running gates:
+  `sed -i 's/8000/9147/g' ci/smoke.mjs ci/logic-test.mjs`, run, then `git checkout -- ci/`
 - **Cache-bust on every deploy:** bump the `?v=` token on `style.css`, `rule-usage.js`,
-  and `app.js` in `index.html` (one shared token) so a release loads immediately —
+  and `app.js` in `index.html` (one shared token) so a release loads immediately --
   Pages serves `max-age=600` with no per-file hashing, so without this a phone/desktop
   keeps the stale cached files. Don't add `?v=` to the ES-module imports inside `app.js`
-  (relative imports drop the query → a sub-module loaded both versioned and unversioned
+  (relative imports drop the query -> a sub-module loaded both versioned and unversioned
   would instantiate twice); the module graph revalidates within the 10-min window.
 - **R-rulebook:** UI is stamped with `data-r="Rxx"`; `rule-usage.js` is generated
   by `ci/gen-rule-usage.mjs` (has a `--check` drift guard + duplicate-rule guard).
@@ -74,5 +77,5 @@ Reference implementations: `.login-*` and `.cancel-arc` blocks in `style.css`.
 
 - Never put the model identifier, secrets, or `DEFAULT_CONFIG` passwords in the
   repo (it's public via Pages). Backend `Code.gs` stays gitignored.
-- Changing a WO part/task line to Complete must NOT complete the work order —
+- Changing a WO part/task line to Complete must NOT complete the work order â€”
   only the blue **Complete WO** button does.
