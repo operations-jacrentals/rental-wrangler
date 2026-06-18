@@ -284,7 +284,7 @@ input { font-family: inherit; }
    mirroring the L/R edges used to switch columns. The cancel-arc is hidden (release in
    empty space cancels). */
 .is-phone .cancel-arc { display: none; }
-.is-phone .chat-drop { left: 0; right: 0; bottom: 0; width: auto; height: 94px; border-radius: 16px 16px 0 0; border-width: 1.5px 0 0 0; }
+.is-phone .chat-drop { left: 0; right: 0; bottom: 0; width: auto; height: calc(94px + env(safe-area-inset-bottom)); padding-bottom: env(safe-area-inset-bottom); border-radius: 16px 16px 0 0; border-width: 1.5px 0 0 0; }   /* §M0 keep the drop CTA above the home indicator */
 .is-phone .chat-drop .cd-inner { flex-direction: row; gap: 12px; }
 .is-phone .chat-drop .cd-ico { width: 24px; height: 24px; }
 /* Card tabs = a SEGMENTED NAV BAR (one container, flat segments) — now sit INSIDE
@@ -1011,7 +1011,7 @@ select.lf-in { appearance: none; cursor: pointer; }
 .fab svg { width: 21px; height: 21px; }
 .fab-badge { position: absolute; top: -3px; right: -3px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 99px;
   background: var(--accent); color: #1a1205; font-size: 11px; font-weight: 800; display: grid; place-items: center; box-shadow: 0 0 0 2px var(--bg); }
-.is-phone .fab-stack { bottom: 76px; }   /* clear the mobile dock */
+.is-phone .fab-stack { bottom: calc(76px + env(safe-area-inset-bottom)); }   /* clear the mobile dock + home indicator */
 @media (prefers-reduced-motion: reduce) { .fab:hover { transform: none; } }
 /* §18g Mr. Wrangler conversation rail — stamped data-plate chips above the FABs */
 .wr-rail { display: flex; flex-direction: column; align-items: flex-end; gap: 7px; margin-bottom: 4px; max-width: 240px; }
@@ -1033,7 +1033,7 @@ select.lf-in { appearance: none; cursor: pointer; }
    chat bubbles, role tab-bar at the bottom. Floats bottom-right. Yard data-plate steel. */
 .bottombar .iconbtn { position: relative; }
 .bb-badge { position: absolute; top: 1px; right: 1px; min-width: 15px; height: 15px; padding: 0 3px; border-radius: 8px; background: var(--accent); color: #1a1205; font-size: 9px; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; }
-.chat-dock { position: fixed; right: 14px; bottom: 60px; width: 366px; max-height: min(74vh, 660px); z-index: 60;
+.chat-dock { position: fixed; right: 14px; bottom: 60px; width: 366px; max-height: min(74dvh, 660px); z-index: 60;
   display: flex; flex-direction: column; border-radius: 16px; overflow: hidden;
   background: linear-gradient(180deg,#1b2129,#0c0e11); border: 1px solid var(--line); box-shadow: 0 26px 64px -18px rgba(0,0,0,.72); }
 /* ─ tagged-element rail (the signature: a row of colored context plates) ─ */
@@ -1099,10 +1099,10 @@ select.lf-in { appearance: none; cursor: pointer; }
 .drag-ghost .dg-dot { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; background: var(--txt-3); }
 .drag-ghost .dg-dot.c-red { background: var(--red); } .drag-ghost .dg-dot.c-yellow { background: var(--yellow); } .drag-ghost .dg-dot.c-green { background: var(--green); }
 @media (prefers-reduced-motion: reduce) { .chat-drop { transition: opacity .18s ease; transform: none; } }
-@media (max-width: 560px) { .chat-dock { right: 8px; left: 8px; width: auto; bottom: 56px; max-height: 76vh; } }
+@media (max-width: 560px) { .chat-dock { right: 8px; left: 8px; width: auto; bottom: max(56px, calc(8px + env(safe-area-inset-bottom))); max-height: 76dvh; } }
 @media (prefers-reduced-motion: reduce) { .cmt-marker.flash { animation: none !important; } }
 /* §18 Mr. Wrangler dock — floats bottom-right alongside or instead of the team chat dock */
-.wrangler-dock { position: fixed; right: 14px; bottom: 60px; width: 400px; max-height: min(74vh, 660px); z-index: 60;
+.wrangler-dock { position: fixed; right: 14px; bottom: 60px; width: 400px; max-height: min(74dvh, 660px); z-index: 60;
   display: flex; flex-direction: column; border-radius: 16px; overflow: hidden;
   background: linear-gradient(180deg,#1b2129,#0c0e11); border: 1px solid var(--line); box-shadow: 0 26px 64px -18px rgba(0,0,0,.72); }
 .wrangler-dock.wr-beside-chat { right: 394px; }
@@ -1118,7 +1118,7 @@ select.lf-in { appearance: none; cursor: pointer; }
 .js-wr-min .chev { transition: transform .12s; }
 .wrangler-dock.wr-min .js-wr-min .chev { transform: rotate(180deg); }   /* chevron flips up = expand */
 @media (prefers-reduced-motion: reduce) { .js-wr-min .chev { transition: none; } }
-@media (max-width: 760px) { .wrangler-dock { right: 8px; left: 8px; width: auto; bottom: 56px; max-height: 76vh; } .wrangler-dock.wr-beside-chat { right: 8px; } }
+@media (max-width: 760px) { .wrangler-dock { right: 8px; left: 8px; width: auto; bottom: max(56px, calc(8px + env(safe-area-inset-bottom))); max-height: 76dvh; } .wrangler-dock.wr-beside-chat { right: 8px; } }
 
 /* §6.2 #11 inline edit */
 .inline-edit { cursor: text; border-radius: 4px; }
@@ -1565,7 +1565,9 @@ select.nc-in { cursor: pointer; }
    rivets, and a safety-orange ignition button. Built FROM the brand (orange is
    already the system accent — earned), deliberately none of the AI-default looks. */
 .login-screen {
-  min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px;
+  min-height: 100vh; min-height: 100dvh;   /* §M0 dvh = the REAL visible height on mobile (100vh lies past the URL bar) */
+  display: flex; align-items: center; justify-content: center;
+  padding: max(20px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) max(20px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
   background:
     radial-gradient(130% 90% at 50% -15%, rgba(255, 122, 26, .10), transparent 55%),
     repeating-linear-gradient(135deg, rgba(255, 255, 255, .012) 0 2px, transparent 2px 10px),
