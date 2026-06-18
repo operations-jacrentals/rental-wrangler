@@ -99,13 +99,22 @@ accountAgreementsOk(c)       // customerCards(c).every(k => cardAuthorized(c, k)
 
 ## Immutability + PDF
 
-- **Frozen text snapshot (shipped).** Each signing record stores the **full agreement
-  title + text** as it read at signing, alongside the signature + selfie. Editing
-  `agreements.js` later never touches a past signing — it already carries its own copy.
-  This is simpler and more robust than a separate version registry (no manual versioning
-  discipline, no lookup indirection); the tradeoff is ~3–4 KB of text per signing inside the
-  synced customer record (small next to the signature/selfie images, which already rode
-  along). The 50k-char-per-cell watch-item below still applies.
+- **Frozen text via a version registry (revised — storage-light).** The first release
+  (#151) stored the full agreement **text** (~6–8 KB) on every signing, which — append-only,
+  inside the synced customer record — risked blowing the ~50k-char Sheets cell on a re-sign.
+  The follow-up (#PR2) stores only a small `version` id per signing; the frozen title/text
+  live in an append-only `AGREEMENT_VERSIONS` registry in `agreements.js` and are resolved at
+  display/PDF time. Revising an agreement = add a new dated entry + bump `AGREEMENT_CURRENT`;
+  old signings keep resolving their original text. The migration strips the baked-in `text`
+  from #151 records to reclaim the space.
+- **Image offload to Drive (shipped, activates on backend deploy).** After signing, the
+  selfie + signature are pushed to a per-customer Drive folder via the backend
+  `archiveAgreementMedia` action; the inline data-URLs are then dropped from the record and
+  replaced with `driveSelfieUrl`/`driveSignatureUrl`. Graceful: without the handler the
+  images simply stay inline. Handler to paste: `docs/backend-snippets/archiveAgreementMedia.md`.
+  The signature is also downscaled (380px) before storing.
+- **Gate scoped to non-expired cards.** `accountAgreementsOk` / the Unsigned-Card flag count
+  only `validCards` (non-expired) — an expired, unsigned card no longer blocks the yard.
 - **PDF (client-side, immutable).** "⤓ PDF" renders the frozen signing (title + frozen text +
   signature + selfie + signer + date) into a print-styled, read-only view and produces a PDF
   via the browser print pipeline (no new dependency, no backend). The content is regenerated
