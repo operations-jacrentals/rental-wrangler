@@ -15,7 +15,7 @@ rule here was read out of `const RULE_META` (app.js:1344), `const CLASS_RULE`
 (app.js:1373), the R0 lint CSS (style.css:985), and the live `data-r` stamps —
 not from memory. Drift is guarded mechanically: `ci/gen-rule-usage.mjs --check`
 fails CI if a builder's call sites change but `rule-usage.js` (the per-rule field
-catalog) wasn't regenerated, and `ci/logic-test.mjs` (22 `ok()` checks via the
+catalog) wasn't regenerated, and `ci/logic-test.mjs` (36 `ok()` checks via the
 `#local`-only `window.__rw` seam) locks the money + multi-unit invariants as
 executable tests. **Commit this doc** so it travels with the repo — the whole
 reason v7 went stale is that it didn't. When the code changes a rule, change this
@@ -769,7 +769,7 @@ days + honors overbooking (bffde57, 54c9849).
 **KPI:** +X score pops (4d1ea19); Team KPI one-ring-per-role + Sulphur Team row
 (57cc5dd).
 
-**CI:** `ci/logic-test.mjs` (c62ff16, now 22 `ok()` checks); `ci/gen-rule-usage.mjs` +
+**CI:** `ci/logic-test.mjs` (c62ff16, now 36 `ok()` checks); `ci/gen-rule-usage.mjs` +
 `rule-usage.js` drift guard (fbb3ee7); boot smoke hardened (a5999da); `backend/`
 gitignored (f3215a9).
 
@@ -784,7 +784,7 @@ gitignored (f3215a9).
 2. **`rule-usage.js --check`** (`ci/gen-rule-usage.mjs`) fails CI if a builder's
    call sites changed but the per-rule field catalog wasn't regenerated — it is the
    mechanical drift alarm for the rulebook's CONTENTS.
-3. **`ci/logic-test.mjs`** (22 `ok()` checks via the `#local`-only `window.__rw` seam) is
+3. **`ci/logic-test.mjs`** (36 `ok()` checks via the `#local`-only `window.__rw` seam) is
    the executable spec for the money + multi-unit invariants (#13-#15 above).
    Treat those assertions as canonical behavior.
 4. **DUPLICATE rule-number guard — ✅ DONE (eaceeb5).** `ci/gen-rule-usage.mjs` now

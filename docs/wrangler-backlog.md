@@ -3,9 +3,11 @@
 Pinned backlog from the sticky-note photos, grouped into like-minded phases.
 (FC = Field Call. Crossed-out notes are parked at the bottom.)
 
-## ✅ Autonomous run summary (2026-06-15, on `claude/ui-overhaul-w55upw`)
+## ✅ Autonomous run summary (2026-06-15, started on `claude/ui-overhaul-w55upw`)
 Worked all 6 phases end-to-end. Every commit passed the 3 gates; each UI piece was
-screenshot-checked. **All on the branch (PR #7)** — nothing auto-shipped to live.
+screenshot-checked. **PR #7 is now MERGED + LIVE** (`main` @ `445511b`), followed by the
+v8.3 Requests-inbox/FAB work, #29 (route arrows + For-Sale fix + scroll-bug clearance), and
+the A1 tab→search-pill routing (#31/#32). Per-session SPEC narrative continues in PR #36.
 
 - **Phase 1 — bugs:** ✅ right-click-over-preview · Complete-Rental feedback · Bill/Don't-bill toggle · fleet-dropdown z-index · Cancel/Reopen WO · footers-no-longer-change-mode · ✅ **For-Sale-in-availability** (units list now hides non-Active fleet under an availability window). The 2 units-list scroll bugs: **proven resolved at HEAD** (Playwright repro — Back/right-click-back/jog all restore the saved scroll; fresh opens land at top) — fixed by the Phase 2a/2b interaction work (#16/#17).
 - **Phase 2 — chrome:** ✅ per-card striped-header colors · removed Dashboard · removed footer dashed line · Membership/Used-Sales swapped · +Unit pill hidden after first unit · Yard Mode already locked. (Graph icon delivered with Phase 4.)
