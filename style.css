@@ -1904,25 +1904,35 @@ body.rw-inspect .c-titlecard:hover { outline: 2px solid #18b6ff; outline-offset:
 .stall-split:hover { color: var(--accent); border-color: var(--accent-line); }
 .stall-split svg { flex: 0 0 auto; }
 .stall-sub { font-size: 11.5px; color: var(--txt-3); font-style: italic; margin-top: 6px; }
+.stall-sub.armed { color: var(--accent); font-style: normal; }
+.stall-sub.hint { color: var(--txt-3); font-style: normal; }
 .stall-empty { display: flex; align-items: center; gap: 9px; padding: 11px 2px; }
 .rentalsec-foot { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 10px; }
-.rtrail { display: grid; align-items: center; justify-items: center; column-gap: 7px; row-gap: 4px; margin-top: 8px; }
-.rtrail.rt { grid-template-columns: auto minmax(48px, 1fr) auto minmax(48px, 1fr) auto; }
-.rtrail.one { grid-template-columns: auto minmax(48px, 1fr) auto; }
-.rtbox { width: 34px; height: 34px; border-radius: 9px; background: var(--panel-2); border: 1px solid var(--line); display: grid; place-items: center; color: var(--txt-2); }
-.rtbox svg { width: 18px; height: 18px; }
-.rtbox.site { color: #c2925a; border-color: rgba(194, 146, 90, .5); background: rgba(194, 146, 90, .14); cursor: pointer; }
-.rtbox.site:hover { filter: brightness(1.12); }
-.rtbox.done { color: var(--green); border-color: var(--green); background: var(--green-bg); }
-.rtbar { width: 100%; }
-.rtbar.done { height: 6px; border-radius: 3px; background: var(--green); }
-.rtbar.pending { height: 0; border-top: 2px dashed var(--line); }
-.rtover { font-size: 11px; font-weight: 700; align-self: end; white-space: nowrap; }
-.rtover.log { color: var(--txt); cursor: pointer; }
-.rtover.log:hover { text-decoration: underline; }
-.rtover.done { color: var(--green); cursor: pointer; }
-.rtlbl { font-size: 11px; color: var(--txt-2); align-self: start; text-align: center; line-height: 1.15; }
-.rtaddr { display: block; color: #c2925a; text-decoration: underline; cursor: pointer; max-width: 118px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* §20 route rail — linear House(Jac)─Person(Job Site)─House(Jac) stepper; the rail
+   itself is the type control (tap two stops). Address rides ABOVE each connector
+   line, +Log rides BELOW it; node well fills orange when its leg is on the route. */
+.rtrail2 { display: grid; grid-template-columns: auto minmax(80px, 1fr) auto minmax(80px, 1fr) auto; align-items: start; margin-top: 9px; }
+.rtnode, .rtleg { display: grid; grid-template-rows: 16px 36px 16px; align-items: center; row-gap: 3px; }
+.rtnode { justify-self: center; justify-items: center; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.rtgap { height: 0; }
+.rtwell { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; background: var(--panel-2); border: 1px solid var(--line); color: var(--txt-3); transition: color .12s ease, border-color .12s ease, background .12s ease; }
+.rtwell svg { width: 20px; height: 20px; }
+.rtname { font-family: 'Saira Condensed', system-ui, sans-serif; font-size: 13px; font-weight: 700; letter-spacing: .4px; line-height: 1; white-space: nowrap; color: var(--txt-2); }
+.rtnode:hover .rtwell { color: var(--txt-2); border-color: var(--accent-line); }
+.rtnode.on .rtwell { background: var(--accent); border-color: var(--accent); color: var(--on-orange); }   /* locked on the run — solid orange + dark ink */
+.rtnode.on .rtname { color: var(--txt); }
+.rtnode.arm .rtwell { background: var(--panel-2); border-color: var(--accent); color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }   /* first tap armed — orange OUTLINE (overrides the on-fill so the pending pick always reads) */
+.rtnode.arm .rtname { color: var(--accent); }
+.rtnode:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 11px; }
+.rtleg { justify-items: stretch; text-align: center; }
+.rtline { height: 0; border-top: 2px dashed var(--line); }
+.rtleg.on .rtline { border-top-style: solid; border-color: var(--accent); }
+.rtaddr { color: var(--tan, #c2925a); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; font-size: 11.5px; line-height: 1; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rtaddr:hover { filter: brightness(1.12); }
+.rtlog { font-size: 11px; font-weight: 700; line-height: 1; white-space: nowrap; cursor: pointer; }
+.rtlog.log { color: var(--txt-2); }
+.rtlog.log:hover { color: var(--txt); text-decoration: underline; }
+.rtlog.done { color: var(--green); }
 .unitchip { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .unitchip.voided { opacity: .55; }
 .unitchip.voided .pill { position: relative; }

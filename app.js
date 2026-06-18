@@ -546,6 +546,11 @@ function transportLineItems(r) {
    Delivery, truck→store = Recovery, store→store = Round-Trip, a single store = Self.
    Shown only when a delivery address exists; setting it syncs the invoice line. ── */
 const ICO_STORE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9.5L5.2 5h13.6L20 9.5M5 9.5V20h14V9.5M5 9.5h14"/><path d="M9.5 20v-4.5h5V20"/></svg>';
+/* §20 route-rail nodes — outline house (the JacRentals yard, both ends) + outline
+   person (the customer at the job site). Stroke from currentColor so the node well
+   tints them orange when the leg is on the armed/active route. */
+const ICO_HOUSE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M3 11.4 12 4l9 7.4"/><path d="M5 10.2V20h14v-9.8"/><path d="M9.8 20v-5h4.4v5"/></svg>';
+const ICO_USER = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.3"/><path d="M5.6 20a6.4 6.4 0 0 1 12.8 0"/></svg>';
 // (the old 3-node transport picker + ICO_TRUCK/TRANSPORT_NODES/LINES were
 //  removed in the streamline sweep — superseded by miniJourneyHtml, R15)
 /** Keep the invoice's auto Transport line in sync with the rental's transport type/address.
@@ -893,6 +898,20 @@ function setTransportType(rentalId, unitId, type) {
   if (!eu || isPrimaryUnit(r, eu)) r.transportType = type;
   syncTransportLine(r); reindex('rentals', r); logAction(r, `Transport type → ${type}`); render();
 }
+/** §20 route-rail node tap: arm the first stop, then a second stop locks the type.
+ *  Jac→Site = Delivery · Site→Jac = Recovery · Jac↔Jac = Round-Trip (order-free).
+ *  Tapping the armed node again disarms it. */
+const ROUTE_PAIR = { 'jacL+site': 'Delivery', 'jacR+site': 'Recovery', 'jacL+jacR': 'Round-Trip' };
+function armTransportNode(rentalId, unitId, node) {
+  const arm = state.transportArm;
+  const same = arm && arm.rentalId === rentalId && (arm.unitId || null) === (unitId || null);
+  if (!same) { state.transportArm = { rentalId, unitId: unitId || null, node }; return render(); }
+  if (arm.node === node) { state.transportArm = null; return render(); }   // tap the same stop → disarm
+  const type = ROUTE_PAIR[[arm.node, node].sort().join('+')];
+  state.transportArm = null;
+  if (type) return setTransportType(rentalId, unitId, type);   // setTransportType re-bills + renders
+  render();
+}
 
 /** Invoice subtotal / tax / total / paid / balance / derived status (§10 + aging). */
 const TAX_RATE = 0.1075;   // §10 sales tax — 10.75% (Jac 2026-06-07); honors exemptions
@@ -1181,6 +1200,7 @@ const state = {
   cascade: createCascade(DATA),   // wired with v6 canonical fields (cascade.js DEFAULT_FIELDS)
   overlay: null,       // { kind, ... } for popups
   focusedCard: null,   // clicked card → orange border (§0.1 visual feedback, no anchor)
+  transportArm: null,  // §20 route-rail two-click selector: { rentalId, unitId, node } — the FIRST stop tapped (armed orange); a second stop locks the type
   winpicker: null,     // { rentalId, monthISO, anchor } — the rental-window range picker
   availWin: null,      // §10 persistent window scope for the "available" search (set by the picker; outlives it)
   filterTerms: [],            // §5.4 — AND-narrowing filter terms (type + Enter)
@@ -3182,45 +3202,58 @@ function miniJourneyHtml(r2, eu) {
   return `<div class="journeywrap"><div class="jtype">${seg}${oneWay ? `<span class="jprice">${money(oneWay)}<span class="sfx"> /one-way</span></span>` : ''}</div><div class="journey mini">${body}</div></div>`;
 }
 const ICO_PIN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s7-6.5 7-12a7 7 0 1 0-14 0c0 5.5 7 12 7 12z"/><circle cx="12" cy="9" r="2.5"/></svg>';
-/* §20 STALL ROUTE RAIL (Jac 2026-06-15) — the per-unit Home—Site—Home journey as a
-   CONNECTED rail in the day-timeline's grammar: enlarged node medallions joined by
-   thick segment legs that FILL GREEN as each capture is logged (matching the day-cell
-   elapsed tint) and stay hollow-dashed while pending. +Log Delivery/+Log Recovery and
-   the ✓-done state ride the legs; the site address sits ONCE under the shared Site
-   node. Replaces the old smeared transport chip + right-column + bottom section. */
+/* §20 STALL ROUTE RAIL (Jac 2026-06-18) — the per-unit transport journey as a linear
+   horizontal stepper: outline HOUSE (Jac yard) — outline PERSON (Job Site) — outline
+   HOUSE (Jac), always all three stops so the rail itself is the type CONTROL. Tap two
+   stops to set the run (Jac→Site delivers · Site→Jac recovers · Jac↔Jac round-trips):
+   the first arms ORANGE-outline, the second locks the path ORANGE-fill. On each active
+   leg the site address rides ABOVE the connector line and +Log Delivery/Recovery rides
+   BELOW it; the ✓-done capture turns the log green. (R15) */
 function stallRouteHtml(r, eu) {
   const te = state.transportEdit;
   const uId = eu.unitId;
   const du = ` data-unit="${esc(uId)}"`;
   if (te && te.rentalId === r.rentalId && (te.unitId || null) === uId) return `<div class="stall-edit">${transportEditorHtml()}</div>`;
+
   const type = (eu.transportType && eu.transportType !== 'Self') ? eu.transportType : null;
-  if (!type) {
-    return `<div class="stall-sub"><button class="add-field anchor js-tedit-open" data-r="R5b" data-rec="${esc(r.rentalId)}"${du} data-leg="delivery" style="height:24px;font-size:11px">+Transport</button></div>`;
-  }
+  const delLeg = type === 'Delivery' || type === 'Round-Trip';   // left line: Jac → Site
+  const recLeg = type === 'Recovery' || type === 'Round-Trip';   // right line: Site → Jac
+  const arm = state.transportArm;
+  const armNode = (arm && arm.rentalId === r.rentalId && (arm.unitId || null) === uId) ? arm.node : null;
+
   const tr = unitTransport(r, eu);
   const oneWay = (tr && tr.perLeg != null) ? tr.perLeg : (tr && tr.price != null ? tr.price : null);
   const drive = (tr && tr.driveMin != null) ? `~${tr.driveMin} min` : '';
-  const addrRaw = eu.deliveryAddress || (isPrimaryUnit(r, eu) ? r.deliveryAddress : '');   // mirror yardToolHtml's primary fallback so the two journeys never diverge
-  const addr = addrRaw ? esc(addrRaw) : '+Address';
   const sd = !!eu.startCapture, ed = !!eu.endCapture;
-  const sub = `<div class="stall-sub">⇄ ${esc(type)}${oneWay ? ` · ${money(oneWay)}/one-way` : ''}</div>`;
-  const home = `<span class="rtbox">${ICO_STORE}</span>`;
-  const site = (done) => `<span class="rtbox site${eu.deliveryAddress ? ' set' : ''}${done ? ' done' : ''} js-tedit-open" data-rec="${esc(r.rentalId)}"${du} data-leg="delivery">${ICO_PIN}</span>`;
-  const over = (cap, done, label) => `<span class="rtover ${done ? 'done' : 'log'} js-yard" data-cap="${cap}" data-rec="${esc(r.rentalId)}"${du}>${done ? '✓ ' + esc(label.replace('+Log ', '')) : esc(label)}</span>`;
-  const bar = (done) => `<span class="rtbar ${done ? 'done' : 'pending'}"></span>`;
-  const sp = '<span></span>';
-  const lblJac = '<span class="rtlbl">Jac</span>';
-  const lblSite = `<span class="rtlbl">Site<span class="rtaddr js-tedit-open" data-rec="${esc(r.rentalId)}"${du} data-leg="delivery">${addr}</span></span>`;
-  const lblDrive = drive ? `<span class="rtlbl">${esc(drive)}</span>` : sp;
-  let rail;
-  if (type === 'Round-Trip') {
-    rail = `<div class="rtrail rt">${sp}${over('start', sd, '+Log Delivery')}${sp}${over('end', ed, '+Log Recovery')}${sp}${home}${bar(sd)}${site(sd)}${bar(ed)}${home}${lblJac}${lblDrive}${lblSite}${sp}${lblJac}</div>`;
-  } else if (type === 'Delivery') {
-    rail = `<div class="rtrail one">${sp}${over('start', sd, '+Log Delivery')}${sp}${home}${bar(sd)}${site(sd)}${lblJac}${lblDrive}${lblSite}</div>`;
-  } else {
-    rail = `<div class="rtrail one">${sp}${over('end', ed, '+Log Recovery')}${sp}${site(ed)}${bar(ed)}${home}${lblSite}${lblDrive}${lblJac}</div>`;
-  }
-  return sub + rail;
+  const delAddr = eu.deliveryAddress || (isPrimaryUnit(r, eu) ? r.deliveryAddress : '');   // mirror the primary fallback so both journeys agree
+  const recAddr = eu.recoveryAddress || delAddr;
+
+  // A stop — always tappable; ON = on the locked route (orange fill), ARM = first tap (orange outline).
+  const stop = (key, ico, lbl, on) => `<span class="rtnode js-tnode${on ? ' on' : ''}${armNode === key ? ' arm' : ''}" data-node="${key}" data-rec="${esc(r.rentalId)}"${du} role="button" tabindex="0" aria-label="${esc(lbl)} stop — tap to set the transport route">
+      <span class="rtgap"></span><span class="rtwell">${ico}</span><span class="rtname">${esc(lbl)}</span></span>`;
+  // A connector leg — address above, line, +Log below; inert (thin dashed line only) when the route doesn't use it.
+  const leg = (on, addr, cap, done, logLbl, addrLeg) => {
+    if (!on) return `<span class="rtleg"><span class="rtgap"></span><span class="rtline"></span><span class="rtgap"></span></span>`;
+    return `<span class="rtleg on">
+      <span class="rtaddr js-tedit-open" data-rec="${esc(r.rentalId)}"${du} data-leg="${addrLeg}">${addr ? esc(addr) : '+Address'}</span>
+      <span class="rtline"></span>
+      <span class="rtlog ${done ? 'done' : 'log'} js-yard" data-cap="${cap}" data-rec="${esc(r.rentalId)}"${du}>${done ? '✓ ' + esc(logLbl.replace('+Log ', '')) : esc(logLbl)}</span>
+    </span>`;
+  };
+
+  const sub = type
+    ? `<div class="stall-sub">⇄ ${esc(type)}${oneWay ? ` · ${money(oneWay)}/one-way` : ''}${drive ? ` · ${esc(drive)}` : ''}</div>`
+    : armNode
+      ? `<div class="stall-sub armed">Tap the destination stop to lock the route…</div>`
+      : `<div class="stall-sub hint">Tap two stops to set the run — Jac→Site delivers · Site→Jac recovers · Jac↔Jac round-trips.</div>`;
+
+  return `${sub}<div class="rtrail2" data-r="R15">${
+    stop('jacL', ICO_HOUSE, 'Jac', delLeg)
+  }${leg(delLeg, delAddr, 'start', sd, '+Log Delivery', 'delivery')}${
+    stop('site', ICO_USER, 'Job Site', delLeg || recLeg)
+  }${leg(recLeg, recAddr, 'end', ed, '+Log Recovery', 'recovery')}${
+    stop('jacR', ICO_HOUSE, 'Jac', recLeg)
+  }</div>`;
 }
 /* card-head title flags: live condition + worst-WO bottleneck (units);
    rental status + pay status (rentals). Two stacked 14px rows = title height. */
@@ -8400,6 +8433,7 @@ function onClick(e) {
   if (closest('.js-site-go')) { const b = closest('.js-site-go'); e.stopPropagation(); return openTransportEdit(b.dataset.rec, b.dataset.unit || null, 'delivery'); }   // legacy dispatch links still open the editor
   if (closest('.js-tedit-open')) { const b = closest('.js-tedit-open'); e.stopPropagation(); return openTransportEdit(b.dataset.rec, b.dataset.unit || null, b.dataset.leg || 'delivery'); }
   if (closest('.js-ttype')) { const b = closest('.js-ttype'); e.stopPropagation(); return setTransportType(b.dataset.rec, b.dataset.unit || null, b.dataset.val); }
+  if (closest('.js-tnode')) { const b = closest('.js-tnode'); e.stopPropagation(); return armTransportNode(b.dataset.rec, b.dataset.unit || null, b.dataset.node); }
   if (closest('.js-tedit-save')) { e.stopPropagation(); return saveTransportEdit(); }
   if (closest('.js-tedit-cancel')) { e.stopPropagation(); return closeTransportEdit(); }
   if (closest('.js-tsug-pick')) { const b = closest('.js-tsug-pick'); e.stopPropagation(); return tePick(Number(b.dataset.i)); }
@@ -11122,6 +11156,10 @@ function boot() {
       return dispatchArrowClick(route ? route.dataset.day : (state.dispatchDay || TODAY_ISO), pt.dataset.node);
     }
     if (e.key === 'Escape' && state.dispArm != null) { e.preventDefault(); e.stopPropagation(); state.dispArm = null; render(); }
+    // §20 route-rail: keyboard-activate a stop, Esc disarms the pending route pick
+    const rn = e.target.closest && e.target.closest('.js-tnode');
+    if (rn && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); return armTransportNode(rn.dataset.rec, rn.dataset.unit || null, rn.dataset.node); }
+    if (e.key === 'Escape' && state.transportArm != null) { e.preventDefault(); e.stopPropagation(); state.transportArm = null; render(); }
   });
   document.addEventListener('mousemove', onInspectMove);   // Design Inspector hover tag (no-op unless state.inspect)
   document.addEventListener('mousemove', caScrub);          // D2 — customer activity chart cursor scrub
