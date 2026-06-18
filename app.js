@@ -7325,11 +7325,10 @@ function openDropdown(anchorEl, html, { align = 'left', cls = '' } = {}) {
   return dd;
 }
 function openStatusDropdown(rentalId, anchorEl) {
-  // progressing timeline; Tomorrow/Today are DERIVED display states excluded by GATE_TL.order
-  const cur = IDX.rental.get(rentalId)?.status || '';
-  const html = gateTimeline('rentalStatus', cur, 'Rental status', (v, inner, sc) =>
-    `<button class="gt-row ${sc} js-setstatus" data-rec="${esc(rentalId)}" data-val="${esc(v)}">${inner}</button>`);
-  openDropdown(anchorEl, html, { cls: 'gt' });
+  // Plain list (gate timeline reverted 2026-06-18 — it mispositioned on Jac's live layout; gateTimeline() kept dormant for a future re-ship). Tomorrow/Today are DERIVED display states — excluded.
+  const html = Object.keys(STATUS.rentalStatus).filter((v) => v !== 'Tomorrow' && v !== 'Today').map((v) =>
+    `<button class="dd-item js-setstatus" data-rec="${esc(rentalId)}" data-val="${esc(v)}">${statusPill('rentalStatus', v)}</button>`).join('');
+  openDropdown(anchorEl, html);
 }
 function openFleetDropdown(unitId, anchorEl) {
   const html = Object.keys(STATUS.unitFleetStatus).map((v) =>
@@ -7359,10 +7358,9 @@ function setExpenseReconcile(expenseId, val) {
 function openFunnelDropdown(custId, which, anchorEl) {
   const cust = IDX.customer.get(custId);
   const cur = which === 'membership' ? cust?.membershipStage : cust?.usedSalesStage;
-  const title = which === 'membership' ? 'Membership funnel' : 'Used sales funnel';
-  const html = gateTimeline('funnelStage', cur || 'N/A', title, (v, inner, sc) =>
-    `<button class="gt-row ${sc} js-setfunnel" data-rec="${esc(custId)}" data-which="${which}" data-val="${esc(v)}">${inner}</button>`);
-  openDropdown(anchorEl, html, { cls: 'gt' });
+  const html = Object.keys(STATUS.funnelStage).map((v) =>
+    `<button class="dd-item js-setfunnel ${v === cur ? 'on' : ''}" data-rec="${esc(custId)}" data-which="${which}" data-val="${esc(v)}">${badge(getStatus('funnelStage', v).label, getStatus('funnelStage', v).color)}</button>`).join('');
+  openDropdown(anchorEl, html);
 }
 function setFunnelStage(custId, which, val) {
   const c = IDX.customer.get(custId);
@@ -8773,11 +8771,9 @@ function removeUnitInvoiceLine(r, unitId) {
   logAction(inv, `${IDX.unit.get(unitId)?.name || unitId} line(s) removed — No Show / Cancel (not billed)`);
 }
 function openUnitStatusDropdown(rentalId, unitId, anchorEl) {
-  const r = IDX.rental.get(rentalId); const eu = r && unitEntry(r, unitId);
-  const cur = eu ? unitStatus(r, eu) : '';
-  const html = gateTimeline('rentalStatus', cur, 'Unit status', (v, inner, sc) =>
-    `<button class="gt-row ${sc} js-setunitstatus" data-rec="${esc(rentalId)}" data-unit="${esc(unitId)}" data-val="${esc(v)}">${inner}</button>`);
-  openDropdown(anchorEl, html, { cls: 'gt' });
+  const html = Object.keys(STATUS.rentalStatus).filter((v) => v !== 'Tomorrow' && v !== 'Today').map((v) =>
+    `<button class="dd-item js-setunitstatus" data-rec="${esc(rentalId)}" data-unit="${esc(unitId)}" data-val="${esc(v)}">${statusPill('rentalStatus', v)}</button>`).join('');
+  openDropdown(anchorEl, html);
 }
 /* §9 Field Call — a unit breaks mid-rental: flag the rental (red FC), fail the unit,
    and auto-open a Field-Call work order so the M.Tech can dispatch parts/swap. */
@@ -10165,11 +10161,9 @@ function setWoLinePhase(woId, idx, val) {
   reanchorRender();
 }
 function openWoPhaseDropdown(woId, anchorEl, lineIdx) {
-  const w = IDX.wo.get(woId);
-  const cur = lineIdx == null ? (w?.phase || '') : (w?.lineItems?.[lineIdx]?.phase || '');
-  const html = gateTimeline('woPhase', cur, lineIdx == null ? 'Work order phase' : 'Line phase', (v, inner, sc) =>
-    `<button class="gt-row ${sc} ${lineIdx == null ? 'js-setwophase' : 'js-setwolinephase'}" data-rec="${esc(woId)}"${lineIdx == null ? '' : ` data-idx="${lineIdx}"`} data-val="${esc(v)}">${inner}</button>`);
-  openDropdown(anchorEl, html, { cls: 'gt' });
+  const html = Object.keys(STATUS.woPhase).map((v) =>
+    `<button class="dd-item ${lineIdx == null ? 'js-setwophase' : 'js-setwolinephase'}" data-rec="${esc(woId)}"${lineIdx == null ? '' : ` data-idx="${lineIdx}"`} data-val="${esc(v)}">${statusPill('woPhase', v)}</button>`).join('');
+  openDropdown(anchorEl, html);
 }
 
 /* ── §12.2 rental-window range picker — a single popup: a time selector above a
