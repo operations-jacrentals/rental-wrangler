@@ -315,6 +315,12 @@ input { font-family: inherit; }
 .is-phone .winpicker { border-radius: 18px 18px 0 0; max-height: 92dvh; overflow: auto;
   padding-bottom: max(10px, env(safe-area-inset-bottom)); animation: sheetUp .2s cubic-bezier(.2,.7,.2,1); }
 .is-phone.sheet-open .card-body { overflow: hidden; }   /* §M3 lock the column scroll behind an open sheet */
+/* the calendar (both the window picker AND the R22 single-date picker reuse .wp-*):
+   on a full-width sheet the day cells get room, so make them tappable too */
+.is-phone .winpicker .wp-day { height: 42px; font-size: 14px; }                 /* was 30 */
+.is-phone .winpicker .wp-dow { font-size: 11px; }
+.is-phone .winpicker .wp-nav button { min-width: 40px; min-height: 40px; }
+.is-phone .winpicker .wp-time input[type="time"] { height: 40px; }
 @keyframes sheetUp { from { transform: translateY(100%); } to { transform: none; } }
 @media (prefers-reduced-motion: reduce) { .is-phone .popup, .is-phone .winpicker { animation: none; } }
 /* Card tabs = a SEGMENTED NAV BAR (one container, flat segments) — now sit INSIDE

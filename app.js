@@ -5820,7 +5820,29 @@ function cardGraphBody(card) {
    §12 OVERLAYS & BOARDS — renderOverlay kinds + back-office board popups
    ════════════════════════════════════════════════════════════════════════ */
 let _ovScroll = {}, _ovLastKind = null;   // keep a popup-body's scroll across its OWN re-renders (sign/selfie)
+/* ── §M3 — phone hardware-BACK button (Android) joins the dismiss chain. We keep at
+   most ONE dummy history entry while any sheet/overlay/dock is open; pressing Back
+   pops it and closes the topmost surface (same order as Esc), re-pushing if more
+   remain. Closing by other means (Esc/✕/backdrop) consumes the dangling entry so the
+   stack stays balanced. Phone-only — desktop keeps Esc/click. Wired in boot(). ── */
+let backGuard = false, backConsuming = false;
+function anyDismissable() { return !!(state.overlay || state.winpicker || state.chat.open || state.wrangler.open); }
+function dismissTopSheet() {
+  if (state.winpicker) { closeWinPicker(); return true; }
+  if (state.overlay) { closeOverlay(); return true; }
+  if (state.wrangler.open) { wranglerRailSnapshot(); state.wrangler.open = false; render(); return true; }   // mirror js-wr-close
+  if (state.chat.open) { state.chat.open = false; render(); return true; }                                    // mirror js-chat-close
+  return false;
+}
+function syncBackGuard() {
+  if (!document.body.classList.contains('is-phone')) return;
+  const open = anyDismissable();
+  if (open && !backGuard) { try { history.pushState({ rwSheet: true }, ''); } catch (e) {} backGuard = true; }
+  else if (!open && backGuard) { backConsuming = true; backGuard = false; try { history.back(); } catch (e) {} }   // closed via Esc/✕ → eat the dummy entry
+}
+
 function renderOverlay() {
+  syncBackGuard();
   const root = $('#overlay-root');
   if (_ovLastKind) { const _pb = root.querySelector('.popup-body'); if (_pb) _ovScroll[_ovLastKind] = _pb.scrollTop; }
   destroyCardElement();        // any re-render/overlay-switch tears down a mounted Stripe element
@@ -7460,6 +7482,7 @@ function render() {
   }
   // §M3 — lock the column scroll behind any open sheet/overlay/dock on phones
   document.body.classList.toggle('sheet-open', !!(state.overlay || state.winpicker || state.chat.open || state.wrangler.open));
+  syncBackGuard();   // §M3 — keep the Android back-button guard in step with what's open
   // §17 — the internal team dock floats bottom-right above the bar when open
   if (state.chat.open) { const d = el('div', 'chat-dock', ''); d.dataset.drop = 'chat'; d.innerHTML = chatDockEl(); $('#app').appendChild(d); }
   // §18 — Mr. Wrangler dock floats alongside the team chat (or alone at bottom-right)
@@ -10925,6 +10948,12 @@ function boot() {
   const onVP = () => { applyViewportClass(); if (!booting) render(); };
   window.matchMedia('(max-width: 640px)').addEventListener('change', onVP);
   window.matchMedia('(max-width: 1024px)').addEventListener('change', onVP);
+  // §M3 — Android hardware-back / swipe-back closes the topmost sheet instead of
+  // leaving the app. backConsuming = our own balancing history.back(), so ignore it.
+  window.addEventListener('popstate', () => {
+    if (backConsuming) { backConsuming = false; return; }
+    if (anyDismissable()) { backGuard = false; dismissTopSheet(); }   // entry already popped by the browser → re-pushed by render if more remain
+  });
   // §M1 — phone swipe: the grid is a scroll-snap track; on settle, sync the active
   // column (drives the per-column bottom strip + the dot indicator). Capture phase
   // because scroll doesn't bubble. Change-guarded so the render() scroll-restore is a no-op.
@@ -11054,13 +11083,9 @@ function boot() {
     if (e.target.classList.contains('nc-in') && e.key === 'Enter' && e.target.tagName !== 'SELECT') { e.preventDefault(); return saveNewCustomer(); }
     if (e.target.classList.contains('js-wr-in') && e.key === 'Enter') { e.preventDefault(); return wranglerSend(); }   // §18
     if (e.target.classList.contains('chat-input') && e.key === 'Enter') { e.preventDefault(); return chatSend(); }
-    // §M3 — one predictable back/dismiss chain: winpicker → overlay → Mr. Wrangler dock → team chat dock.
-    if (e.key === 'Escape') {
-      if (state.winpicker) { closeWinPicker(); }
-      else if (state.overlay) { closeOverlay(); }
-      else if (state.wrangler.open) { wranglerRailSnapshot(); state.wrangler.open = false; render(); }   // mirror js-wr-close (lands the chat on the §18g rail)
-      else if (state.chat.open) { state.chat.open = false; render(); }                                    // mirror js-chat-close
-    }
+    // §M3 — one predictable back/dismiss chain (shared with the Android back button):
+    // winpicker → overlay → Mr. Wrangler dock → team chat dock.
+    if (e.key === 'Escape') dismissTopSheet();
   });
   // mouse hotkeys (§0.1): double-click a row = anchor; right-click = Back
   const hotkeyGuard = (e) => e.target.closest('.inline-edit, input, textarea, select, .pill, button, .x') || state.winpicker;
