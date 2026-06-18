@@ -16,7 +16,7 @@ import { DATA } from './data.js';
 import { createCascade } from './cascade.js';
 import { serviceOrdersForUnit, completeService, SERVICE_TASKS } from './service-countdown.js';
 import * as CFG from './config.js';
-import { AGREEMENTS } from './agreements.js';
+import { AGREEMENTS, AGREEMENT_VERSIONS, AGREEMENT_CURRENT } from './agreements.js';
 import {
   getStatus, STATUS, ROLES, GRID_CARDS, BACKOFFICE_BOARDS, SORT_FIELDS,
   SHOP_TYPES, SHOP_SEGMENTS, COLUMNS, COLUMN_OF,
@@ -115,16 +115,23 @@ function migrateCustomers() {
     // type, frozen at signing). Fold the legacy singular `agreement` — or, on the
     // default card, the legacy customer-level signature — into agreements[0].
     c.cards.forEach((k) => {
-      if (Array.isArray(k.agreements)) return;
+      if (Array.isArray(k.agreements)) {
+        // Reclaim space from the first card-bound release (#151), which baked the full
+        // ~6–8 KB agreement text into every signing: drop it, keep a small version id.
+        k.agreements.forEach((s) => {
+          if (s && s.text) { if (!s.version) s.version = AGREEMENT_CURRENT[s.key === 'membership' ? 'membership' : 'rental'] || ''; delete s.text; migrationDirty = true; }
+        });
+        return;
+      }
       k.agreements = [];
       const legacy = (k.agreement && k.agreement.signature) ? k.agreement
         : (k.isDefault && c.signature ? { signedAt: c.agreementSignedAt || '', version: c.agreementType || 'rental', signature: c.signature, selfie: c.selfie } : null);
       if (legacy && legacy.signature) {
         const key = legacy.version === 'membership' ? 'membership' : 'rental';
         const ag = AGREEMENTS[key] || AGREEMENTS.rental;
-        k.agreements.push({ id: 'SIG-' + c.customerId + '-' + (k.id || '0'), key, title: ag.title, text: ag.text,
+        k.agreements.push({ id: 'SIG-' + c.customerId + '-' + (k.id || '0'), key, version: AGREEMENT_CURRENT[key] || '', title: ag.title,
           accountType: c.accountType || '', signedAt: legacy.signedAt || '', signerName: c.name || '',
-          signature: legacy.signature, selfie: legacy.selfie || '', driveFileId: null, driveUrl: null });
+          signature: legacy.signature, selfie: legacy.selfie || '', driveSignatureUrl: '', driveSelfieUrl: '', driveFolderId: '' });
       }
       migrationDirty = true;
     });
@@ -251,10 +258,20 @@ const cardSignings = (k) => (k && Array.isArray(k.agreements)) ? k.agreements : 
 function cardCurrentSigning(c, k) { const want = requiredAgreementKey(c); const s = cardSignings(k); for (let i = s.length - 1; i >= 0; i--) { if ((s[i].key || 'rental') === want) return s[i]; } return null; }
 const cardAuthorized = (c, k) => !!cardCurrentSigning(c, k);
 function cardSignState(c, k) { return cardAuthorized(c, k) ? 'authorized' : (cardSignings(k).length ? 'stale' : 'unsigned'); }
-/** THE GATE — true only when EVERY active card is signed for the current account type. */
-const accountAgreementsOk = (c) => customerCards(c).every((k) => cardAuthorized(c, k));
+/* Resolve a signing's frozen title/text from the version registry (storage-light:
+   the signing stores only `version`, not the ~6–8 KB text). Falls back to a baked
+   `text`/`title` on legacy records, then to the current agreement for its key. */
+const signingTitle = (s) => (s && (s.title || (AGREEMENT_VERSIONS[s.version] || {}).title)) || (AGREEMENTS[s && s.key] || {}).title || 'Agreement';
+const signingText = (s) => (s && (s.text || (AGREEMENT_VERSIONS[s.version] || {}).text)) || (AGREEMENTS[s && s.key] || AGREEMENTS.rental).text || '';
+/* Drive-aware image accessors — prefer the archived Drive URL, fall back to the
+   inline data-URL kept until the backend offloads it (graceful pre-deploy). */
+const signingSelfieSrc = (s) => (s && (s.driveSelfieUrl || s.selfie)) || '';
+const signingSignatureSrc = (s) => (s && (s.driveSignatureUrl || s.signature)) || '';
+/** THE GATE — true only when every NON-EXPIRED card is signed for the current
+    account type. Expired cards can't be charged anyway, so they don't gate. */
+const accountAgreementsOk = (c) => validCards(c).every((k) => cardAuthorized(c, k));
 const accountAgreementsBlocked = (c) => !!c && !accountAgreementsOk(c);
-const unsignedCardCount = (c) => customerCards(c).filter((k) => !cardAuthorized(c, k)).length;
+const unsignedCardCount = (c) => validCards(c).filter((k) => !cardAuthorized(c, k)).length;
 /* §14 booking/delivery gate — blocked when there's no valid card OR any card isn't
    signed for the current account type. Charging is NEVER gated on this. */
 const cardGateBlocked = (cust) => !!cust && (!hasValidCard(cust) || accountAgreementsBlocked(cust));
@@ -265,36 +282,56 @@ function cardGateReason(cust) {
   return '';
 }
 /* Append an immutable signing record to a card — the current account type's
-   agreement is FROZEN onto the card (title + full text snapshot) with the
-   signature + selfie. Re-signing (new card / account-type change) appends; it
-   never edits a prior record. */
+   agreement is FROZEN onto the card by its small VERSION id (text resolved from the
+   registry, never stored inline) with the signature + selfie. Re-signing (new card /
+   account-type change) appends; it never edits a prior record. The images are then
+   offloaded to Drive (graceful: stay inline until the backend handler exists). */
 function signCardAgreement(c, k, signature, selfie) {
   if (!c || !k || !signature) return;
   const key = requiredAgreementKey(c); const ag = AGREEMENTS[key] || AGREEMENTS.rental;
   if (!Array.isArray(k.agreements)) k.agreements = [];
-  k.agreements.push({ id: 'SIG-' + (state.seq++), key, title: ag.title, text: ag.text,
+  const sig = { id: 'SIG-' + (state.seq++), key, version: AGREEMENT_CURRENT[key] || '', title: ag.title,
     accountType: c.accountType || '', signedAt: TODAY_ISO, signerName: c.name || fullName(c),
-    signature, selfie: selfie || '', driveFileId: null, driveUrl: null });
+    signature, selfie: selfie || '', driveSignatureUrl: '', driveSelfieUrl: '', driveFolderId: '' };
+  k.agreements.push(sig);
   reindex('customers', c);
   logAction(c, `${ag.title} signed on ${brandName(k.brand)} ••${k.last4}`);
+  archiveAgreementMedia(c, k, sig);   // offload images to Drive when the backend supports it
+}
+/* Offload a signing's selfie + signature to Drive (per-customer folder) and replace
+   the heavy inline data-URLs with light Drive URLs — keeps the synced customer record
+   small (a Sheets cell caps ~50k chars). No-op without a backend / handler, so the
+   images simply stay inline until the Apps Script `archiveAgreementMedia` is deployed. */
+async function archiveAgreementMedia(c, k, sig) {
+  if (!backendPassword || (!sig.signature && !sig.selfie)) return;
+  try {
+    const r = await backendCall('archiveAgreementMedia', { customerId: c.customerId, cardId: k.id, signingId: sig.id,
+      signerName: sig.signerName, signedAt: sig.signedAt, signature: sig.signature, selfie: sig.selfie });
+    if (!r || !r.ok) return;   // handler absent / failed → leave images inline, try again on next sign
+    if (r.signatureUrl) { sig.driveSignatureUrl = r.signatureUrl; sig.signature = ''; }
+    if (r.selfieUrl) { sig.driveSelfieUrl = r.selfieUrl; sig.selfie = ''; }
+    if (r.folderId) sig.driveFolderId = r.folderId;
+    reindex('customers', c); saveSoon();
+  } catch (e) { /* offline / no handler — images stay inline, harmless */ }
 }
 /* Immutable PDF of a frozen signing — opens a clean, read-only print view rendered
-   ENTIRELY from the stored snapshot (title + frozen text + signature + selfie +
-   signer + date). Browser "Save as PDF" yields a file that can't be edited; the
-   content re-renders identically every time. (Drive archival can backfill later.) */
+   ENTIRELY from the stored snapshot (title + frozen text resolved from the version
+   registry + signature + selfie + signer + date). Browser "Save as PDF" yields a
+   file that can't be edited; the content re-renders identically every time. */
 function openSignedPdf(custId, cardId, sigId) {
   const c = IDX.customer.get(custId || ''); const k = c && customerCards(c).find((x) => x.id === cardId);
   const s = k && cardSignings(k).find((x) => x.id === sigId);
   if (!s) return toast('Signed agreement not found.');
   const win = window.open('', '_blank'); if (!win) return toast('Allow pop-ups to open the PDF.');
   const e2 = (t) => String(t == null ? '' : t).replace(/[&<>]/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m]));
-  win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${e2(s.title)} — ${e2(s.signerName)}</title>
+  const sigSrc = signingSignatureSrc(s), selfieSrc = signingSelfieSrc(s);
+  win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${e2(signingTitle(s))} — ${e2(s.signerName)}</title>
     <style>body{font:13px/1.55 Georgia,'Times New Roman',serif;color:#111;margin:40px;max-width:760px}h1{font-size:19px;margin:0 0 4px}.meta{color:#444;margin:0 0 20px;font-size:12px}pre{white-space:pre-wrap;font:inherit;margin:0}.sigs{display:flex;gap:28px;margin-top:26px;flex-wrap:wrap}figure{margin:0}.sigs img{border:1px solid #ccc;max-width:260px;max-height:120px;display:block}figcaption{font-size:10px;color:#555;text-transform:uppercase;letter-spacing:1.2px;margin-top:5px}.bar{margin-top:26px}@media print{.bar{display:none}}</style>
     </head><body>
-    <h1>${e2(s.title)}</h1>
+    <h1>${e2(signingTitle(s))}</h1>
     <p class="meta">${e2(s.signerName)}${s.accountType ? ' · ' + e2(s.accountType) : ''} · accepted ${e2(s.signedAt || '—')} · card ••${e2(k.last4)}</p>
-    <pre>${e2(s.text)}</pre>
-    <div class="sigs">${s.signature ? `<figure><img src="${s.signature}" alt="signature"><figcaption>Signature</figcaption></figure>` : ''}${s.selfie ? `<figure><img src="${s.selfie}" alt="selfie"><figcaption>Selfie on file</figcaption></figure>` : ''}</div>
+    <pre>${e2(signingText(s))}</pre>
+    <div class="sigs">${sigSrc ? `<figure><img src="${e2(sigSrc)}" alt="signature"><figcaption>Signature</figcaption></figure>` : ''}${selfieSrc ? `<figure><img src="${e2(selfieSrc)}" alt="selfie"><figcaption>Selfie on file</figcaption></figure>` : ''}</div>
     <div class="bar"><button onclick="window.print()" style="padding:9px 18px;font:13px sans-serif">Save as PDF / Print</button></div>
     </body></html>`);
   win.document.close();
@@ -6394,10 +6431,10 @@ function renderOverlay() {
         const sg = cardCurrentSigning(custRec, k);
         body = `
           <div class="ag-meta">${esc(meta)}<span class="ag-metasep"></span>${badge('Authorized', 'green')}</div>
-          <div class="ag-signed"><span class="ag-lock">${AG_LOCK}</span><span class="t"><b>${esc(sg.title)}</b> · signed ${esc(sg.signedAt || '—')}</span>${actionPill('commit', '⤓ PDF', { js: 'js-ncsign-pdf', data: { card: k.id, sig: sg.id } })}</div>
+          <div class="ag-signed"><span class="ag-lock">${AG_LOCK}</span><span class="t"><b>${esc(signingTitle(sg))}</b> · signed ${esc(sg.signedAt || '—')}</span>${actionPill('commit', '⤓ PDF', { js: 'js-ncsign-pdf', data: { card: k.id, sig: sg.id } })}</div>
           <div class="ag-packet">
-            <div class="ag-pcell"><div class="ag-pcap">Selfie</div>${sg.selfie ? `<img class="ag-selfie" src="${esc(sg.selfie)}" alt="selfie on file" />` : '<div class="ag-selfie empty">—</div>'}</div>
-            <div class="ag-pcell"><div class="ag-pcap">Signature</div><img class="ag-sigthumb" src="${esc(sg.signature)}" alt="signature on file" /></div>
+            <div class="ag-pcell"><div class="ag-pcap">Selfie</div>${signingSelfieSrc(sg) ? `<img class="ag-selfie" src="${esc(signingSelfieSrc(sg))}" alt="selfie on file" />` : '<div class="ag-selfie empty">—</div>'}</div>
+            <div class="ag-pcell"><div class="ag-pcap">Signature</div>${signingSignatureSrc(sg) ? `<img class="ag-sigthumb" src="${esc(signingSignatureSrc(sg))}" alt="signature on file" />` : '<div class="ag-sigthumb"></div>'}</div>
           </div>
           <p class="muted" style="font-size:11px;margin:12px 2px 0">🔒 Locked — the exact agreement accepted on this card. Re-signing happens only on a new card or an account-type change.</p>`;
       } else {
@@ -7155,6 +7192,9 @@ function ncApplyName(d) {
 // Wire the signature canvas for finger/stylus/mouse drawing (white bg → JPEG export).
 function setupSignaturePad() {
   const cv = document.querySelector('.overlay .nc-sigpad'); if (!cv) return;
+  // Match the backing store to the rendered size so strokes aren't stretched (the pad
+  // is width:auto in the flex row). getBoundingClientRect is laid out by now.
+  const r = cv.getBoundingClientRect(); if (r.width && r.height) { cv.width = Math.round(r.width); cv.height = Math.round(r.height); }
   const ctx = cv.getContext('2d');
   ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);
   ctx.strokeStyle = '#15171c'; ctx.lineWidth = 2.4; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
@@ -8288,14 +8328,16 @@ function onClick(e) {
     const cv = document.querySelector('.overlay .nc-sigpad');
     if (!cv || !cv.dataset.drawn) return flashOr('.overlay .nc-sigpad', 'Sign in the box first.');
     if (!(o.signDraft && o.signDraft.selfie)) return toast('Take a selfie to authorize this card.');
-    signCardAgreement(c, k, cv.toDataURL('image/jpeg', 0.6), o.signDraft.selfie);
-    o.signDraft = null; o.signRead = null; renderOverlay(); render(); return;
+    // downscale the signature (a 500×220 pad → ~3 KB) before freezing it onto the card
+    downscaleImage(cv.toDataURL('image/jpeg', 0.8), 380, 0.6, (sig) => {
+      signCardAgreement(c, k, sig || cv.toDataURL('image/jpeg', 0.6), o.signDraft.selfie);
+      o.signDraft = null; o.signRead = null; renderOverlay(); render();
+    });
+    return;
   }
   if (closest('.js-ncsign-pdf')) { e.stopPropagation(); const b = closest('.js-ncsign-pdf'); return openSignedPdf(state.overlay.editId, b.dataset.card, b.dataset.sig); }
   if (closest('.js-nc-selfie-clear')) { e.stopPropagation(); ncSyncInputs(); state.overlay.draft.selfie = ''; renderOverlay(); return; }
-  if (closest('.js-nc-sig-save')) { e.stopPropagation(); const cv = document.querySelector('.overlay .nc-sigpad'); if (cv && cv.dataset.drawn) { ncSyncInputs(); const dr = state.overlay.draft; dr.signature = cv.toDataURL('image/jpeg', 0.6); dr.agreementType = /member/i.test(dr.accountType || '') ? 'membership' : 'rental'; dr.agreementSignedAt = TODAY_ISO; renderOverlay(); } else flashOr('.overlay .nc-sigpad', 'Sign in the box first.'); return; }
   if (closest('.js-nc-sig-clearpad')) { e.stopPropagation(); const cv = document.querySelector('.overlay .nc-sigpad'); if (cv) { const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height); cv.dataset.drawn = ''; } return; }
-  if (closest('.js-nc-sig-clear')) { e.stopPropagation(); ncSyncInputs(); const dr = state.overlay.draft; dr.signature = ''; dr.agreementType = ''; dr.agreementSignedAt = ''; renderOverlay(); return; }
   if (closest('.js-nc-qr')) { e.stopPropagation(); const id = state.overlay.editId; openOverlay({ kind: 'qr', title: 'Continue on phone', url: location.origin + location.pathname + '#edit=' + id, caption: 'Scan to finish this account on your phone.' }); return; }
   if (closest('.js-edit-customer')) { e.stopPropagation(); return openCustomerForm(closest('.js-edit-customer').dataset.rec); }
   if (closest('.js-view-agreement')) { e.stopPropagation(); const cust = IDX.customer.get(closest('.js-view-agreement').dataset.rec); if (cust) openOverlay({ kind: 'agreement', recId: cust.customerId }); return; }
@@ -8304,7 +8346,11 @@ function onClick(e) {
     const rec = closest('.js-add-card').dataset.rec;
     // From the onboarding form: persist the draft (incl. signature/selfie) first, add the card,
     // then RETURN to the form (card now on file) — no save-close-reopen. Elsewhere: normal add.
-    if (state.overlay && state.overlay.kind === 'newCustomer') { ncSyncDraftToCustomer(state.overlay); state.overlay.cardSub = true; renderOverlay(); return; }   // §14 open the card panel BESIDE the form
+    if (state.overlay && state.overlay.kind === 'newCustomer') {
+      ncSyncDraftToCustomer(state.overlay);
+      if (!state.overlay.editId) { flashOr('.overlay [data-f="name"]', 'Enter a name & phone before adding a card.'); return; }   // need a saved customer to attach the card to
+      state.overlay.cardSub = true; renderOverlay(); return;   // §14 open the card panel BESIDE the form
+    }
     return openAddCard(rec);
   }
   if (closest('.js-cardsub-cancel')) { e.stopPropagation(); if (state.overlay && state.overlay.kind === 'newCustomer') { state.overlay.cardSub = false; renderOverlay(); } return; }   // §14 close just the card panel, keep the form
