@@ -316,6 +316,14 @@ try {
     st.settings.company = { maxNetDays: 60 }; const dueCap60 = T.dueForCustomer(tc.customerId); ok(dueCap60 > due30b, 'raising the system max to 60 lets the same Net 999 customer go further out');
     tc.netDays = savedNd; st.settings.company = savedCo2;   // restore
 
+    // 19) Layout & Footers — per-card footer visibility (default shown = zero change)
+    const savedLayout = st.settings.layout;
+    st.settings.layout = undefined;
+    ok(T.footerHidden('rentals') === false, 'no layout config → footers shown (default)');
+    st.settings.layout = { footers: { rentals: 'off' } };
+    ok(T.footerHidden('rentals') === true && T.footerHidden('units') === false, 'a card footer can be hidden without affecting others');
+    st.settings.layout = savedLayout;   // restore
+
     return out;
   });
 

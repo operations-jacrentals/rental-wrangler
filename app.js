@@ -1814,6 +1814,9 @@ function persistAdminSettings(s) {
 // Company identity (Settings → Company). Read-through with shipped fallbacks, so an empty
 // config keeps every surface exactly as it ships today.
 const companyCfg = () => (state.settings && state.settings.company) || {};
+// Layout prefs (Settings → Layout & Footers). Read-through; default keeps every footer shown.
+const layoutCfg = () => (state.settings && state.settings.layout) || {};
+const footerHidden = (card) => (layoutCfg().footers || {})[card] === 'off';
 const COMPANY_DEFAULTS = { name: 'JacRentals', tagline: 'Heavy-Equipment Rental · Sulphur, LA', revenueGoal: (CFG.REVENUE_GOAL_DEFAULT || 150000), maxNetDays: 30 };
 const companyName = () => (companyCfg().name || '').trim() || COMPANY_DEFAULTS.name;
 const companyTagline = () => (companyCfg().tagline || '').trim() || COMPANY_DEFAULTS.tagline;
@@ -1843,7 +1846,7 @@ const SETTINGS_TABS = [
   { id: 'requirements',  label: 'Rental Rules',     icon: STATUS_ICONS.shield,    v1: true },
   { id: 'kpis',          label: 'KPIs & Rings',     icon: STATUS_ICONS.gauge,     v1: true },
   { id: 'notifications', label: 'Notifications',    icon: I.bell,                 note: 'Team chat on/off, driver dispatch alerts, customer reminders & cadence.' },
-  { id: 'layout',        label: 'Layout & Footers', icon: I.grid,                 note: 'Per-card footer visibility, card / column visibility, grid order, default sort.' },
+  { id: 'layout',        label: 'Layout & Footers', icon: I.grid,                 v1: true },
   { id: 'integrations',  label: 'Integrations',     icon: STATUS_ICONS.zap,       note: 'Stripe, Maps, telematics feed — references & toggles (secrets stay server-side).' },
 ];
 const draftStatusOv = (o, set, val) => (((o.draftSettings || {}).status || {})[set] || {})[val] || {};
@@ -1869,6 +1872,7 @@ function settingsBoardHtml(o) {
   else if (o.tab === 'kpis') pane = settingsKpisPane(o);
   else if (o.tab === 'general') pane = settingsCompanyPane(o);
   else if (o.tab === 'requirements') pane = settingsRulesPane(o);
+  else if (o.tab === 'layout') pane = settingsLayoutPane(o);
   else pane = settingsPlannedPane(SETTINGS_TABS.find((t) => t.id === o.tab));
   return `<div class="set-board"><nav class="set-rail" aria-label="Settings sections">${rail}</nav><div class="set-pane">${pane}</div></div>`;
 }
@@ -1937,6 +1941,27 @@ function settingsRulesPane(o) {
     <div class="rule-list">${rows}</div>
     <div class="rule-planned-head">Coming once their capture field exists</div>
     <div class="rule-list">${planned}</div>`;
+}
+// Cards that carry a totals footer (the highlighted roll-up row beneath the list).
+const LAYOUT_FOOTER_CARDS = [
+  { key: 'rentals', label: 'Rentals' }, { key: 'units', label: 'Units' }, { key: 'customers', label: 'Customers' },
+  { key: 'categories', label: 'Categories' }, { key: 'invoices', label: 'Invoices' }, { key: 'workOrders', label: 'Work Orders' },
+  { key: 'inspections', label: 'Inspections' },
+];
+function settingsLayoutPane(o) {
+  const draft = (o.draftSettings && o.draftSettings.layout && o.draftSettings.layout.footers) || (state.settings && state.settings.layout && state.settings.layout.footers) || {};
+  const rows = LAYOUT_FOOTER_CARDS.map((c) => {
+    const shown = draft[c.key] !== 'off';
+    return `<div class="rule-row">
+      <div class="rule-main"><span class="rule-label">${CARD_ICON[c.key] || ''}${esc(c.label)} footer</span><span class="rule-desc">The totals roll-up beneath the ${esc(c.label.toLowerCase())} list.</span></div>
+      ${segCtl([{ label: 'Hide', js: 'js-layout-footer', data: { card: c.key, val: 'off' }, on: shown ? null : 'red' }, { label: 'Show', js: 'js-layout-footer', data: { card: c.key, val: 'on' }, on: shown ? 'green' : null }])}
+    </div>`;
+  }).join('');
+  return `
+    <div class="set-pane-head"><h4>Layout &amp; Footers</h4><p>Show or hide each card's <strong>totals footer</strong> — the highlighted roll-up row beneath its list. Everything defaults to shown.</p></div>
+    <div class="rule-list">${rows}</div>
+    <div class="rule-planned-head">More layout controls coming</div>
+    <div class="rule-list"><div class="rule-row rule-soon"><div class="rule-main"><span class="rule-label">Columns · sort · grid order</span><span class="rule-desc">Builds on the existing List-View column picker — a focused follow-on so the two don't fight.</span></div><span class="rule-soon-tag">Planned</span></div></div>`;
 }
 function settingsStatusesPane(o) {
   const setSel = o.setSel || 'rentalStatus';
@@ -2978,6 +3003,7 @@ const footDropBadge = (card, value) =>
  *  numeric roll-ups (e.g. "6 Tomorrow · 900 HRS avg · 12 Part Needed"). */
 function listTotalsEl(card, rows, session) {
   if (!rows || !rows.length) return null;
+  if (footerHidden(card)) return null;   // Settings → Layout & Footers: this card's totals footer is hidden
   const cols = cardColumns(card, session);
   const sel = loadListTotals(card);                 // null = every aggregatable column
   const allowed = sel ? new Set(sel) : null;
@@ -8679,6 +8705,8 @@ function onClick(e) {
   if (closest('.js-kpi-refine')) { e.stopPropagation(); const b = closest('.js-kpi-refine'); openWranglerForKpi(b.dataset.role, Number(b.dataset.i)); return; }
   // Rental Rules tab
   if (closest('.js-rule-set')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-rule-set'); if (o) { o.draftSettings = o.draftSettings || {}; o.draftSettings.rentalRules = o.draftSettings.rentalRules || { ...((state.settings && state.settings.rentalRules) || {}) }; o.draftSettings.rentalRules[b.dataset.rule] = b.dataset.val === 'required' ? 'required' : 'off'; renderOverlay(); } return; }
+  // Layout & Footers tab
+  if (closest('.js-layout-footer')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-layout-footer'); if (o) { o.draftSettings = o.draftSettings || {}; o.draftSettings.layout = o.draftSettings.layout || { ...((state.settings && state.settings.layout) || {}) }; o.draftSettings.layout.footers = { ...(o.draftSettings.layout.footers || {}), [b.dataset.card]: b.dataset.val === 'off' ? 'off' : 'on' }; renderOverlay(); } return; }
   if (closest('.js-nc-save')) { e.stopPropagation(); return saveNewCustomer(); }
   if (closest('.js-nc-acct')) { const b = closest('.js-nc-acct'); e.stopPropagation(); ncSyncInputs(); state.overlay.draft.accountType = b.dataset.val; renderOverlay(); return; }
   if (closest('.js-nc-selfie-clear')) { e.stopPropagation(); ncSyncInputs(); state.overlay.draft.selfie = ''; renderOverlay(); return; }
@@ -11905,7 +11933,7 @@ function exposeTestApi() {
       computeTransportPrice, isFueledType, unitTransport, rentalTransport,
       wrValidatePlan, applyWranglerData, wrFunnel, invoiceMergeable, mergeInvoiceInto,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
-      companyRevenueGoal, companyName, companyTagline, rentalRuleBlock, dueForCustomer, __state: state };
+      companyRevenueGoal, companyName, companyTagline, rentalRuleBlock, dueForCustomer, footerHidden, __state: state };
   } catch (e) { /* no window (non-browser) */ }
 }
 

@@ -1435,7 +1435,8 @@ select.lf-in { appearance: none; cursor: pointer; }
 .rule-row { display: flex; align-items: center; gap: 12px; padding: 11px 13px; background: var(--panel); border: 1px solid var(--line); border-radius: 11px; }
 .rule-row.on { border-color: var(--red); box-shadow: inset 3px 0 0 var(--red); }
 .rule-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.rule-label { font-size: 13.5px; font-weight: 700; color: var(--txt); }
+.rule-label { font-size: 13.5px; font-weight: 700; color: var(--txt); display: inline-flex; align-items: center; gap: 6px; }
+.rule-label svg { width: 15px; height: 15px; color: var(--txt-3); }
 .rule-desc { font-size: 11.5px; color: var(--txt-2); }
 .rule-row .seg { flex: 0 0 auto; }
 .rule-planned-head { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.2px; font-size: 10px; font-weight: 700; color: var(--txt-3); margin: 16px 0 8px; }
