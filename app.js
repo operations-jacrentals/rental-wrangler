@@ -7285,7 +7285,69 @@ function bvCustomizePanel(card) {
    ════════════════════════════════════════════════════════════════════════ */
 /** Shared floating dropdown (matches board chrome) — used by the status pill
  *  dropdown and the in-card Sort menu. */
-function openDropdown(anchorEl, html, { align = 'left' } = {}) {
+/* ── Gate TIMELINE (Jac 2026-06-18) — the four ordered status gates render as a
+   progressing timeline: a vertical hazard rail + a per-stage icon, with done (green
+   check) / active (orange "you are here") / upcoming (dim dashed) states, and
+   off-ramp stages (Cancelled, No Show, Don't Contact) dimmed + italic so they don't
+   read as progress. Monochrome by design — the resting pills/badges carry the
+   registry colors for glance-scanning (Jac kept the dropdown clean). ── */
+const GTI = (p) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
+const GATE_ICON = {
+  'Quote': GTI('<path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z"/><path d="M9 13h6M9 17h4"/>'),
+  'Reserved': GTI('<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M3 10h18M8 2v4M16 2v4"/>'),
+  'On Rent': GTI('<circle cx="12" cy="7" r="4"/><path d="M5 21v-1a7 7 0 0 1 14 0v1"/>'),
+  'End Rent': GTI('<path d="M6 2h12M6 22h12M8 2c0 4 8 6 8 10s-8 6-8 10M16 2c0 4-8 6-8 10"/>'),
+  'Off Rent': GTI('<rect x="6" y="6" width="12" height="12" rx="2"/>'),
+  'Returned': GTI('<path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/>'),
+  'Cancelled': GTI('<circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/>'),
+  'No Show': GTI('<circle cx="9" cy="8" r="4"/><path d="M3 21v-1a6 6 0 0 1 9-5.2"/><path d="M16.5 16.5l4 4M20.5 16.5l-4 4"/>'),
+  'Part Needed?': GTI('<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 0 1 4.5 1.5c0 1.5-2 2-2 3.5"/><path d="M12 17h.01"/>'),
+  'No Part Needed': GTI('<path d="M7 11v9H4a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1h3zM7 11l4-7a2 2 0 0 1 3 1.5V9h5a2 2 0 0 1 2 2.3l-1.2 7A2 2 0 0 1 20.6 20H7"/>'),
+  'Part Needed': GTI('<path d="M12 3 2 20h20z"/><path d="M12 9v5M12 17h.01"/>'),
+  'Part is Local': GTI('<path d="M12 21s7-6.6 7-11a7 7 0 0 0-14 0c0 4.4 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/>'),
+  'Part Ordered': GTI('<path d="M1 5h13v11H1zM14 8h4l4 4v4h-8z"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="18" r="2"/>'),
+  'Part in Stock': GTI('<path d="M3 7l9-4 9 4-9 4z"/><path d="M3 7v10l9 4 9-4V7"/><path d="M12 11v10"/>'),
+  'Complete': GTI('<circle cx="12" cy="12" r="9"/><path d="M8.5 12.5l2.5 2.5 4.5-5"/>'),
+  'N/A': GTI('<path d="M5 12h14"/>'),
+  'Inbound Lead': GTI('<circle cx="12" cy="12" r="9"/><path d="M12 7v8M8.5 11.5 12 15l3.5-3.5"/>'),
+  'Outbound Lead': GTI('<circle cx="12" cy="12" r="9"/><path d="M12 17V9M8.5 12.5 12 9l3.5 3.5"/>'),
+  "Don't Contact": GTI('<circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/>'),
+  'Contacted': GTI('<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3 19.5 19.5 0 0 1-6-6 19.8 19.8 0 0 1-3-8.6A2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.4 2.1L8.1 9.9a16 16 0 0 0 6 6l1.4-1.4a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/>'),
+  'Not A No!': GTI('<path d="M7 11v9H4a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1h3zM7 11l4-7a2 2 0 0 1 3 1.5V9h5a2 2 0 0 1 2 2.3l-1.2 7A2 2 0 0 1 20.6 20H7"/>'),
+  'Payment Discussed': GTI('<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/>'),
+  'Paid': GTI('<path d="M8 21h8M12 17v4M7 4h10v4a5 5 0 0 1-10 0zM7 5H4v2a3 3 0 0 0 3 3M17 5h3v2a3 3 0 0 1-3 3"/>'),
+};
+const GATE_TL = {
+  rentalStatus: { title: 'Rental status', order: ['Quote', 'Reserved', 'On Rent', 'End Rent', 'Off Rent', 'Returned', 'Cancelled', 'No Show'], off: new Set(['Cancelled', 'No Show']) },
+  woPhase:      { title: 'Work order phase', order: ['Part Needed?', 'No Part Needed', 'Part Needed', 'Part is Local', 'Part Ordered', 'Part in Stock', 'Complete'], off: new Set() },
+  funnelStage:  { title: 'Funnel stage', order: ['N/A', 'Inbound Lead', 'Outbound Lead', "Don't Contact", 'Contacted', 'Not A No!', 'Payment Discussed', 'Paid'], off: new Set(["Don't Contact"]) },
+};
+const GTCHK = GTI('<path d="M5 12.5l4 4 10-11"/>');
+/** Build the gate-timeline dropdown body. `mk(value, inner, stateCls)` wraps each row
+ *  into the selecting button (each gate supplies its own js-class + data-attrs). */
+function gateTimeline(set, current, title, mk) {
+  const cfg = GATE_TL[set]; if (!cfg) return '';
+  const { order, off } = cfg;
+  const ai = order.indexOf(current);            // active row index (display order)
+  const curOff = off.has(current);
+  const rows = order.map((v, i) => {
+    let st;
+    if (v === current) st = 'a';
+    else if (off.has(v)) st = 's';
+    else if (curOff) st = 'u';
+    else st = i < ai ? 'd' : 'u';
+    let conn = '';
+    if (i < order.length - 1) {
+      const kind = curOff ? 'dash' : (i + 1 < ai ? 'solid' : (i + 1 === ai ? 'grad' : 'dash'));
+      conn = kind === 'dash' ? '<span class="gt-dash"></span>' : `<span class="gt-line ${kind}"></span>`;
+    }
+    const chk = st === 'd' ? `<i class="gt-chk">${GTCHK}</i>` : '';
+    const inner = `${conn}<span class="gt-node">${GATE_ICON[v] || I.circle}</span><span class="gt-lbl">${chk}${esc(getStatus(set, v).label)}</span>`;
+    return mk(v, inner, 'gt-' + st);
+  }).join('');
+  return `<span class="gt-haz"></span><div class="gt-cap">${esc(title)}</div><div class="gt-body">${rows}</div>`;
+}
+function openDropdown(anchorEl, html, { align = 'left', cls = '' } = {}) {
   hideHoverPreview();   // a floated preview (z-9000) buried the menu — clear it on open (Jac: fleet-status box hidden behind hover)
   // re-clicking the SAME trigger toggles the menu shut (the anchor is excluded from the
   // outside-close handler below, so its mousedown doesn't pre-close before this runs).
@@ -7294,7 +7356,7 @@ function openDropdown(anchorEl, html, { align = 'left' } = {}) {
   // detach each closing menu's own outside-close listener so none orphan on document
   document.querySelectorAll('.dropdown-menu').forEach((n) => { if (n._off) document.removeEventListener('mousedown', n._off); n.remove(); });
   if (sameAnchor) return null;
-  const dd = el('div', 'dropdown-menu', html);
+  const dd = el('div', 'dropdown-menu' + (cls ? ' ' + cls : ''), html);
   dd._anchor = anchorEl;
   document.body.appendChild(dd);
   const rect = anchorEl.getBoundingClientRect();
@@ -7310,10 +7372,11 @@ function openDropdown(anchorEl, html, { align = 'left' } = {}) {
   return dd;
 }
 function openStatusDropdown(rentalId, anchorEl) {
-  // Tomorrow/Today are DERIVED display states (not user-selectable) — exclude from the picker
-  const html = Object.keys(STATUS.rentalStatus).filter((v) => v !== 'Tomorrow' && v !== 'Today').map((v) =>
-    `<button class="dd-item js-setstatus" data-rec="${esc(rentalId)}" data-val="${esc(v)}">${statusPill('rentalStatus', v)}</button>`).join('');
-  openDropdown(anchorEl, html);
+  // progressing timeline; Tomorrow/Today are DERIVED display states excluded by GATE_TL.order
+  const cur = IDX.rental.get(rentalId)?.status || '';
+  const html = gateTimeline('rentalStatus', cur, 'Rental status', (v, inner, sc) =>
+    `<button class="gt-row ${sc} js-setstatus" data-rec="${esc(rentalId)}" data-val="${esc(v)}">${inner}</button>`);
+  openDropdown(anchorEl, html, { cls: 'gt' });
 }
 function openFleetDropdown(unitId, anchorEl) {
   const html = Object.keys(STATUS.unitFleetStatus).map((v) =>
@@ -7343,9 +7406,10 @@ function setExpenseReconcile(expenseId, val) {
 function openFunnelDropdown(custId, which, anchorEl) {
   const cust = IDX.customer.get(custId);
   const cur = which === 'membership' ? cust?.membershipStage : cust?.usedSalesStage;
-  const html = Object.keys(STATUS.funnelStage).map((v) =>
-    `<button class="dd-item js-setfunnel ${v === cur ? 'on' : ''}" data-rec="${esc(custId)}" data-which="${which}" data-val="${esc(v)}">${badge(getStatus('funnelStage', v).label, getStatus('funnelStage', v).color)}</button>`).join('');
-  openDropdown(anchorEl, html);
+  const title = which === 'membership' ? 'Membership funnel' : 'Used sales funnel';
+  const html = gateTimeline('funnelStage', cur || 'N/A', title, (v, inner, sc) =>
+    `<button class="gt-row ${sc} js-setfunnel" data-rec="${esc(custId)}" data-which="${which}" data-val="${esc(v)}">${inner}</button>`);
+  openDropdown(anchorEl, html, { cls: 'gt' });
 }
 function setFunnelStage(custId, which, val) {
   const c = IDX.customer.get(custId);
@@ -8756,9 +8820,11 @@ function removeUnitInvoiceLine(r, unitId) {
   logAction(inv, `${IDX.unit.get(unitId)?.name || unitId} line(s) removed — No Show / Cancel (not billed)`);
 }
 function openUnitStatusDropdown(rentalId, unitId, anchorEl) {
-  const html = Object.keys(STATUS.rentalStatus).filter((v) => v !== 'Tomorrow' && v !== 'Today').map((v) =>
-    `<button class="dd-item js-setunitstatus" data-rec="${esc(rentalId)}" data-unit="${esc(unitId)}" data-val="${esc(v)}">${statusPill('rentalStatus', v)}</button>`).join('');
-  openDropdown(anchorEl, html);
+  const r = IDX.rental.get(rentalId); const eu = r && unitEntry(r, unitId);
+  const cur = eu ? unitStatus(r, eu) : '';
+  const html = gateTimeline('rentalStatus', cur, 'Unit status', (v, inner, sc) =>
+    `<button class="gt-row ${sc} js-setunitstatus" data-rec="${esc(rentalId)}" data-unit="${esc(unitId)}" data-val="${esc(v)}">${inner}</button>`);
+  openDropdown(anchorEl, html, { cls: 'gt' });
 }
 /* §9 Field Call — a unit breaks mid-rental: flag the rental (red FC), fail the unit,
    and auto-open a Field-Call work order so the M.Tech can dispatch parts/swap. */
@@ -10146,9 +10212,11 @@ function setWoLinePhase(woId, idx, val) {
   reanchorRender();
 }
 function openWoPhaseDropdown(woId, anchorEl, lineIdx) {
-  const html = Object.keys(STATUS.woPhase).map((v) =>
-    `<button class="dd-item ${lineIdx == null ? 'js-setwophase' : 'js-setwolinephase'}" data-rec="${esc(woId)}"${lineIdx == null ? '' : ` data-idx="${lineIdx}"`} data-val="${esc(v)}">${statusPill('woPhase', v)}</button>`).join('');
-  openDropdown(anchorEl, html);
+  const w = IDX.wo.get(woId);
+  const cur = lineIdx == null ? (w?.phase || '') : (w?.lineItems?.[lineIdx]?.phase || '');
+  const html = gateTimeline('woPhase', cur, lineIdx == null ? 'Work order phase' : 'Line phase', (v, inner, sc) =>
+    `<button class="gt-row ${sc} ${lineIdx == null ? 'js-setwophase' : 'js-setwolinephase'}" data-rec="${esc(woId)}"${lineIdx == null ? '' : ` data-idx="${lineIdx}"`} data-val="${esc(v)}">${inner}</button>`);
+  openDropdown(anchorEl, html, { cls: 'gt' });
 }
 
 /* ── §12.2 rental-window range picker — a single popup: a time selector above a
