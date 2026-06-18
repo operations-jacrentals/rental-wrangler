@@ -1811,6 +1811,13 @@ function persistAdminSettings(s) {
   try { localStorage.setItem('jactec.settings', JSON.stringify(s)); } catch (e) {}
   applySettings(s);
 }
+// Company identity (Settings → Company). Read-through with shipped fallbacks, so an empty
+// config keeps every surface exactly as it ships today.
+const companyCfg = () => (state.settings && state.settings.company) || {};
+const COMPANY_DEFAULTS = { name: 'JacRentals', tagline: 'Heavy-Equipment Rental · Sulphur, LA', revenueGoal: (CFG.REVENUE_GOAL_DEFAULT || 150000) };
+const companyName = () => (companyCfg().name || '').trim() || COMPANY_DEFAULTS.name;
+const companyTagline = () => (companyCfg().tagline || '').trim() || COMPANY_DEFAULTS.tagline;
+const companyRevenueGoal = () => { const n = Number(companyCfg().revenueGoal); return n > 0 ? n : COMPANY_DEFAULTS.revenueGoal; };
 
 /* ── Settings Board render (tab rail + panes). The rail lists every planned tab so
    the information architecture is visible; v1 ships Logins + Statuses working, the
@@ -1818,7 +1825,7 @@ function persistAdminSettings(s) {
 const SETTINGS_TABS = [
   { id: 'logins',        label: 'Roles & Logins',  icon: I.lock,                 v1: true },
   { id: 'statuses',      label: 'Statuses & Icons', icon: STATUS_ICONS.tag,       v1: true },
-  { id: 'general',       label: 'Company',          icon: CARD_ICON.vendors,      note: 'Identity, logo, yard origin, revenue goal, tax & timezone.' },
+  { id: 'general',       label: 'Company',          icon: CARD_ICON.vendors,      v1: true },
   { id: 'fields',        label: 'Custom Fields',    icon: I.sliders,              note: 'Add fields to customers, units, rentals & invoices — type, required, placement.' },
   { id: 'inspections',   label: 'Inspections',      icon: CARD_ICON.inspections,  note: 'Checklist templates per category type, Pass/Fail items, required photos, auto-fail → WO.' },
   { id: 'requirements',  label: 'Rental Rules',     icon: STATUS_ICONS.shield,    note: 'Require card-on-file for On Rent; selfie / signature / ID / PO as Required · Optional · None; Cash vs Net 30.' },
@@ -1848,6 +1855,7 @@ function settingsBoardHtml(o) {
   if (o.tab === 'statuses') pane = settingsStatusesPane(o);
   else if (o.tab === 'logins') pane = settingsLoginsPane(o);
   else if (o.tab === 'kpis') pane = settingsKpisPane(o);
+  else if (o.tab === 'general') pane = settingsCompanyPane(o);
   else pane = settingsPlannedPane(SETTINGS_TABS.find((t) => t.id === o.tab));
   return `<div class="set-board"><nav class="set-rail" aria-label="Settings sections">${rail}</nav><div class="set-pane">${pane}</div></div>`;
 }
@@ -1863,6 +1871,26 @@ function settingsLoginsPane(o) {
     <div class="set-row" style="margin-top:12px;align-items:center"><span class="set-role" style="flex:0 0 auto" data-tip="A light vibration confirms committed actions on phones (post a chat, drop a link, complete a WO, release-to-cancel). Android only — iOS has no vibration.">Haptic feedback</span>${segCtl([{ label: 'Off', js: 'js-haptics', data: { val: '0' }, on: state.hapticsOff ? 'red' : null }, { label: 'On', js: 'js-haptics', data: { val: '1' }, on: state.hapticsOff ? null : 'green' }])}</div>
     <p class="set-note">Touch feedback — saved on this device.</p>`;
 }
+function settingsCompanyPane(o) {
+  const co = (o.draftSettings && o.draftSettings.company) || (state.settings && state.settings.company) || {};
+  const v = (k) => esc(co[k] != null ? co[k] : '');
+  const ph = (k) => esc(COMPANY_DEFAULTS[k]);
+  const goal = Number(co.revenueGoal) > 0 ? Number(co.revenueGoal) : COMPANY_DEFAULTS.revenueGoal;
+  return `
+    <div class="set-pane-head"><h4>Company</h4><p>Your yard's identity and targets. These flow onto printed receipts and the dashboard — leave one blank to keep the shipped default.</p></div>
+    <div class="co-form">
+      <label class="co-fld"><span class="kpi-cap">COMPANY NAME</span><input class="co-in js-co-field" data-f="name" value="${v('name')}" placeholder="${ph('name')}" autocomplete="off"/></label>
+      <label class="co-fld"><span class="kpi-cap">TAGLINE / SUBLINE</span><input class="co-in js-co-field" data-f="tagline" value="${v('tagline')}" placeholder="${ph('tagline')}" autocomplete="off"/></label>
+      <label class="co-fld co-fld-goal"><span class="kpi-cap">MONTHLY REVENUE GOAL</span><span class="co-goal-wrap"><span class="co-goal-$">$</span><input class="co-in co-in-num js-co-field" data-f="revenueGoal" value="${co.revenueGoal != null ? esc(co.revenueGoal) : ''}" placeholder="${COMPANY_DEFAULTS.revenueGoal}" inputmode="numeric" autocomplete="off"/></span></label>
+      <p class="set-note">Feeds the Sales <strong>Revenue Goal</strong> ring — currently <strong>${esc(money(goal))}/mo</strong>. The ring fills as this month's rental revenue climbs toward it.</p>
+      <div class="co-preview">
+        <span class="kpi-cap">RECEIPT PREVIEW</span>
+        <div class="co-receipt"><div class="co-receipt-brand">${esc(companyDraftName(co))}</div><div class="co-receipt-sub">${esc(companyDraftTagline(co))}</div></div>
+      </div>
+    </div>`;
+}
+const companyDraftName = (co) => (String(co.name || '').trim() || COMPANY_DEFAULTS.name);
+const companyDraftTagline = (co) => (String(co.tagline || '').trim() || COMPANY_DEFAULTS.tagline);
 function settingsStatusesPane(o) {
   const setSel = o.setSel || 'rentalStatus';
   const picker = SETTINGS_STATUS_SETS.map((s) => `<button class="set-pick js-set-pick${s.set === setSel ? ' on' : ''}" data-set="${s.set}">${esc(s.label)}</button>`).join('');
@@ -4973,7 +5001,7 @@ function legacyKpiPct(roleId) {
     // in the current calendar month. (A future Settings board will make the goal admin-set.)
     const ym = TODAY_ISO.slice(0, 7);
     const revenue = R.reduce((a, r) => { if ((r.startDate || '').slice(0, 7) !== ym) return a; const p = rentalPrice(r); return a + (p ? p.price : 0); }, 0);
-    const revGoal = pctOf(revenue, CFG.REVENUE_GOAL_DEFAULT || 150000);
+    const revGoal = pctOf(revenue, companyRevenueGoal());   // Settings → Company sets the monthly goal (defaults to SPEC §10)
     const big = C.filter((c) => (c._digest?.totalPaid || 0) > 1999);
     const activeRate = pctOf(big.filter((c) => (c._digest?.activePct || 0) > 0).length, big.length);
     const members = C.filter((c) => /Member/.test(c.accountType || '') && c.accountType !== 'Member Incomplete').length;
@@ -9669,6 +9697,15 @@ function onChange(e) {
     setDraftStatus(o, e.target.dataset.set, e.target.dataset.val, { label: (v && v !== def.label) ? v : '' });
     renderOverlay(); return;
   }
+  // Settings Board — Company identity (commit on blur)
+  if (e.target.classList.contains('js-co-field')) {
+    const o = state.overlay; if (!o) return;
+    o.draftSettings = o.draftSettings || {}; o.draftSettings.company = o.draftSettings.company || { ...((state.settings && state.settings.company) || {}) };
+    const f = e.target.dataset.f, raw = e.target.value.trim();
+    if (f === 'revenueGoal') { const n = Number(raw.replace(/[^0-9.]/g, '')); o.draftSettings.company.revenueGoal = (raw && isFinite(n) && n > 0) ? n : undefined; }
+    else o.draftSettings.company[f] = raw || undefined;
+    renderOverlay(); return;
+  }
   // Settings Board — KPI ring label / target (commit on blur)
   if (e.target.classList.contains('js-kpi-lbl')) { const o = state.overlay; if (!o) return; const rings = ensureKpiDraft(o, e.target.dataset.role); rings[Number(e.target.dataset.i)].label = e.target.value.trim(); renderOverlay(); return; }
   if (e.target.classList.contains('js-kpi-tgt')) { const o = state.overlay; if (!o) return; const rings = ensureKpiDraft(o, e.target.dataset.role); const n = Number(e.target.value); rings[Number(e.target.dataset.i)].target = isFinite(n) && e.target.value.trim() ? n : undefined; renderOverlay(); return; }
@@ -10478,7 +10515,7 @@ function printInvoice(invoiceId) {
   if (!host) { host = document.createElement('div'); host.id = 'print-root'; document.body.appendChild(host); }
   host.innerHTML = `
     <div class="pr-doc">
-      <div class="pr-head"><div class="pr-brand">JacRentals</div><div class="pr-sub">Heavy-Equipment Rental · Sulphur, LA</div></div>
+      <div class="pr-head"><div class="pr-brand">${esc(companyName())}</div><div class="pr-sub">${esc(companyTagline())}</div></div>
       <div class="pr-meta">
         <div><span class="pr-k">Invoice</span><span class="pr-v">${esc(inv.invoiceId)}</span></div>
         <div><span class="pr-k">Bill to</span><span class="pr-v">${esc(cust ? cust.name : '—')}</span></div>
@@ -11794,7 +11831,7 @@ function exposeTestApi() {
       computeTransportPrice, isFueledType, unitTransport, rentalTransport,
       wrValidatePlan, applyWranglerData, wrFunnel, invoiceMergeable, mergeInvoiceInto,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
-      __state: state };
+      companyRevenueGoal, companyName, companyTagline, __state: state };
   } catch (e) { /* no window (non-browser) */ }
 }
 

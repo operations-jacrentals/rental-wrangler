@@ -1414,6 +1414,20 @@ select.lf-in { appearance: none; cursor: pointer; }
 .kpi-preview { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px 10px 4px; align-self: stretch; }
 .kpi-preview-l { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1px; font-size: 9.5px; font-weight: 700; color: var(--txt-3); }
 .wr-kpi-readback { font-family: ui-monospace, monospace; font-size: 10.5px; color: var(--txt-3); margin: 3px 0 6px; line-height: 1.4; }
+/* Company tab */
+.co-form { display: flex; flex-direction: column; gap: 12px; max-width: 440px; }
+.co-fld { display: flex; flex-direction: column; gap: 3px; }
+.co-in { height: 34px; padding: 0 11px; border-radius: 9px; background: var(--bg-2); border: 1px solid var(--line); color: var(--txt); font-size: 13.5px; font-weight: 600; }
+.co-in:focus { outline: none; border-color: var(--accent-line); box-shadow: 0 0 0 3px var(--accent-soft); }
+.co-goal-wrap { display: flex; align-items: center; gap: 0; background: var(--bg-2); border: 1px solid var(--line); border-radius: 9px; padding-left: 11px; }
+.co-goal-wrap:focus-within { border-color: var(--accent-line); box-shadow: 0 0 0 3px var(--accent-soft); }
+.co-goal-$ { font-family: 'Saira Condensed', system-ui, sans-serif; font-weight: 800; color: var(--txt-3); font-size: 15px; }
+.co-in-num { background: transparent; border: 0; box-shadow: none; flex: 1; font-family: 'Saira Condensed', system-ui, sans-serif; font-size: 18px; font-weight: 700; letter-spacing: .5px; }
+.co-in-num:focus { box-shadow: none; }
+.co-preview { display: flex; flex-direction: column; gap: 5px; margin-top: 4px; }
+.co-receipt { background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; text-align: center; }
+.co-receipt-brand { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 2px; font-weight: 800; font-size: 18px; color: var(--txt); }
+.co-receipt-sub { font-size: 11px; color: var(--txt-2); margin-top: 2px; }
 body.is-phone .kpi-board { flex-direction: column-reverse; }
 body.is-phone .kpi-preview { align-self: center; }
 body.is-phone .kpi-row { flex-wrap: wrap; }

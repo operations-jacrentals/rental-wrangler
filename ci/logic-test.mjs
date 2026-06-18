@@ -273,6 +273,18 @@ try {
     st.settings.kpis = savedKpis;   // restore
     ok(JSON.stringify(T.kpiFor('mechanic')) === JSON.stringify(T.legacyKpiPct('mechanic')), 'removing the override restores the default ring');
 
+    // 16) Company tab — identity read-through with shipped fallbacks; revenue goal feeds the Sales ring
+    const savedCo = st.settings.company;
+    ok(T.companyRevenueGoal() === 150000 && T.companyName() === 'JacRentals', 'company helpers fall back to the shipped defaults when unset');
+    st.settings.company = { name: 'Bayou Iron', tagline: 'Diggers & Dozers', revenueGoal: 222000 };
+    ok(T.companyRevenueGoal() === 222000 && T.companyName() === 'Bayou Iron' && T.companyTagline() === 'Diggers & Dozers', 'company override is read back');
+    const salesGoalHi = T.kpiFor('sales')[0];
+    st.settings.company = { revenueGoal: 1 };
+    const salesGoalLo = T.kpiFor('sales')[0];
+    ok(salesGoalLo >= salesGoalHi, `Sales Revenue Goal ring tracks the company goal (goal=1 → ${salesGoalLo}% ≥ goal=222k → ${salesGoalHi}%)`);
+    st.settings.company = savedCo;   // restore
+    ok(JSON.stringify(T.kpiFor('sales')) === JSON.stringify(T.legacyKpiPct('sales')), 'no company override → Sales ring matches the shipped default (150k)');
+
     return out;
   });
 
