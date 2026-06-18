@@ -267,19 +267,20 @@ input { font-family: inherit; }
    bar is hidden; each column docks its own strip (Yard→chat · Rentals→tools ·
    Customers→external chats). Swipe (native scroll-snap) moves between columns. */
 .is-phone .bottombar { display: none; }
-.mobile-dock { flex: 0 0 auto; display: flex; flex-direction: column; border-top: 1px solid var(--line);
-  background: var(--panel); padding-bottom: max(6px, env(safe-area-inset-bottom)); }
-.mdock-dots { display: flex; justify-content: center; gap: 4px; padding: 6px 0 3px; }
-.mdot { width: 22px; height: 18px; border: none; background: none; padding: 0; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
-.mdot::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--txt-3); opacity: .4; transition: opacity .15s, transform .15s, background .15s; }
-.mdot.on::before { opacity: 1; background: var(--accent); transform: scale(1.25); }
-.mdock-bar { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 46px; padding: 8px 16px; border: none; cursor: pointer; background: transparent; color: var(--txt);
-  font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1px; font-weight: 700; font-size: 14px; }
-.mdock-bar svg { width: 20px; height: 20px; flex: 0 0 auto; color: var(--accent); }
-.mdock-bar .mdock-soon { margin-left: auto; font-size: 10px; letter-spacing: 1px; color: var(--txt-3); border: 1px solid var(--line); border-radius: 6px; padding: 2px 7px; }
-.mdock-tools { display: flex; align-items: center; gap: 4px; overflow-x: auto; padding: 3px 8px 5px; scrollbar-width: none; }
-.mdock-tools::-webkit-scrollbar { display: none; }
-.mdock-tools .iconbtn { flex: 0 0 auto; min-height: 42px; }
+.mobile-dock { flex: 0 0 auto; display: flex; flex-direction: column; gap: 2px; border-top: 1px solid var(--line);
+  background: var(--panel); padding: 2px 8px max(4px, env(safe-area-inset-bottom)); touch-action: pan-y; }   /* compact; pan-y lets our pointer swipe own the horizontal */
+.mdock-dots { display: flex; justify-content: center; gap: 7px; padding: 2px 0 0; }   /* thin column indicator (column also changes by toggle/swipe) */
+.mdot { width: 34px; height: 16px; border: none; background: none; padding: 0; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+.mdot::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--txt-3); opacity: .4; transition: opacity .15s, transform .15s, background .15s; }
+.mdot.on::before { opacity: 1; background: var(--accent); transform: scale(1.3); }
+/* the toggle row: card toggles fill the width, the ONE action icon parks at the right */
+.mdock-tabs { display: flex; align-items: center; gap: 8px; }
+.mdock-tabs .col-tabs { flex: 1 1 auto; min-width: 0; max-width: none; justify-content: flex-start; overflow-x: auto; scrollbar-width: none; }
+.mdock-tabs .col-tabs::-webkit-scrollbar { display: none; }
+.mdock-sp { flex: 1 1 0; min-width: 4px; }
+.mdock-act { flex: 0 0 auto; position: relative; }
+/* footer toggles: inactive = icon (+count) only, active keeps its stamped label */
+.mdock-tabs .coltab:not(.on) .ct-lbl { display: none; }
 /* ── §M2 Mobile drag — the chat drop-zone is the BOTTOM EDGE (full width) on phones,
    mirroring the L/R edges used to switch columns. The cancel-arc is hidden (release in
    empty space cancels). */
@@ -301,7 +302,7 @@ input { font-family: inherit; }
 .is-phone .bv-btn { min-width: 44px; min-height: 44px; }                         /* per-card graph toggle (was 32) */
 .is-phone .coltab { min-height: 44px; }                                         /* card view tabs (was 30) */
 .is-phone .popup-head .x { width: 40px; height: 40px; }                         /* sheet close ✕ (was 30) */
-.is-phone .mdot { width: 44px; height: 44px; }                                  /* swipe-column dots — was 22×18 */
+.is-phone .mdot { width: 38px; height: 22px; }                                  /* column indicator dots (column also changes by toggle tap / footer swipe) */
 .is-phone .chat-tag .x { position: relative; }                                  /* tag remove ✕ keeps its 14px look… */
 .is-phone .chat-tag .x::before { content: ''; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 40px; height: 40px; }   /* …but a 40px hit box */
 /* ── §M3 — overlays & the winpicker become bottom SHEETS on phones: full-width,
@@ -323,6 +324,25 @@ input { font-family: inherit; }
 .is-phone .winpicker .wp-time input[type="time"] { height: 40px; }
 @keyframes sheetUp { from { transform: translateY(100%); } to { transform: none; } }
 @media (prefers-reduced-motion: reduce) { .is-phone .popup, .is-phone .winpicker { animation: none; } }
+/* ── §M4 — phone header: keep ALL FIVE KPI rings on screen. They drop to their own
+   full-width row under the logo/search and shrink to fit five across. ── */
+.is-phone .header { flex-wrap: wrap; gap: 8px 10px; padding: 10px 10px 0; }
+.is-phone .logo { width: 56px; height: 56px; }
+.is-phone .header-right { flex: 1 1 60%; }
+.is-phone .kpis { order: 3; flex: 0 0 100%; display: flex; justify-content: space-between; gap: 2px; }
+.is-phone .kpi-ring { min-width: 0; flex: 1 1 0; padding: 2px 0 0; }
+.is-phone .ring-wrap svg { width: 50px; height: 50px; }
+.is-phone .kpi-ring .ring-label { font-size: 9px; letter-spacing: .2px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* bigger Back/Forward jog on phones (the ‹ › card-history control) */
+.is-phone .card-jog .jog-btn { min-width: 46px; min-height: 44px; }
+.is-phone .card-jog .jog-btn svg { width: 19px; height: 19px; }
+/* single active column — no 3-wide scroll track (the grid swipe is Back/Forward, §M3) */
+.is-phone .grid { display: block; overflow: hidden; padding: 12px 8px 4px; }
+.is-phone .col { flex: 1 1 auto; padding: 0; height: 100%; }
+/* the global tool tray rendered as a phone sheet (§M1 footer → Tools) */
+.tools-tray { display: flex; flex-wrap: wrap; gap: 8px; }
+.tools-tray .iconbtn { flex: 0 0 auto; min-height: 44px; }
+.tools-tray .bb-sep { display: none; }
 /* Card tabs = a SEGMENTED NAV BAR (one container, flat segments) — now sit INSIDE
    the card at its top, centered, so the card's height/glow includes the toggles. */
 .col-tabs { display: inline-flex; gap: 3px; flex: 0 0 auto; align-self: center; max-width: calc(100% - 16px); overflow: hidden;

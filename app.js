@@ -1513,7 +1513,7 @@ function scrollToSect(card, sect) {
 function pillTo(card, recId) {
   if (recId == null) return;
   // 3-column display: a link pill forces its column to reveal the target card.
-  const revealCol = (member) => { const cs = activeSession(); const col = COLUMN_OF[member]; if (cs.cols && col) cs.cols[col] = member; };
+  const revealCol = (member) => { const cs = activeSession(); const col = COLUMN_OF[member]; if (cs.cols && col) { cs.cols[col] = member; const idx = COLUMNS.findIndex((c) => c.id === col); if (idx >= 0) state.mobileCol = idx; } };   // §M1 — also flip the visible phone column so a cross-column link lands where you can see it
   if (SHOP_TYPES.includes(card)) { if (recOf(card, recId)) { revealCol(card); openStandard('shop', recId, card); } return; }
   if (recOf(card, recId)) { revealCol(card); openStandard(card, recId); }
 }
@@ -4169,7 +4169,7 @@ function columnEl(col, session) {
   // stamp the VIEW identity (list vs which record) so render() keys scroll memory by it
   const cs = card.dataset.card && session.cards ? session.cards[card.dataset.card] : null;
   card.dataset.view = (cs && cs.mode === 'standard' && cs.recId != null) ? `${cs.recType || ''}:${cs.recId}` : 'list';
-  card.insertBefore(colTabsEl(col, active, session), card.firstChild);   // toggles live INSIDE the card top
+  if (!document.body.classList.contains('is-phone')) card.insertBefore(colTabsEl(col, active, session), card.firstChild);   // toggles live INSIDE the card top on desktop; on phones they move to the footer dock (§M1)
   const tot = card.querySelector('.card-body .list-totals');             // freeze the totals as a card FOOTER (out of the scroll)
   if (tot) card.appendChild(tot);
   wrap.appendChild(card);
@@ -4179,6 +4179,12 @@ function colTabsEl(col, active, session) {
   // Jac 2026-06-12: the toggle CHIP stays centered; the nav cluster sits OUTSIDE
   // it, parked at the row's right edge (.tabrow wraps both).
   const bar = el('div', 'tabrow');
+  bar.innerHTML = `<div class="col-tabs">${colTabButtonsHtml(col, active, session)}</div>` + colActionsHtml(active, session);
+  return bar;
+}
+/* The coltab buttons themselves (no wrapper) — shared by the desktop in-card tab row
+   (colTabsEl) AND the phone footer (mobileDockEl), so a toggle looks identical in both. */
+function colTabButtonsHtml(col, active, session) {
   // v2 (Jac call #1): the standalone Inspections + Work Orders tabs go away —
   // they live INSIDE the Unit card now; only Service keeps a tab. The hidden
   // tab still renders while its member is ACTIVE so deep links navigate home.
@@ -4187,7 +4193,7 @@ function colTabsEl(col, active, session) {
   // units column — clipboard-? icon + count; hidden when zero; it's just a filter.
   const notReady = col.members.includes('units') ? DATA.units.filter((u) => u.inspectionStatus === 'Not Ready').length : 0;
   const nrChip = notReady ? `<button class="coltab js-notready compact alert" data-tip="${notReady} Not Ready — filter the Units list"><span class="ct-ico">${CARD_ICON.inspectionsPending || CARD_ICON.inspections}</span><span class="ct-n">${notReady}</span></button>` : '';
-  bar.innerHTML = `<div class="col-tabs">` + col.members.filter((m) => !HIDDEN_TABS.has(m) || m === active).map((m) => {
+  return col.members.filter((m) => !HIDDEN_TABS.has(m) || m === active).map((m) => {
     const on = m === active, compact = SHOP_TYPES.includes(m);   // shop sub-types are icon-only
     const n = memberCount(m, session);
     const alert = SHOP_TYPES.includes(m) && shopAlertCount(m, session) > 0;   // red = work needs doing
@@ -4196,8 +4202,7 @@ function colTabsEl(col, active, session) {
       + (compact ? '' : `<span class="ct-lbl">${esc(MEMBER_TITLE[m])}</span>`)
       + `<span class="ct-n">${n}</span>`
       + `</button>`;
-  }).join('') + nrChip + `</div>` + colActionsHtml(active, session);
-  return bar;
+  }).join('') + nrChip;
 }
 /* Jac 2026-06-12: the nav cluster (List / Anchor / New tab) rides the TOGGLE row,
    not the title row — the item header gets room to breathe and head gates align right. */
@@ -4808,15 +4813,22 @@ function bottomBarInner() {
 }
 function bottomBarEl() { const bar = el('div', 'bottombar'); bar.innerHTML = bottomBarInner(); return bar; }
 // §M1 — phone-only per-column bottom strip: Yard→internal chat · Rentals→tool bar · Customers→external chats (shell).
+// §M1 phone footer — the column's card toggles (active = icon+label+count, the rest
+// icon+count only) + ONE trailing action icon, over a thin column-dot indicator. The
+// whole dock is swipeable left/right to change columns (column switching lives HERE now,
+// not in the grid — the grid swipe is Back/Forward, §M3).
 function mobileDockEl() {
-  const col = state.mobileCol;
+  const col = Math.max(0, Math.min(2, state.mobileCol));
+  const colObj = COLUMNS[col];
+  const session = activeSession();
+  const active = (session.cols && session.cols[colObj.id]) || colObj.default;
   const dots = `<div class="mdock-dots">${[0, 1, 2].map((i) => `<button class="mdot${i === col ? ' on' : ''}" data-mcol="${i}" aria-label="Column ${i + 1}"></button>`).join('')}</div>`;
-  let strip;
-  if (col === 1) strip = `<div class="mdock-tools">${bottomBarInner()}</div>`;                       // Rentals → tool bar
-  else if (col === 2) strip = `<button class="mdock-bar js-ext-chat">${I.chat}<span class="mdock-lbl">External chats</span><span class="mdock-soon">soon</span></button>`;   // Customers → external (shell)
-  else { const n = chatUnreadCount(); strip = `<button class="mdock-bar js-chat-toggle">${I.chat}<span class="mdock-lbl">Team chat</span>${n ? `<span class="bb-badge" style="position:static;margin-left:auto">${n > 9 ? '9+' : n}</span>` : ''}</button>`; }   // Yard → internal chat
+  let action;
+  if (col === 1) action = `<button class="iconbtn mdock-act js-mtools" data-tip="Tools — receipt, share, Mr. Wrangler, admin">${I.sliders || I.menu || '☰'}</button>`;   // Rentals → tools sheet
+  else if (col === 2) action = `<button class="iconbtn mdock-act js-ext-chat" data-tip="External chats (soon)">${I.chat}</button>`;                                       // Customers → external (shell)
+  else { const n = chatUnreadCount(); action = `<button class="iconbtn mdock-act js-chat-toggle" data-tip="Team chat">${I.chat}${n ? `<span class="bb-badge">${n > 9 ? '9+' : n}</span>` : ''}</button>`; }   // Yard → team chat
   const d = el('div', 'mobile-dock');
-  d.innerHTML = dots + strip;
+  d.innerHTML = dots + `<div class="mdock-tabs"><div class="col-tabs">${colTabButtonsHtml(colObj, active, session)}</div><span class="mdock-sp"></span>${action}</div>`;
   return d;
 }
 /* ════════════════════════════════════════════════════════════════════════
@@ -5826,6 +5838,7 @@ let _ovScroll = {}, _ovLastKind = null;   // keep a popup-body's scroll across i
    remain. Closing by other means (Esc/✕/backdrop) consumes the dangling entry so the
    stack stays balanced. Phone-only — desktop keeps Esc/click. Wired in boot(). ── */
 let backGuard = false, backConsuming = false;
+let mdockSwipeFired = false;   // §M1 — a footer column-swipe sets this so the trailing click is swallowed once
 function anyDismissable() { return !!(state.overlay || state.winpicker || state.chat.open || state.wrangler.open); }
 function dismissTopSheet() {
   if (state.winpicker) { closeWinPicker(); return true; }
@@ -6231,6 +6244,13 @@ function renderOverlay() {
         <button class="bv-mini${o.customize ? ' on' : ''} js-bv-customize" data-tip="Choose which values show in the card's List View">${I.sliders} List rows</button>
         <span class="spacer"></span><button class="x js-close">${I.x}</button></div>
       <div class="popup-body board-body bv-body">${o.customize ? bvCustomizePanel(o.card) : ''}${boardViewTable(o, session)}</div>`;
+    overlay.appendChild(pop);
+  } else if (o.kind === 'tools') {
+    // §M1 — the global tool tray (the desktop bottom bar) as a phone sheet
+    const pop = el('div', 'popup'); pop.style.width = '360px';
+    pop.innerHTML = `
+      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${I.sliders || I.menu || ''}</span><h3>Tools</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
+      <div class="popup-body"><div class="tools-tray">${bottomBarInner()}</div></div>`;
     overlay.appendChild(pop);
   } else if (o.kind === 'settings') {
     const cfg = o.config || { roles: {}, admin: '' };
@@ -7450,16 +7470,15 @@ function render() {
   const header = headerEl();
   const session = activeSession();
   // 3-column layout: each column paints its one active member card (+ a tab strip).
+  // §M1 — on phones we paint ONLY the active column (no 3-wide scroll track): a horizontal
+  // swipe is Back/Forward now, and the column is changed from the footer dock instead.
+  const phone = document.body.classList.contains('is-phone');
   const grid = el('div', 'grid');
-  for (const col of COLUMNS) grid.appendChild(columnEl(col, session));
+  const shown = phone ? [COLUMNS[Math.max(0, Math.min(2, state.mobileCol))]] : COLUMNS;
+  for (const col of shown) grid.appendChild(columnEl(col, session));
   const bottomBar = bottomBarEl();
   $('#app').replaceChildren(header, grid, bottomBar);
-  // §M1 — on phones, the global bar is hidden (CSS) and a per-column strip is docked;
-  // restore the swipe position so an action's re-render doesn't snap back to column 1.
-  if (document.body.classList.contains('is-phone')) {
-    $('#app').appendChild(mobileDockEl());
-    grid.scrollLeft = state.mobileCol * (grid.clientWidth || window.innerWidth);
-  }
+  if (phone) $('#app').appendChild(mobileDockEl());   // the global bar is hidden (CSS); the footer dock carries the toggles + column nav
   // restore scroll by VIEW: same view → keep your spot; back to a list → return to the
   // row you left; opened a record → top of Standard view (a targeted link scrolls itself after).
   document.querySelectorAll('.card[data-card]').forEach((c) => {
@@ -8001,6 +8020,7 @@ function dispatchDrop(p, t) {
 }
 
 function onClick(e) {
+  if (mdockSwipeFired) { mdockSwipeFired = false; e.stopPropagation(); e.preventDefault(); return; }   // §M1 — swallow the click that ends a footer column-swipe
   const t = e.target;
   const closest = (sel) => t.closest(sel);
 
@@ -8132,6 +8152,7 @@ function onClick(e) {
   if (closest('.js-feedback')) { e.stopPropagation(); return wranglerNewChat(); }   // §18d folded: the old bug/request form is now the one Mr. Wrangler chat
   // §17 internal team dock
   if (closest('[data-mcol]')) { e.stopPropagation(); state.mobileCol = +closest('[data-mcol]').dataset.mcol; return render(); }   // §M1 dot nav
+  if (closest('.js-mtools')) { e.stopPropagation(); return openOverlay({ kind: 'tools' }); }   // §M1 phone footer → the global tool tray as a sheet
   if (closest('.js-ext-chat')) { e.stopPropagation(); return toast('External customer & vendor chats arrive with the messaging backend.'); }
   if (closest('.js-chat-toggle')) { e.stopPropagation(); state.chat.open = !state.chat.open; return render(); }
   if (closest('.js-chat-close')) { e.stopPropagation(); state.chat.open = false; return render(); }
@@ -8192,7 +8213,11 @@ function onClick(e) {
     // A1 — the Services (heart) tab filters the Units list to service-due as a removable
     // pill, instead of switching to a stuck Service view you can't clear. (Jac 2026-06-15)
     if (ct.dataset.member === 'serviceOrders') { const s = activeSession(); if (s.cols) s.cols.left = 'units'; s.cards.units.mode = 'list'; s.cards.units.recId = null; s.cards.units.recType = null; addColFilter('units', '__svc', 'due'); return; }
-    const cs = activeSession(); if (cs.cols) cs.cols[ct.dataset.col] = ct.dataset.member; return render();
+    const cs = activeSession(); if (cs.cols) cs.cols[ct.dataset.col] = ct.dataset.member;
+    // §M1 — on phones the footer toggle is the primary nav (no in-card List button): tapping a
+    // card shows its LIST (the back chevron returns from a record). Desktop keeps per-member state.
+    if (document.body.classList.contains('is-phone')) { const mc = cs.cards[ct.dataset.member]; if (mc) { mc.mode = 'list'; mc.recId = null; mc.recType = null; } }
+    return render();
   }
   // §2.3 dispatch timeline — day nav + open a stop's rental (Phase 6)
   if (closest('.js-disp-day')) { e.stopPropagation(); state.dispArm = null; state.dispatchDay = addDaysISO(state.dispatchDay || TODAY_ISO, Number(closest('.js-disp-day').dataset.dir)); return render(); }
@@ -10954,17 +10979,22 @@ function boot() {
     if (backConsuming) { backConsuming = false; return; }
     if (anyDismissable()) { backGuard = false; dismissTopSheet(); }   // entry already popped by the browser → re-pushed by render if more remain
   });
-  // §M1 — phone swipe: the grid is a scroll-snap track; on settle, sync the active
-  // column (drives the per-column bottom strip + the dot indicator). Capture phase
-  // because scroll doesn't bubble. Change-guarded so the render() scroll-restore is a no-op.
-  let gridScrollT = null;
-  document.addEventListener('scroll', (e) => {
-    if (!e.target.classList || !e.target.classList.contains('grid') || !document.body.classList.contains('is-phone')) return;
-    clearTimeout(gridScrollT);
-    gridScrollT = setTimeout(() => {
-      const g = e.target, idx = Math.max(0, Math.min(2, Math.round(g.scrollLeft / (g.clientWidth || 1))));
-      if (idx !== state.mobileCol) { state.mobileCol = idx; render(); }
-    }, 130);
+  // §M1 — phone column switching lives in the FOOTER now (tap a dot/toggle, or swipe the
+  // dock left/right). The grid no longer scroll-snaps between columns (its swipe is
+  // Back/Forward, §M3). A swipe that fires swallows the trailing click on its start target.
+  let mdockSwipe = null;
+  document.addEventListener('pointerdown', (e) => {
+    const dk = e.target.closest && e.target.closest('.mobile-dock');
+    mdockSwipe = dk ? { x: e.clientX, y: e.clientY, id: e.pointerId } : null;
+  }, true);
+  document.addEventListener('pointerup', (e) => {
+    const s = mdockSwipe; mdockSwipe = null;
+    if (!s || e.pointerId !== s.id) return;
+    const dx = e.clientX - s.x, dy = e.clientY - s.y;
+    if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy) * 1.4) return;   // not a clean horizontal swipe
+    mdockSwipeFired = true;                                                // swallow the trailing click (e.g. if it started on a toggle)
+    const next = Math.max(0, Math.min(2, state.mobileCol + (dx < 0 ? 1 : -1)));   // left → next column, right → previous
+    if (next !== state.mobileCol) { state.mobileCol = next; haptic(8); render(); }
   }, true);
   initDrag();   // §15c drag & drop link engine — #drag-layer singleton + document pointer listeners
   try { loadGoogleMaps(); } catch (e) {}   // §2.3 warm the Maps SDK at boot so the dispatch cockpit + transport editor open instantly (no first-open wait / "load it twice")
