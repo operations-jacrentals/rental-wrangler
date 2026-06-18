@@ -110,6 +110,24 @@ function migrateCustomers() {
       }
       migrationDirty = true;
     }
+    // Card-bound agreements: each card carries an APPEND-ONLY array of immutable
+    // signing records (the agreement is attached to the CARD, signed per account
+    // type, frozen at signing). Fold the legacy singular `agreement` — or, on the
+    // default card, the legacy customer-level signature — into agreements[0].
+    c.cards.forEach((k) => {
+      if (Array.isArray(k.agreements)) return;
+      k.agreements = [];
+      const legacy = (k.agreement && k.agreement.signature) ? k.agreement
+        : (k.isDefault && c.signature ? { signedAt: c.agreementSignedAt || '', version: c.agreementType || 'rental', signature: c.signature, selfie: c.selfie } : null);
+      if (legacy && legacy.signature) {
+        const key = legacy.version === 'membership' ? 'membership' : 'rental';
+        const ag = AGREEMENTS[key] || AGREEMENTS.rental;
+        k.agreements.push({ id: 'SIG-' + c.customerId + '-' + (k.id || '0'), key, title: ag.title, text: ag.text,
+          accountType: c.accountType || '', signedAt: legacy.signedAt || '', signerName: c.name || '',
+          signature: legacy.signature, selfie: legacy.selfie || '', driveFileId: null, driveUrl: null });
+      }
+      migrationDirty = true;
+    });
     // §14b ACH bank accounts on file — parallel to cards[]; tokenized via Stripe (us_bank_account),
     // we store only last4 + bankName + type + the Stripe pm id (never the raw routing/account).
     if (!Array.isArray(c.achAccounts)) { c.achAccounts = []; migrationDirty = true; }
@@ -222,6 +240,65 @@ function cardFlag(c) {
   const def = defaultCard(c); return (def && cardExpiringSoon(def)) ? 'expiring' : 'ok';
 }
 const CARD_FLAG_META = { ok: { label: 'Card OK', color: 'green' }, expiring: { label: 'Card Expiring', color: 'yellow' }, none: { label: 'No Card', color: 'red' } };
+/* ── Card-bound agreements (§7.1b) ──
+   Every card carries an append-only array of immutable signing records. The
+   agreement a card needs is decided by the customer's CURRENT account type
+   (Member-ness flips rental ⇄ membership; Business-ness doesn't change it). A card
+   is AUTHORIZED only when its latest signing matches the required key; an account-
+   type change makes a previously-signed card STALE until re-signed. */
+const requiredAgreementKey = (c) => /member/i.test((c && c.accountType) || '') ? 'membership' : 'rental';
+const cardSignings = (k) => (k && Array.isArray(k.agreements)) ? k.agreements : (k && k.agreement && k.agreement.signature ? [{ key: k.agreement.version === 'membership' ? 'membership' : 'rental', signedAt: k.agreement.signedAt, signature: k.agreement.signature, selfie: k.agreement.selfie }] : []);
+function cardCurrentSigning(c, k) { const want = requiredAgreementKey(c); const s = cardSignings(k); for (let i = s.length - 1; i >= 0; i--) { if ((s[i].key || 'rental') === want) return s[i]; } return null; }
+const cardAuthorized = (c, k) => !!cardCurrentSigning(c, k);
+function cardSignState(c, k) { return cardAuthorized(c, k) ? 'authorized' : (cardSignings(k).length ? 'stale' : 'unsigned'); }
+/** THE GATE — true only when EVERY active card is signed for the current account type. */
+const accountAgreementsOk = (c) => customerCards(c).every((k) => cardAuthorized(c, k));
+const accountAgreementsBlocked = (c) => !!c && !accountAgreementsOk(c);
+const unsignedCardCount = (c) => customerCards(c).filter((k) => !cardAuthorized(c, k)).length;
+/* §14 booking/delivery gate — blocked when there's no valid card OR any card isn't
+   signed for the current account type. Charging is NEVER gated on this. */
+const cardGateBlocked = (cust) => !!cust && (!hasValidCard(cust) || accountAgreementsBlocked(cust));
+function cardGateReason(cust) {
+  if (!cust) return '';
+  if (!hasValidCard(cust)) return 'no valid card on file';
+  if (accountAgreementsBlocked(cust)) { const n = unsignedCardCount(cust); return `${n} card${n > 1 ? 's' : ''} not signed for the current account type`; }
+  return '';
+}
+/* Append an immutable signing record to a card — the current account type's
+   agreement is FROZEN onto the card (title + full text snapshot) with the
+   signature + selfie. Re-signing (new card / account-type change) appends; it
+   never edits a prior record. */
+function signCardAgreement(c, k, signature, selfie) {
+  if (!c || !k || !signature) return;
+  const key = requiredAgreementKey(c); const ag = AGREEMENTS[key] || AGREEMENTS.rental;
+  if (!Array.isArray(k.agreements)) k.agreements = [];
+  k.agreements.push({ id: 'SIG-' + (state.seq++), key, title: ag.title, text: ag.text,
+    accountType: c.accountType || '', signedAt: TODAY_ISO, signerName: c.name || fullName(c),
+    signature, selfie: selfie || '', driveFileId: null, driveUrl: null });
+  reindex('customers', c);
+  logAction(c, `${ag.title} signed on ${brandName(k.brand)} ••${k.last4}`);
+}
+/* Immutable PDF of a frozen signing — opens a clean, read-only print view rendered
+   ENTIRELY from the stored snapshot (title + frozen text + signature + selfie +
+   signer + date). Browser "Save as PDF" yields a file that can't be edited; the
+   content re-renders identically every time. (Drive archival can backfill later.) */
+function openSignedPdf(custId, cardId, sigId) {
+  const c = IDX.customer.get(custId || ''); const k = c && customerCards(c).find((x) => x.id === cardId);
+  const s = k && cardSignings(k).find((x) => x.id === sigId);
+  if (!s) return toast('Signed agreement not found.');
+  const win = window.open('', '_blank'); if (!win) return toast('Allow pop-ups to open the PDF.');
+  const e2 = (t) => String(t == null ? '' : t).replace(/[&<>]/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m]));
+  win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${e2(s.title)} — ${e2(s.signerName)}</title>
+    <style>body{font:13px/1.55 Georgia,'Times New Roman',serif;color:#111;margin:40px;max-width:760px}h1{font-size:19px;margin:0 0 4px}.meta{color:#444;margin:0 0 20px;font-size:12px}pre{white-space:pre-wrap;font:inherit;margin:0}.sigs{display:flex;gap:28px;margin-top:26px;flex-wrap:wrap}figure{margin:0}.sigs img{border:1px solid #ccc;max-width:260px;max-height:120px;display:block}figcaption{font-size:10px;color:#555;text-transform:uppercase;letter-spacing:1.2px;margin-top:5px}.bar{margin-top:26px}@media print{.bar{display:none}}</style>
+    </head><body>
+    <h1>${e2(s.title)}</h1>
+    <p class="meta">${e2(s.signerName)}${s.accountType ? ' · ' + e2(s.accountType) : ''} · accepted ${e2(s.signedAt || '—')} · card ••${e2(k.last4)}</p>
+    <pre>${e2(s.text)}</pre>
+    <div class="sigs">${s.signature ? `<figure><img src="${s.signature}" alt="signature"><figcaption>Signature</figcaption></figure>` : ''}${s.selfie ? `<figure><img src="${s.selfie}" alt="selfie"><figcaption>Selfie on file</figcaption></figure>` : ''}</div>
+    <div class="bar"><button onclick="window.print()" style="padding:9px 18px;font:13px sans-serif">Save as PDF / Print</button></div>
+    </body></html>`);
+  win.document.close();
+}
 function setCardDefault(custId, cardId) {
   const c = IDX.customer.get(custId); if (!c) return;
   const k = customerCards(c).find((x) => x.id === cardId); if (!k) return;
@@ -281,21 +358,22 @@ function paymentMethodsSection(c) {
 }
 function cardTabBody(c) {
   const cards = customerCards(c);
-  const consent = !!(c.signature && c.selfie);
+  const SIGN_BADGE = { authorized: ['Signed', 'green'], stale: ['Re-sign', 'yellow'], unsigned: ['Unsigned', 'red'] };
   const rows = cards.length ? cards.map((k) => {
     const exp = cardExpired(k), soon = cardExpiringSoon(k);
+    const st = cardSignState(c, k), sb = SIGN_BADGE[st];
     return `<div class="card-row">
       <span class="cr-brand">${esc(brandName(k.brand))} ••${esc(k.last4)}</span>
       <span class="cr-exp${exp ? ' bad' : soon ? ' warn' : ''}">${k.expMonth ? esc(k.expMonth + '/' + String(k.expYear).slice(-2)) : ''}${exp ? ' · expired' : ''}</span>
       <span class="cr-nick inline-edit" data-edit="cardNick" data-rec="${c.customerId}" data-card="${k.id}">${k.nickname ? esc(k.nickname) : '<span class="add-field" data-r="R5c">+Nickname</span>'}</span>
-      ${k.agreement ? badge('Agreement ✓', 'green') : ''}
+      ${badge(sb[0], sb[1])}
+      ${st !== 'authorized' ? actionPill('commit', 'Sign', { js: 'js-card-sign', data: { rec: c.customerId, card: k.id } }) : ''}
       ${k.isDefault ? badge('Default', 'blue') : actionPill('commit', 'Make default', { js: 'js-card-default', data: { rec: c.customerId, card: k.id } })}
       <button class="x js-card-remove" data-rec="${c.customerId}" data-card="${k.id}" data-tip="Remove card">${I.x}</button>
     </div>`;
   }).join('') : '<span class="muted" style="font-size:12px">No cards on file.</span>';
   return `<div class="cards-list">${rows}</div>
-    ${consent ? `<div style="margin-top:10px">${addBtn('Card', { link: true, js: 'js-add-card', data: { rec: c.customerId } })}</div>`
-              : '<span class="muted" style="font-size:11px">Capture a selfie + signature (Edit account) before adding a card.</span>'}`;
+    <div style="margin-top:10px">${addBtn('Card', { link: true, js: 'js-add-card', data: { rec: c.customerId } })}</div>`;
 }
 function achTabBody(c) {
   const banks = customerBanks(c);
@@ -1993,14 +2071,14 @@ function ghostPill(label, { js, data } = {}) {
  *  foot. Pure chrome, composed from already-stamped parts (the muted close, R17/R18 in
  *  the foot) — no own data-r. `icon` = an `I.*`/`CARD_ICON.*` glyph; `headRight` =
  *  extra head buttons (e.g. the phone-QR); `body`/`foot` = innerHTML strings. */
-function popupShell({ icon, title, tag, danger, headRight = '', body = '', foot = '', closeJs = 'js-close', bodyClass = '' } = {}) {
+function popupShell({ icon, title, tag, danger, headRight = '', headRail = '', body = '', foot = '', closeJs = 'js-close', bodyClass = '' } = {}) {
+  // headRail (optional): raw HTML that REPLACES the stamped title block — used when a
+  // tab rail IS the header (the card-bound agreements form). Default keeps the title.
   return `
     <div class="pl-cap${danger ? ' danger' : ''}"></div>
     <span class="pl-rivet tl"></span><span class="pl-rivet tr"></span><span class="pl-rivet bl"></span><span class="pl-rivet br"></span>
-    <div class="popup-head">
-      ${icon ? `<span class="pl-ic">${icon}</span>` : ''}
-      <div class="pl-title"><h3>${esc(title || '')}</h3>${tag ? `<span class="pl-tag">${esc(tag)}</span>` : ''}</div>
-      <span class="spacer"></span>${headRight}
+    <div class="popup-head${headRail ? ' has-rail' : ''}">
+      ${headRail || `${icon ? `<span class="pl-ic">${icon}</span>` : ''}<div class="pl-title"><h3>${esc(title || '')}</h3>${tag ? `<span class="pl-tag">${esc(tag)}</span>` : ''}</div><span class="spacer"></span>${headRight}`}
       <button class="x ${closeJs}" aria-label="Close">${I.x}</button>
     </div>
     <div class="popup-body${bodyClass ? ' ' + bodyClass : ''}">${body}</div>
@@ -3256,10 +3334,11 @@ function headFlagsHtml(card, rec) {
     const activeR = DATA.rentals.find((r) => r.customerId === rec.customerId && ACTIVE_RENTAL.has(r.status));
     const rSt = activeR ? getStatus('rentalStatus', rentalDisplayStatus(activeR)) : null;
     const noCard = cardFlag(rec) === 'none';
-    const acctDone = !!(rec.selfie && rec.signature);
+    const unsignedCard = !noCard && accountAgreementsBlocked(rec);   // §7.1b has cards but one isn't signed for the current type
+    const acctDone = customerCards(rec).length > 0 && accountAgreementsOk(rec);
     return flagsStack([rec.phone ? flagEl(rec.phone, 'gray') : '', flagEl(acct.label, acct.color, { icon: CARD_ICON.customers })])
       + flagsStack([pay ? flagEl(pay.label, pay.color, { icon: CARD_ICON.invoices, alert: payBad }) : '', rSt ? flagEl(rSt.label, rSt.color, { icon: CARD_ICON.rentals, card: 'rentals', recId: activeR.rentalId, alert: true }) : ''])
-      + (noCard ? flagsStack([flagEl('No Card', 'red', { alert: true, sect: 'sec-cards' })]) : '')
+      + (noCard ? flagsStack([flagEl('No Card', 'red', { alert: true, sect: 'sec-cards' })]) : unsignedCard ? flagsStack([flagEl('Unsigned Card', 'red', { alert: true, sect: 'sec-cards' })]) : '')
       + `<span style="margin-left:auto">${gatePillRaw(acctDone ? 'Account' : 'Incomplete', acctDone ? 'green' : 'yellow', 'js-edit-customer', { rec: rec.customerId }, true)}</span>`;
   }
   if (card === 'categories') {
@@ -6242,62 +6321,71 @@ function renderOverlay() {
     overlay.appendChild(pop);
   } else if (o.kind === 'newCustomer') {
     const d = o.draft; const isEdit = !!o.editId;
+    const custRec = IDX.customer.get(o.editId || '');
+    const cards = custRec ? customerCards(custRec) : [];
+    const tab = (o.tab && (o.tab === 'account' || cards.some((k) => k.id === o.tab))) ? o.tab : 'account';
     const indOpts = NC_INDUSTRIES.map((i) => `<option value="${esc(i)}"></option>`).join('');
     const acctPills = NC_ACCOUNT_TYPES.map((t) => `<button type="button" class="nc-pill js-nc-acct${t === d.accountType ? ' on' : ''}" data-val="${esc(t)}">${esc(getStatus('customerAccountType', t).label)}</button>`).join('');
-    const selfieBox = d.selfie ? `<img class="nc-thumb" src="${esc(d.selfie)}" alt="selfie" />` : `<div class="nc-thumb empty">No photo</div>`;
-    const sigBox = d.signature ? `<img class="nc-thumb sig" src="${esc(d.signature)}" alt="signature" />` : `<canvas class="nc-sigpad" width="400" height="120"></canvas>`;
-    const custRec = IDX.customer.get(o.editId || '');
-    const cardOnFile = hasCardOnFile(custRec);
-    const cardShort = cardOnFile ? `${brandName(custRec.cardBrand)} ••••${custRec.cardLast4}` : 'No card';
-    const agType = /member/i.test(d.accountType || '') ? 'membership' : 'rental';
-    const ag = AGREEMENTS[agType];
-    const agSigned = d.agreementSignedAt && d.agreementType === agType;
-    const pop = el('div', 'popup nc-popup');
-    const ncFoot = `<button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill ignition js-nc-save" data-r="R17">${isEdit ? 'Save account' : 'Create customer'}</button>`;
-    pop.innerHTML = popupShell({
-      icon: CARD_ICON.customers || '', title: isEdit ? 'Edit / Complete Account' : 'New Customer', tag: 'Customer · Account packet',
-      headRight: isEdit ? `<button class="iconbtn js-nc-qr" data-tip="Open on phone">${I.qr}</button>` : '',
-      foot: ncFoot,
-      body: `
+    const nameVal = (d.name != null && d.name !== '') ? d.name : `${d.firstName || ''} ${d.lastName || ''}`.trim();
+    const AG_LOCK = '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
+    const AG_CAM = '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>';
+    // The card rail IS the header (no title). Account tab + a tab per card (signed dot) + a +Card add.
+    const railTabs = `<div class="ag-tabs" role="tablist">
+      <button type="button" class="ag-tab js-nc-tab${tab === 'account' ? ' on' : ''}" data-tab="account">Account</button>
+      ${cards.map((k) => `<button type="button" class="ag-tab js-nc-tab${tab === k.id ? ' on' : ''}" data-tab="${esc(k.id)}"><span class="ag-dot ${cardAuthorized(custRec, k) ? 'ok' : 'bad'}"></span>${esc(brandName(k.brand))} ••${esc(k.last4)}</button>`).join('')}
+      ${addBtn('Card', { link: true, js: 'js-add-card', data: { rec: o.editId || '' } })}
+    </div>`;
+    const headRail = `${railTabs}<span class="spacer"></span>${isEdit ? `<button class="iconbtn js-nc-qr" data-tip="Open on phone">${I.qr}</button>` : ''}`;
+    let body;
+    if (tab === 'account') {
+      const blocked = custRec && accountAgreementsBlocked(custRec);
+      const nBad = custRec ? unsignedCardCount(custRec) : 0;
+      body = `
+        ${blocked ? `<div class="ag-banner bad">${nBad} card${nBad > 1 ? 's' : ''} needs signing — On-Rent &amp; delivery blocked.</div>` : ''}
         <div class="nc-grid">
-          <label class="nc-field"><span>First name *</span><input class="nc-in" data-f="firstName" value="${esc(d.firstName)}" autocomplete="off" /></label>
-          <label class="nc-field"><span>Last name</span><input class="nc-in" data-f="lastName" value="${esc(d.lastName)}" autocomplete="off" /></label>
-          <label class="nc-field nc-wide"><span>Company</span><input class="nc-in" data-f="company" value="${esc(d.company)}" autocomplete="off" /></label>
+          <label class="nc-field"><span>Name *</span><input class="nc-in" data-f="name" value="${esc(nameVal)}" autocomplete="off" placeholder="First Last" /></label>
+          <label class="nc-field"><span>Company</span><input class="nc-in" data-f="company" value="${esc(d.company)}" autocomplete="off" /></label>
           <label class="nc-field"><span>Phone *</span><input class="nc-in" data-f="phone" value="${esc(d.phone)}" autocomplete="off" /></label>
           <label class="nc-field"><span>Email</span><input class="nc-in" data-f="email" type="email" value="${esc(d.email)}" autocomplete="off" /></label>
-          <label class="nc-field nc-wide"><span>Industry</span><input class="nc-in" data-f="industry" list="nc-industries" value="${esc(d.industry)}" autocomplete="off" /></label>
+          <label class="nc-field"><span>Industry</span><input class="nc-in" data-f="industry" list="nc-industries" value="${esc(d.industry)}" autocomplete="off" /></label>
+          <label class="nc-field"><span>Notes</span><input class="nc-in" data-f="accountNotes" value="${esc(d.accountNotes)}" autocomplete="off" /></label>
           <div class="nc-field nc-wide"><span>Account type</span><div class="nc-pills">${acctPills}</div></div>
-          <label class="nc-field nc-wide"><span>Notes</span><input class="nc-in" data-f="accountNotes" value="${esc(d.accountNotes)}" autocomplete="off" /></label>
         </div>
-        <datalist id="nc-industries">${indOpts}</datalist>
-        <div class="nc-sec-title">${esc(ag.title)}${agSigned ? ' <span class="nc-ag-ok">✓ accepted ' + esc(d.agreementSignedAt) + '</span>' : ' <span class="nc-ag-note">— sign below to accept</span>'}</div>
-        <div class="nc-agreement" tabindex="0">${esc(ag.text)}</div>
-        <div class="nc-sec-title">Account packet</div>
-        <div class="nc-packet">
-          <div class="nc-tile nc-tile-sig${d.signature ? ' done' : ''}">
-            <div class="nc-tile-head"><span class="nc-cap-lbl">Signature${agSigned ? '' : ' *'}</span>${d.signature ? '<span class="nc-ok">✓</span>' : ''}</div>
-            ${sigBox}
-            <div class="nc-tile-act">${d.signature ? '<button class="pill ghost js-nc-sig-clear" data-r="R18">Re-sign</button>' : '<button class="pill c-green js-nc-sig-save" data-r="R17">Accept &amp; sign</button><button class="pill ghost js-nc-sig-clearpad" data-r="R18">Clear</button>'}</div>
+        <datalist id="nc-industries">${indOpts}</datalist>`;
+    } else {
+      const k = cards.find((x) => x.id === tab);
+      const meta = `${k.isDefault ? 'Default · ' : ''}${k.expMonth ? 'exp ' + k.expMonth + '/' + String(k.expYear).slice(-2) : 'no exp'}`;
+      const st = cardSignState(custRec, k);
+      if (st === 'authorized') {
+        const sg = cardCurrentSigning(custRec, k);
+        body = `
+          <div class="ag-meta">${esc(meta)}<span class="ag-metasep"></span>${badge('Authorized', 'green')}</div>
+          <div class="ag-signed"><span class="ag-lock">${AG_LOCK}</span><span class="t"><b>${esc(sg.title)}</b> · signed ${esc(sg.signedAt || '—')}</span>${actionPill('commit', '⤓ PDF', { js: 'js-ncsign-pdf', data: { card: k.id, sig: sg.id } })}</div>
+          <div class="ag-packet">
+            <div class="ag-pcell"><div class="ag-pcap">Selfie</div>${sg.selfie ? `<img class="ag-selfie" src="${esc(sg.selfie)}" alt="selfie on file" />` : '<div class="ag-selfie empty">—</div>'}</div>
+            <div class="ag-pcell"><div class="ag-pcap">Signature</div><img class="ag-sigthumb" src="${esc(sg.signature)}" alt="signature on file" /></div>
           </div>
-          <div class="nc-tiles">
-            <div class="nc-tile${d.selfie ? ' done' : ''}">
-              <div class="nc-tile-head"><span class="nc-cap-lbl">Selfie</span>${d.selfie ? '<span class="nc-ok">✓</span>' : ''}</div>
-              ${selfieBox}
-              <div class="nc-tile-act"><label class="pill c-commit" data-r="R17">${d.selfie ? 'Retake' : 'Take photo'}<input type="file" accept="image/*" capture="user" class="js-nc-selfie" hidden /></label>${d.selfie ? '<button class="pill ghost js-nc-selfie-clear" data-r="R18">Remove</button>' : ''}</div>
-            </div>
-            <div class="nc-tile${cardOnFile ? ' done' : ''}">
-              <div class="nc-tile-head"><span class="nc-cap-lbl">Card on file</span>${cardOnFile ? '<span class="nc-ok">✓</span>' : ''}</div>
-              <div class="nc-thumb empty${cardOnFile ? ' good' : ''}">${esc(cardShort)}</div>
-              <div class="nc-tile-act">${
-                !(d.signature && d.selfie) ? '<span class="muted" style="font-size:11px">Sign first</span>'
-                  : !o.editId ? '<span class="muted" style="font-size:11px">Add name &amp; phone</span>'
-                    : `<button class="pill c-commit js-add-card" data-rec="${o.editId}" data-r="R17">${cardOnFile ? 'Replace card' : 'Add card'}</button>`
-              }</div>
-            </div>
+          <p class="muted" style="font-size:11px;margin:12px 2px 0">🔒 Locked — the exact agreement accepted on this card. Re-signing happens only on a new card or an account-type change.</p>`;
+      } else {
+        const key = requiredAgreementKey(custRec); const ag = AGREEMENTS[key];
+        const selfie = o.signDraft && o.signDraft.selfie;
+        body = `
+          <div class="ag-meta">${esc(meta)}<span class="ag-metasep"></span>${badge(st === 'stale' ? 'Re-sign' : 'Unsigned', 'red')}</div>
+          <div class="ag-gate"><span class="lead">${st === 'stale' ? 'Account type changed — re-sign required.' : 'Sign to allow On-Rent &amp; delivery.'}</span><span class="sub">Card can still be charged.</span></div>
+          <div class="ag-readref"><span><b>${esc(ag.title)}</b></span><button type="button" class="ag-readbtn js-ncsign-read" data-card="${esc(k.id)}">${o.signRead === k.id ? 'Hide' : 'Read'} ↗</button></div>
+          ${o.signRead === k.id ? `<div class="nc-agreement" tabindex="0">${esc(ag.text)}</div>` : ''}
+          <div class="ag-capcap">Capture both to authorize</div>
+          <div class="ag-caprow">
+            <label class="ag-selfiebtn">${selfie ? `<img class="ag-selfie" src="${esc(selfie)}" alt="selfie" />` : `${AG_CAM}<span class="l">Selfie</span>`}<input type="file" accept="image/*" capture="user" class="js-ncsign-selfie" hidden /></label>
+            <canvas class="nc-sigpad ag-pad" width="500" height="220"></canvas>
           </div>
-        </div>
-        ${o.error ? `<div class="login-err" style="text-align:left;margin-top:10px">${esc(o.error)}</div>` : ''}`,
-    });
+          <div class="ag-acceptrow">${actionPill('commit', 'Accept & Sign', { js: 'js-ncsign-save', data: { card: k.id } })}${ghostPill('Clear', { js: 'js-nc-sig-clearpad' })}</div>`;
+      }
+    }
+    const pop = el('div', 'popup nc-popup');
+    const ncFoot = `<button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill ignition js-nc-save" data-r="R17">${isEdit ? 'Save account' : 'Create customer'}</button>`;
+    pop.innerHTML = popupShell({ headRail, foot: ncFoot, bodyClass: 'nc-tabbody',
+      body: `${body}${o.error ? `<div class="login-err" style="text-align:left;margin-top:10px">${esc(o.error)}</div>` : ''}` });
     overlay.appendChild(pop);
     if (o.cardSub) {   // §14 the "Add card" panel rendered BESIDE the form (not replacing it)
       const cc = IDX.customer.get(o.editId);
@@ -6402,12 +6490,11 @@ function renderOverlay() {
     // Stripe Card Element — raw card data stays inside Stripe's iframe.
     const c = IDX.customer.get(o.customerId);
     if (!c) { state.overlay = null; return; }
-    const consent = !!(c.signature && c.selfie);
     const pop = el('div', 'popup'); pop.style.width = '430px';
     pop.innerHTML = popupShell({ icon: CARD_ICON.customers || '', title: `Add card — ${c.name}`, tag: 'Customer · card on file',
-      foot: `<button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill ignition js-card-save" data-r="R17" ${consent ? '' : 'disabled style="opacity:.45;cursor:default"'}>Save card</button>`,
+      foot: `<button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill ignition js-card-save" data-r="R17">Save card</button>`,
       body: `
-        ${consent ? '' : `<div class="login-err" style="text-align:left;margin-bottom:12px">A selfie + signature are required first (card authorization). <button class="pill c-commit js-edit-customer" data-r="R17" data-rec="${c.customerId}" style="margin-left:6px">Complete account</button></div>`}
+        <p class="muted" style="font-size:11px;margin:0 0 10px">Saved cards can be charged right away. The account can't go On Rent or log deliveries until the card is signed (next step).</p>
         <div class="pay-cap">Card number</div>
         <div class="pay-card-field" id="sl-card-element"></div>
         <div class="pay-err" id="sl-card-error"></div>
@@ -6511,8 +6598,8 @@ function renderOverlay() {
   if (o.kind === 'partform') document.querySelector('.overlay .js-pf2-desc')?.focus();   // Jac: Part/Task field focused by default
   if (o.kind === 'newCustomer') setupSignaturePad();
   if (o.kind === 'payment') setupPayAlloc();   // live counter for the §19 allocation rows
-  if (o.kind === 'addCard') { const cc = IDX.customer.get(o.customerId); if (cc && cc.signature && cc.selfie) mountCardElement(); }   // only mount with consent (nothing to orphan otherwise)
-  if (o.kind === 'newCustomer' && o.cardSub) { const cc = IDX.customer.get(o.editId); if (cc && cc.signature && cc.selfie) mountCardElement(); }   // §14 the side-by-side Add-card panel
+  if (o.kind === 'addCard') { const cc = IDX.customer.get(o.customerId); if (cc) mountCardElement(); }   // §7.1b card saved first, signed after
+  if (o.kind === 'newCustomer' && o.cardSub) { const cc = IDX.customer.get(o.editId); if (cc) mountCardElement(); }   // §14 the side-by-side Add-card panel
 }
 const openOverlay = (o) => { state.datepick = null; _ovScroll[o.kind] = 0; state.overlay = o; renderOverlay(); };   // fresh open starts at top
 /* ── §15 in-app feedback: bug/request → queued to the backend Feedback tab ── */
@@ -6989,6 +7076,16 @@ function fabStackEl() {
 function ncSyncInputs() {
   const o = state.overlay; if (!o || o.kind !== 'newCustomer') return;
   const root = document.querySelector('.overlay .popup-body'); if (root) root.querySelectorAll('[data-f]').forEach((i) => { o.draft[i.dataset.f] = i.value.trim(); });
+  ncApplyName(o.draft);
+}
+/* The form uses ONE "Name" field — everything after the first space is the last
+   name. Split it into firstName/lastName (the model's canonical pair). */
+function ncApplyName(d) {
+  if (!d || d.name == null) return;
+  const n = String(d.name).trim();
+  if (!n) { d.firstName = ''; d.lastName = ''; return; }
+  const parts = n.split(/\s+/);
+  d.firstName = parts[0]; d.lastName = parts.slice(1).join(' ');
 }
 // Wire the signature canvas for finger/stylus/mouse drawing (white bg → JPEG export).
 function setupSignaturePad() {
@@ -8117,6 +8214,19 @@ function onClick(e) {
   if (closest('.js-haptics')) { e.stopPropagation(); const on = closest('.js-haptics').dataset.val === '1'; state.hapticsOff = !on; try { localStorage.setItem('jactec.hapticsOff', on ? '0' : '1'); } catch (err) {} if (on) haptic([12, 30, 12]); renderOverlay(); return; }   // §M-touch — toggle + a sample buzz when turning ON
   if (closest('.js-nc-save')) { e.stopPropagation(); return saveNewCustomer(); }
   if (closest('.js-nc-acct')) { const b = closest('.js-nc-acct'); e.stopPropagation(); ncSyncInputs(); state.overlay.draft.accountType = b.dataset.val; renderOverlay(); return; }
+  // §7.1b card-bound agreements: tab rail + per-card signing
+  if (closest('.js-nc-tab')) { e.stopPropagation(); ncSyncInputs(); state.overlay.tab = closest('.js-nc-tab').dataset.tab; state.overlay.signRead = null; renderOverlay(); return; }
+  if (closest('.js-ncsign-read')) { e.stopPropagation(); const id = closest('.js-ncsign-read').dataset.card; state.overlay.signRead = (state.overlay.signRead === id) ? null : id; renderOverlay(); return; }
+  if (closest('.js-ncsign-save')) {
+    e.stopPropagation(); const o = state.overlay; const c = IDX.customer.get(o.editId || ''); const k = c && customerCards(c).find((x) => x.id === closest('.js-ncsign-save').dataset.card);
+    if (!c || !k) return;
+    const cv = document.querySelector('.overlay .nc-sigpad');
+    if (!cv || !cv.dataset.drawn) return flashOr('.overlay .nc-sigpad', 'Sign in the box first.');
+    if (!(o.signDraft && o.signDraft.selfie)) return toast('Take a selfie to authorize this card.');
+    signCardAgreement(c, k, cv.toDataURL('image/jpeg', 0.6), o.signDraft.selfie);
+    o.signDraft = null; o.signRead = null; renderOverlay(); render(); return;
+  }
+  if (closest('.js-ncsign-pdf')) { e.stopPropagation(); const b = closest('.js-ncsign-pdf'); return openSignedPdf(state.overlay.editId, b.dataset.card, b.dataset.sig); }
   if (closest('.js-nc-selfie-clear')) { e.stopPropagation(); ncSyncInputs(); state.overlay.draft.selfie = ''; renderOverlay(); return; }
   if (closest('.js-nc-sig-save')) { e.stopPropagation(); const cv = document.querySelector('.overlay .nc-sigpad'); if (cv && cv.dataset.drawn) { ncSyncInputs(); const dr = state.overlay.draft; dr.signature = cv.toDataURL('image/jpeg', 0.6); dr.agreementType = /member/i.test(dr.accountType || '') ? 'membership' : 'rental'; dr.agreementSignedAt = TODAY_ISO; renderOverlay(); } else flashOr('.overlay .nc-sigpad', 'Sign in the box first.'); return; }
   if (closest('.js-nc-sig-clearpad')) { e.stopPropagation(); const cv = document.querySelector('.overlay .nc-sigpad'); if (cv) { const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height); cv.dataset.drawn = ''; } return; }
@@ -8133,6 +8243,7 @@ function onClick(e) {
     return openAddCard(rec);
   }
   if (closest('.js-cardsub-cancel')) { e.stopPropagation(); if (state.overlay && state.overlay.kind === 'newCustomer') { state.overlay.cardSub = false; renderOverlay(); } return; }   // §14 close just the card panel, keep the form
+  if (closest('.js-card-sign')) { e.stopPropagation(); const b = closest('.js-card-sign'); openCustomerForm(b.dataset.rec); if (state.overlay) { state.overlay.tab = b.dataset.card; renderOverlay(); } return; }
   if (closest('.js-card-default')) { e.stopPropagation(); const b = closest('.js-card-default'); return setCardDefault(b.dataset.rec, b.dataset.card); }
   if (closest('.js-card-remove')) { e.stopPropagation(); const b = closest('.js-card-remove'); return removeCard(b.dataset.rec, b.dataset.card); }
   if (closest('.js-pm-tab')) { e.stopPropagation(); state.pmTab = closest('.js-pm-tab').dataset.tab; return render(); }   // §14b Cards | ACH toggle
@@ -8695,10 +8806,10 @@ async function requireAdmin(reason, onOk) {
 function cardOverrideRental(rentalId, val) {
   const r = IDX.rental.get(rentalId); if (!r) return;
   const cust = r.customerId ? IDX.customer.get(r.customerId) : null;
-  requireAdmin(`${cust ? cust.name : 'This customer'} has no valid card on file — booking is blocked.`, () => {
+  requireAdmin(`${cust ? cust.name : 'This customer'} — ${cardGateReason(cust) || 'card gate'}. Booking is blocked.`, () => {
     r.cardOverride = true;
-    logAction(r, `Admin override — booked ${getStatus('rentalStatus', val).label} with no valid card on file`);
-    if (cust) logAction(cust, 'Admin override used to book a rental without a valid card');
+    logAction(r, `Admin override — booked ${getStatus('rentalStatus', val).label} (${cardGateReason(cust) || 'card gate'})`);
+    if (cust) logAction(cust, 'Admin override used to book past the card/agreement gate');
     setRentalStatus(rentalId, val);
   });
 }
@@ -8709,9 +8820,10 @@ function setRentalStatus(rentalId, val) {
   // §9 hard gates
   if (val === 'On Rent' && !r.invoiceId) { flashOr('.js-create-invoice', 'Blocked: "On Rent" requires a linked invoice (§9).'); return; }
   if (['On Rent', 'Reserved'].includes(val) && cust && /Blacklist/i.test(cust.accountType || '')) { toast('Blocked: customer is blacklisted (§9).'); return; }
-  // §14 — a booking requires a valid card on file by default; an Admin can override.
-  if (BOOKING_STATUSES.includes(val) && cust && !hasValidCard(cust) && !r.cardOverride) {
-    toast(`${cust.name} has no valid card on file — Admin override required.`);
+  // §14 — a booking requires a valid card that is SIGNED for the current account
+  // type; any unsigned card blocks. An Admin can override. (Charging is never gated.)
+  if (BOOKING_STATUSES.includes(val) && cardGateBlocked(cust) && !r.cardOverride) {
+    toast(`${cust.name} — ${cardGateReason(cust)}. Admin override required.`);
     return cardOverrideRental(rentalId, val);
   }
   const wasVoided = ['No Show', 'Cancelled'].includes(r.status);
@@ -8738,7 +8850,7 @@ function setUnitStatus(rentalId, unitId, val) {
   const cust = r.customerId ? IDX.customer.get(r.customerId) : null;
   if (val === 'On Rent' && !r.invoiceId) { flashOr('.js-create-invoice', 'Blocked: "On Rent" requires a linked invoice (§9).'); return; }
   if (['On Rent', 'Reserved'].includes(val) && cust && /Blacklist/i.test(cust.accountType || '')) { toast('Blocked: customer is blacklisted (§9).'); return; }
-  if (BOOKING_STATUSES.includes(val) && cust && !hasValidCard(cust) && !r.cardOverride) { toast(`${cust.name} has no valid card on file — Admin override required.`); return; }
+  if (BOOKING_STATUSES.includes(val) && cardGateBlocked(cust) && !r.cardOverride) { toast(`${cust.name} — ${cardGateReason(cust)}. Admin override required.`); return; }
   // §20 No-Show / Cancel: don't commit the terminal status while a payment is
   // assigned to the unit (it would count toward Complete yet stay billed) — block first.
   if ((val === 'No Show' || val === 'Cancelled') && unitLinePaid(r, unitId)) { toast('That unit has an assigned payment — refund it before No Show/Cancel.'); return; }
@@ -8842,6 +8954,9 @@ function setUnitCapture(r, eu, key, stamp) {
 function yardCapture(rentalId, cap, unitId) {
   const r = IDX.rental.get(rentalId); if (!r) return;
   const cur = captureUnit(r, unitId) || r;
+  // §14 a delivery log goes On Rent — block the driver up front when the account's
+  // card/agreement gate isn't clear (the journey node reads locked, not dead).
+  if (cap === 'start') { const gc = r.customerId ? IDX.customer.get(r.customerId) : null; if (cardGateBlocked(gc) && !r.cardOverride) { toast(`🔒 ${gc.name} — ${cardGateReason(gc)}. Sign the card before logging a delivery.`); return; } }
   if (cap === 'start' && cur.startCapture) return toast('Start already captured — video on file.');
   if (cap === 'end' && cur.endCapture) return toast('End already captured — video on file.');
   if (cap === 'end' && !cur.startCapture) return flashOr('.js-yard[data-cap="start"]', 'Log the Start/Delivery first.');
@@ -9279,10 +9394,19 @@ function onChange(e) {
     reader.readAsDataURL(file);
     return;
   }
+  // §7.1b per-card signing selfie — stashed on o.signDraft until Accept & Sign freezes it onto the card.
+  if (e.target.classList.contains('js-ncsign-selfie')) {
+    const file = e.target.files && e.target.files[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => { downscaleImage(reader.result, 340, 0.5, (out) => { if (!out) { toast('Could not read that image.'); return; } const o = state.overlay; if (o && o.kind === 'newCustomer') { o.signDraft = o.signDraft || {}; o.signDraft.selfie = out; renderOverlay(); } }); };
+    reader.readAsDataURL(file);
+    return;
+  }
   // New Customer form: filling Company auto-promotes Non-Business → Business.
   if (e.target.dataset && e.target.dataset.f && state.overlay?.kind === 'newCustomer') {
     const o = state.overlay, root = document.querySelector('.overlay .popup-body');
     if (root) root.querySelectorAll('[data-f]').forEach((i) => { o.draft[i.dataset.f] = i.value.trim(); });
+    ncApplyName(o.draft);
     // quick-add: First + Phone present → persist behind the scenes (no render, keeps focus)
     if (!o.editId) quickSaveCustomer(o);
     // already saved → keep the record live as they keep typing (no render)
@@ -9519,25 +9643,24 @@ function ncSyncDraftToCustomer(o) {
   const d = o.draft;
   Object.assign(c, { firstName: d.firstName, lastName: d.lastName, name: `${d.firstName} ${d.lastName}`.trim(),
     company: d.company, phone: d.phone, email: d.email, industry: d.industry, accountType: d.accountType || 'Non-Business',
-    accountNotes: d.accountNotes, selfie: d.selfie, signature: d.signature, agreementType: d.agreementType || '', agreementSignedAt: d.agreementSignedAt || '' });
+    accountNotes: d.accountNotes });   // §7.1b signature/selfie/agreement live on the CARD now — never wiped from the account form
   reindex('customers', c);
 }
 function saveNewCustomer() {
   const o = state.overlay; if (!o || o.kind !== 'newCustomer') return;
   const root = document.querySelector('.overlay .popup-body'); if (!root) return;
   root.querySelectorAll('[data-f]').forEach((i) => { o.draft[i.dataset.f] = i.value.trim(); });
-  if (!o.draft.firstName) { o.error = 'First name is required (we use it for marketing).'; renderOverlay(); document.querySelector('.overlay [data-f="firstName"]')?.focus(); return; }
+  ncApplyName(o.draft);
+  if (!o.draft.firstName) { o.error = 'A name is required (we use it for marketing).'; renderOverlay(); document.querySelector('.overlay [data-f="name"]')?.focus(); return; }
   if (!o.draft.phone) { o.error = 'A phone number is required.'; renderOverlay(); document.querySelector('.overlay [data-f="phone"]')?.focus(); return; }
   if (o.draft.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(o.draft.email)) { o.error = 'That email doesn’t look valid (or leave it blank).'; renderOverlay(); return; }
   const d = o.draft;
   if (o.editId) {                                   // ── editing / completing an existing customer ──
     const c = IDX.customer.get(o.editId); if (!c) { closeOverlay(); return; }
-    const wasSigned = !!c.agreementSignedAt;
-    Object.assign(c, { firstName: d.firstName, lastName: d.lastName, company: d.company, phone: d.phone, email: d.email, industry: d.industry, accountType: d.accountType || 'Non-Business', accountNotes: d.accountNotes, selfie: d.selfie, signature: d.signature, agreementType: d.agreementType || '', agreementSignedAt: d.agreementSignedAt || '' });
+    Object.assign(c, { firstName: d.firstName, lastName: d.lastName, company: d.company, phone: d.phone, email: d.email, industry: d.industry, accountType: d.accountType || 'Non-Business', accountNotes: d.accountNotes });   // §7.1b signature/agreement live on the card
     if (!c.accountNotes) c.accountNotesColor = '';   // popup has no dot picker — don't leave a stale tag on a cleared note
     c.name = `${d.firstName} ${d.lastName}`.trim() || c.name;
     reindex('customers', c);
-    if (c.agreementSignedAt && !wasSigned) logAction(c, `${AGREEMENTS[c.agreementType]?.title || 'Agreement'} signed`);
     logAction(c, 'Account details updated');
     const lt = applyCustomerLink(o, c.customerId) || o.linked;   // quick-add-link → land back on the Quote/invoice
     closeOverlay();
@@ -9741,14 +9864,17 @@ async function saveCardFlow(btn) {
     c.stripeId = r.stripeId || c.stripeId;
     if (!Array.isArray(c.cards)) c.cards = [];
     const firstCard = customerCards(c).length === 0;
-    c.cards.push({ id: 'CARD-' + (state.seq++), stripePmId: setupIntent.payment_method, brand: s.card.brand, last4: s.card.last4,
+    const newCardId = 'CARD-' + (state.seq++);
+    // §7.1b a card lands UNSIGNED — it can be charged, but the account can't go
+    // On Rent / log deliveries until this card is signed for the account type.
+    c.cards.push({ id: newCardId, stripePmId: setupIntent.payment_method, brand: s.card.brand, last4: s.card.last4,
       expMonth: s.card.expMonth, expYear: s.card.expYear, nickname: o.nickname || '', notes: '', isDefault: firstCard, status: 'active',
-      agreement: c.signature ? { signedAt: TODAY_ISO, version: 'rental', signature: c.signature, selfie: c.selfie } : null });
+      agreements: [] });
     c.cardBrand = s.card.brand; c.cardLast4 = s.card.last4; c.cardExpMonth = s.card.expMonth; c.cardExpYear = s.card.expYear;   // legacy mirror (default card)
-    reindex('customers', c); logAction(c, `Card added — ${brandName(s.card.brand)} ••••${s.card.last4} (signed agreement)`);
+    reindex('customers', c); logAction(c, `Card added — ${brandName(s.card.brand)} ••••${s.card.last4} (unsigned)`);
     destroyCardElement();
-    toast('Card saved ✓');
-    if (sub) { o.cardSub = false; renderOverlay(); }   // §14 close the card panel in place, refresh the form (card now on file)
+    toast('Card saved — sign to authorize ✓');
+    if (sub) { o.cardSub = false; o.tab = newCardId; renderOverlay(); }   // §14 close the card panel, jump to the new card's tab to sign
     else if (o.returnTo === 'payment' && o.invoiceId) openPayInvoice(o.invoiceId);
     else closeOverlay();
     render();

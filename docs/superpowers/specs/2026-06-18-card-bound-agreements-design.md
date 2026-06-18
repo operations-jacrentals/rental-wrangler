@@ -99,14 +99,13 @@ accountAgreementsOk(c)       // customerCards(c).every(k => cardAuthorized(c, k)
 
 ## Immutability + PDF
 
-- **Frozen text via a versioned registry.** `agreements.js` keeps `AGREEMENTS[key]` as the
-  *current* text plus a new append-only `AGREEMENT_VERSIONS` map: `{ versionId: { key, title,
-  text, hash } }`. At signing we resolve the current text's `hash`; if it isn't in the
-  registry yet, a new `versionId` is minted and recorded. A signing stores only the
-  `versionId` — display/PDF look up the frozen text. Editing an agreement later mints a new
-  version; **past signings keep pointing at the exact text they accepted.** This keeps the
-  heavy text **out of the synced customer record** (only the small signature/selfie images,
-  which already existed, ride along).
+- **Frozen text snapshot (shipped).** Each signing record stores the **full agreement
+  title + text** as it read at signing, alongside the signature + selfie. Editing
+  `agreements.js` later never touches a past signing — it already carries its own copy.
+  This is simpler and more robust than a separate version registry (no manual versioning
+  discipline, no lookup indirection); the tradeoff is ~3–4 KB of text per signing inside the
+  synced customer record (small next to the signature/selfie images, which already rode
+  along). The 50k-char-per-cell watch-item below still applies.
 - **PDF (client-side, immutable).** "⤓ PDF" renders the frozen signing (title + frozen text +
   signature + selfie + signer + date) into a print-styled, read-only view and produces a PDF
   via the browser print pipeline (no new dependency, no backend). The content is regenerated
