@@ -1313,6 +1313,12 @@ select.lf-in { appearance: none; cursor: pointer; }
 /* back-office board popups (§0.4 / §7.9–7.12) — simple spreadsheet */
 .board-popup { width: 86vw; height: 80vh; }
 .board-popup .popup-head .c-count { font-size: 11px; font-weight: 700; color: var(--txt-3); background: var(--panel-2); padding: 1px 8px; border-radius: 999px; }
+/* ── Tier 2 WORK SURFACE (board / boardview) — riveted header rail + 2px orange baseline,
+   NO hazard cap: calmer than a dialog because you work IN these, not dismiss them ── */
+.board-popup { border-color: var(--line); box-shadow: var(--shadow), 0 0 0 1px rgba(0,0,0,.45); }
+.board-popup .popup-head { position: relative; background: linear-gradient(180deg, var(--panel-2), var(--panel)); border-bottom: 2px solid var(--accent); }
+.board-popup .popup-head::before, .board-popup .popup-head::after { content: ''; position: absolute; top: 11px; width: 6px; height: 6px; border-radius: 50%; z-index: 1; pointer-events: none; background: radial-gradient(circle at 35% 30%, #434c58, #0f1318); box-shadow: inset 0 0 0 1px rgba(0,0,0,.55); }
+.board-popup .popup-head::before { left: 9px; } .board-popup .popup-head::after { right: 9px; }
 .board-body { padding: 0; overflow: auto; }
 
 /* §13.3 Card Graph view — data-plate analytics (Phase 4) */
