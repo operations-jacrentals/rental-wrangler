@@ -4819,7 +4819,7 @@ function fleetInsp() {
   DATA.units.forEach((u) => { if (c[u.inspectionStatus] != null) c[u.inspectionStatus]++; });
   return { ...c, total: c.Ready + c['Not Ready'] + c.Failed };
 }
-function kpiFor(roleId) {
+function legacyKpiPct(roleId) {
   const R = DATA.rentals, W = DATA.workOrders, N = DATA.inspections, INV = DATA.invoices, C = DATA.customers;
   const f = fleetInsp();
   if (roleId === 'mechanic') {
@@ -4893,6 +4893,98 @@ const KPI_HELP = {
   'Active Customer Rate':   'Of your big customers (paid $2k+ lifetime), how many are currently active.',
   'Pipeline':               'Sales pipeline strength — members signed + leads moved past “Inbound”, toward a target of 10.',
 };
+
+/* ════════════════════════════════════════════════════════════════════════
+   §11b KPI METRIC ENGINE — admin-definable KPIs (Settings → KPIs & Rings).
+   A SAFE, declarative spec (no eval, Pages-public-safe): a metric is filters +
+   an aggregate over an entity allowlist, evaluated by kpiEval(). The shipped 15
+   KPIs route through kind:'builtin' (the legacy math above), so with no admin
+   override the dashboard is byte-for-byte unchanged. Custom KPIs author via the
+   DSL (ratio/goal/count/sum) — Mr. Wrangler emits + validates the spec.
+   ════════════════════════════════════════════════════════════════════════ */
+const KPI_ENTITY = {   // entity key → live rows (the authoring UI + validator gate on these names)
+  units: () => DATA.units, rentals: () => DATA.rentals, workOrders: () => DATA.workOrders,
+  inspections: () => DATA.inspections, invoices: () => DATA.invoices, customers: () => DATA.customers,
+};
+// Curated derived fields (prefix _) — safe computed accessors so common needs work without code.
+const KPI_DERIVED = {
+  _ageDays:   (r) => { const d = r.date || r.openedDate || r.createdDate || r.startDate; return d ? Math.max(0, Math.round((TODAY.getTime() - parseISO(d).getTime()) / 86400000)) : 0; },
+  _month:     (r) => (r.startDate || r.date || '').slice(0, 7),
+  _revenue:   (r) => { const p = rentalPrice(r); return p ? p.price : 0; },
+  _paid:      (r) => invoiceTotals(r).paid,
+  _billed:    (r) => invoiceTotals(r).total,
+  _totalPaid: (r) => (r._digest && r._digest.totalPaid) || 0,
+  _activePct: (r) => (r._digest && r._digest.activePct) || 0,
+};
+const KPI_TOKENS = { '@thisMonth': () => TODAY_ISO.slice(0, 7), '@today': () => TODAY_ISO };
+const kpiField = (rec, f) => (f && f[0] === '_' && KPI_DERIVED[f]) ? KPI_DERIVED[f](rec) : rec[f];
+const kpiVal = (v) => (typeof v === 'string' && KPI_TOKENS[v]) ? KPI_TOKENS[v]() : v;
+function kpiCond(rec, cond) {
+  const a = kpiField(rec, cond.f), b = kpiVal(cond.v);
+  switch (cond.op) {
+    case 'eq': return a === b; case 'ne': return a !== b;
+    case 'in': return Array.isArray(b) && b.includes(a); case 'nin': return Array.isArray(b) && !b.includes(a);
+    case 'gt': return Number(a) > Number(b); case 'gte': return Number(a) >= Number(b);
+    case 'lt': return Number(a) < Number(b); case 'lte': return Number(a) <= Number(b);
+    case 'contains': return String(a == null ? '' : a).toLowerCase().includes(String(b == null ? '' : b).toLowerCase());
+    case 'exists': return a != null && a !== ''; case 'truthy': return !!a; case 'falsy': return !a;
+    default: return false;
+  }
+}
+function kpiRows(src) {
+  const get = KPI_ENTITY[src && src.entity]; if (!get) return [];
+  let rows = get() || [];
+  (src.where || []).forEach((cond) => { rows = rows.filter((r) => { try { return kpiCond(r, cond); } catch (e) { return false; } }); });
+  return rows;
+}
+const kpiAgg = (src) => src && src.agg === 'sum'
+  ? kpiRows(src).reduce((a, r) => a + (Number(kpiField(r, src.field)) || 0), 0)
+  : kpiRows(src).length;
+const kpiBand = (ring, pct, raw, unit) => ({ pct: Math.max(0, Math.min(100, (ring && ring.band === 'down') ? 100 - pct : pct)), raw, unit });
+const kpiTarget = (ring) => (ring && ring.target != null ? Number(ring.target) : 0);
+/** Evaluate one ring spec → { pct (0-100 | null), raw numerator, unit }. Defensive:
+ *  a malformed spec yields a zero ring, never a thrown render. */
+function kpiEval(ring) {
+  const m = (ring && ring.metric) || {};
+  try {
+    if (m.kind === 'builtin') {
+      const pcts = legacyKpiPct(m.ref) || [], raws = legacyKpiRaw(m.ref) || [], raw = raws[m.idx] || { v: 0, unit: '' };
+      return { pct: pcts[m.idx] != null ? pcts[m.idx] : null, raw: raw.v, unit: raw.unit };
+    }
+    if (m.kind === 'ratio') {
+      const num = kpiAgg(m.num);
+      const den = (m.den && m.den.const != null) ? Number(m.den.const) : kpiAgg(m.den || { entity: m.num.entity });
+      return kpiBand(ring, pctOf(num, den), num, m.unit || '');
+    }
+    if (m.kind === 'count') {
+      const n = kpiAgg({ ...m.src, agg: 'count' });
+      const tot = kpiAgg({ ...(m.of || { entity: m.src.entity }), agg: 'count' });
+      return kpiBand(ring, pctOf(n, tot), n, m.unit || '');
+    }
+    if (m.kind === 'goal' || m.kind === 'sum') {
+      const v = kpiAgg(m.src), tgt = kpiTarget(ring);
+      return kpiBand(ring, tgt > 0 ? Math.round(Math.min(v / tgt, 1) * 100) : 0, v, m.unit || (m.src && m.src.agg === 'sum' ? '$' : ''));
+    }
+  } catch (e) { /* defensive — a bad spec must never crash the dashboard */ }
+  return { pct: 0, raw: 0, unit: m.unit || '' };
+}
+// Shipped defaults: every current KPI as a builtin ring (guarantees defaults === today).
+const KPI_DEFAULTS = {};
+ROLES.forEach((role) => {
+  KPI_DEFAULTS[role.id] = (role.kpis || []).map((label, idx) => ({
+    id: `${role.id}-${idx}`, label, help: KPI_HELP[label] || '', metric: { kind: 'builtin', ref: role.id, idx },
+  }));
+});
+/** The 3 ring specs for a role — admin override (config.settings.kpis) if valid, else defaults. */
+function roleRings(roleId) {
+  const ov = state.settings && state.settings.kpis && state.settings.kpis[roleId];
+  if (Array.isArray(ov) && ov.length === 3 && ov.every((r) => r && typeof r === 'object' && r.metric)) return ov;
+  return KPI_DEFAULTS[roleId] || [];
+}
+// kpiFor / kpiRaw now read through the spec layer (defaults route to the legacy math unchanged).
+function kpiFor(roleId) { return roleRings(roleId).map((r) => kpiEval(r).pct); }
+function kpiRaw(roleId) { return roleRings(roleId).map((r) => { const e = kpiEval(r); return { v: e.raw, unit: e.unit }; }); }
+
 /** §11 Team ring — per-position average across the 5 roles (skips null placeholders). */
 function kpiTeam() {
   const all = ROLES.map((r) => kpiFor(r.id));
@@ -4904,7 +4996,7 @@ function kpiTeam() {
    on counts) and flash the ring green ×3, video-game style. Detected by diffing
    the metrics each render, so it covers EVERY action — present and future —
    without per-action hooks. kpiRaw mirrors kpiFor's numerators, higher = better. */
-function kpiRaw(roleId) {
+function legacyKpiRaw(roleId) {
   const R = DATA.rentals, W = DATA.workOrders, N = DATA.inspections, INV = DATA.invoices, C = DATA.customers;
   const f = fleetInsp();
   const c = (v) => ({ v, unit: '' }), usd = (v) => ({ v, unit: '$' });
@@ -11540,7 +11632,8 @@ function exposeTestApi() {
       rentalAllocated, unitRentalPrice, rentalDisplayName, setWoLinePhase, setWoPhase, woBottleneck,
       cleanUnitName, planUnitMigration, applyUnitMigration, openMigrationPreview,
       computeTransportPrice, isFueledType, unitTransport, rentalTransport,
-      wrValidatePlan, applyWranglerData, wrFunnel, invoiceMergeable, mergeInvoiceInto };
+      wrValidatePlan, applyWranglerData, wrFunnel, invoiceMergeable, mergeInvoiceInto,
+      kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS };
   } catch (e) { /* no window (non-browser) */ }
 }
 

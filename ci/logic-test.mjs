@@ -229,6 +229,31 @@ try {
     ok(mPaid && (Number(mPaid.amountPaid) || 0) === 1000 && mPaid.lineItems.length === 2, 'blocked merge left the PAID invoice fully intact');
     const mki = T.DATA.invoices.findIndex((o) => o.invoiceId === 'TST-KEEP'); if (mki >= 0) T.DATA.invoices.splice(mki, 1); T.IDX.invoice.delete('TST-KEEP');   // restore
 
+    // 14) KPIs & RINGS — admin-definable metric engine (step 1: defaults === today + DSL correctness)
+    const ROLE_IDS = ['mechanic', 'mtech', 'driver', 'office', 'sales'];
+    let kpiMatch = true, kpiRawMatch = true;
+    ROLE_IDS.forEach((id) => {
+      if (JSON.stringify(T.kpiFor(id)) !== JSON.stringify(T.legacyKpiPct(id))) kpiMatch = false;
+      const nr = T.kpiRaw(id).map((m) => [m.v, m.unit]), or = T.legacyKpiRaw(id).map((m) => [m.v, m.unit]);
+      if (JSON.stringify(nr) !== JSON.stringify(or)) kpiRawMatch = false;
+    });
+    ok(kpiMatch, 'KPI defaults reproduce legacy kpiFor for all 5 roles (no dashboard regression)');
+    ok(kpiRawMatch, 'KPI raw numerators reproduce legacy kpiRaw for all 5 roles (gamification unchanged)');
+    ok(T.kpiFor('driver')[2] === null && T.kpiFor('office')[2] === null, 'GPS/email placeholder rings stay null (not coerced to 0)');
+    // DSL engine — synthetic specs computed over live demo data
+    const kUnits = T.DATA.units, kWos = T.DATA.workOrders;
+    const readyN = kUnits.filter((u) => u.inspectionStatus === 'Ready').length;
+    const ce = T.kpiEval({ metric: { kind: 'count', src: { entity: 'units', where: [{ f: 'inspectionStatus', op: 'eq', v: 'Ready' }] } } });
+    ok(ce.raw === readyN && ce.pct === Math.round(readyN / kUnits.length * 100), `count kind: Ready units (${ce.raw}) ÷ fleet → ${ce.pct}%`);
+    const compN = kWos.filter((w) => w.phase === 'Complete').length, liveN = kWos.filter((w) => !w.cancelled).length;
+    const re = T.kpiEval({ metric: { kind: 'ratio', num: { entity: 'workOrders', where: [{ f: 'phase', op: 'eq', v: 'Complete' }], agg: 'count' }, den: { entity: 'workOrders', where: [{ f: 'cancelled', op: 'ne', v: true }], agg: 'count' } } });
+    ok(re.raw === compN && re.pct === (liveN > 0 ? Math.round(compN / liveN * 100) : 0), `ratio kind: Complete (${compN}) ÷ live WOs (${liveN}) → ${re.pct}%`);
+    const totalPaid = T.DATA.invoices.reduce((a, i) => a + T.invoiceTotals(i).paid, 0);
+    const ge = T.kpiEval({ target: 1000000, metric: { kind: 'goal', src: { entity: 'invoices', agg: 'sum', field: '_paid' } } });
+    ok(ge.raw === totalPaid && ge.unit === '$', `goal kind: collected $${ge.raw} sums via the _paid derived field`);
+    ok(T.kpiEval({ band: 'down', metric: { kind: 'count', src: { entity: 'units', where: [{ f: 'inspectionStatus', op: 'eq', v: 'Ready' }] } } }).pct === 100 - ce.pct, 'band:down inverts the ring fill (lower-is-better)');
+    ok(T.kpiEval({ metric: { kind: 'ratio', num: { entity: 'NOPE' } } }).pct === 0, 'malformed metric → safe 0 ring (never throws)');
+
     return out;
   });
 
