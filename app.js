@@ -1814,19 +1814,22 @@ function persistAdminSettings(s) {
 // Company identity (Settings → Company). Read-through with shipped fallbacks, so an empty
 // config keeps every surface exactly as it ships today.
 const companyCfg = () => (state.settings && state.settings.company) || {};
-const COMPANY_DEFAULTS = { name: 'JacRentals', tagline: 'Heavy-Equipment Rental · Sulphur, LA', revenueGoal: (CFG.REVENUE_GOAL_DEFAULT || 150000) };
-// Invoice due-date from the customer's payment terms (Settings → Rental Rules can require terms).
-// Unset terms keep the shipped 14-day default, so existing customers are unchanged.
-function dueForCustomer(customerId) {
-  const c = customerId ? IDX.customer.get(customerId) : null;
-  const terms = c && c.paymentTerms;
-  if (terms === 'Net 30') return addDays(TODAY_ISO, 30);
-  if (terms === 'Cash') return TODAY_ISO;
-  return addDays(TODAY_ISO, 14);
-}
+const COMPANY_DEFAULTS = { name: 'JacRentals', tagline: 'Heavy-Equipment Rental · Sulphur, LA', revenueGoal: (CFG.REVENUE_GOAL_DEFAULT || 150000), maxNetDays: 30 };
 const companyName = () => (companyCfg().name || '').trim() || COMPANY_DEFAULTS.name;
 const companyTagline = () => (companyCfg().tagline || '').trim() || COMPANY_DEFAULTS.tagline;
 const companyRevenueGoal = () => { const n = Number(companyCfg().revenueGoal); return n > 0 ? n : COMPANY_DEFAULTS.revenueGoal; };
+// System-wide ceiling on customer Net-day terms (Settings → Company). Caps every customer's net days.
+const companyMaxNetDays = () => { const n = Number(companyCfg().maxNetDays); return n >= 0 && isFinite(n) ? n : COMPANY_DEFAULTS.maxNetDays; };
+// Normalize a raw Net-days draft value → an integer 0..max, or undefined when blank.
+const normNetDays = (v) => { if (v === '' || v == null) return undefined; const n = Math.round(Number(v)); return isFinite(n) ? Math.max(0, Math.min(n, companyMaxNetDays())) : undefined; };
+// Invoice due-date from the customer's Net-days terms (capped at the system max). Net X → creation
+// date + X days (0 = COD/due today). Unset keeps the shipped 14-day default, so existing customers
+// are unchanged.
+function dueForCustomer(customerId) {
+  const c = customerId ? IDX.customer.get(customerId) : null;
+  const nd = normNetDays(c && c.netDays);
+  return nd != null ? addDays(TODAY_ISO, nd) : addDays(TODAY_ISO, 14);
+}
 
 /* ── Settings Board render (tab rail + panes). The rail lists every planned tab so
    the information architecture is visible; v1 ships Logins + Statuses working, the
@@ -1886,6 +1889,7 @@ function settingsCompanyPane(o) {
   const v = (k) => esc(co[k] != null ? co[k] : '');
   const ph = (k) => esc(COMPANY_DEFAULTS[k]);
   const goal = Number(co.revenueGoal) > 0 ? Number(co.revenueGoal) : COMPANY_DEFAULTS.revenueGoal;
+  const maxNet = (co.maxNetDays != null && co.maxNetDays !== '' && isFinite(Number(co.maxNetDays))) ? Number(co.maxNetDays) : COMPANY_DEFAULTS.maxNetDays;
   return `
     <div class="set-pane-head"><h4>Company</h4><p>Your yard's identity and targets. These flow onto printed receipts and the dashboard — leave one blank to keep the shipped default.</p></div>
     <div class="co-form">
@@ -1893,6 +1897,8 @@ function settingsCompanyPane(o) {
       <label class="co-fld"><span class="kpi-cap">TAGLINE / SUBLINE</span><input class="co-in js-co-field" data-f="tagline" value="${v('tagline')}" placeholder="${ph('tagline')}" autocomplete="off"/></label>
       <label class="co-fld co-fld-goal"><span class="kpi-cap">MONTHLY REVENUE GOAL</span><span class="co-goal-wrap"><span class="co-goal-$">$</span><input class="co-in co-in-num js-co-field" data-f="revenueGoal" value="${co.revenueGoal != null ? esc(co.revenueGoal) : ''}" placeholder="${COMPANY_DEFAULTS.revenueGoal}" inputmode="numeric" autocomplete="off"/></span></label>
       <p class="set-note">Feeds the Sales <strong>Revenue Goal</strong> ring — currently <strong>${esc(money(goal))}/mo</strong>. The ring fills as this month's rental revenue climbs toward it.</p>
+      <label class="co-fld co-fld-goal"><span class="kpi-cap">MAX PAYMENT TERMS (NET DAYS)</span><span class="co-goal-wrap"><input class="co-in co-in-num js-co-field" data-f="maxNetDays" value="${co.maxNetDays != null ? esc(co.maxNetDays) : ''}" placeholder="${COMPANY_DEFAULTS.maxNetDays}" inputmode="numeric" autocomplete="off"/><span class="co-goal-suffix">days</span></span></label>
+      <p class="set-note">The ceiling on any customer's Net-day terms (currently <strong>${esc(maxNet)} days</strong>). A customer's Net X auto-sets their invoice due date, capped here.</p>
       <div class="co-preview">
         <span class="kpi-cap">RECEIPT PREVIEW</span>
         <div class="co-receipt"><div class="co-receipt-brand">${esc(companyDraftName(co))}</div><div class="co-receipt-sub">${esc(companyDraftTagline(co))}</div></div>
@@ -1907,7 +1913,7 @@ const RENTAL_RULES_READY = [
   { key: 'signature', label: 'Signed agreement', desc: 'The customer has e-signed the rental agreement.' },
   { key: 'selfie', label: 'Customer selfie', desc: 'A selfie captured in the account packet.' },
   { key: 'id', label: 'Driver’s license / ID', desc: 'An ID / license number on the customer account.' },
-  { key: 'terms', label: 'Payment terms set', desc: 'Customer has Cash or Net 30 selected (drives the due date).' },
+  { key: 'terms', label: 'Payment terms set', desc: 'Customer has Net-days entered (0 = COD; drives the due date).' },
   { key: 'po', label: 'PO number', desc: "A PO number on the rental's invoice." },
 ];
 const RENTAL_RULES_PLANNED = [
@@ -6800,7 +6806,7 @@ function renderOverlay() {
           <label class="nc-field nc-wide"><span>Industry</span><input class="nc-in" data-f="industry" list="nc-industries" value="${esc(d.industry)}" autocomplete="off" /></label>
           <div class="nc-field nc-wide"><span>Account type</span><div class="nc-pills">${acctPills}</div></div>
           <label class="nc-field"><span>Driver’s license / ID #</span><input class="nc-in" data-f="idNumber" value="${esc(d.idNumber || '')}" autocomplete="off" /></label>
-          <div class="nc-field"><span>Payment terms</span><div class="nc-pills">${NC_PAYMENT_TERMS.map((t) => `<button type="button" class="nc-pill js-nc-terms${t === d.paymentTerms ? ' on' : ''}" data-val="${esc(t)}">${esc(t)}</button>`).join('')}</div></div>
+          <label class="nc-field"><span>Payment terms — Net days</span><input class="nc-in" data-f="netDays" type="number" min="0" max="${companyMaxNetDays()}" value="${d.netDays != null && d.netDays !== '' ? esc(d.netDays) : ''}" placeholder="0 = COD" autocomplete="off" /><span class="nc-hint">0 = Cash on delivery · max ${companyMaxNetDays()} days (set in Settings → Company)</span></label>
           <label class="nc-field nc-wide"><span>Notes</span><input class="nc-in" data-f="accountNotes" value="${esc(d.accountNotes)}" autocomplete="off" /></label>
         </div>
         <datalist id="nc-industries">${indOpts}</datalist>
@@ -8675,7 +8681,6 @@ function onClick(e) {
   if (closest('.js-rule-set')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-rule-set'); if (o) { o.draftSettings = o.draftSettings || {}; o.draftSettings.rentalRules = o.draftSettings.rentalRules || { ...((state.settings && state.settings.rentalRules) || {}) }; o.draftSettings.rentalRules[b.dataset.rule] = b.dataset.val === 'required' ? 'required' : 'off'; renderOverlay(); } return; }
   if (closest('.js-nc-save')) { e.stopPropagation(); return saveNewCustomer(); }
   if (closest('.js-nc-acct')) { const b = closest('.js-nc-acct'); e.stopPropagation(); ncSyncInputs(); state.overlay.draft.accountType = b.dataset.val; renderOverlay(); return; }
-  if (closest('.js-nc-terms')) { const b = closest('.js-nc-terms'); e.stopPropagation(); ncSyncInputs(); const d = state.overlay.draft; d.paymentTerms = d.paymentTerms === b.dataset.val ? '' : b.dataset.val; renderOverlay(); return; }
   if (closest('.js-nc-selfie-clear')) { e.stopPropagation(); ncSyncInputs(); state.overlay.draft.selfie = ''; renderOverlay(); return; }
   if (closest('.js-nc-sig-save')) { e.stopPropagation(); const cv = document.querySelector('.overlay .nc-sigpad'); if (cv && cv.dataset.drawn) { ncSyncInputs(); const dr = state.overlay.draft; dr.signature = cv.toDataURL('image/jpeg', 0.6); dr.agreementType = /member/i.test(dr.accountType || '') ? 'membership' : 'rental'; dr.agreementSignedAt = TODAY_ISO; renderOverlay(); } else flashOr('.overlay .nc-sigpad', 'Sign in the box first.'); return; }
   if (closest('.js-nc-sig-clearpad')) { e.stopPropagation(); const cv = document.querySelector('.overlay .nc-sigpad'); if (cv) { const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height); cv.dataset.drawn = ''; } return; }
@@ -9275,7 +9280,7 @@ function rentalRuleBlock(r, cust, val) {
   if (req('signature') && !(cust && cust.signature)) return 'Rental rule: a signed agreement is required before On Rent.';
   if (req('selfie') && !(cust && cust.selfie)) return 'Rental rule: a customer selfie is required before On Rent.';
   if (req('id') && !(cust && cust.idNumber)) return "Rental rule: a driver's license / ID is required before On Rent.";
-  if (req('terms') && !(cust && cust.paymentTerms)) return 'Rental rule: payment terms (Cash or Net 30) must be set before On Rent.';
+  if (req('terms') && !(cust && cust.netDays != null && cust.netDays !== '')) return 'Rental rule: payment terms (Net days) must be set before On Rent.';
   if (req('po') && !(inv && inv.po)) return 'Rental rule: a PO number on the invoice is required before On Rent.';
   return null;
 }
@@ -9768,6 +9773,7 @@ function onChange(e) {
     o.draftSettings = o.draftSettings || {}; o.draftSettings.company = o.draftSettings.company || { ...((state.settings && state.settings.company) || {}) };
     const f = e.target.dataset.f, raw = e.target.value.trim();
     if (f === 'revenueGoal') { const n = Number(raw.replace(/[^0-9.]/g, '')); o.draftSettings.company.revenueGoal = (raw && isFinite(n) && n > 0) ? n : undefined; }
+    else if (f === 'maxNetDays') { const n = Math.round(Number(raw.replace(/[^0-9.]/g, ''))); o.draftSettings.company.maxNetDays = (raw && isFinite(n) && n >= 0) ? n : undefined; }
     else o.draftSettings.company[f] = raw || undefined;
     renderOverlay(); return;
   }
@@ -10062,7 +10068,7 @@ function openCustomerForm(editId, prefill, linkTo) {
     email: f('email'), industry: f('industry'), accountType: f('accountType', 'Non-Business'),
     accountNotes: f('accountNotes'), selfie: f('selfie'), signature: f('signature'),
     agreementType: f('agreementType'), agreementSignedAt: f('agreementSignedAt'),
-    idNumber: f('idNumber'), paymentTerms: f('paymentTerms'),
+    idNumber: f('idNumber'), netDays: f('netDays'),
   } });
 }
 // Downscale + JPEG-compress an image data URL so it fits inside one Sheet cell
@@ -10081,7 +10087,6 @@ function downscaleImage(dataUrl, maxDim, quality, cb) {
 }
 const NC_INDUSTRIES = ['Construction', 'Concrete', 'Welding', 'Electrical', 'Plumbing', 'Roofing', 'Painting', 'Landscaping', 'Trucking', 'Industrial', 'Oil & Gas', 'Real Estate', 'Entertainment', 'Agriculture'];
 const NC_ACCOUNT_TYPES = ['Non-Business', 'Business', 'Non-Business Member', 'Business Member'];
-const NC_PAYMENT_TERMS = ['Cash', 'Net 30'];   // drives invoice due-date (Settings → Rental Rules can require it)
 /** Next sequential customer id (C0001 format), one past the current max. */
 function nextCustomerId() {
   const max = DATA.customers.reduce((m, c) => { const n = /^C(\d+)$/.exec(c.customerId || ''); return n ? Math.max(m, +n[1]) : m; }, 0);
@@ -10099,7 +10104,7 @@ function quickSaveCustomer(o) {
     company: d.company, phone: d.phone, email: d.email, address: '',
     industry: d.industry, accountType: d.accountType || 'Non-Business', payStatus: 'New Customer',
     requiresPO: false, accountNotes: d.accountNotes, stripeId: '', selfie: d.selfie || '', signature: d.signature || '',
-    idNumber: d.idNumber || '', paymentTerms: d.paymentTerms || '',
+    idNumber: d.idNumber || '', netDays: normNetDays(d.netDays),
     agreementType: d.agreementType || '', agreementSignedAt: d.agreementSignedAt || '',
     interestedCategoryIds: [], activityLog: [], usedSalesStage: 'N/A', membershipStage: 'N/A',
     _digest: { activePct: 0, totalPaid: 0, visits: 0, years: 0, avgFrequencyDays: 0, firstInvoice: '', lastInvoice: '' },
@@ -10146,7 +10151,7 @@ function saveNewCustomer() {
   if (o.editId) {                                   // ── editing / completing an existing customer ──
     const c = IDX.customer.get(o.editId); if (!c) { closeOverlay(); return; }
     const wasSigned = !!c.agreementSignedAt;
-    Object.assign(c, { firstName: d.firstName, lastName: d.lastName, company: d.company, phone: d.phone, email: d.email, industry: d.industry, accountType: d.accountType || 'Non-Business', accountNotes: d.accountNotes, selfie: d.selfie, signature: d.signature, agreementType: d.agreementType || '', agreementSignedAt: d.agreementSignedAt || '', idNumber: d.idNumber || '', paymentTerms: d.paymentTerms || '' });
+    Object.assign(c, { firstName: d.firstName, lastName: d.lastName, company: d.company, phone: d.phone, email: d.email, industry: d.industry, accountType: d.accountType || 'Non-Business', accountNotes: d.accountNotes, selfie: d.selfie, signature: d.signature, agreementType: d.agreementType || '', agreementSignedAt: d.agreementSignedAt || '', idNumber: d.idNumber || '', netDays: normNetDays(d.netDays) });
     if (!c.accountNotes) c.accountNotesColor = '';   // popup has no dot picker — don't leave a stale tag on a cleared note
     c.name = `${d.firstName} ${d.lastName}`.trim() || c.name;
     reindex('customers', c);
@@ -10164,7 +10169,7 @@ function saveNewCustomer() {
     company: d.company, phone: d.phone, email: d.email, address: '',
     industry: d.industry, accountType: d.accountType || 'Non-Business', payStatus: 'New Customer',
     requiresPO: false, accountNotes: d.accountNotes, stripeId: '', selfie: d.selfie || '', signature: d.signature || '',
-    idNumber: d.idNumber || '', paymentTerms: d.paymentTerms || '',
+    idNumber: d.idNumber || '', netDays: normNetDays(d.netDays),
     agreementType: d.agreementType || '', agreementSignedAt: d.agreementSignedAt || '',
     interestedCategoryIds: [], activityLog: [], usedSalesStage: 'N/A', membershipStage: 'N/A',
     _digest: { activePct: 0, totalPaid: 0, visits: 0, years: 0, avgFrequencyDays: 0, firstInvoice: '', lastInvoice: '' },

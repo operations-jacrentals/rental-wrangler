@@ -302,16 +302,19 @@ try {
     st.settings.rentalRules = { id: 'required' };
     ok(/ID/i.test(T.rentalRuleBlock({}, { name: 'X' }, 'On Rent') || '') && T.rentalRuleBlock({}, { name: 'X', idNumber: 'LA-12345' }, 'On Rent') === null, 'ID Required: blocks without an ID #, allows with one');
     st.settings.rentalRules = { terms: 'required' };
-    ok(/terms/i.test(T.rentalRuleBlock({}, { name: 'X' }, 'On Rent') || '') && T.rentalRuleBlock({}, { name: 'X', paymentTerms: 'Net 30' }, 'On Rent') === null, 'Payment-terms Required: blocks until Cash/Net 30 is set');
+    ok(/terms/i.test(T.rentalRuleBlock({}, { name: 'X' }, 'On Rent') || '') && T.rentalRuleBlock({}, { name: 'X', netDays: 0 }, 'On Rent') === null, 'Payment-terms Required: blocks until Net days entered (0/COD counts)');
     st.settings.rentalRules = savedRules;   // restore
 
-    // 18) Payment terms → invoice due date (Cash = today, Net 30 = +30, unset = shipped 14-day default)
-    const tc = T.DATA.customers[0]; const savedTerms = tc.paymentTerms;
-    tc.paymentTerms = ''; ok(T.dueForCustomer(tc.customerId) > T.TODAY_ISO, 'no terms → a future (14-day) due date, unchanged from today');
-    const due14 = T.dueForCustomer(tc.customerId);
-    tc.paymentTerms = 'Cash'; ok(T.dueForCustomer(tc.customerId) === T.TODAY_ISO, 'Cash → due today');
-    tc.paymentTerms = 'Net 30'; const due30 = T.dueForCustomer(tc.customerId); ok(due30 > due14, `Net 30 → later due date than the 14-day default (${due30} > ${due14})`);
-    tc.paymentTerms = savedTerms;   // restore
+    // 18) Net-days terms → invoice due date, capped by the system max (Settings → Company)
+    const tc = T.DATA.customers[0]; const savedNd = tc.netDays; const savedCo2 = st.settings.company;
+    st.settings.company = { maxNetDays: 30 };
+    tc.netDays = undefined; ok(T.dueForCustomer(tc.customerId) > T.TODAY_ISO, 'no terms → the shipped 14-day default, unchanged');
+    const due14b = T.dueForCustomer(tc.customerId);
+    tc.netDays = 0; ok(T.dueForCustomer(tc.customerId) === T.TODAY_ISO, 'Net 0 → due today (COD)');
+    tc.netDays = 30; const due30b = T.dueForCustomer(tc.customerId); ok(due30b > due14b, `Net 30 → later due date than the 14-day default (${due30b})`);
+    tc.netDays = 999; const dueCap = T.dueForCustomer(tc.customerId); ok(dueCap === due30b, `customer Net 999 is CAPPED at the system max of 30 (${dueCap})`);
+    st.settings.company = { maxNetDays: 60 }; const dueCap60 = T.dueForCustomer(tc.customerId); ok(dueCap60 > due30b, 'raising the system max to 60 lets the same Net 999 customer go further out');
+    tc.netDays = savedNd; st.settings.company = savedCo2;   // restore
 
     return out;
   });

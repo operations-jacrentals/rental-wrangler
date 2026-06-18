@@ -1422,8 +1422,10 @@ select.lf-in { appearance: none; cursor: pointer; }
 .co-goal-wrap { display: flex; align-items: center; gap: 0; background: var(--bg-2); border: 1px solid var(--line); border-radius: 9px; padding-left: 11px; }
 .co-goal-wrap:focus-within { border-color: var(--accent-line); box-shadow: 0 0 0 3px var(--accent-soft); }
 .co-goal-$ { font-family: 'Saira Condensed', system-ui, sans-serif; font-weight: 800; color: var(--txt-3); font-size: 15px; }
-.co-in-num { background: transparent; border: 0; box-shadow: none; flex: 1; font-family: 'Saira Condensed', system-ui, sans-serif; font-size: 18px; font-weight: 700; letter-spacing: .5px; }
-.co-in-num:focus { box-shadow: none; }
+.co-in-num { background: transparent; border: 0; box-shadow: none; flex: 1; min-width: 0; font-family: 'Saira Condensed', system-ui, sans-serif; font-size: 18px; font-weight: 700; letter-spacing: .5px; }
+.co-in-num:focus { box-shadow: none; outline: none; }
+.co-goal-suffix { font-family: 'Saira Condensed', system-ui, sans-serif; font-weight: 700; color: var(--txt-3); font-size: 13px; padding-right: 11px; text-transform: uppercase; letter-spacing: 1px; }
+.nc-hint { font-size: 10px; color: var(--txt-3); margin-top: 3px; }
 .co-preview { display: flex; flex-direction: column; gap: 5px; margin-top: 4px; }
 .co-receipt { background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; text-align: center; }
 .co-receipt-brand { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 2px; font-weight: 800; font-size: 18px; color: var(--txt); }
