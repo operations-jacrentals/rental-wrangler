@@ -347,6 +347,15 @@ try {
     ok(T.checklistRequired(aUnit) === false && T.checklistFor(aUnit) !== null, 'a defined-but-not-required checklist is available but does not take over');
     st.settings.inspections = savedInsp;   // restore
 
+    // 22) Reversibility — a corrupt customization must self-heal, never brick the app
+    const savedAll = st.settings;
+    st.settings = { status: { rentalStatus: 'this-is-not-an-object-it-is-garbage' } };   // malformed
+    let threw = false; try { T.applySettings(st.settings); } catch (e) { threw = true; }
+    ok(!threw, 'applySettings never throws on a corrupt settings object');
+    ok(T.getStatus('rentalStatus', 'On Rent').label === 'On Rent', 'after a corrupt apply, the status registry is back to its shipped default');
+    st.settings = savedAll; T.applySettings(st.settings);   // restore + re-apply clean
+    ok(JSON.stringify(T.kpiFor('mechanic')) === JSON.stringify(T.legacyKpiPct('mechanic')), 'clean settings re-apply leaves the dashboard at defaults');
+
     return out;
   });
 

@@ -1344,7 +1344,10 @@ select.lf-in { appearance: none; cursor: pointer; }
 .set-pane-head p { margin: 0; font-size: 12px; line-height: 1.5; color: var(--txt-2); max-width: 52ch; }
 .set-pane-head em { font-style: normal; font-family: ui-monospace, monospace; color: var(--txt); }
 .set-note { font-size: 10.5px; color: var(--txt-3); margin: 4px 0 0; }
-.set-err { margin-right: auto; align-self: center; color: var(--red); font-size: 12px; font-weight: 600; }
+.set-err { align-self: center; color: var(--red); font-size: 12px; font-weight: 600; margin-right: 4px; }
+.set-danger { color: var(--txt-3); }
+.set-danger:hover { color: var(--red); border-color: var(--red); }
+.set-danger.armed { color: var(--on-red, #fff); background: var(--red); border-color: var(--red); animation: flagPulse 1s ease-in-out infinite; }
 
 /* Statuses & Icons tab */
 .set-picker { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }

@@ -1805,11 +1805,49 @@ function applyStatusOverrides(over) {
     }
   }
 }
-function applySettings(s) { s = s || state.settings || {}; applyStatusOverrides(s.status); }
+// Self-healing apply: a bad/corrupt customization must NEVER brick the app. If applying the
+// overrides throws, wipe the saved settings and fall back to the shipped defaults so the next
+// render (and every future boot) is clean. Render-time reads are independently defensive.
+let settingsReverted = false;
+function applySettings(s) {
+  s = s || state.settings || {};
+  try {
+    applyStatusOverrides(s.status);
+  } catch (e) {
+    settingsReverted = true;
+    try { applyStatusOverrides(null); } catch (_) {}
+    try { localStorage.removeItem('jactec.settings'); } catch (_) {}
+    state.settings = {};
+    try { console.error('Rental Wrangler: a saved customization failed to apply — reverted to defaults.', e); } catch (_) {}
+  }
+}
 function persistAdminSettings(s) {
+  try { const prev = localStorage.getItem('jactec.settings'); if (prev && prev !== '{}') localStorage.setItem('jactec.settings.prev', prev); } catch (e) {}   // one-level undo backup
   state.settings = s;
   try { localStorage.setItem('jactec.settings', JSON.stringify(s)); } catch (e) {}
   applySettings(s);
+}
+const hasSettingsBackup = () => { try { const p = localStorage.getItem('jactec.settings.prev'); return !!(p && p !== '{}'); } catch (e) { return false; } };
+/* Reset EVERY admin customization back to shipped defaults (Settings → Reset all). Persists the
+   empty config so it sticks across devices, then reloads the board clean. */
+async function resetAllSettings() {
+  const o = state.overlay; if (!o || o.kind !== 'settings') return;
+  try { if (o.adminPw) await backendCall('setConfig', { password: o.adminPw, config: { roles: o.config.roles, admin: o.config.admin, settings: {} } }); } catch (e) {}
+  persistAdminSettings({});
+  o.draftSettings = {}; o.config.settings = {}; o.resetArm = false;
+  closeOverlay(); toast('All customizations reset to the shipped defaults.'); render();
+}
+/* Undo the single most recent Save (restores jactec.settings.prev). */
+async function undoLastSettings() {
+  let prev; try { prev = JSON.parse(localStorage.getItem('jactec.settings.prev') || 'null'); } catch (e) {}
+  if (!prev) { toast('Nothing to undo.'); return; }
+  const o = state.overlay;
+  try { if (o && o.adminPw) await backendCall('setConfig', { password: o.adminPw, config: { roles: o.config.roles, admin: o.config.admin, settings: prev } }); } catch (e) {}
+  try { localStorage.removeItem('jactec.settings.prev'); } catch (e) {}
+  persistAdminSettings(prev);
+  try { localStorage.removeItem('jactec.settings.prev'); } catch (e) {}   // don't chain undos off the restore
+  if (o) { o.draftSettings = JSON.parse(JSON.stringify(prev)); o.config.settings = prev; }
+  toast('Reverted to the previous settings.'); renderOverlay(); render();
 }
 // Company identity (Settings → Company). Read-through with shipped fallbacks, so an empty
 // config keeps every surface exactly as it ships today.
@@ -6874,7 +6912,7 @@ function renderOverlay() {
     o.setSel = o.setSel || 'rentalStatus';
     if (!o.draftSettings) o.draftSettings = JSON.parse(JSON.stringify((o.config && o.config.settings) || state.settings || {}));
     const pop = el('div', 'popup board-popup settings-popup');
-    const foot = `${o.error ? `<span class="set-err">${esc(o.error)}</span>` : ''}<button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill ignition js-settings-save" data-r="R17">Save settings</button>`;
+    const foot = `<button class="pill ghost set-danger js-settings-reset${o.resetArm ? ' armed' : ''}" data-r="R18">${o.resetArm ? 'Click again — reset everything' : 'Reset all'}</button>${hasSettingsBackup() ? '<button class="pill ghost js-settings-undo" data-r="R18">Undo last change</button>' : ''}<span class="spacer"></span>${o.error ? `<span class="set-err">${esc(o.error)}</span>` : ''}<button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill ignition js-settings-save" data-r="R17">Save settings</button>`;
     pop.innerHTML = `
       <div class="popup-head">
         <span class="pl-ic">${I.sliders}</span>
@@ -8801,10 +8839,12 @@ function onClick(e) {
   if (closest('.js-switch-user')) { e.stopPropagation(); return switchUser(); }
   if (closest('.js-open-settings')) { e.stopPropagation(); return openSettings(); }
   if (closest('.js-settings-save')) { e.stopPropagation(); return saveSettings(); }
+  if (closest('.js-settings-reset')) { e.stopPropagation(); const o = state.overlay; if (!o) return; if (o.resetArm) return resetAllSettings(); o.resetArm = true; renderOverlay(); return; }   // armed two-click confirm
+  if (closest('.js-settings-undo')) { e.stopPropagation(); return undoLastSettings(); }
   if (closest('.js-overbook')) { e.stopPropagation(); const on = closest('.js-overbook').dataset.val === '1'; state.overbookOn = on; try { localStorage.setItem('jactec.overbook', on ? '1' : '0'); } catch (err) {} toast(on ? 'Overbooking allowed — conflicting links get a pulsing red Overbooked flag.' : 'Overbooking blocked — a conflicting unit drop is refused.'); renderOverlay(); return; }
   if (closest('.js-haptics')) { e.stopPropagation(); const on = closest('.js-haptics').dataset.val === '1'; state.hapticsOff = !on; try { localStorage.setItem('jactec.hapticsOff', on ? '0' : '1'); } catch (err) {} if (on) haptic([12, 30, 12]); renderOverlay(); return; }   // §M-touch — toggle + a sample buzz when turning ON
   // Settings Board — tab rail + Statuses & Icons editing
-  if (closest('.js-set-tab')) { e.stopPropagation(); const o = state.overlay; if (o) { captureLoginEdits(o); o.tab = closest('.js-set-tab').dataset.tab; o.iconFor = null; o.error = null; renderOverlay(); } return; }
+  if (closest('.js-set-tab')) { e.stopPropagation(); const o = state.overlay; if (o) { captureLoginEdits(o); o.tab = closest('.js-set-tab').dataset.tab; o.iconFor = null; o.error = null; o.resetArm = false; renderOverlay(); } return; }
   if (closest('.js-set-pick')) { e.stopPropagation(); const o = state.overlay; if (o) { o.setSel = closest('.js-set-pick').dataset.set; o.iconFor = null; renderOverlay(); } return; }
   if (closest('.js-set-color')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-set-color'); if (o) { setDraftStatus(o, b.dataset.set, b.dataset.val, { color: b.dataset.color }); renderOverlay(); } return; }
   if (closest('.js-set-icon-open')) { e.stopPropagation(); const o = state.overlay, k = closest('.js-set-icon-open').dataset.key; if (o) { o.iconFor = o.iconFor === k ? null : k; renderOverlay(); } return; }
@@ -11809,7 +11849,14 @@ function applyViewportClass() {
   document.body.classList.toggle('is-narrow', window.matchMedia('(max-width: 1024px)').matches);
 }
 function boot() {
+  // Recovery hatch: app.jacrentals.com/#reset-settings (or #safe-mode) wipes saved customizations
+  // before they apply — the guaranteed way back if a bad setting ever breaks the screen.
+  try {
+    const h = (location.hash || '').toLowerCase();
+    if (h.includes('reset-settings') || h.includes('safe-mode')) { localStorage.removeItem('jactec.settings'); localStorage.removeItem('jactec.settings.prev'); state.settings = {}; settingsReverted = true; }
+  } catch (e) {}
   applySettings();   // Settings Board: apply admin status overrides (color/icon) before the first render
+  if (settingsReverted) setTimeout(() => { try { toast('Customizations reset to defaults (recovery mode).'); } catch (e) {} }, 800);
   initTooltip();
   applyViewportClass();
   const onVP = () => { applyViewportClass(); if (!booting) render(); };
@@ -12093,7 +12140,7 @@ function exposeTestApi() {
       computeTransportPrice, isFueledType, unitTransport, rentalTransport,
       wrValidatePlan, applyWranglerData, wrFunnel, invoiceMergeable, mergeInvoiceInto,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
-      companyRevenueGoal, companyName, companyTagline, rentalRuleBlock, dueForCustomer, footerHidden, customFieldsFor, checklistFor, checklistRequired, __state: state };
+      companyRevenueGoal, companyName, companyTagline, rentalRuleBlock, dueForCustomer, footerHidden, customFieldsFor, checklistFor, checklistRequired, applySettings, getStatus, __state: state };
   } catch (e) { /* no window (non-browser) */ }
 }
 
