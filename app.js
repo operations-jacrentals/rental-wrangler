@@ -7302,12 +7302,23 @@ function openDropdown(anchorEl, html, { align = 'left', cls = '' } = {}) {
   dd._anchor = anchorEl;
   document.body.appendChild(dd);
   const rect = anchorEl.getBoundingClientRect();
-  const w = dd.offsetWidth || 180, h = dd.offsetHeight || 100;
-  let left = align === 'right' ? rect.right - w : rect.left;
-  left = Math.max(8, Math.min(left, window.innerWidth - w - 8));
-  let top = rect.bottom + 5;
-  if (top + h > window.innerHeight - 8) top = Math.max(8, rect.top - h - 5);
-  dd.style.left = left + 'px'; dd.style.top = top + 'px';
+  // Keep the menu fully on-screen. A tall menu (the 8-stage gate timeline) anchored
+  // low could otherwise spill far below the fold — flipping ALONE isn't enough, so we
+  // cap the height to the viewport and HARD-CLAMP top/left to both edges. Re-placed on
+  // the next frame because offsetHeight can grow after the first paint (fonts/icons).
+  dd.style.maxHeight = (window.innerHeight - 16) + 'px';
+  dd.style.overflowY = 'auto';
+  const place = () => {
+    const w = dd.offsetWidth || 180, h = dd.offsetHeight || 100;
+    let left = align === 'right' ? rect.right - w : rect.left;
+    left = Math.max(8, Math.min(left, window.innerWidth - w - 8));
+    let top = rect.bottom + 5;
+    if (top + h > window.innerHeight - 8) top = rect.top - h - 5;           // prefer flipping above the anchor
+    top = Math.max(8, Math.min(top, window.innerHeight - h - 8));           // …but never spill off either edge
+    dd.style.left = left + 'px'; dd.style.top = top + 'px';
+  };
+  place();
+  requestAnimationFrame(place);
   const off = (e) => { if (!dd.contains(e.target) && !anchorEl.contains(e.target)) { dd.remove(); document.removeEventListener('mousedown', off); } };
   dd._off = off;
   setTimeout(() => document.addEventListener('mousedown', off), 0);
