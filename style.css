@@ -693,15 +693,18 @@ select.lf-in { appearance: none; cursor: pointer; }
 .sort .dir span { font-size: 9px; line-height: 1.05; color: var(--txt-3); }
 .sort .dir span.on { color: var(--accent); }
 
-/* reusable floating dropdown menu (sort fields, status options) — matches board chrome */
-.dropdown-menu { position: fixed; z-index: 9100; min-width: 170px; padding: 6px; background: var(--panel); border: 1px solid var(--accent); border-radius: var(--chip-radius); box-shadow: var(--shadow), 0 0 0 2px var(--accent-line), 0 0 26px -8px rgba(255,122,26,.5); }
+/* reusable floating dropdown menu (sort fields, status options) — Tier 3 SELECTOR-LIST:
+   steel panel + a left hazard rail (the signature), no orange halo (dialogs keep that). */
+.dropdown-menu { position: fixed; z-index: 9100; min-width: 170px; padding: 6px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--chip-radius); box-shadow: var(--shadow), 0 0 0 1px rgba(0,0,0,.4); }
+.dropdown-menu:not(.gt) { position: fixed; overflow: hidden; padding-left: 14px; }
+.dropdown-menu:not(.gt)::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 6px; background: repeating-linear-gradient(180deg, var(--yellow) 0 11px, #14181d 11px 22px); }
 .dropdown-menu .dd-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 10px; border-radius: 9px; font-size: 12px; font-weight: 600; text-align: left; color: var(--txt-2); }
 .dropdown-menu .dd-item:hover { background: var(--panel-2); color: var(--txt); }
 .dropdown-menu .dd-item.on { color: var(--accent); }
 .dropdown-menu .dd-item .tick { margin-left: auto; opacity: 0; }
 .dropdown-menu .dd-item.on .tick { opacity: 1; }
 /* §5.5 Views menu: section headers + a per-view delete ✕ */
-.dropdown-menu .dd-sec { font-size: 9.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .5px; color: var(--txt-3); padding: 8px 10px 3px; }
+.dropdown-menu .dd-sec { font-family: 'Saira Condensed', system-ui, sans-serif; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.1px; color: var(--txt-3); padding: 8px 10px 3px; }
 .dropdown-menu .dd-item.js-applyview.on .tick { margin-left: 0; }
 .dropdown-menu .dd-item .x { margin-left: auto; opacity: .45; font-size: 12px; padding: 0 2px; }
 .dropdown-menu .dd-item .x:hover { opacity: 1; color: var(--red); }
@@ -2038,8 +2041,9 @@ input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
 /* the timeline grew 6px so the gate + rate stack never collide */
 .timeline { height: 56px; }
 .tl-over .mid { gap: 2px; }
-/* R20 CONTEXT MENU — right-click on any element */
-.ctx-menu { position: fixed; z-index: 210; min-width: 190px; background: var(--card); border: 1px solid var(--accent-line); border-radius: 12px; box-shadow: 0 0 0 2px var(--accent-soft), var(--shadow); padding: 5px; }
+/* R20 CONTEXT MENU — right-click on any element. Tier 3 selector-list: steel + left hazard rail. */
+.ctx-menu { position: fixed; z-index: 210; min-width: 190px; overflow: hidden; background: var(--card); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow), 0 0 0 1px rgba(0,0,0,.4); padding: 5px 5px 5px 13px; }
+.ctx-menu::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 6px; background: repeating-linear-gradient(180deg, var(--yellow) 0 11px, #14181d 11px 22px); }
 .ctx-menu .dd-item { display: flex; align-items: center; gap: 9px; width: 100%; padding: 7px 10px; border-radius: 8px; background: none; border: none; color: var(--txt); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; text-align: left; }
 .ctx-menu .dd-item:hover { background: var(--panel-2); }
 .ctx-menu .menu-sep { height: 1px; background: var(--line); margin: 4px 0; }
