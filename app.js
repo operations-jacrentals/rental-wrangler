@@ -1828,7 +1828,7 @@ const SETTINGS_TABS = [
   { id: 'general',       label: 'Company',          icon: CARD_ICON.vendors,      v1: true },
   { id: 'fields',        label: 'Custom Fields',    icon: I.sliders,              note: 'Add fields to customers, units, rentals & invoices — type, required, placement.' },
   { id: 'inspections',   label: 'Inspections',      icon: CARD_ICON.inspections,  note: 'Checklist templates per category type, Pass/Fail items, required photos, auto-fail → WO.' },
-  { id: 'requirements',  label: 'Rental Rules',     icon: STATUS_ICONS.shield,    note: 'Require card-on-file for On Rent; selfie / signature / ID / PO as Required · Optional · None; Cash vs Net 30.' },
+  { id: 'requirements',  label: 'Rental Rules',     icon: STATUS_ICONS.shield,    v1: true },
   { id: 'kpis',          label: 'KPIs & Rings',     icon: STATUS_ICONS.gauge,     v1: true },
   { id: 'notifications', label: 'Notifications',    icon: I.bell,                 note: 'Team chat on/off, driver dispatch alerts, customer reminders & cadence.' },
   { id: 'layout',        label: 'Layout & Footers', icon: I.grid,                 note: 'Per-card footer visibility, card / column visibility, grid order, default sort.' },
@@ -1856,6 +1856,7 @@ function settingsBoardHtml(o) {
   else if (o.tab === 'logins') pane = settingsLoginsPane(o);
   else if (o.tab === 'kpis') pane = settingsKpisPane(o);
   else if (o.tab === 'general') pane = settingsCompanyPane(o);
+  else if (o.tab === 'requirements') pane = settingsRulesPane(o);
   else pane = settingsPlannedPane(SETTINGS_TABS.find((t) => t.id === o.tab));
   return `<div class="set-board"><nav class="set-rail" aria-label="Settings sections">${rail}</nav><div class="set-pane">${pane}</div></div>`;
 }
@@ -1891,6 +1892,37 @@ function settingsCompanyPane(o) {
 }
 const companyDraftName = (co) => (String(co.name || '').trim() || COMPANY_DEFAULTS.name);
 const companyDraftTagline = (co) => (String(co.tagline || '').trim() || COMPANY_DEFAULTS.tagline);
+// Rental Rules — data-ready requirements (enforced) + those still needing a capture field.
+const RENTAL_RULES_READY = [
+  { key: 'card', label: 'Card on file', desc: 'A valid (un-expired) card saved to the customer.' },
+  { key: 'signature', label: 'Signed agreement', desc: 'The customer has e-signed the rental agreement.' },
+  { key: 'selfie', label: 'Customer selfie', desc: 'A selfie captured in the account packet.' },
+  { key: 'po', label: 'PO number', desc: "A PO number on the rental's invoice." },
+];
+const RENTAL_RULES_PLANNED = [
+  { label: 'Driver’s license / ID', desc: 'Needs an ID capture field on the account packet.' },
+  { label: 'Deposit', desc: 'Needs a deposit amount + payment concept on the rental.' },
+  { label: 'Payment terms (Cash / Net 30)', desc: 'Needs a terms field wired into the invoice due-date.' },
+];
+function settingsRulesPane(o) {
+  const draft = (o.draftSettings && o.draftSettings.rentalRules) || (state.settings && state.settings.rentalRules) || {};
+  const rows = RENTAL_RULES_READY.map((r) => {
+    const on = draft[r.key] === 'required';
+    return `<div class="rule-row${on ? ' on' : ''}">
+      <div class="rule-main"><span class="rule-label">${esc(r.label)}</span><span class="rule-desc">${esc(r.desc)}</span></div>
+      ${segCtl([{ label: 'Off', js: 'js-rule-set', data: { rule: r.key, val: 'off' }, on: on ? null : 'gray' }, { label: 'Required', js: 'js-rule-set', data: { rule: r.key, val: 'required' }, on: on ? 'red' : null }])}
+    </div>`;
+  }).join('');
+  const planned = RENTAL_RULES_PLANNED.map((r) => `<div class="rule-row rule-soon">
+      <div class="rule-main"><span class="rule-label">${esc(r.label)}</span><span class="rule-desc">${esc(r.desc)}</span></div>
+      <span class="rule-soon-tag">Needs a field</span>
+    </div>`).join('');
+  return `
+    <div class="set-pane-head"><h4>Rental Rules</h4><p>Set a requirement to <strong>Required</strong> and a unit <strong>cannot go On Rent</strong> until it's met — a hard stop, no override. Leave it Off to change nothing.</p></div>
+    <div class="rule-list">${rows}</div>
+    <div class="rule-planned-head">Coming once their capture field exists</div>
+    <div class="rule-list">${planned}</div>`;
+}
 function settingsStatusesPane(o) {
   const setSel = o.setSel || 'rentalStatus';
   const picker = SETTINGS_STATUS_SETS.map((s) => `<button class="set-pick js-set-pick${s.set === setSel ? ' on' : ''}" data-set="${s.set}">${esc(s.label)}</button>`).join('');
@@ -8628,6 +8660,8 @@ function onClick(e) {
   if (closest('.js-kpi-band')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-kpi-band'); if (o) { const rings = ensureKpiDraft(o, b.dataset.role); rings[Number(b.dataset.i)].band = b.dataset.band; renderOverlay(); } return; }
   if (closest('.js-kpi-reset')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-kpi-reset'); if (o) { const rings = ensureKpiDraft(o, b.dataset.role); rings[Number(b.dataset.i)] = JSON.parse(JSON.stringify((KPI_DEFAULTS[b.dataset.role] || [])[Number(b.dataset.i)] || {})); renderOverlay(); } return; }
   if (closest('.js-kpi-refine')) { e.stopPropagation(); const b = closest('.js-kpi-refine'); openWranglerForKpi(b.dataset.role, Number(b.dataset.i)); return; }
+  // Rental Rules tab
+  if (closest('.js-rule-set')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-rule-set'); if (o) { o.draftSettings = o.draftSettings || {}; o.draftSettings.rentalRules = o.draftSettings.rentalRules || { ...((state.settings && state.settings.rentalRules) || {}) }; o.draftSettings.rentalRules[b.dataset.rule] = b.dataset.val === 'required' ? 'required' : 'off'; renderOverlay(); } return; }
   if (closest('.js-nc-save')) { e.stopPropagation(); return saveNewCustomer(); }
   if (closest('.js-nc-acct')) { const b = closest('.js-nc-acct'); e.stopPropagation(); ncSyncInputs(); state.overlay.draft.accountType = b.dataset.val; renderOverlay(); return; }
   if (closest('.js-nc-selfie-clear')) { e.stopPropagation(); ncSyncInputs(); state.overlay.draft.selfie = ''; renderOverlay(); return; }
@@ -9216,6 +9250,21 @@ function cardOverrideRental(rentalId, val) {
     setRentalStatus(rentalId, val);
   });
 }
+/* Admin "Rental Rules" (Settings → Rental Rules) — HARD-BLOCK On Rent until every
+   requirement an admin marked Required is met. Pure + defensive: with no rules set
+   (the default) it always returns null, so the On Rent flow is byte-for-byte today's. */
+function rentalRuleBlock(r, cust, val) {
+  if (val !== 'On Rent') return null;
+  const rules = (state.settings && state.settings.rentalRules) || {};
+  const req = (k) => rules[k] === 'required';
+  if (!req('card') && !req('signature') && !req('selfie') && !req('po')) return null;
+  const inv = r && r.invoiceId ? IDX.invoice.get(r.invoiceId) : null;
+  if (req('card') && !(cust && hasValidCard(cust))) return 'Rental rule: a valid card on file is required before On Rent.';
+  if (req('signature') && !(cust && cust.signature)) return 'Rental rule: a signed agreement is required before On Rent.';
+  if (req('selfie') && !(cust && cust.selfie)) return 'Rental rule: a customer selfie is required before On Rent.';
+  if (req('po') && !(inv && inv.po)) return 'Rental rule: a PO number on the invoice is required before On Rent.';
+  return null;
+}
 function setRentalStatus(rentalId, val) {
   const r = IDX.rental.get(rentalId);
   if (!r) return;
@@ -9223,6 +9272,7 @@ function setRentalStatus(rentalId, val) {
   // §9 hard gates
   if (val === 'On Rent' && !r.invoiceId) { flashOr('.js-create-invoice', 'Blocked: "On Rent" requires a linked invoice (§9).'); return; }
   if (['On Rent', 'Reserved'].includes(val) && cust && /Blacklist/i.test(cust.accountType || '')) { toast('Blocked: customer is blacklisted (§9).'); return; }
+  const _rb = rentalRuleBlock(r, cust, val); if (_rb) { flashOr('.js-add-card', _rb); return; }   // admin Rental Rules — hard block
   // §14 — a booking requires a valid card on file by default; an Admin can override.
   if (BOOKING_STATUSES.includes(val) && cust && !hasValidCard(cust) && !r.cardOverride) {
     toast(`${cust.name} has no valid card on file — Admin override required.`);
@@ -9252,6 +9302,7 @@ function setUnitStatus(rentalId, unitId, val) {
   const cust = r.customerId ? IDX.customer.get(r.customerId) : null;
   if (val === 'On Rent' && !r.invoiceId) { flashOr('.js-create-invoice', 'Blocked: "On Rent" requires a linked invoice (§9).'); return; }
   if (['On Rent', 'Reserved'].includes(val) && cust && /Blacklist/i.test(cust.accountType || '')) { toast('Blocked: customer is blacklisted (§9).'); return; }
+  { const _rb = rentalRuleBlock(r, cust, val); if (_rb) { toast(_rb); return; } }   // admin Rental Rules — hard block
   if (BOOKING_STATUSES.includes(val) && cust && !hasValidCard(cust) && !r.cardOverride) { toast(`${cust.name} has no valid card on file — Admin override required.`); return; }
   // §20 No-Show / Cancel: don't commit the terminal status while a payment is
   // assigned to the unit (it would count toward Complete yet stay billed) — block first.
@@ -11831,7 +11882,7 @@ function exposeTestApi() {
       computeTransportPrice, isFueledType, unitTransport, rentalTransport,
       wrValidatePlan, applyWranglerData, wrFunnel, invoiceMergeable, mergeInvoiceInto,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
-      companyRevenueGoal, companyName, companyTagline, __state: state };
+      companyRevenueGoal, companyName, companyTagline, rentalRuleBlock, __state: state };
   } catch (e) { /* no window (non-browser) */ }
 }
 

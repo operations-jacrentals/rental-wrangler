@@ -285,6 +285,22 @@ try {
     st.settings.company = savedCo;   // restore
     ok(JSON.stringify(T.kpiFor('sales')) === JSON.stringify(T.legacyKpiPct('sales')), 'no company override → Sales ring matches the shipped default (150k)');
 
+    // 17) Rental Rules — hard-block On Rent (default Off = zero change; pure rentalRuleBlock)
+    const savedRules = st.settings.rentalRules;
+    st.settings.rentalRules = {};
+    ok(T.rentalRuleBlock({ invoiceId: null }, { name: 'X' }, 'On Rent') === null, 'no rules set → On Rent never blocked (regression-safe default)');
+    st.settings.rentalRules = { signature: 'required' };
+    ok(T.rentalRuleBlock({}, { name: 'X' }, 'Reserved') === null, 'rules gate ONLY On Rent (Reserved passes)');
+    ok(/sign/i.test(T.rentalRuleBlock({}, { name: 'X' }, 'On Rent') || ''), 'signature Required + no signature → On Rent blocked');
+    ok(T.rentalRuleBlock({}, { name: 'X', signature: 'data:sig' }, 'On Rent') === null, 'signature Required + signature on file → allowed');
+    st.settings.rentalRules = { card: 'required' };
+    ok(/card/i.test(T.rentalRuleBlock({}, { name: 'X' }, 'On Rent') || ''), 'card Required + no card → On Rent blocked (true hard stop)');
+    st.settings.rentalRules = { po: 'required' };
+    ok(/PO/.test(T.rentalRuleBlock({ invoiceId: null }, { name: 'X' }, 'On Rent') || ''), 'PO Required + no invoice/PO → On Rent blocked');
+    const poInv = T.DATA.invoices.find((i) => i.po);
+    if (poInv) ok(T.rentalRuleBlock({ invoiceId: poInv.invoiceId }, { name: 'X' }, 'On Rent') === null, 'PO Required + invoice carries a PO → allowed');
+    st.settings.rentalRules = savedRules;   // restore
+
     return out;
   });
 
