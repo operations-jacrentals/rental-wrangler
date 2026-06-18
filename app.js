@@ -1815,6 +1815,15 @@ function persistAdminSettings(s) {
 // config keeps every surface exactly as it ships today.
 const companyCfg = () => (state.settings && state.settings.company) || {};
 const COMPANY_DEFAULTS = { name: 'JacRentals', tagline: 'Heavy-Equipment Rental · Sulphur, LA', revenueGoal: (CFG.REVENUE_GOAL_DEFAULT || 150000) };
+// Invoice due-date from the customer's payment terms (Settings → Rental Rules can require terms).
+// Unset terms keep the shipped 14-day default, so existing customers are unchanged.
+function dueForCustomer(customerId) {
+  const c = customerId ? IDX.customer.get(customerId) : null;
+  const terms = c && c.paymentTerms;
+  if (terms === 'Net 30') return addDays(TODAY_ISO, 30);
+  if (terms === 'Cash') return TODAY_ISO;
+  return addDays(TODAY_ISO, 14);
+}
 const companyName = () => (companyCfg().name || '').trim() || COMPANY_DEFAULTS.name;
 const companyTagline = () => (companyCfg().tagline || '').trim() || COMPANY_DEFAULTS.tagline;
 const companyRevenueGoal = () => { const n = Number(companyCfg().revenueGoal); return n > 0 ? n : COMPANY_DEFAULTS.revenueGoal; };
@@ -1897,12 +1906,12 @@ const RENTAL_RULES_READY = [
   { key: 'card', label: 'Card on file', desc: 'A valid (un-expired) card saved to the customer.' },
   { key: 'signature', label: 'Signed agreement', desc: 'The customer has e-signed the rental agreement.' },
   { key: 'selfie', label: 'Customer selfie', desc: 'A selfie captured in the account packet.' },
+  { key: 'id', label: 'Driver’s license / ID', desc: 'An ID / license number on the customer account.' },
+  { key: 'terms', label: 'Payment terms set', desc: 'Customer has Cash or Net 30 selected (drives the due date).' },
   { key: 'po', label: 'PO number', desc: "A PO number on the rental's invoice." },
 ];
 const RENTAL_RULES_PLANNED = [
-  { label: 'Driver’s license / ID', desc: 'Needs an ID capture field on the account packet.' },
   { label: 'Deposit', desc: 'Needs a deposit amount + payment concept on the rental.' },
-  { label: 'Payment terms (Cash / Net 30)', desc: 'Needs a terms field wired into the invoice due-date.' },
 ];
 function settingsRulesPane(o) {
   const draft = (o.draftSettings && o.draftSettings.rentalRules) || (state.settings && state.settings.rentalRules) || {};
@@ -6790,6 +6799,8 @@ function renderOverlay() {
           <label class="nc-field"><span>Email</span><input class="nc-in" data-f="email" type="email" value="${esc(d.email)}" autocomplete="off" /></label>
           <label class="nc-field nc-wide"><span>Industry</span><input class="nc-in" data-f="industry" list="nc-industries" value="${esc(d.industry)}" autocomplete="off" /></label>
           <div class="nc-field nc-wide"><span>Account type</span><div class="nc-pills">${acctPills}</div></div>
+          <label class="nc-field"><span>Driver’s license / ID #</span><input class="nc-in" data-f="idNumber" value="${esc(d.idNumber || '')}" autocomplete="off" /></label>
+          <div class="nc-field"><span>Payment terms</span><div class="nc-pills">${NC_PAYMENT_TERMS.map((t) => `<button type="button" class="nc-pill js-nc-terms${t === d.paymentTerms ? ' on' : ''}" data-val="${esc(t)}">${esc(t)}</button>`).join('')}</div></div>
           <label class="nc-field nc-wide"><span>Notes</span><input class="nc-in" data-f="accountNotes" value="${esc(d.accountNotes)}" autocomplete="off" /></label>
         </div>
         <datalist id="nc-industries">${indOpts}</datalist>
@@ -8664,6 +8675,7 @@ function onClick(e) {
   if (closest('.js-rule-set')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-rule-set'); if (o) { o.draftSettings = o.draftSettings || {}; o.draftSettings.rentalRules = o.draftSettings.rentalRules || { ...((state.settings && state.settings.rentalRules) || {}) }; o.draftSettings.rentalRules[b.dataset.rule] = b.dataset.val === 'required' ? 'required' : 'off'; renderOverlay(); } return; }
   if (closest('.js-nc-save')) { e.stopPropagation(); return saveNewCustomer(); }
   if (closest('.js-nc-acct')) { const b = closest('.js-nc-acct'); e.stopPropagation(); ncSyncInputs(); state.overlay.draft.accountType = b.dataset.val; renderOverlay(); return; }
+  if (closest('.js-nc-terms')) { const b = closest('.js-nc-terms'); e.stopPropagation(); ncSyncInputs(); const d = state.overlay.draft; d.paymentTerms = d.paymentTerms === b.dataset.val ? '' : b.dataset.val; renderOverlay(); return; }
   if (closest('.js-nc-selfie-clear')) { e.stopPropagation(); ncSyncInputs(); state.overlay.draft.selfie = ''; renderOverlay(); return; }
   if (closest('.js-nc-sig-save')) { e.stopPropagation(); const cv = document.querySelector('.overlay .nc-sigpad'); if (cv && cv.dataset.drawn) { ncSyncInputs(); const dr = state.overlay.draft; dr.signature = cv.toDataURL('image/jpeg', 0.6); dr.agreementType = /member/i.test(dr.accountType || '') ? 'membership' : 'rental'; dr.agreementSignedAt = TODAY_ISO; renderOverlay(); } else flashOr('.overlay .nc-sigpad', 'Sign in the box first.'); return; }
   if (closest('.js-nc-sig-clearpad')) { e.stopPropagation(); const cv = document.querySelector('.overlay .nc-sigpad'); if (cv) { const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height); cv.dataset.drawn = ''; } return; }
@@ -9257,11 +9269,13 @@ function rentalRuleBlock(r, cust, val) {
   if (val !== 'On Rent') return null;
   const rules = (state.settings && state.settings.rentalRules) || {};
   const req = (k) => rules[k] === 'required';
-  if (!req('card') && !req('signature') && !req('selfie') && !req('po')) return null;
+  if (!['card', 'signature', 'selfie', 'po', 'id', 'terms'].some(req)) return null;
   const inv = r && r.invoiceId ? IDX.invoice.get(r.invoiceId) : null;
   if (req('card') && !(cust && hasValidCard(cust))) return 'Rental rule: a valid card on file is required before On Rent.';
   if (req('signature') && !(cust && cust.signature)) return 'Rental rule: a signed agreement is required before On Rent.';
   if (req('selfie') && !(cust && cust.selfie)) return 'Rental rule: a customer selfie is required before On Rent.';
+  if (req('id') && !(cust && cust.idNumber)) return "Rental rule: a driver's license / ID is required before On Rent.";
+  if (req('terms') && !(cust && cust.paymentTerms)) return 'Rental rule: payment terms (Cash or Net 30) must be set before On Rent.';
   if (req('po') && !(inv && inv.po)) return 'Rental rule: a PO number on the invoice is required before On Rent.';
   return null;
 }
@@ -10048,6 +10062,7 @@ function openCustomerForm(editId, prefill, linkTo) {
     email: f('email'), industry: f('industry'), accountType: f('accountType', 'Non-Business'),
     accountNotes: f('accountNotes'), selfie: f('selfie'), signature: f('signature'),
     agreementType: f('agreementType'), agreementSignedAt: f('agreementSignedAt'),
+    idNumber: f('idNumber'), paymentTerms: f('paymentTerms'),
   } });
 }
 // Downscale + JPEG-compress an image data URL so it fits inside one Sheet cell
@@ -10066,6 +10081,7 @@ function downscaleImage(dataUrl, maxDim, quality, cb) {
 }
 const NC_INDUSTRIES = ['Construction', 'Concrete', 'Welding', 'Electrical', 'Plumbing', 'Roofing', 'Painting', 'Landscaping', 'Trucking', 'Industrial', 'Oil & Gas', 'Real Estate', 'Entertainment', 'Agriculture'];
 const NC_ACCOUNT_TYPES = ['Non-Business', 'Business', 'Non-Business Member', 'Business Member'];
+const NC_PAYMENT_TERMS = ['Cash', 'Net 30'];   // drives invoice due-date (Settings → Rental Rules can require it)
 /** Next sequential customer id (C0001 format), one past the current max. */
 function nextCustomerId() {
   const max = DATA.customers.reduce((m, c) => { const n = /^C(\d+)$/.exec(c.customerId || ''); return n ? Math.max(m, +n[1]) : m; }, 0);
@@ -10083,6 +10099,7 @@ function quickSaveCustomer(o) {
     company: d.company, phone: d.phone, email: d.email, address: '',
     industry: d.industry, accountType: d.accountType || 'Non-Business', payStatus: 'New Customer',
     requiresPO: false, accountNotes: d.accountNotes, stripeId: '', selfie: d.selfie || '', signature: d.signature || '',
+    idNumber: d.idNumber || '', paymentTerms: d.paymentTerms || '',
     agreementType: d.agreementType || '', agreementSignedAt: d.agreementSignedAt || '',
     interestedCategoryIds: [], activityLog: [], usedSalesStage: 'N/A', membershipStage: 'N/A',
     _digest: { activePct: 0, totalPaid: 0, visits: 0, years: 0, avgFrequencyDays: 0, firstInvoice: '', lastInvoice: '' },
@@ -10129,7 +10146,7 @@ function saveNewCustomer() {
   if (o.editId) {                                   // ── editing / completing an existing customer ──
     const c = IDX.customer.get(o.editId); if (!c) { closeOverlay(); return; }
     const wasSigned = !!c.agreementSignedAt;
-    Object.assign(c, { firstName: d.firstName, lastName: d.lastName, company: d.company, phone: d.phone, email: d.email, industry: d.industry, accountType: d.accountType || 'Non-Business', accountNotes: d.accountNotes, selfie: d.selfie, signature: d.signature, agreementType: d.agreementType || '', agreementSignedAt: d.agreementSignedAt || '' });
+    Object.assign(c, { firstName: d.firstName, lastName: d.lastName, company: d.company, phone: d.phone, email: d.email, industry: d.industry, accountType: d.accountType || 'Non-Business', accountNotes: d.accountNotes, selfie: d.selfie, signature: d.signature, agreementType: d.agreementType || '', agreementSignedAt: d.agreementSignedAt || '', idNumber: d.idNumber || '', paymentTerms: d.paymentTerms || '' });
     if (!c.accountNotes) c.accountNotesColor = '';   // popup has no dot picker — don't leave a stale tag on a cleared note
     c.name = `${d.firstName} ${d.lastName}`.trim() || c.name;
     reindex('customers', c);
@@ -10147,6 +10164,7 @@ function saveNewCustomer() {
     company: d.company, phone: d.phone, email: d.email, address: '',
     industry: d.industry, accountType: d.accountType || 'Non-Business', payStatus: 'New Customer',
     requiresPO: false, accountNotes: d.accountNotes, stripeId: '', selfie: d.selfie || '', signature: d.signature || '',
+    idNumber: d.idNumber || '', paymentTerms: d.paymentTerms || '',
     agreementType: d.agreementType || '', agreementSignedAt: d.agreementSignedAt || '',
     interestedCategoryIds: [], activityLog: [], usedSalesStage: 'N/A', membershipStage: 'N/A',
     _digest: { activePct: 0, totalPaid: 0, visits: 0, years: 0, avgFrequencyDays: 0, firstInvoice: '', lastInvoice: '' },
@@ -10630,7 +10648,7 @@ function startNewWorkOrder(unitId) {
 function startNewInvoice(customerId) {
   const cust = customerId ? IDX.customer.get(customerId) : null;
   const id = nextInvoiceId();
-  const draft = { invoiceId: id, customerId: customerId || null, rentalIds: [], date: TODAY_ISO, dueDate: addDays(TODAY_ISO, 14), po: '', amountPaid: 0, lineItems: [], mock: true };
+  const draft = { invoiceId: id, customerId: customerId || null, rentalIds: [], date: TODAY_ISO, dueDate: dueForCustomer(customerId), po: '', amountPaid: 0, lineItems: [], mock: true };
   DATA.invoices.push(draft); IDX.invoice.set(id, draft); reindex('invoices', draft);
   logAction(draft, cust ? `Invoice created for ${cust.name}` : 'Invoice created');
   anchorRecord('invoices', id);   // no pick mode — drag links it up (Wave 2)
@@ -10684,7 +10702,7 @@ function createInvoiceForRental(rentalId) {
   if (!r.startDate || !r.endDate) { flashOr('.timeline, .statusbar.draftwin', 'Set the rental window first.'); return; }
   if (!rentalUnitIds(r).length) { flashOr('.stall-empty, [data-slot="unit"]', 'Add at least one unit before invoicing.'); return; }
   const id = nextInvoiceId();
-  const inv = { invoiceId: id, customerId: r.customerId, rentalIds: [rentalId], date: TODAY_ISO, dueDate: addDays(TODAY_ISO, 14), po: '', amountPaid: 0, lineItems: [], mock: true };
+  const inv = { invoiceId: id, customerId: r.customerId, rentalIds: [rentalId], date: TODAY_ISO, dueDate: dueForCustomer(r.customerId), po: '', amountPaid: 0, lineItems: [], mock: true };
   rentalLineItems(r).forEach((li) => inv.lineItems.push(li));      // one rental line per unit (§20)
   transportLineItems(r).forEach((li) => inv.lineItems.push(li));   // one transport line per unit (§20)
   DATA.invoices.push(inv); IDX.invoice.set(id, inv); reindex('invoices', inv);
@@ -11235,7 +11253,7 @@ function billWOToInvoice(woId) {
   let inv = DATA.invoices.find((i) => i.customerId === custId && !['Paid', 'Refunded'].includes(invoiceTotals(i).status));
   if (!inv) {
     const id = nextInvoiceId();
-    inv = { invoiceId: id, customerId: custId, rentalIds: [], date: TODAY_ISO, dueDate: addDays(TODAY_ISO, 14), po: '', amountPaid: 0, lineItems: [], mock: true };
+    inv = { invoiceId: id, customerId: custId, rentalIds: [], date: TODAY_ISO, dueDate: dueForCustomer(custId), po: '', amountPaid: 0, lineItems: [], mock: true };
     DATA.invoices.push(inv); IDX.invoice.set(id, inv); reindex('invoices', inv);
   }
   addWOToInvoice(inv.invoiceId, woId);
@@ -11882,7 +11900,7 @@ function exposeTestApi() {
       computeTransportPrice, isFueledType, unitTransport, rentalTransport,
       wrValidatePlan, applyWranglerData, wrFunnel, invoiceMergeable, mergeInvoiceInto,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
-      companyRevenueGoal, companyName, companyTagline, rentalRuleBlock, __state: state };
+      companyRevenueGoal, companyName, companyTagline, rentalRuleBlock, dueForCustomer, __state: state };
   } catch (e) { /* no window (non-browser) */ }
 }
 

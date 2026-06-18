@@ -299,7 +299,19 @@ try {
     ok(/PO/.test(T.rentalRuleBlock({ invoiceId: null }, { name: 'X' }, 'On Rent') || ''), 'PO Required + no invoice/PO → On Rent blocked');
     const poInv = T.DATA.invoices.find((i) => i.po);
     if (poInv) ok(T.rentalRuleBlock({ invoiceId: poInv.invoiceId }, { name: 'X' }, 'On Rent') === null, 'PO Required + invoice carries a PO → allowed');
+    st.settings.rentalRules = { id: 'required' };
+    ok(/ID/i.test(T.rentalRuleBlock({}, { name: 'X' }, 'On Rent') || '') && T.rentalRuleBlock({}, { name: 'X', idNumber: 'LA-12345' }, 'On Rent') === null, 'ID Required: blocks without an ID #, allows with one');
+    st.settings.rentalRules = { terms: 'required' };
+    ok(/terms/i.test(T.rentalRuleBlock({}, { name: 'X' }, 'On Rent') || '') && T.rentalRuleBlock({}, { name: 'X', paymentTerms: 'Net 30' }, 'On Rent') === null, 'Payment-terms Required: blocks until Cash/Net 30 is set');
     st.settings.rentalRules = savedRules;   // restore
+
+    // 18) Payment terms → invoice due date (Cash = today, Net 30 = +30, unset = shipped 14-day default)
+    const tc = T.DATA.customers[0]; const savedTerms = tc.paymentTerms;
+    tc.paymentTerms = ''; ok(T.dueForCustomer(tc.customerId) > T.TODAY_ISO, 'no terms → a future (14-day) due date, unchanged from today');
+    const due14 = T.dueForCustomer(tc.customerId);
+    tc.paymentTerms = 'Cash'; ok(T.dueForCustomer(tc.customerId) === T.TODAY_ISO, 'Cash → due today');
+    tc.paymentTerms = 'Net 30'; const due30 = T.dueForCustomer(tc.customerId); ok(due30 > due14, `Net 30 → later due date than the 14-day default (${due30} > ${due14})`);
+    tc.paymentTerms = savedTerms;   // restore
 
     return out;
   });
