@@ -1820,6 +1820,10 @@ const footerHidden = (card) => (layoutCfg().footers || {})[card] === 'off';
 // Admin-defined custom fields per entity (Settings → Custom Fields). Values live schema-less
 // on the record (rec.custom[fieldId]); an empty config means no extra fields anywhere.
 const customFieldsFor = (entity) => ((state.settings && state.settings.customFields) || {})[entity] || [];
+// Per-category inspection checklists (Settings → Inspections). Empty = today's quick Pass/Fail only.
+const inspectionCfg = (categoryId) => ((state.settings && state.settings.inspections) || {})[categoryId] || null;
+function checklistFor(unit) { const c = unit && inspectionCfg(unit.categoryId); return (c && Array.isArray(c.items) && c.items.length) ? c : null; }
+const checklistRequired = (unit) => { const c = checklistFor(unit); return !!(c && c.required); };
 const COMPANY_DEFAULTS = { name: 'JacRentals', tagline: 'Heavy-Equipment Rental · Sulphur, LA', revenueGoal: (CFG.REVENUE_GOAL_DEFAULT || 150000), maxNetDays: 30 };
 const companyName = () => (companyCfg().name || '').trim() || COMPANY_DEFAULTS.name;
 const companyTagline = () => (companyCfg().tagline || '').trim() || COMPANY_DEFAULTS.tagline;
@@ -1845,7 +1849,7 @@ const SETTINGS_TABS = [
   { id: 'statuses',      label: 'Statuses & Icons', icon: STATUS_ICONS.tag,       v1: true },
   { id: 'general',       label: 'Company',          icon: CARD_ICON.vendors,      v1: true },
   { id: 'fields',        label: 'Custom Fields',    icon: I.sliders,              v1: true },
-  { id: 'inspections',   label: 'Inspections',      icon: CARD_ICON.inspections,  note: 'Checklist templates per category type, Pass/Fail items, required photos, auto-fail → WO.' },
+  { id: 'inspections',   label: 'Inspections',      icon: CARD_ICON.inspections,  v1: true },
   { id: 'requirements',  label: 'Rental Rules',     icon: STATUS_ICONS.shield,    v1: true },
   { id: 'kpis',          label: 'KPIs & Rings',     icon: STATUS_ICONS.gauge,     v1: true },
   { id: 'notifications', label: 'Notifications',    icon: I.bell,                 note: 'Team chat on/off, driver dispatch alerts, customer reminders & cadence.' },
@@ -1877,6 +1881,7 @@ function settingsBoardHtml(o) {
   else if (o.tab === 'requirements') pane = settingsRulesPane(o);
   else if (o.tab === 'layout') pane = settingsLayoutPane(o);
   else if (o.tab === 'fields') pane = settingsFieldsPane(o);
+  else if (o.tab === 'inspections') pane = settingsInspectionsPane(o);
   else pane = settingsPlannedPane(SETTINGS_TABS.find((t) => t.id === o.tab));
   return `<div class="set-board"><nav class="set-rail" aria-label="Settings sections">${rail}</nav><div class="set-pane">${pane}</div></div>`;
 }
@@ -1980,6 +1985,37 @@ function ensureCfDraft(o, entity) {
   o.draftSettings.customFields = o.draftSettings.customFields || {};
   if (!o.draftSettings.customFields[entity]) o.draftSettings.customFields[entity] = JSON.parse(JSON.stringify(customFieldsFor(entity)));
   return o.draftSettings.customFields[entity];
+}
+function ensureInspDraft(o, catId) {
+  o.draftSettings = o.draftSettings || {};
+  o.draftSettings.inspections = o.draftSettings.inspections || {};
+  if (!o.draftSettings.inspections[catId]) { const cur = inspectionCfg(catId); o.draftSettings.inspections[catId] = cur ? JSON.parse(JSON.stringify(cur)) : { required: false, items: [] }; }
+  return o.draftSettings.inspections[catId];
+}
+function draftInspCfg(o, catId) {
+  return (o.draftSettings && o.draftSettings.inspections && o.draftSettings.inspections[catId]) || inspectionCfg(catId) || { required: false, items: [] };
+}
+function settingsInspectionsPane(o) {
+  const cats = DATA.categories || [];
+  const catId = o.inspCat || (cats[0] && cats[0].categoryId) || '';
+  o.inspCat = catId;
+  const pick = cats.map((c) => { const cfg = draftInspCfg(o, c.categoryId); const tag = (cfg.items && cfg.items.length) ? (cfg.required ? ' ●' : ' ○') : ''; return `<button class="set-pick js-insp-cat${c.categoryId === catId ? ' on' : ''}" data-cat="${esc(c.categoryId)}">${esc(c.name)}${tag}</button>`; }).join('');
+  const cfg = draftInspCfg(o, catId);
+  const cat = IDX.category.get(catId);
+  const items = cfg.items || [];
+  const rows = items.length ? items.map((it) => `<div class="rule-row">
+      <div class="rule-main"><span class="rule-label">${esc(it.label)}</span><span class="rule-desc">Pass / Fail line</span></div>
+      <button class="so-reset js-insp-remove" data-cat="${esc(catId)}" data-id="${esc(it.id)}" data-tip="Remove item">${I.x}</button>
+    </div>`).join('') : '<p class="set-note">No checklist items yet — add the things to inspect below.</p>';
+  return `
+    <div class="set-pane-head"><h4>Inspections</h4><p>Build a Pass/Fail checklist per category. When a category's checklist is <strong>Required</strong>, starting an inspection on one of its units opens a full-screen checklist that must be completed — any Fail trips the existing failed-inspection work order.</p></div>
+    <div class="set-picker">${pick}</div>
+    <div class="rule-row" style="margin-bottom:10px"><div class="rule-main"><span class="rule-label">Require a checklist for ${esc(cat ? cat.name : 'this category')}</span><span class="rule-desc">On = +Inspection takes over the sheet until every item is checked.</span></div>${segCtl([{ label: 'Off', js: 'js-insp-req', data: { cat: catId, v: '0' }, on: cfg.required ? null : 'gray' }, { label: 'Required', js: 'js-insp-req', data: { cat: catId, v: '1' }, on: cfg.required ? 'red' : null }])}</div>
+    <div class="rule-list">${rows}</div>
+    <div class="cf-add">
+      <input class="co-in js-insp-label" placeholder="New checklist item (e.g. Hydraulics — no leaks)" value="${esc(o.inspDraft || '')}" autocomplete="off" />
+      <button class="pill ignition js-insp-add" data-r="R17">+ Add item</button>
+    </div>`;
 }
 function settingsFieldsPane(o) {
   const ent = o.cfEntity || 'customers'; o.cfEntity = ent;
@@ -3893,7 +3929,9 @@ const DETAIL = {
       <h4>Inspection <span class="hmuted">· ${esc(stamp)}</span></h4>
       <div class="fieldstack">
         <div class="kv" style="justify-content:center">
-          ${segCtl([
+          ${checklistRequired(u)
+    ? `<button class="pill ignition js-open-checklist" data-rec="${u.unitId}" data-r="R17">${CARD_ICON.inspections} ${pendingInspForUnit(u.unitId) ? 'Resume inspection' : '+ Inspection'}</button>`
+    : segCtl([
             { label: '✓ Pass', js: 'js-cond', data: { rec: u.unitId, val: 'Pass' }, on: cond === 'Ready' ? 'green' : null },
             { label: 'Not Ready', js: 'js-cond', data: { rec: u.unitId, val: 'Not Ready' }, on: cond === 'Not Ready' ? 'yellow' : null },
             { label: '✕ Fail', js: 'js-cond', data: { rec: u.unitId, val: 'Fail' }, on: cond === 'Failed' ? 'red' : null },
@@ -6941,6 +6979,27 @@ function renderOverlay() {
         <div class="pillrow" style="margin-top:14px;justify-content:flex-end"><button class="pill ghost js-close" data-r="R18">Close</button><button class="pill c-commit js-edit-customer" data-r="R17" data-rec="${c.customerId}">Edit account</button></div>
       </div>`;
     overlay.appendChild(pop);
+  } else if (o.kind === 'checklist') {
+    // Required-checklist takeover (Settings → Inspections): replaces the sheet until completed;
+    // closing keeps it as a pending inspection. Any item Fail → overall Fail → existing auto-WO.
+    const u = IDX.unit.get(o.unitId); const cfg = u && checklistFor(u); const n = IDX.insp.get(o.inspId);
+    if (!u || !cfg || !n) { state.overlay = null; return; }
+    n.items = n.items || {};
+    const items = cfg.items || [];
+    const done = items.filter((it) => n.items[it.id]).length; const allDone = done === items.length;
+    const cat = IDX.category.get(u.categoryId) || {};
+    const itemRows = items.map((it) => `<div class="ck-row"><span class="ck-label">${esc(it.label)}</span>${segCtl([{ label: '✓ Pass', js: 'js-ck-item', data: { id: it.id, val: 'Pass' }, on: n.items[it.id] === 'Pass' ? 'green' : null }, { label: '✕ Fail', js: 'js-ck-item', data: { id: it.id, val: 'Fail' }, on: n.items[it.id] === 'Fail' ? 'red' : null }])}</div>`).join('');
+    const pop = el('div', 'popup board-popup ck-popup');
+    pop.innerHTML = `
+      <div class="popup-head">
+        <span class="pl-ic">${CARD_ICON.inspections}</span>
+        <div class="pl-title"><h3>Inspection — ${esc(u.name)}</h3><span class="pl-tag">${esc(cat.name || '')} checklist · ${done}/${items.length} checked</span></div>
+        <span class="spacer"></span>
+        <button class="x js-ck-pending" aria-label="Keep as pending">${I.x}</button>
+      </div>
+      <div class="popup-body ck-body">${itemRows}</div>
+      <div class="popup-foot"><button class="pill ghost js-ck-pending" data-r="R18">Keep as pending</button><button class="pill ignition js-ck-complete${allDone ? '' : ' is-disabled'}" data-r="R17">Complete inspection</button></div>`;
+    overlay.appendChild(pop);
   } else if (o.kind === 'inspection') {
     // §12.8 Failure report — triggered when an inspection is marked Failed: capture a
     // photo/video + a description for the auto-created work order.
@@ -8766,6 +8825,11 @@ function onClick(e) {
   if (closest('.js-cf-req')) { e.stopPropagation(); const o = state.overlay; if (o) { o.cfDraft = { ...(o.cfDraft || { label: '', type: 'text', required: false }), required: closest('.js-cf-req').dataset.v === '1' }; renderOverlay(); } return; }
   if (closest('.js-cf-add')) { e.stopPropagation(); const o = state.overlay; if (!o) return; const lblEl = document.querySelector('.settings-popup .js-cf-label'); const label = (o.cfDraft && o.cfDraft.label || (lblEl ? lblEl.value : '')).trim(); if (!label) { if (lblEl) { lblEl.focus(); } toast('Give the field a label first.'); return; } const fields = ensureCfDraft(o, o.cfEntity || 'customers'); fields.push({ id: cfSlug(label), label, type: (o.cfDraft && o.cfDraft.type) || 'text', required: !!(o.cfDraft && o.cfDraft.required) }); o.cfDraft = { label: '', type: 'text', required: false }; renderOverlay(); return; }
   if (closest('.js-cf-remove')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-cf-remove'); if (o) { const fields = ensureCfDraft(o, b.dataset.ent); const i = fields.findIndex((f) => f.id === b.dataset.id); if (i >= 0) fields.splice(i, 1); renderOverlay(); } return; }
+  // Inspections tab
+  if (closest('.js-insp-cat')) { e.stopPropagation(); const o = state.overlay; if (o) { o.inspCat = closest('.js-insp-cat').dataset.cat; renderOverlay(); } return; }
+  if (closest('.js-insp-req')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-insp-req'); if (o) { ensureInspDraft(o, b.dataset.cat).required = b.dataset.v === '1'; renderOverlay(); } return; }
+  if (closest('.js-insp-add')) { e.stopPropagation(); const o = state.overlay; if (!o) return; const el2 = document.querySelector('.settings-popup .js-insp-label'); const label = ((o.inspDraft != null ? o.inspDraft : (el2 ? el2.value : '')) || '').trim(); if (!label) { if (el2) el2.focus(); toast('Type a checklist item first.'); return; } const cfg = ensureInspDraft(o, o.inspCat); cfg.items = cfg.items || []; cfg.items.push({ id: 'ck_' + (label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'item') + '_' + Math.random().toString(36).slice(2, 5), label }); o.inspDraft = ''; renderOverlay(); return; }
+  if (closest('.js-insp-remove')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-insp-remove'); if (o) { const cfg = ensureInspDraft(o, b.dataset.cat); cfg.items = (cfg.items || []).filter((it) => it.id !== b.dataset.id); renderOverlay(); } return; }
   if (closest('.js-nc-save')) { e.stopPropagation(); return saveNewCustomer(); }
   if (closest('.js-nc-acct')) { const b = closest('.js-nc-acct'); e.stopPropagation(); ncSyncInputs(); state.overlay.draft.accountType = b.dataset.val; renderOverlay(); return; }
   if (closest('.js-nc-selfie-clear')) { e.stopPropagation(); ncSyncInputs(); state.overlay.draft.selfie = ''; renderOverlay(); return; }
@@ -9019,6 +9083,10 @@ function onClick(e) {
   }
   // ── v2 build: condition/wash segs · yard captures · site popup · WO complete · history chips ──
   if (closest('.js-cond')) { const b = closest('.js-cond'); return setUnitCondition(b.dataset.rec, b.dataset.val); }
+  if (closest('.js-open-checklist')) { e.stopPropagation(); return openChecklist(closest('.js-open-checklist').dataset.rec); }
+  if (closest('.js-ck-item')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-ck-item'); if (o && o.kind === 'checklist') { const n = IDX.insp.get(o.inspId); if (n) { n.items = n.items || {}; n.items[b.dataset.id] = b.dataset.val; renderOverlay(); } } return; }
+  if (closest('.js-ck-complete')) { e.stopPropagation(); return completeChecklist(); }
+  if (closest('.js-ck-pending')) { e.stopPropagation(); closeOverlay(); toast('Inspection kept as pending — resume it anytime.'); return; }
   if (closest('.js-washseg')) { const b = closest('.js-washseg'); return setUnitWash(b.dataset.rec, b.dataset.val); }
   if (closest('.js-yard')) { const b = closest('.js-yard'); return yardCapture(b.dataset.rec, b.dataset.cap, b.dataset.unit); }
   if (closest('.js-cap-save')) return saveYardCapture();
@@ -9491,6 +9559,34 @@ function setUnitCondition(unitId, val) {
   reindex('units', u); logAction(u, 'Condition → Not Ready');
   toast('Condition → Not Ready'); reanchorRender();
 }
+// A required-checklist inspection started but not yet completed (Jac: kept as Pending).
+function pendingInspForUnit(unitId) {
+  return (DATA.inspections || []).find((n) => n.unitId === unitId && (n.checklist === '' || n.checklist == null) && n.items && typeof n.items === 'object');
+}
+// Open the full-screen checklist takeover for a unit whose category requires one (resumes a pending draft).
+function openChecklist(unitId) {
+  const u = IDX.unit.get(unitId); if (!u) return;
+  if (!checklistFor(u)) return toast('No checklist is set for this category.');
+  let n = pendingInspForUnit(unitId);
+  if (!n) n = newInspectionForUnit(u);
+  n.items = n.items || {};
+  state.overlay = { kind: 'checklist', unitId, inspId: n.inspectionId };
+  render();
+}
+// Complete the checklist → overall result cascades through the existing setInspResult (auto-WO on fail).
+function completeChecklist() {
+  const o = state.overlay; if (!o || o.kind !== 'checklist') return;
+  const u = IDX.unit.get(o.unitId); const cfg = u && checklistFor(u); const n = IDX.insp.get(o.inspId);
+  if (!u || !cfg || !n) { closeOverlay(); return; }
+  const items = cfg.items || [];
+  const left = items.filter((it) => !n.items[it.id]).length;
+  if (left) { toast(`Mark every item first — ${left} left.`); return; }
+  const failed = items.filter((it) => n.items[it.id] === 'Fail');
+  if (failed.length) n.description = 'Failed checklist: ' + failed.map((it) => it.label).join(', ');
+  state.overlay = null;                                   // close the takeover; a Fail re-opens the photo/notes popup
+  setInspResult(n.inspectionId, failed.length ? 'Fail' : 'Pass');   // cascade onto the inspection section + auto-WO
+  toast(failed.length ? `Inspection failed — work order opened for ${u.name}.` : `Inspection passed — ${u.name} is Ready. ✓`);
+}
 function setUnitWash(unitId, val) {
   const u = IDX.unit.get(unitId); if (!u) return;
   u.washChoice = val;                     // a decision was made — unlocks Pass (R19 gate)
@@ -9865,6 +9961,7 @@ function onChange(e) {
     renderOverlay(); return;
   }
   // Settings Board — KPI ring label / target (commit on blur)
+  if (e.target.classList.contains('js-insp-label')) { const o = state.overlay; if (o) o.inspDraft = e.target.value; return; }
   if (e.target.classList.contains('js-kpi-lbl')) { const o = state.overlay; if (!o) return; const rings = ensureKpiDraft(o, e.target.dataset.role); rings[Number(e.target.dataset.i)].label = e.target.value.trim(); renderOverlay(); return; }
   if (e.target.classList.contains('js-kpi-tgt')) { const o = state.overlay; if (!o) return; const rings = ensureKpiDraft(o, e.target.dataset.role); const n = Number(e.target.value); rings[Number(e.target.dataset.i)].target = isFinite(n) && e.target.value.trim() ? n : undefined; renderOverlay(); return; }
   // F2 — +File upload: read the chosen photo/document; images are downscaled, others kept
@@ -11996,7 +12093,7 @@ function exposeTestApi() {
       computeTransportPrice, isFueledType, unitTransport, rentalTransport,
       wrValidatePlan, applyWranglerData, wrFunnel, invoiceMergeable, mergeInvoiceInto,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
-      companyRevenueGoal, companyName, companyTagline, rentalRuleBlock, dueForCustomer, footerHidden, customFieldsFor, __state: state };
+      companyRevenueGoal, companyName, companyTagline, rentalRuleBlock, dueForCustomer, footerHidden, customFieldsFor, checklistFor, checklistRequired, __state: state };
   } catch (e) { /* no window (non-browser) */ }
 }
 

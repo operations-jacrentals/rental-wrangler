@@ -334,6 +334,19 @@ try {
     ok(T.customFieldsFor('units').length === 0, 'custom fields are per-entity (units unaffected)');
     st.settings.customFields = savedCF;   // restore
 
+    // 21) Inspections — per-category required checklist (default none = quick toggles unchanged)
+    const savedInsp = st.settings.inspections;
+    const aUnit = T.DATA.units[0]; const aCat = aUnit.categoryId;
+    st.settings.inspections = undefined;
+    ok(T.checklistFor(aUnit) === null && T.checklistRequired(aUnit) === false, 'no checklist config → unit uses the quick Pass/Fail toggles (default)');
+    st.settings.inspections = { [aCat]: { required: true, items: [{ id: 'ck_brakes_a1', label: 'Brakes' }, { id: 'ck_lights_b2', label: 'Lights' }] } };
+    ok(T.checklistRequired(aUnit) === true && T.checklistFor(aUnit).items.length === 2, 'a required checklist is picked up for units of that category');
+    const otherCat = T.DATA.units.find((u) => u.categoryId !== aCat);
+    if (otherCat) ok(T.checklistRequired(otherCat) === false, 'checklists are per-category (other categories unaffected)');
+    st.settings.inspections = { [aCat]: { required: false, items: [{ id: 'ck_x', label: 'X' }] } };
+    ok(T.checklistRequired(aUnit) === false && T.checklistFor(aUnit) !== null, 'a defined-but-not-required checklist is available but does not take over');
+    st.settings.inspections = savedInsp;   // restore
+
     return out;
   });
 
