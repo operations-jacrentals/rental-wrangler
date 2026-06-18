@@ -15,7 +15,10 @@ that don't come from git: the session handoff and the Claude memory files.
    npx playwright install chromium
    ```
 
-2. **Read the handoff** → `HANDOFF-2026-06-18.md` (this folder)
+2. **Read the handoffs** (this folder — there are two, from concurrent sessions):
+   - `HANDOFF-2026-06-18.md` — Blued Steel visual polish, navigation, KPI blur mask
+   - `HANDOFF-dispatch-maps-2026-06-18.md` — Dispatch Office Cockpit (Phase 1), the maps first-open
+     fix, and the board-view removal, **with the incomplete tasks (driver cab, notifications, telematics)**
 
 3. **Restore Claude memory** → `MEMORY-FILES.md` (this folder)
    Copy each section into the appropriate file under:

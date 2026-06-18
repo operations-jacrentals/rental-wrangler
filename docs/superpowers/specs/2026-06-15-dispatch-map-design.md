@@ -82,15 +82,35 @@ fallback: no GPS/signal → manual "Next stop" + last-known, never a frozen map.
 last-completed stop (or yard), facing next planned. Phase-next: telematics feed replaces
 the body of this one function.
 
+## Phase 1 As-Built (2026-06-18) — what actually shipped vs. the spec above
+
+> Read this before building Phase 2. The spec above is the **full vision**; Phase 1 shipped
+> a useful subset. Do NOT assume the fancy spec items are already in code.
+
+**What shipped (PRs #73, #79, #104, #106, #131):**
+- Full-pane map (`mountDispatchMap` / `refreshDispatchMap`) + right-edge hover rail (`.disprail`). Map: straight `Polyline`, no Directions API. Telematics seam: `dispatchTruckPos` v1 = last-done stop.
+- Rail: collapsed = kind-dot + time. Expanded = KIND (`badge` R3b), NEXT, Done, customer (`refPill` R2), unit, address. "No set time" stops pin to the **TOP** (not a bottom tray as the spec imagined).
+- Editable stop-time (12h/24h, re-sorts on valid entry). **Native HTML5 DnD** drag-to-reorder (NOT the custom pointer engine or cancel-arc from the spec). Rail stays open during drag (`.disprail.dragging`); moved stop keeps a blue focus ring (`state.dispFocusId`).
+- Stop-click → `dispatchFocusStop` (pan+highlight on map, never navigates away).
+- Live board footer, no send button.
+
+**What is NOT yet built (spec vision, pending):**
+- No time-axis drag (dragging to a time position = retiming). The rail is a list, not a time axis.
+- No ghost-drift preview, no feasibility guard, no "can't-make-it" red flash.
+- No snap-to-:00/:15/:30/:45 detents.
+- No unscheduled-tray at the rail foot (unsched stops are at the top instead).
+- Phase 2 driver cab (next-stop map, action plate, Mark-delivered, video/pic, NOW-bar).
+- Phase 3 live auto-notify (debounced, in-app notification record + "notified · seen" receipt).
+- Telematics live feed into `dispatchTruckPos` (~2026-06-23).
+
 ## Phasing
 
-1. **Office cockpit** — map + pins + route + the Run Rail (retime=reorder, ghost-drift,
-   feasibility guard, unscheduled tray). The orchestration core.
-2. **Driver cab** — next-stop map + action plate + Mark-completed (capture reuse) +
+1. **Office cockpit** ✅ **PHASE 1 SHIPPED** (see "Phase 1 As-Built" above). Map + pins + route + reorderable/retimeable rail. The orchestration core.
+2. **Driver cab** ⏳ **PENDING** — next-stop map + action plate + Mark-completed (capture reuse) +
    Add video/pic + NOW-bar + auto-advance.
-3. **Live auto-notify + driver banner** (debounced notification record on change +
-   acknowledge + "notified · seen" receipt). No send button.
-4. **(next week)** telematics → `driverPosition`. **(later)** SMS notify.
+3. **Live auto-notify + driver banner** ⏳ **PENDING** — debounced notification record on change +
+   acknowledge + "notified · seen" receipt. No send button.
+4. **Telematics → `dispatchTruckPos`** ⏳ **~2026-06-23** (Jac wires). **(later)** SMS notify.
 
 ## Build constraints (jactec-ui)
 
