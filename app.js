@@ -5875,13 +5875,12 @@ function renderOverlay() {
   if (o.kind === 'qr') {
     const url = o.url || location.href;
     const pop = el('div', 'popup'); pop.style.width = '340px';
-    pop.innerHTML = `
-      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${I.qr}</span><h3>${esc(o.title || 'Share session')}</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
-      <div class="popup-body" style="text-align:center">
+    pop.innerHTML = popupShell({ icon: I.qr, title: o.title || 'Share session', tag: 'Share · this session', body: `
+      <div style="text-align:center">
         <img class="qr-img" alt="QR code" src="https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=8&bgcolor=15171c&color=ff7a1a&data=${encodeURIComponent(url)}" width="220" height="220" style="border-radius:12px;background:var(--panel-2)" />
         <p class="muted" style="margin-top:10px;font-size:12px;word-break:break-all">${esc(url)}</p>
         <p class="muted" style="margin-top:6px;font-size:11px">${esc(o.caption || 'Scan to open this session on another device (single shared login — §1/§4.2).')}</p>
-      </div>`;
+      </div>` });
     overlay.appendChild(pop);
   } else if (o.kind === 'migrateUnits') {
     // Round up missing units — preview the create/link plan before writing anything.
@@ -5894,21 +5893,16 @@ function renderOverlay() {
         <td style="padding:5px 8px;color:var(--muted)">${esc(IDX.category.get(p.categoryId)?.name || p.categoryId || '—')}</td>
         <td style="padding:5px 8px;color:var(--muted);text-align:right">${p.count}</td></tr>`).join('');
     const pop = el('div', 'popup'); pop.style.width = '560px';
-    pop.innerHTML = `
-      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${CARD_ICON.units || ''}</span><h3>Round up missing units</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
-      <div class="popup-body">
+    pop.innerHTML = popupShell({ icon: CARD_ICON.units || '', title: 'Round up missing units', tag: 'Units · migrate',
+      foot: `<button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill ignition js-migrate-go" data-r="R17">Create &amp; link ${o.plan.length}</button>`,
+      body: `
         <p style="font-size:13px;margin-bottom:10px"><b>${o.plan.length}</b> unit${o.plan.length === 1 ? '' : 's'} were referenced on rentals but never recorded. This will <b>create ${creates}</b> new record${creates === 1 ? '' : 's'}${links ? ` and <b>link ${links}</b> to existing units` : ''}, then connect <b>${rentals}</b> rental${rentals === 1 ? '' : 's'} (and their customers, categories &amp; invoices) to them.</p>
         <div style="max-height:46vh;overflow:auto;border:1px solid rgba(255,255,255,.1);border-radius:8px">
           <table style="width:100%;border-collapse:collapse;font-size:12px">
             <thead><tr style="position:sticky;top:0;background:var(--panel-2)"><th style="text-align:left;padding:6px 8px">Unit</th><th style="text-align:left;padding:6px 8px">Action</th><th style="text-align:left;padding:6px 8px">Category</th><th style="text-align:right;padding:6px 8px">Rentals</th></tr></thead>
             <tbody>${rows}</tbody>
           </table>
-        </div>
-        <div class="pillrow" style="justify-content:flex-end;margin-top:12px">
-          <button class="pill ref js-close">Cancel</button>
-          <button class="pill c-commit js-migrate-go" style="height:26px;font-size:11px">Create &amp; link ${o.plan.length}</button>
-        </div>
-      </div>`;
+        </div>` });
     overlay.appendChild(pop);
   } else if (o.kind === 'comment') {
     // Phase 6 (Jac redesign) — a SIMPLE comment card that floods with the picked color.
@@ -6042,9 +6036,9 @@ function renderOverlay() {
     const ven = x?.vendorId ? (IDX.vendor.get(x.vendorId) || DATA.vendors.find((v) => v.vendorId === x.vendorId)) : null;
     if (o.date === undefined) o.date = x?.date || TODAY_ISO;
     const pop = el('div', 'popup'); pop.style.width = '400px';
-    pop.innerHTML = `
-      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${CARD_ICON.expenses}</span><h3>${x ? 'Edit' : 'New'} Receipt</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
-      <div class="popup-body">
+    pop.innerHTML = popupShell({ icon: CARD_ICON.expenses, title: `${x ? 'Edit' : 'New'} Receipt`, tag: 'Expense · receipt',
+      foot: `${ghostPill('Cancel', { js: 'js-close' })}${actionPill('commit', x ? 'Save' : 'Add receipt', { js: 'js-rf-save' })}`,
+      body: `
         ${fileDrop(state.receiptPhoto || x?.photo ? '✓ receipt photo attached' : 'Tap to add the receipt photo', { js: 'js-rf-file', capture: 'environment', done: !!(state.receiptPhoto || x?.photo) })}
         <input class="lf-in js-rf-vendor" placeholder="Vendor" value="${esc(ven?.name || '')}" style="width:100%;margin-bottom:7px">
         <div style="display:flex;gap:7px;margin-bottom:7px">
@@ -6052,12 +6046,7 @@ function renderOverlay() {
           ${dateField('date', o.date)}
         </div>
         <input class="lf-in js-rf-part" placeholder="Part Name" value="" style="width:100%;margin-bottom:4px">
-        <p class="muted" style="font-size:11px;margin:4px 0 12px">✨ Empty fields are filled by Mr. Wrangler after saving: the photo is read for the vendor, amount, date and category.</p>
-        <div class="pillrow" style="justify-content:flex-end">
-          ${ghostPill('Cancel', { js: 'js-close' })}
-          ${actionPill('commit', x ? 'Save' : 'Add receipt', { js: 'js-rf-save' })}
-        </div>
-      </div>`;
+        <p class="muted" style="font-size:11px;margin:4px 0 4px">✨ Empty fields are filled by Mr. Wrangler after saving: the photo is read for the vendor, amount, date and category.</p>` });
     overlay.appendChild(pop);
   } else if (o.kind === 'capture') {
     // v2 yard journey: every log opens this popup; with transport, the address
@@ -6066,36 +6055,26 @@ function renderOverlay() {
     const isDel = r && r.transportType && r.transportType !== 'Self';
     const title = o.cap === 'fc' ? 'Log Field Call' : o.cap === 'start' ? (isDel ? 'Log Delivery' : 'Log Start') : (isDel ? 'Log Recovery' : 'Log End');
     const pop = el('div', 'popup'); pop.style.width = '380px';
-    pop.innerHTML = `
-      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${I.video}</span><h3>${esc(title)}</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
-      <div class="popup-body">
+    pop.innerHTML = popupShell({ icon: I.video, title, tag: o.cap === 'fc' ? 'Field call · log' : 'Yard journey · log',
+      foot: `${ghostPill('Cancel', { js: 'js-close' })}<button class="pill ignition js-cap-save" data-r="R17">${o.cap === 'fc' ? 'Log Field Call' : 'Log it'}</button>`,
+      body: `
         ${r && r.deliveryAddress && o.cap !== 'fc' ? `
         <div style="border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-bottom:10px">
           <div style="padding:8px 11px;font-size:12.5px;display:flex;align-items:center;gap:7px"><span>📍</span><b>${esc(r.deliveryAddress)}</b></div>
           <div class="site-map" style="height:96px">${r.sitePin && r.sitePin.lat != null ? '<span class="site-pin" style="left:50%;top:50%">📍</span>' : ''}<span class="map-tag">driver destination${r.sitePin && r.sitePin.lat != null ? ' — exact pin set' : ''}</span></div>
         </div>` : ''}
-        <label class="cap-drop">${I.video} <span>${state.capFile ? '✓ video attached' : 'Tap to capture / attach the video'}</span><input type="file" accept="video/*,image/*" capture="environment" class="js-cap-file" style="display:none"></label>
-        <div class="pillrow" style="justify-content:flex-end;margin-top:12px">
-          <button class="pill ref js-close">Cancel</button>
-          <button class="pill c-commit js-cap-save" style="height:26px;font-size:11px">${o.cap === 'fc' ? 'Log Field Call' : 'Log it'}</button>
-        </div>
-      </div>`;
+        <label class="cap-drop">${I.video} <span>${state.capFile ? '✓ video attached' : 'Tap to capture / attach the video'}</span><input type="file" accept="video/*,image/*" capture="environment" class="js-cap-file" style="display:none"></label>` });
     overlay.appendChild(pop);
   } else if (o.kind === 'wodone') {
     // v2: Complete WO with open line items → warn, don't hard-block
     const w = IDX.wo.get(o.woId);
     const open = (w?.lineItems || []).filter((l) => l.phase !== 'Complete');
     const pop = el('div', 'popup'); pop.style.width = '360px';
-    pop.innerHTML = `
-      <div class="popup-head"><h3>Complete this Work Order?</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
-      <div class="popup-body">
+    pop.innerHTML = popupShell({ icon: CARD_ICON.workOrders, title: 'Complete this Work Order?', tag: 'Work order · confirm', danger: true,
+      foot: `${ghostPill('Cancel', { js: 'js-close' })}${actionPill('danger', 'Complete WO', { js: 'js-wodone-confirm', data: { rec: o.woId } })}`,
+      body: `
         <p style="font-size:13px;margin-bottom:6px">Are you sure? Not all items are completed.</p>
-        <p class="muted" style="font-size:12px;margin-bottom:12px">Still open: ${open.map((l) => `“${esc(l.part)} · ${esc(getStatus('woPhase', l.phase).label)}”`).join(' · ') || '—'}</p>
-        <div class="pillrow" style="justify-content:flex-end">
-          <button class="pill ref js-close">Cancel</button>
-          <button class="pill c-commit js-wodone-confirm" data-rec="${esc(o.woId)}" style="height:26px;font-size:11px">Complete WO</button>
-        </div>
-      </div>`;
+        <p class="muted" style="font-size:12px;margin-bottom:4px">Still open: ${open.map((l) => `“${esc(l.part)} · ${esc(getStatus('woPhase', l.phase).label)}”`).join(' · ') || '—'}</p>` });
     overlay.appendChild(pop);
   } else if (o.kind === 'role') {
     const role = ROLES.find((r) => r.id === o.role);
