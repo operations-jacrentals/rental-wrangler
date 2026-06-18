@@ -1,5 +1,5 @@
 # JacTec / Rental Wrangler — SPEC v8
-**v8 — reconciled to code 2026-06-13, updated through session-2 (pm) · supersedes v7
+**v8 — reconciled to code 2026-06-13, updated through v8.7 (2026-06-18) · supersedes v7
 (frozen 2026-06-12 morning) · lives in `JacTec-handoff/` — ✅ NOW COMMITTED, travels
 with the repo (the anti-drift fix is in place)**
 
@@ -308,6 +308,41 @@ pointer-events: none` on `.kpi-ring, .big-ring, .menu-team-ring` — Jac wants r
 hidden until further notice. Marked block at the very end of `style.css`; remove the
 3-line block to restore. Do not remove until Jac says so. (PR #132 — color-change
 attempt — was a typo misread, superseded immediately by #133.)
+
+---
+
+## v8.7 — Built-State Delta (2026-06-18 · Dispatch Office Cockpit + maps first-paint fix + board-view removal)
+
+_(This session's work only. Other sessions also pushed to `main` on 2026-06-18 — see v8.6 for Blued
+Steel/nav/KPI, and the **unmerged** branch `origin/claude/handoff-continuation-q442qm` for in-flight
+rulebook/SPEC edits that should be reconciled.)_
+
+**§2.3 Dispatch is now the OFFICE COCKPIT (PRs #73 / #79 / #104 / #106 / #131).** The Calendar card's
+dispatch view is rebuilt from a list into a **full-pane live Google map** of the day's run + a minimal
+**schedule rail** floating on the right that expands on hover/focus to adjust the run. `dispatchGridBody`
+rewritten. New/changed `app.js` functions: `mountDispatchMap` / `refreshDispatchMap` / `placeDispatchPin`
+/ `dispGeocode` (map engine — mounts fresh each render with remembered pan/zoom; straight `Polyline`
+route, no Directions/quota; Places geocode fallback for pinless stops), `dispatchTruckPos` (the
+**telematics seam** — v1 = last-completed stop's pin; live feed wires in ~2026-06-23), `dispatchFocusStop`
+(tap a stop → pan/highlight ON the map, never navigates away — Jac's explicit choice), `dispatchKind` /
+`stopDone` / `dispatchNextId` / `timeToMin` (parses 12h "9:00 AM" AND 24h) / `fmtClock`. Rail tokens
+reuse builders: KIND + Done = `badge` (R3b), customer/unit = `refPill`/`unitPill` (R2) — **no new
+`RULE_META` rule, zero R0 violations**; editable stop-time re-sorts; **drag a token to reorder** (native
+dnd → `jactec.dispatchOrder`); "No set time" pins to the top. Live board — **no "send" button**. Design
+spec: `docs/superpowers/specs/2026-06-15-dispatch-map-design.md`. Still TODO: Phase 2 driver cab, Phase
+3 driver notification (in-app, debounced), telematics swap. **Verify on PROD, not `#local`** (the
+`#local` demo's index empties under test churn and crashes render, so the map never paints there).
+
+**Maps first-paint fix (PR #68).** A Google map built the same frame its container is inserted paints at
+**0×0** and stays blank until the next open ("had to open it twice"). Fix in `mountTransportEditor` (and
+`mountDispatchMap`): after creating the map, `requestAnimationFrame` + a 250ms `setTimeout` calling
+`google.maps.event.trigger(map,'resize')` (+ `setCenter`). Diagnosed from the prod console — the Maps key
+is HEALTHY (no referrer/API/quota errors; only Google deprecation warnings). Maps is also **preloaded at
+boot** (`loadGoogleMaps()` in `boot()`) so the cockpit/editor open instantly.
+
+**Board View (spreadsheet) removed (PR #134).** The unapproved `js-boardview` (`.bv-btn`) toggle is gone
+from the card + shop headers. The separate back-office board popups (`js-board` / `BACKOFFICE_BOARDS` for
+vendors/parts/expenses/files) are untouched. Standing rule: memory `no_board_view.md`.
 
 ---
 
