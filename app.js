@@ -1993,7 +1993,7 @@ function ghostPill(label, { js, data } = {}) {
  *  foot. Pure chrome, composed from already-stamped parts (the muted close, R17/R18 in
  *  the foot) — no own data-r. `icon` = an `I.*`/`CARD_ICON.*` glyph; `headRight` =
  *  extra head buttons (e.g. the phone-QR); `body`/`foot` = innerHTML strings. */
-function popupShell({ icon, title, tag, danger, headRight = '', body = '', foot = '', closeJs = 'js-close' } = {}) {
+function popupShell({ icon, title, tag, danger, headRight = '', body = '', foot = '', closeJs = 'js-close', bodyClass = '' } = {}) {
   return `
     <div class="pl-cap${danger ? ' danger' : ''}"></div>
     <span class="pl-rivet tl"></span><span class="pl-rivet tr"></span><span class="pl-rivet bl"></span><span class="pl-rivet br"></span>
@@ -2003,7 +2003,7 @@ function popupShell({ icon, title, tag, danger, headRight = '', body = '', foot 
       <span class="spacer"></span>${headRight}
       <button class="x ${closeJs}" aria-label="Close">${I.x}</button>
     </div>
-    <div class="popup-body">${body}</div>
+    <div class="popup-body${bodyClass ? ' ' + bodyClass : ''}">${body}</div>
     ${foot ? `<div class="popup-foot">${foot}</div>` : ''}`;
 }
 
@@ -6010,9 +6010,9 @@ function renderOverlay() {
     const li = o.idx != null ? (w?.lineItems || [])[o.idx] : null;
     const ven = li?.vendorId ? DATA.vendors.find((v) => v.vendorId === li.vendorId) : null;
     const pop = el('div', 'popup'); pop.style.width = '400px';
-    pop.innerHTML = `
-      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${CARD_ICON.parts || CARD_ICON.workOrders}</span><h3>${li ? 'Edit' : 'Add'} Part / Task</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
-      <div class="popup-body">
+    pop.innerHTML = popupShell({ icon: CARD_ICON.parts || CARD_ICON.workOrders, title: `${li ? 'Edit' : 'Add'} Part / Task`, tag: 'Work order · line',
+      foot: `${ghostPill('Cancel', { js: 'js-close' })}${actionPill('commit', li ? 'Save' : 'Add line', { js: 'js-pf2-save' })}`,
+      body: `
         ${fileDrop(state.partPhoto || li?.photo ? '✓ photo attached' : 'Add Photo (not required)', { js: 'js-pf2-file', capture: 'environment', done: !!(state.partPhoto || li?.photo), icon: I.camera })}
         <p class="muted" style="text-align:center;font-size:11.5px;margin:7px 0 10px">✨ Mr. Wrangler will add the parts for you!</p>
         <input class="lf-in js-pf2-desc" placeholder="Part/Task Name" value="${esc(li?.part || '')}" style="width:100%;margin-bottom:7px">
@@ -6022,12 +6022,7 @@ function renderOverlay() {
         </div>
         <input class="lf-in js-pf2-url" placeholder="URL link" value="${esc(li?.url || '')}" style="width:100%;margin-bottom:7px">
         <input class="lf-in js-pf2-vendor" placeholder="Vendor" value="${esc(ven?.name || '')}" style="width:100%;margin-bottom:4px">
-        <p class="muted" style="font-size:11px;margin:4px 0 12px">✨ Empty fields are filled by Mr. Wrangler after saving: the photo is reviewed for the description/cost/url, and hours are estimated from the category + industry standards.</p>
-        <div class="pillrow" style="justify-content:flex-end">
-          ${ghostPill('Cancel', { js: 'js-close' })}
-          ${actionPill('commit', li ? 'Save' : 'Add line', { js: 'js-pf2-save' })}
-        </div>
-      </div>`;
+        <p class="muted" style="font-size:11px;margin:4px 0 4px">✨ Empty fields are filled by Mr. Wrangler after saving: the photo is reviewed for the description/cost/url, and hours are estimated from the category + industry standards.</p>` });
     overlay.appendChild(pop);
   } else if (o.kind === 'receiptform') {
     // Receipt popup (Jac: "Receipts use popups and reconcile against parts") — the
@@ -6087,12 +6082,9 @@ function renderOverlay() {
       return `<div class="kpi-line" data-tip="${esc(KPI_HELP[k] || '')}"><span class="ring-no" style="border-color:var(--${raw == null ? 'line' : b.color});color:var(--${raw == null ? 'txt-3' : b.color})">${i + 1}</span><span class="k-name">${esc(k)}<span class="muted" style="font-size:10px;margin-left:6px">${ringTag[i]}</span></span><span class="k-val">${valTxt}</span></div>`;
     }).join('');
     const pop = el('div', 'popup kpi-popup');
-    pop.innerHTML = `
-      <div class="popup-head"><span class="ring-ico" style="color:var(--${role.color});display:inline-flex;width:18px;height:18px">${RING_ICON[role.id]}</span><h3>${esc(role.label)} KPIs</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
-      <div class="popup-body">
+    pop.innerHTML = popupShell({ icon: RING_ICON[role.id], title: `${role.label} KPIs`, tag: 'Role · scorecard', body: `
         <div class="big-ring">${ring3SVG(vals, role.color, { size: 150 })}</div>
-        <div class="kpi-list">${lines}</div>
-      </div>`;
+        <div class="kpi-list">${lines}</div>` });
     overlay.appendChild(pop);
   } else if (o.kind === 'requests') {
     // §18e the in-app approval inbox for Mr. Wrangler's "Filed for Jac's OK" requests.
@@ -6137,9 +6129,9 @@ function renderOverlay() {
         : (!reqLoaded && reqLoading ? '<div class="req-empty">Loading…</div>'
           : '<div class="req-empty"><span class="req-empty-ic">📭</span><p>No requests waiting.</p><span>When Mr. Wrangler sends one to the developer, it lands here for review.</span></div>'));
     const pop = el('div', 'popup'); pop.style.width = '480px';
-    pop.innerHTML = `
-      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${I.inbox}</span><h3>Requests${list.length ? ` · ${list.length}` : ''}</h3><span class="spacer"></span><button class="iconbtn js-req-refresh" data-tip="Refresh">${I.refresh || '⟳'}</button><button class="x js-close">${I.x}</button></div>
-      <div class="popup-body req-wrap">${inner}</div>`;
+    pop.innerHTML = popupShell({ icon: I.inbox, title: `Requests${list.length ? ` · ${list.length}` : ''}`, tag: 'Mr. Wrangler · approvals',
+      headRight: `<button class="iconbtn js-req-refresh" data-tip="Refresh">${I.refresh || '⟳'}</button>`,
+      bodyClass: 'req-wrap', body: inner });
     overlay.appendChild(pop);
   } else if (o.kind === 'notifications') {
     // §18f Notifications — recently-RESOLVED Mr. Wrangler fixes, surfaced in-app so a reporter
@@ -6155,9 +6147,9 @@ function renderOverlay() {
               <div class="req-acts"><span class="req-await">${n.closedAt ? 'Resolved ' + esc(fmtShortDate(String(n.closedAt).slice(0, 10))) : 'Resolved'}</span><a class="req-link" href="${esc(n.url)}" target="_blank" rel="noopener">GitHub ↗</a></div>
             </div>`).join('')));
     const pop = el('div', 'popup'); pop.style.width = '460px';
-    pop.innerHTML = `
-      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${I.bell}</span><h3>Notifications${list.length ? ` · ${list.length}` : ''}</h3><span class="spacer"></span><button class="iconbtn js-notif-refresh" data-tip="Refresh">${I.refresh || '⟳'}</button><button class="x js-close">${I.x}</button></div>
-      <div class="popup-body req-wrap">${inner}</div>`;
+    pop.innerHTML = popupShell({ icon: I.bell, title: `Notifications${list.length ? ` · ${list.length}` : ''}`, tag: 'Mr. Wrangler · resolved',
+      headRight: `<button class="iconbtn js-notif-refresh" data-tip="Refresh">${I.refresh || '⟳'}</button>`,
+      bodyClass: 'req-wrap', body: inner });
     overlay.appendChild(pop);
   } else if (o.kind === 'hotkeys') {
     const rows = [
@@ -6168,29 +6160,24 @@ function renderOverlay() {
       { d: 'dblright', n: 'Double right-click', t: 'Drop the anchor — the session goes anchor-less.' },
     ];
     const pop = el('div', 'popup hk-popup');
-    pop.innerHTML = `
-      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${I.mouse}</span><h3>Mouse shortcuts</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
-      <div class="popup-body hk-body">
+    pop.innerHTML = popupShell({ icon: I.mouse, title: 'Mouse shortcuts', tag: 'Operator · controls', bodyClass: 'hk-body', body: `
         ${rows.map((r) => `<div class="hk-row"><div class="hk-demo hk-${r.d}">${hkDemoInner(r.d)}</div><div class="hk-text"><div class="hk-name">${esc(r.n)}</div><div class="hk-desc">${esc(r.t)}</div></div></div>`).join('')}
-        <p class="muted" style="font-size:11px;margin:6px 2px 0">These work on a list row or anywhere on a card.</p>
-      </div>`;
+        <p class="muted" style="font-size:11px;margin:6px 2px 0">These work on a list row or anywhere on a card.</p>` });
     overlay.appendChild(pop);
   } else if (o.kind === 'feedback') {
     const ctx = feedbackContext();
     const TYPES = [['Bug', 'Claude fixes it'], ['Improvement', 'needs your OK'], ['Idea', 'needs your OK'], ['Change', 'needs your OK']];
     const pop = el('div', 'popup'); pop.style.width = '470px';
-    pop.innerHTML = `
-      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${I.feedback}</span><h3>Report a bug or request</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
-      <div class="popup-body">
+    pop.innerHTML = popupShell({ icon: I.feedback, title: 'Report a bug or request', tag: 'Mr. Wrangler · report',
+      foot: `<button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill ignition js-fb-send" data-r="R17" ${o.busy ? 'disabled' : ''}>${o.busy ? 'Sending…' : 'Send report'}</button>`,
+      body: `
         <div class="fb-types">${TYPES.map(([t, h]) => `<button class="nc-pill js-fb-type${(o.fbType || 'Bug') === t ? ' on' : ''}" data-val="${t}">${t}<span class="fb-hint">${h}</span></button>`).join('')}</div>
         <textarea class="insp-desc js-fb-text" placeholder="What happened, or what would you like? The more specific, the better.">${esc(o.text || '')}</textarea>
         ${o.shot
           ? `<div class="fb-shot"><img src="${esc(o.shot)}" alt="screenshot"><button class="fb-shot-x js-fb-shot-x" data-tip="Remove">${I.x}</button></div>`
           : `<label class="fb-attach"><span>${I.plus} Add a screenshot (recommended)</span><input type="file" accept="image/*" class="js-fb-shot" hidden></label>`}
         <div class="fb-ctx muted">Auto-attached so Claude can reproduce it: <b>${esc(ctx.view)}</b> · ${esc(ctx.role || 'no role')} · ${esc(ctx.viewport)}</div>
-        ${o.error ? `<div class="login-err" style="text-align:left;margin-top:8px">${esc(o.error)}</div>` : ''}
-        <div class="pillrow" style="justify-content:flex-end;margin-top:14px"><button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill c-commit js-fb-send" data-r="R17" ${o.busy ? 'disabled' : ''}>${o.busy ? 'Sending…' : 'Send report'}</button></div>
-      </div>`;
+        ${o.error ? `<div class="login-err" style="text-align:left;margin-top:8px">${esc(o.error)}</div>` : ''}` });
     overlay.appendChild(pop);
   } else if (o.kind === 'board') {
     const board = BACKOFFICE_BOARDS.find((b) => b.id === o.board);
@@ -6234,17 +6221,16 @@ function renderOverlay() {
   } else if (o.kind === 'tools') {
     // §M1 — the global tool tray (the desktop bottom bar) as a phone sheet
     const pop = el('div', 'popup'); pop.style.width = '360px';
-    pop.innerHTML = `
-      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${I.sliders || I.menu || ''}</span><h3>Tools</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
-      <div class="popup-body"><div class="tools-tray">${bottomBarInner()}</div></div>`;
+    pop.innerHTML = popupShell({ icon: I.sliders || I.menu || '', title: 'Tools', tag: 'Yard · toolbox',
+      body: `<div class="tools-tray">${bottomBarInner()}</div>` });
     overlay.appendChild(pop);
   } else if (o.kind === 'settings') {
     const cfg = o.config || { roles: {}, admin: '' };
     const roleRows = Object.keys(cfg.roles).map((role) => `<label class="set-row"><span class="set-role">${esc(role)}</span><input class="set-input" data-role="${esc(role)}" value="${esc(cfg.roles[role])}" autocomplete="off" /></label>`).join('');
     const pop = el('div', 'popup'); pop.style.width = '380px';
-    pop.innerHTML = `
-      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${I.grid}</span><h3>Settings — Logins</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
-      <div class="popup-body">
+    pop.innerHTML = popupShell({ icon: I.grid, title: 'Settings — Logins', tag: 'Admin · access',
+      foot: `<button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill ignition js-settings-save" data-r="R17">Save</button>`,
+      body: `
         <p class="muted" style="font-size:11px;margin:0 0 10px">Each role signs in with its password (plus their name). Changes apply at next sign-in.</p>
         ${roleRows}
         <label class="set-row set-admin"><span class="set-role">Admin</span><input class="set-input" data-admin="1" value="${esc(cfg.admin)}" autocomplete="off" /></label>
@@ -6252,9 +6238,7 @@ function renderOverlay() {
         <p class="muted" style="font-size:10.5px;margin:4px 0 0">Drag &amp; drop policy — saved on this device.</p>
         <div class="set-row" style="margin-top:12px;align-items:center"><span class="set-role" style="flex:0 0 auto" data-tip="A light vibration confirms committed actions on phones (post a chat, drop a link, complete a WO, release-to-cancel). Android only — iOS has no vibration.">Haptic feedback</span>${segCtl([{ label: 'Off', js: 'js-haptics', data: { val: '0' }, on: state.hapticsOff ? 'red' : null }, { label: 'On', js: 'js-haptics', data: { val: '1' }, on: state.hapticsOff ? null : 'green' }])}</div>
         <p class="muted" style="font-size:10.5px;margin:4px 0 0">Touch feedback — saved on this device.</p>
-        ${o.error ? `<div class="login-err" style="text-align:left;margin-top:8px">${esc(o.error)}</div>` : ''}
-        <div class="pillrow" style="margin-top:14px;justify-content:flex-end"><button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill c-commit js-settings-save">Save</button></div>
-      </div>`;
+        ${o.error ? `<div class="login-err" style="text-align:left;margin-top:8px">${esc(o.error)}</div>` : ''}` });
     overlay.appendChild(pop);
   } else if (o.kind === 'newCustomer') {
     const d = o.draft; const isEdit = !!o.editId;
@@ -6338,14 +6322,12 @@ function renderOverlay() {
     if (!c) { state.overlay = null; return; }
     const ag = AGREEMENTS[c.agreementType] || AGREEMENTS.rental;
     const pop = el('div', 'popup nc-popup');
-    pop.innerHTML = `
-      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${CARD_ICON.customers || ''}</span><h3>${esc(ag.title)}</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
-      <div class="popup-body">
+    pop.innerHTML = popupShell({ icon: CARD_ICON.customers || '', title: ag.title, tag: 'Customer · agreement',
+      foot: `<button class="pill ghost js-close" data-r="R18">Close</button><button class="pill ignition js-edit-customer" data-r="R17" data-rec="${c.customerId}">Edit account</button>`,
+      body: `
         <div class="nc-ag-meta">${esc(fullName(c))}${c.agreementSignedAt ? ` · accepted ${esc(c.agreementSignedAt)}` : ' · not yet signed'}</div>
         <div class="nc-agreement" tabindex="0">${esc(ag.text)}</div>
-        ${c.signature ? `<div class="nc-ag-sigline"><span class="nc-cap-lbl">Signature</span><img class="nc-thumb sig" src="${esc(c.signature)}" alt="signature" /></div>` : ''}
-        <div class="pillrow" style="margin-top:14px;justify-content:flex-end"><button class="pill ghost js-close" data-r="R18">Close</button><button class="pill c-commit js-edit-customer" data-r="R17" data-rec="${c.customerId}">Edit account</button></div>
-      </div>`;
+        ${c.signature ? `<div class="nc-ag-sigline"><span class="nc-cap-lbl">Signature</span><img class="nc-thumb sig" src="${esc(c.signature)}" alt="signature" /></div>` : ''}` });
     overlay.appendChild(pop);
   } else if (o.kind === 'inspection') {
     // §12.8 Failure report — triggered when an inspection is marked Failed: capture a
@@ -6359,18 +6341,16 @@ function renderOverlay() {
       ? `<div class="insp-photo">${isVideo ? `<video src="${esc(n.photo)}" controls></video>` : `<img src="${esc(n.photo)}" alt="failure photo">`}<label class="insp-rephoto">Replace<input type="file" accept="image/*,video/*" class="js-insp-photo" data-rec="${n.inspectionId}" hidden></label></div>`
       : `<label class="insp-photo empty"><span>${I.video} Add photo / video</span><input type="file" accept="image/*,video/*" class="js-insp-photo" data-rec="${n.inspectionId}" hidden></label>`;
     const pop = el('div', 'popup insp-popup');
-    pop.innerHTML = `
-      <div class="popup-head"><span class="c-icon" style="color:var(--red);display:inline-flex">${CARD_ICON.inspections}</span><h3>Failure report — ${esc(unit?.name || '—')}</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
-      <div class="popup-body">
+    pop.innerHTML = popupShell({ icon: CARD_ICON.inspections, title: `Failure report — ${unit?.name || '—'}`, tag: 'Inspection · failure', danger: true,
+      foot: `<button class="pill ignition js-close" data-r="R17">Done</button>`,
+      body: `
         <div class="pillrow" style="margin-bottom:12px">${unit ? unitPill(unit.unitId) : ''}<span class="pill c-${ir.color}">${esc(ir.label)}</span>${n.woId ? refPill('workOrders', n.woId, 'Work Order') : ''}<span class="muted" style="font-size:12px;margin-left:auto">${esc(fmtShortDate(n.date))}</span></div>
         ${media}
         <textarea class="insp-desc js-insp-desc" data-rec="${n.inspectionId}" placeholder="Describe the failure (what's wrong, parts needed)…">${esc(n.description || '')}</textarea>
         <div class="insp-gate" style="margin-top:12px"><span class="insp-gate-lbl">Charge the customer?</span>${segCtl([
           { label: 'Bill', js: 'js-insp-bill', data: { rec: n.inspectionId, val: 'Yes' }, on: n.billCustomer === 'Yes' ? 'green' : null },
           { label: 'Don’t bill', js: 'js-insp-bill', data: { rec: n.inspectionId, val: 'No' }, on: n.billCustomer === 'No' ? 'gray' : null },
-        ], 'seg-bill')}</div>
-        <div class="pillrow" style="justify-content:flex-end;margin-top:14px"><button class="pill c-commit js-close">Done</button></div>
-      </div>`;
+        ], 'seg-bill')}</div>` });
     overlay.appendChild(pop);
   } else if (o.kind === 'service') {
     // §7.7/§12.7 service completion — Hours at Completion · Date · Photo · Notes
@@ -6383,17 +6363,15 @@ function renderOverlay() {
       ? `<div class="insp-photo">${svcVid ? `<video src="${esc(state.svcPhoto)}" controls></video>` : `<img src="${esc(state.svcPhoto)}" alt="service photo">`}<label class="insp-rephoto">Replace<input type="file" accept="image/*" class="js-svc-photo" hidden></label></div>`
       : `<label class="insp-photo empty req"><span>${I.video} Add photo (required)</span><input type="file" accept="image/*" class="js-svc-photo" hidden></label>`;
     const pop = el('div', 'popup insp-popup');
-    pop.innerHTML = `
-      <div class="popup-head"><span class="c-icon" style="color:var(--accent);display:inline-flex">${CARD_ICON.serviceOrders || ''}</span><h3>Complete service — ${esc(u.name)}</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
-      <div class="popup-body">
+    pop.innerHTML = popupShell({ icon: CARD_ICON.serviceOrders || '', title: `Complete service — ${u.name}`, tag: 'Service · complete',
+      foot: `<button class="pill ignition js-svc-save" data-r="R17" data-unit="${u.unitId}" data-task="${task.taskId}">Record completion</button>`,
+      body: `
         <div class="pillrow" style="margin-bottom:12px">${unitPill(u.unitId)}<span class="pill c-${task.color}">${esc(task.name)}</span><span class="muted" style="font-size:12px;margin-left:auto">${esc(svcText(task))}</span></div>
         <div class="svc-ref"><div class="svc-ref-head">Reference</div><div class="svc-ref-body">${task.parts && task.parts.length ? `Parts: ${esc(task.parts.join(' · '))}<br>` : ''}Filters · Hyperlinks · Instructions · Photo — set per-task in the backend (§7.7)</div></div>
         <label class="svc-field"><span>Hours at completion</span><input type="number" class="js-svc-hours" value="${num(u.currentHours)}"></label>
         <label class="svc-field"><span>Date completed</span><input type="date" class="js-svc-date" value="${TODAY_ISO}"></label>
         ${media}
-        <textarea class="insp-desc js-svc-notes" placeholder="Notes (parts used, observations)…"></textarea>
-        <div class="pillrow" style="justify-content:flex-end;margin-top:10px"><button class="pill c-commit js-svc-save" data-r="R17" data-unit="${u.unitId}" data-task="${task.taskId}">Record completion</button></div>
-      </div>`;
+        <textarea class="insp-desc js-svc-notes" placeholder="Notes (parts used, observations)…"></textarea>` });
     overlay.appendChild(pop);
   } else if (o.kind === 'schedule') {
     // §12.1 Schedule — a single date+time follow-up logged to the customer Activity Log
@@ -6401,13 +6379,11 @@ function renderOverlay() {
     if (!c) { state.overlay = null; return; }
     if (o.when === undefined) { o.when = TODAY_ISO; o.whenTime = to24(nowHourLabel()) || '09:00'; }
     const pop = el('div', 'popup'); pop.style.width = '340px';
-    pop.innerHTML = `
-      <div class="popup-head"><span class="c-icon" style="color:var(--accent);display:inline-flex">${CARD_ICON.customers}</span><h3>Schedule — ${esc(c.name)}</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
-      <div class="popup-body">
+    pop.innerHTML = popupShell({ icon: CARD_ICON.customers, title: `Schedule — ${c.name}`, tag: 'Customer · follow-up',
+      foot: `<button class="pill ignition js-schedule-save" data-r="R17" data-rec="${c.customerId}">Add to schedule</button>`,
+      body: `
         <label class="svc-field"><span>Date &amp; time</span>${dateField('when', o.when, { withTime: true, time: o.whenTime })}</label>
-        <textarea class="insp-desc js-sch-note" placeholder="What's the follow-up? (quote call, pickup, demo…)">${esc(o.note || '')}</textarea>
-        <div class="pillrow" style="justify-content:flex-end;margin-top:10px"><button class="pill c-commit js-schedule-save" data-r="R17" data-rec="${c.customerId}">Add to schedule</button></div>
-      </div>`;
+        <textarea class="insp-desc js-sch-note" placeholder="What's the follow-up? (quote call, pickup, demo…)">${esc(o.note || '')}</textarea>` });
     overlay.appendChild(pop);
   } else if (o.kind === 'splitUnit') {
     // §20 split — give one unit its own window on a NEW sibling rental, same invoice.
@@ -6415,14 +6391,12 @@ function renderOverlay() {
     if (!r || !u) { state.overlay = null; return; }
     const inv = r.invoiceId ? IDX.invoice.get(r.invoiceId) : null;
     const pop = el('div', 'popup'); pop.style.width = '360px';
-    pop.innerHTML = `
-      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${CARD_ICON.rentals}</span><h3>Different dates — ${esc(u.name)}</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
-      <div class="popup-body">
+    pop.innerHTML = popupShell({ icon: CARD_ICON.rentals, title: `Different dates — ${u.name}`, tag: 'Rental · split window',
+      foot: `<button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill ignition js-split-go" data-r="R17">Make separate rental</button>`,
+      body: `
         <p style="font-size:12.5px;margin-bottom:12px">The other machines stay on <b>${esc(fmtWindow(r.startDate, r.endDate) || 'this window')}</b>. This makes a <b>separate rental</b> for ${esc(u.name)}${inv ? ` on the same invoice (${esc(invoiceShort(inv.invoiceId))})` : ''}, moving its journey + lines over.</p>
         <label class="svc-field"><span>Start</span>${dateField('splitStart', o.splitStart)}</label>
-        <label class="svc-field" style="margin-top:8px"><span>End</span>${dateField('splitEnd', o.splitEnd)}</label>
-        <div class="pillrow" style="justify-content:flex-end;margin-top:14px"><button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill c-commit js-split-go" data-r="R17">Make separate rental</button></div>
-      </div>`;
+        <label class="svc-field" style="margin-top:8px"><span>End</span>${dateField('splitEnd', o.splitEnd)}</label>` });
     overlay.appendChild(pop);
   } else if (o.kind === 'addCard') {
     // Stripe Card Element — raw card data stays inside Stripe's iframe.
@@ -6430,16 +6404,14 @@ function renderOverlay() {
     if (!c) { state.overlay = null; return; }
     const consent = !!(c.signature && c.selfie);
     const pop = el('div', 'popup'); pop.style.width = '430px';
-    pop.innerHTML = `
-      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${CARD_ICON.customers || ''}</span><h3>Add card — ${esc(c.name)}</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
-      <div class="popup-body">
+    pop.innerHTML = popupShell({ icon: CARD_ICON.customers || '', title: `Add card — ${c.name}`, tag: 'Customer · card on file',
+      foot: `<button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill ignition js-card-save" data-r="R17" ${consent ? '' : 'disabled style="opacity:.45;cursor:default"'}>Save card</button>`,
+      body: `
         ${consent ? '' : `<div class="login-err" style="text-align:left;margin-bottom:12px">A selfie + signature are required first (card authorization). <button class="pill c-commit js-edit-customer" data-r="R17" data-rec="${c.customerId}" style="margin-left:6px">Complete account</button></div>`}
         <div class="pay-cap">Card number</div>
         <div class="pay-card-field" id="sl-card-element"></div>
         <div class="pay-err" id="sl-card-error"></div>
-        <p class="muted" style="font-size:11px;margin:10px 0 0">Entered securely via Stripe. We store only the brand + last 4 digits — never the full number. The customer's signature + selfie on file authorize future charges.</p>
-        <div class="pillrow" style="justify-content:flex-end;margin-top:14px"><button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill c-commit js-card-save" data-r="R17" ${consent ? '' : 'disabled style="opacity:.45;cursor:default"'}>Save card</button></div>
-      </div>`;
+        <p class="muted" style="font-size:11px;margin:10px 0 0">Entered securely via Stripe. We store only the brand + last 4 digits — never the full number. The customer's signature + selfie on file authorize future charges.</p>` });
     overlay.appendChild(pop);
   } else if (o.kind === 'addAch') {
     // §14b ACH — raw routing/account live ONLY in these inputs → straight to Stripe
@@ -6448,9 +6420,9 @@ function renderOverlay() {
     if (!c) { state.overlay = null; return; }
     const consent = !!(c.signature && c.selfie);
     const pop = el('div', 'popup'); pop.style.width = '430px';
-    pop.innerHTML = `
-      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${CARD_ICON.customers || ''}</span><h3>Add bank account — ${esc(c.name)}</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
-      <div class="popup-body">
+    pop.innerHTML = popupShell({ icon: CARD_ICON.customers || '', title: `Add bank account — ${c.name}`, tag: 'Customer · ACH bank',
+      foot: `<button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill ignition js-ach-save" data-r="R17" ${consent ? '' : 'disabled style="opacity:.45;cursor:default"'}>Save ACH</button>`,
+      body: `
         ${consent ? '' : `<div class="login-err" style="text-align:left;margin-bottom:12px">A selfie + signature are required first (ACH authorization). <button class="pill c-commit js-edit-customer" data-r="R17" data-rec="${c.customerId}" style="margin-left:6px">Complete account</button></div>`}
         <div class="pay-cap">Account holder name</div>
         <input class="lf-in" id="sl-ach-holder" value="${esc(c.name || '')}" autocomplete="off" spellcheck="false" placeholder="Name on the account">
@@ -6463,9 +6435,7 @@ function renderOverlay() {
           <div class="ach-col"><div class="pay-cap">Holder type</div><select class="lf-in" id="sl-ach-holdertype"><option value="individual">Individual</option><option value="company">Company</option></select></div>
         </div>
         <div class="pay-err" id="sl-ach-error"></div>
-        <p class="muted" style="font-size:11px;margin:10px 0 0">Entered securely via Stripe. We store only the bank name + last 4 digits — never the full routing or account number. The signature + selfie on file authorize ACH debits. The account must be verified before it can be charged.</p>
-        <div class="pillrow" style="justify-content:flex-end;margin-top:14px"><button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill c-commit js-ach-save" data-r="R17" ${consent ? '' : 'disabled style="opacity:.45;cursor:default"'}>Save ACH</button></div>
-      </div>`;
+        <p class="muted" style="font-size:11px;margin:10px 0 0">Entered securely via Stripe. We store only the bank name + last 4 digits — never the full routing or account number. The signature + selfie on file authorize ACH debits. The account must be verified before it can be charged.</p>` });
     overlay.appendChild(pop);
   } else if (o.kind === 'verifyAch') {
     // §14b verify a pending ACH via the micro-deposit descriptor code the customer
@@ -6474,15 +6444,13 @@ function renderOverlay() {
     const k = c && customerBanks(c).find((x) => x.id === o.bankId);
     if (!c || !k) { state.overlay = null; return; }
     const pop = el('div', 'popup'); pop.style.width = '400px';
-    pop.innerHTML = `
-      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${CARD_ICON.customers || ''}</span><h3>Verify ${esc(k.bankName || 'bank')} ••${esc(k.last4)}</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
-      <div class="popup-body">
+    pop.innerHTML = popupShell({ icon: CARD_ICON.customers || '', title: `Verify ${k.bankName || 'bank'} ••${k.last4}`, tag: 'Customer · verify ACH',
+      foot: `<button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill ignition js-ach-verify-save" data-r="R17">Verify account</button>`,
+      body: `
         <p class="muted" style="font-size:12px;margin:0 0 12px">Stripe sent a small deposit (about $0.01) to this account. Once it lands (1–2 business days), the customer sees a 6-character code on their statement starting with <b>SM</b>. Enter it here to verify the account for charging.</p>
         <div class="pay-cap">Verification code</div>
         <input class="lf-in" id="sl-vach-code" autocomplete="off" maxlength="6" placeholder="SM____" style="text-transform:uppercase;letter-spacing:2px">
-        <div class="pay-err" id="sl-vach-error"></div>
-        <div class="pillrow" style="justify-content:flex-end;margin-top:14px"><button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill c-commit js-ach-verify-save" data-r="R17">Verify account</button></div>
-      </div>`;
+        <div class="pay-err" id="sl-vach-error"></div>` });
     overlay.appendChild(pop);
   } else if (o.kind === 'payment') {
     const inv = IDX.invoice.get(o.invoiceId);
@@ -6517,10 +6485,16 @@ function renderOverlay() {
     // CASH / CHECK sub-panel — one editable amount (defaults to the full balance,
     // capped at it; dial it down for a partial), saved to the exact cent. Check adds a #.
     const manualPanel = `<label class="pay-field"><span>Amount ${method === 'check' ? 'on check' : 'received'}</span><input class="pay-amt-in js-manual-amt" type="number" min="0.01" max="${t.balance}" step="0.01" value="${t.balance.toFixed(2)}" ${o.busy ? 'disabled' : ''}></label>${method === 'check' ? `<label class="pay-field"><span>Check #</span><input class="pay-amt-in js-check-num" type="text" inputmode="numeric" autocomplete="off" placeholder="e.g. 1042" value="${esc(o.checkNum || '')}" ${o.busy ? 'disabled' : ''}></label>` : ''}`;
+    const payFoot = o.confirmRefund
+      ? `<button class="pill ghost js-refund-cancel" data-r="R18">Cancel</button><button class="pill c-danger js-refund-confirm" data-r="R17" data-rec="${inv.invoiceId}" ${o.busy ? 'disabled' : ''}>${o.busy ? 'Refunding…' : 'Confirm refund'}</button>`
+      : `<button class="pill ghost js-close" data-r="R18">Close</button>
+         ${t.paid > 0 && !refunded ? `<button class="pill c-danger js-refund-invoice" data-r="R17" data-rec="${inv.invoiceId}" ${o.busy ? 'disabled' : ''}>Refund</button>` : ''}
+         ${canPay ? (method === 'card'
+           ? (card ? `<button class="pill c-money js-charge-invoice" data-rec="${inv.invoiceId}" ${o.busy ? 'disabled' : ''}>${o.busy ? 'Charging…' : 'Charge'}</button>`
+                   : `<button class="add-field anchor js-pay-addcard" data-r="R5b" data-rec="${inv.customerId || ''}" data-inv="${inv.invoiceId}" ${inv.customerId ? '' : 'disabled style="opacity:.45;cursor:default"'}>+Card</button>`)
+           : `<button class="pill c-money js-record-payment" data-rec="${inv.invoiceId}" ${o.busy ? 'disabled' : ''}>${o.busy ? 'Recording…' : 'Record payment'}</button>`) : ''}`;
     const pop = el('div', 'popup'); pop.style.width = '380px';
-    pop.innerHTML = `
-      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${CARD_ICON.invoices || ''}</span><h3>${esc(inv.invoiceId)}</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
-      <div class="popup-body">
+    pop.innerHTML = popupShell({ icon: CARD_ICON.invoices || '', title: inv.invoiceId, tag: 'Invoice · payment', foot: payFoot, body: `
         <div class="pay-amount"><span class="pay-amount-num">${money2(t.balance)}</span><span class="pay-amount-sfx">${t.balance > 0 ? 'balance due' : 'balance'}${c ? ' · ' + esc(c.name) : ''}</span></div>
         <div class="pay-status-line">${statusPill('invoiceStatus', t.status)}<span class="muted">${money2(t.paid)} of ${money2(t.total)} paid${refAmt ? ` · ${money2(refAmt)} refunded` : ''}</span></div>
         ${inv.achProcessing && inv.pendingPaymentIntentId ? `<div class="pay-card-on-file warn" style="flex-direction:column;align-items:flex-start;gap:7px"><span>🏦 ACH payment processing — it settles in a few business days.</span><button class="pill c-commit js-ach-check" data-rec="${esc(inv.invoiceId)}" data-pi="${esc(inv.pendingPaymentIntentId)}" data-r="R17" ${o.busy ? 'disabled' : ''}>Check ACH status</button></div>` : ''}
@@ -6528,18 +6502,7 @@ function renderOverlay() {
           : t.balance <= 0 ? `<div class="pay-card-on-file good">✓ Paid in full${inv.paymentMethod ? ' · ' + esc(inv.paymentMethod) : ''}</div>`
             : `${methodSel}${method === 'card' ? cardPanel : manualPanel}`}
         ${o.confirmRefund ? `<div class="pay-confirm">Refund ${money2(t.paid)} to ${esc(inv.paymentMethod || 'the card')}?</div>` : ''}
-        ${o.error ? `<div class="login-err" style="text-align:left;margin-top:10px">${esc(o.error)}</div>` : ''}
-        <div class="pillrow" style="justify-content:flex-end;margin-top:16px">
-          ${o.confirmRefund
-            ? `<button class="pill ghost js-refund-cancel" data-r="R18">Cancel</button><button class="pill c-danger js-refund-confirm" data-r="R17" data-rec="${inv.invoiceId}" ${o.busy ? 'disabled' : ''}>${o.busy ? 'Refunding…' : 'Confirm refund'}</button>`
-            : `<button class="pill ghost js-close" data-r="R18">Close</button>
-               ${t.paid > 0 && !refunded ? `<button class="pill c-danger js-refund-invoice" data-r="R17" data-rec="${inv.invoiceId}" ${o.busy ? 'disabled' : ''}>Refund</button>` : ''}
-               ${canPay ? (method === 'card'
-                 ? (card ? `<button class="pill c-money js-charge-invoice" data-rec="${inv.invoiceId}" ${o.busy ? 'disabled' : ''}>${o.busy ? 'Charging…' : 'Charge'}</button>`
-                         : `<button class="add-field anchor js-pay-addcard" data-r="R5b" data-rec="${inv.customerId || ''}" data-inv="${inv.invoiceId}" ${inv.customerId ? '' : 'disabled style="opacity:.45;cursor:default"'}>+Card</button>`)
-                 : `<button class="pill c-money js-record-payment" data-rec="${inv.invoiceId}" ${o.busy ? 'disabled' : ''}>${o.busy ? 'Recording…' : 'Record payment'}</button>`) : ''}`}
-        </div>
-      </div>`;
+        ${o.error ? `<div class="login-err" style="text-align:left;margin-top:10px">${esc(o.error)}</div>` : ''}` });
     overlay.appendChild(pop);
   }
   root.appendChild(overlay);
