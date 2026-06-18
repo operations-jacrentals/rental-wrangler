@@ -356,6 +356,13 @@ try {
     st.settings = savedAll; T.applySettings(st.settings);   // restore + re-apply clean
     ok(JSON.stringify(T.kpiFor('mechanic')) === JSON.stringify(T.legacyKpiPct('mechanic')), 'clean settings re-apply leaves the dashboard at defaults');
 
+    // 23) Per-tab "Reset page" — each tab maps to its own slice + a defaults value
+    ok(T.pageDefaultSlice('statuses').key === 'status' && T.pageDefaultSlice('kpis').key === 'kpis', 'each tab resets only its own settings slice');
+    const cfReset = T.pageDefaultSlice('fields').value;
+    ok(Array.isArray(cfReset.customers) && cfReset.customers.length === 0 && Array.isArray(cfReset.units), 'Reset page (Custom Fields) empties every entity, not just the active one');
+    ok(JSON.stringify(T.pageDefaultSlice('layout').value) === JSON.stringify({ footers: {} }), 'Reset page (Layout) restores all footers shown');
+    ok(T.pageDefaultSlice('logins') === null && T.pageDefaultSlice('notifications') === null, 'tabs with no settings slice (Logins/planned) have no Reset page');
+
     return out;
   });
 

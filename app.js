@@ -1828,6 +1828,34 @@ function persistAdminSettings(s) {
   applySettings(s);
 }
 const hasSettingsBackup = () => { try { const p = localStorage.getItem('jactec.settings.prev'); return !!(p && p !== '{}'); } catch (e) { return false; } };
+// The settings slice a given tab owns + the value that resets JUST that tab to shipped defaults.
+// (Empties are explicit per-key so the editor shows defaults regardless of what's still saved.)
+function pageDefaultSlice(tab) {
+  switch (tab) {
+    case 'statuses': return { key: 'status', value: {} };
+    case 'kpis': return { key: 'kpis', value: {} };
+    case 'general': return { key: 'company', value: {} };
+    case 'requirements': return { key: 'rentalRules', value: {} };
+    case 'layout': return { key: 'layout', value: { footers: {} } };
+    case 'fields': return { key: 'customFields', value: { customers: [], units: [], rentals: [], invoices: [] } };
+    case 'inspections': return { key: 'inspections', value: Object.fromEntries((DATA.categories || []).map((c) => [c.categoryId, { required: false, items: [] }])) };
+    default: return null;   // Logins / planned tabs have no resettable slice
+  }
+}
+/* Reset only the CURRENT tab to defaults — a gentle step before "Reset all". Reverts the tab's
+   DRAFT slice (so Cancel undoes it, Save keeps it); other tabs' customizations are untouched. */
+function resetPageSettings() {
+  const o = state.overlay; if (!o || o.kind !== 'settings') return;
+  const slice = pageDefaultSlice(o.tab); if (!slice) return;
+  o.draftSettings = o.draftSettings || {};
+  o.draftSettings[slice.key] = JSON.parse(JSON.stringify(slice.value));
+  if (o.tab === 'fields') o.cfDraft = { label: '', type: 'text', required: false };
+  if (o.tab === 'inspections') o.inspDraft = '';
+  o.resetArm = false;
+  const lbl = (SETTINGS_TABS.find((t) => t.id === o.tab) || {}).label || 'This tab';
+  toast(`${lbl} reset to defaults — Save to keep, or Cancel to undo.`);
+  renderOverlay();
+}
 /* Reset EVERY admin customization back to shipped defaults (Settings → Reset all). Persists the
    empty config so it sticks across devices, then reloads the board clean. */
 async function resetAllSettings() {
@@ -6912,7 +6940,7 @@ function renderOverlay() {
     o.setSel = o.setSel || 'rentalStatus';
     if (!o.draftSettings) o.draftSettings = JSON.parse(JSON.stringify((o.config && o.config.settings) || state.settings || {}));
     const pop = el('div', 'popup board-popup settings-popup');
-    const foot = `<button class="pill ghost set-danger js-settings-reset${o.resetArm ? ' armed' : ''}" data-r="R18">${o.resetArm ? 'Click again — reset everything' : 'Reset all'}</button>${hasSettingsBackup() ? '<button class="pill ghost js-settings-undo" data-r="R18">Undo last change</button>' : ''}<span class="spacer"></span>${o.error ? `<span class="set-err">${esc(o.error)}</span>` : ''}<button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill ignition js-settings-save" data-r="R17">Save settings</button>`;
+    const foot = `${pageDefaultSlice(o.tab) ? '<button class="pill ghost js-settings-resetpage" data-r="R18" data-tip="Reset just this tab to defaults (Save to keep)">Reset page</button>' : ''}<button class="pill ghost set-danger js-settings-reset${o.resetArm ? ' armed' : ''}" data-r="R18">${o.resetArm ? 'Click again — reset everything' : 'Reset all'}</button>${hasSettingsBackup() ? '<button class="pill ghost js-settings-undo" data-r="R18">Undo last change</button>' : ''}<span class="spacer"></span>${o.error ? `<span class="set-err">${esc(o.error)}</span>` : ''}<button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill ignition js-settings-save" data-r="R17">Save settings</button>`;
     pop.innerHTML = `
       <div class="popup-head">
         <span class="pl-ic">${I.sliders}</span>
@@ -8839,6 +8867,7 @@ function onClick(e) {
   if (closest('.js-switch-user')) { e.stopPropagation(); return switchUser(); }
   if (closest('.js-open-settings')) { e.stopPropagation(); return openSettings(); }
   if (closest('.js-settings-save')) { e.stopPropagation(); return saveSettings(); }
+  if (closest('.js-settings-resetpage')) { e.stopPropagation(); return resetPageSettings(); }   // gentle: default just this tab
   if (closest('.js-settings-reset')) { e.stopPropagation(); const o = state.overlay; if (!o) return; if (o.resetArm) return resetAllSettings(); o.resetArm = true; renderOverlay(); return; }   // armed two-click confirm
   if (closest('.js-settings-undo')) { e.stopPropagation(); return undoLastSettings(); }
   if (closest('.js-overbook')) { e.stopPropagation(); const on = closest('.js-overbook').dataset.val === '1'; state.overbookOn = on; try { localStorage.setItem('jactec.overbook', on ? '1' : '0'); } catch (err) {} toast(on ? 'Overbooking allowed — conflicting links get a pulsing red Overbooked flag.' : 'Overbooking blocked — a conflicting unit drop is refused.'); renderOverlay(); return; }
@@ -12140,7 +12169,7 @@ function exposeTestApi() {
       computeTransportPrice, isFueledType, unitTransport, rentalTransport,
       wrValidatePlan, applyWranglerData, wrFunnel, invoiceMergeable, mergeInvoiceInto,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
-      companyRevenueGoal, companyName, companyTagline, rentalRuleBlock, dueForCustomer, footerHidden, customFieldsFor, checklistFor, checklistRequired, applySettings, getStatus, __state: state };
+      companyRevenueGoal, companyName, companyTagline, rentalRuleBlock, dueForCustomer, footerHidden, customFieldsFor, checklistFor, checklistRequired, applySettings, getStatus, pageDefaultSlice, __state: state };
   } catch (e) { /* no window (non-browser) */ }
 }
 
