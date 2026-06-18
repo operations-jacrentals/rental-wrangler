@@ -1822,7 +1822,7 @@ const SETTINGS_TABS = [
   { id: 'fields',        label: 'Custom Fields',    icon: I.sliders,              note: 'Add fields to customers, units, rentals & invoices — type, required, placement.' },
   { id: 'inspections',   label: 'Inspections',      icon: CARD_ICON.inspections,  note: 'Checklist templates per category type, Pass/Fail items, required photos, auto-fail → WO.' },
   { id: 'requirements',  label: 'Rental Rules',     icon: STATUS_ICONS.shield,    note: 'Require card-on-file for On Rent; selfie / signature / ID / PO as Required · Optional · None; Cash vs Net 30.' },
-  { id: 'kpis',          label: 'KPIs & Rings',     icon: STATUS_ICONS.gauge,     note: 'Per-role dashboard rings — how many rings, which metric each shows, and the formula/target behind it.' },
+  { id: 'kpis',          label: 'KPIs & Rings',     icon: STATUS_ICONS.gauge,     v1: true },
   { id: 'notifications', label: 'Notifications',    icon: I.bell,                 note: 'Team chat on/off, driver dispatch alerts, customer reminders & cadence.' },
   { id: 'layout',        label: 'Layout & Footers', icon: I.grid,                 note: 'Per-card footer visibility, card / column visibility, grid order, default sort.' },
   { id: 'integrations',  label: 'Integrations',     icon: STATUS_ICONS.zap,       note: 'Stripe, Maps, telematics feed — references & toggles (secrets stay server-side).' },
@@ -1847,6 +1847,7 @@ function settingsBoardHtml(o) {
   let pane;
   if (o.tab === 'statuses') pane = settingsStatusesPane(o);
   else if (o.tab === 'logins') pane = settingsLoginsPane(o);
+  else if (o.tab === 'kpis') pane = settingsKpisPane(o);
   else pane = settingsPlannedPane(SETTINGS_TABS.find((t) => t.id === o.tab));
   return `<div class="set-board"><nav class="set-rail" aria-label="Settings sections">${rail}</nav><div class="set-pane">${pane}</div></div>`;
 }
@@ -1900,6 +1901,113 @@ function settingsPlannedPane(t) {
       <p>${esc(t.note || '')}</p>
       <p class="set-planned-sub">Wired into this same board next — it'll save through the same admin config.</p>
     </div>`;
+}
+// Draft KPI rings for a role — the override if present, else the shipped defaults (read-only).
+function draftRoleRings(o, roleId) {
+  const ov = o.draftSettings && o.draftSettings.kpis && o.draftSettings.kpis[roleId];
+  return (Array.isArray(ov) && ov.length === 3) ? ov : (KPI_DEFAULTS[roleId] || []);
+}
+// Clone the defaults into the draft for this role the first time it's edited (so edits have a home).
+function ensureKpiDraft(o, roleId) {
+  o.draftSettings = o.draftSettings || {};
+  o.draftSettings.kpis = o.draftSettings.kpis || {};
+  if (!o.draftSettings.kpis[roleId]) o.draftSettings.kpis[roleId] = JSON.parse(JSON.stringify(KPI_DEFAULTS[roleId] || []));
+  return o.draftSettings.kpis[roleId];
+}
+// Plain-English readback of a DSL metric (for the "MEASURES" line).
+const kpiSrcText = (s) => s ? `${(s.agg === 'sum' ? 'sum of ' + (s.field || '?') + ' in ' : '')}${s.entity || '?'}${(s.where && s.where.length) ? ' [' + s.where.map((c) => `${c.f} ${c.op} ${Array.isArray(c.v) ? c.v.join('/') : c.v}`).join(', ') + ']' : ''}` : '?';
+function kpiMetricReadback(m) {
+  if (!m) return 'Built-in metric.';
+  if (m.kind === 'builtin') return 'Built-in metric.';
+  if (m.kind === 'ratio') return `${kpiSrcText(m.num)} ÷ ${m.den && m.den.const != null ? m.den.const : kpiSrcText(m.den)}`;
+  if (m.kind === 'count') return `${kpiSrcText(m.src)} ÷ all ${m.src && m.src.entity || ''}`;
+  if (m.kind === 'goal' || m.kind === 'sum') return `${kpiSrcText(m.src)} toward a target`;
+  return 'Custom metric.';
+}
+function settingsKpisPane(o) {
+  const roleId = o.kpiRole || 'mechanic'; o.kpiRole = roleId;
+  const role = ROLES.find((r) => r.id === roleId) || {};
+  const rolePick = ROLES.map((r) => `<button class="set-pick js-kpi-role${r.id === roleId ? ' on' : ''}" data-role="${r.id}">${esc(r.label)}</button>`).join('');
+  const rings = draftRoleRings(o, roleId);
+  const previewVals = rings.map((r) => { const v = kpiEval(r).pct; return v == null ? 0 : v; });
+  const rows = rings.map((ring, idx) => {
+    const ev = kpiEval(ring);
+    const val = ev.pct == null ? '—' : ev.pct + '%';
+    const isDSL = ring.metric && ring.metric.kind && ring.metric.kind !== 'builtin';
+    const measure = kpiMetricReadback(ring.metric) === 'Built-in metric.' ? (ring.help || KPI_HELP[ring.label] || 'Built-in metric.') : kpiMetricReadback(ring.metric);
+    const tune = isDSL ? `<div class="kpi-tune">
+        <label class="kpi-fld kpi-fld-sm"><span class="kpi-cap">TARGET</span><input class="kpi-tgt js-kpi-tgt" data-role="${roleId}" data-i="${idx}" value="${esc(ring.target != null ? ring.target : '')}" inputmode="numeric" autocomplete="off"/></label>
+        <div class="kpi-fld kpi-fld-sm"><span class="kpi-cap">BETTER</span>${segCtl([{ label: '▲ High', js: 'js-kpi-band', data: { role: roleId, i: idx, band: 'up' }, on: ring.band !== 'down' ? 'green' : null }, { label: '▼ Low', js: 'js-kpi-band', data: { role: roleId, i: idx, band: 'down' }, on: ring.band === 'down' ? 'green' : null }])}</div>
+      </div>` : '';
+    return `<div class="kpi-row">
+      <span class="kpi-slot">RING ${idx + 1}</span>
+      <div class="kpi-main">
+        <label class="kpi-fld"><span class="kpi-cap">LABEL</span><input class="kpi-lbl js-kpi-lbl" data-role="${roleId}" data-i="${idx}" value="${esc(ring.label || '')}" autocomplete="off"/></label>
+        <div class="kpi-measure"><span class="kpi-cap">MEASURES</span><span class="kpi-measure-t${isDSL ? ' dsl' : ''}">${esc(measure)}</span></div>
+        ${tune}
+      </div>
+      <div class="kpi-val"><span class="kpi-val-n">${esc(val)}</span><span class="kpi-val-c">live</span></div>
+      <button class="pill ignition js-kpi-refine" data-role="${roleId}" data-i="${idx}" data-r="R17" data-tip="Describe it in plain English — Mr. Wrangler builds it">🤠 Refine</button>
+      ${isDSL ? `<button class="so-reset js-kpi-reset" data-role="${roleId}" data-i="${idx}" data-tip="Reset to default">${I.back}</button>` : '<span class="so-reset-sp"></span>'}
+    </div>`;
+  }).join('');
+  return `
+    <div class="set-pane-head"><h4>KPIs &amp; Rings</h4><p>Each role shows 3 rings. Rename one or set its target, or tap <strong>🤠 Refine</strong> to describe a new metric in plain English — Mr. Wrangler interrogates it, proves it against your live data, and locks it in.</p></div>
+    <div class="set-picker">${rolePick}</div>
+    <div class="kpi-board">
+      <div class="kpi-rows">${rows}</div>
+      <div class="kpi-preview"><div class="kpi-preview-ring">${ring3SVG(previewVals, null, { size: 120 })}</div><span class="kpi-preview-l">${esc(role.label || '')} — live rings</span></div>
+    </div>`;
+}
+/* Hand a ring off to Mr. Wrangler to author. Carries the board's in-progress settings +
+   the admin credential forward so lock-in can persist without re-auth, then reopens the
+   board on the KPIs tab. The dock floats free, so the modal board is closed meanwhile. */
+function openWranglerForKpi(roleId, idx) {
+  const o = state.overlay;
+  const draftSettings = (o && o.draftSettings) ? JSON.parse(JSON.stringify(o.draftSettings)) : JSON.parse(JSON.stringify(state.settings || {}));
+  const role = ROLES.find((r) => r.id === roleId) || {};
+  const ring = draftRoleRings({ draftSettings }, roleId)[idx] || {};
+  const kt = { role: roleId, roleLabel: role.label, idx, adminPw: (o && o.adminPw) || '', roles: (o && o.config && o.config.roles) || {}, admin: (o && o.config && o.config.admin) || '', draftSettings };
+  if (o) closeOverlay();
+  state.wrangler.kpiTarget = kt;
+  openWranglerDock({
+    messages: [{ role: 'assistant', content: `🤠 Let's wrangle the ${role.label} role's Ring ${idx + 1} (now “${ring.label || '—'}”). Tell me in plain English what this ring should measure — I'll ask anything I need, prove it against your live yard data, and lock it in.` }],
+    draft: '',
+  });
+}
+// The KPI-authoring addendum — appended to the system prompt ONLY while a ring is being built.
+function wranglerKpiSystem() {
+  const kt = state.wrangler.kpiTarget; if (!kt) return '';
+  const fields = Object.keys(KPI_FIELDS).map((e) => `  ${e}: ${KPI_FIELDS[e].join(', ')}`).join('\n');
+  return `KPI AUTHORING MODE — you are building the "${kt.roleLabel}" role's Ring ${kt.idx + 1}. The admin will describe a metric; ask any quick clarifying question (window? what counts? higher or lower is better?), then emit EXACTLY this block when it's nailed down:\n` +
+    '```wrangler-action\n{"action":"kpi","role":"' + kt.role + '","ring":' + kt.idx + ',"label":"<≤28 chars>","help":"<one plain sentence>","band":"up|down","target":<number, ONLY for goal/sum>,"unit":"%|$|count","metric":{ … }}\n```\n' +
+    'metric is ONE of:\n' +
+    '• {"kind":"ratio","num":SOURCE,"den":SOURCE|{"const":N}} — a percentage (num÷den). Cross-entity allowed.\n' +
+    '• {"kind":"count","src":SOURCE} — filtered count ÷ all rows of that entity.\n' +
+    '• {"kind":"goal","src":SOURCE} — value vs target (set "target"). SOURCE.agg may be "sum" (set "field").\n' +
+    'SOURCE = {"entity":E,"where":[{"f":FIELD,"op":OP,"v":VALUE}],"agg":"count"|"sum","field":FIELD}. ' +
+    'OP ∈ eq, ne, in, nin, gt, gte, lt, lte, contains, exists, truthy, falsy. Tokens @thisMonth / @today.\n' +
+    'ONLY these entities + fields (nothing money/auth/pricing):\n' + fields + '\n' +
+    'Derived fields: _ageDays, _month, _revenue (rental price), _paid/_billed (invoice $), _totalPaid/_activePct (customer). ' +
+    'Keep chat short and natural; never mention JSON, fields, or this block. Emit it only once the metric is unambiguous.';
+}
+/** Apply a validated Wrangler-authored KPI: write the ring into settings.kpis, persist (with
+ *  the carried admin credential), apply live, and reopen the board on the KPIs tab. */
+async function lockKpiFromWrangler(mi) {
+  const w = state.wrangler, kt = w.kpiTarget; if (!kt) return;
+  const m = w.messages[mi]; if (!m || !m.action || m.filed) return;
+  const v = m.action._kpi || wrValidateKpi(m.action); if (!v.ok) return;
+  const settings = kt.draftSettings || {};
+  settings.kpis = settings.kpis || {};
+  if (!settings.kpis[kt.role]) settings.kpis[kt.role] = JSON.parse(JSON.stringify(KPI_DEFAULTS[kt.role] || []));
+  settings.kpis[kt.role][kt.idx] = v.ring;
+  let warn = '';
+  try { if (kt.adminPw) { const r = await backendCall('setConfig', { password: kt.adminPw, config: { roles: kt.roles, admin: kt.admin, settings } }); if (!r || !r.ok) warn = ' (saved on this device — sync retry needed)'; } }
+  catch (e) { warn = ' (saved on this device — offline)'; }
+  persistAdminSettings(settings);           // mirror + apply live so the header ring updates now
+  m.filed = true; w.kpiTarget = null;
+  toast(`Locked in “${v.ring.label}” for ${kt.roleLabel} · Ring ${kt.idx + 1}.${warn} 🤠`);
+  openOverlay({ kind: 'settings', config: { roles: kt.roles, admin: kt.admin, settings }, adminPw: kt.adminPw, tab: 'kpis', kpiRole: kt.role, draftSettings: settings });
 }
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -4985,6 +5093,41 @@ function roleRings(roleId) {
 function kpiFor(roleId) { return roleRings(roleId).map((r) => kpiEval(r).pct); }
 function kpiRaw(roleId) { return roleRings(roleId).map((r) => { const e = kpiEval(r); return { v: e.raw, unit: e.unit }; }); }
 
+/* Filterable field allowlist per entity (+ derived _fields) — gates BOTH the Wrangler
+   validator and what the authoring prompt is told it may reference. Nothing money/auth. */
+const KPI_FIELDS = {
+  units: ['name', 'fleetStatus', 'inspectionStatus', 'assignedMechanic', 'make', 'model', 'year', 'gpsType', 'categoryId'],
+  rentals: ['status', 'fieldCall', 'transportType', 'customerId', 'startDate', 'endDate', '_month', '_revenue'],
+  workOrders: ['phase', 'cancelled', 'billCustomer', 'type', '_ageDays'],
+  inspections: ['result', 'wash', 'woId', 'date', '_ageDays'],
+  invoices: ['date', 'dueDate', '_paid', '_billed'],
+  customers: ['accountType', 'usedSalesStage', 'membershipStage', 'industry', '_totalPaid', '_activePct'],
+};
+function wrValidateKpiSource(s, issues, label) {
+  if (!s || !KPI_ENTITY[s.entity]) { issues.push(`${label}: unknown entity "${s && s.entity}"`); return; }
+  const allow = KPI_FIELDS[s.entity] || [];
+  (s.where || []).forEach((c) => { if (!c || !allow.includes(c.f)) issues.push(`${label}: field "${c && c.f}" not allowed on ${s.entity}`); });
+  if (s.agg === 'sum' && !allow.includes(s.field)) issues.push(`${label}: sum field "${s.field}" not allowed on ${s.entity}`);
+}
+/** Validate a Mr. Wrangler kpi action → { ok, ring, issues, value, role, idx }. The ring is
+ *  rebuilt from the allowlisted parts only, then computed live to prove it functions. */
+function wrValidateKpi(act) {
+  const issues = []; act = act || {};
+  if (!ROLES.find((r) => r.id === act.role)) issues.push(`unknown role "${act.role}"`);
+  const idx = Number(act.ring);
+  if (!(idx >= 0 && idx <= 2)) issues.push('ring must be 1, 2, or 3');
+  const m = act.metric || {};
+  if (!['ratio', 'count', 'goal', 'sum'].includes(m.kind)) issues.push(`unknown metric kind "${m.kind}"`);
+  if (m.kind === 'ratio') { wrValidateKpiSource(m.num, issues, 'numerator'); if (!(m.den && m.den.const != null)) wrValidateKpiSource(m.den, issues, 'denominator'); }
+  if (m.kind === 'count') wrValidateKpiSource(m.src, issues, 'source');
+  if (m.kind === 'goal' || m.kind === 'sum') { wrValidateKpiSource(m.src, issues, 'source'); if (!(Number(act.target) > 0)) issues.push('a positive target is required'); }
+  const ring = { id: `${act.role}-${idx}-c`, label: String(act.label || 'KPI').slice(0, 28), help: String(act.help || '').slice(0, 160),
+    target: act.target != null ? Number(act.target) : undefined, unit: act.unit, band: act.band === 'down' ? 'down' : 'up', metric: m };
+  let value = null;
+  if (!issues.length) { try { value = kpiEval(ring).pct; if (value == null) issues.push('metric did not compute'); } catch (e) { issues.push('metric did not compute'); } }
+  return { ok: !issues.length, ring, issues, value, role: act.role, idx };
+}
+
 /** §11 Team ring — per-position average across the 5 roles (skips null placeholders). */
 function kpiTeam() {
   const all = ROLES.map((r) => kpiFor(r.id));
@@ -5201,6 +5344,14 @@ function wranglerDockEl() {
           act = m.filed
             ? `<span class="wr-actdone">✓ Applied — ${esc(sum)}</span>`
             : `<div class="wr-apply"><div class="wr-apply-sum">Preview: ${esc(sum)}</div>${skip}${plan.ops.length ? `<button class="wr-actbtn wr-actbtn-build js-wr-apply" data-mi="${i}">✓ Apply these changes</button>` : '<span class="wr-apply-none">Nothing here I can safely apply.</span>'}</div>`;
+        } else if (m.action && m.action.action === 'kpi') {
+          const v = m.action._kpi || (m.action._kpi = wrValidateKpi(m.action));
+          const valTxt = v.value == null ? '—' : v.value + '%';
+          act = m.filed
+            ? `<span class="wr-actdone">✓ Locked in — ${esc(v.ring.label)} (${esc(valTxt)})</span>`
+            : v.ok
+              ? `<div class="wr-apply"><div class="wr-apply-sum">${esc(v.role)} · Ring ${v.idx + 1}: <b>${esc(v.ring.label)}</b> — live <b>${esc(valTxt)}</b></div><div class="wr-kpi-readback">${esc(kpiMetricReadback(v.ring.metric))}</div><button class="wr-actbtn wr-actbtn-build js-wr-kpi-lock" data-mi="${i}">✓ Lock in this KPI</button></div>`
+              : `<div class="wr-apply"><div class="wr-apply-skip">can’t build that yet: ${esc(v.issues.join('; '))}</div></div>`;
         } else if (m.action) {
           const ak = m.action.action;
           const doneLbl = ak === 'plan' ? 'Building to your plan' : ak === 'request' ? 'Sent to the developer for OK' : 'Fixing now — I’ll let you know when it’s done';
@@ -6985,7 +7136,7 @@ async function wranglerSend() {
   syncWranglerComment(o, 'user', text, imgs);   // §18e mirror the turn onto the issue thread
   wranglerClearNeedsAnswer(o.reqNumber);        // §18e answering a "Needs your answer" request clears it from the inbox
   o.draft = ''; o.attach = []; o.files = []; o.busy = true; o.error = ''; render();
-  const system = WRANGLER_SYSTEM + '\n\n' + wranglerContext(o);
+  const system = WRANGLER_SYSTEM + (o.kpiTarget ? '\n\n' + wranglerKpiSystem() : '') + '\n\n' + wranglerContext(o);
   // Build the payload: images become a content-block array; CSV/text files fold
   // into the message text so Mr. Wrangler reads their rows.
   const fileBlock = (m) => (m.files && m.files.length)
@@ -7008,7 +7159,7 @@ async function wranglerSend() {
       const raw = (r.text || '').trim();
       const act = parseWranglerAction(raw);
       let shown = stripWranglerAction(raw);
-      if (!shown) shown = act ? (act.action === 'data' ? 'Here’s what I’ll change — preview it and hit apply when it looks right.' : act.action === 'request' ? 'Got it — I’ll send this to the developer to OK.' : act.action === 'plan' ? 'Here’s the plan — tap Build when it’s right.' : 'On it — I’ll fix this right now and let you know when I’m done.') : '(no answer)';
+      if (!shown) shown = act ? (act.action === 'data' ? 'Here’s what I’ll change — preview it and hit apply when it looks right.' : act.action === 'kpi' ? 'Here’s the KPI — lock it in when the live number looks right.' : act.action === 'request' ? 'Got it — I’ll send this to the developer to OK.' : act.action === 'plan' ? 'Here’s the plan — tap Build when it’s right.' : 'On it — I’ll fix this right now and let you know when I’m done.') : '(no answer)';
       o.messages.push({ role: 'assistant', content: shown, action: act || null, filed: false });
       syncWranglerComment(o, 'assistant', shown);   // §18e mirror Mr. Wrangler's reply onto the issue thread
     } else {
@@ -8444,6 +8595,11 @@ function onClick(e) {
   if (closest('.js-set-icon-open')) { e.stopPropagation(); const o = state.overlay, k = closest('.js-set-icon-open').dataset.key; if (o) { o.iconFor = o.iconFor === k ? null : k; renderOverlay(); } return; }
   if (closest('.js-set-icon')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-set-icon'); if (o) { setDraftStatus(o, b.dataset.set, b.dataset.val, { icon: b.dataset.icon || '' }); o.iconFor = null; renderOverlay(); } return; }
   if (closest('.js-set-reset')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-set-reset'); if (o && o.draftSettings && o.draftSettings.status && o.draftSettings.status[b.dataset.set]) { delete o.draftSettings.status[b.dataset.set][b.dataset.val]; renderOverlay(); } return; }
+  // KPIs & Rings tab
+  if (closest('.js-kpi-role')) { e.stopPropagation(); const o = state.overlay; if (o) { o.kpiRole = closest('.js-kpi-role').dataset.role; renderOverlay(); } return; }
+  if (closest('.js-kpi-band')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-kpi-band'); if (o) { const rings = ensureKpiDraft(o, b.dataset.role); rings[Number(b.dataset.i)].band = b.dataset.band; renderOverlay(); } return; }
+  if (closest('.js-kpi-reset')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-kpi-reset'); if (o) { const rings = ensureKpiDraft(o, b.dataset.role); rings[Number(b.dataset.i)] = JSON.parse(JSON.stringify((KPI_DEFAULTS[b.dataset.role] || [])[Number(b.dataset.i)] || {})); renderOverlay(); } return; }
+  if (closest('.js-kpi-refine')) { e.stopPropagation(); const b = closest('.js-kpi-refine'); openWranglerForKpi(b.dataset.role, Number(b.dataset.i)); return; }
   if (closest('.js-nc-save')) { e.stopPropagation(); return saveNewCustomer(); }
   if (closest('.js-nc-acct')) { const b = closest('.js-nc-acct'); e.stopPropagation(); ncSyncInputs(); state.overlay.draft.accountType = b.dataset.val; renderOverlay(); return; }
   if (closest('.js-nc-selfie-clear')) { e.stopPropagation(); ncSyncInputs(); state.overlay.draft.selfie = ''; renderOverlay(); return; }
@@ -8530,6 +8686,7 @@ function onClick(e) {
   if (closest('.js-wr-close')) { e.stopPropagation(); wranglerRailSnapshot(); state.wrangler.open = false; return render(); }   // §18 close the dock back to the launcher; the chat lands on the §18g rail
   if (closest('.js-wr-act')) { e.stopPropagation(); return wranglerFileAction(Number(closest('.js-wr-act').dataset.mi)); }   // §18d file the fix/request Mr. Wrangler proposed inline
   if (closest('.js-wr-apply')) { e.stopPropagation(); const o = state.wrangler; if (!o.open) return; const m = o.messages[Number(closest('.js-wr-apply').dataset.mi)]; if (!m || !m.action || m.filed) return; const plan = m.action._plan || wrValidatePlan(m.action); if (!plan.ops.length) return; m.filed = true; applyWranglerData(plan); return; }   // Mr. Wrangler applies the previewed add/update/import
+  if (closest('.js-wr-kpi-lock')) { e.stopPropagation(); lockKpiFromWrangler(Number(closest('.js-wr-kpi-lock').dataset.mi)); return; }   // Mr. Wrangler locks in an authored KPI ring
   if (closest('.js-wr-unattach')) { e.stopPropagation(); const o = state.wrangler; if (o.open && o.attach) { o.attach.splice(Number(closest('.js-wr-unattach').dataset.i), 1); render(); } return; }   // §18d drop a pending image attachment
   if (closest('.js-wr-unfile')) { e.stopPropagation(); const o = state.wrangler; if (o.open && o.files) { o.files.splice(Number(closest('.js-wr-unfile').dataset.i), 1); render(); } return; }   // §18d drop a pending file attachment
   if (closest('.js-wrangler')) { e.stopPropagation(); if (state.wrangler.open) { wranglerRailSnapshot(); state.wrangler.open = false; return render(); } return wranglerNewChat(); }   // §18 toggle Mr. Wrangler dock — opening always starts a fresh chat (the last one waits on the §18g rail)
@@ -9512,6 +9669,9 @@ function onChange(e) {
     setDraftStatus(o, e.target.dataset.set, e.target.dataset.val, { label: (v && v !== def.label) ? v : '' });
     renderOverlay(); return;
   }
+  // Settings Board — KPI ring label / target (commit on blur)
+  if (e.target.classList.contains('js-kpi-lbl')) { const o = state.overlay; if (!o) return; const rings = ensureKpiDraft(o, e.target.dataset.role); rings[Number(e.target.dataset.i)].label = e.target.value.trim(); renderOverlay(); return; }
+  if (e.target.classList.contains('js-kpi-tgt')) { const o = state.overlay; if (!o) return; const rings = ensureKpiDraft(o, e.target.dataset.role); const n = Number(e.target.value); rings[Number(e.target.dataset.i)].target = isFinite(n) && e.target.value.trim() ? n : undefined; renderOverlay(); return; }
   // F2 — +File upload: read the chosen photo/document; images are downscaled, others kept
   // as-is. Held in state.overlay.fileUpload until "Add file" (which sends it to Drive).
   if (e.target.classList.contains('js-ff-file')) {
@@ -11633,7 +11793,8 @@ function exposeTestApi() {
       cleanUnitName, planUnitMigration, applyUnitMigration, openMigrationPreview,
       computeTransportPrice, isFueledType, unitTransport, rentalTransport,
       wrValidatePlan, applyWranglerData, wrFunnel, invoiceMergeable, mergeInvoiceInto,
-      kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS };
+      kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
+      __state: state };
   } catch (e) { /* no window (non-browser) */ }
 }
 

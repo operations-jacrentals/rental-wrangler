@@ -254,6 +254,25 @@ try {
     ok(T.kpiEval({ band: 'down', metric: { kind: 'count', src: { entity: 'units', where: [{ f: 'inspectionStatus', op: 'eq', v: 'Ready' }] } } }).pct === 100 - ce.pct, 'band:down inverts the ring fill (lower-is-better)');
     ok(T.kpiEval({ metric: { kind: 'ratio', num: { entity: 'NOPE' } } }).pct === 0, 'malformed metric → safe 0 ring (never throws)');
 
+    // 15) Mr. Wrangler KPI authoring — validate + lock-in write path
+    const goodKpi = { action: 'kpi', role: 'mechanic', ring: 1, label: 'WO ≤ 2 days', band: 'up', unit: '%',
+      metric: { kind: 'ratio', num: { entity: 'workOrders', where: [{ f: 'phase', op: 'eq', v: 'Complete' }, { f: '_ageDays', op: 'lte', v: 2 }], agg: 'count' }, den: { entity: 'workOrders', where: [{ f: 'cancelled', op: 'ne', v: true }], agg: 'count' } } };
+    const gv = T.wrValidateKpi(goodKpi);
+    ok(gv.ok && typeof gv.value === 'number' && gv.idx === 1, `wrValidateKpi accepts a sound cross-field ratio (live ${gv.value}%)`);
+    const badField = T.wrValidateKpi({ action: 'kpi', role: 'mechanic', ring: 1, target: 5, metric: { kind: 'goal', src: { entity: 'units', where: [{ f: 'currentHours', op: 'gt', v: 0 }] } } });
+    ok(!badField.ok && badField.issues.some((s) => /currentHours/.test(s)), 'wrValidateKpi rejects a non-allowlisted field (currentHours — money/ops fields stay off-limits)');
+    ok(!T.wrValidateKpi({ action: 'kpi', role: 'nope', ring: 9, metric: { kind: 'bogus' } }).ok, 'wrValidateKpi rejects bad role / ring / kind');
+    // lock-in write path: a non-trivial custom ring flows through roleRings → kpiFor
+    const nz = T.wrValidateKpi({ action: 'kpi', role: 'mechanic', ring: 1, label: 'WO done rate', band: 'up',
+      metric: { kind: 'ratio', num: { entity: 'workOrders', where: [{ f: 'phase', op: 'eq', v: 'Complete' }], agg: 'count' }, den: { entity: 'workOrders', where: [{ f: 'cancelled', op: 'ne', v: true }], agg: 'count' } } });
+    const st = T.__state; const savedKpis = st.settings.kpis;
+    st.settings.kpis = { mechanic: JSON.parse(JSON.stringify(T.KPI_DEFAULTS.mechanic)) };
+    st.settings.kpis.mechanic[1] = nz.ring;
+    const overridden = T.kpiFor('mechanic')[1];
+    ok(nz.value > 0 && overridden === nz.value, `kpiFor reflects a locked-in custom ring (${overridden}%, ≠ default)`);
+    st.settings.kpis = savedKpis;   // restore
+    ok(JSON.stringify(T.kpiFor('mechanic')) === JSON.stringify(T.legacyKpiPct('mechanic')), 'removing the override restores the default ring');
+
     return out;
   });
 
