@@ -287,6 +287,36 @@ input { font-family: inherit; }
 .is-phone .chat-drop { left: 0; right: 0; bottom: 0; width: auto; height: calc(94px + env(safe-area-inset-bottom)); padding-bottom: env(safe-area-inset-bottom); border-radius: 16px 16px 0 0; border-width: 1.5px 0 0 0; }   /* §M0 keep the drop CTA above the home indicator */
 .is-phone .chat-drop .cd-inner { flex-direction: row; gap: 12px; }
 .is-phone .chat-drop .cd-ico { width: 24px; height: 24px; }
+/* ── §M-touch — phone hit-area floor (≥44px). Desktop density is untouched; we only
+   grow the genuinely TAPPABLE controls on phones (single column = room to spare).
+   Glyphs keep their size — only the hit box grows. ── */
+.is-phone .rbtn { width: 44px; height: 44px; }                                  /* row eye / open-tab (was 22) */
+.is-phone .sortbtn { height: 44px; }
+.is-phone .sort .dir { width: 40px; height: 44px; }                             /* was 26×32 */
+.is-phone .mini-search { min-height: 44px; }                                    /* was 24 */
+.is-phone .pill.gate { height: 40px; }                                          /* status gate = interactive (was 28); wide, so width clears the floor */
+.is-phone .rtab { min-height: 46px; justify-content: center; }                  /* chat role tabs */
+.is-phone .cmt-dot { width: 34px; height: 34px; }                               /* colour-picker swatches (was 17; full 44 each would over-wide the row) */
+.is-phone .iconbtn { min-height: 44px; }
+.is-phone .bv-btn { min-width: 44px; min-height: 44px; }                         /* per-card graph toggle (was 32) */
+.is-phone .coltab { min-height: 44px; }                                         /* card view tabs (was 30) */
+.is-phone .popup-head .x { width: 40px; height: 40px; }                         /* sheet close ✕ (was 30) */
+.is-phone .mdot { width: 44px; height: 44px; }                                  /* swipe-column dots — was 22×18 */
+.is-phone .chat-tag .x { position: relative; }                                  /* tag remove ✕ keeps its 14px look… */
+.is-phone .chat-tag .x::before { content: ''; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 40px; height: 40px; }   /* …but a 40px hit box */
+/* ── §M3 — overlays & the winpicker become bottom SHEETS on phones: full-width,
+   pinned to the bottom edge, rounded top, slide up. Popups keep their ✕ and the
+   backdrop closes on tap; the winpicker gets its own tap-to-close backdrop + Esc. ── */
+.is-phone .overlay { align-items: flex-end; padding: 0; gap: 0; }
+.is-phone .popup { max-width: 100%; width: 100%; max-height: 92dvh; border-radius: 18px 18px 0 0; border-bottom: 0;
+  padding-bottom: env(safe-area-inset-bottom); animation: sheetUp .2s cubic-bezier(.2,.7,.2,1); }
+.sheet-backdrop { position: fixed; inset: 0; z-index: 9490; background: rgba(0,0,0,.5); }   /* §M3 winpicker phone backdrop */
+.is-phone .winpicker-float { left: 0; right: 0; top: auto; bottom: 0; width: 100%; z-index: 9500; }
+.is-phone .winpicker { border-radius: 18px 18px 0 0; max-height: 92dvh; overflow: auto;
+  padding-bottom: max(10px, env(safe-area-inset-bottom)); animation: sheetUp .2s cubic-bezier(.2,.7,.2,1); }
+.is-phone.sheet-open .card-body { overflow: hidden; }   /* §M3 lock the column scroll behind an open sheet */
+@keyframes sheetUp { from { transform: translateY(100%); } to { transform: none; } }
+@media (prefers-reduced-motion: reduce) { .is-phone .popup, .is-phone .winpicker { animation: none; } }
 /* Card tabs = a SEGMENTED NAV BAR (one container, flat segments) — now sit INSIDE
    the card at its top, centered, so the card's height/glow includes the toggles. */
 .col-tabs { display: inline-flex; gap: 3px; flex: 0 0 auto; align-self: center; max-width: calc(100% - 16px); overflow: hidden;

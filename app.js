@@ -1196,6 +1196,7 @@ const state = {
   invoiceSeq: DATA.invoices.length,   // monotonic invoice number (never reused after a discard)
   previewsOn: (() => { try { return localStorage.getItem('jactec.previewsOff') !== '1'; } catch (e) { return true; } })(),   // hover previews (per device)
   overbookOn: (() => { try { return localStorage.getItem('jactec.overbook') === '1'; } catch (e) { return false; } })(),   // §10 allow-overbooking policy (per device, default OFF — drag build)
+  hapticsOff: (() => { try { return localStorage.getItem('jactec.hapticsOff') === '1'; } catch (e) { return false; } })(),   // §M-touch Vibration-API feedback (per device, default ON; Android-only, no-op on iOS)
   wranglerRail: (() => { try { return JSON.parse(localStorage.getItem('jactec.wranglerRail') || '[]'); } catch (e) { return []; } })(),   // §18g the bottom-right rail of past Mr. Wrangler conversations (per device); each = a snapshot { id, title, ts, card, recId, recType, reqNumber, reqTitle, reqUrl, messages }
 };
 const activeSession = () => (state.activeTabId ? state.tabs.find((t) => t.id === state.activeTabId)?.session : state.defaultSession) || state.defaultSession;
@@ -4875,7 +4876,7 @@ function chatDockEl() {
   const c = activeChat();
   const u = commentUserKey();
   // tagged-element rail at the very top (no header, per Jac) — close/back ride the rail's end
-  const tagsHtml = c ? c.tags.map((t) => `<span class="chat-tag c-${t.color || 'gray'}" data-tip="${esc(t.label)}"><span class="ct-dot"></span><span class="ct-lbl">${esc(t.label)}</span><button class="x" data-chat-untag="${esc(t.id)}" aria-label="Remove ${esc(t.label)}">${I.x}</button></span>`).join('') : '<span class="chat-rail-hint">No chat open — right-click a record or drag an element in</span>';
+  const tagsHtml = c ? c.tags.map((t) => `<span class="chat-tag c-${t.color || 'gray'}" data-tip="${esc(t.label)}"><span class="ct-dot"></span><span class="ct-lbl">${esc(t.label)}</span><button class="x" data-chat-untag="${esc(t.id)}" aria-label="Remove ${esc(t.label)}">${I.x}</button></span>`).join('') : '<span class="chat-rail-hint">No chat open — right-click / long-press a record, or drag one in</span>';
   const rail = `<div class="chat-rail">${tagsHtml}<span class="rail-sp"></span>${c ? `<button class="rail-ico js-chat-back" aria-label="All flags" data-tip="All flags">${I.chevL}</button>` : ''}<button class="rail-ico js-chat-close" aria-label="Close chat" data-tip="Close">${I.x}</button></div>`;
   const feed = chatFeed().map((it) => {
     if (it.kind === 'msg') {
@@ -5017,7 +5018,7 @@ function chatSend() {
   let c = activeChat(); if (!c) c = newChat();                          // typing with no active chat opens one to the team
   c.messages.push({ id: 'MSG' + (state.seq++), by: commentUserKey(), when: TODAY_ISO, at: Date.now(), text });
   c.seen[commentUserKey()] = Date.now();                                // author has seen their own update
-  state.chat.draft = ''; saveSoon(); pushChatsSoon(); render();
+  state.chat.draft = ''; saveSoon(); pushChatsSoon(); haptic([12, 30, 12]); render();   // §M-touch — success tick on a posted message
   setTimeout(() => { const i = document.querySelector('.chat-input'); if (i) i.focus(); const f = document.querySelector('.chat-feed'); if (f) f.scrollTop = f.scrollHeight; }, 0);
 }
 function chatToggleRole(id) {
@@ -6221,6 +6222,8 @@ function renderOverlay() {
         <label class="set-row set-admin"><span class="set-role">Admin</span><input class="set-input" data-admin="1" value="${esc(cfg.admin)}" autocomplete="off" /></label>
         <div class="set-row" style="margin-top:12px;align-items:center"><span class="set-role" style="flex:0 0 auto" data-tip="ON: dropping a unit onto a conflicting rental links anyway — both sides get a pulsing red 'Overbooked' flag while the overlap exists. OFF: the drop is blocked, naming the conflict.">Allow overbooking</span>${segCtl([{ label: 'Off', js: 'js-overbook', data: { val: '0' }, on: state.overbookOn ? null : 'red' }, { label: 'On', js: 'js-overbook', data: { val: '1' }, on: state.overbookOn ? 'green' : null }])}</div>
         <p class="muted" style="font-size:10.5px;margin:4px 0 0">Drag &amp; drop policy — saved on this device.</p>
+        <div class="set-row" style="margin-top:12px;align-items:center"><span class="set-role" style="flex:0 0 auto" data-tip="A light vibration confirms committed actions on phones (post a chat, drop a link, complete a WO, release-to-cancel). Android only — iOS has no vibration.">Haptic feedback</span>${segCtl([{ label: 'Off', js: 'js-haptics', data: { val: '0' }, on: state.hapticsOff ? 'red' : null }, { label: 'On', js: 'js-haptics', data: { val: '1' }, on: state.hapticsOff ? null : 'green' }])}</div>
+        <p class="muted" style="font-size:10.5px;margin:4px 0 0">Touch feedback — saved on this device.</p>
         ${o.error ? `<div class="login-err" style="text-align:left;margin-top:8px">${esc(o.error)}</div>` : ''}
         <div class="pillrow" style="margin-top:14px;justify-content:flex-end"><button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill c-commit js-settings-save">Save</button></div>
       </div>`;
@@ -7444,12 +7447,19 @@ function render() {
     else b.scrollTop = 0;
   });
   document.documentElement.setAttribute('data-theme', state.theme);
-  // the rental-window picker floats above the grid, anchored to its trigger (§12.2)
+  // the rental-window picker floats above the grid, anchored to its trigger (§12.2);
+  // on phones it becomes a bottom sheet (§M3) with a tap-to-close backdrop instead.
   if (state.winpicker) {
     const wr = IDX.rental.get(state.winpicker.rentalId);
-    if (wr) { const fl = el('div', 'winpicker-float'); fl.innerHTML = winPickerEl(wr); $('#app').appendChild(fl); positionWinPicker(fl); }
-    else state.winpicker = null;
+    if (wr) {
+      const phone = document.body.classList.contains('is-phone');
+      if (phone) { const bd = el('div', 'sheet-backdrop'); bd.dataset.sheetclose = 'win'; $('#app').appendChild(bd); }
+      const fl = el('div', 'winpicker-float'); fl.innerHTML = winPickerEl(wr); $('#app').appendChild(fl);
+      if (!phone) positionWinPicker(fl);   // phone: CSS pins it to the bottom edge, so skip the JS anchor
+    } else state.winpicker = null;
   }
+  // §M3 — lock the column scroll behind any open sheet/overlay/dock on phones
+  document.body.classList.toggle('sheet-open', !!(state.overlay || state.winpicker || state.chat.open || state.wrangler.open));
   // §17 — the internal team dock floats bottom-right above the bar when open
   if (state.chat.open) { const d = el('div', 'chat-dock', ''); d.dataset.drop = 'chat'; d.innerHTML = chatDockEl(); $('#app').appendChild(d); }
   // §18 — Mr. Wrangler dock floats alongside the team chat (or alone at bottom-right)
@@ -7568,6 +7578,17 @@ function invoiceUnitIds(inv) {
   (inv.rentalIds || []).forEach((rid) => { const r = IDX.rental.get(rid); if (r) rentalUnits(r).forEach((eu) => { if (eu.unitId) ids.add(eu.unitId); }); });
   (inv.lineItems || []).forEach((li) => { if (li.unitId) ids.add(li.unitId); });
   return [...ids];
+}
+
+/** §M-touch — haptic reinforcement for a COMMITTED gesture (one pulse, never on
+ *  scroll/hover). Best-effort: Android/Chrome only — iOS Safari has no Vibration
+ *  API, so this is reinforcement, never the sole signal. Gated on the per-device
+ *  off-switch (Settings) + reduced-motion. Vocabulary: 8 = light tick (advance),
+ *  [12,30,12] = success (sent/dropped/done), [35,25,35] = abort (release-to-cancel). */
+function haptic(pattern) {
+  if (state.hapticsOff || !('vibrate' in navigator)) return;
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  try { navigator.vibrate(pattern); } catch (e) {}
 }
 
 /** Called from boot() — builds the #drag-layer singleton (ghost + cancel arc)
@@ -7785,11 +7806,13 @@ function updateHot(under) {
   const padHot = !!(t && t.newChat);
   if (padHot !== chatDropPad.classList.contains('hot')) {    // §17 — light the pad only on the transition
     chatDropPad.classList.toggle('hot', padHot);
+    if (padHot) haptic(10);                                  // §M-touch — tick when the new-chat pad arms
     const cl = chatDropPad.querySelector('.cd-label'); if (cl) cl.textContent = padHot ? 'Release to start' : 'Drop to start a chat';
   }
   const arcHot = !!(t && t.cancel);
   if (arcHot !== dragArc.classList.contains('hot')) {        // only on the transition — no per-frame text churn in the rAF loop
     dragArc.classList.toggle('hot', arcHot);
+    if (arcHot) haptic(8);                                   // §M-touch — tick when "release to cancel" arms
     const lbl = dragArc.querySelector('.ca-label');
     if (lbl) lbl.textContent = arcHot ? 'Release to cancel' : 'Cancel';   // tell the operator exactly what releasing does
   }
@@ -7859,9 +7882,10 @@ function dragUp(e) {
   if (e.pointerId !== DRAG.payload.pointerId) return;
   DRAG.point.x = e.clientX; DRAG.point.y = e.clientY;
   const t = dropTargetAt(e.clientX, e.clientY);
-  if (!t || t.cancel) return cancelDrag();                               // arc, dead space, invalid target → no mutation
+  if (!t || t.cancel) { if (t && t.cancel) haptic([35, 25, 35]); return cancelDrag(); }   // deliberate release on the arc = abort buzz; dead space = silent
   const payload = DRAG.payload;
   endDrag();
+  haptic([12, 30, 12]);                                                  // committed drop → success tick
   dispatchDrop(payload, t);                                              // §16 mutations re-run every hard gate, then render
 }
 function cancelDrag() { if (DRAG.active) endDrag({ rerender: true }); else disarmDrag(); }
@@ -8017,6 +8041,7 @@ function onClick(e) {
   if (closest('.js-open-settings')) { e.stopPropagation(); return openSettings(); }
   if (closest('.js-settings-save')) { e.stopPropagation(); return saveSettings(); }
   if (closest('.js-overbook')) { e.stopPropagation(); const on = closest('.js-overbook').dataset.val === '1'; state.overbookOn = on; try { localStorage.setItem('jactec.overbook', on ? '1' : '0'); } catch (err) {} toast(on ? 'Overbooking allowed — conflicting links get a pulsing red Overbooked flag.' : 'Overbooking blocked — a conflicting unit drop is refused.'); renderOverlay(); return; }
+  if (closest('.js-haptics')) { e.stopPropagation(); const on = closest('.js-haptics').dataset.val === '1'; state.hapticsOff = !on; try { localStorage.setItem('jactec.hapticsOff', on ? '0' : '1'); } catch (err) {} if (on) haptic([12, 30, 12]); renderOverlay(); return; }   // §M-touch — toggle + a sample buzz when turning ON
   if (closest('.js-nc-save')) { e.stopPropagation(); return saveNewCustomer(); }
   if (closest('.js-nc-acct')) { const b = closest('.js-nc-acct'); e.stopPropagation(); ncSyncInputs(); state.overlay.draft.accountType = b.dataset.val; renderOverlay(); return; }
   if (closest('.js-nc-selfie-clear')) { e.stopPropagation(); ncSyncInputs(); state.overlay.draft.selfie = ''; renderOverlay(); return; }
@@ -8277,7 +8302,7 @@ function onClick(e) {
   if (closest('.js-wo-complete')) { const b = closest('.js-wo-complete'); return completeWOAttempt(b.dataset.rec); }
   if (closest('.js-wo-cancel')) { const b = closest('.js-wo-cancel'); const w = IDX.wo.get(b.dataset.rec); if (w) { w.cancelled = true; reindex('workOrders', w); logAction(w, 'Work order cancelled'); toast('Work order cancelled — find it in the done list to reopen.'); reanchorRender(); } return; }   // Jac: can't cancel WOs (reversible flag, terminal like Complete)
   if (closest('.js-wo-reopen')) { const b = closest('.js-wo-reopen'); const w = IDX.wo.get(b.dataset.rec); if (w) { w.cancelled = false; reindex('workOrders', w); logAction(w, 'Work order reopened'); toast('Work order reopened.'); reanchorRender(); } return; }
-  if (closest('.js-wodone-confirm')) { const b = closest('.js-wodone-confirm'); state.overlay = null; setWoPhase(b.dataset.rec, 'Complete'); renderOverlay(); return; }
+  if (closest('.js-wodone-confirm')) { const b = closest('.js-wodone-confirm'); state.overlay = null; setWoPhase(b.dataset.rec, 'Complete'); haptic([12, 30, 12]); renderOverlay(); return; }
   if (closest('.js-migrate-go')) { const o = state.overlay; if (!o || o.kind !== 'migrateUnits') return; const res = applyUnitMigration(o.plan); state.overlay = null; renderOverlay(); render(); toast(`Rounded up ${res.created} unit${res.created === 1 ? '' : 's'} and linked ${res.linked} rental${res.linked === 1 ? '' : 's'}.`); return; }
   if (closest('.js-split-open')) { const b = closest('.js-split-open'); e.stopPropagation(); const r = IDX.rental.get(b.dataset.rec); if (r) openOverlay({ kind: 'splitUnit', rentalId: b.dataset.rec, unitId: b.dataset.unit, splitStart: r.startDate, splitEnd: r.endDate }); return; }
   if (closest('.js-split-go')) { const o = state.overlay; if (!o || o.kind !== 'splitUnit') return; const sib = splitUnitToNewRental(o.rentalId, o.unitId, o.splitStart, o.splitEnd); if (sib) { closeOverlay(); try { anchorRecord('rentals', sib.rentalId); } catch (err) { render(); } } return; }
@@ -8335,6 +8360,7 @@ function onClick(e) {
   if (closest('.js-wp-done')) { e.stopPropagation(); return closeWinPicker(); }
   if (closest('.js-tl-blocker')) { e.stopPropagation(); const st = document.querySelector('.stalls'); if (st) st.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); attnFlash('.stall .pill.dvd'); return; }
   if (closest('.js-open-winpicker')) { e.stopPropagation(); const rec = closest('.js-open-winpicker').dataset.rec; return state.winpicker?.rentalId === rec ? closeWinPicker() : openWinPicker(rec); }
+  if (closest('[data-sheetclose]')) { e.stopPropagation(); return closeWinPicker(); }   // §M3 — tap the phone sheet backdrop to dismiss the winpicker
 
   // sort menu + direction toggle
   if (closest('.js-sortmenu')) { const b = closest('.js-sortmenu'); return openViewMenu(b.dataset.card, b); }
@@ -11028,7 +11054,13 @@ function boot() {
     if (e.target.classList.contains('nc-in') && e.key === 'Enter' && e.target.tagName !== 'SELECT') { e.preventDefault(); return saveNewCustomer(); }
     if (e.target.classList.contains('js-wr-in') && e.key === 'Enter') { e.preventDefault(); return wranglerSend(); }   // §18
     if (e.target.classList.contains('chat-input') && e.key === 'Enter') { e.preventDefault(); return chatSend(); }
-    if (e.key === 'Escape') { if (state.winpicker) { closeWinPicker(); } else if (state.overlay) { closeOverlay(); } }
+    // §M3 — one predictable back/dismiss chain: winpicker → overlay → Mr. Wrangler dock → team chat dock.
+    if (e.key === 'Escape') {
+      if (state.winpicker) { closeWinPicker(); }
+      else if (state.overlay) { closeOverlay(); }
+      else if (state.wrangler.open) { wranglerRailSnapshot(); state.wrangler.open = false; render(); }   // mirror js-wr-close (lands the chat on the §18g rail)
+      else if (state.chat.open) { state.chat.open = false; render(); }                                    // mirror js-chat-close
+    }
   });
   // mouse hotkeys (§0.1): double-click a row = anchor; right-click = Back
   const hotkeyGuard = (e) => e.target.closest('.inline-edit, input, textarea, select, .pill, button, .x') || state.winpicker;
