@@ -337,7 +337,7 @@ input { font-family: inherit; }
 .is-phone .card-jog .jog-btn { min-width: 46px; min-height: 44px; }
 .is-phone .card-jog .jog-btn svg { width: 19px; height: 19px; }
 /* single active column — no 3-wide scroll track (the grid swipe is Back/Forward, §M3) */
-.is-phone .grid { display: block; overflow: hidden; padding: 12px 8px 4px; }
+.is-phone .grid { display: block; overflow: hidden; padding: 12px 8px 4px; touch-action: pan-y; }   /* vertical scroll native; JS owns the horizontal swipe (Back/Forward) */
 .is-phone .col { flex: 1 1 auto; padding: 0; height: 100%; }
 /* the global tool tray rendered as a phone sheet (§M1 footer → Tools) */
 .tools-tray { display: flex; flex-wrap: wrap; gap: 8px; }

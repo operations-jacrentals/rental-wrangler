@@ -4813,6 +4813,13 @@ function bottomBarInner() {
 }
 function bottomBarEl() { const bar = el('div', 'bottombar'); bar.innerHTML = bottomBarInner(); return bar; }
 // §M1 — phone-only per-column bottom strip: Yard→internal chat · Rentals→tool bar · Customers→external chats (shell).
+// §M1/§M3 — the active phone column's card id (state.cards key), for the grid Back/Fwd swipe.
+function activeMobileCard() {
+  const colObj = COLUMNS[Math.max(0, Math.min(2, state.mobileCol))];
+  const s = activeSession();
+  const member = (s.cols && s.cols[colObj.id]) || colObj.default;
+  return SHOP_TYPES.includes(member) ? 'shop' : member;
+}
 // §M1 phone footer — the column's card toggles (active = icon+label+count, the rest
 // icon+count only) + ONE trailing action icon, over a thin column-dot indicator. The
 // whole dock is swipeable left/right to change columns (column switching lives HERE now,
@@ -5838,7 +5845,7 @@ let _ovScroll = {}, _ovLastKind = null;   // keep a popup-body's scroll across i
    remain. Closing by other means (Esc/✕/backdrop) consumes the dangling entry so the
    stack stays balanced. Phone-only — desktop keeps Esc/click. Wired in boot(). ── */
 let backGuard = false, backConsuming = false;
-let mdockSwipeFired = false;   // §M1 — a footer column-swipe sets this so the trailing click is swallowed once
+let swipeFired = false;   // §M1/§M3 — a footer (column) or grid (Back/Fwd) swipe sets this so the trailing click is swallowed once
 function anyDismissable() { return !!(state.overlay || state.winpicker || state.chat.open || state.wrangler.open); }
 function dismissTopSheet() {
   if (state.winpicker) { closeWinPicker(); return true; }
@@ -7673,6 +7680,10 @@ function initDrag() {
    • a VERTICAL move on touch = scroll intent → disarm, the list scrolls natively,
    • holding STILL ~500ms = the right-click/context menu (armMenuTimer),
    • a quick press-and-release never arms past the click discriminator (= tap/action). ── */
+// §M3 — touch DRAG is now a long-press: a press must be HELD ~300ms before a horizontal
+// move lifts a drag. A quick horizontal flick (before this fires) is a Back/Forward swipe
+// instead (see the grid swipe tracker in boot). Frees the horizontal axis for navigation.
+function armReadyTimer(arm) { return setTimeout(() => { if (DRAG.armed === arm) arm.ready = true; }, 300); }
 function armMenuTimer(arm) {   // §M3 — touch hold-still opens the context menu (not a drag)
   return setTimeout(() => {
     if (DRAG.armed !== arm) return;
@@ -7692,8 +7703,8 @@ function dragDown(e) {
   const chatEl = e.target.closest('[data-chat-el]');
   if (chatEl) {
     DRAG.point.x = e.clientX; DRAG.point.y = e.clientY;
-    const arm = { chatEl: chatElPayload(chatEl), x: e.clientX, y: e.clientY, pointerId: e.pointerId, touch: e.pointerType === 'touch', lp: null };
-    if (arm.touch) arm.lp = armMenuTimer(arm);
+    const arm = { chatEl: chatElPayload(chatEl), x: e.clientX, y: e.clientY, pointerId: e.pointerId, touch: e.pointerType === 'touch', lp: null, rdy: null, ready: e.pointerType !== 'touch' };
+    if (arm.touch) { arm.lp = armMenuTimer(arm); arm.rdy = armReadyTimer(arm); }
     DRAG.armed = arm; return;
   }
   const bail = e.target.closest('.inline-edit, .inline-input, input, textarea, select, button, .x, .pill, .seg, .add-field, .linkname, .flag, .jnode, .dropdown-menu, .overlay, .hover-preview, .winpicker-float, .ctx-menu');
@@ -7703,8 +7714,8 @@ function dragDown(e) {
   const src = dragSourceAt(e.target);
   if (!src) return;
   DRAG.point.x = e.clientX; DRAG.point.y = e.clientY;                    // seed the ghost/hit-test point — a touch long-press may fire with NO move first
-  const armed = { card: src.card, rec: src.rec, x: e.clientX, y: e.clientY, pointerId: e.pointerId, touch: e.pointerType === 'touch', lp: null };
-  if (armed.touch) armed.lp = armMenuTimer(armed);
+  const armed = { card: src.card, rec: src.rec, x: e.clientX, y: e.clientY, pointerId: e.pointerId, touch: e.pointerType === 'touch', lp: null, rdy: null, ready: e.pointerType !== 'touch' };
+  if (armed.touch) { armed.lp = armMenuTimer(armed); armed.rdy = armReadyTimer(armed); }
   DRAG.armed = armed;
 }
 /* Resolve what a press grabs, in priority order:
@@ -7732,7 +7743,7 @@ function dragSourceAt(target) {
   }
   return null;
 }
-function disarmDrag() { if (DRAG.armed && DRAG.armed.lp) clearTimeout(DRAG.armed.lp); DRAG.armed = null; }
+function disarmDrag() { if (DRAG.armed) { if (DRAG.armed.lp) clearTimeout(DRAG.armed.lp); if (DRAG.armed.rdy) clearTimeout(DRAG.armed.rdy); } DRAG.armed = null; }
 // Read a granular chat-taggable element's payload from its data-* stamps (§17).
 function chatElPayload(node) {
   return { id: node.dataset.chatId || null, label: (node.dataset.chatLabel || node.textContent || '').trim().slice(0, 48) || 'Item',
@@ -7748,7 +7759,8 @@ function dragMove(e) {
       const adx = Math.abs(e.clientX - a.x), ady = Math.abs(e.clientY - a.y);
       if (adx < 8 && ady < 8) return;                                    // still inside the slop — a hold here becomes the menu
       if (ady >= adx) { disarmDrag(); return; }                         // vertical intent → native scroll
-      return startDrag();                                                // horizontal intent → drag the element
+      if (!a.ready) { disarmDrag(); return; }                            // §M3 horizontal move BEFORE the long-press = a Back/Forward swipe (handled on pointerup), not a drag
+      return startDrag();                                                // held long enough → horizontal drag-to-link
     }
     if (dist > 6) startDrag();
     return;
@@ -7761,6 +7773,7 @@ function dragMove(e) {
 function startDrag() {
   const a = DRAG.armed; if (!a) return;
   if (a.lp) clearTimeout(a.lp);
+  if (a.rdy) clearTimeout(a.rdy);
   if (pendingRowClick) { clearTimeout(pendingRowClick.timer); pendingRowClick = null; }   // nothing pending may fire mid-drag
   hideHoverPreview(); hideTip();
   try { window.getSelection().removeAllRanges(); } catch (err) {}        // pre-threshold mouse travel may have selected text (the dblclick idiom, §16)
@@ -8020,7 +8033,7 @@ function dispatchDrop(p, t) {
 }
 
 function onClick(e) {
-  if (mdockSwipeFired) { mdockSwipeFired = false; e.stopPropagation(); e.preventDefault(); return; }   // §M1 — swallow the click that ends a footer column-swipe
+  if (swipeFired) { swipeFired = false; e.stopPropagation(); e.preventDefault(); return; }   // §M1/§M3 — swallow the click that ends a column / Back-Fwd swipe
   const t = e.target;
   const closest = (sel) => t.closest(sel);
 
@@ -10979,22 +10992,30 @@ function boot() {
     if (backConsuming) { backConsuming = false; return; }
     if (anyDismissable()) { backGuard = false; dismissTopSheet(); }   // entry already popped by the browser → re-pushed by render if more remain
   });
-  // §M1 — phone column switching lives in the FOOTER now (tap a dot/toggle, or swipe the
-  // dock left/right). The grid no longer scroll-snaps between columns (its swipe is
-  // Back/Forward, §M3). A swipe that fires swallows the trailing click on its start target.
-  let mdockSwipe = null;
+  // §M1/§M3 — phone horizontal swipes. On the FOOTER dock: change column (the only place
+  // columns change now). On the GRID/column: Back/Forward of the active card. A real drag
+  // (long-press then move) is excluded; a fired swipe swallows the trailing click.
+  let swipeStart = null;
   document.addEventListener('pointerdown', (e) => {
-    const dk = e.target.closest && e.target.closest('.mobile-dock');
-    mdockSwipe = dk ? { x: e.clientX, y: e.clientY, id: e.pointerId } : null;
+    if (!document.body.classList.contains('is-phone')) { swipeStart = null; return; }
+    const inFooter = !!(e.target.closest && e.target.closest('.mobile-dock'));
+    const inGrid = !inFooter && !!(e.target.closest && e.target.closest('.grid'));
+    swipeStart = (inFooter || inGrid) ? { x: e.clientX, y: e.clientY, id: e.pointerId, footer: inFooter } : null;
   }, true);
   document.addEventListener('pointerup', (e) => {
-    const s = mdockSwipe; mdockSwipe = null;
-    if (!s || e.pointerId !== s.id) return;
+    const s = swipeStart; swipeStart = null;
+    if (!s || e.pointerId !== s.id || DRAG.active || DRAG.suppressClick) return;   // a real drag is not a swipe
     const dx = e.clientX - s.x, dy = e.clientY - s.y;
-    if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy) * 1.4) return;   // not a clean horizontal swipe
-    mdockSwipeFired = true;                                                // swallow the trailing click (e.g. if it started on a toggle)
-    const next = Math.max(0, Math.min(2, state.mobileCol + (dx < 0 ? 1 : -1)));   // left → next column, right → previous
-    if (next !== state.mobileCol) { state.mobileCol = next; haptic(8); render(); }
+    if (Math.abs(dx) < 55 || Math.abs(dx) < Math.abs(dy) * 1.3) return;            // not a clean horizontal swipe
+    swipeFired = true;                                                             // swallow the trailing click (row/toggle)
+    if (s.footer) {
+      const next = Math.max(0, Math.min(2, state.mobileCol + (dx < 0 ? 1 : -1)));  // left → next column, right → previous
+      if (next !== state.mobileCol) { state.mobileCol = next; haptic(8); render(); }
+    } else {
+      const card = activeMobileCard();
+      if (dx > 0) cardBack(card); else cardFwd(card);                              // swipe right → Back, left → Forward
+      haptic(8);
+    }
   }, true);
   initDrag();   // §15c drag & drop link engine — #drag-layer singleton + document pointer listeners
   try { loadGoogleMaps(); } catch (e) {}   // §2.3 warm the Maps SDK at boot so the dispatch cockpit + transport editor open instantly (no first-open wait / "load it twice")
