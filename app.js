@@ -1198,6 +1198,7 @@ const state = {
   overbookOn: (() => { try { return localStorage.getItem('jactec.overbook') === '1'; } catch (e) { return false; } })(),   // §10 allow-overbooking policy (per device, default OFF — drag build)
   hapticsOff: (() => { try { return localStorage.getItem('jactec.hapticsOff') === '1'; } catch (e) { return false; } })(),   // §M-touch Vibration-API feedback (per device, default ON; Android-only, no-op on iOS)
   wranglerRail: (() => { try { return JSON.parse(localStorage.getItem('jactec.wranglerRail') || '[]'); } catch (e) { return []; } })(),   // §18g the bottom-right rail of past Mr. Wrangler conversations (per device); each = a snapshot { id, title, ts, card, recId, recType, reqNumber, reqTitle, reqUrl, messages }
+  settings: loadAdminSettings(),   // Settings Board admin customization (config.settings); mirrored to localStorage, applied at boot via applySettings()
 };
 const activeSession = () => (state.activeTabId ? state.tabs.find((t) => t.id === state.activeTabId)?.session : state.defaultSession) || state.defaultSession;
 /** Next unique invoice id — a monotonic counter so deleting a Quote-stage invoice can't reuse a number. */
@@ -1722,6 +1723,186 @@ const RING_ICON = {
 };
 
 /* ════════════════════════════════════════════════════════════════════════
+   SETTINGS BOARD — admin customization (config.settings).
+   A curated, VENDORED subset of Lucide (MIT) glyphs an admin can pin to a
+   status option from the Statuses & Icons tab. Inlined as path data via ico()
+   — same dependency-free pattern as I / CARD_ICON. NEVER a runtime import.
+   ════════════════════════════════════════════════════════════════════════ */
+const STATUS_ICONS = {
+  check:       ico('<path d="M20 6 9 17l-5-5"/>'),
+  checkCircle: ico('<circle cx="12" cy="12" r="9"/><path d="m8.5 12 2.5 2.5 4.5-4.5"/>'),
+  x:           ico('<path d="M18 6 6 18M6 6l12 12"/>'),
+  xCircle:     ico('<circle cx="12" cy="12" r="9"/><path d="m15 9-6 6M9 9l6 6"/>'),
+  alert:       ico('<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/>'),
+  ban:         ico('<circle cx="12" cy="12" r="9"/><path d="m5.6 5.6 12.8 12.8"/>'),
+  clock:       ico('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
+  hourglass:   ico('<path d="M6 2h12M6 22h12M7 2c0 4 4 5 5 7 1-2 5-3 5-7M7 22c0-4 4-5 5-7 1 2 5 3 5 7"/>'),
+  calendar:    ico('<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M3 10h18M8 2v4M16 2v4"/>'),
+  truck:       ico('<path d="M14 18V6a1 1 0 0 0-1-1H3a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h1"/><path d="M14 9h4l3 3v5a1 1 0 0 1-1 1h-1M15 18H9"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="18" r="2"/>'),
+  mapPin:      ico('<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/>'),
+  refresh:     ico('<path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/>'),
+  wrench:      CARD_ICON.workOrders,
+  hammer:      CARD_ICON.shop,
+  package:     CARD_ICON.parts,
+  clipboard:   CARD_ICON.inspections,
+  dollar:      ico('<path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>'),
+  cart:        ico('<circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/><path d="M2 3h3l2.6 12.4a1 1 0 0 0 1 .8h8.7a1 1 0 0 0 1-.78L22 7H6"/>'),
+  tag:         ico('<path d="M12.6 2.6 21 11a2 2 0 0 1 0 3l-6.5 6.5a2 2 0 0 1-3 0L3 12V4a1.4 1.4 0 0 1 1.4-1.4z"/><circle cx="7.5" cy="7.5" r="1.3" fill="currentColor"/>'),
+  flag:        ico('<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><path d="M4 22v-7"/>'),
+  star:        ico('<path d="M12 2l3 6.5 7 .9-5 4.8 1.3 7-6.3-3.4L5.7 21l1.3-7-5-4.8 7-.9z"/>'),
+  zap:         ico('<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>'),
+  snowflake:   ico('<path d="M12 2v20M4 7l16 10M20 7 4 17M2 12h20"/>'),
+  shield:      ico('<path d="M12 2 4 5v6c0 5 3.5 8 8 11 4.5-3 8-6 8-11V5z"/>'),
+  lock:        I.lock,
+  unlock:      I.lockOpen,
+  pause:       ico('<rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/>'),
+  play:        ico('<path d="M6 4v16l13-8z"/>'),
+  arrowUp:     ico('<path d="M12 19V5M5 12l7-7 7 7"/>'),
+  arrowDown:   ico('<path d="M12 5v14M19 12l-7 7-7-7"/>'),
+  thumbsUp:    ico('<path d="M7 11v9H3a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1z"/><path d="M7 11l4-8a2 2 0 0 1 3 2l-1 5h5a2 2 0 0 1 2 2.3l-1.2 6A2 2 0 0 1 17 21H7"/>'),
+  thumbsDown:  ico('<path d="M17 13V4h4a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1z"/><path d="M17 13l-4 8a2 2 0 0 1-3-2l1-5H6a2 2 0 0 1-2-2.3l1.2-6A2 2 0 0 1 7 3h10"/>'),
+  phone:       ico('<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3 19.5 19.5 0 0 1-6-6 19.8 19.8 0 0 1-3-8.6A2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.2a2 2 0 0 1 2.1-.5c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z"/>'),
+  mail:        ico('<rect x="2" y="4" width="20" height="16" rx="2"/><path d="m2 6 10 7L22 6"/>'),
+  user:        ico('<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>'),
+  eye:         I.eye,
+  droplet:     I.droplet,
+  bell:        I.bell,
+  gauge:       ico('<path d="M12 14 8 9"/><path d="M3.3 17a9 9 0 1 1 17.4 0z"/>'),
+  circle:      ico('<circle cx="12" cy="12" r="9"/>'),
+};
+// Sets exposed in the Statuses & Icons tab (curated — derived sets like serviceStatus are omitted).
+const SETTINGS_STATUS_SETS = [
+  { set: 'rentalStatus', label: 'Rental Status' }, { set: 'unitInspectionStatus', label: 'Inspection' },
+  { set: 'unitFleetStatus', label: 'Fleet' }, { set: 'invoiceStatus', label: 'Invoice' },
+  { set: 'customerPayStatus', label: 'Customer Pay' }, { set: 'customerAccountType', label: 'Account Type' },
+  { set: 'transportType', label: 'Transport' }, { set: 'woPhase', label: 'WO Phase' },
+  { set: 'funnelStage', label: 'Sales Funnel' }, { set: 'gpsStatus', label: 'GPS' },
+  { set: 'expenseCategory', label: 'Expense Category' }, { set: 'paymentMethod', label: 'Payment Method' },
+];
+
+/* Snapshot the registry's shipped label/color so applyStatusOverrides() can RESET an
+   option an admin later un-customizes. Captured once, at module load. */
+const STATUS_DEFAULTS = {};
+for (const set of Object.keys(STATUS)) {
+  STATUS_DEFAULTS[set] = {};
+  for (const v of Object.keys(STATUS[set])) STATUS_DEFAULTS[set][v] = { color: STATUS[set][v].color, label: STATUS[set][v].label };
+}
+const ovIcon = (st) => (st && st.icon && STATUS_ICONS[st.icon]) || '';   // an admin-assigned status icon (else none)
+
+function loadAdminSettings() { try { return JSON.parse(localStorage.getItem('jactec.settings') || '{}') || {}; } catch (e) { return {}; } }
+/* Apply presentational status overrides by mutating the frozen STATUS records IN PLACE
+   (color/label/icon only — never the value/key, so cascade + import are untouched). Every
+   render reads through getStatus(), so one mutation propagates everywhere. */
+function applyStatusOverrides(over) {
+  over = over || {};
+  for (const set of Object.keys(STATUS)) {
+    const o = over[set] || {};
+    for (const v of Object.keys(STATUS[set])) {
+      const def = STATUS_DEFAULTS[set][v], rec = STATUS[set][v], ov = o[v] || {};
+      rec.color = ov.color || def.color;
+      rec.label = ov.label || def.label;
+      if (ov.icon) rec.icon = ov.icon; else delete rec.icon;
+    }
+  }
+}
+function applySettings(s) { s = s || state.settings || {}; applyStatusOverrides(s.status); }
+function persistAdminSettings(s) {
+  state.settings = s;
+  try { localStorage.setItem('jactec.settings', JSON.stringify(s)); } catch (e) {}
+  applySettings(s);
+}
+
+/* ── Settings Board render (tab rail + panes). The rail lists every planned tab so
+   the information architecture is visible; v1 ships Logins + Statuses working, the
+   rest as "Planned" stubs (each becomes a follow-on spec). ── */
+const SETTINGS_TABS = [
+  { id: 'logins',        label: 'Roles & Logins',  icon: I.lock,                 v1: true },
+  { id: 'statuses',      label: 'Statuses & Icons', icon: STATUS_ICONS.tag,       v1: true },
+  { id: 'general',       label: 'Company',          icon: CARD_ICON.vendors,      note: 'Identity, logo, yard origin, revenue goal, tax & timezone.' },
+  { id: 'fields',        label: 'Custom Fields',    icon: I.sliders,              note: 'Add fields to customers, units, rentals & invoices — type, required, placement.' },
+  { id: 'inspections',   label: 'Inspections',      icon: CARD_ICON.inspections,  note: 'Checklist templates per category type, Pass/Fail items, required photos, auto-fail → WO.' },
+  { id: 'requirements',  label: 'Rental Rules',     icon: STATUS_ICONS.shield,    note: 'Require card-on-file for On Rent; selfie / signature / ID / PO as Required · Optional · None; Cash vs Net 30.' },
+  { id: 'kpis',          label: 'KPIs & Rings',     icon: STATUS_ICONS.gauge,     note: 'Per-role dashboard rings — how many rings, which metric each shows, and the formula/target behind it.' },
+  { id: 'notifications', label: 'Notifications',    icon: I.bell,                 note: 'Team chat on/off, driver dispatch alerts, customer reminders & cadence.' },
+  { id: 'layout',        label: 'Layout & Footers', icon: I.grid,                 note: 'Per-card footer visibility, card / column visibility, grid order, default sort.' },
+  { id: 'integrations',  label: 'Integrations',     icon: STATUS_ICONS.zap,       note: 'Stripe, Maps, telematics feed — references & toggles (secrets stay server-side).' },
+];
+const draftStatusOv = (o, set, val) => (((o.draftSettings || {}).status || {})[set] || {})[val] || {};
+function setDraftStatus(o, set, val, patch) {
+  o.draftSettings = o.draftSettings || {};
+  o.draftSettings.status = o.draftSettings.status || {};
+  o.draftSettings.status[set] = o.draftSettings.status[set] || {};
+  const next = { ...(o.draftSettings.status[set][val] || {}), ...patch };
+  if (!next.color) delete next.color; if (!next.icon) delete next.icon; if (!next.label) delete next.label;   // empties → fall back to the shipped default
+  if (Object.keys(next).length) o.draftSettings.status[set][val] = next; else delete o.draftSettings.status[set][val];
+}
+function captureLoginEdits(o) {   // keep typed-but-unsaved password edits across a tab switch
+  const root = document.querySelector('.settings-popup .popup-body'); if (!root) return;
+  if (!root.querySelector('.set-input[data-role]')) return;
+  const roles = {}; root.querySelectorAll('.set-input[data-role]').forEach((i) => { roles[i.dataset.role] = i.value; });
+  o.config.roles = roles; o.config.admin = root.querySelector('.set-input[data-admin]')?.value ?? o.config.admin;
+}
+function settingsBoardHtml(o) {
+  const rail = SETTINGS_TABS.map((t) => `<button class="set-tab js-set-tab${o.tab === t.id ? ' on' : ''}" data-tab="${t.id}"><span class="set-tab-ic">${t.icon || ''}</span><span class="set-tab-l">${esc(t.label)}</span>${t.v1 ? '' : '<span class="set-tab-dot" data-tip="Planned — wired in next"></span>'}</button>`).join('');
+  let pane;
+  if (o.tab === 'statuses') pane = settingsStatusesPane(o);
+  else if (o.tab === 'logins') pane = settingsLoginsPane(o);
+  else pane = settingsPlannedPane(SETTINGS_TABS.find((t) => t.id === o.tab));
+  return `<div class="set-board"><nav class="set-rail" aria-label="Settings sections">${rail}</nav><div class="set-pane">${pane}</div></div>`;
+}
+function settingsLoginsPane(o) {
+  const cfg = o.config || { roles: {}, admin: '' };
+  const roleRows = Object.keys(cfg.roles || {}).map((role) => `<label class="set-row"><span class="set-role">${esc(role)}</span><input class="set-input" data-role="${esc(role)}" value="${esc(cfg.roles[role])}" autocomplete="off" /></label>`).join('');
+  return `
+    <div class="set-pane-head"><h4>Roles &amp; Logins</h4><p>Each role signs in with its password (plus their name). Changes apply at next sign-in.</p></div>
+    ${roleRows}
+    <label class="set-row set-admin"><span class="set-role">Admin</span><input class="set-input" data-admin="1" value="${esc(cfg.admin || '')}" autocomplete="off" /></label>
+    <div class="set-row" style="margin-top:14px;align-items:center"><span class="set-role" style="flex:0 0 auto" data-tip="ON: dropping a unit onto a conflicting rental links anyway — both sides get a pulsing red 'Overbooked' flag while the overlap exists. OFF: the drop is blocked, naming the conflict.">Allow overbooking</span>${segCtl([{ label: 'Off', js: 'js-overbook', data: { val: '0' }, on: state.overbookOn ? null : 'red' }, { label: 'On', js: 'js-overbook', data: { val: '1' }, on: state.overbookOn ? 'green' : null }])}</div>
+    <p class="set-note">Drag &amp; drop policy — saved on this device.</p>
+    <div class="set-row" style="margin-top:12px;align-items:center"><span class="set-role" style="flex:0 0 auto" data-tip="A light vibration confirms committed actions on phones (post a chat, drop a link, complete a WO, release-to-cancel). Android only — iOS has no vibration.">Haptic feedback</span>${segCtl([{ label: 'Off', js: 'js-haptics', data: { val: '0' }, on: state.hapticsOff ? 'red' : null }, { label: 'On', js: 'js-haptics', data: { val: '1' }, on: state.hapticsOff ? null : 'green' }])}</div>
+    <p class="set-note">Touch feedback — saved on this device.</p>`;
+}
+function settingsStatusesPane(o) {
+  const setSel = o.setSel || 'rentalStatus';
+  const picker = SETTINGS_STATUS_SETS.map((s) => `<button class="set-pick js-set-pick${s.set === setSel ? ' on' : ''}" data-set="${s.set}">${esc(s.label)}</button>`).join('');
+  const swatch = (set, val, cur) => CFG.COLOR_TOKENS.map((c) => `<button class="so-sw c-${c}${c === cur ? ' on' : ''} js-set-color" data-set="${esc(set)}" data-val="${esc(val)}" data-color="${c}" data-tip="${c}" aria-label="${c}"></button>`).join('');
+  const rows = Object.keys(STATUS[setSel] || {}).map((val) => {
+    const def = STATUS_DEFAULTS[setSel][val] || {}; const ov = draftStatusOv(o, setSel, val);
+    const color = ov.color || def.color; const iconKey = ov.icon || ''; const label = ov.label || def.label;
+    const dirty = !!(ov.color || ov.icon || ov.label);
+    const open = o.iconFor === setSel + '' + val;
+    const curIc = iconKey ? STATUS_ICONS[iconKey] : (CARD_ICON[SET_CARD[setSel]] || I.plus);
+    const tray = open ? `<div class="so-tray">
+        <button class="so-ic-opt${!iconKey ? ' on' : ''} js-set-icon" data-set="${esc(setSel)}" data-val="${esc(val)}" data-icon="" data-tip="Default (card icon)">${CARD_ICON[SET_CARD[setSel]] || I.circle}<span class="so-ic-def">DEF</span></button>
+        ${Object.keys(STATUS_ICONS).map((k) => `<button class="so-ic-opt${k === iconKey ? ' on' : ''} js-set-icon" data-set="${esc(setSel)}" data-val="${esc(val)}" data-icon="${k}" data-tip="${k}">${STATUS_ICONS[k]}</button>`).join('')}
+      </div>` : '';
+    return `<div class="so-row${open ? ' tray-open' : ''}">
+      <div class="so-prev">${statusPill(setSel, val, { previewColor: color, previewIcon: iconKey, previewLabel: label })}</div>
+      <label class="so-lbl-wrap" data-tip="The label customers and staff see — safe to rename"><span class="so-lbl-cap">LABEL</span><input class="so-lbl js-set-label" data-set="${esc(setSel)}" data-val="${esc(val)}" value="${esc(label)}" autocomplete="off" /></label>
+      <code class="so-val" data-tip="System role — fixed. Logic keys off this value, so a rename can't change what the status does.">${I.lock}${esc(val)}</code>
+      <div class="so-sws">${swatch(setSel, val, color)}</div>
+      <button class="so-ic js-set-icon-open${iconKey ? ' has' : ''}" data-key="${esc(setSel + '' + val)}" data-tip="Choose an icon">${curIc}</button>
+      ${dirty ? `<button class="so-reset js-set-reset" data-set="${esc(setSel)}" data-val="${esc(val)}" data-tip="Reset to default">${I.back}</button>` : '<span class="so-reset-sp"></span>'}
+      ${tray}
+    </div>`;
+  }).join('');
+  return `
+    <div class="set-pane-head"><h4>Statuses &amp; Icons</h4><p>Rename, recolor, and pin an icon to a status. The locked <em>value</em> is its system role and never changes — so <strong>On Rent</strong> can read &ldquo;Out&rdquo; and still behave like On Rent everywhere.</p></div>
+    <div class="set-picker">${picker}</div>
+    <div class="so-list">${rows}</div>`;
+}
+function settingsPlannedPane(t) {
+  if (!t) return '';
+  return `<div class="set-planned">
+      <span class="set-planned-ic">${t.icon || ''}</span>
+      <h4>${esc(t.label)}</h4>
+      <span class="set-planned-tag">Planned</span>
+      <p>${esc(t.note || '')}</p>
+      <p class="set-planned-sub">Wired into this same board next — it'll save through the same admin config.</p>
+    </div>`;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
    §5 UI BUILDERS — ONE function per design rule (the SPEC v8 rulebook).
    Every builder stamps its output with data-r="Rn". The flash-lint (R0)
    slowly pulses anything WITHOUT a stamp: if it flashes, it bypassed the
@@ -1742,17 +1923,20 @@ const RING_ICON = {
 // R3: each status badge carries the icon of the card the status belongs to
 const SET_CARD = { rentalStatus: 'rentals', unitRentalStatus: 'rentals', invoiceStatus: 'invoices', unitInspectionStatus: 'inspections', inspectionResult: 'inspections', unitFleetStatus: 'units', gpsStatus: 'units', unitOrderStatus: 'workOrders', woPhase: 'workOrders', woType: 'workOrders', customerPayStatus: 'customers', accountType: 'customers', serviceStatus: 'serviceOrders', expenseReconcile: 'expenses', vendorType: 'vendors', companyFileType: 'files' };
 const dataAttrs = (data) => Object.entries(data || {}).map(([k, v]) => ` data-${k}="${esc(String(v))}"`).join('');
-function statusPill(set, value, { card, recId, x, truck } = {}) {
+function statusPill(set, value, { card, recId, x, truck, previewColor, previewIcon, previewLabel } = {}) {
   const st = getStatus(set, value);
+  const color = previewColor || st.color;   // Settings Board live preview overrides the applied color
+  const label = previewLabel != null ? previewLabel : st.label;
   const data = card ? ` data-pill-card="${card}" data-pill-rec="${esc(recId)}"` : '';
   const tk = truck ? `<span class="truck">${I.truck}</span>` : '';
   const xb = x ? `<span class="x" data-x="${esc(x)}">✕</span>` : '';
-  const ic = truck ? '' : (CARD_ICON[SET_CARD[set]] || '');   // R3: parent-card icon hugs the label
+  const oIc = previewIcon !== undefined ? (STATUS_ICONS[previewIcon] || '') : ovIcon(st);   // admin-assigned status icon (or preview)
+  const ic = truck ? '' : (oIc || CARD_ICON[SET_CARD[set]] || '');   // R3: admin status icon, else parent-card icon
   // §17 — a status badge is draggable into a chat (drag/long-press; tap is unaffected)
   const crec = card ? recOf(card, recId) : null;
   const chatLbl = st.label + (crec ? ' — ' + (detailTitle(card, crec) || recId) : '');
   const chat = card ? ` data-chat-el data-chat-label="${esc(chatLbl)}" data-chat-color="${esc(st.color)}" data-chat-card="${esc(card)}" data-chat-rec="${esc(recId)}"` : '';
-  return `<span class="pill c-${st.color}${truck ? ' truck' : ''}" data-r="R3" data-badge${data}${chat}>${tk}${ic}<span class="t">${esc(st.label)}</span>${xb}</span>`;
+  return `<span class="pill c-${color}${truck ? ' truck' : ''}" data-r="R3" data-badge${data}${chat}>${tk}${ic}<span class="t">${esc(label)}</span>${xb}</span>`;
 }
 function refPill(card, recId, label, { x, xData } = {}) {
   const xb = x ? `<span class="x" data-x="${esc(x)}"${xData != null ? ` data-id="${esc(xData)}"` : ''}>✕</span>` : '';
@@ -1776,7 +1960,7 @@ const badge = (label, color = 'gray') => `<span class="pill c-${color}" data-r="
 function gatePill(set, value, js, data, { truck } = {}) {
   const st = getStatus(set, value);
   const tk = truck ? `<span class="truck">${I.truck}</span>` : '';
-  return `<span class="pill gate c-${st.color} ${js}" data-r="R1"${dataAttrs(data)}>${tk}${esc(st.label)} ${I.chev}</span>`;
+  return `<span class="pill gate c-${st.color} ${js}" data-r="R1"${dataAttrs(data)}>${tk}${ovIcon(st)}${esc(st.label)} ${I.chev}</span>`;
 }
 /** R1: a gate with a custom label (e.g. ETA-as-status on WO lines). */
 function gatePillRaw(label, color, js, data, noChev) {
@@ -6260,22 +6444,21 @@ function renderOverlay() {
       <div class="popup-body"><div class="tools-tray">${bottomBarInner()}</div></div>`;
     overlay.appendChild(pop);
   } else if (o.kind === 'settings') {
-    const cfg = o.config || { roles: {}, admin: '' };
-    const roleRows = Object.keys(cfg.roles).map((role) => `<label class="set-row"><span class="set-role">${esc(role)}</span><input class="set-input" data-role="${esc(role)}" value="${esc(cfg.roles[role])}" autocomplete="off" /></label>`).join('');
-    const pop = el('div', 'popup'); pop.style.width = '380px';
+    o.config = o.config || { roles: {}, admin: '' };
+    o.tab = o.tab || 'logins';
+    o.setSel = o.setSel || 'rentalStatus';
+    if (!o.draftSettings) o.draftSettings = JSON.parse(JSON.stringify((o.config && o.config.settings) || state.settings || {}));
+    const pop = el('div', 'popup board-popup settings-popup');
+    const foot = `${o.error ? `<span class="set-err">${esc(o.error)}</span>` : ''}<button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill ignition js-settings-save" data-r="R17">Save settings</button>`;
     pop.innerHTML = `
-      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${I.grid}</span><h3>Settings — Logins</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
-      <div class="popup-body">
-        <p class="muted" style="font-size:11px;margin:0 0 10px">Each role signs in with its password (plus their name). Changes apply at next sign-in.</p>
-        ${roleRows}
-        <label class="set-row set-admin"><span class="set-role">Admin</span><input class="set-input" data-admin="1" value="${esc(cfg.admin)}" autocomplete="off" /></label>
-        <div class="set-row" style="margin-top:12px;align-items:center"><span class="set-role" style="flex:0 0 auto" data-tip="ON: dropping a unit onto a conflicting rental links anyway — both sides get a pulsing red 'Overbooked' flag while the overlap exists. OFF: the drop is blocked, naming the conflict.">Allow overbooking</span>${segCtl([{ label: 'Off', js: 'js-overbook', data: { val: '0' }, on: state.overbookOn ? null : 'red' }, { label: 'On', js: 'js-overbook', data: { val: '1' }, on: state.overbookOn ? 'green' : null }])}</div>
-        <p class="muted" style="font-size:10.5px;margin:4px 0 0">Drag &amp; drop policy — saved on this device.</p>
-        <div class="set-row" style="margin-top:12px;align-items:center"><span class="set-role" style="flex:0 0 auto" data-tip="A light vibration confirms committed actions on phones (post a chat, drop a link, complete a WO, release-to-cancel). Android only — iOS has no vibration.">Haptic feedback</span>${segCtl([{ label: 'Off', js: 'js-haptics', data: { val: '0' }, on: state.hapticsOff ? 'red' : null }, { label: 'On', js: 'js-haptics', data: { val: '1' }, on: state.hapticsOff ? null : 'green' }])}</div>
-        <p class="muted" style="font-size:10.5px;margin:4px 0 0">Touch feedback — saved on this device.</p>
-        ${o.error ? `<div class="login-err" style="text-align:left;margin-top:8px">${esc(o.error)}</div>` : ''}
-        <div class="pillrow" style="margin-top:14px;justify-content:flex-end"><button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill c-commit js-settings-save">Save</button></div>
-      </div>`;
+      <div class="popup-head">
+        <span class="pl-ic">${I.sliders}</span>
+        <div class="pl-title"><h3>Settings</h3><span class="pl-tag">Admin · Wrangle the yard</span></div>
+        <span class="spacer"></span>
+        <button class="x js-close" aria-label="Close">${I.x}</button>
+      </div>
+      <div class="popup-body settings-body">${settingsBoardHtml(o)}</div>
+      <div class="popup-foot">${foot}</div>`;
     overlay.appendChild(pop);
   } else if (o.kind === 'newCustomer') {
     const d = o.draft; const isEdit = !!o.editId;
@@ -8162,6 +8345,13 @@ function onClick(e) {
   if (closest('.js-settings-save')) { e.stopPropagation(); return saveSettings(); }
   if (closest('.js-overbook')) { e.stopPropagation(); const on = closest('.js-overbook').dataset.val === '1'; state.overbookOn = on; try { localStorage.setItem('jactec.overbook', on ? '1' : '0'); } catch (err) {} toast(on ? 'Overbooking allowed — conflicting links get a pulsing red Overbooked flag.' : 'Overbooking blocked — a conflicting unit drop is refused.'); renderOverlay(); return; }
   if (closest('.js-haptics')) { e.stopPropagation(); const on = closest('.js-haptics').dataset.val === '1'; state.hapticsOff = !on; try { localStorage.setItem('jactec.hapticsOff', on ? '0' : '1'); } catch (err) {} if (on) haptic([12, 30, 12]); renderOverlay(); return; }   // §M-touch — toggle + a sample buzz when turning ON
+  // Settings Board — tab rail + Statuses & Icons editing
+  if (closest('.js-set-tab')) { e.stopPropagation(); const o = state.overlay; if (o) { captureLoginEdits(o); o.tab = closest('.js-set-tab').dataset.tab; o.iconFor = null; o.error = null; renderOverlay(); } return; }
+  if (closest('.js-set-pick')) { e.stopPropagation(); const o = state.overlay; if (o) { o.setSel = closest('.js-set-pick').dataset.set; o.iconFor = null; renderOverlay(); } return; }
+  if (closest('.js-set-color')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-set-color'); if (o) { setDraftStatus(o, b.dataset.set, b.dataset.val, { color: b.dataset.color }); renderOverlay(); } return; }
+  if (closest('.js-set-icon-open')) { e.stopPropagation(); const o = state.overlay, k = closest('.js-set-icon-open').dataset.key; if (o) { o.iconFor = o.iconFor === k ? null : k; renderOverlay(); } return; }
+  if (closest('.js-set-icon')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-set-icon'); if (o) { setDraftStatus(o, b.dataset.set, b.dataset.val, { icon: b.dataset.icon || '' }); o.iconFor = null; renderOverlay(); } return; }
+  if (closest('.js-set-reset')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-set-reset'); if (o && o.draftSettings && o.draftSettings.status && o.draftSettings.status[b.dataset.set]) { delete o.draftSettings.status[b.dataset.set][b.dataset.val]; renderOverlay(); } return; }
   if (closest('.js-nc-save')) { e.stopPropagation(); return saveNewCustomer(); }
   if (closest('.js-nc-acct')) { const b = closest('.js-nc-acct'); e.stopPropagation(); ncSyncInputs(); state.overlay.draft.accountType = b.dataset.val; renderOverlay(); return; }
   if (closest('.js-nc-selfie-clear')) { e.stopPropagation(); ncSyncInputs(); state.overlay.draft.selfie = ''; renderOverlay(); return; }
@@ -9222,6 +9412,14 @@ function onInput(e) {
 
 /* change events — native <input type="date"> / <select> on draft details. */
 function onChange(e) {
+  // Settings Board — relabel a status (commit on blur/enter; the value/role stays locked)
+  if (e.target.classList.contains('js-set-label')) {
+    const o = state.overlay; if (!o) return;
+    const def = (STATUS_DEFAULTS[e.target.dataset.set] || {})[e.target.dataset.val] || {};
+    const v = e.target.value.trim();
+    setDraftStatus(o, e.target.dataset.set, e.target.dataset.val, { label: (v && v !== def.label) ? v : '' });
+    renderOverlay(); return;
+  }
   // F2 — +File upload: read the chosen photo/document; images are downscaled, others kept
   // as-is. Held in state.overlay.fileUpload until "Add file" (which sends it to Drive).
   if (e.target.classList.contains('js-ff-file')) {
@@ -9397,14 +9595,25 @@ async function openSettings() {
 }
 async function saveSettings() {
   const o = state.overlay; if (!o || o.kind !== 'settings') return;
-  const root = document.querySelector('.overlay .popup-body'); if (!root) return;
-  const roles = {}; root.querySelectorAll('.set-input[data-role]').forEach((i) => { roles[i.dataset.role] = i.value.trim(); });
-  const admin = root.querySelector('.set-input[data-admin]')?.value.trim() || '';
-  if (!admin || Object.values(roles).some((v) => !v)) { o.error = 'Passwords can\'t be empty.'; renderOverlay(); return; }
+  const root = document.querySelector('.settings-popup .popup-body'); if (!root) return;
+  // Logins inputs only exist while the Logins tab is open — when they're absent, keep the
+  // passwords from o.config so saving from another tab can't wipe them.
+  const haveLogins = !!root.querySelector('.set-input[data-role]');
+  let roles = o.config.roles || {}, admin = o.config.admin || '';
+  if (haveLogins) {
+    roles = {}; root.querySelectorAll('.set-input[data-role]').forEach((i) => { roles[i.dataset.role] = i.value.trim(); });
+    admin = root.querySelector('.set-input[data-admin]')?.value.trim() || '';
+    if (!admin || Object.values(roles).some((v) => !v)) { o.error = 'Passwords can\'t be empty.'; o.tab = 'logins'; renderOverlay(); return; }
+  }
+  const settings = o.draftSettings || state.settings || {};
   try {
-    const r = await backendCall('setConfig', { password: o.adminPw, config: { roles, admin } });
-    if (r && r.ok) { if (currentRole === 'Admin' || currentRole === 'Owner') { const myNew = currentRole === 'Admin' ? admin : (roles[currentRole] || o.adminPw); backendPassword = myNew; sessionStorage.setItem('jactec.pw', myNew); o.adminPw = myNew; } closeOverlay(); toast('Logins updated.'); }
-    else { o.error = 'Save failed.'; renderOverlay(); }
+    const r = await backendCall('setConfig', { password: o.adminPw, config: { roles, admin, settings } });
+    if (r && r.ok) {
+      if (haveLogins && (currentRole === 'Admin' || currentRole === 'Owner')) { const myNew = currentRole === 'Admin' ? admin : (roles[currentRole] || o.adminPw); backendPassword = myNew; sessionStorage.setItem('jactec.pw', myNew); o.adminPw = myNew; }
+      o.config.roles = roles; o.config.admin = admin; o.config.settings = settings;
+      persistAdminSettings(settings);   // mirror locally + apply the status overrides live
+      closeOverlay(); toast('Settings saved.'); render();
+    } else { o.error = 'Save failed.'; renderOverlay(); }
   } catch (e) { o.error = 'Could not reach the database.'; renderOverlay(); }
 }
 const addDays = (iso, n) => { const d = parseISO(iso); d.setDate(d.getDate() + n); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
@@ -11049,6 +11258,7 @@ function applyViewportClass() {
   document.body.classList.toggle('is-narrow', window.matchMedia('(max-width: 1024px)').matches);
 }
 function boot() {
+  applySettings();   // Settings Board: apply admin status overrides (color/icon) before the first render
   initTooltip();
   applyViewportClass();
   const onVP = () => { applyViewportClass(); if (!booting) render(); };

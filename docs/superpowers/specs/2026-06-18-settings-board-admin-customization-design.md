@@ -56,8 +56,15 @@ Prove the whole pattern end-to-end with the lowest-risk, most demonstrative tab:
 - **C. Statuses & Pills tab (fully working, but value-safe):** for each status set, edit
   **label, color (from the palette), and icon** per option. **The underlying status *value*
   (the data key) is never editable** — values are keys used across every record, the cascade
-  engine, and `LEGACY_MAP`; renaming one would orphan data. Add/remove/reorder options is
-  **deferred** to a follow-on (same reason). Live pill preview as you edit.
+  engine, and `LEGACY_MAP`; renaming one would orphan data. The value is shown as a **locked
+  chip** next to the editable LABEL field so the role-vs-label split is explicit (Jac, live:
+  "the label can change but their role in the system can't" — e.g. **On Rent** may read "Out"
+  yet still behave like On Rent everywhere). Add/remove/reorder options is **deferred** to a
+  follow-on (same reason). Live pill preview as you edit.
+- **F. KPIs & Rings tab (Planned stub in v1).** Jac (live) wants per-role dashboard rings
+  editable here — **how many rings, which metric each shows, and the formula/target behind
+  each.** The formula editor needs a small **safe calc DSL** over record aggregates (a real
+  subsystem), so v1 ships it as a "Planned" rail tab; it gets its own follow-on spec.
 - **D. Roles / Logins tab:** folds the existing password editor in unchanged, so the new board
   is a strict superset of today's Settings (no regression).
 - **E. Icon library:** a **curated, vendored subset** of **Lucide** (MIT) icons (~36 relevant:
