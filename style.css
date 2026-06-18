@@ -710,7 +710,7 @@ select.lf-in { appearance: none; cursor: pointer; }
 .dropdown-menu .dd-item .x:hover { opacity: 1; color: var(--red); }
 /* ── Gate TIMELINE dropdown (the four ordered status gates) — steel panel + vertical
    hazard rail, NO orange halo (that stays for dialogs); monochrome progress states ── */
-.dropdown-menu.gt { width: 244px; min-width: 234px; max-width: 92vw; padding: 0; overflow: hidden; position: relative; border: 1px solid var(--line); box-shadow: var(--shadow), 0 0 0 1px rgba(0,0,0,.4); }   /* explicit width: the width:100% rows otherwise stretch this fixed box to the full viewport */
+.dropdown-menu.gt { width: 244px; min-width: 234px; max-width: 92vw; padding: 0; overflow: hidden; position: fixed; border: 1px solid var(--line); box-shadow: var(--shadow), 0 0 0 1px rgba(0,0,0,.4); }   /* MUST be position:fixed (a fixed box still anchors the absolute rail/connectors). `relative` here overrode the base .dropdown-menu's fixed → openDropdown's top/left measured from page flow, dumping the menu ~1 viewport below the fold (the "opens far below screen" bug). Width is explicit so the width:100% rows don't stretch it to the viewport. */
 .gt-haz { position: absolute; left: 0; top: 0; bottom: 0; width: 7px; background: repeating-linear-gradient(180deg, var(--yellow) 0 11px, #14181d 11px 22px); }
 .gt-cap { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.3px; font-weight: 700; font-size: 10px; color: var(--txt-3); padding: 10px 12px 4px 20px; }
 .gt-body { padding: 2px 10px 9px 18px; }
