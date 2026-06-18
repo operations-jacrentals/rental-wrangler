@@ -1442,6 +1442,11 @@ select.lf-in { appearance: none; cursor: pointer; }
 .rule-planned-head { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.2px; font-size: 10px; font-weight: 700; color: var(--txt-3); margin: 16px 0 8px; }
 .rule-soon { opacity: .72; }
 .rule-soon-tag { flex: 0 0 auto; font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .6px; font-size: 9px; font-weight: 700; color: var(--tan, #c2925a); border: 1px dashed var(--tan, #c2925a); border-radius: 999px; padding: 2px 8px; }
+.cf-req { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .6px; font-size: 8.5px; font-weight: 700; color: var(--red); border: 1px solid var(--red); border-radius: 999px; padding: 0 6px; margin-left: 6px; vertical-align: 1px; }
+.cf-add { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line); }
+.cf-add .js-cf-label { flex: 1 1 200px; min-width: 0; }
+.cf-add .seg { flex: 0 0 auto; }
+.cf-add .js-cf-add { flex: 0 0 auto; }
 body.is-phone .kpi-board { flex-direction: column-reverse; }
 body.is-phone .kpi-preview { align-self: center; }
 body.is-phone .kpi-row { flex-wrap: wrap; }

@@ -1817,6 +1817,9 @@ const companyCfg = () => (state.settings && state.settings.company) || {};
 // Layout prefs (Settings → Layout & Footers). Read-through; default keeps every footer shown.
 const layoutCfg = () => (state.settings && state.settings.layout) || {};
 const footerHidden = (card) => (layoutCfg().footers || {})[card] === 'off';
+// Admin-defined custom fields per entity (Settings → Custom Fields). Values live schema-less
+// on the record (rec.custom[fieldId]); an empty config means no extra fields anywhere.
+const customFieldsFor = (entity) => ((state.settings && state.settings.customFields) || {})[entity] || [];
 const COMPANY_DEFAULTS = { name: 'JacRentals', tagline: 'Heavy-Equipment Rental · Sulphur, LA', revenueGoal: (CFG.REVENUE_GOAL_DEFAULT || 150000), maxNetDays: 30 };
 const companyName = () => (companyCfg().name || '').trim() || COMPANY_DEFAULTS.name;
 const companyTagline = () => (companyCfg().tagline || '').trim() || COMPANY_DEFAULTS.tagline;
@@ -1841,7 +1844,7 @@ const SETTINGS_TABS = [
   { id: 'logins',        label: 'Roles & Logins',  icon: I.lock,                 v1: true },
   { id: 'statuses',      label: 'Statuses & Icons', icon: STATUS_ICONS.tag,       v1: true },
   { id: 'general',       label: 'Company',          icon: CARD_ICON.vendors,      v1: true },
-  { id: 'fields',        label: 'Custom Fields',    icon: I.sliders,              note: 'Add fields to customers, units, rentals & invoices — type, required, placement.' },
+  { id: 'fields',        label: 'Custom Fields',    icon: I.sliders,              v1: true },
   { id: 'inspections',   label: 'Inspections',      icon: CARD_ICON.inspections,  note: 'Checklist templates per category type, Pass/Fail items, required photos, auto-fail → WO.' },
   { id: 'requirements',  label: 'Rental Rules',     icon: STATUS_ICONS.shield,    v1: true },
   { id: 'kpis',          label: 'KPIs & Rings',     icon: STATUS_ICONS.gauge,     v1: true },
@@ -1873,6 +1876,7 @@ function settingsBoardHtml(o) {
   else if (o.tab === 'general') pane = settingsCompanyPane(o);
   else if (o.tab === 'requirements') pane = settingsRulesPane(o);
   else if (o.tab === 'layout') pane = settingsLayoutPane(o);
+  else if (o.tab === 'fields') pane = settingsFieldsPane(o);
   else pane = settingsPlannedPane(SETTINGS_TABS.find((t) => t.id === o.tab));
   return `<div class="set-board"><nav class="set-rail" aria-label="Settings sections">${rail}</nav><div class="set-pane">${pane}</div></div>`;
 }
@@ -1962,6 +1966,45 @@ function settingsLayoutPane(o) {
     <div class="rule-list">${rows}</div>
     <div class="rule-planned-head">More layout controls coming</div>
     <div class="rule-list"><div class="rule-row rule-soon"><div class="rule-main"><span class="rule-label">Columns · sort · grid order</span><span class="rule-desc">Builds on the existing List-View column picker — a focused follow-on so the two don't fight.</span></div><span class="rule-soon-tag">Planned</span></div></div>`;
+}
+// Entities that can carry custom fields. v1 wires the Customers form; others store defs but
+// their forms aren't wired yet (shown as 'form coming').
+const CF_ENTITIES = [{ key: 'customers', label: 'Customers', wired: true }, { key: 'units', label: 'Units' }, { key: 'rentals', label: 'Rentals' }, { key: 'invoices', label: 'Invoices' }];
+const CF_TYPES = ['text', 'number'];
+const cfSlug = (label) => 'cf_' + (String(label).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'field') + '_' + Math.random().toString(36).slice(2, 6);
+function draftCustomFields(o, entity) {
+  return (o.draftSettings && o.draftSettings.customFields && o.draftSettings.customFields[entity]) || customFieldsFor(entity);
+}
+function ensureCfDraft(o, entity) {
+  o.draftSettings = o.draftSettings || {};
+  o.draftSettings.customFields = o.draftSettings.customFields || {};
+  if (!o.draftSettings.customFields[entity]) o.draftSettings.customFields[entity] = JSON.parse(JSON.stringify(customFieldsFor(entity)));
+  return o.draftSettings.customFields[entity];
+}
+function settingsFieldsPane(o) {
+  const ent = o.cfEntity || 'customers'; o.cfEntity = ent;
+  const meta = CF_ENTITIES.find((e) => e.key === ent) || {};
+  const add = o.cfDraft || { label: '', type: 'text', required: false };
+  const pick = CF_ENTITIES.map((e) => `<button class="set-pick js-cf-entity${e.key === ent ? ' on' : ''}" data-ent="${e.key}">${esc(e.label)}${e.wired ? '' : ' ·'}</button>`).join('');
+  const fields = draftCustomFields(o, ent);
+  const rows = fields.length ? fields.map((f) => `<div class="rule-row">
+      <div class="rule-main"><span class="rule-label">${esc(f.label)}${f.required ? ' <span class="cf-req">required</span>' : ''}</span><span class="rule-desc">${esc(f.type)} field${f.id ? ' · <code>' + esc(f.id) + '</code>' : ''}</span></div>
+      <button class="so-reset js-cf-remove" data-ent="${ent}" data-id="${esc(f.id)}" data-tip="Remove field">${I.x}</button>
+    </div>`).join('') : '<p class="set-note">No custom fields yet — add one below.</p>';
+  const wiredNote = meta.wired
+    ? `<p class="set-note">These appear on the <strong>${esc(meta.label)}</strong> form under “More details” and save onto each record.</p>`
+    : `<p class="set-note">Fields are stored, but the <strong>${esc(meta.label)}</strong> form isn't wired to show them yet — that's a follow-on. Customers is live today.</p>`;
+  return `
+    <div class="set-pane-head"><h4>Custom Fields</h4><p>Add your own fields to a record. Nothing changes until you add one.</p></div>
+    <div class="set-picker">${pick}</div>
+    ${wiredNote}
+    <div class="rule-list">${rows}</div>
+    <div class="cf-add">
+      <input class="co-in js-cf-label" placeholder="New field label (e.g. Tax-exempt #)" value="${esc(add.label)}" autocomplete="off" />
+      ${segCtl(CF_TYPES.map((t) => ({ label: t, js: 'js-cf-type', data: { type: t }, on: add.type === t ? 'green' : null })))}
+      ${segCtl([{ label: 'Optional', js: 'js-cf-req', data: { v: '0' }, on: add.required ? null : 'gray' }, { label: 'Required', js: 'js-cf-req', data: { v: '1' }, on: add.required ? 'red' : null }])}
+      <button class="pill ignition js-cf-add" data-r="R17">+ Add field</button>
+    </div>`;
 }
 function settingsStatusesPane(o) {
   const setSel = o.setSel || 'rentalStatus';
@@ -6835,6 +6878,7 @@ function renderOverlay() {
           <label class="nc-field"><span>Payment terms — Net days</span><input class="nc-in" data-f="netDays" type="number" min="0" max="${companyMaxNetDays()}" value="${d.netDays != null && d.netDays !== '' ? esc(d.netDays) : ''}" placeholder="0 = COD" autocomplete="off" /><span class="nc-hint">0 = Cash on delivery · max ${companyMaxNetDays()} days (set in Settings → Company)</span></label>
           <label class="nc-field nc-wide"><span>Notes</span><input class="nc-in" data-f="accountNotes" value="${esc(d.accountNotes)}" autocomplete="off" /></label>
         </div>
+        ${cfSectionHtml('customers', d.custom || {})}
         <datalist id="nc-industries">${indOpts}</datalist>
         <div class="nc-sec-title">${esc(ag.title)}${agSigned ? ' <span class="nc-ag-ok">✓ accepted ' + esc(d.agreementSignedAt) + '</span>' : ' <span class="nc-ag-note">— sign below to accept</span>'}</div>
         <div class="nc-agreement" tabindex="0">${esc(ag.text)}</div>
@@ -7575,7 +7619,16 @@ function fabStackEl() {
 // typed values survive a selfie/signature/pill change).
 function ncSyncInputs() {
   const o = state.overlay; if (!o || o.kind !== 'newCustomer') return;
-  const root = document.querySelector('.overlay .popup-body'); if (root) root.querySelectorAll('[data-f]').forEach((i) => { o.draft[i.dataset.f] = i.value.trim(); });
+  const root = document.querySelector('.overlay .popup-body'); if (!root) return;
+  root.querySelectorAll('[data-f]').forEach((i) => { o.draft[i.dataset.f] = i.value.trim(); });
+  o.draft.custom = o.draft.custom || {};
+  root.querySelectorAll('[data-cf]').forEach((i) => { o.draft.custom[i.dataset.cf] = i.value.trim(); });
+}
+// Admin custom-fields section for an entity form. Empty when no fields are defined.
+function cfSectionHtml(entity, vals) {
+  const defs = customFieldsFor(entity); if (!defs.length) return '';
+  const rows = defs.map((f) => `<label class="nc-field"><span>${esc(f.label)}${f.required ? ' *' : ''}</span><input class="nc-in js-cf-val" data-cf="${esc(f.id)}" type="${f.type === 'number' ? 'number' : 'text'}" value="${esc((vals && vals[f.id]) || '')}" autocomplete="off" /></label>`).join('');
+  return `<div class="nc-sec-title">More details</div><div class="nc-grid">${rows}</div>`;
 }
 // Wire the signature canvas for finger/stylus/mouse drawing (white bg → JPEG export).
 function setupSignaturePad() {
@@ -8707,6 +8760,12 @@ function onClick(e) {
   if (closest('.js-rule-set')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-rule-set'); if (o) { o.draftSettings = o.draftSettings || {}; o.draftSettings.rentalRules = o.draftSettings.rentalRules || { ...((state.settings && state.settings.rentalRules) || {}) }; o.draftSettings.rentalRules[b.dataset.rule] = b.dataset.val === 'required' ? 'required' : 'off'; renderOverlay(); } return; }
   // Layout & Footers tab
   if (closest('.js-layout-footer')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-layout-footer'); if (o) { o.draftSettings = o.draftSettings || {}; o.draftSettings.layout = o.draftSettings.layout || { ...((state.settings && state.settings.layout) || {}) }; o.draftSettings.layout.footers = { ...(o.draftSettings.layout.footers || {}), [b.dataset.card]: b.dataset.val === 'off' ? 'off' : 'on' }; renderOverlay(); } return; }
+  // Custom Fields tab
+  if (closest('.js-cf-entity')) { e.stopPropagation(); const o = state.overlay; if (o) { o.cfEntity = closest('.js-cf-entity').dataset.ent; renderOverlay(); } return; }
+  if (closest('.js-cf-type')) { e.stopPropagation(); const o = state.overlay; if (o) { o.cfDraft = { ...(o.cfDraft || { label: '', type: 'text', required: false }), type: closest('.js-cf-type').dataset.type }; renderOverlay(); } return; }
+  if (closest('.js-cf-req')) { e.stopPropagation(); const o = state.overlay; if (o) { o.cfDraft = { ...(o.cfDraft || { label: '', type: 'text', required: false }), required: closest('.js-cf-req').dataset.v === '1' }; renderOverlay(); } return; }
+  if (closest('.js-cf-add')) { e.stopPropagation(); const o = state.overlay; if (!o) return; const lblEl = document.querySelector('.settings-popup .js-cf-label'); const label = (o.cfDraft && o.cfDraft.label || (lblEl ? lblEl.value : '')).trim(); if (!label) { if (lblEl) { lblEl.focus(); } toast('Give the field a label first.'); return; } const fields = ensureCfDraft(o, o.cfEntity || 'customers'); fields.push({ id: cfSlug(label), label, type: (o.cfDraft && o.cfDraft.type) || 'text', required: !!(o.cfDraft && o.cfDraft.required) }); o.cfDraft = { label: '', type: 'text', required: false }; renderOverlay(); return; }
+  if (closest('.js-cf-remove')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-cf-remove'); if (o) { const fields = ensureCfDraft(o, b.dataset.ent); const i = fields.findIndex((f) => f.id === b.dataset.id); if (i >= 0) fields.splice(i, 1); renderOverlay(); } return; }
   if (closest('.js-nc-save')) { e.stopPropagation(); return saveNewCustomer(); }
   if (closest('.js-nc-acct')) { const b = closest('.js-nc-acct'); e.stopPropagation(); ncSyncInputs(); state.overlay.draft.accountType = b.dataset.val; renderOverlay(); return; }
   if (closest('.js-nc-selfie-clear')) { e.stopPropagation(); ncSyncInputs(); state.overlay.draft.selfie = ''; renderOverlay(); return; }
@@ -10096,7 +10155,7 @@ function openCustomerForm(editId, prefill, linkTo) {
     email: f('email'), industry: f('industry'), accountType: f('accountType', 'Non-Business'),
     accountNotes: f('accountNotes'), selfie: f('selfie'), signature: f('signature'),
     agreementType: f('agreementType'), agreementSignedAt: f('agreementSignedAt'),
-    idNumber: f('idNumber'), netDays: f('netDays'),
+    idNumber: f('idNumber'), netDays: f('netDays'), custom: (c && c.custom) ? { ...c.custom } : {},
   } });
 }
 // Downscale + JPEG-compress an image data URL so it fits inside one Sheet cell
@@ -10132,7 +10191,7 @@ function quickSaveCustomer(o) {
     company: d.company, phone: d.phone, email: d.email, address: '',
     industry: d.industry, accountType: d.accountType || 'Non-Business', payStatus: 'New Customer',
     requiresPO: false, accountNotes: d.accountNotes, stripeId: '', selfie: d.selfie || '', signature: d.signature || '',
-    idNumber: d.idNumber || '', netDays: normNetDays(d.netDays),
+    idNumber: d.idNumber || '', netDays: normNetDays(d.netDays), custom: d.custom || {},
     agreementType: d.agreementType || '', agreementSignedAt: d.agreementSignedAt || '',
     interestedCategoryIds: [], activityLog: [], usedSalesStage: 'N/A', membershipStage: 'N/A',
     _digest: { activePct: 0, totalPaid: 0, visits: 0, years: 0, avgFrequencyDays: 0, firstInvoice: '', lastInvoice: '' },
@@ -10172,14 +10231,18 @@ function saveNewCustomer() {
   const o = state.overlay; if (!o || o.kind !== 'newCustomer') return;
   const root = document.querySelector('.overlay .popup-body'); if (!root) return;
   root.querySelectorAll('[data-f]').forEach((i) => { o.draft[i.dataset.f] = i.value.trim(); });
+  o.draft.custom = o.draft.custom || {};
+  root.querySelectorAll('[data-cf]').forEach((i) => { o.draft.custom[i.dataset.cf] = i.value.trim(); });
   if (!o.draft.firstName) { o.error = 'First name is required (we use it for marketing).'; renderOverlay(); document.querySelector('.overlay [data-f="firstName"]')?.focus(); return; }
   if (!o.draft.phone) { o.error = 'A phone number is required.'; renderOverlay(); document.querySelector('.overlay [data-f="phone"]')?.focus(); return; }
   if (o.draft.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(o.draft.email)) { o.error = 'That email doesn’t look valid (or leave it blank).'; renderOverlay(); return; }
+  const missingCf = customFieldsFor('customers').find((f) => f.required && !(o.draft.custom[f.id] || '').trim());
+  if (missingCf) { o.error = `“${missingCf.label}” is required.`; renderOverlay(); document.querySelector(`.overlay [data-cf="${missingCf.id}"]`)?.focus(); return; }
   const d = o.draft;
   if (o.editId) {                                   // ── editing / completing an existing customer ──
     const c = IDX.customer.get(o.editId); if (!c) { closeOverlay(); return; }
     const wasSigned = !!c.agreementSignedAt;
-    Object.assign(c, { firstName: d.firstName, lastName: d.lastName, company: d.company, phone: d.phone, email: d.email, industry: d.industry, accountType: d.accountType || 'Non-Business', accountNotes: d.accountNotes, selfie: d.selfie, signature: d.signature, agreementType: d.agreementType || '', agreementSignedAt: d.agreementSignedAt || '', idNumber: d.idNumber || '', netDays: normNetDays(d.netDays) });
+    Object.assign(c, { firstName: d.firstName, lastName: d.lastName, company: d.company, phone: d.phone, email: d.email, industry: d.industry, accountType: d.accountType || 'Non-Business', accountNotes: d.accountNotes, selfie: d.selfie, signature: d.signature, agreementType: d.agreementType || '', agreementSignedAt: d.agreementSignedAt || '', idNumber: d.idNumber || '', netDays: normNetDays(d.netDays), custom: d.custom || {} });
     if (!c.accountNotes) c.accountNotesColor = '';   // popup has no dot picker — don't leave a stale tag on a cleared note
     c.name = `${d.firstName} ${d.lastName}`.trim() || c.name;
     reindex('customers', c);
@@ -10197,7 +10260,7 @@ function saveNewCustomer() {
     company: d.company, phone: d.phone, email: d.email, address: '',
     industry: d.industry, accountType: d.accountType || 'Non-Business', payStatus: 'New Customer',
     requiresPO: false, accountNotes: d.accountNotes, stripeId: '', selfie: d.selfie || '', signature: d.signature || '',
-    idNumber: d.idNumber || '', netDays: normNetDays(d.netDays),
+    idNumber: d.idNumber || '', netDays: normNetDays(d.netDays), custom: d.custom || {},
     agreementType: d.agreementType || '', agreementSignedAt: d.agreementSignedAt || '',
     interestedCategoryIds: [], activityLog: [], usedSalesStage: 'N/A', membershipStage: 'N/A',
     _digest: { activePct: 0, totalPaid: 0, visits: 0, years: 0, avgFrequencyDays: 0, firstInvoice: '', lastInvoice: '' },
@@ -11933,7 +11996,7 @@ function exposeTestApi() {
       computeTransportPrice, isFueledType, unitTransport, rentalTransport,
       wrValidatePlan, applyWranglerData, wrFunnel, invoiceMergeable, mergeInvoiceInto,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
-      companyRevenueGoal, companyName, companyTagline, rentalRuleBlock, dueForCustomer, footerHidden, __state: state };
+      companyRevenueGoal, companyName, companyTagline, rentalRuleBlock, dueForCustomer, footerHidden, customFieldsFor, __state: state };
   } catch (e) { /* no window (non-browser) */ }
 }
 

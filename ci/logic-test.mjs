@@ -324,6 +324,16 @@ try {
     ok(T.footerHidden('rentals') === true && T.footerHidden('units') === false, 'a card footer can be hidden without affecting others');
     st.settings.layout = savedLayout;   // restore
 
+    // 20) Custom Fields — admin-defined fields per entity (default none = forms unchanged)
+    const savedCF = st.settings.customFields;
+    st.settings.customFields = undefined;
+    ok(T.customFieldsFor('customers').length === 0, 'no custom fields configured → none on any form (default)');
+    st.settings.customFields = { customers: [{ id: 'cf_tax_id_ab12', label: 'Tax-exempt #', type: 'text', required: true }] };
+    const cf = T.customFieldsFor('customers');
+    ok(cf.length === 1 && cf[0].required && cf[0].id === 'cf_tax_id_ab12', 'a defined custom field reads back with its type/required');
+    ok(T.customFieldsFor('units').length === 0, 'custom fields are per-entity (units unaffected)');
+    st.settings.customFields = savedCF;   // restore
+
     return out;
   });
 
