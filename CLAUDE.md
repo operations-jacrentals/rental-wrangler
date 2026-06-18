@@ -60,6 +60,12 @@ Reference implementations: `.login-*` and `.cancel-arc` blocks in `style.css`.
   Also develop on the session's feature branch and open a **draft PR**.
 - **Gates (must pass before push):** `node ci/smoke.mjs`,
   `node ci/logic-test.mjs`, `node ci/gen-rule-usage.mjs --check`.
+- **Cache-bust on every deploy:** bump the `?v=` token on `style.css`, `rule-usage.js`,
+  and `app.js` in `index.html` (one shared token) so a release loads immediately —
+  Pages serves `max-age=600` with no per-file hashing, so without this a phone/desktop
+  keeps the stale cached files. Don't add `?v=` to the ES-module imports inside `app.js`
+  (relative imports drop the query → a sub-module loaded both versioned and unversioned
+  would instantiate twice); the module graph revalidates within the 10-min window.
 - **R-rulebook:** UI is stamped with `data-r="Rxx"`; `rule-usage.js` is generated
   by `ci/gen-rule-usage.mjs` (has a `--check` drift guard + duplicate-rule guard).
   Regenerate (drop `--check`) when rule usage changes.
