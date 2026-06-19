@@ -6940,6 +6940,10 @@ function applyWranglerData(plan) {
   if (first) { const s = activeSession(); if (s.cols) s.cols.right = 'customers'; const ccs = s.cards.customers; if (created === 1) { ccs.mode = 'standard'; ccs.recId = first; } else { ccs.mode = 'list'; ccs.recId = null; ccs.search = ''; } ccs.graphView = false; }
   render();
   toast(`Mr. Wrangler ${[created ? `added ${created}` : '', updated ? `updated ${updated}` : ''].filter(Boolean).join(' · ') || 'made no changes'}. 🤠`);
+  // A bulk import is a one-shot action the operator immediately closes/reloads after
+  // (to go see the new records) — the 1200ms saveSoon() debounce would never fire and
+  // the in-memory records would be lost. Kick the diff-sync NOW instead of waiting.
+  if (created || updated) flushSave();
 }
 
 // Build the GitHub repro packet from Mr. Wrangler's structured report + the live
@@ -11116,6 +11120,16 @@ async function flushSave() {
   saving = false;
   if (savePending) { savePending = false; saveSoon(); }
 }
+// Safety net: a debounced save that hasn't flushed yet — or a large bulk-import sync
+// still in flight — would be lost silently if the page closes/reloads first (#164).
+// If anything is still un-persisted, kick a final flush and let the browser show its
+// "unsaved changes" prompt so the operator can't drop records without noticing.
+window.addEventListener('beforeunload', (e) => {
+  if (booting || !backendPassword || !lastSaved) return;   // demo/offline: nothing to persist
+  if (!saving && !savePending && !computeChanges().n) return;   // everything's already saved → leave quietly
+  flushSave();
+  e.preventDefault(); e.returnValue = '';
+});
 function renderLogin(msg) {
   $('#app').innerHTML = `<div class="login-screen"><form class="login-box" id="login-form">
     <span class="rivet tl"></span><span class="rivet tr"></span><span class="rivet bl"></span><span class="rivet br"></span>
