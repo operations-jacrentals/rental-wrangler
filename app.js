@@ -4259,8 +4259,10 @@ function columnEl(col, session) {
   const cs = card.dataset.card && session.cards ? session.cards[card.dataset.card] : null;
   card.dataset.view = (cs && cs.mode === 'standard' && cs.recId != null) ? `${cs.recType || ''}:${cs.recId}` : 'list';
   if (!document.body.classList.contains('is-phone')) card.insertBefore(colTabsEl(col, active, session), card.firstChild);   // toggles live INSIDE the card top on desktop; on phones they move to the footer dock (§M1)
-  const tot = card.querySelector('.card-body .list-totals');             // freeze the totals as a card FOOTER (out of the scroll)
-  if (tot) card.appendChild(tot);
+  const tot = card.querySelector('.card-body .list-totals');             // freeze the totals out of the scroll
+  // §M1 — phones invert the desktop layout: the card "footer" (totals) sits at the TOP,
+  // while the toggles + search live in the bottom dock. Desktop keeps it as a footer.
+  if (tot) { if (document.body.classList.contains('is-phone')) card.insertBefore(tot, card.firstChild); else card.appendChild(tot); }
   wrap.appendChild(card);
   return wrap;
 }
@@ -4909,22 +4911,38 @@ function activeMobileCard() {
   const member = (s.cols && s.cols[colObj.id]) || colObj.default;
   return SHOP_TYPES.includes(member) ? 'shop' : member;
 }
-// §M1 phone footer — the column's card toggles (active = icon+label+count, the rest
-// icon+count only) + ONE trailing action icon, over a thin column-dot indicator. The
-// whole dock is swipeable left/right to change columns (column switching lives HERE now,
-// not in the grid — the grid swipe is Back/Forward, §M3).
+// §M1 — the card the phone is currently showing (the active column's member).
+function currentMobileMember() {
+  const colObj = COLUMNS[Math.max(0, Math.min(2, state.mobileCol))];
+  const s = activeSession();
+  return (s.cols && s.cols[colObj.id]) || colObj.default;
+}
+// §M1 — the flat card list the phone switcher offers (the hidden inspections/work-orders
+// live inside the Unit card, so they're not in the switcher). Order = a natural workflow.
+const MOBILE_CARDS = ['units', 'categories', 'serviceOrders', 'rentals', 'calendar', 'customers', 'invoices'];
+// §M1 — jump straight to a card (flattens the 3-column model on phones): set the column +
+// member, flip the visible column, and show that card's LIST.
+function goToCard(member) {
+  const s = activeSession(); const col = COLUMN_OF[member];
+  if (s.cols && col) s.cols[col] = member;
+  const idx = COLUMNS.findIndex((c) => c.id === col); if (idx >= 0) state.mobileCol = idx;
+  const mc = s.cards[member]; if (mc) { mc.mode = 'list'; mc.recId = null; mc.recType = null; }
+  render();
+}
+// §M1 phone footer — ONE card-toggle bar: every card collapsed to its icon, the SELECTED
+// card expands to icon + stamped label. Tap an icon to jump to that card's list. The card's
+// search/sort row is moved DOWN into the .mdock-searchslot by render(). Swipe the dock
+// left/right to step through cards; the grid swipe is Back/Forward.
 function mobileDockEl() {
-  const col = Math.max(0, Math.min(2, state.mobileCol));
-  const colObj = COLUMNS[col];
-  const session = activeSession();
-  const active = (session.cols && session.cols[colObj.id]) || colObj.default;
-  const dots = `<div class="mdock-dots">${[0, 1, 2].map((i) => `<button class="mdot${i === col ? ' on' : ''}" data-mcol="${i}" aria-label="Column ${i + 1}"></button>`).join('')}</div>`;
-  let action;
-  if (col === 1) action = `<button class="iconbtn mdock-act js-mtools" data-tip="Tools — receipt, share, Mr. Wrangler, admin">${I.sliders || I.menu || '☰'}</button>`;   // Rentals → tools sheet
-  else if (col === 2) action = `<button class="iconbtn mdock-act js-ext-chat" data-tip="External chats (soon)">${I.chat}</button>`;                                       // Customers → external (shell)
-  else { const n = chatUnreadCount(); action = `<button class="iconbtn mdock-act js-chat-toggle" data-tip="Team chat">${I.chat}${n ? `<span class="bb-badge">${n > 9 ? '9+' : n}</span>` : ''}</button>`; }   // Yard → team chat
+  const cur = currentMobileMember();
+  const togs = MOBILE_CARDS.map((m) => {
+    const on = m === cur;
+    return `<button class="mcard-tog${on ? ' on' : ''}" data-gocard="${m}" data-tip="${esc(MEMBER_TITLE[m] || m)}"><span class="mct-ico">${memberIcon(m)}</span>${on ? `<span class="mct-lbl">${esc(MEMBER_TITLE[m] || m)}</span>` : ''}</button>`;
+  }).join('');
+  const pend = unseenNotifs() + wranglerRequests.length;   // surface hidden notifications/requests as a badge on the menu
+  const tools = `<button class="iconbtn mdock-act js-mtools" data-tip="Tools, notifications &amp; requests">${I.sliders || I.menu || '☰'}${pend ? `<span class="bb-badge">${pend > 9 ? '9+' : pend}</span>` : ''}</button>`;
   const d = el('div', 'mobile-dock');
-  d.innerHTML = dots + `<div class="mdock-tabs"><div class="col-tabs">${colTabButtonsHtml(colObj, active, session)}</div><span class="mdock-sp"></span>${action}</div>`;
+  d.innerHTML = `<div class="mdock-searchslot"></div><div class="mdock-row"><div class="mcard-bar">${togs}</div>${tools}</div>`;
   return d;
 }
 /* ════════════════════════════════════════════════════════════════════════
@@ -6309,10 +6327,14 @@ function renderOverlay() {
       <div class="popup-body board-body bv-body">${o.customize ? bvCustomizePanel(o.card) : ''}${boardViewTable(o, session)}</div>`;
     overlay.appendChild(pop);
   } else if (o.kind === 'tools') {
-    // §M1 — the global tool tray (the desktop bottom bar) as a phone sheet
+    // §M1 — the global tool tray (the desktop bottom bar) as a phone sheet. Notifications +
+    // Requests live here on phone (their floating FABs are hidden) — bottomBarInner already
+    // carries Requests, so we add the Notifications bell.
+    const nu = unseenNotifs();
+    const notifBtn = `<button class="iconbtn js-notifications" data-tip="Notifications">${I.bell}<span>Notifications</span>${nu ? `<span class="bb-badge">${nu > 9 ? '9+' : nu}</span>` : ''}</button>`;
     const pop = el('div', 'popup'); pop.style.width = '360px';
     pop.innerHTML = popupShell({ icon: I.sliders || I.menu || '', title: 'Tools', tag: 'Yard · toolbox',
-      body: `<div class="tools-tray">${bottomBarInner()}</div>` });
+      body: `<div class="tools-tray">${notifBtn}${bottomBarInner()}</div>` });
     overlay.appendChild(pop);
   } else if (o.kind === 'settings') {
     const cfg = o.config || { roles: {}, admin: '' };
@@ -7644,7 +7666,15 @@ function render() {
   for (const col of shown) grid.appendChild(columnEl(col, session));
   const bottomBar = bottomBarEl();
   $('#app').replaceChildren(header, grid, bottomBar);
-  if (phone) $('#app').appendChild(mobileDockEl());   // the global bar is hidden (CSS); the footer dock carries the toggles + column nav
+  if (phone) {
+    const dock = mobileDockEl();
+    $('#app').appendChild(dock);
+    // §M1 — move the active card's list search/sort row DOWN into the footer (it sits with
+    // the card switcher). Same node → its delegated handlers keep working. Record view has
+    // no listbar, so the slot stays empty (CSS hides it).
+    const lb = grid.querySelector('.listbar');
+    if (lb) dock.querySelector('.mdock-searchslot').appendChild(lb);
+  }
   // restore scroll by VIEW: same view → keep your spot; back to a list → return to the
   // row you left; opened a record → top of Standard view (a targeted link scrolls itself after).
   document.querySelectorAll('.card[data-card]').forEach((c) => {
@@ -8345,6 +8375,7 @@ function onClick(e) {
   // §17 internal team dock
   if (closest('[data-mcol]')) { e.stopPropagation(); state.mobileCol = +closest('[data-mcol]').dataset.mcol; return render(); }   // §M1 dot nav
   if (closest('.js-mtools')) { e.stopPropagation(); return openOverlay({ kind: 'tools' }); }   // §M1 phone footer → the global tool tray as a sheet
+  if (closest('[data-gocard]')) { e.stopPropagation(); return goToCard(closest('[data-gocard]').dataset.gocard); }   // §M1 footer card-toggle bar → jump to that card
   if (closest('.js-ext-chat')) { e.stopPropagation(); return toast('External customer & vendor chats arrive with the messaging backend.'); }
   if (closest('.js-chat-toggle')) { e.stopPropagation(); state.chat.open = !state.chat.open; return render(); }
   if (closest('.js-chat-close')) { e.stopPropagation(); state.chat.open = false; return render(); }
@@ -11208,8 +11239,9 @@ function boot() {
     if (Math.abs(dx) < 55 || Math.abs(dx) < Math.abs(dy) * 1.3) return;            // not a clean horizontal swipe
     swipeFired = true;                                                             // swallow the trailing click (row/toggle)
     if (s.footer) {
-      const next = Math.max(0, Math.min(2, state.mobileCol + (dx < 0 ? 1 : -1)));  // left → next column, right → previous
-      if (next !== state.mobileCol) { state.mobileCol = next; haptic(8); render(); }
+      const cur = currentMobileMember(); let i = MOBILE_CARDS.indexOf(cur); if (i < 0) i = 0;   // left → next card, right → previous
+      const next = Math.max(0, Math.min(MOBILE_CARDS.length - 1, i + (dx < 0 ? 1 : -1)));
+      if (next !== i) { goToCard(MOBILE_CARDS[next]); haptic(8); }
     } else {
       const card = activeMobileCard();
       if (dx > 0) cardBack(card); else cardFwd(card);                              // swipe right → Back, left → Forward
