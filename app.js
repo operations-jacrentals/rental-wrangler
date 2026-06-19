@@ -9936,6 +9936,9 @@ async function saveCardFlow(btn) {
   const errBox = document.getElementById('sl-card-error');
   const setErr = (m) => { if (errBox) errBox.textContent = m || ''; };
   const reset = () => { btn.disabled = false; btn.textContent = 'Save card'; };
+  // Surface failures LOUDLY (a toast), not just in the small card-field box, so a
+  // backend/Stripe error can't silently look like "nothing happened".
+  const fail = (m) => { setErr(m); toast('Card not saved — ' + (m || 'try again.')); reset(); };
   // §7.1b a card saves UNSIGNED — the signature/selfie are captured per-card AFTER
   // saving (the signing tab), so DON'T gate the save on a customer-level signature.
   const live = () => state.overlay === o;   // bail if the overlay changed/closed mid-await
@@ -9943,14 +9946,14 @@ async function saveCardFlow(btn) {
   try {
     const r = await backendCall('stripeSetupIntent', { customerId: c.customerId });
     if (!live()) return;
-    if (!r || !r.ok) { setErr(friendlyPayErr(r)); reset(); return; }
+    if (!r || !r.ok) return fail(friendlyPayErr(r));
     const { setupIntent, error } = await stripe.confirmCardSetup(r.clientSecret, { payment_method: { card: _cardElement, billing_details: { name: c.name || undefined, email: c.email || undefined, phone: c.phone || undefined } } });
     if (!live()) return;
-    if (error) { setErr(error.message); reset(); return; }
-    if (!setupIntent || setupIntent.status !== 'succeeded') { setErr('Card could not be saved — try again.'); reset(); return; }
+    if (error) return fail(error.message);
+    if (!setupIntent || setupIntent.status !== 'succeeded') return fail('Card could not be saved — try again.');
     const s = await backendCall('stripeSaveCard', { customerId: c.customerId, paymentMethodId: setupIntent.payment_method, setupIntentId: setupIntent.id });
     if (!live()) return;
-    if (!s || !s.ok) { setErr(friendlyPayErr(s)); reset(); return; }
+    if (!s || !s.ok) return fail(friendlyPayErr(s));
     c.stripeId = r.stripeId || c.stripeId;
     if (!Array.isArray(c.cards)) c.cards = [];
     const firstCard = customerCards(c).length === 0;
@@ -9964,11 +9967,12 @@ async function saveCardFlow(btn) {
     reindex('customers', c); logAction(c, `Card added — ${brandName(s.card.brand)} ••••${s.card.last4} (unsigned)`);
     destroyCardElement();
     toast('Card saved — sign to authorize ✓');
-    if (sub) { o.cardSub = false; o.tab = newCardId; renderOverlay(); }   // §14 close the card panel, jump to the new card's tab to sign
+    // Land on the new card's SIGNING tab no matter how Add-card was opened.
+    if (sub) { o.cardSub = false; o.tab = newCardId; renderOverlay(); }   // §14 panel beside the form → switch its tab
     else if (o.returnTo === 'payment' && o.invoiceId) openPayInvoice(o.invoiceId);
-    else closeOverlay();
+    else { closeOverlay(); openCustomerForm(c.customerId); if (state.overlay) { state.overlay.tab = newCardId; renderOverlay(); } }   // standalone → open the account form on the signing tab
     render();
-  } catch (e) { setErr('Network error — try again.'); reset(); }
+  } catch (e) { fail('Network error — try again.'); }
 }
 
 // Save ACH: bank SetupIntent (server) → confirmUsBankAccountSetup (browser; raw
