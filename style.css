@@ -333,16 +333,16 @@ input { font-family: inherit; }
 /* ── §M4 — phone header: logo + ALL FIVE KPI rings share the TOP row (rings shrunk to
    fit), and the global search wraps to its own full-width row underneath. ── */
 .is-phone .header { flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 10px 10px 0; }
-.is-phone .logo { width: 58px; height: 58px; }
-.is-phone .kpis { order: 1; flex: 1 1 auto; min-width: 0; display: flex; justify-content: space-around; gap: 2px; }   /* logo + rings share row 1 */
+.is-phone .logo { width: 58px; height: 58px; order: 1; }
+.is-phone .kpis { order: 1; flex: 1 1 auto; min-width: 0; display: flex; justify-content: space-around; gap: 2px; }   /* logo + rings share a row, below the tool bar */
 .is-phone .kpi-ring { min-width: 0; flex: 0 1 auto; padding: 1px 0 0; }
 .is-phone .ring-wrap svg { width: 52px; height: 52px; }
 .is-phone .kpi-ring .ring-label { font-size: 8.5px; letter-spacing: .1px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.is-phone .header-right { order: 3; flex: 1 1 100%; min-width: 0; }   /* global search on its own full-width row */
-/* the tool bar opened up ACROSS THE TOP (phone only) — its own full-width row under the rings */
+.is-phone .header-right { order: 2; flex: 1 1 100%; min-width: 0; }   /* global search on its own full-width row */
+/* the tool bar ACROSS THE TOP, ABOVE the logo/rings (phone only) — its own full-width row */
 .top-toolbar { display: none; }
-.is-phone .top-toolbar { order: 2; display: flex; flex: 1 1 100%; align-items: center; justify-content: space-between;
-  gap: 2px; overflow-x: auto; scrollbar-width: none; padding: 4px 0 0; }
+.is-phone .top-toolbar { order: 0; display: flex; flex: 1 1 100%; align-items: center; justify-content: space-between;
+  gap: 2px; overflow-x: auto; scrollbar-width: none; padding: 0 0 2px; }
 .is-phone .top-toolbar::-webkit-scrollbar { display: none; }
 .is-phone .top-toolbar .iconbtn { flex: 0 0 auto; min-height: 42px; padding: 0 9px; position: relative; }   /* anchor the badge to its button (else it escapes to the screen corner) */
 .is-phone .top-toolbar .bb-sep { display: none; }

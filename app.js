@@ -4980,7 +4980,7 @@ function currentMobileMember() {
 }
 // §M1 — the flat card list the phone toggle bar offers. On desktop, inspections + work
 // orders live INSIDE the Unit card (hidden tabs); on phone they get their own toggles too.
-const MOBILE_CARDS = ['units', 'categories', 'inspections', 'serviceOrders', 'workOrders', 'rentals', 'calendar', 'customers', 'invoices'];
+const MOBILE_CARDS = ['units', 'categories', 'inspections', 'serviceOrders', 'rentals', 'calendar', 'customers', 'invoices'];
 // §M1 — jump straight to a card (flattens the 3-column model on phones): set the column +
 // member, flip the visible column, and show that card's LIST.
 function goToCard(member) {
