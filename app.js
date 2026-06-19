@@ -6508,7 +6508,7 @@ function renderOverlay() {
           ${/Member/.test(d.accountType || '') ? `<div class="nc-field nc-wide"><span>Membership plan</span>${segCtl([
             { label: 'Monthly · $299', js: 'js-nc-plan', data: { val: 'monthly' }, on: d.membershipPlan === 'monthly' ? 'green' : null },
             { label: 'Annual · $2,691', js: 'js-nc-plan', data: { val: 'annual' }, on: d.membershipPlan === 'annual' ? 'green' : null },
-          ], 'seg-plan')}<span class="muted" style="font-size:11px;margin-top:6px">Locked into the signed Membership Agreement — billed on the enrollment date, no proration.</span></div>` : ''}
+          ], 'seg-plan')}<span class="muted" style="display:block;margin-top:6px;font-family:var(--font);font-weight:400;font-size:11px;text-transform:none;letter-spacing:normal">Locked into the signed Membership Agreement — billed on the enrollment date, no proration.</span></div>` : ''}
         </div>
         <datalist id="nc-industries">${indOpts}</datalist>`;
     } else {
