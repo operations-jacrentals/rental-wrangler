@@ -10106,6 +10106,15 @@ function mountCardElement() {
 }
 function destroyCardElement() { if (_cardElement) { try { _cardElement.destroy(); } catch (e) {} } _cardElement = null; _cardElements = null; }
 
+// Reject if a promise hasn't settled in `ms` so a STALLED (never-resolving) backend
+// round-trip can't leave the save button spinning "Saving…" forever with no error.
+// fetch() has no built-in timeout; a hung Apps Script call otherwise never rejects.
+// Only wraps human-free server round-trips — never the interactive 3DS confirm step.
+function withTimeout(promise, ms, label) {
+  let t; const timeout = new Promise((_, rej) => { t = setTimeout(() => { const e = new Error((label || 'Request') + ' timed out'); e.rwTimeout = true; rej(e); }, ms); });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(t));
+}
+
 // Save card: SetupIntent (server) → confirmCardSetup (browser) → persist (server).
 // DOM-driven (no renderOverlay) so the Card Element isn't wiped mid-entry.
 async function saveCardFlow(btn) {
@@ -10124,14 +10133,14 @@ async function saveCardFlow(btn) {
   const live = () => state.overlay === o;   // bail if the overlay changed/closed mid-await
   btn.disabled = true; btn.textContent = 'Saving…'; setErr('');
   try {
-    const r = await backendCall('stripeSetupIntent', { customerId: c.customerId });
+    const r = await withTimeout(backendCall('stripeSetupIntent', { customerId: c.customerId }), 30000, 'Setting up the card');
     if (!live()) return;
     if (!r || !r.ok) return fail(friendlyPayErr(r));
     const { setupIntent, error } = await stripe.confirmCardSetup(r.clientSecret, { payment_method: { card: _cardElement, billing_details: { name: c.name || undefined, email: c.email || undefined, phone: c.phone || undefined } } });
     if (!live()) return;
     if (error) return fail(error.message);
     if (!setupIntent || setupIntent.status !== 'succeeded') return fail('Card could not be saved — try again.');
-    const s = await backendCall('stripeSaveCard', { customerId: c.customerId, paymentMethodId: setupIntent.payment_method, setupIntentId: setupIntent.id });
+    const s = await withTimeout(backendCall('stripeSaveCard', { customerId: c.customerId, paymentMethodId: setupIntent.payment_method, setupIntentId: setupIntent.id }), 30000, 'Saving the card');
     if (!live()) return;
     if (!s || !s.ok) return fail(friendlyPayErr(s));
     c.stripeId = r.stripeId || c.stripeId;
@@ -10158,7 +10167,7 @@ async function saveCardFlow(btn) {
     else if (o.returnTo === 'payment' && o.invoiceId) openPayInvoice(o.invoiceId);
     else { closeOverlay(); openCustomerForm(c.customerId); if (state.overlay) { state.overlay.tab = newCardId; renderOverlay(); } }   // standalone → open the account form on the signing tab
     render();
-  } catch (e) { fail('Network error — try again.'); }
+  } catch (e) { fail(e && e.rwTimeout ? 'Saving timed out — check your connection and try again.' : 'Network error — try again.'); }
 }
 
 // Save ACH: bank SetupIntent (server) → confirmUsBankAccountSetup (browser; raw
