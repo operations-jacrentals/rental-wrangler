@@ -3856,6 +3856,7 @@ const DETAIL = {
     </div></div>`;
     const membership = `<div class="section"><h4>Membership</h4><div class="fieldstack centered">
       ${kvPills(funnelPill(c.customerId, 'membership', c.membershipStage || 'N/A'))}
+      ${c.membershipPlan ? kvPills(badge(c.membershipPlan === 'annual' ? 'Annual · $2,691/yr' : 'Monthly · $299/mo', 'gray')) : ''}
       ${isMember && c.paidUntil ? kv(yr(c.paidUntil), { sfx: 'paid until' }) : ''}
       ${c.paidCadence ? kvPills(`${badge('Paid ' + c.paidCadence, 'green')}${c.unlimitedTransport ? badge('Unlimited Transport', 'purple') : ''}`) : ''}
       ${c.paidFees ? kv(money(c.paidFees), { sfx: 'paid fees' }) : ''}
@@ -6477,6 +6478,10 @@ function renderOverlay() {
             </div>
           </div>
           <div class="nc-field nc-wide"><span>Account type</span><div class="nc-pills">${acctPills}</div></div>
+          ${/Member/.test(d.accountType || '') ? `<div class="nc-field nc-wide"><span>Membership plan</span>${segCtl([
+            { label: 'Monthly · $299', js: 'js-nc-plan', data: { val: 'monthly' }, on: d.membershipPlan === 'monthly' ? 'green' : null },
+            { label: 'Annual · $2,691', js: 'js-nc-plan', data: { val: 'annual' }, on: d.membershipPlan === 'annual' ? 'green' : null },
+          ], 'seg-plan')}<span class="muted" style="font-size:11px;margin-top:6px">Locked into the signed Membership Agreement — billed on the enrollment date, no proration.</span></div>` : ''}
         </div>
         <datalist id="nc-industries">${indOpts}</datalist>`;
     } else {
@@ -8470,7 +8475,8 @@ function onClick(e) {
   if (closest('.js-overbook')) { e.stopPropagation(); const on = closest('.js-overbook').dataset.val === '1'; state.overbookOn = on; try { localStorage.setItem('jactec.overbook', on ? '1' : '0'); } catch (err) {} toast(on ? 'Overbooking allowed — conflicting links get a pulsing red Overbooked flag.' : 'Overbooking blocked — a conflicting unit drop is refused.'); renderOverlay(); return; }
   if (closest('.js-haptics')) { e.stopPropagation(); const on = closest('.js-haptics').dataset.val === '1'; state.hapticsOff = !on; try { localStorage.setItem('jactec.hapticsOff', on ? '0' : '1'); } catch (err) {} if (on) haptic([12, 30, 12]); renderOverlay(); return; }   // §M-touch — toggle + a sample buzz when turning ON
   if (closest('.js-nc-save')) { e.stopPropagation(); return saveNewCustomer(); }
-  if (closest('.js-nc-acct')) { const b = closest('.js-nc-acct'); e.stopPropagation(); ncSyncInputs(); state.overlay.draft.accountType = b.dataset.val; renderOverlay(); return; }
+  if (closest('.js-nc-acct')) { const b = closest('.js-nc-acct'); e.stopPropagation(); ncSyncInputs(); const d = state.overlay.draft; d.accountType = b.dataset.val; if (!/Member/.test(d.accountType || '')) d.membershipPlan = ''; renderOverlay(); return; }
+  if (closest('.js-nc-plan')) { const b = closest('.js-nc-plan'); e.stopPropagation(); ncSyncInputs(); state.overlay.draft.membershipPlan = b.dataset.val; renderOverlay(); return; }
   if (closest('.js-nc-po')) { e.stopPropagation(); ncSyncInputs(); const o = state.overlay; o.draft.requiresPO = (o.draft.requiresPO === true) ? false : true; if (o.editId) { const c = IDX.customer.get(o.editId); if (c) { c.requiresPO = o.draft.requiresPO; reindex('customers', c); } } renderOverlay(); return; }
   // §7.1b card-bound agreements: tab rail + per-card signing
   if (closest('.js-nc-tab')) { e.stopPropagation(); ncSyncInputs(); state.overlay.tab = closest('.js-nc-tab').dataset.tab; state.overlay.signRead = null; renderOverlay(); return; }
@@ -9840,6 +9846,7 @@ function openCustomerForm(editId, prefill, linkTo) {
   openOverlay({ kind: 'newCustomer', error: '', editId: editId || null, linkTo: (!editId && linkTo) || null, draft: {
     firstName: f('firstName'), lastName: f('lastName'), company: f('company'), phone: f('phone'),
     email: f('email'), industry: f('industry'), accountType: f('accountType', 'Non-Business'),
+    membershipPlan: f('membershipPlan'),
     requiresPO: c ? !!c.requiresPO : undefined, accountNotes: f('accountNotes'), selfie: f('selfie'), signature: f('signature'),
     agreementType: f('agreementType'), agreementSignedAt: f('agreementSignedAt'),
   } });
@@ -9875,7 +9882,7 @@ function quickSaveCustomer(o) {
   const c = {
     customerId: id, firstName: d.firstName, lastName: d.lastName, name: `${d.firstName} ${d.lastName}`.trim(),
     company: d.company, phone: d.phone, email: d.email, address: '',
-    industry: d.industry, accountType: d.accountType || 'Non-Business', payStatus: 'New Customer',
+    industry: d.industry, accountType: d.accountType || 'Non-Business', membershipPlan: /Member/.test(d.accountType || '') ? (d.membershipPlan || '') : '', payStatus: 'New Customer',
     requiresPO: !!d.requiresPO, accountNotes: d.accountNotes, stripeId: '', selfie: d.selfie || '', signature: d.signature || '',
     agreementType: d.agreementType || '', agreementSignedAt: d.agreementSignedAt || '',
     interestedCategoryIds: [], activityLog: [], usedSalesStage: 'N/A', membershipStage: 'N/A',
@@ -9909,6 +9916,7 @@ function ncSyncDraftToCustomer(o) {
   const d = o.draft;
   Object.assign(c, { firstName: d.firstName, lastName: d.lastName, name: `${d.firstName} ${d.lastName}`.trim(),
     company: d.company, phone: d.phone, email: d.email, industry: d.industry, accountType: d.accountType || 'Non-Business',
+    membershipPlan: /Member/.test(d.accountType || '') ? (d.membershipPlan || '') : '',
     requiresPO: !!d.requiresPO, accountNotes: d.accountNotes });   // §7.1b signature/selfie/agreement live on the CARD now — never wiped from the account form
   reindex('customers', c);
 }
@@ -9924,7 +9932,7 @@ function saveNewCustomer() {
   const d = o.draft;
   if (o.editId) {                                   // ── editing / completing an existing customer ──
     const c = IDX.customer.get(o.editId); if (!c) { closeOverlay(); return; }
-    Object.assign(c, { firstName: d.firstName, lastName: d.lastName, company: d.company, phone: d.phone, email: d.email, industry: d.industry, accountType: d.accountType || 'Non-Business', requiresPO: !!d.requiresPO, accountNotes: d.accountNotes });   // §7.1b signature/agreement live on the card
+    Object.assign(c, { firstName: d.firstName, lastName: d.lastName, company: d.company, phone: d.phone, email: d.email, industry: d.industry, accountType: d.accountType || 'Non-Business', membershipPlan: /Member/.test(d.accountType || '') ? (d.membershipPlan || '') : '', requiresPO: !!d.requiresPO, accountNotes: d.accountNotes });   // §7.1b signature/agreement live on the card
     if (!c.accountNotes) c.accountNotesColor = '';   // popup has no dot picker — don't leave a stale tag on a cleared note
     c.name = `${d.firstName} ${d.lastName}`.trim() || c.name;
     reindex('customers', c);
@@ -9940,7 +9948,7 @@ function saveNewCustomer() {
   const c = {
     customerId: id, firstName: d.firstName, lastName: d.lastName, name: `${d.firstName} ${d.lastName}`.trim(),
     company: d.company, phone: d.phone, email: d.email, address: '',
-    industry: d.industry, accountType: d.accountType || 'Non-Business', payStatus: 'New Customer',
+    industry: d.industry, accountType: d.accountType || 'Non-Business', membershipPlan: /Member/.test(d.accountType || '') ? (d.membershipPlan || '') : '', payStatus: 'New Customer',
     requiresPO: !!d.requiresPO, accountNotes: d.accountNotes, stripeId: '', selfie: d.selfie || '', signature: d.signature || '',
     agreementType: d.agreementType || '', agreementSignedAt: d.agreementSignedAt || '',
     interestedCategoryIds: [], activityLog: [], usedSalesStage: 'N/A', membershipStage: 'N/A',
