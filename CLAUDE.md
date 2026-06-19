@@ -73,9 +73,26 @@ Reference implementations: `.login-*` and `.cancel-arc` blocks in `style.css`.
   by `ci/gen-rule-usage.mjs` (has a `--check` drift guard + duplicate-rule guard).
   Regenerate (drop `--check`) when rule usage changes.
 
+## Icons (Jac, 2026-06-19)
+
+- **Never hand-draw / hand-author icons.** Every glyph comes from a library.
+  Generic glyphs are vendored **verbatim from Lucide** (ISC, pinned) into
+  `icons.js` (`I`, `CARD_ICON`, `RING_ICON`) by `tools/gen-icons.mjs`. To add or
+  change one, map `name -> lucide-icon-name` in that script and run
+  `node tools/gen-icons.mjs` (needs network, dev-time only) — never paste raw
+  `<path>` data by hand. It's NOT a required CI gate (no external CDN in CI);
+  use `node tools/gen-icons.mjs --check` locally to catch drift.
+- **Bespoke marks are the only exception** and stay in `icons.js`: the steel
+  logo (`bluesteel`), `horseshoe`, `hardhat`/`mtech`, the `mark`, the rounded
+  `circle` placeholder, the Tabler **backhoe** excavator (`categories`), the
+  `clipboard-question` (`inspectionsPending`, no Lucide equivalent), and the
+  gate-timeline status glyphs (`GATE_ICON`, still in `app.js`). Don't replace
+  these with library icons without asking.
+
 ## Don't
 
 - Never put the model identifier, secrets, or `DEFAULT_CONFIG` passwords in the
   repo (it's public via Pages). Backend `Code.gs` stays gitignored.
 - Changing a WO part/task line to Complete must NOT complete the work order â€”
   only the blue **Complete WO** button does.
+- Never hand-roll an icon (see **Icons** above) — source it from the library.
