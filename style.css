@@ -10,6 +10,7 @@
   --accent: #ff7a1a; --accent-soft: rgba(255,122,26,.14); --accent-line: rgba(255,122,26,.5);
   --bg: #0b0c0f; --bg-2: #101216; --panel: #15171c; --panel-2: #1b1e24;
   --card: #14161b; --card-head: #191c22;
+  --sbw: 9px; --listbar-strip: var(--card);   /* scrollbar width (matches *::-webkit-scrollbar) + the search-bar strip fill that bleeds under the scroll gutter */
   --line: #262a31; --line-soft: #1f232a;
   --txt: #e9edf4; --txt-2: #a7afbc; --txt-3: #6b7480; --track: #22262e; --on-orange: #1a1205;
 
@@ -300,7 +301,7 @@ input { font-family: inherit; }
    grow the genuinely TAPPABLE controls on phones (single column = room to spare).
    Glyphs keep their size — only the hit box grows. ── */
 .is-phone .rbtn { width: 44px; height: 44px; }                                  /* row eye / open-tab (was 22) */
-.is-phone .sortbtn { height: 44px; }
+.is-phone .sort { height: 44px; }
 .is-phone .sort .dir { width: 40px; height: 44px; }                             /* was 26×32 */
 .is-phone .mini-search { min-height: 44px; }                                    /* was 24 */
 .is-phone .pill.gate { height: 40px; }                                          /* status gate = interactive (was 28); wide, so width clears the floor */
@@ -719,17 +720,23 @@ select.lf-in { appearance: none; cursor: pointer; }
 }
 
 /* list-view search/sort bar (§12 in-card Sort) — floating chips, no hard line */
-.listbar { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; gap: 7px; padding: 6px 10px; background: linear-gradient(var(--card) 70%, transparent); }
+.listbar { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; gap: 7px; padding: 6px 10px; background: linear-gradient(var(--card) 70%, transparent); box-shadow: var(--sbw) 0 0 0 var(--listbar-strip); }   /* the strip bleeds under the scroll gutter (full card width) so the scrollbar hovers above it instead of leaving a funny gap */
 .listbar .mini-search { flex: 1; min-width: 0; height: 32px; padding: 0 11px; border-radius: var(--chip-radius); background: var(--panel); border: 1px solid var(--line); color: var(--txt); font-size: 12px; box-shadow: var(--chip-shadow); }
 .listbar .mini-search:focus { outline: none; border-color: var(--accent-line); }
-.sort { display: flex; align-items: center; gap: 4px; }
-.sortbtn { display: inline-flex; align-items: center; gap: 5px; height: 32px; padding: 0 9px; border-radius: var(--chip-radius); background: var(--panel); border: 1px solid var(--line); color: var(--txt-2); font-size: 11px; font-weight: 600; box-shadow: var(--chip-shadow); white-space: nowrap; }
-.sortbtn:hover { border-color: var(--accent-line); color: var(--txt); }
+/* §12 sort control — ONE unified chip: [field ⌄ │ ▲▼]. The two segments share a
+   single steel chip (no second box, no extra horizontal space) split by a
+   saddle-stitch seam, matching the .card-jog stepper (recognition over recall). */
+.sort { display: inline-flex; align-items: stretch; height: 32px; border-radius: var(--chip-radius); overflow: hidden; background: var(--panel); border: 1px solid var(--line); box-shadow: var(--chip-shadow); }
+.sort:hover, .sort:has(.sortbtn.viewing) { border-color: var(--accent-line); }
+.sortbtn { display: inline-flex; align-items: center; gap: 5px; height: 100%; padding: 0 9px; border: 0; background: transparent; color: var(--txt-2); font-size: 11px; font-weight: 600; white-space: nowrap; }
+.sortbtn:hover { color: var(--txt); }
+.sortbtn.viewing { color: var(--accent); }
 .sortbtn .chev { width: 12px; height: 12px; opacity: .6; }
-.sort .dir { display: flex; flex-direction: column; width: 26px; height: 32px; border-radius: var(--chip-radius); background: var(--panel); border: 1px solid var(--line); align-items: center; justify-content: center; box-shadow: var(--chip-shadow); }
-.sort .dir:hover { border-color: var(--accent-line); }
+.sort .dir { display: flex; flex-direction: column; width: 22px; height: 100%; border: 0; border-left: 1px dashed rgba(194,146,90,.55); background: transparent; align-items: center; justify-content: center; }   /* saddle-stitch seam (same as .card-jog) */
+.sort .dir:hover { background: var(--accent-soft); }
 .sort .dir span { font-size: 9px; line-height: 1.05; color: var(--txt-3); }
 .sort .dir span.on { color: var(--accent); }
+.sort > button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
 /* reusable floating dropdown menu (sort fields, status options) — Tier 3 SELECTOR-LIST:
    steel panel + a left hazard rail (the signature), no orange halo (dialogs keep that). */
@@ -772,7 +779,6 @@ select.lf-in { appearance: none; cursor: pointer; }
 .gt-s .gt-lbl { color: var(--txt-3); font-style: italic; }
 .gt-a .gt-node { color: var(--on-orange); background: linear-gradient(180deg, #ff9038, var(--accent)); box-shadow: 0 0 0 3px var(--accent-soft); }
 .gt-a .gt-lbl { color: var(--accent); font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .6px; font-weight: 800; font-size: 13.5px; }
-.sortbtn.viewing { color: var(--accent); border-color: var(--accent-line); }
 
 /* ── Shop card (merged Work Orders + Service Orders + Inspections) ───────── */
 .shopbar { display: flex; align-items: center; gap: 6px; padding: 6px 10px 4px; flex-wrap: wrap; }
@@ -1335,7 +1341,7 @@ select.lf-in { appearance: none; cursor: pointer; }
 .pl-cap { height: 8px; width: 100%; flex: 0 0 auto; border-bottom: 1px solid #000;   /* THE signature — hi-vis caution band, matches the card cap + login band */
   background: repeating-linear-gradient(135deg, var(--yellow, #f5c542) 0 13px, #14181d 13px 26px); }
 .pl-cap.danger { background: repeating-linear-gradient(135deg, var(--red, #ff4242) 0 13px, #1a0808 13px 26px); }   /* abort/destroy popups */
-.pl-rivet { position: absolute; width: 6px; height: 6px; border-radius: 50%; z-index: 2; pointer-events: none;
+.pl-rivet { position: absolute; width: 6px; height: 6px; border-radius: 50%; z-index: 12; pointer-events: none;   /* top layer of the popup plate — above head/body/foot content */
   background: radial-gradient(circle at 35% 30%, #434c58, #0f1318); box-shadow: inset 0 0 0 1px rgba(0,0,0,.55); }
 .pl-rivet.tl { top: 18px; left: 12px; } .pl-rivet.tr { top: 18px; right: 12px; }
 .pl-rivet.bl { bottom: 12px; left: 12px; } .pl-rivet.br { bottom: 12px; right: 12px; }
@@ -1807,7 +1813,7 @@ select.nc-in { cursor: pointer; }
   background: repeating-linear-gradient(135deg, var(--yellow, #f5c542) 0 13px, #14181d 13px 26px);
   border-bottom: 1px solid #000;
 }
-.login-box .rivet { position: absolute; width: 6px; height: 6px; border-radius: 50%;
+.login-box .rivet { position: absolute; width: 6px; height: 6px; border-radius: 50%; z-index: 12;   /* top layer of the login plate */
   background: radial-gradient(circle at 35% 30%, #434c58, #0f1318); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .55); }
 .login-box .rivet.tl { top: 20px; left: 14px; } .login-box .rivet.tr { top: 20px; right: 14px; }
 .login-box .rivet.bl { bottom: 13px; left: 14px; } .login-box .rivet.br { bottom: 13px; right: 14px; }
@@ -2422,7 +2428,7 @@ body.dragging .row.drop-ok { opacity: 1; }
   border-bottom:1px solid rgba(0,0,0,.6); pointer-events:none;
 }
 [data-theme="yard"] .col > .card::after {        /* four corner rivets bolting the plate down */
-  content:''; position:absolute; inset:0; z-index:5; pointer-events:none; border-radius:inherit;
+  content:''; position:absolute; inset:0; z-index:12; pointer-events:none; border-radius:inherit;   /* rivets are the TOP layer of the plate */
   background:
     radial-gradient(circle at 12px 15px, var(--rivet) 0 1.4px, var(--rivet-pit) 1.7px 3px, transparent 3.4px),
     radial-gradient(circle at calc(100% - 12px) 15px, var(--rivet) 0 1.4px, var(--rivet-pit) 1.7px 3px, transparent 3.4px),
@@ -2518,7 +2524,7 @@ body.dragging .row.drop-ok { opacity: 1; }
   border-bottom:1px solid rgba(0,0,0,.6); pointer-events:none;
 }
 [data-theme="bluedsteel"] .col > .card::after {   /* four corner rivets — same as Yard, blued */
-  content:''; position:absolute; inset:0; z-index:5; pointer-events:none; border-radius:inherit;
+  content:''; position:absolute; inset:0; z-index:12; pointer-events:none; border-radius:inherit;   /* rivets are the TOP layer of the plate — never under a badge/text/icon */
   background:
     radial-gradient(circle at 12px 15px, var(--rivet) 0 1.4px, var(--rivet-pit) 1.7px 3px, transparent 3.4px),
     radial-gradient(circle at calc(100% - 12px) 15px, var(--rivet) 0 1.4px, var(--rivet-pit) 1.7px 3px, transparent 3.4px),
@@ -2556,7 +2562,7 @@ body.dragging .row.drop-ok { opacity: 1; }
 }
 /* search/sort sub-header (.listbar) — a clean solid dark strip so the floor/card
    texture never bleeds through the controls (Jac) */
-[data-theme="bluedsteel"] .listbar { background: linear-gradient(180deg, #0c1320 80%, transparent); }
+[data-theme="bluedsteel"] .listbar { background: linear-gradient(180deg, #0c1320 80%, transparent); --listbar-strip: #0c1320; }
 
 /* global search bar (.searchwrap, the top "Search everything…") — was a flat panel;
    now a blued-steel plate: the same plate material + a machined top lip as the cards,
