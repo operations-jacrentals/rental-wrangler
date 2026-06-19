@@ -295,7 +295,7 @@ function agCaptureBlock(o, ag, readKey, acceptJs, acceptData, acceptLabel) {
   return `
     <div class="ag-readref"><span><b>${esc(ag.title)}</b></span><button type="button" class="ag-readbtn js-ncsign-read" data-card="${esc(readKey)}">${o.signRead === readKey ? 'Hide' : 'Read'} ↗</button></div>
     ${o.signRead === readKey ? `<div class="nc-agreement" tabindex="0">${esc(ag.text)}</div>` : ''}
-    <div class="ag-capcap">Capture both to authorize</div>
+    <div class="ag-caphead"><span class="ag-capcap">Capture both to authorize</span><button type="button" class="ag-readbtn js-sign-popout" data-title="${esc(ag.title)}" data-tip="Pop the signature pad into its own window — drag it to the customer's touchscreen to sign">2nd screen ↗</button></div>
     <div class="ag-caprow">
       <label class="ag-selfiebtn js-ag-selfie">${selfie
         ? `<img class="ag-selfie" src="${esc(selfie)}" alt="selfie" /><span class="ag-cam-cap">Retake</span>`
@@ -7243,25 +7243,77 @@ function captureAgSelfie() {
   const o = state.overlay; if (o && o.kind === 'newCustomer') { o.signDraft = o.signDraft || {}; o.signDraft.selfie = cv.toDataURL('image/jpeg', 0.6); }
   stopAgCam(); renderOverlay();
 }
-// Wire the signature canvas for finger/stylus/mouse drawing (white bg → JPEG export).
+/* Pop the signature pad out into its OWN movable OS window (window.open) so it can be
+   dragged to the customer-facing touchscreen on another monitor — "escape the browser".
+   Strokes stream back here via postMessage and land on the main pad + o.signDraft.sigData,
+   so the operator's normal Save/Sign commits them — no separate Done step in the popout.
+   Any pointer/digitizer device draws on it (finger, stylus, or a USB/Bluetooth pen pad the
+   OS exposes as a pointer); pen pressure varies the line width. */
+let _sigWin = null, _sigMsgWired = false;
+function onSigMessage(e) {
+  if (e.origin !== location.origin) return;   // same-origin only
+  const d = e.data || {}; if (d.type !== 'rw-signature' || typeof d.dataURL !== 'string') return;
+  const o = state.overlay; if (o) { o.signDraft = o.signDraft || {}; o.signDraft.sigData = d.dataURL; }   // persist across re-renders
+  const cv = document.querySelector('.overlay .nc-sigpad'); if (!cv) return;
+  const ctx = cv.getContext('2d'), img = new Image();
+  img.onload = () => { ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height); ctx.drawImage(img, 0, 0, cv.width, cv.height); cv.dataset.drawn = '1'; };
+  img.src = d.dataURL;
+}
+function openSignatureWindow(title) {
+  if (!_sigMsgWired) { window.addEventListener('message', onSigMessage); _sigMsgWired = true; }
+  try { if (_sigWin && !_sigWin.closed) { _sigWin.focus(); return; } } catch (e) {}
+  const w = window.open('', 'rwSignPad', 'width=760,height=560');
+  if (!w) { toast('Allow pop-ups to open the signature window.'); return; }
+  _sigWin = w;
+  const base = location.href.replace(/[^/]*(\?.*)?$/, '');   // absolute base so the popout can load style.css (tokens)
+  const cssTok = ((((document.querySelector('link[href*="style.css"]') || {}).href) || '').match(/\?v=[0-9a-z]+/) || [''])[0];
+  const t = esc(title || 'Rental Account Agreement');
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Signature — ${t}</title><link rel="stylesheet" href="${base}style.css${cssTok}">
+    <style>html,body{height:100%;margin:0;background:var(--bg,#0b0c0f);color:var(--txt,#e9edf4);font-family:'Geist',system-ui,sans-serif;overflow:hidden}
+      .sw{display:flex;flex-direction:column;height:100%;box-sizing:border-box;padding:18px;gap:12px}
+      .sw-cap{font-family:'Saira Condensed',system-ui,sans-serif;text-transform:uppercase;letter-spacing:1.6px;font-size:13px;color:var(--txt-2,#aeb6c2)}
+      .sw-cap b{color:var(--txt,#e9edf4);font-weight:700}
+      .sw-pad{flex:1;width:100%;border:1.5px dashed var(--line,#2a2f37);border-radius:14px;background:#fbfcfd;touch-action:none;cursor:crosshair}
+      .sw-foot{display:flex;justify-content:flex-end}
+      .sw-clear{appearance:none;font-family:'Saira Condensed',system-ui,sans-serif;text-transform:uppercase;letter-spacing:1.3px;font-size:12px;font-weight:700;padding:10px 18px;border-radius:999px;border:1px solid var(--line,#2a2f37);background:var(--panel,#161a20);color:var(--txt-2,#aeb6c2);cursor:pointer}</style></head>
+    <body><div class="sw"><div class="sw-cap">Sign here — <b>${t}</b></div><canvas class="sw-pad" id="p"></canvas><div class="sw-foot"><button class="sw-clear" id="c">Clear</button></div></div>
+    <script>(function(){var cv=document.getElementById('p'),ctx=cv.getContext('2d'),drawing=false,last=null;
+      function fit(){var r=cv.getBoundingClientRect();cv.width=Math.round(r.width);cv.height=Math.round(r.height);ctx.fillStyle='#fff';ctx.fillRect(0,0,cv.width,cv.height);ctx.strokeStyle='#15171c';ctx.lineCap='round';ctx.lineJoin='round';}
+      function pos(e){var r=cv.getBoundingClientRect();return{x:(e.clientX-r.left)*(cv.width/r.width),y:(e.clientY-r.top)*(cv.height/r.height)};}
+      function send(){try{if(window.opener)window.opener.postMessage({type:'rw-signature',dataURL:cv.toDataURL('image/jpeg',0.8)},location.origin);}catch(_){}}
+      cv.addEventListener('pointerdown',function(e){e.preventDefault();drawing=true;last=pos(e);try{cv.setPointerCapture(e.pointerId);}catch(_){}});
+      cv.addEventListener('pointermove',function(e){if(!drawing)return;e.preventDefault();var p=pos(e);ctx.lineWidth=(e.pointerType==='pen'&&e.pressure>0)?(1.4+e.pressure*2.6):2.4;ctx.beginPath();ctx.moveTo(last.x,last.y);ctx.lineTo(p.x,p.y);ctx.stroke();last=p;});
+      function up(){if(drawing){drawing=false;send();}}
+      cv.addEventListener('pointerup',up);cv.addEventListener('pointerleave',up);
+      document.getElementById('c').addEventListener('click',function(){fit();send();});
+      window.addEventListener('resize',function(){var d=cv.toDataURL();fit();var im=new Image();im.onload=function(){ctx.drawImage(im,0,0,cv.width,cv.height);};im.src=d;});
+      fit();})();<\/script></body></html>`);
+  w.document.close();
+}
+// Wire the signature canvas for finger/stylus/mouse/pen drawing (white bg → JPEG export).
 function setupSignaturePad() {
   // Wire EVERY pad in the overlay (the capture can ride the card signing tab and/or
   // the +Card panel) — match each backing store to its rendered size so strokes
   // aren't stretched (the pad is width:auto in the flex row); rects are laid out by now.
+  const o = state.overlay;
   document.querySelectorAll('.overlay .nc-sigpad').forEach((cv) => {
     const r = cv.getBoundingClientRect(); if (r.width && r.height) { cv.width = Math.round(r.width); cv.height = Math.round(r.height); }
     const ctx = cv.getContext('2d');
     ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);
     ctx.strokeStyle = '#15171c'; ctx.lineWidth = 2.4; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    // re-apply a signature already captured (2nd-screen popout, or before this re-render) so taking a selfie etc. can't wipe it
+    if (o && o.signDraft && o.signDraft.sigData) { const img = new Image(); img.onload = () => { ctx.drawImage(img, 0, 0, cv.width, cv.height); cv.dataset.drawn = '1'; }; img.src = o.signDraft.sigData; }
     let drawing = false, last = null;
     const pos = (e) => { const b = cv.getBoundingClientRect(); return { x: (e.clientX - b.left) * (cv.width / b.width), y: (e.clientY - b.top) * (cv.height / b.height) }; };
+    const stash = () => { if (drawing) { drawing = false; if (o) { o.signDraft = o.signDraft || {}; o.signDraft.sigData = cv.toDataURL('image/jpeg', 0.8); } } };
     cv.addEventListener('pointerdown', (e) => { e.preventDefault(); drawing = true; last = pos(e); cv.dataset.drawn = '1'; cv.setPointerCapture(e.pointerId); });
-    cv.addEventListener('pointermove', (e) => { if (!drawing) return; e.preventDefault(); const p = pos(e); ctx.beginPath(); ctx.moveTo(last.x, last.y); ctx.lineTo(p.x, p.y); ctx.stroke(); last = p; });
-    cv.addEventListener('pointerup', () => { drawing = false; });
-    cv.addEventListener('pointerleave', () => { drawing = false; });
+    cv.addEventListener('pointermove', (e) => { if (!drawing) return; e.preventDefault(); const p = pos(e); ctx.lineWidth = (e.pointerType === 'pen' && e.pressure > 0) ? (1.4 + e.pressure * 2.6) : 2.4; ctx.beginPath(); ctx.moveTo(last.x, last.y); ctx.lineTo(p.x, p.y); ctx.stroke(); last = p; });
+    cv.addEventListener('pointerup', stash);
+    cv.addEventListener('pointerleave', stash);
   });
 }
-const closeOverlay = () => { destroyCardElement(); stopAgCam(); state.datepick = null; state.overlay = null; renderOverlay(); };
+const closeOverlay = () => { destroyCardElement(); stopAgCam(); try { if (_sigWin && !_sigWin.closed) _sigWin.close(); } catch (e) {} _sigWin = null; state.datepick = null; state.overlay = null; renderOverlay(); };
 
 /* ── Back-office boards (§7.9–7.12): spreadsheet-style tables ─────────────── */
 function vendorTotals(vendorId) {
@@ -8424,7 +8476,8 @@ function onClick(e) {
   }
   if (closest('.js-ncsign-pdf')) { e.stopPropagation(); const b = closest('.js-ncsign-pdf'); return openSignedPdf(state.overlay.editId, b.dataset.card, b.dataset.sig); }
   if (closest('.js-nc-selfie-clear')) { e.stopPropagation(); ncSyncInputs(); state.overlay.draft.selfie = ''; renderOverlay(); return; }
-  if (closest('.js-nc-sig-clearpad')) { e.stopPropagation(); const cv = document.querySelector('.overlay .nc-sigpad'); if (cv) { const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height); cv.dataset.drawn = ''; } return; }
+  if (closest('.js-nc-sig-clearpad')) { e.stopPropagation(); const o = state.overlay; if (o && o.signDraft) o.signDraft.sigData = null; const cv = document.querySelector('.overlay .nc-sigpad'); if (cv) { const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height); cv.dataset.drawn = ''; } return; }
+  if (closest('.js-sign-popout')) { e.preventDefault(); e.stopPropagation(); openSignatureWindow(closest('.js-sign-popout').dataset.title); return; }
   if (closest('.js-ag-selfie')) {   // selfie tile: one-tap snap off the live feed; Retake clears it; no camera → native picker
     const o = state.overlay; if (!o) return;
     const tile = closest('.js-ag-selfie');

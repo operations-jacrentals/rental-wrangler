@@ -1641,6 +1641,8 @@ select.nc-in { cursor: pointer; }
 .ag-sigthumb { width: 100%; height: 96px; object-fit: contain; border: 1px solid var(--line); border-radius: 10px; background: #fbfcfd; }
 /* CAPTURE row: selfie tile + the BIG sign pad */
 .ag-capcap { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.5px; font-size: 10.5px; color: var(--txt-3); margin: 0 0 8px; }
+.ag-caphead { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 8px; }
+.ag-caphead .ag-capcap { margin: 0; }
 .ag-caprow { display: flex; gap: 11px; align-items: stretch; }
 .ag-selfiebtn { width: 120px; flex: 0 0 auto; border: 1.5px dashed var(--line); border-radius: 12px; background: var(--panel);
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--txt-3); cursor: pointer; overflow: hidden; }
