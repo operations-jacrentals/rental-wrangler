@@ -210,6 +210,14 @@ try {
     ok(T.IDX.unit.get('U003').notes === 'WR test note' && T.IDX.unit.get('U003').currentHours === hoursBefore, 'applied the safe note, did NOT write the money/ops field');
     T.DATA.customers.length = custBefore; u3.notes = noteBefore;   // restore
 
+    // #152 a big import reply can be TRUNCATED by the model's output limit (no closing ```);
+    // parseWranglerAction must salvage the complete rows so the preview still opens.
+    const wrTrunc = '```wrangler-action\n{"action":"data","title":"Import leads","ops":[{"op":"import","entity":"customers","rows":[\n{"firstName":"Aaa","lastName":"One","phone":"337-555-0101"},\n{"firstName":"Bbb","lastName":"Two","email":"b@x.com"},\n{"firstName":"Ccc","lastName":"Tr';   // cut off mid-row, no closing fence
+    const wrSal = T.parseWranglerAction(wrTrunc);
+    ok(wrSal && wrSal.action === 'data' && wrSal._truncated && wrSal.ops[0].rows.length === 2, 'parseWranglerAction salvages 2 complete rows from a truncated import + flags _truncated');
+    const wrFull = T.parseWranglerAction('```wrangler-action\n{"action":"data","title":"t","ops":[{"op":"import","entity":"customers","rows":[{"firstName":"Z"}]}]}\n```');
+    ok(wrFull && !wrFull._truncated && wrFull.ops[0].rows.length === 1, 'a normal closed import still parses cleanly (no _truncated flag)');
+
     // 13) MERGE INVOICES (#64) — consolidate a customer's UNPAID bills; money-safe by construction
     const mC = 'C0009';
     const mA = { invoiceId: 'TST-KEEP', customerId: mC, rentalIds: [], date: T.TODAY_ISO, dueDate: T.TODAY_ISO, po: '', amountPaid: 0, lineItems: [{ kind: 'custom', ref: null, lid: 'LMA1', label: 'A line', amount: 100 }] };
