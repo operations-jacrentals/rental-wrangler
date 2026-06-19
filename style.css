@@ -272,23 +272,18 @@ input { font-family: inherit; }
 /* the card's search/sort row, relocated here from the top of the list (empty in record view) */
 .mdock-searchslot:empty { display: none; }
 .mdock-searchslot .listbar { margin: 0; }
-/* the ONE card switcher (current card; tap → pick any card) + global actions */
+/* the card-toggle BAR: every card as an icon; the selected one expands to icon + label */
 .mdock-row { display: flex; align-items: center; gap: 8px; }
-.mdock-switch { display: inline-flex; align-items: center; gap: 7px; flex: 0 1 auto; min-width: 0; min-height: 44px; padding: 0 14px; border: none; cursor: pointer;
-  border-radius: 12px; background: var(--accent); color: var(--on-orange, #1a1205);
-  font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.2px; font-weight: 800; font-size: 15px; }
-.mdock-switch .ms-ico { display: inline-flex; } .mdock-switch .ms-ico svg { width: 18px; height: 18px; }
-.mdock-switch .ms-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mdock-switch .ms-chev { display: inline-flex; opacity: .8; } .mdock-switch .ms-chev svg { width: 15px; height: 15px; transform: rotate(180deg); }
-.mdock-sp { flex: 1 1 0; min-width: 4px; }
+.mcard-bar { display: flex; align-items: center; gap: 3px; flex: 1 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px; padding: 3px; box-shadow: var(--chip-shadow); }
+.mcard-bar::-webkit-scrollbar { display: none; }
+.mcard-tog { display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; min-height: 44px; min-width: 44px; justify-content: center;
+  padding: 0 9px; border: none; background: none; cursor: pointer; border-radius: 9px; color: var(--txt-2); transition: background .12s, color .12s; }
+.mcard-tog .mct-ico { display: inline-flex; } .mcard-tog .mct-ico svg { width: 19px; height: 19px; }
+.mcard-tog .mct-lbl { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1px; font-weight: 800; font-size: 13px; white-space: nowrap; }
+.mcard-tog.on { background: var(--accent); color: var(--on-orange, #1a1205); }   /* selected = ignition orange + dark ink */
+.mcard-tog:not(.on):active { background: rgba(255,255,255,.06); }
 .mdock-act { flex: 0 0 auto; position: relative; }
-/* the card-switcher menu (sheet) */
-.cardpick-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
-.cardpick-item { display: flex; align-items: center; gap: 9px; min-height: 50px; padding: 0 12px; cursor: pointer;
-  border-radius: 12px; background: var(--panel-2); border: 1px solid var(--line); color: var(--txt); font-size: 14px; font-weight: 600; }
-.cardpick-item .cpi-ico { display: inline-flex; color: var(--accent); } .cardpick-item .cpi-ico svg { width: 18px; height: 18px; }
-.cardpick-item .cpi-n { margin-left: auto; color: var(--txt-3); font-weight: 700; font-size: 12px; }
-.cardpick-item.on { border-color: var(--accent); color: var(--accent); } .cardpick-item.on .cpi-n { color: var(--accent); }
 /* ── §M2 Mobile drag — the chat drop-zone is the BOTTOM EDGE (full width) on phones,
    mirroring the L/R edges used to switch columns. The cancel-arc is hidden (release in
    empty space cancels). */
@@ -335,11 +330,11 @@ input { font-family: inherit; }
 /* ── §M4 — phone header: logo + ALL FIVE KPI rings share the TOP row (rings shrunk to
    fit), and the global search wraps to its own full-width row underneath. ── */
 .is-phone .header { flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 10px 10px 0; }
-.is-phone .logo { width: 48px; height: 48px; }
-.is-phone .kpis { order: 1; flex: 1 1 auto; min-width: 0; display: flex; justify-content: space-between; gap: 2px; }
-.is-phone .kpi-ring { min-width: 0; flex: 1 1 0; padding: 1px 0 0; }
-.is-phone .ring-wrap svg { width: 40px; height: 40px; }
-.is-phone .kpi-ring .ring-label { font-size: 8px; letter-spacing: .1px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.is-phone .logo { width: 58px; height: 58px; }
+.is-phone .kpis { order: 1; flex: 1 1 auto; min-width: 0; display: flex; justify-content: space-around; gap: 2px; }
+.is-phone .kpi-ring { min-width: 0; flex: 0 1 auto; padding: 1px 0 0; }
+.is-phone .ring-wrap svg { width: 52px; height: 52px; }
+.is-phone .kpi-ring .ring-label { font-size: 8.5px; letter-spacing: .1px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .is-phone .header-right { order: 2; flex: 1 1 100%; min-width: 0; }   /* global search on its own full-width row, underneath the rings */
 /* bigger Back/Forward jog on phones (the ‹ › card-history control) */
 .is-phone .card-jog { height: 44px; }                                           /* un-clip the 26px container so the bigger jog buttons actually show */

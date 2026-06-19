@@ -4838,17 +4838,19 @@ function goToCard(member) {
   const mc = s.cards[member]; if (mc) { mc.mode = 'list'; mc.recId = null; mc.recType = null; }
   render();
 }
-// §M1 phone footer — ONE card switcher (current card; tap = pick any card fast) + the
-// global actions. The card's search/sort row is moved DOWN into the .mdock-searchslot by
-// render(). Swipe the dock left/right to step through cards; the grid swipe is Back/Forward.
+// §M1 phone footer — ONE card-toggle bar: every card collapsed to its icon, the SELECTED
+// card expands to icon + stamped label. Tap an icon to jump to that card's list. The card's
+// search/sort row is moved DOWN into the .mdock-searchslot by render(). Swipe the dock
+// left/right to step through cards; the grid swipe is Back/Forward.
 function mobileDockEl() {
-  const member = currentMobileMember();
-  const n = chatUnreadCount();
-  const switcher = `<button class="mdock-switch js-cardpicker" data-tip="Switch card"><span class="ms-ico">${memberIcon(member)}</span><span class="ms-name">${esc(MEMBER_TITLE[member] || member)}</span><span class="ms-chev">${I.chev}</span></button>`;
-  const chat = `<button class="iconbtn mdock-act js-chat-toggle" data-tip="Team chat">${I.chat}${n ? `<span class="bb-badge">${n > 9 ? '9+' : n}</span>` : ''}</button>`;
+  const cur = currentMobileMember();
+  const togs = MOBILE_CARDS.map((m) => {
+    const on = m === cur;
+    return `<button class="mcard-tog${on ? ' on' : ''}" data-gocard="${m}" data-tip="${esc(MEMBER_TITLE[m] || m)}"><span class="mct-ico">${memberIcon(m)}</span>${on ? `<span class="mct-lbl">${esc(MEMBER_TITLE[m] || m)}</span>` : ''}</button>`;
+  }).join('');
   const tools = `<button class="iconbtn mdock-act js-mtools" data-tip="Tools — receipt, share, Mr. Wrangler, admin">${I.sliders || I.menu || '☰'}</button>`;
   const d = el('div', 'mobile-dock');
-  d.innerHTML = `<div class="mdock-searchslot"></div><div class="mdock-row">${switcher}<span class="mdock-sp"></span>${chat}${tools}</div>`;
+  d.innerHTML = `<div class="mdock-searchslot"></div><div class="mdock-row"><div class="mcard-bar">${togs}</div>${tools}</div>`;
   return d;
 }
 /* ════════════════════════════════════════════════════════════════════════
@@ -6264,15 +6266,6 @@ function renderOverlay() {
         <button class="bv-mini${o.customize ? ' on' : ''} js-bv-customize" data-tip="Choose which values show in the card's List View">${I.sliders} List rows</button>
         <span class="spacer"></span><button class="x js-close">${I.x}</button></div>
       <div class="popup-body board-body bv-body">${o.customize ? bvCustomizePanel(o.card) : ''}${boardViewTable(o, session)}</div>`;
-    overlay.appendChild(pop);
-  } else if (o.kind === 'cardpicker') {
-    // §M1 — the single card switcher's menu: jump to any card fast (flat, no columns).
-    const cur = currentMobileMember(); const s = activeSession();
-    const items = MOBILE_CARDS.map((m) => `<button class="cardpick-item${m === cur ? ' on' : ''}" data-cardpick="${m}"><span class="cpi-ico">${memberIcon(m)}</span><span class="cpi-name">${esc(MEMBER_TITLE[m] || m)}</span><span class="cpi-n">${memberCount(m, s)}</span></button>`).join('');
-    const pop = el('div', 'popup'); pop.style.width = '360px';
-    pop.innerHTML = `
-      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${I.grid}</span><h3>Go to card</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
-      <div class="popup-body"><div class="cardpick-grid">${items}</div></div>`;
     overlay.appendChild(pop);
   } else if (o.kind === 'tools') {
     // §M1 — the global tool tray (the desktop bottom bar) as a phone sheet
@@ -8196,8 +8189,7 @@ function onClick(e) {
   // §17 internal team dock
   if (closest('[data-mcol]')) { e.stopPropagation(); state.mobileCol = +closest('[data-mcol]').dataset.mcol; return render(); }   // §M1 dot nav
   if (closest('.js-mtools')) { e.stopPropagation(); return openOverlay({ kind: 'tools' }); }   // §M1 phone footer → the global tool tray as a sheet
-  if (closest('.js-cardpicker')) { e.stopPropagation(); return openOverlay({ kind: 'cardpicker' }); }   // §M1 the single card switcher → pick any card
-  if (closest('[data-cardpick]')) { e.stopPropagation(); const m = closest('[data-cardpick]').dataset.cardpick; goToCard(m); closeOverlay(); return; }
+  if (closest('[data-gocard]')) { e.stopPropagation(); return goToCard(closest('[data-gocard]').dataset.gocard); }   // §M1 footer card-toggle bar → jump to that card
   if (closest('.js-ext-chat')) { e.stopPropagation(); return toast('External customer & vendor chats arrive with the messaging backend.'); }
   if (closest('.js-chat-toggle')) { e.stopPropagation(); state.chat.open = !state.chat.open; return render(); }
   if (closest('.js-chat-close')) { e.stopPropagation(); state.chat.open = false; return render(); }
