@@ -205,9 +205,15 @@ try {
     ok(wrUpd && wrUpd.fields.notes === 'WR test note' && !('currentHours' in wrUpd.fields), 'update keeps allowlisted notes, DROPS currentHours');
     ok(!wrPlan.ops.some((o) => o.entity === 'invoices'), 'invoices edit is REFUSED entirely (never touch money)');
     const custBefore = T.DATA.customers.length; const u3 = T.IDX.unit.get('U003'); const noteBefore = u3.notes, hoursBefore = u3.currentHours;
+    window.JT.snapshotSaved();   // #164 baseline the diff-sync against the CURRENT data
     T.applyWranglerData(wrPlan);
     ok(T.DATA.customers.length === custBefore + 2, 'applyWranglerData added exactly the 2 imported customers');
     ok(T.IDX.unit.get('U003').notes === 'WR test note' && T.IDX.unit.get('U003').currentHours === hoursBefore, 'applied the safe note, did NOT write the money/ops field');
+    // #164 — the bulk import must reach the diff-sync (it was being lost when the page
+    // closed before the 1200ms debounce fired). computeChanges sees the new + updated.
+    const wrDiff = window.JT.computeChanges();
+    ok(wrDiff.upserts.customers && wrDiff.upserts.customers.length >= 2, 'imported customers are QUEUED for the diff-sync (persist, not just in-memory)');
+    ok(wrDiff.upserts.units && wrDiff.upserts.units.some((u) => u.id === 'U003'), 'the applied unit note is queued for persistence too');
     T.DATA.customers.length = custBefore; u3.notes = noteBefore;   // restore
 
     // #152 a big import reply can be TRUNCATED by the model's output limit (no closing ```);
