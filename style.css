@@ -334,8 +334,9 @@ input { font-family: inherit; }
 .is-phone .ring-wrap svg { width: 50px; height: 50px; }
 .is-phone .kpi-ring .ring-label { font-size: 9px; letter-spacing: .2px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* bigger Back/Forward jog on phones (the ‹ › card-history control) */
+.is-phone .card-jog { height: 44px; }                                           /* un-clip the 26px container so the bigger jog buttons actually show */
 .is-phone .card-jog .jog-btn { min-width: 46px; min-height: 44px; }
-.is-phone .card-jog .jog-btn svg { width: 19px; height: 19px; }
+.is-phone .card-jog .jog-btn svg { width: 20px; height: 20px; }
 /* single active column — no 3-wide scroll track (the grid swipe is Back/Forward, §M3) */
 .is-phone .grid { display: block; overflow: hidden; padding: 12px 8px 4px; touch-action: pan-y; }   /* vertical scroll native; JS owns the horizontal swipe (Back/Forward) */
 .is-phone .col { flex: 1 1 auto; padding: 0; height: 100%; }
@@ -343,6 +344,26 @@ input { font-family: inherit; }
 .tools-tray { display: flex; flex-wrap: wrap; gap: 8px; }
 .tools-tray .iconbtn { flex: 0 0 auto; min-height: 44px; }
 .tools-tray .bb-sep { display: none; }
+/* ── §M5 — phone fixes for the record cards (Jac IMG_1963) ───────────────────── */
+/* Header: drop the big operator name on phones (no room) so the open-record tabs +
+   active tab stop overflowing the right edge. */
+.is-phone .hello-name { display: none; }
+.is-phone .header-right { flex: 1 1 auto; min-width: 0; }
+.is-phone .hr-top { min-width: 0; }
+/* Rental window header: the Not-Ready blocker + status gate were wrapping on top of
+   each other (and the dates). Make the bar taller, pin the dates to the TOP corners,
+   and drop the status row to the BOTTOM — full width, centered, no overlap. */
+.is-phone .rentalsec .timeline { height: 96px; }
+.is-phone .tl-over .d1, .is-phone .tl-over .d2 { top: 11px; transform: none; }
+.is-phone .tl-over .midwrap { inset: auto 8px 11px 8px; padding: 0; gap: 6px; justify-content: center; }
+/* Footer actions (Complete Rental / Field Call) wrap instead of overflowing. */
+.is-phone .rentalsec-foot { flex-wrap: wrap; }
+/* The floating Mr. Wrangler conversation rail covered the card body on phones — hide it
+   (the inbox FAB + its badge still surface anything that needs an answer). */
+.is-phone .wr-rail { display: none; }
+/* Give the scroll content clearance below the floating bottom-right FAB cluster so the
+   History / notes don't sit under the notification + inbox buttons. */
+.is-phone .card-body { padding-bottom: 72px; }
 /* Card tabs = a SEGMENTED NAV BAR (one container, flat segments) — now sit INSIDE
    the card at its top, centered, so the card's height/glow includes the toggles. */
 .col-tabs { display: inline-flex; gap: 3px; flex: 0 0 auto; align-self: center; max-width: calc(100% - 16px); overflow: hidden;
