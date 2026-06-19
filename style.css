@@ -267,13 +267,16 @@ input { font-family: inherit; }
    bar is hidden; each column docks its own strip (Yard→chat · Rentals→tools ·
    Customers→external chats). Swipe (native scroll-snap) moves between columns. */
 .is-phone .bottombar { display: none; }
-.mobile-dock { flex: 0 0 auto; display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--line);
-  background: var(--panel); padding: 6px 8px max(6px, env(safe-area-inset-bottom)); touch-action: pan-y; }   /* pan-y lets our pointer swipe own the horizontal */
-/* the card's search/sort row, relocated here from the top of the list (empty in record view) */
+.mobile-dock { flex: 0 0 auto; display: flex; flex-direction: column; gap: 0; border-top: 1px solid var(--line);
+  background: var(--panel); padding: 0 0 max(6px, env(safe-area-inset-bottom)); touch-action: pan-y; }   /* pan-y lets our pointer swipe own the horizontal */
+/* the card's search/sort row, relocated here — a FULL-WIDTH band (edge to edge) */
 .mdock-searchslot:empty { display: none; }
-.mdock-searchslot .listbar { margin: 0; }
+.is-phone .mdock-searchslot .listbar { position: static; margin: 0; padding: 8px; gap: 8px;
+  background: var(--bg-2); border-bottom: 1px solid var(--line); box-shadow: 0 5px 11px -7px rgba(0,0,0,.45); }
+.is-phone .mdock-searchslot .mini-searchwrap { min-height: 44px; }   /* match the graph/sort buttons so the row is one height */
+.is-phone .mdock-searchslot .mini-search { height: 44px; }
 /* the card-toggle BAR: every card as an icon; the selected one expands to icon + label */
-.mdock-row { display: flex; align-items: center; gap: 8px; }
+.mdock-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; }
 .mcard-bar { display: flex; align-items: center; gap: 3px; flex: 1 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none;
   background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px; padding: 3px; box-shadow: var(--chip-shadow); }
 .mcard-bar::-webkit-scrollbar { display: none; }
@@ -335,7 +338,11 @@ input { font-family: inherit; }
 .is-phone .kpi-ring { min-width: 0; flex: 0 1 auto; padding: 1px 0 0; }
 .is-phone .ring-wrap svg { width: 52px; height: 52px; }
 .is-phone .kpi-ring .ring-label { font-size: 8.5px; letter-spacing: .1px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.is-phone .header { position: relative; }
 .is-phone .header-right { order: 2; flex: 1 1 100%; min-width: 0; }   /* global search on its own full-width row, underneath the rings */
+.is-phone .kpis { padding-right: 48px; }   /* reserve the top-right corner for the Tools button */
+.tools-top { display: none; }   /* the header Tools menu is phone-only */
+.is-phone .tools-top { display: inline-flex; position: absolute; top: 10px; right: 10px; }
 /* bigger Back/Forward jog on phones (the ‹ › card-history control) */
 .is-phone .card-jog { height: 44px; }                                           /* un-clip the 26px container so the bigger jog buttons actually show */
 .is-phone .card-jog .jog-btn { min-width: 46px; min-height: 44px; }
