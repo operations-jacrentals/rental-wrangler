@@ -282,6 +282,59 @@ function cardGateReason(cust) {
   if (accountAgreementsBlocked(cust)) { const n = unsignedCardCount(cust); return `${n} card${n > 1 ? 's' : ''} not signed for the current account type`; }
   return '';
 }
+/* Signing-form glyphs (existing inline marks, hoisted to module scope so the
+   per-card tab AND the account-level "held draft" share one capture form). */
+const AG_LOCK = '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
+const AG_CAM = '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>';
+/* The shared selfie + signature capture controls — emitted on a CARD's signing tab
+   (commit → js-ncsign-save) and on the ACCOUNT tab as a held draft when no card
+   exists yet (commit → js-ncsign-hold). `readKey` distinguishes whose Read toggle is
+   open (a card id, or 'account'); the live selfie rides o.signDraft until committed. */
+function agCaptureBlock(o, ag, readKey, acceptJs, acceptData, acceptLabel) {
+  const selfie = o.signDraft && o.signDraft.selfie;
+  return `
+    <div class="ag-readref"><span><b>${esc(ag.title)}</b></span><button type="button" class="ag-readbtn js-ncsign-read" data-card="${esc(readKey)}">${o.signRead === readKey ? 'Hide' : 'Read'} ↗</button></div>
+    ${o.signRead === readKey ? `<div class="nc-agreement" tabindex="0">${esc(ag.text)}</div>` : ''}
+    <div class="ag-capcap">Capture both to authorize</div>
+    <div class="ag-caprow">
+      <label class="ag-selfiebtn">${selfie ? `<img class="ag-selfie" src="${esc(selfie)}" alt="selfie" />` : `${AG_CAM}<span class="l">Selfie</span>`}<input type="file" accept="image/*" capture="user" class="js-ncsign-selfie" hidden /></label>
+      <canvas class="nc-sigpad ag-pad" width="500" height="220"></canvas>
+    </div>
+    <div class="ag-acceptrow">${actionPill('commit', acceptLabel, { js: acceptJs, data: acceptData })}${ghostPill('Clear', { js: 'js-nc-sig-clearpad' })}</div>`;
+}
+/* Account-tab signing, shown ONLY before the first card exists — the wrangler can
+   sign the agreement now (selfie + signature) and it's HELD on the account, then
+   saddles onto the first card they add. Once held, shows the on-hand packet + Redo. */
+function acctHeldSignBlock(o, custRec, d) {
+  const key = requiredAgreementKey(custRec || { accountType: d.accountType });
+  const ag = AGREEMENTS[key] || AGREEMENTS.rental;
+  const p = custRec && custRec.pendingSigning;
+  const inner = (p && p.signature)
+    ? `<div class="ag-signed"><span class="ag-lock">${AG_LOCK}</span><span class="t"><b>${esc(p.title || ag.title)}</b> · signed ${esc(p.signedAt || '—')}</span>${ghostPill('Redo', { js: 'js-ncsign-holdclear' })}</div>
+       <div class="ag-packet">
+         <div class="ag-pcell"><div class="ag-pcap">Selfie</div>${p.selfie ? `<img class="ag-selfie" src="${esc(p.selfie)}" alt="selfie on hand" />` : '<div class="ag-selfie empty">—</div>'}</div>
+         <div class="ag-pcell"><div class="ag-pcap">Signature</div>${p.signature ? `<img class="ag-sigthumb" src="${esc(p.signature)}" alt="signature on hand" />` : '<div class="ag-sigthumb"></div>'}</div>
+       </div>
+       <p class="muted" style="font-size:11px;margin:12px 2px 0">✓ Signed and on hand — it saddles onto the first card you add. Add a card to authorize On-Rent &amp; delivery.</p>`
+    : `<div class="ag-gate"><span class="lead">Sign now — no card needed yet.</span><span class="sub">It'll saddle onto the first card you add.</span></div>
+       ${agCaptureBlock(o, ag, 'account', 'js-ncsign-hold', {}, 'Sign & Hold')}`;
+  return `<div class="ag-capcap" style="margin:16px 2px 8px">Signed agreement</div>${inner}`;
+}
+/* Move an account-level HELD signing onto a freshly-added card — the draft's FROZEN
+   key/version/date is preserved verbatim (it's the agreement they actually accepted,
+   not whatever the account type is now), then the held draft is cleared. */
+function attachHeldSigning(c, k) {
+  const p = c && c.pendingSigning; if (!p || !p.signature || !k) return;
+  if (!Array.isArray(k.agreements)) k.agreements = [];
+  const sig = { id: 'SIG-' + (state.seq++), key: p.key || 'rental', version: p.version || '', title: p.title || '',
+    accountType: p.accountType || '', signedAt: p.signedAt || TODAY_ISO, signerName: p.signerName || c.name || fullName(c),
+    signature: p.signature, selfie: p.selfie || '', driveSignatureUrl: '', driveSelfieUrl: '', driveFolderId: '' };
+  k.agreements.push(sig);
+  c.pendingSigning = null;
+  reindex('customers', c);
+  logAction(c, `Held ${p.title || 'agreement'} attached to ${brandName(k.brand)} ••${k.last4}`);
+  archiveAgreementMedia(c, k, sig);
+}
 /* Append an immutable signing record to a card — the current account type's
    agreement is FROZEN onto the card by its small VERSION id (text resolved from the
    registry, never stored inline) with the signature + selfie. Re-signing (new card /
@@ -6360,8 +6413,6 @@ function renderOverlay() {
     const indOpts = NC_INDUSTRIES.map((i) => `<option value="${esc(i)}"></option>`).join('');
     const acctPills = NC_ACCOUNT_TYPES.map((t) => `<button type="button" class="nc-pill js-nc-acct${t === d.accountType ? ' on' : ''}" data-val="${esc(t)}">${esc(getStatus('customerAccountType', t).label)}</button>`).join('');
     const nameVal = (d.name != null && d.name !== '') ? d.name : `${d.firstName || ''} ${d.lastName || ''}`.trim();
-    const AG_LOCK = '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
-    const AG_CAM = '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>';
     // The card rail IS the header (no title). Account tab + a tab per card (signed dot) + a +Card add.
     const railTabs = `<div class="ag-tabs" role="tablist">
       <button type="button" class="ag-tab js-nc-tab${tab === 'account' ? ' on' : ''}" data-tab="account">Account</button>
@@ -6389,7 +6440,8 @@ function renderOverlay() {
           </div>
           <div class="nc-field nc-wide"><span>Account type</span><div class="nc-pills">${acctPills}</div></div>
         </div>
-        <datalist id="nc-industries">${indOpts}</datalist>`;
+        <datalist id="nc-industries">${indOpts}</datalist>
+        ${cards.length ? '' : acctHeldSignBlock(o, custRec, d)}`;
     } else {
       const k = cards.find((x) => x.id === tab);
       const meta = `${k.isDefault ? 'Default · ' : ''}${k.expMonth ? 'exp ' + k.expMonth + '/' + String(k.expYear).slice(-2) : 'no exp'}`;
@@ -6406,18 +6458,10 @@ function renderOverlay() {
           <p class="muted" style="font-size:11px;margin:12px 2px 0">🔒 Locked — the exact agreement accepted on this card. Re-signing happens only on a new card or an account-type change.</p>`;
       } else {
         const key = requiredAgreementKey(custRec); const ag = AGREEMENTS[key];
-        const selfie = o.signDraft && o.signDraft.selfie;
         body = `
           <div class="ag-meta">${esc(meta)}<span class="ag-metasep"></span>${badge(st === 'stale' ? 'Re-sign' : 'Unsigned', 'red')}</div>
           <div class="ag-gate"><span class="lead">${st === 'stale' ? 'Account type changed — re-sign required.' : 'Sign to allow On-Rent &amp; delivery.'}</span><span class="sub">Card can still be charged.</span></div>
-          <div class="ag-readref"><span><b>${esc(ag.title)}</b></span><button type="button" class="ag-readbtn js-ncsign-read" data-card="${esc(k.id)}">${o.signRead === k.id ? 'Hide' : 'Read'} ↗</button></div>
-          ${o.signRead === k.id ? `<div class="nc-agreement" tabindex="0">${esc(ag.text)}</div>` : ''}
-          <div class="ag-capcap">Capture both to authorize</div>
-          <div class="ag-caprow">
-            <label class="ag-selfiebtn">${selfie ? `<img class="ag-selfie" src="${esc(selfie)}" alt="selfie" />` : `${AG_CAM}<span class="l">Selfie</span>`}<input type="file" accept="image/*" capture="user" class="js-ncsign-selfie" hidden /></label>
-            <canvas class="nc-sigpad ag-pad" width="500" height="220"></canvas>
-          </div>
-          <div class="ag-acceptrow">${actionPill('commit', 'Accept & Sign', { js: 'js-ncsign-save', data: { card: k.id } })}${ghostPill('Clear', { js: 'js-nc-sig-clearpad' })}</div>`;
+          ${agCaptureBlock(o, ag, k.id, 'js-ncsign-save', { card: k.id }, 'Accept & Sign')}`;
       }
     }
     const pop = el('div', 'popup nc-popup');
@@ -8315,6 +8359,28 @@ function onClick(e) {
     });
     return;
   }
+  if (closest('.js-ncsign-hold')) {   // Account tab, no card yet: sign now → HELD on the account, attaches to the first card added
+    e.stopPropagation(); const o = state.overlay; ncSyncInputs();
+    const cv = document.querySelector('.overlay .nc-sigpad');
+    if (!cv || !cv.dataset.drawn) return flashOr('.overlay .nc-sigpad', 'Sign in the box first.');
+    if (!(o.signDraft && o.signDraft.selfie)) return toast('Take a selfie to hold this agreement.');
+    if (!o.editId && !quickSaveCustomer(o)) return flashOr('.overlay [data-f="name"]', 'Enter a name & phone first.');
+    const c = IDX.customer.get(o.editId); if (!c) return;
+    const key = requiredAgreementKey(c); const ag = AGREEMENTS[key] || AGREEMENTS.rental;
+    downscaleImage(cv.toDataURL('image/jpeg', 0.8), 380, 0.6, (sig) => {
+      c.pendingSigning = { key, version: AGREEMENT_CURRENT[key] || '', title: ag.title, accountType: c.accountType || '',
+        signedAt: TODAY_ISO, signerName: c.name || fullName(c), signature: sig || cv.toDataURL('image/jpeg', 0.6), selfie: o.signDraft.selfie };
+      reindex('customers', c); logAction(c, `${ag.title} signed & held (no card yet)`);
+      o.signDraft = null; o.signRead = null; renderOverlay(); render();
+      toast('Agreement on hand — add a card to authorize ✓');
+    });
+    return;
+  }
+  if (closest('.js-ncsign-holdclear')) {   // discard the held draft to re-sign
+    e.stopPropagation(); const o = state.overlay; const c = IDX.customer.get(o.editId || '');
+    if (c) { c.pendingSigning = null; reindex('customers', c); }
+    o.signDraft = null; o.signRead = null; renderOverlay(); render(); return;
+  }
   if (closest('.js-ncsign-pdf')) { e.stopPropagation(); const b = closest('.js-ncsign-pdf'); return openSignedPdf(state.overlay.editId, b.dataset.card, b.dataset.sig); }
   if (closest('.js-nc-selfie-clear')) { e.stopPropagation(); ncSyncInputs(); state.overlay.draft.selfie = ''; renderOverlay(); return; }
   if (closest('.js-nc-sig-clearpad')) { e.stopPropagation(); const cv = document.querySelector('.overlay .nc-sigpad'); if (cv) { const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height); cv.dataset.drawn = ''; } return; }
@@ -9961,16 +10027,19 @@ async function saveCardFlow(btn) {
     c.stripeId = r.stripeId || c.stripeId;
     if (!Array.isArray(c.cards)) c.cards = [];
     const firstCard = customerCards(c).length === 0;
+    const held = !!(c.pendingSigning && c.pendingSigning.signature);   // an account-level agreement is on hand → saddle it onto this card
     const newCardId = 'CARD-' + (state.seq++);
     // §7.1b a card lands UNSIGNED — it can be charged, but the account can't go
     // On Rent / log deliveries until this card is signed for the account type.
-    c.cards.push({ id: newCardId, stripePmId: setupIntent.payment_method, brand: s.card.brand, last4: s.card.last4,
+    const newCard = { id: newCardId, stripePmId: setupIntent.payment_method, brand: s.card.brand, last4: s.card.last4,
       expMonth: s.card.expMonth, expYear: s.card.expYear, nickname: o.nickname || '', notes: '', isDefault: firstCard, status: 'active',
-      agreements: [] });
+      agreements: [] };
+    c.cards.push(newCard);
     c.cardBrand = s.card.brand; c.cardLast4 = s.card.last4; c.cardExpMonth = s.card.expMonth; c.cardExpYear = s.card.expYear;   // legacy mirror (default card)
-    reindex('customers', c); logAction(c, `Card added — ${brandName(s.card.brand)} ••••${s.card.last4} (unsigned)`);
+    if (held) attachHeldSigning(c, newCard);   // held agreement saddles onto the new card → lands authorized
+    reindex('customers', c); logAction(c, `Card added — ${brandName(s.card.brand)} ••••${s.card.last4}${held ? '' : ' (unsigned)'}`);
     destroyCardElement();
-    toast('Card saved — sign to authorize ✓');
+    toast(held ? 'Card saved — held agreement attached, authorized ✓' : 'Card saved — sign to authorize ✓');
     // Land on the new card's SIGNING tab no matter how Add-card was opened.
     if (sub) { o.cardSub = false; o.tab = newCardId; renderOverlay(); }   // §14 panel beside the form → switch its tab
     else if (o.returnTo === 'payment' && o.invoiceId) openPayInvoice(o.invoiceId);
