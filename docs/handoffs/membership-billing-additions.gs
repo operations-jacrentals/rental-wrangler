@@ -141,7 +141,7 @@ function stripeWebhook_(e) {
 
 // Daily time-trigger: reconcile every active/past_due subscription against Stripe (covers any
 // webhook that didn't deliver) and enforce OUR 7-day grace → lapse. Install via the Triggers UI.
-function membershipDailySweep_() {
+function membershipDailySweep() {
   var s = ss().getSheetByName('customers'); if (!s) return;
   var last = s.getLastRow(); if (last < 2) return;
   var vals = s.getRange(2, 2, last - 1, 1).getValues(), ids = [];
