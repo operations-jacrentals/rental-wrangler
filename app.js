@@ -6381,7 +6381,12 @@ function renderOverlay() {
           <label class="nc-field"><span>Phone *</span><input class="nc-in" data-f="phone" value="${esc(d.phone)}" autocomplete="off" /></label>
           <label class="nc-field"><span>Email</span><input class="nc-in" data-f="email" type="email" value="${esc(d.email)}" autocomplete="off" /></label>
           <label class="nc-field"><span>Industry</span><input class="nc-in" data-f="industry" list="nc-industries" value="${esc(d.industry)}" autocomplete="off" /></label>
-          <label class="nc-field"><span>Notes</span><input class="nc-in" data-f="accountNotes" value="${esc(d.accountNotes)}" autocomplete="off" /></label>
+          <div class="nc-field"><span>Notes · PO</span>
+            <div class="nc-notes-po">
+              <input class="nc-in" data-f="accountNotes" value="${esc(d.accountNotes)}" autocomplete="off" placeholder="Notes" />
+              <button type="button" class="nc-po js-nc-po${d.requiresPO ? ' on' : ''}" aria-pressed="${d.requiresPO ? 'true' : 'false'}" data-tip="${d.requiresPO ? 'PO required before invoicing' : 'No PO required'}">PO ${d.requiresPO ? 'Yes' : 'No'}</button>
+            </div>
+          </div>
           <div class="nc-field nc-wide"><span>Account type</span><div class="nc-pills">${acctPills}</div></div>
         </div>
         <datalist id="nc-industries">${indOpts}</datalist>`;
@@ -6430,7 +6435,7 @@ function renderOverlay() {
             <div class="pay-cap">Card number</div>
             <div class="pay-card-field" id="sl-card-element"></div>
             <div class="pay-err" id="sl-card-error"></div>
-            <p class="muted" style="font-size:11px;margin:10px 0 0">Entered securely via Stripe — we store only the brand + last 4 digits. The signature + selfie on file authorize future charges.</p>`,
+            <p class="muted" style="font-size:11px;margin:10px 0 0">Entered securely via Stripe — we store only the brand + last 4 digits. Next you'll sign the agreement on this card to authorize On-Rent &amp; deliveries.</p>`,
           foot: `<button class="pill ghost js-cardsub-cancel" data-r="R18">Cancel</button><button class="pill c-commit js-card-save" data-r="R17">Save card</button>`,
         });
         overlay.appendChild(cp);
@@ -6531,7 +6536,7 @@ function renderOverlay() {
         <div class="pay-cap">Card number</div>
         <div class="pay-card-field" id="sl-card-element"></div>
         <div class="pay-err" id="sl-card-error"></div>
-        <p class="muted" style="font-size:11px;margin:10px 0 0">Entered securely via Stripe. We store only the brand + last 4 digits — never the full number. The customer's signature + selfie on file authorize future charges.</p>` });
+        <p class="muted" style="font-size:11px;margin:10px 0 0">Entered securely via Stripe. We store only the brand + last 4 digits — never the full number. Sign the agreement on this card to authorize On-Rent &amp; deliveries.</p>` });
     overlay.appendChild(pop);
   } else if (o.kind === 'addAch') {
     // §14b ACH — raw routing/account live ONLY in these inputs → straight to Stripe
@@ -8289,6 +8294,7 @@ function onClick(e) {
   if (closest('.js-haptics')) { e.stopPropagation(); const on = closest('.js-haptics').dataset.val === '1'; state.hapticsOff = !on; try { localStorage.setItem('jactec.hapticsOff', on ? '0' : '1'); } catch (err) {} if (on) haptic([12, 30, 12]); renderOverlay(); return; }   // §M-touch — toggle + a sample buzz when turning ON
   if (closest('.js-nc-save')) { e.stopPropagation(); return saveNewCustomer(); }
   if (closest('.js-nc-acct')) { const b = closest('.js-nc-acct'); e.stopPropagation(); ncSyncInputs(); state.overlay.draft.accountType = b.dataset.val; renderOverlay(); return; }
+  if (closest('.js-nc-po')) { e.stopPropagation(); ncSyncInputs(); const o = state.overlay; o.draft.requiresPO = !o.draft.requiresPO; if (o.editId) { const c = IDX.customer.get(o.editId); if (c) { c.requiresPO = o.draft.requiresPO; reindex('customers', c); } } renderOverlay(); return; }
   // §7.1b card-bound agreements: tab rail + per-card signing
   if (closest('.js-nc-tab')) { e.stopPropagation(); ncSyncInputs(); state.overlay.tab = closest('.js-nc-tab').dataset.tab; state.overlay.signRead = null; renderOverlay(); return; }
   if (closest('.js-ncsign-read')) { e.stopPropagation(); const id = closest('.js-ncsign-read').dataset.card; state.overlay.signRead = (state.overlay.signRead === id) ? null : id; renderOverlay(); return; }
@@ -9657,7 +9663,7 @@ function openCustomerForm(editId, prefill, linkTo) {
   openOverlay({ kind: 'newCustomer', error: '', editId: editId || null, linkTo: (!editId && linkTo) || null, draft: {
     firstName: f('firstName'), lastName: f('lastName'), company: f('company'), phone: f('phone'),
     email: f('email'), industry: f('industry'), accountType: f('accountType', 'Non-Business'),
-    accountNotes: f('accountNotes'), selfie: f('selfie'), signature: f('signature'),
+    requiresPO: !!(c && c.requiresPO), accountNotes: f('accountNotes'), selfie: f('selfie'), signature: f('signature'),
     agreementType: f('agreementType'), agreementSignedAt: f('agreementSignedAt'),
   } });
 }
@@ -9693,7 +9699,7 @@ function quickSaveCustomer(o) {
     customerId: id, firstName: d.firstName, lastName: d.lastName, name: `${d.firstName} ${d.lastName}`.trim(),
     company: d.company, phone: d.phone, email: d.email, address: '',
     industry: d.industry, accountType: d.accountType || 'Non-Business', payStatus: 'New Customer',
-    requiresPO: false, accountNotes: d.accountNotes, stripeId: '', selfie: d.selfie || '', signature: d.signature || '',
+    requiresPO: !!d.requiresPO, accountNotes: d.accountNotes, stripeId: '', selfie: d.selfie || '', signature: d.signature || '',
     agreementType: d.agreementType || '', agreementSignedAt: d.agreementSignedAt || '',
     interestedCategoryIds: [], activityLog: [], usedSalesStage: 'N/A', membershipStage: 'N/A',
     _digest: { activePct: 0, totalPaid: 0, visits: 0, years: 0, avgFrequencyDays: 0, firstInvoice: '', lastInvoice: '' },
@@ -9726,7 +9732,7 @@ function ncSyncDraftToCustomer(o) {
   const d = o.draft;
   Object.assign(c, { firstName: d.firstName, lastName: d.lastName, name: `${d.firstName} ${d.lastName}`.trim(),
     company: d.company, phone: d.phone, email: d.email, industry: d.industry, accountType: d.accountType || 'Non-Business',
-    accountNotes: d.accountNotes });   // §7.1b signature/selfie/agreement live on the CARD now — never wiped from the account form
+    requiresPO: !!d.requiresPO, accountNotes: d.accountNotes });   // §7.1b signature/selfie/agreement live on the CARD now — never wiped from the account form
   reindex('customers', c);
 }
 function saveNewCustomer() {
@@ -9740,7 +9746,7 @@ function saveNewCustomer() {
   const d = o.draft;
   if (o.editId) {                                   // ── editing / completing an existing customer ──
     const c = IDX.customer.get(o.editId); if (!c) { closeOverlay(); return; }
-    Object.assign(c, { firstName: d.firstName, lastName: d.lastName, company: d.company, phone: d.phone, email: d.email, industry: d.industry, accountType: d.accountType || 'Non-Business', accountNotes: d.accountNotes });   // §7.1b signature/agreement live on the card
+    Object.assign(c, { firstName: d.firstName, lastName: d.lastName, company: d.company, phone: d.phone, email: d.email, industry: d.industry, accountType: d.accountType || 'Non-Business', requiresPO: !!d.requiresPO, accountNotes: d.accountNotes });   // §7.1b signature/agreement live on the card
     if (!c.accountNotes) c.accountNotesColor = '';   // popup has no dot picker — don't leave a stale tag on a cleared note
     c.name = `${d.firstName} ${d.lastName}`.trim() || c.name;
     reindex('customers', c);
@@ -9756,7 +9762,7 @@ function saveNewCustomer() {
     customerId: id, firstName: d.firstName, lastName: d.lastName, name: `${d.firstName} ${d.lastName}`.trim(),
     company: d.company, phone: d.phone, email: d.email, address: '',
     industry: d.industry, accountType: d.accountType || 'Non-Business', payStatus: 'New Customer',
-    requiresPO: false, accountNotes: d.accountNotes, stripeId: '', selfie: d.selfie || '', signature: d.signature || '',
+    requiresPO: !!d.requiresPO, accountNotes: d.accountNotes, stripeId: '', selfie: d.selfie || '', signature: d.signature || '',
     agreementType: d.agreementType || '', agreementSignedAt: d.agreementSignedAt || '',
     interestedCategoryIds: [], activityLog: [], usedSalesStage: 'N/A', membershipStage: 'N/A',
     _digest: { activePct: 0, totalPaid: 0, visits: 0, years: 0, avgFrequencyDays: 0, firstInvoice: '', lastInvoice: '' },
@@ -9930,7 +9936,8 @@ async function saveCardFlow(btn) {
   const errBox = document.getElementById('sl-card-error');
   const setErr = (m) => { if (errBox) errBox.textContent = m || ''; };
   const reset = () => { btn.disabled = false; btn.textContent = 'Save card'; };
-  if (!c.signature || !c.selfie) { setErr('Capture a selfie + signature first (card authorization).'); return; }
+  // §7.1b a card saves UNSIGNED — the signature/selfie are captured per-card AFTER
+  // saving (the signing tab), so DON'T gate the save on a customer-level signature.
   const live = () => state.overlay === o;   // bail if the overlay changed/closed mid-await
   btn.disabled = true; btn.textContent = 'Saving…'; setErr('');
   try {
