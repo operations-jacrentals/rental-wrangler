@@ -4904,11 +4904,16 @@ function headerEl() {
       <span class="ring-label">${esc(label)}</span>
     </button>`;
   const rings = ROLES.map((role) => roleRing(role.id, role.label, kpiFor(role.id), role.color)).join('');
-  // Decluttered top: logo + rings, then the GLOBAL item tabs above the global search.
-  // The action toolbar (New / Dashboard / tools) lives in a bottom bar (bottomBarEl).
+  // §M1 — phone-only TOP TOOLBAR: the full tool set opened up across the top of the screen
+  // (logo + rings stay on their own row above it). Notifications + Requests live here too.
+  const nu = unseenNotifs();
+  const notifBtn = `<button class="iconbtn js-notifications" data-tip="Notifications">${I.bell}${nu ? `<span class="bb-badge">${nu > 9 ? '9+' : nu}</span>` : ''}</button>`;
+  const topBar = `<div class="top-toolbar">${notifBtn}${bottomBarInner()}</div>`;
+  // Decluttered top: logo + rings on one row, the tool bar across the next.
   h.innerHTML = `
     <button class="logo js-logo" aria-label="Jac Rentals"></button>
     <div class="kpis">${rings}</div>
+    ${topBar}
     <div class="header-right">
       <div class="hr-top">
         <div class="header-tabs tabstrip">${tabStrip(state.tabs)}</div>
@@ -4970,9 +4975,9 @@ function currentMobileMember() {
   const s = activeSession();
   return (s.cols && s.cols[colObj.id]) || colObj.default;
 }
-// §M1 — the flat card list the phone switcher offers (the hidden inspections/work-orders
-// live inside the Unit card, so they're not in the switcher). Order = a natural workflow.
-const MOBILE_CARDS = ['units', 'categories', 'serviceOrders', 'rentals', 'calendar', 'customers', 'invoices'];
+// §M1 — the flat card list the phone toggle bar offers. On desktop, inspections + work
+// orders live INSIDE the Unit card (hidden tabs); on phone they get their own toggles too.
+const MOBILE_CARDS = ['units', 'categories', 'inspections', 'serviceOrders', 'workOrders', 'rentals', 'calendar', 'customers', 'invoices'];
 // §M1 — jump straight to a card (flattens the 3-column model on phones): set the column +
 // member, flip the visible column, and show that card's LIST.
 function goToCard(member) {
@@ -4992,10 +4997,8 @@ function mobileDockEl() {
     const on = m === cur;
     return `<button class="mcard-tog${on ? ' on' : ''}" data-gocard="${m}" data-tip="${esc(MEMBER_TITLE[m] || m)}"><span class="mct-ico">${memberIcon(m)}</span>${on ? `<span class="mct-lbl">${esc(MEMBER_TITLE[m] || m)}</span>` : ''}</button>`;
   }).join('');
-  const pend = unseenNotifs() + wranglerRequests.length;   // surface hidden notifications/requests as a badge on the menu
-  const tools = `<button class="iconbtn mdock-act js-mtools" data-tip="Tools, notifications &amp; requests">${I.sliders || I.menu || '☰'}${pend ? `<span class="bb-badge">${pend > 9 ? '9+' : pend}</span>` : ''}</button>`;
   const d = el('div', 'mobile-dock');
-  d.innerHTML = `<div class="mdock-searchslot"></div><div class="mdock-row"><div class="mcard-bar">${togs}</div>${tools}</div>`;
+  d.innerHTML = `<div class="mdock-searchslot"></div><div class="mdock-row"><div class="mcard-bar">${togs}</div></div>`;
   return d;
 }
 /* ════════════════════════════════════════════════════════════════════════
@@ -7717,8 +7720,9 @@ function render() {
   const grid = el('div', 'grid');
   const shown = phone ? [COLUMNS[Math.max(0, Math.min(2, state.mobileCol))]] : COLUMNS;
   for (const col of shown) grid.appendChild(columnEl(col, session));
-  const bottomBar = bottomBarEl();
-  $('#app').replaceChildren(header, grid, bottomBar);
+  // §M1 — desktop keeps the bottom toolbar; on phone the tools open up across the top header instead.
+  if (phone) $('#app').replaceChildren(header, grid);
+  else $('#app').replaceChildren(header, grid, bottomBarEl());
   if (phone) {
     const dock = mobileDockEl();
     $('#app').appendChild(dock);
