@@ -2,6 +2,37 @@
 
 **Date:** 2026-06-19 · **Spec:** `docs/superpowers/specs/2026-06-19-membership-billing-design.md`
 
+## Go-live plan (decided with Jac, 2026-06-19)
+
+- **LIVE, not test mode.** Use the Stripe **live** secret key. The live-money path
+  (`membershipActivate` + webhook + lapse sweep) has never executed, so:
+- **First charge is a controlled self-test:** after deploy, **Jac activates his OWN
+  membership first** (a real $299 / $2,691 charge to his own card); confirm in Stripe
+  it billed correctly (amount, cycle, `paidUntil`) **before** staff enroll any real
+  member. Nothing charges automatically — Activate is manual per-customer, and the
+  daily lapse sweep only touches accounts already `past_due` (none yet), so deploying
+  charges nobody until a human taps Activate.
+- **Credentials reach the agent via environment variables** (Claude Code web env
+  settings — NOT pasted in chat), then a fresh session on branch
+  `claude/local-chat-session-d2qgoe`:
+  - `STRIPE_LIVE_KEY` = `sk_live_…` (live secret key — **rotate the moment we're done**)
+  - `APPS_SCRIPT_ID` = the Script ID of the *Rental Wrangler — Live Database* project
+  - `CLASPRC_JSON` = full contents of `~/.clasprc.json` after `npx clasp login`
+    (edit access to the Apps Script as Jac — run `clasp logout` to invalidate when done)
+- **Same deployment id** on redeploy (`-i AKfycbzHahzg…`) so the exec URL the
+  frontend already calls is unchanged.
+
+### Agent run-of-show once the env vars are live
+1. `STRIPE_LIVE_KEY` → create the two **live** Prices ($299/mo, $2,691/yr) + tax rate
+   + the webhook (→ `…/exec?wh=stripe`); capture price ids + signing secret.
+2. `CLASPRC_JSON` + `APPS_SCRIPT_ID` → `clasp pull` live `Code.gs`, splice in
+   `membershipActivate` + webhook handler + daily sweep, write the price/secret ids to
+   Script Properties, `clasp push`, `clasp deploy -i AKfycbzHahzg…`.
+3. Build **Phase 3** (active-rental re-rate on lapse) in the frontend.
+4. Jac self-activates → verify in Stripe → report proof → staff go live.
+
+---
+
 The **frontend** for membership billing is built and shipping (plan capture + the
 **Activate Membership** flow). It degrades gracefully: until the backend below is
 live, tapping *Activate Membership* shows *"the membership billing backend isn't
