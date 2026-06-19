@@ -450,6 +450,32 @@ const customerBanks = (c) => (c && Array.isArray(c.achAccounts)) ? c.achAccounts
 const defaultBank = (c) => { const ks = customerBanks(c); return ks.find((k) => k.isDefault) || ks[0] || null; };
 const verifiedBanks = (c) => customerBanks(c).filter((k) => k.verified);
 const hasChargeableBank = (c) => verifiedBanks(c).length > 0;
+/* ── Membership billing (§ membership-billing-design) ──
+   A membership can be ACTIVATED once the customer is a Member type, has picked a
+   plan, has a card on file, and has signed the Membership Agreement on a card.
+   Activation creates the Stripe Subscription (backend) and is the first charge. */
+const membershipSigned = (c) => requiredAgreementKey(c) === 'membership' && customerCards(c).some((k) => cardAuthorized(c, k));
+const membershipActive = (c) => !!(c && c.membershipStatus === 'active');
+function membershipGate(c) {
+  if (!/member/i.test((c && c.accountType) || '')) return { ok: false, why: '' };
+  if (membershipActive(c)) return { ok: false, why: '' };
+  if (!c.membershipPlan) return { ok: false, why: 'Pick a plan (Edit account) to enroll.' };
+  if (!hasCardOnFile(c)) return { ok: false, why: 'Add a card on file before activating.' };
+  if (!membershipSigned(c)) return { ok: false, why: 'Sign the Membership Agreement on the card.' };
+  return { ok: true, why: '' };
+}
+/** The status / Activate row shown in the customer-card Membership section. */
+function membershipStatusRow(c) {
+  if (!/member/i.test(c.accountType || '')) return '';
+  const st = c.membershipStatus;
+  if (st === 'active') return kvPills(badge('Active', 'green'));
+  if (st === 'past_due') return kvPills(`${badge('Past Due', 'red')}${c.graceUntil ? badge('grace ends ' + yr(c.graceUntil), 'yellow') : ''}`);
+  if (st === 'lapsed') return kvPills(badge('Lapsed · Retail rates', 'red'));
+  if (state.mbrBusy === c.customerId) return `<div class="pillrow" style="justify-content:center;margin-top:6px"><button class="pill c-money" disabled data-r="R17">Activating…</button></div>`;
+  const g = membershipGate(c);
+  if (g.ok) return `<div class="pillrow" style="justify-content:center;margin-top:6px">${actionPill('money', 'Activate Membership', { js: 'js-mbr-activate', data: { rec: c.customerId } })}</div>`;
+  return g.why ? `<span class="muted" style="font-size:11px">${esc(g.why)}</span>` : '';
+}
 const bankTypeLabel = (t) => (t === 'savings' ? 'Savings' : 'Checking');
 const bankOneLabel = (k) => k ? `${k.bankName || 'Bank'} ••${k.last4} · ${bankTypeLabel(k.accountType)}${k.verified ? '' : ' · unverified'}` : '';
 function setBankDefault(custId, bankId) {   // app-level default among banks (NOT Stripe's single default PM — that stays the card's, for auto-charge)
@@ -3858,6 +3884,7 @@ const DETAIL = {
       ${kvPills(funnelPill(c.customerId, 'membership', c.membershipStage || 'N/A'))}
       ${c.membershipPlan ? kvPills(badge(c.membershipPlan === 'annual' ? 'Annual · $2,691/yr' : 'Monthly · $299/mo', 'gray')) : ''}
       ${isMember && c.paidUntil ? kv(yr(c.paidUntil), { sfx: 'paid until' }) : ''}
+      ${membershipStatusRow(c)}
       ${c.paidCadence ? kvPills(`${badge('Paid ' + c.paidCadence, 'green')}${c.unlimitedTransport ? badge('Unlimited Transport', 'purple') : ''}`) : ''}
       ${c.paidFees ? kv(money(c.paidFees), { sfx: 'paid fees' }) : ''}
     </div></div>`;
@@ -8529,6 +8556,7 @@ function onClick(e) {
   if (closest('.js-pay-pick')) { e.stopPropagation(); if (state.overlay) { const b = closest('.js-pay-pick'); state.overlay.selectedCardId = b.dataset.card || b.dataset.bank; renderOverlay(); } return; }
   if (closest('.js-pay-method')) { e.stopPropagation(); if (state.overlay) { const nb = document.querySelector('.overlay .js-check-num'); if (nb) state.overlay.checkNum = nb.value.trim(); state.overlay.method = closest('.js-pay-method').dataset.method; state.overlay.error = ''; renderOverlay(); } return; }
   if (closest('.js-charge-invoice')) { e.stopPropagation(); return chargeInvoiceFlow(closest('.js-charge-invoice').dataset.rec); }
+  if (closest('.js-mbr-activate')) { e.stopPropagation(); return activateMembership(closest('.js-mbr-activate').dataset.rec); }
   if (closest('.js-record-payment')) { e.stopPropagation(); return recordManualPayment(closest('.js-record-payment').dataset.rec); }
   if (closest('.js-print-invoice')) { e.stopPropagation(); return printInvoice(closest('.js-print-invoice').dataset.rec); }
   if (closest('.js-pay-addcard')) { e.stopPropagation(); const b = closest('.js-pay-addcard'); return openAddCard(b.dataset.rec, { returnTo: 'payment', invoiceId: b.dataset.inv }); }
@@ -10261,6 +10289,34 @@ async function checkAchStatus(invoiceId, piId) {
 // Charge an invoice off_session; on 3DS fall back to an on-session confirm, then
 // re-verify server-side before marking paid. The payment overlay has no Card
 // Element, so re-rendering it for busy/error states is safe.
+/* Activate a membership: backend creates the Stripe Subscription on the saved card
+   (billing anchored to today, no proration) and makes the first charge. The two
+   backend calls ride the withTimeout watchdog (#172) so a stalled backend surfaces
+   a clear error instead of hanging. Degrades gracefully before the billing backend
+   is deployed (Track C) — a friendly toast, no half-written state. */
+async function activateMembership(customerId) {
+  const c = IDX.customer.get(customerId); if (!c) return;
+  const g = membershipGate(c); if (!g.ok) { flashOr('.js-mbr-activate', g.why || 'Not ready to activate.'); return; }
+  if (state.mbrBusy) return;
+  state.mbrBusy = customerId; render();
+  try {
+    const r = await withTimeout(backendCall('membershipActivate', { customerId, plan: c.membershipPlan }), 30000, 'Activating membership');
+    if (!r || !r.ok) { toast(r && r.error ? friendlyPayErr(r) : 'Couldn’t activate — the membership billing backend isn’t deployed yet.'); return; }
+    c.stripeSubId = r.subscriptionId || c.stripeSubId || '';
+    c.membershipStatus = 'active';
+    c.membershipStartedAt = TODAY_ISO;
+    if (r.paidUntil) c.paidUntil = r.paidUntil;
+    c.membershipStage = 'Paid';
+    delete c.graceUntil;
+    reindex('customers', c);
+    logAction(c, `Membership activated — ${c.membershipPlan === 'annual' ? 'Annual $2,691/yr' : 'Monthly $299/mo'}${r.last4 ? ' on ••' + r.last4 : ''}`);
+    toast('Membership activated ✓ — first charge made.');
+  } catch (e) {
+    toast(e && e.rwTimeout ? 'Activation timed out — check your connection and try again.' : 'Network error — try again.');
+  } finally {
+    state.mbrBusy = null; render();
+  }
+}
 async function chargeInvoiceFlow(invoiceId) {
   const o = state.overlay; if (!o || o.kind !== 'payment') return;
   const live = () => state.overlay === o;   // bail if the overlay changed/closed mid-await
