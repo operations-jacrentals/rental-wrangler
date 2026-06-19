@@ -184,6 +184,8 @@ input { font-family: inherit; }
   transition: background .12s, border-color .12s, color .12s;
 }
 .iconbtn:hover { background: var(--panel-2); border-color: var(--accent-line); }
+.iconbtn-bare { background: transparent; border-color: transparent; box-shadow: none; padding: 0 8px; color: var(--txt-3); }   /* float the icon — no chip (Jac: QR) */
+.iconbtn-bare:hover { background: transparent; border-color: transparent; color: var(--accent); }
 .iconbtn svg { width: 16px; height: 16px; }
 .iconbtn.primary { background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent); gap: 4px; }
 .iconbtn.off { color: var(--txt-3); }   /* previews toggled off */
@@ -1570,8 +1572,10 @@ select.nc-in { cursor: pointer; }
   background: var(--panel); color: var(--txt-3); cursor: pointer; white-space: nowrap; transition: color .12s, border-color .12s, background .12s; }
 .nc-po:hover { border-color: var(--red); color: var(--txt-2); }
 .nc-po.on { color: var(--red); border-color: var(--red); background: var(--red-bg); }
+.nc-po.req { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); animation: attnGlow 1.6s ease-in-out infinite; }   /* PO unanswered — required before save */
+.nc-po.req:hover { color: var(--accent); border-color: var(--accent); }
 .nc-po:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-@media (prefers-reduced-motion: reduce) { .nc-po { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .nc-po { transition: none; } .nc-po.req { animation: none; box-shadow: 0 0 0 2px var(--accent-soft); } }
 /* customer account packet — selfie / signature / card */
 .nc-popup { width: 500px; max-height: 88vh; }
 .nc-popup .popup-body { overflow-y: auto; }
@@ -1672,8 +1676,9 @@ select.nc-in { cursor: pointer; }
   text-transform: uppercase; letter-spacing: 1.2px; font-size: 9.5px; }
 .ag-cam-hint { display: none; }
 .ag-selfiebtn.live .ag-cam-hint { display: block; }
-.ag-pad { flex: 1; min-width: 0; height: 210px; width: auto; border: 1.5px dashed var(--line); border-radius: 12px;
-  background: radial-gradient(circle at 50% 40%, var(--panel-2), var(--panel)); touch-action: none; cursor: crosshair; }
+.ag-pad { flex: 1; min-width: 0; height: 160px; width: auto; border: 1.5px dashed var(--line); border-radius: 12px;
+  background: radial-gradient(circle at 50% 40%, var(--panel-2), var(--panel)); touch-action: none;
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='22'%3E%3Ccircle cx='11' cy='11' r='7' fill='none' stroke='%23ff7a1a' stroke-width='2'/%3E%3Ccircle cx='11' cy='11' r='1.6' fill='%23ff7a1a'/%3E%3C/svg%3E") 11 11, crosshair; }
 .ag-acceptrow { display: flex; gap: 9px; margin: 13px 0 0; }
 .ag-acceptrow .pill.c-commit { flex: 1; justify-content: center; }
 /* saddle-stitch seam between the card field and the held-agreement capture in the +Card panel */

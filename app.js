@@ -286,23 +286,23 @@ function cardGateReason(cust) {
    per-card tab AND the account-level "held draft" share one capture form). */
 const AG_LOCK = '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
 const AG_CAM = '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>';
-/* The shared selfie + signature capture controls — emitted on a CARD's signing tab
-   (commit → js-ncsign-save) and in the +Card panel as a held draft when no card
-   exists yet (commit → js-ncsign-hold). `readKey` distinguishes whose Read toggle is
-   open (a card id, or 'account'); the live selfie rides o.signDraft until committed. */
-function agCaptureBlock(o, ag, readKey, acceptJs, acceptData, acceptLabel) {
+/* The shared selfie + signature capture controls — emitted on a CARD's signing tab and
+   in the +Card panel (no card yet). There's no in-block commit button: the bottom-right
+   Save persists whatever's captured (commitCapture). `readKey` distinguishes whose Terms
+   toggle is open (a card id, or 'account'); the live selfie/signature ride o.signDraft. */
+function agCaptureBlock(o, ag, readKey) {
   const selfie = o.signDraft && o.signDraft.selfie;
   return `
-    <div class="ag-readref"><span><b>${esc(ag.title)}</b></span><button type="button" class="ag-readbtn js-ncsign-read" data-card="${esc(readKey)}">${o.signRead === readKey ? 'Hide' : 'Read'} ↗</button></div>
+    <div class="ag-readref"><span><b>${esc(ag.title)}</b></span>${linkName(o.signRead === readKey ? 'Hide' : 'Terms', { js: 'js-ncsign-read', data: { card: readKey } })}</div>
     ${o.signRead === readKey ? `<div class="nc-agreement" tabindex="0">${esc(ag.text)}</div>` : ''}
-    <div class="ag-caphead"><span class="ag-capcap">Capture both to authorize</span><button type="button" class="ag-readbtn js-sign-popout" data-title="${esc(ag.title)}" data-tip="Pop the signature pad into its own window — drag it to the customer's touchscreen to sign">2nd screen ↗</button></div>
+    <div class="ag-caphead"><span class="ag-capcap">Capture both to authorize</span>${linkName('Open Window', { js: 'js-sign-popout', data: { title: ag.title } })}</div>
     <div class="ag-caprow">
       <label class="ag-selfiebtn js-ag-selfie">${selfie
         ? `<img class="ag-selfie" src="${esc(selfie)}" alt="selfie" /><span class="ag-cam-cap">Retake</span>`
         : `<video class="ag-cam-feed" autoplay muted playsinline></video><span class="ag-cam-fallback">${AG_CAM}<span class="l">Selfie</span></span><span class="ag-cam-cap ag-cam-hint">Tap to capture</span>`}<input type="file" accept="image/*" capture="user" class="js-ncsign-selfie" hidden /></label>
       <canvas class="nc-sigpad ag-pad" width="500" height="220"></canvas>
     </div>
-    <div class="ag-acceptrow">${actionPill('commit', acceptLabel, { js: acceptJs, data: acceptData })}${ghostPill('Clear', { js: 'js-nc-sig-clearpad' })}</div>`;
+    <div class="ag-acceptrow">${ghostPill('Clear', { js: 'js-nc-sig-clearpad' })}</div>`;
 }
 /* Sign-before-a-card capture, rendered inside the +Card panel before the first card
    exists (NOT on the Account tab — account setup stays separate). The wrangler can
@@ -319,8 +319,8 @@ function heldSignBlock(o, custRec, d) {
          <div class="ag-pcell"><div class="ag-pcap">Signature</div>${p.signature ? `<img class="ag-sigthumb" src="${esc(p.signature)}" alt="signature on hand" />` : '<div class="ag-sigthumb"></div>'}</div>
        </div>
        <p class="muted" style="font-size:11px;margin:12px 2px 0">✓ Signed and on hand — it saddles onto the first card you add. Add a card to authorize On-Rent &amp; delivery.</p>`
-    : `<div class="ag-gate"><span class="lead">Sign now — no card needed yet.</span><span class="sub">It'll saddle onto the first card you add.</span></div>
-       ${agCaptureBlock(o, ag, 'account', 'js-ncsign-hold', {}, 'Sign & Hold')}`;
+    : `<div class="ag-gate"><span class="lead">On Rent blocked until Selfie + Card + Signature</span></div>
+       ${agCaptureBlock(o, ag, 'account')}`;
   return `<div class="ag-capcap" style="margin:16px 2px 8px">Signed agreement</div>${inner}`;
 }
 /* Move an account-level HELD signing onto a freshly-added card — the draft's FROZEN
@@ -331,7 +331,7 @@ function attachHeldSigning(c, k) {
   if (!Array.isArray(k.agreements)) k.agreements = [];
   const sig = { id: 'SIG-' + (state.seq++), key: p.key || 'rental', version: p.version || '', title: p.title || '',
     accountType: p.accountType || '', signedAt: p.signedAt || TODAY_ISO, signerName: p.signerName || c.name || fullName(c),
-    signature: p.signature, selfie: p.selfie || '', driveSignatureUrl: '', driveSelfieUrl: '', driveFolderId: '' };
+    signature: p.signature, selfie: p.selfie || '', acct: Object.assign({}, p.acct || acctSnapshot(c, k), { last4: k.last4 }), driveSignatureUrl: '', driveSelfieUrl: '', driveFolderId: '' };
   k.agreements.push(sig);
   c.pendingSigning = null;
   reindex('customers', c);
@@ -349,11 +349,36 @@ function signCardAgreement(c, k, signature, selfie) {
   if (!Array.isArray(k.agreements)) k.agreements = [];
   const sig = { id: 'SIG-' + (state.seq++), key, version: AGREEMENT_CURRENT[key] || '', title: ag.title,
     accountType: c.accountType || '', signedAt: TODAY_ISO, signerName: c.name || fullName(c),
-    signature, selfie: selfie || '', driveSignatureUrl: '', driveSelfieUrl: '', driveFolderId: '' };
+    signature, selfie: selfie || '', acct: acctSnapshot(c, k), driveSignatureUrl: '', driveSelfieUrl: '', driveFolderId: '' };
   k.agreements.push(sig);
   reindex('customers', c);
   logAction(c, `${ag.title} signed on ${brandName(k.brand)} ••${k.last4}`);
   archiveAgreementMedia(c, k, sig);   // offload images to Drive when the backend supports it
+}
+/* Frozen snapshot of the account fields + card ••last4 AT SIGNING — the signed-agreement
+   PDF reprints exactly what was true when accepted, even if the account is edited later. */
+function acctSnapshot(c, k) {
+  return { name: (c && (c.name || fullName(c))) || '', company: (c && c.company) || '', phone: (c && c.phone) || '',
+    email: (c && c.email) || '', industry: (c && c.industry) || '', accountType: (c && c.accountType) || '',
+    requiresPO: !!(c && c.requiresPO), last4: (k && k.last4) || '' };
+}
+/* Hold a captured signing on the account (no card yet) — saddles onto the first card added.
+   Set by Save now that there's no separate "Sign & Hold" button. */
+function holdSigning(c, signature, selfie) {
+  if (!c || !signature) return;
+  const key = requiredAgreementKey(c); const ag = AGREEMENTS[key] || AGREEMENTS.rental;
+  c.pendingSigning = { key, version: AGREEMENT_CURRENT[key] || '', title: ag.title, accountType: c.accountType || '',
+    signedAt: TODAY_ISO, signerName: c.name || fullName(c), signature, selfie: selfie || '', acct: acctSnapshot(c, null) };
+  reindex('customers', c); logAction(c, `${ag.title} signed & held (no card yet)`);
+}
+/* Save is the only commit now: persist a captured selfie + signature onto the active card
+   (the open card tab) or, with no card yet, hold it on the account. No-op without a full capture. */
+function commitCapture(o, c) {
+  const sd = o && o.signDraft; if (!c || !sd || !sd.selfie || !sd.sigData) return;
+  const k = (o.tab && o.tab !== 'account') ? customerCards(c).find((x) => x.id === o.tab) : null;
+  if (k) signCardAgreement(c, k, sd.sigData, sd.selfie);
+  else if (!customerCards(c).some((x) => cardAuthorized(c, x))) holdSigning(c, sd.sigData, sd.selfie);
+  o.signDraft = null;
 }
 /* Offload a signing's selfie + signature to Drive (per-customer folder) and replace
    the heavy inline data-URLs with light Drive URLs — keeps the synced customer record
@@ -382,11 +407,18 @@ function openSignedPdf(custId, cardId, sigId) {
   const win = window.open('', '_blank'); if (!win) return toast('Allow pop-ups to open the PDF.');
   const e2 = (t) => String(t == null ? '' : t).replace(/[&<>]/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m]));
   const sigSrc = signingSignatureSrc(s), selfieSrc = signingSelfieSrc(s);
+  // Frozen account snapshot taken at signing (fallback to the live record for legacy signings).
+  const a = s.acct || acctSnapshot(c, k);
+  const row = (lbl, val) => val ? `<tr><th>${e2(lbl)}</th><td>${e2(val)}</td></tr>` : '';
+  const acctRows = row('Account', a.name) + row('Company', a.company) + row('Phone', a.phone) + row('Email', a.email)
+    + row('Industry', a.industry) + row('Account type', a.accountType) + row('PO required', a.requiresPO ? 'Yes' : 'No')
+    + row('Card on file', (a.last4 || k.last4) ? '•••• ' + (a.last4 || k.last4) : '');
   win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${e2(signingTitle(s))} — ${e2(s.signerName)}</title>
-    <style>body{font:13px/1.55 Georgia,'Times New Roman',serif;color:#111;margin:40px;max-width:760px}h1{font-size:19px;margin:0 0 4px}.meta{color:#444;margin:0 0 20px;font-size:12px}pre{white-space:pre-wrap;font:inherit;margin:0}.sigs{display:flex;gap:28px;margin-top:26px;flex-wrap:wrap}figure{margin:0}.sigs img{border:1px solid #ccc;max-width:260px;max-height:120px;display:block}figcaption{font-size:10px;color:#555;text-transform:uppercase;letter-spacing:1.2px;margin-top:5px}.bar{margin-top:26px}@media print{.bar{display:none}}</style>
+    <style>body{font:13px/1.55 Georgia,'Times New Roman',serif;color:#111;margin:40px;max-width:760px}h1{font-size:19px;margin:0 0 4px}.meta{color:#444;margin:0 0 18px;font-size:12px}pre{white-space:pre-wrap;font:inherit;margin:0}.acct{border-collapse:collapse;margin:0 0 22px;font-size:12px}.acct th{text-align:left;color:#555;font-weight:600;padding:3px 16px 3px 0;vertical-align:top;white-space:nowrap}.acct td{padding:3px 0;color:#111}.sigs{display:flex;gap:28px;margin-top:26px;flex-wrap:wrap}figure{margin:0}.sigs img{border:1px solid #ccc;max-width:260px;max-height:120px;display:block}figcaption{font-size:10px;color:#555;text-transform:uppercase;letter-spacing:1.2px;margin-top:5px}.bar{margin-top:26px}@media print{.bar{display:none}}</style>
     </head><body>
     <h1>${e2(signingTitle(s))}</h1>
-    <p class="meta">${e2(s.signerName)}${s.accountType ? ' · ' + e2(s.accountType) : ''} · accepted ${e2(s.signedAt || '—')} · card ••${e2(k.last4)}</p>
+    <p class="meta">${e2(s.signerName)}${s.accountType ? ' · ' + e2(s.accountType) : ''} · accepted ${e2(s.signedAt || '—')} · card ••${e2(a.last4 || k.last4)}</p>
+    <table class="acct">${acctRows}</table>
     <pre>${e2(signingText(s))}</pre>
     <div class="sigs">${sigSrc ? `<figure><img src="${e2(sigSrc)}" alt="signature"><figcaption>Signature</figcaption></figure>` : ''}${selfieSrc ? `<figure><img src="${e2(selfieSrc)}" alt="selfie"><figcaption>Selfie on file</figcaption></figure>` : ''}</div>
     <div class="bar"><button onclick="window.print()" style="padding:9px 18px;font:13px sans-serif">Save as PDF / Print</button></div>
@@ -6425,7 +6457,7 @@ function renderOverlay() {
       ${cards.map((k) => `<button type="button" class="ag-tab js-nc-tab${tab === k.id ? ' on' : ''}" data-tab="${esc(k.id)}"><span class="ag-dot ${cardAuthorized(custRec, k) ? 'ok' : 'bad'}"></span>${esc(brandName(k.brand))} ••${esc(k.last4)}</button>`).join('')}
       ${addBtn('Card', { link: true, js: 'js-add-card', data: { rec: o.editId || '' } })}
     </div>`;
-    const headRail = `${railTabs}<span class="spacer"></span>${isEdit ? `<button class="iconbtn js-nc-qr" data-tip="Open on phone">${I.qr}</button>` : ''}`;
+    const headRail = `${railTabs}<span class="spacer"></span>${isEdit ? `<button class="iconbtn iconbtn-bare js-nc-qr" data-tip="Open on phone">${I.qr}</button>` : ''}`;
     let body;
     if (tab === 'account') {
       const blocked = custRec && accountAgreementsBlocked(custRec);
@@ -6441,7 +6473,7 @@ function renderOverlay() {
           <div class="nc-field"><span>Notes · PO</span>
             <div class="nc-notes-po">
               <input class="nc-in" data-f="accountNotes" value="${esc(d.accountNotes)}" autocomplete="off" placeholder="Notes" />
-              <button type="button" class="nc-po js-nc-po${d.requiresPO ? ' on' : ''}" aria-pressed="${d.requiresPO ? 'true' : 'false'}" data-tip="${d.requiresPO ? 'PO required before invoicing' : 'No PO required'}">PO ${d.requiresPO ? 'Yes' : 'No'}</button>
+              ${(() => { const set = d.requiresPO === true || d.requiresPO === false; return `<button type="button" class="nc-po js-nc-po${d.requiresPO === true ? ' on' : ''}${set ? '' : ' req'}" aria-pressed="${d.requiresPO === true ? 'true' : 'false'}" data-tip="${set ? (d.requiresPO ? 'PO required before invoicing' : 'No PO required') : 'Answer required before saving — does this account need a PO?'}">PO ${set ? (d.requiresPO ? 'Yes' : 'No') : '?'}</button>`; })()}
             </div>
           </div>
           <div class="nc-field nc-wide"><span>Account type</span><div class="nc-pills">${acctPills}</div></div>
@@ -6465,8 +6497,8 @@ function renderOverlay() {
         const key = requiredAgreementKey(custRec); const ag = AGREEMENTS[key];
         body = `
           <div class="ag-meta">${esc(meta)}<span class="ag-metasep"></span>${badge(st === 'stale' ? 'Re-sign' : 'Unsigned', 'red')}</div>
-          <div class="ag-gate"><span class="lead">${st === 'stale' ? 'Account type changed — re-sign required.' : 'Sign to allow On-Rent &amp; delivery.'}</span><span class="sub">Card can still be charged.</span></div>
-          ${agCaptureBlock(o, ag, k.id, 'js-ncsign-save', { card: k.id }, 'Accept & Sign')}`;
+          <div class="ag-gate"><span class="lead">${st === 'stale' ? 'Account type changed — re-sign required.' : 'Sign to allow On-Rent &amp; delivery.'}</span><span class="sub">Save to authorize · card can still be charged.</span></div>
+          ${agCaptureBlock(o, ag, k.id)}`;
       }
     }
     const pop = el('div', 'popup nc-popup');
@@ -6478,8 +6510,8 @@ function renderOverlay() {
       const cc = IDX.customer.get(o.editId);
       if (cc) {
         // Before the FIRST card, the agreement (selfie + signature) is captured HERE, in
-        // the card flow — never on the Account tab (account setup stays its own thing).
-        // Sign & Hold saddles onto this card on save, or you sign the card next.
+        // the card flow — never on the Account tab. The bottom-right Save commits it
+        // (no separate Sign & Hold): a card present → signs it; none yet → holds it.
         const noCardYet = customerCards(cc).length === 0;
         const cp = el('div', 'popup'); cp.style.width = noCardYet ? '440px' : '400px';
         cp.innerHTML = popupShell({
@@ -6488,7 +6520,6 @@ function renderOverlay() {
             <div class="pay-cap">Card number</div>
             <div class="pay-card-field" id="sl-card-element"></div>
             <div class="pay-err" id="sl-card-error"></div>
-            <p class="muted" style="font-size:11px;margin:10px 0 0">Entered securely via Stripe — we store only the brand + last 4 digits.${noCardYet ? ' Sign &amp; Hold the agreement below now (no card needed yet) and it saddles onto this card on save — or save the card and sign it next.' : ' Next you\'ll sign the agreement on this card to authorize On-Rent &amp; deliveries.'}</p>
             ${noCardYet ? `<div class="ag-cardsplit"></div>${heldSignBlock(o, cc, o.draft)}` : ''}`,
           foot: `<button class="pill ghost js-cardsub-cancel" data-r="R18">Cancel</button><button class="pill c-commit js-card-save" data-r="R17">Save card</button>`,
         });
@@ -7277,12 +7308,12 @@ function openSignatureWindow(title) {
       .sw{display:flex;flex-direction:column;height:100%;box-sizing:border-box;padding:18px;gap:12px}
       .sw-cap{font-family:'Saira Condensed',system-ui,sans-serif;text-transform:uppercase;letter-spacing:1.6px;font-size:13px;color:var(--txt-2,#aeb6c2)}
       .sw-cap b{color:var(--txt,#e9edf4);font-weight:700}
-      .sw-pad{flex:1;width:100%;border:1.5px dashed var(--line,#2a2f37);border-radius:14px;background:#fbfcfd;touch-action:none;cursor:crosshair}
+      .sw-pad{flex:1;width:100%;border:1.5px dashed var(--line,#2a2f37);border-radius:14px;background:#fbfcfd;touch-action:none;cursor:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='22'%3E%3Ccircle cx='11' cy='11' r='7' fill='none' stroke='%23ff7a1a' stroke-width='2'/%3E%3Ccircle cx='11' cy='11' r='1.6' fill='%23ff7a1a'/%3E%3C/svg%3E") 11 11, crosshair}
       .sw-foot{display:flex;justify-content:flex-end}
       .sw-clear{appearance:none;font-family:'Saira Condensed',system-ui,sans-serif;text-transform:uppercase;letter-spacing:1.3px;font-size:12px;font-weight:700;padding:10px 18px;border-radius:999px;border:1px solid var(--line,#2a2f37);background:var(--panel,#161a20);color:var(--txt-2,#aeb6c2);cursor:pointer}</style></head>
     <body><div class="sw"><div class="sw-cap">Sign here — <b>${t}</b></div><canvas class="sw-pad" id="p"></canvas><div class="sw-foot"><button class="sw-clear" id="c">Clear</button></div></div>
     <script>(function(){var cv=document.getElementById('p'),ctx=cv.getContext('2d'),drawing=false,last=null;
-      function fit(){var r=cv.getBoundingClientRect();cv.width=Math.round(r.width);cv.height=Math.round(r.height);ctx.fillStyle='#fff';ctx.fillRect(0,0,cv.width,cv.height);ctx.strokeStyle='#15171c';ctx.lineCap='round';ctx.lineJoin='round';}
+      function fit(){var r=cv.getBoundingClientRect();cv.width=Math.round(r.width);cv.height=Math.round(r.height);ctx.fillStyle='#fff';ctx.fillRect(0,0,cv.width,cv.height);ctx.strokeStyle=(getComputedStyle(document.documentElement).getPropertyValue('--accent')||'#ff7a1a').trim();ctx.lineCap='round';ctx.lineJoin='round';}
       function pos(e){var r=cv.getBoundingClientRect();return{x:(e.clientX-r.left)*(cv.width/r.width),y:(e.clientY-r.top)*(cv.height/r.height)};}
       function send(){try{if(window.opener)window.opener.postMessage({type:'rw-signature',dataURL:cv.toDataURL('image/jpeg',0.8)},location.origin);}catch(_){}}
       cv.addEventListener('pointerdown',function(e){e.preventDefault();drawing=true;last=pos(e);try{cv.setPointerCapture(e.pointerId);}catch(_){}});
@@ -7304,7 +7335,8 @@ function setupSignaturePad() {
     const r = cv.getBoundingClientRect(); if (r.width && r.height) { cv.width = Math.round(r.width); cv.height = Math.round(r.height); }
     const ctx = cv.getContext('2d');
     ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);
-    ctx.strokeStyle = '#15171c'; ctx.lineWidth = 2.4; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.strokeStyle = (getComputedStyle(document.documentElement).getPropertyValue('--accent') || '#ff7a1a').trim();   // orange ink (Jac)
+    ctx.lineWidth = 2.4; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
     // re-apply a signature already captured (2nd-screen popout, or before this re-render) so taking a selfie etc. can't wipe it
     if (o && o.signDraft && o.signDraft.sigData) { const img = new Image(); img.onload = () => { ctx.drawImage(img, 0, 0, cv.width, cv.height); cv.dataset.drawn = '1'; }; img.src = o.signDraft.sigData; }
     let drawing = false, last = null;
@@ -8439,40 +8471,10 @@ function onClick(e) {
   if (closest('.js-haptics')) { e.stopPropagation(); const on = closest('.js-haptics').dataset.val === '1'; state.hapticsOff = !on; try { localStorage.setItem('jactec.hapticsOff', on ? '0' : '1'); } catch (err) {} if (on) haptic([12, 30, 12]); renderOverlay(); return; }   // §M-touch — toggle + a sample buzz when turning ON
   if (closest('.js-nc-save')) { e.stopPropagation(); return saveNewCustomer(); }
   if (closest('.js-nc-acct')) { const b = closest('.js-nc-acct'); e.stopPropagation(); ncSyncInputs(); state.overlay.draft.accountType = b.dataset.val; renderOverlay(); return; }
-  if (closest('.js-nc-po')) { e.stopPropagation(); ncSyncInputs(); const o = state.overlay; o.draft.requiresPO = !o.draft.requiresPO; if (o.editId) { const c = IDX.customer.get(o.editId); if (c) { c.requiresPO = o.draft.requiresPO; reindex('customers', c); } } renderOverlay(); return; }
+  if (closest('.js-nc-po')) { e.stopPropagation(); ncSyncInputs(); const o = state.overlay; o.draft.requiresPO = (o.draft.requiresPO === true) ? false : true; if (o.editId) { const c = IDX.customer.get(o.editId); if (c) { c.requiresPO = o.draft.requiresPO; reindex('customers', c); } } renderOverlay(); return; }
   // §7.1b card-bound agreements: tab rail + per-card signing
   if (closest('.js-nc-tab')) { e.stopPropagation(); ncSyncInputs(); state.overlay.tab = closest('.js-nc-tab').dataset.tab; state.overlay.signRead = null; renderOverlay(); return; }
   if (closest('.js-ncsign-read')) { e.stopPropagation(); const id = closest('.js-ncsign-read').dataset.card; state.overlay.signRead = (state.overlay.signRead === id) ? null : id; renderOverlay(); return; }
-  if (closest('.js-ncsign-save')) {
-    e.stopPropagation(); const o = state.overlay; const c = IDX.customer.get(o.editId || ''); const k = c && customerCards(c).find((x) => x.id === closest('.js-ncsign-save').dataset.card);
-    if (!c || !k) return;
-    const cv = document.querySelector('.overlay .nc-sigpad');
-    if (!cv || !cv.dataset.drawn) return flashOr('.overlay .nc-sigpad', 'Sign in the box first.');
-    if (!(o.signDraft && o.signDraft.selfie)) return toast('Take a selfie to authorize this card.');
-    // downscale the signature (a 500×220 pad → ~3 KB) before freezing it onto the card
-    downscaleImage(cv.toDataURL('image/jpeg', 0.8), 380, 0.6, (sig) => {
-      signCardAgreement(c, k, sig || cv.toDataURL('image/jpeg', 0.6), o.signDraft.selfie);
-      o.signDraft = null; o.signRead = null; renderOverlay(); render();
-    });
-    return;
-  }
-  if (closest('.js-ncsign-hold')) {   // +Card panel, no card yet: sign now → HELD on the account, attaches to the first card added
-    e.stopPropagation(); const o = state.overlay; ncSyncInputs();
-    const cv = document.querySelector('.overlay .nc-sigpad');
-    if (!cv || !cv.dataset.drawn) return flashOr('.overlay .nc-sigpad', 'Sign in the box first.');
-    if (!(o.signDraft && o.signDraft.selfie)) return toast('Take a selfie to hold this agreement.');
-    if (!o.editId && !quickSaveCustomer(o)) return flashOr('.overlay [data-f="name"]', 'Enter a name & phone first.');
-    const c = IDX.customer.get(o.editId); if (!c) return;
-    const key = requiredAgreementKey(c); const ag = AGREEMENTS[key] || AGREEMENTS.rental;
-    downscaleImage(cv.toDataURL('image/jpeg', 0.8), 380, 0.6, (sig) => {
-      c.pendingSigning = { key, version: AGREEMENT_CURRENT[key] || '', title: ag.title, accountType: c.accountType || '',
-        signedAt: TODAY_ISO, signerName: c.name || fullName(c), signature: sig || cv.toDataURL('image/jpeg', 0.6), selfie: o.signDraft.selfie };
-      reindex('customers', c); logAction(c, `${ag.title} signed & held (no card yet)`);
-      o.signDraft = null; o.signRead = null; renderOverlay(); render();
-      toast('Agreement on hand — add a card to authorize ✓');
-    });
-    return;
-  }
   if (closest('.js-ncsign-holdclear')) {   // discard the held draft to re-sign
     e.stopPropagation(); const o = state.overlay; const c = IDX.customer.get(o.editId || '');
     if (c) { c.pendingSigning = null; reindex('customers', c); }
@@ -9658,7 +9660,7 @@ function onChange(e) {
     reader.readAsDataURL(file);
     return;
   }
-  // §7.1b per-card signing selfie — stashed on o.signDraft until Accept & Sign freezes it onto the card.
+  // §7.1b per-card signing selfie — stashed on o.signDraft until Save freezes it onto the card.
   if (e.target.classList.contains('js-ncsign-selfie')) {
     const file = e.target.files && e.target.files[0]; if (!file) return;
     const reader = new FileReader();
@@ -9838,7 +9840,7 @@ function openCustomerForm(editId, prefill, linkTo) {
   openOverlay({ kind: 'newCustomer', error: '', editId: editId || null, linkTo: (!editId && linkTo) || null, draft: {
     firstName: f('firstName'), lastName: f('lastName'), company: f('company'), phone: f('phone'),
     email: f('email'), industry: f('industry'), accountType: f('accountType', 'Non-Business'),
-    requiresPO: !!(c && c.requiresPO), accountNotes: f('accountNotes'), selfie: f('selfie'), signature: f('signature'),
+    requiresPO: c ? !!c.requiresPO : undefined, accountNotes: f('accountNotes'), selfie: f('selfie'), signature: f('signature'),
     agreementType: f('agreementType'), agreementSignedAt: f('agreementSignedAt'),
   } });
 }
@@ -9918,6 +9920,7 @@ function saveNewCustomer() {
   if (!o.draft.firstName) { o.error = 'A name is required (we use it for marketing).'; renderOverlay(); document.querySelector('.overlay [data-f="name"]')?.focus(); return; }
   if (!o.draft.phone) { o.error = 'A phone number is required.'; renderOverlay(); document.querySelector('.overlay [data-f="phone"]')?.focus(); return; }
   if (o.draft.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(o.draft.email)) { o.error = 'That email doesn’t look valid (or leave it blank).'; renderOverlay(); return; }
+  if (o.draft.requiresPO !== true && o.draft.requiresPO !== false) { o.error = ''; o.tab = 'account'; renderOverlay(); flashOr('.overlay .js-nc-po', 'Choose PO — Yes or No before saving.'); return; }   // force the PO answer
   const d = o.draft;
   if (o.editId) {                                   // ── editing / completing an existing customer ──
     const c = IDX.customer.get(o.editId); if (!c) { closeOverlay(); return; }
@@ -9925,6 +9928,7 @@ function saveNewCustomer() {
     if (!c.accountNotes) c.accountNotesColor = '';   // popup has no dot picker — don't leave a stale tag on a cleared note
     c.name = `${d.firstName} ${d.lastName}`.trim() || c.name;
     reindex('customers', c);
+    commitCapture(o, c);   // Save IS the commit — persist any captured selfie + signature
     logAction(c, 'Account details updated');
     const lt = applyCustomerLink(o, c.customerId) || o.linked;   // quick-add-link → land back on the Quote/invoice
     closeOverlay();
@@ -9943,6 +9947,7 @@ function saveNewCustomer() {
     _digest: { activePct: 0, totalPaid: 0, visits: 0, years: 0, avgFrequencyDays: 0, firstInvoice: '', lastInvoice: '' },
   };
   DATA.customers.push(c); IDX.customer.set(id, c); reindex('customers', c);
+  commitCapture(o, c);   // Save IS the commit — persist any captured selfie + signature
   logAction(c, 'Customer onboarded');
   const lt = applyCustomerLink(o, id);   // quick-add-link → land back on the Quote/invoice
   closeOverlay();
@@ -10132,7 +10137,8 @@ async function saveCardFlow(btn) {
     c.stripeId = r.stripeId || c.stripeId;
     if (!Array.isArray(c.cards)) c.cards = [];
     const firstCard = customerCards(c).length === 0;
-    const held = !!(c.pendingSigning && c.pendingSigning.signature);   // an account-level agreement is on hand → saddle it onto this card
+    const sd = o.signDraft, liveCap = !!(sd && sd.selfie && sd.sigData);   // selfie + signature captured in this panel → sign on save
+    const held = !!(c.pendingSigning && c.pendingSigning.signature);       // or an account-level agreement already on hand
     const newCardId = 'CARD-' + (state.seq++);
     // §7.1b a card lands UNSIGNED — it can be charged, but the account can't go
     // On Rent / log deliveries until this card is signed for the account type.
@@ -10141,10 +10147,12 @@ async function saveCardFlow(btn) {
       agreements: [] };
     c.cards.push(newCard);
     c.cardBrand = s.card.brand; c.cardLast4 = s.card.last4; c.cardExpMonth = s.card.expMonth; c.cardExpYear = s.card.expYear;   // legacy mirror (default card)
-    if (held) attachHeldSigning(c, newCard);   // held agreement saddles onto the new card → lands authorized
-    reindex('customers', c); logAction(c, `Card added — ${brandName(s.card.brand)} ••••${s.card.last4}${held ? '' : ' (unsigned)'}`);
+    if (liveCap) { signCardAgreement(c, newCard, sd.sigData, sd.selfie); o.signDraft = null; }   // Save IS the commit — sign the card now
+    else if (held) attachHeldSigning(c, newCard);   // else a held agreement saddles onto the new card
+    const authd = liveCap || held;
+    reindex('customers', c); logAction(c, `Card added — ${brandName(s.card.brand)} ••••${s.card.last4}${authd ? '' : ' (unsigned)'}`);
     destroyCardElement();
-    toast(held ? 'Card saved — held agreement attached, authorized ✓' : 'Card saved — sign to authorize ✓');
+    toast(authd ? 'Card saved — agreement signed, authorized ✓' : 'Card saved — sign to authorize ✓');
     // Land on the new card's SIGNING tab no matter how Add-card was opened.
     if (sub) { o.cardSub = false; o.tab = newCardId; renderOverlay(); }   // §14 panel beside the form → switch its tab
     else if (o.returnTo === 'payment' && o.invoiceId) openPayInvoice(o.invoiceId);
