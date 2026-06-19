@@ -4851,16 +4851,16 @@ function headerEl() {
       <span class="ring-label">${esc(label)}</span>
     </button>`;
   const rings = ROLES.map((role) => roleRing(role.id, role.label, kpiFor(role.id), role.color)).join('');
-  // §M1 — phone-only Tools menu, parked top-right in the header (uses the empty top space;
-  // holds Notifications + Requests + the rest). Hidden on desktop via CSS.
-  const pend = unseenNotifs() + wranglerRequests.length;
-  const toolsTop = `<button class="iconbtn tools-top js-mtools" data-tip="Tools, notifications &amp; requests">${I.sliders || I.menu || '☰'}${pend ? `<span class="bb-badge">${pend > 9 ? '9+' : pend}</span>` : ''}</button>`;
-  // Decluttered top: logo + rings, then the GLOBAL item tabs above the global search.
-  // The action toolbar (New / Dashboard / tools) lives in a bottom bar (bottomBarEl).
+  // §M1 — phone-only TOP TOOLBAR: the full tool set opened up across the top of the screen
+  // (logo + rings stay on their own row above it). Notifications + Requests live here too.
+  const nu = unseenNotifs();
+  const notifBtn = `<button class="iconbtn js-notifications" data-tip="Notifications">${I.bell}${nu ? `<span class="bb-badge">${nu > 9 ? '9+' : nu}</span>` : ''}</button>`;
+  const topBar = `<div class="top-toolbar">${notifBtn}${bottomBarInner()}</div>`;
+  // Decluttered top: logo + rings on one row, the tool bar across the next.
   h.innerHTML = `
     <button class="logo js-logo" aria-label="Jac Rentals"></button>
     <div class="kpis">${rings}</div>
-    ${toolsTop}
+    ${topBar}
     <div class="header-right">
       <div class="hr-top">
         <div class="header-tabs tabstrip">${tabStrip(state.tabs)}</div>
@@ -7672,8 +7672,9 @@ function render() {
   const grid = el('div', 'grid');
   const shown = phone ? [COLUMNS[Math.max(0, Math.min(2, state.mobileCol))]] : COLUMNS;
   for (const col of shown) grid.appendChild(columnEl(col, session));
-  const bottomBar = bottomBarEl();
-  $('#app').replaceChildren(header, grid, bottomBar);
+  // §M1 — desktop keeps the bottom toolbar; on phone the tools open up across the top header instead.
+  if (phone) $('#app').replaceChildren(header, grid);
+  else $('#app').replaceChildren(header, grid, bottomBarEl());
   if (phone) {
     const dock = mobileDockEl();
     $('#app').appendChild(dock);
