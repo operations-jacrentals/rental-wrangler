@@ -4170,8 +4170,10 @@ function columnEl(col, session) {
   const cs = card.dataset.card && session.cards ? session.cards[card.dataset.card] : null;
   card.dataset.view = (cs && cs.mode === 'standard' && cs.recId != null) ? `${cs.recType || ''}:${cs.recId}` : 'list';
   if (!document.body.classList.contains('is-phone')) card.insertBefore(colTabsEl(col, active, session), card.firstChild);   // toggles live INSIDE the card top on desktop; on phones they move to the footer dock (§M1)
-  const tot = card.querySelector('.card-body .list-totals');             // freeze the totals as a card FOOTER (out of the scroll)
-  if (tot) card.appendChild(tot);
+  const tot = card.querySelector('.card-body .list-totals');             // freeze the totals out of the scroll
+  // §M1 — phones invert the desktop layout: the card "footer" (totals) sits at the TOP,
+  // while the toggles + search live in the bottom dock. Desktop keeps it as a footer.
+  if (tot) { if (document.body.classList.contains('is-phone')) card.insertBefore(tot, card.firstChild); else card.appendChild(tot); }
   wrap.appendChild(card);
   return wrap;
 }
@@ -4848,7 +4850,8 @@ function mobileDockEl() {
     const on = m === cur;
     return `<button class="mcard-tog${on ? ' on' : ''}" data-gocard="${m}" data-tip="${esc(MEMBER_TITLE[m] || m)}"><span class="mct-ico">${memberIcon(m)}</span>${on ? `<span class="mct-lbl">${esc(MEMBER_TITLE[m] || m)}</span>` : ''}</button>`;
   }).join('');
-  const tools = `<button class="iconbtn mdock-act js-mtools" data-tip="Tools — receipt, share, Mr. Wrangler, admin">${I.sliders || I.menu || '☰'}</button>`;
+  const pend = unseenNotifs() + wranglerRequests.length;   // surface hidden notifications/requests as a badge on the menu
+  const tools = `<button class="iconbtn mdock-act js-mtools" data-tip="Tools, notifications &amp; requests">${I.sliders || I.menu || '☰'}${pend ? `<span class="bb-badge">${pend > 9 ? '9+' : pend}</span>` : ''}</button>`;
   const d = el('div', 'mobile-dock');
   d.innerHTML = `<div class="mdock-searchslot"></div><div class="mdock-row"><div class="mcard-bar">${togs}</div>${tools}</div>`;
   return d;
@@ -6268,11 +6271,15 @@ function renderOverlay() {
       <div class="popup-body board-body bv-body">${o.customize ? bvCustomizePanel(o.card) : ''}${boardViewTable(o, session)}</div>`;
     overlay.appendChild(pop);
   } else if (o.kind === 'tools') {
-    // §M1 — the global tool tray (the desktop bottom bar) as a phone sheet
+    // §M1 — the global tool tray (the desktop bottom bar) as a phone sheet. Notifications +
+    // Requests live here on phone (their floating FABs are hidden) — bottomBarInner already
+    // carries Requests, so we add the Notifications bell.
+    const nu = unseenNotifs();
+    const notifBtn = `<button class="iconbtn js-notifications" data-tip="Notifications">${I.bell}<span>Notifications</span>${nu ? `<span class="bb-badge">${nu > 9 ? '9+' : nu}</span>` : ''}</button>`;
     const pop = el('div', 'popup'); pop.style.width = '360px';
     pop.innerHTML = `
       <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${I.sliders || I.menu || ''}</span><h3>Tools</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
-      <div class="popup-body"><div class="tools-tray">${bottomBarInner()}</div></div>`;
+      <div class="popup-body"><div class="tools-tray">${notifBtn}${bottomBarInner()}</div></div>`;
     overlay.appendChild(pop);
   } else if (o.kind === 'settings') {
     const cfg = o.config || { roles: {}, admin: '' };

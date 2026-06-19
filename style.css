@@ -351,7 +351,8 @@ input { font-family: inherit; }
 /* Header: drop the big operator name on phones (no room) so the open-record tabs +
    active tab stop overflowing the right edge. */
 .is-phone .hello-name { display: none; }
-.is-phone .hr-top { min-width: 0; }
+.is-phone .hr-top { min-width: 0; min-height: 0; }   /* collapse the empty open-tabs row so the search sits tight under the rings */
+.is-phone .header-right { gap: 5px; }
 /* Rental window header: the Not-Ready blocker + status gate were wrapping on top of
    each other (and the dates). Make the bar taller, pin the dates to the TOP corners,
    and drop the status row to the BOTTOM — full width, centered, no overlap. */
@@ -365,7 +366,9 @@ input { font-family: inherit; }
 .is-phone .wr-rail { display: none; }
 /* Give the scroll content clearance below the floating bottom-right FAB cluster so the
    History / notes don't sit under the notification + inbox buttons. */
-.is-phone .card-body { padding-bottom: 72px; }
+.is-phone .card-body { padding-bottom: 10px; }   /* FABs are folded into the footer Tools menu now, so no big clearance needed */
+/* phone inverts the layout — the totals strip is a card HEADER now (border + shadow flip down) */
+.is-phone .list-totals { border-top: none; border-bottom: 1px solid var(--accent-line); box-shadow: 0 5px 11px -7px rgba(0,0,0,.45); }
 /* Card tabs = a SEGMENTED NAV BAR (one container, flat segments) — now sit INSIDE
    the card at its top, centered, so the card's height/glow includes the toggles. */
 .col-tabs { display: inline-flex; gap: 3px; flex: 0 0 auto; align-self: center; max-width: calc(100% - 16px); overflow: hidden;
@@ -1090,7 +1093,7 @@ select.lf-in { appearance: none; cursor: pointer; }
 .fab svg { width: 21px; height: 21px; }
 .fab-badge { position: absolute; top: -3px; right: -3px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 99px;
   background: var(--accent); color: #1a1205; font-size: 11px; font-weight: 800; display: grid; place-items: center; box-shadow: 0 0 0 2px var(--bg); }
-.is-phone .fab-stack { bottom: calc(76px + env(safe-area-inset-bottom)); }   /* clear the mobile dock + home indicator */
+.is-phone .fab-stack { display: none; }   /* §M1 — Notifications + Requests live in the footer Tools menu on phones, not as floating FABs */
 @media (prefers-reduced-motion: reduce) { .fab:hover { transform: none; } }
 /* §18g Mr. Wrangler conversation rail — stamped data-plate chips above the FABs */
 .wr-rail { display: flex; flex-direction: column; align-items: flex-end; gap: 7px; margin-bottom: 4px; max-width: 240px; }
