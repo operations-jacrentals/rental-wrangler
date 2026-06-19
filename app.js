@@ -287,7 +287,7 @@ function cardGateReason(cust) {
 const AG_LOCK = '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
 const AG_CAM = '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>';
 /* The shared selfie + signature capture controls — emitted on a CARD's signing tab
-   (commit → js-ncsign-save) and on the ACCOUNT tab as a held draft when no card
+   (commit → js-ncsign-save) and in the +Card panel as a held draft when no card
    exists yet (commit → js-ncsign-hold). `readKey` distinguishes whose Read toggle is
    open (a card id, or 'account'); the live selfie rides o.signDraft until committed. */
 function agCaptureBlock(o, ag, readKey, acceptJs, acceptData, acceptLabel) {
@@ -295,17 +295,20 @@ function agCaptureBlock(o, ag, readKey, acceptJs, acceptData, acceptLabel) {
   return `
     <div class="ag-readref"><span><b>${esc(ag.title)}</b></span><button type="button" class="ag-readbtn js-ncsign-read" data-card="${esc(readKey)}">${o.signRead === readKey ? 'Hide' : 'Read'} ↗</button></div>
     ${o.signRead === readKey ? `<div class="nc-agreement" tabindex="0">${esc(ag.text)}</div>` : ''}
-    <div class="ag-capcap">Capture both to authorize</div>
+    <div class="ag-caphead"><span class="ag-capcap">Capture both to authorize</span><button type="button" class="ag-readbtn js-sign-popout" data-title="${esc(ag.title)}" data-tip="Pop the signature pad into its own window — drag it to the customer's touchscreen to sign">2nd screen ↗</button></div>
     <div class="ag-caprow">
-      <label class="ag-selfiebtn">${selfie ? `<img class="ag-selfie" src="${esc(selfie)}" alt="selfie" />` : `${AG_CAM}<span class="l">Selfie</span>`}<input type="file" accept="image/*" capture="user" class="js-ncsign-selfie" hidden /></label>
+      <label class="ag-selfiebtn js-ag-selfie">${selfie
+        ? `<img class="ag-selfie" src="${esc(selfie)}" alt="selfie" /><span class="ag-cam-cap">Retake</span>`
+        : `<video class="ag-cam-feed" autoplay muted playsinline></video><span class="ag-cam-fallback">${AG_CAM}<span class="l">Selfie</span></span><span class="ag-cam-cap ag-cam-hint">Tap to capture</span>`}<input type="file" accept="image/*" capture="user" class="js-ncsign-selfie" hidden /></label>
       <canvas class="nc-sigpad ag-pad" width="500" height="220"></canvas>
     </div>
     <div class="ag-acceptrow">${actionPill('commit', acceptLabel, { js: acceptJs, data: acceptData })}${ghostPill('Clear', { js: 'js-nc-sig-clearpad' })}</div>`;
 }
-/* Account-tab signing, shown ONLY before the first card exists — the wrangler can
+/* Sign-before-a-card capture, rendered inside the +Card panel before the first card
+   exists (NOT on the Account tab — account setup stays separate). The wrangler can
    sign the agreement now (selfie + signature) and it's HELD on the account, then
    saddles onto the first card they add. Once held, shows the on-hand packet + Redo. */
-function acctHeldSignBlock(o, custRec, d) {
+function heldSignBlock(o, custRec, d) {
   const key = requiredAgreementKey(custRec || { accountType: d.accountType });
   const ag = AGREEMENTS[key] || AGREEMENTS.rental;
   const p = custRec && custRec.pendingSigning;
@@ -6443,8 +6446,7 @@ function renderOverlay() {
           </div>
           <div class="nc-field nc-wide"><span>Account type</span><div class="nc-pills">${acctPills}</div></div>
         </div>
-        <datalist id="nc-industries">${indOpts}</datalist>
-        ${cards.length ? '' : acctHeldSignBlock(o, custRec, d)}`;
+        <datalist id="nc-industries">${indOpts}</datalist>`;
     } else {
       const k = cards.find((x) => x.id === tab);
       const meta = `${k.isDefault ? 'Default · ' : ''}${k.expMonth ? 'exp ' + k.expMonth + '/' + String(k.expYear).slice(-2) : 'no exp'}`;
@@ -6475,14 +6477,19 @@ function renderOverlay() {
     if (o.cardSub) {   // §14 the "Add card" panel rendered BESIDE the form (not replacing it)
       const cc = IDX.customer.get(o.editId);
       if (cc) {
-        const cp = el('div', 'popup'); cp.style.width = '400px';
+        // Before the FIRST card, the agreement (selfie + signature) is captured HERE, in
+        // the card flow — never on the Account tab (account setup stays its own thing).
+        // Sign & Hold saddles onto this card on save, or you sign the card next.
+        const noCardYet = customerCards(cc).length === 0;
+        const cp = el('div', 'popup'); cp.style.width = noCardYet ? '440px' : '400px';
         cp.innerHTML = popupShell({
-          icon: CARD_ICON.customers || '', title: 'Add card', tag: 'Customer · Card on file', closeJs: 'js-cardsub-cancel',
+          icon: CARD_ICON.customers || '', title: noCardYet ? 'Card & agreement' : 'Add card', tag: 'Customer · Card on file', closeJs: 'js-cardsub-cancel',
           body: `
             <div class="pay-cap">Card number</div>
             <div class="pay-card-field" id="sl-card-element"></div>
             <div class="pay-err" id="sl-card-error"></div>
-            <p class="muted" style="font-size:11px;margin:10px 0 0">Entered securely via Stripe — we store only the brand + last 4 digits. Next you'll sign the agreement on this card to authorize On-Rent &amp; deliveries.</p>`,
+            <p class="muted" style="font-size:11px;margin:10px 0 0">Entered securely via Stripe — we store only the brand + last 4 digits.${noCardYet ? ' Sign &amp; Hold the agreement below now (no card needed yet) and it saddles onto this card on save — or save the card and sign it next.' : ' Next you\'ll sign the agreement on this card to authorize On-Rent &amp; deliveries.'}</p>
+            ${noCardYet ? `<div class="ag-cardsplit"></div>${heldSignBlock(o, cc, o.draft)}` : ''}`,
           foot: `<button class="pill ghost js-cardsub-cancel" data-r="R18">Cancel</button><button class="pill c-commit js-card-save" data-r="R17">Save card</button>`,
         });
         overlay.appendChild(cp);
@@ -6685,6 +6692,7 @@ function renderOverlay() {
   if (o.kind === 'payment') setupPayAlloc();   // live counter for the §19 allocation rows
   if (o.kind === 'addCard') { const cc = IDX.customer.get(o.customerId); if (cc) mountCardElement(); }   // §7.1b card saved first, signed after
   if (o.kind === 'newCustomer' && o.cardSub) { const cc = IDX.customer.get(o.editId); if (cc) mountCardElement(); }   // §14 the side-by-side Add-card panel
+  { const _agFeed = overlay.querySelector('.ag-cam-feed'); if (_agFeed) startAgCam(_agFeed); else stopAgCam(); }   // live selfie camera follows the capture block
 }
 const openOverlay = (o) => { state.datepick = null; _ovScroll[o.kind] = 0; state.overlay = o; renderOverlay(); };   // fresh open starts at top
 /* ── §15 in-app feedback: bug/request → queued to the backend Feedback tab ── */
@@ -7207,23 +7215,108 @@ function ncApplyName(d) {
   const parts = n.split(/\s+/);
   d.firstName = parts[0]; d.lastName = parts.slice(1).join(' ');
 }
-// Wire the signature canvas for finger/stylus/mouse drawing (white bg → JPEG export).
-function setupSignaturePad() {
-  const cv = document.querySelector('.overlay .nc-sigpad'); if (!cv) return;
-  // Match the backing store to the rendered size so strokes aren't stretched (the pad
-  // is width:auto in the flex row). getBoundingClientRect is laid out by now.
-  const r = cv.getBoundingClientRect(); if (r.width && r.height) { cv.width = Math.round(r.width); cv.height = Math.round(r.height); }
-  const ctx = cv.getContext('2d');
-  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);
-  ctx.strokeStyle = '#15171c'; ctx.lineWidth = 2.4; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-  let drawing = false, last = null;
-  const pos = (e) => { const r = cv.getBoundingClientRect(); return { x: (e.clientX - r.left) * (cv.width / r.width), y: (e.clientY - r.top) * (cv.height / r.height) }; };
-  cv.addEventListener('pointerdown', (e) => { e.preventDefault(); drawing = true; last = pos(e); cv.dataset.drawn = '1'; cv.setPointerCapture(e.pointerId); });
-  cv.addEventListener('pointermove', (e) => { if (!drawing) return; e.preventDefault(); const p = pos(e); ctx.beginPath(); ctx.moveTo(last.x, last.y); ctx.lineTo(p.x, p.y); ctx.stroke(); last = p; });
-  cv.addEventListener('pointerup', () => { drawing = false; });
-  cv.addEventListener('pointerleave', () => { drawing = false; });
+/* Live selfie camera for the agreement capture — auto-on the moment the capture block
+   renders so the operator just taps ONCE to snap (no OS picker round-trip). The stream
+   is module-scoped and re-attached across re-renders (no repeat permission prompt); it's
+   stopped on capture, on leaving the capture block, and on overlay close so the camera
+   light never lingers. No camera / permission denied → the file-input fallback stays. */
+let _agCam = null;
+function startAgCam(video) {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;   // no camera API → keep the file-input fallback
+  const attach = (stream) => {
+    _agCam = stream;
+    const v = video || document.querySelector('.overlay .ag-cam-feed'); if (!v) { stopAgCam(); return; }
+    if (v.srcObject !== stream) v.srcObject = stream;
+    if (v.play) v.play().catch(() => {});
+    const tile = v.closest('.ag-selfiebtn'); if (tile) tile.classList.add('live');   // reveal the feed + the "Tap to capture" hint
+  };
+  if (_agCam && _agCam.active) { attach(_agCam); return; }   // reuse the running stream across re-renders — no re-prompt
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false })
+    .then(attach)
+    .catch(() => { _agCam = null; });   // denied / no device → leave the file-input fallback in place
 }
-const closeOverlay = () => { destroyCardElement(); state.datepick = null; state.overlay = null; renderOverlay(); };
+function stopAgCam() {
+  if (_agCam) { _agCam.getTracks().forEach((t) => t.stop()); _agCam = null; }
+}
+function captureAgSelfie() {
+  const v = document.querySelector('.overlay .ag-cam-feed'); if (!v || !v.videoWidth) return;
+  const W = 340, cv = document.createElement('canvas'); cv.width = W; cv.height = Math.round(v.videoHeight * (W / v.videoWidth));
+  const ctx = cv.getContext('2d'); ctx.translate(cv.width, 0); ctx.scale(-1, 1);   // mirror to match the live (selfie) preview
+  ctx.drawImage(v, 0, 0, cv.width, cv.height);
+  const o = state.overlay; if (o && o.kind === 'newCustomer') { o.signDraft = o.signDraft || {}; o.signDraft.selfie = cv.toDataURL('image/jpeg', 0.6); }
+  stopAgCam(); renderOverlay();
+}
+/* Pop the signature pad out into its OWN movable OS window (window.open) so it can be
+   dragged to the customer-facing touchscreen on another monitor — "escape the browser".
+   Strokes stream back here via postMessage and land on the main pad + o.signDraft.sigData,
+   so the operator's normal Save/Sign commits them — no separate Done step in the popout.
+   Any pointer/digitizer device draws on it (finger, stylus, or a USB/Bluetooth pen pad the
+   OS exposes as a pointer); pen pressure varies the line width. */
+let _sigWin = null, _sigMsgWired = false;
+function onSigMessage(e) {
+  if (e.origin !== location.origin) return;   // same-origin only
+  const d = e.data || {}; if (d.type !== 'rw-signature' || typeof d.dataURL !== 'string') return;
+  const o = state.overlay; if (o) { o.signDraft = o.signDraft || {}; o.signDraft.sigData = d.dataURL; }   // persist across re-renders
+  const cv = document.querySelector('.overlay .nc-sigpad'); if (!cv) return;
+  const ctx = cv.getContext('2d'), img = new Image();
+  img.onload = () => { ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height); ctx.drawImage(img, 0, 0, cv.width, cv.height); cv.dataset.drawn = '1'; };
+  img.src = d.dataURL;
+}
+function openSignatureWindow(title) {
+  if (!_sigMsgWired) { window.addEventListener('message', onSigMessage); _sigMsgWired = true; }
+  try { if (_sigWin && !_sigWin.closed) { _sigWin.focus(); return; } } catch (e) {}
+  const w = window.open('', 'rwSignPad', 'width=760,height=560');
+  if (!w) { toast('Allow pop-ups to open the signature window.'); return; }
+  _sigWin = w;
+  const base = location.href.replace(/[^/]*(\?.*)?$/, '');   // absolute base so the popout can load style.css (tokens)
+  const cssTok = ((((document.querySelector('link[href*="style.css"]') || {}).href) || '').match(/\?v=[0-9a-z]+/) || [''])[0];
+  const t = esc(title || 'Rental Account Agreement');
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Signature — ${t}</title><link rel="stylesheet" href="${base}style.css${cssTok}">
+    <style>html,body{height:100%;margin:0;background:var(--bg,#0b0c0f);color:var(--txt,#e9edf4);font-family:'Geist',system-ui,sans-serif;overflow:hidden}
+      .sw{display:flex;flex-direction:column;height:100%;box-sizing:border-box;padding:18px;gap:12px}
+      .sw-cap{font-family:'Saira Condensed',system-ui,sans-serif;text-transform:uppercase;letter-spacing:1.6px;font-size:13px;color:var(--txt-2,#aeb6c2)}
+      .sw-cap b{color:var(--txt,#e9edf4);font-weight:700}
+      .sw-pad{flex:1;width:100%;border:1.5px dashed var(--line,#2a2f37);border-radius:14px;background:#fbfcfd;touch-action:none;cursor:crosshair}
+      .sw-foot{display:flex;justify-content:flex-end}
+      .sw-clear{appearance:none;font-family:'Saira Condensed',system-ui,sans-serif;text-transform:uppercase;letter-spacing:1.3px;font-size:12px;font-weight:700;padding:10px 18px;border-radius:999px;border:1px solid var(--line,#2a2f37);background:var(--panel,#161a20);color:var(--txt-2,#aeb6c2);cursor:pointer}</style></head>
+    <body><div class="sw"><div class="sw-cap">Sign here — <b>${t}</b></div><canvas class="sw-pad" id="p"></canvas><div class="sw-foot"><button class="sw-clear" id="c">Clear</button></div></div>
+    <script>(function(){var cv=document.getElementById('p'),ctx=cv.getContext('2d'),drawing=false,last=null;
+      function fit(){var r=cv.getBoundingClientRect();cv.width=Math.round(r.width);cv.height=Math.round(r.height);ctx.fillStyle='#fff';ctx.fillRect(0,0,cv.width,cv.height);ctx.strokeStyle='#15171c';ctx.lineCap='round';ctx.lineJoin='round';}
+      function pos(e){var r=cv.getBoundingClientRect();return{x:(e.clientX-r.left)*(cv.width/r.width),y:(e.clientY-r.top)*(cv.height/r.height)};}
+      function send(){try{if(window.opener)window.opener.postMessage({type:'rw-signature',dataURL:cv.toDataURL('image/jpeg',0.8)},location.origin);}catch(_){}}
+      cv.addEventListener('pointerdown',function(e){e.preventDefault();drawing=true;last=pos(e);try{cv.setPointerCapture(e.pointerId);}catch(_){}});
+      cv.addEventListener('pointermove',function(e){if(!drawing)return;e.preventDefault();var p=pos(e);ctx.lineWidth=(e.pointerType==='pen'&&e.pressure>0)?(1.4+e.pressure*2.6):2.4;ctx.beginPath();ctx.moveTo(last.x,last.y);ctx.lineTo(p.x,p.y);ctx.stroke();last=p;});
+      function up(){if(drawing){drawing=false;send();}}
+      cv.addEventListener('pointerup',up);cv.addEventListener('pointerleave',up);
+      document.getElementById('c').addEventListener('click',function(){fit();send();});
+      window.addEventListener('resize',function(){var d=cv.toDataURL();fit();var im=new Image();im.onload=function(){ctx.drawImage(im,0,0,cv.width,cv.height);};im.src=d;});
+      fit();})();<\/script></body></html>`);
+  w.document.close();
+}
+// Wire the signature canvas for finger/stylus/mouse/pen drawing (white bg → JPEG export).
+function setupSignaturePad() {
+  // Wire EVERY pad in the overlay (the capture can ride the card signing tab and/or
+  // the +Card panel) — match each backing store to its rendered size so strokes
+  // aren't stretched (the pad is width:auto in the flex row); rects are laid out by now.
+  const o = state.overlay;
+  document.querySelectorAll('.overlay .nc-sigpad').forEach((cv) => {
+    const r = cv.getBoundingClientRect(); if (r.width && r.height) { cv.width = Math.round(r.width); cv.height = Math.round(r.height); }
+    const ctx = cv.getContext('2d');
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);
+    ctx.strokeStyle = '#15171c'; ctx.lineWidth = 2.4; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    // re-apply a signature already captured (2nd-screen popout, or before this re-render) so taking a selfie etc. can't wipe it
+    if (o && o.signDraft && o.signDraft.sigData) { const img = new Image(); img.onload = () => { ctx.drawImage(img, 0, 0, cv.width, cv.height); cv.dataset.drawn = '1'; }; img.src = o.signDraft.sigData; }
+    let drawing = false, last = null;
+    const pos = (e) => { const b = cv.getBoundingClientRect(); return { x: (e.clientX - b.left) * (cv.width / b.width), y: (e.clientY - b.top) * (cv.height / b.height) }; };
+    const stash = () => { if (drawing) { drawing = false; if (o) { o.signDraft = o.signDraft || {}; o.signDraft.sigData = cv.toDataURL('image/jpeg', 0.8); } } };
+    cv.addEventListener('pointerdown', (e) => { e.preventDefault(); drawing = true; last = pos(e); cv.dataset.drawn = '1'; cv.setPointerCapture(e.pointerId); });
+    cv.addEventListener('pointermove', (e) => { if (!drawing) return; e.preventDefault(); const p = pos(e); ctx.lineWidth = (e.pointerType === 'pen' && e.pressure > 0) ? (1.4 + e.pressure * 2.6) : 2.4; ctx.beginPath(); ctx.moveTo(last.x, last.y); ctx.lineTo(p.x, p.y); ctx.stroke(); last = p; });
+    cv.addEventListener('pointerup', stash);
+    cv.addEventListener('pointerleave', stash);
+  });
+}
+const closeOverlay = () => { destroyCardElement(); stopAgCam(); try { if (_sigWin && !_sigWin.closed) _sigWin.close(); } catch (e) {} _sigWin = null; state.datepick = null; state.overlay = null; renderOverlay(); };
 
 /* ── Back-office boards (§7.9–7.12): spreadsheet-style tables ─────────────── */
 function vendorTotals(vendorId) {
@@ -8363,7 +8456,7 @@ function onClick(e) {
     });
     return;
   }
-  if (closest('.js-ncsign-hold')) {   // Account tab, no card yet: sign now → HELD on the account, attaches to the first card added
+  if (closest('.js-ncsign-hold')) {   // +Card panel, no card yet: sign now → HELD on the account, attaches to the first card added
     e.stopPropagation(); const o = state.overlay; ncSyncInputs();
     const cv = document.querySelector('.overlay .nc-sigpad');
     if (!cv || !cv.dataset.drawn) return flashOr('.overlay .nc-sigpad', 'Sign in the box first.');
@@ -8387,7 +8480,15 @@ function onClick(e) {
   }
   if (closest('.js-ncsign-pdf')) { e.stopPropagation(); const b = closest('.js-ncsign-pdf'); return openSignedPdf(state.overlay.editId, b.dataset.card, b.dataset.sig); }
   if (closest('.js-nc-selfie-clear')) { e.stopPropagation(); ncSyncInputs(); state.overlay.draft.selfie = ''; renderOverlay(); return; }
-  if (closest('.js-nc-sig-clearpad')) { e.stopPropagation(); const cv = document.querySelector('.overlay .nc-sigpad'); if (cv) { const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height); cv.dataset.drawn = ''; } return; }
+  if (closest('.js-nc-sig-clearpad')) { e.stopPropagation(); const o = state.overlay; if (o && o.signDraft) o.signDraft.sigData = null; const cv = document.querySelector('.overlay .nc-sigpad'); if (cv) { const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height); cv.dataset.drawn = ''; } return; }
+  if (closest('.js-sign-popout')) { e.preventDefault(); e.stopPropagation(); openSignatureWindow(closest('.js-sign-popout').dataset.title); return; }
+  if (closest('.js-ag-selfie')) {   // selfie tile: one-tap snap off the live feed; Retake clears it; no camera → native picker
+    const o = state.overlay; if (!o) return;
+    const tile = closest('.js-ag-selfie');
+    if (o.signDraft && o.signDraft.selfie) { e.preventDefault(); e.stopPropagation(); o.signDraft.selfie = null; renderOverlay(); return; }   // Retake → clear + restart camera
+    if (tile.classList.contains('live')) { e.preventDefault(); e.stopPropagation(); captureAgSelfie(); return; }   // live feed → grab the frame in a single tap
+    return;   // no camera/permission → let the <label> open the OS file/camera picker (fallback)
+  }
   if (closest('.js-nc-qr')) { e.stopPropagation(); const id = state.overlay.editId; openOverlay({ kind: 'qr', title: 'Continue on phone', url: location.origin + location.pathname + '#edit=' + id, caption: 'Scan to finish this account on your phone.' }); return; }
   if (closest('.js-edit-customer')) { e.stopPropagation(); return openCustomerForm(closest('.js-edit-customer').dataset.rec); }
   if (closest('.js-view-agreement')) { e.stopPropagation(); const cust = IDX.customer.get(closest('.js-view-agreement').dataset.rec); if (cust) openOverlay({ kind: 'agreement', recId: cust.customerId }); return; }
