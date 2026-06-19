@@ -4351,6 +4351,14 @@ function columnEl(col, session) {
   // §M1 — phones invert the desktop layout: the card "footer" (totals) sits at the TOP,
   // while the toggles + search live in the bottom dock. Desktop keeps it as a footer.
   if (tot) { if (document.body.classList.contains('is-phone')) card.insertBefore(tot, card.firstChild); else card.appendChild(tot); }
+  // Desktop: freeze the search/sort bar out of the scroll too — a full-width card
+  // header so the card-body scrollbar runs ONLY through the list below it, never in
+  // a gutter alongside the bar (the "funny" gap). Mirrors the .list-totals footer
+  // freeze; on phones render() relocates the bar to the bottom dock instead.
+  if (!document.body.classList.contains('is-phone')) {
+    const lb = card.querySelector('.card-body .listbar'), body = card.querySelector('.card-body');
+    if (lb && body) card.insertBefore(lb, body);
+  }
   wrap.appendChild(card);
   return wrap;
 }

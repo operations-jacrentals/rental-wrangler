@@ -10,7 +10,6 @@
   --accent: #ff7a1a; --accent-soft: rgba(255,122,26,.14); --accent-line: rgba(255,122,26,.5);
   --bg: #0b0c0f; --bg-2: #101216; --panel: #15171c; --panel-2: #1b1e24;
   --card: #14161b; --card-head: #191c22;
-  --sbw: 9px; --listbar-strip: var(--card);   /* scrollbar width (matches *::-webkit-scrollbar) + the search-bar strip fill that bleeds under the scroll gutter */
   --line: #262a31; --line-soft: #1f232a;
   --txt: #e9edf4; --txt-2: #a7afbc; --txt-3: #6b7480; --track: #22262e; --on-orange: #1a1205;
 
@@ -720,7 +719,11 @@ select.lf-in { appearance: none; cursor: pointer; }
 }
 
 /* list-view search/sort bar (§12 in-card Sort) — floating chips, no hard line */
-.listbar { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; gap: 7px; padding: 6px 10px; background: linear-gradient(var(--card) 70%, transparent); box-shadow: var(--sbw) 0 0 0 var(--listbar-strip); }   /* the strip bleeds under the scroll gutter (full card width) so the scrollbar hovers above it instead of leaving a funny gap */
+.listbar { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; gap: 7px; padding: 6px 10px; background: linear-gradient(var(--card) 70%, transparent); }
+/* Desktop lifts the bar OUT of the scroll into a full-width card header (see
+   columnEl) so the card-body scrollbar runs only through the list below it — no
+   gutter gap beside the search strip. */
+.card > .listbar { flex: 0 0 auto; position: static; background: var(--card); }
 .listbar .mini-search { flex: 1; min-width: 0; height: 32px; padding: 0 11px; border-radius: var(--chip-radius); background: var(--panel); border: 1px solid var(--line); color: var(--txt); font-size: 12px; box-shadow: var(--chip-shadow); }
 .listbar .mini-search:focus { outline: none; border-color: var(--accent-line); }
 /* §12 sort control — ONE unified chip: [field ⌄ │ ▲▼]. The two segments share a
@@ -2562,7 +2565,8 @@ body.dragging .row.drop-ok { opacity: 1; }
 }
 /* search/sort sub-header (.listbar) — a clean solid dark strip so the floor/card
    texture never bleeds through the controls (Jac) */
-[data-theme="bluedsteel"] .listbar { background: linear-gradient(180deg, #0c1320 80%, transparent); --listbar-strip: #0c1320; }
+[data-theme="bluedsteel"] .listbar { background: linear-gradient(180deg, #0c1320 80%, transparent); }
+[data-theme="bluedsteel"] .card > .listbar { background: #0c1320; }
 
 /* global search bar (.searchwrap, the top "Search everything…") — was a flat panel;
    now a blued-steel plate: the same plate material + a machined top lip as the cards,
