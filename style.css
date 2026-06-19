@@ -1648,6 +1648,18 @@ select.nc-in { cursor: pointer; }
 .ag-selfiebtn:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
 .ag-selfiebtn .l { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.3px; font-size: 10.5px; }
 .ag-selfiebtn .ag-selfie { width: 100%; height: 100%; object-fit: cover; }
+/* live selfie camera — auto-on; one tap snaps the photo (file-input fallback when absent) */
+.ag-selfiebtn { position: relative; }
+.ag-selfiebtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ag-cam-feed { display: none; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+.ag-cam-fallback { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 8px; }
+.ag-selfiebtn.live .ag-cam-feed { display: block; }
+.ag-selfiebtn.live .ag-cam-fallback { display: none; }
+.ag-cam-cap { position: absolute; left: 0; right: 0; bottom: 0; padding: 4px 6px; text-align: center; background: var(--panel-2);
+  border-top: 1px solid var(--line); color: var(--txt-2); font-family: 'Saira Condensed', system-ui, sans-serif;
+  text-transform: uppercase; letter-spacing: 1.2px; font-size: 9.5px; }
+.ag-cam-hint { display: none; }
+.ag-selfiebtn.live .ag-cam-hint { display: block; }
 .ag-pad { flex: 1; min-width: 0; height: 210px; width: auto; border: 1.5px dashed var(--line); border-radius: 12px;
   background: radial-gradient(circle at 50% 40%, var(--panel-2), var(--panel)); touch-action: none; cursor: crosshair; }
 .ag-acceptrow { display: flex; gap: 9px; margin: 13px 0 0; }

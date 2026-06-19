@@ -297,7 +297,9 @@ function agCaptureBlock(o, ag, readKey, acceptJs, acceptData, acceptLabel) {
     ${o.signRead === readKey ? `<div class="nc-agreement" tabindex="0">${esc(ag.text)}</div>` : ''}
     <div class="ag-capcap">Capture both to authorize</div>
     <div class="ag-caprow">
-      <label class="ag-selfiebtn">${selfie ? `<img class="ag-selfie" src="${esc(selfie)}" alt="selfie" />` : `${AG_CAM}<span class="l">Selfie</span>`}<input type="file" accept="image/*" capture="user" class="js-ncsign-selfie" hidden /></label>
+      <label class="ag-selfiebtn js-ag-selfie">${selfie
+        ? `<img class="ag-selfie" src="${esc(selfie)}" alt="selfie" /><span class="ag-cam-cap">Retake</span>`
+        : `<video class="ag-cam-feed" autoplay muted playsinline></video><span class="ag-cam-fallback">${AG_CAM}<span class="l">Selfie</span></span><span class="ag-cam-cap ag-cam-hint">Tap to capture</span>`}<input type="file" accept="image/*" capture="user" class="js-ncsign-selfie" hidden /></label>
       <canvas class="nc-sigpad ag-pad" width="500" height="220"></canvas>
     </div>
     <div class="ag-acceptrow">${actionPill('commit', acceptLabel, { js: acceptJs, data: acceptData })}${ghostPill('Clear', { js: 'js-nc-sig-clearpad' })}</div>`;
@@ -6687,6 +6689,7 @@ function renderOverlay() {
   if (o.kind === 'payment') setupPayAlloc();   // live counter for the §19 allocation rows
   if (o.kind === 'addCard') { const cc = IDX.customer.get(o.customerId); if (cc) mountCardElement(); }   // §7.1b card saved first, signed after
   if (o.kind === 'newCustomer' && o.cardSub) { const cc = IDX.customer.get(o.editId); if (cc) mountCardElement(); }   // §14 the side-by-side Add-card panel
+  { const _agFeed = overlay.querySelector('.ag-cam-feed'); if (_agFeed) startAgCam(_agFeed); else stopAgCam(); }   // live selfie camera follows the capture block
 }
 const openOverlay = (o) => { state.datepick = null; _ovScroll[o.kind] = 0; state.overlay = o; renderOverlay(); };   // fresh open starts at top
 /* ── §15 in-app feedback: bug/request → queued to the backend Feedback tab ── */
@@ -7209,6 +7212,37 @@ function ncApplyName(d) {
   const parts = n.split(/\s+/);
   d.firstName = parts[0]; d.lastName = parts.slice(1).join(' ');
 }
+/* Live selfie camera for the agreement capture — auto-on the moment the capture block
+   renders so the operator just taps ONCE to snap (no OS picker round-trip). The stream
+   is module-scoped and re-attached across re-renders (no repeat permission prompt); it's
+   stopped on capture, on leaving the capture block, and on overlay close so the camera
+   light never lingers. No camera / permission denied → the file-input fallback stays. */
+let _agCam = null;
+function startAgCam(video) {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;   // no camera API → keep the file-input fallback
+  const attach = (stream) => {
+    _agCam = stream;
+    const v = video || document.querySelector('.overlay .ag-cam-feed'); if (!v) { stopAgCam(); return; }
+    if (v.srcObject !== stream) v.srcObject = stream;
+    if (v.play) v.play().catch(() => {});
+    const tile = v.closest('.ag-selfiebtn'); if (tile) tile.classList.add('live');   // reveal the feed + the "Tap to capture" hint
+  };
+  if (_agCam && _agCam.active) { attach(_agCam); return; }   // reuse the running stream across re-renders — no re-prompt
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false })
+    .then(attach)
+    .catch(() => { _agCam = null; });   // denied / no device → leave the file-input fallback in place
+}
+function stopAgCam() {
+  if (_agCam) { _agCam.getTracks().forEach((t) => t.stop()); _agCam = null; }
+}
+function captureAgSelfie() {
+  const v = document.querySelector('.overlay .ag-cam-feed'); if (!v || !v.videoWidth) return;
+  const W = 340, cv = document.createElement('canvas'); cv.width = W; cv.height = Math.round(v.videoHeight * (W / v.videoWidth));
+  const ctx = cv.getContext('2d'); ctx.translate(cv.width, 0); ctx.scale(-1, 1);   // mirror to match the live (selfie) preview
+  ctx.drawImage(v, 0, 0, cv.width, cv.height);
+  const o = state.overlay; if (o && o.kind === 'newCustomer') { o.signDraft = o.signDraft || {}; o.signDraft.selfie = cv.toDataURL('image/jpeg', 0.6); }
+  stopAgCam(); renderOverlay();
+}
 // Wire the signature canvas for finger/stylus/mouse drawing (white bg → JPEG export).
 function setupSignaturePad() {
   // Wire EVERY pad in the overlay (the capture can ride the card signing tab and/or
@@ -7227,7 +7261,7 @@ function setupSignaturePad() {
     cv.addEventListener('pointerleave', () => { drawing = false; });
   });
 }
-const closeOverlay = () => { destroyCardElement(); state.datepick = null; state.overlay = null; renderOverlay(); };
+const closeOverlay = () => { destroyCardElement(); stopAgCam(); state.datepick = null; state.overlay = null; renderOverlay(); };
 
 /* ── Back-office boards (§7.9–7.12): spreadsheet-style tables ─────────────── */
 function vendorTotals(vendorId) {
@@ -8391,6 +8425,13 @@ function onClick(e) {
   if (closest('.js-ncsign-pdf')) { e.stopPropagation(); const b = closest('.js-ncsign-pdf'); return openSignedPdf(state.overlay.editId, b.dataset.card, b.dataset.sig); }
   if (closest('.js-nc-selfie-clear')) { e.stopPropagation(); ncSyncInputs(); state.overlay.draft.selfie = ''; renderOverlay(); return; }
   if (closest('.js-nc-sig-clearpad')) { e.stopPropagation(); const cv = document.querySelector('.overlay .nc-sigpad'); if (cv) { const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height); cv.dataset.drawn = ''; } return; }
+  if (closest('.js-ag-selfie')) {   // selfie tile: one-tap snap off the live feed; Retake clears it; no camera → native picker
+    const o = state.overlay; if (!o) return;
+    const tile = closest('.js-ag-selfie');
+    if (o.signDraft && o.signDraft.selfie) { e.preventDefault(); e.stopPropagation(); o.signDraft.selfie = null; renderOverlay(); return; }   // Retake → clear + restart camera
+    if (tile.classList.contains('live')) { e.preventDefault(); e.stopPropagation(); captureAgSelfie(); return; }   // live feed → grab the frame in a single tap
+    return;   // no camera/permission → let the <label> open the OS file/camera picker (fallback)
+  }
   if (closest('.js-nc-qr')) { e.stopPropagation(); const id = state.overlay.editId; openOverlay({ kind: 'qr', title: 'Continue on phone', url: location.origin + location.pathname + '#edit=' + id, caption: 'Scan to finish this account on your phone.' }); return; }
   if (closest('.js-edit-customer')) { e.stopPropagation(); return openCustomerForm(closest('.js-edit-customer').dataset.rec); }
   if (closest('.js-view-agreement')) { e.stopPropagation(); const cust = IDX.customer.get(closest('.js-view-agreement').dataset.rec); if (cust) openOverlay({ kind: 'agreement', recId: cust.customerId }); return; }
