@@ -16,7 +16,8 @@ import { DATA } from './data.js';
 import { createCascade } from './cascade.js';
 import { serviceOrdersForUnit, completeService, SERVICE_TASKS } from './service-countdown.js';
 import * as CFG from './config.js';
-import { AGREEMENTS } from './agreements.js';
+import { AGREEMENTS, AGREEMENT_VERSIONS, AGREEMENT_CURRENT } from './agreements.js';
+import { I, CARD_ICON, RING_ICON } from './icons.js';
 import {
   getStatus, STATUS, ROLES, GRID_CARDS, BACKOFFICE_BOARDS, SORT_FIELDS,
   SHOP_TYPES, SHOP_SEGMENTS, COLUMNS, COLUMN_OF,
@@ -110,6 +111,31 @@ function migrateCustomers() {
       }
       migrationDirty = true;
     }
+    // Card-bound agreements: each card carries an APPEND-ONLY array of immutable
+    // signing records (the agreement is attached to the CARD, signed per account
+    // type, frozen at signing). Fold the legacy singular `agreement` — or, on the
+    // default card, the legacy customer-level signature — into agreements[0].
+    c.cards.forEach((k) => {
+      if (Array.isArray(k.agreements)) {
+        // Reclaim space from the first card-bound release (#151), which baked the full
+        // ~6–8 KB agreement text into every signing: drop it, keep a small version id.
+        k.agreements.forEach((s) => {
+          if (s && s.text) { if (!s.version) s.version = AGREEMENT_CURRENT[s.key === 'membership' ? 'membership' : 'rental'] || ''; delete s.text; migrationDirty = true; }
+        });
+        return;
+      }
+      k.agreements = [];
+      const legacy = (k.agreement && k.agreement.signature) ? k.agreement
+        : (k.isDefault && c.signature ? { signedAt: c.agreementSignedAt || '', version: c.agreementType || 'rental', signature: c.signature, selfie: c.selfie } : null);
+      if (legacy && legacy.signature) {
+        const key = legacy.version === 'membership' ? 'membership' : 'rental';
+        const ag = AGREEMENTS[key] || AGREEMENTS.rental;
+        k.agreements.push({ id: 'SIG-' + c.customerId + '-' + (k.id || '0'), key, version: AGREEMENT_CURRENT[key] || '', title: ag.title,
+          accountType: c.accountType || '', signedAt: legacy.signedAt || '', signerName: c.name || '',
+          signature: legacy.signature, selfie: legacy.selfie || '', driveSignatureUrl: '', driveSelfieUrl: '', driveFolderId: '' });
+      }
+      migrationDirty = true;
+    });
     // §14b ACH bank accounts on file — parallel to cards[]; tokenized via Stripe (us_bank_account),
     // we store only last4 + bankName + type + the Stripe pm id (never the raw routing/account).
     if (!Array.isArray(c.achAccounts)) { c.achAccounts = []; migrationDirty = true; }
@@ -222,6 +248,95 @@ function cardFlag(c) {
   const def = defaultCard(c); return (def && cardExpiringSoon(def)) ? 'expiring' : 'ok';
 }
 const CARD_FLAG_META = { ok: { label: 'Card OK', color: 'green' }, expiring: { label: 'Card Expiring', color: 'yellow' }, none: { label: 'No Card', color: 'red' } };
+/* ── Card-bound agreements (§7.1b) ──
+   Every card carries an append-only array of immutable signing records. The
+   agreement a card needs is decided by the customer's CURRENT account type
+   (Member-ness flips rental ⇄ membership; Business-ness doesn't change it). A card
+   is AUTHORIZED only when its latest signing matches the required key; an account-
+   type change makes a previously-signed card STALE until re-signed. */
+const requiredAgreementKey = (c) => /member/i.test((c && c.accountType) || '') ? 'membership' : 'rental';
+const cardSignings = (k) => (k && Array.isArray(k.agreements)) ? k.agreements : (k && k.agreement && k.agreement.signature ? [{ key: k.agreement.version === 'membership' ? 'membership' : 'rental', signedAt: k.agreement.signedAt, signature: k.agreement.signature, selfie: k.agreement.selfie }] : []);
+function cardCurrentSigning(c, k) { const want = requiredAgreementKey(c); const s = cardSignings(k); for (let i = s.length - 1; i >= 0; i--) { if ((s[i].key || 'rental') === want) return s[i]; } return null; }
+const cardAuthorized = (c, k) => !!cardCurrentSigning(c, k);
+function cardSignState(c, k) { return cardAuthorized(c, k) ? 'authorized' : (cardSignings(k).length ? 'stale' : 'unsigned'); }
+/* Resolve a signing's frozen title/text from the version registry (storage-light:
+   the signing stores only `version`, not the ~6–8 KB text). Falls back to a baked
+   `text`/`title` on legacy records, then to the current agreement for its key. */
+const signingTitle = (s) => (s && (s.title || (AGREEMENT_VERSIONS[s.version] || {}).title)) || (AGREEMENTS[s && s.key] || {}).title || 'Agreement';
+const signingText = (s) => (s && (s.text || (AGREEMENT_VERSIONS[s.version] || {}).text)) || (AGREEMENTS[s && s.key] || AGREEMENTS.rental).text || '';
+/* Drive-aware image accessors — prefer the archived Drive URL, fall back to the
+   inline data-URL kept until the backend offloads it (graceful pre-deploy). */
+const signingSelfieSrc = (s) => (s && (s.driveSelfieUrl || s.selfie)) || '';
+const signingSignatureSrc = (s) => (s && (s.driveSignatureUrl || s.signature)) || '';
+/** THE GATE — true only when every NON-EXPIRED card is signed for the current
+    account type. Expired cards can't be charged anyway, so they don't gate. */
+const accountAgreementsOk = (c) => validCards(c).every((k) => cardAuthorized(c, k));
+const accountAgreementsBlocked = (c) => !!c && !accountAgreementsOk(c);
+const unsignedCardCount = (c) => validCards(c).filter((k) => !cardAuthorized(c, k)).length;
+/* §14 booking/delivery gate — blocked when there's no valid card OR any card isn't
+   signed for the current account type. Charging is NEVER gated on this. */
+const cardGateBlocked = (cust) => !!cust && (!hasValidCard(cust) || accountAgreementsBlocked(cust));
+function cardGateReason(cust) {
+  if (!cust) return '';
+  if (!hasValidCard(cust)) return 'no valid card on file';
+  if (accountAgreementsBlocked(cust)) { const n = unsignedCardCount(cust); return `${n} card${n > 1 ? 's' : ''} not signed for the current account type`; }
+  return '';
+}
+/* Append an immutable signing record to a card — the current account type's
+   agreement is FROZEN onto the card by its small VERSION id (text resolved from the
+   registry, never stored inline) with the signature + selfie. Re-signing (new card /
+   account-type change) appends; it never edits a prior record. The images are then
+   offloaded to Drive (graceful: stay inline until the backend handler exists). */
+function signCardAgreement(c, k, signature, selfie) {
+  if (!c || !k || !signature) return;
+  const key = requiredAgreementKey(c); const ag = AGREEMENTS[key] || AGREEMENTS.rental;
+  if (!Array.isArray(k.agreements)) k.agreements = [];
+  const sig = { id: 'SIG-' + (state.seq++), key, version: AGREEMENT_CURRENT[key] || '', title: ag.title,
+    accountType: c.accountType || '', signedAt: TODAY_ISO, signerName: c.name || fullName(c),
+    signature, selfie: selfie || '', driveSignatureUrl: '', driveSelfieUrl: '', driveFolderId: '' };
+  k.agreements.push(sig);
+  reindex('customers', c);
+  logAction(c, `${ag.title} signed on ${brandName(k.brand)} ••${k.last4}`);
+  archiveAgreementMedia(c, k, sig);   // offload images to Drive when the backend supports it
+}
+/* Offload a signing's selfie + signature to Drive (per-customer folder) and replace
+   the heavy inline data-URLs with light Drive URLs — keeps the synced customer record
+   small (a Sheets cell caps ~50k chars). No-op without a backend / handler, so the
+   images simply stay inline until the Apps Script `archiveAgreementMedia` is deployed. */
+async function archiveAgreementMedia(c, k, sig) {
+  if (!backendPassword || (!sig.signature && !sig.selfie)) return;
+  try {
+    const r = await backendCall('archiveAgreementMedia', { customerId: c.customerId, cardId: k.id, signingId: sig.id,
+      signerName: sig.signerName, signedAt: sig.signedAt, signature: sig.signature, selfie: sig.selfie });
+    if (!r || !r.ok) return;   // handler absent / failed → leave images inline, try again on next sign
+    if (r.signatureUrl) { sig.driveSignatureUrl = r.signatureUrl; sig.signature = ''; }
+    if (r.selfieUrl) { sig.driveSelfieUrl = r.selfieUrl; sig.selfie = ''; }
+    if (r.folderId) sig.driveFolderId = r.folderId;
+    reindex('customers', c); saveSoon();
+  } catch (e) { /* offline / no handler — images stay inline, harmless */ }
+}
+/* Immutable PDF of a frozen signing — opens a clean, read-only print view rendered
+   ENTIRELY from the stored snapshot (title + frozen text resolved from the version
+   registry + signature + selfie + signer + date). Browser "Save as PDF" yields a
+   file that can't be edited; the content re-renders identically every time. */
+function openSignedPdf(custId, cardId, sigId) {
+  const c = IDX.customer.get(custId || ''); const k = c && customerCards(c).find((x) => x.id === cardId);
+  const s = k && cardSignings(k).find((x) => x.id === sigId);
+  if (!s) return toast('Signed agreement not found.');
+  const win = window.open('', '_blank'); if (!win) return toast('Allow pop-ups to open the PDF.');
+  const e2 = (t) => String(t == null ? '' : t).replace(/[&<>]/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m]));
+  const sigSrc = signingSignatureSrc(s), selfieSrc = signingSelfieSrc(s);
+  win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${e2(signingTitle(s))} — ${e2(s.signerName)}</title>
+    <style>body{font:13px/1.55 Georgia,'Times New Roman',serif;color:#111;margin:40px;max-width:760px}h1{font-size:19px;margin:0 0 4px}.meta{color:#444;margin:0 0 20px;font-size:12px}pre{white-space:pre-wrap;font:inherit;margin:0}.sigs{display:flex;gap:28px;margin-top:26px;flex-wrap:wrap}figure{margin:0}.sigs img{border:1px solid #ccc;max-width:260px;max-height:120px;display:block}figcaption{font-size:10px;color:#555;text-transform:uppercase;letter-spacing:1.2px;margin-top:5px}.bar{margin-top:26px}@media print{.bar{display:none}}</style>
+    </head><body>
+    <h1>${e2(signingTitle(s))}</h1>
+    <p class="meta">${e2(s.signerName)}${s.accountType ? ' · ' + e2(s.accountType) : ''} · accepted ${e2(s.signedAt || '—')} · card ••${e2(k.last4)}</p>
+    <pre>${e2(signingText(s))}</pre>
+    <div class="sigs">${sigSrc ? `<figure><img src="${e2(sigSrc)}" alt="signature"><figcaption>Signature</figcaption></figure>` : ''}${selfieSrc ? `<figure><img src="${e2(selfieSrc)}" alt="selfie"><figcaption>Selfie on file</figcaption></figure>` : ''}</div>
+    <div class="bar"><button onclick="window.print()" style="padding:9px 18px;font:13px sans-serif">Save as PDF / Print</button></div>
+    </body></html>`);
+  win.document.close();
+}
 function setCardDefault(custId, cardId) {
   const c = IDX.customer.get(custId); if (!c) return;
   const k = customerCards(c).find((x) => x.id === cardId); if (!k) return;
@@ -281,21 +396,22 @@ function paymentMethodsSection(c) {
 }
 function cardTabBody(c) {
   const cards = customerCards(c);
-  const consent = !!(c.signature && c.selfie);
+  const SIGN_BADGE = { authorized: ['Signed', 'green'], stale: ['Re-sign', 'yellow'], unsigned: ['Unsigned', 'red'] };
   const rows = cards.length ? cards.map((k) => {
     const exp = cardExpired(k), soon = cardExpiringSoon(k);
+    const st = cardSignState(c, k), sb = SIGN_BADGE[st];
     return `<div class="card-row">
       <span class="cr-brand">${esc(brandName(k.brand))} ••${esc(k.last4)}</span>
       <span class="cr-exp${exp ? ' bad' : soon ? ' warn' : ''}">${k.expMonth ? esc(k.expMonth + '/' + String(k.expYear).slice(-2)) : ''}${exp ? ' · expired' : ''}</span>
       <span class="cr-nick inline-edit" data-edit="cardNick" data-rec="${c.customerId}" data-card="${k.id}">${k.nickname ? esc(k.nickname) : '<span class="add-field" data-r="R5c">+Nickname</span>'}</span>
-      ${k.agreement ? badge('Agreement ✓', 'green') : ''}
+      ${badge(sb[0], sb[1])}
+      ${st !== 'authorized' ? actionPill('commit', 'Sign', { js: 'js-card-sign', data: { rec: c.customerId, card: k.id } }) : ''}
       ${k.isDefault ? badge('Default', 'blue') : actionPill('commit', 'Make default', { js: 'js-card-default', data: { rec: c.customerId, card: k.id } })}
       <button class="x js-card-remove" data-rec="${c.customerId}" data-card="${k.id}" data-tip="Remove card">${I.x}</button>
     </div>`;
   }).join('') : '<span class="muted" style="font-size:12px">No cards on file.</span>';
   return `<div class="cards-list">${rows}</div>
-    ${consent ? `<div style="margin-top:10px">${addBtn('Card', { link: true, js: 'js-add-card', data: { rec: c.customerId } })}</div>`
-              : '<span class="muted" style="font-size:11px">Capture a selfie + signature (Edit account) before adding a card.</span>'}`;
+    <div style="margin-top:10px">${addBtn('Card', { link: true, js: 'js-add-card', data: { rec: c.customerId } })}</div>`;
 }
 function achTabBody(c) {
   const banks = customerBanks(c);
@@ -546,6 +662,11 @@ function transportLineItems(r) {
    Delivery, truck→store = Recovery, store→store = Round-Trip, a single store = Self.
    Shown only when a delivery address exists; setting it syncs the invoice line. ── */
 const ICO_STORE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9.5L5.2 5h13.6L20 9.5M5 9.5V20h14V9.5M5 9.5h14"/><path d="M9.5 20v-4.5h5V20"/></svg>';
+/* §20 route-rail nodes — outline house (the JacRentals yard, both ends) + outline
+   person (the customer at the job site). Stroke from currentColor so the node well
+   tints them orange when the leg is on the armed/active route. */
+const ICO_HOUSE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M3 11.4 12 4l9 7.4"/><path d="M5 10.2V20h14v-9.8"/><path d="M9.8 20v-5h4.4v5"/></svg>';
+const ICO_USER = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.3"/><path d="M5.6 20a6.4 6.4 0 0 1 12.8 0"/></svg>';
 // (the old 3-node transport picker + ICO_TRUCK/TRANSPORT_NODES/LINES were
 //  removed in the streamline sweep — superseded by miniJourneyHtml, R15)
 /** Keep the invoice's auto Transport line in sync with the rental's transport type/address.
@@ -893,6 +1014,20 @@ function setTransportType(rentalId, unitId, type) {
   if (!eu || isPrimaryUnit(r, eu)) r.transportType = type;
   syncTransportLine(r); reindex('rentals', r); logAction(r, `Transport type → ${type}`); render();
 }
+/** §20 route-rail node tap: arm the first stop, then a second stop locks the type.
+ *  Jac→Site = Delivery · Site→Jac = Recovery · Jac↔Jac = Round-Trip (order-free).
+ *  Tapping the armed node again disarms it. */
+const ROUTE_PAIR = { 'jacL+site': 'Delivery', 'jacR+site': 'Recovery', 'jacL+jacR': 'Round-Trip' };
+function armTransportNode(rentalId, unitId, node) {
+  const arm = state.transportArm;
+  const same = arm && arm.rentalId === rentalId && (arm.unitId || null) === (unitId || null);
+  if (!same) { state.transportArm = { rentalId, unitId: unitId || null, node }; return render(); }
+  if (arm.node === node) { state.transportArm = null; return render(); }   // tap the same stop → disarm
+  const type = ROUTE_PAIR[[arm.node, node].sort().join('+')];
+  state.transportArm = null;
+  if (type) return setTransportType(rentalId, unitId, type);   // setTransportType re-bills + renders
+  render();
+}
 
 /** Invoice subtotal / tax / total / paid / balance / derived status (§10 + aging). */
 const TAX_RATE = 0.1075;   // §10 sales tax — 10.75% (Jac 2026-06-07); honors exemptions
@@ -1181,6 +1316,7 @@ const state = {
   cascade: createCascade(DATA),   // wired with v6 canonical fields (cascade.js DEFAULT_FIELDS)
   overlay: null,       // { kind, ... } for popups
   focusedCard: null,   // clicked card → orange border (§0.1 visual feedback, no anchor)
+  transportArm: null,  // §20 route-rail two-click selector: { rentalId, unitId, node } — the FIRST stop tapped (armed orange); a second stop locks the type
   winpicker: null,     // { rentalId, monthISO, anchor } — the rental-window range picker
   availWin: null,      // §10 persistent window scope for the "available" search (set by the picker; outlives it)
   filterTerms: [],            // §5.4 — AND-narrowing filter terms (type + Enter)
@@ -1655,71 +1791,10 @@ function filterTermPill(ft, i, scope) {
 /* ════════════════════════════════════════════════════════════════════════
    §5a ICONS — inline SVG (stroke-based, currentColor)
    ════════════════════════════════════════════════════════════════════════ */
-const I = {
-  circle: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="5"/><rect x="9.3" y="9.3" width="5.4" height="5.4" rx="1.6" fill="currentColor" stroke="none"/></svg>',
-  plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>',
-  search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>',
-  x: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M6 6l12 12M18 6 6 18"/></svg>',
-  filter: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5h18l-7 8v6l-4-2v-4z"/></svg>',
-  grid: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>',
-  truck: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 5h13v11H1zM14 8h4l4 4v4h-8z"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="18" r="2"/></svg>',
-  back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M15 6l-6 6 6 6"/></svg>',
-  list: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/></svg>',
-  mark: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l5-12 4 8 3-5 6 9z"/></svg>',
-  sun: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5 19 19M19 5l-1.5 1.5M6.5 17.5 5 19"/></svg>',
-  moon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A8 8 0 1 1 11.2 3 6 6 0 0 0 21 12.8z"/></svg>',
-  hardhat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M3 18a9 9 0 0 1 18 0z"/><path d="M2 18h20"/><path d="M10 9V6a2 2 0 0 1 2-2 2 2 0 0 1 2 2v3"/><path d="M5 14V12M19 14V12"/></svg>',
-  horseshoe: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3.5C3.5 6 3 11 5 15.5 6.2 18.3 9 20 12 20s5.8-1.7 7-4.5C21 11 20.5 6 17 3.5"/><path d="M6.5 19.5l-.5 1.5M17.5 19.5l.5 1.5"/></svg>',
-  bluesteel: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/><circle cx="6.4" cy="6.5" r=".7" fill="currentColor" stroke="none"/><circle cx="17.6" cy="6.5" r=".7" fill="currentColor" stroke="none"/></svg>',
-  qr: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h3v3h-3zM20 14v7M14 20h7"/></svg>',
-  mouse: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="7"/><path d="M12 6v4"/></svg>',
-  video: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="13" height="12" rx="2"/><path d="m15 10 6-3v10l-6-3z"/></svg>',
-  camera: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.5 4h-5L7.5 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3.5z"/><circle cx="12" cy="13" r="3"/></svg>',
-  droplet: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3s6 6.4 6 10.5a6 6 0 0 1-12 0C6 9.4 12 3 12 3z"/></svg>',
-  table: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9.5h18M3 15h18M9 4v16"/></svg>',
-  graph: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 3v17h17"/><rect x="7.5" y="11" width="2.6" height="6" rx="0.6" fill="currentColor" stroke="none"/><rect x="12" y="7.5" width="2.6" height="9.5" rx="0.6" fill="currentColor" stroke="none"/><rect x="16.5" y="13" width="2.6" height="4" rx="0.6" fill="currentColor" stroke="none"/></svg>',
-  sliders: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h10M18 6h2M4 12h2M10 12h10M4 18h12M20 18h0M16 18h4"/><circle cx="16" cy="6" r="2"/><circle cx="8" cy="12" r="2"/><circle cx="14" cy="18" r="2"/></svg>',
-  inbox: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>',
-  bell: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>',
-  eye: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>',
-  eyeOff: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.9 4.24A9.1 9.1 0 0 1 12 4c6.5 0 10 7 10 7a13.2 13.2 0 0 1-2 2.6M6.6 6.6A13.2 13.2 0 0 0 2 11s3.5 7 10 7a9.1 9.1 0 0 0 4-.9"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2M2 2l20 20"/></svg>',
-  feedback: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M9.5 9.5h5M9.5 12.7h3"/></svg>',
-  box: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7l9-4 9 4-9 4z"/><path d="M3 7v10l9 4 9-4V7"/><path d="M12 11v10"/></svg>',
-  doc: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2h8l4 4v16H6z"/><path d="M14 2v4h4"/></svg>',
-  lock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>',
-  lockOpen: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.5-2"/></svg>',
-  chev: '<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 9l6 6 6-6"/></svg>',
-  chevL: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>',
-  chevR: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>',
-  chat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>',
-};
-
-/* Card + KPI-ring glyphs — sourced from free libraries (Lucide MIT; the excavator
-   is Tabler's "backhoe", MIT). Inlined per §6.2 #12 (stroke-based, currentColor). */
-const ico = (p) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
-const CARD_ICON = {
-  customers:     ico('<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>'),                                // person
-  rentals:       ico('<path d="M8 2v4M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/>'),                    // calendar
-  categories:    ico('<path d="M2 17a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/><path d="M11 17a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/><path d="M13 19h-9"/><path d="M4 15h9"/><path d="M8 12v-5h2a3 3 0 0 1 3 3v5"/><path d="M5 15v-2a1 1 0 0 1 1 -1h7"/><path d="M21.12 9.88l-3.12 -4.88l-5 5"/><path d="M21.12 9.88a3 3 0 0 1 -2.12 5.12a3 3 0 0 1 -2.12 -.88l4.24 -4.24"/>'), // excavator (Tabler backhoe)
-  units:         ico('<path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/>'), // tag (asset)
-  invoices:      ico('<path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1-2-1Z"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><path d="M12 17.5v-11"/>'), // receipt
-  workOrders:    ico('<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>'), // wrench
-  serviceOrders: ico('<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>'),  // heart
-  inspections:   ico('<rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 14 2 2 4-4"/>'),   // clipboard-check (done)
-  inspectionsPending: ico('<rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M10 12.3a2 2 0 1 1 2.7 1.9c-.6.3-1 .7-1 1.4"/><path d="M11.7 17.8h.01"/>'),   // clipboard-question (Not Ready / pending)
-  shop:          ico('<path d="m15 12-8.5 8.5a2.12 2.12 0 1 1-3-3L12 9"/><path d="M17.64 15 22 10.64"/><path d="m20.91 11.7-1.25-1.25c-.6-.6-.93-1.4-.93-2.25v-.86L16.01 4.6a5.56 5.56 0 0 0-3.94-1.64H9l.92.82A6.18 6.18 0 0 1 12 8.4v1.56l2 2h2.47l2.26 1.91"/>'), // hammer (Shop)
-  parts:         ico('<path d="M16.5 9.4 7.55 4.24"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>'), // package
-  vendors:       ico('<path d="M3 9h18v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M3 9l1.5-5h15L21 9"/><path d="M3 9h18"/><path d="M9 22V12h6v10"/>'),  // storefront
-  expenses:      ico('<path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"/><path d="M14 8h-4M14 12h-4M12 16h-2"/>'),  // receipt
-  files:         ico('<path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/>'),  // folder
-};
-const RING_ICON = {
-  mechanic: CARD_ICON.workOrders,  // wrench
-  mtech:    ico('<path d="M2 18a1 1 0 0 0 1 1h18a1 1 0 0 0 1-1v-1a1 1 0 0 0-1-1H3a1 1 0 0 0-1 1Z"/><path d="M10 10V5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v5"/><path d="M4 15v-3a6 6 0 0 1 6-6"/><path d="M14 6a6 6 0 0 1 6 6v3"/>'),  // hard-hat
-  driver:   ico('<path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.62l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/>'),  // truck
-  office:   ico('<path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4M10 10h4M10 14h4M10 18h4"/>'),  // building
-  sales:    ico('<path d="M16 7h6v6"/><path d="m22 7-8.5 8.5-5-5L2 17"/>'),  // trending-up
-};
+/* Icon registries (I, CARD_ICON, RING_ICON) live in icons.js — generic glyphs
+   are vendored VERBATIM from Lucide (regenerate: `node tools/gen-icons.mjs`),
+   bespoke brand/ranch marks kept there. GATE_ICON (gate-timeline status glyphs)
+   stays below in §5, intentionally bespoke. */
 
 /* ════════════════════════════════════════════════════════════════════════
    §5 UI BUILDERS — ONE function per design rule (the SPEC v8 rulebook).
@@ -1993,17 +2068,17 @@ function ghostPill(label, { js, data } = {}) {
  *  foot. Pure chrome, composed from already-stamped parts (the muted close, R17/R18 in
  *  the foot) — no own data-r. `icon` = an `I.*`/`CARD_ICON.*` glyph; `headRight` =
  *  extra head buttons (e.g. the phone-QR); `body`/`foot` = innerHTML strings. */
-function popupShell({ icon, title, tag, danger, headRight = '', body = '', foot = '', closeJs = 'js-close' } = {}) {
+function popupShell({ icon, title, tag, danger, headRight = '', headRail = '', body = '', foot = '', closeJs = 'js-close', bodyClass = '' } = {}) {
+  // headRail (optional): raw HTML that REPLACES the stamped title block — used when a
+  // tab rail IS the header (the card-bound agreements form). Default keeps the title.
   return `
     <div class="pl-cap${danger ? ' danger' : ''}"></div>
     <span class="pl-rivet tl"></span><span class="pl-rivet tr"></span><span class="pl-rivet bl"></span><span class="pl-rivet br"></span>
-    <div class="popup-head">
-      ${icon ? `<span class="pl-ic">${icon}</span>` : ''}
-      <div class="pl-title"><h3>${esc(title || '')}</h3>${tag ? `<span class="pl-tag">${esc(tag)}</span>` : ''}</div>
-      <span class="spacer"></span>${headRight}
+    <div class="popup-head${headRail ? ' has-rail' : ''}">
+      ${headRail || `${icon ? `<span class="pl-ic">${icon}</span>` : ''}<div class="pl-title"><h3>${esc(title || '')}</h3>${tag ? `<span class="pl-tag">${esc(tag)}</span>` : ''}</div><span class="spacer"></span>${headRight}`}
       <button class="x ${closeJs}" aria-label="Close">${I.x}</button>
     </div>
-    <div class="popup-body">${body}</div>
+    <div class="popup-body${bodyClass ? ' ' + bodyClass : ''}">${body}</div>
     ${foot ? `<div class="popup-foot">${foot}</div>` : ''}`;
 }
 
@@ -3182,45 +3257,58 @@ function miniJourneyHtml(r2, eu) {
   return `<div class="journeywrap"><div class="jtype">${seg}${oneWay ? `<span class="jprice">${money(oneWay)}<span class="sfx"> /one-way</span></span>` : ''}</div><div class="journey mini">${body}</div></div>`;
 }
 const ICO_PIN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s7-6.5 7-12a7 7 0 1 0-14 0c0 5.5 7 12 7 12z"/><circle cx="12" cy="9" r="2.5"/></svg>';
-/* §20 STALL ROUTE RAIL (Jac 2026-06-15) — the per-unit Home—Site—Home journey as a
-   CONNECTED rail in the day-timeline's grammar: enlarged node medallions joined by
-   thick segment legs that FILL GREEN as each capture is logged (matching the day-cell
-   elapsed tint) and stay hollow-dashed while pending. +Log Delivery/+Log Recovery and
-   the ✓-done state ride the legs; the site address sits ONCE under the shared Site
-   node. Replaces the old smeared transport chip + right-column + bottom section. */
+/* §20 STALL ROUTE RAIL (Jac 2026-06-18) — the per-unit transport journey as a linear
+   horizontal stepper: outline HOUSE (Jac yard) — outline PERSON (Job Site) — outline
+   HOUSE (Jac), always all three stops so the rail itself is the type CONTROL. Tap two
+   stops to set the run (Jac→Site delivers · Site→Jac recovers · Jac↔Jac round-trips):
+   the first arms ORANGE-outline, the second locks the path ORANGE-fill. On each active
+   leg the site address rides ABOVE the connector line and +Log Delivery/Recovery rides
+   BELOW it; the ✓-done capture turns the log green. (R15) */
 function stallRouteHtml(r, eu) {
   const te = state.transportEdit;
   const uId = eu.unitId;
   const du = ` data-unit="${esc(uId)}"`;
   if (te && te.rentalId === r.rentalId && (te.unitId || null) === uId) return `<div class="stall-edit">${transportEditorHtml()}</div>`;
+
   const type = (eu.transportType && eu.transportType !== 'Self') ? eu.transportType : null;
-  if (!type) {
-    return `<div class="stall-sub"><button class="add-field anchor js-tedit-open" data-r="R5b" data-rec="${esc(r.rentalId)}"${du} data-leg="delivery" style="height:24px;font-size:11px">+Transport</button></div>`;
-  }
+  const delLeg = type === 'Delivery' || type === 'Round-Trip';   // left line: Jac → Site
+  const recLeg = type === 'Recovery' || type === 'Round-Trip';   // right line: Site → Jac
+  const arm = state.transportArm;
+  const armNode = (arm && arm.rentalId === r.rentalId && (arm.unitId || null) === uId) ? arm.node : null;
+
   const tr = unitTransport(r, eu);
   const oneWay = (tr && tr.perLeg != null) ? tr.perLeg : (tr && tr.price != null ? tr.price : null);
   const drive = (tr && tr.driveMin != null) ? `~${tr.driveMin} min` : '';
-  const addrRaw = eu.deliveryAddress || (isPrimaryUnit(r, eu) ? r.deliveryAddress : '');   // mirror yardToolHtml's primary fallback so the two journeys never diverge
-  const addr = addrRaw ? esc(addrRaw) : '+Address';
   const sd = !!eu.startCapture, ed = !!eu.endCapture;
-  const sub = `<div class="stall-sub">⇄ ${esc(type)}${oneWay ? ` · ${money(oneWay)}/one-way` : ''}</div>`;
-  const home = `<span class="rtbox">${ICO_STORE}</span>`;
-  const site = (done) => `<span class="rtbox site${eu.deliveryAddress ? ' set' : ''}${done ? ' done' : ''} js-tedit-open" data-rec="${esc(r.rentalId)}"${du} data-leg="delivery">${ICO_PIN}</span>`;
-  const over = (cap, done, label) => `<span class="rtover ${done ? 'done' : 'log'} js-yard" data-cap="${cap}" data-rec="${esc(r.rentalId)}"${du}>${done ? '✓ ' + esc(label.replace('+Log ', '')) : esc(label)}</span>`;
-  const bar = (done) => `<span class="rtbar ${done ? 'done' : 'pending'}"></span>`;
-  const sp = '<span></span>';
-  const lblJac = '<span class="rtlbl">Jac</span>';
-  const lblSite = `<span class="rtlbl">Site<span class="rtaddr js-tedit-open" data-rec="${esc(r.rentalId)}"${du} data-leg="delivery">${addr}</span></span>`;
-  const lblDrive = drive ? `<span class="rtlbl">${esc(drive)}</span>` : sp;
-  let rail;
-  if (type === 'Round-Trip') {
-    rail = `<div class="rtrail rt">${sp}${over('start', sd, '+Log Delivery')}${sp}${over('end', ed, '+Log Recovery')}${sp}${home}${bar(sd)}${site(sd)}${bar(ed)}${home}${lblJac}${lblDrive}${lblSite}${sp}${lblJac}</div>`;
-  } else if (type === 'Delivery') {
-    rail = `<div class="rtrail one">${sp}${over('start', sd, '+Log Delivery')}${sp}${home}${bar(sd)}${site(sd)}${lblJac}${lblDrive}${lblSite}</div>`;
-  } else {
-    rail = `<div class="rtrail one">${sp}${over('end', ed, '+Log Recovery')}${sp}${site(ed)}${bar(ed)}${home}${lblSite}${lblDrive}${lblJac}</div>`;
-  }
-  return sub + rail;
+  const delAddr = eu.deliveryAddress || (isPrimaryUnit(r, eu) ? r.deliveryAddress : '');   // mirror the primary fallback so both journeys agree
+  const recAddr = eu.recoveryAddress || delAddr;
+
+  // A stop — always tappable; ON = on the locked route (orange fill), ARM = first tap (orange outline).
+  const stop = (key, ico, lbl, on) => `<span class="rtnode js-tnode${on ? ' on' : ''}${armNode === key ? ' arm' : ''}" data-node="${key}" data-rec="${esc(r.rentalId)}"${du} role="button" tabindex="0" aria-label="${esc(lbl)} stop — tap to set the transport route">
+      <span class="rtgap"></span><span class="rtwell">${ico}</span><span class="rtname">${esc(lbl)}</span></span>`;
+  // A connector leg — address above, line, +Log below; inert (thin dashed line only) when the route doesn't use it.
+  const leg = (on, addr, cap, done, logLbl, addrLeg) => {
+    if (!on) return `<span class="rtleg"><span class="rtgap"></span><span class="rtline"></span><span class="rtgap"></span></span>`;
+    return `<span class="rtleg on">
+      <span class="rtaddr js-tedit-open" data-rec="${esc(r.rentalId)}"${du} data-leg="${addrLeg}">${addr ? esc(addr) : '+Address'}</span>
+      <span class="rtline"></span>
+      <span class="rtlog ${done ? 'done' : 'log'} js-yard" data-cap="${cap}" data-rec="${esc(r.rentalId)}"${du}>${done ? '✓ ' + esc(logLbl.replace('+Log ', '')) : esc(logLbl)}</span>
+    </span>`;
+  };
+
+  const sub = type
+    ? `<div class="stall-sub">⇄ ${esc(type)}${oneWay ? ` · ${money(oneWay)}/one-way` : ''}${drive ? ` · ${esc(drive)}` : ''}</div>`
+    : armNode
+      ? `<div class="stall-sub armed">Tap the destination stop to lock the route…</div>`
+      : `<div class="stall-sub hint">Tap two stops to set the run — Jac→Site delivers · Site→Jac recovers · Jac↔Jac round-trips.</div>`;
+
+  return `${sub}<div class="rtrail2" data-r="R15">${
+    stop('jacL', ICO_HOUSE, 'Jac', delLeg)
+  }${leg(delLeg, delAddr, 'start', sd, '+Log Delivery', 'delivery')}${
+    stop('site', ICO_USER, 'Job Site', delLeg || recLeg)
+  }${leg(recLeg, recAddr, 'end', ed, '+Log Recovery', 'recovery')}${
+    stop('jacR', ICO_HOUSE, 'Jac', recLeg)
+  }</div>`;
 }
 /* card-head title flags: live condition + worst-WO bottleneck (units);
    rental status + pay status (rentals). Two stacked 14px rows = title height. */
@@ -3256,10 +3344,11 @@ function headFlagsHtml(card, rec) {
     const activeR = DATA.rentals.find((r) => r.customerId === rec.customerId && ACTIVE_RENTAL.has(r.status));
     const rSt = activeR ? getStatus('rentalStatus', rentalDisplayStatus(activeR)) : null;
     const noCard = cardFlag(rec) === 'none';
-    const acctDone = !!(rec.selfie && rec.signature);
+    const unsignedCard = !noCard && accountAgreementsBlocked(rec);   // §7.1b has cards but one isn't signed for the current type
+    const acctDone = customerCards(rec).length > 0 && accountAgreementsOk(rec);
     return flagsStack([rec.phone ? flagEl(rec.phone, 'gray') : '', flagEl(acct.label, acct.color, { icon: CARD_ICON.customers })])
       + flagsStack([pay ? flagEl(pay.label, pay.color, { icon: CARD_ICON.invoices, alert: payBad }) : '', rSt ? flagEl(rSt.label, rSt.color, { icon: CARD_ICON.rentals, card: 'rentals', recId: activeR.rentalId, alert: true }) : ''])
-      + (noCard ? flagsStack([flagEl('No Card', 'red', { alert: true, sect: 'sec-cards' })]) : '')
+      + (noCard ? flagsStack([flagEl('No Card', 'red', { alert: true, sect: 'sec-cards' })]) : unsignedCard ? flagsStack([flagEl('Unsigned Card', 'red', { alert: true, sect: 'sec-cards' })]) : '')
       + `<span style="margin-left:auto">${gatePillRaw(acctDone ? 'Account' : 'Incomplete', acctDone ? 'green' : 'yellow', 'js-edit-customer', { rec: rec.customerId }, true)}</span>`;
   }
   if (card === 'categories') {
@@ -4940,9 +5029,10 @@ function wranglerDockEl() {
           const plan = m.action._plan || (m.action._plan = wrValidatePlan(m.action));
           const sum = wrPlanSummary(plan);
           const skip = plan.issues.length ? `<div class="wr-apply-skip">skipped: ${esc(plan.issues.join('; '))}</div>` : '';
+          const cut = m.action._truncated ? `<div class="wr-apply-skip">⚠ my reply was cut off — only ${plan.ops.reduce((n, o) => n + (o.rows ? o.rows.length : 0), 0)} row(s) came through; apply these, then ask me to send the rest in a smaller batch</div>` : '';
           act = m.filed
             ? `<span class="wr-actdone">✓ Applied — ${esc(sum)}</span>`
-            : `<div class="wr-apply"><div class="wr-apply-sum">Preview: ${esc(sum)}</div>${skip}${plan.ops.length ? `<button class="wr-actbtn wr-actbtn-build js-wr-apply" data-mi="${i}">✓ Apply these changes</button>` : '<span class="wr-apply-none">Nothing here I can safely apply.</span>'}</div>`;
+            : `<div class="wr-apply"><div class="wr-apply-sum">Preview: ${esc(sum)}</div>${cut}${skip}${plan.ops.length ? `<button class="wr-actbtn wr-actbtn-build js-wr-apply" data-mi="${i}">✓ Apply these changes</button>` : '<span class="wr-apply-none">Nothing here I can safely apply.</span>'}</div>`;
         } else if (m.action) {
           const ak = m.action.action;
           const doneLbl = ak === 'plan' ? 'Building to your plan' : ak === 'request' ? 'Sent to the developer for OK' : 'Fixing now — I’ll let you know when it’s done';
@@ -5893,13 +5983,12 @@ function renderOverlay() {
   if (o.kind === 'qr') {
     const url = o.url || location.href;
     const pop = el('div', 'popup'); pop.style.width = '340px';
-    pop.innerHTML = `
-      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${I.qr}</span><h3>${esc(o.title || 'Share session')}</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
-      <div class="popup-body" style="text-align:center">
+    pop.innerHTML = popupShell({ icon: I.qr, title: o.title || 'Share session', tag: 'Share · this session', body: `
+      <div style="text-align:center">
         <img class="qr-img" alt="QR code" src="https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=8&bgcolor=15171c&color=ff7a1a&data=${encodeURIComponent(url)}" width="220" height="220" style="border-radius:12px;background:var(--panel-2)" />
         <p class="muted" style="margin-top:10px;font-size:12px;word-break:break-all">${esc(url)}</p>
         <p class="muted" style="margin-top:6px;font-size:11px">${esc(o.caption || 'Scan to open this session on another device (single shared login — §1/§4.2).')}</p>
-      </div>`;
+      </div>` });
     overlay.appendChild(pop);
   } else if (o.kind === 'migrateUnits') {
     // Round up missing units — preview the create/link plan before writing anything.
@@ -5912,21 +6001,16 @@ function renderOverlay() {
         <td style="padding:5px 8px;color:var(--muted)">${esc(IDX.category.get(p.categoryId)?.name || p.categoryId || '—')}</td>
         <td style="padding:5px 8px;color:var(--muted);text-align:right">${p.count}</td></tr>`).join('');
     const pop = el('div', 'popup'); pop.style.width = '560px';
-    pop.innerHTML = `
-      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${CARD_ICON.units || ''}</span><h3>Round up missing units</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
-      <div class="popup-body">
+    pop.innerHTML = popupShell({ icon: CARD_ICON.units || '', title: 'Round up missing units', tag: 'Units · migrate',
+      foot: `<button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill ignition js-migrate-go" data-r="R17">Create &amp; link ${o.plan.length}</button>`,
+      body: `
         <p style="font-size:13px;margin-bottom:10px"><b>${o.plan.length}</b> unit${o.plan.length === 1 ? '' : 's'} were referenced on rentals but never recorded. This will <b>create ${creates}</b> new record${creates === 1 ? '' : 's'}${links ? ` and <b>link ${links}</b> to existing units` : ''}, then connect <b>${rentals}</b> rental${rentals === 1 ? '' : 's'} (and their customers, categories &amp; invoices) to them.</p>
         <div style="max-height:46vh;overflow:auto;border:1px solid rgba(255,255,255,.1);border-radius:8px">
           <table style="width:100%;border-collapse:collapse;font-size:12px">
             <thead><tr style="position:sticky;top:0;background:var(--panel-2)"><th style="text-align:left;padding:6px 8px">Unit</th><th style="text-align:left;padding:6px 8px">Action</th><th style="text-align:left;padding:6px 8px">Category</th><th style="text-align:right;padding:6px 8px">Rentals</th></tr></thead>
             <tbody>${rows}</tbody>
           </table>
-        </div>
-        <div class="pillrow" style="justify-content:flex-end;margin-top:12px">
-          <button class="pill ref js-close">Cancel</button>
-          <button class="pill c-commit js-migrate-go" style="height:26px;font-size:11px">Create &amp; link ${o.plan.length}</button>
-        </div>
-      </div>`;
+        </div>` });
     overlay.appendChild(pop);
   } else if (o.kind === 'comment') {
     // Phase 6 (Jac redesign) — a SIMPLE comment card that floods with the picked color.
@@ -6034,9 +6118,9 @@ function renderOverlay() {
     const li = o.idx != null ? (w?.lineItems || [])[o.idx] : null;
     const ven = li?.vendorId ? DATA.vendors.find((v) => v.vendorId === li.vendorId) : null;
     const pop = el('div', 'popup'); pop.style.width = '400px';
-    pop.innerHTML = `
-      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${CARD_ICON.parts || CARD_ICON.workOrders}</span><h3>${li ? 'Edit' : 'Add'} Part / Task</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
-      <div class="popup-body">
+    pop.innerHTML = popupShell({ icon: CARD_ICON.parts || CARD_ICON.workOrders, title: `${li ? 'Edit' : 'Add'} Part / Task`, tag: 'Work order · line',
+      foot: `${ghostPill('Cancel', { js: 'js-close' })}${actionPill('commit', li ? 'Save' : 'Add line', { js: 'js-pf2-save' })}`,
+      body: `
         ${fileDrop(state.partPhoto || li?.photo ? '✓ photo attached' : 'Add Photo (not required)', { js: 'js-pf2-file', capture: 'environment', done: !!(state.partPhoto || li?.photo), icon: I.camera })}
         <p class="muted" style="text-align:center;font-size:11.5px;margin:7px 0 10px">✨ Mr. Wrangler will add the parts for you!</p>
         <input class="lf-in js-pf2-desc" placeholder="Part/Task Name" value="${esc(li?.part || '')}" style="width:100%;margin-bottom:7px">
@@ -6046,12 +6130,7 @@ function renderOverlay() {
         </div>
         <input class="lf-in js-pf2-url" placeholder="URL link" value="${esc(li?.url || '')}" style="width:100%;margin-bottom:7px">
         <input class="lf-in js-pf2-vendor" placeholder="Vendor" value="${esc(ven?.name || '')}" style="width:100%;margin-bottom:4px">
-        <p class="muted" style="font-size:11px;margin:4px 0 12px">✨ Empty fields are filled by Mr. Wrangler after saving: the photo is reviewed for the description/cost/url, and hours are estimated from the category + industry standards.</p>
-        <div class="pillrow" style="justify-content:flex-end">
-          ${ghostPill('Cancel', { js: 'js-close' })}
-          ${actionPill('commit', li ? 'Save' : 'Add line', { js: 'js-pf2-save' })}
-        </div>
-      </div>`;
+        <p class="muted" style="font-size:11px;margin:4px 0 4px">✨ Empty fields are filled by Mr. Wrangler after saving: the photo is reviewed for the description/cost/url, and hours are estimated from the category + industry standards.</p>` });
     overlay.appendChild(pop);
   } else if (o.kind === 'receiptform') {
     // Receipt popup (Jac: "Receipts use popups and reconcile against parts") — the
@@ -6060,9 +6139,9 @@ function renderOverlay() {
     const ven = x?.vendorId ? (IDX.vendor.get(x.vendorId) || DATA.vendors.find((v) => v.vendorId === x.vendorId)) : null;
     if (o.date === undefined) o.date = x?.date || TODAY_ISO;
     const pop = el('div', 'popup'); pop.style.width = '400px';
-    pop.innerHTML = `
-      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${CARD_ICON.expenses}</span><h3>${x ? 'Edit' : 'New'} Receipt</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
-      <div class="popup-body">
+    pop.innerHTML = popupShell({ icon: CARD_ICON.expenses, title: `${x ? 'Edit' : 'New'} Receipt`, tag: 'Expense · receipt',
+      foot: `${ghostPill('Cancel', { js: 'js-close' })}${actionPill('commit', x ? 'Save' : 'Add receipt', { js: 'js-rf-save' })}`,
+      body: `
         ${fileDrop(state.receiptPhoto || x?.photo ? '✓ receipt photo attached' : 'Tap to add the receipt photo', { js: 'js-rf-file', capture: 'environment', done: !!(state.receiptPhoto || x?.photo) })}
         <input class="lf-in js-rf-vendor" placeholder="Vendor" value="${esc(ven?.name || '')}" style="width:100%;margin-bottom:7px">
         <div style="display:flex;gap:7px;margin-bottom:7px">
@@ -6070,12 +6149,7 @@ function renderOverlay() {
           ${dateField('date', o.date)}
         </div>
         <input class="lf-in js-rf-part" placeholder="Part Name" value="" style="width:100%;margin-bottom:4px">
-        <p class="muted" style="font-size:11px;margin:4px 0 12px">✨ Empty fields are filled by Mr. Wrangler after saving: the photo is read for the vendor, amount, date and category.</p>
-        <div class="pillrow" style="justify-content:flex-end">
-          ${ghostPill('Cancel', { js: 'js-close' })}
-          ${actionPill('commit', x ? 'Save' : 'Add receipt', { js: 'js-rf-save' })}
-        </div>
-      </div>`;
+        <p class="muted" style="font-size:11px;margin:4px 0 4px">✨ Empty fields are filled by Mr. Wrangler after saving: the photo is read for the vendor, amount, date and category.</p>` });
     overlay.appendChild(pop);
   } else if (o.kind === 'capture') {
     // v2 yard journey: every log opens this popup; with transport, the address
@@ -6084,36 +6158,26 @@ function renderOverlay() {
     const isDel = r && r.transportType && r.transportType !== 'Self';
     const title = o.cap === 'fc' ? 'Log Field Call' : o.cap === 'start' ? (isDel ? 'Log Delivery' : 'Log Start') : (isDel ? 'Log Recovery' : 'Log End');
     const pop = el('div', 'popup'); pop.style.width = '380px';
-    pop.innerHTML = `
-      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${I.video}</span><h3>${esc(title)}</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
-      <div class="popup-body">
+    pop.innerHTML = popupShell({ icon: I.video, title, tag: o.cap === 'fc' ? 'Field call · log' : 'Yard journey · log',
+      foot: `${ghostPill('Cancel', { js: 'js-close' })}<button class="pill ignition js-cap-save" data-r="R17">${o.cap === 'fc' ? 'Log Field Call' : 'Log it'}</button>`,
+      body: `
         ${r && r.deliveryAddress && o.cap !== 'fc' ? `
         <div style="border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-bottom:10px">
           <div style="padding:8px 11px;font-size:12.5px;display:flex;align-items:center;gap:7px"><span>📍</span><b>${esc(r.deliveryAddress)}</b></div>
           <div class="site-map" style="height:96px">${r.sitePin && r.sitePin.lat != null ? '<span class="site-pin" style="left:50%;top:50%">📍</span>' : ''}<span class="map-tag">driver destination${r.sitePin && r.sitePin.lat != null ? ' — exact pin set' : ''}</span></div>
         </div>` : ''}
-        <label class="cap-drop">${I.video} <span>${state.capFile ? '✓ video attached' : 'Tap to capture / attach the video'}</span><input type="file" accept="video/*,image/*" capture="environment" class="js-cap-file" style="display:none"></label>
-        <div class="pillrow" style="justify-content:flex-end;margin-top:12px">
-          <button class="pill ref js-close">Cancel</button>
-          <button class="pill c-commit js-cap-save" style="height:26px;font-size:11px">${o.cap === 'fc' ? 'Log Field Call' : 'Log it'}</button>
-        </div>
-      </div>`;
+        <label class="cap-drop">${I.video} <span>${state.capFile ? '✓ video attached' : 'Tap to capture / attach the video'}</span><input type="file" accept="video/*,image/*" capture="environment" class="js-cap-file" style="display:none"></label>` });
     overlay.appendChild(pop);
   } else if (o.kind === 'wodone') {
     // v2: Complete WO with open line items → warn, don't hard-block
     const w = IDX.wo.get(o.woId);
     const open = (w?.lineItems || []).filter((l) => l.phase !== 'Complete');
     const pop = el('div', 'popup'); pop.style.width = '360px';
-    pop.innerHTML = `
-      <div class="popup-head"><h3>Complete this Work Order?</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
-      <div class="popup-body">
+    pop.innerHTML = popupShell({ icon: CARD_ICON.workOrders, title: 'Complete this Work Order?', tag: 'Work order · confirm', danger: true,
+      foot: `${ghostPill('Cancel', { js: 'js-close' })}${actionPill('danger', 'Complete WO', { js: 'js-wodone-confirm', data: { rec: o.woId } })}`,
+      body: `
         <p style="font-size:13px;margin-bottom:6px">Are you sure? Not all items are completed.</p>
-        <p class="muted" style="font-size:12px;margin-bottom:12px">Still open: ${open.map((l) => `“${esc(l.part)} · ${esc(getStatus('woPhase', l.phase).label)}”`).join(' · ') || '—'}</p>
-        <div class="pillrow" style="justify-content:flex-end">
-          <button class="pill ref js-close">Cancel</button>
-          <button class="pill c-commit js-wodone-confirm" data-rec="${esc(o.woId)}" style="height:26px;font-size:11px">Complete WO</button>
-        </div>
-      </div>`;
+        <p class="muted" style="font-size:12px;margin-bottom:4px">Still open: ${open.map((l) => `“${esc(l.part)} · ${esc(getStatus('woPhase', l.phase).label)}”`).join(' · ') || '—'}</p>` });
     overlay.appendChild(pop);
   } else if (o.kind === 'role') {
     const role = ROLES.find((r) => r.id === o.role);
@@ -6126,12 +6190,9 @@ function renderOverlay() {
       return `<div class="kpi-line" data-tip="${esc(KPI_HELP[k] || '')}"><span class="ring-no" style="border-color:var(--${raw == null ? 'line' : b.color});color:var(--${raw == null ? 'txt-3' : b.color})">${i + 1}</span><span class="k-name">${esc(k)}<span class="muted" style="font-size:10px;margin-left:6px">${ringTag[i]}</span></span><span class="k-val">${valTxt}</span></div>`;
     }).join('');
     const pop = el('div', 'popup kpi-popup');
-    pop.innerHTML = `
-      <div class="popup-head"><span class="ring-ico" style="color:var(--${role.color});display:inline-flex;width:18px;height:18px">${RING_ICON[role.id]}</span><h3>${esc(role.label)} KPIs</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
-      <div class="popup-body">
+    pop.innerHTML = popupShell({ icon: RING_ICON[role.id], title: `${role.label} KPIs`, tag: 'Role · scorecard', body: `
         <div class="big-ring">${ring3SVG(vals, role.color, { size: 150 })}</div>
-        <div class="kpi-list">${lines}</div>
-      </div>`;
+        <div class="kpi-list">${lines}</div>` });
     overlay.appendChild(pop);
   } else if (o.kind === 'requests') {
     // §18e the in-app approval inbox for Mr. Wrangler's "Filed for Jac's OK" requests.
@@ -6176,9 +6237,9 @@ function renderOverlay() {
         : (!reqLoaded && reqLoading ? '<div class="req-empty">Loading…</div>'
           : '<div class="req-empty"><span class="req-empty-ic">📭</span><p>No requests waiting.</p><span>When Mr. Wrangler sends one to the developer, it lands here for review.</span></div>'));
     const pop = el('div', 'popup'); pop.style.width = '480px';
-    pop.innerHTML = `
-      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${I.inbox}</span><h3>Requests${list.length ? ` · ${list.length}` : ''}</h3><span class="spacer"></span><button class="iconbtn js-req-refresh" data-tip="Refresh">${I.refresh || '⟳'}</button><button class="x js-close">${I.x}</button></div>
-      <div class="popup-body req-wrap">${inner}</div>`;
+    pop.innerHTML = popupShell({ icon: I.inbox, title: `Requests${list.length ? ` · ${list.length}` : ''}`, tag: 'Mr. Wrangler · approvals',
+      headRight: `<button class="iconbtn js-req-refresh" data-tip="Refresh">${I.refresh || '⟳'}</button>`,
+      bodyClass: 'req-wrap', body: inner });
     overlay.appendChild(pop);
   } else if (o.kind === 'notifications') {
     // §18f Notifications — recently-RESOLVED Mr. Wrangler fixes, surfaced in-app so a reporter
@@ -6194,9 +6255,9 @@ function renderOverlay() {
               <div class="req-acts"><span class="req-await">${n.closedAt ? 'Resolved ' + esc(fmtShortDate(String(n.closedAt).slice(0, 10))) : 'Resolved'}</span><a class="req-link" href="${esc(n.url)}" target="_blank" rel="noopener">GitHub ↗</a></div>
             </div>`).join('')));
     const pop = el('div', 'popup'); pop.style.width = '460px';
-    pop.innerHTML = `
-      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${I.bell}</span><h3>Notifications${list.length ? ` · ${list.length}` : ''}</h3><span class="spacer"></span><button class="iconbtn js-notif-refresh" data-tip="Refresh">${I.refresh || '⟳'}</button><button class="x js-close">${I.x}</button></div>
-      <div class="popup-body req-wrap">${inner}</div>`;
+    pop.innerHTML = popupShell({ icon: I.bell, title: `Notifications${list.length ? ` · ${list.length}` : ''}`, tag: 'Mr. Wrangler · resolved',
+      headRight: `<button class="iconbtn js-notif-refresh" data-tip="Refresh">${I.refresh || '⟳'}</button>`,
+      bodyClass: 'req-wrap', body: inner });
     overlay.appendChild(pop);
   } else if (o.kind === 'hotkeys') {
     const rows = [
@@ -6207,29 +6268,24 @@ function renderOverlay() {
       { d: 'dblright', n: 'Double right-click', t: 'Drop the anchor — the session goes anchor-less.' },
     ];
     const pop = el('div', 'popup hk-popup');
-    pop.innerHTML = `
-      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${I.mouse}</span><h3>Mouse shortcuts</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
-      <div class="popup-body hk-body">
+    pop.innerHTML = popupShell({ icon: I.mouse, title: 'Mouse shortcuts', tag: 'Operator · controls', bodyClass: 'hk-body', body: `
         ${rows.map((r) => `<div class="hk-row"><div class="hk-demo hk-${r.d}">${hkDemoInner(r.d)}</div><div class="hk-text"><div class="hk-name">${esc(r.n)}</div><div class="hk-desc">${esc(r.t)}</div></div></div>`).join('')}
-        <p class="muted" style="font-size:11px;margin:6px 2px 0">These work on a list row or anywhere on a card.</p>
-      </div>`;
+        <p class="muted" style="font-size:11px;margin:6px 2px 0">These work on a list row or anywhere on a card.</p>` });
     overlay.appendChild(pop);
   } else if (o.kind === 'feedback') {
     const ctx = feedbackContext();
     const TYPES = [['Bug', 'Claude fixes it'], ['Improvement', 'needs your OK'], ['Idea', 'needs your OK'], ['Change', 'needs your OK']];
     const pop = el('div', 'popup'); pop.style.width = '470px';
-    pop.innerHTML = `
-      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${I.feedback}</span><h3>Report a bug or request</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
-      <div class="popup-body">
+    pop.innerHTML = popupShell({ icon: I.feedback, title: 'Report a bug or request', tag: 'Mr. Wrangler · report',
+      foot: `<button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill ignition js-fb-send" data-r="R17" ${o.busy ? 'disabled' : ''}>${o.busy ? 'Sending…' : 'Send report'}</button>`,
+      body: `
         <div class="fb-types">${TYPES.map(([t, h]) => `<button class="nc-pill js-fb-type${(o.fbType || 'Bug') === t ? ' on' : ''}" data-val="${t}">${t}<span class="fb-hint">${h}</span></button>`).join('')}</div>
         <textarea class="insp-desc js-fb-text" placeholder="What happened, or what would you like? The more specific, the better.">${esc(o.text || '')}</textarea>
         ${o.shot
           ? `<div class="fb-shot"><img src="${esc(o.shot)}" alt="screenshot"><button class="fb-shot-x js-fb-shot-x" data-tip="Remove">${I.x}</button></div>`
           : `<label class="fb-attach"><span>${I.plus} Add a screenshot (recommended)</span><input type="file" accept="image/*" class="js-fb-shot" hidden></label>`}
         <div class="fb-ctx muted">Auto-attached so Claude can reproduce it: <b>${esc(ctx.view)}</b> · ${esc(ctx.role || 'no role')} · ${esc(ctx.viewport)}</div>
-        ${o.error ? `<div class="login-err" style="text-align:left;margin-top:8px">${esc(o.error)}</div>` : ''}
-        <div class="pillrow" style="justify-content:flex-end;margin-top:14px"><button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill c-commit js-fb-send" data-r="R17" ${o.busy ? 'disabled' : ''}>${o.busy ? 'Sending…' : 'Send report'}</button></div>
-      </div>`;
+        ${o.error ? `<div class="login-err" style="text-align:left;margin-top:8px">${esc(o.error)}</div>` : ''}` });
     overlay.appendChild(pop);
   } else if (o.kind === 'board') {
     const board = BACKOFFICE_BOARDS.find((b) => b.id === o.board);
@@ -6277,17 +6333,16 @@ function renderOverlay() {
     const nu = unseenNotifs();
     const notifBtn = `<button class="iconbtn js-notifications" data-tip="Notifications">${I.bell}<span>Notifications</span>${nu ? `<span class="bb-badge">${nu > 9 ? '9+' : nu}</span>` : ''}</button>`;
     const pop = el('div', 'popup'); pop.style.width = '360px';
-    pop.innerHTML = `
-      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${I.sliders || I.menu || ''}</span><h3>Tools</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
-      <div class="popup-body"><div class="tools-tray">${notifBtn}${bottomBarInner()}</div></div>`;
+    pop.innerHTML = popupShell({ icon: I.sliders || I.menu || '', title: 'Tools', tag: 'Yard · toolbox',
+      body: `<div class="tools-tray">${notifBtn}${bottomBarInner()}</div>` });
     overlay.appendChild(pop);
   } else if (o.kind === 'settings') {
     const cfg = o.config || { roles: {}, admin: '' };
     const roleRows = Object.keys(cfg.roles).map((role) => `<label class="set-row"><span class="set-role">${esc(role)}</span><input class="set-input" data-role="${esc(role)}" value="${esc(cfg.roles[role])}" autocomplete="off" /></label>`).join('');
     const pop = el('div', 'popup'); pop.style.width = '380px';
-    pop.innerHTML = `
-      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${I.grid}</span><h3>Settings — Logins</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
-      <div class="popup-body">
+    pop.innerHTML = popupShell({ icon: I.grid, title: 'Settings — Logins', tag: 'Admin · access',
+      foot: `<button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill ignition js-settings-save" data-r="R17">Save</button>`,
+      body: `
         <p class="muted" style="font-size:11px;margin:0 0 10px">Each role signs in with its password (plus their name). Changes apply at next sign-in.</p>
         ${roleRows}
         <label class="set-row set-admin"><span class="set-role">Admin</span><input class="set-input" data-admin="1" value="${esc(cfg.admin)}" autocomplete="off" /></label>
@@ -6295,68 +6350,75 @@ function renderOverlay() {
         <p class="muted" style="font-size:10.5px;margin:4px 0 0">Drag &amp; drop policy — saved on this device.</p>
         <div class="set-row" style="margin-top:12px;align-items:center"><span class="set-role" style="flex:0 0 auto" data-tip="A light vibration confirms committed actions on phones (post a chat, drop a link, complete a WO, release-to-cancel). Android only — iOS has no vibration.">Haptic feedback</span>${segCtl([{ label: 'Off', js: 'js-haptics', data: { val: '0' }, on: state.hapticsOff ? 'red' : null }, { label: 'On', js: 'js-haptics', data: { val: '1' }, on: state.hapticsOff ? null : 'green' }])}</div>
         <p class="muted" style="font-size:10.5px;margin:4px 0 0">Touch feedback — saved on this device.</p>
-        ${o.error ? `<div class="login-err" style="text-align:left;margin-top:8px">${esc(o.error)}</div>` : ''}
-        <div class="pillrow" style="margin-top:14px;justify-content:flex-end"><button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill c-commit js-settings-save">Save</button></div>
-      </div>`;
+        ${o.error ? `<div class="login-err" style="text-align:left;margin-top:8px">${esc(o.error)}</div>` : ''}` });
     overlay.appendChild(pop);
   } else if (o.kind === 'newCustomer') {
     const d = o.draft; const isEdit = !!o.editId;
+    const custRec = IDX.customer.get(o.editId || '');
+    const cards = custRec ? customerCards(custRec) : [];
+    const tab = (o.tab && (o.tab === 'account' || cards.some((k) => k.id === o.tab))) ? o.tab : 'account';
     const indOpts = NC_INDUSTRIES.map((i) => `<option value="${esc(i)}"></option>`).join('');
     const acctPills = NC_ACCOUNT_TYPES.map((t) => `<button type="button" class="nc-pill js-nc-acct${t === d.accountType ? ' on' : ''}" data-val="${esc(t)}">${esc(getStatus('customerAccountType', t).label)}</button>`).join('');
-    const selfieBox = d.selfie ? `<img class="nc-thumb" src="${esc(d.selfie)}" alt="selfie" />` : `<div class="nc-thumb empty">No photo</div>`;
-    const sigBox = d.signature ? `<img class="nc-thumb sig" src="${esc(d.signature)}" alt="signature" />` : `<canvas class="nc-sigpad" width="400" height="120"></canvas>`;
-    const custRec = IDX.customer.get(o.editId || '');
-    const cardOnFile = hasCardOnFile(custRec);
-    const cardShort = cardOnFile ? `${brandName(custRec.cardBrand)} ••••${custRec.cardLast4}` : 'No card';
-    const agType = /member/i.test(d.accountType || '') ? 'membership' : 'rental';
-    const ag = AGREEMENTS[agType];
-    const agSigned = d.agreementSignedAt && d.agreementType === agType;
-    const pop = el('div', 'popup nc-popup');
-    const ncFoot = `<button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill ignition js-nc-save" data-r="R17">${isEdit ? 'Save account' : 'Create customer'}</button>`;
-    pop.innerHTML = popupShell({
-      icon: CARD_ICON.customers || '', title: isEdit ? 'Edit / Complete Account' : 'New Customer', tag: 'Customer · Account packet',
-      headRight: isEdit ? `<button class="iconbtn js-nc-qr" data-tip="Open on phone">${I.qr}</button>` : '',
-      foot: ncFoot,
-      body: `
+    const nameVal = (d.name != null && d.name !== '') ? d.name : `${d.firstName || ''} ${d.lastName || ''}`.trim();
+    const AG_LOCK = '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
+    const AG_CAM = '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>';
+    // The card rail IS the header (no title). Account tab + a tab per card (signed dot) + a +Card add.
+    const railTabs = `<div class="ag-tabs" role="tablist">
+      <button type="button" class="ag-tab js-nc-tab${tab === 'account' ? ' on' : ''}" data-tab="account">Account</button>
+      ${cards.map((k) => `<button type="button" class="ag-tab js-nc-tab${tab === k.id ? ' on' : ''}" data-tab="${esc(k.id)}"><span class="ag-dot ${cardAuthorized(custRec, k) ? 'ok' : 'bad'}"></span>${esc(brandName(k.brand))} ••${esc(k.last4)}</button>`).join('')}
+      ${addBtn('Card', { link: true, js: 'js-add-card', data: { rec: o.editId || '' } })}
+    </div>`;
+    const headRail = `${railTabs}<span class="spacer"></span>${isEdit ? `<button class="iconbtn js-nc-qr" data-tip="Open on phone">${I.qr}</button>` : ''}`;
+    let body;
+    if (tab === 'account') {
+      const blocked = custRec && accountAgreementsBlocked(custRec);
+      const nBad = custRec ? unsignedCardCount(custRec) : 0;
+      body = `
+        ${blocked ? `<div class="ag-banner bad">${nBad} card${nBad > 1 ? 's' : ''} needs signing — On-Rent &amp; delivery blocked.</div>` : ''}
         <div class="nc-grid">
-          <label class="nc-field"><span>First name *</span><input class="nc-in" data-f="firstName" value="${esc(d.firstName)}" autocomplete="off" /></label>
-          <label class="nc-field"><span>Last name</span><input class="nc-in" data-f="lastName" value="${esc(d.lastName)}" autocomplete="off" /></label>
-          <label class="nc-field nc-wide"><span>Company</span><input class="nc-in" data-f="company" value="${esc(d.company)}" autocomplete="off" /></label>
+          <label class="nc-field"><span>Name *</span><input class="nc-in" data-f="name" value="${esc(nameVal)}" autocomplete="off" placeholder="First Last" /></label>
+          <label class="nc-field"><span>Company</span><input class="nc-in" data-f="company" value="${esc(d.company)}" autocomplete="off" /></label>
           <label class="nc-field"><span>Phone *</span><input class="nc-in" data-f="phone" value="${esc(d.phone)}" autocomplete="off" /></label>
           <label class="nc-field"><span>Email</span><input class="nc-in" data-f="email" type="email" value="${esc(d.email)}" autocomplete="off" /></label>
-          <label class="nc-field nc-wide"><span>Industry</span><input class="nc-in" data-f="industry" list="nc-industries" value="${esc(d.industry)}" autocomplete="off" /></label>
+          <label class="nc-field"><span>Industry</span><input class="nc-in" data-f="industry" list="nc-industries" value="${esc(d.industry)}" autocomplete="off" /></label>
+          <label class="nc-field"><span>Notes</span><input class="nc-in" data-f="accountNotes" value="${esc(d.accountNotes)}" autocomplete="off" /></label>
           <div class="nc-field nc-wide"><span>Account type</span><div class="nc-pills">${acctPills}</div></div>
-          <label class="nc-field nc-wide"><span>Notes</span><input class="nc-in" data-f="accountNotes" value="${esc(d.accountNotes)}" autocomplete="off" /></label>
         </div>
-        <datalist id="nc-industries">${indOpts}</datalist>
-        <div class="nc-sec-title">${esc(ag.title)}${agSigned ? ' <span class="nc-ag-ok">✓ accepted ' + esc(d.agreementSignedAt) + '</span>' : ' <span class="nc-ag-note">— sign below to accept</span>'}</div>
-        <div class="nc-agreement" tabindex="0">${esc(ag.text)}</div>
-        <div class="nc-sec-title">Account packet</div>
-        <div class="nc-packet">
-          <div class="nc-tile nc-tile-sig${d.signature ? ' done' : ''}">
-            <div class="nc-tile-head"><span class="nc-cap-lbl">Signature${agSigned ? '' : ' *'}</span>${d.signature ? '<span class="nc-ok">✓</span>' : ''}</div>
-            ${sigBox}
-            <div class="nc-tile-act">${d.signature ? '<button class="pill ghost js-nc-sig-clear" data-r="R18">Re-sign</button>' : '<button class="pill c-green js-nc-sig-save" data-r="R17">Accept &amp; sign</button><button class="pill ghost js-nc-sig-clearpad" data-r="R18">Clear</button>'}</div>
+        <datalist id="nc-industries">${indOpts}</datalist>`;
+    } else {
+      const k = cards.find((x) => x.id === tab);
+      const meta = `${k.isDefault ? 'Default · ' : ''}${k.expMonth ? 'exp ' + k.expMonth + '/' + String(k.expYear).slice(-2) : 'no exp'}`;
+      const st = cardSignState(custRec, k);
+      if (st === 'authorized') {
+        const sg = cardCurrentSigning(custRec, k);
+        body = `
+          <div class="ag-meta">${esc(meta)}<span class="ag-metasep"></span>${badge('Authorized', 'green')}</div>
+          <div class="ag-signed"><span class="ag-lock">${AG_LOCK}</span><span class="t"><b>${esc(signingTitle(sg))}</b> · signed ${esc(sg.signedAt || '—')}</span>${actionPill('commit', '⤓ PDF', { js: 'js-ncsign-pdf', data: { card: k.id, sig: sg.id } })}</div>
+          <div class="ag-packet">
+            <div class="ag-pcell"><div class="ag-pcap">Selfie</div>${signingSelfieSrc(sg) ? `<img class="ag-selfie" src="${esc(signingSelfieSrc(sg))}" alt="selfie on file" />` : '<div class="ag-selfie empty">—</div>'}</div>
+            <div class="ag-pcell"><div class="ag-pcap">Signature</div>${signingSignatureSrc(sg) ? `<img class="ag-sigthumb" src="${esc(signingSignatureSrc(sg))}" alt="signature on file" />` : '<div class="ag-sigthumb"></div>'}</div>
           </div>
-          <div class="nc-tiles">
-            <div class="nc-tile${d.selfie ? ' done' : ''}">
-              <div class="nc-tile-head"><span class="nc-cap-lbl">Selfie</span>${d.selfie ? '<span class="nc-ok">✓</span>' : ''}</div>
-              ${selfieBox}
-              <div class="nc-tile-act"><label class="pill c-commit" data-r="R17">${d.selfie ? 'Retake' : 'Take photo'}<input type="file" accept="image/*" capture="user" class="js-nc-selfie" hidden /></label>${d.selfie ? '<button class="pill ghost js-nc-selfie-clear" data-r="R18">Remove</button>' : ''}</div>
-            </div>
-            <div class="nc-tile${cardOnFile ? ' done' : ''}">
-              <div class="nc-tile-head"><span class="nc-cap-lbl">Card on file</span>${cardOnFile ? '<span class="nc-ok">✓</span>' : ''}</div>
-              <div class="nc-thumb empty${cardOnFile ? ' good' : ''}">${esc(cardShort)}</div>
-              <div class="nc-tile-act">${
-                !(d.signature && d.selfie) ? '<span class="muted" style="font-size:11px">Sign first</span>'
-                  : !o.editId ? '<span class="muted" style="font-size:11px">Add name &amp; phone</span>'
-                    : `<button class="pill c-commit js-add-card" data-rec="${o.editId}" data-r="R17">${cardOnFile ? 'Replace card' : 'Add card'}</button>`
-              }</div>
-            </div>
+          <p class="muted" style="font-size:11px;margin:12px 2px 0">🔒 Locked — the exact agreement accepted on this card. Re-signing happens only on a new card or an account-type change.</p>`;
+      } else {
+        const key = requiredAgreementKey(custRec); const ag = AGREEMENTS[key];
+        const selfie = o.signDraft && o.signDraft.selfie;
+        body = `
+          <div class="ag-meta">${esc(meta)}<span class="ag-metasep"></span>${badge(st === 'stale' ? 'Re-sign' : 'Unsigned', 'red')}</div>
+          <div class="ag-gate"><span class="lead">${st === 'stale' ? 'Account type changed — re-sign required.' : 'Sign to allow On-Rent &amp; delivery.'}</span><span class="sub">Card can still be charged.</span></div>
+          <div class="ag-readref"><span><b>${esc(ag.title)}</b></span><button type="button" class="ag-readbtn js-ncsign-read" data-card="${esc(k.id)}">${o.signRead === k.id ? 'Hide' : 'Read'} ↗</button></div>
+          ${o.signRead === k.id ? `<div class="nc-agreement" tabindex="0">${esc(ag.text)}</div>` : ''}
+          <div class="ag-capcap">Capture both to authorize</div>
+          <div class="ag-caprow">
+            <label class="ag-selfiebtn">${selfie ? `<img class="ag-selfie" src="${esc(selfie)}" alt="selfie" />` : `${AG_CAM}<span class="l">Selfie</span>`}<input type="file" accept="image/*" capture="user" class="js-ncsign-selfie" hidden /></label>
+            <canvas class="nc-sigpad ag-pad" width="500" height="220"></canvas>
           </div>
-        </div>
-        ${o.error ? `<div class="login-err" style="text-align:left;margin-top:10px">${esc(o.error)}</div>` : ''}`,
-    });
+          <div class="ag-acceptrow">${actionPill('commit', 'Accept & Sign', { js: 'js-ncsign-save', data: { card: k.id } })}${ghostPill('Clear', { js: 'js-nc-sig-clearpad' })}</div>`;
+      }
+    }
+    const pop = el('div', 'popup nc-popup');
+    const ncFoot = `<button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill ignition js-nc-save" data-r="R17">${isEdit ? 'Save account' : 'Create customer'}</button>`;
+    pop.innerHTML = popupShell({ headRail, foot: ncFoot, bodyClass: 'nc-tabbody',
+      body: `${body}${o.error ? `<div class="login-err" style="text-align:left;margin-top:10px">${esc(o.error)}</div>` : ''}` });
     overlay.appendChild(pop);
     if (o.cardSub) {   // §14 the "Add card" panel rendered BESIDE the form (not replacing it)
       const cc = IDX.customer.get(o.editId);
@@ -6381,14 +6443,12 @@ function renderOverlay() {
     if (!c) { state.overlay = null; return; }
     const ag = AGREEMENTS[c.agreementType] || AGREEMENTS.rental;
     const pop = el('div', 'popup nc-popup');
-    pop.innerHTML = `
-      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${CARD_ICON.customers || ''}</span><h3>${esc(ag.title)}</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
-      <div class="popup-body">
+    pop.innerHTML = popupShell({ icon: CARD_ICON.customers || '', title: ag.title, tag: 'Customer · agreement',
+      foot: `<button class="pill ghost js-close" data-r="R18">Close</button><button class="pill ignition js-edit-customer" data-r="R17" data-rec="${c.customerId}">Edit account</button>`,
+      body: `
         <div class="nc-ag-meta">${esc(fullName(c))}${c.agreementSignedAt ? ` · accepted ${esc(c.agreementSignedAt)}` : ' · not yet signed'}</div>
         <div class="nc-agreement" tabindex="0">${esc(ag.text)}</div>
-        ${c.signature ? `<div class="nc-ag-sigline"><span class="nc-cap-lbl">Signature</span><img class="nc-thumb sig" src="${esc(c.signature)}" alt="signature" /></div>` : ''}
-        <div class="pillrow" style="margin-top:14px;justify-content:flex-end"><button class="pill ghost js-close" data-r="R18">Close</button><button class="pill c-commit js-edit-customer" data-r="R17" data-rec="${c.customerId}">Edit account</button></div>
-      </div>`;
+        ${c.signature ? `<div class="nc-ag-sigline"><span class="nc-cap-lbl">Signature</span><img class="nc-thumb sig" src="${esc(c.signature)}" alt="signature" /></div>` : ''}` });
     overlay.appendChild(pop);
   } else if (o.kind === 'inspection') {
     // §12.8 Failure report — triggered when an inspection is marked Failed: capture a
@@ -6402,18 +6462,16 @@ function renderOverlay() {
       ? `<div class="insp-photo">${isVideo ? `<video src="${esc(n.photo)}" controls></video>` : `<img src="${esc(n.photo)}" alt="failure photo">`}<label class="insp-rephoto">Replace<input type="file" accept="image/*,video/*" class="js-insp-photo" data-rec="${n.inspectionId}" hidden></label></div>`
       : `<label class="insp-photo empty"><span>${I.video} Add photo / video</span><input type="file" accept="image/*,video/*" class="js-insp-photo" data-rec="${n.inspectionId}" hidden></label>`;
     const pop = el('div', 'popup insp-popup');
-    pop.innerHTML = `
-      <div class="popup-head"><span class="c-icon" style="color:var(--red);display:inline-flex">${CARD_ICON.inspections}</span><h3>Failure report — ${esc(unit?.name || '—')}</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
-      <div class="popup-body">
+    pop.innerHTML = popupShell({ icon: CARD_ICON.inspections, title: `Failure report — ${unit?.name || '—'}`, tag: 'Inspection · failure', danger: true,
+      foot: `<button class="pill ignition js-close" data-r="R17">Done</button>`,
+      body: `
         <div class="pillrow" style="margin-bottom:12px">${unit ? unitPill(unit.unitId) : ''}<span class="pill c-${ir.color}">${esc(ir.label)}</span>${n.woId ? refPill('workOrders', n.woId, 'Work Order') : ''}<span class="muted" style="font-size:12px;margin-left:auto">${esc(fmtShortDate(n.date))}</span></div>
         ${media}
         <textarea class="insp-desc js-insp-desc" data-rec="${n.inspectionId}" placeholder="Describe the failure (what's wrong, parts needed)…">${esc(n.description || '')}</textarea>
         <div class="insp-gate" style="margin-top:12px"><span class="insp-gate-lbl">Charge the customer?</span>${segCtl([
           { label: 'Bill', js: 'js-insp-bill', data: { rec: n.inspectionId, val: 'Yes' }, on: n.billCustomer === 'Yes' ? 'green' : null },
           { label: 'Don’t bill', js: 'js-insp-bill', data: { rec: n.inspectionId, val: 'No' }, on: n.billCustomer === 'No' ? 'gray' : null },
-        ], 'seg-bill')}</div>
-        <div class="pillrow" style="justify-content:flex-end;margin-top:14px"><button class="pill c-commit js-close">Done</button></div>
-      </div>`;
+        ], 'seg-bill')}</div>` });
     overlay.appendChild(pop);
   } else if (o.kind === 'service') {
     // §7.7/§12.7 service completion — Hours at Completion · Date · Photo · Notes
@@ -6426,17 +6484,15 @@ function renderOverlay() {
       ? `<div class="insp-photo">${svcVid ? `<video src="${esc(state.svcPhoto)}" controls></video>` : `<img src="${esc(state.svcPhoto)}" alt="service photo">`}<label class="insp-rephoto">Replace<input type="file" accept="image/*" class="js-svc-photo" hidden></label></div>`
       : `<label class="insp-photo empty req"><span>${I.video} Add photo (required)</span><input type="file" accept="image/*" class="js-svc-photo" hidden></label>`;
     const pop = el('div', 'popup insp-popup');
-    pop.innerHTML = `
-      <div class="popup-head"><span class="c-icon" style="color:var(--accent);display:inline-flex">${CARD_ICON.serviceOrders || ''}</span><h3>Complete service — ${esc(u.name)}</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
-      <div class="popup-body">
+    pop.innerHTML = popupShell({ icon: CARD_ICON.serviceOrders || '', title: `Complete service — ${u.name}`, tag: 'Service · complete',
+      foot: `<button class="pill ignition js-svc-save" data-r="R17" data-unit="${u.unitId}" data-task="${task.taskId}">Record completion</button>`,
+      body: `
         <div class="pillrow" style="margin-bottom:12px">${unitPill(u.unitId)}<span class="pill c-${task.color}">${esc(task.name)}</span><span class="muted" style="font-size:12px;margin-left:auto">${esc(svcText(task))}</span></div>
         <div class="svc-ref"><div class="svc-ref-head">Reference</div><div class="svc-ref-body">${task.parts && task.parts.length ? `Parts: ${esc(task.parts.join(' · '))}<br>` : ''}Filters · Hyperlinks · Instructions · Photo — set per-task in the backend (§7.7)</div></div>
         <label class="svc-field"><span>Hours at completion</span><input type="number" class="js-svc-hours" value="${num(u.currentHours)}"></label>
         <label class="svc-field"><span>Date completed</span><input type="date" class="js-svc-date" value="${TODAY_ISO}"></label>
         ${media}
-        <textarea class="insp-desc js-svc-notes" placeholder="Notes (parts used, observations)…"></textarea>
-        <div class="pillrow" style="justify-content:flex-end;margin-top:10px"><button class="pill c-commit js-svc-save" data-r="R17" data-unit="${u.unitId}" data-task="${task.taskId}">Record completion</button></div>
-      </div>`;
+        <textarea class="insp-desc js-svc-notes" placeholder="Notes (parts used, observations)…"></textarea>` });
     overlay.appendChild(pop);
   } else if (o.kind === 'schedule') {
     // §12.1 Schedule — a single date+time follow-up logged to the customer Activity Log
@@ -6444,13 +6500,11 @@ function renderOverlay() {
     if (!c) { state.overlay = null; return; }
     if (o.when === undefined) { o.when = TODAY_ISO; o.whenTime = to24(nowHourLabel()) || '09:00'; }
     const pop = el('div', 'popup'); pop.style.width = '340px';
-    pop.innerHTML = `
-      <div class="popup-head"><span class="c-icon" style="color:var(--accent);display:inline-flex">${CARD_ICON.customers}</span><h3>Schedule — ${esc(c.name)}</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
-      <div class="popup-body">
+    pop.innerHTML = popupShell({ icon: CARD_ICON.customers, title: `Schedule — ${c.name}`, tag: 'Customer · follow-up',
+      foot: `<button class="pill ignition js-schedule-save" data-r="R17" data-rec="${c.customerId}">Add to schedule</button>`,
+      body: `
         <label class="svc-field"><span>Date &amp; time</span>${dateField('when', o.when, { withTime: true, time: o.whenTime })}</label>
-        <textarea class="insp-desc js-sch-note" placeholder="What's the follow-up? (quote call, pickup, demo…)">${esc(o.note || '')}</textarea>
-        <div class="pillrow" style="justify-content:flex-end;margin-top:10px"><button class="pill c-commit js-schedule-save" data-r="R17" data-rec="${c.customerId}">Add to schedule</button></div>
-      </div>`;
+        <textarea class="insp-desc js-sch-note" placeholder="What's the follow-up? (quote call, pickup, demo…)">${esc(o.note || '')}</textarea>` });
     overlay.appendChild(pop);
   } else if (o.kind === 'splitUnit') {
     // §20 split — give one unit its own window on a NEW sibling rental, same invoice.
@@ -6458,31 +6512,26 @@ function renderOverlay() {
     if (!r || !u) { state.overlay = null; return; }
     const inv = r.invoiceId ? IDX.invoice.get(r.invoiceId) : null;
     const pop = el('div', 'popup'); pop.style.width = '360px';
-    pop.innerHTML = `
-      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${CARD_ICON.rentals}</span><h3>Different dates — ${esc(u.name)}</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
-      <div class="popup-body">
+    pop.innerHTML = popupShell({ icon: CARD_ICON.rentals, title: `Different dates — ${u.name}`, tag: 'Rental · split window',
+      foot: `<button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill ignition js-split-go" data-r="R17">Make separate rental</button>`,
+      body: `
         <p style="font-size:12.5px;margin-bottom:12px">The other machines stay on <b>${esc(fmtWindow(r.startDate, r.endDate) || 'this window')}</b>. This makes a <b>separate rental</b> for ${esc(u.name)}${inv ? ` on the same invoice (${esc(invoiceShort(inv.invoiceId))})` : ''}, moving its journey + lines over.</p>
         <label class="svc-field"><span>Start</span>${dateField('splitStart', o.splitStart)}</label>
-        <label class="svc-field" style="margin-top:8px"><span>End</span>${dateField('splitEnd', o.splitEnd)}</label>
-        <div class="pillrow" style="justify-content:flex-end;margin-top:14px"><button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill c-commit js-split-go" data-r="R17">Make separate rental</button></div>
-      </div>`;
+        <label class="svc-field" style="margin-top:8px"><span>End</span>${dateField('splitEnd', o.splitEnd)}</label>` });
     overlay.appendChild(pop);
   } else if (o.kind === 'addCard') {
     // Stripe Card Element — raw card data stays inside Stripe's iframe.
     const c = IDX.customer.get(o.customerId);
     if (!c) { state.overlay = null; return; }
-    const consent = !!(c.signature && c.selfie);
     const pop = el('div', 'popup'); pop.style.width = '430px';
-    pop.innerHTML = `
-      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${CARD_ICON.customers || ''}</span><h3>Add card — ${esc(c.name)}</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
-      <div class="popup-body">
-        ${consent ? '' : `<div class="login-err" style="text-align:left;margin-bottom:12px">A selfie + signature are required first (card authorization). <button class="pill c-commit js-edit-customer" data-r="R17" data-rec="${c.customerId}" style="margin-left:6px">Complete account</button></div>`}
+    pop.innerHTML = popupShell({ icon: CARD_ICON.customers || '', title: `Add card — ${c.name}`, tag: 'Customer · card on file',
+      foot: `<button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill ignition js-card-save" data-r="R17">Save card</button>`,
+      body: `
+        <p class="muted" style="font-size:11px;margin:0 0 10px">Saved cards can be charged right away. The account can't go On Rent or log deliveries until the card is signed (next step).</p>
         <div class="pay-cap">Card number</div>
         <div class="pay-card-field" id="sl-card-element"></div>
         <div class="pay-err" id="sl-card-error"></div>
-        <p class="muted" style="font-size:11px;margin:10px 0 0">Entered securely via Stripe. We store only the brand + last 4 digits — never the full number. The customer's signature + selfie on file authorize future charges.</p>
-        <div class="pillrow" style="justify-content:flex-end;margin-top:14px"><button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill c-commit js-card-save" data-r="R17" ${consent ? '' : 'disabled style="opacity:.45;cursor:default"'}>Save card</button></div>
-      </div>`;
+        <p class="muted" style="font-size:11px;margin:10px 0 0">Entered securely via Stripe. We store only the brand + last 4 digits — never the full number. The customer's signature + selfie on file authorize future charges.</p>` });
     overlay.appendChild(pop);
   } else if (o.kind === 'addAch') {
     // §14b ACH — raw routing/account live ONLY in these inputs → straight to Stripe
@@ -6491,9 +6540,9 @@ function renderOverlay() {
     if (!c) { state.overlay = null; return; }
     const consent = !!(c.signature && c.selfie);
     const pop = el('div', 'popup'); pop.style.width = '430px';
-    pop.innerHTML = `
-      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${CARD_ICON.customers || ''}</span><h3>Add bank account — ${esc(c.name)}</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
-      <div class="popup-body">
+    pop.innerHTML = popupShell({ icon: CARD_ICON.customers || '', title: `Add bank account — ${c.name}`, tag: 'Customer · ACH bank',
+      foot: `<button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill ignition js-ach-save" data-r="R17" ${consent ? '' : 'disabled style="opacity:.45;cursor:default"'}>Save ACH</button>`,
+      body: `
         ${consent ? '' : `<div class="login-err" style="text-align:left;margin-bottom:12px">A selfie + signature are required first (ACH authorization). <button class="pill c-commit js-edit-customer" data-r="R17" data-rec="${c.customerId}" style="margin-left:6px">Complete account</button></div>`}
         <div class="pay-cap">Account holder name</div>
         <input class="lf-in" id="sl-ach-holder" value="${esc(c.name || '')}" autocomplete="off" spellcheck="false" placeholder="Name on the account">
@@ -6506,9 +6555,7 @@ function renderOverlay() {
           <div class="ach-col"><div class="pay-cap">Holder type</div><select class="lf-in" id="sl-ach-holdertype"><option value="individual">Individual</option><option value="company">Company</option></select></div>
         </div>
         <div class="pay-err" id="sl-ach-error"></div>
-        <p class="muted" style="font-size:11px;margin:10px 0 0">Entered securely via Stripe. We store only the bank name + last 4 digits — never the full routing or account number. The signature + selfie on file authorize ACH debits. The account must be verified before it can be charged.</p>
-        <div class="pillrow" style="justify-content:flex-end;margin-top:14px"><button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill c-commit js-ach-save" data-r="R17" ${consent ? '' : 'disabled style="opacity:.45;cursor:default"'}>Save ACH</button></div>
-      </div>`;
+        <p class="muted" style="font-size:11px;margin:10px 0 0">Entered securely via Stripe. We store only the bank name + last 4 digits — never the full routing or account number. The signature + selfie on file authorize ACH debits. The account must be verified before it can be charged.</p>` });
     overlay.appendChild(pop);
   } else if (o.kind === 'verifyAch') {
     // §14b verify a pending ACH via the micro-deposit descriptor code the customer
@@ -6517,15 +6564,13 @@ function renderOverlay() {
     const k = c && customerBanks(c).find((x) => x.id === o.bankId);
     if (!c || !k) { state.overlay = null; return; }
     const pop = el('div', 'popup'); pop.style.width = '400px';
-    pop.innerHTML = `
-      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${CARD_ICON.customers || ''}</span><h3>Verify ${esc(k.bankName || 'bank')} ••${esc(k.last4)}</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
-      <div class="popup-body">
+    pop.innerHTML = popupShell({ icon: CARD_ICON.customers || '', title: `Verify ${k.bankName || 'bank'} ••${k.last4}`, tag: 'Customer · verify ACH',
+      foot: `<button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill ignition js-ach-verify-save" data-r="R17">Verify account</button>`,
+      body: `
         <p class="muted" style="font-size:12px;margin:0 0 12px">Stripe sent a small deposit (about $0.01) to this account. Once it lands (1–2 business days), the customer sees a 6-character code on their statement starting with <b>SM</b>. Enter it here to verify the account for charging.</p>
         <div class="pay-cap">Verification code</div>
         <input class="lf-in" id="sl-vach-code" autocomplete="off" maxlength="6" placeholder="SM____" style="text-transform:uppercase;letter-spacing:2px">
-        <div class="pay-err" id="sl-vach-error"></div>
-        <div class="pillrow" style="justify-content:flex-end;margin-top:14px"><button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill c-commit js-ach-verify-save" data-r="R17">Verify account</button></div>
-      </div>`;
+        <div class="pay-err" id="sl-vach-error"></div>` });
     overlay.appendChild(pop);
   } else if (o.kind === 'payment') {
     const inv = IDX.invoice.get(o.invoiceId);
@@ -6560,10 +6605,16 @@ function renderOverlay() {
     // CASH / CHECK sub-panel — one editable amount (defaults to the full balance,
     // capped at it; dial it down for a partial), saved to the exact cent. Check adds a #.
     const manualPanel = `<label class="pay-field"><span>Amount ${method === 'check' ? 'on check' : 'received'}</span><input class="pay-amt-in js-manual-amt" type="number" min="0.01" max="${t.balance}" step="0.01" value="${t.balance.toFixed(2)}" ${o.busy ? 'disabled' : ''}></label>${method === 'check' ? `<label class="pay-field"><span>Check #</span><input class="pay-amt-in js-check-num" type="text" inputmode="numeric" autocomplete="off" placeholder="e.g. 1042" value="${esc(o.checkNum || '')}" ${o.busy ? 'disabled' : ''}></label>` : ''}`;
+    const payFoot = o.confirmRefund
+      ? `<button class="pill ghost js-refund-cancel" data-r="R18">Cancel</button><button class="pill c-danger js-refund-confirm" data-r="R17" data-rec="${inv.invoiceId}" ${o.busy ? 'disabled' : ''}>${o.busy ? 'Refunding…' : 'Confirm refund'}</button>`
+      : `<button class="pill ghost js-close" data-r="R18">Close</button>
+         ${t.paid > 0 && !refunded ? `<button class="pill c-danger js-refund-invoice" data-r="R17" data-rec="${inv.invoiceId}" ${o.busy ? 'disabled' : ''}>Refund</button>` : ''}
+         ${canPay ? (method === 'card'
+           ? (card ? `<button class="pill c-money js-charge-invoice" data-rec="${inv.invoiceId}" ${o.busy ? 'disabled' : ''}>${o.busy ? 'Charging…' : 'Charge'}</button>`
+                   : `<button class="add-field anchor js-pay-addcard" data-r="R5b" data-rec="${inv.customerId || ''}" data-inv="${inv.invoiceId}" ${inv.customerId ? '' : 'disabled style="opacity:.45;cursor:default"'}>+Card</button>`)
+           : `<button class="pill c-money js-record-payment" data-rec="${inv.invoiceId}" ${o.busy ? 'disabled' : ''}>${o.busy ? 'Recording…' : 'Record payment'}</button>`) : ''}`;
     const pop = el('div', 'popup'); pop.style.width = '380px';
-    pop.innerHTML = `
-      <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${CARD_ICON.invoices || ''}</span><h3>${esc(inv.invoiceId)}</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
-      <div class="popup-body">
+    pop.innerHTML = popupShell({ icon: CARD_ICON.invoices || '', title: inv.invoiceId, tag: 'Invoice · payment', foot: payFoot, body: `
         <div class="pay-amount"><span class="pay-amount-num">${money2(t.balance)}</span><span class="pay-amount-sfx">${t.balance > 0 ? 'balance due' : 'balance'}${c ? ' · ' + esc(c.name) : ''}</span></div>
         <div class="pay-status-line">${statusPill('invoiceStatus', t.status)}<span class="muted">${money2(t.paid)} of ${money2(t.total)} paid${refAmt ? ` · ${money2(refAmt)} refunded` : ''}</span></div>
         ${inv.achProcessing && inv.pendingPaymentIntentId ? `<div class="pay-card-on-file warn" style="flex-direction:column;align-items:flex-start;gap:7px"><span>🏦 ACH payment processing — it settles in a few business days.</span><button class="pill c-commit js-ach-check" data-rec="${esc(inv.invoiceId)}" data-pi="${esc(inv.pendingPaymentIntentId)}" data-r="R17" ${o.busy ? 'disabled' : ''}>Check ACH status</button></div>` : ''}
@@ -6571,18 +6622,7 @@ function renderOverlay() {
           : t.balance <= 0 ? `<div class="pay-card-on-file good">✓ Paid in full${inv.paymentMethod ? ' · ' + esc(inv.paymentMethod) : ''}</div>`
             : `${methodSel}${method === 'card' ? cardPanel : manualPanel}`}
         ${o.confirmRefund ? `<div class="pay-confirm">Refund ${money2(t.paid)} to ${esc(inv.paymentMethod || 'the card')}?</div>` : ''}
-        ${o.error ? `<div class="login-err" style="text-align:left;margin-top:10px">${esc(o.error)}</div>` : ''}
-        <div class="pillrow" style="justify-content:flex-end;margin-top:16px">
-          ${o.confirmRefund
-            ? `<button class="pill ghost js-refund-cancel" data-r="R18">Cancel</button><button class="pill c-danger js-refund-confirm" data-r="R17" data-rec="${inv.invoiceId}" ${o.busy ? 'disabled' : ''}>${o.busy ? 'Refunding…' : 'Confirm refund'}</button>`
-            : `<button class="pill ghost js-close" data-r="R18">Close</button>
-               ${t.paid > 0 && !refunded ? `<button class="pill c-danger js-refund-invoice" data-r="R17" data-rec="${inv.invoiceId}" ${o.busy ? 'disabled' : ''}>Refund</button>` : ''}
-               ${canPay ? (method === 'card'
-                 ? (card ? `<button class="pill c-money js-charge-invoice" data-rec="${inv.invoiceId}" ${o.busy ? 'disabled' : ''}>${o.busy ? 'Charging…' : 'Charge'}</button>`
-                         : `<button class="add-field anchor js-pay-addcard" data-r="R5b" data-rec="${inv.customerId || ''}" data-inv="${inv.invoiceId}" ${inv.customerId ? '' : 'disabled style="opacity:.45;cursor:default"'}>+Card</button>`)
-                 : `<button class="pill c-money js-record-payment" data-rec="${inv.invoiceId}" ${o.busy ? 'disabled' : ''}>${o.busy ? 'Recording…' : 'Record payment'}</button>`) : ''}`}
-        </div>
-      </div>`;
+        ${o.error ? `<div class="login-err" style="text-align:left;margin-top:10px">${esc(o.error)}</div>` : ''}` });
     overlay.appendChild(pop);
   }
   root.appendChild(overlay);
@@ -6591,8 +6631,8 @@ function renderOverlay() {
   if (o.kind === 'partform') document.querySelector('.overlay .js-pf2-desc')?.focus();   // Jac: Part/Task field focused by default
   if (o.kind === 'newCustomer') setupSignaturePad();
   if (o.kind === 'payment') setupPayAlloc();   // live counter for the §19 allocation rows
-  if (o.kind === 'addCard') { const cc = IDX.customer.get(o.customerId); if (cc && cc.signature && cc.selfie) mountCardElement(); }   // only mount with consent (nothing to orphan otherwise)
-  if (o.kind === 'newCustomer' && o.cardSub) { const cc = IDX.customer.get(o.editId); if (cc && cc.signature && cc.selfie) mountCardElement(); }   // §14 the side-by-side Add-card panel
+  if (o.kind === 'addCard') { const cc = IDX.customer.get(o.customerId); if (cc) mountCardElement(); }   // §7.1b card saved first, signed after
+  if (o.kind === 'newCustomer' && o.cardSub) { const cc = IDX.customer.get(o.editId); if (cc) mountCardElement(); }   // §14 the side-by-side Add-card panel
 }
 const openOverlay = (o) => { state.datepick = null; _ovScroll[o.kind] = 0; state.overlay = o; renderOverlay(); };   // fresh open starts at top
 /* ── §15 in-app feedback: bug/request → queued to the backend Feedback tab ── */
@@ -6755,7 +6795,9 @@ async function wranglerSend() {
       const raw = (r.text || '').trim();
       const act = parseWranglerAction(raw);
       let shown = stripWranglerAction(raw);
-      if (!shown) shown = act ? (act.action === 'data' ? 'Here’s what I’ll change — preview it and hit apply when it looks right.' : act.action === 'request' ? 'Got it — I’ll send this to the developer to OK.' : act.action === 'plan' ? 'Here’s the plan — tap Build when it’s right.' : 'On it — I’ll fix this right now and let you know when I’m done.') : '(no answer)';
+      const truncated = /```wrangler-action/.test(raw) && !act;   // #152 a fence arrived but nothing usable came out of it
+      if (truncated) shown = (shown ? shown + '\n\n' : '') + '⚠️ My reply got cut off before I could finish that action — too much in one go. Ask me to do it in smaller batches and I’ll send a preview you can apply.';
+      else if (!shown) shown = act ? (act.action === 'data' ? 'Here’s what I’ll change — preview it and hit apply when it looks right.' : act.action === 'request' ? 'Got it — I’ll send this to the developer to OK.' : act.action === 'plan' ? 'Here’s the plan — tap Build when it’s right.' : 'On it — I’ll fix this right now and let you know when I’m done.') : '(no answer)';
       o.messages.push({ role: 'assistant', content: shown, action: act || null, filed: false });
       syncWranglerComment(o, 'assistant', shown);   // §18e mirror Mr. Wrangler's reply onto the issue thread
     } else {
@@ -6771,12 +6813,41 @@ async function wranglerSend() {
 // Mr. Wrangler decides when something is fixable and emits a hidden action block;
 // we parse it out of his reply (and strip it from what the user sees).
 function parseWranglerAction(text) {
-  const m = String(text || '').match(/```wrangler-action\s*([\s\S]*?)```/);
+  const s = String(text || '');
+  let m = s.match(/```wrangler-action\s*([\s\S]*?)```/);   // a normal, closed fence
+  if (!m) m = s.match(/```wrangler-action\s*([\s\S]*)$/);  // #152 a truncated reply leaves the fence UNCLOSED
   if (!m) return null;
-  try { const j = JSON.parse(m[1].trim()); if (j && ((['fix', 'request', 'plan'].includes(j.action) && j.title) || (j.action === 'data' && Array.isArray(j.ops)))) return j; } catch (e) {}
-  return null;
+  const body = m[1].trim();
+  try { const j = JSON.parse(body); if (j && ((['fix', 'request', 'plan'].includes(j.action) && j.title) || (j.action === 'data' && Array.isArray(j.ops)))) return j; } catch (e) {}
+  return wrSalvageDataAction(body);   // truncated import → recover the complete rows so the preview still opens
 }
-const stripWranglerAction = (text) => String(text || '').replace(/```wrangler-action\s*[\s\S]*?```/g, '').trim();
+// #152 A big `data`/import reply can blow past the model's output-token limit and
+// arrive cut off mid-row (no closing ``` ), which left parse AND strip empty so NO
+// preview opened at all. Salvage the header + every COMPLETE row by brace-walking the
+// rows array; each recovered row still runs the wrValidatePlan allowlist on apply, so
+// nothing unsafe can ride in on a half-parsed payload. `_truncated` warns in the preview.
+function wrSalvageDataAction(body) {
+  if (!/"action"\s*:\s*"data"/.test(body)) return null;
+  const entity = (body.match(/"entity"\s*:\s*"(\w+)"/) || [])[1];
+  const rowsAt = body.indexOf('"rows"');
+  const open = rowsAt < 0 ? -1 : body.indexOf('[', rowsAt);
+  if (!entity || open < 0) return null;
+  const title = (body.match(/"title"\s*:\s*"((?:[^"\\]|\\.)*)"/) || [])[1] || 'Import';
+  const rows = []; let depth = 0, start = -1, inStr = false, escd = false;
+  for (let i = open + 1; i < body.length; i++) {
+    const ch = body[i];
+    if (inStr) { if (escd) escd = false; else if (ch === '\\') escd = true; else if (ch === '"') inStr = false; continue; }
+    if (ch === '"') inStr = true;
+    else if (ch === '{') { if (depth === 0) start = i; depth++; }
+    else if (ch === '}') { if (--depth === 0 && start >= 0) { try { rows.push(JSON.parse(body.slice(start, i + 1))); } catch (e) {} start = -1; } }
+    else if (ch === ']' && depth === 0) break;
+  }
+  return rows.length ? { action: 'data', title, ops: [{ op: 'import', entity, rows }], _truncated: true } : null;
+}
+const stripWranglerAction = (text) => String(text || '')
+  .replace(/```wrangler-action\s*[\s\S]*?```/g, '')
+  .replace(/```wrangler-action\s*[\s\S]*$/, '')   // #152 also drop a truncated, unclosed fence
+  .trim();
 
 /* ════════════ Mr. Wrangler ACTS on your data (Jac 2026-06-16) ════════════════
    add / update / bulk-import items — NEVER delete, NEVER money/card/auth/WO. Only
@@ -7069,10 +7140,23 @@ function fabStackEl() {
 function ncSyncInputs() {
   const o = state.overlay; if (!o || o.kind !== 'newCustomer') return;
   const root = document.querySelector('.overlay .popup-body'); if (root) root.querySelectorAll('[data-f]').forEach((i) => { o.draft[i.dataset.f] = i.value.trim(); });
+  ncApplyName(o.draft);
+}
+/* The form uses ONE "Name" field — everything after the first space is the last
+   name. Split it into firstName/lastName (the model's canonical pair). */
+function ncApplyName(d) {
+  if (!d || d.name == null) return;
+  const n = String(d.name).trim();
+  if (!n) { d.firstName = ''; d.lastName = ''; return; }
+  const parts = n.split(/\s+/);
+  d.firstName = parts[0]; d.lastName = parts.slice(1).join(' ');
 }
 // Wire the signature canvas for finger/stylus/mouse drawing (white bg → JPEG export).
 function setupSignaturePad() {
   const cv = document.querySelector('.overlay .nc-sigpad'); if (!cv) return;
+  // Match the backing store to the rendered size so strokes aren't stretched (the pad
+  // is width:auto in the flex row). getBoundingClientRect is laid out by now.
+  const r = cv.getBoundingClientRect(); if (r.width && r.height) { cv.width = Math.round(r.width); cv.height = Math.round(r.height); }
   const ctx = cv.getContext('2d');
   ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);
   ctx.strokeStyle = '#15171c'; ctx.lineWidth = 2.4; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
@@ -7307,7 +7391,69 @@ function bvCustomizePanel(card) {
    ════════════════════════════════════════════════════════════════════════ */
 /** Shared floating dropdown (matches board chrome) — used by the status pill
  *  dropdown and the in-card Sort menu. */
-function openDropdown(anchorEl, html, { align = 'left' } = {}) {
+/* ── Gate TIMELINE (Jac 2026-06-18) — the four ordered status gates render as a
+   progressing timeline: a vertical hazard rail + a per-stage icon, with done (green
+   check) / active (orange "you are here") / upcoming (dim dashed) states, and
+   off-ramp stages (Cancelled, No Show, Don't Contact) dimmed + italic so they don't
+   read as progress. Monochrome by design — the resting pills/badges carry the
+   registry colors for glance-scanning (Jac kept the dropdown clean). ── */
+const GTI = (p) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
+const GATE_ICON = {
+  'Quote': GTI('<path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z"/><path d="M9 13h6M9 17h4"/>'),
+  'Reserved': GTI('<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M3 10h18M8 2v4M16 2v4"/>'),
+  'On Rent': GTI('<circle cx="12" cy="7" r="4"/><path d="M5 21v-1a7 7 0 0 1 14 0v1"/>'),
+  'End Rent': GTI('<path d="M6 2h12M6 22h12M8 2c0 4 8 6 8 10s-8 6-8 10M16 2c0 4-8 6-8 10"/>'),
+  'Off Rent': GTI('<rect x="6" y="6" width="12" height="12" rx="2"/>'),
+  'Returned': GTI('<path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/>'),
+  'Cancelled': GTI('<circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/>'),
+  'No Show': GTI('<circle cx="9" cy="8" r="4"/><path d="M3 21v-1a6 6 0 0 1 9-5.2"/><path d="M16.5 16.5l4 4M20.5 16.5l-4 4"/>'),
+  'Part Needed?': GTI('<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 0 1 4.5 1.5c0 1.5-2 2-2 3.5"/><path d="M12 17h.01"/>'),
+  'No Part Needed': GTI('<path d="M7 11v9H4a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1h3zM7 11l4-7a2 2 0 0 1 3 1.5V9h5a2 2 0 0 1 2 2.3l-1.2 7A2 2 0 0 1 20.6 20H7"/>'),
+  'Part Needed': GTI('<path d="M12 3 2 20h20z"/><path d="M12 9v5M12 17h.01"/>'),
+  'Part is Local': GTI('<path d="M12 21s7-6.6 7-11a7 7 0 0 0-14 0c0 4.4 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/>'),
+  'Part Ordered': GTI('<path d="M1 5h13v11H1zM14 8h4l4 4v4h-8z"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="18" r="2"/>'),
+  'Part in Stock': GTI('<path d="M3 7l9-4 9 4-9 4z"/><path d="M3 7v10l9 4 9-4V7"/><path d="M12 11v10"/>'),
+  'Complete': GTI('<circle cx="12" cy="12" r="9"/><path d="M8.5 12.5l2.5 2.5 4.5-5"/>'),
+  'N/A': GTI('<path d="M5 12h14"/>'),
+  'Inbound Lead': GTI('<circle cx="12" cy="12" r="9"/><path d="M12 7v8M8.5 11.5 12 15l3.5-3.5"/>'),
+  'Outbound Lead': GTI('<circle cx="12" cy="12" r="9"/><path d="M12 17V9M8.5 12.5 12 9l3.5 3.5"/>'),
+  "Don't Contact": GTI('<circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/>'),
+  'Contacted': GTI('<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3 19.5 19.5 0 0 1-6-6 19.8 19.8 0 0 1-3-8.6A2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.4 2.1L8.1 9.9a16 16 0 0 0 6 6l1.4-1.4a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/>'),
+  'Not A No!': GTI('<path d="M7 11v9H4a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1h3zM7 11l4-7a2 2 0 0 1 3 1.5V9h5a2 2 0 0 1 2 2.3l-1.2 7A2 2 0 0 1 20.6 20H7"/>'),
+  'Payment Discussed': GTI('<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/>'),
+  'Paid': GTI('<path d="M8 21h8M12 17v4M7 4h10v4a5 5 0 0 1-10 0zM7 5H4v2a3 3 0 0 0 3 3M17 5h3v2a3 3 0 0 1-3 3"/>'),
+};
+const GATE_TL = {
+  rentalStatus: { title: 'Rental status', order: ['Quote', 'Reserved', 'On Rent', 'End Rent', 'Off Rent', 'Returned', 'Cancelled', 'No Show'], off: new Set(['Cancelled', 'No Show']) },
+  woPhase:      { title: 'Work order phase', order: ['Part Needed?', 'No Part Needed', 'Part Needed', 'Part is Local', 'Part Ordered', 'Part in Stock', 'Complete'], off: new Set() },
+  funnelStage:  { title: 'Funnel stage', order: ['N/A', 'Inbound Lead', 'Outbound Lead', "Don't Contact", 'Contacted', 'Not A No!', 'Payment Discussed', 'Paid'], off: new Set(["Don't Contact"]) },
+};
+const GTCHK = GTI('<path d="M5 12.5l4 4 10-11"/>');
+/** Build the gate-timeline dropdown body. `mk(value, inner, stateCls)` wraps each row
+ *  into the selecting button (each gate supplies its own js-class + data-attrs). */
+function gateTimeline(set, current, title, mk) {
+  const cfg = GATE_TL[set]; if (!cfg) return '';
+  const { order, off } = cfg;
+  const ai = order.indexOf(current);            // active row index (display order)
+  const curOff = off.has(current);
+  const rows = order.map((v, i) => {
+    let st;
+    if (v === current) st = 'a';
+    else if (off.has(v)) st = 's';
+    else if (curOff) st = 'u';
+    else st = i < ai ? 'd' : 'u';
+    let conn = '';
+    if (i < order.length - 1) {
+      const kind = curOff ? 'dash' : (i + 1 < ai ? 'solid' : (i + 1 === ai ? 'grad' : 'dash'));
+      conn = kind === 'dash' ? '<span class="gt-dash"></span>' : `<span class="gt-line ${kind}"></span>`;
+    }
+    const chk = st === 'd' ? `<i class="gt-chk">${GTCHK}</i>` : '';
+    const inner = `${conn}<span class="gt-node">${GATE_ICON[v] || I.circle}</span><span class="gt-lbl">${chk}${esc(getStatus(set, v).label)}</span>`;
+    return mk(v, inner, 'gt-' + st);
+  }).join('');
+  return `<span class="gt-haz"></span><div class="gt-cap">${esc(title)}</div><div class="gt-body">${rows}</div>`;
+}
+function openDropdown(anchorEl, html, { align = 'left', cls = '' } = {}) {
   hideHoverPreview();   // a floated preview (z-9000) buried the menu — clear it on open (Jac: fleet-status box hidden behind hover)
   // re-clicking the SAME trigger toggles the menu shut (the anchor is excluded from the
   // outside-close handler below, so its mousedown doesn't pre-close before this runs).
@@ -7316,26 +7462,38 @@ function openDropdown(anchorEl, html, { align = 'left' } = {}) {
   // detach each closing menu's own outside-close listener so none orphan on document
   document.querySelectorAll('.dropdown-menu').forEach((n) => { if (n._off) document.removeEventListener('mousedown', n._off); n.remove(); });
   if (sameAnchor) return null;
-  const dd = el('div', 'dropdown-menu', html);
+  const dd = el('div', 'dropdown-menu' + (cls ? ' ' + cls : ''), html);
   dd._anchor = anchorEl;
   document.body.appendChild(dd);
   const rect = anchorEl.getBoundingClientRect();
-  const w = dd.offsetWidth || 180, h = dd.offsetHeight || 100;
-  let left = align === 'right' ? rect.right - w : rect.left;
-  left = Math.max(8, Math.min(left, window.innerWidth - w - 8));
-  let top = rect.bottom + 5;
-  if (top + h > window.innerHeight - 8) top = Math.max(8, rect.top - h - 5);
-  dd.style.left = left + 'px'; dd.style.top = top + 'px';
+  // Keep the menu fully on-screen. A tall menu (the 8-stage gate timeline) anchored
+  // low could otherwise spill far below the fold — flipping ALONE isn't enough, so we
+  // cap the height to the viewport and HARD-CLAMP top/left to both edges. Re-placed on
+  // the next frame because offsetHeight can grow after the first paint (fonts/icons).
+  dd.style.maxHeight = (window.innerHeight - 16) + 'px';
+  dd.style.overflowY = 'auto';
+  const place = () => {
+    const w = dd.offsetWidth || 180, h = dd.offsetHeight || 100;
+    let left = align === 'right' ? rect.right - w : rect.left;
+    left = Math.max(8, Math.min(left, window.innerWidth - w - 8));
+    let top = rect.bottom + 5;
+    if (top + h > window.innerHeight - 8) top = rect.top - h - 5;           // prefer flipping above the anchor
+    top = Math.max(8, Math.min(top, window.innerHeight - h - 8));           // …but never spill off either edge
+    dd.style.left = left + 'px'; dd.style.top = top + 'px';
+  };
+  place();
+  requestAnimationFrame(place);
   const off = (e) => { if (!dd.contains(e.target) && !anchorEl.contains(e.target)) { dd.remove(); document.removeEventListener('mousedown', off); } };
   dd._off = off;
   setTimeout(() => document.addEventListener('mousedown', off), 0);
   return dd;
 }
 function openStatusDropdown(rentalId, anchorEl) {
-  // Tomorrow/Today are DERIVED display states (not user-selectable) — exclude from the picker
-  const html = Object.keys(STATUS.rentalStatus).filter((v) => v !== 'Tomorrow' && v !== 'Today').map((v) =>
-    `<button class="dd-item js-setstatus" data-rec="${esc(rentalId)}" data-val="${esc(v)}">${statusPill('rentalStatus', v)}</button>`).join('');
-  openDropdown(anchorEl, html);
+  // progressing timeline; Tomorrow/Today are DERIVED display states excluded by GATE_TL.order
+  const cur = IDX.rental.get(rentalId)?.status || '';
+  const html = gateTimeline('rentalStatus', cur, 'Rental status', (v, inner, sc) =>
+    `<button class="gt-row ${sc} js-setstatus" data-rec="${esc(rentalId)}" data-val="${esc(v)}">${inner}</button>`);
+  openDropdown(anchorEl, html, { cls: 'gt' });
 }
 function openFleetDropdown(unitId, anchorEl) {
   const html = Object.keys(STATUS.unitFleetStatus).map((v) =>
@@ -7365,9 +7523,10 @@ function setExpenseReconcile(expenseId, val) {
 function openFunnelDropdown(custId, which, anchorEl) {
   const cust = IDX.customer.get(custId);
   const cur = which === 'membership' ? cust?.membershipStage : cust?.usedSalesStage;
-  const html = Object.keys(STATUS.funnelStage).map((v) =>
-    `<button class="dd-item js-setfunnel ${v === cur ? 'on' : ''}" data-rec="${esc(custId)}" data-which="${which}" data-val="${esc(v)}">${badge(getStatus('funnelStage', v).label, getStatus('funnelStage', v).color)}</button>`).join('');
-  openDropdown(anchorEl, html);
+  const title = which === 'membership' ? 'Membership funnel' : 'Used sales funnel';
+  const html = gateTimeline('funnelStage', cur || 'N/A', title, (v, inner, sc) =>
+    `<button class="gt-row ${sc} js-setfunnel" data-rec="${esc(custId)}" data-which="${which}" data-val="${esc(v)}">${inner}</button>`);
+  openDropdown(anchorEl, html, { cls: 'gt' });
 }
 function setFunnelStage(custId, which, val) {
   const c = IDX.customer.get(custId);
@@ -8130,10 +8289,25 @@ function onClick(e) {
   if (closest('.js-haptics')) { e.stopPropagation(); const on = closest('.js-haptics').dataset.val === '1'; state.hapticsOff = !on; try { localStorage.setItem('jactec.hapticsOff', on ? '0' : '1'); } catch (err) {} if (on) haptic([12, 30, 12]); renderOverlay(); return; }   // §M-touch — toggle + a sample buzz when turning ON
   if (closest('.js-nc-save')) { e.stopPropagation(); return saveNewCustomer(); }
   if (closest('.js-nc-acct')) { const b = closest('.js-nc-acct'); e.stopPropagation(); ncSyncInputs(); state.overlay.draft.accountType = b.dataset.val; renderOverlay(); return; }
+  // §7.1b card-bound agreements: tab rail + per-card signing
+  if (closest('.js-nc-tab')) { e.stopPropagation(); ncSyncInputs(); state.overlay.tab = closest('.js-nc-tab').dataset.tab; state.overlay.signRead = null; renderOverlay(); return; }
+  if (closest('.js-ncsign-read')) { e.stopPropagation(); const id = closest('.js-ncsign-read').dataset.card; state.overlay.signRead = (state.overlay.signRead === id) ? null : id; renderOverlay(); return; }
+  if (closest('.js-ncsign-save')) {
+    e.stopPropagation(); const o = state.overlay; const c = IDX.customer.get(o.editId || ''); const k = c && customerCards(c).find((x) => x.id === closest('.js-ncsign-save').dataset.card);
+    if (!c || !k) return;
+    const cv = document.querySelector('.overlay .nc-sigpad');
+    if (!cv || !cv.dataset.drawn) return flashOr('.overlay .nc-sigpad', 'Sign in the box first.');
+    if (!(o.signDraft && o.signDraft.selfie)) return toast('Take a selfie to authorize this card.');
+    // downscale the signature (a 500×220 pad → ~3 KB) before freezing it onto the card
+    downscaleImage(cv.toDataURL('image/jpeg', 0.8), 380, 0.6, (sig) => {
+      signCardAgreement(c, k, sig || cv.toDataURL('image/jpeg', 0.6), o.signDraft.selfie);
+      o.signDraft = null; o.signRead = null; renderOverlay(); render();
+    });
+    return;
+  }
+  if (closest('.js-ncsign-pdf')) { e.stopPropagation(); const b = closest('.js-ncsign-pdf'); return openSignedPdf(state.overlay.editId, b.dataset.card, b.dataset.sig); }
   if (closest('.js-nc-selfie-clear')) { e.stopPropagation(); ncSyncInputs(); state.overlay.draft.selfie = ''; renderOverlay(); return; }
-  if (closest('.js-nc-sig-save')) { e.stopPropagation(); const cv = document.querySelector('.overlay .nc-sigpad'); if (cv && cv.dataset.drawn) { ncSyncInputs(); const dr = state.overlay.draft; dr.signature = cv.toDataURL('image/jpeg', 0.6); dr.agreementType = /member/i.test(dr.accountType || '') ? 'membership' : 'rental'; dr.agreementSignedAt = TODAY_ISO; renderOverlay(); } else flashOr('.overlay .nc-sigpad', 'Sign in the box first.'); return; }
   if (closest('.js-nc-sig-clearpad')) { e.stopPropagation(); const cv = document.querySelector('.overlay .nc-sigpad'); if (cv) { const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height); cv.dataset.drawn = ''; } return; }
-  if (closest('.js-nc-sig-clear')) { e.stopPropagation(); ncSyncInputs(); const dr = state.overlay.draft; dr.signature = ''; dr.agreementType = ''; dr.agreementSignedAt = ''; renderOverlay(); return; }
   if (closest('.js-nc-qr')) { e.stopPropagation(); const id = state.overlay.editId; openOverlay({ kind: 'qr', title: 'Continue on phone', url: location.origin + location.pathname + '#edit=' + id, caption: 'Scan to finish this account on your phone.' }); return; }
   if (closest('.js-edit-customer')) { e.stopPropagation(); return openCustomerForm(closest('.js-edit-customer').dataset.rec); }
   if (closest('.js-view-agreement')) { e.stopPropagation(); const cust = IDX.customer.get(closest('.js-view-agreement').dataset.rec); if (cust) openOverlay({ kind: 'agreement', recId: cust.customerId }); return; }
@@ -8142,10 +8316,15 @@ function onClick(e) {
     const rec = closest('.js-add-card').dataset.rec;
     // From the onboarding form: persist the draft (incl. signature/selfie) first, add the card,
     // then RETURN to the form (card now on file) — no save-close-reopen. Elsewhere: normal add.
-    if (state.overlay && state.overlay.kind === 'newCustomer') { ncSyncDraftToCustomer(state.overlay); state.overlay.cardSub = true; renderOverlay(); return; }   // §14 open the card panel BESIDE the form
+    if (state.overlay && state.overlay.kind === 'newCustomer') {
+      ncSyncDraftToCustomer(state.overlay);
+      if (!state.overlay.editId) { flashOr('.overlay [data-f="name"]', 'Enter a name & phone before adding a card.'); return; }   // need a saved customer to attach the card to
+      state.overlay.cardSub = true; renderOverlay(); return;   // §14 open the card panel BESIDE the form
+    }
     return openAddCard(rec);
   }
   if (closest('.js-cardsub-cancel')) { e.stopPropagation(); if (state.overlay && state.overlay.kind === 'newCustomer') { state.overlay.cardSub = false; renderOverlay(); } return; }   // §14 close just the card panel, keep the form
+  if (closest('.js-card-sign')) { e.stopPropagation(); const b = closest('.js-card-sign'); openCustomerForm(b.dataset.rec); if (state.overlay) { state.overlay.tab = b.dataset.card; renderOverlay(); } return; }
   if (closest('.js-card-default')) { e.stopPropagation(); const b = closest('.js-card-default'); return setCardDefault(b.dataset.rec, b.dataset.card); }
   if (closest('.js-card-remove')) { e.stopPropagation(); const b = closest('.js-card-remove'); return removeCard(b.dataset.rec, b.dataset.card); }
   if (closest('.js-pm-tab')) { e.stopPropagation(); state.pmTab = closest('.js-pm-tab').dataset.tab; return render(); }   // §14b Cards | ACH toggle
@@ -8388,6 +8567,7 @@ function onClick(e) {
   if (closest('.js-site-go')) { const b = closest('.js-site-go'); e.stopPropagation(); return openTransportEdit(b.dataset.rec, b.dataset.unit || null, 'delivery'); }   // legacy dispatch links still open the editor
   if (closest('.js-tedit-open')) { const b = closest('.js-tedit-open'); e.stopPropagation(); return openTransportEdit(b.dataset.rec, b.dataset.unit || null, b.dataset.leg || 'delivery'); }
   if (closest('.js-ttype')) { const b = closest('.js-ttype'); e.stopPropagation(); return setTransportType(b.dataset.rec, b.dataset.unit || null, b.dataset.val); }
+  if (closest('.js-tnode')) { const b = closest('.js-tnode'); e.stopPropagation(); return armTransportNode(b.dataset.rec, b.dataset.unit || null, b.dataset.node); }
   if (closest('.js-tedit-save')) { e.stopPropagation(); return saveTransportEdit(); }
   if (closest('.js-tedit-cancel')) { e.stopPropagation(); return closeTransportEdit(); }
   if (closest('.js-tsug-pick')) { const b = closest('.js-tsug-pick'); e.stopPropagation(); return tePick(Number(b.dataset.i)); }
@@ -8709,10 +8889,10 @@ async function requireAdmin(reason, onOk) {
 function cardOverrideRental(rentalId, val) {
   const r = IDX.rental.get(rentalId); if (!r) return;
   const cust = r.customerId ? IDX.customer.get(r.customerId) : null;
-  requireAdmin(`${cust ? cust.name : 'This customer'} has no valid card on file — booking is blocked.`, () => {
+  requireAdmin(`${cust ? cust.name : 'This customer'} — ${cardGateReason(cust) || 'card gate'}. Booking is blocked.`, () => {
     r.cardOverride = true;
-    logAction(r, `Admin override — booked ${getStatus('rentalStatus', val).label} with no valid card on file`);
-    if (cust) logAction(cust, 'Admin override used to book a rental without a valid card');
+    logAction(r, `Admin override — booked ${getStatus('rentalStatus', val).label} (${cardGateReason(cust) || 'card gate'})`);
+    if (cust) logAction(cust, 'Admin override used to book past the card/agreement gate');
     setRentalStatus(rentalId, val);
   });
 }
@@ -8723,9 +8903,10 @@ function setRentalStatus(rentalId, val) {
   // §9 hard gates
   if (val === 'On Rent' && !r.invoiceId) { flashOr('.js-create-invoice', 'Blocked: "On Rent" requires a linked invoice (§9).'); return; }
   if (['On Rent', 'Reserved'].includes(val) && cust && /Blacklist/i.test(cust.accountType || '')) { toast('Blocked: customer is blacklisted (§9).'); return; }
-  // §14 — a booking requires a valid card on file by default; an Admin can override.
-  if (BOOKING_STATUSES.includes(val) && cust && !hasValidCard(cust) && !r.cardOverride) {
-    toast(`${cust.name} has no valid card on file — Admin override required.`);
+  // §14 — a booking requires a valid card that is SIGNED for the current account
+  // type; any unsigned card blocks. An Admin can override. (Charging is never gated.)
+  if (BOOKING_STATUSES.includes(val) && cardGateBlocked(cust) && !r.cardOverride) {
+    toast(`${cust.name} — ${cardGateReason(cust)}. Admin override required.`);
     return cardOverrideRental(rentalId, val);
   }
   const wasVoided = ['No Show', 'Cancelled'].includes(r.status);
@@ -8752,7 +8933,7 @@ function setUnitStatus(rentalId, unitId, val) {
   const cust = r.customerId ? IDX.customer.get(r.customerId) : null;
   if (val === 'On Rent' && !r.invoiceId) { flashOr('.js-create-invoice', 'Blocked: "On Rent" requires a linked invoice (§9).'); return; }
   if (['On Rent', 'Reserved'].includes(val) && cust && /Blacklist/i.test(cust.accountType || '')) { toast('Blocked: customer is blacklisted (§9).'); return; }
-  if (BOOKING_STATUSES.includes(val) && cust && !hasValidCard(cust) && !r.cardOverride) { toast(`${cust.name} has no valid card on file — Admin override required.`); return; }
+  if (BOOKING_STATUSES.includes(val) && cardGateBlocked(cust) && !r.cardOverride) { toast(`${cust.name} — ${cardGateReason(cust)}. Admin override required.`); return; }
   // §20 No-Show / Cancel: don't commit the terminal status while a payment is
   // assigned to the unit (it would count toward Complete yet stay billed) — block first.
   if ((val === 'No Show' || val === 'Cancelled') && unitLinePaid(r, unitId)) { toast('That unit has an assigned payment — refund it before No Show/Cancel.'); return; }
@@ -8787,9 +8968,11 @@ function removeUnitInvoiceLine(r, unitId) {
   logAction(inv, `${IDX.unit.get(unitId)?.name || unitId} line(s) removed — No Show / Cancel (not billed)`);
 }
 function openUnitStatusDropdown(rentalId, unitId, anchorEl) {
-  const html = Object.keys(STATUS.rentalStatus).filter((v) => v !== 'Tomorrow' && v !== 'Today').map((v) =>
-    `<button class="dd-item js-setunitstatus" data-rec="${esc(rentalId)}" data-unit="${esc(unitId)}" data-val="${esc(v)}">${statusPill('rentalStatus', v)}</button>`).join('');
-  openDropdown(anchorEl, html);
+  const r = IDX.rental.get(rentalId); const eu = r && unitEntry(r, unitId);
+  const cur = eu ? unitStatus(r, eu) : '';
+  const html = gateTimeline('rentalStatus', cur, 'Unit status', (v, inner, sc) =>
+    `<button class="gt-row ${sc} js-setunitstatus" data-rec="${esc(rentalId)}" data-unit="${esc(unitId)}" data-val="${esc(v)}">${inner}</button>`);
+  openDropdown(anchorEl, html, { cls: 'gt' });
 }
 /* §9 Field Call — a unit breaks mid-rental: flag the rental (red FC), fail the unit,
    and auto-open a Field-Call work order so the M.Tech can dispatch parts/swap. */
@@ -8854,6 +9037,9 @@ function setUnitCapture(r, eu, key, stamp) {
 function yardCapture(rentalId, cap, unitId) {
   const r = IDX.rental.get(rentalId); if (!r) return;
   const cur = captureUnit(r, unitId) || r;
+  // §14 a delivery log goes On Rent — block the driver up front when the account's
+  // card/agreement gate isn't clear (the journey node reads locked, not dead).
+  if (cap === 'start') { const gc = r.customerId ? IDX.customer.get(r.customerId) : null; if (cardGateBlocked(gc) && !r.cardOverride) { toast(`🔒 ${gc.name} — ${cardGateReason(gc)}. Sign the card before logging a delivery.`); return; } }
   if (cap === 'start' && cur.startCapture) return toast('Start already captured — video on file.');
   if (cap === 'end' && cur.endCapture) return toast('End already captured — video on file.');
   if (cap === 'end' && !cur.startCapture) return flashOr('.js-yard[data-cap="start"]', 'Log the Start/Delivery first.');
@@ -9291,10 +9477,19 @@ function onChange(e) {
     reader.readAsDataURL(file);
     return;
   }
+  // §7.1b per-card signing selfie — stashed on o.signDraft until Accept & Sign freezes it onto the card.
+  if (e.target.classList.contains('js-ncsign-selfie')) {
+    const file = e.target.files && e.target.files[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => { downscaleImage(reader.result, 340, 0.5, (out) => { if (!out) { toast('Could not read that image.'); return; } const o = state.overlay; if (o && o.kind === 'newCustomer') { o.signDraft = o.signDraft || {}; o.signDraft.selfie = out; renderOverlay(); } }); };
+    reader.readAsDataURL(file);
+    return;
+  }
   // New Customer form: filling Company auto-promotes Non-Business → Business.
   if (e.target.dataset && e.target.dataset.f && state.overlay?.kind === 'newCustomer') {
     const o = state.overlay, root = document.querySelector('.overlay .popup-body');
     if (root) root.querySelectorAll('[data-f]').forEach((i) => { o.draft[i.dataset.f] = i.value.trim(); });
+    ncApplyName(o.draft);
     // quick-add: First + Phone present → persist behind the scenes (no render, keeps focus)
     if (!o.editId) quickSaveCustomer(o);
     // already saved → keep the record live as they keep typing (no render)
@@ -9531,25 +9726,24 @@ function ncSyncDraftToCustomer(o) {
   const d = o.draft;
   Object.assign(c, { firstName: d.firstName, lastName: d.lastName, name: `${d.firstName} ${d.lastName}`.trim(),
     company: d.company, phone: d.phone, email: d.email, industry: d.industry, accountType: d.accountType || 'Non-Business',
-    accountNotes: d.accountNotes, selfie: d.selfie, signature: d.signature, agreementType: d.agreementType || '', agreementSignedAt: d.agreementSignedAt || '' });
+    accountNotes: d.accountNotes });   // §7.1b signature/selfie/agreement live on the CARD now — never wiped from the account form
   reindex('customers', c);
 }
 function saveNewCustomer() {
   const o = state.overlay; if (!o || o.kind !== 'newCustomer') return;
   const root = document.querySelector('.overlay .popup-body'); if (!root) return;
   root.querySelectorAll('[data-f]').forEach((i) => { o.draft[i.dataset.f] = i.value.trim(); });
-  if (!o.draft.firstName) { o.error = 'First name is required (we use it for marketing).'; renderOverlay(); document.querySelector('.overlay [data-f="firstName"]')?.focus(); return; }
+  ncApplyName(o.draft);
+  if (!o.draft.firstName) { o.error = 'A name is required (we use it for marketing).'; renderOverlay(); document.querySelector('.overlay [data-f="name"]')?.focus(); return; }
   if (!o.draft.phone) { o.error = 'A phone number is required.'; renderOverlay(); document.querySelector('.overlay [data-f="phone"]')?.focus(); return; }
   if (o.draft.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(o.draft.email)) { o.error = 'That email doesn’t look valid (or leave it blank).'; renderOverlay(); return; }
   const d = o.draft;
   if (o.editId) {                                   // ── editing / completing an existing customer ──
     const c = IDX.customer.get(o.editId); if (!c) { closeOverlay(); return; }
-    const wasSigned = !!c.agreementSignedAt;
-    Object.assign(c, { firstName: d.firstName, lastName: d.lastName, company: d.company, phone: d.phone, email: d.email, industry: d.industry, accountType: d.accountType || 'Non-Business', accountNotes: d.accountNotes, selfie: d.selfie, signature: d.signature, agreementType: d.agreementType || '', agreementSignedAt: d.agreementSignedAt || '' });
+    Object.assign(c, { firstName: d.firstName, lastName: d.lastName, company: d.company, phone: d.phone, email: d.email, industry: d.industry, accountType: d.accountType || 'Non-Business', accountNotes: d.accountNotes });   // §7.1b signature/agreement live on the card
     if (!c.accountNotes) c.accountNotesColor = '';   // popup has no dot picker — don't leave a stale tag on a cleared note
     c.name = `${d.firstName} ${d.lastName}`.trim() || c.name;
     reindex('customers', c);
-    if (c.agreementSignedAt && !wasSigned) logAction(c, `${AGREEMENTS[c.agreementType]?.title || 'Agreement'} signed`);
     logAction(c, 'Account details updated');
     const lt = applyCustomerLink(o, c.customerId) || o.linked;   // quick-add-link → land back on the Quote/invoice
     closeOverlay();
@@ -9753,14 +9947,17 @@ async function saveCardFlow(btn) {
     c.stripeId = r.stripeId || c.stripeId;
     if (!Array.isArray(c.cards)) c.cards = [];
     const firstCard = customerCards(c).length === 0;
-    c.cards.push({ id: 'CARD-' + (state.seq++), stripePmId: setupIntent.payment_method, brand: s.card.brand, last4: s.card.last4,
+    const newCardId = 'CARD-' + (state.seq++);
+    // §7.1b a card lands UNSIGNED — it can be charged, but the account can't go
+    // On Rent / log deliveries until this card is signed for the account type.
+    c.cards.push({ id: newCardId, stripePmId: setupIntent.payment_method, brand: s.card.brand, last4: s.card.last4,
       expMonth: s.card.expMonth, expYear: s.card.expYear, nickname: o.nickname || '', notes: '', isDefault: firstCard, status: 'active',
-      agreement: c.signature ? { signedAt: TODAY_ISO, version: 'rental', signature: c.signature, selfie: c.selfie } : null });
+      agreements: [] });
     c.cardBrand = s.card.brand; c.cardLast4 = s.card.last4; c.cardExpMonth = s.card.expMonth; c.cardExpYear = s.card.expYear;   // legacy mirror (default card)
-    reindex('customers', c); logAction(c, `Card added — ${brandName(s.card.brand)} ••••${s.card.last4} (signed agreement)`);
+    reindex('customers', c); logAction(c, `Card added — ${brandName(s.card.brand)} ••••${s.card.last4} (unsigned)`);
     destroyCardElement();
-    toast('Card saved ✓');
-    if (sub) { o.cardSub = false; renderOverlay(); }   // §14 close the card panel in place, refresh the form (card now on file)
+    toast('Card saved — sign to authorize ✓');
+    if (sub) { o.cardSub = false; o.tab = newCardId; renderOverlay(); }   // §14 close the card panel, jump to the new card's tab to sign
     else if (o.returnTo === 'payment' && o.invoiceId) openPayInvoice(o.invoiceId);
     else closeOverlay();
     render();
@@ -10177,9 +10374,11 @@ function setWoLinePhase(woId, idx, val) {
   reanchorRender();
 }
 function openWoPhaseDropdown(woId, anchorEl, lineIdx) {
-  const html = Object.keys(STATUS.woPhase).map((v) =>
-    `<button class="dd-item ${lineIdx == null ? 'js-setwophase' : 'js-setwolinephase'}" data-rec="${esc(woId)}"${lineIdx == null ? '' : ` data-idx="${lineIdx}"`} data-val="${esc(v)}">${statusPill('woPhase', v)}</button>`).join('');
-  openDropdown(anchorEl, html);
+  const w = IDX.wo.get(woId);
+  const cur = lineIdx == null ? (w?.phase || '') : (w?.lineItems?.[lineIdx]?.phase || '');
+  const html = gateTimeline('woPhase', cur, lineIdx == null ? 'Work order phase' : 'Line phase', (v, inner, sc) =>
+    `<button class="gt-row ${sc} ${lineIdx == null ? 'js-setwophase' : 'js-setwolinephase'}" data-rec="${esc(woId)}"${lineIdx == null ? '' : ` data-idx="${lineIdx}"`} data-val="${esc(v)}">${inner}</button>`);
+  openDropdown(anchorEl, html, { cls: 'gt' });
 }
 
 /* ── §12.2 rental-window range picker — a single popup: a time selector above a
@@ -11107,6 +11306,10 @@ function boot() {
       return dispatchArrowClick(route ? route.dataset.day : (state.dispatchDay || TODAY_ISO), pt.dataset.node);
     }
     if (e.key === 'Escape' && state.dispArm != null) { e.preventDefault(); e.stopPropagation(); state.dispArm = null; render(); }
+    // §20 route-rail: keyboard-activate a stop, Esc disarms the pending route pick
+    const rn = e.target.closest && e.target.closest('.js-tnode');
+    if (rn && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); return armTransportNode(rn.dataset.rec, rn.dataset.unit || null, rn.dataset.node); }
+    if (e.key === 'Escape' && state.transportArm != null) { e.preventDefault(); e.stopPropagation(); state.transportArm = null; render(); }
   });
   document.addEventListener('mousemove', onInspectMove);   // Design Inspector hover tag (no-op unless state.inspect)
   document.addEventListener('mousemove', caScrub);          // D2 — customer activity chart cursor scrub
@@ -11294,7 +11497,7 @@ function exposeTestApi() {
       rentalAllocated, unitRentalPrice, rentalDisplayName, setWoLinePhase, setWoPhase, woBottleneck,
       cleanUnitName, planUnitMigration, applyUnitMigration, openMigrationPreview,
       computeTransportPrice, isFueledType, unitTransport, rentalTransport,
-      wrValidatePlan, applyWranglerData, wrFunnel, invoiceMergeable, mergeInvoiceInto };
+      wrValidatePlan, applyWranglerData, wrFunnel, invoiceMergeable, mergeInvoiceInto, parseWranglerAction };
   } catch (e) { /* no window (non-browser) */ }
 }
 

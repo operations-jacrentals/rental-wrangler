@@ -136,3 +136,15 @@ By signing, Customer acknowledges they have read, understood, and agree to this 
   },
 };
 export default AGREEMENTS;
+
+/* ── Frozen agreement VERSIONS (§7.1b immutability, storage-light) ──
+   A signing stores only a small `version` id, NOT the full ~6–8 KB text — the text
+   is resolved from this append-only registry at display/PDF time. When an agreement
+   above is revised, ADD a new dated entry here and bump AGREEMENT_CURRENT[key]; old
+   signings keep resolving their original frozen text. Never edit a shipped entry. */
+export const AGREEMENT_VERSIONS = {
+  'rental@2026-06': { key: 'rental', title: AGREEMENTS.rental.title, text: AGREEMENTS.rental.text },
+  'membership@2026-06': { key: 'membership', title: AGREEMENTS.membership.title, text: AGREEMENTS.membership.text },
+};
+export const AGREEMENT_CURRENT = { rental: 'rental@2026-06', membership: 'membership@2026-06' };
+

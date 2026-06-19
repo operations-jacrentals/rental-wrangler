@@ -1,5 +1,5 @@
 # JacTec / Rental Wrangler — SPEC v8
-**v8 — reconciled to code 2026-06-13, updated through session-2 (pm) · supersedes v7
+**v8 — reconciled to code 2026-06-13, updated through v8.7 (2026-06-18) · supersedes v7
 (frozen 2026-06-12 morning) · lives in `JacTec-handoff/` — ✅ NOW COMMITTED, travels
 with the repo (the anti-drift fix is in place)**
 
@@ -263,6 +263,86 @@ both fall back gracefully (demo keeps a downscaled image inline / the QR is the 
 
 **Convention.** `CLAUDE.md` now records Jac's standing preference — **always ask via popups**
 (the AskUserQuestion tool), never inline in chat.
+
+## v8.6 — Built-State Delta (2026-06-18 · Blued Steel polish + nav QoL + KPI mask)
+
+Session focus: completing the Blued Steel visual suite, two navigation improvements,
+and a temporary KPI blur mask. All shipped to `main` via squash-merged PRs (branch →
+PR → CI `smoke`). Code is truth; this records what landed.
+
+**Blued Steel theme — complete card plate suite (PRs #60/#61/#69/#72/#74/#77).**
+Every surface in `[data-theme="bluedsteel"]` now reads as one cohesive blued-steel
+data-plate. **Search bar** (`.searchwrap`) — metal plate treatment matching the cards:
+`tex-metal-blued.jpg` tiled at 300px + blued gradient overlay + inset top glow; was a
+flat orphaned input. **List cards** — same texture at 340px, blued-teal gradient overlay
+(`rgba(58,80,118,.34)` → `rgba(8,11,18,.68)`); card cap hazard stripe now yellow
+(`--stripe: var(--yellow)`). **Standard-view sections** (`.section`) — milled-panel
+recess: `rgba(11,15,24,.36)` bg + `inset 0 1px 0 rgba(150,178,222,.12), 0 2px 8px -3px
+rgba(0,0,0,.55)` — reads as a well machined into the plate. **Rows** — same milled-panel
+recess formula, border `rgba(150,178,222,.16)`. This "milled-panel recess" recipe is the
+canonical dark-panel surface for the bluedsteel theme; it's now in `signature-recipes.md`.
+
+**Column polish — toggle gap + center texture flip (PR #99).** `.card > .tabrow` margin
+changed from `9px 8px 5px` → `13px 8px 8px`. Root cause: the 6px hazard stripe is
+`position: absolute` at the card top, eating top margin; formula `desired_gap +
+stripe_height - border = 8 + 6 - 1 = 13px` gives exactly 8px visual gap above and below
+on all three columns. Center column now uses `assets/tex-metal-blued-flip.jpg` (a
+horizontal mirror of the blued plate, created via PowerShell `RotateNoneFlipX`) — grain
+direction reads differently enough that frequent users don't register the pattern
+repeating across columns.
+
+**Back button → list view fallback (PR #82).** `cardBack()` previously did nothing with
+an empty `backStack`. Now: empty stack + `standard` mode + record open → navigates to
+list view (lost state pushed onto `fwdStack`). `cardJog()` now shows the `←` Back button
+even when `backStack` is empty, as long as a record is open — closes the dead-end of
+"opened a record from search with no visible Back."
+
+**+Unit / +Category quick-add from empty search (PR #85).** Units and Categories cards
+now show a `+New Unit` / `+New Category` button in the empty-search state — matching the
+Rentals/Customers pattern. `quickAddUnitFromSearch` / `quickAddCategoryFromSearch` create
+the record, clear search, and call `openStandard()` (so Back works). ID generators:
+`nextUnitId()` → `U001`…; `nextCategoryId()` → `CAT001`…
+
+**KPI blur mask (PRs #132/#133 — TEMPORARY, intentionally live).** `filter: blur(12px);
+pointer-events: none` on `.kpi-ring, .big-ring, .menu-team-ring` — Jac wants ring status
+hidden until further notice. Marked block at the very end of `style.css`; remove the
+3-line block to restore. Do not remove until Jac says so. (PR #132 — color-change
+attempt — was a typo misread, superseded immediately by #133.)
+
+---
+
+## v8.7 — Built-State Delta (2026-06-18 · Dispatch Office Cockpit + maps first-paint fix + board-view removal)
+
+_(This session's work only. Other sessions also pushed to `main` on 2026-06-18 — see v8.6 for Blued
+Steel/nav/KPI, and the **unmerged** branch `origin/claude/handoff-continuation-q442qm` for in-flight
+rulebook/SPEC edits that should be reconciled.)_
+
+**§2.3 Dispatch is now the OFFICE COCKPIT (PRs #73 / #79 / #104 / #106 / #131).** The Calendar card's
+dispatch view is rebuilt from a list into a **full-pane live Google map** of the day's run + a minimal
+**schedule rail** floating on the right that expands on hover/focus to adjust the run. `dispatchGridBody`
+rewritten. New/changed `app.js` functions: `mountDispatchMap` / `refreshDispatchMap` / `placeDispatchPin`
+/ `dispGeocode` (map engine — mounts fresh each render with remembered pan/zoom; straight `Polyline`
+route, no Directions/quota; Places geocode fallback for pinless stops), `dispatchTruckPos` (the
+**telematics seam** — v1 = last-completed stop's pin; live feed wires in ~2026-06-23), `dispatchFocusStop`
+(tap a stop → pan/highlight ON the map, never navigates away — Jac's explicit choice), `dispatchKind` /
+`stopDone` / `dispatchNextId` / `timeToMin` (parses 12h "9:00 AM" AND 24h) / `fmtClock`. Rail tokens
+reuse builders: KIND + Done = `badge` (R3b), customer/unit = `refPill`/`unitPill` (R2) — **no new
+`RULE_META` rule, zero R0 violations**; editable stop-time re-sorts; **drag a token to reorder** (native
+dnd → `jactec.dispatchOrder`); "No set time" pins to the top. Live board — **no "send" button**. Design
+spec: `docs/superpowers/specs/2026-06-15-dispatch-map-design.md`. Still TODO: Phase 2 driver cab, Phase
+3 driver notification (in-app, debounced), telematics swap. **Verify on PROD, not `#local`** (the
+`#local` demo's index empties under test churn and crashes render, so the map never paints there).
+
+**Maps first-paint fix (PR #68).** A Google map built the same frame its container is inserted paints at
+**0×0** and stays blank until the next open ("had to open it twice"). Fix in `mountTransportEditor` (and
+`mountDispatchMap`): after creating the map, `requestAnimationFrame` + a 250ms `setTimeout` calling
+`google.maps.event.trigger(map,'resize')` (+ `setCenter`). Diagnosed from the prod console — the Maps key
+is HEALTHY (no referrer/API/quota errors; only Google deprecation warnings). Maps is also **preloaded at
+boot** (`loadGoogleMaps()` in `boot()`) so the cockpit/editor open instantly.
+
+**Board View (spreadsheet) removed (PR #134).** The unapproved `js-boardview` (`.bv-btn`) toggle is gone
+from the card + shop headers. The separate back-office board popups (`js-board` / `BACKOFFICE_BOARDS` for
+vendors/parts/expenses/files) are untouched. Standing rule: memory `no_board_view.md`.
 
 ---
 
@@ -602,9 +682,18 @@ GAMIFICATION 3561; Dispatch Time Grid 3673) · §12 Overlays & boards (3737) ·
 - ✅ **v8.5 (2026-06-15 eve) — Jac's interaction sweep + units import repair** — see the v8.5
   Built-State Delta above. `#migrate-units` (unrecorded-unit repair) + "All Units" view; **A1**
   (footer / "Not Ready" / Services sticky filters → removable search-bar pills); 11 UI/interaction
-  fixes (B1/B2/B4/B5/B6/B7, D1/D2/E1/E2, C1, F1, G1); F2/H1 **frontends** (backend handlers pending).
+  fixes (B1/B2/B4/B5/B6/B7, D1/D2,E1/E2, C1, F1, G1); F2/H1 **frontends** (backend handlers pending).
+
+- ✅ **v8.6 (2026-06-18) — Blued Steel polish + nav QoL + KPI mask** — see the v8.6
+  Built-State Delta above. Full Blued Steel card-plate suite complete (search bar, list cards, section
+  recesses, rows — PRs #60–#77); toggle gap equalized + center column texture flip (PR #99); Back
+  button → list fallback + `cardJog` shows Back in record (PR #82); +Unit/+Category quick-add from
+  empty search (PR #85); KPI blur mask live + **intentionally temporary** (PR #133 — remove when Jac
+  instructs).
 
 **Carry forward (real remaining work):**
+0. **📌 Pinned from v8.6** — **KPI blur mask is live and temporary.** Remove the 3-line
+   `/* KPI MASK */` block at the end of `style.css` when Jac says to restore ring visibility.
 0. **📌 Pinned from v8.5** — TWO backend Apps Script handlers (frontends shipped + spec'd in the
    handoff doc §9/§10): **`uploadFile`** (F2 — file → Google Drive, returns a share link) and
    **`saveSession`/`getSession`** (H1 — session sharing, a Script-Property store). Also **A1's last

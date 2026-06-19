@@ -719,18 +719,47 @@ select.lf-in { appearance: none; cursor: pointer; }
 .sort .dir span { font-size: 9px; line-height: 1.05; color: var(--txt-3); }
 .sort .dir span.on { color: var(--accent); }
 
-/* reusable floating dropdown menu (sort fields, status options) — matches board chrome */
-.dropdown-menu { position: fixed; z-index: 9100; min-width: 170px; padding: 6px; background: var(--panel); border: 1px solid var(--accent); border-radius: var(--chip-radius); box-shadow: var(--shadow), 0 0 0 2px var(--accent-line), 0 0 26px -8px rgba(255,122,26,.5); }
+/* reusable floating dropdown menu (sort fields, status options) — Tier 3 SELECTOR-LIST:
+   steel panel + a left hazard rail (the signature), no orange halo (dialogs keep that). */
+.dropdown-menu { position: fixed; z-index: 9100; width: max-content; min-width: 150px; max-width: min(92vw, 340px); padding: 6px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--chip-radius); box-shadow: var(--shadow), 0 0 0 1px rgba(0,0,0,.4); }   /* width:max-content hugs the widest item label; min/max keep it from getting awkwardly narrow or stretching wide */
+.dropdown-menu:not(.gt) { position: fixed; overflow: hidden; padding-left: 14px; }
+.dropdown-menu:not(.gt)::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 6px; background: repeating-linear-gradient(180deg, var(--yellow) 0 11px, #14181d 11px 22px); }
 .dropdown-menu .dd-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 10px; border-radius: 9px; font-size: 12px; font-weight: 600; text-align: left; color: var(--txt-2); }
 .dropdown-menu .dd-item:hover { background: var(--panel-2); color: var(--txt); }
 .dropdown-menu .dd-item.on { color: var(--accent); }
 .dropdown-menu .dd-item .tick { margin-left: auto; opacity: 0; }
 .dropdown-menu .dd-item.on .tick { opacity: 1; }
 /* §5.5 Views menu: section headers + a per-view delete ✕ */
-.dropdown-menu .dd-sec { font-size: 9.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .5px; color: var(--txt-3); padding: 8px 10px 3px; }
+.dropdown-menu .dd-sec { font-family: 'Saira Condensed', system-ui, sans-serif; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.1px; color: var(--txt-3); padding: 8px 10px 3px; }
 .dropdown-menu .dd-item.js-applyview.on .tick { margin-left: 0; }
 .dropdown-menu .dd-item .x { margin-left: auto; opacity: .45; font-size: 12px; padding: 0 2px; }
 .dropdown-menu .dd-item .x:hover { opacity: 1; color: var(--red); }
+/* ── Gate TIMELINE dropdown (the four ordered status gates) — steel panel + vertical
+   hazard rail, NO orange halo (that stays for dialogs); monochrome progress states ── */
+.dropdown-menu.gt { width: max-content; min-width: 180px; max-width: 92vw; padding: 0; overflow: hidden; position: fixed; border: 1px solid var(--line); box-shadow: var(--shadow), 0 0 0 1px rgba(0,0,0,.4); }   /* MUST be position:fixed (a fixed box still anchors the absolute rail/connectors). `relative` here overrode the base .dropdown-menu's fixed → openDropdown's top/left measured from page flow, dumping the menu ~1 viewport below the fold (the "opens far below screen" bug). `width:max-content` hugs the widest row's label (the menu was a fixed 244px regardless of content); the max-width clamp keeps the width:100% rows from stretching it to the viewport. */
+.gt-haz { position: absolute; left: 0; top: 0; bottom: 0; width: 7px; background: repeating-linear-gradient(180deg, var(--yellow) 0 11px, #14181d 11px 22px); }
+.gt-cap { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.3px; font-weight: 700; font-size: 10px; color: var(--txt-3); padding: 10px 12px 4px 20px; }
+.gt-body { padding: 2px 10px 9px 18px; }
+.gt-row { position: relative; display: flex; align-items: center; gap: 11px; width: 100%; min-height: 40px; padding: 0 4px; text-align: left; background: none; border: 0; cursor: pointer; color: var(--txt-2); }
+.gt-row:hover { background: rgba(255,255,255,.04); border-radius: 8px; }
+.gt-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 8px; }
+.gt-line { position: absolute; left: 17px; top: 50%; height: 100%; width: 2px; }
+.gt-line.solid { background: #2f6b3e; }
+.gt-line.grad { background: linear-gradient(180deg, #2f6b3e, var(--accent)); }
+.gt-dash { position: absolute; left: 17px; top: 50%; height: 100%; border-left: 2px dashed var(--line); }
+.gt-node { position: relative; z-index: 1; width: 28px; height: 28px; flex: 0 0 auto; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: var(--panel-2); box-shadow: inset 0 0 0 1.5px var(--line); }
+.gt-node svg { width: 15px; height: 15px; }
+.gt-lbl { font-size: 12.5px; font-weight: 600; }
+.gt-chk { display: inline-flex; vertical-align: -2px; margin-right: 3px; }
+.gt-chk svg { width: 11px; height: 11px; color: #5fc98a; }
+.gt-d .gt-node { color: #7fd49a; background: #15231a; box-shadow: inset 0 0 0 1.5px #2f6b3e; }
+.gt-d .gt-lbl { color: var(--txt-2); }
+.gt-u .gt-node { color: var(--txt-3); }
+.gt-u .gt-lbl { color: var(--txt-3); }
+.gt-s .gt-node { color: #5b636f; background: var(--panel); box-shadow: inset 0 0 0 1.5px var(--line-soft); }
+.gt-s .gt-lbl { color: var(--txt-3); font-style: italic; }
+.gt-a .gt-node { color: var(--on-orange); background: linear-gradient(180deg, #ff9038, var(--accent)); box-shadow: 0 0 0 3px var(--accent-soft); }
+.gt-a .gt-lbl { color: var(--accent); font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .6px; font-weight: 800; font-size: 13.5px; }
 .sortbtn.viewing { color: var(--accent); border-color: var(--accent-line); }
 
 /* ── Shop card (merged Work Orders + Service Orders + Inspections) ───────── */
@@ -1313,6 +1342,12 @@ select.lf-in { appearance: none; cursor: pointer; }
 /* back-office board popups (§0.4 / §7.9–7.12) — simple spreadsheet */
 .board-popup { width: 86vw; height: 80vh; }
 .board-popup .popup-head .c-count { font-size: 11px; font-weight: 700; color: var(--txt-3); background: var(--panel-2); padding: 1px 8px; border-radius: 999px; }
+/* ── Tier 2 WORK SURFACE (board / boardview) — riveted header rail + 2px orange baseline,
+   NO hazard cap: calmer than a dialog because you work IN these, not dismiss them ── */
+.board-popup { border-color: var(--line); box-shadow: var(--shadow), 0 0 0 1px rgba(0,0,0,.45); }
+.board-popup .popup-head { position: relative; background: linear-gradient(180deg, var(--panel-2), var(--panel)); border-bottom: 2px solid var(--accent); }
+.board-popup .popup-head::before, .board-popup .popup-head::after { content: ''; position: absolute; top: 11px; width: 6px; height: 6px; border-radius: 50%; z-index: 1; pointer-events: none; background: radial-gradient(circle at 35% 30%, #434c58, #0f1318); box-shadow: inset 0 0 0 1px rgba(0,0,0,.55); }
+.board-popup .popup-head::before { left: 9px; } .board-popup .popup-head::after { right: 9px; }
 .board-body { padding: 0; overflow: auto; }
 
 /* §13.3 Card Graph view — data-plate analytics (Phase 4) */
@@ -1545,6 +1580,69 @@ select.nc-in { cursor: pointer; }
 .nc-ag-sigline { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
 .nc-ag-sigline .nc-thumb.sig { max-height: 72px; }
 .nc-thumb.empty.good { color: var(--good, #1a9f57); font-weight: 700; }
+
+/* ── §7.1b card-bound agreements — the tabbed account/per-card form ── */
+.nc-tabbody { overflow-y: auto; }
+/* the card rail IS the header (replaces the stamped title) */
+.popup-head.has-rail { align-items: flex-end; gap: 6px; padding-bottom: 0; border-bottom: 1px solid var(--line); }
+.popup-head.has-rail .x { align-self: flex-start; }
+.ag-tabs { display: flex; align-items: flex-end; gap: 2px; flex: 1; flex-wrap: wrap; min-width: 0; }
+.ag-tab { display: flex; align-items: center; gap: 7px; padding: 9px 13px; margin-bottom: -1px;
+  font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.4px; font-weight: 700;
+  font-size: 12.5px; color: var(--txt-3); background: transparent; border: none; border-radius: 8px 8px 0 0; cursor: pointer;
+  position: relative; transition: color .12s; }
+.ag-tab:hover { color: var(--txt-2); }
+.ag-tab.on { color: var(--txt); }
+.ag-tab.on::after { content: ''; position: absolute; left: 7px; right: 7px; bottom: 0; height: 2.5px; border-radius: 2px; background: var(--accent); }
+.ag-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ag-tabs .add-field { align-self: center; margin-bottom: 2px; }
+.ag-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
+.ag-dot.ok { background: var(--green); }
+.ag-dot.bad { background: var(--red); box-shadow: 0 0 0 3px var(--red-bg); }
+/* short status banner — a thin red hazard rail, calm body */
+.ag-banner { position: relative; padding: 9px 13px 9px 20px; border-radius: 10px; margin: 2px 0 16px; font-size: 12.5px; font-weight: 600; }
+.ag-banner.bad { background: var(--red-bg); border: 1px solid var(--accent-line); border-color: rgba(255,66,66,.34); color: var(--red); }
+.ag-banner.bad::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 8px; border-radius: 10px 0 0 10px;
+  background: repeating-linear-gradient(135deg, var(--red) 0 7px, #14181d 7px 14px); }
+/* per-card meta line + states */
+.ag-meta { display: flex; align-items: center; gap: 9px; margin: 2px 0 14px; font-size: 12.5px; color: var(--txt-2); }
+.ag-metasep { margin-left: auto; }
+.ag-gate { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; margin: 0 0 15px; font-size: 12.5px; }
+.ag-gate .lead { color: var(--red); font-weight: 600; }
+.ag-gate .sub { color: var(--txt-3); }
+.ag-readref { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 13px; border-radius: 10px;
+  background: var(--panel); border: 1px solid var(--line); margin: 0 0 14px; font-size: 13px; color: var(--txt-2); }
+.ag-readref b { font-weight: 600; color: var(--txt); }
+.ag-readbtn { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.2px; font-weight: 700;
+  font-size: 11px; color: var(--blue); background: transparent; border: none; cursor: pointer; }
+.ag-readbtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ag-readref + .nc-agreement { margin: -6px 0 14px; }
+.ag-signed { display: flex; align-items: center; gap: 9px; padding: 11px 13px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); }
+.ag-lock { color: var(--green); display: flex; flex: 0 0 auto; }
+.ag-signed .t { font-size: 13px; color: var(--txt-2); }
+.ag-signed .t b { color: var(--txt); font-weight: 600; }
+.ag-signed .pill { margin-left: auto; }
+/* packet on file: selfie + signature side by side */
+.ag-packet { display: flex; gap: 11px; margin-top: 14px; }
+.ag-pcell { flex: 1; min-width: 0; }
+.ag-pcap { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.5px; font-size: 10px; color: var(--txt-3); margin-bottom: 6px; }
+.ag-pcell .ag-selfie { width: 100%; height: 96px; object-fit: cover; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); }
+.ag-pcell .ag-selfie.empty { display: flex; align-items: center; justify-content: center; color: var(--txt-3); }
+.ag-sigthumb { width: 100%; height: 96px; object-fit: contain; border: 1px solid var(--line); border-radius: 10px; background: #fbfcfd; }
+/* CAPTURE row: selfie tile + the BIG sign pad */
+.ag-capcap { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.5px; font-size: 10.5px; color: var(--txt-3); margin: 0 0 8px; }
+.ag-caprow { display: flex; gap: 11px; align-items: stretch; }
+.ag-selfiebtn { width: 120px; flex: 0 0 auto; border: 1.5px dashed var(--line); border-radius: 12px; background: var(--panel);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--txt-3); cursor: pointer; overflow: hidden; }
+.ag-selfiebtn:hover { border-color: var(--accent-line); }
+.ag-selfiebtn:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ag-selfiebtn .l { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.3px; font-size: 10.5px; }
+.ag-selfiebtn .ag-selfie { width: 100%; height: 100%; object-fit: cover; }
+.ag-pad { flex: 1; min-width: 0; height: 210px; width: auto; border: 1.5px dashed var(--line); border-radius: 12px;
+  background: radial-gradient(circle at 50% 40%, var(--panel-2), var(--panel)); touch-action: none; cursor: crosshair; }
+.ag-acceptrow { display: flex; gap: 9px; margin: 13px 0 0; }
+.ag-acceptrow .pill.c-commit { flex: 1; justify-content: center; }
+@media (prefers-reduced-motion: reduce) { .ag-tab { transition: none; } }
 /* Stripe payment UI */
 .pay-cap { font-size: 11px; font-weight: 700; color: var(--txt-3); text-transform: uppercase; letter-spacing: .3px; margin: 0 0 6px; }
 .pay-card-field { padding: 12px 13px; border: 1px solid var(--accent-line); border-radius: 10px; background: var(--panel); }
@@ -1898,25 +1996,35 @@ body.rw-inspect .c-titlecard:hover { outline: 2px solid #18b6ff; outline-offset:
 .stall-split:hover { color: var(--accent); border-color: var(--accent-line); }
 .stall-split svg { flex: 0 0 auto; }
 .stall-sub { font-size: 11.5px; color: var(--txt-3); font-style: italic; margin-top: 6px; }
+.stall-sub.armed { color: var(--accent); font-style: normal; }
+.stall-sub.hint { color: var(--txt-3); font-style: normal; }
 .stall-empty { display: flex; align-items: center; gap: 9px; padding: 11px 2px; }
 .rentalsec-foot { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 10px; }
-.rtrail { display: grid; align-items: center; justify-items: center; column-gap: 7px; row-gap: 4px; margin-top: 8px; }
-.rtrail.rt { grid-template-columns: auto minmax(48px, 1fr) auto minmax(48px, 1fr) auto; }
-.rtrail.one { grid-template-columns: auto minmax(48px, 1fr) auto; }
-.rtbox { width: 34px; height: 34px; border-radius: 9px; background: var(--panel-2); border: 1px solid var(--line); display: grid; place-items: center; color: var(--txt-2); }
-.rtbox svg { width: 18px; height: 18px; }
-.rtbox.site { color: #c2925a; border-color: rgba(194, 146, 90, .5); background: rgba(194, 146, 90, .14); cursor: pointer; }
-.rtbox.site:hover { filter: brightness(1.12); }
-.rtbox.done { color: var(--green); border-color: var(--green); background: var(--green-bg); }
-.rtbar { width: 100%; }
-.rtbar.done { height: 6px; border-radius: 3px; background: var(--green); }
-.rtbar.pending { height: 0; border-top: 2px dashed var(--line); }
-.rtover { font-size: 11px; font-weight: 700; align-self: end; white-space: nowrap; }
-.rtover.log { color: var(--txt); cursor: pointer; }
-.rtover.log:hover { text-decoration: underline; }
-.rtover.done { color: var(--green); cursor: pointer; }
-.rtlbl { font-size: 11px; color: var(--txt-2); align-self: start; text-align: center; line-height: 1.15; }
-.rtaddr { display: block; color: #c2925a; text-decoration: underline; cursor: pointer; max-width: 118px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* §20 route rail — linear House(Jac)─Person(Job Site)─House(Jac) stepper; the rail
+   itself is the type control (tap two stops). Address rides ABOVE each connector
+   line, +Log rides BELOW it; node well fills orange when its leg is on the route. */
+.rtrail2 { display: grid; grid-template-columns: auto minmax(80px, 1fr) auto minmax(80px, 1fr) auto; align-items: start; margin-top: 9px; }
+.rtnode, .rtleg { display: grid; grid-template-rows: 16px 36px 16px; align-items: center; row-gap: 3px; }
+.rtnode { justify-self: center; justify-items: center; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.rtgap { height: 0; }
+.rtwell { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; background: var(--panel-2); border: 1px solid var(--line); color: var(--txt-3); transition: color .12s ease, border-color .12s ease, background .12s ease; }
+.rtwell svg { width: 20px; height: 20px; }
+.rtname { font-family: 'Saira Condensed', system-ui, sans-serif; font-size: 13px; font-weight: 700; letter-spacing: .4px; line-height: 1; white-space: nowrap; color: var(--txt-2); }
+.rtnode:hover .rtwell { color: var(--txt-2); border-color: var(--accent-line); }
+.rtnode.on .rtwell { background: var(--accent); border-color: var(--accent); color: var(--on-orange); }   /* locked on the run — solid orange + dark ink */
+.rtnode.on .rtname { color: var(--txt); }
+.rtnode.arm .rtwell { background: var(--panel-2); border-color: var(--accent); color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }   /* first tap armed — orange OUTLINE (overrides the on-fill so the pending pick always reads) */
+.rtnode.arm .rtname { color: var(--accent); }
+.rtnode:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 11px; }
+.rtleg { justify-items: stretch; text-align: center; }
+.rtline { height: 0; border-top: 2px dashed var(--line); }
+.rtleg.on .rtline { border-top-style: solid; border-color: var(--accent); }
+.rtaddr { color: var(--tan, #c2925a); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; font-size: 11.5px; line-height: 1; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rtaddr:hover { filter: brightness(1.12); }
+.rtlog { font-size: 11px; font-weight: 700; line-height: 1; white-space: nowrap; cursor: pointer; }
+.rtlog.log { color: var(--txt-2); }
+.rtlog.log:hover { color: var(--txt); text-decoration: underline; }
+.rtlog.done { color: var(--green); }
 .unitchip { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .unitchip.voided { opacity: .55; }
 .unitchip.voided .pill { position: relative; }
@@ -2032,8 +2140,9 @@ input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
 /* the timeline grew 6px so the gate + rate stack never collide */
 .timeline { height: 56px; }
 .tl-over .mid { gap: 2px; }
-/* R20 CONTEXT MENU — right-click on any element */
-.ctx-menu { position: fixed; z-index: 210; min-width: 190px; background: var(--card); border: 1px solid var(--accent-line); border-radius: 12px; box-shadow: 0 0 0 2px var(--accent-soft), var(--shadow); padding: 5px; }
+/* R20 CONTEXT MENU — right-click on any element. Tier 3 selector-list: steel + left hazard rail. */
+.ctx-menu { position: fixed; z-index: 210; min-width: 190px; overflow: hidden; background: var(--card); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow), 0 0 0 1px rgba(0,0,0,.4); padding: 5px 5px 5px 13px; }
+.ctx-menu::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 6px; background: repeating-linear-gradient(180deg, var(--yellow) 0 11px, #14181d 11px 22px); }
 .ctx-menu .dd-item { display: flex; align-items: center; gap: 9px; width: 100%; padding: 7px 10px; border-radius: 8px; background: none; border: none; color: var(--txt); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; text-align: left; }
 .ctx-menu .dd-item:hover { background: var(--panel-2); }
 .ctx-menu .menu-sep { height: 1px; background: var(--line); margin: 4px 0; }
