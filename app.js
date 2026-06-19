@@ -287,7 +287,7 @@ function cardGateReason(cust) {
 const AG_LOCK = '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
 const AG_CAM = '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>';
 /* The shared selfie + signature capture controls — emitted on a CARD's signing tab
-   (commit → js-ncsign-save) and on the ACCOUNT tab as a held draft when no card
+   (commit → js-ncsign-save) and in the +Card panel as a held draft when no card
    exists yet (commit → js-ncsign-hold). `readKey` distinguishes whose Read toggle is
    open (a card id, or 'account'); the live selfie rides o.signDraft until committed. */
 function agCaptureBlock(o, ag, readKey, acceptJs, acceptData, acceptLabel) {
@@ -302,10 +302,11 @@ function agCaptureBlock(o, ag, readKey, acceptJs, acceptData, acceptLabel) {
     </div>
     <div class="ag-acceptrow">${actionPill('commit', acceptLabel, { js: acceptJs, data: acceptData })}${ghostPill('Clear', { js: 'js-nc-sig-clearpad' })}</div>`;
 }
-/* Account-tab signing, shown ONLY before the first card exists — the wrangler can
+/* Sign-before-a-card capture, rendered inside the +Card panel before the first card
+   exists (NOT on the Account tab — account setup stays separate). The wrangler can
    sign the agreement now (selfie + signature) and it's HELD on the account, then
    saddles onto the first card they add. Once held, shows the on-hand packet + Redo. */
-function acctHeldSignBlock(o, custRec, d) {
+function heldSignBlock(o, custRec, d) {
   const key = requiredAgreementKey(custRec || { accountType: d.accountType });
   const ag = AGREEMENTS[key] || AGREEMENTS.rental;
   const p = custRec && custRec.pendingSigning;
@@ -6440,8 +6441,7 @@ function renderOverlay() {
           </div>
           <div class="nc-field nc-wide"><span>Account type</span><div class="nc-pills">${acctPills}</div></div>
         </div>
-        <datalist id="nc-industries">${indOpts}</datalist>
-        ${cards.length ? '' : acctHeldSignBlock(o, custRec, d)}`;
+        <datalist id="nc-industries">${indOpts}</datalist>`;
     } else {
       const k = cards.find((x) => x.id === tab);
       const meta = `${k.isDefault ? 'Default · ' : ''}${k.expMonth ? 'exp ' + k.expMonth + '/' + String(k.expYear).slice(-2) : 'no exp'}`;
@@ -6472,14 +6472,19 @@ function renderOverlay() {
     if (o.cardSub) {   // §14 the "Add card" panel rendered BESIDE the form (not replacing it)
       const cc = IDX.customer.get(o.editId);
       if (cc) {
-        const cp = el('div', 'popup'); cp.style.width = '400px';
+        // Before the FIRST card, the agreement (selfie + signature) is captured HERE, in
+        // the card flow — never on the Account tab (account setup stays its own thing).
+        // Sign & Hold saddles onto this card on save, or you sign the card next.
+        const noCardYet = customerCards(cc).length === 0;
+        const cp = el('div', 'popup'); cp.style.width = noCardYet ? '440px' : '400px';
         cp.innerHTML = popupShell({
-          icon: CARD_ICON.customers || '', title: 'Add card', tag: 'Customer · Card on file', closeJs: 'js-cardsub-cancel',
+          icon: CARD_ICON.customers || '', title: noCardYet ? 'Card & agreement' : 'Add card', tag: 'Customer · Card on file', closeJs: 'js-cardsub-cancel',
           body: `
             <div class="pay-cap">Card number</div>
             <div class="pay-card-field" id="sl-card-element"></div>
             <div class="pay-err" id="sl-card-error"></div>
-            <p class="muted" style="font-size:11px;margin:10px 0 0">Entered securely via Stripe — we store only the brand + last 4 digits. Next you'll sign the agreement on this card to authorize On-Rent &amp; deliveries.</p>`,
+            <p class="muted" style="font-size:11px;margin:10px 0 0">Entered securely via Stripe — we store only the brand + last 4 digits.${noCardYet ? ' Sign &amp; Hold the agreement below now (no card needed yet) and it saddles onto this card on save — or save the card and sign it next.' : ' Next you\'ll sign the agreement on this card to authorize On-Rent &amp; deliveries.'}</p>
+            ${noCardYet ? `<div class="ag-cardsplit"></div>${heldSignBlock(o, cc, o.draft)}` : ''}`,
           foot: `<button class="pill ghost js-cardsub-cancel" data-r="R18">Cancel</button><button class="pill c-commit js-card-save" data-r="R17">Save card</button>`,
         });
         overlay.appendChild(cp);
@@ -7206,19 +7211,21 @@ function ncApplyName(d) {
 }
 // Wire the signature canvas for finger/stylus/mouse drawing (white bg → JPEG export).
 function setupSignaturePad() {
-  const cv = document.querySelector('.overlay .nc-sigpad'); if (!cv) return;
-  // Match the backing store to the rendered size so strokes aren't stretched (the pad
-  // is width:auto in the flex row). getBoundingClientRect is laid out by now.
-  const r = cv.getBoundingClientRect(); if (r.width && r.height) { cv.width = Math.round(r.width); cv.height = Math.round(r.height); }
-  const ctx = cv.getContext('2d');
-  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);
-  ctx.strokeStyle = '#15171c'; ctx.lineWidth = 2.4; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-  let drawing = false, last = null;
-  const pos = (e) => { const r = cv.getBoundingClientRect(); return { x: (e.clientX - r.left) * (cv.width / r.width), y: (e.clientY - r.top) * (cv.height / r.height) }; };
-  cv.addEventListener('pointerdown', (e) => { e.preventDefault(); drawing = true; last = pos(e); cv.dataset.drawn = '1'; cv.setPointerCapture(e.pointerId); });
-  cv.addEventListener('pointermove', (e) => { if (!drawing) return; e.preventDefault(); const p = pos(e); ctx.beginPath(); ctx.moveTo(last.x, last.y); ctx.lineTo(p.x, p.y); ctx.stroke(); last = p; });
-  cv.addEventListener('pointerup', () => { drawing = false; });
-  cv.addEventListener('pointerleave', () => { drawing = false; });
+  // Wire EVERY pad in the overlay (the capture can ride the card signing tab and/or
+  // the +Card panel) — match each backing store to its rendered size so strokes
+  // aren't stretched (the pad is width:auto in the flex row); rects are laid out by now.
+  document.querySelectorAll('.overlay .nc-sigpad').forEach((cv) => {
+    const r = cv.getBoundingClientRect(); if (r.width && r.height) { cv.width = Math.round(r.width); cv.height = Math.round(r.height); }
+    const ctx = cv.getContext('2d');
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);
+    ctx.strokeStyle = '#15171c'; ctx.lineWidth = 2.4; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    let drawing = false, last = null;
+    const pos = (e) => { const b = cv.getBoundingClientRect(); return { x: (e.clientX - b.left) * (cv.width / b.width), y: (e.clientY - b.top) * (cv.height / b.height) }; };
+    cv.addEventListener('pointerdown', (e) => { e.preventDefault(); drawing = true; last = pos(e); cv.dataset.drawn = '1'; cv.setPointerCapture(e.pointerId); });
+    cv.addEventListener('pointermove', (e) => { if (!drawing) return; e.preventDefault(); const p = pos(e); ctx.beginPath(); ctx.moveTo(last.x, last.y); ctx.lineTo(p.x, p.y); ctx.stroke(); last = p; });
+    cv.addEventListener('pointerup', () => { drawing = false; });
+    cv.addEventListener('pointerleave', () => { drawing = false; });
+  });
 }
 const closeOverlay = () => { destroyCardElement(); state.datepick = null; state.overlay = null; renderOverlay(); };
 
@@ -8359,7 +8366,7 @@ function onClick(e) {
     });
     return;
   }
-  if (closest('.js-ncsign-hold')) {   // Account tab, no card yet: sign now → HELD on the account, attaches to the first card added
+  if (closest('.js-ncsign-hold')) {   // +Card panel, no card yet: sign now → HELD on the account, attaches to the first card added
     e.stopPropagation(); const o = state.overlay; ncSyncInputs();
     const cv = document.querySelector('.overlay .nc-sigpad');
     if (!cv || !cv.dataset.drawn) return flashOr('.overlay .nc-sigpad', 'Sign in the box first.');

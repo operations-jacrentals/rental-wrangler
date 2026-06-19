@@ -1652,6 +1652,9 @@ select.nc-in { cursor: pointer; }
   background: radial-gradient(circle at 50% 40%, var(--panel-2), var(--panel)); touch-action: none; cursor: crosshair; }
 .ag-acceptrow { display: flex; gap: 9px; margin: 13px 0 0; }
 .ag-acceptrow .pill.c-commit { flex: 1; justify-content: center; }
+/* saddle-stitch seam between the card field and the held-agreement capture in the +Card panel */
+.ag-cardsplit { height: 0; margin: 16px 0 4px; border-top: 1.5px dashed var(--tan, #c2925a);
+  border-image: repeating-linear-gradient(90deg, var(--tan, #c2925a) 0 7px, transparent 7px 13px) 1; }
 @media (prefers-reduced-motion: reduce) { .ag-tab { transition: none; } }
 /* Stripe payment UI */
 .pay-cap { font-size: 11px; font-weight: 700; color: var(--txt-3); text-transform: uppercase; letter-spacing: .3px; margin: 0 0 6px; }
