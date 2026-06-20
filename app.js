@@ -10316,12 +10316,18 @@ async function refundInvoiceFlow(invoiceId) {
   // invoice to Refunded (status derives from inv.refunded) and keep amountPaid so the
   // balance reads $0; release line assignments per the full-refund invariant (§4).
   if (/^cash$/i.test(inv.paymentMethod || '') || /^check/i.test(inv.paymentMethod || '')) {
-    const t = invoiceTotals(inv); const before = t.status;
-    inv.refunded = true; inv.refundedAmount = t.paid; inv.allocations = {};
-    o.confirmRefund = false; o.busy = false; o.error = '';
-    reindex('invoices', inv);
-    logAction(inv, `Refunded ${money(t.paid)} (${inv.paymentMethod}) — ${before} → Refunded`);
-    toast('Refunded ✓'); render(); renderOverlay(); return;
+    // Cash/Check refunds never touched Stripe, but inv.refunded / refundedAmount are
+    // server-owned (sync-PROTECTED) — so the SERVER records the manual refund too, else
+    // it'd revert on refresh. applyPayment keeps amountPaid (balance reads $0) and flips
+    // the status to Refunded. (#109/#117)
+    const live = () => state.overlay === o;
+    o.busy = true; o.error = ''; o.confirmRefund = false; renderOverlay();
+    try {
+      const r = await backendCall('recordManualRefund', { invoiceId });
+      if (!live()) return;
+      if (r && r.ok) { applyPayment(invoiceId, r); o.busy = false; toast('Refunded ✓'); renderOverlay(); return; }
+      o.busy = false; o.error = friendlyPayErr(r); renderOverlay(); return;
+    } catch (e) { if (live()) { o.busy = false; o.error = 'Network error — try again.'; renderOverlay(); } return; }
   }
   const live = () => state.overlay === o;
   o.busy = true; o.error = ''; o.confirmRefund = false; renderOverlay();
@@ -10355,7 +10361,14 @@ function applyPayment(invoiceId, r, alloc) {
 // the exact cent (no ceiling/rounding) and clamped at the outstanding balance so a
 // payment can never overpay; partials just dial the amount down. amountPaid persists
 // through the normal record sync, exactly like every other invoice field.
-function recordManualPayment(invoiceId) {
+// Record a manual CASH / CHECK payment (#109) — no Stripe. The figure is captured to
+// the exact cent and clamped at the outstanding balance so a payment can never overpay.
+// The SERVER records it (recordManualPayment): invoice money fields (amountPaid,
+// paymentMethod, paidAt, payments) are server-owned / sync-PROTECTED, so a client-side
+// write gets stripped on sync and "reverts" on refresh (#bug). The backend is
+// authoritative — it caps at the live balance, appends to payments[] and audits the
+// ledger — exactly like a card charge; we apply its result via applyPayment.
+async function recordManualPayment(invoiceId) {
   const o = state.overlay; if (!o || o.kind !== 'payment') return;
   const inv = IDX.invoice.get(invoiceId); if (!inv) return;
   const numEl = document.querySelector('.overlay .js-check-num'); if (numEl) o.checkNum = numEl.value.trim();   // survive the error re-render
@@ -10367,18 +10380,20 @@ function recordManualPayment(invoiceId) {
   if (balCents <= 0) { o.error = 'Nothing left to pay on this invoice.'; return renderOverlay(); }
   const payCents = Math.min(Math.round(entered * 100), balCents);   // exact cents, never over the balance
   const isCheck = o.method === 'check';
-  let label = 'Cash';
-  if (isCheck) { const num = (o.checkNum || '').trim(); if (!num) { o.error = 'Enter the check number.'; return renderOverlay(); } label = 'Check #' + num; }
-  const before = t.status;
-  inv.amountPaid = (Math.round((Number(inv.amountPaid) || 0) * 100) + payCents) / 100;
-  inv.paymentMethod = label;
-  inv.paidAt = TODAY_ISO;
-  reindex('invoices', inv);
-  const after = invoiceTotals(inv).status;
-  logAction(inv, `${label} payment ${money2(payCents / 100)} — ${before} → ${after}`);
-  closeOverlay();
-  render();
-  toast(invoiceTotals(inv).balance <= 0.005 ? 'Paid in full ✓' : `${label} payment recorded ✓`);
+  const checkNum = (o.checkNum || '').trim();
+  if (isCheck && !checkNum) { o.error = 'Enter the check number.'; return renderOverlay(); }
+  const live = () => state.overlay === o;
+  o.busy = true; o.error = ''; renderOverlay();
+  try {
+    const r = await withTimeout(backendCall('recordManualPayment', { invoiceId, amountCents: payCents, method: isCheck ? 'check' : 'cash', checkNum: isCheck ? checkNum : '' }), 30000, 'Recording the payment');
+    if (!live()) return;
+    if (!r || !r.ok) { o.busy = false; o.error = friendlyPayErr(r); return renderOverlay(); }
+    applyPayment(invoiceId, r);   // server is authoritative (amountPaid / paymentMethod / paidAt)
+    o.busy = false; closeOverlay();
+    toast(invoiceTotals(inv).balance <= 0.005 ? 'Paid in full ✓' : `${r.paymentMethod || 'Cash'} payment recorded ✓`);
+  } catch (e) {
+    if (live()) { o.busy = false; o.error = (e && e.rwTimeout) ? 'Timed out — try again.' : 'Network error — try again.'; renderOverlay(); }
+  }
 }
 // Print / PDF a customer-facing invoice (#109) — a clean white document (not the dark
 // yard UI) rendered into #print-root; the @media print rules hide everything else and
