@@ -612,7 +612,9 @@ function searchBlob(card, rec) {
     case 'rentals': {
       const u = un(rec.unitId), c = ca(rec.categoryId), cust = cu(rec.customerId);
       p = [rec.rentalName, rec.legacyUnitName, rec.startTime, rec.deliveryAddress, rec.po, rec.notes,
-        rec.fieldCall ? 'field call fc' : '', rec.startDate, rec.endDate, rec.invoiceId,
+        rec.fieldCall ? 'field call fc' : '', rec.startDate, rec.endDate,
+        fmtShortDate(rec.startDate), fmtShortDate(rec.endDate),   // human date forms ("Jun 18") so a natural date search matches, not just ISO
+        rec.invoiceId,
         rec.status, L('rentalStatus', rec.status), L('rentalStatus', rentalDisplayStatus(rec)),
         rec.transportType, L('transportType', rec.transportType),
         u?.name, u?.make, u?.model, u?.serial, c?.name, cust?.name, cust?.company];
