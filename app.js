@@ -268,6 +268,25 @@ const signingText = (s) => (s && (s.text || (AGREEMENT_VERSIONS[s.version] || {}
    inline data-URL kept until the backend offloads it (graceful pre-deploy). */
 const signingSelfieSrc = (s) => (s && (s.driveSelfieUrl || s.selfie)) || '';
 const signingSignatureSrc = (s) => (s && (s.driveSignatureUrl || s.signature)) || '';
+/* The newest agreement selfie across ALL of a customer's cards — the faded
+   backdrop behind the Account section. Prefers the archived Drive URL
+   (signingSelfieSrc → driveSelfieUrl); the inline data-URL is only the pre-offload
+   fallback. That ordering is load-bearing: at thousands of customers the backdrop
+   resolves to a lazy-loaded URL the browser fetches only when the card is open,
+   never inline image data riding the bulk payload. Legacy `c.selfie` is the last
+   resort. */
+function latestCustomerSelfie(c) {
+  if (!c) return '';
+  let best = null, bestT = -Infinity;
+  for (const k of customerCards(c)) {
+    for (const s of cardSignings(k)) {
+      if (!signingSelfieSrc(s)) continue;
+      const t = s.signedAt ? +parseISO(s.signedAt) : 0;
+      if (t >= bestT) { bestT = t; best = s; }
+    }
+  }
+  return best ? signingSelfieSrc(best) : (c.selfie || '');
+}
 /** THE GATE — true only when every NON-EXPIRED card is signed for the current
     account type. Expired cards can't be charged anyway, so they don't gate. */
 const accountAgreementsOk = (c) => validCards(c).every((k) => cardAuthorized(c, k));
@@ -3203,6 +3222,18 @@ function saveCommentOverlay() {
   closeOverlay(); render();
   toast('Comment posted — marker set.');
 }
+/* The faded backdrop behind an OPEN Work Order section: the WO's first existing
+   photo — the linked failed-inspection photo (the WO's origin), else the earliest
+   part-line photo. References photos already on the records (Jac: no new upload —
+   they come from Failed Inspections or a part's photo), so it adds zero new
+   storage. Dropped once the WO is Complete, so only open WOs ever carry one. */
+function woBackdrop(w) {
+  if (!w || w.phase === 'Complete') return '';
+  const insp = w.inspectionId && IDX.insp.get(w.inspectionId);
+  if (insp && insp.photo) return insp.photo;
+  for (const li of (w.lineItems || [])) if (li.photo) return li.photo;
+  return '';
+}
 function woSectionHtml(w) {
   const bn = woBottleneck(w);
   const secColor = bn.color === 'red' ? 'red' : bn.color === 'green' ? 'green' : 'yellow';
@@ -3224,7 +3255,8 @@ function woSectionHtml(w) {
     // the description re-opens the part popup; vendor/url live in its tooltip
     return `<div class="woline">${gatePillRaw(lbl, ph.color, 'js-wophase-line', { rec: w.woId, idx })}<span class="js-partedit" data-rec="${w.woId}" data-idx="${idx}" style="cursor:pointer"${tip ? ` data-tip="${esc(tip)}"` : ''}>${li.aiPending ? '✨ ' : ''}${esc(li.part)}${ven ? ' ' + linkName(ven.name, { js: 'js-vendor-open', data: { rec: ven.vendorId } }) : ''}</span><span class="nums"><b>${money(li.cost)}</b><span>${li.hours || 0}h</span></span></div>`;
   }).join('');
-  return `<div class="section sec-${secColor} wo-${w.woId}" data-wo="${w.woId}">
+  const woBg = woBackdrop(w);
+  return `<div class="section sec-${secColor} wo-${w.woId}${woBg ? ' has-photo' : ''}" data-wo="${w.woId}">${woBg ? `<div class="sec-photo" style="--photo:url('${esc(woBg)}')"></div>` : ''}
     <h4 class="h-name"><span style="font-weight:800;margin-right:1px">WO:</span> <span class="inline-edit" data-edit="field" data-card="workOrders" data-field="woReport" data-rec="${w.woId}" data-ph="Report">${esc(w.woReport)}</span>
       <span class="right">${flagsStack([typeFlag, flagEl(fmtShortDate(w.date), 'gray')], 24)}</span></h4>
     <div class="wototals">${addBtn('Part/Task', { anchor: true, js: 'js-add-part', h: 26, data: { rec: w.woId } })}<span class="derived">${money(parts)} parts + ${hrs} hrs</span></div>
@@ -3820,14 +3852,14 @@ const DETAIL = {
     // §7.1 — every contact/account detail is click-to-edit (auto-saves via the persist hook)
     // R5: empty fields render the dashed "+Thing" add (no "Add", no space after +)
     const efield = (f, ph, wrap) => { const val = c[f]; const thing = ph.replace(/^Add\s+/i, ''); const lbl = thing.charAt(0).toUpperCase() + thing.slice(1); return `<div class="kv"><span class="v inline-edit" data-edit="custField" data-field="${f}" data-rec="${c.customerId}" data-ph="${esc(ph)}"${wrap ? ' style="white-space:normal"' : ''}>${val ? esc(val) : `<span class="add-field" data-r="R5c">+${esc(lbl)}</span>`}</span></div>`; };
-    const selfieThumb = c.selfie ? `<img class="cust-selfie" src="${esc(c.selfie)}" alt="" />` : '';
+    const acctSelfie = latestCustomerSelfie(c);   // newest agreement selfie → faded Account backdrop (retired the tiny thumb)
     const agPill = c.agreementSignedAt ? `<button class="pill c-green js-view-agreement" data-r="R3" data-rec="${c.customerId}" data-tip="View signed agreement">${esc(AGREEMENTS[c.agreementType]?.title || 'Agreement')} ✓</button>` : '';
     // every category this customer has EVER rented → R9 flags (ink+icon, no badge) — Jac 2026-06-12
     const rentedCatIds = [...new Set(DATA.rentals.filter((r) => r.customerId === c.customerId)
       .map((r) => r.categoryId || IDX.unit.get(r.unitId)?.categoryId).filter(Boolean))];
     const rentedFlags = rentedCatIds.map((id) => { const cat = IDX.category.get(id); return cat ? flagEl(cat.name, 'gray', { icon: CARD_ICON.categories, card: 'categories', recId: id }) : ''; }).filter(Boolean).join('');
     /* Jac 2026-06-12: Contact + Account MERGED — LEFT = entered fields, RIGHT = facts + derived (card anatomy) */
-    const account = `<div class="section"><h4>Account</h4>
+    const account = `<div class="section${acctSelfie ? ' has-photo' : ''}">${acctSelfie ? `<div class="sec-photo" style="--photo:url('${esc(acctSelfie)}')"></div>` : ''}<h4>Account</h4>
       <div class="split">
         <div class="side">
           <div class="kv2">${efield('firstName', 'First name')}${efield('lastName', 'Last name')}</div>
@@ -3836,7 +3868,7 @@ const DETAIL = {
           ${efield('address', 'Add address', true)}
         </div>
         <div class="side r">
-          ${kvPills(`${selfieThumb}${badge(acct.label, acct.color)}${c.requiresPO ? badge('PO Required', 'yellow') : ''}${agPill}`)}
+          ${kvPills(`${badge(acct.label, acct.color)}${c.requiresPO ? badge('PO Required', 'yellow') : ''}${agPill}`)}
           ${kv(money(d.totalPaid), { pfx: 'Total', derived: true })}
           ${kv(`${d.visits || 0}`, { pfx: 'Visits', derived: true })}
           ${kv(`${d.years || 0} yrs`, { pfx: 'Customer for', derived: true })}
@@ -11736,7 +11768,8 @@ function exposeTestApi() {
       rentalAllocated, unitRentalPrice, rentalDisplayName, setWoLinePhase, setWoPhase, woBottleneck,
       cleanUnitName, planUnitMigration, applyUnitMigration, openMigrationPreview,
       computeTransportPrice, isFueledType, unitTransport, rentalTransport,
-      wrValidatePlan, applyWranglerData, wrFunnel, invoiceMergeable, mergeInvoiceInto, parseWranglerAction };
+      wrValidatePlan, applyWranglerData, wrFunnel, invoiceMergeable, mergeInvoiceInto, parseWranglerAction,
+      latestCustomerSelfie, woBackdrop };
   } catch (e) { /* no window (non-browser) */ }
 }
 

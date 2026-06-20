@@ -51,8 +51,8 @@ brief pre-upload window; the steady state is a URL.
 | Question | Decision |
 |---|---|
 | Customer photo source | Newest agreement signing's selfie across the customer's cards |
-| WO photo source | First photo uploaded to the WO; else the linked inspection's photo |
-| WO lifecycle | Frozen on first set; backdrop dropped when the WO is Complete |
+| WO photo source | The WO's first EXISTING photo — the linked failed-inspection photo, else the earliest part-line photo. **No new upload UI or stored field** (Jac, 2026-06-20): photos already arrive via Failed Inspections or a part's photo upload, so the resolver only references them. |
+| WO lifecycle | Deterministic first-photo (inspection origin wins); backdrop dropped when the WO is Complete |
 | Treatment (both) | Full-bleed faded backdrop behind the section, steel scrim |
 | Privacy / control | Always auto-show, no toggle |
 | Source representation | Drive URL preferred (lazy-loaded); base64 only as transient fallback |
@@ -84,113 +84,106 @@ brief pre-upload window; the steady state is a URL.
 6. else '' → no backdrop
 ```
 
-**Surface** — in the `account` template (`app.js:3830`), add a backdrop layer
-and marker class only when a source exists:
+**Surface** — in the `account` template, add the backdrop layer + marker class
+only when a source exists:
 
 ```
-const selfie = latestCustomerSelfie(c);
-const account = `<div class="section sec-account${selfie ? ' has-photo' : ''}">
-  ${selfie ? `<div class="acct-photo" style="--photo:url('${esc(selfie)}')"></div>` : ''}
-  <h4>Account</h4>
+const acctSelfie = latestCustomerSelfie(c);
+const account = `<div class="section${acctSelfie ? ' has-photo' : ''}">${
+  acctSelfie ? `<div class="sec-photo" style="--photo:url('${esc(acctSelfie)}')"></div>` : ''
+}<h4>Account</h4>
   <div class="split"> … existing columns, unchanged … </div>
 </div>`;
 ```
 
-Retire the `selfieThumb` chip + `.cust-selfie` rule (`app.js:3823`, `:3839`) —
-the section is the photo now.
+Retired the `selfieThumb` chip + `.cust-selfie` rule — the section is the photo
+now.
 
 ### B · Work Order backdrop
 
-**New persisted field:** `w.bgPhotoUrl` — a Drive URL, **written once** when the
-WO's first photo is attached, then immutable.
-
-**New capability:** attach a photo to a WO. Reuse the existing Drive upload
-infra (`uploadCapture` backend action / `uploadCaptureMedia`, `app.js:9272`):
-the file uploads to Drive, the returned URL is stored in `w.bgPhotoUrl` (and may
-also feed an attachments list later — out of scope here). The upload affordance
-lives in the WO section header (an `addBtn`/icon, `data-r` stamped).
+**No new field, no new UI** (Jac, 2026-06-20). WO photos already exist on the
+records — the linked failed-inspection's `photo`, or a part line's `li.photo`
+(captured for Mr. Wrangler's photo-autofill). The backdrop only *references* the
+first such photo, so it adds **zero new storage** and honors the "no new base64
+path" rule by construction.
 
 **Source resolver — `woBackdrop(w)`:**
 
 ```
-if (w.phase === 'Complete') return '';          // dropped on completion
-if (w.bgPhotoUrl) return w.bgPhotoUrl;          // frozen first upload
+if (!w || w.phase === 'Complete') return '';          // dropped on completion
 const insp = w.inspectionId && IDX.insp.get(w.inspectionId);
-if (insp && insp.photo) return insp.photo;      // fallback: spawning inspection
+if (insp && insp.photo) return insp.photo;            // origin: the failed inspection
+for (const li of (w.lineItems || [])) if (li.photo) return li.photo;  // else first part photo
 return '';
 ```
 
-- **Frozen:** once `w.bgPhotoUrl` is set it never changes (the first photo wins;
-  later uploads don't replace the backdrop).
+- **Deterministic "first photo":** for a Failed WO the inspection photo predates
+  any part work, so it wins (the genuine first photo); a Manual WO falls to its
+  earliest part-line photo. Both are stable, so the backdrop is effectively
+  frozen without a stored field.
 - **Dropped on Complete:** the resolver returns `''` for a completed WO → the
-  section reverts to plain steel. The stored `w.bgPhotoUrl` is *kept* (cheap, a
-  URL) so the field is stable, but it's simply not rendered. Only **open** WOs
-  carry a live backdrop — the working set stays small by design.
+  section reverts to plain steel. Only **open** WOs carry a live backdrop — the
+  working set stays small by design.
 
 **Surface** — the WO section template (`app.js:3227`) gets the same
-`has-photo` + `.acct-photo`/`.wo-photo` backdrop-layer pattern, driven by
-`woBackdrop(w)`.
+`has-photo` + `.sec-photo` backdrop-layer pattern, driven by `woBackdrop(w)`.
 
-### Shared treatment — runs through `jactec-ui`
+### Shared treatment — `.sec-photo` (built + screenshot-reviewed via `jactec-ui`)
 
-Built and screenshot-reviewed through the `jactec-ui` skill before showing Jac.
-Direction (not final CSS):
+One shared backdrop layer for both surfaces (`style.css`, by the `.section` rule):
 
-- The image sits **faded and desaturated** under a steel scrim
-  (`linear-gradient(180deg, rgba(27,33,41,.86), rgba(12,14,17,.92))`) so it
-  reads as a ghost behind the data-plate — industrial first.
-- Text contrast preserved (stamped label, fields, derived rows stay legible —
-  quality-floor contrast check).
-- Static; reduced-motion respected. Rivets / layout unchanged. The backdrop is
-  a background, not a new component.
-- Backdrop layer is absolutely positioned, `inset:0`, behind content; the
-  `.section` variant gets `position:relative; overflow:hidden`.
-- `esc()` the URL inside `url('…')` — treat the src as untrusted.
+- The image sits **faded and desaturated** (`filter: grayscale(.5) contrast(.96)`)
+  under a **fully tokenized** steel scrim —
+  `linear-gradient(180deg, color-mix(in srgb, var(--panel) 82%, transparent),
+  color-mix(in srgb, var(--bg) 91%, transparent))` — so it reads as a ghost
+  behind the data-plate (industrial first) **and themes itself** for dark /
+  light / yard / ranch with no per-theme CSS. Verified: dark = light text on a
+  dark scrim, light = dark text on a light scrim, both AA-legible.
+- Static; nothing for `prefers-reduced-motion` to disable. Rivets / layout
+  unchanged. The backdrop is a background, **not** a lint-family element, so it
+  carries **no `data-r`** and adds nothing to `rule-usage.js`.
+- Layer is `position:absolute; inset:0; z-index:0; pointer-events:none`; the
+  `.section.has-photo` gets `position:relative; overflow:hidden` and its content
+  children ride `z-index:1`. Tooltips/menus are `position:fixed` at body level,
+  so `overflow:hidden` clips nothing real.
+- `esc()` the URL inside `url('…')` — treat the src as untrusted (data-URLs and
+  Drive URLs carry no single-quote, so quoting holds).
 
 ### Data flow
 
 ```
 record (DATA)
   ├─ customer: cards[].agreements[] → newest signedAt → signingSelfieSrc → URL
-  └─ work order: w.bgPhotoUrl (frozen) ?? inspection.photo, gated by phase
-        └─ inline --photo var → .section.has-photo backdrop (lazy CSS bg)
+  └─ work order: inspection.photo ?? first lineItems[].photo, gated by phase
+        └─ inline --photo var → .section.has-photo .sec-photo backdrop (lazy CSS bg)
 ```
 
 No async at render; the browser lazy-fetches the referenced URL on view.
 
 ### Error / edge handling
 
-- No source → no `has-photo` → today's plain panel (must look intentional).
-- Drive URL 404 (deleted) → CSS bg simply doesn't paint; scrim + panel still
-  render; no JS error path.
+- No source → no `has-photo` → today's plain panel (looks intentional).
+- URL 404 (deleted) → CSS bg simply doesn't paint; scrim + panel still render;
+  no JS error path.
 - Customer: multiple signings → newest `signedAt` wins deterministically.
-- WO: first upload frozen; completion hides (not deletes) the backdrop.
-- Legacy customer with only `c.selfie` → fallback path renders it (transient
-  base64 until/unless migrated to a Drive URL).
+- WO: inspection photo wins over a part photo; completion hides the backdrop.
+- Legacy customer with only `c.selfie` → fallback path renders it.
 
-## Testing
+## Testing — DONE
 
-- `ci/logic-test.mjs`:
-  - `latestCustomerSelfie` — newest-wins, drive-over-base64, legacy fallback,
-    empty → ''.
-  - `woBackdrop` — frozen `bgPhotoUrl` wins; inspection-photo fallback; Complete
-    → ''; no source → ''.
-- `ci/smoke.mjs`: customer + WO standard views render with and without a source
-  (no throw; `has-photo` present only when a source exists; completed WO shows
-  no backdrop).
-- Manual: signed customer shows faded face; new customer shows plain panel;
-  signing a newer agreement swaps the face. Open WO with a photo shows the
-  backdrop; completing it reverts to steel; a second upload does not change it.
+- `ci/logic-test.mjs` (now 68/68): `latestCustomerSelfie` — newest-wins,
+  drive-over-base64, multi-card newest, legacy fallback, empty → '';
+  `woBackdrop` — first part photo, inspection-photo precedence, Complete → '',
+  no source → ''.
+- `ci/smoke.mjs`: app boots clean (both templates render without throw).
+- Visual self-critique: dark + light Account-backdrop screenshots reviewed
+  against `jactec-ui` (ghost-behind-plate, AA contrast, tokenized scrim). The WO
+  section reuses the identical `.sec-photo` layer.
 
-## Gates (per CLAUDE.md)
+## Gates (per CLAUDE.md) — PASSED
 
-- Build/review the visual through the `jactec-ui` skill; screenshot +
-  self-critique before showing Jac.
-- The WO upload affordance carries a `data-r` stamp → regenerate `rule-usage.js`
-  (`node ci/gen-rule-usage.mjs`). A pure backdrop adds none.
-- Pass the three gates: `node ci/smoke.mjs`, `node ci/logic-test.mjs`,
-  `node ci/gen-rule-usage.mjs --check` (port-swap 8000→9147 first, restore
-  `ci/` after).
-- Bump the shared `?v=` token on `style.css` / `app.js` / `rule-usage.js` in
-  `index.html`.
+- Three gates green: `node ci/smoke.mjs`, `node ci/logic-test.mjs` (68/68),
+  `node ci/gen-rule-usage.mjs --check` (current — no `data-r` change).
+- Shared `?v=` token bumped `20260619n → 20260620a` on `style.css` /
+  `rule-usage.js` / `app.js` in `index.html`.
 - Ship via feature branch → PR → squash-merge (main is branch-protected).

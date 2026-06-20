@@ -898,6 +898,23 @@ select.lf-in { appearance: none; cursor: pointer; }
 
 /* sections sit on their own sub-cards (§6.2 #5) — standard dark panel surface */
 .section { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
+/* Faded photo backdrop behind a standard-view section — the Account selfie, or an
+   OPEN work order's first photo. The image rides --photo (a Drive URL or an
+   existing record photo, fetched lazily only when this card renders) under a fully
+   TOKENIZED steel scrim, so it reads as a ghost behind the data-plate and themes
+   itself (dark / light / yard / ranch) for free. Static → nothing for
+   prefers-reduced-motion to disable. Tooltips/menus are position:fixed at body
+   level, so overflow:hidden here clips nothing real. */
+.section.has-photo { position: relative; overflow: hidden; }
+.section.has-photo > :not(.sec-photo) { position: relative; z-index: 1; }
+.sec-photo {
+  position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  background-image:
+    linear-gradient(180deg, color-mix(in srgb, var(--panel) 82%, transparent), color-mix(in srgb, var(--bg) 91%, transparent)),
+    var(--photo);
+  background-size: cover; background-position: center;
+  filter: grayscale(.5) contrast(.96);
+}
 /* section headers CENTERED (v2 build); right-side flags pin absolutely so the
    title stays true-center */
 .section > h4 { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--txt-3); margin-bottom: 8px; display: flex; align-items: center; justify-content: center; gap: 7px; position: relative; }
@@ -1605,7 +1622,6 @@ select.nc-in { cursor: pointer; }
 .nc-sigpad { width: 100%; height: 96px; border-radius: 9px; border: 1px solid var(--accent-line); background: #fff; touch-action: none; cursor: crosshair; }
 .nc-tile-act { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .nc-tile-act .pill, .nc-tile-act label.pill { font-size: 11px; padding: 6px 11px; cursor: pointer; }
-.cust-selfie { width: 30px; height: 30px; border-radius: 8px; object-fit: cover; border: 1px solid var(--line); flex: 0 0 auto; }
 .nc-ag-note { font-weight: 600; text-transform: none; letter-spacing: 0; color: var(--txt-3); }
 .nc-ag-ok { font-weight: 700; text-transform: none; letter-spacing: 0; color: var(--good, #1a9f57); }
 .nc-agreement { max-height: 168px; overflow-y: auto; white-space: pre-wrap; font-size: 11.5px; line-height: 1.5; color: var(--txt-2); background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 13px; -webkit-overflow-scrolling: touch; }

@@ -243,6 +243,23 @@ try {
     ok(mPaid && (Number(mPaid.amountPaid) || 0) === 1000 && mPaid.lineItems.length === 2, 'blocked merge left the PAID invoice fully intact');
     const mki = T.DATA.invoices.findIndex((o) => o.invoiceId === 'TST-KEEP'); if (mki >= 0) T.DATA.invoices.splice(mki, 1); T.IDX.invoice.delete('TST-KEEP');   // restore
 
+    // 13) photo backdrops — customer Account selfie + open Work Order first-photo
+    ok(T.latestCustomerSelfie(null) === '' && T.latestCustomerSelfie({}) === '', 'latestCustomerSelfie: no customer / no cards → empty');
+    ok(T.latestCustomerSelfie({ selfie: 'data:legacy' }) === 'data:legacy', 'latestCustomerSelfie: legacy c.selfie fallback');
+    const lcsCust = { cards: [{ status: 'active', agreements: [
+      { key: 'rental', signedAt: '2026-01-01', selfie: 'data:old' },
+      { key: 'rental', signedAt: '2026-05-01', driveSelfieUrl: 'https://drive/new.jpg', selfie: 'data:new' } ] }] };
+    ok(T.latestCustomerSelfie(lcsCust) === 'https://drive/new.jpg', 'latestCustomerSelfie: newest signing wins + prefers the Drive URL over base64');
+    const lcsTwoCards = { cards: [
+      { status: 'active', agreements: [{ key: 'rental', signedAt: '2026-06-10', driveSelfieUrl: 'https://drive/A.jpg' }] },
+      { status: 'active', agreements: [{ key: 'rental', signedAt: '2026-02-01', driveSelfieUrl: 'https://drive/B.jpg' }] } ] };
+    ok(T.latestCustomerSelfie(lcsTwoCards) === 'https://drive/A.jpg', 'latestCustomerSelfie: newest across multiple cards');
+    ok(T.woBackdrop(null) === '' && T.woBackdrop({ phase: 'Part Needed' }) === '', 'woBackdrop: nothing / no photo → empty');
+    ok(T.woBackdrop({ phase: 'Part Needed', lineItems: [{}, { photo: 'data:part' }] }) === 'data:part', 'woBackdrop: first part-line photo');
+    const wbInsp = { phase: 'Part Needed', inspectionId: 'INS-2', lineItems: [{ photo: 'data:part' }] };
+    ok(T.woBackdrop(wbInsp) === (T.IDX.insp.get('INS-2')?.photo || ''), 'woBackdrop: linked failed-inspection photo wins over the part photo');
+    ok(T.woBackdrop({ phase: 'Complete', inspectionId: 'INS-2', lineItems: [{ photo: 'data:part' }] }) === '', 'woBackdrop: dropped once the WO is Complete');
+
     return out;
   });
 
