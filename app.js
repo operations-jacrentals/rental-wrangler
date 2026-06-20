@@ -1440,7 +1440,7 @@ const state = {
   previewsOn: (() => { try { return localStorage.getItem('jactec.previewsOff') !== '1'; } catch (e) { return true; } })(),   // hover previews (per device)
   overbookOn: (() => { try { return localStorage.getItem('jactec.overbook') === '1'; } catch (e) { return false; } })(),   // §10 allow-overbooking policy (per device, default OFF — drag build)
   hapticsOff: (() => { try { return localStorage.getItem('jactec.hapticsOff') === '1'; } catch (e) { return false; } })(),   // §M-touch Vibration-API feedback (per device, default ON; Android-only, no-op on iOS)
-  wranglerRail: (() => { try { return JSON.parse(localStorage.getItem('jactec.wranglerRail') || '[]'); } catch (e) { return []; } })(),   // §18g the bottom-right rail of past Mr. Wrangler conversations (per device); each = a snapshot { id, title, ts, card, recId, recType, reqNumber, reqTitle, reqUrl, messages }
+  wranglerRail: [],   // §18g the bottom-right rail of past Mr. Wrangler conversations (per device), each a snapshot { id, title, ts, card, recId, recType, reqNumber, reqTitle, reqUrl, messages }. Loaded async from IndexedDB (wranglerRailLoad) — IndexedDB replaced the localStorage rail that silently overflowed.
 };
 const activeSession = () => (state.activeTabId ? state.tabs.find((t) => t.id === state.activeTabId)?.session : state.defaultSession) || state.defaultSession;
 /** Next unique invoice id — a monotonic counter so deleting a Quote-stage invoice can't reuse a number. */
@@ -5175,7 +5175,7 @@ function wranglerDockEl() {
               ? `<span class="wr-actdone" style="color:var(--txt-3)">…filing</span>`
               : `<button class="wr-actbtn${ak === 'plan' ? ' wr-actbtn-build' : ''} js-wr-act" data-mi="${i}">${btnLbl}</button>`;
         }
-        const imgs = (m.images && m.images.length) ? `<div class="wr-bub-imgs">${m.images.map((s) => `<img src="${esc(s)}" alt="attached image">`).join('')}</div>` : '';
+        const imgs = (m.images && m.images.length) ? `<div class="wr-bub-imgs">${m.images.map((img) => { const s = wrImgSrc(img); return s ? `<img src="${esc(s)}" alt="attached image">` : ''; }).join('')}</div>` : '';
         const files = (m.files && m.files.length) ? `<div class="wr-bub-files">${m.files.map((f) => `<span class="wr-file-chip" data-tip="${esc(f.name)}">${I.paperclip || '📎'}<span class="wr-file-n">${esc(f.name)}</span></span>`).join('')}</div>` : '';
         const txt = m.content ? `${esc(m.content).replace(/\n/g, '<br>')}` : '';
         return `<div class="wr-msg ${m.role}">${m.role === 'assistant' ? '<span class="wr-av">🤠</span>' : ''}<div class="wr-bub">${imgs}${files}${txt}${act}</div></div>`;
@@ -5204,6 +5204,7 @@ function wranglerDockEl() {
 }
 function mountWranglerDock() {
   const d = document.querySelector('.wrangler-dock'); if (!d) return;
+  wrHydrateBlobs(state.wrangler.messages);   // resolve any image blob refs → object URLs, then repaint
   const inp = d.querySelector('.js-wr-in');
   if (inp) inp.addEventListener('paste', (ev) => {
     const items = (ev.clipboardData && ev.clipboardData.items) || [];
@@ -5216,8 +5217,9 @@ function mountWranglerDock() {
 // §18g Conversation rail — the bottom-right strip of past Mr. Wrangler chats.
 // Opening Mr. Wrangler always starts a NEW chat; the one you leave is snapshotted
 // here so you can hop back in. A `needs-jac` chat (Mr. Wrangler is waiting on you)
-// rides the rail flashing until you answer it.
-const WR_RAIL_MAX = 8;   // how many stored chats the rail keeps (newest win)
+// rides the rail flashing until you answer it. Retention: KEEP ALL chats (the old
+// 8-chat localStorage cap is retired); the rail UI shows the recent few, the store
+// keeps everything, bounded by the size budget/offload layer.
 /* ── wrStore — IndexedDB for the Mr. Wrangler rail ────────────────────────────
    The rail used to live in localStorage with inline-base64 images; image-heavy
    chats blew the ~5MB cap and a silent try/catch swallowed the QuotaExceeded, so
@@ -5266,7 +5268,75 @@ const wrStore = {
     ? navigator.storage.estimate() : Promise.resolve({ usage: 0, quota: 0 }),
 };
 function wranglerNewId() { return 'wc' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
-function wranglerRailSave() { try { localStorage.setItem('jactec.wranglerRail', JSON.stringify(state.wranglerRail.slice(0, WR_RAIL_MAX))); } catch (e) {} }
+/* A stored message's image is a ref { blobKey, driveUrl?, mime? } — or, for an
+   un-migrated LIVE message, a legacy base64 string. wrImgSrc → a renderable src:
+   the Drive URL if offloaded, else a session object URL for the local blob
+   (hydrated async, then a re-render paints it), else '' until ready. */
+const wrBlobUrls = Object.create(null);   // blobKey → object URL (per-session cache)
+function wrImgSrc(img) {
+  if (!img) return '';
+  if (typeof img === 'string') return img;              // legacy inline base64
+  if (img.driveUrl) return img.driveUrl;
+  return wrBlobUrls[img.blobKey] || '';                 // '' until hydrated, then re-render
+}
+let _wrHydrating = false;
+async function wrHydrateBlobs(messages) {
+  const need = new Set();
+  (messages || []).forEach((m) => (m.images || []).forEach((img) => {
+    if (img && typeof img === 'object' && img.blobKey && !img.driveUrl && !wrBlobUrls[img.blobKey]) need.add(img.blobKey);
+  }));
+  if (!need.size || _wrHydrating) return;
+  _wrHydrating = true; let any = false;
+  for (const key of need) { try { const b = await wrStore.getBlob(key); if (b) { wrBlobUrls[key] = URL.createObjectURL(b); any = true; } } catch (e) {} }
+  _wrHydrating = false;
+  if (any && state.wrangler.open) render();              // paint the now-resolved images (guard prevents a loop)
+}
+/* Convert a message's images into refs, storing any base64 as a blob. Idempotent:
+   an existing ref passes through. Never loses an image — keeps the base64 inline
+   if the blob store fails. */
+async function wrIngestImages(chatId, images) {
+  if (!images || !images.length) return images || null;
+  const out = [];
+  for (let i = 0; i < images.length; i++) {
+    const img = images[i];
+    if (img && typeof img === 'object') { out.push(img); continue; }                 // already a ref
+    if (typeof img === 'string' && img.startsWith('data:')) {
+      const key = 'b_' + chatId + '_' + i + '_' + Math.random().toString(36).slice(2, 6);
+      try { const blob = await (await fetch(img)).blob(); await wrStore.putBlob(key, blob); out.push({ blobKey: key, mime: blob.type }); }
+      catch (e) { out.push(img); }                                                    // keep base64 — never lose the image
+    } else if (img) out.push(img);
+  }
+  return out;
+}
+/* Persist a rail snapshot to IndexedDB (ingesting its image blobs). Async +
+   LOUD on failure — the old silent localStorage catch is gone for good. */
+async function wranglerRailPersist(snap) {
+  try {
+    for (const m of (snap.messages || [])) { if (m.images) m.images = await wrIngestImages(snap.id, m.images); }
+    await wrStore.putChat(snap);
+  } catch (e) { toast('⚠ Couldn’t save this chat locally — ' + ((e && e.message) || 'storage error')); }
+}
+/* Boot: migrate the legacy localStorage rail into IndexedDB (one-time), then load
+   ALL stored chats into the in-memory rail (newest first). Keep-all retention —
+   the size guarantee is enforced by the budget/offload layer, not by dropping. */
+async function wranglerRailLoad() {
+  let legacy = null; try { legacy = localStorage.getItem('jactec.wranglerRail'); } catch (e) {}
+  if (legacy) {
+    try {
+      for (const c of (JSON.parse(legacy) || [])) {
+        if (!c || !c.id) continue;
+        for (const m of (c.messages || [])) { if (m.images) m.images = await wrIngestImages(c.id, m.images); }
+        await wrStore.putChat(c);
+      }
+      try { localStorage.removeItem('jactec.wranglerRail'); } catch (e) {}            // migrated — drop the legacy key
+    } catch (e) { /* leave the legacy key in place if migration fails — don't lose it */ }
+  }
+  try {
+    const all = await wrStore.listChats();
+    state.wranglerRail = (all || []).sort((a, b) => (b.ts || 0) - (a.ts || 0));
+    if (state.wranglerRail.length) render();
+  } catch (e) { toast('⚠ Couldn’t load chat history — ' + ((e && e.message) || 'storage error')); }
+}
 // A short, human title for a conversation: its first thing-said, else the request title.
 function wranglerConvoTitle(o) {
   const fu = (o.messages || []).find((m) => m.role === 'user' && m.content && m.content.trim());
@@ -5282,8 +5352,7 @@ function wranglerRailSnapshot() {
     messages: o.messages.map((m) => ({ role: m.role, content: m.content, images: m.images || null, files: m.files || null, action: m.action || null, filed: m.filed || false, issue: m.issue || null })) };
   const i = state.wranglerRail.findIndex((c) => c.id === snap.id);
   if (i >= 0) state.wranglerRail[i] = snap; else state.wranglerRail.unshift(snap);
-  state.wranglerRail = state.wranglerRail.slice(0, WR_RAIL_MAX);
-  wranglerRailSave();
+  wranglerRailPersist(snap);   // → IndexedDB (keep all; ingest image blobs; loud on failure)
 }
 // Start a fresh conversation (snapshotting whatever was open first).
 function wranglerNewChat(seed) {
@@ -7175,7 +7244,7 @@ async function wranglerFileAction(mi) {
   const m = o.messages[mi]; if (!m || !m.action || m.filed) return;
   const isPlan = m.action.action === 'plan';
   const { title, body, label } = wranglerActionPacket(o, m.action);
-  const images = []; (o.messages || []).forEach((mm) => (mm.images || []).forEach((s) => { if (images.length < 8) images.push(s); }));   // §18e carry the chat’s photos onto the issue
+  const images = []; (o.messages || []).forEach((mm) => (mm.images || []).forEach((img) => { const s = wrImgSrc(img); if (images.length < 8 && (s.startsWith('data:') || s.startsWith('http'))) images.push(s); }));   // §18e carry the chat’s photos onto the issue (base64 or an offloaded Drive URL — never a local object URL)
   const okToast = (n) => isPlan ? `Building to your plan — #${n}. 🤠` : label === 'wrangler-request' ? `Sent #${n} to the developer for the OK. 🤠` : `Filed #${n} — Mr. Wrangler’s on it. 🤠`;
   if (typeof backendPassword !== 'undefined' && backendPassword) {
     m.filing = true; render();
@@ -11521,6 +11590,7 @@ function finishLoad() {
   buildIndexes(); state.cascade = createCascade(DATA); booting = false; render();
   loadGlobalViews();                                            // pull the shared, company-wide view set
   loadChats();                                                  // pull the shared team-chat threads (§ team-chat sync)
+  wranglerRailLoad();                                           // load the Mr. Wrangler rail from IndexedDB (+ one-time localStorage migration)
   refreshWranglerRequests();                                    // §18e populate the approval-inbox badge
   refreshWranglerNotifications();                               // §18f populate the notification-bell badge
   startRefreshPoll();                                           // live multi-user: poll for others' changes (§ refreshFromBackend)
@@ -11831,7 +11901,7 @@ function boot() {
 
 // #local — render straight from data.js with NO backend (offline/demo + dev smoke test).
 // saveSoon() already no-ops without a password, so edits stay in-memory only.
-function offlineBoot() { buildIndexes(); state.cascade = createCascade(DATA); seedDemoRequests(); booting = false; render(); exposeTestApi(); }
+function offlineBoot() { buildIndexes(); state.cascade = createCascade(DATA); seedDemoRequests(); booting = false; render(); exposeTestApi(); wranglerRailLoad(); }
 /* #local demo only: a sample Requests-inbox entry so the review/continue flow is
    visible without a backend. Real installs fetch live requests via the backend. */
 function seedDemoRequests() {
@@ -11883,7 +11953,7 @@ function exposeTestApi() {
       cleanUnitName, planUnitMigration, applyUnitMigration, openMigrationPreview,
       computeTransportPrice, isFueledType, unitTransport, rentalTransport,
       wrValidatePlan, applyWranglerData, wrFunnel, invoiceMergeable, mergeInvoiceInto, parseWranglerAction,
-      latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore };
+      latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore, wranglerRailLoad };
   } catch (e) { /* no window (non-browser) */ }
 }
 
