@@ -158,5 +158,39 @@ result → records carry ~60-byte URLs; bulk payload stops shipping image data
 
 `Code.gs` is gitignored, so confirm `uploadCapture` accepts a generic
 `{dataUrl, name}` and returns `{ok, url}` (it is wired for videos). If it does,
-**no backend change** is needed; if not, the plan will include a paste-in
-snippet to generalize it.
+**no backend change** is needed. If it's video-specific, the appendix below has a
+paste-in handler.
+
+## Appendix — `Code.gs` paste-in (ONLY if `uploadCapture` isn't already generic)
+
+The frontend already calls `backendCall('uploadCapture', { dataUrl, name })` and
+expects `{ ok: true, url }`. The capture-video path proves an action like this
+exists; it most likely already accepts an arbitrary `dataUrl` + `name`. Paste/
+adapt this **only if** the existing action rejects a non-video payload. Reconcile
+the folder + auth bits with the real file (this is gitignored and not in the repo,
+so the exact helpers here are illustrative):
+
+```javascript
+// uploadCapture: decode a base64 data URL, save it to the media Drive folder,
+// return a shareable URL. Generic over {dataUrl, name} — photos and videos alike.
+function uploadCapture_(p) {
+  if (!p || !p.dataUrl) return { ok: false, error: 'no dataUrl' };
+  var m = String(p.dataUrl).match(/^data:([^;]+);base64,(.*)$/);
+  if (!m) return { ok: false, error: 'not a base64 data URL' };
+  var mime = m[1];
+  var bytes = Utilities.base64Decode(m[2]);
+  var ext = (mime.split('/')[1] || 'bin').replace('jpeg', 'jpg');
+  var safe = String(p.name || 'capture').replace(/[^A-Za-z0-9_\-]/g, '_');
+  var blob = Utilities.newBlob(bytes, mime, safe + '.' + ext);
+  var folder = getMediaFolder_();                 // reuse the existing capture/Drive folder helper
+  var file = folder.createFile(blob);
+  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  // Match whatever URL shape the app already stores for capture videos / selfies:
+  return { ok: true, url: 'https://drive.google.com/uc?export=view&id=' + file.getId() };
+}
+```
+
+Notes: `name` already arrives collision-resistant from the client
+(`insp_<id>`, `wopart_<woId>_<lid>`). If the existing action returns a different
+URL shape, keep that shape — the app just stores the string and renders it as an
+`<img>`/CSS background, so any link Drive serves inline works.
