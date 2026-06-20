@@ -910,7 +910,7 @@ select.lf-in { appearance: none; cursor: pointer; }
 .sec-photo {
   position: absolute; inset: 0; z-index: 0; pointer-events: none;
   background-image:
-    linear-gradient(180deg, color-mix(in srgb, var(--panel) 82%, transparent), color-mix(in srgb, var(--bg) 91%, transparent)),
+    linear-gradient(180deg, color-mix(in srgb, var(--panel) 76%, transparent), color-mix(in srgb, var(--panel) 83%, transparent)),
     var(--photo);
   background-size: cover; background-position: center;
   filter: grayscale(.5) contrast(.96);
