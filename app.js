@@ -5320,6 +5320,7 @@ async function wranglerRailPersist(snap) {
   const online = typeof backendPassword !== 'undefined' && backendPassword;
   if (online && (snap.messages || []).some((m) => m.filed)) wrOffloadChatImages(snap);   // on-file: free the local copies (safe — they ride the issue)
   wrEnforceBudget();                                                                     // threshold: keep the store ≤ budget
+  pushWranglerRailSoon();                                                                // cross-device: sync the rail to the backend (debounced)
 }
 // ── The storage guarantee: offload to Drive + bounded eviction (never overflow) ──
 const WR_LOCAL_BUDGET = 25 * 1024 * 1024;   // hard ceiling for the Wrangler store
@@ -5406,6 +5407,7 @@ async function wranglerRailLoad() {
     state.wranglerRail = (all || []).sort((a, b) => (b.ts || 0) - (a.ts || 0));
     if (state.wranglerRail.length) render();
   } catch (e) { toast('⚠ Couldn’t load chat history — ' + ((e && e.message) || 'storage error')); }
+  loadWranglerRail();   // cross-device: union the local rail with the role's backend rail
 }
 // A short, human title for a conversation: its first thing-said, else the request title.
 function wranglerConvoTitle(o) {
@@ -11552,6 +11554,7 @@ async function refreshFromBackend() {
         if (m.changed) applied++;
       }
     } catch (e) { /* chat sync is best-effort */ }
+    loadWranglerRail();   // also pull this role's Mr. Wrangler rail (cross-device) — best-effort, self-renders
     if (applied && !state.overlay && !DRAG.active && !hoverNode) { state.cascade = createCascade(DATA); render(); }
   } catch (e) { /* offline / blip → retry next tick */ }
   finally { refreshing = false; }
@@ -11609,6 +11612,49 @@ async function loadChats() {
     const { changed, localAhead } = mergeChats(r.chats);
     if (localAhead) pushChats(); else lastChatsJson = JSON.stringify(state.chat.chats);   // mark synced (or send local-only threads up)
     if (changed) render();
+  } catch (e) { /* offline → the refresh poll retries */ }
+}
+// ── Cross-device Mr. Wrangler rail sync (per ROLE; mirrors team-chat sync) ──
+// The rail lives in IndexedDB per device (#181); this makes it follow the role
+// login across devices. PURE merge: union by id, newest ts wins, reports
+// localAhead. The caller applies it to state + the IndexedDB cache.
+let railPushTimer = null, lastRailJson = null;
+function mergeWranglerRails(local, remote) {
+  const byId = new Map((local || []).map((c) => [c.id, c]));
+  let changed = false, localAhead = false;
+  (remote || []).forEach((rc) => {
+    if (!rc || !rc.id) return;
+    const lc = byId.get(rc.id);
+    if (!lc) { byId.set(rc.id, rc); changed = true; }                       // a chat from another device
+    else if ((rc.ts || 0) > (lc.ts || 0)) { byId.set(rc.id, rc); changed = true; }   // remote is newer → wins
+    else if ((lc.ts || 0) > (rc.ts || 0)) { localAhead = true; }            // we're newer → push up
+  });
+  const remoteIds = new Set((remote || []).map((c) => c && c.id));
+  if ((local || []).some((c) => c && !remoteIds.has(c.id))) localAhead = true;   // a local-only chat → push up
+  const merged = [...byId.values()].sort((a, b) => (b.ts || 0) - (a.ts || 0));
+  return { merged, changed, localAhead };
+}
+function pushWranglerRailSoon() { if (booting || !backendPassword) return; clearTimeout(railPushTimer); railPushTimer = setTimeout(pushWranglerRail, 1200); }
+async function pushWranglerRail() {
+  if (!backendPassword) return;
+  for (const c of state.wranglerRail) { try { await wrOffloadChatImages(c); } catch (e) {} }   // full fidelity: images → Drive URLs before they ride the sync
+  const chats = state.wranglerRail, js = JSON.stringify(chats);
+  if (js === lastRailJson) return;                                          // nothing new since the last push
+  try { const r = await backendCall('setWranglerRail', { chats }); if (r && r.ok) lastRailJson = js; } catch (e) { /* offline → retries */ }
+}
+async function loadWranglerRail() {
+  if (!backendPassword) return;
+  try {
+    const r = await backendCall('getWranglerRail');
+    if (!r || !r.ok || !Array.isArray(r.chats)) return;
+    const localBefore = state.wranglerRail;
+    const { merged, changed, localAhead } = mergeWranglerRails(localBefore, r.chats);
+    if (changed) {
+      const beforeById = new Map(localBefore.map((c) => [c.id, c]));
+      for (const rc of r.chats) { const lc = beforeById.get(rc.id); if (rc && rc.id && (!lc || (rc.ts || 0) > (lc.ts || 0))) { try { await wrStore.putChat(rc); } catch (e) {} } }   // cache the remote winners
+      state.wranglerRail = merged; render();
+    }
+    if (localAhead) pushWranglerRailSoon(); else lastRailJson = JSON.stringify(state.wranglerRail);
   } catch (e) { /* offline → the refresh poll retries */ }
 }
 function saveSoon() { if (booting || !backendPassword) return; clearTimeout(saveTimer); saveTimer = setTimeout(flushSave, 1200); }
@@ -12030,7 +12076,7 @@ function exposeTestApi() {
       cleanUnitName, planUnitMigration, applyUnitMigration, openMigrationPreview,
       computeTransportPrice, isFueledType, unitTransport, rentalTransport,
       wrValidatePlan, applyWranglerData, wrFunnel, invoiceMergeable, mergeInvoiceInto, parseWranglerAction,
-      latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore, wranglerRailLoad, wrOffloadChatImages, wrEvictChatBlobs, driveViewUrl };
+      latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore, wranglerRailLoad, wrOffloadChatImages, wrEvictChatBlobs, driveViewUrl, mergeWranglerRails };
   } catch (e) { /* no window (non-browser) */ }
 }
 

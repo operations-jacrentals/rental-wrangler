@@ -330,6 +330,19 @@ try {
     await T.offloadPhotoNow(recE, 'photo', 'ne', null, null, fidUp);
     ok(recE.photo === 'https://drive.google.com/uc?export=view&id=Z9', 'offloadPhotoNow: stores the embeddable Drive URL when the backend returns a fileId');
 
+    // 18) cross-device Wrangler rail merge — union by id, newest ts wins, localAhead
+    const A = { id: 'a', ts: 10 }, A2 = { id: 'a', ts: 20 }, B = { id: 'b', ts: 5 }, C = { id: 'c', ts: 7 };
+    let m = T.mergeWranglerRails([A], [B]);
+    ok(m.merged.length === 2 && m.changed === true && m.localAhead === true, 'mergeWranglerRails: remote-only chat added (changed), local-only chat flags localAhead');
+    m = T.mergeWranglerRails([A], [A2]);
+    ok(m.merged.find((c) => c.id === 'a').ts === 20 && m.changed === true && m.localAhead === false, 'mergeWranglerRails: remote newer ts wins');
+    m = T.mergeWranglerRails([A2], [A]);
+    ok(m.merged.find((c) => c.id === 'a').ts === 20 && m.changed === false && m.localAhead === true, 'mergeWranglerRails: local newer ts kept + flags localAhead');
+    m = T.mergeWranglerRails([A2, C], [A2, C]);
+    ok(m.changed === false && m.localAhead === false, 'mergeWranglerRails: identical rails → no change, not ahead');
+    m = T.mergeWranglerRails([], [C, B]);
+    ok(m.merged.map((c) => c.id).join(',') === 'c,b' && m.changed === true, 'mergeWranglerRails: empty local → adopts remote, sorted newest-first');
+
     return out;
   });
 
