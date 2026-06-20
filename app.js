@@ -5336,7 +5336,7 @@ async function wrOffloadChatImages(chat, _upload) {
     try {
       const blob = await wrStore.getBlob(img.blobKey); if (!blob) continue;
       const res = await upload({ dataUrl: await wrBlobToDataUrl(blob), name: 'wrchat_' + chat.id + '_' + img.blobKey });
-      if (res && res.ok && res.url) { await wrStore.delBlob(img.blobKey); wrRevoke(img.blobKey); img.driveUrl = res.url; delete img.blobKey; changed = true; }   // blob now lives on Drive
+      if (res && res.ok && res.url) { await wrStore.delBlob(img.blobKey); wrRevoke(img.blobKey); img.driveUrl = driveViewUrl(res); delete img.blobKey; changed = true; }   // blob now lives on Drive (embeddable URL)
     } catch (e) { /* leave the blob — never lose it */ }
   }
   if (changed) { try { await wrStore.putChat(chat); } catch (e) {} }
@@ -9521,7 +9521,7 @@ async function offloadPhotoNow(target, field, name, owner, coll, _upload) {
   try {
     const res = await upload({ dataUrl: v, name });
     if (res && res.ok && res.url && target[field] === v) {                          // unchanged since upload → safe to swap
-      target[field] = res.url;
+      target[field] = driveViewUrl(res);                                            // embeddable Drive URL (built from fileId), not the file-view page
       if (owner && coll) reindex(coll, owner);
       saveSoon();
       return true;
@@ -11462,6 +11462,13 @@ let backendPassword = sessionStorage.getItem('jactec.pw') || '';
 let booting = true;                       // suppresses saves during initial load
 let saveTimer = null, saving = false, savePending = false;
 
+/* uploadCapture returns url:f.getUrl() — a Drive file-VIEW page, which does NOT
+   render in an <img src> or CSS url(). For IMAGES we build the embeddable form
+   from the returned fileId (uc?export=view&id=…), matching the selfie/agreement
+   archive convention. Videos keep f.getUrl() (the nicer Drive-player page). */
+function driveViewUrl(res) {
+  return (res && res.fileId) ? ('https://drive.google.com/uc?export=view&id=' + res.fileId) : ((res && res.url) || '');
+}
 async function backendCall(action, extra) {
   // text/plain avoids a CORS preflight that GAS web apps can't answer
   const payload = Object.assign({ action, password: backendPassword }, extra || {});
@@ -12023,7 +12030,7 @@ function exposeTestApi() {
       cleanUnitName, planUnitMigration, applyUnitMigration, openMigrationPreview,
       computeTransportPrice, isFueledType, unitTransport, rentalTransport,
       wrValidatePlan, applyWranglerData, wrFunnel, invoiceMergeable, mergeInvoiceInto, parseWranglerAction,
-      latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore, wranglerRailLoad, wrOffloadChatImages, wrEvictChatBlobs };
+      latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore, wranglerRailLoad, wrOffloadChatImages, wrEvictChatBlobs, driveViewUrl };
   } catch (e) { /* no window (non-browser) */ }
 }
 
