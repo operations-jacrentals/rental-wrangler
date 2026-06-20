@@ -11823,6 +11823,14 @@ async function loadFromBackend() {
   // could overwrite real data on a transient blip. A fresh backend is populated
   // explicitly via #reseed (admin), never silently from the demo file.
   PERSIST_KEYS.forEach((k) => { if (Array.isArray(data[k])) { DATA[k].length = 0; data[k].forEach((x) => DATA[k].push(x)); } });
+  // Settings Board: the backend now ships admin customizations with every load, so they
+  // sync to EVERY signed-in role (not just admins via getConfig). Server wins when it has
+  // settings; an empty server is left alone so it can't wipe a device's local config mid-rollout.
+  if (r.settings && typeof r.settings === 'object' && Object.keys(r.settings).length) {
+    state.settings = r.settings;
+    try { localStorage.setItem('jactec.settings', JSON.stringify(r.settings)); } catch (e) {}
+    applySettings(r.settings);
+  }
 }
 
 // ── Incremental persistence (diff-based sync) ──────────────────────────────
