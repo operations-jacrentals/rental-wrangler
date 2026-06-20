@@ -34,7 +34,7 @@ try {
   await page.goto('http://localhost:8000/#local', { waitUntil: 'domcontentloaded', timeout: 20000 });
   await page.waitForFunction(() => !!window.__rw, { timeout: 20000 });
 
-  const results = await page.evaluate(() => {
+  const results = await page.evaluate(async () => {
     const T = window.__rw; const out = []; const ok = (c, m) => out.push({ ok: !!c, m });
 
     // 1) CRITICAL — allocations keyed by a stable lid, immune to line reorder/splice
@@ -205,9 +205,15 @@ try {
     ok(wrUpd && wrUpd.fields.notes === 'WR test note' && !('currentHours' in wrUpd.fields), 'update keeps allowlisted notes, DROPS currentHours');
     ok(!wrPlan.ops.some((o) => o.entity === 'invoices'), 'invoices edit is REFUSED entirely (never touch money)');
     const custBefore = T.DATA.customers.length; const u3 = T.IDX.unit.get('U003'); const noteBefore = u3.notes, hoursBefore = u3.currentHours;
+    window.JT.snapshotSaved();   // #164 baseline the diff-sync against the CURRENT data
     T.applyWranglerData(wrPlan);
     ok(T.DATA.customers.length === custBefore + 2, 'applyWranglerData added exactly the 2 imported customers');
     ok(T.IDX.unit.get('U003').notes === 'WR test note' && T.IDX.unit.get('U003').currentHours === hoursBefore, 'applied the safe note, did NOT write the money/ops field');
+    // #164 — the bulk import must reach the diff-sync (it was being lost when the page
+    // closed before the 1200ms debounce fired). computeChanges sees the new + updated.
+    const wrDiff = window.JT.computeChanges();
+    ok(wrDiff.upserts.customers && wrDiff.upserts.customers.length >= 2, 'imported customers are QUEUED for the diff-sync (persist, not just in-memory)');
+    ok(wrDiff.upserts.units && wrDiff.upserts.units.some((u) => u.id === 'U003'), 'the applied unit note is queued for persistence too');
     T.DATA.customers.length = custBefore; u3.notes = noteBefore;   // restore
 
     // #152 a big import reply can be TRUNCATED by the model's output limit (no closing ```);
@@ -237,7 +243,107 @@ try {
     ok(mPaid && (Number(mPaid.amountPaid) || 0) === 1000 && mPaid.lineItems.length === 2, 'blocked merge left the PAID invoice fully intact');
     const mki = T.DATA.invoices.findIndex((o) => o.invoiceId === 'TST-KEEP'); if (mki >= 0) T.DATA.invoices.splice(mki, 1); T.IDX.invoice.delete('TST-KEEP');   // restore
 
-    // 14) KPIs & RINGS — admin-definable metric engine (step 1: defaults === today + DSL correctness)
+    // 13) photo backdrops — customer Account selfie + open Work Order first-photo
+    ok(T.latestCustomerSelfie(null) === '' && T.latestCustomerSelfie({}) === '', 'latestCustomerSelfie: no customer / no cards → empty');
+    ok(T.latestCustomerSelfie({ selfie: 'data:legacy' }) === 'data:legacy', 'latestCustomerSelfie: legacy c.selfie fallback');
+    const lcsCust = { cards: [{ status: 'active', agreements: [
+      { key: 'rental', signedAt: '2026-01-01', selfie: 'data:old' },
+      { key: 'rental', signedAt: '2026-05-01', driveSelfieUrl: 'https://drive/new.jpg', selfie: 'data:new' } ] }] };
+    ok(T.latestCustomerSelfie(lcsCust) === 'https://drive/new.jpg', 'latestCustomerSelfie: newest signing wins + prefers the Drive URL over base64');
+    const lcsTwoCards = { cards: [
+      { status: 'active', agreements: [{ key: 'rental', signedAt: '2026-06-10', driveSelfieUrl: 'https://drive/A.jpg' }] },
+      { status: 'active', agreements: [{ key: 'rental', signedAt: '2026-02-01', driveSelfieUrl: 'https://drive/B.jpg' }] } ] };
+    ok(T.latestCustomerSelfie(lcsTwoCards) === 'https://drive/A.jpg', 'latestCustomerSelfie: newest across multiple cards');
+    ok(T.woBackdrop(null) === '' && T.woBackdrop({ phase: 'Part Needed' }) === '', 'woBackdrop: nothing / no photo → empty');
+    ok(T.woBackdrop({ phase: 'Part Needed', lineItems: [{}, { photo: 'data:part' }] }) === 'data:part', 'woBackdrop: first part-line photo');
+    const wbInsp = { phase: 'Part Needed', inspectionId: 'INS-2', lineItems: [{ photo: 'data:part' }] };
+    ok(T.woBackdrop(wbInsp) === (T.IDX.insp.get('INS-2')?.photo || ''), 'woBackdrop: linked failed-inspection photo wins over the part photo');
+    ok(T.woBackdrop({ phase: 'Complete', inspectionId: 'INS-2', lineItems: [{ photo: 'data:part' }] }) === '', 'woBackdrop: dropped once the WO is Complete');
+
+    // 14) photo offload to Drive (de-bloat) — swap logic via an injected uploader stub
+    const okUp = async (p) => ({ ok: true, url: 'https://drive/' + p.name });
+    const failUp = async () => ({ ok: false });
+    const recA = { photo: 'data:image/jpeg;base64,AAA' };
+    ok((await T.offloadPhotoNow(recA, 'photo', 'n1', null, null, okUp)) === true && recA.photo === 'https://drive/n1', 'offloadPhotoNow: base64 → Drive URL on ok');
+    ok((await T.offloadPhotoNow(recA, 'photo', 'n1', null, null, okUp)) === false && recA.photo === 'https://drive/n1', 'offloadPhotoNow: idempotent — a URL is a no-op');
+    const recB = { photo: 'data:image/jpeg;base64,BBB' };
+    ok((await T.offloadPhotoNow(recB, 'photo', 'n2', null, null, failUp)) === false && recB.photo === 'data:image/jpeg;base64,BBB', 'offloadPhotoNow: failed upload leaves base64 untouched (never lose a photo)');
+    ok((await T.offloadPhotoNow({ photo: '' }, 'photo', 'n3', null, null, okUp)) === false, 'offloadPhotoNow: empty → no-op');
+    const recD = { photo: 'data:image/jpeg;base64,DDD' };
+    const staleUp = async () => { recD.photo = 'data:image/jpeg;base64,NEW'; return { ok: true, url: 'https://drive/stale' }; };   // re-captured mid-flight
+    ok((await T.offloadPhotoNow(recD, 'photo', 'n4', null, null, staleUp)) === false && recD.photo === 'data:image/jpeg;base64,NEW', 'offloadPhotoNow: stale-guard — a mid-flight re-capture is not clobbered');
+    // base64PhotoTargets — counts only data: photos (inspections + nested WO line items), idempotent after a pass
+    const beforeT = T.base64PhotoTargets().length;
+    const insX = { inspectionId: 'INS-OFFLOAD', photo: 'data:image/jpeg;base64,III' };
+    T.DATA.inspections.push(insX); T.IDX.insp.set('INS-OFFLOAD', insX);
+    const woX = { woId: 'WO-OFFLOAD', lineItems: [{ photo: 'data:image/jpeg;base64,LLL', lid: 'LX' }, { photo: 'https://drive/already.jpg' }, {}] };
+    T.DATA.workOrders.push(woX); T.IDX.wo.set('WO-OFFLOAD', woX);
+    ok(T.base64PhotoTargets().length === beforeT + 2, 'base64PhotoTargets: counts the new inspection + the one base64 line (skips the URL line + the photoless line)');
+    for (const job of T.base64PhotoTargets()) await T.offloadPhotoNow(job.t, 'photo', job.name, job.owner, job.coll, okUp);
+    ok(T.base64PhotoTargets().length === 0, 'base64PhotoTargets: empty after a full offload pass (idempotent)');
+    T.DATA.inspections.pop(); T.IDX.insp.delete('INS-OFFLOAD'); T.DATA.workOrders.pop(); T.IDX.wo.delete('WO-OFFLOAD');   // restore
+
+    // 15) wrStore — the IndexedDB layer for the Wrangler rail (real round-trips)
+    const S = T.wrStore;
+    const chat = { id: 'wc-test-1', title: 'hi', ts: 1, messages: [{ role: 'user', content: 'yo', images: [{ blobKey: 'b_wc-test-1_0' }] }] };
+    await S.putChat(chat);
+    const got = await S.getChat('wc-test-1');
+    ok(got && got.id === 'wc-test-1' && got.messages[0].images[0].blobKey === 'b_wc-test-1_0', 'wrStore: putChat/getChat round-trip keeps the message ref');
+    const listed = await S.listChats();
+    ok(Array.isArray(listed) && listed.some((c) => c.id === 'wc-test-1'), 'wrStore: listChats returns the stored chat');
+    const blob = new Blob([new Uint8Array([1, 2, 3, 4])], { type: 'image/jpeg' });
+    await S.putBlob('b_wc-test-1_0', blob);
+    const gotBlob = await S.getBlob('b_wc-test-1_0');
+    ok(gotBlob instanceof Blob && gotBlob.size === 4, 'wrStore: putBlob/getBlob round-trip returns the Blob (binary, not base64)');
+    await S.delBlob('b_wc-test-1_0');
+    ok((await S.getBlob('b_wc-test-1_0')) === undefined, 'wrStore: delBlob removes the blob');
+    await S.delChat('wc-test-1');
+    ok((await S.getChat('wc-test-1')) === undefined, 'wrStore: delChat removes the chat');
+    const est = await S.estimate();
+    ok(est && typeof est.usage === 'number' && typeof est.quota === 'number', 'wrStore: estimate() returns usage/quota numbers');
+
+    // 16) Drive offload + eviction for the Wrangler store (the size guarantee)
+    const wrUp = async (p) => ({ ok: true, url: 'https://drive/' + encodeURIComponent(p.name) });
+    const ob = new Blob([new Uint8Array([9, 9, 9, 9, 9])], { type: 'image/png' });
+    await S.putBlob('b_wc-off_0', ob);
+    const offChat = { id: 'wc-off', ts: 2, messages: [{ role: 'user', content: 'x', images: [{ blobKey: 'b_wc-off_0' }] }] };
+    await S.putChat(offChat);
+    const did = await T.wrOffloadChatImages(offChat, wrUp);
+    ok(did === true && offChat.messages[0].images[0].driveUrl && !offChat.messages[0].images[0].blobKey, 'wrOffloadChatImages: un-synced blob → Drive URL set, local blobKey cleared');
+    ok((await S.getBlob('b_wc-off_0')) === undefined, 'wrOffloadChatImages: local blob dropped after offload (re-fetchable from driveUrl)');
+    ok((await T.wrOffloadChatImages(offChat, wrUp)) === false, 'wrOffloadChatImages: idempotent — a synced chat is a no-op');
+    // eviction: a synced blob is a safe cache drop; an un-synced one needs unsyncedOk
+    await S.putBlob('b_wc-ev_0', ob); await S.putBlob('b_wc-ev_1', ob);
+    const evChat = { id: 'wc-ev', ts: 3, messages: [{ role: 'user', content: 'y', images: [{ blobKey: 'b_wc-ev_0', driveUrl: 'https://drive/x' }, { blobKey: 'b_wc-ev_1' }] }] };
+    ok((await T.wrEvictChatBlobs(evChat, false)) === 1, 'wrEvictChatBlobs: drops only the synced blob when unsyncedOk=false (text untouched)');
+    ok(evChat.messages[0].content === 'y' && evChat.messages[0].images.length === 2, 'wrEvictChatBlobs: message text + refs preserved — only the local blob is freed');
+    ok((await T.wrEvictChatBlobs(evChat, true)) === 1, 'wrEvictChatBlobs: drops the un-synced blob only as a last resort (unsyncedOk=true)');
+    await S.delChat('wc-off'); await S.delChat('wc-ev');
+
+    // 17) driveViewUrl — uploadCapture's file-view page → an embeddable <img> URL via fileId
+    ok(T.driveViewUrl({ ok: true, url: 'https://drive.google.com/file/d/FID/view', fileId: 'FID' }) === 'https://drive.google.com/uc?export=view&id=FID', 'driveViewUrl: builds the embeddable uc?export=view form from fileId');
+    ok(T.driveViewUrl({ ok: true, url: 'https://x/y' }) === 'https://x/y', 'driveViewUrl: falls back to res.url when no fileId');
+    ok(T.driveViewUrl(null) === '' && T.driveViewUrl({}) === '', 'driveViewUrl: empty when nothing usable');
+    // integration: an offload that returns a fileId stores the EMBEDDABLE url (not the file-view page)
+    const fidUp = async (p) => ({ ok: true, url: 'https://drive.google.com/file/d/Z9/view', fileId: 'Z9' });
+    const recE = { photo: 'data:image/jpeg;base64,EEE' };
+    await T.offloadPhotoNow(recE, 'photo', 'ne', null, null, fidUp);
+    ok(recE.photo === 'https://drive.google.com/uc?export=view&id=Z9', 'offloadPhotoNow: stores the embeddable Drive URL when the backend returns a fileId');
+
+    // 18) cross-device Wrangler rail merge — union by id, newest ts wins, localAhead
+    const A = { id: 'a', ts: 10 }, A2 = { id: 'a', ts: 20 }, B = { id: 'b', ts: 5 }, C = { id: 'c', ts: 7 };
+    let m = T.mergeWranglerRails([A], [B]);
+    ok(m.merged.length === 2 && m.changed === true && m.localAhead === true, 'mergeWranglerRails: remote-only chat added (changed), local-only chat flags localAhead');
+    m = T.mergeWranglerRails([A], [A2]);
+    ok(m.merged.find((c) => c.id === 'a').ts === 20 && m.changed === true && m.localAhead === false, 'mergeWranglerRails: remote newer ts wins');
+    m = T.mergeWranglerRails([A2], [A]);
+    ok(m.merged.find((c) => c.id === 'a').ts === 20 && m.changed === false && m.localAhead === true, 'mergeWranglerRails: local newer ts kept + flags localAhead');
+    m = T.mergeWranglerRails([A2, C], [A2, C]);
+    ok(m.changed === false && m.localAhead === false, 'mergeWranglerRails: identical rails → no change, not ahead');
+    m = T.mergeWranglerRails([], [C, B]);
+    ok(m.merged.map((c) => c.id).join(',') === 'c,b' && m.changed === true, 'mergeWranglerRails: empty local → adopts remote, sorted newest-first');
+
+    // 19) KPIs & RINGS — admin-definable metric engine (step 1: defaults === today + DSL correctness)
     const ROLE_IDS = ['mechanic', 'mtech', 'driver', 'office', 'sales'];
     let kpiMatch = true, kpiRawMatch = true;
     ROLE_IDS.forEach((id) => {
@@ -262,7 +368,7 @@ try {
     ok(T.kpiEval({ band: 'down', metric: { kind: 'count', src: { entity: 'units', where: [{ f: 'inspectionStatus', op: 'eq', v: 'Ready' }] } } }).pct === 100 - ce.pct, 'band:down inverts the ring fill (lower-is-better)');
     ok(T.kpiEval({ metric: { kind: 'ratio', num: { entity: 'NOPE' } } }).pct === 0, 'malformed metric → safe 0 ring (never throws)');
 
-    // 15) Mr. Wrangler KPI authoring — validate + lock-in write path
+    // 20) Mr. Wrangler KPI authoring — validate + lock-in write path
     const goodKpi = { action: 'kpi', role: 'mechanic', ring: 1, label: 'WO ≤ 2 days', band: 'up', unit: '%',
       metric: { kind: 'ratio', num: { entity: 'workOrders', where: [{ f: 'phase', op: 'eq', v: 'Complete' }, { f: '_ageDays', op: 'lte', v: 2 }], agg: 'count' }, den: { entity: 'workOrders', where: [{ f: 'cancelled', op: 'ne', v: true }], agg: 'count' } } };
     const gv = T.wrValidateKpi(goodKpi);
@@ -281,7 +387,7 @@ try {
     st.settings.kpis = savedKpis;   // restore
     ok(JSON.stringify(T.kpiFor('mechanic')) === JSON.stringify(T.legacyKpiPct('mechanic')), 'removing the override restores the default ring');
 
-    // 16) Company tab — identity read-through with shipped fallbacks; revenue goal feeds the Sales ring
+    // 21) Company tab — identity read-through with shipped fallbacks; revenue goal feeds the Sales ring
     const savedCo = st.settings.company;
     ok(T.companyRevenueGoal() === 150000 && T.companyName() === 'JacRentals', 'company helpers fall back to the shipped defaults when unset');
     st.settings.company = { name: 'Bayou Iron', tagline: 'Diggers & Dozers', revenueGoal: 222000 };
@@ -293,7 +399,7 @@ try {
     st.settings.company = savedCo;   // restore
     ok(JSON.stringify(T.kpiFor('sales')) === JSON.stringify(T.legacyKpiPct('sales')), 'no company override → Sales ring matches the shipped default (150k)');
 
-    // 17) Rental Rules — hard-block On Rent (default Off = zero change; pure rentalRuleBlock)
+    // 22) Rental Rules — hard-block On Rent (default Off = zero change; pure rentalRuleBlock)
     const savedRules = st.settings.rentalRules;
     st.settings.rentalRules = {};
     ok(T.rentalRuleBlock({ invoiceId: null }, { name: 'X' }, 'On Rent') === null, 'no rules set → On Rent never blocked (regression-safe default)');
@@ -313,7 +419,7 @@ try {
     ok(/terms/i.test(T.rentalRuleBlock({}, { name: 'X' }, 'On Rent') || '') && T.rentalRuleBlock({}, { name: 'X', netDays: 0 }, 'On Rent') === null, 'Payment-terms Required: blocks until Net days entered (0/COD counts)');
     st.settings.rentalRules = savedRules;   // restore
 
-    // 18) Net-days terms → invoice due date, capped by the system max (Settings → Company)
+    // 23) Net-days terms → invoice due date, capped by the system max (Settings → Company)
     const tc = T.DATA.customers[0]; const savedNd = tc.netDays; const savedCo2 = st.settings.company;
     st.settings.company = { maxNetDays: 30 };
     tc.netDays = undefined; ok(T.dueForCustomer(tc.customerId) > T.TODAY_ISO, 'no terms → the shipped 14-day default, unchanged');
@@ -324,7 +430,7 @@ try {
     st.settings.company = { maxNetDays: 60 }; const dueCap60 = T.dueForCustomer(tc.customerId); ok(dueCap60 > due30b, 'raising the system max to 60 lets the same Net 999 customer go further out');
     tc.netDays = savedNd; st.settings.company = savedCo2;   // restore
 
-    // 19) Layout & Footers — per-card footer visibility (default shown = zero change)
+    // 24) Layout & Footers — per-card footer visibility (default shown = zero change)
     const savedLayout = st.settings.layout;
     st.settings.layout = undefined;
     ok(T.footerHidden('rentals') === false, 'no layout config → footers shown (default)');
@@ -332,7 +438,7 @@ try {
     ok(T.footerHidden('rentals') === true && T.footerHidden('units') === false, 'a card footer can be hidden without affecting others');
     st.settings.layout = savedLayout;   // restore
 
-    // 20) Custom Fields — admin-defined fields per entity (default none = forms unchanged)
+    // 25) Custom Fields — admin-defined fields per entity (default none = forms unchanged)
     const savedCF = st.settings.customFields;
     st.settings.customFields = undefined;
     ok(T.customFieldsFor('customers').length === 0, 'no custom fields configured → none on any form (default)');
@@ -342,7 +448,7 @@ try {
     ok(T.customFieldsFor('units').length === 0, 'custom fields are per-entity (units unaffected)');
     st.settings.customFields = savedCF;   // restore
 
-    // 21) Inspections — per-category required checklist (default none = quick toggles unchanged)
+    // 26) Inspections — per-category required checklist (default none = quick toggles unchanged)
     const savedInsp = st.settings.inspections;
     const aUnit = T.DATA.units[0]; const aCat = aUnit.categoryId;
     st.settings.inspections = undefined;
@@ -355,7 +461,7 @@ try {
     ok(T.checklistRequired(aUnit) === false && T.checklistFor(aUnit) !== null, 'a defined-but-not-required checklist is available but does not take over');
     st.settings.inspections = savedInsp;   // restore
 
-    // 22) Reversibility — a corrupt customization must self-heal, never brick the app
+    // 27) Reversibility — a corrupt customization must self-heal, never brick the app
     const savedAll = st.settings;
     st.settings = { status: { rentalStatus: 'this-is-not-an-object-it-is-garbage' } };   // malformed
     let threw = false; try { T.applySettings(st.settings); } catch (e) { threw = true; }
@@ -364,7 +470,7 @@ try {
     st.settings = savedAll; T.applySettings(st.settings);   // restore + re-apply clean
     ok(JSON.stringify(T.kpiFor('mechanic')) === JSON.stringify(T.legacyKpiPct('mechanic')), 'clean settings re-apply leaves the dashboard at defaults');
 
-    // 23) Per-tab "Reset page" — each tab maps to its own slice + a defaults value
+    // 28) Per-tab "Reset page" — each tab maps to its own slice + a defaults value
     ok(T.pageDefaultSlice('statuses').key === 'status' && T.pageDefaultSlice('kpis').key === 'kpis', 'each tab resets only its own settings slice');
     const cfReset = T.pageDefaultSlice('fields').value;
     ok(Array.isArray(cfReset.customers) && cfReset.customers.length === 0 && Array.isArray(cfReset.units), 'Reset page (Custom Fields) empties every entity, not just the active one');

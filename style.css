@@ -184,6 +184,8 @@ input { font-family: inherit; }
   transition: background .12s, border-color .12s, color .12s;
 }
 .iconbtn:hover { background: var(--panel-2); border-color: var(--accent-line); }
+.iconbtn-bare { background: transparent; border-color: transparent; box-shadow: none; padding: 0 8px; color: var(--txt-3); }   /* float the icon — no chip (Jac: QR) */
+.iconbtn-bare:hover { background: transparent; border-color: transparent; color: var(--accent); }
 .iconbtn svg { width: 16px; height: 16px; }
 .iconbtn.primary { background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent); gap: 4px; }
 .iconbtn.off { color: var(--txt-3); }   /* previews toggled off */
@@ -267,20 +269,26 @@ input { font-family: inherit; }
    bar is hidden; each column docks its own strip (Yard→chat · Rentals→tools ·
    Customers→external chats). Swipe (native scroll-snap) moves between columns. */
 .is-phone .bottombar { display: none; }
-.mobile-dock { flex: 0 0 auto; display: flex; flex-direction: column; gap: 2px; border-top: 1px solid var(--line);
-  background: var(--panel); padding: 2px 8px max(4px, env(safe-area-inset-bottom)); touch-action: pan-y; }   /* compact; pan-y lets our pointer swipe own the horizontal */
-.mdock-dots { display: flex; justify-content: center; gap: 7px; padding: 2px 0 0; }   /* thin column indicator (column also changes by toggle/swipe) */
-.mdot { width: 34px; height: 16px; border: none; background: none; padding: 0; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
-.mdot::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--txt-3); opacity: .4; transition: opacity .15s, transform .15s, background .15s; }
-.mdot.on::before { opacity: 1; background: var(--accent); transform: scale(1.3); }
-/* the toggle row: card toggles fill the width, the ONE action icon parks at the right */
-.mdock-tabs { display: flex; align-items: center; gap: 8px; }
-.mdock-tabs .col-tabs { flex: 1 1 auto; min-width: 0; max-width: none; justify-content: flex-start; overflow-x: auto; scrollbar-width: none; }
-.mdock-tabs .col-tabs::-webkit-scrollbar { display: none; }
-.mdock-sp { flex: 1 1 0; min-width: 4px; }
+.mobile-dock { flex: 0 0 auto; display: flex; flex-direction: column; gap: 0; border-top: 1px solid var(--line);
+  background: var(--panel); padding: 0 0 max(6px, env(safe-area-inset-bottom)); touch-action: pan-y; }   /* pan-y lets our pointer swipe own the horizontal */
+/* the card's search/sort row, relocated here — a FULL-WIDTH band (edge to edge) */
+.mdock-searchslot:empty { display: none; }
+.is-phone .mdock-searchslot .listbar { position: static; margin: 0; padding: 8px; gap: 8px;
+  background: var(--bg-2); border-bottom: 1px solid var(--line); box-shadow: 0 5px 11px -7px rgba(0,0,0,.45); }
+.is-phone .mdock-searchslot .mini-searchwrap { min-height: 44px; }   /* match the graph/sort buttons so the row is one height */
+.is-phone .mdock-searchslot .mini-search { height: 44px; }
+/* the card-toggle BAR: every card as an icon; the selected one expands to icon + label */
+.mdock-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; }
+.mcard-bar { display: flex; align-items: center; gap: 3px; flex: 1 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px; padding: 3px; box-shadow: var(--chip-shadow); }
+.mcard-bar::-webkit-scrollbar { display: none; }
+.mcard-tog { display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; min-height: 44px; min-width: 44px; justify-content: center;
+  padding: 0 9px; border: none; background: none; cursor: pointer; border-radius: 9px; color: var(--txt-2); transition: background .12s, color .12s; }
+.mcard-tog .mct-ico { display: inline-flex; } .mcard-tog .mct-ico svg { width: 19px; height: 19px; }
+.mcard-tog .mct-lbl { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1px; font-weight: 800; font-size: 13px; white-space: nowrap; }
+.mcard-tog.on { background: var(--accent); color: var(--on-orange, #1a1205); }   /* selected = ignition orange + dark ink */
+.mcard-tog:not(.on):active { background: rgba(255,255,255,.06); }
 .mdock-act { flex: 0 0 auto; position: relative; }
-/* footer toggles: inactive = icon (+count) only, active keeps its stamped label */
-.mdock-tabs .coltab:not(.on) .ct-lbl { display: none; }
 /* ── §M2 Mobile drag — the chat drop-zone is the BOTTOM EDGE (full width) on phones,
    mirroring the L/R edges used to switch columns. The cancel-arc is hidden (release in
    empty space cancels). */
@@ -292,7 +300,7 @@ input { font-family: inherit; }
    grow the genuinely TAPPABLE controls on phones (single column = room to spare).
    Glyphs keep their size — only the hit box grows. ── */
 .is-phone .rbtn { width: 44px; height: 44px; }                                  /* row eye / open-tab (was 22) */
-.is-phone .sortbtn { height: 44px; }
+.is-phone .sort { height: 44px; }
 .is-phone .sort .dir { width: 40px; height: 44px; }                             /* was 26×32 */
 .is-phone .mini-search { min-height: 44px; }                                    /* was 24 */
 .is-phone .pill.gate { height: 40px; }                                          /* status gate = interactive (was 28); wide, so width clears the floor */
@@ -324,18 +332,26 @@ input { font-family: inherit; }
 .is-phone .winpicker .wp-time input[type="time"] { height: 40px; }
 @keyframes sheetUp { from { transform: translateY(100%); } to { transform: none; } }
 @media (prefers-reduced-motion: reduce) { .is-phone .popup, .is-phone .winpicker { animation: none; } }
-/* ── §M4 — phone header: keep ALL FIVE KPI rings on screen. They drop to their own
-   full-width row under the logo/search and shrink to fit five across. ── */
-.is-phone .header { flex-wrap: wrap; gap: 8px 10px; padding: 10px 10px 0; }
-.is-phone .logo { width: 56px; height: 56px; }
-.is-phone .header-right { flex: 1 1 60%; }
-.is-phone .kpis { order: 3; flex: 0 0 100%; display: flex; justify-content: space-between; gap: 2px; }
-.is-phone .kpi-ring { min-width: 0; flex: 1 1 0; padding: 2px 0 0; }
-.is-phone .ring-wrap svg { width: 50px; height: 50px; }
-.is-phone .kpi-ring .ring-label { font-size: 9px; letter-spacing: .2px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* ── §M4 — phone header: logo + ALL FIVE KPI rings share the TOP row (rings shrunk to
+   fit), and the global search wraps to its own full-width row underneath. ── */
+.is-phone .header { flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 10px 10px 0; }
+.is-phone .logo { width: 58px; height: 58px; order: 1; }
+.is-phone .kpis { order: 1; flex: 1 1 auto; min-width: 0; display: flex; justify-content: space-around; gap: 2px; }   /* logo + rings share a row, below the tool bar */
+.is-phone .kpi-ring { min-width: 0; flex: 0 1 auto; padding: 1px 0 0; }
+.is-phone .ring-wrap svg { width: 52px; height: 52px; }
+.is-phone .kpi-ring .ring-label { font-size: 8.5px; letter-spacing: .1px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.is-phone .header-right { order: 2; flex: 1 1 100%; min-width: 0; }   /* global search on its own full-width row */
+/* the tool bar ACROSS THE TOP, ABOVE the logo/rings (phone only) — its own full-width row */
+.top-toolbar { display: none; }
+.is-phone .top-toolbar { order: 0; display: flex; flex: 1 1 100%; align-items: center; justify-content: space-between;
+  gap: 2px; overflow-x: auto; scrollbar-width: none; padding: 0 0 2px; }
+.is-phone .top-toolbar::-webkit-scrollbar { display: none; }
+.is-phone .top-toolbar .iconbtn { flex: 0 0 auto; min-height: 42px; padding: 0 9px; position: relative; }   /* anchor the badge to its button (else it escapes to the screen corner) */
+.is-phone .top-toolbar .bb-sep { display: none; }
 /* bigger Back/Forward jog on phones (the ‹ › card-history control) */
+.is-phone .card-jog { height: 44px; }                                           /* un-clip the 26px container so the bigger jog buttons actually show */
 .is-phone .card-jog .jog-btn { min-width: 46px; min-height: 44px; }
-.is-phone .card-jog .jog-btn svg { width: 19px; height: 19px; }
+.is-phone .card-jog .jog-btn svg { width: 20px; height: 20px; }
 /* single active column — no 3-wide scroll track (the grid swipe is Back/Forward, §M3) */
 .is-phone .grid { display: block; overflow: hidden; padding: 12px 8px 4px; touch-action: pan-y; }   /* vertical scroll native; JS owns the horizontal swipe (Back/Forward) */
 .is-phone .col { flex: 1 1 auto; padding: 0; height: 100%; }
@@ -343,6 +359,28 @@ input { font-family: inherit; }
 .tools-tray { display: flex; flex-wrap: wrap; gap: 8px; }
 .tools-tray .iconbtn { flex: 0 0 auto; min-height: 44px; }
 .tools-tray .bb-sep { display: none; }
+/* ── §M5 — phone fixes for the record cards (Jac IMG_1963) ───────────────────── */
+/* Header: drop the big operator name on phones (no room) so the open-record tabs +
+   active tab stop overflowing the right edge. */
+.is-phone .hello-name { display: none; }
+.is-phone .hr-top { min-width: 0; min-height: 0; }   /* collapse the empty open-tabs row so the search sits tight under the rings */
+.is-phone .header-right { gap: 5px; }
+/* Rental window header: the Not-Ready blocker + status gate were wrapping on top of
+   each other (and the dates). Make the bar taller, pin the dates to the TOP corners,
+   and drop the status row to the BOTTOM — full width, centered, no overlap. */
+.is-phone .rentalsec .timeline { height: 96px; }
+.is-phone .tl-over .d1, .is-phone .tl-over .d2 { top: 11px; transform: none; }
+.is-phone .tl-over .midwrap { inset: auto 8px 11px 8px; padding: 0; gap: 6px; justify-content: center; }
+/* Footer actions (Complete Rental / Field Call) wrap instead of overflowing. */
+.is-phone .rentalsec-foot { flex-wrap: wrap; }
+/* The floating Mr. Wrangler conversation rail covered the card body on phones — hide it
+   (the inbox FAB + its badge still surface anything that needs an answer). */
+.is-phone .wr-rail { display: none; }
+/* Give the scroll content clearance below the floating bottom-right FAB cluster so the
+   History / notes don't sit under the notification + inbox buttons. */
+.is-phone .card-body { padding-bottom: 10px; }   /* FABs are folded into the footer Tools menu now, so no big clearance needed */
+/* phone inverts the layout — the totals strip is a card HEADER now (border + shadow flip down) */
+.is-phone .list-totals { border-top: none; border-bottom: 1px solid var(--accent-line); box-shadow: 0 5px 11px -7px rgba(0,0,0,.45); }
 /* Card tabs = a SEGMENTED NAV BAR (one container, flat segments) — now sit INSIDE
    the card at its top, centered, so the card's height/glow includes the toggles. */
 .col-tabs { display: inline-flex; gap: 3px; flex: 0 0 auto; align-self: center; max-width: calc(100% - 16px); overflow: hidden;
@@ -682,20 +720,30 @@ select.lf-in { appearance: none; cursor: pointer; }
 
 /* list-view search/sort bar (§12 in-card Sort) — floating chips, no hard line */
 .listbar { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; gap: 7px; padding: 6px 10px; background: linear-gradient(var(--card) 70%, transparent); }
+/* Desktop lifts the bar OUT of the scroll into a full-width card header (see
+   columnEl) so the card-body scrollbar runs only through the list below it — no
+   gutter gap beside the search strip. */
+.card > .listbar { flex: 0 0 auto; position: static; background: var(--card); }
 .listbar .mini-search { flex: 1; min-width: 0; height: 32px; padding: 0 11px; border-radius: var(--chip-radius); background: var(--panel); border: 1px solid var(--line); color: var(--txt); font-size: 12px; box-shadow: var(--chip-shadow); }
 .listbar .mini-search:focus { outline: none; border-color: var(--accent-line); }
-.sort { display: flex; align-items: center; gap: 4px; }
-.sortbtn { display: inline-flex; align-items: center; gap: 5px; height: 32px; padding: 0 9px; border-radius: var(--chip-radius); background: var(--panel); border: 1px solid var(--line); color: var(--txt-2); font-size: 11px; font-weight: 600; box-shadow: var(--chip-shadow); white-space: nowrap; }
-.sortbtn:hover { border-color: var(--accent-line); color: var(--txt); }
+/* §12 sort control — ONE unified chip: [field ⌄ │ ▲▼]. The two segments share a
+   single steel chip (no second box, no extra horizontal space) split by a
+   saddle-stitch seam, matching the .card-jog stepper (recognition over recall). */
+.sort { display: inline-flex; align-items: stretch; height: 32px; border-radius: var(--chip-radius); overflow: hidden; background: var(--panel); border: 1px solid var(--line); box-shadow: var(--chip-shadow); }
+.sort:hover, .sort:has(.sortbtn.viewing) { border-color: var(--accent-line); }
+.sortbtn { display: inline-flex; align-items: center; gap: 5px; height: 100%; padding: 0 9px; border: 0; background: transparent; color: var(--txt-2); font-size: 11px; font-weight: 600; white-space: nowrap; }
+.sortbtn:hover { color: var(--txt); }
+.sortbtn.viewing { color: var(--accent); }
 .sortbtn .chev { width: 12px; height: 12px; opacity: .6; }
-.sort .dir { display: flex; flex-direction: column; width: 26px; height: 32px; border-radius: var(--chip-radius); background: var(--panel); border: 1px solid var(--line); align-items: center; justify-content: center; box-shadow: var(--chip-shadow); }
-.sort .dir:hover { border-color: var(--accent-line); }
+.sort .dir { display: flex; flex-direction: column; width: 22px; height: 100%; border: 0; border-left: 1px dashed rgba(194,146,90,.55); background: transparent; align-items: center; justify-content: center; }   /* saddle-stitch seam (same as .card-jog) */
+.sort .dir:hover { background: var(--accent-soft); }
 .sort .dir span { font-size: 9px; line-height: 1.05; color: var(--txt-3); }
 .sort .dir span.on { color: var(--accent); }
+.sort > button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
 /* reusable floating dropdown menu (sort fields, status options) — Tier 3 SELECTOR-LIST:
    steel panel + a left hazard rail (the signature), no orange halo (dialogs keep that). */
-.dropdown-menu { position: fixed; z-index: 9100; min-width: 170px; padding: 6px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--chip-radius); box-shadow: var(--shadow), 0 0 0 1px rgba(0,0,0,.4); }
+.dropdown-menu { position: fixed; z-index: 9100; width: max-content; min-width: 150px; max-width: min(92vw, 340px); padding: 6px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--chip-radius); box-shadow: var(--shadow), 0 0 0 1px rgba(0,0,0,.4); }   /* width:max-content hugs the widest item label; min/max keep it from getting awkwardly narrow or stretching wide */
 .dropdown-menu:not(.gt) { position: fixed; overflow: hidden; padding-left: 14px; }
 .dropdown-menu:not(.gt)::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 6px; background: repeating-linear-gradient(180deg, var(--yellow) 0 11px, #14181d 11px 22px); }
 .dropdown-menu .dd-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 10px; border-radius: 9px; font-size: 12px; font-weight: 600; text-align: left; color: var(--txt-2); }
@@ -710,17 +758,17 @@ select.lf-in { appearance: none; cursor: pointer; }
 .dropdown-menu .dd-item .x:hover { opacity: 1; color: var(--red); }
 /* ── Gate TIMELINE dropdown (the four ordered status gates) — steel panel + vertical
    hazard rail, NO orange halo (that stays for dialogs); monochrome progress states ── */
-.dropdown-menu.gt { width: 244px; min-width: 234px; max-width: 92vw; padding: 0; overflow: hidden; position: fixed; border: 1px solid var(--line); box-shadow: var(--shadow), 0 0 0 1px rgba(0,0,0,.4); }   /* MUST be position:fixed (a fixed box still anchors the absolute rail/connectors). `relative` here overrode the base .dropdown-menu's fixed → openDropdown's top/left measured from page flow, dumping the menu ~1 viewport below the fold (the "opens far below screen" bug). Width is explicit so the width:100% rows don't stretch it to the viewport. */
+.dropdown-menu.gt { width: max-content; min-width: 180px; max-width: 92vw; padding: 0; overflow: hidden; position: fixed; border: 1px solid var(--line); box-shadow: var(--shadow), 0 0 0 1px rgba(0,0,0,.4); }   /* MUST be position:fixed (a fixed box still anchors the absolute rail/connectors). `relative` here overrode the base .dropdown-menu's fixed → openDropdown's top/left measured from page flow, dumping the menu ~1 viewport below the fold (the "opens far below screen" bug). `width:max-content` hugs the widest row's label (the menu was a fixed 244px regardless of content); the max-width clamp keeps the width:100% rows from stretching it to the viewport. */
 .gt-haz { position: absolute; left: 0; top: 0; bottom: 0; width: 7px; background: repeating-linear-gradient(180deg, var(--yellow) 0 11px, #14181d 11px 22px); }
 .gt-cap { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.3px; font-weight: 700; font-size: 10px; color: var(--txt-3); padding: 10px 12px 4px 20px; }
 .gt-body { padding: 2px 10px 9px 18px; }
 .gt-row { position: relative; display: flex; align-items: center; gap: 11px; width: 100%; min-height: 40px; padding: 0 4px; text-align: left; background: none; border: 0; cursor: pointer; color: var(--txt-2); }
 .gt-row:hover { background: rgba(255,255,255,.04); border-radius: 8px; }
 .gt-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 8px; }
-.gt-line { position: absolute; left: 14px; top: 50%; bottom: 0; width: 2px; }
+.gt-line { position: absolute; left: 17px; top: 50%; height: 100%; width: 2px; }
 .gt-line.solid { background: #2f6b3e; }
 .gt-line.grad { background: linear-gradient(180deg, #2f6b3e, var(--accent)); }
-.gt-dash { position: absolute; left: 13px; top: 50%; bottom: 0; border-left: 2px dashed var(--line); }
+.gt-dash { position: absolute; left: 17px; top: 50%; height: 100%; border-left: 2px dashed var(--line); }
 .gt-node { position: relative; z-index: 1; width: 28px; height: 28px; flex: 0 0 auto; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: var(--panel-2); box-shadow: inset 0 0 0 1.5px var(--line); }
 .gt-node svg { width: 15px; height: 15px; }
 .gt-lbl { font-size: 12.5px; font-weight: 600; }
@@ -734,7 +782,6 @@ select.lf-in { appearance: none; cursor: pointer; }
 .gt-s .gt-lbl { color: var(--txt-3); font-style: italic; }
 .gt-a .gt-node { color: var(--on-orange); background: linear-gradient(180deg, #ff9038, var(--accent)); box-shadow: 0 0 0 3px var(--accent-soft); }
 .gt-a .gt-lbl { color: var(--accent); font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .6px; font-weight: 800; font-size: 13.5px; }
-.sortbtn.viewing { color: var(--accent); border-color: var(--accent-line); }
 
 /* ── Shop card (merged Work Orders + Service Orders + Inspections) ───────── */
 .shopbar { display: flex; align-items: center; gap: 6px; padding: 6px 10px 4px; flex-wrap: wrap; }
@@ -851,6 +898,23 @@ select.lf-in { appearance: none; cursor: pointer; }
 
 /* sections sit on their own sub-cards (§6.2 #5) — standard dark panel surface */
 .section { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
+/* Faded photo backdrop behind a standard-view section — the Account selfie, or an
+   OPEN work order's first photo. The image rides --photo (a Drive URL or an
+   existing record photo, fetched lazily only when this card renders) under a fully
+   TOKENIZED steel scrim, so it reads as a ghost behind the data-plate and themes
+   itself (dark / light / yard / ranch) for free. Static → nothing for
+   prefers-reduced-motion to disable. Tooltips/menus are position:fixed at body
+   level, so overflow:hidden here clips nothing real. */
+.section.has-photo { position: relative; overflow: hidden; }
+.section.has-photo > :not(.sec-photo) { position: relative; z-index: 1; }
+.sec-photo {
+  position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  background-image:
+    linear-gradient(180deg, color-mix(in srgb, var(--panel) 76%, transparent), color-mix(in srgb, var(--panel) 83%, transparent)),
+    var(--photo);
+  background-size: cover; background-position: center;
+  filter: grayscale(.5) contrast(.96);
+}
 /* section headers CENTERED (v2 build); right-side flags pin absolutely so the
    title stays true-center */
 .section > h4 { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--txt-3); margin-bottom: 8px; display: flex; align-items: center; justify-content: center; gap: 7px; position: relative; }
@@ -1096,7 +1160,7 @@ select.lf-in { appearance: none; cursor: pointer; }
 .fab svg { width: 21px; height: 21px; }
 .fab-badge { position: absolute; top: -3px; right: -3px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 99px;
   background: var(--accent); color: #1a1205; font-size: 11px; font-weight: 800; display: grid; place-items: center; box-shadow: 0 0 0 2px var(--bg); }
-.is-phone .fab-stack { bottom: calc(76px + env(safe-area-inset-bottom)); }   /* clear the mobile dock + home indicator */
+.is-phone .fab-stack { display: none; }   /* §M1 — Notifications + Requests live in the footer Tools menu on phones, not as floating FABs */
 @media (prefers-reduced-motion: reduce) { .fab:hover { transform: none; } }
 /* §18g Mr. Wrangler conversation rail — stamped data-plate chips above the FABs */
 .wr-rail { display: flex; flex-direction: column; align-items: flex-end; gap: 7px; margin-bottom: 4px; max-width: 240px; }
@@ -1297,7 +1361,7 @@ select.lf-in { appearance: none; cursor: pointer; }
 .pl-cap { height: 8px; width: 100%; flex: 0 0 auto; border-bottom: 1px solid #000;   /* THE signature — hi-vis caution band, matches the card cap + login band */
   background: repeating-linear-gradient(135deg, var(--yellow, #f5c542) 0 13px, #14181d 13px 26px); }
 .pl-cap.danger { background: repeating-linear-gradient(135deg, var(--red, #ff4242) 0 13px, #1a0808 13px 26px); }   /* abort/destroy popups */
-.pl-rivet { position: absolute; width: 6px; height: 6px; border-radius: 50%; z-index: 2; pointer-events: none;
+.pl-rivet { position: absolute; width: 6px; height: 6px; border-radius: 50%; z-index: 12; pointer-events: none;   /* top layer of the popup plate — above head/body/foot content */
   background: radial-gradient(circle at 35% 30%, #434c58, #0f1318); box-shadow: inset 0 0 0 1px rgba(0,0,0,.55); }
 .pl-rivet.tl { top: 18px; left: 12px; } .pl-rivet.tr { top: 18px; right: 12px; }
 .pl-rivet.bl { bottom: 12px; left: 12px; } .pl-rivet.br { bottom: 12px; right: 12px; }
@@ -1671,6 +1735,18 @@ select.nc-in { cursor: pointer; }
 .nc-pill { padding: 7px 13px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line); color: var(--txt-2); font-size: 12px; font-weight: 700; cursor: pointer; transition: background .12s, border-color .12s, color .12s; }
 .nc-pill:hover { border-color: var(--accent-line); }
 .nc-pill.on { background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent); }
+/* Notes field sharing its row with a red/gray PO-required toggle */
+.nc-notes-po { display: flex; gap: 8px; align-items: stretch; }
+.nc-notes-po .nc-in { flex: 1; min-width: 0; }
+.nc-po { flex: 0 0 auto; font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1px;
+  font-weight: 700; font-size: 11px; padding: 0 13px; border-radius: 9px; border: 1px solid var(--line);
+  background: var(--panel); color: var(--txt-3); cursor: pointer; white-space: nowrap; transition: color .12s, border-color .12s, background .12s; }
+.nc-po:hover { border-color: var(--red); color: var(--txt-2); }
+.nc-po.on { color: var(--red); border-color: var(--red); background: var(--red-bg); }
+.nc-po.req { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); animation: attnGlow 1.6s ease-in-out infinite; }   /* PO unanswered — required before save */
+.nc-po.req:hover { color: var(--accent); border-color: var(--accent); }
+.nc-po:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .nc-po { transition: none; } .nc-po.req { animation: none; box-shadow: 0 0 0 2px var(--accent-soft); } }
 /* customer account packet — selfie / signature / card */
 .nc-popup { width: 500px; max-height: 88vh; }
 .nc-popup .popup-body { overflow-y: auto; }
@@ -1691,7 +1767,6 @@ select.nc-in { cursor: pointer; }
 .nc-sigpad { width: 100%; height: 96px; border-radius: 9px; border: 1px solid var(--accent-line); background: #fff; touch-action: none; cursor: crosshair; }
 .nc-tile-act { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .nc-tile-act .pill, .nc-tile-act label.pill { font-size: 11px; padding: 6px 11px; cursor: pointer; }
-.cust-selfie { width: 30px; height: 30px; border-radius: 8px; object-fit: cover; border: 1px solid var(--line); flex: 0 0 auto; }
 .nc-ag-note { font-weight: 600; text-transform: none; letter-spacing: 0; color: var(--txt-3); }
 .nc-ag-ok { font-weight: 700; text-transform: none; letter-spacing: 0; color: var(--good, #1a9f57); }
 .nc-agreement { max-height: 168px; overflow-y: auto; white-space: pre-wrap; font-size: 11.5px; line-height: 1.5; color: var(--txt-2); background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 13px; -webkit-overflow-scrolling: touch; }
@@ -1750,6 +1825,8 @@ select.nc-in { cursor: pointer; }
 .ag-sigthumb { width: 100%; height: 96px; object-fit: contain; border: 1px solid var(--line); border-radius: 10px; background: #fbfcfd; }
 /* CAPTURE row: selfie tile + the BIG sign pad */
 .ag-capcap { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.5px; font-size: 10.5px; color: var(--txt-3); margin: 0 0 8px; }
+.ag-caphead { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 8px; }
+.ag-caphead .ag-capcap { margin: 0; }
 .ag-caprow { display: flex; gap: 11px; align-items: stretch; }
 .ag-selfiebtn { width: 120px; flex: 0 0 auto; border: 1.5px dashed var(--line); border-radius: 12px; background: var(--panel);
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--txt-3); cursor: pointer; overflow: hidden; }
@@ -1757,10 +1834,26 @@ select.nc-in { cursor: pointer; }
 .ag-selfiebtn:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
 .ag-selfiebtn .l { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.3px; font-size: 10.5px; }
 .ag-selfiebtn .ag-selfie { width: 100%; height: 100%; object-fit: cover; }
-.ag-pad { flex: 1; min-width: 0; height: 210px; width: auto; border: 1.5px dashed var(--line); border-radius: 12px;
-  background: radial-gradient(circle at 50% 40%, var(--panel-2), var(--panel)); touch-action: none; cursor: crosshair; }
+/* live selfie camera — auto-on; one tap snaps the photo (file-input fallback when absent) */
+.ag-selfiebtn { position: relative; }
+.ag-selfiebtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ag-cam-feed { display: none; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+.ag-cam-fallback { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 8px; }
+.ag-selfiebtn.live .ag-cam-feed { display: block; }
+.ag-selfiebtn.live .ag-cam-fallback { display: none; }
+.ag-cam-cap { position: absolute; left: 0; right: 0; bottom: 0; padding: 4px 6px; text-align: center; background: var(--panel-2);
+  border-top: 1px solid var(--line); color: var(--txt-2); font-family: 'Saira Condensed', system-ui, sans-serif;
+  text-transform: uppercase; letter-spacing: 1.2px; font-size: 9.5px; }
+.ag-cam-hint { display: none; }
+.ag-selfiebtn.live .ag-cam-hint { display: block; }
+.ag-pad { flex: 1; min-width: 0; height: 160px; width: auto; border: 1.5px dashed var(--line); border-radius: 12px;
+  background: radial-gradient(circle at 50% 40%, var(--panel-2), var(--panel)); touch-action: none;
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='22'%3E%3Ccircle cx='11' cy='11' r='7' fill='none' stroke='%23ff7a1a' stroke-width='2'/%3E%3Ccircle cx='11' cy='11' r='1.6' fill='%23ff7a1a'/%3E%3C/svg%3E") 11 11, crosshair; }
 .ag-acceptrow { display: flex; gap: 9px; margin: 13px 0 0; }
 .ag-acceptrow .pill.c-commit { flex: 1; justify-content: center; }
+/* saddle-stitch seam between the card field and the held-agreement capture in the +Card panel */
+.ag-cardsplit { height: 0; margin: 16px 0 4px; border-top: 1.5px dashed var(--tan, #c2925a);
+  border-image: repeating-linear-gradient(90deg, var(--tan, #c2925a) 0 7px, transparent 7px 13px) 1; }
 @media (prefers-reduced-motion: reduce) { .ag-tab { transition: none; } }
 /* Stripe payment UI */
 .pay-cap { font-size: 11px; font-weight: 700; color: var(--txt-3); text-transform: uppercase; letter-spacing: .3px; margin: 0 0 6px; }
@@ -1884,7 +1977,7 @@ select.nc-in { cursor: pointer; }
   background: repeating-linear-gradient(135deg, var(--yellow, #f5c542) 0 13px, #14181d 13px 26px);
   border-bottom: 1px solid #000;
 }
-.login-box .rivet { position: absolute; width: 6px; height: 6px; border-radius: 50%;
+.login-box .rivet { position: absolute; width: 6px; height: 6px; border-radius: 50%; z-index: 12;   /* top layer of the login plate */
   background: radial-gradient(circle at 35% 30%, #434c58, #0f1318); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .55); }
 .login-box .rivet.tl { top: 20px; left: 14px; } .login-box .rivet.tr { top: 20px; right: 14px; }
 .login-box .rivet.bl { bottom: 13px; left: 14px; } .login-box .rivet.br { bottom: 13px; right: 14px; }
@@ -2499,7 +2592,7 @@ body.dragging .row.drop-ok { opacity: 1; }
   border-bottom:1px solid rgba(0,0,0,.6); pointer-events:none;
 }
 [data-theme="yard"] .col > .card::after {        /* four corner rivets bolting the plate down */
-  content:''; position:absolute; inset:0; z-index:5; pointer-events:none; border-radius:inherit;
+  content:''; position:absolute; inset:0; z-index:12; pointer-events:none; border-radius:inherit;   /* rivets are the TOP layer of the plate */
   background:
     radial-gradient(circle at 12px 15px, var(--rivet) 0 1.4px, var(--rivet-pit) 1.7px 3px, transparent 3.4px),
     radial-gradient(circle at calc(100% - 12px) 15px, var(--rivet) 0 1.4px, var(--rivet-pit) 1.7px 3px, transparent 3.4px),
@@ -2595,7 +2688,7 @@ body.dragging .row.drop-ok { opacity: 1; }
   border-bottom:1px solid rgba(0,0,0,.6); pointer-events:none;
 }
 [data-theme="bluedsteel"] .col > .card::after {   /* four corner rivets — same as Yard, blued */
-  content:''; position:absolute; inset:0; z-index:5; pointer-events:none; border-radius:inherit;
+  content:''; position:absolute; inset:0; z-index:12; pointer-events:none; border-radius:inherit;   /* rivets are the TOP layer of the plate — never under a badge/text/icon */
   background:
     radial-gradient(circle at 12px 15px, var(--rivet) 0 1.4px, var(--rivet-pit) 1.7px 3px, transparent 3.4px),
     radial-gradient(circle at calc(100% - 12px) 15px, var(--rivet) 0 1.4px, var(--rivet-pit) 1.7px 3px, transparent 3.4px),
@@ -2634,6 +2727,7 @@ body.dragging .row.drop-ok { opacity: 1; }
 /* search/sort sub-header (.listbar) — a clean solid dark strip so the floor/card
    texture never bleeds through the controls (Jac) */
 [data-theme="bluedsteel"] .listbar { background: linear-gradient(180deg, #0c1320 80%, transparent); }
+[data-theme="bluedsteel"] .card > .listbar { background: #0c1320; }
 
 /* global search bar (.searchwrap, the top "Search everything…") — was a flat panel;
    now a blued-steel plate: the same plate material + a machined top lip as the cards,

@@ -1,42 +1,44 @@
 #!/bin/bash
-# SessionStart hook — restore clasp (Apps Script CLI) credentials from an environment secret
-# so the agent can deploy the gitignored backend (`clasp push`) in Claude Code on the web.
-#
-# NOTHING SECRET IS COMMITTED. The credentials come from an env secret you set on the
-# environment (see docs/backend-clasp-setup.md):
-#   • CLASPRC_JSON_B64 — base64 of your local ~/.clasprc.json   (recommended)
-#   • CLASPRC_JSON     — the raw contents of ~/.clasprc.json    (fallback)
-#
-# Safe everywhere: if no secret is set (e.g. your local machine), it does nothing and never
-# touches an existing ~/.clasprc.json. It also never fails the session.
-set -uo pipefail
+# Rental Wrangler — Claude Code on the web: clasp DEPLOY BRIDGE bootstrap.
+# Wires up clasp so the agent can deploy the Apps Script backend (gitignored
+# Code.gs) without manual pasting. It is a safe no-op unless CLASPRC_JSON_B64
+# (or raw CLASPRC_JSON) is set — a Google clasp credential held ONLY as an
+# environment secret in the env settings, never in this repo or chat.
+# See docs/handoffs/backend-deploy-via-clasp.md.
+set -euo pipefail
 
-creds=""
+# Only meaningful in the remote (Claude Code on the web) environment.
+if [ "${CLAUDE_CODE_REMOTE:-}" != "true" ]; then exit 0; fi
+
+# Resolve the clasp credential from either CLASPRC_JSON_B64 (preferred — base64
+# survives env-var newline/quoting cleanly) or raw CLASPRC_JSON. Held ONLY as an
+# environment secret in the env settings, never in this repo or chat.
+cred=""
 if [ -n "${CLASPRC_JSON_B64:-}" ]; then
-  creds="$(printf '%s' "$CLASPRC_JSON_B64" | base64 -d 2>/dev/null || true)"
+  cred="$(printf '%s' "$CLASPRC_JSON_B64" | base64 -d 2>/dev/null || true)"
 elif [ -n "${CLASPRC_JSON:-}" ]; then
-  creds="${CLASPRC_JSON}"
+  cred="${CLASPRC_JSON}"
 fi
 
-if [ -z "$creds" ]; then
-  echo "clasp: no CLASPRC_JSON(_B64) secret set — skipping backend auth (backend deploys stay manual)."
-  exit 0
+# Sanity-check it decoded to a JSON object before writing — guards against a
+# placeholder/garbage secret silently clobbering ~/.clasprc.json with junk.
+case "$cred" in
+  *'{'*'}'*) : ;;
+  *)
+    echo "clasp deploy bridge: no valid clasp credential configured (set CLASPRC_JSON_B64 to the base64 of a clasp-login ~/.clasprc.json); skipping — clasp will be unauthenticated."
+    exit 0
+    ;;
+esac
+
+# 1) Write the clasp credential so clasp is authenticated for this session.
+printf '%s' "$cred" > "$HOME/.clasprc.json"
+chmod 600 "$HOME/.clasprc.json"
+
+# 2) Bind a working dir to the Apps Script project (Script ID from env).
+if [ -n "${APPS_SCRIPT_ID:-}" ]; then
+  mkdir -p "$HOME/rw-backend"
+  printf '{"scriptId":"%s","rootDir":"%s"}\n' "$APPS_SCRIPT_ID" "$HOME/rw-backend" > "$HOME/rw-backend/.clasp.json"
 fi
 
-# Safety: on a non-remote (local) machine that already has a clasp login, leave it untouched.
-target="$HOME/.clasprc.json"
-if [ "${CLAUDE_CODE_REMOTE:-}" != "true" ] && [ -f "$target" ]; then
-  echo "clasp: local ~/.clasprc.json present — leaving your existing login untouched."
-  exit 0
-fi
-
-printf '%s' "$creds" > "$target"
-chmod 600 "$target"
-
-if command -v clasp >/dev/null 2>&1; then
-  who="$(clasp show-authorized-user 2>&1 | head -2 | tr '\n' ' ' || true)"
-  echo "clasp: credentials restored — ${who:-(could not verify; check the secret)}"
-else
-  echo "clasp: credentials restored (clasp not on PATH; install @google/clasp to deploy)."
-fi
-exit 0
+# clasp itself is installed lazily at deploy time (keeps session start instant).
+echo "clasp deploy bridge: credential wired (~/.clasprc.json), project at ~/rw-backend. To deploy the backend, see docs/handoffs/backend-deploy-via-clasp.md."
