@@ -283,6 +283,43 @@ try {
     ok(T.base64PhotoTargets().length === 0, 'base64PhotoTargets: empty after a full offload pass (idempotent)');
     T.DATA.inspections.pop(); T.IDX.insp.delete('INS-OFFLOAD'); T.DATA.workOrders.pop(); T.IDX.wo.delete('WO-OFFLOAD');   // restore
 
+    // 15) wrStore — the IndexedDB layer for the Wrangler rail (real round-trips)
+    const S = T.wrStore;
+    const chat = { id: 'wc-test-1', title: 'hi', ts: 1, messages: [{ role: 'user', content: 'yo', images: [{ blobKey: 'b_wc-test-1_0' }] }] };
+    await S.putChat(chat);
+    const got = await S.getChat('wc-test-1');
+    ok(got && got.id === 'wc-test-1' && got.messages[0].images[0].blobKey === 'b_wc-test-1_0', 'wrStore: putChat/getChat round-trip keeps the message ref');
+    const listed = await S.listChats();
+    ok(Array.isArray(listed) && listed.some((c) => c.id === 'wc-test-1'), 'wrStore: listChats returns the stored chat');
+    const blob = new Blob([new Uint8Array([1, 2, 3, 4])], { type: 'image/jpeg' });
+    await S.putBlob('b_wc-test-1_0', blob);
+    const gotBlob = await S.getBlob('b_wc-test-1_0');
+    ok(gotBlob instanceof Blob && gotBlob.size === 4, 'wrStore: putBlob/getBlob round-trip returns the Blob (binary, not base64)');
+    await S.delBlob('b_wc-test-1_0');
+    ok((await S.getBlob('b_wc-test-1_0')) === undefined, 'wrStore: delBlob removes the blob');
+    await S.delChat('wc-test-1');
+    ok((await S.getChat('wc-test-1')) === undefined, 'wrStore: delChat removes the chat');
+    const est = await S.estimate();
+    ok(est && typeof est.usage === 'number' && typeof est.quota === 'number', 'wrStore: estimate() returns usage/quota numbers');
+
+    // 16) Drive offload + eviction for the Wrangler store (the size guarantee)
+    const wrUp = async (p) => ({ ok: true, url: 'https://drive/' + encodeURIComponent(p.name) });
+    const ob = new Blob([new Uint8Array([9, 9, 9, 9, 9])], { type: 'image/png' });
+    await S.putBlob('b_wc-off_0', ob);
+    const offChat = { id: 'wc-off', ts: 2, messages: [{ role: 'user', content: 'x', images: [{ blobKey: 'b_wc-off_0' }] }] };
+    await S.putChat(offChat);
+    const did = await T.wrOffloadChatImages(offChat, wrUp);
+    ok(did === true && offChat.messages[0].images[0].driveUrl && !offChat.messages[0].images[0].blobKey, 'wrOffloadChatImages: un-synced blob → Drive URL set, local blobKey cleared');
+    ok((await S.getBlob('b_wc-off_0')) === undefined, 'wrOffloadChatImages: local blob dropped after offload (re-fetchable from driveUrl)');
+    ok((await T.wrOffloadChatImages(offChat, wrUp)) === false, 'wrOffloadChatImages: idempotent — a synced chat is a no-op');
+    // eviction: a synced blob is a safe cache drop; an un-synced one needs unsyncedOk
+    await S.putBlob('b_wc-ev_0', ob); await S.putBlob('b_wc-ev_1', ob);
+    const evChat = { id: 'wc-ev', ts: 3, messages: [{ role: 'user', content: 'y', images: [{ blobKey: 'b_wc-ev_0', driveUrl: 'https://drive/x' }, { blobKey: 'b_wc-ev_1' }] }] };
+    ok((await T.wrEvictChatBlobs(evChat, false)) === 1, 'wrEvictChatBlobs: drops only the synced blob when unsyncedOk=false (text untouched)');
+    ok(evChat.messages[0].content === 'y' && evChat.messages[0].images.length === 2, 'wrEvictChatBlobs: message text + refs preserved — only the local blob is freed');
+    ok((await T.wrEvictChatBlobs(evChat, true)) === 1, 'wrEvictChatBlobs: drops the un-synced blob only as a last resort (unsyncedOk=true)');
+    await S.delChat('wc-off'); await S.delChat('wc-ev');
+
     return out;
   });
 
