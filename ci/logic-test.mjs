@@ -320,6 +320,16 @@ try {
     ok((await T.wrEvictChatBlobs(evChat, true)) === 1, 'wrEvictChatBlobs: drops the un-synced blob only as a last resort (unsyncedOk=true)');
     await S.delChat('wc-off'); await S.delChat('wc-ev');
 
+    // 17) driveViewUrl — uploadCapture's file-view page → an embeddable <img> URL via fileId
+    ok(T.driveViewUrl({ ok: true, url: 'https://drive.google.com/file/d/FID/view', fileId: 'FID' }) === 'https://drive.google.com/uc?export=view&id=FID', 'driveViewUrl: builds the embeddable uc?export=view form from fileId');
+    ok(T.driveViewUrl({ ok: true, url: 'https://x/y' }) === 'https://x/y', 'driveViewUrl: falls back to res.url when no fileId');
+    ok(T.driveViewUrl(null) === '' && T.driveViewUrl({}) === '', 'driveViewUrl: empty when nothing usable');
+    // integration: an offload that returns a fileId stores the EMBEDDABLE url (not the file-view page)
+    const fidUp = async (p) => ({ ok: true, url: 'https://drive.google.com/file/d/Z9/view', fileId: 'Z9' });
+    const recE = { photo: 'data:image/jpeg;base64,EEE' };
+    await T.offloadPhotoNow(recE, 'photo', 'ne', null, null, fidUp);
+    ok(recE.photo === 'https://drive.google.com/uc?export=view&id=Z9', 'offloadPhotoNow: stores the embeddable Drive URL when the backend returns a fileId');
+
     return out;
   });
 
