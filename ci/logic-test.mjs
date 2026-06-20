@@ -477,6 +477,33 @@ try {
     ok(JSON.stringify(T.pageDefaultSlice('layout').value) === JSON.stringify({ footers: {} }), 'Reset page (Layout) restores all footers shown');
     ok(T.pageDefaultSlice('logins') === null && T.pageDefaultSlice('notifications') === null, 'tabs with no settings slice (Logins/planned) have no Reset page');
 
+    // 29) §5.4d DATE SEARCH — overlap (rentals), point-in-range (dated cards), invoice
+    //     either/or, no-op on date-less cards, negation — all through the real matchers.
+    const rA = T.IDX.rental.get('R-A');   // window 2026-06-02 → 2026-06-12
+    ok(T.dateTermHits('rentals', rA, '2026-06-05') === true, 'date: a single day inside the rental window hits (overlap)');
+    ok(T.dateTermHits('rentals', rA, '2026-06-20') === false, 'date: a day outside the window misses');
+    ok(T.dateTermHits('rentals', rA, '2026-06-10..2026-06-30') === true, 'date: a range overlapping the tail of the window hits');
+    ok(T.dateTermHits('rentals', rA, '2026-06-13..2026-06-30') === false, 'date: a range starting after the window ends misses');
+    ok(T.dateTermHits('rentals', rA, '2026-05-01..2026-12-31') === true, 'date: a range that fully contains the window hits (overlap, not containment)');
+    const rB = T.IDX.rental.get('R-B');   // window 2026-06-15 → 2026-06-22 (extends past the query range)
+    ok(T.dateTermHits('rentals', rB, '2026-06-18..2026-06-20') === true, 'date: a rental spanning PAST the searched range still hits (Jac: overlapping)');
+    const iv = T.IDX.invoice.get('01i02Ju26');   // issued 2026-06-02, due 2026-06-16
+    ok(T.dateTermHits('invoices', iv, '2026-06-02') === true, 'date: an invoice matches on its ISSUED date');
+    ok(T.dateTermHits('invoices', iv, '2026-06-16') === true, 'date: an invoice matches on its DUE date too (either/or, per Jac)');
+    ok(T.dateTermHits('invoices', iv, '2026-06-09') === false, 'date: a day between issued and due (matching neither) misses');
+    const insp = T.IDX.insp.get('INS-1');   // dated 2026-06-01
+    ok(T.dateTermHits('inspections', insp, '2026-05-30..2026-06-03') === true && T.dateTermHits('inspections', insp, '2026-06-02') === false, 'date: a point-dated card matches its own date within range only');
+    const file = (T.DATA.files || []).find((f) => f.reviewByDate);
+    if (file) ok(T.dateTermHits('files', file, file.reviewByDate) === true, 'date: a company file matches its review-by date');
+    // integration through rowMatches — no-op on date-less cards + negation
+    const aUnit2 = T.DATA.units[0];
+    const dPos = [{ col: '__date', value: '2026-06-05', neg: false }];
+    ok(T.rowMatches('units', aUnit2, '', dPos) === true, 'date: a date filter is a NO-OP on date-less cards (units stay shown)');
+    ok(T.rowMatches('rentals', rA, '', dPos) === true && T.rowMatches('rentals', rB, '', dPos) === false, 'date: rowMatches keeps the overlapping rental, drops the non-overlapping one');
+    const dNeg = [{ col: '__date', value: '2026-06-05', neg: true }];
+    ok(T.rowMatches('rentals', rA, '', dNeg) === false && T.rowMatches('rentals', rB, '', dNeg) === true, 'date: a NEGATED date filter excludes the match and keeps the rest');
+    ok(T.rowMatches('units', aUnit2, '', dNeg) === true, 'date: a NEGATED date filter is STILL a no-op on date-less cards (never excluded)');
+
     return out;
   });
 

@@ -1427,6 +1427,7 @@ const state = {
   focusedCard: null,   // clicked card → orange border (§0.1 visual feedback, no anchor)
   transportArm: null,  // §20 route-rail two-click selector: { rentalId, unitId, node } — the FIRST stop tapped (armed orange); a second stop locks the type
   winpicker: null,     // { rentalId, monthISO, anchor } — the rental-window range picker
+  datesearch: null,    // { scope, monthISO, anchor, start, end, editIndex } — §5.4d standalone date/range SEARCH picker (type "date"→Enter)
   availWin: null,      // §10 persistent window scope for the "available" search (set by the picker; outlives it)
   filterTerms: [],            // §5.4 — AND-narrowing filter terms (type + Enter)
   unitPick: null,             // { ids, from } — Invoice +WO narrows the Units list to the invoice's linked units (Phase 4)
@@ -1540,7 +1541,7 @@ function closeTab(id) {
   if (state.activeTabId === id) state.activeTabId = state.tabs.length ? state.tabs[Math.max(0, i - 1)].id : null;
   render();
 }
-function closeAll() { state.tabs = []; state.activeTabId = null; state.searchMode = false; state.query = ''; state.winpicker = null; render(); }
+function closeAll() { state.tabs = []; state.activeTabId = null; state.searchMode = false; state.query = ''; state.winpicker = null; state.datesearch = null; render(); }
 /* Wave 2 (Jac): QUOTES SURVIVE. Nothing is swept on tab close / session switch —
    a Quote-status rental (or any fresh record) lives until Completed/Cancelled
    or deliberately deleted. The `mock` flag stays purely a UI affordance gate
@@ -1796,6 +1797,19 @@ function availSearchActive() {
   return ['units', 'categories'].some((c) => s.cards[c] && AVAIL_RE.test(s.cards[c].search || ''))
     || AVAIL_RE.test(state.query || '') || (state.filterTerms || []).some((t) => /^(?:un)?available$/.test(t.t));
 }
+/* §5.4d — DATE SEARCH. A `__date` filter term (value 'ISO' or 'ISO..ISO', built by
+   the date picker — type "date"/"dates" → Enter) matches records that HAVE a date:
+   rentals by WINDOW OVERLAP with the picked range, point-dated cards if ANY of their
+   dates lands in the range (invoices test issued OR due). Cards with no date of their
+   own are left alone — the term is stripped there so it filters neither in nor out. */
+const DATE_CARDS = new Set(['rentals', 'invoices', 'workOrders', 'inspections', 'expenses', 'files']);
+function recordDateMatch(card, rec, qFrom, qTo) {
+  if (card === 'rentals') { const s = rec.startDate; if (!s) return false; const e = rec.endDate || s; return s <= qTo && e >= qFrom; }   // window overlap
+  const pts = card === 'invoices' ? [rec.date, rec.dueDate] : card === 'files' ? [rec.reviewByDate] : [rec.date];
+  return pts.some((d) => d && d >= qFrom && d <= qTo);
+}
+function dateTermHits(card, rec, value) { const [a, b] = String(value).split('..'); return recordDateMatch(card, rec, a, b || a); }
+function dateScopedTerms(card, terms) { return DATE_CARDS.has(card) ? (terms || []) : (terms || []).filter((t) => t.col !== '__date'); }
 function rowMatches(card, rec, query, terms) {
   const ql = (query || '').toLowerCase();
   const tl = (terms || []).map((t) => t.t);
@@ -1814,17 +1828,19 @@ function rowMatches(card, rec, query, terms) {
   // "Ready" can't also catch "Not Ready"; plain text terms fall to the blob substring match.
   // §13.4 — a NOT term excludes on its own; positive terms of the SAME column OR together
   // (toggle several graph slices = match any), while different columns still AND.
+  const terms2b = dateScopedTerms(card, terms2);   // §5.4d — drop date terms on date-less cards (no-op)
   const byCol = {};
-  for (const t of terms2) {
+  for (const t of terms2b) {
     if (!t.col) continue;
     if (t.neg) { if (totColMatch(card, rec, t.col, t.value)) return false; }
     else (byCol[t.col] = byCol[t.col] || []).push(t.value);
   }
   for (const col in byCol) { if (!byCol[col].some((v) => totColMatch(card, rec, col, v))) return false; }
-  return blobMatches(IDX.search.get(card + ':' + idOf(card, rec)), q2, terms2.filter((t) => !t.col));
+  return blobMatches(IDX.search.get(card + ':' + idOf(card, rec)), q2, terms2b.filter((t) => !t.col));
 }
 // A1 — exact match for a footer-chip's {col, value}, per record (mirrors applyTotalFilter).
 function totColMatch(card, rec, col, value) {
+  if (col === '__date') return dateTermHits(card, rec, value);   // §5.4d date-picker filter term
   if (col === '__wo') return DATA.workOrders.some((w) => w.unitId === rec.unitId && w.phase !== 'Complete' && !w.cancelled && (value === 'open' || w.phase === 'Part Ordered' || (w.lineItems || []).some((l) => l.phase === 'Part Ordered')));
   if (col === '__cond') return rec.inspectionStatus === value;
   if (col === '__svc') { const s = topServiceForUnit(rec); return !!rec.washRequested || !!(s && s.remaining < 0); }   // service-due: overdue service or wash requested
@@ -1881,6 +1897,10 @@ function colFilterLabel(card, col, value) {
 }
 function addFilterTerm(scope, raw) {
   const v = (raw || '').trim().toLowerCase(); if (!v) return;
+  if (v === 'date' || v === 'dates') {   // §5.4d — the keyword opens the date/range picker instead of pinning the word
+    if (scope === 'global') state.query = ''; else activeSession().cards[scope].search = '';
+    return openDateSearch(scope);
+  }
   const arr = termsFor(scope);
   if (!arr.some((ft) => ft.t === v)) arr.push({ t: v, neg: false });
   if (scope === 'global') state.query = ''; else activeSession().cards[scope].search = '';
@@ -1892,7 +1912,8 @@ function toggleFilterNeg(scope, i) { const arr = termsFor(scope); if (arr[i]) ar
 /** A pinned filter-term pill: leading ○ toggle (→ red − = NOT) + label. The whole
     pill is click-to-remove (js-ft-x); the ○ toggle is checked first so it wins. */
 function filterTermPill(ft, i, scope) {
-  return `<span class="filt-term${ft.neg ? ' neg' : ''} js-ft-x" data-scope="${esc(scope)}" data-i="${i}" data-tip="Click to remove">`
+  const isDate = ft.col === '__date';   // §5.4d date chip: whole pill re-opens the picker (edit), not remove
+  return `<span class="filt-term${ft.neg ? ' neg' : ''}${isDate ? ' is-date js-date-edit' : ' js-ft-x'}" data-scope="${esc(scope)}" data-i="${i}" data-tip="${isDate ? 'Click to change the date' : 'Click to remove'}">`
     + `<button class="ft-neg js-ft-neg" data-scope="${esc(scope)}" data-i="${i}" data-tip="${ft.neg ? 'Excluding — click to include' : 'Including — click to exclude'}"></button>`
     + `<span class="lbl">${esc(ft.t)}</span>`
     + `</span>`;
@@ -5236,7 +5257,7 @@ function shopCardEl(cardDef, session, forcedSeg) {
 // serviceOrders→units search blob. Lets the graph carousel's col-tagged terms filter the
 // shop list (the old path was blob-only and ignored col terms).
 function shopItemMatches(it, query, terms) {
-  const card = it.type, rec = it.rec, terms2 = terms || [];
+  const card = it.type, rec = it.rec, terms2 = dateScopedTerms(card, terms || []);   // §5.4d per-type date scoping (Shop mixes WOs/inspections with date-less types)
   const byCol = {};
   for (const t of terms2) { if (!t.col) continue; if (t.neg) { if (totColMatch(card, rec, t.col, t.value)) return false; } else (byCol[t.col] = byCol[t.col] || []).push(t.value); }
   for (const col in byCol) { if (!byCol[col].some((v) => totColMatch(card, rec, col, v))) return false; }
@@ -6951,8 +6972,9 @@ let _ovScroll = {}, _ovLastKind = null;   // keep a popup-body's scroll across i
    stack stays balanced. Phone-only — desktop keeps Esc/click. Wired in boot(). ── */
 let backGuard = false, backConsuming = false;
 let swipeFired = false;   // §M1/§M3 — a footer (column) or grid (Back/Fwd) swipe sets this so the trailing click is swallowed once
-function anyDismissable() { return !!(state.overlay || state.winpicker || state.chat.open || state.wrangler.open); }
+function anyDismissable() { return !!(state.overlay || state.winpicker || state.datesearch || state.chat.open || state.wrangler.open); }
 function dismissTopSheet() {
+  if (state.datesearch) { closeDateSearch(); return true; }
   if (state.winpicker) { closeWinPicker(); return true; }
   if (state.overlay) { closeOverlay(); return true; }
   if (state.wrangler.open) { wranglerRailSnapshot(); state.wrangler.open = false; render(); return true; }   // mirror js-wr-close
@@ -8817,8 +8839,15 @@ function render() {
       if (!phone) positionWinPicker(fl);   // phone: CSS pins it to the bottom edge, so skip the JS anchor
     } else state.winpicker = null;
   }
+  // §5.4d — the standalone date-search picker floats under the search bar (phone: bottom sheet)
+  if (state.datesearch) {
+    const phone = document.body.classList.contains('is-phone');
+    if (phone) { const bd = el('div', 'sheet-backdrop'); bd.dataset.sheetclose = 'date'; $('#app').appendChild(bd); }
+    const fl = el('div', 'datesearch-float'); fl.innerHTML = dateSearchEl(); $('#app').appendChild(fl);
+    if (!phone) positionDateSearch(fl);
+  }
   // §M3 — lock the column scroll behind any open sheet/overlay/dock on phones
-  document.body.classList.toggle('sheet-open', !!(state.overlay || state.winpicker || state.chat.open || state.wrangler.open));
+  document.body.classList.toggle('sheet-open', !!(state.overlay || state.winpicker || state.datesearch || state.chat.open || state.wrangler.open));
   syncBackGuard();   // §M3 — keep the Android back-button guard in step with what's open
   // §17 — the internal team dock floats bottom-right above the bar when open
   if (state.chat.open) { const d = el('div', 'chat-dock', ''); d.dataset.drop = 'chat'; d.innerHTML = chatDockEl(); $('#app').appendChild(d); }
@@ -9389,6 +9418,11 @@ function onClick(e) {
   // Units / Categories / Customers cards (browse, toggle, open-to-inspect, drag-to-
   // select). It closes only on a click truly OUTSIDE those cards, the picker, and the
   // trigger. (Drags never reach here — their trailing click is swallowed at 4925.)
+  // §5.4d — the date-search picker closes on a click outside the calendar, the search
+  // bars, and the date chips (so editing a chip keeps it open).
+  if (state.datesearch && !closest('.winpicker') && !closest('.searchwrap') && !closest('.mini-searchwrap') && !closest('.js-date-edit')) {
+    state.datesearch = null; render(); return;
+  }
   if (state.winpicker
       && !closest('.winpicker')
       && !closest('.js-open-winpicker')
@@ -9623,6 +9657,7 @@ function onClick(e) {
   }
   if (closest('.js-clear')) return clearSearch();
   if (closest('.js-ft-neg')) { const b = closest('.js-ft-neg'); e.stopPropagation(); return toggleFilterNeg(b.dataset.scope, Number(b.dataset.i)); }
+  if (closest('.js-date-edit')) { const b = closest('.js-date-edit'); e.stopPropagation(); return openDateSearch(b.dataset.scope, Number(b.dataset.i)); }   // §5.4d re-open the picker to change the date
   if (closest('.js-ft-x')) { const b = closest('.js-ft-x'); e.stopPropagation(); return removeFilterTerm(b.dataset.scope, Number(b.dataset.i)); }
   if (closest('.js-closeall')) return closeAll();
   if (closest('.js-closetab')) { e.stopPropagation(); return closeTab(closest('.js-closetab').dataset.tab); }
@@ -9789,9 +9824,16 @@ function onClick(e) {
   if (closest('.js-wp-save')) { e.stopPropagation(); return winPickSave(); }
   if (closest('.js-wp-today')) { e.stopPropagation(); return winPickToday(); }
   if (closest('.js-wp-done')) { e.stopPropagation(); return closeWinPicker(); }
+  // §5.4d date-search picker
+  if (closest('.js-ds-day')) { e.stopPropagation(); return dsPickDay(closest('.js-ds-day').dataset.iso); }
+  if (closest('.js-ds-prev')) { e.stopPropagation(); return dsMonth(-1); }
+  if (closest('.js-ds-next')) { e.stopPropagation(); return dsMonth(1); }
+  if (closest('.js-ds-today')) { e.stopPropagation(); return dsToday(); }
+  if (closest('.js-ds-clear')) { e.stopPropagation(); return dsClear(); }
+  if (closest('.js-ds-done')) { e.stopPropagation(); return dsDone(); }
   if (closest('.js-tl-blocker')) { e.stopPropagation(); const st = document.querySelector('.stalls'); if (st) st.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); attnFlash('.stall .pill.dvd'); return; }
   if (closest('.js-open-winpicker')) { e.stopPropagation(); const rec = closest('.js-open-winpicker').dataset.rec; return state.winpicker?.rentalId === rec ? closeWinPicker() : openWinPicker(rec); }
-  if (closest('[data-sheetclose]')) { e.stopPropagation(); return closeWinPicker(); }   // §M3 — tap the phone sheet backdrop to dismiss the winpicker
+  if (closest('[data-sheetclose]')) { e.stopPropagation(); return closest('[data-sheetclose]').dataset.sheetclose === 'date' ? closeDateSearch() : closeWinPicker(); }   // §M3 — tap the phone sheet backdrop to dismiss the picker
 
   // sort menu + direction toggle
   if (closest('.js-sortmenu')) { const b = closest('.js-sortmenu'); return openViewMenu(b.dataset.card, b); }
@@ -11931,6 +11973,93 @@ function positionWinPicker(fl) {
   fl.style.top = Math.round(top) + 'px';
 }
 
+/* ════════════════════════════════════════════════════════════════════════
+   §5.4d — DATE SEARCH PICKER. A standalone calendar that REUSES the rental
+   window-picker's look (.winpicker/.wp-*) but none of its rental/availability
+   coupling. Type "date"/"dates"→Enter (or click a date chip) to open; tap one
+   day or two to set a range; Done pins a `__date` filter term on the scope.
+   ════════════════════════════════════════════════════════════════════════ */
+function openDateSearch(scope, editIndex = null) {
+  let start = '', end = '';
+  if (editIndex != null) {
+    const ft = (termsFor(scope) || [])[editIndex];
+    if (ft && ft.col === '__date') { const [a, b] = String(ft.value).split('..'); start = a || ''; end = (b && b !== a) ? b : ''; }
+  }
+  state.datesearch = { scope, monthISO: firstOfMonthISO(start || TODAY_ISO), anchor: null, start, end, editIndex };
+  render();
+}
+function closeDateSearch() { state.datesearch = null; render(); }
+function dsMonth(delta) { const ds = state.datesearch; if (!ds) return; const d = parseISO(ds.monthISO); d.setMonth(d.getMonth() + delta); ds.monthISO = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`; render(); }
+function dsToday() { const ds = state.datesearch; if (!ds) return; ds.monthISO = firstOfMonthISO(TODAY_ISO); ds.start = TODAY_ISO; ds.end = ''; ds.anchor = TODAY_ISO; render(); }
+function dsClear() { const ds = state.datesearch; if (!ds) return; ds.start = ''; ds.end = ''; ds.anchor = null; render(); }
+function dsPickDay(iso) {
+  const ds = state.datesearch; if (!ds) return;
+  if (!ds.anchor || (ds.start && ds.end)) { ds.anchor = iso; ds.start = iso; ds.end = ''; }   // begin a fresh range
+  else {                                                                                       // close the range (either drag direction)
+    const a = ds.anchor;
+    if (parseISO(iso) - parseISO(a) >= 0) { ds.start = a; ds.end = iso; } else { ds.start = iso; ds.end = a; }
+    ds.anchor = null;
+  }
+  render();
+}
+function dsDone() {
+  const ds = state.datesearch; if (!ds) return;
+  const scope = ds.scope, arr = termsFor(scope);
+  if (!ds.start) {   // nothing picked → if editing, drop the chip; either way close
+    if (ds.editIndex != null && arr[ds.editIndex]) arr.splice(ds.editIndex, 1);
+    state.datesearch = null; return afterFilterChange(scope);
+  }
+  const from = ds.start, to = ds.end || ds.start;
+  const value = from === to ? from : from + '..' + to;
+  const label = from === to ? fmtShortDate(from) : `${fmtShortDate(from)} – ${fmtShortDate(to)}`;
+  const neg = (ds.editIndex != null && arr[ds.editIndex] && arr[ds.editIndex].neg) || false;
+  const term = { t: label, col: '__date', value, neg };
+  if (ds.editIndex != null && arr[ds.editIndex]) arr[ds.editIndex] = term;
+  else if (!arr.some((x) => x.col === '__date' && x.value === value)) arr.push(term);
+  state.datesearch = null; afterFilterChange(scope);
+}
+/** Render the standalone date-search calendar (reuses the .wp-* grid styling). */
+function dateSearchEl() {
+  const ds = state.datesearch;
+  const md = parseISO(ds.monthISO), y = md.getFullYear(), m = md.getMonth();
+  const startDow = new Date(y, m, 1).getDay(), daysIn = new Date(y, m + 1, 0).getDate();
+  const s = ds.start, e = ds.end, a = ds.anchor;
+  const lo = s && e ? (s < e ? s : e) : (s || a), hi = s && e ? (s < e ? e : s) : null;
+  let cells = '';
+  for (let i = 0; i < startDow; i++) cells += `<button class="wp-day empty" tabindex="-1"></button>`;
+  for (let day = 1; day <= daysIn; day++) {
+    const iso = isoOf(new Date(y, m, day));
+    let cls = 'wp-day js-ds-day';
+    if (iso === lo) cls += ' range-start';
+    if (hi && iso === hi) cls += ' range-end';
+    if (hi && iso > lo && iso < hi) cls += ' in-range';
+    if (a && iso === a && !hi) cls += ' range-start range-end';
+    if (iso === TODAY_ISO) cls += ' today';
+    cells += `<button class="${cls}" data-iso="${iso}">${day}</button>`;
+  }
+  const dows = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((d) => `<span class="wp-dow">${d}</span>`).join('');
+  const sel = s ? (e && e !== s ? `${fmtShortDate(s)} – ${fmtShortDate(e)}` : fmtShortDate(s)) : 'Pick a day · or a range';
+  return `<div class="winpicker datesearch">
+    <div class="ds-cap"><span class="ds-kicker">Filter by date</span><span class="ds-sel">${esc(sel)}</span></div>
+    <div class="wp-head"><span class="wp-month">${MONTH_NAMES[m]} ${y}</span>
+      <span class="wp-nav"><button class="js-ds-prev" data-tip="Previous month">‹</button><button class="js-ds-next" data-tip="Next month">›</button></span></div>
+    <div class="wp-grid">${dows}${cells}</div>
+    <div class="wp-foot">${ghostPill('Today', { js: 'js-ds-today' })}${ghostPill('Clear', { js: 'js-ds-clear' })}${actionPill('commit', 'Done', { js: 'js-ds-done' })}</div>
+  </div>`;
+}
+function positionDateSearch(fl) {
+  const ds = state.datesearch; if (!ds) { fl.style.display = 'none'; return; }
+  const anchor = ds.scope === 'global' ? document.querySelector('#globalsearch') : document.querySelector(`.mini-search[data-card="${ds.scope}"]`);
+  if (!anchor) { fl.style.display = 'none'; return; }
+  const tr = anchor.getBoundingClientRect();
+  const pw = fl.offsetWidth || 300, ph = fl.offsetHeight || 380;
+  const left = Math.max(10, Math.min(tr.left, window.innerWidth - pw - 10));
+  let top = tr.bottom + 6;                                       // open BELOW the bar (it lives at the top)
+  if (top + ph > window.innerHeight - 10) top = Math.max(10, tr.top - ph - 6);   // no room → flip above
+  fl.style.left = Math.round(left) + 'px';
+  fl.style.top = Math.round(top) + 'px';
+}
+
 /* ── inspection gated flow (§9): Wash → Checklist → Ready/Failed (+auto-WO) ── */
 function setInspWash(id, val) {
   const n = IDX.insp.get(id); if (!n) return;
@@ -12926,6 +13055,7 @@ function exposeTestApi() {
       computeTransportPrice, isFueledType, unitTransport, rentalTransport,
       wrValidatePlan, applyWranglerData, wrFunnel, invoiceMergeable, mergeInvoiceInto, parseWranglerAction,
       latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore, wranglerRailLoad, wrOffloadChatImages, wrEvictChatBlobs, driveViewUrl, mergeWranglerRails,
+      recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
       companyRevenueGoal, companyName, companyTagline, rentalRuleBlock, dueForCustomer, footerHidden, customFieldsFor, checklistFor, checklistRequired, applySettings, getStatus, pageDefaultSlice, __state: state };
   } catch (e) { /* no window (non-browser) */ }
