@@ -5309,12 +5309,82 @@ async function wrIngestImages(chatId, images) {
   return out;
 }
 /* Persist a rail snapshot to IndexedDB (ingesting its image blobs). Async +
-   LOUD on failure — the old silent localStorage catch is gone for good. */
+   LOUD on failure — the old silent localStorage catch is gone for good. Then run
+   the two offload triggers: a FILED chat's images go to Drive (they're in the
+   issue now), and the budget check keeps the store bounded. */
 async function wranglerRailPersist(snap) {
   try {
     for (const m of (snap.messages || [])) { if (m.images) m.images = await wrIngestImages(snap.id, m.images); }
     await wrStore.putChat(snap);
-  } catch (e) { toast('⚠ Couldn’t save this chat locally — ' + ((e && e.message) || 'storage error')); }
+  } catch (e) { toast('⚠ Couldn’t save this chat locally — ' + ((e && e.message) || 'storage error')); return; }
+  const online = typeof backendPassword !== 'undefined' && backendPassword;
+  if (online && (snap.messages || []).some((m) => m.filed)) wrOffloadChatImages(snap);   // on-file: free the local copies (safe — they ride the issue)
+  wrEnforceBudget();                                                                     // threshold: keep the store ≤ budget
+}
+// ── The storage guarantee: offload to Drive + bounded eviction (never overflow) ──
+const WR_LOCAL_BUDGET = 25 * 1024 * 1024;   // hard ceiling for the Wrangler store
+function wrRevoke(blobKey) { if (wrBlobUrls[blobKey]) { try { URL.revokeObjectURL(wrBlobUrls[blobKey]); } catch (e) {} delete wrBlobUrls[blobKey]; } }
+function wrBlobToDataUrl(blob) { return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => rej(r.error); r.readAsDataURL(blob); }); }
+/* Offload a chat's un-synced image blobs to Drive (online only): set driveUrl,
+   drop the local blob (it re-fetches from the URL). _upload is a test seam. */
+async function wrOffloadChatImages(chat, _upload) {
+  const upload = _upload || ((typeof backendPassword !== 'undefined' && backendPassword) ? ((p) => backendCall('uploadCapture', p)) : null);
+  if (!upload || !chat) return false;
+  let changed = false;
+  for (const m of (chat.messages || [])) for (const img of (m.images || [])) {
+    if (!img || typeof img !== 'object' || !img.blobKey || img.driveUrl) continue;
+    try {
+      const blob = await wrStore.getBlob(img.blobKey); if (!blob) continue;
+      const res = await upload({ dataUrl: await wrBlobToDataUrl(blob), name: 'wrchat_' + chat.id + '_' + img.blobKey });
+      if (res && res.ok && res.url) { await wrStore.delBlob(img.blobKey); wrRevoke(img.blobKey); img.driveUrl = res.url; delete img.blobKey; changed = true; }   // blob now lives on Drive
+    } catch (e) { /* leave the blob — never lose it */ }
+  }
+  if (changed) { try { await wrStore.putChat(chat); } catch (e) {} }
+  return changed;
+}
+/* Drop a chat's LOCAL image blobs to free space. Synced blobs (have a driveUrl)
+   are a SAFE cache drop — re-fetchable; un-synced is a lossy last resort. */
+async function wrEvictChatBlobs(chat, unsyncedOk) {
+  let n = 0;
+  for (const m of (chat.messages || [])) for (const img of (m.images || [])) {
+    if (!img || typeof img !== 'object' || !img.blobKey) continue;   // no local blob to drop
+    if (img.driveUrl || unsyncedOk) {
+      try { await wrStore.delBlob(img.blobKey); } catch (e) {}
+      wrRevoke(img.blobKey);
+      if (!img.driveUrl) img.gone = true;   // un-synced + dropped → image lost (render shows nothing); text/ref kept
+      delete img.blobKey;                   // local blob gone → not re-counted on a later pass
+      n++;
+    }
+  }
+  if (n) { try { await wrStore.putChat(chat); } catch (e) {} }   // persist the ref changes
+  return n;
+}
+/* Keep the Wrangler store ≤ WR_LOCAL_BUDGET so localStorage's silent overflow can
+   never recur — layered, loss-averse, loud: (1) images → Drive when online,
+   (2) synced-first blob eviction, (3) un-synced eviction + (4) oldest-text trim as
+   the unreachable backstop. Text is never dropped before every image is gone. */
+let _wrEnforcing = false;
+async function wrEnforceBudget() {
+  if (_wrEnforcing) return;
+  let usage; try { usage = (await wrStore.estimate()).usage || 0; } catch (e) { return; }
+  if (usage < WR_LOCAL_BUDGET * 0.6) return;                                    // comfortably under → nothing to do
+  _wrEnforcing = true;
+  const under = async () => { try { return ((await wrStore.estimate()).usage || 0) < WR_LOCAL_BUDGET * 0.6; } catch (e) { return true; } };
+  const over = async () => { try { return ((await wrStore.estimate()).usage || 0) >= WR_LOCAL_BUDGET; } catch (e) { return false; } };
+  try {
+    const oldest = [...state.wranglerRail].sort((a, b) => (a.ts || 0) - (b.ts || 0));
+    const online = typeof backendPassword !== 'undefined' && backendPassword;
+    if (online) { for (const c of oldest) { await wrOffloadChatImages(c); if (await under()) return; } }   // Layer 1
+    for (const c of oldest) { await wrEvictChatBlobs(c, false); if (await under()) return; }               // Layer 2 (synced-first, safe)
+    if (await over()) {                                                                                     // Layer 3 (lossy, LOUD)
+      let dropped = 0; for (const c of oldest) { dropped += await wrEvictChatBlobs(c, true); if (await under()) break; }
+      if (dropped) toast('⚠ Freed local space — ' + dropped + ' un-synced chat image' + (dropped === 1 ? '' : 's') + ' dropped. Reconnect to save them to Drive.');
+      if (await over()) {                                                                                   // Layer 4 (text backstop)
+        for (const c of oldest) { try { await wrStore.delChat(c.id); } catch (e) {} state.wranglerRail = state.wranglerRail.filter((x) => x.id !== c.id); if (await under()) break; }
+        toast('⚠ Trimmed the oldest chats to stay under the storage limit.'); render();
+      }
+    }
+  } finally { _wrEnforcing = false; }
 }
 /* Boot: migrate the legacy localStorage rail into IndexedDB (one-time), then load
    ALL stored chats into the in-memory rail (newest first). Keep-all retention —
@@ -11953,7 +12023,7 @@ function exposeTestApi() {
       cleanUnitName, planUnitMigration, applyUnitMigration, openMigrationPreview,
       computeTransportPrice, isFueledType, unitTransport, rentalTransport,
       wrValidatePlan, applyWranglerData, wrFunnel, invoiceMergeable, mergeInvoiceInto, parseWranglerAction,
-      latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore, wranglerRailLoad };
+      latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore, wranglerRailLoad, wrOffloadChatImages, wrEvictChatBlobs };
   } catch (e) { /* no window (non-browser) */ }
 }
 

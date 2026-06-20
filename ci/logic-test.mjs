@@ -302,6 +302,24 @@ try {
     const est = await S.estimate();
     ok(est && typeof est.usage === 'number' && typeof est.quota === 'number', 'wrStore: estimate() returns usage/quota numbers');
 
+    // 16) Drive offload + eviction for the Wrangler store (the size guarantee)
+    const wrUp = async (p) => ({ ok: true, url: 'https://drive/' + encodeURIComponent(p.name) });
+    const ob = new Blob([new Uint8Array([9, 9, 9, 9, 9])], { type: 'image/png' });
+    await S.putBlob('b_wc-off_0', ob);
+    const offChat = { id: 'wc-off', ts: 2, messages: [{ role: 'user', content: 'x', images: [{ blobKey: 'b_wc-off_0' }] }] };
+    await S.putChat(offChat);
+    const did = await T.wrOffloadChatImages(offChat, wrUp);
+    ok(did === true && offChat.messages[0].images[0].driveUrl && !offChat.messages[0].images[0].blobKey, 'wrOffloadChatImages: un-synced blob → Drive URL set, local blobKey cleared');
+    ok((await S.getBlob('b_wc-off_0')) === undefined, 'wrOffloadChatImages: local blob dropped after offload (re-fetchable from driveUrl)');
+    ok((await T.wrOffloadChatImages(offChat, wrUp)) === false, 'wrOffloadChatImages: idempotent — a synced chat is a no-op');
+    // eviction: a synced blob is a safe cache drop; an un-synced one needs unsyncedOk
+    await S.putBlob('b_wc-ev_0', ob); await S.putBlob('b_wc-ev_1', ob);
+    const evChat = { id: 'wc-ev', ts: 3, messages: [{ role: 'user', content: 'y', images: [{ blobKey: 'b_wc-ev_0', driveUrl: 'https://drive/x' }, { blobKey: 'b_wc-ev_1' }] }] };
+    ok((await T.wrEvictChatBlobs(evChat, false)) === 1, 'wrEvictChatBlobs: drops only the synced blob when unsyncedOk=false (text untouched)');
+    ok(evChat.messages[0].content === 'y' && evChat.messages[0].images.length === 2, 'wrEvictChatBlobs: message text + refs preserved — only the local blob is freed');
+    ok((await T.wrEvictChatBlobs(evChat, true)) === 1, 'wrEvictChatBlobs: drops the un-synced blob only as a last resort (unsyncedOk=true)');
+    await S.delChat('wc-off'); await S.delChat('wc-ev');
+
     return out;
   });
 
