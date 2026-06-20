@@ -34,7 +34,7 @@ try {
   await page.goto('http://localhost:8000/#local', { waitUntil: 'domcontentloaded', timeout: 20000 });
   await page.waitForFunction(() => !!window.__rw, { timeout: 20000 });
 
-  const results = await page.evaluate(() => {
+  const results = await page.evaluate(async () => {
     const T = window.__rw; const out = []; const ok = (c, m) => out.push({ ok: !!c, m });
 
     // 1) CRITICAL — allocations keyed by a stable lid, immune to line reorder/splice
@@ -259,6 +259,29 @@ try {
     const wbInsp = { phase: 'Part Needed', inspectionId: 'INS-2', lineItems: [{ photo: 'data:part' }] };
     ok(T.woBackdrop(wbInsp) === (T.IDX.insp.get('INS-2')?.photo || ''), 'woBackdrop: linked failed-inspection photo wins over the part photo');
     ok(T.woBackdrop({ phase: 'Complete', inspectionId: 'INS-2', lineItems: [{ photo: 'data:part' }] }) === '', 'woBackdrop: dropped once the WO is Complete');
+
+    // 14) photo offload to Drive (de-bloat) — swap logic via an injected uploader stub
+    const okUp = async (p) => ({ ok: true, url: 'https://drive/' + p.name });
+    const failUp = async () => ({ ok: false });
+    const recA = { photo: 'data:image/jpeg;base64,AAA' };
+    ok((await T.offloadPhotoNow(recA, 'photo', 'n1', null, null, okUp)) === true && recA.photo === 'https://drive/n1', 'offloadPhotoNow: base64 → Drive URL on ok');
+    ok((await T.offloadPhotoNow(recA, 'photo', 'n1', null, null, okUp)) === false && recA.photo === 'https://drive/n1', 'offloadPhotoNow: idempotent — a URL is a no-op');
+    const recB = { photo: 'data:image/jpeg;base64,BBB' };
+    ok((await T.offloadPhotoNow(recB, 'photo', 'n2', null, null, failUp)) === false && recB.photo === 'data:image/jpeg;base64,BBB', 'offloadPhotoNow: failed upload leaves base64 untouched (never lose a photo)');
+    ok((await T.offloadPhotoNow({ photo: '' }, 'photo', 'n3', null, null, okUp)) === false, 'offloadPhotoNow: empty → no-op');
+    const recD = { photo: 'data:image/jpeg;base64,DDD' };
+    const staleUp = async () => { recD.photo = 'data:image/jpeg;base64,NEW'; return { ok: true, url: 'https://drive/stale' }; };   // re-captured mid-flight
+    ok((await T.offloadPhotoNow(recD, 'photo', 'n4', null, null, staleUp)) === false && recD.photo === 'data:image/jpeg;base64,NEW', 'offloadPhotoNow: stale-guard — a mid-flight re-capture is not clobbered');
+    // base64PhotoTargets — counts only data: photos (inspections + nested WO line items), idempotent after a pass
+    const beforeT = T.base64PhotoTargets().length;
+    const insX = { inspectionId: 'INS-OFFLOAD', photo: 'data:image/jpeg;base64,III' };
+    T.DATA.inspections.push(insX); T.IDX.insp.set('INS-OFFLOAD', insX);
+    const woX = { woId: 'WO-OFFLOAD', lineItems: [{ photo: 'data:image/jpeg;base64,LLL', lid: 'LX' }, { photo: 'https://drive/already.jpg' }, {}] };
+    T.DATA.workOrders.push(woX); T.IDX.wo.set('WO-OFFLOAD', woX);
+    ok(T.base64PhotoTargets().length === beforeT + 2, 'base64PhotoTargets: counts the new inspection + the one base64 line (skips the URL line + the photoless line)');
+    for (const job of T.base64PhotoTargets()) await T.offloadPhotoNow(job.t, 'photo', job.name, job.owner, job.coll, okUp);
+    ok(T.base64PhotoTargets().length === 0, 'base64PhotoTargets: empty after a full offload pass (idempotent)');
+    T.DATA.inspections.pop(); T.IDX.insp.delete('INS-OFFLOAD'); T.DATA.workOrders.pop(); T.IDX.wo.delete('WO-OFFLOAD');   // restore
 
     return out;
   });

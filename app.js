@@ -5033,7 +5033,8 @@ function bottomBarInner() {
     <button class="iconbtn js-adminlock${adminUnlocked() ? ' on' : ''}" data-tip="${adminUnlocked() ? 'Admin tools unlocked — click to lock' : 'Admin tools — click to unlock'}">${adminUnlocked() ? I.lockOpen : I.lock}</button>
     ${adminUnlocked() ? `<button class="iconbtn js-lint${document.body.classList.contains('rw-lint') ? ' on' : ''}" data-tip="Design lint — flash anything that bypassed the UI builders (R0)">${I.eye}</button>
     <button class="iconbtn js-inspect${state.inspect ? ' on' : ''}" data-tip="Design Inspector — hover names the rule, click copies the reference">${I.search}</button>
-    <button class="iconbtn js-rulebook" data-tip="The R-Rulebook — visual design reference (SPEC v8)">${I.doc}</button>` : ''}`;
+    <button class="iconbtn js-rulebook" data-tip="The R-Rulebook — visual design reference (SPEC v8)">${I.doc}</button>
+    <button class="iconbtn js-photo-sweep" data-tip="Offload base64 photos to Drive — one-shot migration to de-bloat the payload">${I.camera}</button>` : ''}`;
 }
 function bottomBarEl() { const bar = el('div', 'bottombar'); bar.innerHTML = bottomBarInner(); return bar; }
 // §M1 — phone-only per-column bottom strip: Yard→internal chat · Rentals→tool bar · Customers→external chats (shell).
@@ -8594,6 +8595,7 @@ function onClick(e) {
   }
   if (closest('.js-rbtab')) { e.stopPropagation(); if (state.overlay) state.overlay.rbTab = closest('.js-rbtab').dataset.tab; return renderOverlay(); }
   if (closest('.js-rulebook')) return openOverlay({ kind: 'rulebook' });
+  if (closest('.js-photo-sweep')) { e.stopPropagation(); return sweepPhotosToDrive(); }   // admin one-shot: offload base64 photos → Drive
   if (closest('.js-feedback')) { e.stopPropagation(); return wranglerNewChat(); }   // §18d folded: the old bug/request form is now the one Mr. Wrangler chat
   // §17 internal team dock
   if (closest('[data-mcol]')) { e.stopPropagation(); state.mobileCol = +closest('[data-mcol]').dataset.mcol; return render(); }   // §M1 dot nav
@@ -9313,6 +9315,68 @@ function uploadCaptureMedia(r, eu, cap, dataUrl) {
     })
     .catch(() => toast('Video upload failed — the log stamp is saved without it.'));
 }
+/* ── Photo offload (Jac 2026-06-20) — de-bloat the payload ────────────────────
+   A captured inspection/part photo rides the record as inline base64 (~30-80KB),
+   so it bloats the Sheet AND the bulk cold-load payload (computeChanges sends the
+   whole record). Offload it to Drive — the same treatment selfies + capture-videos
+   already get — so the record carries a ~60-byte URL instead. Same-field swap:
+   inspection.photo / li.photo are already URL-or-base64, so every reader (the WO
+   backdrop, the thumbs) keeps working unchanged.
+   SAFE: idempotent (skips a value that's already a URL), never loses a photo (a
+   failed/offline upload leaves the base64 untouched), and guards against a stale
+   swap if the photo was re-captured mid-flight. Returns true when it swapped — the
+   migration sweep counts those. */
+async function offloadPhotoNow(target, field, name, owner, coll, _upload) {
+  const v = target && target[field];
+  if (!v || typeof v !== 'string' || !v.startsWith('data:')) return false;          // already a URL / empty → no-op
+  // Real path uploads via the backend (only when connected); _upload is a test seam.
+  const upload = _upload || ((typeof backendPassword !== 'undefined' && backendPassword) ? ((p) => backendCall('uploadCapture', p)) : null);
+  if (!upload) return false;                                                         // demo / offline → keep base64
+  try {
+    const res = await upload({ dataUrl: v, name });
+    if (res && res.ok && res.url && target[field] === v) {                          // unchanged since upload → safe to swap
+      target[field] = res.url;
+      if (owner && coll) reindex(coll, owner);
+      saveSoon();
+      return true;
+    }
+  } catch (e) { /* offline / server error → base64 stays, retried on next capture or sweep */ }
+  return false;
+}
+const offloadPhoto = (target, field, name, owner, coll) => { offloadPhotoNow(target, field, name, owner, coll); };
+/* The migration targets: every base64 photo still sitting on a record (inspections
+   + nested WO part lines). Pure + idempotent — a second pass returns [] once the
+   forward path + a prior sweep have swapped them to URLs. */
+function base64PhotoTargets() {
+  const out = [];
+  (DATA.inspections || []).forEach((n) => { if ((n.photo || '').startsWith('data:')) out.push({ t: n, name: 'insp_' + n.inspectionId, owner: n, coll: 'inspections' }); });
+  (DATA.workOrders || []).forEach((w) => (w.lineItems || []).forEach((li) => { if ((li.photo || '').startsWith('data:')) out.push({ t: li, name: 'wopart_' + w.woId + '_' + lineKey(li), owner: w, coll: 'workOrders' }); }));
+  return out;
+}
+/* One-shot migration (admin, run live by Jac): offload every existing base64 photo
+   to Drive. Throttled (≤3 concurrent) so one browser session doesn't hammer Drive;
+   idempotent + resumable (re-run skips URLs; a mid-sweep reload just resumes); a
+   live progress toast. Closing the tab is the stop — persisted progress remains. */
+let photoSweepRunning = false;
+async function sweepPhotosToDrive() {
+  if (photoSweepRunning) return;
+  if (typeof backendPassword === 'undefined' || !backendPassword) { toast('Connect to the backend first — the sweep uploads to Drive.'); return; }
+  const targets = base64PhotoTargets();
+  if (!targets.length) { toast('Nothing to offload — every photo is already a Drive URL.'); return; }
+  photoSweepRunning = true;
+  let done = 0, ok = 0, i = 0;
+  toast(`Offloading photos to Drive — 0 / ${targets.length}…`);
+  const worker = async () => {
+    while (i < targets.length) {
+      const job = targets[i++];
+      if (await offloadPhotoNow(job.t, 'photo', job.name, job.owner, job.coll)) ok++;
+      if (++done % 5 === 0 || done === targets.length) toast(`Offloading photos to Drive — ${done} / ${targets.length}…`);
+    }
+  };
+  await Promise.all([worker(), worker(), worker()]);
+  photoSweepRunning = false;
+  toast(`Sweep done — ${ok} / ${targets.length} photo${targets.length === 1 ? '' : 's'} offloaded to Drive.`);
+}
 /* Part/Task popup save: creates the WO line + Parts/Vendors board records when
    new; empty fields are flagged aiPending for Mr. Wrangler review (backend TODO). */
 /* ── §18g — Mr. Wrangler PHOTO AUTOFILL (I1, Jac 2026-06-15): after a receipt/part is
@@ -9427,7 +9491,10 @@ function savePartForm() {
   const willFill = li.aiPending && photo && typeof backendPassword !== 'undefined' && backendPassword;
   toast(willFill ? '✨ Saved — Mr. Wrangler is reading the photo to fill the blanks…' : li.aiPending ? '✨ Saved — add a photo and Mr. Wrangler can fill the blanks.' : 'Line saved.');
   reanchorRender(); renderOverlay();
-  if (willFill) autofillPartLine(w, li, photo);   // §18g fire-and-forget photo autofill
+  // Offload the line photo to Drive (de-bloat) — but Mr. Wrangler reads the
+  // in-memory base64 FIRST, so chain the offload after the autofill resolves.
+  const offloadLinePhoto = () => { if (photo) offloadPhoto(li, 'photo', 'wopart_' + w.woId + '_' + lineKey(li), w, 'workOrders'); };
+  if (willFill) autofillPartLine(w, li, photo).then(offloadLinePhoto, offloadLinePhoto); else offloadLinePhoto();   // §18g fire-and-forget photo autofill (offload even if the AI read fails)
 }
 /* Receipt popup save (§7.11): creates/updates the expense; vendor name-match or
    auto-create (the savePartForm idiom); empty AI-fillable fields flag aiPending ✨;
@@ -9723,7 +9790,7 @@ function onChange(e) {
   if (e.target.classList.contains('js-insp-photo')) {
     const file = e.target.files && e.target.files[0]; if (!file) return;
     const reader = new FileReader();
-    reader.onload = () => { downscaleImage(reader.result, 600, 0.5, (out) => { if (!out) { toast('Could not read that image.'); return; } const n = IDX.insp.get(e.target.dataset.rec); if (n) { n.photo = out; render(); if (state.overlay?.kind === 'inspection') renderOverlay(); } }); };
+    reader.onload = () => { downscaleImage(reader.result, 600, 0.5, (out) => { if (!out) { toast('Could not read that image.'); return; } const n = IDX.insp.get(e.target.dataset.rec); if (n) { n.photo = out; saveSoon(); render(); if (state.overlay?.kind === 'inspection') renderOverlay(); offloadPhoto(n, 'photo', 'insp_' + n.inspectionId, n, 'inspections'); } }); };
     reader.onerror = () => toast('Could not read that image.');
     reader.readAsDataURL(file);
     return;
@@ -11769,7 +11836,7 @@ function exposeTestApi() {
       cleanUnitName, planUnitMigration, applyUnitMigration, openMigrationPreview,
       computeTransportPrice, isFueledType, unitTransport, rentalTransport,
       wrValidatePlan, applyWranglerData, wrFunnel, invoiceMergeable, mergeInvoiceInto, parseWranglerAction,
-      latestCustomerSelfie, woBackdrop };
+      latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets };
   } catch (e) { /* no window (non-browser) */ }
 }
 

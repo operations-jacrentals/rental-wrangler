@@ -144,8 +144,11 @@ result → records carry ~60-byte URLs; bulk payload stops shipping image data
 
 ## Gates (per CLAUDE.md)
 
-- The sweep control is a new UI affordance → emit from a §5 builder with a
-  `data-r` stamp and regenerate `rule-usage.js` (`node ci/gen-rule-usage.mjs`).
+- The sweep control is an admin-toolbar **`iconbtn`** matching its siblings
+  (`js-lint` / `js-inspect` / `js-rulebook`) — those carry **no `data-r`**
+  (iconbtn isn't a lint-family element), so the sweep button doesn't either and
+  `rule-usage.js` is unchanged. (Corrects this spec's earlier §5-builder
+  assumption — the established pattern is the plain admin iconbtn.)
 - Three gates: `node ci/smoke.mjs`, `node ci/logic-test.mjs`,
   `node ci/gen-rule-usage.mjs --check` (port-swap 8000→9147 first, restore `ci/`).
 - Bump the shared `?v=` token in `index.html`.
