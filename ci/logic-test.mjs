@@ -283,6 +283,25 @@ try {
     ok(T.base64PhotoTargets().length === 0, 'base64PhotoTargets: empty after a full offload pass (idempotent)');
     T.DATA.inspections.pop(); T.IDX.insp.delete('INS-OFFLOAD'); T.DATA.workOrders.pop(); T.IDX.wo.delete('WO-OFFLOAD');   // restore
 
+    // 15) wrStore — the IndexedDB layer for the Wrangler rail (real round-trips)
+    const S = T.wrStore;
+    const chat = { id: 'wc-test-1', title: 'hi', ts: 1, messages: [{ role: 'user', content: 'yo', images: [{ blobKey: 'b_wc-test-1_0' }] }] };
+    await S.putChat(chat);
+    const got = await S.getChat('wc-test-1');
+    ok(got && got.id === 'wc-test-1' && got.messages[0].images[0].blobKey === 'b_wc-test-1_0', 'wrStore: putChat/getChat round-trip keeps the message ref');
+    const listed = await S.listChats();
+    ok(Array.isArray(listed) && listed.some((c) => c.id === 'wc-test-1'), 'wrStore: listChats returns the stored chat');
+    const blob = new Blob([new Uint8Array([1, 2, 3, 4])], { type: 'image/jpeg' });
+    await S.putBlob('b_wc-test-1_0', blob);
+    const gotBlob = await S.getBlob('b_wc-test-1_0');
+    ok(gotBlob instanceof Blob && gotBlob.size === 4, 'wrStore: putBlob/getBlob round-trip returns the Blob (binary, not base64)');
+    await S.delBlob('b_wc-test-1_0');
+    ok((await S.getBlob('b_wc-test-1_0')) === undefined, 'wrStore: delBlob removes the blob');
+    await S.delChat('wc-test-1');
+    ok((await S.getChat('wc-test-1')) === undefined, 'wrStore: delChat removes the chat');
+    const est = await S.estimate();
+    ok(est && typeof est.usage === 'number' && typeof est.quota === 'number', 'wrStore: estimate() returns usage/quota numbers');
+
     return out;
   });
 

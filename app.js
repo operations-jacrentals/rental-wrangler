@@ -5218,6 +5218,53 @@ function mountWranglerDock() {
 // here so you can hop back in. A `needs-jac` chat (Mr. Wrangler is waiting on you)
 // rides the rail flashing until you answer it.
 const WR_RAIL_MAX = 8;   // how many stored chats the rail keeps (newest win)
+/* ── wrStore — IndexedDB for the Mr. Wrangler rail ────────────────────────────
+   The rail used to live in localStorage with inline-base64 images; image-heavy
+   chats blew the ~5MB cap and a silent try/catch swallowed the QuotaExceeded, so
+   history vanished. IndexedDB (gigabytes, native Blobs) replaces it. Two stores:
+   `chats` keyed by chat id (snapshot text + message refs), `blobs` keyed by a
+   blob key (the image Blob itself). A thin promise wrapper — no deps. Every call
+   REJECTS loudly on failure; callers surface it (never a silent drop again).
+   See docs/superpowers/specs/2026-06-20-wrangler-chat-storage-design.md. */
+const WR_DB = 'jactec.wrangler', WR_DB_VER = 1;
+let _wrDbPromise = null;
+function wrDbOpen() {
+  if (_wrDbPromise) return _wrDbPromise;
+  _wrDbPromise = new Promise((resolve, reject) => {
+    if (typeof indexedDB === 'undefined') { reject(new Error('no-indexeddb')); return; }
+    let req; try { req = indexedDB.open(WR_DB, WR_DB_VER); } catch (e) { reject(e); return; }
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains('chats')) db.createObjectStore('chats', { keyPath: 'id' });
+      if (!db.objectStoreNames.contains('blobs')) db.createObjectStore('blobs');   // out-of-line keys (blobKey)
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error || new Error('idb-open-failed'));
+  });
+  return _wrDbPromise;
+}
+/* Run one store op in its own transaction; resolve with the request's result once
+   the tx COMMITS (so a write is durable before we move on). fn returns an IDBRequest. */
+function wrTx(store, mode, fn) {
+  return wrDbOpen().then((db) => new Promise((resolve, reject) => {
+    let tx, req;
+    try { tx = db.transaction(store, mode); req = fn(tx.objectStore(store)); } catch (e) { reject(e); return; }
+    tx.oncomplete = () => resolve(req ? req.result : undefined);
+    tx.onerror = () => reject(tx.error || new Error('idb-tx-error'));
+    tx.onabort = () => reject(tx.error || new Error('idb-abort'));
+  }));
+}
+const wrStore = {
+  putChat: (c) => wrTx('chats', 'readwrite', (os) => os.put(c)),
+  getChat: (id) => wrTx('chats', 'readonly', (os) => os.get(id)),
+  delChat: (id) => wrTx('chats', 'readwrite', (os) => os.delete(id)),
+  listChats: () => wrTx('chats', 'readonly', (os) => os.getAll()),
+  putBlob: (key, blob) => wrTx('blobs', 'readwrite', (os) => os.put(blob, key)),
+  getBlob: (key) => wrTx('blobs', 'readonly', (os) => os.get(key)),
+  delBlob: (key) => wrTx('blobs', 'readwrite', (os) => os.delete(key)),
+  estimate: () => (typeof navigator !== 'undefined' && navigator.storage && navigator.storage.estimate)
+    ? navigator.storage.estimate() : Promise.resolve({ usage: 0, quota: 0 }),
+};
 function wranglerNewId() { return 'wc' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
 function wranglerRailSave() { try { localStorage.setItem('jactec.wranglerRail', JSON.stringify(state.wranglerRail.slice(0, WR_RAIL_MAX))); } catch (e) {} }
 // A short, human title for a conversation: its first thing-said, else the request title.
@@ -11836,7 +11883,7 @@ function exposeTestApi() {
       cleanUnitName, planUnitMigration, applyUnitMigration, openMigrationPreview,
       computeTransportPrice, isFueledType, unitTransport, rentalTransport,
       wrValidatePlan, applyWranglerData, wrFunnel, invoiceMergeable, mergeInvoiceInto, parseWranglerAction,
-      latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets };
+      latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore };
   } catch (e) { /* no window (non-browser) */ }
 }
 
