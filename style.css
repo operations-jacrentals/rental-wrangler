@@ -320,7 +320,7 @@ input { font-family: inherit; }
 .is-phone .popup { max-width: 100%; width: 100%; max-height: 92dvh; border-radius: 18px 18px 0 0; border-bottom: 0;
   padding-bottom: env(safe-area-inset-bottom); animation: sheetUp .2s cubic-bezier(.2,.7,.2,1); }
 .sheet-backdrop { position: fixed; inset: 0; z-index: 9490; background: rgba(0,0,0,.5); }   /* §M3 winpicker phone backdrop */
-.is-phone .winpicker-float { left: 0; right: 0; top: auto; bottom: 0; width: 100%; z-index: 9500; }
+.is-phone .winpicker-float, .is-phone .datesearch-float { left: 0; right: 0; top: auto; bottom: 0; width: 100%; z-index: 9500; }
 .is-phone .winpicker { border-radius: 18px 18px 0 0; max-height: 92dvh; overflow: auto;
   padding-bottom: max(10px, env(safe-area-inset-bottom)); animation: sheetUp .2s cubic-bezier(.2,.7,.2,1); }
 .is-phone.sheet-open .card-body { overflow: hidden; }   /* §M3 lock the column scroll behind an open sheet */
@@ -1293,7 +1293,7 @@ select.lf-in { appearance: none; cursor: pointer; }
 .statusbar.draftwin.wintrigger .wt-label { flex: 1; text-align: center; font-size: 13px; font-weight: 700; }
 .statusbar.draftwin.wintrigger:hover { background: var(--accent-soft); }
 .statusbar.js-open-winpicker { cursor: pointer; }
-.winpicker-float { position: fixed; z-index: 60; width: 300px; }
+.winpicker-float, .datesearch-float { position: fixed; z-index: 60; width: 300px; }
 .winpicker { border: 1px solid var(--accent); border-radius: 12px; background: var(--panel); padding: 10px; box-shadow: 0 22px 48px -18px rgba(0,0,0,.7), 0 0 0 2px var(--accent-line), 0 0 26px -4px rgba(255,122,26,.5); }
 .winpicker .wp-time { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 9px; padding-bottom: 9px; border-bottom: 1px solid var(--line-soft); }
 .winpicker .wp-time label { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .4px; color: var(--txt-3); }
@@ -1321,6 +1321,13 @@ select.lf-in { appearance: none; cursor: pointer; }
 .winpicker .wp-day.range-end { background: var(--accent); color: #fff; border-radius: 0 7px 7px 0; }
 .winpicker .wp-day.range-start.range-end { border-radius: 7px; }
 .winpicker .wp-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 9px; padding-top: 9px; border-top: 1px solid var(--line-soft); }
+/* §5.4d — DATE SEARCH picker: reuses the winpicker shell; a stamped kicker + a live
+   selection readout sit above the grid. The date chips it pins carry a tan saddle-
+   stitch underline so they read as editable (click re-opens the picker). */
+.winpicker.datesearch .ds-cap { display: flex; flex-direction: column; gap: 1px; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--line-soft); }
+.winpicker.datesearch .ds-kicker { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.3px; font-weight: 700; font-size: 10px; color: var(--txt-3); }
+.winpicker.datesearch .ds-sel { font-size: 13px; font-weight: 700; color: var(--txt); }
+.filt-term.is-date .lbl { border-bottom: 1px dashed color-mix(in srgb, var(--tan, #c2925a) 65%, transparent); padding-bottom: 1px; }
 /* (Wave 2) pickbar + pick-target CSS removed with pick mode */
 
 
