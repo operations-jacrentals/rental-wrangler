@@ -96,3 +96,13 @@ Reference implementations: `.login-*` and `.cancel-arc` blocks in `style.css`.
 - Changing a WO part/task line to Complete must NOT complete the work order â€”
   only the blue **Complete WO** button does.
 - Never hand-roll an icon (see **Icons** above) — source it from the library.
+
+## Auto-delegation — model triage (Jac, 2026-06-21)
+
+You can pick a **subagent's** model; you can't change your own. So push cheap work down and keep the hard calls up. **Heuristic:** if you could hand it to an intern with a checklist, delegate it — and delegate by the *cost of being wrong*, not by how simple it looks.
+
+- **Haiku subagent — pure mechanical / IO, no judgment.** git/gh plumbing (branch create/delete after merge, PR creation, `log`/`status`/`diff --stat` probes); `Grep`/`Glob` sweeps to locate before editing; bulk rename/move/reformat; extracting a known field (the script id from `backend-ids.local.md`, names from `roles.md`); running a script with known inputs and reporting its output (the `/audit` analyzer, seeds, builds — the script does the math, Haiku writes the terse report).
+- **Sonnet subagent — well-scoped implementation against a settled spec.** A UI/CSS change from a written spec; an **additive** `Code.js` GAS handler whose contract is already defined; a new `SKILL.md`/`/role` card from a template; a PR body from a diff; converting a dump into schema-shaped seed JSON; one isolated bug with a clear repro.
+- **Keep on the main session — never delegate.** Authoring/revising a SPEC; security / auth / data gates (role-password, customer isolation, margin-floor visibility, any server-side gate — wrong = live PII or pricing leak); `/role` lens selection and its data-sensitivity / customer-isolation calls (*writing* the report can drop to Sonnet, the *call* can't); cross-system architecture (GAS ↔ front-end contract, data-shape changes); irreversible ops (the `/clasp` prod-deploy STOP gate, force-push, secret handling); and any bug that already resisted ≥2 fixes.
+- **Fan-out → use a Workflow.** When the same mechanical step repeats across many similar items (delete N branches, regen M cards, patch a token across the tree), drive it as a Workflow that fans out Haiku/Sonnet agents — don't loop on main.
+- **Guard rails:** anything touching role visibility, pricing floors, or auth looks simple and isn't — don't downgrade it; a subagent that reads secrets is Sonnet-minimum and must never echo secret values; "the spec is clear" doesn't authorize delegation if the spec has gaps (resolve on main first, then delegate the mechanical output); if the output ships with no human review step, keep it on main.
