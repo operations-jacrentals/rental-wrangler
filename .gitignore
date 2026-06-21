@@ -3,13 +3,16 @@
 Thumbs.db
 *.log
 
-# Local tooling (not part of the app) — but COMMIT shared skills + the shared
-# SessionStart hook so they travel + work in Claude Code web sessions (local
-# settings like settings.local.json stay ignored).
+# Local tooling — commit shared skills + the shared SessionStart hook so they
+# travel + work in Claude Code web/cloud sessions; keep local settings
+# (settings.local.json) and any *.local.* secret/dump (backend IDs, research
+# dumps) private.
 .claude/*
 !.claude/skills/
 !.claude/settings.json
 !.claude/hooks/
+.claude/skills/**/*.local.md
+.claude/skills/**/*.local.json
 
 # Internal handoff: the spec + RAW customer/parts/work-order CSVs — NOT for the
 # public site (the served app uses the curated demo data in data.js instead).
