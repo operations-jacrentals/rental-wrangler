@@ -30,6 +30,7 @@ The app is organized into long-lived **area branches** (`area/*`) off `staging`,
 
 ## 4. Working rules for this session (state briefly, then follow)
 - **Token discipline:** terse by default; `Grep`/`Glob` before `Read`; read only the range you need; spawn subagents for large isolated work to protect the main context.
+- **Model triage:** auto-delegate mechanical/bulk work (git/gh plumbing, grep sweeps, file munging, running scripts) to **Haiku** subagents and well-scoped implementation to **Sonnet** subagents; keep architecture, security/gates, and ambiguous calls on the main session. Full rule in `CLAUDE.md` → *Auto-delegation*. (You pick subagent models; you can't change your own.)
 - **Clarifying questions:** use the `AskUserQuestion` popup — not inline prose — whenever a decision is genuinely Jac's to make.
 - **Specs:** after generating or changing a spec/feature/screen, offer to run `/role` to audit it through the 15 role lenses.
 - **Efficiency:** `/audit` is available anytime; the ~1M-token auto-audit hook will also prompt a coaching report.
