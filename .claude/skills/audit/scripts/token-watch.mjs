@@ -1,14 +1,15 @@
 #!/usr/bin/env node
-// UserPromptSubmit hook — fires the /audit coaching report roughly every 100k
-// tokens used this session. Reads the hook JSON on stdin (transcript_path,
-// session_id), sums non-cache input+output across assistant turns, and when a
-// new 100k bucket is crossed, prints a reminder that becomes context so Claude
-// runs /audit after handling the current message. Silent otherwise. No deps.
+// UserPromptSubmit hook — fires the /audit coaching report roughly every
+// 1,000,000 tokens used this session. Reads the hook JSON on stdin
+// (transcript_path, session_id), sums non-cache input+output across assistant
+// turns, and when a new 1M bucket is crossed, prints a reminder that becomes
+// context so Claude runs /audit after handling the current message. Silent
+// otherwise. No deps.
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const THRESHOLD = 100000;
+const THRESHOLD = 1000000;
 
 let stdin = '';
 try { stdin = readFileSync(0, 'utf8'); } catch {}
@@ -39,8 +40,9 @@ try { last = JSON.parse(readFileSync(stateFile, 'utf8')).bucket || 0; } catch {}
 if (bucket > last) {
   try { mkdirSync(stateDir, { recursive: true }); writeFileSync(stateFile, JSON.stringify({ bucket })); } catch {}
   const k = Math.round(used / 1000);
+  const mark = +(THRESHOLD * bucket / 1000000).toFixed(2); // millions
   process.stdout.write(
-    `[token checkpoint] ~${k}k tokens used this session (crossed ${bucket}x100k). ` +
+    `[token checkpoint] ~${k}k tokens used this session (crossed the ${mark}M mark). ` +
     `After you finish the user's current request, run the /audit skill and give Jac a brief token + model-fit coaching report.`
   );
 }

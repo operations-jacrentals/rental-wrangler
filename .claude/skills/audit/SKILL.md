@@ -1,6 +1,6 @@
 ---
 name: audit
-description: Token-efficiency + model-appropriateness coaching report for the current Claude Code session. Run with /audit anytime; also fired automatically by a hook roughly every 100k tokens. Reports cache hit rate, redundant file reads, oversized tool outputs, whether the model tier fit the work (Haiku / Sonnet / Opus), and 2-4 concrete habit changes with estimated savings.
+description: Token-efficiency + model-appropriateness coaching report for the current Claude Code session. Run with /audit anytime; also fired automatically by a hook roughly every 1M tokens. Reports cache hit rate, redundant file reads, oversized tool outputs, whether the model tier fit the work (Haiku / Sonnet / Opus), and 2-4 concrete habit changes with estimated savings.
 ---
 
 # /audit — Token + Model Efficiency Coach
