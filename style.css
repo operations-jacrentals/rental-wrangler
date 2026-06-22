@@ -2509,6 +2509,7 @@ body { font-variant-numeric: tabular-nums; }
    same signature as the login data-plate, so the two reads as one yard system);
    HOT (chip over it, release = cancel) snaps to a red DANGER state with red
    chevrons + an armed inset glow. apex height = --arc-apex (≈20% of middle card). */
+/* (smoke-test rider: /start flow verification — comment-only, no rule/logic change) */
 .cancel-arc { position: fixed; left: -20vw; bottom: 48px; width: 140vw; height: var(--arc-apex); border-radius: 100% 100% 0 0; overflow: hidden; background: linear-gradient(180deg, #1b2129, #0c0e11 72%); display: flex; align-items: flex-start; justify-content: center; padding-top: calc(var(--arc-apex) * .22); transform: translateY(150%); transition: transform .22s cubic-bezier(.2, .7, .2, 1); box-shadow: 0 -22px 52px -28px #000; }
 .cancel-arc::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 8px; background: repeating-linear-gradient(135deg, var(--yellow, #f5c542) 0 13px, #14181d 13px 26px); }
 .cancel-arc.show { transform: translateY(0); }
