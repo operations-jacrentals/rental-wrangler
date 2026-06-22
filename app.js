@@ -5720,7 +5720,6 @@ function bottomBarInner() {
     <button class="iconbtn js-wrangler" data-tip="Mr. Wrangler — ask the yard AI, or report a bug to fix" style="font-size:16px">🤠</button>
     <button class="iconbtn js-requests" data-tip="Requests for your OK — review what Mr. Wrangler filed">${I.inbox}${wranglerRequests.length ? `<span class="bb-badge">${wranglerRequests.length > 9 ? '9+' : wranglerRequests.length}</span>` : ''}</button>
     <button class="iconbtn js-hotkeys" data-tip="Mouse &amp; keyboard shortcuts">${I.mouse}</button>
-    <button class="iconbtn js-adminlock${adminUnlocked() ? ' on' : ''}" data-tip="${adminUnlocked() ? 'Admin tools unlocked — click to lock' : 'Admin tools — click to unlock'}">${adminUnlocked() ? I.lockOpen : I.lock}</button>
     ${adminUnlocked() ? `<button class="iconbtn js-lint${document.body.classList.contains('rw-lint') ? ' on' : ''}" data-tip="Design lint — flash anything that bypassed the UI builders (R0)">${I.eye}</button>
     <button class="iconbtn js-inspect${state.inspect ? ' on' : ''}" data-tip="Design Inspector — hover names the rule, click copies the reference">${I.search}</button>
     <button class="iconbtn js-rulebook" data-tip="The R-Rulebook — visual design reference (SPEC v8)">${I.doc}</button>
@@ -9548,8 +9547,6 @@ function onClick(e) {
   if (closest('.js-qr')) return shareSession();
   if (closest('.js-previews') || closest('.js-roweye')) { e.stopPropagation(); state.previewsOn = !state.previewsOn; if (!state.previewsOn) hideHoverPreview(); try { localStorage.setItem('jactec.previewsOff', state.previewsOn ? '0' : '1'); } catch (e) {} toast(state.previewsOn ? 'Hover previews on.' : 'Hover previews off — every eye runs red.'); return render(); }
   if (closest('.js-hotkeys')) return openOverlay({ kind: 'hotkeys' });
-  if (closest('.js-adminlock')) { e.stopPropagation(); return toggleAdminLock(); }
-  if (closest('.js-lint, .js-inspect, .js-rulebook') && !adminUnlocked()) { e.stopPropagation(); return toggleAdminLock(); }
   if (closest('.js-lint')) {   // R0 flash-lint toggle — persists per device
     const on = document.body.classList.toggle('rw-lint');
     try { localStorage.setItem('jactec.lint', on ? '1' : '0'); } catch (err) {}
@@ -10065,24 +10062,14 @@ function startInlineEdit(span) {
 
 const BOOKING_STATUSES = ['On Rent', 'Reserved', 'Today', 'Tomorrow'];
 
-/* ADMIN TOOLS GATE (Jac 2026-06-13) — the dev/design tools (R-Rulebook, Design
-   Inspector, Design Lint) live behind the admin passphrase. This is a client-side
-   gate (obfuscated hash, not real crypto — anyone reading the source could bypass
-   it), which is appropriate for hiding internal tooling, not for securing secrets.
-   Real-app Admin/Owner roles are already trusted. Settings is intentionally NOT
-   gated here (Jac: "the settings board you don't need to hide"). */
-const ADMIN_HASH = 'xy16gqtfz0';
-function _cyrb53(s, seed = 0) { let h1 = 0xdeadbeef ^ seed, h2 = 0x41c6ce57 ^ seed; for (let i = 0, ch; i < s.length; i++) { ch = s.charCodeAt(i); h1 = Math.imul(h1 ^ ch, 2654435761); h2 = Math.imul(h2 ^ ch, 1597334677); } h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507); h1 ^= Math.imul(h2 ^ (h2 >>> 13), 3266489909); h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507); h2 ^= Math.imul(h1 ^ (h1 >>> 13), 3266489909); return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36); }
-let _adminUnlock = (() => { try { return localStorage.getItem('jactec.admin') === ADMIN_HASH; } catch (e) { return false; } })();
-function adminUnlocked() { return _adminUnlock || currentRole === 'Admin' || currentRole === 'Owner'; }
-function toggleAdminLock() {
-  if (_adminUnlock) { _adminUnlock = false; try { localStorage.removeItem('jactec.admin'); } catch (e) {} toast('Admin tools locked.'); return render(); }
-  if (currentRole === 'Admin' || currentRole === 'Owner') { toast('You already have Admin access to these tools.'); return; }
-  const pw = window.prompt('Enter the Admin password to unlock dev tools:') || '';
-  if (!pw) return;
-  if (_cyrb53(pw) === ADMIN_HASH) { _adminUnlock = true; try { localStorage.setItem('jactec.admin', ADMIN_HASH); } catch (e) {} toast('🔓 Admin tools unlocked.'); render(); }
-  else toast('Wrong password.');
-}
+/* ADMIN TOOLS GATE (Jac 2026-06-22) — the dev/design tools (R-Rulebook, Design
+   Inspector, Design Lint) show ONLY for an Admin/Owner login. The old obfuscated
+   passphrase unlock was dropped (Jac): the admin login is the only thing that
+   should see these, so a normal account gets nothing — no lock toggle, no peek.
+   Settings is intentionally NOT gated here (Jac: "you don't need to hide it").
+   (requireAdmin below — the backend-verified card/price override — is separate
+   and untouched.) */
+function adminUnlocked() { return currentRole === 'Admin' || currentRole === 'Owner'; }
 
 /** Verify an Admin password (reuses the Settings gate), then run onOk. Demo/offline → allowed. */
 async function requireAdmin(reason, onOk) {
