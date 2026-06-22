@@ -1276,6 +1276,12 @@ select.lf-in { appearance: none; cursor: pointer; }
 .inline-edit { cursor: text; border-radius: 4px; }
 .inline-edit:hover { box-shadow: inset 0 -1px 0 var(--accent-line); }
 .inline-input { font: inherit; font-weight: 600; color: var(--txt); background: var(--panel-2); border: 1px solid var(--accent-line); border-radius: 7px; padding: 3px 8px; min-width: 150px; max-width: 100%; outline: none; }
+/* When the inline editor is a <select> (e.g. the Admin-gated category picker), strip the
+   native OS chrome and stamp our own chevron — no browser-default dropdown (SKILL §8). */
+select.inline-input { appearance: none; -webkit-appearance: none; cursor: pointer; padding-right: 26px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='none' stroke='%236b7480' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 8px center; }
+select.inline-input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 /* §12.3 category proportional inspection-mix bar (Ready/Not Ready/Failed) */
 .mixbar { height: 9px; border-radius: 5px; overflow: hidden; }
