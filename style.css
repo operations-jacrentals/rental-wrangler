@@ -1559,6 +1559,14 @@ select.inline-input:focus-visible { outline: 2px solid var(--accent); outline-of
 .ck-row { display: flex; align-items: center; gap: 12px; padding: 9px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 11px; }
 .ck-label { flex: 1; min-width: 0; font-size: 13.5px; font-weight: 600; color: var(--txt); }
 .ck-row .seg { flex: 0 0 auto; }
+.ck-row .co-in { max-width: 180px; flex: 0 0 auto; }
+.ck-row .datefield { flex: 0 0 auto; }
+.ck-row .insp-photo { flex: 0 0 auto; min-height: 64px; width: 120px; margin-bottom: 0; }
+/* Dropdown options well in the Inspections builder add-row */
+.insp-opt-well { width: 100%; border-left: 3px solid var(--line); background: var(--bg-2); border-radius: 9px; padding: 8px 10px; display: flex; flex-direction: column; gap: 7px; margin-top: 2px; }
+.insp-opt-row { display: flex; align-items: center; gap: 8px; }
+.insp-opt-lbl { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; color: var(--txt); }
+.insp-opt-well .co-in { flex: 1 1 140px; min-width: 0; }
 .pill.is-disabled { opacity: .45; }
 body.is-phone .kpi-board { flex-direction: column-reverse; }
 body.is-phone .kpi-preview { align-self: center; }
@@ -1828,6 +1836,7 @@ select.nc-in { cursor: pointer; }
 .ag-tabs .add-field { align-self: center; margin-bottom: 2px; }
 .ag-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
 .ag-dot.ok { background: var(--green); }
+.ag-dot.mid { background: var(--yellow); box-shadow: 0 0 0 3px var(--yellow-bg); }   /* §7.1c in-progress */
 .ag-dot.bad { background: var(--red); box-shadow: 0 0 0 3px var(--red-bg); }
 /* short status banner — a thin red hazard rail, calm body */
 .ag-banner { position: relative; padding: 9px 13px 9px 20px; border-radius: 10px; margin: 2px 0 16px; font-size: 12.5px; font-weight: 600; }
@@ -1885,8 +1894,17 @@ select.nc-in { cursor: pointer; }
 .ag-pad { flex: 1; min-width: 0; height: 160px; width: auto; border: 1.5px dashed var(--line); border-radius: 12px;
   background: radial-gradient(circle at 50% 40%, var(--panel-2), var(--panel)); touch-action: none;
   cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='22'%3E%3Ccircle cx='11' cy='11' r='7' fill='none' stroke='%23ff7a1a' stroke-width='2'/%3E%3Ccircle cx='11' cy='11' r='1.6' fill='%23ff7a1a'/%3E%3C/svg%3E") 11 11, crosshair; }
-.ag-acceptrow { display: flex; gap: 9px; margin: 13px 0 0; }
+.ag-acceptrow { display: flex; align-items: center; gap: 9px; margin: 13px 0 0; }
 .ag-acceptrow .pill.c-commit { flex: 1; justify-content: center; }
+/* §7.1c the 3-piece capture progress strip (typographic data-plate, not a pill) + per-piece saved hints */
+.ag-prog { margin: 0 0 14px; padding: 10px 13px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); }
+.ag-prog-row { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; }
+.ag-prog-item { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.4px; font-weight: 700; font-size: 11px; color: var(--txt-3); }
+.ag-prog-item.done { color: var(--green); }
+.ag-prog-note { margin-top: 7px; font-size: 11px; color: var(--txt-3); }
+.ag-saverow { display: flex; gap: 16px; margin: 10px 2px 0; }
+.ag-savedhint { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.2px; font-weight: 600; font-size: 9.5px; color: var(--txt-3); }
+.ag-savedhint.on { color: var(--green); }
 /* saddle-stitch seam between the card field and the held-agreement capture in the +Card panel */
 .ag-cardsplit { height: 0; margin: 16px 0 4px; border-top: 1.5px dashed var(--tan, #c2925a);
   border-image: repeating-linear-gradient(90deg, var(--tan, #c2925a) 0 7px, transparent 7px 13px) 1; }
