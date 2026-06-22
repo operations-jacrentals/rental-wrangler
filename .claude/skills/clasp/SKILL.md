@@ -32,7 +32,13 @@ clasp show-authorized-user --json                  # THE source of truth -> {"lo
 - **`loggedIn: true`** → authed; proceed.
 - **`loggedIn: false`** → **stop, do not deploy.** Either `CLASPRC_JSON_B64` is empty (session started before the secret existed → ask Jac to restart it) or the secret is stale / wrong-format for v3 (re-export: `clasp login` on a trusted machine, then base64 its fresh `.clasprc.json` back into the secret). Don't guess, don't hunt for files.
 
-**Local Windows desktop = NOT a deploy environment.** Credentials are cloud-provisioned, so a desktop has clasp but no keys (`loggedIn:false` is expected, not broken). **Don't `clasp login` here** — run `/clasp` from a **cloud session**, where the secret auto-wires auth. A local session that needs a backend deploy should route the work to a cloud session.
+**Local Windows desktop = NOT a deploy environment, and local clasp is unreliable for *any* live call.** Even with creds wired, local `clasp pull`/`push` fail: the desktop token expires and Google's **RAPT reauth policy blocks silent refresh** (`invalid_grant / invalid_rapt`), with an undici "Premature close" on top. So **`loggedIn:true` from `show-authorized-user` is a FALSE POSITIVE** — it proves a creds *file* exists, not that the token *works*. To **read** the backend locally, skip clasp → use the Drive connector (next section). To **deploy**, use a cloud session through the STOP-gate.
+
+## Reading the backend locally — via the Google Drive connector (no clasp, no token dance)
+The Apps Script project is just a Drive file, and the **Drive connector is authed independently of clasp** (under Jac's Google account), so it sidesteps all three clasp-local failures — expired token · RAPT-blocked refresh · undici pull. This is the canonical way to read `Code.gs` from a local session:
+1. **Find the project — this yields the canonical scriptId (do NOT trust `backend-ids.local.md`; its id had a case typo).** `search_files` with `mimeType = 'application/vnd.google-apps.script'` → the project titled **"Rental Wrangler Gate"**, id `1hw9A7Id3YIoiSCBkNFeDaKGRv-VtljFFIuBdQG5QULrgS0DjQhQ_2vyZ` (trailing **capital Z**).
+2. **Download the source:** `download_file_content` on that id → base64-encoded JSON; **decode it**, parse `files[]` (each has `name` + `source`), write to disk, and read only the handlers you need (~150K chars — keep the bulk out of context).
+3. **Read-only — diagnosis only.** Deploys still go through the cloud `/clasp` STOP-gate. Never paste real customer data or secrets from the source into the repo or reports.
 
 ## Step 2 — Backend working copy
 ```bash
@@ -61,7 +67,7 @@ curl -sS -L -H 'Content-Type: text/plain;charset=utf-8' \
 No `RW_PW` set? You can only test the **auth-rejection** path — ask Jac for a role password if you need a money-action test.
 
 ## Environment
-clasp (backend), GitHub, Google Drive, Gmail, Figma, HeyGen are available in the clasp-enabled **cloud** session — that's the deploy environment, and this runbook is written for it (Linux/bash). The local Windows desktop is **not** a deploy environment: it has clasp but no cloud secret, so don't `clasp login` there — run `/clasp` from a cloud session. (Auth state is always whatever `clasp show-authorized-user --json` reports — never an assumed file path.)
+clasp (backend), GitHub, Google Drive, Gmail, Figma, HeyGen are available in the clasp-enabled **cloud** session — that's the deploy environment, and this runbook is written for it (Linux/bash). The local Windows desktop is **not** a deploy environment and its clasp can't make live calls (expired token + RAPT-blocked refresh) — to read the backend locally use the Drive-connector method above; to deploy, use a cloud session. (NB: `show-authorized-user → loggedIn:true` only proves a creds *file* exists — NOT that the token works.)
 
 ## Note for /start
 This skill is referenced by the startup skill: at session start, if clasp is installed, `/start` checks auth with `clasp show-authorized-user --json` and **only if `loggedIn: true`** treats the backend as reachable via `/clasp` (then: don't ask how to access the backend, use clasp). If `loggedIn: false`, `/start` reports it's installed-but-not-authed and how to fix — see `/start` §1.
