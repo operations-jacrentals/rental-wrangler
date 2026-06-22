@@ -2908,6 +2908,7 @@ const RB_TABS = [
     items: [{ r: 'R21' }, { f: 'upload-capture' }] },
   { id: 'data', label: 'Data & Behaviors', intro: 'Visualizations, plus the app’s behaviors — it flashes instead of erroring, right-clicks, tooltips, and self-lints.',
     items: [{ r: 'R16' }, { r: 'R15' }, { r: 'R13' }, { f: 'data-kpi' }, { f: 'data-gauge' }, { r: 'R19' }, { r: 'R20' }, { r: 'R23' }, { f: 'behavior-preview' }, { r: 'R0' }] },
+  { id: 'windows', label: 'Windows', intro: 'Every pop-up window in the app, by kind. Expand one for a live preview, its fields, and a copy-paste edit reference — your map to wrangle any screen.', items: [] },
 ];
 /* structural fallbacks so hovering containers also names their rule */
 const CLASS_RULE = [
@@ -7118,9 +7119,32 @@ function buildPopupEl(o, overlay, opts = {}) {
         </div>
       </div>`;
     };
+    // §RB-Windows — one collapsible row per catalogued popup window. Collapsed shows
+    // label + tag + a copy-ref button; the live preview, its fields, and the code
+    // location build lazily on first expand (see the js-win-row handler).
+    const windowRow = (w) => {
+      const loc = `app.js · renderOverlay → o.kind === '${w.kind}'`;
+      return `<div class="rb-win" data-kind="${esc(w.kind)}">
+        <div class="rb-win-head">
+          <button class="rb-win-toggle js-win-row" data-kind="${esc(w.kind)}" aria-expanded="false">
+            <span class="rb-win-chev" aria-hidden="true">${I.chev}</span>
+            <span class="rb-win-label">${esc(w.label)}</span>
+            <span class="rb-win-tag">${esc(w.tag)}</span>
+          </button>
+          <button class="rb-win-copy js-win-copy" data-kind="${esc(w.kind)}" data-tip="Copy a Claude-ready edit reference">📋<span>Copy</span></button>
+        </div>
+        <div class="rb-win-body" hidden>
+          <div class="rb-win-preview" data-built="0"></div>
+          <div class="rb-win-fields"></div>
+          <code class="rb-win-loc">${esc(loc)}</code>
+        </div>
+      </div>`;
+    };
     const activeTab = RB_TABS.find((t) => t.id === o.rbTab) || RB_TABS[0];
     const tabBar = RB_TABS.map((t) => `<button class="rb-tab${t.id === activeTab.id ? ' on' : ''} js-rbtab" data-tab="${t.id}">${esc(t.label)}</button>`).join('');
-    const rows = activeTab.items.map((it) => (it.r ? ruleRow(it.r) : foundRow(it.f))).join('');
+    const rows = activeTab.id === 'windows'
+      ? WINDOW_CATALOG.map(windowRow).join('')
+      : activeTab.items.map((it) => (it.r ? ruleRow(it.r) : foundRow(it.f))).join('');
     // ORPHANS — lint-flagged controls with no rule yet (surfaced on Data & Behaviors)
     let orphanBlock = '';
     if (activeTab.id === 'data') {
@@ -9611,6 +9635,47 @@ function onClick(e) {
     return render();
   }
   if (closest('.js-rbtab')) { e.stopPropagation(); if (state.overlay) state.overlay.rbTab = closest('.js-rbtab').dataset.tab; return renderOverlay(); }
+  if (closest('.js-win-copy')) {   // §RB-Windows — copy a Claude-ready edit reference for this popup
+    e.stopPropagation();
+    const kind = closest('.js-win-copy').dataset.kind;
+    const w = WINDOW_CATALOG.find((x) => x.kind === kind);
+    const ref = w ? `Edit the "${w.label}" popup in app.js (renderOverlay → o.kind === '${kind}'), from the R-Rulebook Windows catalog.` : kind;
+    const done = () => toast('📋 Edit reference copied — paste it to Claude.');
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(ref).then(done, done);
+    else { try { const ta = document.createElement('textarea'); ta.value = ref; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); } catch (err) {} done(); }
+    return;
+  }
+  if (closest('.js-win-row')) {   // §RB-Windows — expand a window row; build its inert preview lazily on first open
+    e.stopPropagation();
+    const btn = closest('.js-win-row'); const win = btn.closest('.rb-win'); const body = win.querySelector('.rb-win-body');
+    const open = win.classList.toggle('open'); btn.setAttribute('aria-expanded', open ? 'true' : 'false'); body.hidden = !open;
+    if (open) {
+      const well = win.querySelector('.rb-win-preview');
+      if (well.dataset.built === '0') {
+        well.dataset.built = '1';
+        const node = previewOverlayFor(btn.dataset.kind);
+        if (node) {
+          well.appendChild(node);
+          const seen = new Set(); const chips = [];
+          [...node.querySelectorAll('input, textarea, select, .file-drop')].forEach((fe) => {
+            if (fe.tagName === 'INPUT' && (fe.type === 'file' || fe.type === 'hidden')) return;   // the .file-drop already represents its file input
+            const isDrop = fe.classList.contains('file-drop'); const isSel = fe.tagName === 'SELECT';
+            const kindTag = isDrop ? 'file' : isSel ? 'dropdown' : (fe.getAttribute('type') || fe.tagName.toLowerCase());
+            const label = (fe.getAttribute('placeholder') || fe.getAttribute('aria-label') || (isDrop ? 'Add file' : isSel ? (fe.options[0] && fe.options[0].textContent) || 'Choose' : kindTag) || '').trim();
+            const key = (label + '|' + kindTag).toLowerCase(); if (!label || seen.has(key)) return; seen.add(key);
+            chips.push(`<span class="rb-win-field"><b>${esc(label.slice(0, 30))}</b><i>${esc(kindTag)}</i></span>`);
+          });
+          win.querySelector('.rb-win-fields').innerHTML = chips.length
+            ? `<div class="rb-win-fieldlbl">Fields · forms · dropdowns (${chips.length})</div>${chips.join('')}`
+            : '<span class="rb-win-norec">No labelled fields in this window.</span>';
+        } else {
+          well.innerHTML = '<span class="rb-win-norec">No demo record to preview — open it live in the app to edit.</span>';
+          win.querySelector('.rb-win-fields').remove();
+        }
+      }
+    }
+    return;
+  }
   if (closest('.js-rulebook')) return openOverlay({ kind: 'rulebook' });
   if (closest('.js-photo-sweep')) { e.stopPropagation(); return sweepPhotosToDrive(); }   // admin one-shot: offload base64 photos → Drive
   if (closest('.js-feedback')) { e.stopPropagation(); return wranglerNewChat(); }   // §18d folded: the old bug/request form is now the one Mr. Wrangler chat
@@ -13101,7 +13166,7 @@ function exposeTestApi() {
       latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore, wranglerRailLoad, wrOffloadChatImages, wrEvictChatBlobs, driveViewUrl, mergeWranglerRails,
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
-      companyRevenueGoal, companyName, companyTagline, rentalRuleBlock, dueForCustomer, footerHidden, customFieldsFor, checklistFor, checklistRequired, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, __state: state };
+      companyRevenueGoal, companyName, companyTagline, rentalRuleBlock, dueForCustomer, footerHidden, customFieldsFor, checklistFor, checklistRequired, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, setRole: (r) => { currentRole = r || ''; render(); }, __state: state };
   } catch (e) { /* no window (non-browser) */ }
 }
 

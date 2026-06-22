@@ -2096,6 +2096,46 @@ body.rw-inspect .c-titlecard:hover { outline: 2px solid #18b6ff; outline-offset:
 .rb-surf { display: inline-flex; align-items: center; justify-content: center; min-width: 52px; height: 34px;
   padding: 0 11px; border: 1px solid var(--line); border-radius: 10px; font-size: 10.5px; color: var(--txt-3); }
 
+/* ── Rulebook → Windows catalog (Jac 2026-06-22): collapsible popup index ── */
+.rb-win { border-bottom: 1px solid var(--line-soft); }
+.rb-win:last-child { border-bottom: none; }
+.rb-win-head { display: flex; align-items: stretch; gap: 8px; }
+.rb-win-toggle { flex: 1; min-width: 0; display: flex; align-items: center; gap: 9px; background: none;
+  border: none; padding: 9px 2px; cursor: pointer; text-align: left; color: var(--txt); }
+.rb-win-toggle:hover .rb-win-label { color: var(--accent); }
+.rb-win-chev { display: inline-flex; flex-shrink: 0; color: var(--txt-3); transition: transform .12s ease; }
+.rb-win-chev svg { width: 15px; height: 15px; }
+.rb-win.open .rb-win-chev { transform: rotate(180deg); color: var(--accent); }
+.rb-win-label { font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rb-win-tag { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1px;
+  font-size: 10px; font-weight: 600; color: var(--txt-3); white-space: nowrap; flex-shrink: 0; }
+.rb-win-copy { flex-shrink: 0; align-self: center; display: inline-flex; align-items: center; gap: 5px;
+  font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .8px;
+  font-size: 10px; font-weight: 700; color: var(--txt-3); background: var(--bg-2); border: 1px solid var(--line);
+  border-radius: 8px; padding: 4px 9px; cursor: pointer; transition: color .12s, border-color .12s; }
+.rb-win-copy:hover { color: var(--accent); border-color: var(--accent-line); }
+.rb-win-body { padding: 2px 2px 14px; }
+.rb-win-preview { position: relative; border: 1px solid var(--line); border-radius: 12px; background: var(--bg-2);
+  padding: 16px; overflow: hidden; display: flex; justify-content: center; }
+.rb-win-preview .popup { position: static; pointer-events: none; transform: none; box-shadow: var(--chip-shadow); margin: 0; }
+.rb-win-preview .rb-prev-holder { pointer-events: none; display: flex; flex-direction: column; gap: 12px; align-items: center; max-width: 100%; }
+.rb-win-preview::after { content: 'PREVIEW · NOT LIVE'; position: absolute; top: 8px; right: 10px;
+  font-family: 'Saira Condensed', system-ui, sans-serif; letter-spacing: 1px; font-size: 9px; font-weight: 700;
+  color: var(--txt-3); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 2px 6px; z-index: 2; }
+.rb-win-norec { font-size: 11.5px; color: var(--txt-3); font-style: italic; }
+.rb-win-fields { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 11px; align-items: center; }
+.rb-win-fieldlbl { width: 100%; font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase;
+  letter-spacing: 1px; font-size: 9.5px; font-weight: 700; color: var(--txt-3); margin-bottom: 1px; }
+.rb-win-field { display: inline-flex; align-items: baseline; gap: 5px; font-size: 11px; color: var(--txt-2);
+  background: var(--bg-2); border: 1px solid var(--line-soft); border-radius: 7px; padding: 3px 8px; }
+.rb-win-field b { font-weight: 600; color: var(--txt); }
+.rb-win-field i { font-style: normal; font-size: 9px; text-transform: uppercase; letter-spacing: .5px; color: var(--txt-3); }
+.rb-win-loc { display: block; margin-top: 11px; font-family: ui-monospace, monospace; font-size: 10.5px;
+  color: var(--accent); background: var(--accent-soft); border: 1px solid var(--accent-line); border-radius: 7px;
+  padding: 5px 9px; word-break: break-all; }
+.rb-win-toggle:focus-visible, .rb-win-copy:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .rb-win-chev { transition: none; } }
+
 /* ── §13 v2 BUILD: gate pills · derived pills · flags · section colors ·
       timeline · yard/transport journeys · history chips · WO grid · toggles
       (spec: drafts/units-rentals-v2.html + HANDOFF "design source of truth") ── */
