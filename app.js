@@ -1,4 +1,4 @@
-/**
+﻿/**
  * app.js — Rental Wrangler application engine (SPEC v6)
  * ============================================================================
  * One normalized state object; one-way data flow (§2): UI renders from state →
@@ -2158,11 +2158,13 @@ function settingsBoardHtml(o) {
 }
 function settingsLoginsPane(o) {
   const cfg = o.config || { roles: {}, admin: '' };
-  const roleRows = Object.keys(cfg.roles || {}).map((role) => `<label class="set-row"><span class="set-role">${esc(role)}</span><input class="set-input" data-role="${esc(role)}" value="${esc(cfg.roles[role])}" autocomplete="off" /></label>`).join('');
+  const pwType = o.revealPw ? 'text' : 'password';   // masked by default so passwords don't shoulder-surf; toggle to reveal
+  const roleRows = Object.keys(cfg.roles || {}).map((role) => `<label class="set-row"><span class="set-role">${esc(role)}</span><input class="set-input" type="${pwType}" data-role="${esc(role)}" value="${esc(cfg.roles[role])}" autocomplete="off" /></label>`).join('');
   return `
     <div class="set-pane-head"><h4>Roles &amp; Logins</h4><p>Each role signs in with its password (plus their name). Changes apply at next sign-in.</p></div>
+    <div class="set-reveal-row"><button class="set-reveal js-set-reveal" type="button">${I.eye} ${o.revealPw ? 'Hide passwords' : 'Show passwords'}</button></div>
     ${roleRows}
-    <label class="set-row set-admin"><span class="set-role">Admin</span><input class="set-input" data-admin="1" value="${esc(cfg.admin || '')}" autocomplete="off" /></label>
+    <label class="set-row set-admin"><span class="set-role">Admin</span><input class="set-input" type="${pwType}" data-admin="1" value="${esc(cfg.admin || '')}" autocomplete="off" /></label>
     <div class="set-row" style="margin-top:14px;align-items:center"><span class="set-role" style="flex:0 0 auto" data-tip="ON: dropping a unit onto a conflicting rental links anyway — both sides get a pulsing red 'Overbooked' flag while the overlap exists. OFF: the drop is blocked, naming the conflict.">Allow overbooking</span>${segCtl([{ label: 'Off', js: 'js-overbook', data: { val: '0' }, on: state.overbookOn ? null : 'red' }, { label: 'On', js: 'js-overbook', data: { val: '1' }, on: state.overbookOn ? 'green' : null }])}</div>
     <p class="set-note">Drag &amp; drop policy — saved on this device.</p>
     <div class="set-row" style="margin-top:12px;align-items:center"><span class="set-role" style="flex:0 0 auto" data-tip="A light vibration confirms committed actions on phones (post a chat, drop a link, complete a WO, release-to-cancel). Android only — iOS has no vibration.">Haptic feedback</span>${segCtl([{ label: 'Off', js: 'js-haptics', data: { val: '0' }, on: state.hapticsOff ? 'red' : null }, { label: 'On', js: 'js-haptics', data: { val: '1' }, on: state.hapticsOff ? null : 'green' }])}</div>
@@ -3518,10 +3520,13 @@ function efld(card, rec, idField, field, ph, opts = {}) {
   const phDisp = String(ph).replace(/^Add\s+/i, '');   // rule 8/12: drop "Add" + space (data-ph keeps full prompt)
   const dotColor = opts.dot ? rec[field + 'Color'] : '';   // rule 8: notes carry a 3-color dot tag
   const dot = (has && dotColor) ? `<span class="note-dot nd-${esc(dotColor)}"></span>` : '';
-  const disp = has ? dot + esc(opts.fmt ? opts.fmt(raw) : String(raw)) : `<span class="add-field" data-r="R5c">+${esc(phDisp)}</span>`;
+  const disp = has ? dot + esc(opts.fmt ? opts.fmt(raw) : String(raw)) : `<span class="add-field" data-r="${opts.link ? 'R5b' : 'R5c'}">+${esc(phDisp)}</span>`;
   const pfx = opts.pfx ? `<span class="pfx">${esc(opts.pfx)}</span>` : '';
   const sfx = (has && opts.sfx) ? `<span class="sfx">${esc(opts.sfx)}</span>` : '';
-  return `<div class="kv${opts.wrap ? ' wrap' : ''}">${pfx}<span class="v inline-edit" data-edit="field" data-card="${card}" data-field="${field}" data-rec="${esc(String(rec[idField]))}" data-ph="${esc(ph)}" data-type="${opts.type || 'text'}"${opts.dot ? ' data-dot="1"' : ''}${opts.wrap ? ' style="white-space:normal"' : ''}>${disp}</span>${sfx}</div>`;
+  // opts.admin → the edit is gated behind requireAdmin (Admin/Owner pass, others get the password popup);
+  // opts.editKind → swap the startInlineEdit branch (e.g. 'unitCategory' opens a <select>).
+  const adm = opts.admin ? ' data-admin="1"' : '';
+  return `<div class="kv${opts.wrap ? ' wrap' : ''}">${pfx}<span class="v inline-edit" data-edit="${opts.editKind || 'field'}" data-card="${card}" data-field="${field}" data-rec="${esc(String(rec[idField]))}" data-ph="${esc(ph)}" data-type="${opts.type || 'text'}"${opts.dot ? ' data-dot="1"' : ''}${adm}${opts.wrap ? ' style="white-space:normal"' : ''}>${disp}</span>${sfx}</div>`;
 }
 
 /* Card anatomy (Jac 2026-06-10): Section 0 = Notes on EVERY standard view.
@@ -4183,7 +4188,7 @@ const DETAIL = {
     const makeModel = [u.year, u.make, u.model].filter(Boolean).join(' ');
 
     const specs = `<div class="section"><h4>Specs</h4><div class="fieldstack">
-      ${kvPills(cat ? refPill('categories', cat.categoryId, cat.name) : badge('No category'))}
+      ${efld('units', u, 'unitId', 'categoryId', 'Category', { editKind: 'unitCategory', admin: true, link: true, fmt: (id) => IDX.category.get(id)?.name || 'Unknown category' })}
       ${efld('units', u, 'unitId', 'serial', 'Add serial', { pfx: 'S/N' })}
       ${efld('units', u, 'unitId', 'year', 'Year', { type: 'number' })}
       ${efld('units', u, 'unitId', 'make', 'Make')}
@@ -4508,8 +4513,11 @@ const DETAIL = {
     const rentSegs = RENTAL_BAR_ORDER.map((stt) => { const ct = rmix.counts[stt] || 0; if (!ct) return ''; const color = stt === 'Available' ? 'gray' : getStatus('rentalStatus', stt).color; return mixSeg(ct, rmix.total, stt, color, stt, 'rental', !!rmix.truck[stt]); }).join('');
     const rentBar = rmix.total ? `<div class="mixbar tall">${rentSegs}</div>` : '';
     const bars = (mixBar || rentBar) ? `<div class="mixbars">${mixBar}${rentBar}</div>` : '';
+    // Pricing is Admin-gated (Jac 2026-06-22): anyone can read the rates, but changing
+    // one fires the requireAdmin popup (Admin/Owner pass straight through).
+    const priceFld = (field, sfx, ph) => efld('categories', c, 'categoryId', field, ph, { type: 'number', admin: true, fmt: (v) => money(v), sfx });
     const pricing = `<div class="section"><h4>Pricing</h4><div class="fieldstack">
-      ${kv(money(c.memberDaily), { sfx: '/day member' })}${kv(money(c.rate1Day), { sfx: '/1-day' })}${kv(money(c.rate7Day), { sfx: '/7-day' })}${kv(money(c.rate4Wk), { sfx: '/4-week' })}${kv(money(c.weekend), { sfx: '/weekend' })}
+      ${priceFld('memberDaily', '/day member', 'Member daily')}${priceFld('rate1Day', '/1-day', '1-day rate')}${priceFld('rate7Day', '/7-day', '7-day rate')}${priceFld('rate4Wk', '/4-week', '4-week rate')}${priceFld('weekend', '/weekend', 'Weekend rate')}
     </div></div>`;
     const fleet = `<div class="section"><h4>Fleet Summary</h4><div class="fieldstack">
       ${st.forSale ? kvPills(badge(st.forSale + ' For Sale', 'purple')) : ''}
@@ -5848,6 +5856,11 @@ function wranglerDockEl() {
     ? o.messages.map((m, i) => {
         let act = '';
         if (m.action && m.action.action === 'data') {
+          // Resolve the attached CSV for import-ish actions — csv-import OR a plain
+          // import, so the safety net can tell when the model under-sent rows.
+          if (!m.action._csvAttached && m.action.ops && m.action.ops.some((op) => op.op === 'csv-import' || op.op === 'import')) {
+            m.action._csvAttached = wrFindAttachedCsv(o.messages, i);
+          }
           const plan = m.action._plan || (m.action._plan = wrValidatePlan(m.action));
           const sum = wrPlanSummary(plan);
           const skip = plan.issues.length ? `<div class="wr-apply-skip">skipped: ${esc(plan.issues.join('; '))}</div>` : '';
@@ -7359,18 +7372,23 @@ function renderOverlay() {
     o.config = o.config || { roles: {}, admin: '' };
     o.tab = o.tab || 'logins';
     o.setSel = o.setSel || 'rentalStatus';
-    if (!o.draftSettings) o.draftSettings = JSON.parse(JSON.stringify((o.config && o.config.settings) || state.settings || {}));
     const pop = el('div', 'popup board-popup settings-popup');
-    const foot = `${pageDefaultSlice(o.tab) ? '<button class="pill ghost js-settings-resetpage" data-r="R18" data-tip="Reset just this tab to defaults (Save to keep)">Reset page</button>' : ''}<button class="pill ghost set-danger js-settings-reset${o.resetArm ? ' armed' : ''}" data-r="R18">${o.resetArm ? 'Click again — reset everything' : 'Reset all'}</button>${hasSettingsBackup() ? '<button class="pill ghost js-settings-undo" data-r="R18">Undo last change</button>' : ''}<span class="spacer"></span>${o.error ? `<span class="set-err">${esc(o.error)}</span>` : ''}<button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill ignition js-settings-save" data-r="R17">Save settings</button>`;
-    pop.innerHTML = `
-      <div class="popup-head">
+    const head = `<div class="popup-head">
         <span class="pl-ic">${I.sliders}</span>
         <div class="pl-title"><h3>Settings</h3><span class="pl-tag">Admin · Wrangle the yard</span></div>
         <span class="spacer"></span>
         <button class="x js-close" aria-label="Close">${I.x}</button>
-      </div>
+      </div>`;
+    if (o.loading) {
+      // Skeleton while getConfig is in flight — a stamped label + hazard-stripe scanner so the wait reads as work, not a freeze.
+      pop.innerHTML = `${head}<div class="popup-body settings-body"><div class="set-loading"><div class="set-loading-bar" aria-hidden="true"></div><div class="set-loading-lbl">Rounding up the yard settings…</div></div></div>`;
+    } else {
+      if (!o.draftSettings) o.draftSettings = JSON.parse(JSON.stringify((o.config && o.config.settings) || state.settings || {}));
+      const foot = `${pageDefaultSlice(o.tab) ? '<button class="pill ghost js-settings-resetpage" data-r="R18" data-tip="Reset just this tab to defaults (Save to keep)">Reset page</button>' : ''}<button class="pill ghost set-danger js-settings-reset${o.resetArm ? ' armed' : ''}" data-r="R18">${o.resetArm ? 'Click again — reset everything' : 'Reset all'}</button>${hasSettingsBackup() ? '<button class="pill ghost js-settings-undo" data-r="R18">Undo last change</button>' : ''}<span class="spacer"></span>${o.error ? `<span class="set-err">${esc(o.error)}</span>` : ''}<button class="pill ghost js-close" data-r="R18"${o.saving ? ' disabled' : ''}>Cancel</button><button class="pill ignition js-settings-save${o.saving ? ' is-disabled' : ''}" data-r="R17"${o.saving ? ' disabled' : ''}>${o.saving ? 'Saving…' : 'Save settings'}</button>`;
+      pop.innerHTML = `${head}
       <div class="popup-body settings-body">${settingsBoardHtml(o)}</div>
       <div class="popup-foot">${foot}</div>`;
+    }
     overlay.appendChild(pop);
   } else if (o.kind === 'newCustomer') {
     const d = o.draft; const isEdit = !!o.editId;
@@ -7709,7 +7727,7 @@ async function sendFeedback() {
    (action 'wrangler'); Code.gs calls api.anthropic.com with the key from a Script
    Property. Carries a compact data digest + (when opened from a record) its detail.
    ════════════════════════════════════════════════════════════════════════ */
-const WRANGLER_SYSTEM = "You are Mr. Wrangler, the in-app AI for JacRentals — a heavy-equipment rental yard in Sulphur, Louisiana. You help the team make sense of their units, rentals, customers, invoices, work orders, and service, and you help triage bugs they report.\n\nSTYLE — keep it tight: answer in 1–3 sentences by default. Lead with the direct answer first; add at most one short supporting clause. Use a bullet list ONLY when enumerating multiple records, one line each. Don't restate the question, don't pad, and don't over-explain what you can't do — just answer.\n\nDATA — the snapshot below holds the LIVE records: every category with its rates, every fleet unit with its type and status, every rental with its date window and customer, customers with balances owed, and the open invoices and work orders. Reason over it directly. Only say a fact is missing if it truly isn't in the snapshot. Never invent records, names, or numbers.\n\nHELPING & FIXING — you're the assistant living inside the app (think Claude, but for this yard). The user might ask a question, describe a problem, or paste something — work out what they need and help. If they describe a BUG or glitch in the app itself (something not working, a dead control, a wrong layout or behavior), reproduce it in your head; if you're missing a detail, ask ONE quick follow-up (what they tapped + what they expected). Once you can state a clear repro, FILE A FIX by ending your reply with this exact fenced block:\n```wrangler-action\n{\"action\":\"fix\",\"title\":\"<short title>\",\"report\":\"<clear repro: steps, expected vs actual, any element involved>\"}\n```\nThat auto-ships obvious bugs (a dead control, a typo, a plainly wrong value).\nBut if it's a CHANGE or improvement (not an obvious bug), do NOT file it blind — talk it through first: lay out a SHORT, concrete PLAN of exactly what you'd change and where, then ask if that's good or needs adjusting. When you put a concrete plan on the table, end with:\n```wrangler-action\n{\"action\":\"plan\",\"title\":\"<short title>\",\"plan\":\"<numbered steps: what changes, where, and the resulting UX>\"}\n```\nJac reviews that plan and taps Build only when it's right — so take his tweaks and re-propose the plan until he's happy. Emit a block ONLY when ready — a clear repro for a fix, or a concrete plan for a change — never while still gathering detail; keep your visible words short and natural and never mention JSON, blocks, labels, or buttons.\n\nACTING ON DATA — you can DO things, not just answer. You can ADD, UPDATE, or BULK-IMPORT items for the user: customers, units, categories, rentals. NEVER delete anything, and NEVER touch money, card, payment, pricing, balances, auth, or work-order-completion fields. If the user asks to add/change something, or hands you lead/customer data to import (pasted rows, a list, a spreadsheet they paste in), DO IT — never say you can't or that Jac has to build it. Ask any quick follow-up you genuinely need first (which field, how their columns map, what membership stage), then end your reply with:\n```wrangler-action\n{\"action\":\"data\",\"title\":\"<what this does>\",\"ops\":[{\"op\":\"import\",\"entity\":\"customers\",\"rows\":[{\"firstName\":\"..\",\"lastName\":\"..\",\"phone\":\"..\",\"email\":\"..\",\"membershipStage\":\"..\"}]},{\"op\":\"create\",\"entity\":\"customers\",\"fields\":{}},{\"op\":\"update\",\"entity\":\"units\",\"id\":\"U003\",\"fields\":{\"notes\":\"..\"}}]}\n```\nThe user ALWAYS sees a preview and taps Apply before anything is written, so propose freely — but you CANNOT save anything yourself: that wrangler-action block plus the user's Apply tap is the ONLY thing that writes data. So whenever you add, update, or import, you MUST end the reply with the block, and you must NEVER say or imply the change is already done, saved, added, or imported — word it as a preview to apply (say something like: here's the import — look it over and tap Apply). If a list is too big to land in one reply, import a smaller batch and tell them how many rows are still to send; never claim a save you didn't actually emit in a block. Map their funnel/membership words to one of: Inbound Lead, Outbound Lead, Contacted, Not A No!, Payment Discussed, Paid. Editable fields are name/contact/address/industry/notes/account-type/membership+sales stage (customers), name/mechanic/notes/specs (units), name/description/fuel (categories), notes/po (rentals) — anything else (prices, balances, payments) you must decline and explain you can't touch money.\n\nA light wrangler/ranch flavor in voice is welcome — never campy.";
+const WRANGLER_SYSTEM = "You are Mr. Wrangler, the in-app AI for JacRentals — a heavy-equipment rental yard in Sulphur, Louisiana. You help the team make sense of their units, rentals, customers, invoices, work orders, and service, and you help triage bugs they report.\n\nSTYLE — keep it tight: answer in 1–3 sentences by default. Lead with the direct answer first; add at most one short supporting clause. Use a bullet list ONLY when enumerating multiple records, one line each. Don't restate the question, don't pad, and don't over-explain what you can't do — just answer.\n\nDATA — the snapshot below holds the LIVE records: every category with its rates, every fleet unit with its type and status, every rental with its date window and customer, customers with balances owed, and the open invoices and work orders. Reason over it directly. Only say a fact is missing if it truly isn't in the snapshot. Never invent records, names, or numbers.\n\nHELPING & FIXING — you're the assistant living inside the app (think Claude, but for this yard). The user might ask a question, describe a problem, or paste something — work out what they need and help. If they describe a BUG or glitch in the app itself (something not working, a dead control, a wrong layout or behavior), reproduce it in your head; if you're missing a detail, ask ONE quick follow-up (what they tapped + what they expected). Once you can state a clear repro, FILE A FIX by ending your reply with this exact fenced block:\n```wrangler-action\n{\"action\":\"fix\",\"title\":\"<short title>\",\"report\":\"<clear repro: steps, expected vs actual, any element involved>\"}\n```\nThat auto-ships obvious bugs (a dead control, a typo, a plainly wrong value).\nBut if it's a CHANGE or improvement (not an obvious bug), do NOT file it blind — talk it through first: lay out a SHORT, concrete PLAN of exactly what you'd change and where, then ask if that's good or needs adjusting. When you put a concrete plan on the table, end with:\n```wrangler-action\n{\"action\":\"plan\",\"title\":\"<short title>\",\"plan\":\"<numbered steps: what changes, where, and the resulting UX>\"}\n```\nJac reviews that plan and taps Build only when it's right — so take his tweaks and re-propose the plan until he's happy. Emit a block ONLY when ready — a clear repro for a fix, or a concrete plan for a change — never while still gathering detail; keep your visible words short and natural and never mention JSON, blocks, labels, or buttons.\n\nACTING ON DATA — you can DO things, not just answer. You can ADD, UPDATE, or BULK-IMPORT items for the user: customers, units, categories, rentals. NEVER delete anything, and NEVER touch money, card, payment, pricing, balances, auth, or work-order-completion fields. If the user asks to add/change something, or hands you lead/customer data to import (pasted rows, a list, a spreadsheet they paste in), DO IT — never say you can't or that Jac has to build it. Ask any quick follow-up you genuinely need first (which field, how their columns map, what membership stage), then end your reply with:\n```wrangler-action\n{\"action\":\"data\",\"title\":\"<what this does>\",\"ops\":[{\"op\":\"import\",\"entity\":\"customers\",\"rows\":[{\"firstName\":\"..\",\"lastName\":\"..\",\"phone\":\"..\",\"email\":\"..\",\"membershipStage\":\"..\"}]},{\"op\":\"create\",\"entity\":\"customers\",\"fields\":{}},{\"op\":\"update\",\"entity\":\"units\",\"id\":\"U003\",\"fields\":{\"notes\":\"..\"}}]}\n```\nThe user ALWAYS sees a preview and taps Apply before anything is written, so propose freely — but you CANNOT save anything yourself: that wrangler-action block plus the user's Apply tap is the ONLY thing that writes data. So whenever you add, update, or import, you MUST end the reply with the block, and you must NEVER say or imply the change is already done, saved, added, or imported — word it as a preview to apply (say something like: here's the import — look it over and tap Apply). If the user PASTES a long list of rows (not a file) too big for one reply, import a smaller batch and tell them how many rows are still to send (but for an ATTACHED CSV file, never inline rows like this — always use the csv-import op described below, which expands every row locally with no size limit); never claim a save you didn't actually emit in a block. Map their funnel/membership words to one of: Inbound Lead, Outbound Lead, Contacted, Not A No!, Payment Discussed, Paid. Editable fields are name/contact/address/industry/notes/account-type/membership+sales stage (customers), name/mechanic/notes/specs (units), name/description/fuel (categories), notes/po (rentals) — anything else (prices, balances, payments) you must decline and explain you can't touch money.\n\nLARGE CSV IMPORTS — when the user attaches a CSV file you will see a compact summary: column headers, up to 5 sample rows, and the total row count. For any attached CSV with 2 or more rows, ALWAYS use the csv-import op (never the inline import op) and DO NOT re-emit all the rows yourself — instead emit a csv-import op with just the column mapping. The app expands every row locally, so nothing gets cut off no matter how big the file:\n\`\`\`wrangler-action\n{\"action\":\"data\",\"title\":\"Import 234 customers from leads.csv\",\"ops\":[{\"op\":\"csv-import\",\"entity\":\"customers\",\"mapping\":{\"First Name\":\"firstName\",\"Last Name\":\"lastName\",\"Mobile\":\"phone\",\"E-mail\":\"email\"},\"skipIfEmpty\":[\"firstName\",\"lastName\"]}]}\n\`\`\`\nThe mapping keys are the CSV column headers EXACTLY as shown in the summary. The values are app field names (firstName, lastName, phone, email, company, address, industry, accountNotes, accountType, membershipStage, usedSalesStage for customers). Set skipIfEmpty to app fields that must not be blank. Map every column that clearly lines up with an app field even if the names differ (\"Mobile\" -> \"phone\"). If you are unsure about a column, ask first.\n\nA light wrangler/ranch flavor in voice is welcome — never campy.";
 // The digest is Mr. Wrangler's whole window into the yard, so it carries the ACTUAL
 // records (not just counts): category rates, each unit's type/status, each rental's
 // date window + customer, customer balances, and open invoices/WOs. Sections cap at
@@ -7784,18 +7802,53 @@ function wranglerAttachFile(file) {
   });
   reader.readAsDataURL(file);
 }
-// §18d CSV/text attachment — read the file as text and carry it with the next turn
-// (Mr. Wrangler reads it as a text block; images still ride the vision path above).
+// §18d CSV/text attachment — read the file as text and carry it with the next turn.
+// CSV files are parsed into {csvHeaders, csvRows} so the payload to Mr. Wrangler is
+// just headers + a 5-row sample; he maps columns, and the frontend expands ALL rows
+// locally (no model output ceiling regardless of CSV size). Other text files ride
+// the old full-text path.
+function parseCsvFile(text) {
+  const lines = []; let cur = [], field = '', inQ = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inQ) {
+      if (ch === '"' && text[i + 1] === '"') { field += '"'; i++; }
+      else if (ch === '"') inQ = false;
+      else field += ch;
+    } else if (ch === '"') { inQ = true; }
+    else if (ch === ',') { cur.push(field.trim()); field = ''; }
+    else if (ch === '\n' || (ch === '\r' && text[i + 1] !== '\n')) {
+      cur.push(field.trim()); field = '';
+      if (cur.some(Boolean)) lines.push(cur);
+      cur = [];
+    } else if (ch !== '\r') { field += ch; }
+  }
+  cur.push(field.trim()); if (cur.some(Boolean)) lines.push(cur);
+  if (lines.length < 2) return null;
+  const headers = lines[0]; const rows = [];
+  for (let i = 1; i < lines.length; i++) {
+    const r = lines[i]; if (!r.some(Boolean)) continue;
+    const obj = {}; headers.forEach((h, j) => { if (h) obj[h] = r[j] || ''; }); rows.push(obj);
+  }
+  return { headers, rows };
+}
 function wranglerAttachTextFile(file) {
   const o = state.wrangler; if (!o.open || !file) return;
   const name = (file.name || 'file').toLowerCase();
-  const okType = (file.type && (file.type.startsWith('text/') || /csv/.test(file.type))) || /\.(csv|tsv|txt|md|log)$/.test(name);
-  if (!okType) { toast('I can read screenshots and CSV/text files — that file type isn’t supported.'); return; }
-  if (file.size > 256 * 1024) { toast('That file is over 256 KB — trim it or paste just the rows you need.'); return; }
+  const isCsv = (file.type && /csv/.test(file.type)) || /\.csv$/.test(name);
+  const okType = (file.type && file.type.startsWith('text/')) || isCsv || /\.(tsv|txt|md|log)$/.test(name);
+  if (!okType) { toast('I can read screenshots and CSV/text files — that file type is not supported.'); return; }
+  const limit = isCsv ? 2 * 1024 * 1024 : 256 * 1024;
+  if (file.size > limit) { toast(isCsv ? 'That CSV is over 2 MB — trim it down.' : 'That file is over 256 KB — trim it or paste just the rows you need.'); return; }
   const reader = new FileReader();
   reader.onload = () => {
     o.files = o.files || []; if (o.files.length >= 3) { toast('Up to 3 files per message.'); return; }
-    o.files.push({ name: file.name || 'file', text: String(reader.result || '') }); render();
+    const text = String(reader.result || '');
+    const parsed = isCsv ? parseCsvFile(text) : null;
+    o.files.push(parsed
+      ? { name: file.name || 'file', text, csvHeaders: parsed.headers, csvRows: parsed.rows }
+      : { name: file.name || 'file', text });
+    render();
   };
   reader.onerror = () => toast('Could not read that file.');
   reader.readAsText(file);
@@ -7820,7 +7873,16 @@ async function wranglerSend() {
   // Build the payload: images become a content-block array; CSV/text files fold
   // into the message text so Mr. Wrangler reads their rows.
   const fileBlock = (m) => (m.files && m.files.length)
-    ? m.files.map((f) => `\n\nAttached file "${f.name}":\n\`\`\`\n${f.text}\n\`\`\``).join('')
+    ? m.files.map((f) => {
+        if (f.csvRows) {
+          const sample = f.csvRows.slice(0, 5);
+          const hdr = f.csvHeaders.join(',');
+          const body = sample.map((r) => f.csvHeaders.map((h) => r[h] || '').join(',')).join('\n');
+          const more = f.csvRows.length > 5 ? '\n(+' + (f.csvRows.length - 5) + ' more rows — use csv-import op to map all columns)' : '';
+          return '\n\nAttached CSV "' + f.name + '" — ' + f.csvRows.length + ' total rows:\n```\n' + hdr + '\n' + body + more + '\n```';
+        }
+        return '\n\nAttached file "' + f.name + '":\n```\n' + f.text + '\n```';
+      }).join('')
     : '';
   const payloadMsgs = o.messages.map((m) => {
     const body = (m.content || '') + fileBlock(m);
@@ -7928,15 +7990,70 @@ function wrCleanFields(entity, obj) {
   });
   return { out, skipped };
 }
+/** Backscan a chat's messages for the most recent user-attached CSV (a file with
+ *  parsed csvRows) before the given action index — so an import action can find the
+ *  file it refers to. Pure + testable; the dock and the safety net both use it. */
+function wrFindAttachedCsv(messages, beforeIndex) {
+  for (let j = beforeIndex - 1; j >= 0; j--) {
+    const um = messages[j];
+    if (um && um.role === 'user' && um.files) {
+      const f = um.files.find((uf) => uf && uf.csvRows);
+      if (f) return f;
+    }
+  }
+  return null;
+}
 /** Validate a `data` action into a safe preview plan (drops anything off the allowlist). */
 function wrValidatePlan(act) {
   const ops = []; const issues = [];
   (Array.isArray(act.ops) ? act.ops : []).forEach((raw) => {
     const ent = WR_EDITABLE[raw.entity];
     if (!ent) { issues.push(`can’t touch “${raw.entity}”`); return; }
-    const opn = raw.op === 'import' ? 'import' : raw.op === 'update' ? 'update' : 'create';
-    if (opn === 'import') {
-      if (!ent.importable) { issues.push(`can’t bulk-import ${ent.label}s`); return; }
+    const opn = raw.op === 'csv-import' ? 'csv-import' : raw.op === 'import' ? 'import' : raw.op === 'update' ? 'update' : 'create';
+    if (opn === 'csv-import') {
+      if (!ent.importable) { issues.push('can\'t bulk-import ' + ent.label + 's'); return; }
+      const csv = act._csvAttached;
+      if (!csv || !csv.csvRows) { issues.push('CSV file not found — attach the file and ask again'); return; }
+      const mapping = raw.mapping || {}; const skipIfEmpty = raw.skipIfEmpty || [];
+      // Forgiving header match: resolve each mapping key to a REAL CSV header,
+      // ignoring case/spaces/punctuation, so "Email" still finds "E-mail" and even an
+      // app-field-style key ("firstName") finds "First Name". A model slip on a column
+      // label no longer silently drops the whole column.
+      const csvHeaders = csv.csvHeaders || Object.keys(csv.csvRows[0] || {});
+      const normH = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const headerByNorm = {};
+      csvHeaders.forEach((h) => { const k = normH(h); if (k && !(k in headerByNorm)) headerByNorm[k] = h; });
+      const resolved = []; const unmatched = [];
+      Object.entries(mapping).forEach(([col, field]) => {
+        if (!field) return;
+        const real = csvHeaders.includes(col) ? col : headerByNorm[normH(col)];
+        if (real) resolved.push([real, field]); else unmatched.push(col);
+      });
+      let skipped = 0; const rows = [];
+      csv.csvRows.forEach((csvRow) => {
+        const mapped = {};
+        resolved.forEach((pair) => { mapped[pair[1]] = String(csvRow[pair[0]] || ''); });
+        if (skipIfEmpty.some((f) => !mapped[f])) { skipped++; return; }
+        const { out } = wrCleanFields(raw.entity, mapped);
+        if (Object.keys(out).length) rows.push(out);
+        else skipped++;
+      });
+      if (!rows.length) { issues.push('No rows mapped — check the column names match the CSV headers exactly'); return; }
+      if (unmatched.length) issues.push('couldn\'t match column' + (unmatched.length > 1 ? 's' : '') + ': ' + unmatched.join(', '));
+      if (skipped) issues.push(skipped + ' row' + (skipped > 1 ? 's' : '') + ' skipped (blank required field)');
+      ops.push({ op: 'csv-import', entity: raw.entity, rows });
+    } else if (opn === 'import') {
+      if (!ent.importable) { issues.push('can\'t bulk-import ' + ent.label + 's'); return; }
+      // Safety net: a CSV is attached but the model inlined the rows itself (the old,
+      // size-limited path) and sent FEWER than the file holds — it truncated or
+      // batched. Don't silently apply a partial: surface it loudly and skip, so the
+      // user re-asks and Mr. Wrangler uses csv-import (which expands every row).
+      const attached = act._csvAttached;
+      const inlineCount = (raw.rows || []).length;
+      if (attached && attached.csvRows && inlineCount < attached.csvRows.length) {
+        issues.push('Mr. Wrangler only sent ' + inlineCount + ' of ' + attached.csvRows.length + ' rows inline — ask it to use csv-import so all the columns map and no rows get cut off');
+        return;
+      }
       const rows = (raw.rows || []).map((r) => wrCleanFields(raw.entity, r).out).filter((r) => Object.keys(r).length);
       if (rows.length) ops.push({ op: 'import', entity: raw.entity, rows });
     } else if (opn === 'update') {
@@ -7954,7 +8071,7 @@ function wrValidatePlan(act) {
 }
 function wrPlanSummary(plan) {
   const add = {}, upd = {};
-  plan.ops.forEach((op) => { const l = WR_EDITABLE[op.entity].label; if (op.op === 'update') upd[l] = (upd[l] || 0) + 1; else add[l] = (add[l] || 0) + (op.op === 'import' ? op.rows.length : 1); });
+  plan.ops.forEach((op) => { const l = WR_EDITABLE[op.entity].label; if (op.op === 'update') upd[l] = (upd[l] || 0) + 1; else add[l] = (add[l] || 0) + ((op.op === 'import' || op.op === 'csv-import') ? op.rows.length : 1); });
   const seg = (m, verb) => Object.entries(m).map(([l, n]) => `${verb} ${n} ${l}${n > 1 ? 's' : ''}`);
   return [...seg(add, 'add'), ...seg(upd, 'update')].join(' · ') || 'no safe changes';
 }
@@ -7973,7 +8090,7 @@ function applyWranglerData(plan) {
       if (op.entity === 'customers') t.name = `${t.firstName || ''} ${t.lastName || ''}`.trim() || t.name;
       reindex(op.entity, t); logAction(t, `Mr. Wrangler updated ${Object.keys(op.fields).join(', ')}`); updated++;
     } else {
-      (op.op === 'import' ? op.rows : [op.fields]).forEach((f) => { if (op.entity === 'customers') { const c = wrCreateCustomer(f); created++; first = first || c.customerId; } });
+      (op.op === 'import' || op.op === 'csv-import' ? op.rows : [op.fields]).forEach((f) => { if (op.entity === 'customers') { const c = wrCreateCustomer(f); created++; first = first || c.customerId; } });
     }
   });
   if (first) { const s = activeSession(); if (s.cols) s.cols.right = 'customers'; const ccs = s.cards.customers; if (created === 1) { ccs.mode = 'standard'; ccs.recId = first; } else { ccs.mode = 'list'; ccs.recId = null; ccs.search = ''; } ccs.graphView = false; }
@@ -8328,7 +8445,11 @@ const boardRows = (boardId) => ({ parts: DATA.parts, vendors: DATA.vendors, expe
 const BOARD_DEF = {
   parts: {
     cols: ['Part', 'Vendor', 'Cost', 'Qty', 'Product #', 'Order from'],
-    row: (p) => [(p.aiPending ? '✨ ' : '') + esc(p.name), IDX.vendor.get(p.vendorId) ? linkName(IDX.vendor.get(p.vendorId).name, { js: 'js-vendor-open', data: { rec: p.vendorId } }) : '—', p.priceEach != null ? money(p.priceEach) : '—', p.qtyOnHand != null ? `${p.qtyOnHand}` : '—', esc(p.productNumber || '—'), esc(p.orderEmail || p.website || '—')],
+    row: (p) => [(p.aiPending ? '✨ ' : '') + esc(p.name), IDX.vendor.get(p.vendorId) ? linkName(IDX.vendor.get(p.vendorId).name, { js: 'js-vendor-open', data: { rec: p.vendorId } }) : '—', p.priceEach != null ? money(p.priceEach) : '—', p.qtyOnHand != null ? `${p.qtyOnHand}` : '—', esc(p.productNumber || '—'),
+      // R7 link instead of a raw overflowing URL: email → mailto, website → short "Order ↗"
+      p.orderEmail ? linkName(p.orderEmail, { js: 'js-open-link', data: { url: 'mailto:' + p.orderEmail } })
+        : p.website ? linkName('Order ↗', { js: 'js-open-link', data: { url: (/^https?:\/\//i.test(p.website) ? p.website : 'https://' + p.website) } })
+        : '—'],
   },
   vendors: {
     cols: ['Vendor', 'Type', 'Phone', 'Total Spent', 'Parts', 'Avg Cost'],
@@ -9440,6 +9561,7 @@ function onClick(e) {
   if (closest('.js-logo')) return openLogoMenu(closest('.js-logo'));
   if (closest('.js-switch-user')) { e.stopPropagation(); return switchUser(); }
   if (closest('.js-open-settings')) { e.stopPropagation(); return openSettings(); }
+  if (closest('.js-set-reveal')) { e.stopPropagation(); const o = state.overlay; if (o) { captureLoginEdits(o); o.revealPw = !o.revealPw; renderOverlay(); } return; }   // toggle masked role passwords
   if (closest('.js-settings-save')) { e.stopPropagation(); return saveSettings(); }
   if (closest('.js-settings-resetpage')) { e.stopPropagation(); return resetPageSettings(); }   // gentle: default just this tab
   if (closest('.js-settings-reset')) { e.stopPropagation(); const o = state.overlay; if (!o) return; if (o.resetArm) return resetAllSettings(); o.resetArm = true; renderOverlay(); return; }   // armed two-click confirm
@@ -9855,7 +9977,7 @@ function onClick(e) {
   if (closest('.js-clear-totfilter')) { e.stopPropagation(); const cs = activeSession().cards[closest('.js-clear-totfilter').dataset.card]; if (cs) cs.totalFilter = null; render(); return; }
 
   // inline edit (click a value → input)
-  if (closest('.inline-edit')) { e.stopPropagation(); return startInlineEdit(closest('.inline-edit')); }
+  if (closest('.inline-edit')) { e.stopPropagation(); const _ie = closest('.inline-edit'); if (_ie.dataset.admin === '1' && !adminUnlocked()) return requireAdmin('Categories and pricing are Admin-only.', () => startInlineEdit(_ie)); return startInlineEdit(_ie); }
 
   // X-to-swap / remove on pills (handle before the pill-open)
   const xEl = closest('.x');
@@ -10028,6 +10150,17 @@ function startInlineEdit(span) {
     if (type === 'number') input.type = 'number';
     else if (type === 'date') input.type = 'date';
     commit = () => { if (done) return; done = true; if (rec) { let v = input.value.trim(); if (type === 'number') v = (v === '' ? null : Number(v)); const old = rec[f]; const oldDot = rec[f + 'Color'] || ''; const newDot = (span.dataset.dot === '1' && v) ? (input._dotPick ?? oldDot) : ''; if (String(old ?? '') !== String(v ?? '') || oldDot !== newDot) { rec[f] = v; if (span.dataset.dot === '1') rec[f + 'Color'] = newDot; reindex(card, rec); logAction(rec, `${humanizeField(f)}: ${auditVal(old)} → ${auditVal(v)}`); } } render(); if (state.overlay?.kind === 'board') renderOverlay(); };
+  } else if (kind === 'unitCategory') {
+    // Admin-gated category link for a unit — a <select> of categories (the gate fires
+    // in the click handler before we get here). Drops back to "No category" on the blank.
+    const u = IDX.unit.get(recId);
+    const sel = el('select', 'inline-input');
+    sel.innerHTML = ['<option value="">— No category —</option>'].concat(DATA.categories.map((c) => `<option value="${esc(c.categoryId)}"${u && u.categoryId === c.categoryId ? ' selected' : ''}>${esc(c.name)}</option>`)).join('');
+    const commitCat = () => { if (done) return; done = true; if (u) { const old = u.categoryId; const v = sel.value || null; if ((old || '') !== (v || '')) { u.categoryId = v; reindex('units', u); logAction(u, `Category: ${auditVal(IDX.category.get(old)?.name || '')} → ${auditVal(IDX.category.get(v)?.name || '')}`); } } render(); };
+    span.replaceWith(sel); sel.focus();
+    sel.addEventListener('change', commitCat);
+    sel.addEventListener('blur', commitCat);
+    return;
   } else { return; }
   if (kind === 'field' && span.dataset.dot === '1') {
     // rule 8 — notes get the 3-color dot picker (white/red/green) while entering
@@ -10247,7 +10380,7 @@ function openChecklist(unitId) {
   if (!n) n = newInspectionForUnit(u);
   n.items = n.items || {};
   state.overlay = { kind: 'checklist', unitId, inspId: n.inspectionId };
-  render();
+  render(); renderOverlay();   // overlays live in #overlay-root, which render() doesn't paint — must renderOverlay() or the checklist never shows
 }
 // Complete the checklist → overall result cascades through the existing setInspResult (auto-WO on fail).
 function completeChecklist() {
@@ -10884,11 +11017,14 @@ async function openSettings() {
   document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove());
   const adminPw = (currentRole === 'Admin' || currentRole === 'Owner') ? backendPassword : (window.prompt('Settings is Admin-only.\nEnter the Admin password:') || '');
   if (!adminPw) return;
+  // Open the shell immediately in a loading state so the wait is visible, not a frozen UI.
+  openOverlay({ kind: 'settings', loading: true, adminPw });
   try {
     const r = await backendCall('getConfig', { password: adminPw });
-    if (!r || !r.ok) { toast(r && r.error === 'unauthorized' ? 'Wrong Admin password.' : 'Could not open Settings.'); return; }
-    openOverlay({ kind: 'settings', config: r.config, adminPw });
-  } catch (e) { toast('Could not reach the database.'); }
+    const o = state.overlay; if (!o || o.kind !== 'settings') return;   // closed while we waited
+    if (!r || !r.ok) { closeOverlay(); toast(r && r.error === 'unauthorized' ? 'Wrong Admin password.' : 'Could not open Settings.'); return; }
+    o.config = r.config; o.loading = false; renderOverlay();
+  } catch (e) { const o = state.overlay; if (o && o.kind === 'settings') closeOverlay(); toast('Could not reach the database.'); }
 }
 async function saveSettings() {
   const o = state.overlay; if (!o || o.kind !== 'settings') return;
@@ -10903,15 +11039,18 @@ async function saveSettings() {
     if (!admin || Object.values(roles).some((v) => !v)) { o.error = 'Passwords can\'t be empty.'; o.tab = 'logins'; renderOverlay(); return; }
   }
   const settings = o.draftSettings || state.settings || {};
+  // Inputs are read above; now flip to the Saving… state so the button doesn't look frozen.
+  o.saving = true; o.error = ''; renderOverlay();
   try {
     const r = await backendCall('setConfig', { password: o.adminPw, config: { roles, admin, settings } });
+    o.saving = false;
     if (r && r.ok) {
       if (haveLogins && (currentRole === 'Admin' || currentRole === 'Owner')) { const myNew = currentRole === 'Admin' ? admin : (roles[currentRole] || o.adminPw); backendPassword = myNew; sessionStorage.setItem('jactec.pw', myNew); o.adminPw = myNew; }
       o.config.roles = roles; o.config.admin = admin; o.config.settings = settings;
       persistAdminSettings(settings);   // mirror locally + apply the status overrides live
       closeOverlay(); toast('Settings saved.'); render();
     } else { o.error = 'Save failed.'; renderOverlay(); }
-  } catch (e) { o.error = 'Could not reach the database.'; renderOverlay(); }
+  } catch (e) { o.saving = false; o.error = 'Could not reach the database.'; renderOverlay(); }
 }
 const addDays = (iso, n) => { const d = parseISO(iso); d.setDate(d.getDate() + n); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 
@@ -12657,7 +12796,7 @@ window.addEventListener('beforeunload', (e) => {
   e.preventDefault(); e.returnValue = '';
 });
 function renderLogin(msg) {
-  $('#app').innerHTML = `<div class="login-screen"><form class="login-box" id="login-form">
+  $('#app').innerHTML = `<div class="login-screen"><video id="login-video" class="login-video" src="assets/login-intro.mp4" muted loop playsinline preload="auto" aria-hidden="true"></video><form class="login-box" id="login-form">
     <span class="rivet tl"></span><span class="rivet tr"></span><span class="rivet bl"></span><span class="rivet br"></span>
     <div class="login-plate">
       <img class="login-logo" src="assets/jac-rentals-logo.jpg" alt="Jac Rentals" />
@@ -12729,6 +12868,9 @@ async function attemptLogin() {
   if (!pw) return;
   backendPassword = pw;
   const btn = document.getElementById('login-go'); if (btn) { btn.textContent = 'Signing in…'; btn.disabled = true; }
+  // Roll the Mr. Wrangler intro behind the box while the (slow) backend load runs — a little entertainment for the wait.
+  const screen = document.querySelector('.login-screen'); if (screen) screen.classList.add('signing-in');
+  const vid = document.getElementById('login-video'); if (vid) { try { const p = vid.play(); if (p && p.catch) p.catch(() => {}); } catch (e) {} }
   try {
     // Ask the backend for the role. The role-aware backend returns it; an older
     // backend (pre-roles) replies "unknown action" → we proceed without a role
@@ -13053,7 +13195,7 @@ function exposeTestApi() {
       rentalAllocated, unitRentalPrice, rentalDisplayName, setWoLinePhase, setWoPhase, woBottleneck,
       cleanUnitName, planUnitMigration, applyUnitMigration, openMigrationPreview,
       computeTransportPrice, isFueledType, unitTransport, rentalTransport,
-      wrValidatePlan, applyWranglerData, wrFunnel, invoiceMergeable, mergeInvoiceInto, parseWranglerAction, stripWranglerAction,
+      wrValidatePlan, applyWranglerData, wrFunnel, invoiceMergeable, mergeInvoiceInto, parseWranglerAction, stripWranglerAction, parseCsvFile, wrFindAttachedCsv,
       latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore, wranglerRailLoad, wrOffloadChatImages, wrEvictChatBlobs, driveViewUrl, mergeWranglerRails,
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,

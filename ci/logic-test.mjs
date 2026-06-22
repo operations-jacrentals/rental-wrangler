@@ -213,6 +213,46 @@ try {
     ok(!/wrangler-action/.test(T.stripWranglerAction(truncReply)), 'truncated action block is stripped from the visible bubble (no raw JSON dump)');
     const truncPlan = T.wrValidatePlan(truncAct);
     ok(truncPlan.ops.length === 1 && truncPlan.ops[0].rows.length === 2, 'salvaged action validates into an applyable preview plan');
+    // csv-import: model maps columns, frontend expands all rows (no output-token ceiling)
+    const csvText = 'First Name,Last Name,Mobile,Email\nAnn,One,337-555-0001,ann@x.com\nBo,Two,337-555-0002,\nCut,Off,,';
+    const parsed = T.parseCsvFile(csvText);
+    ok(parsed && parsed.headers.length === 4, 'parseCsvFile extracts 4 headers from CSV');
+    ok(parsed && parsed.rows.length === 3, 'parseCsvFile extracts 3 data rows');
+    ok(parsed && parsed.rows[0]['First Name'] === 'Ann' && parsed.rows[0]['Mobile'] === '337-555-0001', 'parseCsvFile maps header names to values correctly');
+    const csvFile = { name: 'leads.csv', csvHeaders: parsed.headers, csvRows: parsed.rows };
+    const csvAction = { action: 'data', title: 'Import from CSV', ops: [{ op: 'csv-import', entity: 'customers', mapping: { 'First Name': 'firstName', 'Last Name': 'lastName', 'Mobile': 'phone', 'Email': 'email' }, skipIfEmpty: ['firstName', 'lastName'] }], _csvAttached: csvFile };
+    const csvPlan = T.wrValidatePlan(csvAction);
+    ok(csvPlan.ops.length === 1 && csvPlan.ops[0].op === 'csv-import', 'csv-import op passes wrValidatePlan');
+    const csvOp = csvPlan.ops[0];
+    ok(csvOp && csvOp.rows.length === 3, 'all 3 rows mapped (skipIfEmpty only cuts rows with blank firstName/lastName)');
+    ok(csvOp && csvOp.rows[0].firstName === 'Ann' && csvOp.rows[0].phone === '337-555-0001', 'column mapping applied correctly');
+    ok(csvOp && !('Mobile' in csvOp.rows[0]), 'CSV column name (Mobile) is gone -- only app field name (phone) survives');
+    const csvSkipAction = { action: 'data', title: 'Import skipping blanks', ops: [{ op: 'csv-import', entity: 'customers', mapping: { 'First Name': 'firstName', 'Last Name': 'lastName', 'Mobile': 'phone' }, skipIfEmpty: ['firstName', 'phone'] }], _csvAttached: csvFile };
+    const csvSkipPlan = T.wrValidatePlan(csvSkipAction);
+    const csvSkipOp = csvSkipPlan.ops[0];
+    ok(csvSkipOp && csvSkipOp.rows.length === 2, 'skipIfEmpty on phone drops only Cut (empty phone) -- Ann and Bo both survive');
+    // HARDENING — correctness must not depend on the model labelling every column perfectly.
+    // 1) forgiving header match: model mislabels columns (case / punctuation / app-name style) and they STILL map
+    const csvFuzzyAction = { action: 'data', title: 'Import with sloppy column keys', ops: [{ op: 'csv-import', entity: 'customers', mapping: { 'first name': 'firstName', 'LAST NAME': 'lastName', 'mobile': 'phone', 'E-Mail': 'email' }, skipIfEmpty: ['firstName', 'lastName'] }], _csvAttached: csvFile };
+    const csvFuzzyOp = T.wrValidatePlan(csvFuzzyAction).ops[0];
+    ok(csvFuzzyOp && csvFuzzyOp.rows.length === 3, 'forgiving match: sloppy-case/punctuation column keys still map all 3 rows');
+    ok(csvFuzzyOp && csvFuzzyOp.rows[0].email === 'ann@x.com' && csvFuzzyOp.rows[0].phone === '337-555-0001', 'forgiving match: "E-Mail"->Email and "mobile"->Mobile resolved to the right columns');
+    // 2) a genuinely unmatched column is surfaced (not silently dropped without a word)
+    const csvBadColAction = { action: 'data', title: 'Import with one bad column', ops: [{ op: 'csv-import', entity: 'customers', mapping: { 'First Name': 'firstName', 'Last Name': 'lastName', 'Cell Phone Number': 'phone' }, skipIfEmpty: ['firstName', 'lastName'] }], _csvAttached: csvFile };
+    const csvBadColPlan = T.wrValidatePlan(csvBadColAction);
+    ok(csvBadColPlan.issues.some((s) => /Cell Phone Number/.test(s)), 'unmatched column is reported back to the user, not silently dropped');
+    // 3) wrFindAttachedCsv — the live dock seam that links an action to its attached file (was stubbed before)
+    const dockMsgs = [{ role: 'user', content: 'import these', files: [csvFile] }, { role: 'assistant', content: 'here you go', action: { action: 'data', ops: [{ op: 'csv-import', entity: 'customers', mapping: {} }] } }];
+    ok(T.wrFindAttachedCsv(dockMsgs, 1) === csvFile, 'wrFindAttachedCsv finds the CSV attached on an earlier user message');
+    ok(T.wrFindAttachedCsv(dockMsgs, 0) === null, 'wrFindAttachedCsv returns null when no earlier message holds a CSV');
+    // 4) safety net: model inlined FEWER rows than the attached CSV (truncated/batched) -> loud, NO silent partial apply
+    const shortInline = { action: 'data', title: 'Partial inline import', ops: [{ op: 'import', entity: 'customers', rows: [{ firstName: 'Ann', lastName: 'One' }] }], _csvAttached: csvFile };
+    const shortPlan = T.wrValidatePlan(shortInline);
+    ok(shortPlan.ops.length === 0, 'safety net: a 1-row inline import against a 3-row attached CSV produces NO op (no silent partial)');
+    ok(shortPlan.issues.some((s) => /1 of 3 rows/.test(s)), 'safety net: surfaces "only sent 1 of 3 rows" so the user re-asks for csv-import');
+    // 5) the salvage path (no CSV attached, e.g. pasted-then-truncated rows) is UNAFFECTED by the safety net
+    const inlineNoCsv = { action: 'data', title: 'Plain inline import', ops: [{ op: 'import', entity: 'customers', rows: [{ firstName: 'Solo', lastName: 'Lead' }] }] };
+    ok(T.wrValidatePlan(inlineNoCsv).ops.length === 1, 'safety net only fires when a CSV is attached — a plain inline import still applies');
     const custBefore = T.DATA.customers.length; const u3 = T.IDX.unit.get('U003'); const noteBefore = u3.notes, hoursBefore = u3.currentHours;
     window.JT.snapshotSaved();   // #164 baseline the diff-sync against the CURRENT data
     T.applyWranglerData(wrPlan);
