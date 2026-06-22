@@ -39,6 +39,8 @@ The app is organized into long-lived **area branches** (`area/*`), each owning a
 - **Clarifying questions:** use the `AskUserQuestion` popup — not inline prose — whenever a decision is genuinely Jac's to make.
 - **Specs:** after generating or changing a spec/feature/screen, offer to run `/role` to audit it through the 15 role lenses.
 - **Efficiency:** `/audit` is available anytime; the ~1M-token auto-audit hook will also prompt a coaching report.
+- **Promotion cadence — propose the hops, never auto-promote to live:** when a task is *done*, offer to merge `<domain>/<task>` → `area/<domain>` (the merged task branch then self-cleans via the branch janitor). When Jac wants to preview/QA, merge `area/<domain>` → `staging` — the staging site auto-syncs (~10 min) for phone testing. Only after Jac confirms it's clean on staging, open a PR `staging` → `main` (protected; CI). **`main` is live — promoting to it is always Jac's explicit call.**
+- **Session hygiene:** when a task branch merges, that chat is done — remind Jac he can archive it (or run `/tidy-sessions`) so finished chats don't linger.
 
 ## 5. Ready summary
 End with 3–4 lines: tools OK/missing, current branch + what's in flight, the proposed branch/folder (awaiting OK), and "what are we working on?"
