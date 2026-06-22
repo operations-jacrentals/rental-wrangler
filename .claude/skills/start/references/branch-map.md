@@ -1,10 +1,12 @@
 # Branch map — area branches off `staging`
 
 **How branching works here**
-- The app is divided into long-lived **area branches** (`area/*`), each owning one domain. Many sessions — local or cloud — share the same area branch.
-- Flow: **`area/<domain>` → merge to `staging`** (integration + preview/debug) → after debugging, **`staging` → `main`** (live at app.jacrentals.com).
-- `/start` reads this map, matches what you describe to an area, and (with your OK) checks out that branch so every session starts from the latest shared state. This is the antidote to scattered one-off `claude/*` chats.
-- `main` is protected (PR + CI required); never commit straight to it. `staging` is where areas converge and get debugged together before promotion.
+- The app is divided into long-lived **area branches** (`area/*`), each owning one domain — think of an area as a *chapter*.
+- You don't work on an area branch directly. For each task you branch a short-lived **task branch off it** (`<domain>/<task>`), so multiple sessions can work the SAME area **in parallel without colliding** (3 payment ideas = `invoicing-payments/idea-a`, `/idea-b`, `/idea-c` — three sessions, zero stepping on each other).
+- Flow: **`<domain>/<task>` → `area/<domain>` → `staging`** (integration + preview/debug) → after debugging, **`staging` → `main`** (live at app.jacrentals.com).
+- `/start` reads this map, matches what you describe to the best area, and (with your OK) cuts a task branch off the **latest** of that area — every session starts current.
+- Naming: task branch is `<domain>/<task>` (e.g. `invoicing-payments/refund-rounding`), **NOT** `area/<domain>/<task>` — git won't nest a branch under an existing branch's name.
+- `main` is protected (PR + CI required); never commit straight to it. `staging` is where areas converge and get debugged before promotion.
 
 **Routing table** — match the user's described work to an area:
 

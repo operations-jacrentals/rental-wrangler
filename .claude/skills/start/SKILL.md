@@ -20,13 +20,18 @@ node --version; npm --version; clasp --version; gh --version; git --version
 - Show how the current branch differs from the integration branch when available: `git diff --stat origin/staging...HEAD` (or vs `origin/main`).
 - Recall memory: read `MEMORY.md` and surface anything relevant to this session's topic (e.g. `[[jactec-skill-build-plan]]`, `[[jactec-tooling]]`, `[[jactec-design-prefs]]`).
 
-## 3. Route to an area branch — DO NOT switch without an OK
-The app is organized into long-lived **area branches** (`area/*`) off `staging`, each owning a domain (rentals/dispatch, invoicing, units/fleet, design system, etc.). Many sessions share one area branch; the flow is **`area/<domain>` → `staging` (preview/debug) → `main` (live)**.
-- Read **`references/branch-map.md`**, match what Jac described to the best-fitting area, and **PROPOSE** it in one line (e.g. *"This is invoicing work → switch to `area/invoicing-payments`?"*). **WAIT for his OK** before switching.
-- On OK: `git fetch origin && git checkout <area-branch> && git pull --ff-only` so you start from the latest. Commit and push to that same area branch.
-- If two areas overlap, name both and let Jac pick (use `AskUserQuestion`). If **nothing** fits, propose a NEW `area/<slug>` branched off `staging`.
-- Also offer a session-output folder `<YYYY-MM-DD> <Topic>/` (git-ignored; OUTPUTS only — exports, scratch — never source). Use today's date.
-- If the topic isn't clear yet, defer routing until the first real task is defined — don't switch branches blind.
+## 3. Route to a TASK BRANCH off the right area — DO NOT switch without an OK
+The app is organized into long-lived **area branches** (`area/*`), each owning a domain. You do **not** work on an area branch directly — you branch a short-lived **task branch off it** (`<domain>/<task>`), so multiple sessions can work the SAME area in parallel without colliding. Flow: **`<domain>/<task>` → `area/<domain>` → `staging` (preview/debug) → `main` (live)**.
+- Read **`references/branch-map.md`**, match what Jac described to the best-fitting area, and **PROPOSE a task branch** in one line (e.g. *"Invoicing work → branch `invoicing-payments/refund-rounding` off `area/invoicing-payments`?"*). **WAIT for his OK** before switching.
+- On OK, start from current code (never stale):
+  1. `git fetch origin`
+  2. refresh the area base from the trunk: `git checkout area/<domain> && git merge --no-edit origin/main` (instant if untouched; a real merge if the area has work — **if it CONFLICTS, STOP and surface it**, don't guess), then `git push` the refreshed area.
+  3. cut the task branch: `git checkout -b <domain>/<task>` and `git push -u origin <domain>/<task>`.
+  4. Commit your work to the **task branch** and push there. Name it `<domain>/<task>`, NOT `area/<domain>/<task>` — git won't nest a branch under an existing branch's name.
+- When the task is done: merge `<domain>/<task>` → `area/<domain>`, then `area/<domain>` → `staging` to preview/debug, then PR `staging` → `main` once clean. (A standalone task can PR straight to `staging`.)
+- If two areas overlap, name both and let Jac pick (`AskUserQuestion`). If **nothing** fits, propose a NEW `area/<slug>` off `staging`, then a task branch off that.
+- Also offer a session-output folder `<YYYY-MM-DD> <Topic>/` (git-ignored; OUTPUTS only — never source). Use today's date.
+- If the topic isn't clear yet, defer until the first real task is defined — don't branch blind.
 
 ## 4. Working rules for this session (state briefly, then follow)
 - **Token discipline:** terse by default; `Grep`/`Glob` before `Read`; read only the range you need; spawn subagents for large isolated work to protect the main context.
