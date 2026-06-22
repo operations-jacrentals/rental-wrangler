@@ -2910,6 +2910,7 @@ const RB_TABS = [
     items: [{ r: 'R21' }, { f: 'upload-capture' }] },
   { id: 'data', label: 'Data & Behaviors', intro: 'Visualizations, plus the app’s behaviors — it flashes instead of erroring, right-clicks, tooltips, and self-lints.',
     items: [{ r: 'R16' }, { r: 'R15' }, { r: 'R13' }, { f: 'data-kpi' }, { f: 'data-gauge' }, { r: 'R19' }, { r: 'R20' }, { r: 'R23' }, { f: 'behavior-preview' }, { r: 'R0' }] },
+  { id: 'windows', label: 'Windows', intro: 'Every pop-up window in the app, by kind. Expand one for a live preview, its fields, and a copy-paste edit reference — your map to wrangle any screen.', items: [] },
 ];
 /* structural fallbacks so hovering containers also names their rule */
 const CLASS_RULE = [
@@ -5728,7 +5729,6 @@ function bottomBarInner() {
     <button class="iconbtn js-wrangler" data-tip="Mr. Wrangler — ask the yard AI, or report a bug to fix" style="font-size:16px">🤠</button>
     <button class="iconbtn js-requests" data-tip="Requests for your OK — review what Mr. Wrangler filed">${I.inbox}${wranglerRequests.length ? `<span class="bb-badge">${wranglerRequests.length > 9 ? '9+' : wranglerRequests.length}</span>` : ''}</button>
     <button class="iconbtn js-hotkeys" data-tip="Mouse &amp; keyboard shortcuts">${I.mouse}</button>
-    <button class="iconbtn js-adminlock${adminUnlocked() ? ' on' : ''}" data-tip="${adminUnlocked() ? 'Admin tools unlocked — click to lock' : 'Admin tools — click to unlock'}">${adminUnlocked() ? I.lockOpen : I.lock}</button>
     ${adminUnlocked() ? `<button class="iconbtn js-lint${document.body.classList.contains('rw-lint') ? ' on' : ''}" data-tip="Design lint — flash anything that bypassed the UI builders (R0)">${I.eye}</button>
     <button class="iconbtn js-inspect${state.inspect ? ' on' : ''}" data-tip="Design Inspector — hover names the rule, click copies the reference">${I.search}</button>
     <button class="iconbtn js-rulebook" data-tip="The R-Rulebook — visual design reference (SPEC v8)">${I.doc}</button>
@@ -7006,7 +7006,22 @@ function renderOverlay() {
   const o = state.overlay;
   const overlay = el('div', 'overlay');
   overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) closeOverlay(); });
-
+  if (buildPopupEl(o, overlay) === false) { state.overlay = null; return; }
+  root.appendChild(overlay);
+  { const _nb = overlay.querySelector('.popup-body'); if (_nb && _ovScroll[o.kind]) _nb.scrollTop = _ovScroll[o.kind]; }   // restore scroll on a same-overlay re-render (sign/selfie no longer jump to top)
+  _ovLastKind = o.kind;
+  if (o.kind === 'partform') document.querySelector('.overlay .js-pf2-desc')?.focus();   // Jac: Part/Task field focused by default
+  if (o.kind === 'newCustomer') setupSignaturePad();
+  if (o.kind === 'payment') setupPayAlloc();   // live counter for the §19 allocation rows
+  if (o.kind === 'addCard') { const cc = IDX.customer.get(o.customerId); if (cc) mountCardElement(); }   // §7.1b card saved first, signed after
+  if (o.kind === 'newCustomer' && o.cardSub) { const cc = IDX.customer.get(o.editId); if (cc) mountCardElement(); }   // §14 the side-by-side Add-card panel
+  { const _agFeed = overlay.querySelector('.ag-cam-feed'); if (_agFeed) startAgCam(_agFeed); else stopAgCam(); }   // live selfie camera follows the capture block
+}
+// §RB-Windows enabler — the per-kind popup BUILDER, extracted from renderOverlay so the
+// admin Rulebook can render an inert preview of any popup. Pure: builds into `overlay`,
+// no global side-effects (the live Stripe/camera/focus wiring stays in renderOverlay's
+// post phase). Returns false if a record guard tripped (caller closes the overlay), else true.
+function buildPopupEl(o, overlay, opts = {}) {
   if (o.kind === 'qr') {
     const url = o.url || location.href;
     const pop = el('div', 'popup'); pop.style.width = '340px';
@@ -7051,7 +7066,7 @@ function renderOverlay() {
       <textarea class="cmt-input js-cmt-text" placeholder="Leave a note…">${esc(o.text || '')}</textarea>
       <div class="cmt-card-foot">${rec ? `<span class="cmt-hint">${esc(detailTitle(entityCardOf(o.card, o.recType), rec))}</span>` : '<span></span>'}<button class="cmt-post js-cmt-save">Post</button></div>`;
     overlay.appendChild(pop);
-    setTimeout(() => pop.querySelector('.cmt-input')?.focus(), 0);
+    if (!opts.preview) setTimeout(() => pop.querySelector('.cmt-input')?.focus(), 0);
   } else if (o.kind === 'rulebook') {
     // THE VISUAL RULEBOOK (SPEC v8) — every example is emitted by the REAL
     // builder, so this reference can never drift from the code.
@@ -7112,9 +7127,32 @@ function renderOverlay() {
         </div>
       </div>`;
     };
+    // §RB-Windows — one collapsible row per catalogued popup window. Collapsed shows
+    // label + tag + a copy-ref button; the live preview, its fields, and the code
+    // location build lazily on first expand (see the js-win-row handler).
+    const windowRow = (w) => {
+      const loc = `app.js · renderOverlay → o.kind === '${w.kind}'`;
+      return `<div class="rb-win" data-kind="${esc(w.kind)}">
+        <div class="rb-win-head">
+          <button class="rb-win-toggle js-win-row" data-kind="${esc(w.kind)}" aria-expanded="false">
+            <span class="rb-win-chev" aria-hidden="true">${I.chev}</span>
+            <span class="rb-win-label">${esc(w.label)}</span>
+            <span class="rb-win-tag">${esc(w.tag)}</span>
+          </button>
+          <button class="rb-win-copy js-win-copy" data-kind="${esc(w.kind)}" data-tip="Copy a Claude-ready edit reference">📋<span>Copy</span></button>
+        </div>
+        <div class="rb-win-body" hidden>
+          <div class="rb-win-preview" data-built="0"></div>
+          <div class="rb-win-fields"></div>
+          <code class="rb-win-loc">${esc(loc)}</code>
+        </div>
+      </div>`;
+    };
     const activeTab = RB_TABS.find((t) => t.id === o.rbTab) || RB_TABS[0];
     const tabBar = RB_TABS.map((t) => `<button class="rb-tab${t.id === activeTab.id ? ' on' : ''} js-rbtab" data-tab="${t.id}">${esc(t.label)}</button>`).join('');
-    const rows = activeTab.items.map((it) => (it.r ? ruleRow(it.r) : foundRow(it.f))).join('');
+    const rows = activeTab.id === 'windows'
+      ? WINDOW_CATALOG.map(windowRow).join('')
+      : activeTab.items.map((it) => (it.r ? ruleRow(it.r) : foundRow(it.f))).join('');
     // ORPHANS — lint-flagged controls with no rule yet (surfaced on Data & Behaviors)
     let orphanBlock = '';
     if (activeTab.id === 'data') {
@@ -7127,6 +7165,25 @@ function renderOverlay() {
         <details class="rb-idx"${orphans.length ? ' open' : ''}><summary>${orphans.length} element${orphans.length === 1 ? '' : 's'}</summary>${orphanRows}</details></div>
       </div>`;
     }
+    let standaloneBlock = '';
+    if (activeTab.id === 'windows') {
+      const stdRows = STANDALONE_SURFACES.map((s, i) => `<div class="rb-win" data-std="${i}">
+        <div class="rb-win-head">
+          <button class="rb-win-toggle js-win-row" data-std="${i}" aria-expanded="false">
+            <span class="rb-win-chev" aria-hidden="true">${I.chev}</span>
+            <span class="rb-win-label">${esc(s.label)}</span>
+            <span class="rb-win-tag">${esc(s.tag)}</span>
+          </button>
+          <button class="rb-win-copy js-win-copy" data-ref="${esc('Edit the ' + s.label + ' (' + s.loc + ') — a standalone form/dropdown in the app, not a pop-up window.')}">📋<span>Copy</span></button>
+        </div>
+        <div class="rb-win-body" hidden>
+          <div class="rb-win-preview" data-built="0"></div>
+          <div class="rb-win-fields"></div>
+          <code class="rb-win-loc">${esc(s.loc)}</code>
+        </div>
+      </div>`).join('');
+      standaloneBlock = `<div class="rb-std"><div class="rb-std-head">Standalone — forms &amp; dropdowns not in a pop-up</div>${stdRows}</div>`;
+    }
     const pop = el('div', 'popup'); pop.style.width = '680px';
     pop.innerHTML = `
       <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${I.doc}</span><h3>The R-Rulebook — SPEC v8 · design system</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
@@ -7135,6 +7192,7 @@ function renderOverlay() {
         <p class="rb-intro">${esc(activeTab.intro)} <span class="muted">Live examples — this reference can’t drift. Use the 🔍 Inspector (bottom bar) to hover any element and copy its rule.</span></p>
         ${rows}
         ${orphanBlock}
+        ${standaloneBlock}
       </div>`;
     overlay.appendChild(pop);
   } else if (o.kind === 'partform') {
@@ -7475,7 +7533,7 @@ function renderOverlay() {
     // Read-only signed-agreement viewer (from the customer card). Shows the exact
     // agreement the customer accepted plus their signature + the date.
     const c = IDX.customer.get(o.recId);
-    if (!c) { state.overlay = null; return; }
+    if (!c) { return false; }
     const ag = AGREEMENTS[c.agreementType] || AGREEMENTS.rental;
     const pop = el('div', 'popup nc-popup');
     pop.innerHTML = popupShell({ icon: CARD_ICON.customers || '', title: ag.title, tag: 'Customer · agreement',
@@ -7489,7 +7547,7 @@ function renderOverlay() {
     // Required-checklist takeover (Settings → Inspections): replaces the sheet until completed;
     // closing keeps it as a pending inspection. Any item Fail → overall Fail → existing auto-WO.
     const u = IDX.unit.get(o.unitId); const cfg = u && checklistFor(u); const n = IDX.insp.get(o.inspId);
-    if (!u || !cfg || !n) { state.overlay = null; return; }
+    if (!u || !cfg || !n) { return false; }
     n.items = n.items || {};
     const items = cfg.items || [];
     const done = items.filter((it) => n.items[it.id]).length; const allDone = done === items.length;
@@ -7510,7 +7568,7 @@ function renderOverlay() {
     // §12.8 Failure report — triggered when an inspection is marked Failed: capture a
     // photo/video + a description for the auto-created work order.
     const n = IDX.insp.get(o.recId);
-    if (!n) { state.overlay = null; return; }
+    if (!n) { return false; }
     const unit = IDX.unit.get(n.unitId);
     const ir = inspResult(n);
     const isVideo = (n.photo || '').startsWith('data:video');
@@ -7534,7 +7592,7 @@ function renderOverlay() {
     const u = IDX.unit.get(o.unitId);
     const rows = u ? unitServiceRows(u) : [];   // includes the wash task (svc-wash)
     const task = rows.find((s) => s.taskId === o.taskId);
-    if (!u || !task) { state.overlay = null; return; }
+    if (!u || !task) { return false; }
     const svcVid = (state.svcPhoto || '').startsWith('data:video');
     const media = state.svcPhoto
       ? `<div class="insp-photo">${svcVid ? `<video src="${esc(state.svcPhoto)}" controls></video>` : `<img src="${esc(state.svcPhoto)}" alt="service photo">`}<label class="insp-rephoto">Replace<input type="file" accept="image/*" class="js-svc-photo" hidden></label></div>`
@@ -7553,7 +7611,7 @@ function renderOverlay() {
   } else if (o.kind === 'schedule') {
     // §12.1 Schedule — a single date+time follow-up logged to the customer Activity Log
     const c = IDX.customer.get(o.customerId);
-    if (!c) { state.overlay = null; return; }
+    if (!c) { return false; }
     if (o.when === undefined) { o.when = TODAY_ISO; o.whenTime = to24(nowHourLabel()) || '09:00'; }
     const pop = el('div', 'popup'); pop.style.width = '340px';
     pop.innerHTML = popupShell({ icon: CARD_ICON.customers, title: `Schedule — ${c.name}`, tag: 'Customer · follow-up',
@@ -7565,7 +7623,7 @@ function renderOverlay() {
   } else if (o.kind === 'splitUnit') {
     // §20 split — give one unit its own window on a NEW sibling rental, same invoice.
     const r = IDX.rental.get(o.rentalId), u = IDX.unit.get(o.unitId);
-    if (!r || !u) { state.overlay = null; return; }
+    if (!r || !u) { return false; }
     const inv = r.invoiceId ? IDX.invoice.get(r.invoiceId) : null;
     const pop = el('div', 'popup'); pop.style.width = '360px';
     pop.innerHTML = popupShell({ icon: CARD_ICON.rentals, title: `Different dates — ${u.name}`, tag: 'Rental · split window',
@@ -7578,7 +7636,7 @@ function renderOverlay() {
   } else if (o.kind === 'addCard') {
     // Stripe Card Element — raw card data stays inside Stripe's iframe.
     const c = IDX.customer.get(o.customerId);
-    if (!c) { state.overlay = null; return; }
+    if (!c) { return false; }
     const pop = el('div', 'popup'); pop.style.width = '430px';
     pop.innerHTML = popupShell({ icon: CARD_ICON.customers || '', title: `Add card — ${c.name}`, tag: 'Customer · card on file',
       foot: `<button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill ignition js-card-save" data-r="R17">Save card</button>`,
@@ -7593,7 +7651,7 @@ function renderOverlay() {
     // §14b ACH — raw routing/account live ONLY in these inputs → straight to Stripe
     // (confirmUsBankAccountSetup); never stored, never sent to our backend.
     const c = IDX.customer.get(o.customerId);
-    if (!c) { state.overlay = null; return; }
+    if (!c) { return false; }
     const consent = !!(c.signature && c.selfie);
     const pop = el('div', 'popup'); pop.style.width = '430px';
     pop.innerHTML = popupShell({ icon: CARD_ICON.customers || '', title: `Add bank account — ${c.name}`, tag: 'Customer · ACH bank',
@@ -7618,7 +7676,7 @@ function renderOverlay() {
     // reads off their bank statement (a $0.01 deposit described "...SMxxxx").
     const c = IDX.customer.get(o.customerId);
     const k = c && customerBanks(c).find((x) => x.id === o.bankId);
-    if (!c || !k) { state.overlay = null; return; }
+    if (!c || !k) { return false; }
     const pop = el('div', 'popup'); pop.style.width = '400px';
     pop.innerHTML = popupShell({ icon: CARD_ICON.customers || '', title: `Verify ${k.bankName || 'bank'} ••${k.last4}`, tag: 'Customer · verify ACH',
       foot: `<button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill ignition js-ach-verify-save" data-r="R17">Verify account</button>`,
@@ -7630,7 +7688,7 @@ function renderOverlay() {
     overlay.appendChild(pop);
   } else if (o.kind === 'payment') {
     const inv = IDX.invoice.get(o.invoiceId);
-    if (!inv) { state.overlay = null; return; }
+    if (!inv) { return false; }
     const t = invoiceTotals(inv);
     const c = inv.customerId ? IDX.customer.get(inv.customerId) : null;
     const card = hasCardOnFile(c);
@@ -7681,17 +7739,78 @@ function renderOverlay() {
         ${o.error ? `<div class="login-err" style="text-align:left;margin-top:10px">${esc(o.error)}</div>` : ''}` });
     overlay.appendChild(pop);
   }
-  root.appendChild(overlay);
-  { const _nb = overlay.querySelector('.popup-body'); if (_nb && _ovScroll[o.kind]) _nb.scrollTop = _ovScroll[o.kind]; }   // restore scroll on a same-overlay re-render (sign/selfie no longer jump to top)
-  _ovLastKind = o.kind;
-  if (o.kind === 'partform') document.querySelector('.overlay .js-pf2-desc')?.focus();   // Jac: Part/Task field focused by default
-  if (o.kind === 'newCustomer') setupSignaturePad();
-  if (o.kind === 'payment') setupPayAlloc();   // live counter for the §19 allocation rows
-  if (o.kind === 'addCard') { const cc = IDX.customer.get(o.customerId); if (cc) mountCardElement(); }   // §7.1b card saved first, signed after
-  if (o.kind === 'newCustomer' && o.cardSub) { const cc = IDX.customer.get(o.editId); if (cc) mountCardElement(); }   // §14 the side-by-side Add-card panel
-  { const _agFeed = overlay.querySelector('.ag-cam-feed'); if (_agFeed) startAgCam(_agFeed); else stopAgCam(); }   // live selfie camera follows the capture block
+  return true;
 }
 const openOverlay = (o) => { state.datepick = null; _ovScroll[o.kind] = 0; state.overlay = o; renderOverlay(); };   // fresh open starts at top
+/* ════════════ RB-WINDOWS catalog (Jac 2026-06-22) — the admin Rulebook's index of
+   EVERY popup window. One entry per renderOverlay kind so the "Windows" tab can list
+   it and (on expand) show an inert live preview via buildPopupEl. sample() returns
+   representative args from the demo seed (DATA.*); a kind whose record we don't have
+   in demo just yields no preview — the row still lists it. The CI guard
+   (gen-window-catalog) fails if a renderOverlay branch is missing here, so "every
+   popup is listed" stays literally true. label = human name · tag = the popup's tag. */
+const WINDOW_CATALOG = [
+  { kind: 'qr',            label: 'Share session (QR)',      tag: 'Share · session',          sample: () => ({}) },
+  { kind: 'migrateUnits',  label: 'Round up missing units',  tag: 'Units · migrate',          sample: () => ({ plan: [{ name: 'Sample Unit', action: 'create', unitId: 'U000', categoryId: ((DATA.categories || [])[0] || {}).categoryId, count: 1 }] }) },
+  { kind: 'comment',       label: 'Comment note',            tag: 'Note · comment',           sample: () => ({ card: 'units', recId: ((DATA.units || [])[0] || {}).unitId, recType: null, color: 'yellow' }) },
+  { kind: 'rulebook',      label: 'The R-Rulebook',          tag: 'SPEC v8 · design system',  sample: () => ({}) },
+  { kind: 'partform',      label: 'Add / Edit Part · Task',  tag: 'Work order · line',         sample: () => ({ woId: ((DATA.workOrders || [])[0] || {}).woId }) },
+  { kind: 'receiptform',   label: 'New / Edit Receipt',      tag: 'Expense · receipt',         sample: () => ({}) },
+  { kind: 'capture',       label: 'Log yard journey',        tag: 'Yard journey · log',        sample: () => ({ rentalId: ((DATA.rentals || [])[0] || {}).rentalId, cap: 'start' }) },
+  { kind: 'wodone',        label: 'Complete Work Order?',    tag: 'Work order · confirm',      sample: () => ({ woId: ((DATA.workOrders || [])[0] || {}).woId }) },
+  { kind: 'role',          label: 'Role KPIs',               tag: 'Role · scorecard',          sample: () => ({ role: (ROLES[0] || {}).id }) },
+  { kind: 'requests',      label: 'Requests inbox',          tag: 'Mr. Wrangler · approvals',  sample: () => ({}) },
+  { kind: 'notifications', label: 'Notifications',           tag: 'Mr. Wrangler · resolved',   sample: () => ({}) },
+  { kind: 'hotkeys',       label: 'Mouse shortcuts',         tag: 'Operator · controls',       sample: () => ({}) },
+  { kind: 'feedback',      label: 'Report a bug or request', tag: 'Mr. Wrangler · report',     sample: () => ({}) },
+  { kind: 'board',         label: 'Back-office board',       tag: 'Back office · records',     sample: () => ({ board: (BACKOFFICE_BOARDS[0] || {}).id }) },
+  { kind: 'boardview',     label: 'Board View',              tag: 'Card · board view',         sample: () => ({ card: 'units', query: '', sort: {}, calc: {}, colOrder: null, extraRows: [], cellData: {}, seq: 0 }) },
+  { kind: 'tools',         label: 'Tools tray',              tag: 'Yard · toolbox',            sample: () => ({}) },
+  { kind: 'settings',      label: 'Settings',                tag: 'Admin · settings',          sample: () => ({}) },
+  { kind: 'newCustomer',   label: 'New / Edit Customer',     tag: 'Customer · account',        sample: () => ({ editId: null, draft: { firstName: '', lastName: '', company: '', phone: '', email: '', industry: '', accountType: 'Non-Business', requiresPO: undefined, accountNotes: '', idNumber: '', netDays: '', custom: {} } }) },
+  { kind: 'agreement',     label: 'Signed agreement',        tag: 'Customer · agreement',      sample: () => ({ recId: ((DATA.customers || [])[0] || {}).customerId }) },
+  { kind: 'checklist',     label: 'Inspection checklist',    tag: 'Inspection · checklist',    sample: () => ({ unitId: ((DATA.units || [])[0] || {}).unitId, inspId: ((DATA.inspections || [])[0] || {}).inspectionId }) },
+  { kind: 'inspection',    label: 'Failure report',          tag: 'Inspection · failure',      sample: () => ({ recId: ((DATA.inspections || [])[0] || {}).inspectionId }) },
+  { kind: 'service',       label: 'Complete service',        tag: 'Service · complete',        sample: () => ({ unitId: ((DATA.units || [])[0] || {}).unitId, taskId: 'svc-wash' }) },
+  { kind: 'schedule',      label: 'Schedule follow-up',      tag: 'Customer · follow-up',      sample: () => ({ customerId: ((DATA.customers || [])[0] || {}).customerId }) },
+  { kind: 'splitUnit',     label: 'Different dates (split)',  tag: 'Rental · split window',     sample: () => ({ rentalId: ((DATA.rentals || [])[0] || {}).rentalId, unitId: ((DATA.units || [])[0] || {}).unitId }) },
+  { kind: 'addCard',       label: 'Add card',                tag: 'Customer · card on file',   sample: () => ({ customerId: ((DATA.customers || [])[0] || {}).customerId }) },
+  { kind: 'addAch',        label: 'Add bank account',        tag: 'Customer · ACH bank',       sample: () => ({ customerId: ((DATA.customers || [])[0] || {}).customerId }) },
+  { kind: 'verifyAch',     label: 'Verify ACH',              tag: 'Customer · verify ACH',     sample: () => { const c = (DATA.customers || []).find((x) => (x.achAccounts || []).length); return c ? { customerId: c.customerId, bankId: c.achAccounts[0].id } : {}; } },
+  { kind: 'payment',       label: 'Take Payment',            tag: 'Invoice · payment',         sample: () => ({ invoiceId: ((DATA.invoices || [])[0] || {}).invoiceId }) },
+];
+/* Build an INERT preview popup for a catalog kind (or null if a record guard trips
+   or it throws). Reuses buildPopupEl with {preview:true} — the REAL popup — into a
+   throwaway holder so nothing touches the live overlay or fires side-effects. */
+function previewOverlayFor(kind) {
+  const entry = WINDOW_CATALOG.find((w) => w.kind === kind);
+  if (!entry) return null;
+  const holder = el('div', 'rb-prev-holder');
+  try {
+    const o = { kind, ...(entry.sample ? entry.sample() : {}), preview: true };
+    if (buildPopupEl(o, holder, { preview: true }) === false) return null;
+  } catch (e) { return null; }
+  return holder.firstElementChild ? holder : null;
+}
+/* Standalone surfaces — the forms & dropdowns that AREN'T pop-up windows (they live
+   inline on the cards/toolbar), listed under the Windows tab with a code location +
+   copy-ref. No live preview (they need card context); the locator is the map. */
+const STANDALONE_SURFACES = [
+  { label: 'Status gate dropdown', tag: 'R1 · advances a record', loc: 'app.js · gatePill / gatePillRaw / funnelPill',
+    preview: () => gatePill('rentalStatus', 'On Rent', '', {}) },
+  { label: 'Right-click context menu', tag: 'R20 · cut · copy · comment', loc: 'app.js · openCtxMenu',
+    preview: () => `<div class="ctx-menu" style="position:static;display:inline-block;min-width:168px;box-shadow:none">`
+      + `<button class="dd-item">✂ Cut</button><button class="dd-item">📋 Copy</button><button class="dd-item">📌 Paste</button>`
+      + `<div class="menu-sep"></div><button class="dd-item">💬 Add Comment</button><button class="dd-item">🤠 Ask Mr. Wrangler</button></div>` },
+  { label: 'Date / time picker', tag: 'R22 · the one styled calendar', loc: 'app.js · dateField',
+    preview: () => dateField('when', '', { withTime: true }) },
+  { label: 'Card notes line', tag: 'R12 · boxless notes', loc: 'app.js · notesSection',
+    preview: () => { const r = (DATA.units || [])[0]; if (!r) return ''; const ns = notesSection('units', r, 'unitId'); return ns.top || ns.bottom; } },
+  { label: 'Global search + filters', tag: 'Toolbar · find · pin chips', loc: 'app.js · #globalsearch input',
+    preview: () => `<div style="display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:10px;padding:6px 10px;background:var(--bg-2);min-width:280px">`
+      + `<span style="display:inline-flex;color:var(--txt-3)">${I.search}</span>`
+      + `<input class="search" placeholder="Search everything…" style="border:none;background:none;outline:none;color:var(--txt);flex:1;min-width:0" disabled>${badge('Type · Excavator')}</div>` },
+];
 /* ── §15 in-app feedback: bug/request → queued to the backend Feedback tab ── */
 function feedbackContext() {
   const s = activeSession(), a = s && s.anchor;
@@ -9559,8 +9678,6 @@ function onClick(e) {
   if (closest('.js-qr')) return shareSession();
   if (closest('.js-previews') || closest('.js-roweye')) { e.stopPropagation(); state.previewsOn = !state.previewsOn; if (!state.previewsOn) hideHoverPreview(); try { localStorage.setItem('jactec.previewsOff', state.previewsOn ? '0' : '1'); } catch (e) {} toast(state.previewsOn ? 'Hover previews on.' : 'Hover previews off — every eye runs red.'); return render(); }
   if (closest('.js-hotkeys')) return openOverlay({ kind: 'hotkeys' });
-  if (closest('.js-adminlock')) { e.stopPropagation(); return toggleAdminLock(); }
-  if (closest('.js-lint, .js-inspect, .js-rulebook') && !adminUnlocked()) { e.stopPropagation(); return toggleAdminLock(); }
   if (closest('.js-lint')) {   // R0 flash-lint toggle — persists per device
     const on = document.body.classList.toggle('rw-lint');
     try { localStorage.setItem('jactec.lint', on ? '1' : '0'); } catch (err) {}
@@ -9575,6 +9692,52 @@ function onClick(e) {
     return render();
   }
   if (closest('.js-rbtab')) { e.stopPropagation(); if (state.overlay) state.overlay.rbTab = closest('.js-rbtab').dataset.tab; return renderOverlay(); }
+  if (closest('.js-win-copy')) {   // §RB-Windows — copy a Claude-ready edit reference for this popup
+    e.stopPropagation();
+    const cb = closest('.js-win-copy');
+    const w = cb.dataset.kind ? WINDOW_CATALOG.find((x) => x.kind === cb.dataset.kind) : null;
+    const ref = cb.dataset.ref || (w ? `Edit the "${w.label}" popup in app.js (renderOverlay → o.kind === '${cb.dataset.kind}'), from the R-Rulebook Windows catalog.` : cb.dataset.kind);
+    const done = () => toast('📋 Edit reference copied — paste it to Claude.');
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(ref).then(done, done);
+    else { try { const ta = document.createElement('textarea'); ta.value = ref; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); } catch (err) {} done(); }
+    return;
+  }
+  if (closest('.js-win-row')) {   // §RB-Windows — expand a window row; build its inert preview lazily on first open
+    e.stopPropagation();
+    const btn = closest('.js-win-row'); const win = btn.closest('.rb-win'); const body = win.querySelector('.rb-win-body');
+    const open = win.classList.toggle('open'); btn.setAttribute('aria-expanded', open ? 'true' : 'false'); body.hidden = !open;
+    if (open) {
+      const well = win.querySelector('.rb-win-preview');
+      if (well.dataset.built === '0') {
+        well.dataset.built = '1';
+        let scope = null;
+        if (btn.dataset.std != null) {                       // standalone surface — render its inert preview HTML
+          try { const html = STANDALONE_SURFACES[+btn.dataset.std].preview(); if (html) { well.innerHTML = html; scope = well; } } catch (err) { scope = null; }
+        } else {                                             // popup window — build the real popup inert
+          const node = previewOverlayFor(btn.dataset.kind);
+          if (node) { well.appendChild(node); scope = node; }
+        }
+        if (scope) {
+          const seen = new Set(); const chips = [];
+          [...scope.querySelectorAll('input, textarea, select, .file-drop')].forEach((fe) => {
+            if (fe.tagName === 'INPUT' && (fe.type === 'file' || fe.type === 'hidden')) return;   // the .file-drop already represents its file input
+            const isDrop = fe.classList.contains('file-drop'); const isSel = fe.tagName === 'SELECT';
+            const kindTag = isDrop ? 'file' : isSel ? 'dropdown' : (fe.getAttribute('type') || fe.tagName.toLowerCase());
+            const label = (fe.getAttribute('placeholder') || fe.getAttribute('aria-label') || (isDrop ? 'Add file' : isSel ? (fe.options[0] && fe.options[0].textContent) || 'Choose' : kindTag) || '').trim();
+            const key = (label + '|' + kindTag).toLowerCase(); if (!label || seen.has(key)) return; seen.add(key);
+            chips.push(`<span class="rb-win-field"><b>${esc(label.slice(0, 30))}</b><i>${esc(kindTag)}</i></span>`);
+          });
+          win.querySelector('.rb-win-fields').innerHTML = chips.length
+            ? `<div class="rb-win-fieldlbl">Fields · forms · dropdowns (${chips.length})</div>${chips.join('')}`
+            : '<span class="rb-win-norec">No labelled fields here.</span>';
+        } else {
+          well.innerHTML = '<span class="rb-win-norec">No demo record to preview — open it live in the app to edit.</span>';
+          win.querySelector('.rb-win-fields')?.remove();
+        }
+      }
+    }
+    return;
+  }
   if (closest('.js-rulebook')) return openOverlay({ kind: 'rulebook' });
   if (closest('.js-photo-sweep')) { e.stopPropagation(); return sweepPhotosToDrive(); }   // admin one-shot: offload base64 photos → Drive
   if (closest('.js-feedback')) { e.stopPropagation(); return wranglerNewChat(); }   // §18d folded: the old bug/request form is now the one Mr. Wrangler chat
@@ -10087,24 +10250,14 @@ function startInlineEdit(span) {
 
 const BOOKING_STATUSES = ['On Rent', 'Reserved', 'Today', 'Tomorrow'];
 
-/* ADMIN TOOLS GATE (Jac 2026-06-13) — the dev/design tools (R-Rulebook, Design
-   Inspector, Design Lint) live behind the admin passphrase. This is a client-side
-   gate (obfuscated hash, not real crypto — anyone reading the source could bypass
-   it), which is appropriate for hiding internal tooling, not for securing secrets.
-   Real-app Admin/Owner roles are already trusted. Settings is intentionally NOT
-   gated here (Jac: "the settings board you don't need to hide"). */
-const ADMIN_HASH = 'xy16gqtfz0';
-function _cyrb53(s, seed = 0) { let h1 = 0xdeadbeef ^ seed, h2 = 0x41c6ce57 ^ seed; for (let i = 0, ch; i < s.length; i++) { ch = s.charCodeAt(i); h1 = Math.imul(h1 ^ ch, 2654435761); h2 = Math.imul(h2 ^ ch, 1597334677); } h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507); h1 ^= Math.imul(h2 ^ (h2 >>> 13), 3266489909); h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507); h2 ^= Math.imul(h1 ^ (h1 >>> 13), 3266489909); return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36); }
-let _adminUnlock = (() => { try { return localStorage.getItem('jactec.admin') === ADMIN_HASH; } catch (e) { return false; } })();
-function adminUnlocked() { return _adminUnlock || currentRole === 'Admin' || currentRole === 'Owner'; }
-function toggleAdminLock() {
-  if (_adminUnlock) { _adminUnlock = false; try { localStorage.removeItem('jactec.admin'); } catch (e) {} toast('Admin tools locked.'); return render(); }
-  if (currentRole === 'Admin' || currentRole === 'Owner') { toast('You already have Admin access to these tools.'); return; }
-  const pw = window.prompt('Enter the Admin password to unlock dev tools:') || '';
-  if (!pw) return;
-  if (_cyrb53(pw) === ADMIN_HASH) { _adminUnlock = true; try { localStorage.setItem('jactec.admin', ADMIN_HASH); } catch (e) {} toast('🔓 Admin tools unlocked.'); render(); }
-  else toast('Wrong password.');
-}
+/* ADMIN TOOLS GATE (Jac 2026-06-22) — the dev/design tools (R-Rulebook, Design
+   Inspector, Design Lint) show ONLY for an Admin/Owner login. The old obfuscated
+   passphrase unlock was dropped (Jac): the admin login is the only thing that
+   should see these, so a normal account gets nothing — no lock toggle, no peek.
+   Settings is intentionally NOT gated here (Jac: "you don't need to hide it").
+   (requireAdmin below — the backend-verified card/price override — is separate
+   and untouched.) */
+function adminUnlocked() { return currentRole === 'Admin' || currentRole === 'Owner'; }
 
 /** Verify an Admin password (reuses the Settings gate), then run onOk. Demo/offline → allowed. */
 async function requireAdmin(reason, onOk) {
@@ -13095,7 +13248,7 @@ function exposeTestApi() {
       latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore, wranglerRailLoad, wrOffloadChatImages, wrEvictChatBlobs, driveViewUrl, mergeWranglerRails,
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
-      companyRevenueGoal, companyName, companyTagline, rentalRuleBlock, dueForCustomer, footerHidden, customFieldsFor, checklistFor, checklistRequired, applySettings, getStatus, pageDefaultSlice, __state: state };
+      companyRevenueGoal, companyName, companyTagline, rentalRuleBlock, dueForCustomer, footerHidden, customFieldsFor, checklistFor, checklistRequired, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, setRole: (r) => { currentRole = r || ''; render(); }, __state: state };
   } catch (e) { /* no window (non-browser) */ }
 }
 
