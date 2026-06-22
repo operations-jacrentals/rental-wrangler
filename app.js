@@ -2043,7 +2043,7 @@ function pageDefaultSlice(tab) {
     case 'requirements': return { key: 'rentalRules', value: {} };
     case 'layout': return { key: 'layout', value: { footers: {} } };
     case 'fields': return { key: 'customFields', value: { customers: [], units: [], rentals: [], invoices: [] } };
-    case 'inspections': return { key: 'inspections', value: Object.fromEntries((DATA.categories || []).map((c) => [c.categoryId, { required: false, items: [] }])) };
+    case 'inspections': return { key: 'inspections', value: Object.fromEntries([...new Set((DATA.categories || []).map((c) => inspFamilyKey(c)))].map((k) => [k, { required: false, items: [] }])) };
     default: return null;   // Logins / planned tabs have no resettable slice
   }
 }
@@ -2091,8 +2091,22 @@ const footerHidden = (card) => (layoutCfg().footers || {})[card] === 'off';
 // Admin-defined custom fields per entity (Settings → Custom Fields). Values live schema-less
 // on the record (rec.custom[fieldId]); an empty config means no extra fields anywhere.
 const customFieldsFor = (entity) => ((state.settings && state.settings.customFields) || {})[entity] || [];
-// Per-category inspection checklists (Settings → Inspections). Empty = today's quick Pass/Fail only.
-const inspectionCfg = (categoryId) => ((state.settings && state.settings.inspections) || {})[categoryId] || null;
+// Inspection checklists are keyed by EQUIPMENT FAMILY so one list covers the whole
+// family (Settings → Inspections): all *Excavator* categories share one, all
+// *Trailer* categories share one EXCEPT *Dump Trailer* (its own). Everything else
+// stays per-category (keyed by its own categoryId, so prior per-category configs are
+// unchanged). Empty = today's quick Pass/Fail only.
+function inspFamilyKey(cat) {
+  const n = ((cat && cat.name) || '').toLowerCase();
+  if (n.includes('excavator')) return 'fam:excavator';                              // incl. "Microexcavator"
+  if (n.includes('trailer')) return n.includes('dump') ? 'fam:trailer-dump' : 'fam:trailer';
+  return cat ? cat.categoryId : '';
+}
+const INSP_FAM_LABELS = { 'fam:excavator': 'Excavator', 'fam:trailer': 'Trailer', 'fam:trailer-dump': 'Dump Trailer' };
+const inspKeyOfCat = (categoryId) => inspFamilyKey(IDX.category.get(categoryId));
+const inspFamilyLabel = (key) => INSP_FAM_LABELS[key] || (IDX.category.get(key) ? IDX.category.get(key).name : key);
+const inspCfgByKey = (key) => ((state.settings && state.settings.inspections) || {})[key] || null;
+const inspectionCfg = (categoryId) => inspCfgByKey(inspKeyOfCat(categoryId));
 function checklistFor(unit) { const c = unit && inspectionCfg(unit.categoryId); return (c && Array.isArray(c.items) && c.items.length) ? c : null; }
 const checklistRequired = (unit) => { const c = checklistFor(unit); return !!(c && c.required); };
 const INSP_TYPES = ['toggle','file','select','number','date','text'];
@@ -2271,22 +2285,25 @@ function ensureCfDraft(o, entity) {
   if (!o.draftSettings.customFields[entity]) o.draftSettings.customFields[entity] = JSON.parse(JSON.stringify(customFieldsFor(entity)));
   return o.draftSettings.customFields[entity];
 }
-function ensureInspDraft(o, catId) {
+function ensureInspDraft(o, key) {   // key = an inspFamilyKey (family or ungrouped categoryId)
   o.draftSettings = o.draftSettings || {};
   o.draftSettings.inspections = o.draftSettings.inspections || {};
-  if (!o.draftSettings.inspections[catId]) { const cur = inspectionCfg(catId); o.draftSettings.inspections[catId] = cur ? JSON.parse(JSON.stringify(cur)) : { required: false, items: [] }; }
-  return o.draftSettings.inspections[catId];
+  if (!o.draftSettings.inspections[key]) { const cur = inspCfgByKey(key); o.draftSettings.inspections[key] = cur ? JSON.parse(JSON.stringify(cur)) : { required: false, items: [] }; }
+  return o.draftSettings.inspections[key];
 }
-function draftInspCfg(o, catId) {
-  return (o.draftSettings && o.draftSettings.inspections && o.draftSettings.inspections[catId]) || inspectionCfg(catId) || { required: false, items: [] };
+function draftInspCfg(o, key) {
+  return (o.draftSettings && o.draftSettings.inspections && o.draftSettings.inspections[key]) || inspCfgByKey(key) || { required: false, items: [] };
 }
 function settingsInspectionsPane(o) {
   const cats = DATA.categories || [];
-  const catId = o.inspCat || (cats[0] && cats[0].categoryId) || '';
-  o.inspCat = catId;
-  const pick = cats.map((c) => { const cfg = draftInspCfg(o, c.categoryId); const tag = (cfg.items && cfg.items.length) ? (cfg.required ? ' ●' : ' ○') : ''; return `<button class="set-pick js-insp-cat${c.categoryId === catId ? ' on' : ''}" data-cat="${esc(c.categoryId)}">${esc(c.name)}${tag}</button>`; }).join('');
-  const cfg = draftInspCfg(o, catId);
-  const cat = IDX.category.get(catId);
+  const fams = []; const seen = new Set();
+  cats.forEach((c) => { const k = inspFamilyKey(c); if (!seen.has(k)) { seen.add(k); fams.push(k); } });
+  const famKey = (o.inspFam && seen.has(o.inspFam)) ? o.inspFam : (fams[0] || '');
+  o.inspFam = famKey;
+  const pick = fams.map((k) => { const c = draftInspCfg(o, k); const tag = (c.items && c.items.length) ? (c.required ? ' ●' : ' ○') : ''; return `<button class="set-pick js-insp-cat${k === famKey ? ' on' : ''}" data-cat="${esc(k)}">${esc(inspFamilyLabel(k))}${tag}</button>`; }).join('');
+  const cfg = draftInspCfg(o, famKey);
+  const famLabel = inspFamilyLabel(famKey);
+  const memberCount = cats.filter((c) => inspFamilyKey(c) === famKey).length;
   const items = cfg.items || [];
   const inspDraft = o.inspDraft && typeof o.inspDraft === 'object' ? o.inspDraft : { label: '', type: 'toggle', required: false, options: [] };
   const rows = items.length ? items.map((it) => {
@@ -2303,7 +2320,7 @@ function settingsInspectionsPane(o) {
     } else desc = t;
     return `<div class="rule-row">
       <div class="rule-main"><span class="rule-label">${esc(it.label)}</span><span class="rule-desc">${desc}</span></div>
-      <button class="so-reset js-insp-remove" data-cat="${esc(catId)}" data-id="${esc(it.id)}" data-tip="Remove item">${I.x}</button>
+      <button class="so-reset js-insp-remove" data-cat="${esc(famKey)}" data-id="${esc(it.id)}" data-tip="Remove item">${I.x}</button>
     </div>`;
   }).join('') : '<p class="set-note">No checklist items yet — add the things to inspect below.</p>';
   const optWell = inspDraft.type === 'select' ? `<div class="insp-opt-well">
@@ -2311,9 +2328,10 @@ function settingsInspectionsPane(o) {
     <div style="display:flex;align-items:center;gap:8px;margin-top:6px"><input class="co-in js-insp-opt-label" placeholder="New option (e.g. Bald)" value="${esc(inspDraft.optLabel || '')}" autocomplete="off" />${addBtn('Option', { js: 'js-insp-opt-add', line: true })}</div>
   </div>` : '';
   return `
-    <div class="set-pane-head"><h4>Inspections</h4><p>Build a checklist per category. When a category's checklist is <strong>Required</strong>, starting an inspection on one of its units opens a full-screen checklist that must be completed — any Toggle Fail or flagged Dropdown selection trips the existing failed-inspection work order.</p></div>
+    <div class="set-pane-head"><h4>Inspections</h4><p>Build a checklist per equipment type. When a type's checklist is <strong>Required</strong>, starting an inspection on one of its units opens a full-screen checklist that must be completed — any Toggle Fail or flagged Dropdown selection trips the existing failed-inspection work order.</p></div>
     <div class="set-picker">${pick}</div>
-    <div class="rule-row" style="margin-bottom:10px"><div class="rule-main"><span class="rule-label">Require a checklist for ${esc(cat ? cat.name : 'this category')}</span><span class="rule-desc">On = +Inspection takes over the sheet until every item is checked.</span></div>${segCtl([{ label: 'Off', js: 'js-insp-req', data: { cat: catId, v: '0' }, on: cfg.required ? null : 'gray' }, { label: 'Required', js: 'js-insp-req', data: { cat: catId, v: '1' }, on: cfg.required ? 'red' : null }])}</div>
+    ${memberCount > 1 ? `<p class="set-note">Shared by all ${memberCount} ${esc(famLabel)} categories — edit once, applies to every one.</p>` : ''}
+    <div class="rule-row" style="margin-bottom:10px"><div class="rule-main"><span class="rule-label">Require a checklist for ${esc(famLabel)}</span><span class="rule-desc">On = +Inspection takes over the sheet until every item is checked.</span></div>${segCtl([{ label: 'Off', js: 'js-insp-req', data: { cat: famKey, v: '0' }, on: cfg.required ? null : 'gray' }, { label: 'Required', js: 'js-insp-req', data: { cat: famKey, v: '1' }, on: cfg.required ? 'red' : null }])}</div>
     <div class="rule-list">${rows}</div>
     <div class="cf-add">
       <input class="co-in js-insp-label" placeholder="New checklist item (e.g. Hydraulics — no leaks)" value="${esc(inspDraft.label || '')}" autocomplete="off" />
@@ -7032,7 +7050,7 @@ function syncBackGuard() {
 function renderOverlay() {
   syncBackGuard();
   const root = $('#overlay-root');
-  if (_ovLastKind) { const _pb = root.querySelector('.popup-body'); if (_pb) _ovScroll[_ovLastKind] = _pb.scrollTop; }
+  if (_ovLastKind) { const _pb = root.querySelector('.set-pane') || root.querySelector('.popup-body'); if (_pb) _ovScroll[_ovLastKind] = _pb.scrollTop; }   // .set-pane is the settings scroller; .popup-body for the rest
   destroyCardElement();        // any re-render/overlay-switch tears down a mounted Stripe element
   root.innerHTML = '';
   if (!state.overlay) { _ovLastKind = null; return; }
@@ -7737,7 +7755,7 @@ function renderOverlay() {
     overlay.appendChild(pop);
   }
   root.appendChild(overlay);
-  { const _nb = overlay.querySelector('.popup-body'); if (_nb && _ovScroll[o.kind]) _nb.scrollTop = _ovScroll[o.kind]; }   // restore scroll on a same-overlay re-render (sign/selfie no longer jump to top)
+  { const _nb = overlay.querySelector('.set-pane') || overlay.querySelector('.popup-body'); if (_nb && _ovScroll[o.kind]) _nb.scrollTop = _ovScroll[o.kind]; }   // restore scroll on a same-overlay re-render (settings pane / sign / selfie no longer jump to top)
   _ovLastKind = o.kind;
   if (o.kind === 'partform') document.querySelector('.overlay .js-pf2-desc')?.focus();   // Jac: Part/Task field focused by default
   if (o.kind === 'newCustomer') setupSignaturePad();
@@ -9542,14 +9560,14 @@ function onClick(e) {
   if (closest('.js-cf-add')) { e.stopPropagation(); const o = state.overlay; if (!o) return; const lblEl = document.querySelector('.settings-popup .js-cf-label'); const label = (o.cfDraft && o.cfDraft.label || (lblEl ? lblEl.value : '')).trim(); if (!label) { if (lblEl) { lblEl.focus(); } toast('Give the field a label first.'); return; } const fields = ensureCfDraft(o, o.cfEntity || 'customers'); fields.push({ id: cfSlug(label), label, type: (o.cfDraft && o.cfDraft.type) || 'text', required: !!(o.cfDraft && o.cfDraft.required) }); o.cfDraft = { label: '', type: 'text', required: false }; renderOverlay(); return; }
   if (closest('.js-cf-remove')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-cf-remove'); if (o) { const fields = ensureCfDraft(o, b.dataset.ent); const i = fields.findIndex((f) => f.id === b.dataset.id); if (i >= 0) fields.splice(i, 1); renderOverlay(); } return; }
   // Inspections tab
-  if (closest('.js-insp-cat')) { e.stopPropagation(); const o = state.overlay; if (o) { o.inspCat = closest('.js-insp-cat').dataset.cat; renderOverlay(); } return; }
+  if (closest('.js-insp-cat')) { e.stopPropagation(); const o = state.overlay; if (o) { o.inspFam = closest('.js-insp-cat').dataset.cat; renderOverlay(); } return; }
   if (closest('.js-insp-req')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-insp-req'); if (o) { ensureInspDraft(o, b.dataset.cat).required = b.dataset.v === '1'; renderOverlay(); } return; }
   if (closest('.js-insp-type')) { e.stopPropagation(); const o=state.overlay; if(o){ o.inspDraft={...(o.inspDraft||{label:'',required:false,options:[]}), type: closest('.js-insp-type').dataset.type}; if(o.inspDraft.type!=='select'){} renderOverlay(); } return; }
   if (closest('.js-insp-itemreq')) { e.stopPropagation(); const o=state.overlay; if(o){ o.inspDraft={...(o.inspDraft||{}), required: closest('.js-insp-itemreq').dataset.v==='1'}; renderOverlay(); } return; }
   if (closest('.js-insp-opt-add')) { e.stopPropagation(); const o=state.overlay; if(!o)return; const inp=document.querySelector('.settings-popup .js-insp-opt-label'); const lbl=((o.inspDraft&&o.inspDraft.optLabel)|| (inp?inp.value:'')).trim(); if(!lbl){ if(inp)inp.focus(); toast('Type an option first.'); return; } o.inspDraft.options=o.inspDraft.options||[]; o.inspDraft.options.push({label:lbl, fail:false}); o.inspDraft.optLabel=''; renderOverlay(); return; }
   if (closest('.js-insp-opt-remove')) { e.stopPropagation(); const o=state.overlay, b=closest('.js-insp-opt-remove'); if(o&&o.inspDraft&&o.inspDraft.options){ o.inspDraft.options.splice(Number(b.dataset.i),1); renderOverlay(); } return; }
   if (closest('.js-insp-opt-fail')) { e.stopPropagation(); const o=state.overlay, b=closest('.js-insp-opt-fail'); if(o&&o.inspDraft&&o.inspDraft.options){ const op=o.inspDraft.options[Number(b.dataset.i)]; if(op) op.fail = b.dataset.v==='1'; renderOverlay(); } return; }
-  if (closest('.js-insp-add')) { e.stopPropagation(); const o=state.overlay; if(!o)return; const d=o.inspDraft||{label:'',type:'toggle',required:false,options:[]}; const el2=document.querySelector('.settings-popup .js-insp-label'); const label=((d.label!=null?d.label:(el2?el2.value:''))||'').trim(); if(!label){ if(el2)el2.focus(); toast('Type a checklist item first.'); return; } const type=d.type||'toggle'; if(type==='select' && !((d.options||[]).length)){ toast('Add at least one dropdown option.'); return; } const cfg=ensureInspDraft(o, o.inspCat); cfg.items=cfg.items||[]; const item={ id:'ck_'+(label.toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'')||'item')+'_'+Math.random().toString(36).slice(2,5), label, type }; if(type!=='toggle') item.required=!!d.required; if(type==='select') item.options=(d.options||[]).map((op)=>({label:op.label, fail:!!op.fail})); cfg.items.push(item); o.inspDraft={label:'',type:'toggle',required:false,options:[]}; renderOverlay(); return; }
+  if (closest('.js-insp-add')) { e.stopPropagation(); const o=state.overlay; if(!o)return; const d=o.inspDraft||{label:'',type:'toggle',required:false,options:[]}; const el2=document.querySelector('.settings-popup .js-insp-label'); const label=((d.label!=null?d.label:(el2?el2.value:''))||'').trim(); if(!label){ if(el2)el2.focus(); toast('Type a checklist item first.'); return; } const type=d.type||'toggle'; if(type==='select' && !((d.options||[]).length)){ toast('Add at least one dropdown option.'); return; } const cfg=ensureInspDraft(o, o.inspFam); cfg.items=cfg.items||[]; const item={ id:'ck_'+(label.toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'')||'item')+'_'+Math.random().toString(36).slice(2,5), label, type }; if(type!=='toggle') item.required=!!d.required; if(type==='select') item.options=(d.options||[]).map((op)=>({label:op.label, fail:!!op.fail})); cfg.items.push(item); o.inspDraft={label:'',type:'toggle',required:false,options:[]}; renderOverlay(); return; }
   if (closest('.js-insp-remove')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-insp-remove'); if (o) { const cfg = ensureInspDraft(o, b.dataset.cat); cfg.items = (cfg.items || []).filter((it) => it.id !== b.dataset.id); renderOverlay(); } return; }
   if (closest('.js-nc-save')) { e.stopPropagation(); return saveNewCustomer(); }
   if (closest('.js-nc-acct')) { const b = closest('.js-nc-acct'); e.stopPropagation(); ncSyncInputs(); state.overlay.draft.accountType = b.dataset.val; renderOverlay(); return; }
@@ -13160,7 +13178,7 @@ function exposeTestApi() {
       latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore, wranglerRailLoad, wrOffloadChatImages, wrEvictChatBlobs, driveViewUrl, mergeWranglerRails,
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
-      companyRevenueGoal, companyName, companyTagline, rentalRuleBlock, dueForCustomer, footerHidden, customFieldsFor, checklistFor, checklistRequired, applySettings, getStatus, pageDefaultSlice, __state: state };
+      companyRevenueGoal, companyName, companyTagline, rentalRuleBlock, dueForCustomer, footerHidden, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, applySettings, getStatus, pageDefaultSlice, __state: state };
   } catch (e) { /* no window (non-browser) */ }
 }
 
