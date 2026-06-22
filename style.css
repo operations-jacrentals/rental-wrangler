@@ -2135,6 +2135,15 @@ body.rw-inspect .c-titlecard:hover { outline: 2px solid #18b6ff; outline-offset:
   padding: 5px 9px; word-break: break-all; }
 .rb-win-toggle:focus-visible, .rb-win-copy:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) { .rb-win-chev { transition: none; } }
+/* standalone surfaces — forms/dropdowns not in a pop-up; a saddle-stitch tan divider sets them apart */
+.rb-std { margin-top: 16px; padding-top: 13px; border-top: 1px dashed var(--tan, #c2925a); }
+.rb-std-head { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1px;
+  font-size: 10.5px; font-weight: 700; color: var(--txt-3); margin-bottom: 4px; }
+.rb-std-row { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; padding: 9px 0; border-bottom: 1px solid var(--line-soft); }
+.rb-std-row:last-child { border-bottom: none; }
+.rb-std-loc { font-family: ui-monospace, monospace; font-size: 10px; color: var(--accent);
+  background: var(--accent-soft); border: 1px solid var(--accent-line); border-radius: 7px; padding: 3px 8px; }
+.rb-std-row .rb-win-copy { margin-left: auto; }
 
 /* ── §13 v2 BUILD: gate pills · derived pills · flags · section colors ·
       timeline · yard/transport journeys · history chips · WO grid · toggles

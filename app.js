@@ -7157,6 +7157,16 @@ function buildPopupEl(o, overlay, opts = {}) {
         <details class="rb-idx"${orphans.length ? ' open' : ''}><summary>${orphans.length} element${orphans.length === 1 ? '' : 's'}</summary>${orphanRows}</details></div>
       </div>`;
     }
+    let standaloneBlock = '';
+    if (activeTab.id === 'windows') {
+      const stdRows = STANDALONE_SURFACES.map((s) => `<div class="rb-std-row">
+        <span class="rb-win-label">${esc(s.label)}</span>
+        <span class="rb-win-tag">${esc(s.tag)}</span>
+        <code class="rb-std-loc">${esc(s.loc)}</code>
+        <button class="rb-win-copy js-win-copy" data-ref="${esc('Edit the ' + s.label + ' (' + s.loc + ') — a standalone form/dropdown in the app, not a pop-up window.')}">📋<span>Copy</span></button>
+      </div>`).join('');
+      standaloneBlock = `<div class="rb-std"><div class="rb-std-head">Standalone — forms &amp; dropdowns not in a pop-up</div>${stdRows}</div>`;
+    }
     const pop = el('div', 'popup'); pop.style.width = '680px';
     pop.innerHTML = `
       <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${I.doc}</span><h3>The R-Rulebook — SPEC v8 · design system</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
@@ -7165,6 +7175,7 @@ function buildPopupEl(o, overlay, opts = {}) {
         <p class="rb-intro">${esc(activeTab.intro)} <span class="muted">Live examples — this reference can’t drift. Use the 🔍 Inspector (bottom bar) to hover any element and copy its rule.</span></p>
         ${rows}
         ${orphanBlock}
+        ${standaloneBlock}
       </div>`;
     overlay.appendChild(pop);
   } else if (o.kind === 'partform') {
@@ -7759,6 +7770,16 @@ function previewOverlayFor(kind) {
   } catch (e) { return null; }
   return holder.firstElementChild ? holder : null;
 }
+/* Standalone surfaces — the forms & dropdowns that AREN'T pop-up windows (they live
+   inline on the cards/toolbar), listed under the Windows tab with a code location +
+   copy-ref. No live preview (they need card context); the locator is the map. */
+const STANDALONE_SURFACES = [
+  { label: 'Status gate dropdown', tag: 'R1 · advances a record', loc: 'app.js · gatePill / gatePillRaw / funnelPill' },
+  { label: 'Right-click context menu', tag: 'R20 · cut · copy · comment', loc: 'app.js · openCtxMenu' },
+  { label: 'Window / date picker', tag: 'Rental · pick the window', loc: 'app.js · openWinPicker' },
+  { label: 'Card notes line', tag: 'R12 · boxless notes', loc: 'app.js · notesSection' },
+  { label: 'Global search + filters', tag: 'Toolbar · find · pin chips', loc: 'app.js · #globalsearch input' },
+];
 /* ── §15 in-app feedback: bug/request → queued to the backend Feedback tab ── */
 function feedbackContext() {
   const s = activeSession(), a = s && s.anchor;
@@ -9637,9 +9658,9 @@ function onClick(e) {
   if (closest('.js-rbtab')) { e.stopPropagation(); if (state.overlay) state.overlay.rbTab = closest('.js-rbtab').dataset.tab; return renderOverlay(); }
   if (closest('.js-win-copy')) {   // §RB-Windows — copy a Claude-ready edit reference for this popup
     e.stopPropagation();
-    const kind = closest('.js-win-copy').dataset.kind;
-    const w = WINDOW_CATALOG.find((x) => x.kind === kind);
-    const ref = w ? `Edit the "${w.label}" popup in app.js (renderOverlay → o.kind === '${kind}'), from the R-Rulebook Windows catalog.` : kind;
+    const cb = closest('.js-win-copy');
+    const w = cb.dataset.kind ? WINDOW_CATALOG.find((x) => x.kind === cb.dataset.kind) : null;
+    const ref = cb.dataset.ref || (w ? `Edit the "${w.label}" popup in app.js (renderOverlay → o.kind === '${cb.dataset.kind}'), from the R-Rulebook Windows catalog.` : cb.dataset.kind);
     const done = () => toast('📋 Edit reference copied — paste it to Claude.');
     if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(ref).then(done, done);
     else { try { const ta = document.createElement('textarea'); ta.value = ref; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); } catch (err) {} done(); }
