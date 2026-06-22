@@ -1,4 +1,4 @@
-/**
+﻿/**
  * app.js — Rental Wrangler application engine (SPEC v6)
  * ============================================================================
  * One normalized state object; one-way data flow (§2): UI renders from state →
@@ -5856,6 +5856,12 @@ function wranglerDockEl() {
     ? o.messages.map((m, i) => {
         let act = '';
         if (m.action && m.action.action === 'data') {
+          if (!m.action._csvAttached && m.action.ops && m.action.ops.some((op) => op.op === 'csv-import')) {
+            for (let j = i - 1; j >= 0; j--) {
+              const um = o.messages[j];
+              if (um.role === 'user' && um.files) { const f = um.files.find((uf) => uf.csvRows); if (f) { m.action._csvAttached = f; break; } }
+            }
+          }
           const plan = m.action._plan || (m.action._plan = wrValidatePlan(m.action));
           const sum = wrPlanSummary(plan);
           const skip = plan.issues.length ? `<div class="wr-apply-skip">skipped: ${esc(plan.issues.join('; '))}</div>` : '';
@@ -7722,7 +7728,7 @@ async function sendFeedback() {
    (action 'wrangler'); Code.gs calls api.anthropic.com with the key from a Script
    Property. Carries a compact data digest + (when opened from a record) its detail.
    ════════════════════════════════════════════════════════════════════════ */
-const WRANGLER_SYSTEM = "You are Mr. Wrangler, the in-app AI for JacRentals — a heavy-equipment rental yard in Sulphur, Louisiana. You help the team make sense of their units, rentals, customers, invoices, work orders, and service, and you help triage bugs they report.\n\nSTYLE — keep it tight: answer in 1–3 sentences by default. Lead with the direct answer first; add at most one short supporting clause. Use a bullet list ONLY when enumerating multiple records, one line each. Don't restate the question, don't pad, and don't over-explain what you can't do — just answer.\n\nDATA — the snapshot below holds the LIVE records: every category with its rates, every fleet unit with its type and status, every rental with its date window and customer, customers with balances owed, and the open invoices and work orders. Reason over it directly. Only say a fact is missing if it truly isn't in the snapshot. Never invent records, names, or numbers.\n\nHELPING & FIXING — you're the assistant living inside the app (think Claude, but for this yard). The user might ask a question, describe a problem, or paste something — work out what they need and help. If they describe a BUG or glitch in the app itself (something not working, a dead control, a wrong layout or behavior), reproduce it in your head; if you're missing a detail, ask ONE quick follow-up (what they tapped + what they expected). Once you can state a clear repro, FILE A FIX by ending your reply with this exact fenced block:\n```wrangler-action\n{\"action\":\"fix\",\"title\":\"<short title>\",\"report\":\"<clear repro: steps, expected vs actual, any element involved>\"}\n```\nThat auto-ships obvious bugs (a dead control, a typo, a plainly wrong value).\nBut if it's a CHANGE or improvement (not an obvious bug), do NOT file it blind — talk it through first: lay out a SHORT, concrete PLAN of exactly what you'd change and where, then ask if that's good or needs adjusting. When you put a concrete plan on the table, end with:\n```wrangler-action\n{\"action\":\"plan\",\"title\":\"<short title>\",\"plan\":\"<numbered steps: what changes, where, and the resulting UX>\"}\n```\nJac reviews that plan and taps Build only when it's right — so take his tweaks and re-propose the plan until he's happy. Emit a block ONLY when ready — a clear repro for a fix, or a concrete plan for a change — never while still gathering detail; keep your visible words short and natural and never mention JSON, blocks, labels, or buttons.\n\nACTING ON DATA — you can DO things, not just answer. You can ADD, UPDATE, or BULK-IMPORT items for the user: customers, units, categories, rentals. NEVER delete anything, and NEVER touch money, card, payment, pricing, balances, auth, or work-order-completion fields. If the user asks to add/change something, or hands you lead/customer data to import (pasted rows, a list, a spreadsheet they paste in), DO IT — never say you can't or that Jac has to build it. Ask any quick follow-up you genuinely need first (which field, how their columns map, what membership stage), then end your reply with:\n```wrangler-action\n{\"action\":\"data\",\"title\":\"<what this does>\",\"ops\":[{\"op\":\"import\",\"entity\":\"customers\",\"rows\":[{\"firstName\":\"..\",\"lastName\":\"..\",\"phone\":\"..\",\"email\":\"..\",\"membershipStage\":\"..\"}]},{\"op\":\"create\",\"entity\":\"customers\",\"fields\":{}},{\"op\":\"update\",\"entity\":\"units\",\"id\":\"U003\",\"fields\":{\"notes\":\"..\"}}]}\n```\nThe user ALWAYS sees a preview and taps Apply before anything is written, so propose freely — but you CANNOT save anything yourself: that wrangler-action block plus the user's Apply tap is the ONLY thing that writes data. So whenever you add, update, or import, you MUST end the reply with the block, and you must NEVER say or imply the change is already done, saved, added, or imported — word it as a preview to apply (say something like: here's the import — look it over and tap Apply). If a list is too big to land in one reply, import a smaller batch and tell them how many rows are still to send; never claim a save you didn't actually emit in a block. Map their funnel/membership words to one of: Inbound Lead, Outbound Lead, Contacted, Not A No!, Payment Discussed, Paid. Editable fields are name/contact/address/industry/notes/account-type/membership+sales stage (customers), name/mechanic/notes/specs (units), name/description/fuel (categories), notes/po (rentals) — anything else (prices, balances, payments) you must decline and explain you can't touch money.\n\nA light wrangler/ranch flavor in voice is welcome — never campy.";
+const WRANGLER_SYSTEM = "You are Mr. Wrangler, the in-app AI for JacRentals — a heavy-equipment rental yard in Sulphur, Louisiana. You help the team make sense of their units, rentals, customers, invoices, work orders, and service, and you help triage bugs they report.\n\nSTYLE — keep it tight: answer in 1–3 sentences by default. Lead with the direct answer first; add at most one short supporting clause. Use a bullet list ONLY when enumerating multiple records, one line each. Don't restate the question, don't pad, and don't over-explain what you can't do — just answer.\n\nDATA — the snapshot below holds the LIVE records: every category with its rates, every fleet unit with its type and status, every rental with its date window and customer, customers with balances owed, and the open invoices and work orders. Reason over it directly. Only say a fact is missing if it truly isn't in the snapshot. Never invent records, names, or numbers.\n\nHELPING & FIXING — you're the assistant living inside the app (think Claude, but for this yard). The user might ask a question, describe a problem, or paste something — work out what they need and help. If they describe a BUG or glitch in the app itself (something not working, a dead control, a wrong layout or behavior), reproduce it in your head; if you're missing a detail, ask ONE quick follow-up (what they tapped + what they expected). Once you can state a clear repro, FILE A FIX by ending your reply with this exact fenced block:\n```wrangler-action\n{\"action\":\"fix\",\"title\":\"<short title>\",\"report\":\"<clear repro: steps, expected vs actual, any element involved>\"}\n```\nThat auto-ships obvious bugs (a dead control, a typo, a plainly wrong value).\nBut if it's a CHANGE or improvement (not an obvious bug), do NOT file it blind — talk it through first: lay out a SHORT, concrete PLAN of exactly what you'd change and where, then ask if that's good or needs adjusting. When you put a concrete plan on the table, end with:\n```wrangler-action\n{\"action\":\"plan\",\"title\":\"<short title>\",\"plan\":\"<numbered steps: what changes, where, and the resulting UX>\"}\n```\nJac reviews that plan and taps Build only when it's right — so take his tweaks and re-propose the plan until he's happy. Emit a block ONLY when ready — a clear repro for a fix, or a concrete plan for a change — never while still gathering detail; keep your visible words short and natural and never mention JSON, blocks, labels, or buttons.\n\nACTING ON DATA — you can DO things, not just answer. You can ADD, UPDATE, or BULK-IMPORT items for the user: customers, units, categories, rentals. NEVER delete anything, and NEVER touch money, card, payment, pricing, balances, auth, or work-order-completion fields. If the user asks to add/change something, or hands you lead/customer data to import (pasted rows, a list, a spreadsheet they paste in), DO IT — never say you can't or that Jac has to build it. Ask any quick follow-up you genuinely need first (which field, how their columns map, what membership stage), then end your reply with:\n```wrangler-action\n{\"action\":\"data\",\"title\":\"<what this does>\",\"ops\":[{\"op\":\"import\",\"entity\":\"customers\",\"rows\":[{\"firstName\":\"..\",\"lastName\":\"..\",\"phone\":\"..\",\"email\":\"..\",\"membershipStage\":\"..\"}]},{\"op\":\"create\",\"entity\":\"customers\",\"fields\":{}},{\"op\":\"update\",\"entity\":\"units\",\"id\":\"U003\",\"fields\":{\"notes\":\"..\"}}]}\n```\nThe user ALWAYS sees a preview and taps Apply before anything is written, so propose freely — but you CANNOT save anything yourself: that wrangler-action block plus the user's Apply tap is the ONLY thing that writes data. So whenever you add, update, or import, you MUST end the reply with the block, and you must NEVER say or imply the change is already done, saved, added, or imported — word it as a preview to apply (say something like: here's the import — look it over and tap Apply). If a list is too big to land in one reply, import a smaller batch and tell them how many rows are still to send; never claim a save you didn't actually emit in a block. Map their funnel/membership words to one of: Inbound Lead, Outbound Lead, Contacted, Not A No!, Payment Discussed, Paid. Editable fields are name/contact/address/industry/notes/account-type/membership+sales stage (customers), name/mechanic/notes/specs (units), name/description/fuel (categories), notes/po (rentals) — anything else (prices, balances, payments) you must decline and explain you can't touch money.\n\nLARGE CSV IMPORTS — when the user attaches a CSV file you will see a compact summary: column headers, up to 5 sample rows, and the total row count. For any CSV with 2 or more rows, DO NOT re-emit all the rows yourself — instead emit a csv-import op with just the column mapping. The app expands every row locally, so nothing gets cut off no matter how big the file:\n\`\`\`wrangler-action\n{\"action\":\"data\",\"title\":\"Import 234 customers from leads.csv\",\"ops\":[{\"op\":\"csv-import\",\"entity\":\"customers\",\"mapping\":{\"First Name\":\"firstName\",\"Last Name\":\"lastName\",\"Mobile\":\"phone\",\"E-mail\":\"email\"},\"skipIfEmpty\":[\"firstName\",\"lastName\"]}]}\n\`\`\`\nThe mapping keys are the CSV column headers EXACTLY as shown in the summary. The values are app field names (firstName, lastName, phone, email, company, address, industry, accountNotes, accountType, membershipStage, usedSalesStage for customers). Set skipIfEmpty to app fields that must not be blank. Map every column that clearly lines up with an app field even if the names differ (\"Mobile\" -> \"phone\"). If you are unsure about a column, ask first.\n\nA light wrangler/ranch flavor in voice is welcome — never campy.";
 // The digest is Mr. Wrangler's whole window into the yard, so it carries the ACTUAL
 // records (not just counts): category rates, each unit's type/status, each rental's
 // date window + customer, customer balances, and open invoices/WOs. Sections cap at
@@ -7797,18 +7803,53 @@ function wranglerAttachFile(file) {
   });
   reader.readAsDataURL(file);
 }
-// §18d CSV/text attachment — read the file as text and carry it with the next turn
-// (Mr. Wrangler reads it as a text block; images still ride the vision path above).
+// §18d CSV/text attachment — read the file as text and carry it with the next turn.
+// CSV files are parsed into {csvHeaders, csvRows} so the payload to Mr. Wrangler is
+// just headers + a 5-row sample; he maps columns, and the frontend expands ALL rows
+// locally (no model output ceiling regardless of CSV size). Other text files ride
+// the old full-text path.
+function parseCsvFile(text) {
+  const lines = []; let cur = [], field = '', inQ = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inQ) {
+      if (ch === '"' && text[i + 1] === '"') { field += '"'; i++; }
+      else if (ch === '"') inQ = false;
+      else field += ch;
+    } else if (ch === '"') { inQ = true; }
+    else if (ch === ',') { cur.push(field.trim()); field = ''; }
+    else if (ch === '\n' || (ch === '\r' && text[i + 1] !== '\n')) {
+      cur.push(field.trim()); field = '';
+      if (cur.some(Boolean)) lines.push(cur);
+      cur = [];
+    } else if (ch !== '\r') { field += ch; }
+  }
+  cur.push(field.trim()); if (cur.some(Boolean)) lines.push(cur);
+  if (lines.length < 2) return null;
+  const headers = lines[0]; const rows = [];
+  for (let i = 1; i < lines.length; i++) {
+    const r = lines[i]; if (!r.some(Boolean)) continue;
+    const obj = {}; headers.forEach((h, j) => { if (h) obj[h] = r[j] || ''; }); rows.push(obj);
+  }
+  return { headers, rows };
+}
 function wranglerAttachTextFile(file) {
   const o = state.wrangler; if (!o.open || !file) return;
   const name = (file.name || 'file').toLowerCase();
-  const okType = (file.type && (file.type.startsWith('text/') || /csv/.test(file.type))) || /\.(csv|tsv|txt|md|log)$/.test(name);
-  if (!okType) { toast('I can read screenshots and CSV/text files — that file type isn’t supported.'); return; }
-  if (file.size > 256 * 1024) { toast('That file is over 256 KB — trim it or paste just the rows you need.'); return; }
+  const isCsv = (file.type && /csv/.test(file.type)) || /\.csv$/.test(name);
+  const okType = (file.type && file.type.startsWith('text/')) || isCsv || /\.(tsv|txt|md|log)$/.test(name);
+  if (!okType) { toast('I can read screenshots and CSV/text files — that file type is not supported.'); return; }
+  const limit = isCsv ? 2 * 1024 * 1024 : 256 * 1024;
+  if (file.size > limit) { toast(isCsv ? 'That CSV is over 2 MB — trim it down.' : 'That file is over 256 KB — trim it or paste just the rows you need.'); return; }
   const reader = new FileReader();
   reader.onload = () => {
     o.files = o.files || []; if (o.files.length >= 3) { toast('Up to 3 files per message.'); return; }
-    o.files.push({ name: file.name || 'file', text: String(reader.result || '') }); render();
+    const text = String(reader.result || '');
+    const parsed = isCsv ? parseCsvFile(text) : null;
+    o.files.push(parsed
+      ? { name: file.name || 'file', text, csvHeaders: parsed.headers, csvRows: parsed.rows }
+      : { name: file.name || 'file', text });
+    render();
   };
   reader.onerror = () => toast('Could not read that file.');
   reader.readAsText(file);
@@ -7833,7 +7874,16 @@ async function wranglerSend() {
   // Build the payload: images become a content-block array; CSV/text files fold
   // into the message text so Mr. Wrangler reads their rows.
   const fileBlock = (m) => (m.files && m.files.length)
-    ? m.files.map((f) => `\n\nAttached file "${f.name}":\n\`\`\`\n${f.text}\n\`\`\``).join('')
+    ? m.files.map((f) => {
+        if (f.csvRows) {
+          const sample = f.csvRows.slice(0, 5);
+          const hdr = f.csvHeaders.join(',');
+          const body = sample.map((r) => f.csvHeaders.map((h) => r[h] || '').join(',')).join('\n');
+          const more = f.csvRows.length > 5 ? '\n(+' + (f.csvRows.length - 5) + ' more rows — use csv-import op to map all columns)' : '';
+          return '\n\nAttached CSV "' + f.name + '" — ' + f.csvRows.length + ' total rows:\n```\n' + hdr + '\n' + body + more + '\n```';
+        }
+        return '\n\nAttached file "' + f.name + '":\n```\n' + f.text + '\n```';
+      }).join('')
     : '';
   const payloadMsgs = o.messages.map((m) => {
     const body = (m.content || '') + fileBlock(m);
@@ -7947,9 +7997,26 @@ function wrValidatePlan(act) {
   (Array.isArray(act.ops) ? act.ops : []).forEach((raw) => {
     const ent = WR_EDITABLE[raw.entity];
     if (!ent) { issues.push(`can’t touch “${raw.entity}”`); return; }
-    const opn = raw.op === 'import' ? 'import' : raw.op === 'update' ? 'update' : 'create';
-    if (opn === 'import') {
-      if (!ent.importable) { issues.push(`can’t bulk-import ${ent.label}s`); return; }
+    const opn = raw.op === 'csv-import' ? 'csv-import' : raw.op === 'import' ? 'import' : raw.op === 'update' ? 'update' : 'create';
+    if (opn === 'csv-import') {
+      if (!ent.importable) { issues.push('can\'t bulk-import ' + ent.label + 's'); return; }
+      const csv = act._csvAttached;
+      if (!csv || !csv.csvRows) { issues.push('CSV file not found — attach the file and ask again'); return; }
+      const mapping = raw.mapping || {}; const skipIfEmpty = raw.skipIfEmpty || [];
+      let skipped = 0; const rows = [];
+      csv.csvRows.forEach((csvRow) => {
+        const mapped = {};
+        Object.entries(mapping).forEach(([col, field]) => { if (field) mapped[field] = String(csvRow[col] || ''); });
+        if (skipIfEmpty.some((f) => !mapped[f])) { skipped++; return; }
+        const { out } = wrCleanFields(raw.entity, mapped);
+        if (Object.keys(out).length) rows.push(out);
+        else skipped++;
+      });
+      if (!rows.length) { issues.push('No rows mapped — check the column names match the CSV headers exactly'); return; }
+      if (skipped) issues.push(skipped + ' row' + (skipped > 1 ? 's' : '') + ' skipped (blank required field)');
+      ops.push({ op: 'csv-import', entity: raw.entity, rows });
+    } else if (opn === 'import') {
+      if (!ent.importable) { issues.push('can\'t bulk-import ' + ent.label + 's'); return; }
       const rows = (raw.rows || []).map((r) => wrCleanFields(raw.entity, r).out).filter((r) => Object.keys(r).length);
       if (rows.length) ops.push({ op: 'import', entity: raw.entity, rows });
     } else if (opn === 'update') {
@@ -7967,7 +8034,7 @@ function wrValidatePlan(act) {
 }
 function wrPlanSummary(plan) {
   const add = {}, upd = {};
-  plan.ops.forEach((op) => { const l = WR_EDITABLE[op.entity].label; if (op.op === 'update') upd[l] = (upd[l] || 0) + 1; else add[l] = (add[l] || 0) + (op.op === 'import' ? op.rows.length : 1); });
+  plan.ops.forEach((op) => { const l = WR_EDITABLE[op.entity].label; if (op.op === 'update') upd[l] = (upd[l] || 0) + 1; else add[l] = (add[l] || 0) + ((op.op === 'import' || op.op === 'csv-import') ? op.rows.length : 1); });
   const seg = (m, verb) => Object.entries(m).map(([l, n]) => `${verb} ${n} ${l}${n > 1 ? 's' : ''}`);
   return [...seg(add, 'add'), ...seg(upd, 'update')].join(' · ') || 'no safe changes';
 }
@@ -7986,7 +8053,7 @@ function applyWranglerData(plan) {
       if (op.entity === 'customers') t.name = `${t.firstName || ''} ${t.lastName || ''}`.trim() || t.name;
       reindex(op.entity, t); logAction(t, `Mr. Wrangler updated ${Object.keys(op.fields).join(', ')}`); updated++;
     } else {
-      (op.op === 'import' ? op.rows : [op.fields]).forEach((f) => { if (op.entity === 'customers') { const c = wrCreateCustomer(f); created++; first = first || c.customerId; } });
+      (op.op === 'import' || op.op === 'csv-import' ? op.rows : [op.fields]).forEach((f) => { if (op.entity === 'customers') { const c = wrCreateCustomer(f); created++; first = first || c.customerId; } });
     }
   });
   if (first) { const s = activeSession(); if (s.cols) s.cols.right = 'customers'; const ccs = s.cards.customers; if (created === 1) { ccs.mode = 'standard'; ccs.recId = first; } else { ccs.mode = 'list'; ccs.recId = null; ccs.search = ''; } ccs.graphView = false; }
@@ -13091,7 +13158,7 @@ function exposeTestApi() {
       rentalAllocated, unitRentalPrice, rentalDisplayName, setWoLinePhase, setWoPhase, woBottleneck,
       cleanUnitName, planUnitMigration, applyUnitMigration, openMigrationPreview,
       computeTransportPrice, isFueledType, unitTransport, rentalTransport,
-      wrValidatePlan, applyWranglerData, wrFunnel, invoiceMergeable, mergeInvoiceInto, parseWranglerAction,
+      wrValidatePlan, applyWranglerData, wrFunnel, invoiceMergeable, mergeInvoiceInto, parseWranglerAction, stripWranglerAction, parseCsvFile,
       latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore, wranglerRailLoad, wrOffloadChatImages, wrEvictChatBlobs, driveViewUrl, mergeWranglerRails,
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,

@@ -204,6 +204,33 @@ try {
     ok(wrImp && wrImp.rows.length === 2 && wrImp.rows[0].membershipStage === 'Contacted', 'import keeps 2 rows + maps the stage');
     ok(wrUpd && wrUpd.fields.notes === 'WR test note' && !('currentHours' in wrUpd.fields), 'update keeps allowlisted notes, DROPS currentHours');
     ok(!wrPlan.ops.some((o) => o.entity === 'invoices'), 'invoices edit is REFUSED entirely (never touch money)');
+    // #152 — a big import truncated mid-JSON (no closing fence) must STILL strip from the
+    // bubble and open a preview from the rows that fully arrived (not dump raw JSON, no Apply).
+    const truncReply = 'Here’s the import:\n\n```wrangler-action\n{"action":"data","title":"Import leads","ops":[{"op":"import","entity":"customers","rows":[\n{"firstName":"Ann","lastName":"One","phone":"337-555-0009"},\n{"firstName":"Bo","lastName":"Two","phone":"337-555-0010"},\n{"firstName":"Cut","lastName":"Off","phone":"337-555';
+    const truncAct = T.parseWranglerAction(truncReply);
+    ok(truncAct && truncAct.action === 'data' && truncAct._truncated, 'truncated import block still parses into a data action (#152)');
+    ok(truncAct && truncAct.ops[0].rows.length === 2, 'salvage keeps the 2 complete rows, drops the cut-off one');
+    ok(!/wrangler-action/.test(T.stripWranglerAction(truncReply)), 'truncated action block is stripped from the visible bubble (no raw JSON dump)');
+    const truncPlan = T.wrValidatePlan(truncAct);
+    ok(truncPlan.ops.length === 1 && truncPlan.ops[0].rows.length === 2, 'salvaged action validates into an applyable preview plan');
+    // csv-import: model maps columns, frontend expands all rows (no output-token ceiling)
+    const csvText = 'First Name,Last Name,Mobile,Email\nAnn,One,337-555-0001,ann@x.com\nBo,Two,337-555-0002,\nCut,Off,,';
+    const parsed = T.parseCsvFile(csvText);
+    ok(parsed && parsed.headers.length === 4, 'parseCsvFile extracts 4 headers from CSV');
+    ok(parsed && parsed.rows.length === 3, 'parseCsvFile extracts 3 data rows');
+    ok(parsed && parsed.rows[0]['First Name'] === 'Ann' && parsed.rows[0]['Mobile'] === '337-555-0001', 'parseCsvFile maps header names to values correctly');
+    const csvFile = { name: 'leads.csv', csvHeaders: parsed.headers, csvRows: parsed.rows };
+    const csvAction = { action: 'data', title: 'Import from CSV', ops: [{ op: 'csv-import', entity: 'customers', mapping: { 'First Name': 'firstName', 'Last Name': 'lastName', 'Mobile': 'phone', 'Email': 'email' }, skipIfEmpty: ['firstName', 'lastName'] }], _csvAttached: csvFile };
+    const csvPlan = T.wrValidatePlan(csvAction);
+    ok(csvPlan.ops.length === 1 && csvPlan.ops[0].op === 'csv-import', 'csv-import op passes wrValidatePlan');
+    const csvOp = csvPlan.ops[0];
+    ok(csvOp && csvOp.rows.length === 3, 'all 3 rows mapped (skipIfEmpty only cuts rows with blank firstName/lastName)');
+    ok(csvOp && csvOp.rows[0].firstName === 'Ann' && csvOp.rows[0].phone === '337-555-0001', 'column mapping applied correctly');
+    ok(csvOp && !('Mobile' in csvOp.rows[0]), 'CSV column name (Mobile) is gone -- only app field name (phone) survives');
+    const csvSkipAction = { action: 'data', title: 'Import skipping blanks', ops: [{ op: 'csv-import', entity: 'customers', mapping: { 'First Name': 'firstName', 'Last Name': 'lastName', 'Mobile': 'phone' }, skipIfEmpty: ['firstName', 'phone'] }], _csvAttached: csvFile };
+    const csvSkipPlan = T.wrValidatePlan(csvSkipAction);
+    const csvSkipOp = csvSkipPlan.ops[0];
+    ok(csvSkipOp && csvSkipOp.rows.length === 2, 'skipIfEmpty on phone drops only Cut (empty phone) -- Ann and Bo both survive');
     const custBefore = T.DATA.customers.length; const u3 = T.IDX.unit.get('U003'); const noteBefore = u3.notes, hoursBefore = u3.currentHours;
     window.JT.snapshotSaved();   // #164 baseline the diff-sync against the CURRENT data
     T.applyWranglerData(wrPlan);

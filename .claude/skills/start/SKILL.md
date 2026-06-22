@@ -34,9 +34,19 @@ The app is organized into long-lived **area branches** (`area/*`), each owning a
 - If the topic isn't clear yet, defer until the first real task is defined — don't branch blind.
 
 ## 4. Working rules for this session (state briefly, then follow)
+
+### Hard rules — no exceptions
+- **Questions → `AskUserQuestion` popup ONLY.** Every clarification, choice, or decision that is Jac's to make goes through the `AskUserQuestion` tool. NEVER ask questions inline in chat text. Not even small ones. Not even "does this look right?" — pop it up.
+- **Designing or building a feature first? → `/brainstorming`.** When Jac wants to plan, design, or spec a feature BEFORE touching code ("what should we do about X?", "how should we approach Y?"), invoke `/brainstorming` to turn the rough idea into an approved design. Don't start coding a UI concept without a spec sign-off.
+- **Any new or reshaped UI → two mandatory skills, in order:**
+  1. **`/jactec-ui`** — the yard data-plate design language enforcer (dark steel, ONE safety-orange accent, hazard-stripe, Saira Condensed, rivets, R0–R24 rulebook). Governs every screen, card, column, pill, button, field, popup, menu, date picker, KPI ring. Run this first.
+  2. **`/frontend`** — aesthetic direction, typography, avoiding AI defaults. Run after `/jactec-ui` frames the language. Together these two are the quality gate for every visual change.
+  - Backend (`Code.gs`) changes, CI scripts, and pure logic are exempt from both.
+- **R-Rulebook — stamp UI + keep `rule-usage.js` current.** Every new UI element gets a `data-r="Rxx"` attribute matching the rulebook. When rule usage changes, regenerate: `node ci/gen-rule-usage.mjs` (no `--check`). The `--check` flag is the CI gate — run `node ci/gen-rule-usage.mjs --check` before pushing; it fails on drift or duplicate rules.
+
+### Working discipline
 - **Token discipline:** terse by default; `Grep`/`Glob` before `Read`; read only the range you need; spawn subagents for large isolated work to protect the main context.
 - **Model triage:** auto-delegate mechanical/bulk work (git/gh plumbing, grep sweeps, file munging, running scripts) to **Haiku** subagents and well-scoped implementation to **Sonnet** subagents; keep architecture, security/gates, and ambiguous calls on the main session. Full rule in `CLAUDE.md` → *Auto-delegation*. (You pick subagent models; you can't change your own.)
-- **Clarifying questions:** use the `AskUserQuestion` popup — not inline prose — whenever a decision is genuinely Jac's to make.
 - **Specs:** after generating or changing a spec/feature/screen, offer to run `/role` to audit it through the 15 role lenses.
 - **Something reported broken → `wrangler-fix` first.** Anything reported not-working or broken — an in-app `wrangler-fix`/`wrangler-request` issue OR Jac just saying it in-session — runs through the `wrangler-fix` skill before any code change: prove the claim against the canon (R-Rulebook, SPEC v8, docs, code) with citations, trace the symptom UP to its root cause, sweep for sibling bugs of the same class, fix only what's proven at the cause, then re-reproduce to confirm it failed-before/passes-after. No fix without a cited root cause.
 - **Efficiency:** `/audit` is available anytime; the ~1M-token auto-audit hook will also prompt a coaching report.
@@ -52,5 +62,5 @@ End with 3–4 lines: tools OK/missing, current branch + what's in flight, the p
 ## Conventions reference
 - **Branches:** work on an **`area/*`** branch (see `references/branch-map.md`) → merge to `staging` (preview/debug) → `staging` → `main` (`main` = live at app.jacrentals.com via GitHub Pages). `main` is protected: changes land via PR + CI.
 - **Backend:** ships via `/clasp` (clasp), never git. `Code.gs`/`Code.js` are gitignored (public repo). In cloud sessions a `SessionStart` hook auto-wires clasp auth from the `CLASPRC_JSON_B64` env secret.
-- **Sibling skills:** `/clasp` (backend deploy), `/role` (spec audit), `/audit` (token + model-fit coaching), `/tidy-sessions` (archive finished chats). Plus the existing suite: `jactec-ui`, `frontend`, `mobile-*`, `webapp-testing`, `wrangler-fix`.
+- **Sibling skills:** `/clasp` (backend deploy), `/role` (spec audit), `/audit` (token + model-fit coaching), `/tidy-sessions` (archive finished chats), `/brainstorming` (design/spec before building — invoke before touching UI code), `/jactec-ui` (yard data-plate design language — **mandatory** for any UI), `/frontend` (aesthetic direction — **mandatory** for any UI), `mobile-*`, `webapp-testing`, `wrangler-fix`.
 - **At session end:** write a short handoff note (what changed, what's pending, which area branch) into the session folder so the next chat — local or cloud — picks up cleanly.
