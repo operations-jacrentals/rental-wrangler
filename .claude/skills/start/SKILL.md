@@ -8,9 +8,16 @@ description: Jac Rentals session startup routine — run at the top of a session
 Run this first thing in a session. It gets the session organized so parallel chats and branches stop colliding, and primes Claude with the right tools, conventions, and discipline. Built for both local (Windows/PowerShell) and cloud (Linux) sessions.
 
 ## 1. Toolchain probe
-Run and report a short table — node, npm, clasp, gh, git:
+Run and report a short table — node, npm, clasp, gh, git, PowerShell, and env secrets:
 ```
 node --version; npm --version; clasp --version; gh --version; git --version
+$PSVersionTable.PSVersion.ToString()
+```
+Also check that the app password secret is present (do NOT echo it):
+```powershell
+[Environment]::GetEnvironmentVariable("RW_PW", "User") -ne $null -and `
+[Environment]::GetEnvironmentVariable("RW_PW", "User") -ne ""
+# True = set; False = missing (Staging E2E login won't work)
 ```
 - **clasp installed ≠ backend reachable — verify AUTH the right way.** Probe with clasp's own command, never by looking for a credentials file (clasp 3.x does **not** reliably use the old `~/.clasprc.json` path — guessing paths is exactly how sessions wrongly cry "no auth"):
   ```
@@ -31,14 +38,33 @@ node --version; npm --version; clasp --version; gh --version; git --version
 - Recall memory: read `MEMORY.md` and surface anything relevant to this session's topic (e.g. `[[jactec-skill-build-plan]]`, `[[jactec-tooling]]`, `[[jactec-design-prefs]]`).
 
 ## 3. Route to a TASK BRANCH off the right area — DO NOT switch without an OK
-The app is organized into long-lived **area branches** (`area/*`), each owning a domain. You do **not** work on an area branch directly — you branch a short-lived **task branch off it** (`<domain>/<task>`), so multiple sessions can work the SAME area in parallel without colliding. Flow: **`<domain>/<task>` → `area/<domain>` → `staging` (preview/debug) → `main` (live)**.
+The app is organized into long-lived **area branches** (`area/*`), each owning a domain. You do **not** work on an area branch directly — you branch a short-lived **task branch off it** (`<domain>/<task>`), so multiple sessions can work the SAME area in parallel without colliding. Flow: **`<domain>/<task>` → `area/<domain>` (test LOCALLY here) → `staging` (combined final debug for the area(s) you choose to promote) → `main` (live)**. The key shift (Jac, 2026-06-22): **you debug each feature at the area level on a local URL — staging is no longer the per-feature test surface**, only the on-demand combined-debug bundle right before `main`. This decouples testing from promotion: an unready feature never has to ride along to `main`, and you reach `main` with one PR, not a session-by-session push.
 - Read **`references/branch-map.md`**, match what Jac described to the best-fitting area, and **PROPOSE a task branch** in one line (e.g. *"Invoicing work → branch `invoicing-payments/refund-rounding` off `area/invoicing-payments`?"*). **WAIT for his OK** before switching.
 - On OK, start from current code (never stale):
   1. `git fetch origin`
   2. refresh the area base from the trunk: `git checkout area/<domain> && git merge --no-edit origin/main` (instant if untouched; a real merge if the area has work — **if it CONFLICTS, STOP and surface it**, don't guess), then `git push` the refreshed area.
   3. cut the task branch: `git checkout -b <domain>/<task>` and `git push -u origin <domain>/<task>`.
   4. Commit your work to the **task branch** and push there. Name it `<domain>/<task>`, NOT `area/<domain>/<task>` — git won't nest a branch under an existing branch's name.
-- When the task is done: merge `<domain>/<task>` → `area/<domain>`, then `area/<domain>` → `staging` to preview/debug, then PR `staging` → `main` once clean. (A standalone task can PR straight to `staging`.)
+- **Test at the AREA level, LOCALLY — this is the primary debug loop (NOT staging).** When a feature merges to its `area/<domain>`, serve that branch and drive it on `localhost` — isolated, instant, no entanglement with anyone else's in-flight work. It's the dev-loop version of what `ci/smoke.mjs` already does (a static server), minus Playwright:
+  1. Save this tiny server to a **gitignored scratch path** (e.g. the session-output folder — never commit it) as `serve.mjs`:
+     ```js
+     import { createServer } from 'http';
+     import { readFile } from 'fs/promises';
+     import { extname, join, normalize } from 'path';
+     const T = { '.html':'text/html','.js':'text/javascript','.css':'text/css','.json':'application/json','.svg':'image/svg+xml' };
+     createServer(async (q, s) => {
+       try { let p = decodeURIComponent(q.url.split('?')[0]); if (p==='/') p='/index.html';
+         const b = await readFile(join('.', normalize(p)));
+         s.writeHead(200, { 'Content-Type': T[extname(p)] || 'application/octet-stream' }); s.end(b);
+       } catch { s.writeHead(404); s.end('404'); }
+     }).listen(9147, () => console.log('http://localhost:9147'));
+     ```
+  2. From the repo root on the area branch: `node <path>/serve.mjs` (**port 9147** — 8000 is reserved on this machine).
+  3. Open `http://localhost:9147` and log in — password from **`$env:RW_PW`** (never hardcode or echo it; no var set → you can only check the pre-login surface). Then **exercise exactly the feature you built**, plus a sanity flow.
+  - **Backend note:** local hits the SAME single GAS web app + Sheets DB that staging and main use (`app.js` → `BACKEND_URL`), gated by the team password — so local testing is **no riskier with real data than staging**. PII guard still applies: read for understanding; NEVER paste Drive/Sheets data into the repo/commits/seeds ([[jactec-real-data-migration]]).
+  - Drive it with **Claude-in-Chrome** for an automated assertion (no local install needed), or just open it yourself.
+- **Fork on every area merge — no lingering branches (Jac, 2026-06-22).** The moment a feature lands on its `area/<domain>` and passes the **local** test, raise a `AskUserQuestion` fork: **(a) keep debugging this branch**, or **(b) it's DONE — archive it.** Done = the task branch is retired (it's already on the area; the branch janitor deletes it on merge) and **this chat is closed**. A branch that's merged + locally verified is FINISHED — don't let it sit around reporting "behind." A session's job ends when its work is on its area and blessed — **not** at staging, and **never** by individually pushing to `main`.
+- **Promotion is selective + rare, and `main` is reached ONCE.** Areas accumulate finished, locally-verified work independently. When something needs to ship, **pick which area(s)** to promote → merge only those into `staging` → combined final debug on the real staging URL (§4 Staging E2E) → open **one** PR `staging` → `main`. You never go session-to-session pushing to main; that ritual is what caused the "behind / merge damage-control" churn. (`staging` is long-lived and accumulates — Jac's choice; promote to `main` on his explicit call, possibly days/weeks apart.)
 - If two areas overlap, name both and let Jac pick (`AskUserQuestion`). If **nothing** fits, propose a NEW `area/<slug>` off `staging`, then a task branch off that.
 - Also offer a session-output folder `<YYYY-MM-DD> <Topic>/` (git-ignored; OUTPUTS only — never source). Use today's date.
 - If the topic isn't clear yet, defer until the first real task is defined — don't branch blind.
@@ -60,8 +86,8 @@ The app is organized into long-lived **area branches** (`area/*`), each owning a
 - **Specs:** after generating or changing a spec/feature/screen, offer to run `/role` to audit it through the 15 role lenses.
 - **Something reported broken → `wrangler-fix` first.** Anything reported not-working or broken — an in-app `wrangler-fix`/`wrangler-request` issue OR Jac just saying it in-session — runs through the `wrangler-fix` skill before any code change: prove the claim against the canon (R-Rulebook, SPEC v8, docs, code) with citations, trace the symptom UP to its root cause, sweep for sibling bugs of the same class, fix only what's proven at the cause, then re-reproduce to confirm it failed-before/passes-after. No fix without a cited root cause.
 - **Efficiency:** `/audit` is available anytime; the ~1M-token auto-audit hook will also prompt a coaching report.
-- **Promotion cadence — propose the hops, never auto-promote to live:** when a task is *done*, offer to merge `<domain>/<task>` → `area/<domain>` (the merged task branch then self-cleans via the branch janitor). When Jac wants to preview/QA, merge `area/<domain>` → `staging` — **then two mandatory deploy steps + Staging E2E before calling it clean.** Only after Jac confirms it's clean on staging, open a PR `staging` → `main` (protected; CI). **`main` is live — promoting to it is always Jac's explicit call.**
-- **Staging E2E — after a push to `staging`, DRIVE THE LIVE APP before declaring it clean (don't trust unit tests alone).** A skill can't auto-fire on a git push, so this is a **session-performed** step (a CI Playwright job could automate it later — Playwright runs fine in CI even though it won't install on this desktop). On each `area/<domain>` → `staging` merge:
+- **Promotion cadence — propose the hops, never auto-promote to live:** when a feature merges to `area/<domain>`, **test it LOCALLY first** (§3 — serve on `localhost:9147`, log in with `$RW_PW`, exercise it), then raise the **continue-or-archive fork** (§3). A locally-verified, archived feature is *done* — it sits on its area, the task branch self-cleans via the janitor, and the chat closes. **Sessions do NOT individually push to `main`.** When Jac wants to ship, he picks **which area(s)** to promote; merge only those → `staging` → **two mandatory deploy steps + Staging E2E** → then **one** PR `staging` → `main` (protected; CI). **`main` is live — promoting to it is always Jac's explicit call**, often days/weeks apart.
+- **Staging E2E — at PROMOTION time, after merging the chosen area(s) to `staging`, DRIVE THE LIVE APP before declaring it clean (don't trust unit tests alone).** This is the *combined* final check (multiple areas together on the real deploy path) — distinct from the per-feature **local** area test in §3, which is your everyday loop. Reach this step only when Jac is promoting, not on every feature. A skill can't auto-fire on a git push, so this is a **session-performed** step (a CI Playwright job could automate it later — Playwright runs fine in CI even though it won't install on this desktop). On each `area/<domain>` → `staging` merge:
   1. **Bump the shared `?v=` cache token** first — check what staging has: `git show origin/staging:index.html | grep '?v='`. Set a value *newer* than that. (A same-token file swap stays cached ~10 min; skipping this has burned us before.)
   2. **Force the sync** so you exercise the new code, not stale: `gh workflow run sync-staging.yml --repo operations-jacrentals/rental-wrangler-staging` (Pages rebuilds ~1 min). Then **verify the LIVE site serves the new bytes** (`curl -s https://operations-jacrentals.github.io/rental-wrangler-staging/app.js | grep <new-only marker>`). The mirror can serve an OLD file under a NEW token — only a re-sync fixes it. Staging URL: `https://operations-jacrentals.github.io/rental-wrangler-staging/` ([[jactec-staging-url]]).
   3. **Drive it with Claude-in-Chrome** (the browser MCP — needs **no local install**, unlike Playwright, which won't install on this desktop): open the staging URL, log in (password from an env var like `$RW_PW` — **never hardcode or echo it**; no var set → you can only check the pre-login surface), then **exercise exactly what you built**, end-to-end, plus a known sanity flow — e.g., run a sample CSV through **Mr. Wrangler** and confirm the expected output, not merely that the page renders.
@@ -70,13 +96,14 @@ The app is organized into long-lived **area branches** (`area/*`), each owning a
 ## 5. Ready summary
 End with 3–4 lines: tools OK/missing, current branch + what's in flight, the proposed branch/folder (awaiting OK), and "what are we working on?"
 
-## 6. Wrap-up — after shipping to `main`, or when the session winds down
-- **Run `/tidy-sessions`.** After a PR merges to `main` (work shipped) — or as the session ends — invoke `/tidy-sessions` to sweep finished/stale chats. It lists candidates and archives only what Jac confirms; it never touches the current chat or open-PR work.
+## 6. Wrap-up — when a feature is archived (§3 fork), after shipping to `main`, or when the session winds down
+- **A feature is DONE at the §3 fork**, not only at `main`: once it's on its `area/<domain>`, locally verified, and you chose "archive," the session's work is complete even though `main` won't move for days/weeks. Close it then — don't keep it open waiting on promotion.
+- **Run `/tidy-sessions`.** After a feature is archived, a PR merges to `main`, or the session ends — invoke `/tidy-sessions` to sweep finished/stale chats. It lists candidates and archives only what Jac confirms; it never touches the current chat or open-PR work.
 - **Mark THIS chat done.** A session can't archive itself mid-use, so tell Jac his work shipped and he can archive this chat on the way out — otherwise the next `/tidy-sessions` sweep catches it automatically once its task branch is gone (the branch janitor deletes merged task branches).
 - **Handoff note.** Write a short note (what shipped, what's pending, which area branch) into the session-output folder so the next chat — local or cloud — picks up cleanly.
 
 ## Conventions reference
-- **Branches:** work on an **`area/*`** branch (see `references/branch-map.md`) → merge to `staging` (preview/debug) → `staging` → `main` (`main` = live at app.jacrentals.com via GitHub Pages). `main` is protected: changes land via PR + CI.
+- **Branches:** task branch `<domain>/<task>` off **`area/*`** (see `references/branch-map.md`) → merge to its area and **test LOCALLY** (`node serve.mjs` → `localhost:9147`, log in with `$RW_PW`) → **continue-or-archive fork** → areas accumulate finished work → promote **chosen** area(s) to `staging` (combined final debug) → **one** PR `staging` → `main` (`main` = live at app.jacrentals.com via GitHub Pages, protected, PR + CI). Staging is the *promotion* surface, not the per-feature test surface; sessions never push to `main` individually.
 - **Backend:** ships via `/clasp` (clasp), never git. `Code.gs`/`Code.js` are gitignored (public repo). In cloud sessions a `SessionStart` hook auto-wires clasp auth from the `CLASPRC_JSON_B64` env secret.
 - **Sibling skills:** `/clasp` (backend deploy), `/role` (spec audit), `/audit` (token + model-fit coaching), `/tidy-sessions` (archive finished chats), `/brainstorming` (design/spec before building — invoke before touching UI code), `/jactec-ui` (yard data-plate design language — **mandatory** for any UI), `/frontend` (aesthetic direction — **mandatory** for any UI), `mobile-*`, `webapp-testing`, `wrangler-fix`.
 - **At session end:** write a short handoff note (what changed, what's pending, which area branch) into the session folder so the next chat — local or cloud — picks up cleanly.
