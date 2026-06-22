@@ -42,7 +42,7 @@ The app is organized into long-lived **area branches** (`area/*`), each owning a
   1. **`/jactec-ui`** — the yard data-plate design language enforcer (dark steel, ONE safety-orange accent, hazard-stripe, Saira Condensed, rivets, R0–R24 rulebook). Governs every screen, card, column, pill, button, field, popup, menu, date picker, KPI ring. Run this first.
   2. **`/frontend`** — aesthetic direction, typography, avoiding AI defaults. Run after `/jactec-ui` frames the language. Together these two are the quality gate for every visual change.
   - Backend (`Code.gs`) changes, CI scripts, and pure logic are exempt from both.
-- **R-Rulebook — stamp UI + keep `rule-usage.js` current.** Every new UI element gets a `data-r="Rxx"` attribute matching the rulebook. When rule usage changes, regenerate: `node ci/gen-rule-usage.mjs` (no `--check`). The `--check` flag is the CI gate — run `node ci/gen-rule-usage.mjs --check` before pushing; it fails on drift or duplicate rules.
+- **R-Rulebook — stamp UI + keep `rule-usage.js` current.** Every new UI element gets a `data-r="Rxx"` attribute matching the rulebook. When rule usage changes, regenerate: `node ci/gen-rule-usage.mjs` (no `--check`). The `--check` flag is the CI gate — run `node ci/gen-rule-usage.mjs --check` before pushing; it fails on drift or duplicate rules. **Any new or reshaped UI keeps the R-Rulebook current — a hard rule (see CLAUDE.md → R-rulebook).** New popup windows also need a `WINDOW_CATALOG` entry, enforced by `node ci/check-window-catalog.mjs`.
 
 ### Working discipline
 - **Token discipline:** terse by default; `Grep`/`Glob` before `Read`; read only the range you need; spawn subagents for large isolated work to protect the main context.
