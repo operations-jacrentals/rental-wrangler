@@ -318,6 +318,14 @@ function cardGateReason(cust) {
    per-card tab AND the account-level "held draft" share one capture form). */
 const AG_LOCK = '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
 const AG_CAM = '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>';
+/* §7.1c the 3-piece capture progress strip — typographic (matches the un-stamped
+   .ag-meta/.ag-gate content pattern, NOT a pill, so it's outside the R0 lint family).
+   `pieces` = [{label, done}]; ✓ done / — pending, in the stamped Saira voice. */
+function capProgress(pieces) {
+  const left = pieces.filter((p) => !p.done).length;
+  const row = pieces.map((p) => `<span class="ag-prog-item${p.done ? ' done' : ''}">${esc(p.label)} ${p.done ? '✓' : '—'}</span>`).join('');
+  return `<div class="ag-prog"><div class="ag-prog-row">${row}</div><div class="ag-prog-note">${esc(left === 0 ? 'Complete — authorized ✓' : `Finish ${left} more to authorize`)}</div></div>`;
+}
 /* The shared selfie + signature capture controls — emitted on a CARD's signing tab and
    in the +Card panel (no card yet). §7.1c: each piece AUTO-SAVES on capture (no commit button)
    straight onto the card — or, pre-card, onto c.pendingCapture. `readKey` is the target: a
@@ -326,16 +334,18 @@ function agCaptureBlock(o, ag, readKey) {
   const c = o && o.editId ? IDX.customer.get(o.editId) : null;
   const k = (readKey && readKey !== 'account' && c) ? customerCards(c).find((x) => x.id === readKey) : null;
   const selfie = k ? cardSelfie(k) : ((c && c.pendingCapture && c.pendingCapture.selfie) || '');
+  const hasSig = k ? !!cardDraftSig(k) : !!(c && c.pendingCapture && c.pendingCapture.signature);
   return `
     <div class="ag-readref"><span><b>${esc(ag.title)}</b></span>${linkName(o.signRead === readKey ? 'Hide' : 'Terms', { js: 'js-ncsign-read', data: { card: readKey } })}</div>
     ${o.signRead === readKey ? `<div class="nc-agreement" tabindex="0">${esc(ag.text)}</div>` : ''}
     <div class="ag-caphead"><span class="ag-capcap">Capture selfie + signature</span>${linkName('Open Window', { js: 'js-sign-popout', data: { title: ag.title } })}</div>
     <div class="ag-caprow">
       <label class="ag-selfiebtn js-ag-selfie">${selfie
-        ? `<img class="ag-selfie" src="${esc(selfie)}" alt="selfie" /><span class="ag-cam-cap">Retake</span>`
+        ? `<img class="ag-selfie" src="${esc(selfie)}" alt="selfie" /><span class="ag-cam-cap">✓ Saved · Retake</span>`
         : `<video class="ag-cam-feed" autoplay muted playsinline></video><span class="ag-cam-fallback">${AG_CAM}<span class="l">Selfie</span></span><span class="ag-cam-cap ag-cam-hint">Tap to capture</span>`}<input type="file" accept="image/*" capture="user" class="js-ncsign-selfie" hidden /></label>
       <canvas class="nc-sigpad ag-pad" width="500" height="220"></canvas>
     </div>
+    ${(selfie || hasSig) ? `<div class="ag-saverow">${selfie ? '<span class="ag-savedhint on">Selfie ✓ saved</span>' : ''}${hasSig ? '<span class="ag-savedhint on">Signature ✓ saved</span>' : ''}</div>` : ''}
     <div class="ag-acceptrow">${ghostPill('Clear', { js: 'js-nc-sig-clearpad' })}</div>`;
 }
 /* Sign-before-a-card capture, rendered inside the +Card panel before the first card
@@ -346,10 +356,10 @@ function heldSignBlock(o, custRec, d) {
   const key = requiredAgreementKey(custRec || { accountType: d.accountType });
   const ag = AGREEMENTS[key] || AGREEMENTS.rental;
   const p = (custRec && custRec.pendingCapture) || {};   // §7.1c pre-card held pieces (saddle onto the first card)
-  const note = (p.selfie || p.signature)
-    ? `<p class="muted" style="font-size:11px;margin:10px 2px 0">${p.selfie && p.signature ? '✓ Selfie + signature held' : p.selfie ? '✓ Selfie held — add a signature' : '✓ Signature held — add a selfie'} — these saddle onto the first card you add; On-Rent &amp; delivery unlock once that card is complete.</p>`
-    : `<div class="ag-gate"><span class="lead">On Rent unlocks once Card + Selfie + Signature are all complete</span></div>`;
-  return `<div class="ag-capcap" style="margin:16px 2px 8px">Signed agreement</div>${note}${agCaptureBlock(o, ag, 'account')}`;
+  return `<div class="ag-capcap" style="margin:16px 2px 8px">Signed agreement</div>
+    ${capProgress([{ label: 'Card', done: false }, { label: 'Selfie', done: !!p.selfie }, { label: 'Signature', done: !!p.signature }])}
+    <p class="muted" style="font-size:11px;margin:2px 2px 0">Selfie &amp; signature save now and saddle onto the first card you add; On-Rent &amp; delivery unlock once that card is complete.</p>
+    ${agCaptureBlock(o, ag, 'account')}`;
 }
 /* Move an account-level HELD signing onto a freshly-added card — the draft's FROZEN
    key/version/date is preserved verbatim (it's the agreement they actually accepted,
@@ -7439,7 +7449,7 @@ function renderOverlay() {
     // The card rail IS the header (no title). Account tab + a tab per card (signed dot) + a +Card add.
     const railTabs = `<div class="ag-tabs" role="tablist">
       <button type="button" class="ag-tab js-nc-tab${tab === 'account' ? ' on' : ''}" data-tab="account">Account</button>
-      ${cards.map((k) => `<button type="button" class="ag-tab js-nc-tab${tab === k.id ? ' on' : ''}" data-tab="${esc(k.id)}"><span class="ag-dot ${cardAuthorized(custRec, k) ? 'ok' : 'bad'}"></span>${esc(brandName(k.brand))} ••${esc(k.last4)}</button>`).join('')}
+      ${cards.map((k) => `<button type="button" class="ag-tab js-nc-tab${tab === k.id ? ' on' : ''}" data-tab="${esc(k.id)}"><span class="ag-dot ${{ complete: 'ok', 'in-progress': 'mid', stale: 'bad' }[cardCaptureState(custRec, k)]}"></span>${esc(brandName(k.brand))} ••${esc(k.last4)}</button>`).join('')}
       ${addBtn('Card', { link: true, js: 'js-add-card', data: { rec: o.editId || '' } })}
     </div>`;
     const headRail = `${railTabs}<span class="spacer"></span>${isEdit ? `<button class="iconbtn iconbtn-bare js-nc-qr" data-tip="Open on phone">${I.qr}</button>` : ''}`;
@@ -7484,8 +7494,9 @@ function renderOverlay() {
       } else {
         const key = requiredAgreementKey(custRec); const ag = AGREEMENTS[key];
         body = `
-          <div class="ag-meta">${esc(meta)}<span class="ag-metasep"></span>${badge(st === 'stale' ? 'Re-sign' : 'Unsigned', 'red')}</div>
-          <div class="ag-gate"><span class="lead">${st === 'stale' ? 'Account type changed — re-sign required.' : 'Sign to allow On-Rent &amp; delivery.'}</span><span class="sub">Save to authorize · card can still be charged.</span></div>
+          <div class="ag-meta">${esc(meta)}<span class="ag-metasep"></span>${badge(st === 'stale' ? 'Re-sign' : 'In progress', st === 'stale' ? 'yellow' : 'gray')}</div>
+          ${capProgress([{ label: 'Card', done: true }, { label: 'Selfie', done: cardHasSelfie(k) }, { label: 'Signature', done: cardHasSignature(custRec, k) }])}
+          <div class="ag-gate"><span class="sub">${st === 'stale' ? 'Account type changed — re-sign the agreement below.' : 'On-Rent &amp; delivery unlock when complete; the card can still be charged now.'}</span></div>
           ${agCaptureBlock(o, ag, k.id)}`;
       }
     }
@@ -13114,7 +13125,8 @@ function exposeTestApi() {
       latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore, wranglerRailLoad, wrOffloadChatImages, wrEvictChatBlobs, driveViewUrl, mergeWranglerRails,
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
-      companyRevenueGoal, companyName, companyTagline, rentalRuleBlock, dueForCustomer, footerHidden, customFieldsFor, checklistFor, checklistRequired, applySettings, getStatus, pageDefaultSlice, __state: state };
+      companyRevenueGoal, companyName, companyTagline, rentalRuleBlock, dueForCustomer, footerHidden, customFieldsFor, checklistFor, checklistRequired, applySettings, getStatus, pageDefaultSlice,
+      openCustomerForm, renderOverlay, render, cardComplete, cardCaptureState, cardHasSelfie, cardHasSignature, captureSelfie, captureSignature, __state: state };   // UI drivers for headless screenshot/e2e tests
   } catch (e) { /* no window (non-browser) */ }
 }
 
