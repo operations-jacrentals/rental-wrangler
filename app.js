@@ -6998,7 +6998,22 @@ function renderOverlay() {
   const o = state.overlay;
   const overlay = el('div', 'overlay');
   overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) closeOverlay(); });
-
+  if (buildPopupEl(o, overlay) === false) { state.overlay = null; return; }
+  root.appendChild(overlay);
+  { const _nb = overlay.querySelector('.popup-body'); if (_nb && _ovScroll[o.kind]) _nb.scrollTop = _ovScroll[o.kind]; }   // restore scroll on a same-overlay re-render (sign/selfie no longer jump to top)
+  _ovLastKind = o.kind;
+  if (o.kind === 'partform') document.querySelector('.overlay .js-pf2-desc')?.focus();   // Jac: Part/Task field focused by default
+  if (o.kind === 'newCustomer') setupSignaturePad();
+  if (o.kind === 'payment') setupPayAlloc();   // live counter for the §19 allocation rows
+  if (o.kind === 'addCard') { const cc = IDX.customer.get(o.customerId); if (cc) mountCardElement(); }   // §7.1b card saved first, signed after
+  if (o.kind === 'newCustomer' && o.cardSub) { const cc = IDX.customer.get(o.editId); if (cc) mountCardElement(); }   // §14 the side-by-side Add-card panel
+  { const _agFeed = overlay.querySelector('.ag-cam-feed'); if (_agFeed) startAgCam(_agFeed); else stopAgCam(); }   // live selfie camera follows the capture block
+}
+// §RB-Windows enabler — the per-kind popup BUILDER, extracted from renderOverlay so the
+// admin Rulebook can render an inert preview of any popup. Pure: builds into `overlay`,
+// no global side-effects (the live Stripe/camera/focus wiring stays in renderOverlay's
+// post phase). Returns false if a record guard tripped (caller closes the overlay), else true.
+function buildPopupEl(o, overlay, opts = {}) {
   if (o.kind === 'qr') {
     const url = o.url || location.href;
     const pop = el('div', 'popup'); pop.style.width = '340px';
@@ -7043,7 +7058,7 @@ function renderOverlay() {
       <textarea class="cmt-input js-cmt-text" placeholder="Leave a note…">${esc(o.text || '')}</textarea>
       <div class="cmt-card-foot">${rec ? `<span class="cmt-hint">${esc(detailTitle(entityCardOf(o.card, o.recType), rec))}</span>` : '<span></span>'}<button class="cmt-post js-cmt-save">Post</button></div>`;
     overlay.appendChild(pop);
-    setTimeout(() => pop.querySelector('.cmt-input')?.focus(), 0);
+    if (!opts.preview) setTimeout(() => pop.querySelector('.cmt-input')?.focus(), 0);
   } else if (o.kind === 'rulebook') {
     // THE VISUAL RULEBOOK (SPEC v8) — every example is emitted by the REAL
     // builder, so this reference can never drift from the code.
@@ -7462,7 +7477,7 @@ function renderOverlay() {
     // Read-only signed-agreement viewer (from the customer card). Shows the exact
     // agreement the customer accepted plus their signature + the date.
     const c = IDX.customer.get(o.recId);
-    if (!c) { state.overlay = null; return; }
+    if (!c) { return false; }
     const ag = AGREEMENTS[c.agreementType] || AGREEMENTS.rental;
     const pop = el('div', 'popup nc-popup');
     pop.innerHTML = popupShell({ icon: CARD_ICON.customers || '', title: ag.title, tag: 'Customer · agreement',
@@ -7476,7 +7491,7 @@ function renderOverlay() {
     // Required-checklist takeover (Settings → Inspections): replaces the sheet until completed;
     // closing keeps it as a pending inspection. Any item Fail → overall Fail → existing auto-WO.
     const u = IDX.unit.get(o.unitId); const cfg = u && checklistFor(u); const n = IDX.insp.get(o.inspId);
-    if (!u || !cfg || !n) { state.overlay = null; return; }
+    if (!u || !cfg || !n) { return false; }
     n.items = n.items || {};
     const items = cfg.items || [];
     const done = items.filter((it) => n.items[it.id]).length; const allDone = done === items.length;
@@ -7497,7 +7512,7 @@ function renderOverlay() {
     // §12.8 Failure report — triggered when an inspection is marked Failed: capture a
     // photo/video + a description for the auto-created work order.
     const n = IDX.insp.get(o.recId);
-    if (!n) { state.overlay = null; return; }
+    if (!n) { return false; }
     const unit = IDX.unit.get(n.unitId);
     const ir = inspResult(n);
     const isVideo = (n.photo || '').startsWith('data:video');
@@ -7521,7 +7536,7 @@ function renderOverlay() {
     const u = IDX.unit.get(o.unitId);
     const rows = u ? unitServiceRows(u) : [];   // includes the wash task (svc-wash)
     const task = rows.find((s) => s.taskId === o.taskId);
-    if (!u || !task) { state.overlay = null; return; }
+    if (!u || !task) { return false; }
     const svcVid = (state.svcPhoto || '').startsWith('data:video');
     const media = state.svcPhoto
       ? `<div class="insp-photo">${svcVid ? `<video src="${esc(state.svcPhoto)}" controls></video>` : `<img src="${esc(state.svcPhoto)}" alt="service photo">`}<label class="insp-rephoto">Replace<input type="file" accept="image/*" class="js-svc-photo" hidden></label></div>`
@@ -7540,7 +7555,7 @@ function renderOverlay() {
   } else if (o.kind === 'schedule') {
     // §12.1 Schedule — a single date+time follow-up logged to the customer Activity Log
     const c = IDX.customer.get(o.customerId);
-    if (!c) { state.overlay = null; return; }
+    if (!c) { return false; }
     if (o.when === undefined) { o.when = TODAY_ISO; o.whenTime = to24(nowHourLabel()) || '09:00'; }
     const pop = el('div', 'popup'); pop.style.width = '340px';
     pop.innerHTML = popupShell({ icon: CARD_ICON.customers, title: `Schedule — ${c.name}`, tag: 'Customer · follow-up',
@@ -7552,7 +7567,7 @@ function renderOverlay() {
   } else if (o.kind === 'splitUnit') {
     // §20 split — give one unit its own window on a NEW sibling rental, same invoice.
     const r = IDX.rental.get(o.rentalId), u = IDX.unit.get(o.unitId);
-    if (!r || !u) { state.overlay = null; return; }
+    if (!r || !u) { return false; }
     const inv = r.invoiceId ? IDX.invoice.get(r.invoiceId) : null;
     const pop = el('div', 'popup'); pop.style.width = '360px';
     pop.innerHTML = popupShell({ icon: CARD_ICON.rentals, title: `Different dates — ${u.name}`, tag: 'Rental · split window',
@@ -7565,7 +7580,7 @@ function renderOverlay() {
   } else if (o.kind === 'addCard') {
     // Stripe Card Element — raw card data stays inside Stripe's iframe.
     const c = IDX.customer.get(o.customerId);
-    if (!c) { state.overlay = null; return; }
+    if (!c) { return false; }
     const pop = el('div', 'popup'); pop.style.width = '430px';
     pop.innerHTML = popupShell({ icon: CARD_ICON.customers || '', title: `Add card — ${c.name}`, tag: 'Customer · card on file',
       foot: `<button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill ignition js-card-save" data-r="R17">Save card</button>`,
@@ -7580,7 +7595,7 @@ function renderOverlay() {
     // §14b ACH — raw routing/account live ONLY in these inputs → straight to Stripe
     // (confirmUsBankAccountSetup); never stored, never sent to our backend.
     const c = IDX.customer.get(o.customerId);
-    if (!c) { state.overlay = null; return; }
+    if (!c) { return false; }
     const consent = !!(c.signature && c.selfie);
     const pop = el('div', 'popup'); pop.style.width = '430px';
     pop.innerHTML = popupShell({ icon: CARD_ICON.customers || '', title: `Add bank account — ${c.name}`, tag: 'Customer · ACH bank',
@@ -7605,7 +7620,7 @@ function renderOverlay() {
     // reads off their bank statement (a $0.01 deposit described "...SMxxxx").
     const c = IDX.customer.get(o.customerId);
     const k = c && customerBanks(c).find((x) => x.id === o.bankId);
-    if (!c || !k) { state.overlay = null; return; }
+    if (!c || !k) { return false; }
     const pop = el('div', 'popup'); pop.style.width = '400px';
     pop.innerHTML = popupShell({ icon: CARD_ICON.customers || '', title: `Verify ${k.bankName || 'bank'} ••${k.last4}`, tag: 'Customer · verify ACH',
       foot: `<button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill ignition js-ach-verify-save" data-r="R17">Verify account</button>`,
@@ -7617,7 +7632,7 @@ function renderOverlay() {
     overlay.appendChild(pop);
   } else if (o.kind === 'payment') {
     const inv = IDX.invoice.get(o.invoiceId);
-    if (!inv) { state.overlay = null; return; }
+    if (!inv) { return false; }
     const t = invoiceTotals(inv);
     const c = inv.customerId ? IDX.customer.get(inv.customerId) : null;
     const card = hasCardOnFile(c);
@@ -7668,15 +7683,7 @@ function renderOverlay() {
         ${o.error ? `<div class="login-err" style="text-align:left;margin-top:10px">${esc(o.error)}</div>` : ''}` });
     overlay.appendChild(pop);
   }
-  root.appendChild(overlay);
-  { const _nb = overlay.querySelector('.popup-body'); if (_nb && _ovScroll[o.kind]) _nb.scrollTop = _ovScroll[o.kind]; }   // restore scroll on a same-overlay re-render (sign/selfie no longer jump to top)
-  _ovLastKind = o.kind;
-  if (o.kind === 'partform') document.querySelector('.overlay .js-pf2-desc')?.focus();   // Jac: Part/Task field focused by default
-  if (o.kind === 'newCustomer') setupSignaturePad();
-  if (o.kind === 'payment') setupPayAlloc();   // live counter for the §19 allocation rows
-  if (o.kind === 'addCard') { const cc = IDX.customer.get(o.customerId); if (cc) mountCardElement(); }   // §7.1b card saved first, signed after
-  if (o.kind === 'newCustomer' && o.cardSub) { const cc = IDX.customer.get(o.editId); if (cc) mountCardElement(); }   // §14 the side-by-side Add-card panel
-  { const _agFeed = overlay.querySelector('.ag-cam-feed'); if (_agFeed) startAgCam(_agFeed); else stopAgCam(); }   // live selfie camera follows the capture block
+  return true;
 }
 const openOverlay = (o) => { state.datepick = null; _ovScroll[o.kind] = 0; state.overlay = o; renderOverlay(); };   // fresh open starts at top
 /* ── §15 in-app feedback: bug/request → queued to the backend Feedback tab ── */
