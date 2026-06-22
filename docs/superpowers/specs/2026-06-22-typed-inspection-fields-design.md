@@ -54,7 +54,7 @@ Each inspection item grows from `{ id, label }` to:
 | Type | Settings builder | Inspector (takeover) renders | Stored | Can fail? |
 |---|---|---|---|---|
 | **Toggle** | default; no extra config | ✓ Pass / ✕ Fail segcontrol (today's UI) | `'Pass'`/`'Fail'` | **Yes** — Fail trips WO |
-| **Add File** | Required toggle | photo/video/file capture tile (reuses the failure-photo `<input type=file>` → dataURL pattern) | `data:` URL | no |
+| **Add File** | Required toggle | photo capture tile (image only — downscaled; reuses the service-photo `<input type=file>` → dataURL pattern; video rejected to keep records small) | `data:` URL | no |
 | **Dropdown** | options sub-editor; each option has a "fails" flag | the admin's options (segcontrol or `<select>`) | chosen label | **Yes** — if chosen option is flagged `fail` |
 | **Number** | Required toggle | numbers-only input (`inputmode=numeric`) | number | no |
 | **Date** | Required toggle | date picker (reuse `dateField`) | ISO date | no |
@@ -140,10 +140,11 @@ Each writes `n.items[id]` via a handler analogous to the existing `js-ck-item`
 ## File storage
 
 Reuse the existing **`data:` URL on the record** mechanism (FileReader →
-dataURL), identical to the §12.8 failure photo (app.js:7518) and the agreement
-selfie. The value lives in `n.items[id]` and persists through the same inspection
-sync — **no backend change**. Constraint: large videos = large dataURLs, the same
-trade-off already accepted for failure-report videos.
+`downscaleImage` → dataURL), mirroring the service-completion photo
+(`js-svc-photo`, app.js:10873): **image only, downscaled; video is rejected** to
+keep the record small. The value lives in `n.items[id]` and persists through the
+same inspection sync — **no backend change**. (Video evidence = a future
+extension, same as the failure-report path which keeps full video.)
 
 ## Validation / edge cases
 
