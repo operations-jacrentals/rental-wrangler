@@ -497,16 +497,18 @@ try {
     ok(T.customFieldsFor('units').length === 0, 'custom fields are per-entity (units unaffected)');
     st.settings.customFields = savedCF;   // restore
 
-    // 26) Inspections — per-category required checklist (default none = quick toggles unchanged)
+    // 26) Inspections — required checklist keyed by EQUIPMENT FAMILY (default none = quick toggles unchanged)
     const savedInsp = st.settings.inspections;
-    const aUnit = T.DATA.units[0]; const aCat = aUnit.categoryId;
+    const aUnit = T.DATA.units[0]; const aKey = T.inspKeyOfCat(aUnit.categoryId);
     st.settings.inspections = undefined;
     ok(T.checklistFor(aUnit) === null && T.checklistRequired(aUnit) === false, 'no checklist config → unit uses the quick Pass/Fail toggles (default)');
-    st.settings.inspections = { [aCat]: { required: true, items: [{ id: 'ck_brakes_a1', label: 'Brakes' }, { id: 'ck_lights_b2', label: 'Lights' }] } };
-    ok(T.checklistRequired(aUnit) === true && T.checklistFor(aUnit).items.length === 2, 'a required checklist is picked up for units of that category');
-    const otherCat = T.DATA.units.find((u) => u.categoryId !== aCat);
-    if (otherCat) ok(T.checklistRequired(otherCat) === false, 'checklists are per-category (other categories unaffected)');
-    st.settings.inspections = { [aCat]: { required: false, items: [{ id: 'ck_x', label: 'X' }] } };
+    st.settings.inspections = { [aKey]: { required: true, items: [{ id: 'ck_brakes_a1', label: 'Brakes' }, { id: 'ck_lights_b2', label: 'Lights' }] } };
+    ok(T.checklistRequired(aUnit) === true && T.checklistFor(aUnit).items.length === 2, 'a required checklist is picked up for units of that family');
+    const otherUnit = T.DATA.units.find((u) => T.inspKeyOfCat(u.categoryId) !== aKey);
+    if (otherUnit) ok(T.checklistRequired(otherUnit) === false, 'checklists are per-family (other families unaffected)');
+    const sibUnit = T.DATA.units.find((u) => u.categoryId !== aUnit.categoryId && T.inspKeyOfCat(u.categoryId) === aKey);
+    if (sibUnit) ok(T.checklistRequired(sibUnit) === true && (T.checklistFor(sibUnit) || {}).items.length === 2, 'a sibling category in the same family SHARES the checklist');
+    st.settings.inspections = { [aKey]: { required: false, items: [{ id: 'ck_x', label: 'X' }] } };
     ok(T.checklistRequired(aUnit) === false && T.checklistFor(aUnit) !== null, 'a defined-but-not-required checklist is available but does not take over');
     st.settings.inspections = savedInsp;   // restore
 

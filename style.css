@@ -1559,6 +1559,14 @@ select.inline-input:focus-visible { outline: 2px solid var(--accent); outline-of
 .ck-row { display: flex; align-items: center; gap: 12px; padding: 9px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 11px; }
 .ck-label { flex: 1; min-width: 0; font-size: 13.5px; font-weight: 600; color: var(--txt); }
 .ck-row .seg { flex: 0 0 auto; }
+.ck-row .co-in { max-width: 180px; flex: 0 0 auto; }
+.ck-row .datefield { flex: 0 0 auto; }
+.ck-row .insp-photo { flex: 0 0 auto; min-height: 64px; width: 120px; margin-bottom: 0; }
+/* Dropdown options well in the Inspections builder add-row */
+.insp-opt-well { width: 100%; border-left: 3px solid var(--line); background: var(--bg-2); border-radius: 9px; padding: 8px 10px; display: flex; flex-direction: column; gap: 7px; margin-top: 2px; }
+.insp-opt-row { display: flex; align-items: center; gap: 8px; }
+.insp-opt-lbl { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; color: var(--txt); }
+.insp-opt-well .co-in { flex: 1 1 140px; min-width: 0; }
 .pill.is-disabled { opacity: .45; }
 body.is-phone .kpi-board { flex-direction: column-reverse; }
 body.is-phone .kpi-preview { align-self: center; }
@@ -1828,6 +1836,7 @@ select.nc-in { cursor: pointer; }
 .ag-tabs .add-field { align-self: center; margin-bottom: 2px; }
 .ag-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
 .ag-dot.ok { background: var(--green); }
+.ag-dot.mid { background: var(--yellow); box-shadow: 0 0 0 3px var(--yellow-bg); }   /* §7.1c in-progress */
 .ag-dot.bad { background: var(--red); box-shadow: 0 0 0 3px var(--red-bg); }
 /* short status banner — a thin red hazard rail, calm body */
 .ag-banner { position: relative; padding: 9px 13px 9px 20px; border-radius: 10px; margin: 2px 0 16px; font-size: 12.5px; font-weight: 600; }
@@ -1885,8 +1894,17 @@ select.nc-in { cursor: pointer; }
 .ag-pad { flex: 1; min-width: 0; height: 160px; width: auto; border: 1.5px dashed var(--line); border-radius: 12px;
   background: radial-gradient(circle at 50% 40%, var(--panel-2), var(--panel)); touch-action: none;
   cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='22'%3E%3Ccircle cx='11' cy='11' r='7' fill='none' stroke='%23ff7a1a' stroke-width='2'/%3E%3Ccircle cx='11' cy='11' r='1.6' fill='%23ff7a1a'/%3E%3C/svg%3E") 11 11, crosshair; }
-.ag-acceptrow { display: flex; gap: 9px; margin: 13px 0 0; }
+.ag-acceptrow { display: flex; align-items: center; gap: 9px; margin: 13px 0 0; }
 .ag-acceptrow .pill.c-commit { flex: 1; justify-content: center; }
+/* §7.1c the 3-piece capture progress strip (typographic data-plate, not a pill) + per-piece saved hints */
+.ag-prog { margin: 0 0 14px; padding: 10px 13px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); }
+.ag-prog-row { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; }
+.ag-prog-item { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.4px; font-weight: 700; font-size: 11px; color: var(--txt-3); }
+.ag-prog-item.done { color: var(--green); }
+.ag-prog-note { margin-top: 7px; font-size: 11px; color: var(--txt-3); }
+.ag-saverow { display: flex; gap: 16px; margin: 10px 2px 0; }
+.ag-savedhint { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.2px; font-weight: 600; font-size: 9.5px; color: var(--txt-3); }
+.ag-savedhint.on { color: var(--green); }
 /* saddle-stitch seam between the card field and the held-agreement capture in the +Card panel */
 .ag-cardsplit { height: 0; margin: 16px 0 4px; border-top: 1.5px dashed var(--tan, #c2925a);
   border-image: repeating-linear-gradient(90deg, var(--tan, #c2925a) 0 7px, transparent 7px 13px) 1; }
@@ -2133,6 +2151,51 @@ body.rw-inspect .c-titlecard:hover { outline: 2px solid #18b6ff; outline-offset:
 .rb-sw b { font-weight: 800; } .rb-sw i { font-style: normal; font-weight: 600; opacity: .8; font-size: 9px; }
 .rb-surf { display: inline-flex; align-items: center; justify-content: center; min-width: 52px; height: 34px;
   padding: 0 11px; border: 1px solid var(--line); border-radius: 10px; font-size: 10.5px; color: var(--txt-3); }
+
+/* ── Rulebook → Windows catalog (Jac 2026-06-22): collapsible popup index ── */
+.rb-win { border-bottom: 1px solid var(--line-soft); }
+.rb-win:last-child { border-bottom: none; }
+.rb-win-head { display: flex; align-items: stretch; gap: 8px; }
+.rb-win-toggle { flex: 1; min-width: 0; display: flex; align-items: center; gap: 9px; background: none;
+  border: none; padding: 9px 2px; cursor: pointer; text-align: left; color: var(--txt); }
+.rb-win-toggle:hover .rb-win-label { color: var(--accent); }
+.rb-win-chev { display: inline-flex; flex-shrink: 0; color: var(--txt-3); transition: transform .12s ease; }
+.rb-win-chev svg { width: 15px; height: 15px; }
+.rb-win.open .rb-win-chev { transform: rotate(180deg); color: var(--accent); }
+.rb-win-label { font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rb-win-tag { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1px;
+  font-size: 10px; font-weight: 600; color: var(--txt-3); white-space: nowrap; flex-shrink: 0; }
+.rb-win-copy { flex-shrink: 0; align-self: center; display: inline-flex; align-items: center; gap: 5px;
+  font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .8px;
+  font-size: 10px; font-weight: 700; color: var(--txt-3); background: var(--bg-2); border: 1px solid var(--line);
+  border-radius: 8px; padding: 4px 9px; cursor: pointer; transition: color .12s, border-color .12s; }
+.rb-win-copy:hover { color: var(--accent); border-color: var(--accent-line); }
+.rb-win-body { padding: 2px 2px 14px; }
+.rb-win-preview { position: relative; border: 1px solid var(--line); border-radius: 12px; background: var(--bg-2);
+  padding: 16px; overflow: hidden; display: flex; justify-content: center; pointer-events: none; }
+.rb-win-preview .popup { position: static; pointer-events: none; transform: none; box-shadow: var(--chip-shadow); margin: 0; }
+.rb-win-preview .rb-prev-holder { pointer-events: none; display: flex; flex-direction: column; gap: 12px; align-items: center; max-width: 100%; }
+.rb-win-preview::after { content: 'PREVIEW · NOT LIVE'; position: absolute; top: 8px; right: 10px;
+  font-family: 'Saira Condensed', system-ui, sans-serif; letter-spacing: 1px; font-size: 9px; font-weight: 700;
+  color: var(--txt-3); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 2px 6px; z-index: 2; }
+.rb-win-norec { font-size: 11.5px; color: var(--txt-3); font-style: italic; }
+.rb-win-fields { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 11px; align-items: center; }
+.rb-win-fieldlbl { width: 100%; font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase;
+  letter-spacing: 1px; font-size: 9.5px; font-weight: 700; color: var(--txt-3); margin-bottom: 1px; }
+.rb-win-field { display: inline-flex; align-items: baseline; gap: 5px; font-size: 11px; color: var(--txt-2);
+  background: var(--bg-2); border: 1px solid var(--line-soft); border-radius: 7px; padding: 3px 8px; }
+.rb-win-field b { font-weight: 600; color: var(--txt); }
+.rb-win-field i { font-style: normal; font-size: 9px; text-transform: uppercase; letter-spacing: .5px; color: var(--txt-3); }
+.rb-win-loc { display: block; margin-top: 11px; font-family: ui-monospace, monospace; font-size: 10.5px;
+  color: var(--accent); background: var(--accent-soft); border: 1px solid var(--accent-line); border-radius: 7px;
+  padding: 5px 9px; word-break: break-all; }
+.rb-win-toggle:focus-visible, .rb-win-copy:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .rb-win-chev { transition: none; } }
+/* standalone surfaces — forms/dropdowns not in a pop-up; a saddle-stitch tan divider sets them apart */
+.rb-std { margin-top: 16px; padding-top: 13px; border-top: 1px dashed var(--tan, #c2925a); }
+.rb-std-head { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1px;
+  font-size: 10.5px; font-weight: 700; color: var(--txt-3); margin-bottom: 4px; }
+/* standalone rows reuse the .rb-win collapsible structure (toggle · body · preview) */
 
 /* ── §13 v2 BUILD: gate pills · derived pills · flags · section colors ·
       timeline · yard/transport journeys · history chips · WO grid · toggles
