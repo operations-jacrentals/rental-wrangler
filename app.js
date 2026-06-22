@@ -7172,11 +7172,20 @@ function buildPopupEl(o, overlay, opts = {}) {
     }
     let standaloneBlock = '';
     if (activeTab.id === 'windows') {
-      const stdRows = STANDALONE_SURFACES.map((s) => `<div class="rb-std-row">
-        <span class="rb-win-label">${esc(s.label)}</span>
-        <span class="rb-win-tag">${esc(s.tag)}</span>
-        <code class="rb-std-loc">${esc(s.loc)}</code>
-        <button class="rb-win-copy js-win-copy" data-ref="${esc('Edit the ' + s.label + ' (' + s.loc + ') — a standalone form/dropdown in the app, not a pop-up window.')}">📋<span>Copy</span></button>
+      const stdRows = STANDALONE_SURFACES.map((s, i) => `<div class="rb-win" data-std="${i}">
+        <div class="rb-win-head">
+          <button class="rb-win-toggle js-win-row" data-std="${i}" aria-expanded="false">
+            <span class="rb-win-chev" aria-hidden="true">${I.chev}</span>
+            <span class="rb-win-label">${esc(s.label)}</span>
+            <span class="rb-win-tag">${esc(s.tag)}</span>
+          </button>
+          <button class="rb-win-copy js-win-copy" data-ref="${esc('Edit the ' + s.label + ' (' + s.loc + ') — a standalone form/dropdown in the app, not a pop-up window.')}">📋<span>Copy</span></button>
+        </div>
+        <div class="rb-win-body" hidden>
+          <div class="rb-win-preview" data-built="0"></div>
+          <div class="rb-win-fields"></div>
+          <code class="rb-win-loc">${esc(s.loc)}</code>
+        </div>
       </div>`).join('');
       standaloneBlock = `<div class="rb-std"><div class="rb-std-head">Standalone — forms &amp; dropdowns not in a pop-up</div>${stdRows}</div>`;
     }
@@ -7792,11 +7801,20 @@ function previewOverlayFor(kind) {
    inline on the cards/toolbar), listed under the Windows tab with a code location +
    copy-ref. No live preview (they need card context); the locator is the map. */
 const STANDALONE_SURFACES = [
-  { label: 'Status gate dropdown', tag: 'R1 · advances a record', loc: 'app.js · gatePill / gatePillRaw / funnelPill' },
-  { label: 'Right-click context menu', tag: 'R20 · cut · copy · comment', loc: 'app.js · openCtxMenu' },
-  { label: 'Window / date picker', tag: 'Rental · pick the window', loc: 'app.js · openWinPicker' },
-  { label: 'Card notes line', tag: 'R12 · boxless notes', loc: 'app.js · notesSection' },
-  { label: 'Global search + filters', tag: 'Toolbar · find · pin chips', loc: 'app.js · #globalsearch input' },
+  { label: 'Status gate dropdown', tag: 'R1 · advances a record', loc: 'app.js · gatePill / gatePillRaw / funnelPill',
+    preview: () => gatePill('rentalStatus', 'On Rent', '', {}) },
+  { label: 'Right-click context menu', tag: 'R20 · cut · copy · comment', loc: 'app.js · openCtxMenu',
+    preview: () => `<div class="ctx-menu" style="position:static;display:inline-block;min-width:168px;box-shadow:none">`
+      + `<button class="dd-item">✂ Cut</button><button class="dd-item">📋 Copy</button><button class="dd-item">📌 Paste</button>`
+      + `<div class="menu-sep"></div><button class="dd-item">💬 Add Comment</button><button class="dd-item">🤠 Ask Mr. Wrangler</button></div>` },
+  { label: 'Date / time picker', tag: 'R22 · the one styled calendar', loc: 'app.js · dateField',
+    preview: () => dateField('when', '', { withTime: true }) },
+  { label: 'Card notes line', tag: 'R12 · boxless notes', loc: 'app.js · notesSection',
+    preview: () => { const r = (DATA.units || [])[0]; if (!r) return ''; const ns = notesSection('units', r, 'unitId'); return ns.top || ns.bottom; } },
+  { label: 'Global search + filters', tag: 'Toolbar · find · pin chips', loc: 'app.js · #globalsearch input',
+    preview: () => `<div style="display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:10px;padding:6px 10px;background:var(--bg-2);min-width:280px">`
+      + `<span style="display:inline-flex;color:var(--txt-3)">${I.search}</span>`
+      + `<input class="search" placeholder="Search everything…" style="border:none;background:none;outline:none;color:var(--txt);flex:1;min-width:0" disabled>${badge('Type · Excavator')}</div>` },
 ];
 /* ── §15 in-app feedback: bug/request → queued to the backend Feedback tab ── */
 function feedbackContext() {
@@ -9796,11 +9814,16 @@ function onClick(e) {
       const well = win.querySelector('.rb-win-preview');
       if (well.dataset.built === '0') {
         well.dataset.built = '1';
-        const node = previewOverlayFor(btn.dataset.kind);
-        if (node) {
-          well.appendChild(node);
+        let scope = null;
+        if (btn.dataset.std != null) {                       // standalone surface — render its inert preview HTML
+          try { const html = STANDALONE_SURFACES[+btn.dataset.std].preview(); if (html) { well.innerHTML = html; scope = well; } } catch (err) { scope = null; }
+        } else {                                             // popup window — build the real popup inert
+          const node = previewOverlayFor(btn.dataset.kind);
+          if (node) { well.appendChild(node); scope = node; }
+        }
+        if (scope) {
           const seen = new Set(); const chips = [];
-          [...node.querySelectorAll('input, textarea, select, .file-drop')].forEach((fe) => {
+          [...scope.querySelectorAll('input, textarea, select, .file-drop')].forEach((fe) => {
             if (fe.tagName === 'INPUT' && (fe.type === 'file' || fe.type === 'hidden')) return;   // the .file-drop already represents its file input
             const isDrop = fe.classList.contains('file-drop'); const isSel = fe.tagName === 'SELECT';
             const kindTag = isDrop ? 'file' : isSel ? 'dropdown' : (fe.getAttribute('type') || fe.tagName.toLowerCase());
@@ -9810,10 +9833,10 @@ function onClick(e) {
           });
           win.querySelector('.rb-win-fields').innerHTML = chips.length
             ? `<div class="rb-win-fieldlbl">Fields · forms · dropdowns (${chips.length})</div>${chips.join('')}`
-            : '<span class="rb-win-norec">No labelled fields in this window.</span>';
+            : '<span class="rb-win-norec">No labelled fields here.</span>';
         } else {
           well.innerHTML = '<span class="rb-win-norec">No demo record to preview — open it live in the app to edit.</span>';
-          win.querySelector('.rb-win-fields').remove();
+          win.querySelector('.rb-win-fields')?.remove();
         }
       }
     }

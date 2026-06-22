@@ -2154,7 +2154,7 @@ body.rw-inspect .c-titlecard:hover { outline: 2px solid #18b6ff; outline-offset:
 .rb-win-copy:hover { color: var(--accent); border-color: var(--accent-line); }
 .rb-win-body { padding: 2px 2px 14px; }
 .rb-win-preview { position: relative; border: 1px solid var(--line); border-radius: 12px; background: var(--bg-2);
-  padding: 16px; overflow: hidden; display: flex; justify-content: center; }
+  padding: 16px; overflow: hidden; display: flex; justify-content: center; pointer-events: none; }
 .rb-win-preview .popup { position: static; pointer-events: none; transform: none; box-shadow: var(--chip-shadow); margin: 0; }
 .rb-win-preview .rb-prev-holder { pointer-events: none; display: flex; flex-direction: column; gap: 12px; align-items: center; max-width: 100%; }
 .rb-win-preview::after { content: 'PREVIEW · NOT LIVE'; position: absolute; top: 8px; right: 10px;
@@ -2177,11 +2177,7 @@ body.rw-inspect .c-titlecard:hover { outline: 2px solid #18b6ff; outline-offset:
 .rb-std { margin-top: 16px; padding-top: 13px; border-top: 1px dashed var(--tan, #c2925a); }
 .rb-std-head { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1px;
   font-size: 10.5px; font-weight: 700; color: var(--txt-3); margin-bottom: 4px; }
-.rb-std-row { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; padding: 9px 0; border-bottom: 1px solid var(--line-soft); }
-.rb-std-row:last-child { border-bottom: none; }
-.rb-std-loc { font-family: ui-monospace, monospace; font-size: 10px; color: var(--accent);
-  background: var(--accent-soft); border: 1px solid var(--accent-line); border-radius: 7px; padding: 3px 8px; }
-.rb-std-row .rb-win-copy { margin-left: auto; }
+/* standalone rows reuse the .rb-win collapsible structure (toggle · body · preview) */
 
 /* ── §13 v2 BUILD: gate pills · derived pills · flags · section colors ·
       timeline · yard/transport journeys · history chips · WO grid · toggles
