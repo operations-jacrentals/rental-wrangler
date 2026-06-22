@@ -39,3 +39,6 @@ jobs:
 
       - name: Rulebook field catalog is current
         run: node ci/gen-rule-usage.mjs --check
+
+      - name: Window catalog covers every popup
+        run: node ci/check-window-catalog.mjs
