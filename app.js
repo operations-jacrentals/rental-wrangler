@@ -2055,7 +2055,7 @@ function resetPageSettings() {
   o.draftSettings = o.draftSettings || {};
   o.draftSettings[slice.key] = JSON.parse(JSON.stringify(slice.value));
   if (o.tab === 'fields') o.cfDraft = { label: '', type: 'text', required: false };
-  if (o.tab === 'inspections') o.inspDraft = '';
+  if (o.tab === 'inspections') o.inspDraft = { label: '', type: 'toggle', required: false, options: [] };
   o.resetArm = false;
   const lbl = (SETTINGS_TABS.find((t) => t.id === o.tab) || {}).label || 'This tab';
   toast(`${lbl} reset to defaults — Save to keep, or Cancel to undo.`);
@@ -2095,6 +2095,18 @@ const customFieldsFor = (entity) => ((state.settings && state.settings.customFie
 const inspectionCfg = (categoryId) => ((state.settings && state.settings.inspections) || {})[categoryId] || null;
 function checklistFor(unit) { const c = unit && inspectionCfg(unit.categoryId); return (c && Array.isArray(c.items) && c.items.length) ? c : null; }
 const checklistRequired = (unit) => { const c = checklistFor(unit); return !!(c && c.required); };
+const INSP_TYPES = ['toggle','file','select','number','date','text'];
+const inspItemType = (it) => it && it.type ? it.type : 'toggle';
+function inspItemFails(it, val) {
+  const t = inspItemType(it);
+  if (t === 'toggle') return val === 'Fail';
+  if (t === 'select') { const o = (it.options || []).find((op) => op.label === val); return !!(o && o.fail); }
+  return false;
+}
+function inspItemUnanswered(it, val) {
+  if (inspItemType(it) === 'toggle') return !val;          // must pick Pass or Fail (as today)
+  return !!it.required && (val == null || val === '');      // required non-toggle must be filled; optional may be blank
+}
 const COMPANY_DEFAULTS = { name: 'JacRentals', tagline: 'Heavy-Equipment Rental · Sulphur, LA', revenueGoal: (CFG.REVENUE_GOAL_DEFAULT || 150000), maxNetDays: 30 };
 const companyName = () => (companyCfg().name || '').trim() || COMPANY_DEFAULTS.name;
 const companyTagline = () => (companyCfg().tagline || '').trim() || COMPANY_DEFAULTS.tagline;
@@ -2276,17 +2288,38 @@ function settingsInspectionsPane(o) {
   const cfg = draftInspCfg(o, catId);
   const cat = IDX.category.get(catId);
   const items = cfg.items || [];
-  const rows = items.length ? items.map((it) => `<div class="rule-row">
-      <div class="rule-main"><span class="rule-label">${esc(it.label)}</span><span class="rule-desc">Pass / Fail line</span></div>
+  const inspDraft = o.inspDraft && typeof o.inspDraft === 'object' ? o.inspDraft : { label: '', type: 'toggle', required: false, options: [] };
+  const rows = items.length ? items.map((it) => {
+    const t = inspItemType(it);
+    let desc;
+    if (t === 'toggle') desc = 'Toggle · Pass/Fail';
+    else if (t === 'file') desc = `File${it.required ? ' · required' : ''}`;
+    else if (t === 'number') desc = `Number${it.required ? ' · required' : ''}`;
+    else if (t === 'date') desc = `Date${it.required ? ' · required' : ''}`;
+    else if (t === 'text') desc = `Text${it.required ? ' · required' : ''}`;
+    else if (t === 'select') {
+      const optLabels = (it.options || []).map((op) => op.fail ? `<span style="color:var(--red)">${esc(op.label)}</span>` : esc(op.label)).join(' / ');
+      desc = `Dropdown · ${optLabels}${it.required ? ' · required' : ''}`;
+    } else desc = t;
+    return `<div class="rule-row">
+      <div class="rule-main"><span class="rule-label">${esc(it.label)}</span><span class="rule-desc">${desc}</span></div>
       <button class="so-reset js-insp-remove" data-cat="${esc(catId)}" data-id="${esc(it.id)}" data-tip="Remove item">${I.x}</button>
-    </div>`).join('') : '<p class="set-note">No checklist items yet — add the things to inspect below.</p>';
+    </div>`;
+  }).join('') : '<p class="set-note">No checklist items yet — add the things to inspect below.</p>';
+  const optWell = inspDraft.type === 'select' ? `<div class="insp-opt-well">
+    ${(inspDraft.options || []).map((op, i) => `<div class="insp-opt-row"><span class="insp-opt-lbl">${esc(op.label)}</span>${segCtl([{ label: 'OK', js: 'js-insp-opt-fail', data: { i, v: '0' }, on: op.fail ? null : 'gray' }, { label: 'Fails', js: 'js-insp-opt-fail', data: { i, v: '1' }, on: op.fail ? 'red' : null }])}<button class="so-reset js-insp-opt-remove" data-i="${i}" data-tip="Remove option">${I.x}</button></div>`).join('')}
+    <div style="display:flex;align-items:center;gap:8px;margin-top:6px"><input class="co-in js-insp-opt-label" placeholder="New option (e.g. Bald)" value="${esc(inspDraft.optLabel || '')}" autocomplete="off" />${addBtn('Option', { js: 'js-insp-opt-add', line: true })}</div>
+  </div>` : '';
   return `
-    <div class="set-pane-head"><h4>Inspections</h4><p>Build a Pass/Fail checklist per category. When a category's checklist is <strong>Required</strong>, starting an inspection on one of its units opens a full-screen checklist that must be completed — any Fail trips the existing failed-inspection work order.</p></div>
+    <div class="set-pane-head"><h4>Inspections</h4><p>Build a checklist per category. When a category's checklist is <strong>Required</strong>, starting an inspection on one of its units opens a full-screen checklist that must be completed — any Toggle Fail or flagged Dropdown selection trips the existing failed-inspection work order.</p></div>
     <div class="set-picker">${pick}</div>
     <div class="rule-row" style="margin-bottom:10px"><div class="rule-main"><span class="rule-label">Require a checklist for ${esc(cat ? cat.name : 'this category')}</span><span class="rule-desc">On = +Inspection takes over the sheet until every item is checked.</span></div>${segCtl([{ label: 'Off', js: 'js-insp-req', data: { cat: catId, v: '0' }, on: cfg.required ? null : 'gray' }, { label: 'Required', js: 'js-insp-req', data: { cat: catId, v: '1' }, on: cfg.required ? 'red' : null }])}</div>
     <div class="rule-list">${rows}</div>
     <div class="cf-add">
-      <input class="co-in js-insp-label" placeholder="New checklist item (e.g. Hydraulics — no leaks)" value="${esc(o.inspDraft || '')}" autocomplete="off" />
+      <input class="co-in js-insp-label" placeholder="New checklist item (e.g. Hydraulics — no leaks)" value="${esc(inspDraft.label || '')}" autocomplete="off" />
+      ${segCtl(INSP_TYPES.map((t) => ({ label: t, js: 'js-insp-type', data: { type: t }, on: (inspDraft.type || 'toggle') === t ? 'green' : null })))}
+      ${segCtl([{ label: 'Optional', js: 'js-insp-itemreq', data: { v: '0' }, on: inspDraft.required ? null : 'gray' }, { label: 'Required', js: 'js-insp-itemreq', data: { v: '1' }, on: inspDraft.required ? 'red' : null }])}
+      ${optWell}
       <button class="pill ignition js-insp-add" data-r="R17">+ Add item</button>
     </div>`;
 }
@@ -7555,9 +7588,31 @@ function buildPopupEl(o, overlay, opts = {}) {
     if (!u || !cfg || !n) { return false; }
     n.items = n.items || {};
     const items = cfg.items || [];
-    const done = items.filter((it) => n.items[it.id]).length; const allDone = done === items.length;
+    const done = items.filter((it) => !inspItemUnanswered(it, n.items[it.id])).length; const allDone = done === items.length;
     const cat = IDX.category.get(u.categoryId) || {};
-    const itemRows = items.map((it) => `<div class="ck-row"><span class="ck-label">${esc(it.label)}</span>${segCtl([{ label: '✓ Pass', js: 'js-ck-item', data: { id: it.id, val: 'Pass' }, on: n.items[it.id] === 'Pass' ? 'green' : null }, { label: '✕ Fail', js: 'js-ck-item', data: { id: it.id, val: 'Fail' }, on: n.items[it.id] === 'Fail' ? 'red' : null }])}</div>`).join('');
+    const itemRows = items.map((it) => {
+      const t = inspItemType(it);
+      const val = n.items[it.id];
+      let ctrl;
+      if (t === 'toggle') {
+        ctrl = segCtl([{ label: '✓ Pass', js: 'js-ck-item', data: { id: it.id, val: 'Pass' }, on: val === 'Pass' ? 'green' : null }, { label: '✕ Fail', js: 'js-ck-item', data: { id: it.id, val: 'Fail' }, on: val === 'Fail' ? 'red' : null }]);
+      } else if (t === 'select') {
+        ctrl = segCtl((it.options || []).map((op) => ({ label: op.label, js: 'js-ck-item', data: { id: it.id, val: op.label }, on: val === op.label ? (op.fail ? 'red' : 'green') : null })));
+      } else if (t === 'number') {
+        ctrl = `<input type="number" inputmode="numeric" class="co-in js-ck-input" data-id="${esc(it.id)}" value="${esc(val||'')}" />`;
+      } else if (t === 'text') {
+        ctrl = `<input type="text" class="co-in js-ck-input" data-id="${esc(it.id)}" value="${esc(val||'')}" />`;
+      } else if (t === 'date') {
+        ctrl = dateField('ckd_'+it.id, val);
+      } else if (t === 'file') {
+        ctrl = val
+          ? `<div class="insp-photo"><img src="${esc(val)}" alt="evidence"><label class="insp-rephoto">Replace<input type="file" accept="image/*" class="js-ck-file" data-id="${esc(it.id)}" hidden></label></div>`
+          : `<label class="insp-photo empty"><span>${I.video} Add photo</span><input type="file" accept="image/*" class="js-ck-file" data-id="${esc(it.id)}" hidden></label>`;
+      } else {
+        ctrl = segCtl([{ label: '✓ Pass', js: 'js-ck-item', data: { id: it.id, val: 'Pass' }, on: val === 'Pass' ? 'green' : null }, { label: '✕ Fail', js: 'js-ck-item', data: { id: it.id, val: 'Fail' }, on: val === 'Fail' ? 'red' : null }]);
+      }
+      return `<div class="ck-row"><span class="ck-label">${esc(it.label)}</span>${ctrl}</div>`;
+    }).join('');
     const pop = el('div', 'popup board-popup ck-popup');
     pop.innerHTML = `
       <div class="popup-head">
@@ -9712,7 +9767,12 @@ function onClick(e) {
   // Inspections tab
   if (closest('.js-insp-cat')) { e.stopPropagation(); const o = state.overlay; if (o) { o.inspCat = closest('.js-insp-cat').dataset.cat; renderOverlay(); } return; }
   if (closest('.js-insp-req')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-insp-req'); if (o) { ensureInspDraft(o, b.dataset.cat).required = b.dataset.v === '1'; renderOverlay(); } return; }
-  if (closest('.js-insp-add')) { e.stopPropagation(); const o = state.overlay; if (!o) return; const el2 = document.querySelector('.settings-popup .js-insp-label'); const label = ((o.inspDraft != null ? o.inspDraft : (el2 ? el2.value : '')) || '').trim(); if (!label) { if (el2) el2.focus(); toast('Type a checklist item first.'); return; } const cfg = ensureInspDraft(o, o.inspCat); cfg.items = cfg.items || []; cfg.items.push({ id: 'ck_' + (label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'item') + '_' + Math.random().toString(36).slice(2, 5), label }); o.inspDraft = ''; renderOverlay(); return; }
+  if (closest('.js-insp-type')) { e.stopPropagation(); const o=state.overlay; if(o){ o.inspDraft={...(o.inspDraft||{label:'',required:false,options:[]}), type: closest('.js-insp-type').dataset.type}; if(o.inspDraft.type!=='select'){} renderOverlay(); } return; }
+  if (closest('.js-insp-itemreq')) { e.stopPropagation(); const o=state.overlay; if(o){ o.inspDraft={...(o.inspDraft||{}), required: closest('.js-insp-itemreq').dataset.v==='1'}; renderOverlay(); } return; }
+  if (closest('.js-insp-opt-add')) { e.stopPropagation(); const o=state.overlay; if(!o)return; const inp=document.querySelector('.settings-popup .js-insp-opt-label'); const lbl=((o.inspDraft&&o.inspDraft.optLabel)|| (inp?inp.value:'')).trim(); if(!lbl){ if(inp)inp.focus(); toast('Type an option first.'); return; } o.inspDraft.options=o.inspDraft.options||[]; o.inspDraft.options.push({label:lbl, fail:false}); o.inspDraft.optLabel=''; renderOverlay(); return; }
+  if (closest('.js-insp-opt-remove')) { e.stopPropagation(); const o=state.overlay, b=closest('.js-insp-opt-remove'); if(o&&o.inspDraft&&o.inspDraft.options){ o.inspDraft.options.splice(Number(b.dataset.i),1); renderOverlay(); } return; }
+  if (closest('.js-insp-opt-fail')) { e.stopPropagation(); const o=state.overlay, b=closest('.js-insp-opt-fail'); if(o&&o.inspDraft&&o.inspDraft.options){ const op=o.inspDraft.options[Number(b.dataset.i)]; if(op) op.fail = b.dataset.v==='1'; renderOverlay(); } return; }
+  if (closest('.js-insp-add')) { e.stopPropagation(); const o=state.overlay; if(!o)return; const d=o.inspDraft||{label:'',type:'toggle',required:false,options:[]}; const el2=document.querySelector('.settings-popup .js-insp-label'); const label=((d.label!=null?d.label:(el2?el2.value:''))||'').trim(); if(!label){ if(el2)el2.focus(); toast('Type a checklist item first.'); return; } const type=d.type||'toggle'; if(type==='select' && !((d.options||[]).length)){ toast('Add at least one dropdown option.'); return; } const cfg=ensureInspDraft(o, o.inspCat); cfg.items=cfg.items||[]; const item={ id:'ck_'+(label.toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'')||'item')+'_'+Math.random().toString(36).slice(2,5), label, type }; if(type!=='toggle') item.required=!!d.required; if(type==='select') item.options=(d.options||[]).map((op)=>({label:op.label, fail:!!op.fail})); cfg.items.push(item); o.inspDraft={label:'',type:'toggle',required:false,options:[]}; renderOverlay(); return; }
   if (closest('.js-insp-remove')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-insp-remove'); if (o) { const cfg = ensureInspDraft(o, b.dataset.cat); cfg.items = (cfg.items || []).filter((it) => it.id !== b.dataset.id); renderOverlay(); } return; }
   if (closest('.js-nc-save')) { e.stopPropagation(); return saveNewCustomer(); }
   if (closest('.js-nc-acct')) { const b = closest('.js-nc-acct'); e.stopPropagation(); ncSyncInputs(); state.overlay.draft.accountType = b.dataset.val; renderOverlay(); return; }
@@ -10095,12 +10155,12 @@ function onClick(e) {
 
   // §12.2 rental-window range picker (calendar popup) — clicking the bar opens it
   // R22 date picker (schedule / receipt popups)
-  if (closest('.js-datepick')) { const b = closest('.js-datepick'); e.stopPropagation(); const f = b.dataset.field; state.datepick = (state.datepick?.field === f) ? null : { field: f, withTime: !!b.dataset.withtime, monthISO: firstOfMonthISO(state.overlay?.[f] || TODAY_ISO) }; return renderOverlay(); }
+  if (closest('.js-datepick')) { const b = closest('.js-datepick'); e.stopPropagation(); const f = b.dataset.field; state.datepick = (state.datepick?.field === f) ? null : { field: f, withTime: !!b.dataset.withtime, monthISO: firstOfMonthISO(dpGet(f) || TODAY_ISO) }; return renderOverlay(); }
   if (closest('.js-dp-day')) { e.stopPropagation(); return dpPick(closest('.js-dp-day').dataset.iso); }
   if (closest('.js-dp-prev')) { e.stopPropagation(); return dpMonth(-1); }
   if (closest('.js-dp-next')) { e.stopPropagation(); return dpMonth(1); }
-  if (closest('.js-dp-today')) { e.stopPropagation(); const dp = state.datepick; if (dp) { dp.monthISO = firstOfMonthISO(TODAY_ISO); if (state.overlay) state.overlay[dp.field] = TODAY_ISO; } return renderOverlay(); }
-  if (closest('.js-dp-clear')) { e.stopPropagation(); const dp = state.datepick; if (dp && state.overlay) { state.overlay[dp.field] = ''; state.overlay[dp.field + 'Time'] = ''; } return renderOverlay(); }
+  if (closest('.js-dp-today')) { e.stopPropagation(); const dp = state.datepick; if (dp) { dp.monthISO = firstOfMonthISO(TODAY_ISO); dpSet(dp.field, TODAY_ISO); } return renderOverlay(); }
+  if (closest('.js-dp-clear')) { e.stopPropagation(); const dp = state.datepick; if (dp && state.overlay) { dpSet(dp.field, ''); state.overlay[dp.field + 'Time'] = ''; } return renderOverlay(); }
   if (closest('.js-dp-done')) { e.stopPropagation(); state.datepick = null; return renderOverlay(); }
   if (closest('.js-wp-day')) { e.stopPropagation(); return winPickDay(closest('.js-wp-day').dataset.iso); }
   if (closest('.js-wp-prev')) { e.stopPropagation(); return winPickMonth(-1); }
@@ -10541,10 +10601,10 @@ function completeChecklist() {
   const u = IDX.unit.get(o.unitId); const cfg = u && checklistFor(u); const n = IDX.insp.get(o.inspId);
   if (!u || !cfg || !n) { closeOverlay(); return; }
   const items = cfg.items || [];
-  const left = items.filter((it) => !n.items[it.id]).length;
+  const left = items.filter((it) => inspItemUnanswered(it, n.items[it.id])).length;
   if (left) { toast(`Mark every item first — ${left} left.`); return; }
-  const failed = items.filter((it) => n.items[it.id] === 'Fail');
-  if (failed.length) n.description = 'Failed checklist: ' + failed.map((it) => it.label).join(', ');
+  const failed = items.filter((it) => inspItemFails(it, n.items[it.id]));
+  if (failed.length) n.description = 'Failed checklist: ' + failed.map((it) => inspItemType(it)==='select' ? (it.label + ': ' + (n.items[it.id]||'')) : it.label).join(', ');
   state.overlay = null;                                   // close the takeover; a Fail re-opens the photo/notes popup
   setInspResult(n.inspectionId, failed.length ? 'Fail' : 'Pass');   // cascade onto the inspection section + auto-WO
   toast(failed.length ? `Inspection failed — work order opened for ${u.name}.` : `Inspection passed — ${u.name} is Ready. ✓`);
@@ -10991,7 +11051,9 @@ function onChange(e) {
     renderOverlay(); return;
   }
   // Settings Board — KPI ring label / target (commit on blur)
-  if (e.target.classList.contains('js-insp-label')) { const o = state.overlay; if (o) o.inspDraft = e.target.value; return; }
+  if (e.target.classList.contains('js-insp-label')) { const o = state.overlay; if (o) { if (o.inspDraft && typeof o.inspDraft === 'object') o.inspDraft.label = e.target.value; else o.inspDraft = { label: e.target.value, type:'toggle', required:false, options:[] }; } return; }
+  if (e.target.classList.contains('js-insp-opt-label')) { const o = state.overlay; if (o && o.inspDraft) o.inspDraft.optLabel = e.target.value; return; }
+  if (e.target.classList.contains('js-ck-input')) { const o = state.overlay; if (o && o.kind === 'checklist') { const n = IDX.insp.get(o.inspId); if (n) { n.items = n.items || {}; n.items[e.target.dataset.id] = e.target.value; } } return; }
   if (e.target.classList.contains('js-kpi-lbl')) { const o = state.overlay; if (!o) return; const rings = ensureKpiDraft(o, e.target.dataset.role); rings[Number(e.target.dataset.i)].label = e.target.value.trim(); renderOverlay(); return; }
   if (e.target.classList.contains('js-kpi-tgt')) { const o = state.overlay; if (!o) return; const rings = ensureKpiDraft(o, e.target.dataset.role); const n = Number(e.target.value); rings[Number(e.target.dataset.i)].target = isFinite(n) && e.target.value.trim() ? n : undefined; renderOverlay(); return; }
   // F2 — +File upload: read the chosen photo/document; images are downscaled, others kept
@@ -11127,6 +11189,7 @@ function onChange(e) {
     return;
   }
   if (e.target.classList.contains('js-insp-desc')) { const n = IDX.insp.get(e.target.dataset.rec); if (n) { n.description = e.target.value; render(); } return; }
+  if (e.target.classList.contains('js-ck-file')) { const file = e.target.files && e.target.files[0]; if (!file) return; if ((file.type||'').startsWith('video/')) { toast('Videos can’t be stored — attach a photo instead.'); return; } const id = e.target.dataset.id; const reader = new FileReader(); reader.onload = () => { downscaleImage(reader.result, 600, 0.5, (out) => { if (!out) { toast('Could not read that image.'); return; } const o = state.overlay; if (o && o.kind === 'checklist') { const n = IDX.insp.get(o.inspId); if (n) { n.items = n.items || {}; n.items[id] = out; saveSoon(); renderOverlay(); } } }); }; reader.onerror = () => toast('Could not read that image.'); reader.readAsDataURL(file); return; }
   if (e.target.classList.contains('js-svc-photo')) {
     const file = e.target.files && e.target.files[0]; if (!file) return;
     if ((file.type || '').startsWith('video/')) { toast('Videos can’t be stored on the record — attach a photo instead.'); return; }
@@ -12173,12 +12236,14 @@ function winPickToday() { const wp = state.winpicker; if (!wp) return; wp.monthI
 /* ── R22 DATE PICKER — single date/datetime, reuses the .wp-* calendar styling.
    state.datepick = { field, withTime, monthISO }; writes state.overlay[field]
    (+ [field+'Time'] when withTime). Used by the schedule + receipt popups. ── */
+function dpGet(field){ const o=state.overlay; if(!o)return ''; if(o.kind==='checklist'&&field&&field.indexOf('ckd_')===0){ const n=IDX.insp.get(o.inspId); return (n&&n.items&&n.items[field.slice(4)])||''; } return o[field]||''; }
+function dpSet(field,val){ const o=state.overlay; if(!o)return; if(o.kind==='checklist'&&field&&field.indexOf('ckd_')===0){ const n=IDX.insp.get(o.inspId); if(n){ n.items=n.items||{}; if(val) n.items[field.slice(4)]=val; else delete n.items[field.slice(4)]; } return; } o[field]=val; }
 function dpMonth(delta) { const dp = state.datepick; if (!dp) return; const d = parseISO(dp.monthISO); d.setMonth(d.getMonth() + delta); dp.monthISO = isoOf(new Date(d.getFullYear(), d.getMonth(), 1)); renderOverlay(); }
-function dpPick(iso) { const dp = state.datepick, o = state.overlay; if (!dp || !o) return; o[dp.field] = iso; if (!dp.withTime) state.datepick = null; renderOverlay(); }
+function dpPick(iso) { const dp = state.datepick, o = state.overlay; if (!dp || !o) return; dpSet(dp.field, iso); if (!dp.withTime) state.datepick = null; renderOverlay(); }
 function dpTime(hhmm) { const dp = state.datepick, o = state.overlay; if (!dp || !o) return; o[dp.field + 'Time'] = hhmm; renderOverlay(); }
 function datePickerInline() {
   const dp = state.datepick, o = state.overlay; if (!dp || !o) return '';
-  const cur = o[dp.field] || '';
+  const cur = dpGet(dp.field);
   const md = parseISO(dp.monthISO); const y = md.getFullYear(), m = md.getMonth();
   const startDow = new Date(y, m, 1).getDay();
   const daysIn = new Date(y, m + 1, 0).getDate();
