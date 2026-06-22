@@ -257,8 +257,21 @@ const CARD_FLAG_META = { ok: { label: 'Card OK', color: 'green' }, expiring: { l
 const requiredAgreementKey = (c) => /member/i.test((c && c.accountType) || '') ? 'membership' : 'rental';
 const cardSignings = (k) => (k && Array.isArray(k.agreements)) ? k.agreements : (k && k.agreement && k.agreement.signature ? [{ key: k.agreement.version === 'membership' ? 'membership' : 'rental', signedAt: k.agreement.signedAt, signature: k.agreement.signature, selfie: k.agreement.selfie }] : []);
 function cardCurrentSigning(c, k) { const want = requiredAgreementKey(c); const s = cardSignings(k); for (let i = s.length - 1; i >= 0; i--) { if ((s[i].key || 'rental') === want) return s[i]; } return null; }
-const cardAuthorized = (c, k) => !!cardCurrentSigning(c, k);
+/* §7.1c independent capture: the selfie is a durable per-card photo; the signature is held
+   in card.draftSignature until completion, then frozen into an immutable agreements[] record
+   stamped with ONE completion date. A card is COMPLETE (= authorized) only when card + selfie
+   + a signature matching the CURRENT account type are all present. (cardSelfie inlines its own
+   record fallback so legacy cards — whose selfie lived inside the signing — still read.) */
+const cardSelfie = (k) => { if (!k) return ''; if (k.driveSelfieUrl || k.selfie) return k.driveSelfieUrl || k.selfie; const s = cardSignings(k); const last = s[s.length - 1]; return (last && (last.driveSelfieUrl || last.selfie)) || ''; };
+const cardHasSelfie = (k) => !!cardSelfie(k);
+const cardDraftSig = (k) => (k && k.draftSignature && k.draftSignature.signature) ? k.draftSignature : null;
+const cardHasSignature = (c, k) => !!cardCurrentSigning(c, k) || !!cardDraftSig(k);
+const cardComplete = (c, k) => !!cardCurrentSigning(c, k) && cardHasSelfie(k);
+const cardAuthorized = (c, k) => cardComplete(c, k);
 function cardSignState(c, k) { return cardAuthorized(c, k) ? 'authorized' : (cardSignings(k).length ? 'stale' : 'unsigned'); }
+/* 'complete' | 'stale' (a finalized signing exists but for the wrong account type → re-sign)
+   | 'in-progress' (a card exists but is missing the selfie and/or a matching signature) */
+function cardCaptureState(c, k) { if (cardComplete(c, k)) return 'complete'; if (cardSignings(k).length && !cardCurrentSigning(c, k)) return 'stale'; return 'in-progress'; }
 /* Resolve a signing's frozen title/text from the version registry (storage-light:
    the signing stores only `version`, not the ~6–8 KB text). Falls back to a baked
    `text`/`title` on legacy records, then to the current agreement for its key. */
@@ -298,7 +311,7 @@ const cardGateBlocked = (cust) => !!cust && (!hasValidCard(cust) || accountAgree
 function cardGateReason(cust) {
   if (!cust) return '';
   if (!hasValidCard(cust)) return 'no valid card on file';
-  if (accountAgreementsBlocked(cust)) { const n = unsignedCardCount(cust); return `${n} card${n > 1 ? 's' : ''} not signed for the current account type`; }
+  if (accountAgreementsBlocked(cust)) { const n = unsignedCardCount(cust); return `${n} card${n > 1 ? 's' : ''} not complete (needs selfie + signature for the current account type)`; }
   return '';
 }
 /* Signing-form glyphs (existing inline marks, hoisted to module scope so the
@@ -306,15 +319,17 @@ function cardGateReason(cust) {
 const AG_LOCK = '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
 const AG_CAM = '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>';
 /* The shared selfie + signature capture controls — emitted on a CARD's signing tab and
-   in the +Card panel (no card yet). There's no in-block commit button: the bottom-right
-   Save persists whatever's captured (commitCapture). `readKey` distinguishes whose Terms
-   toggle is open (a card id, or 'account'); the live selfie/signature ride o.signDraft. */
+   in the +Card panel (no card yet). §7.1c: each piece AUTO-SAVES on capture (no commit button)
+   straight onto the card — or, pre-card, onto c.pendingCapture. `readKey` is the target: a
+   card id, or 'account' (the held pre-card bucket). */
 function agCaptureBlock(o, ag, readKey) {
-  const selfie = o.signDraft && o.signDraft.selfie;
+  const c = o && o.editId ? IDX.customer.get(o.editId) : null;
+  const k = (readKey && readKey !== 'account' && c) ? customerCards(c).find((x) => x.id === readKey) : null;
+  const selfie = k ? cardSelfie(k) : ((c && c.pendingCapture && c.pendingCapture.selfie) || '');
   return `
     <div class="ag-readref"><span><b>${esc(ag.title)}</b></span>${linkName(o.signRead === readKey ? 'Hide' : 'Terms', { js: 'js-ncsign-read', data: { card: readKey } })}</div>
     ${o.signRead === readKey ? `<div class="nc-agreement" tabindex="0">${esc(ag.text)}</div>` : ''}
-    <div class="ag-caphead"><span class="ag-capcap">Capture both to authorize</span>${linkName('Open Window', { js: 'js-sign-popout', data: { title: ag.title } })}</div>
+    <div class="ag-caphead"><span class="ag-capcap">Capture selfie + signature</span>${linkName('Open Window', { js: 'js-sign-popout', data: { title: ag.title } })}</div>
     <div class="ag-caprow">
       <label class="ag-selfiebtn js-ag-selfie">${selfie
         ? `<img class="ag-selfie" src="${esc(selfie)}" alt="selfie" /><span class="ag-cam-cap">Retake</span>`
@@ -330,17 +345,11 @@ function agCaptureBlock(o, ag, readKey) {
 function heldSignBlock(o, custRec, d) {
   const key = requiredAgreementKey(custRec || { accountType: d.accountType });
   const ag = AGREEMENTS[key] || AGREEMENTS.rental;
-  const p = custRec && custRec.pendingSigning;
-  const inner = (p && p.signature)
-    ? `<div class="ag-signed"><span class="ag-lock">${AG_LOCK}</span><span class="t"><b>${esc(p.title || ag.title)}</b> · signed ${esc(p.signedAt || '—')}</span>${ghostPill('Redo', { js: 'js-ncsign-holdclear' })}</div>
-       <div class="ag-packet">
-         <div class="ag-pcell"><div class="ag-pcap">Selfie</div>${p.selfie ? `<img class="ag-selfie" src="${esc(p.selfie)}" alt="selfie on hand" />` : '<div class="ag-selfie empty">—</div>'}</div>
-         <div class="ag-pcell"><div class="ag-pcap">Signature</div>${p.signature ? `<img class="ag-sigthumb" src="${esc(p.signature)}" alt="signature on hand" />` : '<div class="ag-sigthumb"></div>'}</div>
-       </div>
-       <p class="muted" style="font-size:11px;margin:12px 2px 0">✓ Signed and on hand — it saddles onto the first card you add. Add a card to authorize On-Rent &amp; delivery.</p>`
-    : `<div class="ag-gate"><span class="lead">On Rent blocked until Selfie + Card + Signature</span></div>
-       ${agCaptureBlock(o, ag, 'account')}`;
-  return `<div class="ag-capcap" style="margin:16px 2px 8px">Signed agreement</div>${inner}`;
+  const p = (custRec && custRec.pendingCapture) || {};   // §7.1c pre-card held pieces (saddle onto the first card)
+  const note = (p.selfie || p.signature)
+    ? `<p class="muted" style="font-size:11px;margin:10px 2px 0">${p.selfie && p.signature ? '✓ Selfie + signature held' : p.selfie ? '✓ Selfie held — add a signature' : '✓ Signature held — add a selfie'} — these saddle onto the first card you add; On-Rent &amp; delivery unlock once that card is complete.</p>`
+    : `<div class="ag-gate"><span class="lead">On Rent unlocks once Card + Selfie + Signature are all complete</span></div>`;
+  return `<div class="ag-capcap" style="margin:16px 2px 8px">Signed agreement</div>${note}${agCaptureBlock(o, ag, 'account')}`;
 }
 /* Move an account-level HELD signing onto a freshly-added card — the draft's FROZEN
    key/version/date is preserved verbatim (it's the agreement they actually accepted,
@@ -374,6 +383,19 @@ function signCardAgreement(c, k, signature, selfie) {
   logAction(c, `${ag.title} signed on ${brandName(k.brand)} ••${k.last4}`);
   archiveAgreementMedia(c, k, sig);   // offload images to Drive when the backend supports it
 }
+/* §7.1c finalize-on-complete: when a card has all three pieces — the card, a selfie, and a
+   held draft signature matching the CURRENT account type — freeze the signature into an
+   immutable agreements[] record (one completion date = TODAY_ISO) and clear the draft. Called
+   after each piece auto-saves; a no-op until all three are present. Charging is never gated
+   on this; only On-Rent/delivery is. Returns true if it finalized (→ flip the tab to Complete). */
+function maybeFinalizeCard(c, k) {
+  if (!c || !k || cardCurrentSigning(c, k)) return false;            // nothing to do / already complete for this type
+  const draft = cardDraftSig(k);
+  if (!draft || (draft.key || 'rental') !== requiredAgreementKey(c) || !cardHasSelfie(k)) return false;
+  signCardAgreement(c, k, draft.signature, cardSelfie(k));           // freezes the record (reindex + log + Drive offload)
+  k.draftSignature = null;                                           // the signature now lives in the immutable record
+  return true;
+}
 /* Frozen snapshot of the account fields + card ••last4 AT SIGNING — the signed-agreement
    PDF reprints exactly what was true when accepted, even if the account is edited later. */
 function acctSnapshot(c, k) {
@@ -390,14 +412,48 @@ function holdSigning(c, signature, selfie) {
     signedAt: TODAY_ISO, signerName: c.name || fullName(c), signature, selfie: selfie || '', acct: acctSnapshot(c, null) };
   reindex('customers', c); logAction(c, `${ag.title} signed & held (no card yet)`);
 }
-/* Save is the only commit now: persist a captured selfie + signature onto the active card
-   (the open card tab) or, with no card yet, hold it on the account. No-op without a full capture. */
+/* §7.1c independent capture — each piece (card · selfie · signature) AUTO-SAVES the moment
+   it's captured, in any order, and the card finalizes (one completion date) once all three
+   are present. The capture target is the open card tab, or — with no card yet — a held bucket
+   on the account (c.pendingCapture) that saddles onto the first card added. */
+function captureCtx(o) {
+  const c = o && o.editId ? IDX.customer.get(o.editId) : null;
+  if (!c) return { c: null, k: null };
+  if (o.cardSub) return { c, k: null };                                            // the +Card panel (no card yet) → held
+  const k = (o.tab && o.tab !== 'account') ? customerCards(c).find((x) => x.id === o.tab) || null : null;
+  return { c, k };
+}
+function captureSelfie(o, dataUrl) {
+  const { c, k } = captureCtx(o); if (!c) return;
+  if (k) { k.selfie = dataUrl; k.driveSelfieUrl = ''; maybeFinalizeCard(c, k); }   // durable per-card photo
+  else { c.pendingCapture = c.pendingCapture || {}; c.pendingCapture.selfie = dataUrl; }
+  reindex('customers', c); saveSoon();
+}
+function captureSignature(o, dataUrl) {                                            // auto-saves the draft; finalize is debounced (scheduleFinalizeSign) so a multi-stroke signature isn't cut off after the first stroke
+  const { c, k } = captureCtx(o); if (!c) return;
+  if (k) k.draftSignature = { signature: dataUrl, key: requiredAgreementKey(c), accountType: c.accountType || '', signerName: c.name || fullName(c) };
+  else { c.pendingCapture = c.pendingCapture || {}; c.pendingCapture.signature = dataUrl; c.pendingCapture.key = requiredAgreementKey(c); }
+  reindex('customers', c); saveSoon();
+}
+/* The signature is drawn over several strokes, so finalize only after the pen has rested a
+   beat (reset on every new stroke). If that completes the card, flip the tab to Complete. */
+let _signFinalizeT = null;
+function scheduleFinalizeSign(o) { clearTimeout(_signFinalizeT); _signFinalizeT = setTimeout(() => { const { c, k } = captureCtx(o); if (c && k && maybeFinalizeCard(c, k)) { renderOverlay(); render(); } }, 1200); }
+function clearCaptureSelfie(o) { const { c, k } = captureCtx(o); if (!c) return; if (k) { k.selfie = ''; k.driveSelfieUrl = ''; } else if (c.pendingCapture) c.pendingCapture.selfie = ''; reindex('customers', c); saveSoon(); }
+function clearCaptureSignature(o) { const { c, k } = captureCtx(o); if (!c) return; if (k) k.draftSignature = null; else if (c.pendingCapture) c.pendingCapture.signature = ''; reindex('customers', c); saveSoon(); }
+/* Move pre-card held pieces (c.pendingCapture) onto a freshly-added card, then finalize. */
+function saddlePendingCapture(c, k) {
+  const p = c && c.pendingCapture; if (!p || !k) return;
+  if (p.selfie) k.selfie = p.selfie;
+  if (p.signature) k.draftSignature = { signature: p.signature, key: p.key || requiredAgreementKey(c), accountType: c.accountType || '', signerName: c.name || fullName(c) };
+  c.pendingCapture = null;
+  maybeFinalizeCard(c, k);
+}
+/* Save no longer commits capture (each piece auto-saves on capture). It just finalizes any
+   card now holding all three pieces — a belt-and-suspenders pass over the customer's cards. */
 function commitCapture(o, c) {
-  const sd = o && o.signDraft; if (!c || !sd || !sd.selfie || !sd.sigData) return;
-  const k = (o.tab && o.tab !== 'account') ? customerCards(c).find((x) => x.id === o.tab) : null;
-  if (k) signCardAgreement(c, k, sd.sigData, sd.selfie);
-  else if (!customerCards(c).some((x) => cardAuthorized(c, x))) holdSigning(c, sd.sigData, sd.selfie);
-  o.signDraft = null;
+  if (!c) return;
+  customerCards(c).forEach((k) => maybeFinalizeCard(c, k));
 }
 /* Offload a signing's selfie + signature to Drive (per-customer folder) and replace
    the heavy inline data-URLs with light Drive URLs — keeps the synced customer record
@@ -8236,12 +8292,12 @@ function captureAgSelfie() {
   const W = 340, cv = document.createElement('canvas'); cv.width = W; cv.height = Math.round(v.videoHeight * (W / v.videoWidth));
   const ctx = cv.getContext('2d'); ctx.translate(cv.width, 0); ctx.scale(-1, 1);   // mirror to match the live (selfie) preview
   ctx.drawImage(v, 0, 0, cv.width, cv.height);
-  const o = state.overlay; if (o && o.kind === 'newCustomer') { o.signDraft = o.signDraft || {}; o.signDraft.selfie = cv.toDataURL('image/jpeg', 0.6); }
+  const o = state.overlay; if (o && o.kind === 'newCustomer') captureSelfie(o, cv.toDataURL('image/jpeg', 0.6));   // auto-saves onto the card (or held pre-card) + may finalize
   stopAgCam(); renderOverlay();
 }
 /* Pop the signature pad out into its OWN movable OS window (window.open) so it can be
    dragged to the customer-facing touchscreen on another monitor — "escape the browser".
-   Strokes stream back here via postMessage and land on the main pad + o.signDraft.sigData,
+   Strokes stream back here via postMessage and auto-save onto the card (captureSignature),
    so the operator's normal Save/Sign commits them — no separate Done step in the popout.
    Any pointer/digitizer device draws on it (finger, stylus, or a USB/Bluetooth pen pad the
    OS exposes as a pointer); pen pressure varies the line width. */
@@ -8249,7 +8305,7 @@ let _sigWin = null, _sigMsgWired = false;
 function onSigMessage(e) {
   if (e.origin !== location.origin) return;   // same-origin only
   const d = e.data || {}; if (d.type !== 'rw-signature' || typeof d.dataURL !== 'string') return;
-  const o = state.overlay; if (o) { o.signDraft = o.signDraft || {}; o.signDraft.sigData = d.dataURL; }   // persist across re-renders
+  const o = state.overlay; if (o) { captureSignature(o, d.dataURL); scheduleFinalizeSign(o); }   // auto-save the draft; finalize once the pen rests (if it completes the card)
   const cv = document.querySelector('.overlay .nc-sigpad'); if (!cv) return;
   const ctx = cv.getContext('2d'), img = new Image();
   img.onload = () => { ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height); ctx.drawImage(img, 0, 0, cv.width, cv.height); cv.dataset.drawn = '1'; };
@@ -8300,11 +8356,12 @@ function setupSignaturePad() {
     ctx.strokeStyle = (getComputedStyle(document.documentElement).getPropertyValue('--accent') || '#ff7a1a').trim();   // orange ink (Jac)
     ctx.lineWidth = 2.4; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
     // re-apply a signature already captured (2nd-screen popout, or before this re-render) so taking a selfie etc. can't wipe it
-    if (o && o.signDraft && o.signDraft.sigData) { const img = new Image(); img.onload = () => { ctx.drawImage(img, 0, 0, cv.width, cv.height); cv.dataset.drawn = '1'; }; img.src = o.signDraft.sigData; }
+    const _ctx = captureCtx(o); const cur = _ctx.k ? ((cardDraftSig(_ctx.k) || {}).signature || '') : ((_ctx.c && _ctx.c.pendingCapture && _ctx.c.pendingCapture.signature) || '');   // re-apply the card's saved draft signature (re-render / 2nd-screen / re-open)
+    if (cur) { const img = new Image(); img.onload = () => { ctx.drawImage(img, 0, 0, cv.width, cv.height); cv.dataset.drawn = '1'; }; img.src = cur; }
     let drawing = false, last = null;
     const pos = (e) => { const b = cv.getBoundingClientRect(); return { x: (e.clientX - b.left) * (cv.width / b.width), y: (e.clientY - b.top) * (cv.height / b.height) }; };
-    const stash = () => { if (drawing) { drawing = false; if (o) { o.signDraft = o.signDraft || {}; o.signDraft.sigData = cv.toDataURL('image/jpeg', 0.8); } } };
-    cv.addEventListener('pointerdown', (e) => { e.preventDefault(); drawing = true; last = pos(e); cv.dataset.drawn = '1'; cv.setPointerCapture(e.pointerId); });
+    const stash = () => { if (drawing) { drawing = false; captureSignature(o, cv.toDataURL('image/jpeg', 0.8)); scheduleFinalizeSign(o); } };   // auto-save the draft; finalize once the pen rests
+    cv.addEventListener('pointerdown', (e) => { e.preventDefault(); drawing = true; last = pos(e); cv.dataset.drawn = '1'; clearTimeout(_signFinalizeT); cv.setPointerCapture(e.pointerId); });
     cv.addEventListener('pointermove', (e) => { if (!drawing) return; e.preventDefault(); const p = pos(e); ctx.lineWidth = (e.pointerType === 'pen' && e.pressure > 0) ? (1.4 + e.pressure * 2.6) : 2.4; ctx.beginPath(); ctx.moveTo(last.x, last.y); ctx.lineTo(p.x, p.y); ctx.stroke(); last = p; });
     cv.addEventListener('pointerup', stash);
     cv.addEventListener('pointerleave', stash);
@@ -9479,19 +9536,20 @@ function onClick(e) {
   // §7.1b card-bound agreements: tab rail + per-card signing
   if (closest('.js-nc-tab')) { e.stopPropagation(); ncSyncInputs(); state.overlay.tab = closest('.js-nc-tab').dataset.tab; state.overlay.signRead = null; renderOverlay(); return; }
   if (closest('.js-ncsign-read')) { e.stopPropagation(); const id = closest('.js-ncsign-read').dataset.card; state.overlay.signRead = (state.overlay.signRead === id) ? null : id; renderOverlay(); return; }
-  if (closest('.js-ncsign-holdclear')) {   // discard the held draft to re-sign
+  if (closest('.js-ncsign-holdclear')) {   // discard the held pre-card captures to start over
     e.stopPropagation(); const o = state.overlay; const c = IDX.customer.get(o.editId || '');
-    if (c) { c.pendingSigning = null; reindex('customers', c); }
-    o.signDraft = null; o.signRead = null; renderOverlay(); render(); return;
+    if (c) { c.pendingCapture = null; c.pendingSigning = null; reindex('customers', c); }
+    o.signRead = null; renderOverlay(); render(); return;
   }
   if (closest('.js-ncsign-pdf')) { e.stopPropagation(); const b = closest('.js-ncsign-pdf'); return openSignedPdf(state.overlay.editId, b.dataset.card, b.dataset.sig); }
   if (closest('.js-nc-selfie-clear')) { e.stopPropagation(); ncSyncInputs(); state.overlay.draft.selfie = ''; renderOverlay(); return; }
-  if (closest('.js-nc-sig-clearpad')) { e.stopPropagation(); const o = state.overlay; if (o && o.signDraft) o.signDraft.sigData = null; const cv = document.querySelector('.overlay .nc-sigpad'); if (cv) { const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height); cv.dataset.drawn = ''; } return; }
+  if (closest('.js-nc-sig-clearpad')) { e.stopPropagation(); const o = state.overlay; if (o) clearCaptureSignature(o); const cv = document.querySelector('.overlay .nc-sigpad'); if (cv) { const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height); cv.dataset.drawn = ''; } return; }
   if (closest('.js-sign-popout')) { e.preventDefault(); e.stopPropagation(); openSignatureWindow(closest('.js-sign-popout').dataset.title); return; }
   if (closest('.js-ag-selfie')) {   // selfie tile: one-tap snap off the live feed; Retake clears it; no camera → native picker
     const o = state.overlay; if (!o) return;
     const tile = closest('.js-ag-selfie');
-    if (o.signDraft && o.signDraft.selfie) { e.preventDefault(); e.stopPropagation(); o.signDraft.selfie = null; renderOverlay(); return; }   // Retake → clear + restart camera
+    const _x = captureCtx(o); const hasSelfie = _x.k ? cardHasSelfie(_x.k) : !!(_x.c && _x.c.pendingCapture && _x.c.pendingCapture.selfie);
+    if (hasSelfie) { e.preventDefault(); e.stopPropagation(); clearCaptureSelfie(o); renderOverlay(); return; }   // Retake → clear + restart camera
     if (tile.classList.contains('live')) { e.preventDefault(); e.stopPropagation(); captureAgSelfie(); return; }   // live feed → grab the frame in a single tap
     return;   // no camera/permission → let the <label> open the OS file/camera picker (fallback)
   }
@@ -10812,11 +10870,11 @@ function onChange(e) {
     reader.readAsDataURL(file);
     return;
   }
-  // §7.1b per-card signing selfie — stashed on o.signDraft until Save freezes it onto the card.
+  // §7.1c per-card selfie — auto-saves onto the card (or held pre-card) the moment it's captured.
   if (e.target.classList.contains('js-ncsign-selfie')) {
     const file = e.target.files && e.target.files[0]; if (!file) return;
     const reader = new FileReader();
-    reader.onload = () => { downscaleImage(reader.result, 340, 0.5, (out) => { if (!out) { toast('Could not read that image.'); return; } const o = state.overlay; if (o && o.kind === 'newCustomer') { o.signDraft = o.signDraft || {}; o.signDraft.selfie = out; renderOverlay(); } }); };
+    reader.onload = () => { downscaleImage(reader.result, 340, 0.5, (out) => { if (!out) { toast('Could not read that image.'); return; } const o = state.overlay; if (o && o.kind === 'newCustomer') { captureSelfie(o, out); renderOverlay(); } }); };
     reader.readAsDataURL(file);
     return;
   }
@@ -11316,22 +11374,21 @@ async function saveCardFlow(btn) {
     c.stripeId = r.stripeId || c.stripeId;
     if (!Array.isArray(c.cards)) c.cards = [];
     const firstCard = customerCards(c).length === 0;
-    const sd = o.signDraft, liveCap = !!(sd && sd.selfie && sd.sigData);   // selfie + signature captured in this panel → sign on save
-    const held = !!(c.pendingSigning && c.pendingSigning.signature);       // or an account-level agreement already on hand
     const newCardId = 'CARD-' + (state.seq++);
-    // §7.1b a card lands UNSIGNED — it can be charged, but the account can't go
-    // On Rent / log deliveries until this card is signed for the account type.
+    // §7.1c a card lands IN PROGRESS — chargeable immediately, but the account can't go On Rent /
+    // log deliveries until the card is COMPLETE (card + selfie + signature). Any selfie/signature
+    // captured in this panel were held on c.pendingCapture and now saddle onto the new card.
     const newCard = { id: newCardId, stripePmId: setupIntent.payment_method, brand: s.card.brand, last4: s.card.last4,
       expMonth: s.card.expMonth, expYear: s.card.expYear, nickname: o.nickname || '', notes: '', isDefault: firstCard, status: 'active',
-      agreements: [] };
+      selfie: '', driveSelfieUrl: '', draftSignature: null, agreements: [] };
     c.cards.push(newCard);
     c.cardBrand = s.card.brand; c.cardLast4 = s.card.last4; c.cardExpMonth = s.card.expMonth; c.cardExpYear = s.card.expYear;   // legacy mirror (default card)
-    if (liveCap) { signCardAgreement(c, newCard, sd.sigData, sd.selfie); o.signDraft = null; }   // Save IS the commit — sign the card now
-    else if (held) attachHeldSigning(c, newCard);   // else a held agreement saddles onto the new card
-    const authd = liveCap || held;
-    reindex('customers', c); logAction(c, `Card added — ${brandName(s.card.brand)} ••••${s.card.last4}${authd ? '' : ' (unsigned)'}`);
+    saddlePendingCapture(c, newCard);                                                            // held selfie/signature → this card, then finalize if all three are present
+    if (!cardComplete(c, newCard) && c.pendingSigning && c.pendingSigning.signature) attachHeldSigning(c, newCard);   // legacy held packet (pre-#7.1c) back-compat
+    const authd = cardComplete(c, newCard);
+    reindex('customers', c); logAction(c, `Card added — ${brandName(s.card.brand)} ••••${s.card.last4}${authd ? '' : ' (in progress)'}`);
     destroyCardElement();
-    toast(authd ? 'Card saved — agreement signed, authorized ✓' : 'Card saved — sign to authorize ✓');
+    toast(authd ? 'Card saved — agreement complete, authorized ✓' : 'Card saved — finish selfie + signature to authorize ✓');
     // Land on the new card's SIGNING tab no matter how Add-card was opened.
     if (sub) { o.cardSub = false; o.tab = newCardId; renderOverlay(); }   // §14 panel beside the form → switch its tab
     else if (o.returnTo === 'payment' && o.invoiceId) openPayInvoice(o.invoiceId);
