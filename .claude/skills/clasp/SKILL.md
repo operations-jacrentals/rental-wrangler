@@ -18,13 +18,21 @@ The Rental Wrangler backend is a Google Apps Script web app. It ships through **
 ## Backend identifiers
 Read the `scriptId`, prod `deployment id`, and `exec URL` from `references/backend-ids.local.md` (gitignored — never published). If that file is absent (e.g. a fresh cloud container), take them from env vars `RW_SCRIPT_ID` / `RW_PROD_DEPLOYMENT_ID` / `EXEC_URL`, or ask Jac. **Never hardcode them in this committed file.**
 
-## Step 1 — Wire clasp auth from the env secret (self-contained)
+## Step 1 — Wire clasp auth, then VERIFY with clasp itself (never by file path)
+Auth is "wired" only if **`clasp show-authorized-user` says so** — a credentials *file existing* proves nothing (clasp 3.x doesn't reliably read the old `~/.clasprc.json` default path, so `test -f` gives false readings). Write the secret to an explicit file, point clasp at it with `clasp_config_auth`, then confirm with clasp's own command:
 ```bash
-[ -n "$CLASPRC_JSON_B64" ] && printf '%s' "$CLASPRC_JSON_B64" | base64 -d > ~/.clasprc.json && chmod 600 ~/.clasprc.json
-clasp --version                                   # expect 3.x
-test -f ~/.clasprc.json && echo AUTHED || echo "NO AUTH — stop and tell Jac"
+# Cloud session: secret -> explicit auth file -> tell clasp where it is
+if [ -n "$CLASPRC_JSON_B64" ]; then
+  printf '%s' "$CLASPRC_JSON_B64" | base64 -d > ~/.clasprc.json && chmod 600 ~/.clasprc.json
+  export clasp_config_auth="$HOME/.clasprc.json"   # v3 reads creds from here (sidesteps default-path drift)
+fi
+clasp --version                                    # expect 3.x
+clasp show-authorized-user --json                  # THE source of truth -> {"loggedIn": true}
 ```
-If `CLASPRC_JSON_B64` is empty, this session started **before the secret existed** — stop and ask Jac to restart it. Don't guess.
+- **`loggedIn: true`** → authed; proceed.
+- **`loggedIn: false`** → **stop, do not deploy.** Either `CLASPRC_JSON_B64` is empty (session started before the secret existed → ask Jac to restart it) or the secret is stale / wrong-format for v3 (re-export: `clasp login` on a trusted machine, then base64 its fresh `.clasprc.json` back into the secret). Don't guess, don't hunt for files.
+
+**Local Windows desktop = NOT a deploy environment.** Credentials are cloud-provisioned, so a desktop has clasp but no keys (`loggedIn:false` is expected, not broken). **Don't `clasp login` here** — run `/clasp` from a **cloud session**, where the secret auto-wires auth. A local session that needs a backend deploy should route the work to a cloud session.
 
 ## Step 2 — Backend working copy
 ```bash
@@ -53,7 +61,7 @@ curl -sS -L -H 'Content-Type: text/plain;charset=utf-8' \
 No `RW_PW` set? You can only test the **auth-rejection** path — ask Jac for a role password if you need a money-action test.
 
 ## Environment
-clasp (backend), GitHub, Google Drive, Gmail, Figma, HeyGen are available in the clasp-enabled session. This runbook is written for that (Linux/bash) environment; on the local Windows desktop, clasp auth comes from the desktop's own `~/.clasprc.json` instead of the env secret.
+clasp (backend), GitHub, Google Drive, Gmail, Figma, HeyGen are available in the clasp-enabled **cloud** session — that's the deploy environment, and this runbook is written for it (Linux/bash). The local Windows desktop is **not** a deploy environment: it has clasp but no cloud secret, so don't `clasp login` there — run `/clasp` from a cloud session. (Auth state is always whatever `clasp show-authorized-user --json` reports — never an assumed file path.)
 
-## Note for /jac-start
-This skill is referenced by the startup skill: at session start, if clasp is available, jac-start should remind that **the backend is reachable via `/clasp` — do not ask how to access the backend, use clasp.**
+## Note for /start
+This skill is referenced by the startup skill: at session start, if clasp is installed, `/start` checks auth with `clasp show-authorized-user --json` and **only if `loggedIn: true`** treats the backend as reachable via `/clasp` (then: don't ask how to access the backend, use clasp). If `loggedIn: false`, `/start` reports it's installed-but-not-authed and how to fix — see `/start` §1.
