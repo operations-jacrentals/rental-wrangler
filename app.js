@@ -3518,10 +3518,13 @@ function efld(card, rec, idField, field, ph, opts = {}) {
   const phDisp = String(ph).replace(/^Add\s+/i, '');   // rule 8/12: drop "Add" + space (data-ph keeps full prompt)
   const dotColor = opts.dot ? rec[field + 'Color'] : '';   // rule 8: notes carry a 3-color dot tag
   const dot = (has && dotColor) ? `<span class="note-dot nd-${esc(dotColor)}"></span>` : '';
-  const disp = has ? dot + esc(opts.fmt ? opts.fmt(raw) : String(raw)) : `<span class="add-field" data-r="R5c">+${esc(phDisp)}</span>`;
+  const disp = has ? dot + esc(opts.fmt ? opts.fmt(raw) : String(raw)) : `<span class="add-field" data-r="${opts.link ? 'R5b' : 'R5c'}">+${esc(phDisp)}</span>`;
   const pfx = opts.pfx ? `<span class="pfx">${esc(opts.pfx)}</span>` : '';
   const sfx = (has && opts.sfx) ? `<span class="sfx">${esc(opts.sfx)}</span>` : '';
-  return `<div class="kv${opts.wrap ? ' wrap' : ''}">${pfx}<span class="v inline-edit" data-edit="field" data-card="${card}" data-field="${field}" data-rec="${esc(String(rec[idField]))}" data-ph="${esc(ph)}" data-type="${opts.type || 'text'}"${opts.dot ? ' data-dot="1"' : ''}${opts.wrap ? ' style="white-space:normal"' : ''}>${disp}</span>${sfx}</div>`;
+  // opts.admin → the edit is gated behind requireAdmin (Admin/Owner pass, others get the password popup);
+  // opts.editKind → swap the startInlineEdit branch (e.g. 'unitCategory' opens a <select>).
+  const adm = opts.admin ? ' data-admin="1"' : '';
+  return `<div class="kv${opts.wrap ? ' wrap' : ''}">${pfx}<span class="v inline-edit" data-edit="${opts.editKind || 'field'}" data-card="${card}" data-field="${field}" data-rec="${esc(String(rec[idField]))}" data-ph="${esc(ph)}" data-type="${opts.type || 'text'}"${opts.dot ? ' data-dot="1"' : ''}${adm}${opts.wrap ? ' style="white-space:normal"' : ''}>${disp}</span>${sfx}</div>`;
 }
 
 /* Card anatomy (Jac 2026-06-10): Section 0 = Notes on EVERY standard view.
@@ -4183,7 +4186,7 @@ const DETAIL = {
     const makeModel = [u.year, u.make, u.model].filter(Boolean).join(' ');
 
     const specs = `<div class="section"><h4>Specs</h4><div class="fieldstack">
-      ${kvPills(cat ? refPill('categories', cat.categoryId, cat.name) : badge('No category'))}
+      ${efld('units', u, 'unitId', 'categoryId', 'Category', { editKind: 'unitCategory', admin: true, link: true, fmt: (id) => IDX.category.get(id)?.name || 'Unknown category' })}
       ${efld('units', u, 'unitId', 'serial', 'Add serial', { pfx: 'S/N' })}
       ${efld('units', u, 'unitId', 'year', 'Year', { type: 'number' })}
       ${efld('units', u, 'unitId', 'make', 'Make')}
@@ -4508,8 +4511,11 @@ const DETAIL = {
     const rentSegs = RENTAL_BAR_ORDER.map((stt) => { const ct = rmix.counts[stt] || 0; if (!ct) return ''; const color = stt === 'Available' ? 'gray' : getStatus('rentalStatus', stt).color; return mixSeg(ct, rmix.total, stt, color, stt, 'rental', !!rmix.truck[stt]); }).join('');
     const rentBar = rmix.total ? `<div class="mixbar tall">${rentSegs}</div>` : '';
     const bars = (mixBar || rentBar) ? `<div class="mixbars">${mixBar}${rentBar}</div>` : '';
+    // Pricing is Admin-gated (Jac 2026-06-22): anyone can read the rates, but changing
+    // one fires the requireAdmin popup (Admin/Owner pass straight through).
+    const priceFld = (field, sfx, ph) => efld('categories', c, 'categoryId', field, ph, { type: 'number', admin: true, fmt: (v) => money(v), sfx });
     const pricing = `<div class="section"><h4>Pricing</h4><div class="fieldstack">
-      ${kv(money(c.memberDaily), { sfx: '/day member' })}${kv(money(c.rate1Day), { sfx: '/1-day' })}${kv(money(c.rate7Day), { sfx: '/7-day' })}${kv(money(c.rate4Wk), { sfx: '/4-week' })}${kv(money(c.weekend), { sfx: '/weekend' })}
+      ${priceFld('memberDaily', '/day member', 'Member daily')}${priceFld('rate1Day', '/1-day', '1-day rate')}${priceFld('rate7Day', '/7-day', '7-day rate')}${priceFld('rate4Wk', '/4-week', '4-week rate')}${priceFld('weekend', '/weekend', 'Weekend rate')}
     </div></div>`;
     const fleet = `<div class="section"><h4>Fleet Summary</h4><div class="fieldstack">
       ${st.forSale ? kvPills(badge(st.forSale + ' For Sale', 'purple')) : ''}
@@ -7359,18 +7365,23 @@ function renderOverlay() {
     o.config = o.config || { roles: {}, admin: '' };
     o.tab = o.tab || 'logins';
     o.setSel = o.setSel || 'rentalStatus';
-    if (!o.draftSettings) o.draftSettings = JSON.parse(JSON.stringify((o.config && o.config.settings) || state.settings || {}));
     const pop = el('div', 'popup board-popup settings-popup');
-    const foot = `${pageDefaultSlice(o.tab) ? '<button class="pill ghost js-settings-resetpage" data-r="R18" data-tip="Reset just this tab to defaults (Save to keep)">Reset page</button>' : ''}<button class="pill ghost set-danger js-settings-reset${o.resetArm ? ' armed' : ''}" data-r="R18">${o.resetArm ? 'Click again — reset everything' : 'Reset all'}</button>${hasSettingsBackup() ? '<button class="pill ghost js-settings-undo" data-r="R18">Undo last change</button>' : ''}<span class="spacer"></span>${o.error ? `<span class="set-err">${esc(o.error)}</span>` : ''}<button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill ignition js-settings-save" data-r="R17">Save settings</button>`;
-    pop.innerHTML = `
-      <div class="popup-head">
+    const head = `<div class="popup-head">
         <span class="pl-ic">${I.sliders}</span>
         <div class="pl-title"><h3>Settings</h3><span class="pl-tag">Admin · Wrangle the yard</span></div>
         <span class="spacer"></span>
         <button class="x js-close" aria-label="Close">${I.x}</button>
-      </div>
+      </div>`;
+    if (o.loading) {
+      // Skeleton while getConfig is in flight — a stamped label + hazard-stripe scanner so the wait reads as work, not a freeze.
+      pop.innerHTML = `${head}<div class="popup-body settings-body"><div class="set-loading"><div class="set-loading-bar" aria-hidden="true"></div><div class="set-loading-lbl">Rounding up the yard settings…</div></div></div>`;
+    } else {
+      if (!o.draftSettings) o.draftSettings = JSON.parse(JSON.stringify((o.config && o.config.settings) || state.settings || {}));
+      const foot = `${pageDefaultSlice(o.tab) ? '<button class="pill ghost js-settings-resetpage" data-r="R18" data-tip="Reset just this tab to defaults (Save to keep)">Reset page</button>' : ''}<button class="pill ghost set-danger js-settings-reset${o.resetArm ? ' armed' : ''}" data-r="R18">${o.resetArm ? 'Click again — reset everything' : 'Reset all'}</button>${hasSettingsBackup() ? '<button class="pill ghost js-settings-undo" data-r="R18">Undo last change</button>' : ''}<span class="spacer"></span>${o.error ? `<span class="set-err">${esc(o.error)}</span>` : ''}<button class="pill ghost js-close" data-r="R18"${o.saving ? ' disabled' : ''}>Cancel</button><button class="pill ignition js-settings-save${o.saving ? ' is-disabled' : ''}" data-r="R17"${o.saving ? ' disabled' : ''}>${o.saving ? 'Saving…' : 'Save settings'}</button>`;
+      pop.innerHTML = `${head}
       <div class="popup-body settings-body">${settingsBoardHtml(o)}</div>
       <div class="popup-foot">${foot}</div>`;
+    }
     overlay.appendChild(pop);
   } else if (o.kind === 'newCustomer') {
     const d = o.draft; const isEdit = !!o.editId;
@@ -9855,7 +9866,7 @@ function onClick(e) {
   if (closest('.js-clear-totfilter')) { e.stopPropagation(); const cs = activeSession().cards[closest('.js-clear-totfilter').dataset.card]; if (cs) cs.totalFilter = null; render(); return; }
 
   // inline edit (click a value → input)
-  if (closest('.inline-edit')) { e.stopPropagation(); return startInlineEdit(closest('.inline-edit')); }
+  if (closest('.inline-edit')) { e.stopPropagation(); const _ie = closest('.inline-edit'); if (_ie.dataset.admin === '1' && !adminUnlocked()) return requireAdmin('Categories and pricing are Admin-only.', () => startInlineEdit(_ie)); return startInlineEdit(_ie); }
 
   // X-to-swap / remove on pills (handle before the pill-open)
   const xEl = closest('.x');
@@ -10028,6 +10039,17 @@ function startInlineEdit(span) {
     if (type === 'number') input.type = 'number';
     else if (type === 'date') input.type = 'date';
     commit = () => { if (done) return; done = true; if (rec) { let v = input.value.trim(); if (type === 'number') v = (v === '' ? null : Number(v)); const old = rec[f]; const oldDot = rec[f + 'Color'] || ''; const newDot = (span.dataset.dot === '1' && v) ? (input._dotPick ?? oldDot) : ''; if (String(old ?? '') !== String(v ?? '') || oldDot !== newDot) { rec[f] = v; if (span.dataset.dot === '1') rec[f + 'Color'] = newDot; reindex(card, rec); logAction(rec, `${humanizeField(f)}: ${auditVal(old)} → ${auditVal(v)}`); } } render(); if (state.overlay?.kind === 'board') renderOverlay(); };
+  } else if (kind === 'unitCategory') {
+    // Admin-gated category link for a unit — a <select> of categories (the gate fires
+    // in the click handler before we get here). Drops back to "No category" on the blank.
+    const u = IDX.unit.get(recId);
+    const sel = el('select', 'inline-input');
+    sel.innerHTML = ['<option value="">— No category —</option>'].concat(DATA.categories.map((c) => `<option value="${esc(c.categoryId)}"${u && u.categoryId === c.categoryId ? ' selected' : ''}>${esc(c.name)}</option>`)).join('');
+    const commitCat = () => { if (done) return; done = true; if (u) { const old = u.categoryId; const v = sel.value || null; if ((old || '') !== (v || '')) { u.categoryId = v; reindex('units', u); logAction(u, `Category: ${auditVal(IDX.category.get(old)?.name || '')} → ${auditVal(IDX.category.get(v)?.name || '')}`); } } render(); };
+    span.replaceWith(sel); sel.focus();
+    sel.addEventListener('change', commitCat);
+    sel.addEventListener('blur', commitCat);
+    return;
   } else { return; }
   if (kind === 'field' && span.dataset.dot === '1') {
     // rule 8 — notes get the 3-color dot picker (white/red/green) while entering
@@ -10247,7 +10269,7 @@ function openChecklist(unitId) {
   if (!n) n = newInspectionForUnit(u);
   n.items = n.items || {};
   state.overlay = { kind: 'checklist', unitId, inspId: n.inspectionId };
-  render();
+  render(); renderOverlay();   // overlays live in #overlay-root, which render() doesn't paint — must renderOverlay() or the checklist never shows
 }
 // Complete the checklist → overall result cascades through the existing setInspResult (auto-WO on fail).
 function completeChecklist() {
@@ -10884,11 +10906,14 @@ async function openSettings() {
   document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove());
   const adminPw = (currentRole === 'Admin' || currentRole === 'Owner') ? backendPassword : (window.prompt('Settings is Admin-only.\nEnter the Admin password:') || '');
   if (!adminPw) return;
+  // Open the shell immediately in a loading state so the wait is visible, not a frozen UI.
+  openOverlay({ kind: 'settings', loading: true, adminPw });
   try {
     const r = await backendCall('getConfig', { password: adminPw });
-    if (!r || !r.ok) { toast(r && r.error === 'unauthorized' ? 'Wrong Admin password.' : 'Could not open Settings.'); return; }
-    openOverlay({ kind: 'settings', config: r.config, adminPw });
-  } catch (e) { toast('Could not reach the database.'); }
+    const o = state.overlay; if (!o || o.kind !== 'settings') return;   // closed while we waited
+    if (!r || !r.ok) { closeOverlay(); toast(r && r.error === 'unauthorized' ? 'Wrong Admin password.' : 'Could not open Settings.'); return; }
+    o.config = r.config; o.loading = false; renderOverlay();
+  } catch (e) { const o = state.overlay; if (o && o.kind === 'settings') closeOverlay(); toast('Could not reach the database.'); }
 }
 async function saveSettings() {
   const o = state.overlay; if (!o || o.kind !== 'settings') return;
@@ -10903,15 +10928,18 @@ async function saveSettings() {
     if (!admin || Object.values(roles).some((v) => !v)) { o.error = 'Passwords can\'t be empty.'; o.tab = 'logins'; renderOverlay(); return; }
   }
   const settings = o.draftSettings || state.settings || {};
+  // Inputs are read above; now flip to the Saving… state so the button doesn't look frozen.
+  o.saving = true; o.error = ''; renderOverlay();
   try {
     const r = await backendCall('setConfig', { password: o.adminPw, config: { roles, admin, settings } });
+    o.saving = false;
     if (r && r.ok) {
       if (haveLogins && (currentRole === 'Admin' || currentRole === 'Owner')) { const myNew = currentRole === 'Admin' ? admin : (roles[currentRole] || o.adminPw); backendPassword = myNew; sessionStorage.setItem('jactec.pw', myNew); o.adminPw = myNew; }
       o.config.roles = roles; o.config.admin = admin; o.config.settings = settings;
       persistAdminSettings(settings);   // mirror locally + apply the status overrides live
       closeOverlay(); toast('Settings saved.'); render();
     } else { o.error = 'Save failed.'; renderOverlay(); }
-  } catch (e) { o.error = 'Could not reach the database.'; renderOverlay(); }
+  } catch (e) { o.saving = false; o.error = 'Could not reach the database.'; renderOverlay(); }
 }
 const addDays = (iso, n) => { const d = parseISO(iso); d.setDate(d.getDate() + n); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 
@@ -12657,7 +12685,7 @@ window.addEventListener('beforeunload', (e) => {
   e.preventDefault(); e.returnValue = '';
 });
 function renderLogin(msg) {
-  $('#app').innerHTML = `<div class="login-screen"><form class="login-box" id="login-form">
+  $('#app').innerHTML = `<div class="login-screen"><video id="login-video" class="login-video" src="assets/login-intro.mp4" muted loop playsinline preload="auto" aria-hidden="true"></video><form class="login-box" id="login-form">
     <span class="rivet tl"></span><span class="rivet tr"></span><span class="rivet bl"></span><span class="rivet br"></span>
     <div class="login-plate">
       <img class="login-logo" src="assets/jac-rentals-logo.jpg" alt="Jac Rentals" />
@@ -12729,6 +12757,9 @@ async function attemptLogin() {
   if (!pw) return;
   backendPassword = pw;
   const btn = document.getElementById('login-go'); if (btn) { btn.textContent = 'Signing in…'; btn.disabled = true; }
+  // Roll the Mr. Wrangler intro behind the box while the (slow) backend load runs — a little entertainment for the wait.
+  const screen = document.querySelector('.login-screen'); if (screen) screen.classList.add('signing-in');
+  const vid = document.getElementById('login-video'); if (vid) { try { const p = vid.play(); if (p && p.catch) p.catch(() => {}); } catch (e) {} }
   try {
     // Ask the backend for the role. The role-aware backend returns it; an older
     // backend (pre-roles) replies "unknown action" → we proceed without a role
