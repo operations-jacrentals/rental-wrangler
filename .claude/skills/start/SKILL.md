@@ -1,6 +1,6 @@
 ---
 name: start
-description: Jac Rentals session startup routine — run at the top of a session with /start. Probes the toolchain (node/npm/clasp/gh/git), orients on the current git branch vs staging/main, recalls relevant memory, ROUTES the session to the right long-lived area branch (using the branch map, based on what you want to work on) and proposes a dated session-output folder — waiting for your OK before switching — then sets token-efficiency + role-aware working rules for the rest of the session.
+description: Jac Rentals session startup routine — run at the top of a session with /start. Probes the toolchain (node/npm/clasp/gh/git + Playwright), orients on the current git branch vs staging/main, recalls relevant memory, ROUTES the session to the right long-lived area branch (using the branch map, based on what you want to work on) and proposes a dated session-output folder — waiting for your OK before switching — then sets token-efficiency + role-aware working rules for the rest of the session.
 ---
 
 # /start — Jac Rentals session startup
@@ -12,7 +12,15 @@ Run and report a short table — node, npm, clasp, gh, git:
 ```
 node --version; npm --version; clasp --version; gh --version; git --version
 ```
-- **clasp is installed → the GAS backend is reachable via the `/clasp` skill. NEVER ask how to access the backend; use `/clasp`** (additive-only; it STOPS before any prod deploy).
+- **clasp installed ≠ backend reachable — verify AUTH the right way.** Probe with clasp's own command, never by looking for a credentials file (clasp 3.x does **not** reliably use the old `~/.clasprc.json` path — guessing paths is exactly how sessions wrongly cry "no auth"):
+  ```
+  clasp --version                       # installed? (expect 3.x)
+  clasp show-authorized-user --json     # authed?  -> {"loggedIn": true|false}
+  ```
+  (default user; if you use a named user or `--auth <file>`, pass the same flags to the check.)
+  - **`loggedIn: true`** → backend IS reachable via the `/clasp` skill (additive-only; STOPS before any prod deploy). **Don't ask how to access the backend and don't re-verify by file path — just use `/clasp`.**
+  - **`loggedIn: false`** → **normal for a LOCAL session — clasp creds are cloud-provisioned, so the desktop has the tool but not the keys.** Don't treat it as broken, don't claim the backend is reachable, don't dig through `~/.clasprc.json`, and **don't `clasp login` here.** Backend deploys run from a **cloud session**, where the `SessionStart` hook auto-wires auth from the `CLASPRC_JSON_B64` secret — so route any backend deploy there. (If you see `loggedIn:false` *in a cloud session*, the secret's empty → the session predates it → restart it.)
+- **Playwright (browser gates) — runs in CI, NOT locally on this machine.** `ci/smoke.mjs` (boot check) and `ci/logic-test.mjs` (money + multi-unit regression) drive headless Chromium via Playwright (pinned `1.48.0`). **CI installs it fresh and runs both on every PR** — that's the source of truth, and why PRs are safe with nothing installed locally. A local install was attempted repeatedly and **fails on this desktop**: the Chromium extraction wedges (sandboxed → Playwright's lockfile starves on slow I/O; unsandboxed → exit 127), even after a Defender exclusion. **Don't burn time reinstalling it here — rely on CI** for the browser gates; only `node ci/gen-rule-usage.mjs --check` (no browser) runs locally. (A future machine that CAN run them: `npm install --no-save playwright@1.48.0 && npx playwright install chromium`, then swap the reserved port — `sed -i 's/8000/9147/g' ci/smoke.mjs ci/logic-test.mjs`, run, `git checkout -- ci/`.)
 - If a tool is missing, say so plainly — don't assume it's there.
 
 ## 2. Branch + status orientation
@@ -50,7 +58,12 @@ The app is organized into long-lived **area branches** (`area/*`), each owning a
 - **Specs:** after generating or changing a spec/feature/screen, offer to run `/role` to audit it through the 15 role lenses.
 - **Something reported broken → `wrangler-fix` first.** Anything reported not-working or broken — an in-app `wrangler-fix`/`wrangler-request` issue OR Jac just saying it in-session — runs through the `wrangler-fix` skill before any code change: prove the claim against the canon (R-Rulebook, SPEC v8, docs, code) with citations, trace the symptom UP to its root cause, sweep for sibling bugs of the same class, fix only what's proven at the cause, then re-reproduce to confirm it failed-before/passes-after. No fix without a cited root cause.
 - **Efficiency:** `/audit` is available anytime; the ~1M-token auto-audit hook will also prompt a coaching report.
-- **Promotion cadence — propose the hops, never auto-promote to live:** when a task is *done*, offer to merge `<domain>/<task>` → `area/<domain>` (the merged task branch then self-cleans via the branch janitor). When Jac wants to preview/QA, merge `area/<domain>` → `staging` — the staging site auto-syncs (~10 min) for phone testing. Only after Jac confirms it's clean on staging, open a PR `staging` → `main` (protected; CI). **`main` is live — promoting to it is always Jac's explicit call.**
+- **Promotion cadence — propose the hops, never auto-promote to live:** when a task is *done*, offer to merge `<domain>/<task>` → `area/<domain>` (the merged task branch then self-cleans via the branch janitor). When Jac wants to preview/QA, merge `area/<domain>` → `staging` — the staging mirror auto-syncs (~10 min) for phone testing. **Then run the Staging E2E check (below) before calling it clean.** Only after Jac confirms it's clean on staging, open a PR `staging` → `main` (protected; CI). **`main` is live — promoting to it is always Jac's explicit call.**
+- **Staging E2E — after a push to `staging`, DRIVE THE LIVE APP before declaring it clean (don't trust unit tests alone).** A skill can't auto-fire on a git push, so this is a **session-performed** step (a CI Playwright job could automate it later — Playwright runs fine in CI even though it won't install on this desktop). On each `area/<domain>` → `staging` merge:
+  1. **Force the sync** so you exercise the new code, not stale: `gh workflow run sync-staging.yml --repo operations-jacrentals/rental-wrangler-staging` (Pages rebuilds ~1 min). Staging URL: `https://operations-jacrentals.github.io/rental-wrangler-staging/` ([[jactec-staging-url]]).
+  2. **Drive it with Claude-in-Chrome** (the browser MCP — needs **no local install**, unlike Playwright, which won't install on this desktop): open the staging URL, log in (password from an env var like `$RW_PW` — **never hardcode or echo it**; no var set → you can only check the pre-login surface), then **exercise exactly what you built**, end-to-end, plus a known sanity flow — e.g., run a sample CSV through **Mr. Wrangler** and confirm the expected output, not merely that the page renders.
+  3. **Assert it truly worked:** no console/page errors on boot, and the feature's visible result matches expectation. Save a screenshot for the handoff note.
+  4. **A red E2E STOPs promotion** — surface it, fix on the task/area branch, re-sync, re-run. Only a green staging E2E earns the `staging` → `main` PR.
 ## 5. Ready summary
 End with 3–4 lines: tools OK/missing, current branch + what's in flight, the proposed branch/folder (awaiting OK), and "what are we working on?"
 

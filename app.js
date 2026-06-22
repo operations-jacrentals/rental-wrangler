@@ -11634,7 +11634,8 @@ function destroyCardElement() { if (_cardElement) { try { _cardElement.destroy()
 // Reject if a promise hasn't settled in `ms` so a STALLED (never-resolving) backend
 // round-trip can't leave the save button spinning "Saving…" forever with no error.
 // fetch() has no built-in timeout; a hung Apps Script call otherwise never rejects.
-// Only wraps human-free server round-trips — never the interactive 3DS confirm step.
+// Server round-trips get 30s; the interactive card confirm gets a GENEROUS 180s bound (#172) so a true
+// infinite hang surfaces as an error, without aborting a legitimate (slower) 3DS prompt mid-authentication.
 function withTimeout(promise, ms, label) {
   let t; const timeout = new Promise((_, rej) => { t = setTimeout(() => { const e = new Error((label || 'Request') + ' timed out'); e.rwTimeout = true; rej(e); }, ms); });
   return Promise.race([promise, timeout]).finally(() => clearTimeout(t));
@@ -11661,7 +11662,10 @@ async function saveCardFlow(btn) {
     const r = await withTimeout(backendCall('stripeSetupIntent', { customerId: c.customerId }), 30000, 'Setting up the card');
     if (!live()) return;
     if (!r || !r.ok) return fail(friendlyPayErr(r));
-    const { setupIntent, error } = await stripe.confirmCardSetup(r.clientSecret, { payment_method: { card: _cardElement, billing_details: { name: c.name || undefined, email: c.email || undefined, phone: c.phone || undefined } } });
+    // #172 the interactive confirm CAN stall forever (dead network / a 3DS that never resolves), leaving the
+    // button spinning "Saving…" with no error. Bound it GENEROUSLY (180s — tolerates a real 3DS prompt) so a
+    // true hang surfaces as an error instead of an infinite spinner. The catch below maps rwTimeout → a toast.
+    const { setupIntent, error } = await withTimeout(stripe.confirmCardSetup(r.clientSecret, { payment_method: { card: _cardElement, billing_details: { name: c.name || undefined, email: c.email || undefined, phone: c.phone || undefined } } }), 180000, 'Card confirmation');
     if (!live()) return;
     if (error) return fail(error.message);
     if (!setupIntent || setupIntent.status !== 'succeeded') return fail('Card could not be saved — try again.');
@@ -11686,7 +11690,9 @@ async function saveCardFlow(btn) {
     const authd = liveCap || held;
     reindex('customers', c); logAction(c, `Card added — ${brandName(s.card.brand)} ••••${s.card.last4}${authd ? '' : ' (unsigned)'}`);
     destroyCardElement();
-    toast(authd ? 'Card saved — agreement signed, authorized ✓' : 'Card saved — sign to authorize ✓');
+    // "authorized" here = the customer authorized FUTURE charges (card-on-file mandate) — NOT a payment.
+    // Say so plainly so a saved card is never mistaken for money collected (#false-charge incident).
+    toast(authd ? 'Card saved on file — agreement signed ✓ (no charge taken)' : 'Card saved on file — sign to authorize future charges');
     // Land on the new card's SIGNING tab no matter how Add-card was opened.
     if (sub) { o.cardSub = false; o.tab = newCardId; renderOverlay(); }   // §14 panel beside the form → switch its tab
     else if (o.returnTo === 'payment' && o.invoiceId) openPayInvoice(o.invoiceId);
