@@ -40,13 +40,16 @@ The app is organized into long-lived **area branches** (`area/*`), each owning a
 - **Specs:** after generating or changing a spec/feature/screen, offer to run `/role` to audit it through the 15 role lenses.
 - **Efficiency:** `/audit` is available anytime; the ~1M-token auto-audit hook will also prompt a coaching report.
 - **Promotion cadence — propose the hops, never auto-promote to live:** when a task is *done*, offer to merge `<domain>/<task>` → `area/<domain>` (the merged task branch then self-cleans via the branch janitor). When Jac wants to preview/QA, merge `area/<domain>` → `staging` — the staging site auto-syncs (~10 min) for phone testing. Only after Jac confirms it's clean on staging, open a PR `staging` → `main` (protected; CI). **`main` is live — promoting to it is always Jac's explicit call.**
-- **Session hygiene:** when a task branch merges, that chat is done — remind Jac he can archive it (or run `/tidy-sessions`) so finished chats don't linger.
-
 ## 5. Ready summary
 End with 3–4 lines: tools OK/missing, current branch + what's in flight, the proposed branch/folder (awaiting OK), and "what are we working on?"
+
+## 6. Wrap-up — after shipping to `main`, or when the session winds down
+- **Run `/tidy-sessions`.** After a PR merges to `main` (work shipped) — or as the session ends — invoke `/tidy-sessions` to sweep finished/stale chats. It lists candidates and archives only what Jac confirms; it never touches the current chat or open-PR work.
+- **Mark THIS chat done.** A session can't archive itself mid-use, so tell Jac his work shipped and he can archive this chat on the way out — otherwise the next `/tidy-sessions` sweep catches it automatically once its task branch is gone (the branch janitor deletes merged task branches).
+- **Handoff note.** Write a short note (what shipped, what's pending, which area branch) into the session-output folder so the next chat — local or cloud — picks up cleanly.
 
 ## Conventions reference
 - **Branches:** work on an **`area/*`** branch (see `references/branch-map.md`) → merge to `staging` (preview/debug) → `staging` → `main` (`main` = live at app.jacrentals.com via GitHub Pages). `main` is protected: changes land via PR + CI.
 - **Backend:** ships via `/clasp` (clasp), never git. `Code.gs`/`Code.js` are gitignored (public repo). In cloud sessions a `SessionStart` hook auto-wires clasp auth from the `CLASPRC_JSON_B64` env secret.
-- **Sibling skills:** `/clasp` (backend deploy), `/role` (spec audit), `/audit` (token + model-fit coaching). Plus the existing suite: `jactec-ui`, `frontend`, `mobile-*`, `webapp-testing`, `wrangler-fix`.
+- **Sibling skills:** `/clasp` (backend deploy), `/role` (spec audit), `/audit` (token + model-fit coaching), `/tidy-sessions` (archive finished chats). Plus the existing suite: `jactec-ui`, `frontend`, `mobile-*`, `webapp-testing`, `wrangler-fix`.
 - **At session end:** write a short handoff note (what changed, what's pending, which area branch) into the session folder so the next chat — local or cloud — picks up cleanly.
