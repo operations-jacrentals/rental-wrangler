@@ -8341,7 +8341,11 @@ const boardRows = (boardId) => ({ parts: DATA.parts, vendors: DATA.vendors, expe
 const BOARD_DEF = {
   parts: {
     cols: ['Part', 'Vendor', 'Cost', 'Qty', 'Product #', 'Order from'],
-    row: (p) => [(p.aiPending ? '✨ ' : '') + esc(p.name), IDX.vendor.get(p.vendorId) ? linkName(IDX.vendor.get(p.vendorId).name, { js: 'js-vendor-open', data: { rec: p.vendorId } }) : '—', p.priceEach != null ? money(p.priceEach) : '—', p.qtyOnHand != null ? `${p.qtyOnHand}` : '—', esc(p.productNumber || '—'), esc(p.orderEmail || p.website || '—')],
+    row: (p) => [(p.aiPending ? '✨ ' : '') + esc(p.name), IDX.vendor.get(p.vendorId) ? linkName(IDX.vendor.get(p.vendorId).name, { js: 'js-vendor-open', data: { rec: p.vendorId } }) : '—', p.priceEach != null ? money(p.priceEach) : '—', p.qtyOnHand != null ? `${p.qtyOnHand}` : '—', esc(p.productNumber || '—'),
+      // R7 link instead of a raw overflowing URL: email → mailto, website → short "Order ↗"
+      p.orderEmail ? linkName(p.orderEmail, { js: 'js-open-link', data: { url: 'mailto:' + p.orderEmail } })
+        : p.website ? linkName('Order ↗', { js: 'js-open-link', data: { url: (/^https?:\/\//i.test(p.website) ? p.website : 'https://' + p.website) } })
+        : '—'],
   },
   vendors: {
     cols: ['Vendor', 'Type', 'Phone', 'Total Spent', 'Parts', 'Avg Cost'],
