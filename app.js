@@ -16,7 +16,8 @@ import { DATA } from './data.js';
 import { createCascade } from './cascade.js';
 import { serviceOrdersForUnit, completeService, SERVICE_TASKS } from './service-countdown.js';
 import * as CFG from './config.js';
-import { AGREEMENTS } from './agreements.js';
+import { AGREEMENTS, AGREEMENT_VERSIONS, AGREEMENT_CURRENT } from './agreements.js';
+import { ico, I, CARD_ICON, RING_ICON } from './icons.js';
 import {
   getStatus, STATUS, ROLES, GRID_CARDS, BACKOFFICE_BOARDS, SORT_FIELDS,
   SHOP_TYPES, SHOP_SEGMENTS, COLUMNS, COLUMN_OF,
@@ -115,16 +116,23 @@ function migrateCustomers() {
     // type, frozen at signing). Fold the legacy singular `agreement` — or, on the
     // default card, the legacy customer-level signature — into agreements[0].
     c.cards.forEach((k) => {
-      if (Array.isArray(k.agreements)) return;
+      if (Array.isArray(k.agreements)) {
+        // Reclaim space from the first card-bound release (#151), which baked the full
+        // ~6–8 KB agreement text into every signing: drop it, keep a small version id.
+        k.agreements.forEach((s) => {
+          if (s && s.text) { if (!s.version) s.version = AGREEMENT_CURRENT[s.key === 'membership' ? 'membership' : 'rental'] || ''; delete s.text; migrationDirty = true; }
+        });
+        return;
+      }
       k.agreements = [];
       const legacy = (k.agreement && k.agreement.signature) ? k.agreement
         : (k.isDefault && c.signature ? { signedAt: c.agreementSignedAt || '', version: c.agreementType || 'rental', signature: c.signature, selfie: c.selfie } : null);
       if (legacy && legacy.signature) {
         const key = legacy.version === 'membership' ? 'membership' : 'rental';
         const ag = AGREEMENTS[key] || AGREEMENTS.rental;
-        k.agreements.push({ id: 'SIG-' + c.customerId + '-' + (k.id || '0'), key, title: ag.title, text: ag.text,
+        k.agreements.push({ id: 'SIG-' + c.customerId + '-' + (k.id || '0'), key, version: AGREEMENT_CURRENT[key] || '', title: ag.title,
           accountType: c.accountType || '', signedAt: legacy.signedAt || '', signerName: c.name || '',
-          signature: legacy.signature, selfie: legacy.selfie || '', driveFileId: null, driveUrl: null });
+          signature: legacy.signature, selfie: legacy.selfie || '', driveSignatureUrl: '', driveSelfieUrl: '', driveFolderId: '' });
       }
       migrationDirty = true;
     });
@@ -251,10 +259,39 @@ const cardSignings = (k) => (k && Array.isArray(k.agreements)) ? k.agreements : 
 function cardCurrentSigning(c, k) { const want = requiredAgreementKey(c); const s = cardSignings(k); for (let i = s.length - 1; i >= 0; i--) { if ((s[i].key || 'rental') === want) return s[i]; } return null; }
 const cardAuthorized = (c, k) => !!cardCurrentSigning(c, k);
 function cardSignState(c, k) { return cardAuthorized(c, k) ? 'authorized' : (cardSignings(k).length ? 'stale' : 'unsigned'); }
-/** THE GATE — true only when EVERY active card is signed for the current account type. */
-const accountAgreementsOk = (c) => customerCards(c).every((k) => cardAuthorized(c, k));
+/* Resolve a signing's frozen title/text from the version registry (storage-light:
+   the signing stores only `version`, not the ~6–8 KB text). Falls back to a baked
+   `text`/`title` on legacy records, then to the current agreement for its key. */
+const signingTitle = (s) => (s && (s.title || (AGREEMENT_VERSIONS[s.version] || {}).title)) || (AGREEMENTS[s && s.key] || {}).title || 'Agreement';
+const signingText = (s) => (s && (s.text || (AGREEMENT_VERSIONS[s.version] || {}).text)) || (AGREEMENTS[s && s.key] || AGREEMENTS.rental).text || '';
+/* Drive-aware image accessors — prefer the archived Drive URL, fall back to the
+   inline data-URL kept until the backend offloads it (graceful pre-deploy). */
+const signingSelfieSrc = (s) => (s && (s.driveSelfieUrl || s.selfie)) || '';
+const signingSignatureSrc = (s) => (s && (s.driveSignatureUrl || s.signature)) || '';
+/* The newest agreement selfie across ALL of a customer's cards — the faded
+   backdrop behind the Account section. Prefers the archived Drive URL
+   (signingSelfieSrc → driveSelfieUrl); the inline data-URL is only the pre-offload
+   fallback. That ordering is load-bearing: at thousands of customers the backdrop
+   resolves to a lazy-loaded URL the browser fetches only when the card is open,
+   never inline image data riding the bulk payload. Legacy `c.selfie` is the last
+   resort. */
+function latestCustomerSelfie(c) {
+  if (!c) return '';
+  let best = null, bestT = -Infinity;
+  for (const k of customerCards(c)) {
+    for (const s of cardSignings(k)) {
+      if (!signingSelfieSrc(s)) continue;
+      const t = s.signedAt ? +parseISO(s.signedAt) : 0;
+      if (t >= bestT) { bestT = t; best = s; }
+    }
+  }
+  return best ? signingSelfieSrc(best) : (c.selfie || '');
+}
+/** THE GATE — true only when every NON-EXPIRED card is signed for the current
+    account type. Expired cards can't be charged anyway, so they don't gate. */
+const accountAgreementsOk = (c) => validCards(c).every((k) => cardAuthorized(c, k));
 const accountAgreementsBlocked = (c) => !!c && !accountAgreementsOk(c);
-const unsignedCardCount = (c) => customerCards(c).filter((k) => !cardAuthorized(c, k)).length;
+const unsignedCardCount = (c) => validCards(c).filter((k) => !cardAuthorized(c, k)).length;
 /* §14 booking/delivery gate — blocked when there's no valid card OR any card isn't
    signed for the current account type. Charging is NEVER gated on this. */
 const cardGateBlocked = (cust) => !!cust && (!hasValidCard(cust) || accountAgreementsBlocked(cust));
@@ -264,37 +301,145 @@ function cardGateReason(cust) {
   if (accountAgreementsBlocked(cust)) { const n = unsignedCardCount(cust); return `${n} card${n > 1 ? 's' : ''} not signed for the current account type`; }
   return '';
 }
+/* Signing-form glyphs (existing inline marks, hoisted to module scope so the
+   per-card tab AND the account-level "held draft" share one capture form). */
+const AG_LOCK = '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
+const AG_CAM = '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>';
+/* The shared selfie + signature capture controls — emitted on a CARD's signing tab and
+   in the +Card panel (no card yet). There's no in-block commit button: the bottom-right
+   Save persists whatever's captured (commitCapture). `readKey` distinguishes whose Terms
+   toggle is open (a card id, or 'account'); the live selfie/signature ride o.signDraft. */
+function agCaptureBlock(o, ag, readKey) {
+  const selfie = o.signDraft && o.signDraft.selfie;
+  return `
+    <div class="ag-readref"><span><b>${esc(ag.title)}</b></span>${linkName(o.signRead === readKey ? 'Hide' : 'Terms', { js: 'js-ncsign-read', data: { card: readKey } })}</div>
+    ${o.signRead === readKey ? `<div class="nc-agreement" tabindex="0">${esc(ag.text)}</div>` : ''}
+    <div class="ag-caphead"><span class="ag-capcap">Capture both to authorize</span>${linkName('Open Window', { js: 'js-sign-popout', data: { title: ag.title } })}</div>
+    <div class="ag-caprow">
+      <label class="ag-selfiebtn js-ag-selfie">${selfie
+        ? `<img class="ag-selfie" src="${esc(selfie)}" alt="selfie" /><span class="ag-cam-cap">Retake</span>`
+        : `<video class="ag-cam-feed" autoplay muted playsinline></video><span class="ag-cam-fallback">${AG_CAM}<span class="l">Selfie</span></span><span class="ag-cam-cap ag-cam-hint">Tap to capture</span>`}<input type="file" accept="image/*" capture="user" class="js-ncsign-selfie" hidden /></label>
+      <canvas class="nc-sigpad ag-pad" width="500" height="220"></canvas>
+    </div>
+    <div class="ag-acceptrow">${ghostPill('Clear', { js: 'js-nc-sig-clearpad' })}</div>`;
+}
+/* Sign-before-a-card capture, rendered inside the +Card panel before the first card
+   exists (NOT on the Account tab — account setup stays separate). The wrangler can
+   sign the agreement now (selfie + signature) and it's HELD on the account, then
+   saddles onto the first card they add. Once held, shows the on-hand packet + Redo. */
+function heldSignBlock(o, custRec, d) {
+  const key = requiredAgreementKey(custRec || { accountType: d.accountType });
+  const ag = AGREEMENTS[key] || AGREEMENTS.rental;
+  const p = custRec && custRec.pendingSigning;
+  const inner = (p && p.signature)
+    ? `<div class="ag-signed"><span class="ag-lock">${AG_LOCK}</span><span class="t"><b>${esc(p.title || ag.title)}</b> · signed ${esc(p.signedAt || '—')}</span>${ghostPill('Redo', { js: 'js-ncsign-holdclear' })}</div>
+       <div class="ag-packet">
+         <div class="ag-pcell"><div class="ag-pcap">Selfie</div>${p.selfie ? `<img class="ag-selfie" src="${esc(p.selfie)}" alt="selfie on hand" />` : '<div class="ag-selfie empty">—</div>'}</div>
+         <div class="ag-pcell"><div class="ag-pcap">Signature</div>${p.signature ? `<img class="ag-sigthumb" src="${esc(p.signature)}" alt="signature on hand" />` : '<div class="ag-sigthumb"></div>'}</div>
+       </div>
+       <p class="muted" style="font-size:11px;margin:12px 2px 0">✓ Signed and on hand — it saddles onto the first card you add. Add a card to authorize On-Rent &amp; delivery.</p>`
+    : `<div class="ag-gate"><span class="lead">On Rent blocked until Selfie + Card + Signature</span></div>
+       ${agCaptureBlock(o, ag, 'account')}`;
+  return `<div class="ag-capcap" style="margin:16px 2px 8px">Signed agreement</div>${inner}`;
+}
+/* Move an account-level HELD signing onto a freshly-added card — the draft's FROZEN
+   key/version/date is preserved verbatim (it's the agreement they actually accepted,
+   not whatever the account type is now), then the held draft is cleared. */
+function attachHeldSigning(c, k) {
+  const p = c && c.pendingSigning; if (!p || !p.signature || !k) return;
+  if (!Array.isArray(k.agreements)) k.agreements = [];
+  const sig = { id: 'SIG-' + (state.seq++), key: p.key || 'rental', version: p.version || '', title: p.title || '',
+    accountType: p.accountType || '', signedAt: p.signedAt || TODAY_ISO, signerName: p.signerName || c.name || fullName(c),
+    signature: p.signature, selfie: p.selfie || '', acct: Object.assign({}, p.acct || acctSnapshot(c, k), { last4: k.last4 }), driveSignatureUrl: '', driveSelfieUrl: '', driveFolderId: '' };
+  k.agreements.push(sig);
+  c.pendingSigning = null;
+  reindex('customers', c);
+  logAction(c, `Held ${p.title || 'agreement'} attached to ${brandName(k.brand)} ••${k.last4}`);
+  archiveAgreementMedia(c, k, sig);
+}
 /* Append an immutable signing record to a card — the current account type's
-   agreement is FROZEN onto the card (title + full text snapshot) with the
-   signature + selfie. Re-signing (new card / account-type change) appends; it
-   never edits a prior record. */
+   agreement is FROZEN onto the card by its small VERSION id (text resolved from the
+   registry, never stored inline) with the signature + selfie. Re-signing (new card /
+   account-type change) appends; it never edits a prior record. The images are then
+   offloaded to Drive (graceful: stay inline until the backend handler exists). */
 function signCardAgreement(c, k, signature, selfie) {
   if (!c || !k || !signature) return;
   const key = requiredAgreementKey(c); const ag = AGREEMENTS[key] || AGREEMENTS.rental;
   if (!Array.isArray(k.agreements)) k.agreements = [];
-  k.agreements.push({ id: 'SIG-' + (state.seq++), key, title: ag.title, text: ag.text,
+  const sig = { id: 'SIG-' + (state.seq++), key, version: AGREEMENT_CURRENT[key] || '', title: ag.title,
     accountType: c.accountType || '', signedAt: TODAY_ISO, signerName: c.name || fullName(c),
-    signature, selfie: selfie || '', driveFileId: null, driveUrl: null });
+    signature, selfie: selfie || '', acct: acctSnapshot(c, k), driveSignatureUrl: '', driveSelfieUrl: '', driveFolderId: '' };
+  k.agreements.push(sig);
   reindex('customers', c);
   logAction(c, `${ag.title} signed on ${brandName(k.brand)} ••${k.last4}`);
+  archiveAgreementMedia(c, k, sig);   // offload images to Drive when the backend supports it
+}
+/* Frozen snapshot of the account fields + card ••last4 AT SIGNING — the signed-agreement
+   PDF reprints exactly what was true when accepted, even if the account is edited later. */
+function acctSnapshot(c, k) {
+  return { name: (c && (c.name || fullName(c))) || '', company: (c && c.company) || '', phone: (c && c.phone) || '',
+    email: (c && c.email) || '', industry: (c && c.industry) || '', accountType: (c && c.accountType) || '',
+    requiresPO: !!(c && c.requiresPO), last4: (k && k.last4) || '' };
+}
+/* Hold a captured signing on the account (no card yet) — saddles onto the first card added.
+   Set by Save now that there's no separate "Sign & Hold" button. */
+function holdSigning(c, signature, selfie) {
+  if (!c || !signature) return;
+  const key = requiredAgreementKey(c); const ag = AGREEMENTS[key] || AGREEMENTS.rental;
+  c.pendingSigning = { key, version: AGREEMENT_CURRENT[key] || '', title: ag.title, accountType: c.accountType || '',
+    signedAt: TODAY_ISO, signerName: c.name || fullName(c), signature, selfie: selfie || '', acct: acctSnapshot(c, null) };
+  reindex('customers', c); logAction(c, `${ag.title} signed & held (no card yet)`);
+}
+/* Save is the only commit now: persist a captured selfie + signature onto the active card
+   (the open card tab) or, with no card yet, hold it on the account. No-op without a full capture. */
+function commitCapture(o, c) {
+  const sd = o && o.signDraft; if (!c || !sd || !sd.selfie || !sd.sigData) return;
+  const k = (o.tab && o.tab !== 'account') ? customerCards(c).find((x) => x.id === o.tab) : null;
+  if (k) signCardAgreement(c, k, sd.sigData, sd.selfie);
+  else if (!customerCards(c).some((x) => cardAuthorized(c, x))) holdSigning(c, sd.sigData, sd.selfie);
+  o.signDraft = null;
+}
+/* Offload a signing's selfie + signature to Drive (per-customer folder) and replace
+   the heavy inline data-URLs with light Drive URLs — keeps the synced customer record
+   small (a Sheets cell caps ~50k chars). No-op without a backend / handler, so the
+   images simply stay inline until the Apps Script `archiveAgreementMedia` is deployed. */
+async function archiveAgreementMedia(c, k, sig) {
+  if (!backendPassword || (!sig.signature && !sig.selfie)) return;
+  try {
+    const r = await backendCall('archiveAgreementMedia', { customerId: c.customerId, cardId: k.id, signingId: sig.id,
+      signerName: sig.signerName, signedAt: sig.signedAt, signature: sig.signature, selfie: sig.selfie });
+    if (!r || !r.ok) return;   // handler absent / failed → leave images inline, try again on next sign
+    if (r.signatureUrl) { sig.driveSignatureUrl = r.signatureUrl; sig.signature = ''; }
+    if (r.selfieUrl) { sig.driveSelfieUrl = r.selfieUrl; sig.selfie = ''; }
+    if (r.folderId) sig.driveFolderId = r.folderId;
+    reindex('customers', c); saveSoon();
+  } catch (e) { /* offline / no handler — images stay inline, harmless */ }
 }
 /* Immutable PDF of a frozen signing — opens a clean, read-only print view rendered
-   ENTIRELY from the stored snapshot (title + frozen text + signature + selfie +
-   signer + date). Browser "Save as PDF" yields a file that can't be edited; the
-   content re-renders identically every time. (Drive archival can backfill later.) */
+   ENTIRELY from the stored snapshot (title + frozen text resolved from the version
+   registry + signature + selfie + signer + date). Browser "Save as PDF" yields a
+   file that can't be edited; the content re-renders identically every time. */
 function openSignedPdf(custId, cardId, sigId) {
   const c = IDX.customer.get(custId || ''); const k = c && customerCards(c).find((x) => x.id === cardId);
   const s = k && cardSignings(k).find((x) => x.id === sigId);
   if (!s) return toast('Signed agreement not found.');
   const win = window.open('', '_blank'); if (!win) return toast('Allow pop-ups to open the PDF.');
   const e2 = (t) => String(t == null ? '' : t).replace(/[&<>]/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m]));
-  win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${e2(s.title)} — ${e2(s.signerName)}</title>
-    <style>body{font:13px/1.55 Georgia,'Times New Roman',serif;color:#111;margin:40px;max-width:760px}h1{font-size:19px;margin:0 0 4px}.meta{color:#444;margin:0 0 20px;font-size:12px}pre{white-space:pre-wrap;font:inherit;margin:0}.sigs{display:flex;gap:28px;margin-top:26px;flex-wrap:wrap}figure{margin:0}.sigs img{border:1px solid #ccc;max-width:260px;max-height:120px;display:block}figcaption{font-size:10px;color:#555;text-transform:uppercase;letter-spacing:1.2px;margin-top:5px}.bar{margin-top:26px}@media print{.bar{display:none}}</style>
+  const sigSrc = signingSignatureSrc(s), selfieSrc = signingSelfieSrc(s);
+  // Frozen account snapshot taken at signing (fallback to the live record for legacy signings).
+  const a = s.acct || acctSnapshot(c, k);
+  const row = (lbl, val) => val ? `<tr><th>${e2(lbl)}</th><td>${e2(val)}</td></tr>` : '';
+  const acctRows = row('Account', a.name) + row('Company', a.company) + row('Phone', a.phone) + row('Email', a.email)
+    + row('Industry', a.industry) + row('Account type', a.accountType) + row('PO required', a.requiresPO ? 'Yes' : 'No')
+    + row('Card on file', (a.last4 || k.last4) ? '•••• ' + (a.last4 || k.last4) : '');
+  win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${e2(signingTitle(s))} — ${e2(s.signerName)}</title>
+    <style>body{font:13px/1.55 Georgia,'Times New Roman',serif;color:#111;margin:40px;max-width:760px}h1{font-size:19px;margin:0 0 4px}.meta{color:#444;margin:0 0 18px;font-size:12px}pre{white-space:pre-wrap;font:inherit;margin:0}.acct{border-collapse:collapse;margin:0 0 22px;font-size:12px}.acct th{text-align:left;color:#555;font-weight:600;padding:3px 16px 3px 0;vertical-align:top;white-space:nowrap}.acct td{padding:3px 0;color:#111}.sigs{display:flex;gap:28px;margin-top:26px;flex-wrap:wrap}figure{margin:0}.sigs img{border:1px solid #ccc;max-width:260px;max-height:120px;display:block}figcaption{font-size:10px;color:#555;text-transform:uppercase;letter-spacing:1.2px;margin-top:5px}.bar{margin-top:26px}@media print{.bar{display:none}}</style>
     </head><body>
-    <h1>${e2(s.title)}</h1>
-    <p class="meta">${e2(s.signerName)}${s.accountType ? ' · ' + e2(s.accountType) : ''} · accepted ${e2(s.signedAt || '—')} · card ••${e2(k.last4)}</p>
-    <pre>${e2(s.text)}</pre>
-    <div class="sigs">${s.signature ? `<figure><img src="${s.signature}" alt="signature"><figcaption>Signature</figcaption></figure>` : ''}${s.selfie ? `<figure><img src="${s.selfie}" alt="selfie"><figcaption>Selfie on file</figcaption></figure>` : ''}</div>
+    <h1>${e2(signingTitle(s))}</h1>
+    <p class="meta">${e2(s.signerName)}${s.accountType ? ' · ' + e2(s.accountType) : ''} · accepted ${e2(s.signedAt || '—')} · card ••${e2(a.last4 || k.last4)}</p>
+    <table class="acct">${acctRows}</table>
+    <pre>${e2(signingText(s))}</pre>
+    <div class="sigs">${sigSrc ? `<figure><img src="${e2(sigSrc)}" alt="signature"><figcaption>Signature</figcaption></figure>` : ''}${selfieSrc ? `<figure><img src="${e2(selfieSrc)}" alt="selfie"><figcaption>Selfie on file</figcaption></figure>` : ''}</div>
     <div class="bar"><button onclick="window.print()" style="padding:9px 18px;font:13px sans-serif">Save as PDF / Print</button></div>
     </body></html>`);
   win.document.close();
@@ -467,7 +612,9 @@ function searchBlob(card, rec) {
     case 'rentals': {
       const u = un(rec.unitId), c = ca(rec.categoryId), cust = cu(rec.customerId);
       p = [rec.rentalName, rec.legacyUnitName, rec.startTime, rec.deliveryAddress, rec.po, rec.notes,
-        rec.fieldCall ? 'field call fc' : '', rec.startDate, rec.endDate, rec.invoiceId,
+        rec.fieldCall ? 'field call fc' : '', rec.startDate, rec.endDate,
+        fmtShortDate(rec.startDate), fmtShortDate(rec.endDate),   // human date forms ("Jun 18") so a natural date search matches, not just ISO
+        rec.invoiceId,
         rec.status, L('rentalStatus', rec.status), L('rentalStatus', rentalDisplayStatus(rec)),
         rec.transportType, L('transportType', rec.transportType),
         u?.name, u?.make, u?.model, u?.serial, c?.name, cust?.name, cust?.company];
@@ -1280,6 +1427,7 @@ const state = {
   focusedCard: null,   // clicked card → orange border (§0.1 visual feedback, no anchor)
   transportArm: null,  // §20 route-rail two-click selector: { rentalId, unitId, node } — the FIRST stop tapped (armed orange); a second stop locks the type
   winpicker: null,     // { rentalId, monthISO, anchor } — the rental-window range picker
+  datesearch: null,    // { scope, monthISO, anchor, start, end, editIndex } — §5.4d standalone date/range SEARCH picker (type "date"→Enter)
   availWin: null,      // §10 persistent window scope for the "available" search (set by the picker; outlives it)
   filterTerms: [],            // §5.4 — AND-narrowing filter terms (type + Enter)
   unitPick: null,             // { ids, from } — Invoice +WO narrows the Units list to the invoice's linked units (Phase 4)
@@ -1295,7 +1443,8 @@ const state = {
   previewsOn: (() => { try { return localStorage.getItem('jactec.previewsOff') !== '1'; } catch (e) { return true; } })(),   // hover previews (per device)
   overbookOn: (() => { try { return localStorage.getItem('jactec.overbook') === '1'; } catch (e) { return false; } })(),   // §10 allow-overbooking policy (per device, default OFF — drag build)
   hapticsOff: (() => { try { return localStorage.getItem('jactec.hapticsOff') === '1'; } catch (e) { return false; } })(),   // §M-touch Vibration-API feedback (per device, default ON; Android-only, no-op on iOS)
-  wranglerRail: (() => { try { return JSON.parse(localStorage.getItem('jactec.wranglerRail') || '[]'); } catch (e) { return []; } })(),   // §18g the bottom-right rail of past Mr. Wrangler conversations (per device); each = a snapshot { id, title, ts, card, recId, recType, reqNumber, reqTitle, reqUrl, messages }
+  wranglerRail: [],   // §18g the bottom-right rail of past Mr. Wrangler conversations (per device), each a snapshot { id, title, ts, card, recId, recType, reqNumber, reqTitle, reqUrl, messages }. Loaded async from IndexedDB (wranglerRailLoad) — IndexedDB replaced the localStorage rail that silently overflowed.
+  settings: loadAdminSettings(),   // Settings Board admin customization (config.settings); mirrored to localStorage, applied at boot via applySettings()
 };
 const activeSession = () => (state.activeTabId ? state.tabs.find((t) => t.id === state.activeTabId)?.session : state.defaultSession) || state.defaultSession;
 /** Next unique invoice id — a monotonic counter so deleting a Quote-stage invoice can't reuse a number. */
@@ -1392,7 +1541,7 @@ function closeTab(id) {
   if (state.activeTabId === id) state.activeTabId = state.tabs.length ? state.tabs[Math.max(0, i - 1)].id : null;
   render();
 }
-function closeAll() { state.tabs = []; state.activeTabId = null; state.searchMode = false; state.query = ''; state.winpicker = null; render(); }
+function closeAll() { state.tabs = []; state.activeTabId = null; state.searchMode = false; state.query = ''; state.winpicker = null; state.datesearch = null; render(); }
 /* Wave 2 (Jac): QUOTES SURVIVE. Nothing is swept on tab close / session switch —
    a Quote-status rental (or any fresh record) lives until Completed/Cancelled
    or deliberately deleted. The `mock` flag stays purely a UI affordance gate
@@ -1648,6 +1797,19 @@ function availSearchActive() {
   return ['units', 'categories'].some((c) => s.cards[c] && AVAIL_RE.test(s.cards[c].search || ''))
     || AVAIL_RE.test(state.query || '') || (state.filterTerms || []).some((t) => /^(?:un)?available$/.test(t.t));
 }
+/* §5.4d — DATE SEARCH. A `__date` filter term (value 'ISO' or 'ISO..ISO', built by
+   the date picker — type "date"/"dates" → Enter) matches records that HAVE a date:
+   rentals by WINDOW OVERLAP with the picked range, point-dated cards if ANY of their
+   dates lands in the range (invoices test issued OR due). Cards with no date of their
+   own are left alone — the term is stripped there so it filters neither in nor out. */
+const DATE_CARDS = new Set(['rentals', 'invoices', 'workOrders', 'inspections', 'expenses', 'files']);
+function recordDateMatch(card, rec, qFrom, qTo) {
+  if (card === 'rentals') { const s = rec.startDate; if (!s) return false; const e = rec.endDate || s; return s <= qTo && e >= qFrom; }   // window overlap
+  const pts = card === 'invoices' ? [rec.date, rec.dueDate] : card === 'files' ? [rec.reviewByDate] : [rec.date];
+  return pts.some((d) => d && d >= qFrom && d <= qTo);
+}
+function dateTermHits(card, rec, value) { const [a, b] = String(value).split('..'); return recordDateMatch(card, rec, a, b || a); }
+function dateScopedTerms(card, terms) { return DATE_CARDS.has(card) ? (terms || []) : (terms || []).filter((t) => t.col !== '__date'); }
 function rowMatches(card, rec, query, terms) {
   const ql = (query || '').toLowerCase();
   const tl = (terms || []).map((t) => t.t);
@@ -1666,17 +1828,19 @@ function rowMatches(card, rec, query, terms) {
   // "Ready" can't also catch "Not Ready"; plain text terms fall to the blob substring match.
   // §13.4 — a NOT term excludes on its own; positive terms of the SAME column OR together
   // (toggle several graph slices = match any), while different columns still AND.
+  const terms2b = dateScopedTerms(card, terms2);   // §5.4d — drop date terms on date-less cards (no-op)
   const byCol = {};
-  for (const t of terms2) {
+  for (const t of terms2b) {
     if (!t.col) continue;
     if (t.neg) { if (totColMatch(card, rec, t.col, t.value)) return false; }
     else (byCol[t.col] = byCol[t.col] || []).push(t.value);
   }
   for (const col in byCol) { if (!byCol[col].some((v) => totColMatch(card, rec, col, v))) return false; }
-  return blobMatches(IDX.search.get(card + ':' + idOf(card, rec)), q2, terms2.filter((t) => !t.col));
+  return blobMatches(IDX.search.get(card + ':' + idOf(card, rec)), q2, terms2b.filter((t) => !t.col));
 }
 // A1 — exact match for a footer-chip's {col, value}, per record (mirrors applyTotalFilter).
 function totColMatch(card, rec, col, value) {
+  if (col === '__date') return dateTermHits(card, rec, value);   // §5.4d date-picker filter term
   if (col === '__wo') return DATA.workOrders.some((w) => w.unitId === rec.unitId && w.phase !== 'Complete' && !w.cancelled && (value === 'open' || w.phase === 'Part Ordered' || (w.lineItems || []).some((l) => l.phase === 'Part Ordered')));
   if (col === '__cond') return rec.inspectionStatus === value;
   if (col === '__svc') { const s = topServiceForUnit(rec); return !!rec.washRequested || !!(s && s.remaining < 0); }   // service-due: overdue service or wash requested
@@ -1733,6 +1897,10 @@ function colFilterLabel(card, col, value) {
 }
 function addFilterTerm(scope, raw) {
   const v = (raw || '').trim().toLowerCase(); if (!v) return;
+  if (v === 'date' || v === 'dates') {   // §5.4d — the keyword opens the date/range picker instead of pinning the word
+    if (scope === 'global') state.query = ''; else activeSession().cards[scope].search = '';
+    return openDateSearch(scope);
+  }
   const arr = termsFor(scope);
   if (!arr.some((ft) => ft.t === v)) arr.push({ t: v, neg: false });
   if (scope === 'global') state.query = ''; else activeSession().cards[scope].search = '';
@@ -1744,7 +1912,8 @@ function toggleFilterNeg(scope, i) { const arr = termsFor(scope); if (arr[i]) ar
 /** A pinned filter-term pill: leading ○ toggle (→ red − = NOT) + label. The whole
     pill is click-to-remove (js-ft-x); the ○ toggle is checked first so it wins. */
 function filterTermPill(ft, i, scope) {
-  return `<span class="filt-term${ft.neg ? ' neg' : ''} js-ft-x" data-scope="${esc(scope)}" data-i="${i}" data-tip="Click to remove">`
+  const isDate = ft.col === '__date';   // §5.4d date chip: whole pill re-opens the picker (edit), not remove
+  return `<span class="filt-term${ft.neg ? ' neg' : ''}${isDate ? ' is-date js-date-edit' : ' js-ft-x'}" data-scope="${esc(scope)}" data-i="${i}" data-tip="${isDate ? 'Click to change the date' : 'Click to remove'}">`
     + `<button class="ft-neg js-ft-neg" data-scope="${esc(scope)}" data-i="${i}" data-tip="${ft.neg ? 'Excluding — click to include' : 'Including — click to exclude'}"></button>`
     + `<span class="lbl">${esc(ft.t)}</span>`
     + `</span>`;
@@ -1753,71 +1922,543 @@ function filterTermPill(ft, i, scope) {
 /* ════════════════════════════════════════════════════════════════════════
    §5a ICONS — inline SVG (stroke-based, currentColor)
    ════════════════════════════════════════════════════════════════════════ */
-const I = {
-  circle: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="5"/><rect x="9.3" y="9.3" width="5.4" height="5.4" rx="1.6" fill="currentColor" stroke="none"/></svg>',
-  plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>',
-  search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>',
-  x: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M6 6l12 12M18 6 6 18"/></svg>',
-  filter: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5h18l-7 8v6l-4-2v-4z"/></svg>',
-  grid: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>',
-  truck: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 5h13v11H1zM14 8h4l4 4v4h-8z"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="18" r="2"/></svg>',
-  back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M15 6l-6 6 6 6"/></svg>',
-  list: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/></svg>',
-  mark: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l5-12 4 8 3-5 6 9z"/></svg>',
-  sun: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5 19 19M19 5l-1.5 1.5M6.5 17.5 5 19"/></svg>',
-  moon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A8 8 0 1 1 11.2 3 6 6 0 0 0 21 12.8z"/></svg>',
-  hardhat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M3 18a9 9 0 0 1 18 0z"/><path d="M2 18h20"/><path d="M10 9V6a2 2 0 0 1 2-2 2 2 0 0 1 2 2v3"/><path d="M5 14V12M19 14V12"/></svg>',
-  horseshoe: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3.5C3.5 6 3 11 5 15.5 6.2 18.3 9 20 12 20s5.8-1.7 7-4.5C21 11 20.5 6 17 3.5"/><path d="M6.5 19.5l-.5 1.5M17.5 19.5l.5 1.5"/></svg>',
-  bluesteel: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/><circle cx="6.4" cy="6.5" r=".7" fill="currentColor" stroke="none"/><circle cx="17.6" cy="6.5" r=".7" fill="currentColor" stroke="none"/></svg>',
-  qr: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h3v3h-3zM20 14v7M14 20h7"/></svg>',
-  mouse: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="7"/><path d="M12 6v4"/></svg>',
-  video: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="13" height="12" rx="2"/><path d="m15 10 6-3v10l-6-3z"/></svg>',
-  camera: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.5 4h-5L7.5 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3.5z"/><circle cx="12" cy="13" r="3"/></svg>',
-  droplet: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3s6 6.4 6 10.5a6 6 0 0 1-12 0C6 9.4 12 3 12 3z"/></svg>',
-  table: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9.5h18M3 15h18M9 4v16"/></svg>',
-  graph: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 3v17h17"/><rect x="7.5" y="11" width="2.6" height="6" rx="0.6" fill="currentColor" stroke="none"/><rect x="12" y="7.5" width="2.6" height="9.5" rx="0.6" fill="currentColor" stroke="none"/><rect x="16.5" y="13" width="2.6" height="4" rx="0.6" fill="currentColor" stroke="none"/></svg>',
-  sliders: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h10M18 6h2M4 12h2M10 12h10M4 18h12M20 18h0M16 18h4"/><circle cx="16" cy="6" r="2"/><circle cx="8" cy="12" r="2"/><circle cx="14" cy="18" r="2"/></svg>',
-  inbox: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>',
-  bell: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>',
-  eye: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>',
-  eyeOff: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.9 4.24A9.1 9.1 0 0 1 12 4c6.5 0 10 7 10 7a13.2 13.2 0 0 1-2 2.6M6.6 6.6A13.2 13.2 0 0 0 2 11s3.5 7 10 7a9.1 9.1 0 0 0 4-.9"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2M2 2l20 20"/></svg>',
-  feedback: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M9.5 9.5h5M9.5 12.7h3"/></svg>',
-  box: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7l9-4 9 4-9 4z"/><path d="M3 7v10l9 4 9-4V7"/><path d="M12 11v10"/></svg>',
-  doc: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2h8l4 4v16H6z"/><path d="M14 2v4h4"/></svg>',
-  lock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>',
-  lockOpen: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.5-2"/></svg>',
-  chev: '<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 9l6 6 6-6"/></svg>',
-  chevL: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>',
-  chevR: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>',
-  chat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>',
-};
+/* Icon registries (I, CARD_ICON, RING_ICON) live in icons.js — generic glyphs
+   are vendored VERBATIM from Lucide (regenerate: `node tools/gen-icons.mjs`),
+   bespoke brand/ranch marks kept there. GATE_ICON (gate-timeline status glyphs)
+   stays below in §5, intentionally bespoke. */
 
-/* Card + KPI-ring glyphs — sourced from free libraries (Lucide MIT; the excavator
-   is Tabler's "backhoe", MIT). Inlined per §6.2 #12 (stroke-based, currentColor). */
-const ico = (p) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
-const CARD_ICON = {
-  customers:     ico('<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>'),                                // person
-  rentals:       ico('<path d="M8 2v4M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/>'),                    // calendar
-  categories:    ico('<path d="M2 17a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/><path d="M11 17a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/><path d="M13 19h-9"/><path d="M4 15h9"/><path d="M8 12v-5h2a3 3 0 0 1 3 3v5"/><path d="M5 15v-2a1 1 0 0 1 1 -1h7"/><path d="M21.12 9.88l-3.12 -4.88l-5 5"/><path d="M21.12 9.88a3 3 0 0 1 -2.12 5.12a3 3 0 0 1 -2.12 -.88l4.24 -4.24"/>'), // excavator (Tabler backhoe)
-  units:         ico('<path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/>'), // tag (asset)
-  invoices:      ico('<path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1-2-1Z"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><path d="M12 17.5v-11"/>'), // receipt
-  workOrders:    ico('<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>'), // wrench
-  serviceOrders: ico('<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>'),  // heart
-  inspections:   ico('<rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 14 2 2 4-4"/>'),   // clipboard-check (done)
-  inspectionsPending: ico('<rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M10 12.3a2 2 0 1 1 2.7 1.9c-.6.3-1 .7-1 1.4"/><path d="M11.7 17.8h.01"/>'),   // clipboard-question (Not Ready / pending)
-  shop:          ico('<path d="m15 12-8.5 8.5a2.12 2.12 0 1 1-3-3L12 9"/><path d="M17.64 15 22 10.64"/><path d="m20.91 11.7-1.25-1.25c-.6-.6-.93-1.4-.93-2.25v-.86L16.01 4.6a5.56 5.56 0 0 0-3.94-1.64H9l.92.82A6.18 6.18 0 0 1 12 8.4v1.56l2 2h2.47l2.26 1.91"/>'), // hammer (Shop)
-  parts:         ico('<path d="M16.5 9.4 7.55 4.24"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>'), // package
-  vendors:       ico('<path d="M3 9h18v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M3 9l1.5-5h15L21 9"/><path d="M3 9h18"/><path d="M9 22V12h6v10"/>'),  // storefront
-  expenses:      ico('<path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"/><path d="M14 8h-4M14 12h-4M12 16h-2"/>'),  // receipt
-  files:         ico('<path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/>'),  // folder
+/* ════════════════════════════════════════════════════════════════════════
+   SETTINGS BOARD — admin customization (config.settings).
+   A curated, VENDORED subset of Lucide (MIT) glyphs an admin can pin to a
+   status option from the Statuses & Icons tab. Inlined as path data via ico()
+   — same dependency-free pattern as I / CARD_ICON. NEVER a runtime import.
+   ════════════════════════════════════════════════════════════════════════ */
+const STATUS_ICONS = {
+  check:       ico('<path d="M20 6 9 17l-5-5"/>'),
+  checkCircle: ico('<circle cx="12" cy="12" r="9"/><path d="m8.5 12 2.5 2.5 4.5-4.5"/>'),
+  x:           ico('<path d="M18 6 6 18M6 6l12 12"/>'),
+  xCircle:     ico('<circle cx="12" cy="12" r="9"/><path d="m15 9-6 6M9 9l6 6"/>'),
+  alert:       ico('<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/>'),
+  ban:         ico('<circle cx="12" cy="12" r="9"/><path d="m5.6 5.6 12.8 12.8"/>'),
+  clock:       ico('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
+  hourglass:   ico('<path d="M6 2h12M6 22h12M7 2c0 4 4 5 5 7 1-2 5-3 5-7M7 22c0-4 4-5 5-7 1 2 5 3 5 7"/>'),
+  calendar:    ico('<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M3 10h18M8 2v4M16 2v4"/>'),
+  truck:       ico('<path d="M14 18V6a1 1 0 0 0-1-1H3a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h1"/><path d="M14 9h4l3 3v5a1 1 0 0 1-1 1h-1M15 18H9"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="18" r="2"/>'),
+  mapPin:      ico('<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/>'),
+  refresh:     ico('<path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/>'),
+  wrench:      CARD_ICON.workOrders,
+  hammer:      CARD_ICON.shop,
+  package:     CARD_ICON.parts,
+  clipboard:   CARD_ICON.inspections,
+  dollar:      ico('<path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>'),
+  cart:        ico('<circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/><path d="M2 3h3l2.6 12.4a1 1 0 0 0 1 .8h8.7a1 1 0 0 0 1-.78L22 7H6"/>'),
+  tag:         ico('<path d="M12.6 2.6 21 11a2 2 0 0 1 0 3l-6.5 6.5a2 2 0 0 1-3 0L3 12V4a1.4 1.4 0 0 1 1.4-1.4z"/><circle cx="7.5" cy="7.5" r="1.3" fill="currentColor"/>'),
+  flag:        ico('<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><path d="M4 22v-7"/>'),
+  star:        ico('<path d="M12 2l3 6.5 7 .9-5 4.8 1.3 7-6.3-3.4L5.7 21l1.3-7-5-4.8 7-.9z"/>'),
+  zap:         ico('<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>'),
+  snowflake:   ico('<path d="M12 2v20M4 7l16 10M20 7 4 17M2 12h20"/>'),
+  shield:      ico('<path d="M12 2 4 5v6c0 5 3.5 8 8 11 4.5-3 8-6 8-11V5z"/>'),
+  lock:        I.lock,
+  unlock:      I.lockOpen,
+  pause:       ico('<rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/>'),
+  play:        ico('<path d="M6 4v16l13-8z"/>'),
+  arrowUp:     ico('<path d="M12 19V5M5 12l7-7 7 7"/>'),
+  arrowDown:   ico('<path d="M12 5v14M19 12l-7 7-7-7"/>'),
+  thumbsUp:    ico('<path d="M7 11v9H3a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1z"/><path d="M7 11l4-8a2 2 0 0 1 3 2l-1 5h5a2 2 0 0 1 2 2.3l-1.2 6A2 2 0 0 1 17 21H7"/>'),
+  thumbsDown:  ico('<path d="M17 13V4h4a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1z"/><path d="M17 13l-4 8a2 2 0 0 1-3-2l1-5H6a2 2 0 0 1-2-2.3l1.2-6A2 2 0 0 1 7 3h10"/>'),
+  phone:       ico('<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3 19.5 19.5 0 0 1-6-6 19.8 19.8 0 0 1-3-8.6A2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.2a2 2 0 0 1 2.1-.5c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z"/>'),
+  mail:        ico('<rect x="2" y="4" width="20" height="16" rx="2"/><path d="m2 6 10 7L22 6"/>'),
+  user:        ico('<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>'),
+  eye:         I.eye,
+  droplet:     I.droplet,
+  bell:        I.bell,
+  gauge:       ico('<path d="M12 14 8 9"/><path d="M3.3 17a9 9 0 1 1 17.4 0z"/>'),
+  circle:      ico('<circle cx="12" cy="12" r="9"/>'),
 };
-const RING_ICON = {
-  mechanic: CARD_ICON.workOrders,  // wrench
-  mtech:    ico('<path d="M2 18a1 1 0 0 0 1 1h18a1 1 0 0 0 1-1v-1a1 1 0 0 0-1-1H3a1 1 0 0 0-1 1Z"/><path d="M10 10V5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v5"/><path d="M4 15v-3a6 6 0 0 1 6-6"/><path d="M14 6a6 6 0 0 1 6 6v3"/>'),  // hard-hat
-  driver:   ico('<path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.62l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/>'),  // truck
-  office:   ico('<path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4M10 10h4M10 14h4M10 18h4"/>'),  // building
-  sales:    ico('<path d="M16 7h6v6"/><path d="m22 7-8.5 8.5-5-5L2 17"/>'),  // trending-up
-};
+// Sets exposed in the Statuses & Icons tab (curated — derived sets like serviceStatus are omitted).
+const SETTINGS_STATUS_SETS = [
+  { set: 'rentalStatus', label: 'Rental Status' }, { set: 'unitInspectionStatus', label: 'Inspection' },
+  { set: 'unitFleetStatus', label: 'Fleet' }, { set: 'invoiceStatus', label: 'Invoice' },
+  { set: 'customerPayStatus', label: 'Customer Pay' }, { set: 'customerAccountType', label: 'Account Type' },
+  { set: 'transportType', label: 'Transport' }, { set: 'woPhase', label: 'WO Phase' },
+  { set: 'funnelStage', label: 'Sales Funnel' }, { set: 'gpsStatus', label: 'GPS' },
+  { set: 'expenseCategory', label: 'Expense Category' }, { set: 'paymentMethod', label: 'Payment Method' },
+];
+
+/* Snapshot the registry's shipped label/color so applyStatusOverrides() can RESET an
+   option an admin later un-customizes. Captured once, at module load. */
+const STATUS_DEFAULTS = {};
+for (const set of Object.keys(STATUS)) {
+  STATUS_DEFAULTS[set] = {};
+  for (const v of Object.keys(STATUS[set])) STATUS_DEFAULTS[set][v] = { color: STATUS[set][v].color, label: STATUS[set][v].label };
+}
+const ovIcon = (st) => (st && st.icon && STATUS_ICONS[st.icon]) || '';   // an admin-assigned status icon (else none)
+
+function loadAdminSettings() { try { return JSON.parse(localStorage.getItem('jactec.settings') || '{}') || {}; } catch (e) { return {}; } }
+/* Apply presentational status overrides by mutating the frozen STATUS records IN PLACE
+   (color/label/icon only — never the value/key, so cascade + import are untouched). Every
+   render reads through getStatus(), so one mutation propagates everywhere. */
+function applyStatusOverrides(over) {
+  over = over || {};
+  for (const set of Object.keys(STATUS)) {
+    const o = over[set] || {};
+    for (const v of Object.keys(STATUS[set])) {
+      const def = STATUS_DEFAULTS[set][v], rec = STATUS[set][v], ov = o[v] || {};
+      rec.color = ov.color || def.color;
+      rec.label = ov.label || def.label;
+      if (ov.icon) rec.icon = ov.icon; else delete rec.icon;
+    }
+  }
+}
+// Self-healing apply: a bad/corrupt customization must NEVER brick the app. If applying the
+// overrides throws, wipe the saved settings and fall back to the shipped defaults so the next
+// render (and every future boot) is clean. Render-time reads are independently defensive.
+let settingsReverted = false;
+function applySettings(s) {
+  s = s || state.settings || {};
+  try {
+    applyStatusOverrides(s.status);
+  } catch (e) {
+    settingsReverted = true;
+    try { applyStatusOverrides(null); } catch (_) {}
+    try { localStorage.removeItem('jactec.settings'); } catch (_) {}
+    state.settings = {};
+    try { console.error('Rental Wrangler: a saved customization failed to apply — reverted to defaults.', e); } catch (_) {}
+  }
+}
+function persistAdminSettings(s) {
+  try { const prev = localStorage.getItem('jactec.settings'); if (prev && prev !== '{}') localStorage.setItem('jactec.settings.prev', prev); } catch (e) {}   // one-level undo backup
+  state.settings = s;
+  try { localStorage.setItem('jactec.settings', JSON.stringify(s)); } catch (e) {}
+  applySettings(s);
+}
+const hasSettingsBackup = () => { try { const p = localStorage.getItem('jactec.settings.prev'); return !!(p && p !== '{}'); } catch (e) { return false; } };
+// The settings slice a given tab owns + the value that resets JUST that tab to shipped defaults.
+// (Empties are explicit per-key so the editor shows defaults regardless of what's still saved.)
+function pageDefaultSlice(tab) {
+  switch (tab) {
+    case 'statuses': return { key: 'status', value: {} };
+    case 'kpis': return { key: 'kpis', value: {} };
+    case 'general': return { key: 'company', value: {} };
+    case 'requirements': return { key: 'rentalRules', value: {} };
+    case 'layout': return { key: 'layout', value: { footers: {} } };
+    case 'fields': return { key: 'customFields', value: { customers: [], units: [], rentals: [], invoices: [] } };
+    case 'inspections': return { key: 'inspections', value: Object.fromEntries((DATA.categories || []).map((c) => [c.categoryId, { required: false, items: [] }])) };
+    default: return null;   // Logins / planned tabs have no resettable slice
+  }
+}
+/* Reset only the CURRENT tab to defaults — a gentle step before "Reset all". Reverts the tab's
+   DRAFT slice (so Cancel undoes it, Save keeps it); other tabs' customizations are untouched. */
+function resetPageSettings() {
+  const o = state.overlay; if (!o || o.kind !== 'settings') return;
+  const slice = pageDefaultSlice(o.tab); if (!slice) return;
+  o.draftSettings = o.draftSettings || {};
+  o.draftSettings[slice.key] = JSON.parse(JSON.stringify(slice.value));
+  if (o.tab === 'fields') o.cfDraft = { label: '', type: 'text', required: false };
+  if (o.tab === 'inspections') o.inspDraft = '';
+  o.resetArm = false;
+  const lbl = (SETTINGS_TABS.find((t) => t.id === o.tab) || {}).label || 'This tab';
+  toast(`${lbl} reset to defaults — Save to keep, or Cancel to undo.`);
+  renderOverlay();
+}
+/* Reset EVERY admin customization back to shipped defaults (Settings → Reset all). Persists the
+   empty config so it sticks across devices, then reloads the board clean. */
+async function resetAllSettings() {
+  const o = state.overlay; if (!o || o.kind !== 'settings') return;
+  try { if (o.adminPw) await backendCall('setConfig', { password: o.adminPw, config: { roles: o.config.roles, admin: o.config.admin, settings: {} } }); } catch (e) {}
+  persistAdminSettings({});
+  o.draftSettings = {}; o.config.settings = {}; o.resetArm = false;
+  closeOverlay(); toast('All customizations reset to the shipped defaults.'); render();
+}
+/* Undo the single most recent Save (restores jactec.settings.prev). */
+async function undoLastSettings() {
+  let prev; try { prev = JSON.parse(localStorage.getItem('jactec.settings.prev') || 'null'); } catch (e) {}
+  if (!prev) { toast('Nothing to undo.'); return; }
+  const o = state.overlay;
+  try { if (o && o.adminPw) await backendCall('setConfig', { password: o.adminPw, config: { roles: o.config.roles, admin: o.config.admin, settings: prev } }); } catch (e) {}
+  try { localStorage.removeItem('jactec.settings.prev'); } catch (e) {}
+  persistAdminSettings(prev);
+  try { localStorage.removeItem('jactec.settings.prev'); } catch (e) {}   // don't chain undos off the restore
+  if (o) { o.draftSettings = JSON.parse(JSON.stringify(prev)); o.config.settings = prev; }
+  toast('Reverted to the previous settings.'); renderOverlay(); render();
+}
+// Company identity (Settings → Company). Read-through with shipped fallbacks, so an empty
+// config keeps every surface exactly as it ships today.
+const companyCfg = () => (state.settings && state.settings.company) || {};
+// Layout prefs (Settings → Layout & Footers). Read-through; default keeps every footer shown.
+const layoutCfg = () => (state.settings && state.settings.layout) || {};
+const footerHidden = (card) => (layoutCfg().footers || {})[card] === 'off';
+// Admin-defined custom fields per entity (Settings → Custom Fields). Values live schema-less
+// on the record (rec.custom[fieldId]); an empty config means no extra fields anywhere.
+const customFieldsFor = (entity) => ((state.settings && state.settings.customFields) || {})[entity] || [];
+// Per-category inspection checklists (Settings → Inspections). Empty = today's quick Pass/Fail only.
+const inspectionCfg = (categoryId) => ((state.settings && state.settings.inspections) || {})[categoryId] || null;
+function checklistFor(unit) { const c = unit && inspectionCfg(unit.categoryId); return (c && Array.isArray(c.items) && c.items.length) ? c : null; }
+const checklistRequired = (unit) => { const c = checklistFor(unit); return !!(c && c.required); };
+const COMPANY_DEFAULTS = { name: 'JacRentals', tagline: 'Heavy-Equipment Rental · Sulphur, LA', revenueGoal: (CFG.REVENUE_GOAL_DEFAULT || 150000), maxNetDays: 30 };
+const companyName = () => (companyCfg().name || '').trim() || COMPANY_DEFAULTS.name;
+const companyTagline = () => (companyCfg().tagline || '').trim() || COMPANY_DEFAULTS.tagline;
+const companyRevenueGoal = () => { const n = Number(companyCfg().revenueGoal); return n > 0 ? n : COMPANY_DEFAULTS.revenueGoal; };
+// System-wide ceiling on customer Net-day terms (Settings → Company). Caps every customer's net days.
+const companyMaxNetDays = () => { const n = Number(companyCfg().maxNetDays); return n >= 0 && isFinite(n) ? n : COMPANY_DEFAULTS.maxNetDays; };
+// Normalize a raw Net-days draft value → an integer 0..max, or undefined when blank.
+const normNetDays = (v) => { if (v === '' || v == null) return undefined; const n = Math.round(Number(v)); return isFinite(n) ? Math.max(0, Math.min(n, companyMaxNetDays())) : undefined; };
+// Invoice due-date from the customer's Net-days terms (capped at the system max). Net X → creation
+// date + X days (0 = COD/due today). Unset keeps the shipped 14-day default, so existing customers
+// are unchanged.
+function dueForCustomer(customerId) {
+  const c = customerId ? IDX.customer.get(customerId) : null;
+  const nd = normNetDays(c && c.netDays);
+  return nd != null ? addDays(TODAY_ISO, nd) : addDays(TODAY_ISO, 14);
+}
+
+/* ── Settings Board render (tab rail + panes). The rail lists every planned tab so
+   the information architecture is visible; v1 ships Logins + Statuses working, the
+   rest as "Planned" stubs (each becomes a follow-on spec). ── */
+const SETTINGS_TABS = [
+  { id: 'logins',        label: 'Roles & Logins',  icon: I.lock,                 v1: true },
+  { id: 'statuses',      label: 'Statuses & Icons', icon: STATUS_ICONS.tag,       v1: true },
+  { id: 'general',       label: 'Company',          icon: CARD_ICON.vendors,      v1: true },
+  { id: 'fields',        label: 'Custom Fields',    icon: I.sliders,              v1: true },
+  { id: 'inspections',   label: 'Inspections',      icon: CARD_ICON.inspections,  v1: true },
+  { id: 'requirements',  label: 'Rental Rules',     icon: STATUS_ICONS.shield,    v1: true },
+  { id: 'kpis',          label: 'KPIs & Rings',     icon: STATUS_ICONS.gauge,     v1: true },
+  { id: 'notifications', label: 'Notifications',    icon: I.bell,                 note: 'Team chat on/off, driver dispatch alerts, customer reminders & cadence.' },
+  { id: 'layout',        label: 'Layout & Footers', icon: I.grid,                 v1: true },
+  { id: 'integrations',  label: 'Integrations',     icon: STATUS_ICONS.zap,       note: 'Stripe, Maps, telematics feed — references & toggles (secrets stay server-side).' },
+];
+const draftStatusOv = (o, set, val) => (((o.draftSettings || {}).status || {})[set] || {})[val] || {};
+function setDraftStatus(o, set, val, patch) {
+  o.draftSettings = o.draftSettings || {};
+  o.draftSettings.status = o.draftSettings.status || {};
+  o.draftSettings.status[set] = o.draftSettings.status[set] || {};
+  const next = { ...(o.draftSettings.status[set][val] || {}), ...patch };
+  if (!next.color) delete next.color; if (!next.icon) delete next.icon; if (!next.label) delete next.label;   // empties → fall back to the shipped default
+  if (Object.keys(next).length) o.draftSettings.status[set][val] = next; else delete o.draftSettings.status[set][val];
+}
+function captureLoginEdits(o) {   // keep typed-but-unsaved password edits across a tab switch
+  const root = document.querySelector('.settings-popup .popup-body'); if (!root) return;
+  if (!root.querySelector('.set-input[data-role]')) return;
+  const roles = {}; root.querySelectorAll('.set-input[data-role]').forEach((i) => { roles[i.dataset.role] = i.value; });
+  o.config.roles = roles; o.config.admin = root.querySelector('.set-input[data-admin]')?.value ?? o.config.admin;
+}
+function settingsBoardHtml(o) {
+  const rail = SETTINGS_TABS.map((t) => `<button class="set-tab js-set-tab${o.tab === t.id ? ' on' : ''}" data-tab="${t.id}"><span class="set-tab-ic">${t.icon || ''}</span><span class="set-tab-l">${esc(t.label)}</span>${t.v1 ? '' : '<span class="set-tab-dot" data-tip="Planned — wired in next"></span>'}</button>`).join('');
+  let pane;
+  if (o.tab === 'statuses') pane = settingsStatusesPane(o);
+  else if (o.tab === 'logins') pane = settingsLoginsPane(o);
+  else if (o.tab === 'kpis') pane = settingsKpisPane(o);
+  else if (o.tab === 'general') pane = settingsCompanyPane(o);
+  else if (o.tab === 'requirements') pane = settingsRulesPane(o);
+  else if (o.tab === 'layout') pane = settingsLayoutPane(o);
+  else if (o.tab === 'fields') pane = settingsFieldsPane(o);
+  else if (o.tab === 'inspections') pane = settingsInspectionsPane(o);
+  else pane = settingsPlannedPane(SETTINGS_TABS.find((t) => t.id === o.tab));
+  return `<div class="set-board"><nav class="set-rail" aria-label="Settings sections">${rail}</nav><div class="set-pane">${pane}</div></div>`;
+}
+function settingsLoginsPane(o) {
+  const cfg = o.config || { roles: {}, admin: '' };
+  const roleRows = Object.keys(cfg.roles || {}).map((role) => `<label class="set-row"><span class="set-role">${esc(role)}</span><input class="set-input" data-role="${esc(role)}" value="${esc(cfg.roles[role])}" autocomplete="off" /></label>`).join('');
+  return `
+    <div class="set-pane-head"><h4>Roles &amp; Logins</h4><p>Each role signs in with its password (plus their name). Changes apply at next sign-in.</p></div>
+    ${roleRows}
+    <label class="set-row set-admin"><span class="set-role">Admin</span><input class="set-input" data-admin="1" value="${esc(cfg.admin || '')}" autocomplete="off" /></label>
+    <div class="set-row" style="margin-top:14px;align-items:center"><span class="set-role" style="flex:0 0 auto" data-tip="ON: dropping a unit onto a conflicting rental links anyway — both sides get a pulsing red 'Overbooked' flag while the overlap exists. OFF: the drop is blocked, naming the conflict.">Allow overbooking</span>${segCtl([{ label: 'Off', js: 'js-overbook', data: { val: '0' }, on: state.overbookOn ? null : 'red' }, { label: 'On', js: 'js-overbook', data: { val: '1' }, on: state.overbookOn ? 'green' : null }])}</div>
+    <p class="set-note">Drag &amp; drop policy — saved on this device.</p>
+    <div class="set-row" style="margin-top:12px;align-items:center"><span class="set-role" style="flex:0 0 auto" data-tip="A light vibration confirms committed actions on phones (post a chat, drop a link, complete a WO, release-to-cancel). Android only — iOS has no vibration.">Haptic feedback</span>${segCtl([{ label: 'Off', js: 'js-haptics', data: { val: '0' }, on: state.hapticsOff ? 'red' : null }, { label: 'On', js: 'js-haptics', data: { val: '1' }, on: state.hapticsOff ? null : 'green' }])}</div>
+    <p class="set-note">Touch feedback — saved on this device.</p>`;
+}
+function settingsCompanyPane(o) {
+  const co = (o.draftSettings && o.draftSettings.company) || (state.settings && state.settings.company) || {};
+  const v = (k) => esc(co[k] != null ? co[k] : '');
+  const ph = (k) => esc(COMPANY_DEFAULTS[k]);
+  const goal = Number(co.revenueGoal) > 0 ? Number(co.revenueGoal) : COMPANY_DEFAULTS.revenueGoal;
+  const maxNet = (co.maxNetDays != null && co.maxNetDays !== '' && isFinite(Number(co.maxNetDays))) ? Number(co.maxNetDays) : COMPANY_DEFAULTS.maxNetDays;
+  return `
+    <div class="set-pane-head"><h4>Company</h4><p>Your yard's identity and targets. These flow onto printed receipts and the dashboard — leave one blank to keep the shipped default.</p></div>
+    <div class="co-form">
+      <label class="co-fld"><span class="kpi-cap">COMPANY NAME</span><input class="co-in js-co-field" data-f="name" value="${v('name')}" placeholder="${ph('name')}" autocomplete="off"/></label>
+      <label class="co-fld"><span class="kpi-cap">TAGLINE / SUBLINE</span><input class="co-in js-co-field" data-f="tagline" value="${v('tagline')}" placeholder="${ph('tagline')}" autocomplete="off"/></label>
+      <label class="co-fld co-fld-goal"><span class="kpi-cap">MONTHLY REVENUE GOAL</span><span class="co-goal-wrap"><span class="co-goal-$">$</span><input class="co-in co-in-num js-co-field" data-f="revenueGoal" value="${co.revenueGoal != null ? esc(co.revenueGoal) : ''}" placeholder="${COMPANY_DEFAULTS.revenueGoal}" inputmode="numeric" autocomplete="off"/></span></label>
+      <p class="set-note">Feeds the Sales <strong>Revenue Goal</strong> ring — currently <strong>${esc(money(goal))}/mo</strong>. The ring fills as this month's rental revenue climbs toward it.</p>
+      <label class="co-fld co-fld-goal"><span class="kpi-cap">MAX PAYMENT TERMS (NET DAYS)</span><span class="co-goal-wrap"><input class="co-in co-in-num js-co-field" data-f="maxNetDays" value="${co.maxNetDays != null ? esc(co.maxNetDays) : ''}" placeholder="${COMPANY_DEFAULTS.maxNetDays}" inputmode="numeric" autocomplete="off"/><span class="co-goal-suffix">days</span></span></label>
+      <p class="set-note">The ceiling on any customer's Net-day terms (currently <strong>${esc(maxNet)} days</strong>). A customer's Net X auto-sets their invoice due date, capped here.</p>
+      <div class="co-preview">
+        <span class="kpi-cap">RECEIPT PREVIEW</span>
+        <div class="co-receipt"><div class="co-receipt-brand">${esc(companyDraftName(co))}</div><div class="co-receipt-sub">${esc(companyDraftTagline(co))}</div></div>
+      </div>
+    </div>`;
+}
+const companyDraftName = (co) => (String(co.name || '').trim() || COMPANY_DEFAULTS.name);
+const companyDraftTagline = (co) => (String(co.tagline || '').trim() || COMPANY_DEFAULTS.tagline);
+// Rental Rules — data-ready requirements (enforced) + those still needing a capture field.
+const RENTAL_RULES_READY = [
+  { key: 'card', label: 'Card on file', desc: 'A valid (un-expired) card saved to the customer.' },
+  { key: 'signature', label: 'Signed agreement', desc: 'The customer has e-signed the rental agreement.' },
+  { key: 'selfie', label: 'Customer selfie', desc: 'A selfie captured in the account packet.' },
+  { key: 'id', label: 'Driver’s license / ID', desc: 'An ID / license number on the customer account.' },
+  { key: 'terms', label: 'Payment terms set', desc: 'Customer has Net-days entered (0 = COD; drives the due date).' },
+  { key: 'po', label: 'PO number', desc: "A PO number on the rental's invoice." },
+];
+const RENTAL_RULES_PLANNED = [
+  { label: 'Deposit', desc: 'Needs a deposit amount + payment concept on the rental.' },
+];
+function settingsRulesPane(o) {
+  const draft = (o.draftSettings && o.draftSettings.rentalRules) || (state.settings && state.settings.rentalRules) || {};
+  const rows = RENTAL_RULES_READY.map((r) => {
+    const on = draft[r.key] === 'required';
+    return `<div class="rule-row${on ? ' on' : ''}">
+      <div class="rule-main"><span class="rule-label">${esc(r.label)}</span><span class="rule-desc">${esc(r.desc)}</span></div>
+      ${segCtl([{ label: 'Off', js: 'js-rule-set', data: { rule: r.key, val: 'off' }, on: on ? null : 'gray' }, { label: 'Required', js: 'js-rule-set', data: { rule: r.key, val: 'required' }, on: on ? 'red' : null }])}
+    </div>`;
+  }).join('');
+  const planned = RENTAL_RULES_PLANNED.map((r) => `<div class="rule-row rule-soon">
+      <div class="rule-main"><span class="rule-label">${esc(r.label)}</span><span class="rule-desc">${esc(r.desc)}</span></div>
+      <span class="rule-soon-tag">Needs a field</span>
+    </div>`).join('');
+  return `
+    <div class="set-pane-head"><h4>Rental Rules</h4><p>Set a requirement to <strong>Required</strong> and a unit <strong>cannot go On Rent</strong> until it's met — a hard stop, no override. Leave it Off to change nothing.</p></div>
+    <div class="rule-list">${rows}</div>
+    <div class="rule-planned-head">Coming once their capture field exists</div>
+    <div class="rule-list">${planned}</div>`;
+}
+// Cards that carry a totals footer (the highlighted roll-up row beneath the list).
+const LAYOUT_FOOTER_CARDS = [
+  { key: 'rentals', label: 'Rentals' }, { key: 'units', label: 'Units' }, { key: 'customers', label: 'Customers' },
+  { key: 'categories', label: 'Categories' }, { key: 'invoices', label: 'Invoices' }, { key: 'workOrders', label: 'Work Orders' },
+  { key: 'inspections', label: 'Inspections' },
+];
+function settingsLayoutPane(o) {
+  const draft = (o.draftSettings && o.draftSettings.layout && o.draftSettings.layout.footers) || (state.settings && state.settings.layout && state.settings.layout.footers) || {};
+  const rows = LAYOUT_FOOTER_CARDS.map((c) => {
+    const shown = draft[c.key] !== 'off';
+    return `<div class="rule-row">
+      <div class="rule-main"><span class="rule-label">${CARD_ICON[c.key] || ''}${esc(c.label)} footer</span><span class="rule-desc">The totals roll-up beneath the ${esc(c.label.toLowerCase())} list.</span></div>
+      ${segCtl([{ label: 'Hide', js: 'js-layout-footer', data: { card: c.key, val: 'off' }, on: shown ? null : 'red' }, { label: 'Show', js: 'js-layout-footer', data: { card: c.key, val: 'on' }, on: shown ? 'green' : null }])}
+    </div>`;
+  }).join('');
+  return `
+    <div class="set-pane-head"><h4>Layout &amp; Footers</h4><p>Show or hide each card's <strong>totals footer</strong> — the highlighted roll-up row beneath its list. Everything defaults to shown.</p></div>
+    <div class="rule-list">${rows}</div>
+    <div class="rule-planned-head">More layout controls coming</div>
+    <div class="rule-list"><div class="rule-row rule-soon"><div class="rule-main"><span class="rule-label">Columns · sort · grid order</span><span class="rule-desc">Builds on the existing List-View column picker — a focused follow-on so the two don't fight.</span></div><span class="rule-soon-tag">Planned</span></div></div>`;
+}
+// Entities that can carry custom fields. v1 wires the Customers form; others store defs but
+// their forms aren't wired yet (shown as 'form coming').
+const CF_ENTITIES = [{ key: 'customers', label: 'Customers', wired: true }, { key: 'units', label: 'Units' }, { key: 'rentals', label: 'Rentals' }, { key: 'invoices', label: 'Invoices' }];
+const CF_TYPES = ['text', 'number'];
+const cfSlug = (label) => 'cf_' + (String(label).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'field') + '_' + Math.random().toString(36).slice(2, 6);
+function draftCustomFields(o, entity) {
+  return (o.draftSettings && o.draftSettings.customFields && o.draftSettings.customFields[entity]) || customFieldsFor(entity);
+}
+function ensureCfDraft(o, entity) {
+  o.draftSettings = o.draftSettings || {};
+  o.draftSettings.customFields = o.draftSettings.customFields || {};
+  if (!o.draftSettings.customFields[entity]) o.draftSettings.customFields[entity] = JSON.parse(JSON.stringify(customFieldsFor(entity)));
+  return o.draftSettings.customFields[entity];
+}
+function ensureInspDraft(o, catId) {
+  o.draftSettings = o.draftSettings || {};
+  o.draftSettings.inspections = o.draftSettings.inspections || {};
+  if (!o.draftSettings.inspections[catId]) { const cur = inspectionCfg(catId); o.draftSettings.inspections[catId] = cur ? JSON.parse(JSON.stringify(cur)) : { required: false, items: [] }; }
+  return o.draftSettings.inspections[catId];
+}
+function draftInspCfg(o, catId) {
+  return (o.draftSettings && o.draftSettings.inspections && o.draftSettings.inspections[catId]) || inspectionCfg(catId) || { required: false, items: [] };
+}
+function settingsInspectionsPane(o) {
+  const cats = DATA.categories || [];
+  const catId = o.inspCat || (cats[0] && cats[0].categoryId) || '';
+  o.inspCat = catId;
+  const pick = cats.map((c) => { const cfg = draftInspCfg(o, c.categoryId); const tag = (cfg.items && cfg.items.length) ? (cfg.required ? ' ●' : ' ○') : ''; return `<button class="set-pick js-insp-cat${c.categoryId === catId ? ' on' : ''}" data-cat="${esc(c.categoryId)}">${esc(c.name)}${tag}</button>`; }).join('');
+  const cfg = draftInspCfg(o, catId);
+  const cat = IDX.category.get(catId);
+  const items = cfg.items || [];
+  const rows = items.length ? items.map((it) => `<div class="rule-row">
+      <div class="rule-main"><span class="rule-label">${esc(it.label)}</span><span class="rule-desc">Pass / Fail line</span></div>
+      <button class="so-reset js-insp-remove" data-cat="${esc(catId)}" data-id="${esc(it.id)}" data-tip="Remove item">${I.x}</button>
+    </div>`).join('') : '<p class="set-note">No checklist items yet — add the things to inspect below.</p>';
+  return `
+    <div class="set-pane-head"><h4>Inspections</h4><p>Build a Pass/Fail checklist per category. When a category's checklist is <strong>Required</strong>, starting an inspection on one of its units opens a full-screen checklist that must be completed — any Fail trips the existing failed-inspection work order.</p></div>
+    <div class="set-picker">${pick}</div>
+    <div class="rule-row" style="margin-bottom:10px"><div class="rule-main"><span class="rule-label">Require a checklist for ${esc(cat ? cat.name : 'this category')}</span><span class="rule-desc">On = +Inspection takes over the sheet until every item is checked.</span></div>${segCtl([{ label: 'Off', js: 'js-insp-req', data: { cat: catId, v: '0' }, on: cfg.required ? null : 'gray' }, { label: 'Required', js: 'js-insp-req', data: { cat: catId, v: '1' }, on: cfg.required ? 'red' : null }])}</div>
+    <div class="rule-list">${rows}</div>
+    <div class="cf-add">
+      <input class="co-in js-insp-label" placeholder="New checklist item (e.g. Hydraulics — no leaks)" value="${esc(o.inspDraft || '')}" autocomplete="off" />
+      <button class="pill ignition js-insp-add" data-r="R17">+ Add item</button>
+    </div>`;
+}
+function settingsFieldsPane(o) {
+  const ent = o.cfEntity || 'customers'; o.cfEntity = ent;
+  const meta = CF_ENTITIES.find((e) => e.key === ent) || {};
+  const add = o.cfDraft || { label: '', type: 'text', required: false };
+  const pick = CF_ENTITIES.map((e) => `<button class="set-pick js-cf-entity${e.key === ent ? ' on' : ''}" data-ent="${e.key}">${esc(e.label)}${e.wired ? '' : ' ·'}</button>`).join('');
+  const fields = draftCustomFields(o, ent);
+  const rows = fields.length ? fields.map((f) => `<div class="rule-row">
+      <div class="rule-main"><span class="rule-label">${esc(f.label)}${f.required ? ' <span class="cf-req">required</span>' : ''}</span><span class="rule-desc">${esc(f.type)} field${f.id ? ' · <code>' + esc(f.id) + '</code>' : ''}</span></div>
+      <button class="so-reset js-cf-remove" data-ent="${ent}" data-id="${esc(f.id)}" data-tip="Remove field">${I.x}</button>
+    </div>`).join('') : '<p class="set-note">No custom fields yet — add one below.</p>';
+  const wiredNote = meta.wired
+    ? `<p class="set-note">These appear on the <strong>${esc(meta.label)}</strong> form under “More details” and save onto each record.</p>`
+    : `<p class="set-note">Fields are stored, but the <strong>${esc(meta.label)}</strong> form isn't wired to show them yet — that's a follow-on. Customers is live today.</p>`;
+  return `
+    <div class="set-pane-head"><h4>Custom Fields</h4><p>Add your own fields to a record. Nothing changes until you add one.</p></div>
+    <div class="set-picker">${pick}</div>
+    ${wiredNote}
+    <div class="rule-list">${rows}</div>
+    <div class="cf-add">
+      <input class="co-in js-cf-label" placeholder="New field label (e.g. Tax-exempt #)" value="${esc(add.label)}" autocomplete="off" />
+      ${segCtl(CF_TYPES.map((t) => ({ label: t, js: 'js-cf-type', data: { type: t }, on: add.type === t ? 'green' : null })))}
+      ${segCtl([{ label: 'Optional', js: 'js-cf-req', data: { v: '0' }, on: add.required ? null : 'gray' }, { label: 'Required', js: 'js-cf-req', data: { v: '1' }, on: add.required ? 'red' : null }])}
+      <button class="pill ignition js-cf-add" data-r="R17">+ Add field</button>
+    </div>`;
+}
+function settingsStatusesPane(o) {
+  const setSel = o.setSel || 'rentalStatus';
+  const picker = SETTINGS_STATUS_SETS.map((s) => `<button class="set-pick js-set-pick${s.set === setSel ? ' on' : ''}" data-set="${s.set}">${esc(s.label)}</button>`).join('');
+  const swatch = (set, val, cur) => CFG.COLOR_TOKENS.map((c) => `<button class="so-sw c-${c}${c === cur ? ' on' : ''} js-set-color" data-set="${esc(set)}" data-val="${esc(val)}" data-color="${c}" data-tip="${c}" aria-label="${c}"></button>`).join('');
+  const rows = Object.keys(STATUS[setSel] || {}).map((val) => {
+    const def = STATUS_DEFAULTS[setSel][val] || {}; const ov = draftStatusOv(o, setSel, val);
+    const color = ov.color || def.color; const iconKey = ov.icon || ''; const label = ov.label || def.label;
+    const dirty = !!(ov.color || ov.icon || ov.label);
+    const open = o.iconFor === setSel + '' + val;
+    const curIc = iconKey ? STATUS_ICONS[iconKey] : (CARD_ICON[SET_CARD[setSel]] || I.plus);
+    const tray = open ? `<div class="so-tray">
+        <button class="so-ic-opt${!iconKey ? ' on' : ''} js-set-icon" data-set="${esc(setSel)}" data-val="${esc(val)}" data-icon="" data-tip="Default (card icon)">${CARD_ICON[SET_CARD[setSel]] || I.circle}<span class="so-ic-def">DEF</span></button>
+        ${Object.keys(STATUS_ICONS).map((k) => `<button class="so-ic-opt${k === iconKey ? ' on' : ''} js-set-icon" data-set="${esc(setSel)}" data-val="${esc(val)}" data-icon="${k}" data-tip="${k}">${STATUS_ICONS[k]}</button>`).join('')}
+      </div>` : '';
+    return `<div class="so-row${open ? ' tray-open' : ''}">
+      <div class="so-prev">${statusPill(setSel, val, { previewColor: color, previewIcon: iconKey, previewLabel: label })}</div>
+      <label class="so-lbl-wrap" data-tip="The label customers and staff see — safe to rename"><span class="so-lbl-cap">LABEL</span><input class="so-lbl js-set-label" data-set="${esc(setSel)}" data-val="${esc(val)}" value="${esc(label)}" autocomplete="off" /></label>
+      <code class="so-val" data-tip="System role — fixed. Logic keys off this value, so a rename can't change what the status does.">${I.lock}${esc(val)}</code>
+      <div class="so-sws">${swatch(setSel, val, color)}</div>
+      <button class="so-ic js-set-icon-open${iconKey ? ' has' : ''}" data-key="${esc(setSel + '' + val)}" data-tip="Choose an icon">${curIc}</button>
+      ${dirty ? `<button class="so-reset js-set-reset" data-set="${esc(setSel)}" data-val="${esc(val)}" data-tip="Reset to default">${I.back}</button>` : '<span class="so-reset-sp"></span>'}
+      ${tray}
+    </div>`;
+  }).join('');
+  return `
+    <div class="set-pane-head"><h4>Statuses &amp; Icons</h4><p>Rename, recolor, and pin an icon to a status. The locked <em>value</em> is its system role and never changes — so <strong>On Rent</strong> can read &ldquo;Out&rdquo; and still behave like On Rent everywhere.</p></div>
+    <div class="set-picker">${picker}</div>
+    <div class="so-list">${rows}</div>`;
+}
+function settingsPlannedPane(t) {
+  if (!t) return '';
+  return `<div class="set-planned">
+      <span class="set-planned-ic">${t.icon || ''}</span>
+      <h4>${esc(t.label)}</h4>
+      <span class="set-planned-tag">Planned</span>
+      <p>${esc(t.note || '')}</p>
+      <p class="set-planned-sub">Wired into this same board next — it'll save through the same admin config.</p>
+    </div>`;
+}
+// Draft KPI rings for a role — the override if present, else the shipped defaults (read-only).
+function draftRoleRings(o, roleId) {
+  const ov = o.draftSettings && o.draftSettings.kpis && o.draftSettings.kpis[roleId];
+  return (Array.isArray(ov) && ov.length === 3) ? ov : (KPI_DEFAULTS[roleId] || []);
+}
+// Clone the defaults into the draft for this role the first time it's edited (so edits have a home).
+function ensureKpiDraft(o, roleId) {
+  o.draftSettings = o.draftSettings || {};
+  o.draftSettings.kpis = o.draftSettings.kpis || {};
+  if (!o.draftSettings.kpis[roleId]) o.draftSettings.kpis[roleId] = JSON.parse(JSON.stringify(KPI_DEFAULTS[roleId] || []));
+  return o.draftSettings.kpis[roleId];
+}
+// Plain-English readback of a DSL metric (for the "MEASURES" line).
+const kpiSrcText = (s) => s ? `${(s.agg === 'sum' ? 'sum of ' + (s.field || '?') + ' in ' : '')}${s.entity || '?'}${(s.where && s.where.length) ? ' [' + s.where.map((c) => `${c.f} ${c.op} ${Array.isArray(c.v) ? c.v.join('/') : c.v}`).join(', ') + ']' : ''}` : '?';
+function kpiMetricReadback(m) {
+  if (!m) return 'Built-in metric.';
+  if (m.kind === 'builtin') return 'Built-in metric.';
+  if (m.kind === 'ratio') return `${kpiSrcText(m.num)} ÷ ${m.den && m.den.const != null ? m.den.const : kpiSrcText(m.den)}`;
+  if (m.kind === 'count') return `${kpiSrcText(m.src)} ÷ all ${m.src && m.src.entity || ''}`;
+  if (m.kind === 'goal' || m.kind === 'sum') return `${kpiSrcText(m.src)} toward a target`;
+  return 'Custom metric.';
+}
+function settingsKpisPane(o) {
+  const roleId = o.kpiRole || 'mechanic'; o.kpiRole = roleId;
+  const role = ROLES.find((r) => r.id === roleId) || {};
+  const rolePick = ROLES.map((r) => `<button class="set-pick js-kpi-role${r.id === roleId ? ' on' : ''}" data-role="${r.id}">${esc(r.label)}</button>`).join('');
+  const rings = draftRoleRings(o, roleId);
+  const previewVals = rings.map((r) => { const v = kpiEval(r).pct; return v == null ? 0 : v; });
+  const rows = rings.map((ring, idx) => {
+    const ev = kpiEval(ring);
+    const val = ev.pct == null ? '—' : ev.pct + '%';
+    const isDSL = ring.metric && ring.metric.kind && ring.metric.kind !== 'builtin';
+    const measure = kpiMetricReadback(ring.metric) === 'Built-in metric.' ? (ring.help || KPI_HELP[ring.label] || 'Built-in metric.') : kpiMetricReadback(ring.metric);
+    const tune = isDSL ? `<div class="kpi-tune">
+        <label class="kpi-fld kpi-fld-sm"><span class="kpi-cap">TARGET</span><input class="kpi-tgt js-kpi-tgt" data-role="${roleId}" data-i="${idx}" value="${esc(ring.target != null ? ring.target : '')}" inputmode="numeric" autocomplete="off"/></label>
+        <div class="kpi-fld kpi-fld-sm"><span class="kpi-cap">BETTER</span>${segCtl([{ label: '▲ High', js: 'js-kpi-band', data: { role: roleId, i: idx, band: 'up' }, on: ring.band !== 'down' ? 'green' : null }, { label: '▼ Low', js: 'js-kpi-band', data: { role: roleId, i: idx, band: 'down' }, on: ring.band === 'down' ? 'green' : null }])}</div>
+      </div>` : '';
+    return `<div class="kpi-row">
+      <span class="kpi-slot">RING ${idx + 1}</span>
+      <div class="kpi-main">
+        <label class="kpi-fld"><span class="kpi-cap">LABEL</span><input class="kpi-lbl js-kpi-lbl" data-role="${roleId}" data-i="${idx}" value="${esc(ring.label || '')}" autocomplete="off"/></label>
+        <div class="kpi-measure"><span class="kpi-cap">MEASURES</span><span class="kpi-measure-t${isDSL ? ' dsl' : ''}">${esc(measure)}</span></div>
+        ${tune}
+      </div>
+      <div class="kpi-val"><span class="kpi-val-n">${esc(val)}</span><span class="kpi-val-c">live</span></div>
+      <button class="pill ignition js-kpi-refine" data-role="${roleId}" data-i="${idx}" data-r="R17" data-tip="Describe it in plain English — Mr. Wrangler builds it">🤠 Refine</button>
+      ${isDSL ? `<button class="so-reset js-kpi-reset" data-role="${roleId}" data-i="${idx}" data-tip="Reset to default">${I.back}</button>` : '<span class="so-reset-sp"></span>'}
+    </div>`;
+  }).join('');
+  return `
+    <div class="set-pane-head"><h4>KPIs &amp; Rings</h4><p>Each role shows 3 rings. Rename one or set its target, or tap <strong>🤠 Refine</strong> to describe a new metric in plain English — Mr. Wrangler interrogates it, proves it against your live data, and locks it in.</p></div>
+    <div class="set-picker">${rolePick}</div>
+    <div class="kpi-board">
+      <div class="kpi-rows">${rows}</div>
+      <div class="kpi-preview"><div class="kpi-preview-ring">${ring3SVG(previewVals, null, { size: 120 })}</div><span class="kpi-preview-l">${esc(role.label || '')} — live rings</span></div>
+    </div>`;
+}
+/* Hand a ring off to Mr. Wrangler to author. Carries the board's in-progress settings +
+   the admin credential forward so lock-in can persist without re-auth, then reopens the
+   board on the KPIs tab. The dock floats free, so the modal board is closed meanwhile. */
+function openWranglerForKpi(roleId, idx) {
+  const o = state.overlay;
+  const draftSettings = (o && o.draftSettings) ? JSON.parse(JSON.stringify(o.draftSettings)) : JSON.parse(JSON.stringify(state.settings || {}));
+  const role = ROLES.find((r) => r.id === roleId) || {};
+  const ring = draftRoleRings({ draftSettings }, roleId)[idx] || {};
+  const kt = { role: roleId, roleLabel: role.label, idx, adminPw: (o && o.adminPw) || '', roles: (o && o.config && o.config.roles) || {}, admin: (o && o.config && o.config.admin) || '', draftSettings };
+  if (o) closeOverlay();
+  state.wrangler.kpiTarget = kt;
+  openWranglerDock({
+    messages: [{ role: 'assistant', content: `🤠 Let's wrangle the ${role.label} role's Ring ${idx + 1} (now “${ring.label || '—'}”). Tell me in plain English what this ring should measure — I'll ask anything I need, prove it against your live yard data, and lock it in.` }],
+    draft: '',
+  });
+}
+// The KPI-authoring addendum — appended to the system prompt ONLY while a ring is being built.
+function wranglerKpiSystem() {
+  const kt = state.wrangler.kpiTarget; if (!kt) return '';
+  const fields = Object.keys(KPI_FIELDS).map((e) => `  ${e}: ${KPI_FIELDS[e].join(', ')}`).join('\n');
+  return `KPI AUTHORING MODE — you are building the "${kt.roleLabel}" role's Ring ${kt.idx + 1}. The admin will describe a metric; ask any quick clarifying question (window? what counts? higher or lower is better?), then emit EXACTLY this block when it's nailed down:\n` +
+    '```wrangler-action\n{"action":"kpi","role":"' + kt.role + '","ring":' + kt.idx + ',"label":"<≤28 chars>","help":"<one plain sentence>","band":"up|down","target":<number, ONLY for goal/sum>,"unit":"%|$|count","metric":{ … }}\n```\n' +
+    'metric is ONE of:\n' +
+    '• {"kind":"ratio","num":SOURCE,"den":SOURCE|{"const":N}} — a percentage (num÷den). Cross-entity allowed.\n' +
+    '• {"kind":"count","src":SOURCE} — filtered count ÷ all rows of that entity.\n' +
+    '• {"kind":"goal","src":SOURCE} — value vs target (set "target"). SOURCE.agg may be "sum" (set "field").\n' +
+    'SOURCE = {"entity":E,"where":[{"f":FIELD,"op":OP,"v":VALUE}],"agg":"count"|"sum","field":FIELD}. ' +
+    'OP ∈ eq, ne, in, nin, gt, gte, lt, lte, contains, exists, truthy, falsy. Tokens @thisMonth / @today.\n' +
+    'ONLY these entities + fields (nothing money/auth/pricing):\n' + fields + '\n' +
+    'Derived fields: _ageDays, _month, _revenue (rental price), _paid/_billed (invoice $), _totalPaid/_activePct (customer). ' +
+    'Keep chat short and natural; never mention JSON, fields, or this block. Emit it only once the metric is unambiguous.';
+}
+/** Apply a validated Wrangler-authored KPI: write the ring into settings.kpis, persist (with
+ *  the carried admin credential), apply live, and reopen the board on the KPIs tab. */
+async function lockKpiFromWrangler(mi) {
+  const w = state.wrangler, kt = w.kpiTarget; if (!kt) return;
+  const m = w.messages[mi]; if (!m || !m.action || m.filed) return;
+  const v = m.action._kpi || wrValidateKpi(m.action); if (!v.ok) return;
+  const settings = kt.draftSettings || {};
+  settings.kpis = settings.kpis || {};
+  if (!settings.kpis[kt.role]) settings.kpis[kt.role] = JSON.parse(JSON.stringify(KPI_DEFAULTS[kt.role] || []));
+  settings.kpis[kt.role][kt.idx] = v.ring;
+  let warn = '';
+  try { if (kt.adminPw) { const r = await backendCall('setConfig', { password: kt.adminPw, config: { roles: kt.roles, admin: kt.admin, settings } }); if (!r || !r.ok) warn = ' (saved on this device — sync retry needed)'; } }
+  catch (e) { warn = ' (saved on this device — offline)'; }
+  persistAdminSettings(settings);           // mirror + apply live so the header ring updates now
+  m.filed = true; w.kpiTarget = null;
+  toast(`Locked in “${v.ring.label}” for ${kt.roleLabel} · Ring ${kt.idx + 1}.${warn} 🤠`);
+  openOverlay({ kind: 'settings', config: { roles: kt.roles, admin: kt.admin, settings }, adminPw: kt.adminPw, tab: 'kpis', kpiRole: kt.role, draftSettings: settings });
+}
 
 /* ════════════════════════════════════════════════════════════════════════
    §5 UI BUILDERS — ONE function per design rule (the SPEC v8 rulebook).
@@ -1840,17 +2481,20 @@ const RING_ICON = {
 // R3: each status badge carries the icon of the card the status belongs to
 const SET_CARD = { rentalStatus: 'rentals', unitRentalStatus: 'rentals', invoiceStatus: 'invoices', unitInspectionStatus: 'inspections', inspectionResult: 'inspections', unitFleetStatus: 'units', gpsStatus: 'units', unitOrderStatus: 'workOrders', woPhase: 'workOrders', woType: 'workOrders', customerPayStatus: 'customers', accountType: 'customers', serviceStatus: 'serviceOrders', expenseReconcile: 'expenses', vendorType: 'vendors', companyFileType: 'files' };
 const dataAttrs = (data) => Object.entries(data || {}).map(([k, v]) => ` data-${k}="${esc(String(v))}"`).join('');
-function statusPill(set, value, { card, recId, x, truck } = {}) {
+function statusPill(set, value, { card, recId, x, truck, previewColor, previewIcon, previewLabel } = {}) {
   const st = getStatus(set, value);
+  const color = previewColor || st.color;   // Settings Board live preview overrides the applied color
+  const label = previewLabel != null ? previewLabel : st.label;
   const data = card ? ` data-pill-card="${card}" data-pill-rec="${esc(recId)}"` : '';
   const tk = truck ? `<span class="truck">${I.truck}</span>` : '';
   const xb = x ? `<span class="x" data-x="${esc(x)}">✕</span>` : '';
-  const ic = truck ? '' : (CARD_ICON[SET_CARD[set]] || '');   // R3: parent-card icon hugs the label
+  const oIc = previewIcon !== undefined ? (STATUS_ICONS[previewIcon] || '') : ovIcon(st);   // admin-assigned status icon (or preview)
+  const ic = truck ? '' : (oIc || CARD_ICON[SET_CARD[set]] || '');   // R3: admin status icon, else parent-card icon
   // §17 — a status badge is draggable into a chat (drag/long-press; tap is unaffected)
   const crec = card ? recOf(card, recId) : null;
   const chatLbl = st.label + (crec ? ' — ' + (detailTitle(card, crec) || recId) : '');
   const chat = card ? ` data-chat-el data-chat-label="${esc(chatLbl)}" data-chat-color="${esc(st.color)}" data-chat-card="${esc(card)}" data-chat-rec="${esc(recId)}"` : '';
-  return `<span class="pill c-${st.color}${truck ? ' truck' : ''}" data-r="R3" data-badge${data}${chat}>${tk}${ic}<span class="t">${esc(st.label)}</span>${xb}</span>`;
+  return `<span class="pill c-${color}${truck ? ' truck' : ''}" data-r="R3" data-badge${data}${chat}>${tk}${ic}<span class="t">${esc(label)}</span>${xb}</span>`;
 }
 function refPill(card, recId, label, { x, xData } = {}) {
   const xb = x ? `<span class="x" data-x="${esc(x)}"${xData != null ? ` data-id="${esc(xData)}"` : ''}>✕</span>` : '';
@@ -1874,7 +2518,7 @@ const badge = (label, color = 'gray') => `<span class="pill c-${color}" data-r="
 function gatePill(set, value, js, data, { truck } = {}) {
   const st = getStatus(set, value);
   const tk = truck ? `<span class="truck">${I.truck}</span>` : '';
-  return `<span class="pill gate c-${st.color} ${js}" data-r="R1"${dataAttrs(data)}>${tk}${esc(st.label)} ${I.chev}</span>`;
+  return `<span class="pill gate c-${st.color} ${js}" data-r="R1"${dataAttrs(data)}>${tk}${ovIcon(st)}${esc(st.label)} ${I.chev}</span>`;
 }
 /** R1: a gate with a custom label (e.g. ETA-as-status on WO lines). */
 function gatePillRaw(label, color, js, data, noChev) {
@@ -2709,6 +3353,7 @@ const footDropBadge = (card, value) =>
  *  numeric roll-ups (e.g. "6 Tomorrow · 900 HRS avg · 12 Part Needed"). */
 function listTotalsEl(card, rows, session) {
   if (!rows || !rows.length) return null;
+  if (footerHidden(card)) return null;   // Settings → Layout & Footers: this card's totals footer is hidden
   const cols = cardColumns(card, session);
   const sel = loadListTotals(card);                 // null = every aggregatable column
   const allowed = sel ? new Set(sel) : null;
@@ -3138,6 +3783,18 @@ function saveCommentOverlay() {
   closeOverlay(); render();
   toast('Comment posted — marker set.');
 }
+/* The faded backdrop behind an OPEN Work Order section: the WO's first existing
+   photo — the linked failed-inspection photo (the WO's origin), else the earliest
+   part-line photo. References photos already on the records (Jac: no new upload —
+   they come from Failed Inspections or a part's photo), so it adds zero new
+   storage. Dropped once the WO is Complete, so only open WOs ever carry one. */
+function woBackdrop(w) {
+  if (!w || w.phase === 'Complete') return '';
+  const insp = w.inspectionId && IDX.insp.get(w.inspectionId);
+  if (insp && insp.photo) return insp.photo;
+  for (const li of (w.lineItems || [])) if (li.photo) return li.photo;
+  return '';
+}
 function woSectionHtml(w) {
   const bn = woBottleneck(w);
   const secColor = bn.color === 'red' ? 'red' : bn.color === 'green' ? 'green' : 'yellow';
@@ -3159,7 +3816,8 @@ function woSectionHtml(w) {
     // the description re-opens the part popup; vendor/url live in its tooltip
     return `<div class="woline">${gatePillRaw(lbl, ph.color, 'js-wophase-line', { rec: w.woId, idx })}<span class="js-partedit" data-rec="${w.woId}" data-idx="${idx}" style="cursor:pointer"${tip ? ` data-tip="${esc(tip)}"` : ''}>${li.aiPending ? '✨ ' : ''}${esc(li.part)}${ven ? ' ' + linkName(ven.name, { js: 'js-vendor-open', data: { rec: ven.vendorId } }) : ''}</span><span class="nums"><b>${money(li.cost)}</b><span>${li.hours || 0}h</span></span></div>`;
   }).join('');
-  return `<div class="section sec-${secColor} wo-${w.woId}" data-wo="${w.woId}">
+  const woBg = woBackdrop(w);
+  return `<div class="section sec-${secColor} wo-${w.woId}${woBg ? ' has-photo' : ''}" data-wo="${w.woId}">${woBg ? `<div class="sec-photo" style="--photo:url('${esc(woBg)}')"></div>` : ''}
     <h4 class="h-name"><span style="font-weight:800;margin-right:1px">WO:</span> <span class="inline-edit" data-edit="field" data-card="workOrders" data-field="woReport" data-rec="${w.woId}" data-ph="Report">${esc(w.woReport)}</span>
       <span class="right">${flagsStack([typeFlag, flagEl(fmtShortDate(w.date), 'gray')], 24)}</span></h4>
     <div class="wototals">${addBtn('Part/Task', { anchor: true, js: 'js-add-part', h: 26, data: { rec: w.woId } })}<span class="derived">${money(parts)} parts + ${hrs} hrs</span></div>
@@ -3569,7 +4227,9 @@ const DETAIL = {
       <h4>Inspection <span class="hmuted">· ${esc(stamp)}</span></h4>
       <div class="fieldstack">
         <div class="kv" style="justify-content:center">
-          ${segCtl([
+          ${checklistRequired(u)
+    ? `<button class="pill ignition js-open-checklist" data-rec="${u.unitId}" data-r="R17">${CARD_ICON.inspections} ${pendingInspForUnit(u.unitId) ? 'Resume inspection' : '+ Inspection'}</button>`
+    : segCtl([
             { label: '✓ Pass', js: 'js-cond', data: { rec: u.unitId, val: 'Pass' }, on: cond === 'Ready' ? 'green' : null },
             { label: 'Not Ready', js: 'js-cond', data: { rec: u.unitId, val: 'Not Ready' }, on: cond === 'Not Ready' ? 'yellow' : null },
             { label: '✕ Fail', js: 'js-cond', data: { rec: u.unitId, val: 'Fail' }, on: cond === 'Failed' ? 'red' : null },
@@ -3755,14 +4415,14 @@ const DETAIL = {
     // §7.1 — every contact/account detail is click-to-edit (auto-saves via the persist hook)
     // R5: empty fields render the dashed "+Thing" add (no "Add", no space after +)
     const efield = (f, ph, wrap) => { const val = c[f]; const thing = ph.replace(/^Add\s+/i, ''); const lbl = thing.charAt(0).toUpperCase() + thing.slice(1); return `<div class="kv"><span class="v inline-edit" data-edit="custField" data-field="${f}" data-rec="${c.customerId}" data-ph="${esc(ph)}"${wrap ? ' style="white-space:normal"' : ''}>${val ? esc(val) : `<span class="add-field" data-r="R5c">+${esc(lbl)}</span>`}</span></div>`; };
-    const selfieThumb = c.selfie ? `<img class="cust-selfie" src="${esc(c.selfie)}" alt="" />` : '';
+    const acctSelfie = latestCustomerSelfie(c);   // newest agreement selfie → faded Account backdrop (retired the tiny thumb)
     const agPill = c.agreementSignedAt ? `<button class="pill c-green js-view-agreement" data-r="R3" data-rec="${c.customerId}" data-tip="View signed agreement">${esc(AGREEMENTS[c.agreementType]?.title || 'Agreement')} ✓</button>` : '';
     // every category this customer has EVER rented → R9 flags (ink+icon, no badge) — Jac 2026-06-12
     const rentedCatIds = [...new Set(DATA.rentals.filter((r) => r.customerId === c.customerId)
       .map((r) => r.categoryId || IDX.unit.get(r.unitId)?.categoryId).filter(Boolean))];
     const rentedFlags = rentedCatIds.map((id) => { const cat = IDX.category.get(id); return cat ? flagEl(cat.name, 'gray', { icon: CARD_ICON.categories, card: 'categories', recId: id }) : ''; }).filter(Boolean).join('');
     /* Jac 2026-06-12: Contact + Account MERGED — LEFT = entered fields, RIGHT = facts + derived (card anatomy) */
-    const account = `<div class="section"><h4>Account</h4>
+    const account = `<div class="section${acctSelfie ? ' has-photo' : ''}">${acctSelfie ? `<div class="sec-photo" style="--photo:url('${esc(acctSelfie)}')"></div>` : ''}<h4>Account</h4>
       <div class="split">
         <div class="side">
           <div class="kv2">${efield('firstName', 'First name')}${efield('lastName', 'Last name')}</div>
@@ -3771,7 +4431,7 @@ const DETAIL = {
           ${efield('address', 'Add address', true)}
         </div>
         <div class="side r">
-          ${kvPills(`${selfieThumb}${badge(acct.label, acct.color)}${c.requiresPO ? badge('PO Required', 'yellow') : ''}${agPill}`)}
+          ${kvPills(`${badge(acct.label, acct.color)}${c.requiresPO ? badge('PO Required', 'yellow') : ''}${agPill}`)}
           ${kv(money(d.totalPaid), { pfx: 'Total', derived: true })}
           ${kv(`${d.visits || 0}`, { pfx: 'Visits', derived: true })}
           ${kv(`${d.years || 0} yrs`, { pfx: 'Customer for', derived: true })}
@@ -4282,8 +4942,18 @@ function columnEl(col, session) {
   const cs = card.dataset.card && session.cards ? session.cards[card.dataset.card] : null;
   card.dataset.view = (cs && cs.mode === 'standard' && cs.recId != null) ? `${cs.recType || ''}:${cs.recId}` : 'list';
   if (!document.body.classList.contains('is-phone')) card.insertBefore(colTabsEl(col, active, session), card.firstChild);   // toggles live INSIDE the card top on desktop; on phones they move to the footer dock (§M1)
-  const tot = card.querySelector('.card-body .list-totals');             // freeze the totals as a card FOOTER (out of the scroll)
-  if (tot) card.appendChild(tot);
+  const tot = card.querySelector('.card-body .list-totals');             // freeze the totals out of the scroll
+  // §M1 — phones invert the desktop layout: the card "footer" (totals) sits at the TOP,
+  // while the toggles + search live in the bottom dock. Desktop keeps it as a footer.
+  if (tot) { if (document.body.classList.contains('is-phone')) card.insertBefore(tot, card.firstChild); else card.appendChild(tot); }
+  // Desktop: freeze the search/sort bar out of the scroll too — a full-width card
+  // header so the card-body scrollbar runs ONLY through the list below it, never in
+  // a gutter alongside the bar (the "funny" gap). Mirrors the .list-totals footer
+  // freeze; on phones render() relocates the bar to the bottom dock instead.
+  if (!document.body.classList.contains('is-phone')) {
+    const lb = card.querySelector('.card-body .listbar'), body = card.querySelector('.card-body');
+    if (lb && body) card.insertBefore(lb, body);
+  }
   wrap.appendChild(card);
   return wrap;
 }
@@ -4587,7 +5257,7 @@ function shopCardEl(cardDef, session, forcedSeg) {
 // serviceOrders→units search blob. Lets the graph carousel's col-tagged terms filter the
 // shop list (the old path was blob-only and ignored col terms).
 function shopItemMatches(it, query, terms) {
-  const card = it.type, rec = it.rec, terms2 = terms || [];
+  const card = it.type, rec = it.rec, terms2 = dateScopedTerms(card, terms || []);   // §5.4d per-type date scoping (Shop mixes WOs/inspections with date-less types)
   const byCol = {};
   for (const t of terms2) { if (!t.col) continue; if (t.neg) { if (totColMatch(card, rec, t.col, t.value)) return false; } else (byCol[t.col] = byCol[t.col] || []).push(t.value); }
   for (const col in byCol) { if (!byCol[col].some((v) => totColMatch(card, rec, col, v))) return false; }
@@ -4747,7 +5417,7 @@ function fleetInsp() {
   DATA.units.forEach((u) => { if (c[u.inspectionStatus] != null) c[u.inspectionStatus]++; });
   return { ...c, total: c.Ready + c['Not Ready'] + c.Failed };
 }
-function kpiFor(roleId) {
+function legacyKpiPct(roleId) {
   const R = DATA.rentals, W = DATA.workOrders, N = DATA.inspections, INV = DATA.invoices, C = DATA.customers;
   const f = fleetInsp();
   if (roleId === 'mechanic') {
@@ -4793,7 +5463,7 @@ function kpiFor(roleId) {
     // in the current calendar month. (A future Settings board will make the goal admin-set.)
     const ym = TODAY_ISO.slice(0, 7);
     const revenue = R.reduce((a, r) => { if ((r.startDate || '').slice(0, 7) !== ym) return a; const p = rentalPrice(r); return a + (p ? p.price : 0); }, 0);
-    const revGoal = pctOf(revenue, CFG.REVENUE_GOAL_DEFAULT || 150000);
+    const revGoal = pctOf(revenue, companyRevenueGoal());   // Settings → Company sets the monthly goal (defaults to SPEC §10)
     const big = C.filter((c) => (c._digest?.totalPaid || 0) > 1999);
     const activeRate = pctOf(big.filter((c) => (c._digest?.activePct || 0) > 0).length, big.length);
     const members = C.filter((c) => /Member/.test(c.accountType || '') && c.accountType !== 'Member Incomplete').length;
@@ -4821,6 +5491,133 @@ const KPI_HELP = {
   'Active Customer Rate':   'Of your big customers (paid $2k+ lifetime), how many are currently active.',
   'Pipeline':               'Sales pipeline strength — members signed + leads moved past “Inbound”, toward a target of 10.',
 };
+
+/* ════════════════════════════════════════════════════════════════════════
+   §11b KPI METRIC ENGINE — admin-definable KPIs (Settings → KPIs & Rings).
+   A SAFE, declarative spec (no eval, Pages-public-safe): a metric is filters +
+   an aggregate over an entity allowlist, evaluated by kpiEval(). The shipped 15
+   KPIs route through kind:'builtin' (the legacy math above), so with no admin
+   override the dashboard is byte-for-byte unchanged. Custom KPIs author via the
+   DSL (ratio/goal/count/sum) — Mr. Wrangler emits + validates the spec.
+   ════════════════════════════════════════════════════════════════════════ */
+const KPI_ENTITY = {   // entity key → live rows (the authoring UI + validator gate on these names)
+  units: () => DATA.units, rentals: () => DATA.rentals, workOrders: () => DATA.workOrders,
+  inspections: () => DATA.inspections, invoices: () => DATA.invoices, customers: () => DATA.customers,
+};
+// Curated derived fields (prefix _) — safe computed accessors so common needs work without code.
+const KPI_DERIVED = {
+  _ageDays:   (r) => { const d = r.date || r.openedDate || r.createdDate || r.startDate; return d ? Math.max(0, Math.round((TODAY.getTime() - parseISO(d).getTime()) / 86400000)) : 0; },
+  _month:     (r) => (r.startDate || r.date || '').slice(0, 7),
+  _revenue:   (r) => { const p = rentalPrice(r); return p ? p.price : 0; },
+  _paid:      (r) => invoiceTotals(r).paid,
+  _billed:    (r) => invoiceTotals(r).total,
+  _totalPaid: (r) => (r._digest && r._digest.totalPaid) || 0,
+  _activePct: (r) => (r._digest && r._digest.activePct) || 0,
+};
+const KPI_TOKENS = { '@thisMonth': () => TODAY_ISO.slice(0, 7), '@today': () => TODAY_ISO };
+const kpiField = (rec, f) => (f && f[0] === '_' && KPI_DERIVED[f]) ? KPI_DERIVED[f](rec) : rec[f];
+const kpiVal = (v) => (typeof v === 'string' && KPI_TOKENS[v]) ? KPI_TOKENS[v]() : v;
+function kpiCond(rec, cond) {
+  const a = kpiField(rec, cond.f), b = kpiVal(cond.v);
+  switch (cond.op) {
+    case 'eq': return a === b; case 'ne': return a !== b;
+    case 'in': return Array.isArray(b) && b.includes(a); case 'nin': return Array.isArray(b) && !b.includes(a);
+    case 'gt': return Number(a) > Number(b); case 'gte': return Number(a) >= Number(b);
+    case 'lt': return Number(a) < Number(b); case 'lte': return Number(a) <= Number(b);
+    case 'contains': return String(a == null ? '' : a).toLowerCase().includes(String(b == null ? '' : b).toLowerCase());
+    case 'exists': return a != null && a !== ''; case 'truthy': return !!a; case 'falsy': return !a;
+    default: return false;
+  }
+}
+function kpiRows(src) {
+  const get = KPI_ENTITY[src && src.entity]; if (!get) return [];
+  let rows = get() || [];
+  (src.where || []).forEach((cond) => { rows = rows.filter((r) => { try { return kpiCond(r, cond); } catch (e) { return false; } }); });
+  return rows;
+}
+const kpiAgg = (src) => src && src.agg === 'sum'
+  ? kpiRows(src).reduce((a, r) => a + (Number(kpiField(r, src.field)) || 0), 0)
+  : kpiRows(src).length;
+const kpiBand = (ring, pct, raw, unit) => ({ pct: Math.max(0, Math.min(100, (ring && ring.band === 'down') ? 100 - pct : pct)), raw, unit });
+const kpiTarget = (ring) => (ring && ring.target != null ? Number(ring.target) : 0);
+/** Evaluate one ring spec → { pct (0-100 | null), raw numerator, unit }. Defensive:
+ *  a malformed spec yields a zero ring, never a thrown render. */
+function kpiEval(ring) {
+  const m = (ring && ring.metric) || {};
+  try {
+    if (m.kind === 'builtin') {
+      const pcts = legacyKpiPct(m.ref) || [], raws = legacyKpiRaw(m.ref) || [], raw = raws[m.idx] || { v: 0, unit: '' };
+      return { pct: pcts[m.idx] != null ? pcts[m.idx] : null, raw: raw.v, unit: raw.unit };
+    }
+    if (m.kind === 'ratio') {
+      const num = kpiAgg(m.num);
+      const den = (m.den && m.den.const != null) ? Number(m.den.const) : kpiAgg(m.den || { entity: m.num.entity });
+      return kpiBand(ring, pctOf(num, den), num, m.unit || '');
+    }
+    if (m.kind === 'count') {
+      const n = kpiAgg({ ...m.src, agg: 'count' });
+      const tot = kpiAgg({ ...(m.of || { entity: m.src.entity }), agg: 'count' });
+      return kpiBand(ring, pctOf(n, tot), n, m.unit || '');
+    }
+    if (m.kind === 'goal' || m.kind === 'sum') {
+      const v = kpiAgg(m.src), tgt = kpiTarget(ring);
+      return kpiBand(ring, tgt > 0 ? Math.round(Math.min(v / tgt, 1) * 100) : 0, v, m.unit || (m.src && m.src.agg === 'sum' ? '$' : ''));
+    }
+  } catch (e) { /* defensive — a bad spec must never crash the dashboard */ }
+  return { pct: 0, raw: 0, unit: m.unit || '' };
+}
+// Shipped defaults: every current KPI as a builtin ring (guarantees defaults === today).
+const KPI_DEFAULTS = {};
+ROLES.forEach((role) => {
+  KPI_DEFAULTS[role.id] = (role.kpis || []).map((label, idx) => ({
+    id: `${role.id}-${idx}`, label, help: KPI_HELP[label] || '', metric: { kind: 'builtin', ref: role.id, idx },
+  }));
+});
+/** The 3 ring specs for a role — admin override (config.settings.kpis) if valid, else defaults. */
+function roleRings(roleId) {
+  const ov = state.settings && state.settings.kpis && state.settings.kpis[roleId];
+  if (Array.isArray(ov) && ov.length === 3 && ov.every((r) => r && typeof r === 'object' && r.metric)) return ov;
+  return KPI_DEFAULTS[roleId] || [];
+}
+// kpiFor / kpiRaw now read through the spec layer (defaults route to the legacy math unchanged).
+function kpiFor(roleId) { return roleRings(roleId).map((r) => kpiEval(r).pct); }
+function kpiRaw(roleId) { return roleRings(roleId).map((r) => { const e = kpiEval(r); return { v: e.raw, unit: e.unit }; }); }
+
+/* Filterable field allowlist per entity (+ derived _fields) — gates BOTH the Wrangler
+   validator and what the authoring prompt is told it may reference. Nothing money/auth. */
+const KPI_FIELDS = {
+  units: ['name', 'fleetStatus', 'inspectionStatus', 'assignedMechanic', 'make', 'model', 'year', 'gpsType', 'categoryId'],
+  rentals: ['status', 'fieldCall', 'transportType', 'customerId', 'startDate', 'endDate', '_month', '_revenue'],
+  workOrders: ['phase', 'cancelled', 'billCustomer', 'type', '_ageDays'],
+  inspections: ['result', 'wash', 'woId', 'date', '_ageDays'],
+  invoices: ['date', 'dueDate', '_paid', '_billed'],
+  customers: ['accountType', 'usedSalesStage', 'membershipStage', 'industry', '_totalPaid', '_activePct'],
+};
+function wrValidateKpiSource(s, issues, label) {
+  if (!s || !KPI_ENTITY[s.entity]) { issues.push(`${label}: unknown entity "${s && s.entity}"`); return; }
+  const allow = KPI_FIELDS[s.entity] || [];
+  (s.where || []).forEach((c) => { if (!c || !allow.includes(c.f)) issues.push(`${label}: field "${c && c.f}" not allowed on ${s.entity}`); });
+  if (s.agg === 'sum' && !allow.includes(s.field)) issues.push(`${label}: sum field "${s.field}" not allowed on ${s.entity}`);
+}
+/** Validate a Mr. Wrangler kpi action → { ok, ring, issues, value, role, idx }. The ring is
+ *  rebuilt from the allowlisted parts only, then computed live to prove it functions. */
+function wrValidateKpi(act) {
+  const issues = []; act = act || {};
+  if (!ROLES.find((r) => r.id === act.role)) issues.push(`unknown role "${act.role}"`);
+  const idx = Number(act.ring);
+  if (!(idx >= 0 && idx <= 2)) issues.push('ring must be 1, 2, or 3');
+  const m = act.metric || {};
+  if (!['ratio', 'count', 'goal', 'sum'].includes(m.kind)) issues.push(`unknown metric kind "${m.kind}"`);
+  if (m.kind === 'ratio') { wrValidateKpiSource(m.num, issues, 'numerator'); if (!(m.den && m.den.const != null)) wrValidateKpiSource(m.den, issues, 'denominator'); }
+  if (m.kind === 'count') wrValidateKpiSource(m.src, issues, 'source');
+  if (m.kind === 'goal' || m.kind === 'sum') { wrValidateKpiSource(m.src, issues, 'source'); if (!(Number(act.target) > 0)) issues.push('a positive target is required'); }
+  const ring = { id: `${act.role}-${idx}-c`, label: String(act.label || 'KPI').slice(0, 28), help: String(act.help || '').slice(0, 160),
+    target: act.target != null ? Number(act.target) : undefined, unit: act.unit, band: act.band === 'down' ? 'down' : 'up', metric: m };
+  let value = null;
+  if (!issues.length) { try { value = kpiEval(ring).pct; if (value == null) issues.push('metric did not compute'); } catch (e) { issues.push('metric did not compute'); } }
+  return { ok: !issues.length, ring, issues, value, role: act.role, idx };
+}
+
 /** §11 Team ring — per-position average across the 5 roles (skips null placeholders). */
 function kpiTeam() {
   const all = ROLES.map((r) => kpiFor(r.id));
@@ -4832,7 +5629,7 @@ function kpiTeam() {
    on counts) and flash the ring green ×3, video-game style. Detected by diffing
    the metrics each render, so it covers EVERY action — present and future —
    without per-action hooks. kpiRaw mirrors kpiFor's numerators, higher = better. */
-function kpiRaw(roleId) {
+function legacyKpiRaw(roleId) {
   const R = DATA.rentals, W = DATA.workOrders, N = DATA.inspections, INV = DATA.invoices, C = DATA.customers;
   const f = fleetInsp();
   const c = (v) => ({ v, unit: '' }), usd = (v) => ({ v, unit: '$' });
@@ -4872,11 +5669,16 @@ function headerEl() {
       <span class="ring-label">${esc(label)}</span>
     </button>`;
   const rings = ROLES.map((role) => roleRing(role.id, role.label, kpiFor(role.id), role.color)).join('');
-  // Decluttered top: logo + rings, then the GLOBAL item tabs above the global search.
-  // The action toolbar (New / Dashboard / tools) lives in a bottom bar (bottomBarEl).
+  // §M1 — phone-only TOP TOOLBAR: the full tool set opened up across the top of the screen
+  // (logo + rings stay on their own row above it). Notifications + Requests live here too.
+  const nu = unseenNotifs();
+  const notifBtn = `<button class="iconbtn js-notifications" data-tip="Notifications">${I.bell}${nu ? `<span class="bb-badge">${nu > 9 ? '9+' : nu}</span>` : ''}</button>`;
+  const topBar = `<div class="top-toolbar">${notifBtn}${bottomBarInner()}</div>`;
+  // Decluttered top: logo + rings on one row, the tool bar across the next.
   h.innerHTML = `
     <button class="logo js-logo" aria-label="Jac Rentals"></button>
     <div class="kpis">${rings}</div>
+    ${topBar}
     <div class="header-right">
       <div class="hr-top">
         <div class="header-tabs tabstrip">${tabStrip(state.tabs)}</div>
@@ -4921,7 +5723,8 @@ function bottomBarInner() {
     <button class="iconbtn js-adminlock${adminUnlocked() ? ' on' : ''}" data-tip="${adminUnlocked() ? 'Admin tools unlocked — click to lock' : 'Admin tools — click to unlock'}">${adminUnlocked() ? I.lockOpen : I.lock}</button>
     ${adminUnlocked() ? `<button class="iconbtn js-lint${document.body.classList.contains('rw-lint') ? ' on' : ''}" data-tip="Design lint — flash anything that bypassed the UI builders (R0)">${I.eye}</button>
     <button class="iconbtn js-inspect${state.inspect ? ' on' : ''}" data-tip="Design Inspector — hover names the rule, click copies the reference">${I.search}</button>
-    <button class="iconbtn js-rulebook" data-tip="The R-Rulebook — visual design reference (SPEC v8)">${I.doc}</button>` : ''}`;
+    <button class="iconbtn js-rulebook" data-tip="The R-Rulebook — visual design reference (SPEC v8)">${I.doc}</button>
+    <button class="iconbtn js-photo-sweep" data-tip="Offload base64 photos to Drive — one-shot migration to de-bloat the payload">${I.camera}</button>` : ''}`;
 }
 function bottomBarEl() { const bar = el('div', 'bottombar'); bar.innerHTML = bottomBarInner(); return bar; }
 // §M1 — phone-only per-column bottom strip: Yard→internal chat · Rentals→tool bar · Customers→external chats (shell).
@@ -4932,22 +5735,36 @@ function activeMobileCard() {
   const member = (s.cols && s.cols[colObj.id]) || colObj.default;
   return SHOP_TYPES.includes(member) ? 'shop' : member;
 }
-// §M1 phone footer — the column's card toggles (active = icon+label+count, the rest
-// icon+count only) + ONE trailing action icon, over a thin column-dot indicator. The
-// whole dock is swipeable left/right to change columns (column switching lives HERE now,
-// not in the grid — the grid swipe is Back/Forward, §M3).
+// §M1 — the card the phone is currently showing (the active column's member).
+function currentMobileMember() {
+  const colObj = COLUMNS[Math.max(0, Math.min(2, state.mobileCol))];
+  const s = activeSession();
+  return (s.cols && s.cols[colObj.id]) || colObj.default;
+}
+// §M1 — the flat card list the phone toggle bar offers. On desktop, inspections + work
+// orders live INSIDE the Unit card (hidden tabs); on phone they get their own toggles too.
+const MOBILE_CARDS = ['units', 'categories', 'inspections', 'serviceOrders', 'rentals', 'calendar', 'customers', 'invoices'];
+// §M1 — jump straight to a card (flattens the 3-column model on phones): set the column +
+// member, flip the visible column, and show that card's LIST.
+function goToCard(member) {
+  const s = activeSession(); const col = COLUMN_OF[member];
+  if (s.cols && col) s.cols[col] = member;
+  const idx = COLUMNS.findIndex((c) => c.id === col); if (idx >= 0) state.mobileCol = idx;
+  const mc = s.cards[member]; if (mc) { mc.mode = 'list'; mc.recId = null; mc.recType = null; }
+  render();
+}
+// §M1 phone footer — ONE card-toggle bar: every card collapsed to its icon, the SELECTED
+// card expands to icon + stamped label. Tap an icon to jump to that card's list. The card's
+// search/sort row is moved DOWN into the .mdock-searchslot by render(). Swipe the dock
+// left/right to step through cards; the grid swipe is Back/Forward.
 function mobileDockEl() {
-  const col = Math.max(0, Math.min(2, state.mobileCol));
-  const colObj = COLUMNS[col];
-  const session = activeSession();
-  const active = (session.cols && session.cols[colObj.id]) || colObj.default;
-  const dots = `<div class="mdock-dots">${[0, 1, 2].map((i) => `<button class="mdot${i === col ? ' on' : ''}" data-mcol="${i}" aria-label="Column ${i + 1}"></button>`).join('')}</div>`;
-  let action;
-  if (col === 1) action = `<button class="iconbtn mdock-act js-mtools" data-tip="Tools — receipt, share, Mr. Wrangler, admin">${I.sliders || I.menu || '☰'}</button>`;   // Rentals → tools sheet
-  else if (col === 2) action = `<button class="iconbtn mdock-act js-ext-chat" data-tip="External chats (soon)">${I.chat}</button>`;                                       // Customers → external (shell)
-  else { const n = chatUnreadCount(); action = `<button class="iconbtn mdock-act js-chat-toggle" data-tip="Team chat">${I.chat}${n ? `<span class="bb-badge">${n > 9 ? '9+' : n}</span>` : ''}</button>`; }   // Yard → team chat
+  const cur = currentMobileMember();
+  const togs = MOBILE_CARDS.map((m) => {
+    const on = m === cur;
+    return `<button class="mcard-tog${on ? ' on' : ''}" data-gocard="${m}" data-tip="${esc(MEMBER_TITLE[m] || m)}"><span class="mct-ico">${memberIcon(m)}</span>${on ? `<span class="mct-lbl">${esc(MEMBER_TITLE[m] || m)}</span>` : ''}</button>`;
+  }).join('');
   const d = el('div', 'mobile-dock');
-  d.innerHTML = dots + `<div class="mdock-tabs"><div class="col-tabs">${colTabButtonsHtml(colObj, active, session)}</div><span class="mdock-sp"></span>${action}</div>`;
+  d.innerHTML = `<div class="mdock-searchslot"></div><div class="mdock-row"><div class="mcard-bar">${togs}</div></div>`;
   return d;
 }
 /* ════════════════════════════════════════════════════════════════════════
@@ -5034,10 +5851,18 @@ function wranglerDockEl() {
           const plan = m.action._plan || (m.action._plan = wrValidatePlan(m.action));
           const sum = wrPlanSummary(plan);
           const skip = plan.issues.length ? `<div class="wr-apply-skip">skipped: ${esc(plan.issues.join('; '))}</div>` : '';
-          const trunc = m.action._truncated ? `<div class="wr-apply-skip">⚠️ This batch was cut off mid-send — only the rows that fully arrived are here. Apply these, then ask me to send the rest in a smaller batch.</div>` : '';
+          const cut = m.action._truncated ? `<div class="wr-apply-skip">⚠ my reply was cut off — only ${plan.ops.reduce((n, o) => n + (o.rows ? o.rows.length : 0), 0)} row(s) came through; apply these, then ask me to send the rest in a smaller batch</div>` : '';
           act = m.filed
             ? `<span class="wr-actdone">✓ Applied — ${esc(sum)}</span>`
-            : `<div class="wr-apply"><div class="wr-apply-sum">Preview: ${esc(sum)}</div>${trunc}${skip}${plan.ops.length ? `<button class="wr-actbtn wr-actbtn-build js-wr-apply" data-mi="${i}">✓ Apply these changes</button>` : '<span class="wr-apply-none">Nothing here I can safely apply.</span>'}</div>`;
+            : `<div class="wr-apply"><div class="wr-apply-sum">Preview: ${esc(sum)}</div>${cut}${skip}${plan.ops.length ? `<button class="wr-actbtn wr-actbtn-build js-wr-apply" data-mi="${i}">✓ Apply these changes</button>` : '<span class="wr-apply-none">Nothing here I can safely apply.</span>'}</div>`;
+        } else if (m.action && m.action.action === 'kpi') {
+          const v = m.action._kpi || (m.action._kpi = wrValidateKpi(m.action));
+          const valTxt = v.value == null ? '—' : v.value + '%';
+          act = m.filed
+            ? `<span class="wr-actdone">✓ Locked in — ${esc(v.ring.label)} (${esc(valTxt)})</span>`
+            : v.ok
+              ? `<div class="wr-apply"><div class="wr-apply-sum">${esc(v.role)} · Ring ${v.idx + 1}: <b>${esc(v.ring.label)}</b> — live <b>${esc(valTxt)}</b></div><div class="wr-kpi-readback">${esc(kpiMetricReadback(v.ring.metric))}</div><button class="wr-actbtn wr-actbtn-build js-wr-kpi-lock" data-mi="${i}">✓ Lock in this KPI</button></div>`
+              : `<div class="wr-apply"><div class="wr-apply-skip">can’t build that yet: ${esc(v.issues.join('; '))}</div></div>`;
         } else if (m.action) {
           const ak = m.action.action;
           const doneLbl = ak === 'plan' ? 'Building to your plan' : ak === 'request' ? 'Sent to the developer for OK' : 'Fixing now — I’ll let you know when it’s done';
@@ -5048,7 +5873,7 @@ function wranglerDockEl() {
               ? `<span class="wr-actdone" style="color:var(--txt-3)">…filing</span>`
               : `<button class="wr-actbtn${ak === 'plan' ? ' wr-actbtn-build' : ''} js-wr-act" data-mi="${i}">${btnLbl}</button>`;
         }
-        const imgs = (m.images && m.images.length) ? `<div class="wr-bub-imgs">${m.images.map((s) => `<img src="${esc(s)}" alt="attached image">`).join('')}</div>` : '';
+        const imgs = (m.images && m.images.length) ? `<div class="wr-bub-imgs">${m.images.map((img) => { const s = wrImgSrc(img); return s ? `<img src="${esc(s)}" alt="attached image">` : ''; }).join('')}</div>` : '';
         const files = (m.files && m.files.length) ? `<div class="wr-bub-files">${m.files.map((f) => `<span class="wr-file-chip" data-tip="${esc(f.name)}">${I.paperclip || '📎'}<span class="wr-file-n">${esc(f.name)}</span></span>`).join('')}</div>` : '';
         const txt = m.content ? `${esc(m.content).replace(/\n/g, '<br>')}` : '';
         return `<div class="wr-msg ${m.role}">${m.role === 'assistant' ? '<span class="wr-av">🤠</span>' : ''}<div class="wr-bub">${imgs}${files}${txt}${act}</div></div>`;
@@ -5077,6 +5902,7 @@ function wranglerDockEl() {
 }
 function mountWranglerDock() {
   const d = document.querySelector('.wrangler-dock'); if (!d) return;
+  wrHydrateBlobs(state.wrangler.messages);   // resolve any image blob refs → object URLs, then repaint
   const inp = d.querySelector('.js-wr-in');
   if (inp) inp.addEventListener('paste', (ev) => {
     const items = (ev.clipboardData && ev.clipboardData.items) || [];
@@ -5089,10 +5915,198 @@ function mountWranglerDock() {
 // §18g Conversation rail — the bottom-right strip of past Mr. Wrangler chats.
 // Opening Mr. Wrangler always starts a NEW chat; the one you leave is snapshotted
 // here so you can hop back in. A `needs-jac` chat (Mr. Wrangler is waiting on you)
-// rides the rail flashing until you answer it.
-const WR_RAIL_MAX = 8;   // how many stored chats the rail keeps (newest win)
+// rides the rail flashing until you answer it. Retention: KEEP ALL chats (the old
+// 8-chat localStorage cap is retired); the rail UI shows the recent few, the store
+// keeps everything, bounded by the size budget/offload layer.
+/* ── wrStore — IndexedDB for the Mr. Wrangler rail ────────────────────────────
+   The rail used to live in localStorage with inline-base64 images; image-heavy
+   chats blew the ~5MB cap and a silent try/catch swallowed the QuotaExceeded, so
+   history vanished. IndexedDB (gigabytes, native Blobs) replaces it. Two stores:
+   `chats` keyed by chat id (snapshot text + message refs), `blobs` keyed by a
+   blob key (the image Blob itself). A thin promise wrapper — no deps. Every call
+   REJECTS loudly on failure; callers surface it (never a silent drop again).
+   See docs/superpowers/specs/2026-06-20-wrangler-chat-storage-design.md. */
+const WR_DB = 'jactec.wrangler', WR_DB_VER = 1;
+let _wrDbPromise = null;
+function wrDbOpen() {
+  if (_wrDbPromise) return _wrDbPromise;
+  _wrDbPromise = new Promise((resolve, reject) => {
+    if (typeof indexedDB === 'undefined') { reject(new Error('no-indexeddb')); return; }
+    let req; try { req = indexedDB.open(WR_DB, WR_DB_VER); } catch (e) { reject(e); return; }
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains('chats')) db.createObjectStore('chats', { keyPath: 'id' });
+      if (!db.objectStoreNames.contains('blobs')) db.createObjectStore('blobs');   // out-of-line keys (blobKey)
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error || new Error('idb-open-failed'));
+  });
+  return _wrDbPromise;
+}
+/* Run one store op in its own transaction; resolve with the request's result once
+   the tx COMMITS (so a write is durable before we move on). fn returns an IDBRequest. */
+function wrTx(store, mode, fn) {
+  return wrDbOpen().then((db) => new Promise((resolve, reject) => {
+    let tx, req;
+    try { tx = db.transaction(store, mode); req = fn(tx.objectStore(store)); } catch (e) { reject(e); return; }
+    tx.oncomplete = () => resolve(req ? req.result : undefined);
+    tx.onerror = () => reject(tx.error || new Error('idb-tx-error'));
+    tx.onabort = () => reject(tx.error || new Error('idb-abort'));
+  }));
+}
+const wrStore = {
+  putChat: (c) => wrTx('chats', 'readwrite', (os) => os.put(c)),
+  getChat: (id) => wrTx('chats', 'readonly', (os) => os.get(id)),
+  delChat: (id) => wrTx('chats', 'readwrite', (os) => os.delete(id)),
+  listChats: () => wrTx('chats', 'readonly', (os) => os.getAll()),
+  putBlob: (key, blob) => wrTx('blobs', 'readwrite', (os) => os.put(blob, key)),
+  getBlob: (key) => wrTx('blobs', 'readonly', (os) => os.get(key)),
+  delBlob: (key) => wrTx('blobs', 'readwrite', (os) => os.delete(key)),
+  estimate: () => (typeof navigator !== 'undefined' && navigator.storage && navigator.storage.estimate)
+    ? navigator.storage.estimate() : Promise.resolve({ usage: 0, quota: 0 }),
+};
 function wranglerNewId() { return 'wc' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
-function wranglerRailSave() { try { localStorage.setItem('jactec.wranglerRail', JSON.stringify(state.wranglerRail.slice(0, WR_RAIL_MAX))); } catch (e) {} }
+/* A stored message's image is a ref { blobKey, driveUrl?, mime? } — or, for an
+   un-migrated LIVE message, a legacy base64 string. wrImgSrc → a renderable src:
+   the Drive URL if offloaded, else a session object URL for the local blob
+   (hydrated async, then a re-render paints it), else '' until ready. */
+const wrBlobUrls = Object.create(null);   // blobKey → object URL (per-session cache)
+function wrImgSrc(img) {
+  if (!img) return '';
+  if (typeof img === 'string') return img;              // legacy inline base64
+  if (img.driveUrl) return img.driveUrl;
+  return wrBlobUrls[img.blobKey] || '';                 // '' until hydrated, then re-render
+}
+let _wrHydrating = false;
+async function wrHydrateBlobs(messages) {
+  const need = new Set();
+  (messages || []).forEach((m) => (m.images || []).forEach((img) => {
+    if (img && typeof img === 'object' && img.blobKey && !img.driveUrl && !wrBlobUrls[img.blobKey]) need.add(img.blobKey);
+  }));
+  if (!need.size || _wrHydrating) return;
+  _wrHydrating = true; let any = false;
+  for (const key of need) { try { const b = await wrStore.getBlob(key); if (b) { wrBlobUrls[key] = URL.createObjectURL(b); any = true; } } catch (e) {} }
+  _wrHydrating = false;
+  if (any && state.wrangler.open) render();              // paint the now-resolved images (guard prevents a loop)
+}
+/* Convert a message's images into refs, storing any base64 as a blob. Idempotent:
+   an existing ref passes through. Never loses an image — keeps the base64 inline
+   if the blob store fails. */
+async function wrIngestImages(chatId, images) {
+  if (!images || !images.length) return images || null;
+  const out = [];
+  for (let i = 0; i < images.length; i++) {
+    const img = images[i];
+    if (img && typeof img === 'object') { out.push(img); continue; }                 // already a ref
+    if (typeof img === 'string' && img.startsWith('data:')) {
+      const key = 'b_' + chatId + '_' + i + '_' + Math.random().toString(36).slice(2, 6);
+      try { const blob = await (await fetch(img)).blob(); await wrStore.putBlob(key, blob); out.push({ blobKey: key, mime: blob.type }); }
+      catch (e) { out.push(img); }                                                    // keep base64 — never lose the image
+    } else if (img) out.push(img);
+  }
+  return out;
+}
+/* Persist a rail snapshot to IndexedDB (ingesting its image blobs). Async +
+   LOUD on failure — the old silent localStorage catch is gone for good. Then run
+   the two offload triggers: a FILED chat's images go to Drive (they're in the
+   issue now), and the budget check keeps the store bounded. */
+async function wranglerRailPersist(snap) {
+  try {
+    for (const m of (snap.messages || [])) { if (m.images) m.images = await wrIngestImages(snap.id, m.images); }
+    await wrStore.putChat(snap);
+  } catch (e) { toast('⚠ Couldn’t save this chat locally — ' + ((e && e.message) || 'storage error')); return; }
+  const online = typeof backendPassword !== 'undefined' && backendPassword;
+  if (online && (snap.messages || []).some((m) => m.filed)) wrOffloadChatImages(snap);   // on-file: free the local copies (safe — they ride the issue)
+  wrEnforceBudget();                                                                     // threshold: keep the store ≤ budget
+  pushWranglerRailSoon();                                                                // cross-device: sync the rail to the backend (debounced)
+}
+// ── The storage guarantee: offload to Drive + bounded eviction (never overflow) ──
+const WR_LOCAL_BUDGET = 25 * 1024 * 1024;   // hard ceiling for the Wrangler store
+function wrRevoke(blobKey) { if (wrBlobUrls[blobKey]) { try { URL.revokeObjectURL(wrBlobUrls[blobKey]); } catch (e) {} delete wrBlobUrls[blobKey]; } }
+function wrBlobToDataUrl(blob) { return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => rej(r.error); r.readAsDataURL(blob); }); }
+/* Offload a chat's un-synced image blobs to Drive (online only): set driveUrl,
+   drop the local blob (it re-fetches from the URL). _upload is a test seam. */
+async function wrOffloadChatImages(chat, _upload) {
+  const upload = _upload || ((typeof backendPassword !== 'undefined' && backendPassword) ? ((p) => backendCall('uploadCapture', p)) : null);
+  if (!upload || !chat) return false;
+  let changed = false;
+  for (const m of (chat.messages || [])) for (const img of (m.images || [])) {
+    if (!img || typeof img !== 'object' || !img.blobKey || img.driveUrl) continue;
+    try {
+      const blob = await wrStore.getBlob(img.blobKey); if (!blob) continue;
+      const res = await upload({ dataUrl: await wrBlobToDataUrl(blob), name: 'wrchat_' + chat.id + '_' + img.blobKey });
+      if (res && res.ok && res.url) { await wrStore.delBlob(img.blobKey); wrRevoke(img.blobKey); img.driveUrl = driveViewUrl(res); delete img.blobKey; changed = true; }   // blob now lives on Drive (embeddable URL)
+    } catch (e) { /* leave the blob — never lose it */ }
+  }
+  if (changed) { try { await wrStore.putChat(chat); } catch (e) {} }
+  return changed;
+}
+/* Drop a chat's LOCAL image blobs to free space. Synced blobs (have a driveUrl)
+   are a SAFE cache drop — re-fetchable; un-synced is a lossy last resort. */
+async function wrEvictChatBlobs(chat, unsyncedOk) {
+  let n = 0;
+  for (const m of (chat.messages || [])) for (const img of (m.images || [])) {
+    if (!img || typeof img !== 'object' || !img.blobKey) continue;   // no local blob to drop
+    if (img.driveUrl || unsyncedOk) {
+      try { await wrStore.delBlob(img.blobKey); } catch (e) {}
+      wrRevoke(img.blobKey);
+      if (!img.driveUrl) img.gone = true;   // un-synced + dropped → image lost (render shows nothing); text/ref kept
+      delete img.blobKey;                   // local blob gone → not re-counted on a later pass
+      n++;
+    }
+  }
+  if (n) { try { await wrStore.putChat(chat); } catch (e) {} }   // persist the ref changes
+  return n;
+}
+/* Keep the Wrangler store ≤ WR_LOCAL_BUDGET so localStorage's silent overflow can
+   never recur — layered, loss-averse, loud: (1) images → Drive when online,
+   (2) synced-first blob eviction, (3) un-synced eviction + (4) oldest-text trim as
+   the unreachable backstop. Text is never dropped before every image is gone. */
+let _wrEnforcing = false;
+async function wrEnforceBudget() {
+  if (_wrEnforcing) return;
+  let usage; try { usage = (await wrStore.estimate()).usage || 0; } catch (e) { return; }
+  if (usage < WR_LOCAL_BUDGET * 0.6) return;                                    // comfortably under → nothing to do
+  _wrEnforcing = true;
+  const under = async () => { try { return ((await wrStore.estimate()).usage || 0) < WR_LOCAL_BUDGET * 0.6; } catch (e) { return true; } };
+  const over = async () => { try { return ((await wrStore.estimate()).usage || 0) >= WR_LOCAL_BUDGET; } catch (e) { return false; } };
+  try {
+    const oldest = [...state.wranglerRail].sort((a, b) => (a.ts || 0) - (b.ts || 0));
+    const online = typeof backendPassword !== 'undefined' && backendPassword;
+    if (online) { for (const c of oldest) { await wrOffloadChatImages(c); if (await under()) return; } }   // Layer 1
+    for (const c of oldest) { await wrEvictChatBlobs(c, false); if (await under()) return; }               // Layer 2 (synced-first, safe)
+    if (await over()) {                                                                                     // Layer 3 (lossy, LOUD)
+      let dropped = 0; for (const c of oldest) { dropped += await wrEvictChatBlobs(c, true); if (await under()) break; }
+      if (dropped) toast('⚠ Freed local space — ' + dropped + ' un-synced chat image' + (dropped === 1 ? '' : 's') + ' dropped. Reconnect to save them to Drive.');
+      if (await over()) {                                                                                   // Layer 4 (text backstop)
+        for (const c of oldest) { try { await wrStore.delChat(c.id); } catch (e) {} state.wranglerRail = state.wranglerRail.filter((x) => x.id !== c.id); if (await under()) break; }
+        toast('⚠ Trimmed the oldest chats to stay under the storage limit.'); render();
+      }
+    }
+  } finally { _wrEnforcing = false; }
+}
+/* Boot: migrate the legacy localStorage rail into IndexedDB (one-time), then load
+   ALL stored chats into the in-memory rail (newest first). Keep-all retention —
+   the size guarantee is enforced by the budget/offload layer, not by dropping. */
+async function wranglerRailLoad() {
+  let legacy = null; try { legacy = localStorage.getItem('jactec.wranglerRail'); } catch (e) {}
+  if (legacy) {
+    try {
+      for (const c of (JSON.parse(legacy) || [])) {
+        if (!c || !c.id) continue;
+        for (const m of (c.messages || [])) { if (m.images) m.images = await wrIngestImages(c.id, m.images); }
+        await wrStore.putChat(c);
+      }
+      try { localStorage.removeItem('jactec.wranglerRail'); } catch (e) {}            // migrated — drop the legacy key
+    } catch (e) { /* leave the legacy key in place if migration fails — don't lose it */ }
+  }
+  try {
+    const all = await wrStore.listChats();
+    state.wranglerRail = (all || []).sort((a, b) => (b.ts || 0) - (a.ts || 0));
+    if (state.wranglerRail.length) render();
+  } catch (e) { toast('⚠ Couldn’t load chat history — ' + ((e && e.message) || 'storage error')); }
+  loadWranglerRail();   // cross-device: union the local rail with the role's backend rail
+}
 // A short, human title for a conversation: its first thing-said, else the request title.
 function wranglerConvoTitle(o) {
   const fu = (o.messages || []).find((m) => m.role === 'user' && m.content && m.content.trim());
@@ -5108,8 +6122,7 @@ function wranglerRailSnapshot() {
     messages: o.messages.map((m) => ({ role: m.role, content: m.content, images: m.images || null, files: m.files || null, action: m.action || null, filed: m.filed || false, issue: m.issue || null })) };
   const i = state.wranglerRail.findIndex((c) => c.id === snap.id);
   if (i >= 0) state.wranglerRail[i] = snap; else state.wranglerRail.unshift(snap);
-  state.wranglerRail = state.wranglerRail.slice(0, WR_RAIL_MAX);
-  wranglerRailSave();
+  wranglerRailPersist(snap);   // → IndexedDB (keep all; ingest image blobs; loud on failure)
 }
 // Start a fresh conversation (snapshotting whatever was open first).
 function wranglerNewChat(seed) {
@@ -5959,8 +6972,9 @@ let _ovScroll = {}, _ovLastKind = null;   // keep a popup-body's scroll across i
    stack stays balanced. Phone-only — desktop keeps Esc/click. Wired in boot(). ── */
 let backGuard = false, backConsuming = false;
 let swipeFired = false;   // §M1/§M3 — a footer (column) or grid (Back/Fwd) swipe sets this so the trailing click is swallowed once
-function anyDismissable() { return !!(state.overlay || state.winpicker || state.chat.open || state.wrangler.open); }
+function anyDismissable() { return !!(state.overlay || state.winpicker || state.datesearch || state.chat.open || state.wrangler.open); }
 function dismissTopSheet() {
+  if (state.datesearch) { closeDateSearch(); return true; }
   if (state.winpicker) { closeWinPicker(); return true; }
   if (state.overlay) { closeOverlay(); return true; }
   if (state.wrangler.open) { wranglerRailSnapshot(); state.wrangler.open = false; render(); return true; }   // mirror js-wr-close
@@ -6332,26 +7346,31 @@ function renderOverlay() {
       <div class="popup-body board-body bv-body">${o.customize ? bvCustomizePanel(o.card) : ''}${boardViewTable(o, session)}</div>`;
     overlay.appendChild(pop);
   } else if (o.kind === 'tools') {
-    // §M1 — the global tool tray (the desktop bottom bar) as a phone sheet
+    // §M1 — the global tool tray (the desktop bottom bar) as a phone sheet. Notifications +
+    // Requests live here on phone (their floating FABs are hidden) — bottomBarInner already
+    // carries Requests, so we add the Notifications bell.
+    const nu = unseenNotifs();
+    const notifBtn = `<button class="iconbtn js-notifications" data-tip="Notifications">${I.bell}<span>Notifications</span>${nu ? `<span class="bb-badge">${nu > 9 ? '9+' : nu}</span>` : ''}</button>`;
     const pop = el('div', 'popup'); pop.style.width = '360px';
     pop.innerHTML = popupShell({ icon: I.sliders || I.menu || '', title: 'Tools', tag: 'Yard · toolbox',
-      body: `<div class="tools-tray">${bottomBarInner()}</div>` });
+      body: `<div class="tools-tray">${notifBtn}${bottomBarInner()}</div>` });
     overlay.appendChild(pop);
   } else if (o.kind === 'settings') {
-    const cfg = o.config || { roles: {}, admin: '' };
-    const roleRows = Object.keys(cfg.roles).map((role) => `<label class="set-row"><span class="set-role">${esc(role)}</span><input class="set-input" data-role="${esc(role)}" value="${esc(cfg.roles[role])}" autocomplete="off" /></label>`).join('');
-    const pop = el('div', 'popup'); pop.style.width = '380px';
-    pop.innerHTML = popupShell({ icon: I.grid, title: 'Settings — Logins', tag: 'Admin · access',
-      foot: `<button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill ignition js-settings-save" data-r="R17">Save</button>`,
-      body: `
-        <p class="muted" style="font-size:11px;margin:0 0 10px">Each role signs in with its password (plus their name). Changes apply at next sign-in.</p>
-        ${roleRows}
-        <label class="set-row set-admin"><span class="set-role">Admin</span><input class="set-input" data-admin="1" value="${esc(cfg.admin)}" autocomplete="off" /></label>
-        <div class="set-row" style="margin-top:12px;align-items:center"><span class="set-role" style="flex:0 0 auto" data-tip="ON: dropping a unit onto a conflicting rental links anyway — both sides get a pulsing red 'Overbooked' flag while the overlap exists. OFF: the drop is blocked, naming the conflict.">Allow overbooking</span>${segCtl([{ label: 'Off', js: 'js-overbook', data: { val: '0' }, on: state.overbookOn ? null : 'red' }, { label: 'On', js: 'js-overbook', data: { val: '1' }, on: state.overbookOn ? 'green' : null }])}</div>
-        <p class="muted" style="font-size:10.5px;margin:4px 0 0">Drag &amp; drop policy — saved on this device.</p>
-        <div class="set-row" style="margin-top:12px;align-items:center"><span class="set-role" style="flex:0 0 auto" data-tip="A light vibration confirms committed actions on phones (post a chat, drop a link, complete a WO, release-to-cancel). Android only — iOS has no vibration.">Haptic feedback</span>${segCtl([{ label: 'Off', js: 'js-haptics', data: { val: '0' }, on: state.hapticsOff ? 'red' : null }, { label: 'On', js: 'js-haptics', data: { val: '1' }, on: state.hapticsOff ? null : 'green' }])}</div>
-        <p class="muted" style="font-size:10.5px;margin:4px 0 0">Touch feedback — saved on this device.</p>
-        ${o.error ? `<div class="login-err" style="text-align:left;margin-top:8px">${esc(o.error)}</div>` : ''}` });
+    o.config = o.config || { roles: {}, admin: '' };
+    o.tab = o.tab || 'logins';
+    o.setSel = o.setSel || 'rentalStatus';
+    if (!o.draftSettings) o.draftSettings = JSON.parse(JSON.stringify((o.config && o.config.settings) || state.settings || {}));
+    const pop = el('div', 'popup board-popup settings-popup');
+    const foot = `${pageDefaultSlice(o.tab) ? '<button class="pill ghost js-settings-resetpage" data-r="R18" data-tip="Reset just this tab to defaults (Save to keep)">Reset page</button>' : ''}<button class="pill ghost set-danger js-settings-reset${o.resetArm ? ' armed' : ''}" data-r="R18">${o.resetArm ? 'Click again — reset everything' : 'Reset all'}</button>${hasSettingsBackup() ? '<button class="pill ghost js-settings-undo" data-r="R18">Undo last change</button>' : ''}<span class="spacer"></span>${o.error ? `<span class="set-err">${esc(o.error)}</span>` : ''}<button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill ignition js-settings-save" data-r="R17">Save settings</button>`;
+    pop.innerHTML = `
+      <div class="popup-head">
+        <span class="pl-ic">${I.sliders}</span>
+        <div class="pl-title"><h3>Settings</h3><span class="pl-tag">Admin · Wrangle the yard</span></div>
+        <span class="spacer"></span>
+        <button class="x js-close" aria-label="Close">${I.x}</button>
+      </div>
+      <div class="popup-body settings-body">${settingsBoardHtml(o)}</div>
+      <div class="popup-foot">${foot}</div>`;
     overlay.appendChild(pop);
   } else if (o.kind === 'newCustomer') {
     const d = o.draft; const isEdit = !!o.editId;
@@ -6361,15 +7380,13 @@ function renderOverlay() {
     const indOpts = NC_INDUSTRIES.map((i) => `<option value="${esc(i)}"></option>`).join('');
     const acctPills = NC_ACCOUNT_TYPES.map((t) => `<button type="button" class="nc-pill js-nc-acct${t === d.accountType ? ' on' : ''}" data-val="${esc(t)}">${esc(getStatus('customerAccountType', t).label)}</button>`).join('');
     const nameVal = (d.name != null && d.name !== '') ? d.name : `${d.firstName || ''} ${d.lastName || ''}`.trim();
-    const AG_LOCK = '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
-    const AG_CAM = '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>';
     // The card rail IS the header (no title). Account tab + a tab per card (signed dot) + a +Card add.
     const railTabs = `<div class="ag-tabs" role="tablist">
       <button type="button" class="ag-tab js-nc-tab${tab === 'account' ? ' on' : ''}" data-tab="account">Account</button>
       ${cards.map((k) => `<button type="button" class="ag-tab js-nc-tab${tab === k.id ? ' on' : ''}" data-tab="${esc(k.id)}"><span class="ag-dot ${cardAuthorized(custRec, k) ? 'ok' : 'bad'}"></span>${esc(brandName(k.brand))} ••${esc(k.last4)}</button>`).join('')}
       ${addBtn('Card', { link: true, js: 'js-add-card', data: { rec: o.editId || '' } })}
     </div>`;
-    const headRail = `${railTabs}<span class="spacer"></span>${isEdit ? `<button class="iconbtn js-nc-qr" data-tip="Open on phone">${I.qr}</button>` : ''}`;
+    const headRail = `${railTabs}<span class="spacer"></span>${isEdit ? `<button class="iconbtn iconbtn-bare js-nc-qr" data-tip="Open on phone">${I.qr}</button>` : ''}`;
     let body;
     if (tab === 'account') {
       const blocked = custRec && accountAgreementsBlocked(custRec);
@@ -6382,9 +7399,17 @@ function renderOverlay() {
           <label class="nc-field"><span>Phone *</span><input class="nc-in" data-f="phone" value="${esc(d.phone)}" autocomplete="off" /></label>
           <label class="nc-field"><span>Email</span><input class="nc-in" data-f="email" type="email" value="${esc(d.email)}" autocomplete="off" /></label>
           <label class="nc-field"><span>Industry</span><input class="nc-in" data-f="industry" list="nc-industries" value="${esc(d.industry)}" autocomplete="off" /></label>
-          <label class="nc-field"><span>Notes</span><input class="nc-in" data-f="accountNotes" value="${esc(d.accountNotes)}" autocomplete="off" /></label>
+          <div class="nc-field"><span>Notes · PO</span>
+            <div class="nc-notes-po">
+              <input class="nc-in" data-f="accountNotes" value="${esc(d.accountNotes)}" autocomplete="off" placeholder="Notes" />
+              ${(() => { const set = d.requiresPO === true || d.requiresPO === false; return `<button type="button" class="nc-po js-nc-po${d.requiresPO === true ? ' on' : ''}${set ? '' : ' req'}" aria-pressed="${d.requiresPO === true ? 'true' : 'false'}" data-tip="${set ? (d.requiresPO ? 'PO required before invoicing' : 'No PO required') : 'Answer required before saving — does this account need a PO?'}">PO ${set ? (d.requiresPO ? 'Yes' : 'No') : '?'}</button>`; })()}
+            </div>
+          </div>
           <div class="nc-field nc-wide"><span>Account type</span><div class="nc-pills">${acctPills}</div></div>
+          <label class="nc-field"><span>Driver’s license / ID #</span><input class="nc-in" data-f="idNumber" value="${esc(d.idNumber || '')}" autocomplete="off" /></label>
+          <label class="nc-field"><span>Payment terms — Net days</span><input class="nc-in" data-f="netDays" type="number" min="0" max="${companyMaxNetDays()}" value="${d.netDays != null && d.netDays !== '' ? esc(d.netDays) : ''}" placeholder="0 = COD" autocomplete="off" /><span class="nc-hint">0 = Cash on delivery · max ${companyMaxNetDays()} days (set in Settings → Company)</span></label>
         </div>
+        ${cfSectionHtml('customers', d.custom || {})}
         <datalist id="nc-industries">${indOpts}</datalist>`;
     } else {
       const k = cards.find((x) => x.id === tab);
@@ -6394,26 +7419,18 @@ function renderOverlay() {
         const sg = cardCurrentSigning(custRec, k);
         body = `
           <div class="ag-meta">${esc(meta)}<span class="ag-metasep"></span>${badge('Authorized', 'green')}</div>
-          <div class="ag-signed"><span class="ag-lock">${AG_LOCK}</span><span class="t"><b>${esc(sg.title)}</b> · signed ${esc(sg.signedAt || '—')}</span>${actionPill('commit', '⤓ PDF', { js: 'js-ncsign-pdf', data: { card: k.id, sig: sg.id } })}</div>
+          <div class="ag-signed"><span class="ag-lock">${AG_LOCK}</span><span class="t"><b>${esc(signingTitle(sg))}</b> · signed ${esc(sg.signedAt || '—')}</span>${actionPill('commit', '⤓ PDF', { js: 'js-ncsign-pdf', data: { card: k.id, sig: sg.id } })}</div>
           <div class="ag-packet">
-            <div class="ag-pcell"><div class="ag-pcap">Selfie</div>${sg.selfie ? `<img class="ag-selfie" src="${esc(sg.selfie)}" alt="selfie on file" />` : '<div class="ag-selfie empty">—</div>'}</div>
-            <div class="ag-pcell"><div class="ag-pcap">Signature</div><img class="ag-sigthumb" src="${esc(sg.signature)}" alt="signature on file" /></div>
+            <div class="ag-pcell"><div class="ag-pcap">Selfie</div>${signingSelfieSrc(sg) ? `<img class="ag-selfie" src="${esc(signingSelfieSrc(sg))}" alt="selfie on file" />` : '<div class="ag-selfie empty">—</div>'}</div>
+            <div class="ag-pcell"><div class="ag-pcap">Signature</div>${signingSignatureSrc(sg) ? `<img class="ag-sigthumb" src="${esc(signingSignatureSrc(sg))}" alt="signature on file" />` : '<div class="ag-sigthumb"></div>'}</div>
           </div>
           <p class="muted" style="font-size:11px;margin:12px 2px 0">🔒 Locked — the exact agreement accepted on this card. Re-signing happens only on a new card or an account-type change.</p>`;
       } else {
         const key = requiredAgreementKey(custRec); const ag = AGREEMENTS[key];
-        const selfie = o.signDraft && o.signDraft.selfie;
         body = `
           <div class="ag-meta">${esc(meta)}<span class="ag-metasep"></span>${badge(st === 'stale' ? 'Re-sign' : 'Unsigned', 'red')}</div>
-          <div class="ag-gate"><span class="lead">${st === 'stale' ? 'Account type changed — re-sign required.' : 'Sign to allow On-Rent &amp; delivery.'}</span><span class="sub">Card can still be charged.</span></div>
-          <div class="ag-readref"><span><b>${esc(ag.title)}</b></span><button type="button" class="ag-readbtn js-ncsign-read" data-card="${esc(k.id)}">${o.signRead === k.id ? 'Hide' : 'Read'} ↗</button></div>
-          ${o.signRead === k.id ? `<div class="nc-agreement" tabindex="0">${esc(ag.text)}</div>` : ''}
-          <div class="ag-capcap">Capture both to authorize</div>
-          <div class="ag-caprow">
-            <label class="ag-selfiebtn">${selfie ? `<img class="ag-selfie" src="${esc(selfie)}" alt="selfie" />` : `${AG_CAM}<span class="l">Selfie</span>`}<input type="file" accept="image/*" capture="user" class="js-ncsign-selfie" hidden /></label>
-            <canvas class="nc-sigpad ag-pad" width="500" height="220"></canvas>
-          </div>
-          <div class="ag-acceptrow">${actionPill('commit', 'Accept & Sign', { js: 'js-ncsign-save', data: { card: k.id } })}${ghostPill('Clear', { js: 'js-nc-sig-clearpad' })}</div>`;
+          <div class="ag-gate"><span class="lead">${st === 'stale' ? 'Account type changed — re-sign required.' : 'Sign to allow On-Rent &amp; delivery.'}</span><span class="sub">Save to authorize · card can still be charged.</span></div>
+          ${agCaptureBlock(o, ag, k.id)}`;
       }
     }
     const pop = el('div', 'popup nc-popup');
@@ -6424,14 +7441,18 @@ function renderOverlay() {
     if (o.cardSub) {   // §14 the "Add card" panel rendered BESIDE the form (not replacing it)
       const cc = IDX.customer.get(o.editId);
       if (cc) {
-        const cp = el('div', 'popup'); cp.style.width = '400px';
+        // Before the FIRST card, the agreement (selfie + signature) is captured HERE, in
+        // the card flow — never on the Account tab. The bottom-right Save commits it
+        // (no separate Sign & Hold): a card present → signs it; none yet → holds it.
+        const noCardYet = customerCards(cc).length === 0;
+        const cp = el('div', 'popup'); cp.style.width = noCardYet ? '440px' : '400px';
         cp.innerHTML = popupShell({
-          icon: CARD_ICON.customers || '', title: 'Add card', tag: 'Customer · Card on file', closeJs: 'js-cardsub-cancel',
+          icon: CARD_ICON.customers || '', title: noCardYet ? 'Card & agreement' : 'Add card', tag: 'Customer · Card on file', closeJs: 'js-cardsub-cancel',
           body: `
             <div class="pay-cap">Card number</div>
             <div class="pay-card-field" id="sl-card-element"></div>
             <div class="pay-err" id="sl-card-error"></div>
-            <p class="muted" style="font-size:11px;margin:10px 0 0">Entered securely via Stripe — we store only the brand + last 4 digits. The signature + selfie on file authorize future charges.</p>`,
+            ${noCardYet ? `<div class="ag-cardsplit"></div>${heldSignBlock(o, cc, o.draft)}` : ''}`,
           foot: `<button class="pill ghost js-cardsub-cancel" data-r="R18">Cancel</button><button class="pill c-commit js-card-save" data-r="R17">Save card</button>`,
         });
         overlay.appendChild(cp);
@@ -6450,6 +7471,27 @@ function renderOverlay() {
         <div class="nc-ag-meta">${esc(fullName(c))}${c.agreementSignedAt ? ` · accepted ${esc(c.agreementSignedAt)}` : ' · not yet signed'}</div>
         <div class="nc-agreement" tabindex="0">${esc(ag.text)}</div>
         ${c.signature ? `<div class="nc-ag-sigline"><span class="nc-cap-lbl">Signature</span><img class="nc-thumb sig" src="${esc(c.signature)}" alt="signature" /></div>` : ''}` });
+    overlay.appendChild(pop);
+  } else if (o.kind === 'checklist') {
+    // Required-checklist takeover (Settings → Inspections): replaces the sheet until completed;
+    // closing keeps it as a pending inspection. Any item Fail → overall Fail → existing auto-WO.
+    const u = IDX.unit.get(o.unitId); const cfg = u && checklistFor(u); const n = IDX.insp.get(o.inspId);
+    if (!u || !cfg || !n) { state.overlay = null; return; }
+    n.items = n.items || {};
+    const items = cfg.items || [];
+    const done = items.filter((it) => n.items[it.id]).length; const allDone = done === items.length;
+    const cat = IDX.category.get(u.categoryId) || {};
+    const itemRows = items.map((it) => `<div class="ck-row"><span class="ck-label">${esc(it.label)}</span>${segCtl([{ label: '✓ Pass', js: 'js-ck-item', data: { id: it.id, val: 'Pass' }, on: n.items[it.id] === 'Pass' ? 'green' : null }, { label: '✕ Fail', js: 'js-ck-item', data: { id: it.id, val: 'Fail' }, on: n.items[it.id] === 'Fail' ? 'red' : null }])}</div>`).join('');
+    const pop = el('div', 'popup board-popup ck-popup');
+    pop.innerHTML = `
+      <div class="popup-head">
+        <span class="pl-ic">${CARD_ICON.inspections}</span>
+        <div class="pl-title"><h3>Inspection — ${esc(u.name)}</h3><span class="pl-tag">${esc(cat.name || '')} checklist · ${done}/${items.length} checked</span></div>
+        <span class="spacer"></span>
+        <button class="x js-ck-pending" aria-label="Keep as pending">${I.x}</button>
+      </div>
+      <div class="popup-body ck-body">${itemRows}</div>
+      <div class="popup-foot"><button class="pill ghost js-ck-pending" data-r="R18">Keep as pending</button><button class="pill ignition js-ck-complete${allDone ? '' : ' is-disabled'}" data-r="R17">Complete inspection</button></div>`;
     overlay.appendChild(pop);
   } else if (o.kind === 'inspection') {
     // §12.8 Failure report — triggered when an inspection is marked Failed: capture a
@@ -6532,7 +7574,7 @@ function renderOverlay() {
         <div class="pay-cap">Card number</div>
         <div class="pay-card-field" id="sl-card-element"></div>
         <div class="pay-err" id="sl-card-error"></div>
-        <p class="muted" style="font-size:11px;margin:10px 0 0">Entered securely via Stripe. We store only the brand + last 4 digits — never the full number. The customer's signature + selfie on file authorize future charges.</p>` });
+        <p class="muted" style="font-size:11px;margin:10px 0 0">Entered securely via Stripe. We store only the brand + last 4 digits — never the full number. Sign the agreement on this card to authorize On-Rent &amp; deliveries.</p>` });
     overlay.appendChild(pop);
   } else if (o.kind === 'addAch') {
     // §14b ACH — raw routing/account live ONLY in these inputs → straight to Stripe
@@ -6634,6 +7676,7 @@ function renderOverlay() {
   if (o.kind === 'payment') setupPayAlloc();   // live counter for the §19 allocation rows
   if (o.kind === 'addCard') { const cc = IDX.customer.get(o.customerId); if (cc) mountCardElement(); }   // §7.1b card saved first, signed after
   if (o.kind === 'newCustomer' && o.cardSub) { const cc = IDX.customer.get(o.editId); if (cc) mountCardElement(); }   // §14 the side-by-side Add-card panel
+  { const _agFeed = overlay.querySelector('.ag-cam-feed'); if (_agFeed) startAgCam(_agFeed); else stopAgCam(); }   // live selfie camera follows the capture block
 }
 const openOverlay = (o) => { state.datepick = null; _ovScroll[o.kind] = 0; state.overlay = o; renderOverlay(); };   // fresh open starts at top
 /* ── §15 in-app feedback: bug/request → queued to the backend Feedback tab ── */
@@ -6666,7 +7709,7 @@ async function sendFeedback() {
    (action 'wrangler'); Code.gs calls api.anthropic.com with the key from a Script
    Property. Carries a compact data digest + (when opened from a record) its detail.
    ════════════════════════════════════════════════════════════════════════ */
-const WRANGLER_SYSTEM = "You are Mr. Wrangler, the in-app AI for JacRentals — a heavy-equipment rental yard in Sulphur, Louisiana. You help the team make sense of their units, rentals, customers, invoices, work orders, and service, and you help triage bugs they report.\n\nSTYLE — keep it tight: answer in 1–3 sentences by default. Lead with the direct answer first; add at most one short supporting clause. Use a bullet list ONLY when enumerating multiple records, one line each. Don't restate the question, don't pad, and don't over-explain what you can't do — just answer.\n\nDATA — the snapshot below holds the LIVE records: every category with its rates, every fleet unit with its type and status, every rental with its date window and customer, customers with balances owed, and the open invoices and work orders. Reason over it directly. Only say a fact is missing if it truly isn't in the snapshot. Never invent records, names, or numbers.\n\nHELPING & FIXING — you're the assistant living inside the app (think Claude, but for this yard). The user might ask a question, describe a problem, or paste something — work out what they need and help. If they describe a BUG or glitch in the app itself (something not working, a dead control, a wrong layout or behavior), reproduce it in your head; if you're missing a detail, ask ONE quick follow-up (what they tapped + what they expected). Once you can state a clear repro, FILE A FIX by ending your reply with this exact fenced block:\n```wrangler-action\n{\"action\":\"fix\",\"title\":\"<short title>\",\"report\":\"<clear repro: steps, expected vs actual, any element involved>\"}\n```\nThat auto-ships obvious bugs (a dead control, a typo, a plainly wrong value).\nBut if it's a CHANGE or improvement (not an obvious bug), do NOT file it blind — talk it through first: lay out a SHORT, concrete PLAN of exactly what you'd change and where, then ask if that's good or needs adjusting. When you put a concrete plan on the table, end with:\n```wrangler-action\n{\"action\":\"plan\",\"title\":\"<short title>\",\"plan\":\"<numbered steps: what changes, where, and the resulting UX>\"}\n```\nJac reviews that plan and taps Build only when it's right — so take his tweaks and re-propose the plan until he's happy. Emit a block ONLY when ready — a clear repro for a fix, or a concrete plan for a change — never while still gathering detail; keep your visible words short and natural and never mention JSON, blocks, labels, or buttons.\n\nACTING ON DATA — you can DO things, not just answer. You can ADD, UPDATE, or BULK-IMPORT items for the user: customers, units, categories, rentals. NEVER delete anything, and NEVER touch money, card, payment, pricing, balances, auth, or work-order-completion fields. If the user asks to add/change something, or hands you lead/customer data to import (pasted rows, a list, a spreadsheet they paste in), DO IT — never say you can't or that Jac has to build it. Ask any quick follow-up you genuinely need first (which field, how their columns map, what membership stage), then end your reply with:\n```wrangler-action\n{\"action\":\"data\",\"title\":\"<what this does>\",\"ops\":[{\"op\":\"import\",\"entity\":\"customers\",\"rows\":[{\"firstName\":\"..\",\"lastName\":\"..\",\"phone\":\"..\",\"email\":\"..\",\"membershipStage\":\"..\"}]},{\"op\":\"create\",\"entity\":\"customers\",\"fields\":{}},{\"op\":\"update\",\"entity\":\"units\",\"id\":\"U003\",\"fields\":{\"notes\":\"..\"}}]}\n```\nThe user ALWAYS sees a preview and taps Apply before anything is written, so propose freely. Map their funnel/membership words to one of: Inbound Lead, Outbound Lead, Contacted, Not A No!, Payment Discussed, Paid. Editable fields are name/contact/address/industry/notes/account-type/membership+sales stage (customers), name/mechanic/notes/specs (units), name/description/fuel (categories), notes/po (rentals) — anything else (prices, balances, payments) you must decline and explain you can't touch money.\n\nA light wrangler/ranch flavor in voice is welcome — never campy.";
+const WRANGLER_SYSTEM = "You are Mr. Wrangler, the in-app AI for JacRentals — a heavy-equipment rental yard in Sulphur, Louisiana. You help the team make sense of their units, rentals, customers, invoices, work orders, and service, and you help triage bugs they report.\n\nSTYLE — keep it tight: answer in 1–3 sentences by default. Lead with the direct answer first; add at most one short supporting clause. Use a bullet list ONLY when enumerating multiple records, one line each. Don't restate the question, don't pad, and don't over-explain what you can't do — just answer.\n\nDATA — the snapshot below holds the LIVE records: every category with its rates, every fleet unit with its type and status, every rental with its date window and customer, customers with balances owed, and the open invoices and work orders. Reason over it directly. Only say a fact is missing if it truly isn't in the snapshot. Never invent records, names, or numbers.\n\nHELPING & FIXING — you're the assistant living inside the app (think Claude, but for this yard). The user might ask a question, describe a problem, or paste something — work out what they need and help. If they describe a BUG or glitch in the app itself (something not working, a dead control, a wrong layout or behavior), reproduce it in your head; if you're missing a detail, ask ONE quick follow-up (what they tapped + what they expected). Once you can state a clear repro, FILE A FIX by ending your reply with this exact fenced block:\n```wrangler-action\n{\"action\":\"fix\",\"title\":\"<short title>\",\"report\":\"<clear repro: steps, expected vs actual, any element involved>\"}\n```\nThat auto-ships obvious bugs (a dead control, a typo, a plainly wrong value).\nBut if it's a CHANGE or improvement (not an obvious bug), do NOT file it blind — talk it through first: lay out a SHORT, concrete PLAN of exactly what you'd change and where, then ask if that's good or needs adjusting. When you put a concrete plan on the table, end with:\n```wrangler-action\n{\"action\":\"plan\",\"title\":\"<short title>\",\"plan\":\"<numbered steps: what changes, where, and the resulting UX>\"}\n```\nJac reviews that plan and taps Build only when it's right — so take his tweaks and re-propose the plan until he's happy. Emit a block ONLY when ready — a clear repro for a fix, or a concrete plan for a change — never while still gathering detail; keep your visible words short and natural and never mention JSON, blocks, labels, or buttons.\n\nACTING ON DATA — you can DO things, not just answer. You can ADD, UPDATE, or BULK-IMPORT items for the user: customers, units, categories, rentals. NEVER delete anything, and NEVER touch money, card, payment, pricing, balances, auth, or work-order-completion fields. If the user asks to add/change something, or hands you lead/customer data to import (pasted rows, a list, a spreadsheet they paste in), DO IT — never say you can't or that Jac has to build it. Ask any quick follow-up you genuinely need first (which field, how their columns map, what membership stage), then end your reply with:\n```wrangler-action\n{\"action\":\"data\",\"title\":\"<what this does>\",\"ops\":[{\"op\":\"import\",\"entity\":\"customers\",\"rows\":[{\"firstName\":\"..\",\"lastName\":\"..\",\"phone\":\"..\",\"email\":\"..\",\"membershipStage\":\"..\"}]},{\"op\":\"create\",\"entity\":\"customers\",\"fields\":{}},{\"op\":\"update\",\"entity\":\"units\",\"id\":\"U003\",\"fields\":{\"notes\":\"..\"}}]}\n```\nThe user ALWAYS sees a preview and taps Apply before anything is written, so propose freely — but you CANNOT save anything yourself: that wrangler-action block plus the user's Apply tap is the ONLY thing that writes data. So whenever you add, update, or import, you MUST end the reply with the block, and you must NEVER say or imply the change is already done, saved, added, or imported — word it as a preview to apply (say something like: here's the import — look it over and tap Apply). If a list is too big to land in one reply, import a smaller batch and tell them how many rows are still to send; never claim a save you didn't actually emit in a block. Map their funnel/membership words to one of: Inbound Lead, Outbound Lead, Contacted, Not A No!, Payment Discussed, Paid. Editable fields are name/contact/address/industry/notes/account-type/membership+sales stage (customers), name/mechanic/notes/specs (units), name/description/fuel (categories), notes/po (rentals) — anything else (prices, balances, payments) you must decline and explain you can't touch money.\n\nA light wrangler/ranch flavor in voice is welcome — never campy.";
 // The digest is Mr. Wrangler's whole window into the yard, so it carries the ACTUAL
 // records (not just counts): category rates, each unit's type/status, each rental's
 // date window + customer, customer balances, and open invoices/WOs. Sections cap at
@@ -6773,7 +7816,7 @@ async function wranglerSend() {
   syncWranglerComment(o, 'user', text, imgs);   // §18e mirror the turn onto the issue thread
   wranglerClearNeedsAnswer(o.reqNumber);        // §18e answering a "Needs your answer" request clears it from the inbox
   o.draft = ''; o.attach = []; o.files = []; o.busy = true; o.error = ''; render();
-  const system = WRANGLER_SYSTEM + '\n\n' + wranglerContext(o);
+  const system = WRANGLER_SYSTEM + (o.kpiTarget ? '\n\n' + wranglerKpiSystem() : '') + '\n\n' + wranglerContext(o);
   // Build the payload: images become a content-block array; CSV/text files fold
   // into the message text so Mr. Wrangler reads their rows.
   const fileBlock = (m) => (m.files && m.files.length)
@@ -6796,11 +7839,9 @@ async function wranglerSend() {
       const raw = (r.text || '').trim();
       const act = parseWranglerAction(raw);
       let shown = stripWranglerAction(raw);
-      // An action fence was present but nothing parsed/salvaged → the reply was cut
-      // off before a single complete row arrived. Don't leave the user with no preview
-      // and no explanation — tell them to retry smaller (#152).
-      if (!act && /```wrangler-action/.test(raw)) shown += (shown ? '\n\n' : '') + '⚠️ That action got cut off before it finished sending — likely too big for one go. Ask me to send it in smaller batches and the preview will pop right up.';
-      if (!shown) shown = act ? (act.action === 'data' ? 'Here’s what I’ll change — preview it and hit apply when it looks right.' : act.action === 'request' ? 'Got it — I’ll send this to the developer to OK.' : act.action === 'plan' ? 'Here’s the plan — tap Build when it’s right.' : 'On it — I’ll fix this right now and let you know when I’m done.') : '(no answer)';
+      const truncated = /```wrangler-action/.test(raw) && !act;   // #152 a fence arrived but nothing usable came out of it
+      if (truncated) shown = (shown ? shown + '\n\n' : '') + '⚠️ My reply got cut off before I could finish that action — too much in one go. Ask me to do it in smaller batches and I’ll send a preview you can apply.';
+      else if (!shown) shown = act ? (act.action === 'data' ? 'Here’s what I’ll change — preview it and hit apply when it looks right.' : act.action === 'kpi' ? 'Here’s the KPI — lock it in when the live number looks right.' : act.action === 'request' ? 'Got it — I’ll send this to the developer to OK.' : act.action === 'plan' ? 'Here’s the plan — tap Build when it’s right.' : 'On it — I’ll fix this right now and let you know when I’m done.') : '(no answer)';
       o.messages.push({ role: 'assistant', content: shown, action: act || null, filed: false });
       syncWranglerComment(o, 'assistant', shown);   // §18e mirror Mr. Wrangler's reply onto the issue thread
     } else {
@@ -6815,49 +7856,42 @@ async function wranglerSend() {
 // repro. Opens a pre-filled issue → one Submit tap → the engine takes it from there.
 // Mr. Wrangler decides when something is fixable and emits a hidden action block;
 // we parse it out of his reply (and strip it from what the user sees).
-// The closing fence is OPTIONAL (`(?:```|$)`): a big import (e.g. 168 rows) can
-// blow past the model's output-token limit and get cut off mid-JSON, leaving the
-// opening ```wrangler-action with no closer. We still strip + parse what arrived
-// rather than dumping raw JSON in the bubble with no preview (#152).
-const WR_ACTION_RE = /```wrangler-action\s*([\s\S]*?)(?:```|$)/;
 function parseWranglerAction(text) {
-  const m = String(text || '').match(WR_ACTION_RE);
+  const s = String(text || '');
+  let m = s.match(/```wrangler-action\s*([\s\S]*?)```/);   // a normal, closed fence
+  if (!m) m = s.match(/```wrangler-action\s*([\s\S]*)$/);  // #152 a truncated reply leaves the fence UNCLOSED
   if (!m) return null;
-  const src = m[1].trim();
-  let j = null;
-  try { j = JSON.parse(src); } catch (e) { j = salvageWranglerAction(src); }   // truncated stream → recover the rows that fully arrived
-  if (j && ((['fix', 'request', 'plan'].includes(j.action) && j.title) || (j.action === 'data' && Array.isArray(j.ops)))) return j;
-  return null;
+  const body = m[1].trim();
+  try { const j = JSON.parse(body); if (j && ((['fix', 'request', 'plan'].includes(j.action) && j.title) || (j.action === 'data' && Array.isArray(j.ops)))) return j; } catch (e) {}
+  return wrSalvageDataAction(body);   // truncated import → recover the complete rows so the preview still opens
 }
-const stripWranglerAction = (text) => String(text || '').replace(/```wrangler-action\s*[\s\S]*?(?:```|$)/g, '').trim();
-// Best-effort recovery of a truncated `data`/import action (#152): the reply was
-// cut off mid-JSON so it won't parse whole, but the rows that DID arrive are
-// complete objects. Pull the action shell + every fully-closed row (brace-matched)
-// so the preview can still open with what made it through; flag it as _truncated.
-function salvageWranglerAction(src) {
-  if (!/"action"\s*:\s*"data"/.test(src)) return null;   // only the row-structured import is salvageable
-  const title = (src.match(/"title"\s*:\s*"((?:[^"\\]|\\.)*)"/) || [])[1] || '';
-  const entity = (src.match(/"entity"\s*:\s*"((?:[^"\\]|\\.)*)"/) || [])[1] || '';
-  const rowsAt = src.indexOf('"rows"');
-  if (rowsAt < 0 || !entity) return null;
-  let start = src.indexOf('[', rowsAt);
-  if (start < 0) return null;
-  const rows = [];
-  for (let i = start + 1; i < src.length; i++) {
-    if (src[i] !== '{') continue;
-    let depth = 0, inStr = false, esc = false, objStart = i;
-    for (; i < src.length; i++) {
-      const ch = src[i];
-      if (inStr) { if (esc) esc = false; else if (ch === '\\') esc = true; else if (ch === '"') inStr = false; continue; }
-      if (ch === '"') inStr = true;
-      else if (ch === '{') depth++;
-      else if (ch === '}' && --depth === 0) { try { rows.push(JSON.parse(src.slice(objStart, i + 1))); } catch (e) {} break; }
-    }
-    if (depth > 0) break;   // last object was cut off mid-way → keep the complete ones, stop
+// #152 A big `data`/import reply can blow past the model's output-token limit and
+// arrive cut off mid-row (no closing ``` ), which left parse AND strip empty so NO
+// preview opened at all. Salvage the header + every COMPLETE row by brace-walking the
+// rows array; each recovered row still runs the wrValidatePlan allowlist on apply, so
+// nothing unsafe can ride in on a half-parsed payload. `_truncated` warns in the preview.
+function wrSalvageDataAction(body) {
+  if (!/"action"\s*:\s*"data"/.test(body)) return null;
+  const entity = (body.match(/"entity"\s*:\s*"(\w+)"/) || [])[1];
+  const rowsAt = body.indexOf('"rows"');
+  const open = rowsAt < 0 ? -1 : body.indexOf('[', rowsAt);
+  if (!entity || open < 0) return null;
+  const title = (body.match(/"title"\s*:\s*"((?:[^"\\]|\\.)*)"/) || [])[1] || 'Import';
+  const rows = []; let depth = 0, start = -1, inStr = false, escd = false;
+  for (let i = open + 1; i < body.length; i++) {
+    const ch = body[i];
+    if (inStr) { if (escd) escd = false; else if (ch === '\\') escd = true; else if (ch === '"') inStr = false; continue; }
+    if (ch === '"') inStr = true;
+    else if (ch === '{') { if (depth === 0) start = i; depth++; }
+    else if (ch === '}') { if (--depth === 0 && start >= 0) { try { rows.push(JSON.parse(body.slice(start, i + 1))); } catch (e) {} start = -1; } }
+    else if (ch === ']' && depth === 0) break;
   }
-  if (!rows.length) return null;
-  return { action: 'data', title, ops: [{ op: 'import', entity, rows }], _truncated: true };
+  return rows.length ? { action: 'data', title, ops: [{ op: 'import', entity, rows }], _truncated: true } : null;
 }
+const stripWranglerAction = (text) => String(text || '')
+  .replace(/```wrangler-action\s*[\s\S]*?```/g, '')
+  .replace(/```wrangler-action\s*[\s\S]*$/, '')   // #152 also drop a truncated, unclosed fence
+  .trim();
 
 /* ════════════ Mr. Wrangler ACTS on your data (Jac 2026-06-16) ════════════════
    add / update / bulk-import items — NEVER delete, NEVER money/card/auth/WO. Only
@@ -6945,6 +7979,10 @@ function applyWranglerData(plan) {
   if (first) { const s = activeSession(); if (s.cols) s.cols.right = 'customers'; const ccs = s.cards.customers; if (created === 1) { ccs.mode = 'standard'; ccs.recId = first; } else { ccs.mode = 'list'; ccs.recId = null; ccs.search = ''; } ccs.graphView = false; }
   render();
   toast(`Mr. Wrangler ${[created ? `added ${created}` : '', updated ? `updated ${updated}` : ''].filter(Boolean).join(' · ') || 'made no changes'}. 🤠`);
+  // A bulk import is a one-shot action the operator immediately closes/reloads after
+  // (to go see the new records) — the 1200ms saveSoon() debounce would never fire and
+  // the in-memory records would be lost. Kick the diff-sync NOW instead of waiting.
+  if (created || updated) flushSave();
 }
 
 // Build the GitHub repro packet from Mr. Wrangler's structured report + the live
@@ -7002,7 +8040,7 @@ async function wranglerFileAction(mi) {
   const m = o.messages[mi]; if (!m || !m.action || m.filed) return;
   const isPlan = m.action.action === 'plan';
   const { title, body, label } = wranglerActionPacket(o, m.action);
-  const images = []; (o.messages || []).forEach((mm) => (mm.images || []).forEach((s) => { if (images.length < 8) images.push(s); }));   // §18e carry the chat’s photos onto the issue
+  const images = []; (o.messages || []).forEach((mm) => (mm.images || []).forEach((img) => { const s = wrImgSrc(img); if (images.length < 8 && (s.startsWith('data:') || s.startsWith('http'))) images.push(s); }));   // §18e carry the chat’s photos onto the issue (base64 or an offloaded Drive URL — never a local object URL)
   const okToast = (n) => isPlan ? `Building to your plan — #${n}. 🤠` : label === 'wrangler-request' ? `Sent #${n} to the developer for the OK. 🤠` : `Filed #${n} — Mr. Wrangler’s on it. 🤠`;
   if (typeof backendPassword !== 'undefined' && backendPassword) {
     m.filing = true; render();
@@ -7149,8 +8187,17 @@ function fabStackEl() {
 // typed values survive a selfie/signature/pill change).
 function ncSyncInputs() {
   const o = state.overlay; if (!o || o.kind !== 'newCustomer') return;
-  const root = document.querySelector('.overlay .popup-body'); if (root) root.querySelectorAll('[data-f]').forEach((i) => { o.draft[i.dataset.f] = i.value.trim(); });
+  const root = document.querySelector('.overlay .popup-body'); if (!root) return;
+  root.querySelectorAll('[data-f]').forEach((i) => { o.draft[i.dataset.f] = i.value.trim(); });
+  o.draft.custom = o.draft.custom || {};
+  root.querySelectorAll('[data-cf]').forEach((i) => { o.draft.custom[i.dataset.cf] = i.value.trim(); });
   ncApplyName(o.draft);
+}
+// Admin custom-fields section for an entity form. Empty when no fields are defined.
+function cfSectionHtml(entity, vals) {
+  const defs = customFieldsFor(entity); if (!defs.length) return '';
+  const rows = defs.map((f) => `<label class="nc-field"><span>${esc(f.label)}${f.required ? ' *' : ''}</span><input class="nc-in js-cf-val" data-cf="${esc(f.id)}" type="${f.type === 'number' ? 'number' : 'text'}" value="${esc((vals && vals[f.id]) || '')}" autocomplete="off" /></label>`).join('');
+  return `<div class="nc-sec-title">More details</div><div class="nc-grid">${rows}</div>`;
 }
 /* The form uses ONE "Name" field — everything after the first space is the last
    name. Split it into firstName/lastName (the model's canonical pair). */
@@ -7161,20 +8208,109 @@ function ncApplyName(d) {
   const parts = n.split(/\s+/);
   d.firstName = parts[0]; d.lastName = parts.slice(1).join(' ');
 }
-// Wire the signature canvas for finger/stylus/mouse drawing (white bg → JPEG export).
-function setupSignaturePad() {
-  const cv = document.querySelector('.overlay .nc-sigpad'); if (!cv) return;
-  const ctx = cv.getContext('2d');
-  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);
-  ctx.strokeStyle = '#15171c'; ctx.lineWidth = 2.4; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-  let drawing = false, last = null;
-  const pos = (e) => { const r = cv.getBoundingClientRect(); return { x: (e.clientX - r.left) * (cv.width / r.width), y: (e.clientY - r.top) * (cv.height / r.height) }; };
-  cv.addEventListener('pointerdown', (e) => { e.preventDefault(); drawing = true; last = pos(e); cv.dataset.drawn = '1'; cv.setPointerCapture(e.pointerId); });
-  cv.addEventListener('pointermove', (e) => { if (!drawing) return; e.preventDefault(); const p = pos(e); ctx.beginPath(); ctx.moveTo(last.x, last.y); ctx.lineTo(p.x, p.y); ctx.stroke(); last = p; });
-  cv.addEventListener('pointerup', () => { drawing = false; });
-  cv.addEventListener('pointerleave', () => { drawing = false; });
+/* Live selfie camera for the agreement capture — auto-on the moment the capture block
+   renders so the operator just taps ONCE to snap (no OS picker round-trip). The stream
+   is module-scoped and re-attached across re-renders (no repeat permission prompt); it's
+   stopped on capture, on leaving the capture block, and on overlay close so the camera
+   light never lingers. No camera / permission denied → the file-input fallback stays. */
+let _agCam = null;
+function startAgCam(video) {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;   // no camera API → keep the file-input fallback
+  const attach = (stream) => {
+    _agCam = stream;
+    const v = video || document.querySelector('.overlay .ag-cam-feed'); if (!v) { stopAgCam(); return; }
+    if (v.srcObject !== stream) v.srcObject = stream;
+    if (v.play) v.play().catch(() => {});
+    const tile = v.closest('.ag-selfiebtn'); if (tile) tile.classList.add('live');   // reveal the feed + the "Tap to capture" hint
+  };
+  if (_agCam && _agCam.active) { attach(_agCam); return; }   // reuse the running stream across re-renders — no re-prompt
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false })
+    .then(attach)
+    .catch(() => { _agCam = null; });   // denied / no device → leave the file-input fallback in place
 }
-const closeOverlay = () => { destroyCardElement(); state.datepick = null; state.overlay = null; renderOverlay(); };
+function stopAgCam() {
+  if (_agCam) { _agCam.getTracks().forEach((t) => t.stop()); _agCam = null; }
+}
+function captureAgSelfie() {
+  const v = document.querySelector('.overlay .ag-cam-feed'); if (!v || !v.videoWidth) return;
+  const W = 340, cv = document.createElement('canvas'); cv.width = W; cv.height = Math.round(v.videoHeight * (W / v.videoWidth));
+  const ctx = cv.getContext('2d'); ctx.translate(cv.width, 0); ctx.scale(-1, 1);   // mirror to match the live (selfie) preview
+  ctx.drawImage(v, 0, 0, cv.width, cv.height);
+  const o = state.overlay; if (o && o.kind === 'newCustomer') { o.signDraft = o.signDraft || {}; o.signDraft.selfie = cv.toDataURL('image/jpeg', 0.6); }
+  stopAgCam(); renderOverlay();
+}
+/* Pop the signature pad out into its OWN movable OS window (window.open) so it can be
+   dragged to the customer-facing touchscreen on another monitor — "escape the browser".
+   Strokes stream back here via postMessage and land on the main pad + o.signDraft.sigData,
+   so the operator's normal Save/Sign commits them — no separate Done step in the popout.
+   Any pointer/digitizer device draws on it (finger, stylus, or a USB/Bluetooth pen pad the
+   OS exposes as a pointer); pen pressure varies the line width. */
+let _sigWin = null, _sigMsgWired = false;
+function onSigMessage(e) {
+  if (e.origin !== location.origin) return;   // same-origin only
+  const d = e.data || {}; if (d.type !== 'rw-signature' || typeof d.dataURL !== 'string') return;
+  const o = state.overlay; if (o) { o.signDraft = o.signDraft || {}; o.signDraft.sigData = d.dataURL; }   // persist across re-renders
+  const cv = document.querySelector('.overlay .nc-sigpad'); if (!cv) return;
+  const ctx = cv.getContext('2d'), img = new Image();
+  img.onload = () => { ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height); ctx.drawImage(img, 0, 0, cv.width, cv.height); cv.dataset.drawn = '1'; };
+  img.src = d.dataURL;
+}
+function openSignatureWindow(title) {
+  if (!_sigMsgWired) { window.addEventListener('message', onSigMessage); _sigMsgWired = true; }
+  try { if (_sigWin && !_sigWin.closed) { _sigWin.focus(); return; } } catch (e) {}
+  const w = window.open('', 'rwSignPad', 'width=760,height=560');
+  if (!w) { toast('Allow pop-ups to open the signature window.'); return; }
+  _sigWin = w;
+  const base = location.href.replace(/[^/]*(\?.*)?$/, '');   // absolute base so the popout can load style.css (tokens)
+  const cssTok = ((((document.querySelector('link[href*="style.css"]') || {}).href) || '').match(/\?v=[0-9a-z]+/) || [''])[0];
+  const t = esc(title || 'Rental Account Agreement');
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Signature — ${t}</title><link rel="stylesheet" href="${base}style.css${cssTok}">
+    <style>html,body{height:100%;margin:0;background:var(--bg,#0b0c0f);color:var(--txt,#e9edf4);font-family:'Geist',system-ui,sans-serif;overflow:hidden}
+      .sw{display:flex;flex-direction:column;height:100%;box-sizing:border-box;padding:18px;gap:12px}
+      .sw-cap{font-family:'Saira Condensed',system-ui,sans-serif;text-transform:uppercase;letter-spacing:1.6px;font-size:13px;color:var(--txt-2,#aeb6c2)}
+      .sw-cap b{color:var(--txt,#e9edf4);font-weight:700}
+      .sw-pad{flex:1;width:100%;border:1.5px dashed var(--line,#2a2f37);border-radius:14px;background:#fbfcfd;touch-action:none;cursor:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='22'%3E%3Ccircle cx='11' cy='11' r='7' fill='none' stroke='%23ff7a1a' stroke-width='2'/%3E%3Ccircle cx='11' cy='11' r='1.6' fill='%23ff7a1a'/%3E%3C/svg%3E") 11 11, crosshair}
+      .sw-foot{display:flex;justify-content:flex-end}
+      .sw-clear{appearance:none;font-family:'Saira Condensed',system-ui,sans-serif;text-transform:uppercase;letter-spacing:1.3px;font-size:12px;font-weight:700;padding:10px 18px;border-radius:999px;border:1px solid var(--line,#2a2f37);background:var(--panel,#161a20);color:var(--txt-2,#aeb6c2);cursor:pointer}</style></head>
+    <body><div class="sw"><div class="sw-cap">Sign here — <b>${t}</b></div><canvas class="sw-pad" id="p"></canvas><div class="sw-foot"><button class="sw-clear" id="c">Clear</button></div></div>
+    <script>(function(){var cv=document.getElementById('p'),ctx=cv.getContext('2d'),drawing=false,last=null;
+      function fit(){var r=cv.getBoundingClientRect();cv.width=Math.round(r.width);cv.height=Math.round(r.height);ctx.fillStyle='#fff';ctx.fillRect(0,0,cv.width,cv.height);ctx.strokeStyle=(getComputedStyle(document.documentElement).getPropertyValue('--accent')||'#ff7a1a').trim();ctx.lineCap='round';ctx.lineJoin='round';}
+      function pos(e){var r=cv.getBoundingClientRect();return{x:(e.clientX-r.left)*(cv.width/r.width),y:(e.clientY-r.top)*(cv.height/r.height)};}
+      function send(){try{if(window.opener)window.opener.postMessage({type:'rw-signature',dataURL:cv.toDataURL('image/jpeg',0.8)},location.origin);}catch(_){}}
+      cv.addEventListener('pointerdown',function(e){e.preventDefault();drawing=true;last=pos(e);try{cv.setPointerCapture(e.pointerId);}catch(_){}});
+      cv.addEventListener('pointermove',function(e){if(!drawing)return;e.preventDefault();var p=pos(e);ctx.lineWidth=(e.pointerType==='pen'&&e.pressure>0)?(1.4+e.pressure*2.6):2.4;ctx.beginPath();ctx.moveTo(last.x,last.y);ctx.lineTo(p.x,p.y);ctx.stroke();last=p;});
+      function up(){if(drawing){drawing=false;send();}}
+      cv.addEventListener('pointerup',up);cv.addEventListener('pointerleave',up);
+      document.getElementById('c').addEventListener('click',function(){fit();send();});
+      window.addEventListener('resize',function(){var d=cv.toDataURL();fit();var im=new Image();im.onload=function(){ctx.drawImage(im,0,0,cv.width,cv.height);};im.src=d;});
+      fit();})();<\/script></body></html>`);
+  w.document.close();
+}
+// Wire the signature canvas for finger/stylus/mouse/pen drawing (white bg → JPEG export).
+function setupSignaturePad() {
+  // Wire EVERY pad in the overlay (the capture can ride the card signing tab and/or
+  // the +Card panel) — match each backing store to its rendered size so strokes
+  // aren't stretched (the pad is width:auto in the flex row); rects are laid out by now.
+  const o = state.overlay;
+  document.querySelectorAll('.overlay .nc-sigpad').forEach((cv) => {
+    const r = cv.getBoundingClientRect(); if (r.width && r.height) { cv.width = Math.round(r.width); cv.height = Math.round(r.height); }
+    const ctx = cv.getContext('2d');
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);
+    ctx.strokeStyle = (getComputedStyle(document.documentElement).getPropertyValue('--accent') || '#ff7a1a').trim();   // orange ink (Jac)
+    ctx.lineWidth = 2.4; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    // re-apply a signature already captured (2nd-screen popout, or before this re-render) so taking a selfie etc. can't wipe it
+    if (o && o.signDraft && o.signDraft.sigData) { const img = new Image(); img.onload = () => { ctx.drawImage(img, 0, 0, cv.width, cv.height); cv.dataset.drawn = '1'; }; img.src = o.signDraft.sigData; }
+    let drawing = false, last = null;
+    const pos = (e) => { const b = cv.getBoundingClientRect(); return { x: (e.clientX - b.left) * (cv.width / b.width), y: (e.clientY - b.top) * (cv.height / b.height) }; };
+    const stash = () => { if (drawing) { drawing = false; if (o) { o.signDraft = o.signDraft || {}; o.signDraft.sigData = cv.toDataURL('image/jpeg', 0.8); } } };
+    cv.addEventListener('pointerdown', (e) => { e.preventDefault(); drawing = true; last = pos(e); cv.dataset.drawn = '1'; cv.setPointerCapture(e.pointerId); });
+    cv.addEventListener('pointermove', (e) => { if (!drawing) return; e.preventDefault(); const p = pos(e); ctx.lineWidth = (e.pointerType === 'pen' && e.pressure > 0) ? (1.4 + e.pressure * 2.6) : 2.4; ctx.beginPath(); ctx.moveTo(last.x, last.y); ctx.lineTo(p.x, p.y); ctx.stroke(); last = p; });
+    cv.addEventListener('pointerup', stash);
+    cv.addEventListener('pointerleave', stash);
+  });
+}
+const closeOverlay = () => { destroyCardElement(); stopAgCam(); try { if (_sigWin && !_sigWin.closed) _sigWin.close(); } catch (e) {} _sigWin = null; state.datepick = null; state.overlay = null; renderOverlay(); };
 
 /* ── Back-office boards (§7.9–7.12): spreadsheet-style tables ─────────────── */
 function vendorTotals(vendorId) {
@@ -7671,9 +8807,18 @@ function render() {
   const grid = el('div', 'grid');
   const shown = phone ? [COLUMNS[Math.max(0, Math.min(2, state.mobileCol))]] : COLUMNS;
   for (const col of shown) grid.appendChild(columnEl(col, session));
-  const bottomBar = bottomBarEl();
-  $('#app').replaceChildren(header, grid, bottomBar);
-  if (phone) $('#app').appendChild(mobileDockEl());   // the global bar is hidden (CSS); the footer dock carries the toggles + column nav
+  // §M1 — desktop keeps the bottom toolbar; on phone the tools open up across the top header instead.
+  if (phone) $('#app').replaceChildren(header, grid);
+  else $('#app').replaceChildren(header, grid, bottomBarEl());
+  if (phone) {
+    const dock = mobileDockEl();
+    $('#app').appendChild(dock);
+    // §M1 — move the active card's list search/sort row DOWN into the footer (it sits with
+    // the card switcher). Same node → its delegated handlers keep working. Record view has
+    // no listbar, so the slot stays empty (CSS hides it).
+    const lb = grid.querySelector('.listbar');
+    if (lb) dock.querySelector('.mdock-searchslot').appendChild(lb);
+  }
   // restore scroll by VIEW: same view → keep your spot; back to a list → return to the
   // row you left; opened a record → top of Standard view (a targeted link scrolls itself after).
   document.querySelectorAll('.card[data-card]').forEach((c) => {
@@ -7694,8 +8839,15 @@ function render() {
       if (!phone) positionWinPicker(fl);   // phone: CSS pins it to the bottom edge, so skip the JS anchor
     } else state.winpicker = null;
   }
+  // §5.4d — the standalone date-search picker floats under the search bar (phone: bottom sheet)
+  if (state.datesearch) {
+    const phone = document.body.classList.contains('is-phone');
+    if (phone) { const bd = el('div', 'sheet-backdrop'); bd.dataset.sheetclose = 'date'; $('#app').appendChild(bd); }
+    const fl = el('div', 'datesearch-float'); fl.innerHTML = dateSearchEl(); $('#app').appendChild(fl);
+    if (!phone) positionDateSearch(fl);
+  }
   // §M3 — lock the column scroll behind any open sheet/overlay/dock on phones
-  document.body.classList.toggle('sheet-open', !!(state.overlay || state.winpicker || state.chat.open || state.wrangler.open));
+  document.body.classList.toggle('sheet-open', !!(state.overlay || state.winpicker || state.datesearch || state.chat.open || state.wrangler.open));
   syncBackGuard();   // §M3 — keep the Android back-button guard in step with what's open
   // §17 — the internal team dock floats bottom-right above the bar when open
   if (state.chat.open) { const d = el('div', 'chat-dock', ''); d.dataset.drop = 'chat'; d.innerHTML = chatDockEl(); $('#app').appendChild(d); }
@@ -8266,6 +9418,11 @@ function onClick(e) {
   // Units / Categories / Customers cards (browse, toggle, open-to-inspect, drag-to-
   // select). It closes only on a click truly OUTSIDE those cards, the picker, and the
   // trigger. (Drags never reach here — their trailing click is swallowed at 4925.)
+  // §5.4d — the date-search picker closes on a click outside the calendar, the search
+  // bars, and the date chips (so editing a chip keeps it open).
+  if (state.datesearch && !closest('.winpicker') && !closest('.searchwrap') && !closest('.mini-searchwrap') && !closest('.js-date-edit')) {
+    state.datesearch = null; render(); return;
+  }
   if (state.winpicker
       && !closest('.winpicker')
       && !closest('.js-open-winpicker')
@@ -8284,27 +9441,60 @@ function onClick(e) {
   if (closest('.js-switch-user')) { e.stopPropagation(); return switchUser(); }
   if (closest('.js-open-settings')) { e.stopPropagation(); return openSettings(); }
   if (closest('.js-settings-save')) { e.stopPropagation(); return saveSettings(); }
+  if (closest('.js-settings-resetpage')) { e.stopPropagation(); return resetPageSettings(); }   // gentle: default just this tab
+  if (closest('.js-settings-reset')) { e.stopPropagation(); const o = state.overlay; if (!o) return; if (o.resetArm) return resetAllSettings(); o.resetArm = true; renderOverlay(); return; }   // armed two-click confirm
+  if (closest('.js-settings-undo')) { e.stopPropagation(); return undoLastSettings(); }
   if (closest('.js-overbook')) { e.stopPropagation(); const on = closest('.js-overbook').dataset.val === '1'; state.overbookOn = on; try { localStorage.setItem('jactec.overbook', on ? '1' : '0'); } catch (err) {} toast(on ? 'Overbooking allowed — conflicting links get a pulsing red Overbooked flag.' : 'Overbooking blocked — a conflicting unit drop is refused.'); renderOverlay(); return; }
   if (closest('.js-haptics')) { e.stopPropagation(); const on = closest('.js-haptics').dataset.val === '1'; state.hapticsOff = !on; try { localStorage.setItem('jactec.hapticsOff', on ? '0' : '1'); } catch (err) {} if (on) haptic([12, 30, 12]); renderOverlay(); return; }   // §M-touch — toggle + a sample buzz when turning ON
+  // Settings Board — tab rail + Statuses & Icons editing
+  if (closest('.js-set-tab')) { e.stopPropagation(); const o = state.overlay; if (o) { captureLoginEdits(o); o.tab = closest('.js-set-tab').dataset.tab; o.iconFor = null; o.error = null; o.resetArm = false; renderOverlay(); } return; }
+  if (closest('.js-set-pick')) { e.stopPropagation(); const o = state.overlay; if (o) { o.setSel = closest('.js-set-pick').dataset.set; o.iconFor = null; renderOverlay(); } return; }
+  if (closest('.js-set-color')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-set-color'); if (o) { setDraftStatus(o, b.dataset.set, b.dataset.val, { color: b.dataset.color }); renderOverlay(); } return; }
+  if (closest('.js-set-icon-open')) { e.stopPropagation(); const o = state.overlay, k = closest('.js-set-icon-open').dataset.key; if (o) { o.iconFor = o.iconFor === k ? null : k; renderOverlay(); } return; }
+  if (closest('.js-set-icon')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-set-icon'); if (o) { setDraftStatus(o, b.dataset.set, b.dataset.val, { icon: b.dataset.icon || '' }); o.iconFor = null; renderOverlay(); } return; }
+  if (closest('.js-set-reset')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-set-reset'); if (o && o.draftSettings && o.draftSettings.status && o.draftSettings.status[b.dataset.set]) { delete o.draftSettings.status[b.dataset.set][b.dataset.val]; renderOverlay(); } return; }
+  // KPIs & Rings tab
+  if (closest('.js-kpi-role')) { e.stopPropagation(); const o = state.overlay; if (o) { o.kpiRole = closest('.js-kpi-role').dataset.role; renderOverlay(); } return; }
+  if (closest('.js-kpi-band')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-kpi-band'); if (o) { const rings = ensureKpiDraft(o, b.dataset.role); rings[Number(b.dataset.i)].band = b.dataset.band; renderOverlay(); } return; }
+  if (closest('.js-kpi-reset')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-kpi-reset'); if (o) { const rings = ensureKpiDraft(o, b.dataset.role); rings[Number(b.dataset.i)] = JSON.parse(JSON.stringify((KPI_DEFAULTS[b.dataset.role] || [])[Number(b.dataset.i)] || {})); renderOverlay(); } return; }
+  if (closest('.js-kpi-refine')) { e.stopPropagation(); const b = closest('.js-kpi-refine'); openWranglerForKpi(b.dataset.role, Number(b.dataset.i)); return; }
+  // Rental Rules tab
+  if (closest('.js-rule-set')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-rule-set'); if (o) { o.draftSettings = o.draftSettings || {}; o.draftSettings.rentalRules = o.draftSettings.rentalRules || { ...((state.settings && state.settings.rentalRules) || {}) }; o.draftSettings.rentalRules[b.dataset.rule] = b.dataset.val === 'required' ? 'required' : 'off'; renderOverlay(); } return; }
+  // Layout & Footers tab
+  if (closest('.js-layout-footer')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-layout-footer'); if (o) { o.draftSettings = o.draftSettings || {}; o.draftSettings.layout = o.draftSettings.layout || { ...((state.settings && state.settings.layout) || {}) }; o.draftSettings.layout.footers = { ...(o.draftSettings.layout.footers || {}), [b.dataset.card]: b.dataset.val === 'off' ? 'off' : 'on' }; renderOverlay(); } return; }
+  // Custom Fields tab
+  if (closest('.js-cf-entity')) { e.stopPropagation(); const o = state.overlay; if (o) { o.cfEntity = closest('.js-cf-entity').dataset.ent; renderOverlay(); } return; }
+  if (closest('.js-cf-type')) { e.stopPropagation(); const o = state.overlay; if (o) { o.cfDraft = { ...(o.cfDraft || { label: '', type: 'text', required: false }), type: closest('.js-cf-type').dataset.type }; renderOverlay(); } return; }
+  if (closest('.js-cf-req')) { e.stopPropagation(); const o = state.overlay; if (o) { o.cfDraft = { ...(o.cfDraft || { label: '', type: 'text', required: false }), required: closest('.js-cf-req').dataset.v === '1' }; renderOverlay(); } return; }
+  if (closest('.js-cf-add')) { e.stopPropagation(); const o = state.overlay; if (!o) return; const lblEl = document.querySelector('.settings-popup .js-cf-label'); const label = (o.cfDraft && o.cfDraft.label || (lblEl ? lblEl.value : '')).trim(); if (!label) { if (lblEl) { lblEl.focus(); } toast('Give the field a label first.'); return; } const fields = ensureCfDraft(o, o.cfEntity || 'customers'); fields.push({ id: cfSlug(label), label, type: (o.cfDraft && o.cfDraft.type) || 'text', required: !!(o.cfDraft && o.cfDraft.required) }); o.cfDraft = { label: '', type: 'text', required: false }; renderOverlay(); return; }
+  if (closest('.js-cf-remove')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-cf-remove'); if (o) { const fields = ensureCfDraft(o, b.dataset.ent); const i = fields.findIndex((f) => f.id === b.dataset.id); if (i >= 0) fields.splice(i, 1); renderOverlay(); } return; }
+  // Inspections tab
+  if (closest('.js-insp-cat')) { e.stopPropagation(); const o = state.overlay; if (o) { o.inspCat = closest('.js-insp-cat').dataset.cat; renderOverlay(); } return; }
+  if (closest('.js-insp-req')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-insp-req'); if (o) { ensureInspDraft(o, b.dataset.cat).required = b.dataset.v === '1'; renderOverlay(); } return; }
+  if (closest('.js-insp-add')) { e.stopPropagation(); const o = state.overlay; if (!o) return; const el2 = document.querySelector('.settings-popup .js-insp-label'); const label = ((o.inspDraft != null ? o.inspDraft : (el2 ? el2.value : '')) || '').trim(); if (!label) { if (el2) el2.focus(); toast('Type a checklist item first.'); return; } const cfg = ensureInspDraft(o, o.inspCat); cfg.items = cfg.items || []; cfg.items.push({ id: 'ck_' + (label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'item') + '_' + Math.random().toString(36).slice(2, 5), label }); o.inspDraft = ''; renderOverlay(); return; }
+  if (closest('.js-insp-remove')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-insp-remove'); if (o) { const cfg = ensureInspDraft(o, b.dataset.cat); cfg.items = (cfg.items || []).filter((it) => it.id !== b.dataset.id); renderOverlay(); } return; }
   if (closest('.js-nc-save')) { e.stopPropagation(); return saveNewCustomer(); }
   if (closest('.js-nc-acct')) { const b = closest('.js-nc-acct'); e.stopPropagation(); ncSyncInputs(); state.overlay.draft.accountType = b.dataset.val; renderOverlay(); return; }
+  if (closest('.js-nc-po')) { e.stopPropagation(); ncSyncInputs(); const o = state.overlay; o.draft.requiresPO = (o.draft.requiresPO === true) ? false : true; if (o.editId) { const c = IDX.customer.get(o.editId); if (c) { c.requiresPO = o.draft.requiresPO; reindex('customers', c); } } renderOverlay(); return; }
   // §7.1b card-bound agreements: tab rail + per-card signing
   if (closest('.js-nc-tab')) { e.stopPropagation(); ncSyncInputs(); state.overlay.tab = closest('.js-nc-tab').dataset.tab; state.overlay.signRead = null; renderOverlay(); return; }
   if (closest('.js-ncsign-read')) { e.stopPropagation(); const id = closest('.js-ncsign-read').dataset.card; state.overlay.signRead = (state.overlay.signRead === id) ? null : id; renderOverlay(); return; }
-  if (closest('.js-ncsign-save')) {
-    e.stopPropagation(); const o = state.overlay; const c = IDX.customer.get(o.editId || ''); const k = c && customerCards(c).find((x) => x.id === closest('.js-ncsign-save').dataset.card);
-    if (!c || !k) return;
-    const cv = document.querySelector('.overlay .nc-sigpad');
-    if (!cv || !cv.dataset.drawn) return flashOr('.overlay .nc-sigpad', 'Sign in the box first.');
-    if (!(o.signDraft && o.signDraft.selfie)) return toast('Take a selfie to authorize this card.');
-    signCardAgreement(c, k, cv.toDataURL('image/jpeg', 0.6), o.signDraft.selfie);
+  if (closest('.js-ncsign-holdclear')) {   // discard the held draft to re-sign
+    e.stopPropagation(); const o = state.overlay; const c = IDX.customer.get(o.editId || '');
+    if (c) { c.pendingSigning = null; reindex('customers', c); }
     o.signDraft = null; o.signRead = null; renderOverlay(); render(); return;
   }
   if (closest('.js-ncsign-pdf')) { e.stopPropagation(); const b = closest('.js-ncsign-pdf'); return openSignedPdf(state.overlay.editId, b.dataset.card, b.dataset.sig); }
   if (closest('.js-nc-selfie-clear')) { e.stopPropagation(); ncSyncInputs(); state.overlay.draft.selfie = ''; renderOverlay(); return; }
-  if (closest('.js-nc-sig-save')) { e.stopPropagation(); const cv = document.querySelector('.overlay .nc-sigpad'); if (cv && cv.dataset.drawn) { ncSyncInputs(); const dr = state.overlay.draft; dr.signature = cv.toDataURL('image/jpeg', 0.6); dr.agreementType = /member/i.test(dr.accountType || '') ? 'membership' : 'rental'; dr.agreementSignedAt = TODAY_ISO; renderOverlay(); } else flashOr('.overlay .nc-sigpad', 'Sign in the box first.'); return; }
-  if (closest('.js-nc-sig-clearpad')) { e.stopPropagation(); const cv = document.querySelector('.overlay .nc-sigpad'); if (cv) { const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height); cv.dataset.drawn = ''; } return; }
-  if (closest('.js-nc-sig-clear')) { e.stopPropagation(); ncSyncInputs(); const dr = state.overlay.draft; dr.signature = ''; dr.agreementType = ''; dr.agreementSignedAt = ''; renderOverlay(); return; }
+  if (closest('.js-nc-sig-clearpad')) { e.stopPropagation(); const o = state.overlay; if (o && o.signDraft) o.signDraft.sigData = null; const cv = document.querySelector('.overlay .nc-sigpad'); if (cv) { const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height); cv.dataset.drawn = ''; } return; }
+  if (closest('.js-sign-popout')) { e.preventDefault(); e.stopPropagation(); openSignatureWindow(closest('.js-sign-popout').dataset.title); return; }
+  if (closest('.js-ag-selfie')) {   // selfie tile: one-tap snap off the live feed; Retake clears it; no camera → native picker
+    const o = state.overlay; if (!o) return;
+    const tile = closest('.js-ag-selfie');
+    if (o.signDraft && o.signDraft.selfie) { e.preventDefault(); e.stopPropagation(); o.signDraft.selfie = null; renderOverlay(); return; }   // Retake → clear + restart camera
+    if (tile.classList.contains('live')) { e.preventDefault(); e.stopPropagation(); captureAgSelfie(); return; }   // live feed → grab the frame in a single tap
+    return;   // no camera/permission → let the <label> open the OS file/camera picker (fallback)
+  }
   if (closest('.js-nc-qr')) { e.stopPropagation(); const id = state.overlay.editId; openOverlay({ kind: 'qr', title: 'Continue on phone', url: location.origin + location.pathname + '#edit=' + id, caption: 'Scan to finish this account on your phone.' }); return; }
   if (closest('.js-edit-customer')) { e.stopPropagation(); return openCustomerForm(closest('.js-edit-customer').dataset.rec); }
   if (closest('.js-view-agreement')) { e.stopPropagation(); const cust = IDX.customer.get(closest('.js-view-agreement').dataset.rec); if (cust) openOverlay({ kind: 'agreement', recId: cust.customerId }); return; }
@@ -8313,7 +9503,11 @@ function onClick(e) {
     const rec = closest('.js-add-card').dataset.rec;
     // From the onboarding form: persist the draft (incl. signature/selfie) first, add the card,
     // then RETURN to the form (card now on file) — no save-close-reopen. Elsewhere: normal add.
-    if (state.overlay && state.overlay.kind === 'newCustomer') { ncSyncDraftToCustomer(state.overlay); state.overlay.cardSub = true; renderOverlay(); return; }   // §14 open the card panel BESIDE the form
+    if (state.overlay && state.overlay.kind === 'newCustomer') {
+      ncSyncDraftToCustomer(state.overlay);
+      if (!state.overlay.editId) { flashOr('.overlay [data-f="name"]', 'Enter a name & phone before adding a card.'); return; }   // need a saved customer to attach the card to
+      state.overlay.cardSub = true; renderOverlay(); return;   // §14 open the card panel BESIDE the form
+    }
     return openAddCard(rec);
   }
   if (closest('.js-cardsub-cancel')) { e.stopPropagation(); if (state.overlay && state.overlay.kind === 'newCustomer') { state.overlay.cardSub = false; renderOverlay(); } return; }   // §14 close just the card panel, keep the form
@@ -8364,10 +9558,12 @@ function onClick(e) {
   }
   if (closest('.js-rbtab')) { e.stopPropagation(); if (state.overlay) state.overlay.rbTab = closest('.js-rbtab').dataset.tab; return renderOverlay(); }
   if (closest('.js-rulebook')) return openOverlay({ kind: 'rulebook' });
+  if (closest('.js-photo-sweep')) { e.stopPropagation(); return sweepPhotosToDrive(); }   // admin one-shot: offload base64 photos → Drive
   if (closest('.js-feedback')) { e.stopPropagation(); return wranglerNewChat(); }   // §18d folded: the old bug/request form is now the one Mr. Wrangler chat
   // §17 internal team dock
   if (closest('[data-mcol]')) { e.stopPropagation(); state.mobileCol = +closest('[data-mcol]').dataset.mcol; return render(); }   // §M1 dot nav
   if (closest('.js-mtools')) { e.stopPropagation(); return openOverlay({ kind: 'tools' }); }   // §M1 phone footer → the global tool tray as a sheet
+  if (closest('[data-gocard]')) { e.stopPropagation(); return goToCard(closest('[data-gocard]').dataset.gocard); }   // §M1 footer card-toggle bar → jump to that card
   if (closest('.js-ext-chat')) { e.stopPropagation(); return toast('External customer & vendor chats arrive with the messaging backend.'); }
   if (closest('.js-chat-toggle')) { e.stopPropagation(); state.chat.open = !state.chat.open; return render(); }
   if (closest('.js-chat-close')) { e.stopPropagation(); state.chat.open = false; return render(); }
@@ -8386,6 +9582,7 @@ function onClick(e) {
   if (closest('.js-wr-close')) { e.stopPropagation(); wranglerRailSnapshot(); state.wrangler.open = false; return render(); }   // §18 close the dock back to the launcher; the chat lands on the §18g rail
   if (closest('.js-wr-act')) { e.stopPropagation(); return wranglerFileAction(Number(closest('.js-wr-act').dataset.mi)); }   // §18d file the fix/request Mr. Wrangler proposed inline
   if (closest('.js-wr-apply')) { e.stopPropagation(); const o = state.wrangler; if (!o.open) return; const m = o.messages[Number(closest('.js-wr-apply').dataset.mi)]; if (!m || !m.action || m.filed) return; const plan = m.action._plan || wrValidatePlan(m.action); if (!plan.ops.length) return; m.filed = true; applyWranglerData(plan); return; }   // Mr. Wrangler applies the previewed add/update/import
+  if (closest('.js-wr-kpi-lock')) { e.stopPropagation(); lockKpiFromWrangler(Number(closest('.js-wr-kpi-lock').dataset.mi)); return; }   // Mr. Wrangler locks in an authored KPI ring
   if (closest('.js-wr-unattach')) { e.stopPropagation(); const o = state.wrangler; if (o.open && o.attach) { o.attach.splice(Number(closest('.js-wr-unattach').dataset.i), 1); render(); } return; }   // §18d drop a pending image attachment
   if (closest('.js-wr-unfile')) { e.stopPropagation(); const o = state.wrangler; if (o.open && o.files) { o.files.splice(Number(closest('.js-wr-unfile').dataset.i), 1); render(); } return; }   // §18d drop a pending file attachment
   if (closest('.js-wrangler')) { e.stopPropagation(); if (state.wrangler.open) { wranglerRailSnapshot(); state.wrangler.open = false; return render(); } return wranglerNewChat(); }   // §18 toggle Mr. Wrangler dock — opening always starts a fresh chat (the last one waits on the §18g rail)
@@ -8460,6 +9657,7 @@ function onClick(e) {
   }
   if (closest('.js-clear')) return clearSearch();
   if (closest('.js-ft-neg')) { const b = closest('.js-ft-neg'); e.stopPropagation(); return toggleFilterNeg(b.dataset.scope, Number(b.dataset.i)); }
+  if (closest('.js-date-edit')) { const b = closest('.js-date-edit'); e.stopPropagation(); return openDateSearch(b.dataset.scope, Number(b.dataset.i)); }   // §5.4d re-open the picker to change the date
   if (closest('.js-ft-x')) { const b = closest('.js-ft-x'); e.stopPropagation(); return removeFilterTerm(b.dataset.scope, Number(b.dataset.i)); }
   if (closest('.js-closeall')) return closeAll();
   if (closest('.js-closetab')) { e.stopPropagation(); return closeTab(closest('.js-closetab').dataset.tab); }
@@ -8552,6 +9750,10 @@ function onClick(e) {
   }
   // ── v2 build: condition/wash segs · yard captures · site popup · WO complete · history chips ──
   if (closest('.js-cond')) { const b = closest('.js-cond'); return setUnitCondition(b.dataset.rec, b.dataset.val); }
+  if (closest('.js-open-checklist')) { e.stopPropagation(); return openChecklist(closest('.js-open-checklist').dataset.rec); }
+  if (closest('.js-ck-item')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-ck-item'); if (o && o.kind === 'checklist') { const n = IDX.insp.get(o.inspId); if (n) { n.items = n.items || {}; n.items[b.dataset.id] = b.dataset.val; renderOverlay(); } } return; }
+  if (closest('.js-ck-complete')) { e.stopPropagation(); return completeChecklist(); }
+  if (closest('.js-ck-pending')) { e.stopPropagation(); closeOverlay(); toast('Inspection kept as pending — resume it anytime.'); return; }
   if (closest('.js-washseg')) { const b = closest('.js-washseg'); return setUnitWash(b.dataset.rec, b.dataset.val); }
   if (closest('.js-yard')) { const b = closest('.js-yard'); return yardCapture(b.dataset.rec, b.dataset.cap, b.dataset.unit); }
   if (closest('.js-cap-save')) return saveYardCapture();
@@ -8622,9 +9824,16 @@ function onClick(e) {
   if (closest('.js-wp-save')) { e.stopPropagation(); return winPickSave(); }
   if (closest('.js-wp-today')) { e.stopPropagation(); return winPickToday(); }
   if (closest('.js-wp-done')) { e.stopPropagation(); return closeWinPicker(); }
+  // §5.4d date-search picker
+  if (closest('.js-ds-day')) { e.stopPropagation(); return dsPickDay(closest('.js-ds-day').dataset.iso); }
+  if (closest('.js-ds-prev')) { e.stopPropagation(); return dsMonth(-1); }
+  if (closest('.js-ds-next')) { e.stopPropagation(); return dsMonth(1); }
+  if (closest('.js-ds-today')) { e.stopPropagation(); return dsToday(); }
+  if (closest('.js-ds-clear')) { e.stopPropagation(); return dsClear(); }
+  if (closest('.js-ds-done')) { e.stopPropagation(); return dsDone(); }
   if (closest('.js-tl-blocker')) { e.stopPropagation(); const st = document.querySelector('.stalls'); if (st) st.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); attnFlash('.stall .pill.dvd'); return; }
   if (closest('.js-open-winpicker')) { e.stopPropagation(); const rec = closest('.js-open-winpicker').dataset.rec; return state.winpicker?.rentalId === rec ? closeWinPicker() : openWinPicker(rec); }
-  if (closest('[data-sheetclose]')) { e.stopPropagation(); return closeWinPicker(); }   // §M3 — tap the phone sheet backdrop to dismiss the winpicker
+  if (closest('[data-sheetclose]')) { e.stopPropagation(); return closest('[data-sheetclose]').dataset.sheetclose === 'date' ? closeDateSearch() : closeWinPicker(); }   // §M3 — tap the phone sheet backdrop to dismiss the picker
 
   // sort menu + direction toggle
   if (closest('.js-sortmenu')) { const b = closest('.js-sortmenu'); return openViewMenu(b.dataset.card, b); }
@@ -8888,6 +10097,23 @@ function cardOverrideRental(rentalId, val) {
     setRentalStatus(rentalId, val);
   });
 }
+/* Admin "Rental Rules" (Settings → Rental Rules) — HARD-BLOCK On Rent until every
+   requirement an admin marked Required is met. Pure + defensive: with no rules set
+   (the default) it always returns null, so the On Rent flow is byte-for-byte today's. */
+function rentalRuleBlock(r, cust, val) {
+  if (val !== 'On Rent') return null;
+  const rules = (state.settings && state.settings.rentalRules) || {};
+  const req = (k) => rules[k] === 'required';
+  if (!['card', 'signature', 'selfie', 'po', 'id', 'terms'].some(req)) return null;
+  const inv = r && r.invoiceId ? IDX.invoice.get(r.invoiceId) : null;
+  if (req('card') && !(cust && hasValidCard(cust))) return 'Rental rule: a valid card on file is required before On Rent.';
+  if (req('signature') && !(cust && cust.signature)) return 'Rental rule: a signed agreement is required before On Rent.';
+  if (req('selfie') && !(cust && cust.selfie)) return 'Rental rule: a customer selfie is required before On Rent.';
+  if (req('id') && !(cust && cust.idNumber)) return "Rental rule: a driver's license / ID is required before On Rent.";
+  if (req('terms') && !(cust && cust.netDays != null && cust.netDays !== '')) return 'Rental rule: payment terms (Net days) must be set before On Rent.';
+  if (req('po') && !(inv && inv.po)) return 'Rental rule: a PO number on the invoice is required before On Rent.';
+  return null;
+}
 function setRentalStatus(rentalId, val) {
   const r = IDX.rental.get(rentalId);
   if (!r) return;
@@ -8895,6 +10121,7 @@ function setRentalStatus(rentalId, val) {
   // §9 hard gates
   if (val === 'On Rent' && !r.invoiceId) { flashOr('.js-create-invoice', 'Blocked: "On Rent" requires a linked invoice (§9).'); return; }
   if (['On Rent', 'Reserved'].includes(val) && cust && /Blacklist/i.test(cust.accountType || '')) { toast('Blocked: customer is blacklisted (§9).'); return; }
+  const _rb = rentalRuleBlock(r, cust, val); if (_rb) { flashOr('.js-add-card', _rb); return; }   // admin Rental Rules — hard block
   // §14 — a booking requires a valid card that is SIGNED for the current account
   // type; any unsigned card blocks. An Admin can override. (Charging is never gated.)
   if (BOOKING_STATUSES.includes(val) && cardGateBlocked(cust) && !r.cardOverride) {
@@ -8925,6 +10152,7 @@ function setUnitStatus(rentalId, unitId, val) {
   const cust = r.customerId ? IDX.customer.get(r.customerId) : null;
   if (val === 'On Rent' && !r.invoiceId) { flashOr('.js-create-invoice', 'Blocked: "On Rent" requires a linked invoice (§9).'); return; }
   if (['On Rent', 'Reserved'].includes(val) && cust && /Blacklist/i.test(cust.accountType || '')) { toast('Blocked: customer is blacklisted (§9).'); return; }
+  { const _rb = rentalRuleBlock(r, cust, val); if (_rb) { toast(_rb); return; } }   // admin Rental Rules — hard block
   if (BOOKING_STATUSES.includes(val) && cardGateBlocked(cust) && !r.cardOverride) { toast(`${cust.name} — ${cardGateReason(cust)}. Admin override required.`); return; }
   // §20 No-Show / Cancel: don't commit the terminal status while a payment is
   // assigned to the unit (it would count toward Complete yet stay billed) — block first.
@@ -9007,6 +10235,34 @@ function setUnitCondition(unitId, val) {
   reindex('units', u); logAction(u, 'Condition → Not Ready');
   toast('Condition → Not Ready'); reanchorRender();
 }
+// A required-checklist inspection started but not yet completed (Jac: kept as Pending).
+function pendingInspForUnit(unitId) {
+  return (DATA.inspections || []).find((n) => n.unitId === unitId && (n.checklist === '' || n.checklist == null) && n.items && typeof n.items === 'object');
+}
+// Open the full-screen checklist takeover for a unit whose category requires one (resumes a pending draft).
+function openChecklist(unitId) {
+  const u = IDX.unit.get(unitId); if (!u) return;
+  if (!checklistFor(u)) return toast('No checklist is set for this category.');
+  let n = pendingInspForUnit(unitId);
+  if (!n) n = newInspectionForUnit(u);
+  n.items = n.items || {};
+  state.overlay = { kind: 'checklist', unitId, inspId: n.inspectionId };
+  render();
+}
+// Complete the checklist → overall result cascades through the existing setInspResult (auto-WO on fail).
+function completeChecklist() {
+  const o = state.overlay; if (!o || o.kind !== 'checklist') return;
+  const u = IDX.unit.get(o.unitId); const cfg = u && checklistFor(u); const n = IDX.insp.get(o.inspId);
+  if (!u || !cfg || !n) { closeOverlay(); return; }
+  const items = cfg.items || [];
+  const left = items.filter((it) => !n.items[it.id]).length;
+  if (left) { toast(`Mark every item first — ${left} left.`); return; }
+  const failed = items.filter((it) => n.items[it.id] === 'Fail');
+  if (failed.length) n.description = 'Failed checklist: ' + failed.map((it) => it.label).join(', ');
+  state.overlay = null;                                   // close the takeover; a Fail re-opens the photo/notes popup
+  setInspResult(n.inspectionId, failed.length ? 'Fail' : 'Pass');   // cascade onto the inspection section + auto-WO
+  toast(failed.length ? `Inspection failed — work order opened for ${u.name}.` : `Inspection passed — ${u.name} is Ready. ✓`);
+}
 function setUnitWash(unitId, val) {
   const u = IDX.unit.get(unitId); if (!u) return;
   u.washChoice = val;                     // a decision was made — unlocks Pass (R19 gate)
@@ -9081,6 +10337,68 @@ function uploadCaptureMedia(r, eu, cap, dataUrl) {
       else toast('Video upload failed — the log stamp is saved without it.');
     })
     .catch(() => toast('Video upload failed — the log stamp is saved without it.'));
+}
+/* ── Photo offload (Jac 2026-06-20) — de-bloat the payload ────────────────────
+   A captured inspection/part photo rides the record as inline base64 (~30-80KB),
+   so it bloats the Sheet AND the bulk cold-load payload (computeChanges sends the
+   whole record). Offload it to Drive — the same treatment selfies + capture-videos
+   already get — so the record carries a ~60-byte URL instead. Same-field swap:
+   inspection.photo / li.photo are already URL-or-base64, so every reader (the WO
+   backdrop, the thumbs) keeps working unchanged.
+   SAFE: idempotent (skips a value that's already a URL), never loses a photo (a
+   failed/offline upload leaves the base64 untouched), and guards against a stale
+   swap if the photo was re-captured mid-flight. Returns true when it swapped — the
+   migration sweep counts those. */
+async function offloadPhotoNow(target, field, name, owner, coll, _upload) {
+  const v = target && target[field];
+  if (!v || typeof v !== 'string' || !v.startsWith('data:')) return false;          // already a URL / empty → no-op
+  // Real path uploads via the backend (only when connected); _upload is a test seam.
+  const upload = _upload || ((typeof backendPassword !== 'undefined' && backendPassword) ? ((p) => backendCall('uploadCapture', p)) : null);
+  if (!upload) return false;                                                         // demo / offline → keep base64
+  try {
+    const res = await upload({ dataUrl: v, name });
+    if (res && res.ok && res.url && target[field] === v) {                          // unchanged since upload → safe to swap
+      target[field] = driveViewUrl(res);                                            // embeddable Drive URL (built from fileId), not the file-view page
+      if (owner && coll) reindex(coll, owner);
+      saveSoon();
+      return true;
+    }
+  } catch (e) { /* offline / server error → base64 stays, retried on next capture or sweep */ }
+  return false;
+}
+const offloadPhoto = (target, field, name, owner, coll) => { offloadPhotoNow(target, field, name, owner, coll); };
+/* The migration targets: every base64 photo still sitting on a record (inspections
+   + nested WO part lines). Pure + idempotent — a second pass returns [] once the
+   forward path + a prior sweep have swapped them to URLs. */
+function base64PhotoTargets() {
+  const out = [];
+  (DATA.inspections || []).forEach((n) => { if ((n.photo || '').startsWith('data:')) out.push({ t: n, name: 'insp_' + n.inspectionId, owner: n, coll: 'inspections' }); });
+  (DATA.workOrders || []).forEach((w) => (w.lineItems || []).forEach((li) => { if ((li.photo || '').startsWith('data:')) out.push({ t: li, name: 'wopart_' + w.woId + '_' + lineKey(li), owner: w, coll: 'workOrders' }); }));
+  return out;
+}
+/* One-shot migration (admin, run live by Jac): offload every existing base64 photo
+   to Drive. Throttled (≤3 concurrent) so one browser session doesn't hammer Drive;
+   idempotent + resumable (re-run skips URLs; a mid-sweep reload just resumes); a
+   live progress toast. Closing the tab is the stop — persisted progress remains. */
+let photoSweepRunning = false;
+async function sweepPhotosToDrive() {
+  if (photoSweepRunning) return;
+  if (typeof backendPassword === 'undefined' || !backendPassword) { toast('Connect to the backend first — the sweep uploads to Drive.'); return; }
+  const targets = base64PhotoTargets();
+  if (!targets.length) { toast('Nothing to offload — every photo is already a Drive URL.'); return; }
+  photoSweepRunning = true;
+  let done = 0, ok = 0, i = 0;
+  toast(`Offloading photos to Drive — 0 / ${targets.length}…`);
+  const worker = async () => {
+    while (i < targets.length) {
+      const job = targets[i++];
+      if (await offloadPhotoNow(job.t, 'photo', job.name, job.owner, job.coll)) ok++;
+      if (++done % 5 === 0 || done === targets.length) toast(`Offloading photos to Drive — ${done} / ${targets.length}…`);
+    }
+  };
+  await Promise.all([worker(), worker(), worker()]);
+  photoSweepRunning = false;
+  toast(`Sweep done — ${ok} / ${targets.length} photo${targets.length === 1 ? '' : 's'} offloaded to Drive.`);
 }
 /* Part/Task popup save: creates the WO line + Parts/Vendors board records when
    new; empty fields are flagged aiPending for Mr. Wrangler review (backend TODO). */
@@ -9196,7 +10514,10 @@ function savePartForm() {
   const willFill = li.aiPending && photo && typeof backendPassword !== 'undefined' && backendPassword;
   toast(willFill ? '✨ Saved — Mr. Wrangler is reading the photo to fill the blanks…' : li.aiPending ? '✨ Saved — add a photo and Mr. Wrangler can fill the blanks.' : 'Line saved.');
   reanchorRender(); renderOverlay();
-  if (willFill) autofillPartLine(w, li, photo);   // §18g fire-and-forget photo autofill
+  // Offload the line photo to Drive (de-bloat) — but Mr. Wrangler reads the
+  // in-memory base64 FIRST, so chain the offload after the autofill resolves.
+  const offloadLinePhoto = () => { if (photo) offloadPhoto(li, 'photo', 'wopart_' + w.woId + '_' + lineKey(li), w, 'workOrders'); };
+  if (willFill) autofillPartLine(w, li, photo).then(offloadLinePhoto, offloadLinePhoto); else offloadLinePhoto();   // §18g fire-and-forget photo autofill (offload even if the AI read fails)
 }
 /* Receipt popup save (§7.11): creates/updates the expense; vendor name-match or
    auto-create (the savePartForm idiom); empty AI-fillable fields flag aiPending ✨;
@@ -9365,6 +10686,28 @@ function onInput(e) {
 
 /* change events — native <input type="date"> / <select> on draft details. */
 function onChange(e) {
+  // Settings Board — relabel a status (commit on blur/enter; the value/role stays locked)
+  if (e.target.classList.contains('js-set-label')) {
+    const o = state.overlay; if (!o) return;
+    const def = (STATUS_DEFAULTS[e.target.dataset.set] || {})[e.target.dataset.val] || {};
+    const v = e.target.value.trim();
+    setDraftStatus(o, e.target.dataset.set, e.target.dataset.val, { label: (v && v !== def.label) ? v : '' });
+    renderOverlay(); return;
+  }
+  // Settings Board — Company identity (commit on blur)
+  if (e.target.classList.contains('js-co-field')) {
+    const o = state.overlay; if (!o) return;
+    o.draftSettings = o.draftSettings || {}; o.draftSettings.company = o.draftSettings.company || { ...((state.settings && state.settings.company) || {}) };
+    const f = e.target.dataset.f, raw = e.target.value.trim();
+    if (f === 'revenueGoal') { const n = Number(raw.replace(/[^0-9.]/g, '')); o.draftSettings.company.revenueGoal = (raw && isFinite(n) && n > 0) ? n : undefined; }
+    else if (f === 'maxNetDays') { const n = Math.round(Number(raw.replace(/[^0-9.]/g, ''))); o.draftSettings.company.maxNetDays = (raw && isFinite(n) && n >= 0) ? n : undefined; }
+    else o.draftSettings.company[f] = raw || undefined;
+    renderOverlay(); return;
+  }
+  // Settings Board — KPI ring label / target (commit on blur)
+  if (e.target.classList.contains('js-insp-label')) { const o = state.overlay; if (o) o.inspDraft = e.target.value; return; }
+  if (e.target.classList.contains('js-kpi-lbl')) { const o = state.overlay; if (!o) return; const rings = ensureKpiDraft(o, e.target.dataset.role); rings[Number(e.target.dataset.i)].label = e.target.value.trim(); renderOverlay(); return; }
+  if (e.target.classList.contains('js-kpi-tgt')) { const o = state.overlay; if (!o) return; const rings = ensureKpiDraft(o, e.target.dataset.role); const n = Number(e.target.value); rings[Number(e.target.dataset.i)].target = isFinite(n) && e.target.value.trim() ? n : undefined; renderOverlay(); return; }
   // F2 — +File upload: read the chosen photo/document; images are downscaled, others kept
   // as-is. Held in state.overlay.fileUpload until "Add file" (which sends it to Drive).
   if (e.target.classList.contains('js-ff-file')) {
@@ -9469,7 +10812,7 @@ function onChange(e) {
     reader.readAsDataURL(file);
     return;
   }
-  // §7.1b per-card signing selfie — stashed on o.signDraft until Accept & Sign freezes it onto the card.
+  // §7.1b per-card signing selfie — stashed on o.signDraft until Save freezes it onto the card.
   if (e.target.classList.contains('js-ncsign-selfie')) {
     const file = e.target.files && e.target.files[0]; if (!file) return;
     const reader = new FileReader();
@@ -9492,7 +10835,7 @@ function onChange(e) {
   if (e.target.classList.contains('js-insp-photo')) {
     const file = e.target.files && e.target.files[0]; if (!file) return;
     const reader = new FileReader();
-    reader.onload = () => { downscaleImage(reader.result, 600, 0.5, (out) => { if (!out) { toast('Could not read that image.'); return; } const n = IDX.insp.get(e.target.dataset.rec); if (n) { n.photo = out; render(); if (state.overlay?.kind === 'inspection') renderOverlay(); } }); };
+    reader.onload = () => { downscaleImage(reader.result, 600, 0.5, (out) => { if (!out) { toast('Could not read that image.'); return; } const n = IDX.insp.get(e.target.dataset.rec); if (n) { n.photo = out; saveSoon(); render(); if (state.overlay?.kind === 'inspection') renderOverlay(); offloadPhoto(n, 'photo', 'insp_' + n.inspectionId, n, 'inspections'); } }); };
     reader.onerror = () => toast('Could not read that image.');
     reader.readAsDataURL(file);
     return;
@@ -9549,14 +10892,25 @@ async function openSettings() {
 }
 async function saveSettings() {
   const o = state.overlay; if (!o || o.kind !== 'settings') return;
-  const root = document.querySelector('.overlay .popup-body'); if (!root) return;
-  const roles = {}; root.querySelectorAll('.set-input[data-role]').forEach((i) => { roles[i.dataset.role] = i.value.trim(); });
-  const admin = root.querySelector('.set-input[data-admin]')?.value.trim() || '';
-  if (!admin || Object.values(roles).some((v) => !v)) { o.error = 'Passwords can\'t be empty.'; renderOverlay(); return; }
+  const root = document.querySelector('.settings-popup .popup-body'); if (!root) return;
+  // Logins inputs only exist while the Logins tab is open — when they're absent, keep the
+  // passwords from o.config so saving from another tab can't wipe them.
+  const haveLogins = !!root.querySelector('.set-input[data-role]');
+  let roles = o.config.roles || {}, admin = o.config.admin || '';
+  if (haveLogins) {
+    roles = {}; root.querySelectorAll('.set-input[data-role]').forEach((i) => { roles[i.dataset.role] = i.value.trim(); });
+    admin = root.querySelector('.set-input[data-admin]')?.value.trim() || '';
+    if (!admin || Object.values(roles).some((v) => !v)) { o.error = 'Passwords can\'t be empty.'; o.tab = 'logins'; renderOverlay(); return; }
+  }
+  const settings = o.draftSettings || state.settings || {};
   try {
-    const r = await backendCall('setConfig', { password: o.adminPw, config: { roles, admin } });
-    if (r && r.ok) { if (currentRole === 'Admin' || currentRole === 'Owner') { const myNew = currentRole === 'Admin' ? admin : (roles[currentRole] || o.adminPw); backendPassword = myNew; sessionStorage.setItem('jactec.pw', myNew); o.adminPw = myNew; } closeOverlay(); toast('Logins updated.'); }
-    else { o.error = 'Save failed.'; renderOverlay(); }
+    const r = await backendCall('setConfig', { password: o.adminPw, config: { roles, admin, settings } });
+    if (r && r.ok) {
+      if (haveLogins && (currentRole === 'Admin' || currentRole === 'Owner')) { const myNew = currentRole === 'Admin' ? admin : (roles[currentRole] || o.adminPw); backendPassword = myNew; sessionStorage.setItem('jactec.pw', myNew); o.adminPw = myNew; }
+      o.config.roles = roles; o.config.admin = admin; o.config.settings = settings;
+      persistAdminSettings(settings);   // mirror locally + apply the status overrides live
+      closeOverlay(); toast('Settings saved.'); render();
+    } else { o.error = 'Save failed.'; renderOverlay(); }
   } catch (e) { o.error = 'Could not reach the database.'; renderOverlay(); }
 }
 const addDays = (iso, n) => { const d = parseISO(iso); d.setDate(d.getDate() + n); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
@@ -9649,8 +11003,9 @@ function openCustomerForm(editId, prefill, linkTo) {
   openOverlay({ kind: 'newCustomer', error: '', editId: editId || null, linkTo: (!editId && linkTo) || null, draft: {
     firstName: f('firstName'), lastName: f('lastName'), company: f('company'), phone: f('phone'),
     email: f('email'), industry: f('industry'), accountType: f('accountType', 'Non-Business'),
-    accountNotes: f('accountNotes'), selfie: f('selfie'), signature: f('signature'),
+    requiresPO: c ? !!c.requiresPO : undefined, accountNotes: f('accountNotes'), selfie: f('selfie'), signature: f('signature'),
     agreementType: f('agreementType'), agreementSignedAt: f('agreementSignedAt'),
+    idNumber: f('idNumber'), netDays: f('netDays'), custom: (c && c.custom) ? { ...c.custom } : {},
   } });
 }
 // Downscale + JPEG-compress an image data URL so it fits inside one Sheet cell
@@ -9685,7 +11040,8 @@ function quickSaveCustomer(o) {
     customerId: id, firstName: d.firstName, lastName: d.lastName, name: `${d.firstName} ${d.lastName}`.trim(),
     company: d.company, phone: d.phone, email: d.email, address: '',
     industry: d.industry, accountType: d.accountType || 'Non-Business', payStatus: 'New Customer',
-    requiresPO: false, accountNotes: d.accountNotes, stripeId: '', selfie: d.selfie || '', signature: d.signature || '',
+    requiresPO: !!d.requiresPO, accountNotes: d.accountNotes, stripeId: '', selfie: d.selfie || '', signature: d.signature || '',
+    idNumber: d.idNumber || '', netDays: normNetDays(d.netDays), custom: d.custom || {},
     agreementType: d.agreementType || '', agreementSignedAt: d.agreementSignedAt || '',
     interestedCategoryIds: [], activityLog: [], usedSalesStage: 'N/A', membershipStage: 'N/A',
     _digest: { activePct: 0, totalPaid: 0, visits: 0, years: 0, avgFrequencyDays: 0, firstInvoice: '', lastInvoice: '' },
@@ -9718,24 +11074,30 @@ function ncSyncDraftToCustomer(o) {
   const d = o.draft;
   Object.assign(c, { firstName: d.firstName, lastName: d.lastName, name: `${d.firstName} ${d.lastName}`.trim(),
     company: d.company, phone: d.phone, email: d.email, industry: d.industry, accountType: d.accountType || 'Non-Business',
-    accountNotes: d.accountNotes });   // §7.1b signature/selfie/agreement live on the CARD now — never wiped from the account form
+    requiresPO: !!d.requiresPO, accountNotes: d.accountNotes });   // §7.1b signature/selfie/agreement live on the CARD now — never wiped from the account form
   reindex('customers', c);
 }
 function saveNewCustomer() {
   const o = state.overlay; if (!o || o.kind !== 'newCustomer') return;
   const root = document.querySelector('.overlay .popup-body'); if (!root) return;
   root.querySelectorAll('[data-f]').forEach((i) => { o.draft[i.dataset.f] = i.value.trim(); });
+  o.draft.custom = o.draft.custom || {};
+  root.querySelectorAll('[data-cf]').forEach((i) => { o.draft.custom[i.dataset.cf] = i.value.trim(); });
   ncApplyName(o.draft);
   if (!o.draft.firstName) { o.error = 'A name is required (we use it for marketing).'; renderOverlay(); document.querySelector('.overlay [data-f="name"]')?.focus(); return; }
   if (!o.draft.phone) { o.error = 'A phone number is required.'; renderOverlay(); document.querySelector('.overlay [data-f="phone"]')?.focus(); return; }
   if (o.draft.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(o.draft.email)) { o.error = 'That email doesn’t look valid (or leave it blank).'; renderOverlay(); return; }
+  const missingCf = customFieldsFor('customers').find((f) => f.required && !(o.draft.custom[f.id] || '').trim());
+  if (missingCf) { o.error = `“${missingCf.label}” is required.`; renderOverlay(); document.querySelector(`.overlay [data-cf="${missingCf.id}"]`)?.focus(); return; }
+  if (o.draft.requiresPO !== true && o.draft.requiresPO !== false) { o.error = ''; o.tab = 'account'; renderOverlay(); flashOr('.overlay .js-nc-po', 'Choose PO — Yes or No before saving.'); return; }   // force the PO answer
   const d = o.draft;
   if (o.editId) {                                   // ── editing / completing an existing customer ──
     const c = IDX.customer.get(o.editId); if (!c) { closeOverlay(); return; }
-    Object.assign(c, { firstName: d.firstName, lastName: d.lastName, company: d.company, phone: d.phone, email: d.email, industry: d.industry, accountType: d.accountType || 'Non-Business', accountNotes: d.accountNotes });   // §7.1b signature/agreement live on the card
+    Object.assign(c, { firstName: d.firstName, lastName: d.lastName, company: d.company, phone: d.phone, email: d.email, industry: d.industry, accountType: d.accountType || 'Non-Business', requiresPO: !!d.requiresPO, accountNotes: d.accountNotes, idNumber: d.idNumber || '', netDays: normNetDays(d.netDays), custom: d.custom || {} });   // §7.1b signature/agreement live on the card
     if (!c.accountNotes) c.accountNotesColor = '';   // popup has no dot picker — don't leave a stale tag on a cleared note
     c.name = `${d.firstName} ${d.lastName}`.trim() || c.name;
     reindex('customers', c);
+    commitCapture(o, c);   // Save IS the commit — persist any captured selfie + signature
     logAction(c, 'Account details updated');
     const lt = applyCustomerLink(o, c.customerId) || o.linked;   // quick-add-link → land back on the Quote/invoice
     closeOverlay();
@@ -9748,12 +11110,14 @@ function saveNewCustomer() {
     customerId: id, firstName: d.firstName, lastName: d.lastName, name: `${d.firstName} ${d.lastName}`.trim(),
     company: d.company, phone: d.phone, email: d.email, address: '',
     industry: d.industry, accountType: d.accountType || 'Non-Business', payStatus: 'New Customer',
-    requiresPO: false, accountNotes: d.accountNotes, stripeId: '', selfie: d.selfie || '', signature: d.signature || '',
+    requiresPO: !!d.requiresPO, accountNotes: d.accountNotes, stripeId: '', selfie: d.selfie || '', signature: d.signature || '',
+    idNumber: d.idNumber || '', netDays: normNetDays(d.netDays), custom: d.custom || {},
     agreementType: d.agreementType || '', agreementSignedAt: d.agreementSignedAt || '',
     interestedCategoryIds: [], activityLog: [], usedSalesStage: 'N/A', membershipStage: 'N/A',
     _digest: { activePct: 0, totalPaid: 0, visits: 0, years: 0, avgFrequencyDays: 0, firstInvoice: '', lastInvoice: '' },
   };
   DATA.customers.push(c); IDX.customer.set(id, c); reindex('customers', c);
+  commitCapture(o, c);   // Save IS the commit — persist any captured selfie + signature
   logAction(c, 'Customer onboarded');
   const lt = applyCustomerLink(o, id);   // quick-add-link → land back on the Quote/invoice
   closeOverlay();
@@ -9912,6 +11276,15 @@ function mountCardElement() {
 }
 function destroyCardElement() { if (_cardElement) { try { _cardElement.destroy(); } catch (e) {} } _cardElement = null; _cardElements = null; }
 
+// Reject if a promise hasn't settled in `ms` so a STALLED (never-resolving) backend
+// round-trip can't leave the save button spinning "Saving…" forever with no error.
+// fetch() has no built-in timeout; a hung Apps Script call otherwise never rejects.
+// Only wraps human-free server round-trips — never the interactive 3DS confirm step.
+function withTimeout(promise, ms, label) {
+  let t; const timeout = new Promise((_, rej) => { t = setTimeout(() => { const e = new Error((label || 'Request') + ' timed out'); e.rwTimeout = true; rej(e); }, ms); });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(t));
+}
+
 // Save card: SetupIntent (server) → confirmCardSetup (browser) → persist (server).
 // DOM-driven (no renderOverlay) so the Card Element isn't wiped mid-entry.
 async function saveCardFlow(btn) {
@@ -9922,38 +11295,49 @@ async function saveCardFlow(btn) {
   const errBox = document.getElementById('sl-card-error');
   const setErr = (m) => { if (errBox) errBox.textContent = m || ''; };
   const reset = () => { btn.disabled = false; btn.textContent = 'Save card'; };
-  if (!c.signature || !c.selfie) { setErr('Capture a selfie + signature first (card authorization).'); return; }
+  // Surface failures LOUDLY (a toast), not just in the small card-field box, so a
+  // backend/Stripe error can't silently look like "nothing happened".
+  const fail = (m) => { setErr(m); toast('Card not saved — ' + (m || 'try again.')); reset(); };
+  // §7.1b a card saves UNSIGNED — the signature/selfie are captured per-card AFTER
+  // saving (the signing tab), so DON'T gate the save on a customer-level signature.
   const live = () => state.overlay === o;   // bail if the overlay changed/closed mid-await
   btn.disabled = true; btn.textContent = 'Saving…'; setErr('');
   try {
-    const r = await backendCall('stripeSetupIntent', { customerId: c.customerId });
+    const r = await withTimeout(backendCall('stripeSetupIntent', { customerId: c.customerId }), 30000, 'Setting up the card');
     if (!live()) return;
-    if (!r || !r.ok) { setErr(friendlyPayErr(r)); reset(); return; }
+    if (!r || !r.ok) return fail(friendlyPayErr(r));
     const { setupIntent, error } = await stripe.confirmCardSetup(r.clientSecret, { payment_method: { card: _cardElement, billing_details: { name: c.name || undefined, email: c.email || undefined, phone: c.phone || undefined } } });
     if (!live()) return;
-    if (error) { setErr(error.message); reset(); return; }
-    if (!setupIntent || setupIntent.status !== 'succeeded') { setErr('Card could not be saved — try again.'); reset(); return; }
-    const s = await backendCall('stripeSaveCard', { customerId: c.customerId, paymentMethodId: setupIntent.payment_method, setupIntentId: setupIntent.id });
+    if (error) return fail(error.message);
+    if (!setupIntent || setupIntent.status !== 'succeeded') return fail('Card could not be saved — try again.');
+    const s = await withTimeout(backendCall('stripeSaveCard', { customerId: c.customerId, paymentMethodId: setupIntent.payment_method, setupIntentId: setupIntent.id }), 30000, 'Saving the card');
     if (!live()) return;
-    if (!s || !s.ok) { setErr(friendlyPayErr(s)); reset(); return; }
+    if (!s || !s.ok) return fail(friendlyPayErr(s));
     c.stripeId = r.stripeId || c.stripeId;
     if (!Array.isArray(c.cards)) c.cards = [];
     const firstCard = customerCards(c).length === 0;
+    const sd = o.signDraft, liveCap = !!(sd && sd.selfie && sd.sigData);   // selfie + signature captured in this panel → sign on save
+    const held = !!(c.pendingSigning && c.pendingSigning.signature);       // or an account-level agreement already on hand
     const newCardId = 'CARD-' + (state.seq++);
     // §7.1b a card lands UNSIGNED — it can be charged, but the account can't go
     // On Rent / log deliveries until this card is signed for the account type.
-    c.cards.push({ id: newCardId, stripePmId: setupIntent.payment_method, brand: s.card.brand, last4: s.card.last4,
+    const newCard = { id: newCardId, stripePmId: setupIntent.payment_method, brand: s.card.brand, last4: s.card.last4,
       expMonth: s.card.expMonth, expYear: s.card.expYear, nickname: o.nickname || '', notes: '', isDefault: firstCard, status: 'active',
-      agreements: [] });
+      agreements: [] };
+    c.cards.push(newCard);
     c.cardBrand = s.card.brand; c.cardLast4 = s.card.last4; c.cardExpMonth = s.card.expMonth; c.cardExpYear = s.card.expYear;   // legacy mirror (default card)
-    reindex('customers', c); logAction(c, `Card added — ${brandName(s.card.brand)} ••••${s.card.last4} (unsigned)`);
+    if (liveCap) { signCardAgreement(c, newCard, sd.sigData, sd.selfie); o.signDraft = null; }   // Save IS the commit — sign the card now
+    else if (held) attachHeldSigning(c, newCard);   // else a held agreement saddles onto the new card
+    const authd = liveCap || held;
+    reindex('customers', c); logAction(c, `Card added — ${brandName(s.card.brand)} ••••${s.card.last4}${authd ? '' : ' (unsigned)'}`);
     destroyCardElement();
-    toast('Card saved — sign to authorize ✓');
-    if (sub) { o.cardSub = false; o.tab = newCardId; renderOverlay(); }   // §14 close the card panel, jump to the new card's tab to sign
+    toast(authd ? 'Card saved — agreement signed, authorized ✓' : 'Card saved — sign to authorize ✓');
+    // Land on the new card's SIGNING tab no matter how Add-card was opened.
+    if (sub) { o.cardSub = false; o.tab = newCardId; renderOverlay(); }   // §14 panel beside the form → switch its tab
     else if (o.returnTo === 'payment' && o.invoiceId) openPayInvoice(o.invoiceId);
-    else closeOverlay();
+    else { closeOverlay(); openCustomerForm(c.customerId); if (state.overlay) { state.overlay.tab = newCardId; renderOverlay(); } }   // standalone → open the account form on the signing tab
     render();
-  } catch (e) { setErr('Network error — try again.'); reset(); }
+  } catch (e) { fail(e && e.rwTimeout ? 'Saving timed out — check your connection and try again.' : 'Network error — try again.'); }
 }
 
 // Save ACH: bank SetupIntent (server) → confirmUsBankAccountSetup (browser; raw
@@ -10094,12 +11478,18 @@ async function refundInvoiceFlow(invoiceId) {
   // invoice to Refunded (status derives from inv.refunded) and keep amountPaid so the
   // balance reads $0; release line assignments per the full-refund invariant (§4).
   if (/^cash$/i.test(inv.paymentMethod || '') || /^check/i.test(inv.paymentMethod || '')) {
-    const t = invoiceTotals(inv); const before = t.status;
-    inv.refunded = true; inv.refundedAmount = t.paid; inv.allocations = {};
-    o.confirmRefund = false; o.busy = false; o.error = '';
-    reindex('invoices', inv);
-    logAction(inv, `Refunded ${money(t.paid)} (${inv.paymentMethod}) — ${before} → Refunded`);
-    toast('Refunded ✓'); render(); renderOverlay(); return;
+    // Cash/Check refunds never touched Stripe, but inv.refunded / refundedAmount are
+    // server-owned (sync-PROTECTED) — so the SERVER records the manual refund too, else
+    // it'd revert on refresh. applyPayment keeps amountPaid (balance reads $0) and flips
+    // the status to Refunded. (#109/#117)
+    const live = () => state.overlay === o;
+    o.busy = true; o.error = ''; o.confirmRefund = false; renderOverlay();
+    try {
+      const r = await backendCall('recordManualRefund', { invoiceId });
+      if (!live()) return;
+      if (r && r.ok) { applyPayment(invoiceId, r); o.busy = false; toast('Refunded ✓'); renderOverlay(); return; }
+      o.busy = false; o.error = friendlyPayErr(r); renderOverlay(); return;
+    } catch (e) { if (live()) { o.busy = false; o.error = 'Network error — try again.'; renderOverlay(); } return; }
   }
   const live = () => state.overlay === o;
   o.busy = true; o.error = ''; o.confirmRefund = false; renderOverlay();
@@ -10133,7 +11523,14 @@ function applyPayment(invoiceId, r, alloc) {
 // the exact cent (no ceiling/rounding) and clamped at the outstanding balance so a
 // payment can never overpay; partials just dial the amount down. amountPaid persists
 // through the normal record sync, exactly like every other invoice field.
-function recordManualPayment(invoiceId) {
+// Record a manual CASH / CHECK payment (#109) — no Stripe. The figure is captured to
+// the exact cent and clamped at the outstanding balance so a payment can never overpay.
+// The SERVER records it (recordManualPayment): invoice money fields (amountPaid,
+// paymentMethod, paidAt, payments) are server-owned / sync-PROTECTED, so a client-side
+// write gets stripped on sync and "reverts" on refresh (#bug). The backend is
+// authoritative — it caps at the live balance, appends to payments[] and audits the
+// ledger — exactly like a card charge; we apply its result via applyPayment.
+async function recordManualPayment(invoiceId) {
   const o = state.overlay; if (!o || o.kind !== 'payment') return;
   const inv = IDX.invoice.get(invoiceId); if (!inv) return;
   const numEl = document.querySelector('.overlay .js-check-num'); if (numEl) o.checkNum = numEl.value.trim();   // survive the error re-render
@@ -10145,18 +11542,20 @@ function recordManualPayment(invoiceId) {
   if (balCents <= 0) { o.error = 'Nothing left to pay on this invoice.'; return renderOverlay(); }
   const payCents = Math.min(Math.round(entered * 100), balCents);   // exact cents, never over the balance
   const isCheck = o.method === 'check';
-  let label = 'Cash';
-  if (isCheck) { const num = (o.checkNum || '').trim(); if (!num) { o.error = 'Enter the check number.'; return renderOverlay(); } label = 'Check #' + num; }
-  const before = t.status;
-  inv.amountPaid = (Math.round((Number(inv.amountPaid) || 0) * 100) + payCents) / 100;
-  inv.paymentMethod = label;
-  inv.paidAt = TODAY_ISO;
-  reindex('invoices', inv);
-  const after = invoiceTotals(inv).status;
-  logAction(inv, `${label} payment ${money2(payCents / 100)} — ${before} → ${after}`);
-  closeOverlay();
-  render();
-  toast(invoiceTotals(inv).balance <= 0.005 ? 'Paid in full ✓' : `${label} payment recorded ✓`);
+  const checkNum = (o.checkNum || '').trim();
+  if (isCheck && !checkNum) { o.error = 'Enter the check number.'; return renderOverlay(); }
+  const live = () => state.overlay === o;
+  o.busy = true; o.error = ''; renderOverlay();
+  try {
+    const r = await withTimeout(backendCall('recordManualPayment', { invoiceId, amountCents: payCents, method: isCheck ? 'check' : 'cash', checkNum: isCheck ? checkNum : '' }), 30000, 'Recording the payment');
+    if (!live()) return;
+    if (!r || !r.ok) { o.busy = false; o.error = friendlyPayErr(r); return renderOverlay(); }
+    applyPayment(invoiceId, r);   // server is authoritative (amountPaid / paymentMethod / paidAt)
+    o.busy = false; closeOverlay();
+    toast(invoiceTotals(inv).balance <= 0.005 ? 'Paid in full ✓' : `${r.paymentMethod || 'Cash'} payment recorded ✓`);
+  } catch (e) {
+    if (live()) { o.busy = false; o.error = (e && e.rwTimeout) ? 'Timed out — try again.' : 'Network error — try again.'; renderOverlay(); }
+  }
 }
 // Print / PDF a customer-facing invoice (#109) — a clean white document (not the dark
 // yard UI) rendered into #print-root; the @media print rules hide everything else and
@@ -10171,7 +11570,7 @@ function printInvoice(invoiceId) {
   if (!host) { host = document.createElement('div'); host.id = 'print-root'; document.body.appendChild(host); }
   host.innerHTML = `
     <div class="pr-doc">
-      <div class="pr-head"><div class="pr-brand">JacRentals</div><div class="pr-sub">Heavy-Equipment Rental · Sulphur, LA</div></div>
+      <div class="pr-head"><div class="pr-brand">${esc(companyName())}</div><div class="pr-sub">${esc(companyTagline())}</div></div>
       <div class="pr-meta">
         <div><span class="pr-k">Invoice</span><span class="pr-v">${esc(inv.invoiceId)}</span></div>
         <div><span class="pr-k">Bill to</span><span class="pr-v">${esc(cust ? cust.name : '—')}</span></div>
@@ -10235,7 +11634,7 @@ function startNewWorkOrder(unitId) {
 function startNewInvoice(customerId) {
   const cust = customerId ? IDX.customer.get(customerId) : null;
   const id = nextInvoiceId();
-  const draft = { invoiceId: id, customerId: customerId || null, rentalIds: [], date: TODAY_ISO, dueDate: addDays(TODAY_ISO, 14), po: '', amountPaid: 0, lineItems: [], mock: true };
+  const draft = { invoiceId: id, customerId: customerId || null, rentalIds: [], date: TODAY_ISO, dueDate: dueForCustomer(customerId), po: '', amountPaid: 0, lineItems: [], mock: true };
   DATA.invoices.push(draft); IDX.invoice.set(id, draft); reindex('invoices', draft);
   logAction(draft, cust ? `Invoice created for ${cust.name}` : 'Invoice created');
   anchorRecord('invoices', id);   // no pick mode — drag links it up (Wave 2)
@@ -10289,7 +11688,7 @@ function createInvoiceForRental(rentalId) {
   if (!r.startDate || !r.endDate) { flashOr('.timeline, .statusbar.draftwin', 'Set the rental window first.'); return; }
   if (!rentalUnitIds(r).length) { flashOr('.stall-empty, [data-slot="unit"]', 'Add at least one unit before invoicing.'); return; }
   const id = nextInvoiceId();
-  const inv = { invoiceId: id, customerId: r.customerId, rentalIds: [rentalId], date: TODAY_ISO, dueDate: addDays(TODAY_ISO, 14), po: '', amountPaid: 0, lineItems: [], mock: true };
+  const inv = { invoiceId: id, customerId: r.customerId, rentalIds: [rentalId], date: TODAY_ISO, dueDate: dueForCustomer(r.customerId), po: '', amountPaid: 0, lineItems: [], mock: true };
   rentalLineItems(r).forEach((li) => inv.lineItems.push(li));      // one rental line per unit (§20)
   transportLineItems(r).forEach((li) => inv.lineItems.push(li));   // one transport line per unit (§20)
   DATA.invoices.push(inv); IDX.invoice.set(id, inv); reindex('invoices', inv);
@@ -10574,6 +11973,93 @@ function positionWinPicker(fl) {
   fl.style.top = Math.round(top) + 'px';
 }
 
+/* ════════════════════════════════════════════════════════════════════════
+   §5.4d — DATE SEARCH PICKER. A standalone calendar that REUSES the rental
+   window-picker's look (.winpicker/.wp-*) but none of its rental/availability
+   coupling. Type "date"/"dates"→Enter (or click a date chip) to open; tap one
+   day or two to set a range; Done pins a `__date` filter term on the scope.
+   ════════════════════════════════════════════════════════════════════════ */
+function openDateSearch(scope, editIndex = null) {
+  let start = '', end = '';
+  if (editIndex != null) {
+    const ft = (termsFor(scope) || [])[editIndex];
+    if (ft && ft.col === '__date') { const [a, b] = String(ft.value).split('..'); start = a || ''; end = (b && b !== a) ? b : ''; }
+  }
+  state.datesearch = { scope, monthISO: firstOfMonthISO(start || TODAY_ISO), anchor: null, start, end, editIndex };
+  render();
+}
+function closeDateSearch() { state.datesearch = null; render(); }
+function dsMonth(delta) { const ds = state.datesearch; if (!ds) return; const d = parseISO(ds.monthISO); d.setMonth(d.getMonth() + delta); ds.monthISO = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`; render(); }
+function dsToday() { const ds = state.datesearch; if (!ds) return; ds.monthISO = firstOfMonthISO(TODAY_ISO); ds.start = TODAY_ISO; ds.end = ''; ds.anchor = TODAY_ISO; render(); }
+function dsClear() { const ds = state.datesearch; if (!ds) return; ds.start = ''; ds.end = ''; ds.anchor = null; render(); }
+function dsPickDay(iso) {
+  const ds = state.datesearch; if (!ds) return;
+  if (!ds.anchor || (ds.start && ds.end)) { ds.anchor = iso; ds.start = iso; ds.end = ''; }   // begin a fresh range
+  else {                                                                                       // close the range (either drag direction)
+    const a = ds.anchor;
+    if (parseISO(iso) - parseISO(a) >= 0) { ds.start = a; ds.end = iso; } else { ds.start = iso; ds.end = a; }
+    ds.anchor = null;
+  }
+  render();
+}
+function dsDone() {
+  const ds = state.datesearch; if (!ds) return;
+  const scope = ds.scope, arr = termsFor(scope);
+  if (!ds.start) {   // nothing picked → if editing, drop the chip; either way close
+    if (ds.editIndex != null && arr[ds.editIndex]) arr.splice(ds.editIndex, 1);
+    state.datesearch = null; return afterFilterChange(scope);
+  }
+  const from = ds.start, to = ds.end || ds.start;
+  const value = from === to ? from : from + '..' + to;
+  const label = from === to ? fmtShortDate(from) : `${fmtShortDate(from)} – ${fmtShortDate(to)}`;
+  const neg = (ds.editIndex != null && arr[ds.editIndex] && arr[ds.editIndex].neg) || false;
+  const term = { t: label, col: '__date', value, neg };
+  if (ds.editIndex != null && arr[ds.editIndex]) arr[ds.editIndex] = term;
+  else if (!arr.some((x) => x.col === '__date' && x.value === value)) arr.push(term);
+  state.datesearch = null; afterFilterChange(scope);
+}
+/** Render the standalone date-search calendar (reuses the .wp-* grid styling). */
+function dateSearchEl() {
+  const ds = state.datesearch;
+  const md = parseISO(ds.monthISO), y = md.getFullYear(), m = md.getMonth();
+  const startDow = new Date(y, m, 1).getDay(), daysIn = new Date(y, m + 1, 0).getDate();
+  const s = ds.start, e = ds.end, a = ds.anchor;
+  const lo = s && e ? (s < e ? s : e) : (s || a), hi = s && e ? (s < e ? e : s) : null;
+  let cells = '';
+  for (let i = 0; i < startDow; i++) cells += `<button class="wp-day empty" tabindex="-1"></button>`;
+  for (let day = 1; day <= daysIn; day++) {
+    const iso = isoOf(new Date(y, m, day));
+    let cls = 'wp-day js-ds-day';
+    if (iso === lo) cls += ' range-start';
+    if (hi && iso === hi) cls += ' range-end';
+    if (hi && iso > lo && iso < hi) cls += ' in-range';
+    if (a && iso === a && !hi) cls += ' range-start range-end';
+    if (iso === TODAY_ISO) cls += ' today';
+    cells += `<button class="${cls}" data-iso="${iso}">${day}</button>`;
+  }
+  const dows = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((d) => `<span class="wp-dow">${d}</span>`).join('');
+  const sel = s ? (e && e !== s ? `${fmtShortDate(s)} – ${fmtShortDate(e)}` : fmtShortDate(s)) : 'Pick a day · or a range';
+  return `<div class="winpicker datesearch">
+    <div class="ds-cap"><span class="ds-kicker">Filter by date</span><span class="ds-sel">${esc(sel)}</span></div>
+    <div class="wp-head"><span class="wp-month">${MONTH_NAMES[m]} ${y}</span>
+      <span class="wp-nav"><button class="js-ds-prev" data-tip="Previous month">‹</button><button class="js-ds-next" data-tip="Next month">›</button></span></div>
+    <div class="wp-grid">${dows}${cells}</div>
+    <div class="wp-foot">${ghostPill('Today', { js: 'js-ds-today' })}${ghostPill('Clear', { js: 'js-ds-clear' })}${actionPill('commit', 'Done', { js: 'js-ds-done' })}</div>
+  </div>`;
+}
+function positionDateSearch(fl) {
+  const ds = state.datesearch; if (!ds) { fl.style.display = 'none'; return; }
+  const anchor = ds.scope === 'global' ? document.querySelector('#globalsearch') : document.querySelector(`.mini-search[data-card="${ds.scope}"]`);
+  if (!anchor) { fl.style.display = 'none'; return; }
+  const tr = anchor.getBoundingClientRect();
+  const pw = fl.offsetWidth || 300, ph = fl.offsetHeight || 380;
+  const left = Math.max(10, Math.min(tr.left, window.innerWidth - pw - 10));
+  let top = tr.bottom + 6;                                       // open BELOW the bar (it lives at the top)
+  if (top + ph > window.innerHeight - 10) top = Math.max(10, tr.top - ph - 6);   // no room → flip above
+  fl.style.left = Math.round(left) + 'px';
+  fl.style.top = Math.round(top) + 'px';
+}
+
 /* ── inspection gated flow (§9): Wash → Checklist → Ready/Failed (+auto-WO) ── */
 function setInspWash(id, val) {
   const n = IDX.insp.get(id); if (!n) return;
@@ -10840,7 +12326,7 @@ function billWOToInvoice(woId) {
   let inv = DATA.invoices.find((i) => i.customerId === custId && !['Paid', 'Refunded'].includes(invoiceTotals(i).status));
   if (!inv) {
     const id = nextInvoiceId();
-    inv = { invoiceId: id, customerId: custId, rentalIds: [], date: TODAY_ISO, dueDate: addDays(TODAY_ISO, 14), po: '', amountPaid: 0, lineItems: [], mock: true };
+    inv = { invoiceId: id, customerId: custId, rentalIds: [], date: TODAY_ISO, dueDate: dueForCustomer(custId), po: '', amountPaid: 0, lineItems: [], mock: true };
     DATA.invoices.push(inv); IDX.invoice.set(id, inv); reindex('invoices', inv);
   }
   addWOToInvoice(inv.invoiceId, woId);
@@ -10940,6 +12426,13 @@ let backendPassword = sessionStorage.getItem('jactec.pw') || '';
 let booting = true;                       // suppresses saves during initial load
 let saveTimer = null, saving = false, savePending = false;
 
+/* uploadCapture returns url:f.getUrl() — a Drive file-VIEW page, which does NOT
+   render in an <img src> or CSS url(). For IMAGES we build the embeddable form
+   from the returned fileId (uc?export=view&id=…), matching the selfie/agreement
+   archive convention. Videos keep f.getUrl() (the nicer Drive-player page). */
+function driveViewUrl(res) {
+  return (res && res.fileId) ? ('https://drive.google.com/uc?export=view&id=' + res.fileId) : ((res && res.url) || '');
+}
 async function backendCall(action, extra) {
   // text/plain avoids a CORS preflight that GAS web apps can't answer
   const payload = Object.assign({ action, password: backendPassword }, extra || {});
@@ -10955,6 +12448,14 @@ async function loadFromBackend() {
   // could overwrite real data on a transient blip. A fresh backend is populated
   // explicitly via #reseed (admin), never silently from the demo file.
   PERSIST_KEYS.forEach((k) => { if (Array.isArray(data[k])) { DATA[k].length = 0; data[k].forEach((x) => DATA[k].push(x)); } });
+  // Settings Board: the backend now ships admin customizations with every load, so they
+  // sync to EVERY signed-in role (not just admins via getConfig). Server wins when it has
+  // settings; an empty server is left alone so it can't wipe a device's local config mid-rollout.
+  if (r.settings && typeof r.settings === 'object' && Object.keys(r.settings).length) {
+    state.settings = r.settings;
+    try { localStorage.setItem('jactec.settings', JSON.stringify(r.settings)); } catch (e) {}
+    applySettings(r.settings);
+  }
 }
 
 // ── Incremental persistence (diff-based sync) ──────────────────────────────
@@ -11023,6 +12524,7 @@ async function refreshFromBackend() {
         if (m.changed) applied++;
       }
     } catch (e) { /* chat sync is best-effort */ }
+    loadWranglerRail();   // also pull this role's Mr. Wrangler rail (cross-device) — best-effort, self-renders
     if (applied && !state.overlay && !DRAG.active && !hoverNode) { state.cascade = createCascade(DATA); render(); }
   } catch (e) { /* offline / blip → retry next tick */ }
   finally { refreshing = false; }
@@ -11082,6 +12584,49 @@ async function loadChats() {
     if (changed) render();
   } catch (e) { /* offline → the refresh poll retries */ }
 }
+// ── Cross-device Mr. Wrangler rail sync (per ROLE; mirrors team-chat sync) ──
+// The rail lives in IndexedDB per device (#181); this makes it follow the role
+// login across devices. PURE merge: union by id, newest ts wins, reports
+// localAhead. The caller applies it to state + the IndexedDB cache.
+let railPushTimer = null, lastRailJson = null;
+function mergeWranglerRails(local, remote) {
+  const byId = new Map((local || []).map((c) => [c.id, c]));
+  let changed = false, localAhead = false;
+  (remote || []).forEach((rc) => {
+    if (!rc || !rc.id) return;
+    const lc = byId.get(rc.id);
+    if (!lc) { byId.set(rc.id, rc); changed = true; }                       // a chat from another device
+    else if ((rc.ts || 0) > (lc.ts || 0)) { byId.set(rc.id, rc); changed = true; }   // remote is newer → wins
+    else if ((lc.ts || 0) > (rc.ts || 0)) { localAhead = true; }            // we're newer → push up
+  });
+  const remoteIds = new Set((remote || []).map((c) => c && c.id));
+  if ((local || []).some((c) => c && !remoteIds.has(c.id))) localAhead = true;   // a local-only chat → push up
+  const merged = [...byId.values()].sort((a, b) => (b.ts || 0) - (a.ts || 0));
+  return { merged, changed, localAhead };
+}
+function pushWranglerRailSoon() { if (booting || !backendPassword) return; clearTimeout(railPushTimer); railPushTimer = setTimeout(pushWranglerRail, 1200); }
+async function pushWranglerRail() {
+  if (!backendPassword) return;
+  for (const c of state.wranglerRail) { try { await wrOffloadChatImages(c); } catch (e) {} }   // full fidelity: images → Drive URLs before they ride the sync
+  const chats = state.wranglerRail, js = JSON.stringify(chats);
+  if (js === lastRailJson) return;                                          // nothing new since the last push
+  try { const r = await backendCall('setWranglerRail', { chats }); if (r && r.ok) lastRailJson = js; } catch (e) { /* offline → retries */ }
+}
+async function loadWranglerRail() {
+  if (!backendPassword) return;
+  try {
+    const r = await backendCall('getWranglerRail');
+    if (!r || !r.ok || !Array.isArray(r.chats)) return;
+    const localBefore = state.wranglerRail;
+    const { merged, changed, localAhead } = mergeWranglerRails(localBefore, r.chats);
+    if (changed) {
+      const beforeById = new Map(localBefore.map((c) => [c.id, c]));
+      for (const rc of r.chats) { const lc = beforeById.get(rc.id); if (rc && rc.id && (!lc || (rc.ts || 0) > (lc.ts || 0))) { try { await wrStore.putChat(rc); } catch (e) {} } }   // cache the remote winners
+      state.wranglerRail = merged; render();
+    }
+    if (localAhead) pushWranglerRailSoon(); else lastRailJson = JSON.stringify(state.wranglerRail);
+  } catch (e) { /* offline → the refresh poll retries */ }
+}
 function saveSoon() { if (booting || !backendPassword) return; clearTimeout(saveTimer); saveTimer = setTimeout(flushSave, 1200); }
 async function flushSave() {
   if (saving) { savePending = true; return; }
@@ -11101,6 +12646,16 @@ async function flushSave() {
   saving = false;
   if (savePending) { savePending = false; saveSoon(); }
 }
+// Safety net: a debounced save that hasn't flushed yet — or a large bulk-import sync
+// still in flight — would be lost silently if the page closes/reloads first (#164).
+// If anything is still un-persisted, kick a final flush and let the browser show its
+// "unsaved changes" prompt so the operator can't drop records without noticing.
+window.addEventListener('beforeunload', (e) => {
+  if (booting || !backendPassword || !lastSaved) return;   // demo/offline: nothing to persist
+  if (!saving && !savePending && !computeChanges().n) return;   // everything's already saved → leave quietly
+  flushSave();
+  e.preventDefault(); e.returnValue = '';
+});
 function renderLogin(msg) {
   $('#app').innerHTML = `<div class="login-screen"><form class="login-box" id="login-form">
     <span class="rivet tl"></span><span class="rivet tr"></span><span class="rivet bl"></span><span class="rivet br"></span>
@@ -11128,6 +12683,7 @@ function finishLoad() {
   buildIndexes(); state.cascade = createCascade(DATA); booting = false; render();
   loadGlobalViews();                                            // pull the shared, company-wide view set
   loadChats();                                                  // pull the shared team-chat threads (§ team-chat sync)
+  wranglerRailLoad();                                           // load the Mr. Wrangler rail from IndexedDB (+ one-time localStorage migration)
   refreshWranglerRequests();                                    // §18e populate the approval-inbox badge
   refreshWranglerNotifications();                               // §18f populate the notification-bell badge
   startRefreshPoll();                                           // live multi-user: poll for others' changes (§ refreshFromBackend)
@@ -11203,6 +12759,14 @@ function applyViewportClass() {
   document.body.classList.toggle('is-narrow', window.matchMedia('(max-width: 1024px)').matches);
 }
 function boot() {
+  // Recovery hatch: app.jacrentals.com/#reset-settings (or #safe-mode) wipes saved customizations
+  // before they apply — the guaranteed way back if a bad setting ever breaks the screen.
+  try {
+    const h = (location.hash || '').toLowerCase();
+    if (h.includes('reset-settings') || h.includes('safe-mode')) { localStorage.removeItem('jactec.settings'); localStorage.removeItem('jactec.settings.prev'); state.settings = {}; settingsReverted = true; }
+  } catch (e) {}
+  applySettings();   // Settings Board: apply admin status overrides (color/icon) before the first render
+  if (settingsReverted) setTimeout(() => { try { toast('Customizations reset to defaults (recovery mode).'); } catch (e) {} }, 800);
   initTooltip();
   applyViewportClass();
   const onVP = () => { applyViewportClass(); if (!booting) render(); };
@@ -11231,8 +12795,9 @@ function boot() {
     if (Math.abs(dx) < 55 || Math.abs(dx) < Math.abs(dy) * 1.3) return;            // not a clean horizontal swipe
     swipeFired = true;                                                             // swallow the trailing click (row/toggle)
     if (s.footer) {
-      const next = Math.max(0, Math.min(2, state.mobileCol + (dx < 0 ? 1 : -1)));  // left → next column, right → previous
-      if (next !== state.mobileCol) { state.mobileCol = next; haptic(8); render(); }
+      const cur = currentMobileMember(); let i = MOBILE_CARDS.indexOf(cur); if (i < 0) i = 0;   // left → next card, right → previous
+      const next = Math.max(0, Math.min(MOBILE_CARDS.length - 1, i + (dx < 0 ? 1 : -1)));
+      if (next !== i) { goToCard(MOBILE_CARDS[next]); haptic(8); }
     } else {
       const card = activeMobileCard();
       if (dx > 0) cardBack(card); else cardFwd(card);                              // swipe right → Back, left → Forward
@@ -11437,7 +13002,7 @@ function boot() {
 
 // #local — render straight from data.js with NO backend (offline/demo + dev smoke test).
 // saveSoon() already no-ops without a password, so edits stay in-memory only.
-function offlineBoot() { buildIndexes(); state.cascade = createCascade(DATA); seedDemoRequests(); booting = false; render(); exposeTestApi(); }
+function offlineBoot() { buildIndexes(); state.cascade = createCascade(DATA); seedDemoRequests(); booting = false; render(); exposeTestApi(); wranglerRailLoad(); }
 /* #local demo only: a sample Requests-inbox entry so the review/continue flow is
    visible without a backend. Real installs fetch live requests via the backend. */
 function seedDemoRequests() {
@@ -11488,8 +13053,11 @@ function exposeTestApi() {
       rentalAllocated, unitRentalPrice, rentalDisplayName, setWoLinePhase, setWoPhase, woBottleneck,
       cleanUnitName, planUnitMigration, applyUnitMigration, openMigrationPreview,
       computeTransportPrice, isFueledType, unitTransport, rentalTransport,
-      wrValidatePlan, applyWranglerData, wrFunnel, invoiceMergeable, mergeInvoiceInto,
-      parseWranglerAction, stripWranglerAction };
+      wrValidatePlan, applyWranglerData, wrFunnel, invoiceMergeable, mergeInvoiceInto, parseWranglerAction, stripWranglerAction,
+      latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore, wranglerRailLoad, wrOffloadChatImages, wrEvictChatBlobs, driveViewUrl, mergeWranglerRails,
+      recordDateMatch, dateTermHits, rowMatches,
+      kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
+      companyRevenueGoal, companyName, companyTagline, rentalRuleBlock, dueForCustomer, footerHidden, customFieldsFor, checklistFor, checklistRequired, applySettings, getStatus, pageDefaultSlice, __state: state };
   } catch (e) { /* no window (non-browser) */ }
 }
 

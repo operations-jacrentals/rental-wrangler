@@ -34,7 +34,7 @@ try {
   await page.goto('http://localhost:8000/#local', { waitUntil: 'domcontentloaded', timeout: 20000 });
   await page.waitForFunction(() => !!window.__rw, { timeout: 20000 });
 
-  const results = await page.evaluate(() => {
+  const results = await page.evaluate(async () => {
     const T = window.__rw; const out = []; const ok = (c, m) => out.push({ ok: !!c, m });
 
     // 1) CRITICAL — allocations keyed by a stable lid, immune to line reorder/splice
@@ -214,10 +214,24 @@ try {
     const truncPlan = T.wrValidatePlan(truncAct);
     ok(truncPlan.ops.length === 1 && truncPlan.ops[0].rows.length === 2, 'salvaged action validates into an applyable preview plan');
     const custBefore = T.DATA.customers.length; const u3 = T.IDX.unit.get('U003'); const noteBefore = u3.notes, hoursBefore = u3.currentHours;
+    window.JT.snapshotSaved();   // #164 baseline the diff-sync against the CURRENT data
     T.applyWranglerData(wrPlan);
     ok(T.DATA.customers.length === custBefore + 2, 'applyWranglerData added exactly the 2 imported customers');
     ok(T.IDX.unit.get('U003').notes === 'WR test note' && T.IDX.unit.get('U003').currentHours === hoursBefore, 'applied the safe note, did NOT write the money/ops field');
+    // #164 — the bulk import must reach the diff-sync (it was being lost when the page
+    // closed before the 1200ms debounce fired). computeChanges sees the new + updated.
+    const wrDiff = window.JT.computeChanges();
+    ok(wrDiff.upserts.customers && wrDiff.upserts.customers.length >= 2, 'imported customers are QUEUED for the diff-sync (persist, not just in-memory)');
+    ok(wrDiff.upserts.units && wrDiff.upserts.units.some((u) => u.id === 'U003'), 'the applied unit note is queued for persistence too');
     T.DATA.customers.length = custBefore; u3.notes = noteBefore;   // restore
+
+    // #152 a big import reply can be TRUNCATED by the model's output limit (no closing ```);
+    // parseWranglerAction must salvage the complete rows so the preview still opens.
+    const wrTrunc = '```wrangler-action\n{"action":"data","title":"Import leads","ops":[{"op":"import","entity":"customers","rows":[\n{"firstName":"Aaa","lastName":"One","phone":"337-555-0101"},\n{"firstName":"Bbb","lastName":"Two","email":"b@x.com"},\n{"firstName":"Ccc","lastName":"Tr';   // cut off mid-row, no closing fence
+    const wrSal = T.parseWranglerAction(wrTrunc);
+    ok(wrSal && wrSal.action === 'data' && wrSal._truncated && wrSal.ops[0].rows.length === 2, 'parseWranglerAction salvages 2 complete rows from a truncated import + flags _truncated');
+    const wrFull = T.parseWranglerAction('```wrangler-action\n{"action":"data","title":"t","ops":[{"op":"import","entity":"customers","rows":[{"firstName":"Z"}]}]}\n```');
+    ok(wrFull && !wrFull._truncated && wrFull.ops[0].rows.length === 1, 'a normal closed import still parses cleanly (no _truncated flag)');
 
     // 13) MERGE INVOICES (#64) — consolidate a customer's UNPAID bills; money-safe by construction
     const mC = 'C0009';
@@ -237,6 +251,267 @@ try {
     const mPaid = T.IDX.invoice.get('01i02Ju26');
     ok(mPaid && (Number(mPaid.amountPaid) || 0) === 1000 && mPaid.lineItems.length === 2, 'blocked merge left the PAID invoice fully intact');
     const mki = T.DATA.invoices.findIndex((o) => o.invoiceId === 'TST-KEEP'); if (mki >= 0) T.DATA.invoices.splice(mki, 1); T.IDX.invoice.delete('TST-KEEP');   // restore
+
+    // 13) photo backdrops — customer Account selfie + open Work Order first-photo
+    ok(T.latestCustomerSelfie(null) === '' && T.latestCustomerSelfie({}) === '', 'latestCustomerSelfie: no customer / no cards → empty');
+    ok(T.latestCustomerSelfie({ selfie: 'data:legacy' }) === 'data:legacy', 'latestCustomerSelfie: legacy c.selfie fallback');
+    const lcsCust = { cards: [{ status: 'active', agreements: [
+      { key: 'rental', signedAt: '2026-01-01', selfie: 'data:old' },
+      { key: 'rental', signedAt: '2026-05-01', driveSelfieUrl: 'https://drive/new.jpg', selfie: 'data:new' } ] }] };
+    ok(T.latestCustomerSelfie(lcsCust) === 'https://drive/new.jpg', 'latestCustomerSelfie: newest signing wins + prefers the Drive URL over base64');
+    const lcsTwoCards = { cards: [
+      { status: 'active', agreements: [{ key: 'rental', signedAt: '2026-06-10', driveSelfieUrl: 'https://drive/A.jpg' }] },
+      { status: 'active', agreements: [{ key: 'rental', signedAt: '2026-02-01', driveSelfieUrl: 'https://drive/B.jpg' }] } ] };
+    ok(T.latestCustomerSelfie(lcsTwoCards) === 'https://drive/A.jpg', 'latestCustomerSelfie: newest across multiple cards');
+    ok(T.woBackdrop(null) === '' && T.woBackdrop({ phase: 'Part Needed' }) === '', 'woBackdrop: nothing / no photo → empty');
+    ok(T.woBackdrop({ phase: 'Part Needed', lineItems: [{}, { photo: 'data:part' }] }) === 'data:part', 'woBackdrop: first part-line photo');
+    const wbInsp = { phase: 'Part Needed', inspectionId: 'INS-2', lineItems: [{ photo: 'data:part' }] };
+    ok(T.woBackdrop(wbInsp) === (T.IDX.insp.get('INS-2')?.photo || ''), 'woBackdrop: linked failed-inspection photo wins over the part photo');
+    ok(T.woBackdrop({ phase: 'Complete', inspectionId: 'INS-2', lineItems: [{ photo: 'data:part' }] }) === '', 'woBackdrop: dropped once the WO is Complete');
+
+    // 14) photo offload to Drive (de-bloat) — swap logic via an injected uploader stub
+    const okUp = async (p) => ({ ok: true, url: 'https://drive/' + p.name });
+    const failUp = async () => ({ ok: false });
+    const recA = { photo: 'data:image/jpeg;base64,AAA' };
+    ok((await T.offloadPhotoNow(recA, 'photo', 'n1', null, null, okUp)) === true && recA.photo === 'https://drive/n1', 'offloadPhotoNow: base64 → Drive URL on ok');
+    ok((await T.offloadPhotoNow(recA, 'photo', 'n1', null, null, okUp)) === false && recA.photo === 'https://drive/n1', 'offloadPhotoNow: idempotent — a URL is a no-op');
+    const recB = { photo: 'data:image/jpeg;base64,BBB' };
+    ok((await T.offloadPhotoNow(recB, 'photo', 'n2', null, null, failUp)) === false && recB.photo === 'data:image/jpeg;base64,BBB', 'offloadPhotoNow: failed upload leaves base64 untouched (never lose a photo)');
+    ok((await T.offloadPhotoNow({ photo: '' }, 'photo', 'n3', null, null, okUp)) === false, 'offloadPhotoNow: empty → no-op');
+    const recD = { photo: 'data:image/jpeg;base64,DDD' };
+    const staleUp = async () => { recD.photo = 'data:image/jpeg;base64,NEW'; return { ok: true, url: 'https://drive/stale' }; };   // re-captured mid-flight
+    ok((await T.offloadPhotoNow(recD, 'photo', 'n4', null, null, staleUp)) === false && recD.photo === 'data:image/jpeg;base64,NEW', 'offloadPhotoNow: stale-guard — a mid-flight re-capture is not clobbered');
+    // base64PhotoTargets — counts only data: photos (inspections + nested WO line items), idempotent after a pass
+    const beforeT = T.base64PhotoTargets().length;
+    const insX = { inspectionId: 'INS-OFFLOAD', photo: 'data:image/jpeg;base64,III' };
+    T.DATA.inspections.push(insX); T.IDX.insp.set('INS-OFFLOAD', insX);
+    const woX = { woId: 'WO-OFFLOAD', lineItems: [{ photo: 'data:image/jpeg;base64,LLL', lid: 'LX' }, { photo: 'https://drive/already.jpg' }, {}] };
+    T.DATA.workOrders.push(woX); T.IDX.wo.set('WO-OFFLOAD', woX);
+    ok(T.base64PhotoTargets().length === beforeT + 2, 'base64PhotoTargets: counts the new inspection + the one base64 line (skips the URL line + the photoless line)');
+    for (const job of T.base64PhotoTargets()) await T.offloadPhotoNow(job.t, 'photo', job.name, job.owner, job.coll, okUp);
+    ok(T.base64PhotoTargets().length === 0, 'base64PhotoTargets: empty after a full offload pass (idempotent)');
+    T.DATA.inspections.pop(); T.IDX.insp.delete('INS-OFFLOAD'); T.DATA.workOrders.pop(); T.IDX.wo.delete('WO-OFFLOAD');   // restore
+
+    // 15) wrStore — the IndexedDB layer for the Wrangler rail (real round-trips)
+    const S = T.wrStore;
+    const chat = { id: 'wc-test-1', title: 'hi', ts: 1, messages: [{ role: 'user', content: 'yo', images: [{ blobKey: 'b_wc-test-1_0' }] }] };
+    await S.putChat(chat);
+    const got = await S.getChat('wc-test-1');
+    ok(got && got.id === 'wc-test-1' && got.messages[0].images[0].blobKey === 'b_wc-test-1_0', 'wrStore: putChat/getChat round-trip keeps the message ref');
+    const listed = await S.listChats();
+    ok(Array.isArray(listed) && listed.some((c) => c.id === 'wc-test-1'), 'wrStore: listChats returns the stored chat');
+    const blob = new Blob([new Uint8Array([1, 2, 3, 4])], { type: 'image/jpeg' });
+    await S.putBlob('b_wc-test-1_0', blob);
+    const gotBlob = await S.getBlob('b_wc-test-1_0');
+    ok(gotBlob instanceof Blob && gotBlob.size === 4, 'wrStore: putBlob/getBlob round-trip returns the Blob (binary, not base64)');
+    await S.delBlob('b_wc-test-1_0');
+    ok((await S.getBlob('b_wc-test-1_0')) === undefined, 'wrStore: delBlob removes the blob');
+    await S.delChat('wc-test-1');
+    ok((await S.getChat('wc-test-1')) === undefined, 'wrStore: delChat removes the chat');
+    const est = await S.estimate();
+    ok(est && typeof est.usage === 'number' && typeof est.quota === 'number', 'wrStore: estimate() returns usage/quota numbers');
+
+    // 16) Drive offload + eviction for the Wrangler store (the size guarantee)
+    const wrUp = async (p) => ({ ok: true, url: 'https://drive/' + encodeURIComponent(p.name) });
+    const ob = new Blob([new Uint8Array([9, 9, 9, 9, 9])], { type: 'image/png' });
+    await S.putBlob('b_wc-off_0', ob);
+    const offChat = { id: 'wc-off', ts: 2, messages: [{ role: 'user', content: 'x', images: [{ blobKey: 'b_wc-off_0' }] }] };
+    await S.putChat(offChat);
+    const did = await T.wrOffloadChatImages(offChat, wrUp);
+    ok(did === true && offChat.messages[0].images[0].driveUrl && !offChat.messages[0].images[0].blobKey, 'wrOffloadChatImages: un-synced blob → Drive URL set, local blobKey cleared');
+    ok((await S.getBlob('b_wc-off_0')) === undefined, 'wrOffloadChatImages: local blob dropped after offload (re-fetchable from driveUrl)');
+    ok((await T.wrOffloadChatImages(offChat, wrUp)) === false, 'wrOffloadChatImages: idempotent — a synced chat is a no-op');
+    // eviction: a synced blob is a safe cache drop; an un-synced one needs unsyncedOk
+    await S.putBlob('b_wc-ev_0', ob); await S.putBlob('b_wc-ev_1', ob);
+    const evChat = { id: 'wc-ev', ts: 3, messages: [{ role: 'user', content: 'y', images: [{ blobKey: 'b_wc-ev_0', driveUrl: 'https://drive/x' }, { blobKey: 'b_wc-ev_1' }] }] };
+    ok((await T.wrEvictChatBlobs(evChat, false)) === 1, 'wrEvictChatBlobs: drops only the synced blob when unsyncedOk=false (text untouched)');
+    ok(evChat.messages[0].content === 'y' && evChat.messages[0].images.length === 2, 'wrEvictChatBlobs: message text + refs preserved — only the local blob is freed');
+    ok((await T.wrEvictChatBlobs(evChat, true)) === 1, 'wrEvictChatBlobs: drops the un-synced blob only as a last resort (unsyncedOk=true)');
+    await S.delChat('wc-off'); await S.delChat('wc-ev');
+
+    // 17) driveViewUrl — uploadCapture's file-view page → an embeddable <img> URL via fileId
+    ok(T.driveViewUrl({ ok: true, url: 'https://drive.google.com/file/d/FID/view', fileId: 'FID' }) === 'https://drive.google.com/uc?export=view&id=FID', 'driveViewUrl: builds the embeddable uc?export=view form from fileId');
+    ok(T.driveViewUrl({ ok: true, url: 'https://x/y' }) === 'https://x/y', 'driveViewUrl: falls back to res.url when no fileId');
+    ok(T.driveViewUrl(null) === '' && T.driveViewUrl({}) === '', 'driveViewUrl: empty when nothing usable');
+    // integration: an offload that returns a fileId stores the EMBEDDABLE url (not the file-view page)
+    const fidUp = async (p) => ({ ok: true, url: 'https://drive.google.com/file/d/Z9/view', fileId: 'Z9' });
+    const recE = { photo: 'data:image/jpeg;base64,EEE' };
+    await T.offloadPhotoNow(recE, 'photo', 'ne', null, null, fidUp);
+    ok(recE.photo === 'https://drive.google.com/uc?export=view&id=Z9', 'offloadPhotoNow: stores the embeddable Drive URL when the backend returns a fileId');
+
+    // 18) cross-device Wrangler rail merge — union by id, newest ts wins, localAhead
+    const A = { id: 'a', ts: 10 }, A2 = { id: 'a', ts: 20 }, B = { id: 'b', ts: 5 }, C = { id: 'c', ts: 7 };
+    let m = T.mergeWranglerRails([A], [B]);
+    ok(m.merged.length === 2 && m.changed === true && m.localAhead === true, 'mergeWranglerRails: remote-only chat added (changed), local-only chat flags localAhead');
+    m = T.mergeWranglerRails([A], [A2]);
+    ok(m.merged.find((c) => c.id === 'a').ts === 20 && m.changed === true && m.localAhead === false, 'mergeWranglerRails: remote newer ts wins');
+    m = T.mergeWranglerRails([A2], [A]);
+    ok(m.merged.find((c) => c.id === 'a').ts === 20 && m.changed === false && m.localAhead === true, 'mergeWranglerRails: local newer ts kept + flags localAhead');
+    m = T.mergeWranglerRails([A2, C], [A2, C]);
+    ok(m.changed === false && m.localAhead === false, 'mergeWranglerRails: identical rails → no change, not ahead');
+    m = T.mergeWranglerRails([], [C, B]);
+    ok(m.merged.map((c) => c.id).join(',') === 'c,b' && m.changed === true, 'mergeWranglerRails: empty local → adopts remote, sorted newest-first');
+
+    // 19) KPIs & RINGS — admin-definable metric engine (step 1: defaults === today + DSL correctness)
+    const ROLE_IDS = ['mechanic', 'mtech', 'driver', 'office', 'sales'];
+    let kpiMatch = true, kpiRawMatch = true;
+    ROLE_IDS.forEach((id) => {
+      if (JSON.stringify(T.kpiFor(id)) !== JSON.stringify(T.legacyKpiPct(id))) kpiMatch = false;
+      const nr = T.kpiRaw(id).map((m) => [m.v, m.unit]), or = T.legacyKpiRaw(id).map((m) => [m.v, m.unit]);
+      if (JSON.stringify(nr) !== JSON.stringify(or)) kpiRawMatch = false;
+    });
+    ok(kpiMatch, 'KPI defaults reproduce legacy kpiFor for all 5 roles (no dashboard regression)');
+    ok(kpiRawMatch, 'KPI raw numerators reproduce legacy kpiRaw for all 5 roles (gamification unchanged)');
+    ok(T.kpiFor('driver')[2] === null && T.kpiFor('office')[2] === null, 'GPS/email placeholder rings stay null (not coerced to 0)');
+    // DSL engine — synthetic specs computed over live demo data
+    const kUnits = T.DATA.units, kWos = T.DATA.workOrders;
+    const readyN = kUnits.filter((u) => u.inspectionStatus === 'Ready').length;
+    const ce = T.kpiEval({ metric: { kind: 'count', src: { entity: 'units', where: [{ f: 'inspectionStatus', op: 'eq', v: 'Ready' }] } } });
+    ok(ce.raw === readyN && ce.pct === Math.round(readyN / kUnits.length * 100), `count kind: Ready units (${ce.raw}) ÷ fleet → ${ce.pct}%`);
+    const compN = kWos.filter((w) => w.phase === 'Complete').length, liveN = kWos.filter((w) => !w.cancelled).length;
+    const re = T.kpiEval({ metric: { kind: 'ratio', num: { entity: 'workOrders', where: [{ f: 'phase', op: 'eq', v: 'Complete' }], agg: 'count' }, den: { entity: 'workOrders', where: [{ f: 'cancelled', op: 'ne', v: true }], agg: 'count' } } });
+    ok(re.raw === compN && re.pct === (liveN > 0 ? Math.round(compN / liveN * 100) : 0), `ratio kind: Complete (${compN}) ÷ live WOs (${liveN}) → ${re.pct}%`);
+    const totalPaid = T.DATA.invoices.reduce((a, i) => a + T.invoiceTotals(i).paid, 0);
+    const ge = T.kpiEval({ target: 1000000, metric: { kind: 'goal', src: { entity: 'invoices', agg: 'sum', field: '_paid' } } });
+    ok(ge.raw === totalPaid && ge.unit === '$', `goal kind: collected $${ge.raw} sums via the _paid derived field`);
+    ok(T.kpiEval({ band: 'down', metric: { kind: 'count', src: { entity: 'units', where: [{ f: 'inspectionStatus', op: 'eq', v: 'Ready' }] } } }).pct === 100 - ce.pct, 'band:down inverts the ring fill (lower-is-better)');
+    ok(T.kpiEval({ metric: { kind: 'ratio', num: { entity: 'NOPE' } } }).pct === 0, 'malformed metric → safe 0 ring (never throws)');
+
+    // 20) Mr. Wrangler KPI authoring — validate + lock-in write path
+    const goodKpi = { action: 'kpi', role: 'mechanic', ring: 1, label: 'WO ≤ 2 days', band: 'up', unit: '%',
+      metric: { kind: 'ratio', num: { entity: 'workOrders', where: [{ f: 'phase', op: 'eq', v: 'Complete' }, { f: '_ageDays', op: 'lte', v: 2 }], agg: 'count' }, den: { entity: 'workOrders', where: [{ f: 'cancelled', op: 'ne', v: true }], agg: 'count' } } };
+    const gv = T.wrValidateKpi(goodKpi);
+    ok(gv.ok && typeof gv.value === 'number' && gv.idx === 1, `wrValidateKpi accepts a sound cross-field ratio (live ${gv.value}%)`);
+    const badField = T.wrValidateKpi({ action: 'kpi', role: 'mechanic', ring: 1, target: 5, metric: { kind: 'goal', src: { entity: 'units', where: [{ f: 'currentHours', op: 'gt', v: 0 }] } } });
+    ok(!badField.ok && badField.issues.some((s) => /currentHours/.test(s)), 'wrValidateKpi rejects a non-allowlisted field (currentHours — money/ops fields stay off-limits)');
+    ok(!T.wrValidateKpi({ action: 'kpi', role: 'nope', ring: 9, metric: { kind: 'bogus' } }).ok, 'wrValidateKpi rejects bad role / ring / kind');
+    // lock-in write path: a non-trivial custom ring flows through roleRings → kpiFor
+    const nz = T.wrValidateKpi({ action: 'kpi', role: 'mechanic', ring: 1, label: 'WO done rate', band: 'up',
+      metric: { kind: 'ratio', num: { entity: 'workOrders', where: [{ f: 'phase', op: 'eq', v: 'Complete' }], agg: 'count' }, den: { entity: 'workOrders', where: [{ f: 'cancelled', op: 'ne', v: true }], agg: 'count' } } });
+    const st = T.__state; const savedKpis = st.settings.kpis;
+    st.settings.kpis = { mechanic: JSON.parse(JSON.stringify(T.KPI_DEFAULTS.mechanic)) };
+    st.settings.kpis.mechanic[1] = nz.ring;
+    const overridden = T.kpiFor('mechanic')[1];
+    ok(nz.value > 0 && overridden === nz.value, `kpiFor reflects a locked-in custom ring (${overridden}%, ≠ default)`);
+    st.settings.kpis = savedKpis;   // restore
+    ok(JSON.stringify(T.kpiFor('mechanic')) === JSON.stringify(T.legacyKpiPct('mechanic')), 'removing the override restores the default ring');
+
+    // 21) Company tab — identity read-through with shipped fallbacks; revenue goal feeds the Sales ring
+    const savedCo = st.settings.company;
+    ok(T.companyRevenueGoal() === 150000 && T.companyName() === 'JacRentals', 'company helpers fall back to the shipped defaults when unset');
+    st.settings.company = { name: 'Bayou Iron', tagline: 'Diggers & Dozers', revenueGoal: 222000 };
+    ok(T.companyRevenueGoal() === 222000 && T.companyName() === 'Bayou Iron' && T.companyTagline() === 'Diggers & Dozers', 'company override is read back');
+    const salesGoalHi = T.kpiFor('sales')[0];
+    st.settings.company = { revenueGoal: 1 };
+    const salesGoalLo = T.kpiFor('sales')[0];
+    ok(salesGoalLo >= salesGoalHi, `Sales Revenue Goal ring tracks the company goal (goal=1 → ${salesGoalLo}% ≥ goal=222k → ${salesGoalHi}%)`);
+    st.settings.company = savedCo;   // restore
+    ok(JSON.stringify(T.kpiFor('sales')) === JSON.stringify(T.legacyKpiPct('sales')), 'no company override → Sales ring matches the shipped default (150k)');
+
+    // 22) Rental Rules — hard-block On Rent (default Off = zero change; pure rentalRuleBlock)
+    const savedRules = st.settings.rentalRules;
+    st.settings.rentalRules = {};
+    ok(T.rentalRuleBlock({ invoiceId: null }, { name: 'X' }, 'On Rent') === null, 'no rules set → On Rent never blocked (regression-safe default)');
+    st.settings.rentalRules = { signature: 'required' };
+    ok(T.rentalRuleBlock({}, { name: 'X' }, 'Reserved') === null, 'rules gate ONLY On Rent (Reserved passes)');
+    ok(/sign/i.test(T.rentalRuleBlock({}, { name: 'X' }, 'On Rent') || ''), 'signature Required + no signature → On Rent blocked');
+    ok(T.rentalRuleBlock({}, { name: 'X', signature: 'data:sig' }, 'On Rent') === null, 'signature Required + signature on file → allowed');
+    st.settings.rentalRules = { card: 'required' };
+    ok(/card/i.test(T.rentalRuleBlock({}, { name: 'X' }, 'On Rent') || ''), 'card Required + no card → On Rent blocked (true hard stop)');
+    st.settings.rentalRules = { po: 'required' };
+    ok(/PO/.test(T.rentalRuleBlock({ invoiceId: null }, { name: 'X' }, 'On Rent') || ''), 'PO Required + no invoice/PO → On Rent blocked');
+    const poInv = T.DATA.invoices.find((i) => i.po);
+    if (poInv) ok(T.rentalRuleBlock({ invoiceId: poInv.invoiceId }, { name: 'X' }, 'On Rent') === null, 'PO Required + invoice carries a PO → allowed');
+    st.settings.rentalRules = { id: 'required' };
+    ok(/ID/i.test(T.rentalRuleBlock({}, { name: 'X' }, 'On Rent') || '') && T.rentalRuleBlock({}, { name: 'X', idNumber: 'LA-12345' }, 'On Rent') === null, 'ID Required: blocks without an ID #, allows with one');
+    st.settings.rentalRules = { terms: 'required' };
+    ok(/terms/i.test(T.rentalRuleBlock({}, { name: 'X' }, 'On Rent') || '') && T.rentalRuleBlock({}, { name: 'X', netDays: 0 }, 'On Rent') === null, 'Payment-terms Required: blocks until Net days entered (0/COD counts)');
+    st.settings.rentalRules = savedRules;   // restore
+
+    // 23) Net-days terms → invoice due date, capped by the system max (Settings → Company)
+    const tc = T.DATA.customers[0]; const savedNd = tc.netDays; const savedCo2 = st.settings.company;
+    st.settings.company = { maxNetDays: 30 };
+    tc.netDays = undefined; ok(T.dueForCustomer(tc.customerId) > T.TODAY_ISO, 'no terms → the shipped 14-day default, unchanged');
+    const due14b = T.dueForCustomer(tc.customerId);
+    tc.netDays = 0; ok(T.dueForCustomer(tc.customerId) === T.TODAY_ISO, 'Net 0 → due today (COD)');
+    tc.netDays = 30; const due30b = T.dueForCustomer(tc.customerId); ok(due30b > due14b, `Net 30 → later due date than the 14-day default (${due30b})`);
+    tc.netDays = 999; const dueCap = T.dueForCustomer(tc.customerId); ok(dueCap === due30b, `customer Net 999 is CAPPED at the system max of 30 (${dueCap})`);
+    st.settings.company = { maxNetDays: 60 }; const dueCap60 = T.dueForCustomer(tc.customerId); ok(dueCap60 > due30b, 'raising the system max to 60 lets the same Net 999 customer go further out');
+    tc.netDays = savedNd; st.settings.company = savedCo2;   // restore
+
+    // 24) Layout & Footers — per-card footer visibility (default shown = zero change)
+    const savedLayout = st.settings.layout;
+    st.settings.layout = undefined;
+    ok(T.footerHidden('rentals') === false, 'no layout config → footers shown (default)');
+    st.settings.layout = { footers: { rentals: 'off' } };
+    ok(T.footerHidden('rentals') === true && T.footerHidden('units') === false, 'a card footer can be hidden without affecting others');
+    st.settings.layout = savedLayout;   // restore
+
+    // 25) Custom Fields — admin-defined fields per entity (default none = forms unchanged)
+    const savedCF = st.settings.customFields;
+    st.settings.customFields = undefined;
+    ok(T.customFieldsFor('customers').length === 0, 'no custom fields configured → none on any form (default)');
+    st.settings.customFields = { customers: [{ id: 'cf_tax_id_ab12', label: 'Tax-exempt #', type: 'text', required: true }] };
+    const cf = T.customFieldsFor('customers');
+    ok(cf.length === 1 && cf[0].required && cf[0].id === 'cf_tax_id_ab12', 'a defined custom field reads back with its type/required');
+    ok(T.customFieldsFor('units').length === 0, 'custom fields are per-entity (units unaffected)');
+    st.settings.customFields = savedCF;   // restore
+
+    // 26) Inspections — per-category required checklist (default none = quick toggles unchanged)
+    const savedInsp = st.settings.inspections;
+    const aUnit = T.DATA.units[0]; const aCat = aUnit.categoryId;
+    st.settings.inspections = undefined;
+    ok(T.checklistFor(aUnit) === null && T.checklistRequired(aUnit) === false, 'no checklist config → unit uses the quick Pass/Fail toggles (default)');
+    st.settings.inspections = { [aCat]: { required: true, items: [{ id: 'ck_brakes_a1', label: 'Brakes' }, { id: 'ck_lights_b2', label: 'Lights' }] } };
+    ok(T.checklistRequired(aUnit) === true && T.checklistFor(aUnit).items.length === 2, 'a required checklist is picked up for units of that category');
+    const otherCat = T.DATA.units.find((u) => u.categoryId !== aCat);
+    if (otherCat) ok(T.checklistRequired(otherCat) === false, 'checklists are per-category (other categories unaffected)');
+    st.settings.inspections = { [aCat]: { required: false, items: [{ id: 'ck_x', label: 'X' }] } };
+    ok(T.checklistRequired(aUnit) === false && T.checklistFor(aUnit) !== null, 'a defined-but-not-required checklist is available but does not take over');
+    st.settings.inspections = savedInsp;   // restore
+
+    // 27) Reversibility — a corrupt customization must self-heal, never brick the app
+    const savedAll = st.settings;
+    st.settings = { status: { rentalStatus: 'this-is-not-an-object-it-is-garbage' } };   // malformed
+    let threw = false; try { T.applySettings(st.settings); } catch (e) { threw = true; }
+    ok(!threw, 'applySettings never throws on a corrupt settings object');
+    ok(T.getStatus('rentalStatus', 'On Rent').label === 'On Rent', 'after a corrupt apply, the status registry is back to its shipped default');
+    st.settings = savedAll; T.applySettings(st.settings);   // restore + re-apply clean
+    ok(JSON.stringify(T.kpiFor('mechanic')) === JSON.stringify(T.legacyKpiPct('mechanic')), 'clean settings re-apply leaves the dashboard at defaults');
+
+    // 28) Per-tab "Reset page" — each tab maps to its own slice + a defaults value
+    ok(T.pageDefaultSlice('statuses').key === 'status' && T.pageDefaultSlice('kpis').key === 'kpis', 'each tab resets only its own settings slice');
+    const cfReset = T.pageDefaultSlice('fields').value;
+    ok(Array.isArray(cfReset.customers) && cfReset.customers.length === 0 && Array.isArray(cfReset.units), 'Reset page (Custom Fields) empties every entity, not just the active one');
+    ok(JSON.stringify(T.pageDefaultSlice('layout').value) === JSON.stringify({ footers: {} }), 'Reset page (Layout) restores all footers shown');
+    ok(T.pageDefaultSlice('logins') === null && T.pageDefaultSlice('notifications') === null, 'tabs with no settings slice (Logins/planned) have no Reset page');
+
+    // 29) §5.4d DATE SEARCH — overlap (rentals), point-in-range (dated cards), invoice
+    //     either/or, no-op on date-less cards, negation — all through the real matchers.
+    const rA = T.IDX.rental.get('R-A');   // window 2026-06-02 → 2026-06-12
+    ok(T.dateTermHits('rentals', rA, '2026-06-05') === true, 'date: a single day inside the rental window hits (overlap)');
+    ok(T.dateTermHits('rentals', rA, '2026-06-20') === false, 'date: a day outside the window misses');
+    ok(T.dateTermHits('rentals', rA, '2026-06-10..2026-06-30') === true, 'date: a range overlapping the tail of the window hits');
+    ok(T.dateTermHits('rentals', rA, '2026-06-13..2026-06-30') === false, 'date: a range starting after the window ends misses');
+    ok(T.dateTermHits('rentals', rA, '2026-05-01..2026-12-31') === true, 'date: a range that fully contains the window hits (overlap, not containment)');
+    const rB = T.IDX.rental.get('R-B');   // window 2026-06-15 → 2026-06-22 (extends past the query range)
+    ok(T.dateTermHits('rentals', rB, '2026-06-18..2026-06-20') === true, 'date: a rental spanning PAST the searched range still hits (Jac: overlapping)');
+    const iv = T.IDX.invoice.get('01i02Ju26');   // issued 2026-06-02, due 2026-06-16
+    ok(T.dateTermHits('invoices', iv, '2026-06-02') === true, 'date: an invoice matches on its ISSUED date');
+    ok(T.dateTermHits('invoices', iv, '2026-06-16') === true, 'date: an invoice matches on its DUE date too (either/or, per Jac)');
+    ok(T.dateTermHits('invoices', iv, '2026-06-09') === false, 'date: a day between issued and due (matching neither) misses');
+    const insp = T.IDX.insp.get('INS-1');   // dated 2026-06-01
+    ok(T.dateTermHits('inspections', insp, '2026-05-30..2026-06-03') === true && T.dateTermHits('inspections', insp, '2026-06-02') === false, 'date: a point-dated card matches its own date within range only');
+    const file = (T.DATA.files || []).find((f) => f.reviewByDate);
+    if (file) ok(T.dateTermHits('files', file, file.reviewByDate) === true, 'date: a company file matches its review-by date');
+    // integration through rowMatches — no-op on date-less cards + negation
+    const aUnit2 = T.DATA.units[0];
+    const dPos = [{ col: '__date', value: '2026-06-05', neg: false }];
+    ok(T.rowMatches('units', aUnit2, '', dPos) === true, 'date: a date filter is a NO-OP on date-less cards (units stay shown)');
+    ok(T.rowMatches('rentals', rA, '', dPos) === true && T.rowMatches('rentals', rB, '', dPos) === false, 'date: rowMatches keeps the overlapping rental, drops the non-overlapping one');
+    const dNeg = [{ col: '__date', value: '2026-06-05', neg: true }];
+    ok(T.rowMatches('rentals', rA, '', dNeg) === false && T.rowMatches('rentals', rB, '', dNeg) === true, 'date: a NEGATED date filter excludes the match and keeps the rest');
+    ok(T.rowMatches('units', aUnit2, '', dNeg) === true, 'date: a NEGATED date filter is STILL a no-op on date-less cards (never excluded)');
 
     return out;
   });
