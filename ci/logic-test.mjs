@@ -81,8 +81,9 @@ try {
 
     // 3) per-unit status derivation off the shared window (date-robust via TODAY_ISO)
     const today = T.TODAY_ISO;
-    ok(T.unitStatus({ startDate: today }, { status: 'Reserved' }) === 'Today', 'Reserved + today window → Today');
+    ok(T.unitStatus({ startDate: today }, { status: 'Reserved' }) === 'Reserved', 'Reserved + today window stays Reserved (Today/Tomorrow retired → flags)');
     ok(T.unitStatus({ startDate: '2099-01-01' }, { status: 'Reserved' }) === 'Reserved', 'Reserved + far window stays Reserved');
+    ok(T.unitStatus({ startDate: '2000-01-01' }, { status: 'Reserved' }) === 'No Show', 'Reserved + passed window → No Show (derivation kept)');
     ok(T.unitStatus({}, { status: 'On Rent' }) === 'On Rent', 'stored On Rent passes through');
 
     // 4) rentalStatusDisplay — uniform single status vs the mix label
