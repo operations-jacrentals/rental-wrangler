@@ -322,13 +322,13 @@ input { font-family: inherit; }
 /* the card's search/sort row, relocated here — a FULL-WIDTH band (edge to edge) */
 .mdock-searchslot:empty { display: none; }
 .is-phone .mdock-searchslot .listbar { position: static; margin: 0; padding: 8px; gap: 8px;
-  background: var(--bg-2); border-bottom: 1px solid var(--line); box-shadow: 0 5px 11px -7px rgba(0,0,0,.45); }
+  background: none; border: none; box-shadow: none; }   /* no wrapper band — search/graph/sort chips float on the dock (Jac 2026-06-23) */
 .is-phone .mdock-searchslot .mini-searchwrap { min-height: 44px; }   /* match the graph/sort buttons so the row is one height */
 .is-phone .mdock-searchslot .mini-search { height: 44px; }
 /* the card-toggle BAR: every card as an icon; the selected one expands to icon + label */
 .mdock-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; }
-.mcard-bar { display: flex; align-items: center; gap: 3px; flex: 1 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none;
-  background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px; padding: 3px; box-shadow: var(--chip-shadow); }
+.mcard-bar { display: flex; align-items: center; gap: 6px; flex: 1 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none;
+  background: none; border: none; padding: 0; box-shadow: none; }   /* no wrapper panel — card-toggle chips float; the active one is the orange chip (Jac 2026-06-23) */
 .mcard-bar::-webkit-scrollbar { display: none; }
 .mcard-tog { display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; min-height: 44px; min-width: 44px; justify-content: center;
   padding: 0 9px; border: none; background: none; cursor: pointer; border-radius: 9px; color: var(--txt-2); transition: background .12s, color .12s; }
