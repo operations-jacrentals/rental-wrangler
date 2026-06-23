@@ -12142,13 +12142,24 @@ async function saveCardFlow(btn) {
     c.stripeId = r.stripeId || c.stripeId;
     if (!Array.isArray(c.cards)) c.cards = [];
     const firstCard = customerCards(c).length === 0;
-    const newCardId = 'CARD-' + (state.seq++);
+    const newCardId = 'CARD-' + setupIntent.payment_method;   // anchor to the globally-unique Stripe PM id (was 'CARD-'+state.seq, which reset per session and collided across sessions/devices → wrong-card charges / can't-delete / signature bleed)
     // §7.1c a card lands IN PROGRESS — chargeable immediately, but the account can't go On Rent /
     // log deliveries until the card is COMPLETE (card + selfie + signature). Any selfie/signature
     // captured in this panel were held on c.pendingCapture and now saddle onto the new card.
-    const newCard = { id: newCardId, stripePmId: setupIntent.payment_method, brand: s.card.brand, last4: s.card.last4,
+    const newCard = { id: newCardId, stripePmId: setupIntent.payment_method, fingerprint: s.card.fingerprint || '', brand: s.card.brand, last4: s.card.last4,
       expMonth: s.card.expMonth, expYear: s.card.expYear, nickname: o.nickname || '', notes: '', isDefault: firstCard, status: 'active',
       selfie: '', driveSelfieUrl: '', draftSignature: null, agreements: [] };
+    // Stripe attaches the SAME physical card as a NEW pm every time it's saved. If this card's
+    // fingerprint matches one already on file, SUPERSEDE that entry in place — carry its signed
+    // agreement/selfie onto the fresh pm, retire the old pm — so one physical card never piles up
+    // as duplicate chips. (Functional now that stripeSaveCard returns card.fingerprint.)
+    const _dup = newCard.fingerprint ? customerCards(c).find((k) => k.fingerprint === newCard.fingerprint) : null;
+    if (_dup) {
+      newCard.agreements = _dup.agreements || []; newCard.selfie = _dup.selfie || ''; newCard.driveSelfieUrl = _dup.driveSelfieUrl || '';
+      newCard.isDefault = newCard.isDefault || _dup.isDefault;
+      _dup.status = 'removed';
+      if (backendPassword && _dup.stripePmId && _dup.stripePmId !== setupIntent.payment_method) backendCall('stripeRemoveCard', { customerId: c.customerId, paymentMethodId: _dup.stripePmId }).catch(() => {});
+    }
     c.cards.push(newCard);
     c.cardBrand = s.card.brand; c.cardLast4 = s.card.last4; c.cardExpMonth = s.card.expMonth; c.cardExpYear = s.card.expYear;   // legacy mirror (default card)
     saddlePendingCapture(c, newCard);                                                            // held selfie/signature → this card, then finalize if all three are present
