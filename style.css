@@ -1936,6 +1936,15 @@ select.nc-in { cursor: pointer; }
 .alloc-in { width: 80px; box-sizing: border-box; padding: 6px 8px; border: 1px solid var(--accent-line); border-radius: 8px; background: var(--panel); color: var(--txt); font: inherit; font-size: 13px; text-align: right; }
 .alloc-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; font-size: 12.5px; color: var(--txt-2); }
 .alloc-foot b { color: var(--txt); }
+/* §19b refund-allocation panel + per-line refund display (#125) — calm/muted: the ↩
+   marker is a plain fact and the strike carries the "reversed" signal; registry red
+   stays reserved for danger, not every refunded line. Token-based → themes for free. */
+.alloc-refunded .alloc-rem { color: var(--txt-2); }
+.dvd.refund-chip { color: var(--txt-3); }
+.struck { text-decoration: line-through; }
+.inv-line.line-refunded { opacity: .6; }
+.stall.stall-refunded { opacity: .7; }
+.stall-refund { font-size: 11px; font-weight: 600; letter-spacing: .2px; color: var(--txt-3); white-space: nowrap; }
 
 /* role KPI popup */
 .kpi-popup { width: 420px; }
