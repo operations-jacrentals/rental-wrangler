@@ -3119,6 +3119,8 @@ function openWOsForRental(r) {
 const rentalUnitRecords = (r) => rentalUnitIds(r).map((id) => IDX.unit.get(id)).filter(Boolean);
 // A WO carries an ETA when the WO or any of its lines has an `eta` date set.
 const woHasEta = (w) => !!(w.eta || (w.lineItems || []).some((li) => li.eta));
+// ISO date string 90 days in the past — refreshed each call so flags age correctly live.
+const noCardCutoff = () => new Date(Date.now() - 90 * 86400e3).toISOString().slice(0, 10);
 
 const FLAG_COND = {
   rentals: {
@@ -3169,13 +3171,15 @@ const FLAG_COND = {
   customers: {
     'unpaid-balance':    (c) => c.payStatus === 'Unpaid',
     'blacklisted':       (c) => /Blacklist/i.test(c.accountType || ''),
-    'no-card':           (c) => cardFlag(c) === 'none' &&
-      (DATA.rentals.some((r) => r.customerId === c.customerId && r.status !== 'Reserved') ||
-       DATA.invoices.some((i) => i.customerId === c.customerId)),
-    'no-card-reserved':  (c) => cardFlag(c) === 'none' &&
+    'no-card':           (c) => { const d = noCardCutoff(); return cardFlag(c) === 'none' &&
+      (DATA.rentals.some((r) => r.customerId === c.customerId && r.status !== 'Reserved' &&
+        (r.startDate >= d || r.endDate >= d)) ||
+       DATA.invoices.some((i) => i.customerId === c.customerId && i.date >= d)); },
+    'no-card-reserved':  (c) => { const d = noCardCutoff(); return cardFlag(c) === 'none' &&
       DATA.rentals.some((r) => r.customerId === c.customerId && r.status === 'Reserved') &&
-      !DATA.rentals.some((r) => r.customerId === c.customerId && r.status !== 'Reserved') &&
-      !DATA.invoices.some((i) => i.customerId === c.customerId),
+      !DATA.rentals.some((r) => r.customerId === c.customerId && r.status !== 'Reserved' &&
+        (r.startDate >= d || r.endDate >= d)) &&
+      !DATA.invoices.some((i) => i.customerId === c.customerId && i.date >= d); },
     'customer-lost':     (c) => customerActivity(c).stage === 'Lost',
     'customer-inactive': (c) => customerActivity(c).stage === 'Inactive',
     'partial-balance':   (c) => c.payStatus === 'Partial',
