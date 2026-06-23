@@ -6183,12 +6183,13 @@ function commsUtilsEl() {
   const notifBadge = nu ? `<span class="fab-badge">${nu > 9 ? '9+' : nu}</span>` : '';
   return `<button class="fab js-notifications" data-tip="Notifications — resolved fixes">${I.bell}${notifBadge}</button>`;
 }
-// The conversation rail: channels grouped + stamped, each conversation a SEPARATE
-// tab. 🤠 Wrangler — one tab per OPEN request (needs-answer = red · needs-your-OK =
-// yellow; both open the dock, which carries Approve/Dismiss), the live chat, and every
-// past chat. 💬 Team — one tab per active thread. Tabs read as actionable via a STEADY
-// tinted edge (no perpetual glow). The rail REPLACES the old Requests inbox on desktop;
-// each opens ONLY its own thread (data-wrc-needs / data-wrc-open / data-team-open).
+// The conversation rail: Wrangler + Team channels (split by a thin divider, no section
+// labels), each conversation a SEPARATE tab. 🤠 Wrangler — one tab per OPEN request
+// (needs-answer = red · needs-your-OK = yellow; both open the dock, which carries
+// Approve/Dismiss), the live chat, and every past chat. 💬 Team — one tab per active
+// thread. Tabs read as actionable via a STEADY tinted edge (no perpetual glow). The rail
+// REPLACES the old Requests inbox on desktop; each opens ONLY its own thread
+// (data-wrc-needs / data-wrc-open / data-team-open).
 function commsRailEl() {
   const trim = (t, n = 24) => { t = String(t || '').replace(/\s+/g, ' ').trim(); return esc(t.length > n ? t.slice(0, n - 1) + '…' : t); };
   // ── 🤠 WRANGLER ── every open request is its own tab (the inbox lived here before)
@@ -6225,8 +6226,8 @@ function commsRailEl() {
     return `<button class="crail-tab c-${(tag && tag.color) || 'gray'}${active ? ' is-active' : ''}${unseen ? ' is-unseen' : ''}" data-team-open="${esc(c.id)}" role="tab" aria-selected="${active}" data-tip="${esc(label)}"><span class="crail-dot"></span><span class="crail-t">${trim(label)}</span></button>`;
   }).join('');
   const groups = [];
-  if (wrTabs) groups.push(`<div class="crail-group"><span class="crail-glabel">🤠 Wrangler</span>${wrTabs}</div>`);
-  if (teamTabs) groups.push(`<div class="crail-group"><span class="crail-glabel">💬 Team</span>${teamTabs}</div>`);
+  if (wrTabs) groups.push(`<div class="crail-group">${wrTabs}</div>`);
+  if (teamTabs) groups.push(`<div class="crail-group">${teamTabs}</div>`);
   return groups.length ? groups.join('<span class="crail-div" aria-hidden="true"></span>')
     : '<span class="crail-empty">No conversations yet — start one from the tools on the left.</span>';
 }
