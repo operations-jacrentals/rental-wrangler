@@ -160,17 +160,28 @@ Left→right, one row (current `units:` renderer is two-line; reshape to the agr
 
 ---
 
-## 7. Open items (resolve during spec review / phased)
+## 7. Resolved decisions & build order
 
-1. **Per-category unit icon.** No category→library-icon map exists today (only the single
-   Tabler backhoe `CARD_ICON.categories`). Options: (a) ship the generic backhoe glyph for
-   all categories now, add a `categoryIcon[]` Lucide map via `gen-icons.mjs` as a
-   follow-up; (b) block the unit row on building that map first. **Recommend (a).**
+1. **Per-category unit icon — RESOLVED (Jac):** build the **full category→icon map first**,
+   sourced **entirely from a library** (Lucide via `tools/gen-icons.mjs`; the Tabler
+   backhoe stays for excavators as the one existing bespoke-but-vendored mark). **Never
+   hand-author a glyph.** The unit row waits on this map. Categories to map: Light Tower,
+   Lift Scissor, Skid Steer, Excavator (8k/12k) — plus any others in the live category
+   list — each to a representative Lucide name (e.g. scissor lift → a platform/lift glyph,
+   light tower → lamp/lightbulb, skid steer → the backhoe/excavator family). Mapping is
+   added to the `CARD_ICON`/new `CATEGORY_ICON` maps in `gen-icons.mjs`, regenerated
+   offline; no raw `<path>` by hand.
 2. **Rental status gate placement** — deferred by Jac; the calendar card ships without an
    inline gate; revisit where status-advance lives once the new layout is in hand.
-3. **Build order** — recommend: (1) finish rentals → direction A; (2) customer rows;
-   (3) unit rows (gated on the category-icon decision). Each is an independent, shippable
-   slice on this branch.
+3. **Flag-color-system FIRST — RESOLVED (Jac):** implement the R/Y/G/Gray severity color
+   logic (`docs/specs/flag-color-system.md`) **before** the rows, so all three rows render
+   flag colors from day one rather than today's lifecycle hues (avoids re-color churn).
+4. **Build order (RESOLVED):**
+   1. **Flag-color-system** — the severity color seam every row reads.
+   2. **Rentals** → window-track calendar (direction A).
+   3. **Customer rows**.
+   4. **Category→icon library map**, then **Unit rows**.
+   Each is an independent, shippable slice on this branch.
 
 ---
 
