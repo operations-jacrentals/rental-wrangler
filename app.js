@@ -4005,7 +4005,7 @@ const ROWS = {
     const acctPill = statusPill('customerAccountType', c.accountType || 'Non-Business');
     return `<div class="cr">
       <div class="cr-id">
-        <span class="r-title cr-name" style="color:${nameColor}">${esc(c.name)}</span>
+        <span class="r-title cr-name${fc === 'red' ? ' ec-red' : ''}" style="color:${nameColor}">${esc(c.name)}</span>
         ${sub ? `<span class="cr-sub">${sub}</span>` : ''}
       </div>
       ${payHtml}
