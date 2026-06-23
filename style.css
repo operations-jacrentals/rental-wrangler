@@ -878,6 +878,10 @@ select.lf-in { appearance: none; cursor: pointer; }
 /* both row buttons share ONE floating chip (like the card-header chip), stacked + vertically centered */
 .row .r-actions { position: absolute; top: 50%; right: 7px; transform: translateY(-50%); z-index: 2; display: flex; flex-direction: column; gap: 2px; padding: 3px; border-radius: var(--chip-radius); background: var(--panel); border: 1px solid var(--line); box-shadow: var(--chip-shadow); opacity: 0; transition: opacity .12s; }
 .row:hover .r-actions { opacity: 1; }                                                              /* §0.1 buttons on hover only */
+/* Hover row tools can't be reached without a real hover — hide on touch/phone so they
+   don't sit dead on a row (Jac 2026-06-23). Eye → toolbar previews toggle · + → Ctrl+click. */
+.is-phone .row .r-actions { display: none; }
+@media (hover: none) and (pointer: coarse) { .row .r-actions { display: none; } }
 .rbtn { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 8px; background: none; border: none; color: var(--txt-2); }
 .rbtn:hover { background: var(--panel-2); color: var(--accent); }
 .rbtn svg { width: 14px; height: 14px; }
