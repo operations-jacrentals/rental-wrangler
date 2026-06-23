@@ -3539,14 +3539,15 @@ const ROWS = {
     const hl = getEntityColor('units', u);
     // NAME tinted to the unit's flag color (Jac 2026-06-23): r/y/g lead in-color, gray reads muted.
     const nameColor = (hl === 'red' || hl === 'yellow' || hl === 'green') ? `var(--${hl})` : hl === 'gray' ? 'var(--txt-3)' : 'var(--txt)';
-    const sub = [cat ? esc(cat.name) : '', `${num(u.currentHours)} HRS`].filter(Boolean).join(' · ');
+    // Sub order (Jac): hours first, then category — left-to-right reads: hours · cat · NAME · icon · stripe
+    const sub = [`${num(u.currentHours)} HRS`, cat ? esc(cat.name) : ''].filter(Boolean).join(' · ');
     return `<div class="ur" style="--ur-hl:var(--${hl})">
       <div class="ur-pills"><div class="ur-pill-slot">${unitRentalInspPill(u)}</div><div class="ur-pill-slot">${unitWoSoPill(u)}</div></div>
-      <span class="ur-cat">${categoryIconFor(cat && cat.name)}</span>
       <div class="ur-id">
-        <span class="r-title ur-name" style="color:${nameColor}">${esc(u.name)}</span>
         <span class="ur-sub">${sub}</span>
+        <span class="r-title ur-name" style="color:${nameColor}">${esc(u.name)}</span>
       </div>
+      <span class="ur-cat">${categoryIconFor(cat && cat.name)}</span>
     </div>`;
   },
 
