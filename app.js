@@ -2753,7 +2753,11 @@ const FLAG_COND = {
   customers: {
     'unpaid-balance':    (c) => c.payStatus === 'Unpaid',
     'blacklisted':       (c) => /Blacklist/i.test(c.accountType || ''),
-    'no-card':           (c) => cardFlag(c) === 'none',
+    // Only flag if they have an actual business relationship — a rental (any status)
+    // or an invoice. Pure leads in the funnel with no booking don't need a card yet.
+    'no-card':           (c) => cardFlag(c) === 'none' &&
+      (DATA.rentals.some((r) => r.customerId === c.customerId) ||
+       DATA.invoices.some((i) => i.customerId === c.customerId)),
     'customer-lost':     (c) => customerActivity(c).stage === 'Lost',
     'customer-inactive': (c) => customerActivity(c).stage === 'Inactive',
     'partial-balance':   (c) => c.payStatus === 'Partial',
