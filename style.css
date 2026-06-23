@@ -859,6 +859,7 @@ select.lf-in { appearance: none; cursor: pointer; }
 .pill.c-danger { background: var(--red); color: #fff; border-color: transparent; font-weight: 800; }         /* S4: confirm-refund = solid red */
 .pill.ghost { background: transparent; border-color: var(--line); color: var(--txt-2); }                     /* R18: quiet action (Cancel/Close) */
 .pill.ghost:hover { color: var(--txt); border-color: var(--accent-line); }
+.pill.ghost.is-disabled, .pill.ghost.is-disabled:hover { opacity: .45; cursor: default; color: var(--txt-2); border-color: var(--line); }  /* #303 — no email/phone on file: dimmed, no hover lift */
 .pill.locked { opacity: .55; cursor: not-allowed; }                                                          /* R17 locked-gate state (no inline hacks) */
 .req { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 13px; border-radius: 10px; background: #fff; color: #16181d; border: 1px solid #fff; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }  /* rule 15/16/22: required-until-entered = white bg + dark ink */
 .req svg { width: 15px; height: 15px; }
