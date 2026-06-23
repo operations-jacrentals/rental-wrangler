@@ -4321,6 +4321,49 @@ function allocLines(inv) {
     return { li, idx, key: lineKey(li), label: li.label || li.kind || 'Line', amount, remaining, taxable: !exempt && !li.taxExempt };
   }).filter((x) => x.remaining > 0.005);
 }
+/* §19b REFUND allocation — the per-line mirror of the payment allocation above.
+   inv.refundAllocations { lid: refundedDollars (PRE-TAX) } is CLIENT-owned and rides
+   the normal record sync, exactly like inv.allocations; the money TOTALS
+   (refundedAmount / refunded) stay SERVER-owned / sync-protected (#177). itemRefunded
+   mirrors itemPaid; a line's refundable = what's paid minus what's already refunded,
+   so a fully-refunded line drops out of BOTH panels and locks by absence. Works for
+   cash/check lump payments too: itemPaid returns the full line amount on a paid-in-full
+   invoice even with no explicit allocation. */
+/* MONEY GATE — the per-line / partial refund UI (#125) stays OFF until the backend honors
+   `amountCents` on recordManualRefund / stripeRefundInvoice. The current backend ignores it
+   and refunds the FULL captured charge, and ALL environments share ONE backend + Stripe — so
+   sending a partial now would over-refund real money. With this false the Refund button keeps
+   today's safe full-invoice behavior untouched. Flip to true ONLY after deploying the
+   partial-refund backend (docs/handoffs/partial-refunds-backend.md). */
+const PARTIAL_REFUNDS_ENABLED = false;
+function itemRefunded(inv, li) {
+  if (!inv || !inv.refundAllocations) return 0;
+  return Math.min(Number(inv.refundAllocations[lineKey(li)]) || 0, itemPaid(inv, li));
+}
+function itemRefundable(inv, li) { return Math.max(0, itemPaid(inv, li) - itemRefunded(inv, li)); }
+function lineRefunded(inv, li) { return itemRefunded(inv, li) > 0.005; }
+function lineFullyRefunded(inv, li) { return itemPaid(inv, li) > 0.005 && itemRefundable(inv, li) <= 0.005; }
+/* the refundable lines for the refund popup: every line still carrying paid dollars
+   not yet refunded. taxable mirrors allocLines so the gross can ride the §10 tax. */
+function refundLines(inv) {
+  const cust = inv.customerId ? IDX.customer.get(inv.customerId) : null;
+  const exempt = !!(inv.taxExempt || cust?.salesTaxExempt);
+  return (inv.lineItems || []).map((li) => {
+    const paid = itemPaid(inv, li);
+    const refunded = itemRefunded(inv, li);
+    return { li, key: lineKey(li), label: li.label || li.kind || 'Line', paid, refunded, refundable: Math.max(0, paid - refunded), taxable: !exempt && !li.taxExempt };
+  }).filter((x) => x.refundable > 0.005);
+}
+/* Does this rental's invoice line(s) for a unit carry a refund? Drives the cross-card
+   strikethrough on the rental (Jac 2026-06-23) — a refunded unit/transport shows on
+   the rental itself, not only inside the invoice. unitId null = the whole rental. */
+function rentalLineRefund(r, unitId) {
+  if (!r || !r.invoiceId) return { refunded: false, fully: false };
+  const inv = IDX.invoice.get(r.invoiceId); if (!inv) return { refunded: false, fully: false };
+  const mine = (inv.lineItems || []).filter((li) => li.ref === r.rentalId && (unitId == null || li.unitId === unitId) && (li.kind === 'rental' || li.kind === 'transport'));
+  if (!mine.length) return { refunded: false, fully: false };
+  return { refunded: mine.some((li) => lineRefunded(inv, li)), fully: mine.every((li) => lineFullyRefunded(inv, li)) };
+}
 /* Jac ─ Site ─ Jac transport journey under an invoice rental line. +Log Delivery /
    +Log Recovery ARE the same captures as the yard tool's +Start/+End (one event,
    shared fields, so both views stay in sync). Self-pickup collapses to one line. */
@@ -4588,16 +4631,17 @@ const DETAIL = {
           const u = IDX.unit.get(eu.unitId); if (!u) return '';
           const insp = getStatus('unitInspectionStatus', u.inspectionStatus);
           const voided = unitVoided(r, eu);
+          const lref = rentalLineRefund(r, eu.unitId);   // §19b reflect the invoice's per-line refund on the rental's unit
           const multi = units.length > 1;
           const up = unitRentalPrice(r, eu.unitId);
           const noRates = !voided && catRatesUnset(IDX.category.get(u.categoryId))
             ? flagEl('No rates', 'yellow', { icon: CARD_ICON.categories, card: 'categories', recId: u.categoryId, alert: true, title: 'This category has no day / 7-day / 4-week rate — it bills $0. Set its rates before quoting.' })
             : '';
           const splitBtn = multi ? `<button class="stall-split js-split-open" data-rec="${esc(r.rentalId)}" data-unit="${esc(u.unitId)}" data-tip="Give ${esc(u.name)} its own dates — splits to a separate rental on the same invoice"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>dates</button>` : '';
-          return `<div class="stall rd-unit${voided ? ' voided' : ''}">
+          return `<div class="stall rd-unit${voided ? ' voided' : ''}${lref.fully ? ' stall-refunded' : ''}">
             <div class="rd-unit-top">
               <div class="stall-id rd-unit-id">${unitPill(u.unitId, { x: 'unit-remove', xData: u.unitId })}${dPill(insp.label, insp.color, { card: 'units', recId: u.unitId, icon: CARD_ICON.inspections })}${noRates}${multi ? unitStatusGate(r, eu) : ''}</div>
-              <div class="rd-unit-rate">${durLabel ? `<span class="rd-dur">${esc(durLabel)}</span> · ` : ''}<span class="stall-amt">${money(up ? up.price : 0)}</span>${splitBtn}</div>
+              <div class="rd-unit-rate">${lref.refunded ? `<span class="stall-refund" data-tip="${lref.fully ? 'fully' : 'partially'} refunded on the invoice">↩ refunded</span> · ` : ''}${durLabel ? `<span class="rd-dur">${esc(durLabel)}</span> · ` : ''}<span class="stall-amt${lref.fully ? ' struck' : ''}">${money(up ? up.price : 0)}</span>${splitBtn}</div>
             </div>
             ${stallRouteHtml(r, eu)}
           </div>`;
@@ -5030,7 +5074,8 @@ const DETAIL = {
         : li.kind === 'WO' ? `data-pill-card="workOrders" data-pill-rec="${esc(li.ref)}"` : '';
       const x = (!locked && li.kind !== 'transport' && itemPaid(i, li, idx) <= 0) ? `<span class="x line-x" data-x="inv-line-remove" data-idx="${idx}">✕</span>` : '';
       const bal = itemPaid(i, li, idx);   // partial-payment item balance (when assigned)
-      return `<div class="hitem inv-line"><span ${ref} class="inv-line-link" data-r="R7">${esc(li.label)}</span><span class="spacer"></span>${bal > 0 ? `<span class="dvd c-green derived" data-r="R4" data-tip="paid on this line">${money2(bal)}✓</span>` : ''}<b class="derived">${money2(li.amount)}</b>${x}</div>`;
+      const refd = itemRefunded(i, li), fullyR = lineFullyRefunded(i, li);   // §19b per-line refund — strike a fully-refunded line, show the ↩ tally
+      return `<div class="hitem inv-line${fullyR ? ' line-refunded' : ''}"><span ${ref} class="inv-line-link${fullyR ? ' struck' : ''}" data-r="R7">${esc(li.label)}</span><span class="spacer"></span>${bal > 0 && !fullyR ? `<span class="dvd c-green derived" data-r="R4" data-tip="paid on this line">${money2(bal)}✓</span>` : ''}${refd > 0.005 ? `<span class="dvd derived refund-chip" data-r="R4" data-tip="refunded on this line">↩${money2(refd)}</span>` : ''}<b class="derived${fullyR ? ' struck' : ''}">${money2(li.amount)}</b>${x}</div>`;
     }).join('');
     const ledgerRow = (label, val, cls) => `<div class="hitem inv-tot${cls ? ' ' + cls : ''}"><span class="muted">${esc(label)}</span><span class="spacer"></span><b class="derived">${val}</b></div>`;
     const kinds = ['rental', 'transport', 'parts', 'labor'].filter((k) => subBy(k) > 0);
@@ -5924,7 +5969,7 @@ function legacyKpiPct(roleId) {
   }
   if (roleId === 'office') {
     const billed = INV.reduce((a, i) => a + invoiceTotals(i).total, 0);
-    const collected = INV.reduce((a, i) => a + invoiceTotals(i).paid, 0);
+    const collected = INV.reduce((a, i) => a + invoiceTotals(i).paid - (Number(i.refundedAmount) || 0), 0);
     const reservations = R.filter((r) => ['Reserved', 'On Rent', 'End Rent', 'Off Rent', 'Returned', 'No Show'].includes(r.status)).length;
     const shows = R.filter((r) => ['On Rent', 'End Rent', 'Off Rent', 'Returned'].includes(r.status)).length;
     return [pctOf(collected, billed), pctOf(shows, reservations), null];       // Reputation = email backend
@@ -6107,7 +6152,7 @@ function legacyKpiRaw(roleId) {
   if (roleId === 'mechanic') return [c(f.Ready + f['Not Ready']), c(W.filter((w) => w.phase === 'Complete').length), c(W.filter((w) => (w.lineItems || []).some((li) => (li.cost || 0) > 0 || (li.hours || 0) > 0) && w.billCustomer === 'Yes').length)];
   if (roleId === 'mtech') return [c(R.length - R.filter((r) => r.fieldCall).length), c(f.Ready), c(N.filter((n) => !n.woId).length)];
   if (roleId === 'driver') return [c(R.filter((r) => ['On Rent', 'End Rent', 'Off Rent', 'Returned'].includes(r.status)).length), c(N.filter((n) => n.wash === 'Yes').length), c(0)];
-  if (roleId === 'office') return [usd(INV.reduce((a, i) => a + invoiceTotals(i).paid, 0)), c(R.filter((r) => ['On Rent', 'End Rent', 'Off Rent', 'Returned'].includes(r.status)).length), c(0)];
+  if (roleId === 'office') return [usd(INV.reduce((a, i) => a + invoiceTotals(i).paid - (Number(i.refundedAmount) || 0), 0)), c(R.filter((r) => ['On Rent', 'End Rent', 'Off Rent', 'Returned'].includes(r.status)).length), c(0)];
   if (roleId === 'sales') {
     const ym = TODAY_ISO.slice(0, 7);
     const rev = R.reduce((a, r) => ((r.startDate || '').slice(0, 7) !== ym ? a : a + ((rentalPrice(r) || {}).price || 0)), 0);
@@ -6218,12 +6263,13 @@ function commsUtilsEl() {
   const notifBadge = nu ? `<span class="fab-badge">${nu > 9 ? '9+' : nu}</span>` : '';
   return `<button class="fab js-notifications" data-tip="Notifications — resolved fixes">${I.bell}${notifBadge}</button>`;
 }
-// The conversation rail: channels grouped + stamped, each conversation a SEPARATE
-// tab. 🤠 Wrangler — one tab per OPEN request (needs-answer = red · needs-your-OK =
-// yellow; both open the dock, which carries Approve/Dismiss), the live chat, and every
-// past chat. 💬 Team — one tab per active thread. Tabs read as actionable via a STEADY
-// tinted edge (no perpetual glow). The rail REPLACES the old Requests inbox on desktop;
-// each opens ONLY its own thread (data-wrc-needs / data-wrc-open / data-team-open).
+// The conversation rail: Wrangler + Team channels (split by a thin divider, no section
+// labels), each conversation a SEPARATE tab. 🤠 Wrangler — one tab per OPEN request
+// (needs-answer = red · needs-your-OK = yellow; both open the dock, which carries
+// Approve/Dismiss), the live chat, and every past chat. 💬 Team — one tab per active
+// thread. Tabs read as actionable via a STEADY tinted edge (no perpetual glow). The rail
+// REPLACES the old Requests inbox on desktop; each opens ONLY its own thread
+// (data-wrc-needs / data-wrc-open / data-team-open).
 function commsRailEl() {
   const trim = (t, n = 24) => { t = String(t || '').replace(/\s+/g, ' ').trim(); return esc(t.length > n ? t.slice(0, n - 1) + '…' : t); };
   // ── 🤠 WRANGLER ── every open request is its own tab (the inbox lived here before)
@@ -6260,8 +6306,8 @@ function commsRailEl() {
     return `<button class="crail-tab c-${(tag && tag.color) || 'gray'}${active ? ' is-active' : ''}${unseen ? ' is-unseen' : ''}" data-team-open="${esc(c.id)}" role="tab" aria-selected="${active}" data-tip="${esc(label)}"><span class="crail-dot"></span><span class="crail-t">${trim(label)}</span></button>`;
   }).join('');
   const groups = [];
-  if (wrTabs) groups.push(`<div class="crail-group"><span class="crail-glabel">🤠 Wrangler</span>${wrTabs}</div>`);
-  if (teamTabs) groups.push(`<div class="crail-group"><span class="crail-glabel">💬 Team</span>${teamTabs}</div>`);
+  if (wrTabs) groups.push(`<div class="crail-group">${wrTabs}</div>`);
+  if (teamTabs) groups.push(`<div class="crail-group">${teamTabs}</div>`);
   return groups.length ? groups.join('<span class="crail-div" aria-hidden="true"></span>')
     : '<span class="crail-empty">No conversations yet — start one from the tools on the left.</span>';
 }
@@ -7438,7 +7484,7 @@ function cardGraphBody(card) {
     const INV = DATA.invoices;
     let paid = 0, partial = 0, unpaid = 0, refunded = 0, outstanding = 0, collected = 0;
     const detail = INV.map((i) => {
-      const t = invoiceTotals(i); collected += t.paid;
+      const t = invoiceTotals(i); collected += t.paid - (Number(i.refundedAmount) || 0);   // §19b net refunds out of booked revenue (full + partial)
       const isRefunded = !!i.refunded || t.status === 'Refunded';
       if (isRefunded) refunded++;
       else if (t.total > 0) { outstanding += t.balance; if (t.balance <= 0) paid++; else if (t.paid > 0) partial++; else unpaid++; }   // empty ($0) drafts are excluded from the buckets
@@ -7551,7 +7597,7 @@ function renderOverlay() {
   _ovLastKind = o.kind;
   if (o.kind === 'partform') document.querySelector('.overlay .js-pf2-desc')?.focus();   // Jac: Part/Task field focused by default
   if (o.kind === 'newCustomer') setupSignaturePad();
-  if (o.kind === 'payment') setupPayAlloc();   // live counter for the §19 allocation rows
+  if (o.kind === 'payment') { setupPayAlloc(); setupRefundAlloc(); }   // live counters for the §19 pay + §19b refund allocation rows
   if (o.kind === 'addCard') { const cc = IDX.customer.get(o.customerId); if (cc) mountCardElement(); }   // §7.1b card saved first, signed after
   if (o.kind === 'newCustomer' && o.cardSub) { const cc = IDX.customer.get(o.editId); if (cc) mountCardElement(); }   // §14 the side-by-side Add-card panel
   { const _agFeed = overlay.querySelector('.ag-cam-feed'); if (_agFeed) startAgCam(_agFeed); else stopAgCam(); }   // live selfie camera follows the capture block
@@ -8273,6 +8319,8 @@ function buildPopupEl(o, overlay, opts = {}) {
     // gets a row. Lazy-init o.alloc to "pay in full" so the card popup opens charge-ready.
     const lines = (method === 'card' && payOk) ? allocLines(inv) : [];
     if (lines.length && !o.alloc) { o.alloc = {}; lines.forEach((L) => { o.alloc[L.key] = L.remaining; }); }
+    // §19b refund mode: lazy-init o.refundAlloc to "refund in full" so the panel opens ready
+    if (PARTIAL_REFUNDS_ENABLED && o.confirmRefund && !o.refundAlloc) { o.refundAlloc = {}; refundLines(inv).forEach((L) => { o.refundAlloc[L.key] = L.refundable; }); }
     const methodBtn = (m, label) => `<button class="pay-method${method === m ? ' on' : ''} js-pay-method" data-method="${m}" ${o.busy ? 'disabled' : ''}>${label}</button>`;
     const methodSel = canPay ? `<div class="pay-methods">${methodBtn('cash', '💵 Cash')}${methodBtn('check', '🧾 Check')}${methodBtn('card', '💳 Card')}</div>` : '';
     // CARD sub-panel — the existing picker + §19 allocation / free amount (logic unchanged).
@@ -8296,9 +8344,11 @@ function buildPopupEl(o, overlay, opts = {}) {
         <div class="pay-status-line">${statusPill('invoiceStatus', t.status)}<span class="muted">${money2(t.paid)} of ${money2(t.total)} paid${refAmt ? ` · ${money2(refAmt)} refunded` : ''}</span></div>
         ${inv.achProcessing && inv.pendingPaymentIntentId ? `<div class="pay-card-on-file warn" style="flex-direction:column;align-items:flex-start;gap:7px"><span>🏦 ACH payment processing — it settles in a few business days.</span><button class="pill c-commit js-ach-check" data-rec="${esc(inv.invoiceId)}" data-pi="${esc(inv.pendingPaymentIntentId)}" data-r="R17" ${o.busy ? 'disabled' : ''}>Check ACH status</button></div>` : ''}
         ${refunded ? '<div class="pay-card-on-file">↩ This invoice was refunded.</div>'
+          : o.confirmRefund ? (PARTIAL_REFUNDS_ENABLED
+              ? `<div class="pay-confirm">Refund to ${esc(inv.paymentMethod || 'the card')} — assign by line:</div>${refundSectionHtml(refundLines(inv), o)}`
+              : `<div class="pay-confirm">Refund ${money2(t.paid)} to ${esc(inv.paymentMethod || 'the card')}?</div>`)
           : t.balance <= 0 ? `<div class="pay-card-on-file good">✓ Paid in full${inv.paymentMethod ? ' · ' + esc(inv.paymentMethod) : ''}</div>`
             : `${methodSel}${method === 'card' ? cardPanel : manualPanel}`}
-        ${o.confirmRefund ? `<div class="pay-confirm">Refund ${money2(t.paid)} to ${esc(inv.paymentMethod || 'the card')}?</div>` : ''}
         ${o.error ? `<div class="login-err" style="text-align:left;margin-top:10px">${esc(o.error)}</div>` : ''}` });
     overlay.appendChild(pop);
   }
@@ -9422,8 +9472,16 @@ function openDropdown(anchorEl, html, { align = 'left', cls = '' } = {}) {
   return dd;
 }
 function openStatusDropdown(rentalId, anchorEl) {
-  // progressing timeline; Tomorrow/Today are DERIVED display states excluded by GATE_TL.order
-  const cur = IDX.rental.get(rentalId)?.status || '';
+  // Highlight the SAME status the pill shows: the canonical per-unit DISPLAY status
+  // (rentalStatusDisplay → unitStatus), NOT the raw rental-level r.status. On a single-unit
+  // rental the two can diverge — a unit deriving 'No Show' (Reserved + start passed) while
+  // r.status holds a stale 'End Rent' — and reading r.status lit the wrong node (the menu
+  // said End Rent while the pill said No Show). Tomorrow/Today are display-only states
+  // absent from GATE_TL.order, so fold them back to their stored Reserved base.
+  const r = IDX.rental.get(rentalId);
+  const d = r ? rentalStatusDisplay(r) : null;
+  let cur = (d && !d.mixed && d.key) || r?.status || '';
+  if (cur === 'Today' || cur === 'Tomorrow') cur = 'Reserved';
   const html = gateTimeline('rentalStatus', cur, 'Rental status', (v, inner, sc) =>
     `<button class="gt-row ${sc} js-setstatus" data-rec="${esc(rentalId)}" data-val="${esc(v)}">${inner}</button>`);
   openDropdown(anchorEl, html, { cls: 'gt' });
@@ -10219,11 +10277,23 @@ function onClick(e) {
   // and self-hide if their anchor scrolls off; the global search bar lives in `.header` and
   // the per-card search/date chips live in `.card`, so the old datesearch exclusions hold.)
   if (state.datesearch || state.winpicker) {
-    const pickerDeadSpace = !closest('.card') && !closest('.header') && !closest('.bottombar') && !closest('.winpicker');
+    const onPicker = !!(closest('.winpicker') || closest('.winpicker-float'));
+    const pickerDeadSpace = !closest('.card') && !closest('.header') && !closest('.bottombar') && !onPicker;
     if (state.datesearch && pickerDeadSpace) { state.datesearch = null; render(); return; }
-    // Must always render or the float lingers as a dead, frozen overlay (state closed,
-    // DOM open). Discards a fragile rental's staged change. Jac 2026-06-13.
-    if (state.winpicker && pickerDeadSpace) { state.winpicker = null; render(); return; }
+    // Rental-window picker dismisses on a click anywhere OUTSIDE the picker, its trigger, and
+    // the availability cards you browse while picking (units/categories/customers). #263 had
+    // narrowed this to dead-space-only, so over the full-screen 3-column grid an outside click
+    // almost always landed on a card and the picker never closed ("does not close"). Never
+    // SWALLOW an interactive click (#265): drop the float DOM in place — keeping the clicked
+    // anchor attached so a downstream menu still positions correctly — and fall THROUGH so the
+    // click still fires; only a pure dead-space click renders + returns. Discards a fragile
+    // rental's staged change, as before.
+    if (state.winpicker && !onPicker && !closest('.js-open-winpicker') && !closest('[data-sheetclose]')
+        && !closest('.card[data-card="units"]') && !closest('.card[data-card="categories"]') && !closest('.card[data-card="customers"]')) {
+      state.winpicker = null;
+      document.querySelector('.winpicker-float')?.remove();
+      if (pickerDeadSpace) { render(); return; }
+    }
   }
 
   // header / chrome
@@ -10328,7 +10398,7 @@ function onClick(e) {
   if (closest('.js-print-invoice')) { e.stopPropagation(); return printInvoice(closest('.js-print-invoice').dataset.rec); }
   if (closest('.js-pay-addcard')) { e.stopPropagation(); const b = closest('.js-pay-addcard'); return openAddCard(b.dataset.rec, { returnTo: 'payment', invoiceId: b.dataset.inv }); }
   if (closest('.js-refund-invoice')) { e.stopPropagation(); if (state.overlay) { state.overlay.confirmRefund = true; state.overlay.error = ''; renderOverlay(); } return; }
-  if (closest('.js-refund-cancel')) { e.stopPropagation(); if (state.overlay) { state.overlay.confirmRefund = false; renderOverlay(); } return; }
+  if (closest('.js-refund-cancel')) { e.stopPropagation(); if (state.overlay) { state.overlay.confirmRefund = false; state.overlay.refundAlloc = null; renderOverlay(); } return; }
   if (closest('.js-refund-confirm')) { e.stopPropagation(); return refundInvoiceFlow(closest('.js-refund-confirm').dataset.rec); }
   if (closest('.js-lock-invoice')) { e.stopPropagation(); return lockInvoiceFlow(closest('.js-lock-invoice').dataset.rec, true); }
   if (closest('.js-unlock-invoice')) { e.stopPropagation(); return lockInvoiceFlow(closest('.js-unlock-invoice').dataset.rec, false); }
@@ -12119,6 +12189,79 @@ function allocCharge(inv, o) {
   const gross = Math.min(taxable + plain + tax, invoiceTotals(inv).balance);
   return { gross, alloc };
 }
+/* §19b the refund-allocation panel — mirror of allocSectionHtml, reversed. One row per
+   still-refundable line; the $ input is capped at what was paid on that line. A line
+   already partly refunded shows its ↩ tally. Reuses the .alloc-* chrome (on-language,
+   no new R-rule); only the "Refund in full" shortcut is a stamped R5b add-button. */
+function refundSectionHtml(lines, o) {
+  const rows = lines.map((L) => `
+    <div class="alloc-row${L.refunded > 0.005 ? ' alloc-refunded' : ''}">
+      <span class="alloc-name" data-tip="${esc(L.label)}${L.refunded > 0.005 ? ` · ${money(L.refunded)} already refunded` : ''}">${esc(L.label)}</span>
+      <span class="alloc-rem">paid ${money(L.paid)}${L.refunded > 0.005 ? ` · ↩${money(L.refunded)}` : ''}${L.taxable ? '' : ' · no tax'}</span>
+      <span class="alloc-dollar">$<input class="alloc-in refund-in" data-key="${esc(L.key)}" data-taxable="${L.taxable ? '1' : '0'}" data-max="${L.refundable}" type="number" min="0" max="${L.refundable}" step="0.01" value="${(Number(o.refundAlloc[L.key]) || 0).toFixed(2)}" ${o.busy ? 'disabled' : ''}></span>
+    </div>`).join('');
+  return `<div class="alloc-sec">
+    <div class="alloc-head"><span>Refund by line item</span>${lines.length > 1 ? `<button class="add-field anchor js-refund-auto" data-r="R5b" type="button" ${o.busy ? 'disabled' : ''}>Refund in full</button>` : ''}</div>
+    ${rows}
+    <div class="alloc-foot"><span class="js-refund-counter"></span><span class="alloc-charge js-refund-amount"></span></div>
+  </div>`;
+}
+/* Live DOM-driven recompute for the refund panel (mirror of setupPayAlloc): updates
+   o.refundAlloc, the "Refunding $X of $Y paid" counter, the pre-tax+tax=gross read-out,
+   and the Confirm button's label/enabled state. No re-render → inputs keep focus. */
+function setupRefundAlloc() {
+  const o = state.overlay; if (!o || o.kind !== 'payment') return;
+  const body = document.querySelector('.overlay .popup-body'); if (!body) return;
+  const ins = [...body.querySelectorAll('.refund-in')]; if (!ins.length) return;
+  const inv = IDX.invoice.get(o.invoiceId); if (!inv) return;
+  const cust = inv.customerId ? IDX.customer.get(inv.customerId) : null;
+  const exempt = !!(inv.taxExempt || cust?.salesTaxExempt);
+  const t = invoiceTotals(inv);
+  const refundableGross = Math.max(0, t.paid - (Number(inv.refundedAmount) || 0));   // gross still refundable
+  const recompute = () => {
+    let taxable = 0, plain = 0;
+    ins.forEach((inp) => {
+      const max = Number(inp.dataset.max) || 0;
+      let v = Number(inp.value); if (!(v >= 0)) v = 0; if (v > max + 0.005) { v = max; inp.value = max.toFixed(2); }
+      o.refundAlloc[inp.dataset.key] = v;
+      if (inp.dataset.taxable === '1') taxable += v; else plain += v;
+    });
+    const pre = taxable + plain;
+    const tax = exempt ? 0 : Math.round(taxable * TAX_RATE * 100) / 100;
+    const gross = Math.min(pre + tax, refundableGross);
+    const counter = body.querySelector('.js-refund-counter');
+    const amt = body.querySelector('.js-refund-amount');
+    const btn = body.querySelector('.js-refund-confirm');
+    if (counter) counter.innerHTML = gross > 0.005 ? `Refunding <b>${money2(gross)}</b> of ${money2(t.paid)} paid` : `<span class="muted">nothing assigned</span>`;
+    if (amt) {
+      if (pre <= 0) amt.innerHTML = '';
+      else { const lineGross = pre + tax; const eq = `${money2(pre)}${tax ? ` + ${money2(tax)} tax` : ''} = <b>${money2(lineGross)}</b>`;
+        amt.innerHTML = lineGross > refundableGross + 0.005 ? `${eq} · refund <b>${money2(gross)}</b>` : eq; }
+    }
+    if (btn) { btn.disabled = !(gross > 0.005) || !!o.busy; if (!o.busy) btn.textContent = gross > 0.005 ? `Refund ${money2(gross)}` : 'Confirm refund'; }
+  };
+  ins.forEach((inp) => inp.addEventListener('input', recompute));
+  const auto = body.querySelector('.js-refund-auto');
+  if (auto) auto.addEventListener('click', () => { ins.forEach((inp) => { inp.value = (Number(inp.dataset.max) || 0).toFixed(2); }); recompute(); });
+  recompute();
+}
+/* Resolve the gross refund + the per-line PRE-TAX split from o.refundAlloc, capped at
+   each line's paid and the invoice's remaining refundable gross. Mirror of allocCharge. */
+function resolveRefund(inv, o) {
+  const cust = inv.customerId ? IDX.customer.get(inv.customerId) : null;
+  const exempt = !!(inv.taxExempt || cust?.salesTaxExempt);
+  let taxable = 0, plain = 0; const alloc = {};
+  refundLines(inv).forEach((L) => {
+    const v = Math.min(Number(o.refundAlloc?.[L.key]) || 0, L.refundable);
+    if (v <= 0.005) return;
+    alloc[L.key] = v;
+    if (L.taxable) taxable += v; else plain += v;
+  });
+  const tax = exempt ? 0 : Math.round(taxable * TAX_RATE * 100) / 100;
+  const t = invoiceTotals(inv);
+  const gross = Math.min(taxable + plain + tax, Math.max(0, t.paid - (Number(inv.refundedAmount) || 0)));
+  return { gross, alloc };
+}
 
 // Mount the Stripe Card Element into the open addCard overlay (called post-append,
 // like setupSignaturePad). Recreated per open; destroyed on close.
@@ -12177,13 +12320,24 @@ async function saveCardFlow(btn) {
     c.stripeId = r.stripeId || c.stripeId;
     if (!Array.isArray(c.cards)) c.cards = [];
     const firstCard = customerCards(c).length === 0;
-    const newCardId = 'CARD-' + (state.seq++);
+    const newCardId = 'CARD-' + setupIntent.payment_method;   // anchor to the globally-unique Stripe PM id (was 'CARD-'+state.seq, which reset per session and collided across sessions/devices → wrong-card charges / can't-delete / signature bleed)
     // §7.1c a card lands IN PROGRESS — chargeable immediately, but the account can't go On Rent /
     // log deliveries until the card is COMPLETE (card + selfie + signature). Any selfie/signature
     // captured in this panel were held on c.pendingCapture and now saddle onto the new card.
-    const newCard = { id: newCardId, stripePmId: setupIntent.payment_method, brand: s.card.brand, last4: s.card.last4,
+    const newCard = { id: newCardId, stripePmId: setupIntent.payment_method, fingerprint: s.card.fingerprint || '', brand: s.card.brand, last4: s.card.last4,
       expMonth: s.card.expMonth, expYear: s.card.expYear, nickname: o.nickname || '', notes: '', isDefault: firstCard, status: 'active',
       selfie: '', driveSelfieUrl: '', draftSignature: null, agreements: [] };
+    // Stripe attaches the SAME physical card as a NEW pm every time it's saved. If this card's
+    // fingerprint matches one already on file, SUPERSEDE that entry in place — carry its signed
+    // agreement/selfie onto the fresh pm, retire the old pm — so one physical card never piles up
+    // as duplicate chips. (Functional now that stripeSaveCard returns card.fingerprint.)
+    const _dup = newCard.fingerprint ? customerCards(c).find((k) => k.fingerprint === newCard.fingerprint) : null;
+    if (_dup) {
+      newCard.agreements = _dup.agreements || []; newCard.selfie = _dup.selfie || ''; newCard.driveSelfieUrl = _dup.driveSelfieUrl || '';
+      newCard.isDefault = newCard.isDefault || _dup.isDefault;
+      _dup.status = 'removed';
+      if (backendPassword && _dup.stripePmId && _dup.stripePmId !== setupIntent.payment_method) backendCall('stripeRemoveCard', { customerId: c.customerId, paymentMethodId: _dup.stripePmId }).catch(() => {});
+    }
     c.cards.push(newCard);
     c.cardBrand = s.card.brand; c.cardLast4 = s.card.last4; c.cardExpMonth = s.card.expMonth; c.cardExpYear = s.card.expYear;   // legacy mirror (default card)
     saddlePendingCapture(c, newCard);                                                            // held selfie/signature → this card, then finalize if all three are present
@@ -12335,36 +12489,37 @@ async function chargeInvoiceFlow(invoiceId) {
 async function refundInvoiceFlow(invoiceId) {
   const o = state.overlay; if (!o || o.kind !== 'payment') return;
   const inv = IDX.invoice.get(invoiceId); if (!inv) return;
-  // Cash/Check payments (#109) never touched Stripe, so there's no charge to reverse —
-  // refund them BY HAND, client-side, exactly as they were recorded (#117). Flip the
-  // invoice to Refunded (status derives from inv.refunded) and keep amountPaid so the
-  // balance reads $0; release line assignments per the full-refund invariant (§4).
-  if (/^cash$/i.test(inv.paymentMethod || '') || /^check/i.test(inv.paymentMethod || '')) {
-    // Cash/Check refunds never touched Stripe, but inv.refunded / refundedAmount are
-    // server-owned (sync-PROTECTED) — so the SERVER records the manual refund too, else
-    // it'd revert on refresh. applyPayment keeps amountPaid (balance reads $0) and flips
-    // the status to Refunded. (#109/#117)
-    const live = () => state.overlay === o;
-    o.busy = true; o.error = ''; o.confirmRefund = false; renderOverlay();
-    try {
-      const r = await backendCall('recordManualRefund', { invoiceId });
-      if (!live()) return;
-      if (r && r.ok) { applyPayment(invoiceId, r); o.busy = false; toast('Refunded ✓'); renderOverlay(); return; }
-      o.busy = false; o.error = friendlyPayErr(r); renderOverlay(); return;
-    } catch (e) { if (live()) { o.busy = false; o.error = 'Network error — try again.'; renderOverlay(); } return; }
+  // §19b per-line / partial refund (#125) — GATED behind PARTIAL_REFUNDS_ENABLED. When OFF
+  // we refund the whole invoice (amountCents omitted), today's safe behavior. When ON, the
+  // refund gross + the PRE-TAX per-line split come from o.refundAlloc; we send amountCents and
+  // merge the client-owned split into inv.refundAllocations via applyPayment.
+  let amountCents = null, refundAlloc = null;
+  if (PARTIAL_REFUNDS_ENABLED) {
+    const rr = resolveRefund(inv, o);
+    if (rr.gross <= 0.005) { o.error = 'Assign a refund to at least one line.'; return renderOverlay(); }
+    amountCents = Math.round(rr.gross * 100); refundAlloc = rr.alloc;
   }
+  // Cash/Check refund BY HAND (recordManualRefund, no Stripe); a card refunds the captured
+  // charge via Stripe (stripeRefundInvoice). Either way the SERVER owns the money totals
+  // (refunded / refundedAmount, sync-PROTECTED, #177); applyPayment keeps amountPaid so the
+  // balance reads $0 and derives the status from inv.refunded. (#109/#117)
+  const manual = /^cash$/i.test(inv.paymentMethod || '') || /^check/i.test(inv.paymentMethod || '');
+  const action = manual ? 'recordManualRefund' : 'stripeRefundInvoice';
   const live = () => state.overlay === o;
   o.busy = true; o.error = ''; o.confirmRefund = false; renderOverlay();
   try {
-    const r = await backendCall('stripeRefundInvoice', { invoiceId });
+    const r = await backendCall(action, amountCents != null ? { invoiceId, amountCents } : { invoiceId });
     if (!live()) return;
-    if (r && r.ok) { applyPayment(invoiceId, r); o.busy = false; toast('Refunded ✓'); renderOverlay(); return; }
+    if (r && r.ok) { applyPayment(invoiceId, r, null, refundAlloc); o.refundAlloc = null; o.busy = false; toast('Refunded ✓'); renderOverlay(); return; }
     o.busy = false; o.error = friendlyPayErr(r); renderOverlay();
   } catch (e) { if (live()) { o.busy = false; o.error = 'Network error — try again.'; renderOverlay(); } }
 }
 // Apply a server charge/refund result to the local invoice; status is derived from amountPaid.
-// alloc (§19) = the pre-tax per-line split just charged; accumulate it into inv.allocations.
-function applyPayment(invoiceId, r, alloc) {
+// alloc (§19) = the pre-tax per-line split just charged → accumulate into inv.allocations;
+// refundAlloc (§19b) = the pre-tax per-line split just refunded → accumulate into
+// inv.refundAllocations. Both are client-owned + synced; the money totals from `r` are
+// server-authoritative.
+function applyPayment(invoiceId, r, alloc, refundAlloc) {
   const inv = IDX.invoice.get(invoiceId); if (!inv) return;
   const before = invoiceTotals(inv).status;
   if (r.amountPaid != null) inv.amountPaid = r.amountPaid;
@@ -12375,7 +12530,8 @@ function applyPayment(invoiceId, r, alloc) {
   if (r.refundedAmount != null) inv.refundedAmount = r.refundedAmount;
   if (r.locked != null) inv.locked = r.locked;
   if (alloc) { inv.allocations = inv.allocations || {}; Object.entries(alloc).forEach(([k, v]) => { inv.allocations[k] = (Number(inv.allocations[k]) || 0) + v; }); }
-  if (inv.refunded) inv.allocations = {};   // a full refund releases every line assignment
+  if (refundAlloc) { inv.refundAllocations = inv.refundAllocations || {}; Object.entries(refundAlloc).forEach(([k, v]) => { inv.refundAllocations[k] = (Number(inv.refundAllocations[k]) || 0) + v; }); }
+  if (inv.refunded) inv.allocations = {};   // a full refund releases every payment line assignment
   reindex('invoices', inv);
   const after = invoiceTotals(inv).status;
   logAction(inv, r.refundedCents != null ? `Refunded ${money((r.refundedCents || 0) / 100)} — ${before} → ${after}` : `Payment — ${before} → ${after} (${r.paymentMethod || 'card'})`);
@@ -14040,7 +14196,7 @@ function exposeTestApi() {
       unitStatus, rentalUnitStatuses, unitsUniform, rentalStatusDisplay, rentalMirrorStatus, rentalDisplayStatus,
       allUnitsTerminal, unitTerminal, unitVoided, rentalLineItems, transportLineItems, syncRentalPrimary,
       addUnitToRental, removeUnitFromRental, removeUnitInvoiceLine, unitLinePaid, invoiceTotals, allocLines,
-      rentalAllocated, unitRentalPrice, rentalDisplayName, setWoLinePhase, setWoPhase, woBottleneck,
+      rentalAllocated, itemRefunded, itemRefundable, lineRefunded, lineFullyRefunded, refundLines, rentalLineRefund, applyPayment, unitRentalPrice, rentalDisplayName, setWoLinePhase, setWoPhase, woBottleneck,
       cleanUnitName, planUnitMigration, applyUnitMigration, openMigrationPreview,
       computeTransportPrice, isFueledType, unitTransport, rentalTransport,
       wrValidatePlan, applyWranglerData, wrFunnel, invoiceMergeable, mergeInvoiceInto, parseWranglerAction, stripWranglerAction, parseCsvFile, wrFindAttachedCsv,
