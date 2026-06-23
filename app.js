@@ -1611,7 +1611,7 @@ const state = {
   invMergePick: null,         // invoiceId whose "Merge invoice" picker is open (consolidate unpaid bills)
   dashboard: false,           // §5.3/§11 Office Dispatch Time Grid (grid-swap mode)
   seq: 1,
-  invoiceSeq: DATA.invoices.length,   // monotonic invoice number (never reused after a discard)
+  invoiceSeq: maxInvoiceSeq(),   // monotonic invoice number — derived from the highest running number actually present (NOT .length: see maxInvoiceSeq)
   previewsOn: (() => { try { return localStorage.getItem('jactec.previewsOff') !== '1'; } catch (e) { return true; } })(),   // hover previews (per device)
   overbookOn: (() => { try { return localStorage.getItem('jactec.overbook') === '1'; } catch (e) { return false; } })(),   // §10 allow-overbooking policy (per device, default OFF — drag build)
   hapticsOff: (() => { try { return localStorage.getItem('jactec.hapticsOff') === '1'; } catch (e) { return false; } })(),   // §M-touch Vibration-API feedback (per device, default ON; Android-only, no-op on iOS)
@@ -1619,8 +1619,21 @@ const state = {
   settings: loadAdminSettings(),   // Settings Board admin customization (config.settings); mirrored to localStorage, applied at boot via applySettings()
 };
 const activeSession = () => (state.activeTabId ? state.tabs.find((t) => t.id === state.activeTabId)?.session : state.defaultSession) || state.defaultSession;
-/** Next unique invoice id — a monotonic counter so deleting a Quote-stage invoice can't reuse a number. */
-const nextInvoiceId = () => CFG.invoiceId(TODAY_ISO, ++state.invoiceSeq);
+/** Highest running number actually present across invoices, parsed from each id's
+ *  leading digits (e.g. '07i02Ju26' -> 7). The counter MUST come from the data, not
+ *  the array: `DATA.invoices.length` started from the seed file (4) and was never
+ *  recomputed after loadFromBackend swapped in the real invoices, so every login it
+ *  restarted low and minted 05i…/06i… numbers that already existed on the backend —
+ *  duplicate "##i" prefixes that the 18s refresh poll then leap-frogged in. `.length`
+ *  also shrinks on discard (breaking the "never reused" invariant) and doesn't grow
+ *  when the poll pushes remote invoices in. Mirrors nextUnitId/nextCategoryId. */
+function maxInvoiceSeq() {
+  return (DATA.invoices || []).reduce((m, inv) => { const n = /^(\d+)i/.exec(String(inv.invoiceId || '')); return n ? Math.max(m, +n[1]) : m; }, 0);
+}
+/** Next unique invoice id — a monotonic counter so deleting a Quote-stage invoice can't
+ *  reuse a number. Always jumps past the current max in the data, so it can't collide
+ *  with invoices loaded at login or pushed in by the live-refresh poll mid-session. */
+const nextInvoiceId = () => { state.invoiceSeq = Math.max(state.invoiceSeq || 0, maxInvoiceSeq()) + 1; return CFG.invoiceId(TODAY_ISO, state.invoiceSeq); };
 
 /* ── session actions ──────────────────────────────────────────────────────
    `recType` is only meaningful for the Shop card (which holds inspections /
