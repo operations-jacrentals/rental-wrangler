@@ -860,6 +860,11 @@ select.lf-in { appearance: none; cursor: pointer; }
 .pill.ghost { background: transparent; border-color: var(--line); color: var(--txt-2); }                     /* R18: quiet action (Cancel/Close) */
 .pill.ghost:hover { color: var(--txt); border-color: var(--accent-line); }
 .pill.locked { opacity: .55; cursor: not-allowed; }                                                          /* R17 locked-gate state (no inline hacks) */
+/* R2e entity-stamp: row-name style on a linked pill — Saira caps, flag-colored, card icon. */
+.pill.entity-stamp { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .6px; font-weight: 700; font-size: 12.5px; height: 24px; border-radius: 5px; gap: 5px; }
+.pill.entity-stamp svg { width: 13px; height: 13px; }
+.pill.entity-stamp .t { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.pill.entity-stamp:hover { filter: brightness(1.1); }
 .req { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 13px; border-radius: 10px; background: #fff; color: #16181d; border: 1px solid #fff; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }  /* rule 15/16/22: required-until-entered = white bg + dark ink */
 .req svg { width: 15px; height: 15px; }
 /* rule 8: notes carry a 3-color dot tag (white/red/green), picked while entering */

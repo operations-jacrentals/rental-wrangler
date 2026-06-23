@@ -2828,6 +2828,17 @@ function unitPill(unitId, { x, xData } = {}) {
   const chat = ` data-chat-el data-chat-label="${esc(u.name)}" data-chat-color="gray" data-chat-card="units" data-chat-rec="${esc(unitId)}"`;   // §17
   return `<span class="pill ref link" data-r="R2" data-pill-card="units" data-pill-rec="${esc(unitId)}"${chat}>${CARD_ICON.units}${esc(u.name)}${xb}</span>`;
 }
+/** R2e: ENTITY NAME PILL — Saira-stamped linked record. Matches the row-name look:
+ *  uppercase, flag-colored (most-urgent), card icon. Used in rental detail header/stalls. */
+function entityPill(card, rec, { x, xData } = {}) {
+  if (!rec) return '';
+  const id = idOf(card, rec);
+  const name = rec.name || '';
+  const flag = getEntityColor(card, rec) || 'gray';
+  const xb = x ? `<span class="x" data-x="${esc(x)}"${xData != null ? ` data-id="${esc(xData)}"` : ''}>✕</span>` : '';
+  const chat = ` data-chat-el data-chat-label="${esc(name)}" data-chat-color="${esc(flag)}" data-chat-card="${esc(card)}" data-chat-rec="${esc(id)}"`;
+  return `<span class="pill entity-stamp c-${flag}" data-r="R2" data-pill-card="${card}" data-pill-rec="${esc(id)}"${chat}>${CARD_ICON[card] || ''}<span class="t">${esc(name)}</span>${xb}</span>`;
+}
 /** R3b: a DATA CHIP — a plain fact (480 HRS, No GPS), independent of R3. */
 const badge = (label, color = 'gray') => `<span class="pill c-${color}" data-r="R3b"><span class="t">${esc(label)}</span></span>`;
 /** R1: a GATE pill — a status DROPDOWN that moves the record forward. */
@@ -4602,7 +4613,7 @@ const DETAIL = {
 
     /* Header: customer + category + invoice + PO left · gate + balance right. */
     const custEl = cust
-      ? refPill('customers', r.customerId, cust.name, { x: 'cust-swap' })
+      ? entityPill('customers', cust, { x: 'cust-swap' })
       : addBtn('Customer', { link: true, js: 'js-quickadd-cust', h: 26, data: { card: 'rentals', rec: r.rentalId, slot: 'customer' } });
     const catPill = cat ? dPill(cat.name, 'orange', { card: 'categories', recId: cat.categoryId, icon: CARD_ICON.categories }) : '';
     const poField = efld('rentals', r, 'rentalId', 'po', 'Add PO', { fmt: (v) => 'PO ' + v });
@@ -4641,7 +4652,7 @@ const DETAIL = {
           const splitBtn = multi ? `<button class="stall-split js-split-open" data-rec="${esc(r.rentalId)}" data-unit="${esc(u.unitId)}" data-tip="Give ${esc(u.name)} its own dates — splits to a separate rental on the same invoice"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>dates</button>` : '';
           return `<div class="stall rd-unit${voided ? ' voided' : ''}${lref.fully ? ' stall-refunded' : ''}">
             <div class="rd-unit-top">
-              <div class="stall-id rd-unit-id">${unitPill(u.unitId, { x: 'unit-remove', xData: u.unitId })}${dPill(insp.label, insp.color, { card: 'units', recId: u.unitId, icon: CARD_ICON.inspections })}${noRates}${multi ? unitStatusGate(r, eu) : ''}</div>
+              <div class="stall-id rd-unit-id">${entityPill('units', u, { x: 'unit-remove', xData: u.unitId })}${dPill(insp.label, insp.color, { card: 'units', recId: u.unitId, icon: CARD_ICON.inspections })}${noRates}${multi ? unitStatusGate(r, eu) : ''}</div>
               <div class="rd-unit-rate">${lref.refunded ? `<span class="stall-refund" data-tip="${lref.fully ? 'fully' : 'partially'} refunded on the invoice">↩ refunded</span> · ` : ''}${durLabel ? `<span class="rd-dur">${esc(durLabel)}</span> · ` : ''}<span class="stall-amt${lref.fully ? ' struck' : ''}">${money(up ? up.price : 0)}</span>${splitBtn}</div>
             </div>
             ${stallRouteHtml(r, eu)}
