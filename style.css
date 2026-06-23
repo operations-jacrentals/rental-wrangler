@@ -324,6 +324,14 @@ input { font-family: inherit; }
    (e.g. .is-phone .rbtn). The :empty guard still hides empty action chips. */
 .is-phone .c-actions, .is-phone .row .r-actions { opacity: 1; }
 .is-phone .close-x.hoveronly { opacity: 1; }
+/* §M-touch — kill the browser's accidental double-tap-to-ZOOM on phones. It fires on any
+   surface still at touch-action:auto (card bodies, the open detail/standard view, text,
+   pills) and hijacked the double-tap-to-ANCHOR gesture, "zooming WAY in" instead. Setting
+   manipulation at the document level disables double-tap-zoom everywhere while KEEPING
+   intentional pinch-zoom + native scroll. Rows/grid/dock keep their explicit pan-y, so the
+   long-press drag + the column/Back-Fwd swipe engine are untouched (single tap still opens,
+   double tap still anchors — now without the browser stealing it). */
+body.is-phone { touch-action: manipulation; }
 /* ── §M3 — overlays & the winpicker become bottom SHEETS on phones: full-width,
    pinned to the bottom edge, rounded top, slide up. Popups keep their ✕ and the
    backdrop closes on tap; the winpicker gets its own tap-to-close backdrop + Esc. ── */
