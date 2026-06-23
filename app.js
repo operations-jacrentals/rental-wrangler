@@ -9888,20 +9888,21 @@ function onClick(e) {
   // trigger. (Drags never reach here — their trailing click is swallowed at 4925.)
   // §5.4d — the date-search picker closes on a click outside the calendar, the search
   // bars, and the date chips (so editing a chip keeps it open).
-  if (state.datesearch && !closest('.winpicker') && !closest('.searchwrap') && !closest('.mini-searchwrap') && !closest('.js-date-edit')) {
-    state.datesearch = null; render(); return;
-  }
-  if (state.winpicker
-      && !closest('.winpicker')
-      && !closest('.js-open-winpicker')
-      && !closest('.card[data-card="units"]')
-      && !closest('.card[data-card="categories"]')
-      && !closest('.card[data-card="customers"]')) {
+  // #263 — a non-modal picker (date-search or rental-window) dismisses ONLY on a click in
+  // genuine DEAD SPACE: not a card, the header, the bottom bar, or the picker itself. The
+  // old guards nulled the picker AND `return`ed on ANY click outside a narrow allow-list,
+  // so clicking a pill / row / button / link both vanished the picker AND swallowed that
+  // click (its own handler never ran). Mirror the §5.4 dead-space test (the `clearSearch`
+  // line below) so an interactive click keeps the picker's context and still fires — the
+  // picker stays open until true dead space. (Both floats render from state and re-render,
+  // and self-hide if their anchor scrolls off; the global search bar lives in `.header` and
+  // the per-card search/date chips live in `.card`, so the old datesearch exclusions hold.)
+  if (state.datesearch || state.winpicker) {
+    const pickerDeadSpace = !closest('.card') && !closest('.header') && !closest('.bottombar') && !closest('.winpicker');
+    if (state.datesearch && pickerDeadSpace) { state.datesearch = null; render(); return; }
     // Must always render or the float lingers as a dead, frozen overlay (state closed,
     // DOM open). Discards a fragile rental's staged change. Jac 2026-06-13.
-    state.winpicker = null;
-    render();
-    return;
+    if (state.winpicker && pickerDeadSpace) { state.winpicker = null; render(); return; }
   }
 
   // header / chrome
