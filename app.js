@@ -2928,6 +2928,7 @@ const RULE_META = {
   R22: ['Date picker', 'dateField', 'the ONE app-styled calendar for a single date/time (NOT the rental-window timeline)'],
   R23: ['Tooltip', 'data-tip → the one styled tip', 'every hover hint goes through data-tip — a native title attribute is a violation'],
   R24: ['Close ✕', 'closeX', 'red circle · white ✕ — the deliberate close/remove; hover-reveal variant on tabs'],
+  R25: ['Sync banner', 'renderSyncBanner / #sync-banner', 'persistent “Not saving” plate — red hazard-stripe danger cap; raised when the backend sync is failing, hides on recovery. The ONE non-toast alert; lives on <body>, outside #app'],
 };
 /* ════════════ DESIGN-SYSTEM CATALOG — the tabbed Rulebook (Jac 2026-06-14) ════
    The Rulebook grew from "stamped element rules" (R0–R24 above) into the WHOLE
@@ -3053,7 +3054,7 @@ const RB_TABS = [
   { id: 'upload', label: 'Upload & Capture', intro: 'Add-file zones and photo/site captures.',
     items: [{ r: 'R21' }, { f: 'upload-capture' }] },
   { id: 'data', label: 'Data & Behaviors', intro: 'Visualizations, plus the app’s behaviors — it flashes instead of erroring, right-clicks, tooltips, and self-lints.',
-    items: [{ r: 'R16' }, { r: 'R15' }, { r: 'R13' }, { f: 'data-kpi' }, { f: 'data-gauge' }, { r: 'R19' }, { r: 'R20' }, { r: 'R23' }, { f: 'behavior-preview' }, { r: 'R0' }] },
+    items: [{ r: 'R16' }, { r: 'R15' }, { r: 'R13' }, { f: 'data-kpi' }, { f: 'data-gauge' }, { r: 'R19' }, { r: 'R25' }, { r: 'R20' }, { r: 'R23' }, { f: 'behavior-preview' }, { r: 'R0' }] },
   { id: 'windows', label: 'Windows', intro: 'Every pop-up window in the app, by kind. Expand one for a live preview, its fields, and a copy-paste edit reference — your map to wrangle any screen.', items: [] },
 ];
 /* structural fallbacks so hovering containers also names their rule */
@@ -7276,6 +7277,7 @@ function buildPopupEl(o, overlay, opts = {}) {
       R23: '<span class="pill c-gray" data-tip="The one styled tip"><span class="t">hover me</span></span>',
     };
     EX.R21 = fileDrop('Add File', { icon: I.box });
+    EX.R25 = '<span style="position:relative;display:inline-flex;align-items:center;gap:9px;padding:8px 12px;background:var(--panel);border:1px solid var(--line);border-radius:9px;overflow:hidden;max-width:360px"><span style="position:absolute;top:0;left:0;right:0;height:3px;background:repeating-linear-gradient(135deg,var(--red) 0 13px,#14181d 13px 26px)"></span><span style="font-family:\'Saira Condensed\',system-ui,sans-serif;text-transform:uppercase;letter-spacing:1.4px;font-weight:800;font-size:12px;color:var(--red);white-space:nowrap">⚠ Not saving</span><span style="font-size:11px;color:var(--txt-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">changes held, retrying…</span></span>';
     // ── tabbed render — a row builder per kind, then just the active tab's items ──
     const ruleRow = (r) => {
       const m = RULE_META[r]; if (!m) return '';
@@ -13135,7 +13137,15 @@ async function loadWranglerRail() {
     if (localAhead) pushWranglerRailSoon(); else lastRailJson = JSON.stringify(state.wranglerRail);
   } catch (e) { /* offline → the refresh poll retries */ }
 }
-function saveSoon() { if (booting || !backendPassword) return; clearTimeout(saveTimer); saveTimer = setTimeout(flushSave, 1200); }
+function saveSoon(ms) { if (booting || !backendPassword) return; clearTimeout(saveTimer); saveTimer = setTimeout(flushSave, ms || 1200); }
+// #247 — sync-health. A failing backend sync used to be SILENT (savePending → flat
+// 1.2s retry, no signal), so writes vanished with no warning. Now: track consecutive
+// failures, retry with EXPONENTIAL BACKOFF, and once an outage is confirmed (≥2 in a
+// row — one transient blip self-recovers) raise the R25 "Not saving" banner until a
+// sync succeeds. The backend (doSync batched I/O + tryLock_→'busy') is the cure; this
+// is the safety net so a stuck write can never vanish quietly again.
+const SYNC = { failing: false, fails: 0, backoff: 1200 };
+function retrySyncNow() { clearTimeout(saveTimer); SYNC.backoff = 1200; flushSave(); }   // R25 "Retry now"
 // A Google Sheets cell is hard-capped at 50,000 chars; the backend writes each
 // record's full JSON into one cell, so an oversized record makes the write throw
 // and — with the all-or-nothing commit below — jams the WHOLE sync (#251). The
@@ -13178,16 +13188,49 @@ async function flushSave() {
   holdOversized(upserts);                        // keep any still-oversized record out of the batch (fault isolation)
   if (!Object.keys(upserts).length && !Object.keys(deletes).length) { saving = false; if (savePending) { savePending = false; saveSoon(); } return; }
   const wireUp = {}; Object.keys(upserts).forEach((k) => { wireUp[k] = upserts[k].map((u) => u.rec); });
+  let ok = false;
   try {
     const r = await backendCall('sync', { upserts: wireUp, deletes });
     if (r && r.ok) {
       // Commit ONLY what we sent — edits made mid-flight stay dirty and re-flush.
       Object.keys(upserts).forEach((k) => upserts[k].forEach((u) => lastSaved[k].set(u.id, u.js)));
       Object.keys(deletes).forEach((k) => deletes[k].forEach((id) => lastSaved[k].delete(id)));
-    } else { savePending = true; }              // server error → retry
-  } catch (e) { savePending = true; }            // offline → retry on next change
+      ok = true;
+    }
+  } catch (e) { /* offline → handled below */ }
   saving = false;
-  if (savePending) { savePending = false; saveSoon(); }
+  if (ok) {
+    if (SYNC.failing) toast('Back online — changes saved.');   // recovered from an outage
+    SYNC.failing = false; SYNC.fails = 0; SYNC.backoff = 1200; renderSyncBanner();
+    if (savePending) { savePending = false; saveSoon(); }      // flush edits made mid-flight
+  } else {
+    savePending = false;                                       // the backoff timer owns the retry now
+    if (++SYNC.fails >= 2) SYNC.failing = true;                // confirmed outage → raise the banner
+    renderSyncBanner();
+    SYNC.backoff = Math.min(SYNC.backoff * 2, 30000);          // exponential, capped at 30s
+    saveSoon(SYNC.backoff);
+  }
+}
+// R25 — the "Not saving" plate. Mounts on <body> (OUTSIDE #app, like #toast / the drag
+// layer) so render() can't wipe it; flushSave drives it imperatively. Red hazard-stripe
+// danger signature; reserves a top band (body.sync-failing) so it never covers the grid.
+function renderSyncBanner() {
+  let el = document.getElementById('sync-banner');
+  if (!SYNC.failing) { if (el) el.classList.remove('show'); document.body.classList.remove('sync-failing'); return; }
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'sync-banner'; el.dataset.r = 'R25';
+    el.setAttribute('role', 'alert'); el.setAttribute('aria-live', 'assertive');
+    el.innerHTML =
+      '<span class="sb-stripe" aria-hidden="true"></span>' +
+      '<span class="sb-stamp">⚠ Not saving</span>' +
+      '<span class="sb-sub">Can’t reach the yard — your changes are held and keep retrying. Don’t close the app.</span>' +
+      actionPill('commit', 'Retry now');
+    el.querySelector('[data-r="R17"]').addEventListener('click', retrySyncNow);
+    document.body.appendChild(el);
+  }
+  document.body.classList.add('sync-failing');
+  requestAnimationFrame(() => el.classList.add('show'));
 }
 // Safety net: a debounced save that hasn't flushed yet — or a large bulk-import sync
 // still in flight — would be lost silently if the page closes/reloads first (#164).

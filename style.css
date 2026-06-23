@@ -3012,3 +3012,35 @@ body.dragging .row.drop-ok { opacity: 1; }
 /* ── KPI MASK — remove this block to restore ring visibility (Jac) ── */
 .kpi-ring, .big-ring, .menu-team-ring { filter: blur(12px); pointer-events: none; }
 /* ── END KPI MASK ── */
+
+/* ── R25 — "Not saving" sync-failure plate (#247) ─────────────────────────────
+   The silent write-loss fix's user-facing half. Persistent danger banner that lives
+   on <body> (outside #app, like the toast/drag layer) so render() can't wipe it.
+   Red hazard stripe = the danger signature (NOT the reserved orange accent). Reserves
+   a top band via body.sync-failing so it never covers the yard grid. Themes for free
+   off the tokens (dark/light/ranch); static stripe + reduced-motion safe. */
+#sync-banner {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 9600;
+  display: flex; align-items: center; gap: 12px; min-height: 38px;
+  padding: 7px 14px 7px 18px;
+  background: var(--panel); border-bottom: 1px solid var(--line); box-shadow: var(--shadow);
+  transform: translateY(-100%); transition: transform .15s ease-out;
+}
+#sync-banner.show { transform: translateY(0); }
+#sync-banner .sb-stripe {
+  position: absolute; top: 0; left: 0; right: 0; height: 4px;
+  background: repeating-linear-gradient(135deg, var(--red) 0 13px, #14181d 13px 26px);
+}
+#sync-banner .sb-stamp {
+  font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase;
+  letter-spacing: 1.4px; font-weight: 800; font-size: 14px; color: var(--red);
+  white-space: nowrap; flex-shrink: 0;
+}
+#sync-banner .sb-sub {
+  font-family: var(--font); font-size: 12.5px; color: var(--txt-2);
+  flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+#sync-banner .pill { flex-shrink: 0; }
+body.sync-failing #app { padding-top: 40px; }
+@media (prefers-reduced-motion: reduce) { #sync-banner { transition: none; } }
+@media (max-width: 560px) { #sync-banner .sb-sub { display: none; } }   /* keep the stamp + Retry on phones */
