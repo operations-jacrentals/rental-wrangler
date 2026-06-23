@@ -10392,6 +10392,11 @@ function dragDown(e) {
    2. a list ROW of a draggable entity;
    3. empty space on a STANDARD-view card (Task 2) → that card's open record. */
 function dragSourceAt(target) {
+  const tab = target.closest('.tab[data-tab]');                              // §M2 — an open-record item tab is a draggable record: navigate freely, then carry the tab to the target (no sustained cross-column hold). WO tabs included (DROP_MATRIX gate), so workOrders→invoice works even though WO isn't in DRAG_SOURCES.
+  if (tab) {
+    const t = (state.tabs || []).find((x) => x.id === tab.dataset.tab);
+    if (t) { const ent = entityCardOf(t.card, t.recType); if (DROP_MATRIX[ent]) return { card: ent, rec: t.recId }; }
+  }
   const upill = target.closest('[data-pill-card="units"]');                  // a unit pill drags as that unit → link to a rental (Jac B4)
   if (upill && upill.dataset.pillRec) return { card: 'units', rec: upill.dataset.pillRec };
   const woSect = target.closest('.section[data-wo]');

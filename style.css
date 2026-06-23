@@ -314,6 +314,7 @@ input { font-family: inherit; }
 .is-phone .iconbtn { min-height: 44px; }
 .is-phone .bv-btn { min-width: 44px; min-height: 44px; }                         /* per-card graph toggle (was 32) */
 .is-phone .coltab { min-height: 44px; }                                         /* card view tabs (was 30) */
+.is-phone .tab { min-height: 40px; }                                            /* §M2 open-record item tabs are draggable handles — give them a touch grab target */
 .is-phone .popup-head .x { width: 40px; height: 40px; }                         /* sheet close ✕ (was 30) */
 .is-phone .mdot { width: 38px; height: 22px; }                                  /* column indicator dots (column also changes by toggle tap / footer swipe) */
 .is-phone .chat-tag .x { position: relative; }                                  /* tag remove ✕ keeps its 14px look… */
