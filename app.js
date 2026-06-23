@@ -17,12 +17,13 @@ import { createCascade } from './cascade.js';
 import { serviceOrdersForUnit, completeService, SERVICE_TASKS } from './service-countdown.js';
 import * as CFG from './config.js';
 import { AGREEMENTS, AGREEMENT_VERSIONS, AGREEMENT_CURRENT } from './agreements.js';
-import { ico, I, CARD_ICON, RING_ICON } from './icons.js';
+import { ico, I, CARD_ICON, RING_ICON, CATEGORY_ICON } from './icons.js';
 import {
   getStatus, STATUS, ROLES, GRID_CARDS, BACKOFFICE_BOARDS, SORT_FIELDS,
   SHOP_TYPES, SHOP_SEGMENTS, COLUMNS, COLUMN_OF,
   legacyTransportPrice, computeTransportPrice, isFueledType, legsForType, YARD_ORIGIN, GOOGLE_MAPS_KEY,
   fmtWindow, fmtShortDate, showsTruck, parseISO, TODAY_ISO, invoiceShort, TRANSPORT_MAP,
+  FLAG_META, FLAG_SEVERITY_RANK,
 } from './config.js';
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -230,7 +231,10 @@ const STATUS_ORDER = ['Quote', 'Reserved', 'Tomorrow', 'Today', 'On Rent', 'End 
 function unitStatus(r, eu) {
   const base = (eu && eu.status) || r.status || 'Reserved';
   // a reservation whose start date passed without going On Rent = No Show (Jac 2026-06-13)
-  if (base === 'Reserved') { const s = parseISO(r.startDate); if (s) { const d = dayDiff(TODAY, s); if (d < 0) return 'No Show'; if (d === 0) return 'Today'; if (d === 1) return 'Tomorrow'; } }
+  // Today/Tomorrow RETIRED as derived statuses (SPEC flag-color-system) — the urgency
+  // is carried by the starts-today / starts-tomorrow flags. The No-Show derivation
+  // stays (a reservation whose start passed without going On Rent).
+  if (base === 'Reserved') { const s = parseISO(r.startDate); if (s && dayDiff(TODAY, s) < 0) return 'No Show'; }
   return base;
 }
 function rentalUnitStatuses(r) {
@@ -241,7 +245,9 @@ const unitsUniform = (r) => rentalUnitStatuses(r).length <= 1;
    label ("Today/On Rent", lifecycle-ordered) with a neutral color. */
 function rentalStatusDisplay(r) {
   const ss = rentalUnitStatuses(r);
-  if (ss.length <= 1) { const k = ss[0] || rentalDisplayStatus(r); const st = getStatus('rentalStatus', k); return { label: st.label, color: st.color, key: k, mixed: false }; }
+  // COLOR is flag-driven (R/Y/G/gray, SPEC flag-color-system); the LABEL stays the
+  // lifecycle status. Mixed-unit rentals keep the gray "mix" label + gray color.
+  if (ss.length <= 1) { const k = ss[0] || rentalDisplayStatus(r); const st = getStatus('rentalStatus', k); return { label: st.label, color: getEntityColor('rentals', r), key: k, mixed: false }; }
   return { label: ss.join('/'), color: 'gray', key: null, mixed: true };
 }
 /* TERMINAL = the unit has reached an end state; Complete Rental unlocks only when
@@ -1260,14 +1266,14 @@ function invoiceTotals(inv) {
 /** The active rental driving a unit's mirrored Rental Status (excludes
  *  Returned/Cancelled/No Show — §12.4). */
 const ACTIVE_RENTAL = new Set(['Quote', 'Tomorrow', 'Today', 'Reserved', 'On Rent', 'End Rent', 'Off Rent']);
-/** §8/§6.2#7 — Tomorrow/Today are DERIVED display states (stored status stays Reserved):
- *  a Reserved rental starting today shows "Today" (blue), tomorrow shows "Tomorrow" (purple). */
+/** §8/§6.2#7 — a Reserved rental whose start date PASSED (never went On Rent) shows
+ *  the derived "No Show" label; the stored status stays Reserved. Today/Tomorrow are
+ *  RETIRED as derived statuses (SPEC flag-color-system) — their urgency now rides the
+ *  starts-today / starts-tomorrow flags, and the pill keeps reading "Reserved". */
 function rentalDisplayStatus(r) {
   if (r.status === 'Reserved') {
     const s = parseISO(r.startDate);
-    // a reservation whose start date has PASSED and never went On Rent = a No Show
-    // (display-derived, like Today/Tomorrow — the stored status stays Reserved). Jac 2026-06-13
-    if (s) { const d = dayDiff(TODAY, s); if (d < 0) return 'No Show'; if (d === 0) return 'Today'; if (d === 1) return 'Tomorrow'; }
+    if (s && dayDiff(TODAY, s) < 0) return 'No Show';
   }
   return r.status;
 }
@@ -1846,6 +1852,13 @@ function showHoverPreview(target) {
   hideHoverPreview();
   const node = el('div', 'hover-preview');
   try { node.innerHTML = DETAIL[info.ec](info.rec, { historySearch: '', backStack: [], mode: 'standard' }); } catch (e) { return; }
+  // SPEC flag-color-system §5: active flags (severity-sorted) listed below the preview.
+  const pflags = getEntityFlags(info.ec, info.rec);
+  if (pflags.length) {
+    const fl = el('div', 'prev-flags');
+    fl.innerHTML = `<span class="pf-cap">Flags</span>` + flagsStack(pflags.map((f) => flagEl(f.label, f.severity, { alert: f.severity === 'red' })));
+    node.appendChild(fl);
+  }
   node.addEventListener('mouseenter', () => clearTimeout(hoverGrace));                   // arrived on the preview — cancel the close
   node.addEventListener('mouseleave', () => { hoverEl = null; hideHoverPreview(); });    // leaving the preview closes it
   document.body.appendChild(node); hoverNode = node;
@@ -2645,9 +2658,119 @@ async function lockKpiFromWrangler(mi) {
 // R3: each status badge carries the icon of the card the status belongs to
 const SET_CARD = { rentalStatus: 'rentals', unitRentalStatus: 'rentals', invoiceStatus: 'invoices', unitInspectionStatus: 'inspections', inspectionResult: 'inspections', unitFleetStatus: 'units', gpsStatus: 'units', unitOrderStatus: 'workOrders', woPhase: 'workOrders', woType: 'workOrders', customerPayStatus: 'customers', accountType: 'customers', serviceStatus: 'serviceOrders', expenseReconcile: 'expenses', vendorType: 'vendors', companyFileType: 'files' };
 const dataAttrs = (data) => Object.entries(data || {}).map(([k, v]) => ` data-${k}="${esc(String(v))}"`).join('');
-function statusPill(set, value, { card, recId, x, truck, previewColor, previewIcon, previewLabel } = {}) {
+/* ════════════════════════════════════════════════════════════════════════
+   FLAG-DRIVEN COLOR ENGINE — SPEC docs/specs/flag-color-system.md
+   Flags answer "what must I do with this record right now?". getEntityColor →
+   the computed status color: GRAY if formally archived, else the highest active-
+   flag severity (red > yellow > green), else GREEN (nothing to do). FLAG_META
+   (labels/severities) lives in config.js; the CONDITIONS live here with the
+   helpers they need. Conditions evaluate at render time against live record data.
+   ════════════════════════════════════════════════════════════════════════ */
+// Open (not Complete / not cancelled) WOs touching any of a rental's units.
+function openWOsForRental(r) {
+  const ids = new Set(rentalUnitIds(r));
+  return DATA.workOrders.filter((w) => ids.has(w.unitId) && w.phase !== 'Complete' && !w.cancelled);
+}
+const rentalUnitRecords = (r) => rentalUnitIds(r).map((id) => IDX.unit.get(id)).filter(Boolean);
+// A WO carries an ETA when the WO or any of its lines has an `eta` date set.
+const woHasEta = (w) => !!(w.eta || (w.lineItems || []).some((li) => li.eta));
+
+const FLAG_COND = {
+  rentals: {
+    'fc':               (r) => openWOsForRental(r).some((w) => w.woType === 'Field Call'),
+    'overbooked':       (r) => !!rentalOverbooked(r),
+    'unpaid-balance':   (r) => { const c = IDX.customer.get(r.customerId); return !!c && c.payStatus === 'Unpaid'; },
+    'no-card':          (r) => { const c = IDX.customer.get(r.customerId); return !!c && cardFlag(c) === 'none'; },
+    'unsigned-card':    (r) => { const c = IDX.customer.get(r.customerId); if (!c || !hasValidCard(c)) return false; return !cardCurrentSigning(c, defaultCard(c)); },
+    'unit-failed':      (r) => rentalUnitRecords(r).some((u) => u.inspectionStatus === 'Failed'),
+    'off-rent-overdue': (r) => r.status === 'Off Rent',
+    'no-show':          (r) => r.status === 'Reserved' && !!r.startDate && parseISO(r.startDate) < TODAY,
+    'starts-today':     (r) => r.status === 'Reserved' && !!r.startDate && dayDiff(TODAY, parseISO(r.startDate)) === 0,
+    'starts-tomorrow':  (r) => r.status === 'Reserved' && !!r.startDate && dayDiff(TODAY, parseISO(r.startDate)) === 1,
+    'end-rent':         (r) => r.status === 'End Rent',
+    'unit-due-soon':    (r) => rentalUnitRecords(r).some((u) => { const s = topServiceForUnit(u); return !!s && s.status === 'due-soon'; }),
+    'partial-payment':  (r) => { const c = IDX.customer.get(r.customerId); return !!c && c.payStatus === 'Partial'; },
+    'card-expiring':    (r) => { const c = IDX.customer.get(r.customerId); return !!c && cardFlag(c) === 'expiring'; },
+    'complete-rental':  (r) => allUnitsTerminal(r) && !r.completed,
+  },
+  units: {
+    'inspection-failed':    (u) => u.inspectionStatus === 'Failed',
+    'service-past-due':     (u) => { const s = topServiceForUnit(u); return !!s && s.status === 'past-due'; },
+    'overbooked':           (u) => !!unitOverbooked(u.unitId),
+    'gps-offline':          (u) => u.gpsStatus === 'Not Reporting',
+    'inspection-not-ready': (u) => u.inspectionStatus === 'Not Ready',
+    'service-due-soon':     (u) => { const s = topServiceForUnit(u); return !!s && s.status === 'due-soon'; },
+    'wash-requested':       (u) => !!u.washRequested,
+    'gps-verify':           (u) => u.gpsStatus === 'Verify',
+  },
+  workOrders: {
+    'part-needed':         (w) => w.phase === 'Part Needed',
+    'field-call':          (w) => w.woType === 'Field Call',
+    'failed-origin':       (w) => w.woType === 'Failed',
+    'no-lines':            (w) => !(w.lineItems || []).length,
+    'part-unknown':        (w) => w.phase === 'Part Needed?',
+    'part-ordered-no-eta': (w) => w.phase === 'Part Ordered' && !woHasEta(w),
+    'part-ordered-eta':    (w) => w.phase === 'Part Ordered' && woHasEta(w),
+    'part-local':          (w) => w.phase === 'Part is Local',
+    'bill-maybe':          (w) => w.billCustomer === 'Maybe',
+  },
+  invoices: {
+    'unpaid':      (i) => invoiceTotals(i).status === 'Unpaid',
+    'late':        (i) => /^Late/.test(invoiceTotals(i).status),
+    'collections': (i) => invoiceTotals(i).status === 'Collections',
+    'partial':     (i) => invoiceTotals(i).status === 'Partial',
+    'not-due':     (i) => invoiceTotals(i).status === 'Not Due',
+  },
+  customers: {
+    'unpaid-balance':    (c) => c.payStatus === 'Unpaid',
+    'blacklisted':       (c) => /Blacklist/i.test(c.accountType || ''),
+    'no-card':           (c) => cardFlag(c) === 'none',
+    'customer-lost':     (c) => customerActivity(c).stage === 'Lost',
+    'customer-inactive': (c) => customerActivity(c).stage === 'Inactive',
+    'partial-balance':   (c) => c.payStatus === 'Partial',
+    'member-incomplete': (c) => c.accountType === 'Member Incomplete',
+    'action-required':   (c) => customerActivity(c).stage === 'Action Required',
+    'check-in':          (c) => customerActivity(c).stage === 'Check-in',
+    'card-expiring':     (c) => cardFlag(c) === 'expiring',
+  },
+};
+/** Active flags for a record, severity-desc (red → yellow). Safe on any input. */
+function getEntityFlags(entityType, rec) {
+  if (!rec) return [];
+  const meta = FLAG_META[entityType], cond = FLAG_COND[entityType];
+  if (!meta || !cond) return [];
+  const out = [];
+  for (const f of meta) { let on = false; try { on = !!(cond[f.id] && cond[f.id](rec)); } catch (e) { on = false; } if (on) out.push(f); }
+  return out.sort((a, b) => (FLAG_SEVERITY_RANK[b.severity] || 0) - (FLAG_SEVERITY_RANK[a.severity] || 0));
+}
+/** Formally archived → gray, no flag evaluation (§6: rentals on Complete Rental;
+ *  invoices on Refund). Cancelled/No Show stay R/Y until completed (§6.2). */
+function entityArchived(entityType, rec) {
+  if (!rec) return false;
+  if (entityType === 'rentals') return rec.completed === true;
+  if (entityType === 'invoices') return rec.refunded === true || invoiceTotals(rec).status === 'Refunded';
+  return false;
+}
+/** Computed status color: 'gray' (archived) · highest active-flag severity · 'green'. */
+function getEntityColor(entityType, rec) {
+  if (entityArchived(entityType, rec)) return 'gray';
+  const fl = getEntityFlags(entityType, rec);
+  return fl.length ? fl[0].severity : 'green';
+}
+/** Map a statusPill `set` → its entity type (only the 5 PRIMARY status sets are
+ *  flag-colored; secondary sets like unitInspectionStatus keep their registry color). */
+const PRIMARY_SET_ENTITY = { rentalStatus: 'rentals', unitFleetStatus: 'units', woPhase: 'workOrders', invoiceStatus: 'invoices', customerPayStatus: 'customers' };
+
+function statusPill(set, value, { card, recId, x, truck, previewColor, previewIcon, previewLabel, flag } = {}) {
   const st = getStatus(set, value);
-  const color = previewColor || st.color;   // Settings Board live preview overrides the applied color
+  // Color: Settings-Board preview override wins; else a PRIMARY status set computes
+  // its flag-driven color from the record (R/Y/G/gray); else the registry color.
+  let color = previewColor || st.color;
+  const entityType = PRIMARY_SET_ENTITY[set];
+  if (!previewColor && flag !== false && entityType && recId != null) {
+    const erec = recOf(entityType, recId);
+    if (erec) color = getEntityColor(entityType, erec);
+  }
   const label = previewLabel != null ? previewLabel : st.label;
   const data = card ? ` data-pill-card="${card}" data-pill-rec="${esc(recId)}"` : '';
   const tk = truck ? `<span class="truck">${I.truck}</span>` : '';
@@ -2966,7 +3089,7 @@ const RB_FOUNDATION = {
     `<span style="font-size:14px;color:var(--txt)">Rugged equipment, rented right — the body face carries the content.</span>`],
   'type-mono': ['‹›', 'Mono', 'ui-monospace · 10–12px · txt-3',
     'Code + debug references only: the Inspector tag and rulebook builder names.',
-    `<code style="font-family:ui-monospace,monospace;font-size:12px;color:var(--txt-3)">UNITS › INSPECTION › “Ready”</code>`],
+    `<code style="font-family:ui-monospace,monospace;font-size:12px;color:var(--txt-3)">UNITS › INSPECTION › “Passed”</code>`],
   'type-scale': ['#', 'Size scale', '28 · 15 · 13 · 12 · 11 · 10 · 9.5px',
     'Bigger = identity/value (28 KPI · 15 popup title). 12–13 = content. ≤11 = stamped micro-labels & counters. ONE size (11px) for every status badge.',
     `<span style="display:flex;align-items:baseline;gap:13px;flex-wrap:wrap;color:var(--txt)"><span style="font-size:28px;font-weight:800">28</span><span style="font-size:15px;font-weight:700">15</span><span style="font-size:13px">13</span><span style="font-size:12px">12</span><span style="font-family:'Saira Condensed';text-transform:uppercase;letter-spacing:1px;font-size:11px;font-weight:700">11 label</span><span style="font-size:9.5px;color:var(--txt-3)">9.5</span></span>`],
@@ -3117,8 +3240,8 @@ function onInspectMove(e) {
    ════════════════════════════════════════════════════════════════════════ */
 const ROW_META = {
   rentals:    (r) => ({ title: rentalDisplayName(r), sub: IDX.customer.get(r.customerId)?.name || '', color: rentalStatusDisplay(r).color }),
-  customers:  (c) => ({ title: c.name, sub: c.phone || c.company || '', color: getStatus('customerPayStatus', c.payStatus).color }),
-  units:      (u) => ({ title: u.name, sub: IDX.category.get(u.categoryId)?.name || '', color: getStatus('unitInspectionStatus', u.inspectionStatus).color }),
+  customers:  (c) => ({ title: c.name, sub: c.phone || c.company || '', color: getEntityColor('customers', c) }),
+  units:      (u) => ({ title: u.name, sub: IDX.category.get(u.categoryId)?.name || '', color: getEntityColor('units', u) }),
   categories: (c) => ({ title: c.name, sub: c.fuelType || '', color: 'orange' }),
   invoices:   (i) => ({ title: i.invoiceId, sub: IDX.customer.get(i.customerId)?.name || '', color: getStatus('invoiceStatus', invoiceTotals(i).status).color }),
   workOrders: (w) => ({ title: `${IDX.unit.get(w.unitId)?.name || '—'} — ${w.woReport}`, sub: fmtShortDate(w.date), color: getStatus('woPhase', w.phase).color }),
@@ -3165,6 +3288,56 @@ function categoryMixViz(catId) {
   return `<div class="row-viz" style="background:linear-gradient(90deg, var(--mix-green) 0 ${g}%, var(--mix-yellow) ${g}% ${g + y}%, var(--mix-red) ${g + y}% ${g + y + r}%)"></div>`;
 }
 
+/* A library glyph representing a unit's CATEGORY (Jac) — keyword-resolved from the
+   category name onto the vendored CATEGORY_ICON map (Lucide + the Tabler backhoe).
+   Never hand-authored; unknowns fall back to the backhoe (heavy-equipment default). */
+function categoryIconFor(name) {
+  const n = (name || '').toLowerCase();
+  if (/excavat|backhoe|dig|skid|loader|dozer|bobcat|track\s?hoe|mini.?ex/.test(n)) return CATEGORY_ICON.excavator;
+  if (/scissor|boom|man.?lift|aerial|telehandl|fork|\blift\b/.test(n)) return CATEGORY_ICON.lift;
+  if (/light/.test(n)) return CATEGORY_ICON.light;
+  if (/tower/.test(n)) return CATEGORY_ICON.tower;
+  if (/generat|\bpower\b|genset|geny/.test(n)) return CATEGORY_ICON.generator;
+  if (/compress|\bair\b/.test(n)) return CATEGORY_ICON.compressor;
+  if (/pump|water/.test(n)) return CATEGORY_ICON.pump;
+  if (/dump|hauler|flatbed|\btruck\b/.test(n)) return CATEGORY_ICON.truck;
+  if (/tractor|mower|brush|broom/.test(n)) return CATEGORY_ICON.tractor;
+  if (/trailer|container/.test(n)) return CATEGORY_ICON.trailer;
+  if (/fuel|tank/.test(n)) return CATEGORY_ICON.fuel;
+  if (/heat|furnace/.test(n)) return CATEGORY_ICON.heater;
+  if (/saw|cut/.test(n)) return CATEGORY_ICON.saw;
+  return CATEGORY_ICON.excavator;
+}
+/* The unit row's RENTAL+INSPECTION pill (Jac): text = rental status / availability
+   verdict / inspection label; COLOR is inspection-driven (mechanics' card) and only
+   goes red on a catastrophe (Failed inspection, overbooked). Built via statusPill's
+   color/label override so it stays an R3 pill. */
+function unitRentalInspPill(u) {
+  const insp = getStatus('unitInspectionStatus', u.inspectionStatus);
+  const ar = activeRentalForUnit(u.unitId);
+  let text, color;
+  if (availWin) {
+    if (isUnitAvailableFor(u, availWin.start, availWin.end, availWin.selfId)) { text = 'Available'; color = 'green'; }
+    else if (u.fleetStatus !== 'Active') { text = getStatus('unitFleetStatus', u.fleetStatus).label; color = 'red'; }
+    else if (u.inspectionStatus === 'Failed') { text = 'Failed'; color = 'red'; }
+    else { const cf = rentalsOverlappingUnit(u.unitId, availWin.start, availWin.end, availWin.selfId)[0]; text = cf ? 'Booked' : 'Unavailable'; color = 'red'; }
+  } else if (ar) {
+    text = rentalDisplayStatus(ar);
+    color = (u.inspectionStatus === 'Failed' || unitOverbooked(u.unitId)) ? 'red' : insp.color;   // inspection drives; catastrophe → red
+  } else {
+    text = insp.label; color = insp.color;            // Passed / Not Ready / Failed
+  }
+  return statusPill('unitInspectionStatus', u.inspectionStatus, { card: 'units', recId: u.unitId, previewColor: color, previewLabel: text });
+}
+/* The unit row's WORK-ORDER+SERVICE pill (Jac): an open WO's journey bottleneck takes
+   precedence (flag-colored woPhase); otherwise the nearest service order by hours. */
+function unitWoSoPill(u) {
+  const wo = openWOForUnit(u.unitId);
+  if (wo) return statusPill('woPhase', wo.phase, { card: 'workOrders', recId: wo.woId });
+  const svc = topServiceForUnit(u);
+  return svc ? badge(svcText(svc), svc.color) : '';
+}
+
 /* ════════════════════════════════════════════════════════════════════════
    §6b PER-CARD ROWS
    ════════════════════════════════════════════════════════════════════════ */
@@ -3200,107 +3373,124 @@ const ROWS = {
      the truck when it's a transport rental — that's the whole dispatch signal.
      Right = the derived Balance with due-context (R8). Triage without clicking. ── */
   rentals: (r) => {
-    const unit = IDX.unit.get(r.unitId);
     const cust = IDX.customer.get(r.customerId);
     const inv = r.invoiceId ? IDX.invoice.get(r.invoiceId) : null;
-    const price = rentalPrice(r);
-    const dispStatus = rentalDisplayStatus(r);
-    const stColor = rentalStatusDisplay(r).color;   // the elapsed-tint follows the rental status (Jac 2026-06-13)
-    const truck = showsTruck(r.status, r.transportType);
-    const name = rentalUnitsLabel(r) || 'Quote';   // the row IS the window timeline; show just the unit(s)
-    const gate = masterGate(r, { truck });
+    const stColor = rentalStatusDisplay(r).color;   // border-left highlight follows rental status
+    const name = rentalUnitsLabel(r) || 'Quote';
     const s = parseISO(r.startDate), e = parseISO(r.endDate);
 
-    // no window yet (a Quote) → a simple bar to set the window
-    if (!(s && e)) {
-      return `<div class="rtl"><div class="rtl-over">
-        <div class="rtl-l"><span class="rtl-name">${esc(name)}</span><span class="rtl-sub">${cust ? refPill('customers', r.customerId, cust.name) : ''}</span></div>
-        <div class="rtl-mid">${gate}</div>
-        <div class="rtl-r"><span class="rtl-set">Set window</span></div>
-      </div></div>`;
-    }
-
-    // elapsed-tint cells (reused from the R16 day-timeline math)
-    const dayMs = 86400000;
-    const total = Math.max(1, Math.round((e - s) / dayMs));
-    const weekly = total > 14, cells = weekly ? Math.ceil(total / 7) : total;
-    const cellHtml = Array.from({ length: cells }, (_, i) => {
-      const cellEnd = new Date(s.getTime() + (weekly ? (i + 1) * 7 : i + 1) * dayMs);
-      return `<div class="day ${TODAY >= cellEnd ? 'past' : ''}"></div>`;
-    }).join('');
-
-    // Overdue = the unit is physically OUT (On/End/Off Rent) past its end date — NOT a stale reservation.
-    const overdue = e < TODAY && (r.status === 'On Rent' || r.status === 'End Rent' || r.status === 'Off Rent');
-    const nOver = overdue ? dayDiff(e, TODAY) : 0;
-
-    // R8 BALANCE with due-context (Jac), STACKED: $X on top, "Due Jun 21" beneath.
-    // Paid green · not-due blue · bare red $X when overdue (the missing "Due" IS the signal).
-    let bal = '';
+    // ── Balance (R8 derived): Paid green · upcoming yellow · past-due red ───
+    let bal = '', balCls = '';
     if (inv) {
       const t = invoiceTotals(inv);
-      if (t.refunded || t.status === 'Refunded') bal = `<span class="rtl-bal muted">Refunded</span>`;
-      else if (t.balance <= 0 && t.paid > 0) bal = `<span class="rtl-bal" style="color:var(--green)">Paid</span>`;
-      else if (parseISO(inv.dueDate) > TODAY) bal = `<span class="rtl-bal" style="color:var(--blue)">${money(t.balance)}<span class="rtl-due">Due ${esc(relDate(inv.dueDate))}</span></span>`;
-      else bal = `<span class="rtl-bal" style="color:var(--red)">${money(t.balance)}</span>`;
+      if (t.refunded || t.status === 'Refunded') { bal = 'Refunded'; balCls = 'muted'; }
+      else if (t.balance <= 0 && t.paid > 0) { bal = 'Paid'; balCls = 'paid'; }
+      else if (t.balance > 0) { bal = money(t.balance); balCls = parseISO(inv.dueDate) > TODAY ? 'due' : 'overdue'; }
     }
-    // a customer who OWES but has no card on file → call-don't-charge (the one extra billing signal)
-    const noCard = cust && inv && cardFlag(cust) === 'none' && invoiceTotals(inv).balance > 0 ? flagEl('No Card', 'red', { alert: true }) : '';
-    const cat = IDX.category.get(r.categoryId) || (unit ? IDX.category.get(unit.categoryId) : null);
 
-    return `<div class="rtl">
-      <div class="rtl-cells" style="--tint:var(--${stColor}-bg)">${cellHtml}</div>
-      <div class="rtl-over">
-        <div class="rtl-l">
-          <span class="rtl-top"><span class="rtl-name">${esc(name)}</span>${cat ? flagEl(cat.name, 'gray', { icon: CARD_ICON.categories, card: 'categories', recId: cat.categoryId }) : ''}</span>
-          <span class="rtl-sub">${cust ? refPill('customers', r.customerId, cust.name) : ''}<span class="rtl-start">${esc(relDate(r.startDate))}</span></span>
+    // ── Quote (no window yet) ────────────────────────────────────────────────
+    if (!(s && e)) {
+      return `<div class="rcc" style="--rcc-hl:var(--${stColor})">
+        <div class="rcc-head">${esc(name)}</div>
+        <div class="rcc-foot">
+          <span class="rcc-cust">${cust ? esc(cust.name) : ''}</span>
+          <span class="rcc-bal rcc-set">Set window</span>
         </div>
-        <div class="rtl-mid">${gate}${price ? `<span class="rate">${money(price.price)} · ${esc(price.rate)}</span>` : ''}</div>
-        <div class="rtl-r">
-          ${noCard}${bal}
-          <span class="rtl-when">${r.startTime ? `<span class="tm">${esc(r.startTime)}</span>` : ''}<span class="rtl-end${overdue ? ' over' : ''}">${overdue ? `${nOver}d over` : esc(relDate(r.endDate))}</span></span>
-        </div>
+      </div>`;
+    }
+
+    // ── Transport gate icons on start / end dots ─────────────────────────────
+    // Delivery or Round-Trip → truck out on start; Recovery or Round-Trip → truck in on end.
+    // Self (or unset) → person icon (CARD_ICON.customers = Lucide "user").
+    const ttype = r.transportType;
+    const isSelf = !ttype || ttype === 'Self';
+    const startIcon = isSelf ? CARD_ICON.customers : I.truck;
+    const endHasTruck = ttype === 'Recovery' || ttype === 'Round-Trip';
+    const endIcon = isSelf ? CARD_ICON.customers : (endHasTruck ? I.truck : '');
+
+    // ── 3-week dot calendar with the rental window THREADED through the dots ──
+    // (direction A): solid track = elapsed (start→today), faint = remaining
+    // (today→end). Week anchored to today's Sunday (US convention, getDay() 0 = Sun).
+    const wd = TODAY.getDay();
+    const thisSun = new Date(TODAY.getFullYear(), TODAY.getMonth(), TODAY.getDate() - wd);
+    const lastSun = new Date(thisSun.getFullYear(), thisSun.getMonth(), thisSun.getDate() - 7);
+    const dotCells = [];
+    for (let i = 0; i < 21; i++) {
+      const d = new Date(lastSun.getFullYear(), lastSun.getMonth(), lastSun.getDate() + i);
+      const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      const isToday = iso === TODAY_ISO, isStart = iso === r.startDate, isEnd = iso === r.endDate;
+      const inWin = iso >= r.startDate && iso <= r.endDate;   // ISO compares chronologically
+      const elapsed = inWin && d <= TODAY;
+      const cls = ['rcc-day', isToday && 'is-today', isStart && 'is-start', isEnd && 'is-end',
+        inWin && 'is-win', inWin && (elapsed ? 'elapsed' : 'fut'),
+        (!isToday && !inWin && d < TODAY) && 'is-past'].filter(Boolean).join(' ');
+      const time = isStart ? (r.startTime || '') : '';
+      const icon = isStart ? startIcon : (isEnd ? endIcon : '');
+      dotCells.push(`<div class="${cls}">${inWin ? '<span class="rcc-bar"></span>' : ''}<span class="rcc-t">${esc(time)}</span><span class="rcc-dot">${icon}</span></div>`);
+    }
+
+    return `<div class="rcc" style="--rcc-hl:var(--${stColor})">
+      <div class="rcc-head">${esc(name)}</div>
+      <div class="rcc-body">${dotCells.join('')}</div>
+      <div class="rcc-foot">
+        <span class="rcc-cust">${cust ? esc(cust.name) : ''}</span>
+        ${bal ? `<span class="rcc-bal ${balCls}">${esc(bal)}</span>` : ''}
       </div>
     </div>`;
   },
 
   customers: (c) => {
-    const active = DATA.rentals.filter((r) => r.customerId === c.customerId && ACTIVE_RENTAL.has(r.status) && r.status !== 'Quote');
-    const unitPills = active.map((r) => { const u = IDX.unit.get(r.unitId); return u ? statusPill('rentalStatus', rentalDisplayStatus(r), { card: 'rentals', recId: r.rentalId }) : ''; }).join('');
+    // Name TINTED by the customer's flag color (Jac): only red/yellow lead — a clear
+    // customer keeps the calm default ink, archived/gray reads muted.
+    const fc = getEntityColor('customers', c);
+    const nameColor = (fc === 'red' || fc === 'yellow') ? `var(--${fc})` : fc === 'gray' ? 'var(--txt-3)' : 'var(--txt)';
     const acct = getStatus('customerAccountType', c.accountType || 'Non-Business');
-    return `<div class="row-1"><span class="r-title">${esc(c.name)}</span><span class="r-fields"><span>${esc(c.phone || '')}</span></span></div>
-      <div class="row-2">
-        ${badge(acct.label, acct.color)}
-        ${statusPill('customerPayStatus', c.payStatus, { card: 'customers', recId: c.customerId })}
-        ${cardFlag(c) !== 'ok' ? badge(CARD_FLAG_META[cardFlag(c)].label, CARD_FLAG_META[cardFlag(c)].color) : ''}
-        ${unitPills}
-      </div>`;
+    const sub = [esc(c.phone || ''), c.accountType ? esc(acct.label) : ''].filter(Boolean).join(' · ');
+
+    // Pay status AS A NUMBER (Jac — no "New Customer" text): owed balance → yellow before
+    // its due date / red on-or-after; otherwise rolling-12-month spend → green.
+    const yearAgo = new Date(TODAY.getFullYear() - 1, TODAY.getMonth(), TODAY.getDate());
+    let owed = 0, owedPastDue = false, spend12 = 0;
+    DATA.invoices.filter((i) => i.customerId === c.customerId).forEach((i) => {
+      const t = invoiceTotals(i);
+      if (t.status !== 'Refunded' && t.balance > 0) { owed += t.balance; const due = parseISO(i.dueDate); if (!due || due <= TODAY) owedPastDue = true; }
+      const d = parseISO(i.date); if (d && d >= yearAgo) spend12 += Number(i.amountPaid) || 0;
+    });
+    let payHtml = '';
+    if (owed > 0) payHtml = `<span class="cr-pay ${owedPastDue ? 'over' : 'due'}">${money(owed)}</span>`;
+    else if (spend12 > 0) payHtml = `<span class="cr-pay spend">${money(spend12)}</span>`;
+
+    // Most-progressed funnel stage of the two tracks (used-sales / membership); Don't
+    // Contact ranks lowest of the non-N/A stages (shown only when it's the sole one).
+    const FUNNEL_RANK = { 'Inbound Lead': 1, 'Outbound Lead': 2, 'Contacted': 3, 'Not A No!': 4, 'Payment Discussed': 5, 'Paid': 6, "Don't Contact": 0.5 };
+    const topStage = [c.usedSalesStage || 'N/A', c.membershipStage || 'N/A']
+      .filter((s) => s && s !== 'N/A').sort((a, b) => (FUNNEL_RANK[b] || 0) - (FUNNEL_RANK[a] || 0))[0];
+    const funnelHtml = topStage ? statusPill('funnelStage', topStage) : '';
+
+    return `<div class="cr">
+      <div class="cr-id">
+        <span class="r-title cr-name" style="color:${nameColor}">${esc(c.name)}</span>
+        <span class="cr-sub">${sub}</span>
+      </div>
+      <div class="cr-right">${payHtml}${funnelHtml}</div>
+    </div>`;
   },
 
   units: (u) => {
+    // 5 elements (Jac): [category icon] · [name / category·HRS] · [rental+insp pill] ·
+    // [WO+SO pill]. Left border = the unit's most-severe flag color. Category reflows
+    // below the name on narrow widths (flex-wrap).
     const cat = IDX.category.get(u.categoryId);
-    const ar = activeRentalForUnit(u.unitId);
-    const wo = openWOForUnit(u.unitId);
-    const svc = topServiceForUnit(u);
-    // §10: while a rental window is in scope, Row 2 leads with the availability
-    // verdict for THAT window (green Available / fleet / Failed / conflicting rental).
-    let availLead = '';
-    if (availWin) {
-      if (isUnitAvailableFor(u, availWin.start, availWin.end, availWin.selfId)) availLead = badge('Available', 'green');
-      else if (u.fleetStatus !== 'Active') availLead = statusPill('unitFleetStatus', u.fleetStatus);
-      else if (u.inspectionStatus === 'Failed') availLead = badge('Failed', 'red');
-      else { const cf = rentalsOverlappingUnit(u.unitId, availWin.start, availWin.end, availWin.selfId)[0]; availLead = cf ? statusPill('rentalStatus', rentalDisplayStatus(cf), { card: 'rentals', recId: cf.rentalId }) : badge('Unavailable', 'red'); }
-    }
-    // §12.4: QR badge on Row 1; Inspection Status pill lives on Row 2 with the other
-    // status badges. Fleet Status is conveyed by the ROW BACKGROUND (when not Active).
-    return `<div class="row-1"><span class="r-title">${esc(u.name)}</span><span class="r-fields">
-        ${cat ? `<span>${esc(cat.name)}</span>` : ''}<span class="r-key">${num(u.currentHours)} HRS</span></span>
-        <span class="pill c-gray" data-r="R3" data-tip="QR code">${I.qr}</span></div>
-      <div class="row-2">
-        ${availWin ? availLead : (ar ? statusPill('rentalStatus', rentalDisplayStatus(ar), { card: 'rentals', recId: ar.rentalId }) : '')}
-        ${svc ? badge(svcText(svc), svc.color) : ''}
-        ${wo ? statusPill('woPhase', wo.phase, { card: 'workOrders', recId: wo.woId }) : ''}
-        ${statusPill('unitInspectionStatus', u.inspectionStatus, { card: 'units', recId: u.unitId })}
-      </div>`;
+    const hl = getEntityColor('units', u);
+    const sub = [cat ? esc(cat.name) : '', `${num(u.currentHours)} HRS`].filter(Boolean).join(' · ');
+    return `<div class="ur" style="--ur-hl:var(--${hl})">
+      <span class="ur-cat">${categoryIconFor(cat && cat.name)}</span>
+      <div class="ur-id">
+        <span class="r-title ur-name">${esc(u.name)}</span>
+        <span class="ur-sub">${sub}</span>
+      </div>
+      <div class="ur-pills">${unitRentalInspPill(u)}${unitWoSoPill(u)}</div>
+    </div>`;
   },
 
   categories: (c) => {
@@ -4222,11 +4412,47 @@ function headFlagsHtml(card, rec) {
     // Jac 2026-06-12: fuel type + unit count as title flags (was a body badge row);
     // fleet-health flag (any failed → red · any not-ready → yellow · else green).
     const mix = categoryMix(rec.categoryId);
-    const health = mix.Failed ? { l: `${mix.Failed} Failed`, c: 'red' } : mix['Not Ready'] ? { l: `${mix['Not Ready']} Not Ready`, c: 'yellow' } : { l: 'Fleet Ready', c: 'green' };
+    const health = mix.Failed ? { l: `${mix.Failed} Failed`, c: 'red' } : mix['Not Ready'] ? { l: `${mix['Not Ready']} Not Ready`, c: 'yellow' } : { l: 'All Passed', c: 'green' };
     return flagsStack([rec.fuelType ? flagEl(rec.fuelType, 'navy') : '', flagEl(`${mix.total} units`, 'gray', { icon: CARD_ICON.units })])
       + flagsStack([flagEl(health.l, health.c, { icon: CARD_ICON.inspections })]);
   }
   return '';
+}
+
+/* §12.2 RENTAL DETAIL CALENDAR — numbered-date, full-window, Sunday-anchored.
+   Reuses the rcc track system (solid=elapsed, 30% opacity=remaining). */
+function rentalDetailCal(r, stColor) {
+  const s = parseISO(r.startDate), e = parseISO(r.endDate);
+  if (!s || !e) return '';
+  const ttype = r.transportType;
+  const isSelf = !ttype || ttype === 'Self';
+  const startIcon = isSelf ? CARD_ICON.customers : I.truck;
+  const endHasTruck = ttype === 'Recovery' || ttype === 'Round-Trip';
+  const endIcon = isSelf ? CARD_ICON.customers : (endHasTruck ? I.truck : '');
+  const firstSun = new Date(s.getFullYear(), s.getMonth(), s.getDate() - s.getDay());
+  const lastSatDelta = (6 - e.getDay() + 7) % 7;
+  const lastSat = new Date(e.getFullYear(), e.getMonth(), e.getDate() + lastSatDelta);
+  const totalDays = Math.round((lastSat - firstSun) / 86400000) + 1;
+  const DOW = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+  const dowRow = DOW.map((l) => `<span>${l}</span>`).join('');
+  const cells = [];
+  for (let i = 0; i < totalDays; i++) {
+    const d = new Date(firstSun.getFullYear(), firstSun.getMonth(), firstSun.getDate() + i);
+    const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const isToday = iso === TODAY_ISO, isStart = iso === r.startDate, isEnd = iso === r.endDate;
+    const inWin = iso >= r.startDate && iso <= r.endDate;
+    const elapsed = inWin && d <= TODAY;
+    const cls = ['rdcal-day', isToday && 'is-today', isStart && 'is-start', isEnd && 'is-end',
+      inWin && 'is-win', inWin && (elapsed ? 'elapsed' : 'fut'),
+      (!isToday && !inWin && d < TODAY) && 'is-past'].filter(Boolean).join(' ');
+    const time = isStart ? (r.startTime || '') : '';
+    const icon = isStart ? startIcon : (isEnd ? endIcon : '');
+    cells.push(`<div class="${cls}">${inWin ? '<span class="rdcal-bar"></span>' : ''}${time ? `<span class="rdcal-t">${esc(time)}</span>` : ''}<span class="rdcal-n">${d.getDate()}</span>${icon ? `<span class="rdcal-ico">${icon}</span>` : ''}</div>`);
+  }
+  return `<div class="rdcal js-open-winpicker" data-rec="${esc(r.rentalId)}" style="--rdcal-hl:var(--${stColor})">
+    <div class="rdcal-dow">${dowRow}</div>
+    <div class="rdcal-body">${cells.join('')}</div>
+  </div>`;
 }
 
 const DETAIL = {
@@ -4237,73 +4463,51 @@ const DETAIL = {
     const inv = r.invoiceId ? IDX.invoice.get(r.invoiceId) : null;
     const invT = inv ? invoiceTotals(inv) : null;
     const truck = showsTruck(r.status, r.transportType);
-    const stColor = rentalStatusDisplay(r).color;   // §20 section/timeline color follows the roll-up (gray when mixed)
+    const stColor = rentalStatusDisplay(r).color;
     const s = parseISO(r.startDate), e = parseISO(r.endDate);
-
     const hasWin = s && e;
     const units = rentalUnits(r);
-    /* DAY TIMELINE — the shared window as day cells; the master gate rides it and
-       the "N Not Ready" BLOCKER folds in beside it (Jac 2026-06-15). The rate is
-       GONE from here — money now lives in the event-strip balance below. Clicking
-       the bare track opens the window calendar. */
-    const blockN = units.filter((eu) => { const bu = IDX.unit.get(eu.unitId); return bu && bu.inspectionStatus !== 'Ready' && !unitVoided(r, eu); }).length;
-    const blocker = blockN ? `<button class="tl-blocker js-tl-blocker" data-rec="${esc(r.rentalId)}" data-tip="Jump to the machines that aren't ready"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>${blockN} machine${blockN > 1 ? 's' : ''} Not Ready →</button>` : '';
-    let timeline;
-    if (r.mock && !hasWin) {
-      timeline = `<button class="statusbar draftwin wintrigger js-open-winpicker" data-rec="${r.rentalId}"><span class="wt-label">${r.startDate ? esc(fmtShortDate(r.startDate)) + ' → pick end' : 'Select rental window'}</span>${masterGate(r, { truck })}</button>`;
-    } else {
-      const dayMs = 86400000;
-      const total = hasWin ? Math.max(1, Math.round((e - s) / dayMs)) : 1;
-      const weekly = total > 14;
-      const cells = weekly ? Math.ceil(total / 7) : total;
-      const durLabel = (total >= 7 && total % 7 === 0) ? `${total / 7}-Wk` : `${total}-Day`;
-      const cellHtml = Array.from({ length: cells }, (_, i) => {
-        const cellEnd = new Date(s.getTime() + (weekly ? (i + 1) * 7 : i + 1) * dayMs);
-        return `<div class="day ${TODAY >= cellEnd ? 'past' : ''}"></div>`;
-      }).join('');
-      timeline = `<div class="timeline js-open-winpicker" data-rec="${r.rentalId}" style="--tint:var(--${stColor}-bg)">
-        ${cellHtml}
-        <div class="tl-over">
-          <span class="d1"><span class="dlab">${esc(relDate(r.startDate))}</span>${r.startTime ? `<span class="tm">${esc(r.startTime)}</span>` : ''}</span>
-          <span class="midwrap">${blocker}${masterGate(r, { truck })}</span>
-          <span class="d2"><span class="dlab">${esc(relDate(r.endDate))}</span><span class="tm">${esc(durLabel)}</span></span>
-        </div>
-      </div>`;
-    }
-    // Wave 2 empty slots: the UNIT slot points at the Units list (drag links it);
-    // the CUSTOMER slot opens quick-add-link. data-slot stays for R19 flash targets.
-    const pickUnitBtn = addBtn('Unit', { link: true, js: 'js-slot-unit', h: 26, data: { rec: r.rentalId, slot: 'unit' } });
-    const pickCustBtn = addBtn('Customer', { link: true, js: 'js-quickadd-cust', h: 26, data: { card: 'rentals', rec: r.rentalId, slot: 'customer' } });
 
-    /* invoice pill: ✕ unlink ONLY while $0 is assigned to this rental's line item
-       (after any assigned payment, removal requires refunding first — Jac's rule). */
+    /* invoice pill — ✕ unlink only while $0 is assigned (Jac's rule). */
     const paidForThis = inv ? rentalAllocated(inv, r.rentalId) : 0;
     const invPill = inv
       ? `<span class="pill ref link" data-r="R2" data-pill-card="invoices" data-pill-rec="${esc(inv.invoiceId)}">${CARD_ICON.invoices}${esc(invoiceShort(inv.invoiceId))}${paidForThis <= 0 ? `<span class="x" data-x="inv-remove" data-tip="unlink — allowed while $0 is assigned to this rental; afterwards refund first">✕</span>` : ''}</span>`
       : addBtn('Invoice', { link: true, js: 'js-create-invoice', h: 26, data: { rec: r.rentalId } });
 
-    /* EVENT STRIP — adds on the LEFT, the pay-status balance on the RIGHT (Jac
-       2026-06-15). The $480 reads as a balance ($0 / $480 = paid over total); the
-       $0 wears the pay-status color (red unpaid / blue Not Due / green paid). */
+    /* Balance (paid / total) for the header right side. */
     const rentLines = rentalLineItems(r);
     const eventTotal = invT ? invT.total : rentLines.reduce((a, li) => a + (Number(li.amount) || 0), 0);
     const eventPaid = invT ? invT.paid : 0;
     const balColor = (eventPaid > 0 && eventPaid >= eventTotal) ? 'green' : (invT && invT.status === 'Not Due') ? 'blue' : 'red';
-    const balance = `<span class="balline" data-chat-el data-chat-label="${esc('Balance ' + money(eventPaid) + ' / ' + money(eventTotal))}" data-chat-color="${esc(balColor)}"${inv ? ` data-chat-card="invoices" data-chat-rec="${esc(inv.invoiceId)}"` : ''}><b style="color:var(--${balColor})">${money(eventPaid)}</b> <span class="tot">/ ${money(eventTotal)}</span></span>`;
-    const eventStrip = `<div class="estrip">
-      <div class="estrip-l">
-        ${cust ? refPill('customers', r.customerId, cust.name, { x: 'cust-swap' }) : (r.mock ? pickCustBtn : addBtn('Customer', { link: true, js: 'js-quickadd-cust', h: 26, data: { card: 'rentals', rec: r.rentalId, slot: 'customer' } }))}
-        ${cat ? dPill(cat.name, 'orange', { card: 'categories', recId: cat.categoryId, icon: CARD_ICON.categories }) : ''}
-        ${invPill}
-        ${efld('rentals', r, 'rentalId', 'po', 'Add PO', { fmt: (v) => 'PO ' + v })}
-      </div>
-      <div class="estrip-r">${balance}</div>
+    const rdBal = `<span class="rd-bal balline" data-chat-el data-chat-label="${esc('Balance ' + money(eventPaid) + ' / ' + money(eventTotal))}" data-chat-color="${esc(balColor)}"${inv ? ` data-chat-card="invoices" data-chat-rec="${esc(inv.invoiceId)}"` : ''}><b style="color:var(--${balColor})">${money(eventPaid)}</b><span class="tot"> / ${money(eventTotal)}</span></span>`;
+
+    /* Header: customer + category + invoice + PO left · gate + balance right. */
+    const custEl = cust
+      ? refPill('customers', r.customerId, cust.name, { x: 'cust-swap' })
+      : addBtn('Customer', { link: true, js: 'js-quickadd-cust', h: 26, data: { card: 'rentals', rec: r.rentalId, slot: 'customer' } });
+    const catPill = cat ? dPill(cat.name, 'orange', { card: 'categories', recId: cat.categoryId, icon: CARD_ICON.categories }) : '';
+    const poField = efld('rentals', r, 'rentalId', 'po', 'Add PO', { fmt: (v) => 'PO ' + v });
+    const rdHead = `<div class="rd-head">
+      <div class="rd-head-l">${custEl}${catPill}${invPill}${poField}</div>
+      <div class="rd-head-r">${masterGate(r, { truck })}${rdBal}</div>
     </div>`;
 
-    /* PER-UNIT STALLS — each machine is one self-contained block: identity + its
-       inspection + (multi-unit) its own gate + line amount, sitting on its
-       connected Home—Site—Home route rail (transport folded in, captures not
-       tracked — Jac 2026-06-15). */
+    /* Not-Ready blocker — jumps to unit pills; sits above the calendar. */
+    const blockN = units.filter((eu) => { const bu = IDX.unit.get(eu.unitId); return bu && bu.inspectionStatus !== 'Ready' && !unitVoided(r, eu); }).length;
+    const blocker = blockN ? `<button class="tl-blocker js-tl-blocker" data-rec="${esc(r.rentalId)}" data-tip="Jump to the machines that aren't ready"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>${blockN} machine${blockN > 1 ? 's' : ''} Not Ready →</button>` : '';
+
+    /* Calendar: numbered-date full-window grid, or draft window picker. */
+    const calHtml = hasWin
+      ? rentalDetailCal(r, stColor)
+      : `<button class="statusbar draftwin wintrigger js-open-winpicker" data-rec="${esc(r.rentalId)}"><span class="wt-label">${r.startDate ? esc(fmtShortDate(r.startDate)) + ' → pick end' : 'Select rental window'}</span></button>`;
+
+    /* Duration label (shared across all unit rows). */
+    const durLabel = hasWin
+      ? (() => { const total = Math.max(1, Math.round((e - s) / 86400000)); return (total >= 7 && total % 7 === 0) ? `${total / 7}-Wk` : `${total}-Day`; })()
+      : '';
+
+    /* Per-unit rows beneath the calendar — name+pills left, rate right, route rail below. */
+    const pickUnitBtn = addBtn('Unit', { link: true, js: 'js-slot-unit', h: 26, data: { rec: r.rentalId, slot: 'unit' } });
     const stallsHtml = units.length
       ? units.map((eu) => {
           const u = IDX.unit.get(eu.unitId); if (!u) return '';
@@ -4311,38 +4515,36 @@ const DETAIL = {
           const voided = unitVoided(r, eu);
           const multi = units.length > 1;
           const up = unitRentalPrice(r, eu.unitId);
-          // §10 quote-time guard: a category with no rates billing $0 would quote a
-          // free rental — flag it loudly (yellow caution, click → fix the category).
           const noRates = !voided && catRatesUnset(IDX.category.get(u.categoryId))
             ? flagEl('No rates', 'yellow', { icon: CARD_ICON.categories, card: 'categories', recId: u.categoryId, alert: true, title: 'This category has no day / 7-day / 4-week rate — it bills $0. Set its rates before quoting.' })
             : '';
-          return `<div class="stall${voided ? ' voided' : ''}">
-            <div class="stall-head">
-              <div class="stall-id">${unitPill(u.unitId, { x: 'unit-remove', xData: u.unitId })}${dPill(insp.label, insp.color, { card: 'units', recId: u.unitId, icon: CARD_ICON.inspections })}${noRates}${multi ? unitStatusGate(r, eu) : ''}</div>
-              <span class="stall-right">${multi ? `<button class="stall-split js-split-open" data-rec="${esc(r.rentalId)}" data-unit="${esc(u.unitId)}" data-tip="Give ${esc(u.name)} its own dates — splits to a separate rental on the same invoice"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>dates</button>` : ''}<span class="stall-amt">${money(up ? up.price : 0)}</span></span>
+          const splitBtn = multi ? `<button class="stall-split js-split-open" data-rec="${esc(r.rentalId)}" data-unit="${esc(u.unitId)}" data-tip="Give ${esc(u.name)} its own dates — splits to a separate rental on the same invoice"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>dates</button>` : '';
+          return `<div class="stall rd-unit${voided ? ' voided' : ''}">
+            <div class="rd-unit-top">
+              <div class="stall-id rd-unit-id">${unitPill(u.unitId, { x: 'unit-remove', xData: u.unitId })}${dPill(insp.label, insp.color, { card: 'units', recId: u.unitId, icon: CARD_ICON.inspections })}${noRates}${multi ? unitStatusGate(r, eu) : ''}</div>
+              <div class="rd-unit-rate">${durLabel ? `<span class="rd-dur">${esc(durLabel)}</span> · ` : ''}<span class="stall-amt">${money(up ? up.price : 0)}</span>${splitBtn}</div>
             </div>
             ${stallRouteHtml(r, eu)}
           </div>`;
         }).join('')
-      : `<div class="stall stall-empty">${pickUnitBtn}<span class="muted" style="font-size:12px">drag a unit on, or cancel the quote</span></div>`;
+      : `<div class="stall stall-empty rd-unit rd-unit-empty">${pickUnitBtn}<span class="muted" style="font-size:12px">drag a unit on, or cancel the quote</span></div>`;
 
-    /* Complete Rental gate — commit only once every unit is terminal; Cancelled/No
-       Show → red Cancel Rental. */
+    /* Footer: field call + Complete/Cancel left · invoice total right. */
     const cancelish = ['Cancelled', 'No Show'].includes(r.status);
-    const canComplete = allUnitsTerminal(r);   // §20 every unit terminal (Returned / Cancelled / No Show)
+    const canComplete = allUnitsTerminal(r);
     const crBtn = cancelish
       ? actionPill('danger', 'Cancel Rental', { js: 'js-cancel-rental', h: 26, data: { rec: r.rentalId } })
       : actionPill('commit', 'Complete Rental', { js: `js-complete-rental${canComplete ? '' : ' locked'}`, h: 26, data: { rec: r.rentalId } });
-
     const fcRow = r.fieldCall ? actionPill('danger', 'Field Call active — clear', { js: 'js-clear-fc', data: { rec: r.rentalId } }) : '';
+    const invTotalHtml = invT ? `<span class="rd-inv-total">${money(eventTotal)}</span>` : '';
+    const rdFoot = `<div class="rd-foot"><div class="rd-foot-l">${fcRow}${crBtn}</div><div class="rd-foot-r">${invTotalHtml}</div></div>`;
 
-    /* RENTAL section: NO header — the day timeline opens it; the border carries the
-       rental-status color. Day timeline → event strip → per-unit stalls → footer. */
     const rentalSec = `<div class="section sec-${stColor} rentalsec">
-      ${timeline}
-      ${eventStrip}
-      <div class="stalls">${stallsHtml}</div>
-      <div class="rentalsec-foot">${fcRow}${crBtn}</div>
+      ${rdHead}
+      ${blocker ? `<div class="rd-blocker">${blocker}</div>` : ''}
+      ${calHtml}
+      <div class="stalls rd-units">${stallsHtml}</div>
+      ${rdFoot}
     </div>`;
 
     const notes = notesSection('rentals', r, 'rentalId');
@@ -4915,7 +5117,7 @@ const DETAIL = {
     } else if (n.checklist === 'Fail') {
       gate = kvPills(`${n.woId ? refPill('workOrders', n.woId, 'WO') : ''}<button class="pill ref js-open-insp" data-rec="${n.inspectionId}">Failure report →</button>`);
     } else {
-      gate = kvPills(`<span class="pill c-green" data-r="R3b"><span class="t">Ready</span></span>${washSet ? badge(n.wash === 'Yes' ? 'Washed' : 'No wash', n.wash === 'Yes' ? 'blue' : 'gray') : ''}`);
+      gate = kvPills(`<span class="pill c-green" data-r="R3b"><span class="t">Passed</span></span>${washSet ? badge(n.wash === 'Yes' ? 'Washed' : 'No wash', n.wash === 'Yes' ? 'blue' : 'gray') : ''}`);
     }
     const isVideo = (n.photo || '').startsWith('data:video');
     const thumb = n.photo ? (isVideo
@@ -7269,14 +7471,14 @@ function buildPopupEl(o, overlay, opts = {}) {
       R2: refPill('units', '', 'Shrek') + refPill('customers', '', 'Devin Lyles'),
       R3: statusPill('unitInspectionStatus', 'Ready') + statusPill('rentalStatus', 'On Rent'),
       R3b: badge('480 HRS') + badge('No GPS'),
-      R4: dPill('Lift Scissor 26ft', 'orange', { icon: CARD_ICON.categories }) + dPill('Ready', 'green', { icon: CARD_ICON.inspections }),
+      R4: dPill('Lift Scissor 26ft', 'orange', { icon: CARD_ICON.categories }) + dPill('Passed', 'green', { icon: CARD_ICON.inspections }),
       R5: addBtn('Customer', { link: true, h: 26 }) + addBtn('Invoice/+Transport', { link: true, h: 26 }),
       R5b: addBtn('Part/Task', { line: true, h: 26 }) + addBtn('Rental', { line: true, h: 26 }),
       R5c: addBtn('Serial', { h: 26 }) + addBtn('Email', { h: 26 }),
       R6: reqBtn('PO #'),
       R7: linkName('Shrek · Jun 02–Jun 12'),
       R8: '<span class="derived">$2,610 · 7-Day×1 + 1-Day×3</span>',
-      R9: flagsStack([flagEl('Ready', 'green', { icon: CARD_ICON.inspections }), flagEl('ETA Jun 18', 'yellow', { icon: CARD_ICON.workOrders })]),
+      R9: flagsStack([flagEl('Passed', 'green', { icon: CARD_ICON.inspections }), flagEl('ETA Jun 18', 'yellow', { icon: CARD_ICON.workOrders })]),
       R10: '<span class="c-titlecard"><span class="c-icon">' + CARD_ICON.units + '</span><span class="c-title">Beacon</span></span>',
       R11: '<span style="display:inline-block;border:1px solid color-mix(in srgb, var(--green) 45%, transparent);border-radius:9px;padding:4px 14px;font-size:10px;font-weight:700;letter-spacing:.5px;color:var(--green)">INSPECTION</span>',
       R12: '<span class="add-field" data-r="R5c" style="height:24px;font-size:11px">+Notes</span><span class="muted" style="font-size:11px"> (boxless line)</span>',
@@ -10781,7 +10983,7 @@ function completeChecklist() {
   if (failed.length) n.description = 'Failed checklist: ' + failed.map((it) => inspItemType(it)==='select' ? (it.label + ': ' + (n.items[it.id]||'')) : it.label).join(', ');
   state.overlay = null;                                   // close the takeover; a Fail re-opens the photo/notes popup
   setInspResult(n.inspectionId, failed.length ? 'Fail' : 'Pass');   // cascade onto the inspection section + auto-WO
-  toast(failed.length ? `Inspection failed — work order opened for ${u.name}.` : `Inspection passed — ${u.name} is Ready. ✓`);
+  toast(failed.length ? `Inspection failed — work order opened for ${u.name}.` : `Inspection passed — ${u.name} marked Passed. ✓`);
 }
 function setUnitWash(unitId, val) {
   const u = IDX.unit.get(unitId); if (!u) return;
@@ -12219,7 +12421,7 @@ function reindexDraft(card, rec) {
 function createInvoiceForRental(rentalId) {
   const r = IDX.rental.get(rentalId); if (!r) return;
   if (!r.customerId) { flashOr('[data-slot="customer"]', 'The Quote needs a customer first — drag one on (or quick-add).'); return; }
-  if (!r.startDate || !r.endDate) { flashOr('.timeline, .statusbar.draftwin', 'Set the rental window first.'); return; }
+  if (!r.startDate || !r.endDate) { flashOr('.rdcal, .timeline, .statusbar.draftwin', 'Set the rental window first.'); return; }
   if (!rentalUnitIds(r).length) { flashOr('.stall-empty, [data-slot="unit"]', 'Add at least one unit before invoicing.'); return; }
   const id = nextInvoiceId();
   const inv = { invoiceId: id, customerId: r.customerId, rentalIds: [rentalId], date: TODAY_ISO, dueDate: dueForCustomer(r.customerId), po: '', amountPaid: 0, lineItems: [], mock: true };
@@ -12616,7 +12818,7 @@ function setInspResult(id, val) {
     logAction(wo, 'Created from failed inspection');
     toast(`Failed — WO ${wo.woId} created. Add a photo + notes.`);
     state.overlay = { kind: 'inspection', recId: id };   // Fail → open the photo/video + notes popup
-  } else { toast('Passed — unit marked Ready.'); }
+  } else { toast('Unit marked Passed. ✓'); }
   const session = activeSession(); if (session.anchor) setAnchor(session, session.anchor.card, session.anchor.recId, session.anchor.recType);
   render(); renderOverlay();
 }
