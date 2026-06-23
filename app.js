@@ -7393,7 +7393,7 @@ function buildPopupEl(o, overlay, opts = {}) {
     const lines = role.kpis.map((k, i) => {
       const raw = vals[i];
       const b = bandColor(raw == null ? 0 : raw);
-      const valTxt = raw == null ? '<span class="muted">— backend</span>' : `<span style="color:var(--${b.color})">${raw}%</span>`;
+      const valTxt = raw == null ? '<span class="muted">Coming soon</span>' : `<span style="color:var(--${b.color})">${raw}%</span>`;
       return `<div class="kpi-line" data-tip="${esc(KPI_HELP[k] || '')}"><span class="ring-no" style="border-color:var(--${raw == null ? 'line' : b.color});color:var(--${raw == null ? 'txt-3' : b.color})">${i + 1}</span><span class="k-name">${esc(k)}<span class="muted" style="font-size:10px;margin-left:6px">${ringTag[i]}</span></span><span class="k-val">${valTxt}</span></div>`;
     }).join('');
     const pop = el('div', 'popup kpi-popup');
