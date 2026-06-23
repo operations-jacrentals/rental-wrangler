@@ -1188,9 +1188,8 @@ select.lf-in { appearance: none; cursor: pointer; }
    stays left, bell+inbox right. Tab = registry dot + Geist title; selected = the ONE
    safety-orange; a "needs your answer" tab flashes red. */
 .comms-rail { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 12px;
-  overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; padding: 2px 2px; }
-.comms-rail::-webkit-scrollbar { height: 6px; }
-.comms-rail::-webkit-scrollbar-thumb { background: var(--line); border-radius: 99px; }
+  overflow-x: auto; overflow-y: hidden; scrollbar-width: none; padding: 2px 2px; }   /* hide the scrollbar (still scrolls via wheel/trackpad) — matches .header-tabs */
+.comms-rail::-webkit-scrollbar { height: 0; width: 0; }
 .crail-group { flex: 0 0 auto; display: flex; align-items: center; gap: 7px; }
 .crail-glabel { flex: 0 0 auto; font-family: 'Saira Condensed', sans-serif; text-transform: uppercase;
   letter-spacing: 1.4px; font-weight: 700; font-size: 10.5px; color: var(--txt-3); padding-right: 2px; white-space: nowrap; }
@@ -1209,17 +1208,19 @@ select.lf-in { appearance: none; cursor: pointer; }
 .crail-tab.c-green .crail-dot { background: var(--green); } .crail-tab.c-yellow .crail-dot { background: var(--yellow); }
 .crail-tab.c-red .crail-dot { background: var(--red); } .crail-tab.c-blue .crail-dot { background: var(--blue); }
 .crail-tab.c-purple .crail-dot { background: var(--purple); } .crail-tab.c-gray .crail-dot { background: var(--txt-3); }
+/* Actionable request tabs read via a STEADY tinted edge + colored dot — needs-answer
+   (red) · needs-your-OK (yellow). NO perpetual glow: a wall of pulsing tabs was a
+   strobe; motion is reserved for the one transient attnFlash beat elsewhere. */
 .crail-needs .crail-dot { background: var(--red); }
+.crail-ok .crail-dot { background: var(--yellow); }
+.crail-tab.crail-needs:not(.is-active) { border-color: color-mix(in srgb, var(--red) 55%, var(--line)); }
+.crail-tab.crail-ok:not(.is-active) { border-color: color-mix(in srgb, var(--yellow) 50%, var(--line)); }
 .crail-tab.is-unseen { border-color: var(--accent-line); }
 .crail-tab.is-unseen .crail-dot { box-shadow: 0 0 0 3px var(--accent-soft); }
 /* selected conversation = solid safety-orange + dark ink (the one accent use for a tab) */
 .crail-tab.is-active { background: var(--accent); border-color: var(--accent); color: var(--on-orange, #1a1205); }
 .crail-tab.is-active .crail-dot { background: var(--on-orange, #1a1205); box-shadow: none; }
-.crail-tab.wr-flash:not(.is-active) { animation: attnGlow 1.6s ease-in-out infinite; border-color: var(--accent-line); }
-@media (prefers-reduced-motion: reduce) {
-  .crail-tab:hover { transform: none; }
-  .crail-tab.wr-flash:not(.is-active) { animation: none; box-shadow: 0 0 0 2px var(--accent-soft), inset 0 1px 0 rgba(255,255,255,.06); }
-}
+@media (prefers-reduced-motion: reduce) { .crail-tab:hover { transform: none; } }
 
 /* §17 INTERNAL TEAM DOCK (Jac, Phase 7) — headerless: tagged-element pill rail on top,
    chat bubbles, role tab-bar at the bottom. Floats bottom-right. Yard data-plate steel. */
@@ -1899,7 +1900,7 @@ select.nc-in { cursor: pointer; }
 .ag-packet { display: flex; gap: 11px; margin-top: 14px; }
 .ag-pcell { flex: 1; min-width: 0; }
 .ag-pcap { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.5px; font-size: 10px; color: var(--txt-3); margin-bottom: 6px; }
-.ag-pcell .ag-selfie { width: 100%; height: 96px; object-fit: cover; object-position: top; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); }
+.ag-pcell .ag-selfie { width: 100%; height: 96px; object-fit: cover; object-position: center 35%; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); }
 .ag-pcell .ag-selfie.empty { display: flex; align-items: center; justify-content: center; color: var(--txt-3); }
 .ag-sigthumb { width: 100%; height: 96px; object-fit: contain; border: 1px solid var(--line); border-radius: 10px; background: #fbfcfd; }
 /* CAPTURE row: selfie tile + the BIG sign pad */
@@ -1912,11 +1913,11 @@ select.nc-in { cursor: pointer; }
 .ag-selfiebtn:hover { border-color: var(--accent-line); }
 .ag-selfiebtn:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
 .ag-selfiebtn .l { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.3px; font-size: 10.5px; }
-.ag-selfiebtn .ag-selfie { width: 100%; height: 100%; object-fit: cover; object-position: top; }
+.ag-selfiebtn .ag-selfie { width: 100%; height: 100%; object-fit: cover; object-position: center 35%; }
 /* live selfie camera — auto-on; one tap snaps the photo (file-input fallback when absent) */
 .ag-selfiebtn { position: relative; }
 .ag-selfiebtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.ag-cam-feed { display: none; width: 100%; height: 100%; object-fit: cover; object-position: top; transform: scaleX(-1); }
+.ag-cam-feed { display: none; width: 100%; height: 100%; object-fit: cover; object-position: center 35%; transform: scaleX(-1); }
 .ag-cam-fallback { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 8px; }
 .ag-selfiebtn.live .ag-cam-feed { display: block; }
 .ag-selfiebtn.live .ag-cam-fallback { display: none; }
@@ -2056,7 +2057,7 @@ select.nc-in { cursor: pointer; }
 /* Mr. Wrangler intro — full-bleed behind the plate, dark until sign-in starts, then it
    fades up to entertain through the slow backend load. Reduced-motion users skip it. */
 .login-video {
-  position: fixed; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: top;
+  position: fixed; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center 35%;
   opacity: 0; transition: opacity .5s ease; z-index: 0; pointer-events: none;
 }
 .login-screen.signing-in .login-video { opacity: .62; }
