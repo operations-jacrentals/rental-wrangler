@@ -70,7 +70,7 @@ const RAW_STATUS = {
     'Round-Trip': { label: 'Round-Trip', color: 'blue' },
   },
   unitInspectionStatus: {
-    'Ready':     { label: 'Ready',     color: 'green'  },
+    'Ready':     { label: 'Passed',    color: 'green'  },  // stored value stays 'Ready' (live-DB compatible); label only is 'Passed'
     'Not Ready': { label: 'Not Ready', color: 'yellow' },
     'Failed':    { label: 'Failed',    color: 'red'    },
   },
@@ -204,6 +204,76 @@ export function getStatus(set, value) {
   if (!bag) return { ...UNKNOWN_STATUS, value: value ?? '' };
   return bag[value] || { ...UNKNOWN_STATUS, label: value ?? '—', value: value ?? '' };
 }
+
+/* ── Flag-driven color system (SPEC docs/specs/flag-color-system.md) ─────────
+   The CATALOG is data-only (id · label · severity) and lives here next to the
+   STATUS registry. The CONDITION functions live in app.js `FLAG_COND` (they need
+   app-layer helpers: rentalOverbooked, cardFlag, customerActivity, invoiceTotals,
+   topServiceForUnit … which depend on IDX/DATA and can't be imported here — same
+   data-in-config / logic-in-app split as STATUS vs the render code).
+   Severity drives the computed pill/border color: red > yellow > green; an
+   archived record short-circuits to gray (see getEntityColor in app.js). */
+export const FLAG_META = {
+  rentals: [
+    { id: 'fc',              label: 'Field Call',             severity: 'red'    },
+    { id: 'overbooked',      label: 'Overbooked',             severity: 'red'    },
+    { id: 'unpaid-balance',  label: 'Unpaid Balance',         severity: 'red'    },
+    { id: 'no-card',         label: 'No Card',                severity: 'red'    },
+    { id: 'unsigned-card',   label: 'Unsigned Card',          severity: 'red'    },
+    { id: 'unit-failed',     label: 'Unit Failed Inspection', severity: 'red'    },
+    { id: 'off-rent-overdue',label: 'Overdue Return',         severity: 'red'    },
+    { id: 'no-show',         label: 'No Show',                severity: 'yellow' },  // derived: Reserved whose start passed (mirrors the retired derived status)
+    { id: 'starts-today',    label: 'Starts Today',           severity: 'yellow' },
+    { id: 'starts-tomorrow', label: 'Starts Tomorrow',        severity: 'yellow' },
+    { id: 'end-rent',        label: 'Returning Today',        severity: 'yellow' },
+    { id: 'unit-due-soon',   label: 'Service Due Soon',       severity: 'yellow' },
+    { id: 'partial-payment', label: 'Partial Payment',        severity: 'yellow' },
+    { id: 'card-expiring',   label: 'Card Expiring',          severity: 'yellow' },
+    { id: 'complete-rental', label: 'Complete Rental',        severity: 'yellow' },
+  ],
+  units: [
+    { id: 'inspection-failed',    label: 'Failed Inspection', severity: 'red'    },
+    { id: 'service-past-due',     label: 'Service Past Due',  severity: 'red'    },
+    { id: 'overbooked',           label: 'Overbooked',        severity: 'red'    },
+    { id: 'gps-offline',          label: 'GPS Offline',       severity: 'red'    },
+    { id: 'inspection-not-ready', label: 'Not Ready',         severity: 'yellow' },
+    { id: 'service-due-soon',     label: 'Service Due Soon',  severity: 'yellow' },
+    { id: 'wash-requested',       label: 'Wash Requested',    severity: 'yellow' },
+    { id: 'gps-verify',           label: 'GPS Verify',        severity: 'yellow' },
+  ],
+  workOrders: [
+    { id: 'part-needed',         label: 'Part Needed',       severity: 'red'    },
+    { id: 'field-call',          label: 'Field Call',        severity: 'red'    },
+    { id: 'failed-origin',       label: 'From Failed Inspection', severity: 'red' },
+    { id: 'no-lines',            label: 'No Line Items',     severity: 'red'    },
+    { id: 'part-unknown',        label: 'Part Needed?',      severity: 'yellow' },
+    { id: 'part-ordered-no-eta', label: 'No ETA',            severity: 'yellow' },
+    { id: 'part-ordered-eta',    label: 'Part Ordered',      severity: 'yellow' },
+    { id: 'part-local',          label: 'Pick Up Part',      severity: 'yellow' },
+    { id: 'bill-maybe',          label: 'Bill Customer?',    severity: 'yellow' },
+  ],
+  invoices: [
+    { id: 'unpaid',      label: 'Unpaid',      severity: 'red'    },
+    { id: 'late',        label: 'Late',        severity: 'red'    },
+    { id: 'collections', label: 'Collections', severity: 'red'    },
+    { id: 'partial',     label: 'Partial Payment', severity: 'yellow' },
+    { id: 'not-due',     label: 'Balance Due', severity: 'yellow' },
+  ],
+  customers: [
+    { id: 'unpaid-balance',    label: 'Unpaid Balance',    severity: 'red'    },
+    { id: 'blacklisted',       label: 'Blacklisted',       severity: 'red'    },
+    { id: 'no-card',           label: 'No Card',           severity: 'red'    },
+    { id: 'customer-lost',     label: 'Lost',              severity: 'red'    },
+    { id: 'customer-inactive', label: 'Inactive',          severity: 'red'    },
+    { id: 'partial-balance',   label: 'Partial Balance',   severity: 'yellow' },
+    { id: 'member-incomplete', label: 'Member Incomplete', severity: 'yellow' },
+    { id: 'action-required',   label: 'Action Required',   severity: 'yellow' },
+    { id: 'check-in',          label: 'Due for Check-In',  severity: 'yellow' },
+    { id: 'card-expiring',     label: 'Card Expiring',     severity: 'yellow' },
+  ],
+};
+/** Severity rank for sorting/highest-wins. Higher = more severe. */
+export const FLAG_SEVERITY_RANK = { red: 3, yellow: 2, green: 1 };
 
 /* ── Legacy → canonical import map (SPEC §8 / §13; used by the import layer) ─ */
 export const LEGACY_MAP = {

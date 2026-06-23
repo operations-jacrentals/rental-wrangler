@@ -52,8 +52,9 @@ try {
 
     // 3) per-unit status derivation off the shared window (date-robust via TODAY_ISO)
     const today = T.TODAY_ISO;
-    ok(T.unitStatus({ startDate: today }, { status: 'Reserved' }) === 'Today', 'Reserved + today window → Today');
+    ok(T.unitStatus({ startDate: today }, { status: 'Reserved' }) === 'Reserved', 'Reserved + today window stays Reserved (Today/Tomorrow retired → flags)');
     ok(T.unitStatus({ startDate: '2099-01-01' }, { status: 'Reserved' }) === 'Reserved', 'Reserved + far window stays Reserved');
+    ok(T.unitStatus({ startDate: '2000-01-01' }, { status: 'Reserved' }) === 'No Show', 'Reserved + passed window → No Show (derivation kept)');
     ok(T.unitStatus({}, { status: 'On Rent' }) === 'On Rent', 'stored On Rent passes through');
 
     // 4) rentalStatusDisplay — uniform single status vs the mix label
@@ -213,6 +214,46 @@ try {
     ok(!/wrangler-action/.test(T.stripWranglerAction(truncReply)), 'truncated action block is stripped from the visible bubble (no raw JSON dump)');
     const truncPlan = T.wrValidatePlan(truncAct);
     ok(truncPlan.ops.length === 1 && truncPlan.ops[0].rows.length === 2, 'salvaged action validates into an applyable preview plan');
+    // csv-import: model maps columns, frontend expands all rows (no output-token ceiling)
+    const csvText = 'First Name,Last Name,Mobile,Email\nAnn,One,337-555-0001,ann@x.com\nBo,Two,337-555-0002,\nCut,Off,,';
+    const parsed = T.parseCsvFile(csvText);
+    ok(parsed && parsed.headers.length === 4, 'parseCsvFile extracts 4 headers from CSV');
+    ok(parsed && parsed.rows.length === 3, 'parseCsvFile extracts 3 data rows');
+    ok(parsed && parsed.rows[0]['First Name'] === 'Ann' && parsed.rows[0]['Mobile'] === '337-555-0001', 'parseCsvFile maps header names to values correctly');
+    const csvFile = { name: 'leads.csv', csvHeaders: parsed.headers, csvRows: parsed.rows };
+    const csvAction = { action: 'data', title: 'Import from CSV', ops: [{ op: 'csv-import', entity: 'customers', mapping: { 'First Name': 'firstName', 'Last Name': 'lastName', 'Mobile': 'phone', 'Email': 'email' }, skipIfEmpty: ['firstName', 'lastName'] }], _csvAttached: csvFile };
+    const csvPlan = T.wrValidatePlan(csvAction);
+    ok(csvPlan.ops.length === 1 && csvPlan.ops[0].op === 'csv-import', 'csv-import op passes wrValidatePlan');
+    const csvOp = csvPlan.ops[0];
+    ok(csvOp && csvOp.rows.length === 3, 'all 3 rows mapped (skipIfEmpty only cuts rows with blank firstName/lastName)');
+    ok(csvOp && csvOp.rows[0].firstName === 'Ann' && csvOp.rows[0].phone === '337-555-0001', 'column mapping applied correctly');
+    ok(csvOp && !('Mobile' in csvOp.rows[0]), 'CSV column name (Mobile) is gone -- only app field name (phone) survives');
+    const csvSkipAction = { action: 'data', title: 'Import skipping blanks', ops: [{ op: 'csv-import', entity: 'customers', mapping: { 'First Name': 'firstName', 'Last Name': 'lastName', 'Mobile': 'phone' }, skipIfEmpty: ['firstName', 'phone'] }], _csvAttached: csvFile };
+    const csvSkipPlan = T.wrValidatePlan(csvSkipAction);
+    const csvSkipOp = csvSkipPlan.ops[0];
+    ok(csvSkipOp && csvSkipOp.rows.length === 2, 'skipIfEmpty on phone drops only Cut (empty phone) -- Ann and Bo both survive');
+    // HARDENING — correctness must not depend on the model labelling every column perfectly.
+    // 1) forgiving header match: model mislabels columns (case / punctuation / app-name style) and they STILL map
+    const csvFuzzyAction = { action: 'data', title: 'Import with sloppy column keys', ops: [{ op: 'csv-import', entity: 'customers', mapping: { 'first name': 'firstName', 'LAST NAME': 'lastName', 'mobile': 'phone', 'E-Mail': 'email' }, skipIfEmpty: ['firstName', 'lastName'] }], _csvAttached: csvFile };
+    const csvFuzzyOp = T.wrValidatePlan(csvFuzzyAction).ops[0];
+    ok(csvFuzzyOp && csvFuzzyOp.rows.length === 3, 'forgiving match: sloppy-case/punctuation column keys still map all 3 rows');
+    ok(csvFuzzyOp && csvFuzzyOp.rows[0].email === 'ann@x.com' && csvFuzzyOp.rows[0].phone === '337-555-0001', 'forgiving match: "E-Mail"->Email and "mobile"->Mobile resolved to the right columns');
+    // 2) a genuinely unmatched column is surfaced (not silently dropped without a word)
+    const csvBadColAction = { action: 'data', title: 'Import with one bad column', ops: [{ op: 'csv-import', entity: 'customers', mapping: { 'First Name': 'firstName', 'Last Name': 'lastName', 'Cell Phone Number': 'phone' }, skipIfEmpty: ['firstName', 'lastName'] }], _csvAttached: csvFile };
+    const csvBadColPlan = T.wrValidatePlan(csvBadColAction);
+    ok(csvBadColPlan.issues.some((s) => /Cell Phone Number/.test(s)), 'unmatched column is reported back to the user, not silently dropped');
+    // 3) wrFindAttachedCsv — the live dock seam that links an action to its attached file (was stubbed before)
+    const dockMsgs = [{ role: 'user', content: 'import these', files: [csvFile] }, { role: 'assistant', content: 'here you go', action: { action: 'data', ops: [{ op: 'csv-import', entity: 'customers', mapping: {} }] } }];
+    ok(T.wrFindAttachedCsv(dockMsgs, 1) === csvFile, 'wrFindAttachedCsv finds the CSV attached on an earlier user message');
+    ok(T.wrFindAttachedCsv(dockMsgs, 0) === null, 'wrFindAttachedCsv returns null when no earlier message holds a CSV');
+    // 4) safety net: model inlined FEWER rows than the attached CSV (truncated/batched) -> loud, NO silent partial apply
+    const shortInline = { action: 'data', title: 'Partial inline import', ops: [{ op: 'import', entity: 'customers', rows: [{ firstName: 'Ann', lastName: 'One' }] }], _csvAttached: csvFile };
+    const shortPlan = T.wrValidatePlan(shortInline);
+    ok(shortPlan.ops.length === 0, 'safety net: a 1-row inline import against a 3-row attached CSV produces NO op (no silent partial)');
+    ok(shortPlan.issues.some((s) => /1 of 3 rows/.test(s)), 'safety net: surfaces "only sent 1 of 3 rows" so the user re-asks for csv-import');
+    // 5) the salvage path (no CSV attached, e.g. pasted-then-truncated rows) is UNAFFECTED by the safety net
+    const inlineNoCsv = { action: 'data', title: 'Plain inline import', ops: [{ op: 'import', entity: 'customers', rows: [{ firstName: 'Solo', lastName: 'Lead' }] }] };
+    ok(T.wrValidatePlan(inlineNoCsv).ops.length === 1, 'safety net only fires when a CSV is attached — a plain inline import still applies');
     const custBefore = T.DATA.customers.length; const u3 = T.IDX.unit.get('U003'); const noteBefore = u3.notes, hoursBefore = u3.currentHours;
     window.JT.snapshotSaved();   // #164 baseline the diff-sync against the CURRENT data
     T.applyWranglerData(wrPlan);
@@ -224,6 +265,20 @@ try {
     ok(wrDiff.upserts.customers && wrDiff.upserts.customers.length >= 2, 'imported customers are QUEUED for the diff-sync (persist, not just in-memory)');
     ok(wrDiff.upserts.units && wrDiff.upserts.units.some((u) => u.id === 'U003'), 'the applied unit note is queued for persistence too');
     T.DATA.customers.length = custBefore; u3.notes = noteBefore;   // restore
+
+    // #227 — a bare "+New Rental" click must NOT leave an empty Quote in the Sheet. The
+    // mock draft is held out of the §18b sync until it earns real content (a unit, a
+    // customer, a window) — so abandoning it leaves zero backend junk — yet a Quote WITH
+    // content still persists and survives (Wave 2). Baseline first so the draft is "new".
+    window.JT.snapshotSaved();
+    const q227 = { rentalId: 'R-NEW227x', customerId: null, unitId: null, categoryId: null, rentalName: 'New Quote', startDate: '', endDate: '', startTime: '', status: 'Quote', transportType: 'Self', deliveryAddress: '', po: '', invoiceId: null, startHours: null, returnHours: null, notes: '', mock: true };
+    T.DATA.rentals.push(q227); T.IDX.rental.set(q227.rentalId, q227);
+    const d227a = window.JT.computeChanges();
+    ok(!(d227a.upserts.rentals || []).some((u) => u.id === 'R-NEW227x'), '#227: a content-free mock Quote is held OUT of the sync (a bare +New click leaves no backend junk)');
+    q227.customerId = 'C0009';   // now it has real content → it must persist (Quotes survive)
+    const d227b = window.JT.computeChanges();
+    ok((d227b.upserts.rentals || []).some((u) => u.id === 'R-NEW227x'), '#227: once the Quote earns content (a customer) it DOES sync — content-bearing Quotes survive');
+    const qi227 = T.DATA.rentals.findIndex((r) => r.rentalId === 'R-NEW227x'); if (qi227 >= 0) T.DATA.rentals.splice(qi227, 1); T.IDX.rental.delete('R-NEW227x'); window.JT.snapshotSaved();   // restore baseline
 
     // #152 a big import reply can be TRUNCATED by the model's output limit (no closing ```);
     // parseWranglerAction must salvage the complete rows so the preview still opens.
@@ -457,16 +512,18 @@ try {
     ok(T.customFieldsFor('units').length === 0, 'custom fields are per-entity (units unaffected)');
     st.settings.customFields = savedCF;   // restore
 
-    // 26) Inspections — per-category required checklist (default none = quick toggles unchanged)
+    // 26) Inspections — required checklist keyed by EQUIPMENT FAMILY (default none = quick toggles unchanged)
     const savedInsp = st.settings.inspections;
-    const aUnit = T.DATA.units[0]; const aCat = aUnit.categoryId;
+    const aUnit = T.DATA.units[0]; const aKey = T.inspKeyOfCat(aUnit.categoryId);
     st.settings.inspections = undefined;
     ok(T.checklistFor(aUnit) === null && T.checklistRequired(aUnit) === false, 'no checklist config → unit uses the quick Pass/Fail toggles (default)');
-    st.settings.inspections = { [aCat]: { required: true, items: [{ id: 'ck_brakes_a1', label: 'Brakes' }, { id: 'ck_lights_b2', label: 'Lights' }] } };
-    ok(T.checklistRequired(aUnit) === true && T.checklistFor(aUnit).items.length === 2, 'a required checklist is picked up for units of that category');
-    const otherCat = T.DATA.units.find((u) => u.categoryId !== aCat);
-    if (otherCat) ok(T.checklistRequired(otherCat) === false, 'checklists are per-category (other categories unaffected)');
-    st.settings.inspections = { [aCat]: { required: false, items: [{ id: 'ck_x', label: 'X' }] } };
+    st.settings.inspections = { [aKey]: { required: true, items: [{ id: 'ck_brakes_a1', label: 'Brakes' }, { id: 'ck_lights_b2', label: 'Lights' }] } };
+    ok(T.checklistRequired(aUnit) === true && T.checklistFor(aUnit).items.length === 2, 'a required checklist is picked up for units of that family');
+    const otherUnit = T.DATA.units.find((u) => T.inspKeyOfCat(u.categoryId) !== aKey);
+    if (otherUnit) ok(T.checklistRequired(otherUnit) === false, 'checklists are per-family (other families unaffected)');
+    const sibUnit = T.DATA.units.find((u) => u.categoryId !== aUnit.categoryId && T.inspKeyOfCat(u.categoryId) === aKey);
+    if (sibUnit) ok(T.checklistRequired(sibUnit) === true && (T.checklistFor(sibUnit) || {}).items.length === 2, 'a sibling category in the same family SHARES the checklist');
+    st.settings.inspections = { [aKey]: { required: false, items: [{ id: 'ck_x', label: 'X' }] } };
     ok(T.checklistRequired(aUnit) === false && T.checklistFor(aUnit) !== null, 'a defined-but-not-required checklist is available but does not take over');
     st.settings.inspections = savedInsp;   // restore
 
