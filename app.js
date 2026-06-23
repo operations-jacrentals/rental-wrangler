@@ -799,6 +799,14 @@ function rentalPrice(r) {
   return { price: best.total, rate: parts.join(' + ') || '—', days };
 }
 
+/** A category that would bill $0 because its rental rates were never entered — a
+ *  data gap, NOT a display bug: categories are born with rate1Day/rate7Day/rate4Wk
+ *  = 0 (quickAddCategoryFromSearch / CSV import) and the rates are filled in later.
+ *  Drives the quote-time caution flag so a $0-rate category never quotes free. */
+function catRatesUnset(cat) {
+  return !!cat && !cat.rate1Day && !cat.rate7Day && !cat.rate4Wk;
+}
+
 /* §20 per-unit pricing — each unit is billed by ITS OWN category across the
    rental's shared window (rentalPrice reads categoryId/start/end/customer). */
 function unitRentalPrice(r, unitId) {
@@ -1449,7 +1457,11 @@ function categoryStats(cat) {
   // derive from purchaseDate; units missing it default to ~1 year (annualize factor ≈ 1).
   const daysOwned = us.map((u) => u.purchaseDate ? Math.max(1, dayDiff(parseISO(u.purchaseDate), TODAY)) : 365);
   const avgDaysOwned = daysOwned.length ? daysOwned.reduce((a, b) => a + b, 0) / daysOwned.length : 365;
-  const lifetimeRoi = denom ? ((totalRev + (cat.bottomDollar || 0) * us.length) - denom) / denom : null;
+  // ROI needs a real ACQUISITION cost basis — repair cost alone is not an investment.
+  // Without a purchase cost (units with no trueCost/purchasePrice), revenue ÷ repair-only
+  // explodes to absurd %. Gate on `trueCost` (matches the §12.4 unit-level `invested ?`
+  // guard) so a category with no acquisition cost reads '—', not a fake 900,000%.
+  const lifetimeRoi = trueCost ? ((totalRev + (cat.bottomDollar || 0) * us.length) - denom) / denom : null;
   const roi = lifetimeRoi != null ? Math.round(lifetimeRoi * (365 / avgDaysOwned) * 100) : null;
   return {
     count: us.length,
@@ -1632,20 +1644,32 @@ function closeAll() { state.tabs = []; state.activeTabId = null; state.searchMod
    (slot buttons, window trigger) — the §18b sync persists mock records as-is. */
 
 /** Click a row → standard mode in that card (push back-stack). §0.2 */
+// #227 (Jac 2026-06-23) — a bare "+New Rental/Invoice" click used to mint a mock draft
+// AND write it straight to the Sheet (reindex/logAction → saveSoon), so an abandoned
+// empty Quote left junk behind (no nav = no #8 sweep, but the 1.2s save already fired).
+// This predicate is the single source of truth for "content-free throwaway draft": such
+// records self-destruct on navigation (#8 sweep below) AND are held out of the §18b sync
+// (computeChanges) so they never reach the backend until they earn real content.
+function isEmptyMockDraft(card, rec) {
+  if (!rec || !rec.mock) return false;
+  if (card === 'invoices') return !(rec.lineItems || []).length && !(Number(rec.amountPaid) || 0);
+  if (card === 'rentals')  return !(rentalUnits(rec) || []).length && !rec.customerId && !rec.startDate && !rec.invoiceId;
+  return false;
+}
 // #8 — an abandoned empty draft self-destructs the moment you leave it: a mock invoice
 // with no line items, or a mock rental still totally blank. keepId = the record you're
 // navigating TO (never swept). Called from every record-open + anchor. Jac 2026-06-13.
 function sweepEmptyDrafts(keepId) {
   for (let i = DATA.invoices.length - 1; i >= 0; i--) {
     const inv = DATA.invoices[i];
-    if (inv.mock && inv.invoiceId !== keepId && !(inv.lineItems || []).length && !(Number(inv.amountPaid) || 0)) {
+    if (inv.invoiceId !== keepId && isEmptyMockDraft('invoices', inv)) {
       (inv.rentalIds || []).forEach((rid) => { const r = IDX.rental.get(rid); if (r && r.invoiceId === inv.invoiceId) r.invoiceId = ''; });
       IDX.invoice.delete(inv.invoiceId); DATA.invoices.splice(i, 1);
     }
   }
   for (let i = DATA.rentals.length - 1; i >= 0; i--) {
     const r = DATA.rentals[i];
-    if (r.mock && r.rentalId !== keepId && !(rentalUnits(r) || []).length && !r.customerId && !r.startDate && !r.invoiceId) {
+    if (r.rentalId !== keepId && isEmptyMockDraft('rentals', r)) {
       IDX.rental.delete(r.rentalId); DATA.rentals.splice(i, 1);
     }
   }
@@ -1702,7 +1726,7 @@ function cardRecordAt(target) {
 // the prior view so the Back chevron can return to it.
 function cardToList(card) {
   const cs = activeSession().cards[card]; if (!cs) return;   // 'calendar' has no card state → no-op
-  if (cs.mode === 'standard' && cs.recId != null) { pushCardHistory(cs); cs.mode = 'list'; cs.recId = null; cs.recType = null; render(); return; }
+  if (cs.mode === 'standard' && cs.recId != null) { pushCardHistory(cs); cs.mode = 'list'; cs.recId = null; cs.recType = null; sweepEmptyDrafts(); render(); return; }   // #8 — click-away from a record drops any abandoned empty draft
   cs.mode = 'list'; render();
 }
 // Double right-click = drop the session's anchor entirely (anchor-less = no cascade).
@@ -1711,6 +1735,7 @@ function clearAnchor() {
   if (!s.anchor) return;
   s.anchor = null; s.cascade = null;
   for (const c of GRID_CARDS) { const cs = s.cards[c.id]; cs.mode = 'list'; cs.recId = null; cs.recType = null; cs.backStack = []; cs.fwdStack = []; }
+  sweepEmptyDrafts();   // #8 — dropping the anchor leaves every record → sweep any abandoned empty draft
   render();
 }
 /* ── Per-card view history (Phase 1, Task 1) ───────────────────────────────────
@@ -1741,6 +1766,7 @@ function cardBack(card) {
     if (cs.mode === 'standard' && cs.recId != null) {
       cs.fwdStack.push(cardSnap(cs));
       cs.mode = 'list'; cs.recId = null; cs.recType = null; cs.graphView = false;
+      sweepEmptyDrafts();   // #8 — stepping back off a record sweeps any abandoned empty draft
       render();
     }
     return;
@@ -1748,6 +1774,7 @@ function cardBack(card) {
   cs.fwdStack.push(cardSnap(cs));
   applySnap(cs, cs.backStack.pop());
   if (cs.mode === 'standard' && cs.recId != null) ackComments(recOf(entityCardOf(card, cs.recType), cs.recId));
+  sweepEmptyDrafts(cs.recId);   // #8 — sweep the abandoned empty draft we stepped away from (keep the one we land on)
   render();
 }
 function cardFwd(card) {
@@ -2127,7 +2154,7 @@ function pageDefaultSlice(tab) {
     case 'requirements': return { key: 'rentalRules', value: {} };
     case 'layout': return { key: 'layout', value: { footers: {} } };
     case 'fields': return { key: 'customFields', value: { customers: [], units: [], rentals: [], invoices: [] } };
-    case 'inspections': return { key: 'inspections', value: Object.fromEntries((DATA.categories || []).map((c) => [c.categoryId, { required: false, items: [] }])) };
+    case 'inspections': return { key: 'inspections', value: Object.fromEntries([...new Set((DATA.categories || []).map((c) => inspFamilyKey(c)))].map((k) => [k, { required: false, items: [] }])) };
     default: return null;   // Logins / planned tabs have no resettable slice
   }
 }
@@ -2175,8 +2202,22 @@ const footerHidden = (card) => (layoutCfg().footers || {})[card] === 'off';
 // Admin-defined custom fields per entity (Settings → Custom Fields). Values live schema-less
 // on the record (rec.custom[fieldId]); an empty config means no extra fields anywhere.
 const customFieldsFor = (entity) => ((state.settings && state.settings.customFields) || {})[entity] || [];
-// Per-category inspection checklists (Settings → Inspections). Empty = today's quick Pass/Fail only.
-const inspectionCfg = (categoryId) => ((state.settings && state.settings.inspections) || {})[categoryId] || null;
+// Inspection checklists are keyed by EQUIPMENT FAMILY so one list covers the whole
+// family (Settings → Inspections): all *Excavator* categories share one, all
+// *Trailer* categories share one EXCEPT *Dump Trailer* (its own). Everything else
+// stays per-category (keyed by its own categoryId, so prior per-category configs are
+// unchanged). Empty = today's quick Pass/Fail only.
+function inspFamilyKey(cat) {
+  const n = ((cat && cat.name) || '').toLowerCase();
+  if (n.includes('excavator')) return 'fam:excavator';                              // incl. "Microexcavator"
+  if (n.includes('trailer')) return n.includes('dump') ? 'fam:trailer-dump' : 'fam:trailer';
+  return cat ? cat.categoryId : '';
+}
+const INSP_FAM_LABELS = { 'fam:excavator': 'Excavator', 'fam:trailer': 'Trailer', 'fam:trailer-dump': 'Dump Trailer' };
+const inspKeyOfCat = (categoryId) => inspFamilyKey(IDX.category.get(categoryId));
+const inspFamilyLabel = (key) => INSP_FAM_LABELS[key] || (IDX.category.get(key) ? IDX.category.get(key).name : key);
+const inspCfgByKey = (key) => ((state.settings && state.settings.inspections) || {})[key] || null;
+const inspectionCfg = (categoryId) => inspCfgByKey(inspKeyOfCat(categoryId));
 function checklistFor(unit) { const c = unit && inspectionCfg(unit.categoryId); return (c && Array.isArray(c.items) && c.items.length) ? c : null; }
 const checklistRequired = (unit) => { const c = checklistFor(unit); return !!(c && c.required); };
 const INSP_TYPES = ['toggle','file','select','number','date','text'];
@@ -2355,22 +2396,25 @@ function ensureCfDraft(o, entity) {
   if (!o.draftSettings.customFields[entity]) o.draftSettings.customFields[entity] = JSON.parse(JSON.stringify(customFieldsFor(entity)));
   return o.draftSettings.customFields[entity];
 }
-function ensureInspDraft(o, catId) {
+function ensureInspDraft(o, key) {   // key = an inspFamilyKey (family or ungrouped categoryId)
   o.draftSettings = o.draftSettings || {};
   o.draftSettings.inspections = o.draftSettings.inspections || {};
-  if (!o.draftSettings.inspections[catId]) { const cur = inspectionCfg(catId); o.draftSettings.inspections[catId] = cur ? JSON.parse(JSON.stringify(cur)) : { required: false, items: [] }; }
-  return o.draftSettings.inspections[catId];
+  if (!o.draftSettings.inspections[key]) { const cur = inspCfgByKey(key); o.draftSettings.inspections[key] = cur ? JSON.parse(JSON.stringify(cur)) : { required: false, items: [] }; }
+  return o.draftSettings.inspections[key];
 }
-function draftInspCfg(o, catId) {
-  return (o.draftSettings && o.draftSettings.inspections && o.draftSettings.inspections[catId]) || inspectionCfg(catId) || { required: false, items: [] };
+function draftInspCfg(o, key) {
+  return (o.draftSettings && o.draftSettings.inspections && o.draftSettings.inspections[key]) || inspCfgByKey(key) || { required: false, items: [] };
 }
 function settingsInspectionsPane(o) {
   const cats = DATA.categories || [];
-  const catId = o.inspCat || (cats[0] && cats[0].categoryId) || '';
-  o.inspCat = catId;
-  const pick = cats.map((c) => { const cfg = draftInspCfg(o, c.categoryId); const tag = (cfg.items && cfg.items.length) ? (cfg.required ? ' ●' : ' ○') : ''; return `<button class="set-pick js-insp-cat${c.categoryId === catId ? ' on' : ''}" data-cat="${esc(c.categoryId)}">${esc(c.name)}${tag}</button>`; }).join('');
-  const cfg = draftInspCfg(o, catId);
-  const cat = IDX.category.get(catId);
+  const fams = []; const seen = new Set();
+  cats.forEach((c) => { const k = inspFamilyKey(c); if (!seen.has(k)) { seen.add(k); fams.push(k); } });
+  const famKey = (o.inspFam && seen.has(o.inspFam)) ? o.inspFam : (fams[0] || '');
+  o.inspFam = famKey;
+  const pick = fams.map((k) => { const c = draftInspCfg(o, k); const tag = (c.items && c.items.length) ? (c.required ? ' ●' : ' ○') : ''; return `<button class="set-pick js-insp-cat${k === famKey ? ' on' : ''}" data-cat="${esc(k)}">${esc(inspFamilyLabel(k))}${tag}</button>`; }).join('');
+  const cfg = draftInspCfg(o, famKey);
+  const famLabel = inspFamilyLabel(famKey);
+  const memberCount = cats.filter((c) => inspFamilyKey(c) === famKey).length;
   const items = cfg.items || [];
   const inspDraft = o.inspDraft && typeof o.inspDraft === 'object' ? o.inspDraft : { label: '', type: 'toggle', required: false, options: [] };
   const rows = items.length ? items.map((it) => {
@@ -2387,7 +2431,7 @@ function settingsInspectionsPane(o) {
     } else desc = t;
     return `<div class="rule-row">
       <div class="rule-main"><span class="rule-label">${esc(it.label)}</span><span class="rule-desc">${desc}</span></div>
-      <button class="so-reset js-insp-remove" data-cat="${esc(catId)}" data-id="${esc(it.id)}" data-tip="Remove item">${I.x}</button>
+      <button class="so-reset js-insp-remove" data-cat="${esc(famKey)}" data-id="${esc(it.id)}" data-tip="Remove item">${I.x}</button>
     </div>`;
   }).join('') : '<p class="set-note">No checklist items yet — add the things to inspect below.</p>';
   const optWell = inspDraft.type === 'select' ? `<div class="insp-opt-well">
@@ -2395,9 +2439,10 @@ function settingsInspectionsPane(o) {
     <div style="display:flex;align-items:center;gap:8px;margin-top:6px"><input class="co-in js-insp-opt-label" placeholder="New option (e.g. Bald)" value="${esc(inspDraft.optLabel || '')}" autocomplete="off" />${addBtn('Option', { js: 'js-insp-opt-add', line: true })}</div>
   </div>` : '';
   return `
-    <div class="set-pane-head"><h4>Inspections</h4><p>Build a checklist per category. When a category's checklist is <strong>Required</strong>, starting an inspection on one of its units opens a full-screen checklist that must be completed — any Toggle Fail or flagged Dropdown selection trips the existing failed-inspection work order.</p></div>
+    <div class="set-pane-head"><h4>Inspections</h4><p>Build a checklist per equipment type. When a type's checklist is <strong>Required</strong>, starting an inspection on one of its units opens a full-screen checklist that must be completed — any Toggle Fail or flagged Dropdown selection trips the existing failed-inspection work order.</p></div>
     <div class="set-picker">${pick}</div>
-    <div class="rule-row" style="margin-bottom:10px"><div class="rule-main"><span class="rule-label">Require a checklist for ${esc(cat ? cat.name : 'this category')}</span><span class="rule-desc">On = +Inspection takes over the sheet until every item is checked.</span></div>${segCtl([{ label: 'Off', js: 'js-insp-req', data: { cat: catId, v: '0' }, on: cfg.required ? null : 'gray' }, { label: 'Required', js: 'js-insp-req', data: { cat: catId, v: '1' }, on: cfg.required ? 'red' : null }])}</div>
+    ${memberCount > 1 ? `<p class="set-note">Shared by all ${memberCount} ${esc(famLabel)} categories — edit once, applies to every one.</p>` : ''}
+    <div class="rule-row" style="margin-bottom:10px"><div class="rule-main"><span class="rule-label">Require a checklist for ${esc(famLabel)}</span><span class="rule-desc">On = +Inspection takes over the sheet until every item is checked.</span></div>${segCtl([{ label: 'Off', js: 'js-insp-req', data: { cat: famKey, v: '0' }, on: cfg.required ? null : 'gray' }, { label: 'Required', js: 'js-insp-req', data: { cat: famKey, v: '1' }, on: cfg.required ? 'red' : null }])}</div>
     <div class="rule-list">${rows}</div>
     <div class="cf-add">
       <input class="co-in js-insp-label" placeholder="New checklist item (e.g. Hydraulics — no leaks)" value="${esc(inspDraft.label || '')}" autocomplete="off" />
@@ -2901,6 +2946,7 @@ const RULE_META = {
   R22: ['Date picker', 'dateField', 'the ONE app-styled calendar for a single date/time (NOT the rental-window timeline)'],
   R23: ['Tooltip', 'data-tip → the one styled tip', 'every hover hint goes through data-tip — a native title attribute is a violation'],
   R24: ['Close ✕', 'closeX', 'red circle · white ✕ — the deliberate close/remove; hover-reveal variant on tabs'],
+  R25: ['Sync banner', 'renderSyncBanner / #sync-banner', 'persistent “Not saving” plate — red hazard-stripe danger cap; raised when the backend sync is failing, hides on recovery. The ONE non-toast alert; lives on <body>, outside #app'],
 };
 /* ════════════ DESIGN-SYSTEM CATALOG — the tabbed Rulebook (Jac 2026-06-14) ════
    The Rulebook grew from "stamped element rules" (R0–R24 above) into the WHOLE
@@ -3026,7 +3072,7 @@ const RB_TABS = [
   { id: 'upload', label: 'Upload & Capture', intro: 'Add-file zones and photo/site captures.',
     items: [{ r: 'R21' }, { f: 'upload-capture' }] },
   { id: 'data', label: 'Data & Behaviors', intro: 'Visualizations, plus the app’s behaviors — it flashes instead of erroring, right-clicks, tooltips, and self-lints.',
-    items: [{ r: 'R16' }, { r: 'R15' }, { r: 'R13' }, { f: 'data-kpi' }, { f: 'data-gauge' }, { r: 'R19' }, { r: 'R20' }, { r: 'R23' }, { f: 'behavior-preview' }, { r: 'R0' }] },
+    items: [{ r: 'R16' }, { r: 'R15' }, { r: 'R13' }, { f: 'data-kpi' }, { f: 'data-gauge' }, { r: 'R19' }, { r: 'R25' }, { r: 'R20' }, { r: 'R23' }, { f: 'behavior-preview' }, { r: 'R0' }] },
   { id: 'windows', label: 'Windows', intro: 'Every pop-up window in the app, by kind. Expand one for a live preview, its fields, and a copy-paste edit reference — your map to wrangle any screen.', items: [] },
 ];
 /* structural fallbacks so hovering containers also names their rule */
@@ -3918,6 +3964,15 @@ function woBackdrop(w) {
   for (const li of (w.lineItems || [])) if (li.photo) return li.photo;
   return '';
 }
+/** A WO left OPEN past the data-discipline window with no parts/labor entered yet: its
+ *  $0 repair cost is MISSING DATA, not "no repairs", so it must never roll up as a
+ *  finished, zero-cost job (the Asset-Mgr lens wants data-completeness visible). Window
+ *  = 30d, per finding G5. */
+const STALE_WO_DAYS = 30;
+function woStaleEmpty(w) {
+  return !w.cancelled && w.phase !== 'Complete' && !(w.lineItems || []).length
+    && !!w.date && dayDiff(parseISO(w.date), TODAY) > STALE_WO_DAYS;
+}
 function woSectionHtml(w) {
   const bn = woBottleneck(w);
   const secColor = bn.color === 'red' ? 'red' : bn.color === 'green' ? 'green' : 'yellow';
@@ -3940,9 +3995,17 @@ function woSectionHtml(w) {
     return `<div class="woline">${gatePillRaw(lbl, ph.color, 'js-wophase-line', { rec: w.woId, idx })}<span class="js-partedit" data-rec="${w.woId}" data-idx="${idx}" style="cursor:pointer"${tip ? ` data-tip="${esc(tip)}"` : ''}>${li.aiPending ? '✨ ' : ''}${esc(li.part)}${ven ? ' ' + linkName(ven.name, { js: 'js-vendor-open', data: { rec: ven.vendorId } }) : ''}</span><span class="nums"><b>${money(li.cost)}</b><span>${li.hours || 0}h</span></span></div>`;
   }).join('');
   const woBg = woBackdrop(w);
+  // R9b: a WO left open past the window with NO parts/labor reads $0 by omission, not by
+  // fact — pulse a caution in place of the plain opened-date flag so the empty repair-cost
+  // rollup is never mistaken for a finished job.
+  const stale = woStaleEmpty(w);
+  const staleTip = stale ? `Open ${dayDiff(parseISO(w.date), TODAY)} days (since ${fmtShortDate(w.date)}) with no parts or labor entered — repair cost reads $0 until you add a line item.` : '';
+  const dateFlag = stale
+    ? flagEl('No lines', 'yellow', { alert: true, title: staleTip })
+    : flagEl(fmtShortDate(w.date), 'gray');
   return `<div class="section sec-${secColor} wo-${w.woId}${woBg ? ' has-photo' : ''}" data-wo="${w.woId}">${woBg ? `<div class="sec-photo" style="--photo:url('${esc(woBg)}')"></div>` : ''}
     <h4 class="h-name"><span style="font-weight:800;margin-right:1px">WO:</span> <span class="inline-edit" data-edit="field" data-card="workOrders" data-field="woReport" data-rec="${w.woId}" data-ph="Report">${esc(w.woReport)}</span>
-      <span class="right">${flagsStack([typeFlag, flagEl(fmtShortDate(w.date), 'gray')], 24)}</span></h4>
+      <span class="right">${flagsStack([typeFlag, dateFlag], 24)}</span></h4>
     <div class="wototals">${addBtn('Part/Task', { anchor: true, js: 'js-add-part', h: 26, data: { rec: w.woId } })}<span class="derived">${money(parts)} parts + ${hrs} hrs</span></div>
     ${lines || '<div class="kv"><span class="muted" style="font-size:12px">No line items yet</span></div>'}
     <div class="wofoot">
@@ -4248,9 +4311,14 @@ const DETAIL = {
           const voided = unitVoided(r, eu);
           const multi = units.length > 1;
           const up = unitRentalPrice(r, eu.unitId);
+          // §10 quote-time guard: a category with no rates billing $0 would quote a
+          // free rental — flag it loudly (yellow caution, click → fix the category).
+          const noRates = !voided && catRatesUnset(IDX.category.get(u.categoryId))
+            ? flagEl('No rates', 'yellow', { icon: CARD_ICON.categories, card: 'categories', recId: u.categoryId, alert: true, title: 'This category has no day / 7-day / 4-week rate — it bills $0. Set its rates before quoting.' })
+            : '';
           return `<div class="stall${voided ? ' voided' : ''}">
             <div class="stall-head">
-              <div class="stall-id">${unitPill(u.unitId, { x: 'unit-remove', xData: u.unitId })}${dPill(insp.label, insp.color, { card: 'units', recId: u.unitId, icon: CARD_ICON.inspections })}${multi ? unitStatusGate(r, eu) : ''}</div>
+              <div class="stall-id">${unitPill(u.unitId, { x: 'unit-remove', xData: u.unitId })}${dPill(insp.label, insp.color, { card: 'units', recId: u.unitId, icon: CARD_ICON.inspections })}${noRates}${multi ? unitStatusGate(r, eu) : ''}</div>
               <span class="stall-right">${multi ? `<button class="stall-split js-split-open" data-rec="${esc(r.rentalId)}" data-unit="${esc(u.unitId)}" data-tip="Give ${esc(u.name)} its own dates — splits to a separate rental on the same invoice"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>dates</button>` : ''}<span class="stall-amt">${money(up ? up.price : 0)}</span></span>
             </div>
             ${stallRouteHtml(r, eu)}
@@ -6332,6 +6400,8 @@ function chatStartFromDrop(p) {
   let tag;
   if (p.chatEl) tag = { id: p.chatEl.id || ('TAG' + (state.seq++)), label: p.chatEl.label, color: p.chatEl.color || 'gray', ref: p.chatEl.ref || null };
   else { const ec = p.entity, rec = p.rec; const label = ROW_META[ec] ? ROW_META[ec](rec).title : (idOf(ec, rec) || 'Item'); const m = commentMarker(rec); tag = { id: 'TAG:' + ec + ':' + p.id, label, color: m ? m.color : 'gray', ref: { card: ec, recId: p.id } }; }
+  // Dedup like startChatFromEl: a record/element already has a chat → REOPEN it, never spin a duplicate thread.
+  if (tag.ref) { const existing = chatsTagging(tag.ref.card, tag.ref.recId)[0]; if (existing) return openChat(existing.id, `Reopened the chat on this ${SINGULAR[tag.ref.card] || 'record'}.`); }
   newChat(tag); state.chat.open = true; render();
   toast(`New chat started from “${tag.label}”.`);
 }
@@ -7119,9 +7189,10 @@ function syncBackGuard() {
 }
 
 function renderOverlay() {
+  hideTip(); hideHoverPreview();   // the body-level singletons don't get a mouseout when this swap orphans the hovered node — dismiss them like render() does, so a tip can't bleed across a popup switch/close
   syncBackGuard();
   const root = $('#overlay-root');
-  if (_ovLastKind) { const _pb = root.querySelector('.popup-body'); if (_pb) _ovScroll[_ovLastKind] = _pb.scrollTop; }
+  if (_ovLastKind) { const _pb = root.querySelector('.set-pane') || root.querySelector('.popup-body'); if (_pb) _ovScroll[_ovLastKind] = _pb.scrollTop; }   // .set-pane is the settings scroller; .popup-body for the rest
   destroyCardElement();        // any re-render/overlay-switch tears down a mounted Stripe element
   root.innerHTML = '';
   if (!state.overlay) { _ovLastKind = null; return; }
@@ -7130,7 +7201,7 @@ function renderOverlay() {
   overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) closeOverlay(); });
   if (buildPopupEl(o, overlay) === false) { state.overlay = null; return; }
   root.appendChild(overlay);
-  { const _nb = overlay.querySelector('.popup-body'); if (_nb && _ovScroll[o.kind]) _nb.scrollTop = _ovScroll[o.kind]; }   // restore scroll on a same-overlay re-render (sign/selfie no longer jump to top)
+  { const _nb = overlay.querySelector('.set-pane') || overlay.querySelector('.popup-body'); if (_nb && _ovScroll[o.kind]) _nb.scrollTop = _ovScroll[o.kind]; }   // restore scroll on a same-overlay re-render (settings pane / sign / selfie no longer jump to top)
   _ovLastKind = o.kind;
   if (o.kind === 'partform') document.querySelector('.overlay .js-pf2-desc')?.focus();   // Jac: Part/Task field focused by default
   if (o.kind === 'newCustomer') setupSignaturePad();
@@ -7224,6 +7295,7 @@ function buildPopupEl(o, overlay, opts = {}) {
       R23: '<span class="pill c-gray" data-tip="The one styled tip"><span class="t">hover me</span></span>',
     };
     EX.R21 = fileDrop('Add File', { icon: I.box });
+    EX.R25 = '<span style="position:relative;display:inline-flex;align-items:center;gap:9px;padding:8px 12px;background:var(--panel);border:1px solid var(--line);border-radius:9px;overflow:hidden;max-width:360px"><span style="position:absolute;top:0;left:0;right:0;height:3px;background:repeating-linear-gradient(135deg,var(--red) 0 13px,#14181d 13px 26px)"></span><span style="font-family:\'Saira Condensed\',system-ui,sans-serif;text-transform:uppercase;letter-spacing:1.4px;font-weight:800;font-size:12px;color:var(--red);white-space:nowrap">⚠ Not saving</span><span style="font-size:11px;color:var(--txt-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">changes held, retrying…</span></span>';
     // ── tabbed render — a row builder per kind, then just the active tab's items ──
     const ruleRow = (r) => {
       const m = RULE_META[r]; if (!m) return '';
@@ -7393,7 +7465,7 @@ function buildPopupEl(o, overlay, opts = {}) {
     const lines = role.kpis.map((k, i) => {
       const raw = vals[i];
       const b = bandColor(raw == null ? 0 : raw);
-      const valTxt = raw == null ? '<span class="muted">— backend</span>' : `<span style="color:var(--${b.color})">${raw}%</span>`;
+      const valTxt = raw == null ? '<span class="muted">Coming soon</span>' : `<span style="color:var(--${b.color})">${raw}%</span>`;
       return `<div class="kpi-line" data-tip="${esc(KPI_HELP[k] || '')}"><span class="ring-no" style="border-color:var(--${raw == null ? 'line' : b.color});color:var(--${raw == null ? 'txt-3' : b.color})">${i + 1}</span><span class="k-name">${esc(k)}<span class="muted" style="font-size:10px;margin-left:6px">${ringTag[i]}</span></span><span class="k-val">${valTxt}</span></div>`;
     }).join('');
     const pop = el('div', 'popup kpi-popup');
@@ -9851,14 +9923,14 @@ function onClick(e) {
   if (closest('.js-cf-add')) { e.stopPropagation(); const o = state.overlay; if (!o) return; const lblEl = document.querySelector('.settings-popup .js-cf-label'); const label = (o.cfDraft && o.cfDraft.label || (lblEl ? lblEl.value : '')).trim(); if (!label) { if (lblEl) { lblEl.focus(); } toast('Give the field a label first.'); return; } const fields = ensureCfDraft(o, o.cfEntity || 'customers'); fields.push({ id: cfSlug(label), label, type: (o.cfDraft && o.cfDraft.type) || 'text', required: !!(o.cfDraft && o.cfDraft.required) }); o.cfDraft = { label: '', type: 'text', required: false }; renderOverlay(); return; }
   if (closest('.js-cf-remove')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-cf-remove'); if (o) { const fields = ensureCfDraft(o, b.dataset.ent); const i = fields.findIndex((f) => f.id === b.dataset.id); if (i >= 0) fields.splice(i, 1); renderOverlay(); } return; }
   // Inspections tab
-  if (closest('.js-insp-cat')) { e.stopPropagation(); const o = state.overlay; if (o) { o.inspCat = closest('.js-insp-cat').dataset.cat; renderOverlay(); } return; }
+  if (closest('.js-insp-cat')) { e.stopPropagation(); const o = state.overlay; if (o) { o.inspFam = closest('.js-insp-cat').dataset.cat; renderOverlay(); } return; }
   if (closest('.js-insp-req')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-insp-req'); if (o) { ensureInspDraft(o, b.dataset.cat).required = b.dataset.v === '1'; renderOverlay(); } return; }
   if (closest('.js-insp-type')) { e.stopPropagation(); const o=state.overlay; if(o){ o.inspDraft={...(o.inspDraft||{label:'',required:false,options:[]}), type: closest('.js-insp-type').dataset.type}; if(o.inspDraft.type!=='select'){} renderOverlay(); } return; }
   if (closest('.js-insp-itemreq')) { e.stopPropagation(); const o=state.overlay; if(o){ o.inspDraft={...(o.inspDraft||{}), required: closest('.js-insp-itemreq').dataset.v==='1'}; renderOverlay(); } return; }
   if (closest('.js-insp-opt-add')) { e.stopPropagation(); const o=state.overlay; if(!o)return; const inp=document.querySelector('.settings-popup .js-insp-opt-label'); const lbl=((o.inspDraft&&o.inspDraft.optLabel)|| (inp?inp.value:'')).trim(); if(!lbl){ if(inp)inp.focus(); toast('Type an option first.'); return; } o.inspDraft.options=o.inspDraft.options||[]; o.inspDraft.options.push({label:lbl, fail:false}); o.inspDraft.optLabel=''; renderOverlay(); return; }
   if (closest('.js-insp-opt-remove')) { e.stopPropagation(); const o=state.overlay, b=closest('.js-insp-opt-remove'); if(o&&o.inspDraft&&o.inspDraft.options){ o.inspDraft.options.splice(Number(b.dataset.i),1); renderOverlay(); } return; }
   if (closest('.js-insp-opt-fail')) { e.stopPropagation(); const o=state.overlay, b=closest('.js-insp-opt-fail'); if(o&&o.inspDraft&&o.inspDraft.options){ const op=o.inspDraft.options[Number(b.dataset.i)]; if(op) op.fail = b.dataset.v==='1'; renderOverlay(); } return; }
-  if (closest('.js-insp-add')) { e.stopPropagation(); const o=state.overlay; if(!o)return; const d=o.inspDraft||{label:'',type:'toggle',required:false,options:[]}; const el2=document.querySelector('.settings-popup .js-insp-label'); const label=((d.label!=null?d.label:(el2?el2.value:''))||'').trim(); if(!label){ if(el2)el2.focus(); toast('Type a checklist item first.'); return; } const type=d.type||'toggle'; if(type==='select' && !((d.options||[]).length)){ toast('Add at least one dropdown option.'); return; } const cfg=ensureInspDraft(o, o.inspCat); cfg.items=cfg.items||[]; const item={ id:'ck_'+(label.toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'')||'item')+'_'+Math.random().toString(36).slice(2,5), label, type }; if(type!=='toggle') item.required=!!d.required; if(type==='select') item.options=(d.options||[]).map((op)=>({label:op.label, fail:!!op.fail})); cfg.items.push(item); o.inspDraft={label:'',type:'toggle',required:false,options:[]}; renderOverlay(); return; }
+  if (closest('.js-insp-add')) { e.stopPropagation(); const o=state.overlay; if(!o)return; const d=o.inspDraft||{label:'',type:'toggle',required:false,options:[]}; const el2=document.querySelector('.settings-popup .js-insp-label'); const label=((d.label!=null?d.label:(el2?el2.value:''))||'').trim(); if(!label){ if(el2)el2.focus(); toast('Type a checklist item first.'); return; } const type=d.type||'toggle'; if(type==='select' && !((d.options||[]).length)){ toast('Add at least one dropdown option.'); return; } const cfg=ensureInspDraft(o, o.inspFam); cfg.items=cfg.items||[]; const item={ id:'ck_'+(label.toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'')||'item')+'_'+Math.random().toString(36).slice(2,5), label, type }; if(type!=='toggle') item.required=!!d.required; if(type==='select') item.options=(d.options||[]).map((op)=>({label:op.label, fail:!!op.fail})); cfg.items.push(item); o.inspDraft={label:'',type:'toggle',required:false,options:[]}; renderOverlay(); return; }
   if (closest('.js-insp-remove')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-insp-remove'); if (o) { const cfg = ensureInspDraft(o, b.dataset.cat); cfg.items = (cfg.items || []).filter((it) => it.id !== b.dataset.id); renderOverlay(); } return; }
   if (closest('.js-nc-save')) { e.stopPropagation(); return saveNewCustomer(); }
   if (closest('.js-nc-acct')) { const b = closest('.js-nc-acct'); e.stopPropagation(); ncSyncInputs(); state.overlay.draft.accountType = b.dataset.val; renderOverlay(); return; }
@@ -11762,25 +11834,13 @@ async function saveCardFlow(btn) {
     c.stripeId = r.stripeId || c.stripeId;
     if (!Array.isArray(c.cards)) c.cards = [];
     const firstCard = customerCards(c).length === 0;
-    const newCardId = 'CARD-' + setupIntent.payment_method;   // #payment-card-picker — anchor to the globally-unique Stripe PM id (was 'CARD-'+state.seq, which reset per session and collided)
+    const newCardId = 'CARD-' + (state.seq++);
     // §7.1c a card lands IN PROGRESS — chargeable immediately, but the account can't go On Rent /
     // log deliveries until the card is COMPLETE (card + selfie + signature). Any selfie/signature
     // captured in this panel were held on c.pendingCapture and now saddle onto the new card.
-    const newCard = { id: newCardId, stripePmId: setupIntent.payment_method, fingerprint: s.card.fingerprint || '', brand: s.card.brand, last4: s.card.last4,
+    const newCard = { id: newCardId, stripePmId: setupIntent.payment_method, brand: s.card.brand, last4: s.card.last4,
       expMonth: s.card.expMonth, expYear: s.card.expYear, nickname: o.nickname || '', notes: '', isDefault: firstCard, status: 'active',
       selfie: '', driveSelfieUrl: '', draftSignature: null, agreements: [] };
-    // Stripe attaches the SAME physical card as a NEW pm every time it's saved (its own
-    // #1 multi-card gotcha — stripe-payments-demo#45). If this card's fingerprint matches
-    // one already on file, SUPERSEDE that entry in place — carry its signed agreement onto
-    // the fresh pm, retire the old pm — so one card never piles up as duplicate chips.
-    // No-op until the backend returns card.fingerprint; harmless before then.
-    const _dup = newCard.fingerprint ? customerCards(c).find((k) => k.fingerprint === newCard.fingerprint) : null;
-    if (_dup) {
-      newCard.agreements = _dup.agreements || []; newCard.selfie = _dup.selfie || ''; newCard.driveSelfieUrl = _dup.driveSelfieUrl || '';
-      newCard.isDefault = newCard.isDefault || _dup.isDefault;
-      _dup.status = 'removed';
-      if (backendPassword && _dup.stripePmId && _dup.stripePmId !== setupIntent.payment_method) backendCall('stripeRemoveCard', { customerId: c.customerId, paymentMethodId: _dup.stripePmId }).catch(() => {});
-    }
     c.cards.push(newCard);
     c.cardBrand = s.card.brand; c.cardLast4 = s.card.last4; c.cardExpMonth = s.card.expMonth; c.cardExpYear = s.card.expYear;   // legacy mirror (default card)
     saddlePendingCapture(c, newCard);                                                            // held selfie/signature → this card, then finalize if all three are present
@@ -12898,7 +12958,14 @@ async function backendCall(action, extra) {
   // text/plain avoids a CORS preflight that GAS web apps can't answer
   const payload = Object.assign({ action, password: backendPassword }, extra || {});
   const res = await fetch(BACKEND_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload) });
-  return res.json();
+  // A backend error page (GAS 500/quota/auth HTML) is NOT JSON — res.json() throws, callers
+  // catch it, and a real card/charge failure gets masked as a generic "Network error". Parse
+  // defensively and ALWAYS hand callers an {ok:false,error} they can map via friendlyPayErr,
+  // never a thrown exception. Never coerces a failure into a success. (#220 card-save pipeline)
+  const text = await res.text();
+  let body; try { body = JSON.parse(text); } catch { body = { ok: false, error: res.ok ? 'bad-json' : ('http-' + res.status) }; }
+  if (!res.ok && body && body.ok === undefined) body = { ok: false, error: 'http-' + res.status };
+  return body;
 }
 const dataSnapshot = () => { const s = {}; PERSIST_KEYS.forEach((k) => { s[k] = DATA[k] || []; }); return s; };
 async function loadFromBackend() {
@@ -12935,7 +13002,7 @@ function computeChanges() {
   PERSIST_KEYS.forEach((k) => {
     const idf = PERSIST_ID[k]; const prev = (lastSaved && lastSaved[k]) || new Map(); const seen = new Set();
     const ups = [];
-    (DATA[k] || []).forEach((r) => { const id = String(r[idf]); seen.add(id); const js = JSON.stringify(r); if (prev.get(id) !== js) ups.push({ id, js, rec: r }); });
+    (DATA[k] || []).forEach((r) => { const id = String(r[idf]); seen.add(id); if (isEmptyMockDraft(k, r)) return; const js = JSON.stringify(r); if (prev.get(id) !== js) ups.push({ id, js, rec: r }); });   // #227 — a content-free mock draft is held out of the sync until it earns content
     const dels = []; prev.forEach((_, id) => { if (!seen.has(id)) dels.push(id); });
     if (ups.length) { upserts[k] = ups; n += ups.length; }
     if (dels.length) { deletes[k] = dels; n += dels.length; }
@@ -13088,24 +13155,100 @@ async function loadWranglerRail() {
     if (localAhead) pushWranglerRailSoon(); else lastRailJson = JSON.stringify(state.wranglerRail);
   } catch (e) { /* offline → the refresh poll retries */ }
 }
-function saveSoon() { if (booting || !backendPassword) return; clearTimeout(saveTimer); saveTimer = setTimeout(flushSave, 1200); }
+function saveSoon(ms) { if (booting || !backendPassword) return; clearTimeout(saveTimer); saveTimer = setTimeout(flushSave, ms || 1200); }
+// #247 — sync-health. A failing backend sync used to be SILENT (savePending → flat
+// 1.2s retry, no signal), so writes vanished with no warning. Now: track consecutive
+// failures, retry with EXPONENTIAL BACKOFF, and once an outage is confirmed (≥2 in a
+// row — one transient blip self-recovers) raise the R25 "Not saving" banner until a
+// sync succeeds. The backend (doSync batched I/O + tryLock_→'busy') is the cure; this
+// is the safety net so a stuck write can never vanish quietly again.
+const SYNC = { failing: false, fails: 0, backoff: 1200 };
+function retrySyncNow() { clearTimeout(saveTimer); SYNC.backoff = 1200; flushSave(); }   // R25 "Retry now"
+// A Google Sheets cell is hard-capped at 50,000 chars; the backend writes each
+// record's full JSON into one cell, so an oversized record makes the write throw
+// and — with the all-or-nothing commit below — jams the WHOLE sync (#251). The
+// realistic bloat source is an inline base64 photo (~100KB–2MB) still riding an
+// inspection / WO-part record. Offload it to Drive BEFORE the JSON rides the
+// sync, the same treatment chat images already get (pushWranglerRail → 6212).
+async function offloadDirtyPhotos(upserts) {
+  if (!backendPassword) return;                 // demo/offline → can't offload; the size-guard below backstops
+  const jobs = [];
+  (upserts.inspections || []).forEach((u) => { const n = u.rec; if ((n.photo || '').startsWith('data:')) jobs.push(offloadPhotoNow(n, 'photo', 'insp_' + n.inspectionId, n, 'inspections')); });
+  (upserts.workOrders || []).forEach((u) => { const w = u.rec; (w.lineItems || []).forEach((li) => { if ((li.photo || '').startsWith('data:')) jobs.push(offloadPhotoNow(li, 'photo', 'wopart_' + w.woId + '_' + lineKey(li), w, 'workOrders')); }); });
+  if (jobs.length) { try { await Promise.all(jobs); } catch (e) {} }   // a failed offload leaves base64 → held back below, never poisons the batch
+}
+// Client-side fault isolation (#251): if a record is STILL over the cell cap after
+// offload (Drive upload failed, or non-photo bloat), hold it OUT of the batch so it
+// can't abort the sync for every other record. It stays dirty → retries; loud once.
+let _oversizeHeld = new Set();
+function holdOversized(upserts) {
+  const stillHeld = new Set();
+  Object.keys(upserts).forEach((k) => {
+    const keep = [];
+    upserts[k].forEach((u) => {
+      if (u.js.length > 49000) {
+        const tag = k + ':' + u.id; stillHeld.add(tag);
+        if (!_oversizeHeld.has(tag)) toast('⚠ A record is too large to sync (photo over the 50k cell limit) — held back so the rest save. Re-capture with a smaller photo, or reconnect to offload it to Drive.');
+      } else keep.push(u);
+    });
+    if (keep.length) upserts[k] = keep; else delete upserts[k];
+  });
+  _oversizeHeld = stillHeld;
+}
 async function flushSave() {
   if (saving) { savePending = true; return; }
   if (!lastSaved) return;                       // never loaded → nothing to diff against
-  const { upserts, deletes, n } = computeChanges();
+  let { upserts, deletes, n } = computeChanges();
   if (!n) return;                               // nothing changed
   saving = true;
+  await offloadDirtyPhotos(upserts);            // base64 photos → Drive before they can ride into a 50k cell (#251)
+  ({ upserts, deletes } = computeChanges());    // re-diff: offloaded records shrank to a ~60-byte URL
+  holdOversized(upserts);                        // keep any still-oversized record out of the batch (fault isolation)
+  if (!Object.keys(upserts).length && !Object.keys(deletes).length) { saving = false; if (savePending) { savePending = false; saveSoon(); } return; }
   const wireUp = {}; Object.keys(upserts).forEach((k) => { wireUp[k] = upserts[k].map((u) => u.rec); });
+  let ok = false;
   try {
     const r = await backendCall('sync', { upserts: wireUp, deletes });
     if (r && r.ok) {
       // Commit ONLY what we sent — edits made mid-flight stay dirty and re-flush.
       Object.keys(upserts).forEach((k) => upserts[k].forEach((u) => lastSaved[k].set(u.id, u.js)));
       Object.keys(deletes).forEach((k) => deletes[k].forEach((id) => lastSaved[k].delete(id)));
-    } else { savePending = true; }              // server error → retry
-  } catch (e) { savePending = true; }            // offline → retry on next change
+      ok = true;
+    }
+  } catch (e) { /* offline → handled below */ }
   saving = false;
-  if (savePending) { savePending = false; saveSoon(); }
+  if (ok) {
+    if (SYNC.failing) toast('Back online — changes saved.');   // recovered from an outage
+    SYNC.failing = false; SYNC.fails = 0; SYNC.backoff = 1200; renderSyncBanner();
+    if (savePending) { savePending = false; saveSoon(); }      // flush edits made mid-flight
+  } else {
+    savePending = false;                                       // the backoff timer owns the retry now
+    if (++SYNC.fails >= 2) SYNC.failing = true;                // confirmed outage → raise the banner
+    renderSyncBanner();
+    SYNC.backoff = Math.min(SYNC.backoff * 2, 30000);          // exponential, capped at 30s
+    saveSoon(SYNC.backoff);
+  }
+}
+// R25 — the "Not saving" plate. Mounts on <body> (OUTSIDE #app, like #toast / the drag
+// layer) so render() can't wipe it; flushSave drives it imperatively. Red hazard-stripe
+// danger signature; reserves a top band (body.sync-failing) so it never covers the grid.
+function renderSyncBanner() {
+  let el = document.getElementById('sync-banner');
+  if (!SYNC.failing) { if (el) el.classList.remove('show'); document.body.classList.remove('sync-failing'); return; }
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'sync-banner'; el.dataset.r = 'R25';
+    el.setAttribute('role', 'alert'); el.setAttribute('aria-live', 'assertive');
+    el.innerHTML =
+      '<span class="sb-stripe" aria-hidden="true"></span>' +
+      '<span class="sb-stamp">⚠ Not saving</span>' +
+      '<span class="sb-sub">Can’t reach the yard — your changes are held and keep retrying. Don’t close the app.</span>' +
+      actionPill('commit', 'Retry now');
+    el.querySelector('[data-r="R17"]').addEventListener('click', retrySyncNow);
+    document.body.appendChild(el);
+  }
+  document.body.classList.add('sync-failing');
+  requestAnimationFrame(() => el.classList.add('show'));
 }
 // Safety net: a debounced save that hasn't flushed yet — or a large bulk-import sync
 // still in flight — would be lost silently if the page closes/reloads first (#164).
@@ -13521,7 +13664,7 @@ function exposeTestApi() {
       latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore, wranglerRailLoad, wrOffloadChatImages, wrEvictChatBlobs, driveViewUrl, mergeWranglerRails,
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
-      companyRevenueGoal, companyName, companyTagline, rentalRuleBlock, dueForCustomer, footerHidden, customFieldsFor, checklistFor, checklistRequired, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, setRole: (r) => { currentRole = r || ''; render(); },
+      companyRevenueGoal, companyName, companyTagline, rentalRuleBlock, dueForCustomer, footerHidden, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, setRole: (r) => { currentRole = r || ''; render(); },
       openCustomerForm, renderOverlay, render, cardComplete, cardCaptureState, cardHasSelfie, cardHasSignature, captureSelfie, captureSignature, __state: state };   // UI drivers for headless screenshot/e2e tests
   } catch (e) { /* no window (non-browser) */ }
 }
