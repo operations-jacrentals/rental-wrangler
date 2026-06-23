@@ -1556,6 +1556,7 @@ select.inline-input:focus-visible { outline: 2px solid var(--accent); outline-of
 .co-fld { display: flex; flex-direction: column; gap: 3px; }
 .co-in { height: 34px; padding: 0 11px; border-radius: 9px; background: var(--bg-2); border: 1px solid var(--line); color: var(--txt); font-size: 13.5px; font-weight: 600; }
 .co-in:focus { outline: none; border-color: var(--accent-line); box-shadow: 0 0 0 3px var(--accent-soft); }
+.co-in-area { height: auto; min-height: 168px; padding: 10px 11px; line-height: 1.5; font-weight: 500; font-family: 'Geist', system-ui, sans-serif; resize: vertical; white-space: pre-wrap; }
 .co-goal-wrap { display: flex; align-items: center; gap: 0; background: var(--bg-2); border: 1px solid var(--line); border-radius: 9px; padding-left: 11px; }
 .co-goal-wrap:focus-within { border-color: var(--accent-line); box-shadow: 0 0 0 3px var(--accent-soft); }
 .co-goal-$ { font-family: 'Saira Condensed', system-ui, sans-serif; font-weight: 800; color: var(--txt-3); font-size: 15px; }
