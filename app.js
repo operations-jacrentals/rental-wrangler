@@ -12886,7 +12886,15 @@ async function backendCall(action, extra) {
   // text/plain avoids a CORS preflight that GAS web apps can't answer
   const payload = Object.assign({ action, password: backendPassword }, extra || {});
   const res = await fetch(BACKEND_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload) });
-  return res.json();
+  // GAS returns server-side failures (quota / auth / unhandled exception) as a NON-JSON
+  // HTML error page or a non-2xx status. The old `res.json()` THREW on those, so every
+  // backend/Stripe failure was caught upstream as a generic "Network error" — masking the
+  // real reason (#172-class card/charge failures). Parse defensively instead and hand the
+  // caller a clean { ok:false, error } so friendlyPayErr() can surface the actual cause.
+  const text = await res.text();
+  let body; try { body = JSON.parse(text); } catch { body = { ok: false, error: res.ok ? 'bad-json' : ('http-' + res.status) }; }
+  if (!res.ok && body && body.ok === undefined) body = { ok: false, error: 'http-' + res.status };
+  return body;
 }
 const dataSnapshot = () => { const s = {}; PERSIST_KEYS.forEach((k) => { s[k] = DATA[k] || []; }); return s; };
 async function loadFromBackend() {
