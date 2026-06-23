@@ -11767,7 +11767,12 @@ function setupPayAlloc() {
     const charge = body.querySelector('.js-alloc-charge');
     const btn = body.querySelector('.js-charge-invoice');
     if (counter) counter.innerHTML = after <= 0.005 ? `<b style="color:var(--good,#1a9f57)">Pays in full ✓</b>` : `Balance after <b>${money2(after)}</b>`;
-    if (charge) charge.innerHTML = pre > 0 ? `${money2(pre)}${tax ? ` + ${money2(tax)} tax` : ''} = <b>${money2(gross)}</b>` : '<span class="muted">nothing assigned</span>';
+    if (charge) {
+      if (pre <= 0) charge.innerHTML = '<span class="muted">nothing assigned</span>';
+      else { const lineGross = pre + tax;   // honest line total; gross caps at the remaining balance when a prior payment already covered part
+        const eq = `${money2(pre)}${tax ? ` + ${money2(tax)} tax` : ''} = <b>${money2(lineGross)}</b>`;
+        charge.innerHTML = lineGross > bal + 0.005 ? `${eq} · charge <b>${money2(gross)}</b> (balance)` : eq; }
+    }
     if (btn) { btn.disabled = !(gross > 0) || !!o.busy; if (!o.busy) btn.textContent = gross > 0 ? `Charge ${money2(gross)}` : 'Charge'; }
   };
   ins.forEach((inp) => inp.addEventListener('input', recompute));
