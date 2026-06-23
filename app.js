@@ -1669,6 +1669,15 @@ function anchorRecord(card, recId, recType) {
   // per-card searches (don't reset them).
   openInTab(card, recId, recType, { inheritFrom: activeSession() });
 }
+// Double-tap/dbl-click anchor TOGGLE (Jac): double-tapping the record that's already
+// THIS session's anchor drops the anchor (clearAnchor) instead of opening a duplicate
+// anchored tab. Any other record anchors as usual. Used by the gesture paths only —
+// the ⊞ button keeps its always-open-a-new-tab behavior.
+function anchorOrToggle(card, recId, recType) {
+  const a = activeSession().anchor;
+  if (a && a.card === card && String(a.recId) === String(recId) && (a.recType || null) === (recType || null)) return clearAnchor();
+  return anchorRecord(card, recId, recType);
+}
 
 /* Phase 1 shared path — freeze the current session and open card/recId in a NEW
    FOREGROUND tab. Serves anchor / global-search pick / standard-view overtake /
@@ -1904,7 +1913,7 @@ function rowOpen(card, recId, recType) {
 function deferOrAnchor(key, singleFn, anchor) {
   if (pendingRowClick && pendingRowClick.key === key) {
     clearTimeout(pendingRowClick.timer); pendingRowClick = null;
-    return anchorRecord(anchor.card, anchor.recId, anchor.recType);
+    return anchorOrToggle(anchor.card, anchor.recId, anchor.recType);   // 2nd tap on the anchored record un-anchors (toggle)
   }
   if (pendingRowClick) clearTimeout(pendingRowClick.timer);
   pendingRowClick = { key, timer: setTimeout(() => { pendingRowClick = null; singleFn(); }, DBL_MS) };
@@ -14728,9 +14737,9 @@ function boot() {
   document.addEventListener('dblclick', (e) => {
     if (hotkeyGuard(e)) return;
     if (e.target.closest('.row')) return;                 // rows are handled by the click discriminator (#10)
-    const r = cardRecordAt(e.target); if (!r) return;     // dbl-click on a card's open detail → anchor it
+    const r = cardRecordAt(e.target); if (!r) return;     // dbl-click on a card's open detail → anchor it (or un-anchor if it's already the anchor)
     e.preventDefault(); window.getSelection()?.removeAllRanges();
-    anchorRecord(r.card, r.recId, r.recType);
+    anchorOrToggle(r.card, r.recId, r.recType);
   });
   // right-click = send the card to its List View; double right-click = drop the anchor.
   document.addEventListener('contextmenu', (e) => {
