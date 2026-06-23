@@ -656,6 +656,8 @@ function buildIndexes() {
   // lowercased comprehensive search blobs per record (§5) — built via the single
   // searchBlob() source of truth so every field is searchable.
   IDX.search = new Map();
+  buildRentalLinkIndex();        // reverse unit/category → renters map (#267) — read by searchBlob() below
+  suppressLinkReindex = true;    // per-rental reindex must NOT trigger a full link rebuild during this bulk pass
   DATA.customers.forEach((c) => reindex('customers', c));
   DATA.rentals.forEach((r) => reindex('rentals', r));
   DATA.categories.forEach((c) => reindex('categories', c));
@@ -667,6 +669,31 @@ function buildIndexes() {
   DATA.expenses.forEach((x) => reindex('expenses', x)); // §7.11 v2 — receipts are globally searchable
   DATA.parts.forEach((p) => reindex('parts', p));        // §7.12 v2 — parts are searchable
   DATA.companyFiles.forEach((f) => reindex('files', f)); // §7.13 v2 — files are searchable
+  suppressLinkReindex = false;
+}
+/* §5 reverse denormalization (#267) — the forward rentals blob already embeds each
+   rental's unit + category NAMES; these are the mirror so a customer-name search
+   ALSO surfaces the Units & Categories that customer has rented (and a unit/category
+   search surfaces its renters). Rebuilt in one pass over DATA.rentals; the unit and
+   category blobs spread these Sets in searchBlob(). */
+let suppressLinkReindex = false;
+function buildRentalLinkIndex() {
+  IDX.unitRenters = new Map();
+  IDX.catRenters  = new Map();
+  DATA.rentals.forEach((r) => {
+    const cust = IDX.customer.get(r.customerId); if (!cust) return;
+    const tag = [cust.name, cust.company].filter(Boolean).join(' '); if (!tag) return;
+    rentalUnitIds(r).forEach((uid) => { let s = IDX.unitRenters.get(uid); if (!s) IDX.unitRenters.set(uid, s = new Set()); s.add(tag); });
+    if (r.categoryId) { let s = IDX.catRenters.get(r.categoryId); if (!s) IDX.catRenters.set(r.categoryId, s = new Set()); s.add(tag); }
+  });
+}
+/* a rental's links changed → rebuild the reverse map and refresh every unit +
+   category blob (small fixed sets, ~150 records, each now a map lookup) so renter
+   names stay current without tracking per-link add/remove. */
+function reindexRentalLinks() {
+  buildRentalLinkIndex();
+  DATA.units.forEach((u) => IDX.search.set('units:' + u.unitId, searchBlob('units', u)));
+  DATA.categories.forEach((c) => IDX.search.set('categories:' + c.categoryId, searchBlob('categories', c)));
 }
 const idOf   = (card, rec) => rec[{ customers: 'customerId', rentals: 'rentalId', categories: 'categoryId', units: 'unitId', invoices: 'invoiceId', workOrders: 'woId', inspections: 'inspectionId', serviceOrders: 'unitId', vendors: 'vendorId', parts: 'partId', expenses: 'expenseId', files: 'fileId' }[card]];
 const recOf  = (card, id) => ({ customers: IDX.customer, rentals: IDX.rental, categories: IDX.category, units: IDX.unit, invoices: IDX.invoice, workOrders: IDX.wo, inspections: IDX.insp, serviceOrders: IDX.unit, vendors: IDX.vendor, expenses: IDX.expense, parts: IDX.part, files: IDX.file }[card])?.get(id);
@@ -705,7 +732,8 @@ function searchBlob(card, rec) {
       break;
     }
     case 'categories':
-      p = [rec.name, rec.fuelType, rec.description, rec.notes];
+      p = [rec.name, rec.fuelType, rec.description, rec.notes,
+        ...(IDX.catRenters?.get(rec.categoryId) || [])];   // §5 reverse denorm (#267) — the customers who've rented this category
       break;
     case 'units':
       p = [rec.name, rec.assignedMechanic, rec.serial, rec.year, rec.make, rec.model, rec.weight,
@@ -713,7 +741,8 @@ function searchBlob(card, rec) {
         rec.inspectionStatus, L('unitInspectionStatus', rec.inspectionStatus),
         rec.fleetStatus, L('unitFleetStatus', rec.fleetStatus),
         rec.gpsStatus, L('gpsStatus', rec.gpsStatus), ca(rec.categoryId)?.name,
-        rec.washRequested ? 'Wash Requested wash' : ''];
+        rec.washRequested ? 'Wash Requested wash' : '',
+        ...(IDX.unitRenters?.get(rec.unitId) || [])];   // §5 reverse denorm (#267) — the customers who've rented this unit
       break;
     case 'invoices': {
       const cust = cu(rec.customerId); const t = invoiceTotals(rec);
@@ -757,7 +786,7 @@ function searchBlob(card, rec) {
 /** (Re)build a record's search blob in IDX.search. Call after any create/edit.
     Vendors are auto-created mid-session (savePartForm) with no IDX set at the
     call site, so reindex also keeps the IDX.vendor identity map in sync. */
-const reindex = (card, rec) => { const id = idOf(card, rec); if (id != null) { IDX.search.set(card + ':' + id, searchBlob(card, rec)); if (card === 'vendors') IDX.vendor.set(id, rec); if (card === 'expenses') IDX.expense.set(id, rec); if (card === 'parts') IDX.part.set(id, rec); if (card === 'files') IDX.file.set(id, rec); } saveSoon(); };
+const reindex = (card, rec) => { const id = idOf(card, rec); if (id != null) { IDX.search.set(card + ':' + id, searchBlob(card, rec)); if (card === 'vendors') IDX.vendor.set(id, rec); if (card === 'expenses') IDX.expense.set(id, rec); if (card === 'parts') IDX.part.set(id, rec); if (card === 'files') IDX.file.set(id, rec); } if (card === 'rentals' && !suppressLinkReindex) reindexRentalLinks(); saveSoon(); };
 
 /* ════════════════════════════════════════════════════════════════════════
    §3 DERIVATIONS (SPEC §10) — money, availability, statuses, countdowns
@@ -9927,20 +9956,21 @@ function onClick(e) {
   // trigger. (Drags never reach here — their trailing click is swallowed at 4925.)
   // §5.4d — the date-search picker closes on a click outside the calendar, the search
   // bars, and the date chips (so editing a chip keeps it open).
-  if (state.datesearch && !closest('.winpicker') && !closest('.searchwrap') && !closest('.mini-searchwrap') && !closest('.js-date-edit')) {
-    state.datesearch = null; render(); return;
-  }
-  if (state.winpicker
-      && !closest('.winpicker')
-      && !closest('.js-open-winpicker')
-      && !closest('.card[data-card="units"]')
-      && !closest('.card[data-card="categories"]')
-      && !closest('.card[data-card="customers"]')) {
+  // #263 — a non-modal picker (date-search or rental-window) dismisses ONLY on a click in
+  // genuine DEAD SPACE: not a card, the header, the bottom bar, or the picker itself. The
+  // old guards nulled the picker AND `return`ed on ANY click outside a narrow allow-list,
+  // so clicking a pill / row / button / link both vanished the picker AND swallowed that
+  // click (its own handler never ran). Mirror the §5.4 dead-space test (the `clearSearch`
+  // line below) so an interactive click keeps the picker's context and still fires — the
+  // picker stays open until true dead space. (Both floats render from state and re-render,
+  // and self-hide if their anchor scrolls off; the global search bar lives in `.header` and
+  // the per-card search/date chips live in `.card`, so the old datesearch exclusions hold.)
+  if (state.datesearch || state.winpicker) {
+    const pickerDeadSpace = !closest('.card') && !closest('.header') && !closest('.bottombar') && !closest('.winpicker');
+    if (state.datesearch && pickerDeadSpace) { state.datesearch = null; render(); return; }
     // Must always render or the float lingers as a dead, frozen overlay (state closed,
     // DOM open). Discards a fragile rental's staged change. Jac 2026-06-13.
-    state.winpicker = null;
-    render();
-    return;
+    if (state.winpicker && pickerDeadSpace) { state.winpicker = null; render(); return; }
   }
 
   // header / chrome
@@ -12703,7 +12733,9 @@ function addCustomLine(invoiceId, label, amount) {
   inv.lineItems.push({ kind: 'custom', ref: null, lid: lineLid(), label: label || 'Custom', amount });
   logAction(inv, `Added line: ${label || 'Custom'} (${money(amount)})`);
   toast(`Custom line added (${money(amount)}).`);
-  const session = activeSession(); if (session.anchor) setAnchor(session, session.anchor.card, session.anchor.recId, session.anchor.recType);
+  // plain render() — a custom line (kind 'custom', ref null) adds no cascade edge, so it
+  // must NOT re-anchor; setAnchor() here collapsed the open invoice back to the list (it
+  // reset every non-anchored card's recId), kicking you off the invoice. Matches addPartToWO.
   render();
 }
 /* Add a part / labor line to a work order; advances the WO phase sensibly. */
