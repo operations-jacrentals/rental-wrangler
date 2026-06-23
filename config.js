@@ -270,6 +270,7 @@ export const FLAG_META = {
     { id: 'action-required',   label: 'Action Required',   severity: 'yellow' },
     { id: 'check-in',          label: 'Due for Check-In',  severity: 'yellow' },
     { id: 'card-expiring',     label: 'Card Expiring',     severity: 'yellow' },
+    { id: 'no-card-reserved',  label: 'No Card',           severity: 'yellow' },
   ],
 };
 /** Severity rank for sorting/highest-wins. Higher = more severe. */
