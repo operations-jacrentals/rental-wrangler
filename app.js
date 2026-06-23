@@ -1684,7 +1684,7 @@ function cardRecordAt(target) {
 // the prior view so the Back chevron can return to it.
 function cardToList(card) {
   const cs = activeSession().cards[card]; if (!cs) return;   // 'calendar' has no card state → no-op
-  if (cs.mode === 'standard' && cs.recId != null) { pushCardHistory(cs); cs.mode = 'list'; cs.recId = null; cs.recType = null; render(); return; }
+  if (cs.mode === 'standard' && cs.recId != null) { pushCardHistory(cs); cs.mode = 'list'; cs.recId = null; cs.recType = null; sweepEmptyDrafts(); render(); return; }   // #8 — click-away from a record drops any abandoned empty draft
   cs.mode = 'list'; render();
 }
 // Double right-click = drop the session's anchor entirely (anchor-less = no cascade).
@@ -1693,6 +1693,7 @@ function clearAnchor() {
   if (!s.anchor) return;
   s.anchor = null; s.cascade = null;
   for (const c of GRID_CARDS) { const cs = s.cards[c.id]; cs.mode = 'list'; cs.recId = null; cs.recType = null; cs.backStack = []; cs.fwdStack = []; }
+  sweepEmptyDrafts();   // #8 — dropping the anchor leaves every record → sweep any abandoned empty draft
   render();
 }
 /* ── Per-card view history (Phase 1, Task 1) ───────────────────────────────────
@@ -1723,6 +1724,7 @@ function cardBack(card) {
     if (cs.mode === 'standard' && cs.recId != null) {
       cs.fwdStack.push(cardSnap(cs));
       cs.mode = 'list'; cs.recId = null; cs.recType = null; cs.graphView = false;
+      sweepEmptyDrafts();   // #8 — stepping back off a record sweeps any abandoned empty draft
       render();
     }
     return;
@@ -1730,6 +1732,7 @@ function cardBack(card) {
   cs.fwdStack.push(cardSnap(cs));
   applySnap(cs, cs.backStack.pop());
   if (cs.mode === 'standard' && cs.recId != null) ackComments(recOf(entityCardOf(card, cs.recType), cs.recId));
+  sweepEmptyDrafts(cs.recId);   // #8 — sweep the abandoned empty draft we stepped away from (keep the one we land on)
   render();
 }
 function cardFwd(card) {
