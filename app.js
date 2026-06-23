@@ -3978,7 +3978,7 @@ const ROWS = {
     const isMember = c.accountType === 'Member' || c.accountType === 'Business Member';
     const nameColor = (fc === 'red' || fc === 'yellow') ? `var(--${fc})` : fc === 'gray' ? 'var(--txt-3)' : (fc === 'green' && isMember) ? 'var(--green)' : 'var(--txt)';
     const acct = getStatus('customerAccountType', c.accountType || 'Non-Business');
-    const sub = [esc(c.phone || ''), c.accountType ? esc(acct.label) : ''].filter(Boolean).join(' · ');
+    const sub = c.phone ? esc(c.phone) : '';
 
     // Pay status AS A NUMBER (Jac — no "New Customer" text): owed balance → yellow before
     // its due date / red on-or-after; otherwise rolling-12-month spend → green.
