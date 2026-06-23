@@ -1,4 +1,4 @@
-/**
+﻿/**
  * app.js — Rental Wrangler application engine (SPEC v6)
  * ============================================================================
  * One normalized state object; one-way data flow (§2): UI renders from state →
@@ -17,12 +17,13 @@ import { createCascade } from './cascade.js';
 import { serviceOrdersForUnit, completeService, SERVICE_TASKS } from './service-countdown.js';
 import * as CFG from './config.js';
 import { AGREEMENTS, AGREEMENT_VERSIONS, AGREEMENT_CURRENT } from './agreements.js';
-import { ico, I, CARD_ICON, RING_ICON } from './icons.js';
+import { ico, I, CARD_ICON, RING_ICON, CATEGORY_ICON } from './icons.js';
 import {
   getStatus, STATUS, ROLES, GRID_CARDS, BACKOFFICE_BOARDS, SORT_FIELDS,
   SHOP_TYPES, SHOP_SEGMENTS, COLUMNS, COLUMN_OF,
   legacyTransportPrice, computeTransportPrice, isFueledType, legsForType, YARD_ORIGIN, GOOGLE_MAPS_KEY,
   fmtWindow, fmtShortDate, showsTruck, parseISO, TODAY_ISO, invoiceShort, TRANSPORT_MAP,
+  FLAG_META, FLAG_SEVERITY_RANK,
 } from './config.js';
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -111,6 +112,24 @@ function migrateCustomers() {
       }
       migrationDirty = true;
     }
+    // REPAIR colliding card ids (#payment-card-picker). New cards were id'd
+    // 'CARD-' + state.seq, but state.seq resets to 1 EVERY session (it's never seeded
+    // from existing cards), so two cards added in different sessions both became
+    // 'CARD-1'. A shared id broke every id-keyed path — the picker marked BOTH cards
+    // selected, and the charge / delete / set-default / per-card SIGNING lookups
+    // (.find by id) always hit the FIRST match. Give every card a unique, stable id
+    // (anchored to its globally-unique Stripe PM id where present) so each is distinct.
+    (function () {
+      const used = new Set();
+      c.cards.forEach((k) => {
+        if (!k.id || used.has(k.id)) {
+          let id = k.stripePmId ? ('CARD-' + k.stripePmId) : ('CARD-' + c.customerId + '-' + (k.last4 || 'x'));
+          let n = 2; while (!id || used.has(id)) id = 'CARD-' + c.customerId + '-' + (k.last4 || 'x') + '-' + (n++);
+          k.id = id; migrationDirty = true;
+        }
+        used.add(k.id);
+      });
+    })();
     // Card-bound agreements: each card carries an APPEND-ONLY array of immutable
     // signing records (the agreement is attached to the CARD, signed per account
     // type, frozen at signing). Fold the legacy singular `agreement` — or, on the
@@ -212,7 +231,10 @@ const STATUS_ORDER = ['Quote', 'Reserved', 'Tomorrow', 'Today', 'On Rent', 'End 
 function unitStatus(r, eu) {
   const base = (eu && eu.status) || r.status || 'Reserved';
   // a reservation whose start date passed without going On Rent = No Show (Jac 2026-06-13)
-  if (base === 'Reserved') { const s = parseISO(r.startDate); if (s) { const d = dayDiff(TODAY, s); if (d < 0) return 'No Show'; if (d === 0) return 'Today'; if (d === 1) return 'Tomorrow'; } }
+  // Today/Tomorrow RETIRED as derived statuses (SPEC flag-color-system) — the urgency
+  // is carried by the starts-today / starts-tomorrow flags. The No-Show derivation
+  // stays (a reservation whose start passed without going On Rent).
+  if (base === 'Reserved') { const s = parseISO(r.startDate); if (s && dayDiff(TODAY, s) < 0) return 'No Show'; }
   return base;
 }
 function rentalUnitStatuses(r) {
@@ -223,7 +245,9 @@ const unitsUniform = (r) => rentalUnitStatuses(r).length <= 1;
    label ("Today/On Rent", lifecycle-ordered) with a neutral color. */
 function rentalStatusDisplay(r) {
   const ss = rentalUnitStatuses(r);
-  if (ss.length <= 1) { const k = ss[0] || rentalDisplayStatus(r); const st = getStatus('rentalStatus', k); return { label: st.label, color: st.color, key: k, mixed: false }; }
+  // COLOR is flag-driven (R/Y/G/gray, SPEC flag-color-system); the LABEL stays the
+  // lifecycle status. Mixed-unit rentals keep the gray "mix" label + gray color.
+  if (ss.length <= 1) { const k = ss[0] || rentalDisplayStatus(r); const st = getStatus('rentalStatus', k); return { label: st.label, color: getEntityColor('rentals', r), key: k, mixed: false }; }
   return { label: ss.join('/'), color: 'gray', key: null, mixed: true };
 }
 /* TERMINAL = the unit has reached an end state; Complete Rental unlocks only when
@@ -257,8 +281,21 @@ const CARD_FLAG_META = { ok: { label: 'Card OK', color: 'green' }, expiring: { l
 const requiredAgreementKey = (c) => /member/i.test((c && c.accountType) || '') ? 'membership' : 'rental';
 const cardSignings = (k) => (k && Array.isArray(k.agreements)) ? k.agreements : (k && k.agreement && k.agreement.signature ? [{ key: k.agreement.version === 'membership' ? 'membership' : 'rental', signedAt: k.agreement.signedAt, signature: k.agreement.signature, selfie: k.agreement.selfie }] : []);
 function cardCurrentSigning(c, k) { const want = requiredAgreementKey(c); const s = cardSignings(k); for (let i = s.length - 1; i >= 0; i--) { if ((s[i].key || 'rental') === want) return s[i]; } return null; }
-const cardAuthorized = (c, k) => !!cardCurrentSigning(c, k);
+/* §7.1c independent capture: the selfie is a durable per-card photo; the signature is held
+   in card.draftSignature until completion, then frozen into an immutable agreements[] record
+   stamped with ONE completion date. A card is COMPLETE (= authorized) only when card + selfie
+   + a signature matching the CURRENT account type are all present. (cardSelfie inlines its own
+   record fallback so legacy cards — whose selfie lived inside the signing — still read.) */
+const cardSelfie = (k) => { if (!k) return ''; if (k.driveSelfieUrl || k.selfie) return k.driveSelfieUrl || k.selfie; const s = cardSignings(k); const last = s[s.length - 1]; return (last && (last.driveSelfieUrl || last.selfie)) || ''; };
+const cardHasSelfie = (k) => !!cardSelfie(k);
+const cardDraftSig = (k) => (k && k.draftSignature && k.draftSignature.signature) ? k.draftSignature : null;
+const cardHasSignature = (c, k) => !!cardCurrentSigning(c, k) || !!cardDraftSig(k);
+const cardComplete = (c, k) => !!cardCurrentSigning(c, k) && cardHasSelfie(k);
+const cardAuthorized = (c, k) => cardComplete(c, k);
 function cardSignState(c, k) { return cardAuthorized(c, k) ? 'authorized' : (cardSignings(k).length ? 'stale' : 'unsigned'); }
+/* 'complete' | 'stale' (a finalized signing exists but for the wrong account type → re-sign)
+   | 'in-progress' (a card exists but is missing the selfie and/or a matching signature) */
+function cardCaptureState(c, k) { if (cardComplete(c, k)) return 'complete'; if (cardSignings(k).length && !cardCurrentSigning(c, k)) return 'stale'; return 'in-progress'; }
 /* Resolve a signing's frozen title/text from the version registry (storage-light:
    the signing stores only `version`, not the ~6–8 KB text). Falls back to a baked
    `text`/`title` on legacy records, then to the current agreement for its key. */
@@ -298,29 +335,41 @@ const cardGateBlocked = (cust) => !!cust && (!hasValidCard(cust) || accountAgree
 function cardGateReason(cust) {
   if (!cust) return '';
   if (!hasValidCard(cust)) return 'no valid card on file';
-  if (accountAgreementsBlocked(cust)) { const n = unsignedCardCount(cust); return `${n} card${n > 1 ? 's' : ''} not signed for the current account type`; }
+  if (accountAgreementsBlocked(cust)) { const n = unsignedCardCount(cust); return `${n} card${n > 1 ? 's' : ''} not complete (needs selfie + signature for the current account type)`; }
   return '';
 }
 /* Signing-form glyphs (existing inline marks, hoisted to module scope so the
    per-card tab AND the account-level "held draft" share one capture form). */
 const AG_LOCK = '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
 const AG_CAM = '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>';
+/* §7.1c the 3-piece capture progress strip — typographic (matches the un-stamped
+   .ag-meta/.ag-gate content pattern, NOT a pill, so it's outside the R0 lint family).
+   `pieces` = [{label, done}]; ✓ done / — pending, in the stamped Saira voice. */
+function capProgress(pieces) {
+  const left = pieces.filter((p) => !p.done).length;
+  const row = pieces.map((p) => `<span class="ag-prog-item${p.done ? ' done' : ''}">${esc(p.label)} ${p.done ? '✓' : '—'}</span>`).join('');
+  return `<div class="ag-prog"><div class="ag-prog-row">${row}</div><div class="ag-prog-note">${esc(left === 0 ? 'Complete — authorized ✓' : `Finish ${left} more to authorize`)}</div></div>`;
+}
 /* The shared selfie + signature capture controls — emitted on a CARD's signing tab and
-   in the +Card panel (no card yet). There's no in-block commit button: the bottom-right
-   Save persists whatever's captured (commitCapture). `readKey` distinguishes whose Terms
-   toggle is open (a card id, or 'account'); the live selfie/signature ride o.signDraft. */
+   in the +Card panel (no card yet). §7.1c: each piece AUTO-SAVES on capture (no commit button)
+   straight onto the card — or, pre-card, onto c.pendingCapture. `readKey` is the target: a
+   card id, or 'account' (the held pre-card bucket). */
 function agCaptureBlock(o, ag, readKey) {
-  const selfie = o.signDraft && o.signDraft.selfie;
+  const c = o && o.editId ? IDX.customer.get(o.editId) : null;
+  const k = (readKey && readKey !== 'account' && c) ? customerCards(c).find((x) => x.id === readKey) : null;
+  const selfie = k ? cardSelfie(k) : ((c && c.pendingCapture && c.pendingCapture.selfie) || '');
+  const hasSig = k ? !!cardDraftSig(k) : !!(c && c.pendingCapture && c.pendingCapture.signature);
   return `
     <div class="ag-readref"><span><b>${esc(ag.title)}</b></span>${linkName(o.signRead === readKey ? 'Hide' : 'Terms', { js: 'js-ncsign-read', data: { card: readKey } })}</div>
     ${o.signRead === readKey ? `<div class="nc-agreement" tabindex="0">${esc(ag.text)}</div>` : ''}
-    <div class="ag-caphead"><span class="ag-capcap">Capture both to authorize</span>${linkName('Open Window', { js: 'js-sign-popout', data: { title: ag.title } })}</div>
+    <div class="ag-caphead"><span class="ag-capcap">Capture selfie + signature</span>${linkName('Open Window', { js: 'js-sign-popout', data: { title: ag.title } })}</div>
     <div class="ag-caprow">
       <label class="ag-selfiebtn js-ag-selfie">${selfie
-        ? `<img class="ag-selfie" src="${esc(selfie)}" alt="selfie" /><span class="ag-cam-cap">Retake</span>`
+        ? `<img class="ag-selfie" src="${esc(selfie)}" alt="selfie" /><span class="ag-cam-cap">✓ Saved · Retake</span>`
         : `<video class="ag-cam-feed" autoplay muted playsinline></video><span class="ag-cam-fallback">${AG_CAM}<span class="l">Selfie</span></span><span class="ag-cam-cap ag-cam-hint">Tap to capture</span>`}<input type="file" accept="image/*" capture="user" class="js-ncsign-selfie" hidden /></label>
       <canvas class="nc-sigpad ag-pad" width="500" height="220"></canvas>
     </div>
+    ${(selfie || hasSig) ? `<div class="ag-saverow">${selfie ? '<span class="ag-savedhint on">Selfie ✓ saved</span>' : ''}${hasSig ? '<span class="ag-savedhint on">Signature ✓ saved</span>' : ''}</div>` : ''}
     <div class="ag-acceptrow">${ghostPill('Clear', { js: 'js-nc-sig-clearpad' })}</div>`;
 }
 /* Sign-before-a-card capture, rendered inside the +Card panel before the first card
@@ -330,17 +379,11 @@ function agCaptureBlock(o, ag, readKey) {
 function heldSignBlock(o, custRec, d) {
   const key = requiredAgreementKey(custRec || { accountType: d.accountType });
   const ag = AGREEMENTS[key] || AGREEMENTS.rental;
-  const p = custRec && custRec.pendingSigning;
-  const inner = (p && p.signature)
-    ? `<div class="ag-signed"><span class="ag-lock">${AG_LOCK}</span><span class="t"><b>${esc(p.title || ag.title)}</b> · signed ${esc(p.signedAt || '—')}</span>${ghostPill('Redo', { js: 'js-ncsign-holdclear' })}</div>
-       <div class="ag-packet">
-         <div class="ag-pcell"><div class="ag-pcap">Selfie</div>${p.selfie ? `<img class="ag-selfie" src="${esc(p.selfie)}" alt="selfie on hand" />` : '<div class="ag-selfie empty">—</div>'}</div>
-         <div class="ag-pcell"><div class="ag-pcap">Signature</div>${p.signature ? `<img class="ag-sigthumb" src="${esc(p.signature)}" alt="signature on hand" />` : '<div class="ag-sigthumb"></div>'}</div>
-       </div>
-       <p class="muted" style="font-size:11px;margin:12px 2px 0">✓ Signed and on hand — it saddles onto the first card you add. Add a card to authorize On-Rent &amp; delivery.</p>`
-    : `<div class="ag-gate"><span class="lead">On Rent blocked until Selfie + Card + Signature</span></div>
-       ${agCaptureBlock(o, ag, 'account')}`;
-  return `<div class="ag-capcap" style="margin:16px 2px 8px">Signed agreement</div>${inner}`;
+  const p = (custRec && custRec.pendingCapture) || {};   // §7.1c pre-card held pieces (saddle onto the first card)
+  return `<div class="ag-capcap" style="margin:16px 2px 8px">Signed agreement</div>
+    ${capProgress([{ label: 'Card', done: false }, { label: 'Selfie', done: !!p.selfie }, { label: 'Signature', done: !!p.signature }])}
+    <p class="muted" style="font-size:11px;margin:2px 2px 0">Selfie &amp; signature save now and saddle onto the first card you add; On-Rent &amp; delivery unlock once that card is complete.</p>
+    ${agCaptureBlock(o, ag, 'account')}`;
 }
 /* Move an account-level HELD signing onto a freshly-added card — the draft's FROZEN
    key/version/date is preserved verbatim (it's the agreement they actually accepted,
@@ -374,6 +417,19 @@ function signCardAgreement(c, k, signature, selfie) {
   logAction(c, `${ag.title} signed on ${brandName(k.brand)} ••${k.last4}`);
   archiveAgreementMedia(c, k, sig);   // offload images to Drive when the backend supports it
 }
+/* §7.1c finalize-on-complete: when a card has all three pieces — the card, a selfie, and a
+   held draft signature matching the CURRENT account type — freeze the signature into an
+   immutable agreements[] record (one completion date = TODAY_ISO) and clear the draft. Called
+   after each piece auto-saves; a no-op until all three are present. Charging is never gated
+   on this; only On-Rent/delivery is. Returns true if it finalized (→ flip the tab to Complete). */
+function maybeFinalizeCard(c, k) {
+  if (!c || !k || cardCurrentSigning(c, k)) return false;            // nothing to do / already complete for this type
+  const draft = cardDraftSig(k);
+  if (!draft || (draft.key || 'rental') !== requiredAgreementKey(c) || !cardHasSelfie(k)) return false;
+  signCardAgreement(c, k, draft.signature, cardSelfie(k));           // freezes the record (reindex + log + Drive offload)
+  k.draftSignature = null;                                           // the signature now lives in the immutable record
+  return true;
+}
 /* Frozen snapshot of the account fields + card ••last4 AT SIGNING — the signed-agreement
    PDF reprints exactly what was true when accepted, even if the account is edited later. */
 function acctSnapshot(c, k) {
@@ -390,14 +446,48 @@ function holdSigning(c, signature, selfie) {
     signedAt: TODAY_ISO, signerName: c.name || fullName(c), signature, selfie: selfie || '', acct: acctSnapshot(c, null) };
   reindex('customers', c); logAction(c, `${ag.title} signed & held (no card yet)`);
 }
-/* Save is the only commit now: persist a captured selfie + signature onto the active card
-   (the open card tab) or, with no card yet, hold it on the account. No-op without a full capture. */
+/* §7.1c independent capture — each piece (card · selfie · signature) AUTO-SAVES the moment
+   it's captured, in any order, and the card finalizes (one completion date) once all three
+   are present. The capture target is the open card tab, or — with no card yet — a held bucket
+   on the account (c.pendingCapture) that saddles onto the first card added. */
+function captureCtx(o) {
+  const c = o && o.editId ? IDX.customer.get(o.editId) : (o && o.kind === 'addCard' ? IDX.customer.get(o.customerId) : null);
+  if (!c) return { c: null, k: null };
+  if (o.cardSub || o.kind === 'addCard') return { c, k: null };                     // +Card / Add-card panel → held on pendingCapture, saddles onto the new card on save
+  const k = (o.tab && o.tab !== 'account') ? customerCards(c).find((x) => x.id === o.tab) || null : null;
+  return { c, k };
+}
+function captureSelfie(o, dataUrl) {
+  const { c, k } = captureCtx(o); if (!c) return;
+  if (k) { k.selfie = dataUrl; k.driveSelfieUrl = ''; maybeFinalizeCard(c, k); }   // durable per-card photo
+  else { c.pendingCapture = c.pendingCapture || {}; c.pendingCapture.selfie = dataUrl; }
+  reindex('customers', c); saveSoon();
+}
+function captureSignature(o, dataUrl) {                                            // auto-saves the draft; finalize is debounced (scheduleFinalizeSign) so a multi-stroke signature isn't cut off after the first stroke
+  const { c, k } = captureCtx(o); if (!c) return;
+  if (k) k.draftSignature = { signature: dataUrl, key: requiredAgreementKey(c), accountType: c.accountType || '', signerName: c.name || fullName(c) };
+  else { c.pendingCapture = c.pendingCapture || {}; c.pendingCapture.signature = dataUrl; c.pendingCapture.key = requiredAgreementKey(c); }
+  reindex('customers', c); saveSoon();
+}
+/* The signature is drawn over several strokes, so finalize only after the pen has rested a
+   beat (reset on every new stroke). If that completes the card, flip the tab to Complete. */
+let _signFinalizeT = null;
+function scheduleFinalizeSign(o) { clearTimeout(_signFinalizeT); _signFinalizeT = setTimeout(() => { const { c, k } = captureCtx(o); if (c && k && maybeFinalizeCard(c, k)) { renderOverlay(); render(); } }, 1200); }
+function clearCaptureSelfie(o) { const { c, k } = captureCtx(o); if (!c) return; if (k) { k.selfie = ''; k.driveSelfieUrl = ''; } else if (c.pendingCapture) c.pendingCapture.selfie = ''; reindex('customers', c); saveSoon(); }
+function clearCaptureSignature(o) { const { c, k } = captureCtx(o); if (!c) return; if (k) k.draftSignature = null; else if (c.pendingCapture) c.pendingCapture.signature = ''; reindex('customers', c); saveSoon(); }
+/* Move pre-card held pieces (c.pendingCapture) onto a freshly-added card, then finalize. */
+function saddlePendingCapture(c, k) {
+  const p = c && c.pendingCapture; if (!p || !k) return;
+  if (p.selfie) k.selfie = p.selfie;
+  if (p.signature) k.draftSignature = { signature: p.signature, key: p.key || requiredAgreementKey(c), accountType: c.accountType || '', signerName: c.name || fullName(c) };
+  c.pendingCapture = null;
+  maybeFinalizeCard(c, k);
+}
+/* Save no longer commits capture (each piece auto-saves on capture). It just finalizes any
+   card now holding all three pieces — a belt-and-suspenders pass over the customer's cards. */
 function commitCapture(o, c) {
-  const sd = o && o.signDraft; if (!c || !sd || !sd.selfie || !sd.sigData) return;
-  const k = (o.tab && o.tab !== 'account') ? customerCards(c).find((x) => x.id === o.tab) : null;
-  if (k) signCardAgreement(c, k, sd.sigData, sd.selfie);
-  else if (!customerCards(c).some((x) => cardAuthorized(c, x))) holdSigning(c, sd.sigData, sd.selfie);
-  o.signDraft = null;
+  if (!c) return;
+  customerCards(c).forEach((k) => maybeFinalizeCard(c, k));
 }
 /* Offload a signing's selfie + signature to Drive (per-customer folder) and replace
    the heavy inline data-URLs with light Drive URLs — keeps the synced customer record
@@ -572,6 +662,8 @@ function buildIndexes() {
   // lowercased comprehensive search blobs per record (§5) — built via the single
   // searchBlob() source of truth so every field is searchable.
   IDX.search = new Map();
+  buildRentalLinkIndex();        // reverse unit/category → renters map (#267) — read by searchBlob() below
+  suppressLinkReindex = true;    // per-rental reindex must NOT trigger a full link rebuild during this bulk pass
   DATA.customers.forEach((c) => reindex('customers', c));
   DATA.rentals.forEach((r) => reindex('rentals', r));
   DATA.categories.forEach((c) => reindex('categories', c));
@@ -583,6 +675,31 @@ function buildIndexes() {
   DATA.expenses.forEach((x) => reindex('expenses', x)); // §7.11 v2 — receipts are globally searchable
   DATA.parts.forEach((p) => reindex('parts', p));        // §7.12 v2 — parts are searchable
   DATA.companyFiles.forEach((f) => reindex('files', f)); // §7.13 v2 — files are searchable
+  suppressLinkReindex = false;
+}
+/* §5 reverse denormalization (#267) — the forward rentals blob already embeds each
+   rental's unit + category NAMES; these are the mirror so a customer-name search
+   ALSO surfaces the Units & Categories that customer has rented (and a unit/category
+   search surfaces its renters). Rebuilt in one pass over DATA.rentals; the unit and
+   category blobs spread these Sets in searchBlob(). */
+let suppressLinkReindex = false;
+function buildRentalLinkIndex() {
+  IDX.unitRenters = new Map();
+  IDX.catRenters  = new Map();
+  DATA.rentals.forEach((r) => {
+    const cust = IDX.customer.get(r.customerId); if (!cust) return;
+    const tag = [cust.name, cust.company].filter(Boolean).join(' '); if (!tag) return;
+    rentalUnitIds(r).forEach((uid) => { let s = IDX.unitRenters.get(uid); if (!s) IDX.unitRenters.set(uid, s = new Set()); s.add(tag); });
+    if (r.categoryId) { let s = IDX.catRenters.get(r.categoryId); if (!s) IDX.catRenters.set(r.categoryId, s = new Set()); s.add(tag); }
+  });
+}
+/* a rental's links changed → rebuild the reverse map and refresh every unit +
+   category blob (small fixed sets, ~150 records, each now a map lookup) so renter
+   names stay current without tracking per-link add/remove. */
+function reindexRentalLinks() {
+  buildRentalLinkIndex();
+  DATA.units.forEach((u) => IDX.search.set('units:' + u.unitId, searchBlob('units', u)));
+  DATA.categories.forEach((c) => IDX.search.set('categories:' + c.categoryId, searchBlob('categories', c)));
 }
 const idOf   = (card, rec) => rec[{ customers: 'customerId', rentals: 'rentalId', categories: 'categoryId', units: 'unitId', invoices: 'invoiceId', workOrders: 'woId', inspections: 'inspectionId', serviceOrders: 'unitId', vendors: 'vendorId', parts: 'partId', expenses: 'expenseId', files: 'fileId' }[card]];
 const recOf  = (card, id) => ({ customers: IDX.customer, rentals: IDX.rental, categories: IDX.category, units: IDX.unit, invoices: IDX.invoice, workOrders: IDX.wo, inspections: IDX.insp, serviceOrders: IDX.unit, vendors: IDX.vendor, expenses: IDX.expense, parts: IDX.part, files: IDX.file }[card])?.get(id);
@@ -621,7 +738,8 @@ function searchBlob(card, rec) {
       break;
     }
     case 'categories':
-      p = [rec.name, rec.fuelType, rec.description, rec.notes];
+      p = [rec.name, rec.fuelType, rec.description, rec.notes,
+        ...(IDX.catRenters?.get(rec.categoryId) || [])];   // §5 reverse denorm (#267) — the customers who've rented this category
       break;
     case 'units':
       p = [rec.name, rec.assignedMechanic, rec.serial, rec.year, rec.make, rec.model, rec.weight,
@@ -629,7 +747,8 @@ function searchBlob(card, rec) {
         rec.inspectionStatus, L('unitInspectionStatus', rec.inspectionStatus),
         rec.fleetStatus, L('unitFleetStatus', rec.fleetStatus),
         rec.gpsStatus, L('gpsStatus', rec.gpsStatus), ca(rec.categoryId)?.name,
-        rec.washRequested ? 'Wash Requested wash' : ''];
+        rec.washRequested ? 'Wash Requested wash' : '',
+        ...(IDX.unitRenters?.get(rec.unitId) || [])];   // §5 reverse denorm (#267) — the customers who've rented this unit
       break;
     case 'invoices': {
       const cust = cu(rec.customerId); const t = invoiceTotals(rec);
@@ -673,7 +792,7 @@ function searchBlob(card, rec) {
 /** (Re)build a record's search blob in IDX.search. Call after any create/edit.
     Vendors are auto-created mid-session (savePartForm) with no IDX set at the
     call site, so reindex also keeps the IDX.vendor identity map in sync. */
-const reindex = (card, rec) => { const id = idOf(card, rec); if (id != null) { IDX.search.set(card + ':' + id, searchBlob(card, rec)); if (card === 'vendors') IDX.vendor.set(id, rec); if (card === 'expenses') IDX.expense.set(id, rec); if (card === 'parts') IDX.part.set(id, rec); if (card === 'files') IDX.file.set(id, rec); } saveSoon(); };
+const reindex = (card, rec) => { const id = idOf(card, rec); if (id != null) { IDX.search.set(card + ':' + id, searchBlob(card, rec)); if (card === 'vendors') IDX.vendor.set(id, rec); if (card === 'expenses') IDX.expense.set(id, rec); if (card === 'parts') IDX.part.set(id, rec); if (card === 'files') IDX.file.set(id, rec); } if (card === 'rentals' && !suppressLinkReindex) reindexRentalLinks(); saveSoon(); };
 
 /* ════════════════════════════════════════════════════════════════════════
    §3 DERIVATIONS (SPEC §10) — money, availability, statuses, countdowns
@@ -713,6 +832,14 @@ function rentalPrice(r) {
   if (best.ww) parts.push(`${RATE_LABELS.w}×${best.ww}`);
   if (best.dd) parts.push(`${RATE_LABELS.d}×${best.dd}`);
   return { price: best.total, rate: parts.join(' + ') || '—', days };
+}
+
+/** A category that would bill $0 because its rental rates were never entered — a
+ *  data gap, NOT a display bug: categories are born with rate1Day/rate7Day/rate4Wk
+ *  = 0 (quickAddCategoryFromSearch / CSV import) and the rates are filled in later.
+ *  Drives the quote-time caution flag so a $0-rate category never quotes free. */
+function catRatesUnset(cat) {
+  return !!cat && !cat.rate1Day && !cat.rate7Day && !cat.rate4Wk;
 }
 
 /* §20 per-unit pricing — each unit is billed by ITS OWN category across the
@@ -1168,14 +1295,14 @@ function invoiceTotals(inv) {
 /** The active rental driving a unit's mirrored Rental Status (excludes
  *  Returned/Cancelled/No Show — §12.4). */
 const ACTIVE_RENTAL = new Set(['Quote', 'Tomorrow', 'Today', 'Reserved', 'On Rent', 'End Rent', 'Off Rent']);
-/** §8/§6.2#7 — Tomorrow/Today are DERIVED display states (stored status stays Reserved):
- *  a Reserved rental starting today shows "Today" (blue), tomorrow shows "Tomorrow" (purple). */
+/** §8/§6.2#7 — a Reserved rental whose start date PASSED (never went On Rent) shows
+ *  the derived "No Show" label; the stored status stays Reserved. Today/Tomorrow are
+ *  RETIRED as derived statuses (SPEC flag-color-system) — their urgency now rides the
+ *  starts-today / starts-tomorrow flags, and the pill keeps reading "Reserved". */
 function rentalDisplayStatus(r) {
   if (r.status === 'Reserved') {
     const s = parseISO(r.startDate);
-    // a reservation whose start date has PASSED and never went On Rent = a No Show
-    // (display-derived, like Today/Tomorrow — the stored status stays Reserved). Jac 2026-06-13
-    if (s) { const d = dayDiff(TODAY, s); if (d < 0) return 'No Show'; if (d === 0) return 'Today'; if (d === 1) return 'Tomorrow'; }
+    if (s && dayDiff(TODAY, s) < 0) return 'No Show';
   }
   return r.status;
 }
@@ -1365,7 +1492,11 @@ function categoryStats(cat) {
   // derive from purchaseDate; units missing it default to ~1 year (annualize factor ≈ 1).
   const daysOwned = us.map((u) => u.purchaseDate ? Math.max(1, dayDiff(parseISO(u.purchaseDate), TODAY)) : 365);
   const avgDaysOwned = daysOwned.length ? daysOwned.reduce((a, b) => a + b, 0) / daysOwned.length : 365;
-  const lifetimeRoi = denom ? ((totalRev + (cat.bottomDollar || 0) * us.length) - denom) / denom : null;
+  // ROI needs a real ACQUISITION cost basis — repair cost alone is not an investment.
+  // Without a purchase cost (units with no trueCost/purchasePrice), revenue ÷ repair-only
+  // explodes to absurd %. Gate on `trueCost` (matches the §12.4 unit-level `invested ?`
+  // guard) so a category with no acquisition cost reads '—', not a fake 900,000%.
+  const lifetimeRoi = trueCost ? ((totalRev + (cat.bottomDollar || 0) * us.length) - denom) / denom : null;
   const roi = lifetimeRoi != null ? Math.round(lifetimeRoi * (365 / avgDaysOwned) * 100) : null;
   return {
     count: us.length,
@@ -1548,20 +1679,32 @@ function closeAll() { state.tabs = []; state.activeTabId = null; state.searchMod
    (slot buttons, window trigger) — the §18b sync persists mock records as-is. */
 
 /** Click a row → standard mode in that card (push back-stack). §0.2 */
+// #227 (Jac 2026-06-23) — a bare "+New Rental/Invoice" click used to mint a mock draft
+// AND write it straight to the Sheet (reindex/logAction → saveSoon), so an abandoned
+// empty Quote left junk behind (no nav = no #8 sweep, but the 1.2s save already fired).
+// This predicate is the single source of truth for "content-free throwaway draft": such
+// records self-destruct on navigation (#8 sweep below) AND are held out of the §18b sync
+// (computeChanges) so they never reach the backend until they earn real content.
+function isEmptyMockDraft(card, rec) {
+  if (!rec || !rec.mock) return false;
+  if (card === 'invoices') return !(rec.lineItems || []).length && !(Number(rec.amountPaid) || 0);
+  if (card === 'rentals')  return !(rentalUnits(rec) || []).length && !rec.customerId && !rec.startDate && !rec.invoiceId;
+  return false;
+}
 // #8 — an abandoned empty draft self-destructs the moment you leave it: a mock invoice
 // with no line items, or a mock rental still totally blank. keepId = the record you're
 // navigating TO (never swept). Called from every record-open + anchor. Jac 2026-06-13.
 function sweepEmptyDrafts(keepId) {
   for (let i = DATA.invoices.length - 1; i >= 0; i--) {
     const inv = DATA.invoices[i];
-    if (inv.mock && inv.invoiceId !== keepId && !(inv.lineItems || []).length && !(Number(inv.amountPaid) || 0)) {
+    if (inv.invoiceId !== keepId && isEmptyMockDraft('invoices', inv)) {
       (inv.rentalIds || []).forEach((rid) => { const r = IDX.rental.get(rid); if (r && r.invoiceId === inv.invoiceId) r.invoiceId = ''; });
       IDX.invoice.delete(inv.invoiceId); DATA.invoices.splice(i, 1);
     }
   }
   for (let i = DATA.rentals.length - 1; i >= 0; i--) {
     const r = DATA.rentals[i];
-    if (r.mock && r.rentalId !== keepId && !(rentalUnits(r) || []).length && !r.customerId && !r.startDate && !r.invoiceId) {
+    if (r.rentalId !== keepId && isEmptyMockDraft('rentals', r)) {
       IDX.rental.delete(r.rentalId); DATA.rentals.splice(i, 1);
     }
   }
@@ -1618,7 +1761,7 @@ function cardRecordAt(target) {
 // the prior view so the Back chevron can return to it.
 function cardToList(card) {
   const cs = activeSession().cards[card]; if (!cs) return;   // 'calendar' has no card state → no-op
-  if (cs.mode === 'standard' && cs.recId != null) { pushCardHistory(cs); cs.mode = 'list'; cs.recId = null; cs.recType = null; render(); return; }
+  if (cs.mode === 'standard' && cs.recId != null) { pushCardHistory(cs); cs.mode = 'list'; cs.recId = null; cs.recType = null; sweepEmptyDrafts(); render(); return; }   // #8 — click-away from a record drops any abandoned empty draft
   cs.mode = 'list'; render();
 }
 // Double right-click = drop the session's anchor entirely (anchor-less = no cascade).
@@ -1627,6 +1770,7 @@ function clearAnchor() {
   if (!s.anchor) return;
   s.anchor = null; s.cascade = null;
   for (const c of GRID_CARDS) { const cs = s.cards[c.id]; cs.mode = 'list'; cs.recId = null; cs.recType = null; cs.backStack = []; cs.fwdStack = []; }
+  sweepEmptyDrafts();   // #8 — dropping the anchor leaves every record → sweep any abandoned empty draft
   render();
 }
 /* ── Per-card view history (Phase 1, Task 1) ───────────────────────────────────
@@ -1657,6 +1801,7 @@ function cardBack(card) {
     if (cs.mode === 'standard' && cs.recId != null) {
       cs.fwdStack.push(cardSnap(cs));
       cs.mode = 'list'; cs.recId = null; cs.recType = null; cs.graphView = false;
+      sweepEmptyDrafts();   // #8 — stepping back off a record sweeps any abandoned empty draft
       render();
     }
     return;
@@ -1664,6 +1809,7 @@ function cardBack(card) {
   cs.fwdStack.push(cardSnap(cs));
   applySnap(cs, cs.backStack.pop());
   if (cs.mode === 'standard' && cs.recId != null) ackComments(recOf(entityCardOf(card, cs.recType), cs.recId));
+  sweepEmptyDrafts(cs.recId);   // #8 — sweep the abandoned empty draft we stepped away from (keep the one we land on)
   render();
 }
 function cardFwd(card) {
@@ -1735,6 +1881,13 @@ function showHoverPreview(target) {
   hideHoverPreview();
   const node = el('div', 'hover-preview');
   try { node.innerHTML = DETAIL[info.ec](info.rec, { historySearch: '', backStack: [], mode: 'standard' }); } catch (e) { return; }
+  // SPEC flag-color-system §5: active flags (severity-sorted) listed below the preview.
+  const pflags = getEntityFlags(info.ec, info.rec);
+  if (pflags.length) {
+    const fl = el('div', 'prev-flags');
+    fl.innerHTML = `<span class="pf-cap">Flags</span>` + flagsStack(pflags.map((f) => flagEl(f.label, f.severity, { alert: f.severity === 'red' })));
+    node.appendChild(fl);
+  }
   node.addEventListener('mouseenter', () => clearTimeout(hoverGrace));                   // arrived on the preview — cancel the close
   node.addEventListener('mouseleave', () => { hoverEl = null; hideHoverPreview(); });    // leaving the preview closes it
   document.body.appendChild(node); hoverNode = node;
@@ -2043,7 +2196,7 @@ function pageDefaultSlice(tab) {
     case 'requirements': return { key: 'rentalRules', value: {} };
     case 'layout': return { key: 'layout', value: { footers: {} } };
     case 'fields': return { key: 'customFields', value: { customers: [], units: [], rentals: [], invoices: [] } };
-    case 'inspections': return { key: 'inspections', value: Object.fromEntries([...new Set((DATA.categories || []).map((c) => inspFamilyKey(c)))].map((k) => [k, { required: false, items: [] }])) };
+    case 'inspections': return { key: 'inspections', value: Object.fromEntries([...new Set((DATA.categories || []).map((c) => inspFamilyKey(c)))].map((k) => [k, { required: false, items: (INSP_DEFAULTS[k] || []).map((i) => ({ ...i })) }])) };
     default: return null;   // Logins / planned tabs have no resettable slice
   }
 }
@@ -2098,11 +2251,389 @@ const customFieldsFor = (entity) => ((state.settings && state.settings.customFie
 // unchanged). Empty = today's quick Pass/Fail only.
 function inspFamilyKey(cat) {
   const n = ((cat && cat.name) || '').toLowerCase();
-  if (n.includes('excavator')) return 'fam:excavator';                              // incl. "Microexcavator"
+  if (n.includes('excavator')) return 'fam:excavator';
   if (n.includes('trailer')) return n.includes('dump') ? 'fam:trailer-dump' : 'fam:trailer';
+  if (n.includes('skid steer') || n.includes('skidsteer')) return 'fam:skid-steer';
+  if (n.includes('scissor')) return 'fam:scissor';
+  if (n.includes('lull') || n.includes('telehandler') || n.includes('telescopic')) return 'fam:lull';
+  if (n.includes('towable')) return 'fam:towable';
+  if (n.includes('boom')) return 'fam:boom';
+  if (n.includes('dozer') || n.includes('bulldozer')) return 'fam:dozer';
+  if (n.includes('tractor')) return 'fam:tractor';
+  if (n.includes('roller') || n.includes('compactor')) return 'fam:roller';
+  if (n.includes('trencher')) return 'fam:trencher';
+  if (n.includes('stump')) return 'fam:stump-grinder';
+  if (n.includes('buggy')) return 'fam:buggy';
+  if (n.includes('attachment')) return 'fam:attachment';
+  if (n.includes('generator') || n.includes('genset')) return 'fam:generator';
+  if (n.includes('jack hammer') || n.includes('jackhammer') || n.includes('breaker')) return 'fam:jack-hammer';
+  if (n.includes('trowel')) return 'fam:power-trowel';
+  if (n.includes('sump')) return 'fam:sump-pump';
+  if (n.includes('pump')) return 'fam:trash-pump';
+  if (n.includes('concrete saw') || (n.includes('saw') && n.includes('walk'))) return 'fam:concrete-saw';
   return cat ? cat.categoryId : '';
 }
-const INSP_FAM_LABELS = { 'fam:excavator': 'Excavator', 'fam:trailer': 'Trailer', 'fam:trailer-dump': 'Dump Trailer' };
+const INSP_FAM_LABELS = {
+  'fam:excavator': 'Excavator', 'fam:trailer': 'Trailer', 'fam:trailer-dump': 'Dump Trailer',
+  'fam:skid-steer': 'Skid Steer', 'fam:scissor': 'Scissor Lift', 'fam:boom': 'Boom Lift',
+  'fam:lull': 'Telehandler / Lull', 'fam:towable': 'Towable Boom', 'fam:dozer': 'Dozer',
+  'fam:tractor': 'Tractor', 'fam:roller': 'Roller / Compactor', 'fam:trencher': 'Trencher',
+  'fam:stump-grinder': 'Stump Grinder', 'fam:buggy': 'Concrete Buggy', 'fam:attachment': 'Attachment',
+  'fam:generator': 'Generator', 'fam:jack-hammer': 'Jack Hammer', 'fam:power-trowel': 'Power Trowel',
+  'fam:sump-pump': 'Sump Pump', 'fam:trash-pump': 'Trash Pump', 'fam:concrete-saw': 'Walk Behind Concrete Saw',
+};
+const INSP_DEFAULTS = {
+  'fam:excavator': [
+    { id: 'iqc-exc-01', label: 'Hoses Ran Correctly; Scuffs Shown In Video; Unit Does Not Leak', type: 'toggle', required: false },
+    { id: 'iqc-exc-02', label: 'All Trash Is Removed', type: 'toggle', required: false },
+    { id: 'iqc-exc-03', label: 'All Panels & Doors Stay Closed', type: 'toggle', required: false },
+    { id: 'iqc-exc-04', label: 'Dirt In Cab Cleaned Out', type: 'toggle', required: false },
+    { id: 'iqc-exc-05', label: 'Unused & Broken Items Removed', type: 'toggle', required: false },
+    { id: 'iqc-exc-06', label: 'Buttons & Switches Firmly Secured', type: 'toggle', required: false },
+    { id: 'iqc-exc-07', label: 'Excess Grease Wiped Off Joints', type: 'toggle', required: false },
+    { id: 'iqc-exc-08', label: 'All Tie-Downs Removed: Cords/Wires/ZipTies/Tape/Etc', type: 'toggle', required: false },
+    { id: 'iqc-exc-09', label: 'Joysticks, TrackSticks, Blade, Auxiliary, Rabbit & Power Are Like New', type: 'toggle', required: false },
+    { id: 'iqc-exc-10', label: 'Rods & Bolts: Not Bent/Missing', type: 'toggle', required: false },
+    { id: 'iqc-exc-11', label: 'Track Is 1 Finger Tight w/All Shoes', type: 'toggle', required: false },
+    { id: 'iqc-exc-12', label: 'Sprocket Good: Will Not Cut Track', type: 'toggle', required: false },
+    { id: 'iqc-exc-13', label: 'Rollers: No Knock/Lean/Wobble', type: 'toggle', required: false },
+    { id: 'iqc-exc-14', label: 'Fluids Good: H.Oil, E.Oil, Coolant', type: 'toggle', required: false },
+    { id: 'iqc-exc-15', label: 'Water Sep. Good: No Water/Debris', type: 'toggle', required: false },
+    { id: 'iqc-exc-16', label: 'All Zerks & Joints Have Grease', type: 'toggle', required: false },
+    { id: 'iqc-exc-17', label: 'Air Filter & Radiator Cleaned', type: 'toggle', required: false },
+  ],
+  'fam:trailer': [
+    { id: 'iqc-trl-01', label: 'Ramps Have Pins: Not Bolts, Sticks, Wire, Etc', type: 'toggle', required: false },
+    { id: 'iqc-trl-02', label: 'Broken Ramp Legs Removed', type: 'toggle', required: false },
+    { id: 'iqc-trl-03', label: 'Lights Are Mounted: Not Hanging', type: 'toggle', required: false },
+    { id: 'iqc-trl-04', label: 'There Are No Holes In Deck', type: 'toggle', required: false },
+    { id: 'iqc-trl-05', label: 'Unused & Broken Items Removed', type: 'toggle', required: false },
+    { id: 'iqc-trl-06', label: 'Tires Are Not Bald', type: 'toggle', required: false },
+    { id: 'iqc-trl-07', label: 'All Trash Is Removed', type: 'toggle', required: false },
+    { id: 'iqc-trl-08', label: 'All Tie-Downs Removed: Cords/Wires/ZipTies/Tape/Etc', type: 'toggle', required: false },
+    { id: 'iqc-trl-09', label: 'Leaf Springs, Bolts & Ramps In Good Working Order', type: 'toggle', required: false },
+    { id: 'iqc-trl-10', label: 'Air Pressure Matches Tire Rating', type: 'toggle', required: false },
+    { id: 'iqc-trl-11', label: 'Hubs Do Not Wobble', type: 'toggle', required: false },
+    { id: 'iqc-trl-12', label: 'Inside Of Tire Is Not Rubbing', type: 'toggle', required: false },
+    { id: 'iqc-trl-13', label: 'Plug, Lights & Jack Are Working', type: 'toggle', required: false },
+    { id: 'iqc-trl-14', label: 'Welds Good On Hitch & Tongue', type: 'toggle', required: false },
+    { id: 'iqc-trl-15', label: 'Hitch & Pin Function & Lock Safely', type: 'toggle', required: false },
+  ],
+  'fam:trailer-dump': [
+    { id: 'iqc-dmp-01', label: 'Debris Emptied From Trailer Bed', type: 'toggle', required: false },
+    { id: 'iqc-dmp-02', label: 'Box Is Straight w/Working Door', type: 'toggle', required: false },
+    { id: 'iqc-dmp-03', label: 'Remote & Charging Plug-In Like New Condition', type: 'toggle', required: false },
+    { id: 'iqc-dmp-04', label: 'Lights Are Mounted: Not Hanging', type: 'toggle', required: false },
+    { id: 'iqc-dmp-05', label: 'You EASILY Opened Each Door Fully', type: 'toggle', required: false },
+    { id: 'iqc-dmp-06', label: 'Tires Not Bald', type: 'toggle', required: false },
+    { id: 'iqc-dmp-07', label: 'Unused & Broken Items Removed', type: 'toggle', required: false },
+    { id: 'iqc-dmp-08', label: 'All Cords/Wires/ZipTies/Tape/Etc Removed', type: 'toggle', required: false },
+    { id: 'iqc-dmp-09', label: 'Jack Works Or Was REPLACED', type: 'toggle', required: false },
+    { id: 'iqc-dmp-10', label: 'Inside Of Tire Is Not Rubbing', type: 'toggle', required: false },
+    { id: 'iqc-dmp-11', label: 'Brake/Lights Work Or Were Replaced', type: 'toggle', required: false },
+    { id: 'iqc-dmp-12', label: 'Leaf Springs & Bolts: Good', type: 'toggle', required: false },
+    { id: 'iqc-dmp-13', label: 'Hubs Do Not Wobble', type: 'toggle', required: false },
+    { id: 'iqc-dmp-14', label: 'Tire Pressure Matches Rating', type: 'toggle', required: false },
+    { id: 'iqc-dmp-15', label: 'Lugs Not Too Tight', type: 'toggle', required: false },
+    { id: 'iqc-dmp-16', label: 'Check For Cracked Welds', type: 'toggle', required: false },
+    { id: 'iqc-dmp-17', label: 'Hooks, Fins & Plugs All Safely Working', type: 'toggle', required: false },
+  ],
+  'fam:skid-steer': [
+    { id: 'iqc-ss-01', label: 'Hoses Ran Correctly; Scuffs Shown In Video; Unit Does Not Leak', type: 'toggle', required: false },
+    { id: 'iqc-ss-02', label: 'All Trash Is Removed', type: 'toggle', required: false },
+    { id: 'iqc-ss-03', label: 'All Panels & Doors Stay Closed', type: 'toggle', required: false },
+    { id: 'iqc-ss-04', label: 'Dirt In Cab Cleaned Out', type: 'toggle', required: false },
+    { id: 'iqc-ss-05', label: 'Unused & Broken Items Removed', type: 'toggle', required: false },
+    { id: 'iqc-ss-06', label: 'Buttons & Switches Firmly Secured', type: 'toggle', required: false },
+    { id: 'iqc-ss-07', label: 'Excess Grease Wiped Off Joints', type: 'toggle', required: false },
+    { id: 'iqc-ss-08', label: 'All Tie-Downs Removed: Cords/Wires/ZipTies/Tape/Etc', type: 'toggle', required: false },
+    { id: 'iqc-ss-09', label: 'Joysticks, BucketLevers, Auxiliary, FuelPedal & Power Are Like New', type: 'toggle', required: false },
+    { id: 'iqc-ss-10', label: 'Rods & Bolts: Not Bent/Missing', type: 'toggle', required: false },
+    { id: 'iqc-ss-11', label: 'Track Is 1 Finger Tight w/All Shoes', type: 'toggle', required: false },
+    { id: 'iqc-ss-12', label: 'Sprocket Good: Will Not Cut Track', type: 'toggle', required: false },
+    { id: 'iqc-ss-13', label: 'Rollers: No Knock/Lean/Wobble', type: 'toggle', required: false },
+    { id: 'iqc-ss-14', label: 'Fluids Good: H.Oil, E.Oil, Coolant', type: 'toggle', required: false },
+    { id: 'iqc-ss-15', label: 'Water Sep. Good: No Water/Debris', type: 'toggle', required: false },
+    { id: 'iqc-ss-16', label: 'All Zerks & Joints Have Grease', type: 'toggle', required: false },
+    { id: 'iqc-ss-17', label: 'Air Filter & Radiator Cleaned', type: 'toggle', required: false },
+  ],
+  'fam:scissor': [
+    { id: 'iqc-sci-01', label: 'Buttons/Switches Firmly Secured', type: 'toggle', required: false },
+    { id: 'iqc-sci-02', label: 'Zero Leaks', type: 'toggle', required: false },
+    { id: 'iqc-sci-03', label: 'Clean Basket Area', type: 'toggle', required: false },
+    { id: 'iqc-sci-04', label: 'All Cords/Wires/ZipTies/Tape/Etc Removed', type: 'toggle', required: false },
+    { id: 'iqc-sci-05', label: 'Unused & Broken Items Removed', type: 'toggle', required: false },
+    { id: 'iqc-sci-06', label: 'No Trash', type: 'toggle', required: false },
+    { id: 'iqc-sci-07', label: 'This Unit Looks Better Than When I Found It', type: 'toggle', required: false },
+    { id: 'iqc-sci-08', label: 'Check Tire Damage', type: 'toggle', required: false },
+    { id: 'iqc-sci-09', label: 'Both Speeds Are Working, Smooth', type: 'toggle', required: false },
+    { id: 'iqc-sci-10', label: 'Drives Properly', type: 'toggle', required: false },
+    { id: 'iqc-sci-11', label: 'All Controls Operate As New', type: 'toggle', required: false },
+    { id: 'iqc-sci-12', label: 'All Controls Operate While Raised In Air', type: 'toggle', required: false },
+    { id: 'iqc-sci-13', label: 'Charging', type: 'toggle', required: false },
+    { id: 'iqc-sci-14', label: 'Elevating Platform/Ramp Smooth', type: 'toggle', required: false },
+  ],
+  'fam:boom': [
+    { id: 'iqc-bm-01', label: 'Hoses Ran Correctly; Scuffs Shown In Video; Unit Does Not Leak', type: 'toggle', required: false },
+    { id: 'iqc-bm-02', label: 'All Trash Is Removed', type: 'toggle', required: false },
+    { id: 'iqc-bm-03', label: 'You Cleaned The Basket Area', type: 'toggle', required: false },
+    { id: 'iqc-bm-04', label: 'Unused & Broken Items Removed', type: 'toggle', required: false },
+    { id: 'iqc-bm-05', label: 'Buttons & Switches Firmly Secured', type: 'toggle', required: false },
+    { id: 'iqc-bm-06', label: 'Excess Grease Wiped Off Joints', type: 'toggle', required: false },
+    { id: 'iqc-bm-07', label: 'All Tie-Downs Removed: Cords/Wires/ZipTies/Tape/Etc', type: 'toggle', required: false },
+    { id: 'iqc-bm-08', label: 'Controls, Throttle, Power & Operation Are Like New', type: 'toggle', required: false },
+    { id: 'iqc-bm-09', label: 'All Zerks Have Grease', type: 'toggle', required: false },
+    { id: 'iqc-bm-10', label: 'Boom Extends & Retracts', type: 'toggle', required: false },
+    { id: 'iqc-bm-11', label: 'Spray Boom Lube On Boom', type: 'toggle', required: false },
+    { id: 'iqc-bm-12', label: 'Cable Track Without Damage', type: 'toggle', required: false },
+    { id: 'iqc-bm-13', label: 'Tire Pressure Matches Rating', type: 'toggle', required: false },
+    { id: 'iqc-bm-14', label: 'Fluids Good: H.Oil, E.Oil, Coolant', type: 'toggle', required: false },
+    { id: 'iqc-bm-15', label: 'Water Sep. Good: No Water/Debris', type: 'toggle', required: false },
+    { id: 'iqc-bm-16', label: 'Radiator & Air Filter Cleaned', type: 'toggle', required: false },
+  ],
+  'fam:lull': [
+    { id: 'iqc-ll-01', label: 'Hoses Ran Correctly; Scuffs Shown In Video; Unit Does Not Leak', type: 'toggle', required: false },
+    { id: 'iqc-ll-02', label: 'All Trash Is Removed', type: 'toggle', required: false },
+    { id: 'iqc-ll-03', label: 'Unused & Broken Items Removed', type: 'toggle', required: false },
+    { id: 'iqc-ll-04', label: 'Buttons & Switches Firmly Secured', type: 'toggle', required: false },
+    { id: 'iqc-ll-05', label: 'Excess Grease Wiped Off Joints', type: 'toggle', required: false },
+    { id: 'iqc-ll-06', label: 'All Tie-Downs Removed: Cords/Wires/ZipTies/Tape/Etc', type: 'toggle', required: false },
+    { id: 'iqc-ll-07', label: 'Controls, Power & Operation Are Like New', type: 'toggle', required: false },
+    { id: 'iqc-ll-08', label: 'All Zerks Have Grease', type: 'toggle', required: false },
+    { id: 'iqc-ll-09', label: 'Boom Extends & Retracts', type: 'toggle', required: false },
+    { id: 'iqc-ll-10', label: 'Spray Boom Lube On Boom', type: 'toggle', required: false },
+    { id: 'iqc-ll-11', label: 'Forks Slide & Not Bent', type: 'toggle', required: false },
+    { id: 'iqc-ll-12', label: 'Tire Pressure Matches Rating', type: 'toggle', required: false },
+    { id: 'iqc-ll-13', label: 'Fluids Good: H.Oil, E.Oil, Coolant', type: 'toggle', required: false },
+    { id: 'iqc-ll-14', label: 'Water Sep. Good: No Water/Debris', type: 'toggle', required: false },
+    { id: 'iqc-ll-15', label: 'Radiator & Air Filter Cleaned', type: 'toggle', required: false },
+    { id: 'iqc-ll-16', label: 'Legs Fully Retract', type: 'toggle', required: false },
+    { id: 'iqc-ll-17', label: 'Jib & Turntable Work Properly', type: 'toggle', required: false },
+    { id: 'iqc-ll-18', label: 'Pin & Hitch In Good Condition', type: 'toggle', required: false },
+  ],
+  'fam:towable': [
+    { id: 'iqc-tow-01', label: 'Hoses Ran Correctly; Scuffs Shown In Video; Unit Does Not Leak', type: 'toggle', required: false },
+    { id: 'iqc-tow-02', label: 'All Trash Is Removed', type: 'toggle', required: false },
+    { id: 'iqc-tow-03', label: 'Feet Are Not Missing Parts', type: 'toggle', required: false },
+    { id: 'iqc-tow-04', label: 'You Cleaned The Basket Area', type: 'toggle', required: false },
+    { id: 'iqc-tow-05', label: 'Unused & Broken Items Removed', type: 'toggle', required: false },
+    { id: 'iqc-tow-06', label: 'Buttons & Switches Firmly Secured', type: 'toggle', required: false },
+    { id: 'iqc-tow-07', label: 'Battery Covers In Good Condition', type: 'toggle', required: false },
+    { id: 'iqc-tow-08', label: 'All Tie-Downs Removed: Cords/Wires/ZipTies/Tape/Etc', type: 'toggle', required: false },
+    { id: 'iqc-tow-09', label: 'Controls, Power & Operation Are Like New', type: 'toggle', required: false },
+    { id: 'iqc-tow-10', label: 'All Zerks Have Grease', type: 'toggle', required: false },
+    { id: 'iqc-tow-11', label: 'Boom Extends & Retracts', type: 'toggle', required: false },
+    { id: 'iqc-tow-12', label: 'Spray Boom Lube On Boom', type: 'toggle', required: false },
+    { id: 'iqc-tow-13', label: 'Cable Track Without Damage', type: 'toggle', required: false },
+    { id: 'iqc-tow-14', label: 'Tire Pressure Matches Rating', type: 'toggle', required: false },
+    { id: 'iqc-tow-15', label: 'Legs Fully Retract', type: 'toggle', required: false },
+    { id: 'iqc-tow-16', label: 'Jib & Turntable Work Properly', type: 'toggle', required: false },
+    { id: 'iqc-tow-17', label: 'Pin & Hitch In Good Condition', type: 'toggle', required: false },
+  ],
+  'fam:dozer': [
+    { id: 'iqc-dz-01', label: 'Hoses Ran Correctly; Scuffs Shown In Video; Unit Does Not Leak', type: 'toggle', required: false },
+    { id: 'iqc-dz-02', label: 'All Trash Is Removed', type: 'toggle', required: false },
+    { id: 'iqc-dz-03', label: 'You Cleaned The Cab Area', type: 'toggle', required: false },
+    { id: 'iqc-dz-04', label: 'Unused & Broken Items Removed', type: 'toggle', required: false },
+    { id: 'iqc-dz-05', label: 'Buttons & Switches Firmly Secured', type: 'toggle', required: false },
+    { id: 'iqc-dz-06', label: 'Excess Grease Wiped Off Joints', type: 'toggle', required: false },
+    { id: 'iqc-dz-07', label: 'All Tie-Downs Removed: Cords/Wires/ZipTies/Tape/Etc', type: 'toggle', required: false },
+    { id: 'iqc-dz-08', label: 'Controls, Throttle, Power & Operation Are Like New', type: 'toggle', required: false },
+    { id: 'iqc-dz-09', label: 'All Zerks Have Grease', type: 'toggle', required: false },
+    { id: 'iqc-dz-10', label: 'Radiator In Good Condition', type: 'toggle', required: false },
+    { id: 'iqc-dz-11', label: 'Track Will Not Cause F.C.', type: 'toggle', required: false },
+    { id: 'iqc-dz-12', label: 'Intake Is Covered', type: 'toggle', required: false },
+    { id: 'iqc-dz-13', label: 'Def Fluid Level Checked', type: 'toggle', required: false },
+    { id: 'iqc-dz-14', label: 'Fluids Good: H.Oil, E.Oil, Coolant', type: 'toggle', required: false },
+    { id: 'iqc-dz-15', label: 'Water Sep. Good: No Water/Debris', type: 'toggle', required: false },
+    { id: 'iqc-dz-16', label: 'Radiator & Air Filter Cleaned', type: 'toggle', required: false },
+  ],
+  'fam:tractor': [
+    { id: 'iqc-trt-01', label: 'Hoses Ran Correctly; Scuffs Shown In Video; Unit Does Not Leak', type: 'toggle', required: false },
+    { id: 'iqc-trt-02', label: 'All Trash Is Removed', type: 'toggle', required: false },
+    { id: 'iqc-trt-03', label: 'Unused & Broken Items Removed', type: 'toggle', required: false },
+    { id: 'iqc-trt-04', label: 'Buttons & Switches Firmly Secured', type: 'toggle', required: false },
+    { id: 'iqc-trt-05', label: 'Excess Grease Wiped Off Joints', type: 'toggle', required: false },
+    { id: 'iqc-trt-06', label: 'All Tie-Downs Removed: Cords/Wires/ZipTies/Tape/Etc', type: 'toggle', required: false },
+    { id: 'iqc-trt-07', label: 'PTO, Bucket, Control Arms, 4WD All Work As New', type: 'toggle', required: false },
+    { id: 'iqc-trt-08', label: '3 Point Hitch Control Arms Good', type: 'toggle', required: false },
+    { id: 'iqc-trt-09', label: '3 Point Hitch TurnBuckle Good', type: 'toggle', required: false },
+    { id: 'iqc-trt-10', label: 'Zerks Greased (look under unit)', type: 'toggle', required: false },
+    { id: 'iqc-trt-11', label: 'Front Lights Are Working', type: 'toggle', required: false },
+    { id: 'iqc-trt-12', label: 'Fluids Good: H.Oil, E.Oil, Coolant', type: 'toggle', required: false },
+    { id: 'iqc-trt-13', label: 'Tire Pressure Matches Rating', type: 'toggle', required: false },
+    { id: 'iqc-trt-14', label: 'Water Sep. Good: No Water/Debris', type: 'toggle', required: false },
+    { id: 'iqc-trt-15', label: 'Radiator & Air Filter Cleaned', type: 'toggle', required: false },
+  ],
+  'fam:roller': [
+    { id: 'iqc-rl-01', label: 'Steering Wheel Knob Works or Was Removed', type: 'toggle', required: false },
+    { id: 'iqc-rl-02', label: 'All Trash Is Removed', type: 'toggle', required: false },
+    { id: 'iqc-rl-03', label: 'Clay Scraped From Rollers', type: 'toggle', required: false },
+    { id: 'iqc-rl-04', label: 'Unused & Broken Items Removed', type: 'toggle', required: false },
+    { id: 'iqc-rl-05', label: 'Buttons & Switches Firmly Secured', type: 'toggle', required: false },
+    { id: 'iqc-rl-06', label: 'All Tie-Downs Removed: Cords/Wires/ZipTies/Tape/Etc', type: 'toggle', required: false },
+    { id: 'iqc-rl-07', label: 'Controls, Throttle, Power & Operation Are Like New', type: 'toggle', required: false },
+    { id: 'iqc-rl-08', label: 'Water Dial Works Properly', type: 'toggle', required: false },
+    { id: 'iqc-rl-09', label: 'Water Tank Is Full With Cap', type: 'toggle', required: false },
+    { id: 'iqc-rl-10', label: 'Water Spickets Are All Working', type: 'toggle', required: false },
+    { id: 'iqc-rl-11', label: 'Intake Is Covered', type: 'toggle', required: false },
+    { id: 'iqc-rl-12', label: 'Fluids Good: E.Oil', type: 'toggle', required: false },
+    { id: 'iqc-rl-13', label: 'Air Filter Cleaned', type: 'toggle', required: false },
+  ],
+  'fam:trencher': [
+    { id: 'iqc-tr-01', label: 'Hoses Ran Correctly; Scuffs Shown In Video; Unit Does Not Leak', type: 'toggle', required: false },
+    { id: 'iqc-tr-02', label: 'All Trash Is Removed', type: 'toggle', required: false },
+    { id: 'iqc-tr-03', label: 'Unused & Broken Items Removed', type: 'toggle', required: false },
+    { id: 'iqc-tr-04', label: 'Buttons & Switches Firmly Secured', type: 'toggle', required: false },
+    { id: 'iqc-tr-05', label: 'Excess Grease Wiped Off Joints', type: 'toggle', required: false },
+    { id: 'iqc-tr-06', label: 'All Tie-Downs Removed: Cords/Wires/ZipTies/Tape/Etc', type: 'toggle', required: false },
+    { id: 'iqc-tr-07', label: 'Controls, Throttle, Power & Operation Are Like New', type: 'toggle', required: false },
+    { id: 'iqc-tr-08', label: "Both Sprockets Won't Cause F.C.", type: 'toggle', required: false },
+    { id: 'iqc-tr-09', label: 'Track Passes 4 Finger Test', type: 'toggle', required: false },
+    { id: 'iqc-tr-10', label: 'You Greased The Auger', type: 'toggle', required: false },
+    { id: 'iqc-tr-11', label: 'Wires/String Cleaned From Auger', type: 'toggle', required: false },
+    { id: 'iqc-tr-12', label: 'Fluids Good: H.Oil & E.Oil', type: 'toggle', required: false },
+    { id: 'iqc-tr-13', label: 'All Zerks & Joints Have Grease', type: 'toggle', required: false },
+    { id: 'iqc-tr-14', label: 'H.Cooler & Air Filter Cleaned', type: 'toggle', required: false },
+  ],
+  'fam:stump-grinder': [
+    { id: 'iqc-sg-01', label: 'Hoses Ran Correctly; Scuffs Shown In Video; Unit Does Not Leak', type: 'toggle', required: false },
+    { id: 'iqc-sg-02', label: 'All Trash Is Removed', type: 'toggle', required: false },
+    { id: 'iqc-sg-03', label: 'Unused & Broken Items Removed', type: 'toggle', required: false },
+    { id: 'iqc-sg-04', label: 'Buttons & Switches Firmly Secured', type: 'toggle', required: false },
+    { id: 'iqc-sg-05', label: 'Excess Grease Wiped Off Joints', type: 'toggle', required: false },
+    { id: 'iqc-sg-06', label: 'All Tie-Downs Removed: Cords/Wires/ZipTies/Tape/Etc', type: 'toggle', required: false },
+    { id: 'iqc-sg-07', label: 'Joysticks, Throttle, Power & Operation Are Like New', type: 'toggle', required: false },
+    { id: 'iqc-sg-08', label: 'Teeth Replaced and/or Rotated', type: 'toggle', required: false },
+    { id: 'iqc-sg-09', label: 'Track Is 1 Finger Tight w/All Shoes', type: 'toggle', required: false },
+    { id: 'iqc-sg-10', label: 'All Teeth Are "Bowled"', type: 'toggle', required: false },
+    { id: 'iqc-sg-11', label: 'Debris Cleaned From Main Bearing', type: 'toggle', required: false },
+    { id: 'iqc-sg-12', label: 'Fluids Good: H.Oil & E.Oil', type: 'toggle', required: false },
+    { id: 'iqc-sg-13', label: 'Governor Tab Is In Proper Place', type: 'toggle', required: false },
+    { id: 'iqc-sg-14', label: 'All Zerks & Joints Have Grease', type: 'toggle', required: false },
+    { id: 'iqc-sg-15', label: 'H.Cooler & Air Filter Cleaned', type: 'toggle', required: false },
+  ],
+  'fam:buggy': [
+    { id: 'iqc-by-01', label: 'Excess Concrete Removed: Decals & Bucket Floor Visible', type: 'toggle', required: false },
+    { id: 'iqc-by-02', label: 'All Trash Is Removed', type: 'toggle', required: false },
+    { id: 'iqc-by-03', label: 'Light Is Mounted', type: 'toggle', required: false },
+    { id: 'iqc-by-04', label: 'Platform Raises Easily', type: 'toggle', required: false },
+    { id: 'iqc-by-05', label: 'Unused & Broken Items Removed', type: 'toggle', required: false },
+    { id: 'iqc-by-06', label: 'Levers & Switches Work Smoothly', type: 'toggle', required: false },
+    { id: 'iqc-by-07', label: 'Bucket Lip Good: No Chips', type: 'toggle', required: false },
+    { id: 'iqc-by-08', label: 'All Tie-Downs Removed: Cords/Wires/ZipTies/Tape/Etc', type: 'toggle', required: false },
+    { id: 'iqc-by-09', label: 'Controls, Throttle, Power & Operation Are Like New', type: 'toggle', required: false },
+    { id: 'iqc-by-10', label: 'Engine Oil Is Full, But Not Too Full', type: 'toggle', required: false },
+    { id: 'iqc-by-11', label: 'Light Is Working', type: 'toggle', required: false },
+    { id: 'iqc-by-12', label: 'All Zerks & Joints Have Grease', type: 'toggle', required: false },
+    { id: 'iqc-by-13', label: 'H.Cooler & Air Filter Cleaned', type: 'toggle', required: false },
+  ],
+  'fam:attachment': [
+    { id: 'iqc-att-01', label: 'Hoses Ran Correctly; Scuffs Shown In Video; Unit Does Not Leak', type: 'toggle', required: false },
+    { id: 'iqc-att-02', label: 'Hoses Length Good (Long/Short)', type: 'toggle', required: false },
+    { id: 'iqc-att-03', label: 'Couplers Tucked Up Off Ground', type: 'toggle', required: false },
+    { id: 'iqc-att-04', label: 'Clean Coupler Faces', type: 'toggle', required: false },
+    { id: 'iqc-att-05', label: 'All Trash Removed', type: 'toggle', required: false },
+    { id: 'iqc-att-06', label: 'Unused & Broken Items Removed', type: 'toggle', required: false },
+    { id: 'iqc-att-07', label: 'Excess Grease Wiped Off Joints', type: 'toggle', required: false },
+    { id: 'iqc-att-08', label: 'All Tie-Downs Removed: Cords/Wires/ZipTies/Tape/Etc', type: 'toggle', required: false },
+    { id: 'iqc-att-09', label: 'Machine Used To Run It (Skid, Excavator, or Tractor)', type: 'toggle', required: false },
+    { id: 'iqc-att-10', label: 'Operates & Controls Like New', type: 'toggle', required: false },
+    { id: 'iqc-att-11', label: 'Keeper Pins Present', type: 'toggle', required: false },
+    { id: 'iqc-att-12', label: 'Rods & Bolts: Not Bent/Missing', type: 'toggle', required: false },
+    { id: 'iqc-att-13', label: 'All Zerks Greased', type: 'toggle', required: false },
+    { id: 'iqc-att-14', label: 'Bits Are Straight & Pointed', type: 'toggle', required: false },
+    { id: 'iqc-att-15', label: 'Tiller: Debris Clear Of Rotor/Blades', type: 'toggle', required: false },
+    { id: 'iqc-att-16', label: 'Bush Hog: Gear Oil Full, SheerBolt Present, Blades Not Cracked', type: 'toggle', required: false },
+  ],
+  'fam:generator': [
+    { id: 'iqc-gen-01', label: 'Metal Frame Beat Back To Shape', type: 'toggle', required: false },
+    { id: 'iqc-gen-02', label: 'Unit-Mounted On Dolly', type: 'toggle', required: false },
+    { id: 'iqc-gen-03', label: 'You Wiped Down The Unit', type: 'toggle', required: false },
+    { id: 'iqc-gen-04', label: 'This Unit Looks Better Than When I Found It', type: 'toggle', required: false },
+    { id: 'iqc-gen-05', label: 'All Cords/Wires/ZipTies/Tape/Etc Removed', type: 'toggle', required: false },
+    { id: 'iqc-gen-06', label: 'Battery PROPERLY Mounted', type: 'toggle', required: false },
+    { id: 'iqc-gen-07', label: 'Unused & Broken Items Removed', type: 'toggle', required: false },
+    { id: 'iqc-gen-08', label: 'Engine Oil Full, Not Too Full', type: 'toggle', required: false },
+    { id: 'iqc-gen-09', label: 'You Powered A Tool Using Each Plug', type: 'toggle', required: false },
+    { id: 'iqc-gen-10', label: 'Button Start Works', type: 'toggle', required: false },
+    { id: 'iqc-gen-11', label: 'Runs Like New', type: 'toggle', required: false },
+  ],
+  'fam:jack-hammer': [
+    { id: 'iqc-jh-01', label: 'You Wiped Down The Unit', type: 'toggle', required: false },
+    { id: 'iqc-jh-02', label: 'All Three Dots: Good', type: 'toggle', required: false },
+    { id: 'iqc-jh-03', label: 'All 4 Bits Present: Report If Missing', type: 'toggle', required: false },
+    { id: 'iqc-jh-04', label: 'You Removed The Bit: Place In Dolly', type: 'toggle', required: false },
+    { id: 'iqc-jh-05', label: 'This Unit Looks Better Than When I Found It', type: 'toggle', required: false },
+    { id: 'iqc-jh-06', label: 'All Cords/Wires/ZipTies/Tape/Etc Removed', type: 'toggle', required: false },
+    { id: 'iqc-jh-07', label: 'Handle Bolt Is Not Broken', type: 'toggle', required: false },
+    { id: 'iqc-jh-08', label: 'Jacketed Cable Has ZERO Cuts', type: 'toggle', required: false },
+    { id: 'iqc-jh-09', label: 'You Plugged In And Used In Dirt', type: 'toggle', required: false },
+    { id: 'iqc-jh-10', label: 'Wheels Roll Perfectly', type: 'toggle', required: false },
+  ],
+  'fam:power-trowel': [
+    { id: 'iqc-pt-01', label: 'Leveler Not-Broken', type: 'toggle', required: false },
+    { id: 'iqc-pt-02', label: 'Buttons/Switches Firmly Secured', type: 'toggle', required: false },
+    { id: 'iqc-pt-03', label: 'Concrete Knocked Off With Mallet', type: 'toggle', required: false },
+    { id: 'iqc-pt-04', label: 'You Wiped Down The Unit', type: 'toggle', required: false },
+    { id: 'iqc-pt-05', label: 'Zero Leaks', type: 'toggle', required: false },
+    { id: 'iqc-pt-06', label: 'All Cords/Wires/ZipTies/Tape/Etc Removed', type: 'toggle', required: false },
+    { id: 'iqc-pt-07', label: 'Unused & Broken Items Removed', type: 'toggle', required: false },
+    { id: 'iqc-pt-08', label: 'This Unit Looks Better Than When I Found It', type: 'toggle', required: false },
+    { id: 'iqc-pt-09', label: 'Leveler: Not Broken', type: 'toggle', required: false },
+    { id: 'iqc-pt-10', label: 'You Cleaned Air Filter', type: 'toggle', required: false },
+    { id: 'iqc-pt-11', label: 'Pull Cord Will Not Break', type: 'toggle', required: false },
+    { id: 'iqc-pt-12', label: 'You Greased Main Shaft', type: 'toggle', required: false },
+    { id: 'iqc-pt-13', label: 'Runs Like New', type: 'toggle', required: false },
+    { id: 'iqc-pt-14', label: 'Engine Oil Full, Not Too Full', type: 'toggle', required: false },
+    { id: 'iqc-pt-15', label: 'All 4 Blades Are Straight & Smooth', type: 'toggle', required: false },
+  ],
+  'fam:sump-pump': [
+    { id: 'iqc-sp-01', label: 'Discharge Hose Is Not Crushed, Torn, Or Broken', type: 'toggle', required: false },
+    { id: 'iqc-sp-02', label: 'Hoses Displayed w/Pump', type: 'toggle', required: false },
+    { id: 'iqc-sp-03', label: 'Jacketed Cable Has ZERO Cuts', type: 'toggle', required: false },
+    { id: 'iqc-sp-04', label: 'This Unit Looks Better Than When I Found It', type: 'toggle', required: false },
+    { id: 'iqc-sp-05', label: 'All Cords/Wires/ZipTies/Tape/Etc Removed', type: 'toggle', required: false },
+    { id: 'iqc-sp-06', label: 'You Primed & Ran This Unit w/Water', type: 'toggle', required: false },
+    { id: 'iqc-sp-07', label: 'Runs Like New', type: 'toggle', required: false },
+    { id: 'iqc-sp-08', label: 'Debris Cleared From Bottom', type: 'toggle', required: false },
+  ],
+  'fam:trash-pump': [
+    { id: 'iqc-tp-01', label: 'Inlet Hose Is Not Crushed, Torn, Or Broken', type: 'toggle', required: false },
+    { id: 'iqc-tp-02', label: 'Discharge Hose Is Not Crushed, Torn, Or Broken', type: 'toggle', required: false },
+    { id: 'iqc-tp-03', label: 'Hoses Displayed w/Pump', type: 'toggle', required: false },
+    { id: 'iqc-tp-04', label: 'Metal Frame Bent Back To Shape', type: 'toggle', required: false },
+    { id: 'iqc-tp-05', label: 'Unit-Mounted Onto Dolly', type: 'toggle', required: false },
+    { id: 'iqc-tp-06', label: 'Unused & Broken Items Removed', type: 'toggle', required: false },
+    { id: 'iqc-tp-07', label: 'This Unit Looks Better Than When I Found It', type: 'toggle', required: false },
+    { id: 'iqc-tp-08', label: 'All Cords/Wires/ZipTies/Tape/Etc Removed', type: 'toggle', required: false },
+    { id: 'iqc-tp-09', label: 'Runs Like New', type: 'toggle', required: false },
+    { id: 'iqc-tp-10', label: 'You Primed & Ran This Unit w/Water', type: 'toggle', required: false },
+    { id: 'iqc-tp-11', label: 'Water/Trash Emptied From Body', type: 'toggle', required: false },
+    { id: 'iqc-tp-12', label: 'Pull Cord Will Not Break', type: 'toggle', required: false },
+    { id: 'iqc-tp-13', label: 'Engine Oil Full, Not Too Full', type: 'toggle', required: false },
+  ],
+  'fam:concrete-saw': [
+    { id: 'iqc-cs-01', label: 'Leveler Not Broken', type: 'toggle', required: false },
+    { id: 'iqc-cs-02', label: 'Buttons/Switches Firmly Secured', type: 'toggle', required: false },
+    { id: 'iqc-cs-03', label: 'Concrete Knocked Off With Mallet', type: 'toggle', required: false },
+    { id: 'iqc-cs-04', label: 'You Wiped Down The Unit', type: 'toggle', required: false },
+    { id: 'iqc-cs-05', label: 'Zero Leaks', type: 'toggle', required: false },
+    { id: 'iqc-cs-06', label: 'Water Hose Secured In Place', type: 'toggle', required: false },
+    { id: 'iqc-cs-07', label: 'All Cords/Wires/ZipTies/Tape/Etc Removed', type: 'toggle', required: false },
+    { id: 'iqc-cs-08', label: 'Unused & Broken Items Removed', type: 'toggle', required: false },
+    { id: 'iqc-cs-09', label: 'Cover Works Properly', type: 'toggle', required: false },
+    { id: 'iqc-cs-10', label: 'This Unit Looks Better Than When I Found It', type: 'toggle', required: false },
+    { id: 'iqc-cs-11', label: 'Leveler: Not Broken', type: 'toggle', required: false },
+    { id: 'iqc-cs-12', label: 'You Cleaned Air Filter', type: 'toggle', required: false },
+    { id: 'iqc-cs-13', label: 'Pull Cord Will Not Break', type: 'toggle', required: false },
+    { id: 'iqc-cs-14', label: 'You Greased This Zerk', type: 'toggle', required: false },
+    { id: 'iqc-cs-15', label: 'Greased The Axel', type: 'toggle', required: false },
+    { id: 'iqc-cs-16', label: 'Wheels Roll Perfectly', type: 'toggle', required: false },
+    { id: 'iqc-cs-17', label: 'Engine Oil Full, Not Too Full', type: 'toggle', required: false },
+    { id: 'iqc-cs-18', label: 'Runs Like New', type: 'toggle', required: false },
+  ],
+};
 const inspKeyOfCat = (categoryId) => inspFamilyKey(IDX.category.get(categoryId));
 const inspFamilyLabel = (key) => INSP_FAM_LABELS[key] || (IDX.category.get(key) ? IDX.category.get(key).name : key);
 const inspCfgByKey = (key) => ((state.settings && state.settings.inspections) || {})[key] || null;
@@ -2534,9 +3065,119 @@ async function lockKpiFromWrangler(mi) {
 // R3: each status badge carries the icon of the card the status belongs to
 const SET_CARD = { rentalStatus: 'rentals', unitRentalStatus: 'rentals', invoiceStatus: 'invoices', unitInspectionStatus: 'inspections', inspectionResult: 'inspections', unitFleetStatus: 'units', gpsStatus: 'units', unitOrderStatus: 'workOrders', woPhase: 'workOrders', woType: 'workOrders', customerPayStatus: 'customers', accountType: 'customers', serviceStatus: 'serviceOrders', expenseReconcile: 'expenses', vendorType: 'vendors', companyFileType: 'files' };
 const dataAttrs = (data) => Object.entries(data || {}).map(([k, v]) => ` data-${k}="${esc(String(v))}"`).join('');
-function statusPill(set, value, { card, recId, x, truck, previewColor, previewIcon, previewLabel } = {}) {
+/* ════════════════════════════════════════════════════════════════════════
+   FLAG-DRIVEN COLOR ENGINE — SPEC docs/specs/flag-color-system.md
+   Flags answer "what must I do with this record right now?". getEntityColor →
+   the computed status color: GRAY if formally archived, else the highest active-
+   flag severity (red > yellow > green), else GREEN (nothing to do). FLAG_META
+   (labels/severities) lives in config.js; the CONDITIONS live here with the
+   helpers they need. Conditions evaluate at render time against live record data.
+   ════════════════════════════════════════════════════════════════════════ */
+// Open (not Complete / not cancelled) WOs touching any of a rental's units.
+function openWOsForRental(r) {
+  const ids = new Set(rentalUnitIds(r));
+  return DATA.workOrders.filter((w) => ids.has(w.unitId) && w.phase !== 'Complete' && !w.cancelled);
+}
+const rentalUnitRecords = (r) => rentalUnitIds(r).map((id) => IDX.unit.get(id)).filter(Boolean);
+// A WO carries an ETA when the WO or any of its lines has an `eta` date set.
+const woHasEta = (w) => !!(w.eta || (w.lineItems || []).some((li) => li.eta));
+
+const FLAG_COND = {
+  rentals: {
+    'fc':               (r) => openWOsForRental(r).some((w) => w.woType === 'Field Call'),
+    'overbooked':       (r) => !!rentalOverbooked(r),
+    'unpaid-balance':   (r) => { const c = IDX.customer.get(r.customerId); return !!c && c.payStatus === 'Unpaid'; },
+    'no-card':          (r) => { const c = IDX.customer.get(r.customerId); return !!c && cardFlag(c) === 'none'; },
+    'unsigned-card':    (r) => { const c = IDX.customer.get(r.customerId); if (!c || !hasValidCard(c)) return false; return !cardCurrentSigning(c, defaultCard(c)); },
+    'unit-failed':      (r) => rentalUnitRecords(r).some((u) => u.inspectionStatus === 'Failed'),
+    'off-rent-overdue': (r) => r.status === 'Off Rent',
+    'no-show':          (r) => r.status === 'Reserved' && !!r.startDate && parseISO(r.startDate) < TODAY,
+    'starts-today':     (r) => r.status === 'Reserved' && !!r.startDate && dayDiff(TODAY, parseISO(r.startDate)) === 0,
+    'starts-tomorrow':  (r) => r.status === 'Reserved' && !!r.startDate && dayDiff(TODAY, parseISO(r.startDate)) === 1,
+    'end-rent':         (r) => r.status === 'End Rent',
+    'unit-due-soon':    (r) => rentalUnitRecords(r).some((u) => { const s = topServiceForUnit(u); return !!s && s.status === 'due-soon'; }),
+    'partial-payment':  (r) => { const c = IDX.customer.get(r.customerId); return !!c && c.payStatus === 'Partial'; },
+    'card-expiring':    (r) => { const c = IDX.customer.get(r.customerId); return !!c && cardFlag(c) === 'expiring'; },
+    'complete-rental':  (r) => allUnitsTerminal(r) && !r.completed,
+  },
+  units: {
+    'inspection-failed':    (u) => u.inspectionStatus === 'Failed',
+    'service-past-due':     (u) => { const s = topServiceForUnit(u); return !!s && s.status === 'past-due'; },
+    'overbooked':           (u) => !!unitOverbooked(u.unitId),
+    'gps-offline':          (u) => u.gpsStatus === 'Not Reporting',
+    'inspection-not-ready': (u) => u.inspectionStatus === 'Not Ready',
+    'service-due-soon':     (u) => { const s = topServiceForUnit(u); return !!s && s.status === 'due-soon'; },
+    'wash-requested':       (u) => !!u.washRequested,
+    'gps-verify':           (u) => u.gpsStatus === 'Verify',
+  },
+  workOrders: {
+    'part-needed':         (w) => w.phase === 'Part Needed',
+    'field-call':          (w) => w.woType === 'Field Call',
+    'failed-origin':       (w) => w.woType === 'Failed',
+    'no-lines':            (w) => !(w.lineItems || []).length,
+    'part-unknown':        (w) => w.phase === 'Part Needed?',
+    'part-ordered-no-eta': (w) => w.phase === 'Part Ordered' && !woHasEta(w),
+    'part-ordered-eta':    (w) => w.phase === 'Part Ordered' && woHasEta(w),
+    'part-local':          (w) => w.phase === 'Part is Local',
+    'bill-maybe':          (w) => w.billCustomer === 'Maybe',
+  },
+  invoices: {
+    'unpaid':      (i) => invoiceTotals(i).status === 'Unpaid',
+    'late':        (i) => /^Late/.test(invoiceTotals(i).status),
+    'collections': (i) => invoiceTotals(i).status === 'Collections',
+    'partial':     (i) => invoiceTotals(i).status === 'Partial',
+    'not-due':     (i) => invoiceTotals(i).status === 'Not Due',
+  },
+  customers: {
+    'unpaid-balance':    (c) => c.payStatus === 'Unpaid',
+    'blacklisted':       (c) => /Blacklist/i.test(c.accountType || ''),
+    'no-card':           (c) => cardFlag(c) === 'none',
+    'customer-lost':     (c) => customerActivity(c).stage === 'Lost',
+    'customer-inactive': (c) => customerActivity(c).stage === 'Inactive',
+    'partial-balance':   (c) => c.payStatus === 'Partial',
+    'member-incomplete': (c) => c.accountType === 'Member Incomplete',
+    'action-required':   (c) => customerActivity(c).stage === 'Action Required',
+    'check-in':          (c) => customerActivity(c).stage === 'Check-in',
+    'card-expiring':     (c) => cardFlag(c) === 'expiring',
+  },
+};
+/** Active flags for a record, severity-desc (red → yellow). Safe on any input. */
+function getEntityFlags(entityType, rec) {
+  if (!rec) return [];
+  const meta = FLAG_META[entityType], cond = FLAG_COND[entityType];
+  if (!meta || !cond) return [];
+  const out = [];
+  for (const f of meta) { let on = false; try { on = !!(cond[f.id] && cond[f.id](rec)); } catch (e) { on = false; } if (on) out.push(f); }
+  return out.sort((a, b) => (FLAG_SEVERITY_RANK[b.severity] || 0) - (FLAG_SEVERITY_RANK[a.severity] || 0));
+}
+/** Formally archived → gray, no flag evaluation (§6: rentals on Complete Rental;
+ *  invoices on Refund). Cancelled/No Show stay R/Y until completed (§6.2). */
+function entityArchived(entityType, rec) {
+  if (!rec) return false;
+  if (entityType === 'rentals') return rec.completed === true;
+  if (entityType === 'invoices') return rec.refunded === true || invoiceTotals(rec).status === 'Refunded';
+  return false;
+}
+/** Computed status color: 'gray' (archived) · highest active-flag severity · 'green'. */
+function getEntityColor(entityType, rec) {
+  if (entityArchived(entityType, rec)) return 'gray';
+  const fl = getEntityFlags(entityType, rec);
+  return fl.length ? fl[0].severity : 'green';
+}
+/** Map a statusPill `set` → its entity type (only the 5 PRIMARY status sets are
+ *  flag-colored; secondary sets like unitInspectionStatus keep their registry color). */
+const PRIMARY_SET_ENTITY = { rentalStatus: 'rentals', unitFleetStatus: 'units', woPhase: 'workOrders', invoiceStatus: 'invoices', customerPayStatus: 'customers' };
+
+function statusPill(set, value, { card, recId, x, truck, previewColor, previewIcon, previewLabel, flag } = {}) {
   const st = getStatus(set, value);
-  const color = previewColor || st.color;   // Settings Board live preview overrides the applied color
+  // Color: Settings-Board preview override wins; else a PRIMARY status set computes
+  // its flag-driven color from the record (R/Y/G/gray); else the registry color.
+  let color = previewColor || st.color;
+  const entityType = PRIMARY_SET_ENTITY[set];
+  if (!previewColor && flag !== false && entityType && recId != null) {
+    const erec = recOf(entityType, recId);
+    if (erec) color = getEntityColor(entityType, erec);
+  }
   const label = previewLabel != null ? previewLabel : st.label;
   const data = card ? ` data-pill-card="${card}" data-pill-rec="${esc(recId)}"` : '';
   const tk = truck ? `<span class="truck">${I.truck}</span>` : '';
@@ -2835,6 +3476,7 @@ const RULE_META = {
   R22: ['Date picker', 'dateField', 'the ONE app-styled calendar for a single date/time (NOT the rental-window timeline)'],
   R23: ['Tooltip', 'data-tip → the one styled tip', 'every hover hint goes through data-tip — a native title attribute is a violation'],
   R24: ['Close ✕', 'closeX', 'red circle · white ✕ — the deliberate close/remove; hover-reveal variant on tabs'],
+  R25: ['Sync banner', 'renderSyncBanner / #sync-banner', 'persistent “Not saving” plate — red hazard-stripe danger cap; raised when the backend sync is failing, hides on recovery. The ONE non-toast alert; lives on <body>, outside #app'],
 };
 /* ════════════ DESIGN-SYSTEM CATALOG — the tabbed Rulebook (Jac 2026-06-14) ════
    The Rulebook grew from "stamped element rules" (R0–R24 above) into the WHOLE
@@ -2854,7 +3496,7 @@ const RB_FOUNDATION = {
     `<span style="font-size:14px;color:var(--txt)">Rugged equipment, rented right — the body face carries the content.</span>`],
   'type-mono': ['‹›', 'Mono', 'ui-monospace · 10–12px · txt-3',
     'Code + debug references only: the Inspector tag and rulebook builder names.',
-    `<code style="font-family:ui-monospace,monospace;font-size:12px;color:var(--txt-3)">UNITS › INSPECTION › “Ready”</code>`],
+    `<code style="font-family:ui-monospace,monospace;font-size:12px;color:var(--txt-3)">UNITS › INSPECTION › “Passed”</code>`],
   'type-scale': ['#', 'Size scale', '28 · 15 · 13 · 12 · 11 · 10 · 9.5px',
     'Bigger = identity/value (28 KPI · 15 popup title). 12–13 = content. ≤11 = stamped micro-labels & counters. ONE size (11px) for every status badge.',
     `<span style="display:flex;align-items:baseline;gap:13px;flex-wrap:wrap;color:var(--txt)"><span style="font-size:28px;font-weight:800">28</span><span style="font-size:15px;font-weight:700">15</span><span style="font-size:13px">13</span><span style="font-size:12px">12</span><span style="font-family:'Saira Condensed';text-transform:uppercase;letter-spacing:1px;font-size:11px;font-weight:700">11 label</span><span style="font-size:9.5px;color:var(--txt-3)">9.5</span></span>`],
@@ -2960,7 +3602,9 @@ const RB_TABS = [
   { id: 'upload', label: 'Upload & Capture', intro: 'Add-file zones and photo/site captures.',
     items: [{ r: 'R21' }, { f: 'upload-capture' }] },
   { id: 'data', label: 'Data & Behaviors', intro: 'Visualizations, plus the app’s behaviors — it flashes instead of erroring, right-clicks, tooltips, and self-lints.',
-    items: [{ r: 'R16' }, { r: 'R15' }, { r: 'R13' }, { f: 'data-kpi' }, { f: 'data-gauge' }, { r: 'R19' }, { r: 'R20' }, { r: 'R23' }, { f: 'behavior-preview' }, { r: 'R0' }] },
+    items: [{ r: 'R16' }, { r: 'R15' }, { r: 'R13' }, { f: 'data-kpi' }, { f: 'data-gauge' }, { r: 'R19' }, { r: 'R25' }, { r: 'R20' }, { r: 'R23' }, { f: 'behavior-preview' }, { r: 'R0' }] },
+
+  { id: 'windows', label: 'Windows', intro: 'Every pop-up window in the app, by kind. Expand one for a live preview, its fields, and a copy-paste edit reference — your map to wrangle any screen.', items: [] },
 ];
 /* structural fallbacks so hovering containers also names their rule */
 const CLASS_RULE = [
@@ -3004,8 +3648,8 @@ function onInspectMove(e) {
    ════════════════════════════════════════════════════════════════════════ */
 const ROW_META = {
   rentals:    (r) => ({ title: rentalDisplayName(r), sub: IDX.customer.get(r.customerId)?.name || '', color: rentalStatusDisplay(r).color }),
-  customers:  (c) => ({ title: c.name, sub: c.phone || c.company || '', color: getStatus('customerPayStatus', c.payStatus).color }),
-  units:      (u) => ({ title: u.name, sub: IDX.category.get(u.categoryId)?.name || '', color: getStatus('unitInspectionStatus', u.inspectionStatus).color }),
+  customers:  (c) => ({ title: c.name, sub: c.phone || c.company || '', color: getEntityColor('customers', c) }),
+  units:      (u) => ({ title: u.name, sub: IDX.category.get(u.categoryId)?.name || '', color: getEntityColor('units', u) }),
   categories: (c) => ({ title: c.name, sub: c.fuelType || '', color: 'orange' }),
   invoices:   (i) => ({ title: i.invoiceId, sub: IDX.customer.get(i.customerId)?.name || '', color: getStatus('invoiceStatus', invoiceTotals(i).status).color }),
   workOrders: (w) => ({ title: `${IDX.unit.get(w.unitId)?.name || '—'} — ${w.woReport}`, sub: fmtShortDate(w.date), color: getStatus('woPhase', w.phase).color }),
@@ -3052,6 +3696,56 @@ function categoryMixViz(catId) {
   return `<div class="row-viz" style="background:linear-gradient(90deg, var(--mix-green) 0 ${g}%, var(--mix-yellow) ${g}% ${g + y}%, var(--mix-red) ${g + y}% ${g + y + r}%)"></div>`;
 }
 
+/* A library glyph representing a unit's CATEGORY (Jac) — keyword-resolved from the
+   category name onto the vendored CATEGORY_ICON map (Lucide + the Tabler backhoe).
+   Never hand-authored; unknowns fall back to the backhoe (heavy-equipment default). */
+function categoryIconFor(name) {
+  const n = (name || '').toLowerCase();
+  if (/excavat|backhoe|dig|skid|loader|dozer|bobcat|track\s?hoe|mini.?ex/.test(n)) return CATEGORY_ICON.excavator;
+  if (/scissor|boom|man.?lift|aerial|telehandl|fork|\blift\b/.test(n)) return CATEGORY_ICON.lift;
+  if (/light/.test(n)) return CATEGORY_ICON.light;
+  if (/tower/.test(n)) return CATEGORY_ICON.tower;
+  if (/generat|\bpower\b|genset|geny/.test(n)) return CATEGORY_ICON.generator;
+  if (/compress|\bair\b/.test(n)) return CATEGORY_ICON.compressor;
+  if (/pump|water/.test(n)) return CATEGORY_ICON.pump;
+  if (/dump|hauler|flatbed|\btruck\b/.test(n)) return CATEGORY_ICON.truck;
+  if (/tractor|mower|brush|broom/.test(n)) return CATEGORY_ICON.tractor;
+  if (/trailer|container/.test(n)) return CATEGORY_ICON.trailer;
+  if (/fuel|tank/.test(n)) return CATEGORY_ICON.fuel;
+  if (/heat|furnace/.test(n)) return CATEGORY_ICON.heater;
+  if (/saw|cut/.test(n)) return CATEGORY_ICON.saw;
+  return CATEGORY_ICON.excavator;
+}
+/* The unit row's RENTAL+INSPECTION pill (Jac): text = rental status / availability
+   verdict / inspection label; COLOR is inspection-driven (mechanics' card) and only
+   goes red on a catastrophe (Failed inspection, overbooked). Built via statusPill's
+   color/label override so it stays an R3 pill. */
+function unitRentalInspPill(u) {
+  const insp = getStatus('unitInspectionStatus', u.inspectionStatus);
+  const ar = activeRentalForUnit(u.unitId);
+  let text, color;
+  if (availWin) {
+    if (isUnitAvailableFor(u, availWin.start, availWin.end, availWin.selfId)) { text = 'Available'; color = 'green'; }
+    else if (u.fleetStatus !== 'Active') { text = getStatus('unitFleetStatus', u.fleetStatus).label; color = 'red'; }
+    else if (u.inspectionStatus === 'Failed') { text = 'Failed'; color = 'red'; }
+    else { const cf = rentalsOverlappingUnit(u.unitId, availWin.start, availWin.end, availWin.selfId)[0]; text = cf ? 'Booked' : 'Unavailable'; color = 'red'; }
+  } else if (ar) {
+    text = rentalDisplayStatus(ar);
+    color = (u.inspectionStatus === 'Failed' || unitOverbooked(u.unitId)) ? 'red' : insp.color;   // inspection drives; catastrophe → red
+  } else {
+    text = insp.label; color = insp.color;            // Passed / Not Ready / Failed
+  }
+  return statusPill('unitInspectionStatus', u.inspectionStatus, { card: 'units', recId: u.unitId, previewColor: color, previewLabel: text });
+}
+/* The unit row's WORK-ORDER+SERVICE pill (Jac): an open WO's journey bottleneck takes
+   precedence (flag-colored woPhase); otherwise the nearest service order by hours. */
+function unitWoSoPill(u) {
+  const wo = openWOForUnit(u.unitId);
+  if (wo) return statusPill('woPhase', wo.phase, { card: 'workOrders', recId: wo.woId });
+  const svc = topServiceForUnit(u);
+  return svc ? badge(svcText(svc), svc.color) : '';
+}
+
 /* ════════════════════════════════════════════════════════════════════════
    §6b PER-CARD ROWS
    ════════════════════════════════════════════════════════════════════════ */
@@ -3087,122 +3781,168 @@ const ROWS = {
      the truck when it's a transport rental — that's the whole dispatch signal.
      Right = the derived Balance with due-context (R8). Triage without clicking. ── */
   rentals: (r) => {
-    const unit = IDX.unit.get(r.unitId);
     const cust = IDX.customer.get(r.customerId);
     const inv = r.invoiceId ? IDX.invoice.get(r.invoiceId) : null;
-    const price = rentalPrice(r);
-    const dispStatus = rentalDisplayStatus(r);
-    const stColor = rentalStatusDisplay(r).color;   // the elapsed-tint follows the rental status (Jac 2026-06-13)
-    const truck = showsTruck(r.status, r.transportType);
-    const name = rentalUnitsLabel(r) || 'Quote';   // the row IS the window timeline; show just the unit(s)
-    const gate = masterGate(r, { truck });
+    const stColor = rentalStatusDisplay(r).color;   // border-left highlight follows rental status
+    const units = rentalUnitsLabel(r);               // comma-separated unit names (empty on a bare quote)
     const s = parseISO(r.startDate), e = parseISO(r.endDate);
+    const stPill = statusPill('rentalStatus', rentalDisplayStatus(r), { card: 'rentals', recId: r.rentalId });
 
-    // no window yet (a Quote) → a simple bar to set the window
-    if (!(s && e)) {
-      return `<div class="rtl"><div class="rtl-over">
-        <div class="rtl-l"><span class="rtl-name">${esc(name)}</span><span class="rtl-sub">${cust ? refPill('customers', r.customerId, cust.name) : ''}</span></div>
-        <div class="rtl-mid">${gate}</div>
-        <div class="rtl-r"><span class="rtl-set">Set window</span></div>
-      </div></div>`;
-    }
-
-    // elapsed-tint cells (reused from the R16 day-timeline math)
-    const dayMs = 86400000;
-    const total = Math.max(1, Math.round((e - s) / dayMs));
-    const weekly = total > 14, cells = weekly ? Math.ceil(total / 7) : total;
-    const cellHtml = Array.from({ length: cells }, (_, i) => {
-      const cellEnd = new Date(s.getTime() + (weekly ? (i + 1) * 7 : i + 1) * dayMs);
-      return `<div class="day ${TODAY >= cellEnd ? 'past' : ''}"></div>`;
-    }).join('');
-
-    // Overdue = the unit is physically OUT (On/End/Off Rent) past its end date — NOT a stale reservation.
-    const overdue = e < TODAY && (r.status === 'On Rent' || r.status === 'End Rent' || r.status === 'Off Rent');
-    const nOver = overdue ? dayDiff(e, TODAY) : 0;
-
-    // R8 BALANCE with due-context (Jac), STACKED: $X on top, "Due Jun 21" beneath.
-    // Paid green · not-due blue · bare red $X when overdue (the missing "Due" IS the signal).
-    let bal = '';
+    // ── Balance (R8 derived): Paid green · upcoming yellow · past-due red ───
+    let bal = '', balCls = '';
     if (inv) {
       const t = invoiceTotals(inv);
-      if (t.refunded || t.status === 'Refunded') bal = `<span class="rtl-bal muted">Refunded</span>`;
-      else if (t.balance <= 0 && t.paid > 0) bal = `<span class="rtl-bal" style="color:var(--green)">Paid</span>`;
-      else if (parseISO(inv.dueDate) > TODAY) bal = `<span class="rtl-bal" style="color:var(--blue)">${money(t.balance)}<span class="rtl-due">Due ${esc(relDate(inv.dueDate))}</span></span>`;
-      else bal = `<span class="rtl-bal" style="color:var(--red)">${money(t.balance)}</span>`;
+      if (t.refunded || t.status === 'Refunded') { bal = 'Refunded'; balCls = 'muted'; }
+      else if (t.balance <= 0 && t.paid > 0) { bal = 'Paid'; balCls = 'paid'; }
+      else if (t.balance > 0) { bal = money(t.balance); balCls = parseISO(inv.dueDate) > TODAY ? 'due' : 'overdue'; }
     }
-    // a customer who OWES but has no card on file → call-don't-charge (the one extra billing signal)
-    const noCard = cust && inv && cardFlag(cust) === 'none' && invoiceTotals(inv).balance > 0 ? flagEl('No Card', 'red', { alert: true }) : '';
-    const cat = IDX.category.get(r.categoryId) || (unit ? IDX.category.get(unit.categoryId) : null);
 
-    return `<div class="rtl">
-      <div class="rtl-cells" style="--tint:var(--${stColor}-bg)">${cellHtml}</div>
-      <div class="rtl-over">
-        <div class="rtl-l">
-          <span class="rtl-top"><span class="rtl-name">${esc(name)}</span>${cat ? flagEl(cat.name, 'gray', { icon: CARD_ICON.categories, card: 'categories', recId: cat.categoryId }) : ''}</span>
-          <span class="rtl-sub">${cust ? refPill('customers', r.customerId, cust.name) : ''}<span class="rtl-start">${esc(relDate(r.startDate))}</span></span>
-        </div>
-        <div class="rtl-mid">${gate}${price ? `<span class="rate">${money(price.price)} · ${esc(price.rate)}</span>` : ''}</div>
-        <div class="rtl-r">
-          ${noCard}${bal}
-          <span class="rtl-when">${r.startTime ? `<span class="tm">${esc(r.startTime)}</span>` : ''}<span class="rtl-end${overdue ? ' over' : ''}">${overdue ? `${nOver}d over` : esc(relDate(r.endDate))}</span></span>
-        </div>
-      </div>
+    // ── HEADER: row 1 = unit names (colored by inspection status) + status pill pinned RIGHT;
+    //           row 2 = customer name + balance (Jac 2026-06-23) ──
+    // Unit names tinted by their inspection status so color signal is immediate on hover.
+    const unitNameHtml = rentalUnits(r).map((eu) => {
+      const unit = IDX.unit.get(eu.unitId);
+      if (!unit) return '';
+      const insp = unit.inspectionStatus;
+      const ic = insp === 'Failed' ? 'var(--red)' : insp === 'Not Ready' ? 'var(--yellow)' : insp === 'Passed' ? 'var(--green)' : 'var(--txt)';
+      return `<span class="rcc-uname" style="color:${ic}" data-tip="${esc(unit.name)}: ${esc(insp || 'Unknown')}">${esc(unit.name)}</span>`;
+    }).filter(Boolean).join('<span class="rcc-usep">, </span>') || (units ? `<span class="rcc-uname">${esc(units)}</span>` : '');
+    const headHtml = `<div class="rcc-head">
+      <div class="rcc-h1">${unitNameHtml ? `<span class="rcc-units">${unitNameHtml}</span>` : ''}${stPill}</div>
+      <div class="rcc-h2"><span class="rcc-cust">${cust ? esc(cust.name) : ''}</span>${
+        bal ? `<span class="rcc-bal ${balCls}">${esc(bal)}</span>` : (!(s && e) ? '<span class="rcc-bal rcc-set">Set window</span>' : '')
+      }</div>
+    </div>`;
+
+    // ── Quote (no window yet) → header only ──────────────────────────────────
+    if (!(s && e)) return `<div class="rcc" style="--rcc-hl:var(--${stColor})">${headHtml}</div>`;
+
+    // ── Transport gate icons on start / end dots ─────────────────────────────
+    // Delivery or Round-Trip → truck out on start; Recovery or Round-Trip → truck in on end.
+    // Self (or unset) → person icon (CARD_ICON.customers = Lucide "user").
+    const ttype = r.transportType;
+    const isSelf = !ttype || ttype === 'Self';
+    const startIcon = isSelf ? CARD_ICON.customers : I.truck;
+    const endHasTruck = ttype === 'Recovery' || ttype === 'Round-Trip';
+    const endIcon = isSelf ? CARD_ICON.customers : (endHasTruck ? I.truck : '');
+
+    // ── 3-week Mon–Fri calendar (closed weekends, Jac 2026-06-23): prev · current
+    //    (today highlighted) · next. Window THREADED through the dots — solid track =
+    //    elapsed (start→today), faint = remaining. Anchored to this week's Monday. ──
+    const wd = TODAY.getDay();                       // 0 Sun … 6 Sat
+    const monOff = wd === 0 ? -6 : 1 - wd;           // days back to this week's Monday
+    const thisMon = new Date(TODAY.getFullYear(), TODAY.getMonth(), TODAY.getDate() + monOff);
+    const firstMon = new Date(thisMon.getFullYear(), thisMon.getMonth(), thisMon.getDate() - 7);
+    const MON = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+    const dotCells = [];
+    for (let w = 0; w < 3; w++) for (let dow = 0; dow < 5; dow++) {   // 5 weekdays × 3 weeks
+      const d = new Date(firstMon.getFullYear(), firstMon.getMonth(), firstMon.getDate() + w * 7 + dow);
+      const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      const isToday = iso === TODAY_ISO, isStart = iso === r.startDate, isEnd = iso === r.endDate;
+      const inWin = iso >= r.startDate && iso <= r.endDate;   // ISO compares chronologically
+      const elapsed = inWin && d <= TODAY;
+      // month-1st: replace dot with large month abbrev — only on non-start/end cells
+      const isMon1st = !isStart && !isEnd && d.getDate() === 1;
+      const cls = ['rcc-day', isToday && 'is-today', isStart && 'is-start', isEnd && 'is-end',
+        inWin && 'is-win', inWin && (elapsed ? 'elapsed' : 'fut'),
+        (!isToday && !inWin && d < TODAY) && 'is-past',
+        isMon1st && 'is-mon1st'].filter(Boolean).join(' ');
+      // start time above start dot; end time above end dot
+      const time = isStart ? (r.startTime || '') : (isEnd ? (r.endTime || '') : '');
+      const icon = isStart ? startIcon : (isEnd ? endIcon : '');
+      // ONLY start & end show a date number; mon-1st shows 3-letter abbrev (no dot); others blank
+      const label = (isStart || isEnd) ? String(d.getDate()) : (isMon1st ? MON[d.getMonth()] : '');
+      const labelCls = isMon1st ? ' mon1st' : '';
+      // mon-1st skips the dot entirely (replaced by the big month text)
+      const dotHtml = isMon1st ? '' : `<span class="rcc-dot">${icon}</span>`;
+      dotCells.push(`<div class="${cls}">${inWin ? '<span class="rcc-bar"></span>' : ''}${time ? `<span class="rcc-t">${esc(time)}</span>` : ''}${dotHtml}${label ? `<span class="rcc-n${labelCls}">${esc(label)}</span>` : ''}</div>`);
+    }
+    const dowHtml = ['M', 'T', 'W', 'T', 'F'].map((l) => `<span>${l}</span>`).join('');
+
+    return `<div class="rcc" style="--rcc-hl:var(--${stColor})">
+      ${headHtml}
+      <div class="rcc-dow">${dowHtml}</div>
+      <div class="rcc-body">${dotCells.join('')}</div>
     </div>`;
   },
 
   customers: (c) => {
-    const active = DATA.rentals.filter((r) => r.customerId === c.customerId && ACTIVE_RENTAL.has(r.status) && r.status !== 'Quote');
-    const unitPills = active.map((r) => { const u = IDX.unit.get(r.unitId); return u ? statusPill('rentalStatus', rentalDisplayStatus(r), { card: 'rentals', recId: r.rentalId }) : ''; }).join('');
+    // Name TINTED by the customer's flag color (Jac): only red/yellow lead — a clear
+    // customer keeps the calm default ink, archived/gray reads muted.
+    const fc = getEntityColor('customers', c);
+    const nameColor = (fc === 'red' || fc === 'yellow') ? `var(--${fc})` : fc === 'gray' ? 'var(--txt-3)' : 'var(--txt)';
     const acct = getStatus('customerAccountType', c.accountType || 'Non-Business');
-    return `<div class="row-1"><span class="r-title">${esc(c.name)}</span><span class="r-fields"><span>${esc(c.phone || '')}</span></span></div>
-      <div class="row-2">
-        ${badge(acct.label, acct.color)}
-        ${statusPill('customerPayStatus', c.payStatus, { card: 'customers', recId: c.customerId })}
-        ${cardFlag(c) !== 'ok' ? badge(CARD_FLAG_META[cardFlag(c)].label, CARD_FLAG_META[cardFlag(c)].color) : ''}
-        ${unitPills}
-      </div>`;
+    const sub = [esc(c.phone || ''), c.accountType ? esc(acct.label) : ''].filter(Boolean).join(' · ');
+
+    // Pay status AS A NUMBER (Jac — no "New Customer" text): owed balance → yellow before
+    // its due date / red on-or-after; otherwise rolling-12-month spend → green.
+    const yearAgo = new Date(TODAY.getFullYear() - 1, TODAY.getMonth(), TODAY.getDate());
+    let owed = 0, owedPastDue = false, spend12 = 0;
+    DATA.invoices.filter((i) => i.customerId === c.customerId).forEach((i) => {
+      const t = invoiceTotals(i);
+      if (t.status !== 'Refunded' && t.balance > 0) { owed += t.balance; const due = parseISO(i.dueDate); if (!due || due <= TODAY) owedPastDue = true; }
+      const d = parseISO(i.date); if (d && d >= yearAgo) spend12 += Number(i.amountPaid) || 0;
+    });
+    let payHtml = '';
+    if (owed > 0) payHtml = `<span class="cr-pay ${owedPastDue ? 'over' : 'due'}">${money(owed)}</span>`;
+    else if (spend12 > 0) payHtml = `<span class="cr-pay spend">${money(spend12)}</span>`;
+
+    // Most-progressed funnel stage of the two tracks (used-sales / membership); Don't
+    // Contact ranks lowest of the non-N/A stages (shown only when it's the sole one).
+    const FUNNEL_RANK = { 'Inbound Lead': 1, 'Outbound Lead': 2, 'Contacted': 3, 'Not A No!': 4, 'Payment Discussed': 5, 'Paid': 6, "Don't Contact": 0.5 };
+    const topStage = [c.usedSalesStage || 'N/A', c.membershipStage || 'N/A']
+      .filter((s) => s && s !== 'N/A').sort((a, b) => (FUNNEL_RANK[b] || 0) - (FUNNEL_RANK[a] || 0))[0];
+    const funnelHtml = topStage ? statusPill('funnelStage', topStage) : '';
+
+    // Row: name · phone·type · pay-$ ← LEFT  ·  [acct pill][funnel pill] → RIGHT.
+    // Both status pills shown always; equal-width grid slots; margin-left:auto pushes them right.
+    const acctPill = statusPill('customerAccountType', c.accountType || 'Non-Business');
+    return `<div class="cr">
+      <div class="cr-id">
+        <span class="r-title cr-name" style="color:${nameColor}">${esc(c.name)}</span>
+        ${sub ? `<span class="cr-sub">${sub}</span>` : ''}
+      </div>
+      ${payHtml}
+      <div class="cr-statuses">
+        <div class="cr-pill-slot">${acctPill}</div>
+        <div class="cr-pill-slot">${funnelHtml}</div>
+      </div>
+    </div>`;
   },
 
   units: (u) => {
+    // Layout (Jac 2026-06-23): [pills LEFT] · [cat icon] · [name / category·HRS RIGHT]
+    // Pills first → user's eye aligns status signal near the rental calendar center.
     const cat = IDX.category.get(u.categoryId);
-    const ar = activeRentalForUnit(u.unitId);
-    const wo = openWOForUnit(u.unitId);
-    const svc = topServiceForUnit(u);
-    // §10: while a rental window is in scope, Row 2 leads with the availability
-    // verdict for THAT window (green Available / fleet / Failed / conflicting rental).
-    let availLead = '';
-    if (availWin) {
-      if (isUnitAvailableFor(u, availWin.start, availWin.end, availWin.selfId)) availLead = badge('Available', 'green');
-      else if (u.fleetStatus !== 'Active') availLead = statusPill('unitFleetStatus', u.fleetStatus);
-      else if (u.inspectionStatus === 'Failed') availLead = badge('Failed', 'red');
-      else { const cf = rentalsOverlappingUnit(u.unitId, availWin.start, availWin.end, availWin.selfId)[0]; availLead = cf ? statusPill('rentalStatus', rentalDisplayStatus(cf), { card: 'rentals', recId: cf.rentalId }) : badge('Unavailable', 'red'); }
-    }
-    // §12.4: QR badge on Row 1; Inspection Status pill lives on Row 2 with the other
-    // status badges. Fleet Status is conveyed by the ROW BACKGROUND (when not Active).
-    return `<div class="row-1"><span class="r-title">${esc(u.name)}</span><span class="r-fields">
-        ${cat ? `<span>${esc(cat.name)}</span>` : ''}<span class="r-key">${num(u.currentHours)} HRS</span></span>
-        <span class="pill c-gray" data-r="R3" data-tip="QR code">${I.qr}</span></div>
-      <div class="row-2">
-        ${availWin ? availLead : (ar ? statusPill('rentalStatus', rentalDisplayStatus(ar), { card: 'rentals', recId: ar.rentalId }) : '')}
-        ${svc ? badge(svcText(svc), svc.color) : ''}
-        ${wo ? statusPill('woPhase', wo.phase, { card: 'workOrders', recId: wo.woId }) : ''}
-        ${statusPill('unitInspectionStatus', u.inspectionStatus, { card: 'units', recId: u.unitId })}
-      </div>`;
+    const hl = getEntityColor('units', u);
+    // NAME tinted to the unit's flag color (Jac 2026-06-23): r/y/g lead in-color, gray reads muted.
+    const nameColor = (hl === 'red' || hl === 'yellow' || hl === 'green') ? `var(--${hl})` : hl === 'gray' ? 'var(--txt-3)' : 'var(--txt)';
+    const sub = [cat ? esc(cat.name) : '', `${num(u.currentHours)} HRS`].filter(Boolean).join(' · ');
+    return `<div class="ur" style="--ur-hl:var(--${hl})">
+      <div class="ur-pills"><div class="ur-pill-slot">${unitRentalInspPill(u)}</div><div class="ur-pill-slot">${unitWoSoPill(u)}</div></div>
+      <span class="ur-cat">${categoryIconFor(cat && cat.name)}</span>
+      <div class="ur-id">
+        <span class="r-title ur-name" style="color:${nameColor}">${esc(u.name)}</span>
+        <span class="ur-sub">${sub}</span>
+      </div>
+    </div>`;
   },
 
   categories: (c) => {
     const mix = categoryMix(c.categoryId);
     const st = categoryStats(c);
-    // §10: under a rental window, lead with how many units are available for it
-    // (a category with zero available shows a red "0" pill).
+    // §10: under a rental window, lead with how many units are available for it.
     let availLead = '';
     if (availWin) { const n = categoryAvailableCount(c.categoryId, availWin.start, availWin.end, availWin.selfId); availLead = n > 0 ? badge(`${n} Available`, 'green') : badge('0 Available', 'red'); }
-    // §12.3 Row 1 = name · 1-Day · 7-Day · 4-Week · Avg Hours; Row 2 = mix counts · ROI
-    return `<div class="row-1"><span class="r-title">${esc(c.name)}</span><span class="r-fields">
-        <span>${money(c.rate1Day)}/1d</span><span>${money(c.rate7Day)}/7d</span><span>${money(c.rate4Wk)}/4wk</span><span class="r-key">${num(st.avgHours)} HRS</span></span></div>
-      <div class="row-2">
-        ${availLead}${mix.Ready ? badge(`${mix.Ready} Ready`, 'green') : ''}${mix['Not Ready'] ? badge(`${mix['Not Ready']} Not Ready`, 'yellow') : ''}${mix.Failed ? badge(`${mix.Failed} Failed`, 'red') : ''}${st.roi != null ? badge(`${st.roi}% ROI`, st.roi >= 0 ? 'green' : 'red') : ''}
-      </div>`;
+    // Layout (Jac 2026-06-23): [status badges LEFT] · [name/rates RIGHT] — mirrors the units row swap.
+    const badges = [availLead, mix.Ready ? badge(`${mix.Ready} Ready`, 'green') : '', mix['Not Ready'] ? badge(`${mix['Not Ready']} Not Ready`, 'yellow') : '', mix.Failed ? badge(`${mix.Failed} Failed`, 'red') : '', st.roi != null ? badge(`${st.roi}% ROI`, st.roi >= 0 ? 'green' : 'red') : ''].join('');
+    return `<div class="catr">
+      <div class="catr-pills">${badges}</div>
+      <div class="catr-id">
+        <span class="r-title">${esc(c.name)}</span>
+        <span class="catr-sub">${money(c.rate1Day)}/1d · ${num(st.avgHours)} HRS</span>
+      </div>
+    </div>`;
   },
 
   invoices: (i) => {
@@ -3446,15 +4186,31 @@ function listTotalsEl(card, rows, session) {
   }
   if (!chips.length) return null;
   const node = el('div', 'list-totals');
-  // Rentals footer = two rows (Jac 2026-06-12): BILLING (price sum + invoice
-  // statuses) on row 1, RENTAL STATUS (registry order) on row 2.
-  if (card === 'rentals') {
-    const stat = chips.filter((c) => c.k === 'status').map((c) => c.html).join('');
-    const bill = chips.filter((c) => c.k !== 'status').map((c) => c.html).join('');
-    node.classList.add('two-row');
-    node.innerHTML = `${bill ? `<div class="tot-row">${bill}</div>` : ''}${stat ? `<div class="tot-row">${stat}</div>` : ''}`;
+  // Footer sections (Jac 2026-06-23): group chips into labeled sections so Fleet · Rental ·
+  // Shop (units), Billing · Status (rentals), and Type · Finance (customers) read as one shop.
+  const totSec = (label, ks) => { const h = chips.filter((c) => ks.has(c.k)).map((c) => c.html).join(''); return h ? `<span class="tot-sec"><span class="tot-label">${label}</span>${h}</span>` : ''; };
+  if (card === 'units') {
+    node.classList.add('sectioned');
+    node.innerHTML = [
+      totSec('Fleet', new Set(['inspection', 'fleet', 'hours'])),
+      totSec('Rental', new Set(['rental'])),
+      totSec('Shop', new Set(['service', 'wash', '__wo'])),
+    ].filter(Boolean).join('') || chips.map((c) => c.html).join('');
+  } else if (card === 'rentals') {
+    node.classList.add('sectioned');
+    node.innerHTML = [
+      totSec('Billing', new Set(['invoice', 'price'])),
+      totSec('Status', new Set(['status', 'window', 'customer'])),
+    ].filter(Boolean).join('') || chips.map((c) => c.html).join('');
+  } else if (card === 'customers') {
+    node.classList.add('sectioned');
+    node.innerHTML = [
+      totSec('Type', new Set(['account'])),
+      totSec('Finance', new Set(['pay', 'card'])),
+      totSec('Activity', new Set(['rentals', 'email', 'company'])),
+    ].filter(Boolean).join('') || chips.map((c) => c.html).join('');
   } else {
-    node.innerHTML = chips.map((c) => c.html).join('');   // v2: total count dropped (Jac: "not helpful")
+    node.innerHTML = chips.map((c) => c.html).join('');
   }
   return node;
 }
@@ -3851,6 +4607,15 @@ function woBackdrop(w) {
   for (const li of (w.lineItems || [])) if (li.photo) return li.photo;
   return '';
 }
+/** A WO left OPEN past the data-discipline window with no parts/labor entered yet: its
+ *  $0 repair cost is MISSING DATA, not "no repairs", so it must never roll up as a
+ *  finished, zero-cost job (the Asset-Mgr lens wants data-completeness visible). Window
+ *  = 30d, per finding G5. */
+const STALE_WO_DAYS = 30;
+function woStaleEmpty(w) {
+  return !w.cancelled && w.phase !== 'Complete' && !(w.lineItems || []).length
+    && !!w.date && dayDiff(parseISO(w.date), TODAY) > STALE_WO_DAYS;
+}
 function woSectionHtml(w) {
   const bn = woBottleneck(w);
   const secColor = bn.color === 'red' ? 'red' : bn.color === 'green' ? 'green' : 'yellow';
@@ -3873,9 +4638,17 @@ function woSectionHtml(w) {
     return `<div class="woline">${gatePillRaw(lbl, ph.color, 'js-wophase-line', { rec: w.woId, idx })}<span class="js-partedit" data-rec="${w.woId}" data-idx="${idx}" style="cursor:pointer"${tip ? ` data-tip="${esc(tip)}"` : ''}>${li.aiPending ? '✨ ' : ''}${esc(li.part)}${ven ? ' ' + linkName(ven.name, { js: 'js-vendor-open', data: { rec: ven.vendorId } }) : ''}</span><span class="nums"><b>${money(li.cost)}</b><span>${li.hours || 0}h</span></span></div>`;
   }).join('');
   const woBg = woBackdrop(w);
+  // R9b: a WO left open past the window with NO parts/labor reads $0 by omission, not by
+  // fact — pulse a caution in place of the plain opened-date flag so the empty repair-cost
+  // rollup is never mistaken for a finished job.
+  const stale = woStaleEmpty(w);
+  const staleTip = stale ? `Open ${dayDiff(parseISO(w.date), TODAY)} days (since ${fmtShortDate(w.date)}) with no parts or labor entered — repair cost reads $0 until you add a line item.` : '';
+  const dateFlag = stale
+    ? flagEl('No lines', 'yellow', { alert: true, title: staleTip })
+    : flagEl(fmtShortDate(w.date), 'gray');
   return `<div class="section sec-${secColor} wo-${w.woId}${woBg ? ' has-photo' : ''}" data-wo="${w.woId}">${woBg ? `<div class="sec-photo" style="--photo:url('${esc(woBg)}')"></div>` : ''}
     <h4 class="h-name"><span style="font-weight:800;margin-right:1px">WO:</span> <span class="inline-edit" data-edit="field" data-card="workOrders" data-field="woReport" data-rec="${w.woId}" data-ph="Report">${esc(w.woReport)}</span>
-      <span class="right">${flagsStack([typeFlag, flagEl(fmtShortDate(w.date), 'gray')], 24)}</span></h4>
+      <span class="right">${flagsStack([typeFlag, dateFlag], 24)}</span></h4>
     <div class="wototals">${addBtn('Part/Task', { anchor: true, js: 'js-add-part', h: 26, data: { rec: w.woId } })}<span class="derived">${money(parts)} parts + ${hrs} hrs</span></div>
     ${lines || '<div class="kv"><span class="muted" style="font-size:12px">No line items yet</span></div>'}
     <div class="wofoot">
@@ -3925,6 +4698,49 @@ function allocLines(inv) {
     const remaining = Math.max(0, amount - itemPaid(inv, li));
     return { li, idx, key: lineKey(li), label: li.label || li.kind || 'Line', amount, remaining, taxable: !exempt && !li.taxExempt };
   }).filter((x) => x.remaining > 0.005);
+}
+/* §19b REFUND allocation — the per-line mirror of the payment allocation above.
+   inv.refundAllocations { lid: refundedDollars (PRE-TAX) } is CLIENT-owned and rides
+   the normal record sync, exactly like inv.allocations; the money TOTALS
+   (refundedAmount / refunded) stay SERVER-owned / sync-protected (#177). itemRefunded
+   mirrors itemPaid; a line's refundable = what's paid minus what's already refunded,
+   so a fully-refunded line drops out of BOTH panels and locks by absence. Works for
+   cash/check lump payments too: itemPaid returns the full line amount on a paid-in-full
+   invoice even with no explicit allocation. */
+/* MONEY GATE — the per-line / partial refund UI (#125) stays OFF until the backend honors
+   `amountCents` on recordManualRefund / stripeRefundInvoice. The current backend ignores it
+   and refunds the FULL captured charge, and ALL environments share ONE backend + Stripe — so
+   sending a partial now would over-refund real money. With this false the Refund button keeps
+   today's safe full-invoice behavior untouched. Flip to true ONLY after deploying the
+   partial-refund backend (docs/handoffs/partial-refunds-backend.md). */
+const PARTIAL_REFUNDS_ENABLED = false;
+function itemRefunded(inv, li) {
+  if (!inv || !inv.refundAllocations) return 0;
+  return Math.min(Number(inv.refundAllocations[lineKey(li)]) || 0, itemPaid(inv, li));
+}
+function itemRefundable(inv, li) { return Math.max(0, itemPaid(inv, li) - itemRefunded(inv, li)); }
+function lineRefunded(inv, li) { return itemRefunded(inv, li) > 0.005; }
+function lineFullyRefunded(inv, li) { return itemPaid(inv, li) > 0.005 && itemRefundable(inv, li) <= 0.005; }
+/* the refundable lines for the refund popup: every line still carrying paid dollars
+   not yet refunded. taxable mirrors allocLines so the gross can ride the §10 tax. */
+function refundLines(inv) {
+  const cust = inv.customerId ? IDX.customer.get(inv.customerId) : null;
+  const exempt = !!(inv.taxExempt || cust?.salesTaxExempt);
+  return (inv.lineItems || []).map((li) => {
+    const paid = itemPaid(inv, li);
+    const refunded = itemRefunded(inv, li);
+    return { li, key: lineKey(li), label: li.label || li.kind || 'Line', paid, refunded, refundable: Math.max(0, paid - refunded), taxable: !exempt && !li.taxExempt };
+  }).filter((x) => x.refundable > 0.005);
+}
+/* Does this rental's invoice line(s) for a unit carry a refund? Drives the cross-card
+   strikethrough on the rental (Jac 2026-06-23) — a refunded unit/transport shows on
+   the rental itself, not only inside the invoice. unitId null = the whole rental. */
+function rentalLineRefund(r, unitId) {
+  if (!r || !r.invoiceId) return { refunded: false, fully: false };
+  const inv = IDX.invoice.get(r.invoiceId); if (!inv) return { refunded: false, fully: false };
+  const mine = (inv.lineItems || []).filter((li) => li.ref === r.rentalId && (unitId == null || li.unitId === unitId) && (li.kind === 'rental' || li.kind === 'transport'));
+  if (!mine.length) return { refunded: false, fully: false };
+  return { refunded: mine.some((li) => lineRefunded(inv, li)), fully: mine.every((li) => lineFullyRefunded(inv, li)) };
 }
 /* Jac ─ Site ─ Jac transport journey under an invoice rental line. +Log Delivery /
    +Log Recovery ARE the same captures as the yard tool's +Start/+End (one event,
@@ -4092,11 +4908,47 @@ function headFlagsHtml(card, rec) {
     // Jac 2026-06-12: fuel type + unit count as title flags (was a body badge row);
     // fleet-health flag (any failed → red · any not-ready → yellow · else green).
     const mix = categoryMix(rec.categoryId);
-    const health = mix.Failed ? { l: `${mix.Failed} Failed`, c: 'red' } : mix['Not Ready'] ? { l: `${mix['Not Ready']} Not Ready`, c: 'yellow' } : { l: 'Fleet Ready', c: 'green' };
+    const health = mix.Failed ? { l: `${mix.Failed} Failed`, c: 'red' } : mix['Not Ready'] ? { l: `${mix['Not Ready']} Not Ready`, c: 'yellow' } : { l: 'All Passed', c: 'green' };
     return flagsStack([rec.fuelType ? flagEl(rec.fuelType, 'navy') : '', flagEl(`${mix.total} units`, 'gray', { icon: CARD_ICON.units })])
       + flagsStack([flagEl(health.l, health.c, { icon: CARD_ICON.inspections })]);
   }
   return '';
+}
+
+/* §12.2 RENTAL DETAIL CALENDAR — numbered-date, full-window, Sunday-anchored.
+   Reuses the rcc track system (solid=elapsed, 30% opacity=remaining). */
+function rentalDetailCal(r, stColor) {
+  const s = parseISO(r.startDate), e = parseISO(r.endDate);
+  if (!s || !e) return '';
+  const ttype = r.transportType;
+  const isSelf = !ttype || ttype === 'Self';
+  const startIcon = isSelf ? CARD_ICON.customers : I.truck;
+  const endHasTruck = ttype === 'Recovery' || ttype === 'Round-Trip';
+  const endIcon = isSelf ? CARD_ICON.customers : (endHasTruck ? I.truck : '');
+  const firstSun = new Date(s.getFullYear(), s.getMonth(), s.getDate() - s.getDay());
+  const lastSatDelta = (6 - e.getDay() + 7) % 7;
+  const lastSat = new Date(e.getFullYear(), e.getMonth(), e.getDate() + lastSatDelta);
+  const totalDays = Math.round((lastSat - firstSun) / 86400000) + 1;
+  const DOW = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+  const dowRow = DOW.map((l) => `<span>${l}</span>`).join('');
+  const cells = [];
+  for (let i = 0; i < totalDays; i++) {
+    const d = new Date(firstSun.getFullYear(), firstSun.getMonth(), firstSun.getDate() + i);
+    const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const isToday = iso === TODAY_ISO, isStart = iso === r.startDate, isEnd = iso === r.endDate;
+    const inWin = iso >= r.startDate && iso <= r.endDate;
+    const elapsed = inWin && d <= TODAY;
+    const cls = ['rdcal-day', isToday && 'is-today', isStart && 'is-start', isEnd && 'is-end',
+      inWin && 'is-win', inWin && (elapsed ? 'elapsed' : 'fut'),
+      (!isToday && !inWin && d < TODAY) && 'is-past'].filter(Boolean).join(' ');
+    const time = isStart ? (r.startTime || '') : '';
+    const icon = isStart ? startIcon : (isEnd ? endIcon : '');
+    cells.push(`<div class="${cls}">${inWin ? '<span class="rdcal-bar"></span>' : ''}${time ? `<span class="rdcal-t">${esc(time)}</span>` : ''}<span class="rdcal-n">${d.getDate()}</span>${icon ? `<span class="rdcal-ico">${icon}</span>` : ''}</div>`);
+  }
+  return `<div class="rdcal js-open-winpicker" data-rec="${esc(r.rentalId)}" style="--rdcal-hl:var(--${stColor})">
+    <div class="rdcal-dow">${dowRow}</div>
+    <div class="rdcal-body">${cells.join('')}</div>
+  </div>`;
 }
 
 const DETAIL = {
@@ -4107,107 +4959,89 @@ const DETAIL = {
     const inv = r.invoiceId ? IDX.invoice.get(r.invoiceId) : null;
     const invT = inv ? invoiceTotals(inv) : null;
     const truck = showsTruck(r.status, r.transportType);
-    const stColor = rentalStatusDisplay(r).color;   // §20 section/timeline color follows the roll-up (gray when mixed)
+    const stColor = rentalStatusDisplay(r).color;
     const s = parseISO(r.startDate), e = parseISO(r.endDate);
-
     const hasWin = s && e;
     const units = rentalUnits(r);
-    /* DAY TIMELINE — the shared window as day cells; the master gate rides it and
-       the "N Not Ready" BLOCKER folds in beside it (Jac 2026-06-15). The rate is
-       GONE from here — money now lives in the event-strip balance below. Clicking
-       the bare track opens the window calendar. */
-    const blockN = units.filter((eu) => { const bu = IDX.unit.get(eu.unitId); return bu && bu.inspectionStatus !== 'Ready' && !unitVoided(r, eu); }).length;
-    const blocker = blockN ? `<button class="tl-blocker js-tl-blocker" data-rec="${esc(r.rentalId)}" data-tip="Jump to the machines that aren't ready"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>${blockN} machine${blockN > 1 ? 's' : ''} Not Ready →</button>` : '';
-    let timeline;
-    if (r.mock && !hasWin) {
-      timeline = `<button class="statusbar draftwin wintrigger js-open-winpicker" data-rec="${r.rentalId}"><span class="wt-label">${r.startDate ? esc(fmtShortDate(r.startDate)) + ' → pick end' : 'Select rental window'}</span>${masterGate(r, { truck })}</button>`;
-    } else {
-      const dayMs = 86400000;
-      const total = hasWin ? Math.max(1, Math.round((e - s) / dayMs)) : 1;
-      const weekly = total > 14;
-      const cells = weekly ? Math.ceil(total / 7) : total;
-      const durLabel = (total >= 7 && total % 7 === 0) ? `${total / 7}-Wk` : `${total}-Day`;
-      const cellHtml = Array.from({ length: cells }, (_, i) => {
-        const cellEnd = new Date(s.getTime() + (weekly ? (i + 1) * 7 : i + 1) * dayMs);
-        return `<div class="day ${TODAY >= cellEnd ? 'past' : ''}"></div>`;
-      }).join('');
-      timeline = `<div class="timeline js-open-winpicker" data-rec="${r.rentalId}" style="--tint:var(--${stColor}-bg)">
-        ${cellHtml}
-        <div class="tl-over">
-          <span class="d1"><span class="dlab">${esc(relDate(r.startDate))}</span>${r.startTime ? `<span class="tm">${esc(r.startTime)}</span>` : ''}</span>
-          <span class="midwrap">${blocker}${masterGate(r, { truck })}</span>
-          <span class="d2"><span class="dlab">${esc(relDate(r.endDate))}</span><span class="tm">${esc(durLabel)}</span></span>
-        </div>
-      </div>`;
-    }
-    // Wave 2 empty slots: the UNIT slot points at the Units list (drag links it);
-    // the CUSTOMER slot opens quick-add-link. data-slot stays for R19 flash targets.
-    const pickUnitBtn = addBtn('Unit', { link: true, js: 'js-slot-unit', h: 26, data: { rec: r.rentalId, slot: 'unit' } });
-    const pickCustBtn = addBtn('Customer', { link: true, js: 'js-quickadd-cust', h: 26, data: { card: 'rentals', rec: r.rentalId, slot: 'customer' } });
 
-    /* invoice pill: ✕ unlink ONLY while $0 is assigned to this rental's line item
-       (after any assigned payment, removal requires refunding first — Jac's rule). */
+    /* invoice pill — ✕ unlink only while $0 is assigned (Jac's rule). */
     const paidForThis = inv ? rentalAllocated(inv, r.rentalId) : 0;
     const invPill = inv
       ? `<span class="pill ref link" data-r="R2" data-pill-card="invoices" data-pill-rec="${esc(inv.invoiceId)}">${CARD_ICON.invoices}${esc(invoiceShort(inv.invoiceId))}${paidForThis <= 0 ? `<span class="x" data-x="inv-remove" data-tip="unlink — allowed while $0 is assigned to this rental; afterwards refund first">✕</span>` : ''}</span>`
       : addBtn('Invoice', { link: true, js: 'js-create-invoice', h: 26, data: { rec: r.rentalId } });
 
-    /* EVENT STRIP — adds on the LEFT, the pay-status balance on the RIGHT (Jac
-       2026-06-15). The $480 reads as a balance ($0 / $480 = paid over total); the
-       $0 wears the pay-status color (red unpaid / blue Not Due / green paid). */
+    /* Balance (paid / total) for the header right side. */
     const rentLines = rentalLineItems(r);
     const eventTotal = invT ? invT.total : rentLines.reduce((a, li) => a + (Number(li.amount) || 0), 0);
     const eventPaid = invT ? invT.paid : 0;
     const balColor = (eventPaid > 0 && eventPaid >= eventTotal) ? 'green' : (invT && invT.status === 'Not Due') ? 'blue' : 'red';
-    const balance = `<span class="balline" data-chat-el data-chat-label="${esc('Balance ' + money(eventPaid) + ' / ' + money(eventTotal))}" data-chat-color="${esc(balColor)}"${inv ? ` data-chat-card="invoices" data-chat-rec="${esc(inv.invoiceId)}"` : ''}><b style="color:var(--${balColor})">${money(eventPaid)}</b> <span class="tot">/ ${money(eventTotal)}</span></span>`;
-    const eventStrip = `<div class="estrip">
-      <div class="estrip-l">
-        ${cust ? refPill('customers', r.customerId, cust.name, { x: 'cust-swap' }) : (r.mock ? pickCustBtn : addBtn('Customer', { link: true, js: 'js-quickadd-cust', h: 26, data: { card: 'rentals', rec: r.rentalId, slot: 'customer' } }))}
-        ${cat ? dPill(cat.name, 'orange', { card: 'categories', recId: cat.categoryId, icon: CARD_ICON.categories }) : ''}
-        ${invPill}
-        ${efld('rentals', r, 'rentalId', 'po', 'Add PO', { fmt: (v) => 'PO ' + v })}
-      </div>
-      <div class="estrip-r">${balance}</div>
+    const rdBal = `<span class="rd-bal balline" data-chat-el data-chat-label="${esc('Balance ' + money(eventPaid) + ' / ' + money(eventTotal))}" data-chat-color="${esc(balColor)}"${inv ? ` data-chat-card="invoices" data-chat-rec="${esc(inv.invoiceId)}"` : ''}><b style="color:var(--${balColor})">${money(eventPaid)}</b><span class="tot"> / ${money(eventTotal)}</span></span>`;
+
+    /* Header: customer + category + invoice + PO left · gate + balance right. */
+    const custEl = cust
+      ? refPill('customers', r.customerId, cust.name, { x: 'cust-swap' })
+      : addBtn('Customer', { link: true, js: 'js-quickadd-cust', h: 26, data: { card: 'rentals', rec: r.rentalId, slot: 'customer' } });
+    const catPill = cat ? dPill(cat.name, 'orange', { card: 'categories', recId: cat.categoryId, icon: CARD_ICON.categories }) : '';
+    const poField = efld('rentals', r, 'rentalId', 'po', 'Add PO', { fmt: (v) => 'PO ' + v });
+    const rdHead = `<div class="rd-head">
+      <div class="rd-head-l">${custEl}${catPill}${invPill}${poField}</div>
+      <div class="rd-head-r">${masterGate(r, { truck })}${rdBal}</div>
     </div>`;
 
-    /* PER-UNIT STALLS — each machine is one self-contained block: identity + its
-       inspection + (multi-unit) its own gate + line amount, sitting on its
-       connected Home—Site—Home route rail (transport folded in, captures not
-       tracked — Jac 2026-06-15). */
+    /* Not-Ready blocker — jumps to unit pills; sits above the calendar. */
+    const blockN = units.filter((eu) => { const bu = IDX.unit.get(eu.unitId); return bu && bu.inspectionStatus !== 'Ready' && !unitVoided(r, eu); }).length;
+    const blocker = blockN ? `<button class="tl-blocker js-tl-blocker" data-rec="${esc(r.rentalId)}" data-tip="Jump to the machines that aren't ready"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>${blockN} machine${blockN > 1 ? 's' : ''} Not Ready →</button>` : '';
+
+    /* Calendar: numbered-date full-window grid, or draft window picker. */
+    const calHtml = hasWin
+      ? rentalDetailCal(r, stColor)
+      : `<button class="statusbar draftwin wintrigger js-open-winpicker" data-rec="${esc(r.rentalId)}"><span class="wt-label">${r.startDate ? esc(fmtShortDate(r.startDate)) + ' → pick end' : 'Select rental window'}</span></button>`;
+
+    /* Duration label (shared across all unit rows). */
+    const durLabel = hasWin
+      ? (() => { const total = Math.max(1, Math.round((e - s) / 86400000)); return (total >= 7 && total % 7 === 0) ? `${total / 7}-Wk` : `${total}-Day`; })()
+      : '';
+
+    /* Per-unit rows beneath the calendar — name+pills left, rate right, route rail below. */
+    const pickUnitBtn = addBtn('Unit', { link: true, js: 'js-slot-unit', h: 26, data: { rec: r.rentalId, slot: 'unit' } });
     const stallsHtml = units.length
       ? units.map((eu) => {
           const u = IDX.unit.get(eu.unitId); if (!u) return '';
           const insp = getStatus('unitInspectionStatus', u.inspectionStatus);
           const voided = unitVoided(r, eu);
+          const lref = rentalLineRefund(r, eu.unitId);   // §19b reflect the invoice's per-line refund on the rental's unit
           const multi = units.length > 1;
           const up = unitRentalPrice(r, eu.unitId);
-          return `<div class="stall${voided ? ' voided' : ''}">
-            <div class="stall-head">
-              <div class="stall-id">${unitPill(u.unitId, { x: 'unit-remove', xData: u.unitId })}${dPill(insp.label, insp.color, { card: 'units', recId: u.unitId, icon: CARD_ICON.inspections })}${multi ? unitStatusGate(r, eu) : ''}</div>
-              <span class="stall-right">${multi ? `<button class="stall-split js-split-open" data-rec="${esc(r.rentalId)}" data-unit="${esc(u.unitId)}" data-tip="Give ${esc(u.name)} its own dates — splits to a separate rental on the same invoice"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>dates</button>` : ''}<span class="stall-amt">${money(up ? up.price : 0)}</span></span>
+          const noRates = !voided && catRatesUnset(IDX.category.get(u.categoryId))
+            ? flagEl('No rates', 'yellow', { icon: CARD_ICON.categories, card: 'categories', recId: u.categoryId, alert: true, title: 'This category has no day / 7-day / 4-week rate — it bills $0. Set its rates before quoting.' })
+            : '';
+          const splitBtn = multi ? `<button class="stall-split js-split-open" data-rec="${esc(r.rentalId)}" data-unit="${esc(u.unitId)}" data-tip="Give ${esc(u.name)} its own dates — splits to a separate rental on the same invoice"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>dates</button>` : '';
+          return `<div class="stall rd-unit${voided ? ' voided' : ''}${lref.fully ? ' stall-refunded' : ''}">
+            <div class="rd-unit-top">
+              <div class="stall-id rd-unit-id">${unitPill(u.unitId, { x: 'unit-remove', xData: u.unitId })}${dPill(insp.label, insp.color, { card: 'units', recId: u.unitId, icon: CARD_ICON.inspections })}${noRates}${multi ? unitStatusGate(r, eu) : ''}</div>
+              <div class="rd-unit-rate">${lref.refunded ? `<span class="stall-refund" data-tip="${lref.fully ? 'fully' : 'partially'} refunded on the invoice">↩ refunded</span> · ` : ''}${durLabel ? `<span class="rd-dur">${esc(durLabel)}</span> · ` : ''}<span class="stall-amt${lref.fully ? ' struck' : ''}">${money(up ? up.price : 0)}</span>${splitBtn}</div>
             </div>
             ${stallRouteHtml(r, eu)}
           </div>`;
         }).join('')
-      : `<div class="stall stall-empty">${pickUnitBtn}<span class="muted" style="font-size:12px">drag a unit on, or cancel the quote</span></div>`;
+      : `<div class="stall stall-empty rd-unit rd-unit-empty">${pickUnitBtn}<span class="muted" style="font-size:12px">drag a unit on, or cancel the quote</span></div>`;
 
-    /* Complete Rental gate — commit only once every unit is terminal; Cancelled/No
-       Show → red Cancel Rental. */
+    /* Footer: field call + Complete/Cancel left · invoice total right. */
     const cancelish = ['Cancelled', 'No Show'].includes(r.status);
-    const canComplete = allUnitsTerminal(r);   // §20 every unit terminal (Returned / Cancelled / No Show)
+    const canComplete = allUnitsTerminal(r);
     const crBtn = cancelish
       ? actionPill('danger', 'Cancel Rental', { js: 'js-cancel-rental', h: 26, data: { rec: r.rentalId } })
       : actionPill('commit', 'Complete Rental', { js: `js-complete-rental${canComplete ? '' : ' locked'}`, h: 26, data: { rec: r.rentalId } });
-
     const fcRow = r.fieldCall ? actionPill('danger', 'Field Call active — clear', { js: 'js-clear-fc', data: { rec: r.rentalId } }) : '';
+    const invTotalHtml = invT ? `<span class="rd-inv-total">${money(eventTotal)}</span>` : '';
+    const rdFoot = `<div class="rd-foot"><div class="rd-foot-l">${fcRow}${crBtn}</div><div class="rd-foot-r">${invTotalHtml}</div></div>`;
 
-    /* RENTAL section: NO header — the day timeline opens it; the border carries the
-       rental-status color. Day timeline → event strip → per-unit stalls → footer. */
     const rentalSec = `<div class="section sec-${stColor} rentalsec">
-      ${timeline}
-      ${eventStrip}
-      <div class="stalls">${stallsHtml}</div>
-      <div class="rentalsec-foot">${fcRow}${crBtn}</div>
+      ${rdHead}
+      ${blocker ? `<div class="rd-blocker">${blocker}</div>` : ''}
+      ${calHtml}
+      <div class="stalls rd-units">${stallsHtml}</div>
+      ${rdFoot}
     </div>`;
 
     const notes = notesSection('rentals', r, 'rentalId');
@@ -4618,7 +5452,8 @@ const DETAIL = {
         : li.kind === 'WO' ? `data-pill-card="workOrders" data-pill-rec="${esc(li.ref)}"` : '';
       const x = (!locked && li.kind !== 'transport' && itemPaid(i, li, idx) <= 0) ? `<span class="x line-x" data-x="inv-line-remove" data-idx="${idx}">✕</span>` : '';
       const bal = itemPaid(i, li, idx);   // partial-payment item balance (when assigned)
-      return `<div class="hitem inv-line"><span ${ref} class="inv-line-link" data-r="R7">${esc(li.label)}</span><span class="spacer"></span>${bal > 0 ? `<span class="dvd c-green derived" data-r="R4" data-tip="paid on this line">${money2(bal)}✓</span>` : ''}<b class="derived">${money2(li.amount)}</b>${x}</div>`;
+      const refd = itemRefunded(i, li), fullyR = lineFullyRefunded(i, li);   // §19b per-line refund — strike a fully-refunded line, show the ↩ tally
+      return `<div class="hitem inv-line${fullyR ? ' line-refunded' : ''}"><span ${ref} class="inv-line-link${fullyR ? ' struck' : ''}" data-r="R7">${esc(li.label)}</span><span class="spacer"></span>${bal > 0 && !fullyR ? `<span class="dvd c-green derived" data-r="R4" data-tip="paid on this line">${money2(bal)}✓</span>` : ''}${refd > 0.005 ? `<span class="dvd derived refund-chip" data-r="R4" data-tip="refunded on this line">↩${money2(refd)}</span>` : ''}<b class="derived${fullyR ? ' struck' : ''}">${money2(li.amount)}</b>${x}</div>`;
     }).join('');
     const ledgerRow = (label, val, cls) => `<div class="hitem inv-tot${cls ? ' ' + cls : ''}"><span class="muted">${esc(label)}</span><span class="spacer"></span><b class="derived">${val}</b></div>`;
     const kinds = ['rental', 'transport', 'parts', 'labor'].filter((k) => subBy(k) > 0);
@@ -4780,7 +5615,7 @@ const DETAIL = {
     } else if (n.checklist === 'Fail') {
       gate = kvPills(`${n.woId ? refPill('workOrders', n.woId, 'WO') : ''}<button class="pill ref js-open-insp" data-rec="${n.inspectionId}">Failure report →</button>`);
     } else {
-      gate = kvPills(`<span class="pill c-green" data-r="R3b"><span class="t">Ready</span></span>${washSet ? badge(n.wash === 'Yes' ? 'Washed' : 'No wash', n.wash === 'Yes' ? 'blue' : 'gray') : ''}`);
+      gate = kvPills(`<span class="pill c-green" data-r="R3b"><span class="t">Passed</span></span>${washSet ? badge(n.wash === 'Yes' ? 'Washed' : 'No wash', n.wash === 'Yes' ? 'blue' : 'gray') : ''}`);
     }
     const isVideo = (n.photo || '').startsWith('data:video');
     const thumb = n.photo ? (isVideo
@@ -5512,7 +6347,7 @@ function legacyKpiPct(roleId) {
   }
   if (roleId === 'office') {
     const billed = INV.reduce((a, i) => a + invoiceTotals(i).total, 0);
-    const collected = INV.reduce((a, i) => a + invoiceTotals(i).paid, 0);
+    const collected = INV.reduce((a, i) => a + invoiceTotals(i).paid - (Number(i.refundedAmount) || 0), 0);
     const reservations = R.filter((r) => ['Reserved', 'On Rent', 'End Rent', 'Off Rent', 'Returned', 'No Show'].includes(r.status)).length;
     const shows = R.filter((r) => ['On Rent', 'End Rent', 'Off Rent', 'Returned'].includes(r.status)).length;
     return [pctOf(collected, billed), pctOf(shows, reservations), null];       // Reputation = email backend
@@ -5695,7 +6530,7 @@ function legacyKpiRaw(roleId) {
   if (roleId === 'mechanic') return [c(f.Ready + f['Not Ready']), c(W.filter((w) => w.phase === 'Complete').length), c(W.filter((w) => (w.lineItems || []).some((li) => (li.cost || 0) > 0 || (li.hours || 0) > 0) && w.billCustomer === 'Yes').length)];
   if (roleId === 'mtech') return [c(R.length - R.filter((r) => r.fieldCall).length), c(f.Ready), c(N.filter((n) => !n.woId).length)];
   if (roleId === 'driver') return [c(R.filter((r) => ['On Rent', 'End Rent', 'Off Rent', 'Returned'].includes(r.status)).length), c(N.filter((n) => n.wash === 'Yes').length), c(0)];
-  if (roleId === 'office') return [usd(INV.reduce((a, i) => a + invoiceTotals(i).paid, 0)), c(R.filter((r) => ['On Rent', 'End Rent', 'Off Rent', 'Returned'].includes(r.status)).length), c(0)];
+  if (roleId === 'office') return [usd(INV.reduce((a, i) => a + invoiceTotals(i).paid - (Number(i.refundedAmount) || 0), 0)), c(R.filter((r) => ['On Rent', 'End Rent', 'Off Rent', 'Returned'].includes(r.status)).length), c(0)];
   if (roleId === 'sales') {
     const ym = TODAY_ISO.slice(0, 7);
     const rev = R.reduce((a, r) => ((r.startDate || '').slice(0, 7) !== ym ? a : a + ((rentalPrice(r) || {}).price || 0)), 0);
@@ -5766,8 +6601,11 @@ const THEME_NEXT = {
   ranch: { next: 'yard', icon: I.hardhat, tip: 'Yard mode' },
   light: { next: 'yard', icon: I.hardhat, tip: 'Yard mode' },
 };
-/** The action toolbar — moved to a fixed bottom bar (Dashboard / +New / tools). */
-function bottomBarInner() {
+/** The action toolbar — pinned to the LEFT of the bottom comms band (the
+ *  conversation rail fills the middle, bell + inbox sit at the right). On phones
+ *  this same set opens up across the top header, so the inbox stays here (the
+ *  desktop band passes {noInbox} since its right utils zone carries it). */
+function bottomBarInner(opts = {}) {
   // rules 5/6: LEFT = labeled actions (icon LEADS label, no "+"), Wash joins them;
   // RIGHT (after divider) = icon-only utilities. The +New collapse button is dropped (Jac).
   return `
@@ -5775,17 +6613,82 @@ function bottomBarInner() {
     <span class="bb-sep"></span>
     <button class="iconbtn js-qr" data-tip="Share session (QR)">${I.qr}</button>
     <button class="iconbtn${state.previewsOn ? '' : ' off'} js-previews" data-tip="${state.previewsOn ? 'Hover previews: on' : 'Hover previews: off'}">${state.previewsOn ? I.eye : I.eyeOff}</button>
-    <button class="iconbtn js-chat-toggle${state.chat.open ? ' on' : ''}" data-tip="Team chat — flagged comments + tagged context">${I.chat}${(() => { const n = chatUnreadCount(); return n ? `<span class="bb-badge">${n > 9 ? '9+' : n}</span>` : ''; })()}</button>
-    <button class="iconbtn js-wrangler" data-tip="Mr. Wrangler — ask the yard AI, or report a bug to fix" style="font-size:16px">🤠</button>
-    <button class="iconbtn js-requests" data-tip="Requests for your OK — review what Mr. Wrangler filed">${I.inbox}${wranglerRequests.length ? `<span class="bb-badge">${wranglerRequests.length > 9 ? '9+' : wranglerRequests.length}</span>` : ''}</button>
+    <button class="iconbtn js-chat-toggle${state.chat.open ? ' on' : ''}" data-tip="New team chat — flagged comments + tagged context">${I.chat}${(() => { const n = chatUnreadCount(); return n ? `<span class="bb-badge">${n > 9 ? '9+' : n}</span>` : ''; })()}</button>
+    <button class="iconbtn js-wrangler" data-tip="New chat with Mr. Wrangler — ask the yard AI, or report a bug" style="font-size:16px">🤠</button>
+    ${opts.noInbox ? '' : `<button class="iconbtn js-requests" data-tip="Requests for your OK — review what Mr. Wrangler filed">${I.inbox}${wranglerRequests.length ? `<span class="bb-badge">${wranglerRequests.length > 9 ? '9+' : wranglerRequests.length}</span>` : ''}</button>`}
     <button class="iconbtn js-hotkeys" data-tip="Mouse &amp; keyboard shortcuts">${I.mouse}</button>
-    <button class="iconbtn js-adminlock${adminUnlocked() ? ' on' : ''}" data-tip="${adminUnlocked() ? 'Admin tools unlocked — click to lock' : 'Admin tools — click to unlock'}">${adminUnlocked() ? I.lockOpen : I.lock}</button>
     ${adminUnlocked() ? `<button class="iconbtn js-lint${document.body.classList.contains('rw-lint') ? ' on' : ''}" data-tip="Design lint — flash anything that bypassed the UI builders (R0)">${I.eye}</button>
     <button class="iconbtn js-inspect${state.inspect ? ' on' : ''}" data-tip="Design Inspector — hover names the rule, click copies the reference">${I.search}</button>
     <button class="iconbtn js-rulebook" data-tip="The R-Rulebook — visual design reference (SPEC v8)">${I.doc}</button>
     <button class="iconbtn js-photo-sweep" data-tip="Offload base64 photos to Drive — one-shot migration to de-bloat the payload">${I.camera}</button>` : ''}`;
 }
-function bottomBarEl() { const bar = el('div', 'bottombar'); bar.innerHTML = bottomBarInner(); return bar; }
+// §18g/§17 — the bottom COMMS BAND: toolbar pinned left · the conversation rail
+// fills the middle (every Mr. Wrangler request + chat and every team thread is its
+// OWN tab, so nothing funnels into one session) · bell + inbox at the right.
+function bottomBarEl() {
+  const bar = el('div', 'bottombar');
+  bar.innerHTML = `<div class="bb-tools">${bottomBarInner({ noInbox: true })}</div>`
+    + `<div class="comms-rail" role="tablist" aria-label="Conversations">${commsRailEl()}</div>`
+    + `<div class="bb-utils">${commsUtilsEl()}</div>`;
+  return bar;
+}
+// The right-hand utility of the comms band — just the notification bell now. The
+// Requests inbox is retired on desktop: every open request is a tab in the rail (open
+// it to Approve/Dismiss). The inbox still exists for phones (top toolbar), which have
+// no rail. (resolved-fix feed = the bell.)
+function commsUtilsEl() {
+  const nu = unseenNotifs();
+  const notifBadge = nu ? `<span class="fab-badge">${nu > 9 ? '9+' : nu}</span>` : '';
+  return `<button class="fab js-notifications" data-tip="Notifications — resolved fixes">${I.bell}${notifBadge}</button>`;
+}
+// The conversation rail: Wrangler + Team channels (split by a thin divider, no section
+// labels), each conversation a SEPARATE tab. 🤠 Wrangler — one tab per OPEN request
+// (needs-answer = red · needs-your-OK = yellow; both open the dock, which carries
+// Approve/Dismiss), the live chat, and every past chat. 💬 Team — one tab per active
+// thread. Tabs read as actionable via a STEADY tinted edge (no perpetual glow). The rail
+// REPLACES the old Requests inbox on desktop; each opens ONLY its own thread
+// (data-wrc-needs / data-wrc-open / data-team-open).
+function commsRailEl() {
+  const trim = (t, n = 24) => { t = String(t || '').replace(/\s+/g, ' ').trim(); return esc(t.length > n ? t.slice(0, n - 1) + '…' : t); };
+  // ── 🤠 WRANGLER ── every open request is its own tab (the inbox lived here before)
+  const reqStateKey = (rq) => { const L = rq.labels || []; return L.includes('wrangler-needs-jac') ? 'needs' : L.includes('wrangler-fix') ? 'building' : 'ok'; };
+  const open = (wranglerRequests || []);
+  const reqNums = new Set(open.map((rq) => rq.number));
+  const wrOpen = state.wrangler.open;
+  const reqTabs = open.filter((rq) => reqStateKey(rq) !== 'building').map((rq) => {   // building = Mr. Wrangler working; not actionable, surfaces via the bell when done
+    const st = reqStateKey(rq), cls = st === 'needs' ? 'crail-needs' : 'crail-ok';
+    const tip = st === 'needs' ? `Mr. Wrangler needs your answer — #${rq.number}` : `Needs your OK — #${rq.number}`;
+    const active = wrOpen && (state.wrangler.reqNumber === rq.number || state.wrangler.id === 'req' + rq.number);
+    return `<button class="crail-tab ${cls}${active ? ' is-active' : ''}" data-wrc-needs="${rq.number}" role="tab" aria-selected="${active}" data-tip="${tip}"><span class="crail-dot"></span><span class="crail-t">${trim(rq.title || ('Request #' + rq.number))}</span></button>`;
+  }).join('');
+  const snaps = (state.wranglerRail || []).filter((c) => !(c.reqNumber && reqNums.has(c.reqNumber)));
+  // the live chat first if it's a brand-new one not yet snapshotted onto the rail
+  let liveTab = '';
+  if (wrOpen && state.wrangler.id && !state.wrangler.reqNumber && !snaps.some((c) => c.id === state.wrangler.id) && (state.wrangler.messages || []).length) {
+    liveTab = `<button class="crail-tab is-active" data-wrc-open="${esc(state.wrangler.id)}" role="tab" aria-selected="true" data-tip="Current chat with Mr. Wrangler"><span class="crail-dot"></span><span class="crail-t">${trim(wranglerConvoTitle(state.wrangler) || 'New chat')}</span></button>`;
+  }
+  const snapTabs = snaps.map((c) => {
+    const active = wrOpen && state.wrangler.id === c.id;
+    return `<button class="crail-tab${active ? ' is-active' : ''}" data-wrc-open="${esc(c.id)}" role="tab" aria-selected="${active}" data-tip="Reopen this chat with Mr. Wrangler"><span class="crail-dot"></span><span class="crail-t">${trim(c.title || 'Chat')}</span></button>`;
+  }).join('');
+  const wrTabs = reqTabs + liveTab + snapTabs;
+  // ── 💬 TEAM ──
+  const u = commentUserKey();
+  const teamChats = (state.chat.chats || []).filter((c) => c.participants.length && c.messages.length)
+    .sort((a, b) => Math.max(0, ...b.messages.map((m) => m.at || 0)) - Math.max(0, ...a.messages.map((m) => m.at || 0)));
+  const teamTabs = teamChats.map((c) => {
+    const active = state.chat.open && state.chat.activeId === c.id;
+    const unseen = c.messages.length && Math.max(...c.messages.map((m) => m.at || 0)) > (c.seen[u] || 0);
+    const tag = (c.tags && c.tags[0]) || null;
+    const label = (tag && tag.label) || 'Team chat';
+    return `<button class="crail-tab c-${(tag && tag.color) || 'gray'}${active ? ' is-active' : ''}${unseen ? ' is-unseen' : ''}" data-team-open="${esc(c.id)}" role="tab" aria-selected="${active}" data-tip="${esc(label)}"><span class="crail-dot"></span><span class="crail-t">${trim(label)}</span></button>`;
+  }).join('');
+  const groups = [];
+  if (wrTabs) groups.push(`<div class="crail-group">${wrTabs}</div>`);
+  if (teamTabs) groups.push(`<div class="crail-group">${teamTabs}</div>`);
+  return groups.length ? groups.join('<span class="crail-div" aria-hidden="true"></span>')
+    : '<span class="crail-empty">No conversations yet — start one from the tools on the left.</span>';
+}
 // §M1 — phone-only per-column bottom strip: Yard→internal chat · Rentals→tool bar · Customers→external chats (shell).
 // §M1/§M3 — the active phone column's card id (state.cards key), for the grid Back/Fwd swipe.
 function activeMobileCard() {
@@ -5907,6 +6810,11 @@ function wranglerDockEl() {
     ? o.messages.map((m, i) => {
         let act = '';
         if (m.action && m.action.action === 'data') {
+          // Resolve the attached CSV for import-ish actions — csv-import OR a plain
+          // import, so the safety net can tell when the model under-sent rows.
+          if (!m.action._csvAttached && m.action.ops && m.action.ops.some((op) => op.op === 'csv-import' || op.op === 'import')) {
+            m.action._csvAttached = wrFindAttachedCsv(o.messages, i);
+          }
           const plan = m.action._plan || (m.action._plan = wrValidatePlan(m.action));
           const sum = wrPlanSummary(plan);
           const skip = plan.issues.length ? `<div class="wr-apply-skip">skipped: ${esc(plan.issues.join('; '))}</div>` : '';
@@ -6261,6 +7169,8 @@ function chatStartFromDrop(p) {
   let tag;
   if (p.chatEl) tag = { id: p.chatEl.id || ('TAG' + (state.seq++)), label: p.chatEl.label, color: p.chatEl.color || 'gray', ref: p.chatEl.ref || null };
   else { const ec = p.entity, rec = p.rec; const label = ROW_META[ec] ? ROW_META[ec](rec).title : (idOf(ec, rec) || 'Item'); const m = commentMarker(rec); tag = { id: 'TAG:' + ec + ':' + p.id, label, color: m ? m.color : 'gray', ref: { card: ec, recId: p.id } }; }
+  // Dedup like startChatFromEl: a record/element already has a chat → REOPEN it, never spin a duplicate thread.
+  if (tag.ref) { const existing = chatsTagging(tag.ref.card, tag.ref.recId)[0]; if (existing) return openChat(existing.id, `Reopened the chat on this ${SINGULAR[tag.ref.card] || 'record'}.`); }
   newChat(tag); state.chat.open = true; render();
   toast(`New chat started from “${tag.label}”.`);
 }
@@ -6952,7 +7862,7 @@ function cardGraphBody(card) {
     const INV = DATA.invoices;
     let paid = 0, partial = 0, unpaid = 0, refunded = 0, outstanding = 0, collected = 0;
     const detail = INV.map((i) => {
-      const t = invoiceTotals(i); collected += t.paid;
+      const t = invoiceTotals(i); collected += t.paid - (Number(i.refundedAmount) || 0);   // §19b net refunds out of booked revenue (full + partial)
       const isRefunded = !!i.refunded || t.status === 'Refunded';
       if (isRefunded) refunded++;
       else if (t.total > 0) { outstanding += t.balance; if (t.balance <= 0) paid++; else if (t.paid > 0) partial++; else unpaid++; }   // empty ($0) drafts are excluded from the buckets
@@ -7048,6 +7958,7 @@ function syncBackGuard() {
 }
 
 function renderOverlay() {
+  hideTip(); hideHoverPreview();   // the body-level singletons don't get a mouseout when this swap orphans the hovered node — dismiss them like render() does, so a tip can't bleed across a popup switch/close
   syncBackGuard();
   const root = $('#overlay-root');
   if (_ovLastKind) { const _pb = root.querySelector('.set-pane') || root.querySelector('.popup-body'); if (_pb) _ovScroll[_ovLastKind] = _pb.scrollTop; }   // .set-pane is the settings scroller; .popup-body for the rest
@@ -7057,7 +7968,23 @@ function renderOverlay() {
   const o = state.overlay;
   const overlay = el('div', 'overlay');
   overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) closeOverlay(); });
+  if (buildPopupEl(o, overlay) === false) { state.overlay = null; return; }
+  root.appendChild(overlay);
+  { const _nb = overlay.querySelector('.set-pane') || overlay.querySelector('.popup-body'); if (_nb && _ovScroll[o.kind]) _nb.scrollTop = _ovScroll[o.kind]; }   // restore scroll on a same-overlay re-render (settings pane / sign / selfie no longer jump to top)
 
+  _ovLastKind = o.kind;
+  if (o.kind === 'partform') document.querySelector('.overlay .js-pf2-desc')?.focus();   // Jac: Part/Task field focused by default
+  if (o.kind === 'newCustomer') setupSignaturePad();
+  if (o.kind === 'payment') { setupPayAlloc(); setupRefundAlloc(); }   // live counters for the §19 pay + §19b refund allocation rows
+  if (o.kind === 'addCard') { const cc = IDX.customer.get(o.customerId); if (cc) { mountCardElement(); setupSignaturePad(); } }   // §7.1c capture (selfie + signature) now lives IN the Add-card panel; the live cam is wired by the generic ag-cam-feed hook below
+  if (o.kind === 'newCustomer' && o.cardSub) { const cc = IDX.customer.get(o.editId); if (cc) mountCardElement(); }   // §14 the side-by-side Add-card panel
+  { const _agFeed = overlay.querySelector('.ag-cam-feed'); if (_agFeed) startAgCam(_agFeed); else stopAgCam(); }   // live selfie camera follows the capture block
+}
+// §RB-Windows enabler — the per-kind popup BUILDER, extracted from renderOverlay so the
+// admin Rulebook can render an inert preview of any popup. Pure: builds into `overlay`,
+// no global side-effects (the live Stripe/camera/focus wiring stays in renderOverlay's
+// post phase). Returns false if a record guard tripped (caller closes the overlay), else true.
+function buildPopupEl(o, overlay, opts = {}) {
   if (o.kind === 'qr') {
     const url = o.url || location.href;
     const pop = el('div', 'popup'); pop.style.width = '340px';
@@ -7102,7 +8029,7 @@ function renderOverlay() {
       <textarea class="cmt-input js-cmt-text" placeholder="Leave a note…">${esc(o.text || '')}</textarea>
       <div class="cmt-card-foot">${rec ? `<span class="cmt-hint">${esc(detailTitle(entityCardOf(o.card, o.recType), rec))}</span>` : '<span></span>'}<button class="cmt-post js-cmt-save">Post</button></div>`;
     overlay.appendChild(pop);
-    setTimeout(() => pop.querySelector('.cmt-input')?.focus(), 0);
+    if (!opts.preview) setTimeout(() => pop.querySelector('.cmt-input')?.focus(), 0);
   } else if (o.kind === 'rulebook') {
     // THE VISUAL RULEBOOK (SPEC v8) — every example is emitted by the REAL
     // builder, so this reference can never drift from the code.
@@ -7112,14 +8039,14 @@ function renderOverlay() {
       R2: refPill('units', '', 'Shrek') + refPill('customers', '', 'Devin Lyles'),
       R3: statusPill('unitInspectionStatus', 'Ready') + statusPill('rentalStatus', 'On Rent'),
       R3b: badge('480 HRS') + badge('No GPS'),
-      R4: dPill('Lift Scissor 26ft', 'orange', { icon: CARD_ICON.categories }) + dPill('Ready', 'green', { icon: CARD_ICON.inspections }),
+      R4: dPill('Lift Scissor 26ft', 'orange', { icon: CARD_ICON.categories }) + dPill('Passed', 'green', { icon: CARD_ICON.inspections }),
       R5: addBtn('Customer', { link: true, h: 26 }) + addBtn('Invoice/+Transport', { link: true, h: 26 }),
       R5b: addBtn('Part/Task', { line: true, h: 26 }) + addBtn('Rental', { line: true, h: 26 }),
       R5c: addBtn('Serial', { h: 26 }) + addBtn('Email', { h: 26 }),
       R6: reqBtn('PO #'),
       R7: linkName('Shrek · Jun 02–Jun 12'),
       R8: '<span class="derived">$2,610 · 7-Day×1 + 1-Day×3</span>',
-      R9: flagsStack([flagEl('Ready', 'green', { icon: CARD_ICON.inspections }), flagEl('ETA Jun 18', 'yellow', { icon: CARD_ICON.workOrders })]),
+      R9: flagsStack([flagEl('Passed', 'green', { icon: CARD_ICON.inspections }), flagEl('ETA Jun 18', 'yellow', { icon: CARD_ICON.workOrders })]),
       R10: '<span class="c-titlecard"><span class="c-icon">' + CARD_ICON.units + '</span><span class="c-title">Beacon</span></span>',
       R11: '<span style="display:inline-block;border:1px solid color-mix(in srgb, var(--green) 45%, transparent);border-radius:9px;padding:4px 14px;font-size:10px;font-weight:700;letter-spacing:.5px;color:var(--green)">INSPECTION</span>',
       R12: '<span class="add-field" data-r="R5c" style="height:24px;font-size:11px">+Notes</span><span class="muted" style="font-size:11px"> (boxless line)</span>',
@@ -7138,6 +8065,7 @@ function renderOverlay() {
       R23: '<span class="pill c-gray" data-tip="The one styled tip"><span class="t">hover me</span></span>',
     };
     EX.R21 = fileDrop('Add File', { icon: I.box });
+    EX.R25 = '<span style="position:relative;display:inline-flex;align-items:center;gap:9px;padding:8px 12px;background:var(--panel);border:1px solid var(--line);border-radius:9px;overflow:hidden;max-width:360px"><span style="position:absolute;top:0;left:0;right:0;height:3px;background:repeating-linear-gradient(135deg,var(--red) 0 13px,#14181d 13px 26px)"></span><span style="font-family:\'Saira Condensed\',system-ui,sans-serif;text-transform:uppercase;letter-spacing:1.4px;font-weight:800;font-size:12px;color:var(--red);white-space:nowrap">⚠ Not saving</span><span style="font-size:11px;color:var(--txt-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">changes held, retrying…</span></span>';
     // ── tabbed render — a row builder per kind, then just the active tab's items ──
     const ruleRow = (r) => {
       const m = RULE_META[r]; if (!m) return '';
@@ -7163,9 +8091,32 @@ function renderOverlay() {
         </div>
       </div>`;
     };
+    // §RB-Windows — one collapsible row per catalogued popup window. Collapsed shows
+    // label + tag + a copy-ref button; the live preview, its fields, and the code
+    // location build lazily on first expand (see the js-win-row handler).
+    const windowRow = (w) => {
+      const loc = `app.js · renderOverlay → o.kind === '${w.kind}'`;
+      return `<div class="rb-win" data-kind="${esc(w.kind)}">
+        <div class="rb-win-head">
+          <button class="rb-win-toggle js-win-row" data-kind="${esc(w.kind)}" aria-expanded="false">
+            <span class="rb-win-chev" aria-hidden="true">${I.chev}</span>
+            <span class="rb-win-label">${esc(w.label)}</span>
+            <span class="rb-win-tag">${esc(w.tag)}</span>
+          </button>
+          <button class="rb-win-copy js-win-copy" data-kind="${esc(w.kind)}" data-tip="Copy a Claude-ready edit reference">📋<span>Copy</span></button>
+        </div>
+        <div class="rb-win-body" hidden>
+          <div class="rb-win-preview" data-built="0"></div>
+          <div class="rb-win-fields"></div>
+          <code class="rb-win-loc">${esc(loc)}</code>
+        </div>
+      </div>`;
+    };
     const activeTab = RB_TABS.find((t) => t.id === o.rbTab) || RB_TABS[0];
     const tabBar = RB_TABS.map((t) => `<button class="rb-tab${t.id === activeTab.id ? ' on' : ''} js-rbtab" data-tab="${t.id}">${esc(t.label)}</button>`).join('');
-    const rows = activeTab.items.map((it) => (it.r ? ruleRow(it.r) : foundRow(it.f))).join('');
+    const rows = activeTab.id === 'windows'
+      ? WINDOW_CATALOG.map(windowRow).join('')
+      : activeTab.items.map((it) => (it.r ? ruleRow(it.r) : foundRow(it.f))).join('');
     // ORPHANS — lint-flagged controls with no rule yet (surfaced on Data & Behaviors)
     let orphanBlock = '';
     if (activeTab.id === 'data') {
@@ -7178,6 +8129,25 @@ function renderOverlay() {
         <details class="rb-idx"${orphans.length ? ' open' : ''}><summary>${orphans.length} element${orphans.length === 1 ? '' : 's'}</summary>${orphanRows}</details></div>
       </div>`;
     }
+    let standaloneBlock = '';
+    if (activeTab.id === 'windows') {
+      const stdRows = STANDALONE_SURFACES.map((s, i) => `<div class="rb-win" data-std="${i}">
+        <div class="rb-win-head">
+          <button class="rb-win-toggle js-win-row" data-std="${i}" aria-expanded="false">
+            <span class="rb-win-chev" aria-hidden="true">${I.chev}</span>
+            <span class="rb-win-label">${esc(s.label)}</span>
+            <span class="rb-win-tag">${esc(s.tag)}</span>
+          </button>
+          <button class="rb-win-copy js-win-copy" data-ref="${esc('Edit the ' + s.label + ' (' + s.loc + ') — a standalone form/dropdown in the app, not a pop-up window.')}">📋<span>Copy</span></button>
+        </div>
+        <div class="rb-win-body" hidden>
+          <div class="rb-win-preview" data-built="0"></div>
+          <div class="rb-win-fields"></div>
+          <code class="rb-win-loc">${esc(s.loc)}</code>
+        </div>
+      </div>`).join('');
+      standaloneBlock = `<div class="rb-std"><div class="rb-std-head">Standalone — forms &amp; dropdowns not in a pop-up</div>${stdRows}</div>`;
+    }
     const pop = el('div', 'popup'); pop.style.width = '680px';
     pop.innerHTML = `
       <div class="popup-head"><span class="mark" style="color:var(--accent);display:inline-flex">${I.doc}</span><h3>The R-Rulebook — SPEC v8 · design system</h3><span class="spacer"></span><button class="x js-close">${I.x}</button></div>
@@ -7186,6 +8156,7 @@ function renderOverlay() {
         <p class="rb-intro">${esc(activeTab.intro)} <span class="muted">Live examples — this reference can’t drift. Use the 🔍 Inspector (bottom bar) to hover any element and copy its rule.</span></p>
         ${rows}
         ${orphanBlock}
+        ${standaloneBlock}
       </div>`;
     overlay.appendChild(pop);
   } else if (o.kind === 'partform') {
@@ -7264,7 +8235,7 @@ function renderOverlay() {
     const lines = role.kpis.map((k, i) => {
       const raw = vals[i];
       const b = bandColor(raw == null ? 0 : raw);
-      const valTxt = raw == null ? '<span class="muted">— backend</span>' : `<span style="color:var(--${b.color})">${raw}%</span>`;
+      const valTxt = raw == null ? '<span class="muted">Coming soon</span>' : `<span style="color:var(--${b.color})">${raw}%</span>`;
       return `<div class="kpi-line" data-tip="${esc(KPI_HELP[k] || '')}"><span class="ring-no" style="border-color:var(--${raw == null ? 'line' : b.color});color:var(--${raw == null ? 'txt-3' : b.color})">${i + 1}</span><span class="k-name">${esc(k)}<span class="muted" style="font-size:10px;margin-left:6px">${ringTag[i]}</span></span><span class="k-val">${valTxt}</span></div>`;
     }).join('');
     const pop = el('div', 'popup kpi-popup');
@@ -7447,7 +8418,7 @@ function renderOverlay() {
     // The card rail IS the header (no title). Account tab + a tab per card (signed dot) + a +Card add.
     const railTabs = `<div class="ag-tabs" role="tablist">
       <button type="button" class="ag-tab js-nc-tab${tab === 'account' ? ' on' : ''}" data-tab="account">Account</button>
-      ${cards.map((k) => `<button type="button" class="ag-tab js-nc-tab${tab === k.id ? ' on' : ''}" data-tab="${esc(k.id)}"><span class="ag-dot ${cardAuthorized(custRec, k) ? 'ok' : 'bad'}"></span>${esc(brandName(k.brand))} ••${esc(k.last4)}</button>`).join('')}
+      ${cards.map((k) => `<button type="button" class="ag-tab js-nc-tab${tab === k.id ? ' on' : ''}" data-tab="${esc(k.id)}"><span class="ag-dot ${{ complete: 'ok', 'in-progress': 'mid', stale: 'bad' }[cardCaptureState(custRec, k)]}"></span>${esc(brandName(k.brand))} ••${esc(k.last4)}</button>`).join('')}
       ${addBtn('Card', { link: true, js: 'js-add-card', data: { rec: o.editId || '' } })}
     </div>`;
     const headRail = `${railTabs}<span class="spacer"></span>${isEdit ? `<button class="iconbtn iconbtn-bare js-nc-qr" data-tip="Open on phone">${I.qr}</button>` : ''}`;
@@ -7492,8 +8463,9 @@ function renderOverlay() {
       } else {
         const key = requiredAgreementKey(custRec); const ag = AGREEMENTS[key];
         body = `
-          <div class="ag-meta">${esc(meta)}<span class="ag-metasep"></span>${badge(st === 'stale' ? 'Re-sign' : 'Unsigned', 'red')}</div>
-          <div class="ag-gate"><span class="lead">${st === 'stale' ? 'Account type changed — re-sign required.' : 'Sign to allow On-Rent &amp; delivery.'}</span><span class="sub">Save to authorize · card can still be charged.</span></div>
+          <div class="ag-meta">${esc(meta)}<span class="ag-metasep"></span>${badge(st === 'stale' ? 'Re-sign' : 'In progress', st === 'stale' ? 'yellow' : 'gray')}</div>
+          ${capProgress([{ label: 'Card', done: true }, { label: 'Selfie', done: cardHasSelfie(k) }, { label: 'Signature', done: cardHasSignature(custRec, k) }])}
+          <div class="ag-gate"><span class="sub">${st === 'stale' ? 'Account type changed — re-sign the agreement below.' : 'On-Rent &amp; delivery unlock when complete; the card can still be charged now.'}</span></div>
           ${agCaptureBlock(o, ag, k.id)}`;
       }
     }
@@ -7526,7 +8498,7 @@ function renderOverlay() {
     // Read-only signed-agreement viewer (from the customer card). Shows the exact
     // agreement the customer accepted plus their signature + the date.
     const c = IDX.customer.get(o.recId);
-    if (!c) { state.overlay = null; return; }
+    if (!c) { return false; }
     const ag = AGREEMENTS[c.agreementType] || AGREEMENTS.rental;
     const pop = el('div', 'popup nc-popup');
     pop.innerHTML = popupShell({ icon: CARD_ICON.customers || '', title: ag.title, tag: 'Customer · agreement',
@@ -7540,7 +8512,7 @@ function renderOverlay() {
     // Required-checklist takeover (Settings → Inspections): replaces the sheet until completed;
     // closing keeps it as a pending inspection. Any item Fail → overall Fail → existing auto-WO.
     const u = IDX.unit.get(o.unitId); const cfg = u && checklistFor(u); const n = IDX.insp.get(o.inspId);
-    if (!u || !cfg || !n) { state.overlay = null; return; }
+    if (!u || !cfg || !n) { return false; }
     n.items = n.items || {};
     const items = cfg.items || [];
     const done = items.filter((it) => !inspItemUnanswered(it, n.items[it.id])).length; const allDone = done === items.length;
@@ -7583,7 +8555,7 @@ function renderOverlay() {
     // §12.8 Failure report — triggered when an inspection is marked Failed: capture a
     // photo/video + a description for the auto-created work order.
     const n = IDX.insp.get(o.recId);
-    if (!n) { state.overlay = null; return; }
+    if (!n) { return false; }
     const unit = IDX.unit.get(n.unitId);
     const ir = inspResult(n);
     const isVideo = (n.photo || '').startsWith('data:video');
@@ -7607,7 +8579,7 @@ function renderOverlay() {
     const u = IDX.unit.get(o.unitId);
     const rows = u ? unitServiceRows(u) : [];   // includes the wash task (svc-wash)
     const task = rows.find((s) => s.taskId === o.taskId);
-    if (!u || !task) { state.overlay = null; return; }
+    if (!u || !task) { return false; }
     const svcVid = (state.svcPhoto || '').startsWith('data:video');
     const media = state.svcPhoto
       ? `<div class="insp-photo">${svcVid ? `<video src="${esc(state.svcPhoto)}" controls></video>` : `<img src="${esc(state.svcPhoto)}" alt="service photo">`}<label class="insp-rephoto">Replace<input type="file" accept="image/*" class="js-svc-photo" hidden></label></div>`
@@ -7626,7 +8598,7 @@ function renderOverlay() {
   } else if (o.kind === 'schedule') {
     // §12.1 Schedule — a single date+time follow-up logged to the customer Activity Log
     const c = IDX.customer.get(o.customerId);
-    if (!c) { state.overlay = null; return; }
+    if (!c) { return false; }
     if (o.when === undefined) { o.when = TODAY_ISO; o.whenTime = to24(nowHourLabel()) || '09:00'; }
     const pop = el('div', 'popup'); pop.style.width = '340px';
     pop.innerHTML = popupShell({ icon: CARD_ICON.customers, title: `Schedule — ${c.name}`, tag: 'Customer · follow-up',
@@ -7638,7 +8610,7 @@ function renderOverlay() {
   } else if (o.kind === 'splitUnit') {
     // §20 split — give one unit its own window on a NEW sibling rental, same invoice.
     const r = IDX.rental.get(o.rentalId), u = IDX.unit.get(o.unitId);
-    if (!r || !u) { state.overlay = null; return; }
+    if (!r || !u) { return false; }
     const inv = r.invoiceId ? IDX.invoice.get(r.invoiceId) : null;
     const pop = el('div', 'popup'); pop.style.width = '360px';
     pop.innerHTML = popupShell({ icon: CARD_ICON.rentals, title: `Different dates — ${u.name}`, tag: 'Rental · split window',
@@ -7651,22 +8623,24 @@ function renderOverlay() {
   } else if (o.kind === 'addCard') {
     // Stripe Card Element — raw card data stays inside Stripe's iframe.
     const c = IDX.customer.get(o.customerId);
-    if (!c) { state.overlay = null; return; }
+    if (!c) { return false; }
     const pop = el('div', 'popup'); pop.style.width = '430px';
     pop.innerHTML = popupShell({ icon: CARD_ICON.customers || '', title: `Add card — ${c.name}`, tag: 'Customer · card on file',
       foot: `<button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill ignition js-card-save" data-r="R17">Save card</button>`,
       body: `
-        <p class="muted" style="font-size:11px;margin:0 0 10px">Saved cards can be charged right away. The account can't go On Rent or log deliveries until the card is signed (next step).</p>
+        <p class="muted" style="font-size:11px;margin:0 0 10px">Saved cards can be charged right away. Capture the selfie + signature below to authorize On-Rent &amp; deliveries — or just save the card and sign it later.</p>
         <div class="pay-cap">Card number</div>
         <div class="pay-card-field" id="sl-card-element"></div>
         <div class="pay-err" id="sl-card-error"></div>
-        <p class="muted" style="font-size:11px;margin:10px 0 0">Entered securely via Stripe. We store only the brand + last 4 digits — never the full number. Sign the agreement on this card to authorize On-Rent &amp; deliveries.</p>` });
+        <p class="muted" style="font-size:11px;margin:10px 0 0">Entered securely via Stripe. We store only the brand + last 4 digits — never the full number.</p>
+        <div class="ag-cardsplit"></div>
+        ${heldSignBlock(o, c, {})}` });
     overlay.appendChild(pop);
   } else if (o.kind === 'addAch') {
     // §14b ACH — raw routing/account live ONLY in these inputs → straight to Stripe
     // (confirmUsBankAccountSetup); never stored, never sent to our backend.
     const c = IDX.customer.get(o.customerId);
-    if (!c) { state.overlay = null; return; }
+    if (!c) { return false; }
     const consent = !!(c.signature && c.selfie);
     const pop = el('div', 'popup'); pop.style.width = '430px';
     pop.innerHTML = popupShell({ icon: CARD_ICON.customers || '', title: `Add bank account — ${c.name}`, tag: 'Customer · ACH bank',
@@ -7691,7 +8665,7 @@ function renderOverlay() {
     // reads off their bank statement (a $0.01 deposit described "...SMxxxx").
     const c = IDX.customer.get(o.customerId);
     const k = c && customerBanks(c).find((x) => x.id === o.bankId);
-    if (!c || !k) { state.overlay = null; return; }
+    if (!c || !k) { return false; }
     const pop = el('div', 'popup'); pop.style.width = '400px';
     pop.innerHTML = popupShell({ icon: CARD_ICON.customers || '', title: `Verify ${k.bankName || 'bank'} ••${k.last4}`, tag: 'Customer · verify ACH',
       foot: `<button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill ignition js-ach-verify-save" data-r="R17">Verify account</button>`,
@@ -7703,7 +8677,7 @@ function renderOverlay() {
     overlay.appendChild(pop);
   } else if (o.kind === 'payment') {
     const inv = IDX.invoice.get(o.invoiceId);
-    if (!inv) { state.overlay = null; return; }
+    if (!inv) { return false; }
     const t = invoiceTotals(inv);
     const c = inv.customerId ? IDX.customer.get(inv.customerId) : null;
     const card = hasCardOnFile(c);
@@ -7725,6 +8699,8 @@ function renderOverlay() {
     // gets a row. Lazy-init o.alloc to "pay in full" so the card popup opens charge-ready.
     const lines = (method === 'card' && payOk) ? allocLines(inv) : [];
     if (lines.length && !o.alloc) { o.alloc = {}; lines.forEach((L) => { o.alloc[L.key] = L.remaining; }); }
+    // §19b refund mode: lazy-init o.refundAlloc to "refund in full" so the panel opens ready
+    if (PARTIAL_REFUNDS_ENABLED && o.confirmRefund && !o.refundAlloc) { o.refundAlloc = {}; refundLines(inv).forEach((L) => { o.refundAlloc[L.key] = L.refundable; }); }
     const methodBtn = (m, label) => `<button class="pay-method${method === m ? ' on' : ''} js-pay-method" data-method="${m}" ${o.busy ? 'disabled' : ''}>${label}</button>`;
     const methodSel = canPay ? `<div class="pay-methods">${methodBtn('cash', '💵 Cash')}${methodBtn('check', '🧾 Check')}${methodBtn('card', '💳 Card')}</div>` : '';
     // CARD sub-panel — the existing picker + §19 allocation / free amount (logic unchanged).
@@ -7748,23 +8724,86 @@ function renderOverlay() {
         <div class="pay-status-line">${statusPill('invoiceStatus', t.status)}<span class="muted">${money2(t.paid)} of ${money2(t.total)} paid${refAmt ? ` · ${money2(refAmt)} refunded` : ''}</span></div>
         ${inv.achProcessing && inv.pendingPaymentIntentId ? `<div class="pay-card-on-file warn" style="flex-direction:column;align-items:flex-start;gap:7px"><span>🏦 ACH payment processing — it settles in a few business days.</span><button class="pill c-commit js-ach-check" data-rec="${esc(inv.invoiceId)}" data-pi="${esc(inv.pendingPaymentIntentId)}" data-r="R17" ${o.busy ? 'disabled' : ''}>Check ACH status</button></div>` : ''}
         ${refunded ? '<div class="pay-card-on-file">↩ This invoice was refunded.</div>'
+          : o.confirmRefund ? (PARTIAL_REFUNDS_ENABLED
+              ? `<div class="pay-confirm">Refund to ${esc(inv.paymentMethod || 'the card')} — assign by line:</div>${refundSectionHtml(refundLines(inv), o)}`
+              : `<div class="pay-confirm">Refund ${money2(t.paid)} to ${esc(inv.paymentMethod || 'the card')}?</div>`)
           : t.balance <= 0 ? `<div class="pay-card-on-file good">✓ Paid in full${inv.paymentMethod ? ' · ' + esc(inv.paymentMethod) : ''}</div>`
             : `${methodSel}${method === 'card' ? cardPanel : manualPanel}`}
-        ${o.confirmRefund ? `<div class="pay-confirm">Refund ${money2(t.paid)} to ${esc(inv.paymentMethod || 'the card')}?</div>` : ''}
         ${o.error ? `<div class="login-err" style="text-align:left;margin-top:10px">${esc(o.error)}</div>` : ''}` });
     overlay.appendChild(pop);
   }
-  root.appendChild(overlay);
-  { const _nb = overlay.querySelector('.set-pane') || overlay.querySelector('.popup-body'); if (_nb && _ovScroll[o.kind]) _nb.scrollTop = _ovScroll[o.kind]; }   // restore scroll on a same-overlay re-render (settings pane / sign / selfie no longer jump to top)
-  _ovLastKind = o.kind;
-  if (o.kind === 'partform') document.querySelector('.overlay .js-pf2-desc')?.focus();   // Jac: Part/Task field focused by default
-  if (o.kind === 'newCustomer') setupSignaturePad();
-  if (o.kind === 'payment') setupPayAlloc();   // live counter for the §19 allocation rows
-  if (o.kind === 'addCard') { const cc = IDX.customer.get(o.customerId); if (cc) mountCardElement(); }   // §7.1b card saved first, signed after
-  if (o.kind === 'newCustomer' && o.cardSub) { const cc = IDX.customer.get(o.editId); if (cc) mountCardElement(); }   // §14 the side-by-side Add-card panel
-  { const _agFeed = overlay.querySelector('.ag-cam-feed'); if (_agFeed) startAgCam(_agFeed); else stopAgCam(); }   // live selfie camera follows the capture block
+  return true;
 }
 const openOverlay = (o) => { state.datepick = null; _ovScroll[o.kind] = 0; state.overlay = o; renderOverlay(); };   // fresh open starts at top
+/* ════════════ RB-WINDOWS catalog (Jac 2026-06-22) — the admin Rulebook's index of
+   EVERY popup window. One entry per renderOverlay kind so the "Windows" tab can list
+   it and (on expand) show an inert live preview via buildPopupEl. sample() returns
+   representative args from the demo seed (DATA.*); a kind whose record we don't have
+   in demo just yields no preview — the row still lists it. The CI guard
+   (gen-window-catalog) fails if a renderOverlay branch is missing here, so "every
+   popup is listed" stays literally true. label = human name · tag = the popup's tag. */
+const WINDOW_CATALOG = [
+  { kind: 'qr',            label: 'Share session (QR)',      tag: 'Share · session',          sample: () => ({}) },
+  { kind: 'migrateUnits',  label: 'Round up missing units',  tag: 'Units · migrate',          sample: () => ({ plan: [{ name: 'Sample Unit', action: 'create', unitId: 'U000', categoryId: ((DATA.categories || [])[0] || {}).categoryId, count: 1 }] }) },
+  { kind: 'comment',       label: 'Comment note',            tag: 'Note · comment',           sample: () => ({ card: 'units', recId: ((DATA.units || [])[0] || {}).unitId, recType: null, color: 'yellow' }) },
+  { kind: 'rulebook',      label: 'The R-Rulebook',          tag: 'SPEC v8 · design system',  sample: () => ({}) },
+  { kind: 'partform',      label: 'Add / Edit Part · Task',  tag: 'Work order · line',         sample: () => ({ woId: ((DATA.workOrders || [])[0] || {}).woId }) },
+  { kind: 'receiptform',   label: 'New / Edit Receipt',      tag: 'Expense · receipt',         sample: () => ({}) },
+  { kind: 'capture',       label: 'Log yard journey',        tag: 'Yard journey · log',        sample: () => ({ rentalId: ((DATA.rentals || [])[0] || {}).rentalId, cap: 'start' }) },
+  { kind: 'wodone',        label: 'Complete Work Order?',    tag: 'Work order · confirm',      sample: () => ({ woId: ((DATA.workOrders || [])[0] || {}).woId }) },
+  { kind: 'role',          label: 'Role KPIs',               tag: 'Role · scorecard',          sample: () => ({ role: (ROLES[0] || {}).id }) },
+  { kind: 'requests',      label: 'Requests inbox',          tag: 'Mr. Wrangler · approvals',  sample: () => ({}) },
+  { kind: 'notifications', label: 'Notifications',           tag: 'Mr. Wrangler · resolved',   sample: () => ({}) },
+  { kind: 'hotkeys',       label: 'Mouse shortcuts',         tag: 'Operator · controls',       sample: () => ({}) },
+  { kind: 'feedback',      label: 'Report a bug or request', tag: 'Mr. Wrangler · report',     sample: () => ({}) },
+  { kind: 'board',         label: 'Back-office board',       tag: 'Back office · records',     sample: () => ({ board: (BACKOFFICE_BOARDS[0] || {}).id }) },
+  { kind: 'boardview',     label: 'Board View',              tag: 'Card · board view',         sample: () => ({ card: 'units', query: '', sort: {}, calc: {}, colOrder: null, extraRows: [], cellData: {}, seq: 0 }) },
+  { kind: 'tools',         label: 'Tools tray',              tag: 'Yard · toolbox',            sample: () => ({}) },
+  { kind: 'settings',      label: 'Settings',                tag: 'Admin · settings',          sample: () => ({}) },
+  { kind: 'newCustomer',   label: 'New / Edit Customer',     tag: 'Customer · account',        sample: () => ({ editId: null, draft: { firstName: '', lastName: '', company: '', phone: '', email: '', industry: '', accountType: 'Non-Business', requiresPO: undefined, accountNotes: '', idNumber: '', netDays: '', custom: {} } }) },
+  { kind: 'agreement',     label: 'Signed agreement',        tag: 'Customer · agreement',      sample: () => ({ recId: ((DATA.customers || [])[0] || {}).customerId }) },
+  { kind: 'checklist',     label: 'Inspection checklist',    tag: 'Inspection · checklist',    sample: () => ({ unitId: ((DATA.units || [])[0] || {}).unitId, inspId: ((DATA.inspections || [])[0] || {}).inspectionId }) },
+  { kind: 'inspection',    label: 'Failure report',          tag: 'Inspection · failure',      sample: () => ({ recId: ((DATA.inspections || [])[0] || {}).inspectionId }) },
+  { kind: 'service',       label: 'Complete service',        tag: 'Service · complete',        sample: () => ({ unitId: ((DATA.units || [])[0] || {}).unitId, taskId: 'svc-wash' }) },
+  { kind: 'schedule',      label: 'Schedule follow-up',      tag: 'Customer · follow-up',      sample: () => ({ customerId: ((DATA.customers || [])[0] || {}).customerId }) },
+  { kind: 'splitUnit',     label: 'Different dates (split)',  tag: 'Rental · split window',     sample: () => ({ rentalId: ((DATA.rentals || [])[0] || {}).rentalId, unitId: ((DATA.units || [])[0] || {}).unitId }) },
+  { kind: 'addCard',       label: 'Add card',                tag: 'Customer · card on file',   sample: () => ({ customerId: ((DATA.customers || [])[0] || {}).customerId }) },
+  { kind: 'addAch',        label: 'Add bank account',        tag: 'Customer · ACH bank',       sample: () => ({ customerId: ((DATA.customers || [])[0] || {}).customerId }) },
+  { kind: 'verifyAch',     label: 'Verify ACH',              tag: 'Customer · verify ACH',     sample: () => { const c = (DATA.customers || []).find((x) => (x.achAccounts || []).length); return c ? { customerId: c.customerId, bankId: c.achAccounts[0].id } : {}; } },
+  { kind: 'payment',       label: 'Take Payment',            tag: 'Invoice · payment',         sample: () => ({ invoiceId: ((DATA.invoices || [])[0] || {}).invoiceId }) },
+];
+/* Build an INERT preview popup for a catalog kind (or null if a record guard trips
+   or it throws). Reuses buildPopupEl with {preview:true} — the REAL popup — into a
+   throwaway holder so nothing touches the live overlay or fires side-effects. */
+function previewOverlayFor(kind) {
+  const entry = WINDOW_CATALOG.find((w) => w.kind === kind);
+  if (!entry) return null;
+  const holder = el('div', 'rb-prev-holder');
+  try {
+    const o = { kind, ...(entry.sample ? entry.sample() : {}), preview: true };
+    if (buildPopupEl(o, holder, { preview: true }) === false) return null;
+  } catch (e) { return null; }
+  return holder.firstElementChild ? holder : null;
+}
+/* Standalone surfaces — the forms & dropdowns that AREN'T pop-up windows (they live
+   inline on the cards/toolbar), listed under the Windows tab with a code location +
+   copy-ref. No live preview (they need card context); the locator is the map. */
+const STANDALONE_SURFACES = [
+  { label: 'Status gate dropdown', tag: 'R1 · advances a record', loc: 'app.js · gatePill / gatePillRaw / funnelPill',
+    preview: () => gatePill('rentalStatus', 'On Rent', '', {}) },
+  { label: 'Right-click context menu', tag: 'R20 · cut · copy · comment', loc: 'app.js · openCtxMenu',
+    preview: () => `<div class="ctx-menu" style="position:static;display:inline-block;min-width:168px;box-shadow:none">`
+      + `<button class="dd-item">✂ Cut</button><button class="dd-item">📋 Copy</button><button class="dd-item">📌 Paste</button>`
+      + `<div class="menu-sep"></div><button class="dd-item">💬 Add Comment</button><button class="dd-item">🤠 Ask Mr. Wrangler</button></div>` },
+  { label: 'Date / time picker', tag: 'R22 · the one styled calendar', loc: 'app.js · dateField',
+    preview: () => dateField('when', '', { withTime: true }) },
+  { label: 'Card notes line', tag: 'R12 · boxless notes', loc: 'app.js · notesSection',
+    preview: () => { const r = (DATA.units || [])[0]; if (!r) return ''; const ns = notesSection('units', r, 'unitId'); return ns.top || ns.bottom; } },
+  { label: 'Global search + filters', tag: 'Toolbar · find · pin chips', loc: 'app.js · #globalsearch input',
+    preview: () => `<div style="display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:10px;padding:6px 10px;background:var(--bg-2);min-width:280px">`
+      + `<span style="display:inline-flex;color:var(--txt-3)">${I.search}</span>`
+      + `<input class="search" placeholder="Search everything…" style="border:none;background:none;outline:none;color:var(--txt);flex:1;min-width:0" disabled>${badge('Type · Excavator')}</div>` },
+];
 /* ── §15 in-app feedback: bug/request → queued to the backend Feedback tab ── */
 function feedbackContext() {
   const s = activeSession(), a = s && s.anchor;
@@ -7795,7 +8834,7 @@ async function sendFeedback() {
    (action 'wrangler'); Code.gs calls api.anthropic.com with the key from a Script
    Property. Carries a compact data digest + (when opened from a record) its detail.
    ════════════════════════════════════════════════════════════════════════ */
-const WRANGLER_SYSTEM = "You are Mr. Wrangler, the in-app AI for JacRentals — a heavy-equipment rental yard in Sulphur, Louisiana. You help the team make sense of their units, rentals, customers, invoices, work orders, and service, and you help triage bugs they report.\n\nSTYLE — keep it tight: answer in 1–3 sentences by default. Lead with the direct answer first; add at most one short supporting clause. Use a bullet list ONLY when enumerating multiple records, one line each. Don't restate the question, don't pad, and don't over-explain what you can't do — just answer.\n\nDATA — the snapshot below holds the LIVE records: every category with its rates, every fleet unit with its type and status, every rental with its date window and customer, customers with balances owed, and the open invoices and work orders. Reason over it directly. Only say a fact is missing if it truly isn't in the snapshot. Never invent records, names, or numbers.\n\nHELPING & FIXING — you're the assistant living inside the app (think Claude, but for this yard). The user might ask a question, describe a problem, or paste something — work out what they need and help. If they describe a BUG or glitch in the app itself (something not working, a dead control, a wrong layout or behavior), reproduce it in your head; if you're missing a detail, ask ONE quick follow-up (what they tapped + what they expected). Once you can state a clear repro, FILE A FIX by ending your reply with this exact fenced block:\n```wrangler-action\n{\"action\":\"fix\",\"title\":\"<short title>\",\"report\":\"<clear repro: steps, expected vs actual, any element involved>\"}\n```\nThat auto-ships obvious bugs (a dead control, a typo, a plainly wrong value).\nBut if it's a CHANGE or improvement (not an obvious bug), do NOT file it blind — talk it through first: lay out a SHORT, concrete PLAN of exactly what you'd change and where, then ask if that's good or needs adjusting. When you put a concrete plan on the table, end with:\n```wrangler-action\n{\"action\":\"plan\",\"title\":\"<short title>\",\"plan\":\"<numbered steps: what changes, where, and the resulting UX>\"}\n```\nJac reviews that plan and taps Build only when it's right — so take his tweaks and re-propose the plan until he's happy. Emit a block ONLY when ready — a clear repro for a fix, or a concrete plan for a change — never while still gathering detail; keep your visible words short and natural and never mention JSON, blocks, labels, or buttons.\n\nACTING ON DATA — you can DO things, not just answer. You can ADD, UPDATE, or BULK-IMPORT items for the user: customers, units, categories, rentals. NEVER delete anything, and NEVER touch money, card, payment, pricing, balances, auth, or work-order-completion fields. If the user asks to add/change something, or hands you lead/customer data to import (pasted rows, a list, a spreadsheet they paste in), DO IT — never say you can't or that Jac has to build it. Ask any quick follow-up you genuinely need first (which field, how their columns map, what membership stage), then end your reply with:\n```wrangler-action\n{\"action\":\"data\",\"title\":\"<what this does>\",\"ops\":[{\"op\":\"import\",\"entity\":\"customers\",\"rows\":[{\"firstName\":\"..\",\"lastName\":\"..\",\"phone\":\"..\",\"email\":\"..\",\"membershipStage\":\"..\"}]},{\"op\":\"create\",\"entity\":\"customers\",\"fields\":{}},{\"op\":\"update\",\"entity\":\"units\",\"id\":\"U003\",\"fields\":{\"notes\":\"..\"}}]}\n```\nThe user ALWAYS sees a preview and taps Apply before anything is written, so propose freely — but you CANNOT save anything yourself: that wrangler-action block plus the user's Apply tap is the ONLY thing that writes data. So whenever you add, update, or import, you MUST end the reply with the block, and you must NEVER say or imply the change is already done, saved, added, or imported — word it as a preview to apply (say something like: here's the import — look it over and tap Apply). If a list is too big to land in one reply, import a smaller batch and tell them how many rows are still to send; never claim a save you didn't actually emit in a block. Map their funnel/membership words to one of: Inbound Lead, Outbound Lead, Contacted, Not A No!, Payment Discussed, Paid. Editable fields are name/contact/address/industry/notes/account-type/membership+sales stage (customers), name/mechanic/notes/specs (units), name/description/fuel (categories), notes/po (rentals) — anything else (prices, balances, payments) you must decline and explain you can't touch money.\n\nA light wrangler/ranch flavor in voice is welcome — never campy.";
+const WRANGLER_SYSTEM = "You are Mr. Wrangler, the in-app AI for JacRentals — a heavy-equipment rental yard in Sulphur, Louisiana. You help the team make sense of their units, rentals, customers, invoices, work orders, and service, and you help triage bugs they report.\n\nSTYLE — keep it tight: answer in 1–3 sentences by default. Lead with the direct answer first; add at most one short supporting clause. Use a bullet list ONLY when enumerating multiple records, one line each. Don't restate the question, don't pad, and don't over-explain what you can't do — just answer.\n\nDATA — the snapshot below holds the LIVE records: every category with its rates, every fleet unit with its type and status, every rental with its date window and customer, customers with balances owed, and the open invoices and work orders. Reason over it directly. Only say a fact is missing if it truly isn't in the snapshot. Never invent records, names, or numbers.\n\nHELPING & FIXING — you're the assistant living inside the app (think Claude, but for this yard). The user might ask a question, describe a problem, or paste something — work out what they need and help. If they describe a BUG or glitch in the app itself (something not working, a dead control, a wrong layout or behavior), reproduce it in your head; if you're missing a detail, ask ONE quick follow-up (what they tapped + what they expected). Once you can state a clear repro, FILE A FIX by ending your reply with this exact fenced block:\n```wrangler-action\n{\"action\":\"fix\",\"title\":\"<short title>\",\"report\":\"<clear repro: steps, expected vs actual, any element involved>\"}\n```\nThat auto-ships obvious bugs (a dead control, a typo, a plainly wrong value).\nBut if it's a CHANGE or improvement (not an obvious bug), do NOT file it blind — talk it through first: lay out a SHORT, concrete PLAN of exactly what you'd change and where, then ask if that's good or needs adjusting. When you put a concrete plan on the table, end with:\n```wrangler-action\n{\"action\":\"plan\",\"title\":\"<short title>\",\"plan\":\"<numbered steps: what changes, where, and the resulting UX>\"}\n```\nJac reviews that plan and taps Build only when it's right — so take his tweaks and re-propose the plan until he's happy. Emit a block ONLY when ready — a clear repro for a fix, or a concrete plan for a change — never while still gathering detail; keep your visible words short and natural and never mention JSON, blocks, labels, or buttons.\n\nACTING ON DATA — you can DO things, not just answer. You can ADD, UPDATE, or BULK-IMPORT items for the user: customers, units, categories, rentals. NEVER delete anything, and NEVER touch money, card, payment, pricing, balances, auth, or work-order-completion fields. If the user asks to add/change something, or hands you lead/customer data to import (pasted rows, a list, a spreadsheet they paste in), DO IT — never say you can't or that Jac has to build it. Ask any quick follow-up you genuinely need first (which field, how their columns map, what membership stage), then end your reply with:\n```wrangler-action\n{\"action\":\"data\",\"title\":\"<what this does>\",\"ops\":[{\"op\":\"import\",\"entity\":\"customers\",\"rows\":[{\"firstName\":\"..\",\"lastName\":\"..\",\"phone\":\"..\",\"email\":\"..\",\"membershipStage\":\"..\"}]},{\"op\":\"create\",\"entity\":\"customers\",\"fields\":{}},{\"op\":\"update\",\"entity\":\"units\",\"id\":\"U003\",\"fields\":{\"notes\":\"..\"}}]}\n```\nThe user ALWAYS sees a preview and taps Apply before anything is written, so propose freely — but you CANNOT save anything yourself: that wrangler-action block plus the user's Apply tap is the ONLY thing that writes data. So whenever you add, update, or import, you MUST end the reply with the block, and you must NEVER say or imply the change is already done, saved, added, or imported — word it as a preview to apply (say something like: here's the import — look it over and tap Apply). If the user PASTES a long list of rows (not a file) too big for one reply, import a smaller batch and tell them how many rows are still to send (but for an ATTACHED CSV file, never inline rows like this — always use the csv-import op described below, which expands every row locally with no size limit); never claim a save you didn't actually emit in a block. Map their funnel/membership words to one of: Inbound Lead, Outbound Lead, Contacted, Not A No!, Payment Discussed, Paid. Editable fields are name/contact/address/industry/notes/account-type/membership+sales stage (customers), name/mechanic/notes/specs (units), name/description/fuel (categories), notes/po (rentals) — anything else (prices, balances, payments) you must decline and explain you can't touch money.\n\nLARGE CSV IMPORTS — when the user attaches a CSV file you will see a compact summary: column headers, up to 5 sample rows, and the total row count. For any attached CSV with 2 or more rows, ALWAYS use the csv-import op (never the inline import op) and DO NOT re-emit all the rows yourself — instead emit a csv-import op with just the column mapping. The app expands every row locally, so nothing gets cut off no matter how big the file:\n\`\`\`wrangler-action\n{\"action\":\"data\",\"title\":\"Import 234 customers from leads.csv\",\"ops\":[{\"op\":\"csv-import\",\"entity\":\"customers\",\"mapping\":{\"First Name\":\"firstName\",\"Last Name\":\"lastName\",\"Mobile\":\"phone\",\"E-mail\":\"email\"},\"skipIfEmpty\":[\"firstName\",\"lastName\"]}]}\n\`\`\`\nThe mapping keys are the CSV column headers EXACTLY as shown in the summary. The values are app field names (firstName, lastName, phone, email, company, address, industry, accountNotes, accountType, membershipStage, usedSalesStage for customers). Set skipIfEmpty to app fields that must not be blank. Map every column that clearly lines up with an app field even if the names differ (\"Mobile\" -> \"phone\"). If you are unsure about a column, ask first.\n\nA light wrangler/ranch flavor in voice is welcome — never campy.";
 // The digest is Mr. Wrangler's whole window into the yard, so it carries the ACTUAL
 // records (not just counts): category rates, each unit's type/status, each rental's
 // date window + customer, customer balances, and open invoices/WOs. Sections cap at
@@ -7870,18 +8909,53 @@ function wranglerAttachFile(file) {
   });
   reader.readAsDataURL(file);
 }
-// §18d CSV/text attachment — read the file as text and carry it with the next turn
-// (Mr. Wrangler reads it as a text block; images still ride the vision path above).
+// §18d CSV/text attachment — read the file as text and carry it with the next turn.
+// CSV files are parsed into {csvHeaders, csvRows} so the payload to Mr. Wrangler is
+// just headers + a 5-row sample; he maps columns, and the frontend expands ALL rows
+// locally (no model output ceiling regardless of CSV size). Other text files ride
+// the old full-text path.
+function parseCsvFile(text) {
+  const lines = []; let cur = [], field = '', inQ = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inQ) {
+      if (ch === '"' && text[i + 1] === '"') { field += '"'; i++; }
+      else if (ch === '"') inQ = false;
+      else field += ch;
+    } else if (ch === '"') { inQ = true; }
+    else if (ch === ',') { cur.push(field.trim()); field = ''; }
+    else if (ch === '\n' || (ch === '\r' && text[i + 1] !== '\n')) {
+      cur.push(field.trim()); field = '';
+      if (cur.some(Boolean)) lines.push(cur);
+      cur = [];
+    } else if (ch !== '\r') { field += ch; }
+  }
+  cur.push(field.trim()); if (cur.some(Boolean)) lines.push(cur);
+  if (lines.length < 2) return null;
+  const headers = lines[0]; const rows = [];
+  for (let i = 1; i < lines.length; i++) {
+    const r = lines[i]; if (!r.some(Boolean)) continue;
+    const obj = {}; headers.forEach((h, j) => { if (h) obj[h] = r[j] || ''; }); rows.push(obj);
+  }
+  return { headers, rows };
+}
 function wranglerAttachTextFile(file) {
   const o = state.wrangler; if (!o.open || !file) return;
   const name = (file.name || 'file').toLowerCase();
-  const okType = (file.type && (file.type.startsWith('text/') || /csv/.test(file.type))) || /\.(csv|tsv|txt|md|log)$/.test(name);
-  if (!okType) { toast('I can read screenshots and CSV/text files — that file type isn’t supported.'); return; }
-  if (file.size > 256 * 1024) { toast('That file is over 256 KB — trim it or paste just the rows you need.'); return; }
+  const isCsv = (file.type && /csv/.test(file.type)) || /\.csv$/.test(name);
+  const okType = (file.type && file.type.startsWith('text/')) || isCsv || /\.(tsv|txt|md|log)$/.test(name);
+  if (!okType) { toast('I can read screenshots and CSV/text files — that file type is not supported.'); return; }
+  const limit = isCsv ? 2 * 1024 * 1024 : 256 * 1024;
+  if (file.size > limit) { toast(isCsv ? 'That CSV is over 2 MB — trim it down.' : 'That file is over 256 KB — trim it or paste just the rows you need.'); return; }
   const reader = new FileReader();
   reader.onload = () => {
     o.files = o.files || []; if (o.files.length >= 3) { toast('Up to 3 files per message.'); return; }
-    o.files.push({ name: file.name || 'file', text: String(reader.result || '') }); render();
+    const text = String(reader.result || '');
+    const parsed = isCsv ? parseCsvFile(text) : null;
+    o.files.push(parsed
+      ? { name: file.name || 'file', text, csvHeaders: parsed.headers, csvRows: parsed.rows }
+      : { name: file.name || 'file', text });
+    render();
   };
   reader.onerror = () => toast('Could not read that file.');
   reader.readAsText(file);
@@ -7906,7 +8980,16 @@ async function wranglerSend() {
   // Build the payload: images become a content-block array; CSV/text files fold
   // into the message text so Mr. Wrangler reads their rows.
   const fileBlock = (m) => (m.files && m.files.length)
-    ? m.files.map((f) => `\n\nAttached file "${f.name}":\n\`\`\`\n${f.text}\n\`\`\``).join('')
+    ? m.files.map((f) => {
+        if (f.csvRows) {
+          const sample = f.csvRows.slice(0, 5);
+          const hdr = f.csvHeaders.join(',');
+          const body = sample.map((r) => f.csvHeaders.map((h) => r[h] || '').join(',')).join('\n');
+          const more = f.csvRows.length > 5 ? '\n(+' + (f.csvRows.length - 5) + ' more rows — use csv-import op to map all columns)' : '';
+          return '\n\nAttached CSV "' + f.name + '" — ' + f.csvRows.length + ' total rows:\n```\n' + hdr + '\n' + body + more + '\n```';
+        }
+        return '\n\nAttached file "' + f.name + '":\n```\n' + f.text + '\n```';
+      }).join('')
     : '';
   const payloadMsgs = o.messages.map((m) => {
     const body = (m.content || '') + fileBlock(m);
@@ -7918,6 +9001,10 @@ async function wranglerSend() {
     }
     return { role: m.role, content: body };
   });
+  // #wrangler-chat-separation — pin the chat this reply belongs to. state.wrangler is a SINGLE
+  // mutable object; hopping chats during the await must not bleed the reply (or its issue
+  // comment) into the now-open chat. (openWranglerFromRequest guards its async load the same way.)
+  const replyChatId = o.id, replyReqNum = o.reqNumber;
   try {
     if (typeof backendPassword !== 'undefined' && backendPassword) {
       const r = await backendCall('wrangler', { system, messages: payloadMsgs });
@@ -7928,13 +9015,20 @@ async function wranglerSend() {
       const truncated = /```wrangler-action/.test(raw) && !act;   // #152 a fence arrived but nothing usable came out of it
       if (truncated) shown = (shown ? shown + '\n\n' : '') + '⚠️ My reply got cut off before I could finish that action — too much in one go. Ask me to do it in smaller batches and I’ll send a preview you can apply.';
       else if (!shown) shown = act ? (act.action === 'data' ? 'Here’s what I’ll change — preview it and hit apply when it looks right.' : act.action === 'kpi' ? 'Here’s the KPI — lock it in when the live number looks right.' : act.action === 'request' ? 'Got it — I’ll send this to the developer to OK.' : act.action === 'plan' ? 'Here’s the plan — tap Build when it’s right.' : 'On it — I’ll fix this right now and let you know when I’m done.') : '(no answer)';
-      o.messages.push({ role: 'assistant', content: shown, action: act || null, filed: false });
-      syncWranglerComment(o, 'assistant', shown);   // §18e mirror Mr. Wrangler's reply onto the issue thread
+      // route the reply to its ORIGINATING chat — the live dock if still open, else its rail
+      // snapshot — so a mid-await chat hop can't bleed it into the now-open conversation.
+      const _onChat = state.wrangler.id === replyChatId;
+      const _target = _onChat ? o : state.wranglerRail.find((c) => c.id === replyChatId);
+      if (_target) {
+        _target.messages.push({ role: 'assistant', content: shown, action: act || null, filed: false });
+        syncWranglerComment({ reqNumber: replyReqNum }, 'assistant', shown);   // §18e mirror onto the RIGHT issue thread
+        if (!_onChat) wranglerRailPersist(_target);   // backgrounded chat → fold the reply into its snapshot
+      }
     } else {
       o.messages.push({ role: 'assistant', content: "🤠 Demo mode — sign in to ask the real Mr. Wrangler (the live AI runs through the backend). Here's the snapshot I'd reason over:\n\n" + wranglerDigest() });
     }
-    o.busy = false; render(); setTimeout(() => { const f = document.querySelector('.wrangler-dock .wr-feed'); if (f) f.scrollTop = f.scrollHeight; }, 0);
-  } catch (e) { o.busy = false; o.error = "Mr. Wrangler couldn't answer — check the connection / backend."; render(); }
+    if (state.wrangler.id === replyChatId) { o.busy = false; render(); setTimeout(() => { const f = document.querySelector('.wrangler-dock .wr-feed'); if (f) f.scrollTop = f.scrollHeight; }, 0); } else render();   // only clear/scroll the dock if it's still THIS chat
+  } catch (e) { if (state.wrangler.id === replyChatId) { o.busy = false; o.error = "Mr. Wrangler couldn't answer — check the connection / backend."; render(); } }
 }
 // §18d "Send to the fixer" — turn the current Wrangler chat into a `wrangler-fix`
 // GitHub issue (the Track B repro packet). Carries the transcript, the view/role/
@@ -8014,15 +9108,70 @@ function wrCleanFields(entity, obj) {
   });
   return { out, skipped };
 }
+/** Backscan a chat's messages for the most recent user-attached CSV (a file with
+ *  parsed csvRows) before the given action index — so an import action can find the
+ *  file it refers to. Pure + testable; the dock and the safety net both use it. */
+function wrFindAttachedCsv(messages, beforeIndex) {
+  for (let j = beforeIndex - 1; j >= 0; j--) {
+    const um = messages[j];
+    if (um && um.role === 'user' && um.files) {
+      const f = um.files.find((uf) => uf && uf.csvRows);
+      if (f) return f;
+    }
+  }
+  return null;
+}
 /** Validate a `data` action into a safe preview plan (drops anything off the allowlist). */
 function wrValidatePlan(act) {
   const ops = []; const issues = [];
   (Array.isArray(act.ops) ? act.ops : []).forEach((raw) => {
     const ent = WR_EDITABLE[raw.entity];
     if (!ent) { issues.push(`can’t touch “${raw.entity}”`); return; }
-    const opn = raw.op === 'import' ? 'import' : raw.op === 'update' ? 'update' : 'create';
-    if (opn === 'import') {
-      if (!ent.importable) { issues.push(`can’t bulk-import ${ent.label}s`); return; }
+    const opn = raw.op === 'csv-import' ? 'csv-import' : raw.op === 'import' ? 'import' : raw.op === 'update' ? 'update' : 'create';
+    if (opn === 'csv-import') {
+      if (!ent.importable) { issues.push('can\'t bulk-import ' + ent.label + 's'); return; }
+      const csv = act._csvAttached;
+      if (!csv || !csv.csvRows) { issues.push('CSV file not found — attach the file and ask again'); return; }
+      const mapping = raw.mapping || {}; const skipIfEmpty = raw.skipIfEmpty || [];
+      // Forgiving header match: resolve each mapping key to a REAL CSV header,
+      // ignoring case/spaces/punctuation, so "Email" still finds "E-mail" and even an
+      // app-field-style key ("firstName") finds "First Name". A model slip on a column
+      // label no longer silently drops the whole column.
+      const csvHeaders = csv.csvHeaders || Object.keys(csv.csvRows[0] || {});
+      const normH = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const headerByNorm = {};
+      csvHeaders.forEach((h) => { const k = normH(h); if (k && !(k in headerByNorm)) headerByNorm[k] = h; });
+      const resolved = []; const unmatched = [];
+      Object.entries(mapping).forEach(([col, field]) => {
+        if (!field) return;
+        const real = csvHeaders.includes(col) ? col : headerByNorm[normH(col)];
+        if (real) resolved.push([real, field]); else unmatched.push(col);
+      });
+      let skipped = 0; const rows = [];
+      csv.csvRows.forEach((csvRow) => {
+        const mapped = {};
+        resolved.forEach((pair) => { mapped[pair[1]] = String(csvRow[pair[0]] || ''); });
+        if (skipIfEmpty.some((f) => !mapped[f])) { skipped++; return; }
+        const { out } = wrCleanFields(raw.entity, mapped);
+        if (Object.keys(out).length) rows.push(out);
+        else skipped++;
+      });
+      if (!rows.length) { issues.push('No rows mapped — check the column names match the CSV headers exactly'); return; }
+      if (unmatched.length) issues.push('couldn\'t match column' + (unmatched.length > 1 ? 's' : '') + ': ' + unmatched.join(', '));
+      if (skipped) issues.push(skipped + ' row' + (skipped > 1 ? 's' : '') + ' skipped (blank required field)');
+      ops.push({ op: 'csv-import', entity: raw.entity, rows });
+    } else if (opn === 'import') {
+      if (!ent.importable) { issues.push('can\'t bulk-import ' + ent.label + 's'); return; }
+      // Safety net: a CSV is attached but the model inlined the rows itself (the old,
+      // size-limited path) and sent FEWER than the file holds — it truncated or
+      // batched. Don't silently apply a partial: surface it loudly and skip, so the
+      // user re-asks and Mr. Wrangler uses csv-import (which expands every row).
+      const attached = act._csvAttached;
+      const inlineCount = (raw.rows || []).length;
+      if (attached && attached.csvRows && inlineCount < attached.csvRows.length) {
+        issues.push('Mr. Wrangler only sent ' + inlineCount + ' of ' + attached.csvRows.length + ' rows inline — ask it to use csv-import so all the columns map and no rows get cut off');
+        return;
+      }
       const rows = (raw.rows || []).map((r) => wrCleanFields(raw.entity, r).out).filter((r) => Object.keys(r).length);
       if (rows.length) ops.push({ op: 'import', entity: raw.entity, rows });
     } else if (opn === 'update') {
@@ -8040,7 +9189,7 @@ function wrValidatePlan(act) {
 }
 function wrPlanSummary(plan) {
   const add = {}, upd = {};
-  plan.ops.forEach((op) => { const l = WR_EDITABLE[op.entity].label; if (op.op === 'update') upd[l] = (upd[l] || 0) + 1; else add[l] = (add[l] || 0) + (op.op === 'import' ? op.rows.length : 1); });
+  plan.ops.forEach((op) => { const l = WR_EDITABLE[op.entity].label; if (op.op === 'update') upd[l] = (upd[l] || 0) + 1; else add[l] = (add[l] || 0) + ((op.op === 'import' || op.op === 'csv-import') ? op.rows.length : 1); });
   const seg = (m, verb) => Object.entries(m).map(([l, n]) => `${verb} ${n} ${l}${n > 1 ? 's' : ''}`);
   return [...seg(add, 'add'), ...seg(upd, 'update')].join(' · ') || 'no safe changes';
 }
@@ -8059,7 +9208,7 @@ function applyWranglerData(plan) {
       if (op.entity === 'customers') t.name = `${t.firstName || ''} ${t.lastName || ''}`.trim() || t.name;
       reindex(op.entity, t); logAction(t, `Mr. Wrangler updated ${Object.keys(op.fields).join(', ')}`); updated++;
     } else {
-      (op.op === 'import' ? op.rows : [op.fields]).forEach((f) => { if (op.entity === 'customers') { const c = wrCreateCustomer(f); created++; first = first || c.customerId; } });
+      (op.op === 'import' || op.op === 'csv-import' ? op.rows : [op.fields]).forEach((f) => { if (op.entity === 'customers') { const c = wrCreateCustomer(f); created++; first = first || c.customerId; } });
     }
   });
   if (first) { const s = activeSession(); if (s.cols) s.cols.right = 'customers'; const ccs = s.cards.customers; if (created === 1) { ccs.mode = 'standard'; ccs.recId = first; } else { ccs.mode = 'list'; ccs.recId = null; ccs.search = ''; } ccs.graphView = false; }
@@ -8246,29 +9395,9 @@ function syncWranglerComment(o, role, text, images) {
   if (!o || !o.reqNumber || typeof backendPassword === 'undefined' || !backendPassword) return;
   try { backendCall('wranglerComment', { number: o.reqNumber, role, text: text || '', images: images || [] }).catch(() => {}); } catch (e) {}
 }
-// The floating bottom-right cluster — notification bell (stub for now) + Requests inbox.
-// §18g The conversation rail: stored chats (newest first) + any chat where Mr.
-// Wrangler is waiting on you (those flash). Renders above the bell/inbox FABs.
-function wranglerRailEl() {
-  const needs = (wranglerRequests || []).filter((rq) => (rq.labels || []).includes('wrangler-needs-jac'));
-  const needsNums = new Set(needs.map((rq) => rq.number));
-  const snaps = (state.wranglerRail || []).filter((c) => !(c.reqNumber && needsNums.has(c.reqNumber))).slice(0, 6);
-  if (!needs.length && !snaps.length) return '';
-  const trim = (t) => { t = String(t || '').replace(/\s+/g, ' ').trim(); return esc(t.length > 40 ? t.slice(0, 39) + '…' : t); };
-  const needsChips = needs.map((rq) => `<button class="wr-railchip wr-rc-needs wr-flash" data-wrc-needs="${rq.number}" data-tip="Mr. Wrangler needs your answer — #${rq.number}"><span class="wr-rc-dot"></span><span class="wr-rc-t">${trim(rq.title || ('Request #' + rq.number))}</span></button>`).join('');
-  const snapChips = snaps.map((c) => `<button class="wr-railchip" data-wrc-open="${esc(c.id)}" data-tip="Reopen this chat with Mr. Wrangler"><span class="wr-rc-dot"></span><span class="wr-rc-t">${trim(c.title || 'Chat')}</span></button>`).join('');
-  return `<div class="wr-rail" role="list" aria-label="Mr. Wrangler conversations">${needsChips}${snapChips}</div>`;
-}
-function fabStackEl() {
-  const stack = el('div', 'fab-stack');
-  const reqBadge = wranglerRequests.length ? `<span class="fab-badge">${wranglerRequests.length > 9 ? '9+' : wranglerRequests.length}</span>` : '';
-  const nu = unseenNotifs();
-  const notifBadge = nu ? `<span class="fab-badge">${nu > 9 ? '9+' : nu}</span>` : '';
-  stack.innerHTML = `${wranglerRailEl()}
-    <button class="fab js-notifications" data-tip="Notifications">${I.bell}${notifBadge}</button>
-    <button class="fab js-requests" data-tip="Requests for your OK — review what Mr. Wrangler filed">${I.inbox}${reqBadge}</button>`;
-  return stack;
-}
+// (§18g/§17 — the old floating bottom-right fab-stack + capped wr-rail were retired
+// when the conversation rail moved into the bottom comms band: commsRailEl /
+// commsUtilsEl / bottomBarEl above. Every chat is now its own tab, uncapped.)
 // Read the customer-form inputs back into the draft (call before any re-render so
 // typed values survive a selfie/signature/pill change).
 function ncSyncInputs() {
@@ -8322,12 +9451,12 @@ function captureAgSelfie() {
   const W = 340, cv = document.createElement('canvas'); cv.width = W; cv.height = Math.round(v.videoHeight * (W / v.videoWidth));
   const ctx = cv.getContext('2d'); ctx.translate(cv.width, 0); ctx.scale(-1, 1);   // mirror to match the live (selfie) preview
   ctx.drawImage(v, 0, 0, cv.width, cv.height);
-  const o = state.overlay; if (o && o.kind === 'newCustomer') { o.signDraft = o.signDraft || {}; o.signDraft.selfie = cv.toDataURL('image/jpeg', 0.6); }
+  const o = state.overlay; if (o && o.kind === 'newCustomer') captureSelfie(o, cv.toDataURL('image/jpeg', 0.6));   // auto-saves onto the card (or held pre-card) + may finalize
   stopAgCam(); renderOverlay();
 }
 /* Pop the signature pad out into its OWN movable OS window (window.open) so it can be
    dragged to the customer-facing touchscreen on another monitor — "escape the browser".
-   Strokes stream back here via postMessage and land on the main pad + o.signDraft.sigData,
+   Strokes stream back here via postMessage and auto-save onto the card (captureSignature),
    so the operator's normal Save/Sign commits them — no separate Done step in the popout.
    Any pointer/digitizer device draws on it (finger, stylus, or a USB/Bluetooth pen pad the
    OS exposes as a pointer); pen pressure varies the line width. */
@@ -8335,7 +9464,7 @@ let _sigWin = null, _sigMsgWired = false;
 function onSigMessage(e) {
   if (e.origin !== location.origin) return;   // same-origin only
   const d = e.data || {}; if (d.type !== 'rw-signature' || typeof d.dataURL !== 'string') return;
-  const o = state.overlay; if (o) { o.signDraft = o.signDraft || {}; o.signDraft.sigData = d.dataURL; }   // persist across re-renders
+  const o = state.overlay; if (o) { captureSignature(o, d.dataURL); scheduleFinalizeSign(o); }   // auto-save the draft; finalize once the pen rests (if it completes the card)
   const cv = document.querySelector('.overlay .nc-sigpad'); if (!cv) return;
   const ctx = cv.getContext('2d'), img = new Image();
   img.onload = () => { ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height); ctx.drawImage(img, 0, 0, cv.width, cv.height); cv.dataset.drawn = '1'; };
@@ -8386,11 +9515,12 @@ function setupSignaturePad() {
     ctx.strokeStyle = (getComputedStyle(document.documentElement).getPropertyValue('--accent') || '#ff7a1a').trim();   // orange ink (Jac)
     ctx.lineWidth = 2.4; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
     // re-apply a signature already captured (2nd-screen popout, or before this re-render) so taking a selfie etc. can't wipe it
-    if (o && o.signDraft && o.signDraft.sigData) { const img = new Image(); img.onload = () => { ctx.drawImage(img, 0, 0, cv.width, cv.height); cv.dataset.drawn = '1'; }; img.src = o.signDraft.sigData; }
+    const _ctx = captureCtx(o); const cur = _ctx.k ? ((cardDraftSig(_ctx.k) || {}).signature || '') : ((_ctx.c && _ctx.c.pendingCapture && _ctx.c.pendingCapture.signature) || '');   // re-apply the card's saved draft signature (re-render / 2nd-screen / re-open)
+    if (cur) { const img = new Image(); img.onload = () => { ctx.drawImage(img, 0, 0, cv.width, cv.height); cv.dataset.drawn = '1'; }; img.src = cur; }
     let drawing = false, last = null;
     const pos = (e) => { const b = cv.getBoundingClientRect(); return { x: (e.clientX - b.left) * (cv.width / b.width), y: (e.clientY - b.top) * (cv.height / b.height) }; };
-    const stash = () => { if (drawing) { drawing = false; if (o) { o.signDraft = o.signDraft || {}; o.signDraft.sigData = cv.toDataURL('image/jpeg', 0.8); } } };
-    cv.addEventListener('pointerdown', (e) => { e.preventDefault(); drawing = true; last = pos(e); cv.dataset.drawn = '1'; cv.setPointerCapture(e.pointerId); });
+    const stash = () => { if (drawing) { drawing = false; captureSignature(o, cv.toDataURL('image/jpeg', 0.8)); scheduleFinalizeSign(o); } };   // auto-save the draft; finalize once the pen rests
+    cv.addEventListener('pointerdown', (e) => { e.preventDefault(); drawing = true; last = pos(e); cv.dataset.drawn = '1'; clearTimeout(_signFinalizeT); cv.setPointerCapture(e.pointerId); });
     cv.addEventListener('pointermove', (e) => { if (!drawing) return; e.preventDefault(); const p = pos(e); ctx.lineWidth = (e.pointerType === 'pen' && e.pressure > 0) ? (1.4 + e.pressure * 2.6) : 2.4; ctx.beginPath(); ctx.moveTo(last.x, last.y); ctx.lineTo(p.x, p.y); ctx.stroke(); last = p; });
     cv.addEventListener('pointerup', stash);
     cv.addEventListener('pointerleave', stash);
@@ -8722,8 +9852,16 @@ function openDropdown(anchorEl, html, { align = 'left', cls = '' } = {}) {
   return dd;
 }
 function openStatusDropdown(rentalId, anchorEl) {
-  // progressing timeline; Tomorrow/Today are DERIVED display states excluded by GATE_TL.order
-  const cur = IDX.rental.get(rentalId)?.status || '';
+  // Highlight the SAME status the pill shows: the canonical per-unit DISPLAY status
+  // (rentalStatusDisplay → unitStatus), NOT the raw rental-level r.status. On a single-unit
+  // rental the two can diverge — a unit deriving 'No Show' (Reserved + start passed) while
+  // r.status holds a stale 'End Rent' — and reading r.status lit the wrong node (the menu
+  // said End Rent while the pill said No Show). Tomorrow/Today are display-only states
+  // absent from GATE_TL.order, so fold them back to their stored Reserved base.
+  const r = IDX.rental.get(rentalId);
+  const d = r ? rentalStatusDisplay(r) : null;
+  let cur = (d && !d.mixed && d.key) || r?.status || '';
+  if (cur === 'Today' || cur === 'Tomorrow') cur = 'Reserved';
   const html = gateTimeline('rentalStatus', cur, 'Rental status', (v, inner, sc) =>
     `<button class="gt-row ${sc} js-setstatus" data-rec="${esc(rentalId)}" data-val="${esc(v)}">${inner}</button>`);
   openDropdown(anchorEl, html, { cls: 'gt' });
@@ -8943,9 +10081,8 @@ function render() {
   if (state.chat.open) { const d = el('div', 'chat-dock', ''); d.dataset.drop = 'chat'; d.innerHTML = chatDockEl(); $('#app').appendChild(d); }
   // §18 — Mr. Wrangler dock floats alongside the team chat (or alone at bottom-right)
   if (state.wrangler.open) { const d = el('div', 'wrangler-dock' + (state.chat.open ? ' wr-beside-chat' : '') + (state.wrangler.min ? ' wr-min' : '')); d.innerHTML = wranglerDockEl(); $('#app').appendChild(d); }
-  // §18e — floating bottom-right cluster: notification bell + the Requests inbox.
-  // Hidden while a dock owns that corner.
-  if (!state.chat.open && !state.wrangler.open) $('#app').appendChild(fabStackEl());
+  // §18e/§17 — the bell + Requests inbox now live in the bottom comms band (bb-utils),
+  // always visible; the docks float above it. (The old floating fab-stack is retired.)
   mountTransportEditor();   // inline transport editor: mount the live map + wire the address field
   mountWranglerDock();   // §18 wire paste + drag-drop image input on the wrangler dock after each render
   mountDispatchMap();   // §2.3 office cockpit: re-parent the singleton dispatch map + refresh pins/route/truck
@@ -9510,20 +10647,33 @@ function onClick(e) {
   // trigger. (Drags never reach here — their trailing click is swallowed at 4925.)
   // §5.4d — the date-search picker closes on a click outside the calendar, the search
   // bars, and the date chips (so editing a chip keeps it open).
-  if (state.datesearch && !closest('.winpicker') && !closest('.searchwrap') && !closest('.mini-searchwrap') && !closest('.js-date-edit')) {
-    state.datesearch = null; render(); return;
-  }
-  if (state.winpicker
-      && !closest('.winpicker')
-      && !closest('.js-open-winpicker')
-      && !closest('.card[data-card="units"]')
-      && !closest('.card[data-card="categories"]')
-      && !closest('.card[data-card="customers"]')) {
-    // Must always render or the float lingers as a dead, frozen overlay (state closed,
-    // DOM open). Discards a fragile rental's staged change. Jac 2026-06-13.
-    state.winpicker = null;
-    render();
-    return;
+  // #263 — a non-modal picker (date-search or rental-window) dismisses ONLY on a click in
+  // genuine DEAD SPACE: not a card, the header, the bottom bar, or the picker itself. The
+  // old guards nulled the picker AND `return`ed on ANY click outside a narrow allow-list,
+  // so clicking a pill / row / button / link both vanished the picker AND swallowed that
+  // click (its own handler never ran). Mirror the §5.4 dead-space test (the `clearSearch`
+  // line below) so an interactive click keeps the picker's context and still fires — the
+  // picker stays open until true dead space. (Both floats render from state and re-render,
+  // and self-hide if their anchor scrolls off; the global search bar lives in `.header` and
+  // the per-card search/date chips live in `.card`, so the old datesearch exclusions hold.)
+  if (state.datesearch || state.winpicker) {
+    const onPicker = !!(closest('.winpicker') || closest('.winpicker-float'));
+    const pickerDeadSpace = !closest('.card') && !closest('.header') && !closest('.bottombar') && !onPicker;
+    if (state.datesearch && pickerDeadSpace) { state.datesearch = null; render(); return; }
+    // Rental-window picker dismisses on a click anywhere OUTSIDE the picker, its trigger, and
+    // the availability cards you browse while picking (units/categories/customers). #263 had
+    // narrowed this to dead-space-only, so over the full-screen 3-column grid an outside click
+    // almost always landed on a card and the picker never closed ("does not close"). Never
+    // SWALLOW an interactive click (#265): drop the float DOM in place — keeping the clicked
+    // anchor attached so a downstream menu still positions correctly — and fall THROUGH so the
+    // click still fires; only a pure dead-space click renders + returns. Discards a fragile
+    // rental's staged change, as before.
+    if (state.winpicker && !onPicker && !closest('.js-open-winpicker') && !closest('[data-sheetclose]')
+        && !closest('.card[data-card="units"]') && !closest('.card[data-card="categories"]') && !closest('.card[data-card="customers"]')) {
+      state.winpicker = null;
+      document.querySelector('.winpicker-float')?.remove();
+      if (pickerDeadSpace) { render(); return; }
+    }
   }
 
   // header / chrome
@@ -9575,19 +10725,20 @@ function onClick(e) {
   // §7.1b card-bound agreements: tab rail + per-card signing
   if (closest('.js-nc-tab')) { e.stopPropagation(); ncSyncInputs(); state.overlay.tab = closest('.js-nc-tab').dataset.tab; state.overlay.signRead = null; renderOverlay(); return; }
   if (closest('.js-ncsign-read')) { e.stopPropagation(); const id = closest('.js-ncsign-read').dataset.card; state.overlay.signRead = (state.overlay.signRead === id) ? null : id; renderOverlay(); return; }
-  if (closest('.js-ncsign-holdclear')) {   // discard the held draft to re-sign
+  if (closest('.js-ncsign-holdclear')) {   // discard the held pre-card captures to start over
     e.stopPropagation(); const o = state.overlay; const c = IDX.customer.get(o.editId || '');
-    if (c) { c.pendingSigning = null; reindex('customers', c); }
-    o.signDraft = null; o.signRead = null; renderOverlay(); render(); return;
+    if (c) { c.pendingCapture = null; c.pendingSigning = null; reindex('customers', c); }
+    o.signRead = null; renderOverlay(); render(); return;
   }
   if (closest('.js-ncsign-pdf')) { e.stopPropagation(); const b = closest('.js-ncsign-pdf'); return openSignedPdf(state.overlay.editId, b.dataset.card, b.dataset.sig); }
   if (closest('.js-nc-selfie-clear')) { e.stopPropagation(); ncSyncInputs(); state.overlay.draft.selfie = ''; renderOverlay(); return; }
-  if (closest('.js-nc-sig-clearpad')) { e.stopPropagation(); const o = state.overlay; if (o && o.signDraft) o.signDraft.sigData = null; const cv = document.querySelector('.overlay .nc-sigpad'); if (cv) { const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height); cv.dataset.drawn = ''; } return; }
+  if (closest('.js-nc-sig-clearpad')) { e.stopPropagation(); const o = state.overlay; if (o) clearCaptureSignature(o); const cv = document.querySelector('.overlay .nc-sigpad'); if (cv) { const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height); cv.dataset.drawn = ''; } return; }
   if (closest('.js-sign-popout')) { e.preventDefault(); e.stopPropagation(); openSignatureWindow(closest('.js-sign-popout').dataset.title); return; }
   if (closest('.js-ag-selfie')) {   // selfie tile: one-tap snap off the live feed; Retake clears it; no camera → native picker
     const o = state.overlay; if (!o) return;
     const tile = closest('.js-ag-selfie');
-    if (o.signDraft && o.signDraft.selfie) { e.preventDefault(); e.stopPropagation(); o.signDraft.selfie = null; renderOverlay(); return; }   // Retake → clear + restart camera
+    const _x = captureCtx(o); const hasSelfie = _x.k ? cardHasSelfie(_x.k) : !!(_x.c && _x.c.pendingCapture && _x.c.pendingCapture.selfie);
+    if (hasSelfie) { e.preventDefault(); e.stopPropagation(); clearCaptureSelfie(o); renderOverlay(); return; }   // Retake → clear + restart camera
     if (tile.classList.contains('live')) { e.preventDefault(); e.stopPropagation(); captureAgSelfie(); return; }   // live feed → grab the frame in a single tap
     return;   // no camera/permission → let the <label> open the OS file/camera picker (fallback)
   }
@@ -9627,7 +10778,7 @@ function onClick(e) {
   if (closest('.js-print-invoice')) { e.stopPropagation(); return printInvoice(closest('.js-print-invoice').dataset.rec); }
   if (closest('.js-pay-addcard')) { e.stopPropagation(); const b = closest('.js-pay-addcard'); return openAddCard(b.dataset.rec, { returnTo: 'payment', invoiceId: b.dataset.inv }); }
   if (closest('.js-refund-invoice')) { e.stopPropagation(); if (state.overlay) { state.overlay.confirmRefund = true; state.overlay.error = ''; renderOverlay(); } return; }
-  if (closest('.js-refund-cancel')) { e.stopPropagation(); if (state.overlay) { state.overlay.confirmRefund = false; renderOverlay(); } return; }
+  if (closest('.js-refund-cancel')) { e.stopPropagation(); if (state.overlay) { state.overlay.confirmRefund = false; state.overlay.refundAlloc = null; renderOverlay(); } return; }
   if (closest('.js-refund-confirm')) { e.stopPropagation(); return refundInvoiceFlow(closest('.js-refund-confirm').dataset.rec); }
   if (closest('.js-lock-invoice')) { e.stopPropagation(); return lockInvoiceFlow(closest('.js-lock-invoice').dataset.rec, true); }
   if (closest('.js-unlock-invoice')) { e.stopPropagation(); return lockInvoiceFlow(closest('.js-unlock-invoice').dataset.rec, false); }
@@ -9637,8 +10788,6 @@ function onClick(e) {
   if (closest('.js-qr')) return shareSession();
   if (closest('.js-previews') || closest('.js-roweye')) { e.stopPropagation(); state.previewsOn = !state.previewsOn; if (!state.previewsOn) hideHoverPreview(); try { localStorage.setItem('jactec.previewsOff', state.previewsOn ? '0' : '1'); } catch (e) {} toast(state.previewsOn ? 'Hover previews on.' : 'Hover previews off — every eye runs red.'); return render(); }
   if (closest('.js-hotkeys')) return openOverlay({ kind: 'hotkeys' });
-  if (closest('.js-adminlock')) { e.stopPropagation(); return toggleAdminLock(); }
-  if (closest('.js-lint, .js-inspect, .js-rulebook') && !adminUnlocked()) { e.stopPropagation(); return toggleAdminLock(); }
   if (closest('.js-lint')) {   // R0 flash-lint toggle — persists per device
     const on = document.body.classList.toggle('rw-lint');
     try { localStorage.setItem('jactec.lint', on ? '1' : '0'); } catch (err) {}
@@ -9653,6 +10802,52 @@ function onClick(e) {
     return render();
   }
   if (closest('.js-rbtab')) { e.stopPropagation(); if (state.overlay) state.overlay.rbTab = closest('.js-rbtab').dataset.tab; return renderOverlay(); }
+  if (closest('.js-win-copy')) {   // §RB-Windows — copy a Claude-ready edit reference for this popup
+    e.stopPropagation();
+    const cb = closest('.js-win-copy');
+    const w = cb.dataset.kind ? WINDOW_CATALOG.find((x) => x.kind === cb.dataset.kind) : null;
+    const ref = cb.dataset.ref || (w ? `Edit the "${w.label}" popup in app.js (renderOverlay → o.kind === '${cb.dataset.kind}'), from the R-Rulebook Windows catalog.` : cb.dataset.kind);
+    const done = () => toast('📋 Edit reference copied — paste it to Claude.');
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(ref).then(done, done);
+    else { try { const ta = document.createElement('textarea'); ta.value = ref; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); } catch (err) {} done(); }
+    return;
+  }
+  if (closest('.js-win-row')) {   // §RB-Windows — expand a window row; build its inert preview lazily on first open
+    e.stopPropagation();
+    const btn = closest('.js-win-row'); const win = btn.closest('.rb-win'); const body = win.querySelector('.rb-win-body');
+    const open = win.classList.toggle('open'); btn.setAttribute('aria-expanded', open ? 'true' : 'false'); body.hidden = !open;
+    if (open) {
+      const well = win.querySelector('.rb-win-preview');
+      if (well.dataset.built === '0') {
+        well.dataset.built = '1';
+        let scope = null;
+        if (btn.dataset.std != null) {                       // standalone surface — render its inert preview HTML
+          try { const html = STANDALONE_SURFACES[+btn.dataset.std].preview(); if (html) { well.innerHTML = html; scope = well; } } catch (err) { scope = null; }
+        } else {                                             // popup window — build the real popup inert
+          const node = previewOverlayFor(btn.dataset.kind);
+          if (node) { well.appendChild(node); scope = node; }
+        }
+        if (scope) {
+          const seen = new Set(); const chips = [];
+          [...scope.querySelectorAll('input, textarea, select, .file-drop')].forEach((fe) => {
+            if (fe.tagName === 'INPUT' && (fe.type === 'file' || fe.type === 'hidden')) return;   // the .file-drop already represents its file input
+            const isDrop = fe.classList.contains('file-drop'); const isSel = fe.tagName === 'SELECT';
+            const kindTag = isDrop ? 'file' : isSel ? 'dropdown' : (fe.getAttribute('type') || fe.tagName.toLowerCase());
+            const label = (fe.getAttribute('placeholder') || fe.getAttribute('aria-label') || (isDrop ? 'Add file' : isSel ? (fe.options[0] && fe.options[0].textContent) || 'Choose' : kindTag) || '').trim();
+            const key = (label + '|' + kindTag).toLowerCase(); if (!label || seen.has(key)) return; seen.add(key);
+            chips.push(`<span class="rb-win-field"><b>${esc(label.slice(0, 30))}</b><i>${esc(kindTag)}</i></span>`);
+          });
+          win.querySelector('.rb-win-fields').innerHTML = chips.length
+            ? `<div class="rb-win-fieldlbl">Fields · forms · dropdowns (${chips.length})</div>${chips.join('')}`
+            : '<span class="rb-win-norec">No labelled fields here.</span>';
+        } else {
+          well.innerHTML = '<span class="rb-win-norec">No demo record to preview — open it live in the app to edit.</span>';
+          win.querySelector('.rb-win-fields')?.remove();
+        }
+      }
+    }
+    return;
+  }
   if (closest('.js-rulebook')) return openOverlay({ kind: 'rulebook' });
   if (closest('.js-photo-sweep')) { e.stopPropagation(); return sweepPhotosToDrive(); }   // admin one-shot: offload base64 photos → Drive
   if (closest('.js-feedback')) { e.stopPropagation(); return wranglerNewChat(); }   // §18d folded: the old bug/request form is now the one Mr. Wrangler chat
@@ -9668,6 +10863,7 @@ function onClick(e) {
   if (closest('[data-chat-untag]')) { e.stopPropagation(); const id = closest('[data-chat-untag]').dataset.chatUntag; const c = activeChat(); if (c) c.tags = c.tags.filter((t) => t.id !== id); pushChatsSoon(); return render(); }
   if (closest('[data-chat-role]')) { e.stopPropagation(); return chatToggleRole(closest('[data-chat-role]').dataset.chatRole); }
   if (closest('[data-chat-open]')) { e.stopPropagation(); const [card, recId] = closest('[data-chat-open]').dataset.chatOpen.split('|'); return anchorRecord(SHOP_TYPES.includes(card) ? 'shop' : card, recId, SHOP_TYPES.includes(card) ? card : null); }
+  if (closest('[data-team-open]')) { e.stopPropagation(); return openChat(closest('[data-team-open]').dataset.teamOpen); }   // §17 comms rail: open a team thread in its own tab
   if (closest('.js-fb-type')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'feedback') { const ta = document.querySelector('.overlay .js-fb-text'); if (ta) o.text = ta.value; o.fbType = closest('.js-fb-type').dataset.val; renderOverlay(); } return; }
   if (closest('.js-fb-shot-x')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'feedback') { const ta = document.querySelector('.overlay .js-fb-text'); if (ta) o.text = ta.value; o.shot = ''; renderOverlay(); } return; }
   if (closest('[data-cmt-color]')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'comment') { const ta = document.querySelector('.overlay .js-cmt-text'); if (ta) o.text = ta.value; o.color = closest('[data-cmt-color]').dataset.cmtColor; renderOverlay(); } return; }
@@ -10165,24 +11361,14 @@ function startInlineEdit(span) {
 
 const BOOKING_STATUSES = ['On Rent', 'Reserved', 'Today', 'Tomorrow'];
 
-/* ADMIN TOOLS GATE (Jac 2026-06-13) — the dev/design tools (R-Rulebook, Design
-   Inspector, Design Lint) live behind the admin passphrase. This is a client-side
-   gate (obfuscated hash, not real crypto — anyone reading the source could bypass
-   it), which is appropriate for hiding internal tooling, not for securing secrets.
-   Real-app Admin/Owner roles are already trusted. Settings is intentionally NOT
-   gated here (Jac: "the settings board you don't need to hide"). */
-const ADMIN_HASH = 'xy16gqtfz0';
-function _cyrb53(s, seed = 0) { let h1 = 0xdeadbeef ^ seed, h2 = 0x41c6ce57 ^ seed; for (let i = 0, ch; i < s.length; i++) { ch = s.charCodeAt(i); h1 = Math.imul(h1 ^ ch, 2654435761); h2 = Math.imul(h2 ^ ch, 1597334677); } h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507); h1 ^= Math.imul(h2 ^ (h2 >>> 13), 3266489909); h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507); h2 ^= Math.imul(h1 ^ (h1 >>> 13), 3266489909); return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36); }
-let _adminUnlock = (() => { try { return localStorage.getItem('jactec.admin') === ADMIN_HASH; } catch (e) { return false; } })();
-function adminUnlocked() { return _adminUnlock || currentRole === 'Admin' || currentRole === 'Owner'; }
-function toggleAdminLock() {
-  if (_adminUnlock) { _adminUnlock = false; try { localStorage.removeItem('jactec.admin'); } catch (e) {} toast('Admin tools locked.'); return render(); }
-  if (currentRole === 'Admin' || currentRole === 'Owner') { toast('You already have Admin access to these tools.'); return; }
-  const pw = window.prompt('Enter the Admin password to unlock dev tools:') || '';
-  if (!pw) return;
-  if (_cyrb53(pw) === ADMIN_HASH) { _adminUnlock = true; try { localStorage.setItem('jactec.admin', ADMIN_HASH); } catch (e) {} toast('🔓 Admin tools unlocked.'); render(); }
-  else toast('Wrong password.');
-}
+/* ADMIN TOOLS GATE (Jac 2026-06-22) — the dev/design tools (R-Rulebook, Design
+   Inspector, Design Lint) show ONLY for an Admin/Owner login. The old obfuscated
+   passphrase unlock was dropped (Jac): the admin login is the only thing that
+   should see these, so a normal account gets nothing — no lock toggle, no peek.
+   Settings is intentionally NOT gated here (Jac: "you don't need to hide it").
+   (requireAdmin below — the backend-verified card/price override — is separate
+   and untouched.) */
+function adminUnlocked() { return currentRole === 'Admin' || currentRole === 'Owner'; }
 
 /** Verify an Admin password (reuses the Settings gate), then run onOk. Demo/offline → allowed. */
 async function requireAdmin(reason, onOk) {
@@ -10368,7 +11554,7 @@ function completeChecklist() {
   if (failed.length) n.description = 'Failed checklist: ' + failed.map((it) => inspItemType(it)==='select' ? (it.label + ': ' + (n.items[it.id]||'')) : it.label).join(', ');
   state.overlay = null;                                   // close the takeover; a Fail re-opens the photo/notes popup
   setInspResult(n.inspectionId, failed.length ? 'Fail' : 'Pass');   // cascade onto the inspection section + auto-WO
-  toast(failed.length ? `Inspection failed — work order opened for ${u.name}.` : `Inspection passed — ${u.name} is Ready. ✓`);
+  toast(failed.length ? `Inspection failed — work order opened for ${u.name}.` : `Inspection passed — ${u.name} marked Passed. ✓`);
 }
 function setUnitWash(unitId, val) {
   const u = IDX.unit.get(unitId); if (!u) return;
@@ -10921,11 +12107,11 @@ function onChange(e) {
     reader.readAsDataURL(file);
     return;
   }
-  // §7.1b per-card signing selfie — stashed on o.signDraft until Save freezes it onto the card.
+  // §7.1c per-card selfie — auto-saves onto the card (or held pre-card) the moment it's captured.
   if (e.target.classList.contains('js-ncsign-selfie')) {
     const file = e.target.files && e.target.files[0]; if (!file) return;
     const reader = new FileReader();
-    reader.onload = () => { downscaleImage(reader.result, 340, 0.5, (out) => { if (!out) { toast('Could not read that image.'); return; } const o = state.overlay; if (o && o.kind === 'newCustomer') { o.signDraft = o.signDraft || {}; o.signDraft.selfie = out; renderOverlay(); } }); };
+    reader.onload = () => { downscaleImage(reader.result, 340, 0.5, (out) => { if (!out) { toast('Could not read that image.'); return; } const o = state.overlay; if (o && o.kind === 'newCustomer') { captureSelfie(o, out); renderOverlay(); } }); };
     reader.readAsDataURL(file);
     return;
   }
@@ -11218,7 +12404,7 @@ function saveNewCustomer() {
     const lt = applyCustomerLink(o, c.customerId) || o.linked;   // quick-add-link → land back on the Quote/invoice
     closeOverlay();
     if (lt) { anchorRecord(lt.card, lt.recId); toast(`${c.name} saved and linked.`); }
-    else { anchorRecord('customers', c.customerId); toast(`${c.name} updated.`); }
+    else { render(); toast(`${c.name} updated.`); }   // plain Save Account stays put — don't re-anchor the grid to this customer (sibling of the #262 re-anchor-on-mutation class)
     return;
   }
   const id = nextCustomerId();                       // ── new customer ──
@@ -11354,7 +12540,12 @@ function setupPayAlloc() {
     const charge = body.querySelector('.js-alloc-charge');
     const btn = body.querySelector('.js-charge-invoice');
     if (counter) counter.innerHTML = after <= 0.005 ? `<b style="color:var(--good,#1a9f57)">Pays in full ✓</b>` : `Balance after <b>${money2(after)}</b>`;
-    if (charge) charge.innerHTML = pre > 0 ? `${money2(pre)}${tax ? ` + ${money2(tax)} tax` : ''} = <b>${money2(gross)}</b>` : '<span class="muted">nothing assigned</span>';
+    if (charge) {
+      if (pre <= 0) charge.innerHTML = '<span class="muted">nothing assigned</span>';
+      else { const lineGross = pre + tax;   // honest line total; gross caps at the remaining balance when a prior payment already covered part
+        const eq = `${money2(pre)}${tax ? ` + ${money2(tax)} tax` : ''} = <b>${money2(lineGross)}</b>`;
+        charge.innerHTML = lineGross > bal + 0.005 ? `${eq} · charge <b>${money2(gross)}</b> (balance)` : eq; }
+    }
     if (btn) { btn.disabled = !(gross > 0) || !!o.busy; if (!o.busy) btn.textContent = gross > 0 ? `Charge ${money2(gross)}` : 'Charge'; }
   };
   ins.forEach((inp) => inp.addEventListener('input', recompute));
@@ -11378,6 +12569,79 @@ function allocCharge(inv, o) {
   const gross = Math.min(taxable + plain + tax, invoiceTotals(inv).balance);
   return { gross, alloc };
 }
+/* §19b the refund-allocation panel — mirror of allocSectionHtml, reversed. One row per
+   still-refundable line; the $ input is capped at what was paid on that line. A line
+   already partly refunded shows its ↩ tally. Reuses the .alloc-* chrome (on-language,
+   no new R-rule); only the "Refund in full" shortcut is a stamped R5b add-button. */
+function refundSectionHtml(lines, o) {
+  const rows = lines.map((L) => `
+    <div class="alloc-row${L.refunded > 0.005 ? ' alloc-refunded' : ''}">
+      <span class="alloc-name" data-tip="${esc(L.label)}${L.refunded > 0.005 ? ` · ${money(L.refunded)} already refunded` : ''}">${esc(L.label)}</span>
+      <span class="alloc-rem">paid ${money(L.paid)}${L.refunded > 0.005 ? ` · ↩${money(L.refunded)}` : ''}${L.taxable ? '' : ' · no tax'}</span>
+      <span class="alloc-dollar">$<input class="alloc-in refund-in" data-key="${esc(L.key)}" data-taxable="${L.taxable ? '1' : '0'}" data-max="${L.refundable}" type="number" min="0" max="${L.refundable}" step="0.01" value="${(Number(o.refundAlloc[L.key]) || 0).toFixed(2)}" ${o.busy ? 'disabled' : ''}></span>
+    </div>`).join('');
+  return `<div class="alloc-sec">
+    <div class="alloc-head"><span>Refund by line item</span>${lines.length > 1 ? `<button class="add-field anchor js-refund-auto" data-r="R5b" type="button" ${o.busy ? 'disabled' : ''}>Refund in full</button>` : ''}</div>
+    ${rows}
+    <div class="alloc-foot"><span class="js-refund-counter"></span><span class="alloc-charge js-refund-amount"></span></div>
+  </div>`;
+}
+/* Live DOM-driven recompute for the refund panel (mirror of setupPayAlloc): updates
+   o.refundAlloc, the "Refunding $X of $Y paid" counter, the pre-tax+tax=gross read-out,
+   and the Confirm button's label/enabled state. No re-render → inputs keep focus. */
+function setupRefundAlloc() {
+  const o = state.overlay; if (!o || o.kind !== 'payment') return;
+  const body = document.querySelector('.overlay .popup-body'); if (!body) return;
+  const ins = [...body.querySelectorAll('.refund-in')]; if (!ins.length) return;
+  const inv = IDX.invoice.get(o.invoiceId); if (!inv) return;
+  const cust = inv.customerId ? IDX.customer.get(inv.customerId) : null;
+  const exempt = !!(inv.taxExempt || cust?.salesTaxExempt);
+  const t = invoiceTotals(inv);
+  const refundableGross = Math.max(0, t.paid - (Number(inv.refundedAmount) || 0));   // gross still refundable
+  const recompute = () => {
+    let taxable = 0, plain = 0;
+    ins.forEach((inp) => {
+      const max = Number(inp.dataset.max) || 0;
+      let v = Number(inp.value); if (!(v >= 0)) v = 0; if (v > max + 0.005) { v = max; inp.value = max.toFixed(2); }
+      o.refundAlloc[inp.dataset.key] = v;
+      if (inp.dataset.taxable === '1') taxable += v; else plain += v;
+    });
+    const pre = taxable + plain;
+    const tax = exempt ? 0 : Math.round(taxable * TAX_RATE * 100) / 100;
+    const gross = Math.min(pre + tax, refundableGross);
+    const counter = body.querySelector('.js-refund-counter');
+    const amt = body.querySelector('.js-refund-amount');
+    const btn = body.querySelector('.js-refund-confirm');
+    if (counter) counter.innerHTML = gross > 0.005 ? `Refunding <b>${money2(gross)}</b> of ${money2(t.paid)} paid` : `<span class="muted">nothing assigned</span>`;
+    if (amt) {
+      if (pre <= 0) amt.innerHTML = '';
+      else { const lineGross = pre + tax; const eq = `${money2(pre)}${tax ? ` + ${money2(tax)} tax` : ''} = <b>${money2(lineGross)}</b>`;
+        amt.innerHTML = lineGross > refundableGross + 0.005 ? `${eq} · refund <b>${money2(gross)}</b>` : eq; }
+    }
+    if (btn) { btn.disabled = !(gross > 0.005) || !!o.busy; if (!o.busy) btn.textContent = gross > 0.005 ? `Refund ${money2(gross)}` : 'Confirm refund'; }
+  };
+  ins.forEach((inp) => inp.addEventListener('input', recompute));
+  const auto = body.querySelector('.js-refund-auto');
+  if (auto) auto.addEventListener('click', () => { ins.forEach((inp) => { inp.value = (Number(inp.dataset.max) || 0).toFixed(2); }); recompute(); });
+  recompute();
+}
+/* Resolve the gross refund + the per-line PRE-TAX split from o.refundAlloc, capped at
+   each line's paid and the invoice's remaining refundable gross. Mirror of allocCharge. */
+function resolveRefund(inv, o) {
+  const cust = inv.customerId ? IDX.customer.get(inv.customerId) : null;
+  const exempt = !!(inv.taxExempt || cust?.salesTaxExempt);
+  let taxable = 0, plain = 0; const alloc = {};
+  refundLines(inv).forEach((L) => {
+    const v = Math.min(Number(o.refundAlloc?.[L.key]) || 0, L.refundable);
+    if (v <= 0.005) return;
+    alloc[L.key] = v;
+    if (L.taxable) taxable += v; else plain += v;
+  });
+  const tax = exempt ? 0 : Math.round(taxable * TAX_RATE * 100) / 100;
+  const t = invoiceTotals(inv);
+  const gross = Math.min(taxable + plain + tax, Math.max(0, t.paid - (Number(inv.refundedAmount) || 0)));
+  return { gross, alloc };
+}
 
 // Mount the Stripe Card Element into the open addCard overlay (called post-append,
 // like setupSignaturePad). Recreated per open; destroyed on close.
@@ -11395,7 +12659,8 @@ function destroyCardElement() { if (_cardElement) { try { _cardElement.destroy()
 // Reject if a promise hasn't settled in `ms` so a STALLED (never-resolving) backend
 // round-trip can't leave the save button spinning "Saving…" forever with no error.
 // fetch() has no built-in timeout; a hung Apps Script call otherwise never rejects.
-// Only wraps human-free server round-trips — never the interactive 3DS confirm step.
+// Server round-trips get 30s; the interactive card confirm gets a GENEROUS 180s bound (#172) so a true
+// infinite hang surfaces as an error, without aborting a legitimate (slower) 3DS prompt mid-authentication.
 function withTimeout(promise, ms, label) {
   let t; const timeout = new Promise((_, rej) => { t = setTimeout(() => { const e = new Error((label || 'Request') + ' timed out'); e.rwTimeout = true; rej(e); }, ms); });
   return Promise.race([promise, timeout]).finally(() => clearTimeout(t));
@@ -11422,7 +12687,10 @@ async function saveCardFlow(btn) {
     const r = await withTimeout(backendCall('stripeSetupIntent', { customerId: c.customerId }), 30000, 'Setting up the card');
     if (!live()) return;
     if (!r || !r.ok) return fail(friendlyPayErr(r));
-    const { setupIntent, error } = await stripe.confirmCardSetup(r.clientSecret, { payment_method: { card: _cardElement, billing_details: { name: c.name || undefined, email: c.email || undefined, phone: c.phone || undefined } } });
+    // #172 the interactive confirm CAN stall forever (dead network / a 3DS that never resolves), leaving the
+    // button spinning "Saving…" with no error. Bound it GENEROUSLY (180s — tolerates a real 3DS prompt) so a
+    // true hang surfaces as an error instead of an infinite spinner. The catch below maps rwTimeout → a toast.
+    const { setupIntent, error } = await withTimeout(stripe.confirmCardSetup(r.clientSecret, { payment_method: { card: _cardElement, billing_details: { name: c.name || undefined, email: c.email || undefined, phone: c.phone || undefined } } }), 180000, 'Card confirmation');
     if (!live()) return;
     if (error) return fail(error.message);
     if (!setupIntent || setupIntent.status !== 'succeeded') return fail('Card could not be saved — try again.');
@@ -11432,22 +12700,34 @@ async function saveCardFlow(btn) {
     c.stripeId = r.stripeId || c.stripeId;
     if (!Array.isArray(c.cards)) c.cards = [];
     const firstCard = customerCards(c).length === 0;
-    const sd = o.signDraft, liveCap = !!(sd && sd.selfie && sd.sigData);   // selfie + signature captured in this panel → sign on save
-    const held = !!(c.pendingSigning && c.pendingSigning.signature);       // or an account-level agreement already on hand
-    const newCardId = 'CARD-' + (state.seq++);
-    // §7.1b a card lands UNSIGNED — it can be charged, but the account can't go
-    // On Rent / log deliveries until this card is signed for the account type.
-    const newCard = { id: newCardId, stripePmId: setupIntent.payment_method, brand: s.card.brand, last4: s.card.last4,
+    const newCardId = 'CARD-' + setupIntent.payment_method;   // anchor to the globally-unique Stripe PM id (was 'CARD-'+state.seq, which reset per session and collided across sessions/devices → wrong-card charges / can't-delete / signature bleed)
+    // §7.1c a card lands IN PROGRESS — chargeable immediately, but the account can't go On Rent /
+    // log deliveries until the card is COMPLETE (card + selfie + signature). Any selfie/signature
+    // captured in this panel were held on c.pendingCapture and now saddle onto the new card.
+    const newCard = { id: newCardId, stripePmId: setupIntent.payment_method, fingerprint: s.card.fingerprint || '', brand: s.card.brand, last4: s.card.last4,
       expMonth: s.card.expMonth, expYear: s.card.expYear, nickname: o.nickname || '', notes: '', isDefault: firstCard, status: 'active',
-      agreements: [] };
+      selfie: '', driveSelfieUrl: '', draftSignature: null, agreements: [] };
+    // Stripe attaches the SAME physical card as a NEW pm every time it's saved. If this card's
+    // fingerprint matches one already on file, SUPERSEDE that entry in place — carry its signed
+    // agreement/selfie onto the fresh pm, retire the old pm — so one physical card never piles up
+    // as duplicate chips. (Functional now that stripeSaveCard returns card.fingerprint.)
+    const _dup = newCard.fingerprint ? customerCards(c).find((k) => k.fingerprint === newCard.fingerprint) : null;
+    if (_dup) {
+      newCard.agreements = _dup.agreements || []; newCard.selfie = _dup.selfie || ''; newCard.driveSelfieUrl = _dup.driveSelfieUrl || '';
+      newCard.isDefault = newCard.isDefault || _dup.isDefault;
+      _dup.status = 'removed';
+      if (backendPassword && _dup.stripePmId && _dup.stripePmId !== setupIntent.payment_method) backendCall('stripeRemoveCard', { customerId: c.customerId, paymentMethodId: _dup.stripePmId }).catch(() => {});
+    }
     c.cards.push(newCard);
     c.cardBrand = s.card.brand; c.cardLast4 = s.card.last4; c.cardExpMonth = s.card.expMonth; c.cardExpYear = s.card.expYear;   // legacy mirror (default card)
-    if (liveCap) { signCardAgreement(c, newCard, sd.sigData, sd.selfie); o.signDraft = null; }   // Save IS the commit — sign the card now
-    else if (held) attachHeldSigning(c, newCard);   // else a held agreement saddles onto the new card
-    const authd = liveCap || held;
-    reindex('customers', c); logAction(c, `Card added — ${brandName(s.card.brand)} ••••${s.card.last4}${authd ? '' : ' (unsigned)'}`);
+    saddlePendingCapture(c, newCard);                                                            // held selfie/signature → this card, then finalize if all three are present
+    if (!cardComplete(c, newCard) && c.pendingSigning && c.pendingSigning.signature) attachHeldSigning(c, newCard);   // legacy held packet (pre-#7.1c) back-compat
+    const authd = cardComplete(c, newCard);
+    reindex('customers', c); logAction(c, `Card added — ${brandName(s.card.brand)} ••••${s.card.last4}${authd ? '' : ' (in progress)'}`);
     destroyCardElement();
-    toast(authd ? 'Card saved — agreement signed, authorized ✓' : 'Card saved — sign to authorize ✓');
+    // "authorized" here = the customer authorized FUTURE charges (card-on-file mandate) — NOT a payment.
+    // Say so plainly so a saved card is never mistaken for money collected (#false-charge incident).
+    toast(authd ? 'Card saved on file — agreement complete ✓ (no charge taken)' : 'Card saved on file — finish selfie + signature to authorize (no charge taken)');
     // Land on the new card's SIGNING tab no matter how Add-card was opened.
     if (sub) { o.cardSub = false; o.tab = newCardId; renderOverlay(); }   // §14 panel beside the form → switch its tab
     else if (o.returnTo === 'payment' && o.invoiceId) openPayInvoice(o.invoiceId);
@@ -11589,36 +12869,37 @@ async function chargeInvoiceFlow(invoiceId) {
 async function refundInvoiceFlow(invoiceId) {
   const o = state.overlay; if (!o || o.kind !== 'payment') return;
   const inv = IDX.invoice.get(invoiceId); if (!inv) return;
-  // Cash/Check payments (#109) never touched Stripe, so there's no charge to reverse —
-  // refund them BY HAND, client-side, exactly as they were recorded (#117). Flip the
-  // invoice to Refunded (status derives from inv.refunded) and keep amountPaid so the
-  // balance reads $0; release line assignments per the full-refund invariant (§4).
-  if (/^cash$/i.test(inv.paymentMethod || '') || /^check/i.test(inv.paymentMethod || '')) {
-    // Cash/Check refunds never touched Stripe, but inv.refunded / refundedAmount are
-    // server-owned (sync-PROTECTED) — so the SERVER records the manual refund too, else
-    // it'd revert on refresh. applyPayment keeps amountPaid (balance reads $0) and flips
-    // the status to Refunded. (#109/#117)
-    const live = () => state.overlay === o;
-    o.busy = true; o.error = ''; o.confirmRefund = false; renderOverlay();
-    try {
-      const r = await backendCall('recordManualRefund', { invoiceId });
-      if (!live()) return;
-      if (r && r.ok) { applyPayment(invoiceId, r); o.busy = false; toast('Refunded ✓'); renderOverlay(); return; }
-      o.busy = false; o.error = friendlyPayErr(r); renderOverlay(); return;
-    } catch (e) { if (live()) { o.busy = false; o.error = 'Network error — try again.'; renderOverlay(); } return; }
+  // §19b per-line / partial refund (#125) — GATED behind PARTIAL_REFUNDS_ENABLED. When OFF
+  // we refund the whole invoice (amountCents omitted), today's safe behavior. When ON, the
+  // refund gross + the PRE-TAX per-line split come from o.refundAlloc; we send amountCents and
+  // merge the client-owned split into inv.refundAllocations via applyPayment.
+  let amountCents = null, refundAlloc = null;
+  if (PARTIAL_REFUNDS_ENABLED) {
+    const rr = resolveRefund(inv, o);
+    if (rr.gross <= 0.005) { o.error = 'Assign a refund to at least one line.'; return renderOverlay(); }
+    amountCents = Math.round(rr.gross * 100); refundAlloc = rr.alloc;
   }
+  // Cash/Check refund BY HAND (recordManualRefund, no Stripe); a card refunds the captured
+  // charge via Stripe (stripeRefundInvoice). Either way the SERVER owns the money totals
+  // (refunded / refundedAmount, sync-PROTECTED, #177); applyPayment keeps amountPaid so the
+  // balance reads $0 and derives the status from inv.refunded. (#109/#117)
+  const manual = /^cash$/i.test(inv.paymentMethod || '') || /^check/i.test(inv.paymentMethod || '');
+  const action = manual ? 'recordManualRefund' : 'stripeRefundInvoice';
   const live = () => state.overlay === o;
   o.busy = true; o.error = ''; o.confirmRefund = false; renderOverlay();
   try {
-    const r = await backendCall('stripeRefundInvoice', { invoiceId });
+    const r = await backendCall(action, amountCents != null ? { invoiceId, amountCents } : { invoiceId });
     if (!live()) return;
-    if (r && r.ok) { applyPayment(invoiceId, r); o.busy = false; toast('Refunded ✓'); renderOverlay(); return; }
+    if (r && r.ok) { applyPayment(invoiceId, r, null, refundAlloc); o.refundAlloc = null; o.busy = false; toast('Refunded ✓'); renderOverlay(); return; }
     o.busy = false; o.error = friendlyPayErr(r); renderOverlay();
   } catch (e) { if (live()) { o.busy = false; o.error = 'Network error — try again.'; renderOverlay(); } }
 }
 // Apply a server charge/refund result to the local invoice; status is derived from amountPaid.
-// alloc (§19) = the pre-tax per-line split just charged; accumulate it into inv.allocations.
-function applyPayment(invoiceId, r, alloc) {
+// alloc (§19) = the pre-tax per-line split just charged → accumulate into inv.allocations;
+// refundAlloc (§19b) = the pre-tax per-line split just refunded → accumulate into
+// inv.refundAllocations. Both are client-owned + synced; the money totals from `r` are
+// server-authoritative.
+function applyPayment(invoiceId, r, alloc, refundAlloc) {
   const inv = IDX.invoice.get(invoiceId); if (!inv) return;
   const before = invoiceTotals(inv).status;
   if (r.amountPaid != null) inv.amountPaid = r.amountPaid;
@@ -11629,7 +12910,8 @@ function applyPayment(invoiceId, r, alloc) {
   if (r.refundedAmount != null) inv.refundedAmount = r.refundedAmount;
   if (r.locked != null) inv.locked = r.locked;
   if (alloc) { inv.allocations = inv.allocations || {}; Object.entries(alloc).forEach(([k, v]) => { inv.allocations[k] = (Number(inv.allocations[k]) || 0) + v; }); }
-  if (inv.refunded) inv.allocations = {};   // a full refund releases every line assignment
+  if (refundAlloc) { inv.refundAllocations = inv.refundAllocations || {}; Object.entries(refundAlloc).forEach(([k, v]) => { inv.refundAllocations[k] = (Number(inv.refundAllocations[k]) || 0) + v; }); }
+  if (inv.refunded) inv.allocations = {};   // a full refund releases every payment line assignment
   reindex('invoices', inv);
   const after = invoiceTotals(inv).status;
   logAction(inv, r.refundedCents != null ? `Refunded ${money((r.refundedCents || 0) / 100)} — ${before} → ${after}` : `Payment — ${before} → ${after} (${r.paymentMethod || 'card'})`);
@@ -11699,7 +12981,17 @@ function printInvoice(invoiceId) {
         <div><span>Subtotal</span><span>${money2(t.subtotal)}</span></div>
         <div><span>Tax${t.exempt ? ' (exempt)' : ` (${(TAX_RATE * 100).toFixed(2)}%)`}</span><span>${t.exempt ? '—' : money2(t.tax)}</span></div>
         <div class="pr-big"><span>Total</span><span>${money2(t.total)}</span></div>
-        <div><span>Paid${inv.paymentMethod ? ' · ' + esc(inv.paymentMethod) : ''}</span><span>${money2(t.paid)}</span></div>
+        ${(inv.payments || []).length
+          ? (inv.payments || []).map((p) => {
+              const when = p.at ? esc(fmtShortDate(p.at)) : '';
+              const method = p.type === 'cash' ? 'Cash'
+                : p.type === 'check' ? ('Check' + (p.checkNum ? ' #' + esc(String(p.checkNum)) : ''))
+                : p.type === 'ach-pending' ? 'ACH (pending)'
+                : p.type === 'charge' ? 'Card'
+                : esc(String(p.type || 'Payment'));
+              return `<div><span>Paid${when ? ' · ' + when : ''} · ${method}</span><span>${money2((Number(p.amountCents) || 0) / 100)}</span></div>`;
+            }).join('')
+          : (t.paid ? `<div><span>Paid${inv.paymentMethod ? ' · ' + esc(inv.paymentMethod) : ''}</span><span>${money2(t.paid)}</span></div>` : '')}
         <div class="pr-due"><span>Balance due</span><span>${money2(t.balance)}</span></div>
       </div>
       <div class="pr-foot">Thank you for your business — much obliged. Questions on this ticket? Give the yard a holler.</div>
@@ -11801,7 +13093,7 @@ function reindexDraft(card, rec) {
 function createInvoiceForRental(rentalId) {
   const r = IDX.rental.get(rentalId); if (!r) return;
   if (!r.customerId) { flashOr('[data-slot="customer"]', 'The Quote needs a customer first — drag one on (or quick-add).'); return; }
-  if (!r.startDate || !r.endDate) { flashOr('.timeline, .statusbar.draftwin', 'Set the rental window first.'); return; }
+  if (!r.startDate || !r.endDate) { flashOr('.rdcal, .timeline, .statusbar.draftwin', 'Set the rental window first.'); return; }
   if (!rentalUnitIds(r).length) { flashOr('.stall-empty, [data-slot="unit"]', 'Add at least one unit before invoicing.'); return; }
   const id = nextInvoiceId();
   const inv = { invoiceId: id, customerId: r.customerId, rentalIds: [rentalId], date: TODAY_ISO, dueDate: dueForCustomer(r.customerId), po: '', amountPaid: 0, lineItems: [], mock: true };
@@ -12198,7 +13490,7 @@ function setInspResult(id, val) {
     logAction(wo, 'Created from failed inspection');
     toast(`Failed — WO ${wo.woId} created. Add a photo + notes.`);
     state.overlay = { kind: 'inspection', recId: id };   // Fail → open the photo/video + notes popup
-  } else { toast('Passed — unit marked Ready.'); }
+  } else { toast('Unit marked Passed. ✓'); }
   const session = activeSession(); if (session.anchor) setAnchor(session, session.anchor.card, session.anchor.recId, session.anchor.recType);
   render(); renderOverlay();
 }
@@ -12245,7 +13537,9 @@ function addCustomLine(invoiceId, label, amount) {
   inv.lineItems.push({ kind: 'custom', ref: null, lid: lineLid(), label: label || 'Custom', amount });
   logAction(inv, `Added line: ${label || 'Custom'} (${money(amount)})`);
   toast(`Custom line added (${money(amount)}).`);
-  const session = activeSession(); if (session.anchor) setAnchor(session, session.anchor.card, session.anchor.recId, session.anchor.recType);
+  // plain render() — a custom line (kind 'custom', ref null) adds no cascade edge, so it
+  // must NOT re-anchor; setAnchor() here collapsed the open invoice back to the list (it
+  // reset every non-anchored card's recId), kicking you off the invoice. Matches addPartToWO.
   render();
 }
 /* Add a part / labor line to a work order; advances the WO phase sensibly. */
@@ -12555,7 +13849,14 @@ async function backendCall(action, extra) {
   // text/plain avoids a CORS preflight that GAS web apps can't answer
   const payload = Object.assign({ action, password: backendPassword }, extra || {});
   const res = await fetch(BACKEND_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload) });
-  return res.json();
+  // A backend error page (GAS 500/quota/auth HTML) is NOT JSON — res.json() throws, callers
+  // catch it, and a real card/charge failure gets masked as a generic "Network error". Parse
+  // defensively and ALWAYS hand callers an {ok:false,error} they can map via friendlyPayErr,
+  // never a thrown exception. Never coerces a failure into a success. (#220 card-save pipeline)
+  const text = await res.text();
+  let body; try { body = JSON.parse(text); } catch { body = { ok: false, error: res.ok ? 'bad-json' : ('http-' + res.status) }; }
+  if (!res.ok && body && body.ok === undefined) body = { ok: false, error: 'http-' + res.status };
+  return body;
 }
 const dataSnapshot = () => { const s = {}; PERSIST_KEYS.forEach((k) => { s[k] = DATA[k] || []; }); return s; };
 async function loadFromBackend() {
@@ -12592,7 +13893,7 @@ function computeChanges() {
   PERSIST_KEYS.forEach((k) => {
     const idf = PERSIST_ID[k]; const prev = (lastSaved && lastSaved[k]) || new Map(); const seen = new Set();
     const ups = [];
-    (DATA[k] || []).forEach((r) => { const id = String(r[idf]); seen.add(id); const js = JSON.stringify(r); if (prev.get(id) !== js) ups.push({ id, js, rec: r }); });
+    (DATA[k] || []).forEach((r) => { const id = String(r[idf]); seen.add(id); if (isEmptyMockDraft(k, r)) return; const js = JSON.stringify(r); if (prev.get(id) !== js) ups.push({ id, js, rec: r }); });   // #227 — a content-free mock draft is held out of the sync until it earns content
     const dels = []; prev.forEach((_, id) => { if (!seen.has(id)) dels.push(id); });
     if (ups.length) { upserts[k] = ups; n += ups.length; }
     if (dels.length) { deletes[k] = dels; n += dels.length; }
@@ -12745,24 +14046,128 @@ async function loadWranglerRail() {
     if (localAhead) pushWranglerRailSoon(); else lastRailJson = JSON.stringify(state.wranglerRail);
   } catch (e) { /* offline → the refresh poll retries */ }
 }
-function saveSoon() { if (booting || !backendPassword) return; clearTimeout(saveTimer); saveTimer = setTimeout(flushSave, 1200); }
+function saveSoon(ms) { if (booting || !backendPassword) return; clearTimeout(saveTimer); saveTimer = setTimeout(flushSave, ms || 1200); }
+// #247 — sync-health. A failing backend sync used to be SILENT (savePending → flat
+// 1.2s retry, no signal), so writes vanished with no warning. Now: track consecutive
+// failures, retry with EXPONENTIAL BACKOFF, and once an outage is confirmed (≥2 in a
+// row — one transient blip self-recovers) raise the R25 "Not saving" banner until a
+// sync succeeds. The backend (doSync batched I/O + tryLock_→'busy') is the cure; this
+// is the safety net so a stuck write can never vanish quietly again.
+const SYNC = { failing: false, fails: 0, backoff: 1200 };
+function retrySyncNow() { clearTimeout(saveTimer); SYNC.backoff = 1200; flushSave(); }   // R25 "Retry now"
+// A Google Sheets cell is hard-capped at 50,000 chars; the backend writes each
+// record's full JSON into one cell, so an oversized record makes the write throw
+// and — with the all-or-nothing commit below — jams the WHOLE sync (#251). The
+// realistic bloat source is an inline base64 photo (~100KB–2MB) still riding an
+// inspection / WO-part record — OR a customer's agreement media (signature +
+// selfie) / durable card selfie that predates the Drive offload (#251b: this is
+// the one that re-warned on EVERY login, since migrateCustomers() dirties the
+// record on boot). Offload it ALL to Drive BEFORE the JSON rides the sync, the
+// same treatment chat images already get (pushWranglerRail → 6212).
+async function offloadDirtyPhotos(upserts) {
+  if (!backendPassword) return;                 // demo/offline → can't offload; the size-guard below backstops
+  const jobs = [];
+  (upserts.inspections || []).forEach((u) => { const n = u.rec; if ((n.photo || '').startsWith('data:')) jobs.push(offloadPhotoNow(n, 'photo', 'insp_' + n.inspectionId, n, 'inspections')); });
+  (upserts.workOrders || []).forEach((u) => { const w = u.rec; (w.lineItems || []).forEach((li) => { if ((li.photo || '').startsWith('data:')) jobs.push(offloadPhotoNow(li, 'photo', 'wopart_' + w.woId + '_' + lineKey(li), w, 'workOrders')); }); });
+  // #251b — customer inline media: agreement signings go through the dedicated
+  // per-customer archiveAgreementMedia handler (proper folder + immutable linkage,
+  // idempotent: no-op once it's a Drive URL); the durable card selfie + legacy
+  // customer-level selfie ride the generic capture offload.
+  (upserts.customers || []).forEach((u) => {
+    const c = u.rec;
+    (c.cards || []).forEach((k) => {
+      (k.agreements || []).forEach((sig) => { if ((sig.signature || '').startsWith('data:') || (sig.selfie || '').startsWith('data:')) jobs.push(archiveAgreementMedia(c, k, sig)); });
+      if ((k.selfie || '').startsWith('data:')) jobs.push(offloadPhotoNow(k, 'selfie', 'selfie_' + c.customerId + '_' + k.id, c, 'customers'));
+    });
+    if ((c.selfie || '').startsWith('data:')) jobs.push(offloadPhotoNow(c, 'selfie', 'selfie_' + c.customerId, c, 'customers'));
+  });
+  if (jobs.length) { try { await Promise.all(jobs); } catch (e) {} }   // a failed offload leaves base64 → held back below, never poisons the batch
+}
+// Client-side fault isolation (#251): if a record is STILL over the cell cap after
+// offload (Drive upload failed, or non-photo bloat), hold it OUT of the batch so it
+// can't abort the sync for every other record. It stays dirty → retries.
+// #251b — the warning is PERSISTED per-record (localStorage), so a record that can't
+// be offloaded (offline / handler absent) is announced ONCE, not re-toasted on every
+// login. A record that later shrinks below the cap is forgiven, so a fresh bloat
+// re-warns. The hold-back safety net still runs every sync regardless of the toast.
+let _oversizeHeld = new Set();
+const OVERSIZE_WARN_KEY = 'jactec.oversizeWarned';
+function oversizeWarned() { try { return new Set(JSON.parse(localStorage.getItem(OVERSIZE_WARN_KEY) || '[]')); } catch (e) { return new Set(); } }
+function setOversizeWarned(set) { try { localStorage.setItem(OVERSIZE_WARN_KEY, JSON.stringify([...set])); } catch (e) {} }
+function holdOversized(upserts) {
+  const stillHeld = new Set();
+  const warned = oversizeWarned();
+  let warnedChanged = false;
+  Object.keys(upserts).forEach((k) => {
+    const keep = [];
+    upserts[k].forEach((u) => {
+      if (u.js.length > 49000) {
+        const tag = k + ':' + u.id; stillHeld.add(tag);
+        if (!warned.has(tag)) { toast('⚠ A record is too large to sync (photo over the 50k cell limit) — held back so the rest save. Re-capture with a smaller photo, or reconnect to offload it to Drive.'); warned.add(tag); warnedChanged = true; }
+      } else keep.push(u);
+    });
+    if (keep.length) upserts[k] = keep; else delete upserts[k];
+  });
+  // Forgive a record that WAS held last pass but isn't now (offloaded / re-captured
+  // smaller) so a fresh bloat later re-warns instead of staying silent forever.
+  for (const tag of _oversizeHeld) { if (!stillHeld.has(tag) && warned.delete(tag)) warnedChanged = true; }
+  if (warnedChanged) setOversizeWarned(warned);
+  _oversizeHeld = stillHeld;
+}
 async function flushSave() {
   if (saving) { savePending = true; return; }
   if (!lastSaved) return;                       // never loaded → nothing to diff against
-  const { upserts, deletes, n } = computeChanges();
+  let { upserts, deletes, n } = computeChanges();
   if (!n) return;                               // nothing changed
   saving = true;
+  await offloadDirtyPhotos(upserts);            // base64 photos → Drive before they can ride into a 50k cell (#251)
+  ({ upserts, deletes } = computeChanges());    // re-diff: offloaded records shrank to a ~60-byte URL
+  holdOversized(upserts);                        // keep any still-oversized record out of the batch (fault isolation)
+  if (!Object.keys(upserts).length && !Object.keys(deletes).length) { saving = false; if (savePending) { savePending = false; saveSoon(); } return; }
   const wireUp = {}; Object.keys(upserts).forEach((k) => { wireUp[k] = upserts[k].map((u) => u.rec); });
+  let ok = false;
   try {
     const r = await backendCall('sync', { upserts: wireUp, deletes });
     if (r && r.ok) {
       // Commit ONLY what we sent — edits made mid-flight stay dirty and re-flush.
       Object.keys(upserts).forEach((k) => upserts[k].forEach((u) => lastSaved[k].set(u.id, u.js)));
       Object.keys(deletes).forEach((k) => deletes[k].forEach((id) => lastSaved[k].delete(id)));
-    } else { savePending = true; }              // server error → retry
-  } catch (e) { savePending = true; }            // offline → retry on next change
+      ok = true;
+    }
+  } catch (e) { /* offline → handled below */ }
   saving = false;
-  if (savePending) { savePending = false; saveSoon(); }
+  if (ok) {
+    if (SYNC.failing) toast('Back online — changes saved.');   // recovered from an outage
+    SYNC.failing = false; SYNC.fails = 0; SYNC.backoff = 1200; renderSyncBanner();
+    if (savePending) { savePending = false; saveSoon(); }      // flush edits made mid-flight
+  } else {
+    savePending = false;                                       // the backoff timer owns the retry now
+    if (++SYNC.fails >= 2) SYNC.failing = true;                // confirmed outage → raise the banner
+    renderSyncBanner();
+    SYNC.backoff = Math.min(SYNC.backoff * 2, 30000);          // exponential, capped at 30s
+    saveSoon(SYNC.backoff);
+  }
+}
+// R25 — the "Not saving" plate. Mounts on <body> (OUTSIDE #app, like #toast / the drag
+// layer) so render() can't wipe it; flushSave drives it imperatively. Red hazard-stripe
+// danger signature; reserves a top band (body.sync-failing) so it never covers the grid.
+function renderSyncBanner() {
+  let el = document.getElementById('sync-banner');
+  if (!SYNC.failing) { if (el) el.classList.remove('show'); document.body.classList.remove('sync-failing'); return; }
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'sync-banner'; el.dataset.r = 'R25';
+    el.setAttribute('role', 'alert'); el.setAttribute('aria-live', 'assertive');
+    el.innerHTML =
+      '<span class="sb-stripe" aria-hidden="true"></span>' +
+      '<span class="sb-stamp">⚠ Not saving</span>' +
+      '<span class="sb-sub">Can’t reach the yard — your changes are held and keep retrying. Don’t close the app.</span>' +
+      actionPill('commit', 'Retry now');
+    el.querySelector('[data-r="R17"]').addEventListener('click', retrySyncNow);
+    document.body.appendChild(el);
+  }
+  document.body.classList.add('sync-failing');
+  requestAnimationFrame(() => el.classList.add('show'));
 }
 // Safety net: a debounced save that hasn't flushed yet — or a large bulk-import sync
 // still in flight — would be lost silently if the page closes/reloads first (#164).
@@ -12775,7 +14180,7 @@ window.addEventListener('beforeunload', (e) => {
   e.preventDefault(); e.returnValue = '';
 });
 function renderLogin(msg) {
-  $('#app').innerHTML = `<div class="login-screen"><video id="login-video" class="login-video" src="assets/login-intro.mp4" muted loop playsinline preload="auto" aria-hidden="true"></video><form class="login-box" id="login-form">
+  $('#app').innerHTML = `<div class="login-screen"><video id="login-video" class="login-video" src="assets/login-intro.mp4?v=20260623l" muted loop playsinline preload="auto" aria-hidden="true"></video><form class="login-box" id="login-form">
     <span class="rivet tl"></span><span class="rivet tr"></span><span class="rivet bl"></span><span class="rivet br"></span>
     <div class="login-plate">
       <img class="login-logo" src="assets/jac-rentals-logo.jpg" alt="Jac Rentals" />
@@ -13171,14 +14576,16 @@ function exposeTestApi() {
       unitStatus, rentalUnitStatuses, unitsUniform, rentalStatusDisplay, rentalMirrorStatus, rentalDisplayStatus,
       allUnitsTerminal, unitTerminal, unitVoided, rentalLineItems, transportLineItems, syncRentalPrimary,
       addUnitToRental, removeUnitFromRental, removeUnitInvoiceLine, unitLinePaid, invoiceTotals, allocLines,
-      rentalAllocated, unitRentalPrice, rentalDisplayName, setWoLinePhase, setWoPhase, woBottleneck,
+      rentalAllocated, itemRefunded, itemRefundable, lineRefunded, lineFullyRefunded, refundLines, rentalLineRefund, applyPayment, unitRentalPrice, rentalDisplayName, setWoLinePhase, setWoPhase, woBottleneck,
       cleanUnitName, planUnitMigration, applyUnitMigration, openMigrationPreview,
       computeTransportPrice, isFueledType, unitTransport, rentalTransport,
-      wrValidatePlan, applyWranglerData, wrFunnel, invoiceMergeable, mergeInvoiceInto, parseWranglerAction, stripWranglerAction,
+      wrValidatePlan, applyWranglerData, wrFunnel, invoiceMergeable, mergeInvoiceInto, parseWranglerAction, stripWranglerAction, parseCsvFile, wrFindAttachedCsv,
       latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore, wranglerRailLoad, wrOffloadChatImages, wrEvictChatBlobs, driveViewUrl, mergeWranglerRails,
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
-      companyRevenueGoal, companyName, companyTagline, rentalRuleBlock, dueForCustomer, footerHidden, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, applySettings, getStatus, pageDefaultSlice, __state: state };
+      companyRevenueGoal, companyName, companyTagline, rentalRuleBlock, dueForCustomer, footerHidden, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, setRole: (r) => { currentRole = r || ''; render(); },
+      openCustomerForm, renderOverlay, render, cardComplete, cardCaptureState, cardHasSelfie, cardHasSignature, captureSelfie, captureSignature, __state: state };   // UI drivers for headless screenshot/e2e tests
+
   } catch (e) { /* no window (non-browser) */ }
 }
 

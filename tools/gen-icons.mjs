@@ -44,6 +44,12 @@ const LUCIDE = {
     files: 'folder',
   },
   RING_ICON: { driver: 'truck', office: 'building', sales: 'trending-up' },
+  // Per-category unit glyphs — keyword-resolved by categoryIconFor() in app.js.
+  CATEGORY_ICON: {
+    lift: 'forklift', light: 'lightbulb', generator: 'zap', compressor: 'wind',
+    pump: 'droplet', truck: 'truck', tractor: 'tractor', trailer: 'container',
+    fuel: 'fuel', heater: 'flame', tower: 'radio-tower', saw: 'wrench', box: 'box',
+  },
 };
 
 // ── bespoke marks kept verbatim (no clean Lucide equivalent / styling hook) ──
@@ -67,6 +73,10 @@ const CUSTOM = {
     mechanic: `CARD_ICON.workOrders`,
     mtech: `ico('<path d="M2 18a1 1 0 0 0 1 1h18a1 1 0 0 0 1-1v-1a1 1 0 0 0-1-1H3a1 1 0 0 0-1 1Z"/><path d="M10 10V5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v5"/><path d="M4 15v-3a6 6 0 0 1 6-6"/><path d="M14 6a6 6 0 0 1 6 6v3"/>')`,
   },
+  CATEGORY_ICON: {
+    // excavator / skid / backhoe family reuses the vendored Tabler backhoe.
+    excavator: `CARD_ICON.categories`,
+  },
 };
 
 // Emission order per object (keeps the generated file diff-stable).
@@ -79,6 +89,8 @@ const ORDER = {
       'serviceOrders', 'inspections', 'inspectionsPending', 'shop', 'parts', 'vendors',
       'expenses', 'files'],
   RING_ICON: ['mechanic', 'mtech', 'driver', 'office', 'sales'],
+  CATEGORY_ICON: ['excavator', 'lift', 'light', 'generator', 'compressor', 'pump',
+    'truck', 'tractor', 'trailer', 'fuel', 'heater', 'tower', 'saw', 'box'],
 };
 
 async function fetchInner(lucideName) {
@@ -113,6 +125,7 @@ async function main() {
   const I = await buildObject('I');
   const CARD = await buildObject('CARD_ICON');
   const RING = await buildObject('RING_ICON');
+  const CAT = await buildObject('CATEGORY_ICON');
   const out = `/**
  * icons.js — the icon registry (AUTO-GENERATED for generic glyphs).
  * ---------------------------------------------------------------------------
@@ -130,6 +143,8 @@ ${I}
 ${CARD}
 
 ${RING}
+
+${CAT}
 `;
   if (process.argv.includes('--check')) {
     let cur = '';
