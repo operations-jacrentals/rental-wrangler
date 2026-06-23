@@ -2613,6 +2613,16 @@ body { font-variant-numeric: tabular-nums; }
 .cr-pay.spend { color: var(--green); }
 .cr-pay.due { color: var(--yellow); }
 .cr-pay.over { color: var(--red); }
+
+/* ── UNIT ROW (ur): [cat icon] · [name / category·HRS] · rental+insp · WO+SO ── */
+.row[data-card="units"] .row-content { padding: 0; }
+.ur { display: flex; align-items: center; gap: 9px; min-width: 0; padding: 9px 11px 9px 8px; border-left: 3px solid var(--ur-hl, var(--line)); }
+.ur-cat { flex: 0 0 auto; width: 22px; height: 22px; color: var(--txt-2); display: flex; align-items: center; justify-content: center; }
+.ur-cat svg { width: 19px; height: 19px; display: block; }
+.ur-id { flex: 1 1 auto; min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 1px 8px; }
+.ur-name { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .6px; font-weight: 700; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; min-width: 0; }
+.ur-sub { font-size: 11px; color: var(--txt-2); white-space: nowrap; flex: 0 0 auto; }
+.ur-pills { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; }
 /* rentals footer: Billing row over Rental-Status row (Jac) */
 .list-totals.two-row { flex-direction: column; align-items: stretch; gap: 4px; }
 .list-totals.two-row .tot-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }

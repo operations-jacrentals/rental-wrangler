@@ -17,7 +17,7 @@ import { createCascade } from './cascade.js';
 import { serviceOrdersForUnit, completeService, SERVICE_TASKS } from './service-countdown.js';
 import * as CFG from './config.js';
 import { AGREEMENTS, AGREEMENT_VERSIONS, AGREEMENT_CURRENT } from './agreements.js';
-import { ico, I, CARD_ICON, RING_ICON } from './icons.js';
+import { ico, I, CARD_ICON, RING_ICON, CATEGORY_ICON } from './icons.js';
 import {
   getStatus, STATUS, ROLES, GRID_CARDS, BACKOFFICE_BOARDS, SORT_FIELDS,
   SHOP_TYPES, SHOP_SEGMENTS, COLUMNS, COLUMN_OF,
@@ -3223,7 +3223,7 @@ function onInspectMove(e) {
 const ROW_META = {
   rentals:    (r) => ({ title: rentalDisplayName(r), sub: IDX.customer.get(r.customerId)?.name || '', color: rentalStatusDisplay(r).color }),
   customers:  (c) => ({ title: c.name, sub: c.phone || c.company || '', color: getEntityColor('customers', c) }),
-  units:      (u) => ({ title: u.name, sub: IDX.category.get(u.categoryId)?.name || '', color: getStatus('unitInspectionStatus', u.inspectionStatus).color }),
+  units:      (u) => ({ title: u.name, sub: IDX.category.get(u.categoryId)?.name || '', color: getEntityColor('units', u) }),
   categories: (c) => ({ title: c.name, sub: c.fuelType || '', color: 'orange' }),
   invoices:   (i) => ({ title: i.invoiceId, sub: IDX.customer.get(i.customerId)?.name || '', color: getStatus('invoiceStatus', invoiceTotals(i).status).color }),
   workOrders: (w) => ({ title: `${IDX.unit.get(w.unitId)?.name || '—'} — ${w.woReport}`, sub: fmtShortDate(w.date), color: getStatus('woPhase', w.phase).color }),
@@ -3268,6 +3268,56 @@ function categoryMixViz(catId) {
   if (!mix.total) return '';
   const g = (mix.Ready / mix.total) * 100, y = (mix['Not Ready'] / mix.total) * 100, r = (mix.Failed / mix.total) * 100;
   return `<div class="row-viz" style="background:linear-gradient(90deg, var(--mix-green) 0 ${g}%, var(--mix-yellow) ${g}% ${g + y}%, var(--mix-red) ${g + y}% ${g + y + r}%)"></div>`;
+}
+
+/* A library glyph representing a unit's CATEGORY (Jac) — keyword-resolved from the
+   category name onto the vendored CATEGORY_ICON map (Lucide + the Tabler backhoe).
+   Never hand-authored; unknowns fall back to the backhoe (heavy-equipment default). */
+function categoryIconFor(name) {
+  const n = (name || '').toLowerCase();
+  if (/excavat|backhoe|dig|skid|loader|dozer|bobcat|track\s?hoe|mini.?ex/.test(n)) return CATEGORY_ICON.excavator;
+  if (/scissor|boom|man.?lift|aerial|telehandl|fork|\blift\b/.test(n)) return CATEGORY_ICON.lift;
+  if (/light/.test(n)) return CATEGORY_ICON.light;
+  if (/tower/.test(n)) return CATEGORY_ICON.tower;
+  if (/generat|\bpower\b|genset|geny/.test(n)) return CATEGORY_ICON.generator;
+  if (/compress|\bair\b/.test(n)) return CATEGORY_ICON.compressor;
+  if (/pump|water/.test(n)) return CATEGORY_ICON.pump;
+  if (/dump|hauler|flatbed|\btruck\b/.test(n)) return CATEGORY_ICON.truck;
+  if (/tractor|mower|brush|broom/.test(n)) return CATEGORY_ICON.tractor;
+  if (/trailer|container/.test(n)) return CATEGORY_ICON.trailer;
+  if (/fuel|tank/.test(n)) return CATEGORY_ICON.fuel;
+  if (/heat|furnace/.test(n)) return CATEGORY_ICON.heater;
+  if (/saw|cut/.test(n)) return CATEGORY_ICON.saw;
+  return CATEGORY_ICON.excavator;
+}
+/* The unit row's RENTAL+INSPECTION pill (Jac): text = rental status / availability
+   verdict / inspection label; COLOR is inspection-driven (mechanics' card) and only
+   goes red on a catastrophe (Failed inspection, overbooked). Built via statusPill's
+   color/label override so it stays an R3 pill. */
+function unitRentalInspPill(u) {
+  const insp = getStatus('unitInspectionStatus', u.inspectionStatus);
+  const ar = activeRentalForUnit(u.unitId);
+  let text, color;
+  if (availWin) {
+    if (isUnitAvailableFor(u, availWin.start, availWin.end, availWin.selfId)) { text = 'Available'; color = 'green'; }
+    else if (u.fleetStatus !== 'Active') { text = getStatus('unitFleetStatus', u.fleetStatus).label; color = 'red'; }
+    else if (u.inspectionStatus === 'Failed') { text = 'Failed'; color = 'red'; }
+    else { const cf = rentalsOverlappingUnit(u.unitId, availWin.start, availWin.end, availWin.selfId)[0]; text = cf ? 'Booked' : 'Unavailable'; color = 'red'; }
+  } else if (ar) {
+    text = rentalDisplayStatus(ar);
+    color = (u.inspectionStatus === 'Failed' || unitOverbooked(u.unitId)) ? 'red' : insp.color;   // inspection drives; catastrophe → red
+  } else {
+    text = insp.label; color = insp.color;            // Passed / Not Ready / Failed
+  }
+  return statusPill('unitInspectionStatus', u.inspectionStatus, { card: 'units', recId: u.unitId, previewColor: color, previewLabel: text });
+}
+/* The unit row's WORK-ORDER+SERVICE pill (Jac): an open WO's journey bottleneck takes
+   precedence (flag-colored woPhase); otherwise the nearest service order by hours. */
+function unitWoSoPill(u) {
+  const wo = openWOForUnit(u.unitId);
+  if (wo) return statusPill('woPhase', wo.phase, { card: 'workOrders', recId: wo.woId });
+  const svc = topServiceForUnit(u);
+  return svc ? badge(svcText(svc), svc.color) : '';
 }
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -3409,30 +3459,20 @@ const ROWS = {
   },
 
   units: (u) => {
+    // 5 elements (Jac): [category icon] · [name / category·HRS] · [rental+insp pill] ·
+    // [WO+SO pill]. Left border = the unit's most-severe flag color. Category reflows
+    // below the name on narrow widths (flex-wrap).
     const cat = IDX.category.get(u.categoryId);
-    const ar = activeRentalForUnit(u.unitId);
-    const wo = openWOForUnit(u.unitId);
-    const svc = topServiceForUnit(u);
-    // §10: while a rental window is in scope, Row 2 leads with the availability
-    // verdict for THAT window (green Available / fleet / Failed / conflicting rental).
-    let availLead = '';
-    if (availWin) {
-      if (isUnitAvailableFor(u, availWin.start, availWin.end, availWin.selfId)) availLead = badge('Available', 'green');
-      else if (u.fleetStatus !== 'Active') availLead = statusPill('unitFleetStatus', u.fleetStatus);
-      else if (u.inspectionStatus === 'Failed') availLead = badge('Failed', 'red');
-      else { const cf = rentalsOverlappingUnit(u.unitId, availWin.start, availWin.end, availWin.selfId)[0]; availLead = cf ? statusPill('rentalStatus', rentalDisplayStatus(cf), { card: 'rentals', recId: cf.rentalId }) : badge('Unavailable', 'red'); }
-    }
-    // §12.4: QR badge on Row 1; Inspection Status pill lives on Row 2 with the other
-    // status badges. Fleet Status is conveyed by the ROW BACKGROUND (when not Active).
-    return `<div class="row-1"><span class="r-title">${esc(u.name)}</span><span class="r-fields">
-        ${cat ? `<span>${esc(cat.name)}</span>` : ''}<span class="r-key">${num(u.currentHours)} HRS</span></span>
-        <span class="pill c-gray" data-r="R3" data-tip="QR code">${I.qr}</span></div>
-      <div class="row-2">
-        ${availWin ? availLead : (ar ? statusPill('rentalStatus', rentalDisplayStatus(ar), { card: 'rentals', recId: ar.rentalId }) : '')}
-        ${svc ? badge(svcText(svc), svc.color) : ''}
-        ${wo ? statusPill('woPhase', wo.phase, { card: 'workOrders', recId: wo.woId }) : ''}
-        ${statusPill('unitInspectionStatus', u.inspectionStatus, { card: 'units', recId: u.unitId })}
-      </div>`;
+    const hl = getEntityColor('units', u);
+    const sub = [cat ? esc(cat.name) : '', `${num(u.currentHours)} HRS`].filter(Boolean).join(' · ');
+    return `<div class="ur" style="--ur-hl:var(--${hl})">
+      <span class="ur-cat">${categoryIconFor(cat && cat.name)}</span>
+      <div class="ur-id">
+        <span class="r-title ur-name">${esc(u.name)}</span>
+        <span class="ur-sub">${sub}</span>
+      </div>
+      <div class="ur-pills">${unitRentalInspPill(u)}${unitWoSoPill(u)}</div>
+    </div>`;
   },
 
   categories: (c) => {
