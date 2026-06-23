@@ -8153,6 +8153,10 @@ async function wranglerSend() {
     }
     return { role: m.role, content: body };
   });
+  // #wrangler-chat-separation — pin the chat this reply belongs to. state.wrangler is a SINGLE
+  // mutable object; hopping chats during the await must not bleed the reply (or its issue
+  // comment) into the now-open chat. (openWranglerFromRequest guards its async load the same way.)
+  const replyChatId = o.id, replyReqNum = o.reqNumber;
   try {
     if (typeof backendPassword !== 'undefined' && backendPassword) {
       const r = await backendCall('wrangler', { system, messages: payloadMsgs });
@@ -8163,13 +8167,20 @@ async function wranglerSend() {
       const truncated = /```wrangler-action/.test(raw) && !act;   // #152 a fence arrived but nothing usable came out of it
       if (truncated) shown = (shown ? shown + '\n\n' : '') + '⚠️ My reply got cut off before I could finish that action — too much in one go. Ask me to do it in smaller batches and I’ll send a preview you can apply.';
       else if (!shown) shown = act ? (act.action === 'data' ? 'Here’s what I’ll change — preview it and hit apply when it looks right.' : act.action === 'kpi' ? 'Here’s the KPI — lock it in when the live number looks right.' : act.action === 'request' ? 'Got it — I’ll send this to the developer to OK.' : act.action === 'plan' ? 'Here’s the plan — tap Build when it’s right.' : 'On it — I’ll fix this right now and let you know when I’m done.') : '(no answer)';
-      o.messages.push({ role: 'assistant', content: shown, action: act || null, filed: false });
-      syncWranglerComment(o, 'assistant', shown);   // §18e mirror Mr. Wrangler's reply onto the issue thread
+      // route the reply to its ORIGINATING chat — the live dock if still open, else its rail
+      // snapshot — so a mid-await chat hop can't bleed it into the now-open conversation.
+      const _onChat = state.wrangler.id === replyChatId;
+      const _target = _onChat ? o : state.wranglerRail.find((c) => c.id === replyChatId);
+      if (_target) {
+        _target.messages.push({ role: 'assistant', content: shown, action: act || null, filed: false });
+        syncWranglerComment({ reqNumber: replyReqNum }, 'assistant', shown);   // §18e mirror onto the RIGHT issue thread
+        if (!_onChat) wranglerRailPersist(_target);   // backgrounded chat → fold the reply into its snapshot
+      }
     } else {
       o.messages.push({ role: 'assistant', content: "🤠 Demo mode — sign in to ask the real Mr. Wrangler (the live AI runs through the backend). Here's the snapshot I'd reason over:\n\n" + wranglerDigest() });
     }
-    o.busy = false; render(); setTimeout(() => { const f = document.querySelector('.wrangler-dock .wr-feed'); if (f) f.scrollTop = f.scrollHeight; }, 0);
-  } catch (e) { o.busy = false; o.error = "Mr. Wrangler couldn't answer — check the connection / backend."; render(); }
+    if (state.wrangler.id === replyChatId) { o.busy = false; render(); setTimeout(() => { const f = document.querySelector('.wrangler-dock .wr-feed'); if (f) f.scrollTop = f.scrollHeight; }, 0); } else render();   // only clear/scroll the dock if it's still THIS chat
+  } catch (e) { if (state.wrangler.id === replyChatId) { o.busy = false; o.error = "Mr. Wrangler couldn't answer — check the connection / backend."; render(); } }
 }
 // §18d "Send to the fixer" — turn the current Wrangler chat into a `wrangler-fix`
 // GitHub issue (the Track B repro packet). Carries the transcript, the view/role/
