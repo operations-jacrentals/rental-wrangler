@@ -11766,9 +11766,21 @@ async function saveCardFlow(btn) {
     // §7.1c a card lands IN PROGRESS — chargeable immediately, but the account can't go On Rent /
     // log deliveries until the card is COMPLETE (card + selfie + signature). Any selfie/signature
     // captured in this panel were held on c.pendingCapture and now saddle onto the new card.
-    const newCard = { id: newCardId, stripePmId: setupIntent.payment_method, brand: s.card.brand, last4: s.card.last4,
+    const newCard = { id: newCardId, stripePmId: setupIntent.payment_method, fingerprint: s.card.fingerprint || '', brand: s.card.brand, last4: s.card.last4,
       expMonth: s.card.expMonth, expYear: s.card.expYear, nickname: o.nickname || '', notes: '', isDefault: firstCard, status: 'active',
       selfie: '', driveSelfieUrl: '', draftSignature: null, agreements: [] };
+    // Stripe attaches the SAME physical card as a NEW pm every time it's saved (its own
+    // #1 multi-card gotcha — stripe-payments-demo#45). If this card's fingerprint matches
+    // one already on file, SUPERSEDE that entry in place — carry its signed agreement onto
+    // the fresh pm, retire the old pm — so one card never piles up as duplicate chips.
+    // No-op until the backend returns card.fingerprint; harmless before then.
+    const _dup = newCard.fingerprint ? customerCards(c).find((k) => k.fingerprint === newCard.fingerprint) : null;
+    if (_dup) {
+      newCard.agreements = _dup.agreements || []; newCard.selfie = _dup.selfie || ''; newCard.driveSelfieUrl = _dup.driveSelfieUrl || '';
+      newCard.isDefault = newCard.isDefault || _dup.isDefault;
+      _dup.status = 'removed';
+      if (backendPassword && _dup.stripePmId && _dup.stripePmId !== setupIntent.payment_method) backendCall('stripeRemoveCard', { customerId: c.customerId, paymentMethodId: _dup.stripePmId }).catch(() => {});
+    }
     c.cards.push(newCard);
     c.cardBrand = s.card.brand; c.cardLast4 = s.card.last4; c.cardExpMonth = s.card.expMonth; c.cardExpYear = s.card.expYear;   // legacy mirror (default card)
     saddlePendingCapture(c, newCard);                                                            // held selfie/signature → this card, then finalize if all three are present
