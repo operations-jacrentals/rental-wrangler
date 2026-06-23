@@ -319,11 +319,10 @@ input { font-family: inherit; }
 .is-phone .mdot { width: 38px; height: 22px; }                                  /* column indicator dots (column also changes by toggle tap / footer swipe) */
 .is-phone .chat-tag .x { position: relative; }                                  /* tag remove ✕ keeps its 14px look… */
 .is-phone .chat-tag .x::before { content: ''; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 40px; height: 40px; }   /* …but a 40px hit box */
-/* §M-touch — hover-only affordances are UNREACHABLE on touch (a phone has no :hover, so
-   these never reveal). Force the card/row action chips + the hover-reveal close ✕ on so
-   every action stays tappable — the 44px hit-area sizing above already assumes they show
-   (e.g. .is-phone .rbtn). The :empty guard still hides empty action chips. */
-.is-phone .c-actions, .is-phone .row .r-actions { opacity: 1; }
+/* §M-touch — the hover-reveal tab close ✕ has no touch alternative, so force it visible
+   on phones (a phone has no :hover). The card-header / row hover TOOLS are deliberately
+   HIDDEN on touch instead (PR #316) — their actions have touch paths (double-tap anchor,
+   long-press menu, back chevron) — so they are not revealed here. */
 .is-phone .close-x.hoveronly { opacity: 1; }
 /* §M-touch — kill the browser's accidental double-tap-to-ZOOM on phones. It fires on any
    surface still at touch-action:auto (card bodies, the open detail/standard view, text,
