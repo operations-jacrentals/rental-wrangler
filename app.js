@@ -3625,6 +3625,9 @@ const RB_FOUNDATION = {
   'color-tan': ['✶', 'Wrangler tan', '--tan #c2925a / --tan-deep (yard theme)',
     'The light ranch seasoning — worn leather for saddle-stitch dividers & tiny touches. Restrained.',
     rbSw('var(--tan,#c2925a)', 'Tan', 'saddle-stitch', '#1a1205')],
+  'color-ec-red': ['⚠', 'ec-red · flagging glow', 'fill: color-mix(--red 65%, white) · shadow: 0 0 3px --red, 0 0 7px (--red 60%+transparent)',
+    'Official treatment for EVERY flagging-red signal — text names/pills/flags/headers, borders, dots/bars. Three knobs in style.css .ec-red group: fill % (65), inner glow (3px), outer halo (7px / 60%). Never use pure --red alone on flagging text.',
+    `<span style="-webkit-text-fill-color:color-mix(in srgb,var(--red) 65%,white);text-shadow:0 0 3px var(--red),0 0 7px color-mix(in srgb,var(--red) 60%,transparent);font-weight:700;font-size:13px;letter-spacing:.5px">TUCKER FONTENOT · No Card · $0.30 overdue</span>`],
   // ── FORM ──
   'radius': ['◳', 'Radius', '--radius 14–16 · --chip-radius 11–12 · 8–10 controls · 999 pills',
     'Cards/popups softest · chips medium · controls tight · pills & counters full-round · rings/avatars circles.',
@@ -3911,7 +3914,7 @@ const ROWS = {
       if (!unit) return '';
       const insp = unit.inspectionStatus;
       const ic = insp === 'Failed' ? 'var(--red)' : insp === 'Not Ready' ? 'var(--yellow)' : insp === 'Passed' ? 'var(--green)' : 'var(--txt)';
-      return `<span class="rcc-uname" style="color:${ic}" data-tip="${esc(unit.name)}: ${esc(insp || 'Unknown')}">${esc(unit.name)}</span>`;
+      return `<span class="rcc-uname${insp === 'Failed' ? ' ec-red' : ''}" style="color:${ic}" data-tip="${esc(unit.name)}: ${esc(insp || 'Unknown')}">${esc(unit.name)}</span>`;
     }).filter(Boolean).join('<span class="rcc-usep">, </span>') || (units ? `<span class="rcc-uname">${esc(units)}</span>` : '');
     const headHtml = `<div class="rcc-head">
       <div class="rcc-h1">${unitNameHtml ? `<span class="rcc-units">${unitNameHtml}</span>` : ''}${stPill}</div>
@@ -3979,7 +3982,7 @@ const ROWS = {
     const isMember = c.accountType === 'Member' || c.accountType === 'Business Member';
     const nameColor = (fc === 'red' || fc === 'yellow') ? `var(--${fc})` : fc === 'gray' ? 'var(--txt-3)' : (fc === 'green' && isMember) ? 'var(--green)' : 'var(--txt)';
     const acct = getStatus('customerAccountType', c.accountType || 'Non-Business');
-    const sub = [esc(c.phone || ''), c.accountType ? esc(acct.label) : ''].filter(Boolean).join(' · ');
+    const sub = c.phone ? esc(c.phone) : '';
 
     // Pay status AS A NUMBER (Jac — no "New Customer" text): owed balance → yellow before
     // its due date / red on-or-after; otherwise rolling-12-month spend → green.
@@ -4006,7 +4009,7 @@ const ROWS = {
     const acctPill = statusPill('customerAccountType', c.accountType || 'Non-Business');
     return `<div class="cr">
       <div class="cr-id">
-        <span class="r-title cr-name" style="color:${nameColor}">${esc(c.name)}</span>
+        <span class="r-title cr-name${fc === 'red' ? ' ec-red' : ''}" style="color:${nameColor}">${esc(c.name)}</span>
         ${sub ? `<span class="cr-sub">${sub}</span>` : ''}
       </div>
       ${payHtml}
@@ -6533,13 +6536,48 @@ function scorePop(roleId, ringIdx, delta, unit) {
   btn.appendChild(pop);                                            // floats up + fades (CSS), then removed
   setTimeout(() => pop.remove(), 760);
 }
+/* ════════════ COMING 2026 — the roadmap morale plate (Jac 2026-06-23) ════════
+   The KPI rings ride behind a blur (the metrics engine isn't wired up yet). Rather
+   than leave dead frosted glass up top, the rings wear a "Coming 2026" data-plate
+   that opens this roadmap — what's on the docket plus every area of the yard we're
+   building out. Pure morale: a glance at how much is coming. The list mirrors
+   backlog.md (the sorted task branches) + the area map; keep it in step when those
+   move. type: Feature (gray) · Fix (red) · Cleanup (gray) · Planned (yellow). */
+const ROADMAP_ITEMS = [
+  { t: 'Rental Status button',                   area: 'Rentals',       type: 'Feature' },
+  { t: 'Card-on-File no longer blocks On Rent',  area: 'Rentals',       type: 'Fix' },
+  { t: 'Retire the obsolete Window Picker',      area: 'Rentals',       type: 'Cleanup' },
+  { t: 'Invoice Card',                           area: 'Invoicing',     type: 'Feature' },
+  { t: 'Fix the “OBi” invoice link label',       area: 'Invoicing',     type: 'Fix' },
+  { t: 'Category rows — scroll by group',        area: 'Units',         type: 'Feature' },
+  { t: 'Default Services — hand over the manuals',area: 'Shop',         type: 'Feature' },
+  { t: 'Custom Fields + defaults',               area: 'Backend',       type: 'Feature' },
+  { t: 'Customer self-service portal',           area: 'Mobile',        type: 'Feature' },
+  { t: 'Notifications',                           area: 'Comms',         type: 'Feature' },
+  { t: 'Customer texts & email',                 area: 'Comms',         type: 'Feature' },
+  { t: 'Memberships — round out the details',    area: 'Members',       type: 'Planned' },
+];
+const ROADMAP_AREAS = [
+  'Rentals & Dispatch', 'Invoicing & Payments', 'Customers / CRM', 'Memberships',
+  'Units & Fleet', 'Maintenance Shop', 'Financials & KPIs', 'Backend & Data',
+  'Design System', 'Mobile & Remote', 'Comms & Notifications', 'HR & Compliance',
+  'Sales & Growth', 'Maps & Location', 'Search & Views', 'Frontend & Performance',
+  'Mr. Wrangler AI',
+];
 function headerEl() {
   const h = el('div', 'header');
   const roleRing = (id, label, vals, color) => `<button class="kpi-ring js-ring" data-role="${id}">
       <span class="ring-wrap">${ring3SVG(vals, color, { size: 64 })}</span>
       <span class="ring-label">${esc(label)}</span>
     </button>`;
-  const rings = ROLES.map((role) => roleRing(role.id, role.label, kpiFor(role.id), role.color)).join('');
+  // The blurred rings wear a "Coming 2026" plate (last child of .kpis) — taps open the roadmap.
+  const comingPlate = `<button class="coming-plate js-roadmap" data-tip="What's coming in 2026" aria-label="Coming 2026 — open the roadmap">
+      <span class="cp-haz" aria-hidden="true"></span>
+      <span class="cp-rivet tl"></span><span class="cp-rivet tr"></span><span class="cp-rivet bl"></span><span class="cp-rivet br"></span>
+      <span class="cp-stamp">Coming <b>2026</b></span>
+      <span class="cp-sub">Round up what we’re wrangling</span>
+    </button>`;
+  const rings = ROLES.map((role) => roleRing(role.id, role.label, kpiFor(role.id), role.color)).join('') + comingPlate;
   // §M1 — phone-only TOP TOOLBAR: the full tool set opened up across the top of the screen
   // (logo + rings stay on their own row above it). Notifications + Requests live here too.
   const nu = unseenNotifs();
@@ -8424,6 +8462,27 @@ function buildPopupEl(o, overlay, opts = {}) {
         ${rows.map((r) => `<div class="hk-row"><div class="hk-demo hk-${r.d}">${hkDemoInner(r.d)}</div><div class="hk-text"><div class="hk-name">${esc(r.n)}</div><div class="hk-desc">${esc(r.t)}</div></div></div>`).join('')}
         <p class="muted" style="font-size:11px;margin:6px 2px 0">These work on a list row or anywhere on a card.</p>` });
     overlay.appendChild(pop);
+  } else if (o.kind === 'roadmap') {
+    // §M2 — "Coming 2026" roadmap (the morale window behind the blurred rings).
+    const TYPE_COLOR = { Fix: 'red', Planned: 'yellow' };   // Feature/Cleanup stay gray (R3b)
+    const counts = ROADMAP_ITEMS.reduce((m, it) => (m[it.type] = (m[it.type] || 0) + 1, m), {});
+    const tally = [['Feature', 'building'], ['Fix', 'fixing'], ['Cleanup', 'cleaning up'], ['Planned', 'to scope']]
+      .filter(([t]) => counts[t]).map(([t, v]) => `${counts[t]} ${v}`).join(' · ');
+    const rows = ROADMAP_ITEMS.map((it) => `<div class="rm-row">
+        <span class="rm-badge">${badge(it.type, TYPE_COLOR[it.type] || 'gray')}</span>
+        <span class="rm-name">${esc(it.t)}</span>
+        <span class="rm-area">${esc(it.area)}</span>
+      </div>`).join('');
+    const chips = ROADMAP_AREAS.map((a) => `<span class="rm-chip">${esc(a)}</span>`).join('');
+    const pop = el('div', 'popup rm-popup');
+    pop.innerHTML = popupShell({ icon: I.horseshoe, title: 'Coming in 2026', tag: 'Roadmap · what we’re wrangling', bodyClass: 'rm-body', body: `
+        <p class="rm-intro">${ROADMAP_ITEMS.length} on the docket — ${esc(tally)}. The gauges up top light up once the metrics engine lands.</p>
+        <div class="rm-list">${rows}</div>
+        <div class="rm-stitch" aria-hidden="true"></div>
+        <div class="rm-terr-h">The whole territory — ${ROADMAP_AREAS.length} areas under the saddle</div>
+        <div class="rm-chips">${chips}</div>
+        <p class="rm-foot">Got an idea for the list? Tap <strong>🤠 Report</strong> on any card and tell Mr. Wrangler.</p>` });
+    overlay.appendChild(pop);
   } else if (o.kind === 'feedback') {
     const ctx = feedbackContext();
     const TYPES = [['Bug', 'Claude fixes it'], ['Improvement', 'needs your OK'], ['Idea', 'needs your OK'], ['Change', 'needs your OK']];
@@ -8858,6 +8917,7 @@ const WINDOW_CATALOG = [
   { kind: 'requests',      label: 'Requests inbox',          tag: 'Mr. Wrangler · approvals',  sample: () => ({}) },
   { kind: 'notifications', label: 'Notifications',           tag: 'Mr. Wrangler · resolved',   sample: () => ({}) },
   { kind: 'hotkeys',       label: 'Mouse shortcuts',         tag: 'Operator · controls',       sample: () => ({}) },
+  { kind: 'roadmap',       label: 'Coming in 2026',          tag: 'Roadmap · the docket',      sample: () => ({}) },
   { kind: 'feedback',      label: 'Report a bug or request', tag: 'Mr. Wrangler · report',     sample: () => ({}) },
   { kind: 'board',         label: 'Back-office board',       tag: 'Back office · records',     sample: () => ({ board: (BACKOFFICE_BOARDS[0] || {}).id }) },
   { kind: 'boardview',     label: 'Board View',              tag: 'Card · board view',         sample: () => ({ card: 'units', query: '', sort: {}, calc: {}, colOrder: null, extraRows: [], cellData: {}, seq: 0 }) },
@@ -10353,12 +10413,12 @@ function initDrag() {
 // move lifts a drag. A quick horizontal flick (before this fires) is a Back/Forward swipe
 // instead (see the grid swipe tracker in boot). Frees the horizontal axis for navigation.
 function armReadyTimer(arm) { return setTimeout(() => { if (DRAG.armed === arm) arm.ready = true; }, 300); }
-function armMenuTimer(arm) {   // §M3 — touch hold-still opens the context menu (not a drag)
+function armMenuTimer(arm) {   // §M3 — hold-still opens the context menu: touch long-press OR mouse click-and-hold (the right-click equivalent)
   return setTimeout(() => {
     if (DRAG.armed !== arm) return;
     const t = document.elementFromPoint(arm.x, arm.y);
     DRAG.armed = null;
-    if (t) { DRAG.suppressClick = true; lastTouchCtx = performance.now(); openCtxMenuAt(t, arm.x, arm.y); }
+    if (t) { DRAG.suppressClick = true; if (arm.touch) lastTouchCtx = performance.now(); openCtxMenuAt(t, arm.x, arm.y); }   // lastTouchCtx guards the trailing native contextmenu — touch only
   }, 500);
 }
 function dragDown(e) {
@@ -10373,7 +10433,8 @@ function dragDown(e) {
   if (chatEl) {
     DRAG.point.x = e.clientX; DRAG.point.y = e.clientY;
     const arm = { chatEl: chatElPayload(chatEl), x: e.clientX, y: e.clientY, pointerId: e.pointerId, touch: e.pointerType === 'touch', lp: null, rdy: null, ready: e.pointerType !== 'touch' };
-    if (arm.touch) { arm.lp = armMenuTimer(arm); arm.rdy = armReadyTimer(arm); }
+    arm.lp = armMenuTimer(arm);                          // §M3 — hold still → context menu (mouse + touch)
+    if (arm.touch) arm.rdy = armReadyTimer(arm);         // touch only: a hold must precede a horizontal drag (mouse drags immediately)
     DRAG.armed = arm; return;
   }
   const bail = e.target.closest('.inline-edit, .inline-input, input, textarea, select, button, .x, .pill, .seg, .add-field, .linkname, .flag, .jnode, .dropdown-menu, .overlay, .hover-preview, .winpicker-float, .ctx-menu');
@@ -10384,7 +10445,8 @@ function dragDown(e) {
   if (!src) return;
   DRAG.point.x = e.clientX; DRAG.point.y = e.clientY;                    // seed the ghost/hit-test point — a touch long-press may fire with NO move first
   const armed = { card: src.card, rec: src.rec, x: e.clientX, y: e.clientY, pointerId: e.pointerId, touch: e.pointerType === 'touch', lp: null, rdy: null, ready: e.pointerType !== 'touch' };
-  if (armed.touch) { armed.lp = armMenuTimer(armed); armed.rdy = armReadyTimer(armed); }
+  armed.lp = armMenuTimer(armed);                        // §M3 — hold still → context menu (mouse + touch)
+  if (armed.touch) armed.rdy = armReadyTimer(armed);     // touch only: a hold must precede a horizontal drag (mouse drags immediately)
   DRAG.armed = armed;
 }
 /* Resolve what a press grabs, in priority order:
@@ -10945,6 +11007,7 @@ function onClick(e) {
   if (closest('.js-lock-invoice')) { e.stopPropagation(); return lockInvoiceFlow(closest('.js-lock-invoice').dataset.rec, true); }
   if (closest('.js-unlock-invoice')) { e.stopPropagation(); return lockInvoiceFlow(closest('.js-unlock-invoice').dataset.rec, false); }
   if (closest('.js-ring')) return openOverlay({ kind: 'role', role: closest('.js-ring').dataset.role });
+  if (closest('.js-roadmap')) return openOverlay({ kind: 'roadmap' });
   if (closest('.js-close')) return closeOverlay();
   if (closest('.js-theme')) { state.theme = (THEME_NEXT[state.theme] || THEME_NEXT.dark).next; try { localStorage.setItem('jactec.theme', state.theme); } catch (e) {} if (state.overlay && state.overlay.kind !== 'addCard') renderOverlay(); render(); return; }
   if (closest('.js-qr')) return shareSession();

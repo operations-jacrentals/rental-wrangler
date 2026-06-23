@@ -126,7 +126,7 @@ input { font-family: inherit; }
 
 /* KPI rings (§5.2/§11) — Apple-style concentric progress rings, each colored by
    its own value band; number + role label below. */
-.kpis { display: flex; align-items: center; gap: 14px; }
+.kpis { display: flex; align-items: center; gap: 14px; position: relative; }   /* position: anchor for the Coming-2026 plate */
 .kpi-ring {
   display: flex; flex-direction: column; align-items: center; gap: 3px;
   padding: 4px 6px 0; border-radius: 11px; border: 1px solid transparent; min-width: 64px;
@@ -152,6 +152,53 @@ input { font-family: inherit; }
 .big-ring .ring-fill.ring-glow { filter: drop-shadow(0 0 2.4px var(--green)) drop-shadow(0 0 5.2px var(--green)); }
 .kpi-ring .ring-label { font-size: 10px; color: var(--txt-3); font-weight: 600; text-transform: uppercase; letter-spacing: .3px; }
 .kpi-ring .ring-pct { font-size: 28px; font-weight: 700; fill: var(--txt); }   /* big popup ring only */
+
+/* ── COMING 2026 — roadmap plate over the blurred rings (Jac 2026-06-23) ──────
+   Signature = the hi-vis hazard-stripe cap ("work zone / coming soon"); the dimmed
+   gauges glow behind frosted steel. Boldness spent ONLY on the stripe; everything
+   else quiet. No orange (reserved) — caution-yellow ties to the hazard signature.
+   Themes for free off the tokens; reduced-motion freezes the lift. */
+.coming-plate {
+  position: absolute; inset: 0; z-index: 3;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+  border: 1px solid var(--line); border-radius: var(--chip-radius); overflow: hidden;
+  padding: 7px 16px 5px; cursor: pointer; font-family: 'Saira Condensed', sans-serif;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--panel) 76%, transparent), color-mix(in srgb, var(--bg) 88%, transparent));
+  -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px);
+  transition: border-color .15s, transform .15s;
+}
+.coming-plate:hover { border-color: color-mix(in srgb, var(--yellow) 45%, var(--line)); transform: translateY(-1px); }
+.coming-plate:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.cp-haz { position: absolute; left: 0; right: 0; top: 0; height: 5px; opacity: .9;
+  background: repeating-linear-gradient(135deg, var(--yellow) 0 11px, #14181d 11px 22px); }
+.cp-rivet { position: absolute; width: 4px; height: 4px; border-radius: 50%;   /* matches .pl-rivet metal */
+  background: radial-gradient(circle at 35% 30%, #434c58, #0f1318); box-shadow: inset 0 0 0 1px rgba(0,0,0,.55); }
+.cp-rivet.tl { left: 6px; top: 9px; } .cp-rivet.tr { right: 6px; top: 9px; }
+.cp-rivet.bl { left: 6px; bottom: 6px; } .cp-rivet.br { right: 6px; bottom: 6px; }
+.cp-stamp { margin-top: 3px; font-size: 17px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; color: var(--txt); line-height: 1; }
+.cp-stamp b { color: var(--yellow); font-weight: 800; }
+.cp-sub { font-family: var(--font); font-size: 9.5px; letter-spacing: .2px; color: var(--txt-3); text-align: center; }
+.is-phone .coming-plate { padding: 2px 6px; }
+.is-phone .cp-stamp { margin-top: 2px; font-size: 12px; letter-spacing: 1px; }
+.is-phone .cp-sub, .is-phone .cp-rivet { display: none; }
+@media (prefers-reduced-motion: reduce) { .coming-plate { transition: none; } .coming-plate:hover { transform: none; } }
+
+/* ── COMING 2026 roadmap popup — the docket + the whole territory ── */
+.rm-popup { width: 460px; max-width: 94vw; }
+.rm-intro { margin: 0 2px 12px; font-size: 12.5px; line-height: 1.45; color: var(--txt-2); }
+.rm-list { display: flex; flex-direction: column; }
+.rm-row { display: grid; grid-template-columns: 80px 1fr auto; align-items: center; gap: 10px;
+  padding: 7px 2px; border-bottom: 1px solid var(--line-soft); }
+.rm-row:last-child { border-bottom: 0; }
+.rm-badge { display: flex; }
+.rm-name { font-size: 13px; font-weight: 600; color: var(--txt); }
+.rm-area { font-family: 'Saira Condensed', sans-serif; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--txt-3); white-space: nowrap; }
+.rm-stitch { margin: 15px 0; border-top: 1.5px dashed var(--tan, #c2925a); opacity: .6; }   /* saddle-stitch — the ranch seasoning */
+.rm-terr-h { margin-bottom: 9px; text-align: center; font-family: 'Saira Condensed', sans-serif; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; color: var(--txt-3); }
+.rm-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.rm-chip { padding: 3px 10px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel-2);
+  font-family: 'Saira Condensed', sans-serif; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: var(--txt-2); }
+.rm-foot { margin: 14px 2px 0; font-size: 11.5px; line-height: 1.4; color: var(--txt-3); }
 
 /* tab strip — ONE row, scrolls horizontally if many; sits above the toolbar */
 .tabstrip { display: flex; gap: 6px; overflow-x: auto; max-width: 100%; padding-bottom: 0; }
@@ -422,8 +469,8 @@ body.is-phone { touch-action: manipulation; }
 .coltab .ct-n { font-size: 11px; font-weight: 700; color: var(--txt-3); background: var(--bg-2); padding: 1px 8px; border-radius: 999px; }
 .coltab.on .ct-n { color: var(--on-orange); background: rgba(0,0,0,.16); }
 /* red "needs work" alert on a Shop tab (pending inspections / open WOs / overdue service) */
-.coltab.alert:not(.on) { color: var(--txt); background: var(--bg-2); box-shadow: inset 0 0 0 1px var(--red); }   /* rule 1: red border + red icon + light ink + dark bg */
-.coltab.alert:not(.on) .ct-ico { color: var(--red); }
+.coltab.alert:not(.on) { color: var(--txt); background: var(--bg-2); box-shadow: inset 0 0 0 1px var(--red), 0 0 5px color-mix(in srgb, var(--red) 30%, transparent); }   /* rule 1: red border + red icon + light ink + dark bg */
+.coltab.alert:not(.on) .ct-ico { color: var(--red); filter: drop-shadow(0 0 3px color-mix(in srgb, var(--red) 55%, transparent)); }
 .coltab.alert .ct-n { color: var(--txt); background: transparent; }
 /* prominent orange action button — mirrors the Select-rental-window button */
 /* R5b (the real one) at CTA size: empty-search "+New X" + the +New Rental row use the
@@ -577,7 +624,7 @@ select.lf-in { appearance: none; cursor: pointer; }
 .disp-addr { color: var(--blue); text-decoration: underline; cursor: pointer; }
 .disp-deadline { flex: 0 0 auto; font-size: 10.5px; font-weight: 700; color: var(--txt-3); text-transform: uppercase; letter-spacing: .4px; }
 .disp-deadline.today { color: var(--accent); }
-.disp-deadline.over { color: var(--red); }
+.disp-deadline.over { color: var(--red); -webkit-text-fill-color: color-mix(in srgb, var(--red) 65%, white); text-shadow: 0 0 3px var(--red), 0 0 7px color-mix(in srgb, var(--red) 60%, transparent); }
 .disp-home { padding: 4px 11px; }
 .disp-home .disp-unit { font-size: 12px; color: var(--txt-2); font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .6px; }
 .disp-home .disp-sub { font-size: 10.5px; }
@@ -845,6 +892,10 @@ select.lf-in { appearance: none; cursor: pointer; }
 /* both row buttons share ONE floating chip (like the card-header chip), stacked + vertically centered */
 .row .r-actions { position: absolute; top: 50%; right: 7px; transform: translateY(-50%); z-index: 2; display: flex; flex-direction: column; gap: 2px; padding: 3px; border-radius: var(--chip-radius); background: var(--panel); border: 1px solid var(--line); box-shadow: var(--chip-shadow); opacity: 0; transition: opacity .12s; }
 .row:hover .r-actions { opacity: 1; }                                                              /* §0.1 buttons on hover only */
+/* Hover row tools can't be reached without a real hover — hide on touch/phone so they
+   don't sit dead on a row (Jac 2026-06-23). Eye → toolbar previews toggle · + → Ctrl+click. */
+.is-phone .row .r-actions { display: none; }
+@media (hover: none) and (pointer: coarse) { .row .r-actions { display: none; } }
 .rbtn { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 8px; background: none; border: none; color: var(--txt-2); }
 .rbtn:hover { background: var(--panel-2); color: var(--accent); }
 .rbtn svg { width: 14px; height: 14px; }
@@ -1182,7 +1233,7 @@ select.lf-in { appearance: none; cursor: pointer; }
 /* request lifecycle state (Needs your OK / Needs your answer / Building) */
 .req-head .spacer { flex: 1 1 auto; }
 .req-state { height: 20px; font-size: 9.5px; letter-spacing: .3px; flex: 0 0 auto; align-self: center; }
-.req-card.req-needs { border-color: var(--red); box-shadow: 0 0 0 1px rgba(255, 66, 66, .25); }
+.req-card.req-needs { border-color: var(--red); box-shadow: 0 0 0 1px color-mix(in srgb, var(--red) 50%, transparent), 0 0 7px color-mix(in srgb, var(--red) 30%, transparent); }
 
 /* §18e/f the round bell + Requests inbox — now ride the right of the bottom comms band
    (.bb-utils); the old floating fab-stack + its reserved right lane are retired. */
@@ -1216,14 +1267,14 @@ select.lf-in { appearance: none; cursor: pointer; }
 .crail-t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* registry dot follows the team thread's flag color */
 .crail-tab.c-green .crail-dot { background: var(--green); } .crail-tab.c-yellow .crail-dot { background: var(--yellow); }
-.crail-tab.c-red .crail-dot { background: var(--red); } .crail-tab.c-blue .crail-dot { background: var(--blue); }
+.crail-tab.c-red .crail-dot { background: var(--red); box-shadow: 0 0 4px color-mix(in srgb, var(--red) 50%, transparent); } .crail-tab.c-blue .crail-dot { background: var(--blue); }
 .crail-tab.c-purple .crail-dot { background: var(--purple); } .crail-tab.c-gray .crail-dot { background: var(--txt-3); }
 /* Actionable request tabs read via a STEADY tinted edge + colored dot — needs-answer
    (red) · needs-your-OK (yellow). NO perpetual glow: a wall of pulsing tabs was a
    strobe; motion is reserved for the one transient attnFlash beat elsewhere. */
 .crail-needs .crail-dot { background: var(--red); }
 .crail-ok .crail-dot { background: var(--yellow); }
-.crail-tab.crail-needs:not(.is-active) { border-color: color-mix(in srgb, var(--red) 55%, var(--line)); }
+.crail-tab.crail-needs:not(.is-active) { border-color: var(--red); box-shadow: 0 0 5px color-mix(in srgb, var(--red) 30%, transparent); }
 .crail-tab.crail-ok:not(.is-active) { border-color: color-mix(in srgb, var(--yellow) 50%, var(--line)); }
 .crail-tab.is-unseen { border-color: var(--accent-line); }
 .crail-tab.is-unseen .crail-dot { box-shadow: 0 0 0 3px var(--accent-soft); }
@@ -1644,7 +1695,7 @@ body.is-phone .set-tab-l { flex: 0 0 auto; }
 .gv-lead-n { color: var(--txt-3); font-weight: 700; font-size: 11px; }
 .gv-lead-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gv-lead-mech { font-size: 11px; color: var(--txt-3); }
-.gv-lead-c { font-weight: 800; color: var(--red); }
+.gv-lead-c { font-weight: 800; color: var(--red); -webkit-text-fill-color: color-mix(in srgb, var(--red) 65%, white); text-shadow: 0 0 3px var(--red), 0 0 7px color-mix(in srgb, var(--red) 60%, transparent); }
 .gv-pie { display: flex; flex-direction: column; align-items: center; }
 .gv-pie svg { display: block; }
 .gv-legend { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 10px; justify-content: center; }
@@ -1658,7 +1709,7 @@ body.is-phone .set-tab-l { flex: 0 0 auto; }
 .gv-bar-track { flex: 1; width: 70%; display: flex; align-items: flex-end; }
 .gv-bar-fill { position: relative; width: 100%; min-height: 2px; border-radius: 4px 4px 0 0; }
 /* §13.4 Revenue-by-Status: a red cap on the bar = the uncollected (unpaid + refunded) share */
-.gv-bar-red { position: absolute; top: 0; left: 0; right: 0; min-height: 2px; background: var(--red); border-radius: 4px 4px 0 0; }
+.gv-bar-red { position: absolute; top: 0; left: 0; right: 0; min-height: 2px; background: var(--red); border-radius: 4px 4px 0 0; box-shadow: 0 0 8px color-mix(in srgb, var(--red) 45%, transparent); }
 .gv-bars .gv-barcol.on .gv-bar-red { background: var(--red); }   /* stay red even when the bar is the active filter (orange) */
 .gv-revbars .gv-bar-n { color: var(--txt); font-weight: 700; }
 .gv-bar-x { font-size: 10px; color: var(--txt-3); margin-top: 5px; text-transform: uppercase; letter-spacing: .4px; }
@@ -1724,7 +1775,7 @@ body.is-phone .set-tab-l { flex: 0 0 auto; }
 .gv-lead-list .gv-lead-row:hover { background: var(--panel); }
 .gv-lead-list .gv-lead-row.on { background: var(--accent-soft); }
 .gv-lead-list .gv-lead-row.on .gv-lead-name { color: var(--accent); }
-.gv-lead-list .gv-lead-row .gv-lead-c { color: var(--txt-2); }
+.gv-lead-list .gv-lead-row .gv-lead-c { color: var(--txt-2); -webkit-text-fill-color: var(--txt-2); text-shadow: none; }
 .gv-lead-list .gv-lead-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 /* clickable number tiles */
 .gv-numrow { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -1889,17 +1940,17 @@ select.nc-in { cursor: pointer; }
 .ag-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
 .ag-dot.ok { background: var(--green); }
 .ag-dot.mid { background: var(--yellow); box-shadow: 0 0 0 3px var(--yellow-bg); }   /* §7.1c in-progress */
-.ag-dot.bad { background: var(--red); box-shadow: 0 0 0 3px var(--red-bg); }
+.ag-dot.bad { background: var(--red); box-shadow: 0 0 0 3px var(--red-bg), 0 0 6px color-mix(in srgb, var(--red) 40%, transparent); }
 /* short status banner — a thin red hazard rail, calm body */
 .ag-banner { position: relative; padding: 9px 13px 9px 20px; border-radius: 10px; margin: 2px 0 16px; font-size: 12.5px; font-weight: 600; }
-.ag-banner.bad { background: var(--red-bg); border: 1px solid var(--accent-line); border-color: rgba(255,66,66,.34); color: var(--red); }
+.ag-banner.bad { background: var(--red-bg); border: 1px solid var(--accent-line); border-color: var(--red); color: var(--red); -webkit-text-fill-color: color-mix(in srgb, var(--red) 65%, white); text-shadow: 0 0 3px var(--red), 0 0 7px color-mix(in srgb, var(--red) 60%, transparent); box-shadow: 0 0 6px color-mix(in srgb, var(--red) 25%, transparent); }
 .ag-banner.bad::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 8px; border-radius: 10px 0 0 10px;
   background: repeating-linear-gradient(135deg, var(--red) 0 7px, #14181d 7px 14px); }
 /* per-card meta line + states */
 .ag-meta { display: flex; align-items: center; gap: 9px; margin: 2px 0 14px; font-size: 12.5px; color: var(--txt-2); }
 .ag-metasep { margin-left: auto; }
 .ag-gate { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; margin: 0 0 15px; font-size: 12.5px; }
-.ag-gate .lead { color: var(--red); font-weight: 600; }
+.ag-gate .lead { color: var(--red); font-weight: 600; -webkit-text-fill-color: color-mix(in srgb, var(--red) 65%, white); text-shadow: 0 0 3px var(--red), 0 0 7px color-mix(in srgb, var(--red) 60%, transparent); }
 .ag-gate .sub { color: var(--txt-3); }
 .ag-readref { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 13px; border-radius: 10px;
   background: var(--panel); border: 1px solid var(--line); margin: 0 0 14px; font-size: 13px; color: var(--txt-2); }
@@ -2280,7 +2331,7 @@ body.rw-inspect .c-titlecard:hover { outline: 2px solid #18b6ff; outline-offset:
 .flag:hover { text-decoration: underline; }
 .flag.c-green { background: none; color: var(--green); border: none; }
 .flag.c-yellow { background: none; color: var(--yellow); border: none; }
-.flag.c-red { background: none; color: var(--red); border: none; }
+.flag.c-red { background: none; color: var(--red); border: none; -webkit-text-fill-color: color-mix(in srgb, var(--red) 65%, white); text-shadow: 0 0 3px var(--red), 0 0 7px color-mix(in srgb, var(--red) 60%, transparent); }
 .flag.c-blue { background: none; color: var(--blue); border: none; }
 .flag.c-purple { background: none; color: var(--purple); border: none; }
 .flag.c-gray { background: none; color: var(--gray); border: none; }
@@ -2290,8 +2341,8 @@ body.rw-inspect .c-titlecard:hover { outline: 2px solid #18b6ff; outline-offset:
 .section.sec-green > h4 { color: var(--green); }
 .section.sec-yellow { border-color: color-mix(in srgb, var(--yellow) 45%, transparent); }
 .section.sec-yellow > h4 { color: var(--yellow); }
-.section.sec-red { border-color: color-mix(in srgb, var(--red) 80%, transparent); }
-.section.sec-red > h4 { color: var(--red); }
+.section.sec-red { border-color: var(--red); box-shadow: 0 0 8px color-mix(in srgb, var(--red) 30%, transparent); }
+.section.sec-red > h4 { color: var(--red); -webkit-text-fill-color: color-mix(in srgb, var(--red) 65%, white); text-shadow: 0 0 3px var(--red), 0 0 7px color-mix(in srgb, var(--red) 60%, transparent); }
 
 /* NOTES = heading-only line, no panel box, no label (filled→top, empty→bottom) */
 .nsec { display: flex; align-items: center; gap: 9px; padding: 1px 2px; }
@@ -2729,6 +2780,14 @@ body { font-variant-numeric: tabular-nums; }
 .cr { display: flex; align-items: center; gap: 8px; min-width: 0; justify-content: flex-start; }
 .cr-id { flex: 0 1 auto; min-width: 0; display: flex; align-items: baseline; gap: 8px; }
 .cr-name { flex: 0 1 auto; min-width: 0; font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .6px; font-weight: 700; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* ec-red: official flagging-red text treatment — --red halo bleeds into 65%-red+white fill, no hard seam. */
+.cr-name.ec-red,
+.rcc-uname.ec-red,
+.rcc-bal.overdue,
+.cr-pay.over,
+.pill.c-red .t { color: var(--red); -webkit-text-fill-color: color-mix(in srgb, var(--red) 65%, white); text-shadow: 0 0 3px var(--red), 0 0 7px color-mix(in srgb, var(--red) 60%, transparent); }
+/* ec-red border glow on red status pills */
+.pill.c-red { border-color: color-mix(in srgb, var(--red) 55%, transparent); box-shadow: 0 0 4px color-mix(in srgb, var(--red) 25%, transparent); }
 .cr-sub { flex: 0 1 auto; min-width: 0; font-size: 11.5px; color: var(--txt-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cr-pay { flex: 0 0 auto; font-size: 13px; font-weight: 700; font-style: italic; white-space: nowrap; }
 .cr-pay.spend { color: var(--green); }
