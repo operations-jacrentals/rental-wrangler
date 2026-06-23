@@ -12886,7 +12886,14 @@ async function backendCall(action, extra) {
   // text/plain avoids a CORS preflight that GAS web apps can't answer
   const payload = Object.assign({ action, password: backendPassword }, extra || {});
   const res = await fetch(BACKEND_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload) });
-  return res.json();
+  // A backend error page (GAS 500/quota/auth HTML) is NOT JSON — res.json() throws, callers
+  // catch it, and a real card/charge failure gets masked as a generic "Network error". Parse
+  // defensively and ALWAYS hand callers an {ok:false,error} they can map via friendlyPayErr,
+  // never a thrown exception. Never coerces a failure into a success. (#220 card-save pipeline)
+  const text = await res.text();
+  let body; try { body = JSON.parse(text); } catch { body = { ok: false, error: res.ok ? 'bad-json' : ('http-' + res.status) }; }
+  if (!res.ok && body && body.ok === undefined) body = { ok: false, error: 'http-' + res.status };
+  return body;
 }
 const dataSnapshot = () => { const s = {}; PERSIST_KEYS.forEach((k) => { s[k] = DATA[k] || []; }); return s; };
 async function loadFromBackend() {
