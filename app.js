@@ -3170,8 +3170,12 @@ const FLAG_COND = {
     'unpaid-balance':    (c) => c.payStatus === 'Unpaid',
     'blacklisted':       (c) => /Blacklist/i.test(c.accountType || ''),
     'no-card':           (c) => cardFlag(c) === 'none' &&
-      (DATA.rentals.some((r) => r.customerId === c.customerId) ||
+      (DATA.rentals.some((r) => r.customerId === c.customerId && r.status !== 'Reserved') ||
        DATA.invoices.some((i) => i.customerId === c.customerId)),
+    'no-card-reserved':  (c) => cardFlag(c) === 'none' &&
+      DATA.rentals.some((r) => r.customerId === c.customerId && r.status === 'Reserved') &&
+      !DATA.rentals.some((r) => r.customerId === c.customerId && r.status !== 'Reserved') &&
+      !DATA.invoices.some((i) => i.customerId === c.customerId),
     'customer-lost':     (c) => customerActivity(c).stage === 'Lost',
     'customer-inactive': (c) => customerActivity(c).stage === 'Inactive',
     'partial-balance':   (c) => c.payStatus === 'Partial',
