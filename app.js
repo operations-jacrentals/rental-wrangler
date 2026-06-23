@@ -6164,31 +6164,35 @@ function bottomBarEl() {
     + `<div class="bb-utils">${commsUtilsEl()}</div>`;
   return bar;
 }
-// The right-hand utilities of the comms band — notification bell + the Requests inbox.
+// The right-hand utility of the comms band — just the notification bell now. The
+// Requests inbox is retired on desktop: every open request is a tab in the rail (open
+// it to Approve/Dismiss). The inbox still exists for phones (top toolbar), which have
+// no rail. (resolved-fix feed = the bell.)
 function commsUtilsEl() {
-  const reqBadge = wranglerRequests.length ? `<span class="fab-badge">${wranglerRequests.length > 9 ? '9+' : wranglerRequests.length}</span>` : '';
   const nu = unseenNotifs();
   const notifBadge = nu ? `<span class="fab-badge">${nu > 9 ? '9+' : nu}</span>` : '';
-  return `<button class="fab js-notifications" data-tip="Notifications — resolved fixes">${I.bell}${notifBadge}</button>
-    <button class="fab js-requests" data-tip="Requests for your OK — review what Mr. Wrangler filed">${I.inbox}${reqBadge}</button>`;
+  return `<button class="fab js-notifications" data-tip="Notifications — resolved fixes">${I.bell}${notifBadge}</button>`;
 }
 // The conversation rail: channels grouped + stamped, each conversation a SEPARATE
-// tab. 🤠 Wrangler — one tab per needs-answer request (flashing), the live chat, and
-// every past chat; 💬 Team — one tab per active thread. (Customer SMS/email channels
-// slot in here later.) Tabs reuse the wrangler open handlers (data-wrc-needs /
-// data-wrc-open) and a dedicated data-team-open for team threads, so each opens
-// ONLY its own thread.
+// tab. 🤠 Wrangler — one tab per OPEN request (needs-answer = red · needs-your-OK =
+// yellow; both open the dock, which carries Approve/Dismiss), the live chat, and every
+// past chat. 💬 Team — one tab per active thread. Tabs read as actionable via a STEADY
+// tinted edge (no perpetual glow). The rail REPLACES the old Requests inbox on desktop;
+// each opens ONLY its own thread (data-wrc-needs / data-wrc-open / data-team-open).
 function commsRailEl() {
   const trim = (t, n = 24) => { t = String(t || '').replace(/\s+/g, ' ').trim(); return esc(t.length > n ? t.slice(0, n - 1) + '…' : t); };
-  // ── 🤠 WRANGLER ──
-  const needs = (wranglerRequests || []).filter((rq) => (rq.labels || []).includes('wrangler-needs-jac'));
-  const needsNums = new Set(needs.map((rq) => rq.number));
+  // ── 🤠 WRANGLER ── every open request is its own tab (the inbox lived here before)
+  const reqStateKey = (rq) => { const L = rq.labels || []; return L.includes('wrangler-needs-jac') ? 'needs' : L.includes('wrangler-fix') ? 'building' : 'ok'; };
+  const open = (wranglerRequests || []);
+  const reqNums = new Set(open.map((rq) => rq.number));
   const wrOpen = state.wrangler.open;
-  const needTabs = needs.map((rq) => {
+  const reqTabs = open.filter((rq) => reqStateKey(rq) !== 'building').map((rq) => {   // building = Mr. Wrangler working; not actionable, surfaces via the bell when done
+    const st = reqStateKey(rq), cls = st === 'needs' ? 'crail-needs' : 'crail-ok';
+    const tip = st === 'needs' ? `Mr. Wrangler needs your answer — #${rq.number}` : `Needs your OK — #${rq.number}`;
     const active = wrOpen && (state.wrangler.reqNumber === rq.number || state.wrangler.id === 'req' + rq.number);
-    return `<button class="crail-tab crail-needs wr-flash${active ? ' is-active' : ''}" data-wrc-needs="${rq.number}" role="tab" aria-selected="${active}" data-tip="Mr. Wrangler needs your answer — #${rq.number}"><span class="crail-dot"></span><span class="crail-t">${trim(rq.title || ('Request #' + rq.number))}</span></button>`;
+    return `<button class="crail-tab ${cls}${active ? ' is-active' : ''}" data-wrc-needs="${rq.number}" role="tab" aria-selected="${active}" data-tip="${tip}"><span class="crail-dot"></span><span class="crail-t">${trim(rq.title || ('Request #' + rq.number))}</span></button>`;
   }).join('');
-  const snaps = (state.wranglerRail || []).filter((c) => !(c.reqNumber && needsNums.has(c.reqNumber)));
+  const snaps = (state.wranglerRail || []).filter((c) => !(c.reqNumber && reqNums.has(c.reqNumber)));
   // the live chat first if it's a brand-new one not yet snapshotted onto the rail
   let liveTab = '';
   if (wrOpen && state.wrangler.id && !state.wrangler.reqNumber && !snaps.some((c) => c.id === state.wrangler.id) && (state.wrangler.messages || []).length) {
@@ -6198,7 +6202,7 @@ function commsRailEl() {
     const active = wrOpen && state.wrangler.id === c.id;
     return `<button class="crail-tab${active ? ' is-active' : ''}" data-wrc-open="${esc(c.id)}" role="tab" aria-selected="${active}" data-tip="Reopen this chat with Mr. Wrangler"><span class="crail-dot"></span><span class="crail-t">${trim(c.title || 'Chat')}</span></button>`;
   }).join('');
-  const wrTabs = needTabs + liveTab + snapTabs;
+  const wrTabs = reqTabs + liveTab + snapTabs;
   // ── 💬 TEAM ──
   const u = commentUserKey();
   const teamChats = (state.chat.chats || []).filter((c) => c.participants.length && c.messages.length)
