@@ -1439,7 +1439,11 @@ function categoryStats(cat) {
   // derive from purchaseDate; units missing it default to ~1 year (annualize factor ≈ 1).
   const daysOwned = us.map((u) => u.purchaseDate ? Math.max(1, dayDiff(parseISO(u.purchaseDate), TODAY)) : 365);
   const avgDaysOwned = daysOwned.length ? daysOwned.reduce((a, b) => a + b, 0) / daysOwned.length : 365;
-  const lifetimeRoi = denom ? ((totalRev + (cat.bottomDollar || 0) * us.length) - denom) / denom : null;
+  // ROI needs a real ACQUISITION cost basis — repair cost alone is not an investment.
+  // Without a purchase cost (units with no trueCost/purchasePrice), revenue ÷ repair-only
+  // explodes to absurd %. Gate on `trueCost` (matches the §12.4 unit-level `invested ?`
+  // guard) so a category with no acquisition cost reads '—', not a fake 900,000%.
+  const lifetimeRoi = trueCost ? ((totalRev + (cat.bottomDollar || 0) * us.length) - denom) / denom : null;
   const roi = lifetimeRoi != null ? Math.round(lifetimeRoi * (365 / avgDaysOwned) * 100) : null;
   return {
     count: us.length,
