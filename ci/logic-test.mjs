@@ -509,7 +509,7 @@ try {
     st.settings.rentalRules = { id: 'required' };
     ok(/ID/i.test(T.rentalRuleBlock({}, { name: 'X' }, 'On Rent') || '') && T.rentalRuleBlock({}, { name: 'X', idNumber: 'LA-12345' }, 'On Rent') === null, 'ID Required: blocks without an ID #, allows with one');
     st.settings.rentalRules = { terms: 'required' };
-    ok(/terms/i.test(T.rentalRuleBlock({}, { name: 'X' }, 'On Rent') || '') && T.rentalRuleBlock({}, { name: 'X', netDays: 0 }, 'On Rent') === null, 'Payment-terms Required: blocks until Net days entered (0/COD counts)');
+    ok(T.rentalRuleBlock({}, { name: 'X' }, 'On Rent') === null && T.rentalRuleBlock({}, { name: 'X', netDays: 0 }, 'On Rent') === null && /terms/i.test(T.rentalRuleBlock({}, { name: 'X', netDays: 'abc' }, 'On Rent') || ''), 'Payment-terms Required: blank Net days counts as COD (passes), 0 passes, only a non-numeric value blocks');
     st.settings.rentalRules = savedRules;   // restore
 
     // 23) Net-days terms → invoice due date, capped by the system max (Settings → Company)

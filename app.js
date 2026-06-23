@@ -11551,7 +11551,9 @@ function rentalRuleBlock(r, cust, val) {
   if (req('signature') && !(cust && (cust.signature || validCards(cust).some((k) => cardCurrentSigning(cust, k))))) return 'Rental rule: a signed agreement is required before On Rent.';
   if (req('selfie') && !(cust && latestCustomerSelfie(cust))) return 'Rental rule: a customer selfie is required before On Rent.';
   if (req('id') && !(cust && cust.idNumber)) return "Rental rule: a driver's license / ID is required before On Rent.";
-  if (req('terms') && !(cust && cust.netDays != null && cust.netDays !== '')) return 'Rental rule: payment terms (Net days) must be set before On Rent.';
+  // §9 'terms' rule (relaxed Jac 2026-06-23): a BLANK Net-days counts as COD (0) and is accepted —
+  // it no longer blocks On Rent; only a present, non-numeric value would (normNetDays prevents that).
+  if (req('terms') && cust && cust.netDays != null && cust.netDays !== '' && !Number.isFinite(Number(cust.netDays))) return 'Rental rule: payment terms (Net days) must be a valid number before On Rent.';
   if (req('po') && !(inv && inv.po)) return 'Rental rule: a PO number on the invoice is required before On Rent.';
   return null;
 }
