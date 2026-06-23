@@ -326,7 +326,7 @@ input { font-family: inherit; }
 .is-phone .mdock-searchslot .mini-searchwrap { min-height: 44px; }   /* match the graph/sort buttons so the row is one height */
 .is-phone .mdock-searchslot .mini-search { height: 44px; }
 /* the card-toggle BAR: every card as an icon; the selected one expands to icon + label */
-.mdock-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; }
+.mdock-row { display: flex; align-items: center; gap: 8px; padding: 8px; }   /* unified dock padding to 8 (Jac 2026-06-23) */
 .mcard-bar { display: flex; align-items: center; gap: 6px; flex: 1 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none;
   background: none; border: none; padding: 0; box-shadow: none; }   /* no wrapper panel — card-toggle chips float; the active one is the orange chip (Jac 2026-06-23) */
 .mcard-bar::-webkit-scrollbar { display: none; }
@@ -382,7 +382,7 @@ input { font-family: inherit; }
 @media (prefers-reduced-motion: reduce) { .is-phone .popup, .is-phone .winpicker { animation: none; } }
 /* ── §M4 — phone header: logo + ALL FIVE KPI rings share the TOP row (rings shrunk to
    fit), and the global search wraps to its own full-width row underneath. ── */
-.is-phone .header { flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 10px 10px 0; }
+.is-phone .header { flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px 12px 0; }   /* unified to the 8/12 rhythm (Jac 2026-06-23) */
 .is-phone .logo { width: 58px; height: 58px; order: 1; }
 .is-phone .kpis { order: 1; flex: 1 1 auto; min-width: 0; display: flex; justify-content: space-around; gap: 2px; }   /* logo + rings share a row, below the tool bar */
 .is-phone .kpi-ring { min-width: 0; flex: 0 1 auto; padding: 1px 0 0; }
