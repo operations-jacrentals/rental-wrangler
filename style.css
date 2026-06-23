@@ -2785,6 +2785,29 @@ body { font-variant-numeric: tabular-nums; }
 .drag-ghost { position: fixed; left: 0; top: 0; z-index: 9500; display: flex; align-items: center; gap: 7px; max-width: 240px; padding: 7px 12px; border-radius: 999px; background: var(--panel); border: 1px solid var(--accent); box-shadow: 0 0 0 2px var(--accent-line), 0 14px 34px -10px rgba(0,0,0,.65); color: var(--accent); font-size: 12.5px; font-weight: 700; pointer-events: none; will-change: transform; }
 .drag-ghost svg { width: 14px; height: 14px; flex: 0 0 auto; }
 .drag-ghost .dg-t { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+/* §M2 ZIP ZONES (phone) — edge rails of valid drop-target cards during a drag. Steel
+   data-plate tabs with a per-card hazard stripe (the ONLY colour — a transient drag
+   overlay, so the one-orange rule holds for persistent UI). Drag onto one to jump to
+   that card's column; hot = armed, about to zip. Mirrors the cancel-arc language. */
+#zip-zones { position: fixed; inset: 0; pointer-events: none; }
+.zz-rail { position: fixed; top: 0; bottom: 0; display: flex; flex-direction: column; justify-content: center; gap: 12px; padding: 8px 0; }
+.zz-rail-left { left: 0; align-items: flex-start; padding-left: env(safe-area-inset-left); }
+.zz-rail-right { right: 0; align-items: flex-end; padding-right: env(safe-area-inset-right); }
+.zip-zone { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  width: 78px; min-height: 92px; padding: 12px 8px; color: var(--txt-2);
+  background: linear-gradient(180deg, #1b2129, #0c0e11); border: 1px solid var(--line); box-shadow: 0 14px 34px -12px #000; }
+.zip-left  { border-left: 0; border-radius: 0 15px 15px 0; animation: zipInL .18s cubic-bezier(.2,.7,.2,1); }
+.zip-right { border-right: 0; border-radius: 15px 0 0 15px; animation: zipInR .18s cubic-bezier(.2,.7,.2,1); }
+.zip-zone::before { content: ''; position: absolute; top: 0; bottom: 0; width: 7px;   /* hi-vis hazard stripe in the card's hue */
+  background: repeating-linear-gradient(135deg, var(--zip-hue, var(--accent)) 0 13px, #14181d 13px 26px); }
+.zip-left::before  { right: 0; } .zip-right::before { left: 0; }
+.zip-zone .zz-ico { display: inline-flex; color: var(--zip-hue, var(--accent)); } .zip-zone .zz-ico svg { width: 22px; height: 22px; }
+.zip-zone .zz-lbl { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1px; font-weight: 800; font-size: 11px; line-height: 1.05; text-align: center; }
+.zip-zone.hot { color: var(--zip-hue, var(--accent)); border-color: var(--zip-hue, var(--accent));
+  box-shadow: 0 14px 44px -12px #000, inset 0 0 34px -10px var(--zip-hue, var(--accent)); }
+@keyframes zipInL { from { transform: translateX(-100%); } to { transform: none; } }
+@keyframes zipInR { from { transform: translateX(100%); } to { transform: none; } }
+@media (prefers-reduced-motion: reduce) { .zip-zone { animation: none; } }
 /* THE CANCEL ARC — "the abort bay" (frontend-design pass, Jac 2026-06-13).
    A heavy steel half-ellipse rising from the bottom: drop the dragged chip in
    here to ABORT the link. Idle = steel bay with a caution HAZARD-STRIPE lip (the
