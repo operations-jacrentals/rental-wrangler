@@ -112,6 +112,24 @@ function migrateCustomers() {
       }
       migrationDirty = true;
     }
+    // REPAIR colliding card ids (#payment-card-picker). New cards were id'd
+    // 'CARD-' + state.seq, but state.seq resets to 1 EVERY session (it's never seeded
+    // from existing cards), so two cards added in different sessions both became
+    // 'CARD-1'. A shared id broke every id-keyed path — the picker marked BOTH cards
+    // selected, and the charge / delete / set-default / per-card SIGNING lookups
+    // (.find by id) always hit the FIRST match. Give every card a unique, stable id
+    // (anchored to its globally-unique Stripe PM id where present) so each is distinct.
+    (function () {
+      const used = new Set();
+      c.cards.forEach((k) => {
+        if (!k.id || used.has(k.id)) {
+          let id = k.stripePmId ? ('CARD-' + k.stripePmId) : ('CARD-' + c.customerId + '-' + (k.last4 || 'x'));
+          let n = 2; while (!id || used.has(id)) id = 'CARD-' + c.customerId + '-' + (k.last4 || 'x') + '-' + (n++);
+          k.id = id; migrationDirty = true;
+        }
+        used.add(k.id);
+      });
+    })();
     // Card-bound agreements: each card carries an APPEND-ONLY array of immutable
     // signing records (the agreement is attached to the CARD, signed per account
     // type, frozen at signing). Fold the legacy singular `agreement` — or, on the
@@ -644,6 +662,8 @@ function buildIndexes() {
   // lowercased comprehensive search blobs per record (§5) — built via the single
   // searchBlob() source of truth so every field is searchable.
   IDX.search = new Map();
+  buildRentalLinkIndex();        // reverse unit/category → renters map (#267) — read by searchBlob() below
+  suppressLinkReindex = true;    // per-rental reindex must NOT trigger a full link rebuild during this bulk pass
   DATA.customers.forEach((c) => reindex('customers', c));
   DATA.rentals.forEach((r) => reindex('rentals', r));
   DATA.categories.forEach((c) => reindex('categories', c));
@@ -655,6 +675,31 @@ function buildIndexes() {
   DATA.expenses.forEach((x) => reindex('expenses', x)); // §7.11 v2 — receipts are globally searchable
   DATA.parts.forEach((p) => reindex('parts', p));        // §7.12 v2 — parts are searchable
   DATA.companyFiles.forEach((f) => reindex('files', f)); // §7.13 v2 — files are searchable
+  suppressLinkReindex = false;
+}
+/* §5 reverse denormalization (#267) — the forward rentals blob already embeds each
+   rental's unit + category NAMES; these are the mirror so a customer-name search
+   ALSO surfaces the Units & Categories that customer has rented (and a unit/category
+   search surfaces its renters). Rebuilt in one pass over DATA.rentals; the unit and
+   category blobs spread these Sets in searchBlob(). */
+let suppressLinkReindex = false;
+function buildRentalLinkIndex() {
+  IDX.unitRenters = new Map();
+  IDX.catRenters  = new Map();
+  DATA.rentals.forEach((r) => {
+    const cust = IDX.customer.get(r.customerId); if (!cust) return;
+    const tag = [cust.name, cust.company].filter(Boolean).join(' '); if (!tag) return;
+    rentalUnitIds(r).forEach((uid) => { let s = IDX.unitRenters.get(uid); if (!s) IDX.unitRenters.set(uid, s = new Set()); s.add(tag); });
+    if (r.categoryId) { let s = IDX.catRenters.get(r.categoryId); if (!s) IDX.catRenters.set(r.categoryId, s = new Set()); s.add(tag); }
+  });
+}
+/* a rental's links changed → rebuild the reverse map and refresh every unit +
+   category blob (small fixed sets, ~150 records, each now a map lookup) so renter
+   names stay current without tracking per-link add/remove. */
+function reindexRentalLinks() {
+  buildRentalLinkIndex();
+  DATA.units.forEach((u) => IDX.search.set('units:' + u.unitId, searchBlob('units', u)));
+  DATA.categories.forEach((c) => IDX.search.set('categories:' + c.categoryId, searchBlob('categories', c)));
 }
 const idOf   = (card, rec) => rec[{ customers: 'customerId', rentals: 'rentalId', categories: 'categoryId', units: 'unitId', invoices: 'invoiceId', workOrders: 'woId', inspections: 'inspectionId', serviceOrders: 'unitId', vendors: 'vendorId', parts: 'partId', expenses: 'expenseId', files: 'fileId' }[card]];
 const recOf  = (card, id) => ({ customers: IDX.customer, rentals: IDX.rental, categories: IDX.category, units: IDX.unit, invoices: IDX.invoice, workOrders: IDX.wo, inspections: IDX.insp, serviceOrders: IDX.unit, vendors: IDX.vendor, expenses: IDX.expense, parts: IDX.part, files: IDX.file }[card])?.get(id);
@@ -693,7 +738,8 @@ function searchBlob(card, rec) {
       break;
     }
     case 'categories':
-      p = [rec.name, rec.fuelType, rec.description, rec.notes];
+      p = [rec.name, rec.fuelType, rec.description, rec.notes,
+        ...(IDX.catRenters?.get(rec.categoryId) || [])];   // §5 reverse denorm (#267) — the customers who've rented this category
       break;
     case 'units':
       p = [rec.name, rec.assignedMechanic, rec.serial, rec.year, rec.make, rec.model, rec.weight,
@@ -701,7 +747,8 @@ function searchBlob(card, rec) {
         rec.inspectionStatus, L('unitInspectionStatus', rec.inspectionStatus),
         rec.fleetStatus, L('unitFleetStatus', rec.fleetStatus),
         rec.gpsStatus, L('gpsStatus', rec.gpsStatus), ca(rec.categoryId)?.name,
-        rec.washRequested ? 'Wash Requested wash' : ''];
+        rec.washRequested ? 'Wash Requested wash' : '',
+        ...(IDX.unitRenters?.get(rec.unitId) || [])];   // §5 reverse denorm (#267) — the customers who've rented this unit
       break;
     case 'invoices': {
       const cust = cu(rec.customerId); const t = invoiceTotals(rec);
@@ -745,7 +792,7 @@ function searchBlob(card, rec) {
 /** (Re)build a record's search blob in IDX.search. Call after any create/edit.
     Vendors are auto-created mid-session (savePartForm) with no IDX set at the
     call site, so reindex also keeps the IDX.vendor identity map in sync. */
-const reindex = (card, rec) => { const id = idOf(card, rec); if (id != null) { IDX.search.set(card + ':' + id, searchBlob(card, rec)); if (card === 'vendors') IDX.vendor.set(id, rec); if (card === 'expenses') IDX.expense.set(id, rec); if (card === 'parts') IDX.part.set(id, rec); if (card === 'files') IDX.file.set(id, rec); } saveSoon(); };
+const reindex = (card, rec) => { const id = idOf(card, rec); if (id != null) { IDX.search.set(card + ':' + id, searchBlob(card, rec)); if (card === 'vendors') IDX.vendor.set(id, rec); if (card === 'expenses') IDX.expense.set(id, rec); if (card === 'parts') IDX.part.set(id, rec); if (card === 'files') IDX.file.set(id, rec); } if (card === 'rentals' && !suppressLinkReindex) reindexRentalLinks(); saveSoon(); };
 
 /* ════════════════════════════════════════════════════════════════════════
    §3 DERIVATIONS (SPEC §10) — money, availability, statuses, countdowns
@@ -6086,8 +6133,11 @@ const THEME_NEXT = {
   ranch: { next: 'yard', icon: I.hardhat, tip: 'Yard mode' },
   light: { next: 'yard', icon: I.hardhat, tip: 'Yard mode' },
 };
-/** The action toolbar — moved to a fixed bottom bar (Dashboard / +New / tools). */
-function bottomBarInner() {
+/** The action toolbar — pinned to the LEFT of the bottom comms band (the
+ *  conversation rail fills the middle, bell + inbox sit at the right). On phones
+ *  this same set opens up across the top header, so the inbox stays here (the
+ *  desktop band passes {noInbox} since its right utils zone carries it). */
+function bottomBarInner(opts = {}) {
   // rules 5/6: LEFT = labeled actions (icon LEADS label, no "+"), Wash joins them;
   // RIGHT (after divider) = icon-only utilities. The +New collapse button is dropped (Jac).
   return `
@@ -6095,16 +6145,77 @@ function bottomBarInner() {
     <span class="bb-sep"></span>
     <button class="iconbtn js-qr" data-tip="Share session (QR)">${I.qr}</button>
     <button class="iconbtn${state.previewsOn ? '' : ' off'} js-previews" data-tip="${state.previewsOn ? 'Hover previews: on' : 'Hover previews: off'}">${state.previewsOn ? I.eye : I.eyeOff}</button>
-    <button class="iconbtn js-chat-toggle${state.chat.open ? ' on' : ''}" data-tip="Team chat — flagged comments + tagged context">${I.chat}${(() => { const n = chatUnreadCount(); return n ? `<span class="bb-badge">${n > 9 ? '9+' : n}</span>` : ''; })()}</button>
-    <button class="iconbtn js-wrangler" data-tip="Mr. Wrangler — ask the yard AI, or report a bug to fix" style="font-size:16px">🤠</button>
-    <button class="iconbtn js-requests" data-tip="Requests for your OK — review what Mr. Wrangler filed">${I.inbox}${wranglerRequests.length ? `<span class="bb-badge">${wranglerRequests.length > 9 ? '9+' : wranglerRequests.length}</span>` : ''}</button>
+    <button class="iconbtn js-chat-toggle${state.chat.open ? ' on' : ''}" data-tip="New team chat — flagged comments + tagged context">${I.chat}${(() => { const n = chatUnreadCount(); return n ? `<span class="bb-badge">${n > 9 ? '9+' : n}</span>` : ''; })()}</button>
+    <button class="iconbtn js-wrangler" data-tip="New chat with Mr. Wrangler — ask the yard AI, or report a bug" style="font-size:16px">🤠</button>
+    ${opts.noInbox ? '' : `<button class="iconbtn js-requests" data-tip="Requests for your OK — review what Mr. Wrangler filed">${I.inbox}${wranglerRequests.length ? `<span class="bb-badge">${wranglerRequests.length > 9 ? '9+' : wranglerRequests.length}</span>` : ''}</button>`}
     <button class="iconbtn js-hotkeys" data-tip="Mouse &amp; keyboard shortcuts">${I.mouse}</button>
     ${adminUnlocked() ? `<button class="iconbtn js-lint${document.body.classList.contains('rw-lint') ? ' on' : ''}" data-tip="Design lint — flash anything that bypassed the UI builders (R0)">${I.eye}</button>
     <button class="iconbtn js-inspect${state.inspect ? ' on' : ''}" data-tip="Design Inspector — hover names the rule, click copies the reference">${I.search}</button>
     <button class="iconbtn js-rulebook" data-tip="The R-Rulebook — visual design reference (SPEC v8)">${I.doc}</button>
     <button class="iconbtn js-photo-sweep" data-tip="Offload base64 photos to Drive — one-shot migration to de-bloat the payload">${I.camera}</button>` : ''}`;
 }
-function bottomBarEl() { const bar = el('div', 'bottombar'); bar.innerHTML = bottomBarInner(); return bar; }
+// §18g/§17 — the bottom COMMS BAND: toolbar pinned left · the conversation rail
+// fills the middle (every Mr. Wrangler request + chat and every team thread is its
+// OWN tab, so nothing funnels into one session) · bell + inbox at the right.
+function bottomBarEl() {
+  const bar = el('div', 'bottombar');
+  bar.innerHTML = `<div class="bb-tools">${bottomBarInner({ noInbox: true })}</div>`
+    + `<div class="comms-rail" role="tablist" aria-label="Conversations">${commsRailEl()}</div>`
+    + `<div class="bb-utils">${commsUtilsEl()}</div>`;
+  return bar;
+}
+// The right-hand utilities of the comms band — notification bell + the Requests inbox.
+function commsUtilsEl() {
+  const reqBadge = wranglerRequests.length ? `<span class="fab-badge">${wranglerRequests.length > 9 ? '9+' : wranglerRequests.length}</span>` : '';
+  const nu = unseenNotifs();
+  const notifBadge = nu ? `<span class="fab-badge">${nu > 9 ? '9+' : nu}</span>` : '';
+  return `<button class="fab js-notifications" data-tip="Notifications — resolved fixes">${I.bell}${notifBadge}</button>
+    <button class="fab js-requests" data-tip="Requests for your OK — review what Mr. Wrangler filed">${I.inbox}${reqBadge}</button>`;
+}
+// The conversation rail: channels grouped + stamped, each conversation a SEPARATE
+// tab. 🤠 Wrangler — one tab per needs-answer request (flashing), the live chat, and
+// every past chat; 💬 Team — one tab per active thread. (Customer SMS/email channels
+// slot in here later.) Tabs reuse the wrangler open handlers (data-wrc-needs /
+// data-wrc-open) and a dedicated data-team-open for team threads, so each opens
+// ONLY its own thread.
+function commsRailEl() {
+  const trim = (t, n = 24) => { t = String(t || '').replace(/\s+/g, ' ').trim(); return esc(t.length > n ? t.slice(0, n - 1) + '…' : t); };
+  // ── 🤠 WRANGLER ──
+  const needs = (wranglerRequests || []).filter((rq) => (rq.labels || []).includes('wrangler-needs-jac'));
+  const needsNums = new Set(needs.map((rq) => rq.number));
+  const wrOpen = state.wrangler.open;
+  const needTabs = needs.map((rq) => {
+    const active = wrOpen && (state.wrangler.reqNumber === rq.number || state.wrangler.id === 'req' + rq.number);
+    return `<button class="crail-tab crail-needs wr-flash${active ? ' is-active' : ''}" data-wrc-needs="${rq.number}" role="tab" aria-selected="${active}" data-tip="Mr. Wrangler needs your answer — #${rq.number}"><span class="crail-dot"></span><span class="crail-t">${trim(rq.title || ('Request #' + rq.number))}</span></button>`;
+  }).join('');
+  const snaps = (state.wranglerRail || []).filter((c) => !(c.reqNumber && needsNums.has(c.reqNumber)));
+  // the live chat first if it's a brand-new one not yet snapshotted onto the rail
+  let liveTab = '';
+  if (wrOpen && state.wrangler.id && !state.wrangler.reqNumber && !snaps.some((c) => c.id === state.wrangler.id) && (state.wrangler.messages || []).length) {
+    liveTab = `<button class="crail-tab is-active" data-wrc-open="${esc(state.wrangler.id)}" role="tab" aria-selected="true" data-tip="Current chat with Mr. Wrangler"><span class="crail-dot"></span><span class="crail-t">${trim(wranglerConvoTitle(state.wrangler) || 'New chat')}</span></button>`;
+  }
+  const snapTabs = snaps.map((c) => {
+    const active = wrOpen && state.wrangler.id === c.id;
+    return `<button class="crail-tab${active ? ' is-active' : ''}" data-wrc-open="${esc(c.id)}" role="tab" aria-selected="${active}" data-tip="Reopen this chat with Mr. Wrangler"><span class="crail-dot"></span><span class="crail-t">${trim(c.title || 'Chat')}</span></button>`;
+  }).join('');
+  const wrTabs = needTabs + liveTab + snapTabs;
+  // ── 💬 TEAM ──
+  const u = commentUserKey();
+  const teamChats = (state.chat.chats || []).filter((c) => c.participants.length && c.messages.length)
+    .sort((a, b) => Math.max(0, ...b.messages.map((m) => m.at || 0)) - Math.max(0, ...a.messages.map((m) => m.at || 0)));
+  const teamTabs = teamChats.map((c) => {
+    const active = state.chat.open && state.chat.activeId === c.id;
+    const unseen = c.messages.length && Math.max(...c.messages.map((m) => m.at || 0)) > (c.seen[u] || 0);
+    const tag = (c.tags && c.tags[0]) || null;
+    const label = (tag && tag.label) || 'Team chat';
+    return `<button class="crail-tab c-${(tag && tag.color) || 'gray'}${active ? ' is-active' : ''}${unseen ? ' is-unseen' : ''}" data-team-open="${esc(c.id)}" role="tab" aria-selected="${active}" data-tip="${esc(label)}"><span class="crail-dot"></span><span class="crail-t">${trim(label)}</span></button>`;
+  }).join('');
+  const groups = [];
+  if (wrTabs) groups.push(`<div class="crail-group"><span class="crail-glabel">🤠 Wrangler</span>${wrTabs}</div>`);
+  if (teamTabs) groups.push(`<div class="crail-group"><span class="crail-glabel">💬 Team</span>${teamTabs}</div>`);
+  return groups.length ? groups.join('<span class="crail-div" aria-hidden="true"></span>')
+    : '<span class="crail-empty">No conversations yet — start one from the tools on the left.</span>';
+}
 // §M1 — phone-only per-column bottom strip: Yard→internal chat · Rentals→tool bar · Customers→external chats (shell).
 // §M1/§M3 — the active phone column's card id (state.cards key), for the grid Back/Fwd swipe.
 function activeMobileCard() {
@@ -8411,6 +8522,10 @@ async function wranglerSend() {
     }
     return { role: m.role, content: body };
   });
+  // #wrangler-chat-separation — pin the chat this reply belongs to. state.wrangler is a SINGLE
+  // mutable object; hopping chats during the await must not bleed the reply (or its issue
+  // comment) into the now-open chat. (openWranglerFromRequest guards its async load the same way.)
+  const replyChatId = o.id, replyReqNum = o.reqNumber;
   try {
     if (typeof backendPassword !== 'undefined' && backendPassword) {
       const r = await backendCall('wrangler', { system, messages: payloadMsgs });
@@ -8421,13 +8536,20 @@ async function wranglerSend() {
       const truncated = /```wrangler-action/.test(raw) && !act;   // #152 a fence arrived but nothing usable came out of it
       if (truncated) shown = (shown ? shown + '\n\n' : '') + '⚠️ My reply got cut off before I could finish that action — too much in one go. Ask me to do it in smaller batches and I’ll send a preview you can apply.';
       else if (!shown) shown = act ? (act.action === 'data' ? 'Here’s what I’ll change — preview it and hit apply when it looks right.' : act.action === 'kpi' ? 'Here’s the KPI — lock it in when the live number looks right.' : act.action === 'request' ? 'Got it — I’ll send this to the developer to OK.' : act.action === 'plan' ? 'Here’s the plan — tap Build when it’s right.' : 'On it — I’ll fix this right now and let you know when I’m done.') : '(no answer)';
-      o.messages.push({ role: 'assistant', content: shown, action: act || null, filed: false });
-      syncWranglerComment(o, 'assistant', shown);   // §18e mirror Mr. Wrangler's reply onto the issue thread
+      // route the reply to its ORIGINATING chat — the live dock if still open, else its rail
+      // snapshot — so a mid-await chat hop can't bleed it into the now-open conversation.
+      const _onChat = state.wrangler.id === replyChatId;
+      const _target = _onChat ? o : state.wranglerRail.find((c) => c.id === replyChatId);
+      if (_target) {
+        _target.messages.push({ role: 'assistant', content: shown, action: act || null, filed: false });
+        syncWranglerComment({ reqNumber: replyReqNum }, 'assistant', shown);   // §18e mirror onto the RIGHT issue thread
+        if (!_onChat) wranglerRailPersist(_target);   // backgrounded chat → fold the reply into its snapshot
+      }
     } else {
       o.messages.push({ role: 'assistant', content: "🤠 Demo mode — sign in to ask the real Mr. Wrangler (the live AI runs through the backend). Here's the snapshot I'd reason over:\n\n" + wranglerDigest() });
     }
-    o.busy = false; render(); setTimeout(() => { const f = document.querySelector('.wrangler-dock .wr-feed'); if (f) f.scrollTop = f.scrollHeight; }, 0);
-  } catch (e) { o.busy = false; o.error = "Mr. Wrangler couldn't answer — check the connection / backend."; render(); }
+    if (state.wrangler.id === replyChatId) { o.busy = false; render(); setTimeout(() => { const f = document.querySelector('.wrangler-dock .wr-feed'); if (f) f.scrollTop = f.scrollHeight; }, 0); } else render();   // only clear/scroll the dock if it's still THIS chat
+  } catch (e) { if (state.wrangler.id === replyChatId) { o.busy = false; o.error = "Mr. Wrangler couldn't answer — check the connection / backend."; render(); } }
 }
 // §18d "Send to the fixer" — turn the current Wrangler chat into a `wrangler-fix`
 // GitHub issue (the Track B repro packet). Carries the transcript, the view/role/
@@ -8794,29 +8916,9 @@ function syncWranglerComment(o, role, text, images) {
   if (!o || !o.reqNumber || typeof backendPassword === 'undefined' || !backendPassword) return;
   try { backendCall('wranglerComment', { number: o.reqNumber, role, text: text || '', images: images || [] }).catch(() => {}); } catch (e) {}
 }
-// The floating bottom-right cluster — notification bell (stub for now) + Requests inbox.
-// §18g The conversation rail: stored chats (newest first) + any chat where Mr.
-// Wrangler is waiting on you (those flash). Renders above the bell/inbox FABs.
-function wranglerRailEl() {
-  const needs = (wranglerRequests || []).filter((rq) => (rq.labels || []).includes('wrangler-needs-jac'));
-  const needsNums = new Set(needs.map((rq) => rq.number));
-  const snaps = (state.wranglerRail || []).filter((c) => !(c.reqNumber && needsNums.has(c.reqNumber))).slice(0, 6);
-  if (!needs.length && !snaps.length) return '';
-  const trim = (t) => { t = String(t || '').replace(/\s+/g, ' ').trim(); return esc(t.length > 40 ? t.slice(0, 39) + '…' : t); };
-  const needsChips = needs.map((rq) => `<button class="wr-railchip wr-rc-needs wr-flash" data-wrc-needs="${rq.number}" data-tip="Mr. Wrangler needs your answer — #${rq.number}"><span class="wr-rc-dot"></span><span class="wr-rc-t">${trim(rq.title || ('Request #' + rq.number))}</span></button>`).join('');
-  const snapChips = snaps.map((c) => `<button class="wr-railchip" data-wrc-open="${esc(c.id)}" data-tip="Reopen this chat with Mr. Wrangler"><span class="wr-rc-dot"></span><span class="wr-rc-t">${trim(c.title || 'Chat')}</span></button>`).join('');
-  return `<div class="wr-rail" role="list" aria-label="Mr. Wrangler conversations">${needsChips}${snapChips}</div>`;
-}
-function fabStackEl() {
-  const stack = el('div', 'fab-stack');
-  const reqBadge = wranglerRequests.length ? `<span class="fab-badge">${wranglerRequests.length > 9 ? '9+' : wranglerRequests.length}</span>` : '';
-  const nu = unseenNotifs();
-  const notifBadge = nu ? `<span class="fab-badge">${nu > 9 ? '9+' : nu}</span>` : '';
-  stack.innerHTML = `${wranglerRailEl()}
-    <button class="fab js-notifications" data-tip="Notifications">${I.bell}${notifBadge}</button>
-    <button class="fab js-requests" data-tip="Requests for your OK — review what Mr. Wrangler filed">${I.inbox}${reqBadge}</button>`;
-  return stack;
-}
+// (§18g/§17 — the old floating bottom-right fab-stack + capped wr-rail were retired
+// when the conversation rail moved into the bottom comms band: commsRailEl /
+// commsUtilsEl / bottomBarEl above. Every chat is now its own tab, uncapped.)
 // Read the customer-form inputs back into the draft (call before any re-render so
 // typed values survive a selfie/signature/pill change).
 function ncSyncInputs() {
@@ -9492,9 +9594,8 @@ function render() {
   if (state.chat.open) { const d = el('div', 'chat-dock', ''); d.dataset.drop = 'chat'; d.innerHTML = chatDockEl(); $('#app').appendChild(d); }
   // §18 — Mr. Wrangler dock floats alongside the team chat (or alone at bottom-right)
   if (state.wrangler.open) { const d = el('div', 'wrangler-dock' + (state.chat.open ? ' wr-beside-chat' : '') + (state.wrangler.min ? ' wr-min' : '')); d.innerHTML = wranglerDockEl(); $('#app').appendChild(d); }
-  // §18e — floating bottom-right cluster: notification bell + the Requests inbox.
-  // Hidden while a dock owns that corner.
-  if (!state.chat.open && !state.wrangler.open) $('#app').appendChild(fabStackEl());
+  // §18e/§17 — the bell + Requests inbox now live in the bottom comms band (bb-utils),
+  // always visible; the docks float above it. (The old floating fab-stack is retired.)
   mountTransportEditor();   // inline transport editor: mount the live map + wire the address field
   mountWranglerDock();   // §18 wire paste + drag-drop image input on the wrangler dock after each render
   mountDispatchMap();   // §2.3 office cockpit: re-parent the singleton dispatch map + refresh pins/route/truck
@@ -10059,20 +10160,21 @@ function onClick(e) {
   // trigger. (Drags never reach here — their trailing click is swallowed at 4925.)
   // §5.4d — the date-search picker closes on a click outside the calendar, the search
   // bars, and the date chips (so editing a chip keeps it open).
-  if (state.datesearch && !closest('.winpicker') && !closest('.searchwrap') && !closest('.mini-searchwrap') && !closest('.js-date-edit')) {
-    state.datesearch = null; render(); return;
-  }
-  if (state.winpicker
-      && !closest('.winpicker')
-      && !closest('.js-open-winpicker')
-      && !closest('.card[data-card="units"]')
-      && !closest('.card[data-card="categories"]')
-      && !closest('.card[data-card="customers"]')) {
+  // #263 — a non-modal picker (date-search or rental-window) dismisses ONLY on a click in
+  // genuine DEAD SPACE: not a card, the header, the bottom bar, or the picker itself. The
+  // old guards nulled the picker AND `return`ed on ANY click outside a narrow allow-list,
+  // so clicking a pill / row / button / link both vanished the picker AND swallowed that
+  // click (its own handler never ran). Mirror the §5.4 dead-space test (the `clearSearch`
+  // line below) so an interactive click keeps the picker's context and still fires — the
+  // picker stays open until true dead space. (Both floats render from state and re-render,
+  // and self-hide if their anchor scrolls off; the global search bar lives in `.header` and
+  // the per-card search/date chips live in `.card`, so the old datesearch exclusions hold.)
+  if (state.datesearch || state.winpicker) {
+    const pickerDeadSpace = !closest('.card') && !closest('.header') && !closest('.bottombar') && !closest('.winpicker');
+    if (state.datesearch && pickerDeadSpace) { state.datesearch = null; render(); return; }
     // Must always render or the float lingers as a dead, frozen overlay (state closed,
     // DOM open). Discards a fragile rental's staged change. Jac 2026-06-13.
-    state.winpicker = null;
-    render();
-    return;
+    if (state.winpicker && pickerDeadSpace) { state.winpicker = null; render(); return; }
   }
 
   // header / chrome
@@ -10262,6 +10364,7 @@ function onClick(e) {
   if (closest('[data-chat-untag]')) { e.stopPropagation(); const id = closest('[data-chat-untag]').dataset.chatUntag; const c = activeChat(); if (c) c.tags = c.tags.filter((t) => t.id !== id); pushChatsSoon(); return render(); }
   if (closest('[data-chat-role]')) { e.stopPropagation(); return chatToggleRole(closest('[data-chat-role]').dataset.chatRole); }
   if (closest('[data-chat-open]')) { e.stopPropagation(); const [card, recId] = closest('[data-chat-open]').dataset.chatOpen.split('|'); return anchorRecord(SHOP_TYPES.includes(card) ? 'shop' : card, recId, SHOP_TYPES.includes(card) ? card : null); }
+  if (closest('[data-team-open]')) { e.stopPropagation(); return openChat(closest('[data-team-open]').dataset.teamOpen); }   // §17 comms rail: open a team thread in its own tab
   if (closest('.js-fb-type')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'feedback') { const ta = document.querySelector('.overlay .js-fb-text'); if (ta) o.text = ta.value; o.fbType = closest('.js-fb-type').dataset.val; renderOverlay(); } return; }
   if (closest('.js-fb-shot-x')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'feedback') { const ta = document.querySelector('.overlay .js-fb-text'); if (ta) o.text = ta.value; o.shot = ''; renderOverlay(); } return; }
   if (closest('[data-cmt-color]')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'comment') { const ta = document.querySelector('.overlay .js-cmt-text'); if (ta) o.text = ta.value; o.color = closest('[data-cmt-color]').dataset.cmtColor; renderOverlay(); } return; }
@@ -11938,7 +12041,12 @@ function setupPayAlloc() {
     const charge = body.querySelector('.js-alloc-charge');
     const btn = body.querySelector('.js-charge-invoice');
     if (counter) counter.innerHTML = after <= 0.005 ? `<b style="color:var(--good,#1a9f57)">Pays in full ✓</b>` : `Balance after <b>${money2(after)}</b>`;
-    if (charge) charge.innerHTML = pre > 0 ? `${money2(pre)}${tax ? ` + ${money2(tax)} tax` : ''} = <b>${money2(gross)}</b>` : '<span class="muted">nothing assigned</span>';
+    if (charge) {
+      if (pre <= 0) charge.innerHTML = '<span class="muted">nothing assigned</span>';
+      else { const lineGross = pre + tax;   // honest line total; gross caps at the remaining balance when a prior payment already covered part
+        const eq = `${money2(pre)}${tax ? ` + ${money2(tax)} tax` : ''} = <b>${money2(lineGross)}</b>`;
+        charge.innerHTML = lineGross > bal + 0.005 ? `${eq} · charge <b>${money2(gross)}</b> (balance)` : eq; }
+    }
     if (btn) { btn.disabled = !(gross > 0) || !!o.busy; if (!o.busy) btn.textContent = gross > 0 ? `Charge ${money2(gross)}` : 'Charge'; }
   };
   ins.forEach((inp) => inp.addEventListener('input', recompute));
@@ -12288,7 +12396,17 @@ function printInvoice(invoiceId) {
         <div><span>Subtotal</span><span>${money2(t.subtotal)}</span></div>
         <div><span>Tax${t.exempt ? ' (exempt)' : ` (${(TAX_RATE * 100).toFixed(2)}%)`}</span><span>${t.exempt ? '—' : money2(t.tax)}</span></div>
         <div class="pr-big"><span>Total</span><span>${money2(t.total)}</span></div>
-        <div><span>Paid${inv.paymentMethod ? ' · ' + esc(inv.paymentMethod) : ''}</span><span>${money2(t.paid)}</span></div>
+        ${(inv.payments || []).length
+          ? (inv.payments || []).map((p) => {
+              const when = p.at ? esc(fmtShortDate(p.at)) : '';
+              const method = p.type === 'cash' ? 'Cash'
+                : p.type === 'check' ? ('Check' + (p.checkNum ? ' #' + esc(String(p.checkNum)) : ''))
+                : p.type === 'ach-pending' ? 'ACH (pending)'
+                : p.type === 'charge' ? 'Card'
+                : esc(String(p.type || 'Payment'));
+              return `<div><span>Paid${when ? ' · ' + when : ''} · ${method}</span><span>${money2((Number(p.amountCents) || 0) / 100)}</span></div>`;
+            }).join('')
+          : (t.paid ? `<div><span>Paid${inv.paymentMethod ? ' · ' + esc(inv.paymentMethod) : ''}</span><span>${money2(t.paid)}</span></div>` : '')}
         <div class="pr-due"><span>Balance due</span><span>${money2(t.balance)}</span></div>
       </div>
       <div class="pr-foot">Thank you for your business — much obliged. Questions on this ticket? Give the yard a holler.</div>
@@ -12834,7 +12952,9 @@ function addCustomLine(invoiceId, label, amount) {
   inv.lineItems.push({ kind: 'custom', ref: null, lid: lineLid(), label: label || 'Custom', amount });
   logAction(inv, `Added line: ${label || 'Custom'} (${money(amount)})`);
   toast(`Custom line added (${money(amount)}).`);
-  const session = activeSession(); if (session.anchor) setAnchor(session, session.anchor.card, session.anchor.recId, session.anchor.recType);
+  // plain render() — a custom line (kind 'custom', ref null) adds no cascade edge, so it
+  // must NOT re-anchor; setAnchor() here collapsed the open invoice back to the list (it
+  // reset every non-anchored card's recId), kicking you off the invoice. Matches addPartToWO.
   render();
 }
 /* Add a part / labor line to a work order; advances the WO phase sensibly. */
@@ -13354,31 +13474,59 @@ function retrySyncNow() { clearTimeout(saveTimer); SYNC.backoff = 1200; flushSav
 // record's full JSON into one cell, so an oversized record makes the write throw
 // and — with the all-or-nothing commit below — jams the WHOLE sync (#251). The
 // realistic bloat source is an inline base64 photo (~100KB–2MB) still riding an
-// inspection / WO-part record. Offload it to Drive BEFORE the JSON rides the
-// sync, the same treatment chat images already get (pushWranglerRail → 6212).
+// inspection / WO-part record — OR a customer's agreement media (signature +
+// selfie) / durable card selfie that predates the Drive offload (#251b: this is
+// the one that re-warned on EVERY login, since migrateCustomers() dirties the
+// record on boot). Offload it ALL to Drive BEFORE the JSON rides the sync, the
+// same treatment chat images already get (pushWranglerRail → 6212).
 async function offloadDirtyPhotos(upserts) {
   if (!backendPassword) return;                 // demo/offline → can't offload; the size-guard below backstops
   const jobs = [];
   (upserts.inspections || []).forEach((u) => { const n = u.rec; if ((n.photo || '').startsWith('data:')) jobs.push(offloadPhotoNow(n, 'photo', 'insp_' + n.inspectionId, n, 'inspections')); });
   (upserts.workOrders || []).forEach((u) => { const w = u.rec; (w.lineItems || []).forEach((li) => { if ((li.photo || '').startsWith('data:')) jobs.push(offloadPhotoNow(li, 'photo', 'wopart_' + w.woId + '_' + lineKey(li), w, 'workOrders')); }); });
+  // #251b — customer inline media: agreement signings go through the dedicated
+  // per-customer archiveAgreementMedia handler (proper folder + immutable linkage,
+  // idempotent: no-op once it's a Drive URL); the durable card selfie + legacy
+  // customer-level selfie ride the generic capture offload.
+  (upserts.customers || []).forEach((u) => {
+    const c = u.rec;
+    (c.cards || []).forEach((k) => {
+      (k.agreements || []).forEach((sig) => { if ((sig.signature || '').startsWith('data:') || (sig.selfie || '').startsWith('data:')) jobs.push(archiveAgreementMedia(c, k, sig)); });
+      if ((k.selfie || '').startsWith('data:')) jobs.push(offloadPhotoNow(k, 'selfie', 'selfie_' + c.customerId + '_' + k.id, c, 'customers'));
+    });
+    if ((c.selfie || '').startsWith('data:')) jobs.push(offloadPhotoNow(c, 'selfie', 'selfie_' + c.customerId, c, 'customers'));
+  });
   if (jobs.length) { try { await Promise.all(jobs); } catch (e) {} }   // a failed offload leaves base64 → held back below, never poisons the batch
 }
 // Client-side fault isolation (#251): if a record is STILL over the cell cap after
 // offload (Drive upload failed, or non-photo bloat), hold it OUT of the batch so it
-// can't abort the sync for every other record. It stays dirty → retries; loud once.
+// can't abort the sync for every other record. It stays dirty → retries.
+// #251b — the warning is PERSISTED per-record (localStorage), so a record that can't
+// be offloaded (offline / handler absent) is announced ONCE, not re-toasted on every
+// login. A record that later shrinks below the cap is forgiven, so a fresh bloat
+// re-warns. The hold-back safety net still runs every sync regardless of the toast.
 let _oversizeHeld = new Set();
+const OVERSIZE_WARN_KEY = 'jactec.oversizeWarned';
+function oversizeWarned() { try { return new Set(JSON.parse(localStorage.getItem(OVERSIZE_WARN_KEY) || '[]')); } catch (e) { return new Set(); } }
+function setOversizeWarned(set) { try { localStorage.setItem(OVERSIZE_WARN_KEY, JSON.stringify([...set])); } catch (e) {} }
 function holdOversized(upserts) {
   const stillHeld = new Set();
+  const warned = oversizeWarned();
+  let warnedChanged = false;
   Object.keys(upserts).forEach((k) => {
     const keep = [];
     upserts[k].forEach((u) => {
       if (u.js.length > 49000) {
         const tag = k + ':' + u.id; stillHeld.add(tag);
-        if (!_oversizeHeld.has(tag)) toast('⚠ A record is too large to sync (photo over the 50k cell limit) — held back so the rest save. Re-capture with a smaller photo, or reconnect to offload it to Drive.');
+        if (!warned.has(tag)) { toast('⚠ A record is too large to sync (photo over the 50k cell limit) — held back so the rest save. Re-capture with a smaller photo, or reconnect to offload it to Drive.'); warned.add(tag); warnedChanged = true; }
       } else keep.push(u);
     });
     if (keep.length) upserts[k] = keep; else delete upserts[k];
   });
+  // Forgive a record that WAS held last pass but isn't now (offloaded / re-captured
+  // smaller) so a fresh bloat later re-warns instead of staying silent forever.
+  for (const tag of _oversizeHeld) { if (!stillHeld.has(tag) && warned.delete(tag)) warnedChanged = true; }
+  if (warnedChanged) setOversizeWarned(warned);
   _oversizeHeld = stillHeld;
 }
 async function flushSave() {
@@ -13447,7 +13595,7 @@ window.addEventListener('beforeunload', (e) => {
   e.preventDefault(); e.returnValue = '';
 });
 function renderLogin(msg) {
-  $('#app').innerHTML = `<div class="login-screen"><video id="login-video" class="login-video" src="assets/login-intro.mp4" muted loop playsinline preload="auto" aria-hidden="true"></video><form class="login-box" id="login-form">
+  $('#app').innerHTML = `<div class="login-screen"><video id="login-video" class="login-video" src="assets/login-intro.mp4?v=20260623l" muted loop playsinline preload="auto" aria-hidden="true"></video><form class="login-box" id="login-form">
     <span class="rivet tl"></span><span class="rivet tr"></span><span class="rivet bl"></span><span class="rivet br"></span>
     <div class="login-plate">
       <img class="login-logo" src="assets/jac-rentals-logo.jpg" alt="Jac Rentals" />
