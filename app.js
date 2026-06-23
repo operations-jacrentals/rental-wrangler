@@ -534,6 +534,40 @@ function openSignedPdf(custId, cardId, sigId) {
     </body></html>`);
   win.document.close();
 }
+/* #293 — Printable Membership Agreement. Opens a clean print/PDF view of the membership
+   agreement with the customer's details filled into {{customerName}}/{{date}}/{{membershipType}},
+   a yard wordmark header, and a signature line, then offers the native print/Save-as-PDF dialog.
+   Template comes from Settings → Company (membershipPrintTemplate(); falls back to the shipped
+   text). This is a HANDOUT only — it does NOT alter the signed-agreement registry (§7.1b) or
+   what the customer e-signs. */
+function openMembershipAgreementPdf(custId) {
+  const c = IDX.customer.get(custId || ''); if (!c) return toast('Customer not found.');
+  const win = window.open('', '_blank'); if (!win) return toast('Allow pop-ups to open the agreement.');
+  const e2 = (t) => String(t == null ? '' : t).replace(/[&<>]/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m]));
+  const dateStr = TODAY.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  const membershipType = c.paidCadence ? (c.paidCadence + ' Membership')
+    : (c.membershipStage && c.membershipStage !== 'N/A' ? c.membershipStage : 'Membership');
+  const filled = membershipPrintTemplate()
+    .replace(/\{\{\s*customerName\s*\}\}/g, fullName(c) || 'Customer')
+    .replace(/\{\{\s*date\s*\}\}/g, dateStr)
+    .replace(/\{\{\s*membershipType\s*\}\}/g, membershipType);
+  win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${e2(AGREEMENTS.membership.title)} — ${e2(fullName(c))}</title>
+    <style>body{font:13px/1.55 Georgia,'Times New Roman',serif;color:#111;margin:40px;max-width:760px}
+    .brand{display:flex;align-items:center;gap:11px;border-bottom:3px solid #ff7a1a;padding-bottom:12px;margin:0 0 16px}
+    .brand svg{width:30px;height:30px;color:#14181d}.brand .wm{font:700 22px/1 'Arial Narrow',Arial,sans-serif;letter-spacing:1.5px;text-transform:uppercase;color:#14181d}.brand .tl{font-size:11px;color:#555;margin-top:3px;letter-spacing:.3px}
+    h1{font-size:19px;margin:6px 0 2px}.meta{color:#444;margin:0 0 18px;font-size:12px}pre{white-space:pre-wrap;font:inherit;margin:0}
+    .sigline{display:flex;gap:40px;margin-top:42px;page-break-inside:avoid}.sl{flex:1}.sl .ln{display:block;border-bottom:1px solid #111;height:34px}.sl .cap{font-size:10px;color:#555;text-transform:uppercase;letter-spacing:1.2px}
+    .bar{margin-top:30px}@media print{.bar{display:none}}</style>
+    </head><body>
+    <div class="brand">${I.bluesteel}<div><div class="wm">${e2(companyName())}</div><div class="tl">${e2(companyTagline())}</div></div></div>
+    <h1>${e2(AGREEMENTS.membership.title)}</h1>
+    <p class="meta">${e2(fullName(c))} · ${e2(membershipType)} · ${e2(dateStr)}</p>
+    <pre>${e2(filled)}</pre>
+    <div class="sigline"><div class="sl"><span class="ln"></span><span class="cap">Customer signature</span></div><div class="sl" style="flex:0 0 200px"><span class="ln"></span><span class="cap">Date</span></div></div>
+    <div class="bar"><button onclick="window.print()" style="padding:9px 18px;font:13px sans-serif">Save as PDF / Print</button></div>
+    </body></html>`);
+  win.document.close();
+}
 function setCardDefault(custId, cardId) {
   const c = IDX.customer.get(custId); if (!c) return;
   const k = customerCards(c).find((x) => x.id === cardId); if (!k) return;
@@ -2273,6 +2307,11 @@ function inspItemUnanswered(it, val) {
 const COMPANY_DEFAULTS = { name: 'JacRentals', tagline: 'Heavy-Equipment Rental · Sulphur, LA', revenueGoal: (CFG.REVENUE_GOAL_DEFAULT || 150000), maxNetDays: 30 };
 const companyName = () => (companyCfg().name || '').trim() || COMPANY_DEFAULTS.name;
 const companyTagline = () => (companyCfg().tagline || '').trim() || COMPANY_DEFAULTS.tagline;
+// #293 — Membership Agreement PRINT template (Settings → Company). Falls back to the shipped
+// legal text when blank. Supports {{customerName}}/{{date}}/{{membershipType}}, filled in
+// per-customer at print time. A HANDOUT artifact only — it does NOT touch the signed-agreement
+// registry (§7.1b) or what a customer actually e-signs.
+const membershipPrintTemplate = () => { const t = companyCfg().membershipAgreementTemplate; return (typeof t === 'string' && t.trim()) ? t : AGREEMENTS.membership.text; };
 const companyRevenueGoal = () => { const n = Number(companyCfg().revenueGoal); return n > 0 ? n : COMPANY_DEFAULTS.revenueGoal; };
 // System-wide ceiling on customer Net-day terms (Settings → Company). Caps every customer's net days.
 const companyMaxNetDays = () => { const n = Number(companyCfg().maxNetDays); return n >= 0 && isFinite(n) ? n : COMPANY_DEFAULTS.maxNetDays; };
@@ -2362,6 +2401,8 @@ function settingsCompanyPane(o) {
         <span class="kpi-cap">RECEIPT PREVIEW</span>
         <div class="co-receipt"><div class="co-receipt-brand">${esc(companyDraftName(co))}</div><div class="co-receipt-sub">${esc(companyDraftTagline(co))}</div></div>
       </div>
+      <label class="co-fld"><span class="kpi-cap">MEMBERSHIP AGREEMENT — PRINT TEMPLATE</span><textarea class="co-in co-in-area js-co-field" data-f="membershipAgreementTemplate" rows="9" autocomplete="off" spellcheck="false">${co.membershipAgreementTemplate != null ? v('membershipAgreementTemplate') : esc(AGREEMENTS.membership.text)}</textarea></label>
+      <p class="set-note">Printed from a member's profile via <strong>Print Agreement</strong>. Placeholders <strong>{{customerName}}</strong>, <strong>{{date}}</strong>, <strong>{{membershipType}}</strong> are filled in per customer at print time. Clear the box to fall back to the standard agreement.</p>
     </div>`;
 }
 const companyDraftName = (co) => (String(co.name || '').trim() || COMPANY_DEFAULTS.name);
@@ -4853,11 +4894,14 @@ const DETAIL = {
       ${kvPills(funnelPill(c.customerId, 'usedSales', c.usedSalesStage || 'N/A'))}
       <div class="kv pillrow">${intCats}${addBtn('Category', { link: true, js: 'js-addcat', h: 26, data: { rec: c.customerId } })}</div>
     </div></div>`;
+    // #293 — once a membership stage is set, offer a printable filled-in agreement (handout/PDF).
+    const memberStageSet = !!(c.membershipStage && c.membershipStage !== 'N/A');
     const membership = `<div class="section"><h4>Membership</h4><div class="fieldstack centered">
       ${kvPills(funnelPill(c.customerId, 'membership', c.membershipStage || 'N/A'))}
       ${isMember && c.paidUntil ? kv(yr(c.paidUntil), { sfx: 'paid until' }) : ''}
       ${c.paidCadence ? kvPills(`${badge('Paid ' + c.paidCadence, 'green')}${c.unlimitedTransport ? badge('Unlimited Transport', 'purple') : ''}`) : ''}
       ${c.paidFees ? kv(money(c.paidFees), { sfx: 'paid fees' }) : ''}
+      ${memberStageSet ? `<div class="kv pillrow">${actionPill('commit', 'Print Agreement', { js: 'js-print-magreement', h: 26, data: { rec: c.customerId } })}</div>` : ''}
     </div></div>`;
     /* §12.1 ACTION BOARD v4 (Jac 2026-06-12): header row = "Actions" label +
        +Log Actions · +Schedule Actions + "Schedule" label; under them, TWO
@@ -10249,6 +10293,7 @@ function onClick(e) {
   if (closest('.js-nc-qr')) { e.stopPropagation(); const id = state.overlay.editId; openOverlay({ kind: 'qr', title: 'Continue on phone', url: location.origin + location.pathname + '#edit=' + id, caption: 'Scan to finish this account on your phone.' }); return; }
   if (closest('.js-edit-customer')) { e.stopPropagation(); return openCustomerForm(closest('.js-edit-customer').dataset.rec); }
   if (closest('.js-view-agreement')) { e.stopPropagation(); const cust = IDX.customer.get(closest('.js-view-agreement').dataset.rec); if (cust) openOverlay({ kind: 'agreement', recId: cust.customerId }); return; }
+  if (closest('.js-print-magreement')) { e.stopPropagation(); openMembershipAgreementPdf(closest('.js-print-magreement').dataset.rec); return; }
   if (closest('.js-add-card')) {
     e.stopPropagation();
     const rec = closest('.js-add-card').dataset.rec;
