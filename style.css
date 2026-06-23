@@ -1175,9 +1175,8 @@ select.lf-in { appearance: none; cursor: pointer; }
    stays left, bell+inbox right. Tab = registry dot + Geist title; selected = the ONE
    safety-orange; a "needs your answer" tab flashes red. */
 .comms-rail { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 12px;
-  overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; padding: 2px 2px; }
-.comms-rail::-webkit-scrollbar { height: 6px; }
-.comms-rail::-webkit-scrollbar-thumb { background: var(--line); border-radius: 99px; }
+  overflow-x: auto; overflow-y: hidden; scrollbar-width: none; padding: 2px 2px; }   /* hide the scrollbar (still scrolls via wheel/trackpad) — matches .header-tabs */
+.comms-rail::-webkit-scrollbar { height: 0; width: 0; }
 .crail-group { flex: 0 0 auto; display: flex; align-items: center; gap: 7px; }
 .crail-glabel { flex: 0 0 auto; font-family: 'Saira Condensed', sans-serif; text-transform: uppercase;
   letter-spacing: 1.4px; font-weight: 700; font-size: 10.5px; color: var(--txt-3); padding-right: 2px; white-space: nowrap; }
@@ -1196,17 +1195,19 @@ select.lf-in { appearance: none; cursor: pointer; }
 .crail-tab.c-green .crail-dot { background: var(--green); } .crail-tab.c-yellow .crail-dot { background: var(--yellow); }
 .crail-tab.c-red .crail-dot { background: var(--red); } .crail-tab.c-blue .crail-dot { background: var(--blue); }
 .crail-tab.c-purple .crail-dot { background: var(--purple); } .crail-tab.c-gray .crail-dot { background: var(--txt-3); }
+/* Actionable request tabs read via a STEADY tinted edge + colored dot — needs-answer
+   (red) · needs-your-OK (yellow). NO perpetual glow: a wall of pulsing tabs was a
+   strobe; motion is reserved for the one transient attnFlash beat elsewhere. */
 .crail-needs .crail-dot { background: var(--red); }
+.crail-ok .crail-dot { background: var(--yellow); }
+.crail-tab.crail-needs:not(.is-active) { border-color: color-mix(in srgb, var(--red) 55%, var(--line)); }
+.crail-tab.crail-ok:not(.is-active) { border-color: color-mix(in srgb, var(--yellow) 50%, var(--line)); }
 .crail-tab.is-unseen { border-color: var(--accent-line); }
 .crail-tab.is-unseen .crail-dot { box-shadow: 0 0 0 3px var(--accent-soft); }
 /* selected conversation = solid safety-orange + dark ink (the one accent use for a tab) */
 .crail-tab.is-active { background: var(--accent); border-color: var(--accent); color: var(--on-orange, #1a1205); }
 .crail-tab.is-active .crail-dot { background: var(--on-orange, #1a1205); box-shadow: none; }
-.crail-tab.wr-flash:not(.is-active) { animation: attnGlow 1.6s ease-in-out infinite; border-color: var(--accent-line); }
-@media (prefers-reduced-motion: reduce) {
-  .crail-tab:hover { transform: none; }
-  .crail-tab.wr-flash:not(.is-active) { animation: none; box-shadow: 0 0 0 2px var(--accent-soft), inset 0 1px 0 rgba(255,255,255,.06); }
-}
+@media (prefers-reduced-motion: reduce) { .crail-tab:hover { transform: none; } }
 
 /* §17 INTERNAL TEAM DOCK (Jac, Phase 7) — headerless: tagged-element pill rail on top,
    chat bubbles, role tab-bar at the bottom. Floats bottom-right. Yard data-plate steel. */
