@@ -781,6 +781,14 @@ function rentalPrice(r) {
   return { price: best.total, rate: parts.join(' + ') || '—', days };
 }
 
+/** A category that would bill $0 because its rental rates were never entered — a
+ *  data gap, NOT a display bug: categories are born with rate1Day/rate7Day/rate4Wk
+ *  = 0 (quickAddCategoryFromSearch / CSV import) and the rates are filled in later.
+ *  Drives the quote-time caution flag so a $0-rate category never quotes free. */
+function catRatesUnset(cat) {
+  return !!cat && !cat.rate1Day && !cat.rate7Day && !cat.rate4Wk;
+}
+
 /* §20 per-unit pricing — each unit is billed by ITS OWN category across the
    rental's shared window (rentalPrice reads categoryId/start/end/customer). */
 function unitRentalPrice(r, unitId) {
@@ -4280,9 +4288,14 @@ const DETAIL = {
           const voided = unitVoided(r, eu);
           const multi = units.length > 1;
           const up = unitRentalPrice(r, eu.unitId);
+          // §10 quote-time guard: a category with no rates billing $0 would quote a
+          // free rental — flag it loudly (yellow caution, click → fix the category).
+          const noRates = !voided && catRatesUnset(IDX.category.get(u.categoryId))
+            ? flagEl('No rates', 'yellow', { icon: CARD_ICON.categories, card: 'categories', recId: u.categoryId, alert: true, title: 'This category has no day / 7-day / 4-week rate — it bills $0. Set its rates before quoting.' })
+            : '';
           return `<div class="stall${voided ? ' voided' : ''}">
             <div class="stall-head">
-              <div class="stall-id">${unitPill(u.unitId, { x: 'unit-remove', xData: u.unitId })}${dPill(insp.label, insp.color, { card: 'units', recId: u.unitId, icon: CARD_ICON.inspections })}${multi ? unitStatusGate(r, eu) : ''}</div>
+              <div class="stall-id">${unitPill(u.unitId, { x: 'unit-remove', xData: u.unitId })}${dPill(insp.label, insp.color, { card: 'units', recId: u.unitId, icon: CARD_ICON.inspections })}${noRates}${multi ? unitStatusGate(r, eu) : ''}</div>
               <span class="stall-right">${multi ? `<button class="stall-split js-split-open" data-rec="${esc(r.rentalId)}" data-unit="${esc(u.unitId)}" data-tip="Give ${esc(u.name)} its own dates — splits to a separate rental on the same invoice"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>dates</button>` : ''}<span class="stall-amt">${money(up ? up.price : 0)}</span></span>
             </div>
             ${stallRouteHtml(r, eu)}
