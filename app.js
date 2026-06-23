@@ -3624,6 +3624,9 @@ const RB_FOUNDATION = {
   'color-tan': ['✶', 'Wrangler tan', '--tan #c2925a / --tan-deep (yard theme)',
     'The light ranch seasoning — worn leather for saddle-stitch dividers & tiny touches. Restrained.',
     rbSw('var(--tan,#c2925a)', 'Tan', 'saddle-stitch', '#1a1205')],
+  'color-ec-red': ['⚠', 'ec-red · flagging glow', 'fill: color-mix(--red 65%, white) · shadow: 0 0 3px --red, 0 0 7px (--red 60%+transparent)',
+    'Official treatment for EVERY flagging-red signal — text names/pills/flags/headers, borders, dots/bars. Three knobs in style.css .ec-red group: fill % (65), inner glow (3px), outer halo (7px / 60%). Never use pure --red alone on flagging text.',
+    `<span style="-webkit-text-fill-color:color-mix(in srgb,var(--red) 65%,white);text-shadow:0 0 3px var(--red),0 0 7px color-mix(in srgb,var(--red) 60%,transparent);font-weight:700;font-size:13px;letter-spacing:.5px">TUCKER FONTENOT · No Card · $0.30 overdue</span>`],
   // ── FORM ──
   'radius': ['◳', 'Radius', '--radius 14–16 · --chip-radius 11–12 · 8–10 controls · 999 pills',
     'Cards/popups softest · chips medium · controls tight · pills & counters full-round · rings/avatars circles.',
