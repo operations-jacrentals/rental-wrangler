@@ -1644,7 +1644,11 @@ body.is-phone .set-tab-l { flex: 0 0 auto; }
 .gv-barcol { flex: 1; display: flex; flex-direction: column; align-items: center; height: 100%; min-width: 0; }
 .gv-bar-n { font-size: 10px; color: var(--txt-3); font-weight: 700; height: 14px; }
 .gv-bar-track { flex: 1; width: 70%; display: flex; align-items: flex-end; }
-.gv-bar-fill { width: 100%; min-height: 2px; border-radius: 4px 4px 0 0; }
+.gv-bar-fill { position: relative; width: 100%; min-height: 2px; border-radius: 4px 4px 0 0; }
+/* §13.4 Revenue-by-Status: a red cap on the bar = the uncollected (unpaid + refunded) share */
+.gv-bar-red { position: absolute; top: 0; left: 0; right: 0; min-height: 2px; background: var(--red); border-radius: 4px 4px 0 0; }
+.gv-bars .gv-barcol.on .gv-bar-red { background: var(--red); }   /* stay red even when the bar is the active filter (orange) */
+.gv-revbars .gv-bar-n { color: var(--txt); font-weight: 700; }
 .gv-bar-x { font-size: 10px; color: var(--txt-3); margin-top: 5px; text-transform: uppercase; letter-spacing: .4px; }
 .gv-units-scroll { max-height: 240px; overflow-y: auto; border: 1px solid var(--line); border-radius: 10px; }
 .gv-soon { padding: 52px 24px; text-align: center; color: var(--txt-2); }
@@ -1662,6 +1666,14 @@ body.is-phone .set-tab-l { flex: 0 0 auto; }
 .gv-dots { display: flex; gap: 4px; }
 .gv-dots i { width: 5px; height: 5px; border-radius: 50%; background: var(--line); }
 .gv-dots i.on { background: var(--accent); }
+/* §13.4 timeline pill — scopes the time-based graphs to a recent window; active window stamped on it */
+.gv-win { display: inline-flex; align-items: center; gap: 3px; padding: 1px 9px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel); color: var(--txt-2); font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1px; font-weight: 700; font-size: 10px; line-height: 1.7; cursor: pointer; }
+.gv-win svg { width: 11px; height: 11px; }
+.gv-win:hover { color: var(--txt); border-color: var(--accent-line); }
+.gv-win:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.gv-win.gv-win-on { color: var(--accent); border-color: var(--accent); }
+.gv-win-static { cursor: default; color: var(--txt-3); }
+.gv-win-static:hover { color: var(--txt-3); border-color: var(--line); }
 .gv-chev { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; flex: 0 0 auto; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--txt-2); cursor: pointer; }
 .gv-chev:hover { color: var(--txt); border-color: var(--accent-line); }
 .gv-chev:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

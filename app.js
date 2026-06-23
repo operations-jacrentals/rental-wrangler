@@ -1340,7 +1340,14 @@ function rentalDisplayStatus(r) {
   }
   return r.status;
 }
-/** "Today"/"Tomorrow" beat a date for orientation (Jac 2026-06-12); else the short date. */
+/** §13.4 — the status bucket for the Revenue-by-Status bars: like rentalDisplayStatus
+ *  (past-start Reserved → No Show) but ALSO breaks a Reserved rental starting today /
+ *  tomorrow out into its own "Today" / "Tomorrow" bar (Jac 2026-06-23). */
+function rentalRevStatus(r) {
+  const base = rentalDisplayStatus(r);
+  if (base === 'Reserved') { const n = dayDiff(TODAY, parseISO(r.startDate)); if (n === 0) return 'Today'; if (n === 1) return 'Tomorrow'; }
+  return base;
+}
 function relDate(iso) {
   const d = parseISO(iso); if (!d) return '';
   const n = dayDiff(TODAY, d);
@@ -2036,6 +2043,10 @@ function totColMatch(card, rec, col, value) {
   if (col === '__fcmonth') return DATA.workOrders.some((w) => w.unitId === rec.unitId && w.woType === 'Field Call' && (w.date || '').slice(0, 7) === value);   // §13.4 — Field Call in month YYYY-MM
   if (col === '__rentmonth') return (rec.startDate || '').slice(0, 7) === value;   // §13.4 — rental starting in month YYYY-MM
   if (col === '__datemonth') return (rec.date || '').slice(0, 7) === value;   // §13.4 — inspections / work orders dated in month YYYY-MM
+  if (col === '__rstat') return rentalRevStatus(rec) === value;   // §13.4 — Revenue-by-Status bar (incl. Today/Tomorrow)
+  if (col === '__rentrange') { const [a, b] = String(value).split('|'); const d = (rec.startDate || '').slice(0, 10); return !!d && d >= a && d < b; }   // §13.4 — rental start in a timeline bucket [a,b)
+  if (col === '__daterange') { const [a, b] = String(value).split('|'); const d = (rec.date || '').slice(0, 10); return !!d && d >= a && d < b; }   // §13.4 — inspection / WO dated in a timeline bucket
+  if (col === '__fcrange') { const [a, b] = String(value).split('|'); return DATA.workOrders.some((w) => w.unitId === rec.unitId && w.woType === 'Field Call' && (w.date || '').slice(0, 10) >= a && (w.date || '').slice(0, 10) < b); }   // §13.4 — Field Call in a timeline bucket
   if (col === '__svcstat') {   // §13.4 — a unit's service urgency (mirrors the serviceOrders status pie)
     if (value === 'wash') return !!rec.washRequested;
     if (rec.washRequested) return false;
@@ -2077,6 +2088,14 @@ function colFilterLabel(card, col, value) {
   if (col === '__fcmonth') { const d = parseISO(value + '-01'); return 'FC · ' + (d ? d.toLocaleString('en-US', { month: 'short' }) : value); }
   if (col === '__rentmonth') { const d = parseISO(value + '-01'); return d ? d.toLocaleString('en-US', { month: 'short' }) : value; }
   if (col === '__datemonth') { const d = parseISO(value + '-01'); return d ? d.toLocaleString('en-US', { month: 'short' }) : value; }
+  if (col === '__rstat') return String(value);   // §13.4 Revenue-by-Status bar → the status itself
+  if (col === '__rentrange' || col === '__daterange' || col === '__fcrange') {   // §13.4 timeline bucket [a,b) → a friendly date range
+    const [a, b] = String(value).split('|'), sa = parseISO(a), sb = parseISO(b);
+    if (!sa || !sb) return String(value);
+    const e = new Date(sb); e.setDate(e.getDate() - 1); const f = (d) => `${d.getMonth() + 1}/${d.getDate()}`;
+    const lbl = f(sa) === f(e) ? f(sa) : `${f(sa)}–${f(e)}`;
+    return col === '__fcrange' ? 'FC · ' + lbl : lbl;
+  }
   if (col === '__svcstat') return ({ 'past-due': 'Overdue', 'due-soon': 'Due Soon', 'on-schedule': 'On Schedule', wash: 'Wash' }[value] || value);
   const c = cardColumns(card, activeSession()).find((x) => x.key === col);
   const m = (c && c.meta) ? c.meta(value) : null;
@@ -7614,6 +7633,42 @@ function gvMonths6() {
   for (let i = 5; i >= 0; i--) { const d = new Date(TODAY.getFullYear(), TODAY.getMonth() - i, 1); out.push({ key: d.toISOString().slice(0, 7), label: d.toLocaleString('en-US', { month: 'short' }) }); }
   return out;
 }
+/* §13.4 — TIMELINE SELECTOR (Jac 2026-06-23). Per-source (per card / shop segment) the
+   graph carousel's TIME-BASED views can be scoped to a recent window: 7/10/30/90/180/360
+   days, or All (default = today's all-time/6-month behavior). Snapshot views ignore it and
+   read "Current". The active window is stamped ON the chart head, never hover-only. */
+const GV_WIN_OPTS = [7, 10, 30, 90, 180, 360];
+const GV_WIN_KEY = (src) => `jactec.gvWin.${src}`;
+const GV_WIN = Object.create(null);
+function loadGvWin(src) {
+  if (src in GV_WIN) return GV_WIN[src];
+  let v = 0; try { v = Number(localStorage.getItem(GV_WIN_KEY(src))) || 0; } catch (e) { v = 0; }
+  GV_WIN[src] = GV_WIN_OPTS.includes(v) ? v : 0;   // 0 = All time
+  return GV_WIN[src];
+}
+function saveGvWin(src, days) {
+  const d = GV_WIN_OPTS.includes(days) ? days : 0;
+  GV_WIN[src] = d;
+  try { if (d) localStorage.setItem(GV_WIN_KEY(src), String(d)); else localStorage.removeItem(GV_WIN_KEY(src)); } catch (e) { /* private mode */ }
+}
+const gvWinLabel = (d) => d ? `${d}D` : 'All';
+// ISO (yyyy-mm-dd) cutoff: the oldest day still IN a `days`-long window ending today (inclusive). null = all.
+function gvWinCutoff(days) { if (!days) return null; const d = new Date(TODAY); d.setDate(d.getDate() - days + 1); return d.toISOString().slice(0, 10); }
+// Time buckets spanning the window for the "/period" bar charts. Each = {key:"a|b", label, a, b}
+// with a<=date<b (ISO). Granularity adapts: ≤14d daily · ≤90d weekly · else monthly (All = 6 months).
+function gvBuckets(days) {
+  const out = [], iso = (d) => d.toISOString().slice(0, 10), base = new Date(TODAY);
+  if (!days || days > 90) {
+    const n = !days ? 6 : Math.min(12, Math.max(1, Math.round(days / 30)));
+    for (let i = n - 1; i >= 0; i--) { const a = new Date(base.getFullYear(), base.getMonth() - i, 1), b = new Date(base.getFullYear(), base.getMonth() - i + 1, 1); out.push({ key: iso(a) + '|' + iso(b), label: a.toLocaleString('en-US', { month: 'short' }), a: iso(a), b: iso(b) }); }
+  } else if (days > 14) {
+    const weeks = Math.ceil(days / 7);
+    for (let i = weeks - 1; i >= 0; i--) { const b = new Date(base); b.setDate(b.getDate() - i * 7 + 1); const a = new Date(b); a.setDate(a.getDate() - 7); out.push({ key: iso(a) + '|' + iso(b), label: `${a.getMonth() + 1}/${a.getDate()}`, a: iso(a), b: iso(b) }); }
+  } else {
+    for (let i = days - 1; i >= 0; i--) { const a = new Date(base); a.setDate(a.getDate() - i); const b = new Date(a); b.setDate(b.getDate() + 1); out.push({ key: iso(a) + '|' + iso(b), label: `${a.getMonth() + 1}/${a.getDate()}`, a: iso(a), b: iso(b) }); }
+  }
+  return out;
+}
 /* ════════════════════════════════════════════════════════════════════════
    §13.4 GRAPH CAROUSEL (Jac 2026-06-16) — the per-card Graph is a deck of
    INTERACTIVE views stacked ABOVE the list. Chevrons cycle the view; clicking a
@@ -7630,6 +7685,8 @@ function gvSmallest(view) { const live = (view.segs || []).filter((s) => s.count
 // Each seg's {col,value} is exactly a filter term, so a click maps straight to the list.
 function graphViewsFor(card) {
   if (card === 'units') {
+    const win = loadGvWin(card), cut = gvWinCutoff(win), bk = gvBuckets(win);
+    const inWin = (iso) => !cut || (!!iso && iso.slice(0, 10) >= cut);
     const f = fleetInsp();
     const insp = [['Ready', 'green'], ['Not Ready', 'yellow'], ['Failed', 'red']].map(([v, c]) => ({ col: 'inspection', value: v, label: v, count: f[v] || 0, color: c }));
     const fleetN = {}; DATA.units.forEach((u) => { const s = u.fleetStatus || '—'; fleetN[s] = (fleetN[s] || 0) + 1; });
@@ -7639,8 +7696,9 @@ function graphViewsFor(card) {
     const nUnits = (set) => DATA.units.filter((u) => set.has(u.unitId)).length;
     const shop = [{ col: '__wo', value: 'open', label: 'WOs Open', count: nUnits(openSet), color: 'red' }, { col: '__wo', value: 'ordered', label: 'Parts Ordered', count: nUnits(ordSet), color: 'yellow' }];
     const fc = DATA.workOrders.filter((w) => w.woType === 'Field Call');
-    const fcMonth = gvMonths6().map((m) => ({ col: '__fcmonth', value: m.key, label: m.label, count: new Set(fc.filter((w) => (w.date || '').slice(0, 7) === m.key).map((w) => w.unitId)).size, color: 'red' }));
-    const fcByUnit = {}; fc.forEach((w) => { if (w.unitId) fcByUnit[w.unitId] = (fcByUnit[w.unitId] || 0) + 1; });
+    const fcMonth = bk.map((m) => ({ col: '__fcrange', value: m.key, label: m.label, count: new Set(fc.filter((w) => { const d = (w.date || '').slice(0, 10); return d >= m.a && d < m.b; }).map((w) => w.unitId)).size, color: 'red' }));
+    const fcw = cut ? fc.filter((w) => inWin(w.date)) : fc;   // windowed field calls (by WO date)
+    const fcByUnit = {}; fcw.forEach((w) => { if (w.unitId) fcByUnit[w.unitId] = (fcByUnit[w.unitId] || 0) + 1; });
     const fcLead = Object.entries(fcByUnit).map(([uid, n]) => ({ col: 'name', value: IDX.unit.get(uid)?.name || uid, label: IDX.unit.get(uid)?.name || uid, count: n, color: 'red' })).sort((a, b) => b.count - a.count).slice(0, 8);
     const nums = [
       { col: '__fc', value: '1', label: 'Field Calls', count: new Set(fc.map((w) => w.unitId)).size, color: 'red' },
@@ -7653,20 +7711,39 @@ function graphViewsFor(card) {
       { key: 'inspection', title: 'Inspection', kind: 'pie', segs: insp },
       { key: 'fleet', title: 'Fleet', kind: 'pie', segs: fleet },
       { key: 'shop', title: 'Shop · Open WOs', kind: 'pie', segs: shop },
-      { key: 'fcmonth', title: 'Field Calls / Month', kind: 'bars', color: 'red', segs: fcMonth },
-      { key: 'fclead', title: 'Most Field Calls', kind: 'lead', segs: fcLead },
+      { key: 'fcmonth', title: 'Field Calls', kind: 'bars', color: 'red', timed: true, segs: fcMonth },
+      { key: 'fclead', title: 'Most Field Calls', kind: 'lead', timed: true, segs: fcLead },
       { key: 'nums', title: 'By the Numbers', kind: 'nums', segs: nums },
     ];
   }
   if (card === 'rentals') {
     const R = DATA.rentals, ym = TODAY_ISO.slice(0, 7);
-    const sc = {}; R.forEach((r) => { const s = rentalDisplayStatus(r); sc[s] = (sc[s] || 0) + 1; });
+    const win = loadGvWin(card), cut = gvWinCutoff(win), bk = gvBuckets(win);
+    const inWin = (iso) => !cut || (!!iso && iso.slice(0, 10) >= cut);
+    const Rw = cut ? R.filter((r) => inWin(r.startDate)) : R;   // windowed by rental start date
+    const sc = {}; R.forEach((r) => { const s = rentalDisplayStatus(r); sc[s] = (sc[s] || 0) + 1; });   // current-state counts (nums)
     const ordIdx = (s) => { const k = RENTAL_BAR_ORDER.indexOf(s); return k < 0 ? 99 : k; };
-    const status = Object.keys(sc).sort((a, b) => ordIdx(a) - ordIdx(b)).map((s) => ({ col: 'status', value: s, label: s, count: sc[s], color: s === 'Available' ? 'gray' : (getStatus('rentalStatus', s).color || 'gray') }));
+    // Revenue by status (Jac 2026-06-23): bar HEIGHT = summed rental revenue; a RED overlay on the
+    // realized-revenue lifecycle (On Rent → Returned) = the uncollected share (unpaid balance + refunded).
+    const REV_RED = new Set(['On Rent', 'End Rent', 'Off Rent', 'Returned']);
+    const rev = {};
+    Rw.forEach((r) => {
+      const s = rentalRevStatus(r), p = (rentalPrice(r) || {}).price || 0;
+      if (!p) return;
+      const b = rev[s] || (rev[s] = { rev: 0, red: 0 });
+      b.rev += p;
+      if (REV_RED.has(s)) {
+        const inv = r.invoiceId && IDX.invoice.get(r.invoiceId);
+        let frac = 1;   // not yet invoiced → the whole active-rental revenue is still uncollected
+        if (inv) { const t = invoiceTotals(inv); frac = t.total > 0 ? Math.max(0, Math.min(1, (t.balance + (Number(inv.refundedAmount) || 0)) / t.total)) : 0; }
+        b.red += p * frac;
+      }
+    });
+    const revStatus = Object.keys(rev).sort((a, b) => ordIdx(a) - ordIdx(b)).map((s) => ({ col: '__rstat', value: s, label: s, count: Math.round(rev[s].rev), red: Math.round(rev[s].red), color: s === 'Available' ? 'gray' : (getStatus('rentalStatus', s).color || 'gray') }));
     const ic = {}; R.forEach((r) => { const inv = r.invoiceId && IDX.invoice.get(r.invoiceId); const s = inv ? invoiceTotals(inv).status : 'No invoice'; ic[s] = (ic[s] || 0) + 1; });
     const invoice = Object.entries(ic).sort((a, b) => b[1] - a[1]).map(([s, n]) => ({ col: 'invoice', value: s === 'No invoice' ? '' : s, label: s, count: n, color: s === 'No invoice' ? 'gray' : (getStatus('invoiceStatus', s).color || 'gray') }));
-    const rmonth = gvMonths6().map((m) => ({ col: '__rentmonth', value: m.key, label: m.label, count: R.filter((r) => (r.startDate || '').slice(0, 7) === m.key).length, color: 'blue' }));
-    const byUnit = {}; R.forEach((r) => rentalUnits(r).forEach((eu) => { const u = IDX.unit.get(eu.unitId); if (u) byUnit[u.name] = (byUnit[u.name] || 0) + 1; }));
+    const rmonth = bk.map((m) => ({ col: '__rentrange', value: m.key, label: m.label, count: R.filter((r) => { const d = (r.startDate || '').slice(0, 10); return d >= m.a && d < m.b; }).length, color: 'blue' }));
+    const byUnit = {}; Rw.forEach((r) => rentalUnits(r).forEach((eu) => { const u = IDX.unit.get(eu.unitId); if (u) byUnit[u.name] = (byUnit[u.name] || 0) + 1; }));
     const topUnits = Object.entries(byUnit).map(([name, n]) => ({ col: 'name', value: name, label: name, count: n, color: 'blue' })).sort((a, b) => b.count - a.count).slice(0, 8);
     const nums = [
       { col: 'status', value: 'On Rent', label: 'On Rent', count: sc['On Rent'] || 0, color: 'green' },
@@ -7675,10 +7752,10 @@ function graphViewsFor(card) {
       { col: '__rentmonth', value: ym, label: 'This Month', count: R.filter((r) => (r.startDate || '').slice(0, 7) === ym).length, color: 'blue' },
     ];
     return [
-      { key: 'status', title: 'Status Mix', kind: 'pie', segs: status },
+      { key: 'status', title: 'Revenue by Status', kind: 'revbars', timed: true, segs: revStatus },
       { key: 'invoice', title: 'Invoice Status', kind: 'pie', segs: invoice },
-      { key: 'rmonth', title: 'Rentals / Month', kind: 'bars', color: 'blue', segs: rmonth },
-      { key: 'units', title: 'Most-Rented Units', kind: 'lead', segs: topUnits },
+      { key: 'rmonth', title: 'Rentals Booked', kind: 'bars', color: 'blue', timed: true, segs: rmonth },
+      { key: 'units', title: 'Most-Rented Units', kind: 'lead', timed: true, segs: topUnits },
       { key: 'nums', title: 'By the Numbers', kind: 'nums', segs: nums },
     ];
   }
@@ -7722,27 +7799,29 @@ function graphViewsFor(card) {
     ];
   }
   if (card === 'inspections') {
+    const bk = gvBuckets(loadGvWin(card));
     const N = DATA.inspections.filter((n) => shopItemMode('inspections', n, false));   // the open queue — same population the shop list shows
     const rc = {}; N.forEach((n) => { const r = inspResult(n); (rc[r.label] = rc[r.label] || { label: r.label, color: r.color, count: 0 }).count++; });
     const result = Object.values(rc).map((x) => ({ col: 'result', value: x.label, label: x.label, count: x.count, color: x.color }));
-    const imonth = gvMonths6().map((m) => ({ col: '__datemonth', value: m.key, label: m.label, count: N.filter((n) => (n.date || '').slice(0, 7) === m.key).length, color: 'blue' }));
+    const imonth = bk.map((m) => ({ col: '__daterange', value: m.key, label: m.label, count: N.filter((n) => { const d = (n.date || '').slice(0, 10); return d >= m.a && d < m.b; }).length, color: 'blue' }));
     return [
       { key: 'result', title: 'Results', kind: 'pie', segs: result },
-      { key: 'imonth', title: 'Inspections / Month', kind: 'bars', color: 'blue', segs: imonth },
+      { key: 'imonth', title: 'Inspections', kind: 'bars', color: 'blue', timed: true, segs: imonth },
       { key: 'nums', title: 'By the Numbers', kind: 'nums', segs: result.map((s) => ({ ...s })) },
     ];
   }
   if (card === 'workOrders') {
+    const bk = gvBuckets(loadGvWin(card));
     const W = DATA.workOrders.filter((w) => shopItemMode('workOrders', w, false));   // the open queue — same population the shop list shows
     const pc = {}; W.forEach((w) => { const ph = w.phase || '—'; pc[ph] = (pc[ph] || 0) + 1; });
     const phase = Object.entries(pc).sort((a, b) => b[1] - a[1]).map(([ph, n]) => ({ col: 'phase', value: ph, label: getStatus('woPhase', ph).label || ph, count: n, color: getStatus('woPhase', ph).color || 'gray' }));
     const tc = {}; W.forEach((w) => { const t = w.woType || '—'; tc[t] = (tc[t] || 0) + 1; });
     const type = Object.entries(tc).sort((a, b) => b[1] - a[1]).map(([t, n]) => ({ col: 'type', value: t, label: t, count: n, color: getStatus('woType', t).color || 'gray' }));
-    const wmonth = gvMonths6().map((m) => ({ col: '__datemonth', value: m.key, label: m.label, count: W.filter((w) => (w.date || '').slice(0, 7) === m.key).length, color: 'blue' }));
+    const wmonth = bk.map((m) => ({ col: '__daterange', value: m.key, label: m.label, count: W.filter((w) => { const d = (w.date || '').slice(0, 10); return d >= m.a && d < m.b; }).length, color: 'blue' }));
     return [
       { key: 'phase', title: 'Open by Phase', kind: 'pie', segs: phase },
       { key: 'type', title: 'By Type', kind: 'pie', segs: type },
-      { key: 'wmonth', title: 'Work Orders / Month', kind: 'bars', color: 'blue', segs: wmonth },
+      { key: 'wmonth', title: 'Work Orders', kind: 'bars', color: 'blue', timed: true, segs: wmonth },
     ];
   }
   if (card === 'serviceOrders') {
@@ -7837,6 +7916,16 @@ function gvRenderView(card, src, cs, v) {
     const max = Math.max(1, ...v.segs.map((s) => s.count));
     return `<div class="gv-bars">${v.segs.map((s) => gvSegBtn(cs, card, src, s, `<div class="gv-bar-n">${s.count || ''}</div><div class="gv-bar-track"><div class="gv-bar-fill" style="height:${Math.round((s.count / max) * 100)}%;background:var(--${s.color || v.color || 'accent'})"></div></div><div class="gv-bar-x">${esc(s.label)}</div>`, 'gv-barcol')).join('')}</div>`;
   }
+  if (v.kind === 'revbars') {   // §13.4 — bar height = revenue ($); a red cap = uncollected (unpaid + refunded) share
+    const max = Math.max(1, ...v.segs.map((s) => s.count));
+    return `<div class="gv-bars gv-revbars">${v.segs.map((s) => {
+      const h = Math.round((s.count / max) * 100);
+      const redPct = (s.red && s.count) ? Math.max(0, Math.min(100, Math.round((s.red / s.count) * 100))) : 0;
+      const fill = `<div class="gv-bar-track"><div class="gv-bar-fill" style="height:${h}%;background:var(--${s.color || v.color || 'accent'})">${redPct ? `<div class="gv-bar-red" style="height:${redPct}%"></div>` : ''}</div></div>`;
+      const inner = `<div class="gv-bar-n">${esc(money(s.count))}</div>${fill}<div class="gv-bar-x">${esc(s.label)}</div>`;
+      return gvSegBtn(cs, card, src, s, inner, 'gv-barcol');
+    }).join('')}</div>`;
+  }
   if (v.kind === 'lead') {
     if (!v.segs.length) return '<div class="gv-empty">No data yet.</div>';
     return `<div class="gv-lead-list">${v.segs.map((s, i) => gvSegBtn(cs, card, src, s, `<span class="gv-lead-n">${i + 1}</span><span class="gv-lead-name">${esc(s.label)}</span><span class="gv-lead-c">${esc(String(s.disp != null ? s.disp : s.count))}</span>`, 'gv-lead-row')).join('')}</div>`;
@@ -7848,12 +7937,23 @@ function graphPanelHtml(card, src, cs) {
   const views = graphViewsFor(src); if (!views) return '';
   const idx = gvClampIdx(cs.graphIdx, views.length), v = views[idx];
   const dots = views.map((_, i) => `<i class="${i === idx ? 'on' : ''}"></i>`).join('');
+  // §13.4 timeline — time-based views get a clickable window pill (stamps the active window ON the
+  // chart so windowed numbers are never mistaken for all-time); snapshot views read "Current".
+  const winCtl = v.timed
+    ? `<button class="gv-win js-gvwin${loadGvWin(src) ? ' gv-win-on' : ''}" data-card="${card}" data-src="${esc(src)}" data-tip="Timeline — scope these graphs to a recent window"><span class="gv-win-l">${gvWinLabel(loadGvWin(src))}</span> ${I.chev}</button>`
+    : `<span class="gv-win gv-win-static" data-tip="A snapshot of right now — no time window applies">Current</span>`;
   return `<div class="gv-head">
       <button class="gv-chev js-gv-chev" data-card="${card}" data-src="${esc(src)}" data-dir="-1" data-tip="Previous graph">${GV_CHEV_L}</button>
-      <div class="gv-head-mid"><div class="gv-title">${esc(v.title)}</div><div class="gv-dots">${dots}</div></div>
+      <div class="gv-head-mid"><div class="gv-title">${esc(v.title)}</div><div class="gv-dots">${dots}</div>${winCtl}</div>
       <button class="gv-chev js-gv-chev" data-card="${card}" data-src="${esc(src)}" data-dir="1" data-tip="Next graph">${GV_CHEV_R}</button>
     </div>
     <div class="gv-view gv-view-${v.kind}">${gvRenderView(card, src, cs, v)}</div>`;
+}
+// §13.4 — the timeline window menu (opened from the gv-win pill); picks 7/10/30/90/180/360 days or All.
+function openGvWinMenu(anchorEl, card, src) {
+  const cur = loadGvWin(src);
+  const opt = (d, lbl) => `<button class="dd-item js-gvwin-opt${cur === d ? ' on' : ''}" data-card="${esc(card)}" data-src="${esc(src)}" data-win="${d}">${lbl}</button>`;
+  openDropdown(anchorEl, opt(0, 'All time') + GV_WIN_OPTS.map((d) => opt(d, `Last ${d} days`)).join(''));
 }
 function cardGraphBody(card) {
   if (card === 'units') {
@@ -10945,6 +11045,8 @@ function onClick(e) {
   if (closest('.js-cardgraph')) { e.stopPropagation(); const b = closest('.js-cardgraph'); const card = b.dataset.card, src = b.dataset.src || card; const cs = activeSession().cards[card]; if (!cs.graphView) { if (graphViewsFor(src)) return gvOpen(card, src); cs.graphView = true; return render(); } cs.graphView = false; return render(); }   // §13.4 per-card Graph carousel toggle (legacy / Shop-'all': dashboard)
   if (closest('.js-gv-chev')) { e.stopPropagation(); const b = closest('.js-gv-chev'); return gvChevron(b.dataset.card, b.dataset.src || b.dataset.card, Number(b.dataset.dir)); }   // §13.4 cycle the active graph view
   if (closest('.js-gv-seg')) { e.stopPropagation(); const b = closest('.js-gv-seg'); return toggleGraphSeg(b.dataset.card, b.dataset.src || b.dataset.card, b.dataset.col, b.dataset.value, b.dataset.label); }   // §13.4 toggle a slice/bar/row/number → search entry
+  if (closest('.js-gvwin')) { e.stopPropagation(); const b = closest('.js-gvwin'); return openGvWinMenu(b, b.dataset.card, b.dataset.src); }   // §13.4 open the timeline window menu
+  if (closest('.js-gvwin-opt')) { e.stopPropagation(); const b = closest('.js-gvwin-opt'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); const cs = activeSession().cards[b.dataset.card]; if (cs) { gvStripTerms(cs); cs.listLimit = undefined; } saveGvWin(b.dataset.src, Number(b.dataset.win)); return render(); }   // §13.4 pick a window → clear stale bucket filters + re-render
   if (closest('.js-bv-sort') && !closest('.js-bv-inscol')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview') { const key = closest('.js-bv-sort').dataset.col; if (o.sort?.key === key) o.sort.dir = o.sort.dir === 'asc' ? 'desc' : 'asc'; else o.sort = { key, dir: 'asc' }; renderOverlay(); } return; }
   if (closest('.js-bv-addcol')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview') { o.colOrder = o.colOrder || []; o.colOrder.push({ kind: 'extra', id: 'xc' + (++o.seq), label: '' }); renderOverlay(); } return; }
   if (closest('.js-bv-inscol')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview' && o.colOrder) { const after = Number(closest('.js-bv-inscol').dataset.after); o.colOrder.splice(after + 1, 0, { kind: 'extra', id: 'xc' + (++o.seq), label: '' }); renderOverlay(); } return; }
