@@ -3406,8 +3406,9 @@ const ROWS = {
     const cust = IDX.customer.get(r.customerId);
     const inv = r.invoiceId ? IDX.invoice.get(r.invoiceId) : null;
     const stColor = rentalStatusDisplay(r).color;   // border-left highlight follows rental status
-    const name = rentalUnitsLabel(r) || 'Quote';
+    const units = rentalUnitsLabel(r);               // comma-separated unit names (empty on a bare quote)
     const s = parseISO(r.startDate), e = parseISO(r.endDate);
+    const stPill = statusPill('rentalStatus', rentalDisplayStatus(r), { card: 'rentals', recId: r.rentalId });
 
     // ── Balance (R8 derived): Paid green · upcoming yellow · past-due red ───
     let bal = '', balCls = '';
@@ -3418,16 +3419,17 @@ const ROWS = {
       else if (t.balance > 0) { bal = money(t.balance); balCls = parseISO(inv.dueDate) > TODAY ? 'due' : 'overdue'; }
     }
 
-    // ── Quote (no window yet) ────────────────────────────────────────────────
-    if (!(s && e)) {
-      return `<div class="rcc" style="--rcc-hl:var(--${stColor})">
-        <div class="rcc-head">${esc(name)}</div>
-        <div class="rcc-foot">
-          <span class="rcc-cust">${cust ? esc(cust.name) : ''}</span>
-          <span class="rcc-bal rcc-set">Set window</span>
-        </div>
-      </div>`;
-    }
+    // ── HEADER carries every value now (footer retired, Jac 2026-06-23): row 1 =
+    //    status pill + comma-separated unit names; row 2 = customer name + balance ──
+    const headHtml = `<div class="rcc-head">
+      <div class="rcc-h1">${stPill}${units ? `<span class="rcc-units">${esc(units)}</span>` : ''}</div>
+      <div class="rcc-h2"><span class="rcc-cust">${cust ? esc(cust.name) : ''}</span>${
+        bal ? `<span class="rcc-bal ${balCls}">${esc(bal)}</span>` : (!(s && e) ? '<span class="rcc-bal rcc-set">Set window</span>' : '')
+      }</div>
+    </div>`;
+
+    // ── Quote (no window yet) → header only ──────────────────────────────────
+    if (!(s && e)) return `<div class="rcc" style="--rcc-hl:var(--${stColor})">${headHtml}</div>`;
 
     // ── Transport gate icons on start / end dots ─────────────────────────────
     // Delivery or Round-Trip → truck out on start; Recovery or Round-Trip → truck in on end.
@@ -3438,15 +3440,17 @@ const ROWS = {
     const endHasTruck = ttype === 'Recovery' || ttype === 'Round-Trip';
     const endIcon = isSelf ? CARD_ICON.customers : (endHasTruck ? I.truck : '');
 
-    // ── 3-week dot calendar with the rental window THREADED through the dots ──
-    // (direction A): solid track = elapsed (start→today), faint = remaining
-    // (today→end). Week anchored to today's Sunday (US convention, getDay() 0 = Sun).
-    const wd = TODAY.getDay();
-    const thisSun = new Date(TODAY.getFullYear(), TODAY.getMonth(), TODAY.getDate() - wd);
-    const lastSun = new Date(thisSun.getFullYear(), thisSun.getMonth(), thisSun.getDate() - 7);
+    // ── 3-week Mon–Fri calendar (closed weekends, Jac 2026-06-23): prev · current
+    //    (today highlighted) · next. Window THREADED through the dots — solid track =
+    //    elapsed (start→today), faint = remaining. Anchored to this week's Monday. ──
+    const wd = TODAY.getDay();                       // 0 Sun … 6 Sat
+    const monOff = wd === 0 ? -6 : 1 - wd;           // days back to this week's Monday
+    const thisMon = new Date(TODAY.getFullYear(), TODAY.getMonth(), TODAY.getDate() + monOff);
+    const firstMon = new Date(thisMon.getFullYear(), thisMon.getMonth(), thisMon.getDate() - 7);
+    const MON = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
     const dotCells = [];
-    for (let i = 0; i < 21; i++) {
-      const d = new Date(lastSun.getFullYear(), lastSun.getMonth(), lastSun.getDate() + i);
+    for (let w = 0; w < 3; w++) for (let dow = 0; dow < 5; dow++) {   // 5 weekdays × 3 weeks
+      const d = new Date(firstMon.getFullYear(), firstMon.getMonth(), firstMon.getDate() + w * 7 + dow);
       const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
       const isToday = iso === TODAY_ISO, isStart = iso === r.startDate, isEnd = iso === r.endDate;
       const inWin = iso >= r.startDate && iso <= r.endDate;   // ISO compares chronologically
@@ -3456,16 +3460,17 @@ const ROWS = {
         (!isToday && !inWin && d < TODAY) && 'is-past'].filter(Boolean).join(' ');
       const time = isStart ? (r.startTime || '') : '';
       const icon = isStart ? startIcon : (isEnd ? endIcon : '');
-      dotCells.push(`<div class="${cls}">${inWin ? '<span class="rcc-bar"></span>' : ''}<span class="rcc-t">${esc(time)}</span><span class="rcc-dot">${icon}</span></div>`);
+      // ONLY start & end show a date number; a month's 1st shows its 3-letter abbrev instead.
+      const label = (isStart || isEnd) ? String(d.getDate()) : (d.getDate() === 1 ? MON[d.getMonth()] : '');
+      const isMon = label && !(isStart || isEnd);
+      dotCells.push(`<div class="${cls}">${inWin ? '<span class="rcc-bar"></span>' : ''}${time ? `<span class="rcc-t">${esc(time)}</span>` : ''}<span class="rcc-dot">${icon}</span>${label ? `<span class="rcc-n${isMon ? ' mon' : ''}">${esc(label)}</span>` : ''}</div>`);
     }
+    const dowHtml = ['M', 'T', 'W', 'T', 'F'].map((l) => `<span>${l}</span>`).join('');
 
     return `<div class="rcc" style="--rcc-hl:var(--${stColor})">
-      <div class="rcc-head">${esc(name)}</div>
+      ${headHtml}
+      <div class="rcc-dow">${dowHtml}</div>
       <div class="rcc-body">${dotCells.join('')}</div>
-      <div class="rcc-foot">
-        <span class="rcc-cust">${cust ? esc(cust.name) : ''}</span>
-        ${bal ? `<span class="rcc-bal ${balCls}">${esc(bal)}</span>` : ''}
-      </div>
     </div>`;
   },
 
@@ -3497,12 +3502,15 @@ const ROWS = {
       .filter((s) => s && s !== 'N/A').sort((a, b) => (FUNNEL_RANK[b] || 0) - (FUNNEL_RANK[a] || 0))[0];
     const funnelHtml = topStage ? statusPill('funnelStage', topStage) : '';
 
+    // ONE left-packed row (Jac 2026-06-23): name · phone·type · pay-$ · funnel — no
+    // right anchor (the old layout left a dead gap mid-row). On a narrow card the
+    // phone·type reflows under the name (container query).
     return `<div class="cr">
       <div class="cr-id">
         <span class="r-title cr-name" style="color:${nameColor}">${esc(c.name)}</span>
-        <span class="cr-sub">${sub}</span>
+        ${sub ? `<span class="cr-sub">${sub}</span>` : ''}
       </div>
-      <div class="cr-right">${payHtml}${funnelHtml}</div>
+      ${payHtml}${funnelHtml}
     </div>`;
   },
 
@@ -3512,11 +3520,13 @@ const ROWS = {
     // below the name on narrow widths (flex-wrap).
     const cat = IDX.category.get(u.categoryId);
     const hl = getEntityColor('units', u);
+    // NAME tinted to the unit's flag color (Jac 2026-06-23): r/y/g lead in-color, gray reads muted.
+    const nameColor = (hl === 'red' || hl === 'yellow' || hl === 'green') ? `var(--${hl})` : hl === 'gray' ? 'var(--txt-3)' : 'var(--txt)';
     const sub = [cat ? esc(cat.name) : '', `${num(u.currentHours)} HRS`].filter(Boolean).join(' · ');
     return `<div class="ur" style="--ur-hl:var(--${hl})">
       <span class="ur-cat">${categoryIconFor(cat && cat.name)}</span>
       <div class="ur-id">
-        <span class="r-title ur-name">${esc(u.name)}</span>
+        <span class="r-title ur-name" style="color:${nameColor}">${esc(u.name)}</span>
         <span class="ur-sub">${sub}</span>
       </div>
       <div class="ur-pills">${unitRentalInspPill(u)}${unitWoSoPill(u)}</div>
