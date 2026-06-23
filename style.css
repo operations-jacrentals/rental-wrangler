@@ -1886,7 +1886,7 @@ select.nc-in { cursor: pointer; }
 .ag-packet { display: flex; gap: 11px; margin-top: 14px; }
 .ag-pcell { flex: 1; min-width: 0; }
 .ag-pcap { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.5px; font-size: 10px; color: var(--txt-3); margin-bottom: 6px; }
-.ag-pcell .ag-selfie { width: 100%; height: 96px; object-fit: cover; object-position: top; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); }
+.ag-pcell .ag-selfie { width: 100%; height: 96px; object-fit: cover; object-position: center 35%; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); }
 .ag-pcell .ag-selfie.empty { display: flex; align-items: center; justify-content: center; color: var(--txt-3); }
 .ag-sigthumb { width: 100%; height: 96px; object-fit: contain; border: 1px solid var(--line); border-radius: 10px; background: #fbfcfd; }
 /* CAPTURE row: selfie tile + the BIG sign pad */
@@ -1899,11 +1899,11 @@ select.nc-in { cursor: pointer; }
 .ag-selfiebtn:hover { border-color: var(--accent-line); }
 .ag-selfiebtn:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
 .ag-selfiebtn .l { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.3px; font-size: 10.5px; }
-.ag-selfiebtn .ag-selfie { width: 100%; height: 100%; object-fit: cover; object-position: top; }
+.ag-selfiebtn .ag-selfie { width: 100%; height: 100%; object-fit: cover; object-position: center 35%; }
 /* live selfie camera — auto-on; one tap snaps the photo (file-input fallback when absent) */
 .ag-selfiebtn { position: relative; }
 .ag-selfiebtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.ag-cam-feed { display: none; width: 100%; height: 100%; object-fit: cover; object-position: top; transform: scaleX(-1); }
+.ag-cam-feed { display: none; width: 100%; height: 100%; object-fit: cover; object-position: center 35%; transform: scaleX(-1); }
 .ag-cam-fallback { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 8px; }
 .ag-selfiebtn.live .ag-cam-feed { display: block; }
 .ag-selfiebtn.live .ag-cam-fallback { display: none; }
@@ -2043,7 +2043,7 @@ select.nc-in { cursor: pointer; }
 /* Mr. Wrangler intro — full-bleed behind the plate, dark until sign-in starts, then it
    fades up to entertain through the slow backend load. Reduced-motion users skip it. */
 .login-video {
-  position: fixed; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: top;
+  position: fixed; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center 35%;
   opacity: 0; transition: opacity .5s ease; z-index: 0; pointer-events: none;
 }
 .login-screen.signing-in .login-video { opacity: .62; }
