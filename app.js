@@ -7119,6 +7119,7 @@ function syncBackGuard() {
 }
 
 function renderOverlay() {
+  hideTip();   // a tooltip floats on <body>, OUTSIDE #overlay-root — tearing down/switching a popup destroys its source element with no mouseout, so dismiss it here too (mirrors render())
   syncBackGuard();
   const root = $('#overlay-root');
   if (_ovLastKind) { const _pb = root.querySelector('.set-pane') || root.querySelector('.popup-body'); if (_pb) _ovScroll[_ovLastKind] = _pb.scrollTop; }   // .set-pane is the settings scroller; .popup-body for the rest
