@@ -2946,6 +2946,28 @@ function openCtxMenu(e, hit) {
   m.style.top = Math.min(e.clientY, window.innerHeight - m.offsetHeight - 8) + 'px';
   setTimeout(() => document.addEventListener('mousedown', ctxOutside), 0);
 }
+// §13.4/§R20 — graph-view chrome menu: hide/show the clickable filter-pill legend under the
+// charts and/or the Views & sort control, or Reset both. Reuses the R20 ctx-menu shell +
+// the ctxOutside closer; the chosen state persists per device, per card (loadGvChrome).
+let ctxGvCard = null;
+function openGvChromeMenu(e, card) {
+  closeCtxMenu();
+  ctxTarget = null; ctxGvCard = card;
+  const ch = loadGvChrome(card);
+  const m = document.createElement('div');
+  m.className = 'ctx-menu'; m.id = 'rw-ctx';
+  const item = (act, label) => `<button class="dd-item" data-ctx="${act}">${label}</button>`;
+  m.innerHTML = [
+    item('gv-pills', `🏷️ ${ch.pills ? 'Show' : 'Hide'} filter pills`),
+    item('gv-sort', `↕️ ${ch.sort ? 'Show' : 'Hide'} Views &amp; sort`),
+    '<div class="menu-sep"></div>',
+    item('gv-reset', '↺ Reset pills &amp; sort'),
+  ].join('');
+  document.body.appendChild(m);
+  m.style.left = Math.min(e.clientX, window.innerWidth - 205) + 'px';
+  m.style.top = Math.min(e.clientY, window.innerHeight - m.offsetHeight - 8) + 'px';
+  setTimeout(() => document.addEventListener('mousedown', ctxOutside), 0);
+}
 // §M3 — open the right-click/long-press menu for the element at (x,y). Shared by the
 // contextmenu handler (mouse) and the touch long-press timer (phone). Mirrors the §R20
 // logic: a real "leaf" tool opens the Wrangler menu; card dead-space → card-to-List.
@@ -2955,6 +2977,13 @@ function openCtxMenuAt(target, x, y) {
   if (!target || !target.closest) return;
   if (target.closest('input, textarea, .inline-input')) return;
   const card = target.closest('.card'); if (!card && !target.closest('.overlay .popup')) return;
+  // §13.4 — inside an OPEN graph view, right-click/long-press the panel (or the Views & sort
+  // control above it) opens the graph-chrome menu instead of the per-element Wrangler menu,
+  // so the filter pills / sort can be hidden and Reset.
+  if (card && !state.winpicker) {
+    const cid = card.dataset.card, gcs = cid && activeSession().cards[cid];
+    if (gcs && gcs.graphView && (target.closest('.gv-panel') || target.closest('.sort'))) return openGvChromeMenu({ clientX: x, clientY: y }, cid);
+  }
   // While the rental-window picker is open, keep right-click → BACK working; just suppress
   // the element context menu (it gets in the way of picking). (Jac B5, 2026-06-15)
   const leaf = state.winpicker ? null : target.closest('.pill, .add-field, .flag, .linkname, .inv-line-link, .req, .seg, button, .inline-edit, .jnode, .x, a, .d-title, .r-title, .derived');
@@ -2972,6 +3001,14 @@ function ctxOutside(e) {
   closeCtxMenu();
 }
 function runCtxAction(act) {
+  if (act.startsWith('gv-')) {   // §13.4 graph-chrome menu — no leaf target, just the card
+    const card = ctxGvCard; closeCtxMenu(); document.removeEventListener('mousedown', ctxOutside); ctxGvCard = null;
+    if (!card) return;
+    if (act === 'gv-pills') saveGvChrome(card, { pills: !gvPillsHidden(card) });
+    else if (act === 'gv-sort') saveGvChrome(card, { sort: !gvSortHidden(card) });
+    else if (act === 'gv-reset') saveGvChrome(card, { pills: false, sort: false });
+    return render();
+  }
   const tg = ctxTarget; closeCtxMenu(); document.removeEventListener('mousedown', ctxOutside);
   if (!tg) return;
   const el = tg.el;
@@ -3066,7 +3103,7 @@ const RULE_META = {
   R17: ['Action pill', 'actionPill', 'commit = blue · money = green · danger = solid red; .locked = gated'],
   R18: ['Ghost', 'ghostPill', 'the ONE quiet action — Cancel / Close / Exit / Clear'],
   R19: ['Attention flash', 'attnFlash / flashOr', 'a glow that points AT the next action — replaces an error message when the fix is on screen'],
-  R20: ['Context menu', 'openCtxMenu (right-click · long-press)', 'right-click/long-press any element: Cut · Copy · Paste · Search · Replace · Add Comment · Ask Mr. Wrangler'],
+  R20: ['Context menu', 'openCtxMenu (right-click · long-press)', 'right-click/long-press any element: Cut · Copy · Paste · Search · Replace · Add Comment · Ask Mr. Wrangler — or, inside an open graph view, hide the filter pills / Views & sort (Reset restores)'],
   R21: ['File drop', 'fileDrop', 'the MASSIVE popup add-file zone — R5b blue dashed at full size'],
   R22: ['Date picker', 'dateField', 'the ONE app-styled calendar for a single date/time (NOT the rental-window timeline)'],
   R23: ['Tooltip', 'data-tip → the one styled tip', 'every hover hint goes through data-tip — a native title attribute is a violation'],
@@ -5442,10 +5479,10 @@ function listView(cardDef, session) {
       ${cascChip}${cterms.map((ft, i) => filterTermPill(ft, i, card)).join('')}
       <input class="mini-search" placeholder="${cterms.length ? 'Add filter — Enter to pin…' : `Search ${esc(cardDef.title.toLowerCase())}…`}" value="${esc(cs.search)}" data-card="${card}" />
     </div>
-    <div class="sort">
+    ${(cs.graphView && gvSortHidden(card)) ? '' : `<div class="sort">
       <button class="sortbtn js-sortmenu${av ? ' viewing' : ''}" data-card="${card}" data-tip="Views &amp; sort">${esc(av ? av.name : curField.label)} ${I.chev}</button>
       <button class="dir js-sortdir" data-card="${card}"><span class="${cs.sort.dir === 'asc' ? 'on' : ''}">▲</span><span class="${cs.sort.dir === 'desc' ? 'on' : ''}">▼</span></button>
-    </div>`;
+    </div>`}`;
   wrap.appendChild(bar);
   // §13.4 — Graph carousel: an interactive panel ABOVE the list (the list renders below,
   // filtered by the chart's g-tagged search terms). Legacy cards still full-replace the list.
@@ -7194,6 +7231,26 @@ function gvRestore(src, cs, idx) {
 }
 function gvOpen(card, src) { const cs = activeSession().cards[card]; cs.graphView = true; gvRestore(src, cs, cs.graphIdx || 0); cs.listLimit = undefined; render(); }
 function gvChevron(card, src, dir) { const cs = activeSession().cards[card]; gvSaveCurrent(src, cs); gvRestore(src, cs, (cs.graphIdx || 0) + dir); cs.listLimit = undefined; render(); }
+// §13.4 — per-device, per-card graph-chrome prefs: hide the clickable filter-pill legend
+// under the chart (pie slices stay clickable) and/or the Views & sort control. Toggled from
+// the §R20 right-click menu (Reset restores both). Persisted like the list layout; default
+// shows everything, and the key is dropped once nothing is hidden.
+const GV_CHROME_KEY = (card) => `jactec.gvChrome.${card}`;
+const GV_CHROME = Object.create(null);
+function loadGvChrome(card) {
+  if (card in GV_CHROME) return GV_CHROME[card];
+  let v = null;
+  try { const raw = localStorage.getItem(GV_CHROME_KEY(card)); if (raw) v = JSON.parse(raw); } catch (e) { v = null; }
+  v = (v && typeof v === 'object') ? { pills: !!v.pills, sort: !!v.sort } : { pills: false, sort: false };
+  GV_CHROME[card] = v; return v;
+}
+function saveGvChrome(card, patch) {
+  const next = { ...loadGvChrome(card), ...patch };
+  GV_CHROME[card] = next;
+  try { if (next.pills || next.sort) localStorage.setItem(GV_CHROME_KEY(card), JSON.stringify(next)); else localStorage.removeItem(GV_CHROME_KEY(card)); } catch (e) {}
+}
+const gvPillsHidden = (card) => loadGvChrome(card).pills;
+const gvSortHidden = (card) => loadGvChrome(card).sort;
 // Idempotent close-sync: any path that flips graphView off (record open, invoice surface,
 // switch to Shop 'all') leaves g-terms behind — save them to memory + strip them.
 function gvSyncClosed(src, cs) { if (cs.graphView) return; if (!(cs.filterTerms || []).some((t) => t.g)) return; gvSaveCurrent(src, cs); gvStripTerms(cs); }
@@ -7238,8 +7295,10 @@ function gvPieClickable(card, src, cs, segs, size = 116) {
 }
 function gvRenderView(card, src, cs, v) {
   if (v.kind === 'pie') {
-    const legend = v.segs.map((s) => gvSegBtn(cs, card, src, s, `<i style="background:var(--${s.color})"></i><span class="gl-lbl">${esc(s.label)}</span> <b>${s.count}</b>`, 'gv-leg')).join('');
-    return `<div class="gv-pie">${gvPieClickable(card, src, cs, v.segs)}<div class="gv-legend gv-legend-click">${legend}</div></div>`;
+    // the legend chips are the clickable "filter pills" under the donut — hideable via the
+    // §R20 graph-chrome menu (the donut slices stay clickable as the pointer path).
+    const legend = gvPillsHidden(card) ? '' : `<div class="gv-legend gv-legend-click">${v.segs.map((s) => gvSegBtn(cs, card, src, s, `<i style="background:var(--${s.color})"></i><span class="gl-lbl">${esc(s.label)}</span> <b>${s.count}</b>`, 'gv-leg')).join('')}</div>`;
+    return `<div class="gv-pie">${gvPieClickable(card, src, cs, v.segs)}${legend}</div>`;
   }
   if (v.kind === 'bars') {
     const max = Math.max(1, ...v.segs.map((s) => s.count));
