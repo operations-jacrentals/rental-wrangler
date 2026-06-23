@@ -5901,8 +5901,11 @@ const THEME_NEXT = {
   ranch: { next: 'yard', icon: I.hardhat, tip: 'Yard mode' },
   light: { next: 'yard', icon: I.hardhat, tip: 'Yard mode' },
 };
-/** The action toolbar — moved to a fixed bottom bar (Dashboard / +New / tools). */
-function bottomBarInner() {
+/** The action toolbar — pinned to the LEFT of the bottom comms band (the
+ *  conversation rail fills the middle, bell + inbox sit at the right). On phones
+ *  this same set opens up across the top header, so the inbox stays here (the
+ *  desktop band passes {noInbox} since its right utils zone carries it). */
+function bottomBarInner(opts = {}) {
   // rules 5/6: LEFT = labeled actions (icon LEADS label, no "+"), Wash joins them;
   // RIGHT (after divider) = icon-only utilities. The +New collapse button is dropped (Jac).
   return `
@@ -5910,16 +5913,77 @@ function bottomBarInner() {
     <span class="bb-sep"></span>
     <button class="iconbtn js-qr" data-tip="Share session (QR)">${I.qr}</button>
     <button class="iconbtn${state.previewsOn ? '' : ' off'} js-previews" data-tip="${state.previewsOn ? 'Hover previews: on' : 'Hover previews: off'}">${state.previewsOn ? I.eye : I.eyeOff}</button>
-    <button class="iconbtn js-chat-toggle${state.chat.open ? ' on' : ''}" data-tip="Team chat — flagged comments + tagged context">${I.chat}${(() => { const n = chatUnreadCount(); return n ? `<span class="bb-badge">${n > 9 ? '9+' : n}</span>` : ''; })()}</button>
-    <button class="iconbtn js-wrangler" data-tip="Mr. Wrangler — ask the yard AI, or report a bug to fix" style="font-size:16px">🤠</button>
-    <button class="iconbtn js-requests" data-tip="Requests for your OK — review what Mr. Wrangler filed">${I.inbox}${wranglerRequests.length ? `<span class="bb-badge">${wranglerRequests.length > 9 ? '9+' : wranglerRequests.length}</span>` : ''}</button>
+    <button class="iconbtn js-chat-toggle${state.chat.open ? ' on' : ''}" data-tip="New team chat — flagged comments + tagged context">${I.chat}${(() => { const n = chatUnreadCount(); return n ? `<span class="bb-badge">${n > 9 ? '9+' : n}</span>` : ''; })()}</button>
+    <button class="iconbtn js-wrangler" data-tip="New chat with Mr. Wrangler — ask the yard AI, or report a bug" style="font-size:16px">🤠</button>
+    ${opts.noInbox ? '' : `<button class="iconbtn js-requests" data-tip="Requests for your OK — review what Mr. Wrangler filed">${I.inbox}${wranglerRequests.length ? `<span class="bb-badge">${wranglerRequests.length > 9 ? '9+' : wranglerRequests.length}</span>` : ''}</button>`}
     <button class="iconbtn js-hotkeys" data-tip="Mouse &amp; keyboard shortcuts">${I.mouse}</button>
     ${adminUnlocked() ? `<button class="iconbtn js-lint${document.body.classList.contains('rw-lint') ? ' on' : ''}" data-tip="Design lint — flash anything that bypassed the UI builders (R0)">${I.eye}</button>
     <button class="iconbtn js-inspect${state.inspect ? ' on' : ''}" data-tip="Design Inspector — hover names the rule, click copies the reference">${I.search}</button>
     <button class="iconbtn js-rulebook" data-tip="The R-Rulebook — visual design reference (SPEC v8)">${I.doc}</button>
     <button class="iconbtn js-photo-sweep" data-tip="Offload base64 photos to Drive — one-shot migration to de-bloat the payload">${I.camera}</button>` : ''}`;
 }
-function bottomBarEl() { const bar = el('div', 'bottombar'); bar.innerHTML = bottomBarInner(); return bar; }
+// §18g/§17 — the bottom COMMS BAND: toolbar pinned left · the conversation rail
+// fills the middle (every Mr. Wrangler request + chat and every team thread is its
+// OWN tab, so nothing funnels into one session) · bell + inbox at the right.
+function bottomBarEl() {
+  const bar = el('div', 'bottombar');
+  bar.innerHTML = `<div class="bb-tools">${bottomBarInner({ noInbox: true })}</div>`
+    + `<div class="comms-rail" role="tablist" aria-label="Conversations">${commsRailEl()}</div>`
+    + `<div class="bb-utils">${commsUtilsEl()}</div>`;
+  return bar;
+}
+// The right-hand utilities of the comms band — notification bell + the Requests inbox.
+function commsUtilsEl() {
+  const reqBadge = wranglerRequests.length ? `<span class="fab-badge">${wranglerRequests.length > 9 ? '9+' : wranglerRequests.length}</span>` : '';
+  const nu = unseenNotifs();
+  const notifBadge = nu ? `<span class="fab-badge">${nu > 9 ? '9+' : nu}</span>` : '';
+  return `<button class="fab js-notifications" data-tip="Notifications — resolved fixes">${I.bell}${notifBadge}</button>
+    <button class="fab js-requests" data-tip="Requests for your OK — review what Mr. Wrangler filed">${I.inbox}${reqBadge}</button>`;
+}
+// The conversation rail: channels grouped + stamped, each conversation a SEPARATE
+// tab. 🤠 Wrangler — one tab per needs-answer request (flashing), the live chat, and
+// every past chat; 💬 Team — one tab per active thread. (Customer SMS/email channels
+// slot in here later.) Tabs reuse the wrangler open handlers (data-wrc-needs /
+// data-wrc-open) and a dedicated data-team-open for team threads, so each opens
+// ONLY its own thread.
+function commsRailEl() {
+  const trim = (t, n = 24) => { t = String(t || '').replace(/\s+/g, ' ').trim(); return esc(t.length > n ? t.slice(0, n - 1) + '…' : t); };
+  // ── 🤠 WRANGLER ──
+  const needs = (wranglerRequests || []).filter((rq) => (rq.labels || []).includes('wrangler-needs-jac'));
+  const needsNums = new Set(needs.map((rq) => rq.number));
+  const wrOpen = state.wrangler.open;
+  const needTabs = needs.map((rq) => {
+    const active = wrOpen && (state.wrangler.reqNumber === rq.number || state.wrangler.id === 'req' + rq.number);
+    return `<button class="crail-tab crail-needs wr-flash${active ? ' is-active' : ''}" data-wrc-needs="${rq.number}" role="tab" aria-selected="${active}" data-tip="Mr. Wrangler needs your answer — #${rq.number}"><span class="crail-dot"></span><span class="crail-t">${trim(rq.title || ('Request #' + rq.number))}</span></button>`;
+  }).join('');
+  const snaps = (state.wranglerRail || []).filter((c) => !(c.reqNumber && needsNums.has(c.reqNumber)));
+  // the live chat first if it's a brand-new one not yet snapshotted onto the rail
+  let liveTab = '';
+  if (wrOpen && state.wrangler.id && !state.wrangler.reqNumber && !snaps.some((c) => c.id === state.wrangler.id) && (state.wrangler.messages || []).length) {
+    liveTab = `<button class="crail-tab is-active" data-wrc-open="${esc(state.wrangler.id)}" role="tab" aria-selected="true" data-tip="Current chat with Mr. Wrangler"><span class="crail-dot"></span><span class="crail-t">${trim(wranglerConvoTitle(state.wrangler) || 'New chat')}</span></button>`;
+  }
+  const snapTabs = snaps.map((c) => {
+    const active = wrOpen && state.wrangler.id === c.id;
+    return `<button class="crail-tab${active ? ' is-active' : ''}" data-wrc-open="${esc(c.id)}" role="tab" aria-selected="${active}" data-tip="Reopen this chat with Mr. Wrangler"><span class="crail-dot"></span><span class="crail-t">${trim(c.title || 'Chat')}</span></button>`;
+  }).join('');
+  const wrTabs = needTabs + liveTab + snapTabs;
+  // ── 💬 TEAM ──
+  const u = commentUserKey();
+  const teamChats = (state.chat.chats || []).filter((c) => c.participants.length && c.messages.length)
+    .sort((a, b) => Math.max(0, ...b.messages.map((m) => m.at || 0)) - Math.max(0, ...a.messages.map((m) => m.at || 0)));
+  const teamTabs = teamChats.map((c) => {
+    const active = state.chat.open && state.chat.activeId === c.id;
+    const unseen = c.messages.length && Math.max(...c.messages.map((m) => m.at || 0)) > (c.seen[u] || 0);
+    const tag = (c.tags && c.tags[0]) || null;
+    const label = (tag && tag.label) || 'Team chat';
+    return `<button class="crail-tab c-${(tag && tag.color) || 'gray'}${active ? ' is-active' : ''}${unseen ? ' is-unseen' : ''}" data-team-open="${esc(c.id)}" role="tab" aria-selected="${active}" data-tip="${esc(label)}"><span class="crail-dot"></span><span class="crail-t">${trim(label)}</span></button>`;
+  }).join('');
+  const groups = [];
+  if (wrTabs) groups.push(`<div class="crail-group"><span class="crail-glabel">🤠 Wrangler</span>${wrTabs}</div>`);
+  if (teamTabs) groups.push(`<div class="crail-group"><span class="crail-glabel">💬 Team</span>${teamTabs}</div>`);
+  return groups.length ? groups.join('<span class="crail-div" aria-hidden="true"></span>')
+    : '<span class="crail-empty">No conversations yet — start one from the tools on the left.</span>';
+}
 // §M1 — phone-only per-column bottom strip: Yard→internal chat · Rentals→tool bar · Customers→external chats (shell).
 // §M1/§M3 — the active phone column's card id (state.cards key), for the grid Back/Fwd swipe.
 function activeMobileCard() {
@@ -8619,33 +8683,9 @@ function syncWranglerComment(o, role, text, images) {
   if (!o || !o.reqNumber || typeof backendPassword === 'undefined' || !backendPassword) return;
   try { backendCall('wranglerComment', { number: o.reqNumber, role, text: text || '', images: images || [] }).catch(() => {}); } catch (e) {}
 }
-// The floating bottom-right cluster — notification bell (stub for now) + Requests inbox.
-// §18g The conversation rail: stored chats (newest first) + any chat where Mr.
-// Wrangler is waiting on you (those flash). Renders above the bell/inbox FABs.
-function wranglerRailEl() {
-  const needs = (wranglerRequests || []).filter((rq) => (rq.labels || []).includes('wrangler-needs-jac'));
-  const needsNums = new Set(needs.map((rq) => rq.number));
-  const snaps = (state.wranglerRail || []).filter((c) => !(c.reqNumber && needsNums.has(c.reqNumber))).slice(0, 6);
-  if (!needs.length && !snaps.length) return '';
-  const trim = (t) => { t = String(t || '').replace(/\s+/g, ' ').trim(); return esc(t.length > 40 ? t.slice(0, 39) + '…' : t); };
-  // #246 — cap the needs-jac chips so they stop cascading over the UI; the overflow
-  // opens the requests inbox (the same list already badged on the bell/inbox FAB).
-  const NEEDS_CAP = 3, moreNeeds = needs.length - NEEDS_CAP;
-  const needsChips = needs.slice(0, NEEDS_CAP).map((rq) => `<button class="wr-railchip wr-rc-needs wr-flash" data-wrc-needs="${rq.number}" data-tip="Mr. Wrangler needs your answer — #${rq.number}"><span class="wr-rc-dot"></span><span class="wr-rc-t">${trim(rq.title || ('Request #' + rq.number))}</span></button>`).join('')
-    + (moreNeeds > 0 ? `<button class="wr-railchip wr-rc-needs js-requests" data-tip="${moreNeeds} more need your answer — open the requests inbox"><span class="wr-rc-dot"></span><span class="wr-rc-t">+${moreNeeds} more</span></button>` : '');
-  const snapChips = snaps.map((c) => `<button class="wr-railchip" data-wrc-open="${esc(c.id)}" data-tip="Reopen this chat with Mr. Wrangler"><span class="wr-rc-dot"></span><span class="wr-rc-t">${trim(c.title || 'Chat')}</span></button>`).join('');
-  return `<div class="wr-rail" role="list" aria-label="Mr. Wrangler conversations">${needsChips}${snapChips}</div>`;
-}
-function fabStackEl() {
-  const stack = el('div', 'fab-stack');
-  const reqBadge = wranglerRequests.length ? `<span class="fab-badge">${wranglerRequests.length > 9 ? '9+' : wranglerRequests.length}</span>` : '';
-  const nu = unseenNotifs();
-  const notifBadge = nu ? `<span class="fab-badge">${nu > 9 ? '9+' : nu}</span>` : '';
-  stack.innerHTML = `${wranglerRailEl()}
-    <button class="fab js-notifications" data-tip="Notifications">${I.bell}${notifBadge}</button>
-    <button class="fab js-requests" data-tip="Requests for your OK — review what Mr. Wrangler filed">${I.inbox}${reqBadge}</button>`;
-  return stack;
-}
+// (§18g/§17 — the old floating bottom-right fab-stack + capped wr-rail were retired
+// when the conversation rail moved into the bottom comms band: commsRailEl /
+// commsUtilsEl / bottomBarEl above. Every chat is now its own tab, uncapped.)
 // Read the customer-form inputs back into the draft (call before any re-render so
 // typed values survive a selfie/signature/pill change).
 function ncSyncInputs() {
@@ -9321,9 +9361,8 @@ function render() {
   if (state.chat.open) { const d = el('div', 'chat-dock', ''); d.dataset.drop = 'chat'; d.innerHTML = chatDockEl(); $('#app').appendChild(d); }
   // §18 — Mr. Wrangler dock floats alongside the team chat (or alone at bottom-right)
   if (state.wrangler.open) { const d = el('div', 'wrangler-dock' + (state.chat.open ? ' wr-beside-chat' : '') + (state.wrangler.min ? ' wr-min' : '')); d.innerHTML = wranglerDockEl(); $('#app').appendChild(d); }
-  // §18e — floating bottom-right cluster: notification bell + the Requests inbox.
-  // Hidden while a dock owns that corner.
-  if (!state.chat.open && !state.wrangler.open) $('#app').appendChild(fabStackEl());
+  // §18e/§17 — the bell + Requests inbox now live in the bottom comms band (bb-utils),
+  // always visible; the docks float above it. (The old floating fab-stack is retired.)
   mountTransportEditor();   // inline transport editor: mount the live map + wire the address field
   mountWranglerDock();   // §18 wire paste + drag-drop image input on the wrangler dock after each render
   mountDispatchMap();   // §2.3 office cockpit: re-parent the singleton dispatch map + refresh pins/route/truck
@@ -10091,6 +10130,7 @@ function onClick(e) {
   if (closest('[data-chat-untag]')) { e.stopPropagation(); const id = closest('[data-chat-untag]').dataset.chatUntag; const c = activeChat(); if (c) c.tags = c.tags.filter((t) => t.id !== id); pushChatsSoon(); return render(); }
   if (closest('[data-chat-role]')) { e.stopPropagation(); return chatToggleRole(closest('[data-chat-role]').dataset.chatRole); }
   if (closest('[data-chat-open]')) { e.stopPropagation(); const [card, recId] = closest('[data-chat-open]').dataset.chatOpen.split('|'); return anchorRecord(SHOP_TYPES.includes(card) ? 'shop' : card, recId, SHOP_TYPES.includes(card) ? card : null); }
+  if (closest('[data-team-open]')) { e.stopPropagation(); return openChat(closest('[data-team-open]').dataset.teamOpen); }   // §17 comms rail: open a team thread in its own tab
   if (closest('.js-fb-type')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'feedback') { const ta = document.querySelector('.overlay .js-fb-text'); if (ta) o.text = ta.value; o.fbType = closest('.js-fb-type').dataset.val; renderOverlay(); } return; }
   if (closest('.js-fb-shot-x')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'feedback') { const ta = document.querySelector('.overlay .js-fb-text'); if (ta) o.text = ta.value; o.shot = ''; renderOverlay(); } return; }
   if (closest('[data-cmt-color]')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'comment') { const ta = document.querySelector('.overlay .js-cmt-text'); if (ta) o.text = ta.value; o.color = closest('[data-cmt-color]').dataset.cmtColor; renderOverlay(); } return; }
@@ -13183,31 +13223,59 @@ function retrySyncNow() { clearTimeout(saveTimer); SYNC.backoff = 1200; flushSav
 // record's full JSON into one cell, so an oversized record makes the write throw
 // and — with the all-or-nothing commit below — jams the WHOLE sync (#251). The
 // realistic bloat source is an inline base64 photo (~100KB–2MB) still riding an
-// inspection / WO-part record. Offload it to Drive BEFORE the JSON rides the
-// sync, the same treatment chat images already get (pushWranglerRail → 6212).
+// inspection / WO-part record — OR a customer's agreement media (signature +
+// selfie) / durable card selfie that predates the Drive offload (#251b: this is
+// the one that re-warned on EVERY login, since migrateCustomers() dirties the
+// record on boot). Offload it ALL to Drive BEFORE the JSON rides the sync, the
+// same treatment chat images already get (pushWranglerRail → 6212).
 async function offloadDirtyPhotos(upserts) {
   if (!backendPassword) return;                 // demo/offline → can't offload; the size-guard below backstops
   const jobs = [];
   (upserts.inspections || []).forEach((u) => { const n = u.rec; if ((n.photo || '').startsWith('data:')) jobs.push(offloadPhotoNow(n, 'photo', 'insp_' + n.inspectionId, n, 'inspections')); });
   (upserts.workOrders || []).forEach((u) => { const w = u.rec; (w.lineItems || []).forEach((li) => { if ((li.photo || '').startsWith('data:')) jobs.push(offloadPhotoNow(li, 'photo', 'wopart_' + w.woId + '_' + lineKey(li), w, 'workOrders')); }); });
+  // #251b — customer inline media: agreement signings go through the dedicated
+  // per-customer archiveAgreementMedia handler (proper folder + immutable linkage,
+  // idempotent: no-op once it's a Drive URL); the durable card selfie + legacy
+  // customer-level selfie ride the generic capture offload.
+  (upserts.customers || []).forEach((u) => {
+    const c = u.rec;
+    (c.cards || []).forEach((k) => {
+      (k.agreements || []).forEach((sig) => { if ((sig.signature || '').startsWith('data:') || (sig.selfie || '').startsWith('data:')) jobs.push(archiveAgreementMedia(c, k, sig)); });
+      if ((k.selfie || '').startsWith('data:')) jobs.push(offloadPhotoNow(k, 'selfie', 'selfie_' + c.customerId + '_' + k.id, c, 'customers'));
+    });
+    if ((c.selfie || '').startsWith('data:')) jobs.push(offloadPhotoNow(c, 'selfie', 'selfie_' + c.customerId, c, 'customers'));
+  });
   if (jobs.length) { try { await Promise.all(jobs); } catch (e) {} }   // a failed offload leaves base64 → held back below, never poisons the batch
 }
 // Client-side fault isolation (#251): if a record is STILL over the cell cap after
 // offload (Drive upload failed, or non-photo bloat), hold it OUT of the batch so it
-// can't abort the sync for every other record. It stays dirty → retries; loud once.
+// can't abort the sync for every other record. It stays dirty → retries.
+// #251b — the warning is PERSISTED per-record (localStorage), so a record that can't
+// be offloaded (offline / handler absent) is announced ONCE, not re-toasted on every
+// login. A record that later shrinks below the cap is forgiven, so a fresh bloat
+// re-warns. The hold-back safety net still runs every sync regardless of the toast.
 let _oversizeHeld = new Set();
+const OVERSIZE_WARN_KEY = 'jactec.oversizeWarned';
+function oversizeWarned() { try { return new Set(JSON.parse(localStorage.getItem(OVERSIZE_WARN_KEY) || '[]')); } catch (e) { return new Set(); } }
+function setOversizeWarned(set) { try { localStorage.setItem(OVERSIZE_WARN_KEY, JSON.stringify([...set])); } catch (e) {} }
 function holdOversized(upserts) {
   const stillHeld = new Set();
+  const warned = oversizeWarned();
+  let warnedChanged = false;
   Object.keys(upserts).forEach((k) => {
     const keep = [];
     upserts[k].forEach((u) => {
       if (u.js.length > 49000) {
         const tag = k + ':' + u.id; stillHeld.add(tag);
-        if (!_oversizeHeld.has(tag)) toast('⚠ A record is too large to sync (photo over the 50k cell limit) — held back so the rest save. Re-capture with a smaller photo, or reconnect to offload it to Drive.');
+        if (!warned.has(tag)) { toast('⚠ A record is too large to sync (photo over the 50k cell limit) — held back so the rest save. Re-capture with a smaller photo, or reconnect to offload it to Drive.'); warned.add(tag); warnedChanged = true; }
       } else keep.push(u);
     });
     if (keep.length) upserts[k] = keep; else delete upserts[k];
   });
+  // Forgive a record that WAS held last pass but isn't now (offloaded / re-captured
+  // smaller) so a fresh bloat later re-warns instead of staying silent forever.
+  for (const tag of _oversizeHeld) { if (!stillHeld.has(tag) && warned.delete(tag)) warnedChanged = true; }
+  if (warnedChanged) setOversizeWarned(warned);
   _oversizeHeld = stillHeld;
 }
 async function flushSave() {

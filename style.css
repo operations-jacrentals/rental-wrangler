@@ -98,11 +98,16 @@ input { font-family: inherit; }
 .hr-top { display: flex; align-items: flex-start; gap: 10px; min-height: 38px; }
 .header-tabs { display: flex; align-items: center; gap: 8px; flex: 1 1 auto; min-width: 0; overflow-x: auto; overflow-y: hidden; }
 .header-tabs::-webkit-scrollbar { height: 0; }
-.bottombar > .iconbtn { height: 36px; }
+.bottombar .iconbtn { height: 36px; }
 .bb-sep { width: 1px; align-self: stretch; margin: 4px 4px; background: var(--line); }
 /* the +New split/collapse is gone — every create action is now its own labeled button */
-/* the action toolbar, now a centered bottom bar — no background, floats over the page */
-.bottombar { flex: 0 0 auto; display: flex; align-items: center; justify-content: center; gap: 10px; padding: 4px 14px 10px; background: transparent; }
+/* §18g/§17 — the bottom COMMS BAND: toolbar pinned left · conversation rail fills the
+   middle (scrolls) · bell+inbox at the right. No background, floats over the page. */
+.bottombar { flex: 0 0 auto; display: flex; align-items: center; justify-content: flex-start; gap: 12px; padding: 4px 14px 10px; background: transparent; }
+.bb-tools { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; }
+.bb-utils { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; }
+.bb-utils .fab { width: 40px; height: 40px; }
+.bb-utils .fab svg { width: 19px; height: 19px; }
 .hello-name { margin-left: auto; align-self: center; font-size: 24px; font-weight: 800; color: var(--txt); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 46%; letter-spacing: .2px; line-height: 1; padding-right: 4px; }
 .toolbar { display: flex; align-items: center; gap: 10px; }
 .toolbar .closeall { flex: 0 0 auto; }
@@ -1150,11 +1155,8 @@ select.lf-in { appearance: none; cursor: pointer; }
 .req-state { height: 20px; font-size: 9.5px; letter-spacing: .3px; flex: 0 0 auto; align-self: center; }
 .req-card.req-needs { border-color: var(--red); box-shadow: 0 0 0 1px rgba(255, 66, 66, .25); }
 
-/* §18e/f floating bottom-right cluster — notification bell + Requests inbox */
-.fab-stack { position: fixed; right: 16px; bottom: 16px; z-index: 70; display: flex; flex-direction: column; gap: 10px; }
-/* Reserve a right lane on desktop so the cluster (and its rail) never sit ON TOP of the
-   rightmost card's data/footer (Jac 2026-06-22). Phones hide the FABs entirely (below). */
-@media (min-width: 1025px) { .grid { padding-right: 74px; } }
+/* §18e/f the round bell + Requests inbox — now ride the right of the bottom comms band
+   (.bb-utils); the old floating fab-stack + its reserved right lane are retired. */
 .fab { position: relative; width: 46px; height: 46px; border-radius: 50%; cursor: pointer; border: 1px solid var(--line);
   background: linear-gradient(180deg, var(--card-head), var(--card)); color: var(--txt-2, var(--txt));
   display: grid; place-items: center; box-shadow: 0 6px 18px -6px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.08); transition: transform .1s, border-color .1s; }
@@ -1163,29 +1165,44 @@ select.lf-in { appearance: none; cursor: pointer; }
 .fab svg { width: 21px; height: 21px; }
 .fab-badge { position: absolute; top: -3px; right: -3px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 99px;
   background: var(--accent); color: #1a1205; font-size: 11px; font-weight: 800; display: grid; place-items: center; box-shadow: 0 0 0 2px var(--bg); }
-.is-phone .fab-stack { display: none; }   /* §M1 — Notifications + Requests live in the footer Tools menu on phones, not as floating FABs */
 @media (prefers-reduced-motion: reduce) { .fab:hover { transform: none; } }
-/* §18g Mr. Wrangler conversation rail — stamped data-plate chips above the FABs */
-.wr-rail { display: flex; flex-direction: column; align-items: flex-end; gap: 7px; margin-bottom: 4px; max-width: 240px; }
-.wr-railchip { display: inline-flex; align-items: center; gap: 7px; max-width: 100%; padding: 6px 12px; border-radius: 99px; cursor: pointer;
-  background: linear-gradient(180deg, var(--card-head), var(--card)); border: 1px solid var(--line); color: var(--txt-2, var(--txt));
-  box-shadow: 0 6px 18px -6px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.08);
-  font: inherit; font-size: 12.5px; font-weight: 600;
-  transition: transform .1s, border-color .1s; }
-.wr-railchip:hover { border-color: var(--accent-line); color: var(--txt); transform: translateY(-1px); }
-.wr-railchip:focus-visible { outline: 2px solid var(--accent-line); outline-offset: 2px; }
-.wr-rc-dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; background: var(--txt-3); }
-.wr-rc-t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.wr-rc-needs .wr-rc-dot { background: var(--red); }
-.wr-railchip.wr-flash { animation: attnGlow 1.6s ease-in-out infinite; border-color: var(--accent-line); }
-.is-phone .wr-rail { max-width: 62vw; }
-/* Recent-chat snap chips spilled over the rightmost card (Jac 2026-06-22). Collapse them
-   at rest so the corner stays clean; reveal on hover/focus of the cluster. Action-required
-   (wr-rc-needs) chips always show — they flash and need an answer. */
-.fab-stack .wr-railchip:not(.wr-rc-needs) { display: none; }
-.fab-stack:hover .wr-railchip:not(.wr-rc-needs),
-.fab-stack:focus-within .wr-railchip:not(.wr-rc-needs) { display: inline-flex; }
-@media (prefers-reduced-motion: reduce) { .wr-railchip:hover { transform: none; } .wr-railchip.wr-flash { animation: none; box-shadow: 0 0 0 2px var(--accent-soft), 0 6px 18px -6px rgba(0,0,0,.6); } }
+/* §18g/§17 — the bottom COMMS RAIL: channels grouped + stamped, each conversation its
+   OWN data-plate tab. Fills the band's middle and scrolls horizontally; the toolbar
+   stays left, bell+inbox right. Tab = registry dot + Geist title; selected = the ONE
+   safety-orange; a "needs your answer" tab flashes red. */
+.comms-rail { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 12px;
+  overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; padding: 2px 2px; }
+.comms-rail::-webkit-scrollbar { height: 6px; }
+.comms-rail::-webkit-scrollbar-thumb { background: var(--line); border-radius: 99px; }
+.crail-group { flex: 0 0 auto; display: flex; align-items: center; gap: 7px; }
+.crail-glabel { flex: 0 0 auto; font-family: 'Saira Condensed', sans-serif; text-transform: uppercase;
+  letter-spacing: 1.4px; font-weight: 700; font-size: 10.5px; color: var(--txt-3); padding-right: 2px; white-space: nowrap; }
+.crail-div { flex: 0 0 auto; width: 1px; align-self: stretch; margin: 5px 2px; background: var(--line); }
+.crail-empty { color: var(--txt-3); font-size: 12px; font-style: italic; white-space: nowrap; }
+.crail-tab { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 7px; max-width: 190px; padding: 6px 12px;
+  border-radius: var(--chip-radius, 11px); cursor: pointer; border: 1px solid var(--line); color: var(--txt-2, var(--txt));
+  background: linear-gradient(180deg, var(--card-head), var(--card));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.06); font: inherit; font-size: 12.5px; font-weight: 600;
+  transition: transform .1s, border-color .1s, background .12s, color .12s; }
+.crail-tab:hover { border-color: var(--accent-line); color: var(--txt); transform: translateY(-1px); }
+.crail-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.crail-dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; background: var(--txt-3); }
+.crail-t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* registry dot follows the team thread's flag color */
+.crail-tab.c-green .crail-dot { background: var(--green); } .crail-tab.c-yellow .crail-dot { background: var(--yellow); }
+.crail-tab.c-red .crail-dot { background: var(--red); } .crail-tab.c-blue .crail-dot { background: var(--blue); }
+.crail-tab.c-purple .crail-dot { background: var(--purple); } .crail-tab.c-gray .crail-dot { background: var(--txt-3); }
+.crail-needs .crail-dot { background: var(--red); }
+.crail-tab.is-unseen { border-color: var(--accent-line); }
+.crail-tab.is-unseen .crail-dot { box-shadow: 0 0 0 3px var(--accent-soft); }
+/* selected conversation = solid safety-orange + dark ink (the one accent use for a tab) */
+.crail-tab.is-active { background: var(--accent); border-color: var(--accent); color: var(--on-orange, #1a1205); }
+.crail-tab.is-active .crail-dot { background: var(--on-orange, #1a1205); box-shadow: none; }
+.crail-tab.wr-flash:not(.is-active) { animation: attnGlow 1.6s ease-in-out infinite; border-color: var(--accent-line); }
+@media (prefers-reduced-motion: reduce) {
+  .crail-tab:hover { transform: none; }
+  .crail-tab.wr-flash:not(.is-active) { animation: none; box-shadow: 0 0 0 2px var(--accent-soft), inset 0 1px 0 rgba(255,255,255,.06); }
+}
 
 /* §17 INTERNAL TEAM DOCK (Jac, Phase 7) — headerless: tagged-element pill rail on top,
    chat bubbles, role tab-bar at the bottom. Floats bottom-right. Yard data-plate steel. */
