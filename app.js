@@ -8545,7 +8545,11 @@ function wranglerRailEl() {
   const snaps = (state.wranglerRail || []).filter((c) => !(c.reqNumber && needsNums.has(c.reqNumber))).slice(0, 6);
   if (!needs.length && !snaps.length) return '';
   const trim = (t) => { t = String(t || '').replace(/\s+/g, ' ').trim(); return esc(t.length > 40 ? t.slice(0, 39) + '…' : t); };
-  const needsChips = needs.map((rq) => `<button class="wr-railchip wr-rc-needs wr-flash" data-wrc-needs="${rq.number}" data-tip="Mr. Wrangler needs your answer — #${rq.number}"><span class="wr-rc-dot"></span><span class="wr-rc-t">${trim(rq.title || ('Request #' + rq.number))}</span></button>`).join('');
+  // #246 — cap the needs-jac chips so they stop cascading over the UI; the overflow
+  // opens the requests inbox (the same list already badged on the bell/inbox FAB).
+  const NEEDS_CAP = 3, moreNeeds = needs.length - NEEDS_CAP;
+  const needsChips = needs.slice(0, NEEDS_CAP).map((rq) => `<button class="wr-railchip wr-rc-needs wr-flash" data-wrc-needs="${rq.number}" data-tip="Mr. Wrangler needs your answer — #${rq.number}"><span class="wr-rc-dot"></span><span class="wr-rc-t">${trim(rq.title || ('Request #' + rq.number))}</span></button>`).join('')
+    + (moreNeeds > 0 ? `<button class="wr-railchip wr-rc-needs js-requests" data-tip="${moreNeeds} more need your answer — open the requests inbox"><span class="wr-rc-dot"></span><span class="wr-rc-t">+${moreNeeds} more</span></button>` : '');
   const snapChips = snaps.map((c) => `<button class="wr-railchip" data-wrc-open="${esc(c.id)}" data-tip="Reopen this chat with Mr. Wrangler"><span class="wr-rc-dot"></span><span class="wr-rc-t">${trim(c.title || 'Chat')}</span></button>`).join('');
   return `<div class="wr-rail" role="list" aria-label="Mr. Wrangler conversations">${needsChips}${snapChips}</div>`;
 }
