@@ -10361,12 +10361,12 @@ function initDrag() {
 // move lifts a drag. A quick horizontal flick (before this fires) is a Back/Forward swipe
 // instead (see the grid swipe tracker in boot). Frees the horizontal axis for navigation.
 function armReadyTimer(arm) { return setTimeout(() => { if (DRAG.armed === arm) arm.ready = true; }, 300); }
-function armMenuTimer(arm) {   // §M3 — touch hold-still opens the context menu (not a drag)
+function armMenuTimer(arm) {   // §M3 — hold-still opens the context menu: touch long-press OR mouse click-and-hold (the right-click equivalent)
   return setTimeout(() => {
     if (DRAG.armed !== arm) return;
     const t = document.elementFromPoint(arm.x, arm.y);
     DRAG.armed = null;
-    if (t) { DRAG.suppressClick = true; lastTouchCtx = performance.now(); openCtxMenuAt(t, arm.x, arm.y); }
+    if (t) { DRAG.suppressClick = true; if (arm.touch) lastTouchCtx = performance.now(); openCtxMenuAt(t, arm.x, arm.y); }   // lastTouchCtx guards the trailing native contextmenu — touch only
   }, 500);
 }
 function dragDown(e) {
@@ -10381,7 +10381,8 @@ function dragDown(e) {
   if (chatEl) {
     DRAG.point.x = e.clientX; DRAG.point.y = e.clientY;
     const arm = { chatEl: chatElPayload(chatEl), x: e.clientX, y: e.clientY, pointerId: e.pointerId, touch: e.pointerType === 'touch', lp: null, rdy: null, ready: e.pointerType !== 'touch' };
-    if (arm.touch) { arm.lp = armMenuTimer(arm); arm.rdy = armReadyTimer(arm); }
+    arm.lp = armMenuTimer(arm);                          // §M3 — hold still → context menu (mouse + touch)
+    if (arm.touch) arm.rdy = armReadyTimer(arm);         // touch only: a hold must precede a horizontal drag (mouse drags immediately)
     DRAG.armed = arm; return;
   }
   const bail = e.target.closest('.inline-edit, .inline-input, input, textarea, select, button, .x, .pill, .seg, .add-field, .linkname, .flag, .jnode, .dropdown-menu, .overlay, .hover-preview, .winpicker-float, .ctx-menu');
@@ -10392,7 +10393,8 @@ function dragDown(e) {
   if (!src) return;
   DRAG.point.x = e.clientX; DRAG.point.y = e.clientY;                    // seed the ghost/hit-test point — a touch long-press may fire with NO move first
   const armed = { card: src.card, rec: src.rec, x: e.clientX, y: e.clientY, pointerId: e.pointerId, touch: e.pointerType === 'touch', lp: null, rdy: null, ready: e.pointerType !== 'touch' };
-  if (armed.touch) { armed.lp = armMenuTimer(armed); armed.rdy = armReadyTimer(armed); }
+  armed.lp = armMenuTimer(armed);                        // §M3 — hold still → context menu (mouse + touch)
+  if (armed.touch) armed.rdy = armReadyTimer(armed);     // touch only: a hold must precede a horizontal drag (mouse drags immediately)
   DRAG.armed = armed;
 }
 /* Resolve what a press grabs, in priority order:
