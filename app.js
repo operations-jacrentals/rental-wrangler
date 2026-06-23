@@ -11909,7 +11909,7 @@ function saveNewCustomer() {
     const lt = applyCustomerLink(o, c.customerId) || o.linked;   // quick-add-link → land back on the Quote/invoice
     closeOverlay();
     if (lt) { anchorRecord(lt.card, lt.recId); toast(`${c.name} saved and linked.`); }
-    else { anchorRecord('customers', c.customerId); toast(`${c.name} updated.`); }
+    else { render(); toast(`${c.name} updated.`); }   // plain Save Account stays put — don't re-anchor the grid to this customer (sibling of the #262 re-anchor-on-mutation class)
     return;
   }
   const id = nextCustomerId();                       // ── new customer ──
