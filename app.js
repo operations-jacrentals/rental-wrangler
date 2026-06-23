@@ -2193,6 +2193,7 @@ function pageDefaultSlice(tab) {
     case 'statuses': return { key: 'status', value: {} };
     case 'kpis': return { key: 'kpis', value: {} };
     case 'general': return { key: 'company', value: {} };
+    case 'agreements': return { key: 'agreements', value: {} };
     case 'requirements': return { key: 'rentalRules', value: {} };
     case 'fields': return { key: 'customFields', value: { customers: [], units: [], rentals: [], invoices: [] } };
     case 'inspections': return { key: 'inspections', value: Object.fromEntries([...new Set((DATA.categories || []).map((c) => inspFamilyKey(c)))].map((k) => [k, { required: false, items: [] }])) };
@@ -2294,6 +2295,7 @@ const SETTINGS_TABS = [
   { id: 'logins',        label: 'Roles & Logins',  icon: I.lock,                 v1: true },
   { id: 'statuses',      label: 'Statuses & Icons', icon: STATUS_ICONS.tag,       v1: true },
   { id: 'general',       label: 'Company',          icon: CARD_ICON.vendors,      v1: true },
+  { id: 'agreements',    label: 'Agreements',       icon: I.doc,                  v1: true },
   { id: 'fields',        label: 'Custom Fields',    icon: I.sliders,              v1: true },
   { id: 'inspections',   label: 'Inspections',      icon: CARD_ICON.inspections,  v1: true },
   { id: 'requirements',  label: 'Rental Rules',     icon: STATUS_ICONS.shield,    v1: true },
@@ -2323,6 +2325,7 @@ function settingsBoardHtml(o) {
   else if (o.tab === 'logins') pane = settingsLoginsPane(o);
   else if (o.tab === 'kpis') pane = settingsKpisPane(o);
   else if (o.tab === 'general') pane = settingsCompanyPane(o);
+  else if (o.tab === 'agreements') pane = settingsAgreementsPane(o);
   else if (o.tab === 'requirements') pane = settingsRulesPane(o);
   else if (o.tab === 'fields') pane = settingsFieldsPane(o);
   else if (o.tab === 'inspections') pane = settingsInspectionsPane(o);
@@ -2366,6 +2369,32 @@ function settingsCompanyPane(o) {
 }
 const companyDraftName = (co) => (String(co.name || '').trim() || COMPANY_DEFAULTS.name);
 const companyDraftTagline = (co) => (String(co.tagline || '').trim() || COMPANY_DEFAULTS.tagline);
+/* ── Settings → Agreements: the editable Membership Agreement template (#295). Stored in
+   state.settings.agreements.membershipTemplate; empty falls back to the shipped agreements.js
+   text. {{customerName}} · {{date}} · {{membershipType}} are filled at print from live data. */
+const AGREEMENT_PLACEHOLDERS = ['customerName', 'date', 'membershipType'];
+const membershipTemplate = () => {
+  const t = ((state.settings && state.settings.agreements) || {}).membershipTemplate;
+  return (typeof t === 'string' && t.trim()) ? t : AGREEMENTS.membership.text;
+};
+function fillAgreementPlaceholders(tpl, c) {
+  const map = {
+    customerName: fullName(c) || (c && c.name) || '',
+    date: `${fmtShortDate(TODAY_ISO)}, ${parseISO(TODAY_ISO).getFullYear()}`,
+    membershipType: (c && c.accountType) || '',
+  };
+  return String(tpl).replace(/\{\{\s*(customerName|date|membershipType)\s*\}\}/g, (m, k) => (map[k] != null ? map[k] : m));
+}
+function settingsAgreementsPane(o) {
+  const draft = (o.draftSettings && o.draftSettings.agreements) || (state.settings && state.settings.agreements) || {};
+  const tpl = (typeof draft.membershipTemplate === 'string') ? draft.membershipTemplate : AGREEMENTS.membership.text;
+  const chips = AGREEMENT_PLACEHOLDERS.map((p) => `<code class="ag-tpl-chip">{{${esc(p)}}}</code>`).join('');
+  return `
+    <div class="set-pane-head"><h4>Membership Agreement</h4><p>The agreement text a member signs and prints. Edit it here, then hit <strong>Print Agreement</strong> on any member's profile to fill it in and send it to your printer / PDF. Leave it untouched to keep the shipped wording.</p></div>
+    <div class="ag-tpl-keys"><span class="kpi-cap">PLACEHOLDERS — FILLED FROM THE MEMBER'S RECORD AT PRINT</span><div class="ag-tpl-chips">${chips}</div></div>
+    <label class="co-fld"><span class="kpi-cap">AGREEMENT TEXT</span><textarea class="ag-tpl-area js-ag-template" spellcheck="false" rows="22" placeholder="Membership agreement text…">${esc(tpl)}</textarea></label>
+    <p class="set-note">Plain text — line breaks are preserved. The printed copy is topped with your yard logo and finished with a signature line.</p>`;
+}
 // Rental Rules — data-ready requirements (enforced) + those still needing a capture field.
 const RENTAL_RULES_READY = [
   { key: 'card', label: 'Card on file', desc: 'A valid (un-expired) card saved to the customer.' },
@@ -4853,11 +4882,17 @@ const DETAIL = {
       ${kvPills(funnelPill(c.customerId, 'usedSales', c.usedSalesStage || 'N/A'))}
       <div class="kv pillrow">${intCats}${addBtn('Category', { link: true, js: 'js-addcat', h: 26, data: { rec: c.customerId } })}</div>
     </div></div>`;
+    // #295 — Print Agreement shows once the customer is in the membership funnel (any stage but N/A).
+    const inMembershipFunnel = !!(c.membershipStage && c.membershipStage !== 'N/A');
+    const printAgreement = inMembershipFunnel
+      ? `<div class="kv pillrow" style="justify-content:center;margin-top:9px">${ghostPill('🖨 Print Agreement', { js: 'js-print-agreement', data: { rec: c.customerId } })}</div>`
+      : '';
     const membership = `<div class="section"><h4>Membership</h4><div class="fieldstack centered">
       ${kvPills(funnelPill(c.customerId, 'membership', c.membershipStage || 'N/A'))}
       ${isMember && c.paidUntil ? kv(yr(c.paidUntil), { sfx: 'paid until' }) : ''}
       ${c.paidCadence ? kvPills(`${badge('Paid ' + c.paidCadence, 'green')}${c.unlimitedTransport ? badge('Unlimited Transport', 'purple') : ''}`) : ''}
       ${c.paidFees ? kv(money(c.paidFees), { sfx: 'paid fees' }) : ''}
+      ${printAgreement}
     </div></div>`;
     /* §12.1 ACTION BOARD v4 (Jac 2026-06-12): header row = "Actions" label +
        +Log Actions · +Schedule Actions + "Schedule" label; under them, TWO
@@ -10280,6 +10315,7 @@ function onClick(e) {
   if (closest('.js-charge-invoice')) { e.stopPropagation(); return chargeInvoiceFlow(closest('.js-charge-invoice').dataset.rec); }
   if (closest('.js-record-payment')) { e.stopPropagation(); return recordManualPayment(closest('.js-record-payment').dataset.rec); }
   if (closest('.js-print-invoice')) { e.stopPropagation(); return printInvoice(closest('.js-print-invoice').dataset.rec); }
+  if (closest('.js-print-agreement')) { e.stopPropagation(); return printMembershipAgreement(closest('.js-print-agreement').dataset.rec); }
   if (closest('.js-pay-addcard')) { e.stopPropagation(); const b = closest('.js-pay-addcard'); return openAddCard(b.dataset.rec, { returnTo: 'payment', invoiceId: b.dataset.inv }); }
   if (closest('.js-refund-invoice')) { e.stopPropagation(); if (state.overlay) { state.overlay.confirmRefund = true; state.overlay.error = ''; renderOverlay(); } return; }
   if (closest('.js-refund-cancel')) { e.stopPropagation(); if (state.overlay) { state.overlay.confirmRefund = false; state.overlay.refundAlloc = null; renderOverlay(); } return; }
@@ -11490,6 +11526,14 @@ function onChange(e) {
     else o.draftSettings.company[f] = raw || undefined;
     renderOverlay(); return;
   }
+  // Settings Board — Membership Agreement template (#295; commit on blur, no re-render so scroll/caret hold)
+  if (e.target.classList.contains('js-ag-template')) {
+    const o = state.overlay; if (!o) return;
+    o.draftSettings = o.draftSettings || {}; o.draftSettings.agreements = o.draftSettings.agreements || { ...((state.settings && state.settings.agreements) || {}) };
+    const raw = e.target.value;
+    o.draftSettings.agreements.membershipTemplate = (raw.trim() === AGREEMENTS.membership.text.trim()) ? undefined : (raw || undefined);
+    return;
+  }
   // Settings Board — KPI ring label / target (commit on blur)
   if (e.target.classList.contains('js-insp-label')) { const o = state.overlay; if (o) { if (o.inspDraft && typeof o.inspDraft === 'object') o.inspDraft.label = e.target.value; else o.inspDraft = { label: e.target.value, type:'toggle', required:false, options:[] }; } return; }
   if (e.target.classList.contains('js-insp-opt-label')) { const o = state.overlay; if (o && o.inspDraft) o.inspDraft.optLabel = e.target.value; return; }
@@ -12477,6 +12521,38 @@ function printInvoice(invoiceId) {
         <div class="pr-due"><span>Balance due</span><span>${money2(t.balance)}</span></div>
       </div>
       <div class="pr-foot">Thank you for your business — much obliged. Questions on this ticket? Give the yard a holler.</div>
+    </div>`;
+  document.body.classList.add('printing');
+  const cleanup = () => { document.body.classList.remove('printing'); window.removeEventListener('afterprint', cleanup); };
+  window.addEventListener('afterprint', cleanup);
+  window.print();
+}
+/* #295 — printable Membership Agreement. Fills the Settings template's placeholders with
+   THIS member's live data, then renders the same clean white #print-root document the
+   invoice uses (yard logo + body + signature line) and fires the native print/PDF dialog. */
+function printMembershipAgreement(custId) {
+  const c = IDX.customer.get(custId || ''); if (!c) return;
+  const body = fillAgreementPlaceholders(membershipTemplate(), c);
+  const dateStr = `${fmtShortDate(TODAY_ISO)}, ${parseISO(TODAY_ISO).getFullYear()}`;
+  let host = document.getElementById('print-root');
+  if (!host) { host = document.createElement('div'); host.id = 'print-root'; document.body.appendChild(host); }
+  host.innerHTML = `
+    <div class="pr-doc">
+      <div class="pr-head pr-head-logo">
+        <img class="pr-logo" src="assets/jac-rentals-logo.svg" alt="" onerror="this.style.display='none'" />
+        <div class="pr-brandwrap"><div class="pr-brand">${esc(companyName())}</div><div class="pr-sub">${esc(companyTagline())}</div></div>
+      </div>
+      <div class="pr-meta">
+        <div><span class="pr-k">Member</span><span class="pr-v">${esc(fullName(c) || '—')}</span></div>
+        <div><span class="pr-k">Membership</span><span class="pr-v">${esc(c.accountType || '—')}</span></div>
+        <div><span class="pr-k">Date</span><span class="pr-v">${esc(dateStr)}</span></div>
+      </div>
+      <div class="pr-agreement">${esc(body)}</div>
+      <div class="pr-sign">
+        <div class="pr-sign-col"><div class="pr-sign-line"></div><span class="pr-sign-cap">Member signature</span></div>
+        <div class="pr-sign-col pr-sign-date"><div class="pr-sign-line"></div><span class="pr-sign-cap">Date</span></div>
+      </div>
+      <div class="pr-foot">Much obliged for ridin' with ${esc(companyName())}. Questions on this agreement? Give the yard a holler.</div>
     </div>`;
   document.body.classList.add('printing');
   const cleanup = () => { document.body.classList.remove('printing'); window.removeEventListener('afterprint', cleanup); };

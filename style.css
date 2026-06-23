@@ -1556,6 +1556,12 @@ select.inline-input:focus-visible { outline: 2px solid var(--accent); outline-of
 .co-fld { display: flex; flex-direction: column; gap: 3px; }
 .co-in { height: 34px; padding: 0 11px; border-radius: 9px; background: var(--bg-2); border: 1px solid var(--line); color: var(--txt); font-size: 13.5px; font-weight: 600; }
 .co-in:focus { outline: none; border-color: var(--accent-line); box-shadow: 0 0 0 3px var(--accent-soft); }
+/* #295 — Membership Agreement template editor (Settings → Agreements) */
+.ag-tpl-keys { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 12px; }
+.ag-tpl-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.ag-tpl-chip { font-family: 'Saira Condensed', system-ui, sans-serif; font-weight: 700; letter-spacing: .5px; font-size: 12px; color: var(--accent); background: var(--accent-soft); border: 1px solid var(--accent-line); border-radius: 7px; padding: 2px 8px; }
+.ag-tpl-area { width: 100%; min-height: 320px; resize: vertical; padding: 11px 12px; border-radius: 9px; background: var(--bg-2); border: 1px solid var(--line); color: var(--txt); font-family: 'Geist Mono', ui-monospace, monospace; font-size: 12.5px; line-height: 1.55; }
+.ag-tpl-area:focus { outline: none; border-color: var(--accent-line); box-shadow: 0 0 0 3px var(--accent-soft); }
 .co-goal-wrap { display: flex; align-items: center; gap: 0; background: var(--bg-2); border: 1px solid var(--line); border-radius: 9px; padding-left: 11px; }
 .co-goal-wrap:focus-within { border-color: var(--accent-line); box-shadow: 0 0 0 3px var(--accent-soft); }
 .co-goal-$ { font-family: 'Saira Condensed', system-ui, sans-serif; font-weight: 800; color: var(--txt-3); font-size: 15px; }
@@ -3150,6 +3156,16 @@ body.dragging .row.drop-ok { opacity: 1; }
 .pr-tot .pr-big { font-weight: 800; font-size: 15px; border-bottom: 2px solid #14181d; }
 .pr-tot .pr-due { font-family: 'Saira Condensed', sans-serif; text-transform: uppercase; letter-spacing: 1px; font-weight: 800; font-size: 15px; border-bottom: none; padding-top: 8px; }
 .pr-foot { margin-top: 28px; padding-top: 10px; border-top: 1px solid #e4e8ee; font-size: 11.5px; color: #5a626e; }
+/* #295 — printable Membership Agreement (rides the same #print-root white-doc system) */
+.pr-head-logo { display: flex; align-items: center; gap: 14px; }
+.pr-logo { width: 52px; height: 52px; object-fit: contain; flex: 0 0 auto; }
+.pr-brandwrap { min-width: 0; }
+.pr-agreement { white-space: pre-wrap; font-size: 12px; line-height: 1.6; margin: 4px 0 0; }
+.pr-sign { display: flex; gap: 40px; margin-top: 40px; page-break-inside: avoid; }
+.pr-sign-col { flex: 1 1 0; }
+.pr-sign-col.pr-sign-date { flex: 0 0 200px; }
+.pr-sign-line { border-bottom: 1.5px solid #14181d; height: 30px; }
+.pr-sign-cap { display: block; margin-top: 5px; font-family: 'Saira Condensed', sans-serif; text-transform: uppercase; letter-spacing: 1px; font-weight: 700; font-size: 11px; color: #5a626e; }
 
 /* ── KPI MASK — remove this block to restore ring visibility (Jac) ── */
 .kpi-ring, .big-ring, .menu-team-ring { filter: blur(12px); pointer-events: none; }
