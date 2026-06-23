@@ -50,6 +50,35 @@ try {
     const inv2 = T.IDX.invoice.get('02i07Ju26');
     ok(T.itemPaid(inv2, inv2.lineItems[0]) === 0, 'itemPaid 0 on an unpaid invoice line');
 
+    // 2b) §19b per-line / partial refund (#125) — refund math, settled balance, applyPayment merge
+    {
+      const ri = T.IDX.invoice.get('01i02Ju26');
+      const rline = ri.lineItems.find((l) => l.kind === 'rental');
+      const rkey = T.lineKey(rline);
+      const linePaid = T.itemPaid(ri, rline);                              // 753
+      const snap = { refundedAmount: ri.refundedAmount, refunded: ri.refunded, refundAllocations: ri.refundAllocations };
+      const balBefore = T.invoiceTotals(ri).balance;
+      const half = Math.round((linePaid / 2) * 100) / 100;
+
+      ri.refundAllocations = { [rkey]: half }; ri.refundedAmount = half;   // simulate a partial per-line refund
+      ok(Math.abs(T.itemRefunded(ri, rline) - half) < 0.01, 'itemRefunded tracks the per-line refund');
+      ok(Math.abs(T.itemRefundable(ri, rline) - (linePaid - half)) < 0.01, 'itemRefundable = paid − refunded');
+      ok(!T.lineFullyRefunded(ri, rline), 'half-refunded line is not fully refunded');
+      ok(T.invoiceTotals(ri).balance === balBefore, 'SETTLED: balance unchanged by a refund (#116 invariant, extended to partials)');
+      ok(T.refundLines(ri).some((L) => L.key === rkey), 'a still-refundable line appears in refundLines');
+
+      ri.refundAllocations = { [rkey]: linePaid };                        // fully refund the line
+      ok(T.lineFullyRefunded(ri, rline), 'line fully refunded when its refund == its paid');
+      ok(!T.refundLines(ri).some((L) => L.key === rkey), 'refundLines excludes a fully-refunded line');
+
+      ri.refundAllocations = {}; ri.refundedAmount = 0; ri.refunded = false;
+      T.applyPayment('01i02Ju26', { refundedAmount: half, refundedCents: Math.round(half * 100), amountPaid: ri.amountPaid }, null, { [rkey]: half });
+      ok(Math.abs((ri.refundAllocations[rkey] || 0) - half) < 0.01, 'applyPayment merges the refund split into inv.refundAllocations');
+
+      ri.refundAllocations = snap.refundAllocations; ri.refundedAmount = snap.refundedAmount; ri.refunded = snap.refunded;   // restore
+      ok(T.rentalLineRefund({ rentalId: 'Z', invoiceId: null }).refunded === false, 'rentalLineRefund: no invoice → not refunded');
+    }
+
     // 3) per-unit status derivation off the shared window (date-robust via TODAY_ISO)
     const today = T.TODAY_ISO;
     ok(T.unitStatus({ startDate: today }, { status: 'Reserved' }) === 'Reserved', 'Reserved + today window stays Reserved (Today/Tomorrow retired → flags)');
