@@ -1834,6 +1834,13 @@ function showHoverPreview(target) {
   hideHoverPreview();
   const node = el('div', 'hover-preview');
   try { node.innerHTML = DETAIL[info.ec](info.rec, { historySearch: '', backStack: [], mode: 'standard' }); } catch (e) { return; }
+  // SPEC flag-color-system §5: active flags (severity-sorted) listed below the preview.
+  const pflags = getEntityFlags(info.ec, info.rec);
+  if (pflags.length) {
+    const fl = el('div', 'prev-flags');
+    fl.innerHTML = `<span class="pf-cap">Flags</span>` + flagsStack(pflags.map((f) => flagEl(f.label, f.severity, { alert: f.severity === 'red' })));
+    node.appendChild(fl);
+  }
   node.addEventListener('mouseenter', () => clearTimeout(hoverGrace));                   // arrived on the preview — cancel the close
   node.addEventListener('mouseleave', () => { hoverEl = null; hideHoverPreview(); });    // leaving the preview closes it
   document.body.appendChild(node); hoverNode = node;

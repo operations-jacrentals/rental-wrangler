@@ -523,6 +523,10 @@ select.lf-in { appearance: none; cursor: pointer; }
   animation: hpFade .12s ease-out; }
 @keyframes hpFade { from { opacity: 0; transform: translateY(4px) } to { opacity: 1; transform: none } }
 .hover-preview .detail { gap: 10px; }
+/* Flag-color-system §5: active flags listed below the preview content. */
+.prev-flags { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--line); display: flex; flex-direction: column; align-items: flex-start; gap: 5px; }
+.prev-flags .pf-cap { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.1px; font-size: 9px; font-weight: 700; color: var(--txt-3); }
+.prev-flags .flags { display: flex; flex-wrap: wrap; gap: 5px; }
 /* Calendar (dispatch grid) inside the middle column */
 .cal-body { padding: 0; display: flex; flex-direction: column; min-height: 0; }
 /* §2.3 dispatch — the daily driver timeline (Phase 6) */
