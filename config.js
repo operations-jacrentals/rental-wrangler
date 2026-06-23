@@ -352,7 +352,7 @@ export const COLUMNS = [
   { id: 'right',  default: 'customers', members: ['customers', 'invoices'] },
 ];
 export const COLUMN_OF = {
-  units: 'left', categories: 'left', inspections: 'left', serviceOrders: 'left', workOrders: 'left',
+  units: 'left', categories: 'left', inspections: 'left', serviceOrders: 'left', workOrders: 'left', shop: 'left',
   rentals: 'middle', invoices: 'right', customers: 'right',
 };
 

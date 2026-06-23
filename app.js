@@ -1669,6 +1669,15 @@ function anchorRecord(card, recId, recType) {
   // per-card searches (don't reset them).
   openInTab(card, recId, recType, { inheritFrom: activeSession() });
 }
+// Double-tap/dbl-click anchor TOGGLE (Jac): double-tapping the record that's already
+// THIS session's anchor drops the anchor (clearAnchor) instead of opening a duplicate
+// anchored tab. Any other record anchors as usual. Used by the gesture paths only —
+// the ⊞ button keeps its always-open-a-new-tab behavior.
+function anchorOrToggle(card, recId, recType) {
+  const a = activeSession().anchor;
+  if (a && a.card === card && String(a.recId) === String(recId) && (a.recType || null) === (recType || null)) return clearAnchor();
+  return anchorRecord(card, recId, recType);
+}
 
 /* Phase 1 shared path — freeze the current session and open card/recId in a NEW
    FOREGROUND tab. Serves anchor / global-search pick / standard-view overtake /
@@ -1904,7 +1913,7 @@ function rowOpen(card, recId, recType) {
 function deferOrAnchor(key, singleFn, anchor) {
   if (pendingRowClick && pendingRowClick.key === key) {
     clearTimeout(pendingRowClick.timer); pendingRowClick = null;
-    return anchorRecord(anchor.card, anchor.recId, anchor.recType);
+    return anchorOrToggle(anchor.card, anchor.recId, anchor.recType);   // 2nd tap on the anchored record un-anchors (toggle)
   }
   if (pendingRowClick) clearTimeout(pendingRowClick.timer);
   pendingRowClick = { key, timer: setTimeout(() => { pendingRowClick = null; singleFn(); }, DBL_MS) };
@@ -2069,6 +2078,7 @@ function totColMatch(card, rec, col, value) {
     if (value === 'on-schedule') return !s || (s.status !== 'past-due' && s.status !== 'due-soon');
     return false;
   }
+  if (col === '__wophase') return card === 'workOrders' && (rec.phase || '—') === value;   // shop front-page WO bar: match this phase AND exclude non-WO items (the normal 'phase' fallback would let them through)
   const c = cardColumns(card, activeSession()).find((x) => x.key === col);
   return c ? String(c.get(rec)) === String(value) : true;
 }
@@ -5862,24 +5872,22 @@ function colTabsEl(col, active, session) {
 /* The coltab buttons themselves (no wrapper) — shared by the desktop in-card tab row
    (colTabsEl) AND the phone footer (mobileDockEl), so a toggle looks identical in both. */
 function colTabButtonsHtml(col, active, session) {
-  // v2 (Jac call #1): the standalone Inspections + Work Orders tabs go away —
-  // they live INSIDE the Unit card now; only Service keeps a tab. The hidden
-  // tab still renders while its member is ACTIVE so deep links navigate home.
-  const HIDDEN_TABS = new Set(['inspections', 'workOrders']);
-  // "Not Ready" filter chip (Jac 2026-06-11): rides with the Service heart on the
-  // units column — clipboard-? icon + count; hidden when zero; it's just a filter.
-  const notReady = col.members.includes('units') ? DATA.units.filter((u) => u.inspectionStatus === 'Not Ready').length : 0;
-  const nrChip = notReady ? `<button class="coltab js-notready compact alert" data-tip="${notReady} Not Ready — filter the Units list"><span class="ct-ico">${CARD_ICON.inspectionsPending || CARD_ICON.inspections}</span><span class="ct-n">${notReady}</span></button>` : '';
-  return col.members.filter((m) => !HIDDEN_TABS.has(m) || m === active).map((m) => {
-    const on = m === active, compact = SHOP_TYPES.includes(m);   // shop sub-types are icon-only
-    const n = memberCount(m, session);
-    const alert = SHOP_TYPES.includes(m) && shopAlertCount(m, session) > 0;   // red = work needs doing
-    return `<button class="coltab js-coltab${on ? ' on' : ''}${compact ? ' compact' : ''}${alert ? ' alert' : ''}" data-col="${col.id}" data-member="${m}" data-tip="${esc(MEMBER_TITLE[m])}${alert ? ' — needs attention' : ''}">`
+  // The 3 shop sub-types (inspections/workOrders/serviceOrders) fold into ONE wrench
+  // "Shop" toggle that opens the shop graph; the old Service-heart toggle + Not-Ready
+  // chip are absorbed into it (the graph's Services + Not Ready bars).
+  const coltabBtn = (m, on, { alert = false, count = null } = {}) =>
+    `<button class="coltab js-coltab${on ? ' on' : ''}${alert ? ' alert' : ''}" data-col="${col.id}" data-member="${m}" data-tip="${esc(MEMBER_TITLE[m] || m)}${alert ? ' — needs attention' : ''}">`
       + `<span class="ct-ico">${memberIcon(m)}</span>`
-      + (compact ? '' : `<span class="ct-lbl">${esc(MEMBER_TITLE[m])}</span>`)
-      + `<span class="ct-n">${n}</span>`
+      + `<span class="ct-lbl">${esc(MEMBER_TITLE[m] || m)}</span>`
+      + (count != null ? `<span class="ct-n">${count}</span>` : '')
       + `</button>`;
-  }).join('') + nrChip;
+  let out = col.members.filter((m) => !SHOP_TYPES.includes(m)).map((m) => coltabBtn(m, m === active, { count: memberCount(m, session) })).join('');
+  if (col.members.some((m) => SHOP_TYPES.includes(m))) {   // this column owns the shop → append the wrench Shop toggle
+    const shopActive = active === 'shop' || SHOP_TYPES.includes(active);
+    const alertN = SHOP_TYPES.reduce((a, ty) => a + shopAlertCount(ty, session), 0);   // total items needing the crew
+    out += coltabBtn('shop', shopActive, { alert: alertN > 0, count: alertN });
+  }
+  return out;
 }
 /* Jac 2026-06-12: the nav cluster (List / Anchor / New tab) rides the TOGGLE row,
    not the title row — the item header gets room to breathe and head gates align right. */
@@ -5894,6 +5902,7 @@ function colActionsHtml(active, session) {
 }
 function memberCardEl(member, session) {
   if (member === 'calendar') return calendarCardEl(session);
+  if (member === 'shop') return shopCardEl({ id: 'shop', title: 'Shop' }, session);   // the wrench "Shop" member = the COMBINED view (segment bar + 3-bar front-page graph), no forcedSeg
   if (SHOP_TYPES.includes(member)) return shopCardEl({ id: 'shop', title: MEMBER_TITLE[member] }, session, member);
   return cardEl(GRID_CARD_BY_ID[member], session);
 }
@@ -5928,7 +5937,7 @@ function cardEl(cardDef, session) {
       : '';
     const head = el('div', 'card-head');
     head.innerHTML = `
-      ${cardJog(card, cs)}
+      ${document.body.classList.contains('is-phone') ? '' : cardJog(card, cs)}${/* §M — on phones the jog rides the bottom dock (where List view keeps it), not the card header */ ''}
       <span class="c-titlecard"><span class="c-icon">${CARD_ICON[card] || ''}</span>${titleHtml}</span>
       ${commentMarkerHtml(card, stdRec)}
       ${headFlagsHtml(card, stdRec)}`;
@@ -6709,22 +6718,26 @@ function activeMobileCard() {
   const member = (s.cols && s.cols[colObj.id]) || colObj.default;
   return SHOP_TYPES.includes(member) ? 'shop' : member;
 }
-// §M1 — the card the phone is currently showing (the active column's member).
+// §M1 — the card the phone is currently showing (the active column's member). Fold the
+// shop sub-types to 'shop' (mirror activeMobileCard) so the footer toggle highlight + the
+// swipe-step index track the single Shop entry instead of failing to match.
 function currentMobileMember() {
   const colObj = COLUMNS[Math.max(0, Math.min(2, state.mobileCol))];
   const s = activeSession();
-  return (s.cols && s.cols[colObj.id]) || colObj.default;
+  const m = (s.cols && s.cols[colObj.id]) || colObj.default;
+  return SHOP_TYPES.includes(m) ? 'shop' : m;
 }
-// §M1 — the flat card list the phone toggle bar offers. On desktop, inspections + work
-// orders live INSIDE the Unit card (hidden tabs); on phone they get their own toggles too.
-const MOBILE_CARDS = ['units', 'categories', 'inspections', 'serviceOrders', 'rentals', 'calendar', 'customers', 'invoices'];
+// §M1 — the flat card list the phone toggle bar offers. The 3 shop sub-types fold into one
+// 'shop' entry (the wrench), matching desktop; it opens the 3-bar shop graph.
+const MOBILE_CARDS = ['units', 'categories', 'shop', 'rentals', 'calendar', 'customers', 'invoices'];
 // §M1 — jump straight to a card (flattens the 3-column model on phones): set the column +
-// member, flip the visible column, and show that card's LIST.
+// member, flip the visible column, and show that card's LIST (or, for Shop, its graph).
 function goToCard(member) {
   const s = activeSession(); const col = COLUMN_OF[member];
   if (s.cols && col) s.cols[col] = member;
   const idx = COLUMNS.findIndex((c) => c.id === col); if (idx >= 0) state.mobileCol = idx;
-  const mc = s.cards[member]; if (mc) { mc.mode = 'list'; mc.recId = null; mc.recType = null; }
+  if (member === 'shop') { const sc = s.cards.shop; if (sc) { sc.segment = 'all'; sc.graphView = true; sc.mode = 'list'; sc.recId = null; sc.recType = null; } }
+  else { const mc = s.cards[member]; if (mc) { mc.mode = 'list'; mc.recId = null; mc.recType = null; } }
   render();
 }
 // §M1 phone footer — ONE card-toggle bar: every card collapsed to its icon, the SELECTED
@@ -7787,6 +7800,26 @@ function graphViewsFor(card) {
       { key: 'nums', title: 'By the Numbers', kind: 'nums', segs: status.map((s) => ({ ...s })) },
     ];
   }
+  if (card === 'shop') {
+    // The Shop "front page" (wrench toggle): one stacked-bar view of what needs the
+    // crew's attention right now — Not Ready · Services · Work Orders.
+    const notReady = DATA.units.filter((u) => u.inspectionStatus === 'Not Ready').length;
+    let svcOver = 0, svcDue = 0;
+    DATA.units.forEach((u) => { if (u.washRequested) return; const s = topServiceForUnit(u); if (!s) return; if (s.status === 'past-due') svcOver++; else if (s.status === 'due-soon') svcDue++; });
+    const woByPhase = {}; DATA.workOrders.filter((w) => w.phase !== 'Complete' && !w.cancelled).forEach((w) => { const ph = w.phase || '—'; woByPhase[ph] = (woByPhase[ph] || 0) + 1; });
+    const woParts = Object.keys(STATUS.woPhase).filter((ph) => ph !== 'Complete' && woByPhase[ph]).map((ph) => ({ col: '__wophase', value: ph, label: getStatus('woPhase', ph).label || ph, count: woByPhase[ph], color: getStatus('woPhase', ph).color || 'gray' }));
+    const bars = [
+      // Not Ready reuses the established js-notready affordance (route to the Units list,
+      // filtered to Not-Ready) rather than a graph filter — same behavior the old chip had.
+      { label: 'Not Ready', count: notReady, color: 'yellow', js: 'js-notready', tip: `${notReady} Not Ready — open the Units list` },
+      { label: 'Services', parts: [
+        { col: '__svcstat', value: 'past-due', label: 'Overdue', count: svcOver, color: 'red' },
+        { col: '__svcstat', value: 'due-soon', label: 'Due', count: svcDue, color: 'yellow' },
+      ] },
+      { label: 'Work Orders', parts: woParts },
+    ];
+    return [{ key: 'shopfront', title: 'Shop', kind: 'stackbars', segs: bars }];
+  }
   return null;
 }
 // ── state transitions. The active view's selection lives in cs.filterTerms as g-tagged
@@ -7874,6 +7907,27 @@ function gvRenderView(card, src, cs, v) {
       const inner = `<div class="gv-bar-n">${esc(money(s.count))}</div>${fill}<div class="gv-bar-x">${esc(s.label)}</div>`;
       return gvSegBtn(cs, card, src, s, inner, 'gv-barcol');
     }).join('')}</div>`;
+  }
+  if (v.kind === 'stackbars') {   // bars whose fill is a STACK of clickable segments (each = a filter); a single-part bar can carry a custom action class (js)
+    const tot = (s) => s.parts ? s.parts.reduce((a, p) => a + (p.count || 0), 0) : (s.count || 0);
+    const max = Math.max(1, ...v.segs.map(tot));
+    const bars = v.segs.map((s) => {
+      const t = tot(s), h = Math.round((t / max) * 100);
+      let stack;
+      if (s.parts) {
+        stack = s.parts.filter((p) => p.count).map((p) => {
+          const on = gvSegOn(cs, p.col, p.value);
+          return `<button class="gv-bar-seg js-gv-seg${on ? ' on' : ''}" style="flex:${p.count} 1 0;background:var(--${p.color})" data-card="${card}" data-src="${esc(src)}" data-col="${esc(p.col)}" data-value="${esc(String(p.value))}" data-label="${esc(p.label)}" data-tip="${on ? 'Remove filter' : 'Filter to ' + esc(p.label)}"></button>`;
+        }).join('');
+      } else {
+        stack = t ? `<button class="gv-bar-seg ${s.js || ''}" style="flex:1;background:var(--${s.color || v.color || 'accent'})" data-tip="${esc(s.tip || s.label)}"></button>` : '';
+      }
+      return `<div class="gv-barcol"><div class="gv-bar-n">${t || ''}</div><div class="gv-bar-track"><div class="gv-bar-stack" style="height:${h}%">${stack}</div></div><div class="gv-bar-x">${esc(s.label)}</div></div>`;
+    }).join('');
+    const legParts = [];
+    v.segs.forEach((s) => { if (s.parts) s.parts.filter((p) => p.count).forEach((p) => legParts.push(gvSegBtn(cs, card, src, p, `<i style="background:var(--${p.color})"></i><span class="gl-lbl">${esc(p.label)}</span> <b>${p.count}</b>`, 'gv-leg'))); });
+    const legend = (gvPillsHidden(card) || !legParts.length) ? '' : `<div class="gv-legend gv-legend-click">${legParts.join('')}</div>`;
+    return `<div class="gv-bars gv-stackbars">${bars}</div>${legend}`;
   }
   if (v.kind === 'lead') {
     if (!v.segs.length) return '<div class="gv-empty">No data yet.</div>';
@@ -10156,6 +10210,15 @@ function render() {
     // no listbar, so the slot stays empty (CSS hides it).
     const lb = grid.querySelector('.listbar');
     if (lb) dock.querySelector('.mdock-searchslot').appendChild(lb);
+    else {   // §M — Standard (record) view has no listbar; keep the Back/Fwd jog in the SAME
+      // bottom-dock spot List view uses, instead of letting it sit up in the card header.
+      const cardNode = grid.querySelector('.card[data-card]');
+      const dc = cardNode && cardNode.dataset.card, cs = dc && activeSession().cards[dc];
+      if (cs && cs.mode === 'standard') {
+        const jog = cardJog(dc, cs);
+        if (jog) { const bar = el('div', 'listbar mdock-jogbar'); bar.innerHTML = jog; dock.querySelector('.mdock-searchslot').appendChild(bar); }
+      }
+    }
   }
   // restore scroll by VIEW: same view → keep your spot; back to a list → return to the
   // row you left; opened a record → top of Standard view (a targeted link scrolls itself after).
@@ -10199,7 +10262,7 @@ function render() {
   applyTitles();   // full text on hover wherever we truncate (custom ~0.5s tooltip)
   drawDispatchArrows();   // §2.3 — paint free-form route legs over the dispatch run (needs live geometry)
   scoreTick();     // §11 gamification — pop +X over any ring whose metric just rose
-  if (DRAG.active) reapplyDragDecor();   // §15c — re-stamp drop targets after ANY mid-drag rebuild (the card swap IS a render)
+  if (DRAG.active) { reapplyDragDecor(); buildZipZones(); }   // §15c — re-stamp drop targets + rebuild the §M2 zip rails after ANY mid-drag rebuild (the card swap IS a render)
   const dt = performance.now() - t0;
   renderCount++;
   if (dt > CFG.PERF_BUDGET_MS) console.warn(`[perf] render ${renderCount} took ${dt.toFixed(1)}ms (budget ${CFG.PERF_BUDGET_MS}ms)`);
@@ -10256,11 +10319,11 @@ function toast(msg) {
    Drops dispatch into the EXISTING §16 mutations — no money/safety logic here.
    Wave 2: pick mode is GONE — drag (+ customer quick-add-link) IS the link path.
    ════════════════════════════════════════════════════════════════════════ */
-const DRAG = { active: false, armed: null, payload: null, point: { x: 0, y: 0 }, ghost: null, suppressClick: false, raf: null, hot: null };
+const DRAG = { active: false, armed: null, payload: null, point: { x: 0, y: 0 }, ghost: null, suppressClick: false, raf: null, hot: null, zipHot: null };
 // units/rentals/customers/invoices link via DROP_MATRIX; categories + serviceOrders are
 // drag sources ONLY for chat-tagging (they're not in DROP_MATRIX, so no record links). §17
 const DRAG_SOURCES = new Set(['units', 'rentals', 'customers', 'invoices', 'categories', 'serviceOrders']);
-let dragLayer = null, dragArc = null, chatDropPad = null, dragEdgeDwell = null;
+let dragLayer = null, dragArc = null, chatDropPad = null, zipZones = null, zipDwell = null, zipCooldown = false;
 
 /* DROP_MATRIX — payload entity → { target entity: validator(srcRec, tgtRec) }.
    Validators are the cheap VISUAL gate (which rows/cards glow .drop-ok); the
@@ -10329,6 +10392,10 @@ function initDrag() {
   // spin up a brand-new chat seeded with that thing.
   chatDropPad = el('div', 'chat-drop', '<div class="cd-inner"><svg class="cd-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg><span class="cd-label">Drop to start a chat</span></div>');
   dragLayer.appendChild(chatDropPad);
+  // §M2 — phone "zip zones": edge rails of valid drop-target cards. Dragging onto one
+  // jumps to that card's column mid-drag (drag stays live), then you drop on the row.
+  zipZones = el('div'); zipZones.id = 'zip-zones';
+  dragLayer.appendChild(zipZones);
   document.body.appendChild(dragLayer);
   document.addEventListener('pointerdown', dragDown);
   document.addEventListener('pointermove', dragMove);
@@ -10402,6 +10469,11 @@ function dragDown(e) {
    2. a list ROW of a draggable entity;
    3. empty space on a STANDARD-view card (Task 2) → that card's open record. */
 function dragSourceAt(target) {
+  const tab = target.closest('.tab[data-tab]');                              // §M2 — an open-record item tab is a draggable record: navigate freely, then carry the tab to the target (no sustained cross-column hold). WO tabs included (DROP_MATRIX gate), so workOrders→invoice works even though WO isn't in DRAG_SOURCES.
+  if (tab) {
+    const t = (state.tabs || []).find((x) => x.id === tab.dataset.tab);
+    if (t) { const ent = entityCardOf(t.card, t.recType); if (DROP_MATRIX[ent]) return { card: ent, rec: t.recId }; }
+  }
   const upill = target.closest('[data-pill-card="units"]');                  // a unit pill drags as that unit → link to a rental (Jac B4)
   if (upill && upill.dataset.pillRec) return { card: 'units', rec: upill.dataset.pillRec };
   const woSect = target.closest('.section[data-wo]');
@@ -10483,6 +10555,7 @@ function startDrag() {
   // links (e.g. customer↔invoice, which share the right column) use the reverse
   // drag direction (the DROP_MATRIX is bidirectional).
   reapplyDragDecor();
+  buildZipZones();   // §M2 — phone edge rails of valid target cards
   dragFrameLoop();
 }
 
@@ -10595,19 +10668,71 @@ function dragFrameLoop() {
   };
   DRAG.raf = requestAnimationFrame(step);
 }
-// §M2 — while dragging on a phone, holding the pointer at the left/right screen edge
-// switches to the adjacent column (one column per dwell), so an item can be carried
-// across columns. The bottom edge is the chat zone (handled by the drop-pad, §17).
+// §M2 ZIP ZONES (phone) — the valid drop-target cards for the dragged item appear as
+// edge rails. Dragging onto a zone jumps to that card's column (drag stays live), then
+// you drop on the exact row. Replaces the old blind 350ms/30px edge-dwell.
+// Hazard-stripe tint per card so you aim by colour (transient drag overlay only — the
+// persistent UI keeps the one-orange rule). No status meaning is encoded here.
+const ZIP_HUE = { units: 'brown', categories: 'brown', rentals: 'blue', invoices: 'green', customers: 'purple', workOrders: 'accent', serviceOrders: 'accent', inspections: 'accent', shop: 'accent' };
+function zipTargetsFor(entity) {
+  const accept = DROP_MATRIX[entity] || {}, s = activeSession();
+  return Object.keys(accept).map((tgt) => {
+    const idx = COLUMNS.findIndex((c) => c.id === COLUMN_OF[tgt]);
+    return { entity: tgt, idx, label: MEMBER_TITLE[tgt] || tgt, icon: CARD_ICON[tgt] || '', hue: ZIP_HUE[tgt] || 'accent' };
+  }).filter((z) => {
+    if (z.idx < 0) return false;
+    const colId = COLUMNS[z.idx].id, cur = (s.cols && s.cols[colId]) || COLUMNS[z.idx].default;
+    const showing = z.idx === state.mobileCol && (cur === z.entity || (SHOP_TYPES.includes(z.entity) && SHOP_TYPES.includes(cur)));
+    return !showing;   // no zone for the card already on screen
+  });
+}
+// (re)build the edge rails for the current drag source + visible column. Phone only.
+function buildZipZones() {
+  if (!zipZones) return;
+  zipZones.innerHTML = ''; DRAG.zipHot = null; zipDwell = null;
+  if (!DRAG.active || !document.body.classList.contains('is-phone')) return;
+  const targets = zipTargetsFor(DRAG.payload.entity);
+  if (!targets.length) return;
+  const railL = el('div', 'zz-rail zz-rail-left'), railR = el('div', 'zz-rail zz-rail-right');
+  targets.forEach((z) => {
+    const left = z.idx < state.mobileCol || (z.idx === state.mobileCol && COLUMNS[z.idx].id === 'left');   // column to the left → left edge; same-column member-switch sits on its home side
+    const b = el('div', `zip-zone zip-${left ? 'left' : 'right'}`);
+    b.dataset.zip = z.entity;
+    b.style.setProperty('--zip-hue', `var(--${z.hue})`);
+    b.innerHTML = `<span class="zz-ico">${z.icon}</span><span class="zz-lbl">${esc(z.label)}</span>`;
+    (left ? railL : railR).appendChild(b);
+  });
+  if (railL.children.length) zipZones.appendChild(railL);
+  if (railR.children.length) zipZones.appendChild(railR);
+}
+// jump the phone to a target card's column (keeping the drag live) so its rows are droppable.
+function zipToCard(entity) {
+  const s = activeSession(), idx = COLUMNS.findIndex((c) => c.id === COLUMN_OF[entity]);
+  if (idx < 0) return;
+  if (s.cols) s.cols[COLUMNS[idx].id] = entity;
+  state.mobileCol = idx;
+  const mc = s.cards[SHOP_TYPES.includes(entity) ? 'shop' : entity];
+  if (mc) { mc.mode = 'list'; mc.recId = null; mc.recType = null; }   // list mode → rows to drop on
+  render();   // §15c hook re-stamps drop decor + rebuilds the zip rails for the new column
+}
 function phoneDragEdge() {
-  const EDGE = 30, DWELL = 350, w = window.innerWidth, x = DRAG.point.x;
-  const side = x <= EDGE ? -1 : x >= w - EDGE ? 1 : 0;
-  if (!side) { dragEdgeDwell = null; return; }
+  if (!zipZones) return;
+  const DWELL = 150;
+  let over = null;
+  for (const z of zipZones.querySelectorAll('.zip-zone')) {
+    const r = z.getBoundingClientRect();
+    if (DRAG.point.x >= r.left && DRAG.point.x <= r.right && DRAG.point.y >= r.top && DRAG.point.y <= r.bottom) { over = z; break; }
+  }
+  if (zipCooldown) { if (!over) zipCooldown = false; if (DRAG.zipHot) { DRAG.zipHot.classList.remove('hot'); DRAG.zipHot = null; } return; }   // after a zip, must leave the edge before another can arm (no accidental chain-zip)
+  if (DRAG.zipHot && DRAG.zipHot !== over) DRAG.zipHot.classList.remove('hot');
+  if (over && DRAG.zipHot !== over) { over.classList.add('hot'); haptic(8); }   // §M-touch — tick when a zip zone arms
+  DRAG.zipHot = over;
+  if (!over) { zipDwell = null; return; }
   const now = performance.now();
-  if (!dragEdgeDwell || dragEdgeDwell.side !== side) { dragEdgeDwell = { side, at: now }; return; }
-  if (now - dragEdgeDwell.at < DWELL) return;
-  const next = Math.max(0, Math.min(2, state.mobileCol + side));
-  dragEdgeDwell.at = now;                                    // re-arm the dwell for a possible further hop
-  if (next !== state.mobileCol) { state.mobileCol = next; render(); }   // render re-stamps drop targets mid-drag (§15c) + restores scroll to the new column
+  if (!zipDwell || zipDwell.el !== over) { zipDwell = { el: over, at: now }; return; }
+  if (now - zipDwell.at < DWELL) return;
+  zipDwell = null; zipCooldown = true;
+  zipToCard(over.dataset.zip);   // render rebuilds the rails; the rAF loop continues for the new context
 }
 
 /* ── release / cancel ───────────────────────────────────────────────────── */
@@ -10629,11 +10754,12 @@ function endDrag({ rerender } = {}) {
   if (DRAG.ghost) DRAG.ghost.remove();
   dragArc.classList.remove('show', 'hot');
   chatDropPad.classList.remove('show', 'hot');
+  if (zipZones) zipZones.innerHTML = '';   // §M2 — tear down the edge rails
   const arcLbl = dragArc.querySelector('.ca-label'); if (arcLbl) arcLbl.textContent = 'Cancel';   // reset copy so the next drag opens idle, not "Release to cancel"
   document.querySelectorAll('.drop-ok, .drop-hot').forEach((n) => n.classList.remove('drop-ok', 'drop-hot'));
   document.body.classList.remove('dragging');
   delete document.body.dataset.drag;
-  DRAG.active = false; DRAG.payload = null; DRAG.ghost = null; DRAG.hot = null; DRAG.armed = null; dragEdgeDwell = null;
+  DRAG.active = false; DRAG.payload = null; DRAG.ghost = null; DRAG.hot = null; DRAG.armed = null; DRAG.zipHot = null; zipDwell = null; zipCooldown = false;
   DRAG.suppressClick = true;   // the trailing click is swallowed once; the NEXT pointerdown clears it (no timer — see dragDown)
   if (rerender) render();
 }
@@ -11030,13 +11156,11 @@ function onClick(e) {
   if (closest('.js-new-cat-search')) { e.stopPropagation(); return quickAddCategoryFromSearch(activeSession().cards.categories.search); }
   if (closest('.js-coltab')) {
     const ct = closest('.js-coltab'); e.stopPropagation();
-    // A1 — the Services (heart) tab filters the Units list to service-due as a removable
-    // pill, instead of switching to a stuck Service view you can't clear. (Jac 2026-06-15)
-    if (ct.dataset.member === 'serviceOrders') { const s = activeSession(); if (s.cols) s.cols.left = 'units'; s.cards.units.mode = 'list'; s.cards.units.recId = null; s.cards.units.recType = null; addColFilter('units', '__svc', 'due'); return; }
     const cs = activeSession(); if (cs.cols) cs.cols[ct.dataset.col] = ct.dataset.member;
+    if (ct.dataset.member === 'shop') { const sc = cs.cards.shop; if (sc) { sc.segment = 'all'; sc.graphView = true; sc.mode = 'list'; sc.recId = null; sc.recType = null; } }   // wrench Shop → the combined 3-bar graph front page
     // §M1 — on phones the footer toggle is the primary nav (no in-card List button): tapping a
     // card shows its LIST (the back chevron returns from a record). Desktop keeps per-member state.
-    if (document.body.classList.contains('is-phone')) { const mc = cs.cards[ct.dataset.member]; if (mc) { mc.mode = 'list'; mc.recId = null; mc.recType = null; } }
+    else if (document.body.classList.contains('is-phone')) { const mc = cs.cards[ct.dataset.member]; if (mc) { mc.mode = 'list'; mc.recId = null; mc.recType = null; } }
     return render();
   }
   // §2.3 dispatch timeline — day nav + open a stop's rental (Phase 6)
@@ -14387,6 +14511,16 @@ async function shareSession() {
     caption: tabs.length ? `Scan to open your ${tabs.length} open tab${tabs.length === 1 ? '' : 's'} on another device — sign in with the shared password.`
       : 'Scan to open Rental Wrangler on another device — sign in with the shared password.' });
 }
+// Shop roles (Mechanic / M.Tech) get the Shop card + its 3-bar graph as the landing view
+// — quick access to the crew's worklist. A default only; they can navigate anywhere after.
+function applyShopRoleLanding() {
+  if (currentRole !== 'mechanic' && currentRole !== 'mtech') return;
+  const s = activeSession(); if (!s) return;
+  if (s.cols) s.cols.left = 'shop';
+  const sc = s.cards.shop; if (sc) { sc.segment = 'all'; sc.graphView = true; sc.mode = 'list'; sc.recId = null; sc.recType = null; }
+  const li = COLUMNS.findIndex((c) => c.id === 'left'); if (li >= 0) state.mobileCol = li;   // phone: make the Shop column the active one
+  render();
+}
 async function attemptLogin() {
   const name = (document.getElementById('login-name')?.value || '').trim();
   const pw = document.getElementById('login-pw')?.value || '';
@@ -14414,6 +14548,7 @@ async function attemptLogin() {
     sessionStorage.setItem('jactec.pw', pw);
     await loadFromBackend();
     finishLoad();
+    applyShopRoleLanding();   // shop roles (Mechanic / M.Tech) land on the Shop graph
   } catch (e) {
     backendPassword = ''; sessionStorage.removeItem('jactec.pw'); sessionStorage.removeItem('jactec.role');
     renderLogin(/unauthorized/i.test(String(e && e.message)) ? 'That password wasn’t recognized.' : "Couldn't reach the database. Check your connection and try again.");
@@ -14602,9 +14737,9 @@ function boot() {
   document.addEventListener('dblclick', (e) => {
     if (hotkeyGuard(e)) return;
     if (e.target.closest('.row')) return;                 // rows are handled by the click discriminator (#10)
-    const r = cardRecordAt(e.target); if (!r) return;     // dbl-click on a card's open detail → anchor it
+    const r = cardRecordAt(e.target); if (!r) return;     // dbl-click on a card's open detail → anchor it (or un-anchor if it's already the anchor)
     e.preventDefault(); window.getSelection()?.removeAllRanges();
-    anchorRecord(r.card, r.recId, r.recType);
+    anchorOrToggle(r.card, r.recId, r.recType);
   });
   // right-click = send the card to its List View; double right-click = drop the anchor.
   document.addEventListener('contextmenu', (e) => {
