@@ -2726,7 +2726,11 @@ const FLAG_COND = {
   customers: {
     'unpaid-balance':    (c) => c.payStatus === 'Unpaid',
     'blacklisted':       (c) => /Blacklist/i.test(c.accountType || ''),
-    'no-card':           (c) => cardFlag(c) === 'none',
+    // Only flag if they have an actual business relationship — a rental (any status)
+    // or an invoice. Pure leads in the funnel with no booking don't need a card yet.
+    'no-card':           (c) => cardFlag(c) === 'none' &&
+      (DATA.rentals.some((r) => r.customerId === c.customerId) ||
+       DATA.invoices.some((i) => i.customerId === c.customerId)),
     'customer-lost':     (c) => customerActivity(c).stage === 'Lost',
     'customer-inactive': (c) => customerActivity(c).stage === 'Inactive',
     'partial-balance':   (c) => c.payStatus === 'Partial',
@@ -2800,6 +2804,17 @@ function unitPill(unitId, { x, xData } = {}) {
   const xb = x ? `<span class="x" data-x="${esc(x)}"${xData != null ? ` data-id="${esc(xData)}"` : ''}>✕</span>` : '';
   const chat = ` data-chat-el data-chat-label="${esc(u.name)}" data-chat-color="gray" data-chat-card="units" data-chat-rec="${esc(unitId)}"`;   // §17
   return `<span class="pill ref link" data-r="R2" data-pill-card="units" data-pill-rec="${esc(unitId)}"${chat}>${CARD_ICON.units}${esc(u.name)}${xb}</span>`;
+}
+/** R2e: ENTITY NAME PILL — Saira-stamped linked record. Matches the row-name look:
+ *  uppercase, flag-colored (most-urgent), card icon. Used in rental detail header/stalls. */
+function entityPill(card, rec, { x, xData } = {}) {
+  if (!rec) return '';
+  const id = idOf(card, rec);
+  const name = rec.name || '';
+  const flag = getEntityColor(card, rec) || 'gray';
+  const xb = x ? `<span class="x" data-x="${esc(x)}"${xData != null ? ` data-id="${esc(xData)}"` : ''}>✕</span>` : '';
+  const chat = ` data-chat-el data-chat-label="${esc(name)}" data-chat-color="${esc(flag)}" data-chat-card="${esc(card)}" data-chat-rec="${esc(id)}"`;
+  return `<span class="pill entity-stamp c-${flag}" data-r="R2" data-pill-card="${card}" data-pill-rec="${esc(id)}"${chat}>${CARD_ICON[card] || ''}<span class="t">${esc(name)}</span>${xb}</span>`;
 }
 /** R3b: a DATA CHIP — a plain fact (480 HRS, No GPS), independent of R3. */
 const badge = (label, color = 'gray') => `<span class="pill c-${color}" data-r="R3b"><span class="t">${esc(label)}</span></span>`;
@@ -3375,7 +3390,7 @@ function unitWoSoPill(u) {
   const wo = openWOForUnit(u.unitId);
   if (wo) return statusPill('woPhase', wo.phase, { card: 'workOrders', recId: wo.woId });
   const svc = topServiceForUnit(u);
-  return svc ? badge(svcText(svc), svc.color) : '';
+  return svc ? badge(svcText(svc), svc.color) : badge('No Orders', 'green');
 }
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -3502,7 +3517,8 @@ const ROWS = {
     // Name TINTED by the customer's flag color (Jac): only red/yellow lead — a clear
     // customer keeps the calm default ink, archived/gray reads muted.
     const fc = getEntityColor('customers', c);
-    const nameColor = (fc === 'red' || fc === 'yellow') ? `var(--${fc})` : fc === 'gray' ? 'var(--txt-3)' : 'var(--txt)';
+    const isMember = c.accountType === 'Member' || c.accountType === 'Business Member';
+    const nameColor = (fc === 'red' || fc === 'yellow') ? `var(--${fc})` : fc === 'gray' ? 'var(--txt-3)' : (fc === 'green' && isMember) ? 'var(--green)' : 'var(--txt)';
     const acct = getStatus('customerAccountType', c.accountType || 'Non-Business');
     const sub = [esc(c.phone || ''), c.accountType ? esc(acct.label) : ''].filter(Boolean).join(' · ');
 
@@ -3524,7 +3540,7 @@ const ROWS = {
     const FUNNEL_RANK = { 'Inbound Lead': 1, 'Outbound Lead': 2, 'Contacted': 3, 'Not A No!': 4, 'Payment Discussed': 5, 'Paid': 6, "Don't Contact": 0.5 };
     const topStage = [c.usedSalesStage || 'N/A', c.membershipStage || 'N/A']
       .filter((s) => s && s !== 'N/A').sort((a, b) => (FUNNEL_RANK[b] || 0) - (FUNNEL_RANK[a] || 0))[0];
-    const funnelHtml = topStage ? statusPill('funnelStage', topStage) : '';
+    const funnelHtml = topStage ? statusPill('funnelStage', topStage) : badge('N/A', 'gray');
 
     // Row: name · phone·type · pay-$ ← LEFT  ·  [acct pill][funnel pill] → RIGHT.
     // Both status pills shown always; equal-width grid slots; margin-left:auto pushes them right.
@@ -3549,14 +3565,15 @@ const ROWS = {
     const hl = getEntityColor('units', u);
     // NAME tinted to the unit's flag color (Jac 2026-06-23): r/y/g lead in-color, gray reads muted.
     const nameColor = (hl === 'red' || hl === 'yellow' || hl === 'green') ? `var(--${hl})` : hl === 'gray' ? 'var(--txt-3)' : 'var(--txt)';
-    const sub = [cat ? esc(cat.name) : '', `${num(u.currentHours)} HRS`].filter(Boolean).join(' · ');
+    // Sub order (Jac): hours first, then category — left-to-right reads: hours · cat · NAME · icon · stripe
+    const sub = [`${num(u.currentHours)} HRS`, cat ? esc(cat.name) : ''].filter(Boolean).join(' · ');
     return `<div class="ur" style="--ur-hl:var(--${hl})">
       <div class="ur-pills"><div class="ur-pill-slot">${unitRentalInspPill(u)}</div><div class="ur-pill-slot">${unitWoSoPill(u)}</div></div>
-      <span class="ur-cat">${categoryIconFor(cat && cat.name)}</span>
       <div class="ur-id">
-        <span class="r-title ur-name" style="color:${nameColor}">${esc(u.name)}</span>
         <span class="ur-sub">${sub}</span>
+        <span class="r-title ur-name" style="color:${nameColor}">${esc(u.name)}</span>
       </div>
+      <span class="ur-cat">${categoryIconFor(cat && cat.name)}</span>
     </div>`;
   },
 
@@ -4493,13 +4510,14 @@ const DETAIL = {
 
     /* Header: customer + category + invoice + PO left · gate + balance right. */
     const custEl = cust
-      ? refPill('customers', r.customerId, cust.name, { x: 'cust-swap' })
+      ? entityPill('customers', cust, { x: 'cust-swap' })
       : addBtn('Customer', { link: true, js: 'js-quickadd-cust', h: 26, data: { card: 'rentals', rec: r.rentalId, slot: 'customer' } });
     const catPill = cat ? dPill(cat.name, 'orange', { card: 'categories', recId: cat.categoryId, icon: CARD_ICON.categories }) : '';
     const poField = efld('rentals', r, 'rentalId', 'po', 'Add PO', { fmt: (v) => 'PO ' + v });
+    /* Header: customer + PO left · status gate top-right, then invoice+balance below. */
     const rdHead = `<div class="rd-head">
-      <div class="rd-head-l">${custEl}${catPill}${invPill}${poField}</div>
-      <div class="rd-head-r">${masterGate(r, { truck })}${rdBal}</div>
+      <div class="rd-head-l">${custEl}${poField}</div>
+      <div class="rd-head-r">${masterGate(r, { truck })}<div class="rd-head-bal">${invPill}${rdBal}</div></div>
     </div>`;
 
     /* Not-Ready blocker — jumps to unit pills; sits above the calendar. */
@@ -4522,6 +4540,7 @@ const DETAIL = {
       ? units.map((eu) => {
           const u = IDX.unit.get(eu.unitId); if (!u) return '';
           const insp = getStatus('unitInspectionStatus', u.inspectionStatus);
+          const unitCat = IDX.category.get(u.categoryId);
           const voided = unitVoided(r, eu);
           const lref = rentalLineRefund(r, eu.unitId);   // §19b reflect the invoice's per-line refund on the rental's unit
           const multi = units.length > 1;
@@ -4532,7 +4551,7 @@ const DETAIL = {
           const splitBtn = multi ? `<button class="stall-split js-split-open" data-rec="${esc(r.rentalId)}" data-unit="${esc(u.unitId)}" data-tip="Give ${esc(u.name)} its own dates — splits to a separate rental on the same invoice"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>dates</button>` : '';
           return `<div class="stall rd-unit${voided ? ' voided' : ''}${lref.fully ? ' stall-refunded' : ''}">
             <div class="rd-unit-top">
-              <div class="stall-id rd-unit-id">${unitPill(u.unitId, { x: 'unit-remove', xData: u.unitId })}${dPill(insp.label, insp.color, { card: 'units', recId: u.unitId, icon: CARD_ICON.inspections })}${noRates}${multi ? unitStatusGate(r, eu) : ''}</div>
+              <div class="stall-id rd-unit-id">${entityPill('units', u, { x: 'unit-remove', xData: u.unitId })}${unitCat ? dPill(unitCat.name, 'orange', { card: 'categories', recId: u.categoryId, icon: CARD_ICON.categories }) : ''}${noRates}${multi ? unitStatusGate(r, eu) : ''}</div>
               <div class="rd-unit-rate">${lref.refunded ? `<span class="stall-refund" data-tip="${lref.fully ? 'fully' : 'partially'} refunded on the invoice">↩ refunded</span> · ` : ''}${durLabel ? `<span class="rd-dur">${esc(durLabel)}</span> · ` : ''}<span class="stall-amt${lref.fully ? ' struck' : ''}">${money(up ? up.price : 0)}</span>${splitBtn}</div>
             </div>
             ${stallRouteHtml(r, eu)}
@@ -4540,7 +4559,7 @@ const DETAIL = {
         }).join('')
       : `<div class="stall stall-empty rd-unit rd-unit-empty">${pickUnitBtn}<span class="muted" style="font-size:12px">drag a unit on, or cancel the quote</span></div>`;
 
-    /* Footer: field call + Complete/Cancel left · invoice total right. */
+    /* Footer: field call left · Complete/Cancel button RIGHT (Jac spec). */
     const cancelish = ['Cancelled', 'No Show'].includes(r.status);
     const canComplete = allUnitsTerminal(r);
     const crBtn = cancelish
@@ -4548,7 +4567,7 @@ const DETAIL = {
       : actionPill('commit', 'Complete Rental', { js: `js-complete-rental${canComplete ? '' : ' locked'}`, h: 26, data: { rec: r.rentalId } });
     const fcRow = r.fieldCall ? actionPill('danger', 'Field Call active — clear', { js: 'js-clear-fc', data: { rec: r.rentalId } }) : '';
     const invTotalHtml = invT ? `<span class="rd-inv-total">${money(eventTotal)}</span>` : '';
-    const rdFoot = `<div class="rd-foot"><div class="rd-foot-l">${fcRow}${crBtn}</div><div class="rd-foot-r">${invTotalHtml}</div></div>`;
+    const rdFoot = `<div class="rd-foot"><div class="rd-foot-l">${fcRow}</div><div class="rd-foot-r">${crBtn}</div></div>`;
 
     const rentalSec = `<div class="section sec-${stColor} rentalsec">
       ${rdHead}
@@ -12687,12 +12706,17 @@ function openWinPicker(rentalId) {
   if (!r.startTime) r.startTime = nowHourLabel();   // default to the current hour (user spec)
   state.winpicker = { rentalId, monthISO: firstOfMonthISO(r.startDate || TODAY_ISO), anchor: null };
   if (rentalFragile(r)) state.winpicker.staged = { rentalId, startDate: r.startDate || '', endDate: r.endDate || '', startTime: r.startTime || '' };
-  // Task C — frame the yard on open: reveal Categories (list view) in the left column
-  // so the operator can browse what's free for this window. If the rental already has a
-  // window, light the availability lens right away (live rentals only — staged commits on Save).
+  // Task C / item #9 — frame the yard on open: reveal Categories (list view) in the
+  // left column only when the Rental Standard View is open with dates already set.
+  // If opened from a list-view mini-calendar, skip the column pivot (Jac: "Both, but
+  // only trigger the category path if the Rental Standard View is open with dates selected").
   const s = activeSession();
-  if (s.cols) s.cols.left = 'categories';
-  const cc = s.cards.categories; if (cc) { cc.mode = 'list'; cc.recId = null; cc.listLimit = undefined; }
+  const rs = s.cards.rentals;
+  if (rs && rs.mode === 'standard' && rs.recId === rentalId && r.startDate && r.endDate) {
+    if (s.cols) s.cols.left = 'categories';
+    const cc = s.cards.categories; if (cc) { cc.mode = 'list'; cc.recId = null; cc.listLimit = undefined; }
+  }
+  // Availability lens fires for both trigger paths whenever dates exist.
   if (!rentalFragile(r) && r.startDate && r.endDate) enterAvailabilitySearch(r);
   render();
 }
