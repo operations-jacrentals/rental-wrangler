@@ -3507,7 +3507,8 @@ const ROWS = {
     // Name TINTED by the customer's flag color (Jac): only red/yellow lead — a clear
     // customer keeps the calm default ink, archived/gray reads muted.
     const fc = getEntityColor('customers', c);
-    const nameColor = (fc === 'red' || fc === 'yellow') ? `var(--${fc})` : fc === 'gray' ? 'var(--txt-3)' : 'var(--txt)';
+    const isMember = c.accountType === 'Member' || c.accountType === 'Business Member';
+    const nameColor = (fc === 'red' || fc === 'yellow') ? `var(--${fc})` : fc === 'gray' ? 'var(--txt-3)' : (fc === 'green' && isMember) ? 'var(--green)' : 'var(--txt)';
     const acct = getStatus('customerAccountType', c.accountType || 'Non-Business');
     const sub = [esc(c.phone || ''), c.accountType ? esc(acct.label) : ''].filter(Boolean).join(' · ');
 
