@@ -2640,11 +2640,11 @@ body { font-variant-numeric: tabular-nums; }
    3-week dot calendar: last week above · current week middle · next week below.
    Border-left carries the rental status color. Today, start, and end dots are
    highlighted; transport icon sits inside the marked dot. ── */
-.card[data-card="rentals"] .list { display: grid; grid-template-columns: 1fr 1fr; grid-auto-rows: 154px; }
+.card[data-card="rentals"] .list { display: grid; grid-template-columns: 1fr 1fr; grid-auto-rows: min-content; }
 .card[data-card="rentals"] .list .newrow,
 .card[data-card="rentals"] .list .empty-new,
-.card[data-card="rentals"] .list .empty { grid-column: 1 / -1; }   /* +New Rental + empty states span both columns */
-.row[data-card="rentals"] { padding: 0; display: flex; flex-direction: column; }
+.card[data-card="rentals"] .list .empty { grid-column: 1 / -1; }   /* +New Rental + empty states span both columns (and self-size, no tall track) */
+.row[data-card="rentals"] { padding: 0; display: flex; flex-direction: column; height: 172px; }
 .row[data-card="rentals"] .row-content { padding: 0; height: 100%; display: flex; flex-direction: column; }
 .rcc { flex: 1; display: flex; flex-direction: column; gap: 5px; padding: 8px 10px 7px; border-left: 3px solid var(--rcc-hl, var(--line)); overflow: hidden; }
 /* HEADER — row 1: status pill + unit names · row 2: customer + balance (Jac 2026-06-23) */
