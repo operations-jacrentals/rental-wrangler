@@ -528,6 +528,10 @@ select.lf-in { appearance: none; cursor: pointer; }
   animation: hpFade .12s ease-out; }
 @keyframes hpFade { from { opacity: 0; transform: translateY(4px) } to { opacity: 1; transform: none } }
 .hover-preview .detail { gap: 10px; }
+/* Flag-color-system §5: active flags listed below the preview content. */
+.prev-flags { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--line); display: flex; flex-direction: column; align-items: flex-start; gap: 5px; }
+.prev-flags .pf-cap { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.1px; font-size: 9px; font-weight: 700; color: var(--txt-3); }
+.prev-flags .flags { display: flex; flex-wrap: wrap; gap: 5px; }
 /* Calendar (dispatch grid) inside the middle column */
 .cal-body { padding: 0; display: flex; flex-direction: column; min-height: 0; }
 /* §2.3 dispatch — the daily driver timeline (Phase 6) */
@@ -2337,6 +2341,45 @@ body.rw-inspect .c-titlecard:hover { outline: 2px solid #18b6ff; outline-offset:
 .stall-sub.hint { color: var(--txt-3); font-style: normal; }
 .stall-empty { display: flex; align-items: center; gap: 9px; padding: 11px 2px; }
 .rentalsec-foot { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 10px; }
+
+/* ── RENTAL DETAIL v2 — header · calendar · unit rows · footer (rd-*, rdcal-*) ── */
+.rd-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.rd-head-l { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; min-width: 0; }
+.rd-head-r { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.rd-blocker { margin-bottom: 6px; }
+/* numbered-date window-track calendar */
+.rdcal { background: var(--panel-2); border-radius: 10px; overflow: hidden; cursor: pointer; margin-top: 2px; user-select: none; }
+.rdcal:hover { filter: brightness(1.04); }
+.rdcal-dow { display: grid; grid-template-columns: repeat(7, 1fr); padding: 5px 4px 2px; }
+.rdcal-dow span { text-align: center; font-size: 8px; font-weight: 700; color: var(--txt-3); text-transform: uppercase; font-family: 'Saira Condensed', system-ui, sans-serif; }
+.rdcal-body { display: grid; grid-template-columns: repeat(7, 1fr); column-gap: 0; padding: 0 4px 6px; }
+.rdcal-day { position: relative; height: 34px; }
+.rdcal-bar { position: absolute; z-index: 1; top: 50%; transform: translateY(-50%); left: 0; right: 0; height: 3px; }
+.rdcal-day.elapsed .rdcal-bar { background: var(--rdcal-hl); }
+.rdcal-day.fut .rdcal-bar { background: var(--rdcal-hl); opacity: .3; }
+.rdcal-day.is-start .rdcal-bar { left: 50%; border-radius: 2px 0 0 2px; }
+.rdcal-day.is-end .rdcal-bar { right: 50%; border-radius: 0 2px 2px 0; }
+.rdcal-n { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 2; font-size: 11px; font-weight: 600; color: var(--txt-2); line-height: 1.2; border-radius: 3px; padding: 0 2px; white-space: nowrap; }
+.rdcal-t { position: absolute; top: 2px; left: 50%; transform: translateX(-50%); z-index: 3; font-size: 7px; font-weight: 700; color: var(--txt-2); font-family: 'Saira Condensed', system-ui, sans-serif; white-space: nowrap; letter-spacing: .2px; }
+.rdcal-ico { position: absolute; bottom: 2px; left: 50%; transform: translateX(-50%); z-index: 2; width: 10px; height: 10px; color: var(--rdcal-hl, var(--green)); display: flex; align-items: center; justify-content: center; }
+.rdcal-ico svg { width: 100%; height: 100%; display: block; }
+.rdcal-day.is-past .rdcal-n { opacity: .35; }
+.rdcal-day.is-win .rdcal-n { color: var(--txt); }
+.rdcal-day.is-today .rdcal-n { color: var(--accent); font-weight: 800; }
+.rdcal-day.is-start .rdcal-n { background: var(--rdcal-hl, var(--green)); color: var(--card); font-weight: 800; }
+.rdcal-day.is-end .rdcal-n { outline: 1.5px solid var(--rdcal-hl, var(--green)); color: var(--rdcal-hl, var(--green)); font-weight: 800; border-radius: 50%; }
+/* unit rows beneath calendar */
+.rd-units { margin-top: 6px; }
+.rd-unit-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.rd-unit-id { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.rd-unit-rate { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--txt-2); white-space: nowrap; flex-shrink: 0; }
+.rd-dur { font-weight: 600; color: var(--txt); }
+/* footer: complete/cancel left · invoice total right */
+.rd-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.rd-foot-l { display: flex; align-items: center; gap: 8px; }
+.rd-foot-r { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.rd-inv-total { font-size: 15px; font-weight: 800; color: var(--txt); text-decoration: underline; font-variant-numeric: tabular-nums; }
+
 /* §20 route rail — linear House(Jac)─Person(Job Site)─House(Jac) stepper; the rail
    itself is the type control (tap two stops). Address rides ABOVE each connector
    line, +Log rides BELOW it; node well fills orange when its leg is on the route. */
@@ -2578,36 +2621,64 @@ body { font-variant-numeric: tabular-nums; }
 .inv-tot.big b { font-size: 14px; }
 .inv-tot.due b { color: var(--accent); }
 
-/* ── RENTALS DISPATCHER ROW (Jac 2026-06-12): the row IS a living day-timeline,
-   identical day-blocking to the Standard View R16 (no marker line, no inner
-   padding — the cells bleed to the row's edges). R1 gate (with truck) centers;
-   the derived Balance stacks over its due-date on the right. ── */
-.row[data-card="rentals"] { padding: 0; }
-.row[data-card="rentals"] .row-content { padding: 0; height: 52px; }
-.rtl { position: relative; height: 52px; overflow: hidden; }
-.rtl-cells { position: absolute; inset: 0; display: flex; }
-.rtl-cells .day { flex: 1; border-right: 1px solid var(--line); }
-.rtl-cells .day:last-child { border-right: none; }
-.rtl-cells .day.past { background: var(--tint, var(--green-bg)); }   /* elapsed-tint follows the rental status */
-/* overlay — clicks fall THROUGH to the row (opens the rental) except the re-enabled pills */
-.rtl-over { position: absolute; inset: 0; z-index: 2; display: flex; align-items: center; gap: 10px; padding: 0 13px; pointer-events: none; }
-.rtl-over .pill, .rtl-over .flag, .rtl-over [data-pill-card] { pointer-events: auto; }
-.rtl-l { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 1px; overflow: hidden; }
-.rtl-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.rtl-top .rtl-name { font-weight: 700; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.rtl-l .rtl-sub { display: flex; align-items: center; gap: 7px; min-width: 0; }
-.rtl-l .rtl-start { font-size: 10.5px; color: var(--txt-3); white-space: nowrap; }
-.rtl-mid { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 1px; }
-.rtl-mid .rate { font-size: 10px; font-weight: 700; font-style: italic; color: var(--txt-2); white-space: nowrap; }
-.rtl-r { flex: 1 1 0; min-width: 0; display: flex; align-items: center; justify-content: flex-end; gap: 9px; }
-.rtl-bal { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.2; font-style: italic; font-weight: 700; font-size: 12px; white-space: nowrap; }
-.rtl-bal.muted { color: var(--txt-3); font-style: normal; font-weight: 600; }
-.rtl-bal .rtl-due { font-weight: 600; font-size: 10.5px; }
-.rtl-when { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.15; }
-.rtl-when .tm { color: var(--txt-2); font-size: 10px; font-weight: 600; }
-.rtl-when .rtl-end { font-size: 11.5px; font-weight: 700; }
-.rtl-when .rtl-end.over { color: var(--red); }
-.rtl-set { font-size: 11px; color: var(--txt-3); font-style: italic; }
+/* ── RENTAL CALENDAR CARD (rcc) — 2 × 3 mini-calendar grid ─────────────────
+   Six rentals sit in a 2-col × 3-row grid matching the old 6-row footprint
+   (grid-auto-rows:111px × 3 rows + 2 gaps ≈ same real estate). Each card is a
+   3-week dot calendar: last week above · current week middle · next week below.
+   Border-left carries the rental status color. Today, start, and end dots are
+   highlighted; transport icon sits inside the marked dot. ── */
+.card[data-card="rentals"] .list { display: grid; grid-template-columns: 1fr 1fr; grid-auto-rows: 111px; }
+.row[data-card="rentals"] { padding: 0; display: flex; flex-direction: column; }
+.row[data-card="rentals"] .row-content { padding: 0; height: 100%; display: flex; flex-direction: column; }
+.rcc { flex: 1; display: flex; flex-direction: column; gap: 3px; padding: 6px 8px 5px; border-left: 3px solid var(--rcc-hl, var(--line)); overflow: hidden; }
+.rcc-head { font-size: 11px; font-weight: 700; color: var(--txt); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; }
+.rcc-body { flex: 1; display: grid; grid-template-columns: repeat(7, 1fr); column-gap: 0; row-gap: 4px; align-content: center; min-height: 0; }
+/* the dot sits at the cell's vertical centre; the time floats above it; the window
+   track (.rcc-bar) runs along that same centre line, behind the dots (no column-gap
+   → consecutive in-window bars touch into a continuous thread, breaking at week edges). */
+.rcc-day { position: relative; display: flex; align-items: center; justify-content: center; min-width: 0; }
+.rcc-t { position: absolute; top: -1px; font-size: 6.5px; font-weight: 700; line-height: 8px; color: var(--txt-2); text-align: center; white-space: nowrap; font-family: 'Saira Condensed', system-ui, sans-serif; letter-spacing: .2px; z-index: 3; }
+.rcc-dot { position: relative; z-index: 2; width: 6px; height: 6px; border-radius: 50%; background: var(--line); display: flex; align-items: center; justify-content: center; color: transparent; }
+.rcc-dot svg { width: 4.5px; height: 4.5px; display: block; }
+.rcc-bar { position: absolute; z-index: 1; top: 50%; transform: translateY(-50%); left: 0; right: 0; height: 3px; }
+.rcc-day.elapsed .rcc-bar { background: var(--rcc-hl, var(--green)); }
+.rcc-day.fut .rcc-bar { background: var(--rcc-hl, var(--green)); opacity: .3; }
+.rcc-day.is-start .rcc-bar { left: 50%; border-radius: 2px 0 0 2px; }
+.rcc-day.is-end .rcc-bar { right: 50%; border-radius: 0 2px 2px 0; }
+.rcc-day.is-past .rcc-dot { background: var(--panel); opacity: .4; }
+.rcc-day.is-win .rcc-dot { background: var(--rcc-hl, var(--green)); opacity: .7; }
+.rcc-day.is-today .rcc-dot { width: 8px; height: 8px; background: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); opacity: 1; }
+.rcc-day.is-start .rcc-dot, .rcc-day.is-end .rcc-dot { width: 9px; height: 9px; background: var(--rcc-hl, var(--green)); color: var(--card); opacity: 1; }
+.rcc-day.is-start .rcc-dot svg, .rcc-day.is-end .rcc-dot svg { width: 6px; height: 6px; }
+.rcc-foot { display: flex; align-items: center; justify-content: space-between; gap: 4px; min-width: 0; flex-shrink: 0; }
+.rcc-cust { font-size: 9.5px; font-weight: 600; color: var(--txt-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
+.rcc-bal { font-size: 9.5px; font-weight: 700; white-space: nowrap; flex-shrink: 0; }
+.rcc-bal.paid { color: var(--green); }
+.rcc-bal.due { color: var(--yellow); }
+.rcc-bal.overdue { color: var(--red); }
+.rcc-bal.muted { color: var(--txt-3); font-weight: 600; }
+.rcc-set { color: var(--txt-3); font-style: italic; font-weight: 400; }
+
+/* ── CUSTOMER ROW (cr): name (flag-tinted) + phone·type · pay-$ value · funnel ── */
+.cr { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.cr-id { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.cr-name { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .6px; font-weight: 700; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cr-sub { font-size: 11px; color: var(--txt-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cr-right { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; }
+.cr-pay { font-size: 13px; font-weight: 700; font-style: italic; white-space: nowrap; }
+.cr-pay.spend { color: var(--green); }
+.cr-pay.due { color: var(--yellow); }
+.cr-pay.over { color: var(--red); }
+
+/* ── UNIT ROW (ur): [cat icon] · [name / category·HRS] · rental+insp · WO+SO ── */
+.row[data-card="units"] .row-content { padding: 0; }
+.ur { display: flex; align-items: center; gap: 9px; min-width: 0; padding: 9px 11px 9px 8px; border-left: 3px solid var(--ur-hl, var(--line)); }
+.ur-cat { flex: 0 0 auto; width: 22px; height: 22px; color: var(--txt-2); display: flex; align-items: center; justify-content: center; }
+.ur-cat svg { width: 19px; height: 19px; display: block; }
+.ur-id { flex: 1 1 auto; min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 1px 8px; }
+.ur-name { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .6px; font-weight: 700; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; min-width: 0; }
+.ur-sub { font-size: 11px; color: var(--txt-2); white-space: nowrap; flex: 0 0 auto; }
+.ur-pills { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; }
 /* rentals footer: Billing row over Rental-Status row (Jac) */
 .list-totals.two-row { flex-direction: column; align-items: stretch; gap: 4px; }
 .list-totals.two-row .tot-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
