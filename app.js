@@ -9882,21 +9882,17 @@ function onClick(e) {
     if (r) { e.preventDefault(); e.stopPropagation(); return openInNewTab(r.card, r.recId, r.recType); }
   }
 
-  // Task C — the picker is NON-MODAL: it stays open while the operator works the
-  // Units / Categories / Customers cards (browse, toggle, open-to-inspect, drag-to-
-  // select). It closes only on a click truly OUTSIDE those cards, the picker, and the
-  // trigger. (Drags never reach here — their trailing click is swallowed at 4925.)
-  // §5.4d — the date-search picker closes on a click outside the calendar, the search
-  // bars, and the date chips (so editing a chip keeps it open).
-  if (state.datesearch && !closest('.winpicker') && !closest('.searchwrap') && !closest('.mini-searchwrap') && !closest('.js-date-edit')) {
-    state.datesearch = null; render(); return;
-  }
-  if (state.winpicker
-      && !closest('.winpicker')
-      && !closest('.js-open-winpicker')
-      && !closest('.card[data-card="units"]')
-      && !closest('.card[data-card="categories"]')
-      && !closest('.card[data-card="customers"]')) {
+  // Task C — the picker is NON-MODAL: it stays open while the operator works any
+  // card / the header / the bottom bar (browse, toggle, open-to-inspect, drag-to-
+  // select) AND every click still runs its OWN action. It dismisses ONLY on a click
+  // landing on genuine DEAD SPACE — never on an interactive target — so a click is
+  // never swallowed (the old allow-list `return`ed on pills/rows/buttons, nulling the
+  // picker AND eating the click; #263). This mirrors the §5.4 search-mode dismiss
+  // below: an interactive target never enters the block, so it falls through to its
+  // own handler. (Drags never reach here — their trailing click is swallowed at 4925.)
+  const winDeadSpace = !closest('.card') && !closest('.header') && !closest('.winpicker') && !closest('.bottombar');
+  if (state.datesearch && winDeadSpace) { state.datesearch = null; render(); return; }
+  if (state.winpicker && winDeadSpace) {
     // Must always render or the float lingers as a dead, frozen overlay (state closed,
     // DOM open). Discards a fragile rental's staged change. Jac 2026-06-13.
     state.winpicker = null;
