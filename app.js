@@ -11797,7 +11797,12 @@ function setupPayAlloc() {
     const charge = body.querySelector('.js-alloc-charge');
     const btn = body.querySelector('.js-charge-invoice');
     if (counter) counter.innerHTML = after <= 0.005 ? `<b style="color:var(--good,#1a9f57)">Pays in full ✓</b>` : `Balance after <b>${money2(after)}</b>`;
-    if (charge) charge.innerHTML = pre > 0 ? `${money2(pre)}${tax ? ` + ${money2(tax)} tax` : ''} = <b>${money2(gross)}</b>` : '<span class="muted">nothing assigned</span>';
+    if (charge) {
+      if (pre <= 0) charge.innerHTML = '<span class="muted">nothing assigned</span>';
+      else { const lineGross = pre + tax;   // honest line total; gross caps at the remaining balance when a prior payment already covered part
+        const eq = `${money2(pre)}${tax ? ` + ${money2(tax)} tax` : ''} = <b>${money2(lineGross)}</b>`;
+        charge.innerHTML = lineGross > bal + 0.005 ? `${eq} · charge <b>${money2(gross)}</b> (balance)` : eq; }
+    }
     if (btn) { btn.disabled = !(gross > 0) || !!o.busy; if (!o.busy) btn.textContent = gross > 0 ? `Charge ${money2(gross)}` : 'Charge'; }
   };
   ins.forEach((inp) => inp.addEventListener('input', recompute));
@@ -12147,7 +12152,17 @@ function printInvoice(invoiceId) {
         <div><span>Subtotal</span><span>${money2(t.subtotal)}</span></div>
         <div><span>Tax${t.exempt ? ' (exempt)' : ` (${(TAX_RATE * 100).toFixed(2)}%)`}</span><span>${t.exempt ? '—' : money2(t.tax)}</span></div>
         <div class="pr-big"><span>Total</span><span>${money2(t.total)}</span></div>
-        <div><span>Paid${inv.paymentMethod ? ' · ' + esc(inv.paymentMethod) : ''}</span><span>${money2(t.paid)}</span></div>
+        ${(inv.payments || []).length
+          ? (inv.payments || []).map((p) => {
+              const when = p.at ? esc(fmtShortDate(p.at)) : '';
+              const method = p.type === 'cash' ? 'Cash'
+                : p.type === 'check' ? ('Check' + (p.checkNum ? ' #' + esc(String(p.checkNum)) : ''))
+                : p.type === 'ach-pending' ? 'ACH (pending)'
+                : p.type === 'charge' ? 'Card'
+                : esc(String(p.type || 'Payment'));
+              return `<div><span>Paid${when ? ' · ' + when : ''} · ${method}</span><span>${money2((Number(p.amountCents) || 0) / 100)}</span></div>`;
+            }).join('')
+          : (t.paid ? `<div><span>Paid${inv.paymentMethod ? ' · ' + esc(inv.paymentMethod) : ''}</span><span>${money2(t.paid)}</span></div>` : '')}
         <div class="pr-due"><span>Balance due</span><span>${money2(t.balance)}</span></div>
       </div>
       <div class="pr-foot">Thank you for your business — much obliged. Questions on this ticket? Give the yard a holler.</div>
