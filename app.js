@@ -1614,20 +1614,32 @@ function closeAll() { state.tabs = []; state.activeTabId = null; state.searchMod
    (slot buttons, window trigger) — the §18b sync persists mock records as-is. */
 
 /** Click a row → standard mode in that card (push back-stack). §0.2 */
+// #227 (Jac 2026-06-23) — a bare "+New Rental/Invoice" click used to mint a mock draft
+// AND write it straight to the Sheet (reindex/logAction → saveSoon), so an abandoned
+// empty Quote left junk behind (no nav = no #8 sweep, but the 1.2s save already fired).
+// This predicate is the single source of truth for "content-free throwaway draft": such
+// records self-destruct on navigation (#8 sweep below) AND are held out of the §18b sync
+// (computeChanges) so they never reach the backend until they earn real content.
+function isEmptyMockDraft(card, rec) {
+  if (!rec || !rec.mock) return false;
+  if (card === 'invoices') return !(rec.lineItems || []).length && !(Number(rec.amountPaid) || 0);
+  if (card === 'rentals')  return !(rentalUnits(rec) || []).length && !rec.customerId && !rec.startDate && !rec.invoiceId;
+  return false;
+}
 // #8 — an abandoned empty draft self-destructs the moment you leave it: a mock invoice
 // with no line items, or a mock rental still totally blank. keepId = the record you're
 // navigating TO (never swept). Called from every record-open + anchor. Jac 2026-06-13.
 function sweepEmptyDrafts(keepId) {
   for (let i = DATA.invoices.length - 1; i >= 0; i--) {
     const inv = DATA.invoices[i];
-    if (inv.mock && inv.invoiceId !== keepId && !(inv.lineItems || []).length && !(Number(inv.amountPaid) || 0)) {
+    if (inv.invoiceId !== keepId && isEmptyMockDraft('invoices', inv)) {
       (inv.rentalIds || []).forEach((rid) => { const r = IDX.rental.get(rid); if (r && r.invoiceId === inv.invoiceId) r.invoiceId = ''; });
       IDX.invoice.delete(inv.invoiceId); DATA.invoices.splice(i, 1);
     }
   }
   for (let i = DATA.rentals.length - 1; i >= 0; i--) {
     const r = DATA.rentals[i];
-    if (r.mock && r.rentalId !== keepId && !(rentalUnits(r) || []).length && !r.customerId && !r.startDate && !r.invoiceId) {
+    if (r.rentalId !== keepId && isEmptyMockDraft('rentals', r)) {
       IDX.rental.delete(r.rentalId); DATA.rentals.splice(i, 1);
     }
   }
@@ -12953,7 +12965,7 @@ function computeChanges() {
   PERSIST_KEYS.forEach((k) => {
     const idf = PERSIST_ID[k]; const prev = (lastSaved && lastSaved[k]) || new Map(); const seen = new Set();
     const ups = [];
-    (DATA[k] || []).forEach((r) => { const id = String(r[idf]); seen.add(id); const js = JSON.stringify(r); if (prev.get(id) !== js) ups.push({ id, js, rec: r }); });
+    (DATA[k] || []).forEach((r) => { const id = String(r[idf]); seen.add(id); if (isEmptyMockDraft(k, r)) return; const js = JSON.stringify(r); if (prev.get(id) !== js) ups.push({ id, js, rec: r }); });   // #227 — a content-free mock draft is held out of the sync until it earns content
     const dels = []; prev.forEach((_, id) => { if (!seen.has(id)) dels.push(id); });
     if (ups.length) { upserts[k] = ups; n += ups.length; }
     if (dels.length) { deletes[k] = dels; n += dels.length; }
