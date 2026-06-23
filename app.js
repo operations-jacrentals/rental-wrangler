@@ -13136,12 +13136,47 @@ async function loadWranglerRail() {
   } catch (e) { /* offline → the refresh poll retries */ }
 }
 function saveSoon() { if (booting || !backendPassword) return; clearTimeout(saveTimer); saveTimer = setTimeout(flushSave, 1200); }
+// A Google Sheets cell is hard-capped at 50,000 chars; the backend writes each
+// record's full JSON into one cell, so an oversized record makes the write throw
+// and — with the all-or-nothing commit below — jams the WHOLE sync (#251). The
+// realistic bloat source is an inline base64 photo (~100KB–2MB) still riding an
+// inspection / WO-part record. Offload it to Drive BEFORE the JSON rides the
+// sync, the same treatment chat images already get (pushWranglerRail → 6212).
+async function offloadDirtyPhotos(upserts) {
+  if (!backendPassword) return;                 // demo/offline → can't offload; the size-guard below backstops
+  const jobs = [];
+  (upserts.inspections || []).forEach((u) => { const n = u.rec; if ((n.photo || '').startsWith('data:')) jobs.push(offloadPhotoNow(n, 'photo', 'insp_' + n.inspectionId, n, 'inspections')); });
+  (upserts.workOrders || []).forEach((u) => { const w = u.rec; (w.lineItems || []).forEach((li) => { if ((li.photo || '').startsWith('data:')) jobs.push(offloadPhotoNow(li, 'photo', 'wopart_' + w.woId + '_' + lineKey(li), w, 'workOrders')); }); });
+  if (jobs.length) { try { await Promise.all(jobs); } catch (e) {} }   // a failed offload leaves base64 → held back below, never poisons the batch
+}
+// Client-side fault isolation (#251): if a record is STILL over the cell cap after
+// offload (Drive upload failed, or non-photo bloat), hold it OUT of the batch so it
+// can't abort the sync for every other record. It stays dirty → retries; loud once.
+let _oversizeHeld = new Set();
+function holdOversized(upserts) {
+  const stillHeld = new Set();
+  Object.keys(upserts).forEach((k) => {
+    const keep = [];
+    upserts[k].forEach((u) => {
+      if (u.js.length > 49000) {
+        const tag = k + ':' + u.id; stillHeld.add(tag);
+        if (!_oversizeHeld.has(tag)) toast('⚠ A record is too large to sync (photo over the 50k cell limit) — held back so the rest save. Re-capture with a smaller photo, or reconnect to offload it to Drive.');
+      } else keep.push(u);
+    });
+    if (keep.length) upserts[k] = keep; else delete upserts[k];
+  });
+  _oversizeHeld = stillHeld;
+}
 async function flushSave() {
   if (saving) { savePending = true; return; }
   if (!lastSaved) return;                       // never loaded → nothing to diff against
-  const { upserts, deletes, n } = computeChanges();
+  let { upserts, deletes, n } = computeChanges();
   if (!n) return;                               // nothing changed
   saving = true;
+  await offloadDirtyPhotos(upserts);            // base64 photos → Drive before they can ride into a 50k cell (#251)
+  ({ upserts, deletes } = computeChanges());    // re-diff: offloaded records shrank to a ~60-byte URL
+  holdOversized(upserts);                        // keep any still-oversized record out of the batch (fault isolation)
+  if (!Object.keys(upserts).length && !Object.keys(deletes).length) { saving = false; if (savePending) { savePending = false; saveSoon(); } return; }
   const wireUp = {}; Object.keys(upserts).forEach((k) => { wireUp[k] = upserts[k].map((u) => u.rec); });
   try {
     const r = await backendCall('sync', { upserts: wireUp, deletes });
