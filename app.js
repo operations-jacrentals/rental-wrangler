@@ -12844,12 +12844,17 @@ function openWinPicker(rentalId) {
   if (!r.startTime) r.startTime = nowHourLabel();   // default to the current hour (user spec)
   state.winpicker = { rentalId, monthISO: firstOfMonthISO(r.startDate || TODAY_ISO), anchor: null };
   if (rentalFragile(r)) state.winpicker.staged = { rentalId, startDate: r.startDate || '', endDate: r.endDate || '', startTime: r.startTime || '' };
-  // Task C — frame the yard on open: reveal Categories (list view) in the left column
-  // so the operator can browse what's free for this window. If the rental already has a
-  // window, light the availability lens right away (live rentals only — staged commits on Save).
+  // Task C / item #9 — frame the yard on open: reveal Categories (list view) in the
+  // left column only when the Rental Standard View is open with dates already set.
+  // If opened from a list-view mini-calendar, skip the column pivot (Jac: "Both, but
+  // only trigger the category path if the Rental Standard View is open with dates selected").
   const s = activeSession();
-  if (s.cols) s.cols.left = 'categories';
-  const cc = s.cards.categories; if (cc) { cc.mode = 'list'; cc.recId = null; cc.listLimit = undefined; }
+  const rs = s.cards.rentals;
+  if (rs && rs.mode === 'standard' && rs.recId === rentalId && r.startDate && r.endDate) {
+    if (s.cols) s.cols.left = 'categories';
+    const cc = s.cards.categories; if (cc) { cc.mode = 'list'; cc.recId = null; cc.listLimit = undefined; }
+  }
+  // Availability lens fires for both trigger paths whenever dates exist.
   if (!rentalFragile(r) && r.startDate && r.endDate) enterAvailabilitySearch(r);
   render();
 }
