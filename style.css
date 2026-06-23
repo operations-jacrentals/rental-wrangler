@@ -384,8 +384,6 @@ input { font-family: inherit; }
 /* Give the scroll content clearance below the floating bottom-right FAB cluster so the
    History / notes don't sit under the notification + inbox buttons. */
 .is-phone .card-body { padding-bottom: 10px; }   /* FABs are folded into the footer Tools menu now, so no big clearance needed */
-/* phone inverts the layout — the totals strip is a card HEADER now (border + shadow flip down) */
-.is-phone .list-totals { border-top: none; border-bottom: 1px solid var(--accent-line); box-shadow: 0 5px 11px -7px rgba(0,0,0,.45); }
 /* Card tabs = a SEGMENTED NAV BAR (one container, flat segments) — now sit INSIDE
    the card at its top, centered, so the card's height/glow includes the toggles. */
 .col-tabs { display: inline-flex; gap: 3px; flex: 0 0 auto; align-self: center; max-width: calc(100% - 16px); overflow: hidden;
@@ -1731,21 +1729,6 @@ body.is-phone .set-tab-l { flex: 0 0 auto; }
   border-radius: 9px; background: var(--panel); border: 1px solid var(--line); color: var(--txt-2); }
 .bv-btn:hover { color: var(--accent); border-color: var(--accent-line); background: var(--panel-2); }
 .bv-btn svg { width: 16px; height: 16px; }
-/* the value totals, frozen as a real Card Footer below the scrolling body */
-.list-totals { flex: 0 0 auto; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 9px 12px;
-  background: var(--card-head); border-top: 1px solid var(--accent-line); box-shadow: 0 -5px 11px -7px rgba(0,0,0,.45); }
-/* R4 (Jac 2026-06-12): footer chips wear the DERIVED-pill treatment — no
-   background, no border, no icon; colored ink + underline on hover/active. */
-.tot-chip { font-size: 11px; font-weight: 700; padding: 2px 2px; background: none; color: var(--txt-2);
-  border: none; white-space: nowrap; }
-.tot-chip.c-green { color: var(--green); } .tot-chip.c-red { color: var(--red); } .tot-chip.c-yellow { color: var(--yellow); }
-.tot-chip.c-blue { color: var(--blue); } .tot-chip.c-purple { color: var(--purple); } .tot-chip.c-orange { color: var(--orange); }
-.tot-chip.c-navy { color: var(--navy); } .tot-chip.c-pink { color: var(--pink); } .tot-chip.c-brown { color: var(--brown); }
-/* badge-value chips are clickable → filter the list to that value */
-button.tot-chip { cursor: pointer; font-family: inherit; }
-button.tot-chip:hover { text-decoration: underline; text-underline-offset: 3px; }
-button.tot-chip.on { text-decoration: underline; text-underline-offset: 3px; filter: brightness(1.18); }
-
 /* §13.2 — Board View spreadsheet popup */
 .bv-popup { width: 92vw; height: 86vh; max-width: 1400px; }
 .bv-head { gap: 10px; }
@@ -2769,16 +2752,6 @@ body { font-variant-numeric: tabular-nums; }
 @container (max-width: 340px) {
   .cr-statuses { grid-template-columns: 1fr; flex-basis: 80px; }
 }
-
-/* ── FOOTER SECTIONS: labeled chip groups separated by a rule (units/rentals/customers). ── */
-.list-totals.sectioned { gap: 0; padding: 6px 0; }
-.tot-sec { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 3px 12px; border-right: 1px solid var(--line); }
-.tot-sec:last-child { border-right: none; }
-.tot-label { font-size: 9px; font-weight: 700; font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .9px; color: var(--txt-3); margin-right: 2px; flex: 0 0 auto; }
-
-/* rentals footer: Billing row over Rental-Status row (Jac) — kept for non-sectioned fallback */
-.list-totals.two-row { flex-direction: column; align-items: stretch; gap: 4px; }
-.list-totals.two-row .tot-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 
 /* No-Preview Mode (Jac 2026-06-12): every eye — row chips + the toolbar — runs RED */
 .rbtn.js-roweye.off, .iconbtn.js-previews.off { color: var(--red); opacity: 1; }

@@ -2032,7 +2032,7 @@ function rowMatches(card, rec, query, terms) {
   for (const col in byCol) { if (!byCol[col].some((v) => totColMatch(card, rec, col, v))) return false; }
   return blobMatches(IDX.search.get(card + ':' + idOf(card, rec)), q2, terms2b.filter((t) => !t.col));
 }
-// A1 — exact match for a footer-chip's {col, value}, per record (mirrors applyTotalFilter).
+// A1 — exact match for a filter term's {col, value}, per record.
 function totColMatch(card, rec, col, value) {
   if (col === '__date') return dateTermHits(card, rec, value);   // §5.4d date-picker filter term
   if (col === '__wo') return DATA.workOrders.some((w) => w.unitId === rec.unitId && w.phase !== 'Complete' && !w.cancelled && (value === 'open' || w.phase === 'Part Ordered' || (w.lineItems || []).some((l) => l.phase === 'Part Ordered')));
@@ -2247,7 +2247,6 @@ function pageDefaultSlice(tab) {
     case 'kpis': return { key: 'kpis', value: {} };
     case 'general': return { key: 'company', value: {} };
     case 'requirements': return { key: 'rentalRules', value: {} };
-    case 'layout': return { key: 'layout', value: { footers: {} } };
     case 'fields': return { key: 'customFields', value: { customers: [], units: [], rentals: [], invoices: [] } };
     case 'inspections': return { key: 'inspections', value: Object.fromEntries([...new Set((DATA.categories || []).map((c) => inspFamilyKey(c)))].map((k) => [k, { required: false, items: (INSP_DEFAULTS[k] || []).map((i) => ({ ...i })) }])) };
     default: return null;   // Logins / planned tabs have no resettable slice
@@ -2291,9 +2290,6 @@ async function undoLastSettings() {
 // Company identity (Settings → Company). Read-through with shipped fallbacks, so an empty
 // config keeps every surface exactly as it ships today.
 const companyCfg = () => (state.settings && state.settings.company) || {};
-// Layout prefs (Settings → Layout & Footers). Read-through; default keeps every footer shown.
-const layoutCfg = () => (state.settings && state.settings.layout) || {};
-const footerHidden = (card) => (layoutCfg().footers || {})[card] === 'off';
 // Admin-defined custom fields per entity (Settings → Custom Fields). Values live schema-less
 // on the record (rec.custom[fieldId]); an empty config means no extra fields anywhere.
 const customFieldsFor = (entity) => ((state.settings && state.settings.customFields) || {})[entity] || [];
@@ -2742,7 +2738,6 @@ const SETTINGS_TABS = [
   { id: 'requirements',  label: 'Rental Rules',     icon: STATUS_ICONS.shield,    v1: true },
   { id: 'kpis',          label: 'KPIs & Rings',     icon: STATUS_ICONS.gauge,     v1: true },
   { id: 'notifications', label: 'Notifications',    icon: I.bell,                 note: 'Team chat on/off, driver dispatch alerts, customer reminders & cadence.' },
-  { id: 'layout',        label: 'Layout & Footers', icon: I.grid,                 v1: true },
   { id: 'integrations',  label: 'Integrations',     icon: STATUS_ICONS.zap,       note: 'Stripe, Maps, telematics feed — references & toggles (secrets stay server-side).' },
 ];
 const draftStatusOv = (o, set, val) => (((o.draftSettings || {}).status || {})[set] || {})[val] || {};
@@ -2768,7 +2763,6 @@ function settingsBoardHtml(o) {
   else if (o.tab === 'kpis') pane = settingsKpisPane(o);
   else if (o.tab === 'general') pane = settingsCompanyPane(o);
   else if (o.tab === 'requirements') pane = settingsRulesPane(o);
-  else if (o.tab === 'layout') pane = settingsLayoutPane(o);
   else if (o.tab === 'fields') pane = settingsFieldsPane(o);
   else if (o.tab === 'inspections') pane = settingsInspectionsPane(o);
   else pane = settingsPlannedPane(SETTINGS_TABS.find((t) => t.id === o.tab));
@@ -2845,27 +2839,6 @@ function settingsRulesPane(o) {
     <div class="rule-list">${rows}</div>
     <div class="rule-planned-head">Coming once their capture field exists</div>
     <div class="rule-list">${planned}</div>`;
-}
-// Cards that carry a totals footer (the highlighted roll-up row beneath the list).
-const LAYOUT_FOOTER_CARDS = [
-  { key: 'rentals', label: 'Rentals' }, { key: 'units', label: 'Units' }, { key: 'customers', label: 'Customers' },
-  { key: 'categories', label: 'Categories' }, { key: 'invoices', label: 'Invoices' }, { key: 'workOrders', label: 'Work Orders' },
-  { key: 'inspections', label: 'Inspections' },
-];
-function settingsLayoutPane(o) {
-  const draft = (o.draftSettings && o.draftSettings.layout && o.draftSettings.layout.footers) || (state.settings && state.settings.layout && state.settings.layout.footers) || {};
-  const rows = LAYOUT_FOOTER_CARDS.map((c) => {
-    const shown = draft[c.key] !== 'off';
-    return `<div class="rule-row">
-      <div class="rule-main"><span class="rule-label">${CARD_ICON[c.key] || ''}${esc(c.label)} footer</span><span class="rule-desc">The totals roll-up beneath the ${esc(c.label.toLowerCase())} list.</span></div>
-      ${segCtl([{ label: 'Hide', js: 'js-layout-footer', data: { card: c.key, val: 'off' }, on: shown ? null : 'red' }, { label: 'Show', js: 'js-layout-footer', data: { card: c.key, val: 'on' }, on: shown ? 'green' : null }])}
-    </div>`;
-  }).join('');
-  return `
-    <div class="set-pane-head"><h4>Layout &amp; Footers</h4><p>Show or hide each card's <strong>totals footer</strong> — the highlighted roll-up row beneath its list. Everything defaults to shown.</p></div>
-    <div class="rule-list">${rows}</div>
-    <div class="rule-planned-head">More layout controls coming</div>
-    <div class="rule-list"><div class="rule-row rule-soon"><div class="rule-main"><span class="rule-label">Columns · sort · grid order</span><span class="rule-desc">Builds on the existing List-View column picker — a focused follow-on so the two don't fight.</span></div><span class="rule-soon-tag">Planned</span></div></div>`;
 }
 // Entities that can carry custom fields. v1 wires the Customers form; others store defs but
 // their forms aren't wired yet (shown as 'form coming').
@@ -3273,6 +3246,16 @@ function unitPill(unitId, { x, xData } = {}) {
   const chat = ` data-chat-el data-chat-label="${esc(u.name)}" data-chat-color="gray" data-chat-card="units" data-chat-rec="${esc(unitId)}"`;   // §17
   return `<span class="pill ref link" data-r="R2" data-pill-card="units" data-pill-rec="${esc(unitId)}"${chat}>${CARD_ICON.units}${esc(u.name)}${xb}</span>`;
 }
+/** R2: entity-stamp pill — flag-colored (getEntityColor), Saira-caps, card icon + name. */
+function entityPill(card, rec, { x, xData } = {}) {
+  if (!rec) return '';
+  const id = idOf(card, rec);
+  const name = rec.name || '';
+  const flag = getEntityColor(card, rec) || 'gray';
+  const xb = x ? `<span class="x" data-x="${esc(x)}"${xData != null ? ` data-id="${esc(xData)}"` : ''}>✕</span>` : '';
+  const chat = ` data-chat-el data-chat-label="${esc(name)}" data-chat-color="${esc(flag)}" data-chat-card="${esc(card)}" data-chat-rec="${esc(id)}"`;
+  return `<span class="pill entity-stamp c-${flag}" data-r="R2" data-pill-card="${card}" data-pill-rec="${esc(id)}"${chat}>${CARD_ICON[card] || ''}<span class="t">${esc(name)}</span>${xb}</span>`;
+}
 /** R3b: a DATA CHIP — a plain fact (480 HRS, No GPS), independent of R3. */
 const badge = (label, color = 'gray') => `<span class="pill c-${color}" data-r="R3b"><span class="t">${esc(label)}</span></span>`;
 /** R1: a GATE pill — a status DROPDOWN that moves the record forward. */
@@ -3399,6 +3382,27 @@ function flashOr(sel, msg) {
  *  Replace opens the inline editor · Add Comment logs to History ·
  *  Ask Mr. Wrangler copies a debug reference for Claude. */
 let ctxTarget = null;
+// §13.4 graph-chrome right-click menu — tracks which card it was opened on so runCtxAction can act without
+// the ctxOutside closer; the chosen state persists per device, per card (loadGvChrome).
+let ctxGvCard = null;
+function openGvChromeMenu(e, card) {
+  closeCtxMenu();
+  ctxTarget = null; ctxGvCard = card;
+  const ch = loadGvChrome(card);
+  const m = document.createElement('div');
+  m.className = 'ctx-menu'; m.id = 'rw-ctx';
+  const item = (act, label) => `<button class="dd-item" data-ctx="${act}">${label}</button>`;
+  m.innerHTML = [
+    item('gv-pills', `🏷️ ${ch.pills ? 'Show' : 'Hide'} filter pills`),
+    item('gv-sort', `↕️ ${ch.sort ? 'Show' : 'Hide'} Views &amp; sort`),
+    '<div class="menu-sep"></div>',
+    item('gv-reset', '↺ Reset pills &amp; sort'),
+  ].join('');
+  document.body.appendChild(m);
+  m.style.left = Math.min(e.clientX, window.innerWidth - 205) + 'px';
+  m.style.top = Math.min(e.clientY, window.innerHeight - m.offsetHeight - 8) + 'px';
+  setTimeout(() => document.addEventListener('mousedown', ctxOutside), 0);
+}
 function closeCtxMenu() { const m = document.getElementById('rw-ctx'); if (m) m.remove(); }
 function openCtxMenu(e, hit) {
   closeCtxMenu();
@@ -3427,6 +3431,13 @@ function openCtxMenuAt(target, x, y) {
   if (!target || !target.closest) return;
   if (target.closest('input, textarea, .inline-input')) return;
   const card = target.closest('.card'); if (!card && !target.closest('.overlay .popup')) return;
+  // §13.4 — inside an OPEN graph view, right-click/long-press the panel (or the Views & sort
+  // control above it) opens the graph-chrome menu instead of the per-element Wrangler menu,
+  // so the filter pills / sort can be hidden and Reset.
+  if (card && !state.winpicker) {
+    const cid = card.dataset.card, gcs = cid && activeSession().cards[cid];
+    if (gcs && gcs.graphView && (target.closest('.gv-panel') || target.closest('.sort'))) return openGvChromeMenu({ clientX: x, clientY: y }, cid);
+  }
   // While the rental-window picker is open, keep right-click → BACK working; just suppress
   // the element context menu (it gets in the way of picking). (Jac B5, 2026-06-15)
   const leaf = state.winpicker ? null : target.closest('.pill, .add-field, .flag, .linkname, .inv-line-link, .req, .seg, button, .inline-edit, .jnode, .x, a, .d-title, .r-title, .derived');
@@ -3444,6 +3455,14 @@ function ctxOutside(e) {
   closeCtxMenu();
 }
 function runCtxAction(act) {
+  if (act.startsWith('gv-')) {   // §13.4 graph-chrome menu — no leaf target, just the card
+    const card = ctxGvCard; closeCtxMenu(); document.removeEventListener('mousedown', ctxOutside); ctxGvCard = null;
+    if (!card) return;
+    if (act === 'gv-pills') saveGvChrome(card, { pills: !gvPillsHidden(card) });
+    else if (act === 'gv-sort') saveGvChrome(card, { sort: !gvSortHidden(card) });
+    else if (act === 'gv-reset') saveGvChrome(card, { pills: false, sort: false });
+    return render();
+  }
   const tg = ctxTarget; closeCtxMenu(); document.removeEventListener('mousedown', ctxOutside);
   if (!tg) return;
   const el = tg.el;
@@ -4202,108 +4221,6 @@ function fmtAggValue(col, a, calc) {
   const v = a[calc] != null ? a[calc] : a.sum;
   return col.type === 'money' ? money(v) : col.type === 'pct' ? num(v) + '%' : num(v);
 }
-/* Footer chips Jac pruned as noise (2026-06-16): whole numeric roll-ups dropped
-   per card, plus a few badge VALUES. No Show is a rental-card-only signal. */
-const FOOT_DROP_NUM = { units: ['service'], rentals: ['price'], customers: ['rentals'] };
-const footDropNum = (card, key) => (FOOT_DROP_NUM[card] || []).includes(key);
-const footDropBadge = (card, value) =>
-  (value === 'No Show' && card !== 'rentals') ||      // No Show = rental card only
-  (value === 'Refunded' && card !== 'invoices') ||    // Refunded = invoice card only
-  value === 'Returned' || value === 'Card OK';
-/** The highlighted summary row beneath a card's List View: badge value-counts +
- *  numeric roll-ups (e.g. "6 Tomorrow · 900 HRS avg · 12 Part Needed"). */
-function listTotalsEl(card, rows, session) {
-  if (!rows || !rows.length) return null;
-  if (footerHidden(card)) return null;   // Settings → Layout & Footers: this card's totals footer is hidden
-  const cols = cardColumns(card, session);
-  const sel = loadListTotals(card);                 // null = every aggregatable column
-  const allowed = sel ? new Set(sel) : null;
-  const totCard = (session.cards && session.cards[card]) ? card : 'shop';   // shop sub-types route to the shop card
-  const tf = session.cards[totCard] && session.cards[totCard].totalFilter;
-  const chips = [];   // { k: col.key, html } — buckets let rentals split Billing/Status rows
-  for (const col of cols) {
-    if (allowed && !allowed.has(col.key)) continue;
-    if (footDropNum(card, col.key)) continue;            // Jac-pruned numeric roll-up
-    const a = aggColumn(col, rows);
-    if (a.kind === 'badge') {
-      // each value-count is a button → filters the list to that value.
-      // Registry-set columns order by the SET's canonical order (Jac: faster to use),
-      // ad-hoc badges keep count-desc.
-      const ord = col.set ? Object.keys(STATUS[col.set] || {}) : null;
-      Object.entries(a.counts).sort((x, y) => ord ? ord.indexOf(x[0]) - ord.indexOf(y[0]) : y[1] - x[1]).forEach(([key, n]) => {
-        if (footDropBadge(card, key)) return;            // Jac-pruned badge value
-        const m = col.meta ? col.meta(key) : { label: key, color: 'gray' };
-        const on = tf && tf.col === col.key && String(tf.value) === String(key);
-        chips.push({ k: col.key, html: `<button class="tot-chip c-${m.color} js-tot-chip${on ? ' on' : ''}" data-r="R4" data-tot-card="${totCard}" data-tot-col="${col.key}" data-tot-val="${esc(String(key))}">${n} ${esc(m.label)}</button>` });
-      });
-    } else if (a.kind === 'num' && a.count) {
-      const calc = col.agg === 'sum' ? 'sum' : 'avg';
-      const val = col.type === 'money' ? money(a[calc]) : num(a[calc]);
-      chips.push({ k: col.key, html: `<span class="tot-chip" data-r="R4">${val} ${esc(col.label)} ${calc}</span>` });
-    }
-  }
-  // v2: the units footer carries the SHOP — open-WO + parts-ordered counts
-  // (the standalone Inspections/WO tabs went away; Jac call #1)
-  if (card === 'units') {
-    const openBy = new Set(DATA.workOrders.filter((w) => w.phase !== 'Complete' && !w.cancelled).map((w) => w.unitId));
-    const ordBy = new Set(DATA.workOrders.filter((w) => w.phase !== 'Complete' && !w.cancelled && (w.phase === 'Part Ordered' || (w.lineItems || []).some((l) => l.phase === 'Part Ordered'))).map((w) => w.unitId));
-    const nOpen = rows.filter((u) => openBy.has(u.unitId)).length;
-    const nOrd = rows.filter((u) => ordBy.has(u.unitId)).length;
-    if (nOpen) { const on = tf && tf.col === '__wo' && tf.value === 'open'; chips.push({ k: '__wo', html: `<button class="tot-chip c-red js-tot-chip${on ? ' on' : ''}" data-r="R4" data-tot-card="units" data-tot-col="__wo" data-tot-val="open">${nOpen} WOs Open</button>` }); }
-    if (nOrd) { const on = tf && tf.col === '__wo' && tf.value === 'ordered'; chips.push({ k: '__wo', html: `<button class="tot-chip c-yellow js-tot-chip${on ? ' on' : ''}" data-r="R4" data-tot-card="units" data-tot-col="__wo" data-tot-val="ordered">${nOrd} Parts Ordered</button>` }); }
-  }
-  if (!chips.length) return null;
-  const node = el('div', 'list-totals');
-  // Footer sections (Jac 2026-06-23): group chips into labeled sections so Fleet · Rental ·
-  // Shop (units), Billing · Status (rentals), and Type · Finance (customers) read as one shop.
-  const totSec = (label, ks) => { const h = chips.filter((c) => ks.has(c.k)).map((c) => c.html).join(''); return h ? `<span class="tot-sec"><span class="tot-label">${label}</span>${h}</span>` : ''; };
-  if (card === 'units') {
-    node.classList.add('sectioned');
-    node.innerHTML = [
-      totSec('Fleet', new Set(['inspection', 'fleet', 'hours'])),
-      totSec('Rental', new Set(['rental'])),
-      totSec('Shop', new Set(['service', 'wash', '__wo'])),
-    ].filter(Boolean).join('') || chips.map((c) => c.html).join('');
-  } else if (card === 'rentals') {
-    node.classList.add('sectioned');
-    node.innerHTML = [
-      totSec('Billing', new Set(['invoice', 'price'])),
-      totSec('Status', new Set(['status', 'window', 'customer'])),
-    ].filter(Boolean).join('') || chips.map((c) => c.html).join('');
-  } else if (card === 'customers') {
-    node.classList.add('sectioned');
-    node.innerHTML = [
-      totSec('Type', new Set(['account'])),
-      totSec('Finance', new Set(['pay', 'card'])),
-      totSec('Activity', new Set(['rentals', 'email', 'company'])),
-    ].filter(Boolean).join('') || chips.map((c) => c.html).join('');
-  } else {
-    node.innerHTML = chips.map((c) => c.html).join('');
-  }
-  return node;
-}
-/** Filter a card's list rows by an active footer-chip filter (col === value). */
-function applyTotalFilter(card, rows, session) {
-  const cs = session.cards[card]; if (!cs || !cs.totalFilter) return rows;
-  if (cs.totalFilter.col === '__wo') {           // v2 synthetic footer chips: units with shop work
-    const want = cs.totalFilter.value;
-    const ids = new Set(DATA.workOrders.filter((w) => w.phase !== 'Complete' && !w.cancelled && (want === 'open' || w.phase === 'Part Ordered' || (w.lineItems || []).some((l) => l.phase === 'Part Ordered'))).map((w) => w.unitId));
-    return rows.filter((rec) => ids.has(rec.unitId));
-  }
-  if (cs.totalFilter.col === '__cond') return rows.filter((rec) => rec.inspectionStatus === cs.totalFilter.value);   // the Not Ready tab chip
-  const col = cardColumns(card, session).find((c) => c.key === cs.totalFilter.col);
-  return col ? rows.filter((rec) => String(col.get(rec)) === String(cs.totalFilter.value)) : rows;
-}
-/** A removable "Filtered to X" chip when a footer-chip filter is active. */
-function totalFilterChip(card, session) {
-  const cs = session.cards[card]; if (!cs || !cs.totalFilter) return null;
-  const col = cardColumns(card, session).find((c) => c.key === cs.totalFilter.col);
-  const m = (col && col.meta) ? col.meta(cs.totalFilter.value) : { label: cs.totalFilter.value };
-  const chip = el('div', 'fleet-chip');
-  chip.innerHTML = `<span class="muted">Filtered to</span> <b>${esc(m.label)}</b> <button class="x js-clear-totfilter" data-card="${card}" data-tip="Clear">${I.x}</button>`;
-  return chip;
-}
-
 /* ── §13.3 LIST-VIEW LAYOUT — per-device choice of which registry columns show in
    row 1 (details, non-badge, Name always first) vs row 2 (badges). Saved to
    localStorage; when absent a card uses its hand-tuned ROWS renderer. ── */
@@ -4335,22 +4252,22 @@ function saveListLayout(card, layout) {
   LIST_LAYOUTS[card] = layout || undefined;
   try { if (layout) localStorage.setItem(LIST_LAYOUT_KEY(card), JSON.stringify(layout)); else localStorage.removeItem(LIST_LAYOUT_KEY(card)); } catch (e) { /* private mode */ }
 }
-/* Which columns roll up in the card's totals footer — chosen per device, independent
-   of the row layout. null = the default (every aggregatable column). */
-const LIST_TOTALS_KEY = (card) => `jactec.listTotals.${card}`;
-const LIST_TOTALS = Object.create(null);
-const isAggCol = (c) => c.badge || c.type === 'money' || c.type === 'num' || c.type === 'pct';
-function loadListTotals(card) {
-  if (card in LIST_TOTALS) return LIST_TOTALS[card];
+const GV_CHROME_KEY = (card) => `jactec.gvChrome.${card}`;
+const GV_CHROME = Object.create(null);
+function loadGvChrome(card) {
+  if (card in GV_CHROME) return GV_CHROME[card];
   let v = null;
-  try { const raw = localStorage.getItem(LIST_TOTALS_KEY(card)); if (raw) v = JSON.parse(raw); } catch (e) { v = null; }
-  if (Array.isArray(v)) { const keys = new Set((CARD_COLUMNS[card] || []).map((c) => c.key)); v = v.filter((k) => keys.has(k)); } else v = null;
-  LIST_TOTALS[card] = v; return v;
+  try { const raw = localStorage.getItem(GV_CHROME_KEY(card)); if (raw) v = JSON.parse(raw); } catch (e) { v = null; }
+  GV_CHROME[card] = (v && typeof v === 'object') ? v : {};
+  return GV_CHROME[card];
 }
-function saveListTotals(card, keys) {
-  LIST_TOTALS[card] = keys || undefined;
-  try { if (keys) localStorage.setItem(LIST_TOTALS_KEY(card), JSON.stringify(keys)); else localStorage.removeItem(LIST_TOTALS_KEY(card)); } catch (e) {}
+function saveGvChrome(card, patch) {
+  const next = { ...loadGvChrome(card), ...patch };
+  GV_CHROME[card] = next;
+  try { if (next.pills || next.sort) localStorage.setItem(GV_CHROME_KEY(card), JSON.stringify(next)); else localStorage.removeItem(GV_CHROME_KEY(card)); } catch (e) {}
 }
+const gvPillsHidden = (card) => loadGvChrome(card).pills;
+const gvSortHidden = (card) => loadGvChrome(card).sort;
 /** A list row's inner HTML from a saved layout: Name is the locked title, the
  *  rest of row 1 are non-badge values, row 2 are badge pills. */
 function customRowHTML(card, rec, layout) {
@@ -5045,15 +4962,14 @@ const DETAIL = {
     const balColor = (eventPaid > 0 && eventPaid >= eventTotal) ? 'green' : (invT && invT.status === 'Not Due') ? 'blue' : 'red';
     const rdBal = `<span class="rd-bal balline" data-chat-el data-chat-label="${esc('Balance ' + money(eventPaid) + ' / ' + money(eventTotal))}" data-chat-color="${esc(balColor)}"${inv ? ` data-chat-card="invoices" data-chat-rec="${esc(inv.invoiceId)}"` : ''}><b style="color:var(--${balColor})">${money(eventPaid)}</b><span class="tot"> / ${money(eventTotal)}</span></span>`;
 
-    /* Header: customer + category + invoice + PO left · gate + balance right. */
+    /* Header: customer + PO left · status gate top-right, then invoice+balance below. */
     const custEl = cust
-      ? refPill('customers', r.customerId, cust.name, { x: 'cust-swap' })
+      ? entityPill('customers', cust, { x: 'cust-swap' })
       : addBtn('Customer', { link: true, js: 'js-quickadd-cust', h: 26, data: { card: 'rentals', rec: r.rentalId, slot: 'customer' } });
-    const catPill = cat ? dPill(cat.name, 'orange', { card: 'categories', recId: cat.categoryId, icon: CARD_ICON.categories }) : '';
     const poField = efld('rentals', r, 'rentalId', 'po', 'Add PO', { fmt: (v) => 'PO ' + v });
     const rdHead = `<div class="rd-head">
-      <div class="rd-head-l">${custEl}${catPill}${invPill}${poField}</div>
-      <div class="rd-head-r">${masterGate(r, { truck })}${rdBal}</div>
+      <div class="rd-head-l">${custEl}${poField}</div>
+      <div class="rd-head-r">${masterGate(r, { truck })}<div class="rd-head-bal">${invPill}${rdBal}</div></div>
     </div>`;
 
     /* Not-Ready blocker — jumps to unit pills; sits above the calendar. */
@@ -5075,7 +4991,7 @@ const DETAIL = {
     const stallsHtml = units.length
       ? units.map((eu) => {
           const u = IDX.unit.get(eu.unitId); if (!u) return '';
-          const insp = getStatus('unitInspectionStatus', u.inspectionStatus);
+          const unitCat = IDX.category.get(u.categoryId);
           const voided = unitVoided(r, eu);
           const lref = rentalLineRefund(r, eu.unitId);   // §19b reflect the invoice's per-line refund on the rental's unit
           const multi = units.length > 1;
@@ -5086,7 +5002,7 @@ const DETAIL = {
           const splitBtn = multi ? `<button class="stall-split js-split-open" data-rec="${esc(r.rentalId)}" data-unit="${esc(u.unitId)}" data-tip="Give ${esc(u.name)} its own dates — splits to a separate rental on the same invoice"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>dates</button>` : '';
           return `<div class="stall rd-unit${voided ? ' voided' : ''}${lref.fully ? ' stall-refunded' : ''}">
             <div class="rd-unit-top">
-              <div class="stall-id rd-unit-id">${unitPill(u.unitId, { x: 'unit-remove', xData: u.unitId })}${dPill(insp.label, insp.color, { card: 'units', recId: u.unitId, icon: CARD_ICON.inspections })}${noRates}${multi ? unitStatusGate(r, eu) : ''}</div>
+              <div class="stall-id rd-unit-id">${entityPill('units', u, { x: 'unit-remove', xData: u.unitId })}${unitCat ? dPill(unitCat.name, 'orange', { card: 'categories', recId: u.categoryId, icon: CARD_ICON.categories }) : ''}${noRates}${multi ? unitStatusGate(r, eu) : ''}</div>
               <div class="rd-unit-rate">${lref.refunded ? `<span class="stall-refund" data-tip="${lref.fully ? 'fully' : 'partially'} refunded on the invoice">↩ refunded</span> · ` : ''}${durLabel ? `<span class="rd-dur">${esc(durLabel)}</span> · ` : ''}<span class="stall-amt${lref.fully ? ' struck' : ''}">${money(up ? up.price : 0)}</span>${splitBtn}</div>
             </div>
             ${stallRouteHtml(r, eu)}
@@ -5094,15 +5010,14 @@ const DETAIL = {
         }).join('')
       : `<div class="stall stall-empty rd-unit rd-unit-empty">${pickUnitBtn}<span class="muted" style="font-size:12px">drag a unit on, or cancel the quote</span></div>`;
 
-    /* Footer: field call + Complete/Cancel left · invoice total right. */
+    /* Footer: field call left · Complete/Cancel right (Jac spec). */
     const cancelish = ['Cancelled', 'No Show'].includes(r.status);
     const canComplete = allUnitsTerminal(r);
     const crBtn = cancelish
       ? actionPill('danger', 'Cancel Rental', { js: 'js-cancel-rental', h: 26, data: { rec: r.rentalId } })
       : actionPill('commit', 'Complete Rental', { js: `js-complete-rental${canComplete ? '' : ' locked'}`, h: 26, data: { rec: r.rentalId } });
     const fcRow = r.fieldCall ? actionPill('danger', 'Field Call active — clear', { js: 'js-clear-fc', data: { rec: r.rentalId } }) : '';
-    const invTotalHtml = invT ? `<span class="rd-inv-total">${money(eventTotal)}</span>` : '';
-    const rdFoot = `<div class="rd-foot"><div class="rd-foot-l">${fcRow}${crBtn}</div><div class="rd-foot-r">${invTotalHtml}</div></div>`;
+    const rdFoot = `<div class="rd-foot"><div class="rd-foot-l">${fcRow}</div><div class="rd-foot-r">${crBtn}</div></div>`;
 
     const rentalSec = `<div class="section sec-${stColor} rentalsec">
       ${rdHead}
@@ -5907,14 +5822,9 @@ function columnEl(col, session) {
   const cs = card.dataset.card && session.cards ? session.cards[card.dataset.card] : null;
   card.dataset.view = (cs && cs.mode === 'standard' && cs.recId != null) ? `${cs.recType || ''}:${cs.recId}` : 'list';
   if (!document.body.classList.contains('is-phone')) card.insertBefore(colTabsEl(col, active, session), card.firstChild);   // toggles live INSIDE the card top on desktop; on phones they move to the footer dock (§M1)
-  const tot = card.querySelector('.card-body .list-totals');             // freeze the totals out of the scroll
-  // §M1 — phones invert the desktop layout: the card "footer" (totals) sits at the TOP,
-  // while the toggles + search live in the bottom dock. Desktop keeps it as a footer.
-  if (tot) { if (document.body.classList.contains('is-phone')) card.insertBefore(tot, card.firstChild); else card.appendChild(tot); }
   // Desktop: freeze the search/sort bar out of the scroll too — a full-width card
   // header so the card-body scrollbar runs ONLY through the list below it, never in
-  // a gutter alongside the bar (the "funny" gap). Mirrors the .list-totals footer
-  // freeze; on phones render() relocates the bar to the bottom dock instead.
+  // a gutter alongside the bar (the "funny" gap). On phones render() relocates the bar to the bottom dock instead.
   if (!document.body.classList.contains('is-phone')) {
     const lb = card.querySelector('.card-body .listbar'), body = card.querySelector('.card-body');
     if (lb && body) card.insertBefore(lb, body);
@@ -6040,10 +5950,10 @@ function listView(cardDef, session) {
       ${cascChip}${cterms.map((ft, i) => filterTermPill(ft, i, card)).join('')}
       <input class="mini-search" placeholder="${cterms.length ? 'Add filter — Enter to pin…' : `Search ${esc(cardDef.title.toLowerCase())}…`}" value="${esc(cs.search)}" data-card="${card}" />
     </div>
-    <div class="sort">
+    ${(cs.graphView && gvSortHidden(card)) ? '' : `<div class="sort">
       <button class="sortbtn js-sortmenu${av ? ' viewing' : ''}" data-card="${card}" data-tip="Views &amp; sort">${esc(av ? av.name : curField.label)} ${I.chev}</button>
       <button class="dir js-sortdir" data-card="${card}"><span class="${cs.sort.dir === 'asc' ? 'on' : ''}">▲</span><span class="${cs.sort.dir === 'desc' ? 'on' : ''}">▼</span></button>
-    </div>`;
+    </div>`}`;
   wrap.appendChild(bar);
   // §13.4 — Graph carousel: an interactive panel ABOVE the list (the list renders below,
   // filtered by the chart's g-tagged search terms). Legacy cards still full-replace the list.
@@ -6081,9 +5991,6 @@ function listView(cardDef, session) {
   } else if (availWin && card === 'categories') {
     rows = [...rows].sort((a, b) => (availUnavailable('categories', a) ? 1 : 0) - (availUnavailable('categories', b) ? 1 : 0));
   }
-  rows = applyTotalFilter(card, rows, session);          // a clicked footer-chip narrows the list
-  const tfChip = totalFilterChip(card, session); if (tfChip) wrap.appendChild(tfChip);
-
   const list = el('div', 'list');
   // §0.2 — Rentals always lead with a +New Rental row, no matter the search (obsoletes
   // the old toolbar Rental button). INSIDE the list so it shares the row inset — was
@@ -6117,8 +6024,6 @@ function listView(cardDef, session) {
     appendWindowed(list, rows, cs, card, (rec) => list.appendChild(rowEl(card, rec)));
   }
   wrap.appendChild(list);
-  const totals = listTotalsEl(card, rows, session);   // highlighted roll-up row at the card's foot
-  if (totals) wrap.appendChild(totals);
   return wrap;
 }
 const PLUS_NEW = new Set(['rentals', 'invoices', 'customers']);
@@ -6281,18 +6186,6 @@ function shopListView(session, byType, forcedSeg) {
   }
   items = shopSort(items, cs.sort);
 
-  // a clicked footer-chip narrows the shop list (filter is stored on the shop card)
-  if (cs.totalFilter && segActive !== 'all') {
-    const fcol = (CARD_COLUMNS[segActive] || []).find((c) => c.key === cs.totalFilter.col);
-    if (fcol) {
-      items = items.filter((it) => String(fcol.get(it.rec)) === String(cs.totalFilter.value));
-      const m = fcol.meta ? fcol.meta(cs.totalFilter.value) : { label: cs.totalFilter.value };
-      const chip = el('div', 'fleet-chip');
-      chip.innerHTML = `<span class="muted">Filtered to</span> <b>${esc(m.label)}</b> <button class="x js-clear-totfilter" data-card="shop" data-tip="Clear">${I.x}</button>`;
-      wrap.appendChild(chip);
-    }
-  }
-
   const list = el('div', 'list');
   if (!items.length) {
     // creation lives in ONE place — the header + New menu (no per-card +New)
@@ -6301,10 +6194,6 @@ function shopListView(session, byType, forcedSeg) {
     appendWindowed(list, items, cs, 'shop', (it) => list.appendChild(shopRowEl(it.type, it.rec)));
   }
   wrap.appendChild(list);
-  if (segActive !== 'all') {   // a single shop segment has one record shape → roll it up
-    const tot = listTotalsEl(segActive, items.map((it) => it.rec), session);
-    if (tot) wrap.appendChild(tot);
-  }
   return wrap;
 }
 
@@ -7917,8 +7806,8 @@ function gvPieClickable(card, src, cs, segs, size = 116) {
 }
 function gvRenderView(card, src, cs, v) {
   if (v.kind === 'pie') {
-    const legend = v.segs.map((s) => gvSegBtn(cs, card, src, s, `<i style="background:var(--${s.color})"></i><span class="gl-lbl">${esc(s.label)}</span> <b>${s.count}</b>`, 'gv-leg')).join('');
-    return `<div class="gv-pie">${gvPieClickable(card, src, cs, v.segs)}<div class="gv-legend gv-legend-click">${legend}</div></div>`;
+    const legend = gvPillsHidden(card) ? '' : `<div class="gv-legend gv-legend-click">${v.segs.map((s) => gvSegBtn(cs, card, src, s, `<i style="background:var(--${s.color})"></i><span class="gl-lbl">${esc(s.label)}</span> <b>${s.count}</b>`, 'gv-leg')).join('')}</div>`;
+    return `<div class="gv-pie">${gvPieClickable(card, src, cs, v.segs)}${legend}</div>`;
   }
   if (v.kind === 'bars') {
     const max = Math.max(1, ...v.segs.map((s) => s.count));
@@ -9887,16 +9776,11 @@ function bvCustomizePanel(card) {
   const nonBadge = cols.filter((c) => !c.pill && c.key !== nameKey);
   const badges = cols.filter((c) => c.pill);
   const box = (c, row, on, locked) => `<label class="bv-pick${locked ? ' locked' : ''}"><input type="checkbox" class="js-bv-pick" data-card="${card}" data-row="${row}" data-col="${c.key}"${on ? ' checked' : ''}${locked ? ' disabled' : ''}/> ${esc(c.label)}</label>`;
-  const aggCols = cols.filter(isAggCol);
-  const totSel = loadListTotals(card);                  // null = all
-  const totBox = (c) => `<label class="bv-pick"><input type="checkbox" class="js-bv-tot" data-card="${card}" data-col="${c.key}"${(totSel ? totSel.includes(c.key) : true) ? ' checked' : ''}/> ${esc(c.label)}</label>`;
   return `<div class="bv-customize">
     <div class="bv-pick-group"><h4>List row 1 — details <span class="muted">(${(layout.row1 || []).length}/6)</span></h4>
       ${box(cols[0], 'row1', true, true)}${nonBadge.map((c) => box(c, 'row1', layout.row1.includes(c.key), false)).join('')}</div>
     <div class="bv-pick-group"><h4>List row 2 — badges <span class="muted">(${(layout.row2 || []).length}/6)</span></h4>
       ${badges.length ? badges.map((c) => box(c, 'row2', layout.row2.includes(c.key), false)).join('') : '<span class="muted">No badge columns on this card.</span>'}</div>
-    <div class="bv-pick-group"><h4>Card totals <span class="muted">(footer)</span></h4>
-      ${aggCols.length ? aggCols.map(totBox).join('') : '<span class="muted">Nothing to total.</span>'}</div>
     <button class="pill ghost js-bv-resetlayout" data-r="R18" data-card="${card}">Reset to defaults</button>
   </div>`;
 }
@@ -10853,8 +10737,6 @@ function onClick(e) {
   if (closest('.js-kpi-refine')) { e.stopPropagation(); const b = closest('.js-kpi-refine'); openWranglerForKpi(b.dataset.role, Number(b.dataset.i)); return; }
   // Rental Rules tab
   if (closest('.js-rule-set')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-rule-set'); if (o) { o.draftSettings = o.draftSettings || {}; o.draftSettings.rentalRules = o.draftSettings.rentalRules || { ...((state.settings && state.settings.rentalRules) || {}) }; o.draftSettings.rentalRules[b.dataset.rule] = b.dataset.val === 'required' ? 'required' : 'off'; renderOverlay(); } return; }
-  // Layout & Footers tab
-  if (closest('.js-layout-footer')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-layout-footer'); if (o) { o.draftSettings = o.draftSettings || {}; o.draftSettings.layout = o.draftSettings.layout || { ...((state.settings && state.settings.layout) || {}) }; o.draftSettings.layout.footers = { ...(o.draftSettings.layout.footers || {}), [b.dataset.card]: b.dataset.val === 'off' ? 'off' : 'on' }; renderOverlay(); } return; }
   // Custom Fields tab
   if (closest('.js-cf-entity')) { e.stopPropagation(); const o = state.overlay; if (o) { o.cfEntity = closest('.js-cf-entity').dataset.ent; renderOverlay(); } return; }
   if (closest('.js-cf-type')) { e.stopPropagation(); const o = state.overlay; if (o) { o.cfDraft = { ...(o.cfDraft || { label: '', type: 'text', required: false }), type: closest('.js-cf-type').dataset.type }; renderOverlay(); } return; }
@@ -11065,7 +10947,7 @@ function onClick(e) {
   if (closest('.js-bv-insrow')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview') { o.extraRows = o.extraRows || []; o.extraRows.push({ id: 'xr' + (++o.seq), pos: Number(closest('.js-bv-insrow').dataset.pos), cells: {} }); renderOverlay(); } return; }
   if (closest('.js-bv-rmrow')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview') { const id = closest('.js-bv-rmrow').dataset.row; o.extraRows = (o.extraRows || []).filter((er) => er.id !== id); renderOverlay(); } return; }
   if (closest('.js-bv-customize')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview') { o.customize = !o.customize; renderOverlay(); } return; }
-  if (closest('.js-bv-resetlayout')) { e.stopPropagation(); const card = closest('.js-bv-resetlayout').dataset.card; saveListLayout(card, null); saveListTotals(card, null); render(); renderOverlay(); return; }
+  if (closest('.js-bv-resetlayout')) { e.stopPropagation(); const card = closest('.js-bv-resetlayout').dataset.card; saveListLayout(card, null); render(); renderOverlay(); return; }
   if (closest('.js-new-cust-search')) { e.stopPropagation(); const cs = activeSession().cards.customers; return startNewCustomer(parseCustomerSearch(cs.search)); }
   if (closest('.js-new-unit-search')) { e.stopPropagation(); return quickAddUnitFromSearch(activeSession().cards.units.search); }
   if (closest('.js-new-cat-search')) { e.stopPropagation(); return quickAddCategoryFromSearch(activeSession().cards.categories.search); }
@@ -11291,17 +11173,6 @@ function onClick(e) {
   if (closest('.js-addview')) { if (!adminUnlocked()) { document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return; } const b = closest('.js-addview'); const card = b.dataset.card; const cs = activeSession().cards[card]; const search = (cs.search || '').trim(); const terms = (cs.filterTerms || []).map((t) => ({ ...t })); const suggested = viewLabel(search, terms); const name = (typeof prompt === 'function' ? prompt('Name this view:', suggested) : suggested); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); if (name && name.trim()) { const views = loadViews(card); if (!views.some((v) => v.name.toLowerCase() === name.trim().toLowerCase())) { views.push({ name: name.trim(), search, terms }); saveViews(card, views); } } render(); return; }
   if (closest('.js-sortfield')) { const b = closest('.js-sortfield'); const cs = activeSession().cards[b.dataset.card]; const f = SORT_FIELDS[b.dataset.card].find((x) => x.field === b.dataset.field); if (f) { cs.sort = { ...f }; saveSort(b.dataset.card, cs.sort); } document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); render(); return; }
   if (closest('.js-sortdir')) { const card = closest('.js-sortdir').dataset.card; const cs = activeSession().cards[card]; cs.sort.dir = cs.sort.dir === 'asc' ? 'desc' : 'asc'; saveSort(card, cs.sort); render(); return; }
-
-  // footer-totals badge → filter the list to that value (click the active chip to clear)
-  if (closest('.js-tot-chip')) {
-    const b = closest('.js-tot-chip'); const card = b.dataset.totCard; const cs = activeSession().cards[card];
-    if (cs) {
-      if (cs.mode === 'standard') { cs.mode = 'list'; cs.recId = null; cs.recType = null; }   // footers show the filtered list, not a record detail
-      addColFilter(card, b.dataset.totCol, b.dataset.totVal);   // A1 — route into the card's search bar as a removable, exact-match pill
-    }
-    return;
-  }
-  if (closest('.js-clear-totfilter')) { e.stopPropagation(); const cs = activeSession().cards[closest('.js-clear-totfilter').dataset.card]; if (cs) cs.totalFilter = null; render(); return; }
 
   // inline edit (click a value → input)
   if (closest('.inline-edit')) { e.stopPropagation(); const _ie = closest('.inline-edit'); if (_ie.dataset.admin === '1' && !adminUnlocked()) return requireAdmin('Categories and pricing are Admin-only.', () => startInlineEdit(_ie)); return startInlineEdit(_ie); }
@@ -12244,17 +12115,6 @@ function onChange(e) {
     const nameKey = (CARD_COLUMNS[card] || [])[0]?.key;   // Name stays as the locked title
     if (nameKey && !layout.row1.includes(nameKey)) layout.row1.unshift(nameKey);
     saveListLayout(card, layout);
-    render(); renderOverlay();
-    return;
-  }
-  // Board View "Card totals" picker → toggle a column in/out of the footer roll-up.
-  if (e.target.classList.contains('js-bv-tot')) {
-    const card = e.target.dataset.card, col = e.target.dataset.col;
-    const aggKeys = (CARD_COLUMNS[card] || []).filter(isAggCol).map((c) => c.key);
-    let sel = loadListTotals(card); sel = (sel ? sel.slice() : aggKeys.slice());   // start from "all"
-    if (e.target.checked) { if (!sel.includes(col)) sel.push(col); }
-    else { const i = sel.indexOf(col); if (i >= 0) sel.splice(i, 1); }
-    saveListTotals(card, sel);
     render(); renderOverlay();
     return;
   }
@@ -13406,12 +13266,16 @@ function openWinPicker(rentalId) {
   if (!r.startTime) r.startTime = nowHourLabel();   // default to the current hour (user spec)
   state.winpicker = { rentalId, monthISO: firstOfMonthISO(r.startDate || TODAY_ISO), anchor: null };
   if (rentalFragile(r)) state.winpicker.staged = { rentalId, startDate: r.startDate || '', endDate: r.endDate || '', startTime: r.startTime || '' };
-  // Task C — frame the yard on open: reveal Categories (list view) in the left column
-  // so the operator can browse what's free for this window. If the rental already has a
-  // window, light the availability lens right away (live rentals only — staged commits on Save).
+  // Task C — only pivot the left column to Categories when the Rental Standard View is already
+  // open for this rental AND dates are set (so clicking the mini-calendar on a list-view row
+  // doesn't clobber whatever the operator had open on the left).
+  // Availability lens fires for both trigger paths whenever dates exist.
   const s = activeSession();
-  if (s.cols) s.cols.left = 'categories';
-  const cc = s.cards.categories; if (cc) { cc.mode = 'list'; cc.recId = null; cc.listLimit = undefined; }
+  const rs = s.cards.rentals;
+  if (rs && rs.mode === 'standard' && rs.recId === rentalId && r.startDate && r.endDate) {
+    if (s.cols) s.cols.left = 'categories';
+    const cc = s.cards.categories; if (cc) { cc.mode = 'list'; cc.recId = null; cc.listLimit = undefined; }
+  }
   if (!rentalFragile(r) && r.startDate && r.endDate) enterAvailabilitySearch(r);
   render();
 }
@@ -14784,7 +14648,7 @@ function exposeTestApi() {
       latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore, wranglerRailLoad, wrOffloadChatImages, wrEvictChatBlobs, driveViewUrl, mergeWranglerRails,
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
-      companyRevenueGoal, companyName, companyTagline, rentalRuleBlock, dueForCustomer, footerHidden, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, setRole: (r) => { currentRole = r || ''; render(); },
+      companyRevenueGoal, companyName, companyTagline, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, setRole: (r) => { currentRole = r || ''; render(); },
       openCustomerForm, renderOverlay, render, cardComplete, cardCaptureState, cardHasSelfie, cardHasSignature, captureSelfie, captureSignature, __state: state };   // UI drivers for headless screenshot/e2e tests
 
   } catch (e) { /* no window (non-browser) */ }
