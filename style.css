@@ -2706,8 +2706,8 @@ body { font-variant-numeric: tabular-nums; }
 .cr { display: flex; align-items: center; gap: 8px; min-width: 0; justify-content: flex-start; }
 .cr-id { flex: 0 1 auto; min-width: 0; display: flex; align-items: baseline; gap: 8px; }
 .cr-name { flex: 0 1 auto; min-width: 0; font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .6px; font-weight: 700; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-/* Red customer names: outline stays at full --red; fill dialed to 60% so harsh red-on-dark vibration eases. */
-.cr-name.ec-red { -webkit-text-stroke: 0.5px var(--red); -webkit-text-fill-color: color-mix(in srgb, var(--red) 60%, transparent); }
+/* Red customer names: thick outline at full --red; fill mixed toward white so the interior reads as a brighter, lighter red — legible without the harsh vibration. */
+.cr-name.ec-red { -webkit-text-stroke: 1.5px var(--red); -webkit-text-fill-color: color-mix(in srgb, var(--red) 55%, white); }
 .cr-sub { flex: 0 1 auto; min-width: 0; font-size: 11.5px; color: var(--txt-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cr-pay { flex: 0 0 auto; font-size: 13px; font-weight: 700; font-style: italic; white-space: nowrap; }
 .cr-pay.spend { color: var(--green); }
