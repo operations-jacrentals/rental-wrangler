@@ -98,11 +98,16 @@ input { font-family: inherit; }
 .hr-top { display: flex; align-items: flex-start; gap: 10px; min-height: 38px; }
 .header-tabs { display: flex; align-items: center; gap: 8px; flex: 1 1 auto; min-width: 0; overflow-x: auto; overflow-y: hidden; }
 .header-tabs::-webkit-scrollbar { height: 0; }
-.bottombar > .iconbtn { height: 36px; }
+.bottombar .iconbtn { height: 36px; }
 .bb-sep { width: 1px; align-self: stretch; margin: 4px 4px; background: var(--line); }
 /* the +New split/collapse is gone — every create action is now its own labeled button */
-/* the action toolbar, now a centered bottom bar — no background, floats over the page */
-.bottombar { flex: 0 0 auto; display: flex; align-items: center; justify-content: center; gap: 10px; padding: 4px 14px 10px; background: transparent; }
+/* §18g/§17 — the bottom COMMS BAND: toolbar pinned left · conversation rail fills the
+   middle (scrolls) · bell+inbox at the right. No background, floats over the page. */
+.bottombar { flex: 0 0 auto; display: flex; align-items: center; justify-content: flex-start; gap: 12px; padding: 4px 14px 10px; background: transparent; }
+.bb-tools { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; }
+.bb-utils { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; }
+.bb-utils .fab { width: 40px; height: 40px; }
+.bb-utils .fab svg { width: 19px; height: 19px; }
 .hello-name { margin-left: auto; align-self: center; font-size: 24px; font-weight: 800; color: var(--txt); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 46%; letter-spacing: .2px; line-height: 1; padding-right: 4px; }
 .toolbar { display: flex; align-items: center; gap: 10px; }
 .toolbar .closeall { flex: 0 0 auto; }
@@ -523,6 +528,10 @@ select.lf-in { appearance: none; cursor: pointer; }
   animation: hpFade .12s ease-out; }
 @keyframes hpFade { from { opacity: 0; transform: translateY(4px) } to { opacity: 1; transform: none } }
 .hover-preview .detail { gap: 10px; }
+/* Flag-color-system §5: active flags listed below the preview content. */
+.prev-flags { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--line); display: flex; flex-direction: column; align-items: flex-start; gap: 5px; }
+.prev-flags .pf-cap { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.1px; font-size: 9px; font-weight: 700; color: var(--txt-3); }
+.prev-flags .flags { display: flex; flex-wrap: wrap; gap: 5px; }
 /* Calendar (dispatch grid) inside the middle column */
 .cal-body { padding: 0; display: flex; flex-direction: column; min-height: 0; }
 /* §2.3 dispatch — the daily driver timeline (Phase 6) */
@@ -797,7 +806,7 @@ select.lf-in { appearance: none; cursor: pointer; }
 /* ── §6.2 Item rows are cards/chips ──────────────────────────────────────── */
 .list { padding: 4px 8px 8px; display: flex; flex-direction: column; gap: 7px; }   /* even title→search→firstRow gaps (≈10px each) */
 .row {
-  position: relative; overflow: hidden; cursor: pointer;
+  position: relative; overflow: hidden; cursor: pointer; container-type: inline-size;
   border-radius: 12px; border: 1px solid var(--line); background: var(--panel);
   padding: 9px 11px; transition: border-color .12s, background .12s, transform .05s;
 }
@@ -884,6 +893,19 @@ select.lf-in { appearance: none; cursor: pointer; }
 .c-brown  { background: var(--brown-bg);  color: var(--brown);  border-color: color-mix(in srgb, var(--brown) 30%, transparent); }
 .c-gray   { background: var(--gray-bg);   color: var(--txt-2);  border-color: var(--line); }
 .c-orange { background: var(--orange-bg); color: var(--orange); border-color: var(--accent-line); }
+
+/* R3 status pills + R3b data badges — stamped data-plate: Saira caps, squared
+   corners, a touch larger for legibility (Jac 2026-06-23). Gates (R1), ref/link
+   pills (R2), and derived pills (R4) keep their own shapes. */
+.pill[data-badge], .pill[data-r="R3b"] {
+  border-radius: 5px;
+  font-family: 'Saira Condensed', system-ui, sans-serif;
+  text-transform: uppercase;
+  letter-spacing: .8px;
+  font-weight: 700;
+  font-size: 11px;
+  height: 22px;
+}
 
 /* ── Standard mode (§0.2 / §12) ──────────────────────────────────────────── */
 .detail { padding: 12px; display: flex; flex-direction: column; gap: 12px; }
@@ -1150,11 +1172,8 @@ select.lf-in { appearance: none; cursor: pointer; }
 .req-state { height: 20px; font-size: 9.5px; letter-spacing: .3px; flex: 0 0 auto; align-self: center; }
 .req-card.req-needs { border-color: var(--red); box-shadow: 0 0 0 1px rgba(255, 66, 66, .25); }
 
-/* §18e/f floating bottom-right cluster — notification bell + Requests inbox */
-.fab-stack { position: fixed; right: 16px; bottom: 16px; z-index: 70; display: flex; flex-direction: column; gap: 10px; }
-/* Reserve a right lane on desktop so the cluster (and its rail) never sit ON TOP of the
-   rightmost card's data/footer (Jac 2026-06-22). Phones hide the FABs entirely (below). */
-@media (min-width: 1025px) { .grid { padding-right: 74px; } }
+/* §18e/f the round bell + Requests inbox — now ride the right of the bottom comms band
+   (.bb-utils); the old floating fab-stack + its reserved right lane are retired. */
 .fab { position: relative; width: 46px; height: 46px; border-radius: 50%; cursor: pointer; border: 1px solid var(--line);
   background: linear-gradient(180deg, var(--card-head), var(--card)); color: var(--txt-2, var(--txt));
   display: grid; place-items: center; box-shadow: 0 6px 18px -6px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.08); transition: transform .1s, border-color .1s; }
@@ -1163,29 +1182,43 @@ select.lf-in { appearance: none; cursor: pointer; }
 .fab svg { width: 21px; height: 21px; }
 .fab-badge { position: absolute; top: -3px; right: -3px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 99px;
   background: var(--accent); color: #1a1205; font-size: 11px; font-weight: 800; display: grid; place-items: center; box-shadow: 0 0 0 2px var(--bg); }
-.is-phone .fab-stack { display: none; }   /* §M1 — Notifications + Requests live in the footer Tools menu on phones, not as floating FABs */
 @media (prefers-reduced-motion: reduce) { .fab:hover { transform: none; } }
-/* §18g Mr. Wrangler conversation rail — stamped data-plate chips above the FABs */
-.wr-rail { display: flex; flex-direction: column; align-items: flex-end; gap: 7px; margin-bottom: 4px; max-width: 240px; }
-.wr-railchip { display: inline-flex; align-items: center; gap: 7px; max-width: 100%; padding: 6px 12px; border-radius: 99px; cursor: pointer;
-  background: linear-gradient(180deg, var(--card-head), var(--card)); border: 1px solid var(--line); color: var(--txt-2, var(--txt));
-  box-shadow: 0 6px 18px -6px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.08);
-  font: inherit; font-size: 12.5px; font-weight: 600;
-  transition: transform .1s, border-color .1s; }
-.wr-railchip:hover { border-color: var(--accent-line); color: var(--txt); transform: translateY(-1px); }
-.wr-railchip:focus-visible { outline: 2px solid var(--accent-line); outline-offset: 2px; }
-.wr-rc-dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; background: var(--txt-3); }
-.wr-rc-t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.wr-rc-needs .wr-rc-dot { background: var(--red); }
-.wr-railchip.wr-flash { animation: attnGlow 1.6s ease-in-out infinite; border-color: var(--accent-line); }
-.is-phone .wr-rail { max-width: 62vw; }
-/* Recent-chat snap chips spilled over the rightmost card (Jac 2026-06-22). Collapse them
-   at rest so the corner stays clean; reveal on hover/focus of the cluster. Action-required
-   (wr-rc-needs) chips always show — they flash and need an answer. */
-.fab-stack .wr-railchip:not(.wr-rc-needs) { display: none; }
-.fab-stack:hover .wr-railchip:not(.wr-rc-needs),
-.fab-stack:focus-within .wr-railchip:not(.wr-rc-needs) { display: inline-flex; }
-@media (prefers-reduced-motion: reduce) { .wr-railchip:hover { transform: none; } .wr-railchip.wr-flash { animation: none; box-shadow: 0 0 0 2px var(--accent-soft), 0 6px 18px -6px rgba(0,0,0,.6); } }
+/* §18g/§17 — the bottom COMMS RAIL: channels grouped + stamped, each conversation its
+   OWN data-plate tab. Fills the band's middle and scrolls horizontally; the toolbar
+   stays left, bell+inbox right. Tab = registry dot + Geist title; selected = the ONE
+   safety-orange; a "needs your answer" tab flashes red. */
+.comms-rail { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 12px;
+  overflow-x: auto; overflow-y: hidden; scrollbar-width: none; padding: 2px 2px; }   /* hide the scrollbar (still scrolls via wheel/trackpad) — matches .header-tabs */
+.comms-rail::-webkit-scrollbar { height: 0; width: 0; }
+.crail-group { flex: 0 0 auto; display: flex; align-items: center; gap: 7px; }
+.crail-div { flex: 0 0 auto; width: 1px; align-self: stretch; margin: 5px 2px; background: var(--line); }
+.crail-empty { color: var(--txt-3); font-size: 12px; font-style: italic; white-space: nowrap; }
+.crail-tab { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 7px; max-width: 190px; padding: 6px 12px;
+  border-radius: var(--chip-radius, 11px); cursor: pointer; border: 1px solid var(--line); color: var(--txt-2, var(--txt));
+  background: linear-gradient(180deg, var(--card-head), var(--card));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.06); font: inherit; font-size: 12.5px; font-weight: 600;
+  transition: transform .1s, border-color .1s, background .12s, color .12s; }
+.crail-tab:hover { border-color: var(--accent-line); color: var(--txt); transform: translateY(-1px); }
+.crail-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.crail-dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; background: var(--txt-3); }
+.crail-t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* registry dot follows the team thread's flag color */
+.crail-tab.c-green .crail-dot { background: var(--green); } .crail-tab.c-yellow .crail-dot { background: var(--yellow); }
+.crail-tab.c-red .crail-dot { background: var(--red); } .crail-tab.c-blue .crail-dot { background: var(--blue); }
+.crail-tab.c-purple .crail-dot { background: var(--purple); } .crail-tab.c-gray .crail-dot { background: var(--txt-3); }
+/* Actionable request tabs read via a STEADY tinted edge + colored dot — needs-answer
+   (red) · needs-your-OK (yellow). NO perpetual glow: a wall of pulsing tabs was a
+   strobe; motion is reserved for the one transient attnFlash beat elsewhere. */
+.crail-needs .crail-dot { background: var(--red); }
+.crail-ok .crail-dot { background: var(--yellow); }
+.crail-tab.crail-needs:not(.is-active) { border-color: color-mix(in srgb, var(--red) 55%, var(--line)); }
+.crail-tab.crail-ok:not(.is-active) { border-color: color-mix(in srgb, var(--yellow) 50%, var(--line)); }
+.crail-tab.is-unseen { border-color: var(--accent-line); }
+.crail-tab.is-unseen .crail-dot { box-shadow: 0 0 0 3px var(--accent-soft); }
+/* selected conversation = solid safety-orange + dark ink (the one accent use for a tab) */
+.crail-tab.is-active { background: var(--accent); border-color: var(--accent); color: var(--on-orange, #1a1205); }
+.crail-tab.is-active .crail-dot { background: var(--on-orange, #1a1205); box-shadow: none; }
+@media (prefers-reduced-motion: reduce) { .crail-tab:hover { transform: none; } }
 
 /* §17 INTERNAL TEAM DOCK (Jac, Phase 7) — headerless: tagged-element pill rail on top,
    chat bubbles, role tab-bar at the bottom. Floats bottom-right. Yard data-plate steel. */
@@ -1865,7 +1898,7 @@ select.nc-in { cursor: pointer; }
 .ag-packet { display: flex; gap: 11px; margin-top: 14px; }
 .ag-pcell { flex: 1; min-width: 0; }
 .ag-pcap { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.5px; font-size: 10px; color: var(--txt-3); margin-bottom: 6px; }
-.ag-pcell .ag-selfie { width: 100%; height: 96px; object-fit: cover; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); }
+.ag-pcell .ag-selfie { width: 100%; height: 96px; object-fit: cover; object-position: center 35%; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); }
 .ag-pcell .ag-selfie.empty { display: flex; align-items: center; justify-content: center; color: var(--txt-3); }
 .ag-sigthumb { width: 100%; height: 96px; object-fit: contain; border: 1px solid var(--line); border-radius: 10px; background: #fbfcfd; }
 /* CAPTURE row: selfie tile + the BIG sign pad */
@@ -1878,11 +1911,11 @@ select.nc-in { cursor: pointer; }
 .ag-selfiebtn:hover { border-color: var(--accent-line); }
 .ag-selfiebtn:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
 .ag-selfiebtn .l { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.3px; font-size: 10.5px; }
-.ag-selfiebtn .ag-selfie { width: 100%; height: 100%; object-fit: cover; }
+.ag-selfiebtn .ag-selfie { width: 100%; height: 100%; object-fit: cover; object-position: center 35%; }
 /* live selfie camera — auto-on; one tap snaps the photo (file-input fallback when absent) */
 .ag-selfiebtn { position: relative; }
 .ag-selfiebtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.ag-cam-feed { display: none; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+.ag-cam-feed { display: none; width: 100%; height: 100%; object-fit: cover; object-position: center 35%; transform: scaleX(-1); }
 .ag-cam-fallback { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 8px; }
 .ag-selfiebtn.live .ag-cam-feed { display: block; }
 .ag-selfiebtn.live .ag-cam-fallback { display: none; }
@@ -1936,6 +1969,15 @@ select.nc-in { cursor: pointer; }
 .alloc-in { width: 80px; box-sizing: border-box; padding: 6px 8px; border: 1px solid var(--accent-line); border-radius: 8px; background: var(--panel); color: var(--txt); font: inherit; font-size: 13px; text-align: right; }
 .alloc-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; font-size: 12.5px; color: var(--txt-2); }
 .alloc-foot b { color: var(--txt); }
+/* §19b refund-allocation panel + per-line refund display (#125) — calm/muted: the ↩
+   marker is a plain fact and the strike carries the "reversed" signal; registry red
+   stays reserved for danger, not every refunded line. Token-based → themes for free. */
+.alloc-refunded .alloc-rem { color: var(--txt-2); }
+.dvd.refund-chip { color: var(--txt-3); }
+.struck { text-decoration: line-through; }
+.inv-line.line-refunded { opacity: .6; }
+.stall.stall-refunded { opacity: .7; }
+.stall-refund { font-size: 11px; font-weight: 600; letter-spacing: .2px; color: var(--txt-3); white-space: nowrap; }
 
 /* role KPI popup */
 .kpi-popup { width: 420px; }
@@ -2022,7 +2064,7 @@ select.nc-in { cursor: pointer; }
 /* Mr. Wrangler intro — full-bleed behind the plate, dark until sign-in starts, then it
    fades up to entertain through the slow backend load. Reduced-motion users skip it. */
 .login-video {
-  position: fixed; inset: 0; width: 100%; height: 100%; object-fit: cover;
+  position: fixed; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center 35%;
   opacity: 0; transition: opacity .5s ease; z-index: 0; pointer-events: none;
 }
 .login-screen.signing-in .login-video { opacity: .62; }
@@ -2320,6 +2362,45 @@ body.rw-inspect .c-titlecard:hover { outline: 2px solid #18b6ff; outline-offset:
 .stall-sub.hint { color: var(--txt-3); font-style: normal; }
 .stall-empty { display: flex; align-items: center; gap: 9px; padding: 11px 2px; }
 .rentalsec-foot { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 10px; }
+
+/* ── RENTAL DETAIL v2 — header · calendar · unit rows · footer (rd-*, rdcal-*) ── */
+.rd-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.rd-head-l { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; min-width: 0; }
+.rd-head-r { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.rd-blocker { margin-bottom: 6px; }
+/* numbered-date window-track calendar */
+.rdcal { background: var(--panel-2); border-radius: 10px; overflow: hidden; cursor: pointer; margin-top: 2px; user-select: none; }
+.rdcal:hover { filter: brightness(1.04); }
+.rdcal-dow { display: grid; grid-template-columns: repeat(7, 1fr); padding: 5px 4px 2px; }
+.rdcal-dow span { text-align: center; font-size: 8px; font-weight: 700; color: var(--txt-3); text-transform: uppercase; font-family: 'Saira Condensed', system-ui, sans-serif; }
+.rdcal-body { display: grid; grid-template-columns: repeat(7, 1fr); column-gap: 0; padding: 0 4px 6px; }
+.rdcal-day { position: relative; height: 34px; }
+.rdcal-bar { position: absolute; z-index: 1; top: 50%; transform: translateY(-50%); left: 0; right: 0; height: 3px; }
+.rdcal-day.elapsed .rdcal-bar { background: var(--rdcal-hl); }
+.rdcal-day.fut .rdcal-bar { background: var(--rdcal-hl); opacity: .3; }
+.rdcal-day.is-start .rdcal-bar { left: 50%; border-radius: 2px 0 0 2px; }
+.rdcal-day.is-end .rdcal-bar { right: 50%; border-radius: 0 2px 2px 0; }
+.rdcal-n { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 2; font-size: 11px; font-weight: 600; color: var(--txt-2); line-height: 1.2; border-radius: 3px; padding: 0 2px; white-space: nowrap; }
+.rdcal-t { position: absolute; top: 2px; left: 50%; transform: translateX(-50%); z-index: 3; font-size: 7px; font-weight: 700; color: var(--txt-2); font-family: 'Saira Condensed', system-ui, sans-serif; white-space: nowrap; letter-spacing: .2px; }
+.rdcal-ico { position: absolute; bottom: 2px; left: 50%; transform: translateX(-50%); z-index: 2; width: 10px; height: 10px; color: var(--rdcal-hl, var(--green)); display: flex; align-items: center; justify-content: center; }
+.rdcal-ico svg { width: 100%; height: 100%; display: block; }
+.rdcal-day.is-past .rdcal-n { opacity: .35; }
+.rdcal-day.is-win .rdcal-n { color: var(--txt); }
+.rdcal-day.is-today .rdcal-n { color: var(--accent); font-weight: 800; }
+.rdcal-day.is-start .rdcal-n { background: var(--rdcal-hl, var(--green)); color: var(--card); font-weight: 800; }
+.rdcal-day.is-end .rdcal-n { outline: 1.5px solid var(--rdcal-hl, var(--green)); color: var(--rdcal-hl, var(--green)); font-weight: 800; border-radius: 50%; }
+/* unit rows beneath calendar */
+.rd-units { margin-top: 6px; }
+.rd-unit-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.rd-unit-id { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.rd-unit-rate { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--txt-2); white-space: nowrap; flex-shrink: 0; }
+.rd-dur { font-weight: 600; color: var(--txt); }
+/* footer: complete/cancel left · invoice total right */
+.rd-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.rd-foot-l { display: flex; align-items: center; gap: 8px; }
+.rd-foot-r { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.rd-inv-total { font-size: 15px; font-weight: 800; color: var(--txt); text-decoration: underline; font-variant-numeric: tabular-nums; }
+
 /* §20 route rail — linear House(Jac)─Person(Job Site)─House(Jac) stepper; the rail
    itself is the type control (tap two stops). Address rides ABOVE each connector
    line, +Log rides BELOW it; node well fills orange when its leg is on the route. */
@@ -2561,37 +2642,124 @@ body { font-variant-numeric: tabular-nums; }
 .inv-tot.big b { font-size: 14px; }
 .inv-tot.due b { color: var(--accent); }
 
-/* ── RENTALS DISPATCHER ROW (Jac 2026-06-12): the row IS a living day-timeline,
-   identical day-blocking to the Standard View R16 (no marker line, no inner
-   padding — the cells bleed to the row's edges). R1 gate (with truck) centers;
-   the derived Balance stacks over its due-date on the right. ── */
-.row[data-card="rentals"] { padding: 0; }
-.row[data-card="rentals"] .row-content { padding: 0; height: 52px; }
-.rtl { position: relative; height: 52px; overflow: hidden; }
-.rtl-cells { position: absolute; inset: 0; display: flex; }
-.rtl-cells .day { flex: 1; border-right: 1px solid var(--line); }
-.rtl-cells .day:last-child { border-right: none; }
-.rtl-cells .day.past { background: var(--tint, var(--green-bg)); }   /* elapsed-tint follows the rental status */
-/* overlay — clicks fall THROUGH to the row (opens the rental) except the re-enabled pills */
-.rtl-over { position: absolute; inset: 0; z-index: 2; display: flex; align-items: center; gap: 10px; padding: 0 13px; pointer-events: none; }
-.rtl-over .pill, .rtl-over .flag, .rtl-over [data-pill-card] { pointer-events: auto; }
-.rtl-l { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 1px; overflow: hidden; }
-.rtl-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.rtl-top .rtl-name { font-weight: 700; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.rtl-l .rtl-sub { display: flex; align-items: center; gap: 7px; min-width: 0; }
-.rtl-l .rtl-start { font-size: 10.5px; color: var(--txt-3); white-space: nowrap; }
-.rtl-mid { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 1px; }
-.rtl-mid .rate { font-size: 10px; font-weight: 700; font-style: italic; color: var(--txt-2); white-space: nowrap; }
-.rtl-r { flex: 1 1 0; min-width: 0; display: flex; align-items: center; justify-content: flex-end; gap: 9px; }
-.rtl-bal { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.2; font-style: italic; font-weight: 700; font-size: 12px; white-space: nowrap; }
-.rtl-bal.muted { color: var(--txt-3); font-style: normal; font-weight: 600; }
-.rtl-bal .rtl-due { font-weight: 600; font-size: 10.5px; }
-.rtl-when { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.15; }
-.rtl-when .tm { color: var(--txt-2); font-size: 10px; font-weight: 600; }
-.rtl-when .rtl-end { font-size: 11.5px; font-weight: 700; }
-.rtl-when .rtl-end.over { color: var(--red); }
-.rtl-set { font-size: 11px; color: var(--txt-3); font-style: italic; }
-/* rentals footer: Billing row over Rental-Status row (Jac) */
+/* ── RENTAL CALENDAR CARD (rcc) — 2 × 3 mini-calendar grid ─────────────────
+   Six rentals sit in a 2-col × 3-row grid matching the old 6-row footprint
+   (grid-auto-rows:111px × 3 rows + 2 gaps ≈ same real estate). Each card is a
+   3-week dot calendar: last week above · current week middle · next week below.
+   Border-left carries the rental status color. Today, start, and end dots are
+   highlighted; transport icon sits inside the marked dot. ── */
+.card[data-card="rentals"] .list { display: grid; grid-template-columns: 1fr 1fr; grid-auto-rows: min-content; }
+.card[data-card="rentals"] .list .newrow,
+.card[data-card="rentals"] .list .empty-new,
+.card[data-card="rentals"] .list .empty { grid-column: 1 / -1; }   /* +New Rental + empty states span both columns (and self-size, no tall track) */
+.row[data-card="rentals"] { padding: 0; display: flex; flex-direction: column; height: 172px; }
+.row[data-card="rentals"] .row-content { padding: 0; height: 100%; display: flex; flex-direction: column; }
+.rcc { flex: 1; display: flex; flex-direction: column; gap: 5px; padding: 8px 10px 7px; border-left: 3px solid var(--rcc-hl, var(--line)); overflow: hidden; }
+/* HEADER — row 1: unit names (LEFT, colored by inspection) + status pill pinned RIGHT;
+   row 2: customer + balance (Jac 2026-06-23) */
+.rcc-head { display: flex; flex-direction: column; gap: 4px; flex-shrink: 0; }
+.rcc-h1 { display: flex; align-items: center; gap: 7px; min-width: 0; justify-content: space-between; }
+.rcc-units { font-size: 12px; font-weight: 700; color: var(--txt); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; display: flex; align-items: center; gap: 0; }
+.rcc-uname { font-weight: 700; font-size: 12px; white-space: nowrap; }
+.rcc-usep { color: var(--txt-3); font-size: 11px; }
+.rcc-h2 { display: flex; align-items: baseline; justify-content: space-between; gap: 7px; min-width: 0; }
+.rcc-cust { font-size: 12px; font-weight: 600; color: var(--txt-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
+.rcc-bal { font-size: 12.5px; font-weight: 800; white-space: nowrap; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.rcc-bal.paid { color: var(--green); }
+.rcc-bal.due { color: var(--yellow); }
+.rcc-bal.overdue { color: var(--red); }
+.rcc-bal.muted { color: var(--txt-3); font-weight: 600; }
+.rcc-set { color: var(--txt-3); font-style: italic; font-weight: 400; }
+/* WEEKDAY LETTERS — Mon–Fri, aligned over the 5 calendar columns */
+.rcc-dow { display: grid; grid-template-columns: repeat(5, 1fr); flex-shrink: 0; }
+.rcc-dow span { text-align: center; font-size: 9.5px; font-weight: 700; color: var(--txt-3); text-transform: uppercase; font-family: 'Saira Condensed', system-ui, sans-serif; letter-spacing: .6px; }
+/* CALENDAR — 5 weekday columns (closed weekends), bigger dots/labels for legibility */
+.rcc-body { flex: 1; display: grid; grid-template-columns: repeat(5, 1fr); column-gap: 0; row-gap: 2px; align-content: center; min-height: 0; }
+/* the dot sits at the cell's vertical centre; the start time floats above it and the
+   date/month label below; the window track (.rcc-bar) runs along that same centre line,
+   behind the dots (no column-gap → consecutive in-window bars touch into a continuous
+   thread, breaking at week edges). */
+.rcc-day { position: relative; display: flex; align-items: center; justify-content: center; min-width: 0; height: 26px; }
+.rcc-t { position: absolute; top: 0; left: 50%; transform: translateX(-50%); font-size: 9px; font-weight: 700; line-height: 10px; color: var(--txt-2); text-align: center; white-space: nowrap; font-family: 'Saira Condensed', system-ui, sans-serif; letter-spacing: .2px; z-index: 3; }
+.rcc-day.is-start .rcc-t, .rcc-day.is-end .rcc-t { font-size: 11px; font-weight: 800; color: var(--txt); }
+.rcc-n { position: absolute; bottom: 0; left: 50%; transform: translateX(-50%); font-size: 10px; font-weight: 800; line-height: 10px; color: var(--txt); text-align: center; white-space: nowrap; z-index: 3; font-variant-numeric: tabular-nums; }
+.rcc-n.mon { color: var(--txt-3); font-weight: 700; font-family: 'Saira Condensed', system-ui, sans-serif; letter-spacing: .4px; }
+.rcc-dot { position: relative; z-index: 2; width: 11px; height: 11px; border-radius: 50%; background: var(--line); display: flex; align-items: center; justify-content: center; color: transparent; }
+.rcc-dot svg { width: 8px; height: 8px; display: block; }
+.rcc-bar { position: absolute; z-index: 1; top: 50%; transform: translateY(-50%); left: 0; right: 0; height: 4px; }
+.rcc-day.elapsed .rcc-bar { background: var(--rcc-hl, var(--green)); }
+.rcc-day.fut .rcc-bar { background: var(--rcc-hl, var(--green)); opacity: .3; }
+.rcc-day.is-start .rcc-bar { left: 50%; border-radius: 2px 0 0 2px; }
+.rcc-day.is-end .rcc-bar { right: 50%; border-radius: 0 2px 2px 0; }
+.rcc-day.is-past .rcc-dot { background: var(--line); opacity: 1; }
+.rcc-day.is-win .rcc-dot { background: var(--rcc-hl, var(--green)); opacity: .7; }
+/* today = orange RING (not fill) so the dot doesn't compete with start/end markers */
+.rcc-day.is-today .rcc-dot { width: 15px; height: 15px; background: transparent; border: 2px solid var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); opacity: 1; }
+/* start/end: enlarged for legibility — bigger dot, bigger icon */
+.rcc-day.is-start .rcc-dot, .rcc-day.is-end .rcc-dot { width: 24px; height: 24px; background: var(--rcc-hl, var(--green)); color: var(--card); opacity: 1; }
+.rcc-day.is-start .rcc-dot svg, .rcc-day.is-end .rcc-dot svg { width: 15px; height: 15px; }
+/* month-1st: no dot, just the big month abbrev */
+.rcc-day.is-mon1st .rcc-dot { display: none; }
+.rcc-n.mon1st { font-size: 13px; font-weight: 800; color: var(--txt-2); font-family: 'Saira Condensed', system-ui, sans-serif; letter-spacing: .6px; bottom: 50%; transform: translate(-50%, 50%); }
+
+/* ── CUSTOMER ROW (cr): ONE left-packed line — name · phone·type · pay-$ · funnel.
+   Half-height (Jac 2026-06-23): tight vertical padding; phone·type reflows UNDER the
+   name only when the card gets narrow (container query). No right anchor → values
+   pack left, dead space falls to the right. ── */
+.row[data-card="customers"] { padding-top: 4px; padding-bottom: 4px; }
+.cr { display: flex; align-items: center; gap: 8px; min-width: 0; justify-content: flex-start; }
+.cr-id { flex: 0 1 auto; min-width: 0; display: flex; align-items: baseline; gap: 8px; }
+.cr-name { flex: 0 1 auto; min-width: 0; font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .6px; font-weight: 700; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cr-sub { flex: 0 1 auto; min-width: 0; font-size: 11.5px; color: var(--txt-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cr-pay { flex: 0 0 auto; font-size: 13px; font-weight: 700; font-style: italic; white-space: nowrap; }
+.cr-pay.spend { color: var(--green); }
+.cr-pay.due { color: var(--yellow); }
+.cr-pay.over { color: var(--red); }
+@container (max-width: 340px) {
+  .cr { flex-wrap: wrap; }
+  .cr-id { flex-direction: column; align-items: flex-start; gap: 1px; }
+}
+
+/* ── UNIT ROW (ur): [status pills LEFT] · [cat icon] · [name · category·HRS RIGHT].
+   Pills first → eye aligns status near the rental calendar center (Jac 2026-06-23).
+   Equal-width pill slots so all rows share the same column rhythm. ── */
+.row[data-card="units"] { padding: 0; }
+.row[data-card="units"] .row-content { padding: 0; }
+.ur { display: flex; align-items: center; gap: 9px; min-width: 0; padding: 8px 11px 8px 8px; border-left: 3px solid var(--ur-hl, var(--line)); }
+.ur-cat { flex: 0 0 auto; width: 22px; height: 22px; color: var(--txt-2); display: flex; align-items: center; justify-content: center; }
+.ur-cat svg { width: 19px; height: 19px; display: block; }
+.ur-id { flex: 1 1 auto; min-width: 0; display: flex; align-items: baseline; gap: 1px 8px; }
+.ur-name { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .6px; font-weight: 700; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; min-width: 0; }
+.ur-sub { font-size: 11.5px; color: var(--txt-2); white-space: nowrap; flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* two pill slots in a 2-column equal-width grid → every row's pills align to the same x-positions */
+.ur-pills { flex: 0 0 auto; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; min-width: 180px; }
+.ur-pill-slot { display: flex; align-items: center; justify-content: center; }
+.ur-pill-slot .pill { width: 100%; text-align: center; justify-content: center; }
+@container (max-width: 340px) {
+  .ur-id { flex-direction: column; align-items: flex-start; gap: 1px; }
+  .ur-pills { grid-template-columns: 1fr; min-width: 90px; }
+}
+/* ── CATEGORY ROW (catr): [status badges LEFT] · [name/rate RIGHT] — mirrors units swap. ── */
+.catr { display: flex; align-items: center; gap: 9px; min-width: 0; padding: 8px 11px 8px 10px; }
+.catr-pills { flex: 0 0 auto; display: flex; flex-wrap: wrap; align-items: center; gap: 5px; min-width: 80px; }
+.catr-id { flex: 1 1 auto; min-width: 0; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.catr-sub { font-size: 11.5px; color: var(--txt-2); white-space: nowrap; }
+
+/* ── CUSTOMER ROW (cr-statuses): account-type + funnel, equal-width, right-pinned. ── */
+.cr-statuses { flex: 0 0 auto; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-left: auto; min-width: 160px; }
+.cr-pill-slot { display: flex; align-items: center; justify-content: center; }
+.cr-pill-slot .pill { width: 100%; text-align: center; justify-content: center; }
+@container (max-width: 340px) {
+  .cr-statuses { grid-template-columns: 1fr; min-width: 80px; }
+}
+
+/* ── FOOTER SECTIONS: labeled chip groups separated by a rule (units/rentals/customers). ── */
+.list-totals.sectioned { gap: 0; padding: 6px 0; }
+.tot-sec { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 3px 12px; border-right: 1px solid var(--line); }
+.tot-sec:last-child { border-right: none; }
+.tot-label { font-size: 9px; font-weight: 700; font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .9px; color: var(--txt-3); margin-right: 2px; flex: 0 0 auto; }
+
+/* rentals footer: Billing row over Rental-Status row (Jac) — kept for non-sectioned fallback */
 .list-totals.two-row { flex-direction: column; align-items: stretch; gap: 4px; }
 .list-totals.two-row .tot-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 
@@ -3012,3 +3180,35 @@ body.dragging .row.drop-ok { opacity: 1; }
 /* ── KPI MASK — remove this block to restore ring visibility (Jac) ── */
 .kpi-ring, .big-ring, .menu-team-ring { filter: blur(12px); pointer-events: none; }
 /* ── END KPI MASK ── */
+
+/* ── R25 — "Not saving" sync-failure plate (#247) ─────────────────────────────
+   The silent write-loss fix's user-facing half. Persistent danger banner that lives
+   on <body> (outside #app, like the toast/drag layer) so render() can't wipe it.
+   Red hazard stripe = the danger signature (NOT the reserved orange accent). Reserves
+   a top band via body.sync-failing so it never covers the yard grid. Themes for free
+   off the tokens (dark/light/ranch); static stripe + reduced-motion safe. */
+#sync-banner {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 9600;
+  display: flex; align-items: center; gap: 12px; min-height: 38px;
+  padding: 7px 14px 7px 18px;
+  background: var(--panel); border-bottom: 1px solid var(--line); box-shadow: var(--shadow);
+  transform: translateY(-100%); transition: transform .15s ease-out;
+}
+#sync-banner.show { transform: translateY(0); }
+#sync-banner .sb-stripe {
+  position: absolute; top: 0; left: 0; right: 0; height: 4px;
+  background: repeating-linear-gradient(135deg, var(--red) 0 13px, #14181d 13px 26px);
+}
+#sync-banner .sb-stamp {
+  font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase;
+  letter-spacing: 1.4px; font-weight: 800; font-size: 14px; color: var(--red);
+  white-space: nowrap; flex-shrink: 0;
+}
+#sync-banner .sb-sub {
+  font-family: var(--font); font-size: 12.5px; color: var(--txt-2);
+  flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+#sync-banner .pill { flex-shrink: 0; }
+body.sync-failing #app { padding-top: 40px; }
+@media (prefers-reduced-motion: reduce) { #sync-banner { transition: none; } }
+@media (max-width: 560px) { #sync-banner .sb-sub { display: none; } }   /* keep the stamp + Retry on phones */

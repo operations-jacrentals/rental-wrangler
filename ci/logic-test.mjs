@@ -50,10 +50,40 @@ try {
     const inv2 = T.IDX.invoice.get('02i07Ju26');
     ok(T.itemPaid(inv2, inv2.lineItems[0]) === 0, 'itemPaid 0 on an unpaid invoice line');
 
+    // 2b) §19b per-line / partial refund (#125) — refund math, settled balance, applyPayment merge
+    {
+      const ri = T.IDX.invoice.get('01i02Ju26');
+      const rline = ri.lineItems.find((l) => l.kind === 'rental');
+      const rkey = T.lineKey(rline);
+      const linePaid = T.itemPaid(ri, rline);                              // 753
+      const snap = { refundedAmount: ri.refundedAmount, refunded: ri.refunded, refundAllocations: ri.refundAllocations };
+      const balBefore = T.invoiceTotals(ri).balance;
+      const half = Math.round((linePaid / 2) * 100) / 100;
+
+      ri.refundAllocations = { [rkey]: half }; ri.refundedAmount = half;   // simulate a partial per-line refund
+      ok(Math.abs(T.itemRefunded(ri, rline) - half) < 0.01, 'itemRefunded tracks the per-line refund');
+      ok(Math.abs(T.itemRefundable(ri, rline) - (linePaid - half)) < 0.01, 'itemRefundable = paid − refunded');
+      ok(!T.lineFullyRefunded(ri, rline), 'half-refunded line is not fully refunded');
+      ok(T.invoiceTotals(ri).balance === balBefore, 'SETTLED: balance unchanged by a refund (#116 invariant, extended to partials)');
+      ok(T.refundLines(ri).some((L) => L.key === rkey), 'a still-refundable line appears in refundLines');
+
+      ri.refundAllocations = { [rkey]: linePaid };                        // fully refund the line
+      ok(T.lineFullyRefunded(ri, rline), 'line fully refunded when its refund == its paid');
+      ok(!T.refundLines(ri).some((L) => L.key === rkey), 'refundLines excludes a fully-refunded line');
+
+      ri.refundAllocations = {}; ri.refundedAmount = 0; ri.refunded = false;
+      T.applyPayment('01i02Ju26', { refundedAmount: half, refundedCents: Math.round(half * 100), amountPaid: ri.amountPaid }, null, { [rkey]: half });
+      ok(Math.abs((ri.refundAllocations[rkey] || 0) - half) < 0.01, 'applyPayment merges the refund split into inv.refundAllocations');
+
+      ri.refundAllocations = snap.refundAllocations; ri.refundedAmount = snap.refundedAmount; ri.refunded = snap.refunded;   // restore
+      ok(T.rentalLineRefund({ rentalId: 'Z', invoiceId: null }).refunded === false, 'rentalLineRefund: no invoice → not refunded');
+    }
+
     // 3) per-unit status derivation off the shared window (date-robust via TODAY_ISO)
     const today = T.TODAY_ISO;
-    ok(T.unitStatus({ startDate: today }, { status: 'Reserved' }) === 'Today', 'Reserved + today window → Today');
+    ok(T.unitStatus({ startDate: today }, { status: 'Reserved' }) === 'Reserved', 'Reserved + today window stays Reserved (Today/Tomorrow retired → flags)');
     ok(T.unitStatus({ startDate: '2099-01-01' }, { status: 'Reserved' }) === 'Reserved', 'Reserved + far window stays Reserved');
+    ok(T.unitStatus({ startDate: '2000-01-01' }, { status: 'Reserved' }) === 'No Show', 'Reserved + passed window → No Show (derivation kept)');
     ok(T.unitStatus({}, { status: 'On Rent' }) === 'On Rent', 'stored On Rent passes through');
 
     // 4) rentalStatusDisplay — uniform single status vs the mix label
@@ -264,6 +294,20 @@ try {
     ok(wrDiff.upserts.customers && wrDiff.upserts.customers.length >= 2, 'imported customers are QUEUED for the diff-sync (persist, not just in-memory)');
     ok(wrDiff.upserts.units && wrDiff.upserts.units.some((u) => u.id === 'U003'), 'the applied unit note is queued for persistence too');
     T.DATA.customers.length = custBefore; u3.notes = noteBefore;   // restore
+
+    // #227 — a bare "+New Rental" click must NOT leave an empty Quote in the Sheet. The
+    // mock draft is held out of the §18b sync until it earns real content (a unit, a
+    // customer, a window) — so abandoning it leaves zero backend junk — yet a Quote WITH
+    // content still persists and survives (Wave 2). Baseline first so the draft is "new".
+    window.JT.snapshotSaved();
+    const q227 = { rentalId: 'R-NEW227x', customerId: null, unitId: null, categoryId: null, rentalName: 'New Quote', startDate: '', endDate: '', startTime: '', status: 'Quote', transportType: 'Self', deliveryAddress: '', po: '', invoiceId: null, startHours: null, returnHours: null, notes: '', mock: true };
+    T.DATA.rentals.push(q227); T.IDX.rental.set(q227.rentalId, q227);
+    const d227a = window.JT.computeChanges();
+    ok(!(d227a.upserts.rentals || []).some((u) => u.id === 'R-NEW227x'), '#227: a content-free mock Quote is held OUT of the sync (a bare +New click leaves no backend junk)');
+    q227.customerId = 'C0009';   // now it has real content → it must persist (Quotes survive)
+    const d227b = window.JT.computeChanges();
+    ok((d227b.upserts.rentals || []).some((u) => u.id === 'R-NEW227x'), '#227: once the Quote earns content (a customer) it DOES sync — content-bearing Quotes survive');
+    const qi227 = T.DATA.rentals.findIndex((r) => r.rentalId === 'R-NEW227x'); if (qi227 >= 0) T.DATA.rentals.splice(qi227, 1); T.IDX.rental.delete('R-NEW227x'); window.JT.snapshotSaved();   // restore baseline
 
     // #152 a big import reply can be TRUNCATED by the model's output limit (no closing ```);
     // parseWranglerAction must salvage the complete rows so the preview still opens.
@@ -497,16 +541,18 @@ try {
     ok(T.customFieldsFor('units').length === 0, 'custom fields are per-entity (units unaffected)');
     st.settings.customFields = savedCF;   // restore
 
-    // 26) Inspections — per-category required checklist (default none = quick toggles unchanged)
+    // 26) Inspections — required checklist keyed by EQUIPMENT FAMILY (default none = quick toggles unchanged)
     const savedInsp = st.settings.inspections;
-    const aUnit = T.DATA.units[0]; const aCat = aUnit.categoryId;
+    const aUnit = T.DATA.units[0]; const aKey = T.inspKeyOfCat(aUnit.categoryId);
     st.settings.inspections = undefined;
     ok(T.checklistFor(aUnit) === null && T.checklistRequired(aUnit) === false, 'no checklist config → unit uses the quick Pass/Fail toggles (default)');
-    st.settings.inspections = { [aCat]: { required: true, items: [{ id: 'ck_brakes_a1', label: 'Brakes' }, { id: 'ck_lights_b2', label: 'Lights' }] } };
-    ok(T.checklistRequired(aUnit) === true && T.checklistFor(aUnit).items.length === 2, 'a required checklist is picked up for units of that category');
-    const otherCat = T.DATA.units.find((u) => u.categoryId !== aCat);
-    if (otherCat) ok(T.checklistRequired(otherCat) === false, 'checklists are per-category (other categories unaffected)');
-    st.settings.inspections = { [aCat]: { required: false, items: [{ id: 'ck_x', label: 'X' }] } };
+    st.settings.inspections = { [aKey]: { required: true, items: [{ id: 'ck_brakes_a1', label: 'Brakes' }, { id: 'ck_lights_b2', label: 'Lights' }] } };
+    ok(T.checklistRequired(aUnit) === true && T.checklistFor(aUnit).items.length === 2, 'a required checklist is picked up for units of that family');
+    const otherUnit = T.DATA.units.find((u) => T.inspKeyOfCat(u.categoryId) !== aKey);
+    if (otherUnit) ok(T.checklistRequired(otherUnit) === false, 'checklists are per-family (other families unaffected)');
+    const sibUnit = T.DATA.units.find((u) => u.categoryId !== aUnit.categoryId && T.inspKeyOfCat(u.categoryId) === aKey);
+    if (sibUnit) ok(T.checklistRequired(sibUnit) === true && (T.checklistFor(sibUnit) || {}).items.length === 2, 'a sibling category in the same family SHARES the checklist');
+    st.settings.inspections = { [aKey]: { required: false, items: [{ id: 'ck_x', label: 'X' }] } };
     ok(T.checklistRequired(aUnit) === false && T.checklistFor(aUnit) !== null, 'a defined-but-not-required checklist is available but does not take over');
     st.settings.inspections = savedInsp;   // restore
 
