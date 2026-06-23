@@ -9165,8 +9165,16 @@ function openDropdown(anchorEl, html, { align = 'left', cls = '' } = {}) {
   return dd;
 }
 function openStatusDropdown(rentalId, anchorEl) {
-  // progressing timeline; Tomorrow/Today are DERIVED display states excluded by GATE_TL.order
-  const cur = IDX.rental.get(rentalId)?.status || '';
+  // Highlight the SAME status the pill shows: the canonical per-unit DISPLAY status
+  // (rentalStatusDisplay → unitStatus), NOT the raw rental-level r.status. On a single-unit
+  // rental the two can diverge — a unit deriving 'No Show' (Reserved + start passed) while
+  // r.status holds a stale 'End Rent' — and reading r.status lit the wrong node (the menu
+  // said End Rent while the pill said No Show). Tomorrow/Today are display-only states
+  // absent from GATE_TL.order, so fold them back to their stored Reserved base.
+  const r = IDX.rental.get(rentalId);
+  const d = r ? rentalStatusDisplay(r) : null;
+  let cur = (d && !d.mixed && d.key) || r?.status || '';
+  if (cur === 'Today' || cur === 'Tomorrow') cur = 'Reserved';
   const html = gateTimeline('rentalStatus', cur, 'Rental status', (v, inner, sc) =>
     `<button class="gt-row ${sc} js-setstatus" data-rec="${esc(rentalId)}" data-val="${esc(v)}">${inner}</button>`);
   openDropdown(anchorEl, html, { cls: 'gt' });
@@ -9963,11 +9971,23 @@ function onClick(e) {
   // and self-hide if their anchor scrolls off; the global search bar lives in `.header` and
   // the per-card search/date chips live in `.card`, so the old datesearch exclusions hold.)
   if (state.datesearch || state.winpicker) {
-    const pickerDeadSpace = !closest('.card') && !closest('.header') && !closest('.bottombar') && !closest('.winpicker');
+    const onPicker = !!(closest('.winpicker') || closest('.winpicker-float'));
+    const pickerDeadSpace = !closest('.card') && !closest('.header') && !closest('.bottombar') && !onPicker;
     if (state.datesearch && pickerDeadSpace) { state.datesearch = null; render(); return; }
-    // Must always render or the float lingers as a dead, frozen overlay (state closed,
-    // DOM open). Discards a fragile rental's staged change. Jac 2026-06-13.
-    if (state.winpicker && pickerDeadSpace) { state.winpicker = null; render(); return; }
+    // Rental-window picker dismisses on a click anywhere OUTSIDE the picker, its trigger, and
+    // the availability cards you browse while picking (units/categories/customers). #263 had
+    // narrowed this to dead-space-only, so over the full-screen 3-column grid an outside click
+    // almost always landed on a card and the picker never closed ("does not close"). Never
+    // SWALLOW an interactive click (#265): drop the float DOM in place — keeping the clicked
+    // anchor attached so a downstream menu still positions correctly — and fall THROUGH so the
+    // click still fires; only a pure dead-space click renders + returns. Discards a fragile
+    // rental's staged change, as before.
+    if (state.winpicker && !onPicker && !closest('.js-open-winpicker') && !closest('[data-sheetclose]')
+        && !closest('.card[data-card="units"]') && !closest('.card[data-card="categories"]') && !closest('.card[data-card="customers"]')) {
+      state.winpicker = null;
+      document.querySelector('.winpicker-float')?.remove();
+      if (pickerDeadSpace) { render(); return; }
+    }
   }
 
   // header / chrome
