@@ -451,9 +451,9 @@ function holdSigning(c, signature, selfie) {
    are present. The capture target is the open card tab, or — with no card yet — a held bucket
    on the account (c.pendingCapture) that saddles onto the first card added. */
 function captureCtx(o) {
-  const c = o && o.editId ? IDX.customer.get(o.editId) : null;
+  const c = o && o.editId ? IDX.customer.get(o.editId) : (o && o.kind === 'addCard' ? IDX.customer.get(o.customerId) : null);
   if (!c) return { c: null, k: null };
-  if (o.cardSub) return { c, k: null };                                            // the +Card panel (no card yet) → held
+  if (o.cardSub || o.kind === 'addCard') return { c, k: null };                     // +Card / Add-card panel → held on pendingCapture, saddles onto the new card on save
   const k = (o.tab && o.tab !== 'account') ? customerCards(c).find((x) => x.id === o.tab) || null : null;
   return { c, k };
 }
@@ -7617,7 +7617,7 @@ function renderOverlay() {
   if (o.kind === 'partform') document.querySelector('.overlay .js-pf2-desc')?.focus();   // Jac: Part/Task field focused by default
   if (o.kind === 'newCustomer') setupSignaturePad();
   if (o.kind === 'payment') { setupPayAlloc(); setupRefundAlloc(); }   // live counters for the §19 pay + §19b refund allocation rows
-  if (o.kind === 'addCard') { const cc = IDX.customer.get(o.customerId); if (cc) mountCardElement(); }   // §7.1b card saved first, signed after
+  if (o.kind === 'addCard') { const cc = IDX.customer.get(o.customerId); if (cc) { mountCardElement(); setupSignaturePad(); } }   // §7.1c capture (selfie + signature) now lives IN the Add-card panel; the live cam is wired by the generic ag-cam-feed hook below
   if (o.kind === 'newCustomer' && o.cardSub) { const cc = IDX.customer.get(o.editId); if (cc) mountCardElement(); }   // §14 the side-by-side Add-card panel
   { const _agFeed = overlay.querySelector('.ag-cam-feed'); if (_agFeed) startAgCam(_agFeed); else stopAgCam(); }   // live selfie camera follows the capture block
 }
@@ -8269,11 +8269,13 @@ function buildPopupEl(o, overlay, opts = {}) {
     pop.innerHTML = popupShell({ icon: CARD_ICON.customers || '', title: `Add card — ${c.name}`, tag: 'Customer · card on file',
       foot: `<button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill ignition js-card-save" data-r="R17">Save card</button>`,
       body: `
-        <p class="muted" style="font-size:11px;margin:0 0 10px">Saved cards can be charged right away. The account can't go On Rent or log deliveries until the card is signed (next step).</p>
+        <p class="muted" style="font-size:11px;margin:0 0 10px">Saved cards can be charged right away. Capture the selfie + signature below to authorize On-Rent &amp; deliveries — or just save the card and sign it later.</p>
         <div class="pay-cap">Card number</div>
         <div class="pay-card-field" id="sl-card-element"></div>
         <div class="pay-err" id="sl-card-error"></div>
-        <p class="muted" style="font-size:11px;margin:10px 0 0">Entered securely via Stripe. We store only the brand + last 4 digits — never the full number. Sign the agreement on this card to authorize On-Rent &amp; deliveries.</p>` });
+        <p class="muted" style="font-size:11px;margin:10px 0 0">Entered securely via Stripe. We store only the brand + last 4 digits — never the full number.</p>
+        <div class="ag-cardsplit"></div>
+        ${heldSignBlock(o, c, {})}` });
     overlay.appendChild(pop);
   } else if (o.kind === 'addAch') {
     // §14b ACH — raw routing/account live ONLY in these inputs → straight to Stripe
