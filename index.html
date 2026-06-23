@@ -2,7 +2,7 @@
 <html lang="en" data-theme="bluedsteel">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />   <!-- §M0 responsive: desktop browsers ignore this; mobile honors it -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover" />   <!-- §M0 responsive + NO zoom (Jac): lock scale at 1:1 so the app never opens zoomed in -->
   <title>Rental Wrangler — JacTec</title>
   <!-- Inline favicon (data URI = no extra request, no /favicon.ico 404). -->
   <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2032%2032'%3E%3Crect%20width='32'%20height='32'%20rx='7'%20fill='%23ff7a18'/%3E%3Ctext%20x='16'%20y='23'%20font-size='19'%20font-family='sans-serif'%20font-weight='700'%20text-anchor='middle'%20fill='%231a1205'%3EJ%3C/text%3E%3C/svg%3E" />
@@ -11,7 +11,7 @@
   <!-- Cache-busting: bump ?v= on EVERY deploy so a new release loads immediately on
        desktop + mobile instead of serving a stale cached app.js/style.css (GitHub Pages
        sends max-age=600 with no per-file hashing). See CLAUDE.md → Deploy & gates. -->
-  <link rel="stylesheet" href="style.css?v=20260623z10" />
+  <link rel="stylesheet" href="style.css?v=20260623z11" />
   <!-- Stripe.js (must load from js.stripe.com for PCI SAQ-A; card data stays in Stripe's iframe) -->
   <script src="https://js.stripe.com/v3/"></script>
 </head>
@@ -21,9 +21,17 @@
   <div id="overlay-root"></div>
   <div id="toast" class="toast"></div>
 
+  <!-- NO pinch-zoom (Jac): iOS Safari ignores user-scalable=no, so block its pinch
+       gesture events directly. With the viewport lock + touch-action:manipulation
+       (double-tap zoom), the app holds at 1:1 and never opens zoomed in. -->
+  <script>
+    ['gesturestart', 'gesturechange', 'gestureend'].forEach((t) =>
+      document.addEventListener(t, (e) => e.preventDefault(), { passive: false }));
+  </script>
+
   <!-- Static catalog of which fields/elements use each design rule (rulebook index). -->
-  <script src="rule-usage.js?v=20260623z10"></script>
-  <script type="module" src="app.js?v=20260623z10"></script>
+  <script src="rule-usage.js?v=20260623z11"></script>
+  <script type="module" src="app.js?v=20260623z11"></script>
   <!-- DEV ONLY (localhost): reload when Claude bumps dev-version.txt — i.e. only
        when a FINISHED, verified edit batch lands (Jac: no mid-edit reloads).
        Never runs on app.jacrentals.com. Pauses while typing in a field. -->
