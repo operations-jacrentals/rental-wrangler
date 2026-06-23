@@ -2069,6 +2069,7 @@ function totColMatch(card, rec, col, value) {
     if (value === 'on-schedule') return !s || (s.status !== 'past-due' && s.status !== 'due-soon');
     return false;
   }
+  if (col === '__wophase') return card === 'workOrders' && (rec.phase || '—') === value;   // shop front-page WO bar: match this phase AND exclude non-WO items (the normal 'phase' fallback would let them through)
   const c = cardColumns(card, activeSession()).find((x) => x.key === col);
   return c ? String(c.get(rec)) === String(value) : true;
 }
@@ -5859,24 +5860,22 @@ function colTabsEl(col, active, session) {
 /* The coltab buttons themselves (no wrapper) — shared by the desktop in-card tab row
    (colTabsEl) AND the phone footer (mobileDockEl), so a toggle looks identical in both. */
 function colTabButtonsHtml(col, active, session) {
-  // v2 (Jac call #1): the standalone Inspections + Work Orders tabs go away —
-  // they live INSIDE the Unit card now; only Service keeps a tab. The hidden
-  // tab still renders while its member is ACTIVE so deep links navigate home.
-  const HIDDEN_TABS = new Set(['inspections', 'workOrders']);
-  // "Not Ready" filter chip (Jac 2026-06-11): rides with the Service heart on the
-  // units column — clipboard-? icon + count; hidden when zero; it's just a filter.
-  const notReady = col.members.includes('units') ? DATA.units.filter((u) => u.inspectionStatus === 'Not Ready').length : 0;
-  const nrChip = notReady ? `<button class="coltab js-notready compact alert" data-tip="${notReady} Not Ready — filter the Units list"><span class="ct-ico">${CARD_ICON.inspectionsPending || CARD_ICON.inspections}</span><span class="ct-n">${notReady}</span></button>` : '';
-  return col.members.filter((m) => !HIDDEN_TABS.has(m) || m === active).map((m) => {
-    const on = m === active, compact = SHOP_TYPES.includes(m);   // shop sub-types are icon-only
-    const n = memberCount(m, session);
-    const alert = SHOP_TYPES.includes(m) && shopAlertCount(m, session) > 0;   // red = work needs doing
-    return `<button class="coltab js-coltab${on ? ' on' : ''}${compact ? ' compact' : ''}${alert ? ' alert' : ''}" data-col="${col.id}" data-member="${m}" data-tip="${esc(MEMBER_TITLE[m])}${alert ? ' — needs attention' : ''}">`
+  // The 3 shop sub-types (inspections/workOrders/serviceOrders) fold into ONE wrench
+  // "Shop" toggle that opens the shop graph; the old Service-heart toggle + Not-Ready
+  // chip are absorbed into it (the graph's Services + Not Ready bars).
+  const coltabBtn = (m, on, { alert = false, count = null } = {}) =>
+    `<button class="coltab js-coltab${on ? ' on' : ''}${alert ? ' alert' : ''}" data-col="${col.id}" data-member="${m}" data-tip="${esc(MEMBER_TITLE[m] || m)}${alert ? ' — needs attention' : ''}">`
       + `<span class="ct-ico">${memberIcon(m)}</span>`
-      + (compact ? '' : `<span class="ct-lbl">${esc(MEMBER_TITLE[m])}</span>`)
-      + `<span class="ct-n">${n}</span>`
+      + `<span class="ct-lbl">${esc(MEMBER_TITLE[m] || m)}</span>`
+      + (count != null ? `<span class="ct-n">${count}</span>` : '')
       + `</button>`;
-  }).join('') + nrChip;
+  let out = col.members.filter((m) => !SHOP_TYPES.includes(m)).map((m) => coltabBtn(m, m === active, { count: memberCount(m, session) })).join('');
+  if (col.members.some((m) => SHOP_TYPES.includes(m))) {   // this column owns the shop → append the wrench Shop toggle
+    const shopActive = active === 'shop' || SHOP_TYPES.includes(active);
+    const alertN = SHOP_TYPES.reduce((a, ty) => a + shopAlertCount(ty, session), 0);   // total items needing the crew
+    out += coltabBtn('shop', shopActive, { alert: alertN > 0, count: alertN });
+  }
+  return out;
 }
 /* Jac 2026-06-12: the nav cluster (List / Anchor / New tab) rides the TOGGLE row,
    not the title row — the item header gets room to breathe and head gates align right. */
@@ -5891,6 +5890,7 @@ function colActionsHtml(active, session) {
 }
 function memberCardEl(member, session) {
   if (member === 'calendar') return calendarCardEl(session);
+  if (member === 'shop') return shopCardEl({ id: 'shop', title: 'Shop' }, session);   // the wrench "Shop" member = the COMBINED view (segment bar + 3-bar front-page graph), no forcedSeg
   if (SHOP_TYPES.includes(member)) return shopCardEl({ id: 'shop', title: MEMBER_TITLE[member] }, session, member);
   return cardEl(GRID_CARD_BY_ID[member], session);
 }
@@ -6674,22 +6674,26 @@ function activeMobileCard() {
   const member = (s.cols && s.cols[colObj.id]) || colObj.default;
   return SHOP_TYPES.includes(member) ? 'shop' : member;
 }
-// §M1 — the card the phone is currently showing (the active column's member).
+// §M1 — the card the phone is currently showing (the active column's member). Fold the
+// shop sub-types to 'shop' (mirror activeMobileCard) so the footer toggle highlight + the
+// swipe-step index track the single Shop entry instead of failing to match.
 function currentMobileMember() {
   const colObj = COLUMNS[Math.max(0, Math.min(2, state.mobileCol))];
   const s = activeSession();
-  return (s.cols && s.cols[colObj.id]) || colObj.default;
+  const m = (s.cols && s.cols[colObj.id]) || colObj.default;
+  return SHOP_TYPES.includes(m) ? 'shop' : m;
 }
-// §M1 — the flat card list the phone toggle bar offers. On desktop, inspections + work
-// orders live INSIDE the Unit card (hidden tabs); on phone they get their own toggles too.
-const MOBILE_CARDS = ['units', 'categories', 'inspections', 'serviceOrders', 'rentals', 'calendar', 'customers', 'invoices'];
+// §M1 — the flat card list the phone toggle bar offers. The 3 shop sub-types fold into one
+// 'shop' entry (the wrench), matching desktop; it opens the 3-bar shop graph.
+const MOBILE_CARDS = ['units', 'categories', 'shop', 'rentals', 'calendar', 'customers', 'invoices'];
 // §M1 — jump straight to a card (flattens the 3-column model on phones): set the column +
-// member, flip the visible column, and show that card's LIST.
+// member, flip the visible column, and show that card's LIST (or, for Shop, its graph).
 function goToCard(member) {
   const s = activeSession(); const col = COLUMN_OF[member];
   if (s.cols && col) s.cols[col] = member;
   const idx = COLUMNS.findIndex((c) => c.id === col); if (idx >= 0) state.mobileCol = idx;
-  const mc = s.cards[member]; if (mc) { mc.mode = 'list'; mc.recId = null; mc.recType = null; }
+  if (member === 'shop') { const sc = s.cards.shop; if (sc) { sc.segment = 'all'; sc.graphView = true; sc.mode = 'list'; sc.recId = null; sc.recType = null; } }
+  else { const mc = s.cards[member]; if (mc) { mc.mode = 'list'; mc.recId = null; mc.recType = null; } }
   render();
 }
 // §M1 phone footer — ONE card-toggle bar: every card collapsed to its icon, the SELECTED
@@ -7752,6 +7756,26 @@ function graphViewsFor(card) {
       { key: 'nums', title: 'By the Numbers', kind: 'nums', segs: status.map((s) => ({ ...s })) },
     ];
   }
+  if (card === 'shop') {
+    // The Shop "front page" (wrench toggle): one stacked-bar view of what needs the
+    // crew's attention right now — Not Ready · Services · Work Orders.
+    const notReady = DATA.units.filter((u) => u.inspectionStatus === 'Not Ready').length;
+    let svcOver = 0, svcDue = 0;
+    DATA.units.forEach((u) => { if (u.washRequested) return; const s = topServiceForUnit(u); if (!s) return; if (s.status === 'past-due') svcOver++; else if (s.status === 'due-soon') svcDue++; });
+    const woByPhase = {}; DATA.workOrders.filter((w) => w.phase !== 'Complete' && !w.cancelled).forEach((w) => { const ph = w.phase || '—'; woByPhase[ph] = (woByPhase[ph] || 0) + 1; });
+    const woParts = Object.keys(STATUS.woPhase).filter((ph) => ph !== 'Complete' && woByPhase[ph]).map((ph) => ({ col: '__wophase', value: ph, label: getStatus('woPhase', ph).label || ph, count: woByPhase[ph], color: getStatus('woPhase', ph).color || 'gray' }));
+    const bars = [
+      // Not Ready reuses the established js-notready affordance (route to the Units list,
+      // filtered to Not-Ready) rather than a graph filter — same behavior the old chip had.
+      { label: 'Not Ready', count: notReady, color: 'yellow', js: 'js-notready', tip: `${notReady} Not Ready — open the Units list` },
+      { label: 'Services', parts: [
+        { col: '__svcstat', value: 'past-due', label: 'Overdue', count: svcOver, color: 'red' },
+        { col: '__svcstat', value: 'due-soon', label: 'Due', count: svcDue, color: 'yellow' },
+      ] },
+      { label: 'Work Orders', parts: woParts },
+    ];
+    return [{ key: 'shopfront', title: 'Shop', kind: 'stackbars', segs: bars }];
+  }
   return null;
 }
 // ── state transitions. The active view's selection lives in cs.filterTerms as g-tagged
@@ -7839,6 +7863,27 @@ function gvRenderView(card, src, cs, v) {
       const inner = `<div class="gv-bar-n">${esc(money(s.count))}</div>${fill}<div class="gv-bar-x">${esc(s.label)}</div>`;
       return gvSegBtn(cs, card, src, s, inner, 'gv-barcol');
     }).join('')}</div>`;
+  }
+  if (v.kind === 'stackbars') {   // bars whose fill is a STACK of clickable segments (each = a filter); a single-part bar can carry a custom action class (js)
+    const tot = (s) => s.parts ? s.parts.reduce((a, p) => a + (p.count || 0), 0) : (s.count || 0);
+    const max = Math.max(1, ...v.segs.map(tot));
+    const bars = v.segs.map((s) => {
+      const t = tot(s), h = Math.round((t / max) * 100);
+      let stack;
+      if (s.parts) {
+        stack = s.parts.filter((p) => p.count).map((p) => {
+          const on = gvSegOn(cs, p.col, p.value);
+          return `<button class="gv-bar-seg js-gv-seg${on ? ' on' : ''}" style="flex:${p.count} 1 0;background:var(--${p.color})" data-card="${card}" data-src="${esc(src)}" data-col="${esc(p.col)}" data-value="${esc(String(p.value))}" data-label="${esc(p.label)}" data-tip="${on ? 'Remove filter' : 'Filter to ' + esc(p.label)}"></button>`;
+        }).join('');
+      } else {
+        stack = t ? `<button class="gv-bar-seg ${s.js || ''}" style="flex:1;background:var(--${s.color || v.color || 'accent'})" data-tip="${esc(s.tip || s.label)}"></button>` : '';
+      }
+      return `<div class="gv-barcol"><div class="gv-bar-n">${t || ''}</div><div class="gv-bar-track"><div class="gv-bar-stack" style="height:${h}%">${stack}</div></div><div class="gv-bar-x">${esc(s.label)}</div></div>`;
+    }).join('');
+    const legParts = [];
+    v.segs.forEach((s) => { if (s.parts) s.parts.filter((p) => p.count).forEach((p) => legParts.push(gvSegBtn(cs, card, src, p, `<i style="background:var(--${p.color})"></i><span class="gl-lbl">${esc(p.label)}</span> <b>${p.count}</b>`, 'gv-leg'))); });
+    const legend = (gvPillsHidden(card) || !legParts.length) ? '' : `<div class="gv-legend gv-legend-click">${legParts.join('')}</div>`;
+    return `<div class="gv-bars gv-stackbars">${bars}</div>${legend}`;
   }
   if (v.kind === 'lead') {
     if (!v.segs.length) return '<div class="gv-empty">No data yet.</div>';
@@ -10970,13 +11015,11 @@ function onClick(e) {
   if (closest('.js-new-cat-search')) { e.stopPropagation(); return quickAddCategoryFromSearch(activeSession().cards.categories.search); }
   if (closest('.js-coltab')) {
     const ct = closest('.js-coltab'); e.stopPropagation();
-    // A1 — the Services (heart) tab filters the Units list to service-due as a removable
-    // pill, instead of switching to a stuck Service view you can't clear. (Jac 2026-06-15)
-    if (ct.dataset.member === 'serviceOrders') { const s = activeSession(); if (s.cols) s.cols.left = 'units'; s.cards.units.mode = 'list'; s.cards.units.recId = null; s.cards.units.recType = null; addColFilter('units', '__svc', 'due'); return; }
     const cs = activeSession(); if (cs.cols) cs.cols[ct.dataset.col] = ct.dataset.member;
+    if (ct.dataset.member === 'shop') { const sc = cs.cards.shop; if (sc) { sc.segment = 'all'; sc.graphView = true; sc.mode = 'list'; sc.recId = null; sc.recType = null; } }   // wrench Shop → the combined 3-bar graph front page
     // §M1 — on phones the footer toggle is the primary nav (no in-card List button): tapping a
     // card shows its LIST (the back chevron returns from a record). Desktop keeps per-member state.
-    if (document.body.classList.contains('is-phone')) { const mc = cs.cards[ct.dataset.member]; if (mc) { mc.mode = 'list'; mc.recId = null; mc.recType = null; } }
+    else if (document.body.classList.contains('is-phone')) { const mc = cs.cards[ct.dataset.member]; if (mc) { mc.mode = 'list'; mc.recId = null; mc.recType = null; } }
     return render();
   }
   // §2.3 dispatch timeline — day nav + open a stop's rental (Phase 6)
@@ -14327,6 +14370,16 @@ async function shareSession() {
     caption: tabs.length ? `Scan to open your ${tabs.length} open tab${tabs.length === 1 ? '' : 's'} on another device — sign in with the shared password.`
       : 'Scan to open Rental Wrangler on another device — sign in with the shared password.' });
 }
+// Shop roles (Mechanic / M.Tech) get the Shop card + its 3-bar graph as the landing view
+// — quick access to the crew's worklist. A default only; they can navigate anywhere after.
+function applyShopRoleLanding() {
+  if (currentRole !== 'mechanic' && currentRole !== 'mtech') return;
+  const s = activeSession(); if (!s) return;
+  if (s.cols) s.cols.left = 'shop';
+  const sc = s.cards.shop; if (sc) { sc.segment = 'all'; sc.graphView = true; sc.mode = 'list'; sc.recId = null; sc.recType = null; }
+  const li = COLUMNS.findIndex((c) => c.id === 'left'); if (li >= 0) state.mobileCol = li;   // phone: make the Shop column the active one
+  render();
+}
 async function attemptLogin() {
   const name = (document.getElementById('login-name')?.value || '').trim();
   const pw = document.getElementById('login-pw')?.value || '';
@@ -14354,6 +14407,7 @@ async function attemptLogin() {
     sessionStorage.setItem('jactec.pw', pw);
     await loadFromBackend();
     finishLoad();
+    applyShopRoleLanding();   // shop roles (Mechanic / M.Tech) land on the Shop graph
   } catch (e) {
     backendPassword = ''; sessionStorage.removeItem('jactec.pw'); sessionStorage.removeItem('jactec.role');
     renderLogin(/unauthorized/i.test(String(e && e.message)) ? 'That password wasn’t recognized.' : "Couldn't reach the database. Check your connection and try again.");

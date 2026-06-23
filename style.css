@@ -1662,6 +1662,15 @@ body.is-phone .set-tab-l { flex: 0 0 auto; }
 .gv-bars .gv-barcol.on .gv-bar-red { background: var(--red); }   /* stay red even when the bar is the active filter (orange) */
 .gv-revbars .gv-bar-n { color: var(--txt); font-weight: 700; }
 .gv-bar-x { font-size: 10px; color: var(--txt-3); margin-top: 5px; text-transform: uppercase; letter-spacing: .4px; }
+/* Shop front-page STACKED bars: each bar's fill is a column of clickable segments
+   (Services = overdue/due, Work Orders = woPhase journey). Registry colors per segment;
+   a 1.5px gap shows the track behind them as a clean separator. */
+.gv-stackbars .gv-bar-stack { width: 100%; display: flex; flex-direction: column-reverse; gap: 1.5px; border-radius: 4px 4px 0 0; overflow: hidden; }
+.gv-bar-seg { width: 100%; min-height: 4px; border: none; padding: 0; cursor: pointer; transition: filter .12s; }
+.gv-bar-seg:hover { filter: brightness(1.15); }
+.gv-stackbars .gv-bar-seg.on { background: var(--accent) !important; }
+.gv-bar-seg:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .gv-bar-seg { transition: none; } .gv-bar-seg:hover { filter: none; } }
 .gv-units-scroll { max-height: 240px; overflow-y: auto; border: 1px solid var(--line); border-radius: 10px; }
 .gv-soon { padding: 52px 24px; text-align: center; color: var(--txt-2); }
 .gv-soon-ic { display: inline-flex; width: 40px; height: 40px; color: var(--accent); opacity: .7; }
