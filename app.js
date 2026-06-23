@@ -638,7 +638,9 @@ function migrateInvoiceLines() {
     if (dirty) migrationDirty = true;
   });
 }
+let buildingIndexes = false;   // §5 — suppress per-rental reverse propagation during a full rebuild (units/categories are reindexed wholesale below)
 function buildIndexes() {
+  buildingIndexes = true;
   migrateCustomers();
   migrateRentals();
   migrateInvoiceLines();
@@ -667,10 +669,29 @@ function buildIndexes() {
   DATA.expenses.forEach((x) => reindex('expenses', x)); // §7.11 v2 — receipts are globally searchable
   DATA.parts.forEach((p) => reindex('parts', p));        // §7.12 v2 — parts are searchable
   DATA.companyFiles.forEach((f) => reindex('files', f)); // §7.13 v2 — files are searchable
+  buildingIndexes = false;
 }
 const idOf   = (card, rec) => rec[{ customers: 'customerId', rentals: 'rentalId', categories: 'categoryId', units: 'unitId', invoices: 'invoiceId', workOrders: 'woId', inspections: 'inspectionId', serviceOrders: 'unitId', vendors: 'vendorId', parts: 'partId', expenses: 'expenseId', files: 'fileId' }[card]];
 const recOf  = (card, id) => ({ customers: IDX.customer, rentals: IDX.rental, categories: IDX.category, units: IDX.unit, invoices: IDX.invoice, workOrders: IDX.wo, inspections: IDX.insp, serviceOrders: IDX.unit, vendors: IDX.vendor, expenses: IDX.expense, parts: IDX.part, files: IDX.file }[card])?.get(id);
 
+/* §5 reverse denormalization — the distinct customers who've ever rented this unit
+   or category, so a customer-name search surfaces the Units & Categories they rented
+   (the mirror of the rentals blob, which already denormalizes unit/category/customer
+   names — app.js rentals case). Scanned fresh off DATA.rentals each call, so a unit's
+   blob is always exact the moment it's reindexed; reindex() propagates a rental change
+   to its CURRENT unit/category (below), and a full rebuild reconciles any it moved off. */
+function rentersOf(linkField, id) {
+  if (id == null) return [];
+  const seen = new Set(); const out = [];
+  for (const r of DATA.rentals) {
+    const cid = r.customerId;
+    if (r[linkField] !== id || !cid || seen.has(cid)) continue;
+    seen.add(cid);
+    const c = IDX.customer.get(cid);
+    if (c) { if (c.name) out.push(c.name); if (c.company) out.push(c.company); }
+  }
+  return out;
+}
 /* ── §5 comprehensive search blob — ONE source of truth for what's searchable.
    Emits every raw field, foreign-key DISPLAY names, AND the getStatus(...) labels
    so the VISIBLE text ('Member', 'Bill: Yes', 'Past Due', 'Delivery') matches too. */
@@ -705,7 +726,8 @@ function searchBlob(card, rec) {
       break;
     }
     case 'categories':
-      p = [rec.name, rec.fuelType, rec.description, rec.notes];
+      p = [rec.name, rec.fuelType, rec.description, rec.notes,
+        ...rentersOf('categoryId', rec.categoryId)];   // §5 reverse — customers who've rented this category
       break;
     case 'units':
       p = [rec.name, rec.assignedMechanic, rec.serial, rec.year, rec.make, rec.model, rec.weight,
@@ -713,7 +735,8 @@ function searchBlob(card, rec) {
         rec.inspectionStatus, L('unitInspectionStatus', rec.inspectionStatus),
         rec.fleetStatus, L('unitFleetStatus', rec.fleetStatus),
         rec.gpsStatus, L('gpsStatus', rec.gpsStatus), ca(rec.categoryId)?.name,
-        rec.washRequested ? 'Wash Requested wash' : ''];
+        rec.washRequested ? 'Wash Requested wash' : '',
+        ...rentersOf('unitId', rec.unitId)];   // §5 reverse — customers who've rented this unit
       break;
     case 'invoices': {
       const cust = cu(rec.customerId); const t = invoiceTotals(rec);
@@ -757,7 +780,11 @@ function searchBlob(card, rec) {
 /** (Re)build a record's search blob in IDX.search. Call after any create/edit.
     Vendors are auto-created mid-session (savePartForm) with no IDX set at the
     call site, so reindex also keeps the IDX.vendor identity map in sync. */
-const reindex = (card, rec) => { const id = idOf(card, rec); if (id != null) { IDX.search.set(card + ':' + id, searchBlob(card, rec)); if (card === 'vendors') IDX.vendor.set(id, rec); if (card === 'expenses') IDX.expense.set(id, rec); if (card === 'parts') IDX.part.set(id, rec); if (card === 'files') IDX.file.set(id, rec); } saveSoon(); };
+const reindex = (card, rec) => { const id = idOf(card, rec); if (id != null) { IDX.search.set(card + ':' + id, searchBlob(card, rec)); if (card === 'vendors') IDX.vendor.set(id, rec); if (card === 'expenses') IDX.expense.set(id, rec); if (card === 'parts') IDX.part.set(id, rec); if (card === 'files') IDX.file.set(id, rec);
+  // §5 reverse denormalization — a rental create/re-link must refresh its linked unit's
+  // & category's blobs so a customer-name search surfaces them right away (not just after
+  // a full rebuild). Skipped mid-rebuild — buildIndexes reindexes units/categories wholesale.
+  if (card === 'rentals' && !buildingIndexes) { const u = IDX.unit.get(rec.unitId); if (u) reindex('units', u); const c = IDX.category.get(rec.categoryId); if (c) reindex('categories', c); } } saveSoon(); };
 
 /* ════════════════════════════════════════════════════════════════════════
    §3 DERIVATIONS (SPEC §10) — money, availability, statuses, countdowns
