@@ -3803,7 +3803,7 @@ function unitWoSoPill(u) {
   const wo = openWOForUnit(u.unitId);
   if (wo) return statusPill('woPhase', wo.phase, { card: 'workOrders', recId: wo.woId });
   const svc = topServiceForUnit(u);
-  return svc ? badge(svcText(svc), svc.color) : '';
+  return svc ? badge(svcText(svc), svc.color) : badge('No Orders', 'green');
 }
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -3972,20 +3972,18 @@ const ROWS = {
   },
 
   units: (u) => {
-    // Layout (Jac 2026-06-23): [pills LEFT] · [cat icon] · [name / category·HRS RIGHT]
-    // Pills first → user's eye aligns status signal near the rental calendar center.
+    // Layout: [pills LEFT] · [HRS·cat NAME right-aligned] · [cat icon] · [border-right stripe]
     const cat = IDX.category.get(u.categoryId);
     const hl = getEntityColor('units', u);
-    // NAME tinted to the unit's flag color (Jac 2026-06-23): r/y/g lead in-color, gray reads muted.
     const nameColor = (hl === 'red' || hl === 'yellow' || hl === 'green') ? `var(--${hl})` : hl === 'gray' ? 'var(--txt-3)' : 'var(--txt)';
-    const sub = [cat ? esc(cat.name) : '', `${num(u.currentHours)} HRS`].filter(Boolean).join(' · ');
+    const sub = [`${num(u.currentHours)} HRS`, cat ? esc(cat.name) : ''].filter(Boolean).join(' · ');
     return `<div class="ur" style="--ur-hl:var(--${hl})">
       <div class="ur-pills"><div class="ur-pill-slot">${unitRentalInspPill(u)}</div><div class="ur-pill-slot">${unitWoSoPill(u)}</div></div>
-      <span class="ur-cat">${categoryIconFor(cat && cat.name)}</span>
       <div class="ur-id">
         <span class="r-title ur-name" style="color:${nameColor}">${esc(u.name)}</span>
         <span class="ur-sub">${sub}</span>
       </div>
+      <span class="ur-cat">${categoryIconFor(cat && cat.name)}</span>
     </div>`;
   },
 
