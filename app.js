@@ -111,6 +111,24 @@ function migrateCustomers() {
       }
       migrationDirty = true;
     }
+    // REPAIR colliding card ids (#payment-card-picker). New cards were id'd
+    // 'CARD-' + state.seq, but state.seq resets to 1 EVERY session (it's never seeded
+    // from existing cards), so two cards added in different sessions both became
+    // 'CARD-1'. A shared id broke every id-keyed path — the picker marked BOTH cards
+    // selected, and the charge / delete / set-default / per-card SIGNING lookups
+    // (.find by id) always hit the FIRST match. Give every card a unique, stable id
+    // (anchored to its globally-unique Stripe PM id where present) so each is distinct.
+    (function () {
+      const used = new Set();
+      c.cards.forEach((k) => {
+        if (!k.id || used.has(k.id)) {
+          let id = k.stripePmId ? ('CARD-' + k.stripePmId) : ('CARD-' + c.customerId + '-' + (k.last4 || 'x'));
+          let n = 2; while (!id || used.has(id)) id = 'CARD-' + c.customerId + '-' + (k.last4 || 'x') + '-' + (n++);
+          k.id = id; migrationDirty = true;
+        }
+        used.add(k.id);
+      });
+    })();
     // Card-bound agreements: each card carries an APPEND-ONLY array of immutable
     // signing records (the agreement is attached to the CARD, signed per account
     // type, frozen at signing). Fold the legacy singular `agreement` — or, on the
