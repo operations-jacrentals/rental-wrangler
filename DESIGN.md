@@ -34,8 +34,8 @@ colors:
   track: "#22262e"
   # — Status registry: each hue means ONE thing everywhere
   ready: "#34d399"               # green  — ready / active
-  caution: "#f5c542"             # yellow — caution
-  danger: "#ff4242"              # red    — danger / overdue / failed
+  caution: "#ffe000"             # yellow — caution
+  danger: "#ff1040"              # red    — danger / overdue / failed
   link: "#5b9dff"               # blue   — link / commit action
   scheduled: "#b07cf5"           # purple — scheduled
   navy: "#6f8bdb"
