@@ -3182,65 +3182,64 @@ const ROWS = {
      the truck when it's a transport rental — that's the whole dispatch signal.
      Right = the derived Balance with due-context (R8). Triage without clicking. ── */
   rentals: (r) => {
-    const unit = IDX.unit.get(r.unitId);
     const cust = IDX.customer.get(r.customerId);
     const inv = r.invoiceId ? IDX.invoice.get(r.invoiceId) : null;
-    const price = rentalPrice(r);
-    const dispStatus = rentalDisplayStatus(r);
-    const stColor = rentalStatusDisplay(r).color;   // the elapsed-tint follows the rental status (Jac 2026-06-13)
-    const truck = showsTruck(r.status, r.transportType);
-    const name = rentalUnitsLabel(r) || 'Quote';   // the row IS the window timeline; show just the unit(s)
-    const gate = masterGate(r, { truck });
+    const stColor = rentalStatusDisplay(r).color;   // border-left highlight follows rental status
+    const name = rentalUnitsLabel(r) || 'Quote';
     const s = parseISO(r.startDate), e = parseISO(r.endDate);
 
-    // no window yet (a Quote) → a simple bar to set the window
-    if (!(s && e)) {
-      return `<div class="rtl"><div class="rtl-over">
-        <div class="rtl-l"><span class="rtl-name">${esc(name)}</span><span class="rtl-sub">${cust ? refPill('customers', r.customerId, cust.name) : ''}</span></div>
-        <div class="rtl-mid">${gate}</div>
-        <div class="rtl-r"><span class="rtl-set">Set window</span></div>
-      </div></div>`;
-    }
-
-    // elapsed-tint cells (reused from the R16 day-timeline math)
-    const dayMs = 86400000;
-    const total = Math.max(1, Math.round((e - s) / dayMs));
-    const weekly = total > 14, cells = weekly ? Math.ceil(total / 7) : total;
-    const cellHtml = Array.from({ length: cells }, (_, i) => {
-      const cellEnd = new Date(s.getTime() + (weekly ? (i + 1) * 7 : i + 1) * dayMs);
-      return `<div class="day ${TODAY >= cellEnd ? 'past' : ''}"></div>`;
-    }).join('');
-
-    // Overdue = the unit is physically OUT (On/End/Off Rent) past its end date — NOT a stale reservation.
-    const overdue = e < TODAY && (r.status === 'On Rent' || r.status === 'End Rent' || r.status === 'Off Rent');
-    const nOver = overdue ? dayDiff(e, TODAY) : 0;
-
-    // R8 BALANCE with due-context (Jac), STACKED: $X on top, "Due Jun 21" beneath.
-    // Paid green · not-due blue · bare red $X when overdue (the missing "Due" IS the signal).
-    let bal = '';
+    // ── Balance (R8 derived): Paid green · upcoming yellow · past-due red ───
+    let bal = '', balCls = '';
     if (inv) {
       const t = invoiceTotals(inv);
-      if (t.refunded || t.status === 'Refunded') bal = `<span class="rtl-bal muted">Refunded</span>`;
-      else if (t.balance <= 0 && t.paid > 0) bal = `<span class="rtl-bal" style="color:var(--green)">Paid</span>`;
-      else if (parseISO(inv.dueDate) > TODAY) bal = `<span class="rtl-bal" style="color:var(--blue)">${money(t.balance)}<span class="rtl-due">Due ${esc(relDate(inv.dueDate))}</span></span>`;
-      else bal = `<span class="rtl-bal" style="color:var(--red)">${money(t.balance)}</span>`;
+      if (t.refunded || t.status === 'Refunded') { bal = 'Refunded'; balCls = 'muted'; }
+      else if (t.balance <= 0 && t.paid > 0) { bal = 'Paid'; balCls = 'paid'; }
+      else if (t.balance > 0) { bal = money(t.balance); balCls = parseISO(inv.dueDate) > TODAY ? 'due' : 'overdue'; }
     }
-    // a customer who OWES but has no card on file → call-don't-charge (the one extra billing signal)
-    const noCard = cust && inv && cardFlag(cust) === 'none' && invoiceTotals(inv).balance > 0 ? flagEl('No Card', 'red', { alert: true }) : '';
-    const cat = IDX.category.get(r.categoryId) || (unit ? IDX.category.get(unit.categoryId) : null);
 
-    return `<div class="rtl">
-      <div class="rtl-cells" style="--tint:var(--${stColor}-bg)">${cellHtml}</div>
-      <div class="rtl-over">
-        <div class="rtl-l">
-          <span class="rtl-top"><span class="rtl-name">${esc(name)}</span>${cat ? flagEl(cat.name, 'gray', { icon: CARD_ICON.categories, card: 'categories', recId: cat.categoryId }) : ''}</span>
-          <span class="rtl-sub">${cust ? refPill('customers', r.customerId, cust.name) : ''}<span class="rtl-start">${esc(relDate(r.startDate))}</span></span>
+    // ── Quote (no window yet) ────────────────────────────────────────────────
+    if (!(s && e)) {
+      return `<div class="rcc" style="--rcc-hl:var(--${stColor})">
+        <div class="rcc-head">${esc(name)}</div>
+        <div class="rcc-foot">
+          <span class="rcc-cust">${cust ? esc(cust.name) : ''}</span>
+          <span class="rcc-bal rcc-set">Set window</span>
         </div>
-        <div class="rtl-mid">${gate}${price ? `<span class="rate">${money(price.price)} · ${esc(price.rate)}</span>` : ''}</div>
-        <div class="rtl-r">
-          ${noCard}${bal}
-          <span class="rtl-when">${r.startTime ? `<span class="tm">${esc(r.startTime)}</span>` : ''}<span class="rtl-end${overdue ? ' over' : ''}">${overdue ? `${nOver}d over` : esc(relDate(r.endDate))}</span></span>
-        </div>
+      </div>`;
+    }
+
+    // ── Transport gate icons on start / end dots ─────────────────────────────
+    // Delivery or Round-Trip → truck out on start; Recovery or Round-Trip → truck in on end.
+    // Self (or unset) → person icon (CARD_ICON.customers = Lucide "user").
+    const ttype = r.transportType;
+    const isSelf = !ttype || ttype === 'Self';
+    const startIcon = isSelf ? CARD_ICON.customers : I.truck;
+    const endHasTruck = ttype === 'Recovery' || ttype === 'Round-Trip';
+    const endIcon = isSelf ? CARD_ICON.customers : (endHasTruck ? I.truck : '');
+
+    // ── 3-week dot calendar (last week · current week · next week) ───────────
+    // Week anchored to today's Sunday (US convention, getDay() 0 = Sun).
+    const wd = TODAY.getDay();
+    const thisSun = new Date(TODAY.getFullYear(), TODAY.getMonth(), TODAY.getDate() - wd);
+    const lastSun = new Date(thisSun.getFullYear(), thisSun.getMonth(), thisSun.getDate() - 7);
+    const dotCells = [];
+    for (let i = 0; i < 21; i++) {
+      const d = new Date(lastSun.getFullYear(), lastSun.getMonth(), lastSun.getDate() + i);
+      const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      const isToday = iso === TODAY_ISO, isStart = iso === r.startDate, isEnd = iso === r.endDate;
+      const cls = ['rcc-day', isToday && 'is-today', isStart && 'is-start', isEnd && 'is-end',
+        (!isToday && d < TODAY) && 'is-past'].filter(Boolean).join(' ');
+      const time = isStart ? (r.startTime || '') : '';
+      const icon = isStart ? startIcon : (isEnd ? endIcon : '');
+      dotCells.push(`<div class="${cls}"><span class="rcc-t">${esc(time)}</span><span class="rcc-dot">${icon}</span></div>`);
+    }
+
+    return `<div class="rcc" style="--rcc-hl:var(--${stColor})">
+      <div class="rcc-head">${esc(name)}</div>
+      <div class="rcc-body">${dotCells.join('')}</div>
+      <div class="rcc-foot">
+        <span class="rcc-cust">${cust ? esc(cust.name) : ''}</span>
+        ${bal ? `<span class="rcc-bal ${balCls}">${esc(bal)}</span>` : ''}
       </div>
     </div>`;
   },
