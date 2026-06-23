@@ -3918,6 +3918,15 @@ function woBackdrop(w) {
   for (const li of (w.lineItems || [])) if (li.photo) return li.photo;
   return '';
 }
+/** A WO left OPEN past the data-discipline window with no parts/labor entered yet: its
+ *  $0 repair cost is MISSING DATA, not "no repairs", so it must never roll up as a
+ *  finished, zero-cost job (the Asset-Mgr lens wants data-completeness visible). Window
+ *  = 30d, per finding G5. */
+const STALE_WO_DAYS = 30;
+function woStaleEmpty(w) {
+  return !w.cancelled && w.phase !== 'Complete' && !(w.lineItems || []).length
+    && !!w.date && dayDiff(parseISO(w.date), TODAY) > STALE_WO_DAYS;
+}
 function woSectionHtml(w) {
   const bn = woBottleneck(w);
   const secColor = bn.color === 'red' ? 'red' : bn.color === 'green' ? 'green' : 'yellow';
@@ -3940,9 +3949,17 @@ function woSectionHtml(w) {
     return `<div class="woline">${gatePillRaw(lbl, ph.color, 'js-wophase-line', { rec: w.woId, idx })}<span class="js-partedit" data-rec="${w.woId}" data-idx="${idx}" style="cursor:pointer"${tip ? ` data-tip="${esc(tip)}"` : ''}>${li.aiPending ? '✨ ' : ''}${esc(li.part)}${ven ? ' ' + linkName(ven.name, { js: 'js-vendor-open', data: { rec: ven.vendorId } }) : ''}</span><span class="nums"><b>${money(li.cost)}</b><span>${li.hours || 0}h</span></span></div>`;
   }).join('');
   const woBg = woBackdrop(w);
+  // R9b: a WO left open past the window with NO parts/labor reads $0 by omission, not by
+  // fact — pulse a caution in place of the plain opened-date flag so the empty repair-cost
+  // rollup is never mistaken for a finished job.
+  const stale = woStaleEmpty(w);
+  const staleTip = stale ? `Open ${dayDiff(parseISO(w.date), TODAY)} days (since ${fmtShortDate(w.date)}) with no parts or labor entered — repair cost reads $0 until you add a line item.` : '';
+  const dateFlag = stale
+    ? flagEl('No lines', 'yellow', { alert: true, title: staleTip })
+    : flagEl(fmtShortDate(w.date), 'gray');
   return `<div class="section sec-${secColor} wo-${w.woId}${woBg ? ' has-photo' : ''}" data-wo="${w.woId}">${woBg ? `<div class="sec-photo" style="--photo:url('${esc(woBg)}')"></div>` : ''}
     <h4 class="h-name"><span style="font-weight:800;margin-right:1px">WO:</span> <span class="inline-edit" data-edit="field" data-card="workOrders" data-field="woReport" data-rec="${w.woId}" data-ph="Report">${esc(w.woReport)}</span>
-      <span class="right">${flagsStack([typeFlag, flagEl(fmtShortDate(w.date), 'gray')], 24)}</span></h4>
+      <span class="right">${flagsStack([typeFlag, dateFlag], 24)}</span></h4>
     <div class="wototals">${addBtn('Part/Task', { anchor: true, js: 'js-add-part', h: 26, data: { rec: w.woId } })}<span class="derived">${money(parts)} parts + ${hrs} hrs</span></div>
     ${lines || '<div class="kv"><span class="muted" style="font-size:12px">No line items yet</span></div>'}
     <div class="wofoot">
