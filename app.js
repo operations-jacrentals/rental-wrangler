@@ -1977,7 +1977,7 @@ function rowMatches(card, rec, query, terms) {
   }
   const q2 = (query || '').replace(/\b(?:un)?available\b/gi, '').replace(/\s+/g, ' ').trim();
   const terms2 = (terms || []).filter((t) => !/^(?:un)?available$/.test(t.t));
-  // A1 — col-scoped terms (from graph slices / the Not-Ready chip) do an EXACT column match so
+  // A1 — col-scoped terms (from footer chips / graph slices) do an EXACT column match so
   // "Ready" can't also catch "Not Ready"; plain text terms fall to the blob substring match.
   // §13.4 — a NOT term excludes on its own; positive terms of the SAME column OR together
   // (toggle several graph slices = match any), while different columns still AND.
@@ -1991,7 +1991,7 @@ function rowMatches(card, rec, query, terms) {
   for (const col in byCol) { if (!byCol[col].some((v) => totColMatch(card, rec, col, v))) return false; }
   return blobMatches(IDX.search.get(card + ':' + idOf(card, rec)), q2, terms2b.filter((t) => !t.col));
 }
-// A1 — exact match for a graph slice / filter term's {col, value}, per record.
+// A1 — exact match for a footer-chip's {col, value}, per record (mirrors applyTotalFilter).
 function totColMatch(card, rec, col, value) {
   if (col === '__date') return dateTermHits(card, rec, value);   // §5.4d date-picker filter term
   if (col === '__wo') return DATA.workOrders.some((w) => w.unitId === rec.unitId && w.phase !== 'Complete' && !w.cancelled && (value === 'open' || w.phase === 'Part Ordered' || (w.lineItems || []).some((l) => l.phase === 'Part Ordered')));
@@ -2028,8 +2028,8 @@ function afterFilterChange(scope) {
   render();
   document.querySelector(scope === 'global' ? '#globalsearch' : `.mini-search[data-card="${scope}"]`)?.focus();
 }
-// A1 — adds an EXACT, removable filter pill to the card's search bar (the Not-Ready chip and
-// other col-scoped filters route through here, so there's ONE filtering pathway: the search bar).
+// A1 — a footer chip adds an EXACT, removable filter pill to the card's search bar (one
+// filtering pathway, cleared from the search bar) instead of a separate sticky footer filter.
 function addColFilter(scope, col, value) {
   const arr = termsFor(scope);
   if (!arr.some((ft) => ft.col === col && String(ft.value) === String(value))) arr.push({ t: colFilterLabel(scope, col, value), value, col, neg: false });
@@ -2194,8 +2194,9 @@ function pageDefaultSlice(tab) {
     case 'kpis': return { key: 'kpis', value: {} };
     case 'general': return { key: 'company', value: {} };
     case 'requirements': return { key: 'rentalRules', value: {} };
+    case 'layout': return { key: 'layout', value: { footers: {} } };
     case 'fields': return { key: 'customFields', value: { customers: [], units: [], rentals: [], invoices: [] } };
-    case 'inspections': return { key: 'inspections', value: Object.fromEntries([...new Set((DATA.categories || []).map((c) => inspFamilyKey(c)))].map((k) => [k, { required: false, items: [] }])) };
+    case 'inspections': return { key: 'inspections', value: Object.fromEntries([...new Set((DATA.categories || []).map((c) => inspFamilyKey(c)))].map((k) => [k, { required: false, items: (INSP_DEFAULTS[k] || []).map((i) => ({ ...i })) }])) };
     default: return null;   // Logins / planned tabs have no resettable slice
   }
 }
@@ -2237,6 +2238,9 @@ async function undoLastSettings() {
 // Company identity (Settings → Company). Read-through with shipped fallbacks, so an empty
 // config keeps every surface exactly as it ships today.
 const companyCfg = () => (state.settings && state.settings.company) || {};
+// Layout prefs (Settings → Layout & Footers). Read-through; default keeps every footer shown.
+const layoutCfg = () => (state.settings && state.settings.layout) || {};
+const footerHidden = (card) => (layoutCfg().footers || {})[card] === 'off';
 // Admin-defined custom fields per entity (Settings → Custom Fields). Values live schema-less
 // on the record (rec.custom[fieldId]); an empty config means no extra fields anywhere.
 const customFieldsFor = (entity) => ((state.settings && state.settings.customFields) || {})[entity] || [];
@@ -2247,11 +2251,389 @@ const customFieldsFor = (entity) => ((state.settings && state.settings.customFie
 // unchanged). Empty = today's quick Pass/Fail only.
 function inspFamilyKey(cat) {
   const n = ((cat && cat.name) || '').toLowerCase();
-  if (n.includes('excavator')) return 'fam:excavator';                              // incl. "Microexcavator"
+  if (n.includes('excavator')) return 'fam:excavator';
   if (n.includes('trailer')) return n.includes('dump') ? 'fam:trailer-dump' : 'fam:trailer';
+  if (n.includes('skid steer') || n.includes('skidsteer')) return 'fam:skid-steer';
+  if (n.includes('scissor')) return 'fam:scissor';
+  if (n.includes('lull') || n.includes('telehandler') || n.includes('telescopic')) return 'fam:lull';
+  if (n.includes('towable')) return 'fam:towable';
+  if (n.includes('boom')) return 'fam:boom';
+  if (n.includes('dozer') || n.includes('bulldozer')) return 'fam:dozer';
+  if (n.includes('tractor')) return 'fam:tractor';
+  if (n.includes('roller') || n.includes('compactor')) return 'fam:roller';
+  if (n.includes('trencher')) return 'fam:trencher';
+  if (n.includes('stump')) return 'fam:stump-grinder';
+  if (n.includes('buggy')) return 'fam:buggy';
+  if (n.includes('attachment')) return 'fam:attachment';
+  if (n.includes('generator') || n.includes('genset')) return 'fam:generator';
+  if (n.includes('jack hammer') || n.includes('jackhammer') || n.includes('breaker')) return 'fam:jack-hammer';
+  if (n.includes('trowel')) return 'fam:power-trowel';
+  if (n.includes('sump')) return 'fam:sump-pump';
+  if (n.includes('pump')) return 'fam:trash-pump';
+  if (n.includes('concrete saw') || (n.includes('saw') && n.includes('walk'))) return 'fam:concrete-saw';
   return cat ? cat.categoryId : '';
 }
-const INSP_FAM_LABELS = { 'fam:excavator': 'Excavator', 'fam:trailer': 'Trailer', 'fam:trailer-dump': 'Dump Trailer' };
+const INSP_FAM_LABELS = {
+  'fam:excavator': 'Excavator', 'fam:trailer': 'Trailer', 'fam:trailer-dump': 'Dump Trailer',
+  'fam:skid-steer': 'Skid Steer', 'fam:scissor': 'Scissor Lift', 'fam:boom': 'Boom Lift',
+  'fam:lull': 'Telehandler / Lull', 'fam:towable': 'Towable Boom', 'fam:dozer': 'Dozer',
+  'fam:tractor': 'Tractor', 'fam:roller': 'Roller / Compactor', 'fam:trencher': 'Trencher',
+  'fam:stump-grinder': 'Stump Grinder', 'fam:buggy': 'Concrete Buggy', 'fam:attachment': 'Attachment',
+  'fam:generator': 'Generator', 'fam:jack-hammer': 'Jack Hammer', 'fam:power-trowel': 'Power Trowel',
+  'fam:sump-pump': 'Sump Pump', 'fam:trash-pump': 'Trash Pump', 'fam:concrete-saw': 'Walk Behind Concrete Saw',
+};
+const INSP_DEFAULTS = {
+  'fam:excavator': [
+    { id: 'iqc-exc-01', label: 'Hoses Ran Correctly; Scuffs Shown In Video; Unit Does Not Leak', type: 'toggle', required: false },
+    { id: 'iqc-exc-02', label: 'All Trash Is Removed', type: 'toggle', required: false },
+    { id: 'iqc-exc-03', label: 'All Panels & Doors Stay Closed', type: 'toggle', required: false },
+    { id: 'iqc-exc-04', label: 'Dirt In Cab Cleaned Out', type: 'toggle', required: false },
+    { id: 'iqc-exc-05', label: 'Unused & Broken Items Removed', type: 'toggle', required: false },
+    { id: 'iqc-exc-06', label: 'Buttons & Switches Firmly Secured', type: 'toggle', required: false },
+    { id: 'iqc-exc-07', label: 'Excess Grease Wiped Off Joints', type: 'toggle', required: false },
+    { id: 'iqc-exc-08', label: 'All Tie-Downs Removed: Cords/Wires/ZipTies/Tape/Etc', type: 'toggle', required: false },
+    { id: 'iqc-exc-09', label: 'Joysticks, TrackSticks, Blade, Auxiliary, Rabbit & Power Are Like New', type: 'toggle', required: false },
+    { id: 'iqc-exc-10', label: 'Rods & Bolts: Not Bent/Missing', type: 'toggle', required: false },
+    { id: 'iqc-exc-11', label: 'Track Is 1 Finger Tight w/All Shoes', type: 'toggle', required: false },
+    { id: 'iqc-exc-12', label: 'Sprocket Good: Will Not Cut Track', type: 'toggle', required: false },
+    { id: 'iqc-exc-13', label: 'Rollers: No Knock/Lean/Wobble', type: 'toggle', required: false },
+    { id: 'iqc-exc-14', label: 'Fluids Good: H.Oil, E.Oil, Coolant', type: 'toggle', required: false },
+    { id: 'iqc-exc-15', label: 'Water Sep. Good: No Water/Debris', type: 'toggle', required: false },
+    { id: 'iqc-exc-16', label: 'All Zerks & Joints Have Grease', type: 'toggle', required: false },
+    { id: 'iqc-exc-17', label: 'Air Filter & Radiator Cleaned', type: 'toggle', required: false },
+  ],
+  'fam:trailer': [
+    { id: 'iqc-trl-01', label: 'Ramps Have Pins: Not Bolts, Sticks, Wire, Etc', type: 'toggle', required: false },
+    { id: 'iqc-trl-02', label: 'Broken Ramp Legs Removed', type: 'toggle', required: false },
+    { id: 'iqc-trl-03', label: 'Lights Are Mounted: Not Hanging', type: 'toggle', required: false },
+    { id: 'iqc-trl-04', label: 'There Are No Holes In Deck', type: 'toggle', required: false },
+    { id: 'iqc-trl-05', label: 'Unused & Broken Items Removed', type: 'toggle', required: false },
+    { id: 'iqc-trl-06', label: 'Tires Are Not Bald', type: 'toggle', required: false },
+    { id: 'iqc-trl-07', label: 'All Trash Is Removed', type: 'toggle', required: false },
+    { id: 'iqc-trl-08', label: 'All Tie-Downs Removed: Cords/Wires/ZipTies/Tape/Etc', type: 'toggle', required: false },
+    { id: 'iqc-trl-09', label: 'Leaf Springs, Bolts & Ramps In Good Working Order', type: 'toggle', required: false },
+    { id: 'iqc-trl-10', label: 'Air Pressure Matches Tire Rating', type: 'toggle', required: false },
+    { id: 'iqc-trl-11', label: 'Hubs Do Not Wobble', type: 'toggle', required: false },
+    { id: 'iqc-trl-12', label: 'Inside Of Tire Is Not Rubbing', type: 'toggle', required: false },
+    { id: 'iqc-trl-13', label: 'Plug, Lights & Jack Are Working', type: 'toggle', required: false },
+    { id: 'iqc-trl-14', label: 'Welds Good On Hitch & Tongue', type: 'toggle', required: false },
+    { id: 'iqc-trl-15', label: 'Hitch & Pin Function & Lock Safely', type: 'toggle', required: false },
+  ],
+  'fam:trailer-dump': [
+    { id: 'iqc-dmp-01', label: 'Debris Emptied From Trailer Bed', type: 'toggle', required: false },
+    { id: 'iqc-dmp-02', label: 'Box Is Straight w/Working Door', type: 'toggle', required: false },
+    { id: 'iqc-dmp-03', label: 'Remote & Charging Plug-In Like New Condition', type: 'toggle', required: false },
+    { id: 'iqc-dmp-04', label: 'Lights Are Mounted: Not Hanging', type: 'toggle', required: false },
+    { id: 'iqc-dmp-05', label: 'You EASILY Opened Each Door Fully', type: 'toggle', required: false },
+    { id: 'iqc-dmp-06', label: 'Tires Not Bald', type: 'toggle', required: false },
+    { id: 'iqc-dmp-07', label: 'Unused & Broken Items Removed', type: 'toggle', required: false },
+    { id: 'iqc-dmp-08', label: 'All Cords/Wires/ZipTies/Tape/Etc Removed', type: 'toggle', required: false },
+    { id: 'iqc-dmp-09', label: 'Jack Works Or Was REPLACED', type: 'toggle', required: false },
+    { id: 'iqc-dmp-10', label: 'Inside Of Tire Is Not Rubbing', type: 'toggle', required: false },
+    { id: 'iqc-dmp-11', label: 'Brake/Lights Work Or Were Replaced', type: 'toggle', required: false },
+    { id: 'iqc-dmp-12', label: 'Leaf Springs & Bolts: Good', type: 'toggle', required: false },
+    { id: 'iqc-dmp-13', label: 'Hubs Do Not Wobble', type: 'toggle', required: false },
+    { id: 'iqc-dmp-14', label: 'Tire Pressure Matches Rating', type: 'toggle', required: false },
+    { id: 'iqc-dmp-15', label: 'Lugs Not Too Tight', type: 'toggle', required: false },
+    { id: 'iqc-dmp-16', label: 'Check For Cracked Welds', type: 'toggle', required: false },
+    { id: 'iqc-dmp-17', label: 'Hooks, Fins & Plugs All Safely Working', type: 'toggle', required: false },
+  ],
+  'fam:skid-steer': [
+    { id: 'iqc-ss-01', label: 'Hoses Ran Correctly; Scuffs Shown In Video; Unit Does Not Leak', type: 'toggle', required: false },
+    { id: 'iqc-ss-02', label: 'All Trash Is Removed', type: 'toggle', required: false },
+    { id: 'iqc-ss-03', label: 'All Panels & Doors Stay Closed', type: 'toggle', required: false },
+    { id: 'iqc-ss-04', label: 'Dirt In Cab Cleaned Out', type: 'toggle', required: false },
+    { id: 'iqc-ss-05', label: 'Unused & Broken Items Removed', type: 'toggle', required: false },
+    { id: 'iqc-ss-06', label: 'Buttons & Switches Firmly Secured', type: 'toggle', required: false },
+    { id: 'iqc-ss-07', label: 'Excess Grease Wiped Off Joints', type: 'toggle', required: false },
+    { id: 'iqc-ss-08', label: 'All Tie-Downs Removed: Cords/Wires/ZipTies/Tape/Etc', type: 'toggle', required: false },
+    { id: 'iqc-ss-09', label: 'Joysticks, BucketLevers, Auxiliary, FuelPedal & Power Are Like New', type: 'toggle', required: false },
+    { id: 'iqc-ss-10', label: 'Rods & Bolts: Not Bent/Missing', type: 'toggle', required: false },
+    { id: 'iqc-ss-11', label: 'Track Is 1 Finger Tight w/All Shoes', type: 'toggle', required: false },
+    { id: 'iqc-ss-12', label: 'Sprocket Good: Will Not Cut Track', type: 'toggle', required: false },
+    { id: 'iqc-ss-13', label: 'Rollers: No Knock/Lean/Wobble', type: 'toggle', required: false },
+    { id: 'iqc-ss-14', label: 'Fluids Good: H.Oil, E.Oil, Coolant', type: 'toggle', required: false },
+    { id: 'iqc-ss-15', label: 'Water Sep. Good: No Water/Debris', type: 'toggle', required: false },
+    { id: 'iqc-ss-16', label: 'All Zerks & Joints Have Grease', type: 'toggle', required: false },
+    { id: 'iqc-ss-17', label: 'Air Filter & Radiator Cleaned', type: 'toggle', required: false },
+  ],
+  'fam:scissor': [
+    { id: 'iqc-sci-01', label: 'Buttons/Switches Firmly Secured', type: 'toggle', required: false },
+    { id: 'iqc-sci-02', label: 'Zero Leaks', type: 'toggle', required: false },
+    { id: 'iqc-sci-03', label: 'Clean Basket Area', type: 'toggle', required: false },
+    { id: 'iqc-sci-04', label: 'All Cords/Wires/ZipTies/Tape/Etc Removed', type: 'toggle', required: false },
+    { id: 'iqc-sci-05', label: 'Unused & Broken Items Removed', type: 'toggle', required: false },
+    { id: 'iqc-sci-06', label: 'No Trash', type: 'toggle', required: false },
+    { id: 'iqc-sci-07', label: 'This Unit Looks Better Than When I Found It', type: 'toggle', required: false },
+    { id: 'iqc-sci-08', label: 'Check Tire Damage', type: 'toggle', required: false },
+    { id: 'iqc-sci-09', label: 'Both Speeds Are Working, Smooth', type: 'toggle', required: false },
+    { id: 'iqc-sci-10', label: 'Drives Properly', type: 'toggle', required: false },
+    { id: 'iqc-sci-11', label: 'All Controls Operate As New', type: 'toggle', required: false },
+    { id: 'iqc-sci-12', label: 'All Controls Operate While Raised In Air', type: 'toggle', required: false },
+    { id: 'iqc-sci-13', label: 'Charging', type: 'toggle', required: false },
+    { id: 'iqc-sci-14', label: 'Elevating Platform/Ramp Smooth', type: 'toggle', required: false },
+  ],
+  'fam:boom': [
+    { id: 'iqc-bm-01', label: 'Hoses Ran Correctly; Scuffs Shown In Video; Unit Does Not Leak', type: 'toggle', required: false },
+    { id: 'iqc-bm-02', label: 'All Trash Is Removed', type: 'toggle', required: false },
+    { id: 'iqc-bm-03', label: 'You Cleaned The Basket Area', type: 'toggle', required: false },
+    { id: 'iqc-bm-04', label: 'Unused & Broken Items Removed', type: 'toggle', required: false },
+    { id: 'iqc-bm-05', label: 'Buttons & Switches Firmly Secured', type: 'toggle', required: false },
+    { id: 'iqc-bm-06', label: 'Excess Grease Wiped Off Joints', type: 'toggle', required: false },
+    { id: 'iqc-bm-07', label: 'All Tie-Downs Removed: Cords/Wires/ZipTies/Tape/Etc', type: 'toggle', required: false },
+    { id: 'iqc-bm-08', label: 'Controls, Throttle, Power & Operation Are Like New', type: 'toggle', required: false },
+    { id: 'iqc-bm-09', label: 'All Zerks Have Grease', type: 'toggle', required: false },
+    { id: 'iqc-bm-10', label: 'Boom Extends & Retracts', type: 'toggle', required: false },
+    { id: 'iqc-bm-11', label: 'Spray Boom Lube On Boom', type: 'toggle', required: false },
+    { id: 'iqc-bm-12', label: 'Cable Track Without Damage', type: 'toggle', required: false },
+    { id: 'iqc-bm-13', label: 'Tire Pressure Matches Rating', type: 'toggle', required: false },
+    { id: 'iqc-bm-14', label: 'Fluids Good: H.Oil, E.Oil, Coolant', type: 'toggle', required: false },
+    { id: 'iqc-bm-15', label: 'Water Sep. Good: No Water/Debris', type: 'toggle', required: false },
+    { id: 'iqc-bm-16', label: 'Radiator & Air Filter Cleaned', type: 'toggle', required: false },
+  ],
+  'fam:lull': [
+    { id: 'iqc-ll-01', label: 'Hoses Ran Correctly; Scuffs Shown In Video; Unit Does Not Leak', type: 'toggle', required: false },
+    { id: 'iqc-ll-02', label: 'All Trash Is Removed', type: 'toggle', required: false },
+    { id: 'iqc-ll-03', label: 'Unused & Broken Items Removed', type: 'toggle', required: false },
+    { id: 'iqc-ll-04', label: 'Buttons & Switches Firmly Secured', type: 'toggle', required: false },
+    { id: 'iqc-ll-05', label: 'Excess Grease Wiped Off Joints', type: 'toggle', required: false },
+    { id: 'iqc-ll-06', label: 'All Tie-Downs Removed: Cords/Wires/ZipTies/Tape/Etc', type: 'toggle', required: false },
+    { id: 'iqc-ll-07', label: 'Controls, Power & Operation Are Like New', type: 'toggle', required: false },
+    { id: 'iqc-ll-08', label: 'All Zerks Have Grease', type: 'toggle', required: false },
+    { id: 'iqc-ll-09', label: 'Boom Extends & Retracts', type: 'toggle', required: false },
+    { id: 'iqc-ll-10', label: 'Spray Boom Lube On Boom', type: 'toggle', required: false },
+    { id: 'iqc-ll-11', label: 'Forks Slide & Not Bent', type: 'toggle', required: false },
+    { id: 'iqc-ll-12', label: 'Tire Pressure Matches Rating', type: 'toggle', required: false },
+    { id: 'iqc-ll-13', label: 'Fluids Good: H.Oil, E.Oil, Coolant', type: 'toggle', required: false },
+    { id: 'iqc-ll-14', label: 'Water Sep. Good: No Water/Debris', type: 'toggle', required: false },
+    { id: 'iqc-ll-15', label: 'Radiator & Air Filter Cleaned', type: 'toggle', required: false },
+    { id: 'iqc-ll-16', label: 'Legs Fully Retract', type: 'toggle', required: false },
+    { id: 'iqc-ll-17', label: 'Jib & Turntable Work Properly', type: 'toggle', required: false },
+    { id: 'iqc-ll-18', label: 'Pin & Hitch In Good Condition', type: 'toggle', required: false },
+  ],
+  'fam:towable': [
+    { id: 'iqc-tow-01', label: 'Hoses Ran Correctly; Scuffs Shown In Video; Unit Does Not Leak', type: 'toggle', required: false },
+    { id: 'iqc-tow-02', label: 'All Trash Is Removed', type: 'toggle', required: false },
+    { id: 'iqc-tow-03', label: 'Feet Are Not Missing Parts', type: 'toggle', required: false },
+    { id: 'iqc-tow-04', label: 'You Cleaned The Basket Area', type: 'toggle', required: false },
+    { id: 'iqc-tow-05', label: 'Unused & Broken Items Removed', type: 'toggle', required: false },
+    { id: 'iqc-tow-06', label: 'Buttons & Switches Firmly Secured', type: 'toggle', required: false },
+    { id: 'iqc-tow-07', label: 'Battery Covers In Good Condition', type: 'toggle', required: false },
+    { id: 'iqc-tow-08', label: 'All Tie-Downs Removed: Cords/Wires/ZipTies/Tape/Etc', type: 'toggle', required: false },
+    { id: 'iqc-tow-09', label: 'Controls, Power & Operation Are Like New', type: 'toggle', required: false },
+    { id: 'iqc-tow-10', label: 'All Zerks Have Grease', type: 'toggle', required: false },
+    { id: 'iqc-tow-11', label: 'Boom Extends & Retracts', type: 'toggle', required: false },
+    { id: 'iqc-tow-12', label: 'Spray Boom Lube On Boom', type: 'toggle', required: false },
+    { id: 'iqc-tow-13', label: 'Cable Track Without Damage', type: 'toggle', required: false },
+    { id: 'iqc-tow-14', label: 'Tire Pressure Matches Rating', type: 'toggle', required: false },
+    { id: 'iqc-tow-15', label: 'Legs Fully Retract', type: 'toggle', required: false },
+    { id: 'iqc-tow-16', label: 'Jib & Turntable Work Properly', type: 'toggle', required: false },
+    { id: 'iqc-tow-17', label: 'Pin & Hitch In Good Condition', type: 'toggle', required: false },
+  ],
+  'fam:dozer': [
+    { id: 'iqc-dz-01', label: 'Hoses Ran Correctly; Scuffs Shown In Video; Unit Does Not Leak', type: 'toggle', required: false },
+    { id: 'iqc-dz-02', label: 'All Trash Is Removed', type: 'toggle', required: false },
+    { id: 'iqc-dz-03', label: 'You Cleaned The Cab Area', type: 'toggle', required: false },
+    { id: 'iqc-dz-04', label: 'Unused & Broken Items Removed', type: 'toggle', required: false },
+    { id: 'iqc-dz-05', label: 'Buttons & Switches Firmly Secured', type: 'toggle', required: false },
+    { id: 'iqc-dz-06', label: 'Excess Grease Wiped Off Joints', type: 'toggle', required: false },
+    { id: 'iqc-dz-07', label: 'All Tie-Downs Removed: Cords/Wires/ZipTies/Tape/Etc', type: 'toggle', required: false },
+    { id: 'iqc-dz-08', label: 'Controls, Throttle, Power & Operation Are Like New', type: 'toggle', required: false },
+    { id: 'iqc-dz-09', label: 'All Zerks Have Grease', type: 'toggle', required: false },
+    { id: 'iqc-dz-10', label: 'Radiator In Good Condition', type: 'toggle', required: false },
+    { id: 'iqc-dz-11', label: 'Track Will Not Cause F.C.', type: 'toggle', required: false },
+    { id: 'iqc-dz-12', label: 'Intake Is Covered', type: 'toggle', required: false },
+    { id: 'iqc-dz-13', label: 'Def Fluid Level Checked', type: 'toggle', required: false },
+    { id: 'iqc-dz-14', label: 'Fluids Good: H.Oil, E.Oil, Coolant', type: 'toggle', required: false },
+    { id: 'iqc-dz-15', label: 'Water Sep. Good: No Water/Debris', type: 'toggle', required: false },
+    { id: 'iqc-dz-16', label: 'Radiator & Air Filter Cleaned', type: 'toggle', required: false },
+  ],
+  'fam:tractor': [
+    { id: 'iqc-trt-01', label: 'Hoses Ran Correctly; Scuffs Shown In Video; Unit Does Not Leak', type: 'toggle', required: false },
+    { id: 'iqc-trt-02', label: 'All Trash Is Removed', type: 'toggle', required: false },
+    { id: 'iqc-trt-03', label: 'Unused & Broken Items Removed', type: 'toggle', required: false },
+    { id: 'iqc-trt-04', label: 'Buttons & Switches Firmly Secured', type: 'toggle', required: false },
+    { id: 'iqc-trt-05', label: 'Excess Grease Wiped Off Joints', type: 'toggle', required: false },
+    { id: 'iqc-trt-06', label: 'All Tie-Downs Removed: Cords/Wires/ZipTies/Tape/Etc', type: 'toggle', required: false },
+    { id: 'iqc-trt-07', label: 'PTO, Bucket, Control Arms, 4WD All Work As New', type: 'toggle', required: false },
+    { id: 'iqc-trt-08', label: '3 Point Hitch Control Arms Good', type: 'toggle', required: false },
+    { id: 'iqc-trt-09', label: '3 Point Hitch TurnBuckle Good', type: 'toggle', required: false },
+    { id: 'iqc-trt-10', label: 'Zerks Greased (look under unit)', type: 'toggle', required: false },
+    { id: 'iqc-trt-11', label: 'Front Lights Are Working', type: 'toggle', required: false },
+    { id: 'iqc-trt-12', label: 'Fluids Good: H.Oil, E.Oil, Coolant', type: 'toggle', required: false },
+    { id: 'iqc-trt-13', label: 'Tire Pressure Matches Rating', type: 'toggle', required: false },
+    { id: 'iqc-trt-14', label: 'Water Sep. Good: No Water/Debris', type: 'toggle', required: false },
+    { id: 'iqc-trt-15', label: 'Radiator & Air Filter Cleaned', type: 'toggle', required: false },
+  ],
+  'fam:roller': [
+    { id: 'iqc-rl-01', label: 'Steering Wheel Knob Works or Was Removed', type: 'toggle', required: false },
+    { id: 'iqc-rl-02', label: 'All Trash Is Removed', type: 'toggle', required: false },
+    { id: 'iqc-rl-03', label: 'Clay Scraped From Rollers', type: 'toggle', required: false },
+    { id: 'iqc-rl-04', label: 'Unused & Broken Items Removed', type: 'toggle', required: false },
+    { id: 'iqc-rl-05', label: 'Buttons & Switches Firmly Secured', type: 'toggle', required: false },
+    { id: 'iqc-rl-06', label: 'All Tie-Downs Removed: Cords/Wires/ZipTies/Tape/Etc', type: 'toggle', required: false },
+    { id: 'iqc-rl-07', label: 'Controls, Throttle, Power & Operation Are Like New', type: 'toggle', required: false },
+    { id: 'iqc-rl-08', label: 'Water Dial Works Properly', type: 'toggle', required: false },
+    { id: 'iqc-rl-09', label: 'Water Tank Is Full With Cap', type: 'toggle', required: false },
+    { id: 'iqc-rl-10', label: 'Water Spickets Are All Working', type: 'toggle', required: false },
+    { id: 'iqc-rl-11', label: 'Intake Is Covered', type: 'toggle', required: false },
+    { id: 'iqc-rl-12', label: 'Fluids Good: E.Oil', type: 'toggle', required: false },
+    { id: 'iqc-rl-13', label: 'Air Filter Cleaned', type: 'toggle', required: false },
+  ],
+  'fam:trencher': [
+    { id: 'iqc-tr-01', label: 'Hoses Ran Correctly; Scuffs Shown In Video; Unit Does Not Leak', type: 'toggle', required: false },
+    { id: 'iqc-tr-02', label: 'All Trash Is Removed', type: 'toggle', required: false },
+    { id: 'iqc-tr-03', label: 'Unused & Broken Items Removed', type: 'toggle', required: false },
+    { id: 'iqc-tr-04', label: 'Buttons & Switches Firmly Secured', type: 'toggle', required: false },
+    { id: 'iqc-tr-05', label: 'Excess Grease Wiped Off Joints', type: 'toggle', required: false },
+    { id: 'iqc-tr-06', label: 'All Tie-Downs Removed: Cords/Wires/ZipTies/Tape/Etc', type: 'toggle', required: false },
+    { id: 'iqc-tr-07', label: 'Controls, Throttle, Power & Operation Are Like New', type: 'toggle', required: false },
+    { id: 'iqc-tr-08', label: "Both Sprockets Won't Cause F.C.", type: 'toggle', required: false },
+    { id: 'iqc-tr-09', label: 'Track Passes 4 Finger Test', type: 'toggle', required: false },
+    { id: 'iqc-tr-10', label: 'You Greased The Auger', type: 'toggle', required: false },
+    { id: 'iqc-tr-11', label: 'Wires/String Cleaned From Auger', type: 'toggle', required: false },
+    { id: 'iqc-tr-12', label: 'Fluids Good: H.Oil & E.Oil', type: 'toggle', required: false },
+    { id: 'iqc-tr-13', label: 'All Zerks & Joints Have Grease', type: 'toggle', required: false },
+    { id: 'iqc-tr-14', label: 'H.Cooler & Air Filter Cleaned', type: 'toggle', required: false },
+  ],
+  'fam:stump-grinder': [
+    { id: 'iqc-sg-01', label: 'Hoses Ran Correctly; Scuffs Shown In Video; Unit Does Not Leak', type: 'toggle', required: false },
+    { id: 'iqc-sg-02', label: 'All Trash Is Removed', type: 'toggle', required: false },
+    { id: 'iqc-sg-03', label: 'Unused & Broken Items Removed', type: 'toggle', required: false },
+    { id: 'iqc-sg-04', label: 'Buttons & Switches Firmly Secured', type: 'toggle', required: false },
+    { id: 'iqc-sg-05', label: 'Excess Grease Wiped Off Joints', type: 'toggle', required: false },
+    { id: 'iqc-sg-06', label: 'All Tie-Downs Removed: Cords/Wires/ZipTies/Tape/Etc', type: 'toggle', required: false },
+    { id: 'iqc-sg-07', label: 'Joysticks, Throttle, Power & Operation Are Like New', type: 'toggle', required: false },
+    { id: 'iqc-sg-08', label: 'Teeth Replaced and/or Rotated', type: 'toggle', required: false },
+    { id: 'iqc-sg-09', label: 'Track Is 1 Finger Tight w/All Shoes', type: 'toggle', required: false },
+    { id: 'iqc-sg-10', label: 'All Teeth Are "Bowled"', type: 'toggle', required: false },
+    { id: 'iqc-sg-11', label: 'Debris Cleaned From Main Bearing', type: 'toggle', required: false },
+    { id: 'iqc-sg-12', label: 'Fluids Good: H.Oil & E.Oil', type: 'toggle', required: false },
+    { id: 'iqc-sg-13', label: 'Governor Tab Is In Proper Place', type: 'toggle', required: false },
+    { id: 'iqc-sg-14', label: 'All Zerks & Joints Have Grease', type: 'toggle', required: false },
+    { id: 'iqc-sg-15', label: 'H.Cooler & Air Filter Cleaned', type: 'toggle', required: false },
+  ],
+  'fam:buggy': [
+    { id: 'iqc-by-01', label: 'Excess Concrete Removed: Decals & Bucket Floor Visible', type: 'toggle', required: false },
+    { id: 'iqc-by-02', label: 'All Trash Is Removed', type: 'toggle', required: false },
+    { id: 'iqc-by-03', label: 'Light Is Mounted', type: 'toggle', required: false },
+    { id: 'iqc-by-04', label: 'Platform Raises Easily', type: 'toggle', required: false },
+    { id: 'iqc-by-05', label: 'Unused & Broken Items Removed', type: 'toggle', required: false },
+    { id: 'iqc-by-06', label: 'Levers & Switches Work Smoothly', type: 'toggle', required: false },
+    { id: 'iqc-by-07', label: 'Bucket Lip Good: No Chips', type: 'toggle', required: false },
+    { id: 'iqc-by-08', label: 'All Tie-Downs Removed: Cords/Wires/ZipTies/Tape/Etc', type: 'toggle', required: false },
+    { id: 'iqc-by-09', label: 'Controls, Throttle, Power & Operation Are Like New', type: 'toggle', required: false },
+    { id: 'iqc-by-10', label: 'Engine Oil Is Full, But Not Too Full', type: 'toggle', required: false },
+    { id: 'iqc-by-11', label: 'Light Is Working', type: 'toggle', required: false },
+    { id: 'iqc-by-12', label: 'All Zerks & Joints Have Grease', type: 'toggle', required: false },
+    { id: 'iqc-by-13', label: 'H.Cooler & Air Filter Cleaned', type: 'toggle', required: false },
+  ],
+  'fam:attachment': [
+    { id: 'iqc-att-01', label: 'Hoses Ran Correctly; Scuffs Shown In Video; Unit Does Not Leak', type: 'toggle', required: false },
+    { id: 'iqc-att-02', label: 'Hoses Length Good (Long/Short)', type: 'toggle', required: false },
+    { id: 'iqc-att-03', label: 'Couplers Tucked Up Off Ground', type: 'toggle', required: false },
+    { id: 'iqc-att-04', label: 'Clean Coupler Faces', type: 'toggle', required: false },
+    { id: 'iqc-att-05', label: 'All Trash Removed', type: 'toggle', required: false },
+    { id: 'iqc-att-06', label: 'Unused & Broken Items Removed', type: 'toggle', required: false },
+    { id: 'iqc-att-07', label: 'Excess Grease Wiped Off Joints', type: 'toggle', required: false },
+    { id: 'iqc-att-08', label: 'All Tie-Downs Removed: Cords/Wires/ZipTies/Tape/Etc', type: 'toggle', required: false },
+    { id: 'iqc-att-09', label: 'Machine Used To Run It (Skid, Excavator, or Tractor)', type: 'toggle', required: false },
+    { id: 'iqc-att-10', label: 'Operates & Controls Like New', type: 'toggle', required: false },
+    { id: 'iqc-att-11', label: 'Keeper Pins Present', type: 'toggle', required: false },
+    { id: 'iqc-att-12', label: 'Rods & Bolts: Not Bent/Missing', type: 'toggle', required: false },
+    { id: 'iqc-att-13', label: 'All Zerks Greased', type: 'toggle', required: false },
+    { id: 'iqc-att-14', label: 'Bits Are Straight & Pointed', type: 'toggle', required: false },
+    { id: 'iqc-att-15', label: 'Tiller: Debris Clear Of Rotor/Blades', type: 'toggle', required: false },
+    { id: 'iqc-att-16', label: 'Bush Hog: Gear Oil Full, SheerBolt Present, Blades Not Cracked', type: 'toggle', required: false },
+  ],
+  'fam:generator': [
+    { id: 'iqc-gen-01', label: 'Metal Frame Beat Back To Shape', type: 'toggle', required: false },
+    { id: 'iqc-gen-02', label: 'Unit-Mounted On Dolly', type: 'toggle', required: false },
+    { id: 'iqc-gen-03', label: 'You Wiped Down The Unit', type: 'toggle', required: false },
+    { id: 'iqc-gen-04', label: 'This Unit Looks Better Than When I Found It', type: 'toggle', required: false },
+    { id: 'iqc-gen-05', label: 'All Cords/Wires/ZipTies/Tape/Etc Removed', type: 'toggle', required: false },
+    { id: 'iqc-gen-06', label: 'Battery PROPERLY Mounted', type: 'toggle', required: false },
+    { id: 'iqc-gen-07', label: 'Unused & Broken Items Removed', type: 'toggle', required: false },
+    { id: 'iqc-gen-08', label: 'Engine Oil Full, Not Too Full', type: 'toggle', required: false },
+    { id: 'iqc-gen-09', label: 'You Powered A Tool Using Each Plug', type: 'toggle', required: false },
+    { id: 'iqc-gen-10', label: 'Button Start Works', type: 'toggle', required: false },
+    { id: 'iqc-gen-11', label: 'Runs Like New', type: 'toggle', required: false },
+  ],
+  'fam:jack-hammer': [
+    { id: 'iqc-jh-01', label: 'You Wiped Down The Unit', type: 'toggle', required: false },
+    { id: 'iqc-jh-02', label: 'All Three Dots: Good', type: 'toggle', required: false },
+    { id: 'iqc-jh-03', label: 'All 4 Bits Present: Report If Missing', type: 'toggle', required: false },
+    { id: 'iqc-jh-04', label: 'You Removed The Bit: Place In Dolly', type: 'toggle', required: false },
+    { id: 'iqc-jh-05', label: 'This Unit Looks Better Than When I Found It', type: 'toggle', required: false },
+    { id: 'iqc-jh-06', label: 'All Cords/Wires/ZipTies/Tape/Etc Removed', type: 'toggle', required: false },
+    { id: 'iqc-jh-07', label: 'Handle Bolt Is Not Broken', type: 'toggle', required: false },
+    { id: 'iqc-jh-08', label: 'Jacketed Cable Has ZERO Cuts', type: 'toggle', required: false },
+    { id: 'iqc-jh-09', label: 'You Plugged In And Used In Dirt', type: 'toggle', required: false },
+    { id: 'iqc-jh-10', label: 'Wheels Roll Perfectly', type: 'toggle', required: false },
+  ],
+  'fam:power-trowel': [
+    { id: 'iqc-pt-01', label: 'Leveler Not-Broken', type: 'toggle', required: false },
+    { id: 'iqc-pt-02', label: 'Buttons/Switches Firmly Secured', type: 'toggle', required: false },
+    { id: 'iqc-pt-03', label: 'Concrete Knocked Off With Mallet', type: 'toggle', required: false },
+    { id: 'iqc-pt-04', label: 'You Wiped Down The Unit', type: 'toggle', required: false },
+    { id: 'iqc-pt-05', label: 'Zero Leaks', type: 'toggle', required: false },
+    { id: 'iqc-pt-06', label: 'All Cords/Wires/ZipTies/Tape/Etc Removed', type: 'toggle', required: false },
+    { id: 'iqc-pt-07', label: 'Unused & Broken Items Removed', type: 'toggle', required: false },
+    { id: 'iqc-pt-08', label: 'This Unit Looks Better Than When I Found It', type: 'toggle', required: false },
+    { id: 'iqc-pt-09', label: 'Leveler: Not Broken', type: 'toggle', required: false },
+    { id: 'iqc-pt-10', label: 'You Cleaned Air Filter', type: 'toggle', required: false },
+    { id: 'iqc-pt-11', label: 'Pull Cord Will Not Break', type: 'toggle', required: false },
+    { id: 'iqc-pt-12', label: 'You Greased Main Shaft', type: 'toggle', required: false },
+    { id: 'iqc-pt-13', label: 'Runs Like New', type: 'toggle', required: false },
+    { id: 'iqc-pt-14', label: 'Engine Oil Full, Not Too Full', type: 'toggle', required: false },
+    { id: 'iqc-pt-15', label: 'All 4 Blades Are Straight & Smooth', type: 'toggle', required: false },
+  ],
+  'fam:sump-pump': [
+    { id: 'iqc-sp-01', label: 'Discharge Hose Is Not Crushed, Torn, Or Broken', type: 'toggle', required: false },
+    { id: 'iqc-sp-02', label: 'Hoses Displayed w/Pump', type: 'toggle', required: false },
+    { id: 'iqc-sp-03', label: 'Jacketed Cable Has ZERO Cuts', type: 'toggle', required: false },
+    { id: 'iqc-sp-04', label: 'This Unit Looks Better Than When I Found It', type: 'toggle', required: false },
+    { id: 'iqc-sp-05', label: 'All Cords/Wires/ZipTies/Tape/Etc Removed', type: 'toggle', required: false },
+    { id: 'iqc-sp-06', label: 'You Primed & Ran This Unit w/Water', type: 'toggle', required: false },
+    { id: 'iqc-sp-07', label: 'Runs Like New', type: 'toggle', required: false },
+    { id: 'iqc-sp-08', label: 'Debris Cleared From Bottom', type: 'toggle', required: false },
+  ],
+  'fam:trash-pump': [
+    { id: 'iqc-tp-01', label: 'Inlet Hose Is Not Crushed, Torn, Or Broken', type: 'toggle', required: false },
+    { id: 'iqc-tp-02', label: 'Discharge Hose Is Not Crushed, Torn, Or Broken', type: 'toggle', required: false },
+    { id: 'iqc-tp-03', label: 'Hoses Displayed w/Pump', type: 'toggle', required: false },
+    { id: 'iqc-tp-04', label: 'Metal Frame Bent Back To Shape', type: 'toggle', required: false },
+    { id: 'iqc-tp-05', label: 'Unit-Mounted Onto Dolly', type: 'toggle', required: false },
+    { id: 'iqc-tp-06', label: 'Unused & Broken Items Removed', type: 'toggle', required: false },
+    { id: 'iqc-tp-07', label: 'This Unit Looks Better Than When I Found It', type: 'toggle', required: false },
+    { id: 'iqc-tp-08', label: 'All Cords/Wires/ZipTies/Tape/Etc Removed', type: 'toggle', required: false },
+    { id: 'iqc-tp-09', label: 'Runs Like New', type: 'toggle', required: false },
+    { id: 'iqc-tp-10', label: 'You Primed & Ran This Unit w/Water', type: 'toggle', required: false },
+    { id: 'iqc-tp-11', label: 'Water/Trash Emptied From Body', type: 'toggle', required: false },
+    { id: 'iqc-tp-12', label: 'Pull Cord Will Not Break', type: 'toggle', required: false },
+    { id: 'iqc-tp-13', label: 'Engine Oil Full, Not Too Full', type: 'toggle', required: false },
+  ],
+  'fam:concrete-saw': [
+    { id: 'iqc-cs-01', label: 'Leveler Not Broken', type: 'toggle', required: false },
+    { id: 'iqc-cs-02', label: 'Buttons/Switches Firmly Secured', type: 'toggle', required: false },
+    { id: 'iqc-cs-03', label: 'Concrete Knocked Off With Mallet', type: 'toggle', required: false },
+    { id: 'iqc-cs-04', label: 'You Wiped Down The Unit', type: 'toggle', required: false },
+    { id: 'iqc-cs-05', label: 'Zero Leaks', type: 'toggle', required: false },
+    { id: 'iqc-cs-06', label: 'Water Hose Secured In Place', type: 'toggle', required: false },
+    { id: 'iqc-cs-07', label: 'All Cords/Wires/ZipTies/Tape/Etc Removed', type: 'toggle', required: false },
+    { id: 'iqc-cs-08', label: 'Unused & Broken Items Removed', type: 'toggle', required: false },
+    { id: 'iqc-cs-09', label: 'Cover Works Properly', type: 'toggle', required: false },
+    { id: 'iqc-cs-10', label: 'This Unit Looks Better Than When I Found It', type: 'toggle', required: false },
+    { id: 'iqc-cs-11', label: 'Leveler: Not Broken', type: 'toggle', required: false },
+    { id: 'iqc-cs-12', label: 'You Cleaned Air Filter', type: 'toggle', required: false },
+    { id: 'iqc-cs-13', label: 'Pull Cord Will Not Break', type: 'toggle', required: false },
+    { id: 'iqc-cs-14', label: 'You Greased This Zerk', type: 'toggle', required: false },
+    { id: 'iqc-cs-15', label: 'Greased The Axel', type: 'toggle', required: false },
+    { id: 'iqc-cs-16', label: 'Wheels Roll Perfectly', type: 'toggle', required: false },
+    { id: 'iqc-cs-17', label: 'Engine Oil Full, Not Too Full', type: 'toggle', required: false },
+    { id: 'iqc-cs-18', label: 'Runs Like New', type: 'toggle', required: false },
+  ],
+};
 const inspKeyOfCat = (categoryId) => inspFamilyKey(IDX.category.get(categoryId));
 const inspFamilyLabel = (key) => INSP_FAM_LABELS[key] || (IDX.category.get(key) ? IDX.category.get(key).name : key);
 const inspCfgByKey = (key) => ((state.settings && state.settings.inspections) || {})[key] || null;
@@ -2299,6 +2681,7 @@ const SETTINGS_TABS = [
   { id: 'requirements',  label: 'Rental Rules',     icon: STATUS_ICONS.shield,    v1: true },
   { id: 'kpis',          label: 'KPIs & Rings',     icon: STATUS_ICONS.gauge,     v1: true },
   { id: 'notifications', label: 'Notifications',    icon: I.bell,                 note: 'Team chat on/off, driver dispatch alerts, customer reminders & cadence.' },
+  { id: 'layout',        label: 'Layout & Footers', icon: I.grid,                 v1: true },
   { id: 'integrations',  label: 'Integrations',     icon: STATUS_ICONS.zap,       note: 'Stripe, Maps, telematics feed — references & toggles (secrets stay server-side).' },
 ];
 const draftStatusOv = (o, set, val) => (((o.draftSettings || {}).status || {})[set] || {})[val] || {};
@@ -2324,6 +2707,7 @@ function settingsBoardHtml(o) {
   else if (o.tab === 'kpis') pane = settingsKpisPane(o);
   else if (o.tab === 'general') pane = settingsCompanyPane(o);
   else if (o.tab === 'requirements') pane = settingsRulesPane(o);
+  else if (o.tab === 'layout') pane = settingsLayoutPane(o);
   else if (o.tab === 'fields') pane = settingsFieldsPane(o);
   else if (o.tab === 'inspections') pane = settingsInspectionsPane(o);
   else pane = settingsPlannedPane(SETTINGS_TABS.find((t) => t.id === o.tab));
@@ -2396,6 +2780,27 @@ function settingsRulesPane(o) {
     <div class="rule-list">${rows}</div>
     <div class="rule-planned-head">Coming once their capture field exists</div>
     <div class="rule-list">${planned}</div>`;
+}
+// Cards that carry a totals footer (the highlighted roll-up row beneath the list).
+const LAYOUT_FOOTER_CARDS = [
+  { key: 'rentals', label: 'Rentals' }, { key: 'units', label: 'Units' }, { key: 'customers', label: 'Customers' },
+  { key: 'categories', label: 'Categories' }, { key: 'invoices', label: 'Invoices' }, { key: 'workOrders', label: 'Work Orders' },
+  { key: 'inspections', label: 'Inspections' },
+];
+function settingsLayoutPane(o) {
+  const draft = (o.draftSettings && o.draftSettings.layout && o.draftSettings.layout.footers) || (state.settings && state.settings.layout && state.settings.layout.footers) || {};
+  const rows = LAYOUT_FOOTER_CARDS.map((c) => {
+    const shown = draft[c.key] !== 'off';
+    return `<div class="rule-row">
+      <div class="rule-main"><span class="rule-label">${CARD_ICON[c.key] || ''}${esc(c.label)} footer</span><span class="rule-desc">The totals roll-up beneath the ${esc(c.label.toLowerCase())} list.</span></div>
+      ${segCtl([{ label: 'Hide', js: 'js-layout-footer', data: { card: c.key, val: 'off' }, on: shown ? null : 'red' }, { label: 'Show', js: 'js-layout-footer', data: { card: c.key, val: 'on' }, on: shown ? 'green' : null }])}
+    </div>`;
+  }).join('');
+  return `
+    <div class="set-pane-head"><h4>Layout &amp; Footers</h4><p>Show or hide each card's <strong>totals footer</strong> — the highlighted roll-up row beneath its list. Everything defaults to shown.</p></div>
+    <div class="rule-list">${rows}</div>
+    <div class="rule-planned-head">More layout controls coming</div>
+    <div class="rule-list"><div class="rule-row rule-soon"><div class="rule-main"><span class="rule-label">Columns · sort · grid order</span><span class="rule-desc">Builds on the existing List-View column picker — a focused follow-on so the two don't fight.</span></div><span class="rule-soon-tag">Planned</span></div></div>`;
 }
 // Entities that can carry custom fields. v1 wires the Customers form; others store defs but
 // their forms aren't wired yet (shown as 'form coming').
@@ -2726,11 +3131,7 @@ const FLAG_COND = {
   customers: {
     'unpaid-balance':    (c) => c.payStatus === 'Unpaid',
     'blacklisted':       (c) => /Blacklist/i.test(c.accountType || ''),
-    // Only flag if they have an actual business relationship — a rental (any status)
-    // or an invoice. Pure leads in the funnel with no booking don't need a card yet.
-    'no-card':           (c) => cardFlag(c) === 'none' &&
-      (DATA.rentals.some((r) => r.customerId === c.customerId) ||
-       DATA.invoices.some((i) => i.customerId === c.customerId)),
+    'no-card':           (c) => cardFlag(c) === 'none',
     'customer-lost':     (c) => customerActivity(c).stage === 'Lost',
     'customer-inactive': (c) => customerActivity(c).stage === 'Inactive',
     'partial-balance':   (c) => c.payStatus === 'Partial',
@@ -2804,17 +3205,6 @@ function unitPill(unitId, { x, xData } = {}) {
   const xb = x ? `<span class="x" data-x="${esc(x)}"${xData != null ? ` data-id="${esc(xData)}"` : ''}>✕</span>` : '';
   const chat = ` data-chat-el data-chat-label="${esc(u.name)}" data-chat-color="gray" data-chat-card="units" data-chat-rec="${esc(unitId)}"`;   // §17
   return `<span class="pill ref link" data-r="R2" data-pill-card="units" data-pill-rec="${esc(unitId)}"${chat}>${CARD_ICON.units}${esc(u.name)}${xb}</span>`;
-}
-/** R2e: ENTITY NAME PILL — Saira-stamped linked record. Matches the row-name look:
- *  uppercase, flag-colored (most-urgent), card icon. Used in rental detail header/stalls. */
-function entityPill(card, rec, { x, xData } = {}) {
-  if (!rec) return '';
-  const id = idOf(card, rec);
-  const name = rec.name || '';
-  const flag = getEntityColor(card, rec) || 'gray';
-  const xb = x ? `<span class="x" data-x="${esc(x)}"${xData != null ? ` data-id="${esc(xData)}"` : ''}>✕</span>` : '';
-  const chat = ` data-chat-el data-chat-label="${esc(name)}" data-chat-color="${esc(flag)}" data-chat-card="${esc(card)}" data-chat-rec="${esc(id)}"`;
-  return `<span class="pill entity-stamp c-${flag}" data-r="R2" data-pill-card="${card}" data-pill-rec="${esc(id)}"${chat}>${CARD_ICON[card] || ''}<span class="t">${esc(name)}</span>${xb}</span>`;
 }
 /** R3b: a DATA CHIP — a plain fact (480 HRS, No GPS), independent of R3. */
 const badge = (label, color = 'gray') => `<span class="pill c-${color}" data-r="R3b"><span class="t">${esc(label)}</span></span>`;
@@ -2961,28 +3351,6 @@ function openCtxMenu(e, hit) {
   m.style.top = Math.min(e.clientY, window.innerHeight - m.offsetHeight - 8) + 'px';
   setTimeout(() => document.addEventListener('mousedown', ctxOutside), 0);
 }
-// §13.4/§R20 — graph-view chrome menu: hide/show the clickable filter-pill legend under the
-// charts and/or the Views & sort control, or Reset both. Reuses the R20 ctx-menu shell +
-// the ctxOutside closer; the chosen state persists per device, per card (loadGvChrome).
-let ctxGvCard = null;
-function openGvChromeMenu(e, card) {
-  closeCtxMenu();
-  ctxTarget = null; ctxGvCard = card;
-  const ch = loadGvChrome(card);
-  const m = document.createElement('div');
-  m.className = 'ctx-menu'; m.id = 'rw-ctx';
-  const item = (act, label) => `<button class="dd-item" data-ctx="${act}">${label}</button>`;
-  m.innerHTML = [
-    item('gv-pills', `🏷️ ${ch.pills ? 'Show' : 'Hide'} filter pills`),
-    item('gv-sort', `↕️ ${ch.sort ? 'Show' : 'Hide'} Views &amp; sort`),
-    '<div class="menu-sep"></div>',
-    item('gv-reset', '↺ Reset pills &amp; sort'),
-  ].join('');
-  document.body.appendChild(m);
-  m.style.left = Math.min(e.clientX, window.innerWidth - 205) + 'px';
-  m.style.top = Math.min(e.clientY, window.innerHeight - m.offsetHeight - 8) + 'px';
-  setTimeout(() => document.addEventListener('mousedown', ctxOutside), 0);
-}
 // §M3 — open the right-click/long-press menu for the element at (x,y). Shared by the
 // contextmenu handler (mouse) and the touch long-press timer (phone). Mirrors the §R20
 // logic: a real "leaf" tool opens the Wrangler menu; card dead-space → card-to-List.
@@ -2992,13 +3360,6 @@ function openCtxMenuAt(target, x, y) {
   if (!target || !target.closest) return;
   if (target.closest('input, textarea, .inline-input')) return;
   const card = target.closest('.card'); if (!card && !target.closest('.overlay .popup')) return;
-  // §13.4 — inside an OPEN graph view, right-click/long-press the panel (or the Views & sort
-  // control above it) opens the graph-chrome menu instead of the per-element Wrangler menu,
-  // so the filter pills / sort can be hidden and Reset.
-  if (card && !state.winpicker) {
-    const cid = card.dataset.card, gcs = cid && activeSession().cards[cid];
-    if (gcs && gcs.graphView && (target.closest('.gv-panel') || target.closest('.sort'))) return openGvChromeMenu({ clientX: x, clientY: y }, cid);
-  }
   // While the rental-window picker is open, keep right-click → BACK working; just suppress
   // the element context menu (it gets in the way of picking). (Jac B5, 2026-06-15)
   const leaf = state.winpicker ? null : target.closest('.pill, .add-field, .flag, .linkname, .inv-line-link, .req, .seg, button, .inline-edit, .jnode, .x, a, .d-title, .r-title, .derived');
@@ -3016,14 +3377,6 @@ function ctxOutside(e) {
   closeCtxMenu();
 }
 function runCtxAction(act) {
-  if (act.startsWith('gv-')) {   // §13.4 graph-chrome menu — no leaf target, just the card
-    const card = ctxGvCard; closeCtxMenu(); document.removeEventListener('mousedown', ctxOutside); ctxGvCard = null;
-    if (!card) return;
-    if (act === 'gv-pills') saveGvChrome(card, { pills: !gvPillsHidden(card) });
-    else if (act === 'gv-sort') saveGvChrome(card, { sort: !gvSortHidden(card) });
-    else if (act === 'gv-reset') saveGvChrome(card, { pills: false, sort: false });
-    return render();
-  }
   const tg = ctxTarget; closeCtxMenu(); document.removeEventListener('mousedown', ctxOutside);
   if (!tg) return;
   const el = tg.el;
@@ -3118,7 +3471,7 @@ const RULE_META = {
   R17: ['Action pill', 'actionPill', 'commit = blue · money = green · danger = solid red; .locked = gated'],
   R18: ['Ghost', 'ghostPill', 'the ONE quiet action — Cancel / Close / Exit / Clear'],
   R19: ['Attention flash', 'attnFlash / flashOr', 'a glow that points AT the next action — replaces an error message when the fix is on screen'],
-  R20: ['Context menu', 'openCtxMenu (right-click · long-press)', 'right-click/long-press any element: Cut · Copy · Paste · Search · Replace · Add Comment · Ask Mr. Wrangler — or, inside an open graph view, hide the filter pills / Views & sort (Reset restores)'],
+  R20: ['Context menu', 'openCtxMenu (right-click · long-press)', 'right-click/long-press any element: Cut · Copy · Paste · Search · Replace · Add Comment · Ask Mr. Wrangler'],
   R21: ['File drop', 'fileDrop', 'the MASSIVE popup add-file zone — R5b blue dashed at full size'],
   R22: ['Date picker', 'dateField', 'the ONE app-styled calendar for a single date/time (NOT the rental-window timeline)'],
   R23: ['Tooltip', 'data-tip → the one styled tip', 'every hover hint goes through data-tip — a native title attribute is a violation'],
@@ -3390,7 +3743,7 @@ function unitWoSoPill(u) {
   const wo = openWOForUnit(u.unitId);
   if (wo) return statusPill('woPhase', wo.phase, { card: 'workOrders', recId: wo.woId });
   const svc = topServiceForUnit(u);
-  return svc ? badge(svcText(svc), svc.color) : badge('No Orders', 'green');
+  return svc ? badge(svcText(svc), svc.color) : '';
 }
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -3517,8 +3870,7 @@ const ROWS = {
     // Name TINTED by the customer's flag color (Jac): only red/yellow lead — a clear
     // customer keeps the calm default ink, archived/gray reads muted.
     const fc = getEntityColor('customers', c);
-    const isMember = c.accountType === 'Member' || c.accountType === 'Business Member';
-    const nameColor = (fc === 'red' || fc === 'yellow') ? `var(--${fc})` : fc === 'gray' ? 'var(--txt-3)' : (fc === 'green' && isMember) ? 'var(--green)' : 'var(--txt)';
+    const nameColor = (fc === 'red' || fc === 'yellow') ? `var(--${fc})` : fc === 'gray' ? 'var(--txt-3)' : 'var(--txt)';
     const acct = getStatus('customerAccountType', c.accountType || 'Non-Business');
     const sub = [esc(c.phone || ''), c.accountType ? esc(acct.label) : ''].filter(Boolean).join(' · ');
 
@@ -3540,7 +3892,7 @@ const ROWS = {
     const FUNNEL_RANK = { 'Inbound Lead': 1, 'Outbound Lead': 2, 'Contacted': 3, 'Not A No!': 4, 'Payment Discussed': 5, 'Paid': 6, "Don't Contact": 0.5 };
     const topStage = [c.usedSalesStage || 'N/A', c.membershipStage || 'N/A']
       .filter((s) => s && s !== 'N/A').sort((a, b) => (FUNNEL_RANK[b] || 0) - (FUNNEL_RANK[a] || 0))[0];
-    const funnelHtml = topStage ? statusPill('funnelStage', topStage) : badge('N/A', 'gray');
+    const funnelHtml = topStage ? statusPill('funnelStage', topStage) : '';
 
     // Row: name · phone·type · pay-$ ← LEFT  ·  [acct pill][funnel pill] → RIGHT.
     // Both status pills shown always; equal-width grid slots; margin-left:auto pushes them right.
@@ -3565,15 +3917,14 @@ const ROWS = {
     const hl = getEntityColor('units', u);
     // NAME tinted to the unit's flag color (Jac 2026-06-23): r/y/g lead in-color, gray reads muted.
     const nameColor = (hl === 'red' || hl === 'yellow' || hl === 'green') ? `var(--${hl})` : hl === 'gray' ? 'var(--txt-3)' : 'var(--txt)';
-    // Sub order (Jac): hours first, then category — left-to-right reads: hours · cat · NAME · icon · stripe
-    const sub = [`${num(u.currentHours)} HRS`, cat ? esc(cat.name) : ''].filter(Boolean).join(' · ');
+    const sub = [cat ? esc(cat.name) : '', `${num(u.currentHours)} HRS`].filter(Boolean).join(' · ');
     return `<div class="ur" style="--ur-hl:var(--${hl})">
       <div class="ur-pills"><div class="ur-pill-slot">${unitRentalInspPill(u)}</div><div class="ur-pill-slot">${unitWoSoPill(u)}</div></div>
-      <div class="ur-id">
-        <span class="ur-sub">${sub}</span>
-        <span class="r-title ur-name" style="color:${nameColor}">${esc(u.name)}</span>
-      </div>
       <span class="ur-cat">${categoryIconFor(cat && cat.name)}</span>
+      <div class="ur-id">
+        <span class="r-title ur-name" style="color:${nameColor}">${esc(u.name)}</span>
+        <span class="ur-sub">${sub}</span>
+      </div>
     </div>`;
   },
 
@@ -3783,6 +4134,108 @@ function fmtAggValue(col, a, calc) {
   const v = a[calc] != null ? a[calc] : a.sum;
   return col.type === 'money' ? money(v) : col.type === 'pct' ? num(v) + '%' : num(v);
 }
+/* Footer chips Jac pruned as noise (2026-06-16): whole numeric roll-ups dropped
+   per card, plus a few badge VALUES. No Show is a rental-card-only signal. */
+const FOOT_DROP_NUM = { units: ['service'], rentals: ['price'], customers: ['rentals'] };
+const footDropNum = (card, key) => (FOOT_DROP_NUM[card] || []).includes(key);
+const footDropBadge = (card, value) =>
+  (value === 'No Show' && card !== 'rentals') ||      // No Show = rental card only
+  (value === 'Refunded' && card !== 'invoices') ||    // Refunded = invoice card only
+  value === 'Returned' || value === 'Card OK';
+/** The highlighted summary row beneath a card's List View: badge value-counts +
+ *  numeric roll-ups (e.g. "6 Tomorrow · 900 HRS avg · 12 Part Needed"). */
+function listTotalsEl(card, rows, session) {
+  if (!rows || !rows.length) return null;
+  if (footerHidden(card)) return null;   // Settings → Layout & Footers: this card's totals footer is hidden
+  const cols = cardColumns(card, session);
+  const sel = loadListTotals(card);                 // null = every aggregatable column
+  const allowed = sel ? new Set(sel) : null;
+  const totCard = (session.cards && session.cards[card]) ? card : 'shop';   // shop sub-types route to the shop card
+  const tf = session.cards[totCard] && session.cards[totCard].totalFilter;
+  const chips = [];   // { k: col.key, html } — buckets let rentals split Billing/Status rows
+  for (const col of cols) {
+    if (allowed && !allowed.has(col.key)) continue;
+    if (footDropNum(card, col.key)) continue;            // Jac-pruned numeric roll-up
+    const a = aggColumn(col, rows);
+    if (a.kind === 'badge') {
+      // each value-count is a button → filters the list to that value.
+      // Registry-set columns order by the SET's canonical order (Jac: faster to use),
+      // ad-hoc badges keep count-desc.
+      const ord = col.set ? Object.keys(STATUS[col.set] || {}) : null;
+      Object.entries(a.counts).sort((x, y) => ord ? ord.indexOf(x[0]) - ord.indexOf(y[0]) : y[1] - x[1]).forEach(([key, n]) => {
+        if (footDropBadge(card, key)) return;            // Jac-pruned badge value
+        const m = col.meta ? col.meta(key) : { label: key, color: 'gray' };
+        const on = tf && tf.col === col.key && String(tf.value) === String(key);
+        chips.push({ k: col.key, html: `<button class="tot-chip c-${m.color} js-tot-chip${on ? ' on' : ''}" data-r="R4" data-tot-card="${totCard}" data-tot-col="${col.key}" data-tot-val="${esc(String(key))}">${n} ${esc(m.label)}</button>` });
+      });
+    } else if (a.kind === 'num' && a.count) {
+      const calc = col.agg === 'sum' ? 'sum' : 'avg';
+      const val = col.type === 'money' ? money(a[calc]) : num(a[calc]);
+      chips.push({ k: col.key, html: `<span class="tot-chip" data-r="R4">${val} ${esc(col.label)} ${calc}</span>` });
+    }
+  }
+  // v2: the units footer carries the SHOP — open-WO + parts-ordered counts
+  // (the standalone Inspections/WO tabs went away; Jac call #1)
+  if (card === 'units') {
+    const openBy = new Set(DATA.workOrders.filter((w) => w.phase !== 'Complete' && !w.cancelled).map((w) => w.unitId));
+    const ordBy = new Set(DATA.workOrders.filter((w) => w.phase !== 'Complete' && !w.cancelled && (w.phase === 'Part Ordered' || (w.lineItems || []).some((l) => l.phase === 'Part Ordered'))).map((w) => w.unitId));
+    const nOpen = rows.filter((u) => openBy.has(u.unitId)).length;
+    const nOrd = rows.filter((u) => ordBy.has(u.unitId)).length;
+    if (nOpen) { const on = tf && tf.col === '__wo' && tf.value === 'open'; chips.push({ k: '__wo', html: `<button class="tot-chip c-red js-tot-chip${on ? ' on' : ''}" data-r="R4" data-tot-card="units" data-tot-col="__wo" data-tot-val="open">${nOpen} WOs Open</button>` }); }
+    if (nOrd) { const on = tf && tf.col === '__wo' && tf.value === 'ordered'; chips.push({ k: '__wo', html: `<button class="tot-chip c-yellow js-tot-chip${on ? ' on' : ''}" data-r="R4" data-tot-card="units" data-tot-col="__wo" data-tot-val="ordered">${nOrd} Parts Ordered</button>` }); }
+  }
+  if (!chips.length) return null;
+  const node = el('div', 'list-totals');
+  // Footer sections (Jac 2026-06-23): group chips into labeled sections so Fleet · Rental ·
+  // Shop (units), Billing · Status (rentals), and Type · Finance (customers) read as one shop.
+  const totSec = (label, ks) => { const h = chips.filter((c) => ks.has(c.k)).map((c) => c.html).join(''); return h ? `<span class="tot-sec"><span class="tot-label">${label}</span>${h}</span>` : ''; };
+  if (card === 'units') {
+    node.classList.add('sectioned');
+    node.innerHTML = [
+      totSec('Fleet', new Set(['inspection', 'fleet', 'hours'])),
+      totSec('Rental', new Set(['rental'])),
+      totSec('Shop', new Set(['service', 'wash', '__wo'])),
+    ].filter(Boolean).join('') || chips.map((c) => c.html).join('');
+  } else if (card === 'rentals') {
+    node.classList.add('sectioned');
+    node.innerHTML = [
+      totSec('Billing', new Set(['invoice', 'price'])),
+      totSec('Status', new Set(['status', 'window', 'customer'])),
+    ].filter(Boolean).join('') || chips.map((c) => c.html).join('');
+  } else if (card === 'customers') {
+    node.classList.add('sectioned');
+    node.innerHTML = [
+      totSec('Type', new Set(['account'])),
+      totSec('Finance', new Set(['pay', 'card'])),
+      totSec('Activity', new Set(['rentals', 'email', 'company'])),
+    ].filter(Boolean).join('') || chips.map((c) => c.html).join('');
+  } else {
+    node.innerHTML = chips.map((c) => c.html).join('');
+  }
+  return node;
+}
+/** Filter a card's list rows by an active footer-chip filter (col === value). */
+function applyTotalFilter(card, rows, session) {
+  const cs = session.cards[card]; if (!cs || !cs.totalFilter) return rows;
+  if (cs.totalFilter.col === '__wo') {           // v2 synthetic footer chips: units with shop work
+    const want = cs.totalFilter.value;
+    const ids = new Set(DATA.workOrders.filter((w) => w.phase !== 'Complete' && !w.cancelled && (want === 'open' || w.phase === 'Part Ordered' || (w.lineItems || []).some((l) => l.phase === 'Part Ordered'))).map((w) => w.unitId));
+    return rows.filter((rec) => ids.has(rec.unitId));
+  }
+  if (cs.totalFilter.col === '__cond') return rows.filter((rec) => rec.inspectionStatus === cs.totalFilter.value);   // the Not Ready tab chip
+  const col = cardColumns(card, session).find((c) => c.key === cs.totalFilter.col);
+  return col ? rows.filter((rec) => String(col.get(rec)) === String(cs.totalFilter.value)) : rows;
+}
+/** A removable "Filtered to X" chip when a footer-chip filter is active. */
+function totalFilterChip(card, session) {
+  const cs = session.cards[card]; if (!cs || !cs.totalFilter) return null;
+  const col = cardColumns(card, session).find((c) => c.key === cs.totalFilter.col);
+  const m = (col && col.meta) ? col.meta(cs.totalFilter.value) : { label: cs.totalFilter.value };
+  const chip = el('div', 'fleet-chip');
+  chip.innerHTML = `<span class="muted">Filtered to</span> <b>${esc(m.label)}</b> <button class="x js-clear-totfilter" data-card="${card}" data-tip="Clear">${I.x}</button>`;
+  return chip;
+}
+
 /* ── §13.3 LIST-VIEW LAYOUT — per-device choice of which registry columns show in
    row 1 (details, non-badge, Name always first) vs row 2 (badges). Saved to
    localStorage; when absent a card uses its hand-tuned ROWS renderer. ── */
@@ -3813,6 +4266,22 @@ function loadListLayout(card) {
 function saveListLayout(card, layout) {
   LIST_LAYOUTS[card] = layout || undefined;
   try { if (layout) localStorage.setItem(LIST_LAYOUT_KEY(card), JSON.stringify(layout)); else localStorage.removeItem(LIST_LAYOUT_KEY(card)); } catch (e) { /* private mode */ }
+}
+/* Which columns roll up in the card's totals footer — chosen per device, independent
+   of the row layout. null = the default (every aggregatable column). */
+const LIST_TOTALS_KEY = (card) => `jactec.listTotals.${card}`;
+const LIST_TOTALS = Object.create(null);
+const isAggCol = (c) => c.badge || c.type === 'money' || c.type === 'num' || c.type === 'pct';
+function loadListTotals(card) {
+  if (card in LIST_TOTALS) return LIST_TOTALS[card];
+  let v = null;
+  try { const raw = localStorage.getItem(LIST_TOTALS_KEY(card)); if (raw) v = JSON.parse(raw); } catch (e) { v = null; }
+  if (Array.isArray(v)) { const keys = new Set((CARD_COLUMNS[card] || []).map((c) => c.key)); v = v.filter((k) => keys.has(k)); } else v = null;
+  LIST_TOTALS[card] = v; return v;
+}
+function saveListTotals(card, keys) {
+  LIST_TOTALS[card] = keys || undefined;
+  try { if (keys) localStorage.setItem(LIST_TOTALS_KEY(card), JSON.stringify(keys)); else localStorage.removeItem(LIST_TOTALS_KEY(card)); } catch (e) {}
 }
 /** A list row's inner HTML from a saved layout: Name is the locked title, the
  *  rest of row 1 are non-badge values, row 2 are badge pills. */
@@ -4510,14 +4979,13 @@ const DETAIL = {
 
     /* Header: customer + category + invoice + PO left · gate + balance right. */
     const custEl = cust
-      ? entityPill('customers', cust, { x: 'cust-swap' })
+      ? refPill('customers', r.customerId, cust.name, { x: 'cust-swap' })
       : addBtn('Customer', { link: true, js: 'js-quickadd-cust', h: 26, data: { card: 'rentals', rec: r.rentalId, slot: 'customer' } });
     const catPill = cat ? dPill(cat.name, 'orange', { card: 'categories', recId: cat.categoryId, icon: CARD_ICON.categories }) : '';
     const poField = efld('rentals', r, 'rentalId', 'po', 'Add PO', { fmt: (v) => 'PO ' + v });
-    /* Header: customer + PO left · status gate top-right, then invoice+balance below. */
     const rdHead = `<div class="rd-head">
-      <div class="rd-head-l">${custEl}${poField}</div>
-      <div class="rd-head-r">${masterGate(r, { truck })}<div class="rd-head-bal">${invPill}${rdBal}</div></div>
+      <div class="rd-head-l">${custEl}${catPill}${invPill}${poField}</div>
+      <div class="rd-head-r">${masterGate(r, { truck })}${rdBal}</div>
     </div>`;
 
     /* Not-Ready blocker — jumps to unit pills; sits above the calendar. */
@@ -4540,7 +5008,6 @@ const DETAIL = {
       ? units.map((eu) => {
           const u = IDX.unit.get(eu.unitId); if (!u) return '';
           const insp = getStatus('unitInspectionStatus', u.inspectionStatus);
-          const unitCat = IDX.category.get(u.categoryId);
           const voided = unitVoided(r, eu);
           const lref = rentalLineRefund(r, eu.unitId);   // §19b reflect the invoice's per-line refund on the rental's unit
           const multi = units.length > 1;
@@ -4551,7 +5018,7 @@ const DETAIL = {
           const splitBtn = multi ? `<button class="stall-split js-split-open" data-rec="${esc(r.rentalId)}" data-unit="${esc(u.unitId)}" data-tip="Give ${esc(u.name)} its own dates — splits to a separate rental on the same invoice"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>dates</button>` : '';
           return `<div class="stall rd-unit${voided ? ' voided' : ''}${lref.fully ? ' stall-refunded' : ''}">
             <div class="rd-unit-top">
-              <div class="stall-id rd-unit-id">${entityPill('units', u, { x: 'unit-remove', xData: u.unitId })}${unitCat ? dPill(unitCat.name, 'orange', { card: 'categories', recId: u.categoryId, icon: CARD_ICON.categories }) : ''}${noRates}${multi ? unitStatusGate(r, eu) : ''}</div>
+              <div class="stall-id rd-unit-id">${unitPill(u.unitId, { x: 'unit-remove', xData: u.unitId })}${dPill(insp.label, insp.color, { card: 'units', recId: u.unitId, icon: CARD_ICON.inspections })}${noRates}${multi ? unitStatusGate(r, eu) : ''}</div>
               <div class="rd-unit-rate">${lref.refunded ? `<span class="stall-refund" data-tip="${lref.fully ? 'fully' : 'partially'} refunded on the invoice">↩ refunded</span> · ` : ''}${durLabel ? `<span class="rd-dur">${esc(durLabel)}</span> · ` : ''}<span class="stall-amt${lref.fully ? ' struck' : ''}">${money(up ? up.price : 0)}</span>${splitBtn}</div>
             </div>
             ${stallRouteHtml(r, eu)}
@@ -4559,7 +5026,7 @@ const DETAIL = {
         }).join('')
       : `<div class="stall stall-empty rd-unit rd-unit-empty">${pickUnitBtn}<span class="muted" style="font-size:12px">drag a unit on, or cancel the quote</span></div>`;
 
-    /* Footer: field call left · Complete/Cancel button RIGHT (Jac spec). */
+    /* Footer: field call + Complete/Cancel left · invoice total right. */
     const cancelish = ['Cancelled', 'No Show'].includes(r.status);
     const canComplete = allUnitsTerminal(r);
     const crBtn = cancelish
@@ -4567,7 +5034,7 @@ const DETAIL = {
       : actionPill('commit', 'Complete Rental', { js: `js-complete-rental${canComplete ? '' : ' locked'}`, h: 26, data: { rec: r.rentalId } });
     const fcRow = r.fieldCall ? actionPill('danger', 'Field Call active — clear', { js: 'js-clear-fc', data: { rec: r.rentalId } }) : '';
     const invTotalHtml = invT ? `<span class="rd-inv-total">${money(eventTotal)}</span>` : '';
-    const rdFoot = `<div class="rd-foot"><div class="rd-foot-l">${fcRow}</div><div class="rd-foot-r">${crBtn}</div></div>`;
+    const rdFoot = `<div class="rd-foot"><div class="rd-foot-l">${fcRow}${crBtn}</div><div class="rd-foot-r">${invTotalHtml}</div></div>`;
 
     const rentalSec = `<div class="section sec-${stColor} rentalsec">
       ${rdHead}
@@ -5369,10 +5836,14 @@ function columnEl(col, session) {
   const cs = card.dataset.card && session.cards ? session.cards[card.dataset.card] : null;
   card.dataset.view = (cs && cs.mode === 'standard' && cs.recId != null) ? `${cs.recType || ''}:${cs.recId}` : 'list';
   if (!document.body.classList.contains('is-phone')) card.insertBefore(colTabsEl(col, active, session), card.firstChild);   // toggles live INSIDE the card top on desktop; on phones they move to the footer dock (§M1)
-  // Desktop: freeze the search/sort bar out of the scroll — a full-width card
+  const tot = card.querySelector('.card-body .list-totals');             // freeze the totals out of the scroll
+  // §M1 — phones invert the desktop layout: the card "footer" (totals) sits at the TOP,
+  // while the toggles + search live in the bottom dock. Desktop keeps it as a footer.
+  if (tot) { if (document.body.classList.contains('is-phone')) card.insertBefore(tot, card.firstChild); else card.appendChild(tot); }
+  // Desktop: freeze the search/sort bar out of the scroll too — a full-width card
   // header so the card-body scrollbar runs ONLY through the list below it, never in
-  // a gutter alongside the bar (the "funny" gap). On phones render() relocates the
-  // bar to the bottom dock instead.
+  // a gutter alongside the bar (the "funny" gap). Mirrors the .list-totals footer
+  // freeze; on phones render() relocates the bar to the bottom dock instead.
   if (!document.body.classList.contains('is-phone')) {
     const lb = card.querySelector('.card-body .listbar'), body = card.querySelector('.card-body');
     if (lb && body) card.insertBefore(lb, body);
@@ -5498,10 +5969,10 @@ function listView(cardDef, session) {
       ${cascChip}${cterms.map((ft, i) => filterTermPill(ft, i, card)).join('')}
       <input class="mini-search" placeholder="${cterms.length ? 'Add filter — Enter to pin…' : `Search ${esc(cardDef.title.toLowerCase())}…`}" value="${esc(cs.search)}" data-card="${card}" />
     </div>
-    ${(cs.graphView && gvSortHidden(card)) ? '' : `<div class="sort">
+    <div class="sort">
       <button class="sortbtn js-sortmenu${av ? ' viewing' : ''}" data-card="${card}" data-tip="Views &amp; sort">${esc(av ? av.name : curField.label)} ${I.chev}</button>
       <button class="dir js-sortdir" data-card="${card}"><span class="${cs.sort.dir === 'asc' ? 'on' : ''}">▲</span><span class="${cs.sort.dir === 'desc' ? 'on' : ''}">▼</span></button>
-    </div>`}`;
+    </div>`;
   wrap.appendChild(bar);
   // §13.4 — Graph carousel: an interactive panel ABOVE the list (the list renders below,
   // filtered by the chart's g-tagged search terms). Legacy cards still full-replace the list.
@@ -5539,6 +6010,9 @@ function listView(cardDef, session) {
   } else if (availWin && card === 'categories') {
     rows = [...rows].sort((a, b) => (availUnavailable('categories', a) ? 1 : 0) - (availUnavailable('categories', b) ? 1 : 0));
   }
+  rows = applyTotalFilter(card, rows, session);          // a clicked footer-chip narrows the list
+  const tfChip = totalFilterChip(card, session); if (tfChip) wrap.appendChild(tfChip);
+
   const list = el('div', 'list');
   // §0.2 — Rentals always lead with a +New Rental row, no matter the search (obsoletes
   // the old toolbar Rental button). INSIDE the list so it shares the row inset — was
@@ -5572,6 +6046,8 @@ function listView(cardDef, session) {
     appendWindowed(list, rows, cs, card, (rec) => list.appendChild(rowEl(card, rec)));
   }
   wrap.appendChild(list);
+  const totals = listTotalsEl(card, rows, session);   // highlighted roll-up row at the card's foot
+  if (totals) wrap.appendChild(totals);
   return wrap;
 }
 const PLUS_NEW = new Set(['rentals', 'invoices', 'customers']);
@@ -5734,6 +6210,18 @@ function shopListView(session, byType, forcedSeg) {
   }
   items = shopSort(items, cs.sort);
 
+  // a clicked footer-chip narrows the shop list (filter is stored on the shop card)
+  if (cs.totalFilter && segActive !== 'all') {
+    const fcol = (CARD_COLUMNS[segActive] || []).find((c) => c.key === cs.totalFilter.col);
+    if (fcol) {
+      items = items.filter((it) => String(fcol.get(it.rec)) === String(cs.totalFilter.value));
+      const m = fcol.meta ? fcol.meta(cs.totalFilter.value) : { label: cs.totalFilter.value };
+      const chip = el('div', 'fleet-chip');
+      chip.innerHTML = `<span class="muted">Filtered to</span> <b>${esc(m.label)}</b> <button class="x js-clear-totfilter" data-card="shop" data-tip="Clear">${I.x}</button>`;
+      wrap.appendChild(chip);
+    }
+  }
+
   const list = el('div', 'list');
   if (!items.length) {
     // creation lives in ONE place — the header + New menu (no per-card +New)
@@ -5742,6 +6230,10 @@ function shopListView(session, byType, forcedSeg) {
     appendWindowed(list, items, cs, 'shop', (it) => list.appendChild(shopRowEl(it.type, it.rec)));
   }
   wrap.appendChild(list);
+  if (segActive !== 'all') {   // a single shop segment has one record shape → roll it up
+    const tot = listTotalsEl(segActive, items.map((it) => it.rec), session);
+    if (tot) wrap.appendChild(tot);
+  }
   return wrap;
 }
 
@@ -7250,26 +7742,6 @@ function gvRestore(src, cs, idx) {
 }
 function gvOpen(card, src) { const cs = activeSession().cards[card]; cs.graphView = true; gvRestore(src, cs, cs.graphIdx || 0); cs.listLimit = undefined; render(); }
 function gvChevron(card, src, dir) { const cs = activeSession().cards[card]; gvSaveCurrent(src, cs); gvRestore(src, cs, (cs.graphIdx || 0) + dir); cs.listLimit = undefined; render(); }
-// §13.4 — per-device, per-card graph-chrome prefs: hide the clickable filter-pill legend
-// under the chart (pie slices stay clickable) and/or the Views & sort control. Toggled from
-// the §R20 right-click menu (Reset restores both). Persisted like the list layout; default
-// shows everything, and the key is dropped once nothing is hidden.
-const GV_CHROME_KEY = (card) => `jactec.gvChrome.${card}`;
-const GV_CHROME = Object.create(null);
-function loadGvChrome(card) {
-  if (card in GV_CHROME) return GV_CHROME[card];
-  let v = null;
-  try { const raw = localStorage.getItem(GV_CHROME_KEY(card)); if (raw) v = JSON.parse(raw); } catch (e) { v = null; }
-  v = (v && typeof v === 'object') ? { pills: !!v.pills, sort: !!v.sort } : { pills: false, sort: false };
-  GV_CHROME[card] = v; return v;
-}
-function saveGvChrome(card, patch) {
-  const next = { ...loadGvChrome(card), ...patch };
-  GV_CHROME[card] = next;
-  try { if (next.pills || next.sort) localStorage.setItem(GV_CHROME_KEY(card), JSON.stringify(next)); else localStorage.removeItem(GV_CHROME_KEY(card)); } catch (e) {}
-}
-const gvPillsHidden = (card) => loadGvChrome(card).pills;
-const gvSortHidden = (card) => loadGvChrome(card).sort;
 // Idempotent close-sync: any path that flips graphView off (record open, invoice surface,
 // switch to Shop 'all') leaves g-terms behind — save them to memory + strip them.
 function gvSyncClosed(src, cs) { if (cs.graphView) return; if (!(cs.filterTerms || []).some((t) => t.g)) return; gvSaveCurrent(src, cs); gvStripTerms(cs); }
@@ -7314,10 +7786,8 @@ function gvPieClickable(card, src, cs, segs, size = 116) {
 }
 function gvRenderView(card, src, cs, v) {
   if (v.kind === 'pie') {
-    // the legend chips are the clickable "filter pills" under the donut — hideable via the
-    // §R20 graph-chrome menu (the donut slices stay clickable as the pointer path).
-    const legend = gvPillsHidden(card) ? '' : `<div class="gv-legend gv-legend-click">${v.segs.map((s) => gvSegBtn(cs, card, src, s, `<i style="background:var(--${s.color})"></i><span class="gl-lbl">${esc(s.label)}</span> <b>${s.count}</b>`, 'gv-leg')).join('')}</div>`;
-    return `<div class="gv-pie">${gvPieClickable(card, src, cs, v.segs)}${legend}</div>`;
+    const legend = v.segs.map((s) => gvSegBtn(cs, card, src, s, `<i style="background:var(--${s.color})"></i><span class="gl-lbl">${esc(s.label)}</span> <b>${s.count}</b>`, 'gv-leg')).join('');
+    return `<div class="gv-pie">${gvPieClickable(card, src, cs, v.segs)}<div class="gv-legend gv-legend-click">${legend}</div></div>`;
   }
   if (v.kind === 'bars') {
     const max = Math.max(1, ...v.segs.map((s) => s.count));
@@ -9265,11 +9735,16 @@ function bvCustomizePanel(card) {
   const nonBadge = cols.filter((c) => !c.pill && c.key !== nameKey);
   const badges = cols.filter((c) => c.pill);
   const box = (c, row, on, locked) => `<label class="bv-pick${locked ? ' locked' : ''}"><input type="checkbox" class="js-bv-pick" data-card="${card}" data-row="${row}" data-col="${c.key}"${on ? ' checked' : ''}${locked ? ' disabled' : ''}/> ${esc(c.label)}</label>`;
+  const aggCols = cols.filter(isAggCol);
+  const totSel = loadListTotals(card);                  // null = all
+  const totBox = (c) => `<label class="bv-pick"><input type="checkbox" class="js-bv-tot" data-card="${card}" data-col="${c.key}"${(totSel ? totSel.includes(c.key) : true) ? ' checked' : ''}/> ${esc(c.label)}</label>`;
   return `<div class="bv-customize">
     <div class="bv-pick-group"><h4>List row 1 — details <span class="muted">(${(layout.row1 || []).length}/6)</span></h4>
       ${box(cols[0], 'row1', true, true)}${nonBadge.map((c) => box(c, 'row1', layout.row1.includes(c.key), false)).join('')}</div>
     <div class="bv-pick-group"><h4>List row 2 — badges <span class="muted">(${(layout.row2 || []).length}/6)</span></h4>
       ${badges.length ? badges.map((c) => box(c, 'row2', layout.row2.includes(c.key), false)).join('') : '<span class="muted">No badge columns on this card.</span>'}</div>
+    <div class="bv-pick-group"><h4>Card totals <span class="muted">(footer)</span></h4>
+      ${aggCols.length ? aggCols.map(totBox).join('') : '<span class="muted">Nothing to total.</span>'}</div>
     <button class="pill ghost js-bv-resetlayout" data-r="R18" data-card="${card}">Reset to defaults</button>
   </div>`;
 }
@@ -10226,6 +10701,8 @@ function onClick(e) {
   if (closest('.js-kpi-refine')) { e.stopPropagation(); const b = closest('.js-kpi-refine'); openWranglerForKpi(b.dataset.role, Number(b.dataset.i)); return; }
   // Rental Rules tab
   if (closest('.js-rule-set')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-rule-set'); if (o) { o.draftSettings = o.draftSettings || {}; o.draftSettings.rentalRules = o.draftSettings.rentalRules || { ...((state.settings && state.settings.rentalRules) || {}) }; o.draftSettings.rentalRules[b.dataset.rule] = b.dataset.val === 'required' ? 'required' : 'off'; renderOverlay(); } return; }
+  // Layout & Footers tab
+  if (closest('.js-layout-footer')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-layout-footer'); if (o) { o.draftSettings = o.draftSettings || {}; o.draftSettings.layout = o.draftSettings.layout || { ...((state.settings && state.settings.layout) || {}) }; o.draftSettings.layout.footers = { ...(o.draftSettings.layout.footers || {}), [b.dataset.card]: b.dataset.val === 'off' ? 'off' : 'on' }; renderOverlay(); } return; }
   // Custom Fields tab
   if (closest('.js-cf-entity')) { e.stopPropagation(); const o = state.overlay; if (o) { o.cfEntity = closest('.js-cf-entity').dataset.ent; renderOverlay(); } return; }
   if (closest('.js-cf-type')) { e.stopPropagation(); const o = state.overlay; if (o) { o.cfDraft = { ...(o.cfDraft || { label: '', type: 'text', required: false }), type: closest('.js-cf-type').dataset.type }; renderOverlay(); } return; }
@@ -10431,7 +10908,7 @@ function onClick(e) {
   if (closest('.js-bv-insrow')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview') { o.extraRows = o.extraRows || []; o.extraRows.push({ id: 'xr' + (++o.seq), pos: Number(closest('.js-bv-insrow').dataset.pos), cells: {} }); renderOverlay(); } return; }
   if (closest('.js-bv-rmrow')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview') { const id = closest('.js-bv-rmrow').dataset.row; o.extraRows = (o.extraRows || []).filter((er) => er.id !== id); renderOverlay(); } return; }
   if (closest('.js-bv-customize')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview') { o.customize = !o.customize; renderOverlay(); } return; }
-  if (closest('.js-bv-resetlayout')) { e.stopPropagation(); const card = closest('.js-bv-resetlayout').dataset.card; saveListLayout(card, null); render(); renderOverlay(); return; }
+  if (closest('.js-bv-resetlayout')) { e.stopPropagation(); const card = closest('.js-bv-resetlayout').dataset.card; saveListLayout(card, null); saveListTotals(card, null); render(); renderOverlay(); return; }
   if (closest('.js-new-cust-search')) { e.stopPropagation(); const cs = activeSession().cards.customers; return startNewCustomer(parseCustomerSearch(cs.search)); }
   if (closest('.js-new-unit-search')) { e.stopPropagation(); return quickAddUnitFromSearch(activeSession().cards.units.search); }
   if (closest('.js-new-cat-search')) { e.stopPropagation(); return quickAddCategoryFromSearch(activeSession().cards.categories.search); }
@@ -10657,6 +11134,17 @@ function onClick(e) {
   if (closest('.js-addview')) { if (!adminUnlocked()) { document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return; } const b = closest('.js-addview'); const card = b.dataset.card; const cs = activeSession().cards[card]; const search = (cs.search || '').trim(); const terms = (cs.filterTerms || []).map((t) => ({ ...t })); const suggested = viewLabel(search, terms); const name = (typeof prompt === 'function' ? prompt('Name this view:', suggested) : suggested); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); if (name && name.trim()) { const views = loadViews(card); if (!views.some((v) => v.name.toLowerCase() === name.trim().toLowerCase())) { views.push({ name: name.trim(), search, terms }); saveViews(card, views); } } render(); return; }
   if (closest('.js-sortfield')) { const b = closest('.js-sortfield'); const cs = activeSession().cards[b.dataset.card]; const f = SORT_FIELDS[b.dataset.card].find((x) => x.field === b.dataset.field); if (f) { cs.sort = { ...f }; saveSort(b.dataset.card, cs.sort); } document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); render(); return; }
   if (closest('.js-sortdir')) { const card = closest('.js-sortdir').dataset.card; const cs = activeSession().cards[card]; cs.sort.dir = cs.sort.dir === 'asc' ? 'desc' : 'asc'; saveSort(card, cs.sort); render(); return; }
+
+  // footer-totals badge → filter the list to that value (click the active chip to clear)
+  if (closest('.js-tot-chip')) {
+    const b = closest('.js-tot-chip'); const card = b.dataset.totCard; const cs = activeSession().cards[card];
+    if (cs) {
+      if (cs.mode === 'standard') { cs.mode = 'list'; cs.recId = null; cs.recType = null; }   // footers show the filtered list, not a record detail
+      addColFilter(card, b.dataset.totCol, b.dataset.totVal);   // A1 — route into the card's search bar as a removable, exact-match pill
+    }
+    return;
+  }
+  if (closest('.js-clear-totfilter')) { e.stopPropagation(); const cs = activeSession().cards[closest('.js-clear-totfilter').dataset.card]; if (cs) cs.totalFilter = null; render(); return; }
 
   // inline edit (click a value → input)
   if (closest('.inline-edit')) { e.stopPropagation(); const _ie = closest('.inline-edit'); if (_ie.dataset.admin === '1' && !adminUnlocked()) return requireAdmin('Categories and pricing are Admin-only.', () => startInlineEdit(_ie)); return startInlineEdit(_ie); }
@@ -11597,6 +12085,17 @@ function onChange(e) {
     const nameKey = (CARD_COLUMNS[card] || [])[0]?.key;   // Name stays as the locked title
     if (nameKey && !layout.row1.includes(nameKey)) layout.row1.unshift(nameKey);
     saveListLayout(card, layout);
+    render(); renderOverlay();
+    return;
+  }
+  // Board View "Card totals" picker → toggle a column in/out of the footer roll-up.
+  if (e.target.classList.contains('js-bv-tot')) {
+    const card = e.target.dataset.card, col = e.target.dataset.col;
+    const aggKeys = (CARD_COLUMNS[card] || []).filter(isAggCol).map((c) => c.key);
+    let sel = loadListTotals(card); sel = (sel ? sel.slice() : aggKeys.slice());   // start from "all"
+    if (e.target.checked) { if (!sel.includes(col)) sel.push(col); }
+    else { const i = sel.indexOf(col); if (i >= 0) sel.splice(i, 1); }
+    saveListTotals(card, sel);
     render(); renderOverlay();
     return;
   }
@@ -12706,17 +13205,12 @@ function openWinPicker(rentalId) {
   if (!r.startTime) r.startTime = nowHourLabel();   // default to the current hour (user spec)
   state.winpicker = { rentalId, monthISO: firstOfMonthISO(r.startDate || TODAY_ISO), anchor: null };
   if (rentalFragile(r)) state.winpicker.staged = { rentalId, startDate: r.startDate || '', endDate: r.endDate || '', startTime: r.startTime || '' };
-  // Task C / item #9 — frame the yard on open: reveal Categories (list view) in the
-  // left column only when the Rental Standard View is open with dates already set.
-  // If opened from a list-view mini-calendar, skip the column pivot (Jac: "Both, but
-  // only trigger the category path if the Rental Standard View is open with dates selected").
+  // Task C — frame the yard on open: reveal Categories (list view) in the left column
+  // so the operator can browse what's free for this window. If the rental already has a
+  // window, light the availability lens right away (live rentals only — staged commits on Save).
   const s = activeSession();
-  const rs = s.cards.rentals;
-  if (rs && rs.mode === 'standard' && rs.recId === rentalId && r.startDate && r.endDate) {
-    if (s.cols) s.cols.left = 'categories';
-    const cc = s.cards.categories; if (cc) { cc.mode = 'list'; cc.recId = null; cc.listLimit = undefined; }
-  }
-  // Availability lens fires for both trigger paths whenever dates exist.
+  if (s.cols) s.cols.left = 'categories';
+  const cc = s.cards.categories; if (cc) { cc.mode = 'list'; cc.recId = null; cc.listLimit = undefined; }
   if (!rentalFragile(r) && r.startDate && r.endDate) enterAvailabilitySearch(r);
   render();
 }
@@ -14089,7 +14583,7 @@ function exposeTestApi() {
       latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore, wranglerRailLoad, wrOffloadChatImages, wrEvictChatBlobs, driveViewUrl, mergeWranglerRails,
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
-      companyRevenueGoal, companyName, companyTagline, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, setRole: (r) => { currentRole = r || ''; render(); },
+      companyRevenueGoal, companyName, companyTagline, rentalRuleBlock, dueForCustomer, footerHidden, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, setRole: (r) => { currentRole = r || ''; render(); },
       openCustomerForm, renderOverlay, render, cardComplete, cardCaptureState, cardHasSelfie, cardHasSignature, captureSelfie, captureSignature, __state: state };   // UI drivers for headless screenshot/e2e tests
 
   } catch (e) { /* no window (non-browser) */ }
