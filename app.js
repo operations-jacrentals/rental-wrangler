@@ -3340,8 +3340,9 @@ const ROWS = {
     const endHasTruck = ttype === 'Recovery' || ttype === 'Round-Trip';
     const endIcon = isSelf ? CARD_ICON.customers : (endHasTruck ? I.truck : '');
 
-    // ── 3-week dot calendar (last week · current week · next week) ───────────
-    // Week anchored to today's Sunday (US convention, getDay() 0 = Sun).
+    // ── 3-week dot calendar with the rental window THREADED through the dots ──
+    // (direction A): solid track = elapsed (start→today), faint = remaining
+    // (today→end). Week anchored to today's Sunday (US convention, getDay() 0 = Sun).
     const wd = TODAY.getDay();
     const thisSun = new Date(TODAY.getFullYear(), TODAY.getMonth(), TODAY.getDate() - wd);
     const lastSun = new Date(thisSun.getFullYear(), thisSun.getMonth(), thisSun.getDate() - 7);
@@ -3350,11 +3351,14 @@ const ROWS = {
       const d = new Date(lastSun.getFullYear(), lastSun.getMonth(), lastSun.getDate() + i);
       const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
       const isToday = iso === TODAY_ISO, isStart = iso === r.startDate, isEnd = iso === r.endDate;
+      const inWin = iso >= r.startDate && iso <= r.endDate;   // ISO compares chronologically
+      const elapsed = inWin && d <= TODAY;
       const cls = ['rcc-day', isToday && 'is-today', isStart && 'is-start', isEnd && 'is-end',
-        (!isToday && d < TODAY) && 'is-past'].filter(Boolean).join(' ');
+        inWin && 'is-win', inWin && (elapsed ? 'elapsed' : 'fut'),
+        (!isToday && !inWin && d < TODAY) && 'is-past'].filter(Boolean).join(' ');
       const time = isStart ? (r.startTime || '') : '';
       const icon = isStart ? startIcon : (isEnd ? endIcon : '');
-      dotCells.push(`<div class="${cls}"><span class="rcc-t">${esc(time)}</span><span class="rcc-dot">${icon}</span></div>`);
+      dotCells.push(`<div class="${cls}">${inWin ? '<span class="rcc-bar"></span>' : ''}<span class="rcc-t">${esc(time)}</span><span class="rcc-dot">${icon}</span></div>`);
     }
 
     return `<div class="rcc" style="--rcc-hl:var(--${stColor})">
