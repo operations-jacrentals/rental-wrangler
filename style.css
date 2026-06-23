@@ -15,8 +15,8 @@
 
   /* status colors (base = text/border tone, -bg = soft fill) */
   --green:#34d399;  --green-bg:rgba(52,211,153,.14);
-  --yellow:#f5c542; --yellow-bg:rgba(245,197,66,.14);
-  --red:#ff4242;    --red-bg:rgba(255,66,66,.18);   /* brighter, bolder (overdue / Failed) */
+  --yellow:#ffe000; --yellow-bg:rgba(255,224,0,.15);
+  --red:#ff1040;    --red-bg:rgba(255,16,64,.18);
   --blue:#5b9dff;   --blue-bg:rgba(91,157,255,.14);
   --navy:#6f8bdb;   --navy-bg:rgba(70,102,196,.18);
   --purple:#b07cf5; --purple-bg:rgba(176,124,245,.16);
@@ -2728,11 +2728,13 @@ body { font-variant-numeric: tabular-nums; }
 .ur { display: flex; align-items: center; gap: 9px; min-width: 0; padding: 8px 11px 8px 8px; border-left: 3px solid var(--ur-hl, var(--line)); }
 .ur-cat { flex: 0 0 auto; width: 22px; height: 22px; color: var(--txt-2); display: flex; align-items: center; justify-content: center; }
 .ur-cat svg { width: 19px; height: 19px; display: block; }
-.ur-id { flex: 1 1 auto; min-width: 0; display: flex; align-items: baseline; gap: 1px 8px; }
+.ur-id { flex: 1 1 auto; min-width: 0; display: flex; align-items: baseline; gap: 1px 8px; justify-content: flex-end; }
 .ur-name { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .6px; font-weight: 700; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; min-width: 0; }
 .ur-sub { font-size: 11.5px; color: var(--txt-2); white-space: nowrap; flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-/* two pill slots in a 2-column equal-width grid → every row's pills align to the same x-positions */
-.ur-pills { flex: 0 0 auto; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; min-width: 180px; }
+/* two pill slots in a 2-column equal-width grid → every row's pills align to the same x-positions.
+   Must use a FIXED width (not min-width) — fr units in an auto-sized flex child resolve per-column,
+   producing unequal widths. A definite width makes 1fr = exactly half. */
+.ur-pills { flex: 0 0 196px; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .ur-pill-slot { display: flex; align-items: center; justify-content: center; }
 .ur-pill-slot .pill { width: 100%; text-align: center; justify-content: center; }
 @container (max-width: 340px) {
