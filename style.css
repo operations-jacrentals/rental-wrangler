@@ -2660,7 +2660,7 @@ body { font-variant-numeric: tabular-nums; }
 .card[data-card="rentals"] .list .empty { grid-column: 1 / -1; }   /* +New Rental + empty states span both columns (and self-size, no tall track) */
 .row[data-card="rentals"] { padding: 0; display: flex; flex-direction: column; height: 172px; }
 .row[data-card="rentals"] .row-content { padding: 0; height: 100%; display: flex; flex-direction: column; }
-.rcc { flex: 1; display: flex; flex-direction: column; gap: 5px; padding: 8px 10px 7px; border-left: 3px solid var(--rcc-hl, var(--line)); overflow: hidden; }
+.rcc { flex: 1; display: flex; flex-direction: column; gap: 5px; padding: 8px 10px 7px; border: 2px solid var(--rcc-hl, var(--line)); border-radius: 11px; overflow: hidden; }
 /* HEADER — row 1: unit names (LEFT, colored by inspection) + status pill pinned RIGHT;
    row 2: customer + balance (Jac 2026-06-23) */
 .rcc-head { display: flex; flex-direction: column; gap: 4px; flex-shrink: 0; }
