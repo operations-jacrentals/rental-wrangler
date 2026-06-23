@@ -4029,7 +4029,7 @@ const ROWS = {
       <div class="ur-pills"><div class="ur-pill-slot">${unitRentalInspPill(u)}</div><div class="ur-pill-slot">${unitWoSoPill(u)}</div></div>
       <div class="ur-id">
         <span class="ur-sub">${sub}</span>
-        <span class="r-title ur-name" style="color:${nameColor}">${esc(u.name)}</span>
+        <span class="r-title ur-name${hl === 'red' ? ' ec-red' : ''}" style="color:${nameColor}">${esc(u.name)}</span>
       </div>
       <span class="ur-cat">${categoryIconFor(cat && cat.name)}</span>
     </div>`;
@@ -6570,12 +6570,9 @@ function headerEl() {
       <span class="ring-wrap">${ring3SVG(vals, color, { size: 64 })}</span>
       <span class="ring-label">${esc(label)}</span>
     </button>`;
-  // The blurred rings wear a "Coming 2026" plate (last child of .kpis) — taps open the roadmap.
+  // "Coming 2026" floats free over the blurred rings (no card) — taps open the roadmap.
   const comingPlate = `<button class="coming-plate js-roadmap" data-tip="What's coming in 2026" aria-label="Coming 2026 — open the roadmap">
-      <span class="cp-haz" aria-hidden="true"></span>
-      <span class="cp-rivet tl"></span><span class="cp-rivet tr"></span><span class="cp-rivet bl"></span><span class="cp-rivet br"></span>
       <span class="cp-stamp">Coming <b>2026</b></span>
-      <span class="cp-sub">Round up what we’re wrangling</span>
     </button>`;
   const rings = ROLES.map((role) => roleRing(role.id, role.label, kpiFor(role.id), role.color)).join('') + comingPlate;
   // §M1 — phone-only TOP TOOLBAR: the full tool set opened up across the top of the screen
