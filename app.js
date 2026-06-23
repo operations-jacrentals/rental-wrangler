@@ -12663,7 +12663,9 @@ function addCustomLine(invoiceId, label, amount) {
   inv.lineItems.push({ kind: 'custom', ref: null, lid: lineLid(), label: label || 'Custom', amount });
   logAction(inv, `Added line: ${label || 'Custom'} (${money(amount)})`);
   toast(`Custom line added (${money(amount)}).`);
-  const session = activeSession(); if (session.anchor) setAnchor(session, session.anchor.card, session.anchor.recId, session.anchor.recType);
+  // plain render() — a custom line (kind 'custom', ref null) adds no cascade edge, so it
+  // must NOT re-anchor; setAnchor() here collapsed the open invoice back to the list (it
+  // reset every non-anchored card's recId), kicking you off the invoice. Matches addPartToWO.
   render();
 }
 /* Add a part / labor line to a work order; advances the WO phase sensibly. */
