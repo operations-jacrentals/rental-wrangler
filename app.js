@@ -3419,10 +3419,18 @@ const ROWS = {
       else if (t.balance > 0) { bal = money(t.balance); balCls = parseISO(inv.dueDate) > TODAY ? 'due' : 'overdue'; }
     }
 
-    // ── HEADER carries every value now (footer retired, Jac 2026-06-23): row 1 =
-    //    status pill + comma-separated unit names; row 2 = customer name + balance ──
+    // ── HEADER: row 1 = unit names (colored by inspection status) + status pill pinned RIGHT;
+    //           row 2 = customer name + balance (Jac 2026-06-23) ──
+    // Unit names tinted by their inspection status so color signal is immediate on hover.
+    const unitNameHtml = rentalUnits(r).map((eu) => {
+      const unit = IDX.unit.get(eu.unitId);
+      if (!unit) return '';
+      const insp = unit.inspectionStatus;
+      const ic = insp === 'Failed' ? 'var(--red)' : insp === 'Not Ready' ? 'var(--yellow)' : insp === 'Passed' ? 'var(--green)' : 'var(--txt)';
+      return `<span class="rcc-uname" style="color:${ic}" data-tip="${esc(unit.name)}: ${esc(insp || 'Unknown')}">${esc(unit.name)}</span>`;
+    }).filter(Boolean).join('<span class="rcc-usep">, </span>') || (units ? `<span class="rcc-uname">${esc(units)}</span>` : '');
     const headHtml = `<div class="rcc-head">
-      <div class="rcc-h1">${stPill}${units ? `<span class="rcc-units">${esc(units)}</span>` : ''}</div>
+      <div class="rcc-h1">${unitNameHtml ? `<span class="rcc-units">${unitNameHtml}</span>` : ''}${stPill}</div>
       <div class="rcc-h2"><span class="rcc-cust">${cust ? esc(cust.name) : ''}</span>${
         bal ? `<span class="rcc-bal ${balCls}">${esc(bal)}</span>` : (!(s && e) ? '<span class="rcc-bal rcc-set">Set window</span>' : '')
       }</div>
@@ -3455,15 +3463,21 @@ const ROWS = {
       const isToday = iso === TODAY_ISO, isStart = iso === r.startDate, isEnd = iso === r.endDate;
       const inWin = iso >= r.startDate && iso <= r.endDate;   // ISO compares chronologically
       const elapsed = inWin && d <= TODAY;
+      // month-1st: replace dot with large month abbrev — only on non-start/end cells
+      const isMon1st = !isStart && !isEnd && d.getDate() === 1;
       const cls = ['rcc-day', isToday && 'is-today', isStart && 'is-start', isEnd && 'is-end',
         inWin && 'is-win', inWin && (elapsed ? 'elapsed' : 'fut'),
-        (!isToday && !inWin && d < TODAY) && 'is-past'].filter(Boolean).join(' ');
-      const time = isStart ? (r.startTime || '') : '';
+        (!isToday && !inWin && d < TODAY) && 'is-past',
+        isMon1st && 'is-mon1st'].filter(Boolean).join(' ');
+      // start time above start dot; end time above end dot
+      const time = isStart ? (r.startTime || '') : (isEnd ? (r.endTime || '') : '');
       const icon = isStart ? startIcon : (isEnd ? endIcon : '');
-      // ONLY start & end show a date number; a month's 1st shows its 3-letter abbrev instead.
-      const label = (isStart || isEnd) ? String(d.getDate()) : (d.getDate() === 1 ? MON[d.getMonth()] : '');
-      const isMon = label && !(isStart || isEnd);
-      dotCells.push(`<div class="${cls}">${inWin ? '<span class="rcc-bar"></span>' : ''}${time ? `<span class="rcc-t">${esc(time)}</span>` : ''}<span class="rcc-dot">${icon}</span>${label ? `<span class="rcc-n${isMon ? ' mon' : ''}">${esc(label)}</span>` : ''}</div>`);
+      // ONLY start & end show a date number; mon-1st shows 3-letter abbrev (no dot); others blank
+      const label = (isStart || isEnd) ? String(d.getDate()) : (isMon1st ? MON[d.getMonth()] : '');
+      const labelCls = isMon1st ? ' mon1st' : '';
+      // mon-1st skips the dot entirely (replaced by the big month text)
+      const dotHtml = isMon1st ? '' : `<span class="rcc-dot">${icon}</span>`;
+      dotCells.push(`<div class="${cls}">${inWin ? '<span class="rcc-bar"></span>' : ''}${time ? `<span class="rcc-t">${esc(time)}</span>` : ''}${dotHtml}${label ? `<span class="rcc-n${labelCls}">${esc(label)}</span>` : ''}</div>`);
     }
     const dowHtml = ['M', 'T', 'W', 'T', 'F'].map((l) => `<span>${l}</span>`).join('');
 
@@ -3502,50 +3516,55 @@ const ROWS = {
       .filter((s) => s && s !== 'N/A').sort((a, b) => (FUNNEL_RANK[b] || 0) - (FUNNEL_RANK[a] || 0))[0];
     const funnelHtml = topStage ? statusPill('funnelStage', topStage) : '';
 
-    // ONE left-packed row (Jac 2026-06-23): name · phone·type · pay-$ · funnel — no
-    // right anchor (the old layout left a dead gap mid-row). On a narrow card the
-    // phone·type reflows under the name (container query).
+    // Row: name · phone·type · pay-$ ← LEFT  ·  [acct pill][funnel pill] → RIGHT.
+    // Both status pills shown always; equal-width grid slots; margin-left:auto pushes them right.
+    const acctPill = statusPill('customerAccountType', c.accountType || 'Non-Business');
     return `<div class="cr">
       <div class="cr-id">
         <span class="r-title cr-name" style="color:${nameColor}">${esc(c.name)}</span>
         ${sub ? `<span class="cr-sub">${sub}</span>` : ''}
       </div>
-      ${payHtml}${funnelHtml}
+      ${payHtml}
+      <div class="cr-statuses">
+        <div class="cr-pill-slot">${acctPill}</div>
+        <div class="cr-pill-slot">${funnelHtml}</div>
+      </div>
     </div>`;
   },
 
   units: (u) => {
-    // 5 elements (Jac): [category icon] · [name / category·HRS] · [rental+insp pill] ·
-    // [WO+SO pill]. Left border = the unit's most-severe flag color. Category reflows
-    // below the name on narrow widths (flex-wrap).
+    // Layout (Jac 2026-06-23): [pills LEFT] · [cat icon] · [name / category·HRS RIGHT]
+    // Pills first → user's eye aligns status signal near the rental calendar center.
     const cat = IDX.category.get(u.categoryId);
     const hl = getEntityColor('units', u);
     // NAME tinted to the unit's flag color (Jac 2026-06-23): r/y/g lead in-color, gray reads muted.
     const nameColor = (hl === 'red' || hl === 'yellow' || hl === 'green') ? `var(--${hl})` : hl === 'gray' ? 'var(--txt-3)' : 'var(--txt)';
     const sub = [cat ? esc(cat.name) : '', `${num(u.currentHours)} HRS`].filter(Boolean).join(' · ');
     return `<div class="ur" style="--ur-hl:var(--${hl})">
+      <div class="ur-pills"><div class="ur-pill-slot">${unitRentalInspPill(u)}</div><div class="ur-pill-slot">${unitWoSoPill(u)}</div></div>
       <span class="ur-cat">${categoryIconFor(cat && cat.name)}</span>
       <div class="ur-id">
         <span class="r-title ur-name" style="color:${nameColor}">${esc(u.name)}</span>
         <span class="ur-sub">${sub}</span>
       </div>
-      <div class="ur-pills">${unitRentalInspPill(u)}${unitWoSoPill(u)}</div>
     </div>`;
   },
 
   categories: (c) => {
     const mix = categoryMix(c.categoryId);
     const st = categoryStats(c);
-    // §10: under a rental window, lead with how many units are available for it
-    // (a category with zero available shows a red "0" pill).
+    // §10: under a rental window, lead with how many units are available for it.
     let availLead = '';
     if (availWin) { const n = categoryAvailableCount(c.categoryId, availWin.start, availWin.end, availWin.selfId); availLead = n > 0 ? badge(`${n} Available`, 'green') : badge('0 Available', 'red'); }
-    // §12.3 Row 1 = name · 1-Day · 7-Day · 4-Week · Avg Hours; Row 2 = mix counts · ROI
-    return `<div class="row-1"><span class="r-title">${esc(c.name)}</span><span class="r-fields">
-        <span>${money(c.rate1Day)}/1d</span><span>${money(c.rate7Day)}/7d</span><span>${money(c.rate4Wk)}/4wk</span><span class="r-key">${num(st.avgHours)} HRS</span></span></div>
-      <div class="row-2">
-        ${availLead}${mix.Ready ? badge(`${mix.Ready} Ready`, 'green') : ''}${mix['Not Ready'] ? badge(`${mix['Not Ready']} Not Ready`, 'yellow') : ''}${mix.Failed ? badge(`${mix.Failed} Failed`, 'red') : ''}${st.roi != null ? badge(`${st.roi}% ROI`, st.roi >= 0 ? 'green' : 'red') : ''}
-      </div>`;
+    // Layout (Jac 2026-06-23): [status badges LEFT] · [name/rates RIGHT] — mirrors the units row swap.
+    const badges = [availLead, mix.Ready ? badge(`${mix.Ready} Ready`, 'green') : '', mix['Not Ready'] ? badge(`${mix['Not Ready']} Not Ready`, 'yellow') : '', mix.Failed ? badge(`${mix.Failed} Failed`, 'red') : '', st.roi != null ? badge(`${st.roi}% ROI`, st.roi >= 0 ? 'green' : 'red') : ''].join('');
+    return `<div class="catr">
+      <div class="catr-pills">${badges}</div>
+      <div class="catr-id">
+        <span class="r-title">${esc(c.name)}</span>
+        <span class="catr-sub">${money(c.rate1Day)}/1d · ${num(st.avgHours)} HRS</span>
+      </div>
+    </div>`;
   },
 
   invoices: (i) => {
@@ -3789,15 +3808,31 @@ function listTotalsEl(card, rows, session) {
   }
   if (!chips.length) return null;
   const node = el('div', 'list-totals');
-  // Rentals footer = two rows (Jac 2026-06-12): BILLING (price sum + invoice
-  // statuses) on row 1, RENTAL STATUS (registry order) on row 2.
-  if (card === 'rentals') {
-    const stat = chips.filter((c) => c.k === 'status').map((c) => c.html).join('');
-    const bill = chips.filter((c) => c.k !== 'status').map((c) => c.html).join('');
-    node.classList.add('two-row');
-    node.innerHTML = `${bill ? `<div class="tot-row">${bill}</div>` : ''}${stat ? `<div class="tot-row">${stat}</div>` : ''}`;
+  // Footer sections (Jac 2026-06-23): group chips into labeled sections so Fleet · Rental ·
+  // Shop (units), Billing · Status (rentals), and Type · Finance (customers) read as one shop.
+  const totSec = (label, ks) => { const h = chips.filter((c) => ks.has(c.k)).map((c) => c.html).join(''); return h ? `<span class="tot-sec"><span class="tot-label">${label}</span>${h}</span>` : ''; };
+  if (card === 'units') {
+    node.classList.add('sectioned');
+    node.innerHTML = [
+      totSec('Fleet', new Set(['inspection', 'fleet', 'hours'])),
+      totSec('Rental', new Set(['rental'])),
+      totSec('Shop', new Set(['service', 'wash', '__wo'])),
+    ].filter(Boolean).join('') || chips.map((c) => c.html).join('');
+  } else if (card === 'rentals') {
+    node.classList.add('sectioned');
+    node.innerHTML = [
+      totSec('Billing', new Set(['invoice', 'price'])),
+      totSec('Status', new Set(['status', 'window', 'customer'])),
+    ].filter(Boolean).join('') || chips.map((c) => c.html).join('');
+  } else if (card === 'customers') {
+    node.classList.add('sectioned');
+    node.innerHTML = [
+      totSec('Type', new Set(['account'])),
+      totSec('Finance', new Set(['pay', 'card'])),
+      totSec('Activity', new Set(['rentals', 'email', 'company'])),
+    ].filter(Boolean).join('') || chips.map((c) => c.html).join('');
   } else {
-    node.innerHTML = chips.map((c) => c.html).join('');   // v2: total count dropped (Jac: "not helpful")
+    node.innerHTML = chips.map((c) => c.html).join('');
   }
   return node;
 }

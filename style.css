@@ -2655,10 +2655,13 @@ body { font-variant-numeric: tabular-nums; }
 .row[data-card="rentals"] { padding: 0; display: flex; flex-direction: column; height: 172px; }
 .row[data-card="rentals"] .row-content { padding: 0; height: 100%; display: flex; flex-direction: column; }
 .rcc { flex: 1; display: flex; flex-direction: column; gap: 5px; padding: 8px 10px 7px; border-left: 3px solid var(--rcc-hl, var(--line)); overflow: hidden; }
-/* HEADER — row 1: status pill + unit names · row 2: customer + balance (Jac 2026-06-23) */
+/* HEADER — row 1: unit names (LEFT, colored by inspection) + status pill pinned RIGHT;
+   row 2: customer + balance (Jac 2026-06-23) */
 .rcc-head { display: flex; flex-direction: column; gap: 4px; flex-shrink: 0; }
-.rcc-h1 { display: flex; align-items: center; gap: 7px; min-width: 0; }
-.rcc-units { font-size: 12px; font-weight: 700; color: var(--txt); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.rcc-h1 { display: flex; align-items: center; gap: 7px; min-width: 0; justify-content: space-between; }
+.rcc-units { font-size: 12px; font-weight: 700; color: var(--txt); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; display: flex; align-items: center; gap: 0; }
+.rcc-uname { font-weight: 700; font-size: 12px; white-space: nowrap; }
+.rcc-usep { color: var(--txt-3); font-size: 11px; }
 .rcc-h2 { display: flex; align-items: baseline; justify-content: space-between; gap: 7px; min-width: 0; }
 .rcc-cust { font-size: 12px; font-weight: 600; color: var(--txt-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
 .rcc-bal { font-size: 12.5px; font-weight: 800; white-space: nowrap; flex-shrink: 0; font-variant-numeric: tabular-nums; }
@@ -2678,6 +2681,7 @@ body { font-variant-numeric: tabular-nums; }
    thread, breaking at week edges). */
 .rcc-day { position: relative; display: flex; align-items: center; justify-content: center; min-width: 0; height: 26px; }
 .rcc-t { position: absolute; top: 0; left: 50%; transform: translateX(-50%); font-size: 9px; font-weight: 700; line-height: 10px; color: var(--txt-2); text-align: center; white-space: nowrap; font-family: 'Saira Condensed', system-ui, sans-serif; letter-spacing: .2px; z-index: 3; }
+.rcc-day.is-start .rcc-t, .rcc-day.is-end .rcc-t { font-size: 11px; font-weight: 800; color: var(--txt); }
 .rcc-n { position: absolute; bottom: 0; left: 50%; transform: translateX(-50%); font-size: 10px; font-weight: 800; line-height: 10px; color: var(--txt); text-align: center; white-space: nowrap; z-index: 3; font-variant-numeric: tabular-nums; }
 .rcc-n.mon { color: var(--txt-3); font-weight: 700; font-family: 'Saira Condensed', system-ui, sans-serif; letter-spacing: .4px; }
 .rcc-dot { position: relative; z-index: 2; width: 11px; height: 11px; border-radius: 50%; background: var(--line); display: flex; align-items: center; justify-content: center; color: transparent; }
@@ -2687,11 +2691,16 @@ body { font-variant-numeric: tabular-nums; }
 .rcc-day.fut .rcc-bar { background: var(--rcc-hl, var(--green)); opacity: .3; }
 .rcc-day.is-start .rcc-bar { left: 50%; border-radius: 2px 0 0 2px; }
 .rcc-day.is-end .rcc-bar { right: 50%; border-radius: 0 2px 2px 0; }
-.rcc-day.is-past .rcc-dot { background: var(--panel); opacity: .4; }
+.rcc-day.is-past .rcc-dot { background: var(--line); opacity: 1; }
 .rcc-day.is-win .rcc-dot { background: var(--rcc-hl, var(--green)); opacity: .7; }
-.rcc-day.is-today .rcc-dot { width: 15px; height: 15px; background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); opacity: 1; }
-.rcc-day.is-start .rcc-dot, .rcc-day.is-end .rcc-dot { width: 17px; height: 17px; background: var(--rcc-hl, var(--green)); color: var(--card); opacity: 1; }
-.rcc-day.is-start .rcc-dot svg, .rcc-day.is-end .rcc-dot svg { width: 11px; height: 11px; }
+/* today = orange RING (not fill) so the dot doesn't compete with start/end markers */
+.rcc-day.is-today .rcc-dot { width: 15px; height: 15px; background: transparent; border: 2px solid var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); opacity: 1; }
+/* start/end: enlarged for legibility — bigger dot, bigger icon */
+.rcc-day.is-start .rcc-dot, .rcc-day.is-end .rcc-dot { width: 24px; height: 24px; background: var(--rcc-hl, var(--green)); color: var(--card); opacity: 1; }
+.rcc-day.is-start .rcc-dot svg, .rcc-day.is-end .rcc-dot svg { width: 15px; height: 15px; }
+/* month-1st: no dot, just the big month abbrev */
+.rcc-day.is-mon1st .rcc-dot { display: none; }
+.rcc-n.mon1st { font-size: 13px; font-weight: 800; color: var(--txt-2); font-family: 'Saira Condensed', system-ui, sans-serif; letter-spacing: .6px; bottom: 50%; transform: translate(-50%, 50%); }
 
 /* ── CUSTOMER ROW (cr): ONE left-packed line — name · phone·type · pay-$ · funnel.
    Half-height (Jac 2026-06-23): tight vertical padding; phone·type reflows UNDER the
@@ -2711,23 +2720,46 @@ body { font-variant-numeric: tabular-nums; }
   .cr-id { flex-direction: column; align-items: flex-start; gap: 1px; }
 }
 
-/* ── UNIT ROW (ur): [cat icon] · [name · category·HRS] · rental+insp · WO+SO.
-   Half-height (Jac 2026-06-23): drop the doubled row+ur padding to one tight band;
-   name·sub ride ONE line, reflowing to stacked only when the card gets narrow. ── */
+/* ── UNIT ROW (ur): [status pills LEFT] · [cat icon] · [name · category·HRS RIGHT].
+   Pills first → eye aligns status near the rental calendar center (Jac 2026-06-23).
+   Equal-width pill slots so all rows share the same column rhythm. ── */
 .row[data-card="units"] { padding: 0; }
 .row[data-card="units"] .row-content { padding: 0; }
-.ur { display: flex; align-items: center; gap: 9px; min-width: 0; padding: 5px 11px 5px 8px; border-left: 3px solid var(--ur-hl, var(--line)); }
+.ur { display: flex; align-items: center; gap: 9px; min-width: 0; padding: 8px 11px 8px 8px; border-left: 3px solid var(--ur-hl, var(--line)); }
 .ur-cat { flex: 0 0 auto; width: 22px; height: 22px; color: var(--txt-2); display: flex; align-items: center; justify-content: center; }
 .ur-cat svg { width: 19px; height: 19px; display: block; }
 .ur-id { flex: 1 1 auto; min-width: 0; display: flex; align-items: baseline; gap: 1px 8px; }
 .ur-name { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .6px; font-weight: 700; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; min-width: 0; }
 .ur-sub { font-size: 11.5px; color: var(--txt-2); white-space: nowrap; flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.ur-pills { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; }
+/* two pill slots in a 2-column equal-width grid → every row's pills align to the same x-positions */
+.ur-pills { flex: 0 0 auto; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; min-width: 180px; }
+.ur-pill-slot { display: flex; align-items: center; justify-content: center; }
+.ur-pill-slot .pill { width: 100%; text-align: center; justify-content: center; }
 @container (max-width: 340px) {
   .ur-id { flex-direction: column; align-items: flex-start; gap: 1px; }
-  .ur-pills { flex-direction: column; align-items: flex-end; gap: 4px; }   /* stack the two pills so neither clips */
+  .ur-pills { grid-template-columns: 1fr; min-width: 90px; }
 }
-/* rentals footer: Billing row over Rental-Status row (Jac) */
+/* ── CATEGORY ROW (catr): [status badges LEFT] · [name/rate RIGHT] — mirrors units swap. ── */
+.catr { display: flex; align-items: center; gap: 9px; min-width: 0; padding: 8px 11px 8px 10px; }
+.catr-pills { flex: 0 0 auto; display: flex; flex-wrap: wrap; align-items: center; gap: 5px; min-width: 80px; }
+.catr-id { flex: 1 1 auto; min-width: 0; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.catr-sub { font-size: 11.5px; color: var(--txt-2); white-space: nowrap; }
+
+/* ── CUSTOMER ROW (cr-statuses): account-type + funnel, equal-width, right-pinned. ── */
+.cr-statuses { flex: 0 0 auto; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-left: auto; min-width: 160px; }
+.cr-pill-slot { display: flex; align-items: center; justify-content: center; }
+.cr-pill-slot .pill { width: 100%; text-align: center; justify-content: center; }
+@container (max-width: 340px) {
+  .cr-statuses { grid-template-columns: 1fr; min-width: 80px; }
+}
+
+/* ── FOOTER SECTIONS: labeled chip groups separated by a rule (units/rentals/customers). ── */
+.list-totals.sectioned { gap: 0; padding: 6px 0; }
+.tot-sec { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 3px 12px; border-right: 1px solid var(--line); }
+.tot-sec:last-child { border-right: none; }
+.tot-label { font-size: 9px; font-weight: 700; font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .9px; color: var(--txt-3); margin-right: 2px; flex: 0 0 auto; }
+
+/* rentals footer: Billing row over Rental-Status row (Jac) — kept for non-sectioned fallback */
 .list-totals.two-row { flex-direction: column; align-items: stretch; gap: 4px; }
 .list-totals.two-row .tot-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 
