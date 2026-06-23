@@ -2708,6 +2708,9 @@ function inspItemUnanswered(it, val) {
 const COMPANY_DEFAULTS = { name: 'JacRentals', tagline: 'Heavy-Equipment Rental · Sulphur, LA', revenueGoal: (CFG.REVENUE_GOAL_DEFAULT || 150000), maxNetDays: 30 };
 const companyName = () => (companyCfg().name || '').trim() || COMPANY_DEFAULTS.name;
 const companyTagline = () => (companyCfg().tagline || '').trim() || COMPANY_DEFAULTS.tagline;
+// Yard phone — flows into texted quotes ("reply or call us at …"). No shipped default
+// (never fabricate a real number into a public repo); Office sets it in Settings → Company.
+const companyPhone = () => (companyCfg().phone || '').trim();
 // #293 — Membership Agreement PRINT template (Settings → Company). Falls back to the shipped
 // legal text when blank. Supports {{customerName}}/{{date}}/{{membershipType}}, filled in
 // per-customer at print time. A HANDOUT artifact only — it does NOT touch the signed-agreement
@@ -2796,6 +2799,8 @@ function settingsCompanyPane(o) {
     <div class="co-form">
       <label class="co-fld"><span class="kpi-cap">COMPANY NAME</span><input class="co-in js-co-field" data-f="name" value="${v('name')}" placeholder="${ph('name')}" autocomplete="off"/></label>
       <label class="co-fld"><span class="kpi-cap">TAGLINE / SUBLINE</span><input class="co-in js-co-field" data-f="tagline" value="${v('tagline')}" placeholder="${ph('tagline')}" autocomplete="off"/></label>
+      <label class="co-fld"><span class="kpi-cap">YARD PHONE</span><input class="co-in js-co-field" data-f="phone" value="${v('phone')}" placeholder="(337) 000-0000" inputmode="tel" autocomplete="off"/></label>
+      <p class="set-note">Used when you <strong>Text</strong> a quote to a customer ("reply or call us at …"). Leave blank to drop the number from the message.</p>
       <label class="co-fld co-fld-goal"><span class="kpi-cap">MONTHLY REVENUE GOAL</span><span class="co-goal-wrap"><span class="co-goal-$">$</span><input class="co-in co-in-num js-co-field" data-f="revenueGoal" value="${co.revenueGoal != null ? esc(co.revenueGoal) : ''}" placeholder="${COMPANY_DEFAULTS.revenueGoal}" inputmode="numeric" autocomplete="off"/></span></label>
       <p class="set-note">Feeds the Sales <strong>Revenue Goal</strong> ring — currently <strong>${esc(money(goal))}/mo</strong>. The ring fills as this month's rental revenue climbs toward it.</p>
       <label class="co-fld co-fld-goal"><span class="kpi-cap">MAX PAYMENT TERMS (NET DAYS)</span><span class="co-goal-wrap"><input class="co-in co-in-num js-co-field" data-f="maxNetDays" value="${co.maxNetDays != null ? esc(co.maxNetDays) : ''}" placeholder="${COMPANY_DEFAULTS.maxNetDays}" inputmode="numeric" autocomplete="off"/><span class="co-goal-suffix">days</span></span></label>
@@ -3479,9 +3484,11 @@ function runCtxAction(act) {
 function actionPill(kind, label, { js, data, h } = {}) {
   return `<button class="pill c-${kind}${js ? ' ' + js : ''}" data-r="R17"${dataAttrs(data)}${h ? ` style="height:${h}px;font-size:11px"` : ''}>${esc(label)}</button>`;
 }
-/** R18: the ONE quiet/neutral action — Cancel, Close, secondary tools. */
-function ghostPill(label, { js, data } = {}) {
-  return `<button class="pill ghost${js ? ' ' + js : ''}" data-r="R18"${dataAttrs(data)}>${esc(label)}</button>`;
+/** R18: the ONE quiet/neutral action — Cancel, Close, secondary tools.
+ *  `disabled` greys it (is-disabled) and drops the js hook so it's inert; pair with `tip`
+ *  (R23 data-tip) to explain why (e.g. "No email on file"). */
+function ghostPill(label, { js, data, tip, disabled } = {}) {
+  return `<button class="pill ghost${disabled ? ' is-disabled' : ''}${js && !disabled ? ' ' + js : ''}" data-r="R18"${dataAttrs(data)}${tip ? ` data-tip="${esc(tip)}"` : ''}${disabled ? ' aria-disabled="true"' : ''}>${esc(label)}</button>`;
 }
 /** The popup PLATE — every overlay's shell, so they all read as one bolted data-plate.
  *  Hazard cap (red `danger` variant for abort/destroy) + corner rivets + stamped Saira
@@ -5562,7 +5569,7 @@ const DETAIL = {
           ${ledgerRow(`Due${i.dueDate ? ' · ' + fmtShortDate(i.dueDate) : ''}`, money2(t.balance), 'due')}
           ${!locked ? `<div class="kv" style="justify-content:flex-end;align-items:center;gap:7px;margin-top:2px"><span class="derived" style="font-size:11px">Set due date</span><input type="date" class="js-due-date" data-rec="${esc(i.invoiceId)}" value="${esc(i.dueDate || '')}" style="font-size:11px;color:var(--txt);background:var(--panel-2);border:1px solid var(--line);border-radius:6px;padding:3px 7px;color-scheme:dark"></div>` : ''}
           ${payCell ? `<div class="pillrow" style="justify-content:flex-end;margin-top:9px">${payCell}</div>` : ''}
-          <div class="pillrow" style="justify-content:flex-end;margin-top:9px">${ghostPill('🖨 Print', { js: 'js-print-invoice', data: { rec: i.invoiceId } })}</div>
+          <div class="pillrow" style="justify-content:flex-end;margin-top:9px">${ghostPill('🖨 Print', { js: 'js-print-invoice', data: { rec: i.invoiceId } })}${ghostPill('✉ Send Email', { js: 'js-send-email', data: { rec: i.invoiceId }, disabled: !cust || !cust.email, tip: !cust ? 'No customer on file' : !cust.email ? 'No email on file' : '' })}${ghostPill('💬 Send Text', { js: 'js-send-text', data: { rec: i.invoiceId }, disabled: !cust || !cust.phone, tip: !cust ? 'No customer on file' : !cust.phone ? 'No phone on file' : '' })}</div>
         </div>
       </div></div>`;
     const notes = notesSection('invoices', i, 'invoiceId');
@@ -10922,6 +10929,8 @@ function onClick(e) {
   if (closest('.js-charge-invoice')) { e.stopPropagation(); return chargeInvoiceFlow(closest('.js-charge-invoice').dataset.rec); }
   if (closest('.js-record-payment')) { e.stopPropagation(); return recordManualPayment(closest('.js-record-payment').dataset.rec); }
   if (closest('.js-print-invoice')) { e.stopPropagation(); return printInvoice(closest('.js-print-invoice').dataset.rec); }
+  if (closest('.js-send-email')) { e.stopPropagation(); return sendInvoiceEmail(closest('.js-send-email').dataset.rec); }
+  if (closest('.js-send-text')) { e.stopPropagation(); return sendInvoiceText(closest('.js-send-text').dataset.rec); }
   if (closest('.js-pay-addcard')) { e.stopPropagation(); const b = closest('.js-pay-addcard'); return openAddCard(b.dataset.rec, { returnTo: 'payment', invoiceId: b.dataset.inv }); }
   if (closest('.js-refund-invoice')) { e.stopPropagation(); if (state.overlay) { state.overlay.confirmRefund = true; state.overlay.error = ''; renderOverlay(); } return; }
   if (closest('.js-refund-cancel')) { e.stopPropagation(); if (state.overlay) { state.overlay.confirmRefund = false; state.overlay.refundAlloc = null; renderOverlay(); } return; }
@@ -13148,6 +13157,48 @@ function printInvoice(invoiceId) {
   const cleanup = () => { document.body.classList.remove('printing'); window.removeEventListener('afterprint', cleanup); };
   window.addEventListener('afterprint', cleanup);
   window.print();
+}
+// Plain-text quote summary for an emailed quote — mailto can't carry a PDF attachment,
+// so we inline the same figures the print doc shows (§12.5 line items + totals).
+function invoiceQuoteSummary(inv) {
+  const t = invoiceTotals(inv);
+  const lines = (inv.lineItems || []).map((li) => `  • ${li.label} — ${money2(Number(li.amount) || 0)}`).join('\n')
+    || '  • (no line items yet)';
+  return [
+    `Quote ${inv.invoiceId} from ${companyName()}`, '',
+    lines, '',
+    `Subtotal: ${money2(t.subtotal)}`,
+    `Tax${t.exempt ? ' (exempt)' : ` (${(TAX_RATE * 100).toFixed(2)}%)`}: ${t.exempt ? '—' : money2(t.tax)}`,
+    `Total: ${money2(t.total)}`, '',
+    'Thank you for your business — much obliged.',
+  ].join('\n');
+}
+// Open the device's mail client pre-filled to the customer with the quote inlined, then
+// stamp a timestamped "Emailed" note on the invoice history (logAction → §R13).
+function sendInvoiceEmail(invoiceId) {
+  const inv = IDX.invoice.get(invoiceId); if (!inv) return;
+  const cust = inv.customerId ? IDX.customer.get(inv.customerId) : null;
+  if (!cust || !cust.email) { toast('No email on file for this customer.'); return; }   // guard — button is disabled, this is belt-and-suspenders
+  const subject = `Quote from ${companyName()} – ${inv.invoiceId}`;
+  window.location.href = `mailto:${encodeURIComponent(cust.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(invoiceQuoteSummary(inv))}`;
+  logAction(inv, `Emailed quote to ${cust.email}`);
+  render();
+  toast(`Opening email to ${cust.email}…`);
+}
+// Open the device's SMS app pre-filled to the customer, then stamp a "Texted" note.
+function sendInvoiceText(invoiceId) {
+  const inv = IDX.invoice.get(invoiceId); if (!inv) return;
+  const cust = inv.customerId ? IDX.customer.get(inv.customerId) : null;
+  if (!cust || !cust.phone) { toast('No phone on file for this customer.'); return; }
+  const t = invoiceTotals(inv);
+  const first = cust.firstName || (cust.name || '').trim().split(/\s+/)[0] || 'there';
+  const yard = companyPhone();
+  const msg = `Hi ${first}, your quote from ${companyName()} is ready – ${money2(t.total)} – reply or call us${yard ? ' at ' + yard : ''}.`;
+  const tel = String(cust.phone).replace(/[^0-9+]/g, '');
+  window.location.href = `sms:${tel}?&body=${encodeURIComponent(msg)}`;   // `?&body=` is the cross-platform (iOS + Android) separator
+  logAction(inv, `Texted quote to ${cust.phone}`);
+  render();
+  toast(`Opening text to ${cust.phone}…`);
 }
 // Lock (seal pricing) or unlock an invoice via the backend (Office/Admin).
 async function lockInvoiceFlow(invoiceId, lock) {
