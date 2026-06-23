@@ -23,6 +23,7 @@ import {
   SHOP_TYPES, SHOP_SEGMENTS, COLUMNS, COLUMN_OF,
   legacyTransportPrice, computeTransportPrice, isFueledType, legsForType, YARD_ORIGIN, GOOGLE_MAPS_KEY,
   fmtWindow, fmtShortDate, showsTruck, parseISO, TODAY_ISO, invoiceShort, TRANSPORT_MAP,
+  FLAG_META, FLAG_SEVERITY_RANK,
 } from './config.js';
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -212,7 +213,10 @@ const STATUS_ORDER = ['Quote', 'Reserved', 'Tomorrow', 'Today', 'On Rent', 'End 
 function unitStatus(r, eu) {
   const base = (eu && eu.status) || r.status || 'Reserved';
   // a reservation whose start date passed without going On Rent = No Show (Jac 2026-06-13)
-  if (base === 'Reserved') { const s = parseISO(r.startDate); if (s) { const d = dayDiff(TODAY, s); if (d < 0) return 'No Show'; if (d === 0) return 'Today'; if (d === 1) return 'Tomorrow'; } }
+  // Today/Tomorrow RETIRED as derived statuses (SPEC flag-color-system) — the urgency
+  // is carried by the starts-today / starts-tomorrow flags. The No-Show derivation
+  // stays (a reservation whose start passed without going On Rent).
+  if (base === 'Reserved') { const s = parseISO(r.startDate); if (s && dayDiff(TODAY, s) < 0) return 'No Show'; }
   return base;
 }
 function rentalUnitStatuses(r) {
@@ -223,7 +227,9 @@ const unitsUniform = (r) => rentalUnitStatuses(r).length <= 1;
    label ("Today/On Rent", lifecycle-ordered) with a neutral color. */
 function rentalStatusDisplay(r) {
   const ss = rentalUnitStatuses(r);
-  if (ss.length <= 1) { const k = ss[0] || rentalDisplayStatus(r); const st = getStatus('rentalStatus', k); return { label: st.label, color: st.color, key: k, mixed: false }; }
+  // COLOR is flag-driven (R/Y/G/gray, SPEC flag-color-system); the LABEL stays the
+  // lifecycle status. Mixed-unit rentals keep the gray "mix" label + gray color.
+  if (ss.length <= 1) { const k = ss[0] || rentalDisplayStatus(r); const st = getStatus('rentalStatus', k); return { label: st.label, color: getEntityColor('rentals', r), key: k, mixed: false }; }
   return { label: ss.join('/'), color: 'gray', key: null, mixed: true };
 }
 /* TERMINAL = the unit has reached an end state; Complete Rental unlocks only when
@@ -1242,14 +1248,14 @@ function invoiceTotals(inv) {
 /** The active rental driving a unit's mirrored Rental Status (excludes
  *  Returned/Cancelled/No Show — §12.4). */
 const ACTIVE_RENTAL = new Set(['Quote', 'Tomorrow', 'Today', 'Reserved', 'On Rent', 'End Rent', 'Off Rent']);
-/** §8/§6.2#7 — Tomorrow/Today are DERIVED display states (stored status stays Reserved):
- *  a Reserved rental starting today shows "Today" (blue), tomorrow shows "Tomorrow" (purple). */
+/** §8/§6.2#7 — a Reserved rental whose start date PASSED (never went On Rent) shows
+ *  the derived "No Show" label; the stored status stays Reserved. Today/Tomorrow are
+ *  RETIRED as derived statuses (SPEC flag-color-system) — their urgency now rides the
+ *  starts-today / starts-tomorrow flags, and the pill keeps reading "Reserved". */
 function rentalDisplayStatus(r) {
   if (r.status === 'Reserved') {
     const s = parseISO(r.startDate);
-    // a reservation whose start date has PASSED and never went On Rent = a No Show
-    // (display-derived, like Today/Tomorrow — the stored status stays Reserved). Jac 2026-06-13
-    if (s) { const d = dayDiff(TODAY, s); if (d < 0) return 'No Show'; if (d === 0) return 'Today'; if (d === 1) return 'Tomorrow'; }
+    if (s && dayDiff(TODAY, s) < 0) return 'No Show';
   }
   return r.status;
 }
@@ -2627,9 +2633,119 @@ async function lockKpiFromWrangler(mi) {
 // R3: each status badge carries the icon of the card the status belongs to
 const SET_CARD = { rentalStatus: 'rentals', unitRentalStatus: 'rentals', invoiceStatus: 'invoices', unitInspectionStatus: 'inspections', inspectionResult: 'inspections', unitFleetStatus: 'units', gpsStatus: 'units', unitOrderStatus: 'workOrders', woPhase: 'workOrders', woType: 'workOrders', customerPayStatus: 'customers', accountType: 'customers', serviceStatus: 'serviceOrders', expenseReconcile: 'expenses', vendorType: 'vendors', companyFileType: 'files' };
 const dataAttrs = (data) => Object.entries(data || {}).map(([k, v]) => ` data-${k}="${esc(String(v))}"`).join('');
-function statusPill(set, value, { card, recId, x, truck, previewColor, previewIcon, previewLabel } = {}) {
+/* ════════════════════════════════════════════════════════════════════════
+   FLAG-DRIVEN COLOR ENGINE — SPEC docs/specs/flag-color-system.md
+   Flags answer "what must I do with this record right now?". getEntityColor →
+   the computed status color: GRAY if formally archived, else the highest active-
+   flag severity (red > yellow > green), else GREEN (nothing to do). FLAG_META
+   (labels/severities) lives in config.js; the CONDITIONS live here with the
+   helpers they need. Conditions evaluate at render time against live record data.
+   ════════════════════════════════════════════════════════════════════════ */
+// Open (not Complete / not cancelled) WOs touching any of a rental's units.
+function openWOsForRental(r) {
+  const ids = new Set(rentalUnitIds(r));
+  return DATA.workOrders.filter((w) => ids.has(w.unitId) && w.phase !== 'Complete' && !w.cancelled);
+}
+const rentalUnitRecords = (r) => rentalUnitIds(r).map((id) => IDX.unit.get(id)).filter(Boolean);
+// A WO carries an ETA when the WO or any of its lines has an `eta` date set.
+const woHasEta = (w) => !!(w.eta || (w.lineItems || []).some((li) => li.eta));
+
+const FLAG_COND = {
+  rentals: {
+    'fc':               (r) => openWOsForRental(r).some((w) => w.woType === 'Field Call'),
+    'overbooked':       (r) => !!rentalOverbooked(r),
+    'unpaid-balance':   (r) => { const c = IDX.customer.get(r.customerId); return !!c && c.payStatus === 'Unpaid'; },
+    'no-card':          (r) => { const c = IDX.customer.get(r.customerId); return !!c && cardFlag(c) === 'none'; },
+    'unsigned-card':    (r) => { const c = IDX.customer.get(r.customerId); if (!c || !hasValidCard(c)) return false; return !cardCurrentSigning(c, defaultCard(c)); },
+    'unit-failed':      (r) => rentalUnitRecords(r).some((u) => u.inspectionStatus === 'Failed'),
+    'off-rent-overdue': (r) => r.status === 'Off Rent',
+    'no-show':          (r) => r.status === 'Reserved' && !!r.startDate && parseISO(r.startDate) < TODAY,
+    'starts-today':     (r) => r.status === 'Reserved' && !!r.startDate && dayDiff(TODAY, parseISO(r.startDate)) === 0,
+    'starts-tomorrow':  (r) => r.status === 'Reserved' && !!r.startDate && dayDiff(TODAY, parseISO(r.startDate)) === 1,
+    'end-rent':         (r) => r.status === 'End Rent',
+    'unit-due-soon':    (r) => rentalUnitRecords(r).some((u) => { const s = topServiceForUnit(u); return !!s && s.status === 'due-soon'; }),
+    'partial-payment':  (r) => { const c = IDX.customer.get(r.customerId); return !!c && c.payStatus === 'Partial'; },
+    'card-expiring':    (r) => { const c = IDX.customer.get(r.customerId); return !!c && cardFlag(c) === 'expiring'; },
+    'complete-rental':  (r) => allUnitsTerminal(r) && !r.completed,
+  },
+  units: {
+    'inspection-failed':    (u) => u.inspectionStatus === 'Failed',
+    'service-past-due':     (u) => { const s = topServiceForUnit(u); return !!s && s.status === 'past-due'; },
+    'overbooked':           (u) => !!unitOverbooked(u.unitId),
+    'gps-offline':          (u) => u.gpsStatus === 'Not Reporting',
+    'inspection-not-ready': (u) => u.inspectionStatus === 'Not Ready',
+    'service-due-soon':     (u) => { const s = topServiceForUnit(u); return !!s && s.status === 'due-soon'; },
+    'wash-requested':       (u) => !!u.washRequested,
+    'gps-verify':           (u) => u.gpsStatus === 'Verify',
+  },
+  workOrders: {
+    'part-needed':         (w) => w.phase === 'Part Needed',
+    'field-call':          (w) => w.woType === 'Field Call',
+    'failed-origin':       (w) => w.woType === 'Failed',
+    'no-lines':            (w) => !(w.lineItems || []).length,
+    'part-unknown':        (w) => w.phase === 'Part Needed?',
+    'part-ordered-no-eta': (w) => w.phase === 'Part Ordered' && !woHasEta(w),
+    'part-ordered-eta':    (w) => w.phase === 'Part Ordered' && woHasEta(w),
+    'part-local':          (w) => w.phase === 'Part is Local',
+    'bill-maybe':          (w) => w.billCustomer === 'Maybe',
+  },
+  invoices: {
+    'unpaid':      (i) => invoiceTotals(i).status === 'Unpaid',
+    'late':        (i) => /^Late/.test(invoiceTotals(i).status),
+    'collections': (i) => invoiceTotals(i).status === 'Collections',
+    'partial':     (i) => invoiceTotals(i).status === 'Partial',
+    'not-due':     (i) => invoiceTotals(i).status === 'Not Due',
+  },
+  customers: {
+    'unpaid-balance':    (c) => c.payStatus === 'Unpaid',
+    'blacklisted':       (c) => /Blacklist/i.test(c.accountType || ''),
+    'no-card':           (c) => cardFlag(c) === 'none',
+    'customer-lost':     (c) => customerActivity(c).stage === 'Lost',
+    'customer-inactive': (c) => customerActivity(c).stage === 'Inactive',
+    'partial-balance':   (c) => c.payStatus === 'Partial',
+    'member-incomplete': (c) => c.accountType === 'Member Incomplete',
+    'action-required':   (c) => customerActivity(c).stage === 'Action Required',
+    'check-in':          (c) => customerActivity(c).stage === 'Check-in',
+    'card-expiring':     (c) => cardFlag(c) === 'expiring',
+  },
+};
+/** Active flags for a record, severity-desc (red → yellow). Safe on any input. */
+function getEntityFlags(entityType, rec) {
+  if (!rec) return [];
+  const meta = FLAG_META[entityType], cond = FLAG_COND[entityType];
+  if (!meta || !cond) return [];
+  const out = [];
+  for (const f of meta) { let on = false; try { on = !!(cond[f.id] && cond[f.id](rec)); } catch (e) { on = false; } if (on) out.push(f); }
+  return out.sort((a, b) => (FLAG_SEVERITY_RANK[b.severity] || 0) - (FLAG_SEVERITY_RANK[a.severity] || 0));
+}
+/** Formally archived → gray, no flag evaluation (§6: rentals on Complete Rental;
+ *  invoices on Refund). Cancelled/No Show stay R/Y until completed (§6.2). */
+function entityArchived(entityType, rec) {
+  if (!rec) return false;
+  if (entityType === 'rentals') return rec.completed === true;
+  if (entityType === 'invoices') return rec.refunded === true || invoiceTotals(rec).status === 'Refunded';
+  return false;
+}
+/** Computed status color: 'gray' (archived) · highest active-flag severity · 'green'. */
+function getEntityColor(entityType, rec) {
+  if (entityArchived(entityType, rec)) return 'gray';
+  const fl = getEntityFlags(entityType, rec);
+  return fl.length ? fl[0].severity : 'green';
+}
+/** Map a statusPill `set` → its entity type (only the 5 PRIMARY status sets are
+ *  flag-colored; secondary sets like unitInspectionStatus keep their registry color). */
+const PRIMARY_SET_ENTITY = { rentalStatus: 'rentals', unitFleetStatus: 'units', woPhase: 'workOrders', invoiceStatus: 'invoices', customerPayStatus: 'customers' };
+
+function statusPill(set, value, { card, recId, x, truck, previewColor, previewIcon, previewLabel, flag } = {}) {
   const st = getStatus(set, value);
-  const color = previewColor || st.color;   // Settings Board live preview overrides the applied color
+  // Color: Settings-Board preview override wins; else a PRIMARY status set computes
+  // its flag-driven color from the record (R/Y/G/gray); else the registry color.
+  let color = previewColor || st.color;
+  const entityType = PRIMARY_SET_ENTITY[set];
+  if (!previewColor && flag !== false && entityType && recId != null) {
+    const erec = recOf(entityType, recId);
+    if (erec) color = getEntityColor(entityType, erec);
+  }
   const label = previewLabel != null ? previewLabel : st.label;
   const data = card ? ` data-pill-card="${card}" data-pill-rec="${esc(recId)}"` : '';
   const tk = truck ? `<span class="truck">${I.truck}</span>` : '';
