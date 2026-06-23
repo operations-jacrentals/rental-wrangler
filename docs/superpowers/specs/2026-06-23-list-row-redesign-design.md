@@ -86,6 +86,38 @@ the rental); only future interactive bits (a gate) would need pill builders.
 
 ---
 
+## 3.5 Rental DETAIL — "standard mode" (the expanded card)
+
+The opened rental record (`DETAIL.rentals`), distinct from the list row (§3). Same
+window-track calendar language, scaled up for the room a detail view has.
+
+**Empty rental (new) — a drop scaffold (IMG_2034):**
+- A dotted-calendar header band with a **Customer** drop slot at top-left (drag a
+  customer onto it).
+- Below: **+Unit** and **+Invoice** dashed add/drop affordances (R5b) — drag a unit and
+  an invoice onto the rental to link them.
+
+**Filled rental (IMG_2035):**
+- **Header:** customer name (top-left) · **balance/total** (top-right), flag-colored money
+  (red when owed) — the same money grammar as the row footer.
+- **Calendar:** the window-track calendar from §3, but **with numbered dates** (the detail
+  has room) spanning as many weeks as the window needs. Start date boxed in the status
+  color, end circled, today marked; the window threads the numbered grid.
+- **Units (beneath the calendar)** — one row per unit on the rental:
+  - unit name (left) ·
+  - **transport journey** beside it — origin → site pin → destination (the R15
+    mini-journey / transport timeline) ·
+  - **rate · price** on the right of the unit row ("4 Days · $500") ·
+  - **transport price** to the right of the journey ("$300").
+- **Invoice total** at the bottom-right ("$1,000", underlined).
+
+Build: reshape `DETAIL.rentals`. Reuses the calendar renderer (a numbered-date variant),
+the R15 transport journey/`miniJourneyHtml`, R5b add/drop for unit + invoice, and the
+flag-colored money. **Later slice** (after the list rows) — shares the calendar + money
+grammar so it lands cheaply once those exist.
+
+---
+
 ## 4. Customer rows — name · contact · pay-$ · funnel
 
 Mirrors the unit row's shape **without a left icon**. Two-line left block, two values on
@@ -177,10 +209,11 @@ Left→right, one row (current `units:` renderer is two-line; reshape to the agr
    logic (`docs/specs/flag-color-system.md`) **before** the rows, so all three rows render
    flag colors from day one rather than today's lifecycle hues (avoids re-color churn).
 4. **Build order (RESOLVED):**
-   1. **Flag-color-system** — the severity color seam every row reads.
-   2. **Rentals** → window-track calendar (direction A).
+   1. **Flag-color-system** — the severity color seam every row reads. ✅ engine landed.
+   2. **Rentals row** → window-track calendar (direction A).
    3. **Customer rows**.
    4. **Category→icon library map**, then **Unit rows**.
+   5. **Rental DETAIL (standard mode)** — §3.5; reuses the row's calendar + money grammar.
    Each is an independent, shippable slice on this branch.
 
 ---
