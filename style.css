@@ -153,35 +153,31 @@ input { font-family: inherit; }
 .kpi-ring .ring-label { font-size: 10px; color: var(--txt-3); font-weight: 600; text-transform: uppercase; letter-spacing: .3px; }
 .kpi-ring .ring-pct { font-size: 28px; font-weight: 700; fill: var(--txt); }   /* big popup ring only */
 
-/* ── COMING 2026 — roadmap plate over the blurred rings (Jac 2026-06-23) ──────
-   Signature = the hi-vis hazard-stripe cap ("work zone / coming soon"); the dimmed
-   gauges glow behind frosted steel. Boldness spent ONLY on the stripe; everything
-   else quiet. No orange (reserved) — caution-yellow ties to the hazard signature.
-   Themes for free off the tokens; reduced-motion freezes the lift. */
+/* ── COMING 2026 — floats free over the blurred rings (Jac 2026-06-23) ──────────
+   No card backing: just the stamped "COMING 2026" floating over the dimmed gauges,
+   with a light gleam that sweeps across the letters once every 15s. Boldness lives
+   in the gleam + the caution-yellow year; everything else quiet. No orange (reserved).
+   The whole rings area is the (invisible) tap target → opens the roadmap. */
 .coming-plate {
   position: absolute; inset: 0; z-index: 3;
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
-  border: 1px solid var(--line); border-radius: var(--chip-radius); overflow: hidden;
-  padding: 7px 16px 5px; cursor: pointer; font-family: 'Saira Condensed', sans-serif;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--panel) 76%, transparent), color-mix(in srgb, var(--bg) 88%, transparent));
-  -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px);
-  transition: border-color .15s, transform .15s;
+  display: flex; align-items: center; justify-content: center;
+  border: 0; background: none; padding: 0; cursor: pointer; font-family: 'Saira Condensed', sans-serif;
 }
-.coming-plate:hover { border-color: color-mix(in srgb, var(--yellow) 45%, var(--line)); transform: translateY(-1px); }
-.coming-plate:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.cp-haz { position: absolute; left: 0; right: 0; top: 0; height: 5px; opacity: .9;
-  background: repeating-linear-gradient(135deg, var(--yellow) 0 11px, #14181d 11px 22px); }
-.cp-rivet { position: absolute; width: 4px; height: 4px; border-radius: 50%;   /* matches .pl-rivet metal */
-  background: radial-gradient(circle at 35% 30%, #434c58, #0f1318); box-shadow: inset 0 0 0 1px rgba(0,0,0,.55); }
-.cp-rivet.tl { left: 6px; top: 9px; } .cp-rivet.tr { right: 6px; top: 9px; }
-.cp-rivet.bl { left: 6px; bottom: 6px; } .cp-rivet.br { right: 6px; bottom: 6px; }
-.cp-stamp { margin-top: 3px; font-size: 17px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; color: var(--txt); line-height: 1; }
+.coming-plate:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: var(--chip-radius); }
+.cp-stamp { position: relative; overflow: hidden; line-height: 1;
+  font-size: 18px; font-weight: 800; letter-spacing: 2.5px; text-transform: uppercase;
+  color: var(--txt); text-shadow: 0 1px 6px rgba(0,0,0,.55); transition: filter .15s; }
 .cp-stamp b { color: var(--yellow); font-weight: 800; }
-.cp-sub { font-family: var(--font); font-size: 9.5px; letter-spacing: .2px; color: var(--txt-3); text-align: center; }
-.is-phone .coming-plate { padding: 2px 6px; }
-.is-phone .cp-stamp { margin-top: 2px; font-size: 12px; letter-spacing: 1px; }
-.is-phone .cp-sub, .is-phone .cp-rivet { display: none; }
-@media (prefers-reduced-motion: reduce) { .coming-plate { transition: none; } .coming-plate:hover { transform: none; } }
+.coming-plate:hover .cp-stamp { filter: brightness(1.15); }
+/* the gleam — a bright diagonal glint sweeps across the letters once per 15s cycle */
+.cp-stamp::after {
+  content: ''; position: absolute; inset: -2px; pointer-events: none; mix-blend-mode: screen;
+  background: linear-gradient(105deg, transparent 38%, rgba(255,255,255,.6) 50%, transparent 62%);
+  transform: translateX(-140%); animation: cpGleam 15s ease-in-out infinite;
+}
+@keyframes cpGleam { 0%, 90% { transform: translateX(-140%); } 97%, 100% { transform: translateX(140%); } }
+.is-phone .cp-stamp { font-size: 13px; letter-spacing: 1.4px; }
+@media (prefers-reduced-motion: reduce) { .cp-stamp::after { display: none; } }
 
 /* ── COMING 2026 roadmap popup — the docket + the whole territory ── */
 .rm-popup { width: 460px; max-width: 94vw; }
@@ -771,6 +767,12 @@ select.lf-in { appearance: none; cursor: pointer; }
   height: 14px; margin-bottom: -14px;
   background: linear-gradient(var(--card), transparent); pointer-events: none;
 }
+/* The fade is ONLY for standard view (content dissolving under the floating title
+   chip). In list view the listbar is lifted out of .card-body (desktop) or docked
+   (mobile), so nothing opaque sits above the fade and its 14px gradient clips the
+   first row's top on every card. Kill it there. (Jac 2026-06-23 — fixes the
+   top-row-cutoff regression introduced with the #219 fade.) */
+.card[data-view="list"] .card-body::before { display: none; }
 
 /* list-view search/sort bar (§12 in-card Sort) — floating chips, no hard line */
 .listbar { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; gap: 7px; padding: 6px 10px; background: linear-gradient(var(--card) 70%, transparent); }
@@ -2760,6 +2762,7 @@ body { font-variant-numeric: tabular-nums; }
 /* ec-red: official flagging-red text treatment — --red halo bleeds into 65%-red+white fill, no hard seam. */
 .cr-name.ec-red,
 .rcc-uname.ec-red,
+.ur-name.ec-red,
 .rcc-bal.overdue,
 .cr-pay.over,
 .pill.c-red .t { color: var(--red); -webkit-text-fill-color: color-mix(in srgb, var(--red) 65%, white); text-shadow: 0 0 3px var(--red), 0 0 7px color-mix(in srgb, var(--red) 60%, transparent); }
