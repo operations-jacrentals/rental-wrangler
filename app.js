@@ -6533,13 +6533,48 @@ function scorePop(roleId, ringIdx, delta, unit) {
   btn.appendChild(pop);                                            // floats up + fades (CSS), then removed
   setTimeout(() => pop.remove(), 760);
 }
+/* ════════════ COMING 2026 — the roadmap morale plate (Jac 2026-06-23) ════════
+   The KPI rings ride behind a blur (the metrics engine isn't wired up yet). Rather
+   than leave dead frosted glass up top, the rings wear a "Coming 2026" data-plate
+   that opens this roadmap — what's on the docket plus every area of the yard we're
+   building out. Pure morale: a glance at how much is coming. The list mirrors
+   backlog.md (the sorted task branches) + the area map; keep it in step when those
+   move. type: Feature (gray) · Fix (red) · Cleanup (gray) · Planned (yellow). */
+const ROADMAP_ITEMS = [
+  { t: 'Rental Status button',                   area: 'Rentals',       type: 'Feature' },
+  { t: 'Card-on-File no longer blocks On Rent',  area: 'Rentals',       type: 'Fix' },
+  { t: 'Retire the obsolete Window Picker',      area: 'Rentals',       type: 'Cleanup' },
+  { t: 'Invoice Card',                           area: 'Invoicing',     type: 'Feature' },
+  { t: 'Fix the “OBi” invoice link label',       area: 'Invoicing',     type: 'Fix' },
+  { t: 'Category rows — scroll by group',        area: 'Units',         type: 'Feature' },
+  { t: 'Default Services — hand over the manuals',area: 'Shop',         type: 'Feature' },
+  { t: 'Custom Fields + defaults',               area: 'Backend',       type: 'Feature' },
+  { t: 'Customer self-service portal',           area: 'Mobile',        type: 'Feature' },
+  { t: 'Notifications',                           area: 'Comms',         type: 'Feature' },
+  { t: 'Customer texts & email',                 area: 'Comms',         type: 'Feature' },
+  { t: 'Memberships — round out the details',    area: 'Members',       type: 'Planned' },
+];
+const ROADMAP_AREAS = [
+  'Rentals & Dispatch', 'Invoicing & Payments', 'Customers / CRM', 'Memberships',
+  'Units & Fleet', 'Maintenance Shop', 'Financials & KPIs', 'Backend & Data',
+  'Design System', 'Mobile & Remote', 'Comms & Notifications', 'HR & Compliance',
+  'Sales & Growth', 'Maps & Location', 'Search & Views', 'Frontend & Performance',
+  'Mr. Wrangler AI',
+];
 function headerEl() {
   const h = el('div', 'header');
   const roleRing = (id, label, vals, color) => `<button class="kpi-ring js-ring" data-role="${id}">
       <span class="ring-wrap">${ring3SVG(vals, color, { size: 64 })}</span>
       <span class="ring-label">${esc(label)}</span>
     </button>`;
-  const rings = ROLES.map((role) => roleRing(role.id, role.label, kpiFor(role.id), role.color)).join('');
+  // The blurred rings wear a "Coming 2026" plate (last child of .kpis) — taps open the roadmap.
+  const comingPlate = `<button class="coming-plate js-roadmap" data-tip="What's coming in 2026" aria-label="Coming 2026 — open the roadmap">
+      <span class="cp-haz" aria-hidden="true"></span>
+      <span class="cp-rivet tl"></span><span class="cp-rivet tr"></span><span class="cp-rivet bl"></span><span class="cp-rivet br"></span>
+      <span class="cp-stamp">Coming <b>2026</b></span>
+      <span class="cp-sub">Round up what we’re wrangling</span>
+    </button>`;
+  const rings = ROLES.map((role) => roleRing(role.id, role.label, kpiFor(role.id), role.color)).join('') + comingPlate;
   // §M1 — phone-only TOP TOOLBAR: the full tool set opened up across the top of the screen
   // (logo + rings stay on their own row above it). Notifications + Requests live here too.
   const nu = unseenNotifs();
@@ -8379,6 +8414,27 @@ function buildPopupEl(o, overlay, opts = {}) {
         ${rows.map((r) => `<div class="hk-row"><div class="hk-demo hk-${r.d}">${hkDemoInner(r.d)}</div><div class="hk-text"><div class="hk-name">${esc(r.n)}</div><div class="hk-desc">${esc(r.t)}</div></div></div>`).join('')}
         <p class="muted" style="font-size:11px;margin:6px 2px 0">These work on a list row or anywhere on a card.</p>` });
     overlay.appendChild(pop);
+  } else if (o.kind === 'roadmap') {
+    // §M2 — "Coming 2026" roadmap (the morale window behind the blurred rings).
+    const TYPE_COLOR = { Fix: 'red', Planned: 'yellow' };   // Feature/Cleanup stay gray (R3b)
+    const counts = ROADMAP_ITEMS.reduce((m, it) => (m[it.type] = (m[it.type] || 0) + 1, m), {});
+    const tally = [['Feature', 'building'], ['Fix', 'fixing'], ['Cleanup', 'cleaning up'], ['Planned', 'to scope']]
+      .filter(([t]) => counts[t]).map(([t, v]) => `${counts[t]} ${v}`).join(' · ');
+    const rows = ROADMAP_ITEMS.map((it) => `<div class="rm-row">
+        <span class="rm-badge">${badge(it.type, TYPE_COLOR[it.type] || 'gray')}</span>
+        <span class="rm-name">${esc(it.t)}</span>
+        <span class="rm-area">${esc(it.area)}</span>
+      </div>`).join('');
+    const chips = ROADMAP_AREAS.map((a) => `<span class="rm-chip">${esc(a)}</span>`).join('');
+    const pop = el('div', 'popup rm-popup');
+    pop.innerHTML = popupShell({ icon: I.horseshoe, title: 'Coming in 2026', tag: 'Roadmap · what we’re wrangling', bodyClass: 'rm-body', body: `
+        <p class="rm-intro">${ROADMAP_ITEMS.length} on the docket — ${esc(tally)}. The gauges up top light up once the metrics engine lands.</p>
+        <div class="rm-list">${rows}</div>
+        <div class="rm-stitch" aria-hidden="true"></div>
+        <div class="rm-terr-h">The whole territory — ${ROADMAP_AREAS.length} areas under the saddle</div>
+        <div class="rm-chips">${chips}</div>
+        <p class="rm-foot">Got an idea for the list? Tap <strong>🤠 Report</strong> on any card and tell Mr. Wrangler.</p>` });
+    overlay.appendChild(pop);
   } else if (o.kind === 'feedback') {
     const ctx = feedbackContext();
     const TYPES = [['Bug', 'Claude fixes it'], ['Improvement', 'needs your OK'], ['Idea', 'needs your OK'], ['Change', 'needs your OK']];
@@ -8813,6 +8869,7 @@ const WINDOW_CATALOG = [
   { kind: 'requests',      label: 'Requests inbox',          tag: 'Mr. Wrangler · approvals',  sample: () => ({}) },
   { kind: 'notifications', label: 'Notifications',           tag: 'Mr. Wrangler · resolved',   sample: () => ({}) },
   { kind: 'hotkeys',       label: 'Mouse shortcuts',         tag: 'Operator · controls',       sample: () => ({}) },
+  { kind: 'roadmap',       label: 'Coming in 2026',          tag: 'Roadmap · the docket',      sample: () => ({}) },
   { kind: 'feedback',      label: 'Report a bug or request', tag: 'Mr. Wrangler · report',     sample: () => ({}) },
   { kind: 'board',         label: 'Back-office board',       tag: 'Back office · records',     sample: () => ({ board: (BACKOFFICE_BOARDS[0] || {}).id }) },
   { kind: 'boardview',     label: 'Board View',              tag: 'Card · board view',         sample: () => ({ card: 'units', query: '', sort: {}, calc: {}, colOrder: null, extraRows: [], cellData: {}, seq: 0 }) },
@@ -10837,6 +10894,7 @@ function onClick(e) {
   if (closest('.js-lock-invoice')) { e.stopPropagation(); return lockInvoiceFlow(closest('.js-lock-invoice').dataset.rec, true); }
   if (closest('.js-unlock-invoice')) { e.stopPropagation(); return lockInvoiceFlow(closest('.js-unlock-invoice').dataset.rec, false); }
   if (closest('.js-ring')) return openOverlay({ kind: 'role', role: closest('.js-ring').dataset.role });
+  if (closest('.js-roadmap')) return openOverlay({ kind: 'roadmap' });
   if (closest('.js-close')) return closeOverlay();
   if (closest('.js-theme')) { state.theme = (THEME_NEXT[state.theme] || THEME_NEXT.dark).next; try { localStorage.setItem('jactec.theme', state.theme); } catch (e) {} if (state.overlay && state.overlay.kind !== 'addCard') renderOverlay(); render(); return; }
   if (closest('.js-qr')) return shareSession();
