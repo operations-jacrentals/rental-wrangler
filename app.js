@@ -4085,6 +4085,42 @@ function allocLines(inv) {
     return { li, idx, key: lineKey(li), label: li.label || li.kind || 'Line', amount, remaining, taxable: !exempt && !li.taxExempt };
   }).filter((x) => x.remaining > 0.005);
 }
+/* §19b REFUND allocation — the per-line mirror of the payment allocation above.
+   inv.refundAllocations { lid: refundedDollars (PRE-TAX) } is CLIENT-owned and rides
+   the normal record sync, exactly like inv.allocations; the money TOTALS
+   (refundedAmount / refunded) stay SERVER-owned / sync-protected (#177). itemRefunded
+   mirrors itemPaid; a line's refundable = what's paid minus what's already refunded,
+   so a fully-refunded line drops out of BOTH panels and locks by absence. Works for
+   cash/check lump payments too: itemPaid returns the full line amount on a paid-in-full
+   invoice even with no explicit allocation. */
+function itemRefunded(inv, li) {
+  if (!inv || !inv.refundAllocations) return 0;
+  return Math.min(Number(inv.refundAllocations[lineKey(li)]) || 0, itemPaid(inv, li));
+}
+function itemRefundable(inv, li) { return Math.max(0, itemPaid(inv, li) - itemRefunded(inv, li)); }
+function lineRefunded(inv, li) { return itemRefunded(inv, li) > 0.005; }
+function lineFullyRefunded(inv, li) { return itemPaid(inv, li) > 0.005 && itemRefundable(inv, li) <= 0.005; }
+/* the refundable lines for the refund popup: every line still carrying paid dollars
+   not yet refunded. taxable mirrors allocLines so the gross can ride the §10 tax. */
+function refundLines(inv) {
+  const cust = inv.customerId ? IDX.customer.get(inv.customerId) : null;
+  const exempt = !!(inv.taxExempt || cust?.salesTaxExempt);
+  return (inv.lineItems || []).map((li) => {
+    const paid = itemPaid(inv, li);
+    const refunded = itemRefunded(inv, li);
+    return { li, key: lineKey(li), label: li.label || li.kind || 'Line', paid, refunded, refundable: Math.max(0, paid - refunded), taxable: !exempt && !li.taxExempt };
+  }).filter((x) => x.refundable > 0.005);
+}
+/* Does this rental's invoice line(s) for a unit carry a refund? Drives the cross-card
+   strikethrough on the rental (Jac 2026-06-23) — a refunded unit/transport shows on
+   the rental itself, not only inside the invoice. unitId null = the whole rental. */
+function rentalLineRefund(r, unitId) {
+  if (!r || !r.invoiceId) return { refunded: false, fully: false };
+  const inv = IDX.invoice.get(r.invoiceId); if (!inv) return { refunded: false, fully: false };
+  const mine = (inv.lineItems || []).filter((li) => li.ref === r.rentalId && (unitId == null || li.unitId === unitId) && (li.kind === 'rental' || li.kind === 'transport'));
+  if (!mine.length) return { refunded: false, fully: false };
+  return { refunded: mine.some((li) => lineRefunded(inv, li)), fully: mine.every((li) => lineFullyRefunded(inv, li)) };
+}
 /* Jac ─ Site ─ Jac transport journey under an invoice rental line. +Log Delivery /
    +Log Recovery ARE the same captures as the yard tool's +Start/+End (one event,
    shared fields, so both views stay in sync). Self-pickup collapses to one line. */
@@ -11824,6 +11860,79 @@ function allocCharge(inv, o) {
   });
   const tax = exempt ? 0 : Math.round(taxable * TAX_RATE * 100) / 100;   // §10 exact-cent tax — the charged gross must use real cents, not a rounded-up dollar
   const gross = Math.min(taxable + plain + tax, invoiceTotals(inv).balance);
+  return { gross, alloc };
+}
+/* §19b the refund-allocation panel — mirror of allocSectionHtml, reversed. One row per
+   still-refundable line; the $ input is capped at what was paid on that line. A line
+   already partly refunded shows its ↩ tally. Reuses the .alloc-* chrome (on-language,
+   no new R-rule); only the "Refund in full" shortcut is a stamped R5b add-button. */
+function refundSectionHtml(lines, o) {
+  const rows = lines.map((L) => `
+    <div class="alloc-row${L.refunded > 0.005 ? ' alloc-refunded' : ''}">
+      <span class="alloc-name" data-tip="${esc(L.label)}${L.refunded > 0.005 ? ` · ${money(L.refunded)} already refunded` : ''}">${esc(L.label)}</span>
+      <span class="alloc-rem">paid ${money(L.paid)}${L.refunded > 0.005 ? ` · ↩${money(L.refunded)}` : ''}${L.taxable ? '' : ' · no tax'}</span>
+      <span class="alloc-dollar">$<input class="alloc-in refund-in" data-key="${esc(L.key)}" data-taxable="${L.taxable ? '1' : '0'}" data-max="${L.refundable}" type="number" min="0" max="${L.refundable}" step="0.01" value="${(Number(o.refundAlloc[L.key]) || 0).toFixed(2)}" ${o.busy ? 'disabled' : ''}></span>
+    </div>`).join('');
+  return `<div class="alloc-sec">
+    <div class="alloc-head"><span>Refund by line item</span>${lines.length > 1 ? `<button class="add-field anchor js-refund-auto" data-r="R5b" type="button" ${o.busy ? 'disabled' : ''}>Refund in full</button>` : ''}</div>
+    ${rows}
+    <div class="alloc-foot"><span class="js-refund-counter"></span><span class="alloc-charge js-refund-amount"></span></div>
+  </div>`;
+}
+/* Live DOM-driven recompute for the refund panel (mirror of setupPayAlloc): updates
+   o.refundAlloc, the "Refunding $X of $Y paid" counter, the pre-tax+tax=gross read-out,
+   and the Confirm button's label/enabled state. No re-render → inputs keep focus. */
+function setupRefundAlloc() {
+  const o = state.overlay; if (!o || o.kind !== 'payment') return;
+  const body = document.querySelector('.overlay .popup-body'); if (!body) return;
+  const ins = [...body.querySelectorAll('.refund-in')]; if (!ins.length) return;
+  const inv = IDX.invoice.get(o.invoiceId); if (!inv) return;
+  const cust = inv.customerId ? IDX.customer.get(inv.customerId) : null;
+  const exempt = !!(inv.taxExempt || cust?.salesTaxExempt);
+  const t = invoiceTotals(inv);
+  const refundableGross = Math.max(0, t.paid - (Number(inv.refundedAmount) || 0));   // gross still refundable
+  const recompute = () => {
+    let taxable = 0, plain = 0;
+    ins.forEach((inp) => {
+      const max = Number(inp.dataset.max) || 0;
+      let v = Number(inp.value); if (!(v >= 0)) v = 0; if (v > max + 0.005) { v = max; inp.value = max.toFixed(2); }
+      o.refundAlloc[inp.dataset.key] = v;
+      if (inp.dataset.taxable === '1') taxable += v; else plain += v;
+    });
+    const pre = taxable + plain;
+    const tax = exempt ? 0 : Math.round(taxable * TAX_RATE * 100) / 100;
+    const gross = Math.min(pre + tax, refundableGross);
+    const counter = body.querySelector('.js-refund-counter');
+    const amt = body.querySelector('.js-refund-amount');
+    const btn = body.querySelector('.js-refund-confirm');
+    if (counter) counter.innerHTML = gross > 0.005 ? `Refunding <b>${money2(gross)}</b> of ${money2(t.paid)} paid` : `<span class="muted">nothing assigned</span>`;
+    if (amt) {
+      if (pre <= 0) amt.innerHTML = '';
+      else { const lineGross = pre + tax; const eq = `${money2(pre)}${tax ? ` + ${money2(tax)} tax` : ''} = <b>${money2(lineGross)}</b>`;
+        amt.innerHTML = lineGross > refundableGross + 0.005 ? `${eq} · refund <b>${money2(gross)}</b>` : eq; }
+    }
+    if (btn) { btn.disabled = !(gross > 0.005) || !!o.busy; if (!o.busy) btn.textContent = gross > 0.005 ? `Refund ${money2(gross)}` : 'Confirm refund'; }
+  };
+  ins.forEach((inp) => inp.addEventListener('input', recompute));
+  const auto = body.querySelector('.js-refund-auto');
+  if (auto) auto.addEventListener('click', () => { ins.forEach((inp) => { inp.value = (Number(inp.dataset.max) || 0).toFixed(2); }); recompute(); });
+  recompute();
+}
+/* Resolve the gross refund + the per-line PRE-TAX split from o.refundAlloc, capped at
+   each line's paid and the invoice's remaining refundable gross. Mirror of allocCharge. */
+function resolveRefund(inv, o) {
+  const cust = inv.customerId ? IDX.customer.get(inv.customerId) : null;
+  const exempt = !!(inv.taxExempt || cust?.salesTaxExempt);
+  let taxable = 0, plain = 0; const alloc = {};
+  refundLines(inv).forEach((L) => {
+    const v = Math.min(Number(o.refundAlloc?.[L.key]) || 0, L.refundable);
+    if (v <= 0.005) return;
+    alloc[L.key] = v;
+    if (L.taxable) taxable += v; else plain += v;
+  });
+  const tax = exempt ? 0 : Math.round(taxable * TAX_RATE * 100) / 100;
+  const t = invoiceTotals(inv);
+  const gross = Math.min(taxable + plain + tax, Math.max(0, t.paid - (Number(inv.refundedAmount) || 0)));
   return { gross, alloc };
 }
 
