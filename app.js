@@ -646,7 +646,7 @@ function cardTabBody(c) {
 }
 function achTabBody(c) {
   const banks = customerBanks(c);
-  const consent = !!(c.signature && c.selfie);
+  const consent = !!((c.signature || validCards(c).some((k) => cardCurrentSigning(c, k))) && latestCustomerSelfie(c));   // §7.1c: agreement + selfie live on the card (Drive-aware), with account-level back-compat
   const rows = banks.length ? banks.map((k) => `<div class="card-row">
       <span class="cr-brand">${esc(k.bankName || 'Bank')} ••${esc(k.last4)}</span>
       <span class="cr-exp">${esc(bankTypeLabel(k.accountType))}</span>
@@ -8685,7 +8685,7 @@ function buildPopupEl(o, overlay, opts = {}) {
     // (confirmUsBankAccountSetup); never stored, never sent to our backend.
     const c = IDX.customer.get(o.customerId);
     if (!c) { return false; }
-    const consent = !!(c.signature && c.selfie);
+    const consent = !!((c.signature || validCards(c).some((k) => cardCurrentSigning(c, k))) && latestCustomerSelfie(c));   // §7.1c: agreement + selfie live on the card (Drive-aware), with account-level back-compat
     const pop = el('div', 'popup'); pop.style.width = '430px';
     pop.innerHTML = popupShell({ icon: CARD_ICON.customers || '', title: `Add bank account — ${c.name}`, tag: 'Customer · ACH bank',
       foot: `<button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill ignition js-ach-save" data-r="R17" ${consent ? '' : 'disabled style="opacity:.45;cursor:default"'}>Save ACH</button>`,
