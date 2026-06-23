@@ -3222,7 +3222,7 @@ function onInspectMove(e) {
    ════════════════════════════════════════════════════════════════════════ */
 const ROW_META = {
   rentals:    (r) => ({ title: rentalDisplayName(r), sub: IDX.customer.get(r.customerId)?.name || '', color: rentalStatusDisplay(r).color }),
-  customers:  (c) => ({ title: c.name, sub: c.phone || c.company || '', color: getStatus('customerPayStatus', c.payStatus).color }),
+  customers:  (c) => ({ title: c.name, sub: c.phone || c.company || '', color: getEntityColor('customers', c) }),
   units:      (u) => ({ title: u.name, sub: IDX.category.get(u.categoryId)?.name || '', color: getStatus('unitInspectionStatus', u.inspectionStatus).color }),
   categories: (c) => ({ title: c.name, sub: c.fuelType || '', color: 'orange' }),
   invoices:   (i) => ({ title: i.invoiceId, sub: IDX.customer.get(i.customerId)?.name || '', color: getStatus('invoiceStatus', invoiceTotals(i).status).color }),
@@ -3372,16 +3372,40 @@ const ROWS = {
   },
 
   customers: (c) => {
-    const active = DATA.rentals.filter((r) => r.customerId === c.customerId && ACTIVE_RENTAL.has(r.status) && r.status !== 'Quote');
-    const unitPills = active.map((r) => { const u = IDX.unit.get(r.unitId); return u ? statusPill('rentalStatus', rentalDisplayStatus(r), { card: 'rentals', recId: r.rentalId }) : ''; }).join('');
+    // Name TINTED by the customer's flag color (Jac): only red/yellow lead — a clear
+    // customer keeps the calm default ink, archived/gray reads muted.
+    const fc = getEntityColor('customers', c);
+    const nameColor = (fc === 'red' || fc === 'yellow') ? `var(--${fc})` : fc === 'gray' ? 'var(--txt-3)' : 'var(--txt)';
     const acct = getStatus('customerAccountType', c.accountType || 'Non-Business');
-    return `<div class="row-1"><span class="r-title">${esc(c.name)}</span><span class="r-fields"><span>${esc(c.phone || '')}</span></span></div>
-      <div class="row-2">
-        ${badge(acct.label, acct.color)}
-        ${statusPill('customerPayStatus', c.payStatus, { card: 'customers', recId: c.customerId })}
-        ${cardFlag(c) !== 'ok' ? badge(CARD_FLAG_META[cardFlag(c)].label, CARD_FLAG_META[cardFlag(c)].color) : ''}
-        ${unitPills}
-      </div>`;
+    const sub = [esc(c.phone || ''), c.accountType ? esc(acct.label) : ''].filter(Boolean).join(' · ');
+
+    // Pay status AS A NUMBER (Jac — no "New Customer" text): owed balance → yellow before
+    // its due date / red on-or-after; otherwise rolling-12-month spend → green.
+    const yearAgo = new Date(TODAY.getFullYear() - 1, TODAY.getMonth(), TODAY.getDate());
+    let owed = 0, owedPastDue = false, spend12 = 0;
+    DATA.invoices.filter((i) => i.customerId === c.customerId).forEach((i) => {
+      const t = invoiceTotals(i);
+      if (t.status !== 'Refunded' && t.balance > 0) { owed += t.balance; const due = parseISO(i.dueDate); if (!due || due <= TODAY) owedPastDue = true; }
+      const d = parseISO(i.date); if (d && d >= yearAgo) spend12 += Number(i.amountPaid) || 0;
+    });
+    let payHtml = '';
+    if (owed > 0) payHtml = `<span class="cr-pay ${owedPastDue ? 'over' : 'due'}">${money(owed)}</span>`;
+    else if (spend12 > 0) payHtml = `<span class="cr-pay spend">${money(spend12)}</span>`;
+
+    // Most-progressed funnel stage of the two tracks (used-sales / membership); Don't
+    // Contact ranks lowest of the non-N/A stages (shown only when it's the sole one).
+    const FUNNEL_RANK = { 'Inbound Lead': 1, 'Outbound Lead': 2, 'Contacted': 3, 'Not A No!': 4, 'Payment Discussed': 5, 'Paid': 6, "Don't Contact": 0.5 };
+    const topStage = [c.usedSalesStage || 'N/A', c.membershipStage || 'N/A']
+      .filter((s) => s && s !== 'N/A').sort((a, b) => (FUNNEL_RANK[b] || 0) - (FUNNEL_RANK[a] || 0))[0];
+    const funnelHtml = topStage ? statusPill('funnelStage', topStage) : '';
+
+    return `<div class="cr">
+      <div class="cr-id">
+        <span class="r-title cr-name" style="color:${nameColor}">${esc(c.name)}</span>
+        <span class="cr-sub">${sub}</span>
+      </div>
+      <div class="cr-right">${payHtml}${funnelHtml}</div>
+    </div>`;
   },
 
   units: (u) => {

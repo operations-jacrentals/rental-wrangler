@@ -2602,6 +2602,17 @@ body { font-variant-numeric: tabular-nums; }
 .rcc-bal.overdue { color: var(--red); }
 .rcc-bal.muted { color: var(--txt-3); font-weight: 600; }
 .rcc-set { color: var(--txt-3); font-style: italic; font-weight: 400; }
+
+/* ── CUSTOMER ROW (cr): name (flag-tinted) + phone·type · pay-$ value · funnel ── */
+.cr { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.cr-id { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.cr-name { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .6px; font-weight: 700; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cr-sub { font-size: 11px; color: var(--txt-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cr-right { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; }
+.cr-pay { font-size: 13px; font-weight: 700; font-style: italic; white-space: nowrap; }
+.cr-pay.spend { color: var(--green); }
+.cr-pay.due { color: var(--yellow); }
+.cr-pay.over { color: var(--red); }
 /* rentals footer: Billing row over Rental-Status row (Jac) */
 .list-totals.two-row { flex-direction: column; align-items: stretch; gap: 4px; }
 .list-totals.two-row .tot-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
