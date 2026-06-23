@@ -11445,8 +11445,8 @@ function rentalRuleBlock(r, cust, val) {
   if (!['card', 'signature', 'selfie', 'po', 'id', 'terms'].some(req)) return null;
   const inv = r && r.invoiceId ? IDX.invoice.get(r.invoiceId) : null;
   if (req('card') && !(cust && hasValidCard(cust))) return 'Rental rule: a valid card on file is required before On Rent.';
-  if (req('signature') && !(cust && cust.signature)) return 'Rental rule: a signed agreement is required before On Rent.';
-  if (req('selfie') && !(cust && cust.selfie)) return 'Rental rule: a customer selfie is required before On Rent.';
+  if (req('signature') && !(cust && (cust.signature || validCards(cust).some((k) => cardCurrentSigning(cust, k))))) return 'Rental rule: a signed agreement is required before On Rent.';
+  if (req('selfie') && !(cust && latestCustomerSelfie(cust))) return 'Rental rule: a customer selfie is required before On Rent.';
   if (req('id') && !(cust && cust.idNumber)) return "Rental rule: a driver's license / ID is required before On Rent.";
   if (req('terms') && !(cust && cust.netDays != null && cust.netDays !== '')) return 'Rental rule: payment terms (Net days) must be set before On Rent.';
   if (req('po') && !(inv && inv.po)) return 'Rental rule: a PO number on the invoice is required before On Rent.';
