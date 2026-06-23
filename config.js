@@ -70,7 +70,7 @@ const RAW_STATUS = {
     'Round-Trip': { label: 'Round-Trip', color: 'blue' },
   },
   unitInspectionStatus: {
-    'Ready':     { label: 'Ready',     color: 'green'  },
+    'Ready':     { label: 'Passed',    color: 'green'  },  // stored value stays 'Ready' (live-DB compatible); label only is 'Passed'
     'Not Ready': { label: 'Not Ready', color: 'yellow' },
     'Failed':    { label: 'Failed',    color: 'red'    },
   },

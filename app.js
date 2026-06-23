@@ -2948,7 +2948,7 @@ const RB_FOUNDATION = {
     `<span style="font-size:14px;color:var(--txt)">Rugged equipment, rented right — the body face carries the content.</span>`],
   'type-mono': ['‹›', 'Mono', 'ui-monospace · 10–12px · txt-3',
     'Code + debug references only: the Inspector tag and rulebook builder names.',
-    `<code style="font-family:ui-monospace,monospace;font-size:12px;color:var(--txt-3)">UNITS › INSPECTION › “Ready”</code>`],
+    `<code style="font-family:ui-monospace,monospace;font-size:12px;color:var(--txt-3)">UNITS › INSPECTION › “Passed”</code>`],
   'type-scale': ['#', 'Size scale', '28 · 15 · 13 · 12 · 11 · 10 · 9.5px',
     'Bigger = identity/value (28 KPI · 15 popup title). 12–13 = content. ≤11 = stamped micro-labels & counters. ONE size (11px) for every status badge.',
     `<span style="display:flex;align-items:baseline;gap:13px;flex-wrap:wrap;color:var(--txt)"><span style="font-size:28px;font-weight:800">28</span><span style="font-size:15px;font-weight:700">15</span><span style="font-size:13px">13</span><span style="font-size:12px">12</span><span style="font-family:'Saira Condensed';text-transform:uppercase;letter-spacing:1px;font-size:11px;font-weight:700">11 label</span><span style="font-size:9.5px;color:var(--txt-3)">9.5</span></span>`],
@@ -4204,7 +4204,7 @@ function headFlagsHtml(card, rec) {
     // Jac 2026-06-12: fuel type + unit count as title flags (was a body badge row);
     // fleet-health flag (any failed → red · any not-ready → yellow · else green).
     const mix = categoryMix(rec.categoryId);
-    const health = mix.Failed ? { l: `${mix.Failed} Failed`, c: 'red' } : mix['Not Ready'] ? { l: `${mix['Not Ready']} Not Ready`, c: 'yellow' } : { l: 'Fleet Ready', c: 'green' };
+    const health = mix.Failed ? { l: `${mix.Failed} Failed`, c: 'red' } : mix['Not Ready'] ? { l: `${mix['Not Ready']} Not Ready`, c: 'yellow' } : { l: 'All Passed', c: 'green' };
     return flagsStack([rec.fuelType ? flagEl(rec.fuelType, 'navy') : '', flagEl(`${mix.total} units`, 'gray', { icon: CARD_ICON.units })])
       + flagsStack([flagEl(health.l, health.c, { icon: CARD_ICON.inspections })]);
   }
@@ -4897,7 +4897,7 @@ const DETAIL = {
     } else if (n.checklist === 'Fail') {
       gate = kvPills(`${n.woId ? refPill('workOrders', n.woId, 'WO') : ''}<button class="pill ref js-open-insp" data-rec="${n.inspectionId}">Failure report →</button>`);
     } else {
-      gate = kvPills(`<span class="pill c-green" data-r="R3b"><span class="t">Ready</span></span>${washSet ? badge(n.wash === 'Yes' ? 'Washed' : 'No wash', n.wash === 'Yes' ? 'blue' : 'gray') : ''}`);
+      gate = kvPills(`<span class="pill c-green" data-r="R3b"><span class="t">Passed</span></span>${washSet ? badge(n.wash === 'Yes' ? 'Washed' : 'No wash', n.wash === 'Yes' ? 'blue' : 'gray') : ''}`);
     }
     const isVideo = (n.photo || '').startsWith('data:video');
     const thumb = n.photo ? (isVideo
@@ -7251,14 +7251,14 @@ function buildPopupEl(o, overlay, opts = {}) {
       R2: refPill('units', '', 'Shrek') + refPill('customers', '', 'Devin Lyles'),
       R3: statusPill('unitInspectionStatus', 'Ready') + statusPill('rentalStatus', 'On Rent'),
       R3b: badge('480 HRS') + badge('No GPS'),
-      R4: dPill('Lift Scissor 26ft', 'orange', { icon: CARD_ICON.categories }) + dPill('Ready', 'green', { icon: CARD_ICON.inspections }),
+      R4: dPill('Lift Scissor 26ft', 'orange', { icon: CARD_ICON.categories }) + dPill('Passed', 'green', { icon: CARD_ICON.inspections }),
       R5: addBtn('Customer', { link: true, h: 26 }) + addBtn('Invoice/+Transport', { link: true, h: 26 }),
       R5b: addBtn('Part/Task', { line: true, h: 26 }) + addBtn('Rental', { line: true, h: 26 }),
       R5c: addBtn('Serial', { h: 26 }) + addBtn('Email', { h: 26 }),
       R6: reqBtn('PO #'),
       R7: linkName('Shrek · Jun 02–Jun 12'),
       R8: '<span class="derived">$2,610 · 7-Day×1 + 1-Day×3</span>',
-      R9: flagsStack([flagEl('Ready', 'green', { icon: CARD_ICON.inspections }), flagEl('ETA Jun 18', 'yellow', { icon: CARD_ICON.workOrders })]),
+      R9: flagsStack([flagEl('Passed', 'green', { icon: CARD_ICON.inspections }), flagEl('ETA Jun 18', 'yellow', { icon: CARD_ICON.workOrders })]),
       R10: '<span class="c-titlecard"><span class="c-icon">' + CARD_ICON.units + '</span><span class="c-title">Beacon</span></span>',
       R11: '<span style="display:inline-block;border:1px solid color-mix(in srgb, var(--green) 45%, transparent);border-radius:9px;padding:4px 14px;font-size:10px;font-weight:700;letter-spacing:.5px;color:var(--green)">INSPECTION</span>',
       R12: '<span class="add-field" data-r="R5c" style="height:24px;font-size:11px">+Notes</span><span class="muted" style="font-size:11px"> (boxless line)</span>',
@@ -10748,7 +10748,7 @@ function completeChecklist() {
   if (failed.length) n.description = 'Failed checklist: ' + failed.map((it) => inspItemType(it)==='select' ? (it.label + ': ' + (n.items[it.id]||'')) : it.label).join(', ');
   state.overlay = null;                                   // close the takeover; a Fail re-opens the photo/notes popup
   setInspResult(n.inspectionId, failed.length ? 'Fail' : 'Pass');   // cascade onto the inspection section + auto-WO
-  toast(failed.length ? `Inspection failed — work order opened for ${u.name}.` : `Inspection passed — ${u.name} is Ready. ✓`);
+  toast(failed.length ? `Inspection failed — work order opened for ${u.name}.` : `Inspection passed — ${u.name} marked Passed. ✓`);
 }
 function setUnitWash(unitId, val) {
   const u = IDX.unit.get(unitId); if (!u) return;
@@ -12583,7 +12583,7 @@ function setInspResult(id, val) {
     logAction(wo, 'Created from failed inspection');
     toast(`Failed — WO ${wo.woId} created. Add a photo + notes.`);
     state.overlay = { kind: 'inspection', recId: id };   // Fail → open the photo/video + notes popup
-  } else { toast('Passed — unit marked Ready.'); }
+  } else { toast('Unit marked Passed. ✓'); }
   const session = activeSession(); if (session.anchor) setAnchor(session, session.anchor.card, session.anchor.recId, session.anchor.recType);
   render(); renderOverlay();
 }
