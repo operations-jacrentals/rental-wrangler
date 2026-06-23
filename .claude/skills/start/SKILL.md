@@ -46,20 +46,29 @@ The app is organized into long-lived **area branches** (`area/*`), each owning a
   3. cut the task branch: `git checkout -b <domain>/<task>` and `git push -u origin <domain>/<task>`.
   4. Commit your work to the **task branch** and push there. Name it `<domain>/<task>`, NOT `area/<domain>/<task>` — git won't nest a branch under an existing branch's name.
 - **Test at the AREA level, LOCALLY — this is the primary debug loop (NOT staging).** When a feature merges to its `area/<domain>`, serve that branch and drive it on `localhost` — isolated, instant, no entanglement with anyone else's in-flight work. It's the dev-loop version of what `ci/smoke.mjs` already does (a static server), minus Playwright:
-  1. Save this tiny server to a **gitignored scratch path** (e.g. the session-output folder — never commit it) as `serve.mjs`:
+  > **Cloud session vs. local machine — read this first.** When Claude Code runs in the web/cloud environment (`CLAUDE_CODE_REMOTE_ENVIRONMENT_TYPE=cloud_default`), the static server starts inside the cloud container but the port is **NOT proxied** to Jac's browser — `http://localhost:9147` from a cloud session is unreachable. Detect with: `echo $CLAUDE_CODE_REMOTE_ENVIRONMENT_TYPE` (prints `cloud_default` = cloud, blank/other = local). **Cloud session's job: code, commit, push to the area branch.** Then Jac pulls on his **local machine** and serves there. If in doubt — the cloud session CAN start the server and confirm it responds inside the container (`curl -s http://localhost:9147 | head -3`) as a smoke-check that the code boots, but it cannot hand Jac a browser URL. The URL only works on Jac's local machine.
+  1. Save this server to a **gitignored scratch path** (e.g. the session-output folder — never commit it) as `serve.mjs`. **This runs on Jac's LOCAL machine** (or cloud, as a boot-smoke-check only — no browser URL from cloud):
      ```js
      import { createServer } from 'http';
      import { readFile } from 'fs/promises';
      import { extname, join, normalize } from 'path';
-     const T = { '.html':'text/html','.js':'text/javascript','.css':'text/css','.json':'application/json','.svg':'image/svg+xml' };
+     const MIME = { '.html':'text/html', '.js':'application/javascript', '.css':'text/css',
+       '.json':'application/json', '.png':'image/png', '.jpg':'image/jpeg',
+       '.svg':'image/svg+xml', '.ico':'image/x-icon', '.woff2':'font/woff2', '.woff':'font/woff' };
+     const ROOT = process.cwd();
      createServer(async (q, s) => {
-       try { let p = decodeURIComponent(q.url.split('?')[0]); if (p==='/') p='/index.html';
-         const b = await readFile(join('.', normalize(p)));
-         s.writeHead(200, { 'Content-Type': T[extname(p)] || 'application/octet-stream' }); s.end(b);
-       } catch { s.writeHead(404); s.end('404'); }
-     }).listen(9147, () => console.log('http://localhost:9147'));
+       try {
+         let p = decodeURIComponent(q.url.split('?')[0]);
+         if (p === '/') p = '/index.html';
+         const safe = normalize(p).replace(/^(\.\.[\/\\])+/, '');
+         const file = join(ROOT, safe);
+         const data = await readFile(file);
+         s.writeHead(200, { 'Content-Type': MIME[extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-store' });
+         s.end(data);
+       } catch { s.writeHead(404); s.end('Not found'); }
+     }).listen(9147, () => console.log('serving on http://localhost:9147'));
      ```
-  2. From the repo root on the area branch: `node <path>/serve.mjs` (**port 9147** — 8000 is reserved on this machine).
+  2. **On Jac's local machine:** pull the area branch (`git pull origin area/<domain>`), then from the repo root: `node <path>/serve.mjs` (**port 9147** — 8000 is reserved on this machine).
   3. Open `http://localhost:9147` and log in — password from **`$env:RW_PW`** (never hardcode or echo it; no var set → you can only check the pre-login surface). Then **exercise exactly the feature you built**, plus a sanity flow.
   - **Backend note:** local hits the SAME single GAS web app + Sheets DB that staging and main use (`app.js` → `BACKEND_URL`), gated by the team password — so local testing is **no riskier with real data than staging**. PII guard still applies: read for understanding; NEVER paste Drive/Sheets data into the repo/commits/seeds ([[jactec-real-data-migration]]).
   - Drive it with **Claude-in-Chrome** for an automated assertion (no local install needed), or just open it yourself.
