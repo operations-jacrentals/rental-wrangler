@@ -15,8 +15,8 @@
 
   /* status colors (base = text/border tone, -bg = soft fill) */
   --green:#34d399;  --green-bg:rgba(52,211,153,.14);
-  --yellow:#f5c542; --yellow-bg:rgba(245,197,66,.14);
-  --red:#ff4242;    --red-bg:rgba(255,66,66,.18);   /* brighter, bolder (overdue / Failed) */
+  --yellow:#ffe000; --yellow-bg:rgba(255,224,0,.15);
+  --red:#ff1040;    --red-bg:rgba(255,16,64,.18);
   --blue:#5b9dff;   --blue-bg:rgba(91,157,255,.14);
   --navy:#6f8bdb;   --navy-bg:rgba(70,102,196,.18);
   --purple:#b07cf5; --purple-bg:rgba(176,124,245,.16);
@@ -858,6 +858,11 @@ select.lf-in { appearance: none; cursor: pointer; }
 .pill.ghost { background: transparent; border-color: var(--line); color: var(--txt-2); }                     /* R18: quiet action (Cancel/Close) */
 .pill.ghost:hover { color: var(--txt); border-color: var(--accent-line); }
 .pill.locked { opacity: .55; cursor: not-allowed; }                                                          /* R17 locked-gate state (no inline hacks) */
+/* R2e entity-stamp: row-name style on a linked pill — Saira caps, flag-colored, card icon. */
+.pill.entity-stamp { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .6px; font-weight: 700; font-size: 12.5px; height: 24px; border-radius: 5px; gap: 5px; }
+.pill.entity-stamp svg { width: 13px; height: 13px; }
+.pill.entity-stamp .t { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.pill.entity-stamp:hover { filter: brightness(1.1); }
 .req { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 13px; border-radius: 10px; background: #fff; color: #16181d; border: 1px solid #fff; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }  /* rule 15/16/22: required-until-entered = white bg + dark ink */
 .req svg { width: 15px; height: 15px; }
 /* rule 8: notes carry a 3-color dot tag (white/red/green), picked while entering */
@@ -2351,7 +2356,8 @@ body.rw-inspect .c-titlecard:hover { outline: 2px solid #18b6ff; outline-offset:
 /* ── RENTAL DETAIL v2 — header · calendar · unit rows · footer (rd-*, rdcal-*) ── */
 .rd-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
 .rd-head-l { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; min-width: 0; }
-.rd-head-r { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.rd-head-r { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; flex-shrink: 0; }
+.rd-head-bal { display: flex; align-items: center; gap: 7px; }
 .rd-blocker { margin-bottom: 6px; }
 /* numbered-date window-track calendar */
 .rdcal { background: var(--panel-2); border-radius: 10px; overflow: hidden; cursor: pointer; margin-top: 2px; user-select: none; }
@@ -2639,7 +2645,7 @@ body { font-variant-numeric: tabular-nums; }
 .card[data-card="rentals"] .list .empty { grid-column: 1 / -1; }   /* +New Rental + empty states span both columns (and self-size, no tall track) */
 .row[data-card="rentals"] { padding: 0; display: flex; flex-direction: column; height: 172px; }
 .row[data-card="rentals"] .row-content { padding: 0; height: 100%; display: flex; flex-direction: column; }
-.rcc { flex: 1; display: flex; flex-direction: column; gap: 5px; padding: 8px 10px 7px; border-left: 3px solid var(--rcc-hl, var(--line)); overflow: hidden; }
+.rcc { flex: 1; display: flex; flex-direction: column; gap: 5px; padding: 8px 10px 7px; border: 2px solid var(--rcc-hl, var(--line)); border-radius: 11px; overflow: hidden; }
 /* HEADER — row 1: unit names (LEFT, colored by inspection) + status pill pinned RIGHT;
    row 2: customer + balance (Jac 2026-06-23) */
 .rcc-head { display: flex; flex-direction: column; gap: 4px; flex-shrink: 0; }
@@ -2679,7 +2685,7 @@ body { font-variant-numeric: tabular-nums; }
 .rcc-day.is-past .rcc-dot { background: var(--line); opacity: 1; }
 .rcc-day.is-win .rcc-dot { background: var(--rcc-hl, var(--green)); opacity: .7; }
 /* today = orange RING (not fill) so the dot doesn't compete with start/end markers */
-.rcc-day.is-today .rcc-dot { width: 15px; height: 15px; background: transparent; border: 2px solid var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); opacity: 1; }
+.rcc-day.is-today .rcc-dot { width: 15px; height: 15px; background: transparent; border: 2px solid var(--blue); box-shadow: 0 0 0 3px var(--blue-bg); opacity: 1; }
 /* start/end: enlarged for legibility — bigger dot, bigger icon */
 .rcc-day.is-start .rcc-dot, .rcc-day.is-end .rcc-dot { width: 24px; height: 24px; background: var(--rcc-hl, var(--green)); color: var(--card); opacity: 1; }
 .rcc-day.is-start .rcc-dot svg, .rcc-day.is-end .rcc-dot svg { width: 15px; height: 15px; }
@@ -2710,19 +2716,22 @@ body { font-variant-numeric: tabular-nums; }
    Equal-width pill slots so all rows share the same column rhythm. ── */
 .row[data-card="units"] { padding: 0; }
 .row[data-card="units"] .row-content { padding: 0; }
-.ur { display: flex; align-items: center; gap: 9px; min-width: 0; padding: 8px 11px 8px 8px; border-left: 3px solid var(--ur-hl, var(--line)); }
+.ur { display: flex; align-items: center; gap: 9px; min-width: 0; padding: 8px 11px 8px 8px; border-right: 3px solid var(--ur-hl, var(--line)); }
 .ur-cat { flex: 0 0 auto; width: 22px; height: 22px; color: var(--txt-2); display: flex; align-items: center; justify-content: center; }
 .ur-cat svg { width: 19px; height: 19px; display: block; }
-.ur-id { flex: 1 1 auto; min-width: 0; display: flex; align-items: baseline; gap: 1px 8px; }
+.ur-id { flex: 1 1 auto; min-width: 0; display: flex; align-items: baseline; gap: 1px 8px; justify-content: flex-end; }
 .ur-name { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .6px; font-weight: 700; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; min-width: 0; }
 .ur-sub { font-size: 11.5px; color: var(--txt-2); white-space: nowrap; flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-/* two pill slots in a 2-column equal-width grid → every row's pills align to the same x-positions */
-.ur-pills { flex: 0 0 auto; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; min-width: 180px; }
+/* two pill slots in a 2-column equal-width grid → every row's pills align to the same x-positions.
+   Must use a FIXED width (not min-width) — fr units in an auto-sized flex child resolve per-column,
+   producing unequal widths. A definite width makes 1fr = exactly half. */
+.ur-pills { flex: 0 0 196px; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .ur-pill-slot { display: flex; align-items: center; justify-content: center; }
-.ur-pill-slot .pill { width: 100%; text-align: center; justify-content: center; }
+.ur-pill-slot .pill { width: 100%; text-align: center; justify-content: center; overflow: hidden; }
+.ur-pill-slot .pill .t { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 @container (max-width: 340px) {
   .ur-id { flex-direction: column; align-items: flex-start; gap: 1px; }
-  .ur-pills { grid-template-columns: 1fr; min-width: 90px; }
+  .ur-pills { flex-basis: 90px; grid-template-columns: 1fr; }
 }
 /* ── CATEGORY ROW (catr): [status badges LEFT] · [name/rate RIGHT] — mirrors units swap. ── */
 .catr { display: flex; align-items: center; gap: 9px; min-width: 0; padding: 8px 11px 8px 10px; }
@@ -2731,11 +2740,12 @@ body { font-variant-numeric: tabular-nums; }
 .catr-sub { font-size: 11.5px; color: var(--txt-2); white-space: nowrap; }
 
 /* ── CUSTOMER ROW (cr-statuses): account-type + funnel, equal-width, right-pinned. ── */
-.cr-statuses { flex: 0 0 auto; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-left: auto; min-width: 160px; }
+.cr-statuses { flex: 0 0 160px; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-left: auto; }
 .cr-pill-slot { display: flex; align-items: center; justify-content: center; }
-.cr-pill-slot .pill { width: 100%; text-align: center; justify-content: center; }
+.cr-pill-slot .pill { width: 100%; text-align: center; justify-content: center; overflow: hidden; }
+.cr-pill-slot .pill .t { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 @container (max-width: 340px) {
-  .cr-statuses { grid-template-columns: 1fr; min-width: 80px; }
+  .cr-statuses { flex-basis: 80px; grid-template-columns: 1fr; }
 }
 
 /* No-Preview Mode (Jac 2026-06-12): every eye — row chips + the toolbar — runs RED */
