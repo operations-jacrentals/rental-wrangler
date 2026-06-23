@@ -3910,7 +3910,7 @@ const ROWS = {
       if (!unit) return '';
       const insp = unit.inspectionStatus;
       const ic = insp === 'Failed' ? 'var(--red)' : insp === 'Not Ready' ? 'var(--yellow)' : insp === 'Passed' ? 'var(--green)' : 'var(--txt)';
-      return `<span class="rcc-uname" style="color:${ic}" data-tip="${esc(unit.name)}: ${esc(insp || 'Unknown')}">${esc(unit.name)}</span>`;
+      return `<span class="rcc-uname${insp === 'Failed' ? ' ec-red' : ''}" style="color:${ic}" data-tip="${esc(unit.name)}: ${esc(insp || 'Unknown')}">${esc(unit.name)}</span>`;
     }).filter(Boolean).join('<span class="rcc-usep">, </span>') || (units ? `<span class="rcc-uname">${esc(units)}</span>` : '');
     const headHtml = `<div class="rcc-head">
       <div class="rcc-h1">${unitNameHtml ? `<span class="rcc-units">${unitNameHtml}</span>` : ''}${stPill}</div>
@@ -3978,7 +3978,7 @@ const ROWS = {
     const isMember = c.accountType === 'Member' || c.accountType === 'Business Member';
     const nameColor = (fc === 'red' || fc === 'yellow') ? `var(--${fc})` : fc === 'gray' ? 'var(--txt-3)' : (fc === 'green' && isMember) ? 'var(--green)' : 'var(--txt)';
     const acct = getStatus('customerAccountType', c.accountType || 'Non-Business');
-    const sub = [esc(c.phone || ''), c.accountType ? esc(acct.label) : ''].filter(Boolean).join(' · ');
+    const sub = c.phone ? esc(c.phone) : '';
 
     // Pay status AS A NUMBER (Jac — no "New Customer" text): owed balance → yellow before
     // its due date / red on-or-after; otherwise rolling-12-month spend → green.
@@ -4005,7 +4005,7 @@ const ROWS = {
     const acctPill = statusPill('customerAccountType', c.accountType || 'Non-Business');
     return `<div class="cr">
       <div class="cr-id">
-        <span class="r-title cr-name" style="color:${nameColor}">${esc(c.name)}</span>
+        <span class="r-title cr-name${fc === 'red' ? ' ec-red' : ''}" style="color:${nameColor}">${esc(c.name)}</span>
         ${sub ? `<span class="cr-sub">${sub}</span>` : ''}
       </div>
       ${payHtml}
