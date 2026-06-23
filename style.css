@@ -126,7 +126,7 @@ input { font-family: inherit; }
 
 /* KPI rings (§5.2/§11) — Apple-style concentric progress rings, each colored by
    its own value band; number + role label below. */
-.kpis { display: flex; align-items: center; gap: 14px; }
+.kpis { display: flex; align-items: center; gap: 14px; position: relative; }   /* position: anchor for the Coming-2026 plate */
 .kpi-ring {
   display: flex; flex-direction: column; align-items: center; gap: 3px;
   padding: 4px 6px 0; border-radius: 11px; border: 1px solid transparent; min-width: 64px;
@@ -152,6 +152,53 @@ input { font-family: inherit; }
 .big-ring .ring-fill.ring-glow { filter: drop-shadow(0 0 2.4px var(--green)) drop-shadow(0 0 5.2px var(--green)); }
 .kpi-ring .ring-label { font-size: 10px; color: var(--txt-3); font-weight: 600; text-transform: uppercase; letter-spacing: .3px; }
 .kpi-ring .ring-pct { font-size: 28px; font-weight: 700; fill: var(--txt); }   /* big popup ring only */
+
+/* ── COMING 2026 — roadmap plate over the blurred rings (Jac 2026-06-23) ──────
+   Signature = the hi-vis hazard-stripe cap ("work zone / coming soon"); the dimmed
+   gauges glow behind frosted steel. Boldness spent ONLY on the stripe; everything
+   else quiet. No orange (reserved) — caution-yellow ties to the hazard signature.
+   Themes for free off the tokens; reduced-motion freezes the lift. */
+.coming-plate {
+  position: absolute; inset: 0; z-index: 3;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+  border: 1px solid var(--line); border-radius: var(--chip-radius); overflow: hidden;
+  padding: 7px 16px 5px; cursor: pointer; font-family: 'Saira Condensed', sans-serif;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--panel) 76%, transparent), color-mix(in srgb, var(--bg) 88%, transparent));
+  -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px);
+  transition: border-color .15s, transform .15s;
+}
+.coming-plate:hover { border-color: color-mix(in srgb, var(--yellow) 45%, var(--line)); transform: translateY(-1px); }
+.coming-plate:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.cp-haz { position: absolute; left: 0; right: 0; top: 0; height: 5px; opacity: .9;
+  background: repeating-linear-gradient(135deg, var(--yellow) 0 11px, #14181d 11px 22px); }
+.cp-rivet { position: absolute; width: 4px; height: 4px; border-radius: 50%;   /* matches .pl-rivet metal */
+  background: radial-gradient(circle at 35% 30%, #434c58, #0f1318); box-shadow: inset 0 0 0 1px rgba(0,0,0,.55); }
+.cp-rivet.tl { left: 6px; top: 9px; } .cp-rivet.tr { right: 6px; top: 9px; }
+.cp-rivet.bl { left: 6px; bottom: 6px; } .cp-rivet.br { right: 6px; bottom: 6px; }
+.cp-stamp { margin-top: 3px; font-size: 17px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; color: var(--txt); line-height: 1; }
+.cp-stamp b { color: var(--yellow); font-weight: 800; }
+.cp-sub { font-family: var(--font); font-size: 9.5px; letter-spacing: .2px; color: var(--txt-3); text-align: center; }
+.is-phone .coming-plate { padding: 2px 6px; }
+.is-phone .cp-stamp { margin-top: 2px; font-size: 12px; letter-spacing: 1px; }
+.is-phone .cp-sub, .is-phone .cp-rivet { display: none; }
+@media (prefers-reduced-motion: reduce) { .coming-plate { transition: none; } .coming-plate:hover { transform: none; } }
+
+/* ── COMING 2026 roadmap popup — the docket + the whole territory ── */
+.rm-popup { width: 460px; max-width: 94vw; }
+.rm-intro { margin: 0 2px 12px; font-size: 12.5px; line-height: 1.45; color: var(--txt-2); }
+.rm-list { display: flex; flex-direction: column; }
+.rm-row { display: grid; grid-template-columns: 80px 1fr auto; align-items: center; gap: 10px;
+  padding: 7px 2px; border-bottom: 1px solid var(--line-soft); }
+.rm-row:last-child { border-bottom: 0; }
+.rm-badge { display: flex; }
+.rm-name { font-size: 13px; font-weight: 600; color: var(--txt); }
+.rm-area { font-family: 'Saira Condensed', sans-serif; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--txt-3); white-space: nowrap; }
+.rm-stitch { margin: 15px 0; border-top: 1.5px dashed var(--tan, #c2925a); opacity: .6; }   /* saddle-stitch — the ranch seasoning */
+.rm-terr-h { margin-bottom: 9px; text-align: center; font-family: 'Saira Condensed', sans-serif; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; color: var(--txt-3); }
+.rm-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.rm-chip { padding: 3px 10px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel-2);
+  font-family: 'Saira Condensed', sans-serif; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: var(--txt-2); }
+.rm-foot { margin: 14px 2px 0; font-size: 11.5px; line-height: 1.4; color: var(--txt-3); }
 
 /* tab strip — ONE row, scrolls horizontally if many; sits above the toolbar */
 .tabstrip { display: flex; gap: 6px; overflow-x: auto; max-width: 100%; padding-bottom: 0; }
@@ -831,6 +878,10 @@ select.lf-in { appearance: none; cursor: pointer; }
 /* both row buttons share ONE floating chip (like the card-header chip), stacked + vertically centered */
 .row .r-actions { position: absolute; top: 50%; right: 7px; transform: translateY(-50%); z-index: 2; display: flex; flex-direction: column; gap: 2px; padding: 3px; border-radius: var(--chip-radius); background: var(--panel); border: 1px solid var(--line); box-shadow: var(--chip-shadow); opacity: 0; transition: opacity .12s; }
 .row:hover .r-actions { opacity: 1; }                                                              /* §0.1 buttons on hover only */
+/* Hover row tools can't be reached without a real hover — hide on touch/phone so they
+   don't sit dead on a row (Jac 2026-06-23). Eye → toolbar previews toggle · + → Ctrl+click. */
+.is-phone .row .r-actions { display: none; }
+@media (hover: none) and (pointer: coarse) { .row .r-actions { display: none; } }
 .rbtn { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 8px; background: none; border: none; color: var(--txt-2); }
 .rbtn:hover { background: var(--panel-2); color: var(--accent); }
 .rbtn svg { width: 14px; height: 14px; }
