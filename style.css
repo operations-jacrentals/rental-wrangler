@@ -2324,6 +2324,45 @@ body.rw-inspect .c-titlecard:hover { outline: 2px solid #18b6ff; outline-offset:
 .stall-sub.hint { color: var(--txt-3); font-style: normal; }
 .stall-empty { display: flex; align-items: center; gap: 9px; padding: 11px 2px; }
 .rentalsec-foot { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 10px; }
+
+/* ── RENTAL DETAIL v2 — header · calendar · unit rows · footer (rd-*, rdcal-*) ── */
+.rd-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.rd-head-l { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; min-width: 0; }
+.rd-head-r { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.rd-blocker { margin-bottom: 6px; }
+/* numbered-date window-track calendar */
+.rdcal { background: var(--panel-2); border-radius: 10px; overflow: hidden; cursor: pointer; margin-top: 2px; user-select: none; }
+.rdcal:hover { filter: brightness(1.04); }
+.rdcal-dow { display: grid; grid-template-columns: repeat(7, 1fr); padding: 5px 4px 2px; }
+.rdcal-dow span { text-align: center; font-size: 8px; font-weight: 700; color: var(--txt-3); text-transform: uppercase; font-family: 'Saira Condensed', system-ui, sans-serif; }
+.rdcal-body { display: grid; grid-template-columns: repeat(7, 1fr); column-gap: 0; padding: 0 4px 6px; }
+.rdcal-day { position: relative; height: 34px; }
+.rdcal-bar { position: absolute; z-index: 1; top: 50%; transform: translateY(-50%); left: 0; right: 0; height: 3px; }
+.rdcal-day.elapsed .rdcal-bar { background: var(--rdcal-hl); }
+.rdcal-day.fut .rdcal-bar { background: var(--rdcal-hl); opacity: .3; }
+.rdcal-day.is-start .rdcal-bar { left: 50%; border-radius: 2px 0 0 2px; }
+.rdcal-day.is-end .rdcal-bar { right: 50%; border-radius: 0 2px 2px 0; }
+.rdcal-n { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 2; font-size: 11px; font-weight: 600; color: var(--txt-2); line-height: 1.2; border-radius: 3px; padding: 0 2px; white-space: nowrap; }
+.rdcal-t { position: absolute; top: 2px; left: 50%; transform: translateX(-50%); z-index: 3; font-size: 7px; font-weight: 700; color: var(--txt-2); font-family: 'Saira Condensed', system-ui, sans-serif; white-space: nowrap; letter-spacing: .2px; }
+.rdcal-ico { position: absolute; bottom: 2px; left: 50%; transform: translateX(-50%); z-index: 2; width: 10px; height: 10px; color: var(--rdcal-hl, var(--green)); display: flex; align-items: center; justify-content: center; }
+.rdcal-ico svg { width: 100%; height: 100%; display: block; }
+.rdcal-day.is-past .rdcal-n { opacity: .35; }
+.rdcal-day.is-win .rdcal-n { color: var(--txt); }
+.rdcal-day.is-today .rdcal-n { color: var(--accent); font-weight: 800; }
+.rdcal-day.is-start .rdcal-n { background: var(--rdcal-hl, var(--green)); color: var(--card); font-weight: 800; }
+.rdcal-day.is-end .rdcal-n { outline: 1.5px solid var(--rdcal-hl, var(--green)); color: var(--rdcal-hl, var(--green)); font-weight: 800; border-radius: 50%; }
+/* unit rows beneath calendar */
+.rd-units { margin-top: 6px; }
+.rd-unit-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.rd-unit-id { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.rd-unit-rate { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--txt-2); white-space: nowrap; flex-shrink: 0; }
+.rd-dur { font-weight: 600; color: var(--txt); }
+/* footer: complete/cancel left · invoice total right */
+.rd-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.rd-foot-l { display: flex; align-items: center; gap: 8px; }
+.rd-foot-r { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.rd-inv-total { font-size: 15px; font-weight: 800; color: var(--txt); text-decoration: underline; font-variant-numeric: tabular-nums; }
+
 /* §20 route rail — linear House(Jac)─Person(Job Site)─House(Jac) stepper; the rail
    itself is the type control (tap two stops). Address rides ABOVE each connector
    line, +Log rides BELOW it; node well fills orange when its leg is on the route. */
