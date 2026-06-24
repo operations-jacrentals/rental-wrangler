@@ -5753,7 +5753,12 @@ function sortRows(card, rows, sort) {
     }
   };
   const dir = sort.dir === 'desc' ? -1 : 1;
-  return [...rows].sort((a, b) => { const va = val(a), vb = val(b); return va < vb ? -dir : va > vb ? dir : 0; });
+  return [...rows].sort((a, b) => {
+    // Completed/cancelled rentals always sink to the bottom so the active queue leads —
+    // they stay searchable/viewable, just below the live ones (Jac 2026-06-24).
+    if (card === 'rentals') { const ac = a.completed ? 1 : 0, bc = b.completed ? 1 : 0; if (ac !== bc) return ac - bc; }
+    const va = val(a), vb = val(b); return va < vb ? -dir : va > vb ? dir : 0;
+  });
 }
 
 const VIRT_CAP = 60;   // first-paint cap (SPEC §3 windowing)
