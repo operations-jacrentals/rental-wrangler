@@ -380,6 +380,10 @@ input { font-family: inherit; }
    long-press drag + the column/Back-Fwd swipe engine are untouched (single tap still opens,
    double tap still anchors — now without the browser stealing it). */
 body.is-phone { touch-action: manipulation; }
+/* §M-touch — iOS Safari auto-zooms when you FOCUS an input whose font-size is < 16px,
+   independent of the viewport scale lock. Force every phone input to 16px so tapping a
+   field (card search, line-item fields, chat compose, login) never zooms the screen. */
+.is-phone input, .is-phone textarea, .is-phone select { font-size: 16px !important; }
 /* ── §M3 — overlays & the winpicker become bottom SHEETS on phones: full-width,
    pinned to the bottom edge, rounded top, slide up. Popups keep their ✕ and the
    backdrop closes on tap; the winpicker gets its own tap-to-close backdrop + Esc. ── */
