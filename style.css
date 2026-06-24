@@ -2474,6 +2474,8 @@ body.rw-inspect .c-titlecard:hover { outline: 2px solid #18b6ff; outline-offset:
 .rdcal-day.is-today .rdcal-n { color: var(--accent); font-weight: 800; }
 .rdcal-day.is-start .rdcal-n { background: var(--rdcal-hl, var(--green)); color: var(--card); font-weight: 800; }
 .rdcal-day.is-end .rdcal-n { outline: 1.5px solid var(--rdcal-hl, var(--green)); color: var(--rdcal-hl, var(--green)); font-weight: 800; border-radius: 50%; }
+/* 1st-of-month → month abbrev marker (matches the mini calendars' .rcc-n.mon1st) */
+.rdcal-n.mon1st { font-family: 'Saira Condensed', system-ui, sans-serif; font-size: 11px; font-weight: 800; letter-spacing: .5px; color: var(--txt-2); padding: 0; }
 /* unit rows beneath calendar */
 .rd-units { margin-top: 6px; }
 .rd-unit-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
