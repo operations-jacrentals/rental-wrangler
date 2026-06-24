@@ -2091,10 +2091,15 @@ function termsFor(scope) {
   return (cs.filterTerms = cs.filterTerms || []);
 }
 function afterFilterChange(scope) {
+  const sel = scope === 'global' ? '#globalsearch' : `.mini-search[data-card="${scope}"]`;
+  // Only KEEP focus on the search box if the user was already typing in it (Enter-to-pin a
+  // term → let them add another). A chip / graph-segment / Not-Ready tap must NOT grab focus
+  // — on a phone that pops the keyboard + scroll-jumps the layout out from under you (Jac).
+  const wasTyping = !!(document.activeElement && document.activeElement.matches && document.activeElement.matches(sel));
   if (scope === 'global') recomputeSearchMode();           // sets searchMode + resets list limits
   else activeSession().cards[scope].listLimit = undefined;  // re-window this card from the top
   render();
-  document.querySelector(scope === 'global' ? '#globalsearch' : `.mini-search[data-card="${scope}"]`)?.focus();
+  if (wasTyping) document.querySelector(sel)?.focus();
 }
 // A1 — a footer chip adds an EXACT, removable filter pill to the card's search bar (one
 // filtering pathway, cleared from the search bar) instead of a separate sticky footer filter.
