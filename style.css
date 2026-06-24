@@ -340,6 +340,10 @@ input { font-family: inherit; }
 .mcard-tog .mct-ico { display: inline-flex; } .mcard-tog .mct-ico svg { width: 19px; height: 19px; }
 .mcard-tog .mct-lbl { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1px; font-weight: 800; font-size: 13px; white-space: nowrap; }
 .mcard-tog.on { background: var(--accent); color: var(--on-orange, #1a1205); }   /* selected = ignition orange + dark ink */
+/* Fill the bar (Jac 2026-06-24): the icon toggles share the leftover width evenly so
+   there's no dead space, while the selected (labelled) toggle keeps its natural size. */
+.mcard-bar .mcard-tog { flex: 1 1 0; }
+.mcard-bar .mcard-tog.on { flex: 0 0 auto; }
 .mcard-tog:not(.on):active { background: rgba(255,255,255,.06); }
 .mdock-act { flex: 0 0 auto; position: relative; }
 /* ── §M2 Mobile drag — the chat drop-zone is the BOTTOM EDGE (full width) on phones,
