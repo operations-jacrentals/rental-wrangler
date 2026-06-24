@@ -5754,9 +5754,14 @@ function sortRows(card, rows, sort) {
   };
   const dir = sort.dir === 'desc' ? -1 : 1;
   return [...rows].sort((a, b) => {
-    // Completed/cancelled rentals always sink to the bottom so the active queue leads —
-    // they stay searchable/viewable, just below the live ones (Jac 2026-06-24).
-    if (card === 'rentals') { const ac = a.completed ? 1 : 0, bc = b.completed ? 1 : 0; if (ac !== bc) return ac - bc; }
+    // Genuinely-completed rentals sink to the bottom so the active queue leads — they stay
+    // searchable/viewable, just below. Cancelled/No-Show are NOT counted: they're not
+    // "completed" until the Complete button is clicked, so they stay up where they can be
+    // worked (mirrors the cancelish check in the rental footer). (Jac 2026-06-24)
+    if (card === 'rentals') {
+      const done = (r) => r.completed && r.status !== 'Cancelled' && r.status !== 'No Show';
+      const ac = done(a) ? 1 : 0, bc = done(b) ? 1 : 0; if (ac !== bc) return ac - bc;
+    }
     const va = val(a), vb = val(b); return va < vb ? -dir : va > vb ? dir : 0;
   });
 }
