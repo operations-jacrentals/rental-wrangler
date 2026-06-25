@@ -927,6 +927,63 @@ function transportLineItems(r) {
   });
   return out;
 }
+/* ════════════ RENTAL EXTENSIONS (Jac 2026-06-25) ════════════
+   Lengthening a fragile (invoiced/out) rental's window re-prices the FULL window
+   per unit and bills only the increment as additive 'extension' line(s) — never
+   re-pricing or touching the original (possibly paid) 'rental' line. Positive
+   deltas only: a shortened window is a refund decision, left manual (refund-first,
+   §7.4). Composes across repeats — each pass diffs against everything already
+   billed for the unit (rental + prior extension lines). */
+/** Dollars already billed for a unit's rental TIME on an invoice (rental + extension
+ *  lines for that unit) — the baseline an extension diffs against. */
+function unitBilledRental(inv, rentalId, unitId) {
+  return (inv.lineItems || []).reduce((a, li) =>
+    a + ((li.ref === rentalId && li.unitId === unitId && (li.kind === 'rental' || li.kind === 'extension')) ? (Number(li.amount) || 0) : 0), 0);
+}
+/** PURE preview of extending r to a staged window (no mutation) — drives the picker
+ *  banner AND the save-time lock guard. Returns null when there's no linked invoice
+ *  or no positive billable delta isn't computed yet (still returns the shorten case). */
+function extensionPreview(r, stagedStart, stagedEnd) {
+  if (!r || !r.invoiceId) return null;
+  const inv = IDX.invoice.get(r.invoiceId); if (!inv) return null;
+  const ns = stagedStart || r.startDate, ne = stagedEnd || r.endDate;
+  if (!ns || !ne) return null;
+  let subtotalDelta = 0; const perUnit = [];
+  rentalUnits(r).forEach((eu) => {
+    if (unitVoided(r, eu)) return;
+    const u = IDX.unit.get(eu.unitId); if (!u) return;
+    const p = rentalPrice({ categoryId: u.categoryId, startDate: ns, endDate: ne, customerId: r.customerId });
+    const d = Math.round(((p ? p.price : 0) - unitBilledRental(inv, r.rentalId, eu.unitId)) * 100) / 100;
+    if (d > 0.005) { subtotalDelta += d; perUnit.push({ unitId: eu.unitId, name: u.name, delta: d, rate: p ? p.rate : '—' }); }
+  });
+  subtotalDelta = Math.round(subtotalDelta * 100) / 100;
+  const cust = IDX.customer.get(r.customerId);
+  const exempt = !!(inv.taxExempt || cust?.salesTaxExempt);
+  const taxDelta = exempt ? 0 : Math.round(subtotalDelta * TAX_RATE * 100) / 100;
+  const prevDays = Math.max(1, dayDiff(parseISO(r.startDate), parseISO(r.endDate)));
+  const newDays = Math.max(1, dayDiff(parseISO(ns), parseISO(ne)));
+  return { subtotalDelta, taxDelta, perUnit, newBalance: invoiceTotals(inv).balance + subtotalDelta + taxDelta, daysDelta: newDays - prevDays, prevEnd: r.endDate, newEnd: ne, locked: !!inv.locked };
+}
+/** Append the per-unit extension delta line(s) to r's invoice (reads r's CURRENT
+ *  window — call AFTER the new dates are written). Returns a summary or null. */
+function billExtension(r) {
+  if (!r || !r.invoiceId) return null;
+  const inv = IDX.invoice.get(r.invoiceId); if (!inv || inv.locked) return null;
+  let subtotalDelta = 0, count = 0;
+  rentalUnits(r).forEach((eu) => {
+    if (unitVoided(r, eu)) return;
+    const u = IDX.unit.get(eu.unitId); if (!u) return;
+    const p = unitRentalPrice(r, eu.unitId);
+    const d = Math.round(((p ? p.price : 0) - unitBilledRental(inv, r.rentalId, eu.unitId)) * 100) / 100;
+    if (d > 0.005) {
+      inv.lineItems.push({ kind: 'extension', ref: r.rentalId, unitId: eu.unitId, lid: lineLid(), label: `${u.name} · Extension → ${fmtShortDate(r.endDate)} · ${p ? p.rate : '—'}`, amount: d });
+      subtotalDelta += d; count++;
+    }
+  });
+  if (!count) return null;
+  reindex('invoices', inv);
+  return { count, subtotalDelta: Math.round(subtotalDelta * 100) / 100, invoiceId: inv.invoiceId };
+}
 /* ── Transport journey-picker (Our yard · Truck · Customer site) — like the rental-
    window picker, but for transport. Click an endpoint then a second: store→truck =
    Delivery, truck→store = Recovery, store→store = Round-Trip, a single store = Self.
@@ -982,7 +1039,7 @@ function healInvoiceLines(r) {
   const live = new Set(rentalUnitIds(r));
   const before = (inv.lineItems || []).length;
   inv.lineItems = (inv.lineItems || []).filter((li) => {
-    const orphan = (li.kind === 'rental' || li.kind === 'transport') && li.ref === r.rentalId && li.unitId && !live.has(li.unitId);
+    const orphan = (li.kind === 'rental' || li.kind === 'transport' || li.kind === 'extension') && li.ref === r.rentalId && li.unitId && !live.has(li.unitId);
     return !orphan || itemPaid(inv, li) > 0;
   });
   if ((inv.lineItems || []).length !== before) reindex('invoices', inv);
@@ -5099,7 +5156,12 @@ const DETAIL = {
       ? actionPill('danger', 'Cancel Rental', { js: 'js-cancel-rental', h: 26, data: { rec: r.rentalId } })
       : actionPill('commit', 'Complete Rental', { js: `js-complete-rental${canComplete ? '' : ' locked'}`, h: 26, data: { rec: r.rentalId } });
     const fcRow = r.fieldCall ? actionPill('danger', 'Field Call active — clear', { js: 'js-clear-fc', data: { rec: r.rentalId } }) : '';
-    const rdFoot = `<div class="rd-foot"><div class="rd-foot-l">${fcRow}</div><div class="rd-foot-r">${crBtn}</div></div>`;
+    // §ext — Extend opens the window picker (staged) to lengthen + rebill; only meaningful
+    // once the rental is invoiced + fragile (out/billed). Adds an 'extension' line item → R5b.
+    const extendBtn = (rentalFragile(r) && r.invoiceId && !cancelish)
+      ? addBtn('Extend', { line: true, h: 26, js: 'js-open-winpicker', data: { rec: r.rentalId, tip: 'Keep ’er out longer — re-rein the window and rebill the added days' } })
+      : '';
+    const rdFoot = `<div class="rd-foot"><div class="rd-foot-l">${extendBtn}${fcRow}</div><div class="rd-foot-r">${crBtn}</div></div>`;
 
     const rentalSec = `<div class="section sec-${stColor} rentalsec">
       ${rdHead}
@@ -11770,7 +11832,7 @@ function removeUnitInvoiceLine(r, unitId) {
   const inv = IDX.invoice.get(r.invoiceId); if (!inv) return;
   const before = (inv.lineItems || []).length;
   inv.lineItems = (inv.lineItems || []).filter((li) => {
-    const mine = (li.kind === 'rental' || li.kind === 'transport') && li.ref === r.rentalId && li.unitId === unitId;
+    const mine = (li.kind === 'rental' || li.kind === 'transport' || li.kind === 'extension') && li.ref === r.rentalId && li.unitId === unitId;
     return !mine || itemPaid(inv, li) > 0;   // keep non-matching lines and any paid matching line
   });
   if ((inv.lineItems || []).length === before) return;
@@ -13550,9 +13612,19 @@ function winPickSave() {
   const wp = state.winpicker; if (!wp) return;
   const r = IDX.rental.get(wp.rentalId);
   if (r && wp.staged) {
+    // A positive extension on a LOCKED invoice must unlock first — pricing is sealed
+    // (don't move the date without billing it). Keep the picker open so they can unlock.
+    const pre = extensionPreview(r, wp.staged.startDate, wp.staged.endDate);
+    if (pre && pre.locked && pre.subtotalDelta > 0.005) { flashOr('.winpicker', 'Unlock the invoice to bill this extension.'); return; }
     r.startDate = wp.staged.startDate; r.endDate = wp.staged.endDate; r.startTime = wp.staged.startTime;
     if (r.startDate && r.endDate && r.status === 'Quote') r.status = 'Reserved';
     logAction(r, `Rental window → ${r.startDate && r.endDate ? fmtShortDate(r.startDate) + '–' + fmtShortDate(r.endDate) : 'cleared'}`);
+    const ext = billExtension(r);   // re-price the lengthened window → additive 'extension' line(s)
+    if (ext) {
+      logAction(r, `Extension billed — +${money(ext.subtotalDelta)} to invoice ${invoiceShort(ext.invoiceId)}`);
+      logAction(IDX.invoice.get(ext.invoiceId), `Extension — ${rentalUnitsLabel(r) || 'rental'} +${money(ext.subtotalDelta)} (${ext.count} line${ext.count > 1 ? 's' : ''})`);
+      toast(`Extension billed — +${money(ext.subtotalDelta)} added to invoice ${invoiceShort(ext.invoiceId)}.`);
+    }
   }
   state.winpicker = null; render();
 }
@@ -13692,13 +13764,26 @@ function winPickerEl(r) {
   }
   const subjName = subject && (subject.kind === 'unit' ? IDX.unit.get(subject.id)?.name : IDX.category.get(subject.id)?.name);
   const dows = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((d) => `<span class="wp-dow">${d}</span>`).join('');
+  // §ext — live extension preview: a lengthened fragile-rental window re-prices the
+  // whole window and shows the increment (added charge + tax + new balance) before commit.
+  const ext = wp.staged ? extensionPreview(IDX.rental.get(wp.rentalId), wp.staged.startDate, wp.staged.endDate) : null;
+  const billing = !!(ext && ext.subtotalDelta > 0.005);
+  const extHtml = billing
+    ? `<div class="wp-ext">
+        <div class="wp-ext-cap"><span class="wp-ext-kick">Extension</span><span class="wp-ext-days">+${ext.daysDelta} day${ext.daysDelta !== 1 ? 's' : ''} · ${esc(fmtShortDate(ext.prevEnd))} → ${esc(fmtShortDate(ext.newEnd))}</span></div>
+        <div class="wp-ext-row"><span>Added charge</span><b>${money2(ext.subtotalDelta)}</b></div>
+        ${ext.taxDelta ? `<div class="wp-ext-row"><span>Tax (${(TAX_RATE * 100).toFixed(2)}%)</span><b>${money2(ext.taxDelta)}</b></div>` : ''}
+        <div class="wp-ext-row wp-ext-bal"><span>New balance</span><b>${money2(ext.newBalance)}</b></div>
+      </div>`
+    : '';
   return `<div class="winpicker">
     <div class="wp-time"><label>Pickup time</label><input type="time" class="js-wp-time" value="${esc(to24(t.startTime) || '09:00')}"></div>
     <div class="wp-head"><span class="wp-month">${MONTH_NAMES[m]} ${y}</span>
       <span class="wp-nav"><button class="js-wp-prev" data-tip="Previous month">‹</button><button class="js-wp-next" data-tip="Next month">›</button></span></div>
     <div class="wp-grid">${dows}${cells}</div>
     ${subjName ? `<div class="wp-blocknote">Greyed days are ${state.overbookOn ? 'booked' : 'unavailable'} for <b>${esc(subjName)}</b>${state.overbookOn ? ' — overbooking is on, pick to force' : ''}</div>` : ''}
-    <div class="wp-foot"><button class="pill ghost js-wp-today" data-r="R18">Today</button>${wp.staged && winStagedChanged() ? actionPill('commit', 'Save', { js: 'js-wp-save' }) : ''}${actionPill('commit', 'Clear', { js: 'js-wp-clear' })}</div>
+    ${extHtml}
+    <div class="wp-foot"><button class="pill ghost js-wp-today" data-r="R18">Today</button>${wp.staged && winStagedChanged() ? actionPill(billing ? 'money' : 'commit', billing ? 'Bill Extension' : 'Save', { js: 'js-wp-save' }) : ''}${actionPill('commit', 'Clear', { js: 'js-wp-clear' })}</div>
   </div>`;
 }
 /** Float the picker anchored to the TOP of its trigger button (opens upward so the
@@ -14917,9 +15002,9 @@ function exposeTestApi() {
   try {
     window.__rw = { DATA, IDX, TODAY_ISO, itemPaid, lineKey, rentalUnits, unitEntry, isPrimaryUnit,
       unitStatus, rentalUnitStatuses, unitsUniform, rentalStatusDisplay, rentalMirrorStatus, rentalDisplayStatus,
-      allUnitsTerminal, unitTerminal, unitVoided, rentalLineItems, transportLineItems, syncRentalPrimary,
+      allUnitsTerminal, unitTerminal, unitVoided, rentalLineItems, transportLineItems, extensionPreview, billExtension, unitBilledRental, syncRentalPrimary,
       addUnitToRental, removeUnitFromRental, removeUnitInvoiceLine, unitLinePaid, invoiceTotals, allocLines,
-      rentalAllocated, itemRefunded, itemRefundable, lineRefunded, lineFullyRefunded, refundLines, rentalLineRefund, applyPayment, unitRentalPrice, rentalDisplayName, setWoLinePhase, setWoPhase, woBottleneck,
+      rentalAllocated, itemRefunded, itemRefundable, lineRefunded, lineFullyRefunded, refundLines, rentalLineRefund, applyPayment, unitRentalPrice, rentalPrice, rentalDisplayName, setWoLinePhase, setWoPhase, woBottleneck,
       cleanUnitName, planUnitMigration, applyUnitMigration, openMigrationPreview,
       computeTransportPrice, isFueledType, unitTransport, rentalTransport,
       wrValidatePlan, applyWranglerData, wrFunnel, invoiceMergeable, mergeInvoiceInto, parseWranglerAction, stripWranglerAction, parseCsvFile, wrFindAttachedCsv,

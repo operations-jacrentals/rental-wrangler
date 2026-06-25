@@ -590,6 +590,64 @@ try {
     ok(T.rowMatches('rentals', rA, '', dNeg) === false && T.rowMatches('rentals', rB, '', dNeg) === true, 'date: a NEGATED date filter excludes the match and keeps the rest');
     ok(T.rowMatches('units', aUnit2, '', dNeg) === true, 'date: a NEGATED date filter is STILL a no-op on date-less cards (never excluded)');
 
+    // 30) RENTAL EXTENSIONS — re-price the lengthened window, bill only the delta as additive
+    //     'extension' line(s); positive only; composes across repeats; never touches paid lines.
+    {
+      const priceFor = (catId, s, e) => { const p = T.rentalPrice({ categoryId: catId, startDate: s, endDate: e, customerId: 'C0009' }); return p ? p.price : 0; };
+      const S0 = '2099-06-01', E0 = '2099-06-06', E1 = '2099-06-13', E2 = '2099-06-20';   // 5d → 12d → 19d
+      // pick two Active units whose category actually PRICES (and prices higher for a longer window)
+      const priced = af.filter((u) => priceFor(u.categoryId, S0, E1) > priceFor(u.categoryId, S0, E0) && priceFor(u.categoryId, S0, E0) > 0);
+      const exU = priced[0], exV = priced[1];
+      ok(!!exU && !!exV, 'two priced Active units available for the extension fixture');
+      const rX = { rentalId: 'R-EXTTEST', customerId: 'C0009', unitId: exU.unitId, categoryId: exU.categoryId, startDate: S0, endDate: E0, startTime: '', status: 'On Rent', transportType: 'Self', deliveryAddress: '', transportMiles: null, invoiceId: null, units: [mk(exU), mk(exV)].map((u) => ({ ...u, transportType: 'Self', transportMiles: null })), notes: '', actions: [], mock: true };
+      T.DATA.rentals.push(rX); T.IDX.rental.set('R-EXTTEST', rX);
+      const invX = { invoiceId: 'I-EXTTEST', customerId: 'C0009', rentalIds: ['R-EXTTEST'], date: T.TODAY_ISO, dueDate: T.TODAY_ISO, po: '', amountPaid: 0, lineItems: [], mock: true };
+      T.rentalLineItems(rX).forEach((li) => invX.lineItems.push(li));
+      T.DATA.invoices.push(invX); T.IDX.invoice.set('I-EXTTEST', invX); rX.invoiceId = 'I-EXTTEST';
+      const extLines = () => invX.lineItems.filter((l) => l.kind === 'extension');
+      const billedUnit = (uId) => invX.lineItems.filter((l) => l.unitId === uId && (l.kind === 'rental' || l.kind === 'extension')).reduce((a, l) => a + (+l.amount || 0), 0);
+
+      // preview is pure (no mutation) and matches the real per-unit price delta
+      const expDeltaU = Math.round((priceFor(exU.categoryId, S0, E1) - priceFor(exU.categoryId, S0, E0)) * 100) / 100;
+      const expDeltaV = Math.round((priceFor(exV.categoryId, S0, E1) - priceFor(exV.categoryId, S0, E0)) * 100) / 100;
+      const pv = T.extensionPreview(rX, S0, E1);
+      const linesBeforePv = invX.lineItems.length;
+      ok(pv && Math.abs(pv.subtotalDelta - (expDeltaU + expDeltaV)) < 0.01, `extensionPreview delta = Σ per-unit re-price (${pv ? pv.subtotalDelta : 'null'})`);
+      ok(invX.lineItems.length === linesBeforePv, 'extensionPreview is PURE — adds no line items');
+      ok(pv && Math.abs(pv.taxDelta - Math.round(pv.subtotalDelta * 0.1075 * 100) / 100) < 0.01, 'extensionPreview taxes the delta at 10.75%');
+
+      // commit the 5→12 extension → one extension line per unit, equal to the re-price delta
+      rX.endDate = E1; const e1 = T.billExtension(rX);
+      ok(e1 && e1.count === 2 && Math.abs(e1.subtotalDelta - (expDeltaU + expDeltaV)) < 0.01, `billExtension 5→12 adds 2 lines (+$${e1 ? e1.subtotalDelta : '?'})`);
+      ok(Math.abs(billedUnit(exU.unitId) - priceFor(exU.categoryId, S0, E1)) < 0.01, 'after extension, unit total billed == full re-priced window (no double-count)');
+
+      // second extension 12→19 composes: diffs against rental + the first extension line
+      rX.endDate = E2; const e2 = T.billExtension(rX);
+      ok(e2 && Math.abs(billedUnit(exU.unitId) - priceFor(exU.categoryId, S0, E2)) < 0.01, 'repeat extension 12→19 composes — billed == full 19-day window, no double-count');
+      ok(extLines().length === 4, 'two extensions on a 2-unit rental → 4 extension lines total');
+
+      // shorten → NO auto-credit (refund-first); positive-delta-only guard
+      const linesBeforeShorten = invX.lineItems.length;
+      rX.endDate = E0; const e3 = T.billExtension(rX);
+      ok(e3 === null && invX.lineItems.length === linesBeforeShorten, 'shortening the window bills nothing (no auto-credit — refund stays manual)');
+
+      // locked invoice → billExtension refuses to add charges
+      rX.endDate = '2099-07-15'; invX.locked = true;
+      ok(T.billExtension(rX) === null, 'locked invoice → extension billing blocked (price sealed)');
+      invX.locked = false;
+
+      // allocation stability: a payment allocated to the original rental line survives a new extension line
+      const rl0 = invX.lineItems.find((l) => l.kind === 'rental' && l.unitId === exU.unitId);
+      invX.amountPaid = rl0.amount; invX.allocations = { [T.lineKey(rl0)]: rl0.amount };   // pay the original line exactly
+      const paidBefore = T.itemPaid(invX, rl0);
+      rX.endDate = '2099-08-20'; T.billExtension(rX);
+      ok(T.itemPaid(invX, rl0) === paidBefore, 'paid original rental line keeps its allocation after an extension line is appended (lid-stable)');
+
+      // cleanup
+      [['R-EXTTEST', T.DATA.rentals, 'rentalId'], ['I-EXTTEST', T.DATA.invoices, 'invoiceId']].forEach(([id, arr, k]) => { const i = arr.findIndex((o) => o[k] === id); if (i >= 0) arr.splice(i, 1); });
+      T.IDX.rental.delete('R-EXTTEST'); T.IDX.invoice.delete('I-EXTTEST');
+    }
+
     return out;
   });
 

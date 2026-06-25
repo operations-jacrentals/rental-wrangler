@@ -1447,6 +1447,17 @@ select.inline-input:focus-visible { outline: 2px solid var(--accent); outline-of
 .winpicker .wp-day.range-end { background: var(--accent); color: #fff; border-radius: 0 7px 7px 0; }
 .winpicker .wp-day.range-start.range-end { border-radius: 7px; }
 .winpicker .wp-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 9px; padding-top: 9px; border-top: 1px solid var(--line-soft); }
+/* §ext — extension preview plate: shown when a lengthened fragile-rental window adds a
+   charge. A worn saddle-stitch (tan) top divider + a stamped kicker set it apart as the
+   "rebill" readout; the new balance owed reads in the app's danger-red balance color. */
+.winpicker .wp-ext { margin-top: 9px; padding-top: 9px; border-top: 1px dashed color-mix(in srgb, var(--tan, #c2925a) 60%, transparent); display: flex; flex-direction: column; gap: 3px; }
+.winpicker .wp-ext-cap { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 2px; }
+.winpicker .wp-ext-kick { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.3px; font-weight: 700; font-size: 10px; color: var(--tan, #c2925a); }
+.winpicker .wp-ext-days { font-size: 11px; font-weight: 700; color: var(--txt-2); }
+.winpicker .wp-ext-row { display: flex; align-items: center; justify-content: space-between; font-size: 12px; color: var(--txt-2); }
+.winpicker .wp-ext-row b { color: var(--txt); font-weight: 700; }
+.winpicker .wp-ext-row.wp-ext-bal { margin-top: 2px; padding-top: 4px; border-top: 1px solid var(--line-soft); font-size: 12.5px; }
+.winpicker .wp-ext-row.wp-ext-bal b { color: var(--red); }
 /* §5.4d — DATE SEARCH picker: reuses the winpicker shell; a stamped kicker + a live
    selection readout sit above the grid. The date chips it pins carry a tan saddle-
    stitch underline so they read as editable (click re-opens the picker). */
