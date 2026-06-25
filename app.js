@@ -9196,6 +9196,26 @@ function wranglerImageBlock(dataUrl) {
   const m = /^data:(image\/[a-z.+-]+);base64,(.*)$/i.exec(dataUrl || '');
   return m ? { type: 'image', source: { type: 'base64', media_type: m[1], data: m[2] } } : null;
 }
+// Map a backend/Anthropic failure to a message that names the REAL cause, instead of
+// always blaming "the connection". The backend hands back the raw Anthropic error string
+// (e.g. the billing message) via r.error; a network failure throws before that. Without
+// this, an out-of-credits API key reads identically to a dead Wi-Fi — which sent us
+// hunting a phantom "connection" bug when the fix was just topping up Anthropic credits.
+function wranglerErrMsg(reason) {
+  const r = String(reason || '').toLowerCase();
+  if (/credit balance is too low|insufficient.*credit|too low to access|plans & billing|quota|billing/.test(r))
+    return "Mr. Wrangler's out of API credits — the Anthropic account needs a top-up before he can answer.";
+  if (/invalid x-api-key|authentication|api key|http-401|\b401\b|permission/.test(r))
+    return "Mr. Wrangler's API key was refused — the backend ANTHROPIC_API_KEY needs a look.";
+  if (/rate.?limit|http-429|\b429\b|overloaded|\b529\b/.test(r))
+    return "Mr. Wrangler's getting rate-limited — give him a few seconds and ask again.";
+  if (/not_found|model|http-404|\b404\b/.test(r))
+    return "Mr. Wrangler's model isn't answering — the backend model setting may be out of date.";
+  if (/bad-json|http-5\d\d|\b50[0-9]\b|\b53[0-9]\b|internal|timeout|timed out/.test(r))
+    return "Couldn't reach Mr. Wrangler's backend — give it a moment and try again.";
+  // genuine network/fetch failure (or unknown) → the original honest fallback
+  return "Mr. Wrangler couldn't answer — check the connection / backend.";
+}
 async function wranglerSend() {
   const o = state.wrangler; if (!o.open) return;
   const inp = document.querySelector('.wrangler-dock .js-wr-in');
@@ -9259,7 +9279,7 @@ async function wranglerSend() {
       o.messages.push({ role: 'assistant', content: "🤠 Demo mode — sign in to ask the real Mr. Wrangler (the live AI runs through the backend). Here's the snapshot I'd reason over:\n\n" + wranglerDigest() });
     }
     if (state.wrangler.id === replyChatId) { o.busy = false; render(); setTimeout(() => { const f = document.querySelector('.wrangler-dock .wr-feed'); if (f) f.scrollTop = f.scrollHeight; }, 0); } else render();   // only clear/scroll the dock if it's still THIS chat
-  } catch (e) { if (state.wrangler.id === replyChatId) { o.busy = false; o.error = "Mr. Wrangler couldn't answer — check the connection / backend."; render(); } }
+  } catch (e) { if (state.wrangler.id === replyChatId) { o.busy = false; o.error = wranglerErrMsg(e && e.message); render(); } }
 }
 // §18d "Send to the fixer" — turn the current Wrangler chat into a `wrangler-fix`
 // GitHub issue (the Track B repro packet). Carries the transcript, the view/role/
