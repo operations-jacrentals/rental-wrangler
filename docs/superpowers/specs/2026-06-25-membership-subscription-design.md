@@ -45,6 +45,11 @@ Rules:
      add-on) on each membership invoice.
   2. **Rental side:** +15% of **each rental's subtotal** (pre-tax) on every
      rental invoice for that account, for as long as protection is on.
+- **All prices are Owner-settable, not hardcoded** (Principle 9; `/role` Owner Q5).
+  The base fees, both add-on fees, the 15% rate, and the $2,000 cap live in the
+  **Settings → Company config** (Sheets-backed) and are read **server-side** at
+  billing time — Jac reprices next year with no code deploy. The numbers in this
+  table are the *initial defaults*.
 - Worked example — Monthly member with both add-ons:
   base $299 + transport $500 + protection (15% × $299 = $44.85) = **$843.85/mo**
   + 10.75% tax.
@@ -108,6 +113,15 @@ JSON keys on the customer record:
 **During the 7-day grace (Past Due): member rates are KEPT** (the agreement gives
 7 days to resolve). The card shows a countdown flag **"⚠️ Canceled In N Days"**.
 Only on lapse (grace expired) do rates revert to retail.
+
+**Lapse is atomic** (`/role` Step 7). On lapse, ONE server-side transaction:
+flips `accountType` off Member (→ pricing reverts via the `app.js:844` gate),
+sets `membershipStage = Lapsed`, **clears the member entitlements**
+(`unlimitedTransport` → off), and generates the Cancellation Invoice (§4). No
+partial/stale state. **Rental Protection (`rentalProtection`) is NOT cleared** —
+it is an independent account-level setting (protection is never free), so a
+lapsed member keeps the +15%-on-rentals line until someone explicitly turns it
+off (Jac, 2026-06-25).
 
 ### 3.1 Membership funnel: "Paid" → "Signed", agreement-driven, not manual
 
@@ -250,15 +264,49 @@ data-plate language). Specifically:
 - Funnel "Signed" relabel + agreement-driven auto-set.
 
 **Deferred (flagged, not built in v1):**
-- Public **website self-enrollment** (backend seam built; web UI later).
-- Damage-claim accounting **against** the $2,000/mo protection cap (v1 surfaces
-  the cap informationally only).
+- **Damage-claim accounting against the $2,000/mo protection cap** → split into
+  its **own follow-on feature** on a dedicated branch **`memberships/protection-claims`**
+  (off `area/memberships`), tracked separately (Jac, 2026-06-25). v1 surfaces the
+  cap **informationally only** — recording claims, drawing them down against the
+  monthly allowance, and the reset/rollover logic all live in that branched
+  feature, not here.
+- Public **website self-enrollment** (backend seam built in v1; web UI later).
 - Dunning niceties beyond the daily-retry / 7-day grace (e.g. escalating
   reminders, SMS/email — would route through `area/comms-notifications`).
 
 ---
 
-## 9. Key code anchors
+## 9. Access, audit & integrity (role-audit hardening)
+
+From the `/role` audit (2026-06-25). These are build requirements, not optional.
+
+1. **Authority gate (T2).** `membershipEnroll`, `membershipCancel`,
+   `membershipReactivate`, and any membership charge are **money actions** —
+   server-side gated to **Office + Owner** (Admin override separately logged),
+   like every other `stripe*` action. The billing cron runs under the project's
+   own authority.
+2. **Audit trail — automatic + attributed.** Every membership money event writes
+   an **append-only, timestamped, attributed** History entry with **no form**:
+   enrollment charge, **each cycle's charge — success AND decline**, cancel,
+   lapse, reactivation payment, and auto-renew roll. Cron entries attribute to a
+   system/auto-billing actor.
+3. **Price-lock seal.** Membership invoices and the Cancellation Invoice respect
+   the existing **price-lock HMAC** once charged/paid — no silent post-charge
+   edits (Office Q1).
+4. **Entitlement gating, both surfaces.** Member rates and the `unlimitedTransport`
+   $0 entitlement are **refused to `Member Incomplete`** and to lapsed accounts in
+   **both the quote and the invoice line** (Conflict #10). Entitlement flags are
+   set only on **activation**, cleared on lapse — never merely "flag present."
+5. **Revenue Goal.** Recurring membership revenue **counts toward the $150k
+   Revenue Goal ring** (Jac, 2026-06-25). Documented here so the ring moving is
+   expected, not a surprise (Owner Q3).
+6. **Self-enrollment isolation seam.** The shared enroll/reactivate backend
+   actions must enforce **server-side row-level isolation** when the future public
+   website calls them — a customer can enroll / pay for **only themselves**, and
+   never see another account's membership or fees. Required of the seam now even
+   though the web UI is deferred (§8).
+
+## 10. Key code anchors
 
 - Member pricing gate: `app.js:844` (`isMember`) — lapse reverts pricing for free.
 - PO gate pattern to mirror for Rental Protection: form toggle `app.js:8670` /
