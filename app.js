@@ -1648,7 +1648,7 @@ const nextInvoiceId = () => { state.invoiceSeq = Math.max(state.invoiceSeq || 0,
 /* ── session actions ──────────────────────────────────────────────────────
    `recType` is only meaningful for the Shop card (which holds inspections /
    workOrders / serviceOrders); it's undefined for the 5 normal cards. */
-function setAnchor(session, card, recId, recType) {
+function setAnchor(session, card, recId, recType, opts = {}) {
   sweepEmptyDrafts(recId);   // #8 — anchoring elsewhere deletes an abandoned empty draft
   if (state.unitPick && !(card === 'units' && state.unitPick.ids.includes(recId))) state.unitPick = null;   // leaving the picker clears it
   const entityCard = entityCardOf(card, recType);
@@ -1656,15 +1656,22 @@ function setAnchor(session, card, recId, recType) {
   const rec = recOf(entityCard, recId);
   session.anchor = { card, recId, recType };
   session.cascade = state.cascade.cascadeAll(type, rec);
-  // anchored card → standard; others → list (cascade)
-  for (const c of GRID_CARDS) {
-    const ccs = session.cards[c.id];
-    ccs.backStack = []; ccs.fwdStack = [];
-    ccs.mode = c.id === card ? 'standard' : 'list';
-    ccs.recId = c.id === card ? recId : null;
-    ccs.recType = c.id === card ? recType : null;
-    ccs.released = false;                                       // re-cascade clears any per-card "browse all" release
-    if (c.id !== card) { ccs.search = ''; ccs.filterTerms = []; }   // cascaded cards reset to the clean anchored view
+  // §264 — a REFRESH (reanchorRender after an option-click: complete/cancel/clear/etc.)
+  // only needs the cascade membership recomputed above; it must NOT reset the sibling
+  // cards. The destructive reset below is for a FRESH anchor only — re-running it on every
+  // option-click was wiping the record you had open in a sibling column plus any typed
+  // search/filter and the back/forward history (the "kicked off the card I was reading" bug).
+  if (!opts.preserve) {
+    // anchored card → standard; others → list (cascade)
+    for (const c of GRID_CARDS) {
+      const ccs = session.cards[c.id];
+      ccs.backStack = []; ccs.fwdStack = [];
+      ccs.mode = c.id === card ? 'standard' : 'list';
+      ccs.recId = c.id === card ? recId : null;
+      ccs.recType = c.id === card ? recType : null;
+      ccs.released = false;                                       // re-cascade clears any per-card "browse all" release
+      if (c.id !== card) { ccs.search = ''; ccs.filterTerms = []; }   // cascaded cards reset to the clean anchored view
+    }
   }
   // 3-column display: make the anchored card the visible member of its column
   // (shop anchors map to their recType member). Pure display; cascade is unchanged.
@@ -13487,7 +13494,10 @@ function setDraftDate(rentalId, which, val) {
   logAction(r, `${which === 'start' ? 'Start' : 'End'} date → ${val ? fmtShortDate(val) : 'cleared'}`);   // #1 — was unlogged
   reanchorRender();
 }
-const reanchorRender = () => { const s = activeSession(); if (s.anchor) setAnchor(s, s.anchor.card, s.anchor.recId, s.anchor.recType); render(); };
+// §264 — refresh the cascade after an in-place action WITHOUT collapsing the sibling
+// cards (preserve their open record, typed search/filter, and history). A fresh anchor
+// still goes through the full setAnchor reset; only this refresh path preserves views.
+const reanchorRender = () => { const s = activeSession(); if (s.anchor) setAnchor(s, s.anchor.card, s.anchor.recId, s.anchor.recType, { preserve: true }); render(); };
 /** Append a timestamped action to a record's log (surfaced in its History section). */
 let actionSeq = 0;
 // Audit trail: who's signed in on this device (remembered across sessions). Every
