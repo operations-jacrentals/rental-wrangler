@@ -632,6 +632,25 @@ try {
       ok(active != null && incomplete != null && active < incomplete && active === 3 * cat.memberDaily, `gate: Active member pays member rate (${active}) < Incomplete pays retail (${incomplete})`);
     }
 
+    // === F3 — membership funnel 'Signed' is agreement-driven, never manual (spec §3.1) ===
+    {
+      const c = { customerId: 'C-SIGN', accountType: 'Business Member', membershipStage: 'Contacted', activityLog: [] };
+      T.IDX.customer.set('C-SIGN', c);
+      T.markMembershipSigned(c, 'rental');
+      ok(c.membershipStage === 'Contacted', 'funnel: signing the RENTAL agreement does NOT touch the membership funnel');
+      T.markMembershipSigned(c, 'membership');
+      ok(c.membershipStage === 'Signed', 'funnel: signing the MEMBERSHIP agreement auto-advances the funnel to Signed');
+      // manual set of the terminal is refused for membership, but allowed for used-sales ('Paid')
+      c.membershipStage = 'Contacted';
+      T.setFunnelStage('C-SIGN', 'membership', 'Signed');
+      ok(c.membershipStage === 'Contacted', 'funnel: Signed cannot be set manually on the membership funnel');
+      T.setFunnelStage('C-SIGN', 'membership', 'Payment Discussed');
+      ok(c.membershipStage === 'Payment Discussed', 'funnel: a non-terminal membership stage IS settable manually');
+      T.setFunnelStage('C-SIGN', 'usedSales', 'Paid');
+      ok(c.usedSalesStage === 'Paid', 'funnel: used-sales keeps Paid as a normal manual terminal');
+      T.IDX.customer.delete('C-SIGN');
+    }
+
     return out;
   });
 

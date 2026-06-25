@@ -165,6 +165,7 @@ function migrateCustomers() {
       if (c.membershipStage === 'Inbound Lead') c.membershipStage = 'N/A';
       c.funnelNAApplied = true; migrationDirty = true;
     }
+    if (c.membershipStage === 'Paid') { c.membershipStage = 'Signed'; migrationDirty = true; }   // F3 — membership terminal relabeled Paid→Signed (auto-set by signing)
   });
 }
 /* ── §20 multi-unit rentals — "a Rental is an EVENT" ──
@@ -395,6 +396,7 @@ function attachHeldSigning(c, k) {
     accountType: p.accountType || '', signedAt: p.signedAt || TODAY_ISO, signerName: p.signerName || c.name || fullName(c),
     signature: p.signature, selfie: p.selfie || '', acct: Object.assign({}, p.acct || acctSnapshot(c, k), { last4: k.last4 }), driveSignatureUrl: '', driveSelfieUrl: '', driveFolderId: '' };
   k.agreements.push(sig);
+  markMembershipSigned(c, sig.key);   // F3 — membership signing advances the funnel to 'Signed'
   c.pendingSigning = null;
   reindex('customers', c);
   logAction(c, `Held ${p.title || 'agreement'} attached to ${brandName(k.brand)} ••${k.last4}`);
@@ -405,6 +407,13 @@ function attachHeldSigning(c, k) {
    registry, never stored inline) with the signature + selfie. Re-signing (new card /
    account-type change) appends; it never edits a prior record. The images are then
    offloaded to Drive (graceful: stay inline until the backend handler exists). */
+// F3: signing the MEMBERSHIP agreement auto-advances the membership funnel to 'Signed'
+// (the terminal stage; never set by hand). The rental agreement does not touch the funnel.
+function markMembershipSigned(c, key) {
+  if (key !== 'membership' || !c || c.membershipStage === 'Signed') return;
+  c.membershipStage = 'Signed';
+  logAction(c, 'Membership agreement signed → Signed');
+}
 function signCardAgreement(c, k, signature, selfie) {
   if (!c || !k || !signature) return;
   const key = requiredAgreementKey(c); const ag = AGREEMENTS[key] || AGREEMENTS.rental;
@@ -413,6 +422,7 @@ function signCardAgreement(c, k, signature, selfie) {
     accountType: c.accountType || '', signedAt: TODAY_ISO, signerName: c.name || fullName(c),
     signature, selfie: selfie || '', acct: acctSnapshot(c, k), driveSignatureUrl: '', driveSelfieUrl: '', driveFolderId: '' };
   k.agreements.push(sig);
+  markMembershipSigned(c, key);   // F3 — membership signing advances the funnel to 'Signed'
   reindex('customers', c);
   logAction(c, `${ag.title} signed on ${brandName(k.brand)} ••${k.last4}`);
   archiveAgreementMedia(c, k, sig);   // offload images to Drive when the backend supports it
@@ -4111,7 +4121,7 @@ const ROWS = {
 
     // Most-progressed funnel stage of the two tracks (used-sales / membership); Don't
     // Contact ranks lowest of the non-N/A stages (shown only when it's the sole one).
-    const FUNNEL_RANK = { 'Inbound Lead': 1, 'Outbound Lead': 2, 'Contacted': 3, 'Not A No!': 4, 'Payment Discussed': 5, 'Paid': 6, "Don't Contact": 0.5 };
+    const FUNNEL_RANK = { 'Inbound Lead': 1, 'Outbound Lead': 2, 'Contacted': 3, 'Not A No!': 4, 'Payment Discussed': 5, 'Paid': 6, 'Signed': 6, "Don't Contact": 0.5 };
     const topStage = [c.usedSalesStage || 'N/A', c.membershipStage || 'N/A']
       .filter((s) => s && s !== 'N/A').sort((a, b) => (FUNNEL_RANK[b] || 0) - (FUNNEL_RANK[a] || 0))[0];
     const funnelHtml = topStage ? statusPill('funnelStage', topStage) : badge('N/A', 'gray');
@@ -10097,9 +10107,11 @@ const GATE_TL = {
 const GTCHK = GTI('<path d="M5 12.5l4 4 10-11"/>');
 /** Build the gate-timeline dropdown body. `mk(value, inner, stateCls)` wraps each row
  *  into the selecting button (each gate supplies its own js-class + data-attrs). */
-function gateTimeline(set, current, title, mk) {
+function gateTimeline(set, current, title, mk, opts = {}) {
   const cfg = GATE_TL[set]; if (!cfg) return '';
-  const { order, off } = cfg;
+  const order = opts.order || cfg.order;        // F3: per-funnel order override (membership ends in 'Signed')
+  const off = cfg.off;
+  const lock = opts.lock || new Set();          // F3: values rendered display-only (not a settable button)
   const ai = order.indexOf(current);            // active row index (display order)
   const curOff = off.has(current);
   const rows = order.map((v, i) => {
@@ -10115,7 +10127,7 @@ function gateTimeline(set, current, title, mk) {
     }
     const chk = st === 'd' ? `<i class="gt-chk">${GTCHK}</i>` : '';
     const inner = `${conn}<span class="gt-node">${GATE_ICON[v] || I.circle}</span><span class="gt-lbl">${chk}${esc(getStatus(set, v).label)}</span>`;
-    return mk(v, inner, 'gt-' + st);
+    return lock.has(v) ? `<div class="gt-row gt-${st} gt-lock">${inner}</div>` : mk(v, inner, 'gt-' + st);   // F3: locked stage is display-only (auto-set, not manually settable)
   }).join('');
   return `<span class="gt-haz"></span><div class="gt-cap">${esc(title)}</div><div class="gt-body">${rows}</div>`;
 }
@@ -10194,17 +10206,22 @@ function setExpenseReconcile(expenseId, val) {
   document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove());
   render(); renderOverlay();
 }
+// F3: the membership funnel ends in 'Signed' (auto-set by signing the agreement) instead
+// of 'Paid'; 'Signed' is shown in the timeline but locked — never a manual choice.
+const MEMBERSHIP_FUNNEL_ORDER = ['N/A', 'Inbound Lead', 'Outbound Lead', "Don't Contact", 'Contacted', 'Not A No!', 'Payment Discussed', 'Signed'];
 function openFunnelDropdown(custId, which, anchorEl) {
   const cust = IDX.customer.get(custId);
   const cur = which === 'membership' ? cust?.membershipStage : cust?.usedSalesStage;
   const title = which === 'membership' ? 'Membership funnel' : 'Used sales funnel';
-  const html = gateTimeline('funnelStage', cur || 'N/A', title, (v, inner, sc) =>
-    `<button class="gt-row ${sc} js-setfunnel" data-rec="${esc(custId)}" data-which="${which}" data-val="${esc(v)}">${inner}</button>`);
+  const mk = (v, inner, sc) => `<button class="gt-row ${sc} js-setfunnel" data-rec="${esc(custId)}" data-which="${which}" data-val="${esc(v)}">${inner}</button>`;
+  const opts = which === 'membership' ? { order: MEMBERSHIP_FUNNEL_ORDER, lock: new Set(['Signed']) } : {};
+  const html = gateTimeline('funnelStage', cur || 'N/A', title, mk, opts);
   openDropdown(anchorEl, html, { cls: 'gt' });
 }
 function setFunnelStage(custId, which, val) {
   const c = IDX.customer.get(custId);
   if (!c) return;
+  if (which === 'membership' && (val === 'Signed' || val === 'Paid')) return;   // F3: membership terminal is auto-set by signing the agreement, never manual
   const field = which === 'membership' ? 'membershipStage' : 'usedSalesStage';
   if (c[field] !== val) { c[field] = val; logAction(c, `${which === 'membership' ? 'Membership' : 'Sales'} stage → ${getStatus('funnelStage', val).label}`); }   // audit: funnel moves were unlogged (Jac, Phase 7)
   reindex('customers', c);
@@ -15004,7 +15021,7 @@ function exposeTestApi() {
       latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore, wranglerRailLoad, wrOffloadChatImages, wrEvictChatBlobs, driveViewUrl, mergeWranglerRails,
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
-      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, setRole: (r) => { currentRole = r || ''; render(); },
+      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, setFunnelStage, markMembershipSigned, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, setRole: (r) => { currentRole = r || ''; render(); },
       openCustomerForm, renderOverlay, render, cardComplete, cardCaptureState, cardHasSelfie, cardHasSignature, captureSelfie, captureSignature, __state: state };   // UI drivers for headless screenshot/e2e tests
 
   } catch (e) { /* no window (non-browser) */ }
