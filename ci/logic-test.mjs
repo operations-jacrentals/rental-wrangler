@@ -646,6 +646,29 @@ try {
       // cleanup
       [['R-EXTTEST', T.DATA.rentals, 'rentalId'], ['I-EXTTEST', T.DATA.invoices, 'invoiceId']].forEach(([id, arr, k]) => { const i = arr.findIndex((o) => o[k] === id); if (i >= 0) arr.splice(i, 1); });
       T.IDX.rental.delete('R-EXTTEST'); T.IDX.invoice.delete('I-EXTTEST');
+
+      // 31) RETROACTIVE RENTAL PRICING setting (default ON) — OFF bills the extension as a
+      //     fresh rental of just the added days; ON blends the whole window (≤ OFF total).
+      const stx = T.__state; const savedCoRetro = stx.settings.company;
+      ok(T.retroPricingOn() === true, 'retroPricingOn() defaults to ON (no setting)');
+      stx.settings.company = { ...(stx.settings.company || {}), retroactivePricing: false };
+      ok(T.retroPricingOn() === false, 'retroPricingOn() reflects the OFF setting');
+      const rY = { rentalId: 'R-EXTOFF', customerId: 'C0009', unitId: exU.unitId, categoryId: exU.categoryId, startDate: S0, endDate: E0, startTime: '', status: 'On Rent', transportType: 'Self', deliveryAddress: '', transportMiles: null, invoiceId: null, units: [{ ...mk(exU), transportType: 'Self', transportMiles: null }], notes: '', actions: [], mock: true };
+      T.DATA.rentals.push(rY); T.IDX.rental.set('R-EXTOFF', rY);
+      const invY = { invoiceId: 'I-EXTOFF', customerId: 'C0009', rentalIds: ['R-EXTOFF'], date: T.TODAY_ISO, dueDate: T.TODAY_ISO, po: '', amountPaid: 0, lineItems: [], mock: true };
+      T.rentalLineItems(rY).forEach((li) => invY.lineItems.push(li));
+      T.DATA.invoices.push(invY); T.IDX.invoice.set('I-EXTOFF', invY); rY.invoiceId = 'I-EXTOFF';
+      const baseLineY = invY.lineItems.find((l) => l.kind === 'rental' && l.unitId === exU.unitId).amount;
+      rY.endDate = E1; const off1 = T.billExtension(rY, E0);
+      const standaloneSeg = priceFor(exU.categoryId, E0, E1);     // E0→E1 priced as its own rental
+      ok(off1 && off1.retro === false && Math.abs(off1.subtotalDelta - standaloneSeg) < 0.01, `OFF: extension billed as standalone added days ($${standaloneSeg}), not the blended delta`);
+      ok(invY.lineItems.find((l) => l.kind === 'rental' && l.unitId === exU.unitId).amount === baseLineY, 'OFF: the original rental line is frozen (unchanged)');
+      // invariant — for the SAME extension, blending the whole window (ON) is never MORE than standalone (OFF)
+      const Emid8 = '2099-06-09';   // S0 +8 days
+      ok(priceFor(exU.categoryId, S0, Emid8) <= priceFor(exU.categoryId, S0, E0) + priceFor(exU.categoryId, E0, Emid8) + 0.005, 'retroactive ON total ≤ OFF total for the same extension (blend never costs more)');
+      stx.settings.company = savedCoRetro;   // restore default
+      [['R-EXTOFF', T.DATA.rentals, 'rentalId'], ['I-EXTOFF', T.DATA.invoices, 'invoiceId']].forEach(([id, arr, k]) => { const i = arr.findIndex((o) => o[k] === id); if (i >= 0) arr.splice(i, 1); });
+      T.IDX.rental.delete('R-EXTOFF'); T.IDX.invoice.delete('I-EXTOFF');
     }
 
     return out;

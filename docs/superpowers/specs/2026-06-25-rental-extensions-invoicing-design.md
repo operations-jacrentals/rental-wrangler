@@ -12,7 +12,7 @@
 >
 > | Decision | Chosen | Alt rejected |
 > |---|---|---|
-> | Extension pricing | **Re-price full window, bill the delta** | standalone-days; show-both |
+> | Extension pricing | **Admin setting — Retroactive Rental Pricing (default ON)** | (see §2.1) |
 > | Where the charge lands | **Additive line on the rental's existing invoice** | new invoice per extension |
 > | What's extendable | **Any *fragile* rental** (invoiced **or** out: On/End/Off Rent) | On-Rent-only |
 
@@ -34,7 +34,16 @@ The fix is **not** a brand-new subsystem; it's: *when a fragile, invoiced rental
 window lengthens, compute the price delta and append it to the invoice as a charge,
 with a live preview so it's never a surprise.*
 
-## 2. Pricing model (Decision 1: re-price full window, bill the delta)
+## 2.1 Retroactive Rental Pricing — admin setting (Jac 2026-06-25)
+
+The pricing basis is an **admin toggle** in **Settings → Company**, `company.retroactivePricing`, **default ON**. It only changes how an extension's delta is computed — the cheapest-rate engine (`rentalPrice`) is **never touched**.
+
+- **ON (retroactive):** extending bills the cheapest price for **all** the days rented, with what's already billed **counting toward it**. `delta = rentalPrice(full window) − alreadyBilled`. A week paid rolls into a month. (This is the §2 model below.)
+- **OFF:** ignore prior days — bill the extension as a **fresh rental of just the added days**: `delta = rentalPrice(prevEnd → newEnd)`, original lines frozen. No retroactive re-blend; the customer doesn't get the weekly/monthly discount applied backward.
+
+Invariant: ON total ≤ OFF total for the same extension (blending never costs more). Both still emit additive `extension` line(s); only the amount differs. The picker preview + the `Bill Extension` flow read the live setting and show the basis ("Cheapest price for all rental days…" vs "Billed as a fresh rental of the added days."). Stored in the `company` settings slice (persists via sync; resets with the Company tab). Helper: `retroPricingOn()`.
+
+## 2. Pricing model — when Retroactive Pricing is ON (the default)
 
 The rate engine `rentalPrice()` (`app.js:838`) already finds the cheapest blend of
 4-Week / 7-Day / 1-Day rates (plus Member / Weekend specials) for **any** window. An

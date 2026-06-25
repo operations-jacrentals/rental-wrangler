@@ -934,27 +934,44 @@ function transportLineItems(r) {
    deltas only: a shortened window is a refund decision, left manual (refund-first,
    §7.4). Composes across repeats — each pass diffs against everything already
    billed for the unit (rental + prior extension lines). */
+/** Retroactive Rental Pricing (admin setting, default ON — Jac 2026-06-25): ON =
+ *  an extension bills the cheapest price for ALL the days rented, with what's already
+ *  billed counting toward it (delta = full-window price − billed). OFF = the extension
+ *  is billed as a FRESH rental of just the added days (prevEnd→newEnd), originals frozen. */
+function retroPricingOn() { return ((state.settings && state.settings.company) || {}).retroactivePricing !== false; }
 /** Dollars already billed for a unit's rental TIME on an invoice (rental + extension
- *  lines for that unit) — the baseline an extension diffs against. */
+ *  lines for that unit) — the baseline retroactive pricing diffs against. */
 function unitBilledRental(inv, rentalId, unitId) {
   return (inv.lineItems || []).reduce((a, li) =>
     a + ((li.ref === rentalId && li.unitId === unitId && (li.kind === 'rental' || li.kind === 'extension')) ? (Number(li.amount) || 0) : 0), 0);
 }
+/** The per-unit extension charge for a window change, honoring the retroactive setting.
+ *  `prevEnd` = the end date BEFORE this extension (the standalone segment's start when OFF).
+ *  Returns { amount, rate } — amount is the dollars to add (>0 means billable). */
+function unitExtensionDelta(inv, r, eu, ns, ne, prevEnd, retro) {
+  const u = IDX.unit.get(eu.unitId); if (!u) return { amount: 0, rate: '—' };
+  if (retro) {                                              // cheapest(full window) − already billed
+    const p = rentalPrice({ categoryId: u.categoryId, startDate: ns, endDate: ne, customerId: r.customerId });
+    return { amount: Math.round(((p ? p.price : 0) - unitBilledRental(inv, r.rentalId, eu.unitId)) * 100) / 100, rate: p ? p.rate : '—' };
+  }
+  // OFF — price ONLY the added segment (prevEnd → newEnd) as a fresh rental; originals frozen.
+  const p = (prevEnd && ne > prevEnd) ? rentalPrice({ categoryId: u.categoryId, startDate: prevEnd, endDate: ne, customerId: r.customerId }) : null;
+  return { amount: p ? Math.round(p.price * 100) / 100 : 0, rate: p ? p.rate : '—' };
+}
 /** PURE preview of extending r to a staged window (no mutation) — drives the picker
- *  banner AND the save-time lock guard. Returns null when there's no linked invoice
- *  or no positive billable delta isn't computed yet (still returns the shorten case). */
+ *  banner AND the save-time lock guard. Honors the retroactive-pricing setting. */
 function extensionPreview(r, stagedStart, stagedEnd) {
   if (!r || !r.invoiceId) return null;
   const inv = IDX.invoice.get(r.invoiceId); if (!inv) return null;
   const ns = stagedStart || r.startDate, ne = stagedEnd || r.endDate;
   if (!ns || !ne) return null;
+  const retro = retroPricingOn();
   let subtotalDelta = 0; const perUnit = [];
   rentalUnits(r).forEach((eu) => {
     if (unitVoided(r, eu)) return;
     const u = IDX.unit.get(eu.unitId); if (!u) return;
-    const p = rentalPrice({ categoryId: u.categoryId, startDate: ns, endDate: ne, customerId: r.customerId });
-    const d = Math.round(((p ? p.price : 0) - unitBilledRental(inv, r.rentalId, eu.unitId)) * 100) / 100;
-    if (d > 0.005) { subtotalDelta += d; perUnit.push({ unitId: eu.unitId, name: u.name, delta: d, rate: p ? p.rate : '—' }); }
+    const d = unitExtensionDelta(inv, r, eu, ns, ne, r.endDate, retro);   // prevEnd = current saved end
+    if (d.amount > 0.005) { subtotalDelta += d.amount; perUnit.push({ unitId: eu.unitId, name: u.name, delta: d.amount, rate: d.rate }); }
   });
   subtotalDelta = Math.round(subtotalDelta * 100) / 100;
   const cust = IDX.customer.get(r.customerId);
@@ -962,27 +979,28 @@ function extensionPreview(r, stagedStart, stagedEnd) {
   const taxDelta = exempt ? 0 : Math.round(subtotalDelta * TAX_RATE * 100) / 100;
   const prevDays = Math.max(1, dayDiff(parseISO(r.startDate), parseISO(r.endDate)));
   const newDays = Math.max(1, dayDiff(parseISO(ns), parseISO(ne)));
-  return { subtotalDelta, taxDelta, perUnit, newBalance: invoiceTotals(inv).balance + subtotalDelta + taxDelta, daysDelta: newDays - prevDays, prevEnd: r.endDate, newEnd: ne, locked: !!inv.locked };
+  return { subtotalDelta, taxDelta, perUnit, newBalance: invoiceTotals(inv).balance + subtotalDelta + taxDelta, daysDelta: newDays - prevDays, prevEnd: r.endDate, newEnd: ne, locked: !!inv.locked, retro };
 }
-/** Append the per-unit extension delta line(s) to r's invoice (reads r's CURRENT
- *  window — call AFTER the new dates are written). Returns a summary or null. */
-function billExtension(r) {
+/** Append the per-unit extension line(s) to r's invoice (reads r's CURRENT window —
+ *  call AFTER the new dates are written; pass the OLD end as prevEnd). Returns a summary or null. */
+function billExtension(r, prevEnd) {
   if (!r || !r.invoiceId) return null;
   const inv = IDX.invoice.get(r.invoiceId); if (!inv || inv.locked) return null;
+  const retro = retroPricingOn();
   let subtotalDelta = 0, count = 0;
   rentalUnits(r).forEach((eu) => {
     if (unitVoided(r, eu)) return;
     const u = IDX.unit.get(eu.unitId); if (!u) return;
-    const p = unitRentalPrice(r, eu.unitId);
-    const d = Math.round(((p ? p.price : 0) - unitBilledRental(inv, r.rentalId, eu.unitId)) * 100) / 100;
-    if (d > 0.005) {
-      inv.lineItems.push({ kind: 'extension', ref: r.rentalId, unitId: eu.unitId, lid: lineLid(), label: `${u.name} · Extension → ${fmtShortDate(r.endDate)} · ${p ? p.rate : '—'}`, amount: d });
-      subtotalDelta += d; count++;
+    const d = unitExtensionDelta(inv, r, eu, r.startDate, r.endDate, prevEnd, retro);
+    if (d.amount > 0.005) {
+      const tag = retro ? `→ ${fmtShortDate(r.endDate)}` : `(${fmtShortDate(prevEnd)}–${fmtShortDate(r.endDate)})`;
+      inv.lineItems.push({ kind: 'extension', ref: r.rentalId, unitId: eu.unitId, lid: lineLid(), label: `${u.name} · Extension ${tag} · ${d.rate}`, amount: d.amount });
+      subtotalDelta += d.amount; count++;
     }
   });
   if (!count) return null;
   reindex('invoices', inv);
-  return { count, subtotalDelta: Math.round(subtotalDelta * 100) / 100, invoiceId: inv.invoiceId };
+  return { count, subtotalDelta: Math.round(subtotalDelta * 100) / 100, invoiceId: inv.invoiceId, retro };
 }
 /* ── Transport journey-picker (Our yard · Truck · Customer site) — like the rental-
    window picker, but for transport. Click an endpoint then a second: store→truck =
@@ -2899,6 +2917,7 @@ function settingsCompanyPane(o) {
   const ph = (k) => esc(COMPANY_DEFAULTS[k]);
   const goal = Number(co.revenueGoal) > 0 ? Number(co.revenueGoal) : COMPANY_DEFAULTS.revenueGoal;
   const maxNet = (co.maxNetDays != null && co.maxNetDays !== '' && isFinite(Number(co.maxNetDays))) ? Number(co.maxNetDays) : COMPANY_DEFAULTS.maxNetDays;
+  const retro = co.retroactivePricing !== false;   // default ON
   return `
     <div class="set-pane-head"><h4>Company</h4><p>Your yard's identity and targets. These flow onto printed receipts and the dashboard — leave one blank to keep the shipped default.</p></div>
     <div class="co-form">
@@ -2910,6 +2929,10 @@ function settingsCompanyPane(o) {
       <p class="set-note">Feeds the Sales <strong>Revenue Goal</strong> ring — currently <strong>${esc(money(goal))}/mo</strong>. The ring fills as this month's rental revenue climbs toward it.</p>
       <label class="co-fld co-fld-goal"><span class="kpi-cap">MAX PAYMENT TERMS (NET DAYS)</span><span class="co-goal-wrap"><input class="co-in co-in-num js-co-field" data-f="maxNetDays" value="${co.maxNetDays != null ? esc(co.maxNetDays) : ''}" placeholder="${COMPANY_DEFAULTS.maxNetDays}" inputmode="numeric" autocomplete="off"/><span class="co-goal-suffix">days</span></span></label>
       <p class="set-note">The ceiling on any customer's Net-day terms (currently <strong>${esc(maxNet)} days</strong>). A customer's Net X auto-sets their invoice due date, capped here.</p>
+      <label class="co-fld co-fld-toggle"><span class="kpi-cap">RETROACTIVE RENTAL PRICING</span>
+        ${segCtl([{ label: 'Off', js: 'js-retro-set', data: { val: 'off' }, on: retro ? null : 'gray' }, { label: 'On', js: 'js-retro-set', data: { val: 'on' }, on: retro ? 'green' : null }])}
+      </label>
+      <p class="set-note"><strong>On</strong> (default): extending a rental bills the cheapest price for <strong>all</strong> the days rented — what's already paid counts toward it (a week paid rolls into the month). <strong>Off</strong>: the extension is billed as a fresh rental of just the added days; the original invoice price stays as it was.</p>
       <div class="co-preview">
         <span class="kpi-cap">RECEIPT PREVIEW</span>
         <div class="co-receipt"><div class="co-receipt-brand">${esc(companyDraftName(co))}</div><div class="co-receipt-sub">${esc(companyDraftTagline(co))}</div></div>
@@ -11063,6 +11086,7 @@ function onClick(e) {
   if (closest('.js-kpi-refine')) { e.stopPropagation(); const b = closest('.js-kpi-refine'); openWranglerForKpi(b.dataset.role, Number(b.dataset.i)); return; }
   // Rental Rules tab
   if (closest('.js-rule-set')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-rule-set'); if (o) { o.draftSettings = o.draftSettings || {}; o.draftSettings.rentalRules = o.draftSettings.rentalRules || { ...((state.settings && state.settings.rentalRules) || {}) }; o.draftSettings.rentalRules[b.dataset.rule] = b.dataset.val === 'required' ? 'required' : 'off'; renderOverlay(); } return; }
+  if (closest('.js-retro-set')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-retro-set'); if (o) { o.draftSettings = o.draftSettings || {}; o.draftSettings.company = o.draftSettings.company || { ...((state.settings && state.settings.company) || {}) }; o.draftSettings.company.retroactivePricing = b.dataset.val === 'on'; renderOverlay(); } return; }
   // Custom Fields tab
   if (closest('.js-cf-entity')) { e.stopPropagation(); const o = state.overlay; if (o) { o.cfEntity = closest('.js-cf-entity').dataset.ent; renderOverlay(); } return; }
   if (closest('.js-cf-type')) { e.stopPropagation(); const o = state.overlay; if (o) { o.cfDraft = { ...(o.cfDraft || { label: '', type: 'text', required: false }), type: closest('.js-cf-type').dataset.type }; renderOverlay(); } return; }
@@ -13616,13 +13640,15 @@ function winPickSave() {
     // (don't move the date without billing it). Keep the picker open so they can unlock.
     const pre = extensionPreview(r, wp.staged.startDate, wp.staged.endDate);
     if (pre && pre.locked && pre.subtotalDelta > 0.005) { flashOr('.winpicker', 'Unlock the invoice to bill this extension.'); return; }
+    const prevEnd = r.endDate || '';
     r.startDate = wp.staged.startDate; r.endDate = wp.staged.endDate; r.startTime = wp.staged.startTime;
     if (r.startDate && r.endDate && r.status === 'Quote') r.status = 'Reserved';
     logAction(r, `Rental window → ${r.startDate && r.endDate ? fmtShortDate(r.startDate) + '–' + fmtShortDate(r.endDate) : 'cleared'}`);
-    const ext = billExtension(r);   // re-price the lengthened window → additive 'extension' line(s)
+    const ext = billExtension(r, prevEnd);   // bill the lengthened window → additive 'extension' line(s)
     if (ext) {
-      logAction(r, `Extension billed — +${money(ext.subtotalDelta)} to invoice ${invoiceShort(ext.invoiceId)}`);
-      logAction(IDX.invoice.get(ext.invoiceId), `Extension — ${rentalUnitsLabel(r) || 'rental'} +${money(ext.subtotalDelta)} (${ext.count} line${ext.count > 1 ? 's' : ''})`);
+      const basis = ext.retro ? 'retroactive' : 'added days';
+      logAction(r, `Extension billed (${basis}) — +${money(ext.subtotalDelta)} to invoice ${invoiceShort(ext.invoiceId)}`);
+      logAction(IDX.invoice.get(ext.invoiceId), `Extension — ${rentalUnitsLabel(r) || 'rental'} +${money(ext.subtotalDelta)} (${ext.count} line${ext.count > 1 ? 's' : ''}, ${basis})`);
       toast(`Extension billed — +${money(ext.subtotalDelta)} added to invoice ${invoiceShort(ext.invoiceId)}.`);
     }
   }
@@ -13774,6 +13800,7 @@ function winPickerEl(r) {
         <div class="wp-ext-row"><span>Added charge</span><b>${money2(ext.subtotalDelta)}</b></div>
         ${ext.taxDelta ? `<div class="wp-ext-row"><span>Tax (${(TAX_RATE * 100).toFixed(2)}%)</span><b>${money2(ext.taxDelta)}</b></div>` : ''}
         <div class="wp-ext-row wp-ext-bal"><span>New balance</span><b>${money2(ext.newBalance)}</b></div>
+        <div class="wp-ext-basis">${ext.retro ? 'Cheapest price for all rental days — prior charges credited.' : 'Billed as a fresh rental of the added days.'}</div>
       </div>`
     : '';
   return `<div class="winpicker">
@@ -15002,7 +15029,7 @@ function exposeTestApi() {
   try {
     window.__rw = { DATA, IDX, TODAY_ISO, itemPaid, lineKey, rentalUnits, unitEntry, isPrimaryUnit,
       unitStatus, rentalUnitStatuses, unitsUniform, rentalStatusDisplay, rentalMirrorStatus, rentalDisplayStatus,
-      allUnitsTerminal, unitTerminal, unitVoided, rentalLineItems, transportLineItems, extensionPreview, billExtension, unitBilledRental, syncRentalPrimary,
+      allUnitsTerminal, unitTerminal, unitVoided, rentalLineItems, transportLineItems, extensionPreview, billExtension, unitBilledRental, retroPricingOn, syncRentalPrimary,
       addUnitToRental, removeUnitFromRental, removeUnitInvoiceLine, unitLinePaid, invoiceTotals, allocLines,
       rentalAllocated, itemRefunded, itemRefundable, lineRefunded, lineFullyRefunded, refundLines, rentalLineRefund, applyPayment, unitRentalPrice, rentalPrice, rentalDisplayName, setWoLinePhase, setWoPhase, woBottleneck,
       cleanUnitName, planUnitMigration, applyUnitMigration, openMigrationPreview,
