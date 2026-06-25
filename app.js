@@ -3930,7 +3930,7 @@ const ROWS = {
     const stColor = rentalStatusDisplay(r).color;   // border-left highlight follows rental status
     const units = rentalUnitsLabel(r);               // comma-separated unit names (empty on a bare quote)
     const s = parseISO(r.startDate), e = parseISO(r.endDate);
-    const stPill = statusPill('rentalStatus', rentalDisplayStatus(r), { card: 'rentals', recId: r.rentalId });
+    const stPill = masterGate(r);   // R1 gate — advance rental status straight from the list row (Jac 2026-06-24)
 
     // ── Balance (R8 derived): Paid green · upcoming yellow · past-due red ───
     let bal = '', balCls = '';
@@ -4992,6 +4992,7 @@ function rentalDetailCal(r, stColor) {
   const lastSat = new Date(e.getFullYear(), e.getMonth(), e.getDate() + lastSatDelta);
   const totalDays = Math.round((lastSat - firstSun) / 86400000) + 1;
   const DOW = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+  const RDCAL_MON = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
   const dowRow = DOW.map((l) => `<span>${l}</span>`).join('');
   const cells = [];
   for (let i = 0; i < totalDays; i++) {
@@ -5000,12 +5001,16 @@ function rentalDetailCal(r, stColor) {
     const isToday = iso === TODAY_ISO, isStart = iso === r.startDate, isEnd = iso === r.endDate;
     const inWin = iso >= r.startDate && iso <= r.endDate;
     const elapsed = inWin && d <= TODAY;
+    // 1st of a month (not a start/end cell) shows the month abbrev so the boundary reads —
+    // matches the mini calendars' mon1st marker (Jac 2026-06-24).
+    const isMon1st = !isStart && !isEnd && d.getDate() === 1;
     const cls = ['rdcal-day', isToday && 'is-today', isStart && 'is-start', isEnd && 'is-end',
       inWin && 'is-win', inWin && (elapsed ? 'elapsed' : 'fut'),
-      (!isToday && !inWin && d < TODAY) && 'is-past'].filter(Boolean).join(' ');
+      (!isToday && !inWin && d < TODAY) && 'is-past', isMon1st && 'is-mon1st'].filter(Boolean).join(' ');
     const time = isStart ? (r.startTime || '') : '';
     const icon = isStart ? startIcon : (isEnd ? endIcon : '');
-    cells.push(`<div class="${cls}">${inWin ? '<span class="rdcal-bar"></span>' : ''}${time ? `<span class="rdcal-t">${esc(time)}</span>` : ''}<span class="rdcal-n">${d.getDate()}</span>${icon ? `<span class="rdcal-ico">${icon}</span>` : ''}</div>`);
+    const nLabel = isMon1st ? RDCAL_MON[d.getMonth()] : String(d.getDate());
+    cells.push(`<div class="${cls}">${inWin ? '<span class="rdcal-bar"></span>' : ''}${time ? `<span class="rdcal-t">${esc(time)}</span>` : ''}<span class="rdcal-n${isMon1st ? ' mon1st' : ''}">${esc(nLabel)}</span>${icon ? `<span class="rdcal-ico">${icon}</span>` : ''}</div>`);
   }
   return `<div class="rdcal js-open-winpicker" data-rec="${esc(r.rentalId)}" style="--rdcal-hl:var(--${stColor})">
     <div class="rdcal-dow">${dowRow}</div>
