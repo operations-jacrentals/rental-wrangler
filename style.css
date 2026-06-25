@@ -1459,6 +1459,8 @@ select.inline-input:focus-visible { outline: 2px solid var(--accent); outline-of
 .winpicker .wp-ext-row.wp-ext-bal { margin-top: 2px; padding-top: 4px; border-top: 1px solid var(--line-soft); font-size: 12.5px; }
 .winpicker .wp-ext-row.wp-ext-bal b { color: var(--red); }
 .winpicker .wp-ext-basis { font-size: 10px; color: var(--txt-3); margin-top: 3px; font-style: italic; }
+.winpicker .wp-ext.wp-ext-down .wp-ext-kick { color: var(--green); }   /* a reduction is good news */
+.winpicker .wp-ext.wp-ext-down .wp-ext-row:first-of-type b { color: var(--green); }
 /* §5.4d — DATE SEARCH picker: reuses the winpicker shell; a stamped kicker + a live
    selection readout sit above the grid. The date chips it pins carry a tan saddle-
    stitch underline so they read as editable (click re-opens the picker). */

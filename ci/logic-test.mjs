@@ -699,6 +699,9 @@ try {
       const rE = mkRental('R-CAP3', '2099-12-01', '2099-12-20');
       T.createInvoiceForRental('R-CAP3');
       ok(T.rentalInvoices(rE).length === 1, 'a 19-day rental starts as one invoice');
+      // preview reflects the SIGNED retro delta — incl. a reduction when extending unlocks a cheaper rate
+      const pvDown = T.extensionPreview(rE, '2099-12-01', '2099-12-29');
+      ok(pvDown && Math.abs(pvDown.subtotalDelta - (pf(cu.categoryId, '2099-12-01', '2099-12-29') - pf(cu.categoryId, '2099-12-01', '2099-12-20'))) < 0.01, 'preview shows the signed retro delta (a credit when extending into the cheaper 4-Week rate)');
       rE.endDate = '2100-01-05'; T.billExtension(rE, '2099-12-20');   // 19 → 35 days
       ok(T.rentalInvoices(rE).length === 2, 'extending 19→35 days spills into a 2nd invoice (28-day cap)');
       const eTot = T.rentalInvoices(rE).reduce((a, iv) => a + T.invoiceTotals(iv).subtotal, 0), e35 = pf(cu.categoryId, '2099-12-01', '2100-01-05');

@@ -1049,13 +1049,17 @@ function extensionPreview(r, stagedStart, stagedEnd) {
   if (!ns || !ne) return null;
   const retro = retroPricingOn();
   let subtotalDelta = 0; const perUnit = [];
+  const unitPaidSeries = (uId) => invs.reduce((a, inv) => a + (inv.lineItems || []).filter((li) => (li.kind === 'rental' || li.kind === 'extension') && li.ref === r.rentalId && li.unitId === uId).reduce((s, li) => s + itemPaid(inv, li), 0), 0);
   rentalUnits(r).forEach((eu) => {
     if (unitVoided(r, eu)) return;
     const u = IDX.unit.get(eu.unitId); if (!u) return;
     let d;
-    if (retro) { const p = rentalPrice({ categoryId: u.categoryId, startDate: ns, endDate: ne, customerId: r.customerId }); d = Math.round(((p ? p.price : 0) - unitBilledSeries(r, eu.unitId)) * 100) / 100; }
-    else { const p = (r.endDate && ne > r.endDate) ? rentalPrice({ categoryId: u.categoryId, startDate: r.endDate, endDate: ne, customerId: r.customerId }) : null; d = p ? Math.round(p.price * 100) / 100 : 0; }
-    if (d > 0.005) { subtotalDelta += d; perUnit.push({ unitId: eu.unitId, name: u.name, delta: d }); }
+    if (retro) {
+      const p = rentalPrice({ categoryId: u.categoryId, startDate: ns, endDate: ne, customerId: r.customerId });
+      d = Math.round(((p ? p.price : 0) - unitBilledSeries(r, eu.unitId)) * 100) / 100;
+      if (d < 0 && unitPaidSeries(eu.unitId) > 0.005) d = 0;   // paid lines can't drop (refund-first), matching billExtension
+    } else { const p = (r.endDate && ne > r.endDate) ? rentalPrice({ categoryId: u.categoryId, startDate: r.endDate, endDate: ne, customerId: r.customerId }) : null; d = p ? Math.round(p.price * 100) / 100 : 0; }
+    if (retro ? Math.abs(d) > 0.005 : d > 0.005) { subtotalDelta += d; perUnit.push({ unitId: eu.unitId, name: u.name, delta: d }); }   // retro counts reductions too
   });
   subtotalDelta = Math.round(subtotalDelta * 100) / 100;
   const cust = IDX.customer.get(r.customerId);
@@ -5761,8 +5765,10 @@ const DETAIL = {
         </div>
       </div></div>`;
     const notes = notesSection('invoices', i, 'invoiceId');
+    // §28cap — a continuation invoice (a later 28-day chunk of a long rental) links back to its first invoice
+    const contChip = i.contOf ? `<span class="pill ref link" data-r="R2" data-pill-card="invoices" data-pill-rec="${esc(i.contOf)}" data-tip="${esc('Continuation of this rental — back to first invoice ' + invoiceShort(i.contOf) + ' (28-day cap split)')}">${CARD_ICON.invoices}Cont. of ${esc(invoiceShort(i.contOf))}</span>` : '';
     return `<div class="detail">
-      <div class="detail-head"><span class="d-title">${esc(i.invoiceId)}</span>${statusPill('invoiceStatus', t.status)}${locked ? badge('🔒 Locked', 'gray') : ''}</div>
+      <div class="detail-head"><span class="d-title">${esc(i.invoiceId)}</span>${statusPill('invoiceStatus', t.status)}${locked ? badge('🔒 Locked', 'gray') : ''}${contChip}</div>
       ${notes.top}
       ${invoiceSec}
       ${notes.bottom}
@@ -13905,13 +13911,15 @@ function winPickerEl(r) {
   // whole window and shows the increment (added charge + tax + new balance) before commit.
   const ext = wp.staged ? extensionPreview(IDX.rental.get(wp.rentalId), wp.staged.startDate, wp.staged.endDate) : null;
   const billing = !!(ext && ext.subtotalDelta > 0.005);
-  const extHtml = billing
-    ? `<div class="wp-ext">
-        <div class="wp-ext-cap"><span class="wp-ext-kick">Extension</span><span class="wp-ext-days">+${ext.daysDelta} day${ext.daysDelta !== 1 ? 's' : ''} · ${esc(fmtShortDate(ext.prevEnd))} → ${esc(fmtShortDate(ext.newEnd))}</span></div>
-        <div class="wp-ext-row"><span>Added charge</span><b>${money2(ext.subtotalDelta)}</b></div>
-        ${ext.taxDelta ? `<div class="wp-ext-row"><span>Tax (${(TAX_RATE * 100).toFixed(2)}%)</span><b>${money2(ext.taxDelta)}</b></div>` : ''}
+  const reducing = !!(ext && ext.subtotalDelta < -0.005);   // retro down-reblend: extending unlocks the cheaper 4-Week rate
+  const changing = billing || reducing;
+  const extHtml = changing
+    ? `<div class="wp-ext${reducing ? ' wp-ext-down' : ''}">
+        <div class="wp-ext-cap"><span class="wp-ext-kick">${reducing ? 'Re-price' : 'Extension'}</span><span class="wp-ext-days">${ext.daysDelta >= 0 ? '+' : ''}${ext.daysDelta} day${Math.abs(ext.daysDelta) !== 1 ? 's' : ''} · ${esc(fmtShortDate(ext.prevEnd))} → ${esc(fmtShortDate(ext.newEnd))}</span></div>
+        <div class="wp-ext-row"><span>${reducing ? 'Invoice credit' : 'Added charge'}</span><b>${reducing ? '−' : ''}${money2(Math.abs(ext.subtotalDelta))}</b></div>
+        ${ext.taxDelta ? `<div class="wp-ext-row"><span>Tax (${(TAX_RATE * 100).toFixed(2)}%)</span><b>${reducing ? '−' : ''}${money2(Math.abs(ext.taxDelta))}</b></div>` : ''}
         <div class="wp-ext-row wp-ext-bal"><span>New balance</span><b>${money2(ext.newBalance)}</b></div>
-        <div class="wp-ext-basis">${ext.retro ? 'Cheapest price for all rental days — prior charges credited.' : 'Billed as a fresh rental of the added days.'}</div>
+        <div class="wp-ext-basis">${reducing ? 'Extending unlocks the cheaper 4-Week rate — the bill drops.' : ext.retro ? 'Cheapest price for all rental days — prior charges count toward it.' : 'Billed as a fresh rental of the added days.'}</div>
       </div>`
     : '';
   return `<div class="winpicker">
@@ -13921,7 +13929,7 @@ function winPickerEl(r) {
     <div class="wp-grid">${dows}${cells}</div>
     ${subjName ? `<div class="wp-blocknote">Greyed days are ${state.overbookOn ? 'booked' : 'unavailable'} for <b>${esc(subjName)}</b>${state.overbookOn ? ' — overbooking is on, pick to force' : ''}</div>` : ''}
     ${extHtml}
-    <div class="wp-foot"><button class="pill ghost js-wp-today" data-r="R18">Today</button>${wp.staged && winStagedChanged() ? actionPill(billing ? 'money' : 'commit', billing ? 'Bill Extension' : 'Save', { js: 'js-wp-save' }) : ''}${actionPill('commit', 'Clear', { js: 'js-wp-clear' })}</div>
+    <div class="wp-foot"><button class="pill ghost js-wp-today" data-r="R18">Today</button>${wp.staged && winStagedChanged() ? actionPill(billing ? 'money' : 'commit', billing ? 'Bill Extension' : reducing ? 'Re-price ↓' : 'Save', { js: 'js-wp-save' }) : ''}${actionPill('commit', 'Clear', { js: 'js-wp-clear' })}</div>
   </div>`;
 }
 /** Float the picker anchored to the TOP of its trigger button (opens upward so the
