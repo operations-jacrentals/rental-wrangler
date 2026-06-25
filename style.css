@@ -2836,23 +2836,35 @@ body { font-variant-numeric: tabular-nums; }
   .ur-id { flex-direction: column; align-items: flex-start; gap: 1px; }
   .ur-pills { grid-template-columns: 1fr; flex-basis: 90px; }
 }
-/* ── CATEGORY ROW (catr): the full unit-row treatment for the fleet roll-up —
-   [fleet-mix badges LEFT] · [rate·HRS over stamped NAME, right-aligned] · [cat icon]
-   · right-edge health stripe (--catr-hl, mix-driven). Zero the row pad so the stripe
-   and the §6 mix-bar row-viz reach the plate edges, exactly like units. ── */
+/* ── CATEGORY MINI-CARD (catr) — Jac 2026-06-25: the category as a vertical unit
+   data-plate. The Categories .list lays these out as a grid — 3-across when the
+   column is wide, folding to 2 (then 1) as it narrows (auto-fill / minmax). Each
+   plate's full border carries the rentable-health color (--catr-hl), exactly like
+   the rentals mini-card's --rcc-hl. Layout: [icon · stamped NAME] / [Avail · rentable
+   tally, two equal pill slots] / [1-Day · 7-Day · 4-Week stacked rate card]. ── */
+.card[data-card="categories"] .list { display: grid; grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); grid-auto-rows: min-content; }
+.card[data-card="categories"] .list .newrow,
+.card[data-card="categories"] .list .empty-new,
+.card[data-card="categories"] .list .empty,
+.card[data-card="categories"] .list .showmore { grid-column: 1 / -1; }   /* +New, empty states & Show-more span every column */
 .row[data-card="categories"] { padding: 0; }
-.row[data-card="categories"] .row-content { padding: 0; }
-.catr { display: flex; align-items: center; gap: 9px; min-width: 0; padding: 8px 11px 8px 10px; border-right: 3px solid var(--catr-hl, var(--line)); }
-.catr-cat { flex: 0 0 auto; width: 22px; height: 22px; color: var(--txt-2); display: flex; align-items: center; justify-content: center; }
-.catr-cat svg { width: 19px; height: 19px; display: block; }
-.catr-pills { flex: 0 1 auto; display: flex; flex-wrap: wrap; align-items: center; gap: 5px; min-width: 80px; }
-.catr-id { flex: 1 1 auto; min-width: 0; display: flex; align-items: baseline; gap: 1px 8px; justify-content: flex-end; }
-.catr-name { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .6px; font-weight: 700; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; min-width: 0; }
-.catr-sub { font-size: 11.5px; color: var(--txt-2); white-space: nowrap; flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-@container (max-width: 340px) {
-  .catr { gap: 6px; }
-  .catr-id { flex-direction: column; align-items: flex-start; gap: 1px; }
-}
+.row[data-card="categories"] .row-content { padding: 0; height: 100%; }
+.catr { height: 100%; display: flex; flex-direction: column; gap: 7px; padding: 8px 9px; border: 2px solid var(--catr-hl, var(--line)); border-radius: 11px; overflow: hidden; }
+.catr-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.catr-cat { flex: 0 0 auto; width: 18px; height: 18px; color: var(--txt-2); display: flex; align-items: center; justify-content: center; }
+.catr-cat svg { width: 17px; height: 17px; display: block; }
+.catr-name { flex: 1 1 auto; min-width: 0; font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .6px; font-weight: 700; font-size: 13px; line-height: 1.1; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.catr-pills { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+.catr-slot { display: flex; align-items: center; justify-content: center; }
+.catr-slot .pill { width: 100%; text-align: center; justify-content: center; overflow: hidden; }
+.catr-slot .pill .t { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+/* the rate card: a stamped period label on the left, the money value on the right,
+   set off by a single saddle-stitch seam from the status pills above. */
+.catr-rates { margin-top: auto; display: flex; flex-direction: column; gap: 2px; border-top: 1px dashed var(--line); padding-top: 6px; }
+.catr-rate { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.catr-rk { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .8px; font-weight: 600; font-size: 10px; color: var(--txt-3); }
+.catr-rv { font-size: 12.5px; font-weight: 700; white-space: nowrap; }
+.catr-rv.none { color: var(--txt-3); font-weight: 600; }
 
 /* ── CUSTOMER ROW (cr-statuses): account-type + funnel, equal-width, right-pinned. ── */
 .cr-statuses { flex: 0 0 160px; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-left: auto; }

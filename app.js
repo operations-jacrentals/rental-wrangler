@@ -1498,6 +1498,16 @@ function categoryMix(categoryId) {
   us.forEach((u) => { if (c[u.inspectionStatus] != null) c[u.inspectionStatus]++; });
   return { ...c, total: us.length };
 }
+/* §9 RENTABLE fleet — Jac's definition, lifted verbatim from the Ready-Rate KPI: a
+   unit counts as rentable when its fleetStatus isn't Inactive/Sold/For-Sale AND its
+   inspection isn't Failed. Sold units have left the yard, so they're out of inventory
+   too. One source for the category mini-card's rentable/total health tally. */
+const RENTABLE_SKIP_FLEET = new Set(['Inactive', 'Sold', 'For Sale']);
+const isUnitRentable = (u) => !RENTABLE_SKIP_FLEET.has(u.fleetStatus) && u.inspectionStatus !== 'Failed';
+function categoryRentable(categoryId) {
+  const inv = DATA.units.filter((u) => u.categoryId === categoryId && u.fleetStatus !== 'Sold');   // Sold left the yard → not inventory
+  return { rentable: inv.filter(isUnitRentable).length, total: inv.length };
+}
 /** A unit's current rental bucket (mirrors §12.4 Rental Status into 3 buckets). */
 function unitRentalBucket(u) {
   const r = activeRentalForUnit(u.unitId);
@@ -3797,7 +3807,9 @@ function rowViz(card, rec) {
   if (availWin && availUnavailable(card, rec)) return `<div class="row-viz" style="background:var(--red-bg)"></div>`;
   if (card === 'rentals') return '';   // Jac 2026-06-12: the wash is dead — the row IS a timeline now
   if (card === 'customers') return customerSpectrumViz(rec);
-  if (card === 'categories') return categoryMixViz(rec.categoryId);
+  // categories: no full-card wash — the mini-card's bordered plate (--catr-hl) and its
+  // rentable/total pill carry fleet health now (Jac 2026-06-25). The §10 window-red
+  // tint above still applies when a window leaves 0 available.
   if (card === 'serviceOrders') { const s = topServiceForUnit(rec); if (s) return `<div class="row-viz" style="background:linear-gradient(90deg, var(--${s.color}-bg), transparent 60%)"></div>`; }
   if (card === 'units') {
     // colour each unit row by its INSPECTION status as a left gradient (same style as
@@ -3812,13 +3824,6 @@ function customerSpectrumViz(c) {
   const pct = c._digest?.activePct ?? 0;
   return `<div class="row-viz" style="background:linear-gradient(90deg, var(--red-bg), var(--orange-bg), var(--yellow-bg), var(--green-bg)); clip-path: inset(0 ${100 - pct}% 0 0)"></div>`;
 }
-function categoryMixViz(catId) {
-  const mix = categoryMix(catId);
-  if (!mix.total) return '';
-  const g = (mix.Ready / mix.total) * 100, y = (mix['Not Ready'] / mix.total) * 100, r = (mix.Failed / mix.total) * 100;
-  return `<div class="row-viz" style="background:linear-gradient(90deg, var(--mix-green) 0 ${g}%, var(--mix-yellow) ${g}% ${g + y}%, var(--mix-red) ${g + y}% ${g + y + r}%)"></div>`;
-}
-
 /* A library glyph representing a unit's CATEGORY (Jac) — keyword-resolved from the
    category name onto the vendored CATEGORY_ICON map (Lucide + the Tabler backhoe).
    Never hand-authored; unknowns fall back to the backhoe (heavy-equipment default). */
@@ -4051,28 +4056,35 @@ const ROWS = {
   },
 
   categories: (c) => {
-    // Full units-row treatment (Jac 2026-06-25): [fleet-mix badges LEFT] ·
-    // [rate·HRS over stamped NAME, right-aligned] · [category icon] · right-edge
-    // HEALTH stripe — the category is the fleet roll-up, so the stripe reads the
-    // mix the way a unit row's --ur-hl reads its own flag.
-    const mix = categoryMix(c.categoryId);
-    const st = categoryStats(c);
-    // §10: under a rental window, lead with how many units are available for it.
-    let availLead = '', hl = mix.Failed ? 'red' : mix['Not Ready'] ? 'yellow' : mix.Ready ? 'green' : 'line';
+    // MINI-CARD (Jac 2026-06-25): the category as a vertical unit data-plate. The
+    // Categories list renders these 3-across (2 when narrow) — see the .list grid.
+    //   [icon · stamped NAME]
+    //   [Availability slot · rentable/inventory slot]   ← two equal pills, Units-style
+    //   [1-Day · 7-Day · 4-Week stacked rates]          ← the rate card, vertical
+    // The whole plate's border carries the rentable-health color (--catr-hl), exactly
+    // like the rentals mini-card's --rcc-hl.
+    const r = categoryRentable(c.categoryId);
+    // health: all rentable → green · some down → yellow · none → red · empty yard → line
+    let hl = r.total === 0 ? 'line' : r.rentable === 0 ? 'red' : r.rentable < r.total ? 'yellow' : 'green';
+    // SLOT 1 — Availability. Under a rental window count availability for THOSE dates;
+    // otherwise the units rentable AND free to go out right now.
+    let availN, availTip;
     if (availWin) {
-      const n = categoryAvailableCount(c.categoryId, availWin.start, availWin.end, availWin.selfId);
-      availLead = n > 0 ? badge(`${n} Available`, 'green') : badge('0 Available', 'red');
-      if (n === 0) hl = 'red';   // window says none free → stripe goes danger, like the row tint
+      availN = categoryAvailableCount(c.categoryId, availWin.start, availWin.end, availWin.selfId);
+      availTip = `${availN} available for the selected rental window`;
+      if (availN === 0) hl = 'red';   // none free for the window → plate goes danger
+    } else {
+      availN = DATA.units.filter((u) => u.categoryId === c.categoryId && isUnitRentable(u) && !activeRentalForUnit(u.unitId)).length;
+      availTip = `${availN} rentable and free to go out right now`;
     }
-    const badges = [availLead, mix.Ready ? badge(`${mix.Ready} Ready`, 'green') : '', mix['Not Ready'] ? badge(`${mix['Not Ready']} Not Ready`, 'yellow') : '', mix.Failed ? badge(`${mix.Failed} Failed`, 'red') : '', st.roi != null ? badge(`${st.roi}% ROI`, st.roi >= 0 ? 'green' : 'red') : ''].join('');
-    const sub = `${money(c.rate1Day)}/1d · ${num(st.avgHours)} HRS`;
+    const rate = (label, v) => `<div class="catr-rate"><span class="catr-rk">${label}</span><span class="catr-rv${v ? '' : ' none'}">${v ? money(v) : '—'}</span></div>`;
     return `<div class="catr" style="--catr-hl:var(--${hl})">
-      <div class="catr-pills">${badges}</div>
-      <div class="catr-id">
-        <span class="catr-sub">${sub}</span>
-        <span class="r-title catr-name">${esc(c.name)}</span>
+      <div class="catr-head"><span class="catr-cat">${categoryIconFor(c.name)}</span><span class="r-title catr-name" data-tip="${esc(c.name)}">${esc(c.name)}</span></div>
+      <div class="catr-pills">
+        <div class="catr-slot" data-tip="${esc(availTip)}">${badge(`${availN} Avail`, availN > 0 ? 'green' : 'red')}</div>
+        <div class="catr-slot" data-tip="${r.rentable} of ${r.total} units rentable — in-yard, inspection not failed">${badge(`${r.rentable}/${r.total}`, hl === 'line' ? 'gray' : hl)}</div>
       </div>
-      <span class="catr-cat">${categoryIconFor(c.name)}</span>
+      <div class="catr-rates">${rate('1-Day', c.rate1Day)}${rate('7-Day', c.rate7Day)}${rate('4-Week', c.rate4Wk)}</div>
     </div>`;
   },
 
