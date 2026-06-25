@@ -973,6 +973,7 @@ function syncTransportLine(r) {
   });
   want.forEach((w) => { inv.lineItems.push(w); changed = true; });   // brand-new units' transport lines
   if (changed) reindex('invoices', inv);
+  syncProtectionLine(r);   // F4b — protection rides on the rental subtotal, so recompute whenever lines sync (the chokepoint for add/remove/split/void)
 }
 /* §20 ADD any MISSING per-unit rental line to the linked invoice. Never regenerates an
    existing line (its payment allocation is keyed by lid — regeneration would orphan it);
@@ -984,6 +985,34 @@ function syncRentalLines(r) {
   const have = new Set((inv.lineItems || []).filter((li) => li.kind === 'rental' && li.ref === r.rentalId).map((li) => li.unitId));
   let changed = false;
   rentalLineItems(r).forEach((li) => { if (!have.has(li.unitId)) { inv.lineItems.push(li); changed = true; } });
+  if (changed) reindex('invoices', inv);
+}
+/* F4b — Rental Protection invoice line. ONE 'protection' line per rental (ref=rentalId, no
+   unitId), amount = rentalProtectionAmount(r) (15% of the equipment subtotal). Taxable like a
+   rental line. Built at invoice creation; kept in sync (lid-preserving, paid-safe) by
+   syncProtectionLine — mirroring the transport-line reprice so allocations/refunds survive. */
+function protectionLineItems(r) {
+  const amt = rentalProtectionAmount(r);
+  if (amt <= 0) return [];
+  const pct = Math.round(rentalProtectionRate() * 100);
+  return [{ kind: 'protection', ref: r.rentalId, lid: lineLid(), label: `Rental Protection · ${pct}%`, amount: amt }];
+}
+function syncProtectionLine(r) {
+  if (!r || !r.invoiceId) return;
+  const inv = IDX.invoice.get(r.invoiceId); if (!inv) return;
+  const want = rentalProtectionAmount(r);
+  const pct = Math.round(rentalProtectionRate() * 100);
+  const label = `Rental Protection · ${pct}%`;
+  let changed = false, found = false;
+  inv.lineItems = (inv.lineItems || []).filter((li) => {
+    if (!(li.kind === 'protection' && li.ref === r.rentalId)) return true;
+    if (itemPaid(inv, li) > 0) { found = true; return true; }                 // never touch a PAID protection line (refund first)
+    if (want <= 0) { changed = true; return false; }                          // no longer applies → drop the unpaid line
+    found = true;
+    if (li.amount !== want || li.label !== label) { li.amount = want; li.label = label; changed = true; }   // reprice unpaid IN PLACE (keeps its lid → allocation survives)
+    return true;
+  });
+  if (!found && want > 0) { inv.lineItems.push({ kind: 'protection', ref: r.rentalId, lid: lineLid(), label, amount: want }); changed = true; }
   if (changed) reindex('invoices', inv);
 }
 /* sweep ORPHANED invoice lines — a rental/transport line for THIS rental whose unit is no
@@ -11886,6 +11915,7 @@ function removeUnitInvoiceLine(r, unitId) {
   });
   if ((inv.lineItems || []).length === before) return;
   reindex('invoices', inv);
+  syncProtectionLine(r);   // F4b — a removed unit shrinks the rental subtotal → reprice protection (covers the No-Show path that skips syncTransportLine)
   logAction(inv, `${IDX.unit.get(unitId)?.name || unitId} line(s) removed — No Show / Cancel (not billed)`);
 }
 function openUnitStatusDropdown(rentalId, unitId, anchorEl) {
@@ -13540,6 +13570,7 @@ function createInvoiceForRental(rentalId) {
   const inv = { invoiceId: id, customerId: r.customerId, rentalIds: [rentalId], date: TODAY_ISO, dueDate: dueForCustomer(r.customerId), po: '', amountPaid: 0, lineItems: [], mock: true };
   rentalLineItems(r).forEach((li) => inv.lineItems.push(li));      // one rental line per unit (§20)
   transportLineItems(r).forEach((li) => inv.lineItems.push(li));   // one transport line per unit (§20)
+  protectionLineItems(r).forEach((li) => inv.lineItems.push(li));  // F4b — Rental Protection surcharge line (when the account carries it)
   DATA.invoices.push(inv); IDX.invoice.set(id, inv); reindex('invoices', inv);
   r.invoiceId = id;
   logAction(inv, `Created for ${rentalUnitsLabel(r) || 'rental'}`);
@@ -14203,6 +14234,7 @@ function addRentalLineToInvoice(invoiceId, rentalId) {
   const total = lines.reduce((a, li) => a + (Number(li.amount) || 0), 0);
   transportLineItems(r).forEach((li) => inv.lineItems.push(li));   // one transport line per unit (§20)
   if (!r.invoiceId) r.invoiceId = invoiceId;
+  protectionLineItems(r).forEach((li) => inv.lineItems.push(li));  // F4b — this rental's protection surcharge (one line per rental, ref=rentalId)
   if (!inv.rentalIds.includes(rentalId)) inv.rentalIds.push(rentalId);
   logAction(inv, `Added rental: ${rentalUnitsLabel(r) || 'Rental'} (${money(total)})`);
   logAction(r, `Added to invoice ${invoiceShort(invoiceId)}`);
@@ -15039,7 +15071,7 @@ function exposeTestApi() {
       latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore, wranglerRailLoad, wrOffloadChatImages, wrEvictChatBlobs, driveViewUrl, mergeWranglerRails,
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
-      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, setFunnelStage, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, setRole: (r) => { currentRole = r || ''; render(); },
+      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, setFunnelStage, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, setRole: (r) => { currentRole = r || ''; render(); },
       openCustomerForm, renderOverlay, render, cardComplete, cardCaptureState, cardHasSelfie, cardHasSignature, captureSelfie, captureSignature, __state: state };   // UI drivers for headless screenshot/e2e tests
 
   } catch (e) { /* no window (non-browser) */ }

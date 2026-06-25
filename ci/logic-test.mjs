@@ -666,6 +666,38 @@ try {
       T.IDX.customer.delete('C-PROT'); T.IDX.unit.delete('U-PROT'); T.IDX.rental.delete('R-PROT');
     }
 
+    // === F4b — Rental Protection invoice LINE: built at creation, lid-preserving reprice, taxable ===
+    {
+      const r2c = (n) => Math.round(n * 100) / 100;
+      const cat = T.DATA.categories.find((k) => k.rate1Day > 0);
+      const cust = { customerId: 'C-PL', accountType: 'Non-Business', rentalProtection: true };
+      const u1 = { unitId: 'U-PL', categoryId: cat.categoryId, name: 'PL1' };
+      const u2 = { unitId: 'U-PL2', categoryId: cat.categoryId, name: 'PL2' };
+      const r = { rentalId: 'R-PL', customerId: 'C-PL', status: 'Reserved', startDate: '2099-06-01', endDate: '2099-06-03', units: [{ unitId: 'U-PL' }], invoiceId: 'I-PL' };
+      const inv = { invoiceId: 'I-PL', customerId: 'C-PL', amountPaid: 0, lineItems: [] };
+      T.IDX.customer.set('C-PL', cust); T.IDX.unit.set('U-PL', u1); T.IDX.unit.set('U-PL2', u2); T.IDX.rental.set('R-PL', r); T.IDX.invoice.set('I-PL', inv);
+      // build at creation: rental lines + protection line
+      T.rentalLineItems(r).forEach((li) => inv.lineItems.push(li));
+      T.protectionLineItems(r).forEach((li) => inv.lineItems.push(li));
+      const rentalSub = inv.lineItems.filter((l) => l.kind === 'rental').reduce((a, l) => a + l.amount, 0);
+      const pl = inv.lineItems.find((l) => l.kind === 'protection');
+      ok(pl && pl.amount === r2c(rentalSub * T.rentalProtectionRate()) && pl.amount > 0, `protection line: built at creation = 15% of rental subtotal ${rentalSub} → ${pl && pl.amount}`);
+      ok(r2c(T.invoiceTotals(inv).subtotal) === r2c(rentalSub + pl.amount), 'protection line: included in the invoice subtotal');
+      ok(r2c(T.invoiceTotals(inv).tax) === r2c((rentalSub + pl.amount) * 0.1075), 'protection line: taxed like the rest (taxable)');
+      // turn protection OFF + resync → unpaid line dropped
+      cust.rentalProtection = false; T.syncProtectionLine(r);
+      ok(!inv.lineItems.some((l) => l.kind === 'protection'), 'protection line: dropped when the account toggles protection off');
+      // back ON + resync → re-added; then add a unit → reprices UP, lid preserved
+      cust.rentalProtection = true; T.syncProtectionLine(r);
+      const plOn = inv.lineItems.find((l) => l.kind === 'protection'); const lid1 = plOn.lid; const amtOn = plOn.amount;   // snapshot the NUMBER (reprice mutates the line in place)
+      r.units.push({ unitId: 'U-PL2' });
+      T.rentalLineItems(r).filter((li) => li.unitId === 'U-PL2').forEach((li) => inv.lineItems.push(li));   // add the new unit's rental line (grows the base)
+      T.syncProtectionLine(r);
+      const plUp = inv.lineItems.find((l) => l.kind === 'protection');
+      ok(plUp && plUp.lid === lid1 && plUp.amount > amtOn, `protection line: reprices UP when a unit is added (${amtOn}→${plUp.amount}), lid preserved`);
+      T.IDX.customer.delete('C-PL'); T.IDX.unit.delete('U-PL'); T.IDX.unit.delete('U-PL2'); T.IDX.rental.delete('R-PL'); T.IDX.invoice.delete('I-PL');
+    }
+
     return out;
   });
 
