@@ -4105,7 +4105,7 @@ const ROWS = {
         <div class="catr-slot js-cat-avail" data-cat="${esc(c.categoryId)}" data-tip="${esc(availTip)} — tap to open these units">${badge(`${availN} Avail`, availN > 0 ? 'green' : 'red')}</div>
         <div class="catr-slot" data-tip="${r.rentable} of ${r.total} units rentable — in-yard, inspection not failed">${badge(`${r.rentable}/${r.total}`, tallyColor)}</div>
       </div>
-      <div class="catr-rates">${rate('1-Day', c.rate1Day)}${rate('Weekend', c.weekend)}${rate('7-Day', c.rate7Day)}${rate('4-Week', c.rate4Wk)}</div>
+      <div class="catr-rates">${rate('1-Day', c.rate1Day)}${rate('7-Day', c.rate7Day)}${rate('4-Week', c.rate4Wk)}${rate('Weekend', c.weekend)}</div>
     </div>`;
   },
 
