@@ -841,7 +841,7 @@ function rentalPrice(r) {
   if (!cat || !s || !e) return null;
   const days = Math.max(1, dayDiff(s, e));
   const cust = IDX.customer.get(r.customerId);
-  const isMember = cust && /Member/.test(cust.accountType || '') && cust.accountType !== 'Member Incomplete';
+  const isMember = isActiveMember(cust);   // §10.4 — Active/in-grace only; refused to Incomplete + lapsed
 
   if (isMember) return { price: days * cat.memberDaily, rate: `Member×${days}`, days };
   // §10 weekend rate (Jac 2026-06-07): Fri→Sun, Fri→Mon, or Sat→Mon — NOT Sat→Sun.
@@ -907,12 +907,14 @@ function transportCost({ transportType, miles, driveMin, address, fueled, unlimi
 }
 /** Transport cost + drive time for a rental (SPEC §10) — primary unit / legacy. */
 function rentalTransport(r) {
-  const unlimited = !!IDX.customer.get(r.customerId)?.unlimitedTransport;
+  const cust = IDX.customer.get(r.customerId);
+  const unlimited = !!(cust?.unlimitedTransport && isActiveMember(cust));   // §10.4 — $0 transport gated to an Active member
   return transportCost({ transportType: r.transportType, miles: r.transportMiles, driveMin: r.transportDriveMin, address: r.deliveryAddress, fueled: unitFueled(r.unitId), unlimited });
 }
 /** §20 transport cost for ONE unit (its own type + address + cached distance). */
 function unitTransport(r, eu) {
-  const unlimited = !!IDX.customer.get(r.customerId)?.unlimitedTransport;
+  const cust = IDX.customer.get(r.customerId);
+  const unlimited = !!(cust?.unlimitedTransport && isActiveMember(cust));   // §10.4 — $0 transport gated to an Active member
   return transportCost({ transportType: eu.transportType, miles: eu.transportMiles, driveMin: eu.transportDriveMin, address: eu.deliveryAddress, fueled: unitFueled(eu.unitId), unlimited });
 }
 /** §20 one invoice 'transport' line per unit that has transport (ref=rentalId,
@@ -2799,6 +2801,29 @@ function membershipFee({ plan, addOns } = {}, pricing) {
   const tax = r2(subtotal * TAX_RATE);
   return { base, transport, protection, subtotal, tax, total: r2(subtotal + tax) };
 }
+/* Membership lifecycle status, derived from the customer's fields (spec §3):
+     None       — not a member account
+     Incomplete — 'Member Incomplete' (enrolled but not activated: no card / agreement / first charge)
+     Active     — paid through today (or a prepaid-to-term member), OR a legacy member with no
+                  subscription fields yet (grandfathered so existing members keep their rate)
+     Past Due   — paidUntil lapsed but still inside the 7-day grace (KEEPS member rates per the agreement)
+     Lapsed     — grace expired (the backend also flips accountType off Member, reverting pricing)
+   ISO date strings compare lexically, so direct >= works for YYYY-MM-DD. */
+function membershipStatus(c) {
+  if (!c) return 'None';
+  const at = c.accountType || '';
+  if (!/Member/.test(at)) return 'None';
+  if (at === 'Member Incomplete') return 'Incomplete';
+  if (!(c.paidUntil || c.paidCadence || c.commitmentEnd)) return 'Active';   // legacy/grandfathered member — no subscription data yet
+  if (c.prepaid) return 'Active';
+  if (c.paidUntil && c.paidUntil >= TODAY_ISO) return 'Active';
+  if (c.graceUntil && c.graceUntil >= TODAY_ISO) return 'Past Due';
+  return 'Lapsed';
+}
+/* The ONE pricing/entitlement gate (spec §10.4): member rate + $0 Unlimited-Transport
+   apply only to an Active or in-grace member — refused to Incomplete AND lapsed, in both
+   the quote and the invoice line. Past Due keeps the rate through the grace window. */
+const isActiveMember = (c) => { const s = membershipStatus(c); return s === 'Active' || s === 'Past Due'; };
 // System-wide ceiling on customer Net-day terms (Settings → Company). Caps every customer's net days.
 const companyMaxNetDays = () => { const n = Number(companyCfg().maxNetDays); return n >= 0 && isFinite(n) ? n : COMPANY_DEFAULTS.maxNetDays; };
 // Normalize a raw Net-days draft value → an integer 0..max, or undefined when blank.
@@ -14979,7 +15004,7 @@ function exposeTestApi() {
       latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore, wranglerRailLoad, wrOffloadChatImages, wrEvictChatBlobs, driveViewUrl, mergeWranglerRails,
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
-      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, setRole: (r) => { currentRole = r || ''; render(); },
+      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, setRole: (r) => { currentRole = r || ''; render(); },
       openCustomerForm, renderOverlay, render, cardComplete, cardCaptureState, cardHasSelfie, cardHasSignature, captureSelfie, captureSignature, __state: state };   // UI drivers for headless screenshot/e2e tests
 
   } catch (e) { /* no window (non-browser) */ }

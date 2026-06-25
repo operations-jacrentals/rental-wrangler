@@ -590,6 +590,48 @@ try {
     ok(T.rowMatches('rentals', rA, '', dNeg) === false && T.rowMatches('rentals', rB, '', dNeg) === true, 'date: a NEGATED date filter excludes the match and keeps the rest');
     ok(T.rowMatches('units', aUnit2, '', dNeg) === true, 'date: a NEGATED date filter is STILL a no-op on date-less cards (never excluded)');
 
+    // === F1 — membership fee math (spec §2): no proration; protection = 15% of BASE only; 10.75% tax ===
+    {
+      const PR = { monthlyBase: 299, annualBase: 2691, monthlyTransport: 500, annualTransport: 4500, protectionPct: 15, protectionCapMonthly: 2000 };
+      const mf = (plan, t, p) => T.membershipFee({ plan, addOns: { transport: t, protection: p } }, PR);
+      const mBoth = mf('Monthly', true, true);
+      ok(mBoth.base === 299 && mBoth.transport === 500 && mBoth.protection === 44.85 && mBoth.subtotal === 843.85 && mBoth.tax === 90.71 && mBoth.total === 934.56, `membership: Monthly both add-ons → 843.85 + tax = 934.56 (got ${mBoth.subtotal}/${mBoth.total})`);
+      ok(mBoth.protection === 44.85, `membership: protection is 15% of BASE only ($299→$44.85), NOT base+transport (got ${mBoth.protection})`);
+      const mBase = mf('Monthly', false, false);
+      ok(mBase.subtotal === 299 && mBase.transport === 0 && mBase.protection === 0 && mBase.total === 331.14, `membership: Monthly base-only → 299 + tax = 331.14 (got ${mBase.total})`);
+      const mTrans = mf('Monthly', true, false);
+      ok(mTrans.subtotal === 799 && mTrans.protection === 0, `membership: Monthly transport-only → subtotal 799, no protection (got ${mTrans.subtotal}/${mTrans.protection})`);
+      const aBoth = mf('Yearly', true, true);
+      ok(aBoth.base === 2691 && aBoth.transport === 4500 && aBoth.protection === 403.65 && aBoth.subtotal === 7594.65 && aBoth.total === 8411.07, `membership: Annual both add-ons → 7594.65 + tax = 8411.07 (got ${aBoth.subtotal}/${aBoth.total})`);
+      const aBase = mf('Yearly', false, false);
+      ok(aBase.subtotal === 2691 && aBase.total === 2980.28, `membership: Annual base-only → 2691 + tax = 2980.28 (got ${aBase.total})`);
+      const pr = T.membershipPricing();
+      ok(['monthlyBase', 'annualBase', 'monthlyTransport', 'annualTransport', 'protectionPct', 'protectionCapMonthly'].every((k) => typeof pr[k] === 'number' && isFinite(pr[k]) && pr[k] >= 0), 'membership: membershipPricing() returns six numeric fields (defaults applied when unset)');
+    }
+
+    // === F2 — membership status engine + Active pricing/entitlement gate (spec §3, §10.4) ===
+    {
+      const ms = T.membershipStatus, iam = T.isActiveMember;
+      const future = '2099-01-01', past = '2000-01-01';
+      ok(ms({ accountType: 'Non-Business' }) === 'None' && iam({ accountType: 'Non-Business' }) === false, 'status: non-member → None, not active');
+      ok(ms({ accountType: 'Member Incomplete' }) === 'Incomplete' && iam({ accountType: 'Member Incomplete' }) === false, 'status: Member Incomplete → Incomplete, NOT active (no member rate)');
+      ok(ms({ accountType: 'Business Member' }) === 'Active', 'status: legacy member (no subscription fields) → grandfathered Active');
+      ok(iam({ accountType: 'Business Member', paidUntil: future }) === true, 'status: paid-through-future → Active (member rate applies)');
+      ok(ms({ accountType: 'Business Member', paidUntil: past, graceUntil: future }) === 'Past Due' && iam({ accountType: 'Business Member', paidUntil: past, graceUntil: future }) === true, 'status: lapsed but in 7-day grace → Past Due, KEEPS member rate');
+      ok(ms({ accountType: 'Business Member', paidUntil: past, graceUntil: past }) === 'Lapsed' && iam({ accountType: 'Business Member', paidUntil: past, graceUntil: past }) === false, 'status: grace expired → Lapsed, member rate REVOKED');
+      ok(ms({ accountType: 'Business Member', prepaid: true, paidUntil: past }) === 'Active', 'status: prepaid-to-term member → Active even past paidUntil');
+      // gate flows through real pricing: an Incomplete member pays RETAIL, an Active member pays the member rate
+      const cat = T.DATA.categories.find((k) => k.memberDaily > 0);
+      const r = { rentalId: 'R-MEMGATE', customerId: 'C-MEMGATE', categoryId: cat.categoryId, unitId: null, startDate: '2026-06-01', endDate: '2026-06-04' };
+      const cust = { customerId: 'C-MEMGATE', accountType: 'Business Member', paidUntil: future };
+      T.IDX.customer.set('C-MEMGATE', cust); T.IDX.rental.set('R-MEMGATE', r);
+      const active = T.rentalPrice(r)?.price;
+      cust.accountType = 'Member Incomplete';
+      const incomplete = T.rentalPrice(r)?.price;
+      T.IDX.customer.delete('C-MEMGATE'); T.IDX.rental.delete('R-MEMGATE');
+      ok(active != null && incomplete != null && active < incomplete && active === 3 * cat.memberDaily, `gate: Active member pays member rate (${active}) < Incomplete pays retail (${incomplete})`);
+    }
+
     return out;
   });
 
