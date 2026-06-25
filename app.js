@@ -958,11 +958,93 @@ function unitExtensionDelta(inv, r, eu, ns, ne, prevEnd, retro) {
   const p = (prevEnd && ne > prevEnd) ? rentalPrice({ categoryId: u.categoryId, startDate: prevEnd, endDate: ne, customerId: r.customerId }) : null;
   return { amount: p ? Math.round(p.price * 100) / 100 : 0, rate: p ? p.rate : '—' };
 }
+/* ── §28cap MULTI-INVOICE SERIES (Jac 2026-06-25) — an invoice bills at most 28
+   rental-days per unit; long rentals split into a series of ≤28-day chunk invoices.
+   Because the 4-Week rate IS 28 days, the cheapest-blend optimizer already seams at
+   28-day marks, so the split bills the SAME total — it's purely organizational. ── */
+const INV_CAP_DAYS = 28;
+/** All invoices billing a rental, ordered by the day-window they cover (covStart). */
+function rentalInvoices(r) {
+  if (!r) return [];
+  return DATA.invoices.filter((i) => (i.rentalIds || []).includes(r.rentalId))
+    .sort((a, b) => { const ka = a.covStart || a.date || '', kb = b.covStart || b.date || ''; return ka < kb ? -1 : ka > kb ? 1 : 0; });
+}
+/** The latest chunk invoice — where the next extension bills if it has room + is open. */
+function rentalActiveInvoice(r) {
+  const invs = rentalInvoices(r);
+  return invs.length ? invs[invs.length - 1] : (r && r.invoiceId ? IDX.invoice.get(r.invoiceId) : null);
+}
+const invCovStart = (inv, r) => inv.covStart || (r ? r.startDate : '');
+const invCovEnd = (inv, r) => inv.covEnd || (r ? r.endDate : '');
+function invCoveredDays(inv, r) { const s = invCovStart(inv, r), e = invCovEnd(inv, r); return (parseISO(s) && parseISO(e)) ? Math.max(0, dayDiff(parseISO(s), parseISO(e))) : 0; }
+const minISO = (a, b) => (a < b ? a : b);
+/** Chunk a window into ≤28-day pieces: [{idx, start, end, days}]. */
+function invoiceChunks(startISO, endISO) {
+  const total = (parseISO(startISO) && parseISO(endISO)) ? dayDiff(parseISO(startISO), parseISO(endISO)) : 0;
+  const out = [];
+  for (let d0 = 0; d0 < total; d0 += INV_CAP_DAYS) { const d1 = Math.min(d0 + INV_CAP_DAYS, total); out.push({ idx: out.length, start: addDaysISO(startISO, d0), end: addDaysISO(startISO, d1), days: d1 - d0 }); }
+  return out.length ? out : [{ idx: 0, start: startISO, end: endISO, days: Math.max(1, total) }];
+}
+/** Dollars already billed for a unit's TIME across the WHOLE rental series. */
+function unitBilledSeries(r, unitId) { return rentalInvoices(r).reduce((a, inv) => a + unitBilledRental(inv, r.rentalId, unitId), 0); }
+/** Open a continuation invoice for [covStart,covEnd] (a fresh ≤28-day chunk). */
+function createContinuationInvoice(r, covStart, covEnd) {
+  const id = nextInvoiceId();
+  const inv = { invoiceId: id, customerId: r.customerId, rentalIds: [r.rentalId], date: TODAY_ISO, dueDate: dueForCustomer(r.customerId), po: '', amountPaid: 0, lineItems: [], covOf: r.rentalId, covStart, covEnd, contOf: r.invoiceId, mock: true };
+  DATA.invoices.push(inv); IDX.invoice.set(id, inv); reindex('invoices', inv);
+  logAction(inv, `Continuation of ${rentalUnitsLabel(r) || 'rental'} — ext of ${invoiceShort(r.invoiceId)}`);
+  logAction(r, `Continuation invoice ${invoiceShort(id)} opened (28-day cap / closed prior)`);
+  return inv;
+}
+/** Bill per-unit charges for [ns,ne] onto `inv` (kind = 'rental' fresh chunk · 'extension'
+ *  grow). prevEnd = the unit's already-billed-through end (=ns for a fresh chunk). */
+function billChunkUnits(inv, r, ns, ne, prevEnd, retro, kind, contInvId) {
+  let delta = 0, count = 0;
+  rentalUnits(r).forEach((eu) => {
+    if (unitVoided(r, eu)) return;
+    const u = IDX.unit.get(eu.unitId); if (!u) return;
+    const d = unitExtensionDelta(inv, r, eu, ns, ne, prevEnd, retro);
+    if (d.amount > 0.005) {
+      const tail = kind === 'extension' ? ` · Extension → ${fmtShortDate(ne)}` : (contInvId ? ` · Ext of ${invoiceShort(contInvId)}` : '');
+      inv.lineItems.push({ kind, ref: r.rentalId, unitId: eu.unitId, lid: lineLid(), label: `${u.name} · ${d.rate}${tail}`, amount: d.amount });
+      delta += d.amount; count++;
+    }
+  });
+  return { delta: Math.round(delta * 100) / 100, count };
+}
+/** Retroactive reconcile of an OPEN chunk: re-price each unit's rental line in `inv` to
+ *  cheapest(ns,ne) — UP or DOWN (the 4-Week rate can make more days cheaper). Unpaid lines
+ *  are re-priced in place (collapsing any prior extension lines into the base rental line);
+ *  a paid line can't drop (refund-first) so it only takes a positive top-up. */
+function reconcileChunkRetro(inv, r, ns, ne) {
+  let delta = 0, count = 0;
+  rentalUnits(r).forEach((eu) => {
+    if (unitVoided(r, eu)) return;
+    const u = IDX.unit.get(eu.unitId); if (!u) return;
+    const p = rentalPrice({ categoryId: u.categoryId, startDate: ns, endDate: ne, customerId: r.customerId });
+    const target = Math.round((p ? p.price : 0) * 100) / 100;
+    const mine = (inv.lineItems || []).filter((li) => (li.kind === 'rental' || li.kind === 'extension') && li.ref === r.rentalId && li.unitId === eu.unitId);
+    const paid = mine.reduce((a, li) => a + itemPaid(inv, li), 0);
+    const billed = Math.round(mine.reduce((a, li) => a + (Number(li.amount) || 0), 0) * 100) / 100;
+    if (Math.abs(target - billed) <= 0.005) return;
+    if (paid > 0.005) {   // some paid → can't re-price down; only a positive top-up (refund-first for any drop)
+      const d = Math.round((target - billed) * 100) / 100;
+      if (d > 0.005) { inv.lineItems.push({ kind: 'extension', ref: r.rentalId, unitId: eu.unitId, lid: lineLid(), label: `${u.name} · Extension → ${fmtShortDate(ne)} · ${p ? p.rate : '—'}`, amount: d }); delta += d; count++; }
+    } else {              // all unpaid → re-price to cheapest(window): collapse to one base rental line at target
+      const keep = mine.find((li) => li.kind === 'rental') || mine[0];
+      inv.lineItems = (inv.lineItems || []).filter((li) => !(mine.indexOf(li) >= 0 && li !== keep));
+      if (keep) { keep.amount = target; keep.kind = 'rental'; keep.label = `${u.name} · ${p ? p.rate : '—'}`; }
+      else if (target > 0.005) { inv.lineItems.push({ kind: 'rental', ref: r.rentalId, unitId: eu.unitId, lid: lineLid(), label: `${u.name} · ${p ? p.rate : '—'}`, amount: target }); }
+      delta += target - billed; count++;
+    }
+  });
+  return { delta: Math.round(delta * 100) / 100, count };
+}
 /** PURE preview of extending r to a staged window (no mutation) — drives the picker
- *  banner AND the save-time lock guard. Honors the retroactive-pricing setting. */
+ *  banner. Series-aware; honors the retroactive-pricing setting. */
 function extensionPreview(r, stagedStart, stagedEnd) {
   if (!r || !r.invoiceId) return null;
-  const inv = IDX.invoice.get(r.invoiceId); if (!inv) return null;
+  const invs = rentalInvoices(r); if (!invs.length) return null;
   const ns = stagedStart || r.startDate, ne = stagedEnd || r.endDate;
   if (!ns || !ne) return null;
   const retro = retroPricingOn();
@@ -970,37 +1052,59 @@ function extensionPreview(r, stagedStart, stagedEnd) {
   rentalUnits(r).forEach((eu) => {
     if (unitVoided(r, eu)) return;
     const u = IDX.unit.get(eu.unitId); if (!u) return;
-    const d = unitExtensionDelta(inv, r, eu, ns, ne, r.endDate, retro);   // prevEnd = current saved end
-    if (d.amount > 0.005) { subtotalDelta += d.amount; perUnit.push({ unitId: eu.unitId, name: u.name, delta: d.amount, rate: d.rate }); }
+    let d;
+    if (retro) { const p = rentalPrice({ categoryId: u.categoryId, startDate: ns, endDate: ne, customerId: r.customerId }); d = Math.round(((p ? p.price : 0) - unitBilledSeries(r, eu.unitId)) * 100) / 100; }
+    else { const p = (r.endDate && ne > r.endDate) ? rentalPrice({ categoryId: u.categoryId, startDate: r.endDate, endDate: ne, customerId: r.customerId }) : null; d = p ? Math.round(p.price * 100) / 100 : 0; }
+    if (d > 0.005) { subtotalDelta += d; perUnit.push({ unitId: eu.unitId, name: u.name, delta: d }); }
   });
   subtotalDelta = Math.round(subtotalDelta * 100) / 100;
   const cust = IDX.customer.get(r.customerId);
-  const exempt = !!(inv.taxExempt || cust?.salesTaxExempt);
+  const exempt = !!(invs[0].taxExempt || cust?.salesTaxExempt);
   const taxDelta = exempt ? 0 : Math.round(subtotalDelta * TAX_RATE * 100) / 100;
+  const curBal = invs.reduce((a, inv) => a + invoiceTotals(inv).balance, 0);
   const prevDays = Math.max(1, dayDiff(parseISO(r.startDate), parseISO(r.endDate)));
   const newDays = Math.max(1, dayDiff(parseISO(ns), parseISO(ne)));
-  return { subtotalDelta, taxDelta, perUnit, newBalance: invoiceTotals(inv).balance + subtotalDelta + taxDelta, daysDelta: newDays - prevDays, prevEnd: r.endDate, newEnd: ne, locked: !!inv.locked, retro };
+  return { subtotalDelta, taxDelta, perUnit, newBalance: curBal + subtotalDelta + taxDelta, daysDelta: newDays - prevDays, prevEnd: r.endDate, newEnd: ne, retro };
 }
-/** Append the per-unit extension line(s) to r's invoice (reads r's CURRENT window —
- *  call AFTER the new dates are written; pass the OLD end as prevEnd). Returns a summary or null. */
+/** Bill a lengthened window across the rental's invoice series — fill the active open
+ *  chunk toward its 28-day cap, then spill into fresh ≤28-day invoices (closed/locked
+ *  active spills immediately). Call AFTER the new dates are written; prevEnd = old end. */
 function billExtension(r, prevEnd) {
   if (!r || !r.invoiceId) return null;
-  const inv = IDX.invoice.get(r.invoiceId); if (!inv || inv.locked) return null;
   const retro = retroPricingOn();
-  let subtotalDelta = 0, count = 0;
-  rentalUnits(r).forEach((eu) => {
-    if (unitVoided(r, eu)) return;
-    const u = IDX.unit.get(eu.unitId); if (!u) return;
-    const d = unitExtensionDelta(inv, r, eu, r.startDate, r.endDate, prevEnd, retro);
-    if (d.amount > 0.005) {
-      const tag = retro ? `→ ${fmtShortDate(r.endDate)}` : `(${fmtShortDate(prevEnd)}–${fmtShortDate(r.endDate)})`;
-      inv.lineItems.push({ kind: 'extension', ref: r.rentalId, unitId: eu.unitId, lid: lineLid(), label: `${u.name} · Extension ${tag} · ${d.rate}`, amount: d.amount });
-      subtotalDelta += d.amount; count++;
+  const targetEnd = r.endDate;
+  let active = rentalActiveInvoice(r); if (!active) return null;
+  if (!active.covStart) { active.covStart = r.startDate; active.covEnd = prevEnd || r.endDate; active.covOf = r.rentalId; }   // backfill legacy
+  let coveredEnd = active.covEnd || prevEnd || r.startDate;
+  if (!targetEnd || !coveredEnd || dayDiff(parseISO(coveredEnd), parseISO(targetEnd)) <= 0) return null;   // no net lengthening
+  const sum = { count: 0, subtotalDelta: 0, invoiceIds: [], newInvoices: 0, retro, invoiceId: r.invoiceId };
+  let guard = 0;
+  while (dayDiff(parseISO(coveredEnd), parseISO(targetEnd)) > 0 && guard++ < 60) {
+    const t = invoiceTotals(active);
+    const closed = t.paid > 0 && t.balance <= 0;
+    const room = INV_CAP_DAYS - invCoveredDays(active, r);
+    if (active.locked || closed || room <= 0) {                                  // spill → fresh chunk invoice
+      const chunkEnd = minISO(addDaysISO(coveredEnd, INV_CAP_DAYS), targetEnd);
+      active = createContinuationInvoice(r, coveredEnd, chunkEnd);
+      const res = billChunkUnits(active, r, coveredEnd, chunkEnd, coveredEnd, retro, 'rental', r.invoiceId);
+      reindex('invoices', active);
+      sum.newInvoices++; sum.count += res.count; sum.subtotalDelta += res.delta; sum.invoiceIds.push(active.invoiceId);
+      coveredEnd = chunkEnd;
+    } else {                                                                      // grow the active open chunk
+      const grow = Math.min(room, dayDiff(parseISO(coveredEnd), parseISO(targetEnd)));
+      const newCovEnd = addDaysISO(coveredEnd, grow);
+      // retro → re-price the chunk to cheapest(covStart→newEnd), up or down (unpaid in place).
+      // OFF → add only the new days standalone (originals frozen).
+      const res = retro ? reconcileChunkRetro(active, r, invCovStart(active, r), newCovEnd)
+        : billChunkUnits(active, r, coveredEnd, newCovEnd, coveredEnd, false, 'extension', null);
+      active.covEnd = newCovEnd; reindex('invoices', active);
+      sum.count += res.count; sum.subtotalDelta += res.delta; if (!sum.invoiceIds.includes(active.invoiceId)) sum.invoiceIds.push(active.invoiceId);
+      coveredEnd = newCovEnd;
     }
-  });
-  if (!count) return null;
-  reindex('invoices', inv);
-  return { count, subtotalDelta: Math.round(subtotalDelta * 100) / 100, invoiceId: inv.invoiceId, retro };
+  }
+  if (!sum.count) return null;
+  sum.subtotalDelta = Math.round(sum.subtotalDelta * 100) / 100;
+  return sum;
 }
 /* ── Transport journey-picker (Our yard · Truck · Customer site) — like the rental-
    window picker, but for transport. Click an endpoint then a second: store→truck =
@@ -1053,14 +1157,15 @@ function syncRentalLines(r) {
    longer on it (and isn't paid) is dropped. Belt-and-suspenders after add/remove/split. */
 function healInvoiceLines(r) {
   if (!r || !r.invoiceId) return;
-  const inv = IDX.invoice.get(r.invoiceId); if (!inv) return;
   const live = new Set(rentalUnitIds(r));
-  const before = (inv.lineItems || []).length;
-  inv.lineItems = (inv.lineItems || []).filter((li) => {
-    const orphan = (li.kind === 'rental' || li.kind === 'transport' || li.kind === 'extension') && li.ref === r.rentalId && li.unitId && !live.has(li.unitId);
-    return !orphan || itemPaid(inv, li) > 0;
+  rentalInvoices(r).forEach((inv) => {   // §28cap — sweep the whole billing series
+    const before = (inv.lineItems || []).length;
+    inv.lineItems = (inv.lineItems || []).filter((li) => {
+      const orphan = (li.kind === 'rental' || li.kind === 'transport' || li.kind === 'extension') && li.ref === r.rentalId && li.unitId && !live.has(li.unitId);
+      return !orphan || itemPaid(inv, li) > 0;
+    });
+    if ((inv.lineItems || []).length !== before) reindex('invoices', inv);
   });
-  if ((inv.lineItems || []).length !== before) reindex('invoices', inv);
 }
 
 /* ════════════ INLINE TRANSPORT EDITOR + GOOGLE MAPS (Jac 2026-06-15) ═════════
@@ -5103,7 +5208,8 @@ const DETAIL = {
   rentals: (r, cs) => {
     const cat = IDX.category.get(r.categoryId);
     const cust = IDX.customer.get(r.customerId);
-    const inv = r.invoiceId ? IDX.invoice.get(r.invoiceId) : null;
+    const invs = rentalInvoices(r);   // §28cap — a rental can have a ≤28-day invoice series
+    const inv = invs[0] || (r.invoiceId ? IDX.invoice.get(r.invoiceId) : null);
     const invT = inv ? invoiceTotals(inv) : null;
     const truck = showsTruck(r.status, r.transportType);
     const stColor = rentalStatusDisplay(r).color;
@@ -5111,17 +5217,17 @@ const DETAIL = {
     const hasWin = s && e;
     const units = rentalUnits(r);
 
-    /* invoice pill — ✕ unlink only while $0 is assigned (Jac's rule). */
+    /* invoice pill(s) — the billing series; ✕ unlink only on the primary while $0 is assigned. */
     const paidForThis = inv ? rentalAllocated(inv, r.rentalId) : 0;
-    const invPill = inv
-      ? `<span class="pill ref link" data-r="R2" data-pill-card="invoices" data-pill-rec="${esc(inv.invoiceId)}">${CARD_ICON.invoices}${esc(invoiceShort(inv.invoiceId))}${paidForThis <= 0 ? `<span class="x" data-x="inv-remove" data-tip="unlink — allowed while $0 is assigned to this rental; afterwards refund first">✕</span>` : ''}</span>`
+    const invPill = invs.length
+      ? invs.map((iv, k) => `<span class="pill ref link" data-r="R2" data-pill-card="invoices" data-pill-rec="${esc(iv.invoiceId)}"${invs.length > 1 ? ` data-tip="${esc('Invoice ' + (k + 1) + ' of ' + invs.length + (iv.contOf ? ' — continuation (28-day cap)' : ''))}"` : ''}>${CARD_ICON.invoices}${esc(invoiceShort(iv.invoiceId))}${k === 0 && paidForThis <= 0 ? `<span class="x" data-x="inv-remove" data-tip="unlink — allowed while $0 is assigned to this rental; afterwards refund first">✕</span>` : ''}</span>`).join('')
       : addBtn('Invoice', { link: true, js: 'js-create-invoice', h: 26, data: { rec: r.rentalId } });
 
-    /* Balance (paid / total) for the header right side. */
+    /* Balance (paid / total) for the header right side — summed across the invoice series. */
     const rentLines = rentalLineItems(r);
-    const eventTotal = invT ? invT.total : rentLines.reduce((a, li) => a + (Number(li.amount) || 0), 0);
-    const eventPaid = invT ? invT.paid : 0;
-    const balColor = (eventPaid > 0 && eventPaid >= eventTotal) ? 'green' : (invT && invT.status === 'Not Due') ? 'blue' : 'red';
+    const eventTotal = invs.length ? invs.reduce((a, iv) => a + invoiceTotals(iv).total, 0) : rentLines.reduce((a, li) => a + (Number(li.amount) || 0), 0);
+    const eventPaid = invs.reduce((a, iv) => a + invoiceTotals(iv).paid, 0);
+    const balColor = (eventPaid > 0 && eventPaid >= eventTotal) ? 'green' : (invT && invT.status === 'Not Due' && eventPaid <= 0) ? 'blue' : 'red';
     const rdBal = `<span class="rd-bal balline" data-chat-el data-chat-label="${esc('Balance ' + money(eventPaid) + ' / ' + money(eventTotal))}" data-chat-color="${esc(balColor)}"${inv ? ` data-chat-card="invoices" data-chat-rec="${esc(inv.invoiceId)}"` : ''}><b style="color:var(--${balColor})">${money(eventPaid)}</b><span class="tot"> / ${money(eventTotal)}</span></span>`;
 
     /* Header: customer + PO left · status gate top-right, then invoice+balance below. */
@@ -11853,15 +11959,14 @@ function unitLinePaid(r, unitId) {
    not billed. A line carrying an assigned payment is kept (refund first); stable
    li.lid keys mean removing a line never disturbs other lines' allocations. */
 function removeUnitInvoiceLine(r, unitId) {
-  const inv = IDX.invoice.get(r.invoiceId); if (!inv) return;
-  const before = (inv.lineItems || []).length;
-  inv.lineItems = (inv.lineItems || []).filter((li) => {
-    const mine = (li.kind === 'rental' || li.kind === 'transport' || li.kind === 'extension') && li.ref === r.rentalId && li.unitId === unitId;
-    return !mine || itemPaid(inv, li) > 0;   // keep non-matching lines and any paid matching line
+  rentalInvoices(r).forEach((inv) => {   // §28cap — sweep the whole billing series, not just the primary
+    const before = (inv.lineItems || []).length;
+    inv.lineItems = (inv.lineItems || []).filter((li) => {
+      const mine = (li.kind === 'rental' || li.kind === 'transport' || li.kind === 'extension') && li.ref === r.rentalId && li.unitId === unitId;
+      return !mine || itemPaid(inv, li) > 0;   // keep non-matching lines and any paid matching line
+    });
+    if ((inv.lineItems || []).length !== before) { reindex('invoices', inv); logAction(inv, `${IDX.unit.get(unitId)?.name || unitId} line(s) removed — No Show / Cancel (not billed)`); }
   });
-  if ((inv.lineItems || []).length === before) return;
-  reindex('invoices', inv);
-  logAction(inv, `${IDX.unit.get(unitId)?.name || unitId} line(s) removed — No Show / Cancel (not billed)`);
 }
 function openUnitStatusDropdown(rentalId, unitId, anchorEl) {
   const r = IDX.rental.get(rentalId); const eu = r && unitEntry(r, unitId);
@@ -13509,15 +13614,23 @@ function createInvoiceForRental(rentalId) {
   if (!r.customerId) { flashOr('[data-slot="customer"]', 'The Quote needs a customer first — drag one on (or quick-add).'); return; }
   if (!r.startDate || !r.endDate) { flashOr('.rdcal, .timeline, .statusbar.draftwin', 'Set the rental window first.'); return; }
   if (!rentalUnitIds(r).length) { flashOr('.stall-empty, [data-slot="unit"]', 'Add at least one unit before invoicing.'); return; }
-  const id = nextInvoiceId();
-  const inv = { invoiceId: id, customerId: r.customerId, rentalIds: [rentalId], date: TODAY_ISO, dueDate: dueForCustomer(r.customerId), po: '', amountPaid: 0, lineItems: [], mock: true };
-  rentalLineItems(r).forEach((li) => inv.lineItems.push(li));      // one rental line per unit (§20)
-  transportLineItems(r).forEach((li) => inv.lineItems.push(li));   // one transport line per unit (§20)
-  DATA.invoices.push(inv); IDX.invoice.set(id, inv); reindex('invoices', inv);
-  r.invoiceId = id;
-  logAction(inv, `Created for ${rentalUnitsLabel(r) || 'rental'}`);
-  logAction(r, `Invoice ${invoiceShort(id)} created`);
-  toast(`Invoice ${invoiceShort(id)} created and linked.`);
+  // §28cap — chunk the window into ≤28-day invoices (a long rental → a billing series).
+  // ≤28 days = exactly one invoice, lines built exactly as before (the common path).
+  const chunks = invoiceChunks(r.startDate, r.endDate);
+  let id = null;
+  chunks.forEach((ch) => {
+    const cid = nextInvoiceId();
+    const inv = { invoiceId: cid, customerId: r.customerId, rentalIds: [rentalId], date: TODAY_ISO, dueDate: dueForCustomer(r.customerId), po: '', amountPaid: 0, lineItems: [], covOf: rentalId, covStart: ch.start, covEnd: ch.end, mock: true };
+    if (ch.idx === 0) { id = cid; r.invoiceId = cid; }
+    else inv.contOf = id;
+    if (chunks.length === 1) { rentalLineItems(r).forEach((li) => inv.lineItems.push(li)); }   // unchanged single-invoice path
+    else billChunkUnits(inv, r, ch.start, ch.end, ch.start, retroPricingOn(), 'rental', ch.idx === 0 ? null : id);   // per-chunk rental line(s)
+    if (ch.idx === 0) transportLineItems(r).forEach((li) => inv.lineItems.push(li));   // transport billed once (chunk 0)
+    DATA.invoices.push(inv); IDX.invoice.set(cid, inv); reindex('invoices', inv);
+    logAction(inv, ch.idx === 0 ? `Created for ${rentalUnitsLabel(r) || 'rental'}` : `Continuation (days ${ch.idx * INV_CAP_DAYS + 1}+) — ext of ${invoiceShort(id)}`);
+  });
+  logAction(r, `Invoice ${invoiceShort(id)} created${chunks.length > 1 ? ` + ${chunks.length - 1} continuation${chunks.length > 2 ? 's' : ''} (28-day cap)` : ''}`);
+  toast(`Invoice ${invoiceShort(id)} created and linked${chunks.length > 1 ? ` — split into ${chunks.length} (28-day cap)` : ''}.`);
   // #8 — open the new invoice ON the Invoice card (Jac 2026-06-13)
   const session = activeSession();
   if (session.anchor) setAnchor(session, session.anchor.card, session.anchor.recId, session.anchor.recType);
@@ -13636,20 +13749,18 @@ function winPickSave() {
   const wp = state.winpicker; if (!wp) return;
   const r = IDX.rental.get(wp.rentalId);
   if (r && wp.staged) {
-    // A positive extension on a LOCKED invoice must unlock first — pricing is sealed
-    // (don't move the date without billing it). Keep the picker open so they can unlock.
-    const pre = extensionPreview(r, wp.staged.startDate, wp.staged.endDate);
-    if (pre && pre.locked && pre.subtotalDelta > 0.005) { flashOr('.winpicker', 'Unlock the invoice to bill this extension.'); return; }
     const prevEnd = r.endDate || '';
     r.startDate = wp.staged.startDate; r.endDate = wp.staged.endDate; r.startTime = wp.staged.startTime;
     if (r.startDate && r.endDate && r.status === 'Quote') r.status = 'Reserved';
     logAction(r, `Rental window → ${r.startDate && r.endDate ? fmtShortDate(r.startDate) + '–' + fmtShortDate(r.endDate) : 'cleared'}`);
-    const ext = billExtension(r, prevEnd);   // bill the lengthened window → additive 'extension' line(s)
+    const ext = billExtension(r, prevEnd);   // bill the lengthened window across the ≤28-day invoice series
     if (ext) {
       const basis = ext.retro ? 'retroactive' : 'added days';
-      logAction(r, `Extension billed (${basis}) — +${money(ext.subtotalDelta)} to invoice ${invoiceShort(ext.invoiceId)}`);
-      logAction(IDX.invoice.get(ext.invoiceId), `Extension — ${rentalUnitsLabel(r) || 'rental'} +${money(ext.subtotalDelta)} (${ext.count} line${ext.count > 1 ? 's' : ''}, ${basis})`);
-      toast(`Extension billed — +${money(ext.subtotalDelta)} added to invoice ${invoiceShort(ext.invoiceId)}.`);
+      const up = ext.subtotalDelta >= 0;
+      const amt = money(Math.abs(ext.subtotalDelta));
+      const newN = ext.newInvoices ? ` · ${ext.newInvoices} new invoice${ext.newInvoices > 1 ? 's' : ''}` : '';
+      logAction(r, `Extension ${up ? 'billed' : 're-priced −'} (${basis}) — ${up ? '+' : '−'}${amt}${newN}`);
+      toast(`Extension ${up ? 'billed +' : 're-priced − '}${amt} (${basis})${ext.newInvoices ? ` — opened ${ext.newInvoices} continuation invoice${ext.newInvoices > 1 ? 's' : ''} (28-day cap)` : ''}.`);
     }
   }
   state.winpicker = null; render();
@@ -15029,7 +15140,7 @@ function exposeTestApi() {
   try {
     window.__rw = { DATA, IDX, TODAY_ISO, itemPaid, lineKey, rentalUnits, unitEntry, isPrimaryUnit,
       unitStatus, rentalUnitStatuses, unitsUniform, rentalStatusDisplay, rentalMirrorStatus, rentalDisplayStatus,
-      allUnitsTerminal, unitTerminal, unitVoided, rentalLineItems, transportLineItems, extensionPreview, billExtension, unitBilledRental, retroPricingOn, syncRentalPrimary,
+      allUnitsTerminal, unitTerminal, unitVoided, rentalLineItems, transportLineItems, extensionPreview, billExtension, unitBilledRental, unitBilledSeries, retroPricingOn, rentalInvoices, rentalActiveInvoice, invoiceChunks, createInvoiceForRental, syncRentalPrimary,
       addUnitToRental, removeUnitFromRental, removeUnitInvoiceLine, unitLinePaid, invoiceTotals, allocLines,
       rentalAllocated, itemRefunded, itemRefundable, lineRefunded, lineFullyRefunded, refundLines, rentalLineRefund, applyPayment, unitRentalPrice, rentalPrice, rentalDisplayName, setWoLinePhase, setWoPhase, woBottleneck,
       cleanUnitName, planUnitMigration, applyUnitMigration, openMigrationPreview,

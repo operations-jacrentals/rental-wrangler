@@ -72,6 +72,44 @@ per non-voided unit eu:
   (`app.js:1304`) applies the 10.75% exact-cent tax automatically. Customer/line tax
   exemption still flows through unchanged.
 
+## 2.2 Multi-invoice billing series + 28-day cap (Jac 2026-06-25)
+
+Rentals now link to **multiple invoices** (a billing series). Rules:
+
+- **An invoice bills at most 28 rental-days per unit** (`INV_CAP_DAYS = 28`). Because the
+  4-Week rate **is** 28 days, the cheapest-blend optimizer already seams at 28-day marks,
+  so splitting there bills the **same total** as one blended invoice — it's purely
+  organizational (Jac: "keeps long-term rentals from getting disorganized").
+- **Applies everywhere, incl. the first invoice** (Jac): a rental created for >28 days
+  emits a *series* of ≤28-day invoices at creation. ≤28-day rentals are **unchanged** —
+  exactly one invoice (the common path; zero behavior change).
+- **"Closed" = paid in full (balance $0).** Extending when the active invoice is closed →
+  a **new** invoice (never reopen a settled one). A new invoice also opens when the active
+  one has no 28-day room left.
+- **Continuation invoices** carry `covOf` (the rental), `covStart`/`covEnd` (the day
+  sub-window they bill), and `contOf` (the first invoice). Their rental-line labels read
+  **"… · Ext of `<rental>` (`<first inv#>`)"** so the customer sees it's a continuation,
+  not a surprise second rental.
+
+**Model — each rental invoice is a contiguous ≤28-day chunk** (`covStart`→`covEnd`):
+- `rentalInvoices(r)` = all invoices billing the rental, ordered by `covStart`.
+- `rentalActiveInvoice(r)` = the latest chunk (where the next extension bills if it has
+  room and is open).
+- **Create** (`createInvoiceForRental`): chunk `[start, end]` into ≤28-day windows; one
+  invoice per chunk, each priced `cheapest(chunk)`; transport on chunk 0 only.
+- **Extend**: fill the active chunk toward its 28-day cap first (re-blend per the
+  retroactive setting), then spill remaining days into fresh ≤28-day invoices. A
+  closed/locked active chunk spills immediately. **Retro re-blend is UP *or* DOWN** for
+  unpaid lines: extending 19→28 days unlocks the 4-Week rate, which can be *cheaper* than
+  the 19-day blend, so the open chunk's line is re-priced down (no separate extension
+  line — the rental line itself updates). Paid lines never drop (refund-first); they take
+  only a positive top-up. `reconcileChunkRetro` does the in-place re-price. Boundaries land on 28-day marks (→ same
+  total) except when a chunk was paid early then extended (the one acknowledged case where
+  a non-28-day cut can total slightly more — unavoidable given "closed → new invoice").
+
+This keeps the §2/§2.1 per-unit delta math, just scoped to the active chunk's window and
+routed across the series.
+
 ## 3. Where the charge lands (Decision 2: additive line on the existing invoice)
 
 A new line-item **kind**: `'extension'`.
