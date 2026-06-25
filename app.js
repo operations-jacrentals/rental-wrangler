@@ -4051,19 +4051,28 @@ const ROWS = {
   },
 
   categories: (c) => {
+    // Full units-row treatment (Jac 2026-06-25): [fleet-mix badges LEFT] ·
+    // [rate·HRS over stamped NAME, right-aligned] · [category icon] · right-edge
+    // HEALTH stripe — the category is the fleet roll-up, so the stripe reads the
+    // mix the way a unit row's --ur-hl reads its own flag.
     const mix = categoryMix(c.categoryId);
     const st = categoryStats(c);
     // §10: under a rental window, lead with how many units are available for it.
-    let availLead = '';
-    if (availWin) { const n = categoryAvailableCount(c.categoryId, availWin.start, availWin.end, availWin.selfId); availLead = n > 0 ? badge(`${n} Available`, 'green') : badge('0 Available', 'red'); }
-    // Layout (Jac 2026-06-23): [status badges LEFT] · [name/rates RIGHT] — mirrors the units row swap.
+    let availLead = '', hl = mix.Failed ? 'red' : mix['Not Ready'] ? 'yellow' : mix.Ready ? 'green' : 'line';
+    if (availWin) {
+      const n = categoryAvailableCount(c.categoryId, availWin.start, availWin.end, availWin.selfId);
+      availLead = n > 0 ? badge(`${n} Available`, 'green') : badge('0 Available', 'red');
+      if (n === 0) hl = 'red';   // window says none free → stripe goes danger, like the row tint
+    }
     const badges = [availLead, mix.Ready ? badge(`${mix.Ready} Ready`, 'green') : '', mix['Not Ready'] ? badge(`${mix['Not Ready']} Not Ready`, 'yellow') : '', mix.Failed ? badge(`${mix.Failed} Failed`, 'red') : '', st.roi != null ? badge(`${st.roi}% ROI`, st.roi >= 0 ? 'green' : 'red') : ''].join('');
-    return `<div class="catr">
+    const sub = `${money(c.rate1Day)}/1d · ${num(st.avgHours)} HRS`;
+    return `<div class="catr" style="--catr-hl:var(--${hl})">
       <div class="catr-pills">${badges}</div>
       <div class="catr-id">
-        <span class="r-title">${esc(c.name)}</span>
-        <span class="catr-sub">${money(c.rate1Day)}/1d · ${num(st.avgHours)} HRS</span>
+        <span class="catr-sub">${sub}</span>
+        <span class="r-title catr-name">${esc(c.name)}</span>
       </div>
+      <span class="catr-cat">${categoryIconFor(c.name)}</span>
     </div>`;
   },
 

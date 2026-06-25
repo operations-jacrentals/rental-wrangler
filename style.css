@@ -2836,11 +2836,23 @@ body { font-variant-numeric: tabular-nums; }
   .ur-id { flex-direction: column; align-items: flex-start; gap: 1px; }
   .ur-pills { grid-template-columns: 1fr; flex-basis: 90px; }
 }
-/* ── CATEGORY ROW (catr): [status badges LEFT] · [name/rate RIGHT] — mirrors units swap. ── */
-.catr { display: flex; align-items: center; gap: 9px; min-width: 0; padding: 8px 11px 8px 10px; }
-.catr-pills { flex: 0 0 auto; display: flex; flex-wrap: wrap; align-items: center; gap: 5px; min-width: 80px; }
-.catr-id { flex: 1 1 auto; min-width: 0; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
-.catr-sub { font-size: 11.5px; color: var(--txt-2); white-space: nowrap; }
+/* ── CATEGORY ROW (catr): the full unit-row treatment for the fleet roll-up —
+   [fleet-mix badges LEFT] · [rate·HRS over stamped NAME, right-aligned] · [cat icon]
+   · right-edge health stripe (--catr-hl, mix-driven). Zero the row pad so the stripe
+   and the §6 mix-bar row-viz reach the plate edges, exactly like units. ── */
+.row[data-card="categories"] { padding: 0; }
+.row[data-card="categories"] .row-content { padding: 0; }
+.catr { display: flex; align-items: center; gap: 9px; min-width: 0; padding: 8px 11px 8px 10px; border-right: 3px solid var(--catr-hl, var(--line)); }
+.catr-cat { flex: 0 0 auto; width: 22px; height: 22px; color: var(--txt-2); display: flex; align-items: center; justify-content: center; }
+.catr-cat svg { width: 19px; height: 19px; display: block; }
+.catr-pills { flex: 0 1 auto; display: flex; flex-wrap: wrap; align-items: center; gap: 5px; min-width: 80px; }
+.catr-id { flex: 1 1 auto; min-width: 0; display: flex; align-items: baseline; gap: 1px 8px; justify-content: flex-end; }
+.catr-name { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .6px; font-weight: 700; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; min-width: 0; }
+.catr-sub { font-size: 11.5px; color: var(--txt-2); white-space: nowrap; flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+@container (max-width: 340px) {
+  .catr { gap: 6px; }
+  .catr-id { flex-direction: column; align-items: flex-start; gap: 1px; }
+}
 
 /* ── CUSTOMER ROW (cr-statuses): account-type + funnel, equal-width, right-pinned. ── */
 .cr-statuses { flex: 0 0 160px; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-left: auto; }
