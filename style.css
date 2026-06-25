@@ -1447,6 +1447,22 @@ select.inline-input:focus-visible { outline: 2px solid var(--accent); outline-of
 .winpicker .wp-day.range-end { background: var(--accent); color: #fff; border-radius: 0 7px 7px 0; }
 .winpicker .wp-day.range-start.range-end { border-radius: 7px; }
 .winpicker .wp-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 9px; padding-top: 9px; border-top: 1px solid var(--line-soft); }
+/* §inline (Jac 2026-06-25) — the rental-window calendar lives INLINE in the rental detail
+   (popup retired): strip the float chrome so it reads as part of the section, fill the width. */
+.rdcal-edit { position: relative; width: 100%; }
+.rdcal-edit .winpicker { border: none; box-shadow: none; background: transparent; padding: 0; border-radius: 0; width: 100%; }
+.rdcal-edit .wp-time { margin-bottom: 7px; padding-bottom: 7px; }
+.rdcal-edit .wp-day { height: 34px; }
+.is-phone .rdcal-edit .wp-day { height: 40px; }
+/* the fragile-rental "Confirm new window" card — hovers over the calendar with the money preview */
+.rdcal-edit.staged .winpicker { filter: saturate(.85) brightness(.78); pointer-events: none; }   /* dim the calendar behind the confirm */
+.rdcal-edit.staged .winpicker .wp-grid, .rdcal-edit.staged .winpicker .wp-time, .rdcal-edit.staged .winpicker .wp-head { pointer-events: auto; }   /* keep the grid editable */
+.wp-confirm { position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%); width: calc(100% - 16px); max-width: 320px; z-index: 5;
+  background: linear-gradient(180deg, var(--panel), var(--panel-2)); border: 1px solid var(--accent); border-radius: 12px;
+  box-shadow: 0 16px 36px -14px rgba(0,0,0,.75), 0 0 0 2px var(--accent-line), 0 0 22px -6px var(--accent); padding: 10px 11px; }
+.wp-confirm-h { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.2px; font-weight: 700; font-size: 11px; color: var(--txt); margin-bottom: 6px; }
+.wp-confirm .wp-ext { margin-top: 0; padding-top: 0; border-top: none; }
+.wp-confirm-foot { display: flex; gap: 7px; justify-content: flex-end; margin-top: 9px; }
 /* §ext — extension preview plate: shown when a lengthened fragile-rental window adds a
    charge. A worn saddle-stitch (tan) top divider + a stamped kicker set it apart as the
    "rebill" readout; the new balance owed reads in the app's danger-red balance color. */

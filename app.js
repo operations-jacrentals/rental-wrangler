@@ -1597,13 +1597,21 @@ function isUnitAvailableFor(u, startISO, endISO, selfId) {
 function categoryAvailableCount(catId, startISO, endISO, selfId) {
   return DATA.units.filter((u) => u.categoryId === catId && isUnitAvailableFor(u, startISO, endISO, selfId)).length;
 }
-/** The rental window in scope while the calendar is open (drives the availability UI). */
+/** The rental window in scope (drives the availability lens on the Units/Categories cards).
+ *  §inline (Jac 2026-06-25): whenever a rental is open in standard mode, its window — or its
+ *  STAGED window while you're editing the inline calendar — drives the lens; clears when the
+ *  rental detail closes. */
 function activeDraftWindow() {
-  const win = (r) => (r && r.startDate && r.endDate) ? { start: r.startDate, end: r.endDate, time: r.startTime, selfId: r.rentalId } : null;
-  // live while the window is being PICKED (Categories/Units update before "Done")
-  if (state.winpicker) { const w = win(IDX.rental.get(state.winpicker.rentalId)); if (w) return w; }
-  // persists after the picker closes via the "available" search; a manually-typed
-  // "available" with no picked window defaults to "available now" (today → tomorrow)
+  const win = (o) => (o && o.startDate && o.endDate) ? { start: o.startDate, end: o.endDate, time: o.startTime, selfId: o.rentalId } : null;
+  const sess = activeSession(), rc = sess && sess.cards && sess.cards.rentals;
+  const openRental = (rc && rc.mode === 'standard' && rc.recId && !rc.released) ? rc.recId : null;
+  if (openRental && state.winEdit && state.winEdit.rentalId === openRental) {
+    const s = state.winEdit.staged;
+    const base = s ? { startDate: s.startDate, endDate: s.endDate, startTime: s.startTime, rentalId: openRental } : IDX.rental.get(openRental);
+    const w = win(base); if (w) return w;
+  }
+  // persists via the "available" search; a manually-typed "available" with no window
+  // defaults to "available now" (today → tomorrow)
   if (availSearchActive()) return state.availWin || { start: TODAY_ISO, end: addDays(TODAY_ISO, 1), time: '', selfId: null };
   return null;
 }
@@ -1792,7 +1800,7 @@ const state = {
   overlay: null,       // { kind, ... } for popups
   focusedCard: null,   // clicked card → orange border (§0.1 visual feedback, no anchor)
   transportArm: null,  // §20 route-rail two-click selector: { rentalId, unitId, node } — the FIRST stop tapped (armed orange); a second stop locks the type
-  winpicker: null,     // { rentalId, monthISO, anchor } — the rental-window range picker
+  winEdit: null,       // §inline rental-window editor (rentalId, monthISO, anchor, staged) — NOT a modal
   datesearch: null,    // { scope, monthISO, anchor, start, end, editIndex } — §5.4d standalone date/range SEARCH picker (type "date"→Enter)
   availWin: null,      // §10 persistent window scope for the "available" search (set by the picker; outlives it)
   filterTerms: [],            // §5.4 — AND-narrowing filter terms (type + Enter)
@@ -1929,7 +1937,7 @@ function closeTab(id) {
   if (state.activeTabId === id) state.activeTabId = state.tabs.length ? state.tabs[Math.max(0, i - 1)].id : null;
   render();
 }
-function closeAll() { state.tabs = []; state.activeTabId = null; state.searchMode = false; state.query = ''; state.winpicker = null; state.datesearch = null; render(); }
+function closeAll() { state.tabs = []; state.activeTabId = null; state.searchMode = false; state.query = ''; state.winEdit = null; state.datesearch = null; render(); }
 /* Wave 2 (Jac): QUOTES SURVIVE. Nothing is swept on tab close / session switch —
    a Quote-status rental (or any fresh record) lives until Completed/Cancelled
    or deliberately deleted. The `mock` flag stays purely a UI affordance gate
@@ -1985,7 +1993,7 @@ function openStandard(card, recId, recType) {
   // category name so Units narrows to that category's window-available units (the
   // 'available' chip is already pinned by enterAvailabilitySearch). The category stays
   // in standard mode, so it remains the calendar's availability subject (greyed days).
-  if (card === 'categories' && state.winpicker && availWin) {
+  if (card === 'categories' && state.winEdit && availWin) {
     const cat = IDX.category.get(recId), s = activeSession(), us = s.cards.units;
     if (cat && us) { us.search = cat.name; us.listLimit = undefined; if (s.cols && s.cols.left) s.cols.left = 'units'; }
   }
@@ -3681,13 +3689,13 @@ function openCtxMenuAt(target, x, y) {
   // §13.4 — inside an OPEN graph view, right-click/long-press the panel (or the Views & sort
   // control above it) opens the graph-chrome menu instead of the per-element Wrangler menu,
   // so the filter pills / sort can be hidden and Reset.
-  if (card && !state.winpicker) {
+  if (card && !(state.winEdit && state.winEdit.anchor)) {
     const cid = card.dataset.card, gcs = cid && activeSession().cards[cid];
     if (gcs && gcs.graphView && (target.closest('.gv-panel') || target.closest('.sort'))) return openGvChromeMenu({ clientX: x, clientY: y }, cid);
   }
   // While the rental-window picker is open, keep right-click → BACK working; just suppress
   // the element context menu (it gets in the way of picking). (Jac B5, 2026-06-15)
-  const leaf = state.winpicker ? null : target.closest('.pill, .add-field, .flag, .linkname, .inv-line-link, .req, .seg, button, .inline-edit, .jnode, .x, a, .d-title, .r-title, .derived');
+  const leaf = (state.winEdit && state.winEdit.anchor) ? null : target.closest('.pill, .add-field, .flag, .linkname, .inv-line-link, .req, .seg, button, .inline-edit, .jnode, .x, a, .d-title, .r-title, .derived');
   const hit = leaf ? (ruleOf(leaf) || { r: null, el: leaf }) : null;
   if (hit) return openCtxMenu({ clientX: x, clientY: y }, hit);
   if (!card) return;
@@ -3802,7 +3810,7 @@ const RULE_META = {
   R13: ['History', 'historySection', 'count chips above the search bar filter inline; record-backed links only'],
   R14: ['Seg toggle', 'segCtl', '3-state segmented control (condition · wash)'],
   R15: ['Journey', 'yardToolHtml / miniJourneyHtml', 'yard +Start/+FC/+End + Jac─Site─Jac transport; white = video owed'],
-  R16: ['Day timeline', 'DETAIL.rentals timeline', 'the rental window in day cells; centered gate + naked price·rate'],
+  R16: ['Window calendar', 'rdcal-edit / winPickerEl (inline)', 'the rental window — an INLINE editable month calendar in the detail (popup retired 2026-06-25); tap start→end, the left Units/Categories card shows availability live, fragile rentals stage behind a hovering Confirm card'],
   R17: ['Action pill', 'actionPill', 'commit = blue · money = green · danger = solid red; .locked = gated'],
   R18: ['Ghost', 'ghostPill', 'the ONE quiet action — Cancel / Close / Exit / Clear'],
   R19: ['Attention flash', 'attnFlash / flashOr', 'a glow that points AT the next action — replaces an error message when the fix is on screen'],
@@ -5248,10 +5256,16 @@ const DETAIL = {
     const blockN = units.filter((eu) => { const bu = IDX.unit.get(eu.unitId); return bu && bu.inspectionStatus !== 'Ready' && !unitVoided(r, eu); }).length;
     const blocker = blockN ? `<button class="tl-blocker js-tl-blocker" data-rec="${esc(r.rentalId)}" data-tip="Jump to the machines that aren't ready"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>${blockN} machine${blockN > 1 ? 's' : ''} Not Ready →</button>` : '';
 
-    /* Calendar: numbered-date full-window grid, or draft window picker. */
-    const calHtml = hasWin
-      ? rentalDetailCal(r, stColor)
-      : `<button class="statusbar draftwin wintrigger js-open-winpicker" data-rec="${esc(r.rentalId)}"><span class="wt-label">${r.startDate ? esc(fmtShortDate(r.startDate)) + ' → pick end' : 'Select rental window'}</span></button>`;
+    /* Calendar: the INLINE editable window calendar (popup retired — Jac 2026-06-25).
+       Tap a day to set start, tap another to set end; the left Categories/Units card
+       reflects availability for the window live. A fragile (invoiced/out) rental stages
+       its edits behind a hovering "Confirm new window" card with the money preview. */
+    if (!state.winEdit || state.winEdit.rentalId !== r.rentalId) {
+      state.winEdit = { rentalId: r.rentalId, monthISO: firstOfMonthISO(r.startDate || TODAY_ISO), anchor: null };
+      if (rentalFragile(r)) state.winEdit.staged = { rentalId: r.rentalId, startDate: r.startDate || '', endDate: r.endDate || '', startTime: r.startTime || '' };
+    }
+    const winStaged = !!(state.winEdit.staged && winStagedChanged());
+    const calHtml = `<div class="rdcal-edit${winStaged ? ' staged' : ''}" data-rec="${esc(r.rentalId)}" style="--rdcal-hl:var(--${stColor})">${winPickerEl(r)}</div>`;
 
     /* Duration label (shared across all unit rows). */
     const durLabel = hasWin
@@ -5289,12 +5303,9 @@ const DETAIL = {
       ? actionPill('danger', 'Cancel Rental', { js: 'js-cancel-rental', h: 26, data: { rec: r.rentalId } })
       : actionPill('commit', 'Complete Rental', { js: `js-complete-rental${canComplete ? '' : ' locked'}`, h: 26, data: { rec: r.rentalId } });
     const fcRow = r.fieldCall ? actionPill('danger', 'Field Call active — clear', { js: 'js-clear-fc', data: { rec: r.rentalId } }) : '';
-    // §ext — Extend opens the window picker (staged) to lengthen + rebill; only meaningful
-    // once the rental is invoiced + fragile (out/billed). Adds an 'extension' line item → R5b.
-    const extendBtn = (rentalFragile(r) && r.invoiceId && !cancelish)
-      ? addBtn('Extend', { line: true, h: 26, js: 'js-open-winpicker', data: { rec: r.rentalId, tip: 'Keep ’er out longer — re-rein the window and rebill the added days' } })
-      : '';
-    const rdFoot = `<div class="rd-foot"><div class="rd-foot-l">${extendBtn}${fcRow}</div><div class="rd-foot-r">${crBtn}</div></div>`;
+    // §ext — extending is now inline: tap a later end date in the calendar above; a fragile
+    // (invoiced/out) rental stages it behind the Confirm card with the money preview.
+    const rdFoot = `<div class="rd-foot"><div class="rd-foot-l">${fcRow}</div><div class="rd-foot-r">${crBtn}</div></div>`;
 
     const rentalSec = `<div class="section sec-${stColor} rentalsec">
       ${rdHead}
@@ -8347,10 +8358,9 @@ let _ovScroll = {}, _ovLastKind = null;   // keep a popup-body's scroll across i
    stack stays balanced. Phone-only — desktop keeps Esc/click. Wired in boot(). ── */
 let backGuard = false, backConsuming = false;
 let swipeFired = false;   // §M1/§M3 — a footer (column) or grid (Back/Fwd) swipe sets this so the trailing click is swallowed once
-function anyDismissable() { return !!(state.overlay || state.winpicker || state.datesearch || state.chat.open || state.wrangler.open); }
+function anyDismissable() { return !!(state.overlay || state.datesearch || state.chat.open || state.wrangler.open); }
 function dismissTopSheet() {
   if (state.datesearch) { closeDateSearch(); return true; }
-  if (state.winpicker) { closeWinPicker(); return true; }
   if (state.overlay) { closeOverlay(); return true; }
   if (state.wrangler.open) { wranglerRailSnapshot(); state.wrangler.open = false; render(); return true; }   // mirror js-wr-close
   if (state.chat.open) { state.chat.open = false; render(); return true; }                                    // mirror js-chat-close
@@ -10488,17 +10498,8 @@ function render() {
     else b.scrollTop = 0;
   });
   document.documentElement.setAttribute('data-theme', state.theme);
-  // the rental-window picker floats above the grid, anchored to its trigger (§12.2);
-  // on phones it becomes a bottom sheet (§M3) with a tap-to-close backdrop instead.
-  if (state.winpicker) {
-    const wr = IDX.rental.get(state.winpicker.rentalId);
-    if (wr) {
-      const phone = document.body.classList.contains('is-phone');
-      if (phone) { const bd = el('div', 'sheet-backdrop'); bd.dataset.sheetclose = 'win'; $('#app').appendChild(bd); }
-      const fl = el('div', 'winpicker-float'); fl.innerHTML = winPickerEl(wr); $('#app').appendChild(fl);
-      if (!phone) positionWinPicker(fl);   // phone: CSS pins it to the bottom edge, so skip the JS anchor
-    } else state.winpicker = null;
-  }
+  // §inline — the rental-window calendar is rendered INLINE in the rental detail
+  // (popup retired, Jac 2026-06-25); no float here anymore.
   // §5.4d — the standalone date-search picker floats under the search bar (phone: bottom sheet)
   if (state.datesearch) {
     const phone = document.body.classList.contains('is-phone');
@@ -10507,7 +10508,7 @@ function render() {
     if (!phone) positionDateSearch(fl);
   }
   // §M3 — lock the column scroll behind any open sheet/overlay/dock on phones
-  document.body.classList.toggle('sheet-open', !!(state.overlay || state.winpicker || state.datesearch || state.chat.open || state.wrangler.open));
+  document.body.classList.toggle('sheet-open', !!(state.overlay || state.datesearch || state.chat.open || state.wrangler.open));
   syncBackGuard();   // §M3 — keep the Android back-button guard in step with what's open
   // §17 — the internal team dock floats bottom-right above the bar when open
   if (state.chat.open) { const d = el('div', 'chat-dock', ''); d.dataset.drop = 'chat'; d.innerHTML = chatDockEl(); $('#app').appendChild(d); }
@@ -11153,24 +11154,12 @@ function onClick(e) {
   // picker stays open until true dead space. (Both floats render from state and re-render,
   // and self-hide if their anchor scrolls off; the global search bar lives in `.header` and
   // the per-card search/date chips live in `.card`, so the old datesearch exclusions hold.)
-  if (state.datesearch || state.winpicker) {
-    const onPicker = !!(closest('.winpicker') || closest('.winpicker-float'));
+  // §5.4d — the standalone date-search float still dismisses on a dead-space click.
+  // (The rental-window editor is INLINE now — no click-away dismissal.)
+  if (state.datesearch) {
+    const onPicker = !!closest('.winpicker') || !!closest('.datesearch-float');
     const pickerDeadSpace = !closest('.card') && !closest('.header') && !closest('.bottombar') && !onPicker;
-    if (state.datesearch && pickerDeadSpace) { state.datesearch = null; render(); return; }
-    // Rental-window picker dismisses on a click anywhere OUTSIDE the picker, its trigger, and
-    // the availability cards you browse while picking (units/categories/customers). #263 had
-    // narrowed this to dead-space-only, so over the full-screen 3-column grid an outside click
-    // almost always landed on a card and the picker never closed ("does not close"). Never
-    // SWALLOW an interactive click (#265): drop the float DOM in place — keeping the clicked
-    // anchor attached so a downstream menu still positions correctly — and fall THROUGH so the
-    // click still fires; only a pure dead-space click renders + returns. Discards a fragile
-    // rental's staged change, as before.
-    if (state.winpicker && !onPicker && !closest('.js-open-winpicker') && !closest('[data-sheetclose]')
-        && !closest('.card[data-card="units"]') && !closest('.card[data-card="categories"]') && !closest('.card[data-card="customers"]')) {
-      state.winpicker = null;
-      document.querySelector('.winpicker-float')?.remove();
-      if (pickerDeadSpace) { render(); return; }
-    }
+    if (pickerDeadSpace) { state.datesearch = null; render(); return; }
   }
 
   // header / chrome
@@ -11614,6 +11603,7 @@ function onClick(e) {
   if (closest('.js-wp-prev')) { e.stopPropagation(); return winPickMonth(-1); }
   if (closest('.js-wp-next')) { e.stopPropagation(); return winPickMonth(1); }
   if (closest('.js-wp-clear')) { e.stopPropagation(); return winPickClear(); }
+  if (closest('.js-wp-cancel')) { e.stopPropagation(); return winPickCancel(); }
   if (closest('.js-wp-save')) { e.stopPropagation(); return winPickSave(); }
   if (closest('.js-wp-today')) { e.stopPropagation(); return winPickToday(); }
   if (closest('.js-wp-done')) { e.stopPropagation(); return closeWinPicker(); }
@@ -11625,7 +11615,7 @@ function onClick(e) {
   if (closest('.js-ds-clear')) { e.stopPropagation(); return dsClear(); }
   if (closest('.js-ds-done')) { e.stopPropagation(); return dsDone(); }
   if (closest('.js-tl-blocker')) { e.stopPropagation(); const st = document.querySelector('.stalls'); if (st) st.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); attnFlash('.stall .pill.dvd'); return; }
-  if (closest('.js-open-winpicker')) { e.stopPropagation(); const rec = closest('.js-open-winpicker').dataset.rec; return state.winpicker?.rentalId === rec ? closeWinPicker() : openWinPicker(rec); }
+  // §inline — the rental-window calendar is edited in place; no popup to open.
   if (closest('[data-sheetclose]')) { e.stopPropagation(); return closest('[data-sheetclose]').dataset.sheetclose === 'date' ? closeDateSearch() : closeWinPicker(); }   // §M3 — tap the phone sheet backdrop to dismiss the picker
 
   // sort menu + direction toggle
@@ -13729,17 +13719,17 @@ function to12(hhmm) { if (!hhmm) return ''; const [H, M] = hhmm.split(':').map(N
 // dispatch consequences) → it STAGES + requires an explicit Save; everything else
 // commits live and closes on click-away, no Save needed (Jac 2026-06-13).
 function rentalFragile(r) { return !!r && (!!r.invoiceId || ['On Rent', 'End Rent', 'Off Rent', 'Returned'].includes(r.status)); }
-function winTarget() { const wp = state.winpicker; if (!wp) return null; return wp.staged || IDX.rental.get(wp.rentalId); }
+function winTarget() { const wp = state.winEdit; if (!wp) return null; return wp.staged || IDX.rental.get(wp.rentalId); }
 function winStagedChanged() {
-  const wp = state.winpicker; if (!wp || !wp.staged) return false;
+  const wp = state.winEdit; if (!wp || !wp.staged) return false;
   const r = IDX.rental.get(wp.rentalId); if (!r) return false;
   return wp.staged.startDate !== (r.startDate || '') || wp.staged.endDate !== (r.endDate || '') || wp.staged.startTime !== (r.startTime || '');
 }
 function openWinPicker(rentalId) {
   const r = IDX.rental.get(rentalId); if (!r) return;
   if (!r.startTime) r.startTime = nowHourLabel();   // default to the current hour (user spec)
-  state.winpicker = { rentalId, monthISO: firstOfMonthISO(r.startDate || TODAY_ISO), anchor: null };
-  if (rentalFragile(r)) state.winpicker.staged = { rentalId, startDate: r.startDate || '', endDate: r.endDate || '', startTime: r.startTime || '' };
+  state.winEdit = { rentalId, monthISO: firstOfMonthISO(r.startDate || TODAY_ISO), anchor: null };
+  if (rentalFragile(r)) state.winEdit.staged = { rentalId, startDate: r.startDate || '', endDate: r.endDate || '', startTime: r.startTime || '' };
   // Task C — only pivot the left column to Categories when the Rental Standard View is already
   // open for this rental AND dates are set (so clicking the mini-calendar on a list-view row
   // doesn't clobber whatever the operator had open on the left).
@@ -13754,7 +13744,7 @@ function openWinPicker(rentalId) {
   render();
 }
 function winPickSave() {
-  const wp = state.winpicker; if (!wp) return;
+  const wp = state.winEdit; if (!wp) return;
   const r = IDX.rental.get(wp.rentalId);
   if (r && wp.staged) {
     const prevEnd = r.endDate || '';
@@ -13771,11 +13761,11 @@ function winPickSave() {
       toast(`Extension ${up ? 'billed +' : 're-priced − '}${amt} (${basis})${ext.newInvoices ? ` — opened ${ext.newInvoices} continuation invoice${ext.newInvoices > 1 ? 's' : ''} (28-day cap)` : ''}.`);
     }
   }
-  state.winpicker = null; render();
+  state.winEdit = null; render();
 }
-function closeWinPicker() { state.winpicker = null; render(); }
+function closeWinPicker() { state.winEdit = null; render(); }
 function winPickMonth(delta) {
-  const wp = state.winpicker; if (!wp) return;
+  const wp = state.winEdit; if (!wp) return;
   const d = parseISO(wp.monthISO); d.setMonth(d.getMonth() + delta);
   wp.monthISO = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`; render();
 }
@@ -13810,7 +13800,7 @@ function exitAvailabilitySearch() {
   if (seed && DATA.categories.some((c) => (c.name || '').toLowerCase() === seed)) us.search = '';
 }
 function winPickDay(iso) {
-  const wp = state.winpicker; if (!wp) return;
+  const wp = state.winEdit; if (!wp) return;
   const r = IDX.rental.get(wp.rentalId); if (!r) return;
   const t = winTarget();                                 // staged (fragile) or the rental itself (live)
   const subject = winPickSubject();
@@ -13831,9 +13821,12 @@ function winPickDay(iso) {
   }
   reanchorRender();
 }
-function setWinTime(hhmm) { const wp = state.winpicker; if (!wp) return; const t = winTarget(); if (!t) return; t.startTime = to12(hhmm); reanchorRender(); }
-function winPickClear() { const wp = state.winpicker; if (!wp) return; const t = winTarget(); if (t) { t.startDate = ''; t.endDate = ''; wp.anchor = null; } if (!wp.staged) exitAvailabilitySearch(); reanchorRender(); }
-function winPickToday() { const wp = state.winpicker; if (!wp) return; wp.monthISO = firstOfMonthISO(TODAY_ISO); const t = winTarget(); if (t) { t.startDate = TODAY_ISO; t.endDate = ''; wp.anchor = TODAY_ISO; } reanchorRender(); }
+function setWinTime(hhmm) { const wp = state.winEdit; if (!wp) return; const t = winTarget(); if (!t) return; t.startTime = to12(hhmm); reanchorRender(); }
+function winPickClear() { const wp = state.winEdit; if (!wp) return; const t = winTarget(); if (t) { t.startDate = ''; t.endDate = ''; wp.anchor = null; } if (!wp.staged) exitAvailabilitySearch(); reanchorRender(); }
+/** §inline — Cancel the staged window edit on a fragile rental: revert the staged copy to
+ *  the rental's real dates (the confirm card disappears, nothing is billed). */
+function winPickCancel() { const wp = state.winEdit; if (!wp || !wp.staged) return; const r = IDX.rental.get(wp.rentalId); if (!r) return; wp.staged = { rentalId: wp.rentalId, startDate: r.startDate || '', endDate: r.endDate || '', startTime: r.startTime || '' }; wp.anchor = null; reanchorRender(); }
+function winPickToday() { const wp = state.winEdit; if (!wp) return; wp.monthISO = firstOfMonthISO(TODAY_ISO); const t = winTarget(); if (t) { t.startDate = TODAY_ISO; t.endDate = ''; wp.anchor = TODAY_ISO; } reanchorRender(); }
 
 /* ── R22 DATE PICKER — single date/datetime, reuses the .wp-* calendar styling.
    state.datepick = { field, withTime, monthISO }; writes state.overlay[field]
@@ -13884,7 +13877,7 @@ function dayBlocked(subject, iso, selfId) {
 }
 /** Render the inline calendar popup for the rental whose picker is open. */
 function winPickerEl(r) {
-  const wp = state.winpicker;
+  const wp = state.winEdit;
   const md = parseISO(wp.monthISO); const y = md.getFullYear(), m = md.getMonth();
   const startDow = new Date(y, m, 1).getDay();
   const daysIn = new Date(y, m + 1, 0).getDate();
@@ -13924,20 +13917,32 @@ function winPickerEl(r) {
         <div class="wp-ext-basis">${reducing ? 'Extending unlocks the cheaper 4-Week rate — the bill drops.' : ext.retro ? 'Cheapest price for all rental days — prior charges count toward it.' : 'Billed as a fresh rental of the added days.'}</div>
       </div>`
     : '';
+  // §inline confirm — a FRAGILE (invoiced/out) rental stages its edit; once the window
+  // actually changes, a "Confirm new rental window?" card hovers over the calendar with the
+  // money preview + a blue Save. Non-fragile rentals commit live (no staging, no confirm).
+  const stagedChanged = !!(wp.staged && winStagedChanged());
+  const saveLabel = billing ? 'Bill Extension' : reducing ? 'Re-price ↓' : 'Confirm window';
+  const confirmCard = stagedChanged
+    ? `<div class="wp-confirm">
+        <div class="wp-confirm-h">Confirm new rental window?</div>
+        ${changing ? extHtml : '<div class="wp-ext-basis" style="margin:0">New window — no change to billing.</div>'}
+        <div class="wp-confirm-foot">${ghostPill('Cancel', { js: 'js-wp-cancel' })}${actionPill(billing ? 'money' : 'commit', saveLabel, { js: 'js-wp-save' })}</div>
+      </div>`
+    : '';
   return `<div class="winpicker">
     <div class="wp-time"><label>Pickup time</label><input type="time" class="js-wp-time" value="${esc(to24(t.startTime) || '09:00')}"></div>
     <div class="wp-head"><span class="wp-month">${MONTH_NAMES[m]} ${y}</span>
       <span class="wp-nav"><button class="js-wp-prev" data-tip="Previous month">‹</button><button class="js-wp-next" data-tip="Next month">›</button></span></div>
     <div class="wp-grid">${dows}${cells}</div>
     ${subjName ? `<div class="wp-blocknote">Greyed days are ${state.overbookOn ? 'booked' : 'unavailable'} for <b>${esc(subjName)}</b>${state.overbookOn ? ' — overbooking is on, pick to force' : ''}</div>` : ''}
-    ${extHtml}
-    <div class="wp-foot"><button class="pill ghost js-wp-today" data-r="R18">Today</button>${wp.staged && winStagedChanged() ? actionPill(billing ? 'money' : 'commit', billing ? 'Bill Extension' : reducing ? 'Re-price ↓' : 'Save', { js: 'js-wp-save' }) : ''}${actionPill('commit', 'Clear', { js: 'js-wp-clear' })}</div>
+    <div class="wp-foot"><button class="pill ghost js-wp-today" data-r="R18">Today</button>${actionPill('commit', 'Clear', { js: 'js-wp-clear' })}</div>
+    ${confirmCard}
   </div>`;
 }
 /** Float the picker anchored to the TOP of its trigger button (opens upward so the
  *  guide popup below it isn't blocked); drops below only if there's no room above. */
 function positionWinPicker(fl) {
-  const trigger = document.querySelector(`.js-open-winpicker[data-rec="${state.winpicker.rentalId}"]`);
+  const trigger = document.querySelector(`.js-open-winpicker[data-rec="${state.winEdit.rentalId}"]`);
   if (!trigger) { fl.style.display = 'none'; return; }       // detail not visible → hide
   const tr = trigger.getBoundingClientRect();
   const pw = fl.offsetWidth || 300, ph = fl.offsetHeight || 360;
@@ -14475,7 +14480,7 @@ const IDX_MAP = { categories: 'category', units: 'unit', customers: 'customer', 
 let refreshing = false, refreshTimer = null;
 async function refreshFromBackend() {
   if (refreshing || booting || !backendPassword || saving || savePending || !lastSaved) return;
-  if (document.hidden || DRAG.active || DRAG.armed || state.winpicker || state.overlay || hoverNode) return;   // don't disrupt active work
+  if (document.hidden || DRAG.active || DRAG.armed || state.winEdit || state.overlay || hoverNode) return;   // don't disrupt active work
   const ae = document.activeElement;
   if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)) return;              // mid-typing
   refreshing = true;
@@ -15032,7 +15037,7 @@ function boot() {
     if (e.key === 'Escape') dismissTopSheet();
   });
   // mouse hotkeys (§0.1): double-click a row = anchor; right-click = Back
-  const hotkeyGuard = (e) => e.target.closest('.inline-edit, input, textarea, select, .pill, button, .x') || state.winpicker;
+  const hotkeyGuard = (e) => e.target.closest('.inline-edit, input, textarea, select, .pill, button, .x') || state.winEdit;
   document.addEventListener('dblclick', (e) => {
     if (hotkeyGuard(e)) return;
     if (e.target.closest('.row')) return;                 // rows are handled by the click discriminator (#10)
@@ -15064,7 +15069,7 @@ function boot() {
     // The row EYE is the one button that IS a preview trigger.
     if (!e.target.closest('.js-roweye') && (e.target.closest('.pill.gate, .js-status-pill, button, .x, .seg, .add-field, .dropdown-menu') || document.querySelector('.dropdown-menu'))) { clearTimeout(hoverTimer); return; }
     const t = hoverTarget(e.target);
-    if (!t || state.overlay || state.winpicker) return;
+    if (!t || state.overlay || state.winEdit) return;
     clearTimeout(hoverGrace);            // re-entering a row cancels a pending close
     if (t === hoverEl) return;
     hoverEl = t; hideHoverPreview();
