@@ -235,7 +235,33 @@ designed for it.
 
 ---
 
-## 7. UI / design-language obligations
+## 7. Membership economics tracking (per-customer, Standard view)
+
+Surfaced in the **Membership section of the customer card's Standard view**
+(`app.js:5409` area) — per customer, internal-only (Office / Owner / Sales lens;
+never the customer portal). Four figures + two derived:
+
+| Metric | Definition |
+|---|---|
+| **Membership Fee Revenue** | Lifetime sum of this customer's **paid** membership-invoice fee lines (base + add-ons + protection-on-fee + tax). |
+| **Member Rental Revenue** | Sum of this customer's rentals priced at the **member** rate (actual billed). |
+| **Counterfactual Retail** | The **same** rentals re-priced at **retail** — **equipment rate only** (day / 7-day / 4-week / weekend tiers). Excludes transport & protection (Jac, 2026-06-25). |
+| **Member Discount** (derived) | `Counterfactual Retail − Member Rental Revenue` — what the membership rate gave away on equipment. |
+| **Net Program Contribution** (derived) | `Membership Fee Revenue − Member Discount` — is the program net-positive for this member? |
+
+- **Nothing extra is stored.** The retail counterfactual is **derived on the fly**
+  from each rental's window + the category's retail rates — the existing
+  `priceRental` (`app.js:844`) already computes both the member and retail paths;
+  reporting just evaluates the retail branch for member rentals.
+- These are **revenue comparisons (member rate vs retail), not margin floors** —
+  no Bottom Dollar / True Cost / ROI — so they are **not** T1-radioactive and are
+  safe on the staff Standard view. They remain **internal-only** (not the customer
+  self-service portal).
+- The Membership-Fee-Revenue and Member-Rental-Revenue figures also roll up into
+  the $150k Revenue Goal (§10.5); the counterfactual and derived figures are
+  **analysis-only** and never count as revenue.
+
+## 8. UI / design-language obligations
 
 All new/reshaped UI runs through **`/jactec-ui`** then **`/frontend`** (yard
 data-plate language). Specifically:
@@ -249,10 +275,13 @@ data-plate language). Specifically:
   the PO toggle's look + tri-state behavior.
 - The per-rental **"Rental Protection not enabled"** reminder mirrors the PO
   warning styling.
+- The **Membership economics block** (§7) on the customer Standard view — stamped
+  stat pills/KVs in the existing Membership section, in the yard data-plate
+  language.
 
 ---
 
-## 8. Scope — in vs. deferred
+## 9. Scope — in vs. deferred
 
 **In v1:**
 - Full enrollment (in-app, Office/Admin), start-date, plan + both add-ons,
@@ -262,6 +291,8 @@ data-plate language). Specifically:
 - Cancellation Invoice mechanic + reactivation-to-prepaid.
 - Account-level Rental Protection toggle + per-rental reminder + 15% lines.
 - Funnel "Signed" relabel + agreement-driven auto-set.
+- **Membership economics block** on the customer Standard view (§7): fee revenue,
+  member-rental revenue, counterfactual retail, member discount, net contribution.
 
 **Deferred (flagged, not built in v1):**
 - **Damage-claim accounting against the $2,000/mo protection cap** → split into
@@ -276,7 +307,7 @@ data-plate language). Specifically:
 
 ---
 
-## 9. Access, audit & integrity (role-audit hardening)
+## 10. Access, audit & integrity (role-audit hardening)
 
 From the `/role` audit (2026-06-25). These are build requirements, not optional.
 
@@ -306,7 +337,7 @@ From the `/role` audit (2026-06-25). These are build requirements, not optional.
    never see another account's membership or fees. Required of the seam now even
    though the web UI is deferred (§8).
 
-## 10. Key code anchors
+## 11. Key code anchors
 
 - Member pricing gate: `app.js:844` (`isMember`) — lapse reverts pricing for free.
 - PO gate pattern to mirror for Rental Protection: form toggle `app.js:8670` /
