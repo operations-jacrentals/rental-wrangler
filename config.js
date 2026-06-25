@@ -140,6 +140,7 @@ const RAW_STATUS = {
     'Not A No!':         { label: 'Not A No!',         color: 'purple' },
     'Payment Discussed': { label: 'Payment Discussed', color: 'orange' },
     'Paid':              { label: 'Paid',              color: 'green'  },
+    'Signed':            { label: 'Signed',            color: 'green'  },   // membership terminal — auto-set by signing the agreement (F3), never manual
   },
   gpsStatus: {
     'Reporting':     { label: 'Reporting',     color: 'green'  },

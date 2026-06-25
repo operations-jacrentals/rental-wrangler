@@ -590,6 +590,165 @@ try {
     ok(T.rowMatches('rentals', rA, '', dNeg) === false && T.rowMatches('rentals', rB, '', dNeg) === true, 'date: a NEGATED date filter excludes the match and keeps the rest');
     ok(T.rowMatches('units', aUnit2, '', dNeg) === true, 'date: a NEGATED date filter is STILL a no-op on date-less cards (never excluded)');
 
+    // === F1 — membership fee math (spec §2): no proration; protection = 15% of BASE only; 10.75% tax ===
+    {
+      const PR = { monthlyBase: 299, annualBase: 2691, monthlyTransport: 500, annualTransport: 4500, protectionPct: 15, protectionCapMonthly: 2000 };
+      const mf = (plan, t, p) => T.membershipFee({ plan, addOns: { transport: t, protection: p } }, PR);
+      const mBoth = mf('Monthly', true, true);
+      ok(mBoth.base === 299 && mBoth.transport === 500 && mBoth.protection === 44.85 && mBoth.subtotal === 843.85 && mBoth.tax === 90.71 && mBoth.total === 934.56, `membership: Monthly both add-ons → 843.85 + tax = 934.56 (got ${mBoth.subtotal}/${mBoth.total})`);
+      ok(mBoth.protection === 44.85, `membership: protection is 15% of BASE only ($299→$44.85), NOT base+transport (got ${mBoth.protection})`);
+      const mBase = mf('Monthly', false, false);
+      ok(mBase.subtotal === 299 && mBase.transport === 0 && mBase.protection === 0 && mBase.total === 331.14, `membership: Monthly base-only → 299 + tax = 331.14 (got ${mBase.total})`);
+      const mTrans = mf('Monthly', true, false);
+      ok(mTrans.subtotal === 799 && mTrans.protection === 0, `membership: Monthly transport-only → subtotal 799, no protection (got ${mTrans.subtotal}/${mTrans.protection})`);
+      const aBoth = mf('Yearly', true, true);
+      ok(aBoth.base === 2691 && aBoth.transport === 4500 && aBoth.protection === 403.65 && aBoth.subtotal === 7594.65 && aBoth.total === 8411.07, `membership: Annual both add-ons → 7594.65 + tax = 8411.07 (got ${aBoth.subtotal}/${aBoth.total})`);
+      const aBase = mf('Yearly', false, false);
+      ok(aBase.subtotal === 2691 && aBase.total === 2980.28, `membership: Annual base-only → 2691 + tax = 2980.28 (got ${aBase.total})`);
+      const pr = T.membershipPricing();
+      ok(['monthlyBase', 'annualBase', 'monthlyTransport', 'annualTransport', 'protectionPct', 'protectionCapMonthly'].every((k) => typeof pr[k] === 'number' && isFinite(pr[k]) && pr[k] >= 0), 'membership: membershipPricing() returns six numeric fields (defaults applied when unset)');
+    }
+
+    // === F2 — membership status engine + Active pricing/entitlement gate (spec §3, §10.4) ===
+    {
+      const ms = T.membershipStatus, iam = T.isActiveMember;
+      const future = '2099-01-01', past = '2000-01-01';
+      ok(ms({ accountType: 'Non-Business' }) === 'None' && iam({ accountType: 'Non-Business' }) === false, 'status: non-member → None, not active');
+      ok(ms({ accountType: 'Member Incomplete' }) === 'Incomplete' && iam({ accountType: 'Member Incomplete' }) === false, 'status: Member Incomplete → Incomplete, NOT active (no member rate)');
+      ok(ms({ accountType: 'Business Member' }) === 'Active', 'status: legacy member (no subscription fields) → grandfathered Active');
+      ok(iam({ accountType: 'Business Member', paidUntil: future }) === true, 'status: paid-through-future → Active (member rate applies)');
+      ok(ms({ accountType: 'Business Member', paidUntil: past, graceUntil: future }) === 'Past Due' && iam({ accountType: 'Business Member', paidUntil: past, graceUntil: future }) === true, 'status: lapsed but in 7-day grace → Past Due, KEEPS member rate');
+      ok(ms({ accountType: 'Business Member', paidUntil: past, graceUntil: past }) === 'Lapsed' && iam({ accountType: 'Business Member', paidUntil: past, graceUntil: past }) === false, 'status: grace expired → Lapsed, member rate REVOKED');
+      ok(ms({ accountType: 'Business Member', prepaid: true, paidUntil: past }) === 'Active', 'status: prepaid-to-term member → Active even past paidUntil');
+      // gate flows through real pricing: an Incomplete member pays RETAIL, an Active member pays the member rate
+      const cat = T.DATA.categories.find((k) => k.memberDaily > 0);
+      const r = { rentalId: 'R-MEMGATE', customerId: 'C-MEMGATE', categoryId: cat.categoryId, unitId: null, startDate: '2026-06-01', endDate: '2026-06-04' };
+      const cust = { customerId: 'C-MEMGATE', accountType: 'Business Member', paidUntil: future };
+      T.IDX.customer.set('C-MEMGATE', cust); T.IDX.rental.set('R-MEMGATE', r);
+      const active = T.rentalPrice(r)?.price;
+      cust.accountType = 'Member Incomplete';
+      const incomplete = T.rentalPrice(r)?.price;
+      T.IDX.customer.delete('C-MEMGATE'); T.IDX.rental.delete('R-MEMGATE');
+      ok(active != null && incomplete != null && active < incomplete && active === 3 * cat.memberDaily, `gate: Active member pays member rate (${active}) < Incomplete pays retail (${incomplete})`);
+    }
+
+    // === F3 — membership funnel 'Signed' is agreement-driven, never manual (spec §3.1) ===
+    {
+      const c = { customerId: 'C-SIGN', accountType: 'Business Member', membershipStage: 'Contacted', activityLog: [] };
+      T.IDX.customer.set('C-SIGN', c);
+      T.markMembershipSigned(c, 'rental');
+      ok(c.membershipStage === 'Contacted', 'funnel: signing the RENTAL agreement does NOT touch the membership funnel');
+      T.markMembershipSigned(c, 'membership');
+      ok(c.membershipStage === 'Signed', 'funnel: signing the MEMBERSHIP agreement auto-advances the funnel to Signed');
+      // manual set of the terminal is refused for membership, but allowed for used-sales ('Paid')
+      c.membershipStage = 'Contacted';
+      T.setFunnelStage('C-SIGN', 'membership', 'Signed');
+      ok(c.membershipStage === 'Contacted', 'funnel: Signed cannot be set manually on the membership funnel');
+      T.setFunnelStage('C-SIGN', 'membership', 'Payment Discussed');
+      ok(c.membershipStage === 'Payment Discussed', 'funnel: a non-terminal membership stage IS settable manually');
+      T.setFunnelStage('C-SIGN', 'usedSales', 'Paid');
+      ok(c.usedSalesStage === 'Paid', 'funnel: used-sales keeps Paid as a normal manual terminal');
+      T.IDX.customer.delete('C-SIGN');
+    }
+
+    // === F4a — Rental Protection account surcharge (spec §2.1): 15% of the rental equipment subtotal, off by default ===
+    {
+      const cat = T.DATA.categories.find((k) => k.rate1Day > 0);
+      const r = { rentalId: 'R-PROT', customerId: 'C-PROT', categoryId: cat.categoryId, units: [{ unitId: 'U-PROT' }], status: 'Reserved', startDate: '2099-06-01', endDate: '2099-06-02' };
+      const u = { unitId: 'U-PROT', categoryId: cat.categoryId, name: 'Prot Unit' };
+      const cust = { customerId: 'C-PROT', accountType: 'Non-Business', rentalProtection: false };
+      T.IDX.customer.set('C-PROT', cust); T.IDX.unit.set('U-PROT', u); T.IDX.rental.set('R-PROT', r);
+      const sub = T.rentalLineItems(r).reduce((a, li) => a + li.amount, 0);
+      ok(T.rentalProtectionAmount(r) === 0, 'protection: OFF account → $0 protection on the rental');
+      cust.rentalProtection = true;
+      const amt = T.rentalProtectionAmount(r);
+      ok(amt === Math.round(sub * T.rentalProtectionRate() * 100) / 100 && amt > 0, `protection: ON → ${T.rentalProtectionRate() * 100}% of equipment subtotal ${sub} = ${amt}`);
+      T.IDX.customer.delete('C-PROT'); T.IDX.unit.delete('U-PROT'); T.IDX.rental.delete('R-PROT');
+    }
+
+    // === F4b — Rental Protection invoice LINE: built at creation, lid-preserving reprice, taxable ===
+    {
+      const r2c = (n) => Math.round(n * 100) / 100;
+      const cat = T.DATA.categories.find((k) => k.rate1Day > 0);
+      const cust = { customerId: 'C-PL', accountType: 'Non-Business', rentalProtection: true };
+      const u1 = { unitId: 'U-PL', categoryId: cat.categoryId, name: 'PL1' };
+      const u2 = { unitId: 'U-PL2', categoryId: cat.categoryId, name: 'PL2' };
+      const r = { rentalId: 'R-PL', customerId: 'C-PL', status: 'Reserved', startDate: '2099-06-01', endDate: '2099-06-03', units: [{ unitId: 'U-PL' }], invoiceId: 'I-PL' };
+      const inv = { invoiceId: 'I-PL', customerId: 'C-PL', amountPaid: 0, lineItems: [] };
+      T.IDX.customer.set('C-PL', cust); T.IDX.unit.set('U-PL', u1); T.IDX.unit.set('U-PL2', u2); T.IDX.rental.set('R-PL', r); T.IDX.invoice.set('I-PL', inv);
+      // build at creation: rental lines + protection line
+      T.rentalLineItems(r).forEach((li) => inv.lineItems.push(li));
+      T.protectionLineItems(r).forEach((li) => inv.lineItems.push(li));
+      const rentalSub = inv.lineItems.filter((l) => l.kind === 'rental').reduce((a, l) => a + l.amount, 0);
+      const pl = inv.lineItems.find((l) => l.kind === 'protection');
+      ok(pl && pl.amount === r2c(rentalSub * T.rentalProtectionRate()) && pl.amount > 0, `protection line: built at creation = 15% of rental subtotal ${rentalSub} → ${pl && pl.amount}`);
+      ok(r2c(T.invoiceTotals(inv).subtotal) === r2c(rentalSub + pl.amount), 'protection line: included in the invoice subtotal');
+      ok(r2c(T.invoiceTotals(inv).tax) === r2c((rentalSub + pl.amount) * 0.1075), 'protection line: taxed like the rest (taxable)');
+      // turn protection OFF + resync → unpaid line dropped
+      cust.rentalProtection = false; T.syncProtectionLine(r);
+      ok(!inv.lineItems.some((l) => l.kind === 'protection'), 'protection line: dropped when the account toggles protection off');
+      // back ON + resync → re-added; then add a unit → reprices UP, lid preserved
+      cust.rentalProtection = true; T.syncProtectionLine(r);
+      const plOn = inv.lineItems.find((l) => l.kind === 'protection'); const lid1 = plOn.lid; const amtOn = plOn.amount;   // snapshot the NUMBER (reprice mutates the line in place)
+      r.units.push({ unitId: 'U-PL2' });
+      T.rentalLineItems(r).filter((li) => li.unitId === 'U-PL2').forEach((li) => inv.lineItems.push(li));   // add the new unit's rental line (grows the base)
+      T.syncProtectionLine(r);
+      const plUp = inv.lineItems.find((l) => l.kind === 'protection');
+      ok(plUp && plUp.lid === lid1 && plUp.amount > amtOn, `protection line: reprices UP when a unit is added (${amtOn}→${plUp.amount}), lid preserved`);
+      T.IDX.customer.delete('C-PL'); T.IDX.unit.delete('U-PL'); T.IDX.unit.delete('U-PL2'); T.IDX.rental.delete('R-PL'); T.IDX.invoice.delete('I-PL');
+    }
+
+    // === F7 — membership economics (spec §7): member rev vs retail counterfactual, derived discount/net ===
+    {
+      const cat = T.DATA.categories.find((k) => k.memberDaily > 0 && k.rate1Day > k.memberDaily);
+      const u = { unitId: 'U-EC', categoryId: cat.categoryId, name: 'EC' };
+      const cust = { customerId: 'C-EC', accountType: 'Business Member', paidUntil: '2099-01-01', paidFees: 1200 };
+      const r = { rentalId: 'R-EC', customerId: 'C-EC', status: 'Reserved', startDate: '2099-06-01', endDate: '2099-06-04', units: [{ unitId: 'U-EC' }] };
+      T.IDX.customer.set('C-EC', cust); T.IDX.unit.set('U-EC', u); T.IDX.rental.set('R-EC', r); T.DATA.rentals.push(r);
+      const e = T.membershipEconomics(cust);
+      const days = 3;
+      ok(e.memberRev === days * cat.memberDaily, `economics: member-rate revenue = ${days}×${cat.memberDaily} = ${e.memberRev}`);
+      ok(e.retailRev > e.memberRev, `economics: retail counterfactual ${e.retailRev} > member ${e.memberRev}`);
+      ok(e.discount === Math.round((e.retailRev - e.memberRev) * 100) / 100 && e.discount > 0, `economics: member discount = retail − member = ${e.discount}`);
+      ok(e.feeRevenue === 1200, 'economics: fee revenue falls back to paidFees when no membership invoices exist');
+      ok(e.net === Math.round((e.feeRevenue - e.discount) * 100) / 100, `economics: net program contribution = fees − discount = ${e.net}`);
+      const idx = T.DATA.rentals.indexOf(r); if (idx >= 0) T.DATA.rentals.splice(idx, 1);
+      T.IDX.customer.delete('C-EC'); T.IDX.unit.delete('U-EC'); T.IDX.rental.delete('R-EC');
+    }
+
+    // === F5 — cancel → Cancellation Invoice → reactivate-to-prepaid (spec §4); demo charge ===
+    {
+      ok(T.addMonthsISO('2026-06-25', 1) === '2026-07-25' && T.addMonthsISO('2026-06-25', 12) === '2027-06-25', 'enroll: addMonthsISO advances Paid-Until / commitment by the cadence');
+      const c = { customerId: 'C-CX', accountType: 'Business Member', company: 'Acme', paidCadence: 'Monthly', commitmentStart: '2099-01-01', commitmentEnd: '2099-12-01', paidUntil: '2099-07-01', addOns: { transport: false, protection: false }, cards: [{ id: 'K1', status: 'active', isDefault: true, stripePmId: 'pm_x', brand: 'visa', last4: '4242', expMonth: 12, expYear: 2099 }], activityLog: [] };
+      T.IDX.customer.set('C-CX', c);
+      ok(T.isActiveMember(c) === true, 'cancel: starts as an Active member');
+      T.membershipCancel('C-CX');
+      const cxl = T.membershipCancellationInvoice(c);
+      ok(cxl && cxl.membershipCancellation && T.invoiceTotals(cxl).balance > 0, 'cancel: Monthly mid-commitment drops a Cancellation Invoice for the remaining term');
+      ok(T.membershipStatus(c) === 'Lapsed' && T.isActiveMember(c) === false, 'cancel: reverts to Lapsed → retail pricing (rentalProtection untouched)');
+      await T.membershipReactivate('C-CX');
+      ok(T.membershipStatus(c) === 'Active' && c.prepaid === true && c.paidUntil === c.commitmentEnd, 'reactivate: paying the Cancellation Invoice in full reopens the membership PREPAID through the term');
+      ok(T.invoiceTotals(cxl).balance <= 0.005, 'reactivate: the Cancellation Invoice reads paid in full');
+      T.IDX.customer.delete('C-CX');
+      const ci = T.DATA.invoices.indexOf(cxl); if (ci >= 0) T.DATA.invoices.splice(ci, 1); T.IDX.invoice.delete(cxl.invoiceId);
+    }
+
+    // === F5 — enrollment happy path (demo charge): card on file → Active + paid membership invoice ===
+    {
+      const c = { customerId: 'C-EN', accountType: 'Non-Business', company: '', membershipStage: 'Signed', cards: [{ id: 'K1', status: 'active', isDefault: true, stripePmId: 'pm_y', brand: 'visa', last4: '4242', expMonth: 12, expYear: 2099 }], activityLog: [] };
+      T.IDX.customer.set('C-EN', c);
+      T.openMembershipEnroll('C-EN');
+      T.__state.overlay.plan = 'Monthly'; T.__state.overlay.addOns = { transport: true, protection: true };
+      await T.membershipEnrollCommit();
+      ok(T.membershipStatus(c) === 'Active' && /Member/.test(c.accountType) && c.accountType !== 'Member Incomplete', 'enroll: a cleared charge flips the account to an Active member');
+      const inv = T.DATA.invoices.find((i) => i.membership && i.customerId === 'C-EN');
+      ok(inv && T.invoiceTotals(inv).balance <= 0.005, 'enroll: a PAID membership invoice is created');
+      ok(c.unlimitedTransport === true && c.rentalProtection === true && c.paidCadence === 'Monthly' && c.commitmentEnd, 'enroll: add-ons + cadence + 12-mo commitment set on the account');
+      T.IDX.customer.delete('C-EN');
+      if (inv) { const ix = T.DATA.invoices.indexOf(inv); if (ix >= 0) T.DATA.invoices.splice(ix, 1); T.IDX.invoice.delete(inv.invoiceId); }
+      T.__state.overlay = null;
+    }
+
     return out;
   });
 
