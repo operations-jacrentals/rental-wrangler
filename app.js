@@ -2834,6 +2834,17 @@ function membershipStatus(c) {
    apply only to an Active or in-grace member — refused to Incomplete AND lapsed, in both
    the quote and the invoice line. Past Due keeps the rate through the grace window. */
 const isActiveMember = (c) => { const s = membershipStatus(c); return s === 'Active' || s === 'Past Due'; };
+/* Rental Protection (F4) — an account-level surcharge (spec §2.1), available to members
+   AND non-members. The rate is the Owner-settable protection % (shared with the membership
+   add-on). rentalProtectionAmount = that % of the rental's EQUIPMENT subtotal (rental lines
+   only — not transport, not other surcharges), 0 when the account doesn't carry protection. */
+const rentalProtectionRate = () => membershipPricing().protectionPct / 100;
+function rentalProtectionAmount(r) {
+  const cust = r && IDX.customer.get(r.customerId);
+  if (!cust || !cust.rentalProtection) return 0;
+  const base = rentalLineItems(r).reduce((a, li) => a + (Number(li.amount) || 0), 0);
+  return Math.round(base * rentalProtectionRate() * 100) / 100;
+}
 // System-wide ceiling on customer Net-day terms (Settings → Company). Caps every customer's net days.
 const companyMaxNetDays = () => { const n = Number(companyCfg().maxNetDays); return n >= 0 && isFinite(n) ? n : COMPANY_DEFAULTS.maxNetDays; };
 // Normalize a raw Net-days draft value → an integer 0..max, or undefined when blank.
@@ -5136,8 +5147,11 @@ const DETAIL = {
       ? entityPill('customers', cust, { x: 'cust-swap' })
       : addBtn('Customer', { link: true, js: 'js-quickadd-cust', h: 26, data: { card: 'rentals', rec: r.rentalId, slot: 'customer' } });
     const poField = efld('rentals', r, 'rentalId', 'po', 'Add PO', { fmt: (v) => 'PO ' + v });
+    // F4 — Rental Protection advisory: when the account doesn't carry protection, every
+    // rental shows a caution badge (parallel to the PO Required flag). Resolved on the account.
+    const protReminder = (cust && !cust.rentalProtection) ? `<span data-tip="Rental Protection isn't enabled on this account — enable it on the customer to cover damages">${badge('Protection off', 'yellow')}</span>` : '';
     const rdHead = `<div class="rd-head">
-      <div class="rd-head-l">${custEl}${poField}</div>
+      <div class="rd-head-l">${custEl}${poField}${protReminder}</div>
       <div class="rd-head-r">${masterGate(r, { truck })}<div class="rd-head-bal">${invPill}${rdBal}</div></div>
     </div>`;
 
@@ -5473,7 +5487,7 @@ const DETAIL = {
           ${efield('address', 'Add address', true)}
         </div>
         <div class="side r">
-          ${kvPills(`${badge(acct.label, acct.color)}${c.requiresPO ? badge('PO Required', 'yellow') : ''}${agPill}`)}
+          ${kvPills(`${badge(acct.label, acct.color)}${c.requiresPO ? badge('PO Required', 'yellow') : ''}${c.rentalProtection ? badge('Protected', 'blue') : ''}${agPill}`)}
           ${kv(money(d.totalPaid), { pfx: 'Total', derived: true })}
           ${kv(`${d.visits || 0}`, { pfx: 'Visits', derived: true })}
           ${kv(`${d.years || 0} yrs`, { pfx: 'Customer for', derived: true })}
@@ -8751,10 +8765,11 @@ function buildPopupEl(o, overlay, opts = {}) {
           <label class="nc-field"><span>Phone *</span><input class="nc-in" data-f="phone" value="${esc(d.phone)}" autocomplete="off" /></label>
           <label class="nc-field"><span>Email</span><input class="nc-in" data-f="email" type="email" value="${esc(d.email)}" autocomplete="off" /></label>
           <label class="nc-field"><span>Industry</span><input class="nc-in" data-f="industry" list="nc-industries" value="${esc(d.industry)}" autocomplete="off" /></label>
-          <div class="nc-field"><span>Notes · PO</span>
+          <div class="nc-field"><span>Notes · PO · Protection</span>
             <div class="nc-notes-po">
               <input class="nc-in" data-f="accountNotes" value="${esc(d.accountNotes)}" autocomplete="off" placeholder="Notes" />
               ${(() => { const set = d.requiresPO === true || d.requiresPO === false; return `<button type="button" class="nc-po js-nc-po${d.requiresPO === true ? ' on' : ''}${set ? '' : ' req'}" aria-pressed="${d.requiresPO === true ? 'true' : 'false'}" data-tip="${set ? (d.requiresPO ? 'PO required before invoicing' : 'No PO required') : 'Answer required before saving — does this account need a PO?'}">PO ${set ? (d.requiresPO ? 'Yes' : 'No') : '?'}</button>`; })()}
+              ${(() => { const set = d.rentalProtection === true || d.rentalProtection === false; return `<button type="button" class="nc-po js-nc-rp${d.rentalProtection === true ? ' on' : ''}${set ? '' : ' req'}" aria-pressed="${d.rentalProtection === true ? 'true' : 'false'}" data-tip="${set ? (d.rentalProtection ? 'Rental Protection on — +' + (membershipPricing().protectionPct) + '% on every rental, covers damages to the monthly cap' : 'No Rental Protection — every rental shows the not-enabled reminder') : 'Answer required before saving — does this account carry Rental Protection?'}">PROT ${set ? (d.rentalProtection ? 'Yes' : 'No') : '?'}</button>`; })()}
             </div>
           </div>
           <div class="nc-field nc-wide"><span>Account type</span><div class="nc-pills">${acctPills}</div></div>
@@ -9078,7 +9093,7 @@ const WINDOW_CATALOG = [
   { kind: 'boardview',     label: 'Board View',              tag: 'Card · board view',         sample: () => ({ card: 'units', query: '', sort: {}, calc: {}, colOrder: null, extraRows: [], cellData: {}, seq: 0 }) },
   { kind: 'tools',         label: 'Tools tray',              tag: 'Yard · toolbox',            sample: () => ({}) },
   { kind: 'settings',      label: 'Settings',                tag: 'Admin · settings',          sample: () => ({}) },
-  { kind: 'newCustomer',   label: 'New / Edit Customer',     tag: 'Customer · account',        sample: () => ({ editId: null, draft: { firstName: '', lastName: '', company: '', phone: '', email: '', industry: '', accountType: 'Non-Business', requiresPO: undefined, accountNotes: '', idNumber: '', netDays: '', custom: {} } }) },
+  { kind: 'newCustomer',   label: 'New / Edit Customer',     tag: 'Customer · account',        sample: () => ({ editId: null, draft: { firstName: '', lastName: '', company: '', phone: '', email: '', industry: '', accountType: 'Non-Business', requiresPO: undefined, rentalProtection: undefined, accountNotes: '', idNumber: '', netDays: '', custom: {} } }) },
   { kind: 'agreement',     label: 'Signed agreement',        tag: 'Customer · agreement',      sample: () => ({ recId: ((DATA.customers || [])[0] || {}).customerId }) },
   { kind: 'checklist',     label: 'Inspection checklist',    tag: 'Inspection · checklist',    sample: () => ({ unitId: ((DATA.units || [])[0] || {}).unitId, inspId: ((DATA.inspections || [])[0] || {}).inspectionId }) },
   { kind: 'inspection',    label: 'Failure report',          tag: 'Inspection · failure',      sample: () => ({ recId: ((DATA.inspections || [])[0] || {}).inspectionId }) },
@@ -9513,7 +9528,7 @@ function wrPlanSummary(plan) {
 }
 function wrCreateCustomer(f) {
   const id = nextCustomerId();
-  const c = { customerId: id, firstName: f.firstName || '', lastName: f.lastName || '', name: `${f.firstName || ''} ${f.lastName || ''}`.trim() || (f.company || 'New lead'), company: f.company || '', phone: f.phone || '', email: f.email || '', address: f.address || '', industry: f.industry || '', accountType: f.accountType || 'Non-Business', payStatus: 'New Customer', requiresPO: false, accountNotes: f.accountNotes || '', stripeId: '', selfie: '', signature: '', agreementType: '', agreementSignedAt: '', interestedCategoryIds: [], activityLog: [], usedSalesStage: f.usedSalesStage || 'Inbound Lead', membershipStage: f.membershipStage || 'Inbound Lead', _digest: { activePct: 0, totalPaid: 0, visits: 0, years: 0, avgFrequencyDays: 0, firstInvoice: '', lastInvoice: '' } };
+  const c = { customerId: id, firstName: f.firstName || '', lastName: f.lastName || '', name: `${f.firstName || ''} ${f.lastName || ''}`.trim() || (f.company || 'New lead'), company: f.company || '', phone: f.phone || '', email: f.email || '', address: f.address || '', industry: f.industry || '', accountType: f.accountType || 'Non-Business', payStatus: 'New Customer', requiresPO: false, rentalProtection: false, accountNotes: f.accountNotes || '', stripeId: '', selfie: '', signature: '', agreementType: '', agreementSignedAt: '', interestedCategoryIds: [], activityLog: [], usedSalesStage: f.usedSalesStage || 'Inbound Lead', membershipStage: f.membershipStage || 'Inbound Lead', _digest: { activePct: 0, totalPaid: 0, visits: 0, years: 0, avgFrequencyDays: 0, firstInvoice: '', lastInvoice: '' } };
   DATA.customers.push(c); IDX.customer.set(id, c); reindex('customers', c); logAction(c, 'Added by Mr. Wrangler');
   return c;
 }
@@ -11114,6 +11129,7 @@ function onClick(e) {
   if (closest('.js-nc-save')) { e.stopPropagation(); return saveNewCustomer(); }
   if (closest('.js-nc-acct')) { const b = closest('.js-nc-acct'); e.stopPropagation(); ncSyncInputs(); state.overlay.draft.accountType = b.dataset.val; renderOverlay(); return; }
   if (closest('.js-nc-po')) { e.stopPropagation(); ncSyncInputs(); const o = state.overlay; o.draft.requiresPO = (o.draft.requiresPO === true) ? false : true; if (o.editId) { const c = IDX.customer.get(o.editId); if (c) { c.requiresPO = o.draft.requiresPO; reindex('customers', c); } } renderOverlay(); return; }
+  if (closest('.js-nc-rp')) { e.stopPropagation(); ncSyncInputs(); const o = state.overlay; o.draft.rentalProtection = (o.draft.rentalProtection === true) ? false : true; if (o.editId) { const c = IDX.customer.get(o.editId); if (c) { c.rentalProtection = o.draft.rentalProtection; reindex('customers', c); } } renderOverlay(); return; }   // F4 — Rental Protection account toggle (mirrors PO)
   // §7.1b card-bound agreements: tab rail + per-card signing
   if (closest('.js-nc-tab')) { e.stopPropagation(); ncSyncInputs(); state.overlay.tab = closest('.js-nc-tab').dataset.tab; state.overlay.signRead = null; renderOverlay(); return; }
   if (closest('.js-ncsign-read')) { e.stopPropagation(); const id = closest('.js-ncsign-read').dataset.card; state.overlay.signRead = (state.overlay.signRead === id) ? null : id; renderOverlay(); return; }
@@ -11824,6 +11840,7 @@ function setRentalStatus(rentalId, val) {
   if (val === 'On Rent' && cust) {
     if (cust.requiresPO && !IDX.invoice.get(r.invoiceId)?.po) warn = '⚠ PO required for this customer — add it before sending.';
     else if (!cust.stripeId) warn = '⚠ No card on file for this customer.';
+    else if (!cust.rentalProtection) warn = '⚠ Rental Protection not enabled on this account.';   // F4 — mirrors the PO advisory
   }
   toast(warn || `Status → ${getStatus('rentalStatus', val).label}`);
   render();
@@ -12625,7 +12642,7 @@ function parseQuickCustomer(q) {
 function quickAddCustomerFromSearch(value) {
   const p = parseQuickCustomer(value); if (!p) return false;
   const id = nextCustomerId();
-  const c = { customerId: id, firstName: p.firstName, lastName: p.lastName, name: `${p.firstName} ${p.lastName}`.trim(), company: '', phone: p.phone, email: '', address: '', industry: '', accountType: 'Non-Business', payStatus: 'New Customer', requiresPO: false, accountNotes: '', stripeId: '', selfie: '', signature: '', agreementType: '', agreementSignedAt: '', interestedCategoryIds: [], activityLog: [], usedSalesStage: 'N/A', membershipStage: 'N/A', _digest: { activePct: 0, totalPaid: 0, visits: 0, years: 0, avgFrequencyDays: 0, firstInvoice: '', lastInvoice: '' } };
+  const c = { customerId: id, firstName: p.firstName, lastName: p.lastName, name: `${p.firstName} ${p.lastName}`.trim(), company: '', phone: p.phone, email: '', address: '', industry: '', accountType: 'Non-Business', payStatus: 'New Customer', requiresPO: false, rentalProtection: false, accountNotes: '', stripeId: '', selfie: '', signature: '', agreementType: '', agreementSignedAt: '', interestedCategoryIds: [], activityLog: [], usedSalesStage: 'N/A', membershipStage: 'N/A', _digest: { activePct: 0, totalPaid: 0, visits: 0, years: 0, avgFrequencyDays: 0, firstInvoice: '', lastInvoice: '' } };
   DATA.customers.push(c); IDX.customer.set(id, c); reindex('customers', c);
   logAction(c, 'Customer quick-added');
   const s = activeSession();
@@ -12686,7 +12703,7 @@ function openCustomerForm(editId, prefill, linkTo) {
   openOverlay({ kind: 'newCustomer', error: '', editId: editId || null, linkTo: (!editId && linkTo) || null, draft: {
     firstName: f('firstName'), lastName: f('lastName'), company: f('company'), phone: f('phone'),
     email: f('email'), industry: f('industry'), accountType: f('accountType', 'Non-Business'),
-    requiresPO: c ? !!c.requiresPO : undefined, accountNotes: f('accountNotes'), selfie: f('selfie'), signature: f('signature'),
+    requiresPO: c ? !!c.requiresPO : undefined, rentalProtection: c ? !!c.rentalProtection : undefined, accountNotes: f('accountNotes'), selfie: f('selfie'), signature: f('signature'),
     agreementType: f('agreementType'), agreementSignedAt: f('agreementSignedAt'),
     idNumber: f('idNumber'), netDays: f('netDays'), custom: (c && c.custom) ? { ...c.custom } : {},
   } });
@@ -12723,7 +12740,7 @@ function quickSaveCustomer(o) {
     customerId: id, firstName: d.firstName, lastName: d.lastName, name: `${d.firstName} ${d.lastName}`.trim(),
     company: d.company, phone: d.phone, email: d.email, address: '',
     industry: d.industry, accountType: d.accountType || 'Non-Business', payStatus: 'New Customer',
-    requiresPO: !!d.requiresPO, accountNotes: d.accountNotes, stripeId: '', selfie: d.selfie || '', signature: d.signature || '',
+    requiresPO: !!d.requiresPO, rentalProtection: !!d.rentalProtection, accountNotes: d.accountNotes, stripeId: '', selfie: d.selfie || '', signature: d.signature || '',
     idNumber: d.idNumber || '', netDays: normNetDays(d.netDays), custom: d.custom || {},
     agreementType: d.agreementType || '', agreementSignedAt: d.agreementSignedAt || '',
     interestedCategoryIds: [], activityLog: [], usedSalesStage: 'N/A', membershipStage: 'N/A',
@@ -12773,10 +12790,11 @@ function saveNewCustomer() {
   const missingCf = customFieldsFor('customers').find((f) => f.required && !(o.draft.custom[f.id] || '').trim());
   if (missingCf) { o.error = `“${missingCf.label}” is required.`; renderOverlay(); document.querySelector(`.overlay [data-cf="${missingCf.id}"]`)?.focus(); return; }
   if (o.draft.requiresPO !== true && o.draft.requiresPO !== false) { o.error = ''; o.tab = 'account'; renderOverlay(); flashOr('.overlay .js-nc-po', 'Choose PO — Yes or No before saving.'); return; }   // force the PO answer
+  if (o.draft.rentalProtection !== true && o.draft.rentalProtection !== false) { o.error = ''; o.tab = 'account'; renderOverlay(); flashOr('.overlay .js-nc-rp', 'Choose Rental Protection — Yes or No before saving.'); return; }   // F4 — force the protection answer (mirrors PO)
   const d = o.draft;
   if (o.editId) {                                   // ── editing / completing an existing customer ──
     const c = IDX.customer.get(o.editId); if (!c) { closeOverlay(); return; }
-    Object.assign(c, { firstName: d.firstName, lastName: d.lastName, company: d.company, phone: d.phone, email: d.email, industry: d.industry, accountType: d.accountType || 'Non-Business', requiresPO: !!d.requiresPO, accountNotes: d.accountNotes, idNumber: d.idNumber || '', netDays: normNetDays(d.netDays), custom: d.custom || {} });   // §7.1b signature/agreement live on the card
+    Object.assign(c, { firstName: d.firstName, lastName: d.lastName, company: d.company, phone: d.phone, email: d.email, industry: d.industry, accountType: d.accountType || 'Non-Business', requiresPO: !!d.requiresPO, rentalProtection: !!d.rentalProtection, accountNotes: d.accountNotes, idNumber: d.idNumber || '', netDays: normNetDays(d.netDays), custom: d.custom || {} });   // §7.1b signature/agreement live on the card
     if (!c.accountNotes) c.accountNotesColor = '';   // popup has no dot picker — don't leave a stale tag on a cleared note
     c.name = `${d.firstName} ${d.lastName}`.trim() || c.name;
     reindex('customers', c);
@@ -12793,7 +12811,7 @@ function saveNewCustomer() {
     customerId: id, firstName: d.firstName, lastName: d.lastName, name: `${d.firstName} ${d.lastName}`.trim(),
     company: d.company, phone: d.phone, email: d.email, address: '',
     industry: d.industry, accountType: d.accountType || 'Non-Business', payStatus: 'New Customer',
-    requiresPO: !!d.requiresPO, accountNotes: d.accountNotes, stripeId: '', selfie: d.selfie || '', signature: d.signature || '',
+    requiresPO: !!d.requiresPO, rentalProtection: !!d.rentalProtection, accountNotes: d.accountNotes, stripeId: '', selfie: d.selfie || '', signature: d.signature || '',
     idNumber: d.idNumber || '', netDays: normNetDays(d.netDays), custom: d.custom || {},
     agreementType: d.agreementType || '', agreementSignedAt: d.agreementSignedAt || '',
     interestedCategoryIds: [], activityLog: [], usedSalesStage: 'N/A', membershipStage: 'N/A',
@@ -15021,7 +15039,7 @@ function exposeTestApi() {
       latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore, wranglerRailLoad, wrOffloadChatImages, wrEvictChatBlobs, driveViewUrl, mergeWranglerRails,
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
-      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, setFunnelStage, markMembershipSigned, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, setRole: (r) => { currentRole = r || ''; render(); },
+      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, setFunnelStage, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, setRole: (r) => { currentRole = r || ''; render(); },
       openCustomerForm, renderOverlay, render, cardComplete, cardCaptureState, cardHasSelfie, cardHasSignature, captureSelfie, captureSignature, __state: state };   // UI drivers for headless screenshot/e2e tests
 
   } catch (e) { /* no window (non-browser) */ }

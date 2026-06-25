@@ -651,6 +651,21 @@ try {
       T.IDX.customer.delete('C-SIGN');
     }
 
+    // === F4a — Rental Protection account surcharge (spec §2.1): 15% of the rental equipment subtotal, off by default ===
+    {
+      const cat = T.DATA.categories.find((k) => k.rate1Day > 0);
+      const r = { rentalId: 'R-PROT', customerId: 'C-PROT', categoryId: cat.categoryId, units: [{ unitId: 'U-PROT' }], status: 'Reserved', startDate: '2099-06-01', endDate: '2099-06-02' };
+      const u = { unitId: 'U-PROT', categoryId: cat.categoryId, name: 'Prot Unit' };
+      const cust = { customerId: 'C-PROT', accountType: 'Non-Business', rentalProtection: false };
+      T.IDX.customer.set('C-PROT', cust); T.IDX.unit.set('U-PROT', u); T.IDX.rental.set('R-PROT', r);
+      const sub = T.rentalLineItems(r).reduce((a, li) => a + li.amount, 0);
+      ok(T.rentalProtectionAmount(r) === 0, 'protection: OFF account → $0 protection on the rental');
+      cust.rentalProtection = true;
+      const amt = T.rentalProtectionAmount(r);
+      ok(amt === Math.round(sub * T.rentalProtectionRate() * 100) / 100 && amt > 0, `protection: ON → ${T.rentalProtectionRate() * 100}% of equipment subtotal ${sub} = ${amt}`);
+      T.IDX.customer.delete('C-PROT'); T.IDX.unit.delete('U-PROT'); T.IDX.rental.delete('R-PROT');
+    }
+
     return out;
   });
 
