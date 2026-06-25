@@ -3002,46 +3002,63 @@ function openMembershipEnroll(custId) {
   const c = IDX.customer.get(custId); if (!c) return;
   openOverlay({ kind: 'membershipEnroll', custId, plan: 'Monthly', addOns: { transport: false, protection: !!c.rentalProtection }, autoRenew: false, startDate: TODAY_ISO, busy: false, error: '' });
 }
-async function membershipEnrollCommit() {
-  const o = state.overlay; if (!o || o.kind !== 'membershipEnroll' || o.busy) return;
-  const c = IDX.customer.get(o.custId); if (!c) return;
-  if (!(hasCardOnFile(c) && hasValidCard(c))) { o.error = 'A valid card on file is required to charge the membership.'; renderOverlay(); flashOr('.overlay .js-me-commit', 'Add a card on file first.'); return; }
-  const pricing = membershipPricing();
-  const fee = membershipFee({ plan: o.plan, addOns: o.addOns }, pricing);
-  const start = o.startDate || TODAY_ISO;
-  const lines = [{ kind: 'membership', ref: c.customerId, lid: lineLid(), label: `Membership · ${o.plan} base`, amount: fee.base }];
-  if (fee.transport) lines.push({ kind: 'membership', ref: c.customerId, lid: lineLid(), label: 'Unlimited Transport', amount: fee.transport });
-  if (fee.protection) lines.push({ kind: 'membership', ref: c.customerId, lid: lineLid(), label: `Rental Protection · ${pricing.protectionPct}%`, amount: fee.protection });
-  const inv = buildMembershipInvoice(c, lines, { date: start, due: start });
-  // set the membership fields, but stay Member Incomplete until the charge clears
-  c.accountType = 'Member Incomplete';
+const memIsDemo = () => (typeof backendPassword === 'undefined' || !backendPassword);
+// Apply the Active member fields locally (the server is authoritative for the PROTECTED
+// paidUntil/graceUntil — set them here for an immediate UI, they round-trip via the backend).
+function memApplyActive(c, o, start, paidUntil) {
+  c.accountType = memberAccountType(c);
   c.paidCadence = (o.plan === 'Annual' ? 'Yearly' : 'Monthly');
   c.commitmentStart = start; c.commitmentEnd = addMonthsISO(start, MEMBERSHIP_MONTHS);
   c.autoRenew = !!o.autoRenew; c.addOns = { transport: !!o.addOns.transport, protection: !!o.addOns.protection };
   if (o.addOns.transport) c.unlimitedTransport = true;
   if (o.addOns.protection) c.rentalProtection = true;
-  c.prepaid = false; c.graceUntil = '';
+  c.prepaid = false; c.graceUntil = ''; c.paidUntil = paidUntil;
   reindex('customers', c);
+  logAction(c, `Membership enrolled — ${o.plan}${o.addOns.transport ? ' + Transport' : ''}${o.addOns.protection ? ' + Protection' : ''}`);
+}
+async function membershipEnrollCommit() {
+  const o = state.overlay; if (!o || o.kind !== 'membershipEnroll' || o.busy) return;
+  const c = IDX.customer.get(o.custId); if (!c) return;
+  if (!(hasCardOnFile(c) && hasValidCard(c))) { o.error = 'A valid card on file is required to charge the membership.'; renderOverlay(); flashOr('.overlay .js-me-commit', 'Add a card on file first.'); return; }
+  const start = o.startDate || TODAY_ISO;
   o.busy = true; o.error = ''; renderOverlay();
   try {
-    const r = await membershipChargeResult(inv.invoiceId, Math.round(fee.total * 100), defaultCard(c));
-    if (state.overlay !== o) return;
-    if (r && r.ok && (r.status === 'succeeded' || r.alreadyPaid)) {
-      if (r._demo) markInvoicePaidLocal(inv, 'Card (demo)'); else applyPayment(inv.invoiceId, r);
-      c.accountType = memberAccountType(c);
-      c.paidUntil = addMonthsISO(start, o.plan === 'Annual' ? 12 : 1);
-      reindex('customers', c);
-      logAction(c, `Membership enrolled — ${o.plan}${o.addOns.transport ? ' + Transport' : ''}${o.addOns.protection ? ' + Protection' : ''} (${money(fee.total)})`);
+    if (memIsDemo()) {   // #local — client-side invoice + simulated charge (no backend)
+      const pricing = membershipPricing(), fee = membershipFee({ plan: o.plan, addOns: o.addOns }, pricing);
+      const lines = [{ kind: 'membership', ref: c.customerId, lid: lineLid(), label: `Membership · ${o.plan} base`, amount: fee.base }];
+      if (fee.transport) lines.push({ kind: 'membership', ref: c.customerId, lid: lineLid(), label: 'Unlimited Transport', amount: fee.transport });
+      if (fee.protection) lines.push({ kind: 'membership', ref: c.customerId, lid: lineLid(), label: `Rental Protection · ${pricing.protectionPct}%`, amount: fee.protection });
+      const inv = buildMembershipInvoice(c, lines, { date: start, due: start });
+      markInvoicePaidLocal(inv, 'Card (demo)');
+      memApplyActive(c, o, start, addMonthsISO(start, o.plan === 'Annual' ? 12 : 1));
       closeOverlay(); render(); toast('Membership active — saddle up! ✓'); return;
     }
-    o.busy = false; o.error = friendlyPayErr(r) || 'Charge declined — the account stays Member Incomplete until payment clears.'; renderOverlay();
+    // PROD — the backend creates the invoice, charges the card, and sets the protected fields server-side
+    const r = await backendCall('membershipEnroll', { customerId: c.customerId, plan: (o.plan === 'Annual' ? 'Yearly' : 'Monthly'), addOns: o.addOns, startDate: start, autoRenew: !!o.autoRenew });
+    if (state.overlay !== o) return;
+    if (r && r.ok && r.status === 'active') {
+      memApplyActive(c, o, start, r.paidUntil || addMonthsISO(start, o.plan === 'Annual' ? 12 : 1));
+      closeOverlay(); render(); toast('Membership active — saddle up! ✓'); return;
+    }
+    o.busy = false;
+    o.error = (r && r.status === 'incomplete') ? (friendlyPayErr(r.charge) || 'Charge declined — the account stays Member Incomplete until payment clears.') : ((r && friendlyPayErr(r)) || 'Enrollment failed — try again.');
+    renderOverlay();
   } catch (e) { if (state.overlay === o) { o.busy = false; o.error = 'Network error — try again.'; renderOverlay(); } }
 }
-function membershipCancel(custId) {
+async function membershipCancel(custId) {
   const c = IDX.customer.get(custId); if (!c) return;
   const status = membershipStatus(c);
   if (status !== 'Active' && status !== 'Past Due') return;
   const yest = isoOf(new Date(Date.parse(TODAY_ISO) - 86400000));
+  if (!memIsDemo()) {   // PROD — backend drops the Cancellation Invoice + expires paid-through server-side
+    try {
+      const r = await backendCall('membershipCancel', { customerId: c.customerId });
+      if (r && r.ok) { c.paidUntil = yest; c.graceUntil = yest; c.prepaid = false; reindex('customers', c); render(); toast(r.cancellationInvoiceId ? 'Membership cancelled — cancellation invoice on the account.' : 'Membership cancelled.'); }
+      else toast('Cancel failed — try again.');
+    } catch (e) { toast('Network error — try again.'); }
+    return;
+  }
+  // demo (#local) — client-side
   // Monthly mid-commitment → a Cancellation Invoice for the remaining term (Annual is already prepaid).
   let cxl = null;
   if (c.paidCadence === 'Monthly' && c.commitmentEnd && !c.prepaid) {
@@ -3062,18 +3079,15 @@ async function membershipReactivate(custId) {
   const c = IDX.customer.get(custId); if (!c) return;
   const cxl = membershipCancellationInvoice(c); if (!cxl) return;
   if (!(hasCardOnFile(c) && hasValidCard(c))) { toast('A valid card on file is required to pay the cancellation invoice.'); return; }
-  const bal = invoiceTotals(cxl).balance;
+  const reopen = () => { c.accountType = memberAccountType(c); c.paidUntil = c.commitmentEnd || addMonthsISO(TODAY_ISO, MEMBERSHIP_MONTHS); c.prepaid = true; c.graceUntil = ''; reindex('customers', c); logAction(c, `Membership reactivated — cancellation paid in full, prepaid through ${c.paidUntil}`); render(); toast('Membership reactivated — prepaid through the term ✓'); };
   try {
-    const r = await membershipChargeResult(cxl.invoiceId, Math.round(bal * 100), defaultCard(c));
-    if (r && r.ok && (r.status === 'succeeded' || r.alreadyPaid)) {
-      if (r._demo) markInvoicePaidLocal(cxl, 'Card (demo)'); else applyPayment(cxl.invoiceId, r);
-      c.accountType = memberAccountType(c);
-      c.paidUntil = c.commitmentEnd || addMonthsISO(TODAY_ISO, MEMBERSHIP_MONTHS);
-      c.prepaid = true; c.graceUntil = '';
-      reindex('customers', c);
-      logAction(c, `Membership reactivated — cancellation paid in full, prepaid through ${c.paidUntil}`);
-      render(); toast('Membership reactivated — prepaid through the term ✓');
-    } else { toast('Charge declined — membership stays lapsed.'); }
+    if (memIsDemo()) {   // #local — charge the cancellation invoice locally
+      markInvoicePaidLocal(cxl, 'Card (demo)'); reopen(); return;
+    }
+    // PROD — backend charges the Cancellation Invoice in full + sets prepaid server-side
+    const r = await backendCall('membershipReactivate', { customerId: c.customerId, invoiceId: cxl.invoiceId });
+    if (r && r.ok && r.status === 'active') reopen();
+    else toast(friendlyPayErr(r && r.charge) || 'Charge declined — membership stays lapsed.');
   } catch (e) { toast('Network error — try again.'); }
 }
 // System-wide ceiling on customer Net-day terms (Settings → Company). Caps every customer's net days.
