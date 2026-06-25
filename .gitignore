@@ -39,3 +39,4 @@ backend/
 
 .gate-smoke.mjs
 .gate-logic.mjs
+.gate-render.mjs
