@@ -1746,6 +1746,16 @@ function closeTab(id) {
   render();
 }
 function closeAll() { state.tabs = []; state.activeTabId = null; state.searchMode = false; state.query = ''; state.winpicker = null; state.datesearch = null; render(); }
+// §313 — keep only the active tab; with none active, fall back to a full close.
+function closeOthers() { if (!state.activeTabId) { closeAll(); return; } state.tabs = state.tabs.filter((t) => t.id === state.activeTabId); render(); }
+// §313 — Close-all trigger. 1–2 tabs close immediately; >2 ask first (a quick popover).
+function openCloseAllMenu(anchorEl) {
+  const n = state.tabs.length;
+  if (!n) return;
+  if (n <= 2) { closeAll(); return; }
+  const row = `<div class="dd-confirm">${actionPill('danger', `Close all ${n}`, { js: 'js-closeall' })}${ghostPill('Close others', { js: 'js-closeothers', tip: 'Keep the current tab open' })}</div>`;
+  openDropdown(anchorEl, `<div class="dd-sec">Close all ${n} tabs?</div>${row}`, { align: 'right' });
+}
 /* Wave 2 (Jac): QUOTES SURVIVE. Nothing is swept on tab close / session switch —
    a Quote-status rental (or any fresh record) lives until Completed/Cancelled
    or deliberately deleted. The `mock` flag stays purely a UI affordance gate
@@ -6679,6 +6689,7 @@ function headerEl() {
     <div class="header-right">
       <div class="hr-top">
         <div class="header-tabs tabstrip">${tabStrip(state.tabs)}</div>
+        ${state.tabs.length ? `<span class="closeall-slot">${ghostPill('Close all', { js: 'js-closeall-menu', tip: 'Close all tabs' })}</span>` : ''}
         <span class="spacer"></span>
         ${currentUser ? `<span class="hello-name">${esc(currentUser)}</span>` : ''}
       </div>
@@ -11279,7 +11290,9 @@ function onClick(e) {
   if (closest('.js-ft-neg')) { const b = closest('.js-ft-neg'); e.stopPropagation(); return toggleFilterNeg(b.dataset.scope, Number(b.dataset.i)); }
   if (closest('.js-date-edit')) { const b = closest('.js-date-edit'); e.stopPropagation(); return openDateSearch(b.dataset.scope, Number(b.dataset.i)); }   // §5.4d re-open the picker to change the date
   if (closest('.js-ft-x')) { const b = closest('.js-ft-x'); e.stopPropagation(); return removeFilterTerm(b.dataset.scope, Number(b.dataset.i)); }
-  if (closest('.js-closeall')) return closeAll();
+  if (closest('.js-closeall-menu')) { e.stopPropagation(); return openCloseAllMenu(closest('.js-closeall-menu')); }
+  if (closest('.js-closeall')) { document.querySelectorAll('.dropdown-menu').forEach((m) => m.remove()); return closeAll(); }
+  if (closest('.js-closeothers')) { document.querySelectorAll('.dropdown-menu').forEach((m) => m.remove()); return closeOthers(); }
   if (closest('.js-closetab')) { e.stopPropagation(); return closeTab(closest('.js-closetab').dataset.tab); }
   if (closest('.js-uncascade')) { e.stopPropagation(); const cs = activeSession().cards[closest('.js-uncascade').dataset.card]; if (cs) cs.released = true; return render(); }
   if (closest('.js-tab')) return switchTab(closest('.js-tab').dataset.tab);
