@@ -1,201 +1,197 @@
 /* ════════════════════════════════════════════════════════════════════════
- * MEMBERSHIP BILLING — backend additions (2026-06-25)
- * -------------------------------------------------------------------------
- * The frontend (F1–F7) already runs membership ENROLL / CANCEL / REACTIVATE by
- * orchestrating the EXISTING, deployed, money-gated `stripeChargeInvoice` action
- * (it creates the membership invoice, sets the member fields, and charges the saved
- * card — same security model as a rental charge). So nothing below is required for
- * the in-app flow to work.
+ * MEMBERSHIP — app-driven billing backend. DEPLOYED LIVE 2026-06-25 (version 46)
+ * to the prod deployment via clasp. This file is the tracked, secret-free record of
+ * the code that is live in Code.gs (which is gitignored). Reconciled against the real
+ * backend helpers (readRecord_/writeRecord_/computeInvoiceCents_/stripeChargeInvoice_/
+ * appendLedger_/getConfigObj/ss()/tryLock_/todayIso_/TAX_RATE_SERVER/MONEY_ROLES).
  *
- * This file adds the TWO genuinely server-only pieces:
- *   (1) membershipBillingCron — a daily time-trigger that auto-charges recurring
- *       cycles (the recurring engine, spec §5), and
- *   (2) membershipEnroll_ / membershipCancel_ / membershipReactivate_ — a single
- *       consolidated, money-gated server endpoint the FUTURE public website will
- *       call (spec §6.1 / §10.6 row-isolation seam). The in-app UI can migrate onto
- *       these later; until then they're additive and unused.
+ * NOTE: the backend ALSO has a separate, dormant Stripe-SUBSCRIPTION membership system
+ * (membershipActivate_ / membershipDailySweep / stripeWebhook_). Per Jac (2026-06-25) we
+ * went app-driven instead; this cron only touches app-driven members (no stripeSubId), so
+ * the two never overlap.
  *
- * This file is the tracked source of truth — NO secrets. Deploy via /clasp once the
- * clasp credential is re-minted (the session that authored this was RAPT-blocked).
- *
- * ── SPLICE (3 edits to Code.gs) ──────────────────────────────────────────
- * EDIT 1 — dispatch (in handle(), beside the other money actions):
+ * ── DISPATCH (spliced into handle(), right after the membershipActivate line ~184) ──
  *   if (action === 'membershipEnroll')     return json(MONEY_ROLES[role] ? membershipEnroll_(body, role)     : { ok:false, error:'forbidden' });
- *   if (action === 'membershipCancel')      return json(MONEY_ROLES[role] ? membershipCancel_(body, role)      : { ok:false, error:'forbidden' });
- *   if (action === 'membershipReactivate')  return json(MONEY_ROLES[role] ? membershipReactivate_(body, role)  : { ok:false, error:'forbidden' });
+ *   if (action === 'membershipCancel')     return json(MONEY_ROLES[role] ? membershipCancel_(body, role)     : { ok:false, error:'forbidden' });
+ *   if (action === 'membershipReactivate') return json(MONEY_ROLES[role] ? membershipReactivate_(body, role) : { ok:false, error:'forbidden' });
  *
- * EDIT 2 — paste the functions below (top-level, e.g. after the Stripe section).
- *
- * EDIT 3 — install the daily trigger ONCE (run installMembershipCron_ from the
- *   Apps Script editor, or add a time-driven trigger on `membershipBillingCron`):
- *   function installMembershipCron_(){ ScriptApp.newTrigger('membershipBillingCron').timeBased().everyDays(1).atHour(3).create(); }
- *
- * ── RECONCILE AT SPLICE (named reuse — confirm against live Code.gs) ──────
- *   • readRecord_(entity,id) · writeRecord_(entity,rec) · allRecords_(entity)
- *     — record store helpers (used by recordManualPayment_, etc.).
- *   • computeInvoiceCents_(inv) → { totalCents, balanceCents } · appendLedger_([...]).
- *   • stripeChargeInvoice_(body, role) — the function BEHIND the deployed
- *     `stripeChargeInvoice` action (charges an invoice's saved default card).
- *     The cron reuses it; if its real name/shape differs, point CHARGE_INVOICE_ at it.
- *   • MONEY_ROLES, MAX_CHARGE_CENTS, LockService, json().
- *   • There may be a legacy `membershipActivate` action stub in the dispatch — it is
- *     unused by the frontend; replace/remove it in favor of these.
+ * ── REMAINING MANUAL STEP: install the daily trigger (clasp run can't — no API-exec deploy).
+ *   In the Apps Script editor: Run → installMembershipBillingCron_   (creates a daily 3am trigger)
+ *   — or Triggers (clock icon) → Add Trigger → membershipBillingCron · Time-driven · Day timer · 3am.
  * ════════════════════════════════════════════════════════════════════════ */
 
-var MEMBERSHIP_TERM_MONTHS = 12;
-var MEMBERSHIP_GRACE_DAYS = 7;
-var TAX_RATE_ = 0.1075;
+/* ════════════════════════════════════════════════════════════════════════
+ * MEMBERSHIP — app-driven recurring billing (Jac 2026-06-25)
+ * Recurring membership WITHOUT Stripe subscriptions: enroll/cancel/reactivate set the
+ * SERVER-OWNED membership fields (paidUntil/graceUntil are protected, so they survive the
+ * client sync) and charge via stripeChargeInvoice_ (the same one-time path the app uses). A
+ * daily trigger (membershipBillingCron) charges each due cycle, handling the add-ons
+ * (Unlimited Transport, Rental Protection 15%) and the cancellation-invoice mechanic that a
+ * Stripe subscription can't express. Operates ONLY on app-driven members (no stripeSubId) —
+ * Stripe-subscription members are handled by membershipDailySweep, so the two never overlap.
+ *
+ * LOCK DISCIPLINE: never hold a script lock across stripeChargeInvoice_ (it acquires + RELEASES
+ * the same script lock internally). Each write takes its own short lock; the charge runs unlocked.
+ * ════════════════════════════════════════════════════════════════════════ */
+var MEM_TERM_MONTHS = 12;
+var MEM_GRACE_DAYS = 7;
+var MEM_DEFAULTS = { monthlyBase: 299, annualBase: 2691, monthlyTransport: 500, annualTransport: 4500, protectionPct: 15, protectionCapMonthly: 2000 };
+var _memSeq = 0;
 
-// Shipped defaults — mirror config.js MEMBERSHIP_DEFAULTS. Owner-settable values live in
-// the Company config; membershipCfg_ reads them, falling back to these (spec §2/§10.1).
-function membershipCfg_() {
-  var d = { monthlyBase: 299, annualBase: 2691, monthlyTransport: 500, annualTransport: 4500, protectionPct: 15, protectionCapMonthly: 2000 };
-  try {
-    var co = (readRecord_('settings', 'company') || readRecord_('config', 'company') || {});   // RECONCILE: however the Company config row is keyed
-    function num(v, def) { var n = Number(v); return (v != null && v !== '' && isFinite(n) && n >= 0) ? n : def; }
-    return {
-      monthlyBase: num(co.memMonthlyBase, d.monthlyBase), annualBase: num(co.memAnnualBase, d.annualBase),
-      monthlyTransport: num(co.memMonthlyTransport, d.monthlyTransport), annualTransport: num(co.memAnnualTransport, d.annualTransport),
-      protectionPct: num(co.memProtectionPct, d.protectionPct), protectionCapMonthly: num(co.memProtectionCap, d.protectionCapMonthly)
-    };
-  } catch (e) { return d; }
+function memAddMonthsIso_(iso, n) {
+  var d = iso ? new Date(iso + 'T00:00:00Z') : new Date();
+  return Utilities.formatDate(new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + n, d.getUTCDate())), 'UTC', 'yyyy-MM-dd');
 }
-
-// Server-side fee math — the authoritative copy (mirrors app.js membershipFee). NO proration;
-// protection = % of BASE only; 10.75% tax. plan: 'Monthly'|'Yearly'.
-function membershipFee_(plan, addOns, cfg) {
-  cfg = cfg || membershipCfg_(); addOns = addOns || {};
+function memYestIso_() { return Utilities.formatDate(new Date(Date.now() - 86400000), 'UTC', 'yyyy-MM-dd'); }
+function memMonthsRemaining_(toIso) {
+  if (!toIso) return 0;
+  var a = new Date(todayIso_() + 'T00:00:00Z'), b = new Date(toIso + 'T00:00:00Z');
+  return Math.max(0, (b.getUTCFullYear() - a.getUTCFullYear()) * 12 + (b.getUTCMonth() - a.getUTCMonth()));
+}
+function memPricing_() {
+  var co = {};
+  try { var cfg = getConfigObj(); co = (cfg && cfg.settings && cfg.settings.company) || {}; } catch (e) {}
+  function num(v, dflt) { var x = Number(v); return (v != null && v !== '' && isFinite(x) && x >= 0) ? x : dflt; }
+  return { monthlyBase: num(co.memMonthlyBase, MEM_DEFAULTS.monthlyBase), annualBase: num(co.memAnnualBase, MEM_DEFAULTS.annualBase),
+    monthlyTransport: num(co.memMonthlyTransport, MEM_DEFAULTS.monthlyTransport), annualTransport: num(co.memAnnualTransport, MEM_DEFAULTS.annualTransport),
+    protectionPct: num(co.memProtectionPct, MEM_DEFAULTS.protectionPct), protectionCapMonthly: num(co.memProtectionCap, MEM_DEFAULTS.protectionCapMonthly) };
+}
+function memIsAnnual_(plan) { return /(Yearly|Annual|annual)/.test(String(plan)); }
+function memFee_(plan, addOns, p) {
+  p = p || memPricing_(); addOns = addOns || {};
   function r2(n) { return Math.round(n * 100) / 100; }
-  var annual = (plan === 'Yearly' || plan === 'Annual');
-  var base = annual ? cfg.annualBase : cfg.monthlyBase;
-  var transport = addOns.transport ? (annual ? cfg.annualTransport : cfg.monthlyTransport) : 0;
-  var protection = addOns.protection ? r2(base * (cfg.protectionPct / 100)) : 0;
+  var annual = memIsAnnual_(plan);
+  var base = annual ? p.annualBase : p.monthlyBase;
+  var transport = addOns.transport ? (annual ? p.annualTransport : p.monthlyTransport) : 0;
+  var protection = addOns.protection ? r2(base * (p.protectionPct / 100)) : 0;
   var subtotal = r2(base + transport + protection);
-  var tax = r2(subtotal * TAX_RATE_);
+  var tax = r2(subtotal * TAX_RATE_SERVER);
   return { base: base, transport: transport, protection: protection, subtotal: subtotal, tax: tax, total: r2(subtotal + tax) };
 }
-
-// ── helpers ───────────────────────────────────────────────────────────────
-function memIsMemberType_(at) { return /Member/.test(at || '') && at !== 'Member Incomplete'; }
-function memAddMonthsISO_(iso, n) { var d = iso ? new Date(iso) : new Date(); return Utilities.formatDate(new Date(d.getFullYear(), d.getMonth() + n, d.getDate()), 'UTC', 'yyyy-MM-dd'); }
-function memTodayISO_() { return Utilities.formatDate(new Date(), 'UTC', 'yyyy-MM-dd'); }
-function memMonthsRemaining_(toISO) { var a = new Date(), b = new Date(toISO); return Math.max(0, (b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth())); }
-function memNextInvoiceId_() { return 'MINV-' + Utilities.formatDate(new Date(), 'UTC', 'yyyyMMdd-HHmmss') + '-' + Math.floor(Math.random() * 1000); }   // RECONCILE: use the app's nextInvoiceId scheme if one exists server-side
-function memFeeLines_(plan, addOns, cfg) {
-  var fee = membershipFee_(plan, addOns, cfg), lines = [{ kind: 'membership', label: 'Membership · ' + plan + ' base', amount: fee.base }];
-  if (fee.transport) lines.push({ kind: 'membership', label: 'Unlimited Transport', amount: fee.transport });
-  if (fee.protection) lines.push({ kind: 'membership', label: 'Rental Protection · ' + cfg.protectionPct + '%', amount: fee.protection });
+function memIsMemberType_(at) { return /Member/.test(String(at || '')) && at !== 'Member Incomplete'; }
+function memMemberAccountType_(c) { return (c.company && String(c.company).trim()) ? 'Business Member' : 'Non-Business Member'; }
+function memNextInvId_() { _memSeq++; return 'MINV-' + Utilities.formatDate(new Date(), 'UTC', 'yyyyMMddHHmmss') + '-' + _memSeq; }
+function memLid_() { _memSeq++; return 'Lm' + Utilities.formatDate(new Date(), 'UTC', 'yyyyMMddHHmmss') + _memSeq; }
+function memFeeLines_(plan, addOns, p) {
+  var fee = memFee_(plan, addOns, p), planLbl = memIsAnnual_(plan) ? 'Annual' : 'Monthly';
+  var lines = [{ kind: 'membership', ref: '', lid: memLid_(), label: 'Membership · ' + planLbl + ' base', amount: fee.base }];
+  if (fee.transport) lines.push({ kind: 'membership', ref: '', lid: memLid_(), label: 'Unlimited Transport', amount: fee.transport });
+  if (fee.protection) lines.push({ kind: 'membership', ref: '', lid: memLid_(), label: 'Rental Protection · ' + p.protectionPct + '%', amount: fee.protection });
   return { fee: fee, lines: lines };
 }
-function memCreateInvoice_(cust, lines, opts) {
+// create + persist a membership invoice under a SHORT lock (released before any charge)
+function memWriteInvoice_(cust, lines, opts) {
   opts = opts || {};
-  var inv = { invoiceId: memNextInvoiceId_(), customerId: cust.customerId, membership: true, membershipCancellation: !!opts.cancellation,
-    date: opts.date || memTodayISO_(), dueDate: opts.due || opts.date || memTodayISO_(), po: '', amountPaid: 0, lineItems: lines };
-  writeRecord_('invoices', inv);
+  var inv = { invoiceId: memNextInvId_(), customerId: cust.customerId, membership: true, membershipCancellation: !!opts.cancellation,
+    date: opts.date || todayIso_(), dueDate: opts.due || opts.date || todayIso_(), po: '', amountPaid: 0, lineItems: lines };
+  var lock = tryLock_(20000); if (!lock) return null;
+  try { writeRecord_('invoices', inv); } finally { lock.releaseLock(); }
   return inv;
 }
-// Charge an invoice's saved card by reusing the deployed action's internal handler.
-function CHARGE_INVOICE_(invoiceId, amountCents, role) {
-  return stripeChargeInvoice_({ invoiceId: invoiceId, amountCents: amountCents }, role || 'Owner');   // RECONCILE: real handler name/shape
+function memPatchCustomer_(customerId, patch) {
+  var lock = tryLock_(20000); if (!lock) return null;
+  try { var c = readRecord_('customers', customerId); if (!c) return null; for (var k in patch) { if (patch[k] === undefined) delete c[k]; else c[k] = patch[k]; } writeRecord_('customers', c); return c; }
+  finally { lock.releaseLock(); }
+}
+function memLedger_(invoiceId, customerId, cents, stripeId, role, ev) {
+  try { appendLedger_([new Date().toISOString(), invoiceId || '', customerId, cents || 0, stripeId || '', role, ev]); } catch (e) {}
 }
 
-// ── (1) THE DAILY RECURRING CRON (spec §5) ─────────────────────────────────
-// Find members whose Paid-Until has arrived (and aren't prepaid), auto-charge the cycle,
-// advance Paid-Until; on decline open the 7-day grace, and on grace-expiry lapse them.
-function membershipBillingCron() {
-  var lock = LockService.getScriptLock(); lock.waitLock(30000);
-  try {
-    var today = memTodayISO_(), cfg = membershipCfg_(), customers = allRecords_('customers') || [];
-    for (var i = 0; i < customers.length; i++) {
-      var c = customers[i];
-      if (!memIsMemberType_(c.accountType) || c.prepaid) continue;
-      // PAST DUE in grace → retry; grace expired → lapse
-      if (c.graceUntil && c.graceUntil >= today) continue;                 // still inside grace; a later run retries
-      if (c.graceUntil && c.graceUntil < today) { membershipLapse_(c); continue; }
-      if (!c.paidUntil || c.paidUntil > today) continue;                   // not due yet
-      // Term complete? (Monthly reaching commitmentEnd) → autoRenew rule
-      if (c.commitmentEnd && c.paidUntil >= c.commitmentEnd) {
-        if (!c.autoRenew) { c.paidCadence = c.paidCadence; writeRecord_('customers', c); continue; }   // completed; stop billing (stays member until paidUntil)
-        c.commitmentStart = today; c.commitmentEnd = memAddMonthsISO_(today, MEMBERSHIP_TERM_MONTHS);   // fresh 12-mo cycle
-      }
-      var plan = (c.paidCadence === 'Yearly') ? 'Yearly' : 'Monthly';
-      var built = memFeeLines_(plan, c.addOns || {}, cfg);
-      var inv = memCreateInvoice_(c, built.lines, { date: today, due: today });
-      var res = CHARGE_INVOICE_(inv.invoiceId, Math.round(built.fee.total * 100), 'Owner');
-      if (res && res.ok && (res.status === 'succeeded' || res.alreadyPaid)) {
-        c.paidUntil = memAddMonthsISO_(c.paidUntil, plan === 'Yearly' ? 12 : 1);
-        c.graceUntil = '';
-        writeRecord_('customers', c);
-        try { appendLedger_([new Date().toISOString(), inv.invoiceId, c.customerId, Math.round(built.fee.total * 100), '', 'cron', 'membership-cycle']); } catch (e) {}
-      } else {
-        c.graceUntil = memAddMonthsISO_(today, 0); c.graceUntil = Utilities.formatDate(new Date(Date.now() + MEMBERSHIP_GRACE_DAYS * 86400000), 'UTC', 'yyyy-MM-dd');
-        writeRecord_('customers', c);                                       // unpaid invoice stays on the account; Past Due flag derives from graceUntil
-        try { appendLedger_([new Date().toISOString(), inv.invoiceId, c.customerId, 0, '', 'cron', 'membership-decline']); } catch (e) {}
-      }
-    }
-    return { ok: true };
-  } finally { lock.releaseLock(); }
-}
-
-// Grace expired → revert to retail (keep the member accountType but expire Paid-Until so the
-// app derives 'Lapsed'); for a Monthly member mid-commitment, drop a Cancellation Invoice for
-// the remaining term (spec §4). Rental Protection is NOT cleared (never free).
-function membershipLapse_(c) {
-  var today = memTodayISO_(), cfg = membershipCfg_();
-  if (c.paidCadence === 'Monthly' && c.commitmentEnd && !c.prepaid) {
-    var rem = memMonthsRemaining_(c.commitmentEnd);
-    if (rem > 0) {
-      var fee = membershipFee_('Monthly', c.addOns || {}, cfg);
-      memCreateInvoice_(c, [{ kind: 'membership', label: 'Cancellation — ' + rem + ' mo remaining (Membership)', amount: Math.round(fee.subtotal * rem * 100) / 100 }], { cancellation: true, due: c.commitmentEnd });
-    }
-  }
-  var yest = Utilities.formatDate(new Date(Date.now() - 86400000), 'UTC', 'yyyy-MM-dd');
-  c.paidUntil = yest; c.graceUntil = yest; c.prepaid = false;
-  writeRecord_('customers', c);
-  try { appendLedger_([new Date().toISOString(), '', c.customerId, 0, '', 'cron', 'membership-lapse']); } catch (e) {}
-}
-
-// ── (2) CONSOLIDATED SERVER ENDPOINT (for the future website; in-app uses the F5 flow) ──
-// Row-isolation: each action keys strictly off body.customerId — a web caller may only act on
-// the account it authenticated as (enforce that mapping at the web-auth layer, spec §10.6).
+// ── enroll: create the cycle invoice, charge it, set member fields. Active only on a cleared charge. ──
 function membershipEnroll_(body, role) {
   var c = readRecord_('customers', String(body.customerId || '')); if (!c) return { ok: false, error: 'customer-not-found' };
-  var plan = (body.plan === 'Yearly' || body.plan === 'Annual') ? 'Yearly' : 'Monthly';
-  var addOns = body.addOns || {}, cfg = membershipCfg_();
-  var start = String(body.startDate || memTodayISO_());
-  var built = memFeeLines_(plan, addOns, cfg);
-  var inv = memCreateInvoice_(c, built.lines, { date: start, due: start });
-  // set fields but stay Incomplete until the charge clears
-  c.accountType = 'Member Incomplete'; c.paidCadence = plan; c.commitmentStart = start; c.commitmentEnd = memAddMonthsISO_(start, MEMBERSHIP_TERM_MONTHS);
-  c.autoRenew = !!body.autoRenew; c.addOns = { transport: !!addOns.transport, protection: !!addOns.protection };
-  if (addOns.transport) c.unlimitedTransport = true; if (addOns.protection) c.rentalProtection = true;
-  c.prepaid = false; c.graceUntil = ''; writeRecord_('customers', c);
-  var res = CHARGE_INVOICE_(inv.invoiceId, Math.round(built.fee.total * 100), role);
+  var plan = memIsAnnual_(body.plan) ? 'Yearly' : 'Monthly';
+  var addOns = body.addOns || {}, p = memPricing_(), start = String(body.startDate || todayIso_());
+  var built = memFeeLines_(plan, addOns, p);
+  var inv = memWriteInvoice_(c, built.lines, { date: start, due: start }); if (!inv) return { ok: false, error: 'busy' };
+  // fields, still Member Incomplete until the charge clears
+  memPatchCustomer_(c.customerId, { accountType: 'Member Incomplete', paidCadence: plan, commitmentStart: start, commitmentEnd: memAddMonthsIso_(start, MEM_TERM_MONTHS),
+    autoRenew: !!body.autoRenew, addOns: { transport: !!addOns.transport, protection: !!addOns.protection },
+    unlimitedTransport: !!addOns.transport || undefined, rentalProtection: !!addOns.protection || undefined, prepaid: false, graceUntil: undefined });
+  var res = stripeChargeInvoice_({ invoiceId: inv.invoiceId }, role);   // UNLOCKED — charge manages its own lock
   if (res && res.ok && (res.status === 'succeeded' || res.alreadyPaid)) {
-    c.accountType = (c.company && String(c.company).trim()) ? 'Business Member' : 'Non-Business Member';
-    c.paidUntil = memAddMonthsISO_(start, plan === 'Yearly' ? 12 : 1);
-    writeRecord_('customers', c);
-    return { ok: true, status: 'active', invoiceId: inv.invoiceId, paidUntil: c.paidUntil };
+    var c2 = memPatchCustomer_(c.customerId, { accountType: memMemberAccountType_(c), paidUntil: memAddMonthsIso_(start, plan === 'Yearly' ? 12 : 1) });
+    memLedger_(inv.invoiceId, c.customerId, Math.round(built.fee.total * 100), c.stripeId, role, 'membership-enroll');
+    return { ok: true, status: 'active', invoiceId: inv.invoiceId, paidUntil: c2 && c2.paidUntil };
   }
   return { ok: true, status: 'incomplete', invoiceId: inv.invoiceId, charge: res };   // declined → stays Member Incomplete
 }
+
+// ── cancel: revert to retail (expire paid-through → Lapsed) + Cancellation Invoice for a Monthly mid-term. ──
 function membershipCancel_(body, role) {
   var c = readRecord_('customers', String(body.customerId || '')); if (!c) return { ok: false, error: 'customer-not-found' };
   if (!memIsMemberType_(c.accountType)) return { ok: false, error: 'not-a-member' };
-  membershipLapse_(c);
-  return { ok: true, status: 'lapsed' };
+  var cxlId = '';
+  if (c.paidCadence === 'Monthly' && c.commitmentEnd && !c.prepaid) {
+    var rem = memMonthsRemaining_(c.commitmentEnd);
+    if (rem > 0) { var fee = memFee_('Monthly', c.addOns || {}, memPricing_());
+      var cxl = memWriteInvoice_(c, [{ kind: 'membership', ref: '', lid: memLid_(), label: 'Cancellation — ' + rem + ' mo remaining (Membership)', amount: Math.round(fee.subtotal * rem * 100) / 100 }], { cancellation: true, due: c.commitmentEnd });
+      cxlId = cxl ? cxl.invoiceId : ''; }
+  }
+  memPatchCustomer_(c.customerId, { paidUntil: memYestIso_(), graceUntil: memYestIso_(), prepaid: false });
+  memLedger_(cxlId, c.customerId, 0, c.stripeId, role, 'membership-cancel');
+  return { ok: true, status: 'lapsed', cancellationInvoiceId: cxlId };
 }
+
+// ── reactivate: pay the Cancellation Invoice in full → reopen PREPAID through the term. ──
 function membershipReactivate_(body, role) {
   var c = readRecord_('customers', String(body.customerId || '')); if (!c) return { ok: false, error: 'customer-not-found' };
-  var invs = (allRecords_('invoices') || []).filter(function (x) { return x.membershipCancellation && x.customerId === c.customerId; });
-  var cxl = null; for (var i = 0; i < invs.length; i++) { if (computeInvoiceCents_(invs[i]).balanceCents > 0) { cxl = invs[i]; break; } }
-  if (!cxl) return { ok: false, error: 'no-cancellation-invoice' };
-  var res = CHARGE_INVOICE_(cxl.invoiceId, computeInvoiceCents_(cxl).balanceCents, role);
+  var cxlId = String(body.invoiceId || ''); if (!cxlId) return { ok: false, error: 'no-cancellation-invoice' };
+  var res = stripeChargeInvoice_({ invoiceId: cxlId }, role);
   if (res && res.ok && (res.status === 'succeeded' || res.alreadyPaid)) {
-    c.accountType = (c.company && String(c.company).trim()) ? 'Business Member' : 'Non-Business Member';
-    c.paidUntil = c.commitmentEnd || memAddMonthsISO_(memTodayISO_(), MEMBERSHIP_TERM_MONTHS);
-    c.prepaid = true; c.graceUntil = ''; writeRecord_('customers', c);
-    return { ok: true, status: 'active', prepaidThrough: c.paidUntil };
+    var c2 = memPatchCustomer_(c.customerId, { accountType: memMemberAccountType_(c), paidUntil: c.commitmentEnd || memAddMonthsIso_(todayIso_(), MEM_TERM_MONTHS), prepaid: true, graceUntil: undefined });
+    memLedger_(cxlId, c.customerId, 0, c.stripeId, role, 'membership-reactivate');
+    return { ok: true, status: 'active', prepaidThrough: c2 && c2.paidUntil };
   }
   return { ok: false, status: 'declined', charge: res };
 }
+
+// ── DAILY CRON: charge each due app-driven member's cycle; decline → 7-day grace; grace expiry → lapse. ──
+function membershipBillingCron() {
+  var s = ss().getSheetByName('customers'); if (!s) return;
+  var last = s.getLastRow(); if (last < 2) return;
+  var vals = s.getRange(2, 2, last - 1, 1).getValues(), ids = [];
+  for (var i = 0; i < vals.length; i++) {
+    var c0 = null; try { c0 = JSON.parse(vals[i][0]); } catch (e) { continue; }
+    if (c0 && memIsMemberType_(c0.accountType) && c0.paidCadence && !c0.stripeSubId) ids.push(c0.customerId);   // app-driven members only
+  }
+  var today = todayIso_();
+  for (var j = 0; j < ids.length; j++) {
+    try {
+      var c = readRecord_('customers', ids[j]); if (!c || !memIsMemberType_(c.accountType) || c.stripeSubId || c.prepaid) continue;
+      if (c.graceUntil && c.graceUntil >= today) continue;                      // still inside grace — a later run retries
+      if (c.graceUntil && c.graceUntil < today) { memLapse_(c); continue; }     // grace expired → lapse
+      if (!c.paidUntil || c.paidUntil > today) continue;                        // not due yet
+      var plan = (c.paidCadence === 'Yearly') ? 'Yearly' : 'Monthly';
+      if (c.commitmentEnd && c.paidUntil >= c.commitmentEnd) {                  // term complete
+        if (!c.autoRenew) continue;                                            // completed; stops billing (member until paidUntil)
+        memPatchCustomer_(c.customerId, { commitmentStart: today, commitmentEnd: memAddMonthsIso_(today, MEM_TERM_MONTHS) });
+        c = readRecord_('customers', ids[j]);
+      }
+      var built = memFeeLines_(plan, c.addOns || {}, memPricing_());
+      var inv = memWriteInvoice_(c, built.lines, { date: today, due: today }); if (!inv) continue;
+      var res = stripeChargeInvoice_({ invoiceId: inv.invoiceId }, 'Owner');    // UNLOCKED
+      if (res && res.ok && (res.status === 'succeeded' || res.alreadyPaid)) {
+        var cur = readRecord_('customers', ids[j]);
+        memPatchCustomer_(ids[j], { paidUntil: memAddMonthsIso_(cur.paidUntil, plan === 'Yearly' ? 12 : 1), graceUntil: undefined });
+        memLedger_(inv.invoiceId, ids[j], Math.round(built.fee.total * 100), c.stripeId, 'cron', 'membership-cycle');
+      } else {
+        memPatchCustomer_(ids[j], { graceUntil: Utilities.formatDate(new Date(Date.now() + MEM_GRACE_DAYS * 86400000), 'UTC', 'yyyy-MM-dd') });
+        memLedger_(inv.invoiceId, ids[j], 0, c.stripeId, 'cron', 'membership-decline');
+      }
+    } catch (e) { try { console.error('membershipBillingCron ' + ids[j] + ': ' + (e && e.stack ? e.stack : e)); } catch (e2) {} }
+  }
+}
+function memLapse_(c) {
+  var cxlId = '';
+  if (c.paidCadence === 'Monthly' && c.commitmentEnd && !c.prepaid) {
+    var rem = memMonthsRemaining_(c.commitmentEnd);
+    if (rem > 0) { var fee = memFee_('Monthly', c.addOns || {}, memPricing_());
+      var cxl = memWriteInvoice_(c, [{ kind: 'membership', ref: '', lid: memLid_(), label: 'Cancellation — ' + rem + ' mo remaining (Membership)', amount: Math.round(fee.subtotal * rem * 100) / 100 }], { cancellation: true, due: c.commitmentEnd });
+      cxlId = cxl ? cxl.invoiceId : ''; }
+  }
+  memPatchCustomer_(c.customerId, { paidUntil: memYestIso_(), graceUntil: memYestIso_(), prepaid: false });
+  memLedger_(cxlId, c.customerId, 0, c.stripeId, 'cron', 'membership-lapse');
+}
+// Install ONCE from the Apps Script editor (Run → installMembershipBillingCron_):
+function installMembershipBillingCron_() { ScriptApp.newTrigger('membershipBillingCron').timeBased().everyDays(1).atHour(3).create(); }
