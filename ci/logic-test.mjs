@@ -698,6 +698,24 @@ try {
       T.IDX.customer.delete('C-PL'); T.IDX.unit.delete('U-PL'); T.IDX.unit.delete('U-PL2'); T.IDX.rental.delete('R-PL'); T.IDX.invoice.delete('I-PL');
     }
 
+    // === F7 — membership economics (spec §7): member rev vs retail counterfactual, derived discount/net ===
+    {
+      const cat = T.DATA.categories.find((k) => k.memberDaily > 0 && k.rate1Day > k.memberDaily);
+      const u = { unitId: 'U-EC', categoryId: cat.categoryId, name: 'EC' };
+      const cust = { customerId: 'C-EC', accountType: 'Business Member', paidUntil: '2099-01-01', paidFees: 1200 };
+      const r = { rentalId: 'R-EC', customerId: 'C-EC', status: 'Reserved', startDate: '2099-06-01', endDate: '2099-06-04', units: [{ unitId: 'U-EC' }] };
+      T.IDX.customer.set('C-EC', cust); T.IDX.unit.set('U-EC', u); T.IDX.rental.set('R-EC', r); T.DATA.rentals.push(r);
+      const e = T.membershipEconomics(cust);
+      const days = 3;
+      ok(e.memberRev === days * cat.memberDaily, `economics: member-rate revenue = ${days}×${cat.memberDaily} = ${e.memberRev}`);
+      ok(e.retailRev > e.memberRev, `economics: retail counterfactual ${e.retailRev} > member ${e.memberRev}`);
+      ok(e.discount === Math.round((e.retailRev - e.memberRev) * 100) / 100 && e.discount > 0, `economics: member discount = retail − member = ${e.discount}`);
+      ok(e.feeRevenue === 1200, 'economics: fee revenue falls back to paidFees when no membership invoices exist');
+      ok(e.net === Math.round((e.feeRevenue - e.discount) * 100) / 100, `economics: net program contribution = fees − discount = ${e.net}`);
+      const idx = T.DATA.rentals.indexOf(r); if (idx >= 0) T.DATA.rentals.splice(idx, 1);
+      T.IDX.customer.delete('C-EC'); T.IDX.unit.delete('U-EC'); T.IDX.rental.delete('R-EC');
+    }
+
     return out;
   });
 

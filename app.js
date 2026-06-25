@@ -2874,6 +2874,82 @@ function rentalProtectionAmount(r) {
   const base = rentalLineItems(r).reduce((a, li) => a + (Number(li.amount) || 0), 0);
   return Math.round(base * rentalProtectionRate() * 100) / 100;
 }
+/* ── Membership economics (F7, spec §7) — per-customer, internal-only ──────────────
+   Fee revenue (paid membership invoices, falling back to the legacy paidFees field),
+   member-rate rental revenue (actual) vs the equipment-rate-only RETAIL counterfactual
+   (what a non-member would have paid), and the derived member discount + net program
+   contribution. The counterfactual is derived on the fly from rentalPrice's retail
+   branch — nothing extra is stored. */
+function membershipFeeRevenue(c) {
+  let sum = 0, any = false;
+  for (const inv of DATA.invoices) { if (inv.membership && inv.customerId === c.customerId) { sum += Number(inv.amountPaid) || 0; any = true; } }
+  return any ? sum : (Number(c.paidFees) || 0);
+}
+function membershipEconomics(c) {
+  if (!c) return null;
+  const r2 = (n) => Math.round(n * 100) / 100;
+  let memberRev = 0, retailRev = 0;
+  for (const r of DATA.rentals) {
+    if (r.customerId !== c.customerId) continue;
+    for (const eu of rentalUnits(r)) {
+      if (unitVoided(r, eu)) continue;
+      const u = IDX.unit.get(eu.unitId); if (!u) continue;
+      const cat = IDX.category.get(u.categoryId); if (!cat) continue;
+      const s = parseISO(r.startDate), e = parseISO(r.endDate); if (!s || !e) continue;
+      const days = Math.max(1, dayDiff(s, e));
+      memberRev += days * (cat.memberDaily || 0);                                                   // member-rate equipment revenue
+      const retail = rentalPrice({ categoryId: u.categoryId, startDate: r.startDate, endDate: r.endDate, customerId: '__retail__' });   // forced non-member → retail tiers
+      retailRev += retail ? retail.price : 0;
+    }
+  }
+  const feeRevenue = r2(membershipFeeRevenue(c));
+  const discount = r2(retailRev - memberRev);                                                       // what the member rate gave away on equipment
+  return { feeRevenue, memberRev: r2(memberRev), retailRev: r2(retailRev), discount, net: r2(feeRevenue - discount) };
+}
+function membershipEconomicsHtml(c) {
+  const e = membershipEconomics(c);
+  if (!e || (!e.feeRevenue && !e.memberRev && !e.retailRev)) return '';
+  return `<div class="mem-econ">
+    ${kv(money(e.feeRevenue), { sfx: 'membership fees', derived: true })}
+    ${kv(money(e.memberRev), { sfx: 'member-rate rentals', derived: true })}
+    ${kv(money(e.retailRev), { sfx: 'retail equivalent', derived: true })}
+    ${kv(money(e.discount), { sfx: 'member discount', derived: true })}
+    ${kv(money(e.net), { sfx: 'net program', derived: true })}
+  </div>`;
+}
+// The outstanding Cancellation Invoice for a lapsed/cancelled Monthly member (spec §4), if any.
+function membershipCancellationInvoice(c) {
+  if (!c) return null;
+  return DATA.invoices.find((inv) => inv.membershipCancellation && inv.customerId === c.customerId && invoiceTotals(inv).balance > 0.005) || null;
+}
+/* ── Membership section (F6) — lifecycle state + actions, in the yard data-plate language ── */
+function membershipSectionHtml(c) {
+  const status = membershipStatus(c);
+  const isMem = status === 'Active' || status === 'Past Due';
+  const yrFull = (iso) => `${fmtShortDate(iso)}, ${parseISO(iso).getFullYear()}`;
+  const stageSet = !!(c.membershipStage && c.membershipStage !== 'N/A');
+  const stateBadge = isMem
+    ? badge(status === 'Past Due' ? 'Past Due' : 'Active Member', status === 'Past Due' ? 'yellow' : 'green')
+    : status === 'Lapsed' ? badge('Lapsed', 'red')
+      : status === 'Incomplete' ? badge('Member Incomplete', 'yellow') : '';
+  const graceN = (status === 'Past Due' && c.graceUntil) ? dayDiff(TODAY, parseISO(c.graceUntil)) : null;   // days left in the 7-day grace
+  const graceFlag = (graceN != null && graceN >= 0) ? kvPills(badge(`⚠ Canceled in ${graceN} day${graceN === 1 ? '' : 's'}`, 'red')) : '';
+  const paidUntil = (isMem && c.paidUntil) ? kv(yrFull(c.paidUntil), { sfx: c.prepaid ? 'prepaid through' : 'paid until' }) : '';
+  const planBadges = c.paidCadence ? kvPills(`${badge('Paid ' + c.paidCadence, 'green')}${c.unlimitedTransport ? badge('Unlimited Transport', 'purple') : ''}${c.rentalProtection ? badge('Protected', 'blue') : ''}${c.autoRenew ? badge('Auto-Renew', 'navy') : ''}`) : '';
+  // F5 adds the Enroll / Cancel / Pay-Cancellation actions + their dialog; this commit
+  // ships the lifecycle display + economics with the already-wired Print Agreement.
+  const printBtn = stageSet ? actionPill('commit', 'Print Agreement', { js: 'js-print-magreement', h: 26, data: { rec: c.customerId } }) : '';
+  const actions = [printBtn].filter(Boolean).join('');
+  return `<div class="section"><h4>Membership</h4><div class="fieldstack centered">
+    ${kvPills(funnelPill(c.customerId, 'membership', c.membershipStage || 'N/A'))}
+    ${stateBadge ? kvPills(stateBadge) : ''}
+    ${graceFlag}
+    ${paidUntil}
+    ${planBadges}
+    ${membershipEconomicsHtml(c)}
+    ${actions ? `<div class="kv pillrow">${actions}</div>` : ''}
+  </div></div>`;
+}
 // System-wide ceiling on customer Net-day terms (Settings → Company). Caps every customer's net days.
 const companyMaxNetDays = () => { const n = Number(companyCfg().maxNetDays); return n >= 0 && isFinite(n) ? n : COMPANY_DEFAULTS.maxNetDays; };
 // Normalize a raw Net-days draft value → an integer 0..max, or undefined when blank.
@@ -5535,14 +5611,7 @@ const DETAIL = {
       <div class="kv pillrow">${intCats}${addBtn('Category', { link: true, js: 'js-addcat', h: 26, data: { rec: c.customerId } })}</div>
     </div></div>`;
     // #293 — once a membership stage is set, offer a printable filled-in agreement (handout/PDF).
-    const memberStageSet = !!(c.membershipStage && c.membershipStage !== 'N/A');
-    const membership = `<div class="section"><h4>Membership</h4><div class="fieldstack centered">
-      ${kvPills(funnelPill(c.customerId, 'membership', c.membershipStage || 'N/A'))}
-      ${isMember && c.paidUntil ? kv(yr(c.paidUntil), { sfx: 'paid until' }) : ''}
-      ${c.paidCadence ? kvPills(`${badge('Paid ' + c.paidCadence, 'green')}${c.unlimitedTransport ? badge('Unlimited Transport', 'purple') : ''}`) : ''}
-      ${c.paidFees ? kv(money(c.paidFees), { sfx: 'paid fees' }) : ''}
-      ${memberStageSet ? `<div class="kv pillrow">${actionPill('commit', 'Print Agreement', { js: 'js-print-magreement', h: 26, data: { rec: c.customerId } })}</div>` : ''}
-    </div></div>`;
+    const membership = membershipSectionHtml(c);   // F6/F7 — lifecycle state, economics + actions
     /* §12.1 ACTION BOARD v4 (Jac 2026-06-12): header row = "Actions" label +
        +Log Actions · +Schedule Actions + "Schedule" label; under them, TWO
        columns — logged actions LEFT, scheduled RIGHT. No empty-state text;
@@ -15071,7 +15140,7 @@ function exposeTestApi() {
       latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore, wranglerRailLoad, wrOffloadChatImages, wrEvictChatBlobs, driveViewUrl, mergeWranglerRails,
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
-      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, setFunnelStage, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, setRole: (r) => { currentRole = r || ''; render(); },
+      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, setFunnelStage, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipSectionHtml, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, setRole: (r) => { currentRole = r || ''; render(); },
       openCustomerForm, renderOverlay, render, cardComplete, cardCaptureState, cardHasSelfie, cardHasSignature, captureSelfie, captureSignature, __state: state };   // UI drivers for headless screenshot/e2e tests
 
   } catch (e) { /* no window (non-browser) */ }
