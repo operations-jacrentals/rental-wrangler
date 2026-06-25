@@ -3818,6 +3818,19 @@ const unitsVisible = (rows, cs) => {
   if (f === 'soldInactive') return rows.filter(isSoldInactive); // only Sold/Inactive
   return rows.filter((u) => u.fleetStatus === 'Active');        // default: Active only (For Sale/Sold/Inactive hidden)
 };
+// Invoice Payment-Method filter (#337) — classify a recorded payment method into the
+// five filter buckets. Unpaid invoices have no recorded method ('' → excluded by any
+// specific filter); anything set but not cash/card/check falls into 'other'.
+const INV_METHOD_OPTS = [['all', 'All'], ['cash', 'Cash'], ['card', 'Card'], ['check', 'Check'], ['other', 'Other']];
+const INV_METHOD_LABEL = Object.fromEntries(INV_METHOD_OPTS);
+function invMethodClass(inv) {
+  const m = (inv.paymentMethod || '').trim().toLowerCase();
+  if (!m) return '';
+  if (/^cash$/.test(m)) return 'cash';
+  if (/^card/.test(m)) return 'card';
+  if (/^check/.test(m)) return 'check';
+  return 'other';
+}
 function rowViz(card, rec) {
   // §10 availability tint takes precedence while a rental window is in scope
   if (availWin && availUnavailable(card, rec)) return `<div class="row-viz" style="background:var(--red-bg)"></div>`;
@@ -6059,6 +6072,12 @@ function listView(cardDef, session) {
     chip.innerHTML = `<span class="muted">${n === 1 ? 'Linked unit on' : `${n} linked units on`} invoice</span> <b>${esc(invoiceShort(state.unitPick.from))}</b> <span class="muted">— open one to add a work order</span> <button class="x js-clear-unitpick" data-tip="Clear filter">${I.x}</button>`;
     wrap.appendChild(chip);
   }
+  // Invoices payment-method filter active → clearable chip as the closed-menu signal (#337)
+  if (card === 'invoices' && cs.payMethod && cs.payMethod !== 'all') {
+    const chip = el('div', 'fleet-chip');
+    chip.innerHTML = `<span class="muted">Payment method</span> <b>${esc(INV_METHOD_LABEL[cs.payMethod] || cs.payMethod)}</b> <button class="x js-clear-paymethod" data-tip="Clear filter">${I.x}</button>`;
+    wrap.appendChild(chip);
+  }
 
   let rows = listFor(card, session);
   if (card === 'units') rows = unitsVisible(rows, cs);   // default: Active only — hide non-Active fleet (or reveal via the sort) (#2/#34)
@@ -6071,6 +6090,7 @@ function listView(cardDef, session) {
     const reveal = cs && cs.sort && (cs.sort.field === 'allFleet' || cs.sort.field === 'soldInactive');
     if (!reveal) rows = rows.filter((u) => u.fleetStatus === 'Active');
   }
+  if (card === 'invoices' && cs.payMethod && cs.payMethod !== 'all') rows = rows.filter((i) => invMethodClass(i) === cs.payMethod);   // §337 stacks with search/status/sort
   if (cs.search.trim() || (cs.filterTerms || []).length) { rows = rows.filter((rec) => rowMatches(card, rec, cs.search, cs.filterTerms)); }
   rows = sortRows(card, rows, cs.sort);
   // §10 — while a rental window is in scope, order Units: available+Ready, available+Not
@@ -10222,6 +10242,11 @@ function openViewMenu(card, anchorEl) {
   }
   html += `<div class="dd-sec">Sort</div>`;
   html += SORT_FIELDS[card].map((f) => `<button class="dd-item js-sortfield${f.field === cs.sort.field ? ' on' : ''}" data-card="${card}" data-field="${f.field}">${esc(f.label)}<span class="tick">✓</span></button>`).join('');
+  if (card === 'invoices') {   // §337 — payment-method filter, stacks with the sort/search above
+    const cur = cs.payMethod || 'all';
+    html += `<div class="dd-sec">Payment Method</div>`;
+    html += INV_METHOD_OPTS.map(([val, lbl]) => `<button class="dd-item js-paymethod${val === cur ? ' on' : ''}" data-method="${val}">${esc(lbl)}<span class="tick">✓</span></button>`).join('');
+  }
   openDropdown(anchorEl, html, { align: 'right' });
 }
 /** Clicked card → orange border (§0.1 visual feedback; not an anchor). */
@@ -11274,6 +11299,7 @@ function onClick(e) {
     return;
   }
   if (closest('.js-clear-unitpick')) { e.stopPropagation(); state.unitPick = null; render(); return; }
+  if (closest('.js-clear-paymethod')) { e.stopPropagation(); activeSession().cards.invoices.payMethod = 'all'; render(); return; }   // §337
   if (closest('.js-addcat')) { const b = closest('.js-addcat'); e.stopPropagation(); return openIntCatDropdown(b.dataset.rec, b); }
   if (closest('.js-setintcat')) { const b = closest('.js-setintcat'); e.stopPropagation(); return addInterestedCategory(b.dataset.rec, b.dataset.val); }
   if (closest('.js-act-open')) { const b = closest('.js-act-open'); e.stopPropagation(); state.actMode = b.dataset.val; state.actOpen = b.dataset.rec; const rec = b.dataset.rec; render(); document.querySelector(`.js-act-in[data-rec="${rec}"]`)?.focus(); return; }
@@ -11436,6 +11462,7 @@ function onClick(e) {
   if (closest('.js-applyview')) { const b = closest('.js-applyview'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return applyView(b.dataset.card, loadViews(b.dataset.card)[Number(b.dataset.idx)]); }
   if (closest('.js-addview')) { if (!adminUnlocked()) { document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return; } const b = closest('.js-addview'); const card = b.dataset.card; const cs = activeSession().cards[card]; const search = (cs.search || '').trim(); const terms = (cs.filterTerms || []).map((t) => ({ ...t })); const suggested = viewLabel(search, terms); const name = (typeof prompt === 'function' ? prompt('Name this view:', suggested) : suggested); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); if (name && name.trim()) { const views = loadViews(card); if (!views.some((v) => v.name.toLowerCase() === name.trim().toLowerCase())) { views.push({ name: name.trim(), search, terms }); saveViews(card, views); } } render(); return; }
   if (closest('.js-sortfield')) { const b = closest('.js-sortfield'); const cs = activeSession().cards[b.dataset.card]; const f = SORT_FIELDS[b.dataset.card].find((x) => x.field === b.dataset.field); if (f) { cs.sort = { ...f }; saveSort(b.dataset.card, cs.sort); } document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); render(); return; }
+  if (closest('.js-paymethod')) { const cs = activeSession().cards.invoices; cs.payMethod = closest('.js-paymethod').dataset.method; document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); render(); return; }   // §337
   if (closest('.js-sortdir')) { const card = closest('.js-sortdir').dataset.card; const cs = activeSession().cards[card]; cs.sort.dir = cs.sort.dir === 'asc' ? 'desc' : 'asc'; saveSort(card, cs.sort); render(); return; }
 
   // inline edit (click a value → input)
