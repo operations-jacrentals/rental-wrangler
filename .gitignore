@@ -36,3 +36,7 @@ dev-version.txt
 
 # Backend Apps Script — worked on here, deployed via copy/paste; never published by Pages
 backend/
+
+.gate-smoke.mjs
+.gate-logic.mjs
+.gate-render.mjs

@@ -837,6 +837,9 @@ select.lf-in { appearance: none; cursor: pointer; }
 /* §5.5 Views menu: section headers + a per-view delete ✕ */
 .dropdown-menu .dd-sec { font-family: 'Saira Condensed', system-ui, sans-serif; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.1px; color: var(--txt-3); padding: 8px 10px 3px; }
 .dropdown-menu .dd-item.js-applyview.on .tick { margin-left: 0; }
+/* §313 — Close-all confirm popover: the two action pills sit on one calm row */
+.dropdown-menu .dd-confirm { display: flex; gap: 8px; padding: 6px 10px 8px; }
+.closeall-slot { flex-shrink: 0; display: inline-flex; align-items: center; }
 .dropdown-menu .dd-item .x { margin-left: auto; opacity: .45; font-size: 12px; padding: 0 2px; }
 .dropdown-menu .dd-item .x:hover { opacity: 1; color: var(--red); }
 /* ── Gate TIMELINE dropdown (the four ordered status gates) — steel panel + vertical
@@ -848,6 +851,10 @@ select.lf-in { appearance: none; cursor: pointer; }
 .gt-row { position: relative; display: flex; align-items: center; gap: 11px; width: 100%; min-height: 40px; padding: 0 4px; text-align: left; background: none; border: 0; cursor: pointer; color: var(--txt-2); }
 .gt-row:hover { background: rgba(255,255,255,.04); border-radius: 8px; }
 .gt-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 8px; }
+/* F3 — a locked (auto-set, non-clickable) stage row: no hover/pointer, slightly dimmed.
+   Membership's terminal 'Signed' is reached by signing the agreement, not by tapping. */
+.gt-row.gt-lock { cursor: default; opacity: .82; }
+.gt-row.gt-lock:hover { background: none; }
 .gt-line { position: absolute; left: 17px; top: 50%; height: 100%; width: 2px; }
 .gt-line.solid { background: #2f6b3e; }
 .gt-line.grad { background: linear-gradient(180deg, #2f6b3e, var(--accent)); }
@@ -1552,6 +1559,19 @@ select.inline-input:focus-visible { outline: 2px solid var(--accent); outline-of
 .set-pane-head p { margin: 0; font-size: 12px; line-height: 1.5; color: var(--txt-2); max-width: 52ch; }
 .set-pane-head em { font-style: normal; font-family: ui-monospace, monospace; color: var(--txt); }
 .set-note { font-size: 10.5px; color: var(--txt-3); margin: 4px 0 0; }
+/* Membership pricing group — saddle-stitch divider (ranch seasoning) sets it apart;
+   dollar fields grid two-up to keep the Company pane compact. */
+.co-memprice { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; margin-top: 14px; padding-top: 12px; border-top: 1.5px dashed var(--tan, #c2925a); }
+.co-memprice > .kpi-cap { grid-column: 1 / -1; letter-spacing: 2px; }
+/* F7 — membership economics: derived stat rows under a saddle-stitch divider (ranch seasoning). */
+.mem-econ { width: 100%; margin-top: 8px; padding-top: 8px; border-top: 1.5px dashed var(--tan, #c2925a); display: flex; flex-direction: column; gap: 2px; }
+/* F5 — membership enrollment dialog: label + control rows, then a stamped charge tote. */
+.me-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 0; border-bottom: 1px solid var(--line); }
+.me-row > .kpi-cap { color: var(--txt-2); letter-spacing: 1.4px; }
+.me-tote { margin-top: 12px; padding: 11px 13px; background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--chip-radius, 12px); display: flex; flex-direction: column; gap: 4px; }
+.me-line { display: flex; align-items: baseline; justify-content: space-between; font-size: 13px; color: var(--txt-2); }
+.me-line.me-total { margin-top: 5px; padding-top: 7px; border-top: 1.5px dashed var(--tan, #c2925a); font-family: 'Saira Condensed', sans-serif; text-transform: uppercase; letter-spacing: 1.5px; color: var(--txt); }
+.me-line.me-total b { color: var(--accent); font-size: 16px; }
 .set-err { align-self: center; color: var(--red); font-size: 12px; font-weight: 600; margin-right: 4px; }
 /* Roles & Logins — passwords masked by default; this toggles reveal (stamped, not a native control). */
 .set-reveal-row { display: flex; justify-content: flex-end; margin: -2px 0 8px; }
