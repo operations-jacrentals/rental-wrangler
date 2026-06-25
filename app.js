@@ -642,7 +642,7 @@ function cardTabBody(c) {
     </div>`;
   }).join('') : '<span class="muted" style="font-size:12px">No cards on file.</span>';
   return `<div class="cards-list">${rows}</div>
-    <div style="margin-top:10px">${addBtn('Card', { link: true, js: 'js-add-card', data: { rec: c.customerId } })}</div>`;
+    ${canMoney() ? `<div style="margin-top:10px">${addBtn('Card', { link: true, js: 'js-add-card', data: { rec: c.customerId } })}</div>` : ''}`;
 }
 function achTabBody(c) {
   const banks = customerBanks(c);
@@ -655,7 +655,8 @@ function achTabBody(c) {
       <button class="x js-bank-remove" data-rec="${c.customerId}" data-bank="${k.id}" data-tip="Remove bank account">${I.x}</button>
     </div>`).join('') : '<span class="muted" style="font-size:12px">No bank accounts on file.</span>';
   return `<div class="cards-list">${rows}</div>
-    ${consent ? `<div style="margin-top:10px">${addBtn('ACH', { link: true, js: 'js-add-ach', data: { rec: c.customerId } })}</div>`
+    ${!canMoney() ? ''
+      : consent ? `<div style="margin-top:10px">${addBtn('ACH', { link: true, js: 'js-add-ach', data: { rec: c.customerId } })}</div>`
               : '<span class="muted" style="font-size:11px">Capture a selfie + signature (Edit account) before adding a bank account.</span>'}`;
 }
 
@@ -8649,7 +8650,7 @@ function buildPopupEl(o, overlay, opts = {}) {
     const railTabs = `<div class="ag-tabs" role="tablist">
       <button type="button" class="ag-tab js-nc-tab${tab === 'account' ? ' on' : ''}" data-tab="account">Account</button>
       ${cards.map((k) => `<button type="button" class="ag-tab js-nc-tab${tab === k.id ? ' on' : ''}" data-tab="${esc(k.id)}"><span class="ag-dot ${{ complete: 'ok', 'in-progress': 'mid', stale: 'bad' }[cardCaptureState(custRec, k)]}"></span>${esc(brandName(k.brand))} ••${esc(k.last4)}</button>`).join('')}
-      ${addBtn('Card', { link: true, js: 'js-add-card', data: { rec: o.editId || '' } })}
+      ${canMoney() ? addBtn('Card', { link: true, js: 'js-add-card', data: { rec: o.editId || '' } }) : ''}
     </div>`;
     const headRail = `${railTabs}<span class="spacer"></span>${isEdit ? `<button class="iconbtn iconbtn-bare js-nc-qr" data-tip="Open on phone">${I.qr}</button>` : ''}`;
     let body;
@@ -11046,6 +11047,7 @@ function onClick(e) {
   if (closest('.js-print-magreement')) { e.stopPropagation(); openMembershipAgreementPdf(closest('.js-print-magreement').dataset.rec); return; }
   if (closest('.js-add-card')) {
     e.stopPropagation();
+    if (!canMoney()) return;   // card-on-file is Office/Owner/Admin only — guards the inline cardSub panel path too
     const rec = closest('.js-add-card').dataset.rec;
     // From the onboarding form: persist the draft (incl. signature/selfie) first, add the card,
     // then RETURN to the form (card now on file) — no save-close-reopen. Elsewhere: normal add.
@@ -12776,8 +12778,8 @@ function friendlyPayErr(r) {
   })[code] || 'Payment failed — try again or use another card.';
 }
 
-async function openAddCard(customerId, opts) { await ensurePubKey(); openOverlay({ kind: 'addCard', customerId, returnTo: (opts && opts.returnTo) || '', invoiceId: (opts && opts.invoiceId) || '' }); }
-async function openAddBank(customerId, opts) { await ensurePubKey(); openOverlay({ kind: 'addAch', customerId, returnTo: (opts && opts.returnTo) || '', invoiceId: (opts && opts.invoiceId) || '' }); }
+async function openAddCard(customerId, opts) { if (!canMoney()) return; await ensurePubKey(); openOverlay({ kind: 'addCard', customerId, returnTo: (opts && opts.returnTo) || '', invoiceId: (opts && opts.invoiceId) || '' }); }   // card-on-file is a money action → Office/Owner/Admin only (roles.md · canMoney)
+async function openAddBank(customerId, opts) { if (!canMoney()) return; await ensurePubKey(); openOverlay({ kind: 'addAch', customerId, returnTo: (opts && opts.returnTo) || '', invoiceId: (opts && opts.invoiceId) || '' }); }   // same gate — bank/ACH on file is the same payment-instrument class
 async function openVerifyBank(customerId, bankId) { await ensurePubKey(); openOverlay({ kind: 'verifyAch', customerId, bankId }); }
 async function openPayInvoice(invoiceId) { await ensurePubKey(); openOverlay({ kind: 'payment', invoiceId, busy: false, error: '' }); }
 
