@@ -2954,9 +2954,13 @@ function membershipSectionHtml(c) {
   const paidUntil = (isMem && c.paidUntil) ? kv(yrFull(c.paidUntil), { sfx: c.prepaid ? 'prepaid through' : 'paid until' }) : '';
   const planBadges = c.paidCadence ? kvPills(`${badge('Paid ' + c.paidCadence, 'green')}${c.unlimitedTransport ? badge('Unlimited Transport', 'purple') : ''}${c.rentalProtection ? badge('Protected', 'blue') : ''}${c.autoRenew ? badge('Auto-Renew', 'navy') : ''}`) : '';
   const cxlInv = membershipCancellationInvoice(c);
-  const enrollBtn = !isMem ? actionPill('commit', status === 'Incomplete' ? 'Complete Enrollment' : 'Saddle Up — Enroll', { js: 'js-mem-enroll', h: 26, data: { rec: c.customerId } }) : '';
-  const cancelBtn = isMem ? actionPill('danger', 'Cancel Membership', { js: 'js-mem-cancel', h: 26, data: { rec: c.customerId } }) : '';
-  const payCxlBtn = cxlInv ? actionPill('money', 'Pay Cancellation ' + money2(invoiceTotals(cxlInv).balance), { js: 'js-mem-paycxl', h: 26, data: { rec: c.customerId } }) : '';
+  // Enroll / Cancel / Pay-Cancellation are MONEY actions → Office/Admin only, same gate as the
+  // invoice Pay/Charge/Refund row (5868) and Add-Card (canMoney). Print Agreement is not a money
+  // action, so it stays visible to every role. (Handlers re-check canMoney() as defence-in-depth.)
+  const mayMoney = canMoney();
+  const enrollBtn = (!isMem && mayMoney) ? actionPill('commit', status === 'Incomplete' ? 'Complete Enrollment' : 'Saddle Up — Enroll', { js: 'js-mem-enroll', h: 26, data: { rec: c.customerId } }) : '';
+  const cancelBtn = (isMem && mayMoney) ? actionPill('danger', 'Cancel Membership', { js: 'js-mem-cancel', h: 26, data: { rec: c.customerId } }) : '';
+  const payCxlBtn = (cxlInv && mayMoney) ? actionPill('money', 'Pay Cancellation ' + money2(invoiceTotals(cxlInv).balance), { js: 'js-mem-paycxl', h: 26, data: { rec: c.customerId } }) : '';
   const printBtn = stageSet ? actionPill('commit', 'Print Agreement', { js: 'js-print-magreement', h: 26, data: { rec: c.customerId } }) : '';
   const actions = [enrollBtn, cancelBtn, payCxlBtn, printBtn].filter(Boolean).join('');
   return `<div class="section"><h4>Membership</h4><div class="fieldstack centered">
@@ -11482,14 +11486,14 @@ function onClick(e) {
   if (closest('.js-view-agreement')) { e.stopPropagation(); const cust = IDX.customer.get(closest('.js-view-agreement').dataset.rec); if (cust) openOverlay({ kind: 'agreement', recId: cust.customerId }); return; }
   if (closest('.js-print-magreement')) { e.stopPropagation(); openMembershipAgreementPdf(closest('.js-print-magreement').dataset.rec); return; }
   // F5 — membership enroll / cancel / reactivate + the enrollment dialog controls
-  if (closest('.js-mem-enroll')) { e.stopPropagation(); return openMembershipEnroll(closest('.js-mem-enroll').dataset.rec); }
-  if (closest('.js-mem-cancel')) { e.stopPropagation(); return membershipCancel(closest('.js-mem-cancel').dataset.rec); }
-  if (closest('.js-mem-paycxl')) { e.stopPropagation(); return membershipReactivate(closest('.js-mem-paycxl').dataset.rec); }
+  if (closest('.js-mem-enroll')) { e.stopPropagation(); if (!canMoney()) { toast('Membership billing is Office/Admin only.'); return; } return openMembershipEnroll(closest('.js-mem-enroll').dataset.rec); }
+  if (closest('.js-mem-cancel')) { e.stopPropagation(); if (!canMoney()) { toast('Membership billing is Office/Admin only.'); return; } return membershipCancel(closest('.js-mem-cancel').dataset.rec); }
+  if (closest('.js-mem-paycxl')) { e.stopPropagation(); if (!canMoney()) { toast('Membership billing is Office/Admin only.'); return; } return membershipReactivate(closest('.js-mem-paycxl').dataset.rec); }
   if (closest('.js-me-plan')) { e.stopPropagation(); const o = state.overlay; if (o) { o.plan = closest('.js-me-plan').dataset.val; renderOverlay(); } return; }
   if (closest('.js-me-transport')) { e.stopPropagation(); const o = state.overlay; if (o) { o.addOns.transport = closest('.js-me-transport').dataset.val === '1'; renderOverlay(); } return; }
   if (closest('.js-me-protection')) { e.stopPropagation(); const o = state.overlay; if (o) { o.addOns.protection = closest('.js-me-protection').dataset.val === '1'; renderOverlay(); } return; }
   if (closest('.js-me-autorenew')) { e.stopPropagation(); const o = state.overlay; if (o) { o.autoRenew = closest('.js-me-autorenew').dataset.val === '1'; renderOverlay(); } return; }
-  if (closest('.js-me-commit')) { e.stopPropagation(); return membershipEnrollCommit(); }
+  if (closest('.js-me-commit')) { e.stopPropagation(); if (!canMoney()) { toast('Membership billing is Office/Admin only.'); return; } return membershipEnrollCommit(); }
   if (closest('.js-add-card')) {
     e.stopPropagation();
     if (!canMoney()) { toast('Cards on file are Office/Admin only.'); return; }   // §14 card-on-file is Office/Admin only — same gate as Pay/Charge/Refund (canMoney)
