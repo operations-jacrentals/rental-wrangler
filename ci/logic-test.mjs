@@ -716,6 +716,39 @@ try {
       T.IDX.customer.delete('C-EC'); T.IDX.unit.delete('U-EC'); T.IDX.rental.delete('R-EC');
     }
 
+    // === F5 — cancel → Cancellation Invoice → reactivate-to-prepaid (spec §4); demo charge ===
+    {
+      ok(T.addMonthsISO('2026-06-25', 1) === '2026-07-25' && T.addMonthsISO('2026-06-25', 12) === '2027-06-25', 'enroll: addMonthsISO advances Paid-Until / commitment by the cadence');
+      const c = { customerId: 'C-CX', accountType: 'Business Member', company: 'Acme', paidCadence: 'Monthly', commitmentStart: '2099-01-01', commitmentEnd: '2099-12-01', paidUntil: '2099-07-01', addOns: { transport: false, protection: false }, cards: [{ id: 'K1', status: 'active', isDefault: true, stripePmId: 'pm_x', brand: 'visa', last4: '4242', expMonth: 12, expYear: 2099 }], activityLog: [] };
+      T.IDX.customer.set('C-CX', c);
+      ok(T.isActiveMember(c) === true, 'cancel: starts as an Active member');
+      T.membershipCancel('C-CX');
+      const cxl = T.membershipCancellationInvoice(c);
+      ok(cxl && cxl.membershipCancellation && T.invoiceTotals(cxl).balance > 0, 'cancel: Monthly mid-commitment drops a Cancellation Invoice for the remaining term');
+      ok(T.membershipStatus(c) === 'Lapsed' && T.isActiveMember(c) === false, 'cancel: reverts to Lapsed → retail pricing (rentalProtection untouched)');
+      await T.membershipReactivate('C-CX');
+      ok(T.membershipStatus(c) === 'Active' && c.prepaid === true && c.paidUntil === c.commitmentEnd, 'reactivate: paying the Cancellation Invoice in full reopens the membership PREPAID through the term');
+      ok(T.invoiceTotals(cxl).balance <= 0.005, 'reactivate: the Cancellation Invoice reads paid in full');
+      T.IDX.customer.delete('C-CX');
+      const ci = T.DATA.invoices.indexOf(cxl); if (ci >= 0) T.DATA.invoices.splice(ci, 1); T.IDX.invoice.delete(cxl.invoiceId);
+    }
+
+    // === F5 — enrollment happy path (demo charge): card on file → Active + paid membership invoice ===
+    {
+      const c = { customerId: 'C-EN', accountType: 'Non-Business', company: '', membershipStage: 'Signed', cards: [{ id: 'K1', status: 'active', isDefault: true, stripePmId: 'pm_y', brand: 'visa', last4: '4242', expMonth: 12, expYear: 2099 }], activityLog: [] };
+      T.IDX.customer.set('C-EN', c);
+      T.openMembershipEnroll('C-EN');
+      T.__state.overlay.plan = 'Monthly'; T.__state.overlay.addOns = { transport: true, protection: true };
+      await T.membershipEnrollCommit();
+      ok(T.membershipStatus(c) === 'Active' && /Member/.test(c.accountType) && c.accountType !== 'Member Incomplete', 'enroll: a cleared charge flips the account to an Active member');
+      const inv = T.DATA.invoices.find((i) => i.membership && i.customerId === 'C-EN');
+      ok(inv && T.invoiceTotals(inv).balance <= 0.005, 'enroll: a PAID membership invoice is created');
+      ok(c.unlimitedTransport === true && c.rentalProtection === true && c.paidCadence === 'Monthly' && c.commitmentEnd, 'enroll: add-ons + cadence + 12-mo commitment set on the account');
+      T.IDX.customer.delete('C-EN');
+      if (inv) { const ix = T.DATA.invoices.indexOf(inv); if (ix >= 0) T.DATA.invoices.splice(ix, 1); T.IDX.invoice.delete(inv.invoiceId); }
+      T.__state.overlay = null;
+    }
+
     return out;
   });
 

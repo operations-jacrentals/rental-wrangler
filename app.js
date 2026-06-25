@@ -2936,10 +2936,12 @@ function membershipSectionHtml(c) {
   const graceFlag = (graceN != null && graceN >= 0) ? kvPills(badge(`⚠ Canceled in ${graceN} day${graceN === 1 ? '' : 's'}`, 'red')) : '';
   const paidUntil = (isMem && c.paidUntil) ? kv(yrFull(c.paidUntil), { sfx: c.prepaid ? 'prepaid through' : 'paid until' }) : '';
   const planBadges = c.paidCadence ? kvPills(`${badge('Paid ' + c.paidCadence, 'green')}${c.unlimitedTransport ? badge('Unlimited Transport', 'purple') : ''}${c.rentalProtection ? badge('Protected', 'blue') : ''}${c.autoRenew ? badge('Auto-Renew', 'navy') : ''}`) : '';
-  // F5 adds the Enroll / Cancel / Pay-Cancellation actions + their dialog; this commit
-  // ships the lifecycle display + economics with the already-wired Print Agreement.
+  const cxlInv = membershipCancellationInvoice(c);
+  const enrollBtn = !isMem ? actionPill('commit', status === 'Incomplete' ? 'Complete Enrollment' : 'Saddle Up — Enroll', { js: 'js-mem-enroll', h: 26, data: { rec: c.customerId } }) : '';
+  const cancelBtn = isMem ? actionPill('danger', 'Cancel Membership', { js: 'js-mem-cancel', h: 26, data: { rec: c.customerId } }) : '';
+  const payCxlBtn = cxlInv ? actionPill('money', 'Pay Cancellation ' + money2(invoiceTotals(cxlInv).balance), { js: 'js-mem-paycxl', h: 26, data: { rec: c.customerId } }) : '';
   const printBtn = stageSet ? actionPill('commit', 'Print Agreement', { js: 'js-print-magreement', h: 26, data: { rec: c.customerId } }) : '';
-  const actions = [printBtn].filter(Boolean).join('');
+  const actions = [enrollBtn, cancelBtn, payCxlBtn, printBtn].filter(Boolean).join('');
   return `<div class="section"><h4>Membership</h4><div class="fieldstack centered">
     ${kvPills(funnelPill(c.customerId, 'membership', c.membershipStage || 'N/A'))}
     ${stateBadge ? kvPills(stateBadge) : ''}
@@ -2949,6 +2951,109 @@ function membershipSectionHtml(c) {
     ${membershipEconomicsHtml(c)}
     ${actions ? `<div class="kv pillrow">${actions}</div>` : ''}
   </div></div>`;
+}
+/* ── F5 — enrollment / cancel / reactivate orchestration ──────────────────────────
+   Reuses the deployed, money-gated stripeChargeInvoice action (same security model as
+   today's rental charges). Enrollment creates the membership invoice + sets the member
+   fields, then charges the saved card; the account only goes ACTIVE on a cleared charge
+   (a decline leaves it Member Incomplete). Cancel reverts to retail and, for a Monthly
+   member mid-commitment, drops a Cancellation Invoice; paying it in full reopens the
+   membership prepaid through the term (spec §4). Rental Protection persists on lapse. */
+const MEMBERSHIP_MONTHS = 12;
+const memberAccountType = (c) => (c.company && c.company.trim()) ? 'Business Member' : 'Non-Business Member';
+const addMonthsISO = (iso, n) => { const d = parseISO(iso) || new Date(); return isoOf(new Date(d.getFullYear(), d.getMonth() + n, d.getDate())); };
+const monthsRemaining = (toISO) => { const a = new Date(), b = parseISO(toISO); if (!b) return 0; return Math.max(0, (b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth())); };
+// Live → real Stripe; demo/offline (no backend password) → simulate a cleared charge so the flow completes locally.
+function membershipChargeResult(invId, amountCents, pick) {
+  const isDemo = (typeof backendPassword === 'undefined' || !backendPassword);
+  if (isDemo) return Promise.resolve({ ok: true, status: 'succeeded', amountPaid: amountCents / 100, fullyPaid: true, paymentMethod: 'Card (demo)', _demo: true });
+  return backendCall('stripeChargeInvoice', { invoiceId: invId, amountCents, paymentMethodId: pick?.stripePmId || undefined });
+}
+function markInvoicePaidLocal(inv, method) { const t = invoiceTotals(inv); inv.amountPaid = t.total; inv.paid = true; inv.paymentMethod = method || 'Card'; inv.paidAt = new Date().toISOString(); reindex('invoices', inv); }
+// Build a membership invoice (kind:'membership' lines so it's identifiable for the §7 economics + revenue rollup).
+function buildMembershipInvoice(c, lines, { cancellation = false, date = TODAY_ISO, due } = {}) {
+  const id = nextInvoiceId();
+  const inv = { invoiceId: id, customerId: c.customerId, membership: true, membershipCancellation: cancellation, date, dueDate: due || date, po: '', amountPaid: 0, lineItems: lines, mock: true };
+  DATA.invoices.push(inv); IDX.invoice.set(id, inv); reindex('invoices', inv);
+  return inv;
+}
+function openMembershipEnroll(custId) {
+  const c = IDX.customer.get(custId); if (!c) return;
+  openOverlay({ kind: 'membershipEnroll', custId, plan: 'Monthly', addOns: { transport: false, protection: !!c.rentalProtection }, autoRenew: false, startDate: TODAY_ISO, busy: false, error: '' });
+}
+async function membershipEnrollCommit() {
+  const o = state.overlay; if (!o || o.kind !== 'membershipEnroll' || o.busy) return;
+  const c = IDX.customer.get(o.custId); if (!c) return;
+  if (!(hasCardOnFile(c) && hasValidCard(c))) { o.error = 'A valid card on file is required to charge the membership.'; renderOverlay(); flashOr('.overlay .js-me-commit', 'Add a card on file first.'); return; }
+  const pricing = membershipPricing();
+  const fee = membershipFee({ plan: o.plan, addOns: o.addOns }, pricing);
+  const start = o.startDate || TODAY_ISO;
+  const lines = [{ kind: 'membership', ref: c.customerId, lid: lineLid(), label: `Membership · ${o.plan} base`, amount: fee.base }];
+  if (fee.transport) lines.push({ kind: 'membership', ref: c.customerId, lid: lineLid(), label: 'Unlimited Transport', amount: fee.transport });
+  if (fee.protection) lines.push({ kind: 'membership', ref: c.customerId, lid: lineLid(), label: `Rental Protection · ${pricing.protectionPct}%`, amount: fee.protection });
+  const inv = buildMembershipInvoice(c, lines, { date: start, due: start });
+  // set the membership fields, but stay Member Incomplete until the charge clears
+  c.accountType = 'Member Incomplete';
+  c.paidCadence = (o.plan === 'Annual' ? 'Yearly' : 'Monthly');
+  c.commitmentStart = start; c.commitmentEnd = addMonthsISO(start, MEMBERSHIP_MONTHS);
+  c.autoRenew = !!o.autoRenew; c.addOns = { transport: !!o.addOns.transport, protection: !!o.addOns.protection };
+  if (o.addOns.transport) c.unlimitedTransport = true;
+  if (o.addOns.protection) c.rentalProtection = true;
+  c.prepaid = false; c.graceUntil = '';
+  reindex('customers', c);
+  o.busy = true; o.error = ''; renderOverlay();
+  try {
+    const r = await membershipChargeResult(inv.invoiceId, Math.round(fee.total * 100), defaultCard(c));
+    if (state.overlay !== o) return;
+    if (r && r.ok && (r.status === 'succeeded' || r.alreadyPaid)) {
+      if (r._demo) markInvoicePaidLocal(inv, 'Card (demo)'); else applyPayment(inv.invoiceId, r);
+      c.accountType = memberAccountType(c);
+      c.paidUntil = addMonthsISO(start, o.plan === 'Annual' ? 12 : 1);
+      reindex('customers', c);
+      logAction(c, `Membership enrolled — ${o.plan}${o.addOns.transport ? ' + Transport' : ''}${o.addOns.protection ? ' + Protection' : ''} (${money(fee.total)})`);
+      closeOverlay(); render(); toast('Membership active — saddle up! ✓'); return;
+    }
+    o.busy = false; o.error = friendlyPayErr(r) || 'Charge declined — the account stays Member Incomplete until payment clears.'; renderOverlay();
+  } catch (e) { if (state.overlay === o) { o.busy = false; o.error = 'Network error — try again.'; renderOverlay(); } }
+}
+function membershipCancel(custId) {
+  const c = IDX.customer.get(custId); if (!c) return;
+  const status = membershipStatus(c);
+  if (status !== 'Active' && status !== 'Past Due') return;
+  const yest = isoOf(new Date(Date.parse(TODAY_ISO) - 86400000));
+  // Monthly mid-commitment → a Cancellation Invoice for the remaining term (Annual is already prepaid).
+  let cxl = null;
+  if (c.paidCadence === 'Monthly' && c.commitmentEnd && !c.prepaid) {
+    const rem = monthsRemaining(c.commitmentEnd);
+    if (rem > 0) {
+      const fee = membershipFee({ plan: 'Monthly', addOns: c.addOns || {} }, membershipPricing());
+      cxl = buildMembershipInvoice(c, [{ kind: 'membership', ref: c.customerId, lid: lineLid(), label: `Cancellation — ${rem} mo remaining (Membership)`, amount: Math.round(fee.subtotal * rem * 100) / 100 }], { cancellation: true, due: c.commitmentEnd });
+    }
+  }
+  // Keep the member accountType but expire paid-through + grace → derives 'Lapsed' (pricing reverts via the gate);
+  // rentalProtection is NOT cleared (never free); unlimitedTransport entitlement falls away with Active status.
+  c.paidUntil = yest; c.graceUntil = yest; c.prepaid = false;
+  reindex('customers', c);
+  logAction(c, cxl ? `Membership cancelled — Cancellation Invoice ${money(invoiceTotals(cxl).total)} (remaining term)` : 'Membership cancelled');
+  render(); toast(cxl ? 'Membership cancelled — cancellation invoice on the account.' : 'Membership cancelled.');
+}
+async function membershipReactivate(custId) {
+  const c = IDX.customer.get(custId); if (!c) return;
+  const cxl = membershipCancellationInvoice(c); if (!cxl) return;
+  if (!(hasCardOnFile(c) && hasValidCard(c))) { toast('A valid card on file is required to pay the cancellation invoice.'); return; }
+  const bal = invoiceTotals(cxl).balance;
+  try {
+    const r = await membershipChargeResult(cxl.invoiceId, Math.round(bal * 100), defaultCard(c));
+    if (r && r.ok && (r.status === 'succeeded' || r.alreadyPaid)) {
+      if (r._demo) markInvoicePaidLocal(cxl, 'Card (demo)'); else applyPayment(cxl.invoiceId, r);
+      c.accountType = memberAccountType(c);
+      c.paidUntil = c.commitmentEnd || addMonthsISO(TODAY_ISO, MEMBERSHIP_MONTHS);
+      c.prepaid = true; c.graceUntil = '';
+      reindex('customers', c);
+      logAction(c, `Membership reactivated — cancellation paid in full, prepaid through ${c.paidUntil}`);
+      render(); toast('Membership reactivated — prepaid through the term ✓');
+    } else { toast('Charge declined — membership stays lapsed.'); }
+  } catch (e) { toast('Network error — try again.'); }
 }
 // System-wide ceiling on customer Net-day terms (Settings → Company). Caps every customer's net days.
 const companyMaxNetDays = () => { const n = Number(companyCfg().maxNetDays); return n >= 0 && isFinite(n) ? n : COMPANY_DEFAULTS.maxNetDays; };
@@ -8425,6 +8530,50 @@ function buildPopupEl(o, overlay, opts = {}) {
           </table>
         </div>` });
     overlay.appendChild(pop);
+  } else if (o.kind === 'membershipEnroll') {
+    // F5 — membership enrollment. Plan + add-ons + start date + auto-renew → live total,
+    // charged on the saved card (the account goes Active only on a cleared charge).
+    const c = IDX.customer.get(o.custId);
+    const pricing = membershipPricing();
+    const fee = membershipFee({ plan: o.plan, addOns: o.addOns }, pricing);
+    const cad = o.plan === 'Annual' ? '/yr' : '/mo';
+    const ready = !!(c && hasCardOnFile(c) && hasValidCard(c));
+    const signed = c && c.membershipStage === 'Signed';
+    const planSeg = segCtl([
+      { label: 'Monthly', js: 'js-me-plan', data: { val: 'Monthly' }, on: o.plan === 'Monthly' ? 'green' : '' },
+      { label: 'Annual', js: 'js-me-plan', data: { val: 'Annual' }, on: o.plan === 'Annual' ? 'green' : '' },
+    ]);
+    const onoff = (k, on, money1) => segCtl([
+      { label: 'No', js: `js-me-${k}`, data: { val: '0' }, on: !on ? 'gray' : '' },
+      { label: money1 ? `Yes · ${money1}` : 'Yes', js: `js-me-${k}`, data: { val: '1' }, on: on ? 'green' : '' },
+    ]);
+    const tPrice = money2(o.plan === 'Annual' ? pricing.annualTransport : pricing.monthlyTransport) + cad;
+    const pPrice = pricing.protectionPct + '% of base';
+    const row = (label, ctl) => `<div class="me-row"><span class="kpi-cap">${label}</span>${ctl}</div>`;
+    const lineRow = (label, amt) => amt ? `<div class="me-line"><span>${esc(label)}</span><b class="derived">${money2(amt)}</b></div>` : '';
+    const gateNote = ready
+      ? `<p class="set-note">Charges <strong>${esc(cardLabel(c))}</strong> now. ${signed ? '' : 'Heads-up: membership agreement not yet on file — sign it from a card when you can.'}</p>`
+      : `<p class="set-note" style="color:var(--yellow)">No valid card on file — add one before enrolling (the charge needs it).</p>`;
+    const body = `
+      ${row('Plan', planSeg)}
+      ${row('Unlimited Transport', onoff('transport', o.addOns.transport, tPrice))}
+      ${row('Rental Protection', onoff('protection', o.addOns.protection, pPrice))}
+      ${row('Auto-Renew at term end', segCtl([{ label: 'No', js: 'js-me-autorenew', data: { val: '0' }, on: !o.autoRenew ? 'gray' : '' }, { label: 'Yes', js: 'js-me-autorenew', data: { val: '1' }, on: o.autoRenew ? 'navy' : '' }]))}
+      ${row('Start date', dateField('startDate', o.startDate, { ph: 'Starts today' }))}
+      <div class="me-tote">
+        ${lineRow(`${o.plan} base`, fee.base)}
+        ${lineRow('Unlimited Transport', fee.transport)}
+        ${lineRow(`Rental Protection · ${pricing.protectionPct}%`, fee.protection)}
+        ${lineRow('Tax · 10.75%', fee.tax)}
+        <div class="me-line me-total"><span>First charge</span><b>${money2(fee.total)}</b></div>
+      </div>
+      ${gateNote}
+      ${o.error ? `<p class="set-err" style="text-align:center">${esc(o.error)}</p>` : ''}`;
+    const foot = `<button class="pill ghost js-close" data-r="R18">Cancel</button>
+      <button class="pill ignition js-me-commit" data-r="R17"${(!ready || o.busy) ? ' disabled aria-disabled="true"' : ''}>${o.busy ? 'Charging…' : 'Enroll &amp; Charge ' + money2(fee.total)}</button>`;
+    const pop = el('div', 'popup'); pop.style.width = '430px';
+    pop.innerHTML = popupShell({ icon: I.horseshoe || CARD_ICON.customers || '', title: 'Saddle Up — Membership', tag: `Customer · enroll`, body, foot });
+    overlay.appendChild(pop);
   } else if (o.kind === 'comment') {
     // Phase 6 (Jac redesign) — a SIMPLE comment card that floods with the picked color.
     // Traffic-light dots top-left pick the color; the card body becomes that solid color.
@@ -9202,6 +9351,7 @@ const WINDOW_CATALOG = [
   { kind: 'addAch',        label: 'Add bank account',        tag: 'Customer · ACH bank',       sample: () => ({ customerId: ((DATA.customers || [])[0] || {}).customerId }) },
   { kind: 'verifyAch',     label: 'Verify ACH',              tag: 'Customer · verify ACH',     sample: () => { const c = (DATA.customers || []).find((x) => (x.achAccounts || []).length); return c ? { customerId: c.customerId, bankId: c.achAccounts[0].id } : {}; } },
   { kind: 'payment',       label: 'Take Payment',            tag: 'Invoice · payment',         sample: () => ({ invoiceId: ((DATA.invoices || [])[0] || {}).invoiceId }) },
+  { kind: 'membershipEnroll', label: 'Membership Enrollment', tag: 'Customer · enroll',         sample: () => ({ custId: ((DATA.customers || [])[0] || {}).customerId, plan: 'Monthly', addOns: { transport: false, protection: false }, autoRenew: false, startDate: TODAY_ISO, busy: false, error: '' }) },
 ];
 /* Build an INERT preview popup for a catalog kind (or null if a record guard trips
    or it throws). Reuses buildPopupEl with {preview:true} — the REAL popup — into a
@@ -11252,6 +11402,15 @@ function onClick(e) {
   if (closest('.js-edit-customer')) { e.stopPropagation(); return openCustomerForm(closest('.js-edit-customer').dataset.rec); }
   if (closest('.js-view-agreement')) { e.stopPropagation(); const cust = IDX.customer.get(closest('.js-view-agreement').dataset.rec); if (cust) openOverlay({ kind: 'agreement', recId: cust.customerId }); return; }
   if (closest('.js-print-magreement')) { e.stopPropagation(); openMembershipAgreementPdf(closest('.js-print-magreement').dataset.rec); return; }
+  // F5 — membership enroll / cancel / reactivate + the enrollment dialog controls
+  if (closest('.js-mem-enroll')) { e.stopPropagation(); return openMembershipEnroll(closest('.js-mem-enroll').dataset.rec); }
+  if (closest('.js-mem-cancel')) { e.stopPropagation(); return membershipCancel(closest('.js-mem-cancel').dataset.rec); }
+  if (closest('.js-mem-paycxl')) { e.stopPropagation(); return membershipReactivate(closest('.js-mem-paycxl').dataset.rec); }
+  if (closest('.js-me-plan')) { e.stopPropagation(); const o = state.overlay; if (o) { o.plan = closest('.js-me-plan').dataset.val; renderOverlay(); } return; }
+  if (closest('.js-me-transport')) { e.stopPropagation(); const o = state.overlay; if (o) { o.addOns.transport = closest('.js-me-transport').dataset.val === '1'; renderOverlay(); } return; }
+  if (closest('.js-me-protection')) { e.stopPropagation(); const o = state.overlay; if (o) { o.addOns.protection = closest('.js-me-protection').dataset.val === '1'; renderOverlay(); } return; }
+  if (closest('.js-me-autorenew')) { e.stopPropagation(); const o = state.overlay; if (o) { o.autoRenew = closest('.js-me-autorenew').dataset.val === '1'; renderOverlay(); } return; }
+  if (closest('.js-me-commit')) { e.stopPropagation(); return membershipEnrollCommit(); }
   if (closest('.js-add-card')) {
     e.stopPropagation();
     if (!canMoney()) { toast('Cards on file are Office/Admin only.'); return; }   // §14 card-on-file is Office/Admin only — same gate as Pay/Charge/Refund (canMoney)
@@ -15140,7 +15299,7 @@ function exposeTestApi() {
       latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore, wranglerRailLoad, wrOffloadChatImages, wrEvictChatBlobs, driveViewUrl, mergeWranglerRails,
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
-      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, setFunnelStage, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipSectionHtml, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, setRole: (r) => { currentRole = r || ''; render(); },
+      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, setFunnelStage, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, addMonthsISO, openMembershipEnroll, membershipEnrollCommit, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, setRole: (r) => { currentRole = r || ''; render(); },
       openCustomerForm, renderOverlay, render, cardComplete, cardCaptureState, cardHasSelfie, cardHasSignature, captureSelfie, captureSignature, __state: state };   // UI drivers for headless screenshot/e2e tests
 
   } catch (e) { /* no window (non-browser) */ }
