@@ -2767,6 +2767,38 @@ const companyPhone = () => (companyCfg().phone || '').trim();
 // registry (§7.1b) or what a customer actually e-signs.
 const membershipPrintTemplate = () => { const t = companyCfg().membershipAgreementTemplate; return (typeof t === 'string' && t.trim()) ? t : AGREEMENTS.membership.text; };
 const companyRevenueGoal = () => { const n = Number(companyCfg().revenueGoal); return n > 0 ? n : COMPANY_DEFAULTS.revenueGoal; };
+/* Membership subscription pricing — Owner-settable in Settings → Company, read here
+   (and server-side at billing time) so Jac can reprice without a code deploy
+   (spec §2/§10.1). Stored as flat config keys (mem*), assembled with the shipped
+   defaults. protectionPct is a percent of the BASE fee only. */
+const MEMBERSHIP_DEFAULTS = { monthlyBase: 299, annualBase: 2691, monthlyTransport: 500, annualTransport: 4500, protectionPct: 15, protectionCapMonthly: 2000 };
+const membershipPricing = () => {
+  const c = companyCfg();
+  const num = (v, d) => { const n = Number(v); return (v != null && v !== '' && isFinite(n) && n >= 0) ? n : d; };
+  return {
+    monthlyBase:          num(c.memMonthlyBase,      MEMBERSHIP_DEFAULTS.monthlyBase),
+    annualBase:           num(c.memAnnualBase,       MEMBERSHIP_DEFAULTS.annualBase),
+    monthlyTransport:     num(c.memMonthlyTransport, MEMBERSHIP_DEFAULTS.monthlyTransport),
+    annualTransport:      num(c.memAnnualTransport,  MEMBERSHIP_DEFAULTS.annualTransport),
+    protectionPct:        num(c.memProtectionPct,    MEMBERSHIP_DEFAULTS.protectionPct),
+    protectionCapMonthly: num(c.memProtectionCap,    MEMBERSHIP_DEFAULTS.protectionCapMonthly),
+  };
+};
+/* Pure: a membership cycle's itemized charge. plan 'Monthly'|'Yearly'; addOns
+   {transport,protection}. NO proration (spec §2); protection = pct of BASE only;
+   tax = TAX_RATE (10.75%). Returns exact-cent figures. The client mirrors this for
+   the live enrollment total; the backend recomputes it authoritatively at charge time. */
+function membershipFee({ plan, addOns } = {}, pricing) {
+  const p = pricing || membershipPricing();
+  const r2 = (n) => Math.round(n * 100) / 100;
+  const annual = plan === 'Yearly' || plan === 'Annual';
+  const base = annual ? p.annualBase : p.monthlyBase;
+  const transport = (addOns && addOns.transport) ? (annual ? p.annualTransport : p.monthlyTransport) : 0;
+  const protection = (addOns && addOns.protection) ? r2(base * (p.protectionPct / 100)) : 0;
+  const subtotal = r2(base + transport + protection);
+  const tax = r2(subtotal * TAX_RATE);
+  return { base, transport, protection, subtotal, tax, total: r2(subtotal + tax) };
+}
 // System-wide ceiling on customer Net-day terms (Settings → Company). Caps every customer's net days.
 const companyMaxNetDays = () => { const n = Number(companyCfg().maxNetDays); return n >= 0 && isFinite(n) ? n : COMPANY_DEFAULTS.maxNetDays; };
 // Normalize a raw Net-days draft value → an integer 0..max, or undefined when blank.
@@ -2859,7 +2891,27 @@ function settingsCompanyPane(o) {
       </div>
       <label class="co-fld"><span class="kpi-cap">MEMBERSHIP AGREEMENT — PRINT TEMPLATE</span><textarea class="co-in co-in-area js-co-field" data-f="membershipAgreementTemplate" rows="9" autocomplete="off" spellcheck="false">${co.membershipAgreementTemplate != null ? v('membershipAgreementTemplate') : esc(AGREEMENTS.membership.text)}</textarea></label>
       <p class="set-note">Printed from a member's profile via <strong>Print Agreement</strong>. Placeholders <strong>{{customerName}}</strong>, <strong>{{date}}</strong>, <strong>{{membershipType}}</strong> are filled in per customer at print time. Clear the box to fall back to the standard agreement.</p>
+      ${settingsMembershipPricing(co)}
     </div>`;
+}
+/* Membership subscription pricing — Owner-settable (spec §2/§10.1). Flat mem* keys,
+   placeholders show the shipped defaults; blank = fall back to default. Reuses the
+   co-fld settings inputs (unstamped, like the sibling Company fields). */
+function settingsMembershipPricing(co) {
+  const d = MEMBERSHIP_DEFAULTS;
+  const dollar = (f, def) => `<label class="co-fld co-fld-goal"><span class="kpi-cap">${esc(f.cap)}</span><span class="co-goal-wrap"><span class="co-goal-$">$</span><input class="co-in co-in-num js-co-field" data-f="${f.key}" value="${co[f.key] != null ? esc(co[f.key]) : ''}" placeholder="${def}" inputmode="numeric" autocomplete="off"/></span></label>`;
+  const pct = `<label class="co-fld co-fld-goal"><span class="kpi-cap">RENTAL PROTECTION RATE</span><span class="co-goal-wrap"><input class="co-in co-in-num js-co-field" data-f="memProtectionPct" value="${co.memProtectionPct != null ? esc(co.memProtectionPct) : ''}" placeholder="${d.protectionPct}" inputmode="numeric" autocomplete="off"/><span class="co-goal-suffix">% of base</span></span></label>`;
+  return `
+      <div class="co-memprice">
+        <span class="kpi-cap" style="opacity:.7">MEMBERSHIP PRICING</span>
+        ${dollar({ cap: 'BASE — MONTHLY', key: 'memMonthlyBase' }, d.monthlyBase)}
+        ${dollar({ cap: 'BASE — ANNUAL', key: 'memAnnualBase' }, d.annualBase)}
+        ${dollar({ cap: 'UNLIMITED TRANSPORT — MONTHLY', key: 'memMonthlyTransport' }, d.monthlyTransport)}
+        ${dollar({ cap: 'UNLIMITED TRANSPORT — ANNUAL', key: 'memAnnualTransport' }, d.annualTransport)}
+        ${pct}
+        ${dollar({ cap: 'RENTAL PROTECTION — COVERAGE CAP / MO', key: 'memProtectionCap' }, d.protectionCapMonthly)}
+      </div>
+      <p class="set-note">Drives enrollment + recurring billing. <strong>Rental Protection</strong> adds its rate to the base fee and to each rental's subtotal, covering up to the monthly cap in damages. Leave a box blank to keep the shipped default.</p>`;
 }
 const companyDraftName = (co) => (String(co.name || '').trim() || COMPANY_DEFAULTS.name);
 const companyDraftTagline = (co) => (String(co.tagline || '').trim() || COMPANY_DEFAULTS.tagline);
@@ -12291,6 +12343,7 @@ function onChange(e) {
     const f = e.target.dataset.f, raw = e.target.value.trim();
     if (f === 'revenueGoal') { const n = Number(raw.replace(/[^0-9.]/g, '')); o.draftSettings.company.revenueGoal = (raw && isFinite(n) && n > 0) ? n : undefined; }
     else if (f === 'maxNetDays') { const n = Math.round(Number(raw.replace(/[^0-9.]/g, ''))); o.draftSettings.company.maxNetDays = (raw && isFinite(n) && n >= 0) ? n : undefined; }
+    else if (/^mem[A-Z]/.test(f)) { const n = Number(raw.replace(/[^0-9.]/g, '')); o.draftSettings.company[f] = (raw && isFinite(n) && n >= 0) ? n : undefined; }   // membership pricing — numeric, Owner-settable (spec §2)
     else o.draftSettings.company[f] = raw || undefined;
     renderOverlay(); return;
   }
@@ -14926,7 +14979,7 @@ function exposeTestApi() {
       latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore, wranglerRailLoad, wrOffloadChatImages, wrEvictChatBlobs, driveViewUrl, mergeWranglerRails,
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
-      companyRevenueGoal, companyName, companyTagline, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, setRole: (r) => { currentRole = r || ''; render(); },
+      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, setRole: (r) => { currentRole = r || ''; render(); },
       openCustomerForm, renderOverlay, render, cardComplete, cardCaptureState, cardHasSelfie, cardHasSignature, captureSelfie, captureSignature, __state: state };   // UI drivers for headless screenshot/e2e tests
 
   } catch (e) { /* no window (non-browser) */ }

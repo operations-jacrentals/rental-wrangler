@@ -1552,6 +1552,10 @@ select.inline-input:focus-visible { outline: 2px solid var(--accent); outline-of
 .set-pane-head p { margin: 0; font-size: 12px; line-height: 1.5; color: var(--txt-2); max-width: 52ch; }
 .set-pane-head em { font-style: normal; font-family: ui-monospace, monospace; color: var(--txt); }
 .set-note { font-size: 10.5px; color: var(--txt-3); margin: 4px 0 0; }
+/* Membership pricing group — saddle-stitch divider (ranch seasoning) sets it apart;
+   dollar fields grid two-up to keep the Company pane compact. */
+.co-memprice { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; margin-top: 14px; padding-top: 12px; border-top: 1.5px dashed var(--tan, #c2925a); }
+.co-memprice > .kpi-cap { grid-column: 1 / -1; letter-spacing: 2px; }
 .set-err { align-self: center; color: var(--red); font-size: 12px; font-weight: 600; margin-right: 4px; }
 /* Roles & Logins — passwords masked by default; this toggles reveal (stamped, not a native control). */
 .set-reveal-row { display: flex; justify-content: flex-end; margin: -2px 0 8px; }
