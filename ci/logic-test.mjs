@@ -722,7 +722,7 @@ try {
       const c = { customerId: 'C-CX', accountType: 'Business Member', company: 'Acme', paidCadence: 'Monthly', commitmentStart: '2099-01-01', commitmentEnd: '2099-12-01', paidUntil: '2099-07-01', addOns: { transport: false, protection: false }, cards: [{ id: 'K1', status: 'active', isDefault: true, stripePmId: 'pm_x', brand: 'visa', last4: '4242', expMonth: 12, expYear: 2099 }], activityLog: [] };
       T.IDX.customer.set('C-CX', c);
       ok(T.isActiveMember(c) === true, 'cancel: starts as an Active member');
-      T.membershipCancel('C-CX');
+      await T.membershipCancel('C-CX');
       const cxl = T.membershipCancellationInvoice(c);
       ok(cxl && cxl.membershipCancellation && T.invoiceTotals(cxl).balance > 0, 'cancel: Monthly mid-commitment drops a Cancellation Invoice for the remaining term');
       ok(T.membershipStatus(c) === 'Lapsed' && T.isActiveMember(c) === false, 'cancel: reverts to Lapsed → retail pricing (rentalProtection untouched)');
