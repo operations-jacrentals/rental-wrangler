@@ -1807,6 +1807,22 @@ function openStandard(card, recId, recType) {
   }
   render();
 }
+/** Jump to the Units card filtered to one category's units — wired to a category
+ *  mini-card's Availability pill (Jac 2026-06-25). Narrows Units by the category
+ *  name (same seam the winpicker uses) and makes sure the Units card is on screen,
+ *  swapping the column that holds Categories over to Units when Units isn't visible. */
+function showCategoryUnits(categoryId) {
+  const cat = IDX.category.get(categoryId); if (!cat) return;
+  const s = activeSession(), us = s.cards.units; if (!us) return;
+  us.search = cat.name; us.listLimit = undefined; us.mode = 'list'; us.recId = null; us.recType = null;
+  if (s.cols) {
+    const slots = ['left', 'middle', 'right'].filter((k) => k in s.cols);
+    if (!slots.some((k) => s.cols[k] === 'units')) s.cols[(slots.find((k) => s.cols[k] === 'categories')) || slots[0]] = 'units';
+  }
+  state.focusedCard = 'units';
+  if (state.mobileCol !== undefined) state.mobileCol = 'units';   // mobile single-column → show Units
+  render();
+}
 /** Universal pill rule (§0.2): clicking any pill forces its target card into
  *  standard mode. WO/Inspection/Service pills now resolve to the Shop card. */
 // Resolve the record a mouse hotkey (dbl-click=anchor, ctrl-click=new tab) should act on:
@@ -4064,27 +4080,32 @@ const ROWS = {
     // The whole plate's border carries the rentable-health color (--catr-hl), exactly
     // like the rentals mini-card's --rcc-hl.
     const r = categoryRentable(c.categoryId);
-    // health: all rentable → green · some down → yellow · none → red · empty yard → line
-    let hl = r.total === 0 ? 'line' : r.rentable === 0 ? 'red' : r.rentable < r.total ? 'yellow' : 'green';
-    // SLOT 1 — Availability. Under a rental window count availability for THOSE dates;
-    // otherwise the units rentable AND free to go out right now.
-    let availN, availTip;
-    if (availWin) {
-      availN = categoryAvailableCount(c.categoryId, availWin.start, availWin.end, availWin.selfId);
-      availTip = `${availN} available for the selected rental window`;
-      if (availN === 0) hl = 'red';   // none free for the window → plate goes danger
-    } else {
-      availN = DATA.units.filter((u) => u.categoryId === c.categoryId && isUnitRentable(u) && !activeRentalForUnit(u.unitId)).length;
-      availTip = `${availN} rentable and free to go out right now`;
-    }
+    const tallyColor = r.total === 0 ? 'gray' : r.rentable === 0 ? 'red' : r.rentable < r.total ? 'yellow' : 'green';
+    // FREE units (inspection-AGNOSTIC): Active fleet, not out on a rental for the window
+    // (or right now). Their inspection makeup colors BOTH the plate border and the name
+    // (Jac 2026-06-25): any free unit Ready → green · else any Not Ready → yellow · else
+    // the only free ones are Failed → red · none free → neutral line.
+    const free = DATA.units.filter((u) => {
+      if (u.categoryId !== c.categoryId || u.fleetStatus !== 'Active') return false;
+      return availWin ? rentalsOverlappingUnit(u.unitId, availWin.start, availWin.end, availWin.selfId).length === 0
+                      : !activeRentalForUnit(u.unitId);
+    });
+    const someInsp = (s) => free.some((u) => u.inspectionStatus === s);
+    const hl = (someInsp('Ready') || someInsp('Passed')) ? 'green' : someInsp('Not Ready') ? 'yellow' : someInsp('Failed') ? 'red' : 'line';
+    const nameColor = (hl === 'green' || hl === 'yellow' || hl === 'red') ? `var(--${hl})` : 'var(--txt)';
+    // SLOT 1 — Availability (true RENTABLE availability: Failed excluded). Window-aware.
+    const availN = availWin
+      ? categoryAvailableCount(c.categoryId, availWin.start, availWin.end, availWin.selfId)
+      : free.filter(isUnitRentable).length;
+    const availTip = availWin ? `${availN} available for the selected rental window` : `${availN} rentable and free to go out right now`;
     const rate = (label, v) => `<div class="catr-rate"><span class="catr-rk">${label}</span><span class="catr-rv${v ? '' : ' none'}">${v ? money(v) : '—'}</span></div>`;
     return `<div class="catr" style="--catr-hl:var(--${hl})">
-      <div class="catr-head"><span class="catr-cat">${categoryIconFor(c.name)}</span><span class="r-title catr-name" data-tip="${esc(c.name)}">${esc(c.name)}</span></div>
+      <div class="catr-head"><span class="catr-cat">${categoryIconFor(c.name)}</span><span class="r-title catr-name${hl === 'red' ? ' ec-red' : ''}" style="color:${nameColor}" data-tip="${esc(c.name)}">${esc(c.name)}</span></div>
       <div class="catr-pills">
-        <div class="catr-slot" data-tip="${esc(availTip)}">${badge(`${availN} Avail`, availN > 0 ? 'green' : 'red')}</div>
-        <div class="catr-slot" data-tip="${r.rentable} of ${r.total} units rentable — in-yard, inspection not failed">${badge(`${r.rentable}/${r.total}`, hl === 'line' ? 'gray' : hl)}</div>
+        <div class="catr-slot js-cat-avail" data-cat="${esc(c.categoryId)}" data-tip="${esc(availTip)} — tap to open these units">${badge(`${availN} Avail`, availN > 0 ? 'green' : 'red')}</div>
+        <div class="catr-slot" data-tip="${r.rentable} of ${r.total} units rentable — in-yard, inspection not failed">${badge(`${r.rentable}/${r.total}`, tallyColor)}</div>
       </div>
-      <div class="catr-rates">${rate('1-Day', c.rate1Day)}${rate('7-Day', c.rate7Day)}${rate('4-Week', c.rate4Wk)}</div>
+      <div class="catr-rates">${rate('1-Day', c.rate1Day)}${rate('Weekend', c.weekend)}${rate('7-Day', c.rate7Day)}${rate('4-Week', c.rate4Wk)}</div>
     </div>`;
   },
 
@@ -11443,6 +11464,9 @@ function onClick(e) {
 
   if (closest('.js-showmore')) { const b = closest('.js-showmore'); e.stopPropagation(); const cs = activeSession().cards[b.dataset.card]; if (cs) { cs.listLimit = (cs.listLimit || VIRT_CAP) + SHOW_MORE_BATCH; render(); } return; }
   if (closest('.js-tolist')) { e.stopPropagation(); return cardToList(closest('.card').dataset.card); }
+  // a category mini-card's Availability pill → jump to the Units card, narrowed to
+  // that category's units (Jac 2026-06-25 — replaces the clunkier availability hop)
+  if (closest('.js-cat-avail')) { e.stopPropagation(); return showCategoryUnits(closest('.js-cat-avail').dataset.cat); }
 
   // a flag naming a section WITHOUT a nav target scrolls within its own card
   // (e.g. "No Card" → Cards on File — Jac 2026-06-12)
