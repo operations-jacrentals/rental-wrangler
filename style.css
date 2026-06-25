@@ -837,6 +837,9 @@ select.lf-in { appearance: none; cursor: pointer; }
 /* §5.5 Views menu: section headers + a per-view delete ✕ */
 .dropdown-menu .dd-sec { font-family: 'Saira Condensed', system-ui, sans-serif; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.1px; color: var(--txt-3); padding: 8px 10px 3px; }
 .dropdown-menu .dd-item.js-applyview.on .tick { margin-left: 0; }
+/* §313 — Close-all confirm popover: the two action pills sit on one calm row */
+.dropdown-menu .dd-confirm { display: flex; gap: 8px; padding: 6px 10px 8px; }
+.closeall-slot { flex-shrink: 0; display: inline-flex; align-items: center; }
 .dropdown-menu .dd-item .x { margin-left: auto; opacity: .45; font-size: 12px; padding: 0 2px; }
 .dropdown-menu .dd-item .x:hover { opacity: 1; color: var(--red); }
 /* ── Gate TIMELINE dropdown (the four ordered status gates) — steel panel + vertical

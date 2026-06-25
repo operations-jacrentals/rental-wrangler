@@ -1648,7 +1648,7 @@ const nextInvoiceId = () => { state.invoiceSeq = Math.max(state.invoiceSeq || 0,
 /* ── session actions ──────────────────────────────────────────────────────
    `recType` is only meaningful for the Shop card (which holds inspections /
    workOrders / serviceOrders); it's undefined for the 5 normal cards. */
-function setAnchor(session, card, recId, recType) {
+function setAnchor(session, card, recId, recType, opts = {}) {
   sweepEmptyDrafts(recId);   // #8 — anchoring elsewhere deletes an abandoned empty draft
   if (state.unitPick && !(card === 'units' && state.unitPick.ids.includes(recId))) state.unitPick = null;   // leaving the picker clears it
   const entityCard = entityCardOf(card, recType);
@@ -1656,15 +1656,22 @@ function setAnchor(session, card, recId, recType) {
   const rec = recOf(entityCard, recId);
   session.anchor = { card, recId, recType };
   session.cascade = state.cascade.cascadeAll(type, rec);
-  // anchored card → standard; others → list (cascade)
-  for (const c of GRID_CARDS) {
-    const ccs = session.cards[c.id];
-    ccs.backStack = []; ccs.fwdStack = [];
-    ccs.mode = c.id === card ? 'standard' : 'list';
-    ccs.recId = c.id === card ? recId : null;
-    ccs.recType = c.id === card ? recType : null;
-    ccs.released = false;                                       // re-cascade clears any per-card "browse all" release
-    if (c.id !== card) { ccs.search = ''; ccs.filterTerms = []; }   // cascaded cards reset to the clean anchored view
+  // §264 — a REFRESH (reanchorRender after an option-click: complete/cancel/clear/etc.)
+  // only needs the cascade membership recomputed above; it must NOT reset the sibling
+  // cards. The destructive reset below is for a FRESH anchor only — re-running it on every
+  // option-click was wiping the record you had open in a sibling column plus any typed
+  // search/filter and the back/forward history (the "kicked off the card I was reading" bug).
+  if (!opts.preserve) {
+    // anchored card → standard; others → list (cascade)
+    for (const c of GRID_CARDS) {
+      const ccs = session.cards[c.id];
+      ccs.backStack = []; ccs.fwdStack = [];
+      ccs.mode = c.id === card ? 'standard' : 'list';
+      ccs.recId = c.id === card ? recId : null;
+      ccs.recType = c.id === card ? recType : null;
+      ccs.released = false;                                       // re-cascade clears any per-card "browse all" release
+      if (c.id !== card) { ccs.search = ''; ccs.filterTerms = []; }   // cascaded cards reset to the clean anchored view
+    }
   }
   // 3-column display: make the anchored card the visible member of its column
   // (shop anchors map to their recType member). Pure display; cascade is unchanged.
@@ -1746,6 +1753,16 @@ function closeTab(id) {
   render();
 }
 function closeAll() { state.tabs = []; state.activeTabId = null; state.searchMode = false; state.query = ''; state.winpicker = null; state.datesearch = null; render(); }
+// §313 — keep only the active tab; with none active, fall back to a full close.
+function closeOthers() { if (!state.activeTabId) { closeAll(); return; } state.tabs = state.tabs.filter((t) => t.id === state.activeTabId); render(); }
+// §313 — Close-all trigger. 1–2 tabs close immediately; >2 ask first (a quick popover).
+function openCloseAllMenu(anchorEl) {
+  const n = state.tabs.length;
+  if (!n) return;
+  if (n <= 2) { closeAll(); return; }
+  const row = `<div class="dd-confirm">${actionPill('danger', `Close all ${n}`, { js: 'js-closeall' })}${ghostPill('Close others', { js: 'js-closeothers', tip: 'Keep the current tab open' })}</div>`;
+  openDropdown(anchorEl, `<div class="dd-sec">Close all ${n} tabs?</div>${row}`, { align: 'right' });
+}
 /* Wave 2 (Jac): QUOTES SURVIVE. Nothing is swept on tab close / session switch —
    a Quote-status rental (or any fresh record) lives until Completed/Cancelled
    or deliberately deleted. The `mock` flag stays purely a UI affordance gate
@@ -3818,6 +3835,19 @@ const unitsVisible = (rows, cs) => {
   if (f === 'soldInactive') return rows.filter(isSoldInactive); // only Sold/Inactive
   return rows.filter((u) => u.fleetStatus === 'Active');        // default: Active only (For Sale/Sold/Inactive hidden)
 };
+// Invoice Payment-Method filter (#337) — classify a recorded payment method into the
+// five filter buckets. Unpaid invoices have no recorded method ('' → excluded by any
+// specific filter); anything set but not cash/card/check falls into 'other'.
+const INV_METHOD_OPTS = [['all', 'All'], ['cash', 'Cash'], ['card', 'Card'], ['check', 'Check'], ['other', 'Other']];
+const INV_METHOD_LABEL = Object.fromEntries(INV_METHOD_OPTS);
+function invMethodClass(inv) {
+  const m = (inv.paymentMethod || '').trim().toLowerCase();
+  if (!m) return '';
+  if (/^cash$/.test(m)) return 'cash';
+  if (/^card/.test(m)) return 'card';
+  if (/^check/.test(m)) return 'check';
+  return 'other';
+}
 function rowViz(card, rec) {
   // §10 availability tint takes precedence while a rental window is in scope
   if (availWin && availUnavailable(card, rec)) return `<div class="row-viz" style="background:var(--red-bg)"></div>`;
@@ -6059,6 +6089,12 @@ function listView(cardDef, session) {
     chip.innerHTML = `<span class="muted">${n === 1 ? 'Linked unit on' : `${n} linked units on`} invoice</span> <b>${esc(invoiceShort(state.unitPick.from))}</b> <span class="muted">— open one to add a work order</span> <button class="x js-clear-unitpick" data-tip="Clear filter">${I.x}</button>`;
     wrap.appendChild(chip);
   }
+  // Invoices payment-method filter active → clearable chip as the closed-menu signal (#337)
+  if (card === 'invoices' && cs.payMethod && cs.payMethod !== 'all') {
+    const chip = el('div', 'fleet-chip');
+    chip.innerHTML = `<span class="muted">Payment method</span> <b>${esc(INV_METHOD_LABEL[cs.payMethod] || cs.payMethod)}</b> <button class="x js-clear-paymethod" data-tip="Clear filter">${I.x}</button>`;
+    wrap.appendChild(chip);
+  }
 
   let rows = listFor(card, session);
   if (card === 'units') rows = unitsVisible(rows, cs);   // default: Active only — hide non-Active fleet (or reveal via the sort) (#2/#34)
@@ -6071,6 +6107,7 @@ function listView(cardDef, session) {
     const reveal = cs && cs.sort && (cs.sort.field === 'allFleet' || cs.sort.field === 'soldInactive');
     if (!reveal) rows = rows.filter((u) => u.fleetStatus === 'Active');
   }
+  if (card === 'invoices' && cs.payMethod && cs.payMethod !== 'all') rows = rows.filter((i) => invMethodClass(i) === cs.payMethod);   // §337 stacks with search/status/sort
   if (cs.search.trim() || (cs.filterTerms || []).length) { rows = rows.filter((rec) => rowMatches(card, rec, cs.search, cs.filterTerms)); }
   rows = sortRows(card, rows, cs.sort);
   // §10 — while a rental window is in scope, order Units: available+Ready, available+Not
@@ -6659,6 +6696,7 @@ function headerEl() {
     <div class="header-right">
       <div class="hr-top">
         <div class="header-tabs tabstrip">${tabStrip(state.tabs)}</div>
+        ${state.tabs.length ? `<span class="closeall-slot">${ghostPill('Close all', { js: 'js-closeall-menu', tip: 'Close all tabs' })}</span>` : ''}
         <span class="spacer"></span>
         ${currentUser ? `<span class="hello-name">${esc(currentUser)}</span>` : ''}
       </div>
@@ -8502,20 +8540,24 @@ function buildPopupEl(o, overlay, opts = {}) {
   } else if (o.kind === 'notifications') {
     // §18f Notifications — recently-RESOLVED Mr. Wrangler fixes, surfaced in-app so a reporter
     // sees their glitch got fixed (with the verdict) without ever opening GitHub.
-    const list = wranglerNotifs;
+    const list = visibleNotifs();   // §246 — dismissed resolved-fix chips stay cleared
+    const muted = notifsMuted();
     const inner = !backendPassword
       ? '<div class="req-empty">Sign in to see notifications.</div>'
       : (!notifLoaded && notifLoading ? '<div class="req-empty">Loading…</div>'
-        : (!list.length ? '<div class="req-empty"><span class="req-empty-ic">🔔</span><p>Nothing new.</p><span>When Mr. Wrangler finishes a fix you reported, it shows here — refresh the app to see the change.</span></div>'
-          : list.map((n) => `<div class="req-card">
-              <div class="req-head"><span class="req-num">${n.merged ? '✅' : 'ⓘ'} #${n.number}</span><span class="req-title">${esc(n.title)}</span></div>
+        : (!list.length ? '<div class="req-empty"><span class="req-empty-ic">🔔</span><p>All clear.</p><span>Resolved fixes you reported show here. When Mr. Wrangler finishes one, refresh the app to see the change.</span></div>'
+          : list.map((n) => `<div class="req-card has-closex">
+              <div class="req-head"><span class="req-num">${n.merged ? '✅' : 'ⓘ'} #${n.number}</span><span class="req-title">${esc(n.title)}</span><span class="spacer"></span>${closeX('js-notif-dismiss', { data: { num: n.number }, hover: true })}</div>
               ${n.verdict ? `<div class="req-text">${esc(n.verdict).replace(/\n+/g, '<br>')}</div>` : '<div class="req-text muted">Resolved — refresh the app to see the change.</div>'}
               <div class="req-acts"><span class="req-await">${n.closedAt ? 'Resolved ' + esc(fmtShortDate(String(n.closedAt).slice(0, 10))) : 'Resolved'}</span><a class="req-link" href="${esc(n.url)}" target="_blank" rel="noopener">GitHub ↗</a></div>
             </div>`).join('')));
+    const foot = backendPassword
+      ? `${list.length ? ghostPill('Dismiss all', { js: 'js-notif-dismissall', tip: 'Clear every resolved notification' }) : ''}${ghostPill(muted ? 'Unmute' : 'Mute', { js: 'js-notif-mute', tip: muted ? 'Show the unseen badge again' : 'Silence the unseen-count badge' })}`
+      : '';
     const pop = el('div', 'popup'); pop.style.width = '460px';
-    pop.innerHTML = popupShell({ icon: I.bell, title: `Notifications${list.length ? ` · ${list.length}` : ''}`, tag: 'Mr. Wrangler · resolved',
+    pop.innerHTML = popupShell({ icon: I.bell, title: `Notifications${list.length ? ` · ${list.length}` : ''}${muted ? ' · muted' : ''}`, tag: 'Mr. Wrangler · resolved',
       headRight: `<button class="iconbtn js-notif-refresh" data-tip="Refresh">${I.refresh || '⟳'}</button>`,
-      bodyClass: 'req-wrap', body: inner });
+      bodyClass: 'req-wrap', body: inner, foot });
     overlay.appendChild(pop);
   } else if (o.kind === 'hotkeys') {
     const rows = [
@@ -9554,9 +9596,21 @@ function wranglerClearNeedsAnswer(n) {
 let wranglerNotifs = [];
 let notifLoaded = false, notifLoading = false;
 const NOTIF_SEEN_KEY = 'jactec.notifsSeen';
+const NOTIF_DISMISS_KEY = 'jactec.notifsDismissed';   // §246 — issue #s the operator cleared from the feed (persists across refreshes)
+const NOTIF_MUTE_KEY = 'jactec.notifsMuted';           // §246 — silence the unseen badge entirely
 const notifsSeenMax = () => { try { return Number(localStorage.getItem(NOTIF_SEEN_KEY)) || 0; } catch (e) { return 0; } };
-const unseenNotifs = () => { const s = notifsSeenMax(); return wranglerNotifs.filter((n) => (n.number || 0) > s).length; };
+const loadDismissedNotifs = () => { try { return new Set(JSON.parse(localStorage.getItem(NOTIF_DISMISS_KEY) || '[]')); } catch (e) { return new Set(); } };
+const saveDismissedNotifs = (set) => { try { localStorage.setItem(NOTIF_DISMISS_KEY, JSON.stringify([...set])); } catch (e) {} };
+const notifsMuted = () => { try { return localStorage.getItem(NOTIF_MUTE_KEY) === '1'; } catch (e) { return false; } };
+const setNotifsMuted = (on) => { try { localStorage.setItem(NOTIF_MUTE_KEY, on ? '1' : '0'); } catch (e) {} };
+// §246 — what actually shows in the bell: resolved fixes the operator hasn't dismissed.
+const visibleNotifs = () => { const d = loadDismissedNotifs(); return wranglerNotifs.filter((n) => !d.has(n.number)); };
+const unseenNotifs = () => { if (notifsMuted()) return 0; const s = notifsSeenMax(); return visibleNotifs().filter((n) => (n.number || 0) > s).length; };
 function markNotifsSeen() { const mx = wranglerNotifs.reduce((a, n) => Math.max(a, n.number || 0), notifsSeenMax()); try { localStorage.setItem(NOTIF_SEEN_KEY, String(mx)); } catch (e) {} }
+// §246 — clear one / all resolved notifications from the feed; the badge + list follow.
+function dismissNotif(num) { const s = loadDismissedNotifs(); s.add(num); saveDismissedNotifs(s); render(); if (state.overlay?.kind === 'notifications') renderOverlay(); }
+function dismissAllNotifs() { const s = loadDismissedNotifs(); wranglerNotifs.forEach((n) => s.add(n.number)); saveDismissedNotifs(s); render(); if (state.overlay?.kind === 'notifications') renderOverlay(); }
+function toggleNotifsMuted() { setNotifsMuted(!notifsMuted()); render(); if (state.overlay?.kind === 'notifications') renderOverlay(); }
 async function refreshWranglerNotifications() {
   if (typeof backendPassword === 'undefined' || !backendPassword || notifLoading) return;   // demo/offline → no feed
   notifLoading = true;
@@ -10222,6 +10276,11 @@ function openViewMenu(card, anchorEl) {
   }
   html += `<div class="dd-sec">Sort</div>`;
   html += SORT_FIELDS[card].map((f) => `<button class="dd-item js-sortfield${f.field === cs.sort.field ? ' on' : ''}" data-card="${card}" data-field="${f.field}">${esc(f.label)}<span class="tick">✓</span></button>`).join('');
+  if (card === 'invoices') {   // §337 — payment-method filter, stacks with the sort/search above
+    const cur = cs.payMethod || 'all';
+    html += `<div class="dd-sec">Payment Method</div>`;
+    html += INV_METHOD_OPTS.map(([val, lbl]) => `<button class="dd-item js-paymethod${val === cur ? ' on' : ''}" data-method="${val}">${esc(lbl)}<span class="tick">✓</span></button>`).join('');
+  }
   openDropdown(anchorEl, html, { align: 'right' });
 }
 /** Clicked card → orange border (§0.1 visual feedback; not an anchor). */
@@ -11185,6 +11244,9 @@ function onClick(e) {
   if (closest('[data-wrc-open]')) { e.stopPropagation(); return wranglerRailOpen(closest('[data-wrc-open]').dataset.wrcOpen); }   // §18g rail: reopen a stored conversation
   if (closest('.js-notifications')) { e.stopPropagation(); openOverlay({ kind: 'notifications' }); markNotifsSeen(); refreshWranglerNotifications(); return; }   // §18f notification bell — in-app resolved-fix feed
   if (closest('.js-notif-refresh')) { e.stopPropagation(); return refreshWranglerNotifications(); }
+  if (closest('.js-notif-dismiss')) { e.stopPropagation(); return dismissNotif(Number(closest('.js-notif-dismiss').dataset.num)); }   // §246 clear one
+  if (closest('.js-notif-dismissall')) { e.stopPropagation(); return dismissAllNotifs(); }   // §246 clear all
+  if (closest('.js-notif-mute')) { e.stopPropagation(); return toggleNotifsMuted(); }   // §246 mute/unmute the badge
   if (closest('.js-requests')) { e.stopPropagation(); openOverlay({ kind: 'requests' }); refreshWranglerRequests(); return; }   // §18e approval inbox
   if (closest('.js-req-refresh')) { e.stopPropagation(); return refreshWranglerRequests(); }
   if (closest('.js-req-chat')) { e.stopPropagation(); return openWranglerFromRequest(Number(closest('.js-req-chat').dataset.n)); }   // §18e continue the conversation
@@ -11254,7 +11316,9 @@ function onClick(e) {
   if (closest('.js-ft-neg')) { const b = closest('.js-ft-neg'); e.stopPropagation(); return toggleFilterNeg(b.dataset.scope, Number(b.dataset.i)); }
   if (closest('.js-date-edit')) { const b = closest('.js-date-edit'); e.stopPropagation(); return openDateSearch(b.dataset.scope, Number(b.dataset.i)); }   // §5.4d re-open the picker to change the date
   if (closest('.js-ft-x')) { const b = closest('.js-ft-x'); e.stopPropagation(); return removeFilterTerm(b.dataset.scope, Number(b.dataset.i)); }
-  if (closest('.js-closeall')) return closeAll();
+  if (closest('.js-closeall-menu')) { e.stopPropagation(); return openCloseAllMenu(closest('.js-closeall-menu')); }
+  if (closest('.js-closeall')) { document.querySelectorAll('.dropdown-menu').forEach((m) => m.remove()); return closeAll(); }
+  if (closest('.js-closeothers')) { document.querySelectorAll('.dropdown-menu').forEach((m) => m.remove()); return closeOthers(); }
   if (closest('.js-closetab')) { e.stopPropagation(); return closeTab(closest('.js-closetab').dataset.tab); }
   if (closest('.js-uncascade')) { e.stopPropagation(); const cs = activeSession().cards[closest('.js-uncascade').dataset.card]; if (cs) cs.released = true; return render(); }
   if (closest('.js-tab')) return switchTab(closest('.js-tab').dataset.tab);
@@ -11274,6 +11338,7 @@ function onClick(e) {
     return;
   }
   if (closest('.js-clear-unitpick')) { e.stopPropagation(); state.unitPick = null; render(); return; }
+  if (closest('.js-clear-paymethod')) { e.stopPropagation(); activeSession().cards.invoices.payMethod = 'all'; render(); return; }   // §337
   if (closest('.js-addcat')) { const b = closest('.js-addcat'); e.stopPropagation(); return openIntCatDropdown(b.dataset.rec, b); }
   if (closest('.js-setintcat')) { const b = closest('.js-setintcat'); e.stopPropagation(); return addInterestedCategory(b.dataset.rec, b.dataset.val); }
   if (closest('.js-act-open')) { const b = closest('.js-act-open'); e.stopPropagation(); state.actMode = b.dataset.val; state.actOpen = b.dataset.rec; const rec = b.dataset.rec; render(); document.querySelector(`.js-act-in[data-rec="${rec}"]`)?.focus(); return; }
@@ -11436,6 +11501,7 @@ function onClick(e) {
   if (closest('.js-applyview')) { const b = closest('.js-applyview'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return applyView(b.dataset.card, loadViews(b.dataset.card)[Number(b.dataset.idx)]); }
   if (closest('.js-addview')) { if (!adminUnlocked()) { document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return; } const b = closest('.js-addview'); const card = b.dataset.card; const cs = activeSession().cards[card]; const search = (cs.search || '').trim(); const terms = (cs.filterTerms || []).map((t) => ({ ...t })); const suggested = viewLabel(search, terms); const name = (typeof prompt === 'function' ? prompt('Name this view:', suggested) : suggested); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); if (name && name.trim()) { const views = loadViews(card); if (!views.some((v) => v.name.toLowerCase() === name.trim().toLowerCase())) { views.push({ name: name.trim(), search, terms }); saveViews(card, views); } } render(); return; }
   if (closest('.js-sortfield')) { const b = closest('.js-sortfield'); const cs = activeSession().cards[b.dataset.card]; const f = SORT_FIELDS[b.dataset.card].find((x) => x.field === b.dataset.field); if (f) { cs.sort = { ...f }; saveSort(b.dataset.card, cs.sort); } document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); render(); return; }
+  if (closest('.js-paymethod')) { const cs = activeSession().cards.invoices; cs.payMethod = closest('.js-paymethod').dataset.method; document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); render(); return; }   // §337
   if (closest('.js-sortdir')) { const card = closest('.js-sortdir').dataset.card; const cs = activeSession().cards[card]; cs.sort.dir = cs.sort.dir === 'asc' ? 'desc' : 'asc'; saveSort(card, cs.sort); render(); return; }
 
   // inline edit (click a value → input)
@@ -13447,7 +13513,10 @@ function setDraftDate(rentalId, which, val) {
   logAction(r, `${which === 'start' ? 'Start' : 'End'} date → ${val ? fmtShortDate(val) : 'cleared'}`);   // #1 — was unlogged
   reanchorRender();
 }
-const reanchorRender = () => { const s = activeSession(); if (s.anchor) setAnchor(s, s.anchor.card, s.anchor.recId, s.anchor.recType); render(); };
+// §264 — refresh the cascade after an in-place action WITHOUT collapsing the sibling
+// cards (preserve their open record, typed search/filter, and history). A fresh anchor
+// still goes through the full setAnchor reset; only this refresh path preserves views.
+const reanchorRender = () => { const s = activeSession(); if (s.anchor) setAnchor(s, s.anchor.card, s.anchor.recId, s.anchor.recType, { preserve: true }); render(); };
 /** Append a timestamped action to a record's log (surfaced in its History section). */
 let actionSeq = 0;
 // Audit trail: who's signed in on this device (remembered across sessions). Every
