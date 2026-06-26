@@ -232,6 +232,18 @@ try {
       ok(dbl.ops.length === 0 && dbl.issues.some((s) => /already invoiced/.test(s)), 'WR: a rental already invoiced is not double-billed');
     }
 
+    // 12e) Apply gate is CONDITIONAL (Jac) — simple single safe edits auto-apply; consequential actions
+    // (bulk, pricing/rate, named operations, several records) still require the preview→Apply tap.
+    {
+      const needs = (ops) => T.wrPlanNeedsApply(T.wrValidatePlan({ action: 'data', ops }));
+      ok(needs([{ op: 'create', entity: 'units', fields: { name: 'Auto1' } }]) === false, 'WR-gate: a single unit create auto-applies (no Apply)');
+      ok(needs([{ op: 'update', entity: 'vendors', id: T.DATA.vendors[0].vendorId, fields: { phone: '555-1' } }]) === false, 'WR-gate: a single safe field edit auto-applies');
+      ok(needs([{ op: 'update', entity: 'categories', id: T.DATA.categories[0].categoryId, fields: { rate1Day: 200 } }]) === true, 'WR-gate: a rate/pricing change requires Apply');
+      ok(T.wrPlanNeedsApply({ ops: [{ op: 'operate', name: 'billRental', params: {} }] }) === true, 'WR-gate: a named operation (billRental) requires Apply');
+      ok(needs([{ op: 'create', entity: 'units', fields: { name: 'A' } }, { op: 'create', entity: 'units', fields: { name: 'B' } }]) === true, 'WR-gate: several records at once require Apply');
+      ok(T.wrPlanNeedsApply({ ops: [{ op: 'import', entity: 'customers', rows: [{}, {}] }] }) === true, 'WR-gate: a bulk import requires Apply');
+    }
+
     // 13) Transport pricing v2 — $3.50/mile + $50 load + $20 fuel (fueled), per leg.
     const tp = (a) => T.computeTransportPrice(a).price;
     // 10 mi Delivery, fueled: (3.5*10 + 50 + 20) * 1 = 105
