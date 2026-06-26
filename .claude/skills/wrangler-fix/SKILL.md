@@ -106,9 +106,9 @@ born — just masks the defect. **No fix without a cited root cause.**
 ## Guardrails
 - **Ask yourself first: "Should I use one of our skills for this?"** Reach for the fitting
   skill before you freehand — `jactec-ui` for ANY UI element (screen, column, card, pill,
-  flag, button, field, popup, menu), the `mobile-*` skills for phone layout/touch/viewport,
-  `frontend` for new visual design, `webapp-testing` to verify in a real browser. Skip only
-  when none genuinely apply.
+  flag, button, field, popup, menu) AND its folded sub-capabilities (aesthetic direction,
+  phone layout/touch/viewport, DESIGN.md, the /role audit), `webapp-testing` to verify in a
+  real browser. Skip only when none genuinely apply.
 - **No fix without a cited root cause** — trace up to the origin before you edit, never guess.
 - One report, one targeted fix at the cause — don't refactor adjacent code (a proven pattern
   sweep of the *same* bug class is the one allowed exception; scope creep is not).

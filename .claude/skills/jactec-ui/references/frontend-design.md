@@ -1,18 +1,19 @@
----
-name: frontend-design
-description: Guidance for distinctive, intentional visual design when building new UI or reshaping an existing one. Helps with aesthetic direction, typography, and making choices that don't read as templated defaults.
-license: Complete terms in LICENSE.txt
----
-
 <!--
-  Vendored skill — attribution
+  Vendored reference — attribution
   Source repo: anthropics/skills (official Anthropic)
   Source URL:  https://github.com/anthropics/skills/blob/main/skills/frontend-design/SKILL.md
   Vendored into this repo on 2026-06-13 (unmodified skill instructions below).
-  Note: This is the official Anthropic 'frontend-design' skill, NOT an obra/superpowers skill (the obra repos do not contain a frontend skill). Directory named 'frontend' per request; frontmatter name remains 'frontend-design'.
+  Folded into the `jactec-ui` skill on 2026-06-26 (was the standalone `frontend` skill).
+  Note: This is the official Anthropic 'frontend-design' skill, NOT an obra/superpowers
+  skill (the obra repos do not contain a frontend skill).
 -->
 
-# Frontend Design
+# Frontend Design (aesthetic direction layer)
+
+This is the **taste / process** layer that sits under the JacTec yard-data-plate
+language. `jactec-ui` (the parent skill) pins this taste to OUR tokens and the
+R-rulebook; this reference is the general method for making distinctive, non-templated
+choices. Read it when you're planning a new surface and want to avoid AI-default looks.
 
 Approach this as the design lead at a small studio known for giving every client a visual identity that could not be mistaken for anyone else's. This client has already rejected proposals that felt templated, and is paying for a distinctive point of view: make deliberate, opinionated choices about palette, typography, and layout that are specific to this brief, and take one real aesthetic risk you can justify.
 
