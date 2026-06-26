@@ -306,11 +306,87 @@ dispatch can hide a real use).
 
 ---
 
-# Part II — The Workshop (GitHub / CI / docs / tools)  — *outline, specced later*
+# Part II — The Workshop (GitHub / CI / docs / tools / root)
 
-`.github/`, `ci/` (the four gates: `smoke`, `logic-test`, `gen-rule-usage`,
-`check-window-catalog`), `docs/`, `tools/`, and the root build/serve scripts.
-Gets the same atlas treatment in a later phase.
+*Everything that builds, guards, deploys, and documents the app — but is never
+served to the browser. Documentation only: these files are wired to GitHub by
+path, so the atlas describes where they live; it does not move or rename them.*
+
+## Act W1 — The Gates (`.github/workflows/ci.yml` → `ci/`)
+The **`smoke`** job runs on every push/PR **to `main`** and is the required
+status check that protects the trunk. It runs six steps, in order:
+
+| Step | Runs | What it guards | Source |
+|------|------|----------------|--------|
+| Syntax check | `node --check` on each JS module | a syntax error can't reach live | `ci.yml` |
+| Boot smoke | `node ci/smoke.mjs` | the app actually boots (headless Chromium) | `ci/smoke.mjs` |
+| Logic regression | `node ci/logic-test.mjs` | money + multi-unit math stays correct (the big one, ~85 KB) | `ci/logic-test.mjs` |
+| Rulebook catalog | `node ci/gen-rule-usage.mjs --check` | `rule-usage.js` matches the `data-r` stamps | `ci/gen-rule-usage.mjs` |
+| Window catalog | `node ci/check-window-catalog.mjs` | `WINDOW_CATALOG` covers every popup (`APP-27`) | `ci/check-window-catalog.mjs` |
+| DESIGN.md sync | `node ci/check-design-md.mjs` | `DESIGN.md` is valid + in sync with `style.css` | `ci/check-design-md.mjs` |
+
+> Playwright (`smoke`, `logic-test`) runs in CI, **not** locally on Jac's
+> machine — CI installs Chromium fresh each run. Locally only the non-browser
+> gates run (`gen-rule-usage --check`, `check-window-catalog`, `check-design-md`,
+> and the atlas `gen-code-map --check`). _Debug here when:_ a PR check is red —
+> open the failing step's script above.
+
+## Act W2 — The Robots (`.github/workflows/`)
+- **`ci.yml`** — the gates above (job `smoke`).
+- **`branch-janitor.yml`** — daily (~07:17 UTC) prune of **merged** task
+  branches. Safe by design: never touches `main`, `staging`, or `area/*`, and
+  never a branch with an open PR.
+- **`wrangler-fix.yml`** — Mr. Wrangler's **Track B** auto-fix engine. An issue
+  labelled `wrangler-fix` / `wrangler-request` → a Claude agent reproduces,
+  patches the frontend, runs the gates, opens a PR, and auto-merges on green.
+  Inert until its secrets (`ANTHROPIC_API_KEY`, `WRANGLER_PAT`) + branch
+  protection are configured. Pairs with the in-app reporter (`APP-01`).
+
+## Act W3 — The Generators (`tools/`)
+*Dev-time only — none are served or imported. Each owns a generated artifact.*
+
+| Tool | Generates / does | Notes |
+|------|------------------|-------|
+| `tools/gen-code-map.mjs` | `docs/code-map.generated.md` (the Atlas index) + `--check` | this phase |
+| `tools/dead-code-scan.mjs` | `docs/dead-code-report.md` (unreferenced-symbol candidates) | this phase |
+| `tools/gen-icons.mjs` | `icons.js` generic glyphs, vendored from Lucide | needs network; never hand-edit icons |
+| `tools/gen-app-icons.py` | the PWA app-icon assets | |
+| `tools/import-real-data.ps1` | imports real customer data | ⚠️ PII — never paste its data into the repo |
+
+## Act W4 — The Library (`docs/`)
+- **`docs/CODE-MAP.md`** (this file), `docs/code-map.generated.md`,
+  `docs/dead-code-report.md` — the Atlas.
+- **`docs/superpowers/specs/`** — design specs (incl. this reorg's).
+- **`docs/handoffs/`**, **`docs/archive/`** — backend-deploy + clasp notes,
+  and the tidied historical handoffs (Part I Step C).
+- **`docs/backend-snippets/`**, `docs/wrangler-*.md`, `docs/google-maps-setup.md`
+  — backend/integration references (see Part III).
+
+## Act W5 — The Root (build, serve, config)
+| File | Role |
+|------|------|
+| `index.html` | the served entrypoint (loads `app.js` + modules + `style.css`; carries the shared `?v=` cache token) |
+| `serve.ps1` | local static server (port 8000 default; use 9147 here) |
+| `Build-Standalone.ps1` | bundle a single-file standalone build |
+| `manifest.webmanifest` | PWA manifest |
+| `package.json` | scripts/metadata |
+| `rule-usage.js` | **generated** by `gen-rule-usage.mjs` (don't hand-edit) |
+| `CNAME` · `.nojekyll` | GitHub Pages: custom domain + raw-serve |
+| `.gitignore` | keeps the backend (`Code.gs`/`backend/`) and secrets out of the public repo |
+
+## Workshop reverse index — "I need to…"
+
+| I need to… | Go to |
+|------------|-------|
+| Fix a failing PR check | the step's script in `ci/` (Act W1) |
+| Add/adjust a CI gate | `.github/workflows/ci.yml` + the `ci/*.mjs` it calls |
+| Add or change an icon | `tools/gen-icons.mjs` (then run it) — never hand-draw |
+| Regenerate the code map | `tools/gen-code-map.mjs` |
+| Find dead-code candidates | `tools/gen-code-map.mjs` → `docs/dead-code-report.md` via `dead-code-scan.mjs` |
+| Understand branch cleanup | `.github/workflows/branch-janitor.yml` |
+| Understand the auto-fix engine | `.github/workflows/wrangler-fix.yml` + `docs/wrangler-pipeline.md` |
+| Change the served entry / cache token | `index.html` |
+| Serve locally | `serve.ps1` (port 9147) |
 
 # Part III — The Backend (Apps Script `Code.js`) — *outline, specced later*
 
