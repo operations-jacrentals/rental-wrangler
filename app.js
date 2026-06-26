@@ -19,7 +19,7 @@ import * as CFG from './config.js';
 import { AGREEMENTS, AGREEMENT_VERSIONS, AGREEMENT_CURRENT } from './agreements.js';
 import { ico, I, CARD_ICON, RING_ICON, CATEGORY_ICON } from './icons.js';
 import {
-  getStatus, STATUS, ROLES, GRID_CARDS, BACKOFFICE_BOARDS, SORT_FIELDS,
+  getStatus, STATUS, ROLES, ROLE_TIERS, tierRank, BUILTIN_ROLE_TIERS, GRID_CARDS, BACKOFFICE_BOARDS, SORT_FIELDS,
   SHOP_TYPES, SHOP_SEGMENTS, COLUMNS, COLUMN_OF,
   legacyTransportPrice, computeTransportPrice, isFueledType, legsForType, YARD_ORIGIN, GOOGLE_MAPS_KEY,
   fmtWindow, fmtShortDate, showsTruck, parseISO, TODAY_ISO, invoiceShort, TRANSPORT_MAP,
@@ -3375,11 +3375,32 @@ function setDraftStatus(o, set, val, patch) {
   if (!next.color) delete next.color; if (!next.icon) delete next.icon; if (!next.label) delete next.label;   // empties → fall back to the shipped default
   if (Object.keys(next).length) o.draftSettings.status[set][val] = next; else delete o.draftSettings.status[set][val];
 }
-function captureLoginEdits(o) {   // keep typed-but-unsaved password edits across a tab switch
+function captureLoginEdits(o) {   // keep typed-but-unsaved password + label edits across a re-render
   const root = document.querySelector('.settings-popup .popup-body'); if (!root) return;
   if (!root.querySelector('.set-input[data-role]')) return;
   const roles = {}; root.querySelectorAll('.set-input[data-role]').forEach((i) => { roles[i.dataset.role] = i.value; });
   o.config.roles = roles; o.config.admin = root.querySelector('.set-input[data-admin]')?.value ?? o.config.admin;
+  const meta = draftRoleMeta(o);
+  root.querySelectorAll('.set-input[data-rolelabel]').forEach((i) => { const id = i.dataset.rolelabel; (meta[id] || (meta[id] = {})).label = i.value; });
+}
+/* Role customization (2026-06-26): built-in logins that can't be deleted (Admin
+   is the separate permanent field below). Renaming/re-tiering them is allowed. */
+const PROTECTED_ROLE_IDS = ['developer'];
+function draftSettingsObj(o) {
+  if (!o.draftSettings) o.draftSettings = JSON.parse(JSON.stringify((o.config && o.config.settings) || state.settings || {}));
+  return o.draftSettings;
+}
+function draftRoleMeta(o) { const s = draftSettingsObj(o); if (!s.roleMeta || typeof s.roleMeta !== 'object') s.roleMeta = {}; return s.roleMeta; }
+/* Backfill a {label,tier} entry for every login the config holds, so the pane can
+   render tiers even on a backend that predates roleMeta. Defaults: the role key
+   doubles as its label; tier from BUILTIN_ROLE_TIERS, else staff. */
+function ensureRoleMeta(o) {
+  const roles = (o.config && o.config.roles) || {}; const meta = draftRoleMeta(o);
+  Object.keys(roles).forEach((id) => {
+    const m = meta[id] || (meta[id] = {});
+    if (!m.label) m.label = id;
+    if (!m.tier) m.tier = BUILTIN_ROLE_TIERS[id.toLowerCase()] || 'staff';
+  });
 }
 function settingsBoardHtml(o) {
   const rail = SETTINGS_TABS.map((t) => `<button class="set-tab js-set-tab${o.tab === t.id ? ' on' : ''}" data-tab="${t.id}"><span class="set-tab-ic">${t.icon || ''}</span><span class="set-tab-l">${esc(t.label)}</span>${t.v1 ? '' : '<span class="set-tab-dot" data-tip="Planned — wired in next"></span>'}</button>`).join('');
@@ -3395,14 +3416,29 @@ function settingsBoardHtml(o) {
   return `<div class="set-board"><nav class="set-rail" aria-label="Settings sections">${rail}</nav><div class="set-pane">${pane}</div></div>`;
 }
 function settingsLoginsPane(o) {
+  ensureRoleMeta(o);
   const cfg = o.config || { roles: {}, admin: '' };
+  const meta = draftRoleMeta(o);
   const pwType = o.revealPw ? 'text' : 'password';   // masked by default so passwords don't shoulder-surf; toggle to reveal
-  const roleRows = Object.keys(cfg.roles || {}).map((role) => `<label class="set-row"><span class="set-role">${esc(role)}</span><input class="set-input" type="${pwType}" data-role="${esc(role)}" value="${esc(cfg.roles[role])}" autocomplete="off" /></label>`).join('');
+  // Tier picker — a segmented control (R14) over ROLE_TIERS; the active tier rides blue.
+  const tierSeg = (id, tier) => segCtl(ROLE_TIERS.map((t) => ({ js: 'js-role-tier', on: t.id === tier ? 'blue' : null, data: { role: id, tier: t.id }, label: t.label })), 'set-tierseg');
+  const roleRows = Object.keys(cfg.roles || {}).map((id) => {
+    const m = meta[id] || {}; const protd = PROTECTED_ROLE_IDS.includes(id.toLowerCase());
+    return `<div class="set-rolecard">
+      <div class="set-row set-rolehead">
+        <input class="set-input set-rolelabel" data-rolelabel="${esc(id)}" value="${esc(m.label || id)}" placeholder="Role name" autocomplete="off" />
+        <input class="set-input" type="${pwType}" data-role="${esc(id)}" value="${esc(cfg.roles[id])}" placeholder="Password" autocomplete="off" />
+        ${protd ? `<span class="set-lock" data-tip="Built-in role — can’t be removed">${I.lock}</span>` : closeX('js-role-del', { data: { role: id } })}
+      </div>
+      <div class="set-tierrow"><span class="set-tiercap">Tier</span>${tierSeg(id, m.tier)}</div>
+    </div>`;
+  }).join('');
   return `
-    <div class="set-pane-head"><h4>Roles &amp; Logins</h4><p>Each role signs in with its password (plus their name). Changes apply at next sign-in.</p></div>
+    <div class="set-pane-head"><h4>Roles &amp; Logins</h4><p>Each role signs in with its password (plus their name). Pick a <strong>tier</strong> for what it can do, rename it, or add your own. Changes apply at next sign-in.</p></div>
     <div class="set-reveal-row"><button class="set-reveal js-set-reveal" type="button">${I.eye} ${o.revealPw ? 'Hide passwords' : 'Show passwords'}</button></div>
     ${roleRows}
-    <label class="set-row set-admin"><span class="set-role">Admin</span><input class="set-input" type="${pwType}" data-admin="1" value="${esc(cfg.admin || '')}" autocomplete="off" /></label>
+    ${addBtn('Role', { js: 'js-role-add' })}
+    <label class="set-row set-admin"><span class="set-role" data-tip="The permanent top-level login — always Admin tier, can’t be removed.">Admin</span><input class="set-input" type="${pwType}" data-admin="1" value="${esc(cfg.admin || '')}" autocomplete="off" /></label>
     <div class="set-row" style="margin-top:14px;align-items:center"><span class="set-role" style="flex:0 0 auto" data-tip="ON: dropping a unit onto a conflicting rental links anyway — both sides get a pulsing red 'Overbooked' flag while the overlap exists. OFF: the drop is blocked, naming the conflict.">Allow overbooking</span>${segCtl([{ label: 'Off', js: 'js-overbook', data: { val: '0' }, on: state.overbookOn ? null : 'red' }, { label: 'On', js: 'js-overbook', data: { val: '1' }, on: state.overbookOn ? 'green' : null }])}</div>
     <p class="set-note">Drag &amp; drop policy — saved on this device.</p>
     <div class="set-row" style="margin-top:12px;align-items:center"><span class="set-role" style="flex:0 0 auto" data-tip="A light vibration confirms committed actions on phones (post a chat, drop a link, complete a WO, release-to-cancel). Android only — iOS has no vibration.">Haptic feedback</span>${segCtl([{ label: 'Off', js: 'js-haptics', data: { val: '0' }, on: state.hapticsOff ? 'red' : null }, { label: 'On', js: 'js-haptics', data: { val: '1' }, on: state.hapticsOff ? null : 'green' }])}</div>
@@ -7301,10 +7337,10 @@ function bottomBarInner(opts = {}) {
     <button class="iconbtn js-wrangler" data-tip="New chat with Mr. Wrangler — ask the yard AI, or report a bug" style="font-size:16px">🤠</button>
     ${opts.noInbox ? '' : `<button class="iconbtn js-requests" data-tip="Requests for your OK — review what Mr. Wrangler filed">${I.inbox}${wranglerRequests.length ? `<span class="bb-badge">${wranglerRequests.length > 9 ? '9+' : wranglerRequests.length}</span>` : ''}</button>`}
     <button class="iconbtn js-hotkeys" data-tip="Mouse &amp; keyboard shortcuts">${I.mouse}</button>
-    ${adminUnlocked() ? `<button class="iconbtn js-lint${document.body.classList.contains('rw-lint') ? ' on' : ''}" data-tip="Design lint — flash anything that bypassed the UI builders (R0)">${I.eye}</button>
+    ${devUnlocked() ? `<button class="iconbtn js-lint${document.body.classList.contains('rw-lint') ? ' on' : ''}" data-tip="Design lint — flash anything that bypassed the UI builders (R0)">${I.eye}</button>
     <button class="iconbtn js-inspect${state.inspect ? ' on' : ''}" data-tip="Design Inspector — hover names the rule, click copies the reference">${I.search}</button>
-    <button class="iconbtn js-rulebook" data-tip="The R-Rulebook — visual design reference (SPEC v8)">${I.doc}</button>
-    <button class="iconbtn js-photo-sweep" data-tip="Offload base64 photos to Drive — one-shot migration to de-bloat the payload">${I.camera}</button>` : ''}`;
+    <button class="iconbtn js-rulebook" data-tip="The R-Rulebook — visual design reference (SPEC v8)">${I.doc}</button>` : ''}
+    ${adminUnlocked() ? `<button class="iconbtn js-photo-sweep" data-tip="Offload base64 photos to Drive — one-shot migration to de-bloat the payload">${I.camera}</button>` : ''}`;
 }
 // §18g/§17 — the bottom COMMS BAND: toolbar pinned left · the conversation rail
 // fills the middle (every Mr. Wrangler request + chat and every team thread is its
@@ -10239,7 +10275,7 @@ async function wranglerFileAction(mi) {
    engine builds + ships it. Owner/Admin only acts; everyone can see what's pending. */
 let wranglerRequests = [];
 let reqLoaded = false, reqLoading = false;
-const canApproveRequests = () => currentRole === 'Owner' || currentRole === 'Admin';
+const canApproveRequests = () => roleTier(currentRole) >= tierRank('manager');
 async function refreshWranglerRequests() {
   if (typeof backendPassword === 'undefined' || !backendPassword || reqLoading) return;   // demo/offline → no inbox
   reqLoading = true;
@@ -11684,6 +11720,9 @@ function onClick(e) {
   if (closest('.js-switch-user')) { e.stopPropagation(); return switchUser(); }
   if (closest('.js-open-settings')) { e.stopPropagation(); return openSettings(); }
   if (closest('.js-set-reveal')) { e.stopPropagation(); const o = state.overlay; if (o) { captureLoginEdits(o); o.revealPw = !o.revealPw; renderOverlay(); } return; }   // toggle masked role passwords
+  if (closest('.js-role-tier')) { e.stopPropagation(); const o = state.overlay; if (o) { captureLoginEdits(o); const b = closest('.js-role-tier'); const meta = draftRoleMeta(o); (meta[b.dataset.role] || (meta[b.dataset.role] = {})).tier = b.dataset.tier; o.error = null; renderOverlay(); } return; }   // pick a role's permission tier
+  if (closest('.js-role-del')) { e.stopPropagation(); const o = state.overlay; if (!o) return; const id = closest('.js-role-del').dataset.role; if (PROTECTED_ROLE_IDS.includes(String(id).toLowerCase())) { o.error = 'That built-in role can’t be removed.'; renderOverlay(); return; } captureLoginEdits(o); delete o.config.roles[id]; delete draftRoleMeta(o)[id]; o.error = null; renderOverlay(); return; }   // remove a role
+  if (closest('.js-role-add')) { e.stopPropagation(); const o = state.overlay; if (!o) return; captureLoginEdits(o); o.config.roles = o.config.roles || {}; let n = Object.keys(o.config.roles).length + 1, id = 'role' + n; while (o.config.roles[id] != null) { n++; id = 'role' + n; } o.config.roles[id] = ''; draftRoleMeta(o)[id] = { label: 'New Role', tier: 'staff' }; o.error = null; renderOverlay(); return; }   // add a custom role
   if (closest('.js-settings-save')) { e.stopPropagation(); return saveSettings(); }
   if (closest('.js-settings-resetpage')) { e.stopPropagation(); return resetPageSettings(); }   // gentle: default just this tab
   if (closest('.js-settings-reset')) { e.stopPropagation(); const o = state.overlay; if (!o) return; if (o.resetArm) return resetAllSettings(); o.resetArm = true; renderOverlay(); return; }   // armed two-click confirm
@@ -12387,18 +12426,36 @@ function startInlineEdit(span) {
 
 const BOOKING_STATUSES = ['On Rent', 'Reserved', 'Today', 'Tomorrow'];
 
-/* ADMIN TOOLS GATE (Jac 2026-06-22) — the dev/design tools (R-Rulebook, Design
-   Inspector, Design Lint) show ONLY for an Admin/Owner login. The old obfuscated
-   passphrase unlock was dropped (Jac): the admin login is the only thing that
-   should see these, so a normal account gets nothing — no lock toggle, no peek.
-   Settings is intentionally NOT gated here (Jac: "you don't need to hide it").
-   (requireAdmin below — the backend-verified card/price override — is separate
-   and untouched.) */
-function adminUnlocked() { return currentRole === 'Admin' || currentRole === 'Owner'; }
+/* ROLE TIERS (role-system redesign 2026-06-26) — roles are customizable, so
+   permissions key off a TIER, never a role name. `roleTier` resolves whatever
+   string the backend's `auth` returned for `currentRole` (id or label, any case)
+   to a rank 0..5 via `settings.roleMeta` (synced to every user in loadFromBackend)
+   with a fallback to BUILTIN_ROLE_TIERS. Spec: docs/superpowers/specs/
+   2026-06-26-role-system-redesign-design.md */
+function roleMetaMap() { return (state.settings && state.settings.roleMeta) || {}; }
+function roleTier(role) {
+  const id = String(role || '').trim().toLowerCase();
+  if (!id) return 0;
+  const meta = roleMetaMap();
+  const key = Object.keys(meta).find((k) => k.toLowerCase() === id);   // case-insensitive
+  if (key && meta[key] && meta[key].tier) return tierRank(meta[key].tier);
+  if (BUILTIN_ROLE_TIERS[id]) return tierRank(BUILTIN_ROLE_TIERS[id]);
+  return 0;
+}
+
+/* ADMIN TOOLS GATE (Jac 2026-06-22; tiers 2026-06-26) — business-admin actions
+   (Settings, category/pricing edits, migrations, curating shared sets) require
+   tier ≥ admin. The DEV/design tools (R-Rulebook, Inspector, Lint) moved UP to
+   `devUnlocked` (tier ≥ developer) — a business Admin no longer sees raw dev
+   tools. (requireAdmin below — the backend-verified card/price override — is
+   separate.) */
+function adminUnlocked() { return roleTier(currentRole) >= tierRank('admin'); }
+/** Dev/design tools (Lint / Inspector / Rulebook) — Developer tier only. */
+function devUnlocked() { return roleTier(currentRole) >= tierRank('developer'); }
 
 /** Verify an Admin password (reuses the Settings gate), then run onOk. Demo/offline → allowed. */
 async function requireAdmin(reason, onOk) {
-  const pw = (currentRole === 'Admin' || currentRole === 'Owner') ? backendPassword
+  const pw = adminUnlocked() ? backendPassword
     : (window.prompt((reason ? reason + '\n\n' : '') + 'Enter an Admin password to override:') || '');
   if (!pw && backendPassword) return;
   if (!backendPassword) { onOk(); return; }          // demo: no backend to verify against
@@ -13193,7 +13250,7 @@ function openLogoMenu(anchorEl) {
   const team = `<div class="menu-sep"></div><div class="menu-team"><div class="menu-team-head">Team KPIs</div><div class="menu-team-ring">${ringsSVG(roleScores, ROLES.map((r) => r.color), { size: 104 })}</div><div class="kpi-list"><div class="kpi-line"><span class="k-name">Sulphur Team</span><span class="k-val" style="color:var(--${tbd.color})">${teamScore}%</span></div></div></div>`;
   const userLine = `<div class="menu-user"><span class="mu-name">${esc(currentUser || 'Signed in')}</span>${currentRole ? `<span class="mu-role">${esc(currentRole)}</span>` : ''}</div>
     <button class="dd-item js-switch-user"><span class="mi-ico" style="display:inline-flex;color:var(--accent)">${I.back}</span>Switch user</button>
-    <button class="dd-item js-open-settings"><span class="mi-ico" style="display:inline-flex;color:var(--accent)">${I.grid}</span>Settings${(currentRole === 'Admin' || currentRole === 'Owner') ? '' : ' <span class="muted" style="font-size:10px;margin-left:2px">Admin</span>'}</button>
+    <button class="dd-item js-open-settings"><span class="mi-ico" style="display:inline-flex;color:var(--accent)">${I.grid}</span>Settings${adminUnlocked() ? '' : ' <span class="muted" style="font-size:10px;margin-left:2px">Admin</span>'}</button>
     <div class="menu-sep"></div>`;
   openDropdown(anchorEl, userLine + boards + team);
 }
@@ -13208,7 +13265,7 @@ function switchUser() {
 // admin password; a staff role must enter it. Loads the live config, then opens the editor.
 async function openSettings() {
   document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove());
-  const adminPw = (currentRole === 'Admin' || currentRole === 'Owner') ? backendPassword : (window.prompt('Settings is Admin-only.\nEnter the Admin password:') || '');
+  const adminPw = adminUnlocked() ? backendPassword : (window.prompt('Settings is Admin-only.\nEnter the Admin password:') || '');
   if (!adminPw) return;
   // Open the shell immediately in a loading state so the wait is visible, not a frozen UI.
   openOverlay({ kind: 'settings', loading: true, adminPw });
@@ -13229,7 +13286,13 @@ async function saveSettings() {
   if (haveLogins) {
     roles = {}; root.querySelectorAll('.set-input[data-role]').forEach((i) => { roles[i.dataset.role] = i.value.trim(); });
     admin = root.querySelector('.set-input[data-admin]')?.value.trim() || '';
+    // Labels + tiers ride in settings.roleMeta — capture the typed labels, then
+    // prune meta for any role that was removed so it can't linger.
+    const meta = draftRoleMeta(o);
+    root.querySelectorAll('.set-input[data-rolelabel]').forEach((i) => { const id = i.dataset.rolelabel; (meta[id] || (meta[id] = {})).label = i.value.trim(); });
+    Object.keys(meta).forEach((id) => { if (!(id in roles)) delete meta[id]; });
     if (!admin || Object.values(roles).some((v) => !v)) { o.error = 'Passwords can\'t be empty.'; o.tab = 'logins'; renderOverlay(); return; }
+    if (Object.keys(roles).some((id) => !(meta[id] && meta[id].label))) { o.error = 'Role names can\'t be empty.'; o.tab = 'logins'; renderOverlay(); return; }
   }
   const settings = o.draftSettings || state.settings || {};
   // Inputs are read above; now flip to the Saving… state so the button doesn't look frozen.
@@ -13238,7 +13301,7 @@ async function saveSettings() {
     const r = await backendCall('setConfig', { password: o.adminPw, config: { roles, admin, settings } });
     o.saving = false;
     if (r && r.ok) {
-      if (haveLogins && (currentRole === 'Admin' || currentRole === 'Owner')) { const myNew = currentRole === 'Admin' ? admin : (roles[currentRole] || o.adminPw); backendPassword = myNew; sessionStorage.setItem('jactec.pw', myNew); o.adminPw = myNew; }
+      if (haveLogins && adminUnlocked()) { const myNew = currentRole === 'Admin' ? admin : (roles[currentRole] || o.adminPw); backendPassword = myNew; sessionStorage.setItem('jactec.pw', myNew); o.adminPw = myNew; }
       o.config.roles = roles; o.config.admin = admin; o.config.settings = settings;
       persistAdminSettings(settings);   // mirror locally + apply the status overrides live
       closeOverlay(); toast('Settings saved.'); render();
@@ -13481,7 +13544,7 @@ function getStripe() {
   return _stripe;
 }
 // Only Office/Admin take payments. In #local demo (no role) we still show the UI.
-const canMoney = () => !currentRole || currentRole === 'Admin' || currentRole === 'Owner' || currentRole === 'Office';
+const canMoney = () => !currentRole || roleTier(currentRole) >= tierRank('money');
 const brandName = (b) => (b || 'Card').replace(/^./, (m) => m.toUpperCase());
 const hasCardOnFile = (c) => customerCards(c).length > 0;
 /* §12.1 rapid action entry (Jac 2026-06-12): commit per the R14 mode toggle —
