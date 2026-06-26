@@ -1,6 +1,6 @@
 # Jac Rentals — Cross-Role Design Framework
 
-The backbone of the `/role` review. Source: role-research workflow `wf_93bd5fe5` (2026-06-20), grounded in the actual Rental Wrangler app/spec. Pair this with `roles.md` (per-role audit questions).
+The backbone of the `/role` review. Source: role-research workflow `wf_93bd5fe5` (2026-06-20), grounded in the actual Rental Wrangler app/spec. Pair this with `role-roles.md` (per-role audit questions).
 
 ---
 
@@ -88,4 +88,4 @@ The backbone of the `/role` review. Source: role-research workflow `wf_93bd5fe5`
 9. **Field/mobile + offline check** — field role (Driver, Outside Sales) or Customer: works in pan/large-tap, tolerates offline capture with queued retry, no hover-only affordances, critical action in ~3–5 taps.
 10. **Rental-domain integrity check** — honors the invariants: transport flat-fee from the authoritative city lookup (no hand-edit, alert on unresolved city), 10.75% tax, member Unlimited-Transport=$0 only when complete, For-Sale/Inactive/Failed units blocked from availability, Round-Trip surfaces BOTH legs, price-lock HMAC respected on locked invoices.
 11. **KPI + parameter check** — does it move any KPI ring formula (each role limited to its own ring)? Are business parameters Owner-settable, with ring impact documented?
-12. **Run role-specific audit questions** — for each role flagged in step 1, run its `roles.md` audit questions against the spec; record pass/fail/gap. Output the consolidated failures, tier/isolation violations, and concrete fixes.
+12. **Run role-specific audit questions** — for each role flagged in step 1, run its `role-roles.md` audit questions against the spec; record pass/fail/gap. Output the consolidated failures, tier/isolation violations, and concrete fixes.
