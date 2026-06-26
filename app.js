@@ -5529,8 +5529,9 @@ const DETAIL = {
       state.winEdit = { rentalId: r.rentalId, monthISO: firstOfMonthISO(r.startDate || TODAY_ISO), anchor: null };
       if (rentalFragile(r)) state.winEdit.staged = { rentalId: r.rentalId, startDate: r.startDate || '', endDate: r.endDate || '', startTime: r.startTime || '' };
     }
-    const winStaged = !!(state.winEdit.staged && winStagedChanged());
-    const calHtml = `<div class="rdcal-edit${winStaged ? ' staged' : ''}" data-rec="${esc(r.rentalId)}" style="--rdcal-hl:var(--${stColor})">${winPickerEl(r)}</div>`;
+    // (the `.staged` class is no longer styled — the dim/pointer-block went away when the
+    //  Confirm panel moved inline (2026-06-26), so we stop emitting the now-inert hook.)
+    const calHtml = `<div class="rdcal-edit" data-rec="${esc(r.rentalId)}" style="--rdcal-hl:var(--${stColor})">${winPickerEl(r)}</div>`;
 
     /* Duration label (shared across all unit rows). */
     const durLabel = hasWin
