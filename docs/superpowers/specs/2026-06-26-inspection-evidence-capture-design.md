@@ -49,7 +49,7 @@ proof of the specific failure.
     that item is marked **Fail**. This is the core of "evidence that generates the Work Order."
   - **Walkaround evidence** — one unit-level photo/video set captured on the takeover, matching the "Shown In Video" card
     language. Configurable per family.
-  Built in phases (below) so Phase 1 alone closes the WO gap; the walkaround can land second.
+  **Both surfaces ship together as one build** (Jac, 2026-06-26); the QC-default content pass is the only separate phase.
 
 **D2 — Evidence is orthogonal to item type.** It is an *attachment on the answer*, not a new item type. A `toggle`
   "Brakes & hydraulics" item stays a toggle and *also* can hold a failure photo. (The existing `file` type is unchanged.)
@@ -58,6 +58,11 @@ proof of the specific failure.
   `None` (default — today's behavior) · `Optional` · `Required-on-Fail` · `Always`.
   `Required-on-Fail` is the workflow lever Jac wants: marking that item **Fail** blocks **Complete inspection** until a
   photo/video is attached — guaranteeing the auto-WO is born with proof.
+
+**D7 — Required-gate escape = "Keep as pending," no override** (Jac, 2026-06-26). If a required photo can't be captured
+  (dead camera, etc.), the inspector taps the existing R18 **"Keep as pending"** and finishes later — the inspection
+  simply cannot **Complete** without the required evidence. We deliberately add **no** Admin override here: nothing
+  reaches Ready/Failed (and no auto-WO fires) without the proof the policy demands.
 
 **D4 — Media:** per-item evidence accepts **image or video** (`accept="image/*,video/*"`), images downscaled via
   `downscaleImage`, video kept inline like the §12.8 report (size-risk acknowledged — same tradeoff already shipped).
@@ -141,13 +146,13 @@ leak/hydraulic/brake/structural lines as `failphoto`, and (if D-W below = requir
 families whose cards reference video. Exact per-family/per-item policy is a **content pass to do with Jac** (see open
 decisions). De-dupe the known repeated lines (Power Trowel / Concrete Saw "Leveler Not Broken") in the same pass.
 
-## Build order (phases — each independently shippable)
+## Build order
 
-1. **Phase 1 — per-item evidence + WO linkage (the core gap).** Data fields, builder Evidence segcontrol, takeover camera
-   affordance, `failphoto` completion gate, `autoWOFromInspection` enrichment, WO-detail evidence strip. Logic tests +
-   jactec-ui screenshots. This alone delivers "evidence that generates the Work Order."
-2. **Phase 2 — walkaround capture.** Header capture tile on the takeover, `n.evidence`, optional/required per family.
-3. **Phase 3 — default policy seeding + de-dupe** in `INSP_DEFAULTS` (content pass with Jac).
+1. **Build 1 — per-item evidence + walkaround + WO linkage (one build, Jac 2026-06-26).** Data fields
+   (`n.itemEvidence`, `n.evidence`, item `evidence` policy); builder Evidence segcontrol; takeover per-row camera
+   affordance + the header walkaround tile; the `failphoto` / `always` / walkaround completion gate; `"Keep as pending"`
+   as the only escape; `autoWOFromInspection` enrichment + WO-detail evidence strip. Logic tests + jactec-ui screenshots.
+2. **Build 2 — default policy seeding + de-dupe** in `INSP_DEFAULTS` (content pass with Jac against the QC cards).
 
 ## Safety / gates
 
@@ -184,8 +189,7 @@ preserved). The following hardening is now part of the spec; one item is a **pre
 
 ## Open decisions (Jac to redline — defaults chosen so build isn't blocked)
 
-1. **D1 depth** — ship both per-item + walkaround, or **Phase 1 only** (per-item) first and decide on walkaround after?
-   *(Default: build Phase 1 first, walkaround as Phase 2.)*
+1. **D1 depth** — ✅ **RESOLVED (Jac 2026-06-26): ship both per-item + walkaround together as one build.**
 2. **D-W walkaround requirement** — Off / Optional / Required by default for QC families? *(Default: Optional.)*
 3. **Per-item video** — allow video per item, or image-only per item with video reserved for walkaround + failure report
    (smaller records)? *(Default: allow video per item, downscaled images.)*
@@ -195,10 +199,8 @@ preserved). The following hardening is now part of the spec; one item is a **pre
    pending record (no loss). *(Default: persist.)*
 6. **Phase 3 content** — which exact default items get `failphoto` and which families get the walkaround — a sit-down
    content pass with Jac against the QC cards.
-7. **Required-gate escape (from /role)** — when an item is `failphoto`-required but the inspector genuinely can't get a
-   photo (dead camera): is **"Keep as pending"** the intended escape (no Complete until photo), *or* do we add a logged
-   Owner/Admin override to Complete without it? *(Default leaning: "Keep as pending" is the escape — no new override —
-   but Jac to confirm, since every hard block normally exposes a logged override.)*
+7. **Required-gate escape (from /role)** — ✅ **RESOLVED (Jac 2026-06-26): "Keep as pending" is the escape; NO override.**
+   See D7. Nothing reaches Ready/Failed (no auto-WO) without the required proof.
 
 ## Future extensions (out of scope now)
 
