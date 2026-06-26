@@ -51,7 +51,7 @@ that with a mechanical, watchable proof — not "trust me."
    - `node ci/check-window-catalog.mjs`
    (Port-swap per CLAUDE.md: `sed -i 's/8000/9147/g' ci/smoke.mjs ci/logic-test.mjs`,
    run, then `git checkout -- ci/`.)
-4. **File moves are limited to never-served, never-imported files** (§5.3),
+4. **File moves are limited to never-served, never-imported files** (§5.4),
    each grep-verified as unreferenced before it moves.
 
 The stripped-comment diff is the spec's central guarantee. A reviewer can run it
@@ -119,7 +119,7 @@ Mirrors the house pattern (`gen-rule-usage.mjs`, `check-window-catalog.mjs`,
 `gen-icons.mjs`): the parts of the map that can be **derived from the code** are
 generated, so the map can never silently drift.
 
-- `tools/gen-code-map.mjs` scans the **standardized banners** (§4.3) across the
+- `tools/gen-code-map.mjs` scans the **standardized banners** (§4.4) across the
   frontend files and emits `docs/code-map.generated.md` — a machine index of
   every chapter: `{ id, title, anchors, file, startLine, endLine }`. This is the
   auto-derivable skeleton; the hand-narrated prose ("what happens / edit when /
@@ -135,7 +135,26 @@ generated, so the map can never silently drift.
 `code-map.generated.md` = the *index* (machine-owned, never hand-edited). The
 narration references chapter IDs; `--check` keeps the two honest.
 
-### 4.3 Standardized chapter banners — inert comments (a separate, proven commit)
+### 4.3 `/atlas` skill — the map as a living, used tool
+
+A CODE-MAP nobody consults will rot. The `/atlas` skill makes the map the
+*default* way sessions locate code, and keeps it honest. It is **instructions
+only** — never served or imported, zero runtime risk.
+
+- **Location:** `.claude/skills/atlas/SKILL.md` (house pattern).
+- **Triggers:** any "where does X live / find / source / edit / debug this code"
+  task — the skill says: open `docs/CODE-MAP.md` + the reverse index FIRST,
+  locate the chapter, jump to the `file:line`, *then* grep only within that
+  chapter's range. (Map-first beats grepping 15k lines blind.)
+- **Keep-current duty:** after any change that adds, moves, or retitles a
+  chapter/banner, run `node tools/gen-code-map.mjs` to refresh the generated
+  index and update the `CODE-MAP.md` narration; `--check` is the gate that
+  catches a forgotten update.
+- **Scope boundary:** governs *navigating the source*. It does **not** touch the
+  app's own in-app global search (`§5`) — that is a shipped runtime feature, out
+  of scope for this reorg.
+
+### 4.4 Standardized chapter banners — inert comments (a separate, proven commit)
 
 The existing banners are half-present and inconsistent (`§`-headers in box-draw
 rules, plus ad-hoc inserts like `RENTAL EXTENSIONS`, `INLINE TRANSPORT EDITOR`,
@@ -179,7 +198,11 @@ Read the frontend files, build the chapter groupings over the existing
    four CI gates green and unchanged; `node tools/gen-code-map.mjs --check`
    passes. Show the proof in the PR.
 
-### 5.3 Step C — tidy non-executed clutter
+### 5.3 Step C — the `/atlas` skill
+Add `.claude/skills/atlas/SKILL.md` (§4.3). Instructions only — no code file
+touched. **Proof:** `git diff --stat` shows only `.claude/skills/` added.
+
+### 5.4 Step D — tidy non-executed clutter
 Move never-served, never-imported items into `docs/` (candidates:
 `NEW COMPUTER HANDOFF/`, `JacTec-handoff/`, `HANDOFF.md`, the dated session
 folder `2026-06-21 Start+Wrapup Test/`, `drafts/`). **Before each move**, grep
@@ -197,6 +220,8 @@ goes up as a **draft PR**.
 - [ ] `docs/CODE-MAP.md` exists and covers every frontend file, with chapters,
       `file:line` anchors, "edit/debug here when" hints, and a reverse index.
 - [ ] `tools/gen-code-map.mjs --check` passes and is wired to fail on drift.
+- [ ] `.claude/skills/atlas/SKILL.md` exists: map-first navigation + keep-current
+      duty; triggers correctly on "find/source/edit/debug code" tasks.
 - [ ] Stripped-comment diff of `app.js` and every executable file is **empty**
       after the banner commit (no logic moved).
 - [ ] All four CI gates green and **identical** before vs. after.
@@ -211,7 +236,7 @@ goes up as a **draft PR**.
 |------|-----------|------------|
 | A banner edit accidentally deletes/alters a code line | Low | Stripped-comment diff must be empty; reject if not |
 | Map line numbers drift as code evolves | Medium | `gen-code-map.mjs --check` drift guard |
-| A "non-served" file is actually referenced | Low | Grep-verify each file before moving (§5.3) |
+| A "non-served" file is actually referenced | Low | Grep-verify each file before moving (§5.4) |
 | Banner comment lands inside a template literal / regex and changes output | Low | Banners go only at top-level chapter boundaries; CI + stripped diff catch it |
 | Scope creep into reordering/refactor | Medium | Hard non-goals (§1); reordering is a separate, later, opt-in Tier 1 |
 
