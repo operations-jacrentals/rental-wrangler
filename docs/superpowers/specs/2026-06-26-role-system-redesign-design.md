@@ -220,11 +220,23 @@ window-catalog gate).
 
 ## 9. Risks / assumptions
 
-- **Assumes `auth` matches password→`roles`-key dynamically against stored
-  config** (true today — editing a password in Settings already changes the
-  login). New keys (`manager`, `developer`) match the same way. If a future
-  reading of `Code.gs` shows `auth` is hardcoded, the `roleMeta` approach still
-  holds but the role **passwords** would need the deferred `Code.gs` seed.
+- **⚠ VERIFIED 2026-06-26 — the backend rejects NEW role keys.** A live probe
+  (`getConfig`/`setConfig`/`auth` against prod) showed the `roles` map is a
+  **fixed 6-slot set** (Owner, Mechanic, Driver, M.Tech, Sales, Office) + the
+  separate `admin` field. `setConfig` silently **drops** any unknown key — adding
+  a `developer` login returned `ok` but did not persist, and `auth` for it is
+  `unauthorized`. Consequences:
+  - **Relabel + re-tier of EXISTING slots works with no backend change** —
+    `settings.roleMeta` persists fine, so **Owner → Manager is live** (the Owner
+    slot's password keeps working and becomes Manager tier on the new frontend).
+  - **Adding the Developer login AND the whole "add custom roles" feature require
+    a `Code.gs` change** so `setConfig`/`auth` accept arbitrary role keys. This is
+    **load-bearing, not deferred**: until it lands, the frontend "+Role" UI saves
+    the label/tier but the new login cannot authenticate.
+  - That `Code.gs` change needs **clasp**, currently **RAPT-blocked**
+    (`invalid_rapt`); the source can't be read in-session to pre-write a precise,
+    security-safe patch. Unblock path: re-mint `CLASPRC_JSON_B64`, then pull →
+    patch the role-key restriction + seed Developer → deploy.
 - **Case/id normalization** is centralized in `roleTier()`; no other code should
   string-compare `currentRole` against a literal tier — only ids (like the shop
   landing) remain as direct id checks.

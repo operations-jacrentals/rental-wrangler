@@ -1,5 +1,17 @@
 # Phase 4 — Role data seeding (runtime, post-deploy)
 
+> **STATUS (2026-06-26, verified against the live backend):**
+> - ✅ **Owner → Manager is already staged** on the live backend via
+>   `settings.roleMeta` (the Owner login's password is unchanged and becomes
+>   Manager tier once the new frontend deploys). Dormant + safe on the old
+>   frontend, which ignores `roleMeta`.
+> - ❌ **Developer login + adding any custom role is BLOCKED.** The live backend
+>   `roles` map is a **fixed 6-slot set** (Owner, Mechanic, Driver, M.Tech,
+>   Sales, Office) + Admin; `setConfig` silently drops new keys, so the
+>   `developer`/`Jacob5133` login won't persist or authenticate. This needs a
+>   **`Code.gs` change** (accept arbitrary role keys) deployed via **clasp**,
+>   which is currently **RAPT-blocked**. Step 4 below cannot succeed until then.
+
 Phases 0–3 (the tier model + customizable Settings UI) ship via the frontend PR.
 This runbook applies the **actual role changes** Jac asked for. It is a **runtime
 config edit**, done **in the live app** by an Admin — **no passwords are ever
