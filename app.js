@@ -745,7 +745,7 @@ function reindexRentalLinks() {
   DATA.units.forEach((u) => IDX.search.set('units:' + u.unitId, searchBlob('units', u)));
   DATA.categories.forEach((c) => IDX.search.set('categories:' + c.categoryId, searchBlob('categories', c)));
 }
-const idOf   = (card, rec) => rec[{ customers: 'customerId', rentals: 'rentalId', categories: 'categoryId', units: 'unitId', invoices: 'invoiceId', workOrders: 'woId', inspections: 'inspectionId', serviceOrders: 'unitId', vendors: 'vendorId', parts: 'partId', expenses: 'expenseId', files: 'fileId' }[card]];
+const idOf   = (card, rec) => rec && rec[{ customers: 'customerId', rentals: 'rentalId', categories: 'categoryId', units: 'unitId', invoices: 'invoiceId', workOrders: 'woId', inspections: 'inspectionId', serviceOrders: 'unitId', vendors: 'vendorId', parts: 'partId', expenses: 'expenseId', files: 'fileId' }[card]];   // null-safe: a dangling ref resolves to undefined, never a render crash (matches recOf)
 const recOf  = (card, id) => ({ customers: IDX.customer, rentals: IDX.rental, categories: IDX.category, units: IDX.unit, invoices: IDX.invoice, workOrders: IDX.wo, inspections: IDX.insp, serviceOrders: IDX.unit, vendors: IDX.vendor, expenses: IDX.expense, parts: IDX.part, files: IDX.file }[card])?.get(id);
 
 /* ── §5 comprehensive search blob — ONE source of truth for what's searchable.
@@ -939,6 +939,189 @@ function transportLineItems(r) {
   });
   return out;
 }
+/* ════════════ RENTAL EXTENSIONS (Jac 2026-06-25) ════════════
+   Lengthening a fragile (invoiced/out) rental's window re-prices the FULL window
+   per unit and bills only the increment as additive 'extension' line(s) — never
+   re-pricing or touching the original (possibly paid) 'rental' line. Positive
+   deltas only: a shortened window is a refund decision, left manual (refund-first,
+   §7.4). Composes across repeats — each pass diffs against everything already
+   billed for the unit (rental + prior extension lines). */
+/** Retroactive Rental Pricing (admin setting, default ON — Jac 2026-06-25): ON =
+ *  an extension bills the cheapest price for ALL the days rented, with what's already
+ *  billed counting toward it (delta = full-window price − billed). OFF = the extension
+ *  is billed as a FRESH rental of just the added days (prevEnd→newEnd), originals frozen. */
+function retroPricingOn() { return ((state.settings && state.settings.company) || {}).retroactivePricing !== false; }
+/** Dollars already billed for a unit's rental TIME on an invoice (rental + extension
+ *  lines for that unit) — the baseline retroactive pricing diffs against. */
+function unitBilledRental(inv, rentalId, unitId) {
+  return (inv.lineItems || []).reduce((a, li) =>
+    a + ((li.ref === rentalId && li.unitId === unitId && (li.kind === 'rental' || li.kind === 'extension')) ? (Number(li.amount) || 0) : 0), 0);
+}
+/** The per-unit extension charge for a window change, honoring the retroactive setting.
+ *  `prevEnd` = the end date BEFORE this extension (the standalone segment's start when OFF).
+ *  Returns { amount, rate } — amount is the dollars to add (>0 means billable). */
+function unitExtensionDelta(inv, r, eu, ns, ne, prevEnd, retro) {
+  const u = IDX.unit.get(eu.unitId); if (!u) return { amount: 0, rate: '—' };
+  if (retro) {                                              // cheapest(full window) − already billed
+    const p = rentalPrice({ categoryId: u.categoryId, startDate: ns, endDate: ne, customerId: r.customerId });
+    return { amount: Math.round(((p ? p.price : 0) - unitBilledRental(inv, r.rentalId, eu.unitId)) * 100) / 100, rate: p ? p.rate : '—' };
+  }
+  // OFF — price ONLY the added segment (prevEnd → newEnd) as a fresh rental; originals frozen.
+  const p = (prevEnd && ne > prevEnd) ? rentalPrice({ categoryId: u.categoryId, startDate: prevEnd, endDate: ne, customerId: r.customerId }) : null;
+  return { amount: p ? Math.round(p.price * 100) / 100 : 0, rate: p ? p.rate : '—' };
+}
+/* ── §28cap MULTI-INVOICE SERIES (Jac 2026-06-25) — an invoice bills at most 28
+   rental-days per unit; long rentals split into a series of ≤28-day chunk invoices.
+   Because the 4-Week rate IS 28 days, the cheapest-blend optimizer already seams at
+   28-day marks, so the split bills the SAME total — it's purely organizational. ── */
+const INV_CAP_DAYS = 28;
+/** All invoices billing a rental, ordered by the day-window they cover (covStart). */
+function rentalInvoices(r) {
+  if (!r) return [];
+  return DATA.invoices.filter((i) => (i.rentalIds || []).includes(r.rentalId))
+    .sort((a, b) => { const ka = a.covStart || a.date || '', kb = b.covStart || b.date || ''; return ka < kb ? -1 : ka > kb ? 1 : 0; });
+}
+/** The latest chunk invoice — where the next extension bills if it has room + is open. */
+function rentalActiveInvoice(r) {
+  const invs = rentalInvoices(r);
+  return invs.length ? invs[invs.length - 1] : (r && r.invoiceId ? IDX.invoice.get(r.invoiceId) : null);
+}
+const invCovStart = (inv, r) => inv.covStart || (r ? r.startDate : '');
+const invCovEnd = (inv, r) => inv.covEnd || (r ? r.endDate : '');
+function invCoveredDays(inv, r) { const s = invCovStart(inv, r), e = invCovEnd(inv, r); return (parseISO(s) && parseISO(e)) ? Math.max(0, dayDiff(parseISO(s), parseISO(e))) : 0; }
+const minISO = (a, b) => (a < b ? a : b);
+/** Chunk a window into ≤28-day pieces: [{idx, start, end, days}]. */
+function invoiceChunks(startISO, endISO) {
+  const total = (parseISO(startISO) && parseISO(endISO)) ? dayDiff(parseISO(startISO), parseISO(endISO)) : 0;
+  const out = [];
+  for (let d0 = 0; d0 < total; d0 += INV_CAP_DAYS) { const d1 = Math.min(d0 + INV_CAP_DAYS, total); out.push({ idx: out.length, start: addDaysISO(startISO, d0), end: addDaysISO(startISO, d1), days: d1 - d0 }); }
+  return out.length ? out : [{ idx: 0, start: startISO, end: endISO, days: Math.max(1, total) }];
+}
+/** Dollars already billed for a unit's TIME across the WHOLE rental series. */
+function unitBilledSeries(r, unitId) { return rentalInvoices(r).reduce((a, inv) => a + unitBilledRental(inv, r.rentalId, unitId), 0); }
+/** Open a continuation invoice for [covStart,covEnd] (a fresh ≤28-day chunk). */
+function createContinuationInvoice(r, covStart, covEnd) {
+  const id = nextInvoiceId();
+  const inv = { invoiceId: id, customerId: r.customerId, rentalIds: [r.rentalId], date: TODAY_ISO, dueDate: dueForCustomer(r.customerId), po: '', amountPaid: 0, lineItems: [], covOf: r.rentalId, covStart, covEnd, contOf: r.invoiceId, mock: true };
+  DATA.invoices.push(inv); IDX.invoice.set(id, inv); reindex('invoices', inv);
+  logAction(inv, `Continuation of ${rentalUnitsLabel(r) || 'rental'} — ext of ${invoiceShort(r.invoiceId)}`);
+  logAction(r, `Continuation invoice ${invoiceShort(id)} opened (28-day cap / closed prior)`);
+  return inv;
+}
+/** Bill per-unit charges for [ns,ne] onto `inv` (kind = 'rental' fresh chunk · 'extension'
+ *  grow). prevEnd = the unit's already-billed-through end (=ns for a fresh chunk). */
+function billChunkUnits(inv, r, ns, ne, prevEnd, retro, kind, contInvId) {
+  let delta = 0, count = 0;
+  rentalUnits(r).forEach((eu) => {
+    if (unitVoided(r, eu)) return;
+    const u = IDX.unit.get(eu.unitId); if (!u) return;
+    const d = unitExtensionDelta(inv, r, eu, ns, ne, prevEnd, retro);
+    if (d.amount > 0.005) {
+      const tail = kind === 'extension' ? ` · Extension → ${fmtShortDate(ne)}` : (contInvId ? ` · Ext of ${invoiceShort(contInvId)}` : '');
+      inv.lineItems.push({ kind, ref: r.rentalId, unitId: eu.unitId, lid: lineLid(), label: `${u.name} · ${d.rate}${tail}`, amount: d.amount });
+      delta += d.amount; count++;
+    }
+  });
+  return { delta: Math.round(delta * 100) / 100, count };
+}
+/** Retroactive reconcile of an OPEN chunk: re-price each unit's rental line in `inv` to
+ *  cheapest(ns,ne) — UP or DOWN (the 4-Week rate can make more days cheaper). Unpaid lines
+ *  are re-priced in place (collapsing any prior extension lines into the base rental line);
+ *  a paid line can't drop (refund-first) so it only takes a positive top-up. */
+function reconcileChunkRetro(inv, r, ns, ne) {
+  let delta = 0, count = 0;
+  rentalUnits(r).forEach((eu) => {
+    if (unitVoided(r, eu)) return;
+    const u = IDX.unit.get(eu.unitId); if (!u) return;
+    const p = rentalPrice({ categoryId: u.categoryId, startDate: ns, endDate: ne, customerId: r.customerId });
+    const target = Math.round((p ? p.price : 0) * 100) / 100;
+    const mine = (inv.lineItems || []).filter((li) => (li.kind === 'rental' || li.kind === 'extension') && li.ref === r.rentalId && li.unitId === eu.unitId);
+    const paid = mine.reduce((a, li) => a + itemPaid(inv, li), 0);
+    const billed = Math.round(mine.reduce((a, li) => a + (Number(li.amount) || 0), 0) * 100) / 100;
+    if (Math.abs(target - billed) <= 0.005) return;
+    if (paid > 0.005) {   // some paid → can't re-price down; only a positive top-up (refund-first for any drop)
+      const d = Math.round((target - billed) * 100) / 100;
+      if (d > 0.005) { inv.lineItems.push({ kind: 'extension', ref: r.rentalId, unitId: eu.unitId, lid: lineLid(), label: `${u.name} · Extension → ${fmtShortDate(ne)} · ${p ? p.rate : '—'}`, amount: d }); delta += d; count++; }
+    } else {              // all unpaid → re-price to cheapest(window): collapse to one base rental line at target
+      const keep = mine.find((li) => li.kind === 'rental') || mine[0];
+      inv.lineItems = (inv.lineItems || []).filter((li) => !(mine.indexOf(li) >= 0 && li !== keep));
+      if (keep) { keep.amount = target; keep.kind = 'rental'; keep.label = `${u.name} · ${p ? p.rate : '—'}`; }
+      else if (target > 0.005) { inv.lineItems.push({ kind: 'rental', ref: r.rentalId, unitId: eu.unitId, lid: lineLid(), label: `${u.name} · ${p ? p.rate : '—'}`, amount: target }); }
+      delta += target - billed; count++;
+    }
+  });
+  return { delta: Math.round(delta * 100) / 100, count };
+}
+/** PURE preview of extending r to a staged window (no mutation) — drives the picker
+ *  banner. Series-aware; honors the retroactive-pricing setting. */
+function extensionPreview(r, stagedStart, stagedEnd) {
+  if (!r || !r.invoiceId) return null;
+  const invs = rentalInvoices(r); if (!invs.length) return null;
+  const ns = stagedStart || r.startDate, ne = stagedEnd || r.endDate;
+  if (!ns || !ne) return null;
+  const retro = retroPricingOn();
+  let subtotalDelta = 0; const perUnit = [];
+  const unitPaidSeries = (uId) => invs.reduce((a, inv) => a + (inv.lineItems || []).filter((li) => (li.kind === 'rental' || li.kind === 'extension') && li.ref === r.rentalId && li.unitId === uId).reduce((s, li) => s + itemPaid(inv, li), 0), 0);
+  rentalUnits(r).forEach((eu) => {
+    if (unitVoided(r, eu)) return;
+    const u = IDX.unit.get(eu.unitId); if (!u) return;
+    let d;
+    if (retro) {
+      const p = rentalPrice({ categoryId: u.categoryId, startDate: ns, endDate: ne, customerId: r.customerId });
+      d = Math.round(((p ? p.price : 0) - unitBilledSeries(r, eu.unitId)) * 100) / 100;
+      if (d < 0 && unitPaidSeries(eu.unitId) > 0.005) d = 0;   // paid lines can't drop (refund-first), matching billExtension
+    } else { const p = (r.endDate && ne > r.endDate) ? rentalPrice({ categoryId: u.categoryId, startDate: r.endDate, endDate: ne, customerId: r.customerId }) : null; d = p ? Math.round(p.price * 100) / 100 : 0; }
+    if (retro ? Math.abs(d) > 0.005 : d > 0.005) { subtotalDelta += d; perUnit.push({ unitId: eu.unitId, name: u.name, delta: d }); }   // retro counts reductions too
+  });
+  subtotalDelta = Math.round(subtotalDelta * 100) / 100;
+  const cust = IDX.customer.get(r.customerId);
+  const exempt = !!(invs[0].taxExempt || cust?.salesTaxExempt);
+  const taxDelta = exempt ? 0 : Math.round(subtotalDelta * TAX_RATE * 100) / 100;
+  const curBal = invs.reduce((a, inv) => a + invoiceTotals(inv).balance, 0);
+  const prevDays = Math.max(1, dayDiff(parseISO(r.startDate), parseISO(r.endDate)));
+  const newDays = Math.max(1, dayDiff(parseISO(ns), parseISO(ne)));
+  return { subtotalDelta, taxDelta, perUnit, newBalance: curBal + subtotalDelta + taxDelta, daysDelta: newDays - prevDays, prevEnd: r.endDate, newEnd: ne, retro };
+}
+/** Bill a lengthened window across the rental's invoice series — fill the active open
+ *  chunk toward its 28-day cap, then spill into fresh ≤28-day invoices (closed/locked
+ *  active spills immediately). Call AFTER the new dates are written; prevEnd = old end. */
+function billExtension(r, prevEnd) {
+  if (!r || !r.invoiceId) return null;
+  const retro = retroPricingOn();
+  const targetEnd = r.endDate;
+  let active = rentalActiveInvoice(r); if (!active) return null;
+  if (!active.covStart) { active.covStart = r.startDate; active.covEnd = prevEnd || r.endDate; active.covOf = r.rentalId; }   // backfill legacy
+  let coveredEnd = active.covEnd || prevEnd || r.startDate;
+  if (!targetEnd || !coveredEnd || dayDiff(parseISO(coveredEnd), parseISO(targetEnd)) <= 0) return null;   // no net lengthening
+  const sum = { count: 0, subtotalDelta: 0, invoiceIds: [], newInvoices: 0, retro, invoiceId: r.invoiceId };
+  let guard = 0;
+  while (dayDiff(parseISO(coveredEnd), parseISO(targetEnd)) > 0 && guard++ < 60) {
+    const t = invoiceTotals(active);
+    const closed = t.paid > 0 && t.balance <= 0;
+    const room = INV_CAP_DAYS - invCoveredDays(active, r);
+    if (active.locked || closed || room <= 0) {                                  // spill → fresh chunk invoice
+      const chunkEnd = minISO(addDaysISO(coveredEnd, INV_CAP_DAYS), targetEnd);
+      active = createContinuationInvoice(r, coveredEnd, chunkEnd);
+      const res = billChunkUnits(active, r, coveredEnd, chunkEnd, coveredEnd, retro, 'rental', r.invoiceId);
+      reindex('invoices', active);
+      sum.newInvoices++; sum.count += res.count; sum.subtotalDelta += res.delta; sum.invoiceIds.push(active.invoiceId);
+      coveredEnd = chunkEnd;
+    } else {                                                                      // grow the active open chunk
+      const grow = Math.min(room, dayDiff(parseISO(coveredEnd), parseISO(targetEnd)));
+      const newCovEnd = addDaysISO(coveredEnd, grow);
+      // retro → re-price the chunk to cheapest(covStart→newEnd), up or down (unpaid in place).
+      // OFF → add only the new days standalone (originals frozen).
+      const res = retro ? reconcileChunkRetro(active, r, invCovStart(active, r), newCovEnd)
+        : billChunkUnits(active, r, coveredEnd, newCovEnd, coveredEnd, false, 'extension', null);
+      active.covEnd = newCovEnd; reindex('invoices', active);
+      sum.count += res.count; sum.subtotalDelta += res.delta; if (!sum.invoiceIds.includes(active.invoiceId)) sum.invoiceIds.push(active.invoiceId);
+      coveredEnd = newCovEnd;
+    }
+  }
+  if (!sum.count) return null;
+  sum.subtotalDelta = Math.round(sum.subtotalDelta * 100) / 100;
+  return sum;
+}
 /* ── Transport journey-picker (Our yard · Truck · Customer site) — like the rental-
    window picker, but for transport. Click an endpoint then a second: store→truck =
    Delivery, truck→store = Recovery, store→store = Round-Trip, a single store = Self.
@@ -1019,14 +1202,15 @@ function syncProtectionLine(r) {
    longer on it (and isn't paid) is dropped. Belt-and-suspenders after add/remove/split. */
 function healInvoiceLines(r) {
   if (!r || !r.invoiceId) return;
-  const inv = IDX.invoice.get(r.invoiceId); if (!inv) return;
   const live = new Set(rentalUnitIds(r));
-  const before = (inv.lineItems || []).length;
-  inv.lineItems = (inv.lineItems || []).filter((li) => {
-    const orphan = (li.kind === 'rental' || li.kind === 'transport') && li.ref === r.rentalId && li.unitId && !live.has(li.unitId);
-    return !orphan || itemPaid(inv, li) > 0;
+  rentalInvoices(r).forEach((inv) => {   // §28cap — sweep the whole billing series
+    const before = (inv.lineItems || []).length;
+    inv.lineItems = (inv.lineItems || []).filter((li) => {
+      const orphan = (li.kind === 'rental' || li.kind === 'transport' || li.kind === 'extension') && li.ref === r.rentalId && li.unitId && !live.has(li.unitId);
+      return !orphan || itemPaid(inv, li) > 0;
+    });
+    if ((inv.lineItems || []).length !== before) reindex('invoices', inv);
   });
-  if ((inv.lineItems || []).length !== before) reindex('invoices', inv);
 }
 
 /* ════════════ INLINE TRANSPORT EDITOR + GOOGLE MAPS (Jac 2026-06-15) ═════════
@@ -1454,13 +1638,21 @@ function isUnitAvailableFor(u, startISO, endISO, selfId) {
 function categoryAvailableCount(catId, startISO, endISO, selfId) {
   return DATA.units.filter((u) => u.categoryId === catId && isUnitAvailableFor(u, startISO, endISO, selfId)).length;
 }
-/** The rental window in scope while the calendar is open (drives the availability UI). */
+/** The rental window in scope (drives the availability lens on the Units/Categories cards).
+ *  §inline (Jac 2026-06-25): whenever a rental is open in standard mode, its window — or its
+ *  STAGED window while you're editing the inline calendar — drives the lens; clears when the
+ *  rental detail closes. */
 function activeDraftWindow() {
-  const win = (r) => (r && r.startDate && r.endDate) ? { start: r.startDate, end: r.endDate, time: r.startTime, selfId: r.rentalId } : null;
-  // live while the window is being PICKED (Categories/Units update before "Done")
-  if (state.winpicker) { const w = win(IDX.rental.get(state.winpicker.rentalId)); if (w) return w; }
-  // persists after the picker closes via the "available" search; a manually-typed
-  // "available" with no picked window defaults to "available now" (today → tomorrow)
+  const win = (o) => (o && o.startDate && o.endDate) ? { start: o.startDate, end: o.endDate, time: o.startTime, selfId: o.rentalId } : null;
+  const sess = activeSession(), rc = sess && sess.cards && sess.cards.rentals;
+  const openRental = (rc && rc.mode === 'standard' && rc.recId && !rc.released) ? rc.recId : null;
+  if (openRental && state.winEdit && state.winEdit.rentalId === openRental) {
+    const s = state.winEdit.staged;
+    const base = s ? { startDate: s.startDate, endDate: s.endDate, startTime: s.startTime, rentalId: openRental } : IDX.rental.get(openRental);
+    const w = win(base); if (w) return w;
+  }
+  // persists via the "available" search; a manually-typed "available" with no window
+  // defaults to "available now" (today → tomorrow)
   if (availSearchActive()) return state.availWin || { start: TODAY_ISO, end: addDays(TODAY_ISO, 1), time: '', selfId: null };
   return null;
 }
@@ -1649,7 +1841,7 @@ const state = {
   overlay: null,       // { kind, ... } for popups
   focusedCard: null,   // clicked card → orange border (§0.1 visual feedback, no anchor)
   transportArm: null,  // §20 route-rail two-click selector: { rentalId, unitId, node } — the FIRST stop tapped (armed orange); a second stop locks the type
-  winpicker: null,     // { rentalId, monthISO, anchor } — the rental-window range picker
+  winEdit: null,       // §inline rental-window editor (rentalId, monthISO, anchor, staged) — NOT a modal
   datesearch: null,    // { scope, monthISO, anchor, start, end, editIndex } — §5.4d standalone date/range SEARCH picker (type "date"→Enter)
   availWin: null,      // §10 persistent window scope for the "available" search (set by the picker; outlives it)
   filterTerms: [],            // §5.4 — AND-narrowing filter terms (type + Enter)
@@ -1793,7 +1985,7 @@ function closeTab(id) {
   if (state.activeTabId === id) state.activeTabId = state.tabs.length ? state.tabs[Math.max(0, i - 1)].id : null;
   render();
 }
-function closeAll() { state.tabs = []; state.activeTabId = null; state.searchMode = false; state.query = ''; state.winpicker = null; state.datesearch = null; render(); }
+function closeAll() { state.tabs = []; state.activeTabId = null; state.searchMode = false; state.query = ''; state.winEdit = null; state.datesearch = null; render(); }
 // §313 — keep only the active tab; with none active, fall back to a full close.
 function closeOthers() { if (!state.activeTabId) { closeAll(); return; } state.tabs = state.tabs.filter((t) => t.id === state.activeTabId); render(); }
 // §313 — Close-all trigger. 1–2 tabs close immediately; >2 ask first (a quick popover).
@@ -1859,7 +2051,7 @@ function openStandard(card, recId, recType) {
   // category name so Units narrows to that category's window-available units (the
   // 'available' chip is already pinned by enterAvailabilitySearch). The category stays
   // in standard mode, so it remains the calendar's availability subject (greyed days).
-  if (card === 'categories' && state.winpicker && availWin) {
+  if (card === 'categories' && state.winEdit && availWin) {
     const cat = IDX.category.get(recId), s = activeSession(), us = s.cards.units;
     if (cat && us) { us.search = cat.name; us.listLimit = undefined; if (s.cols && s.cols.left) s.cols.left = 'units'; }
   }
@@ -3165,6 +3357,7 @@ function settingsCompanyPane(o) {
   const ph = (k) => esc(COMPANY_DEFAULTS[k]);
   const goal = Number(co.revenueGoal) > 0 ? Number(co.revenueGoal) : COMPANY_DEFAULTS.revenueGoal;
   const maxNet = (co.maxNetDays != null && co.maxNetDays !== '' && isFinite(Number(co.maxNetDays))) ? Number(co.maxNetDays) : COMPANY_DEFAULTS.maxNetDays;
+  const retro = co.retroactivePricing !== false;   // default ON
   return `
     <div class="set-pane-head"><h4>Company</h4><p>Your yard's identity and targets. These flow onto printed receipts and the dashboard — leave one blank to keep the shipped default.</p></div>
     <div class="co-form">
@@ -3176,6 +3369,10 @@ function settingsCompanyPane(o) {
       <p class="set-note">Feeds the Sales <strong>Revenue Goal</strong> ring — currently <strong>${esc(money(goal))}/mo</strong>. The ring fills as this month's rental revenue climbs toward it.</p>
       <label class="co-fld co-fld-goal"><span class="kpi-cap">MAX PAYMENT TERMS (NET DAYS)</span><span class="co-goal-wrap"><input class="co-in co-in-num js-co-field" data-f="maxNetDays" value="${co.maxNetDays != null ? esc(co.maxNetDays) : ''}" placeholder="${COMPANY_DEFAULTS.maxNetDays}" inputmode="numeric" autocomplete="off"/><span class="co-goal-suffix">days</span></span></label>
       <p class="set-note">The ceiling on any customer's Net-day terms (currently <strong>${esc(maxNet)} days</strong>). A customer's Net X auto-sets their invoice due date, capped here.</p>
+      <label class="co-fld co-fld-toggle"><span class="kpi-cap">RETROACTIVE RENTAL PRICING</span>
+        ${segCtl([{ label: 'Off', js: 'js-retro-set', data: { val: 'off' }, on: retro ? null : 'gray' }, { label: 'On', js: 'js-retro-set', data: { val: 'on' }, on: retro ? 'green' : null }])}
+      </label>
+      <p class="set-note"><strong>On</strong> (default): extending a rental bills the cheapest price for <strong>all</strong> the days rented — what's already paid counts toward it (a week paid rolls into the month). <strong>Off</strong>: the extension is billed as a fresh rental of just the added days; the original invoice price stays as it was.</p>
       <div class="co-preview">
         <span class="kpi-cap">RECEIPT PREVIEW</span>
         <div class="co-receipt"><div class="co-receipt-brand">${esc(companyDraftName(co))}</div><div class="co-receipt-sub">${esc(companyDraftTagline(co))}</div></div>
@@ -3835,13 +4032,13 @@ function openCtxMenuAt(target, x, y) {
   // §13.4 — inside an OPEN graph view, right-click/long-press the panel (or the Views & sort
   // control above it) opens the graph-chrome menu instead of the per-element Wrangler menu,
   // so the filter pills / sort can be hidden and Reset.
-  if (card && !state.winpicker) {
+  if (card && !(state.winEdit && state.winEdit.anchor)) {
     const cid = card.dataset.card, gcs = cid && activeSession().cards[cid];
     if (gcs && gcs.graphView && (target.closest('.gv-panel') || target.closest('.sort'))) return openGvChromeMenu({ clientX: x, clientY: y }, cid);
   }
   // While the rental-window picker is open, keep right-click → BACK working; just suppress
   // the element context menu (it gets in the way of picking). (Jac B5, 2026-06-15)
-  const leaf = state.winpicker ? null : target.closest('.pill, .add-field, .flag, .linkname, .inv-line-link, .req, .seg, button, .inline-edit, .jnode, .x, a, .d-title, .r-title, .derived');
+  const leaf = (state.winEdit && state.winEdit.anchor) ? null : target.closest('.pill, .add-field, .flag, .linkname, .inv-line-link, .req, .seg, button, .inline-edit, .jnode, .x, a, .d-title, .r-title, .derived');
   const hit = leaf ? (ruleOf(leaf) || { r: null, el: leaf }) : null;
   if (hit) return openCtxMenu({ clientX: x, clientY: y }, hit);
   if (!card) return;
@@ -3956,7 +4153,7 @@ const RULE_META = {
   R13: ['History', 'historySection', 'count chips above the search bar filter inline; record-backed links only'],
   R14: ['Seg toggle', 'segCtl', '3-state segmented control (condition · wash)'],
   R15: ['Journey', 'yardToolHtml / miniJourneyHtml', 'yard +Start/+FC/+End + Jac─Site─Jac transport; white = video owed'],
-  R16: ['Day timeline', 'DETAIL.rentals timeline', 'the rental window in day cells; centered gate + naked price·rate'],
+  R16: ['Window calendar', 'rdcal-edit / winPickerEl (inline)', 'the rental window — an INLINE editable month calendar in the detail (popup retired 2026-06-25); tap start→end, the left Units/Categories card shows availability live, fragile rentals stage behind a hovering Confirm card'],
   R17: ['Action pill', 'actionPill', 'commit = blue · money = green · danger = solid red; .locked = gated'],
   R18: ['Ghost', 'ghostPill', 'the ONE quiet action — Cancel / Close / Exit / Clear'],
   R19: ['Attention flash', 'attnFlash / flashOr', 'a glow that points AT the next action — replaces an error message when the fix is on screen'],
@@ -5333,53 +5530,17 @@ function headFlagsHtml(card, rec) {
   return '';
 }
 
-/* §12.2 RENTAL DETAIL CALENDAR — numbered-date, full-window, Sunday-anchored.
-   Reuses the rcc track system (solid=elapsed, 30% opacity=remaining). */
-function rentalDetailCal(r, stColor) {
-  const s = parseISO(r.startDate), e = parseISO(r.endDate);
-  if (!s || !e) return '';
-  const ttype = r.transportType;
-  const isSelf = !ttype || ttype === 'Self';
-  const startIcon = isSelf ? CARD_ICON.customers : I.truck;
-  const endHasTruck = ttype === 'Recovery' || ttype === 'Round-Trip';
-  const endIcon = isSelf ? CARD_ICON.customers : (endHasTruck ? I.truck : '');
-  const firstSun = new Date(s.getFullYear(), s.getMonth(), s.getDate() - s.getDay());
-  const lastSatDelta = (6 - e.getDay() + 7) % 7;
-  const lastSat = new Date(e.getFullYear(), e.getMonth(), e.getDate() + lastSatDelta);
-  const totalDays = Math.round((lastSat - firstSun) / 86400000) + 1;
-  const DOW = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
-  const RDCAL_MON = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
-  const dowRow = DOW.map((l) => `<span>${l}</span>`).join('');
-  const cells = [];
-  for (let i = 0; i < totalDays; i++) {
-    const d = new Date(firstSun.getFullYear(), firstSun.getMonth(), firstSun.getDate() + i);
-    const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    const isToday = iso === TODAY_ISO, isStart = iso === r.startDate, isEnd = iso === r.endDate;
-    const inWin = iso >= r.startDate && iso <= r.endDate;
-    const elapsed = inWin && d <= TODAY;
-    // 1st of a month (not a start/end cell) shows the month abbrev so the boundary reads —
-    // matches the mini calendars' mon1st marker (Jac 2026-06-24).
-    const isMon1st = !isStart && !isEnd && d.getDate() === 1;
-    const cls = ['rdcal-day', isToday && 'is-today', isStart && 'is-start', isEnd && 'is-end',
-      inWin && 'is-win', inWin && (elapsed ? 'elapsed' : 'fut'),
-      (!isToday && !inWin && d < TODAY) && 'is-past', isMon1st && 'is-mon1st'].filter(Boolean).join(' ');
-    const time = isStart ? (r.startTime || '') : '';
-    const icon = isStart ? startIcon : (isEnd ? endIcon : '');
-    const nLabel = isMon1st ? RDCAL_MON[d.getMonth()] : String(d.getDate());
-    cells.push(`<div class="${cls}">${inWin ? '<span class="rdcal-bar"></span>' : ''}${time ? `<span class="rdcal-t">${esc(time)}</span>` : ''}<span class="rdcal-n${isMon1st ? ' mon1st' : ''}">${esc(nLabel)}</span>${icon ? `<span class="rdcal-ico">${icon}</span>` : ''}</div>`);
-  }
-  return `<div class="rdcal js-open-winpicker" data-rec="${esc(r.rentalId)}" style="--rdcal-hl:var(--${stColor})">
-    <div class="rdcal-dow">${dowRow}</div>
-    <div class="rdcal-body">${cells.join('')}</div>
-  </div>`;
-}
+/* §12.2 — the rental window is now edited INLINE in the standard detail (rdcal-edit →
+   winPickerEl); the old display-only rentalDetailCal + its popup trigger were retired
+   with the inline migration (Jac 2026-06-25). */
 
 const DETAIL = {
   /* ── RENTALS — fully built (§12.2 standard mode) ── */
   rentals: (r, cs) => {
     const cat = IDX.category.get(r.categoryId);
     const cust = IDX.customer.get(r.customerId);
-    const inv = r.invoiceId ? IDX.invoice.get(r.invoiceId) : null;
+    const invs = rentalInvoices(r);   // §28cap — a rental can have a ≤28-day invoice series
+    const inv = invs[0] || (r.invoiceId ? IDX.invoice.get(r.invoiceId) : null);
     const invT = inv ? invoiceTotals(inv) : null;
     const truck = showsTruck(r.status, r.transportType);
     const stColor = rentalStatusDisplay(r).color;
@@ -5387,17 +5548,17 @@ const DETAIL = {
     const hasWin = s && e;
     const units = rentalUnits(r);
 
-    /* invoice pill — ✕ unlink only while $0 is assigned (Jac's rule). */
+    /* invoice pill(s) — the billing series; ✕ unlink only on the primary while $0 is assigned. */
     const paidForThis = inv ? rentalAllocated(inv, r.rentalId) : 0;
-    const invPill = inv
-      ? `<span class="pill ref link" data-r="R2" data-pill-card="invoices" data-pill-rec="${esc(inv.invoiceId)}">${CARD_ICON.invoices}${esc(invoiceShort(inv.invoiceId))}${paidForThis <= 0 ? `<span class="x" data-x="inv-remove" data-tip="unlink — allowed while $0 is assigned to this rental; afterwards refund first">✕</span>` : ''}</span>`
+    const invPill = invs.length
+      ? invs.map((iv, k) => `<span class="pill ref link" data-r="R2" data-pill-card="invoices" data-pill-rec="${esc(iv.invoiceId)}"${invs.length > 1 ? ` data-tip="${esc('Invoice ' + (k + 1) + ' of ' + invs.length + (iv.contOf ? ' — continuation (28-day cap)' : ''))}"` : ''}>${CARD_ICON.invoices}${esc(invoiceShort(iv.invoiceId))}${k === 0 && paidForThis <= 0 ? `<span class="x" data-x="inv-remove" data-tip="unlink — allowed while $0 is assigned to this rental; afterwards refund first">✕</span>` : ''}</span>`).join('')
       : addBtn('Invoice', { link: true, js: 'js-create-invoice', h: 26, data: { rec: r.rentalId } });
 
-    /* Balance (paid / total) for the header right side. */
+    /* Balance (paid / total) for the header right side — summed across the invoice series. */
     const rentLines = rentalLineItems(r);
-    const eventTotal = invT ? invT.total : rentLines.reduce((a, li) => a + (Number(li.amount) || 0), 0);
-    const eventPaid = invT ? invT.paid : 0;
-    const balColor = (eventPaid > 0 && eventPaid >= eventTotal) ? 'green' : (invT && invT.status === 'Not Due') ? 'blue' : 'red';
+    const eventTotal = invs.length ? invs.reduce((a, iv) => a + invoiceTotals(iv).total, 0) : rentLines.reduce((a, li) => a + (Number(li.amount) || 0), 0);
+    const eventPaid = invs.reduce((a, iv) => a + invoiceTotals(iv).paid, 0);
+    const balColor = (eventPaid > 0 && eventPaid >= eventTotal) ? 'green' : (invT && invT.status === 'Not Due' && eventPaid <= 0) ? 'blue' : 'red';
     const rdBal = `<span class="rd-bal balline" data-chat-el data-chat-label="${esc('Balance ' + money(eventPaid) + ' / ' + money(eventTotal))}" data-chat-color="${esc(balColor)}"${inv ? ` data-chat-card="invoices" data-chat-rec="${esc(inv.invoiceId)}"` : ''}><b style="color:var(--${balColor})">${money(eventPaid)}</b><span class="tot"> / ${money(eventTotal)}</span></span>`;
 
     /* Header: customer + PO left · status gate top-right, then invoice+balance below. */
@@ -5417,10 +5578,16 @@ const DETAIL = {
     const blockN = units.filter((eu) => { const bu = IDX.unit.get(eu.unitId); return bu && bu.inspectionStatus !== 'Ready' && !unitVoided(r, eu); }).length;
     const blocker = blockN ? `<button class="tl-blocker js-tl-blocker" data-rec="${esc(r.rentalId)}" data-tip="Jump to the machines that aren't ready"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>${blockN} machine${blockN > 1 ? 's' : ''} Not Ready →</button>` : '';
 
-    /* Calendar: numbered-date full-window grid, or draft window picker. */
-    const calHtml = hasWin
-      ? rentalDetailCal(r, stColor)
-      : `<button class="statusbar draftwin wintrigger js-open-winpicker" data-rec="${esc(r.rentalId)}"><span class="wt-label">${r.startDate ? esc(fmtShortDate(r.startDate)) + ' → pick end' : 'Select rental window'}</span></button>`;
+    /* Calendar: the INLINE editable window calendar (popup retired — Jac 2026-06-25).
+       Tap a day to set start, tap another to set end; the left Categories/Units card
+       reflects availability for the window live. A fragile (invoiced/out) rental stages
+       its edits behind a hovering "Confirm new window" card with the money preview. */
+    if (!state.winEdit || state.winEdit.rentalId !== r.rentalId) {
+      state.winEdit = { rentalId: r.rentalId, monthISO: firstOfMonthISO(r.startDate || TODAY_ISO), anchor: null };
+      if (rentalFragile(r)) state.winEdit.staged = { rentalId: r.rentalId, startDate: r.startDate || '', endDate: r.endDate || '', startTime: r.startTime || '' };
+    }
+    const winStaged = !!(state.winEdit.staged && winStagedChanged());
+    const calHtml = `<div class="rdcal-edit${winStaged ? ' staged' : ''}" data-rec="${esc(r.rentalId)}" style="--rdcal-hl:var(--${stColor})">${winPickerEl(r)}</div>`;
 
     /* Duration label (shared across all unit rows). */
     const durLabel = hasWin
@@ -5458,6 +5625,8 @@ const DETAIL = {
       ? actionPill('danger', 'Cancel Rental', { js: 'js-cancel-rental', h: 26, data: { rec: r.rentalId } })
       : actionPill('commit', 'Complete Rental', { js: `js-complete-rental${canComplete ? '' : ' locked'}`, h: 26, data: { rec: r.rentalId } });
     const fcRow = r.fieldCall ? actionPill('danger', 'Field Call active — clear', { js: 'js-clear-fc', data: { rec: r.rentalId } }) : '';
+    // §ext — extending is now inline: tap a later end date in the calendar above; a fragile
+    // (invoiced/out) rental stages it behind the Confirm card with the money preview.
     const rdFoot = `<div class="rd-foot"><div class="rd-foot-l">${fcRow}</div><div class="rd-foot-r">${crBtn}</div></div>`;
 
     const rentalSec = `<div class="section sec-${stColor} rentalsec">
@@ -5922,8 +6091,10 @@ const DETAIL = {
         </div>
       </div></div>`;
     const notes = notesSection('invoices', i, 'invoiceId');
+    // §28cap — a continuation invoice (a later 28-day chunk of a long rental) links back to its first invoice
+    const contChip = i.contOf ? `<span class="pill ref link" data-r="R2" data-pill-card="invoices" data-pill-rec="${esc(i.contOf)}" data-tip="${esc('Continuation of this rental — back to first invoice ' + invoiceShort(i.contOf) + ' (28-day cap split)')}">${CARD_ICON.invoices}Cont. of ${esc(invoiceShort(i.contOf))}</span>` : '';
     return `<div class="detail">
-      <div class="detail-head"><span class="d-title">${esc(i.invoiceId)}</span>${statusPill('invoiceStatus', t.status)}${locked ? badge('🔒 Locked', 'gray') : ''}</div>
+      <div class="detail-head"><span class="d-title">${esc(i.invoiceId)}</span>${statusPill('invoiceStatus', t.status)}${locked ? badge('🔒 Locked', 'gray') : ''}${contChip}</div>
       ${notes.top}
       ${invoiceSec}
       ${notes.bottom}
@@ -8510,10 +8681,9 @@ let _ovScroll = {}, _ovLastKind = null;   // keep a popup-body's scroll across i
    stack stays balanced. Phone-only — desktop keeps Esc/click. Wired in boot(). ── */
 let backGuard = false, backConsuming = false;
 let swipeFired = false;   // §M1/§M3 — a footer (column) or grid (Back/Fwd) swipe sets this so the trailing click is swallowed once
-function anyDismissable() { return !!(state.overlay || state.winpicker || state.datesearch || state.chat.open || state.wrangler.open); }
+function anyDismissable() { return !!(state.overlay || state.datesearch || state.chat.open || state.wrangler.open); }
 function dismissTopSheet() {
   if (state.datesearch) { closeDateSearch(); return true; }
-  if (state.winpicker) { closeWinPicker(); return true; }
   if (state.overlay) { closeOverlay(); return true; }
   if (state.wrangler.open) { wranglerRailSnapshot(); state.wrangler.open = false; render(); return true; }   // mirror js-wr-close
   if (state.chat.open) { state.chat.open = false; render(); return true; }                                    // mirror js-chat-close
@@ -10745,17 +10915,8 @@ function render() {
     else b.scrollTop = 0;
   });
   document.documentElement.setAttribute('data-theme', state.theme);
-  // the rental-window picker floats above the grid, anchored to its trigger (§12.2);
-  // on phones it becomes a bottom sheet (§M3) with a tap-to-close backdrop instead.
-  if (state.winpicker) {
-    const wr = IDX.rental.get(state.winpicker.rentalId);
-    if (wr) {
-      const phone = document.body.classList.contains('is-phone');
-      if (phone) { const bd = el('div', 'sheet-backdrop'); bd.dataset.sheetclose = 'win'; $('#app').appendChild(bd); }
-      const fl = el('div', 'winpicker-float'); fl.innerHTML = winPickerEl(wr); $('#app').appendChild(fl);
-      if (!phone) positionWinPicker(fl);   // phone: CSS pins it to the bottom edge, so skip the JS anchor
-    } else state.winpicker = null;
-  }
+  // §inline — the rental-window calendar is rendered INLINE in the rental detail
+  // (popup retired, Jac 2026-06-25); no float here anymore.
   // §5.4d — the standalone date-search picker floats under the search bar (phone: bottom sheet)
   if (state.datesearch) {
     const phone = document.body.classList.contains('is-phone');
@@ -10764,7 +10925,7 @@ function render() {
     if (!phone) positionDateSearch(fl);
   }
   // §M3 — lock the column scroll behind any open sheet/overlay/dock on phones
-  document.body.classList.toggle('sheet-open', !!(state.overlay || state.winpicker || state.datesearch || state.chat.open || state.wrangler.open));
+  document.body.classList.toggle('sheet-open', !!(state.overlay || state.datesearch || state.chat.open || state.wrangler.open));
   syncBackGuard();   // §M3 — keep the Android back-button guard in step with what's open
   // §17 — the internal team dock floats bottom-right above the bar when open
   if (state.chat.open) { const d = el('div', 'chat-dock', ''); d.dataset.drop = 'chat'; d.innerHTML = chatDockEl(); $('#app').appendChild(d); }
@@ -11410,24 +11571,12 @@ function onClick(e) {
   // picker stays open until true dead space. (Both floats render from state and re-render,
   // and self-hide if their anchor scrolls off; the global search bar lives in `.header` and
   // the per-card search/date chips live in `.card`, so the old datesearch exclusions hold.)
-  if (state.datesearch || state.winpicker) {
-    const onPicker = !!(closest('.winpicker') || closest('.winpicker-float'));
+  // §5.4d — the standalone date-search float still dismisses on a dead-space click.
+  // (The rental-window editor is INLINE now — no click-away dismissal.)
+  if (state.datesearch) {
+    const onPicker = !!closest('.winpicker') || !!closest('.datesearch-float');
     const pickerDeadSpace = !closest('.card') && !closest('.header') && !closest('.bottombar') && !onPicker;
-    if (state.datesearch && pickerDeadSpace) { state.datesearch = null; render(); return; }
-    // Rental-window picker dismisses on a click anywhere OUTSIDE the picker, its trigger, and
-    // the availability cards you browse while picking (units/categories/customers). #263 had
-    // narrowed this to dead-space-only, so over the full-screen 3-column grid an outside click
-    // almost always landed on a card and the picker never closed ("does not close"). Never
-    // SWALLOW an interactive click (#265): drop the float DOM in place — keeping the clicked
-    // anchor attached so a downstream menu still positions correctly — and fall THROUGH so the
-    // click still fires; only a pure dead-space click renders + returns. Discards a fragile
-    // rental's staged change, as before.
-    if (state.winpicker && !onPicker && !closest('.js-open-winpicker') && !closest('[data-sheetclose]')
-        && !closest('.card[data-card="units"]') && !closest('.card[data-card="categories"]') && !closest('.card[data-card="customers"]')) {
-      state.winpicker = null;
-      document.querySelector('.winpicker-float')?.remove();
-      if (pickerDeadSpace) { render(); return; }
-    }
+    if (pickerDeadSpace) { state.datesearch = null; render(); return; }
   }
 
   // header / chrome
@@ -11455,6 +11604,7 @@ function onClick(e) {
   if (closest('.js-kpi-refine')) { e.stopPropagation(); const b = closest('.js-kpi-refine'); openWranglerForKpi(b.dataset.role, Number(b.dataset.i)); return; }
   // Rental Rules tab
   if (closest('.js-rule-set')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-rule-set'); if (o) { o.draftSettings = o.draftSettings || {}; o.draftSettings.rentalRules = o.draftSettings.rentalRules || { ...((state.settings && state.settings.rentalRules) || {}) }; o.draftSettings.rentalRules[b.dataset.rule] = b.dataset.val === 'required' ? 'required' : 'off'; renderOverlay(); } return; }
+  if (closest('.js-retro-set')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-retro-set'); if (o) { o.draftSettings = o.draftSettings || {}; o.draftSettings.company = o.draftSettings.company || { ...((state.settings && state.settings.company) || {}) }; o.draftSettings.company.retroactivePricing = b.dataset.val === 'on'; renderOverlay(); } return; }
   // Custom Fields tab
   if (closest('.js-cf-entity')) { e.stopPropagation(); const o = state.overlay; if (o) { o.cfEntity = closest('.js-cf-entity').dataset.ent; renderOverlay(); } return; }
   if (closest('.js-cf-type')) { e.stopPropagation(); const o = state.overlay; if (o) { o.cfDraft = { ...(o.cfDraft || { label: '', type: 'text', required: false }), type: closest('.js-cf-type').dataset.type }; renderOverlay(); } return; }
@@ -11886,9 +12036,9 @@ function onClick(e) {
   if (closest('.js-wp-prev')) { e.stopPropagation(); return winPickMonth(-1); }
   if (closest('.js-wp-next')) { e.stopPropagation(); return winPickMonth(1); }
   if (closest('.js-wp-clear')) { e.stopPropagation(); return winPickClear(); }
+  if (closest('.js-wp-cancel')) { e.stopPropagation(); return winPickCancel(); }
   if (closest('.js-wp-save')) { e.stopPropagation(); return winPickSave(); }
   if (closest('.js-wp-today')) { e.stopPropagation(); return winPickToday(); }
-  if (closest('.js-wp-done')) { e.stopPropagation(); return closeWinPicker(); }
   // §5.4d date-search picker
   if (closest('.js-ds-day')) { e.stopPropagation(); return dsPickDay(closest('.js-ds-day').dataset.iso); }
   if (closest('.js-ds-prev')) { e.stopPropagation(); return dsMonth(-1); }
@@ -11897,8 +12047,8 @@ function onClick(e) {
   if (closest('.js-ds-clear')) { e.stopPropagation(); return dsClear(); }
   if (closest('.js-ds-done')) { e.stopPropagation(); return dsDone(); }
   if (closest('.js-tl-blocker')) { e.stopPropagation(); const st = document.querySelector('.stalls'); if (st) st.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); attnFlash('.stall .pill.dvd'); return; }
-  if (closest('.js-open-winpicker')) { e.stopPropagation(); const rec = closest('.js-open-winpicker').dataset.rec; return state.winpicker?.rentalId === rec ? closeWinPicker() : openWinPicker(rec); }
-  if (closest('[data-sheetclose]')) { e.stopPropagation(); return closest('[data-sheetclose]').dataset.sheetclose === 'date' ? closeDateSearch() : closeWinPicker(); }   // §M3 — tap the phone sheet backdrop to dismiss the picker
+  // §inline — the rental-window calendar is edited in place; no popup to open.
+  if (closest('[data-sheetclose]')) { e.stopPropagation(); return closeDateSearch(); }   // §M3 — tap the phone sheet backdrop to dismiss the date-search picker
 
   // sort menu + direction toggle
   if (closest('.js-sortmenu')) { const b = closest('.js-sortmenu'); return openViewMenu(b.dataset.card, b); }
@@ -12239,16 +12389,15 @@ function unitLinePaid(r, unitId) {
    not billed. A line carrying an assigned payment is kept (refund first); stable
    li.lid keys mean removing a line never disturbs other lines' allocations. */
 function removeUnitInvoiceLine(r, unitId) {
-  const inv = IDX.invoice.get(r.invoiceId); if (!inv) return;
-  const before = (inv.lineItems || []).length;
-  inv.lineItems = (inv.lineItems || []).filter((li) => {
-    const mine = (li.kind === 'rental' || li.kind === 'transport') && li.ref === r.rentalId && li.unitId === unitId;
-    return !mine || itemPaid(inv, li) > 0;   // keep non-matching lines and any paid matching line
+  rentalInvoices(r).forEach((inv) => {   // §28cap — sweep the whole billing series, not just the primary
+    const before = (inv.lineItems || []).length;
+    inv.lineItems = (inv.lineItems || []).filter((li) => {
+      const mine = (li.kind === 'rental' || li.kind === 'transport' || li.kind === 'extension') && li.ref === r.rentalId && li.unitId === unitId;
+      return !mine || itemPaid(inv, li) > 0;   // keep non-matching lines and any paid matching line
+    });
+    if ((inv.lineItems || []).length !== before) { reindex('invoices', inv); logAction(inv, `${IDX.unit.get(unitId)?.name || unitId} line(s) removed — No Show / Cancel (not billed)`); }
   });
-  if ((inv.lineItems || []).length === before) return;
-  reindex('invoices', inv);
-  syncProtectionLine(r);   // F4b — a removed unit shrinks the rental subtotal → reprice protection (covers the No-Show path that skips syncTransportLine)
-  logAction(inv, `${IDX.unit.get(unitId)?.name || unitId} line(s) removed — No Show / Cancel (not billed)`);
+  syncProtectionLine(r);   // F4b — a removed unit shrinks the rental subtotal → reprice protection across the series
 }
 function openUnitStatusDropdown(rentalId, unitId, anchorEl) {
   const r = IDX.rental.get(rentalId); const eu = r && unitEntry(r, unitId);
@@ -13736,6 +13885,8 @@ function printInvoice(invoiceId) {
         <div><span class="pr-k">Date</span><span class="pr-v">${esc(fmtShortDate(inv.date) || '—')}</span></div>
         <div><span class="pr-k">Due</span><span class="pr-v">${esc(inv.dueDate ? fmtShortDate(inv.dueDate) : '—')}</span></div>
         ${inv.po ? `<div><span class="pr-k">PO</span><span class="pr-v">${esc(inv.po)}</span></div>` : ''}
+        ${inv.covStart && inv.covEnd ? `<div><span class="pr-k">Rental period</span><span class="pr-v">${esc(fmtShortDate(inv.covStart))} – ${esc(fmtShortDate(inv.covEnd))}</span></div>` : ''}
+        ${inv.contOf ? `<div><span class="pr-k">Continuation of</span><span class="pr-v">${esc(invoiceShort(inv.contOf))} (28-day billing split)</span></div>` : ''}
       </div>
       <table class="pr-lines"><thead><tr><th>Description</th><th class="r">Amount</th></tr></thead><tbody>${rows}</tbody></table>
       <div class="pr-tot">
@@ -13898,16 +14049,26 @@ function createInvoiceForRental(rentalId) {
   if (!r.customerId) { flashOr('[data-slot="customer"]', 'The Quote needs a customer first — drag one on (or quick-add).'); return; }
   if (!r.startDate || !r.endDate) { flashOr('.rdcal, .timeline, .statusbar.draftwin', 'Set the rental window first.'); return; }
   if (!rentalUnitIds(r).length) { flashOr('.stall-empty, [data-slot="unit"]', 'Add at least one unit before invoicing.'); return; }
-  const id = nextInvoiceId();
-  const inv = { invoiceId: id, customerId: r.customerId, rentalIds: [rentalId], date: TODAY_ISO, dueDate: dueForCustomer(r.customerId), po: '', amountPaid: 0, lineItems: [], mock: true };
-  rentalLineItems(r).forEach((li) => inv.lineItems.push(li));      // one rental line per unit (§20)
-  transportLineItems(r).forEach((li) => inv.lineItems.push(li));   // one transport line per unit (§20)
-  protectionLineItems(r).forEach((li) => inv.lineItems.push(li));  // F4b — Rental Protection surcharge line (when the account carries it)
-  DATA.invoices.push(inv); IDX.invoice.set(id, inv); reindex('invoices', inv);
-  r.invoiceId = id;
-  logAction(inv, `Created for ${rentalUnitsLabel(r) || 'rental'}`);
-  logAction(r, `Invoice ${invoiceShort(id)} created`);
-  toast(`Invoice ${invoiceShort(id)} created and linked.`);
+  // §28cap — chunk the window into ≤28-day invoices (a long rental → a billing series).
+  // ≤28 days = exactly one invoice, lines built exactly as before (the common path).
+  const chunks = invoiceChunks(r.startDate, r.endDate);
+  let id = null;
+  chunks.forEach((ch) => {
+    const cid = nextInvoiceId();
+    const inv = { invoiceId: cid, customerId: r.customerId, rentalIds: [rentalId], date: TODAY_ISO, dueDate: dueForCustomer(r.customerId), po: '', amountPaid: 0, lineItems: [], covOf: rentalId, covStart: ch.start, covEnd: ch.end, mock: true };
+    if (ch.idx === 0) { id = cid; r.invoiceId = cid; }
+    else inv.contOf = id;
+    if (chunks.length === 1) { rentalLineItems(r).forEach((li) => inv.lineItems.push(li)); }   // unchanged single-invoice path
+    else billChunkUnits(inv, r, ch.start, ch.end, ch.start, retroPricingOn(), 'rental', ch.idx === 0 ? null : id);   // per-chunk rental line(s)
+    if (ch.idx === 0) {   // transport + Rental Protection surcharge (F4b) billed once, on the primary chunk
+      transportLineItems(r).forEach((li) => inv.lineItems.push(li));
+      protectionLineItems(r).forEach((li) => inv.lineItems.push(li));
+    }
+    DATA.invoices.push(inv); IDX.invoice.set(cid, inv); reindex('invoices', inv);
+    logAction(inv, ch.idx === 0 ? `Created for ${rentalUnitsLabel(r) || 'rental'}` : `Continuation (days ${ch.idx * INV_CAP_DAYS + 1}+) — ext of ${invoiceShort(id)}`);
+  });
+  logAction(r, `Invoice ${invoiceShort(id)} created${chunks.length > 1 ? ` + ${chunks.length - 1} continuation${chunks.length > 2 ? 's' : ''} (28-day cap)` : ''}`);
+  toast(`Invoice ${invoiceShort(id)} created and linked${chunks.length > 1 ? ` — split into ${chunks.length} (28-day cap)` : ''}.`);
   // #8 — open the new invoice ON the Invoice card (Jac 2026-06-13)
   const session = activeSession();
   if (session.anchor) setAnchor(session, session.anchor.card, session.anchor.recId, session.anchor.recType);
@@ -14001,43 +14162,34 @@ function to12(hhmm) { if (!hhmm) return ''; const [H, M] = hhmm.split(':').map(N
 // dispatch consequences) → it STAGES + requires an explicit Save; everything else
 // commits live and closes on click-away, no Save needed (Jac 2026-06-13).
 function rentalFragile(r) { return !!r && (!!r.invoiceId || ['On Rent', 'End Rent', 'Off Rent', 'Returned'].includes(r.status)); }
-function winTarget() { const wp = state.winpicker; if (!wp) return null; return wp.staged || IDX.rental.get(wp.rentalId); }
+function winTarget() { const wp = state.winEdit; if (!wp) return null; return wp.staged || IDX.rental.get(wp.rentalId); }
 function winStagedChanged() {
-  const wp = state.winpicker; if (!wp || !wp.staged) return false;
+  const wp = state.winEdit; if (!wp || !wp.staged) return false;
   const r = IDX.rental.get(wp.rentalId); if (!r) return false;
   return wp.staged.startDate !== (r.startDate || '') || wp.staged.endDate !== (r.endDate || '') || wp.staged.startTime !== (r.startTime || '');
 }
-function openWinPicker(rentalId) {
-  const r = IDX.rental.get(rentalId); if (!r) return;
-  if (!r.startTime) r.startTime = nowHourLabel();   // default to the current hour (user spec)
-  state.winpicker = { rentalId, monthISO: firstOfMonthISO(r.startDate || TODAY_ISO), anchor: null };
-  if (rentalFragile(r)) state.winpicker.staged = { rentalId, startDate: r.startDate || '', endDate: r.endDate || '', startTime: r.startTime || '' };
-  // Task C — only pivot the left column to Categories when the Rental Standard View is already
-  // open for this rental AND dates are set (so clicking the mini-calendar on a list-view row
-  // doesn't clobber whatever the operator had open on the left).
-  // Availability lens fires for both trigger paths whenever dates exist.
-  const s = activeSession();
-  const rs = s.cards.rentals;
-  if (rs && rs.mode === 'standard' && rs.recId === rentalId && r.startDate && r.endDate) {
-    if (s.cols) s.cols.left = 'categories';
-    const cc = s.cards.categories; if (cc) { cc.mode = 'list'; cc.recId = null; cc.listLimit = undefined; }
-  }
-  if (!rentalFragile(r) && r.startDate && r.endDate) enterAvailabilitySearch(r);
-  render();
-}
 function winPickSave() {
-  const wp = state.winpicker; if (!wp) return;
+  const wp = state.winEdit; if (!wp) return;
   const r = IDX.rental.get(wp.rentalId);
   if (r && wp.staged) {
+    const prevEnd = r.endDate || '';
     r.startDate = wp.staged.startDate; r.endDate = wp.staged.endDate; r.startTime = wp.staged.startTime;
     if (r.startDate && r.endDate && r.status === 'Quote') r.status = 'Reserved';
     logAction(r, `Rental window → ${r.startDate && r.endDate ? fmtShortDate(r.startDate) + '–' + fmtShortDate(r.endDate) : 'cleared'}`);
+    const ext = billExtension(r, prevEnd);   // bill the lengthened window across the ≤28-day invoice series
+    if (ext) {
+      const basis = ext.retro ? 'retroactive' : 'added days';
+      const up = ext.subtotalDelta >= 0;
+      const amt = money(Math.abs(ext.subtotalDelta));
+      const newN = ext.newInvoices ? ` · ${ext.newInvoices} new invoice${ext.newInvoices > 1 ? 's' : ''}` : '';
+      logAction(r, `Extension ${up ? 'billed' : 're-priced −'} (${basis}) — ${up ? '+' : '−'}${amt}${newN}`);
+      toast(`Extension ${up ? 'billed +' : 're-priced − '}${amt} (${basis})${ext.newInvoices ? ` — opened ${ext.newInvoices} continuation invoice${ext.newInvoices > 1 ? 's' : ''} (28-day cap)` : ''}.`);
+    }
   }
-  state.winpicker = null; render();
+  state.winEdit = null; render();
 }
-function closeWinPicker() { state.winpicker = null; render(); }
 function winPickMonth(delta) {
-  const wp = state.winpicker; if (!wp) return;
+  const wp = state.winEdit; if (!wp) return;
   const d = parseISO(wp.monthISO); d.setMonth(d.getMonth() + delta);
   wp.monthISO = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`; render();
 }
@@ -14072,7 +14224,7 @@ function exitAvailabilitySearch() {
   if (seed && DATA.categories.some((c) => (c.name || '').toLowerCase() === seed)) us.search = '';
 }
 function winPickDay(iso) {
-  const wp = state.winpicker; if (!wp) return;
+  const wp = state.winEdit; if (!wp) return;
   const r = IDX.rental.get(wp.rentalId); if (!r) return;
   const t = winTarget();                                 // staged (fragile) or the rental itself (live)
   const subject = winPickSubject();
@@ -14093,9 +14245,12 @@ function winPickDay(iso) {
   }
   reanchorRender();
 }
-function setWinTime(hhmm) { const wp = state.winpicker; if (!wp) return; const t = winTarget(); if (!t) return; t.startTime = to12(hhmm); reanchorRender(); }
-function winPickClear() { const wp = state.winpicker; if (!wp) return; const t = winTarget(); if (t) { t.startDate = ''; t.endDate = ''; wp.anchor = null; } if (!wp.staged) exitAvailabilitySearch(); reanchorRender(); }
-function winPickToday() { const wp = state.winpicker; if (!wp) return; wp.monthISO = firstOfMonthISO(TODAY_ISO); const t = winTarget(); if (t) { t.startDate = TODAY_ISO; t.endDate = ''; wp.anchor = TODAY_ISO; } reanchorRender(); }
+function setWinTime(hhmm) { const wp = state.winEdit; if (!wp) return; const t = winTarget(); if (!t) return; t.startTime = to12(hhmm); reanchorRender(); }
+function winPickClear() { const wp = state.winEdit; if (!wp) return; const t = winTarget(); if (t) { t.startDate = ''; t.endDate = ''; wp.anchor = null; } if (!wp.staged) exitAvailabilitySearch(); reanchorRender(); }
+/** §inline — Cancel the staged window edit on a fragile rental: revert the staged copy to
+ *  the rental's real dates (the confirm card disappears, nothing is billed). */
+function winPickCancel() { const wp = state.winEdit; if (!wp || !wp.staged) return; const r = IDX.rental.get(wp.rentalId); if (!r) return; wp.staged = { rentalId: wp.rentalId, startDate: r.startDate || '', endDate: r.endDate || '', startTime: r.startTime || '' }; wp.anchor = null; reanchorRender(); }
+function winPickToday() { const wp = state.winEdit; if (!wp) return; wp.monthISO = firstOfMonthISO(TODAY_ISO); const t = winTarget(); if (t) { t.startDate = TODAY_ISO; t.endDate = ''; wp.anchor = TODAY_ISO; } reanchorRender(); }
 
 /* ── R22 DATE PICKER — single date/datetime, reuses the .wp-* calendar styling.
    state.datepick = { field, withTime, monthISO }; writes state.overlay[field]
@@ -14146,7 +14301,7 @@ function dayBlocked(subject, iso, selfId) {
 }
 /** Render the inline calendar popup for the rental whose picker is open. */
 function winPickerEl(r) {
-  const wp = state.winpicker;
+  const wp = state.winEdit;
   const md = parseISO(wp.monthISO); const y = md.getFullYear(), m = md.getMonth();
   const startDow = new Date(y, m, 1).getDay();
   const daysIn = new Date(y, m + 1, 0).getDate();
@@ -14171,27 +14326,42 @@ function winPickerEl(r) {
   }
   const subjName = subject && (subject.kind === 'unit' ? IDX.unit.get(subject.id)?.name : IDX.category.get(subject.id)?.name);
   const dows = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((d) => `<span class="wp-dow">${d}</span>`).join('');
+  // §ext — live extension preview: a lengthened fragile-rental window re-prices the
+  // whole window and shows the increment (added charge + tax + new balance) before commit.
+  const ext = wp.staged ? extensionPreview(IDX.rental.get(wp.rentalId), wp.staged.startDate, wp.staged.endDate) : null;
+  const billing = !!(ext && ext.subtotalDelta > 0.005);
+  const reducing = !!(ext && ext.subtotalDelta < -0.005);   // retro down-reblend: extending unlocks the cheaper 4-Week rate
+  const changing = billing || reducing;
+  const extHtml = changing
+    ? `<div class="wp-ext${reducing ? ' wp-ext-down' : ''}">
+        <div class="wp-ext-cap"><span class="wp-ext-kick">${reducing ? 'Re-price' : 'Extension'}</span><span class="wp-ext-days">${ext.daysDelta >= 0 ? '+' : ''}${ext.daysDelta} day${Math.abs(ext.daysDelta) !== 1 ? 's' : ''} · ${esc(fmtShortDate(ext.prevEnd))} → ${esc(fmtShortDate(ext.newEnd))}</span></div>
+        <div class="wp-ext-row"><span>${reducing ? 'Invoice credit' : 'Added charge'}</span><b>${reducing ? '−' : ''}${money2(Math.abs(ext.subtotalDelta))}</b></div>
+        ${ext.taxDelta ? `<div class="wp-ext-row"><span>Tax (${(TAX_RATE * 100).toFixed(2)}%)</span><b>${reducing ? '−' : ''}${money2(Math.abs(ext.taxDelta))}</b></div>` : ''}
+        <div class="wp-ext-row wp-ext-bal"><span>New balance</span><b>${money2(ext.newBalance)}</b></div>
+        <div class="wp-ext-basis">${reducing ? 'Extending unlocks the cheaper 4-Week rate — the bill drops.' : ext.retro ? 'Cheapest price for all rental days — prior charges count toward it.' : 'Billed as a fresh rental of the added days.'}</div>
+      </div>`
+    : '';
+  // §inline confirm — a FRAGILE (invoiced/out) rental stages its edit; once the window
+  // actually changes, a "Confirm new rental window?" card hovers over the calendar with the
+  // money preview + a blue Save. Non-fragile rentals commit live (no staging, no confirm).
+  const stagedChanged = !!(wp.staged && winStagedChanged());
+  const saveLabel = billing ? 'Bill Extension' : reducing ? 'Re-price ↓' : 'Confirm window';
+  const confirmCard = stagedChanged
+    ? `<div class="wp-confirm">
+        <div class="wp-confirm-h">Confirm new rental window?</div>
+        ${changing ? extHtml : '<div class="wp-ext-basis" style="margin:0">New window — no change to billing.</div>'}
+        <div class="wp-confirm-foot">${ghostPill('Cancel', { js: 'js-wp-cancel' })}${actionPill(billing ? 'money' : 'commit', saveLabel, { js: 'js-wp-save' })}</div>
+      </div>`
+    : '';
   return `<div class="winpicker">
     <div class="wp-time"><label>Pickup time</label><input type="time" class="js-wp-time" value="${esc(to24(t.startTime) || '09:00')}"></div>
     <div class="wp-head"><span class="wp-month">${MONTH_NAMES[m]} ${y}</span>
       <span class="wp-nav"><button class="js-wp-prev" data-tip="Previous month">‹</button><button class="js-wp-next" data-tip="Next month">›</button></span></div>
     <div class="wp-grid">${dows}${cells}</div>
     ${subjName ? `<div class="wp-blocknote">Greyed days are ${state.overbookOn ? 'booked' : 'unavailable'} for <b>${esc(subjName)}</b>${state.overbookOn ? ' — overbooking is on, pick to force' : ''}</div>` : ''}
-    <div class="wp-foot"><button class="pill ghost js-wp-today" data-r="R18">Today</button>${wp.staged && winStagedChanged() ? actionPill('commit', 'Save', { js: 'js-wp-save' }) : ''}${actionPill('commit', 'Clear', { js: 'js-wp-clear' })}</div>
+    <div class="wp-foot"><button class="pill ghost js-wp-today" data-r="R18">Today</button>${actionPill('commit', 'Clear', { js: 'js-wp-clear' })}</div>
+    ${confirmCard}
   </div>`;
-}
-/** Float the picker anchored to the TOP of its trigger button (opens upward so the
- *  guide popup below it isn't blocked); drops below only if there's no room above. */
-function positionWinPicker(fl) {
-  const trigger = document.querySelector(`.js-open-winpicker[data-rec="${state.winpicker.rentalId}"]`);
-  if (!trigger) { fl.style.display = 'none'; return; }       // detail not visible → hide
-  const tr = trigger.getBoundingClientRect();
-  const pw = fl.offsetWidth || 300, ph = fl.offsetHeight || 360;
-  let left = Math.max(10, Math.min(tr.left + tr.width / 2 - pw / 2, window.innerWidth - pw - 10));   // centered on the button
-  let top = tr.top - ph - 6;                                  // ANCHORED ABOVE the button
-  if (top < 10) top = Math.min(tr.bottom + 6, window.innerHeight - ph - 10);   // no room above → drop below
-  fl.style.left = Math.round(left) + 'px';
-  fl.style.top = Math.round(top) + 'px';
 }
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -14722,7 +14892,7 @@ const IDX_MAP = { categories: 'category', units: 'unit', customers: 'customer', 
 let refreshing = false, refreshTimer = null;
 async function refreshFromBackend() {
   if (refreshing || booting || !backendPassword || saving || savePending || !lastSaved) return;
-  if (document.hidden || DRAG.active || DRAG.armed || state.winpicker || state.overlay || hoverNode) return;   // don't disrupt active work
+  if (document.hidden || DRAG.active || DRAG.armed || state.winEdit || state.overlay || hoverNode) return;   // don't disrupt active work
   const ae = document.activeElement;
   if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)) return;              // mid-typing
   refreshing = true;
@@ -15279,7 +15449,7 @@ function boot() {
     if (e.key === 'Escape') dismissTopSheet();
   });
   // mouse hotkeys (§0.1): double-click a row = anchor; right-click = Back
-  const hotkeyGuard = (e) => e.target.closest('.inline-edit, input, textarea, select, .pill, button, .x') || state.winpicker;
+  const hotkeyGuard = (e) => e.target.closest('.inline-edit, input, textarea, select, .pill, button, .x') || state.winEdit;
   document.addEventListener('dblclick', (e) => {
     if (hotkeyGuard(e)) return;
     if (e.target.closest('.row')) return;                 // rows are handled by the click discriminator (#10)
@@ -15311,7 +15481,7 @@ function boot() {
     // The row EYE is the one button that IS a preview trigger.
     if (!e.target.closest('.js-roweye') && (e.target.closest('.pill.gate, .js-status-pill, button, .x, .seg, .add-field, .dropdown-menu') || document.querySelector('.dropdown-menu'))) { clearTimeout(hoverTimer); return; }
     const t = hoverTarget(e.target);
-    if (!t || state.overlay || state.winpicker) return;
+    if (!t || state.overlay || state.winEdit) return;
     clearTimeout(hoverGrace);            // re-entering a row cancels a pending close
     if (t === hoverEl) return;
     hoverEl = t; hideHoverPreview();
@@ -15397,9 +15567,9 @@ function exposeTestApi() {
   try {
     window.__rw = { DATA, IDX, TODAY_ISO, itemPaid, lineKey, rentalUnits, unitEntry, isPrimaryUnit,
       unitStatus, rentalUnitStatuses, unitsUniform, rentalStatusDisplay, rentalMirrorStatus, rentalDisplayStatus,
-      allUnitsTerminal, unitTerminal, unitVoided, rentalLineItems, transportLineItems, syncRentalPrimary,
+      allUnitsTerminal, unitTerminal, unitVoided, rentalLineItems, transportLineItems, extensionPreview, billExtension, unitBilledRental, unitBilledSeries, retroPricingOn, rentalInvoices, rentalActiveInvoice, invoiceChunks, createInvoiceForRental, syncRentalPrimary,
       addUnitToRental, removeUnitFromRental, removeUnitInvoiceLine, unitLinePaid, invoiceTotals, allocLines,
-      rentalAllocated, itemRefunded, itemRefundable, lineRefunded, lineFullyRefunded, refundLines, rentalLineRefund, applyPayment, unitRentalPrice, rentalDisplayName, setWoLinePhase, setWoPhase, woBottleneck,
+      rentalAllocated, itemRefunded, itemRefundable, lineRefunded, lineFullyRefunded, refundLines, rentalLineRefund, applyPayment, unitRentalPrice, rentalPrice, rentalDisplayName, setWoLinePhase, setWoPhase, woBottleneck,
       cleanUnitName, planUnitMigration, applyUnitMigration, openMigrationPreview,
       computeTransportPrice, isFueledType, unitTransport, rentalTransport,
       wrValidatePlan, applyWranglerData, wrFunnel, invoiceMergeable, mergeInvoiceInto, parseWranglerAction, stripWranglerAction, parseCsvFile, wrFindAttachedCsv,
