@@ -294,6 +294,30 @@ try {
       ok(wr({ customerId: 'C0009', unitIds: [freeUnit.unitId], startDate: '2099-11-03', endDate: '2099-11-05' }).issues.some((s) => /already booked/.test(s)), 'WR-rent: an overlapping booking of the same unit is refused (overbooking gate)');
     }
 
+    // 12h) Name resolution (Jac 2026-06-26) — Wrangler talks in NAMES; ops + foreign-key fields resolve them
+    // to real ids. Fixes the two reported bugs: a unit's categoryId set by NAME, and startRental booked by
+    // customer/unit NAME (where the model previously passed the name as an id and nothing linked).
+    {
+      const cust0 = T.IDX.customer.get('C0009');
+      ok(T.wrResolveCustomer('C0009').rec === cust0, 'WR-resolve: customer by id');
+      const rByName = T.wrResolveCustomer(cust0.name);
+      ok((rByName.rec && rByName.rec.name === cust0.name) || (rByName.many || []).some((c) => c.customerId === 'C0009'), 'WR-resolve: customer by name');
+      if (cust0.phone) { const last4 = String(cust0.phone).replace(/\D/g, '').slice(-4); const rPh = T.wrResolveCustomer(last4); ok(!!(rPh.rec || (rPh.many && rPh.many.length)), 'WR-resolve: customer by phone suffix'); }
+      const cat0 = T.DATA.categories[0];
+      ok(T.wrResolveCategory(cat0.name).rec === cat0, 'WR-resolve: category by name');
+      ok(T.wrResolveCategory(cat0.categoryId).rec === cat0, 'WR-resolve: category by id still works');
+      // FK: a unit created with categoryId = the category NAME resolves to the real id (the Stump-Grinder bug)
+      const fk = T.wrValidatePlan({ action: 'data', ops: [{ op: 'create', entity: 'units', fields: { name: 'WR-ResolveTest', categoryId: cat0.name } }] });
+      ok(fk.ops.length === 1 && fk.ops[0].fields.categoryId === cat0.categoryId, 'WR-resolve: unit categoryId set by NAME resolves to the real id');
+      // an unknown category name is dropped, never stored as a bad id
+      const fkBad = T.wrValidatePlan({ action: 'data', ops: [{ op: 'create', entity: 'units', fields: { name: 'WR-ResolveTest2', categoryId: 'No Such Category XYZ' } }] });
+      ok(fkBad.ops.length === 1 && !('categoryId' in fkBad.ops[0].fields), 'WR-resolve: an unknown category name is dropped (no garbage id)');
+      // startRental booked by customer NAME + unit NAME (the reservation screenshot scenario)
+      const freeU = T.DATA.units.find((u) => u.fleetStatus === 'Active');
+      const byNameRent = T.wrValidatePlan({ action: 'data', ops: [{ op: 'operate', name: 'startRental', params: { customer: cust0.name, units: [freeU.name], startDate: '2099-12-01', endDate: '2099-12-08' } }] });
+      ok(byNameRent.ops.length === 1 && /start rental/.test(byNameRent.ops[0].summary), 'WR-resolve: startRental books by customer NAME + unit NAME');
+    }
+
     // 13) Transport pricing v2 — $3.50/mile + $50 load + $20 fuel (fueled), per leg.
     const tp = (a) => T.computeTransportPrice(a).price;
     // 10 mi Delivery, fueled: (3.5*10 + 50 + 20) * 1 = 105
