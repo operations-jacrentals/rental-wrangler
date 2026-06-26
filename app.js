@@ -978,6 +978,7 @@ const invCovStart = (inv, r) => inv.covStart || (r ? r.startDate : '');
 const invCovEnd = (inv, r) => inv.covEnd || (r ? r.endDate : '');
 function invCoveredDays(inv, r) { const s = invCovStart(inv, r), e = invCovEnd(inv, r); return (parseISO(s) && parseISO(e)) ? Math.max(0, dayDiff(parseISO(s), parseISO(e))) : 0; }
 const minISO = (a, b) => (a < b ? a : b);
+const maxISO = (a, b) => (a > b ? a : b);
 /** Chunk a window into ≤28-day pieces: [{idx, start, end, days}]. */
 function invoiceChunks(startISO, endISO) {
   const total = (parseISO(startISO) && parseISO(endISO)) ? dayDiff(parseISO(startISO), parseISO(endISO)) : 0;
@@ -1040,52 +1041,62 @@ function reconcileChunkRetro(inv, r, ns, ne) {
   });
   return { delta: Math.round(delta * 100) / 100, count };
 }
-/** PURE mirror of billExtension's per-step math — returns the subtotal delta billExtension
- *  WOULD post for lengthening r from prevEnd → newEnd, with ZERO mutation. Kept in lockstep
- *  with billExtension by logic-test (the preview MUST equal what's actually billed). Walks the
- *  same fill→spill chunk model: grow the open active chunk (retro reconcile vs OFF standalone),
- *  then — once that chunk is closed/locked/full — spill ≤28-day standalone segments onto fresh
- *  continuation invoices. This is why a PAID invoice (its segment spills) or one whose prior
- *  charge isn't a matched rental line no longer overstates the charge: the preview now reflects
- *  the real posting, not a blind "full window − matched-billed". */
-function previewExtensionDelta(r, prevEnd, newEnd) {
+/** PURE mirror of billExtension's per-step math — the subtotal delta billExtension WOULD post
+ *  for lengthening r to [newStart, newEnd], with ZERO mutation (replays the fill→spill walk on a
+ *  local chunk model). Kept in lockstep with billExtension by logic-test (the preview MUST equal
+ *  what's actually billed). Handles BOTH ends: grow the active chunk's covEnd toward newEnd AND
+ *  the earliest chunk's covStart toward newStart (retro reconcile vs OFF standalone), spilling
+ *  ≤28-day standalone segments onto fresh continuation invoices once a chunk is closed/locked/
+ *  full. So a PAID invoice (its added segment spills), a manually-lined one, OR an extension at
+ *  the FRONT of the window no longer over/under-states the charge — the preview is the posting. */
+function previewExtensionDelta(r, prevEnd, newEnd, prevStart, newStart) {
   if (!r || !r.invoiceId) return 0;
-  const active = rentalActiveInvoice(r); if (!active) return 0;
-  const targetEnd = newEnd;
-  let coveredEnd = active.covEnd || prevEnd || r.startDate;
-  if (!targetEnd || !coveredEnd || dayDiff(parseISO(coveredEnd), parseISO(targetEnd)) <= 0) return 0;   // no net lengthening → bills nothing (matches billExtension)
+  const invs = rentalInvoices(r); if (!invs.length) return 0;
   const retro = retroPricingOn();
+  const targetEnd = newEnd, targetStart = newStart || r.startDate;
   const units = rentalUnits(r).filter((eu) => !unitVoided(r, eu) && IDX.unit.get(eu.unitId));
   const priceOf = (eu, s, e) => { const p = rentalPrice({ categoryId: IDX.unit.get(eu.unitId).categoryId, startDate: s, endDate: e, customerId: r.customerId }); return p ? Math.round(p.price * 100) / 100 : 0; };
-  let delta = 0, onReal = true, guard = 0;
-  while (dayDiff(parseISO(coveredEnd), parseISO(targetEnd)) > 0 && guard++ < 80) {
-    if (onReal) {
-      const t = invoiceTotals(active);
-      const closed = t.paid > 0 && t.balance <= 0;
-      const room = INV_CAP_DAYS - invCoveredDays(active, r);
-      if (active.locked || closed || room <= 0) { onReal = false; continue; }   // active sealed/full → spill
-      const grow = Math.min(room, dayDiff(parseISO(coveredEnd), parseISO(targetEnd)));
-      const newCovEnd = addDaysISO(coveredEnd, grow);
-      if (retro) {                                                // reconcileChunkRetro: re-price to cheapest(covStart→newEnd) − billed
-        const cs = invCovStart(active, r);
-        units.forEach((eu) => {
-          const target = priceOf(eu, cs, newCovEnd);
-          const mine = (active.lineItems || []).filter((li) => (li.kind === 'rental' || li.kind === 'extension') && li.ref === r.rentalId && li.unitId === eu.unitId);
-          const paid = mine.reduce((a, li) => a + itemPaid(active, li), 0);
-          const billed = Math.round(mine.reduce((a, li) => a + (Number(li.amount) || 0), 0) * 100) / 100;
-          const d = target - billed;
-          if (Math.abs(d) <= 0.005) return;
-          if (paid > 0.005) { if (d > 0.005) delta += d; } else { delta += d; }   // paid can only top up (refund-first); unpaid re-prices either way
-        });
-      } else {                                                    // OFF: bill the added segment standalone
-        units.forEach((eu) => { const d = priceOf(eu, coveredEnd, newCovEnd); if (d > 0.005) delta += d; });
-      }
-      coveredEnd = newCovEnd; onReal = false;                     // real active is now full/at-target; any remainder spills
-    } else {                                                      // spilled: fresh ≤28-day continuation chunk, billed standalone
-      const chunkEnd = minISO(addDaysISO(coveredEnd, INV_CAP_DAYS), targetEnd);
-      units.forEach((eu) => { const d = priceOf(eu, coveredEnd, chunkEnd); if (d > 0.005) delta += d; });
-      coveredEnd = chunkEnd;
-    }
+  // Local, NON-MUTATING model of each invoice chunk; we replay billExtension's fill→spill walk
+  // against it so the preview composes a front+back extension exactly as the real posting would.
+  const chunkOf = (inv) => {
+    const billed = {}, paid = {};
+    units.forEach((eu) => {
+      const mine = (inv.lineItems || []).filter((li) => (li.kind === 'rental' || li.kind === 'extension') && li.ref === r.rentalId && li.unitId === eu.unitId);
+      billed[eu.unitId] = Math.round(mine.reduce((a, li) => a + (Number(li.amount) || 0), 0) * 100) / 100;
+      paid[eu.unitId] = mine.reduce((a, li) => a + itemPaid(inv, li), 0);
+    });
+    const tot = invoiceTotals(inv);
+    return { covStart: invCovStart(inv, r), covEnd: invCovEnd(inv, r), locked: !!inv.locked, closed: tot.paid > 0 && tot.balance <= 0, billed, paid };
+  };
+  const chunks = invs.map(chunkOf);
+  let delta = 0;
+  const reconcile = (c, ns, ne) => units.forEach((eu) => {     // retro re-price chunk to cheapest(ns→ne) − billed
+    const target = priceOf(eu, ns, ne), billed = c.billed[eu.unitId] || 0, d = target - billed;
+    if (Math.abs(d) <= 0.005) return;
+    if ((c.paid[eu.unitId] || 0) > 0.005) { if (d > 0.005) { delta += d; c.billed[eu.unitId] = billed + d; } }   // paid → positive top-up only
+    else { delta += d; c.billed[eu.unitId] = target; }                                                            // unpaid → re-price in place (up or down)
+  });
+  const standalone = (c, ns, ne) => units.forEach((eu) => {    // OFF grow / spill: the added segment priced on its own
+    const amt = priceOf(eu, ns, ne); if (amt > 0.005) { delta += amt; c.billed[eu.unitId] = (c.billed[eu.unitId] || 0) + amt; }
+  });
+  const spill = (ns, ne) => { const c = { covStart: ns, covEnd: ne, locked: false, closed: false, billed: {}, paid: {} }; standalone(c, ns, ne); return c; };
+  const daysOf = (c) => Math.max(0, dayDiff(parseISO(c.covStart), parseISO(c.covEnd)));
+  let guard = 0;
+  // BACK — grow the active (latest) chunk's covEnd toward targetEnd, spilling fresh chunks.
+  let active = chunks[chunks.length - 1];
+  let coveredEnd = active.covEnd || prevEnd || r.startDate;
+  while (targetEnd && coveredEnd && dayDiff(parseISO(coveredEnd), parseISO(targetEnd)) > 0 && guard++ < 200) {
+    const room = INV_CAP_DAYS - daysOf(active);
+    if (active.locked || active.closed || room <= 0) { const ce = minISO(addDaysISO(coveredEnd, INV_CAP_DAYS), targetEnd); active = spill(coveredEnd, ce); chunks.push(active); coveredEnd = ce; }
+    else { const grow = Math.min(room, dayDiff(parseISO(coveredEnd), parseISO(targetEnd))); const nce = addDaysISO(coveredEnd, grow); retro ? reconcile(active, active.covStart, nce) : standalone(active, coveredEnd, nce); active.covEnd = nce; coveredEnd = nce; }
+  }
+  // FRONT — grow the earliest chunk's covStart toward targetStart, spilling fresh chunks.
+  let earliest = chunks[0];
+  let coveredStart = earliest.covStart || prevStart || r.startDate;
+  while (targetStart && coveredStart && dayDiff(parseISO(targetStart), parseISO(coveredStart)) > 0 && guard++ < 200) {
+    const room = INV_CAP_DAYS - daysOf(earliest);
+    if (earliest.locked || earliest.closed || room <= 0) { const cs = maxISO(addDaysISO(coveredStart, -INV_CAP_DAYS), targetStart); earliest = spill(cs, coveredStart); chunks.unshift(earliest); coveredStart = cs; }
+    else { const grow = Math.min(room, dayDiff(parseISO(targetStart), parseISO(coveredStart))); const ncs = addDaysISO(coveredStart, -grow); retro ? reconcile(earliest, ncs, earliest.covEnd) : standalone(earliest, ncs, coveredStart); earliest.covStart = ncs; coveredStart = ncs; }
   }
   return Math.round(delta * 100) / 100;
 }
@@ -1099,29 +1110,29 @@ function extensionPreview(r, stagedStart, stagedEnd) {
   const ns = stagedStart || r.startDate, ne = stagedEnd || r.endDate;
   if (!ns || !ne) return null;
   const retro = retroPricingOn();
-  const subtotalDelta = previewExtensionDelta(r, r.endDate, ne);
+  const subtotalDelta = previewExtensionDelta(r, r.endDate, ne, r.startDate, ns);
   const cust = IDX.customer.get(r.customerId);
   const exempt = !!(invs[0].taxExempt || cust?.salesTaxExempt);
   const taxDelta = exempt ? 0 : Math.round(subtotalDelta * TAX_RATE * 100) / 100;
   const curBal = invs.reduce((a, inv) => a + invoiceTotals(inv).balance, 0);
   const prevDays = Math.max(1, dayDiff(parseISO(r.startDate), parseISO(r.endDate)));
   const newDays = Math.max(1, dayDiff(parseISO(ns), parseISO(ne)));
-  return { subtotalDelta, taxDelta, newBalance: curBal + subtotalDelta + taxDelta, daysDelta: newDays - prevDays, prevEnd: r.endDate, newEnd: ne, retro };
+  return { subtotalDelta, taxDelta, newBalance: curBal + subtotalDelta + taxDelta, daysDelta: newDays - prevDays, prevEnd: r.endDate, newEnd: ne, newStart: ns, prevStart: r.startDate, retro };
 }
 /** Bill a lengthened window across the rental's invoice series — fill the active open
  *  chunk toward its 28-day cap, then spill into fresh ≤28-day invoices (closed/locked
  *  active spills immediately). Call AFTER the new dates are written; prevEnd = old end. */
-function billExtension(r, prevEnd) {
+function billExtension(r, prevEnd, prevStart) {
   if (!r || !r.invoiceId) return null;
   const retro = retroPricingOn();
   const targetEnd = r.endDate;
   let active = rentalActiveInvoice(r); if (!active) return null;
-  if (!active.covStart) { active.covStart = r.startDate; active.covEnd = prevEnd || r.endDate; active.covOf = r.rentalId; }   // backfill legacy
+  if (!active.covStart) { active.covStart = prevStart || r.startDate; active.covEnd = prevEnd || r.endDate; active.covOf = r.rentalId; }   // backfill legacy from the OLD window
   let coveredEnd = active.covEnd || prevEnd || r.startDate;
-  if (!targetEnd || !coveredEnd || dayDiff(parseISO(coveredEnd), parseISO(targetEnd)) <= 0) return null;   // no net lengthening
   const sum = { count: 0, subtotalDelta: 0, invoiceIds: [], newInvoices: 0, retro, invoiceId: r.invoiceId };
   let guard = 0;
-  while (dayDiff(parseISO(coveredEnd), parseISO(targetEnd)) > 0 && guard++ < 60) {
+  // BACK extension — days added AFTER the active chunk's covEnd (end moved later).
+  while (targetEnd && coveredEnd && dayDiff(parseISO(coveredEnd), parseISO(targetEnd)) > 0 && guard++ < 60) {
     const t = invoiceTotals(active);
     const closed = t.paid > 0 && t.balance <= 0;
     const room = INV_CAP_DAYS - invCoveredDays(active, r);
@@ -1142,6 +1153,33 @@ function billExtension(r, prevEnd) {
       active.covEnd = newCovEnd; reindex('invoices', active);
       sum.count += res.count; sum.subtotalDelta += res.delta; if (!sum.invoiceIds.includes(active.invoiceId)) sum.invoiceIds.push(active.invoiceId);
       coveredEnd = newCovEnd;
+    }
+  }
+  // FRONT extension — days added BEFORE the earliest chunk's covStart (start moved earlier).
+  // Symmetric to the back loop: grow the earliest OPEN chunk's covStart earlier (retro reconcile /
+  // OFF standalone), or spill a fresh ≤28-day continuation chunk when it's paid/locked/full.
+  const targetStart = r.startDate;
+  let earliest = rentalInvoices(r)[0] || active;
+  let coveredStart = earliest.covStart || prevStart || r.startDate;
+  while (targetStart && coveredStart && dayDiff(parseISO(targetStart), parseISO(coveredStart)) > 0 && guard++ < 60) {
+    const t = invoiceTotals(earliest);
+    const closed = t.paid > 0 && t.balance <= 0;
+    const room = INV_CAP_DAYS - invCoveredDays(earliest, r);
+    if (earliest.locked || closed || room <= 0) {                                // spill → fresh FRONT chunk invoice
+      const chunkStart = maxISO(addDaysISO(coveredStart, -INV_CAP_DAYS), targetStart);
+      earliest = createContinuationInvoice(r, chunkStart, coveredStart);
+      const res = billChunkUnits(earliest, r, chunkStart, coveredStart, chunkStart, retro, 'rental', r.invoiceId);
+      reindex('invoices', earliest);
+      sum.newInvoices++; sum.count += res.count; sum.subtotalDelta += res.delta; sum.invoiceIds.push(earliest.invoiceId);
+      coveredStart = chunkStart;
+    } else {                                                                      // grow the earliest open chunk earlier
+      const grow = Math.min(room, dayDiff(parseISO(targetStart), parseISO(coveredStart)));
+      const newCovStart = addDaysISO(coveredStart, -grow);
+      const res = retro ? reconcileChunkRetro(earliest, r, newCovStart, invCovEnd(earliest, r))
+        : billChunkUnits(earliest, r, newCovStart, coveredStart, newCovStart, false, 'extension', null);
+      earliest.covStart = newCovStart; reindex('invoices', earliest);
+      sum.count += res.count; sum.subtotalDelta += res.delta; if (!sum.invoiceIds.includes(earliest.invoiceId)) sum.invoiceIds.push(earliest.invoiceId);
+      coveredStart = newCovStart;
     }
   }
   if (!sum.count) return null;
@@ -14377,11 +14415,11 @@ function winPickSave() {
   const wp = state.winEdit; if (!wp) return;
   const r = IDX.rental.get(wp.rentalId);
   if (r && wp.staged) {
-    const prevEnd = r.endDate || '';
+    const prevEnd = r.endDate || '', prevStart = r.startDate || '';
     r.startDate = wp.staged.startDate; r.endDate = wp.staged.endDate; r.startTime = wp.staged.startTime;
     if (r.startDate && r.endDate && r.status === 'Quote') r.status = 'Reserved';
     logAction(r, `Rental window → ${r.startDate && r.endDate ? fmtShortDate(r.startDate) + '–' + fmtShortDate(r.endDate) : 'cleared'}`);
-    const ext = billExtension(r, prevEnd);   // bill the lengthened window across the ≤28-day invoice series
+    const ext = billExtension(r, prevEnd, prevStart);   // bill the lengthened window (either end) across the ≤28-day invoice series
     if (ext) {
       const basis = ext.retro ? 'retroactive' : 'added days';
       const up = ext.subtotalDelta >= 0;
@@ -14539,7 +14577,7 @@ function winPickerEl(r) {
   const changing = billing || reducing;
   const extHtml = changing
     ? `<div class="wp-ext${reducing ? ' wp-ext-down' : ''}">
-        <div class="wp-ext-cap"><span class="wp-ext-kick">${reducing ? 'Re-price' : 'Extension'}</span><span class="wp-ext-days">${ext.daysDelta >= 0 ? '+' : ''}${ext.daysDelta} day${Math.abs(ext.daysDelta) !== 1 ? 's' : ''} · ${esc(fmtShortDate(ext.prevEnd))} → ${esc(fmtShortDate(ext.newEnd))}</span></div>
+        <div class="wp-ext-cap"><span class="wp-ext-kick">${reducing ? 'Re-price' : 'Extension'}</span><span class="wp-ext-days">${ext.daysDelta >= 0 ? '+' : ''}${ext.daysDelta} day${Math.abs(ext.daysDelta) !== 1 ? 's' : ''} · ${esc(fmtShortDate(ext.newStart))} → ${esc(fmtShortDate(ext.newEnd))}</span></div>
         <div class="wp-ext-row"><span>${reducing ? 'Invoice credit' : 'Added charge'}</span><b>${reducing ? '−' : ''}${money2(Math.abs(ext.subtotalDelta))}</b></div>
         ${ext.taxDelta ? `<div class="wp-ext-row"><span>Tax (${(TAX_RATE * 100).toFixed(2)}%)</span><b>${reducing ? '−' : ''}${money2(Math.abs(ext.taxDelta))}</b></div>` : ''}
         <div class="wp-ext-row wp-ext-bal"><span>New balance</span><b>${money2(ext.newBalance)}</b></div>

@@ -764,11 +764,14 @@ try {
     //      `price(full window) − matched-billed`, which overstated both cases.)
     {
       const pf = (catId, s, e) => { const p = T.rentalPrice({ categoryId: catId, startDate: s, endDate: e, customerId: 'C0009' }); return p ? p.price : 0; };
-      const S0 = '2099-08-01', E0 = '2099-08-03', E1 = '2099-08-04';   // 2 days → +1 (mirrors the reported screenshot)
+      const SB = '2099-07-31', S0 = '2099-08-01', E0 = '2099-08-03', E1 = '2099-08-04';   // base 2-day window [S0,E0]; SB = start −1, E1 = end +1
       const af3 = T.DATA.units.filter((u) => u.fleetStatus === 'Active');
       const cu = af3.find((u) => pf(u.categoryId, S0, E1) > pf(u.categoryId, S0, E0) && pf(u.categoryId, S0, E0) > 0) || af3[0];
       const seriesSub = (r) => T.rentalInvoices(r).reduce((a, iv) => a + iv.lineItems.filter((l) => l.kind === 'rental' || l.kind === 'extension').reduce((s, l) => s + (+l.amount || 0), 0), 0);
-      const scenario = (label, paid, matched) => {
+      // ns/ne = the staged new window; default = back extension. Asserts the inline preview equals
+      // the real series delta billExtension posts, for an extension at EITHER end (or both).
+      const scenario = (label, paid, matched, ns, ne) => {
+        ns = ns || S0; ne = ne || E1;
         const rid = 'R-PVEQ', iid = 'I-PVEQ';
         const r = { rentalId: rid, customerId: 'C0009', unitId: cu.unitId, categoryId: cu.categoryId, startDate: S0, endDate: E0, startTime: '', status: 'On Rent', transportType: 'Self', deliveryAddress: '', transportMiles: null, invoiceId: iid, units: [{ unitId: cu.unitId, transportType: 'Self', transportMiles: null }], notes: '', actions: [], mock: true };
         T.DATA.rentals.push(r); T.IDX.rental.set(rid, r);
@@ -777,20 +780,27 @@ try {
         else inv.lineItems.push({ kind: 'item', ref: rid, unitId: cu.unitId, lid: 'L-MAN', label: `${T.IDX.unit.get(cu.unitId)?.name || 'Unit'} · 1-Day×1`, amount: pf(cu.categoryId, S0, E0), qty: 1 });
         T.DATA.invoices.push(inv); T.IDX.invoice.set(iid, inv);
         if (paid) { inv.amountPaid = T.invoiceTotals(inv).total; const l0 = inv.lineItems[0]; inv.allocations = { [T.lineKey(l0)]: l0.amount }; }
-        const pv = T.extensionPreview(r, S0, E1);
+        const pv = T.extensionPreview(r, ns, ne);
         const before = seriesSub(r);
-        r.endDate = E1; T.billExtension(r, E0);
+        r.startDate = ns; r.endDate = ne; T.billExtension(r, E0, S0);
         const actual = Math.round((seriesSub(r) - before) * 100) / 100;
         ok(pv && Math.abs(pv.subtotalDelta - actual) < 0.01, `preview == actual posting — ${label} (preview ${pv ? pv.subtotalDelta : 'null'} vs billed ${actual})`);
         T.rentalInvoices(r).forEach((iv) => { const i = T.DATA.invoices.findIndex((o) => o.invoiceId === iv.invoiceId); if (i >= 0) T.DATA.invoices.splice(i, 1); T.IDX.invoice.delete(iv.invoiceId); });
         const ri = T.DATA.rentals.findIndex((o) => o.rentalId === rid); if (ri >= 0) T.DATA.rentals.splice(ri, 1); T.IDX.rental.delete(rid);
         return pv ? pv.subtotalDelta : null;
       };
-      scenario('unpaid · auto rental line', false, true);
-      scenario('PAID · auto rental line', true, true);
-      const pvManual = scenario('PAID · manual ×1 line (the reported bug)', true, false);
-      // headline regression: a paid manual-lined invoice must preview the ADDED segment, NOT the full new window
-      ok(pvManual != null && Math.abs(pvManual - pf(cu.categoryId, E0, E1)) < 0.01, `paid+manual: added charge = the added segment ($${pf(cu.categoryId, E0, E1)}), not the full window ($${pf(cu.categoryId, S0, E1)})`);
+      // BACK extension (end +1) — the #358 fix
+      scenario('back · unpaid · auto line', false, true, S0, E1);
+      scenario('back · PAID · auto line', true, true, S0, E1);
+      const pvManual = scenario('back · PAID · manual ×1 line (orig bug)', true, false, S0, E1);
+      ok(pvManual != null && Math.abs(pvManual - pf(cu.categoryId, E0, E1)) < 0.01, `back+paid+manual: added charge = the added segment ($${pf(cu.categoryId, E0, E1)}), not the full window ($${pf(cu.categoryId, S0, E1)})`);
+      // FRONT extension (start −1) — the reported "go BACK a day" case: paid invoice spills the added FRONT day
+      scenario('front · unpaid · auto line', false, true, SB, E0);
+      const pvFront = scenario('front · PAID · auto line (start back a day)', true, true, SB, E0);
+      ok(pvFront != null && Math.abs(pvFront - pf(cu.categoryId, SB, S0)) < 0.01, `front+paid: added charge = the added FRONT segment ($${pf(cu.categoryId, SB, S0)}) — start back a day bills the added day`);
+      // COMBINED front+back in one save — composes correctly (a single open chunk re-prices to the full window)
+      scenario('combined front+back · unpaid · auto line', false, true, SB, E1);
+      scenario('combined front+back · PAID · auto line', true, true, SB, E1);
     }
     // === F1 — membership fee math (spec §2): no proration; protection = 15% of BASE only; 10.75% tax ===
     {
