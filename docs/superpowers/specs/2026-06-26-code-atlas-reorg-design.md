@@ -154,6 +154,24 @@ only** — never served or imported, zero runtime risk.
   app's own in-app global search (`§5`) — that is a shipped runtime feature, out
   of scope for this reorg.
 
+### 4.5 Static dead-code scan (added mid-phase — Jac 2026-06-26)
+
+A conservative, **zero-runtime-cost** dead-code finder, grouped by Code-Atlas
+chapter. Replaces the tempting-but-wrong idea of runtime usage counters (which
+would inject executable code into `app.js`, add render-loop overhead, and only
+prove "didn't run *this week*").
+
+- `tools/dead-code-scan.mjs` → `docs/dead-code-report.md`. A module-scope symbol
+  is flagged **only if its name appears exactly once in the entire frontend**
+  (its definition) — counting string occurrences too, so it is deliberately
+  conservative and won't flag string-dispatched (`data-act`) handlers.
+- **Candidates for human review, never an auto-delete list.** Removal is out of
+  scope for this reorg (it would be a behavior change).
+- **Future follow-up (own small spec):** harvest real JS **coverage** from the
+  Playwright CI runs (`smoke`/`logic-test`) to show which chapters actually
+  executed — real "active vs. cold" data, zero production overhead, nothing
+  injected into `app.js`.
+
 ### 4.4 Standardized chapter banners — inert comments (a separate, proven commit)
 
 The existing banners are half-present and inconsistent (`§`-headers in box-draw

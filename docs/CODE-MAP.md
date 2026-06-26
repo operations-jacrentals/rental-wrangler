@@ -298,6 +298,12 @@ node tools/gen-code-map.mjs           # rewrite the index
 node tools/gen-code-map.mjs --check   # CI drift guard (fails if stale)
 ```
 
+**Dead-code candidates.** `node tools/dead-code-scan.mjs` writes
+[`dead-code-report.md`](./dead-code-report.md) — per-chapter top-level symbols
+that appear exactly once in the whole frontend (defined, never referenced).
+Conservative leads for cleanup, **for review — not an auto-delete list** (string
+dispatch can hide a real use).
+
 ---
 
 # Part II — The Workshop (GitHub / CI / docs / tools)  — *outline, specced later*
