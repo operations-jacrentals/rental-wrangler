@@ -979,6 +979,13 @@ const invCovEnd = (inv, r) => inv.covEnd || (r ? r.endDate : '');
 function invCoveredDays(inv, r) { const s = invCovStart(inv, r), e = invCovEnd(inv, r); return (parseISO(s) && parseISO(e)) ? Math.max(0, dayDiff(parseISO(s), parseISO(e))) : 0; }
 const minISO = (a, b) => (a < b ? a : b);
 const maxISO = (a, b) => (a > b ? a : b);
+/** True only for a PURE EXTENSION — the new window [ns,ne] is a strict SUPERSET of the old
+ *  [ps,pe]: no prior day dropped (ns ≤ ps AND ne ≥ pe) and at least one day added. A date MOVE
+ *  or shrink (any day dropped) is NOT an extension → no auto-billing (re-price/refund stays
+ *  manual, refund-first). Guards billExtension + its preview so sliding a window never bills. */
+const isWindowExtension = (ps, pe, ns, ne) => !!(ps && pe && ns && ne)
+  && dayDiff(parseISO(ns), parseISO(ps)) >= 0 && dayDiff(parseISO(pe), parseISO(ne)) >= 0
+  && (dayDiff(parseISO(ns), parseISO(ps)) > 0 || dayDiff(parseISO(pe), parseISO(ne)) > 0);
 /** Chunk a window into ≤28-day pieces: [{idx, start, end, days}]. */
 function invoiceChunks(startISO, endISO) {
   const total = (parseISO(startISO) && parseISO(endISO)) ? dayDiff(parseISO(startISO), parseISO(endISO)) : 0;
@@ -1052,6 +1059,7 @@ function reconcileChunkRetro(inv, r, ns, ne) {
 function previewExtensionDelta(r, prevEnd, newEnd, prevStart, newStart) {
   if (!r || !r.invoiceId) return 0;
   const invs = rentalInvoices(r); if (!invs.length) return 0;
+  if (!isWindowExtension(prevStart || r.startDate, prevEnd, newStart || r.startDate, newEnd)) return 0;   // a MOVE/shrink isn't an extension
   const retro = retroPricingOn();
   const targetEnd = newEnd, targetStart = newStart || r.startDate;
   const units = rentalUnits(r).filter((eu) => !unitVoided(r, eu) && IDX.unit.get(eu.unitId));
@@ -1124,6 +1132,8 @@ function extensionPreview(r, stagedStart, stagedEnd) {
  *  active spills immediately). Call AFTER the new dates are written; prevEnd = old end. */
 function billExtension(r, prevEnd, prevStart) {
   if (!r || !r.invoiceId) return null;
+  // Only a PURE extension bills — a date MOVE/shrink (a prior day dropped) is not an extension.
+  if (!isWindowExtension(prevStart || r.startDate, prevEnd, r.startDate, r.endDate)) return null;
   const retro = retroPricingOn();
   const targetEnd = r.endDate;
   let active = rentalActiveInvoice(r); if (!active) return null;
