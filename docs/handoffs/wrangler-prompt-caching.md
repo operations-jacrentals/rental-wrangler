@@ -1,7 +1,8 @@
 # Spec — Mr. Wrangler prompt caching (cost reduction)
 
-**Status:** Option A patch **staged & ready to deploy** (`wrangler-prompt-caching.gs`).
-Blocked only on the clasp credential (RAPT — see §4). No code live yet.
+**Status:** ✅ **DEPLOYED to prod @50** (2026-06-26) — Option A live on the same exec URL.
+Endpoint verified healthy (structured JSON on a bad password). Empirical cache-hit
+confirmation (`cache_read_input_tokens > 0`) still pending a role-password test call.
 **Author session:** `claude/mr-wrangler-overage-2rusx7` (2026-06-26)
 **Touches:** backend `Code.gs` (ships via `/clasp`); optionally `app.js` (git/PR).
 **Exempt from UI skills** — this is API-payload plumbing, no visible UI.
