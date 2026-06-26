@@ -3456,16 +3456,20 @@ function settingsBoardHtml(o) {
   const rail = SETTINGS_TABS.map((t) => `<button class="set-tab js-set-tab${o.tab === t.id ? ' on' : ''}" data-tab="${t.id}"><span class="set-tab-ic">${t.icon || ''}</span><span class="set-tab-l">${esc(t.label)}</span>${t.v1 ? '' : '<span class="set-tab-dot" data-tip="Planned — wired in next"></span>'}</button>`).join('');
   return `<div class="set-board"><nav class="set-rail" aria-label="Settings sections">${rail}</nav><div class="set-pane">${settingsPaneFor(o)}</div></div>`;
 }
-// Repaint only the settings pane body in place (no overlay teardown → no flash), preserving
-// scroll. Returns false if the settings pane isn't mounted, so callers can fall back to renderOverlay().
+// Repaint the settings board (rail + pane) in place — no overlay teardown, so it never flashes —
+// preserving pane scroll. Rebuilding the rail too means tab switches are safe through this path.
+// Returns false if the settings body isn't mounted yet, so callers fall back to renderOverlay().
 function rerenderSettingsPane() {
   const o = state.overlay; if (!o || o.kind !== 'settings') return false;
-  const pane = document.querySelector('.overlay .set-pane'); if (!pane) return false;
-  const st = pane.scrollTop;
-  pane.innerHTML = settingsPaneFor(o);
-  pane.scrollTop = st;
+  const body = document.querySelector('.overlay .settings-body'); if (!body) return false;
+  const st = (body.querySelector('.set-pane') || {}).scrollTop || 0;
+  body.innerHTML = settingsBoardHtml(o);
+  const np = body.querySelector('.set-pane'); if (np) np.scrollTop = st;
   return true;
 }
+// In-settings re-render that never flashes; falls back to a full overlay render when the settings
+// board isn't the live surface. Use from any settings-pane handler in place of renderOverlay().
+function reSettings() { if (!rerenderSettingsPane()) renderOverlay(); }
 function settingsLoginsPane(o) {
   ensureRoleMeta(o);
   const cfg = o.config || { roles: {}, admin: '' };
@@ -11778,37 +11782,37 @@ function onClick(e) {
   if (closest('.js-logo')) return openLogoMenu(closest('.js-logo'));
   if (closest('.js-switch-user')) { e.stopPropagation(); return switchUser(); }
   if (closest('.js-open-settings')) { e.stopPropagation(); return openSettings(); }
-  if (closest('.js-set-reveal')) { e.stopPropagation(); const o = state.overlay; if (o) { captureLoginEdits(o); o.revealPw = !o.revealPw; renderOverlay(); } return; }   // toggle masked role passwords
-  if (closest('.js-role-tier')) { e.stopPropagation(); const o = state.overlay; if (o) { captureLoginEdits(o); const b = closest('.js-role-tier'); const meta = draftRoleMeta(o); (meta[b.dataset.role] || (meta[b.dataset.role] = {})).tier = b.dataset.tier; o.error = null; renderOverlay(); } return; }   // pick a role's permission tier
-  if (closest('.js-role-del')) { e.stopPropagation(); const o = state.overlay; if (!o) return; const id = closest('.js-role-del').dataset.role; if (PROTECTED_ROLE_IDS.includes(String(id).toLowerCase())) { o.error = 'That built-in role can’t be removed.'; renderOverlay(); return; } captureLoginEdits(o); delete o.config.roles[id]; delete draftRoleMeta(o)[id]; o.error = null; renderOverlay(); return; }   // remove a role
-  if (closest('.js-role-add')) { e.stopPropagation(); const o = state.overlay; if (!o) return; captureLoginEdits(o); o.config.roles = o.config.roles || {}; let n = Object.keys(o.config.roles).length + 1, id = 'role' + n; while (o.config.roles[id] != null) { n++; id = 'role' + n; } o.config.roles[id] = ''; draftRoleMeta(o)[id] = { label: 'New Role', tier: 'staff' }; o.error = null; renderOverlay(); return; }   // add a custom role
+  if (closest('.js-set-reveal')) { e.stopPropagation(); const o = state.overlay; if (o) { captureLoginEdits(o); o.revealPw = !o.revealPw; reSettings(); } return; }   // toggle masked role passwords
+  if (closest('.js-role-tier')) { e.stopPropagation(); const o = state.overlay; if (o) { captureLoginEdits(o); const b = closest('.js-role-tier'); const meta = draftRoleMeta(o); (meta[b.dataset.role] || (meta[b.dataset.role] = {})).tier = b.dataset.tier; o.error = null; reSettings(); } return; }   // pick a role's permission tier
+  if (closest('.js-role-del')) { e.stopPropagation(); const o = state.overlay; if (!o) return; const id = closest('.js-role-del').dataset.role; if (PROTECTED_ROLE_IDS.includes(String(id).toLowerCase())) { o.error = 'That built-in role can’t be removed.'; reSettings(); return; } captureLoginEdits(o); delete o.config.roles[id]; delete draftRoleMeta(o)[id]; o.error = null; reSettings(); return; }   // remove a role
+  if (closest('.js-role-add')) { e.stopPropagation(); const o = state.overlay; if (!o) return; captureLoginEdits(o); o.config.roles = o.config.roles || {}; let n = Object.keys(o.config.roles).length + 1, id = 'role' + n; while (o.config.roles[id] != null) { n++; id = 'role' + n; } o.config.roles[id] = ''; draftRoleMeta(o)[id] = { label: 'New Role', tier: 'staff' }; o.error = null; reSettings(); return; }   // add a custom role
   if (closest('.js-settings-save')) { e.stopPropagation(); return saveSettings(); }
   if (closest('.js-settings-resetpage')) { e.stopPropagation(); return resetPageSettings(); }   // gentle: default just this tab
-  if (closest('.js-settings-reset')) { e.stopPropagation(); const o = state.overlay; if (!o) return; if (o.resetArm) return resetAllSettings(); o.resetArm = true; renderOverlay(); return; }   // armed two-click confirm
+  if (closest('.js-settings-reset')) { e.stopPropagation(); const o = state.overlay; if (!o) return; if (o.resetArm) return resetAllSettings(); o.resetArm = true; reSettings(); return; }   // armed two-click confirm
   if (closest('.js-settings-undo')) { e.stopPropagation(); return undoLastSettings(); }
-  if (closest('.js-overbook')) { e.stopPropagation(); const on = closest('.js-overbook').dataset.val === '1'; state.overbookOn = on; try { localStorage.setItem('jactec.overbook', on ? '1' : '0'); } catch (err) {} toast(on ? 'Overbooking allowed — conflicting links get a pulsing red Overbooked flag.' : 'Overbooking blocked — a conflicting unit drop is refused.'); renderOverlay(); return; }
-  if (closest('.js-haptics')) { e.stopPropagation(); const on = closest('.js-haptics').dataset.val === '1'; state.hapticsOff = !on; try { localStorage.setItem('jactec.hapticsOff', on ? '0' : '1'); } catch (err) {} if (on) haptic([12, 30, 12]); renderOverlay(); return; }   // §M-touch — toggle + a sample buzz when turning ON
+  if (closest('.js-overbook')) { e.stopPropagation(); const on = closest('.js-overbook').dataset.val === '1'; state.overbookOn = on; try { localStorage.setItem('jactec.overbook', on ? '1' : '0'); } catch (err) {} toast(on ? 'Overbooking allowed — conflicting links get a pulsing red Overbooked flag.' : 'Overbooking blocked — a conflicting unit drop is refused.'); reSettings(); return; }
+  if (closest('.js-haptics')) { e.stopPropagation(); const on = closest('.js-haptics').dataset.val === '1'; state.hapticsOff = !on; try { localStorage.setItem('jactec.hapticsOff', on ? '0' : '1'); } catch (err) {} if (on) haptic([12, 30, 12]); reSettings(); return; }   // §M-touch — toggle + a sample buzz when turning ON
   // Settings Board — tab rail + Statuses & Icons editing
-  if (closest('.js-set-tab')) { e.stopPropagation(); const o = state.overlay; if (o) { captureLoginEdits(o); o.tab = closest('.js-set-tab').dataset.tab; o.iconFor = null; o.error = null; o.resetArm = false; renderOverlay(); } return; }
-  if (closest('.js-set-pick')) { e.stopPropagation(); const o = state.overlay; if (o) { o.setSel = closest('.js-set-pick').dataset.set; o.iconFor = null; renderOverlay(); } return; }
-  if (closest('.js-set-color')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-set-color'); if (o) { setDraftStatus(o, b.dataset.set, b.dataset.val, { color: b.dataset.color }); renderOverlay(); } return; }
-  if (closest('.js-set-icon-open')) { e.stopPropagation(); const o = state.overlay, k = closest('.js-set-icon-open').dataset.key; if (o) { o.iconFor = o.iconFor === k ? null : k; renderOverlay(); } return; }
-  if (closest('.js-set-icon')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-set-icon'); if (o) { setDraftStatus(o, b.dataset.set, b.dataset.val, { icon: b.dataset.icon || '' }); o.iconFor = null; renderOverlay(); } return; }
-  if (closest('.js-set-reset')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-set-reset'); if (o && o.draftSettings && o.draftSettings.status && o.draftSettings.status[b.dataset.set]) { delete o.draftSettings.status[b.dataset.set][b.dataset.val]; renderOverlay(); } return; }
+  if (closest('.js-set-tab')) { e.stopPropagation(); const o = state.overlay; if (o) { captureLoginEdits(o); o.tab = closest('.js-set-tab').dataset.tab; o.iconFor = null; o.error = null; o.resetArm = false; reSettings(); } return; }
+  if (closest('.js-set-pick')) { e.stopPropagation(); const o = state.overlay; if (o) { o.setSel = closest('.js-set-pick').dataset.set; o.iconFor = null; reSettings(); } return; }
+  if (closest('.js-set-color')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-set-color'); if (o) { setDraftStatus(o, b.dataset.set, b.dataset.val, { color: b.dataset.color }); reSettings(); } return; }
+  if (closest('.js-set-icon-open')) { e.stopPropagation(); const o = state.overlay, k = closest('.js-set-icon-open').dataset.key; if (o) { o.iconFor = o.iconFor === k ? null : k; reSettings(); } return; }
+  if (closest('.js-set-icon')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-set-icon'); if (o) { setDraftStatus(o, b.dataset.set, b.dataset.val, { icon: b.dataset.icon || '' }); o.iconFor = null; reSettings(); } return; }
+  if (closest('.js-set-reset')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-set-reset'); if (o && o.draftSettings && o.draftSettings.status && o.draftSettings.status[b.dataset.set]) { delete o.draftSettings.status[b.dataset.set][b.dataset.val]; reSettings(); } return; }
   // KPIs & Rings tab
-  if (closest('.js-kpi-role')) { e.stopPropagation(); const o = state.overlay; if (o) { o.kpiRole = closest('.js-kpi-role').dataset.role; renderOverlay(); } return; }
-  if (closest('.js-kpi-band')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-kpi-band'); if (o) { const rings = ensureKpiDraft(o, b.dataset.role); rings[Number(b.dataset.i)].band = b.dataset.band; renderOverlay(); } return; }
-  if (closest('.js-kpi-reset')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-kpi-reset'); if (o) { const rings = ensureKpiDraft(o, b.dataset.role); rings[Number(b.dataset.i)] = JSON.parse(JSON.stringify((KPI_DEFAULTS[b.dataset.role] || [])[Number(b.dataset.i)] || {})); renderOverlay(); } return; }
+  if (closest('.js-kpi-role')) { e.stopPropagation(); const o = state.overlay; if (o) { o.kpiRole = closest('.js-kpi-role').dataset.role; reSettings(); } return; }
+  if (closest('.js-kpi-band')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-kpi-band'); if (o) { const rings = ensureKpiDraft(o, b.dataset.role); rings[Number(b.dataset.i)].band = b.dataset.band; reSettings(); } return; }
+  if (closest('.js-kpi-reset')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-kpi-reset'); if (o) { const rings = ensureKpiDraft(o, b.dataset.role); rings[Number(b.dataset.i)] = JSON.parse(JSON.stringify((KPI_DEFAULTS[b.dataset.role] || [])[Number(b.dataset.i)] || {})); reSettings(); } return; }
   if (closest('.js-kpi-refine')) { e.stopPropagation(); const b = closest('.js-kpi-refine'); openWranglerForKpi(b.dataset.role, Number(b.dataset.i)); return; }
   // Rental Rules tab
-  if (closest('.js-rule-set')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-rule-set'); if (o) { o.draftSettings = o.draftSettings || {}; o.draftSettings.rentalRules = o.draftSettings.rentalRules || { ...((state.settings && state.settings.rentalRules) || {}) }; o.draftSettings.rentalRules[b.dataset.rule] = b.dataset.val === 'required' ? 'required' : 'off'; renderOverlay(); } return; }
-  if (closest('.js-retro-set')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-retro-set'); if (o) { o.draftSettings = o.draftSettings || {}; o.draftSettings.company = o.draftSettings.company || { ...((state.settings && state.settings.company) || {}) }; o.draftSettings.company.retroactivePricing = b.dataset.val === 'on'; renderOverlay(); } return; }
+  if (closest('.js-rule-set')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-rule-set'); if (o) { o.draftSettings = o.draftSettings || {}; o.draftSettings.rentalRules = o.draftSettings.rentalRules || { ...((state.settings && state.settings.rentalRules) || {}) }; o.draftSettings.rentalRules[b.dataset.rule] = b.dataset.val === 'required' ? 'required' : 'off'; reSettings(); } return; }
+  if (closest('.js-retro-set')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-retro-set'); if (o) { o.draftSettings = o.draftSettings || {}; o.draftSettings.company = o.draftSettings.company || { ...((state.settings && state.settings.company) || {}) }; o.draftSettings.company.retroactivePricing = b.dataset.val === 'on'; reSettings(); } return; }
   // Custom Fields tab
-  if (closest('.js-cf-entity')) { e.stopPropagation(); const o = state.overlay; if (o) { o.cfEntity = closest('.js-cf-entity').dataset.ent; renderOverlay(); } return; }
-  if (closest('.js-cf-type')) { e.stopPropagation(); const o = state.overlay; if (o) { o.cfDraft = { ...(o.cfDraft || { label: '', type: 'text', required: false }), type: closest('.js-cf-type').dataset.type }; renderOverlay(); } return; }
-  if (closest('.js-cf-req')) { e.stopPropagation(); const o = state.overlay; if (o) { o.cfDraft = { ...(o.cfDraft || { label: '', type: 'text', required: false }), required: closest('.js-cf-req').dataset.v === '1' }; renderOverlay(); } return; }
-  if (closest('.js-cf-add')) { e.stopPropagation(); const o = state.overlay; if (!o) return; const lblEl = document.querySelector('.settings-popup .js-cf-label'); const label = (o.cfDraft && o.cfDraft.label || (lblEl ? lblEl.value : '')).trim(); if (!label) { if (lblEl) { lblEl.focus(); } toast('Give the field a label first.'); return; } const fields = ensureCfDraft(o, o.cfEntity || 'customers'); fields.push({ id: cfSlug(label), label, type: (o.cfDraft && o.cfDraft.type) || 'text', required: !!(o.cfDraft && o.cfDraft.required) }); o.cfDraft = { label: '', type: 'text', required: false }; renderOverlay(); return; }
-  if (closest('.js-cf-remove')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-cf-remove'); if (o) { const fields = ensureCfDraft(o, b.dataset.ent); const i = fields.findIndex((f) => f.id === b.dataset.id); if (i >= 0) fields.splice(i, 1); renderOverlay(); } return; }
+  if (closest('.js-cf-entity')) { e.stopPropagation(); const o = state.overlay; if (o) { o.cfEntity = closest('.js-cf-entity').dataset.ent; reSettings(); } return; }
+  if (closest('.js-cf-type')) { e.stopPropagation(); const o = state.overlay; if (o) { o.cfDraft = { ...(o.cfDraft || { label: '', type: 'text', required: false }), type: closest('.js-cf-type').dataset.type }; reSettings(); } return; }
+  if (closest('.js-cf-req')) { e.stopPropagation(); const o = state.overlay; if (o) { o.cfDraft = { ...(o.cfDraft || { label: '', type: 'text', required: false }), required: closest('.js-cf-req').dataset.v === '1' }; reSettings(); } return; }
+  if (closest('.js-cf-add')) { e.stopPropagation(); const o = state.overlay; if (!o) return; const lblEl = document.querySelector('.settings-popup .js-cf-label'); const label = (o.cfDraft && o.cfDraft.label || (lblEl ? lblEl.value : '')).trim(); if (!label) { if (lblEl) { lblEl.focus(); } toast('Give the field a label first.'); return; } const fields = ensureCfDraft(o, o.cfEntity || 'customers'); fields.push({ id: cfSlug(label), label, type: (o.cfDraft && o.cfDraft.type) || 'text', required: !!(o.cfDraft && o.cfDraft.required) }); o.cfDraft = { label: '', type: 'text', required: false }; reSettings(); return; }
+  if (closest('.js-cf-remove')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-cf-remove'); if (o) { const fields = ensureCfDraft(o, b.dataset.ent); const i = fields.findIndex((f) => f.id === b.dataset.id); if (i >= 0) fields.splice(i, 1); reSettings(); } return; }
   // Inspections tab
   if (closest('.js-insp-cat')) { e.stopPropagation(); const o = state.overlay; if (o) { o.inspFam = closest('.js-insp-cat').dataset.cat; rerenderSettingsPane(); } return; }
   if (closest('.js-insp-req')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-insp-req'); if (o) { ensureInspDraft(o, b.dataset.cat).required = b.dataset.v === '1'; rerenderSettingsPane(); } return; }
