@@ -13,8 +13,10 @@ Vanilla-JS single-file app (`app.js`), `style.css`, `index.html`, `config.js`,
 ## Design language â€” RUN ALL NEW/CHANGED UI THROUGH THIS (Jac, 2026-06-13)
 
 Jac loves the "yard data-plate" direction from the login + cancel-arc redesign
-and wants **every future UI edit run through the `frontend` skill** in this same
-language. Scope: apply to **new or reshaped UI going forward**. Do **NOT**
+and wants **every future UI edit run through the `jactec-ui` skill** in this same
+language (the former `frontend` aesthetic-direction skill is now folded into
+`jactec-ui` — see `references/frontend-design.md`). Scope: apply to **new or
+reshaped UI going forward**. Do **NOT**
 retroactively restyle the whole existing site yet â€” only touch what an edit
 already touches, unless Jac asks for a site-wide pass.
 
@@ -46,7 +48,7 @@ never a full western theme.
   (tan) as the occasional divider/border, pairing naturally with the rivets;
   optionally a small **brand/star** marker, used rarely. Rule of thumb: if a
   glance reads "western" before it reads "industrial rental yard," dial it back.
-- **Process (from the skill):** plan a token system first, avoid the 3 AI
+- **Process (from the `jactec-ui` skill / its `references/frontend-design.md`):** plan a token system first, avoid the 3 AI
   defaults (cream+serif+terracotta / near-black+acid-green / broadsheet
   hairlines), spend boldness in ONE place, build, **screenshot + self-critique
   before showing Jac**. Quality floor: responsive, visible focus, reduced-motion
@@ -119,8 +121,8 @@ Reference implementations: `.login-*` and `.cancel-arc` blocks in `style.css`.
 You can pick a **subagent's** model; you can't change your own. So push cheap work down and keep the hard calls up. **Heuristic:** if you could hand it to an intern with a checklist, delegate it — and delegate by the *cost of being wrong*, not by how simple it looks.
 
 - **Haiku subagent — pure mechanical / IO, no judgment.** git/gh plumbing (branch create/delete after merge, PR creation, `log`/`status`/`diff --stat` probes); `Grep`/`Glob` sweeps to locate before editing; bulk rename/move/reformat; extracting a known field (the script id from `backend-ids.local.md`, names from `roles.md`); running a script with known inputs and reporting its output (the `/audit` analyzer, seeds, builds — the script does the math, Haiku writes the terse report).
-- **Sonnet subagent — well-scoped implementation against a settled spec.** A UI/CSS change from a written spec; an **additive** `Code.js` GAS handler whose contract is already defined; a new `SKILL.md`/`/role` card from a template; a PR body from a diff; converting a dump into schema-shaped seed JSON; one isolated bug with a clear repro.
-- **Keep on the main session — never delegate.** Authoring/revising a SPEC; security / auth / data gates (role-password, customer isolation, margin-floor visibility, any server-side gate — wrong = live PII or pricing leak); `/role` lens selection and its data-sensitivity / customer-isolation calls (*writing* the report can drop to Sonnet, the *call* can't); cross-system architecture (GAS ↔ front-end contract, data-shape changes); irreversible ops (the `/clasp` prod-deploy STOP gate, force-push, secret handling); and any bug that already resisted ≥2 fixes.
+- **Sonnet subagent — well-scoped implementation against a settled spec.** A UI/CSS change from a written spec; an **additive** `Code.js` GAS handler whose contract is already defined; a new `SKILL.md` / role-lens card (the `jactec-ui` `/role`-audit cards) from a template; a PR body from a diff; converting a dump into schema-shaped seed JSON; one isolated bug with a clear repro.
+- **Keep on the main session — never delegate.** Authoring/revising a SPEC; security / auth / data gates (role-password, customer isolation, margin-floor visibility, any server-side gate — wrong = live PII or pricing leak); the `jactec-ui` `/role`-audit lens selection and its data-sensitivity / customer-isolation calls (*writing* the report can drop to Sonnet, the *call* can't); cross-system architecture (GAS ↔ front-end contract, data-shape changes); irreversible ops (the `/clasp` prod-deploy STOP gate, force-push, secret handling); and any bug that already resisted ≥2 fixes.
 - **Fan-out → use a Workflow.** When the same mechanical step repeats across many similar items (delete N branches, regen M cards, patch a token across the tree), drive it as a Workflow that fans out Haiku/Sonnet agents — don't loop on main.
 - **Escalate UP when warranted.** Delegation isn't only downshifting — you can spawn an *Opus* subagent too. Worth it when the main session is on a cheaper model and hits a hard sub-problem, or when one Workflow stage needs deep reasoning while others stay cheap. If the main session is already Opus, the hard work just stays on main.
 - **Offload long / independent work to the BACKGROUND** so the main chat stays free for new input: run heavy or independent delegated tasks as **background** agents/workflows (they notify on completion) instead of blocking the thread, or split genuinely parallel work across separate cloud sessions / area task-branches. Keep in the foreground only what needs Jac's next reply.
