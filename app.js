@@ -4130,7 +4130,7 @@ const RULE_META = {
   R13: ['History', 'historySection', 'count chips above the search bar filter inline; record-backed links only'],
   R14: ['Seg toggle', 'segCtl', '3-state segmented control (condition · wash)'],
   R15: ['Journey', 'yardToolHtml / miniJourneyHtml', 'yard +Start/+FC/+End + Jac─Site─Jac transport; white = video owed'],
-  R16: ['Window calendar', 'rdcal-edit / winPickerEl (inline)', 'the rental window — an INLINE editable month calendar in the detail (popup retired 2026-06-25); tap start→end, the left Units/Categories card shows availability live, fragile rentals stage behind a hovering Confirm card'],
+  R16: ['Window calendar', 'rdcal-edit / winPickerEl (inline)', 'the rental window — an INLINE editable month calendar in the detail (popup retired 2026-06-25); tap start→end, the left Units/Categories card shows availability live, fragile rentals stage with an inline Confirm panel below the calendar'],
   R17: ['Action pill', 'actionPill', 'commit = blue · money = green · danger = solid red; .locked = gated'],
   R18: ['Ghost', 'ghostPill', 'the ONE quiet action — Cancel / Close / Exit / Clear'],
   R19: ['Attention flash', 'attnFlash / flashOr', 'a glow that points AT the next action — replaces an error message when the fix is on screen'],
@@ -5523,7 +5523,8 @@ const DETAIL = {
     /* Calendar: the INLINE editable window calendar (popup retired — Jac 2026-06-25).
        Tap a day to set start, tap another to set end; the left Categories/Units card
        reflects availability for the window live. A fragile (invoiced/out) rental stages
-       its edits behind a hovering "Confirm new window" card with the money preview. */
+       its edits with an inline "Confirm new window" panel (below the grid, above Clear)
+       carrying the money preview — the calendar stays editable, no blocking popup. */
     if (!state.winEdit || state.winEdit.rentalId !== r.rentalId) {
       state.winEdit = { rentalId: r.rentalId, monthISO: firstOfMonthISO(r.startDate || TODAY_ISO), anchor: null };
       if (rentalFragile(r)) state.winEdit.staged = { rentalId: r.rentalId, startDate: r.startDate || '', endDate: r.endDate || '', startTime: r.startTime || '' };
@@ -8609,6 +8610,34 @@ function cardGraphBody(card) {
    APP-26 · §12 OVERLAYS & BOARDS — renderOverlay kinds + back-office board popups
    ════════════════════════════════════════════════════════════════════════ */
 let _ovScroll = {}, _ovLastKind = null;   // keep a popup-body's scroll across its OWN re-renders (sign/selfie)
+let _popDrag = { x: 0, y: 0 }, _popDragKind = null;   // drag offset of the open popup; persists across its own re-renders, resets on kind change / close
+/* §popup-drag — let users grab a popup by its stamped head and slide it out of the way (desktop
+   only; phone popups are bottom-sheets). The offset is a transform on the flex-centered .popup,
+   stashed in _popDrag so a re-render re-applies it, and cleared when the popup changes or closes. */
+function wirePopupDrag(overlay) {
+  if (document.body.classList.contains('is-phone')) return;   // phone popups dock as bottom-sheets — no drag
+  const pop = overlay.querySelector('.popup'); if (!pop) return;
+  const head = pop.querySelector('.popup-head'); if (!head) return;
+  const apply = () => { const m = _popDrag.x || _popDrag.y; pop.style.transform = m ? `translate(${_popDrag.x}px, ${_popDrag.y}px)` : ''; if (m) pop.style.animation = 'none'; };
+  apply();   // re-seat a dragged popup after its own re-render (without replaying the plateIn drop)
+  head.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0 || e.target.closest('button, a, input, select, textarea, label, .x')) return;   // controls keep their own behavior
+    e.preventDefault();
+    const sx = e.clientX, sy = e.clientY, ox = _popDrag.x, oy = _popDrag.y;
+    const r = pop.getBoundingClientRect(), bx = r.left - ox, by = r.top - oy, w = r.width;   // rect at zero offset
+    pop.classList.add('is-dragging');
+    try { head.setPointerCapture(e.pointerId); } catch (_) {}
+    const move = (ev) => {
+      let nx = ox + (ev.clientX - sx), ny = oy + (ev.clientY - sy);
+      const M = 40;   // keep at least M px of the popup on-screen in each direction
+      nx = Math.min(window.innerWidth - M - bx, Math.max(M - w - bx, nx));
+      ny = Math.min(window.innerHeight - M - by, Math.max(-by, ny));   // never above the top edge
+      _popDrag.x = nx; _popDrag.y = ny; apply();
+    };
+    const up = () => { pop.classList.remove('is-dragging'); head.removeEventListener('pointermove', move); head.removeEventListener('pointerup', up); head.removeEventListener('pointercancel', up); };
+    head.addEventListener('pointermove', move); head.addEventListener('pointerup', up); head.addEventListener('pointercancel', up);
+  });
+}
 /* ── §M3 — phone hardware-BACK button (Android) joins the dismiss chain. We keep at
    most ONE dummy history entry while any sheet/overlay/dock is open; pressing Back
    pops it and closes the topmost surface (same order as Esc), re-pushing if more
@@ -8638,12 +8667,14 @@ function renderOverlay() {
   if (_ovLastKind) { const _pb = root.querySelector('.set-pane') || root.querySelector('.popup-body'); if (_pb) _ovScroll[_ovLastKind] = _pb.scrollTop; }   // .set-pane is the settings scroller; .popup-body for the rest
   destroyCardElement();        // any re-render/overlay-switch tears down a mounted Stripe element
   root.innerHTML = '';
-  if (!state.overlay) { _ovLastKind = null; return; }
+  if (!state.overlay) { _ovLastKind = null; _popDragKind = null; _popDrag = { x: 0, y: 0 }; return; }
   const o = state.overlay;
+  if (o.kind !== _popDragKind) { _popDragKind = o.kind; _popDrag = { x: 0, y: 0 }; }   // a new popup opens centered; re-renders of the same one keep the dragged spot
   const overlay = el('div', 'overlay');
   overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) closeOverlay(); });
   if (buildPopupEl(o, overlay) === false) { state.overlay = null; return; }
   root.appendChild(overlay);
+  wirePopupDrag(overlay);
   { const _nb = overlay.querySelector('.set-pane') || overlay.querySelector('.popup-body'); if (_nb && _ovScroll[o.kind]) _nb.scrollTop = _ovScroll[o.kind]; }   // restore scroll on a same-overlay re-render (settings pane / sign / selfie no longer jump to top)
 
   _ovLastKind = o.kind;
@@ -14267,8 +14298,9 @@ function winPickerEl(r) {
       </div>`
     : '';
   // §inline confirm — a FRAGILE (invoiced/out) rental stages its edit; once the window
-  // actually changes, a "Confirm new rental window?" card hovers over the calendar with the
-  // money preview + a blue Save. Non-fragile rentals commit live (no staging, no confirm).
+  // actually changes, a "Confirm new rental window?" panel drops in INLINE below the calendar
+  // (above the Today/Clear foot) with the money preview + a blue Save. The calendar stays fully
+  // editable behind it — no blocking popup. Non-fragile rentals commit live (no staging).
   const stagedChanged = !!(wp.staged && winStagedChanged());
   const saveLabel = billing ? 'Bill Extension' : reducing ? 'Re-price ↓' : 'Confirm window';
   const confirmCard = stagedChanged
@@ -14284,8 +14316,8 @@ function winPickerEl(r) {
       <span class="wp-nav"><button class="js-wp-prev" data-tip="Previous month">‹</button><button class="js-wp-next" data-tip="Next month">›</button></span></div>
     <div class="wp-grid">${dows}${cells}</div>
     ${subjName ? `<div class="wp-blocknote">Greyed days are ${state.overbookOn ? 'booked' : 'unavailable'} for <b>${esc(subjName)}</b>${state.overbookOn ? ' — overbooking is on, pick to force' : ''}</div>` : ''}
-    <div class="wp-foot"><button class="pill ghost js-wp-today" data-r="R18">Today</button>${actionPill('commit', 'Clear', { js: 'js-wp-clear' })}</div>
     ${confirmCard}
+    <div class="wp-foot"><button class="pill ghost js-wp-today" data-r="R18">Today</button>${actionPill('commit', 'Clear', { js: 'js-wp-clear' })}</div>
   </div>`;
 }
 
