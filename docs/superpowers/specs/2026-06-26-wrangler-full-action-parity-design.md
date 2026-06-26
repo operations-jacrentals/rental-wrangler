@@ -27,7 +27,7 @@ pipeline's contract, validation, and apply layer.
 | Decision | Ruling |
 |---|---|
 | **Money line** | Only the two electronic rails are blocked: **charging a saved card** and **running an ACH**. Everything else a money-user can do is allowed — create/edit invoices, edit category rates & pricing, apply discounts, and record **cash/check** payments and refunds. |
-| **Settings** | All settings **except auth** — company info, KPIs/rings, custom fields, pricing defaults are in scope; **roles, permission tiers, and passwords are off-limits**. |
+| **Settings** | **DROPPED for Wrangler** (Jac, 2026-06-26). Settings persistence is gated behind the **admin password** (`setConfig` requires `adminPw`), which Wrangler must never hold — so settings stay in the admin screen, not in Wrangler. (Originally scoped as "all settings except auth"; the persistence gate makes Wrangler the wrong tool for any of them.) |
 | **Destructive** | **Cancel only** (the reversible "removal" the app already models — cancel a rental, cancel a WO, retire a unit). **No permanent/hard delete.** Note: **invoices are NOT voidable** (Jac, 2026-06-26 — the app has no void concept), so there is no invoice-void operation. |
 | **Composite ops** | **Full flow replication** — Wrangler drives multi-step flows end-to-end (e.g. start a rental incl. agreement + transport, bill a rental), stopping only at the e-payment. |
 | **Rollout** | **Safe stages** — ship in risk order; each stage proven before the next. |
@@ -138,8 +138,10 @@ rises per stage, so they're vetted and shipped in order.
    for the customer), and going truly "On Rent" uses the existing invoice /
    start-logging flow — so "full flow" here means *everything up to* those two
    inherently-human/handoff points, not replacing them. The composite-flow proof.
-4. **Stage 4 — Settings.** `updateSetting` for company info, KPIs, custom fields,
-   pricing defaults — auth paths rejected.
+4. **Stage 4 — Settings. DROPPED (Jac, 2026-06-26).** Settings persistence is gated
+   behind the admin password (`setConfig` requires `adminPw`), which Wrangler must
+   never hold. Settings stay in the admin screen — Wrangler is the wrong tool for
+   them. Stages 1–3 deliver the full intended surface.
 
 ## 8. Testing & gates
 
@@ -164,6 +166,7 @@ rises per stage, so they're vetted and shipped in order.
 - Permanent record deletion via Wrangler (permanent — cancel only; no hard delete).
 - Invoice void (the app has no void concept — Jac, 2026-06-26).
 - Refunds of any kind (deferred — Jac, 2026-06-26); cash/check *payments* are still in for Stage 2.
+- Settings of any kind (dropped — Jac, 2026-06-26 — admin-password-gated persistence).
 - Any change to the backend `Code.gs` contract or the data sync.
 - Reworking the dock's visual design beyond richer preview rows.
 
