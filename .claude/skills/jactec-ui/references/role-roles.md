@@ -1,6 +1,6 @@
 # Jac Rentals — Role Cards (audit lenses)
 
-The 15 role lenses for the `/role` skill. Each card's **audit questions** are the core of step 12 of the checklist in `framework.md`. Full detail (jobs, priorities, pain points, features) is in `research-raw.json` — not loaded by default. Source: workflow `wf_93bd5fe5` (2026-06-20).
+The 15 role lenses for the `/role` skill. Each card's **audit questions** are the core of step 12 of the checklist in `role-framework.md`. Full detail (jobs, priorities, pain points, features) is in `research-raw.json` — not loaded by default. Source: workflow `wf_93bd5fe5` (2026-06-20).
 
 ---
 
