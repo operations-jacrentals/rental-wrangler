@@ -387,6 +387,27 @@ try {
       ok(!/<script>/.test(inj) && /<strong>x<\/strong>/.test(inj), 'WR-fmt: HTML is escaped first (no injection), bold still applies');
     }
 
+    // 12l) Rental window + pickup time (Jac) — "one day from 10am" must log a Mon→Tue RANGE with the time,
+    // not a single dateless/timeless day. endDate honored when given; otherwise derived from days (default 1).
+    {
+      const cust = T.IDX.customer.get('C0009');
+      const freeU = T.DATA.units.find((u) => u.fleetStatus === 'Active');
+      T.__state.overbookOn = false;
+      const plan = T.wrValidatePlan({ action: 'data', ops: [{ op: 'operate', name: 'startRental', params: { customer: cust.name, units: [freeU.name], startDate: '2099-08-03', days: 1, startTime: '10am' } }] });
+      ok(plan.ops.length === 1 && /10:00 AM/.test(plan.ops[0].summary), 'WR-window: one-day booking validates with the time in the preview');
+      const before = T.DATA.rentals.length;
+      T.applyWranglerData(plan);
+      const r = T.DATA.rentals[T.DATA.rentals.length - 1];
+      ok(T.DATA.rentals.length === before + 1, 'WR-window: rental created');
+      ok(r.startDate === '2099-08-03' && r.endDate === '2099-08-04', 'WR-window: one day runs start → next day (a range, not one day)');
+      ok(r.startTime === '10:00 AM', 'WR-window: the 10am pickup time is logged as 10:00 AM');
+      // explicit endDate honored + 24-hr time parses
+      const plan2 = T.wrValidatePlan({ action: 'data', ops: [{ op: 'operate', name: 'startRental', params: { customer: cust.name, units: [freeU.name], startDate: '2099-08-10', endDate: '2099-08-12', startTime: '14:30' } }] });
+      T.applyWranglerData(plan2);
+      const r2 = T.DATA.rentals[T.DATA.rentals.length - 1];
+      ok(r2.startDate === '2099-08-10' && r2.endDate === '2099-08-12' && r2.startTime === '2:30 PM', 'WR-window: explicit endDate honored + 24h time → 2:30 PM');
+    }
+
     // 13) Transport pricing v2 — $3.50/mile + $50 load + $20 fuel (fueled), per leg.
     const tp = (a) => T.computeTransportPrice(a).price;
     // 10 mi Delivery, fueled: (3.5*10 + 50 + 20) * 1 = 105
