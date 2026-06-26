@@ -43,6 +43,9 @@ jobs:
       - name: Window catalog covers every popup
         run: node ci/check-window-catalog.mjs
 
+      - name: Code Atlas index is current
+        run: node tools/gen-code-map.mjs --check
+
       - name: DESIGN.md valid & in sync with style.css
         run: node ci/check-design-md.mjs
 
