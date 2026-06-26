@@ -3581,6 +3581,7 @@ function settingsInspectionsPane(o) {
     <div class="set-picker">${pick}</div>
     ${memberCount > 1 ? `<p class="set-note">Shared by all ${memberCount} ${esc(famLabel)} categories — edit once, applies to every one.</p>` : ''}
     <div class="rule-row" style="margin-bottom:10px"><div class="rule-main"><span class="rule-label">Require a checklist for ${esc(famLabel)}</span><span class="rule-desc">On = +Inspection takes over the sheet until every item is checked.</span></div>${segCtl([{ label: 'Off', js: 'js-insp-req', data: { cat: famKey, v: '0' }, on: cfg.required ? null : 'gray' }, { label: 'Required', js: 'js-insp-req', data: { cat: famKey, v: '1' }, on: cfg.required ? 'red' : null }])}</div>
+    <div class="rule-row" style="margin-bottom:10px"><div class="rule-main"><span class="rule-label">Walkaround video / photos</span><span class="rule-desc">A unit-level capture on the checklist (video allowed). Required = must capture before Complete.</span></div>${segCtl([{ label: 'Off', js: 'js-insp-walk', data: { cat: famKey, v: 'off' }, on: (cfg.walkaround || 'off') === 'off' ? 'gray' : null }, { label: 'Optional', js: 'js-insp-walk', data: { cat: famKey, v: 'optional' }, on: cfg.walkaround === 'optional' ? 'green' : null }, { label: 'Required', js: 'js-insp-walk', data: { cat: famKey, v: 'required' }, on: cfg.walkaround === 'required' ? 'red' : null }])}</div>
     <div class="rule-list">${rows}</div>
     <div class="cf-add">
       <input class="co-in js-insp-label" placeholder="New checklist item (e.g. Hydraulics — no leaks)" value="${esc(inspDraft.label || '')}" autocomplete="off" />
@@ -9420,7 +9421,9 @@ function buildPopupEl(o, overlay, opts = {}) {
     const evOf = (it) => (n.itemEvidence && n.itemEvidence[it.id]) || [];
     const items = cfg.items || [];
     const itemSatisfied = (it) => !inspItemUnanswered(it, n.items[it.id]) && !inspEvidenceMissing(it, n.items[it.id], evOf(it));
-    const done = items.filter(itemSatisfied).length; const allDone = done === items.length;
+    const done = items.filter(itemSatisfied).length;
+    const walk = cfg.walkaround || 'off'; const walkArr = n.evidence || []; const walkNeed = walk === 'required' && !walkArr.length;
+    const allDone = done === items.length && !walkNeed;
     const cat = IDX.category.get(u.categoryId) || {};
     const itemRows = items.map((it) => {
       const t = inspItemType(it);
@@ -9461,7 +9464,7 @@ function buildPopupEl(o, overlay, opts = {}) {
         <span class="spacer"></span>
         <button class="x js-ck-pending" aria-label="Keep as pending">${I.x}</button>
       </div>
-      <div class="popup-body ck-body">${itemRows}</div>
+      <div class="popup-body ck-body">${walk !== 'off' ? `<div class="ck-walk${walkNeed ? ' req' : ''}"><span class="ck-walk-lbl">${I.video} Walkaround${walk === 'required' ? ' · required' : ''}</span><div class="ck-evrow${walkNeed ? ' req' : ''}">${walkArr.map((ev, i) => `<span class="ck-evthumb">${ev.kind === 'video' ? `<video src="${esc(ev.url)}"></video>` : `<img src="${esc(ev.url)}" alt="walkaround">`}<button class="ck-evrm js-ck-walkrm" data-i="${i}" aria-label="Remove">${I.x}</button></span>`).join('')}<label class="ck-evadd${walkNeed ? ' req' : ''}">${I.camera}<span>${walkArr.length ? 'Add' : 'Add photo / video'}</span><input type="file" accept="image/*,video/*" class="js-ck-walk" hidden></label></div></div>` : ''}${itemRows}</div>
       <div class="popup-foot"><button class="pill ghost js-ck-pending" data-r="R18">Keep as pending</button><button class="pill ignition js-ck-complete${allDone ? '' : ' is-disabled'}" data-r="R17">Complete inspection</button></div>`;
     overlay.appendChild(pop);
   } else if (o.kind === 'inspection') {
@@ -11718,6 +11721,7 @@ function onClick(e) {
   // Inspections tab
   if (closest('.js-insp-cat')) { e.stopPropagation(); const o = state.overlay; if (o) { o.inspFam = closest('.js-insp-cat').dataset.cat; renderOverlay(); } return; }
   if (closest('.js-insp-req')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-insp-req'); if (o) { ensureInspDraft(o, b.dataset.cat).required = b.dataset.v === '1'; renderOverlay(); } return; }
+  if (closest('.js-insp-walk')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-insp-walk'); if (o) { ensureInspDraft(o, b.dataset.cat).walkaround = b.dataset.v; renderOverlay(); } return; }
   if (closest('.js-insp-type')) { e.stopPropagation(); const o=state.overlay; if(o){ const type=closest('.js-insp-type').dataset.type; o.inspDraft={...(o.inspDraft||{label:'',options:[]}), type, fail: inspFailDefault(type)}; renderOverlay(); } return; }
   if (closest('.js-insp-failwhen')) { e.stopPropagation(); const o=state.overlay, b=closest('.js-insp-failwhen'); if(o){ o.inspDraft=o.inspDraft||{}; o.inspDraft.fail={...(o.inspDraft.fail||{}), failWhen:b.dataset.v}; renderOverlay(); } return; }
   if (closest('.js-insp-failop')) { e.stopPropagation(); const o=state.overlay, b=closest('.js-insp-failop'); if(o){ o.inspDraft=o.inspDraft||{}; o.inspDraft.fail={...(o.inspDraft.fail||{}), op:b.dataset.v}; renderOverlay(); } return; }
@@ -12079,6 +12083,7 @@ function onClick(e) {
   if (closest('.js-open-checklist')) { e.stopPropagation(); return openChecklist(closest('.js-open-checklist').dataset.rec); }
   if (closest('.js-ck-item')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-ck-item'); if (o && o.kind === 'checklist') { const n = IDX.insp.get(o.inspId); if (n) { n.items = n.items || {}; n.items[b.dataset.id] = b.dataset.val; renderOverlay(); } } return; }
   if (closest('.js-ck-evrm')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-ck-evrm'); if (o && o.kind === 'checklist') { const n = IDX.insp.get(o.inspId); if (n && n.itemEvidence && n.itemEvidence[b.dataset.id]) { n.itemEvidence[b.dataset.id].splice(Number(b.dataset.i), 1); saveSoon(); renderOverlay(); } } return; }
+  if (closest('.js-ck-walkrm')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-ck-walkrm'); if (o && o.kind === 'checklist') { const n = IDX.insp.get(o.inspId); if (n && n.evidence) { n.evidence.splice(Number(b.dataset.i), 1); saveSoon(); renderOverlay(); } } return; }
   if (closest('.js-ck-complete')) { e.stopPropagation(); return completeChecklist(); }
   if (closest('.js-ck-pending')) { e.stopPropagation(); closeOverlay(); toast('Inspection kept as pending — resume it anytime.'); return; }
   if (closest('.js-washseg')) { const b = closest('.js-washseg'); return setUnitWash(b.dataset.rec, b.dataset.val); }
@@ -12581,6 +12586,7 @@ function completeChecklist() {
   const items = cfg.items || [];
   const left = items.filter((it) => inspItemUnanswered(it, n.items[it.id]) || inspEvidenceMissing(it, n.items[it.id], (n.itemEvidence && n.itemEvidence[it.id]) || [])).length;
   if (left) { toast(`Finish every item first — ${left} left (some may need a photo).`); return; }
+  if (cfg.walkaround === 'required' && !((n.evidence || []).length)) { toast('Capture the walkaround before completing.'); return; }
   const failed = items.filter((it) => inspItemFails(it, n.items[it.id]));
   if (failed.length) n.description = 'Failed checklist: ' + failed.map((it) => inspItemType(it)==='select' ? (it.label + ': ' + (n.items[it.id]||'')) : it.label).join(', ');
   state.overlay = null;                                   // close the takeover; a Fail re-opens the photo/notes popup
@@ -13165,6 +13171,9 @@ function onChange(e) {
   // Per-item photo EVIDENCE (Jac 2026-06-26) — image-only, downscaled, stored inline on the
   // record (n.itemEvidence[id]); mirrors js-ck-file. No Drive offload (inherits the inline pattern).
   if (e.target.classList.contains('js-ck-evid')) { const file = e.target.files && e.target.files[0]; if (!file) return; if ((file.type||'').startsWith('video/')) { toast('Per-item evidence is photo-only — use the walkaround for video.'); return; } const id = e.target.dataset.id; const reader = new FileReader(); reader.onload = () => { downscaleImage(reader.result, 800, 0.6, (out) => { if (!out) { toast('Could not read that image.'); return; } const o = state.overlay; if (o && o.kind === 'checklist') { const n = IDX.insp.get(o.inspId); if (n) { n.itemEvidence = n.itemEvidence || {}; (n.itemEvidence[id] = n.itemEvidence[id] || []).push({ kind: 'image', url: out }); logAction(n, 'Evidence photo attached'); saveSoon(); renderOverlay(); } } }); }; reader.onerror = () => toast('Could not read that image.'); reader.readAsDataURL(file); return; }
+  // Unit-level WALKAROUND evidence (Jac 2026-06-26) — image OR video, kept inline on n.evidence
+  // (video uncompressed, like the §12.8 failure report). Off by default per family.
+  if (e.target.classList.contains('js-ck-walk')) { const file = e.target.files && e.target.files[0]; if (!file) return; const o = state.overlay; if (!o || o.kind !== 'checklist') return; const isVid = (file.type||'').startsWith('video/'); const reader = new FileReader(); reader.onload = () => { const store = (url) => { const n = IDX.insp.get(o.inspId); if (n) { n.evidence = n.evidence || []; n.evidence.push({ kind: isVid ? 'video' : 'image', url }); logAction(n, isVid ? 'Walkaround video attached' : 'Walkaround photo attached'); saveSoon(); renderOverlay(); } }; if (isVid) store(reader.result); else downscaleImage(reader.result, 1000, 0.6, (out) => store(out || reader.result)); }; reader.onerror = () => toast('Could not read that file.'); reader.readAsDataURL(file); return; }
   if (e.target.classList.contains('js-svc-photo')) {
     const file = e.target.files && e.target.files[0]; if (!file) return;
     if ((file.type || '').startsWith('video/')) { toast('Videos can’t be stored on the record — attach a photo instead.'); return; }
