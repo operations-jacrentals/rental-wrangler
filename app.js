@@ -204,7 +204,6 @@ function rentalUnits(r) {
   return (r && r.unitId) ? [legacyUnitEntry(r)] : [];
 }
 const rentalUnitIds = (r) => rentalUnits(r).map((u) => u.unitId).filter(Boolean);
-const primaryUnit = (r) => (r && r.unitId) || (rentalUnits(r)[0] || {}).unitId || null;
 const rentalHasUnit = (r, unitId) => rentalUnitIds(r).includes(unitId);
 /* §20 the units[] entry for a unitId (or the PRIMARY when unitId is falsy), else null.
    ONE source for "this unit's entry" — replaces ~9 inlined (r.units||[]).find copies. */
@@ -447,15 +446,6 @@ function acctSnapshot(c, k) {
     email: (c && c.email) || '', industry: (c && c.industry) || '', accountType: (c && c.accountType) || '',
     requiresPO: !!(c && c.requiresPO), last4: (k && k.last4) || '' };
 }
-/* Hold a captured signing on the account (no card yet) — saddles onto the first card added.
-   Set by Save now that there's no separate "Sign & Hold" button. */
-function holdSigning(c, signature, selfie) {
-  if (!c || !signature) return;
-  const key = requiredAgreementKey(c); const ag = AGREEMENTS[key] || AGREEMENTS.rental;
-  c.pendingSigning = { key, version: AGREEMENT_CURRENT[key] || '', title: ag.title, accountType: c.accountType || '',
-    signedAt: TODAY_ISO, signerName: c.name || fullName(c), signature, selfie: selfie || '', acct: acctSnapshot(c, null) };
-  reindex('customers', c); logAction(c, `${ag.title} signed & held (no card yet)`);
-}
 /* §7.1c independent capture — each piece (card · selfie · signature) AUTO-SAVES the moment
    it's captured, in any order, and the card finalizes (one completion date) once all three
    are present. The capture target is the open card tab, or — with no card yet — a held bucket
@@ -600,9 +590,7 @@ function removeCard(custId, cardId) {
 }
 /* ── §14b multi-ACH helpers (parallel to the multi-card helpers above) ── */
 const customerBanks = (c) => (c && Array.isArray(c.achAccounts)) ? c.achAccounts.filter((k) => k.status !== 'removed') : [];
-const defaultBank = (c) => { const ks = customerBanks(c); return ks.find((k) => k.isDefault) || ks[0] || null; };
 const verifiedBanks = (c) => customerBanks(c).filter((k) => k.verified);
-const hasChargeableBank = (c) => verifiedBanks(c).length > 0;
 const bankTypeLabel = (t) => (t === 'savings' ? 'Savings' : 'Checking');
 const bankOneLabel = (k) => k ? `${k.bankName || 'Bank'} ••${k.last4} · ${bankTypeLabel(k.accountType)}${k.verified ? '' : ' · unverified'}` : '';
 function setBankDefault(custId, bankId) {   // app-level default among banks (NOT Stripe's single default PM — that stays the card's, for auto-charge)
@@ -1572,11 +1560,6 @@ function rentalRevStatus(r) {
   const base = rentalDisplayStatus(r);
   if (base === 'Reserved') { const n = dayDiff(TODAY, parseISO(r.startDate)); if (n === 0) return 'Today'; if (n === 1) return 'Tomorrow'; }
   return base;
-}
-function relDate(iso) {
-  const d = parseISO(iso); if (!d) return '';
-  const n = dayDiff(TODAY, d);
-  return n === 0 ? 'Today' : n === 1 ? 'Tomorrow' : fmtShortDate(iso);
 }
 function activeRentalForUnit(unitId) {
   // §20 judge by the UNIT's OWN status, not the rental roll-up — a No-Show /
@@ -3218,12 +3201,6 @@ const MEMBERSHIP_MONTHS = 12;
 const memberAccountType = (c) => (c.company && c.company.trim()) ? 'Business Member' : 'Non-Business Member';
 const addMonthsISO = (iso, n) => { const d = parseISO(iso) || new Date(); return isoOf(new Date(d.getFullYear(), d.getMonth() + n, d.getDate())); };
 const monthsRemaining = (toISO) => { const a = new Date(), b = parseISO(toISO); if (!b) return 0; return Math.max(0, (b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth())); };
-// Live → real Stripe; demo/offline (no backend password) → simulate a cleared charge so the flow completes locally.
-function membershipChargeResult(invId, amountCents, pick) {
-  const isDemo = (typeof backendPassword === 'undefined' || !backendPassword);
-  if (isDemo) return Promise.resolve({ ok: true, status: 'succeeded', amountPaid: amountCents / 100, fullyPaid: true, paymentMethod: 'Card (demo)', _demo: true });
-  return backendCall('stripeChargeInvoice', { invoiceId: invId, amountCents, paymentMethodId: pick?.stripePmId || undefined });
-}
 function markInvoicePaidLocal(inv, method) { const t = invoiceTotals(inv); inv.amountPaid = t.total; inv.paid = true; inv.paymentMethod = method || 'Card'; inv.paidAt = new Date().toISOString(); reindex('invoices', inv); }
 // Build a membership invoice (kind:'membership' lines so it's identifiable for the §7 economics + revenue rollup).
 function buildMembershipInvoice(c, lines, { cancellation = false, date = TODAY_ISO, due } = {}) {
@@ -4246,7 +4223,7 @@ const RULE_META = {
   R13: ['History', 'historySection', 'count chips above the search bar filter inline; record-backed links only'],
   R14: ['Seg toggle', 'segCtl', '3-state segmented control (condition · wash)'],
   R15: ['Journey', 'yardToolHtml / miniJourneyHtml', 'yard +Start/+FC/+End + Jac─Site─Jac transport; white = video owed'],
-  R16: ['Window calendar', 'rdcal-edit / winPickerEl (inline)', 'the rental window — an INLINE editable month calendar in the detail (popup retired 2026-06-25); tap start→end, the left Units/Categories card shows availability live, fragile rentals stage behind a hovering Confirm card'],
+  R16: ['Window calendar', 'rdcal-edit / winPickerEl (inline)', 'the rental window — an INLINE editable month calendar in the detail (popup retired 2026-06-25); tap start→end, the left Units/Categories card shows availability live, fragile rentals stage with an inline Confirm panel below the calendar'],
   R17: ['Action pill', 'actionPill', 'commit = blue · money = green · danger = solid red; .locked = gated'],
   R18: ['Ghost', 'ghostPill', 'the ONE quiet action — Cancel / Close / Exit / Clear'],
   R19: ['Attention flash', 'attnFlash / flashOr', 'a glow that points AT the next action — replaces an error message when the fix is on screen'],
@@ -5453,41 +5430,6 @@ function rentalLineRefund(r, unitId) {
 /* Jac ─ Site ─ Jac transport journey under an invoice rental line. +Log Delivery /
    +Log Recovery ARE the same captures as the yard tool's +Start/+End (one event,
    shared fields, so both views stay in sync). Self-pickup collapses to one line. */
-/** Action-column transport affordance (under +Unit): a blue +Transport button
- *  when none is set, or a compact type+price chip (per unit on multi-unit). */
-function transportActionHtml(r) {
-  const units = rentalUnits(r);
-  const one = (eu, u) => {
-    const du = eu ? ` data-unit="${esc(eu.unitId)}"` : '';
-    const T = eu || r;
-    const hasT = T.transportType && T.transportType !== 'Self';
-    const nameSfx = (units.length > 1 && u) ? ` · ${esc(u.name)}` : '';
-    if (!hasT) return `<button class="add-field anchor js-tedit-open" data-r="R5b" data-rec="${esc(r.rentalId)}"${du} data-leg="delivery" style="height:26px">+Transport${nameSfx}</button>`;
-    const st = getStatus('transportType', T.transportType);
-    const tr = eu ? unitTransport(r, eu) : rentalTransport(r);
-    const oneWay = (tr && tr.perLeg != null) ? tr.perLeg : (tr && tr.price != null ? tr.price : null);
-    return `<span class="pill c-${st.color} js-tedit-open" data-r="R4" data-rec="${esc(r.rentalId)}"${du} data-leg="delivery" style="cursor:pointer">${CARD_ICON.rentals}${esc(st.label)}${nameSfx}${oneWay ? ` · ${money(oneWay)}` : ''}</span>`;
-  };
-  if (!units.length) return one(null, null);
-  return units.map((eu) => { const u = IDX.unit.get(eu.unitId); return u ? one(eu, u) : ''; }).join('');
-}
-/** The Transport section shown on rentals with no invoice yet (with an invoice,
- *  the per-unit journeys ride the invoice lines). Renders a journey per unit that
- *  has transport, plus the inline editor for whichever leg is being edited. */
-function transportSectionHtml(r) {
-  const te = state.transportEdit;
-  const units = rentalUnits(r);
-  const list = units.length ? units : [null];
-  const rows = list.map((eu) => {
-    const hasT = (eu || r).transportType && (eu || r).transportType !== 'Self';
-    const editing = te && te.rentalId === r.rentalId && (te.unitId || null) === (eu ? eu.unitId : null);
-    if (!hasT && !editing) return '';
-    const u = eu ? IDX.unit.get(eu.unitId) : null; if (eu && !u) return '';
-    return `<div class="tjrow">${units.length > 1 && u ? `<span class="stamp tjname">${esc(u.name)}</span>` : ''}${miniJourneyHtml(r, eu)}</div>`;
-  }).filter(Boolean).join('');
-  if (!rows) return '';
-  return `<div class="tsec"><span class="muted tsec-label">Transport</span>${rows}</div>`;
-}
 function miniJourneyHtml(r2, eu) {
   const T = eu || r2;   // §20 per-unit transport + captures (fallback to the rental for legacy)
   const uId = eu ? eu.unitId : (r2.unitId || '');
@@ -5674,13 +5616,15 @@ const DETAIL = {
     /* Calendar: the INLINE editable window calendar (popup retired — Jac 2026-06-25).
        Tap a day to set start, tap another to set end; the left Categories/Units card
        reflects availability for the window live. A fragile (invoiced/out) rental stages
-       its edits behind a hovering "Confirm new window" card with the money preview. */
+       its edits with an inline "Confirm new window" panel (below the grid, above Clear)
+       carrying the money preview — the calendar stays editable, no blocking popup. */
     if (!state.winEdit || state.winEdit.rentalId !== r.rentalId) {
       state.winEdit = { rentalId: r.rentalId, monthISO: firstOfMonthISO(r.startDate || TODAY_ISO), anchor: null };
       if (rentalFragile(r)) state.winEdit.staged = { rentalId: r.rentalId, startDate: r.startDate || '', endDate: r.endDate || '', startTime: r.startTime || '' };
     }
-    const winStaged = !!(state.winEdit.staged && winStagedChanged());
-    const calHtml = `<div class="rdcal-edit${winStaged ? ' staged' : ''}" data-rec="${esc(r.rentalId)}" style="--rdcal-hl:var(--${stColor})">${winPickerEl(r)}</div>`;
+    // (the `.staged` class is no longer styled — the dim/pointer-block went away when the
+    //  Confirm panel moved inline (2026-06-26), so we stop emitting the now-inert hook.)
+    const calHtml = `<div class="rdcal-edit" data-rec="${esc(r.rentalId)}" style="--rdcal-hl:var(--${stColor})">${winPickerEl(r)}</div>`;
 
     /* Duration label (shared across all unit rows). */
     const durLabel = hasWin
@@ -7186,11 +7130,6 @@ function wrValidateKpi(act) {
   return { ok: !issues.length, ring, issues, value, role: act.role, idx };
 }
 
-/** §11 Team ring — per-position average across the 5 roles (skips null placeholders). */
-function kpiTeam() {
-  const all = ROLES.map((r) => kpiFor(r.id));
-  return [0, 1, 2].map((i) => { const vals = all.map((v) => v[i]).filter((x) => x != null); return vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null; });
-}
 
 /* §11 GAMIFICATION (Jac 2026-06-13) — when an action raises a ring's underlying
    metric, pop the raw delta over that ring (natural unit: +$X on money rings, +N
@@ -7456,7 +7395,6 @@ function chatComments() {
 function chatUnreadCount() { const u = commentUserKey(); return chatComments().filter((c) => !(c.ack || []).includes(u)).length; }
 const chatById = (id) => state.chat.chats.find((c) => c.id === id) || null;
 const activeChat = () => chatById(state.chat.activeId);
-const chatLive = () => { const c = activeChat(); return !!c && c.participants.length > 0; };
 function chatRoleOn(id) { const c = activeChat(); return !!c && c.participants.includes(id); }
 function chatsTagging(card, recId) { return state.chat.chats.filter((c) => (c.tags || []).some((t) => t.ref && t.ref.card === card && String(t.ref.recId) === String(recId))); }
 function chatMarkSeen() { const c = activeChat(); if (c) c.seen[commentUserKey()] = Date.now(); }
@@ -7945,7 +7883,6 @@ function dispatchEvents() {
    yard and back. D = Deliver, R = Recover, 🏠 = JAC. Drag a stop to reorder the
    run; type a time; the date rides as a bold-red deadline. Order + times are
    per-device (localStorage). */
-const DISPATCH_HOME = 'JAC · 102 S Huntington';
 const dispatchStopId = (ev) => `${ev.rentalId}|${ev.unitId || ''}|${ev.task}`;
 const _lsJSON = (k) => { try { return JSON.parse(localStorage.getItem(k) || '{}'); } catch (e) { return {}; } };
 const _lsSave = (k, o) => { try { localStorage.setItem(k, JSON.stringify(o)); } catch (e) {} };
@@ -8767,6 +8704,34 @@ function cardGraphBody(card) {
    APP-26 · §12 OVERLAYS & BOARDS — renderOverlay kinds + back-office board popups
    ════════════════════════════════════════════════════════════════════════ */
 let _ovScroll = {}, _ovLastKind = null;   // keep a popup-body's scroll across its OWN re-renders (sign/selfie)
+let _popDrag = { x: 0, y: 0 }, _popDragKind = null;   // drag offset of the open popup; persists across its own re-renders, resets on kind change / close
+/* §popup-drag — let users grab a popup by its stamped head and slide it out of the way (desktop
+   only; phone popups are bottom-sheets). The offset is a transform on the flex-centered .popup,
+   stashed in _popDrag so a re-render re-applies it, and cleared when the popup changes or closes. */
+function wirePopupDrag(overlay) {
+  if (document.body.classList.contains('is-phone')) return;   // phone popups dock as bottom-sheets — no drag
+  const pop = overlay.querySelector('.popup'); if (!pop) return;
+  const head = pop.querySelector('.popup-head'); if (!head) return;
+  const apply = () => { const m = _popDrag.x || _popDrag.y; pop.style.transform = m ? `translate(${_popDrag.x}px, ${_popDrag.y}px)` : ''; if (m) pop.style.animation = 'none'; };
+  apply();   // re-seat a dragged popup after its own re-render (without replaying the plateIn drop)
+  head.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0 || e.target.closest('button, a, input, select, textarea, label, .x')) return;   // controls keep their own behavior
+    e.preventDefault();
+    const sx = e.clientX, sy = e.clientY, ox = _popDrag.x, oy = _popDrag.y;
+    const r = pop.getBoundingClientRect(), bx = r.left - ox, by = r.top - oy, w = r.width;   // rect at zero offset
+    pop.classList.add('is-dragging');
+    try { head.setPointerCapture(e.pointerId); } catch (_) {}
+    const move = (ev) => {
+      let nx = ox + (ev.clientX - sx), ny = oy + (ev.clientY - sy);
+      const M = 40;   // keep at least M px of the popup on-screen in each direction
+      nx = Math.min(window.innerWidth - M - bx, Math.max(M - w - bx, nx));
+      ny = Math.min(window.innerHeight - M - by, Math.max(-by, ny));   // never above the top edge
+      _popDrag.x = nx; _popDrag.y = ny; apply();
+    };
+    const up = () => { pop.classList.remove('is-dragging'); head.removeEventListener('pointermove', move); head.removeEventListener('pointerup', up); head.removeEventListener('pointercancel', up); };
+    head.addEventListener('pointermove', move); head.addEventListener('pointerup', up); head.addEventListener('pointercancel', up);
+  });
+}
 /* ── §M3 — phone hardware-BACK button (Android) joins the dismiss chain. We keep at
    most ONE dummy history entry while any sheet/overlay/dock is open; pressing Back
    pops it and closes the topmost surface (same order as Esc), re-pushing if more
@@ -8796,12 +8761,14 @@ function renderOverlay() {
   if (_ovLastKind) { const _pb = root.querySelector('.set-pane') || root.querySelector('.popup-body'); if (_pb) _ovScroll[_ovLastKind] = _pb.scrollTop; }   // .set-pane is the settings scroller; .popup-body for the rest
   destroyCardElement();        // any re-render/overlay-switch tears down a mounted Stripe element
   root.innerHTML = '';
-  if (!state.overlay) { _ovLastKind = null; return; }
+  if (!state.overlay) { _ovLastKind = null; _popDragKind = null; _popDrag = { x: 0, y: 0 }; return; }
   const o = state.overlay;
+  if (o.kind !== _popDragKind) { _popDragKind = o.kind; _popDrag = { x: 0, y: 0 }; }   // a new popup opens centered; re-renders of the same one keep the dragged spot
   const overlay = el('div', 'overlay');
   overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) closeOverlay(); });
   if (buildPopupEl(o, overlay) === false) { state.overlay = null; return; }
   root.appendChild(overlay);
+  wirePopupDrag(overlay);
   { const _nb = overlay.querySelector('.set-pane') || overlay.querySelector('.popup-body'); if (_nb && _ovScroll[o.kind]) _nb.scrollTop = _ovScroll[o.kind]; }   // restore scroll on a same-overlay re-render (settings pane / sign / selfie no longer jump to top)
 
   _ovLastKind = o.kind;
@@ -10663,16 +10630,6 @@ function boardViewTable(o, session) {
   const hasExtra = order.some((co) => co.kind === 'extra');
   const hint = hasExtra ? `<div class="bv-fieldhint"><b>Fields:</b> ${cols.map((c) => esc(c.key)).join(', ')} &nbsp;·&nbsp; <b>functions:</b> sum() avg() min() max() count() &nbsp;·&nbsp; e.g. <code>=price*0.9</code> · <code>=total-paid</code> · <code>=hours/count(name)</code></div>` : '';
   return hint + `<table class="board-table bv-table"><thead>${head}</thead><tbody>${body}</tbody><tfoot>${summary}</tfoot></table>`;
-}
-/** Seed a Board View from a card's current sort + search, then open the popup. */
-function openBoardView(card) {
-  const session = activeSession();
-  const cs = session.cards[card] || {};
-  const cols = cardColumns(card, session);
-  const seedField = cs.sort?.field;
-  const sortCol = cols.find((c) => c.sortField === seedField || c.key === seedField) || cols[0];
-  const query = (state.searchMode && state.query) ? state.query : (cs.search || '');
-  openOverlay({ kind: 'boardview', card, query, sort: { key: sortCol?.key, dir: cs.sort?.dir || 'asc' }, calc: {}, colOrder: null, extraRows: [], cellData: {}, seq: 0 });
 }
 /** The "List rows" customiser inside Board View: choose which registry columns
  *  appear in List-View row 1 (details) vs row 2 (badges). Saved per device. */
@@ -14468,8 +14425,9 @@ function winPickerEl(r) {
       </div>`
     : '';
   // §inline confirm — a FRAGILE (invoiced/out) rental stages its edit; once the window
-  // actually changes, a "Confirm new rental window?" card hovers over the calendar with the
-  // money preview + a blue Save. Non-fragile rentals commit live (no staging, no confirm).
+  // actually changes, a "Confirm new rental window?" panel drops in INLINE below the calendar
+  // (above the Today/Clear foot) with the money preview + a blue Save. The calendar stays fully
+  // editable behind it — no blocking popup. Non-fragile rentals commit live (no staging).
   const stagedChanged = !!(wp.staged && winStagedChanged());
   const saveLabel = billing ? 'Bill Extension' : reducing ? 'Re-price ↓' : 'Confirm window';
   const confirmCard = stagedChanged
@@ -14485,8 +14443,8 @@ function winPickerEl(r) {
       <span class="wp-nav"><button class="js-wp-prev" data-tip="Previous month">‹</button><button class="js-wp-next" data-tip="Next month">›</button></span></div>
     <div class="wp-grid">${dows}${cells}</div>
     ${subjName ? `<div class="wp-blocknote">Greyed days are ${state.overbookOn ? 'booked' : 'unavailable'} for <b>${esc(subjName)}</b>${state.overbookOn ? ' — overbooking is on, pick to force' : ''}</div>` : ''}
-    <div class="wp-foot"><button class="pill ghost js-wp-today" data-r="R18">Today</button>${actionPill('commit', 'Clear', { js: 'js-wp-clear' })}</div>
     ${confirmCard}
+    <div class="wp-foot"><button class="pill ghost js-wp-today" data-r="R18">Today</button>${actionPill('commit', 'Clear', { js: 'js-wp-clear' })}</div>
   </div>`;
 }
 

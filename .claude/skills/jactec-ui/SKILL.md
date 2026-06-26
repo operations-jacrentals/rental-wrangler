@@ -1,19 +1,28 @@
 ---
 name: jactec-ui
 description: >-
-  Use whenever you build, reshape, or restyle ANY JacTec / Rental Wrangler UI — a
-  screen, column, card, section, pill, flag, button, field, popup, menu, date
-  picker, KPI ring, or any visible element in app.js / style.css. Governs the
-  "yard data-plate" design language (dark industrial steel, ONE safety-orange
+  The single design skill for JacTec / Rental Wrangler. Use whenever you build,
+  reshape, or restyle ANY UI — a screen, column, card, section, pill, flag,
+  button, field, popup, menu, date picker, KPI ring, or any visible element in
+  app.js / style.css — AND for the four folded sub-capabilities: (1) aesthetic
+  direction / typography / avoiding templated AI-default "slop"; (2) MOBILE work
+  — phone reflow of the 3-column yard grid, bottom sheets, viewport/safe-area/dvh
+  sizing, touch gestures (tap vs long-press vs drag vs swipe) and Vibration-API
+  haptics; (3) DESIGN.md — scaffolding or linting the portable YAML-tokens design
+  file (Google Labs spec); (4) the /role audit — reviewing a spec/feature/screen
+  through the 15 Jac Rentals role lenses + the authority / data-sensitivity / gate
+  checklist to catch margin/PII leaks and missing gates BEFORE building. Governs
+  the "yard data-plate" design language (dark industrial steel, ONE safety-orange
   accent, hi-vis hazard-stripe signature, stamped Saira Condensed labels, rivets,
   a light wrangler/ranch seasoning) and its enforcement machinery (the §5
-  builders, the R0–R24 stamped rulebook, the R0 flash-lint, the CI gates). It
-  exists to keep new UI looking unmistakably like OURS and never like generic,
-  AI-detectable "slop." Triggers: "add a column to the units card", "restyle the
-  rentals popup", "make a new status pill", "run this through the design
-  language". Do NOT use for: marketing/landing pages, backend Apps Script
-  (Code.gs), or non-UI logic. Apply only to NEW or RESHAPED UI — never
-  retroactively restyle untouched parts unless Jac asks for a site-wide pass.
+  builders, the R0–R24 stamped rulebook, the R0 flash-lint, the CI gates). Exists
+  to keep UI unmistakably OURS and never generic, AI-detectable slop. Triggers:
+  "add a column to the units card", "restyle the rentals popup", "make a new
+  status pill", "make this work on phones", "wire a long-press", "scaffold a
+  DESIGN.md", "run /role on this spec", "run it through the design language". Do
+  NOT use for: marketing/landing pages, backend Apps Script (Code.gs), or non-UI
+  logic. Apply only to NEW or RESHAPED UI — never retroactively restyle untouched
+  parts unless Jac asks for a site-wide pass.
 ---
 
 # JacTec UI — the yard data-plate design system
@@ -26,12 +35,28 @@ twist in the copy. The whole system is already encoded in the codebase. **Your j
 is to EXTEND it, never to invent a parallel one.** When in doubt, match what's
 there and speak in rule numbers.
 
-> Load the right reference for depth: [`references/tokens.md`](references/tokens.md)
+**This is the one design skill** — it absorbed the former `frontend`, `mobile-*`,
+`design-md`, and `role` skills. The **build language below is the dominant content**;
+the four folded sub-capabilities each live behind a reference and have their own
+section near the end: **Aesthetic direction**, **Mobile**, **DESIGN.md**, and the
+**/role audit**. Jump to the section you need; everything visual still routes through
+the rulebook.
+
+> Load the right reference for depth.
+> **Build language:** [`references/tokens.md`](references/tokens.md)
 > (every color/size literal, all themes) · [`references/rulebook.md`](references/rulebook.md)
 > (the full R0–R24 catalog) · [`references/signature-recipes.md`](references/signature-recipes.md)
 > (copy-paste hazard stripe / rivets / ignition / rings / focus / reduced-motion)
 > · [`references/anti-slop.md`](references/anti-slop.md) (the banned looks + tells)
 > · [`references/checklists.md`](references/checklists.md) (pre-ship gate).
+> **Folded sub-capabilities:** [`references/frontend-design.md`](references/frontend-design.md)
+> (aesthetic-direction method) · [`references/mobile.md`](references/mobile.md)
+> (viewport + reflow + touch/haptics) · [`references/designmd-guide.md`](references/designmd-guide.md)
+> + [`references/designmd-spec.md`](references/designmd-spec.md) +
+> [`references/designmd-lint.md`](references/designmd-lint.md) +
+> [`references/jactec.design.md`](references/jactec.design.md) (DESIGN.md) ·
+> [`references/role-framework.md`](references/role-framework.md) +
+> [`references/role-roles.md`](references/role-roles.md) (/role audit).
 
 ## Requirements — non-negotiable, read before touching any UI
 
@@ -205,7 +230,7 @@ They sharpen the system; they don't replace it.
 
 ## Workflow: structure → tidy → responsive → polish → self-critique
 
-0. **Plan tokens first** (vendored `frontend` skill). Name the surfaces, status
+0. **Plan tokens first** (the aesthetic-direction method — [`references/frontend-design.md`](references/frontend-design.md)). Name the surfaces, status
    colors, type roles, layout concept, and where the ONE signature beat lands.
    Confirm it dodges the three AI defaults (cream+serif+terracotta /
    near-black+acid-green / broadsheet hairlines). If `brainstorming` is opted in, its
@@ -249,3 +274,95 @@ a self-critique screenshot pass. Deploy = feature branch → PR → squash-merge
 branch-protected). Never push a failing gate or a red lint; never put model ids /
 secrets / passwords in the repo (it's public via Pages). Full pre-ship list:
 [`references/checklists.md`](references/checklists.md).
+
+---
+
+# Folded sub-capabilities
+
+Everything above is the **build language** — the dominant job. The four sections below
+are the skills that merged in. Each is a different *mode* of design work; read the one
+that matches the request, then come back to the rulebook when you touch real UI.
+
+## ① Aesthetic direction (the taste layer)
+
+Before you reach for a builder, frame the *direction*. The general method —
+design-lead framing, the two-pass plan (token system → critique against the brief →
+build), the writing-as-design-material rules, and the "remove one accessory"
+self-critique — lives in [`references/frontend-design.md`](references/frontend-design.md).
+For JacTec it's **not** a free hand: the yard data-plate language already IS the
+direction. Use the method to make *intentional* choices within it (where the ONE bold
+beat lands, how the copy reads, which AI-default to dodge), never to invent a parallel
+look. Plan-tokens-first (Workflow step 0) is this layer in action.
+
+## ② Mobile — reflow, viewport, touch
+
+Making any screen work on a phone. **Mobile is a reflow of the data-plate language, not
+a re-theme** — tokens, rules, and the signature stay intact. Full detail in
+[`references/mobile.md`](references/mobile.md), which covers three domains:
+- **Viewport & ratio** — `viewport-fit=cover`, never `100vh` (use `dvh`/`svh`),
+  `env(safe-area-inset-*)` for the notch/home-bar, `aspect-ratio` to kill layout shift,
+  the ≥44×44px touch-target floor, no horizontal overflow.
+- **Navigation & reflow** — the 3-equal-column yard grid collapses to **one active
+  column + a segmented switcher** (reuses `revealCol`); overlays/winpicker/chat-dock
+  become bottom sheets; one predictable Esc/back chain; one primary scroll region.
+- **Touch & haptics** — extend the existing `app.js` §15 pointer drag engine
+  (tap = action, 400ms long-press/drag = grab); `touch-action` is load-bearing; no
+  hover-only actions; optional swipe; a guarded `haptic()` helper (best-effort —
+  **iOS Safari has no Vibration API**, never rely on it for meaning).
+Verify with `webapp-testing` at a phone context (390×844 + 320px).
+
+## ③ DESIGN.md — the portable token file
+
+Scaffold or lint a `DESIGN.md` — the portable YAML-tokens + markdown-rationale file
+(Google Labs alpha spec) that any agent reads to stay on-brand. Full procedure, the
+rails, the CLI, and the offline spec/lint rules are in
+[`references/designmd-guide.md`](references/designmd-guide.md) (with
+[`references/designmd-spec.md`](references/designmd-spec.md),
+[`references/designmd-lint.md`](references/designmd-lint.md), and the ready JacTec stub
+[`references/jactec.design.md`](references/jactec.design.md)). **The load-bearing rail:**
+scaffolding/linting is safe, but **the moment its tokens would fan out into real files,
+STOP — surface the file, get Jac's OK first.** A DESIGN.md is a *projection* of our canon
+(CLAUDE.md + this skill + the R-rulebook), never a competing rulebook; propagating it
+back into UI is a full build job under the rules above, never a silent rewrite. Not a CI
+gate (needs network) — dev-time only.
+
+## ④ The /role audit — role-lens spec review
+
+Audit a spec/design/screen against the real Jac Rentals org **before building**: 15 role
+lenses (Dispatcher → Customer/Contractor) + a 12-step authority / data-sensitivity / gate
+checklist. Catches the leaks a single-perspective spec misses. Load both
+[`references/role-framework.md`](references/role-framework.md) (the hierarchy, the 9-tier
+data-sensitivity matrix, the 12-step checklist) and
+[`references/role-roles.md`](references/role-roles.md) (the 15 cards with each role's
+`spec_audit_questions`) before auditing.
+
+**When:** right after a SPEC is generated, before a new feature/screen, or after any
+change to permissions, pricing visibility, customer-facing surfaces, or status/gate
+logic. Anytime someone types `/role` (no spec named → audit the most recent spec or the
+feature under discussion).
+
+**Hard-fail gates (🔴 blockers, not suggestions):** data-sensitivity (step 3) and
+customer isolation (step 4). **Margin floors are radioactive** — Bottom Dollar, True
+Cost, ROI, part cost on any Sales-shared or customer-facing surface is an automatic 🔴.
+Customer isolation and gates are **server-side** concerns — "the UI hides it" is never an
+acceptable answer.
+
+Output: lead with blockers, then gaps, then per-role pass/fail, then clears, then ordered
+fixes. **Silence = pass** (don't pad). This audit produces findings — it does **not** write
+code or change the spec; offer to apply fixes only after presenting them.
+
+```
+# /role audit — <spec name>
+## Roles touched
+<primary actor(s)> · <incidental readers> — one line each on their lens
+## 🔴 Blockers (HARD-FAIL)
+- <data-sensitivity / isolation / authority violation> — role, field, why, fix
+## 🟡 Gaps
+- <missing gate / audit trail / cascade / mobile / KPI issue> — role, why, fix
+## Per-role audit questions
+**<Role>** — ✅/❌/⚠️ per question, one line each
+## ✅ Clears
+- <what the spec already handles well>
+## Recommended fixes (ordered)
+1. <concrete change>
+```
