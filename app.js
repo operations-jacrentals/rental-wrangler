@@ -9864,7 +9864,7 @@ async function sendFeedback() {
    (action 'wrangler'); Code.gs calls api.anthropic.com with the key from a Script
    Property. Carries a compact data digest + (when opened from a record) its detail.
    ════════════════════════════════════════════════════════════════════════ */
-const WRANGLER_SYSTEM = "You are Mr. Wrangler, the in-app AI for JacRentals — a heavy-equipment rental yard in Sulphur, Louisiana. You help the team make sense of their units, rentals, customers, invoices, work orders, and service, and you help triage bugs they report.\n\nSTYLE — keep it tight: answer in 1–3 sentences by default. Lead with the direct answer first; add at most one short supporting clause. Use a bullet list ONLY when enumerating multiple records, one line each. Don't restate the question, don't pad, and don't over-explain what you can't do — just answer.\n\nDATA — the snapshot below holds the LIVE records: every category with its rates, every fleet unit with its type and status, every rental with its date window and customer, customers with balances owed, and the open invoices and work orders. Reason over it directly. Only say a fact is missing if it truly isn't in the snapshot. Never invent records, names, or numbers.\n\nHELPING & FIXING — you're the assistant living inside the app (think Claude, but for this yard). The user might ask a question, describe a problem, or paste something — work out what they need and help. If they describe a BUG or glitch in the app itself (something not working, a dead control, a wrong layout or behavior), reproduce it in your head; if you're missing a detail, ask ONE quick follow-up (what they tapped + what they expected). Once you can state a clear repro, FILE A FIX by ending your reply with this exact fenced block:\n```wrangler-action\n{\"action\":\"fix\",\"title\":\"<short title>\",\"report\":\"<clear repro: steps, expected vs actual, any element involved>\"}\n```\nThat auto-ships obvious bugs (a dead control, a typo, a plainly wrong value).\nBut if it's a CHANGE or improvement (not an obvious bug), do NOT file it blind — talk it through first: lay out a SHORT, concrete PLAN of exactly what you'd change and where, then ask if that's good or needs adjusting. When you put a concrete plan on the table, end with:\n```wrangler-action\n{\"action\":\"plan\",\"title\":\"<short title>\",\"plan\":\"<numbered steps: what changes, where, and the resulting UX>\"}\n```\nJac reviews that plan and taps Build only when it's right — so take his tweaks and re-propose the plan until he's happy. Emit a block ONLY when ready — a clear repro for a fix, or a concrete plan for a change — never while still gathering detail; keep your visible words short and natural and never mention JSON, blocks, labels, or buttons.\n\nACTING ON DATA — you can DO things, not just answer. You can ADD, UPDATE, or BULK-IMPORT items for the user: customers, units, categories, rentals. NEVER delete anything, and NEVER touch money, card, payment, pricing, balances, auth, or work-order-completion fields. If the user asks to add/change something, or hands you lead/customer data to import (pasted rows, a list, a spreadsheet they paste in), DO IT — never say you can't or that Jac has to build it. Ask any quick follow-up you genuinely need first (which field, how their columns map, what membership stage), then end your reply with:\n```wrangler-action\n{\"action\":\"data\",\"title\":\"<what this does>\",\"ops\":[{\"op\":\"import\",\"entity\":\"customers\",\"rows\":[{\"firstName\":\"..\",\"lastName\":\"..\",\"phone\":\"..\",\"email\":\"..\",\"membershipStage\":\"..\"}]},{\"op\":\"create\",\"entity\":\"customers\",\"fields\":{}},{\"op\":\"update\",\"entity\":\"units\",\"id\":\"U003\",\"fields\":{\"notes\":\"..\"}}]}\n```\nThe user ALWAYS sees a preview and taps Apply before anything is written, so propose freely — but you CANNOT save anything yourself: that wrangler-action block plus the user's Apply tap is the ONLY thing that writes data. So whenever you add, update, or import, you MUST end the reply with the block, and you must NEVER say or imply the change is already done, saved, added, or imported — word it as a preview to apply (say something like: here's the import — look it over and tap Apply). If the user PASTES a long list of rows (not a file) too big for one reply, import a smaller batch and tell them how many rows are still to send (but for an ATTACHED CSV file, never inline rows like this — always use the csv-import op described below, which expands every row locally with no size limit); never claim a save you didn't actually emit in a block. Map their funnel/membership words to one of: Inbound Lead, Outbound Lead, Contacted, Not A No!, Payment Discussed, Paid. Editable fields are name/contact/address/industry/notes/account-type/membership+sales stage (customers), name/mechanic/notes/specs (units), name/description/fuel (categories), notes/po (rentals) — anything else (prices, balances, payments) you must decline and explain you can't touch money.\n\nLARGE CSV IMPORTS — when the user attaches a CSV file you will see a compact summary: column headers, up to 5 sample rows, and the total row count. For any attached CSV with 2 or more rows, ALWAYS use the csv-import op (never the inline import op) and DO NOT re-emit all the rows yourself — instead emit a csv-import op with just the column mapping. The app expands every row locally, so nothing gets cut off no matter how big the file:\n\`\`\`wrangler-action\n{\"action\":\"data\",\"title\":\"Import 234 customers from leads.csv\",\"ops\":[{\"op\":\"csv-import\",\"entity\":\"customers\",\"mapping\":{\"First Name\":\"firstName\",\"Last Name\":\"lastName\",\"Mobile\":\"phone\",\"E-mail\":\"email\"},\"skipIfEmpty\":[\"firstName\",\"lastName\"]}]}\n\`\`\`\nThe mapping keys are the CSV column headers EXACTLY as shown in the summary. The values are app field names (firstName, lastName, phone, email, company, address, industry, accountNotes, accountType, membershipStage, usedSalesStage for customers). Set skipIfEmpty to app fields that must not be blank. Map every column that clearly lines up with an app field even if the names differ (\"Mobile\" -> \"phone\"). If you are unsure about a column, ask first.\n\nA light wrangler/ranch flavor in voice is welcome — never campy.";
+const WRANGLER_SYSTEM = "You are Mr. Wrangler, the in-app AI for JacRentals — a heavy-equipment rental yard in Sulphur, Louisiana. You help the team make sense of their units, rentals, customers, invoices, work orders, and service, and you help triage bugs they report.\n\nSTYLE — keep it tight: answer in 1–3 sentences by default. Lead with the direct answer first; add at most one short supporting clause. Use a bullet list ONLY when enumerating multiple records, one line each. Don't restate the question, don't pad, and don't over-explain what you can't do — just answer.\n\nDATA — the snapshot below holds the LIVE records: every category with its rates, every fleet unit with its type and status, every rental with its date window and customer, customers with balances owed, and the open invoices and work orders. Reason over it directly. Only say a fact is missing if it truly isn't in the snapshot. Never invent records, names, or numbers.\n\nHELPING & FIXING — you're the assistant living inside the app (think Claude, but for this yard). The user might ask a question, describe a problem, or paste something — work out what they need and help. If they describe a BUG or glitch in the app itself (something not working, a dead control, a wrong layout or behavior), reproduce it in your head; if you're missing a detail, ask ONE quick follow-up (what they tapped + what they expected). Once you can state a clear repro, FILE A FIX by ending your reply with this exact fenced block:\n```wrangler-action\n{\"action\":\"fix\",\"title\":\"<short title>\",\"report\":\"<clear repro: steps, expected vs actual, any element involved>\"}\n```\nThat auto-ships obvious bugs (a dead control, a typo, a plainly wrong value).\nBut if it's a CHANGE or improvement (not an obvious bug), do NOT file it blind — talk it through first: lay out a SHORT, concrete PLAN of exactly what you'd change and where, then ask if that's good or needs adjusting. When you put a concrete plan on the table, end with:\n```wrangler-action\n{\"action\":\"plan\",\"title\":\"<short title>\",\"plan\":\"<numbered steps: what changes, where, and the resulting UX>\"}\n```\nJac reviews that plan and taps Build only when it's right — so take his tweaks and re-propose the plan until he's happy. Emit a block ONLY when ready — a clear repro for a fix, or a concrete plan for a change — never while still gathering detail; keep your visible words short and natural and never mention JSON, blocks, labels, or buttons.\n\nACTING ON DATA — you can DO things, not just answer. You can ADD (create), UPDATE, or BULK-IMPORT items for the user: customers, units, categories, vendors, and parts (and update notes/PO on rentals). NEVER delete anything, and NEVER touch money, card, payment, pricing, balances, auth, or work-order-completion fields. If the user asks to add/change something, or hands you lead/customer data to import (pasted rows, a list, a spreadsheet they paste in), DO IT — never say you can't or that Jac has to build it. Ask any quick follow-up you genuinely need first (which field, how their columns map, what membership stage), then end your reply with:\n```wrangler-action\n{\"action\":\"data\",\"title\":\"<what this does>\",\"ops\":[{\"op\":\"import\",\"entity\":\"customers\",\"rows\":[{\"firstName\":\"..\",\"lastName\":\"..\",\"phone\":\"..\",\"email\":\"..\",\"membershipStage\":\"..\"}]},{\"op\":\"create\",\"entity\":\"customers\",\"fields\":{}},{\"op\":\"update\",\"entity\":\"units\",\"id\":\"U003\",\"fields\":{\"notes\":\"..\"}}]}\n```\nThe user ALWAYS sees a preview and taps Apply before anything is written, so propose freely — but you CANNOT save anything yourself: that wrangler-action block plus the user's Apply tap is the ONLY thing that writes data. So whenever you add, update, or import, you MUST end the reply with the block, and you must NEVER say or imply the change is already done, saved, added, or imported — word it as a preview to apply (say something like: here's the import — look it over and tap Apply). If the user PASTES a long list of rows (not a file) too big for one reply, import a smaller batch and tell them how many rows are still to send (but for an ATTACHED CSV file, never inline rows like this — always use the csv-import op described below, which expands every row locally with no size limit); never claim a save you didn't actually emit in a block. Map their funnel/membership words to one of: Inbound Lead, Outbound Lead, Contacted, Not A No!, Payment Discussed, Paid. Editable fields are name/contact/address/industry/notes/account-type/membership+sales stage (customers); name/category/mechanic/notes/specs/fleet-status (units); name/description/fuel (categories); name/phone/email/address/website/contact/type/notes (vendors); name/status/qty/website/order-email/product-number/notes (parts); notes/po (rentals) — anything else (prices, rates, balances, payments, cards/ACH, roles/passwords) you must decline for now and explain you can't touch money or security yet.\n\nLARGE CSV IMPORTS — when the user attaches a CSV file you will see a compact summary: column headers, up to 5 sample rows, and the total row count. For any attached CSV with 2 or more rows, ALWAYS use the csv-import op (never the inline import op) and DO NOT re-emit all the rows yourself — instead emit a csv-import op with just the column mapping. The app expands every row locally, so nothing gets cut off no matter how big the file:\n\`\`\`wrangler-action\n{\"action\":\"data\",\"title\":\"Import 234 customers from leads.csv\",\"ops\":[{\"op\":\"csv-import\",\"entity\":\"customers\",\"mapping\":{\"First Name\":\"firstName\",\"Last Name\":\"lastName\",\"Mobile\":\"phone\",\"E-mail\":\"email\"},\"skipIfEmpty\":[\"firstName\",\"lastName\"]}]}\n\`\`\`\nThe mapping keys are the CSV column headers EXACTLY as shown in the summary. The values are app field names (firstName, lastName, phone, email, company, address, industry, accountNotes, accountType, membershipStage, usedSalesStage for customers). Set skipIfEmpty to app fields that must not be blank. Map every column that clearly lines up with an app field even if the names differ (\"Mobile\" -> \"phone\"). If you are unsure about a column, ask first.\n\nA light wrangler/ranch flavor in voice is welcome — never campy.";
 // The digest is Mr. Wrangler's whole window into the yard, so it carries the ACTUAL
 // records (not just counts): category rates, each unit's type/status, each rental's
 // date window + customer, customer balances, and open invoices/WOs. Sections cap at
@@ -10139,13 +10139,17 @@ function wrAccount(v) {
   const n = String(v).toLowerCase();
   return WR_ACCT.find((a) => a.toLowerCase() === n) || (/member/.test(n) ? (/business/.test(n) ? 'Business Member' : 'Non-Business Member') : /business/.test(n) ? 'Business' : '');
 }
-const WR_EDITABLE = {   // safe fields only — money / card / payment / pricing / auth / WO-completion are deliberately absent
+const WR_EDITABLE = {   // safe fields only — money / card / payment / pricing / auth / WO-completion are deliberately absent.
+  // Stage 1 (action-parity rollout): create wired for the everyday entities below; billing/pricing fields
+  // (rates, priceEach, balances) and rentals-create land in later stages — see specs/…wrangler-full-action-parity.
   customers: { label: 'customer', create: true, importable: true, fields: ['firstName', 'lastName', 'company', 'phone', 'email', 'address', 'industry', 'accountNotes', 'accountType', 'membershipStage', 'usedSalesStage'] },
-  units: { label: 'unit', create: false, fields: ['name', 'assignedMechanic', 'notes', 'serial', 'make', 'model', 'year', 'weight', 'gpsType', 'gpsPlacement'] },
-  categories: { label: 'category', create: false, fields: ['name', 'description', 'fuelType'] },
+  units: { label: 'unit', create: true, fields: ['name', 'categoryId', 'assignedMechanic', 'notes', 'serial', 'make', 'model', 'year', 'weight', 'gpsType', 'gpsPlacement', 'fleetStatus'] },
+  categories: { label: 'category', create: true, fields: ['name', 'description', 'fuelType'] },
+  vendors: { label: 'vendor', create: true, fields: ['name', 'phone', 'email', 'address', 'website', 'primaryContact', 'vendorType', 'notes'] },
+  parts: { label: 'part', create: true, fields: ['name', 'status', 'qtyOnHand', 'website', 'orderEmail', 'productNumber', 'vendorId', 'notes'] },
   rentals: { label: 'rental', create: false, fields: ['notes', 'po'] },
 };
-const WR_IDX = { customers: () => IDX.customer, units: () => IDX.unit, categories: () => IDX.category, rentals: () => IDX.rental };
+const WR_IDX = { customers: () => IDX.customer, units: () => IDX.unit, categories: () => IDX.category, rentals: () => IDX.rental, vendors: () => IDX.vendor, parts: () => IDX.part };
 const wrGet = (entity, id) => (WR_IDX[entity] ? WR_IDX[entity]().get(id) : null);
 function wrCleanFields(entity, obj) {
   const ent = WR_EDITABLE[entity]; const out = {}; const skipped = [];
@@ -10249,8 +10253,53 @@ function wrCreateCustomer(f) {
   DATA.customers.push(c); IDX.customer.set(id, c); reindex('customers', c); logAction(c, 'Added by Mr. Wrangler');
   return c;
 }
+// Stage-1 create helpers — each mints a canonical record (mirroring the in-app quick-add flows
+// and the seed shapes), applies only the already-cleaned allowlisted fields, and returns a
+// uniform { entity, id } so the apply loop can count + focus the right card.
+function nextVendorId() {
+  const max = DATA.vendors.reduce((m, v) => { const n = /^V(\d+)$/.exec(v.vendorId || ''); return n ? Math.max(m, +n[1]) : m; }, 0);
+  return 'V' + String(max + 1).padStart(3, '0');
+}
+function nextPartId() {
+  const max = DATA.parts.reduce((m, p) => { const n = /^P(\d+)$/.exec(p.partId || ''); return n ? Math.max(m, +n[1]) : m; }, 0);
+  return 'P' + String(max + 1).padStart(3, '0');
+}
+function wrCreateUnit(f) {
+  const id = nextUnitId();
+  const u = { unitId: id, name: '', categoryId: '', assignedMechanic: '', currentHours: 0, inspectionStatus: 'Not Ready', fleetStatus: 'Active', purchaseHours: 0, serviceCompletions: {}, ...f, unitId: id };
+  if (!u.name) u.name = 'New unit';
+  DATA.units.push(u); IDX.unit.set(id, u); reindex('units', u); logAction(u, 'Added by Mr. Wrangler');
+  return { entity: 'units', id };
+}
+function wrCreateCategory(f) {
+  const id = nextCategoryId();
+  const c = { categoryId: id, name: '', memberDaily: 0, rate1Day: 0, rate7Day: 0, rate4Wk: 0, weekend: 0, msrp: 0, askPrice: 0, bottomDollar: 0, fuelType: '', description: '', ...f, categoryId: id };
+  if (!c.name) c.name = 'New category';
+  DATA.categories.push(c); IDX.category.set(id, c); reindex('categories', c); logAction(c, 'Added by Mr. Wrangler');
+  return { entity: 'categories', id };
+}
+function wrCreateVendor(f) {
+  const id = nextVendorId();
+  const v = { vendorId: id, name: '', phone: '', email: '', address: '', website: '', primaryContact: '', salesTaxExempt: false, vendorType: '', notes: '', ...f, vendorId: id };
+  if (!v.name) v.name = 'New vendor';
+  DATA.vendors.push(v); reindex('vendors', v); logAction(v, 'Added by Mr. Wrangler');   // reindex('vendors') keeps IDX.vendor in sync
+  return { entity: 'vendors', id };
+}
+function wrCreatePart(f) {
+  const id = nextPartId();
+  const p = { partId: id, name: '', status: 'Catalog', priceEach: null, qtyOnHand: null, website: '', orderEmail: '', productNumber: '', vendorId: null, imageUrl: '', notes: '', ...f, partId: id };
+  if (!p.name) p.name = 'New part';
+  DATA.parts.push(p); reindex('parts', p); logAction(p, 'Added by Mr. Wrangler');   // reindex('parts') keeps IDX.part in sync
+  return { entity: 'parts', id };
+}
+// Per-entity create dispatch — all return { entity, id }. Only entities listed here can be created;
+// anything else (rentals, invoices, …) is a later rollout stage and falls through harmlessly.
+const WR_CREATE = {
+  customers: (f) => { const c = wrCreateCustomer(f); return { entity: 'customers', id: c.customerId }; },
+  units: wrCreateUnit, categories: wrCreateCategory, vendors: wrCreateVendor, parts: wrCreatePart,
+};
 function applyWranglerData(plan) {
-  let created = 0, updated = 0, first = null;
+  let created = 0, updated = 0, firstEntity = null, firstId = null;
   plan.ops.forEach((op) => {
     if (op.op === 'update') {
       const t = op.target || wrGet(op.entity, op.id); if (!t) return;
@@ -10258,10 +10307,14 @@ function applyWranglerData(plan) {
       if (op.entity === 'customers') t.name = `${t.firstName || ''} ${t.lastName || ''}`.trim() || t.name;
       reindex(op.entity, t); logAction(t, `Mr. Wrangler updated ${Object.keys(op.fields).join(', ')}`); updated++;
     } else {
-      (op.op === 'import' || op.op === 'csv-import' ? op.rows : [op.fields]).forEach((f) => { if (op.entity === 'customers') { const c = wrCreateCustomer(f); created++; first = first || c.customerId; } });
+      const mk = WR_CREATE[op.entity]; if (!mk) return;
+      (op.op === 'import' || op.op === 'csv-import' ? op.rows : [op.fields]).forEach((f) => { const r = mk(f); created++; if (!firstId) { firstEntity = r.entity; firstId = r.id; } });
     }
   });
-  if (first) { const s = activeSession(); if (s.cols) s.cols.right = 'customers'; const ccs = s.cards.customers; if (created === 1) { ccs.mode = 'standard'; ccs.recId = first; } else { ccs.mode = 'list'; ccs.recId = null; ccs.search = ''; } ccs.graphView = false; }
+  // Focus the new record only for grid entities that own a column (customers→right,
+  // units/categories→left). Back-office boards (vendors, parts) have no column/card —
+  // skip the nav for them (the record is created + toasted; the user finds it in its board).
+  if (firstId) { const s = activeSession(); const col = COLUMN_OF[firstEntity]; const ccs = s.cards[firstEntity]; if (col && ccs && s.cols) { s.cols[col] = firstEntity; if (created === 1) { ccs.mode = 'standard'; ccs.recId = firstId; } else { ccs.mode = 'list'; ccs.recId = null; ccs.search = ''; } ccs.graphView = false; } }
   render();
   toast(`Mr. Wrangler ${[created ? `added ${created}` : '', updated ? `updated ${updated}` : ''].filter(Boolean).join(' · ') || 'made no changes'}. 🤠`);
   // A bulk import is a one-shot action the operator immediately closes/reloads after

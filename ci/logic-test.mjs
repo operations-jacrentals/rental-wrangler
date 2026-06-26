@@ -162,6 +162,34 @@ try {
     ok(T.DATA.units.length === unitsBefore + 1, 'exactly ONE unit was created for the two Phantom rentals');
     ok(T.planUnitMigration().length === 0, 'migration is idempotent — a second run finds nothing');
 
+    // 12b) Mr. Wrangler action parity — Stage 1: create the everyday entities (units/categories/
+    // vendors/parts), and keep the money/auth/delete lines fenced. The "add a unit named Termite" fix.
+    {
+      const uBefore = T.DATA.units.length, vBefore = T.DATA.vendors.length;
+      // create a unit by name — the original reported failure
+      const uplan = T.wrValidatePlan({ action: 'data', ops: [{ op: 'create', entity: 'units', fields: { name: 'Termite' } }] });
+      ok(uplan.ops.length === 1 && uplan.ops[0].op === 'create' && uplan.ops[0].entity === 'units', 'WR: create-unit op survives validation (units now creatable)');
+      T.applyWranglerData(uplan);
+      const termite = T.DATA.units.find((u) => u.name === 'Termite');
+      ok(!!termite && /^U\d{3}$/.test(termite.unitId) && termite.fleetStatus === 'Active', 'WR: a normal Active unit "Termite" is created with a U-id');
+      ok(T.DATA.units.length === uBefore + 1 && T.IDX.unit.get(termite.unitId) === termite, 'WR: the new unit is in DATA + IDX.unit');
+      // create a vendor — new entity, lands in DATA + IDX.vendor
+      const vplan = T.wrValidatePlan({ action: 'data', ops: [{ op: 'create', entity: 'vendors', fields: { name: 'Acme Supply', phone: '555-0100' } }] });
+      T.applyWranglerData(vplan);
+      const acme = T.DATA.vendors.find((v) => v.name === 'Acme Supply');
+      ok(!!acme && /^V\d{3}$/.test(acme.vendorId) && T.IDX.vendor.get(acme.vendorId) === acme, 'WR: a vendor is created with a V-id and indexed');
+      ok(T.DATA.vendors.length === vBefore + 1, 'WR: exactly one vendor was added');
+      // off-allowlist money field is dropped, never written
+      const pplan = T.wrValidatePlan({ action: 'data', ops: [{ op: 'create', entity: 'parts', fields: { name: 'Filter', priceEach: 99 } }] });
+      ok(pplan.ops.length === 1 && !('priceEach' in pplan.ops[0].fields) && pplan.ops[0].fields.name === 'Filter', 'WR: pricing field (priceEach) is stripped from a part create — money stays fenced');
+      // rentals are NOT creatable this stage → op dropped with an issue
+      const rplan = T.wrValidatePlan({ action: 'data', ops: [{ op: 'create', entity: 'rentals', fields: { notes: 'x' } }] });
+      ok(rplan.ops.length === 0 && rplan.issues.some((s) => /can.t be created/.test(s)), 'WR: rentals-create is refused (later stage)');
+      // unknown / off-limits entity is refused outright
+      const splan = T.wrValidatePlan({ action: 'data', ops: [{ op: 'create', entity: 'settings', fields: { x: 1 } }] });
+      ok(splan.ops.length === 0, 'WR: an entity outside the allowlist (settings) yields no ops');
+    }
+
     // 13) Transport pricing v2 — $3.50/mile + $50 load + $20 fuel (fueled), per leg.
     const tp = (a) => T.computeTransportPrice(a).price;
     // 10 mi Delivery, fueled: (3.5*10 + 50 + 20) * 1 = 105
