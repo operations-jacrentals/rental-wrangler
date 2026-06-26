@@ -131,8 +131,13 @@ rises per stage, so they're vetted and shipped in order.
 2. **Stage 2 — Billing.** `createInvoice` (+ lines), edit pricing/rates/discounts,
    `recordPayment` (cash/check). Money-sensitive — e-rail block proven here.
    (Refunds and invoice-void are out — see §0 addendum below.)
-3. **Stage 3 — Rentals.** `startRental` end-to-end (dates, computed pricing,
-   agreement, transport) and rental billing. The composite-flow proof.
+3. **Stage 3 — Rentals.** `startRental` creates a **Reserved booking** (customer +
+   units + window + optional transport), priced by the engine, with the human-flow
+   gates (fleet-Active, blacklist, overbooking, valid window). Rental billing reuses
+   `billRental`. **The agreement *signature* stays a human step** (an AI can't sign
+   for the customer), and going truly "On Rent" uses the existing invoice /
+   start-logging flow — so "full flow" here means *everything up to* those two
+   inherently-human/handoff points, not replacing them. The composite-flow proof.
 4. **Stage 4 — Settings.** `updateSetting` for company info, KPIs, custom fields,
    pricing defaults — auth paths rejected.
 

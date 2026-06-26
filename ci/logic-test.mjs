@@ -263,6 +263,37 @@ try {
       ok(payInv.amountPaid === 300 && payInv.paid === true && payInv.paymentMethod === 'cash' && payInv.paidAt === '2099-01-01T00:00:00Z', 'WR-pay: applyPayment writes the server result (amountPaid/paid/method/paidAt)');
     }
 
+    // 12g) Stage 3 — startRental operate op: put unit(s) on rent for a customer as a Reserved booking,
+    // with the real gates (fleet-Active, blacklist, overbooking, valid window). Priced by the engine.
+    {
+      const active = T.DATA.units.filter((u) => u.fleetStatus === 'Active');
+      const freeUnit = active[0];   // free in the far-future window below (seed rentals don't reach Nov 2099)
+      const wr = (params) => T.wrValidatePlan({ action: 'data', ops: [{ op: 'operate', name: 'startRental', params }] });
+      // refusals
+      ok(wr({ customerId: 'C-NOPE', unitIds: [freeUnit.unitId], startDate: '2099-11-01', endDate: '2099-11-08' }).issues.some((s) => /no customer/.test(s)), 'WR-rent: unknown customer refused');
+      ok(wr({ customerId: 'C0009', unitIds: [], startDate: '2099-11-01', endDate: '2099-11-08' }).issues.some((s) => /at least one unit/.test(s)), 'WR-rent: no units refused');
+      ok(wr({ customerId: 'C0009', unitIds: ['U-NOPE'], startDate: '2099-11-01', endDate: '2099-11-08' }).issues.some((s) => /no unit/.test(s)), 'WR-rent: unknown unit refused');
+      ok(wr({ customerId: 'C0009', unitIds: [freeUnit.unitId], startDate: '2099-11-08', endDate: '2099-11-01' }).issues.some((s) => /end date is before/.test(s)), 'WR-rent: end-before-start refused');
+      // a retired unit is refused
+      const retired = { unitId: 'U-RETIRED', name: 'Old Iron', categoryId: freeUnit.categoryId, fleetStatus: 'Retired', currentHours: 0, inspectionStatus: 'Not Ready', purchaseHours: 0, serviceCompletions: {} };
+      T.DATA.units.push(retired); T.IDX.unit.set('U-RETIRED', retired);
+      ok(wr({ customerId: 'C0009', unitIds: ['U-RETIRED'], startDate: '2099-11-01', endDate: '2099-11-08' }).issues.some((s) => /not rentable/.test(s)), 'WR-rent: a retired (non-Active) unit refused');
+      // a blacklisted customer is refused
+      T.DATA.customers.push({ customerId: 'C-BL', name: 'Bad Co', accountType: 'Blacklist', firstName: '', lastName: '', activityLog: [] }); T.IDX.customer.set('C-BL', T.DATA.customers[T.DATA.customers.length - 1]);
+      ok(wr({ customerId: 'C-BL', unitIds: [freeUnit.unitId], startDate: '2099-11-01', endDate: '2099-11-08' }).issues.some((s) => /blacklisted/.test(s)), 'WR-rent: a blacklisted customer refused');
+      // overbooking: book the free unit, then a second overlapping booking is refused
+      T.__state.overbookOn = false;   // deterministic — an earlier block toggles this on
+      const okPlan = wr({ customerId: 'C0009', unitIds: [freeUnit.unitId], startDate: '2099-11-01', endDate: '2099-11-08' });
+      ok(okPlan.ops.length === 1 && /start rental/.test(okPlan.ops[0].summary), 'WR-rent: a valid booking previews one operate op');
+      const before = T.DATA.rentals.length;
+      T.applyWranglerData(okPlan);
+      ok(T.DATA.rentals.length === before + 1, 'WR-rent: applying creates the rental');
+      const made = T.DATA.rentals[T.DATA.rentals.length - 1];
+      ok(made.status === 'Reserved' && made.customerId === 'C0009' && T.rentalUnits(made).some((u) => u.unitId === freeUnit.unitId), 'WR-rent: a Reserved booking with the customer + unit');
+      ok((T.rentalPrice(made)?.price || 0) > 0, 'WR-rent: the booking is priced by the engine');
+      ok(wr({ customerId: 'C0009', unitIds: [freeUnit.unitId], startDate: '2099-11-03', endDate: '2099-11-05' }).issues.some((s) => /already booked/.test(s)), 'WR-rent: an overlapping booking of the same unit is refused (overbooking gate)');
+    }
+
     // 13) Transport pricing v2 — $3.50/mile + $50 load + $20 fuel (fueled), per leg.
     const tp = (a) => T.computeTransportPrice(a).price;
     // 10 mi Delivery, fueled: (3.5*10 + 50 + 20) * 1 = 105
