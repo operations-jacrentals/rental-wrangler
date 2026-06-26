@@ -2995,15 +2995,47 @@ function checklistFor(unit) { const c = unit && inspectionCfg(unit.categoryId); 
 const checklistRequired = (unit) => { const c = checklistFor(unit); return !!(c && c.required); };
 const INSP_TYPES = ['toggle','file','select','number','date','text'];
 const inspItemType = (it) => it && it.type ? it.type : 'toggle';
+// Does this item's answer count as a failure? Per-type fail condition lives on `it.fail`
+// (Jac 2026-06-26). A toggle with no `it.fail` reads as failWhen:'fail' so every legacy item
+// (incl. all 21 default families) behaves exactly as before. A failing answer flows the
+// UNCHANGED completeChecklist → setInspResult('Fail') → autoWOFromInspection cascade.
 function inspItemFails(it, val) {
   const t = inspItemType(it);
-  if (t === 'toggle') return val === 'Fail';
+  const f = (it && it.fail) || null;
+  if (t === 'toggle') return (f && f.failWhen === 'pass') ? val === 'Pass' : val === 'Fail';
   if (t === 'select') { const o = (it.options || []).find((op) => op.label === val); return !!(o && o.fail); }
+  if (t === 'number') {
+    if (!f || !f.op || f.op === 'none') return false;
+    const v = Number(val); if (val == null || val === '' || !isFinite(v)) return false;
+    const a = Number(f.a), b = Number(f.b);
+    if (f.op === 'above') return isFinite(a) && v > a;
+    if (f.op === 'below') return isFinite(a) && v < a;
+    if (f.op === 'outside') return isFinite(a) && isFinite(b) && (v < a || v > b);
+    if (f.op === 'inside') return isFinite(a) && isFinite(b) && v >= a && v <= b;
+    return false;
+  }
+  if (t === 'date') {
+    if (!f || !f.op || f.op === 'none' || !val) return false;            // ISO yyyy-mm-dd compares lexically
+    const ref = (!f.ref || f.ref === 'today') ? TODAY_ISO : f.ref;
+    if (f.op === 'before') return val < ref;
+    if (f.op === 'after') return val > ref;
+    return false;
+  }
+  if (t === 'text') {
+    if (!f || !f.op || f.op === 'none') return false;
+    if (f.op === 'empty') return val == null || val === '';
+    if (f.op === 'contains') return !!(f.value && typeof val === 'string' && val.toLowerCase().includes(String(f.value).toLowerCase()));
+    return false;
+  }
   return false;
 }
+// Every item is answer-required now (Jac 2026-06-26 — the Optional/Required toggle is gone);
+// the old `it.required` flag is simply ignored.
 function inspItemUnanswered(it, val) {
-  if (inspItemType(it) === 'toggle') return !val;          // must pick Pass or Fail (as today)
-  return !!it.required && (val == null || val === '');      // required non-toggle must be filled; optional may be blank
+  const t = inspItemType(it);
+  if (t === 'toggle') return !val;                 // must pick Pass or Fail
+  if (t === 'select' || t === 'file') return !val; // must choose an option / attach a file
+  return val == null || val === '';                // number / date / text — must be filled
 }
 const COMPANY_DEFAULTS = { name: 'JacRentals', tagline: 'Heavy-Equipment Rental · Sulphur, LA', revenueGoal: (CFG.REVENUE_GOAL_DEFAULT || 150000), maxNetDays: 30 };
 const companyName = () => (companyCfg().name || '').trim() || COMPANY_DEFAULTS.name;
@@ -15576,7 +15608,7 @@ function exposeTestApi() {
       latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore, wranglerRailLoad, wrOffloadChatImages, wrEvictChatBlobs, driveViewUrl, mergeWranglerRails,
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
-      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, setFunnelStage, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, addMonthsISO, openMembershipEnroll, membershipEnrollCommit, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, setRole: (r) => { currentRole = r || ''; render(); },
+      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, setFunnelStage, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, addMonthsISO, openMembershipEnroll, membershipEnrollCommit, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, setRole: (r) => { currentRole = r || ''; render(); },
       openCustomerForm, renderOverlay, render, cardComplete, cardCaptureState, cardHasSelfie, cardHasSignature, captureSelfie, captureSignature, __state: state };   // UI drivers for headless screenshot/e2e tests
 
   } catch (e) { /* no window (non-browser) */ }

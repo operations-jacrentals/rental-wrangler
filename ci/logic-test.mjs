@@ -548,6 +548,33 @@ try {
     ok(T.checklistRequired(aUnit) === false && T.checklistFor(aUnit) !== null, 'a defined-but-not-required checklist is available but does not take over');
     st.settings.inspections = savedInsp;   // restore
 
+    // 26b) Fail-condition model (Jac 2026-06-26) — per-type fail predicate + all-required gate
+    const F = T.inspItemFails, U = T.inspItemUnanswered;
+    // toggle: legacy (no it.fail) still fails on 'Fail'; inverted fails on 'Pass'
+    ok(F({ type: 'toggle' }, 'Fail') === true && F({ type: 'toggle' }, 'Pass') === false, 'toggle (legacy, no fail cfg) → fails on Fail, passes on Pass');
+    ok(F({ type: 'toggle', fail: { failWhen: 'pass' } }, 'Pass') === true && F({ type: 'toggle', fail: { failWhen: 'pass' } }, 'Fail') === false, 'toggle inverted → Pass trips the fail');
+    // a bare item (no type) reads as toggle — the 21 default families are unaffected
+    ok(F({}, 'Fail') === true && F({}, 'Pass') === false, 'typeless item reads as toggle (default families unchanged)');
+    // number: above / below / outside / inside
+    ok(F({ type: 'number', fail: { op: 'above', a: 100 } }, '120') === true && F({ type: 'number', fail: { op: 'above', a: 100 } }, '80') === false, 'number above → fails when value > a');
+    ok(F({ type: 'number', fail: { op: 'below', a: 30 } }, '20') === true && F({ type: 'number', fail: { op: 'below', a: 30 } }, '40') === false, 'number below → fails when value < a');
+    ok(F({ type: 'number', fail: { op: 'outside', a: 10, b: 20 } }, '25') === true && F({ type: 'number', fail: { op: 'outside', a: 10, b: 20 } }, '15') === false, 'number outside → fails when value outside [a,b]');
+    ok(F({ type: 'number', fail: { op: 'inside', a: 10, b: 20 } }, '15') === true && F({ type: 'number', fail: { op: 'inside', a: 10, b: 20 } }, '25') === false, 'number inside → fails when value inside [a,b]');
+    ok(F({ type: 'number', fail: { op: 'above', a: 100 } }, '') === false && F({ type: 'number', fail: { op: 'none' } }, '5') === false, 'number → blank or op:none never fails');
+    // date: before / after a ref (today by default)
+    ok(F({ type: 'date', fail: { op: 'before', ref: '2026-06-26' } }, '2026-06-01') === true && F({ type: 'date', fail: { op: 'before', ref: '2026-06-26' } }, '2026-07-01') === false, 'date before → fails when date < ref (expiry)');
+    ok(F({ type: 'date', fail: { op: 'after', ref: '2026-06-26' } }, '2026-07-01') === true, 'date after → fails when date > ref');
+    // text: empty / contains
+    ok(F({ type: 'text', fail: { op: 'empty' } }, '') === true && F({ type: 'text', fail: { op: 'empty' } }, 'ok') === false, 'text empty → fails when blank');
+    ok(F({ type: 'text', fail: { op: 'contains', value: 'crack' } }, 'hairline CRACK seen') === true && F({ type: 'text', fail: { op: 'none' } }, 'x') === false, 'text contains → case-insensitive match; op:none never fails');
+    // select: per-option fail (unchanged)
+    ok(F({ type: 'select', options: [{ label: 'Bald', fail: true }, { label: 'OK' }] }, 'Bald') === true && F({ type: 'select', options: [{ label: 'Bald', fail: true }, { label: 'OK' }] }, 'OK') === false, 'select → fails when chosen option flagged fail');
+    // all-required gate — every type must be answered (the Optional path is gone)
+    ok(U({ type: 'toggle' }, '') === true && U({ type: 'toggle' }, 'Pass') === false, 'gate: toggle must be picked');
+    ok(U({ type: 'number' }, '') === true && U({ type: 'number' }, '5') === false, 'gate: number must be filled (no more optional)');
+    ok(U({ type: 'file' }, '') === true && U({ type: 'file' }, 'data:...') === false, 'gate: file must be attached');
+    ok(U({ type: 'text', required: false }, '') === true, 'gate: legacy required:false is ignored — all fields required now');
+
     // 27) Reversibility — a corrupt customization must self-heal, never brick the app
     const savedAll = st.settings;
     st.settings = { status: { rentalStatus: 'this-is-not-an-object-it-is-garbage' } };   // malformed
