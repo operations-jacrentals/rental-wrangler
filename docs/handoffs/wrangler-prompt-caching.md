@@ -1,6 +1,7 @@
 # Spec — Mr. Wrangler prompt caching (cost reduction)
 
-**Status:** proposed, awaiting sign-off. No code shipped yet.
+**Status:** Option A patch **staged & ready to deploy** (`wrangler-prompt-caching.gs`).
+Blocked only on the clasp credential (RAPT — see §4). No code live yet.
 **Author session:** `claude/mr-wrangler-overage-2rusx7` (2026-06-26)
 **Touches:** backend `Code.gs` (ships via `/clasp`); optionally `app.js` (git/PR).
 **Exempt from UI skills** — this is API-payload plumbing, no visible UI.
