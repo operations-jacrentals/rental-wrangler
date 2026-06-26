@@ -388,7 +388,57 @@ status check that protects the trunk. It runs six steps, in order:
 | Change the served entry / cache token | `index.html` |
 | Serve locally | `serve.ps1` (port 9147) |
 
-# Part III — The Backend (Apps Script `Code.js`) — *outline, specced later*
+# Part III — The Backend (Apps Script `Code.js`)
 
-The Google Apps Script web app (gitignored, in `~/rw-backend`, ships via
-`/clasp`, never git). A "Part III" map narrated from the Drive/clasp read.
+*The Google Apps Script **web app** behind a single `/exec` URL, over the
+Google Sheet that **is** the database ("Rental Wrangler — Live Database"). The
+source (`Code.gs`/`Code.js`) is **gitignored** — it never lives in this public
+repo, and ships via **`/clasp`**, never git. So this map documents the backend's
+**contract** (the actions the frontend calls and what they do), which is the
+authoritative frontend↔backend boundary — not the server implementation. To read
+the live handlers, use the Drive connector or `clasp` (see
+`docs/backend-clasp-setup.md`); to deploy, use the `/clasp` skill (additive,
+STOP-gated).*
+
+## How the frontend talks to it (the one entry point)
+- **`APP-38 · §18b Backend Sync** (`app.js:14811`) is the *only* caller.
+  `backendCall(action, extra)` POSTs `{ action, password, ...extra }` as
+  `text/plain` (dodges the GAS CORS preflight) to **`BACKEND_URL`**
+  (`app.js:14817`). Every call is gated by the team **password**.
+- The server always replies `{ ok, ... }` (or `{ ok:false, error }`); the client
+  parses defensively and never coerces a failure into a success.
+- **Persistence is diff-based.** `PERSIST_KEYS` (11 entities) + `PERSIST_ID` (the
+  id field per entity) drive `computeChanges()` → only upserts/deletes are sent
+  (`sync`), not the whole 1.7 MB state. `load` hydrates on sign-in; `seed`
+  populates a fresh backend (admin `#reseed` only).
+
+## The action catalog (every `backendCall` the frontend makes)
+
+| Family | Actions | What the backend does |
+|--------|---------|-----------------------|
+| **Auth & session** | `auth`, `saveSession`, `getSession` | verify the team password; persist/restore a device session |
+| **Data sync** | `load`, `seed`, `sync` | hydrate all entities · seed a fresh DB · apply incremental upserts/deletes |
+| **Config & Views** | `getConfig`, `setConfig`, `getViews`, `setViews` | admin Settings Board (`APP-09`) + company-wide saved Views |
+| **Team chat** | `getChats`, `setChats` | the internal dock (`APP-23`) message store |
+| **Wrangler rail** | `getWranglerRail`, `setWranglerRail` | cross-device store of past Mr. Wrangler conversations (`§18g`) |
+| **Mr. Wrangler AI** | `wrangler` | proxies the chat to Claude (the API key lives server-side, never in the client) |
+| **Wrangler inbox** | `wranglerRequests`, `wranglerThread`, `wranglerComment`, `wranglerApprove`, `wranglerDismiss`, `wranglerFile`, `wranglerNotifications` | the in-app glitch/request pipeline (mirrors the GitHub issues from `wrangler-fix.yml`) |
+| **Files & media** | `uploadFile`, `uploadCapture`, `archiveAgreementMedia` | offload photos/video/signed-agreement media to Drive (see `docs/backend-snippets/archiveAgreementMedia.md`) |
+| **Stripe — cards/bank** | `stripePubKey`, `stripeSetupIntent`, `stripeSaveCard`, `stripeSetDefault`, `stripeRemoveCard`, `stripeBankSetupIntent`, `stripeSaveBank`, `stripeVerifyBank` | card/ACH on file via Stripe (secret key server-side) |
+| **Stripe — charging** | `stripeChargeInvoice`, `stripeFinalizeInvoice`, `recordManualPayment` | charge / finalize an invoice · log a manual payment |
+| **Membership** | `membershipEnroll`, `membershipCancel`, `membershipReactivate` | the subscription lifecycle (`APP-09` economics) |
+| **Misc** | `mapsKey`, `feedback` | hand the client the Maps key · file user feedback |
+
+## Backend reverse index — "I need to…"
+| I need to… | Where |
+|------------|-------|
+| Change how the client calls the backend | `APP-38` (`app.js:14811`) |
+| Add a backend action | add the handler in `Code.gs` (deploy via `/clasp`) **and** a `backendCall('…')` in `app.js` |
+| Read the live server code | Drive connector / `clasp` — `docs/backend-clasp-setup.md` |
+| Deploy the backend | the `/clasp` skill (additive only, STOPs before prod) |
+| Understand the Wrangler inbox server side | `docs/wrangler-inbox-backend.md`, `docs/wrangler-pipeline.md` |
+| See the Sheets DB layout | the `PERSIST_KEYS` / `PERSIST_ID` map (`app.js:14818`) = one tab per entity |
+
+> ⚠️ **PII guard.** The live DB holds real customer data. This map documents the
+> *contract* only — never paste Drive/Sheets contents, the Apps Script source, or
+> any secret/PII into this repo, commits, or seeds.
