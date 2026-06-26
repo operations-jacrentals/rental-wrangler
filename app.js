@@ -10403,7 +10403,7 @@ const BOARD_DEF = {
   },
   files: {
     cols: ['Title', 'Type', 'Group', 'Review-By'],
-    row: (f) => [f.link ? linkName(f.name, { js: 'js-open-link', data: { url: f.link } }) : esc(f.name), statusPill('companyFileType', f.type), esc(f.group || '—'), f.reviewByDate ? esc(fmtShortDate(f.reviewByDate)) + (reviewState(f.reviewByDate) ? ' ' + reviewState(f.reviewByDate) : '') : '—'],
+    row: (f) => [f.link ? linkName(f.name, { js: 'js-open-link', data: { url: /^https?:\/\//i.test(f.link) ? f.link : 'https://' + f.link } }) : esc(f.name), statusPill('companyFileType', f.type), esc(f.group || '—'), f.reviewByDate ? esc(fmtShortDate(f.reviewByDate)) + (reviewState(f.reviewByDate) ? ' ' + reviewState(f.reviewByDate) : '') : '—'],
   },
 };
 function boardTable(boardId, query) {
