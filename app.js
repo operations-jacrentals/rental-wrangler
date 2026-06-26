@@ -19,7 +19,7 @@ import * as CFG from './config.js';
 import { AGREEMENTS, AGREEMENT_VERSIONS, AGREEMENT_CURRENT } from './agreements.js';
 import { ico, I, CARD_ICON, RING_ICON, CATEGORY_ICON } from './icons.js';
 import {
-  getStatus, STATUS, ROLES, GRID_CARDS, BACKOFFICE_BOARDS, SORT_FIELDS,
+  getStatus, STATUS, ROLES, ROLE_TIERS, tierRank, BUILTIN_ROLE_TIERS, GRID_CARDS, BACKOFFICE_BOARDS, SORT_FIELDS,
   SHOP_TYPES, SHOP_SEGMENTS, COLUMNS, COLUMN_OF,
   legacyTransportPrice, computeTransportPrice, isFueledType, legsForType, YARD_ORIGIN, GOOGLE_MAPS_KEY,
   fmtWindow, fmtShortDate, showsTruck, parseISO, TODAY_ISO, invoiceShort, TRANSPORT_MAP,
@@ -7168,10 +7168,10 @@ function bottomBarInner(opts = {}) {
     <button class="iconbtn js-wrangler" data-tip="New chat with Mr. Wrangler — ask the yard AI, or report a bug" style="font-size:16px">🤠</button>
     ${opts.noInbox ? '' : `<button class="iconbtn js-requests" data-tip="Requests for your OK — review what Mr. Wrangler filed">${I.inbox}${wranglerRequests.length ? `<span class="bb-badge">${wranglerRequests.length > 9 ? '9+' : wranglerRequests.length}</span>` : ''}</button>`}
     <button class="iconbtn js-hotkeys" data-tip="Mouse &amp; keyboard shortcuts">${I.mouse}</button>
-    ${adminUnlocked() ? `<button class="iconbtn js-lint${document.body.classList.contains('rw-lint') ? ' on' : ''}" data-tip="Design lint — flash anything that bypassed the UI builders (R0)">${I.eye}</button>
+    ${devUnlocked() ? `<button class="iconbtn js-lint${document.body.classList.contains('rw-lint') ? ' on' : ''}" data-tip="Design lint — flash anything that bypassed the UI builders (R0)">${I.eye}</button>
     <button class="iconbtn js-inspect${state.inspect ? ' on' : ''}" data-tip="Design Inspector — hover names the rule, click copies the reference">${I.search}</button>
-    <button class="iconbtn js-rulebook" data-tip="The R-Rulebook — visual design reference (SPEC v8)">${I.doc}</button>
-    <button class="iconbtn js-photo-sweep" data-tip="Offload base64 photos to Drive — one-shot migration to de-bloat the payload">${I.camera}</button>` : ''}`;
+    <button class="iconbtn js-rulebook" data-tip="The R-Rulebook — visual design reference (SPEC v8)">${I.doc}</button>` : ''}
+    ${adminUnlocked() ? `<button class="iconbtn js-photo-sweep" data-tip="Offload base64 photos to Drive — one-shot migration to de-bloat the payload">${I.camera}</button>` : ''}`;
 }
 // §18g/§17 — the bottom COMMS BAND: toolbar pinned left · the conversation rail
 // fills the middle (every Mr. Wrangler request + chat and every team thread is its
@@ -10064,7 +10064,7 @@ async function wranglerFileAction(mi) {
    engine builds + ships it. Owner/Admin only acts; everyone can see what's pending. */
 let wranglerRequests = [];
 let reqLoaded = false, reqLoading = false;
-const canApproveRequests = () => currentRole === 'Owner' || currentRole === 'Admin';
+const canApproveRequests = () => roleTier(currentRole) >= tierRank('manager');
 async function refreshWranglerRequests() {
   if (typeof backendPassword === 'undefined' || !backendPassword || reqLoading) return;   // demo/offline → no inbox
   reqLoading = true;
@@ -12202,18 +12202,36 @@ function startInlineEdit(span) {
 
 const BOOKING_STATUSES = ['On Rent', 'Reserved', 'Today', 'Tomorrow'];
 
-/* ADMIN TOOLS GATE (Jac 2026-06-22) — the dev/design tools (R-Rulebook, Design
-   Inspector, Design Lint) show ONLY for an Admin/Owner login. The old obfuscated
-   passphrase unlock was dropped (Jac): the admin login is the only thing that
-   should see these, so a normal account gets nothing — no lock toggle, no peek.
-   Settings is intentionally NOT gated here (Jac: "you don't need to hide it").
-   (requireAdmin below — the backend-verified card/price override — is separate
-   and untouched.) */
-function adminUnlocked() { return currentRole === 'Admin' || currentRole === 'Owner'; }
+/* ROLE TIERS (role-system redesign 2026-06-26) — roles are customizable, so
+   permissions key off a TIER, never a role name. `roleTier` resolves whatever
+   string the backend's `auth` returned for `currentRole` (id or label, any case)
+   to a rank 0..5 via `settings.roleMeta` (synced to every user in loadFromBackend)
+   with a fallback to BUILTIN_ROLE_TIERS. Spec: docs/superpowers/specs/
+   2026-06-26-role-system-redesign-design.md */
+function roleMetaMap() { return (state.settings && state.settings.roleMeta) || {}; }
+function roleTier(role) {
+  const id = String(role || '').trim().toLowerCase();
+  if (!id) return 0;
+  const meta = roleMetaMap();
+  const key = Object.keys(meta).find((k) => k.toLowerCase() === id);   // case-insensitive
+  if (key && meta[key] && meta[key].tier) return tierRank(meta[key].tier);
+  if (BUILTIN_ROLE_TIERS[id]) return tierRank(BUILTIN_ROLE_TIERS[id]);
+  return 0;
+}
+
+/* ADMIN TOOLS GATE (Jac 2026-06-22; tiers 2026-06-26) — business-admin actions
+   (Settings, category/pricing edits, migrations, curating shared sets) require
+   tier ≥ admin. The DEV/design tools (R-Rulebook, Inspector, Lint) moved UP to
+   `devUnlocked` (tier ≥ developer) — a business Admin no longer sees raw dev
+   tools. (requireAdmin below — the backend-verified card/price override — is
+   separate.) */
+function adminUnlocked() { return roleTier(currentRole) >= tierRank('admin'); }
+/** Dev/design tools (Lint / Inspector / Rulebook) — Developer tier only. */
+function devUnlocked() { return roleTier(currentRole) >= tierRank('developer'); }
 
 /** Verify an Admin password (reuses the Settings gate), then run onOk. Demo/offline → allowed. */
 async function requireAdmin(reason, onOk) {
-  const pw = (currentRole === 'Admin' || currentRole === 'Owner') ? backendPassword
+  const pw = adminUnlocked() ? backendPassword
     : (window.prompt((reason ? reason + '\n\n' : '') + 'Enter an Admin password to override:') || '');
   if (!pw && backendPassword) return;
   if (!backendPassword) { onOk(); return; }          // demo: no backend to verify against
@@ -12997,7 +13015,7 @@ function openLogoMenu(anchorEl) {
   const team = `<div class="menu-sep"></div><div class="menu-team"><div class="menu-team-head">Team KPIs</div><div class="menu-team-ring">${ringsSVG(roleScores, ROLES.map((r) => r.color), { size: 104 })}</div><div class="kpi-list"><div class="kpi-line"><span class="k-name">Sulphur Team</span><span class="k-val" style="color:var(--${tbd.color})">${teamScore}%</span></div></div></div>`;
   const userLine = `<div class="menu-user"><span class="mu-name">${esc(currentUser || 'Signed in')}</span>${currentRole ? `<span class="mu-role">${esc(currentRole)}</span>` : ''}</div>
     <button class="dd-item js-switch-user"><span class="mi-ico" style="display:inline-flex;color:var(--accent)">${I.back}</span>Switch user</button>
-    <button class="dd-item js-open-settings"><span class="mi-ico" style="display:inline-flex;color:var(--accent)">${I.grid}</span>Settings${(currentRole === 'Admin' || currentRole === 'Owner') ? '' : ' <span class="muted" style="font-size:10px;margin-left:2px">Admin</span>'}</button>
+    <button class="dd-item js-open-settings"><span class="mi-ico" style="display:inline-flex;color:var(--accent)">${I.grid}</span>Settings${adminUnlocked() ? '' : ' <span class="muted" style="font-size:10px;margin-left:2px">Admin</span>'}</button>
     <div class="menu-sep"></div>`;
   openDropdown(anchorEl, userLine + boards + team);
 }
@@ -13012,7 +13030,7 @@ function switchUser() {
 // admin password; a staff role must enter it. Loads the live config, then opens the editor.
 async function openSettings() {
   document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove());
-  const adminPw = (currentRole === 'Admin' || currentRole === 'Owner') ? backendPassword : (window.prompt('Settings is Admin-only.\nEnter the Admin password:') || '');
+  const adminPw = adminUnlocked() ? backendPassword : (window.prompt('Settings is Admin-only.\nEnter the Admin password:') || '');
   if (!adminPw) return;
   // Open the shell immediately in a loading state so the wait is visible, not a frozen UI.
   openOverlay({ kind: 'settings', loading: true, adminPw });
@@ -13042,7 +13060,7 @@ async function saveSettings() {
     const r = await backendCall('setConfig', { password: o.adminPw, config: { roles, admin, settings } });
     o.saving = false;
     if (r && r.ok) {
-      if (haveLogins && (currentRole === 'Admin' || currentRole === 'Owner')) { const myNew = currentRole === 'Admin' ? admin : (roles[currentRole] || o.adminPw); backendPassword = myNew; sessionStorage.setItem('jactec.pw', myNew); o.adminPw = myNew; }
+      if (haveLogins && adminUnlocked()) { const myNew = currentRole === 'Admin' ? admin : (roles[currentRole] || o.adminPw); backendPassword = myNew; sessionStorage.setItem('jactec.pw', myNew); o.adminPw = myNew; }
       o.config.roles = roles; o.config.admin = admin; o.config.settings = settings;
       persistAdminSettings(settings);   // mirror locally + apply the status overrides live
       closeOverlay(); toast('Settings saved.'); render();
@@ -13285,7 +13303,7 @@ function getStripe() {
   return _stripe;
 }
 // Only Office/Admin take payments. In #local demo (no role) we still show the UI.
-const canMoney = () => !currentRole || currentRole === 'Admin' || currentRole === 'Owner' || currentRole === 'Office';
+const canMoney = () => !currentRole || roleTier(currentRole) >= tierRank('money');
 const brandName = (b) => (b || 'Card').replace(/^./, (m) => m.toUpperCase());
 const hasCardOnFile = (c) => customerCards(c).length > 0;
 /* §12.1 rapid action entry (Jac 2026-06-12): commit per the R14 mode toggle —
