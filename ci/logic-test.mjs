@@ -207,6 +207,31 @@ try {
       ok(floor.ops.length === 0, 'WR: bottomDollar (margin floor) stays fenced — off the allowlist');
     }
 
+    // 12d) Stage 2 — billRental operate op: invoice an EXISTING rental via the real pricing engine.
+    // No standalone invoices, no payments/refunds; refuses unbillable rentals and unknown operations.
+    {
+      const bf = T.DATA.units.filter((u) => u.fleetStatus === 'Active');
+      const mkU = (u) => ({ unitId: u.unitId, status: 'On Rent', transportType: 'Self', deliveryAddress: '', recoveryAddress: '', transportMiles: 0, startCapture: null, endCapture: null, fcCapture: null });
+      const rB = { rentalId: 'R-WRBILL', customerId: 'C0009', unitId: bf[0].unitId, categoryId: bf[0].categoryId, rentalName: 'Wrangler bill test', startDate: '2099-09-01', endDate: '2099-09-08', startTime: '', status: 'Reserved', transportType: 'Self', deliveryAddress: '', po: '', invoiceId: null, units: [mkU(bf[0])], notes: '', actions: [], mock: true };
+      T.DATA.rentals.push(rB); T.IDX.rental.set('R-WRBILL', rB);
+      const invCountBefore = T.DATA.invoices.length;
+      // refusals first (no record changes)
+      const unknownOp = T.wrValidatePlan({ action: 'data', ops: [{ op: 'operate', name: 'frobnicate', params: {} }] });
+      ok(unknownOp.ops.length === 0 && unknownOp.issues.some((s) => /don.t know how/.test(s)), 'WR: an unknown operation is refused');
+      const noRental = T.wrValidatePlan({ action: 'data', ops: [{ op: 'operate', name: 'billRental', params: { rentalId: 'R-NOPE' } }] });
+      ok(noRental.ops.length === 0 && noRental.issues.some((s) => /no rental/.test(s)), 'WR: billRental on an unknown rental is refused');
+      // happy path → one operate op, applying it creates + links a real invoice from the pricing engine
+      const bplan = T.wrValidatePlan({ action: 'data', ops: [{ op: 'operate', name: 'billRental', params: { rentalId: 'R-WRBILL' } }] });
+      ok(bplan.ops.length === 1 && bplan.ops[0].op === 'operate' && /invoice rental R-WRBILL/.test(bplan.ops[0].summary), 'WR: billRental on a billable rental previews one operate op');
+      T.applyWranglerData(bplan);
+      ok(!!rB.invoiceId && T.DATA.invoices.length === invCountBefore + 1, 'WR: billRental created + linked a real invoice');
+      const newInv = T.IDX.invoice.get(rB.invoiceId);
+      ok(!!newInv && newInv.rentalIds.includes('R-WRBILL') && newInv.lineItems.length > 0, 'WR: the invoice is built from the pricing engine (has line items, linked to the rental)');
+      // already-invoiced → refused (no double-billing)
+      const dbl = T.wrValidatePlan({ action: 'data', ops: [{ op: 'operate', name: 'billRental', params: { rentalId: 'R-WRBILL' } }] });
+      ok(dbl.ops.length === 0 && dbl.issues.some((s) => /already invoiced/.test(s)), 'WR: a rental already invoiced is not double-billed');
+    }
+
     // 13) Transport pricing v2 — $3.50/mile + $50 load + $20 fuel (fueled), per leg.
     const tp = (a) => T.computeTransportPrice(a).price;
     // 10 mi Delivery, fueled: (3.5*10 + 50 + 20) * 1 = 105
