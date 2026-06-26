@@ -1040,35 +1040,73 @@ function reconcileChunkRetro(inv, r, ns, ne) {
   });
   return { delta: Math.round(delta * 100) / 100, count };
 }
-/** PURE preview of extending r to a staged window (no mutation) — drives the picker
- *  banner. Series-aware; honors the retroactive-pricing setting. */
+/** PURE mirror of billExtension's per-step math — returns the subtotal delta billExtension
+ *  WOULD post for lengthening r from prevEnd → newEnd, with ZERO mutation. Kept in lockstep
+ *  with billExtension by logic-test (the preview MUST equal what's actually billed). Walks the
+ *  same fill→spill chunk model: grow the open active chunk (retro reconcile vs OFF standalone),
+ *  then — once that chunk is closed/locked/full — spill ≤28-day standalone segments onto fresh
+ *  continuation invoices. This is why a PAID invoice (its segment spills) or one whose prior
+ *  charge isn't a matched rental line no longer overstates the charge: the preview now reflects
+ *  the real posting, not a blind "full window − matched-billed". */
+function previewExtensionDelta(r, prevEnd, newEnd) {
+  if (!r || !r.invoiceId) return 0;
+  const active = rentalActiveInvoice(r); if (!active) return 0;
+  const targetEnd = newEnd;
+  let coveredEnd = active.covEnd || prevEnd || r.startDate;
+  if (!targetEnd || !coveredEnd || dayDiff(parseISO(coveredEnd), parseISO(targetEnd)) <= 0) return 0;   // no net lengthening → bills nothing (matches billExtension)
+  const retro = retroPricingOn();
+  const units = rentalUnits(r).filter((eu) => !unitVoided(r, eu) && IDX.unit.get(eu.unitId));
+  const priceOf = (eu, s, e) => { const p = rentalPrice({ categoryId: IDX.unit.get(eu.unitId).categoryId, startDate: s, endDate: e, customerId: r.customerId }); return p ? Math.round(p.price * 100) / 100 : 0; };
+  let delta = 0, onReal = true, guard = 0;
+  while (dayDiff(parseISO(coveredEnd), parseISO(targetEnd)) > 0 && guard++ < 80) {
+    if (onReal) {
+      const t = invoiceTotals(active);
+      const closed = t.paid > 0 && t.balance <= 0;
+      const room = INV_CAP_DAYS - invCoveredDays(active, r);
+      if (active.locked || closed || room <= 0) { onReal = false; continue; }   // active sealed/full → spill
+      const grow = Math.min(room, dayDiff(parseISO(coveredEnd), parseISO(targetEnd)));
+      const newCovEnd = addDaysISO(coveredEnd, grow);
+      if (retro) {                                                // reconcileChunkRetro: re-price to cheapest(covStart→newEnd) − billed
+        const cs = invCovStart(active, r);
+        units.forEach((eu) => {
+          const target = priceOf(eu, cs, newCovEnd);
+          const mine = (active.lineItems || []).filter((li) => (li.kind === 'rental' || li.kind === 'extension') && li.ref === r.rentalId && li.unitId === eu.unitId);
+          const paid = mine.reduce((a, li) => a + itemPaid(active, li), 0);
+          const billed = Math.round(mine.reduce((a, li) => a + (Number(li.amount) || 0), 0) * 100) / 100;
+          const d = target - billed;
+          if (Math.abs(d) <= 0.005) return;
+          if (paid > 0.005) { if (d > 0.005) delta += d; } else { delta += d; }   // paid can only top up (refund-first); unpaid re-prices either way
+        });
+      } else {                                                    // OFF: bill the added segment standalone
+        units.forEach((eu) => { const d = priceOf(eu, coveredEnd, newCovEnd); if (d > 0.005) delta += d; });
+      }
+      coveredEnd = newCovEnd; onReal = false;                     // real active is now full/at-target; any remainder spills
+    } else {                                                      // spilled: fresh ≤28-day continuation chunk, billed standalone
+      const chunkEnd = minISO(addDaysISO(coveredEnd, INV_CAP_DAYS), targetEnd);
+      units.forEach((eu) => { const d = priceOf(eu, coveredEnd, chunkEnd); if (d > 0.005) delta += d; });
+      coveredEnd = chunkEnd;
+    }
+  }
+  return Math.round(delta * 100) / 100;
+}
+/** PURE preview of extending r to a staged window (no mutation) — drives the picker banner.
+ *  The added charge is EXACTLY what billExtension will post (via previewExtensionDelta), so a
+ *  paid invoice (spills the added segment to a continuation invoice) or a manually-lined one
+ *  can never overstate it. Series-aware; honors the retroactive-pricing setting. */
 function extensionPreview(r, stagedStart, stagedEnd) {
   if (!r || !r.invoiceId) return null;
   const invs = rentalInvoices(r); if (!invs.length) return null;
   const ns = stagedStart || r.startDate, ne = stagedEnd || r.endDate;
   if (!ns || !ne) return null;
   const retro = retroPricingOn();
-  let subtotalDelta = 0; const perUnit = [];
-  const unitPaidSeries = (uId) => invs.reduce((a, inv) => a + (inv.lineItems || []).filter((li) => (li.kind === 'rental' || li.kind === 'extension') && li.ref === r.rentalId && li.unitId === uId).reduce((s, li) => s + itemPaid(inv, li), 0), 0);
-  rentalUnits(r).forEach((eu) => {
-    if (unitVoided(r, eu)) return;
-    const u = IDX.unit.get(eu.unitId); if (!u) return;
-    let d;
-    if (retro) {
-      const p = rentalPrice({ categoryId: u.categoryId, startDate: ns, endDate: ne, customerId: r.customerId });
-      d = Math.round(((p ? p.price : 0) - unitBilledSeries(r, eu.unitId)) * 100) / 100;
-      if (d < 0 && unitPaidSeries(eu.unitId) > 0.005) d = 0;   // paid lines can't drop (refund-first), matching billExtension
-    } else { const p = (r.endDate && ne > r.endDate) ? rentalPrice({ categoryId: u.categoryId, startDate: r.endDate, endDate: ne, customerId: r.customerId }) : null; d = p ? Math.round(p.price * 100) / 100 : 0; }
-    if (retro ? Math.abs(d) > 0.005 : d > 0.005) { subtotalDelta += d; perUnit.push({ unitId: eu.unitId, name: u.name, delta: d }); }   // retro counts reductions too
-  });
-  subtotalDelta = Math.round(subtotalDelta * 100) / 100;
+  const subtotalDelta = previewExtensionDelta(r, r.endDate, ne);
   const cust = IDX.customer.get(r.customerId);
   const exempt = !!(invs[0].taxExempt || cust?.salesTaxExempt);
   const taxDelta = exempt ? 0 : Math.round(subtotalDelta * TAX_RATE * 100) / 100;
   const curBal = invs.reduce((a, inv) => a + invoiceTotals(inv).balance, 0);
   const prevDays = Math.max(1, dayDiff(parseISO(r.startDate), parseISO(r.endDate)));
   const newDays = Math.max(1, dayDiff(parseISO(ns), parseISO(ne)));
-  return { subtotalDelta, taxDelta, perUnit, newBalance: curBal + subtotalDelta + taxDelta, daysDelta: newDays - prevDays, prevEnd: r.endDate, newEnd: ne, retro };
+  return { subtotalDelta, taxDelta, newBalance: curBal + subtotalDelta + taxDelta, daysDelta: newDays - prevDays, prevEnd: r.endDate, newEnd: ne, retro };
 }
 /** Bill a lengthened window across the rental's invoice series — fill the active open
  *  chunk toward its 28-day cap, then spill into fresh ≤28-day invoices (closed/locked
