@@ -48,6 +48,7 @@ function cleanTitle(ln) {
     .replace(/^\s*\/?\*+\s*/, '')   // leading /* or *
     .replace(/\s*\*+\/?\s*$/, '')   // trailing */ or *
     .replace(/═+/g, '')             // box rule chars
+    .replace(/^\s*[A-Z]+-\d{2,}\s+·\s+/, '')   // strip the stamped APP-NN · id (Step B); shown in the ID column
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 110);
@@ -64,6 +65,9 @@ function cleanTitle(ln) {
  */
 const letterCount = (s) => (s.match(/[A-Za-z]/g) || []).length;
 
+/** The stamped chapter id on a banner title line, if any (e.g. "APP-04"). */
+const stampOf = (ln) => (ln.match(/\b([A-Z]+-\d{2,})\s+·/) || [])[1] || null;
+
 function findBanners(lines) {
   const banners = [];
   const pures = [];   // rule lines that carry no title (box delimiters)
@@ -74,7 +78,7 @@ function findBanners(lines) {
     const t = cleanTitle(ln);
     if (opensComment && letterCount(t) >= 3) {
       // single-line banner:  /* ════ TITLE ════   (title rides the opening rule)
-      banners.push({ startLine: i + 1, title: t, anchors: [...(ln.match(ANCHOR) || [])] });
+      banners.push({ startLine: i + 1, title: t, anchors: [...(ln.match(ANCHOR) || [])], stamped: stampOf(ln) });
     } else {
       // a box delimiter — an open rule, or a close rule (with or without trailing text)
       pures.push(i);
@@ -92,6 +96,7 @@ function findBanners(lines) {
         startLine: open + 1,
         title: cleanTitle(lines[titleIdx]),
         anchors: [...(lines[titleIdx].match(ANCHOR) || [])],
+        stamped: stampOf(lines[titleIdx]),
       });
     }
   }
@@ -115,6 +120,7 @@ function buildIndex() {
   md += '# Code Atlas — generated chapter index (Part I · The Frontend)\n\n';
 
   let totalChapters = 0;
+  const misStamped = [];   // banners whose embedded id != positional id
   for (const { rel, key } of FILES) {
     let text;
     try { text = readFileSync(join(ROOT, rel), 'utf8'); }
@@ -131,6 +137,9 @@ function buildIndex() {
     md += '|----|------:|---------|---------------|-------------|\n';
     for (let b = 0; b < banners.length; b++) {
       const id = `${key}-${String(b + 1).padStart(2, '0')}`;
+      if (banners[b].stamped && banners[b].stamped !== id) {
+        misStamped.push(`${rel}:${banners[b].startLine} stamped ${banners[b].stamped}, expected ${id}`);
+      }
       const start = banners[b].startLine;
       const end = b + 1 < banners.length ? banners[b + 1].startLine - 1 : lines.length;
       const syms = symbolsIn(lines, start - 1, end);
@@ -145,6 +154,11 @@ function buildIndex() {
     md += '\n';
   }
   md += `---\n\n_Total: ${totalChapters} chapters across ${FILES.length} files._\n`;
+  if (misStamped.length) {
+    console.error('✗ banner id mismatch (a stamped APP-NN no longer matches its file order):');
+    for (const m of misStamped) console.error('   ' + m);
+    process.exit(1);
+  }
   return md;
 }
 

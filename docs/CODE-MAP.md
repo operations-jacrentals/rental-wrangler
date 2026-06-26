@@ -22,7 +22,10 @@
 - `app.js` is divided into **chapters** marked by `═` banners. Each chapter has a
   stable **ID** (`APP-01` … `APP-38`) and usually a legacy **`§`-anchor** (e.g.
   `§3`) that ties back to SPEC v8. *We never renumber `§`* — the IDs are the
-  stable handle; the `§`s are preserved as-is.
+  stable handle; the `§`s are preserved as-is. The IDs are **stamped into the
+  banner comments**, so `grep "APP-19" app.js` jumps straight to that chapter
+  (here, the Shop card). The generator verifies each stamp still matches its
+  file order, so a stray reorder fails `--check`.
 - The chapters do **not** sit in reading order in the file (history bolted later
   features in wherever they fit — e.g. `§13.3/§13.4` land before `§12`, and `§17`
   / `§18` each appear twice). **This map supplies the reading order** via *Acts*.

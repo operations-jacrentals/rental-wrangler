@@ -27,7 +27,7 @@ import {
 } from './config.js';
 
 /* ════════════════════════════════════════════════════════════════════════
-   §0.7 GLITCH CAPTURE — a small ring buffer of recent JS errors, so when you
+   APP-01 · §0.7 GLITCH CAPTURE — a small ring buffer of recent JS errors, so when you
    hand a glitch to Mr. Wrangler the repro packet carries what actually broke
    (the single most useful clue for the auto-fixer). Installed first thing so it
    catches boot-time errors too. Kept tiny + best-effort — never throws itself.
@@ -60,7 +60,7 @@ function wranglerIssueUrl(title, body, label = 'wrangler-fix') {
 }
 
 /* ════════════════════════════════════════════════════════════════════════
-   §1 UTILITIES & FORMATTING — $, el, esc, money, num, dates
+   APP-02 · §1 UTILITIES & FORMATTING — $, el, esc, money, num, dates
    ════════════════════════════════════════════════════════════════════════ */
 const $  = (sel, root = document) => root.querySelector(sel);
 const el = (tag, cls, html) => { const n = document.createElement(tag); if (cls) n.className = cls; if (html != null) n.innerHTML = html; return n; };
@@ -76,7 +76,7 @@ const dayDiff = (a, b) => Math.round((b - a) / 86400000);
 const SINGULAR = { customers: 'customer', rentals: 'rental', units: 'unit', invoices: 'invoice', categories: 'category', workOrders: 'workOrder', inspections: 'inspection', serviceOrders: 'unit' };
 
 /* ════════════════════════════════════════════════════════════════════════
-   §2 INDEXES & SEARCH — built once on load (SPEC §3: never scan per keystroke)
+   APP-03 · §2 INDEXES & SEARCH — built once on load (SPEC §3: never scan per keystroke)
    ════════════════════════════════════════════════════════════════════════ */
 const IDX = {};
 /* Split a legacy single "name" (optionally "First Last (Company)") into parts.
@@ -839,7 +839,7 @@ function searchBlob(card, rec) {
 const reindex = (card, rec) => { const id = idOf(card, rec); if (id != null) { IDX.search.set(card + ':' + id, searchBlob(card, rec)); if (card === 'vendors') IDX.vendor.set(id, rec); if (card === 'expenses') IDX.expense.set(id, rec); if (card === 'parts') IDX.part.set(id, rec); if (card === 'files') IDX.file.set(id, rec); } if (card === 'rentals' && !suppressLinkReindex) reindexRentalLinks(); saveSoon(); };
 
 /* ════════════════════════════════════════════════════════════════════════
-   §3 DERIVATIONS (SPEC §10) — money, availability, statuses, countdowns
+   APP-04 · §3 DERIVATIONS (SPEC §10) — money, availability, statuses, countdowns
    ════════════════════════════════════════════════════════════════════════ */
 const RATE_LABELS = { m: '4-Week', w: '7-Day', d: '1-Day' };
 
@@ -939,7 +939,7 @@ function transportLineItems(r) {
   });
   return out;
 }
-/* ════════════ RENTAL EXTENSIONS (Jac 2026-06-25) ════════════
+/* ════════════ APP-05 · RENTAL EXTENSIONS (Jac 2026-06-25) ════════════
    Lengthening a fragile (invoiced/out) rental's window re-prices the FULL window
    per unit and bills only the increment as additive 'extension' line(s) — never
    re-pricing or touching the original (possibly paid) 'rental' line. Positive
@@ -1213,7 +1213,7 @@ function healInvoiceLines(r) {
   });
 }
 
-/* ════════════ INLINE TRANSPORT EDITOR + GOOGLE MAPS (Jac 2026-06-15) ═════════
+/* ════════════ APP-06 · INLINE TRANSPORT EDITOR + GOOGLE MAPS (Jac 2026-06-15) ═════════
    Replaces the old `site` popup. An inline panel — minimap on top, address field,
    keyboard-navigable suggestions below — lets you set a site address in place.
    Progressive enhancement: real Google (Places + Map + Distance Matrix) when a
@@ -1793,7 +1793,7 @@ function categoryStats(cat) {
 }
 
 /* ════════════════════════════════════════════════════════════════════════
-   §4 STATE & SESSIONS — one normalized object + the session model (SPEC §0.1)
+   APP-07 · §4 STATE & SESSIONS — one normalized object + the session model (SPEC §0.1)
    ════════════════════════════════════════════════════════════════════════
    A "session" is the full grid state. The default (no tabs) session is pure
    list-search across all cards. Each TAB carries its own isolated session with
@@ -2430,7 +2430,7 @@ function filterTermPill(ft, i, scope) {
 }
 
 /* ════════════════════════════════════════════════════════════════════════
-   §5a ICONS — inline SVG (stroke-based, currentColor)
+   APP-08 · §5a ICONS — inline SVG (stroke-based, currentColor)
    ════════════════════════════════════════════════════════════════════════ */
 /* Icon registries (I, CARD_ICON, RING_ICON) live in icons.js — generic glyphs
    are vendored VERBATIM from Lucide (regenerate: `node tools/gen-icons.mjs`),
@@ -2438,7 +2438,7 @@ function filterTermPill(ft, i, scope) {
    stays below in §5, intentionally bespoke. */
 
 /* ════════════════════════════════════════════════════════════════════════
-   SETTINGS BOARD — admin customization (config.settings).
+   APP-09 · SETTINGS BOARD — admin customization (config.settings).
    A curated, VENDORED subset of Lucide (MIT) glyphs an admin can pin to a
    status option from the Statuses & Icons tab. Inlined as path data via ico()
    — same dependency-free pattern as I / CARD_ICON. NEVER a runtime import.
@@ -3677,7 +3677,7 @@ async function lockKpiFromWrangler(mi) {
 }
 
 /* ════════════════════════════════════════════════════════════════════════
-   §5 UI BUILDERS — ONE function per design rule (the SPEC v8 rulebook).
+   APP-10 · §5 UI BUILDERS — ONE function per design rule (the SPEC v8 rulebook).
    Every builder stamps its output with data-r="Rn". The flash-lint (R0)
    slowly pulses anything WITHOUT a stamp: if it flashes, it bypassed the
    system. Debug language: "that violates R4" → fix the builder, fixed
@@ -3698,7 +3698,7 @@ async function lockKpiFromWrangler(mi) {
 const SET_CARD = { rentalStatus: 'rentals', unitRentalStatus: 'rentals', invoiceStatus: 'invoices', unitInspectionStatus: 'inspections', inspectionResult: 'inspections', unitFleetStatus: 'units', gpsStatus: 'units', unitOrderStatus: 'workOrders', woPhase: 'workOrders', woType: 'workOrders', customerPayStatus: 'customers', accountType: 'customers', serviceStatus: 'serviceOrders', expenseReconcile: 'expenses', vendorType: 'vendors', companyFileType: 'files' };
 const dataAttrs = (data) => Object.entries(data || {}).map(([k, v]) => ` data-${k}="${esc(String(v))}"`).join('');
 /* ════════════════════════════════════════════════════════════════════════
-   FLAG-DRIVEN COLOR ENGINE — SPEC docs/specs/flag-color-system.md
+   APP-11 · FLAG-DRIVEN COLOR ENGINE — SPEC docs/specs/flag-color-system.md
    Flags answer "what must I do with this record right now?". getEntityColor →
    the computed status color: GRAY if formally archived, else the highest active-
    flag severity (red > yellow > green), else GREEN (nothing to do). FLAG_META
@@ -4164,7 +4164,7 @@ const RULE_META = {
   R24: ['Close ✕', 'closeX', 'red circle · white ✕ — the deliberate close/remove; hover-reveal variant on tabs'],
   R25: ['Sync banner', 'renderSyncBanner / #sync-banner', 'persistent “Not saving” plate — red hazard-stripe danger cap; raised when the backend sync is failing, hides on recovery. The ONE non-toast alert; lives on <body>, outside #app'],
 };
-/* ════════════ DESIGN-SYSTEM CATALOG — the tabbed Rulebook (Jac 2026-06-14) ════
+/* ════════════ APP-12 · DESIGN-SYSTEM CATALOG — the tabbed Rulebook (Jac 2026-06-14) ════
    The Rulebook grew from "stamped element rules" (R0–R24 above) into the WHOLE
    design system. RB_FOUNDATION = the primitives the rules are built FROM (type,
    color, form, surfaces, motion…) — NOT data-r stamped, they're the tokens &
@@ -4333,7 +4333,7 @@ function onInspectMove(e) {
 }
 
 /* ════════════════════════════════════════════════════════════════════════
-   §6 LIST ROWS — row meta + the universal row template
+   APP-13 · §6 LIST ROWS — row meta + the universal row template
    ════════════════════════════════════════════════════════════════════════ */
 const ROW_META = {
   rentals:    (r) => ({ title: rentalDisplayName(r), sub: IDX.customer.get(r.customerId)?.name || '', color: rentalStatusDisplay(r).color }),
@@ -4444,7 +4444,7 @@ function unitWoSoPill(u) {
 }
 
 /* ════════════════════════════════════════════════════════════════════════
-   §6b PER-CARD ROWS
+   APP-14 · §6b PER-CARD ROWS
    ════════════════════════════════════════════════════════════════════════ */
 function rowEl(card, rec) {
   const id = idOf(card, rec);
@@ -4722,7 +4722,7 @@ const ROWS = {
 };
 
 /* ════════════════════════════════════════════════════════════════════════
-   §7 COLUMN REGISTRY & FOOTER TOTALS — one source of truth per card
+   APP-15 · §7 COLUMN REGISTRY & FOOTER TOTALS — one source of truth per card
    (spreadsheet popup), the List-View totals row, and (later) the List-View
    value picker. Each column: { key, label, type, get(rec), cell(rec), badge,
    set?, meta?, agg }. `get` returns the RAW value (number, or status key for
@@ -4919,7 +4919,7 @@ function rowInnerHTML(card, rec) {
 }
 
 /* ════════════════════════════════════════════════════════════════════════
-   §8 DETAIL RENDERERS — kv/efld/notes · v2 helpers (yard tool, WO sections,
+   APP-16 · §8 DETAIL RENDERERS — kv/efld/notes · v2 helpers (yard tool, WO sections,
    journeys, head flags) · the DETAIL{} map · history
    ════════════════════════════════════════════════════════════════════════ */
 /* Label-free stacked field (§6.2 #3): value + optional prefix/suffix qualifier.
@@ -6274,7 +6274,7 @@ function historyFor(card, rec) {
 }
 
 /* ════════════════════════════════════════════════════════════════════════
-   §9 CARDS & GRID — cardEl, listView, the 3-column shell
+   APP-17 · §9 CARDS & GRID — cardEl, listView, the 3-column shell
    ════════════════════════════════════════════════════════════════════════ */
 function listFor(card, session) {
   // search mode → filtered across all; anchored (cascade) → cascade subset; else → all
@@ -6369,7 +6369,7 @@ function detailTitle(card, rec) {
   }
 }
 /* ════════════════════════════════════════════════════════════════════════
- * 3-COLUMN LAYOUT (display-only shell over the existing cards).
+ * APP-18 · 3-COLUMN LAYOUT (display-only shell over the existing cards).
  * Each column paints ONE active "member" card; the rest are a tab/icon away.
  * The 3 shop members (inspections/serviceOrders/workOrders) still render via the
  * single 'shop' engine card with its segment pinned — NO engine/anchor/cascade
@@ -6650,7 +6650,7 @@ function listView(cardDef, session) {
 const PLUS_NEW = new Set(['rentals', 'invoices', 'customers']);
 
 /* ════════════════════════════════════════════════════════════════════════
-   §10 SHOP CARD — merged Work Orders + Service Orders + Inspections
+   APP-19 · §10 SHOP CARD — merged Work Orders + Service Orders + Inspections
    ────────────────────────────────────────────────────────────────────────
    ITERATE HERE: this whole block is the Shop card's presentation. The grid
    plumbing (anchor/cascade/tabs/standard-mode) routes through it via the
@@ -6844,7 +6844,7 @@ function shopRowEl(type, rec) {
 }
 
 /* ════════════════════════════════════════════════════════════════════════
-   §11 HEADER, KPI & BOTTOM BAR
+   APP-20 · §11 HEADER, KPI & BOTTOM BAR
    ════════════════════════════════════════════════════════════════════════ */
 /** Apple-style band coloring (§11): 0-25 red · 25-50 orange · 50-75 yellow ·
  *  75-100 green · 95-100 glowing green. */
@@ -6968,7 +6968,7 @@ const KPI_HELP = {
 };
 
 /* ════════════════════════════════════════════════════════════════════════
-   §11b KPI METRIC ENGINE — admin-definable KPIs (Settings → KPIs & Rings).
+   APP-21 · §11b KPI METRIC ENGINE — admin-definable KPIs (Settings → KPIs & Rings).
    A SAFE, declarative spec (no eval, Pages-public-safe): a metric is filters +
    an aggregate over an entity allowlist, evaluated by kpiEval(). The shipped 15
    KPIs route through kind:'builtin' (the legacy math above), so with no admin
@@ -7137,7 +7137,7 @@ function scorePop(roleId, ringIdx, delta, unit) {
   btn.appendChild(pop);                                            // floats up + fades (CSS), then removed
   setTimeout(() => pop.remove(), 760);
 }
-/* ════════════ COMING 2026 — the roadmap morale plate (Jac 2026-06-23) ════════
+/* ════════════ APP-22 · COMING 2026 — the roadmap morale plate (Jac 2026-06-23) ════════
    The KPI rings ride behind a blur (the metrics engine isn't wired up yet). Rather
    than leave dead frosted glass up top, the rings wear a "Coming 2026" data-plate
    that opens this roadmap — what's on the docket plus every area of the yard we're
@@ -7348,7 +7348,7 @@ function mobileDockEl() {
   return d;
 }
 /* ════════════════════════════════════════════════════════════════════════
-   §17 INTERNAL TEAM DOCK (Jac, Phase 7) — a bottom-bar chat built on the Phase-6
+   APP-23 · §17 INTERNAL TEAM DOCK (Jac, Phase 7) — a bottom-bar chat built on the Phase-6
    record comments: a live "what's flagged" feed, a rail of TAGGED elements
    (records / lines / pills / prices) shown as colored tabs you add + remove so a
    thread carries its own context, and role buttons that toggle who's included.
@@ -8119,7 +8119,7 @@ function tabBadge(card, rec) {
 }
 
 /* ════════════════════════════════════════════════════════════════════════
-   §13.3 CARD GRAPH VIEW (Phase 4) — a per-card charts overlay, sibling to the
+   APP-24 · §13.3 CARD GRAPH VIEW (Phase 4) — a per-card charts overlay, sibling to the
    Board View. Units first: Field-Call stats, an inspection donut, a parts donut,
    and the unit roster. Pure SVG/CSS — no chart lib. (FC = Field Call.)
    ════════════════════════════════════════════════════════════════════════ */
@@ -8225,7 +8225,7 @@ function gvBuckets(days) {
   return out;
 }
 /* ════════════════════════════════════════════════════════════════════════
-   §13.4 GRAPH CAROUSEL (Jac 2026-06-16) — the per-card Graph is a deck of
+   APP-25 · §13.4 GRAPH CAROUSEL (Jac 2026-06-16) — the per-card Graph is a deck of
    INTERACTIVE views stacked ABOVE the list. Chevrons cycle the view; clicking a
    slice / bar / row / number TOGGLES a search entry (the one filtering pathway),
    so the chart drives the rows. Same-column toggles OR together. Each view
@@ -8671,7 +8671,7 @@ function cardGraphBody(card) {
 }
 
 /* ════════════════════════════════════════════════════════════════════════
-   §12 OVERLAYS & BOARDS — renderOverlay kinds + back-office board popups
+   APP-26 · §12 OVERLAYS & BOARDS — renderOverlay kinds + back-office board popups
    ════════════════════════════════════════════════════════════════════════ */
 let _ovScroll = {}, _ovLastKind = null;   // keep a popup-body's scroll across its OWN re-renders (sign/selfie)
 /* ── §M3 — phone hardware-BACK button (Android) joins the dismiss chain. We keep at
@@ -9544,7 +9544,7 @@ function buildPopupEl(o, overlay, opts = {}) {
   return true;
 }
 const openOverlay = (o) => { state.datepick = null; _ovScroll[o.kind] = 0; state.overlay = o; renderOverlay(); };   // fresh open starts at top
-/* ════════════ RB-WINDOWS catalog (Jac 2026-06-22) — the admin Rulebook's index of
+/* ════════════ APP-27 · RB-WINDOWS catalog (Jac 2026-06-22) — the admin Rulebook's index of
    EVERY popup window. One entry per renderOverlay kind so the "Windows" tab can list
    it and (on expand) show an inert live preview via buildPopupEl. sample() returns
    representative args from the demo seed (DATA.*); a kind whose record we don't have
@@ -9640,7 +9640,7 @@ async function sendFeedback() {
   } catch (e) { o.busy = false; o.error = 'Couldn’t send — check your connection and try again.'; renderOverlay(); }
 }
 /* ════════════════════════════════════════════════════════════════════════
-   §18 MR. WRANGLER — the in-app AI (Claude via the Apps Script backend).
+   APP-28 · §18 MR. WRANGLER — the in-app AI (Claude via the Apps Script backend).
    The API key NEVER touches this public repo: the frontend POSTs to BACKEND_URL
    (action 'wrangler'); Code.gs calls api.anthropic.com with the key from a Script
    Property. Carries a compact data digest + (when opened from a record) its detail.
@@ -9904,7 +9904,7 @@ const stripWranglerAction = (text) => String(text || '')
   .replace(/```wrangler-action\s*[\s\S]*$/, '')   // #152 also drop a truncated, unclosed fence
   .trim();
 
-/* ════════════ Mr. Wrangler ACTS on your data (Jac 2026-06-16) ════════════════
+/* ════════════ APP-29 · Mr. Wrangler ACTS on your data (Jac 2026-06-16) ════════════════
    add / update / bulk-import items — NEVER delete, NEVER money/card/auth/WO. Only
    safe, allowlisted fields. Every op previews in the chat before it writes. */
 const WR_FUNNEL = ['Inbound Lead', 'Outbound Lead', "Don't Contact", 'Contacted', 'Not A No!', 'Payment Discussed', 'Paid'];
@@ -10588,7 +10588,7 @@ function bvCustomizePanel(card) {
 }
 
 /* ════════════════════════════════════════════════════════════════════════
-   §13 DROPDOWNS — openDropdown + status/fleet/funnel/sort menus
+   APP-30 · §13 DROPDOWNS — openDropdown + status/fleet/funnel/sort menus
    ════════════════════════════════════════════════════════════════════════ */
 /** Shared floating dropdown (matches board chrome) — used by the status pill
  *  dropdown and the in-card Sort menu. */
@@ -10858,7 +10858,7 @@ function setFocusedCard(cardId) {
 }
 
 /* ════════════════════════════════════════════════════════════════════════
-   §14 RENDER PIPELINE + toast
+   APP-31 · §14 RENDER PIPELINE + toast
    ════════════════════════════════════════════════════════════════════════ */
 let renderCount = 0;
 const scrollMemo = {};   // persistent scroll positions, keyed `card|view` (list vs which record)
@@ -10983,11 +10983,11 @@ function toast(msg) {
 }
 
 /* ════════════════════════════════════════════════════════════════════════
-   §15 EVENT HANDLERS — onClick/onInput/onChange (single listener tree)
+   APP-32 · §15 EVENT HANDLERS — onClick/onInput/onChange (single listener tree)
    ⚠ §16 ACTIONS/MUTATIONS interleave from here to §17 — see the SPEC v8 map
    ════════════════════════════════════════════════════════════════════════ */
 /* ════════════════════════════════════════════════════════════════════════
-   §15c DRAG & DROP LINK ENGINE (DRAGDROP-DESIGN.md) — custom pointer engine.
+   APP-33 · §15c DRAG & DROP LINK ENGINE (DRAGDROP-DESIGN.md) — custom pointer engine.
    Native HTML5 DnD rejected: the mid-drag column swap re-renders the source
    row, which silently kills native drags (and draggable breaks inline-edit).
    Everything drag-critical (ghost chip + cancel arc) lives in #drag-layer on
@@ -12426,7 +12426,7 @@ function clearFieldCall(rentalId) {
 }
 
 /* ════════════════════════════════════════════════════════════════════════
-   §16 ACTIONS / MUTATIONS — every state change funnels through here
+   APP-34 · §16 ACTIONS / MUTATIONS — every state change funnels through here
    (status setters, drag links, Quotes, captures, site, WO/invoice lines, +New)
    ════════════════════════════════════════════════════════════════════════ */
 /* ── v2 BUILD actions: condition/wash segs · yard captures · site popup · WO complete ── */
@@ -13337,7 +13337,7 @@ function saveNewCustomer() {
   else { anchorRecord('customers', id); toast(`${c.name} added.`); }
 }
 /* ════════════════════════════════════════════════════════════════════════
- * §17 STRIPE / PAYMENTS — card-on-file + invoice charging (client side).
+ * APP-35 · §17 STRIPE / PAYMENTS — card-on-file + invoice charging (client side).
  * Card data is entered ONLY in Stripe's iframe (Card Element) and tokenized in
  * the browser; raw PAN/CVC never touches our code or the backend. The backend
  * owns the money math — the client never sends an amount.
@@ -14365,7 +14365,7 @@ function winPickerEl(r) {
 }
 
 /* ════════════════════════════════════════════════════════════════════════
-   §5.4d — DATE SEARCH PICKER. A standalone calendar that REUSES the rental
+   APP-36 · §5.4d — DATE SEARCH PICKER. A standalone calendar that REUSES the rental
    window-picker's look (.winpicker/.wp-*) but none of its rental/availability
    coupling. Type "date"/"dates"→Enter (or click a date chip) to open; tap one
    day or two to set a range; Done pins a `__date` filter term on the scope.
@@ -14806,10 +14806,10 @@ function mergeInvoiceInto(keepId, absorbId) {
 }
 
 /* ════════════════════════════════════════════════════════════════════════
-   §18 PERSISTENCE & BOOT
+   APP-37 · §18 PERSISTENCE & BOOT
    ════════════════════════════════════════════════════════════════════════ */
 /* ════════════════════════════════════════════════════════════════════════
-   §18b BACKEND SYNC — Google Sheets via the Apps Script web app
+   APP-38 · §18b BACKEND SYNC — Google Sheets via the Apps Script web app
    ════════════════════════════════════════════════════════════════════════
    The app loads its data from the Sheet on sign-in, seeds the Sheet from the
    demo data on first run, and auto-saves (debounced) after every change.
