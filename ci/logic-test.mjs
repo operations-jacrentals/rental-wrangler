@@ -342,6 +342,43 @@ try {
       ok(upByName('customers', 'Nobody McNobodyface', { phone: '1' }).issues.some((s) => /no customer/.test(s)), 'WR-update: an unknown name is refused');
     }
 
+    // 12j) Follow-ups (Jac) — bill/charge by CUSTOMER name, and Expenses/Inspections/Work Orders writable.
+    {
+      // bill by customer → their one un-invoiced rental
+      const fa = { customerId: 'C-WRFA', name: 'Bill ByName', accountType: 'Non-Business', firstName: 'Bill', lastName: 'ByName', phone: '', activityLog: [] };
+      T.DATA.customers.push(fa); T.IDX.customer.set('C-WRFA', fa);
+      const uB = T.DATA.units.find((u) => u.fleetStatus === 'Active');
+      const mkU = (u) => ({ unitId: u.unitId, status: 'Reserved', transportType: 'Self', deliveryAddress: '', recoveryAddress: '', transportMiles: 0, startCapture: null, endCapture: null, fcCapture: null });
+      const rFA = { rentalId: 'R-WRFA', customerId: 'C-WRFA', unitId: uB.unitId, categoryId: uB.categoryId, rentalName: 'FA rental', startDate: '2099-10-01', endDate: '2099-10-08', startTime: '', status: 'Reserved', transportType: 'Self', deliveryAddress: '', po: '', invoiceId: null, units: [mkU(uB)], notes: '', mock: true };
+      T.DATA.rentals.push(rFA); T.IDX.rental.set('R-WRFA', rFA);
+      const bc = T.wrValidatePlan({ action: 'data', ops: [{ op: 'operate', name: 'billRental', params: { customer: 'Bill ByName' } }] });
+      ok(bc.ops.length === 1 && /invoice rental R-WRFA/.test(bc.ops[0].summary), 'WR-bill-by-customer: finds the one un-invoiced rental by name');
+      ok(T.wrValidatePlan({ action: 'data', ops: [{ op: 'operate', name: 'billRental', params: { customer: 'C0009' } }] }).issues.length >= 0, 'WR-bill-by-customer: runs for an id-or-name ref');
+      // charge by customer → their one open invoice (offline → reaches the online gate, proving the invoice was picked)
+      const fb = { customerId: 'C-WRFB', name: 'Pay ByName', accountType: 'Non-Business', firstName: 'Pay', lastName: 'ByName', phone: '', activityLog: [] };
+      T.DATA.customers.push(fb); T.IDX.customer.set('C-WRFB', fb);
+      const invFB = { invoiceId: 'I-WRFB', customerId: 'C-WRFB', rentalIds: [], date: T.TODAY_ISO, dueDate: T.TODAY_ISO, po: '', amountPaid: 0, lineItems: [{ lid: 'fb1', label: 'L', amount: 50, taxable: false, kind: 'custom' }], mock: true };
+      T.DATA.invoices.push(invFB); T.IDX.invoice.set('I-WRFB', invFB);
+      const pc = T.wrValidatePlan({ action: 'data', ops: [{ op: 'operate', name: 'recordPayment', params: { customer: 'Pay ByName', method: 'cash' } }] });
+      ok(pc.issues.some((s) => /needs to be online/.test(s)) && !pc.issues.some((s) => /no open invoice/.test(s)), 'WR-charge-by-customer: picks the one open invoice (then gated offline)');
+      ok(T.wrValidatePlan({ action: 'data', ops: [{ op: 'operate', name: 'recordPayment', params: { customer: 'Bill ByName', method: 'cash' } }] }).issues.some((s) => /no open invoice/.test(s)), 'WR-charge-by-customer: a customer with no open invoice is refused');
+
+      // Expenses / Inspections / Work Orders writable
+      const ven0 = T.DATA.vendors[0];
+      const ex = T.wrValidatePlan({ action: 'data', ops: [{ op: 'create', entity: 'expenses', fields: { vendorId: ven0.name, amount: '125.50', category: 'Parts' } }] });
+      ok(ex.ops.length === 1 && ex.ops[0].fields.vendorId === ven0.vendorId && ex.ops[0].fields.amount === 125.5, 'WR-board: expense created (vendor by name, amount numeric)');
+      const uI = T.DATA.units.find((u) => u.fleetStatus === 'Active');
+      const insp = T.wrValidatePlan({ action: 'data', ops: [{ op: 'create', entity: 'inspections', fields: { unitId: uI.name, description: 'wr insp' } }] });
+      ok(insp.ops.length === 1 && insp.ops[0].fields.unitId === uI.unitId, 'WR-board: inspection created (unit by name)');
+      ok(T.wrValidatePlan({ action: 'data', ops: [{ op: 'create', entity: 'inspections', fields: { description: 'no unit' } }] }).issues.some((s) => /needs unitId/.test(s)), 'WR-board: an inspection with no unit is refused');
+      const woP = T.wrValidatePlan({ action: 'data', ops: [{ op: 'create', entity: 'workOrders', fields: { unitId: uI.name, woReport: 'Fix it', phase: 'Complete' } }] });
+      ok(woP.ops.length === 1 && woP.ops[0].fields.unitId === uI.unitId && !('phase' in woP.ops[0].fields), 'WR-board: work order created; a phase=Complete is stripped (completion stays human)');
+      const woBefore = T.DATA.workOrders.length;
+      T.applyWranglerData(woP);
+      const newWo = T.DATA.workOrders[T.DATA.workOrders.length - 1];
+      ok(T.DATA.workOrders.length === woBefore + 1 && newWo.phase !== 'Complete', 'WR-board: the created work order is not Complete');
+    }
+
     // 13) Transport pricing v2 — $3.50/mile + $50 load + $20 fuel (fueled), per leg.
     const tp = (a) => T.computeTransportPrice(a).price;
     // 10 mi Delivery, fueled: (3.5*10 + 50 + 20) * 1 = 105
