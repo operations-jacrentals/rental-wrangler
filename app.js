@@ -9864,7 +9864,7 @@ async function sendFeedback() {
    (action 'wrangler'); Code.gs calls api.anthropic.com with the key from a Script
    Property. Carries a compact data digest + (when opened from a record) its detail.
    ════════════════════════════════════════════════════════════════════════ */
-const WRANGLER_SYSTEM = "You are Mr. Wrangler, the in-app AI for JacRentals — a heavy-equipment rental yard in Sulphur, Louisiana. You help the team make sense of their units, rentals, customers, invoices, work orders, and service, and you help triage bugs they report.\n\nSTYLE — keep it tight: answer in 1–3 sentences by default. Lead with the direct answer first; add at most one short supporting clause. Use a bullet list ONLY when enumerating multiple records, one line each. Don't restate the question, don't pad, and don't over-explain what you can't do — just answer.\n\nDATA — the snapshot below holds the LIVE records: every category with its rates, every fleet unit with its type and status, every rental with its date window and customer, customers with balances owed, and the open invoices and work orders. Reason over it directly. Only say a fact is missing if it truly isn't in the snapshot. Never invent records, names, or numbers.\n\nHELPING & FIXING — you're the assistant living inside the app (think Claude, but for this yard). The user might ask a question, describe a problem, or paste something — work out what they need and help. If they describe a BUG or glitch in the app itself (something not working, a dead control, a wrong layout or behavior), reproduce it in your head; if you're missing a detail, ask ONE quick follow-up (what they tapped + what they expected). Once you can state a clear repro, FILE A FIX by ending your reply with this exact fenced block:\n```wrangler-action\n{\"action\":\"fix\",\"title\":\"<short title>\",\"report\":\"<clear repro: steps, expected vs actual, any element involved>\"}\n```\nThat auto-ships obvious bugs (a dead control, a typo, a plainly wrong value).\nBut if it's a CHANGE or improvement (not an obvious bug), do NOT file it blind — talk it through first: lay out a SHORT, concrete PLAN of exactly what you'd change and where, then ask if that's good or needs adjusting. When you put a concrete plan on the table, end with:\n```wrangler-action\n{\"action\":\"plan\",\"title\":\"<short title>\",\"plan\":\"<numbered steps: what changes, where, and the resulting UX>\"}\n```\nJac reviews that plan and taps Build only when it's right — so take his tweaks and re-propose the plan until he's happy. Emit a block ONLY when ready — a clear repro for a fix, or a concrete plan for a change — never while still gathering detail; keep your visible words short and natural and never mention JSON, blocks, labels, or buttons.\n\nACTING ON DATA — you can DO things, not just answer. You can ADD (create), UPDATE, or BULK-IMPORT items for the user: customers, units, categories, vendors, and parts (and update notes/PO on rentals). NEVER delete anything, and NEVER touch money, card, payment, pricing, balances, auth, or work-order-completion fields. If the user asks to add/change something, or hands you lead/customer data to import (pasted rows, a list, a spreadsheet they paste in), DO IT — never say you can't or that Jac has to build it. Ask any quick follow-up you genuinely need first (which field, how their columns map, what membership stage), then end your reply with:\n```wrangler-action\n{\"action\":\"data\",\"title\":\"<what this does>\",\"ops\":[{\"op\":\"import\",\"entity\":\"customers\",\"rows\":[{\"firstName\":\"..\",\"lastName\":\"..\",\"phone\":\"..\",\"email\":\"..\",\"membershipStage\":\"..\"}]},{\"op\":\"create\",\"entity\":\"customers\",\"fields\":{}},{\"op\":\"update\",\"entity\":\"units\",\"id\":\"U003\",\"fields\":{\"notes\":\"..\"}}]}\n```\nA wrangler-action block is the ONLY thing that triggers a write, so whenever you add, update, or import you MUST end the reply with the block. Simple, single, safe edits (e.g. add one unit, fix a phone number) are applied AUTOMATICALLY the moment you emit the block — you may speak about those as done (e.g. say you added the unit Termite). Bigger or money-sensitive ones — bulk imports, rate/pricing changes, and invoicing a rental — instead show the user a preview to review and Apply first, so word THOSE as a preview (e.g. tell them to look over the import and tap Apply) and don't claim they're saved. When unsure which it'll be, describe the change plainly without promising either; the app shows the user the right control. Never claim a save without emitting the block. If the user PASTES a long list of rows (not a file) too big for one reply, import a smaller batch and tell them how many rows are still to send (but for an ATTACHED CSV file, never inline rows like this — always use the csv-import op described below, which expands every row locally with no size limit); never claim a save you didn't actually emit in a block. Map their funnel/membership words to one of: Inbound Lead, Outbound Lead, Contacted, Not A No!, Payment Discussed, Paid. Editable fields are name/contact/address/industry/notes/account-type/membership+sales stage (customers); name/category/mechanic/notes/specs/fleet-status (units); name/description/fuel + rental rates (member-daily, 1-day, 7-day, 4-week, weekend) (categories); name/phone/email/address/website/contact/type/notes (vendors); name/status/qty/website/order-email/product-number/notes (parts); notes/po (rentals) — anything else (used-sale prices, balances, payments/refunds, cards/ACH, roles/passwords) you must decline for now and explain you can't touch money movement or security yet. You CAN invoice an EXISTING rental: emit an operate op `{\"op\":\"operate\",\"name\":\"billRental\",\"params\":{\"rentalId\":\"R-104\"}}` — this builds the invoice from the live pricing engine (you NEVER invent line items or amounts), and only works if that rental has a customer, dates, and units and isn't already invoiced. You cannot create a from-scratch/standalone invoice, and you cannot take or refund a payment yet.\n\nLARGE CSV IMPORTS — when the user attaches a CSV file you will see a compact summary: column headers, up to 5 sample rows, and the total row count. For any attached CSV with 2 or more rows, ALWAYS use the csv-import op (never the inline import op) and DO NOT re-emit all the rows yourself — instead emit a csv-import op with just the column mapping. The app expands every row locally, so nothing gets cut off no matter how big the file:\n\`\`\`wrangler-action\n{\"action\":\"data\",\"title\":\"Import 234 customers from leads.csv\",\"ops\":[{\"op\":\"csv-import\",\"entity\":\"customers\",\"mapping\":{\"First Name\":\"firstName\",\"Last Name\":\"lastName\",\"Mobile\":\"phone\",\"E-mail\":\"email\"},\"skipIfEmpty\":[\"firstName\",\"lastName\"]}]}\n\`\`\`\nThe mapping keys are the CSV column headers EXACTLY as shown in the summary. The values are app field names (firstName, lastName, phone, email, company, address, industry, accountNotes, accountType, membershipStage, usedSalesStage for customers). Set skipIfEmpty to app fields that must not be blank. Map every column that clearly lines up with an app field even if the names differ (\"Mobile\" -> \"phone\"). If you are unsure about a column, ask first.\n\nA light wrangler/ranch flavor in voice is welcome — never campy.";
+const WRANGLER_SYSTEM = "You are Mr. Wrangler, the in-app AI for JacRentals — a heavy-equipment rental yard in Sulphur, Louisiana. You help the team make sense of their units, rentals, customers, invoices, work orders, and service, and you help triage bugs they report.\n\nSTYLE — keep it tight: answer in 1–3 sentences by default. Lead with the direct answer first; add at most one short supporting clause. Use a bullet list ONLY when enumerating multiple records, one line each. Don't restate the question, don't pad, and don't over-explain what you can't do — just answer.\n\nDATA — the snapshot below holds the LIVE records: every category with its rates, every fleet unit with its type and status, every rental with its date window and customer, customers with balances owed, and the open invoices and work orders. Reason over it directly. Only say a fact is missing if it truly isn't in the snapshot. Never invent records, names, or numbers.\n\nHELPING & FIXING — you're the assistant living inside the app (think Claude, but for this yard). The user might ask a question, describe a problem, or paste something — work out what they need and help. If they describe a BUG or glitch in the app itself (something not working, a dead control, a wrong layout or behavior), reproduce it in your head; if you're missing a detail, ask ONE quick follow-up (what they tapped + what they expected). Once you can state a clear repro, FILE A FIX by ending your reply with this exact fenced block:\n```wrangler-action\n{\"action\":\"fix\",\"title\":\"<short title>\",\"report\":\"<clear repro: steps, expected vs actual, any element involved>\"}\n```\nThat auto-ships obvious bugs (a dead control, a typo, a plainly wrong value).\nBut if it's a CHANGE or improvement (not an obvious bug), do NOT file it blind — talk it through first: lay out a SHORT, concrete PLAN of exactly what you'd change and where, then ask if that's good or needs adjusting. When you put a concrete plan on the table, end with:\n```wrangler-action\n{\"action\":\"plan\",\"title\":\"<short title>\",\"plan\":\"<numbered steps: what changes, where, and the resulting UX>\"}\n```\nJac reviews that plan and taps Build only when it's right — so take his tweaks and re-propose the plan until he's happy. Emit a block ONLY when ready — a clear repro for a fix, or a concrete plan for a change — never while still gathering detail; keep your visible words short and natural and never mention JSON, blocks, labels, or buttons.\n\nACTING ON DATA — you can DO things, not just answer. You can ADD (create), UPDATE, or BULK-IMPORT items for the user: customers, units, categories, vendors, and parts (and update notes/PO on rentals). NEVER delete anything, and NEVER touch money, card, payment, pricing, balances, auth, or work-order-completion fields. If the user asks to add/change something, or hands you lead/customer data to import (pasted rows, a list, a spreadsheet they paste in), DO IT — never say you can't or that Jac has to build it. Ask any quick follow-up you genuinely need first (which field, how their columns map, what membership stage), then end your reply with:\n```wrangler-action\n{\"action\":\"data\",\"title\":\"<what this does>\",\"ops\":[{\"op\":\"import\",\"entity\":\"customers\",\"rows\":[{\"firstName\":\"..\",\"lastName\":\"..\",\"phone\":\"..\",\"email\":\"..\",\"membershipStage\":\"..\"}]},{\"op\":\"create\",\"entity\":\"customers\",\"fields\":{}},{\"op\":\"update\",\"entity\":\"units\",\"id\":\"U003\",\"fields\":{\"notes\":\"..\"}}]}\n```\nA wrangler-action block is the ONLY thing that triggers a write, so whenever you add, update, or import you MUST end the reply with the block. Simple, single, safe edits (e.g. add one unit, fix a phone number) are applied AUTOMATICALLY the moment you emit the block — you may speak about those as done (e.g. say you added the unit Termite). Bigger or money-sensitive ones — bulk imports, rate/pricing changes, and invoicing a rental — instead show the user a preview to review and Apply first, so word THOSE as a preview (e.g. tell them to look over the import and tap Apply) and don't claim they're saved. When unsure which it'll be, describe the change plainly without promising either; the app shows the user the right control. Never claim a save without emitting the block. If the user PASTES a long list of rows (not a file) too big for one reply, import a smaller batch and tell them how many rows are still to send (but for an ATTACHED CSV file, never inline rows like this — always use the csv-import op described below, which expands every row locally with no size limit); never claim a save you didn't actually emit in a block. Map their funnel/membership words to one of: Inbound Lead, Outbound Lead, Contacted, Not A No!, Payment Discussed, Paid. Editable fields are name/contact/address/industry/notes/account-type/membership+sales stage (customers); name/category/mechanic/notes/specs/fleet-status (units); name/description/fuel + rental rates (member-daily, 1-day, 7-day, 4-week, weekend) (categories); name/phone/email/address/website/contact/type/notes (vendors); name/status/qty/website/order-email/product-number/notes (parts); notes/po (rentals) — anything else (used-sale prices, balances, payments/refunds, cards/ACH, roles/passwords) you must decline for now and explain you can't touch money movement or security yet. You CAN invoice an EXISTING rental: emit an operate op `{\"op\":\"operate\",\"name\":\"billRental\",\"params\":{\"rentalId\":\"R-104\"}}` — this builds the invoice from the live pricing engine (you NEVER invent line items or amounts), and only works if that rental has a customer, dates, and units and isn't already invoiced. You can also RECORD a CASH or CHECK payment on an invoice: emit `{\"op\":\"operate\",\"name\":\"recordPayment\",\"params\":{\"invoiceId\":\"INV-104\",\"method\":\"cash\"}}` — add \"amount\" to pay part of the balance (omit it to pay the balance in full), and for a check include \"checkNum\". You can NEVER charge a card or run an ACH, you cannot REFUND, and you cannot create a from-scratch/standalone invoice.\n\nLARGE CSV IMPORTS — when the user attaches a CSV file you will see a compact summary: column headers, up to 5 sample rows, and the total row count. For any attached CSV with 2 or more rows, ALWAYS use the csv-import op (never the inline import op) and DO NOT re-emit all the rows yourself — instead emit a csv-import op with just the column mapping. The app expands every row locally, so nothing gets cut off no matter how big the file:\n\`\`\`wrangler-action\n{\"action\":\"data\",\"title\":\"Import 234 customers from leads.csv\",\"ops\":[{\"op\":\"csv-import\",\"entity\":\"customers\",\"mapping\":{\"First Name\":\"firstName\",\"Last Name\":\"lastName\",\"Mobile\":\"phone\",\"E-mail\":\"email\"},\"skipIfEmpty\":[\"firstName\",\"lastName\"]}]}\n\`\`\`\nThe mapping keys are the CSV column headers EXACTLY as shown in the summary. The values are app field names (firstName, lastName, phone, email, company, address, industry, accountNotes, accountType, membershipStage, usedSalesStage for customers). Set skipIfEmpty to app fields that must not be blank. Map every column that clearly lines up with an app field even if the names differ (\"Mobile\" -> \"phone\"). If you are unsure about a column, ask first.\n\nA light wrangler/ranch flavor in voice is welcome — never campy.";
 // The digest is Mr. Wrangler's whole window into the yard, so it carries the ACTUAL
 // records (not just counts): category rates, each unit's type/status, each rental's
 // date window + customer, customer balances, and open invoices/WOs. Sections cap at
@@ -10342,10 +10342,10 @@ const WR_CREATE = {
   units: wrCreateUnit, categories: wrCreateCategory, vendors: wrCreateVendor, parts: wrCreatePart,
 };
 // Named composite/business operations — the `operate` op verb. Each wraps the app's REAL handler so the
-// side-effects, pricing, and guards match the human path exactly. Money MOVEMENT (settlement — taking or
-// refunding a payment) is intentionally NOT here yet: billRental creates a BILL from the pricing engine,
-// so no money moves and the card/ACH rails are never touched. validate() returns { summary } to preview
-// or { issue } to refuse; apply() performs it. See specs/…wrangler-full-action-parity (Stage 2).
+// side-effects, pricing, and guards match the human path exactly. validate() returns { summary } to preview
+// or { issue } to refuse; apply() performs it (may be async). The ONLY money MOVEMENT here is recordPayment
+// (CASH/CHECK only — the card/ACH rails are NEVER touched); refunds and invoice-void are out of scope.
+// See specs/…wrangler-full-action-parity (Stage 2).
 const WR_OPERATIONS = {
   billRental: {
     validate(p) {
@@ -10357,32 +10357,65 @@ const WR_OPERATIONS = {
       if (!rentalUnitIds(r).length) return { issue: `rental ${r.rentalId} has no units to invoice` };
       return { summary: `invoice rental ${r.rentalId}${r.rentalName ? ` (${r.rentalName})` : ''}` };
     },
+    selfToasts: true,   // createInvoiceForRental already toasts; don't add a second
     apply(p) { createInvoiceForRental(p.rentalId); return IDX.rental.get(p.rentalId)?.invoiceId || null; },   // wraps the REAL billing path (pricing engine, 28-day cap, nav + toast)
   },
+  recordPayment: {
+    // Record a CASH or CHECK payment on an existing invoice. The backend is authoritative (it caps at the
+    // live balance). NEVER a card/ACH charge — method is cash|check only, enforced here AND in postManualPayment.
+    validate(p) {
+      const inv = p && p.invoiceId ? IDX.invoice.get(p.invoiceId) : null;
+      if (!inv) return { issue: `no invoice “${(p && p.invoiceId) || ''}”` };
+      const method = String((p && p.method) || '').toLowerCase();
+      if (method !== 'cash' && method !== 'check') return { issue: `payment method must be cash or check — I can't charge a card or run an ACH` };
+      if (method === 'check' && !String((p && p.checkNum) || '').trim()) return { issue: `a check payment needs the check number` };
+      const t = invoiceTotals(inv);
+      if (t.balance <= 0.005) return { issue: `invoice ${inv.invoiceId} has no balance left to pay` };
+      let amt = (p && p.amount != null) ? Number(p.amount) : t.balance;
+      if (!Number.isFinite(amt) || amt <= 0) return { issue: `enter a payment amount greater than $0` };
+      amt = Math.min(amt, t.balance);   // never overpay
+      if (!(typeof backendPassword !== 'undefined' && backendPassword)) return { issue: `recording a payment needs to be online — the backend is authoritative for money` };
+      return { summary: `record ${money2(amt)} ${method}${method === 'check' ? ` (check #${String(p.checkNum).trim()})` : ''} on invoice ${inv.invoiceId}` };
+    },
+    apply(p) {
+      const inv = IDX.invoice.get(p.invoiceId); if (!inv) return null;
+      const t = invoiceTotals(inv);
+      const method = String(p.method).toLowerCase();
+      let amt = (p.amount != null) ? Number(p.amount) : t.balance;
+      amt = Math.min(amt, t.balance);
+      return postManualPayment({ invoiceId: p.invoiceId, amountCents: Math.round(amt * 100), method, checkNum: method === 'check' ? String(p.checkNum || '').trim() : '' });   // async → awaited by applyWranglerData
+    },
+  },
 };
-function applyWranglerData(plan) {
-  let created = 0, updated = 0, operated = 0, firstEntity = null, firstId = null;
-  plan.ops.forEach((op) => {
+// async ONLY because a named operation may be (recordPayment hits the authoritative backend). For a plan
+// with no operate ops (every auto-applied edit), no `await` is evaluated, so it still runs synchronously.
+async function applyWranglerData(plan) {
+  let created = 0, updated = 0, operated = 0, failed = false, firstEntity = null, firstId = null;
+  for (const op of plan.ops) {
     if (op.op === 'operate') {
-      const def = WR_OPERATIONS[op.name]; if (!def) return;
-      def.apply(op.params || {}); operated++; return;   // the wrapped handler does its own nav/toast/render
+      const def = WR_OPERATIONS[op.name]; if (!def) continue;
+      try {
+        await def.apply(op.params || {}); operated++;
+        if (!def.selfToasts && op.summary) toast(`Mr. Wrangler: ${op.summary} ✓`);   // payment etc. — confirm; billRental self-toasts
+      } catch (e) { failed = true; toast(`Mr. Wrangler couldn’t do that — ${(e && e.message) || 'try again'}.`); }
+      continue;
     }
     if (op.op === 'update') {
-      const t = op.target || wrGet(op.entity, op.id); if (!t) return;
+      const t = op.target || wrGet(op.entity, op.id); if (!t) continue;
       Object.assign(t, op.fields);
       if (op.entity === 'customers') t.name = `${t.firstName || ''} ${t.lastName || ''}`.trim() || t.name;
       reindex(op.entity, t); logAction(t, `Mr. Wrangler updated ${Object.keys(op.fields).join(', ')}`); updated++;
     } else {
-      const mk = WR_CREATE[op.entity]; if (!mk) return;
+      const mk = WR_CREATE[op.entity]; if (!mk) continue;
       (op.op === 'import' || op.op === 'csv-import' ? op.rows : [op.fields]).forEach((f) => { const r = mk(f); created++; if (!firstId) { firstEntity = r.entity; firstId = r.id; } });
     }
-  });
+  }
   // Focus the new record only for grid entities that own a column (customers→right,
   // units/categories→left). Back-office boards (vendors, parts) have no column/card —
   // skip the nav for them (the record is created + toasted; the user finds it in its board).
   if (firstId) { const s = activeSession(); const col = COLUMN_OF[firstEntity]; const ccs = s.cards[firstEntity]; if (col && ccs && s.cols) { s.cols[col] = firstEntity; if (created === 1) { ccs.mode = 'standard'; ccs.recId = firstId; } else { ccs.mode = 'list'; ccs.recId = null; ccs.search = ''; } ccs.graphView = false; } }
   render();
-  // operate ops self-toast via the handler they wrap — only announce create/update activity here.
+  // operate ops toast above (their own handler or the confirm) — only announce create/update activity here.
   const parts = [created ? `added ${created}` : '', updated ? `updated ${updated}` : ''].filter(Boolean);
   if (parts.length) toast(`Mr. Wrangler ${parts.join(' · ')}. 🤠`);
   else if (!operated) toast('Mr. Wrangler made no changes. 🤠');
@@ -10390,6 +10423,7 @@ function applyWranglerData(plan) {
   // (to go see the new records) — the 1200ms saveSoon() debounce would never fire and
   // the in-memory records would be lost. Kick the diff-sync NOW instead of waiting.
   if (created || updated || operated) flushSave();
+  return { created, updated, operated, failed };
 }
 
 // Build the GitHub repro packet from Mr. Wrangler's structured report + the live
@@ -12132,7 +12166,7 @@ function onClick(e) {
   if (closest('.js-wr-min')) { e.stopPropagation(); state.wrangler.min = !state.wrangler.min; return render(); }   // §18 collapse/expand the wrangler dock to its header bar, in place
   if (closest('.js-wr-close')) { e.stopPropagation(); wranglerRailSnapshot(); state.wrangler.open = false; return render(); }   // §18 close the dock back to the launcher; the chat lands on the §18g rail
   if (closest('.js-wr-act')) { e.stopPropagation(); return wranglerFileAction(Number(closest('.js-wr-act').dataset.mi)); }   // §18d file the fix/request Mr. Wrangler proposed inline
-  if (closest('.js-wr-apply')) { e.stopPropagation(); const o = state.wrangler; if (!o.open) return; const m = o.messages[Number(closest('.js-wr-apply').dataset.mi)]; if (!m || !m.action || m.filed) return; const plan = m.action._plan || wrValidatePlan(m.action); if (!plan.ops.length) return; m.filed = true; applyWranglerData(plan); return; }   // Mr. Wrangler applies the previewed add/update/import
+  if (closest('.js-wr-apply')) { e.stopPropagation(); const o = state.wrangler; if (!o.open) return; const m = o.messages[Number(closest('.js-wr-apply').dataset.mi)]; if (!m || !m.action || m.filed) return; const plan = m.action._plan || wrValidatePlan(m.action); if (!plan.ops.length) return; m.filed = true; render(); Promise.resolve(applyWranglerData(plan)).then((res) => { if (res && res.failed) { m.filed = false; render(); } }); return; }   // Mr. Wrangler applies the previewed add/update/import; a failed async op (e.g. a payment that didn't go through) un-files so the user can retry
   if (closest('.js-wr-kpi-lock')) { e.stopPropagation(); lockKpiFromWrangler(Number(closest('.js-wr-kpi-lock').dataset.mi)); return; }   // Mr. Wrangler locks in an authored KPI ring
   if (closest('.js-wr-unattach')) { e.stopPropagation(); const o = state.wrangler; if (o.open && o.attach) { o.attach.splice(Number(closest('.js-wr-unattach').dataset.i), 1); render(); } return; }   // §18d drop a pending image attachment
   if (closest('.js-wr-unfile')) { e.stopPropagation(); const o = state.wrangler; if (o.open && o.files) { o.files.splice(Number(closest('.js-wr-unfile').dataset.i), 1); render(); } return; }   // §18d drop a pending file attachment
@@ -14206,6 +14240,18 @@ function applyPayment(invoiceId, r, alloc, refundAlloc) {
   logAction(inv, r.refundedCents != null ? `Refunded ${money((r.refundedCents || 0) / 100)} — ${before} → ${after}` : `Payment — ${before} → ${after} (${r.paymentMethod || 'card'})`);
   render();
 }
+// Headless CASH / CHECK payment core (#109) — shared by the overlay handler AND Mr. Wrangler's
+// recordPayment operation. The SERVER is authoritative (caps at the live balance, appends to payments[],
+// audits the ledger); we apply its result via applyPayment. method is 'cash'|'check' ONLY — this NEVER
+// charges a card or runs an ACH. Throws (with a friendly message) on failure so the caller can surface it.
+async function postManualPayment({ invoiceId, amountCents, method, checkNum }) {
+  const m = String(method || '').toLowerCase();
+  if (m !== 'cash' && m !== 'check') throw new Error('Only cash or check can be recorded here.');   // belt-and-suspenders e-rail guard
+  const r = await withTimeout(backendCall('recordManualPayment', { invoiceId, amountCents, method: m, checkNum: m === 'check' ? (checkNum || '') : '' }), 30000, 'Recording the payment');
+  if (!r || !r.ok) throw new Error(friendlyPayErr(r));
+  applyPayment(invoiceId, r);   // server is authoritative (amountPaid / paymentMethod / paidAt)
+  return r;
+}
 // Record a manual CASH / CHECK payment (#109) — no Stripe. The figure is captured to
 // the exact cent (no ceiling/rounding) and clamped at the outstanding balance so a
 // payment can never overpay; partials just dial the amount down. amountPaid persists
@@ -14234,14 +14280,12 @@ async function recordManualPayment(invoiceId) {
   const live = () => state.overlay === o;
   o.busy = true; o.error = ''; renderOverlay();
   try {
-    const r = await withTimeout(backendCall('recordManualPayment', { invoiceId, amountCents: payCents, method: isCheck ? 'check' : 'cash', checkNum: isCheck ? checkNum : '' }), 30000, 'Recording the payment');
+    const r = await postManualPayment({ invoiceId, amountCents: payCents, method: isCheck ? 'check' : 'cash', checkNum: isCheck ? checkNum : '' });
     if (!live()) return;
-    if (!r || !r.ok) { o.busy = false; o.error = friendlyPayErr(r); return renderOverlay(); }
-    applyPayment(invoiceId, r);   // server is authoritative (amountPaid / paymentMethod / paidAt)
     o.busy = false; closeOverlay();
     toast(invoiceTotals(inv).balance <= 0.005 ? 'Paid in full ✓' : `${r.paymentMethod || 'Cash'} payment recorded ✓`);
   } catch (e) {
-    if (live()) { o.busy = false; o.error = (e && e.rwTimeout) ? 'Timed out — try again.' : 'Network error — try again.'; renderOverlay(); }
+    if (live()) { o.busy = false; o.error = (e && e.rwTimeout) ? 'Timed out — try again.' : ((e && e.message) || 'Network error — try again.'); renderOverlay(); }
   }
 }
 // Print / PDF a customer-facing invoice (#109) — a clean white document (not the dark

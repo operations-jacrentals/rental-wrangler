@@ -244,6 +244,25 @@ try {
       ok(T.wrPlanNeedsApply({ ops: [{ op: 'import', entity: 'customers', rows: [{}, {}] }] }) === true, 'WR-gate: a bulk import requires Apply');
     }
 
+    // 12f) Stage 2 — recordPayment operate op: CASH/CHECK only, never a card/ACH rail. The refusal paths
+    // run offline (no backend in the harness); applyPayment applying a server result is unit-tested directly.
+    {
+      // build a fresh unpaid invoice with a real balance
+      const payInv = { invoiceId: 'I-WRPAY', customerId: 'C0009', rentalIds: [], date: T.TODAY_ISO, dueDate: T.TODAY_ISO, po: '', amountPaid: 0, lineItems: [{ lid: 'wp1', label: 'Test line', amount: 300, taxable: false, kind: 'custom' }], mock: true };
+      T.DATA.invoices.push(payInv); T.IDX.invoice.set('I-WRPAY', payInv);
+      const wrp = (params) => T.wrValidatePlan({ action: 'data', ops: [{ op: 'operate', name: 'recordPayment', params }] });
+      ok(wrp({ invoiceId: 'I-NOPE', method: 'cash' }).issues.some((s) => /no invoice/.test(s)), 'WR-pay: unknown invoice refused');
+      ok(wrp({ invoiceId: 'I-WRPAY', method: 'card' }).issues.some((s) => /cash or check/.test(s)), 'WR-pay: card method refused (e-rail stays human)');
+      ok(wrp({ invoiceId: 'I-WRPAY', method: 'ach' }).issues.some((s) => /cash or check/.test(s)), 'WR-pay: ACH method refused (e-rail stays human)');
+      ok(wrp({ invoiceId: 'I-WRPAY', method: 'check' }).issues.some((s) => /check number/.test(s)), 'WR-pay: a check needs a check number');
+      ok(wrp({ invoiceId: 'I-WRPAY', method: 'cash', amount: -5 }).issues.some((s) => /greater than \$0/.test(s)), 'WR-pay: a non-positive amount refused');
+      // offline (no backendPassword in the harness) → the money guard fires last, proving it's enforced
+      ok(wrp({ invoiceId: 'I-WRPAY', method: 'cash' }).issues.some((s) => /needs to be online/.test(s)), 'WR-pay: a valid payment is gated offline (backend is authoritative for money)');
+      // applyPayment applies the SERVER result authoritatively (the half we can unit-test)
+      T.applyPayment('I-WRPAY', { amountPaid: 300, paid: true, paymentMethod: 'cash', paidAt: '2099-01-01T00:00:00Z' });
+      ok(payInv.amountPaid === 300 && payInv.paid === true && payInv.paymentMethod === 'cash' && payInv.paidAt === '2099-01-01T00:00:00Z', 'WR-pay: applyPayment writes the server result (amountPaid/paid/method/paidAt)');
+    }
+
     // 13) Transport pricing v2 — $3.50/mile + $50 load + $20 fuel (fueled), per leg.
     const tp = (a) => T.computeTransportPrice(a).price;
     // 10 mi Delivery, fueled: (3.5*10 + 50 + 20) * 1 = 105
