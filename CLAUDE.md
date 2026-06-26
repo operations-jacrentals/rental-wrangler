@@ -61,7 +61,9 @@ Reference implementations: `.login-*` and `.cancel-arc` blocks in `style.css`.
   NEVER `git push origin HEAD:main` directly -- it will be rejected.
 - **Gates (must pass before push):** `node ci/smoke.mjs`,
   `node ci/logic-test.mjs`, `node ci/gen-rule-usage.mjs --check`,
-  `node ci/check-window-catalog.mjs`.
+  `node ci/check-window-catalog.mjs`, `node tools/gen-code-map.mjs --check`
+  (the Code-Atlas drift guard — regenerate with `node tools/gen-code-map.mjs`
+  when a chapter banner is added/moved/retitled).
   Port 8000 is reserved on this machine -- swap to 9147 before running gates:
   `sed -i 's/8000/9147/g' ci/smoke.mjs ci/logic-test.mjs`, run, then `git checkout -- ci/`
 - **Cache-bust on every deploy:** bump the `?v=` token on `style.css`, `rule-usage.js`,
