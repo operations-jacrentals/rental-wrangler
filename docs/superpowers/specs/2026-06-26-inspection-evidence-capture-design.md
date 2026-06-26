@@ -52,7 +52,7 @@ proof of the specific failure.
   - **Per-item evidence** — any checklist row can carry attached photo/video, surfaced and (optionally) *required* when
     that item is marked **Fail**. This is the core of "evidence that generates the Work Order."
   - **Walkaround evidence** — one unit-level photo/video set captured on the takeover, matching the "Shown In Video" card
-    language. Configurable per family.
+    language. **Off by default** (Jac 2026-06-26); an admin opts a family in (Off / Optional / Required).
   **Both surfaces ship together as one build** (Jac, 2026-06-26); the QC-default content pass is the only separate phase.
 
 **D2 — Evidence is orthogonal to item type.** It is an *attachment on the answer*, not a new item type. A `toggle`
@@ -68,8 +68,9 @@ proof of the specific failure.
   simply cannot **Complete** without the required evidence. We deliberately add **no** Admin override here: nothing
   reaches Ready/Failed (and no auto-WO fires) without the proof the policy demands.
 
-**D4 — Media:** per-item evidence accepts **image or video** (`accept="image/*,video/*"`), images downscaled via
-  `downscaleImage`, video kept inline like the §12.8 report (size-risk acknowledged — same tradeoff already shipped).
+**D4 — Media (Jac 2026-06-26):** per-item evidence is **image-only** (`accept="image/*"`, downscaled via `downscaleImage`)
+  to keep records small. **Video** is reserved for the unit **walkaround** and the existing §12.8 failure report
+  (`accept="image/*,video/*"`, kept inline like today).
 
 **D5 — WO enrichment:** `autoWOFromInspection` inherits the **failed items' evidence + the walkaround** onto the WO so the
   mechanic sees exactly what failed, with proof. The §12.8 failure report still runs (it owns the bill-customer decision)
@@ -102,7 +103,7 @@ flows `completeChecklist → setInspResult('Fail') → autoWOFromInspection` **u
 | **Dropdown** | per-option **Fails** flag (today) + an optional **blank/N-A** option that can itself be flagged pass or fail | option matching `val` has `fail===true` | per-option |
 | **Number** | operator **Above / Below / Outside / Inside** + threshold(s) | above→`v>a`; below→`v<a`; outside→`v<a||v>b`; inside→`a≤v≤b`; none→never | none |
 | **Date** | operator **Before / After** + ref **today** or a fixed date | before→`d<ref`; after→`d>ref`; none→never | none |
-| **Text** | *(open decision — default informational, never fails)* | none | none |
+| **Text** | optional admin fail condition — **none** (default) / **fails if blank** / **fails if contains** `value` | per `op` | none |
 | **Add File** | n/a — the answer is the photo; never fails | none | — |
 
 ```js
@@ -111,7 +112,7 @@ toggle  → { failWhen:'fail'|'pass' }
 select  → options:[{ label, fail }]                       // unchanged from typed-fields spec
 number  → { op:'none'|'above'|'below'|'outside'|'inside', a:Number, b:Number }
 date    → { op:'none'|'before'|'after', ref:'today'|'<ISO>' }
-text    → { op:'none' }
+text    → { op:'none'|'empty'|'contains', value:'<str>' }   // admin-optional; default none
 ```
 
 **Back-compat is automatic:** a `toggle` with no `it.fail` reads as `failWhen:'fail'`, so every existing item — including
@@ -194,11 +195,12 @@ The §12.8 report's single `n.photo` keeps working and is shown alongside.
      and evidence — not just remove. Reuses the draft plumbing; the row sub-label summarizes the config
      (e.g. *"Number · fails below 30 · Fail photo"*).
 2. **Takeover row** (`kind:'checklist'`, `app.js:9329`): each row gets a stamped **camera affordance** — a rivet-framed
-   icon button (Lucide camera/video glyph via `icons.js`, never hand-drawn) that opens the capture input; attached
-   evidence shows as a small thumbnail strip reusing `.insp-photo`. When an item is Fail with `failphoto` policy and no
-   photo yet, the affordance gets the caution-yellow "required" treatment (mirrors `.insp-photo.empty.req`,
-   `app.js:9395`) and the Complete button stays disabled with a stamped reason.
-3. **Walkaround** (Phase 2): a header tile on the takeover ("Walkaround video / photos") capturing `n.evidence`.
+   icon button (Lucide camera glyph via `icons.js`, never hand-drawn) opening an **image-only** capture
+   (`accept="image/*"`); attached evidence shows as a small thumbnail strip reusing `.insp-photo`. When an item fails
+   (per the generalized `inspItemFails`) with `failphoto` policy and no photo yet, the affordance gets the caution-yellow
+   "required" treatment (mirrors `.insp-photo.empty.req`, `app.js:9395`) and Complete stays disabled with a stamped reason.
+3. **Walkaround tile** (Build 2; **off unless the family opts in**): a header tile on the takeover ("Walkaround video /
+   photos", `accept="image/*,video/*"`) capturing `n.evidence`. Hidden entirely when the family's walkaround = Off.
 4. All new elements get `data-r` stamps; `rule-usage.js` regenerated (`ci/gen-rule-usage.mjs`, drop `--check`). If the
    capture/gallery is a popup, it joins `WINDOW_CATALOG` (+ `ci/check-window-catalog.mjs`). Screenshot + self-critique
    before showing Jac, per the skill.
@@ -258,9 +260,9 @@ preserved). The following hardening is now part of the spec; one item is a **pre
 ## Open decisions (Jac to redline — defaults chosen so build isn't blocked)
 
 1. **D1 depth** — ✅ **RESOLVED (Jac 2026-06-26): ship both per-item + walkaround together as one build.**
-2. **D-W walkaround requirement** — Off / Optional / Required by default for QC families? *(Default: Optional.)*
-3. **Per-item video** — allow video per item, or image-only per item with video reserved for walkaround + failure report
-   (smaller records)? *(Default: allow video per item, downscaled images.)*
+2. **D-W walkaround requirement** — ✅ **RESOLVED (Jac 2026-06-26): Off by default**; admin opts a family in per family.
+3. **Per-item video** — ✅ **RESOLVED (Jac 2026-06-26): image-only per item**; video stays on the walkaround + §12.8
+   failure report.
 4. **`Always` policy** — do we need "evidence required even on Pass" for any item, or is `Optional` + `Fail photo`
    enough? *(Default: include `Always` in the model; seed nothing with it.)*
 5. **Pending/abandon** — if an inspector attaches partial evidence then hits "Keep as pending," evidence persists on the
@@ -271,13 +273,11 @@ preserved). The following hardening is now part of the spec; one item is a **pre
    See D7. Nothing reaches Ready/Failed (no auto-WO) without the required proof.
 
 ### Track-1 fail-model — open follow-ups (Jac to confirm)
-8. **Text fail condition** — does a Text field ever trip a fail, or is it always informational? *(Default: informational,
-   never fails — `op:'none'` only.)*
+8. **Text fail condition** — ✅ **RESOLVED (Jac 2026-06-26): optional admin setting** — default `none`; admin may set
+   *fails-if-blank* or *fails-if-contains*.
 9. **Date reference** — Before/After **today** only, or also a **fixed admin-picked date**? *(Default: offer both — `ref`
    = `today` or a chosen ISO date; expiry = Before/today.)*
-10. **Dropdown blank/N-A** — add an explicit blank/"N/A" option the admin can flag pass-or-fail, or is per-option-fail on
-    real options enough (no blank, since all items are answer-required)? *(Default: allow an optional N-A option, admin
-    flags whether it passes or fails.)*
+10. **Dropdown blank/N-A** — ✅ **RESOLVED (Jac 2026-06-26): allow an optional N/A option** the admin flags pass-or-fail.
 11. **Removing `required` — behavior change** — old items saved `required:false` become answer-required. Confirm that's
     intended for existing configs (it matches "all fields required regardless"). *(Default: yes; flag ignored, all
     required.)*
