@@ -3402,18 +3402,31 @@ function ensureRoleMeta(o) {
     if (!m.tier) m.tier = BUILTIN_ROLE_TIERS[id.toLowerCase()] || 'staff';
   });
 }
+// Just the active tab's pane HTML — so an in-pane edit can repaint ONLY the pane
+// (rerenderSettingsPane) instead of tearing down the whole overlay (renderOverlay), which flashed.
+function settingsPaneFor(o) {
+  if (o.tab === 'statuses') return settingsStatusesPane(o);
+  if (o.tab === 'logins') return settingsLoginsPane(o);
+  if (o.tab === 'kpis') return settingsKpisPane(o);
+  if (o.tab === 'general') return settingsCompanyPane(o);
+  if (o.tab === 'requirements') return settingsRulesPane(o);
+  if (o.tab === 'fields') return settingsFieldsPane(o);
+  if (o.tab === 'inspections') return settingsInspectionsPane(o);
+  return settingsPlannedPane(SETTINGS_TABS.find((t) => t.id === o.tab));
+}
 function settingsBoardHtml(o) {
   const rail = SETTINGS_TABS.map((t) => `<button class="set-tab js-set-tab${o.tab === t.id ? ' on' : ''}" data-tab="${t.id}"><span class="set-tab-ic">${t.icon || ''}</span><span class="set-tab-l">${esc(t.label)}</span>${t.v1 ? '' : '<span class="set-tab-dot" data-tip="Planned — wired in next"></span>'}</button>`).join('');
-  let pane;
-  if (o.tab === 'statuses') pane = settingsStatusesPane(o);
-  else if (o.tab === 'logins') pane = settingsLoginsPane(o);
-  else if (o.tab === 'kpis') pane = settingsKpisPane(o);
-  else if (o.tab === 'general') pane = settingsCompanyPane(o);
-  else if (o.tab === 'requirements') pane = settingsRulesPane(o);
-  else if (o.tab === 'fields') pane = settingsFieldsPane(o);
-  else if (o.tab === 'inspections') pane = settingsInspectionsPane(o);
-  else pane = settingsPlannedPane(SETTINGS_TABS.find((t) => t.id === o.tab));
-  return `<div class="set-board"><nav class="set-rail" aria-label="Settings sections">${rail}</nav><div class="set-pane">${pane}</div></div>`;
+  return `<div class="set-board"><nav class="set-rail" aria-label="Settings sections">${rail}</nav><div class="set-pane">${settingsPaneFor(o)}</div></div>`;
+}
+// Repaint only the settings pane body in place (no overlay teardown → no flash), preserving
+// scroll. Returns false if the settings pane isn't mounted, so callers can fall back to renderOverlay().
+function rerenderSettingsPane() {
+  const o = state.overlay; if (!o || o.kind !== 'settings') return false;
+  const pane = document.querySelector('.overlay .set-pane'); if (!pane) return false;
+  const st = pane.scrollTop;
+  pane.innerHTML = settingsPaneFor(o);
+  pane.scrollTop = st;
+  return true;
 }
 function settingsLoginsPane(o) {
   ensureRoleMeta(o);
@@ -3604,6 +3617,30 @@ function inspFailEditor(d) {
   }
   return '';
 }
+// The add/edit item editor — rendered inline under the row being edited (Jac 2026-06-26:
+// "just under the field I want to edit"), or at the bottom of the list in add mode.
+function inspEditorBlock(o) {
+  const d = o.inspDraft && typeof o.inspDraft === 'object' ? o.inspDraft : { label: '', type: 'toggle', fail: inspFailDefault('toggle'), options: [] };
+  const optWell = d.type === 'select' ? `<div class="insp-opt-well">
+    ${(d.options || []).map((op, i) => `<div class="insp-opt-row"><span class="insp-opt-lbl">${esc(op.label)}</span>${segCtl([{ label: 'OK', js: 'js-insp-opt-fail', data: { i, v: '0' }, on: op.fail ? null : 'gray' }, { label: 'Fails', js: 'js-insp-opt-fail', data: { i, v: '1' }, on: op.fail ? 'red' : null }])}<button class="so-reset js-insp-opt-remove" data-i="${i}" data-tip="Remove option">${I.x}</button></div>`).join('')}
+    <div style="display:flex;align-items:center;gap:8px;margin-top:6px"><input class="co-in js-insp-opt-label" placeholder="New option (e.g. Bald)" value="${esc(d.optLabel || '')}" autocomplete="off" />${addBtn('Option', { js: 'js-insp-opt-add', line: true })}<button class="pill ghost js-insp-opt-na" data-tip="Add an N/A option you can flag pass or fail">+ N/A</button></div>
+  </div>` : '';
+  return `<div class="cf-add${o.inspEditId ? ' cf-edit' : ''}">
+      <input class="co-in js-insp-label" placeholder="New checklist item (e.g. Hydraulics — no leaks)" value="${esc(d.label || '')}" autocomplete="off" />
+      ${segCtl(INSP_TYPES.map((t) => ({ label: t, js: 'js-insp-type', data: { type: t }, on: (d.type || 'toggle') === t ? 'green' : null })))}
+      ${inspFailEditor(d)}
+      ${optWell}
+      ${(d.type || 'toggle') !== 'file' ? `<div class="insp-opt-row"><span class="insp-opt-lbl">Evidence</span>${segCtl([
+        { label: 'None', js: 'js-insp-ev', data: { v: 'none' }, on: (d.evidence || 'none') === 'none' ? 'gray' : null },
+        { label: 'Optional', js: 'js-insp-ev', data: { v: 'optional' }, on: d.evidence === 'optional' ? 'green' : null },
+        { label: 'Fail photo', js: 'js-insp-ev', data: { v: 'failphoto' }, on: d.evidence === 'failphoto' ? 'red' : null },
+        { label: 'Always', js: 'js-insp-ev', data: { v: 'always' }, on: d.evidence === 'always' ? 'red' : null }])}</div>` : ''}
+      <div style="display:flex;align-items:center;gap:8px">
+        <button class="pill ignition ${o.inspEditId ? 'js-insp-editsave' : 'js-insp-add'}" data-r="R17">${o.inspEditId ? 'Save changes' : '+ Add item'}</button>
+        ${o.inspEditId ? '<button class="pill ghost js-insp-editcancel">Cancel</button>' : ''}
+      </div>
+    </div>`;
+}
 function settingsInspectionsPane(o) {
   const cats = DATA.categories || [];
   const fams = []; const seen = new Set();
@@ -3615,16 +3652,14 @@ function settingsInspectionsPane(o) {
   const famLabel = inspFamilyLabel(famKey);
   const memberCount = cats.filter((c) => inspFamilyKey(c) === famKey).length;
   const items = cfg.items || [];
-  const inspDraft = o.inspDraft && typeof o.inspDraft === 'object' ? o.inspDraft : { label: '', type: 'toggle', fail: inspFailDefault('toggle'), options: [] };
-  const rows = items.length ? items.map((it) => `<div class="rule-row"${o.inspEditId === it.id ? ' style="outline:1px solid var(--accent,#ff7a1a);border-radius:8px"' : ''}>
+  const rows = items.length ? items.map((it) => {
+    const row = `<div class="rule-row"${o.inspEditId === it.id ? ' style="outline:1px solid var(--accent,#ff7a1a);border-radius:8px"' : ''}>
       <div class="rule-main"><span class="rule-label">${esc(it.label)}</span><span class="rule-desc">${inspFailDesc(it)}${it.evidence && it.evidence !== 'none' ? ` · photo: ${esc(it.evidence === 'failphoto' ? 'on fail' : it.evidence)}` : ''}</span></div>
       <button class="so-reset js-insp-edit" data-id="${esc(it.id)}" data-tip="Edit item">${I.sliders}</button>
       <button class="so-reset js-insp-remove" data-cat="${esc(famKey)}" data-id="${esc(it.id)}" data-tip="Remove item">${I.x}</button>
-    </div>`).join('') : '<p class="set-note">No checklist items yet — add the things to inspect below.</p>';
-  const optWell = inspDraft.type === 'select' ? `<div class="insp-opt-well">
-    ${(inspDraft.options || []).map((op, i) => `<div class="insp-opt-row"><span class="insp-opt-lbl">${esc(op.label)}</span>${segCtl([{ label: 'OK', js: 'js-insp-opt-fail', data: { i, v: '0' }, on: op.fail ? null : 'gray' }, { label: 'Fails', js: 'js-insp-opt-fail', data: { i, v: '1' }, on: op.fail ? 'red' : null }])}<button class="so-reset js-insp-opt-remove" data-i="${i}" data-tip="Remove option">${I.x}</button></div>`).join('')}
-    <div style="display:flex;align-items:center;gap:8px;margin-top:6px"><input class="co-in js-insp-opt-label" placeholder="New option (e.g. Bald)" value="${esc(inspDraft.optLabel || '')}" autocomplete="off" />${addBtn('Option', { js: 'js-insp-opt-add', line: true })}<button class="pill ghost js-insp-opt-na" data-tip="Add an N/A option you can flag pass or fail">+ N/A</button></div>
-  </div>` : '';
+    </div>`;
+    return o.inspEditId === it.id ? row + inspEditorBlock(o) : row;   // editor opens directly under THIS row
+  }).join('') : '<p class="set-note">No checklist items yet — add the things to inspect below.</p>';
   return `
     <div class="set-pane-head"><h4>Inspections</h4><p>Build a checklist per equipment type. Every item must be answered; each carries a <strong>fail condition</strong> (editable anytime). When a type's checklist is <strong>Required</strong>, starting an inspection on one of its units opens a full-screen checklist that must be completed — any item that meets its fail condition trips the existing failed-inspection work order.</p></div>
     <div class="set-picker">${pick}</div>
@@ -3632,21 +3667,7 @@ function settingsInspectionsPane(o) {
     <div class="rule-row" style="margin-bottom:10px"><div class="rule-main"><span class="rule-label">Require a checklist for ${esc(famLabel)}</span><span class="rule-desc">On = +Inspection takes over the sheet until every item is checked.</span></div>${segCtl([{ label: 'Off', js: 'js-insp-req', data: { cat: famKey, v: '0' }, on: cfg.required ? null : 'gray' }, { label: 'Required', js: 'js-insp-req', data: { cat: famKey, v: '1' }, on: cfg.required ? 'red' : null }])}</div>
     <div class="rule-row" style="margin-bottom:10px"><div class="rule-main"><span class="rule-label">Walkaround video / photos</span><span class="rule-desc">A unit-level capture on the checklist (video allowed). Required = must capture before Complete.</span></div>${segCtl([{ label: 'Off', js: 'js-insp-walk', data: { cat: famKey, v: 'off' }, on: (cfg.walkaround || 'off') === 'off' ? 'gray' : null }, { label: 'Optional', js: 'js-insp-walk', data: { cat: famKey, v: 'optional' }, on: cfg.walkaround === 'optional' ? 'green' : null }, { label: 'Required', js: 'js-insp-walk', data: { cat: famKey, v: 'required' }, on: cfg.walkaround === 'required' ? 'red' : null }])}</div>
     <div class="rule-list">${rows}</div>
-    <div class="cf-add">
-      <input class="co-in js-insp-label" placeholder="New checklist item (e.g. Hydraulics — no leaks)" value="${esc(inspDraft.label || '')}" autocomplete="off" />
-      ${segCtl(INSP_TYPES.map((t) => ({ label: t, js: 'js-insp-type', data: { type: t }, on: (inspDraft.type || 'toggle') === t ? 'green' : null })))}
-      ${inspFailEditor(inspDraft)}
-      ${optWell}
-      ${(inspDraft.type || 'toggle') !== 'file' ? `<div class="insp-opt-row"><span class="insp-opt-lbl">Evidence</span>${segCtl([
-        { label: 'None', js: 'js-insp-ev', data: { v: 'none' }, on: (inspDraft.evidence || 'none') === 'none' ? 'gray' : null },
-        { label: 'Optional', js: 'js-insp-ev', data: { v: 'optional' }, on: inspDraft.evidence === 'optional' ? 'green' : null },
-        { label: 'Fail photo', js: 'js-insp-ev', data: { v: 'failphoto' }, on: inspDraft.evidence === 'failphoto' ? 'red' : null },
-        { label: 'Always', js: 'js-insp-ev', data: { v: 'always' }, on: inspDraft.evidence === 'always' ? 'red' : null }])}</div>` : ''}
-      <div style="display:flex;align-items:center;gap:8px">
-        <button class="pill ignition ${o.inspEditId ? 'js-insp-editsave' : 'js-insp-add'}" data-r="R17">${o.inspEditId ? 'Save changes' : '+ Add item'}</button>
-        ${o.inspEditId ? '<button class="pill ghost js-insp-editcancel">Cancel</button>' : ''}
-      </div>
-    </div>`;
+    ${o.inspEditId ? '' : inspEditorBlock(o)}`;
 }
 function settingsFieldsPane(o) {
   const ent = o.cfEntity || 'customers'; o.cfEntity = ent;
@@ -11751,23 +11772,23 @@ function onClick(e) {
   if (closest('.js-cf-add')) { e.stopPropagation(); const o = state.overlay; if (!o) return; const lblEl = document.querySelector('.settings-popup .js-cf-label'); const label = (o.cfDraft && o.cfDraft.label || (lblEl ? lblEl.value : '')).trim(); if (!label) { if (lblEl) { lblEl.focus(); } toast('Give the field a label first.'); return; } const fields = ensureCfDraft(o, o.cfEntity || 'customers'); fields.push({ id: cfSlug(label), label, type: (o.cfDraft && o.cfDraft.type) || 'text', required: !!(o.cfDraft && o.cfDraft.required) }); o.cfDraft = { label: '', type: 'text', required: false }; renderOverlay(); return; }
   if (closest('.js-cf-remove')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-cf-remove'); if (o) { const fields = ensureCfDraft(o, b.dataset.ent); const i = fields.findIndex((f) => f.id === b.dataset.id); if (i >= 0) fields.splice(i, 1); renderOverlay(); } return; }
   // Inspections tab
-  if (closest('.js-insp-cat')) { e.stopPropagation(); const o = state.overlay; if (o) { o.inspFam = closest('.js-insp-cat').dataset.cat; renderOverlay(); } return; }
-  if (closest('.js-insp-req')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-insp-req'); if (o) { ensureInspDraft(o, b.dataset.cat).required = b.dataset.v === '1'; renderOverlay(); } return; }
-  if (closest('.js-insp-walk')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-insp-walk'); if (o) { ensureInspDraft(o, b.dataset.cat).walkaround = b.dataset.v; renderOverlay(); } return; }
-  if (closest('.js-insp-type')) { e.stopPropagation(); const o=state.overlay; if(o){ const type=closest('.js-insp-type').dataset.type; o.inspDraft={...(o.inspDraft||{label:'',options:[]}), type, fail: inspFailDefault(type)}; renderOverlay(); } return; }
-  if (closest('.js-insp-failwhen')) { e.stopPropagation(); const o=state.overlay, b=closest('.js-insp-failwhen'); if(o){ o.inspDraft=o.inspDraft||{}; o.inspDraft.fail={...(o.inspDraft.fail||{}), failWhen:b.dataset.v}; renderOverlay(); } return; }
-  if (closest('.js-insp-failop')) { e.stopPropagation(); const o=state.overlay, b=closest('.js-insp-failop'); if(o){ o.inspDraft=o.inspDraft||{}; o.inspDraft.fail={...(o.inspDraft.fail||{}), op:b.dataset.v}; renderOverlay(); } return; }
-  if (closest('.js-insp-dateref')) { e.stopPropagation(); const o=state.overlay, b=closest('.js-insp-dateref'); if(o){ o.inspDraft=o.inspDraft||{}; const f={...(o.inspDraft.fail||{})}; f.ref = b.dataset.v==='today' ? 'today' : ((f.ref && f.ref!=='today') ? f.ref : TODAY_ISO); o.inspDraft.fail=f; renderOverlay(); } return; }
-  if (closest('.js-insp-opt-na')) { e.stopPropagation(); const o=state.overlay; if(o){ o.inspDraft=o.inspDraft||{}; o.inspDraft.options=o.inspDraft.options||[]; if(!o.inspDraft.options.some((op)=>op.label==='N/A')) o.inspDraft.options.push({label:'N/A', fail:false}); renderOverlay(); } return; }
-  if (closest('.js-insp-ev')) { e.stopPropagation(); const o=state.overlay, b=closest('.js-insp-ev'); if(o){ o.inspDraft=o.inspDraft||{}; o.inspDraft.evidence=b.dataset.v; renderOverlay(); } return; }
-  if (closest('.js-insp-edit')) { e.stopPropagation(); const o=state.overlay, b=closest('.js-insp-edit'); if(o){ const cfg=ensureInspDraft(o, o.inspFam); const it=(cfg.items||[]).find((x)=>x.id===b.dataset.id); if(it){ const type=it.type||'toggle'; o.inspEditId=it.id; o.inspDraft={ label:it.label, type, fail: it.fail ? JSON.parse(JSON.stringify(it.fail)) : inspFailDefault(type), options: it.options ? JSON.parse(JSON.stringify(it.options)) : [], evidence: it.evidence || 'none', optLabel:'' }; renderOverlay(); } } return; }
-  if (closest('.js-insp-editcancel')) { e.stopPropagation(); const o=state.overlay; if(o){ o.inspEditId=null; o.inspDraft={label:'',type:'toggle',options:[],fail:inspFailDefault('toggle')}; renderOverlay(); } return; }
-  if (closest('.js-insp-editsave')) { e.stopPropagation(); const o=state.overlay; if(!o||!o.inspEditId)return; const el2=document.querySelector('.settings-popup .js-insp-label'); const d=o.inspDraft||{}; const label=((d.label!=null?d.label:(el2?el2.value:''))||'').trim(); if(!label){ if(el2)el2.focus(); toast('Item needs a label.'); return; } const type=d.type||'toggle'; if(type==='select' && !((d.options||[]).length)){ toast('Add at least one dropdown option.'); return; } const cfg=ensureInspDraft(o, o.inspFam); const it=(cfg.items||[]).find((x)=>x.id===o.inspEditId); if(it){ it.label=label; it.type=type; delete it.required; if(type==='select'){ it.options=(d.options||[]).map((op)=>({label:op.label, fail:!!op.fail})); delete it.fail; } else if(type==='file'){ delete it.fail; delete it.options; } else { it.fail=d.fail||inspFailDefault(type); delete it.options; } if(type!=='file' && d.evidence && d.evidence!=='none') it.evidence=d.evidence; else delete it.evidence; } o.inspEditId=null; o.inspDraft={label:'',type:'toggle',options:[],fail:inspFailDefault('toggle')}; renderOverlay(); return; }
-  if (closest('.js-insp-opt-add')) { e.stopPropagation(); const o=state.overlay; if(!o)return; const inp=document.querySelector('.settings-popup .js-insp-opt-label'); const lbl=((o.inspDraft&&o.inspDraft.optLabel)|| (inp?inp.value:'')).trim(); if(!lbl){ if(inp)inp.focus(); toast('Type an option first.'); return; } o.inspDraft.options=o.inspDraft.options||[]; o.inspDraft.options.push({label:lbl, fail:false}); o.inspDraft.optLabel=''; renderOverlay(); return; }
-  if (closest('.js-insp-opt-remove')) { e.stopPropagation(); const o=state.overlay, b=closest('.js-insp-opt-remove'); if(o&&o.inspDraft&&o.inspDraft.options){ o.inspDraft.options.splice(Number(b.dataset.i),1); renderOverlay(); } return; }
-  if (closest('.js-insp-opt-fail')) { e.stopPropagation(); const o=state.overlay, b=closest('.js-insp-opt-fail'); if(o&&o.inspDraft&&o.inspDraft.options){ const op=o.inspDraft.options[Number(b.dataset.i)]; if(op) op.fail = b.dataset.v==='1'; renderOverlay(); } return; }
-  if (closest('.js-insp-add')) { e.stopPropagation(); const o=state.overlay; if(!o)return; const d=o.inspDraft||{label:'',type:'toggle',options:[]}; const el2=document.querySelector('.settings-popup .js-insp-label'); const label=((d.label!=null?d.label:(el2?el2.value:''))||'').trim(); if(!label){ if(el2)el2.focus(); toast('Type a checklist item first.'); return; } const type=d.type||'toggle'; if(type==='select' && !((d.options||[]).length)){ toast('Add at least one dropdown option.'); return; } const cfg=ensureInspDraft(o, o.inspFam); cfg.items=cfg.items||[]; const item={ id:'ck_'+(label.toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'')||'item')+'_'+Math.random().toString(36).slice(2,5), label, type }; if(type==='select') item.options=(d.options||[]).map((op)=>({label:op.label, fail:!!op.fail})); else if(type!=='file') item.fail = d.fail || inspFailDefault(type); if(type!=='file' && d.evidence && d.evidence!=='none') item.evidence=d.evidence; cfg.items.push(item); o.inspDraft={label:'',type:'toggle',options:[],fail:inspFailDefault('toggle')}; renderOverlay(); return; }
-  if (closest('.js-insp-remove')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-insp-remove'); if (o) { const cfg = ensureInspDraft(o, b.dataset.cat); cfg.items = (cfg.items || []).filter((it) => it.id !== b.dataset.id); renderOverlay(); } return; }
+  if (closest('.js-insp-cat')) { e.stopPropagation(); const o = state.overlay; if (o) { o.inspFam = closest('.js-insp-cat').dataset.cat; rerenderSettingsPane(); } return; }
+  if (closest('.js-insp-req')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-insp-req'); if (o) { ensureInspDraft(o, b.dataset.cat).required = b.dataset.v === '1'; rerenderSettingsPane(); } return; }
+  if (closest('.js-insp-walk')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-insp-walk'); if (o) { ensureInspDraft(o, b.dataset.cat).walkaround = b.dataset.v; rerenderSettingsPane(); } return; }
+  if (closest('.js-insp-type')) { e.stopPropagation(); const o=state.overlay; if(o){ const type=closest('.js-insp-type').dataset.type; o.inspDraft={...(o.inspDraft||{label:'',options:[]}), type, fail: inspFailDefault(type)}; rerenderSettingsPane(); } return; }
+  if (closest('.js-insp-failwhen')) { e.stopPropagation(); const o=state.overlay, b=closest('.js-insp-failwhen'); if(o){ o.inspDraft=o.inspDraft||{}; o.inspDraft.fail={...(o.inspDraft.fail||{}), failWhen:b.dataset.v}; rerenderSettingsPane(); } return; }
+  if (closest('.js-insp-failop')) { e.stopPropagation(); const o=state.overlay, b=closest('.js-insp-failop'); if(o){ o.inspDraft=o.inspDraft||{}; o.inspDraft.fail={...(o.inspDraft.fail||{}), op:b.dataset.v}; rerenderSettingsPane(); } return; }
+  if (closest('.js-insp-dateref')) { e.stopPropagation(); const o=state.overlay, b=closest('.js-insp-dateref'); if(o){ o.inspDraft=o.inspDraft||{}; const f={...(o.inspDraft.fail||{})}; f.ref = b.dataset.v==='today' ? 'today' : ((f.ref && f.ref!=='today') ? f.ref : TODAY_ISO); o.inspDraft.fail=f; rerenderSettingsPane(); } return; }
+  if (closest('.js-insp-opt-na')) { e.stopPropagation(); const o=state.overlay; if(o){ o.inspDraft=o.inspDraft||{}; o.inspDraft.options=o.inspDraft.options||[]; if(!o.inspDraft.options.some((op)=>op.label==='N/A')) o.inspDraft.options.push({label:'N/A', fail:false}); rerenderSettingsPane(); } return; }
+  if (closest('.js-insp-ev')) { e.stopPropagation(); const o=state.overlay, b=closest('.js-insp-ev'); if(o){ o.inspDraft=o.inspDraft||{}; o.inspDraft.evidence=b.dataset.v; rerenderSettingsPane(); } return; }
+  if (closest('.js-insp-edit')) { e.stopPropagation(); const o=state.overlay, b=closest('.js-insp-edit'); if(o){ const cfg=ensureInspDraft(o, o.inspFam); const it=(cfg.items||[]).find((x)=>x.id===b.dataset.id); if(it){ const type=it.type||'toggle'; o.inspEditId=it.id; o.inspDraft={ label:it.label, type, fail: it.fail ? JSON.parse(JSON.stringify(it.fail)) : inspFailDefault(type), options: it.options ? JSON.parse(JSON.stringify(it.options)) : [], evidence: it.evidence || 'none', optLabel:'' }; rerenderSettingsPane(); } } return; }
+  if (closest('.js-insp-editcancel')) { e.stopPropagation(); const o=state.overlay; if(o){ o.inspEditId=null; o.inspDraft={label:'',type:'toggle',options:[],fail:inspFailDefault('toggle')}; rerenderSettingsPane(); } return; }
+  if (closest('.js-insp-editsave')) { e.stopPropagation(); const o=state.overlay; if(!o||!o.inspEditId)return; const el2=document.querySelector('.settings-popup .js-insp-label'); const d=o.inspDraft||{}; const label=((d.label!=null?d.label:(el2?el2.value:''))||'').trim(); if(!label){ if(el2)el2.focus(); toast('Item needs a label.'); return; } const type=d.type||'toggle'; if(type==='select' && !((d.options||[]).length)){ toast('Add at least one dropdown option.'); return; } const cfg=ensureInspDraft(o, o.inspFam); const it=(cfg.items||[]).find((x)=>x.id===o.inspEditId); if(it){ it.label=label; it.type=type; delete it.required; if(type==='select'){ it.options=(d.options||[]).map((op)=>({label:op.label, fail:!!op.fail})); delete it.fail; } else if(type==='file'){ delete it.fail; delete it.options; } else { it.fail=d.fail||inspFailDefault(type); delete it.options; } if(type!=='file' && d.evidence && d.evidence!=='none') it.evidence=d.evidence; else delete it.evidence; } o.inspEditId=null; o.inspDraft={label:'',type:'toggle',options:[],fail:inspFailDefault('toggle')}; rerenderSettingsPane(); return; }
+  if (closest('.js-insp-opt-add')) { e.stopPropagation(); const o=state.overlay; if(!o)return; const inp=document.querySelector('.settings-popup .js-insp-opt-label'); const lbl=((o.inspDraft&&o.inspDraft.optLabel)|| (inp?inp.value:'')).trim(); if(!lbl){ if(inp)inp.focus(); toast('Type an option first.'); return; } o.inspDraft.options=o.inspDraft.options||[]; o.inspDraft.options.push({label:lbl, fail:false}); o.inspDraft.optLabel=''; rerenderSettingsPane(); return; }
+  if (closest('.js-insp-opt-remove')) { e.stopPropagation(); const o=state.overlay, b=closest('.js-insp-opt-remove'); if(o&&o.inspDraft&&o.inspDraft.options){ o.inspDraft.options.splice(Number(b.dataset.i),1); rerenderSettingsPane(); } return; }
+  if (closest('.js-insp-opt-fail')) { e.stopPropagation(); const o=state.overlay, b=closest('.js-insp-opt-fail'); if(o&&o.inspDraft&&o.inspDraft.options){ const op=o.inspDraft.options[Number(b.dataset.i)]; if(op) op.fail = b.dataset.v==='1'; rerenderSettingsPane(); } return; }
+  if (closest('.js-insp-add')) { e.stopPropagation(); const o=state.overlay; if(!o)return; const d=o.inspDraft||{label:'',type:'toggle',options:[]}; const el2=document.querySelector('.settings-popup .js-insp-label'); const label=((d.label!=null?d.label:(el2?el2.value:''))||'').trim(); if(!label){ if(el2)el2.focus(); toast('Type a checklist item first.'); return; } const type=d.type||'toggle'; if(type==='select' && !((d.options||[]).length)){ toast('Add at least one dropdown option.'); return; } const cfg=ensureInspDraft(o, o.inspFam); cfg.items=cfg.items||[]; const item={ id:'ck_'+(label.toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'')||'item')+'_'+Math.random().toString(36).slice(2,5), label, type }; if(type==='select') item.options=(d.options||[]).map((op)=>({label:op.label, fail:!!op.fail})); else if(type!=='file') item.fail = d.fail || inspFailDefault(type); if(type!=='file' && d.evidence && d.evidence!=='none') item.evidence=d.evidence; cfg.items.push(item); o.inspDraft={label:'',type:'toggle',options:[],fail:inspFailDefault('toggle')}; rerenderSettingsPane(); return; }
+  if (closest('.js-insp-remove')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-insp-remove'); if (o) { const cfg = ensureInspDraft(o, b.dataset.cat); cfg.items = (cfg.items || []).filter((it) => it.id !== b.dataset.id); rerenderSettingsPane(); } return; }
   if (closest('.js-nc-save')) { e.stopPropagation(); return saveNewCustomer(); }
   if (closest('.js-nc-acct')) { const b = closest('.js-nc-acct'); e.stopPropagation(); ncSyncInputs(); state.overlay.draft.accountType = b.dataset.val; renderOverlay(); return; }
   if (closest('.js-nc-po')) { e.stopPropagation(); ncSyncInputs(); const o = state.overlay; o.draft.requiresPO = (o.draft.requiresPO === true) ? false : true; if (o.editId) { const c = IDX.customer.get(o.editId); if (c) { c.requiresPO = o.draft.requiresPO; reindex('customers', c); } } renderOverlay(); return; }
