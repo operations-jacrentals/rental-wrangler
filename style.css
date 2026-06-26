@@ -1935,6 +1935,16 @@ body.is-phone .set-tab-l { flex: 0 0 auto; }
 .set-row .set-input { flex: 1; height: 32px; padding: 0 10px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); color: var(--txt); font-size: 13px; }
 .set-row .set-input:focus { outline: none; border-color: var(--accent-line); }
 .set-row.set-admin { margin-top: 10px; padding-top: 12px; border-top: 1px dashed var(--line); }
+/* Role cards — one panel per login: label + password + remove, with a tier picker beneath. */
+.set-rolecard { padding: 9px 10px 10px; border: 1px solid var(--line); border-radius: 11px; background: var(--panel-2); margin-bottom: 8px; }
+.set-rolecard .set-row { margin-bottom: 0; }
+.set-rolehead .set-rolelabel { flex: 0 0 38%; font-weight: 700; }
+.set-lock { display: inline-flex; align-items: center; color: var(--txt-3); flex: 0 0 auto; }
+.set-lock svg { width: 14px; height: 14px; }
+.set-tierrow { display: flex; align-items: center; gap: 9px; margin-top: 9px; }
+.set-tiercap { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.2px; font-size: 9.5px; font-weight: 700; color: var(--txt-3); flex: 0 0 auto; }
+.set-tierrow .seg.set-tierseg { margin-left: 0; flex: 1 1 auto; }
+.set-tierrow .seg.set-tierseg button { flex: 1 1 0; justify-content: center; padding: 0 7px; font-size: 10px; }
 /* New Customer onboarding form */
 .nc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 11px 12px; }
 .nc-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }

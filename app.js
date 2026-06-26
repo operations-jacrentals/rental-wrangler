@@ -3295,11 +3295,32 @@ function setDraftStatus(o, set, val, patch) {
   if (!next.color) delete next.color; if (!next.icon) delete next.icon; if (!next.label) delete next.label;   // empties → fall back to the shipped default
   if (Object.keys(next).length) o.draftSettings.status[set][val] = next; else delete o.draftSettings.status[set][val];
 }
-function captureLoginEdits(o) {   // keep typed-but-unsaved password edits across a tab switch
+function captureLoginEdits(o) {   // keep typed-but-unsaved password + label edits across a re-render
   const root = document.querySelector('.settings-popup .popup-body'); if (!root) return;
   if (!root.querySelector('.set-input[data-role]')) return;
   const roles = {}; root.querySelectorAll('.set-input[data-role]').forEach((i) => { roles[i.dataset.role] = i.value; });
   o.config.roles = roles; o.config.admin = root.querySelector('.set-input[data-admin]')?.value ?? o.config.admin;
+  const meta = draftRoleMeta(o);
+  root.querySelectorAll('.set-input[data-rolelabel]').forEach((i) => { const id = i.dataset.rolelabel; (meta[id] || (meta[id] = {})).label = i.value; });
+}
+/* Role customization (2026-06-26): built-in logins that can't be deleted (Admin
+   is the separate permanent field below). Renaming/re-tiering them is allowed. */
+const PROTECTED_ROLE_IDS = ['developer'];
+function draftSettingsObj(o) {
+  if (!o.draftSettings) o.draftSettings = JSON.parse(JSON.stringify((o.config && o.config.settings) || state.settings || {}));
+  return o.draftSettings;
+}
+function draftRoleMeta(o) { const s = draftSettingsObj(o); if (!s.roleMeta || typeof s.roleMeta !== 'object') s.roleMeta = {}; return s.roleMeta; }
+/* Backfill a {label,tier} entry for every login the config holds, so the pane can
+   render tiers even on a backend that predates roleMeta. Defaults: the role key
+   doubles as its label; tier from BUILTIN_ROLE_TIERS, else staff. */
+function ensureRoleMeta(o) {
+  const roles = (o.config && o.config.roles) || {}; const meta = draftRoleMeta(o);
+  Object.keys(roles).forEach((id) => {
+    const m = meta[id] || (meta[id] = {});
+    if (!m.label) m.label = id;
+    if (!m.tier) m.tier = BUILTIN_ROLE_TIERS[id.toLowerCase()] || 'staff';
+  });
 }
 function settingsBoardHtml(o) {
   const rail = SETTINGS_TABS.map((t) => `<button class="set-tab js-set-tab${o.tab === t.id ? ' on' : ''}" data-tab="${t.id}"><span class="set-tab-ic">${t.icon || ''}</span><span class="set-tab-l">${esc(t.label)}</span>${t.v1 ? '' : '<span class="set-tab-dot" data-tip="Planned — wired in next"></span>'}</button>`).join('');
@@ -3315,14 +3336,29 @@ function settingsBoardHtml(o) {
   return `<div class="set-board"><nav class="set-rail" aria-label="Settings sections">${rail}</nav><div class="set-pane">${pane}</div></div>`;
 }
 function settingsLoginsPane(o) {
+  ensureRoleMeta(o);
   const cfg = o.config || { roles: {}, admin: '' };
+  const meta = draftRoleMeta(o);
   const pwType = o.revealPw ? 'text' : 'password';   // masked by default so passwords don't shoulder-surf; toggle to reveal
-  const roleRows = Object.keys(cfg.roles || {}).map((role) => `<label class="set-row"><span class="set-role">${esc(role)}</span><input class="set-input" type="${pwType}" data-role="${esc(role)}" value="${esc(cfg.roles[role])}" autocomplete="off" /></label>`).join('');
+  // Tier picker — a segmented control (R14) over ROLE_TIERS; the active tier rides blue.
+  const tierSeg = (id, tier) => segCtl(ROLE_TIERS.map((t) => ({ js: 'js-role-tier', on: t.id === tier ? 'blue' : null, data: { role: id, tier: t.id }, label: t.label })), 'set-tierseg');
+  const roleRows = Object.keys(cfg.roles || {}).map((id) => {
+    const m = meta[id] || {}; const protd = PROTECTED_ROLE_IDS.includes(id.toLowerCase());
+    return `<div class="set-rolecard">
+      <div class="set-row set-rolehead">
+        <input class="set-input set-rolelabel" data-rolelabel="${esc(id)}" value="${esc(m.label || id)}" placeholder="Role name" autocomplete="off" />
+        <input class="set-input" type="${pwType}" data-role="${esc(id)}" value="${esc(cfg.roles[id])}" placeholder="Password" autocomplete="off" />
+        ${protd ? `<span class="set-lock" data-tip="Built-in role — can’t be removed">${I.lock}</span>` : closeX('js-role-del', { data: { role: id } })}
+      </div>
+      <div class="set-tierrow"><span class="set-tiercap">Tier</span>${tierSeg(id, m.tier)}</div>
+    </div>`;
+  }).join('');
   return `
-    <div class="set-pane-head"><h4>Roles &amp; Logins</h4><p>Each role signs in with its password (plus their name). Changes apply at next sign-in.</p></div>
+    <div class="set-pane-head"><h4>Roles &amp; Logins</h4><p>Each role signs in with its password (plus their name). Pick a <strong>tier</strong> for what it can do, rename it, or add your own. Changes apply at next sign-in.</p></div>
     <div class="set-reveal-row"><button class="set-reveal js-set-reveal" type="button">${I.eye} ${o.revealPw ? 'Hide passwords' : 'Show passwords'}</button></div>
     ${roleRows}
-    <label class="set-row set-admin"><span class="set-role">Admin</span><input class="set-input" type="${pwType}" data-admin="1" value="${esc(cfg.admin || '')}" autocomplete="off" /></label>
+    ${addBtn('Role', { js: 'js-role-add' })}
+    <label class="set-row set-admin"><span class="set-role" data-tip="The permanent top-level login — always Admin tier, can’t be removed.">Admin</span><input class="set-input" type="${pwType}" data-admin="1" value="${esc(cfg.admin || '')}" autocomplete="off" /></label>
     <div class="set-row" style="margin-top:14px;align-items:center"><span class="set-role" style="flex:0 0 auto" data-tip="ON: dropping a unit onto a conflicting rental links anyway — both sides get a pulsing red 'Overbooked' flag while the overlap exists. OFF: the drop is blocked, naming the conflict.">Allow overbooking</span>${segCtl([{ label: 'Off', js: 'js-overbook', data: { val: '0' }, on: state.overbookOn ? null : 'red' }, { label: 'On', js: 'js-overbook', data: { val: '1' }, on: state.overbookOn ? 'green' : null }])}</div>
     <p class="set-note">Drag &amp; drop policy — saved on this device.</p>
     <div class="set-row" style="margin-top:12px;align-items:center"><span class="set-role" style="flex:0 0 auto" data-tip="A light vibration confirms committed actions on phones (post a chat, drop a link, complete a WO, release-to-cancel). Android only — iOS has no vibration.">Haptic feedback</span>${segCtl([{ label: 'Off', js: 'js-haptics', data: { val: '0' }, on: state.hapticsOff ? 'red' : null }, { label: 'On', js: 'js-haptics', data: { val: '1' }, on: state.hapticsOff ? null : 'green' }])}</div>
@@ -11509,6 +11545,9 @@ function onClick(e) {
   if (closest('.js-switch-user')) { e.stopPropagation(); return switchUser(); }
   if (closest('.js-open-settings')) { e.stopPropagation(); return openSettings(); }
   if (closest('.js-set-reveal')) { e.stopPropagation(); const o = state.overlay; if (o) { captureLoginEdits(o); o.revealPw = !o.revealPw; renderOverlay(); } return; }   // toggle masked role passwords
+  if (closest('.js-role-tier')) { e.stopPropagation(); const o = state.overlay; if (o) { captureLoginEdits(o); const b = closest('.js-role-tier'); const meta = draftRoleMeta(o); (meta[b.dataset.role] || (meta[b.dataset.role] = {})).tier = b.dataset.tier; o.error = null; renderOverlay(); } return; }   // pick a role's permission tier
+  if (closest('.js-role-del')) { e.stopPropagation(); const o = state.overlay; if (!o) return; const id = closest('.js-role-del').dataset.role; if (PROTECTED_ROLE_IDS.includes(String(id).toLowerCase())) { o.error = 'That built-in role can’t be removed.'; renderOverlay(); return; } captureLoginEdits(o); delete o.config.roles[id]; delete draftRoleMeta(o)[id]; o.error = null; renderOverlay(); return; }   // remove a role
+  if (closest('.js-role-add')) { e.stopPropagation(); const o = state.overlay; if (!o) return; captureLoginEdits(o); o.config.roles = o.config.roles || {}; let n = Object.keys(o.config.roles).length + 1, id = 'role' + n; while (o.config.roles[id] != null) { n++; id = 'role' + n; } o.config.roles[id] = ''; draftRoleMeta(o)[id] = { label: 'New Role', tier: 'staff' }; o.error = null; renderOverlay(); return; }   // add a custom role
   if (closest('.js-settings-save')) { e.stopPropagation(); return saveSettings(); }
   if (closest('.js-settings-resetpage')) { e.stopPropagation(); return resetPageSettings(); }   // gentle: default just this tab
   if (closest('.js-settings-reset')) { e.stopPropagation(); const o = state.overlay; if (!o) return; if (o.resetArm) return resetAllSettings(); o.resetArm = true; renderOverlay(); return; }   // armed two-click confirm
@@ -13051,7 +13090,13 @@ async function saveSettings() {
   if (haveLogins) {
     roles = {}; root.querySelectorAll('.set-input[data-role]').forEach((i) => { roles[i.dataset.role] = i.value.trim(); });
     admin = root.querySelector('.set-input[data-admin]')?.value.trim() || '';
+    // Labels + tiers ride in settings.roleMeta — capture the typed labels, then
+    // prune meta for any role that was removed so it can't linger.
+    const meta = draftRoleMeta(o);
+    root.querySelectorAll('.set-input[data-rolelabel]').forEach((i) => { const id = i.dataset.rolelabel; (meta[id] || (meta[id] = {})).label = i.value.trim(); });
+    Object.keys(meta).forEach((id) => { if (!(id in roles)) delete meta[id]; });
     if (!admin || Object.values(roles).some((v) => !v)) { o.error = 'Passwords can\'t be empty.'; o.tab = 'logins'; renderOverlay(); return; }
+    if (Object.keys(roles).some((id) => !(meta[id] && meta[id].label))) { o.error = 'Role names can\'t be empty.'; o.tab = 'logins'; renderOverlay(); return; }
   }
   const settings = o.draftSettings || state.settings || {};
   // Inputs are read above; now flip to the Saving… state so the button doesn't look frozen.
