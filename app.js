@@ -10217,6 +10217,10 @@ function wrResolveCustomer(ref) {
 function wrResolveUnit(ref) { const s = String(ref == null ? '' : ref).trim(); const byId = s && IDX.unit.get(s); if (byId) return { rec: byId }; return wrMatchByName(DATA.units, s, 'name'); }
 function wrResolveCategory(ref) { const s = String(ref == null ? '' : ref).trim(); const byId = s && IDX.category.get(s); if (byId) return { rec: byId }; return wrMatchByName(DATA.categories, s, 'name'); }
 function wrResolveVendor(ref) { const s = String(ref == null ? '' : ref).trim(); const byId = s && IDX.vendor.get(s); if (byId) return { rec: byId }; return wrMatchByName(DATA.vendors, s, 'name'); }
+function wrResolvePart(ref) { const s = String(ref == null ? '' : ref).trim(); const byId = s && IDX.part.get(s); if (byId) return { rec: byId }; return wrMatchByName(DATA.parts, s, 'name'); }
+function wrResolveRental(ref) { const s = String(ref == null ? '' : ref).trim(); const byId = s && IDX.rental.get(s); if (byId) return { rec: byId }; return wrMatchByName(DATA.rentals, s, 'rentalName'); }
+// Per-entity resolver — used by the UPDATE op so EVERY card/board record can be edited by name, not just id.
+const WR_RESOLVE = { customers: wrResolveCustomer, units: wrResolveUnit, categories: wrResolveCategory, vendors: wrResolveVendor, parts: wrResolvePart, rentals: wrResolveRental };
 // Foreign-key fields that accept a NAME and resolve to the real id (so categoryId:"Stump Grinder" links up).
 const WR_FK = { categoryId: { resolve: wrResolveCategory, idKey: 'categoryId' }, vendorId: { resolve: wrResolveVendor, idKey: 'vendorId' } };
 function wrCleanFields(entity, obj) {
@@ -10307,10 +10311,13 @@ function wrValidatePlan(act) {
       const rows = (raw.rows || []).map((r) => wrCleanFields(raw.entity, r).out).filter((r) => Object.keys(r).length);
       if (rows.length) ops.push({ op: 'import', entity: raw.entity, rows });
     } else if (opn === 'update') {
-      const t = wrGet(raw.entity, raw.id);
+      const resolver = WR_RESOLVE[raw.entity];   // resolve by id OR name (incl. records past the 200-row snapshot cap)
+      const rr = resolver ? resolver(raw.id) : (wrGet(raw.entity, raw.id) ? { rec: wrGet(raw.entity, raw.id) } : {});
+      if (rr.many) { issues.push(`more than one ${ent.label} matches “${raw.id}” — which one? (${rr.many.slice(0, 3).map((x) => x.name || x.rentalName || idOf(raw.entity, x)).join(', ')})`); return; }
+      const t = rr.rec;
       if (!t) { issues.push(`no ${ent.label} “${raw.id}”`); return; }
       const c = wrCleanFields(raw.entity, raw.fields);
-      if (Object.keys(c.out).length) ops.push({ op: 'update', entity: raw.entity, id: raw.id, fields: c.out, target: t });
+      if (Object.keys(c.out).length) ops.push({ op: 'update', entity: raw.entity, id: idOf(raw.entity, t), fields: c.out, target: t });
     } else {
       if (!ent.create) { issues.push(`${ent.label}s can’t be created this way`); return; }
       const c = wrCleanFields(raw.entity, raw.fields);
@@ -16103,7 +16110,7 @@ function exposeTestApi() {
       rentalAllocated, itemRefunded, itemRefundable, lineRefunded, lineFullyRefunded, refundLines, rentalLineRefund, applyPayment, unitRentalPrice, rentalPrice, rentalDisplayName, setWoLinePhase, setWoPhase, woBottleneck,
       cleanUnitName, planUnitMigration, applyUnitMigration, openMigrationPreview,
       computeTransportPrice, isFueledType, unitTransport, rentalTransport,
-      wrValidatePlan, applyWranglerData, wrPlanNeedsApply, wrPlanSummary, wrFunnel, wrResolveCustomer, wrResolveUnit, wrResolveCategory, wrResolveVendor, invoiceMergeable, mergeInvoiceInto, parseWranglerAction, stripWranglerAction, parseCsvFile, wrFindAttachedCsv,
+      wrValidatePlan, applyWranglerData, wrPlanNeedsApply, wrPlanSummary, wrFunnel, wrResolveCustomer, wrResolveUnit, wrResolveCategory, wrResolveVendor, wrResolvePart, wrResolveRental, invoiceMergeable, mergeInvoiceInto, parseWranglerAction, stripWranglerAction, parseCsvFile, wrFindAttachedCsv,
       latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore, wranglerRailLoad, wrOffloadChatImages, wrEvictChatBlobs, driveViewUrl, mergeWranglerRails,
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,

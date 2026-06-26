@@ -318,6 +318,30 @@ try {
       ok(byNameRent.ops.length === 1 && /start rental/.test(byNameRent.ops[0].summary), 'WR-resolve: startRental books by customer NAME + unit NAME');
     }
 
+    // 12i) UPDATE by NAME across every editable card/board (Jac: apply the fix everywhere). The update op
+    // resolves its target by id OR name (incl. records past the 200-row snapshot cap), so editing a record
+    // you can only name — not id — works for customers, units, categories, vendors, parts alike.
+    {
+      const upByName = (entity, ref, fields) => T.wrValidatePlan({ action: 'data', ops: [{ op: 'update', entity, id: ref, fields }] });
+      const cu = T.IDX.customer.get('C0009');
+      const uC = upByName('customers', cu.name, { phone: '555-0199' });
+      ok(uC.ops.length === 1 && uC.ops[0].id === 'C0009', 'WR-update: customer edited BY NAME resolves to the real id');
+      const un = T.DATA.units.find((u) => u.fleetStatus === 'Active');
+      const uU = upByName('units', un.name, { notes: 'wr update note' });
+      ok(uU.ops.length === 1 && uU.ops[0].id === un.unitId, 'WR-update: unit edited BY NAME');
+      const ca = T.DATA.categories[0];
+      const uCat = upByName('categories', ca.name, { description: 'wr desc' });
+      ok(uCat.ops.length === 1 && uCat.ops[0].id === ca.categoryId, 'WR-update: category edited BY NAME');
+      const ve = T.DATA.vendors[0];
+      const uV = upByName('vendors', ve.name, { phone: '555-0200' });
+      ok(uV.ops.length === 1 && uV.ops[0].id === ve.vendorId, 'WR-update: vendor edited BY NAME');
+      const pa = T.DATA.parts[0];
+      const uP = upByName('parts', pa.name, { notes: 'wr part note' });
+      ok(uP.ops.length === 1 && uP.ops[0].id === pa.partId, 'WR-update: part edited BY NAME');
+      // a name that matches nothing is still refused cleanly
+      ok(upByName('customers', 'Nobody McNobodyface', { phone: '1' }).issues.some((s) => /no customer/.test(s)), 'WR-update: an unknown name is refused');
+    }
+
     // 13) Transport pricing v2 — $3.50/mile + $50 load + $20 fuel (fueled), per leg.
     const tp = (a) => T.computeTransportPrice(a).price;
     // 10 mi Delivery, fueled: (3.5*10 + 50 + 20) * 1 = 105
