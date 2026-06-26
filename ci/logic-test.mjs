@@ -190,6 +190,23 @@ try {
       ok(splan.ops.length === 0, 'WR: an entity outside the allowlist (settings) yields no ops');
     }
 
+    // 12c) Stage 2a — category RENTAL RATES are editable (the money line allows pricing), numeric-coerced,
+    // and bad/negative values + the used-sale margin floor stay fenced.
+    {
+      const cat = T.DATA.categories[0];
+      // edit a rate via update; a string number is coerced to a real number (money math stays sound)
+      const eplan = T.wrValidatePlan({ action: 'data', ops: [{ op: 'update', entity: 'categories', id: cat.categoryId, fields: { rate1Day: '425' } }] });
+      ok(eplan.ops.length === 1 && eplan.ops[0].fields.rate1Day === 425 && typeof eplan.ops[0].fields.rate1Day === 'number', 'WR: a category rate edits, string "425" coerced to number 425');
+      T.applyWranglerData(eplan);
+      ok(cat.rate1Day === 425, 'WR: the rate write lands on the category');
+      // a negative/garbage rate is dropped, never written
+      const bad = T.wrValidatePlan({ action: 'data', ops: [{ op: 'update', entity: 'categories', id: cat.categoryId, fields: { rate7Day: -5, weekend: 'free' } }] });
+      ok(bad.ops.length === 0, 'WR: negative / non-numeric rates are dropped (no op)');
+      // the used-sale margin floor is NOT editable this stage
+      const floor = T.wrValidatePlan({ action: 'data', ops: [{ op: 'update', entity: 'categories', id: cat.categoryId, fields: { bottomDollar: 1 } }] });
+      ok(floor.ops.length === 0, 'WR: bottomDollar (margin floor) stays fenced — off the allowlist');
+    }
+
     // 13) Transport pricing v2 — $3.50/mile + $50 load + $20 fuel (fueled), per leg.
     const tp = (a) => T.computeTransportPrice(a).price;
     // 10 mi Delivery, fueled: (3.5*10 + 50 + 20) * 1 = 105
