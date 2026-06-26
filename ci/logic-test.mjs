@@ -801,6 +801,14 @@ try {
       // COMBINED front+back in one save — composes correctly (a single open chunk re-prices to the full window)
       scenario('combined front+back · unpaid · auto line', false, true, SB, E1);
       scenario('combined front+back · PAID · auto line', true, true, SB, E1);
+      // MOVE (slide the window, same length) — NOT an extension: one end grows but a prior day is
+      // DROPPED, so it must bill NOTHING (a reschedule, not an extension — re-price/refund is manual).
+      const SP1 = '2099-08-02';   // S0 + 1
+      const pvMoveFwd = scenario('MOVE forward · PAID (drop front day, add back day)', true, true, SP1, E1);
+      ok(Math.abs(pvMoveFwd || 0) < 0.01, `move forward bills nothing — a same-length slide is not an extension (got ${pvMoveFwd})`);
+      const pvMoveBack = scenario('MOVE backward · PAID (drop back day, add front day)', true, true, SB, SP1);
+      ok(Math.abs(pvMoveBack || 0) < 0.01, `move backward bills nothing — not an extension (got ${pvMoveBack})`);
+      scenario('MOVE forward · unpaid', false, true, SP1, E1);
     }
     // === F1 — membership fee math (spec §2): no proration; protection = 15% of BASE only; 10.75% tax ===
     {
