@@ -5174,46 +5174,9 @@ function headFlagsHtml(card, rec) {
   return '';
 }
 
-/* §12.2 RENTAL DETAIL CALENDAR — numbered-date, full-window, Sunday-anchored.
-   Reuses the rcc track system (solid=elapsed, 30% opacity=remaining). */
-function rentalDetailCal(r, stColor) {
-  const s = parseISO(r.startDate), e = parseISO(r.endDate);
-  if (!s || !e) return '';
-  const ttype = r.transportType;
-  const isSelf = !ttype || ttype === 'Self';
-  const startIcon = isSelf ? CARD_ICON.customers : I.truck;
-  const endHasTruck = ttype === 'Recovery' || ttype === 'Round-Trip';
-  const endIcon = isSelf ? CARD_ICON.customers : (endHasTruck ? I.truck : '');
-  const firstSun = new Date(s.getFullYear(), s.getMonth(), s.getDate() - s.getDay());
-  const lastSatDelta = (6 - e.getDay() + 7) % 7;
-  const lastSat = new Date(e.getFullYear(), e.getMonth(), e.getDate() + lastSatDelta);
-  const totalDays = Math.round((lastSat - firstSun) / 86400000) + 1;
-  const DOW = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
-  const RDCAL_MON = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
-  const dowRow = DOW.map((l) => `<span>${l}</span>`).join('');
-  const cells = [];
-  for (let i = 0; i < totalDays; i++) {
-    const d = new Date(firstSun.getFullYear(), firstSun.getMonth(), firstSun.getDate() + i);
-    const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    const isToday = iso === TODAY_ISO, isStart = iso === r.startDate, isEnd = iso === r.endDate;
-    const inWin = iso >= r.startDate && iso <= r.endDate;
-    const elapsed = inWin && d <= TODAY;
-    // 1st of a month (not a start/end cell) shows the month abbrev so the boundary reads —
-    // matches the mini calendars' mon1st marker (Jac 2026-06-24).
-    const isMon1st = !isStart && !isEnd && d.getDate() === 1;
-    const cls = ['rdcal-day', isToday && 'is-today', isStart && 'is-start', isEnd && 'is-end',
-      inWin && 'is-win', inWin && (elapsed ? 'elapsed' : 'fut'),
-      (!isToday && !inWin && d < TODAY) && 'is-past', isMon1st && 'is-mon1st'].filter(Boolean).join(' ');
-    const time = isStart ? (r.startTime || '') : '';
-    const icon = isStart ? startIcon : (isEnd ? endIcon : '');
-    const nLabel = isMon1st ? RDCAL_MON[d.getMonth()] : String(d.getDate());
-    cells.push(`<div class="${cls}">${inWin ? '<span class="rdcal-bar"></span>' : ''}${time ? `<span class="rdcal-t">${esc(time)}</span>` : ''}<span class="rdcal-n${isMon1st ? ' mon1st' : ''}">${esc(nLabel)}</span>${icon ? `<span class="rdcal-ico">${icon}</span>` : ''}</div>`);
-  }
-  return `<div class="rdcal js-open-winpicker" data-rec="${esc(r.rentalId)}" style="--rdcal-hl:var(--${stColor})">
-    <div class="rdcal-dow">${dowRow}</div>
-    <div class="rdcal-body">${cells.join('')}</div>
-  </div>`;
-}
+/* §12.2 — the rental window is now edited INLINE in the standard detail (rdcal-edit →
+   winPickerEl); the old display-only rentalDetailCal + its popup trigger were retired
+   with the inline migration (Jac 2026-06-25). */
 
 const DETAIL = {
   /* ── RENTALS — fully built (§12.2 standard mode) ── */
@@ -11606,7 +11569,6 @@ function onClick(e) {
   if (closest('.js-wp-cancel')) { e.stopPropagation(); return winPickCancel(); }
   if (closest('.js-wp-save')) { e.stopPropagation(); return winPickSave(); }
   if (closest('.js-wp-today')) { e.stopPropagation(); return winPickToday(); }
-  if (closest('.js-wp-done')) { e.stopPropagation(); return closeWinPicker(); }
   // §5.4d date-search picker
   if (closest('.js-ds-day')) { e.stopPropagation(); return dsPickDay(closest('.js-ds-day').dataset.iso); }
   if (closest('.js-ds-prev')) { e.stopPropagation(); return dsMonth(-1); }
@@ -11616,7 +11578,7 @@ function onClick(e) {
   if (closest('.js-ds-done')) { e.stopPropagation(); return dsDone(); }
   if (closest('.js-tl-blocker')) { e.stopPropagation(); const st = document.querySelector('.stalls'); if (st) st.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); attnFlash('.stall .pill.dvd'); return; }
   // §inline — the rental-window calendar is edited in place; no popup to open.
-  if (closest('[data-sheetclose]')) { e.stopPropagation(); return closest('[data-sheetclose]').dataset.sheetclose === 'date' ? closeDateSearch() : closeWinPicker(); }   // §M3 — tap the phone sheet backdrop to dismiss the picker
+  if (closest('[data-sheetclose]')) { e.stopPropagation(); return closeDateSearch(); }   // §M3 — tap the phone sheet backdrop to dismiss the date-search picker
 
   // sort menu + direction toggle
   if (closest('.js-sortmenu')) { const b = closest('.js-sortmenu'); return openViewMenu(b.dataset.card, b); }
@@ -13725,24 +13687,6 @@ function winStagedChanged() {
   const r = IDX.rental.get(wp.rentalId); if (!r) return false;
   return wp.staged.startDate !== (r.startDate || '') || wp.staged.endDate !== (r.endDate || '') || wp.staged.startTime !== (r.startTime || '');
 }
-function openWinPicker(rentalId) {
-  const r = IDX.rental.get(rentalId); if (!r) return;
-  if (!r.startTime) r.startTime = nowHourLabel();   // default to the current hour (user spec)
-  state.winEdit = { rentalId, monthISO: firstOfMonthISO(r.startDate || TODAY_ISO), anchor: null };
-  if (rentalFragile(r)) state.winEdit.staged = { rentalId, startDate: r.startDate || '', endDate: r.endDate || '', startTime: r.startTime || '' };
-  // Task C — only pivot the left column to Categories when the Rental Standard View is already
-  // open for this rental AND dates are set (so clicking the mini-calendar on a list-view row
-  // doesn't clobber whatever the operator had open on the left).
-  // Availability lens fires for both trigger paths whenever dates exist.
-  const s = activeSession();
-  const rs = s.cards.rentals;
-  if (rs && rs.mode === 'standard' && rs.recId === rentalId && r.startDate && r.endDate) {
-    if (s.cols) s.cols.left = 'categories';
-    const cc = s.cards.categories; if (cc) { cc.mode = 'list'; cc.recId = null; cc.listLimit = undefined; }
-  }
-  if (!rentalFragile(r) && r.startDate && r.endDate) enterAvailabilitySearch(r);
-  render();
-}
 function winPickSave() {
   const wp = state.winEdit; if (!wp) return;
   const r = IDX.rental.get(wp.rentalId);
@@ -13763,7 +13707,6 @@ function winPickSave() {
   }
   state.winEdit = null; render();
 }
-function closeWinPicker() { state.winEdit = null; render(); }
 function winPickMonth(delta) {
   const wp = state.winEdit; if (!wp) return;
   const d = parseISO(wp.monthISO); d.setMonth(d.getMonth() + delta);
@@ -13938,19 +13881,6 @@ function winPickerEl(r) {
     <div class="wp-foot"><button class="pill ghost js-wp-today" data-r="R18">Today</button>${actionPill('commit', 'Clear', { js: 'js-wp-clear' })}</div>
     ${confirmCard}
   </div>`;
-}
-/** Float the picker anchored to the TOP of its trigger button (opens upward so the
- *  guide popup below it isn't blocked); drops below only if there's no room above. */
-function positionWinPicker(fl) {
-  const trigger = document.querySelector(`.js-open-winpicker[data-rec="${state.winEdit.rentalId}"]`);
-  if (!trigger) { fl.style.display = 'none'; return; }       // detail not visible → hide
-  const tr = trigger.getBoundingClientRect();
-  const pw = fl.offsetWidth || 300, ph = fl.offsetHeight || 360;
-  let left = Math.max(10, Math.min(tr.left + tr.width / 2 - pw / 2, window.innerWidth - pw - 10));   // centered on the button
-  let top = tr.top - ph - 6;                                  // ANCHORED ABOVE the button
-  if (top < 10) top = Math.min(tr.bottom + 6, window.innerHeight - ph - 10);   // no room above → drop below
-  fl.style.left = Math.round(left) + 'px';
-  fl.style.top = Math.round(top) + 'px';
 }
 
 /* ════════════════════════════════════════════════════════════════════════
