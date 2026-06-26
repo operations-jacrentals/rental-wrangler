@@ -5722,8 +5722,15 @@ const DETAIL = {
     const cat = IDX.category.get(r.categoryId);
     const cust = IDX.customer.get(r.customerId);
     const invs = rentalInvoices(r);   // §28cap — a rental can have a ≤28-day invoice series
+    // #378 — a FULLY-refunded invoice no longer occupies the rental's billing slot: the money
+    // was returned (settled model — refund never re-bills), so it drops out of the LIVE series
+    // for the balance read-out + the +Invoice affordance. It still shows as a (↩) pill for the
+    // trail and lives on the Invoice card; re-billing creates a fresh invoice (createInvoiceForRental).
+    const invFullyRefunded = (iv) => invoiceTotals(iv).status === 'Refunded';
+    const liveInvs = invs.filter((iv) => !invFullyRefunded(iv));
     const inv = invs[0] || (r.invoiceId ? IDX.invoice.get(r.invoiceId) : null);
-    const invT = inv ? invoiceTotals(inv) : null;
+    const liveInv = liveInvs[0] || null;
+    const invT = liveInv ? invoiceTotals(liveInv) : null;
     const truck = showsTruck(r.status, r.transportType);
     const stColor = rentalStatusDisplay(r).color;
     const s = parseISO(r.startDate), e = parseISO(r.endDate);
@@ -5732,16 +5739,21 @@ const DETAIL = {
 
     /* invoice pill(s) — the billing series; ✕ unlink only on the primary while $0 is assigned. */
     const paidForThis = inv ? rentalAllocated(inv, r.rentalId) : 0;
-    const invPill = invs.length
-      ? invs.map((iv, k) => `<span class="pill ref link" data-r="R2" data-pill-card="invoices" data-pill-rec="${esc(iv.invoiceId)}"${invs.length > 1 ? ` data-tip="${esc('Invoice ' + (k + 1) + ' of ' + invs.length + (iv.contOf ? ' — continuation (28-day cap)' : ''))}"` : ''}>${CARD_ICON.invoices}${esc(invoiceShort(iv.invoiceId))}${k === 0 && paidForThis <= 0 ? `<span class="x" data-x="inv-remove" data-tip="unlink — allowed while $0 is assigned to this rental; afterwards refund first">✕</span>` : ''}</span>`).join('')
-      : addBtn('Invoice', { link: true, js: 'js-create-invoice', h: 26, data: { rec: r.rentalId } });
+    const createInvBtn = addBtn('Invoice', { link: true, js: 'js-create-invoice', h: 26, data: { rec: r.rentalId } });
+    // Render every invoice pill (a fully-refunded one carries a ↩ + "re-bill" tip); then offer
+    // +Invoice whenever there is no LIVE invoice left — so a refund restores the re-bill path (#378).
+    const invPill = (invs.length
+      ? invs.map((iv, k) => { const refunded = invFullyRefunded(iv);
+          const tip = refunded ? 'Refunded — use +Invoice to re-bill on a fresh invoice' : (invs.length > 1 ? 'Invoice ' + (k + 1) + ' of ' + invs.length + (iv.contOf ? ' — continuation (28-day cap)' : '') : '');
+          return `<span class="pill ref link" data-r="R2" data-pill-card="invoices" data-pill-rec="${esc(iv.invoiceId)}"${tip ? ` data-tip="${esc(tip)}"` : ''}>${refunded ? '↩ ' : ''}${CARD_ICON.invoices}${esc(invoiceShort(iv.invoiceId))}${k === 0 && paidForThis <= 0 ? `<span class="x" data-x="inv-remove" data-tip="unlink — allowed while $0 is assigned to this rental; afterwards refund first">✕</span>` : ''}</span>`; }).join('')
+      : '') + (liveInvs.length ? '' : createInvBtn);
 
     /* Balance (paid / total) for the header right side — summed across the invoice series. */
     const rentLines = rentalLineItems(r);
-    const eventTotal = invs.length ? invs.reduce((a, iv) => a + invoiceTotals(iv).total, 0) : rentLines.reduce((a, li) => a + (Number(li.amount) || 0), 0);
-    const eventPaid = invs.reduce((a, iv) => a + invoiceTotals(iv).paid, 0);
+    const eventTotal = liveInvs.length ? liveInvs.reduce((a, iv) => a + invoiceTotals(iv).total, 0) : rentLines.reduce((a, li) => a + (Number(li.amount) || 0), 0);
+    const eventPaid = liveInvs.reduce((a, iv) => a + invoiceTotals(iv).paid, 0);
     const balColor = (eventPaid > 0 && eventPaid >= eventTotal) ? 'green' : (invT && invT.status === 'Not Due' && eventPaid <= 0) ? 'blue' : 'red';
-    const rdBal = `<span class="rd-bal balline" data-chat-el data-chat-label="${esc('Balance ' + money(eventPaid) + ' / ' + money(eventTotal))}" data-chat-color="${esc(balColor)}"${inv ? ` data-chat-card="invoices" data-chat-rec="${esc(inv.invoiceId)}"` : ''}><b style="color:var(--${balColor})">${money(eventPaid)}</b><span class="tot"> / ${money(eventTotal)}</span></span>`;
+    const rdBal = `<span class="rd-bal balline" data-chat-el data-chat-label="${esc('Balance ' + money(eventPaid) + ' / ' + money(eventTotal))}" data-chat-color="${esc(balColor)}"${liveInv ? ` data-chat-card="invoices" data-chat-rec="${esc(liveInv.invoiceId)}"` : ''}><b style="color:var(--${balColor})">${money(eventPaid)}</b><span class="tot"> / ${money(eventTotal)}</span></span>`;
 
     /* Header: customer + PO left · status gate top-right, then invoice+balance below. */
     const custEl = cust
