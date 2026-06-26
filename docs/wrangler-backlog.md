@@ -78,3 +78,9 @@ screenshot-checked. **All on the branch (PR #7)** — nothing auto-shipped to li
 ### Parked (crossed out on the notes)
 - ~~WO Completion Rate: Last 30~~
 - ~~Hide "Returned"~~
+
+## Triage log — 2026-06-23 (logged in-session, NOT fixed — for a later fix pass)
+> Logged onto this branch instead of GitHub issues to avoid the notification-bell flood (see #246).
+> Each item carries its `[area/…]` route. Fix later; run any UI item through `jactec-ui` + `frontend`.
+
+- [ ] **Red isn't legible — needs to pop.** The danger/cancel **red** (`--red #ff4242`; the red hazard-stripe variant; the cancel-arc) still reads muddy / low-contrast against the dark steel panels — not legible enough even after a prior pass. Wants real pop: brighter/higher-contrast red, heavier weight, or an edge/glow to lift it off the panel — while staying in the yard data-plate language (not a generic alert-red). Run through `jactec-ui` (palette + legibility floor) and `frontend` when fixing. `[area/design-system]`
