@@ -756,6 +756,42 @@ try {
         const ri = T.DATA.rentals.findIndex((o) => o.rentalId === rid); if (ri >= 0) T.DATA.rentals.splice(ri, 1); T.IDX.rental.delete(rid);
       });
     }
+
+    // 32b) EXTENSION PREVIEW == ACTUAL POSTING (regression for the reported bug — the inline
+    //      confirm panel's "Added charge" must equal EXACTLY what Bill Extension posts, even when
+    //      the invoice is PAID (spills the added segment to a continuation invoice) or its prior
+    //      charge is a MANUAL line, not an auto rental line. The old preview blindly did
+    //      `price(full window) − matched-billed`, which overstated both cases.)
+    {
+      const pf = (catId, s, e) => { const p = T.rentalPrice({ categoryId: catId, startDate: s, endDate: e, customerId: 'C0009' }); return p ? p.price : 0; };
+      const S0 = '2099-08-01', E0 = '2099-08-03', E1 = '2099-08-04';   // 2 days → +1 (mirrors the reported screenshot)
+      const af3 = T.DATA.units.filter((u) => u.fleetStatus === 'Active');
+      const cu = af3.find((u) => pf(u.categoryId, S0, E1) > pf(u.categoryId, S0, E0) && pf(u.categoryId, S0, E0) > 0) || af3[0];
+      const seriesSub = (r) => T.rentalInvoices(r).reduce((a, iv) => a + iv.lineItems.filter((l) => l.kind === 'rental' || l.kind === 'extension').reduce((s, l) => s + (+l.amount || 0), 0), 0);
+      const scenario = (label, paid, matched) => {
+        const rid = 'R-PVEQ', iid = 'I-PVEQ';
+        const r = { rentalId: rid, customerId: 'C0009', unitId: cu.unitId, categoryId: cu.categoryId, startDate: S0, endDate: E0, startTime: '', status: 'On Rent', transportType: 'Self', deliveryAddress: '', transportMiles: null, invoiceId: iid, units: [{ unitId: cu.unitId, transportType: 'Self', transportMiles: null }], notes: '', actions: [], mock: true };
+        T.DATA.rentals.push(r); T.IDX.rental.set(rid, r);
+        const inv = { invoiceId: iid, customerId: 'C0009', rentalIds: [rid], date: T.TODAY_ISO, dueDate: T.TODAY_ISO, po: '', amountPaid: 0, lineItems: [], covOf: rid, covStart: S0, covEnd: E0, mock: true };
+        if (matched) T.rentalLineItems(r).forEach((li) => inv.lineItems.push(li));
+        else inv.lineItems.push({ kind: 'item', ref: rid, unitId: cu.unitId, lid: 'L-MAN', label: `${T.IDX.unit.get(cu.unitId)?.name || 'Unit'} · 1-Day×1`, amount: pf(cu.categoryId, S0, E0), qty: 1 });
+        T.DATA.invoices.push(inv); T.IDX.invoice.set(iid, inv);
+        if (paid) { inv.amountPaid = T.invoiceTotals(inv).total; const l0 = inv.lineItems[0]; inv.allocations = { [T.lineKey(l0)]: l0.amount }; }
+        const pv = T.extensionPreview(r, S0, E1);
+        const before = seriesSub(r);
+        r.endDate = E1; T.billExtension(r, E0);
+        const actual = Math.round((seriesSub(r) - before) * 100) / 100;
+        ok(pv && Math.abs(pv.subtotalDelta - actual) < 0.01, `preview == actual posting — ${label} (preview ${pv ? pv.subtotalDelta : 'null'} vs billed ${actual})`);
+        T.rentalInvoices(r).forEach((iv) => { const i = T.DATA.invoices.findIndex((o) => o.invoiceId === iv.invoiceId); if (i >= 0) T.DATA.invoices.splice(i, 1); T.IDX.invoice.delete(iv.invoiceId); });
+        const ri = T.DATA.rentals.findIndex((o) => o.rentalId === rid); if (ri >= 0) T.DATA.rentals.splice(ri, 1); T.IDX.rental.delete(rid);
+        return pv ? pv.subtotalDelta : null;
+      };
+      scenario('unpaid · auto rental line', false, true);
+      scenario('PAID · auto rental line', true, true);
+      const pvManual = scenario('PAID · manual ×1 line (the reported bug)', true, false);
+      // headline regression: a paid manual-lined invoice must preview the ADDED segment, NOT the full new window
+      ok(pvManual != null && Math.abs(pvManual - pf(cu.categoryId, E0, E1)) < 0.01, `paid+manual: added charge = the added segment ($${pf(cu.categoryId, E0, E1)}), not the full window ($${pf(cu.categoryId, S0, E1)})`);
+    }
     // === F1 — membership fee math (spec §2): no proration; protection = 15% of BASE only; 10.75% tax ===
     {
       const PR = { monthlyBase: 299, annualBase: 2691, monthlyTransport: 500, annualTransport: 4500, protectionPct: 15, protectionCapMonthly: 2000 };
