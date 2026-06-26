@@ -1,7 +1,11 @@
-# Inspection photo/video evidence → Work Order — design spec
+# Inspection evidence capture + fail-condition model — design spec
 
 - **Date:** 2026-06-26
 - **Status:** Spec for review — touches the inspection → auto-WO (money-adjacent) cascade, so it wants Jac's OK before any build.
+- **Two tracks (interlocked):** **(1) Fail-condition model** — every field is answer-required, the per-item
+  Optional/Required toggle is replaced by a per-type *fail condition* the admin can edit anytime; **(2) Evidence capture**
+  — per-item + walkaround photo/video that flows into the auto-Work-Order. Track 1 is the foundation (its generalized
+  fail predicate is what Track 2's "require a photo on fail" keys off).
 - **Branch:** `claude/inspections-settings-status-9w3ro3`
 - **Area:** `area/units-fleet` (inspections)
 - **Follow-on to:** Inspection checklist takeover (`2026-06-18`) + Typed inspection fields (`2026-06-22`).
@@ -74,7 +78,56 @@ proof of the specific failure.
 **D6 — Zero-change default:** with no evidence policy set and no walkaround requirement, the inspection flow is
   **byte-for-byte today's**. Old saved inspections are untouched (new fields additive).
 
-## Data model (additive, schema-less)
+## Track 1 — Fail-condition model (replaces the per-item "Required" toggle)
+
+**Directive (Jac, 2026-06-26, live):** *"all fields are required regardless"* → drop the Optional/Required toggle.
+*"replace that with a context option for what fails or not … Fail may = pass and Pass may = Fail … numbers: a range?
+above? below? … dropdowns like Pass if blank … these followup context should be changeable even after the field has
+been created."*
+
+### A. Every item is answer-required
+The Optional/Required segcontrol (`js-insp-itemreq`, builder `app.js:3502`) and the item `required` flag are **removed**.
+`inspItemUnanswered` (`app.js:9327`/`2998` region) becomes "must be answered" for **every** type — toggle: pick a side;
+select: choose an option; number/date/text: filled; file: attached. Old `required:false` items are simply read as
+required now (no migration; the flag is ignored).
+
+### B. Each item carries a typed fail condition (`it.fail`)
+A generalized `inspItemFails(it, val)` (`app.js:2998`) switches on `it.type` and reads `it.fail`. The failing answer still
+flows `completeChecklist → setInspResult('Fail') → autoWOFromInspection` **unchanged** — only the *predicate that decides
+"did it fail"* gets richer.
+
+| Type | Fail config (builder) | Predicate | Default |
+|---|---|---|---|
+| **Toggle** | "Fails when…" → **Fail** (normal) or **Pass** (inverse — "passing by inverse") | `failWhen==='pass' ? val==='Pass' : val==='Fail'` | `fail` (today's behavior) |
+| **Dropdown** | per-option **Fails** flag (today) + an optional **blank/N-A** option that can itself be flagged pass or fail | option matching `val` has `fail===true` | per-option |
+| **Number** | operator **Above / Below / Outside / Inside** + threshold(s) | above→`v>a`; below→`v<a`; outside→`v<a||v>b`; inside→`a≤v≤b`; none→never | none |
+| **Date** | operator **Before / After** + ref **today** or a fixed date | before→`d<ref`; after→`d>ref`; none→never | none |
+| **Text** | *(open decision — default informational, never fails)* | none | none |
+| **Add File** | n/a — the answer is the photo; never fails | none | — |
+
+```js
+// it.fail descriptor on each item (schema-less, additive):
+toggle  → { failWhen:'fail'|'pass' }
+select  → options:[{ label, fail }]                       // unchanged from typed-fields spec
+number  → { op:'none'|'above'|'below'|'outside'|'inside', a:Number, b:Number }
+date    → { op:'none'|'before'|'after', ref:'today'|'<ISO>' }
+text    → { op:'none' }
+```
+
+**Back-compat is automatic:** a `toggle` with no `it.fail` reads as `failWhen:'fail'`, so every existing item — including
+all 21 default families — behaves exactly as today. Existing saved answers (`n.items[id]`) are untouched.
+
+### C. Editable after creation (Jac: "so the user doesn't have to work as hard")
+Today an existing item row is **remove-only** (`app.js:3484-3487`). The builder gains **inline editing** of each existing
+row's **label, type, and fail condition**, reusing the same draft plumbing (`ensureInspDraft` / `draftInspCfg` /
+`o.draftSettings.inspections`) — no new persistence surface. Changing a fail condition does **not** rewrite saved history;
+it only changes how *future* completions evaluate. Changing a row's *type* re-defaults its `fail` to that type's default.
+
+### D. Composition with evidence
+Track 2's `failphoto` evidence policy keys off this **generalized** `inspItemFails`, so "require a photo when this item
+fails" now also fires for an out-of-range number or an expired date — not just a toggle Fail.
+
+## Track 2 — Data model (additive, schema-less)
 
 ```js
 // on the inspection record (data.js shape) — both new, both optional:
@@ -82,16 +135,20 @@ n.itemEvidence = { '<itemId>': [ { kind:'image'|'video', url:'data:...'|driveUrl
 n.evidence     = [ { kind:'image'|'video', url:'…' }, … ];                                    // unit walkaround
 
 // on each checklist item in config.settings.inspections[famKey].items[]:
-{ id, label, type, required, options,
-  evidence: 'none'|'optional'|'failphoto'|'always'   // NEW — default 'none' (read as it.evidence || 'none')
+{ id, label, type, options,                          // 'required' REMOVED (Track 1) — all items answer-required
+  fail,                                              // NEW (Track 1) — typed fail descriptor above
+  evidence: 'none'|'optional'|'failphoto'|'always'   // NEW (Track 2) — default 'none' (read as it.evidence || 'none')
 }
 ```
 
-Back-compat: `it.evidence || 'none'` ⇒ existing items need no migration; existing `n.items[id]` answers unchanged.
+Back-compat: `it.evidence || 'none'` and `it.fail`-defaults ⇒ existing items need no migration; existing `n.items[id]`
+answers unchanged.
 
 ## Completion-gate generalization (`app.js:9327`, `completeChecklist` `app.js:12465`)
 
-Today: `allDone = items.every(it => !inspItemUnanswered(it, n.items[it.id]))`.
+Today: `allDone = items.every(it => !inspItemUnanswered(it, n.items[it.id]))`. Per Track 1.A, `inspItemUnanswered` now
+treats **every** type as required (toggle picked / select chosen / number-date-text filled / file attached) — the
+Optional path is gone.
 
 Add an **evidence gate** alongside the answer gate:
 
@@ -125,10 +182,17 @@ The §12.8 report's single `n.photo` keeps working and is shown alongside.
 
 ## UI — through the yard data-plate language (`/jactec-ui`)
 
-1. **Settings builder** (`settingsInspectionsPane`, `app.js:3460`): the add-item row + each existing item row gain an
-   **Evidence** segcontrol (`None · Optional · Fail photo · Always`), mirroring the existing type/required segcontrols
-   (`app.js:3501-3502`). New `js-insp-ev` handler beside `js-insp-type`/`js-insp-itemreq`. Item row sub-label shows the
-   policy (e.g. *"Toggle · Fail photo"*).
+1. **Settings builder** (`settingsInspectionsPane`, `app.js:3460`):
+   - **Remove** the Optional/Required segcontrol (`js-insp-itemreq`, `app.js:3502`).
+   - **Add a per-type Fail-condition editor** that swaps its controls on the selected type (mirrors how the Dropdown
+     options sub-editor already conditionally appears, `app.js:3489-3492`): toggle → a *"Fails when Fail / Pass"*
+     segcontrol; number → an *Above/Below/Outside/Inside* segcontrol + threshold input(s); date → a *Before/After*
+     segcontrol + *today / pick-a-date*; dropdown → the existing per-option Fails flags (+ optional blank/N-A option);
+     text → none. New handlers `js-insp-failop` / `js-insp-faila` / `js-insp-failb` beside `js-insp-type`.
+   - **Add the Evidence segcontrol** (`None · Optional · Fail photo · Always`), new `js-insp-ev` handler.
+   - **Make existing rows editable** (Jac's "work less hard"): a row expands inline to edit label, type, fail condition,
+     and evidence — not just remove. Reuses the draft plumbing; the row sub-label summarizes the config
+     (e.g. *"Number · fails below 30 · Fail photo"*).
 2. **Takeover row** (`kind:'checklist'`, `app.js:9329`): each row gets a stamped **camera affordance** — a rivet-framed
    icon button (Lucide camera/video glyph via `icons.js`, never hand-drawn) that opens the capture input; attached
    evidence shows as a small thumbnail strip reusing `.insp-photo`. When an item is Fail with `failphoto` policy and no
@@ -148,11 +212,15 @@ decisions). De-dupe the known repeated lines (Power Trowel / Concrete Saw "Level
 
 ## Build order
 
-1. **Build 1 — per-item evidence + walkaround + WO linkage (one build, Jac 2026-06-26).** Data fields
-   (`n.itemEvidence`, `n.evidence`, item `evidence` policy); builder Evidence segcontrol; takeover per-row camera
-   affordance + the header walkaround tile; the `failphoto` / `always` / walkaround completion gate; `"Keep as pending"`
-   as the only escape; `autoWOFromInspection` enrichment + WO-detail evidence strip. Logic tests + jactec-ui screenshots.
-2. **Build 2 — default policy seeding + de-dupe** in `INSP_DEFAULTS` (content pass with Jac against the QC cards).
+1. **Build 1 — Fail-condition model (Track 1, the foundation).** Remove the `required` toggle + all-required gate;
+   `it.fail` descriptor + generalized `inspItemFails`; the per-type builder fail-editor; inline-editable existing rows.
+   Independently valuable and required before evidence-on-fail is meaningful. Logic tests for each fail operator +
+   back-compat (old toggle still fails on Fail).
+2. **Build 2 — Evidence capture + WO linkage (Track 2).** `n.itemEvidence` / `n.evidence`; builder Evidence segcontrol;
+   takeover per-row camera affordance + header walkaround tile; `failphoto`/`always`/walkaround completion gate;
+   `"Keep as pending"` as the only escape; `autoWOFromInspection` enrichment + WO-detail evidence strip. jactec-ui pass.
+3. **Build 3 — QC default content pass** in `INSP_DEFAULTS` (with Jac): per-family fail conditions + evidence policy +
+   walkaround flags, and de-dupe the repeated lines (Power Trowel / Concrete Saw "Leveler Not Broken").
 
 ## Safety / gates
 
@@ -197,14 +265,26 @@ preserved). The following hardening is now part of the spec; one item is a **pre
    enough? *(Default: include `Always` in the model; seed nothing with it.)*
 5. **Pending/abandon** — if an inspector attaches partial evidence then hits "Keep as pending," evidence persists on the
    pending record (no loss). *(Default: persist.)*
-6. **Phase 3 content** — which exact default items get `failphoto` and which families get the walkaround — a sit-down
+6. **Build 3 content** — which exact default items get which fail condition / `failphoto` / walkaround — a sit-down
    content pass with Jac against the QC cards.
 7. **Required-gate escape (from /role)** — ✅ **RESOLVED (Jac 2026-06-26): "Keep as pending" is the escape; NO override.**
    See D7. Nothing reaches Ready/Failed (no auto-WO) without the required proof.
+
+### Track-1 fail-model — open follow-ups (Jac to confirm)
+8. **Text fail condition** — does a Text field ever trip a fail, or is it always informational? *(Default: informational,
+   never fails — `op:'none'` only.)*
+9. **Date reference** — Before/After **today** only, or also a **fixed admin-picked date**? *(Default: offer both — `ref`
+   = `today` or a chosen ISO date; expiry = Before/today.)*
+10. **Dropdown blank/N-A** — add an explicit blank/"N/A" option the admin can flag pass-or-fail, or is per-option-fail on
+    real options enough (no blank, since all items are answer-required)? *(Default: allow an optional N-A option, admin
+    flags whether it passes or fails.)*
+11. **Removing `required` — behavior change** — old items saved `required:false` become answer-required. Confirm that's
+    intended for existing configs (it matches "all fields required regardless"). *(Default: yes; flag ignored, all
+    required.)*
 
 ## Future extensions (out of scope now)
 
 - Per-item *required notes* alongside the photo.
 - Pushing evidence into the printed inspection/WO document.
 - Authoring each family's evidence policy directly from the QC CARDS index.
-- Number-range / date-expiry fail conditions (already deferred in the typed-fields spec).
+- Bringing the typed fail-conditions to the general **Custom Fields** tab (unify the type model).
