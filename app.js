@@ -7609,6 +7609,14 @@ function chatDockEl() {
     <div class="chat-compose"><input class="chat-input" placeholder="${c ? 'Message the team…' : 'Type to start a team chat…'}" value="${esc(state.chat.draft || '')}" aria-label="Message the team" /><button class="chat-send js-chat-send" aria-label="Send">${I.chev}</button></div>
     ${roles}`;
 }
+// Render Mr. Wrangler's message text — escape FIRST (no HTML injection), then apply the light markdown the
+// model actually emits: **bold**, `code`, and newlines. Only safe <strong>/<code>/<br> tags are introduced.
+function wrChatFormat(raw) {
+  let s = esc(String(raw == null ? '' : raw));
+  s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');   // **bold** (non-greedy)
+  s = s.replace(/`([^`]+)`/g, '<code>$1</code>');           // `inline code`
+  return s.replace(/\n/g, '<br>');
+}
 // §18 Mr. Wrangler dock — renders the floating dock HTML (mirrors wrangler overlay but as a dock).
 function wranglerDockEl() {
   const o = state.wrangler;
@@ -7650,7 +7658,7 @@ function wranglerDockEl() {
         }
         const imgs = (m.images && m.images.length) ? `<div class="wr-bub-imgs">${m.images.map((img) => { const s = wrImgSrc(img); return s ? `<img src="${esc(s)}" alt="attached image">` : ''; }).join('')}</div>` : '';
         const files = (m.files && m.files.length) ? `<div class="wr-bub-files">${m.files.map((f) => `<span class="wr-file-chip" data-tip="${esc(f.name)}">${I.paperclip || '📎'}<span class="wr-file-n">${esc(f.name)}</span></span>`).join('')}</div>` : '';
-        const txt = m.content ? `${esc(m.content).replace(/\n/g, '<br>')}` : '';
+        const txt = m.content ? wrChatFormat(m.content) : '';
         return `<div class="wr-msg ${m.role}">${m.role === 'assistant' ? '<span class="wr-av">🤠</span>' : ''}<div class="wr-bub">${imgs}${files}${txt}${act}</div></div>`;
       }).join('')
     : '<div class="wr-empty">Ask about this record or the whole yard — service due, balances, what needs attention… or just tell me what’s broken (paste or attach a screenshot) and I’ll get it fixed.</div>';
@@ -9262,7 +9270,7 @@ function buildPopupEl(o, overlay, opts = {}) {
       const photos = (rq.images && rq.images.length)
         ? `<div class="req-photos">${rq.images.map((s) => `<img class="req-photo" src="${esc(s)}" alt="attached photo" loading="lazy">`).join('')}</div>` : '';
       const convo = p.messages.length
-        ? `<div class="req-convo">${p.messages.map((m) => `<div class="req-line ${m.role === 'user' ? 'them' : 'wr'}"><span class="req-who">${m.role === 'user' ? 'Reporter' : '🤠 Wrangler'}</span><span class="req-msg">${esc(m.content).replace(/\n/g, '<br>')}</span></div>`).join('')}</div>` : '';
+        ? `<div class="req-convo">${p.messages.map((m) => `<div class="req-line ${m.role === 'user' ? 'them' : 'wr'}"><span class="req-who">${m.role === 'user' ? 'Reporter' : '🤠 Wrangler'}</span><span class="req-msg">${wrChatFormat(m.content)}</span></div>`).join('')}</div>` : '';
       const chatLbl = st.key === 'needs' ? '💬 Answer Mr. Wrangler' : st.key === 'building' ? '💬 Talk it over' : '💬 Talk to Mr. Wrangler';
       const right = st.key === 'building'
         ? '<span class="req-await">Building…</span>'
@@ -16168,7 +16176,7 @@ function exposeTestApi() {
       rentalAllocated, itemRefunded, itemRefundable, lineRefunded, lineFullyRefunded, refundLines, rentalLineRefund, applyPayment, unitRentalPrice, rentalPrice, rentalDisplayName, setWoLinePhase, setWoPhase, woBottleneck,
       cleanUnitName, planUnitMigration, applyUnitMigration, openMigrationPreview,
       computeTransportPrice, isFueledType, unitTransport, rentalTransport,
-      wrValidatePlan, applyWranglerData, wrPlanNeedsApply, wrPlanSummary, wrFunnel, wrResolveCustomer, wrResolveUnit, wrResolveCategory, wrResolveVendor, wrResolvePart, wrResolveRental, invoiceMergeable, mergeInvoiceInto, parseWranglerAction, stripWranglerAction, parseCsvFile, wrFindAttachedCsv,
+      wrValidatePlan, applyWranglerData, wrPlanNeedsApply, wrPlanSummary, wrFunnel, wrResolveCustomer, wrResolveUnit, wrResolveCategory, wrResolveVendor, wrResolvePart, wrResolveRental, wrChatFormat, invoiceMergeable, mergeInvoiceInto, parseWranglerAction, stripWranglerAction, parseCsvFile, wrFindAttachedCsv,
       latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore, wranglerRailLoad, wrOffloadChatImages, wrEvictChatBlobs, driveViewUrl, mergeWranglerRails,
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,

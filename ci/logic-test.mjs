@@ -379,6 +379,14 @@ try {
       ok(T.DATA.workOrders.length === woBefore + 1 && newWo.phase !== 'Complete', 'WR-board: the created work order is not Complete');
     }
 
+    // 12k) Chat markdown — Wrangler's replies render **bold**/`code`, but stay XSS-safe (escape before format).
+    {
+      ok(/<strong>June 30, 2026<\/strong>/.test(T.wrChatFormat('Monday is **June 30, 2026**.')), 'WR-fmt: **bold** renders as <strong>');
+      ok(/<code>R-104<\/code>/.test(T.wrChatFormat('rental `R-104`')), 'WR-fmt: `code` renders as <code>');
+      const inj = T.wrChatFormat('<script>alert(1)</script> **x**');
+      ok(!/<script>/.test(inj) && /<strong>x<\/strong>/.test(inj), 'WR-fmt: HTML is escaped first (no injection), bold still applies');
+    }
+
     // 13) Transport pricing v2 — $3.50/mile + $50 load + $20 fuel (fueled), per leg.
     const tp = (a) => T.computeTransportPrice(a).price;
     // 10 mi Delivery, fueled: (3.5*10 + 50 + 20) * 1 = 105
