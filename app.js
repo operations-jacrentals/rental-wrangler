@@ -165,6 +165,7 @@ function migrateCustomers() {
       if (c.membershipStage === 'Inbound Lead') c.membershipStage = 'N/A';
       c.funnelNAApplied = true; migrationDirty = true;
     }
+    if (c.membershipStage === 'Paid') { c.membershipStage = 'Signed'; migrationDirty = true; }   // F3 — membership terminal relabeled Paid→Signed (auto-set by signing)
   });
 }
 /* ── §20 multi-unit rentals — "a Rental is an EVENT" ──
@@ -395,6 +396,7 @@ function attachHeldSigning(c, k) {
     accountType: p.accountType || '', signedAt: p.signedAt || TODAY_ISO, signerName: p.signerName || c.name || fullName(c),
     signature: p.signature, selfie: p.selfie || '', acct: Object.assign({}, p.acct || acctSnapshot(c, k), { last4: k.last4 }), driveSignatureUrl: '', driveSelfieUrl: '', driveFolderId: '' };
   k.agreements.push(sig);
+  markMembershipSigned(c, sig.key);   // F3 — membership signing advances the funnel to 'Signed'
   c.pendingSigning = null;
   reindex('customers', c);
   logAction(c, `Held ${p.title || 'agreement'} attached to ${brandName(k.brand)} ••${k.last4}`);
@@ -405,6 +407,13 @@ function attachHeldSigning(c, k) {
    registry, never stored inline) with the signature + selfie. Re-signing (new card /
    account-type change) appends; it never edits a prior record. The images are then
    offloaded to Drive (graceful: stay inline until the backend handler exists). */
+// F3: signing the MEMBERSHIP agreement auto-advances the membership funnel to 'Signed'
+// (the terminal stage; never set by hand). The rental agreement does not touch the funnel.
+function markMembershipSigned(c, key) {
+  if (key !== 'membership' || !c || c.membershipStage === 'Signed') return;
+  c.membershipStage = 'Signed';
+  logAction(c, 'Membership agreement signed → Signed');
+}
 function signCardAgreement(c, k, signature, selfie) {
   if (!c || !k || !signature) return;
   const key = requiredAgreementKey(c); const ag = AGREEMENTS[key] || AGREEMENTS.rental;
@@ -413,6 +422,7 @@ function signCardAgreement(c, k, signature, selfie) {
     accountType: c.accountType || '', signedAt: TODAY_ISO, signerName: c.name || fullName(c),
     signature, selfie: selfie || '', acct: acctSnapshot(c, k), driveSignatureUrl: '', driveSelfieUrl: '', driveFolderId: '' };
   k.agreements.push(sig);
+  markMembershipSigned(c, key);   // F3 — membership signing advances the funnel to 'Signed'
   reindex('customers', c);
   logAction(c, `${ag.title} signed on ${brandName(k.brand)} ••${k.last4}`);
   archiveAgreementMedia(c, k, sig);   // offload images to Drive when the backend supports it
@@ -735,7 +745,7 @@ function reindexRentalLinks() {
   DATA.units.forEach((u) => IDX.search.set('units:' + u.unitId, searchBlob('units', u)));
   DATA.categories.forEach((c) => IDX.search.set('categories:' + c.categoryId, searchBlob('categories', c)));
 }
-const idOf   = (card, rec) => rec[{ customers: 'customerId', rentals: 'rentalId', categories: 'categoryId', units: 'unitId', invoices: 'invoiceId', workOrders: 'woId', inspections: 'inspectionId', serviceOrders: 'unitId', vendors: 'vendorId', parts: 'partId', expenses: 'expenseId', files: 'fileId' }[card]];
+const idOf   = (card, rec) => rec && rec[{ customers: 'customerId', rentals: 'rentalId', categories: 'categoryId', units: 'unitId', invoices: 'invoiceId', workOrders: 'woId', inspections: 'inspectionId', serviceOrders: 'unitId', vendors: 'vendorId', parts: 'partId', expenses: 'expenseId', files: 'fileId' }[card]];   // null-safe: a dangling ref resolves to undefined, never a render crash (matches recOf)
 const recOf  = (card, id) => ({ customers: IDX.customer, rentals: IDX.rental, categories: IDX.category, units: IDX.unit, invoices: IDX.invoice, workOrders: IDX.wo, inspections: IDX.insp, serviceOrders: IDX.unit, vendors: IDX.vendor, expenses: IDX.expense, parts: IDX.part, files: IDX.file }[card])?.get(id);
 
 /* ── §5 comprehensive search blob — ONE source of truth for what's searchable.
@@ -841,7 +851,7 @@ function rentalPrice(r) {
   if (!cat || !s || !e) return null;
   const days = Math.max(1, dayDiff(s, e));
   const cust = IDX.customer.get(r.customerId);
-  const isMember = cust && /Member/.test(cust.accountType || '') && cust.accountType !== 'Member Incomplete';
+  const isMember = isActiveMember(cust);   // §10.4 — Active/in-grace only; refused to Incomplete + lapsed
 
   if (isMember) return { price: days * cat.memberDaily, rate: `Member×${days}`, days };
   // §10 weekend rate (Jac 2026-06-07): Fri→Sun, Fri→Mon, or Sat→Mon — NOT Sat→Sun.
@@ -907,12 +917,14 @@ function transportCost({ transportType, miles, driveMin, address, fueled, unlimi
 }
 /** Transport cost + drive time for a rental (SPEC §10) — primary unit / legacy. */
 function rentalTransport(r) {
-  const unlimited = !!IDX.customer.get(r.customerId)?.unlimitedTransport;
+  const cust = IDX.customer.get(r.customerId);
+  const unlimited = !!(cust?.unlimitedTransport && isActiveMember(cust));   // §10.4 — $0 transport gated to an Active member
   return transportCost({ transportType: r.transportType, miles: r.transportMiles, driveMin: r.transportDriveMin, address: r.deliveryAddress, fueled: unitFueled(r.unitId), unlimited });
 }
 /** §20 transport cost for ONE unit (its own type + address + cached distance). */
 function unitTransport(r, eu) {
-  const unlimited = !!IDX.customer.get(r.customerId)?.unlimitedTransport;
+  const cust = IDX.customer.get(r.customerId);
+  const unlimited = !!(cust?.unlimitedTransport && isActiveMember(cust));   // §10.4 — $0 transport gated to an Active member
   return transportCost({ transportType: eu.transportType, miles: eu.transportMiles, driveMin: eu.transportDriveMin, address: eu.deliveryAddress, fueled: unitFueled(eu.unitId), unlimited });
 }
 /** §20 one invoice 'transport' line per unit that has transport (ref=rentalId,
@@ -1144,6 +1156,7 @@ function syncTransportLine(r) {
   });
   want.forEach((w) => { inv.lineItems.push(w); changed = true; });   // brand-new units' transport lines
   if (changed) reindex('invoices', inv);
+  syncProtectionLine(r);   // F4b — protection rides on the rental subtotal, so recompute whenever lines sync (the chokepoint for add/remove/split/void)
 }
 /* §20 ADD any MISSING per-unit rental line to the linked invoice. Never regenerates an
    existing line (its payment allocation is keyed by lid — regeneration would orphan it);
@@ -1155,6 +1168,34 @@ function syncRentalLines(r) {
   const have = new Set((inv.lineItems || []).filter((li) => li.kind === 'rental' && li.ref === r.rentalId).map((li) => li.unitId));
   let changed = false;
   rentalLineItems(r).forEach((li) => { if (!have.has(li.unitId)) { inv.lineItems.push(li); changed = true; } });
+  if (changed) reindex('invoices', inv);
+}
+/* F4b — Rental Protection invoice line. ONE 'protection' line per rental (ref=rentalId, no
+   unitId), amount = rentalProtectionAmount(r) (15% of the equipment subtotal). Taxable like a
+   rental line. Built at invoice creation; kept in sync (lid-preserving, paid-safe) by
+   syncProtectionLine — mirroring the transport-line reprice so allocations/refunds survive. */
+function protectionLineItems(r) {
+  const amt = rentalProtectionAmount(r);
+  if (amt <= 0) return [];
+  const pct = Math.round(rentalProtectionRate() * 100);
+  return [{ kind: 'protection', ref: r.rentalId, lid: lineLid(), label: `Rental Protection · ${pct}%`, amount: amt }];
+}
+function syncProtectionLine(r) {
+  if (!r || !r.invoiceId) return;
+  const inv = IDX.invoice.get(r.invoiceId); if (!inv) return;
+  const want = rentalProtectionAmount(r);
+  const pct = Math.round(rentalProtectionRate() * 100);
+  const label = `Rental Protection · ${pct}%`;
+  let changed = false, found = false;
+  inv.lineItems = (inv.lineItems || []).filter((li) => {
+    if (!(li.kind === 'protection' && li.ref === r.rentalId)) return true;
+    if (itemPaid(inv, li) > 0) { found = true; return true; }                 // never touch a PAID protection line (refund first)
+    if (want <= 0) { changed = true; return false; }                          // no longer applies → drop the unpaid line
+    found = true;
+    if (li.amount !== want || li.label !== label) { li.amount = want; li.label = label; changed = true; }   // reprice unpaid IN PLACE (keeps its lid → allocation survives)
+    return true;
+  });
+  if (!found && want > 0) { inv.lineItems.push({ kind: 'protection', ref: r.rentalId, lid: lineLid(), label, amount: want }); changed = true; }
   if (changed) reindex('invoices', inv);
 }
 /* sweep ORPHANED invoice lines — a rental/transport line for THIS rental whose unit is no
@@ -1840,7 +1881,7 @@ const nextInvoiceId = () => { state.invoiceSeq = Math.max(state.invoiceSeq || 0,
 /* ── session actions ──────────────────────────────────────────────────────
    `recType` is only meaningful for the Shop card (which holds inspections /
    workOrders / serviceOrders); it's undefined for the 5 normal cards. */
-function setAnchor(session, card, recId, recType) {
+function setAnchor(session, card, recId, recType, opts = {}) {
   sweepEmptyDrafts(recId);   // #8 — anchoring elsewhere deletes an abandoned empty draft
   if (state.unitPick && !(card === 'units' && state.unitPick.ids.includes(recId))) state.unitPick = null;   // leaving the picker clears it
   const entityCard = entityCardOf(card, recType);
@@ -1848,15 +1889,22 @@ function setAnchor(session, card, recId, recType) {
   const rec = recOf(entityCard, recId);
   session.anchor = { card, recId, recType };
   session.cascade = state.cascade.cascadeAll(type, rec);
-  // anchored card → standard; others → list (cascade)
-  for (const c of GRID_CARDS) {
-    const ccs = session.cards[c.id];
-    ccs.backStack = []; ccs.fwdStack = [];
-    ccs.mode = c.id === card ? 'standard' : 'list';
-    ccs.recId = c.id === card ? recId : null;
-    ccs.recType = c.id === card ? recType : null;
-    ccs.released = false;                                       // re-cascade clears any per-card "browse all" release
-    if (c.id !== card) { ccs.search = ''; ccs.filterTerms = []; }   // cascaded cards reset to the clean anchored view
+  // §264 — a REFRESH (reanchorRender after an option-click: complete/cancel/clear/etc.)
+  // only needs the cascade membership recomputed above; it must NOT reset the sibling
+  // cards. The destructive reset below is for a FRESH anchor only — re-running it on every
+  // option-click was wiping the record you had open in a sibling column plus any typed
+  // search/filter and the back/forward history (the "kicked off the card I was reading" bug).
+  if (!opts.preserve) {
+    // anchored card → standard; others → list (cascade)
+    for (const c of GRID_CARDS) {
+      const ccs = session.cards[c.id];
+      ccs.backStack = []; ccs.fwdStack = [];
+      ccs.mode = c.id === card ? 'standard' : 'list';
+      ccs.recId = c.id === card ? recId : null;
+      ccs.recType = c.id === card ? recType : null;
+      ccs.released = false;                                       // re-cascade clears any per-card "browse all" release
+      if (c.id !== card) { ccs.search = ''; ccs.filterTerms = []; }   // cascaded cards reset to the clean anchored view
+    }
   }
   // 3-column display: make the anchored card the visible member of its column
   // (shop anchors map to their recType member). Pure display; cascade is unchanged.
@@ -1938,6 +1986,16 @@ function closeTab(id) {
   render();
 }
 function closeAll() { state.tabs = []; state.activeTabId = null; state.searchMode = false; state.query = ''; state.winEdit = null; state.datesearch = null; render(); }
+// §313 — keep only the active tab; with none active, fall back to a full close.
+function closeOthers() { if (!state.activeTabId) { closeAll(); return; } state.tabs = state.tabs.filter((t) => t.id === state.activeTabId); render(); }
+// §313 — Close-all trigger. 1–2 tabs close immediately; >2 ask first (a quick popover).
+function openCloseAllMenu(anchorEl) {
+  const n = state.tabs.length;
+  if (!n) return;
+  if (n <= 2) { closeAll(); return; }
+  const row = `<div class="dd-confirm">${actionPill('danger', `Close all ${n}`, { js: 'js-closeall' })}${ghostPill('Close others', { js: 'js-closeothers', tip: 'Keep the current tab open' })}</div>`;
+  openDropdown(anchorEl, `<div class="dd-sec">Close all ${n} tabs?</div>${row}`, { align: 'right' });
+}
 /* Wave 2 (Jac): QUOTES SURVIVE. Nothing is swept on tab close / session switch —
    a Quote-status rental (or any fresh record) lives until Completed/Cancelled
    or deliberately deleted. The `mock` flag stays purely a UI affordance gate
@@ -2959,6 +3017,271 @@ const companyPhone = () => (companyCfg().phone || '').trim();
 // registry (§7.1b) or what a customer actually e-signs.
 const membershipPrintTemplate = () => { const t = companyCfg().membershipAgreementTemplate; return (typeof t === 'string' && t.trim()) ? t : AGREEMENTS.membership.text; };
 const companyRevenueGoal = () => { const n = Number(companyCfg().revenueGoal); return n > 0 ? n : COMPANY_DEFAULTS.revenueGoal; };
+/* Membership subscription pricing — Owner-settable in Settings → Company, read here
+   (and server-side at billing time) so Jac can reprice without a code deploy
+   (spec §2/§10.1). Stored as flat config keys (mem*), assembled with the shipped
+   defaults. protectionPct is a percent of the BASE fee only. */
+const MEMBERSHIP_DEFAULTS = { monthlyBase: 299, annualBase: 2691, monthlyTransport: 500, annualTransport: 4500, protectionPct: 15, protectionCapMonthly: 2000 };
+const membershipPricing = () => {
+  const c = companyCfg();
+  const num = (v, d) => { const n = Number(v); return (v != null && v !== '' && isFinite(n) && n >= 0) ? n : d; };
+  return {
+    monthlyBase:          num(c.memMonthlyBase,      MEMBERSHIP_DEFAULTS.monthlyBase),
+    annualBase:           num(c.memAnnualBase,       MEMBERSHIP_DEFAULTS.annualBase),
+    monthlyTransport:     num(c.memMonthlyTransport, MEMBERSHIP_DEFAULTS.monthlyTransport),
+    annualTransport:      num(c.memAnnualTransport,  MEMBERSHIP_DEFAULTS.annualTransport),
+    protectionPct:        num(c.memProtectionPct,    MEMBERSHIP_DEFAULTS.protectionPct),
+    protectionCapMonthly: num(c.memProtectionCap,    MEMBERSHIP_DEFAULTS.protectionCapMonthly),
+  };
+};
+/* Pure: a membership cycle's itemized charge. plan 'Monthly'|'Yearly'; addOns
+   {transport,protection}. NO proration (spec §2); protection = pct of BASE only;
+   tax = TAX_RATE (10.75%). Returns exact-cent figures. The client mirrors this for
+   the live enrollment total; the backend recomputes it authoritatively at charge time. */
+function membershipFee({ plan, addOns } = {}, pricing) {
+  const p = pricing || membershipPricing();
+  const r2 = (n) => Math.round(n * 100) / 100;
+  const annual = plan === 'Yearly' || plan === 'Annual';
+  const base = annual ? p.annualBase : p.monthlyBase;
+  const transport = (addOns && addOns.transport) ? (annual ? p.annualTransport : p.monthlyTransport) : 0;
+  const protection = (addOns && addOns.protection) ? r2(base * (p.protectionPct / 100)) : 0;
+  const subtotal = r2(base + transport + protection);
+  const tax = r2(subtotal * TAX_RATE);
+  return { base, transport, protection, subtotal, tax, total: r2(subtotal + tax) };
+}
+/* Membership lifecycle status, derived from the customer's fields (spec §3):
+     None       — not a member account
+     Incomplete — 'Member Incomplete' (enrolled but not activated: no card / agreement / first charge)
+     Active     — paid through today (or a prepaid-to-term member), OR a legacy member with no
+                  subscription fields yet (grandfathered so existing members keep their rate)
+     Past Due   — paidUntil lapsed but still inside the 7-day grace (KEEPS member rates per the agreement)
+     Lapsed     — grace expired (the backend also flips accountType off Member, reverting pricing)
+   ISO date strings compare lexically, so direct >= works for YYYY-MM-DD. */
+function membershipStatus(c) {
+  if (!c) return 'None';
+  const at = c.accountType || '';
+  if (!/Member/.test(at)) return 'None';
+  if (at === 'Member Incomplete') return 'Incomplete';
+  if (!(c.paidUntil || c.paidCadence || c.commitmentEnd)) return 'Active';   // legacy/grandfathered member — no subscription data yet
+  if (c.prepaid) return 'Active';
+  if (c.paidUntil && c.paidUntil >= TODAY_ISO) return 'Active';
+  if (c.graceUntil && c.graceUntil >= TODAY_ISO) return 'Past Due';
+  return 'Lapsed';
+}
+/* The ONE pricing/entitlement gate (spec §10.4): member rate + $0 Unlimited-Transport
+   apply only to an Active or in-grace member — refused to Incomplete AND lapsed, in both
+   the quote and the invoice line. Past Due keeps the rate through the grace window. */
+const isActiveMember = (c) => { const s = membershipStatus(c); return s === 'Active' || s === 'Past Due'; };
+/* Rental Protection (F4) — an account-level surcharge (spec §2.1), available to members
+   AND non-members. The rate is the Owner-settable protection % (shared with the membership
+   add-on). rentalProtectionAmount = that % of the rental's EQUIPMENT subtotal (rental lines
+   only — not transport, not other surcharges), 0 when the account doesn't carry protection. */
+const rentalProtectionRate = () => membershipPricing().protectionPct / 100;
+function rentalProtectionAmount(r) {
+  const cust = r && IDX.customer.get(r.customerId);
+  if (!cust || !cust.rentalProtection) return 0;
+  const base = rentalLineItems(r).reduce((a, li) => a + (Number(li.amount) || 0), 0);
+  return Math.round(base * rentalProtectionRate() * 100) / 100;
+}
+/* ── Membership economics (F7, spec §7) — per-customer, internal-only ──────────────
+   Fee revenue (paid membership invoices, falling back to the legacy paidFees field),
+   member-rate rental revenue (actual) vs the equipment-rate-only RETAIL counterfactual
+   (what a non-member would have paid), and the derived member discount + net program
+   contribution. The counterfactual is derived on the fly from rentalPrice's retail
+   branch — nothing extra is stored. */
+function membershipFeeRevenue(c) {
+  let sum = 0, any = false;
+  for (const inv of DATA.invoices) { if (inv.membership && inv.customerId === c.customerId) { sum += Number(inv.amountPaid) || 0; any = true; } }
+  return any ? sum : (Number(c.paidFees) || 0);
+}
+function membershipEconomics(c) {
+  if (!c) return null;
+  const r2 = (n) => Math.round(n * 100) / 100;
+  let memberRev = 0, retailRev = 0;
+  for (const r of DATA.rentals) {
+    if (r.customerId !== c.customerId) continue;
+    for (const eu of rentalUnits(r)) {
+      if (unitVoided(r, eu)) continue;
+      const u = IDX.unit.get(eu.unitId); if (!u) continue;
+      const cat = IDX.category.get(u.categoryId); if (!cat) continue;
+      const s = parseISO(r.startDate), e = parseISO(r.endDate); if (!s || !e) continue;
+      const days = Math.max(1, dayDiff(s, e));
+      memberRev += days * (cat.memberDaily || 0);                                                   // member-rate equipment revenue
+      const retail = rentalPrice({ categoryId: u.categoryId, startDate: r.startDate, endDate: r.endDate, customerId: '__retail__' });   // forced non-member → retail tiers
+      retailRev += retail ? retail.price : 0;
+    }
+  }
+  const feeRevenue = r2(membershipFeeRevenue(c));
+  const discount = r2(retailRev - memberRev);                                                       // what the member rate gave away on equipment
+  return { feeRevenue, memberRev: r2(memberRev), retailRev: r2(retailRev), discount, net: r2(feeRevenue - discount) };
+}
+function membershipEconomicsHtml(c) {
+  const e = membershipEconomics(c);
+  if (!e || (!e.feeRevenue && !e.memberRev && !e.retailRev)) return '';
+  return `<div class="mem-econ">
+    ${kv(money(e.feeRevenue), { sfx: 'membership fees', derived: true })}
+    ${kv(money(e.memberRev), { sfx: 'member-rate rentals', derived: true })}
+    ${kv(money(e.retailRev), { sfx: 'retail equivalent', derived: true })}
+    ${kv(money(e.discount), { sfx: 'member discount', derived: true })}
+    ${kv(money(e.net), { sfx: 'net program', derived: true })}
+  </div>`;
+}
+// The outstanding Cancellation Invoice for a lapsed/cancelled Monthly member (spec §4), if any.
+function membershipCancellationInvoice(c) {
+  if (!c) return null;
+  return DATA.invoices.find((inv) => inv.membershipCancellation && inv.customerId === c.customerId && invoiceTotals(inv).balance > 0.005) || null;
+}
+/* ── Membership section (F6) — lifecycle state + actions, in the yard data-plate language ── */
+function membershipSectionHtml(c) {
+  const status = membershipStatus(c);
+  const isMem = status === 'Active' || status === 'Past Due';
+  const yrFull = (iso) => `${fmtShortDate(iso)}, ${parseISO(iso).getFullYear()}`;
+  const stageSet = !!(c.membershipStage && c.membershipStage !== 'N/A');
+  const stateBadge = isMem
+    ? badge(status === 'Past Due' ? 'Past Due' : 'Active Member', status === 'Past Due' ? 'yellow' : 'green')
+    : status === 'Lapsed' ? badge('Lapsed', 'red')
+      : status === 'Incomplete' ? badge('Member Incomplete', 'yellow') : '';
+  const graceN = (status === 'Past Due' && c.graceUntil) ? dayDiff(TODAY, parseISO(c.graceUntil)) : null;   // days left in the 7-day grace
+  const graceFlag = (graceN != null && graceN >= 0) ? kvPills(badge(`⚠ Canceled in ${graceN} day${graceN === 1 ? '' : 's'}`, 'red')) : '';
+  const paidUntil = (isMem && c.paidUntil) ? kv(yrFull(c.paidUntil), { sfx: c.prepaid ? 'prepaid through' : 'paid until' }) : '';
+  const planBadges = c.paidCadence ? kvPills(`${badge('Paid ' + c.paidCadence, 'green')}${c.unlimitedTransport ? badge('Unlimited Transport', 'purple') : ''}${c.rentalProtection ? badge('Protected', 'blue') : ''}${c.autoRenew ? badge('Auto-Renew', 'navy') : ''}`) : '';
+  const cxlInv = membershipCancellationInvoice(c);
+  // Enroll / Cancel / Pay-Cancellation are MONEY actions → Office/Admin only, same gate as the
+  // invoice Pay/Charge/Refund row (5868) and Add-Card (canMoney). Print Agreement is not a money
+  // action, so it stays visible to every role. (Handlers re-check canMoney() as defence-in-depth.)
+  const mayMoney = canMoney();
+  const enrollBtn = (!isMem && mayMoney) ? actionPill('commit', status === 'Incomplete' ? 'Complete Enrollment' : 'Saddle Up — Enroll', { js: 'js-mem-enroll', h: 26, data: { rec: c.customerId } }) : '';
+  const cancelBtn = (isMem && mayMoney) ? actionPill('danger', 'Cancel Membership', { js: 'js-mem-cancel', h: 26, data: { rec: c.customerId } }) : '';
+  const payCxlBtn = (cxlInv && mayMoney) ? actionPill('money', 'Pay Cancellation ' + money2(invoiceTotals(cxlInv).balance), { js: 'js-mem-paycxl', h: 26, data: { rec: c.customerId } }) : '';
+  const printBtn = stageSet ? actionPill('commit', 'Print Agreement', { js: 'js-print-magreement', h: 26, data: { rec: c.customerId } }) : '';
+  const actions = [enrollBtn, cancelBtn, payCxlBtn, printBtn].filter(Boolean).join('');
+  return `<div class="section"><h4>Membership</h4><div class="fieldstack centered">
+    ${kvPills(funnelPill(c.customerId, 'membership', c.membershipStage || 'N/A'))}
+    ${stateBadge ? kvPills(stateBadge) : ''}
+    ${graceFlag}
+    ${paidUntil}
+    ${planBadges}
+    ${membershipEconomicsHtml(c)}
+    ${actions ? `<div class="kv pillrow">${actions}</div>` : ''}
+  </div></div>`;
+}
+/* ── F5 — enrollment / cancel / reactivate orchestration ──────────────────────────
+   Reuses the deployed, money-gated stripeChargeInvoice action (same security model as
+   today's rental charges). Enrollment creates the membership invoice + sets the member
+   fields, then charges the saved card; the account only goes ACTIVE on a cleared charge
+   (a decline leaves it Member Incomplete). Cancel reverts to retail and, for a Monthly
+   member mid-commitment, drops a Cancellation Invoice; paying it in full reopens the
+   membership prepaid through the term (spec §4). Rental Protection persists on lapse. */
+const MEMBERSHIP_MONTHS = 12;
+const memberAccountType = (c) => (c.company && c.company.trim()) ? 'Business Member' : 'Non-Business Member';
+const addMonthsISO = (iso, n) => { const d = parseISO(iso) || new Date(); return isoOf(new Date(d.getFullYear(), d.getMonth() + n, d.getDate())); };
+const monthsRemaining = (toISO) => { const a = new Date(), b = parseISO(toISO); if (!b) return 0; return Math.max(0, (b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth())); };
+// Live → real Stripe; demo/offline (no backend password) → simulate a cleared charge so the flow completes locally.
+function membershipChargeResult(invId, amountCents, pick) {
+  const isDemo = (typeof backendPassword === 'undefined' || !backendPassword);
+  if (isDemo) return Promise.resolve({ ok: true, status: 'succeeded', amountPaid: amountCents / 100, fullyPaid: true, paymentMethod: 'Card (demo)', _demo: true });
+  return backendCall('stripeChargeInvoice', { invoiceId: invId, amountCents, paymentMethodId: pick?.stripePmId || undefined });
+}
+function markInvoicePaidLocal(inv, method) { const t = invoiceTotals(inv); inv.amountPaid = t.total; inv.paid = true; inv.paymentMethod = method || 'Card'; inv.paidAt = new Date().toISOString(); reindex('invoices', inv); }
+// Build a membership invoice (kind:'membership' lines so it's identifiable for the §7 economics + revenue rollup).
+function buildMembershipInvoice(c, lines, { cancellation = false, date = TODAY_ISO, due } = {}) {
+  const id = nextInvoiceId();
+  const inv = { invoiceId: id, customerId: c.customerId, membership: true, membershipCancellation: cancellation, date, dueDate: due || date, po: '', amountPaid: 0, lineItems: lines, mock: true };
+  DATA.invoices.push(inv); IDX.invoice.set(id, inv); reindex('invoices', inv);
+  return inv;
+}
+function openMembershipEnroll(custId) {
+  const c = IDX.customer.get(custId); if (!c) return;
+  openOverlay({ kind: 'membershipEnroll', custId, plan: 'Monthly', addOns: { transport: false, protection: !!c.rentalProtection }, autoRenew: false, startDate: TODAY_ISO, busy: false, error: '' });
+}
+const memIsDemo = () => (typeof backendPassword === 'undefined' || !backendPassword);
+// Apply the Active member fields locally (the server is authoritative for the PROTECTED
+// paidUntil/graceUntil — set them here for an immediate UI, they round-trip via the backend).
+function memApplyActive(c, o, start, paidUntil) {
+  c.accountType = memberAccountType(c);
+  c.paidCadence = (o.plan === 'Annual' ? 'Yearly' : 'Monthly');
+  c.commitmentStart = start; c.commitmentEnd = addMonthsISO(start, MEMBERSHIP_MONTHS);
+  c.autoRenew = !!o.autoRenew; c.addOns = { transport: !!o.addOns.transport, protection: !!o.addOns.protection };
+  if (o.addOns.transport) c.unlimitedTransport = true;
+  if (o.addOns.protection) c.rentalProtection = true;
+  c.prepaid = false; c.graceUntil = ''; c.paidUntil = paidUntil;
+  reindex('customers', c);
+  logAction(c, `Membership enrolled — ${o.plan}${o.addOns.transport ? ' + Transport' : ''}${o.addOns.protection ? ' + Protection' : ''}`);
+}
+async function membershipEnrollCommit() {
+  const o = state.overlay; if (!o || o.kind !== 'membershipEnroll' || o.busy) return;
+  const c = IDX.customer.get(o.custId); if (!c) return;
+  if (!(hasCardOnFile(c) && hasValidCard(c))) { o.error = 'A valid card on file is required to charge the membership.'; renderOverlay(); flashOr('.overlay .js-me-commit', 'Add a card on file first.'); return; }
+  const start = o.startDate || TODAY_ISO;
+  o.busy = true; o.error = ''; renderOverlay();
+  try {
+    if (memIsDemo()) {   // #local — client-side invoice + simulated charge (no backend)
+      const pricing = membershipPricing(), fee = membershipFee({ plan: o.plan, addOns: o.addOns }, pricing);
+      const lines = [{ kind: 'membership', ref: c.customerId, lid: lineLid(), label: `Membership · ${o.plan} base`, amount: fee.base }];
+      if (fee.transport) lines.push({ kind: 'membership', ref: c.customerId, lid: lineLid(), label: 'Unlimited Transport', amount: fee.transport });
+      if (fee.protection) lines.push({ kind: 'membership', ref: c.customerId, lid: lineLid(), label: `Rental Protection · ${pricing.protectionPct}%`, amount: fee.protection });
+      const inv = buildMembershipInvoice(c, lines, { date: start, due: start });
+      markInvoicePaidLocal(inv, 'Card (demo)');
+      memApplyActive(c, o, start, addMonthsISO(start, o.plan === 'Annual' ? 12 : 1));
+      closeOverlay(); render(); toast('Membership active — saddle up! ✓'); return;
+    }
+    // PROD — the backend creates the invoice, charges the card, and sets the protected fields server-side
+    const r = await backendCall('membershipEnroll', { customerId: c.customerId, plan: (o.plan === 'Annual' ? 'Yearly' : 'Monthly'), addOns: o.addOns, startDate: start, autoRenew: !!o.autoRenew });
+    if (state.overlay !== o) return;
+    if (r && r.ok && r.status === 'active') {
+      memApplyActive(c, o, start, r.paidUntil || addMonthsISO(start, o.plan === 'Annual' ? 12 : 1));
+      closeOverlay(); render(); toast('Membership active — saddle up! ✓'); return;
+    }
+    o.busy = false;
+    o.error = (r && r.status === 'incomplete') ? (friendlyPayErr(r.charge) || 'Charge declined — the account stays Member Incomplete until payment clears.') : ((r && friendlyPayErr(r)) || 'Enrollment failed — try again.');
+    renderOverlay();
+  } catch (e) { if (state.overlay === o) { o.busy = false; o.error = 'Network error — try again.'; renderOverlay(); } }
+}
+async function membershipCancel(custId) {
+  const c = IDX.customer.get(custId); if (!c) return;
+  const status = membershipStatus(c);
+  if (status !== 'Active' && status !== 'Past Due') return;
+  const yest = isoOf(new Date(Date.parse(TODAY_ISO) - 86400000));
+  if (!memIsDemo()) {   // PROD — backend drops the Cancellation Invoice + expires paid-through server-side
+    try {
+      const r = await backendCall('membershipCancel', { customerId: c.customerId });
+      if (r && r.ok) { c.paidUntil = yest; c.graceUntil = yest; c.prepaid = false; reindex('customers', c); render(); toast(r.cancellationInvoiceId ? 'Membership cancelled — cancellation invoice on the account.' : 'Membership cancelled.'); }
+      else toast('Cancel failed — try again.');
+    } catch (e) { toast('Network error — try again.'); }
+    return;
+  }
+  // demo (#local) — client-side
+  // Monthly mid-commitment → a Cancellation Invoice for the remaining term (Annual is already prepaid).
+  let cxl = null;
+  if (c.paidCadence === 'Monthly' && c.commitmentEnd && !c.prepaid) {
+    const rem = monthsRemaining(c.commitmentEnd);
+    if (rem > 0) {
+      const fee = membershipFee({ plan: 'Monthly', addOns: c.addOns || {} }, membershipPricing());
+      cxl = buildMembershipInvoice(c, [{ kind: 'membership', ref: c.customerId, lid: lineLid(), label: `Cancellation — ${rem} mo remaining (Membership)`, amount: Math.round(fee.subtotal * rem * 100) / 100 }], { cancellation: true, due: c.commitmentEnd });
+    }
+  }
+  // Keep the member accountType but expire paid-through + grace → derives 'Lapsed' (pricing reverts via the gate);
+  // rentalProtection is NOT cleared (never free); unlimitedTransport entitlement falls away with Active status.
+  c.paidUntil = yest; c.graceUntil = yest; c.prepaid = false;
+  reindex('customers', c);
+  logAction(c, cxl ? `Membership cancelled — Cancellation Invoice ${money(invoiceTotals(cxl).total)} (remaining term)` : 'Membership cancelled');
+  render(); toast(cxl ? 'Membership cancelled — cancellation invoice on the account.' : 'Membership cancelled.');
+}
+async function membershipReactivate(custId) {
+  const c = IDX.customer.get(custId); if (!c) return;
+  const cxl = membershipCancellationInvoice(c); if (!cxl) return;
+  if (!(hasCardOnFile(c) && hasValidCard(c))) { toast('A valid card on file is required to pay the cancellation invoice.'); return; }
+  const reopen = () => { c.accountType = memberAccountType(c); c.paidUntil = c.commitmentEnd || addMonthsISO(TODAY_ISO, MEMBERSHIP_MONTHS); c.prepaid = true; c.graceUntil = ''; reindex('customers', c); logAction(c, `Membership reactivated — cancellation paid in full, prepaid through ${c.paidUntil}`); render(); toast('Membership reactivated — prepaid through the term ✓'); };
+  try {
+    if (memIsDemo()) {   // #local — charge the cancellation invoice locally
+      markInvoicePaidLocal(cxl, 'Card (demo)'); reopen(); return;
+    }
+    // PROD — backend charges the Cancellation Invoice in full + sets prepaid server-side
+    const r = await backendCall('membershipReactivate', { customerId: c.customerId, invoiceId: cxl.invoiceId });
+    if (r && r.ok && r.status === 'active') reopen();
+    else toast(friendlyPayErr(r && r.charge) || 'Charge declined — membership stays lapsed.');
+  } catch (e) { toast('Network error — try again.'); }
+}
 // System-wide ceiling on customer Net-day terms (Settings → Company). Caps every customer's net days.
 const companyMaxNetDays = () => { const n = Number(companyCfg().maxNetDays); return n >= 0 && isFinite(n) ? n : COMPANY_DEFAULTS.maxNetDays; };
 // Normalize a raw Net-days draft value → an integer 0..max, or undefined when blank.
@@ -3056,7 +3379,27 @@ function settingsCompanyPane(o) {
       </div>
       <label class="co-fld"><span class="kpi-cap">MEMBERSHIP AGREEMENT — PRINT TEMPLATE</span><textarea class="co-in co-in-area js-co-field" data-f="membershipAgreementTemplate" rows="9" autocomplete="off" spellcheck="false">${co.membershipAgreementTemplate != null ? v('membershipAgreementTemplate') : esc(AGREEMENTS.membership.text)}</textarea></label>
       <p class="set-note">Printed from a member's profile via <strong>Print Agreement</strong>. Placeholders <strong>{{customerName}}</strong>, <strong>{{date}}</strong>, <strong>{{membershipType}}</strong> are filled in per customer at print time. Clear the box to fall back to the standard agreement.</p>
+      ${settingsMembershipPricing(co)}
     </div>`;
+}
+/* Membership subscription pricing — Owner-settable (spec §2/§10.1). Flat mem* keys,
+   placeholders show the shipped defaults; blank = fall back to default. Reuses the
+   co-fld settings inputs (unstamped, like the sibling Company fields). */
+function settingsMembershipPricing(co) {
+  const d = MEMBERSHIP_DEFAULTS;
+  const dollar = (f, def) => `<label class="co-fld co-fld-goal"><span class="kpi-cap">${esc(f.cap)}</span><span class="co-goal-wrap"><span class="co-goal-$">$</span><input class="co-in co-in-num js-co-field" data-f="${f.key}" value="${co[f.key] != null ? esc(co[f.key]) : ''}" placeholder="${def}" inputmode="numeric" autocomplete="off"/></span></label>`;
+  const pct = `<label class="co-fld co-fld-goal"><span class="kpi-cap">RENTAL PROTECTION RATE</span><span class="co-goal-wrap"><input class="co-in co-in-num js-co-field" data-f="memProtectionPct" value="${co.memProtectionPct != null ? esc(co.memProtectionPct) : ''}" placeholder="${d.protectionPct}" inputmode="numeric" autocomplete="off"/><span class="co-goal-suffix">% of base</span></span></label>`;
+  return `
+      <div class="co-memprice">
+        <span class="kpi-cap" style="opacity:.7">MEMBERSHIP PRICING</span>
+        ${dollar({ cap: 'BASE — MONTHLY', key: 'memMonthlyBase' }, d.monthlyBase)}
+        ${dollar({ cap: 'BASE — ANNUAL', key: 'memAnnualBase' }, d.annualBase)}
+        ${dollar({ cap: 'UNLIMITED TRANSPORT — MONTHLY', key: 'memMonthlyTransport' }, d.monthlyTransport)}
+        ${dollar({ cap: 'UNLIMITED TRANSPORT — ANNUAL', key: 'memAnnualTransport' }, d.annualTransport)}
+        ${pct}
+        ${dollar({ cap: 'RENTAL PROTECTION — COVERAGE CAP / MO', key: 'memProtectionCap' }, d.protectionCapMonthly)}
+      </div>
+      <p class="set-note">Drives enrollment + recurring billing. <strong>Rental Protection</strong> adds its rate to the base fee and to each rental's subtotal, covering up to the monthly cap in damages. Leave a box blank to keep the shipped default.</p>`;
 }
 const companyDraftName = (co) => (String(co.name || '').trim() || COMPANY_DEFAULTS.name);
 const companyDraftTagline = (co) => (String(co.tagline || '').trim() || COMPANY_DEFAULTS.tagline);
@@ -4015,6 +4358,19 @@ const unitsVisible = (rows, cs) => {
   if (f === 'soldInactive') return rows.filter(isSoldInactive); // only Sold/Inactive
   return rows.filter((u) => u.fleetStatus === 'Active');        // default: Active only (For Sale/Sold/Inactive hidden)
 };
+// Invoice Payment-Method filter (#337) — classify a recorded payment method into the
+// five filter buckets. Unpaid invoices have no recorded method ('' → excluded by any
+// specific filter); anything set but not cash/card/check falls into 'other'.
+const INV_METHOD_OPTS = [['all', 'All'], ['cash', 'Cash'], ['card', 'Card'], ['check', 'Check'], ['other', 'Other']];
+const INV_METHOD_LABEL = Object.fromEntries(INV_METHOD_OPTS);
+function invMethodClass(inv) {
+  const m = (inv.paymentMethod || '').trim().toLowerCase();
+  if (!m) return '';
+  if (/^cash$/.test(m)) return 'cash';
+  if (/^card/.test(m)) return 'card';
+  if (/^check/.test(m)) return 'check';
+  return 'other';
+}
 function rowViz(card, rec) {
   // §10 availability tint takes precedence while a rental window is in scope
   if (availWin && availUnavailable(card, rec)) return `<div class="row-viz" style="background:var(--red-bg)"></div>`;
@@ -4231,7 +4587,7 @@ const ROWS = {
 
     // Most-progressed funnel stage of the two tracks (used-sales / membership); Don't
     // Contact ranks lowest of the non-N/A stages (shown only when it's the sole one).
-    const FUNNEL_RANK = { 'Inbound Lead': 1, 'Outbound Lead': 2, 'Contacted': 3, 'Not A No!': 4, 'Payment Discussed': 5, 'Paid': 6, "Don't Contact": 0.5 };
+    const FUNNEL_RANK = { 'Inbound Lead': 1, 'Outbound Lead': 2, 'Contacted': 3, 'Not A No!': 4, 'Payment Discussed': 5, 'Paid': 6, 'Signed': 6, "Don't Contact": 0.5 };
     const topStage = [c.usedSalesStage || 'N/A', c.membershipStage || 'N/A']
       .filter((s) => s && s !== 'N/A').sort((a, b) => (FUNNEL_RANK[b] || 0) - (FUNNEL_RANK[a] || 0))[0];
     const funnelHtml = topStage ? statusPill('funnelStage', topStage) : badge('N/A', 'gray');
@@ -5210,8 +5566,11 @@ const DETAIL = {
       ? entityPill('customers', cust, { x: 'cust-swap' })
       : addBtn('Customer', { link: true, js: 'js-quickadd-cust', h: 26, data: { card: 'rentals', rec: r.rentalId, slot: 'customer' } });
     const poField = efld('rentals', r, 'rentalId', 'po', 'Add PO', { fmt: (v) => 'PO ' + v });
+    // F4 — Rental Protection advisory: when the account doesn't carry protection, every
+    // rental shows a caution badge (parallel to the PO Required flag). Resolved on the account.
+    const protReminder = (cust && !cust.rentalProtection) ? `<span data-tip="Rental Protection isn't enabled on this account — enable it on the customer to cover damages">${badge('Protection off', 'yellow')}</span>` : '';
     const rdHead = `<div class="rd-head">
-      <div class="rd-head-l">${custEl}${poField}</div>
+      <div class="rd-head-l">${custEl}${poField}${protReminder}</div>
       <div class="rd-head-r">${masterGate(r, { truck })}<div class="rd-head-bal">${invPill}${rdBal}</div></div>
     </div>`;
 
@@ -5555,7 +5914,7 @@ const DETAIL = {
           ${efield('address', 'Add address', true)}
         </div>
         <div class="side r">
-          ${kvPills(`${badge(acct.label, acct.color)}${c.requiresPO ? badge('PO Required', 'yellow') : ''}${agPill}`)}
+          ${kvPills(`${badge(acct.label, acct.color)}${c.requiresPO ? badge('PO Required', 'yellow') : ''}${c.rentalProtection ? badge('Protected', 'blue') : ''}${agPill}`)}
           ${kv(money(d.totalPaid), { pfx: 'Total', derived: true })}
           ${kv(`${d.visits || 0}`, { pfx: 'Visits', derived: true })}
           ${kv(`${d.years || 0} yrs`, { pfx: 'Customer for', derived: true })}
@@ -5574,14 +5933,7 @@ const DETAIL = {
       <div class="kv pillrow">${intCats}${addBtn('Category', { link: true, js: 'js-addcat', h: 26, data: { rec: c.customerId } })}</div>
     </div></div>`;
     // #293 — once a membership stage is set, offer a printable filled-in agreement (handout/PDF).
-    const memberStageSet = !!(c.membershipStage && c.membershipStage !== 'N/A');
-    const membership = `<div class="section"><h4>Membership</h4><div class="fieldstack centered">
-      ${kvPills(funnelPill(c.customerId, 'membership', c.membershipStage || 'N/A'))}
-      ${isMember && c.paidUntil ? kv(yr(c.paidUntil), { sfx: 'paid until' }) : ''}
-      ${c.paidCadence ? kvPills(`${badge('Paid ' + c.paidCadence, 'green')}${c.unlimitedTransport ? badge('Unlimited Transport', 'purple') : ''}`) : ''}
-      ${c.paidFees ? kv(money(c.paidFees), { sfx: 'paid fees' }) : ''}
-      ${memberStageSet ? `<div class="kv pillrow">${actionPill('commit', 'Print Agreement', { js: 'js-print-magreement', h: 26, data: { rec: c.customerId } })}</div>` : ''}
-    </div></div>`;
+    const membership = membershipSectionHtml(c);   // F6/F7 — lifecycle state, economics + actions
     /* §12.1 ACTION BOARD v4 (Jac 2026-06-12): header row = "Actions" label +
        +Log Actions · +Schedule Actions + "Schedule" label; under them, TWO
        columns — logged actions LEFT, scheduled RIGHT. No empty-state text;
@@ -6230,6 +6582,12 @@ function listView(cardDef, session) {
     chip.innerHTML = `<span class="muted">${n === 1 ? 'Linked unit on' : `${n} linked units on`} invoice</span> <b>${esc(invoiceShort(state.unitPick.from))}</b> <span class="muted">— open one to add a work order</span> <button class="x js-clear-unitpick" data-tip="Clear filter">${I.x}</button>`;
     wrap.appendChild(chip);
   }
+  // Invoices payment-method filter active → clearable chip as the closed-menu signal (#337)
+  if (card === 'invoices' && cs.payMethod && cs.payMethod !== 'all') {
+    const chip = el('div', 'fleet-chip');
+    chip.innerHTML = `<span class="muted">Payment method</span> <b>${esc(INV_METHOD_LABEL[cs.payMethod] || cs.payMethod)}</b> <button class="x js-clear-paymethod" data-tip="Clear filter">${I.x}</button>`;
+    wrap.appendChild(chip);
+  }
 
   let rows = listFor(card, session);
   if (card === 'units') rows = unitsVisible(rows, cs);   // default: Active only — hide non-Active fleet (or reveal via the sort) (#2/#34)
@@ -6242,6 +6600,7 @@ function listView(cardDef, session) {
     const reveal = cs && cs.sort && (cs.sort.field === 'allFleet' || cs.sort.field === 'soldInactive');
     if (!reveal) rows = rows.filter((u) => u.fleetStatus === 'Active');
   }
+  if (card === 'invoices' && cs.payMethod && cs.payMethod !== 'all') rows = rows.filter((i) => invMethodClass(i) === cs.payMethod);   // §337 stacks with search/status/sort
   if (cs.search.trim() || (cs.filterTerms || []).length) { rows = rows.filter((rec) => rowMatches(card, rec, cs.search, cs.filterTerms)); }
   rows = sortRows(card, rows, cs.sort);
   // §10 — while a rental window is in scope, order Units: available+Ready, available+Not
@@ -6830,6 +7189,7 @@ function headerEl() {
     <div class="header-right">
       <div class="hr-top">
         <div class="header-tabs tabstrip">${tabStrip(state.tabs)}</div>
+        ${state.tabs.length ? `<span class="closeall-slot">${ghostPill('Close all', { js: 'js-closeall-menu', tip: 'Close all tabs' })}</span>` : ''}
         <span class="spacer"></span>
         ${currentUser ? `<span class="hello-name">${esc(currentUser)}</span>` : ''}
       </div>
@@ -8396,6 +8756,50 @@ function buildPopupEl(o, overlay, opts = {}) {
           </table>
         </div>` });
     overlay.appendChild(pop);
+  } else if (o.kind === 'membershipEnroll') {
+    // F5 — membership enrollment. Plan + add-ons + start date + auto-renew → live total,
+    // charged on the saved card (the account goes Active only on a cleared charge).
+    const c = IDX.customer.get(o.custId);
+    const pricing = membershipPricing();
+    const fee = membershipFee({ plan: o.plan, addOns: o.addOns }, pricing);
+    const cad = o.plan === 'Annual' ? '/yr' : '/mo';
+    const ready = !!(c && hasCardOnFile(c) && hasValidCard(c));
+    const signed = c && c.membershipStage === 'Signed';
+    const planSeg = segCtl([
+      { label: 'Monthly', js: 'js-me-plan', data: { val: 'Monthly' }, on: o.plan === 'Monthly' ? 'green' : '' },
+      { label: 'Annual', js: 'js-me-plan', data: { val: 'Annual' }, on: o.plan === 'Annual' ? 'green' : '' },
+    ]);
+    const onoff = (k, on, money1) => segCtl([
+      { label: 'No', js: `js-me-${k}`, data: { val: '0' }, on: !on ? 'gray' : '' },
+      { label: money1 ? `Yes · ${money1}` : 'Yes', js: `js-me-${k}`, data: { val: '1' }, on: on ? 'green' : '' },
+    ]);
+    const tPrice = money2(o.plan === 'Annual' ? pricing.annualTransport : pricing.monthlyTransport) + cad;
+    const pPrice = pricing.protectionPct + '% of base';
+    const row = (label, ctl) => `<div class="me-row"><span class="kpi-cap">${label}</span>${ctl}</div>`;
+    const lineRow = (label, amt) => amt ? `<div class="me-line"><span>${esc(label)}</span><b class="derived">${money2(amt)}</b></div>` : '';
+    const gateNote = ready
+      ? `<p class="set-note">Charges <strong>${esc(cardLabel(c))}</strong> now. ${signed ? '' : 'Heads-up: membership agreement not yet on file — sign it from a card when you can.'}</p>`
+      : `<p class="set-note" style="color:var(--yellow)">No valid card on file — add one before enrolling (the charge needs it).</p>`;
+    const body = `
+      ${row('Plan', planSeg)}
+      ${row('Unlimited Transport', onoff('transport', o.addOns.transport, tPrice))}
+      ${row('Rental Protection', onoff('protection', o.addOns.protection, pPrice))}
+      ${row('Auto-Renew at term end', segCtl([{ label: 'No', js: 'js-me-autorenew', data: { val: '0' }, on: !o.autoRenew ? 'gray' : '' }, { label: 'Yes', js: 'js-me-autorenew', data: { val: '1' }, on: o.autoRenew ? 'navy' : '' }]))}
+      ${row('Start date', dateField('startDate', o.startDate, { ph: 'Starts today' }))}
+      <div class="me-tote">
+        ${lineRow(`${o.plan} base`, fee.base)}
+        ${lineRow('Unlimited Transport', fee.transport)}
+        ${lineRow(`Rental Protection · ${pricing.protectionPct}%`, fee.protection)}
+        ${lineRow('Tax · 10.75%', fee.tax)}
+        <div class="me-line me-total"><span>First charge</span><b>${money2(fee.total)}</b></div>
+      </div>
+      ${gateNote}
+      ${o.error ? `<p class="set-err" style="text-align:center">${esc(o.error)}</p>` : ''}`;
+    const foot = `<button class="pill ghost js-close" data-r="R18">Cancel</button>
+      <button class="pill ignition js-me-commit" data-r="R17"${(!ready || o.busy) ? ' disabled aria-disabled="true"' : ''}>${o.busy ? 'Charging…' : 'Enroll &amp; Charge ' + money2(fee.total)}</button>`;
+    const pop = el('div', 'popup'); pop.style.width = '430px';
+    pop.innerHTML = popupShell({ icon: I.horseshoe || CARD_ICON.customers || '', title: 'Saddle Up — Membership', tag: `Customer · enroll`, body, foot });
+    overlay.appendChild(pop);
   } else if (o.kind === 'comment') {
     // Phase 6 (Jac redesign) — a SIMPLE comment card that floods with the picked color.
     // Traffic-light dots top-left pick the color; the card body becomes that solid color.
@@ -8672,20 +9076,24 @@ function buildPopupEl(o, overlay, opts = {}) {
   } else if (o.kind === 'notifications') {
     // §18f Notifications — recently-RESOLVED Mr. Wrangler fixes, surfaced in-app so a reporter
     // sees their glitch got fixed (with the verdict) without ever opening GitHub.
-    const list = wranglerNotifs;
+    const list = visibleNotifs();   // §246 — dismissed resolved-fix chips stay cleared
+    const muted = notifsMuted();
     const inner = !backendPassword
       ? '<div class="req-empty">Sign in to see notifications.</div>'
       : (!notifLoaded && notifLoading ? '<div class="req-empty">Loading…</div>'
-        : (!list.length ? '<div class="req-empty"><span class="req-empty-ic">🔔</span><p>Nothing new.</p><span>When Mr. Wrangler finishes a fix you reported, it shows here — refresh the app to see the change.</span></div>'
-          : list.map((n) => `<div class="req-card">
-              <div class="req-head"><span class="req-num">${n.merged ? '✅' : 'ⓘ'} #${n.number}</span><span class="req-title">${esc(n.title)}</span></div>
+        : (!list.length ? '<div class="req-empty"><span class="req-empty-ic">🔔</span><p>All clear.</p><span>Resolved fixes you reported show here. When Mr. Wrangler finishes one, refresh the app to see the change.</span></div>'
+          : list.map((n) => `<div class="req-card has-closex">
+              <div class="req-head"><span class="req-num">${n.merged ? '✅' : 'ⓘ'} #${n.number}</span><span class="req-title">${esc(n.title)}</span><span class="spacer"></span>${closeX('js-notif-dismiss', { data: { num: n.number }, hover: true })}</div>
               ${n.verdict ? `<div class="req-text">${esc(n.verdict).replace(/\n+/g, '<br>')}</div>` : '<div class="req-text muted">Resolved — refresh the app to see the change.</div>'}
               <div class="req-acts"><span class="req-await">${n.closedAt ? 'Resolved ' + esc(fmtShortDate(String(n.closedAt).slice(0, 10))) : 'Resolved'}</span><a class="req-link" href="${esc(n.url)}" target="_blank" rel="noopener">GitHub ↗</a></div>
             </div>`).join('')));
+    const foot = backendPassword
+      ? `${list.length ? ghostPill('Dismiss all', { js: 'js-notif-dismissall', tip: 'Clear every resolved notification' }) : ''}${ghostPill(muted ? 'Unmute' : 'Mute', { js: 'js-notif-mute', tip: muted ? 'Show the unseen badge again' : 'Silence the unseen-count badge' })}`
+      : '';
     const pop = el('div', 'popup'); pop.style.width = '460px';
-    pop.innerHTML = popupShell({ icon: I.bell, title: `Notifications${list.length ? ` · ${list.length}` : ''}`, tag: 'Mr. Wrangler · resolved',
+    pop.innerHTML = popupShell({ icon: I.bell, title: `Notifications${list.length ? ` · ${list.length}` : ''}${muted ? ' · muted' : ''}`, tag: 'Mr. Wrangler · resolved',
       headRight: `<button class="iconbtn js-notif-refresh" data-tip="Refresh">${I.refresh || '⟳'}</button>`,
-      bodyClass: 'req-wrap', body: inner });
+      bodyClass: 'req-wrap', body: inner, foot });
     overlay.appendChild(pop);
   } else if (o.kind === 'hotkeys') {
     const rows = [
@@ -8834,10 +9242,11 @@ function buildPopupEl(o, overlay, opts = {}) {
           <label class="nc-field"><span>Phone *</span><input class="nc-in" data-f="phone" value="${esc(d.phone)}" autocomplete="off" /></label>
           <label class="nc-field"><span>Email</span><input class="nc-in" data-f="email" type="email" value="${esc(d.email)}" autocomplete="off" /></label>
           <label class="nc-field"><span>Industry</span><input class="nc-in" data-f="industry" list="nc-industries" value="${esc(d.industry)}" autocomplete="off" /></label>
-          <div class="nc-field"><span>Notes · PO</span>
+          <div class="nc-field"><span>Notes · PO · Protection</span>
             <div class="nc-notes-po">
               <input class="nc-in" data-f="accountNotes" value="${esc(d.accountNotes)}" autocomplete="off" placeholder="Notes" />
               ${(() => { const set = d.requiresPO === true || d.requiresPO === false; return `<button type="button" class="nc-po js-nc-po${d.requiresPO === true ? ' on' : ''}${set ? '' : ' req'}" aria-pressed="${d.requiresPO === true ? 'true' : 'false'}" data-tip="${set ? (d.requiresPO ? 'PO required before invoicing' : 'No PO required') : 'Answer required before saving — does this account need a PO?'}">PO ${set ? (d.requiresPO ? 'Yes' : 'No') : '?'}</button>`; })()}
+              ${(() => { const set = d.rentalProtection === true || d.rentalProtection === false; return `<button type="button" class="nc-po js-nc-rp${d.rentalProtection === true ? ' on' : ''}${set ? '' : ' req'}" aria-pressed="${d.rentalProtection === true ? 'true' : 'false'}" data-tip="${set ? (d.rentalProtection ? 'Rental Protection on — +' + (membershipPricing().protectionPct) + '% on every rental, covers damages to the monthly cap' : 'No Rental Protection — every rental shows the not-enabled reminder') : 'Answer required before saving — does this account carry Rental Protection?'}">PROT ${set ? (d.rentalProtection ? 'Yes' : 'No') : '?'}</button>`; })()}
             </div>
           </div>
           <div class="nc-field nc-wide"><span>Account type</span><div class="nc-pills">${acctPills}</div></div>
@@ -9161,7 +9570,7 @@ const WINDOW_CATALOG = [
   { kind: 'boardview',     label: 'Board View',              tag: 'Card · board view',         sample: () => ({ card: 'units', query: '', sort: {}, calc: {}, colOrder: null, extraRows: [], cellData: {}, seq: 0 }) },
   { kind: 'tools',         label: 'Tools tray',              tag: 'Yard · toolbox',            sample: () => ({}) },
   { kind: 'settings',      label: 'Settings',                tag: 'Admin · settings',          sample: () => ({}) },
-  { kind: 'newCustomer',   label: 'New / Edit Customer',     tag: 'Customer · account',        sample: () => ({ editId: null, draft: { firstName: '', lastName: '', company: '', phone: '', email: '', industry: '', accountType: 'Non-Business', requiresPO: undefined, accountNotes: '', idNumber: '', netDays: '', custom: {} } }) },
+  { kind: 'newCustomer',   label: 'New / Edit Customer',     tag: 'Customer · account',        sample: () => ({ editId: null, draft: { firstName: '', lastName: '', company: '', phone: '', email: '', industry: '', accountType: 'Non-Business', requiresPO: undefined, rentalProtection: undefined, accountNotes: '', idNumber: '', netDays: '', custom: {} } }) },
   { kind: 'agreement',     label: 'Signed agreement',        tag: 'Customer · agreement',      sample: () => ({ recId: ((DATA.customers || [])[0] || {}).customerId }) },
   { kind: 'checklist',     label: 'Inspection checklist',    tag: 'Inspection · checklist',    sample: () => ({ unitId: ((DATA.units || [])[0] || {}).unitId, inspId: ((DATA.inspections || [])[0] || {}).inspectionId }) },
   { kind: 'inspection',    label: 'Failure report',          tag: 'Inspection · failure',      sample: () => ({ recId: ((DATA.inspections || [])[0] || {}).inspectionId }) },
@@ -9172,6 +9581,7 @@ const WINDOW_CATALOG = [
   { kind: 'addAch',        label: 'Add bank account',        tag: 'Customer · ACH bank',       sample: () => ({ customerId: ((DATA.customers || [])[0] || {}).customerId }) },
   { kind: 'verifyAch',     label: 'Verify ACH',              tag: 'Customer · verify ACH',     sample: () => { const c = (DATA.customers || []).find((x) => (x.achAccounts || []).length); return c ? { customerId: c.customerId, bankId: c.achAccounts[0].id } : {}; } },
   { kind: 'payment',       label: 'Take Payment',            tag: 'Invoice · payment',         sample: () => ({ invoiceId: ((DATA.invoices || [])[0] || {}).invoiceId }) },
+  { kind: 'membershipEnroll', label: 'Membership Enrollment', tag: 'Customer · enroll',         sample: () => ({ custId: ((DATA.customers || [])[0] || {}).customerId, plan: 'Monthly', addOns: { transport: false, protection: false }, autoRenew: false, startDate: TODAY_ISO, busy: false, error: '' }) },
 ];
 /* Build an INERT preview popup for a catalog kind (or null if a record guard trips
    or it throws). Reuses buildPopupEl with {preview:true} — the REAL popup — into a
@@ -9366,6 +9776,26 @@ function wranglerImageBlock(dataUrl) {
   const m = /^data:(image\/[a-z.+-]+);base64,(.*)$/i.exec(dataUrl || '');
   return m ? { type: 'image', source: { type: 'base64', media_type: m[1], data: m[2] } } : null;
 }
+// Map a backend/Anthropic failure to a message that names the REAL cause, instead of
+// always blaming "the connection". The backend hands back the raw Anthropic error string
+// (e.g. the billing message) via r.error; a network failure throws before that. Without
+// this, an out-of-credits API key reads identically to a dead Wi-Fi — which sent us
+// hunting a phantom "connection" bug when the fix was just topping up Anthropic credits.
+function wranglerErrMsg(reason) {
+  const r = String(reason || '').toLowerCase();
+  if (/credit balance is too low|insufficient.*credit|too low to access|plans & billing|quota|billing/.test(r))
+    return "Mr. Wrangler's out of API credits — the Anthropic account needs a top-up before he can answer.";
+  if (/invalid x-api-key|authentication|api key|http-401|\b401\b|permission/.test(r))
+    return "Mr. Wrangler's API key was refused — the backend ANTHROPIC_API_KEY needs a look.";
+  if (/rate.?limit|http-429|\b429\b|overloaded|\b529\b/.test(r))
+    return "Mr. Wrangler's getting rate-limited — give him a few seconds and ask again.";
+  if (/not_found|model|http-404|\b404\b/.test(r))
+    return "Mr. Wrangler's model isn't answering — the backend model setting may be out of date.";
+  if (/bad-json|http-5\d\d|\b50[0-9]\b|\b53[0-9]\b|internal|timeout|timed out/.test(r))
+    return "Couldn't reach Mr. Wrangler's backend — give it a moment and try again.";
+  // genuine network/fetch failure (or unknown) → the original honest fallback
+  return "Mr. Wrangler couldn't answer — check the connection / backend.";
+}
 async function wranglerSend() {
   const o = state.wrangler; if (!o.open) return;
   const inp = document.querySelector('.wrangler-dock .js-wr-in');
@@ -9429,7 +9859,7 @@ async function wranglerSend() {
       o.messages.push({ role: 'assistant', content: "🤠 Demo mode — sign in to ask the real Mr. Wrangler (the live AI runs through the backend). Here's the snapshot I'd reason over:\n\n" + wranglerDigest() });
     }
     if (state.wrangler.id === replyChatId) { o.busy = false; render(); setTimeout(() => { const f = document.querySelector('.wrangler-dock .wr-feed'); if (f) f.scrollTop = f.scrollHeight; }, 0); } else render();   // only clear/scroll the dock if it's still THIS chat
-  } catch (e) { if (state.wrangler.id === replyChatId) { o.busy = false; o.error = "Mr. Wrangler couldn't answer — check the connection / backend."; render(); } }
+  } catch (e) { if (state.wrangler.id === replyChatId) { o.busy = false; o.error = wranglerErrMsg(e && e.message); render(); } }
 }
 // §18d "Send to the fixer" — turn the current Wrangler chat into a `wrangler-fix`
 // GitHub issue (the Track B repro packet). Carries the transcript, the view/role/
@@ -9596,7 +10026,7 @@ function wrPlanSummary(plan) {
 }
 function wrCreateCustomer(f) {
   const id = nextCustomerId();
-  const c = { customerId: id, firstName: f.firstName || '', lastName: f.lastName || '', name: `${f.firstName || ''} ${f.lastName || ''}`.trim() || (f.company || 'New lead'), company: f.company || '', phone: f.phone || '', email: f.email || '', address: f.address || '', industry: f.industry || '', accountType: f.accountType || 'Non-Business', payStatus: 'New Customer', requiresPO: false, accountNotes: f.accountNotes || '', stripeId: '', selfie: '', signature: '', agreementType: '', agreementSignedAt: '', interestedCategoryIds: [], activityLog: [], usedSalesStage: f.usedSalesStage || 'Inbound Lead', membershipStage: f.membershipStage || 'Inbound Lead', _digest: { activePct: 0, totalPaid: 0, visits: 0, years: 0, avgFrequencyDays: 0, firstInvoice: '', lastInvoice: '' } };
+  const c = { customerId: id, firstName: f.firstName || '', lastName: f.lastName || '', name: `${f.firstName || ''} ${f.lastName || ''}`.trim() || (f.company || 'New lead'), company: f.company || '', phone: f.phone || '', email: f.email || '', address: f.address || '', industry: f.industry || '', accountType: f.accountType || 'Non-Business', payStatus: 'New Customer', requiresPO: false, rentalProtection: false, accountNotes: f.accountNotes || '', stripeId: '', selfie: '', signature: '', agreementType: '', agreementSignedAt: '', interestedCategoryIds: [], activityLog: [], usedSalesStage: f.usedSalesStage || 'Inbound Lead', membershipStage: f.membershipStage || 'Inbound Lead', _digest: { activePct: 0, totalPaid: 0, visits: 0, years: 0, avgFrequencyDays: 0, firstInvoice: '', lastInvoice: '' } };
   DATA.customers.push(c); IDX.customer.set(id, c); reindex('customers', c); logAction(c, 'Added by Mr. Wrangler');
   return c;
 }
@@ -9724,9 +10154,21 @@ function wranglerClearNeedsAnswer(n) {
 let wranglerNotifs = [];
 let notifLoaded = false, notifLoading = false;
 const NOTIF_SEEN_KEY = 'jactec.notifsSeen';
+const NOTIF_DISMISS_KEY = 'jactec.notifsDismissed';   // §246 — issue #s the operator cleared from the feed (persists across refreshes)
+const NOTIF_MUTE_KEY = 'jactec.notifsMuted';           // §246 — silence the unseen badge entirely
 const notifsSeenMax = () => { try { return Number(localStorage.getItem(NOTIF_SEEN_KEY)) || 0; } catch (e) { return 0; } };
-const unseenNotifs = () => { const s = notifsSeenMax(); return wranglerNotifs.filter((n) => (n.number || 0) > s).length; };
+const loadDismissedNotifs = () => { try { return new Set(JSON.parse(localStorage.getItem(NOTIF_DISMISS_KEY) || '[]')); } catch (e) { return new Set(); } };
+const saveDismissedNotifs = (set) => { try { localStorage.setItem(NOTIF_DISMISS_KEY, JSON.stringify([...set])); } catch (e) {} };
+const notifsMuted = () => { try { return localStorage.getItem(NOTIF_MUTE_KEY) === '1'; } catch (e) { return false; } };
+const setNotifsMuted = (on) => { try { localStorage.setItem(NOTIF_MUTE_KEY, on ? '1' : '0'); } catch (e) {} };
+// §246 — what actually shows in the bell: resolved fixes the operator hasn't dismissed.
+const visibleNotifs = () => { const d = loadDismissedNotifs(); return wranglerNotifs.filter((n) => !d.has(n.number)); };
+const unseenNotifs = () => { if (notifsMuted()) return 0; const s = notifsSeenMax(); return visibleNotifs().filter((n) => (n.number || 0) > s).length; };
 function markNotifsSeen() { const mx = wranglerNotifs.reduce((a, n) => Math.max(a, n.number || 0), notifsSeenMax()); try { localStorage.setItem(NOTIF_SEEN_KEY, String(mx)); } catch (e) {} }
+// §246 — clear one / all resolved notifications from the feed; the badge + list follow.
+function dismissNotif(num) { const s = loadDismissedNotifs(); s.add(num); saveDismissedNotifs(s); render(); if (state.overlay?.kind === 'notifications') renderOverlay(); }
+function dismissAllNotifs() { const s = loadDismissedNotifs(); wranglerNotifs.forEach((n) => s.add(n.number)); saveDismissedNotifs(s); render(); if (state.overlay?.kind === 'notifications') renderOverlay(); }
+function toggleNotifsMuted() { setNotifsMuted(!notifsMuted()); render(); if (state.overlay?.kind === 'notifications') renderOverlay(); }
 async function refreshWranglerNotifications() {
   if (typeof backendPassword === 'undefined' || !backendPassword || notifLoading) return;   // demo/offline → no feed
   notifLoading = true;
@@ -10190,9 +10632,11 @@ const GATE_TL = {
 const GTCHK = GTI('<path d="M5 12.5l4 4 10-11"/>');
 /** Build the gate-timeline dropdown body. `mk(value, inner, stateCls)` wraps each row
  *  into the selecting button (each gate supplies its own js-class + data-attrs). */
-function gateTimeline(set, current, title, mk) {
+function gateTimeline(set, current, title, mk, opts = {}) {
   const cfg = GATE_TL[set]; if (!cfg) return '';
-  const { order, off } = cfg;
+  const order = opts.order || cfg.order;        // F3: per-funnel order override (membership ends in 'Signed')
+  const off = cfg.off;
+  const lock = opts.lock || new Set();          // F3: values rendered display-only (not a settable button)
   const ai = order.indexOf(current);            // active row index (display order)
   const curOff = off.has(current);
   const rows = order.map((v, i) => {
@@ -10208,7 +10652,7 @@ function gateTimeline(set, current, title, mk) {
     }
     const chk = st === 'd' ? `<i class="gt-chk">${GTCHK}</i>` : '';
     const inner = `${conn}<span class="gt-node">${GATE_ICON[v] || I.circle}</span><span class="gt-lbl">${chk}${esc(getStatus(set, v).label)}</span>`;
-    return mk(v, inner, 'gt-' + st);
+    return lock.has(v) ? `<div class="gt-row gt-${st} gt-lock">${inner}</div>` : mk(v, inner, 'gt-' + st);   // F3: locked stage is display-only (auto-set, not manually settable)
   }).join('');
   return `<span class="gt-haz"></span><div class="gt-cap">${esc(title)}</div><div class="gt-body">${rows}</div>`;
 }
@@ -10287,17 +10731,22 @@ function setExpenseReconcile(expenseId, val) {
   document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove());
   render(); renderOverlay();
 }
+// F3: the membership funnel ends in 'Signed' (auto-set by signing the agreement) instead
+// of 'Paid'; 'Signed' is shown in the timeline but locked — never a manual choice.
+const MEMBERSHIP_FUNNEL_ORDER = ['N/A', 'Inbound Lead', 'Outbound Lead', "Don't Contact", 'Contacted', 'Not A No!', 'Payment Discussed', 'Signed'];
 function openFunnelDropdown(custId, which, anchorEl) {
   const cust = IDX.customer.get(custId);
   const cur = which === 'membership' ? cust?.membershipStage : cust?.usedSalesStage;
   const title = which === 'membership' ? 'Membership funnel' : 'Used sales funnel';
-  const html = gateTimeline('funnelStage', cur || 'N/A', title, (v, inner, sc) =>
-    `<button class="gt-row ${sc} js-setfunnel" data-rec="${esc(custId)}" data-which="${which}" data-val="${esc(v)}">${inner}</button>`);
+  const mk = (v, inner, sc) => `<button class="gt-row ${sc} js-setfunnel" data-rec="${esc(custId)}" data-which="${which}" data-val="${esc(v)}">${inner}</button>`;
+  const opts = which === 'membership' ? { order: MEMBERSHIP_FUNNEL_ORDER, lock: new Set(['Signed']) } : {};
+  const html = gateTimeline('funnelStage', cur || 'N/A', title, mk, opts);
   openDropdown(anchorEl, html, { cls: 'gt' });
 }
 function setFunnelStage(custId, which, val) {
   const c = IDX.customer.get(custId);
   if (!c) return;
+  if (which === 'membership' && (val === 'Signed' || val === 'Paid')) return;   // F3: membership terminal is auto-set by signing the agreement, never manual
   const field = which === 'membership' ? 'membershipStage' : 'usedSalesStage';
   if (c[field] !== val) { c[field] = val; logAction(c, `${which === 'membership' ? 'Membership' : 'Sales'} stage → ${getStatus('funnelStage', val).label}`); }   // audit: funnel moves were unlogged (Jac, Phase 7)
   reindex('customers', c);
@@ -10392,6 +10841,11 @@ function openViewMenu(card, anchorEl) {
   }
   html += `<div class="dd-sec">Sort</div>`;
   html += SORT_FIELDS[card].map((f) => `<button class="dd-item js-sortfield${f.field === cs.sort.field ? ' on' : ''}" data-card="${card}" data-field="${f.field}">${esc(f.label)}<span class="tick">✓</span></button>`).join('');
+  if (card === 'invoices') {   // §337 — payment-method filter, stacks with the sort/search above
+    const cur = cs.payMethod || 'all';
+    html += `<div class="dd-sec">Payment Method</div>`;
+    html += INV_METHOD_OPTS.map(([val, lbl]) => `<button class="dd-item js-paymethod${val === cur ? ' on' : ''}" data-method="${val}">${esc(lbl)}<span class="tick">✓</span></button>`).join('');
+  }
   openDropdown(anchorEl, html, { align: 'right' });
 }
 /** Clicked card → orange border (§0.1 visual feedback; not an anchor). */
@@ -11170,6 +11624,7 @@ function onClick(e) {
   if (closest('.js-nc-save')) { e.stopPropagation(); return saveNewCustomer(); }
   if (closest('.js-nc-acct')) { const b = closest('.js-nc-acct'); e.stopPropagation(); ncSyncInputs(); state.overlay.draft.accountType = b.dataset.val; renderOverlay(); return; }
   if (closest('.js-nc-po')) { e.stopPropagation(); ncSyncInputs(); const o = state.overlay; o.draft.requiresPO = (o.draft.requiresPO === true) ? false : true; if (o.editId) { const c = IDX.customer.get(o.editId); if (c) { c.requiresPO = o.draft.requiresPO; reindex('customers', c); } } renderOverlay(); return; }
+  if (closest('.js-nc-rp')) { e.stopPropagation(); ncSyncInputs(); const o = state.overlay; o.draft.rentalProtection = (o.draft.rentalProtection === true) ? false : true; if (o.editId) { const c = IDX.customer.get(o.editId); if (c) { c.rentalProtection = o.draft.rentalProtection; reindex('customers', c); } } renderOverlay(); return; }   // F4 — Rental Protection account toggle (mirrors PO)
   // §7.1b card-bound agreements: tab rail + per-card signing
   if (closest('.js-nc-tab')) { e.stopPropagation(); ncSyncInputs(); state.overlay.tab = closest('.js-nc-tab').dataset.tab; state.overlay.signRead = null; renderOverlay(); return; }
   if (closest('.js-ncsign-read')) { e.stopPropagation(); const id = closest('.js-ncsign-read').dataset.card; state.overlay.signRead = (state.overlay.signRead === id) ? null : id; renderOverlay(); return; }
@@ -11194,6 +11649,15 @@ function onClick(e) {
   if (closest('.js-edit-customer')) { e.stopPropagation(); return openCustomerForm(closest('.js-edit-customer').dataset.rec); }
   if (closest('.js-view-agreement')) { e.stopPropagation(); const cust = IDX.customer.get(closest('.js-view-agreement').dataset.rec); if (cust) openOverlay({ kind: 'agreement', recId: cust.customerId }); return; }
   if (closest('.js-print-magreement')) { e.stopPropagation(); openMembershipAgreementPdf(closest('.js-print-magreement').dataset.rec); return; }
+  // F5 — membership enroll / cancel / reactivate + the enrollment dialog controls
+  if (closest('.js-mem-enroll')) { e.stopPropagation(); if (!canMoney()) { toast('Membership billing is Office/Admin only.'); return; } return openMembershipEnroll(closest('.js-mem-enroll').dataset.rec); }
+  if (closest('.js-mem-cancel')) { e.stopPropagation(); if (!canMoney()) { toast('Membership billing is Office/Admin only.'); return; } return membershipCancel(closest('.js-mem-cancel').dataset.rec); }
+  if (closest('.js-mem-paycxl')) { e.stopPropagation(); if (!canMoney()) { toast('Membership billing is Office/Admin only.'); return; } return membershipReactivate(closest('.js-mem-paycxl').dataset.rec); }
+  if (closest('.js-me-plan')) { e.stopPropagation(); const o = state.overlay; if (o) { o.plan = closest('.js-me-plan').dataset.val; renderOverlay(); } return; }
+  if (closest('.js-me-transport')) { e.stopPropagation(); const o = state.overlay; if (o) { o.addOns.transport = closest('.js-me-transport').dataset.val === '1'; renderOverlay(); } return; }
+  if (closest('.js-me-protection')) { e.stopPropagation(); const o = state.overlay; if (o) { o.addOns.protection = closest('.js-me-protection').dataset.val === '1'; renderOverlay(); } return; }
+  if (closest('.js-me-autorenew')) { e.stopPropagation(); const o = state.overlay; if (o) { o.autoRenew = closest('.js-me-autorenew').dataset.val === '1'; renderOverlay(); } return; }
+  if (closest('.js-me-commit')) { e.stopPropagation(); if (!canMoney()) { toast('Membership billing is Office/Admin only.'); return; } return membershipEnrollCommit(); }
   if (closest('.js-add-card')) {
     e.stopPropagation();
     if (!canMoney()) { toast('Cards on file are Office/Admin only.'); return; }   // §14 card-on-file is Office/Admin only — same gate as Pay/Charge/Refund (canMoney)
@@ -11335,6 +11799,9 @@ function onClick(e) {
   if (closest('[data-wrc-open]')) { e.stopPropagation(); return wranglerRailOpen(closest('[data-wrc-open]').dataset.wrcOpen); }   // §18g rail: reopen a stored conversation
   if (closest('.js-notifications')) { e.stopPropagation(); openOverlay({ kind: 'notifications' }); markNotifsSeen(); refreshWranglerNotifications(); return; }   // §18f notification bell — in-app resolved-fix feed
   if (closest('.js-notif-refresh')) { e.stopPropagation(); return refreshWranglerNotifications(); }
+  if (closest('.js-notif-dismiss')) { e.stopPropagation(); return dismissNotif(Number(closest('.js-notif-dismiss').dataset.num)); }   // §246 clear one
+  if (closest('.js-notif-dismissall')) { e.stopPropagation(); return dismissAllNotifs(); }   // §246 clear all
+  if (closest('.js-notif-mute')) { e.stopPropagation(); return toggleNotifsMuted(); }   // §246 mute/unmute the badge
   if (closest('.js-requests')) { e.stopPropagation(); openOverlay({ kind: 'requests' }); refreshWranglerRequests(); return; }   // §18e approval inbox
   if (closest('.js-req-refresh')) { e.stopPropagation(); return refreshWranglerRequests(); }
   if (closest('.js-req-chat')) { e.stopPropagation(); return openWranglerFromRequest(Number(closest('.js-req-chat').dataset.n)); }   // §18e continue the conversation
@@ -11404,7 +11871,9 @@ function onClick(e) {
   if (closest('.js-ft-neg')) { const b = closest('.js-ft-neg'); e.stopPropagation(); return toggleFilterNeg(b.dataset.scope, Number(b.dataset.i)); }
   if (closest('.js-date-edit')) { const b = closest('.js-date-edit'); e.stopPropagation(); return openDateSearch(b.dataset.scope, Number(b.dataset.i)); }   // §5.4d re-open the picker to change the date
   if (closest('.js-ft-x')) { const b = closest('.js-ft-x'); e.stopPropagation(); return removeFilterTerm(b.dataset.scope, Number(b.dataset.i)); }
-  if (closest('.js-closeall')) return closeAll();
+  if (closest('.js-closeall-menu')) { e.stopPropagation(); return openCloseAllMenu(closest('.js-closeall-menu')); }
+  if (closest('.js-closeall')) { document.querySelectorAll('.dropdown-menu').forEach((m) => m.remove()); return closeAll(); }
+  if (closest('.js-closeothers')) { document.querySelectorAll('.dropdown-menu').forEach((m) => m.remove()); return closeOthers(); }
   if (closest('.js-closetab')) { e.stopPropagation(); return closeTab(closest('.js-closetab').dataset.tab); }
   if (closest('.js-uncascade')) { e.stopPropagation(); const cs = activeSession().cards[closest('.js-uncascade').dataset.card]; if (cs) cs.released = true; return render(); }
   if (closest('.js-tab')) return switchTab(closest('.js-tab').dataset.tab);
@@ -11424,6 +11893,7 @@ function onClick(e) {
     return;
   }
   if (closest('.js-clear-unitpick')) { e.stopPropagation(); state.unitPick = null; render(); return; }
+  if (closest('.js-clear-paymethod')) { e.stopPropagation(); activeSession().cards.invoices.payMethod = 'all'; render(); return; }   // §337
   if (closest('.js-addcat')) { const b = closest('.js-addcat'); e.stopPropagation(); return openIntCatDropdown(b.dataset.rec, b); }
   if (closest('.js-setintcat')) { const b = closest('.js-setintcat'); e.stopPropagation(); return addInterestedCategory(b.dataset.rec, b.dataset.val); }
   if (closest('.js-act-open')) { const b = closest('.js-act-open'); e.stopPropagation(); state.actMode = b.dataset.val; state.actOpen = b.dataset.rec; const rec = b.dataset.rec; render(); document.querySelector(`.js-act-in[data-rec="${rec}"]`)?.focus(); return; }
@@ -11586,6 +12056,7 @@ function onClick(e) {
   if (closest('.js-applyview')) { const b = closest('.js-applyview'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return applyView(b.dataset.card, loadViews(b.dataset.card)[Number(b.dataset.idx)]); }
   if (closest('.js-addview')) { if (!adminUnlocked()) { document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return; } const b = closest('.js-addview'); const card = b.dataset.card; const cs = activeSession().cards[card]; const search = (cs.search || '').trim(); const terms = (cs.filterTerms || []).map((t) => ({ ...t })); const suggested = viewLabel(search, terms); const name = (typeof prompt === 'function' ? prompt('Name this view:', suggested) : suggested); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); if (name && name.trim()) { const views = loadViews(card); if (!views.some((v) => v.name.toLowerCase() === name.trim().toLowerCase())) { views.push({ name: name.trim(), search, terms }); saveViews(card, views); } } render(); return; }
   if (closest('.js-sortfield')) { const b = closest('.js-sortfield'); const cs = activeSession().cards[b.dataset.card]; const f = SORT_FIELDS[b.dataset.card].find((x) => x.field === b.dataset.field); if (f) { cs.sort = { ...f }; saveSort(b.dataset.card, cs.sort); } document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); render(); return; }
+  if (closest('.js-paymethod')) { const cs = activeSession().cards.invoices; cs.payMethod = closest('.js-paymethod').dataset.method; document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); render(); return; }   // §337
   if (closest('.js-sortdir')) { const card = closest('.js-sortdir').dataset.card; const cs = activeSession().cards[card]; cs.sort.dir = cs.sort.dir === 'asc' ? 'desc' : 'asc'; saveSort(card, cs.sort); render(); return; }
 
   // inline edit (click a value → input)
@@ -11880,6 +12351,7 @@ function setRentalStatus(rentalId, val) {
   if (val === 'On Rent' && cust) {
     if (cust.requiresPO && !IDX.invoice.get(r.invoiceId)?.po) warn = '⚠ PO required for this customer — add it before sending.';
     else if (!cust.stripeId) warn = '⚠ No card on file for this customer.';
+    else if (!cust.rentalProtection) warn = '⚠ Rental Protection not enabled on this account.';   // F4 — mirrors the PO advisory
   }
   toast(warn || `Status → ${getStatus('rentalStatus', val).label}`);
   render();
@@ -11925,6 +12397,7 @@ function removeUnitInvoiceLine(r, unitId) {
     });
     if ((inv.lineItems || []).length !== before) { reindex('invoices', inv); logAction(inv, `${IDX.unit.get(unitId)?.name || unitId} line(s) removed — No Show / Cancel (not billed)`); }
   });
+  syncProtectionLine(r);   // F4b — a removed unit shrinks the rental subtotal → reprice protection across the series
 }
 function openUnitStatusDropdown(rentalId, unitId, anchorEl) {
   const r = IDX.rental.get(rentalId); const eu = r && unitEntry(r, unitId);
@@ -12440,6 +12913,7 @@ function onChange(e) {
     const f = e.target.dataset.f, raw = e.target.value.trim();
     if (f === 'revenueGoal') { const n = Number(raw.replace(/[^0-9.]/g, '')); o.draftSettings.company.revenueGoal = (raw && isFinite(n) && n > 0) ? n : undefined; }
     else if (f === 'maxNetDays') { const n = Math.round(Number(raw.replace(/[^0-9.]/g, ''))); o.draftSettings.company.maxNetDays = (raw && isFinite(n) && n >= 0) ? n : undefined; }
+    else if (/^mem[A-Z]/.test(f)) { const n = Number(raw.replace(/[^0-9.]/g, '')); o.draftSettings.company[f] = (raw && isFinite(n) && n >= 0) ? n : undefined; }   // membership pricing — numeric, Owner-settable (spec §2)
     else o.draftSettings.company[f] = raw || undefined;
     renderOverlay(); return;
   }
@@ -12679,7 +13153,7 @@ function parseQuickCustomer(q) {
 function quickAddCustomerFromSearch(value) {
   const p = parseQuickCustomer(value); if (!p) return false;
   const id = nextCustomerId();
-  const c = { customerId: id, firstName: p.firstName, lastName: p.lastName, name: `${p.firstName} ${p.lastName}`.trim(), company: '', phone: p.phone, email: '', address: '', industry: '', accountType: 'Non-Business', payStatus: 'New Customer', requiresPO: false, accountNotes: '', stripeId: '', selfie: '', signature: '', agreementType: '', agreementSignedAt: '', interestedCategoryIds: [], activityLog: [], usedSalesStage: 'N/A', membershipStage: 'N/A', _digest: { activePct: 0, totalPaid: 0, visits: 0, years: 0, avgFrequencyDays: 0, firstInvoice: '', lastInvoice: '' } };
+  const c = { customerId: id, firstName: p.firstName, lastName: p.lastName, name: `${p.firstName} ${p.lastName}`.trim(), company: '', phone: p.phone, email: '', address: '', industry: '', accountType: 'Non-Business', payStatus: 'New Customer', requiresPO: false, rentalProtection: false, accountNotes: '', stripeId: '', selfie: '', signature: '', agreementType: '', agreementSignedAt: '', interestedCategoryIds: [], activityLog: [], usedSalesStage: 'N/A', membershipStage: 'N/A', _digest: { activePct: 0, totalPaid: 0, visits: 0, years: 0, avgFrequencyDays: 0, firstInvoice: '', lastInvoice: '' } };
   DATA.customers.push(c); IDX.customer.set(id, c); reindex('customers', c);
   logAction(c, 'Customer quick-added');
   const s = activeSession();
@@ -12740,7 +13214,7 @@ function openCustomerForm(editId, prefill, linkTo) {
   openOverlay({ kind: 'newCustomer', error: '', editId: editId || null, linkTo: (!editId && linkTo) || null, draft: {
     firstName: f('firstName'), lastName: f('lastName'), company: f('company'), phone: f('phone'),
     email: f('email'), industry: f('industry'), accountType: f('accountType', 'Non-Business'),
-    requiresPO: c ? !!c.requiresPO : undefined, accountNotes: f('accountNotes'), selfie: f('selfie'), signature: f('signature'),
+    requiresPO: c ? !!c.requiresPO : undefined, rentalProtection: c ? !!c.rentalProtection : undefined, accountNotes: f('accountNotes'), selfie: f('selfie'), signature: f('signature'),
     agreementType: f('agreementType'), agreementSignedAt: f('agreementSignedAt'),
     idNumber: f('idNumber'), netDays: f('netDays'), custom: (c && c.custom) ? { ...c.custom } : {},
   } });
@@ -12777,7 +13251,7 @@ function quickSaveCustomer(o) {
     customerId: id, firstName: d.firstName, lastName: d.lastName, name: `${d.firstName} ${d.lastName}`.trim(),
     company: d.company, phone: d.phone, email: d.email, address: '',
     industry: d.industry, accountType: d.accountType || 'Non-Business', payStatus: 'New Customer',
-    requiresPO: !!d.requiresPO, accountNotes: d.accountNotes, stripeId: '', selfie: d.selfie || '', signature: d.signature || '',
+    requiresPO: !!d.requiresPO, rentalProtection: !!d.rentalProtection, accountNotes: d.accountNotes, stripeId: '', selfie: d.selfie || '', signature: d.signature || '',
     idNumber: d.idNumber || '', netDays: normNetDays(d.netDays), custom: d.custom || {},
     agreementType: d.agreementType || '', agreementSignedAt: d.agreementSignedAt || '',
     interestedCategoryIds: [], activityLog: [], usedSalesStage: 'N/A', membershipStage: 'N/A',
@@ -12827,10 +13301,11 @@ function saveNewCustomer() {
   const missingCf = customFieldsFor('customers').find((f) => f.required && !(o.draft.custom[f.id] || '').trim());
   if (missingCf) { o.error = `“${missingCf.label}” is required.`; renderOverlay(); document.querySelector(`.overlay [data-cf="${missingCf.id}"]`)?.focus(); return; }
   if (o.draft.requiresPO !== true && o.draft.requiresPO !== false) { o.error = ''; o.tab = 'account'; renderOverlay(); flashOr('.overlay .js-nc-po', 'Choose PO — Yes or No before saving.'); return; }   // force the PO answer
+  if (o.draft.rentalProtection !== true && o.draft.rentalProtection !== false) { o.error = ''; o.tab = 'account'; renderOverlay(); flashOr('.overlay .js-nc-rp', 'Choose Rental Protection — Yes or No before saving.'); return; }   // F4 — force the protection answer (mirrors PO)
   const d = o.draft;
   if (o.editId) {                                   // ── editing / completing an existing customer ──
     const c = IDX.customer.get(o.editId); if (!c) { closeOverlay(); return; }
-    Object.assign(c, { firstName: d.firstName, lastName: d.lastName, company: d.company, phone: d.phone, email: d.email, industry: d.industry, accountType: d.accountType || 'Non-Business', requiresPO: !!d.requiresPO, accountNotes: d.accountNotes, idNumber: d.idNumber || '', netDays: normNetDays(d.netDays), custom: d.custom || {} });   // §7.1b signature/agreement live on the card
+    Object.assign(c, { firstName: d.firstName, lastName: d.lastName, company: d.company, phone: d.phone, email: d.email, industry: d.industry, accountType: d.accountType || 'Non-Business', requiresPO: !!d.requiresPO, rentalProtection: !!d.rentalProtection, accountNotes: d.accountNotes, idNumber: d.idNumber || '', netDays: normNetDays(d.netDays), custom: d.custom || {} });   // §7.1b signature/agreement live on the card
     if (!c.accountNotes) c.accountNotesColor = '';   // popup has no dot picker — don't leave a stale tag on a cleared note
     c.name = `${d.firstName} ${d.lastName}`.trim() || c.name;
     reindex('customers', c);
@@ -12847,7 +13322,7 @@ function saveNewCustomer() {
     customerId: id, firstName: d.firstName, lastName: d.lastName, name: `${d.firstName} ${d.lastName}`.trim(),
     company: d.company, phone: d.phone, email: d.email, address: '',
     industry: d.industry, accountType: d.accountType || 'Non-Business', payStatus: 'New Customer',
-    requiresPO: !!d.requiresPO, accountNotes: d.accountNotes, stripeId: '', selfie: d.selfie || '', signature: d.signature || '',
+    requiresPO: !!d.requiresPO, rentalProtection: !!d.rentalProtection, accountNotes: d.accountNotes, stripeId: '', selfie: d.selfie || '', signature: d.signature || '',
     idNumber: d.idNumber || '', netDays: normNetDays(d.netDays), custom: d.custom || {},
     agreementType: d.agreementType || '', agreementSignedAt: d.agreementSignedAt || '',
     interestedCategoryIds: [], activityLog: [], usedSalesStage: 'N/A', membershipStage: 'N/A',
@@ -13585,7 +14060,10 @@ function createInvoiceForRental(rentalId) {
     else inv.contOf = id;
     if (chunks.length === 1) { rentalLineItems(r).forEach((li) => inv.lineItems.push(li)); }   // unchanged single-invoice path
     else billChunkUnits(inv, r, ch.start, ch.end, ch.start, retroPricingOn(), 'rental', ch.idx === 0 ? null : id);   // per-chunk rental line(s)
-    if (ch.idx === 0) transportLineItems(r).forEach((li) => inv.lineItems.push(li));   // transport billed once (chunk 0)
+    if (ch.idx === 0) {   // transport + Rental Protection surcharge (F4b) billed once, on the primary chunk
+      transportLineItems(r).forEach((li) => inv.lineItems.push(li));
+      protectionLineItems(r).forEach((li) => inv.lineItems.push(li));
+    }
     DATA.invoices.push(inv); IDX.invoice.set(cid, inv); reindex('invoices', inv);
     logAction(inv, ch.idx === 0 ? `Created for ${rentalUnitsLabel(r) || 'rental'}` : `Continuation (days ${ch.idx * INV_CAP_DAYS + 1}+) — ext of ${invoiceShort(id)}`);
   });
@@ -13606,7 +14084,10 @@ function setDraftDate(rentalId, which, val) {
   logAction(r, `${which === 'start' ? 'Start' : 'End'} date → ${val ? fmtShortDate(val) : 'cleared'}`);   // #1 — was unlogged
   reanchorRender();
 }
-const reanchorRender = () => { const s = activeSession(); if (s.anchor) setAnchor(s, s.anchor.card, s.anchor.recId, s.anchor.recType); render(); };
+// §264 — refresh the cascade after an in-place action WITHOUT collapsing the sibling
+// cards (preserve their open record, typed search/filter, and history). A fresh anchor
+// still goes through the full setAnchor reset; only this refresh path preserves views.
+const reanchorRender = () => { const s = activeSession(); if (s.anchor) setAnchor(s, s.anchor.card, s.anchor.recId, s.anchor.recType, { preserve: true }); render(); };
 /** Append a timestamped action to a record's log (surfaced in its History section). */
 let actionSeq = 0;
 // Audit trail: who's signed in on this device (remembered across sessions). Every
@@ -14258,6 +14739,7 @@ function addRentalLineToInvoice(invoiceId, rentalId) {
   const total = lines.reduce((a, li) => a + (Number(li.amount) || 0), 0);
   transportLineItems(r).forEach((li) => inv.lineItems.push(li));   // one transport line per unit (§20)
   if (!r.invoiceId) r.invoiceId = invoiceId;
+  protectionLineItems(r).forEach((li) => inv.lineItems.push(li));  // F4b — this rental's protection surcharge (one line per rental, ref=rentalId)
   if (!inv.rentalIds.includes(rentalId)) inv.rentalIds.push(rentalId);
   logAction(inv, `Added rental: ${rentalUnitsLabel(r) || 'Rental'} (${money(total)})`);
   logAction(r, `Added to invoice ${invoiceShort(invoiceId)}`);
@@ -15094,7 +15576,7 @@ function exposeTestApi() {
       latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore, wranglerRailLoad, wrOffloadChatImages, wrEvictChatBlobs, driveViewUrl, mergeWranglerRails,
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
-      companyRevenueGoal, companyName, companyTagline, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, setRole: (r) => { currentRole = r || ''; render(); },
+      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, setFunnelStage, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, addMonthsISO, openMembershipEnroll, membershipEnrollCommit, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, setRole: (r) => { currentRole = r || ''; render(); },
       openCustomerForm, renderOverlay, render, cardComplete, cardCaptureState, cardHasSelfie, cardHasSignature, captureSelfie, captureSignature, __state: state };   // UI drivers for headless screenshot/e2e tests
 
   } catch (e) { /* no window (non-browser) */ }
