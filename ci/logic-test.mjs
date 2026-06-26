@@ -574,6 +574,12 @@ try {
     ok(U({ type: 'number' }, '') === true && U({ type: 'number' }, '5') === false, 'gate: number must be filled (no more optional)');
     ok(U({ type: 'file' }, '') === true && U({ type: 'file' }, 'data:...') === false, 'gate: file must be attached');
     ok(U({ type: 'text', required: false }, '') === true, 'gate: legacy required:false is ignored — all fields required now');
+    // evidence gate — failphoto requires a photo only when the item currently fails
+    const EM = T.inspEvidenceMissing;
+    ok(EM({ type: 'toggle', evidence: 'failphoto' }, 'Fail', []) === true && EM({ type: 'toggle', evidence: 'failphoto' }, 'Fail', [{ url: 'x' }]) === false, 'evidence: failphoto blocks a Fail with no photo, clears once attached');
+    ok(EM({ type: 'toggle', evidence: 'failphoto' }, 'Pass', []) === false, 'evidence: failphoto does NOT block a passing item');
+    ok(EM({ type: 'number', evidence: 'failphoto', fail: { op: 'below', a: 30 } }, '20', []) === true, 'evidence: failphoto keys off the generalized fail (number below trips it)');
+    ok(EM({ type: 'toggle', evidence: 'always' }, 'Pass', []) === true && EM({ type: 'toggle', evidence: 'optional' }, 'Fail', []) === false && EM({ type: 'toggle' }, 'Fail', []) === false, 'evidence: always needs a photo regardless; optional/none never block');
 
     // 27) Reversibility — a corrupt customization must self-heal, never brick the app
     const savedAll = st.settings;

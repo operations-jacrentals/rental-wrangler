@@ -3029,6 +3029,18 @@ function inspItemFails(it, val) {
   }
   return false;
 }
+// Is required photo evidence missing for this item right now? Policy `it.evidence`
+// (Jac 2026-06-26): none/optional never block; always → needs ≥1 photo; failphoto →
+// needs a photo only when the item's answer currently fails. Keys off inspItemFails so
+// an out-of-range number or expired date demands a photo too.
+function inspEvidenceMissing(it, val, evArr) {
+  const p = (it && it.evidence) || 'none';
+  if (p === 'none' || p === 'optional') return false;
+  const has = !!(evArr && evArr.length);
+  if (p === 'always') return !has;
+  if (p === 'failphoto') return inspItemFails(it, val) && !has;
+  return false;
+}
 // Every item is answer-required now (Jac 2026-06-26 — the Optional/Required toggle is gone);
 // the old `it.required` flag is simply ignored.
 function inspItemUnanswered(it, val) {
@@ -3556,7 +3568,7 @@ function settingsInspectionsPane(o) {
   const items = cfg.items || [];
   const inspDraft = o.inspDraft && typeof o.inspDraft === 'object' ? o.inspDraft : { label: '', type: 'toggle', fail: inspFailDefault('toggle'), options: [] };
   const rows = items.length ? items.map((it) => `<div class="rule-row"${o.inspEditId === it.id ? ' style="outline:1px solid var(--accent,#ff7a1a);border-radius:8px"' : ''}>
-      <div class="rule-main"><span class="rule-label">${esc(it.label)}</span><span class="rule-desc">${inspFailDesc(it)}</span></div>
+      <div class="rule-main"><span class="rule-label">${esc(it.label)}</span><span class="rule-desc">${inspFailDesc(it)}${it.evidence && it.evidence !== 'none' ? ` · photo: ${esc(it.evidence === 'failphoto' ? 'on fail' : it.evidence)}` : ''}</span></div>
       <button class="so-reset js-insp-edit" data-id="${esc(it.id)}" data-tip="Edit item">${I.sliders}</button>
       <button class="so-reset js-insp-remove" data-cat="${esc(famKey)}" data-id="${esc(it.id)}" data-tip="Remove item">${I.x}</button>
     </div>`).join('') : '<p class="set-note">No checklist items yet — add the things to inspect below.</p>';
@@ -3575,6 +3587,11 @@ function settingsInspectionsPane(o) {
       ${segCtl(INSP_TYPES.map((t) => ({ label: t, js: 'js-insp-type', data: { type: t }, on: (inspDraft.type || 'toggle') === t ? 'green' : null })))}
       ${inspFailEditor(inspDraft)}
       ${optWell}
+      ${(inspDraft.type || 'toggle') !== 'file' ? `<div class="insp-opt-row"><span class="insp-opt-lbl">Evidence</span>${segCtl([
+        { label: 'None', js: 'js-insp-ev', data: { v: 'none' }, on: (inspDraft.evidence || 'none') === 'none' ? 'gray' : null },
+        { label: 'Optional', js: 'js-insp-ev', data: { v: 'optional' }, on: inspDraft.evidence === 'optional' ? 'green' : null },
+        { label: 'Fail photo', js: 'js-insp-ev', data: { v: 'failphoto' }, on: inspDraft.evidence === 'failphoto' ? 'red' : null },
+        { label: 'Always', js: 'js-insp-ev', data: { v: 'always' }, on: inspDraft.evidence === 'always' ? 'red' : null }])}</div>` : ''}
       <div style="display:flex;align-items:center;gap:8px">
         <button class="pill ignition ${o.inspEditId ? 'js-insp-editsave' : 'js-insp-add'}" data-r="R17">${o.inspEditId ? 'Save changes' : '+ Add item'}</button>
         ${o.inspEditId ? '<button class="pill ghost js-insp-editcancel">Cancel</button>' : ''}
@@ -9400,8 +9417,10 @@ function buildPopupEl(o, overlay, opts = {}) {
     const u = IDX.unit.get(o.unitId); const cfg = u && checklistFor(u); const n = IDX.insp.get(o.inspId);
     if (!u || !cfg || !n) { return false; }
     n.items = n.items || {};
+    const evOf = (it) => (n.itemEvidence && n.itemEvidence[it.id]) || [];
     const items = cfg.items || [];
-    const done = items.filter((it) => !inspItemUnanswered(it, n.items[it.id])).length; const allDone = done === items.length;
+    const itemSatisfied = (it) => !inspItemUnanswered(it, n.items[it.id]) && !inspEvidenceMissing(it, n.items[it.id], evOf(it));
+    const done = items.filter(itemSatisfied).length; const allDone = done === items.length;
     const cat = IDX.category.get(u.categoryId) || {};
     const itemRows = items.map((it) => {
       const t = inspItemType(it);
@@ -9424,7 +9443,15 @@ function buildPopupEl(o, overlay, opts = {}) {
       } else {
         ctrl = segCtl([{ label: '✓ Pass', js: 'js-ck-item', data: { id: it.id, val: 'Pass' }, on: val === 'Pass' ? 'green' : null }, { label: '✕ Fail', js: 'js-ck-item', data: { id: it.id, val: 'Fail' }, on: val === 'Fail' ? 'red' : null }]);
       }
-      return `<div class="ck-row"><span class="ck-label">${esc(it.label)}</span>${ctrl}</div>`;
+      let evHtml = '';
+      const evPolicy = it.evidence || 'none';
+      if (evPolicy !== 'none' && t !== 'file') {
+        const evs = evOf(it);
+        const need = inspEvidenceMissing(it, val, evs);
+        const thumbs = evs.map((ev, i) => `<span class="ck-evthumb"><img src="${esc(ev.url)}" alt="evidence"><button class="ck-evrm js-ck-evrm" data-id="${esc(it.id)}" data-i="${i}" aria-label="Remove photo">${I.x}</button></span>`).join('');
+        evHtml = `<div class="ck-evrow${need ? ' req' : ''}">${thumbs}<label class="ck-evadd${need ? ' req' : ''}">${I.camera}<span>${evs.length ? 'Add' : (need ? 'Photo required' : 'Add photo')}</span><input type="file" accept="image/*" class="js-ck-evid" data-id="${esc(it.id)}" hidden></label></div>`;
+      }
+      return `<div class="ck-row"><span class="ck-label">${esc(it.label)}</span>${ctrl}</div>${evHtml}`;
     }).join('');
     const pop = el('div', 'popup board-popup ck-popup');
     pop.innerHTML = `
@@ -11696,13 +11723,14 @@ function onClick(e) {
   if (closest('.js-insp-failop')) { e.stopPropagation(); const o=state.overlay, b=closest('.js-insp-failop'); if(o){ o.inspDraft=o.inspDraft||{}; o.inspDraft.fail={...(o.inspDraft.fail||{}), op:b.dataset.v}; renderOverlay(); } return; }
   if (closest('.js-insp-dateref')) { e.stopPropagation(); const o=state.overlay, b=closest('.js-insp-dateref'); if(o){ o.inspDraft=o.inspDraft||{}; const f={...(o.inspDraft.fail||{})}; f.ref = b.dataset.v==='today' ? 'today' : ((f.ref && f.ref!=='today') ? f.ref : TODAY_ISO); o.inspDraft.fail=f; renderOverlay(); } return; }
   if (closest('.js-insp-opt-na')) { e.stopPropagation(); const o=state.overlay; if(o){ o.inspDraft=o.inspDraft||{}; o.inspDraft.options=o.inspDraft.options||[]; if(!o.inspDraft.options.some((op)=>op.label==='N/A')) o.inspDraft.options.push({label:'N/A', fail:false}); renderOverlay(); } return; }
-  if (closest('.js-insp-edit')) { e.stopPropagation(); const o=state.overlay, b=closest('.js-insp-edit'); if(o){ const cfg=ensureInspDraft(o, o.inspFam); const it=(cfg.items||[]).find((x)=>x.id===b.dataset.id); if(it){ const type=it.type||'toggle'; o.inspEditId=it.id; o.inspDraft={ label:it.label, type, fail: it.fail ? JSON.parse(JSON.stringify(it.fail)) : inspFailDefault(type), options: it.options ? JSON.parse(JSON.stringify(it.options)) : [], optLabel:'' }; renderOverlay(); } } return; }
+  if (closest('.js-insp-ev')) { e.stopPropagation(); const o=state.overlay, b=closest('.js-insp-ev'); if(o){ o.inspDraft=o.inspDraft||{}; o.inspDraft.evidence=b.dataset.v; renderOverlay(); } return; }
+  if (closest('.js-insp-edit')) { e.stopPropagation(); const o=state.overlay, b=closest('.js-insp-edit'); if(o){ const cfg=ensureInspDraft(o, o.inspFam); const it=(cfg.items||[]).find((x)=>x.id===b.dataset.id); if(it){ const type=it.type||'toggle'; o.inspEditId=it.id; o.inspDraft={ label:it.label, type, fail: it.fail ? JSON.parse(JSON.stringify(it.fail)) : inspFailDefault(type), options: it.options ? JSON.parse(JSON.stringify(it.options)) : [], evidence: it.evidence || 'none', optLabel:'' }; renderOverlay(); } } return; }
   if (closest('.js-insp-editcancel')) { e.stopPropagation(); const o=state.overlay; if(o){ o.inspEditId=null; o.inspDraft={label:'',type:'toggle',options:[],fail:inspFailDefault('toggle')}; renderOverlay(); } return; }
-  if (closest('.js-insp-editsave')) { e.stopPropagation(); const o=state.overlay; if(!o||!o.inspEditId)return; const el2=document.querySelector('.settings-popup .js-insp-label'); const d=o.inspDraft||{}; const label=((d.label!=null?d.label:(el2?el2.value:''))||'').trim(); if(!label){ if(el2)el2.focus(); toast('Item needs a label.'); return; } const type=d.type||'toggle'; if(type==='select' && !((d.options||[]).length)){ toast('Add at least one dropdown option.'); return; } const cfg=ensureInspDraft(o, o.inspFam); const it=(cfg.items||[]).find((x)=>x.id===o.inspEditId); if(it){ it.label=label; it.type=type; delete it.required; if(type==='select'){ it.options=(d.options||[]).map((op)=>({label:op.label, fail:!!op.fail})); delete it.fail; } else if(type==='file'){ delete it.fail; delete it.options; } else { it.fail=d.fail||inspFailDefault(type); delete it.options; } } o.inspEditId=null; o.inspDraft={label:'',type:'toggle',options:[],fail:inspFailDefault('toggle')}; renderOverlay(); return; }
+  if (closest('.js-insp-editsave')) { e.stopPropagation(); const o=state.overlay; if(!o||!o.inspEditId)return; const el2=document.querySelector('.settings-popup .js-insp-label'); const d=o.inspDraft||{}; const label=((d.label!=null?d.label:(el2?el2.value:''))||'').trim(); if(!label){ if(el2)el2.focus(); toast('Item needs a label.'); return; } const type=d.type||'toggle'; if(type==='select' && !((d.options||[]).length)){ toast('Add at least one dropdown option.'); return; } const cfg=ensureInspDraft(o, o.inspFam); const it=(cfg.items||[]).find((x)=>x.id===o.inspEditId); if(it){ it.label=label; it.type=type; delete it.required; if(type==='select'){ it.options=(d.options||[]).map((op)=>({label:op.label, fail:!!op.fail})); delete it.fail; } else if(type==='file'){ delete it.fail; delete it.options; } else { it.fail=d.fail||inspFailDefault(type); delete it.options; } if(type!=='file' && d.evidence && d.evidence!=='none') it.evidence=d.evidence; else delete it.evidence; } o.inspEditId=null; o.inspDraft={label:'',type:'toggle',options:[],fail:inspFailDefault('toggle')}; renderOverlay(); return; }
   if (closest('.js-insp-opt-add')) { e.stopPropagation(); const o=state.overlay; if(!o)return; const inp=document.querySelector('.settings-popup .js-insp-opt-label'); const lbl=((o.inspDraft&&o.inspDraft.optLabel)|| (inp?inp.value:'')).trim(); if(!lbl){ if(inp)inp.focus(); toast('Type an option first.'); return; } o.inspDraft.options=o.inspDraft.options||[]; o.inspDraft.options.push({label:lbl, fail:false}); o.inspDraft.optLabel=''; renderOverlay(); return; }
   if (closest('.js-insp-opt-remove')) { e.stopPropagation(); const o=state.overlay, b=closest('.js-insp-opt-remove'); if(o&&o.inspDraft&&o.inspDraft.options){ o.inspDraft.options.splice(Number(b.dataset.i),1); renderOverlay(); } return; }
   if (closest('.js-insp-opt-fail')) { e.stopPropagation(); const o=state.overlay, b=closest('.js-insp-opt-fail'); if(o&&o.inspDraft&&o.inspDraft.options){ const op=o.inspDraft.options[Number(b.dataset.i)]; if(op) op.fail = b.dataset.v==='1'; renderOverlay(); } return; }
-  if (closest('.js-insp-add')) { e.stopPropagation(); const o=state.overlay; if(!o)return; const d=o.inspDraft||{label:'',type:'toggle',options:[]}; const el2=document.querySelector('.settings-popup .js-insp-label'); const label=((d.label!=null?d.label:(el2?el2.value:''))||'').trim(); if(!label){ if(el2)el2.focus(); toast('Type a checklist item first.'); return; } const type=d.type||'toggle'; if(type==='select' && !((d.options||[]).length)){ toast('Add at least one dropdown option.'); return; } const cfg=ensureInspDraft(o, o.inspFam); cfg.items=cfg.items||[]; const item={ id:'ck_'+(label.toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'')||'item')+'_'+Math.random().toString(36).slice(2,5), label, type }; if(type==='select') item.options=(d.options||[]).map((op)=>({label:op.label, fail:!!op.fail})); else if(type!=='file') item.fail = d.fail || inspFailDefault(type); cfg.items.push(item); o.inspDraft={label:'',type:'toggle',options:[],fail:inspFailDefault('toggle')}; renderOverlay(); return; }
+  if (closest('.js-insp-add')) { e.stopPropagation(); const o=state.overlay; if(!o)return; const d=o.inspDraft||{label:'',type:'toggle',options:[]}; const el2=document.querySelector('.settings-popup .js-insp-label'); const label=((d.label!=null?d.label:(el2?el2.value:''))||'').trim(); if(!label){ if(el2)el2.focus(); toast('Type a checklist item first.'); return; } const type=d.type||'toggle'; if(type==='select' && !((d.options||[]).length)){ toast('Add at least one dropdown option.'); return; } const cfg=ensureInspDraft(o, o.inspFam); cfg.items=cfg.items||[]; const item={ id:'ck_'+(label.toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'')||'item')+'_'+Math.random().toString(36).slice(2,5), label, type }; if(type==='select') item.options=(d.options||[]).map((op)=>({label:op.label, fail:!!op.fail})); else if(type!=='file') item.fail = d.fail || inspFailDefault(type); if(type!=='file' && d.evidence && d.evidence!=='none') item.evidence=d.evidence; cfg.items.push(item); o.inspDraft={label:'',type:'toggle',options:[],fail:inspFailDefault('toggle')}; renderOverlay(); return; }
   if (closest('.js-insp-remove')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-insp-remove'); if (o) { const cfg = ensureInspDraft(o, b.dataset.cat); cfg.items = (cfg.items || []).filter((it) => it.id !== b.dataset.id); renderOverlay(); } return; }
   if (closest('.js-nc-save')) { e.stopPropagation(); return saveNewCustomer(); }
   if (closest('.js-nc-acct')) { const b = closest('.js-nc-acct'); e.stopPropagation(); ncSyncInputs(); state.overlay.draft.accountType = b.dataset.val; renderOverlay(); return; }
@@ -12050,6 +12078,7 @@ function onClick(e) {
   if (closest('.js-cond')) { const b = closest('.js-cond'); return setUnitCondition(b.dataset.rec, b.dataset.val); }
   if (closest('.js-open-checklist')) { e.stopPropagation(); return openChecklist(closest('.js-open-checklist').dataset.rec); }
   if (closest('.js-ck-item')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-ck-item'); if (o && o.kind === 'checklist') { const n = IDX.insp.get(o.inspId); if (n) { n.items = n.items || {}; n.items[b.dataset.id] = b.dataset.val; renderOverlay(); } } return; }
+  if (closest('.js-ck-evrm')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-ck-evrm'); if (o && o.kind === 'checklist') { const n = IDX.insp.get(o.inspId); if (n && n.itemEvidence && n.itemEvidence[b.dataset.id]) { n.itemEvidence[b.dataset.id].splice(Number(b.dataset.i), 1); saveSoon(); renderOverlay(); } } return; }
   if (closest('.js-ck-complete')) { e.stopPropagation(); return completeChecklist(); }
   if (closest('.js-ck-pending')) { e.stopPropagation(); closeOverlay(); toast('Inspection kept as pending — resume it anytime.'); return; }
   if (closest('.js-washseg')) { const b = closest('.js-washseg'); return setUnitWash(b.dataset.rec, b.dataset.val); }
@@ -12550,8 +12579,8 @@ function completeChecklist() {
   const u = IDX.unit.get(o.unitId); const cfg = u && checklistFor(u); const n = IDX.insp.get(o.inspId);
   if (!u || !cfg || !n) { closeOverlay(); return; }
   const items = cfg.items || [];
-  const left = items.filter((it) => inspItemUnanswered(it, n.items[it.id])).length;
-  if (left) { toast(`Mark every item first — ${left} left.`); return; }
+  const left = items.filter((it) => inspItemUnanswered(it, n.items[it.id]) || inspEvidenceMissing(it, n.items[it.id], (n.itemEvidence && n.itemEvidence[it.id]) || [])).length;
+  if (left) { toast(`Finish every item first — ${left} left (some may need a photo).`); return; }
   const failed = items.filter((it) => inspItemFails(it, n.items[it.id]));
   if (failed.length) n.description = 'Failed checklist: ' + failed.map((it) => inspItemType(it)==='select' ? (it.label + ': ' + (n.items[it.id]||'')) : it.label).join(', ');
   state.overlay = null;                                   // close the takeover; a Fail re-opens the photo/notes popup
@@ -13133,6 +13162,9 @@ function onChange(e) {
   }
   if (e.target.classList.contains('js-insp-desc')) { const n = IDX.insp.get(e.target.dataset.rec); if (n) { n.description = e.target.value; render(); } return; }
   if (e.target.classList.contains('js-ck-file')) { const file = e.target.files && e.target.files[0]; if (!file) return; if ((file.type||'').startsWith('video/')) { toast('Videos can’t be stored — attach a photo instead.'); return; } const id = e.target.dataset.id; const reader = new FileReader(); reader.onload = () => { downscaleImage(reader.result, 600, 0.5, (out) => { if (!out) { toast('Could not read that image.'); return; } const o = state.overlay; if (o && o.kind === 'checklist') { const n = IDX.insp.get(o.inspId); if (n) { n.items = n.items || {}; n.items[id] = out; saveSoon(); renderOverlay(); } } }); }; reader.onerror = () => toast('Could not read that image.'); reader.readAsDataURL(file); return; }
+  // Per-item photo EVIDENCE (Jac 2026-06-26) — image-only, downscaled, stored inline on the
+  // record (n.itemEvidence[id]); mirrors js-ck-file. No Drive offload (inherits the inline pattern).
+  if (e.target.classList.contains('js-ck-evid')) { const file = e.target.files && e.target.files[0]; if (!file) return; if ((file.type||'').startsWith('video/')) { toast('Per-item evidence is photo-only — use the walkaround for video.'); return; } const id = e.target.dataset.id; const reader = new FileReader(); reader.onload = () => { downscaleImage(reader.result, 800, 0.6, (out) => { if (!out) { toast('Could not read that image.'); return; } const o = state.overlay; if (o && o.kind === 'checklist') { const n = IDX.insp.get(o.inspId); if (n) { n.itemEvidence = n.itemEvidence || {}; (n.itemEvidence[id] = n.itemEvidence[id] || []).push({ kind: 'image', url: out }); logAction(n, 'Evidence photo attached'); saveSoon(); renderOverlay(); } } }); }; reader.onerror = () => toast('Could not read that image.'); reader.readAsDataURL(file); return; }
   if (e.target.classList.contains('js-svc-photo')) {
     const file = e.target.files && e.target.files[0]; if (!file) return;
     if ((file.type || '').startsWith('video/')) { toast('Videos can’t be stored on the record — attach a photo instead.'); return; }
@@ -14591,8 +14623,14 @@ function setInspBill(id, val) {
 function autoWOFromInspection(n) {
   const id = 'WO-INS' + (state.seq++);
   const u = IDX.unit.get(n.unitId);
-  const wo = { woId: id, unitId: n.unitId, inspectionId: n.inspectionId, customerId: n.billCustomer === 'Yes' ? n.customerId : null, woReport: 'From failed inspection', woType: 'Failed', description: `Auto-created from inspection ${n.inspectionId}.`, phase: 'Part Needed?', billCustomer: n.billCustomer || 'No', date: TODAY_ISO, eta: '', unitHoursAtCreation: u?.currentHours || 0, assignedMechanic: '', laborHours: 0, lineItems: [], mock: true };
+  // Enrich the report with the failed-item summary (n.description is set by completeChecklist before
+  // the cascade fires). The WO references the inspection's LIVE evidence via wo.inspectionId, so any
+  // photo added during the inspection (or later in the §12.8 report) surfaces on the WO automatically.
+  const desc = n.description ? `Auto-created from inspection ${n.inspectionId}. ${n.description}` : `Auto-created from inspection ${n.inspectionId}.`;
+  const evCount = n.itemEvidence ? Object.values(n.itemEvidence).reduce((a, arr) => a + ((arr && arr.length) || 0), 0) : 0;
+  const wo = { woId: id, unitId: n.unitId, inspectionId: n.inspectionId, customerId: n.billCustomer === 'Yes' ? n.customerId : null, woReport: 'From failed inspection', woType: 'Failed', description: desc, phase: 'Part Needed?', billCustomer: n.billCustomer || 'No', date: TODAY_ISO, eta: '', unitHoursAtCreation: u?.currentHours || 0, assignedMechanic: '', laborHours: 0, lineItems: [], mock: true };
   DATA.workOrders.push(wo); IDX.wo.set(id, wo); reindex('workOrders', wo);
+  if (evCount) logAction(wo, `Inherited ${evCount} inspection evidence photo${evCount === 1 ? '' : 's'}`);
   n.woId = id;
   return wo;
 }
@@ -15663,7 +15701,7 @@ function exposeTestApi() {
       latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore, wranglerRailLoad, wrOffloadChatImages, wrEvictChatBlobs, driveViewUrl, mergeWranglerRails,
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
-      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, setFunnelStage, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, addMonthsISO, openMembershipEnroll, membershipEnrollCommit, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, setRole: (r) => { currentRole = r || ''; render(); },
+      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, setFunnelStage, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, addMonthsISO, openMembershipEnroll, membershipEnrollCommit, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, setRole: (r) => { currentRole = r || ''; render(); },
       openCustomerForm, renderOverlay, render, cardComplete, cardCaptureState, cardHasSelfie, cardHasSignature, captureSelfie, captureSignature, __state: state };   // UI drivers for headless screenshot/e2e tests
 
   } catch (e) { /* no window (non-browser) */ }

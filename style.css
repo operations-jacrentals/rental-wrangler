@@ -1724,6 +1724,15 @@ select.inline-input:focus-visible { outline: 2px solid var(--accent); outline-of
 .ck-row .co-in { max-width: 180px; flex: 0 0 auto; }
 .ck-row .datefield { flex: 0 0 auto; }
 .ck-row .insp-photo { flex: 0 0 auto; min-height: 64px; width: 120px; margin-bottom: 0; }
+/* Per-item photo evidence strip under a checklist item (Jac 2026-06-26) */
+.ck-evrow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 2px 12px 2px 12px; }
+.ck-evadd { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border: 1px dashed var(--accent-line); border-radius: 9px; background: var(--accent-soft); color: var(--accent); font-size: 12px; font-weight: 700; cursor: pointer; }
+.ck-evadd svg { width: 15px; height: 15px; }
+.ck-evrow.req .ck-evadd { border-color: var(--yellow, #f5c542); color: var(--yellow, #f5c542); background: rgba(245, 197, 66, .08); }
+.ck-evthumb { position: relative; width: 44px; height: 44px; border-radius: 8px; overflow: hidden; border: 1px solid var(--line); flex: 0 0 auto; }
+.ck-evthumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ck-evrm { position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; border-radius: 50%; background: var(--red, #ff4242); color: #fff; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; }
+.ck-evrm svg { width: 11px; height: 11px; }
 /* Dropdown options well in the Inspections builder add-row */
 .insp-opt-well { width: 100%; border-left: 3px solid var(--line); background: var(--bg-2); border-radius: 9px; padding: 8px 10px; display: flex; flex-direction: column; gap: 7px; margin-top: 2px; }
 .insp-opt-row { display: flex; align-items: center; gap: 8px; }
