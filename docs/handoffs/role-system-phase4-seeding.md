@@ -1,16 +1,17 @@
 # Phase 4 — Role data seeding (runtime, post-deploy)
 
-> **STATUS (2026-06-26, verified against the live backend):**
-> - ✅ **Owner → Manager is already staged** on the live backend via
->   `settings.roleMeta` (the Owner login's password is unchanged and becomes
->   Manager tier once the new frontend deploys). Dormant + safe on the old
->   frontend, which ignores `roleMeta`.
-> - ❌ **Developer login + adding any custom role is BLOCKED.** The live backend
->   `roles` map is a **fixed 6-slot set** (Owner, Mechanic, Driver, M.Tech,
->   Sales, Office) + Admin; `setConfig` silently drops new keys, so the
->   `developer`/`Jacob5133` login won't persist or authenticate. This needs a
->   **`Code.gs` change** (accept arbitrary role keys) deployed via **clasp**,
->   which is currently **RAPT-blocked**. Step 4 below cannot succeed until then.
+> **STATUS (2026-06-26 — DONE, verified against the live backend):**
+> - ✅ **Tier-aware backend deployed** (via the Apps Script UI — clasp deploy is
+>   blocked by the jacrentals.com Google Workspace reauth policy). Backend now
+>   accepts arbitrary role keys and gates money/admin by tier (`roleTierRank_`).
+> - ✅ **Developer login seeded** — `auth("Jacob5133")` → role `developer`,
+>   money + admin tier confirmed. `developer` key now persists in the config.
+> - ✅ **Owner → Manager** staged via `settings.roleMeta` (Owner login keeps its
+>   password, resolves to Manager tier server-side; admin demotion confirmed —
+>   the dedicated Admin login retains full admin).
+> - ⏭ **Remaining:** merge frontend PR #352 so the client-side tier UI/gates go
+>   live and match the backend. Until then the live (old) frontend still works —
+>   the backend change is backward-compatible.
 
 Phases 0–3 (the tier model + customizable Settings UI) ship via the frontend PR.
 This runbook applies the **actual role changes** Jac asked for. It is a **runtime
