@@ -4,38 +4,7 @@
 
 ## app.js
 
-**APP-03** — §2 INDEXES & SEARCH — built once on load (SPEC §3: never scan per keystroke)
-
-- `primaryUnit` — app.js:207
-- `holdSigning` — app.js:452
-- `defaultBank` — app.js:603
-- `hasChargeableBank` — app.js:605
-
-**APP-06** — INLINE TRANSPORT EDITOR + GOOGLE MAPS (Jac 2026-06-15)
-
-- `relDate` — app.js:1576
-
-**APP-09** — SETTINGS BOARD — admin customization (config.settings).
-
-- `membershipChargeResult` — app.js:3180
-
-**APP-16** — §8 DETAIL RENDERERS — kv/efld/notes · v2 helpers (yard tool, WO sections,
-
-- `transportActionHtml` — app.js:5365
-- `transportSectionHtml` — app.js:5384
-
-**APP-21** — §11b KPI METRIC ENGINE — admin-definable KPIs (Settings → KPIs & Rings).
-
-- `kpiTeam` — app.js:7097
-
-**APP-23** — §17 INTERNAL TEAM DOCK (Jac, Phase 7) — a bottom-bar chat built on the Phase-6
-
-- `chatLive` — app.js:7366
-- `DISPATCH_HOME` — app.js:7855
-
-**APP-29** — Mr. Wrangler ACTS on your data (Jac 2026-06-16)
-
-- `openBoardView` — app.js:10563
+_No unreferenced top-level symbols found._
 
 ## config.js
 
@@ -63,7 +32,7 @@ _No unreferenced top-level symbols found._
 
 ---
 
-_Scanned 1184 module-scope definitions; 12 unreferenced candidate(s)._
+_Scanned 1172 module-scope definitions; 0 unreferenced candidate(s)._
 
 ## Future: real execution coverage (follow-up)
 
