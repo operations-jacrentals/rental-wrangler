@@ -10126,36 +10126,61 @@ const WR_TOOLS = [
   { name: 'find_work_orders', description: 'List work orders, filtered by unit and/or customer. Returns id, unit, report, phase, type.', input_schema: { type: 'object', properties: { unit: { type: 'string' }, customer: { type: 'string' } }, required: [] } },
   { name: 'check_unit_availability', description: 'Check whether a unit is free for a date window. Returns available + any conflicting rentals. Dates are YYYY-MM-DD.', input_schema: { type: 'object', properties: { unit: { type: 'string' }, startDate: { type: 'string' }, endDate: { type: 'string' } }, required: ['unit', 'startDate', 'endDate'] } },
   { name: 'price_rental', description: 'Quote the price for renting one or more units over a window (uses the live pricing engine; member rates apply if the customer is given). Dates are YYYY-MM-DD. Read-only — does not create anything.', input_schema: { type: 'object', properties: { units: { type: 'array', items: { type: 'string' } }, startDate: { type: 'string' }, endDate: { type: 'string' }, customer: { type: 'string' } }, required: ['units', 'startDate', 'endDate'] } },
+  { name: 'apply_changes', description: "WRITE changes: create/update/import records or run an operation. Pass `ops` — the SAME op shapes documented above ({op:'create'|'update'|'import'|'csv-import', entity, fields|rows|id} and {op:'operate', name:'startRental'|'billRental'|'recordPayment', params}). It validates against the allowlist and the safety fences and RETURNS what resolved or got dropped, so if a link drops (e.g. a category that doesn't exist yet) you can create it first and call again. Safe single edits apply immediately; consequential ones (bulk, pricing, billing, payments, several records) are staged for the user to tap Apply — word those as a preview, never as saved. This is the ONLY write path — never charge a card/ACH, refund, touch a balance, change roles/passwords, hard-delete, or complete a WO.", input_schema: { type: 'object', properties: { title: { type: 'string', description: 'short label for the change' }, ops: { type: 'array', items: { type: 'object' }, description: 'the operations to apply' } }, required: ['ops'] } },
 ];
-const WR_TOOLS_NOTE = "\n\nLOOKING THINGS UP — you have live read-only tools (find_customers, find_units, find_categories, find_vendors, find_rentals, find_invoices, find_work_orders, check_unit_availability, price_rental) that query the FULL records, not just the snapshot. PREFER them: when the user names a customer/unit/rental, look it up to confirm it exists and get its id before you answer or emit an action; check availability before booking; quote with price_rental rather than guessing. Don't ask the user for something a tool can find. The tools only read — every WRITE still goes through the wrangler-action block exactly as described above.";
+const WR_TOOLS_NOTE = "\n\nLOOKING THINGS UP — you have live read-only tools (find_customers, find_units, find_categories, find_vendors, find_rentals, find_invoices, find_work_orders, check_unit_availability, price_rental) that query the FULL records, not just the snapshot. PREFER them: when the user names a customer/unit/rental, look it up to confirm it exists and get its id before you answer or emit an action; check availability before booking; quote with price_rental rather than guessing. Don't ask the user for something a tool can find. For WRITES, prefer the apply_changes tool: call it with the ops array (same shapes as the wrangler-action block) and it returns exactly what resolved or got dropped, so you can fix a dropped link and try again — much better than emitting a blind block. Safe single edits auto-apply; consequential ones come back staged for the user's Apply (word those as a preview). You may still emit a wrangler-action block as a fallback, but don't ALSO emit one for a write you already made with apply_changes.";
 // The agent loop: send → if the model calls tools, run them locally and feed results back →
 // repeat until it answers in plain text. opts.call is injectable for offline tests; it defaults
 // to the live backend pass-through. Degrades to a single shot against a backend with no tools
 // support (no stop_reason='tool_use' → returns the text immediately).
 const WR_MAX_TURNS = 8;
+// Stage 2 — the WRITE tool. Runs the model's proposed ops through the SAME pipeline the
+// wrangler-action block uses (wrValidatePlan allowlist + every fence: no card/ACH, no WO
+// completion, no hard-delete; then the auto-apply vs preview gate). Safe single edits apply
+// immediately; consequential ones (bulk, pricing, billing, payments, multi-record) are STAGED
+// on ctx so wranglerSend surfaces them as a preview→Apply. The structured return lets the model
+// SEE a dropped link / issue and self-correct in the loop, instead of failing blind.
+async function wrApplyChangesTool(input, ctx, opts) {
+  const ops = (input && input.ops) || [];
+  const plan = wrValidatePlan({ action: 'data', title: (input && input.title) || 'Apply changes', ops });
+  if (!plan.ops.length) return { ok: false, applied: false, issues: plan.issues.length ? plan.issues : ['nothing valid to apply'] };
+  if (wrPlanNeedsApply(plan)) {
+    ctx.pendingAct = { action: 'data', title: (input && input.title) || 'Apply changes', ops, _plan: plan };   // consequential → user reviews + taps Apply
+    return { ok: true, applied: false, needsApply: true, summary: wrPlanSummary(plan), issues: plan.issues, note: 'staged for the user to review and tap Apply — do NOT say it is saved yet' };
+  }
+  if (opts && opts.dryRun) return { ok: true, applied: false, summary: wrPlanSummary(plan), issues: plan.issues, note: 'would auto-apply (dry run)' };
+  const res = await applyWranglerData(plan);
+  if (res && res.focus) ctx.focus = res.focus;
+  if (res) ctx.applied += (res.created || 0) + (res.updated || 0) + (res.operated || 0);
+  return { ok: !(res && res.failed), applied: !(res && res.failed), summary: wrPlanSummary(plan), issues: plan.issues, failed: !!(res && res.failed) };
+}
 async function wrRunAgent(apiMessages, system, opts) {
   opts = opts || {};
   const call = opts.call || ((body) => backendCall('wrangler', body));
+  const ctx = { pendingAct: null, focus: null, applied: 0 };
   const messages = apiMessages.slice();
+  const done = (r) => ({ text: ((r && r.text) || '').trim(), pendingAct: ctx.pendingAct, focus: ctx.focus, applied: ctx.applied });
   for (let turn = 0; turn < WR_MAX_TURNS; turn++) {
     const r = await call({ system, messages, tools: WR_TOOLS });
     if (!r || r.error) throw new Error((r && r.error) || 'no response');
-    if (r.stop_reason !== 'tool_use' || !Array.isArray(r.content)) return { text: (r.text || '').trim() };
+    if (r.stop_reason !== 'tool_use' || !Array.isArray(r.content)) return done(r);
     const toolUses = r.content.filter((b) => b && b.type === 'tool_use');
-    if (!toolUses.length) return { text: (r.text || '').trim() };
+    if (!toolUses.length) return done(r);
     messages.push({ role: 'assistant', content: r.content });
-    const results = toolUses.map((tu) => {
+    const results = [];
+    for (const tu of toolUses) {
       let out;
-      try { const impl = WR_TOOL_IMPL[tu.name]; out = impl ? impl(tu.input || {}) : { error: `unknown tool ${tu.name}` }; }
-      catch (e) { out = { error: String((e && e.message) || e) }; }
+      try {
+        if (tu.name === 'apply_changes') out = await wrApplyChangesTool(tu.input || {}, ctx, opts);
+        else { const impl = WR_TOOL_IMPL[tu.name]; out = impl ? impl(tu.input || {}) : { error: `unknown tool ${tu.name}` }; }
+      } catch (e) { out = { error: String((e && e.message) || e) }; }
       if (opts.onTool) { try { opts.onTool(tu.name, tu.input, out); } catch (e) {} }
-      return { type: 'tool_result', tool_use_id: tu.id, content: JSON.stringify(out) };
-    });
+      results.push({ type: 'tool_result', tool_use_id: tu.id, content: JSON.stringify(out) });
+    }
     messages.push({ role: 'user', content: results });
   }
   // Hit the turn cap — make one final tool-free call so the model must answer in words.
-  const rf = await call({ system, messages });
-  return { text: ((rf && rf.text) || '').trim() };
+  return done(await call({ system, messages }));
 }
 
 async function wranglerSend() {
@@ -10200,10 +10225,14 @@ async function wranglerSend() {
   const replyChatId = o.id, replyReqNum = o.reqNumber;
   try {
     if (typeof backendPassword !== 'undefined' && backendPassword) {
-      const r = await wrRunAgent(payloadMsgs, system);   // agentic loop: looks records up via tools, then answers/acts
+      const r = await wrRunAgent(payloadMsgs, system);   // agentic loop: looks records up + writes via tools, then answers
       if (!r || r.error) throw new Error((r && r.error) || 'no response');
       const raw = (r.text || '').trim();
-      const act = parseWranglerAction(raw);
+      // A consequential write staged by apply_changes acts exactly like a parsed data block (preview→Apply).
+      // If apply_changes already auto-applied a safe write in the loop, don't also honor a data block in the
+      // text (would double-write) — but keep a non-data block (fix/plan/request/kpi).
+      let act = r.pendingAct || parseWranglerAction(raw);
+      if (act && act.action === 'data' && r.applied && !r.pendingAct) act = null;
       let shown = stripWranglerAction(raw);
       const truncated = /```wrangler-action/.test(raw) && !act;   // #152 a fence arrived but nothing usable came out of it
       // route the reply to its ORIGINATING chat — the live dock if still open, else its rail
@@ -10218,12 +10247,13 @@ async function wranglerSend() {
         if (plan.ops.length && !plan.issues.length && !wrPlanNeedsApply(plan)) autoPlan = plan;
       }
       if (truncated) shown = (shown ? shown + '\n\n' : '') + '⚠️ My reply got cut off before I could finish that action — too much in one go. Ask me to do it in smaller batches and I’ll send a preview you can apply.';
-      else if (!shown) shown = act ? (act.action === 'data' ? (autoPlan ? 'Done — ' + wrPlanSummary(autoPlan) + '.' : 'Here’s what I’ll change — preview it and hit apply when it looks right.') : act.action === 'kpi' ? 'Here’s the KPI — lock it in when the live number looks right.' : act.action === 'request' ? 'Got it — I’ll send this to the developer to OK.' : act.action === 'plan' ? 'Here’s the plan — tap Build when it’s right.' : 'On it — I’ll fix this right now and let you know when I’m done.') : '(no answer)';
+      else if (!shown) shown = act ? (act.action === 'data' ? (autoPlan ? 'Done — ' + wrPlanSummary(autoPlan) + '.' : 'Here’s what I’ll change — preview it and hit apply when it looks right.') : act.action === 'kpi' ? 'Here’s the KPI — lock it in when the live number looks right.' : act.action === 'request' ? 'Got it — I’ll send this to the developer to OK.' : act.action === 'plan' ? 'Here’s the plan — tap Build when it’s right.' : 'On it — I’ll fix this right now and let you know when I’m done.') : (r.applied ? 'Done — applied your changes. 🤠' : '(no answer)');
       const _target = _onChat ? o : state.wranglerRail.find((c) => c.id === replyChatId);
       if (_target) {
         const msg = { role: 'assistant', content: shown, action: act || null, filed: false };
         _target.messages.push(msg);
         if (autoPlan) { msg.filed = true; Promise.resolve(applyWranglerData(autoPlan)).then((res) => { if (res && res.failed) { msg.filed = false; } else if (res && res.focus) { msg.focus = res.focus; } render(); }); }   // simple safe edit / booking → write it now; stash the focus target for the "Open" link
+        else if (r.applied && r.focus) msg.focus = r.focus;   // apply_changes already wrote it in the loop → keep the "Open" link to the new record
         syncWranglerComment({ reqNumber: replyReqNum }, 'assistant', shown);   // §18e mirror onto the RIGHT issue thread
         if (!_onChat) wranglerRailPersist(_target);   // backgrounded chat → fold the reply into its snapshot
       }
@@ -16370,7 +16400,7 @@ function exposeTestApi() {
       rentalAllocated, itemRefunded, itemRefundable, lineRefunded, lineFullyRefunded, refundLines, rentalLineRefund, applyPayment, unitRentalPrice, rentalPrice, rentalDisplayName, setWoLinePhase, setWoPhase, woBottleneck,
       cleanUnitName, planUnitMigration, applyUnitMigration, openMigrationPreview,
       computeTransportPrice, isFueledType, unitTransport, rentalTransport,
-      wrValidatePlan, applyWranglerData, wrPlanNeedsApply, wrPlanSummary, wrFunnel, wrResolveCustomer, wrResolveUnit, wrResolveCategory, wrResolveVendor, wrResolvePart, wrResolveRental, wrChatFormat, wrFocusRecord, wrRecLabel, activeSession, invoiceMergeable, mergeInvoiceInto, parseWranglerAction, stripWranglerAction, parseCsvFile, wrFindAttachedCsv, wrRunAgent, WR_TOOL_IMPL, WR_TOOLS,
+      wrValidatePlan, applyWranglerData, wrPlanNeedsApply, wrPlanSummary, wrFunnel, wrResolveCustomer, wrResolveUnit, wrResolveCategory, wrResolveVendor, wrResolvePart, wrResolveRental, wrChatFormat, wrFocusRecord, wrRecLabel, activeSession, invoiceMergeable, mergeInvoiceInto, parseWranglerAction, stripWranglerAction, parseCsvFile, wrFindAttachedCsv, wrRunAgent, wrApplyChangesTool, WR_TOOL_IMPL, WR_TOOLS,
       latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore, wranglerRailLoad, wrOffloadChatImages, wrEvictChatBlobs, driveViewUrl, mergeWranglerRails,
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
