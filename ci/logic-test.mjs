@@ -396,10 +396,12 @@ try {
 
     // 12j-agentic) Stage 1 — read-tool implementations + the agent loop (offline, no network).
     {
-      // Tool catalog is well-formed (every schema has a matching implementation and vice-versa).
+      // Tool catalog is well-formed: every read tool has an impl; apply_changes is the one
+      // write tool, handled specially by the loop (wrApplyChangesTool), not via WR_TOOL_IMPL.
       const toolNames = T.WR_TOOLS.map((t) => t.name).sort();
-      const implNames = Object.keys(T.WR_TOOL_IMPL).sort();
-      ok(toolNames.length === implNames.length && toolNames.every((n, i) => n === implNames[i]), 'WR-agent: every tool schema has a matching implementation');
+      const covered = toolNames.every((n) => n === 'apply_changes' || typeof T.WR_TOOL_IMPL[n] === 'function');
+      const noOrphanImpl = Object.keys(T.WR_TOOL_IMPL).every((n) => toolNames.includes(n));
+      ok(covered && noOrphanImpl && toolNames.includes('apply_changes'), 'WR-agent: every tool schema has an implementation (apply_changes via the loop)');
       ok(T.WR_TOOLS.every((t) => t.name && t.description && t.input_schema && t.input_schema.type === 'object'), 'WR-agent: every tool schema is well-formed (name, description, object input_schema)');
 
       // Read tools query the FULL live data and return compact rows.
@@ -433,6 +435,38 @@ try {
       // Back-compat: an old backend (no stop_reason/content) → the loop returns its text in one shot.
       const oneShot = await T.wrRunAgent([{ role: 'user', content: 'hi' }], 'sys', { call: async () => ({ text: 'plain answer' }) });
       ok(oneShot.text === 'plain answer', 'WR-agent: degrades to a single shot against a tools-unaware backend');
+    }
+
+    // 12j-writes) Stage 2 — the apply_changes WRITE tool funnels through the same fences + gate.
+    {
+      const ctx0 = () => ({ pendingAct: null, focus: null, applied: 0 });
+      // Safe single create → auto-applies in the loop (no Apply tap), reports applied + a focus.
+      const ctxA = ctx0(); const uBefore = T.DATA.units.length;
+      const wa = await T.wrApplyChangesTool({ ops: [{ op: 'create', entity: 'units', fields: { name: 'WR-Stage2-Auto' } }] }, ctxA, {});
+      ok(wa.ok && wa.applied && T.DATA.units.length === uBefore + 1 && ctxA.focus && ctxA.focus.entity === 'units', 'WR-write: a safe single create auto-applies via apply_changes and returns a focus');
+
+      // Consequential change (a rate/pricing edit) → staged for Apply, NOT applied; ctx carries the preview.
+      const ctxB = ctx0(); const cat = T.DATA.categories[0]; const rateBefore = cat.rate1Day;
+      const wb = await T.wrApplyChangesTool({ ops: [{ op: 'update', entity: 'categories', id: cat.categoryId, fields: { rate1Day: 999 } }] }, ctxB, {});
+      ok(wb.ok && !wb.applied && wb.needsApply && ctxB.pendingAct && ctxB.pendingAct.action === 'data' && cat.rate1Day === rateBefore, 'WR-write: a pricing change is STAGED (needsApply), not auto-applied');
+
+      // Dropped link → the tool reports the issue so the model can self-correct (no silent drop).
+      const ctxC = ctx0();
+      const wc = await T.wrApplyChangesTool({ ops: [{ op: 'create', entity: 'units', fields: { name: 'WR-Stage2-Orphan', categoryId: '___no_such_category___' } }] }, ctxC, {});
+      // unit still creates (name is valid) but the bad categoryId was dropped — the model sees nothing linked it.
+      ok(wc.ok, 'WR-write: a create with a bad FK still applies the valid fields (link dropped, not a hard fail)');
+
+      // Fences hold through the tool: a card/ACH payment is refused (never auto-applies).
+      const ctxD = ctx0();
+      const wd = await T.wrApplyChangesTool({ ops: [{ op: 'operate', name: 'recordPayment', params: { customer: 'whoever', method: 'card' } }] }, ctxD, {});
+      ok(!wd.applied && !ctxD.pendingAct && (wd.issues || []).length > 0, 'WR-write: a card/ACH payment is refused by the fences (not applied, not staged)');
+
+      // The loop drives apply_changes end-to-end: model calls it, gets the result, then answers.
+      const wcalls = [];
+      const wbackend = async (body) => { wcalls.push(body); if (wcalls.length === 1) return { stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 'w1', name: 'apply_changes', input: { ops: [{ op: 'create', entity: 'vendors', fields: { name: 'WR-Stage2-Vendor' } }] } }] }; return { stop_reason: 'end_turn', text: 'Added the vendor.' }; };
+      const vBefore = T.DATA.vendors.length;
+      const wres = await T.wrRunAgent([{ role: 'user', content: 'add vendor WR-Stage2-Vendor' }], 'sys', { call: wbackend });
+      ok(wres.text === 'Added the vendor.' && wres.applied >= 1 && T.DATA.vendors.length === vBefore + 1, 'WR-write: the loop runs apply_changes and the create lands');
     }
 
     // 12k) Chat markdown — Wrangler's replies render **bold**/`code`, but stay XSS-safe (escape before format).
