@@ -1214,6 +1214,17 @@ select.lf-in { appearance: none; cursor: pointer; }
 .wr-actbtn:focus-visible { outline: 2px solid var(--accent-line, #ff7a1a); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) { .wr-actbtn:active { transform: none; } }
 .wr-actbtn-build { background: linear-gradient(180deg, #43d07f, #2faa63); color: #04140c; }   /* the plan-OK "go build it" commit */
+/* ask_user follow-up options — ARMED chips (orange outline, not fill): a set of choices, none
+   selected yet, so they stay quiet against the steel bubble and don't read as ignition actions. */
+.wr-ask { margin-top: 9px; display: flex; flex-wrap: wrap; gap: 7px; }
+.wr-askbtn { cursor: pointer; min-height: 30px; padding: 5px 12px; border-radius: 8px;
+  border: 1.5px solid var(--accent-line, #ff7a1a); background: rgba(255, 122, 26, .08); color: var(--txt);
+  font-family: 'Saira Condensed', system-ui, sans-serif; font-weight: 700; font-size: 11.5px;
+  letter-spacing: 1.1px; text-transform: uppercase; white-space: normal; text-align: left; }
+.wr-askbtn:hover { background: linear-gradient(180deg, #ff9036, #ff7a1a); color: #1a1205; border-color: transparent; }
+.wr-askbtn:active { transform: translateY(1px); }
+.wr-askbtn:focus-visible { outline: 2px solid var(--accent-line, #ff7a1a); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .wr-askbtn:active { transform: none; } }
 .wr-apply { margin-top: 9px; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
 .wr-apply-sum { font-size: 12px; font-weight: 700; color: var(--txt); }
 .wr-apply-skip { font-size: 10.5px; color: var(--yellow); }

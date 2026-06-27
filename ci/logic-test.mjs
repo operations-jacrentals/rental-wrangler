@@ -396,12 +396,13 @@ try {
 
     // 12j-agentic) Stage 1 — read-tool implementations + the agent loop (offline, no network).
     {
-      // Tool catalog is well-formed: every read tool has an impl; apply_changes is the one
-      // write tool, handled specially by the loop (wrApplyChangesTool), not via WR_TOOL_IMPL.
+      // Tool catalog is well-formed: every read tool has an impl; apply_changes + ask_user are
+      // handled specially by the loop (wrApplyChangesTool / opts.ask), not via WR_TOOL_IMPL.
+      const LOOP_TOOLS = ['apply_changes', 'ask_user'];
       const toolNames = T.WR_TOOLS.map((t) => t.name).sort();
-      const covered = toolNames.every((n) => n === 'apply_changes' || typeof T.WR_TOOL_IMPL[n] === 'function');
+      const covered = toolNames.every((n) => LOOP_TOOLS.includes(n) || typeof T.WR_TOOL_IMPL[n] === 'function');
       const noOrphanImpl = Object.keys(T.WR_TOOL_IMPL).every((n) => toolNames.includes(n));
-      ok(covered && noOrphanImpl && toolNames.includes('apply_changes'), 'WR-agent: every tool schema has an implementation (apply_changes via the loop)');
+      ok(covered && noOrphanImpl && LOOP_TOOLS.every((n) => toolNames.includes(n)), 'WR-agent: every tool schema has an implementation (apply_changes + ask_user via the loop)');
       ok(T.WR_TOOLS.every((t) => t.name && t.description && t.input_schema && t.input_schema.type === 'object'), 'WR-agent: every tool schema is well-formed (name, description, object input_schema)');
 
       // Read tools query the FULL live data and return compact rows.
@@ -467,6 +468,23 @@ try {
       const vBefore = T.DATA.vendors.length;
       const wres = await T.wrRunAgent([{ role: 'user', content: 'add vendor WR-Stage2-Vendor' }], 'sys', { call: wbackend });
       ok(wres.text === 'Added the vendor.' && wres.applied >= 1 && T.DATA.vendors.length === vBefore + 1, 'WR-write: the loop runs apply_changes and the create lands');
+    }
+
+    // 12j-ask) Stage 2b — ask_user suspends the loop for a follow-up, resumes with the answer.
+    {
+      const acalls = [];
+      const abackend = async (body) => { acalls.push(body); if (acalls.length === 1) return { stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 'a1', name: 'ask_user', input: { question: 'Which Cameron?', options: ['Cameron Miller', 'Cameron Diaz'] } }] }; return { stop_reason: 'end_turn', text: 'Booked for Cameron Miller.' }; };
+      let asked = null;
+      const ares = await T.wrRunAgent([{ role: 'user', content: 'book cameron' }], 'sys', { call: abackend, ask: (input) => { asked = input; return Promise.resolve('Cameron Miller'); } });
+      ok(asked && asked.question === 'Which Cameron?' && asked.options.length === 2, 'WR-ask: ask_user surfaces the question + options to the UI');
+      ok(ares.text === 'Booked for Cameron Miller.', 'WR-ask: the loop resumes and finishes after the answer');
+      const afed = acalls[1].messages; const ar = afed[afed.length - 1];
+      ok(ar.role === 'user' && ar.content[0].type === 'tool_result' && ar.content[0].tool_use_id === 'a1' && /Cameron Miller/.test(ar.content[0].content), 'WR-ask: the chosen answer is fed back as the tool_result');
+      // No ask handler (e.g. backgrounded) → the loop proceeds with best-judgement, never hangs.
+      const acalls2 = [];
+      const abackend2 = async (body) => { acalls2.push(body); if (acalls2.length === 1) return { stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 'a2', name: 'ask_user', input: { question: 'Which?' } }] }; return { stop_reason: 'end_turn', text: 'ok' }; };
+      const ares2 = await T.wrRunAgent([{ role: 'user', content: 'x' }], 'sys', { call: abackend2 });
+      ok(ares2.text === 'ok' && /no answer/.test(acalls2[1].messages[acalls2[1].messages.length - 1].content[0].content), 'WR-ask: with no ask handler the loop proceeds (no hang)');
     }
 
     // 12k) Chat markdown — Wrangler's replies render **bold**/`code`, but stay XSS-safe (escape before format).
