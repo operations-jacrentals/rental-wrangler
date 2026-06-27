@@ -10036,6 +10036,128 @@ function wranglerErrMsg(reason) {
   // genuine network/fetch failure (or unknown) → the original honest fallback
   return "Mr. Wrangler couldn't answer — check the connection / backend.";
 }
+
+/* Mr. Wrangler AGENTIC LOOP (Stage 1 — read tools) — part of APP-29 (Wrangler ACTS).
+   Instead of one blind shot at a capped snapshot, Mr. Wrangler can LOOK THINGS UP: the
+   backend `wrangler` action is now a generic Anthropic pass-through (Stage 0), so the
+   whole tool catalog + the loop live here in app.js and ship via Pages — no clasp. Stage 1
+   ships READ tools only (find/price/check — no writes); the existing wrangler-action block
+   still drives every write, unchanged. See specs/2026-06-27-wrangler-agentic-design. */
+const WR_TOOL_LIMIT = 25;   // cap rows handed back to the model per lookup (keeps tokens sane)
+function wrCustOpenBalance(custId) {
+  try { return Math.round((DATA.invoices || []).filter((i) => i.customerId === custId).reduce((a, i) => { try { return a + Math.max(0, invoiceTotals(i).balance); } catch (e) { return a; } }, 0) * 100) / 100; } catch (e) { return 0; }
+}
+// Read-tool implementations — pure lookups over the FULL live DATA/IDX (never the 200-row
+// snapshot), reusing the same resolvers the write path uses. Each returns a compact,
+// JSON-serializable object; a thrown error is caught by the loop and returned as {error}.
+const WR_TOOL_IMPL = {
+  find_customers(input) {
+    const q = String(input.query || '').trim().toLowerCase(); const digits = q.replace(/\D/g, '');
+    let list = DATA.customers || [];
+    if (q) list = list.filter((c) => String(c.name || '').toLowerCase().includes(q) || String(c.company || '').toLowerCase().includes(q) || (digits.length >= 4 && String(c.phone || '').replace(/\D/g, '').includes(digits)));
+    return { count: list.length, customers: list.slice(0, WR_TOOL_LIMIT).map((c) => ({ id: c.customerId, name: c.name, phone: c.phone || '', company: c.company || '', payStatus: c.payStatus || '', balance: wrCustOpenBalance(c.customerId) })) };
+  },
+  find_units(input) {
+    const q = String(input.query || '').trim().toLowerCase();
+    let list = DATA.units || [];
+    if (q) list = list.filter((u) => String(u.name || '').toLowerCase().includes(q) || String((IDX.category.get(u.categoryId) || {}).name || '').toLowerCase().includes(q));
+    if (input.fleetStatus) list = list.filter((u) => String(u.fleetStatus || '').toLowerCase() === String(input.fleetStatus).toLowerCase());
+    return { count: list.length, units: list.slice(0, WR_TOOL_LIMIT).map((u) => ({ id: u.unitId, name: u.name, category: (IDX.category.get(u.categoryId) || {}).name || '', fleetStatus: u.fleetStatus || '' })) };
+  },
+  find_categories(input) {
+    const q = String(input.query || '').trim().toLowerCase();
+    let list = DATA.categories || []; if (q) list = list.filter((c) => String(c.name || '').toLowerCase().includes(q));
+    return { count: list.length, categories: list.slice(0, WR_TOOL_LIMIT).map((c) => ({ id: c.categoryId, name: c.name, memberDaily: c.memberDaily, rate1Day: c.rate1Day, rate7Day: c.rate7Day, rate4Wk: c.rate4Wk, weekend: c.weekend })) };
+  },
+  find_vendors(input) {
+    const q = String(input.query || '').trim().toLowerCase();
+    let list = DATA.vendors || []; if (q) list = list.filter((v) => String(v.name || '').toLowerCase().includes(q));
+    return { count: list.length, vendors: list.slice(0, WR_TOOL_LIMIT).map((v) => ({ id: v.vendorId, name: v.name, phone: v.phone || '', vendorType: v.vendorType || '' })) };
+  },
+  find_rentals(input) {
+    let list = DATA.rentals || [];
+    if (input.customer) { const c = wrResolveCustomer(input.customer).rec; if (!c) return { count: 0, rentals: [], note: `no customer matching “${input.customer}”` }; list = list.filter((r) => r.customerId === c.customerId); }
+    if (input.unit) { const u = wrResolveUnit(input.unit).rec; if (u) list = list.filter((r) => rentalUnitIds(r).includes(u.unitId)); }
+    if (input.status) { const s = String(input.status).toLowerCase(); list = list.filter((r) => String(r.status || '').toLowerCase() === s); }
+    return { count: list.length, rentals: list.slice(0, WR_TOOL_LIMIT).map((r) => ({ id: r.rentalId, label: rentalUnitsLabel(r) || r.rentalName || '', customer: (IDX.customer.get(r.customerId) || {}).name || '', window: fmtWindow(r.startDate, r.endDate), status: r.status || '', invoiced: !!r.invoiceId })) };
+  },
+  find_invoices(input) {
+    let list = DATA.invoices || [];
+    if (input.customer) { const c = wrResolveCustomer(input.customer).rec; if (!c) return { count: 0, invoices: [], note: `no customer matching “${input.customer}”` }; list = list.filter((i) => i.customerId === c.customerId); }
+    let rows = list.map((i) => { let t = { total: 0, balance: 0 }; try { t = invoiceTotals(i); } catch (e) {} return { id: i.invoiceId, customer: (IDX.customer.get(i.customerId) || {}).name || '', total: Math.round(t.total * 100) / 100, balance: Math.round(t.balance * 100) / 100, status: i.status || '' }; });
+    if (input.onlyOpen) rows = rows.filter((r) => r.balance > 0.005);
+    return { count: rows.length, invoices: rows.slice(0, WR_TOOL_LIMIT) };
+  },
+  find_work_orders(input) {
+    let list = DATA.workOrders || [];
+    if (input.unit) { const u = wrResolveUnit(input.unit).rec; if (u) list = list.filter((w) => w.unitId === u.unitId); }
+    if (input.customer) { const c = wrResolveCustomer(input.customer).rec; if (c) list = list.filter((w) => w.customerId === c.customerId); }
+    return { count: list.length, workOrders: list.slice(0, WR_TOOL_LIMIT).map((w) => ({ id: w.woId, unit: (IDX.unit.get(w.unitId) || {}).name || '', report: w.woReport || '', phase: w.phase || '', type: w.woType || '' })) };
+  },
+  check_unit_availability(input) {
+    const u = wrResolveUnit(input.unit || '').rec; if (!u) return { error: `no unit matching “${input.unit}”` };
+    const start = input.startDate, end = input.endDate; if (!start || !end) return { error: 'need startDate and endDate (YYYY-MM-DD)' };
+    const conflicts = rentalsOverlappingUnit(u.unitId, start, end, null).map((r) => ({ rental: r.rentalId, customer: (IDX.customer.get(r.customerId) || {}).name || '', window: fmtWindow(r.startDate, r.endDate) }));
+    return { unit: u.name, fleetStatus: u.fleetStatus, available: u.fleetStatus === 'Active' && !conflicts.length, conflicts };
+  },
+  price_rental(input) {
+    const start = input.startDate, end = input.endDate;
+    const units = Array.isArray(input.units) ? input.units : [input.units].filter(Boolean);
+    if (!start || !end || !units.length) return { error: 'need units, startDate, endDate' };
+    const cust = input.customer ? wrResolveCustomer(input.customer).rec : null;
+    const per = []; let total = 0;
+    units.forEach((ref) => {
+      const u = wrResolveUnit(ref).rec; if (!u) { per.push({ unit: String(ref), error: 'no match' }); return; }
+      const pr = rentalPrice({ categoryId: u.categoryId, startDate: start, endDate: end, customerId: cust ? cust.customerId : '' });
+      if (pr) { per.push({ unit: u.name, price: pr.price, rate: pr.rate, days: pr.days }); total += pr.price; }
+      else per.push({ unit: u.name, error: 'unpriceable — check the dates/category' });
+    });
+    return { startDate: start, endDate: end, customer: cust ? cust.name : null, total: Math.round(total * 100) / 100, units: per };
+  },
+};
+// Anthropic tool schemas — forwarded verbatim to the model by the Stage 0 pass-through.
+const WR_TOOLS = [
+  { name: 'find_customers', description: 'Search customers by name, company, or phone. Returns id, name, phone, payStatus, and open balance. Use this to resolve who the user means before acting.', input_schema: { type: 'object', properties: { query: { type: 'string', description: 'name, company, or phone fragment' } }, required: ['query'] } },
+  { name: 'find_units', description: 'Search fleet units by name or category. Optionally filter by fleetStatus (Active/Retired/…). Returns id, name, category, fleetStatus.', input_schema: { type: 'object', properties: { query: { type: 'string' }, fleetStatus: { type: 'string' } }, required: ['query'] } },
+  { name: 'find_categories', description: 'Search equipment categories by name. Returns id, name, and all rental rates (memberDaily, rate1Day, rate7Day, rate4Wk, weekend).', input_schema: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } },
+  { name: 'find_vendors', description: 'Search vendors by name. Returns id, name, phone, type.', input_schema: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } },
+  { name: 'find_rentals', description: 'List rentals, filtered by customer (name/id), unit (name/id), and/or status. Returns id, units label, customer, window, status, and whether invoiced.', input_schema: { type: 'object', properties: { customer: { type: 'string' }, unit: { type: 'string' }, status: { type: 'string' } }, required: [] } },
+  { name: 'find_invoices', description: 'List invoices, optionally filtered by customer and/or onlyOpen=true. Returns id, customer, total, balance, status.', input_schema: { type: 'object', properties: { customer: { type: 'string' }, onlyOpen: { type: 'boolean' } }, required: [] } },
+  { name: 'find_work_orders', description: 'List work orders, filtered by unit and/or customer. Returns id, unit, report, phase, type.', input_schema: { type: 'object', properties: { unit: { type: 'string' }, customer: { type: 'string' } }, required: [] } },
+  { name: 'check_unit_availability', description: 'Check whether a unit is free for a date window. Returns available + any conflicting rentals. Dates are YYYY-MM-DD.', input_schema: { type: 'object', properties: { unit: { type: 'string' }, startDate: { type: 'string' }, endDate: { type: 'string' } }, required: ['unit', 'startDate', 'endDate'] } },
+  { name: 'price_rental', description: 'Quote the price for renting one or more units over a window (uses the live pricing engine; member rates apply if the customer is given). Dates are YYYY-MM-DD. Read-only — does not create anything.', input_schema: { type: 'object', properties: { units: { type: 'array', items: { type: 'string' } }, startDate: { type: 'string' }, endDate: { type: 'string' }, customer: { type: 'string' } }, required: ['units', 'startDate', 'endDate'] } },
+];
+const WR_TOOLS_NOTE = "\n\nLOOKING THINGS UP — you have live read-only tools (find_customers, find_units, find_categories, find_vendors, find_rentals, find_invoices, find_work_orders, check_unit_availability, price_rental) that query the FULL records, not just the snapshot. PREFER them: when the user names a customer/unit/rental, look it up to confirm it exists and get its id before you answer or emit an action; check availability before booking; quote with price_rental rather than guessing. Don't ask the user for something a tool can find. The tools only read — every WRITE still goes through the wrangler-action block exactly as described above.";
+// The agent loop: send → if the model calls tools, run them locally and feed results back →
+// repeat until it answers in plain text. opts.call is injectable for offline tests; it defaults
+// to the live backend pass-through. Degrades to a single shot against a backend with no tools
+// support (no stop_reason='tool_use' → returns the text immediately).
+const WR_MAX_TURNS = 8;
+async function wrRunAgent(apiMessages, system, opts) {
+  opts = opts || {};
+  const call = opts.call || ((body) => backendCall('wrangler', body));
+  const messages = apiMessages.slice();
+  for (let turn = 0; turn < WR_MAX_TURNS; turn++) {
+    const r = await call({ system, messages, tools: WR_TOOLS });
+    if (!r || r.error) throw new Error((r && r.error) || 'no response');
+    if (r.stop_reason !== 'tool_use' || !Array.isArray(r.content)) return { text: (r.text || '').trim() };
+    const toolUses = r.content.filter((b) => b && b.type === 'tool_use');
+    if (!toolUses.length) return { text: (r.text || '').trim() };
+    messages.push({ role: 'assistant', content: r.content });
+    const results = toolUses.map((tu) => {
+      let out;
+      try { const impl = WR_TOOL_IMPL[tu.name]; out = impl ? impl(tu.input || {}) : { error: `unknown tool ${tu.name}` }; }
+      catch (e) { out = { error: String((e && e.message) || e) }; }
+      if (opts.onTool) { try { opts.onTool(tu.name, tu.input, out); } catch (e) {} }
+      return { type: 'tool_result', tool_use_id: tu.id, content: JSON.stringify(out) };
+    });
+    messages.push({ role: 'user', content: results });
+  }
+  // Hit the turn cap — make one final tool-free call so the model must answer in words.
+  const rf = await call({ system, messages });
+  return { text: ((rf && rf.text) || '').trim() };
+}
+
 async function wranglerSend() {
   const o = state.wrangler; if (!o.open) return;
   const inp = document.querySelector('.wrangler-dock .js-wr-in');
@@ -10047,7 +10169,7 @@ async function wranglerSend() {
   syncWranglerComment(o, 'user', text, imgs);   // §18e mirror the turn onto the issue thread
   wranglerClearNeedsAnswer(o.reqNumber);        // §18e answering a "Needs your answer" request clears it from the inbox
   o.draft = ''; o.attach = []; o.files = []; o.busy = true; o.error = ''; render();
-  const system = WRANGLER_SYSTEM + (o.kpiTarget ? '\n\n' + wranglerKpiSystem() : '') + '\n\n' + wranglerContext(o);
+  const system = WRANGLER_SYSTEM + WR_TOOLS_NOTE + (o.kpiTarget ? '\n\n' + wranglerKpiSystem() : '') + '\n\n' + wranglerContext(o);
   // Build the payload: images become a content-block array; CSV/text files fold
   // into the message text so Mr. Wrangler reads their rows.
   const fileBlock = (m) => (m.files && m.files.length)
@@ -10078,7 +10200,7 @@ async function wranglerSend() {
   const replyChatId = o.id, replyReqNum = o.reqNumber;
   try {
     if (typeof backendPassword !== 'undefined' && backendPassword) {
-      const r = await backendCall('wrangler', { system, messages: payloadMsgs });
+      const r = await wrRunAgent(payloadMsgs, system);   // agentic loop: looks records up via tools, then answers/acts
       if (!r || r.error) throw new Error((r && r.error) || 'no response');
       const raw = (r.text || '').trim();
       const act = parseWranglerAction(raw);
@@ -16248,7 +16370,7 @@ function exposeTestApi() {
       rentalAllocated, itemRefunded, itemRefundable, lineRefunded, lineFullyRefunded, refundLines, rentalLineRefund, applyPayment, unitRentalPrice, rentalPrice, rentalDisplayName, setWoLinePhase, setWoPhase, woBottleneck,
       cleanUnitName, planUnitMigration, applyUnitMigration, openMigrationPreview,
       computeTransportPrice, isFueledType, unitTransport, rentalTransport,
-      wrValidatePlan, applyWranglerData, wrPlanNeedsApply, wrPlanSummary, wrFunnel, wrResolveCustomer, wrResolveUnit, wrResolveCategory, wrResolveVendor, wrResolvePart, wrResolveRental, wrChatFormat, wrFocusRecord, wrRecLabel, activeSession, invoiceMergeable, mergeInvoiceInto, parseWranglerAction, stripWranglerAction, parseCsvFile, wrFindAttachedCsv,
+      wrValidatePlan, applyWranglerData, wrPlanNeedsApply, wrPlanSummary, wrFunnel, wrResolveCustomer, wrResolveUnit, wrResolveCategory, wrResolveVendor, wrResolvePart, wrResolveRental, wrChatFormat, wrFocusRecord, wrRecLabel, activeSession, invoiceMergeable, mergeInvoiceInto, parseWranglerAction, stripWranglerAction, parseCsvFile, wrFindAttachedCsv, wrRunAgent, WR_TOOL_IMPL, WR_TOOLS,
       latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore, wranglerRailLoad, wrOffloadChatImages, wrEvictChatBlobs, driveViewUrl, mergeWranglerRails,
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
