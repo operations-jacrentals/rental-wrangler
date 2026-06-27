@@ -424,6 +424,19 @@ try {
       ok(T.__state.wrangler.min === true, 'WR-reserve: dock minimizes after the booking so the user lands on the rental');
     }
 
+    // 12n) Bring-them-to-it for ANY board (Jac) — wrFocusRecord jumps to the record wherever it lives.
+    {
+      const ven = T.DATA.vendors[0];
+      T.wrFocusRecord('vendors', ven.vendorId);
+      ok(T.__state.overlay && T.__state.overlay.kind === 'board' && T.__state.overlay.board === 'vendors' && T.__state.overlay.recId === ven.vendorId, 'WR-focus: back-office (vendor) opens its board detail');
+      T.__state.overlay = null;
+      T.wrFocusRecord('customers', 'C0009');
+      const cs = T.activeSession().cards.customers;
+      ok(cs.mode === 'standard' && cs.recId === 'C0009', 'WR-focus: a grid record (customer) focuses in place');
+      const wo = T.DATA.workOrders[0];
+      if (wo) { T.wrFocusRecord('workOrders', wo.woId); const a = T.activeSession().anchor; ok(a && a.card === 'shop' && a.recId === wo.woId, 'WR-focus: a shop record (work order) anchors a tab'); }
+    }
+
     // 13) Transport pricing v2 — $3.50/mile + $50 load + $20 fuel (fueled), per leg.
     const tp = (a) => T.computeTransportPrice(a).price;
     // 10 mi Delivery, fueled: (3.5*10 + 50 + 20) * 1 = 105

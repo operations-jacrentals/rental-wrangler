@@ -10467,7 +10467,7 @@ const WR_OPERATIONS = {
       return { summary: `invoice rental ${r.rentalId}${r.rentalName ? ` (${r.rentalName})` : ''}` };
     },
     selfToasts: true,   // createInvoiceForRental already toasts; don't add a second
-    apply(p) { const pick = this._pick(p); if (pick.issue || !pick.rental) return null; createInvoiceForRental(pick.rental.rentalId); return IDX.rental.get(pick.rental.rentalId)?.invoiceId || null; },   // wraps the REAL billing path (pricing engine, 28-day cap, nav + toast)
+    apply(p) { const pick = this._pick(p); if (pick.issue || !pick.rental) return null; createInvoiceForRental(pick.rental.rentalId); return { entity: 'invoices', id: IDX.rental.get(pick.rental.rentalId)?.invoiceId || null }; },   // wraps the REAL billing path (pricing engine, 28-day cap, nav + toast)
   },
   recordPayment: {
     // Record a CASH or CHECK payment on an existing invoice (by invoiceId, OR by customer → their one open
@@ -10500,14 +10500,15 @@ const WR_OPERATIONS = {
       if (!(typeof backendPassword !== 'undefined' && backendPassword)) return { issue: `recording a payment needs to be online — the backend is authoritative for money` };
       return { summary: `record ${money2(amt)} ${method}${method === 'check' ? ` (check #${String(p.checkNum).trim()})` : ''} on invoice ${inv.invoiceId}` };
     },
-    apply(p) {
+    async apply(p) {
       const pick = this._pick(p); if (pick.issue || !pick.inv) return null;
       const inv = pick.inv;
       const t = invoiceTotals(inv);
       const method = String(p.method).toLowerCase();
       let amt = (p.amount != null) ? Number(p.amount) : t.balance;
       amt = Math.min(amt, t.balance);
-      return postManualPayment({ invoiceId: inv.invoiceId, amountCents: Math.round(amt * 100), method, checkNum: method === 'check' ? String(p.checkNum || '').trim() : '' });   // async → awaited by applyWranglerData
+      await postManualPayment({ invoiceId: inv.invoiceId, amountCents: Math.round(amt * 100), method, checkNum: method === 'check' ? String(p.checkNum || '').trim() : '' });
+      return { entity: 'invoices', id: inv.invoiceId };   // bring the user to the invoice that was paid
     },
   },
   startRental: {
@@ -10587,6 +10588,20 @@ const WR_OPERATIONS = {
     },
   },
 };
+// "Bring them to it" (Jac) — jump the user to whatever Wrangler just touched, for EVERY board: grid cards
+// focus in place, shop types anchor a tab, back-office boards open their detail popup. Best-effort, never throws.
+const WR_SHOP_TYPES = new Set(['inspections', 'workOrders', 'serviceOrders']);
+const WR_BOARD_TYPES = new Set(['vendors', 'parts', 'expenses', 'files']);
+function wrFocusRecord(entity, id) {
+  if (!entity || !id) return;
+  try {
+    if (WR_BOARD_TYPES.has(entity)) { openOverlay({ kind: 'board', board: entity, recId: id }); return; }
+    if (WR_SHOP_TYPES.has(entity)) { anchorRecord('shop', id, entity); return; }
+    const s = activeSession(); const col = COLUMN_OF[entity]; const cs = s.cards[entity];
+    if (col && cs && s.cols) { s.cols[col] = entity; cs.mode = 'standard'; cs.recId = id; cs.recType = null; cs.graphView = false; }
+    else { anchorRecord(entity, id); }
+  } catch (e) { /* nav is best-effort */ }
+}
 // async ONLY because a named operation may be (recordPayment hits the authoritative backend). For a plan
 // with no operate ops (every auto-applied edit), no `await` is evaluated, so it still runs synchronously.
 async function applyWranglerData(plan) {
@@ -10595,7 +10610,8 @@ async function applyWranglerData(plan) {
     if (op.op === 'operate') {
       const def = WR_OPERATIONS[op.name]; if (!def) continue;
       try {
-        await def.apply(op.params || {}); operated++;
+        const res = await def.apply(op.params || {}); operated++;
+        if (res && res.id && !firstId) { firstEntity = res.entity; firstId = res.id; }   // bring the user to the rental/invoice it touched
         if (!def.selfToasts && op.summary) toast(`Mr. Wrangler: ${op.summary} ✓`);   // payment etc. — confirm; billRental self-toasts
       } catch (e) { failed = true; toast(`Mr. Wrangler couldn’t do that — ${(e && e.message) || 'try again'}.`); }
       continue;
@@ -10614,9 +10630,11 @@ async function applyWranglerData(plan) {
   // Focus the new record only for grid entities that own a column (customers→right,
   // units/categories→left). Back-office boards (vendors, parts) have no column/card —
   // skip the nav for them (the record is created + toasted; the user finds it in its board).
-  if (firstId) { const s = activeSession(); const col = COLUMN_OF[firstEntity]; const ccs = s.cards[firstEntity]; if (col && ccs && s.cols) { s.cols[col] = firstEntity; if (created > 1) { ccs.mode = 'list'; ccs.recId = null; ccs.search = ''; } else { ccs.mode = 'standard'; ccs.recId = firstId; } ccs.graphView = false; } }
-  // Bring the user to what Wrangler just did (Jac): collapse the dock to its header bar so the record the
-  // app navigated to is front-and-center. One tap on the header reopens the chat.
+  // Bring the user to what Wrangler just did (Jac — applies to ANYTHING it does): a bulk grid import shows
+  // the list; otherwise focus the single record on whatever board it lives on.
+  if (created > 1 && firstEntity && COLUMN_OF[firstEntity]) { const s = activeSession(); const cs = s.cards[firstEntity]; if (s.cols) s.cols[COLUMN_OF[firstEntity]] = firstEntity; if (cs) { cs.mode = 'list'; cs.recId = null; cs.search = ''; cs.graphView = false; } }
+  else if (firstId) wrFocusRecord(firstEntity, firstId);
+  // Collapse the dock to its header bar so the record is front-and-center (one tap reopens the chat).
   if (created || updated || operated) state.wrangler.min = true;
   render();
   // operate ops toast above (their own handler or the confirm) — only announce create/update activity here.
@@ -16206,7 +16224,7 @@ function exposeTestApi() {
       rentalAllocated, itemRefunded, itemRefundable, lineRefunded, lineFullyRefunded, refundLines, rentalLineRefund, applyPayment, unitRentalPrice, rentalPrice, rentalDisplayName, setWoLinePhase, setWoPhase, woBottleneck,
       cleanUnitName, planUnitMigration, applyUnitMigration, openMigrationPreview,
       computeTransportPrice, isFueledType, unitTransport, rentalTransport,
-      wrValidatePlan, applyWranglerData, wrPlanNeedsApply, wrPlanSummary, wrFunnel, wrResolveCustomer, wrResolveUnit, wrResolveCategory, wrResolveVendor, wrResolvePart, wrResolveRental, wrChatFormat, invoiceMergeable, mergeInvoiceInto, parseWranglerAction, stripWranglerAction, parseCsvFile, wrFindAttachedCsv,
+      wrValidatePlan, applyWranglerData, wrPlanNeedsApply, wrPlanSummary, wrFunnel, wrResolveCustomer, wrResolveUnit, wrResolveCategory, wrResolveVendor, wrResolvePart, wrResolveRental, wrChatFormat, wrFocusRecord, activeSession, invoiceMergeable, mergeInvoiceInto, parseWranglerAction, stripWranglerAction, parseCsvFile, wrFindAttachedCsv,
       latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore, wranglerRailLoad, wrOffloadChatImages, wrEvictChatBlobs, driveViewUrl, mergeWranglerRails,
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
