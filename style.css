@@ -1397,6 +1397,15 @@ select.lf-in { appearance: none; cursor: pointer; }
 .wrangler-dock.wr-min { max-height: none; }
 .wrangler-dock.wr-min > :not(.wr-dock-head) { display: none; }
 .wrangler-dock.wr-min .wr-dock-head { border-bottom: 0; }
+/* §M — PHONE (Jac): the chat must never float over content or freeze scroll. Expanded = a bottom sheet
+   that rises from the bottom edge; MINIMIZED = a slim in-flow bar tucked UNDER the card-toggle strip
+   (it's the last #app child, so it lands below the footer), so the yard/board scrolls freely above it.
+   Desktop is untouched. */
+.is-phone .wrangler-dock { left: 0; right: 0; bottom: 0; width: auto; max-height: 82dvh;
+  border-radius: 16px 16px 0 0; z-index: 70; padding-bottom: env(safe-area-inset-bottom); }
+.is-phone .wrangler-dock.wr-beside-chat { right: 0; }
+.is-phone .wrangler-dock.wr-min { position: static; width: auto; max-height: none; flex: 0 0 auto;
+  border-radius: 0; border-width: 1px 0 0 0; box-shadow: none; z-index: auto; }
 .js-wr-min .chev { transition: transform .12s; }
 .wrangler-dock.wr-min .js-wr-min .chev { transform: rotate(180deg); }   /* chevron flips up = expand */
 @media (prefers-reduced-motion: reduce) { .js-wr-min .chev { transition: none; } }
