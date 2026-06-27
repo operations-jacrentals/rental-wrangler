@@ -408,6 +408,22 @@ try {
       ok(r2.startDate === '2099-08-10' && r2.endDate === '2099-08-12' && r2.startTime === '2:30 PM', 'WR-window: explicit endDate honored + 24h time → 2:30 PM');
     }
 
+    // 12m) Reserve from one line — no interrogation (Jac): a unit name matching several auto-picks an
+    // available one (no "which?"), and after any write the dock minimizes so the user lands on the record.
+    {
+      T.__state.overbookOn = false;
+      const cat = T.DATA.categories[0];
+      const mkUnit = (id, name) => { const u = { unitId: id, name, categoryId: cat.categoryId, assignedMechanic: '', currentHours: 0, inspectionStatus: 'Ready', fleetStatus: 'Active', purchaseHours: 0, serviceCompletions: {} }; T.DATA.units.push(u); T.IDX.unit.set(id, u); return u; };
+      mkUnit('U-WRH1', 'WRHmr Alpha'); mkUnit('U-WRH2', 'WRHmr Bravo');
+      const cust = T.IDX.customer.get('C0009');
+      const plan = T.wrValidatePlan({ action: 'data', ops: [{ op: 'operate', name: 'startRental', params: { customer: cust.name, units: ['WRHmr'], startDate: '2099-08-20', days: 3, startTime: '8am' } }] });
+      ok(plan.ops.length === 1 && !plan.issues.some((s) => /which/.test(s)), 'WR-reserve: a unit name matching several auto-picks one (no "which?")');
+      ok(/WRHmr (Alpha|Bravo)/.test(plan.ops[0].summary) && /8:00 AM/.test(plan.ops[0].summary), 'WR-reserve: preview shows the picked unit + time');
+      T.__state.wrangler.min = false;
+      await T.applyWranglerData(plan);
+      ok(T.__state.wrangler.min === true, 'WR-reserve: dock minimizes after the booking so the user lands on the rental');
+    }
+
     // 13) Transport pricing v2 — $3.50/mile + $50 load + $20 fuel (fueled), per leg.
     const tp = (a) => T.computeTransportPrice(a).price;
     // 10 mi Delivery, fueled: (3.5*10 + 50 + 20) * 1 = 105
