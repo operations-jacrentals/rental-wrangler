@@ -222,7 +222,7 @@ try {
       ok(noRental.ops.length === 0 && noRental.issues.some((s) => /no rental/.test(s)), 'WR: billRental on an unknown rental is refused');
       // happy path → one operate op, applying it creates + links a real invoice from the pricing engine
       const bplan = T.wrValidatePlan({ action: 'data', ops: [{ op: 'operate', name: 'billRental', params: { rentalId: 'R-WRBILL' } }] });
-      ok(bplan.ops.length === 1 && bplan.ops[0].op === 'operate' && /invoice rental R-WRBILL/.test(bplan.ops[0].summary), 'WR: billRental on a billable rental previews one operate op');
+      ok(bplan.ops.length === 1 && bplan.ops[0].op === 'operate' && /^invoice .+ for .+\(/.test(bplan.ops[0].summary), 'WR: billRental on a billable rental previews one operate op');
       T.applyWranglerData(bplan);
       ok(!!rB.invoiceId && T.DATA.invoices.length === invCountBefore + 1, 'WR: billRental created + linked a real invoice');
       const newInv = T.IDX.invoice.get(rB.invoiceId);
@@ -352,8 +352,12 @@ try {
       const rFA = { rentalId: 'R-WRFA', customerId: 'C-WRFA', unitId: uB.unitId, categoryId: uB.categoryId, rentalName: 'FA rental', startDate: '2099-10-01', endDate: '2099-10-08', startTime: '', status: 'Reserved', transportType: 'Self', deliveryAddress: '', po: '', invoiceId: null, units: [mkU(uB)], notes: '', mock: true };
       T.DATA.rentals.push(rFA); T.IDX.rental.set('R-WRFA', rFA);
       const bc = T.wrValidatePlan({ action: 'data', ops: [{ op: 'operate', name: 'billRental', params: { customer: 'Bill ByName' } }] });
-      ok(bc.ops.length === 1 && /invoice rental R-WRFA/.test(bc.ops[0].summary), 'WR-bill-by-customer: finds the one un-invoiced rental by name');
-      ok(T.wrValidatePlan({ action: 'data', ops: [{ op: 'operate', name: 'billRental', params: { customer: 'C0009' } }] }).issues.length >= 0, 'WR-bill-by-customer: runs for an id-or-name ref');
+      ok(bc.ops.length === 1 && /for Bill ByName/.test(bc.ops[0].summary), 'WR-bill-by-customer: finds the un-invoiced rental by name (preview shows unit + customer)');
+      // a SECOND, later un-invoiced rental → billRental picks the MOST RECENT, not a cryptic id list
+      const rFA2 = { rentalId: 'R-WRFA2', customerId: 'C-WRFA', unitId: uB.unitId, categoryId: uB.categoryId, rentalName: 'FA rental 2', startDate: '2099-11-15', endDate: '2099-11-18', startTime: '', status: 'Reserved', transportType: 'Self', deliveryAddress: '', po: '', invoiceId: null, units: [mkU(uB)], notes: '', mock: true };
+      T.DATA.rentals.push(rFA2); T.IDX.rental.set('R-WRFA2', rFA2);
+      const bc2 = T.wrValidatePlan({ action: 'data', ops: [{ op: 'operate', name: 'billRental', params: { customer: 'Bill ByName' } }] });
+      ok(bc2.ops.length === 1 && bc2.ops[0].params && /most recent of 2/.test(bc2.ops[0].summary), 'WR-bill-by-customer: with several un-invoiced rentals it picks the most recent (no raw-id dump)');
       // charge by customer → their one open invoice (offline → reaches the online gate, proving the invoice was picked)
       const fb = { customerId: 'C-WRFB', name: 'Pay ByName', accountType: 'Non-Business', firstName: 'Pay', lastName: 'ByName', phone: '', activityLog: [] };
       T.DATA.customers.push(fb); T.IDX.customer.set('C-WRFB', fb);
@@ -370,13 +374,24 @@ try {
       const uI = T.DATA.units.find((u) => u.fleetStatus === 'Active');
       const insp = T.wrValidatePlan({ action: 'data', ops: [{ op: 'create', entity: 'inspections', fields: { unitId: uI.name, description: 'wr insp' } }] });
       ok(insp.ops.length === 1 && insp.ops[0].fields.unitId === uI.unitId, 'WR-board: inspection created (unit by name)');
-      ok(T.wrValidatePlan({ action: 'data', ops: [{ op: 'create', entity: 'inspections', fields: { description: 'no unit' } }] }).issues.some((s) => /needs unitId/.test(s)), 'WR-board: an inspection with no unit is refused');
+      const noUnit = T.wrValidatePlan({ action: 'data', ops: [{ op: 'create', entity: 'inspections', fields: { description: 'no unit' } }] });
+      ok(noUnit.issues.some((s) => /needs a unit/.test(s)) && !noUnit.issues.some((s) => /unitId/.test(s)), 'WR-board: an inspection with no unit is refused with a human message (no raw field name)');
       const woP = T.wrValidatePlan({ action: 'data', ops: [{ op: 'create', entity: 'workOrders', fields: { unitId: uI.name, woReport: 'Fix it', phase: 'Complete' } }] });
       ok(woP.ops.length === 1 && woP.ops[0].fields.unitId === uI.unitId && !('phase' in woP.ops[0].fields), 'WR-board: work order created; a phase=Complete is stripped (completion stays human)');
       const woBefore = T.DATA.workOrders.length;
       T.applyWranglerData(woP);
       const newWo = T.DATA.workOrders[T.DATA.workOrders.length - 1];
       ok(T.DATA.workOrders.length === woBefore + 1 && newWo.phase !== 'Complete', 'WR-board: the created work order is not Complete');
+      // WO for a customer with no unit named → infer their on-rent unit (Jac: "work order for Fiona. Valve problem.")
+      const wcust = { customerId: 'C-WRWO', firstName: 'Fiona', lastName: 'WoTest', name: 'Fiona WoTest', phone: '', email: '', mock: true };
+      T.DATA.customers.push(wcust); T.IDX.customer.set('C-WRWO', wcust);
+      const wunit = T.DATA.units.find((u) => u.fleetStatus === 'Active');
+      const wrnt = { rentalId: 'R-WRWO', customerId: 'C-WRWO', unitId: wunit.unitId, categoryId: wunit.categoryId, rentalName: 'WO infer test', startDate: '2099-09-01', endDate: '2099-09-08', status: 'On Rent', transportType: 'Self', invoiceId: null, units: [{ unitId: wunit.unitId, status: 'On Rent', transportType: 'Self' }], actions: [], mock: true };
+      T.DATA.rentals.push(wrnt); T.IDX.rental.set('R-WRWO', wrnt);
+      const woInfer = T.wrValidatePlan({ action: 'data', ops: [{ op: 'create', entity: 'workOrders', fields: { customerId: 'Fiona WoTest', woReport: 'Valve problem' } }] });
+      ok(woInfer.ops.length === 1 && woInfer.ops[0].fields.unitId === wunit.unitId, 'WR-board: a work order naming only the customer infers their on-rent unit');
+      T.DATA.rentals.pop(); T.IDX.rental.delete('R-WRWO');
+      T.DATA.customers.pop(); T.IDX.customer.delete('C-WRWO');
     }
 
     // 12k) Chat markdown — Wrangler's replies render **bold**/`code`, but stay XSS-safe (escape before format).
