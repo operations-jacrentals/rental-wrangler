@@ -487,6 +487,14 @@ try {
       ok(ares2.text === 'ok' && /no answer/.test(acalls2[1].messages[acalls2[1].messages.length - 1].content[0].content), 'WR-ask: with no ask handler the loop proceeds (no hang)');
     }
 
+    // 12j-slim) Stage 3 — the prompt context is now slim orientation, NOT a per-record snapshot.
+    {
+      const dig = T.wranglerDigest();
+      ok(/Totals —/.test(dig) && /CATEGORIES & RATES/.test(dig), 'WR-slim: orientation keeps the totals + categories/rates');
+      ok(!/FLEET UNITS \(/.test(dig) && !/CUSTOMERS \(name/.test(dig) && !/RENTALS \(id/.test(dig) && !/OPEN INVOICES \(/.test(dig), 'WR-slim: orientation drops the per-record unit/customer/rental/invoice dumps (tools fetch those)');
+      ok(/find_\*/.test(dig), 'WR-slim: orientation points the model at the find_* tools');
+    }
+
     // 12k) Chat markdown — Wrangler's replies render **bold**/`code`, but stay XSS-safe (escape before format).
     {
       ok(/<strong>June 30, 2026<\/strong>/.test(T.wrChatFormat('Monday is **June 30, 2026**.')), 'WR-fmt: **bold** renders as <strong>');
