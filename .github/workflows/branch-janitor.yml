@@ -4,11 +4,26 @@ name: Branch janitor
 # SAFE BY DESIGN: only deletes a branch that (a) is the head of a MERGED PR,
 # (b) has NO open PR, and (c) is NOT a structural branch (main / staging / area/*).
 # So long-lived chapters (area/*) and the trunk/integration branches are never touched.
+#
+# There is also a ONE-TIME, opt-in cleanup job (prune_stranded) for the branches the
+# 2026-06-23 history rewrite stranded off main — these have no merge base with main and
+# are not merged-PR heads, so the daily job above structurally cannot see them. They were
+# verified (2026-06-27) as already-shipped or empty stubs. That job only runs from the
+# Actions tab, defaults to a dry-run, and re-guards every branch at runtime.
 
 on:
   schedule:
     - cron: '17 7 * * *'   # daily ~07:17 UTC
   workflow_dispatch:        # and on-demand from the Actions tab
+    inputs:
+      prune_stranded:
+        description: 'Run the one-time stranded-branch cleanup (2026-06-27 verified set)'
+        type: boolean
+        default: false
+      execute:
+        description: 'Actually delete (leave UNCHECKED for a dry-run list only)'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -48,3 +63,89 @@ jobs:
             fi
           done < live.txt
           echo "pruned $deleted branch(es)"
+
+  # ── One-time cleanup of the 2026-06-23-rewrite-stranded branches. Opt-in + dry-run by default. ──
+  # Every branch below was verified 2026-06-27 (verify-stranded-superseded.sh): 26 added no app.js
+  # code (TODO/doc/CI stubs); 17 are superseded (their work is already on main). None hold unshipped
+  # work. The daily 'prune' job can't reach them (not merged-PR heads, no merge base with main).
+  # After this has been run once and the branches are gone, delete this job.
+  prune_stranded:
+    if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.prune_stranded == 'true' }}
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      EXECUTE: ${{ github.event.inputs.execute }}
+    steps:
+      - name: Prune stranded branches (re-guarded; dry-run unless 'execute' is checked)
+        run: |
+          set -euo pipefail
+          STRANDED="
+            backend-data/card-error-surfacing
+            backend-data/custom-fields-defaults
+            backend-data/sync-outage-p0
+            ci/bump-actions-node24
+            claude/vibrant-roentgen-1ce051
+            claude/wonderful-chatelet-b05184
+            claude/wrangler-fix-34
+            comms-notifications/customer-text-email
+            comms-notifications/notifications
+            customers-crm/dedup-name-graduation
+            design-overhaul
+            design-system/regen-rule-usage
+            design-system/row-density-pass
+            design-system/rulebook-full-catalog
+            financials-kpi/roi-zero-cost-guard
+            frontend-performance/boot-render-coalesce
+            handoff/ach-payments
+            handoff/col-polish
+            handoff/dispatch-cockpit
+            handoff/graph-carousel
+            handoff/popup-tiers
+            handoff/pr138-docs-merge
+            invoicing-payments/card-save-gate
+            invoicing-payments/invoice-card
+            invoicing-payments/invoice-link-label
+            invoicing-payments/payment-card-picker
+            maintenance-shop/default-services
+            memberships/membership-todo
+            mobile-remote/customer-portal
+            rentals-dispatch/new-rental-date-default
+            rentals-dispatch/onrent-cardfile-gate
+            rentals-dispatch/retire-window-picker
+            rentals-dispatch/status-button
+            search-views/global-search-customer-sync
+            units-fleet/category-rows-scroll-group
+            units-fleet/typed-inspection-fields
+            wrangler-ai/notif-rail-collapse
+            wrangler-fix-116-cash-refund
+            wrangler-fix-117-cash-refund
+            wrangler-fix-66-new-customer
+            wrangler-fix/38-transport-equal-width
+            wrangler-fix/transport-button-width
+            wrangler/card-error-surfacing
+          "
+          # runtime safety nets, independent of the embedded list
+          gh pr list -R "$REPO" --state open --limit 1000 --json headRefName -q '.[].headRefName' | sort -u > open.txt
+          gh api "repos/$REPO/branches?per_page=100" --paginate -q '.[].name' | sort -u > live.txt
+          mode="DRY-RUN"; [ "${EXECUTE:-false}" = "true" ] && mode="DELETE"
+          echo "mode=$mode  (open-PRs=$(wc -l < open.txt), live branches=$(wc -l < live.txt))"
+          deleted=0; skipped=0
+          for b in $STRANDED; do
+            [ -z "$b" ] && continue
+            case "$b" in
+              main|staging|area/*|backup/*) echo "  GUARD skip (structural): $b"; skipped=$((skipped+1)); continue ;;
+            esac
+            grep -qxF "$b" live.txt || { echo "  already gone: $b"; continue; }
+            if grep -qxF "$b" open.txt; then echo "  GUARD skip (has open PR): $b"; skipped=$((skipped+1)); continue; fi
+            if [ "$mode" = "DRY-RUN" ]; then
+              echo "  [dry-run] would delete: $b"; continue
+            fi
+            echo "  deleting: $b"
+            if gh api -X DELETE "repos/$REPO/git/refs/heads/$b" >/dev/null 2>&1; then
+              deleted=$((deleted+1))
+            else
+              echo "    (skipped — protected or already gone)"; skipped=$((skipped+1))
+            fi
+          done
+          echo "stranded cleanup: mode=$mode deleted=$deleted guarded/skipped=$skipped"
