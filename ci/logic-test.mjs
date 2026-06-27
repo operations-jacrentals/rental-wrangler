@@ -394,6 +394,47 @@ try {
       T.DATA.customers.pop(); T.IDX.customer.delete('C-WRWO');
     }
 
+    // 12j-agentic) Stage 1 — read-tool implementations + the agent loop (offline, no network).
+    {
+      // Tool catalog is well-formed (every schema has a matching implementation and vice-versa).
+      const toolNames = T.WR_TOOLS.map((t) => t.name).sort();
+      const implNames = Object.keys(T.WR_TOOL_IMPL).sort();
+      ok(toolNames.length === implNames.length && toolNames.every((n, i) => n === implNames[i]), 'WR-agent: every tool schema has a matching implementation');
+      ok(T.WR_TOOLS.every((t) => t.name && t.description && t.input_schema && t.input_schema.type === 'object'), 'WR-agent: every tool schema is well-formed (name, description, object input_schema)');
+
+      // Read tools query the FULL live data and return compact rows.
+      const aUnit = T.DATA.units.find((u) => u.fleetStatus === 'Active');
+      const uRes = T.WR_TOOL_IMPL.find_units({ query: aUnit.name });
+      ok(uRes.count >= 1 && uRes.units.some((u) => u.id === aUnit.unitId), 'WR-agent: find_units locates a unit by name');
+      const catName = (T.IDX.category.get(aUnit.categoryId) || {}).name || '';
+      const pr = T.WR_TOOL_IMPL.price_rental({ units: [aUnit.name], startDate: '2099-09-01', endDate: '2099-09-08' });
+      ok(pr.total > 0 && Array.isArray(pr.units) && pr.units[0] && !pr.units[0].error, 'WR-agent: price_rental quotes a real number from the pricing engine');
+      const av = T.WR_TOOL_IMPL.check_unit_availability({ unit: aUnit.name, startDate: '2099-09-01', endDate: '2099-09-08' });
+      ok(typeof av.available === 'boolean' && Array.isArray(av.conflicts), 'WR-agent: check_unit_availability returns availability + conflicts');
+      ok(T.WR_TOOL_IMPL.find_units({ query: '___nope___zzz' }).count === 0, 'WR-agent: a no-match lookup returns count 0 (no crash)');
+      ok(T.WR_TOOL_IMPL.check_unit_availability({ unit: '___nope___' }).error, 'WR-agent: a tool returns a structured {error}, never throws');
+
+      // The loop: a scripted backend that asks for a tool, then answers — drives the tool locally,
+      // feeds the result back, and returns the final text. (No network; opts.call is injected.)
+      const calls = [];
+      const fakeBackend = async (body) => {
+        calls.push(body);
+        if (calls.length === 1) return { stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 'tu_1', name: 'find_units', input: { query: aUnit.name } }] };
+        return { stop_reason: 'end_turn', content: [{ type: 'text', text: 'Found it.' }], text: 'Found it.' };
+      };
+      const looped = await T.wrRunAgent([{ role: 'user', content: 'is ' + aUnit.name + ' in the fleet?' }], 'sys', { call: fakeBackend });
+      ok(looped.text === 'Found it.', 'WR-agent: the loop returns the model’s final text after running a tool');
+      ok(calls.length === 2, 'WR-agent: the loop made a second call after the tool result');
+      const fed = calls[1].messages;
+      const toolResult = fed[fed.length - 1];
+      ok(toolResult.role === 'user' && Array.isArray(toolResult.content) && toolResult.content[0].type === 'tool_result' && toolResult.content[0].tool_use_id === 'tu_1', 'WR-agent: the tool_result is fed back with the matching tool_use_id');
+      ok(/"units"/.test(toolResult.content[0].content), 'WR-agent: the tool_result carries the real lookup output');
+
+      // Back-compat: an old backend (no stop_reason/content) → the loop returns its text in one shot.
+      const oneShot = await T.wrRunAgent([{ role: 'user', content: 'hi' }], 'sys', { call: async () => ({ text: 'plain answer' }) });
+      ok(oneShot.text === 'plain answer', 'WR-agent: degrades to a single shot against a tools-unaware backend');
+    }
+
     // 12k) Chat markdown — Wrangler's replies render **bold**/`code`, but stay XSS-safe (escape before format).
     {
       ok(/<strong>June 30, 2026<\/strong>/.test(T.wrChatFormat('Monday is **June 30, 2026**.')), 'WR-fmt: **bold** renders as <strong>');
