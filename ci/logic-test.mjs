@@ -437,6 +437,20 @@ try {
       if (wo) { T.wrFocusRecord('workOrders', wo.woId); const a = T.activeSession().anchor; ok(a && a.card === 'shop' && a.recId === wo.woId, 'WR-focus: a shop record (work order) anchors a tab'); }
     }
 
+    // 12o) Bookings auto-apply + a clickable "Open" link (Jac): startRental no longer needs the Apply tap,
+    // recordPayment still does (money settlement), and apply returns a focus target + an "Open …" label.
+    {
+      ok(T.wrPlanNeedsApply({ ops: [{ op: 'operate', name: 'startRental', params: {} }] }) === false, 'WR-auto: startRental auto-applies (no Apply tap)');
+      ok(T.wrPlanNeedsApply({ ops: [{ op: 'operate', name: 'recordPayment', params: {} }] }) === true, 'WR-auto: recordPayment still requires Apply (money settlement)');
+      T.__state.overbookOn = false;
+      const cust = T.IDX.customer.get('C0009');
+      const u = T.DATA.units.find((x) => x.fleetStatus === 'Active');
+      const plan = T.wrValidatePlan({ action: 'data', ops: [{ op: 'operate', name: 'startRental', params: { customer: cust.name, units: [u.name], startDate: '2099-09-15', days: 2, startTime: '8am' } }] });
+      const res = await T.applyWranglerData(plan);
+      ok(res && res.focus && res.focus.entity === 'rentals' && !!res.focus.id, 'WR-auto: a booking returns a focus target (rentals + id) for the Open link');
+      ok(/^Open /.test(T.wrRecLabel(res.focus.entity, res.focus.id)), 'WR-auto: wrRecLabel gives an "Open …" link label');
+    }
+
     // 13) Transport pricing v2 — $3.50/mile + $50 load + $20 fuel (fueled), per leg.
     const tp = (a) => T.computeTransportPrice(a).price;
     // 10 mi Delivery, fueled: (3.5*10 + 50 + 20) * 1 = 105

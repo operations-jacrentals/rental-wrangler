@@ -1220,6 +1220,12 @@ select.lf-in { appearance: none; cursor: pointer; }
 .wr-apply-none { font-size: 11.5px; color: var(--txt-3); font-style: italic; }
 .wr-actdone { display: inline-block; margin-top: 8px; font-size: 11.5px; font-weight: 600;
   color: var(--green, #46c46a); letter-spacing: .3px; }
+/* the clickable "Open <record> →" link Wrangler shows after it acts (Jac: bring me to it) */
+.wr-goto { display: inline-block; margin: 6px 0 0 8px; padding: 0; background: none; border: none;
+  font: inherit; font-size: 11.5px; font-weight: 700; color: var(--accent, #ff7a1a); cursor: pointer;
+  text-decoration: underline; text-underline-offset: 2px; }
+.wr-goto:hover { filter: brightness(1.12); }
+.wr-goto:focus-visible { outline: 2px solid var(--accent-line, #ff7a1a); outline-offset: 2px; border-radius: 4px; }
 
 /* §18e Requests inbox — Mr. Wrangler's "Filed for Jac's OK", reviewed in-app */
 .req-wrap { max-height: 70vh; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; }
