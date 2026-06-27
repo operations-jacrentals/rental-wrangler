@@ -10598,10 +10598,7 @@ function wrFocusRecord(entity, id) {
   if (!entity || !id) return;
   try {
     if (WR_BOARD_TYPES.has(entity)) { openOverlay({ kind: 'board', board: entity, recId: id }); return; }
-    if (WR_SHOP_TYPES.has(entity)) { anchorRecord('shop', id, entity); return; }
-    const s = activeSession(); const col = COLUMN_OF[entity]; const cs = s.cards[entity];
-    if (col && cs && s.cols) { s.cols[col] = entity; cs.mode = 'standard'; cs.recId = id; cs.recType = null; cs.graphView = false; }
-    else { anchorRecord(entity, id); }
+    pillTo(entity, id);   // the app's link-pill nav: reveals the column AND flips the phone's visible column (state.mobileCol), then openStandard — so it lands where you can see it on mobile, not just desktop
   } catch (e) { /* nav is best-effort */ }
 }
 // Short clickable label for the "Open →" link Wrangler shows after it does something.
@@ -12396,7 +12393,7 @@ function onClick(e) {
   if (closest('.js-wr-close')) { e.stopPropagation(); wranglerRailSnapshot(); state.wrangler.open = false; return render(); }   // §18 close the dock back to the launcher; the chat lands on the §18g rail
   if (closest('.js-wr-act')) { e.stopPropagation(); return wranglerFileAction(Number(closest('.js-wr-act').dataset.mi)); }   // §18d file the fix/request Mr. Wrangler proposed inline
   if (closest('.js-wr-apply')) { e.stopPropagation(); const o = state.wrangler; if (!o.open) return; const m = o.messages[Number(closest('.js-wr-apply').dataset.mi)]; if (!m || !m.action || m.filed) return; const plan = m.action._plan || wrValidatePlan(m.action); if (!plan.ops.length) return; m.filed = true; render(); Promise.resolve(applyWranglerData(plan)).then((res) => { if (res && res.failed) { m.filed = false; } else if (res && res.focus) { m.focus = res.focus; } render(); }); return; }
-  if (closest('.js-wr-goto')) { e.stopPropagation(); const b = closest('.js-wr-goto'); wrFocusRecord(b.dataset.ent, b.dataset.id); return render(); }   // the clickable "Open →" link → jump to the record Wrangler made   // Mr. Wrangler applies the previewed add/update/import; a failed async op (e.g. a payment that didn't go through) un-files so the user can retry
+  if (closest('.js-wr-goto')) { e.stopPropagation(); const b = closest('.js-wr-goto'); wrFocusRecord(b.dataset.ent, b.dataset.id); state.wrangler.min = true; return render(); }   // the clickable "Open →" link → jump to the record + collapse the dock so it's revealed (esp. on mobile)   // Mr. Wrangler applies the previewed add/update/import; a failed async op (e.g. a payment that didn't go through) un-files so the user can retry
   if (closest('.js-wr-kpi-lock')) { e.stopPropagation(); lockKpiFromWrangler(Number(closest('.js-wr-kpi-lock').dataset.mi)); return; }   // Mr. Wrangler locks in an authored KPI ring
   if (closest('.js-wr-unattach')) { e.stopPropagation(); const o = state.wrangler; if (o.open && o.attach) { o.attach.splice(Number(closest('.js-wr-unattach').dataset.i), 1); render(); } return; }   // §18d drop a pending image attachment
   if (closest('.js-wr-unfile')) { e.stopPropagation(); const o = state.wrangler; if (o.open && o.files) { o.files.splice(Number(closest('.js-wr-unfile').dataset.i), 1); render(); } return; }   // §18d drop a pending file attachment
