@@ -2054,7 +2054,16 @@ function closeTab(id) {
   if (state.activeTabId === id) state.activeTabId = state.tabs.length ? state.tabs[Math.max(0, i - 1)].id : null;
   render();
 }
-function closeAll() { state.tabs = []; state.activeTabId = null; state.searchMode = false; state.query = ''; state.winEdit = null; state.datesearch = null; render(); }
+function closeAll() {
+  state.tabs = []; state.activeTabId = null;
+  // Clearing the item-tab rail returns to a clean slate, so the search bars must
+  // go with it — both the global one (query + pinned filter pills) and every
+  // per-card mini-search on the now-active default session (these stayed filled).
+  state.searchMode = false; state.query = ''; state.filterTerms = [];
+  for (const c of GRID_CARDS) { const ccs = state.defaultSession.cards[c.id]; if (ccs) { ccs.search = ''; ccs.filterTerms = []; ccs.listLimit = undefined; } }
+  state.winEdit = null; state.datesearch = null;
+  render();
+}
 // §313 — keep only the active tab; with none active, fall back to a full close.
 function closeOthers() { if (!state.activeTabId) { closeAll(); return; } state.tabs = state.tabs.filter((t) => t.id === state.activeTabId); render(); }
 // §313 — Close-all trigger. 1–2 tabs close immediately; >2 ask first (a quick popover).
