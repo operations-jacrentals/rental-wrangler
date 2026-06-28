@@ -162,6 +162,413 @@ try {
     ok(T.DATA.units.length === unitsBefore + 1, 'exactly ONE unit was created for the two Phantom rentals');
     ok(T.planUnitMigration().length === 0, 'migration is idempotent — a second run finds nothing');
 
+    // 12b) Mr. Wrangler action parity — Stage 1: create the everyday entities (units/categories/
+    // vendors/parts), and keep the money/auth/delete lines fenced. The "add a unit named Termite" fix.
+    {
+      const uBefore = T.DATA.units.length, vBefore = T.DATA.vendors.length;
+      // create a unit by name — the original reported failure
+      const uplan = T.wrValidatePlan({ action: 'data', ops: [{ op: 'create', entity: 'units', fields: { name: 'Termite' } }] });
+      ok(uplan.ops.length === 1 && uplan.ops[0].op === 'create' && uplan.ops[0].entity === 'units', 'WR: create-unit op survives validation (units now creatable)');
+      T.applyWranglerData(uplan);
+      const termite = T.DATA.units.find((u) => u.name === 'Termite');
+      ok(!!termite && /^U\d{3}$/.test(termite.unitId) && termite.fleetStatus === 'Active', 'WR: a normal Active unit "Termite" is created with a U-id');
+      ok(T.DATA.units.length === uBefore + 1 && T.IDX.unit.get(termite.unitId) === termite, 'WR: the new unit is in DATA + IDX.unit');
+      // create a vendor — new entity, lands in DATA + IDX.vendor
+      const vplan = T.wrValidatePlan({ action: 'data', ops: [{ op: 'create', entity: 'vendors', fields: { name: 'Acme Supply', phone: '555-0100' } }] });
+      T.applyWranglerData(vplan);
+      const acme = T.DATA.vendors.find((v) => v.name === 'Acme Supply');
+      ok(!!acme && /^V\d{3}$/.test(acme.vendorId) && T.IDX.vendor.get(acme.vendorId) === acme, 'WR: a vendor is created with a V-id and indexed');
+      ok(T.DATA.vendors.length === vBefore + 1, 'WR: exactly one vendor was added');
+      // off-allowlist money field is dropped, never written
+      const pplan = T.wrValidatePlan({ action: 'data', ops: [{ op: 'create', entity: 'parts', fields: { name: 'Filter', priceEach: 99 } }] });
+      ok(pplan.ops.length === 1 && !('priceEach' in pplan.ops[0].fields) && pplan.ops[0].fields.name === 'Filter', 'WR: pricing field (priceEach) is stripped from a part create — money stays fenced');
+      // rentals are NOT creatable this stage → op dropped with an issue
+      const rplan = T.wrValidatePlan({ action: 'data', ops: [{ op: 'create', entity: 'rentals', fields: { notes: 'x' } }] });
+      ok(rplan.ops.length === 0 && rplan.issues.some((s) => /can.t be created/.test(s)), 'WR: rentals-create is refused (later stage)');
+      // unknown / off-limits entity is refused outright
+      const splan = T.wrValidatePlan({ action: 'data', ops: [{ op: 'create', entity: 'settings', fields: { x: 1 } }] });
+      ok(splan.ops.length === 0, 'WR: an entity outside the allowlist (settings) yields no ops');
+    }
+
+    // 12c) Stage 2a — category RENTAL RATES are editable (the money line allows pricing), numeric-coerced,
+    // and bad/negative values + the used-sale margin floor stay fenced.
+    {
+      const cat = T.DATA.categories[0];
+      // edit a rate via update; a string number is coerced to a real number (money math stays sound)
+      const eplan = T.wrValidatePlan({ action: 'data', ops: [{ op: 'update', entity: 'categories', id: cat.categoryId, fields: { rate1Day: '425' } }] });
+      ok(eplan.ops.length === 1 && eplan.ops[0].fields.rate1Day === 425 && typeof eplan.ops[0].fields.rate1Day === 'number', 'WR: a category rate edits, string "425" coerced to number 425');
+      T.applyWranglerData(eplan);
+      ok(cat.rate1Day === 425, 'WR: the rate write lands on the category');
+      // a negative/garbage rate is dropped, never written
+      const bad = T.wrValidatePlan({ action: 'data', ops: [{ op: 'update', entity: 'categories', id: cat.categoryId, fields: { rate7Day: -5, weekend: 'free' } }] });
+      ok(bad.ops.length === 0, 'WR: negative / non-numeric rates are dropped (no op)');
+      // the used-sale margin floor is NOT editable this stage
+      const floor = T.wrValidatePlan({ action: 'data', ops: [{ op: 'update', entity: 'categories', id: cat.categoryId, fields: { bottomDollar: 1 } }] });
+      ok(floor.ops.length === 0, 'WR: bottomDollar (margin floor) stays fenced — off the allowlist');
+    }
+
+    // 12d) Stage 2 — billRental operate op: invoice an EXISTING rental via the real pricing engine.
+    // No standalone invoices, no payments/refunds; refuses unbillable rentals and unknown operations.
+    {
+      const bf = T.DATA.units.filter((u) => u.fleetStatus === 'Active');
+      const mkU = (u) => ({ unitId: u.unitId, status: 'On Rent', transportType: 'Self', deliveryAddress: '', recoveryAddress: '', transportMiles: 0, startCapture: null, endCapture: null, fcCapture: null });
+      const rB = { rentalId: 'R-WRBILL', customerId: 'C0009', unitId: bf[0].unitId, categoryId: bf[0].categoryId, rentalName: 'Wrangler bill test', startDate: '2099-09-01', endDate: '2099-09-08', startTime: '', status: 'Reserved', transportType: 'Self', deliveryAddress: '', po: '', invoiceId: null, units: [mkU(bf[0])], notes: '', actions: [], mock: true };
+      T.DATA.rentals.push(rB); T.IDX.rental.set('R-WRBILL', rB);
+      const invCountBefore = T.DATA.invoices.length;
+      // refusals first (no record changes)
+      const unknownOp = T.wrValidatePlan({ action: 'data', ops: [{ op: 'operate', name: 'frobnicate', params: {} }] });
+      ok(unknownOp.ops.length === 0 && unknownOp.issues.some((s) => /don.t know how/.test(s)), 'WR: an unknown operation is refused');
+      const noRental = T.wrValidatePlan({ action: 'data', ops: [{ op: 'operate', name: 'billRental', params: { rentalId: 'R-NOPE' } }] });
+      ok(noRental.ops.length === 0 && noRental.issues.some((s) => /no rental/.test(s)), 'WR: billRental on an unknown rental is refused');
+      // happy path → one operate op, applying it creates + links a real invoice from the pricing engine
+      const bplan = T.wrValidatePlan({ action: 'data', ops: [{ op: 'operate', name: 'billRental', params: { rentalId: 'R-WRBILL' } }] });
+      ok(bplan.ops.length === 1 && bplan.ops[0].op === 'operate' && /^invoice .+ for .+\(/.test(bplan.ops[0].summary), 'WR: billRental on a billable rental previews one operate op');
+      T.applyWranglerData(bplan);
+      ok(!!rB.invoiceId && T.DATA.invoices.length === invCountBefore + 1, 'WR: billRental created + linked a real invoice');
+      const newInv = T.IDX.invoice.get(rB.invoiceId);
+      ok(!!newInv && newInv.rentalIds.includes('R-WRBILL') && newInv.lineItems.length > 0, 'WR: the invoice is built from the pricing engine (has line items, linked to the rental)');
+      // already-invoiced → refused (no double-billing)
+      const dbl = T.wrValidatePlan({ action: 'data', ops: [{ op: 'operate', name: 'billRental', params: { rentalId: 'R-WRBILL' } }] });
+      ok(dbl.ops.length === 0 && dbl.issues.some((s) => /already invoiced/.test(s)), 'WR: a rental already invoiced is not double-billed');
+    }
+
+    // 12e) Apply gate is CONDITIONAL (Jac) — simple single safe edits auto-apply; consequential actions
+    // (bulk, pricing/rate, named operations, several records) still require the preview→Apply tap.
+    {
+      const needs = (ops) => T.wrPlanNeedsApply(T.wrValidatePlan({ action: 'data', ops }));
+      ok(needs([{ op: 'create', entity: 'units', fields: { name: 'Auto1' } }]) === false, 'WR-gate: a single unit create auto-applies (no Apply)');
+      ok(needs([{ op: 'update', entity: 'vendors', id: T.DATA.vendors[0].vendorId, fields: { phone: '555-1' } }]) === false, 'WR-gate: a single safe field edit auto-applies');
+      ok(needs([{ op: 'update', entity: 'categories', id: T.DATA.categories[0].categoryId, fields: { rate1Day: 200 } }]) === true, 'WR-gate: a rate/pricing change requires Apply');
+      ok(T.wrPlanNeedsApply({ ops: [{ op: 'operate', name: 'billRental', params: {} }] }) === true, 'WR-gate: a named operation (billRental) requires Apply');
+      ok(needs([{ op: 'create', entity: 'units', fields: { name: 'A' } }, { op: 'create', entity: 'units', fields: { name: 'B' } }]) === true, 'WR-gate: several records at once require Apply');
+      ok(T.wrPlanNeedsApply({ ops: [{ op: 'import', entity: 'customers', rows: [{}, {}] }] }) === true, 'WR-gate: a bulk import requires Apply');
+    }
+
+    // 12f) Stage 2 — recordPayment operate op: CASH/CHECK only, never a card/ACH rail. The refusal paths
+    // run offline (no backend in the harness); applyPayment applying a server result is unit-tested directly.
+    {
+      // build a fresh unpaid invoice with a real balance
+      const payInv = { invoiceId: 'I-WRPAY', customerId: 'C0009', rentalIds: [], date: T.TODAY_ISO, dueDate: T.TODAY_ISO, po: '', amountPaid: 0, lineItems: [{ lid: 'wp1', label: 'Test line', amount: 300, taxable: false, kind: 'custom' }], mock: true };
+      T.DATA.invoices.push(payInv); T.IDX.invoice.set('I-WRPAY', payInv);
+      const wrp = (params) => T.wrValidatePlan({ action: 'data', ops: [{ op: 'operate', name: 'recordPayment', params }] });
+      ok(wrp({ invoiceId: 'I-NOPE', method: 'cash' }).issues.some((s) => /no invoice/.test(s)), 'WR-pay: unknown invoice refused');
+      ok(wrp({ invoiceId: 'I-WRPAY', method: 'card' }).issues.some((s) => /cash or check/.test(s)), 'WR-pay: card method refused (e-rail stays human)');
+      ok(wrp({ invoiceId: 'I-WRPAY', method: 'ach' }).issues.some((s) => /cash or check/.test(s)), 'WR-pay: ACH method refused (e-rail stays human)');
+      ok(wrp({ invoiceId: 'I-WRPAY', method: 'check' }).issues.some((s) => /check number/.test(s)), 'WR-pay: a check needs a check number');
+      ok(wrp({ invoiceId: 'I-WRPAY', method: 'cash', amount: -5 }).issues.some((s) => /greater than \$0/.test(s)), 'WR-pay: a non-positive amount refused');
+      // offline (no backendPassword in the harness) → the money guard fires last, proving it's enforced
+      ok(wrp({ invoiceId: 'I-WRPAY', method: 'cash' }).issues.some((s) => /needs to be online/.test(s)), 'WR-pay: a valid payment is gated offline (backend is authoritative for money)');
+      // applyPayment applies the SERVER result authoritatively (the half we can unit-test)
+      T.applyPayment('I-WRPAY', { amountPaid: 300, paid: true, paymentMethod: 'cash', paidAt: '2099-01-01T00:00:00Z' });
+      ok(payInv.amountPaid === 300 && payInv.paid === true && payInv.paymentMethod === 'cash' && payInv.paidAt === '2099-01-01T00:00:00Z', 'WR-pay: applyPayment writes the server result (amountPaid/paid/method/paidAt)');
+    }
+
+    // 12g) Stage 3 — startRental operate op: put unit(s) on rent for a customer as a Reserved booking,
+    // with the real gates (fleet-Active, blacklist, overbooking, valid window). Priced by the engine.
+    {
+      const active = T.DATA.units.filter((u) => u.fleetStatus === 'Active');
+      const freeUnit = active[0];   // free in the far-future window below (seed rentals don't reach Nov 2099)
+      const wr = (params) => T.wrValidatePlan({ action: 'data', ops: [{ op: 'operate', name: 'startRental', params }] });
+      // refusals
+      ok(wr({ customerId: 'C-NOPE', unitIds: [freeUnit.unitId], startDate: '2099-11-01', endDate: '2099-11-08' }).issues.some((s) => /no customer/.test(s)), 'WR-rent: unknown customer refused');
+      ok(wr({ customerId: 'C0009', unitIds: [], startDate: '2099-11-01', endDate: '2099-11-08' }).issues.some((s) => /at least one unit/.test(s)), 'WR-rent: no units refused');
+      ok(wr({ customerId: 'C0009', unitIds: ['U-NOPE'], startDate: '2099-11-01', endDate: '2099-11-08' }).issues.some((s) => /no unit/.test(s)), 'WR-rent: unknown unit refused');
+      ok(wr({ customerId: 'C0009', unitIds: [freeUnit.unitId], startDate: '2099-11-08', endDate: '2099-11-01' }).issues.some((s) => /end date is before/.test(s)), 'WR-rent: end-before-start refused');
+      // a retired unit is refused
+      const retired = { unitId: 'U-RETIRED', name: 'Old Iron', categoryId: freeUnit.categoryId, fleetStatus: 'Retired', currentHours: 0, inspectionStatus: 'Not Ready', purchaseHours: 0, serviceCompletions: {} };
+      T.DATA.units.push(retired); T.IDX.unit.set('U-RETIRED', retired);
+      ok(wr({ customerId: 'C0009', unitIds: ['U-RETIRED'], startDate: '2099-11-01', endDate: '2099-11-08' }).issues.some((s) => /not rentable/.test(s)), 'WR-rent: a retired (non-Active) unit refused');
+      // a blacklisted customer is refused
+      T.DATA.customers.push({ customerId: 'C-BL', name: 'Bad Co', accountType: 'Blacklist', firstName: '', lastName: '', activityLog: [] }); T.IDX.customer.set('C-BL', T.DATA.customers[T.DATA.customers.length - 1]);
+      ok(wr({ customerId: 'C-BL', unitIds: [freeUnit.unitId], startDate: '2099-11-01', endDate: '2099-11-08' }).issues.some((s) => /blacklisted/.test(s)), 'WR-rent: a blacklisted customer refused');
+      // overbooking: book the free unit, then a second overlapping booking is refused
+      T.__state.overbookOn = false;   // deterministic — an earlier block toggles this on
+      const okPlan = wr({ customerId: 'C0009', unitIds: [freeUnit.unitId], startDate: '2099-11-01', endDate: '2099-11-08' });
+      ok(okPlan.ops.length === 1 && /start rental/.test(okPlan.ops[0].summary), 'WR-rent: a valid booking previews one operate op');
+      const before = T.DATA.rentals.length;
+      T.applyWranglerData(okPlan);
+      ok(T.DATA.rentals.length === before + 1, 'WR-rent: applying creates the rental');
+      const made = T.DATA.rentals[T.DATA.rentals.length - 1];
+      ok(made.status === 'Reserved' && made.customerId === 'C0009' && T.rentalUnits(made).some((u) => u.unitId === freeUnit.unitId), 'WR-rent: a Reserved booking with the customer + unit');
+      ok((T.rentalPrice(made)?.price || 0) > 0, 'WR-rent: the booking is priced by the engine');
+      ok(wr({ customerId: 'C0009', unitIds: [freeUnit.unitId], startDate: '2099-11-03', endDate: '2099-11-05' }).issues.some((s) => /already booked/.test(s)), 'WR-rent: an overlapping booking of the same unit is refused (overbooking gate)');
+    }
+
+    // 12h) Name resolution (Jac 2026-06-26) — Wrangler talks in NAMES; ops + foreign-key fields resolve them
+    // to real ids. Fixes the two reported bugs: a unit's categoryId set by NAME, and startRental booked by
+    // customer/unit NAME (where the model previously passed the name as an id and nothing linked).
+    {
+      const cust0 = T.IDX.customer.get('C0009');
+      ok(T.wrResolveCustomer('C0009').rec === cust0, 'WR-resolve: customer by id');
+      const rByName = T.wrResolveCustomer(cust0.name);
+      ok((rByName.rec && rByName.rec.name === cust0.name) || (rByName.many || []).some((c) => c.customerId === 'C0009'), 'WR-resolve: customer by name');
+      if (cust0.phone) { const last4 = String(cust0.phone).replace(/\D/g, '').slice(-4); const rPh = T.wrResolveCustomer(last4); ok(!!(rPh.rec || (rPh.many && rPh.many.length)), 'WR-resolve: customer by phone suffix'); }
+      const cat0 = T.DATA.categories[0];
+      ok(T.wrResolveCategory(cat0.name).rec === cat0, 'WR-resolve: category by name');
+      ok(T.wrResolveCategory(cat0.categoryId).rec === cat0, 'WR-resolve: category by id still works');
+      // FK: a unit created with categoryId = the category NAME resolves to the real id (the Stump-Grinder bug)
+      const fk = T.wrValidatePlan({ action: 'data', ops: [{ op: 'create', entity: 'units', fields: { name: 'WR-ResolveTest', categoryId: cat0.name } }] });
+      ok(fk.ops.length === 1 && fk.ops[0].fields.categoryId === cat0.categoryId, 'WR-resolve: unit categoryId set by NAME resolves to the real id');
+      // an unknown category name is dropped, never stored as a bad id
+      const fkBad = T.wrValidatePlan({ action: 'data', ops: [{ op: 'create', entity: 'units', fields: { name: 'WR-ResolveTest2', categoryId: 'No Such Category XYZ' } }] });
+      ok(fkBad.ops.length === 1 && !('categoryId' in fkBad.ops[0].fields), 'WR-resolve: an unknown category name is dropped (no garbage id)');
+      // startRental booked by customer NAME + unit NAME (the reservation screenshot scenario)
+      const freeU = T.DATA.units.find((u) => u.fleetStatus === 'Active');
+      const byNameRent = T.wrValidatePlan({ action: 'data', ops: [{ op: 'operate', name: 'startRental', params: { customer: cust0.name, units: [freeU.name], startDate: '2099-12-01', endDate: '2099-12-08' } }] });
+      ok(byNameRent.ops.length === 1 && /start rental/.test(byNameRent.ops[0].summary), 'WR-resolve: startRental books by customer NAME + unit NAME');
+    }
+
+    // 12i) UPDATE by NAME across every editable card/board (Jac: apply the fix everywhere). The update op
+    // resolves its target by id OR name (incl. records past the 200-row snapshot cap), so editing a record
+    // you can only name — not id — works for customers, units, categories, vendors, parts alike.
+    {
+      const upByName = (entity, ref, fields) => T.wrValidatePlan({ action: 'data', ops: [{ op: 'update', entity, id: ref, fields }] });
+      const cu = T.IDX.customer.get('C0009');
+      const uC = upByName('customers', cu.name, { phone: '555-0199' });
+      ok(uC.ops.length === 1 && uC.ops[0].id === 'C0009', 'WR-update: customer edited BY NAME resolves to the real id');
+      const un = T.DATA.units.find((u) => u.fleetStatus === 'Active');
+      const uU = upByName('units', un.name, { notes: 'wr update note' });
+      ok(uU.ops.length === 1 && uU.ops[0].id === un.unitId, 'WR-update: unit edited BY NAME');
+      const ca = T.DATA.categories[0];
+      const uCat = upByName('categories', ca.name, { description: 'wr desc' });
+      ok(uCat.ops.length === 1 && uCat.ops[0].id === ca.categoryId, 'WR-update: category edited BY NAME');
+      const ve = T.DATA.vendors[0];
+      const uV = upByName('vendors', ve.name, { phone: '555-0200' });
+      ok(uV.ops.length === 1 && uV.ops[0].id === ve.vendorId, 'WR-update: vendor edited BY NAME');
+      const pa = T.DATA.parts[0];
+      const uP = upByName('parts', pa.name, { notes: 'wr part note' });
+      ok(uP.ops.length === 1 && uP.ops[0].id === pa.partId, 'WR-update: part edited BY NAME');
+      // a name that matches nothing is still refused cleanly
+      ok(upByName('customers', 'Nobody McNobodyface', { phone: '1' }).issues.some((s) => /no customer/.test(s)), 'WR-update: an unknown name is refused');
+    }
+
+    // 12j) Follow-ups (Jac) — bill/charge by CUSTOMER name, and Expenses/Inspections/Work Orders writable.
+    {
+      // bill by customer → their one un-invoiced rental
+      const fa = { customerId: 'C-WRFA', name: 'Bill ByName', accountType: 'Non-Business', firstName: 'Bill', lastName: 'ByName', phone: '', activityLog: [] };
+      T.DATA.customers.push(fa); T.IDX.customer.set('C-WRFA', fa);
+      const uB = T.DATA.units.find((u) => u.fleetStatus === 'Active');
+      const mkU = (u) => ({ unitId: u.unitId, status: 'Reserved', transportType: 'Self', deliveryAddress: '', recoveryAddress: '', transportMiles: 0, startCapture: null, endCapture: null, fcCapture: null });
+      const rFA = { rentalId: 'R-WRFA', customerId: 'C-WRFA', unitId: uB.unitId, categoryId: uB.categoryId, rentalName: 'FA rental', startDate: '2099-10-01', endDate: '2099-10-08', startTime: '', status: 'Reserved', transportType: 'Self', deliveryAddress: '', po: '', invoiceId: null, units: [mkU(uB)], notes: '', mock: true };
+      T.DATA.rentals.push(rFA); T.IDX.rental.set('R-WRFA', rFA);
+      const bc = T.wrValidatePlan({ action: 'data', ops: [{ op: 'operate', name: 'billRental', params: { customer: 'Bill ByName' } }] });
+      ok(bc.ops.length === 1 && /for Bill ByName/.test(bc.ops[0].summary), 'WR-bill-by-customer: finds the un-invoiced rental by name (preview shows unit + customer)');
+      // a SECOND, later un-invoiced rental → billRental picks the MOST RECENT, not a cryptic id list
+      const rFA2 = { rentalId: 'R-WRFA2', customerId: 'C-WRFA', unitId: uB.unitId, categoryId: uB.categoryId, rentalName: 'FA rental 2', startDate: '2099-11-15', endDate: '2099-11-18', startTime: '', status: 'Reserved', transportType: 'Self', deliveryAddress: '', po: '', invoiceId: null, units: [mkU(uB)], notes: '', mock: true };
+      T.DATA.rentals.push(rFA2); T.IDX.rental.set('R-WRFA2', rFA2);
+      const bc2 = T.wrValidatePlan({ action: 'data', ops: [{ op: 'operate', name: 'billRental', params: { customer: 'Bill ByName' } }] });
+      ok(bc2.ops.length === 1 && bc2.ops[0].params && /most recent of 2/.test(bc2.ops[0].summary), 'WR-bill-by-customer: with several un-invoiced rentals it picks the most recent (no raw-id dump)');
+      // charge by customer → their one open invoice (offline → reaches the online gate, proving the invoice was picked)
+      const fb = { customerId: 'C-WRFB', name: 'Pay ByName', accountType: 'Non-Business', firstName: 'Pay', lastName: 'ByName', phone: '', activityLog: [] };
+      T.DATA.customers.push(fb); T.IDX.customer.set('C-WRFB', fb);
+      const invFB = { invoiceId: 'I-WRFB', customerId: 'C-WRFB', rentalIds: [], date: T.TODAY_ISO, dueDate: T.TODAY_ISO, po: '', amountPaid: 0, lineItems: [{ lid: 'fb1', label: 'L', amount: 50, taxable: false, kind: 'custom' }], mock: true };
+      T.DATA.invoices.push(invFB); T.IDX.invoice.set('I-WRFB', invFB);
+      const pc = T.wrValidatePlan({ action: 'data', ops: [{ op: 'operate', name: 'recordPayment', params: { customer: 'Pay ByName', method: 'cash' } }] });
+      ok(pc.issues.some((s) => /needs to be online/.test(s)) && !pc.issues.some((s) => /no open invoice/.test(s)), 'WR-charge-by-customer: picks the one open invoice (then gated offline)');
+      ok(T.wrValidatePlan({ action: 'data', ops: [{ op: 'operate', name: 'recordPayment', params: { customer: 'Bill ByName', method: 'cash' } }] }).issues.some((s) => /no open invoice/.test(s)), 'WR-charge-by-customer: a customer with no open invoice is refused');
+
+      // Expenses / Inspections / Work Orders writable
+      const ven0 = T.DATA.vendors[0];
+      const ex = T.wrValidatePlan({ action: 'data', ops: [{ op: 'create', entity: 'expenses', fields: { vendorId: ven0.name, amount: '125.50', category: 'Parts' } }] });
+      ok(ex.ops.length === 1 && ex.ops[0].fields.vendorId === ven0.vendorId && ex.ops[0].fields.amount === 125.5, 'WR-board: expense created (vendor by name, amount numeric)');
+      const uI = T.DATA.units.find((u) => u.fleetStatus === 'Active');
+      const insp = T.wrValidatePlan({ action: 'data', ops: [{ op: 'create', entity: 'inspections', fields: { unitId: uI.name, description: 'wr insp' } }] });
+      ok(insp.ops.length === 1 && insp.ops[0].fields.unitId === uI.unitId, 'WR-board: inspection created (unit by name)');
+      const noUnit = T.wrValidatePlan({ action: 'data', ops: [{ op: 'create', entity: 'inspections', fields: { description: 'no unit' } }] });
+      ok(noUnit.issues.some((s) => /needs a unit/.test(s)) && !noUnit.issues.some((s) => /unitId/.test(s)), 'WR-board: an inspection with no unit is refused with a human message (no raw field name)');
+      const woP = T.wrValidatePlan({ action: 'data', ops: [{ op: 'create', entity: 'workOrders', fields: { unitId: uI.name, woReport: 'Fix it', phase: 'Complete' } }] });
+      ok(woP.ops.length === 1 && woP.ops[0].fields.unitId === uI.unitId && !('phase' in woP.ops[0].fields), 'WR-board: work order created; a phase=Complete is stripped (completion stays human)');
+      const woBefore = T.DATA.workOrders.length;
+      T.applyWranglerData(woP);
+      const newWo = T.DATA.workOrders[T.DATA.workOrders.length - 1];
+      ok(T.DATA.workOrders.length === woBefore + 1 && newWo.phase !== 'Complete', 'WR-board: the created work order is not Complete');
+      // WO for a customer with no unit named → infer their on-rent unit (Jac: "work order for Fiona. Valve problem.")
+      const wcust = { customerId: 'C-WRWO', firstName: 'Fiona', lastName: 'WoTest', name: 'Fiona WoTest', phone: '', email: '', mock: true };
+      T.DATA.customers.push(wcust); T.IDX.customer.set('C-WRWO', wcust);
+      const wunit = T.DATA.units.find((u) => u.fleetStatus === 'Active');
+      const wrnt = { rentalId: 'R-WRWO', customerId: 'C-WRWO', unitId: wunit.unitId, categoryId: wunit.categoryId, rentalName: 'WO infer test', startDate: '2099-09-01', endDate: '2099-09-08', status: 'On Rent', transportType: 'Self', invoiceId: null, units: [{ unitId: wunit.unitId, status: 'On Rent', transportType: 'Self' }], actions: [], mock: true };
+      T.DATA.rentals.push(wrnt); T.IDX.rental.set('R-WRWO', wrnt);
+      const woInfer = T.wrValidatePlan({ action: 'data', ops: [{ op: 'create', entity: 'workOrders', fields: { customerId: 'Fiona WoTest', woReport: 'Valve problem' } }] });
+      ok(woInfer.ops.length === 1 && woInfer.ops[0].fields.unitId === wunit.unitId, 'WR-board: a work order naming only the customer infers their on-rent unit');
+      T.DATA.rentals.pop(); T.IDX.rental.delete('R-WRWO');
+      T.DATA.customers.pop(); T.IDX.customer.delete('C-WRWO');
+    }
+
+    // 12j-agentic) Stage 1 — read-tool implementations + the agent loop (offline, no network).
+    {
+      // Tool catalog is well-formed: every read tool has an impl; apply_changes + ask_user are
+      // handled specially by the loop (wrApplyChangesTool / opts.ask), not via WR_TOOL_IMPL.
+      const LOOP_TOOLS = ['apply_changes', 'ask_user'];
+      const toolNames = T.WR_TOOLS.map((t) => t.name).sort();
+      const covered = toolNames.every((n) => LOOP_TOOLS.includes(n) || typeof T.WR_TOOL_IMPL[n] === 'function');
+      const noOrphanImpl = Object.keys(T.WR_TOOL_IMPL).every((n) => toolNames.includes(n));
+      ok(covered && noOrphanImpl && LOOP_TOOLS.every((n) => toolNames.includes(n)), 'WR-agent: every tool schema has an implementation (apply_changes + ask_user via the loop)');
+      ok(T.WR_TOOLS.every((t) => t.name && t.description && t.input_schema && t.input_schema.type === 'object'), 'WR-agent: every tool schema is well-formed (name, description, object input_schema)');
+
+      // Read tools query the FULL live data and return compact rows.
+      const aUnit = T.DATA.units.find((u) => u.fleetStatus === 'Active');
+      const uRes = T.WR_TOOL_IMPL.find_units({ query: aUnit.name });
+      ok(uRes.count >= 1 && uRes.units.some((u) => u.id === aUnit.unitId), 'WR-agent: find_units locates a unit by name');
+      const catName = (T.IDX.category.get(aUnit.categoryId) || {}).name || '';
+      const pr = T.WR_TOOL_IMPL.price_rental({ units: [aUnit.name], startDate: '2099-09-01', endDate: '2099-09-08' });
+      ok(pr.total > 0 && Array.isArray(pr.units) && pr.units[0] && !pr.units[0].error, 'WR-agent: price_rental quotes a real number from the pricing engine');
+      const av = T.WR_TOOL_IMPL.check_unit_availability({ unit: aUnit.name, startDate: '2099-09-01', endDate: '2099-09-08' });
+      ok(typeof av.available === 'boolean' && Array.isArray(av.conflicts), 'WR-agent: check_unit_availability returns availability + conflicts');
+      ok(T.WR_TOOL_IMPL.find_units({ query: '___nope___zzz' }).count === 0, 'WR-agent: a no-match lookup returns count 0 (no crash)');
+      ok(T.WR_TOOL_IMPL.check_unit_availability({ unit: '___nope___' }).error, 'WR-agent: a tool returns a structured {error}, never throws');
+
+      // The loop: a scripted backend that asks for a tool, then answers — drives the tool locally,
+      // feeds the result back, and returns the final text. (No network; opts.call is injected.)
+      const calls = [];
+      const fakeBackend = async (body) => {
+        calls.push(body);
+        if (calls.length === 1) return { stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 'tu_1', name: 'find_units', input: { query: aUnit.name } }] };
+        return { stop_reason: 'end_turn', content: [{ type: 'text', text: 'Found it.' }], text: 'Found it.' };
+      };
+      const looped = await T.wrRunAgent([{ role: 'user', content: 'is ' + aUnit.name + ' in the fleet?' }], 'sys', { call: fakeBackend });
+      ok(looped.text === 'Found it.', 'WR-agent: the loop returns the model’s final text after running a tool');
+      ok(calls.length === 2, 'WR-agent: the loop made a second call after the tool result');
+      const fed = calls[1].messages;
+      const toolResult = fed[fed.length - 1];
+      ok(toolResult.role === 'user' && Array.isArray(toolResult.content) && toolResult.content[0].type === 'tool_result' && toolResult.content[0].tool_use_id === 'tu_1', 'WR-agent: the tool_result is fed back with the matching tool_use_id');
+      ok(/"units"/.test(toolResult.content[0].content), 'WR-agent: the tool_result carries the real lookup output');
+
+      // Back-compat: an old backend (no stop_reason/content) → the loop returns its text in one shot.
+      const oneShot = await T.wrRunAgent([{ role: 'user', content: 'hi' }], 'sys', { call: async () => ({ text: 'plain answer' }) });
+      ok(oneShot.text === 'plain answer', 'WR-agent: degrades to a single shot against a tools-unaware backend');
+    }
+
+    // 12j-writes) Stage 2 — the apply_changes WRITE tool funnels through the same fences + gate.
+    {
+      const ctx0 = () => ({ pendingAct: null, focus: null, applied: 0 });
+      // Safe single create → auto-applies in the loop (no Apply tap), reports applied + a focus.
+      const ctxA = ctx0(); const uBefore = T.DATA.units.length;
+      const wa = await T.wrApplyChangesTool({ ops: [{ op: 'create', entity: 'units', fields: { name: 'WR-Stage2-Auto' } }] }, ctxA, {});
+      ok(wa.ok && wa.applied && T.DATA.units.length === uBefore + 1 && ctxA.focus && ctxA.focus.entity === 'units', 'WR-write: a safe single create auto-applies via apply_changes and returns a focus');
+
+      // Consequential change (a rate/pricing edit) → staged for Apply, NOT applied; ctx carries the preview.
+      const ctxB = ctx0(); const cat = T.DATA.categories[0]; const rateBefore = cat.rate1Day;
+      const wb = await T.wrApplyChangesTool({ ops: [{ op: 'update', entity: 'categories', id: cat.categoryId, fields: { rate1Day: 999 } }] }, ctxB, {});
+      ok(wb.ok && !wb.applied && wb.needsApply && ctxB.pendingAct && ctxB.pendingAct.action === 'data' && cat.rate1Day === rateBefore, 'WR-write: a pricing change is STAGED (needsApply), not auto-applied');
+
+      // Dropped link → the tool reports the issue so the model can self-correct (no silent drop).
+      const ctxC = ctx0();
+      const wc = await T.wrApplyChangesTool({ ops: [{ op: 'create', entity: 'units', fields: { name: 'WR-Stage2-Orphan', categoryId: '___no_such_category___' } }] }, ctxC, {});
+      // unit still creates (name is valid) but the bad categoryId was dropped — the model sees nothing linked it.
+      ok(wc.ok, 'WR-write: a create with a bad FK still applies the valid fields (link dropped, not a hard fail)');
+
+      // Fences hold through the tool: a card/ACH payment is refused (never auto-applies).
+      const ctxD = ctx0();
+      const wd = await T.wrApplyChangesTool({ ops: [{ op: 'operate', name: 'recordPayment', params: { customer: 'whoever', method: 'card' } }] }, ctxD, {});
+      ok(!wd.applied && !ctxD.pendingAct && (wd.issues || []).length > 0, 'WR-write: a card/ACH payment is refused by the fences (not applied, not staged)');
+
+      // The loop drives apply_changes end-to-end: model calls it, gets the result, then answers.
+      const wcalls = [];
+      const wbackend = async (body) => { wcalls.push(body); if (wcalls.length === 1) return { stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 'w1', name: 'apply_changes', input: { ops: [{ op: 'create', entity: 'vendors', fields: { name: 'WR-Stage2-Vendor' } }] } }] }; return { stop_reason: 'end_turn', text: 'Added the vendor.' }; };
+      const vBefore = T.DATA.vendors.length;
+      const wres = await T.wrRunAgent([{ role: 'user', content: 'add vendor WR-Stage2-Vendor' }], 'sys', { call: wbackend });
+      ok(wres.text === 'Added the vendor.' && wres.applied >= 1 && T.DATA.vendors.length === vBefore + 1, 'WR-write: the loop runs apply_changes and the create lands');
+    }
+
+    // 12j-ask) Stage 2b — ask_user suspends the loop for a follow-up, resumes with the answer.
+    {
+      const acalls = [];
+      const abackend = async (body) => { acalls.push(body); if (acalls.length === 1) return { stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 'a1', name: 'ask_user', input: { question: 'Which Cameron?', options: ['Cameron Miller', 'Cameron Diaz'] } }] }; return { stop_reason: 'end_turn', text: 'Booked for Cameron Miller.' }; };
+      let asked = null;
+      const ares = await T.wrRunAgent([{ role: 'user', content: 'book cameron' }], 'sys', { call: abackend, ask: (input) => { asked = input; return Promise.resolve('Cameron Miller'); } });
+      ok(asked && asked.question === 'Which Cameron?' && asked.options.length === 2, 'WR-ask: ask_user surfaces the question + options to the UI');
+      ok(ares.text === 'Booked for Cameron Miller.', 'WR-ask: the loop resumes and finishes after the answer');
+      const afed = acalls[1].messages; const ar = afed[afed.length - 1];
+      ok(ar.role === 'user' && ar.content[0].type === 'tool_result' && ar.content[0].tool_use_id === 'a1' && /Cameron Miller/.test(ar.content[0].content), 'WR-ask: the chosen answer is fed back as the tool_result');
+      // No ask handler (e.g. backgrounded) → the loop proceeds with best-judgement, never hangs.
+      const acalls2 = [];
+      const abackend2 = async (body) => { acalls2.push(body); if (acalls2.length === 1) return { stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 'a2', name: 'ask_user', input: { question: 'Which?' } }] }; return { stop_reason: 'end_turn', text: 'ok' }; };
+      const ares2 = await T.wrRunAgent([{ role: 'user', content: 'x' }], 'sys', { call: abackend2 });
+      ok(ares2.text === 'ok' && /no answer/.test(acalls2[1].messages[acalls2[1].messages.length - 1].content[0].content), 'WR-ask: with no ask handler the loop proceeds (no hang)');
+    }
+
+    // 12j-slim) Stage 3 — the prompt context is now slim orientation, NOT a per-record snapshot.
+    {
+      const dig = T.wranglerDigest();
+      ok(/Totals —/.test(dig) && /CATEGORIES & RATES/.test(dig), 'WR-slim: orientation keeps the totals + categories/rates');
+      ok(!/FLEET UNITS \(/.test(dig) && !/CUSTOMERS \(name/.test(dig) && !/RENTALS \(id/.test(dig) && !/OPEN INVOICES \(/.test(dig), 'WR-slim: orientation drops the per-record unit/customer/rental/invoice dumps (tools fetch those)');
+      ok(/find_\*/.test(dig), 'WR-slim: orientation points the model at the find_* tools');
+    }
+
+    // 12k) Chat markdown — Wrangler's replies render **bold**/`code`, but stay XSS-safe (escape before format).
+    {
+      ok(/<strong>June 30, 2026<\/strong>/.test(T.wrChatFormat('Monday is **June 30, 2026**.')), 'WR-fmt: **bold** renders as <strong>');
+      ok(/<code>R-104<\/code>/.test(T.wrChatFormat('rental `R-104`')), 'WR-fmt: `code` renders as <code>');
+      const inj = T.wrChatFormat('<script>alert(1)</script> **x**');
+      ok(!/<script>/.test(inj) && /<strong>x<\/strong>/.test(inj), 'WR-fmt: HTML is escaped first (no injection), bold still applies');
+    }
+
+    // 12l) Rental window + pickup time (Jac) — "one day from 10am" must log a Mon→Tue RANGE with the time,
+    // not a single dateless/timeless day. endDate honored when given; otherwise derived from days (default 1).
+    {
+      const cust = T.IDX.customer.get('C0009');
+      const freeU = T.DATA.units.find((u) => u.fleetStatus === 'Active');
+      T.__state.overbookOn = false;
+      const plan = T.wrValidatePlan({ action: 'data', ops: [{ op: 'operate', name: 'startRental', params: { customer: cust.name, units: [freeU.name], startDate: '2099-08-03', days: 1, startTime: '10am' } }] });
+      ok(plan.ops.length === 1 && /10:00 AM/.test(plan.ops[0].summary), 'WR-window: one-day booking validates with the time in the preview');
+      const before = T.DATA.rentals.length;
+      T.applyWranglerData(plan);
+      const r = T.DATA.rentals[T.DATA.rentals.length - 1];
+      ok(T.DATA.rentals.length === before + 1, 'WR-window: rental created');
+      ok(r.startDate === '2099-08-03' && r.endDate === '2099-08-04', 'WR-window: one day runs start → next day (a range, not one day)');
+      ok(r.startTime === '10:00 AM', 'WR-window: the 10am pickup time is logged as 10:00 AM');
+      // explicit endDate honored + 24-hr time parses
+      const plan2 = T.wrValidatePlan({ action: 'data', ops: [{ op: 'operate', name: 'startRental', params: { customer: cust.name, units: [freeU.name], startDate: '2099-08-10', endDate: '2099-08-12', startTime: '14:30' } }] });
+      T.applyWranglerData(plan2);
+      const r2 = T.DATA.rentals[T.DATA.rentals.length - 1];
+      ok(r2.startDate === '2099-08-10' && r2.endDate === '2099-08-12' && r2.startTime === '2:30 PM', 'WR-window: explicit endDate honored + 24h time → 2:30 PM');
+    }
+
+    // 12m) Reserve from one line — no interrogation (Jac): a unit name matching several auto-picks an
+    // available one (no "which?"), and after any write the dock minimizes so the user lands on the record.
+    {
+      T.__state.overbookOn = false;
+      const cat = T.DATA.categories[0];
+      const mkUnit = (id, name) => { const u = { unitId: id, name, categoryId: cat.categoryId, assignedMechanic: '', currentHours: 0, inspectionStatus: 'Ready', fleetStatus: 'Active', purchaseHours: 0, serviceCompletions: {} }; T.DATA.units.push(u); T.IDX.unit.set(id, u); return u; };
+      mkUnit('U-WRH1', 'WRHmr Alpha'); mkUnit('U-WRH2', 'WRHmr Bravo');
+      const cust = T.IDX.customer.get('C0009');
+      const plan = T.wrValidatePlan({ action: 'data', ops: [{ op: 'operate', name: 'startRental', params: { customer: cust.name, units: ['WRHmr'], startDate: '2099-08-20', days: 3, startTime: '8am' } }] });
+      ok(plan.ops.length === 1 && !plan.issues.some((s) => /which/.test(s)), 'WR-reserve: a unit name matching several auto-picks one (no "which?")');
+      ok(/WRHmr (Alpha|Bravo)/.test(plan.ops[0].summary) && /8:00 AM/.test(plan.ops[0].summary), 'WR-reserve: preview shows the picked unit + time');
+      T.__state.wrangler.min = false;
+      await T.applyWranglerData(plan);
+      ok(T.__state.wrangler.min === true, 'WR-reserve: dock minimizes after the booking so the user lands on the rental');
+    }
+
+    // 12n) Bring-them-to-it for ANY board (Jac) — wrFocusRecord jumps to the record wherever it lives.
+    {
+      const ven = T.DATA.vendors[0];
+      T.wrFocusRecord('vendors', ven.vendorId);
+      ok(T.__state.overlay && T.__state.overlay.kind === 'board' && T.__state.overlay.board === 'vendors' && T.__state.overlay.recId === ven.vendorId, 'WR-focus: back-office (vendor) opens its board detail');
+      T.__state.overlay = null;
+      T.wrFocusRecord('customers', 'C0009');
+      const cs = T.activeSession().cards.customers;
+      ok(cs.mode === 'standard' && cs.recId === 'C0009', 'WR-focus: a grid record (customer) focuses in place');
+      // MOBILE: it flips the phone's visible column to where the record lives (the bug Jac hit)
+      ok(T.__state.mobileCol === 2, 'WR-focus (mobile): the phone column flips to the record (customers → right/2)');
+      const wo = T.DATA.workOrders[0];
+      if (wo) { T.wrFocusRecord('workOrders', wo.woId); const sc = T.activeSession().cards.shop; ok(sc.mode === 'standard' && sc.recId === wo.woId && sc.recType === 'workOrders' && T.__state.mobileCol === 0, 'WR-focus: a shop record (work order) shows on the shop card + flips to the yard column'); }
+    }
+
+    // 12o) Bookings auto-apply + a clickable "Open" link (Jac): startRental no longer needs the Apply tap,
+    // recordPayment still does (money settlement), and apply returns a focus target + an "Open …" label.
+    {
+      ok(T.wrPlanNeedsApply({ ops: [{ op: 'operate', name: 'startRental', params: {} }] }) === false, 'WR-auto: startRental auto-applies (no Apply tap)');
+      ok(T.wrPlanNeedsApply({ ops: [{ op: 'operate', name: 'recordPayment', params: {} }] }) === true, 'WR-auto: recordPayment still requires Apply (money settlement)');
+      T.__state.overbookOn = false;
+      const cust = T.IDX.customer.get('C0009');
+      const u = T.DATA.units.find((x) => x.fleetStatus === 'Active');
+      const plan = T.wrValidatePlan({ action: 'data', ops: [{ op: 'operate', name: 'startRental', params: { customer: cust.name, units: [u.name], startDate: '2099-09-15', days: 2, startTime: '8am' } }] });
+      const res = await T.applyWranglerData(plan);
+      ok(res && res.focus && res.focus.entity === 'rentals' && !!res.focus.id, 'WR-auto: a booking returns a focus target (rentals + id) for the Open link');
+      ok(/^Open /.test(T.wrRecLabel(res.focus.entity, res.focus.id)), 'WR-auto: wrRecLabel gives an "Open …" link label');
+    }
+
     // 13) Transport pricing v2 — $3.50/mile + $50 load + $20 fuel (fueled), per leg.
     const tp = (a) => T.computeTransportPrice(a).price;
     // 10 mi Delivery, fueled: (3.5*10 + 50 + 20) * 1 = 105

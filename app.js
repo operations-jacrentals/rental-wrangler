@@ -5722,8 +5722,15 @@ const DETAIL = {
     const cat = IDX.category.get(r.categoryId);
     const cust = IDX.customer.get(r.customerId);
     const invs = rentalInvoices(r);   // §28cap — a rental can have a ≤28-day invoice series
+    // #378 — a FULLY-refunded invoice no longer occupies the rental's billing slot: the money
+    // was returned (settled model — refund never re-bills), so it drops out of the LIVE series
+    // for the balance read-out + the +Invoice affordance. It still shows as a (↩) pill for the
+    // trail and lives on the Invoice card; re-billing creates a fresh invoice (createInvoiceForRental).
+    const invFullyRefunded = (iv) => invoiceTotals(iv).status === 'Refunded';
+    const liveInvs = invs.filter((iv) => !invFullyRefunded(iv));
     const inv = invs[0] || (r.invoiceId ? IDX.invoice.get(r.invoiceId) : null);
-    const invT = inv ? invoiceTotals(inv) : null;
+    const liveInv = liveInvs[0] || null;
+    const invT = liveInv ? invoiceTotals(liveInv) : null;
     const truck = showsTruck(r.status, r.transportType);
     const stColor = rentalStatusDisplay(r).color;
     const s = parseISO(r.startDate), e = parseISO(r.endDate);
@@ -5732,16 +5739,21 @@ const DETAIL = {
 
     /* invoice pill(s) — the billing series; ✕ unlink only on the primary while $0 is assigned. */
     const paidForThis = inv ? rentalAllocated(inv, r.rentalId) : 0;
-    const invPill = invs.length
-      ? invs.map((iv, k) => `<span class="pill ref link" data-r="R2" data-pill-card="invoices" data-pill-rec="${esc(iv.invoiceId)}"${invs.length > 1 ? ` data-tip="${esc('Invoice ' + (k + 1) + ' of ' + invs.length + (iv.contOf ? ' — continuation (28-day cap)' : ''))}"` : ''}>${CARD_ICON.invoices}${esc(invoiceShort(iv.invoiceId))}${k === 0 && paidForThis <= 0 ? `<span class="x" data-x="inv-remove" data-tip="unlink — allowed while $0 is assigned to this rental; afterwards refund first">✕</span>` : ''}</span>`).join('')
-      : addBtn('Invoice', { link: true, js: 'js-create-invoice', h: 26, data: { rec: r.rentalId } });
+    const createInvBtn = addBtn('Invoice', { link: true, js: 'js-create-invoice', h: 26, data: { rec: r.rentalId } });
+    // Render every invoice pill (a fully-refunded one carries a ↩ + "re-bill" tip); then offer
+    // +Invoice whenever there is no LIVE invoice left — so a refund restores the re-bill path (#378).
+    const invPill = (invs.length
+      ? invs.map((iv, k) => { const refunded = invFullyRefunded(iv);
+          const tip = refunded ? 'Refunded — use +Invoice to re-bill on a fresh invoice' : (invs.length > 1 ? 'Invoice ' + (k + 1) + ' of ' + invs.length + (iv.contOf ? ' — continuation (28-day cap)' : '') : '');
+          return `<span class="pill ref link" data-r="R2" data-pill-card="invoices" data-pill-rec="${esc(iv.invoiceId)}"${tip ? ` data-tip="${esc(tip)}"` : ''}>${refunded ? '↩ ' : ''}${CARD_ICON.invoices}${esc(invoiceShort(iv.invoiceId))}${k === 0 && paidForThis <= 0 ? `<span class="x" data-x="inv-remove" data-tip="unlink — allowed while $0 is assigned to this rental; afterwards refund first">✕</span>` : ''}</span>`; }).join('')
+      : '') + (liveInvs.length ? '' : createInvBtn);
 
     /* Balance (paid / total) for the header right side — summed across the invoice series. */
     const rentLines = rentalLineItems(r);
-    const eventTotal = invs.length ? invs.reduce((a, iv) => a + invoiceTotals(iv).total, 0) : rentLines.reduce((a, li) => a + (Number(li.amount) || 0), 0);
-    const eventPaid = invs.reduce((a, iv) => a + invoiceTotals(iv).paid, 0);
+    const eventTotal = liveInvs.length ? liveInvs.reduce((a, iv) => a + invoiceTotals(iv).total, 0) : rentLines.reduce((a, li) => a + (Number(li.amount) || 0), 0);
+    const eventPaid = liveInvs.reduce((a, iv) => a + invoiceTotals(iv).paid, 0);
     const balColor = (eventPaid > 0 && eventPaid >= eventTotal) ? 'green' : (invT && invT.status === 'Not Due' && eventPaid <= 0) ? 'blue' : 'red';
-    const rdBal = `<span class="rd-bal balline" data-chat-el data-chat-label="${esc('Balance ' + money(eventPaid) + ' / ' + money(eventTotal))}" data-chat-color="${esc(balColor)}"${inv ? ` data-chat-card="invoices" data-chat-rec="${esc(inv.invoiceId)}"` : ''}><b style="color:var(--${balColor})">${money(eventPaid)}</b><span class="tot"> / ${money(eventTotal)}</span></span>`;
+    const rdBal = `<span class="rd-bal balline" data-chat-el data-chat-label="${esc('Balance ' + money(eventPaid) + ' / ' + money(eventTotal))}" data-chat-color="${esc(balColor)}"${liveInv ? ` data-chat-card="invoices" data-chat-rec="${esc(liveInv.invoiceId)}"` : ''}><b style="color:var(--${balColor})">${money(eventPaid)}</b><span class="tot"> / ${money(eventTotal)}</span></span>`;
 
     /* Header: customer + PO left · status gate top-right, then invoice+balance below. */
     const custEl = cust
@@ -7454,7 +7466,7 @@ function commsRailEl() {
     const active = wrOpen && (state.wrangler.reqNumber === rq.number || state.wrangler.id === 'req' + rq.number);
     return `<button class="crail-tab ${cls}${active ? ' is-active' : ''}" data-wrc-needs="${rq.number}" role="tab" aria-selected="${active}" data-tip="${tip}"><span class="crail-dot"></span><span class="crail-t">${trim(rq.title || ('Request #' + rq.number))}</span></button>`;
   }).join('');
-  const snaps = (state.wranglerRail || []).filter((c) => !(c.reqNumber && reqNums.has(c.reqNumber)));
+  const snaps = (state.wranglerRail || []).filter((c) => !c.reqNumber);
   // the live chat first if it's a brand-new one not yet snapshotted onto the rail
   let liveTab = '';
   if (wrOpen && state.wrangler.id && !state.wrangler.reqNumber && !snaps.some((c) => c.id === state.wrangler.id) && (state.wrangler.messages || []).length) {
@@ -7597,6 +7609,14 @@ function chatDockEl() {
     <div class="chat-compose"><input class="chat-input" placeholder="${c ? 'Message the team…' : 'Type to start a team chat…'}" value="${esc(state.chat.draft || '')}" aria-label="Message the team" /><button class="chat-send js-chat-send" aria-label="Send">${I.chev}</button></div>
     ${roles}`;
 }
+// Render Mr. Wrangler's message text — escape FIRST (no HTML injection), then apply the light markdown the
+// model actually emits: **bold**, `code`, and newlines. Only safe <strong>/<code>/<br> tags are introduced.
+function wrChatFormat(raw) {
+  let s = esc(String(raw == null ? '' : raw));
+  s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');   // **bold** (non-greedy)
+  s = s.replace(/`([^`]+)`/g, '<code>$1</code>');           // `inline code`
+  return s.replace(/\n/g, '<br>');
+}
 // §18 Mr. Wrangler dock — renders the floating dock HTML (mirrors wrangler overlay but as a dock).
 function wranglerDockEl() {
   const o = state.wrangler;
@@ -7615,8 +7635,9 @@ function wranglerDockEl() {
           const sum = wrPlanSummary(plan);
           const skip = plan.issues.length ? `<div class="wr-apply-skip">skipped: ${esc(plan.issues.join('; '))}</div>` : '';
           const cut = m.action._truncated ? `<div class="wr-apply-skip">⚠ my reply was cut off — only ${plan.ops.reduce((n, o) => n + (o.rows ? o.rows.length : 0), 0)} row(s) came through; apply these, then ask me to send the rest in a smaller batch</div>` : '';
+          const goto = m.focus && m.focus.id ? ` <button class="wr-goto js-wr-goto" data-ent="${esc(m.focus.entity)}" data-id="${esc(m.focus.id)}">${esc(wrRecLabel(m.focus.entity, m.focus.id))} →</button>` : '';
           act = m.filed
-            ? `<span class="wr-actdone">✓ Applied — ${esc(sum)}</span>`
+            ? `<span class="wr-actdone">✓ Applied — ${esc(sum)}</span>${goto}`
             : `<div class="wr-apply"><div class="wr-apply-sum">Preview: ${esc(sum)}</div>${cut}${skip}${plan.ops.length ? `<button class="wr-actbtn wr-actbtn-build js-wr-apply" data-mi="${i}">✓ Apply these changes</button>` : '<span class="wr-apply-none">Nothing here I can safely apply.</span>'}</div>`;
         } else if (m.action && m.action.action === 'kpi') {
           const v = m.action._kpi || (m.action._kpi = wrValidateKpi(m.action));
@@ -7638,8 +7659,10 @@ function wranglerDockEl() {
         }
         const imgs = (m.images && m.images.length) ? `<div class="wr-bub-imgs">${m.images.map((img) => { const s = wrImgSrc(img); return s ? `<img src="${esc(s)}" alt="attached image">` : ''; }).join('')}</div>` : '';
         const files = (m.files && m.files.length) ? `<div class="wr-bub-files">${m.files.map((f) => `<span class="wr-file-chip" data-tip="${esc(f.name)}">${I.paperclip || '📎'}<span class="wr-file-n">${esc(f.name)}</span></span>`).join('')}</div>` : '';
-        const txt = m.content ? `${esc(m.content).replace(/\n/g, '<br>')}` : '';
-        return `<div class="wr-msg ${m.role}">${m.role === 'assistant' ? '<span class="wr-av">🤠</span>' : ''}<div class="wr-bub">${imgs}${files}${txt}${act}</div></div>`;
+        const txt = m.content ? wrChatFormat(m.content) : '';
+        // ask_user option chips (Stage 2b) — tappable only while THIS question is the live pending one.
+        const ask = (m.askOptions && m.askOptions.length && o.ask) ? `<div class="wr-ask">${m.askOptions.map((opt) => `<button class="wr-askbtn js-wr-ask" data-ans="${esc(opt)}">${esc(opt)}</button>`).join('')}</div>` : '';
+        return `<div class="wr-msg ${m.role}">${m.role === 'assistant' ? '<span class="wr-av">🤠</span>' : ''}<div class="wr-bub">${imgs}${files}${txt}${act}${ask}</div></div>`;
       }).join('')
     : '<div class="wr-empty">Ask about this record or the whole yard — service due, balances, what needs attention… or just tell me what’s broken (paste or attach a screenshot) and I’ll get it fixed.</div>';
   const attachRow = ((o.attach && o.attach.length) || (o.files && o.files.length))
@@ -9250,7 +9273,7 @@ function buildPopupEl(o, overlay, opts = {}) {
       const photos = (rq.images && rq.images.length)
         ? `<div class="req-photos">${rq.images.map((s) => `<img class="req-photo" src="${esc(s)}" alt="attached photo" loading="lazy">`).join('')}</div>` : '';
       const convo = p.messages.length
-        ? `<div class="req-convo">${p.messages.map((m) => `<div class="req-line ${m.role === 'user' ? 'them' : 'wr'}"><span class="req-who">${m.role === 'user' ? 'Reporter' : '🤠 Wrangler'}</span><span class="req-msg">${esc(m.content).replace(/\n/g, '<br>')}</span></div>`).join('')}</div>` : '';
+        ? `<div class="req-convo">${p.messages.map((m) => `<div class="req-line ${m.role === 'user' ? 'them' : 'wr'}"><span class="req-who">${m.role === 'user' ? 'Reporter' : '🤠 Wrangler'}</span><span class="req-msg">${wrChatFormat(m.content)}</span></div>`).join('')}</div>` : '';
       const chatLbl = st.key === 'needs' ? '💬 Answer Mr. Wrangler' : st.key === 'building' ? '💬 Talk it over' : '💬 Talk to Mr. Wrangler';
       const right = st.key === 'building'
         ? '<span class="req-await">Building…</span>'
@@ -9864,55 +9887,30 @@ async function sendFeedback() {
    (action 'wrangler'); Code.gs calls api.anthropic.com with the key from a Script
    Property. Carries a compact data digest + (when opened from a record) its detail.
    ════════════════════════════════════════════════════════════════════════ */
-const WRANGLER_SYSTEM = "You are Mr. Wrangler, the in-app AI for JacRentals — a heavy-equipment rental yard in Sulphur, Louisiana. You help the team make sense of their units, rentals, customers, invoices, work orders, and service, and you help triage bugs they report.\n\nSTYLE — keep it tight: answer in 1–3 sentences by default. Lead with the direct answer first; add at most one short supporting clause. Use a bullet list ONLY when enumerating multiple records, one line each. Don't restate the question, don't pad, and don't over-explain what you can't do — just answer.\n\nDATA — the snapshot below holds the LIVE records: every category with its rates, every fleet unit with its type and status, every rental with its date window and customer, customers with balances owed, and the open invoices and work orders. Reason over it directly. Only say a fact is missing if it truly isn't in the snapshot. Never invent records, names, or numbers.\n\nHELPING & FIXING — you're the assistant living inside the app (think Claude, but for this yard). The user might ask a question, describe a problem, or paste something — work out what they need and help. If they describe a BUG or glitch in the app itself (something not working, a dead control, a wrong layout or behavior), reproduce it in your head; if you're missing a detail, ask ONE quick follow-up (what they tapped + what they expected). Once you can state a clear repro, FILE A FIX by ending your reply with this exact fenced block:\n```wrangler-action\n{\"action\":\"fix\",\"title\":\"<short title>\",\"report\":\"<clear repro: steps, expected vs actual, any element involved>\"}\n```\nThat auto-ships obvious bugs (a dead control, a typo, a plainly wrong value).\nBut if it's a CHANGE or improvement (not an obvious bug), do NOT file it blind — talk it through first: lay out a SHORT, concrete PLAN of exactly what you'd change and where, then ask if that's good or needs adjusting. When you put a concrete plan on the table, end with:\n```wrangler-action\n{\"action\":\"plan\",\"title\":\"<short title>\",\"plan\":\"<numbered steps: what changes, where, and the resulting UX>\"}\n```\nJac reviews that plan and taps Build only when it's right — so take his tweaks and re-propose the plan until he's happy. Emit a block ONLY when ready — a clear repro for a fix, or a concrete plan for a change — never while still gathering detail; keep your visible words short and natural and never mention JSON, blocks, labels, or buttons.\n\nACTING ON DATA — you can DO things, not just answer. You can ADD, UPDATE, or BULK-IMPORT items for the user: customers, units, categories, rentals. NEVER delete anything, and NEVER touch money, card, payment, pricing, balances, auth, or work-order-completion fields. If the user asks to add/change something, or hands you lead/customer data to import (pasted rows, a list, a spreadsheet they paste in), DO IT — never say you can't or that Jac has to build it. Ask any quick follow-up you genuinely need first (which field, how their columns map, what membership stage), then end your reply with:\n```wrangler-action\n{\"action\":\"data\",\"title\":\"<what this does>\",\"ops\":[{\"op\":\"import\",\"entity\":\"customers\",\"rows\":[{\"firstName\":\"..\",\"lastName\":\"..\",\"phone\":\"..\",\"email\":\"..\",\"membershipStage\":\"..\"}]},{\"op\":\"create\",\"entity\":\"customers\",\"fields\":{}},{\"op\":\"update\",\"entity\":\"units\",\"id\":\"U003\",\"fields\":{\"notes\":\"..\"}}]}\n```\nThe user ALWAYS sees a preview and taps Apply before anything is written, so propose freely — but you CANNOT save anything yourself: that wrangler-action block plus the user's Apply tap is the ONLY thing that writes data. So whenever you add, update, or import, you MUST end the reply with the block, and you must NEVER say or imply the change is already done, saved, added, or imported — word it as a preview to apply (say something like: here's the import — look it over and tap Apply). If the user PASTES a long list of rows (not a file) too big for one reply, import a smaller batch and tell them how many rows are still to send (but for an ATTACHED CSV file, never inline rows like this — always use the csv-import op described below, which expands every row locally with no size limit); never claim a save you didn't actually emit in a block. Map their funnel/membership words to one of: Inbound Lead, Outbound Lead, Contacted, Not A No!, Payment Discussed, Paid. Editable fields are name/contact/address/industry/notes/account-type/membership+sales stage (customers), name/mechanic/notes/specs (units), name/description/fuel (categories), notes/po (rentals) — anything else (prices, balances, payments) you must decline and explain you can't touch money.\n\nLARGE CSV IMPORTS — when the user attaches a CSV file you will see a compact summary: column headers, up to 5 sample rows, and the total row count. For any attached CSV with 2 or more rows, ALWAYS use the csv-import op (never the inline import op) and DO NOT re-emit all the rows yourself — instead emit a csv-import op with just the column mapping. The app expands every row locally, so nothing gets cut off no matter how big the file:\n\`\`\`wrangler-action\n{\"action\":\"data\",\"title\":\"Import 234 customers from leads.csv\",\"ops\":[{\"op\":\"csv-import\",\"entity\":\"customers\",\"mapping\":{\"First Name\":\"firstName\",\"Last Name\":\"lastName\",\"Mobile\":\"phone\",\"E-mail\":\"email\"},\"skipIfEmpty\":[\"firstName\",\"lastName\"]}]}\n\`\`\`\nThe mapping keys are the CSV column headers EXACTLY as shown in the summary. The values are app field names (firstName, lastName, phone, email, company, address, industry, accountNotes, accountType, membershipStage, usedSalesStage for customers). Set skipIfEmpty to app fields that must not be blank. Map every column that clearly lines up with an app field even if the names differ (\"Mobile\" -> \"phone\"). If you are unsure about a column, ask first.\n\nA light wrangler/ranch flavor in voice is welcome — never campy.";
+const WRANGLER_SYSTEM = "You are Mr. Wrangler, the in-app AI for JacRentals — a heavy-equipment rental yard in Sulphur, Louisiana. You help the team make sense of their units, rentals, customers, invoices, work orders, and service, and you help triage bugs they report.\n\nSTYLE — keep it tight: answer in 1–3 sentences by default. Lead with the direct answer first; add at most one short supporting clause. Use a bullet list ONLY when enumerating multiple records, one line each. Don't restate the question, don't pad, and don't over-explain what you can't do — just answer.\n\nDATA — you have live read TOOLS that search the FULL records: find_customers, find_units, find_categories, find_vendors, find_rentals, find_invoices, find_work_orders, check_unit_availability, and price_rental. Use them to look up anything specific. Below is a short orientation only (today's date, the totals, and the categories with their rates) — not the full lists. Don't guess at a record you can look up, and only say a fact is missing after a tool comes back empty. Never invent records, names, or numbers.\n\nHELPING & FIXING — you're the assistant living inside the app (think Claude, but for this yard). The user might ask a question, describe a problem, or paste something — work out what they need and help. If they describe a BUG or glitch in the app itself (something not working, a dead control, a wrong layout or behavior), reproduce it in your head; if you're missing a detail, ask ONE quick follow-up (what they tapped + what they expected). Once you can state a clear repro, FILE A FIX by ending your reply with this exact fenced block:\n```wrangler-action\n{\"action\":\"fix\",\"title\":\"<short title>\",\"report\":\"<clear repro: steps, expected vs actual, any element involved>\"}\n```\nThat auto-ships obvious bugs (a dead control, a typo, a plainly wrong value).\nBut if it's a CHANGE or improvement (not an obvious bug), do NOT file it blind — talk it through first: lay out a SHORT, concrete PLAN of exactly what you'd change and where, then ask if that's good or needs adjusting. When you put a concrete plan on the table, end with:\n```wrangler-action\n{\"action\":\"plan\",\"title\":\"<short title>\",\"plan\":\"<numbered steps: what changes, where, and the resulting UX>\"}\n```\nJac reviews that plan and taps Build only when it's right — so take his tweaks and re-propose the plan until he's happy. Emit a block ONLY when ready — a clear repro for a fix, or a concrete plan for a change — never while still gathering detail; keep your visible words short and natural and never mention JSON, blocks, labels, or buttons.\n\nACTING ON DATA — you can DO things, not just answer. You can ADD (create), UPDATE, or BULK-IMPORT items for the user: customers, units, categories, vendors, parts, expenses, inspections, and work orders (and update notes/PO on rentals). Hard limits, always: NEVER hard-delete a record, NEVER charge a card or run an ACH, NEVER refund, NEVER touch a balance directly, NEVER change roles / permissions / passwords (security), and NEVER complete a work order. If the user asks to add/change something, or hands you lead/customer data to import (pasted rows, a list, a spreadsheet they paste in), DO IT — never say you can't or that Jac has to build it. Ask any quick follow-up you genuinely need first (which field, how their columns map, what membership stage), then end your reply with:\n```wrangler-action\n{\"action\":\"data\",\"title\":\"<what this does>\",\"ops\":[{\"op\":\"import\",\"entity\":\"customers\",\"rows\":[{\"firstName\":\"..\",\"lastName\":\"..\",\"phone\":\"..\",\"email\":\"..\",\"membershipStage\":\"..\"}]},{\"op\":\"create\",\"entity\":\"customers\",\"fields\":{}},{\"op\":\"update\",\"entity\":\"units\",\"id\":\"U003\",\"fields\":{\"notes\":\"..\"}}]}\n```\nA wrangler-action block is the ONLY thing that triggers a write, so whenever you add, update, or import you MUST end the reply with the block. Simple, single, safe edits (e.g. add one unit, fix a phone number) are applied AUTOMATICALLY the moment you emit the block — you may speak about those as done (e.g. say you added the unit Termite). Bigger or money-sensitive ones — bulk imports, rate/pricing changes, and invoicing a rental — instead show the user a preview to review and Apply first, so word THOSE as a preview (e.g. tell them to look over the import and tap Apply) and don't claim they're saved. When unsure which it'll be, describe the change plainly without promising either; the app shows the user the right control. Never claim a save without emitting the block. If the user PASTES a long list of rows (not a file) too big for one reply, import a smaller batch and tell them how many rows are still to send (but for an ATTACHED CSV file, never inline rows like this — always use the csv-import op described below, which expands every row locally with no size limit); never claim a save you didn't actually emit in a block. Map their funnel/membership words to one of: Inbound Lead, Outbound Lead, Contacted, Not A No!, Payment Discussed, Paid. Editable fields are name/contact/address/industry/notes/account-type/membership+sales stage (customers); name/category/mechanic/notes/specs/fleet-status (units); name/description/fuel + rental rates (member-daily, 1-day, 7-day, 4-week, weekend) (categories); name/phone/email/address/website/contact/type/notes (vendors); name/status/qty/website/order-email/product-number/notes (parts); notes/po (rentals); vendor/date/amount/category/method/notes (expenses); unit/date/wash/bill-customer/description (inspections); unit/customer/report/type/description/mechanic/eta/labor-hours (work orders — you can create or edit one but you can NEVER complete it or set its phase; only the Complete WO button does that; a work order is service on a UNIT, so if the user names only the customer just pass the customer and I'll attach their on-rent unit — I ask which only if they have none or several out) — anything else (used-sale prices, balances, payments/refunds, cards/ACH, roles/passwords) you must decline for now and explain you can't touch money movement or security yet. NAMES vs IDS — you can refer to any customer, unit, category, or vendor BY NAME (and a customer by phone), and the app resolves it to the right record; the find_* tools return each record's [id] if you want to be exact. When you set a unit's category (categoryId) or a part's vendor (vendorId), pass the category/vendor NAME or its [id] — but it must already exist (look it up with find_categories/find_vendors if unsure); if it's NEW, create that category/vendor FIRST (a separate action) so the link resolves, otherwise the link is dropped. If a name matches more than one record, ask which one rather than guessing. The find_* tools search the FULL records (not a list), so never refuse or demand an id just because a customer or unit isn't in the orientation — look it up by name or phone with a find_* tool and act on what it returns. If you can name who/what the user means, resolve it and proceed; the preview catches a true miss. Ask (with ask_user) only when a lookup is genuinely ambiguous — two real matches — or you have no name at all. You CAN invoice an EXISTING rental: emit an operate op `{\"op\":\"operate\",\"name\":\"billRental\",\"params\":{\"rentalId\":\"R-104\"}}` — this builds the invoice from the live pricing engine (you NEVER invent line items or amounts), and only works if that rental has a customer, dates, and units and isn't already invoiced. You may pass `\"customer\":\"<name>\"` instead of a rental id and I'll bill that customer's MOST RECENT un-invoiced rental — so just emit it with the customer name; do NOT ask for a rental id, even if you can't see the rental in the orientation (the engine searches the full records and the preview shows which one). You can also RECORD a CASH or CHECK payment on an invoice: emit `{\"op\":\"operate\",\"name\":\"recordPayment\",\"params\":{\"invoiceId\":\"INV-104\",\"method\":\"cash\"}}` — add \"amount\" to pay part of the balance (omit it to pay the balance in full), and for a check include \"checkNum\"; or pass \"customer\":\"<name>\" instead of an invoice id to pay that customer's one open invoice. You can NEVER charge a card or run an ACH, you cannot REFUND, and you cannot create a from-scratch/standalone invoice. You can PUT UNITS ON RENT for a customer (create a reserved booking): emit `{\"op\":\"operate\",\"name\":\"startRental\",\"params\":{\"customer\":\"Cameron Miller\",\"units\":[\"3in Trash Pump\"],\"startDate\":\"2026-06-30\",\"days\":1,\"startTime\":\"10:00 AM\"}}` — give startDate plus EITHER a duration (\"days\": 1 for a one-day rental, which runs to the next morning and bills as 1 day) OR an explicit \"endDate\" for a set range, and pass the pickup \"startTime\" (e.g. \"10:00 AM\") whenever the user gives a time. ALWAYS include the time and the duration when stated — a one-day 10am rental is startDate that morning, days 1, startTime 10:00 AM. Optional transport `\"transport\":{\"type\":\"Delivery\",\"miles\":10,\"address\":\"..\"}`. DON'T INTERROGATE — a salesperson should be able to reserve from one short line. From a message like \"Cameron Miller getting a jack hammer Tuesday for 3 days 8am\", just emit the booking: resolve the customer, treat \"3 days\" as days:3, use 8:00 AM, and if the unit name matches several units DON'T ask which — the app auto-picks an available one and the user sees it in the preview to swap. Don't quibble about end-of-day vs last-full-day, and don't make the user choose between interchangeable units. Ask a question ONLY when you truly can't proceed: no matching customer, or no available unit for that window. DATES — a weekday name (\"Wednesday\", \"Tuesday\") ALWAYS means the NEXT upcoming one (today or later), NEVER a date that already passed; resolve it to that date and book — do NOT ask \"did you mean this coming Wednesday?\". Don't ask the user to confirm an obvious date reading. It's priced automatically by the engine; the customer's agreement signature and the payment are SEPARATE steps you don't do. It's refused if a unit isn't Active, the customer is blacklisted, the dates are bad, or a unit is already booked for that window.\n\nLARGE CSV IMPORTS — when the user attaches a CSV file you will see a compact summary: column headers, up to 5 sample rows, and the total row count. For any attached CSV with 2 or more rows, ALWAYS use the csv-import op (never the inline import op) and DO NOT re-emit all the rows yourself — instead emit a csv-import op with just the column mapping. The app expands every row locally, so nothing gets cut off no matter how big the file:\n\`\`\`wrangler-action\n{\"action\":\"data\",\"title\":\"Import 234 customers from leads.csv\",\"ops\":[{\"op\":\"csv-import\",\"entity\":\"customers\",\"mapping\":{\"First Name\":\"firstName\",\"Last Name\":\"lastName\",\"Mobile\":\"phone\",\"E-mail\":\"email\"},\"skipIfEmpty\":[\"firstName\",\"lastName\"]}]}\n\`\`\`\nThe mapping keys are the CSV column headers EXACTLY as shown in the summary. The values are app field names (firstName, lastName, phone, email, company, address, industry, accountNotes, accountType, membershipStage, usedSalesStage for customers). Set skipIfEmpty to app fields that must not be blank. Map every column that clearly lines up with an app field even if the names differ (\"Mobile\" -> \"phone\"). If you are unsure about a column, ask first.\n\nA light wrangler/ranch flavor in voice is welcome — never campy.";
 // The digest is Mr. Wrangler's whole window into the yard, so it carries the ACTUAL
 // records (not just counts): category rates, each unit's type/status, each rental's
 // date window + customer, customer balances, and open invoices/WOs. Sections cap at
 // 200 rows so a huge yard can't blow the context; the cap note tells him there's more.
+// Stage 3 — SLIM orientation, not a snapshot. The model now discovers records through the
+// find_* tools (which search ALL records), so we no longer cram up to 200 of every list into
+// every turn. We keep only what's cheap + bounded + needed up front: today, the totals, and the
+// CATEGORIES & RATES (the small pricing backbone). Everything else is one tool call away.
 function wranglerDigest() {
   const cats = DATA.categories || [], u = DATA.units || [], r = DATA.rentals || [], c = DATA.customers || [], inv = DATA.invoices || [], wo = DATA.workOrders || [];
-  const CAP = 200;
-  const more = (arr, label) => arr.length > CAP ? `\n  …(+${arr.length - CAP} more ${label} not shown — ask to narrow)` : '';
+  const openInv = inv.filter((i) => { try { return (invoiceTotals(i).balance || 0) > 0.005; } catch (e) { return false; } }).length;
+  const openWo = wo.filter((x) => x.phase !== 'Complete' && !x.cancelled).length;
   const lines = [
-    `JacRentals yard snapshot — ${TODAY_ISO}.`,
-    `Totals — Units ${u.length} · Rentals ${r.length} · Customers ${c.length} · Invoices ${inv.length} · Work orders ${wo.length} · Categories ${cats.length}.`,
+    `JacRentals yard — ${TODAY_ISO}.`,
+    `Totals — Units ${u.length} · Rentals ${r.length} · Customers ${c.length} · Invoices ${inv.length} (${openInv} with a balance) · Work orders ${wo.length} (${openWo} open) · Categories ${cats.length}.`,
+    'This is just orientation — to answer about any specific unit, customer, rental, invoice, or work order, use the find_* tools (they search ALL records, not a list).',
   ];
-
-  if (cats.length) lines.push('\nCATEGORIES & RATES:\n' + cats.map((x) =>
-    `  ${x.name}: 1-day ${money(x.rate1Day)} · 7-day ${money(x.rate7Day)} · 4-wk ${money(x.rate4Wk)} · weekend ${money(x.weekend)} · member/day ${money(x.memberDaily)}${x.fuelType ? ' · ' + x.fuelType : ''}`).join('\n'));
-
-  if (u.length) lines.push('\nFLEET UNITS (name [type] · fleet status · inspection · hours):\n' + u.slice(0, CAP).map((x) => {
-    const cat = IDX.category.get(x.categoryId); let svc = '';
-    try { const s = topServiceForUnit(x); if (s && s.remaining != null && s.remaining <= 0) svc = ' · SERVICE DUE'; } catch (e) {}
-    return `  ${x.name} [${cat ? cat.name : (x.categoryId || '—')}] · ${x.fleetStatus || '—'} · ${x.inspectionStatus || '—'} · ${x.currentHours != null ? x.currentHours + 'h' : '—'}${svc}`;
-  }).join('\n') + more(u, 'units'));
-
-  if (r.length) lines.push('\nRENTALS (id · customer · units · window · status):\n' + r.slice(0, CAP).map((x) => {
-    const cust = IDX.customer.get(x.customerId); const win = (x.startDate || '') + (x.endDate ? '→' + x.endDate : '');
-    return `  ${x.rentalId} · ${cust ? cust.name : (x.customerId || '—')} · ${rentalUnitsLabel(x) || '—'} · ${win || '—'} · ${x.status || '—'}`;
-  }).join('\n') + more(r, 'rentals'));
-
-  if (c.length) {
-    const balBy = {}; inv.forEach((i) => { try { const t = invoiceTotals(i); if (i.customerId) balBy[i.customerId] = (balBy[i.customerId] || 0) + (t.balance || 0); } catch (e) {} });
-    lines.push('\nCUSTOMERS (name · type · balance owed · phone):\n' + c.slice(0, CAP).map((x) =>
-      `  ${x.name} · ${x.accountType || '—'} · owes ${money(balBy[x.customerId] || 0)} · ${x.phone || '—'}`).join('\n') + more(c, 'customers'));
-  }
-
-  const open = inv.map((i) => { try { return { i, t: invoiceTotals(i) }; } catch (e) { return null; } }).filter((o) => o && (o.t.balance || 0) > 0);
-  if (open.length) lines.push('\nOPEN INVOICES (id · customer · balance · due):\n' + open.slice(0, CAP).map(({ i, t }) => {
-    const cust = IDX.customer.get(i.customerId); const od = i.dueDate && i.dueDate < TODAY_ISO ? ' · OVERDUE' : '';
-    return `  ${i.invoiceId} · ${cust ? cust.name : (i.customerId || '—')} · ${money(t.balance)} · due ${i.dueDate || '—'}${od}`;
-  }).join('\n') + more(open, 'open invoices'));
-
-  const owos = wo.filter((x) => x.phase !== 'Complete' && !x.cancelled);
-  if (owos.length) lines.push('\nOPEN WORK ORDERS (id · unit · phase · report):\n' + owos.slice(0, CAP).map((x) => {
-    const un = IDX.unit.get(x.unitId); return `  ${x.woId} · ${un ? un.name : (x.unitId || '—')} · ${x.phase || '—'} · ${x.woReport || x.description || '—'}`;
-  }).join('\n') + more(owos, 'work orders'));
-
+  if (cats.length) lines.push('\nCATEGORIES & RATES (name [id]):\n' + cats.map((x) =>
+    `  ${x.name} [${x.categoryId}]: 1-day ${money(x.rate1Day)} · 7-day ${money(x.rate7Day)} · 4-wk ${money(x.rate4Wk)} · weekend ${money(x.weekend)} · member/day ${money(x.memberDaily)}${x.fuelType ? ' · ' + x.fuelType : ''}`).join('\n'));
   return lines.join('\n');
 }
 function wranglerContext(o) {
-  let ctx = 'CURRENT DATA SNAPSHOT:\n' + wranglerDigest();
+  let ctx = 'YARD ORIENTATION (use the find_* tools for any specific record):\n' + wranglerDigest();
   if (o.card && o.recId != null) {
     const ec = entityCardOf(o.card, o.recType), rec = recOf(ec, o.recId);
     if (rec) ctx += `\n\nFOCUSED RECORD — ${ec}: ${detailTitle(ec, rec)}\n` + JSON.stringify(rec).slice(0, 4000);
@@ -10015,18 +10013,170 @@ function wranglerErrMsg(reason) {
   // genuine network/fetch failure (or unknown) → the original honest fallback
   return "Mr. Wrangler couldn't answer — check the connection / backend.";
 }
+
+/* Mr. Wrangler AGENTIC LOOP (Stage 1 — read tools) — part of APP-29 (Wrangler ACTS).
+   Instead of one blind shot at a capped snapshot, Mr. Wrangler can LOOK THINGS UP: the
+   backend `wrangler` action is now a generic Anthropic pass-through (Stage 0), so the
+   whole tool catalog + the loop live here in app.js and ship via Pages — no clasp. Stage 1
+   ships READ tools only (find/price/check — no writes); the existing wrangler-action block
+   still drives every write, unchanged. See specs/2026-06-27-wrangler-agentic-design. */
+const WR_TOOL_LIMIT = 25;   // cap rows handed back to the model per lookup (keeps tokens sane)
+function wrCustOpenBalance(custId) {
+  try { return Math.round((DATA.invoices || []).filter((i) => i.customerId === custId).reduce((a, i) => { try { return a + Math.max(0, invoiceTotals(i).balance); } catch (e) { return a; } }, 0) * 100) / 100; } catch (e) { return 0; }
+}
+// Read-tool implementations — pure lookups over the FULL live DATA/IDX (never the 200-row
+// snapshot), reusing the same resolvers the write path uses. Each returns a compact,
+// JSON-serializable object; a thrown error is caught by the loop and returned as {error}.
+const WR_TOOL_IMPL = {
+  find_customers(input) {
+    const q = String(input.query || '').trim().toLowerCase(); const digits = q.replace(/\D/g, '');
+    let list = DATA.customers || [];
+    if (q) list = list.filter((c) => String(c.name || '').toLowerCase().includes(q) || String(c.company || '').toLowerCase().includes(q) || (digits.length >= 4 && String(c.phone || '').replace(/\D/g, '').includes(digits)));
+    return { count: list.length, customers: list.slice(0, WR_TOOL_LIMIT).map((c) => ({ id: c.customerId, name: c.name, phone: c.phone || '', company: c.company || '', payStatus: c.payStatus || '', balance: wrCustOpenBalance(c.customerId) })) };
+  },
+  find_units(input) {
+    const q = String(input.query || '').trim().toLowerCase();
+    let list = DATA.units || [];
+    if (q) list = list.filter((u) => String(u.name || '').toLowerCase().includes(q) || String((IDX.category.get(u.categoryId) || {}).name || '').toLowerCase().includes(q));
+    if (input.fleetStatus) list = list.filter((u) => String(u.fleetStatus || '').toLowerCase() === String(input.fleetStatus).toLowerCase());
+    return { count: list.length, units: list.slice(0, WR_TOOL_LIMIT).map((u) => ({ id: u.unitId, name: u.name, category: (IDX.category.get(u.categoryId) || {}).name || '', fleetStatus: u.fleetStatus || '' })) };
+  },
+  find_categories(input) {
+    const q = String(input.query || '').trim().toLowerCase();
+    let list = DATA.categories || []; if (q) list = list.filter((c) => String(c.name || '').toLowerCase().includes(q));
+    return { count: list.length, categories: list.slice(0, WR_TOOL_LIMIT).map((c) => ({ id: c.categoryId, name: c.name, memberDaily: c.memberDaily, rate1Day: c.rate1Day, rate7Day: c.rate7Day, rate4Wk: c.rate4Wk, weekend: c.weekend })) };
+  },
+  find_vendors(input) {
+    const q = String(input.query || '').trim().toLowerCase();
+    let list = DATA.vendors || []; if (q) list = list.filter((v) => String(v.name || '').toLowerCase().includes(q));
+    return { count: list.length, vendors: list.slice(0, WR_TOOL_LIMIT).map((v) => ({ id: v.vendorId, name: v.name, phone: v.phone || '', vendorType: v.vendorType || '' })) };
+  },
+  find_rentals(input) {
+    let list = DATA.rentals || [];
+    if (input.customer) { const c = wrResolveCustomer(input.customer).rec; if (!c) return { count: 0, rentals: [], note: `no customer matching “${input.customer}”` }; list = list.filter((r) => r.customerId === c.customerId); }
+    if (input.unit) { const u = wrResolveUnit(input.unit).rec; if (u) list = list.filter((r) => rentalUnitIds(r).includes(u.unitId)); }
+    if (input.status) { const s = String(input.status).toLowerCase(); list = list.filter((r) => String(r.status || '').toLowerCase() === s); }
+    return { count: list.length, rentals: list.slice(0, WR_TOOL_LIMIT).map((r) => ({ id: r.rentalId, label: rentalUnitsLabel(r) || r.rentalName || '', customer: (IDX.customer.get(r.customerId) || {}).name || '', window: fmtWindow(r.startDate, r.endDate), status: r.status || '', invoiced: !!r.invoiceId })) };
+  },
+  find_invoices(input) {
+    let list = DATA.invoices || [];
+    if (input.customer) { const c = wrResolveCustomer(input.customer).rec; if (!c) return { count: 0, invoices: [], note: `no customer matching “${input.customer}”` }; list = list.filter((i) => i.customerId === c.customerId); }
+    let rows = list.map((i) => { let t = { total: 0, balance: 0 }; try { t = invoiceTotals(i); } catch (e) {} return { id: i.invoiceId, customer: (IDX.customer.get(i.customerId) || {}).name || '', total: Math.round(t.total * 100) / 100, balance: Math.round(t.balance * 100) / 100, status: i.status || '' }; });
+    if (input.onlyOpen) rows = rows.filter((r) => r.balance > 0.005);
+    return { count: rows.length, invoices: rows.slice(0, WR_TOOL_LIMIT) };
+  },
+  find_work_orders(input) {
+    let list = DATA.workOrders || [];
+    if (input.unit) { const u = wrResolveUnit(input.unit).rec; if (u) list = list.filter((w) => w.unitId === u.unitId); }
+    if (input.customer) { const c = wrResolveCustomer(input.customer).rec; if (c) list = list.filter((w) => w.customerId === c.customerId); }
+    return { count: list.length, workOrders: list.slice(0, WR_TOOL_LIMIT).map((w) => ({ id: w.woId, unit: (IDX.unit.get(w.unitId) || {}).name || '', report: w.woReport || '', phase: w.phase || '', type: w.woType || '' })) };
+  },
+  check_unit_availability(input) {
+    const u = wrResolveUnit(input.unit || '').rec; if (!u) return { error: `no unit matching “${input.unit}”` };
+    const start = input.startDate, end = input.endDate; if (!start || !end) return { error: 'need startDate and endDate (YYYY-MM-DD)' };
+    const conflicts = rentalsOverlappingUnit(u.unitId, start, end, null).map((r) => ({ rental: r.rentalId, customer: (IDX.customer.get(r.customerId) || {}).name || '', window: fmtWindow(r.startDate, r.endDate) }));
+    return { unit: u.name, fleetStatus: u.fleetStatus, available: u.fleetStatus === 'Active' && !conflicts.length, conflicts };
+  },
+  price_rental(input) {
+    const start = input.startDate, end = input.endDate;
+    const units = Array.isArray(input.units) ? input.units : [input.units].filter(Boolean);
+    if (!start || !end || !units.length) return { error: 'need units, startDate, endDate' };
+    const cust = input.customer ? wrResolveCustomer(input.customer).rec : null;
+    const per = []; let total = 0;
+    units.forEach((ref) => {
+      const u = wrResolveUnit(ref).rec; if (!u) { per.push({ unit: String(ref), error: 'no match' }); return; }
+      const pr = rentalPrice({ categoryId: u.categoryId, startDate: start, endDate: end, customerId: cust ? cust.customerId : '' });
+      if (pr) { per.push({ unit: u.name, price: pr.price, rate: pr.rate, days: pr.days }); total += pr.price; }
+      else per.push({ unit: u.name, error: 'unpriceable — check the dates/category' });
+    });
+    return { startDate: start, endDate: end, customer: cust ? cust.name : null, total: Math.round(total * 100) / 100, units: per };
+  },
+};
+// Anthropic tool schemas — forwarded verbatim to the model by the Stage 0 pass-through.
+const WR_TOOLS = [
+  { name: 'find_customers', description: 'Search customers by name, company, or phone. Returns id, name, phone, payStatus, and open balance. Use this to resolve who the user means before acting.', input_schema: { type: 'object', properties: { query: { type: 'string', description: 'name, company, or phone fragment' } }, required: ['query'] } },
+  { name: 'find_units', description: 'Search fleet units by name or category. Optionally filter by fleetStatus (Active/Retired/…). Returns id, name, category, fleetStatus.', input_schema: { type: 'object', properties: { query: { type: 'string' }, fleetStatus: { type: 'string' } }, required: ['query'] } },
+  { name: 'find_categories', description: 'Search equipment categories by name. Returns id, name, and all rental rates (memberDaily, rate1Day, rate7Day, rate4Wk, weekend).', input_schema: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } },
+  { name: 'find_vendors', description: 'Search vendors by name. Returns id, name, phone, type.', input_schema: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } },
+  { name: 'find_rentals', description: 'List rentals, filtered by customer (name/id), unit (name/id), and/or status. Returns id, units label, customer, window, status, and whether invoiced.', input_schema: { type: 'object', properties: { customer: { type: 'string' }, unit: { type: 'string' }, status: { type: 'string' } }, required: [] } },
+  { name: 'find_invoices', description: 'List invoices, optionally filtered by customer and/or onlyOpen=true. Returns id, customer, total, balance, status.', input_schema: { type: 'object', properties: { customer: { type: 'string' }, onlyOpen: { type: 'boolean' } }, required: [] } },
+  { name: 'find_work_orders', description: 'List work orders, filtered by unit and/or customer. Returns id, unit, report, phase, type.', input_schema: { type: 'object', properties: { unit: { type: 'string' }, customer: { type: 'string' } }, required: [] } },
+  { name: 'check_unit_availability', description: 'Check whether a unit is free for a date window. Returns available + any conflicting rentals. Dates are YYYY-MM-DD.', input_schema: { type: 'object', properties: { unit: { type: 'string' }, startDate: { type: 'string' }, endDate: { type: 'string' } }, required: ['unit', 'startDate', 'endDate'] } },
+  { name: 'price_rental', description: 'Quote the price for renting one or more units over a window (uses the live pricing engine; member rates apply if the customer is given). Dates are YYYY-MM-DD. Read-only — does not create anything.', input_schema: { type: 'object', properties: { units: { type: 'array', items: { type: 'string' } }, startDate: { type: 'string' }, endDate: { type: 'string' }, customer: { type: 'string' } }, required: ['units', 'startDate', 'endDate'] } },
+  { name: 'ask_user', description: "Ask the user ONE short follow-up question when you genuinely can't proceed — a real ambiguity (two customers match, which unit, missing a required detail). Pass a clear `question` and, when the choice is between known options, an `options` array (e.g. the matching customers) so they can just tap one. Use this SPARINGLY — never to confirm an obvious reading or something a find_* tool can answer. The user's answer comes back so you continue.", input_schema: { type: 'object', properties: { question: { type: 'string' }, options: { type: 'array', items: { type: 'string' } } }, required: ['question'] } },
+  { name: 'apply_changes', description: "WRITE changes: create/update/import records or run an operation. Pass `ops` — the SAME op shapes documented above ({op:'create'|'update'|'import'|'csv-import', entity, fields|rows|id} and {op:'operate', name:'startRental'|'billRental'|'recordPayment', params}). It validates against the allowlist and the safety fences and RETURNS what resolved or got dropped, so if a link drops (e.g. a category that doesn't exist yet) you can create it first and call again. Safe single edits apply immediately; consequential ones (bulk, pricing, billing, payments, several records) are staged for the user to tap Apply — word those as a preview, never as saved. This is the ONLY write path — never charge a card/ACH, refund, touch a balance, change roles/passwords, hard-delete, or complete a WO.", input_schema: { type: 'object', properties: { title: { type: 'string', description: 'short label for the change' }, ops: { type: 'array', items: { type: 'object' }, description: 'the operations to apply' } }, required: ['ops'] } },
+];
+const WR_TOOLS_NOTE = "\n\nLOOKING THINGS UP — you have live read-only tools (find_customers, find_units, find_categories, find_vendors, find_rentals, find_invoices, find_work_orders, check_unit_availability, price_rental) that query the FULL records, not just the snapshot. PREFER them: when the user names a customer/unit/rental, look it up to confirm it exists and get its id before you answer or emit an action; check availability before booking; quote with price_rental rather than guessing. Don't ask the user for something a tool can find. For WRITES, prefer the apply_changes tool: call it with the ops array (same shapes as the wrangler-action block) and it returns exactly what resolved or got dropped, so you can fix a dropped link and try again — much better than emitting a blind block. Safe single edits auto-apply; consequential ones come back staged for the user's Apply (word those as a preview). You may still emit a wrangler-action block as a fallback, but don't ALSO emit one for a write you already made with apply_changes. When you truly need to disambiguate before acting, call ask_user (with tappable options when the choice is between known records) instead of guessing or burying the question in prose — but only when a tool can't resolve it.";
+// The agent loop: send → if the model calls tools, run them locally and feed results back →
+// repeat until it answers in plain text. opts.call is injectable for offline tests; it defaults
+// to the live backend pass-through. Degrades to a single shot against a backend with no tools
+// support (no stop_reason='tool_use' → returns the text immediately).
+const WR_MAX_TURNS = 8;
+// Stage 2 — the WRITE tool. Runs the model's proposed ops through the SAME pipeline the
+// wrangler-action block uses (wrValidatePlan allowlist + every fence: no card/ACH, no WO
+// completion, no hard-delete; then the auto-apply vs preview gate). Safe single edits apply
+// immediately; consequential ones (bulk, pricing, billing, payments, multi-record) are STAGED
+// on ctx so wranglerSend surfaces them as a preview→Apply. The structured return lets the model
+// SEE a dropped link / issue and self-correct in the loop, instead of failing blind.
+async function wrApplyChangesTool(input, ctx, opts) {
+  const ops = (input && input.ops) || [];
+  const plan = wrValidatePlan({ action: 'data', title: (input && input.title) || 'Apply changes', ops });
+  if (!plan.ops.length) return { ok: false, applied: false, issues: plan.issues.length ? plan.issues : ['nothing valid to apply'] };
+  if (wrPlanNeedsApply(plan)) {
+    ctx.pendingAct = { action: 'data', title: (input && input.title) || 'Apply changes', ops, _plan: plan };   // consequential → user reviews + taps Apply
+    return { ok: true, applied: false, needsApply: true, summary: wrPlanSummary(plan), issues: plan.issues, note: 'staged for the user to review and tap Apply — do NOT say it is saved yet' };
+  }
+  if (opts && opts.dryRun) return { ok: true, applied: false, summary: wrPlanSummary(plan), issues: plan.issues, note: 'would auto-apply (dry run)' };
+  const res = await applyWranglerData(plan);
+  if (res && res.focus) ctx.focus = res.focus;
+  if (res) ctx.applied += (res.created || 0) + (res.updated || 0) + (res.operated || 0);
+  return { ok: !(res && res.failed), applied: !(res && res.failed), summary: wrPlanSummary(plan), issues: plan.issues, failed: !!(res && res.failed) };
+}
+async function wrRunAgent(apiMessages, system, opts) {
+  opts = opts || {};
+  const call = opts.call || ((body) => backendCall('wrangler', body));
+  const ctx = { pendingAct: null, focus: null, applied: 0 };
+  const messages = apiMessages.slice();
+  const done = (r) => ({ text: ((r && r.text) || '').trim(), pendingAct: ctx.pendingAct, focus: ctx.focus, applied: ctx.applied });
+  for (let turn = 0; turn < WR_MAX_TURNS; turn++) {
+    const r = await call({ system, messages, tools: WR_TOOLS });
+    if (!r || r.error) throw new Error((r && r.error) || 'no response');
+    if (r.stop_reason !== 'tool_use' || !Array.isArray(r.content)) return done(r);
+    const toolUses = r.content.filter((b) => b && b.type === 'tool_use');
+    if (!toolUses.length) return done(r);
+    messages.push({ role: 'assistant', content: r.content });
+    const results = [];
+    for (const tu of toolUses) {
+      let out;
+      try {
+        if (tu.name === 'apply_changes') out = await wrApplyChangesTool(tu.input || {}, ctx, opts);
+        else if (tu.name === 'ask_user') { const ans = opts.ask ? await opts.ask(tu.input || {}) : null; out = { answer: (ans == null || ans === '') ? '(no answer given — use your best judgement and proceed)' : String(ans) }; }
+        else { const impl = WR_TOOL_IMPL[tu.name]; out = impl ? impl(tu.input || {}) : { error: `unknown tool ${tu.name}` }; }
+      } catch (e) { out = { error: String((e && e.message) || e) }; }
+      if (opts.onTool) { try { opts.onTool(tu.name, tu.input, out); } catch (e) {} }
+      results.push({ type: 'tool_result', tool_use_id: tu.id, content: JSON.stringify(out) });
+    }
+    messages.push({ role: 'user', content: results });
+  }
+  // Hit the turn cap — make one final tool-free call so the model must answer in words.
+  return done(await call({ system, messages }));
+}
+
 async function wranglerSend() {
   const o = state.wrangler; if (!o.open) return;
   const inp = document.querySelector('.wrangler-dock .js-wr-in');
   const text = ((inp ? inp.value : o.draft) || '').trim();
   const imgs = (o.attach && o.attach.length) ? o.attach.slice() : null;
   const files = (o.files && o.files.length) ? o.files.slice() : null;
+  // A typed reply while Mr. Wrangler has a pending ask_user question ANSWERS it (resumes the loop),
+  // rather than starting a fresh turn. Tapping an option chip resolves it the same way.
+  if (o.ask && o.ask.resolve) { if (!text) { if (inp) inp.focus(); return; } o.draft = ''; if (inp) inp.value = ''; o.ask.resolve(text); return; }
   if ((!text && !imgs && !files) || o.busy) { if (inp) inp.focus(); return; }
   o.messages.push({ role: 'user', content: text, images: imgs, files });
   syncWranglerComment(o, 'user', text, imgs);   // §18e mirror the turn onto the issue thread
   wranglerClearNeedsAnswer(o.reqNumber);        // §18e answering a "Needs your answer" request clears it from the inbox
   o.draft = ''; o.attach = []; o.files = []; o.busy = true; o.error = ''; render();
-  const system = WRANGLER_SYSTEM + (o.kpiTarget ? '\n\n' + wranglerKpiSystem() : '') + '\n\n' + wranglerContext(o);
+  const system = WRANGLER_SYSTEM + WR_TOOLS_NOTE + (o.kpiTarget ? '\n\n' + wranglerKpiSystem() : '') + '\n\n' + wranglerContext(o);
   // Build the payload: images become a content-block array; CSV/text files fold
   // into the message text so Mr. Wrangler reads their rows.
   const fileBlock = (m) => (m.files && m.files.length)
@@ -10057,20 +10207,44 @@ async function wranglerSend() {
   const replyChatId = o.id, replyReqNum = o.reqNumber;
   try {
     if (typeof backendPassword !== 'undefined' && backendPassword) {
-      const r = await backendCall('wrangler', { system, messages: payloadMsgs });
+      // ask_user (Stage 2b): the loop suspends here on a follow-up question — we post it with tappable
+      // options and wait for a tap/typed reply, which resumes the loop. Tied to the live dock only.
+      const askFn = (input) => new Promise((resolve) => {
+        const options = Array.isArray(input.options) ? input.options.slice(0, 6).map(String) : [];
+        o.messages.push({ role: 'assistant', content: String((input && input.question) || 'Which one?'), askOptions: options });
+        o.ask = { resolve: (answer) => { o.ask = null; o.busy = true; if (answer != null && answer !== '') o.messages.push({ role: 'user', content: String(answer) }); render(); resolve(answer == null ? null : String(answer)); } };
+        o.busy = false; render();
+        setTimeout(() => { const f = document.querySelector('.wrangler-dock .wr-feed'); if (f) f.scrollTop = f.scrollHeight; }, 0);
+      });
+      const r = await wrRunAgent(payloadMsgs, system, { ask: askFn });   // agentic loop: looks up, writes, and asks via tools, then answers
       if (!r || r.error) throw new Error((r && r.error) || 'no response');
       const raw = (r.text || '').trim();
-      const act = parseWranglerAction(raw);
+      // A consequential write staged by apply_changes acts exactly like a parsed data block (preview→Apply).
+      // If apply_changes already auto-applied a safe write in the loop, don't also honor a data block in the
+      // text (would double-write) — but keep a non-data block (fix/plan/request/kpi).
+      let act = r.pendingAct || parseWranglerAction(raw);
+      if (act && act.action === 'data' && r.applied && !r.pendingAct) act = null;
       let shown = stripWranglerAction(raw);
       const truncated = /```wrangler-action/.test(raw) && !act;   // #152 a fence arrived but nothing usable came out of it
-      if (truncated) shown = (shown ? shown + '\n\n' : '') + '⚠️ My reply got cut off before I could finish that action — too much in one go. Ask me to do it in smaller batches and I’ll send a preview you can apply.';
-      else if (!shown) shown = act ? (act.action === 'data' ? 'Here’s what I’ll change — preview it and hit apply when it looks right.' : act.action === 'kpi' ? 'Here’s the KPI — lock it in when the live number looks right.' : act.action === 'request' ? 'Got it — I’ll send this to the developer to OK.' : act.action === 'plan' ? 'Here’s the plan — tap Build when it’s right.' : 'On it — I’ll fix this right now and let you know when I’m done.') : '(no answer)';
       // route the reply to its ORIGINATING chat — the live dock if still open, else its rail
       // snapshot — so a mid-await chat hop can't bleed it into the now-open conversation.
       const _onChat = state.wrangler.id === replyChatId;
+      // Auto-apply (Jac 2026-06-26): a simple, safe data action just happens — no Apply tap. The gate is
+      // kept only for consequential ones (wrPlanNeedsApply). Clean single edits with no skipped fields and
+      // on the LIVE dock auto-apply; bulk/pricing/money/backgrounded ones still wait for the user's Apply.
+      let autoPlan = null;
+      if (act && act.action === 'data' && _onChat) {
+        const plan = act._plan || (act._plan = wrValidatePlan(act));
+        if (plan.ops.length && !plan.issues.length && !wrPlanNeedsApply(plan)) autoPlan = plan;
+      }
+      if (truncated) shown = (shown ? shown + '\n\n' : '') + '⚠️ My reply got cut off before I could finish that action — too much in one go. Ask me to do it in smaller batches and I’ll send a preview you can apply.';
+      else if (!shown) shown = act ? (act.action === 'data' ? (autoPlan ? 'Done — ' + wrPlanSummary(autoPlan) + '.' : 'Here’s what I’ll change — preview it and hit apply when it looks right.') : act.action === 'kpi' ? 'Here’s the KPI — lock it in when the live number looks right.' : act.action === 'request' ? 'Got it — I’ll send this to the developer to OK.' : act.action === 'plan' ? 'Here’s the plan — tap Build when it’s right.' : 'On it — I’ll fix this right now and let you know when I’m done.') : (r.applied ? 'Done — applied your changes. 🤠' : '(no answer)');
       const _target = _onChat ? o : state.wranglerRail.find((c) => c.id === replyChatId);
       if (_target) {
-        _target.messages.push({ role: 'assistant', content: shown, action: act || null, filed: false });
+        const msg = { role: 'assistant', content: shown, action: act || null, filed: false };
+        _target.messages.push(msg);
+        if (autoPlan) { msg.filed = true; Promise.resolve(applyWranglerData(autoPlan)).then((res) => { if (res && res.failed) { msg.filed = false; } else if (res && res.focus) { msg.focus = res.focus; } render(); }); }   // simple safe edit / booking → write it now; stash the focus target for the "Open" link
+        else if (r.applied && r.focus) msg.focus = r.focus;   // apply_changes already wrote it in the loop → keep the "Open" link to the new record
         syncWranglerComment({ reqNumber: replyReqNum }, 'assistant', shown);   // §18e mirror onto the RIGHT issue thread
         if (!_onChat) wranglerRailPersist(_target);   // backgrounded chat → fold the reply into its snapshot
       }
@@ -10139,14 +10313,98 @@ function wrAccount(v) {
   const n = String(v).toLowerCase();
   return WR_ACCT.find((a) => a.toLowerCase() === n) || (/member/.test(n) ? (/business/.test(n) ? 'Business Member' : 'Non-Business Member') : /business/.test(n) ? 'Business' : '');
 }
-const WR_EDITABLE = {   // safe fields only — money / card / payment / pricing / auth / WO-completion are deliberately absent
+const WR_EDITABLE = {   // safe fields only — card/ACH rails, balances, auth, and WO-completion are deliberately absent.
+  // Rollout: Stage 1 wired create for the everyday entities; Stage 2a adds category RENTAL RATES (the agreed
+  // money line allows pricing — only the card/ACH rails are blocked). Used-sale prices (msrp/askPrice/
+  // bottomDollar margin floor), part priceEach, balances, and money MOVEMENT (invoices/payments/refunds)
+  // are still fenced here — see specs/…wrangler-full-action-parity.
   customers: { label: 'customer', create: true, importable: true, fields: ['firstName', 'lastName', 'company', 'phone', 'email', 'address', 'industry', 'accountNotes', 'accountType', 'membershipStage', 'usedSalesStage'] },
-  units: { label: 'unit', create: false, fields: ['name', 'assignedMechanic', 'notes', 'serial', 'make', 'model', 'year', 'weight', 'gpsType', 'gpsPlacement'] },
-  categories: { label: 'category', create: false, fields: ['name', 'description', 'fuelType'] },
+  units: { label: 'unit', create: true, fields: ['name', 'categoryId', 'assignedMechanic', 'notes', 'serial', 'make', 'model', 'year', 'weight', 'gpsType', 'gpsPlacement', 'fleetStatus'] },
+  categories: { label: 'category', create: true, fields: ['name', 'description', 'fuelType', 'memberDaily', 'rate1Day', 'rate7Day', 'rate4Wk', 'weekend'] },
+  vendors: { label: 'vendor', create: true, fields: ['name', 'phone', 'email', 'address', 'website', 'primaryContact', 'vendorType', 'notes'] },
+  parts: { label: 'part', create: true, fields: ['name', 'status', 'qtyOnHand', 'website', 'orderEmail', 'productNumber', 'vendorId', 'notes'] },
   rentals: { label: 'rental', create: false, fields: ['notes', 'po'] },
+  expenses: { label: 'expense', create: true, fields: ['vendorId', 'date', 'amount', 'category', 'method', 'notes', 'reconcile'] },
+  inspections: { label: 'inspection', create: true, fields: ['unitId', 'date', 'wash', 'billCustomer', 'customerId', 'description'] },
+  workOrders: { label: 'work order', create: true, fields: ['unitId', 'customerId', 'woReport', 'woType', 'description', 'assignedMechanic', 'eta', 'billCustomer', 'laborHours'] },   // NO 'phase' — Wrangler must never set/complete a WO (only the Complete WO button does)
 };
-const WR_IDX = { customers: () => IDX.customer, units: () => IDX.unit, categories: () => IDX.category, rentals: () => IDX.rental };
+// Required fields per entity — a create missing one is refused (an inspection/WO with no unit is an orphan).
+const WR_REQUIRED = { inspections: ['unitId'], workOrders: ['unitId'] };
+// Fields that MUST be a finite, non-negative number — coerced from the model's JSON (which may send "360"
+// as a string) and dropped if they don't parse, so a bad value can never poison the money math or specs.
+const WR_NUMERIC = new Set(['memberDaily', 'rate1Day', 'rate7Day', 'rate4Wk', 'weekend', 'qtyOnHand', 'year', 'weight', 'currentHours', 'amount', 'laborHours']);
+// Money-sensitive fields — touching one keeps the preview→Apply gate (below) even on a single edit.
+const WR_MONEY_FIELDS = new Set(['memberDaily', 'rate1Day', 'rate7Day', 'rate4Wk', 'weekend', 'amount']);
+// The preview→Apply gate is NOT 100% of the time (Jac 2026-06-26) — it's reserved for CONSEQUENTIAL actions.
+// A simple, single, safe edit (add a unit, fix a phone) just applies the moment Wrangler answers. Anything
+// bulk, money-sensitive (rates), or a named operation (billRental, …), or several records at once, still
+// shows the user a preview to eyeball + Apply first.
+function wrPlanNeedsApply(plan) {
+  let records = 0;
+  for (const op of (plan && plan.ops) || []) {
+    if (op.op === 'operate') { if (!(WR_OPERATIONS[op.name] || {}).autoApply) return true; continue; }   // ops gate by default; startRental auto-applies (no Apply tap)
+    if (op.op === 'import' || op.op === 'csv-import') return true; // bulk import
+    if (Object.keys(op.fields || {}).some((k) => WR_MONEY_FIELDS.has(k))) return true;   // pricing / rate change
+    records++;
+  }
+  return records > 1;   // several records in one go → let the user review them together
+}
+const WR_IDX = { customers: () => IDX.customer, units: () => IDX.unit, categories: () => IDX.category, rentals: () => IDX.rental, vendors: () => IDX.vendor, parts: () => IDX.part, expenses: () => IDX.expense, inspections: () => IDX.insp, workOrders: () => IDX.wo };
 const wrGet = (entity, id) => (WR_IDX[entity] ? WR_IDX[entity]().get(id) : null);
+// ── Name resolution (Jac 2026-06-26) — Mr. Wrangler talks in NAMES (the digest gives names), so the
+// operations + foreign-key fields resolve a human reference (id | name | phone-suffix for customers) to the
+// real record. Returns { rec } (one match), { many } (ambiguous → ask which), or {} (none). This is what
+// lets "book the sump pump for Cameron Miller" and "add a unit, category Stump Grinder" actually link up. ──
+const wrNorm = (x) => String(x == null ? '' : x).trim().toLowerCase();
+function wrMatchByName(list, ref, nameKey) {
+  const s = wrNorm(ref); if (!s) return {};
+  let m = (list || []).filter((r) => wrNorm(r[nameKey]) === s);                          // exact name wins
+  if (!m.length && s.length >= 2) m = (list || []).filter((r) => wrNorm(r[nameKey]).includes(s));   // else substring
+  if (m.length === 1) return { rec: m[0] };
+  if (m.length > 1) return { many: m };
+  return {};
+}
+function wrResolveCustomer(ref) {
+  const s = String(ref == null ? '' : ref).trim(); if (!s) return {};
+  const byId = IDX.customer.get(s); if (byId) return { rec: byId };
+  const digits = s.replace(/\D/g, '');
+  if (digits.length >= 4) { const ph = (DATA.customers || []).filter((c) => String(c.phone || '').replace(/\D/g, '').endsWith(digits)); if (ph.length === 1) return { rec: ph[0] }; if (ph.length > 1) return { many: ph }; }
+  return wrMatchByName(DATA.customers, s, 'name');
+}
+function wrResolveUnit(ref) { const s = String(ref == null ? '' : ref).trim(); const byId = s && IDX.unit.get(s); if (byId) return { rec: byId }; return wrMatchByName(DATA.units, s, 'name'); }
+function wrResolveCategory(ref) { const s = String(ref == null ? '' : ref).trim(); const byId = s && IDX.category.get(s); if (byId) return { rec: byId }; return wrMatchByName(DATA.categories, s, 'name'); }
+function wrResolveVendor(ref) { const s = String(ref == null ? '' : ref).trim(); const byId = s && IDX.vendor.get(s); if (byId) return { rec: byId }; return wrMatchByName(DATA.vendors, s, 'name'); }
+function wrResolvePart(ref) { const s = String(ref == null ? '' : ref).trim(); const byId = s && IDX.part.get(s); if (byId) return { rec: byId }; return wrMatchByName(DATA.parts, s, 'name'); }
+function wrResolveRental(ref) { const s = String(ref == null ? '' : ref).trim(); const byId = s && IDX.rental.get(s); if (byId) return { rec: byId }; return wrMatchByName(DATA.rentals, s, 'rentalName'); }
+// A work order / inspection needs a UNIT. When the operator names only the customer ("work order for
+// Fiona, valve problem"), infer the equipment from their on-rent fleet: the unique unit across their
+// active (not cancelled/returned) rentals. Returns the unitId only when it's unambiguous — zero or
+// several out leaves it unset so the caller asks which piece of equipment, instead of refusing blind.
+function wrUnitForCustomer(customerId) {
+  if (!customerId) return '';
+  const ids = new Set();
+  (DATA.rentals || []).forEach((r) => { if (r.customerId === customerId && ACTIVE_RENTAL.has(r.status)) rentalUnitIds(r).forEach((uid) => ids.add(uid)); });
+  return ids.size === 1 ? [...ids][0] : '';
+}
+// Human field names for a refused create — never leak a raw key like "unitId" into the chat.
+const WR_FIELD_LABEL = { unitId: 'a unit', customerId: 'a customer', categoryId: 'a category', vendorId: 'a vendor' };
+// Parse a time the operator might say ("10am", "10", "10:30 pm", "14:00") into the app's 12-hr label
+// ("10:00 AM") — the same format setWinTime stores. Empty/unparseable → '' (no time logged).
+function wrParseTime(v) {
+  if (v == null) return '';
+  const s = String(v).trim(); if (!s) return '';
+  let m = s.match(/^(\d{1,2})(?::(\d{2}))?\s*(a\.?m\.?|p\.?m\.?)$/i);
+  if (m) { const h = ((Number(m[1]) % 12) || 12); const mm = m[2] || '00'; const ap = /p/i.test(m[3]) ? 'PM' : 'AM'; return `${h}:${mm} ${ap}`; }
+  m = s.match(/^(\d{1,2}):(\d{2})$/);                       // 24-hr "14:00" / "09:30"
+  if (m) return to12(`${m[1].padStart(2, '0')}:${m[2]}`);
+  m = s.match(/^(\d{1,2})$/);                               // bare hour "10" → assume AM (operator usually says am/pm)
+  if (m) return to12(`${String(Number(m[1]) % 24).padStart(2, '0')}:00`);
+  return '';
+}
+// Per-entity resolver — used by the UPDATE op so EVERY card/board record can be edited by name, not just id.
+const WR_RESOLVE = { customers: wrResolveCustomer, units: wrResolveUnit, categories: wrResolveCategory, vendors: wrResolveVendor, parts: wrResolvePart, rentals: wrResolveRental };
+// Foreign-key fields that accept a NAME and resolve to the real id (so categoryId:"Stump Grinder" links up).
+const WR_FK = { categoryId: { resolve: wrResolveCategory, idKey: 'categoryId' }, vendorId: { resolve: wrResolveVendor, idKey: 'vendorId' }, unitId: { resolve: wrResolveUnit, idKey: 'unitId' }, customerId: { resolve: wrResolveCustomer, idKey: 'customerId' } };
 function wrCleanFields(entity, obj) {
   const ent = WR_EDITABLE[entity]; const out = {}; const skipped = [];
   Object.keys(obj || {}).forEach((k) => {
@@ -10154,6 +10412,8 @@ function wrCleanFields(entity, obj) {
     let v = obj[k];
     if (k === 'membershipStage' || k === 'usedSalesStage') v = wrFunnel(v) || v;
     if (k === 'accountType') v = wrAccount(v) || 'Non-Business';
+    if (WR_NUMERIC.has(k)) { const n = Number(v); if (!Number.isFinite(n) || n < 0) { skipped.push(k); return; } v = n; }   // numeric fields → finite, non-negative or dropped
+    if (WR_FK[k] && typeof v === 'string' && v.trim()) { const r = WR_FK[k].resolve(v); if (r.rec) v = r.rec[WR_FK[k].idKey]; else { skipped.push(k); return; } }   // FK by name → real id, or drop (never store a name as an id)
     out[k] = typeof v === 'string' ? v.trim() : v;
   });
   return { out, skipped };
@@ -10175,6 +10435,14 @@ function wrFindAttachedCsv(messages, beforeIndex) {
 function wrValidatePlan(act) {
   const ops = []; const issues = [];
   (Array.isArray(act.ops) ? act.ops : []).forEach((raw) => {
+    if (raw.op === 'operate') {   // named business operation (e.g. billRental) — validated by its registry entry
+      const def = WR_OPERATIONS[raw.name];
+      if (!def) { issues.push(`I don’t know how to “${raw.name}” yet`); return; }
+      const v = def.validate(raw.params || {});
+      if (v.issue) { issues.push(v.issue); return; }
+      ops.push({ op: 'operate', name: raw.name, params: raw.params || {}, summary: v.summary });
+      return;
+    }
     const ent = WR_EDITABLE[raw.entity];
     if (!ent) { issues.push(`can’t touch “${raw.entity}”`); return; }
     const opn = raw.op === 'csv-import' ? 'csv-import' : raw.op === 'import' ? 'import' : raw.op === 'update' ? 'update' : 'create';
@@ -10225,23 +10493,35 @@ function wrValidatePlan(act) {
       const rows = (raw.rows || []).map((r) => wrCleanFields(raw.entity, r).out).filter((r) => Object.keys(r).length);
       if (rows.length) ops.push({ op: 'import', entity: raw.entity, rows });
     } else if (opn === 'update') {
-      const t = wrGet(raw.entity, raw.id);
+      const resolver = WR_RESOLVE[raw.entity];   // resolve by id OR name (incl. records past the 200-row snapshot cap)
+      const rr = resolver ? resolver(raw.id) : (wrGet(raw.entity, raw.id) ? { rec: wrGet(raw.entity, raw.id) } : {});
+      if (rr.many) { issues.push(`more than one ${ent.label} matches “${raw.id}” — which one? (${rr.many.slice(0, 3).map((x) => x.name || x.rentalName || idOf(raw.entity, x)).join(', ')})`); return; }
+      const t = rr.rec;
       if (!t) { issues.push(`no ${ent.label} “${raw.id}”`); return; }
       const c = wrCleanFields(raw.entity, raw.fields);
-      if (Object.keys(c.out).length) ops.push({ op: 'update', entity: raw.entity, id: raw.id, fields: c.out, target: t });
+      if (Object.keys(c.out).length) ops.push({ op: 'update', entity: raw.entity, id: idOf(raw.entity, t), fields: c.out, target: t });
     } else {
       if (!ent.create) { issues.push(`${ent.label}s can’t be created this way`); return; }
       const c = wrCleanFields(raw.entity, raw.fields);
+      // A WO/inspection needs a unit; if only the customer was named, infer it from their on-rent equipment (Jac).
+      if ((raw.entity === 'workOrders' || raw.entity === 'inspections') && !c.out.unitId && c.out.customerId) {
+        const uid = wrUnitForCustomer(c.out.customerId); if (uid) c.out.unitId = uid;
+      }
+      const missing = (WR_REQUIRED[raw.entity] || []).filter((f) => !c.out[f]);   // e.g. an inspection/WO with no (resolvable) unit
+      if (missing.length) { issues.push(`a ${ent.label} needs ${missing.map((f) => WR_FIELD_LABEL[f] || f).join(' and ')}`); return; }
       if (Object.keys(c.out).length) ops.push({ op: 'create', entity: raw.entity, fields: c.out });
     }
   });
   return { title: act.title || 'Apply changes', ops, issues };
 }
 function wrPlanSummary(plan) {
-  const add = {}, upd = {};
-  plan.ops.forEach((op) => { const l = WR_EDITABLE[op.entity].label; if (op.op === 'update') upd[l] = (upd[l] || 0) + 1; else add[l] = (add[l] || 0) + ((op.op === 'import' || op.op === 'csv-import') ? op.rows.length : 1); });
+  const add = {}, upd = {}, ops = [];
+  plan.ops.forEach((op) => {
+    if (op.op === 'operate') { ops.push(op.summary); return; }   // named operation carries its own human summary
+    const l = WR_EDITABLE[op.entity].label; if (op.op === 'update') upd[l] = (upd[l] || 0) + 1; else add[l] = (add[l] || 0) + ((op.op === 'import' || op.op === 'csv-import') ? op.rows.length : 1);
+  });
   const seg = (m, verb) => Object.entries(m).map(([l, n]) => `${verb} ${n} ${l}${n > 1 ? 's' : ''}`);
-  return [...seg(add, 'add'), ...seg(upd, 'update')].join(' · ') || 'no safe changes';
+  return [...seg(add, 'add'), ...seg(upd, 'update'), ...ops].join(' · ') || 'no safe changes';
 }
 function wrCreateCustomer(f) {
   const id = nextCustomerId();
@@ -10249,25 +10529,289 @@ function wrCreateCustomer(f) {
   DATA.customers.push(c); IDX.customer.set(id, c); reindex('customers', c); logAction(c, 'Added by Mr. Wrangler');
   return c;
 }
-function applyWranglerData(plan) {
-  let created = 0, updated = 0, first = null;
-  plan.ops.forEach((op) => {
+// Stage-1 create helpers — each mints a canonical record (mirroring the in-app quick-add flows
+// and the seed shapes), applies only the already-cleaned allowlisted fields, and returns a
+// uniform { entity, id } so the apply loop can count + focus the right card.
+function nextVendorId() {
+  const max = DATA.vendors.reduce((m, v) => { const n = /^V(\d+)$/.exec(v.vendorId || ''); return n ? Math.max(m, +n[1]) : m; }, 0);
+  return 'V' + String(max + 1).padStart(3, '0');
+}
+function nextPartId() {
+  const max = DATA.parts.reduce((m, p) => { const n = /^P(\d+)$/.exec(p.partId || ''); return n ? Math.max(m, +n[1]) : m; }, 0);
+  return 'P' + String(max + 1).padStart(3, '0');
+}
+function wrCreateUnit(f) {
+  const id = nextUnitId();
+  const u = { unitId: id, name: '', categoryId: '', assignedMechanic: '', currentHours: 0, inspectionStatus: 'Not Ready', fleetStatus: 'Active', purchaseHours: 0, serviceCompletions: {}, ...f, unitId: id };
+  if (!u.name) u.name = 'New unit';
+  DATA.units.push(u); IDX.unit.set(id, u); reindex('units', u); logAction(u, 'Added by Mr. Wrangler');
+  return { entity: 'units', id };
+}
+function wrCreateCategory(f) {
+  const id = nextCategoryId();
+  const c = { categoryId: id, name: '', memberDaily: 0, rate1Day: 0, rate7Day: 0, rate4Wk: 0, weekend: 0, msrp: 0, askPrice: 0, bottomDollar: 0, fuelType: '', description: '', ...f, categoryId: id };
+  if (!c.name) c.name = 'New category';
+  DATA.categories.push(c); IDX.category.set(id, c); reindex('categories', c); logAction(c, 'Added by Mr. Wrangler');
+  return { entity: 'categories', id };
+}
+function wrCreateVendor(f) {
+  const id = nextVendorId();
+  const v = { vendorId: id, name: '', phone: '', email: '', address: '', website: '', primaryContact: '', salesTaxExempt: false, vendorType: '', notes: '', ...f, vendorId: id };
+  if (!v.name) v.name = 'New vendor';
+  DATA.vendors.push(v); reindex('vendors', v); logAction(v, 'Added by Mr. Wrangler');   // reindex('vendors') keeps IDX.vendor in sync
+  return { entity: 'vendors', id };
+}
+function wrCreatePart(f) {
+  const id = nextPartId();
+  const p = { partId: id, name: '', status: 'Catalog', priceEach: null, qtyOnHand: null, website: '', orderEmail: '', productNumber: '', vendorId: null, imageUrl: '', notes: '', ...f, partId: id };
+  if (!p.name) p.name = 'New part';
+  DATA.parts.push(p); reindex('parts', p); logAction(p, 'Added by Mr. Wrangler');   // reindex('parts') keeps IDX.part in sync
+  return { entity: 'parts', id };
+}
+function nextExpenseId() { const max = (DATA.expenses || []).reduce((m, x) => { const n = /^E(\d+)$/.exec(x.expenseId || ''); return n ? Math.max(m, +n[1]) : m; }, 0); return 'E' + String(max + 1).padStart(3, '0'); }
+function nextInspectionId() { const max = (DATA.inspections || []).reduce((m, n) => { const x = /^INS-(\d+)$/.exec(n.inspectionId || ''); return x ? Math.max(m, +x[1]) : m; }, 0); return 'INS-' + (max + 1); }
+function nextWoId() { const max = (DATA.workOrders || []).reduce((m, w) => { const x = /^WO(\d+)$/.exec(w.woId || ''); return x ? Math.max(m, +x[1]) : m; }, 0); return 'WO' + String(max + 1).padStart(4, '0'); }
+function wrCreateExpense(f) {
+  const id = nextExpenseId();
+  const x = { expenseId: id, vendorId: null, date: TODAY_ISO, amount: 0, reconcile: 'Unreconciled', method: 'Cash', category: 'Parts', woId: null, notes: '', ...f, expenseId: id };
+  DATA.expenses.push(x); IDX.expense.set(id, x); reindex('expenses', x); logAction(x, 'Added by Mr. Wrangler');
+  return { entity: 'expenses', id };
+}
+function wrCreateInspection(f) {
+  const id = nextInspectionId();
+  const n = { inspectionId: id, unitId: '', date: TODAY_ISO, wash: '', checklist: '', billCustomer: 'No', customerId: null, woId: null, photo: '', description: '', ...f, inspectionId: id };
+  DATA.inspections.push(n); IDX.insp.set(id, n); reindex('inspections', n); logAction(n, 'Added by Mr. Wrangler');
+  return { entity: 'inspections', id };
+}
+function wrCreateWorkOrder(f) {
+  const id = nextWoId();
+  const w = { woId: id, unitId: '', customerId: null, woReport: 'New Work Order', woType: 'Manual', description: '', billCustomer: 'No', date: TODAY_ISO, eta: '', unitHoursAtCreation: 0, assignedMechanic: '', laborHours: 0, lineItems: [], ...f, woId: id, phase: 'Part Needed?' };   // phase FORCED — Wrangler never sets/completes a WO phase
+  w.unitHoursAtCreation = (IDX.unit.get(w.unitId) || {}).currentHours || 0;
+  DATA.workOrders.push(w); IDX.wo.set(id, w); reindex('workOrders', w); logAction(w, 'Added by Mr. Wrangler');
+  return { entity: 'workOrders', id };
+}
+// Per-entity create dispatch — all return { entity, id }. Only entities listed here can be created.
+const WR_CREATE = {
+  customers: (f) => { const c = wrCreateCustomer(f); return { entity: 'customers', id: c.customerId }; },
+  units: wrCreateUnit, categories: wrCreateCategory, vendors: wrCreateVendor, parts: wrCreatePart,
+  expenses: wrCreateExpense, inspections: wrCreateInspection, workOrders: wrCreateWorkOrder,
+};
+// Named composite/business operations — the `operate` op verb. Each wraps the app's REAL handler so the
+// side-effects, pricing, and guards match the human path exactly. validate() returns { summary } to preview
+// or { issue } to refuse; apply() performs it (may be async). The ONLY money MOVEMENT here is recordPayment
+// (CASH/CHECK only — the card/ACH rails are NEVER touched); refunds and invoice-void are out of scope.
+// See specs/…wrangler-full-action-parity (Stage 2).
+const WR_OPERATIONS = {
+  billRental: {
+    // Pick the rental: by rentalId, OR by customer (name/phone) → their one un-invoiced rental.
+    _pick(p) {
+      if (p && p.rentalId) { const r = IDX.rental.get(p.rentalId); return r ? { rental: r } : { issue: `no rental “${p.rentalId}”` }; }
+      const custRef = (p && (p.customer != null ? p.customer : p.customerId)) || '';
+      if (!custRef) return { issue: `which rental? give a rental id or the customer’s name` };
+      const cres = wrResolveCustomer(custRef);
+      if (cres.many) return { issue: `more than one customer matches “${custRef}” — which one?` };
+      if (!cres.rec) return { issue: `no customer matching “${custRef}”` };
+      const billable = (DATA.rentals || []).filter((r) => r.customerId === cres.rec.customerId && !r.invoiceId && r.startDate && r.endDate && rentalUnitIds(r).length && !['Cancelled', 'Returned'].includes(r.status));
+      if (!billable.length) return { issue: `no un-invoiced rental for ${cres.rec.name}` };
+      // Multiple? Pick the MOST RECENT (Jac) rather than dumping raw ids — the preview shows which, gated by Apply.
+      billable.sort((a, b) => String(b.startDate || '').localeCompare(String(a.startDate || '')) || String(b.rentalId).localeCompare(String(a.rentalId)));
+      return { rental: billable[0], picked: billable.length };
+    },
+    validate(p) {
+      const pick = this._pick(p);
+      if (pick.issue) return { issue: pick.issue };
+      const r = pick.rental;
+      if (r.invoiceId) return { issue: `rental ${r.rentalId} is already invoiced (${invoiceShort(r.invoiceId)})` };
+      if (!r.customerId) return { issue: `rental ${r.rentalId} has no customer yet — add one before invoicing` };
+      if (!r.startDate || !r.endDate) return { issue: `rental ${r.rentalId} needs a start + end date before invoicing` };
+      if (!rentalUnitIds(r).length) return { issue: `rental ${r.rentalId} has no units to invoice` };
+      const cust = IDX.customer.get(r.customerId);
+      const label = rentalUnitsLabel(r) || `rental ${r.rentalId}`;
+      return { summary: `invoice ${label} for ${cust ? cust.name : r.customerId} (${fmtWindow(r.startDate, r.endDate)})${pick.picked > 1 ? ` — most recent of ${pick.picked}` : ''}` };
+    },
+    selfToasts: true,   // createInvoiceForRental already toasts; don't add a second
+    apply(p) { const pick = this._pick(p); if (pick.issue || !pick.rental) return null; createInvoiceForRental(pick.rental.rentalId); return { entity: 'invoices', id: IDX.rental.get(pick.rental.rentalId)?.invoiceId || null }; },   // wraps the REAL billing path (pricing engine, 28-day cap, nav + toast)
+  },
+  recordPayment: {
+    // Record a CASH or CHECK payment on an existing invoice (by invoiceId, OR by customer → their one open
+    // invoice). The backend is authoritative (caps at the live balance). NEVER a card/ACH charge — method is
+    // cash|check only, enforced here AND in postManualPayment.
+    _pick(p) {
+      if (p && p.invoiceId) { const inv = IDX.invoice.get(p.invoiceId); return inv ? { inv } : { issue: `no invoice “${p.invoiceId}”` }; }
+      const custRef = (p && (p.customer != null ? p.customer : p.customerId)) || '';
+      if (!custRef) return { issue: `which invoice? give an invoice id or the customer’s name` };
+      const cres = wrResolveCustomer(custRef);
+      if (cres.many) return { issue: `more than one customer matches “${custRef}” — which one?` };
+      if (!cres.rec) return { issue: `no customer matching “${custRef}”` };
+      const open = (DATA.invoices || []).filter((i) => i.customerId === cres.rec.customerId && (() => { try { return invoiceTotals(i).balance > 0.005; } catch (e) { return false; } })());
+      if (!open.length) return { issue: `no open invoice for ${cres.rec.name}` };
+      if (open.length > 1) return { issue: `${cres.rec.name} has ${open.length} open invoices — say which (${open.slice(0, 3).map((i) => i.invoiceId).join(', ')})` };
+      return { inv: open[0] };
+    },
+    validate(p) {
+      const pick = this._pick(p);
+      if (pick.issue) return { issue: pick.issue };
+      const inv = pick.inv;
+      const method = String((p && p.method) || '').toLowerCase();
+      if (method !== 'cash' && method !== 'check') return { issue: `payment method must be cash or check — I can't charge a card or run an ACH` };
+      if (method === 'check' && !String((p && p.checkNum) || '').trim()) return { issue: `a check payment needs the check number` };
+      const t = invoiceTotals(inv);
+      if (t.balance <= 0.005) return { issue: `invoice ${inv.invoiceId} has no balance left to pay` };
+      let amt = (p && p.amount != null) ? Number(p.amount) : t.balance;
+      if (!Number.isFinite(amt) || amt <= 0) return { issue: `enter a payment amount greater than $0` };
+      amt = Math.min(amt, t.balance);   // never overpay
+      if (!(typeof backendPassword !== 'undefined' && backendPassword)) return { issue: `recording a payment needs to be online — the backend is authoritative for money` };
+      return { summary: `record ${money2(amt)} ${method}${method === 'check' ? ` (check #${String(p.checkNum).trim()})` : ''} on invoice ${inv.invoiceId}` };
+    },
+    async apply(p) {
+      const pick = this._pick(p); if (pick.issue || !pick.inv) return null;
+      const inv = pick.inv;
+      const t = invoiceTotals(inv);
+      const method = String(p.method).toLowerCase();
+      let amt = (p.amount != null) ? Number(p.amount) : t.balance;
+      amt = Math.min(amt, t.balance);
+      await postManualPayment({ invoiceId: inv.invoiceId, amountCents: Math.round(amt * 100), method, checkNum: method === 'check' ? String(p.checkNum || '').trim() : '' });
+      return { entity: 'invoices', id: inv.invoiceId };   // bring the user to the invoice that was paid
+    },
+  },
+  startRental: {
+    autoApply: true,   // a reservation just happens — no Apply tap (Jac); the user is then brought to the rental
+    // Put unit(s) on rent for a customer — create a fully-formed RESERVED booking (priced by the engine on
+    // read). The same gates as the human flow apply (fleet-Active, blacklist, overbooking, valid window). The
+    // customer's AGREEMENT signature and the PAYMENT stay separate human steps; going truly On Rent uses the
+    // existing invoice / start-logging flow (Wrangler can invoice it with billRental).
+    // Build the full booking from human references — customer (id|name|phone), window, and units. Mr. Wrangler
+    // talks in names; when a unit name matches SEVERAL (e.g. "jack hammer" → two units), DON'T ask which —
+    // auto-pick an available one (Active, Ready, not overbooked for the window), since the preview shows it
+    // and the user can change it. Only refuse when nothing fits (no customer / no unit / none available).
+    _plan(p) {
+      const custRef = (p && (p.customerId != null ? p.customerId : p.customer)) || '';
+      const cres = wrResolveCustomer(custRef);
+      if (cres.many) return { issue: `more than one customer matches “${custRef}” — which one? (${cres.many.slice(0, 3).map((c) => c.name).join(', ')})` };
+      if (!cres.rec) return { issue: `no customer matching “${custRef}”` };
+      if (/Blacklist/i.test(cres.rec.accountType || '')) return { issue: `${cres.rec.name} is blacklisted — can't be put on rent` };
+      const win = this._window(p);
+      if (win.issue) return { issue: win.issue };
+      const refs = (Array.isArray(p && p.unitIds) ? p.unitIds : Array.isArray(p && p.units) ? p.units : ((p && (p.unitId || p.unit)) ? [p.unitId || p.unit] : [])).filter(Boolean);
+      if (!refs.length) return { issue: `name at least one unit to put on rent` };
+      const overbook = !!state.overbookOn;
+      const free = (u) => u.fleetStatus === 'Active' && (overbook || rentalsOverlappingUnit(u.unitId, win.start, win.end, null).length === 0);
+      const units = [];
+      for (const ref of refs) {
+        const ures = wrResolveUnit(ref);
+        const cands = ures.rec ? [ures.rec] : (ures.many || []);
+        if (!cands.length) return { issue: `no unit matching “${ref}”` };
+        const pick = cands.filter((u) => free(u) && /ready/i.test(u.inspectionStatus || ''))[0] || cands.filter(free)[0];   // prefer Active+Ready+free, else any free
+        if (!pick) {
+          const u0 = cands[0];
+          if (cands.length > 1) return { issue: `every “${ref}” is booked for ${fmtWindow(win.start, win.end)}` };
+          if (u0.fleetStatus !== 'Active') return { issue: `${u0.name} is ${u0.fleetStatus} — not rentable` };
+          const conf = rentalsOverlappingUnit(u0.unitId, win.start, win.end, null)[0];
+          return { issue: `${u0.name} is already booked ${fmtWindow(conf.startDate, conf.endDate)} — allow overbooking in Settings to force it` };
+        }
+        units.push(pick);
+      }
+      return { customer: cres.rec, units, win };
+    },
+    validate(p) {
+      const r = this._plan(p);
+      if (r.issue) return { issue: r.issue };
+      return { summary: `start rental: ${r.units.map((u) => u.name).join(', ')} for ${r.customer.name} (${fmtWindow(r.win.start, r.win.end)}${r.win.time ? ' · ' + r.win.time : ''})` };
+    },
+    // Compute the date window + pickup time. endDate is honored if given; otherwise derived from `days`
+    // (default 1) so "one day from 10am Monday" reliably spans Mon→Tue (dayDiff=1 → billed as 1 day),
+    // never collapsing to a single date. Time accepts "10am"/"10:00"/"10:00 AM".
+    _window(p) {
+      const start = String((p && p.startDate) || '').trim();
+      if (!start) return { issue: `a rental needs a start date` };
+      if (!parseISO(start)) return { issue: `start date must be YYYY-MM-DD` };
+      let end = String((p && p.endDate) || '').trim();
+      if (!end) { const n = Math.max(1, Math.round(Number((p && p.days) || 1)) || 1); end = addDaysISO(start, n); }
+      if (!parseISO(end)) return { issue: `end date must be YYYY-MM-DD` };
+      if (parseISO(end) < parseISO(start)) return { issue: `the end date is before the start date` };
+      return { start, end, time: wrParseTime((p && (p.startTime != null ? p.startTime : p.time)) || '') };
+    },
+    apply(p) {
+      const res = this._plan(p);
+      if (res.issue || !res.customer || !res.units || !res.win) return null;   // validate already gated this; belt-and-suspenders
+      const win = res.win;
+      const cust = res.customer;
+      const id = 'R-NEW' + Date.now().toString(36) + '-' + (state.seq++);
+      const r = { rentalId: id, customerId: cust.customerId, unitId: null, categoryId: null, rentalName: `Rental — ${cust.name}`, startDate: win.start, endDate: win.end, startTime: win.time, endTime: win.time, status: 'Reserved', transportType: 'Self', deliveryAddress: '', po: '', invoiceId: null, startHours: null, returnHours: null, units: [], notes: '', mock: true };
+      DATA.rentals.push(r); IDX.rental.set(id, r);
+      if (p.transport && p.transport.type && p.transport.type !== 'Self') {   // optional transport — units inherit it via addUnitToRental's proto
+        r.transportType = p.transport.type;
+        r.deliveryAddress = p.transport.address || '';
+        if (p.transport.miles != null) r.transportMiles = Number(p.transport.miles) || 0;
+      }
+      res.units.forEach((u) => addUnitToRental(r, u.unitId));   // builds units[] (Reserved, inherits transport), syncs the primary mirror
+      syncRentalPrimary(r); reindex('rentals', r);
+      logAction(r, 'Put on rent by Mr. Wrangler');
+      const s = activeSession(); const col = COLUMN_OF['rentals']; if (col && s.cols) s.cols[col] = 'rentals'; const cs = s.cards.rentals; if (cs) { cs.mode = 'standard'; cs.recId = id; cs.recType = null; cs.graphView = false; }
+      return { entity: 'rentals', id };
+    },
+  },
+};
+// "Bring them to it" (Jac) — jump the user to whatever Wrangler just touched, for EVERY board: grid cards
+// focus in place, shop types anchor a tab, back-office boards open their detail popup. Best-effort, never throws.
+const WR_SHOP_TYPES = new Set(['inspections', 'workOrders', 'serviceOrders']);
+const WR_BOARD_TYPES = new Set(['vendors', 'parts', 'expenses', 'files']);
+function wrFocusRecord(entity, id) {
+  if (!entity || !id) return;
+  try {
+    if (WR_BOARD_TYPES.has(entity)) { openOverlay({ kind: 'board', board: entity, recId: id }); return; }
+    pillTo(entity, id);   // the app's link-pill nav: reveals the column AND flips the phone's visible column (state.mobileCol), then openStandard — so it lands where you can see it on mobile, not just desktop
+  } catch (e) { /* nav is best-effort */ }
+}
+// Short clickable label for the "Open →" link Wrangler shows after it does something.
+function wrRecLabel(entity, id) {
+  const rec = (entity === 'invoices') ? IDX.invoice.get(id) : (WR_IDX[entity] ? WR_IDX[entity]().get(id) : null);
+  return 'Open ' + ((rec && (rec.name || rec.rentalName || rec.invoiceId || rec.woId || rec.inspectionId)) || id);
+}
+// async ONLY because a named operation may be (recordPayment hits the authoritative backend). For a plan
+// with no operate ops (every auto-applied edit), no `await` is evaluated, so it still runs synchronously.
+async function applyWranglerData(plan) {
+  let created = 0, updated = 0, operated = 0, failed = false, firstEntity = null, firstId = null;
+  for (const op of plan.ops) {
+    if (op.op === 'operate') {
+      const def = WR_OPERATIONS[op.name]; if (!def) continue;
+      try {
+        const res = await def.apply(op.params || {}); operated++;
+        if (res && res.id && !firstId) { firstEntity = res.entity; firstId = res.id; }   // bring the user to the rental/invoice it touched
+        if (!def.selfToasts && op.summary) toast(`Mr. Wrangler: ${op.summary} ✓`);   // payment etc. — confirm; billRental self-toasts
+      } catch (e) { failed = true; toast(`Mr. Wrangler couldn’t do that — ${(e && e.message) || 'try again'}.`); }
+      continue;
+    }
     if (op.op === 'update') {
-      const t = op.target || wrGet(op.entity, op.id); if (!t) return;
+      const t = op.target || wrGet(op.entity, op.id); if (!t) continue;
       Object.assign(t, op.fields);
       if (op.entity === 'customers') t.name = `${t.firstName || ''} ${t.lastName || ''}`.trim() || t.name;
       reindex(op.entity, t); logAction(t, `Mr. Wrangler updated ${Object.keys(op.fields).join(', ')}`); updated++;
+      if (!firstId) { firstEntity = op.entity; firstId = idOf(op.entity, t); }   // bring the user to the edited record too
     } else {
-      (op.op === 'import' || op.op === 'csv-import' ? op.rows : [op.fields]).forEach((f) => { if (op.entity === 'customers') { const c = wrCreateCustomer(f); created++; first = first || c.customerId; } });
+      const mk = WR_CREATE[op.entity]; if (!mk) continue;
+      (op.op === 'import' || op.op === 'csv-import' ? op.rows : [op.fields]).forEach((f) => { const r = mk(f); created++; if (!firstId) { firstEntity = r.entity; firstId = r.id; } });
     }
-  });
-  if (first) { const s = activeSession(); if (s.cols) s.cols.right = 'customers'; const ccs = s.cards.customers; if (created === 1) { ccs.mode = 'standard'; ccs.recId = first; } else { ccs.mode = 'list'; ccs.recId = null; ccs.search = ''; } ccs.graphView = false; }
+  }
+  // Focus the new record only for grid entities that own a column (customers→right,
+  // units/categories→left). Back-office boards (vendors, parts) have no column/card —
+  // skip the nav for them (the record is created + toasted; the user finds it in its board).
+  // Bring the user to what Wrangler just did (Jac — applies to ANYTHING it does): a bulk grid import shows
+  // the list; otherwise focus the single record on whatever board it lives on.
+  if (created > 1 && firstEntity && COLUMN_OF[firstEntity]) { const s = activeSession(); const cs = s.cards[firstEntity]; if (s.cols) s.cols[COLUMN_OF[firstEntity]] = firstEntity; if (cs) { cs.mode = 'list'; cs.recId = null; cs.search = ''; cs.graphView = false; } }
+  else if (firstId) wrFocusRecord(firstEntity, firstId);
+  // Collapse the dock to its header bar so the record is front-and-center (one tap reopens the chat).
+  if (created || updated || operated) state.wrangler.min = true;
   render();
-  toast(`Mr. Wrangler ${[created ? `added ${created}` : '', updated ? `updated ${updated}` : ''].filter(Boolean).join(' · ') || 'made no changes'}. 🤠`);
+  // operate ops toast above (their own handler or the confirm) — only announce create/update activity here.
+  const parts = [created ? `added ${created}` : '', updated ? `updated ${updated}` : ''].filter(Boolean);
+  if (parts.length) toast(`Mr. Wrangler ${parts.join(' · ')}. 🤠`);
+  else if (!operated) toast('Mr. Wrangler made no changes. 🤠');
   // A bulk import is a one-shot action the operator immediately closes/reloads after
   // (to go see the new records) — the 1200ms saveSoon() debounce would never fire and
   // the in-memory records would be lost. Kick the diff-sync NOW instead of waiting.
-  if (created || updated) flushSave();
+  if (created || updated || operated) flushSave();
+  return { created, updated, operated, failed, focus: firstId ? { entity: firstEntity, id: firstId } : null };
 }
 
 // Build the GitHub repro packet from Mr. Wrangler's structured report + the live
@@ -10352,7 +10896,7 @@ const canApproveRequests = () => roleTier(currentRole) >= tierRank('manager');
 async function refreshWranglerRequests() {
   if (typeof backendPassword === 'undefined' || !backendPassword || reqLoading) return;   // demo/offline → no inbox
   reqLoading = true;
-  try { const r = await backendCall('wranglerRequests', {}); if (r && r.ok && Array.isArray(r.requests)) { wranglerRequests = r.requests; reqLoaded = true; } } catch (e) {}
+  try { const r = await backendCall('wranglerRequests', {}); if (r && r.ok && Array.isArray(r.requests)) { wranglerRequests = r.requests.filter((x) => !x.state || x.state.toLowerCase() !== 'closed'); reqLoaded = true; } } catch (e) {}
   reqLoading = false;
   render(); if (state.overlay?.kind === 'requests') renderOverlay();
 }
@@ -11134,7 +11678,7 @@ function render() {
     if (!phone) positionDateSearch(fl);
   }
   // §M3 — lock the column scroll behind any open sheet/overlay/dock on phones
-  document.body.classList.toggle('sheet-open', !!(state.overlay || state.datesearch || state.chat.open || state.wrangler.open));
+  document.body.classList.toggle('sheet-open', !!(state.overlay || state.datesearch || state.chat.open || (state.wrangler.open && !state.wrangler.min)));   // a MINIMIZED Wrangler dock is a slim in-flow bar — it must NOT lock the page scroll (Jac, mobile)
   syncBackGuard();   // §M3 — keep the Android back-button guard in step with what's open
   // §17 — the internal team dock floats bottom-right above the bar when open
   if (state.chat.open) { const d = el('div', 'chat-dock', ''); d.dataset.drop = 'chat'; d.innerHTML = chatDockEl(); $('#app').appendChild(d); }
@@ -12006,11 +12550,13 @@ function onClick(e) {
   if (closest('[data-cmt-color]')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'comment') { const ta = document.querySelector('.overlay .js-cmt-text'); if (ta) o.text = ta.value; o.color = closest('[data-cmt-color]').dataset.cmtColor; renderOverlay(); } return; }
   if (closest('.js-cmt-save')) { e.stopPropagation(); return saveCommentOverlay(); }
   if (closest('.js-fb-send')) { e.stopPropagation(); return sendFeedback(); }
+  if (closest('.js-wr-ask')) { e.stopPropagation(); const o = state.wrangler; if (o.ask && o.ask.resolve) o.ask.resolve(closest('.js-wr-ask').dataset.ans); return; }   // §18 tap an ask_user option → resumes the loop with that answer
   if (closest('.js-wr-send')) { e.stopPropagation(); return wranglerSend(); }   // §18 Mr. Wrangler
   if (closest('.js-wr-min')) { e.stopPropagation(); state.wrangler.min = !state.wrangler.min; return render(); }   // §18 collapse/expand the wrangler dock to its header bar, in place
   if (closest('.js-wr-close')) { e.stopPropagation(); wranglerRailSnapshot(); state.wrangler.open = false; return render(); }   // §18 close the dock back to the launcher; the chat lands on the §18g rail
   if (closest('.js-wr-act')) { e.stopPropagation(); return wranglerFileAction(Number(closest('.js-wr-act').dataset.mi)); }   // §18d file the fix/request Mr. Wrangler proposed inline
-  if (closest('.js-wr-apply')) { e.stopPropagation(); const o = state.wrangler; if (!o.open) return; const m = o.messages[Number(closest('.js-wr-apply').dataset.mi)]; if (!m || !m.action || m.filed) return; const plan = m.action._plan || wrValidatePlan(m.action); if (!plan.ops.length) return; m.filed = true; applyWranglerData(plan); return; }   // Mr. Wrangler applies the previewed add/update/import
+  if (closest('.js-wr-apply')) { e.stopPropagation(); const o = state.wrangler; if (!o.open) return; const m = o.messages[Number(closest('.js-wr-apply').dataset.mi)]; if (!m || !m.action || m.filed) return; const plan = m.action._plan || wrValidatePlan(m.action); if (!plan.ops.length) return; m.filed = true; render(); Promise.resolve(applyWranglerData(plan)).then((res) => { if (res && res.failed) { m.filed = false; } else if (res && res.focus) { m.focus = res.focus; } render(); }); return; }
+  if (closest('.js-wr-goto')) { e.stopPropagation(); const b = closest('.js-wr-goto'); wrFocusRecord(b.dataset.ent, b.dataset.id); state.wrangler.min = true; return render(); }   // the clickable "Open →" link → jump to the record + collapse the dock so it's revealed (esp. on mobile)   // Mr. Wrangler applies the previewed add/update/import; a failed async op (e.g. a payment that didn't go through) un-files so the user can retry
   if (closest('.js-wr-kpi-lock')) { e.stopPropagation(); lockKpiFromWrangler(Number(closest('.js-wr-kpi-lock').dataset.mi)); return; }   // Mr. Wrangler locks in an authored KPI ring
   if (closest('.js-wr-unattach')) { e.stopPropagation(); const o = state.wrangler; if (o.open && o.attach) { o.attach.splice(Number(closest('.js-wr-unattach').dataset.i), 1); render(); } return; }   // §18d drop a pending image attachment
   if (closest('.js-wr-unfile')) { e.stopPropagation(); const o = state.wrangler; if (o.open && o.files) { o.files.splice(Number(closest('.js-wr-unfile').dataset.i), 1); render(); } return; }   // §18d drop a pending file attachment
@@ -14084,6 +14630,18 @@ function applyPayment(invoiceId, r, alloc, refundAlloc) {
   logAction(inv, r.refundedCents != null ? `Refunded ${money((r.refundedCents || 0) / 100)} — ${before} → ${after}` : `Payment — ${before} → ${after} (${r.paymentMethod || 'card'})`);
   render();
 }
+// Headless CASH / CHECK payment core (#109) — shared by the overlay handler AND Mr. Wrangler's
+// recordPayment operation. The SERVER is authoritative (caps at the live balance, appends to payments[],
+// audits the ledger); we apply its result via applyPayment. method is 'cash'|'check' ONLY — this NEVER
+// charges a card or runs an ACH. Throws (with a friendly message) on failure so the caller can surface it.
+async function postManualPayment({ invoiceId, amountCents, method, checkNum }) {
+  const m = String(method || '').toLowerCase();
+  if (m !== 'cash' && m !== 'check') throw new Error('Only cash or check can be recorded here.');   // belt-and-suspenders e-rail guard
+  const r = await withTimeout(backendCall('recordManualPayment', { invoiceId, amountCents, method: m, checkNum: m === 'check' ? (checkNum || '') : '' }), 30000, 'Recording the payment');
+  if (!r || !r.ok) throw new Error(friendlyPayErr(r));
+  applyPayment(invoiceId, r);   // server is authoritative (amountPaid / paymentMethod / paidAt)
+  return r;
+}
 // Record a manual CASH / CHECK payment (#109) — no Stripe. The figure is captured to
 // the exact cent (no ceiling/rounding) and clamped at the outstanding balance so a
 // payment can never overpay; partials just dial the amount down. amountPaid persists
@@ -14112,14 +14670,12 @@ async function recordManualPayment(invoiceId) {
   const live = () => state.overlay === o;
   o.busy = true; o.error = ''; renderOverlay();
   try {
-    const r = await withTimeout(backendCall('recordManualPayment', { invoiceId, amountCents: payCents, method: isCheck ? 'check' : 'cash', checkNum: isCheck ? checkNum : '' }), 30000, 'Recording the payment');
+    const r = await postManualPayment({ invoiceId, amountCents: payCents, method: isCheck ? 'check' : 'cash', checkNum: isCheck ? checkNum : '' });
     if (!live()) return;
-    if (!r || !r.ok) { o.busy = false; o.error = friendlyPayErr(r); return renderOverlay(); }
-    applyPayment(invoiceId, r);   // server is authoritative (amountPaid / paymentMethod / paidAt)
     o.busy = false; closeOverlay();
     toast(invoiceTotals(inv).balance <= 0.005 ? 'Paid in full ✓' : `${r.paymentMethod || 'Cash'} payment recorded ✓`);
   } catch (e) {
-    if (live()) { o.busy = false; o.error = (e && e.rwTimeout) ? 'Timed out — try again.' : 'Network error — try again.'; renderOverlay(); }
+    if (live()) { o.busy = false; o.error = (e && e.rwTimeout) ? 'Timed out — try again.' : ((e && e.message) || 'Network error — try again.'); renderOverlay(); }
   }
 }
 // Print / PDF a customer-facing invoice (#109) — a clean white document (not the dark
@@ -15836,7 +16392,7 @@ function exposeTestApi() {
       rentalAllocated, itemRefunded, itemRefundable, lineRefunded, lineFullyRefunded, refundLines, rentalLineRefund, applyPayment, unitRentalPrice, rentalPrice, rentalDisplayName, setWoLinePhase, setWoPhase, woBottleneck,
       cleanUnitName, planUnitMigration, applyUnitMigration, openMigrationPreview,
       computeTransportPrice, isFueledType, unitTransport, rentalTransport,
-      wrValidatePlan, applyWranglerData, wrFunnel, invoiceMergeable, mergeInvoiceInto, parseWranglerAction, stripWranglerAction, parseCsvFile, wrFindAttachedCsv,
+      wrValidatePlan, applyWranglerData, wrPlanNeedsApply, wrPlanSummary, wrFunnel, wrResolveCustomer, wrResolveUnit, wrResolveCategory, wrResolveVendor, wrResolvePart, wrResolveRental, wrChatFormat, wrFocusRecord, wrRecLabel, activeSession, invoiceMergeable, mergeInvoiceInto, parseWranglerAction, stripWranglerAction, parseCsvFile, wrFindAttachedCsv, wrRunAgent, wrApplyChangesTool, wranglerDigest, WR_TOOL_IMPL, WR_TOOLS,
       latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore, wranglerRailLoad, wrOffloadChatImages, wrEvictChatBlobs, driveViewUrl, mergeWranglerRails,
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
