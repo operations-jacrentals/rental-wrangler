@@ -7466,7 +7466,7 @@ function commsRailEl() {
     const active = wrOpen && (state.wrangler.reqNumber === rq.number || state.wrangler.id === 'req' + rq.number);
     return `<button class="crail-tab ${cls}${active ? ' is-active' : ''}" data-wrc-needs="${rq.number}" role="tab" aria-selected="${active}" data-tip="${tip}"><span class="crail-dot"></span><span class="crail-t">${trim(rq.title || ('Request #' + rq.number))}</span></button>`;
   }).join('');
-  const snaps = (state.wranglerRail || []).filter((c) => !(c.reqNumber && reqNums.has(c.reqNumber)));
+  const snaps = (state.wranglerRail || []).filter((c) => !c.reqNumber);
   // the live chat first if it's a brand-new one not yet snapshotted onto the rail
   let liveTab = '';
   if (wrOpen && state.wrangler.id && !state.wrangler.reqNumber && !snaps.some((c) => c.id === state.wrangler.id) && (state.wrangler.messages || []).length) {
@@ -10896,7 +10896,7 @@ const canApproveRequests = () => roleTier(currentRole) >= tierRank('manager');
 async function refreshWranglerRequests() {
   if (typeof backendPassword === 'undefined' || !backendPassword || reqLoading) return;   // demo/offline → no inbox
   reqLoading = true;
-  try { const r = await backendCall('wranglerRequests', {}); if (r && r.ok && Array.isArray(r.requests)) { wranglerRequests = r.requests; reqLoaded = true; } } catch (e) {}
+  try { const r = await backendCall('wranglerRequests', {}); if (r && r.ok && Array.isArray(r.requests)) { wranglerRequests = r.requests.filter((x) => !x.state || x.state.toLowerCase() !== 'closed'); reqLoaded = true; } } catch (e) {}
   reqLoading = false;
   render(); if (state.overlay?.kind === 'requests') renderOverlay();
 }
