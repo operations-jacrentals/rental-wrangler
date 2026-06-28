@@ -5545,7 +5545,7 @@ function allocLines(inv) {
    sending a partial now would over-refund real money. With this false the Refund button keeps
    today's safe full-invoice behavior untouched. Flip to true ONLY after deploying the
    partial-refund backend (docs/handoffs/partial-refunds-backend.md). */
-const PARTIAL_REFUNDS_ENABLED = false;
+const PARTIAL_REFUNDS_ENABLED = true;
 function itemRefunded(inv, li) {
   if (!inv || !inv.refundAllocations) return 0;
   return Math.min(Number(inv.refundAllocations[lineKey(li)]) || 0, itemPaid(inv, li));
