@@ -10,6 +10,18 @@ name: Branch janitor
 # are not merged-PR heads, so the daily job above structurally cannot see them. They were
 # verified (2026-06-27) as already-shipped or empty stubs. That job only runs from the
 # Actions tab, defaults to a dry-run, and re-guards every branch at runtime.
+#
+# SCOPE — also sweep the Wrangler inbox of already-resolved tasks (Jac, 2026-06-28).
+# The in-app approval inbox is fed by the OPEN GitHub issues labeled `wrangler-fix` /
+# `wrangler-request`. A request whose fix has already shipped (its PR merged / the change
+# is live) but whose issue is still open lingers in Jac's inbox as a stale task — so the
+# janitor should close those resolved issues (a short "shipped in #NNN — closing" comment)
+# so they drop off the inbox. SAFE BY DESIGN, same as the branch prune: never close an
+# issue still labeled `wrangler-needs-jac` (awaiting Jac) or still building; default to a
+# dry-run that only LISTS candidates; require an explicit opt-in to actually close. NOT yet
+# implemented as a step — the issue↔fix link convention (how a merged PR maps to its
+# wrangler-fix issue #) must be pinned down first so it never closes the wrong task; until
+# then `/tidy-sessions` does this confirm-first by hand.
 
 on:
   schedule:
