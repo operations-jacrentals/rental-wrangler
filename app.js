@@ -9316,24 +9316,35 @@ function buildPopupEl(o, overlay, opts = {}) {
       bodyClass: 'req-wrap', body: inner });
     overlay.appendChild(pop);
   } else if (o.kind === 'notifications') {
-    // §18f Notifications — recently-RESOLVED Mr. Wrangler fixes, surfaced in-app so a reporter
-    // sees their glitch got fixed (with the verdict) without ever opening GitHub.
-    const list = visibleNotifs();   // §246 — dismissed resolved-fix chips stay cleared
+    // §18f Notifications — Mr. Wrangler updates surfaced in-app so a reporter sees the outcome
+    // without opening GitHub. TWO kinds, and they must NOT be conflated (Jac, 2026-06-28): a
+    // CLOSED/merged fix is genuinely "Resolved"; an OPEN `wrangler-needs-jac` item (backend sends
+    // kind:'needs', merged:false) still "Needs your decision". The renderer honors n.kind so an
+    // awaiting-you item never reads "Resolved" and pile up looking done.
+    const list = visibleNotifs();   // §246 — dismissed chips stay cleared
     const muted = notifsMuted();
     const inner = !backendPassword
       ? '<div class="req-empty">Sign in to see notifications.</div>'
       : (!notifLoaded && notifLoading ? '<div class="req-empty">Loading…</div>'
-        : (!list.length ? '<div class="req-empty"><span class="req-empty-ic">🔔</span><p>All clear.</p><span>Resolved fixes you reported show here. When Mr. Wrangler finishes one, refresh the app to see the change.</span></div>'
-          : list.map((n) => `<div class="req-card has-closex">
-              <div class="req-head"><span class="req-num">${n.merged ? '✅' : 'ⓘ'} #${n.number}</span><span class="req-title">${esc(n.title)}</span><span class="spacer"></span>${closeX('js-notif-dismiss', { data: { num: n.number }, hover: true })}</div>
-              ${n.verdict ? `<div class="req-text">${esc(n.verdict).replace(/\n+/g, '<br>')}</div>` : '<div class="req-text muted">Resolved — refresh the app to see the change.</div>'}
-              <div class="req-acts"><span class="req-await">${n.closedAt ? 'Resolved ' + esc(fmtShortDate(String(n.closedAt).slice(0, 10))) : 'Resolved'}</span><a class="req-link" href="${esc(n.url)}" target="_blank" rel="noopener">GitHub ↗</a></div>
-            </div>`).join('')));
+        : (!list.length ? '<div class="req-empty"><span class="req-empty-ic">🔔</span><p>All clear.</p><span>Resolved fixes and items needing your decision show here. When Mr. Wrangler finishes one, refresh the app to see the change.</span></div>'
+          : list.map((n) => {
+              // An open wrangler-needs-jac item (backend kind:'needs') NEEDS YOU — never "Resolved".
+              const needs = n.kind === 'needs';
+              const dt = n.closedAt ? ' ' + esc(fmtShortDate(String(n.closedAt).slice(0, 10))) : '';
+              const stat = needs ? { pill: 'Needs you', color: 'red', ic: 'ⓘ', foot: 'Needs your decision' }
+                : n.merged ? { pill: 'Resolved', color: 'green', ic: '✅', foot: 'Resolved' + dt }
+                  : { pill: 'Closed', color: 'gray', ic: '✓', foot: 'Closed' + dt };
+              return `<div class="req-card has-closex${needs ? ' req-needs' : ''}">
+              <div class="req-head"><span class="req-num">${stat.ic} #${n.number}</span><span class="req-title">${esc(n.title)}</span><span class="spacer"></span><span class="pill c-${stat.color} req-state" data-r="R3b">${stat.pill}</span>${closeX('js-notif-dismiss', { data: { num: n.number }, hover: true })}</div>
+              ${n.verdict ? `<div class="req-text">${esc(n.verdict).replace(/\n+/g, '<br>')}</div>` : `<div class="req-text muted">${needs ? 'Mr. Wrangler needs your call on this one.' : 'Resolved — refresh the app to see the change.'}</div>`}
+              <div class="req-acts"><span class="req-await">${stat.foot}</span><a class="req-link" href="${esc(n.url)}" target="_blank" rel="noopener">GitHub ↗</a></div>
+            </div>`;
+            }).join('')));
     const foot = backendPassword
       ? `${list.length ? ghostPill('Dismiss all', { js: 'js-notif-dismissall', tip: 'Clear every resolved notification' }) : ''}${ghostPill(muted ? 'Unmute' : 'Mute', { js: 'js-notif-mute', tip: muted ? 'Show the unseen badge again' : 'Silence the unseen-count badge' })}`
       : '';
     const pop = el('div', 'popup'); pop.style.width = '460px';
-    pop.innerHTML = popupShell({ icon: I.bell, title: `Notifications${list.length ? ` · ${list.length}` : ''}${muted ? ' · muted' : ''}`, tag: 'Mr. Wrangler · resolved',
+    pop.innerHTML = popupShell({ icon: I.bell, title: `Notifications${list.length ? ` · ${list.length}` : ''}${muted ? ' · muted' : ''}`, tag: list.some((n) => n.kind === 'needs') ? 'Mr. Wrangler · needs you / resolved' : 'Mr. Wrangler · resolved',
       headRight: `<button class="iconbtn js-notif-refresh" data-tip="Refresh">${I.refresh || '⟳'}</button>`,
       bodyClass: 'req-wrap', body: inner, foot });
     overlay.appendChild(pop);
