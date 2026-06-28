@@ -7664,13 +7664,30 @@ function wranglerDockEl() {
         const ask = (m.askOptions && m.askOptions.length && o.ask) ? `<div class="wr-ask">${m.askOptions.map((opt) => `<button class="wr-askbtn js-wr-ask" data-ans="${esc(opt)}">${esc(opt)}</button>`).join('')}</div>` : '';
         return `<div class="wr-msg ${m.role}">${m.role === 'assistant' ? '<span class="wr-av">🤠</span>' : ''}<div class="wr-bub">${imgs}${files}${txt}${act}${ask}</div></div>`;
       }).join('')
-    : '<div class="wr-empty">Ask about this record or the whole yard — service due, balances, what needs attention… or just tell me what’s broken (paste or attach a screenshot) and I’ll get it fixed.</div>';
+    : (o.reqNumber
+        ? '<div class="wr-empty">That’s the request up top. Reply here to talk it over with Mr. Wrangler, or use the buttons above to Approve or Dismiss it.</div>'
+        : '<div class="wr-empty">Ask about this record or the whole yard — service due, balances, what needs attention… or just tell me what’s broken (paste or attach a screenshot) and I’ll get it fixed.</div>');
   const attachRow = ((o.attach && o.attach.length) || (o.files && o.files.length))
     ? `<div class="wr-attach-row">${(o.attach || []).map((s, i) => `<div class="wr-thumb"><img src="${esc(s)}" alt="attachment"><button class="wr-thumb-x js-wr-unattach" data-i="${i}" aria-label="Remove">×</button></div>`).join('')}${(o.files || []).map((f, i) => `<div class="wr-fileatt"><span class="wr-fileatt-n">${I.paperclip || '📎'}<span class="wr-file-n">${esc(f.name)}</span></span><button class="wr-thumb-x wr-fileatt-x js-wr-unfile" data-i="${i}" aria-label="Remove">×</button></div>`).join('')}</div>`
     : '';
-  const reqBar = o.reqNumber
-    ? `<div class="wr-reqbar"><span class="wr-reqnum">Request #${o.reqNumber}</span>${o.reqTitle ? `<span class="wr-reqttl">${esc(o.reqTitle)}</span>` : ''}<span class="spacer"></span>${canApproveRequests() ? `<button class="pill ghost js-req-dismiss" data-r="R18" data-n="${o.reqNumber}">Dismiss</button><button class="pill c-commit js-req-approve" data-r="R17" data-n="${o.reqNumber}">✓ Approve</button>` : ''}</div>`
-    : '';
+  // The request header on the dock — readable in full, never truncated. A stamped #id + a
+  // live status pill + GitHub link sit on the top row; the FULL ask wraps below; the actions
+  // (matching the approval inbox) sit on their own row. Fixes "I can't see what it's asking".
+  const reqBar = (() => {
+    if (!o.reqNumber) return '';
+    const rq = (wranglerRequests || []).find((x) => x.number === o.reqNumber);
+    const st = rq ? wrReqState(rq) : null;
+    const statusPill = st ? `<span class="pill c-${st.color} req-state" data-r="R3b">${st.label}</span>` : '';
+    const ghLink = (rq && rq.url) ? `<a class="wr-reqlink" href="${esc(rq.url)}" target="_blank" rel="noopener" data-tip="Open the full request on GitHub">GitHub ↗</a>` : '';
+    const building = st && st.key === 'building';
+    const acts = (canApproveRequests() && !building)
+      ? `<div class="wr-reqacts"><button class="pill ghost js-req-dismiss" data-r="R18" data-n="${o.reqNumber}">Dismiss</button>${(!st || st.key !== 'needs') ? `<button class="pill c-commit js-req-approve" data-r="R17" data-n="${o.reqNumber}">✓ Approve</button>` : ''}</div>`
+      : (building ? '<div class="wr-reqacts"><span class="req-await">Building…</span></div>' : '');
+    return `<div class="wr-reqbar">
+      <div class="wr-reqbar-head"><span class="wr-reqnum">Request #${o.reqNumber}</span>${statusPill}<span class="spacer"></span>${ghLink}</div>
+      ${o.reqTitle ? `<div class="wr-reqttl">${esc(o.reqTitle)}</div>` : ''}
+      ${acts}</div>`;
+  })();
   return `
     <div class="wr-dock-head">
       <span style="font-size:18px">🤠</span>
@@ -9260,12 +9277,7 @@ function buildPopupEl(o, overlay, opts = {}) {
     // §18e the in-app approval inbox for Mr. Wrangler's "Filed for Jac's OK" requests.
     const can = canApproveRequests();
     const list = wranglerRequests;
-    const reqState = (rq) => {
-      const labels = rq.labels || (rq.label ? [rq.label] : []);
-      if (labels.includes('wrangler-needs-jac')) return { key: 'needs', label: 'Needs your answer', color: 'red' };
-      if (labels.includes('wrangler-fix')) return { key: 'building', label: 'Building', color: 'blue' };
-      return { key: 'ok', label: 'Needs your OK', color: 'yellow' };
-    };
+    const reqState = wrReqState;   // shared with the dock reqBar — one source of truth
     const reqCard = (rq) => {
       const p = parseWranglerIssue(rq.body);
       const st = reqState(rq);
@@ -10979,6 +10991,14 @@ function parseWranglerIssue(body) {
 }
 /* Re-open the Mr. Wrangler chat seeded from a filed request, so Jac can keep
    talking it through (same live AI). Each new turn syncs back to the issue. */
+// The state of a Mr. Wrangler request (shared by the approval inbox AND the dock reqBar so
+// they never disagree): needs-your-answer (red) · building (blue) · needs-your-OK (yellow).
+function wrReqState(rq) {
+  const labels = (rq && rq.labels) || (rq && rq.label ? [rq.label] : []);
+  if (labels.includes('wrangler-needs-jac')) return { key: 'needs', label: 'Needs your answer', color: 'red' };
+  if (labels.includes('wrangler-fix')) return { key: 'building', label: 'Building', color: 'blue' };
+  return { key: 'ok', label: 'Needs your OK', color: 'yellow' };
+}
 function openWranglerFromRequest(n) {
   const rq = wranglerRequests.find((x) => x.number === n); if (!rq) return;
   const { report, messages } = parseWranglerIssue(rq.body);
