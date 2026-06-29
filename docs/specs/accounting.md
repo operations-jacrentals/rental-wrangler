@@ -9,6 +9,22 @@
 
 ---
 
+## ✅ Decisions — 2026-06-29 critique (Jac)
+
+These resolve the §11 Open Questions and amend §3 / §6 / §7 / §8.
+
+- **D1 · Cost / spend / aggregate P&L are open to all signed-in users (resolves Q1/G1, Q16).** **Drop** the proposed money-tier gate on the Expenses board, `vendorTotals`, part `priceEach`, and the aggregate P&L/tax surfaces — staff see cost, vendor spend, and the P&L, consistent with the `customers-crm` open-visibility posture. Field cost-capture is simplified: staff both **log and read** cost (no special least-privilege verb). *(Exception → D3.)*
+- **D2 · Accounting basis = accrual, tax-excluded net (resolves Q3/Q5).** Revenue books on the **invoice date**; **Net = Σ `invoice.subtotal` − Σ `expense.amount`**, with sales tax treated as a **pass-through liability** (not revenue). This is the server-canonical `acctPnl` formula so the app and any export always agree. (Basis may become a Setting later if the CPA wants cash; accrual+tax-excluded is the locked v1.)
+- **D3 · Per-unit / per-category profitability — build it, Phase 3, money-gated (resolves Q6/G3).** Show **realized margin** (revenue − attributed cost) per unit/category to **money-tier+**, never the `bottomDollar` floor itself — reuses the `units-fleet` margin gate. This is the one cost surface that stays gated (margin-floor-adjacent / competitive), even though aggregate cost is open (D1).
+- **D4 · Export — CSV/IIF first (Phase 2), QuickBooks OAuth later (Phase 3) (resolves Q9/G5).** CSV is the zero-integration interim; QuickBooks Online OAuth (server-held token, named-only) follows once Q13 is solid.
+- **D5 · Uncollectables route to a Collections feature, not a passive write-off (Jac, 2026-06-29).** Instead of a terminal "bad-debt Write-off," an uncollectable invoice is **sent to "Collections"** — a planned in-app feature that **integrates a 3rd-party collections service**. Collections is its **own roadmap area** (see `AREAS-ROADMAP.md`); accounting still nets a sent-to-collections invoice out of revenue (as a recoverable receivable, not booked income), and reconciles any recovered amount back when the 3rd party remits. The exact accounting treatment (when it leaves revenue, how a partial recovery books) is specced in the Collections area + revisited here.
+
+**⚠️ Cross-cutting / deferred — Q13 (server role trust).** Does the GAS backend receive a **verifiable role**, or only the shared `backendPassword`? If only the password, tier-gating money actions server-side is theatre. **Deferred to the `backend-data` spec (#7); it BLOCKS all Phase-2 money-mutating/outbound actions** (`expenseDelete`, `acctPeriodClose`, `acctExport`). Phase 1 (read-only client P&L) ships regardless.
+
+**Defaults adopted:** Q2 → P&L surfaces **both** as a back-office popup *and* a Financials/KPI tile (coordinate with `financials-kpi`) · Q8 → reconciliation gains a **bank-feed CSV reconcile-assist** (Phase 3, per the "Reconciliation" ask) · Q10 → ship P&L "live" first, add period-close in P3 · Q7 → map the 7 categories 1:1 to GL codes for clean QB export (fuller CoA later) · Q11 → capture optional `expense.taxPaid` for LA use-tax (P2) · Q14 → P&L drill-down reuses the existing gated Invoices board · Q15 → leave `vendorTotals` whole-dollar for P1, re-round to cents in P2 · Q4 → receipt create/edit/delete stays money-tier, closed-period edits refuse server-side · Q12 → ranch-twist copy stays light on money screens (CPA-readable).
+
+---
+
 ## 1. Goal & Problem
 
 **What this area is for.** Invoicing/Payments owns the *money in* (what customers owe and pay). Accounting owns the *money out and the net*: what JacRentals spent (parts, fuel, towing, supplies, shop service), to whom (vendors), against what (a work order, a unit, a category), and whether each dollar has been *reconciled* against the bank. On top of that ledger it derives the picture every owner asks for — **revenue minus cost equals profit**, broken down by period, by category, and eventually by machine — and is the boundary where that picture can be *exported* into a real accounting system instead of living only in Sheets.
