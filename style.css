@@ -1264,10 +1264,17 @@ select.lf-in { appearance: none; cursor: pointer; }
 .req-line.wr .req-who { color: var(--accent); }
 .req-msg { font-size: 12px; color: var(--txt-2); line-height: 1.42; }
 /* the request bar inside the Mr. Wrangler chat (continuing a filed request) */
-.wr-reqbar { display: flex; align-items: center; gap: 8px; padding: 7px 14px; background: var(--accent-soft); border-bottom: 1px solid var(--accent-line); flex-wrap: wrap; }
-.wr-reqnum { font-family: 'Saira Condensed', system-ui, sans-serif; font-weight: 800; font-size: 12px; color: var(--accent); letter-spacing: .5px; flex: 0 0 auto; }
-.wr-reqttl { font-size: 12px; color: var(--txt-2); font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.wr-reqbar .spacer { flex: 1 1 auto; }
+/* The request header on the dock — a small stacked plate: stamp + status on top, the FULL
+   ask wrapping below (never truncated — that was the bug), actions on their own row. */
+.wr-reqbar { display: flex; flex-direction: column; gap: 7px; padding: 9px 14px; background: var(--accent-soft); border-bottom: 1px solid var(--accent-line); }
+.wr-reqbar-head { display: flex; align-items: center; gap: 8px; }
+.wr-reqnum { font-family: 'Saira Condensed', system-ui, sans-serif; font-weight: 800; font-size: 12px; color: var(--accent); letter-spacing: .5px; flex: 0 0 auto; text-transform: uppercase; }
+.wr-reqbar-head .spacer { flex: 1 1 auto; }
+.wr-reqttl { font-size: 13px; line-height: 1.4; color: var(--txt); font-weight: 600; white-space: normal; overflow-wrap: anywhere; }
+.wr-reqlink { font-size: 11px; color: var(--blue); text-decoration: none; flex: 0 0 auto; font-weight: 600; }
+.wr-reqlink:hover { text-decoration: underline; }
+.wr-reqlink:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.wr-reqacts { display: flex; align-items: center; gap: 8px; }
 .wr-reqbar .pill { height: 26px; font-size: 11.5px; }
 /* request lifecycle state (Needs your OK / Needs your answer / Building) */
 .req-head .spacer { flex: 1 1 auto; }
@@ -1304,6 +1311,14 @@ select.lf-in { appearance: none; cursor: pointer; }
 .crail-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .crail-dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; background: var(--txt-3); }
 .crail-t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* the × to REMOVE a chat tab (closing the dock only snapshots it back) — quiet, reveals on
+   hover; always reachable on touch (no hover); reddens on hover to read as a remove. */
+.crail-x { flex: 0 0 auto; margin: 0 -4px 0 1px; width: 16px; height: 16px; display: inline-flex;
+  align-items: center; justify-content: center; border-radius: 50%; font-size: 14px; line-height: 1;
+  color: var(--txt-3); opacity: 0; transition: opacity .1s, color .1s, background .1s; }
+.crail-tab:hover .crail-x { opacity: .75; }
+.crail-x:hover { opacity: 1; color: var(--red); background: color-mix(in srgb, var(--red) 18%, transparent); }
+.is-phone .crail-x { opacity: .75; }   /* touch has no hover — keep the remove reachable */
 /* registry dot follows the team thread's flag color */
 .crail-tab.c-green .crail-dot { background: var(--green); } .crail-tab.c-yellow .crail-dot { background: var(--yellow); }
 .crail-tab.c-red .crail-dot { background: var(--red); box-shadow: 0 0 4px color-mix(in srgb, var(--red) 50%, transparent); } .crail-tab.c-blue .crail-dot { background: var(--blue); }

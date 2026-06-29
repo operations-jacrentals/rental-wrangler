@@ -2054,7 +2054,16 @@ function closeTab(id) {
   if (state.activeTabId === id) state.activeTabId = state.tabs.length ? state.tabs[Math.max(0, i - 1)].id : null;
   render();
 }
-function closeAll() { state.tabs = []; state.activeTabId = null; state.searchMode = false; state.query = ''; state.winEdit = null; state.datesearch = null; render(); }
+function closeAll() {
+  state.tabs = []; state.activeTabId = null;
+  // Clearing the item-tab rail returns to a clean slate, so the search bars must
+  // go with it — both the global one (query + pinned filter pills) and every
+  // per-card mini-search on the now-active default session (these stayed filled).
+  state.searchMode = false; state.query = ''; state.filterTerms = [];
+  for (const c of GRID_CARDS) { const ccs = state.defaultSession.cards[c.id]; if (ccs) { ccs.search = ''; ccs.filterTerms = []; ccs.listLimit = undefined; } }
+  state.winEdit = null; state.datesearch = null;
+  render();
+}
 // §313 — keep only the active tab; with none active, fall back to a full close.
 function closeOthers() { if (!state.activeTabId) { closeAll(); return; } state.tabs = state.tabs.filter((t) => t.id === state.activeTabId); render(); }
 // §313 — Close-all trigger. 1–2 tabs close immediately; >2 ask first (a quick popover).
@@ -5545,7 +5554,7 @@ function allocLines(inv) {
    sending a partial now would over-refund real money. With this false the Refund button keeps
    today's safe full-invoice behavior untouched. Flip to true ONLY after deploying the
    partial-refund backend (docs/handoffs/partial-refunds-backend.md). */
-const PARTIAL_REFUNDS_ENABLED = false;
+const PARTIAL_REFUNDS_ENABLED = true;
 function itemRefunded(inv, li) {
   if (!inv || !inv.refundAllocations) return 0;
   return Math.min(Number(inv.refundAllocations[lineKey(li)]) || 0, itemPaid(inv, li));
@@ -7466,15 +7475,15 @@ function commsRailEl() {
     const active = wrOpen && (state.wrangler.reqNumber === rq.number || state.wrangler.id === 'req' + rq.number);
     return `<button class="crail-tab ${cls}${active ? ' is-active' : ''}" data-wrc-needs="${rq.number}" role="tab" aria-selected="${active}" data-tip="${tip}"><span class="crail-dot"></span><span class="crail-t">${trim(rq.title || ('Request #' + rq.number))}</span></button>`;
   }).join('');
-  const snaps = (state.wranglerRail || []).filter((c) => !(c.reqNumber && reqNums.has(c.reqNumber)));
+  const snaps = (state.wranglerRail || []).filter((c) => !c.reqNumber);
   // the live chat first if it's a brand-new one not yet snapshotted onto the rail
   let liveTab = '';
   if (wrOpen && state.wrangler.id && !state.wrangler.reqNumber && !snaps.some((c) => c.id === state.wrangler.id) && (state.wrangler.messages || []).length) {
-    liveTab = `<button class="crail-tab is-active" data-wrc-open="${esc(state.wrangler.id)}" role="tab" aria-selected="true" data-tip="Current chat with Mr. Wrangler"><span class="crail-dot"></span><span class="crail-t">${trim(wranglerConvoTitle(state.wrangler) || 'New chat')}</span></button>`;
+    liveTab = `<button class="crail-tab is-active" data-wrc-open="${esc(state.wrangler.id)}" role="tab" aria-selected="true" data-tip="Current chat with Mr. Wrangler"><span class="crail-dot"></span><span class="crail-t">${trim(wranglerConvoTitle(state.wrangler) || 'New chat')}</span><span class="crail-x js-wrc-remove" data-wrc-rm="${esc(state.wrangler.id)}" aria-label="Remove this chat" data-tip="Remove this chat">×</span></button>`;
   }
   const snapTabs = snaps.map((c) => {
     const active = wrOpen && state.wrangler.id === c.id;
-    return `<button class="crail-tab${active ? ' is-active' : ''}" data-wrc-open="${esc(c.id)}" role="tab" aria-selected="${active}" data-tip="Reopen this chat with Mr. Wrangler"><span class="crail-dot"></span><span class="crail-t">${trim(c.title || 'Chat')}</span></button>`;
+    return `<button class="crail-tab${active ? ' is-active' : ''}" data-wrc-open="${esc(c.id)}" role="tab" aria-selected="${active}" data-tip="Reopen this chat with Mr. Wrangler"><span class="crail-dot"></span><span class="crail-t">${trim(c.title || 'Chat')}</span><span class="crail-x js-wrc-remove" data-wrc-rm="${esc(c.id)}" aria-label="Remove this chat" data-tip="Remove this chat">×</span></button>`;
   }).join('');
   const wrTabs = reqTabs + liveTab + snapTabs;
   // ── 💬 TEAM ──
@@ -7664,13 +7673,30 @@ function wranglerDockEl() {
         const ask = (m.askOptions && m.askOptions.length && o.ask) ? `<div class="wr-ask">${m.askOptions.map((opt) => `<button class="wr-askbtn js-wr-ask" data-ans="${esc(opt)}">${esc(opt)}</button>`).join('')}</div>` : '';
         return `<div class="wr-msg ${m.role}">${m.role === 'assistant' ? '<span class="wr-av">🤠</span>' : ''}<div class="wr-bub">${imgs}${files}${txt}${act}${ask}</div></div>`;
       }).join('')
-    : '<div class="wr-empty">Ask about this record or the whole yard — service due, balances, what needs attention… or just tell me what’s broken (paste or attach a screenshot) and I’ll get it fixed.</div>';
+    : (o.reqNumber
+        ? '<div class="wr-empty">That’s the request up top. Reply here to talk it over with Mr. Wrangler, or use the buttons above to Approve or Dismiss it.</div>'
+        : '<div class="wr-empty">Ask about this record or the whole yard — service due, balances, what needs attention… or just tell me what’s broken (paste or attach a screenshot) and I’ll get it fixed.</div>');
   const attachRow = ((o.attach && o.attach.length) || (o.files && o.files.length))
     ? `<div class="wr-attach-row">${(o.attach || []).map((s, i) => `<div class="wr-thumb"><img src="${esc(s)}" alt="attachment"><button class="wr-thumb-x js-wr-unattach" data-i="${i}" aria-label="Remove">×</button></div>`).join('')}${(o.files || []).map((f, i) => `<div class="wr-fileatt"><span class="wr-fileatt-n">${I.paperclip || '📎'}<span class="wr-file-n">${esc(f.name)}</span></span><button class="wr-thumb-x wr-fileatt-x js-wr-unfile" data-i="${i}" aria-label="Remove">×</button></div>`).join('')}</div>`
     : '';
-  const reqBar = o.reqNumber
-    ? `<div class="wr-reqbar"><span class="wr-reqnum">Request #${o.reqNumber}</span>${o.reqTitle ? `<span class="wr-reqttl">${esc(o.reqTitle)}</span>` : ''}<span class="spacer"></span>${canApproveRequests() ? `<button class="pill ghost js-req-dismiss" data-r="R18" data-n="${o.reqNumber}">Dismiss</button><button class="pill c-commit js-req-approve" data-r="R17" data-n="${o.reqNumber}">✓ Approve</button>` : ''}</div>`
-    : '';
+  // The request header on the dock — readable in full, never truncated. A stamped #id + a
+  // live status pill + GitHub link sit on the top row; the FULL ask wraps below; the actions
+  // (matching the approval inbox) sit on their own row. Fixes "I can't see what it's asking".
+  const reqBar = (() => {
+    if (!o.reqNumber) return '';
+    const rq = (wranglerRequests || []).find((x) => x.number === o.reqNumber);
+    const st = rq ? wrReqState(rq) : null;
+    const statusPill = st ? `<span class="pill c-${st.color} req-state" data-r="R3b">${st.label}</span>` : '';
+    const ghLink = (rq && rq.url) ? `<a class="wr-reqlink" href="${esc(rq.url)}" target="_blank" rel="noopener" data-tip="Open the full request on GitHub">GitHub ↗</a>` : '';
+    const building = st && st.key === 'building';
+    const acts = (canApproveRequests() && !building)
+      ? `<div class="wr-reqacts"><button class="pill ghost js-req-dismiss" data-r="R18" data-n="${o.reqNumber}">Dismiss</button>${(!st || st.key !== 'needs') ? `<button class="pill c-commit js-req-approve" data-r="R17" data-n="${o.reqNumber}">✓ Approve</button>` : ''}</div>`
+      : (building ? '<div class="wr-reqacts"><span class="req-await">Building…</span></div>' : '');
+    return `<div class="wr-reqbar">
+      <div class="wr-reqbar-head"><span class="wr-reqnum">Request #${o.reqNumber}</span>${statusPill}<span class="spacer"></span>${ghLink}</div>
+      ${o.reqTitle ? `<div class="wr-reqttl">${esc(o.reqTitle)}</div>` : ''}
+      ${acts}</div>`;
+  })();
   return `
     <div class="wr-dock-head">
       <span style="font-size:18px">🤠</span>
@@ -7874,6 +7900,19 @@ async function wrEnforceBudget() {
 /* Boot: migrate the legacy localStorage rail into IndexedDB (one-time), then load
    ALL stored chats into the in-memory rail (newest first). Keep-all retention —
    the size guarantee is enforced by the budget/offload layer, not by dropping. */
+// §18g Chat auto-janitor (Jac, 2026-06-29) — runs on every app open: silently drop plain Mr.
+// Wrangler chats older than the retention window so the rail stays self-cleaning without manual
+// ×-ing. SKIPS request-linked chats (managed via the inbox) and chats with no timestamp (legacy →
+// kept, never guessed-old). The × stays the manual escape hatch; this just stops the slow pile-up.
+const WR_CHAT_RETAIN_DAYS = 30;
+async function wrPruneOldChats() {
+  const cutoff = Date.now() - WR_CHAT_RETAIN_DAYS * 86400000;
+  const stale = (state.wranglerRail || []).filter((c) => !c.reqNumber && (c.ts || 0) > 0 && c.ts < cutoff);
+  if (!stale.length) return;
+  const ids = new Set(stale.map((c) => c.id));
+  for (const c of stale) { try { await wrStore.delChat(c.id); } catch (e) {} }
+  state.wranglerRail = state.wranglerRail.filter((c) => !ids.has(c.id));
+}
 async function wranglerRailLoad() {
   let legacy = null; try { legacy = localStorage.getItem('jactec.wranglerRail'); } catch (e) {}
   if (legacy) {
@@ -7889,6 +7928,7 @@ async function wranglerRailLoad() {
   try {
     const all = await wrStore.listChats();
     state.wranglerRail = (all || []).sort((a, b) => (b.ts || 0) - (a.ts || 0));
+    await wrPruneOldChats();   // §18g auto-janitor: drop plain chats past the retention window
     if (state.wranglerRail.length) render();
   } catch (e) { toast('⚠ Couldn’t load chat history — ' + ((e && e.message) || 'storage error')); }
   loadWranglerRail();   // cross-device: union the local rail with the role's backend rail
@@ -7913,6 +7953,17 @@ function wranglerRailSnapshot() {
 // Start a fresh conversation (snapshotting whatever was open first).
 function wranglerNewChat(seed) {
   openWranglerDock(Object.assign({ messages: [], draft: '', attach: [], files: [], card: null, recId: null, recType: null, reqNumber: null, reqTitle: null, reqUrl: null, id: wranglerNewId() }, seed || {}));
+}
+// §18g REMOVE a Mr. Wrangler conversation entirely (the × on its rail tab) — closing the dock
+// only snapshots a chat back onto the rail, so this is the only way to actually clear one. If the
+// chat is the one open in the dock, close the dock WITHOUT re-snapshotting it.
+function wrRailRemove(id) {
+  if (!id) return;
+  const o = state.wrangler;
+  if (o.id === id) { o.open = false; o.min = false; o.id = null; o.messages = []; o.reqNumber = null; o.reqTitle = null; o.reqUrl = null; }   // drop the live one; cleared so it isn't re-snapshotted on the next open
+  state.wranglerRail = (state.wranglerRail || []).filter((c) => c.id !== id);
+  try { wrStore.delChat(id); } catch (e) {}   // also from IndexedDB so it doesn't reload next boot
+  render();
 }
 // Re-open a stored conversation from the rail.
 function wranglerRailOpen(id) {
@@ -9260,12 +9311,7 @@ function buildPopupEl(o, overlay, opts = {}) {
     // §18e the in-app approval inbox for Mr. Wrangler's "Filed for Jac's OK" requests.
     const can = canApproveRequests();
     const list = wranglerRequests;
-    const reqState = (rq) => {
-      const labels = rq.labels || (rq.label ? [rq.label] : []);
-      if (labels.includes('wrangler-needs-jac')) return { key: 'needs', label: 'Needs your answer', color: 'red' };
-      if (labels.includes('wrangler-fix')) return { key: 'building', label: 'Building', color: 'blue' };
-      return { key: 'ok', label: 'Needs your OK', color: 'yellow' };
-    };
+    const reqState = wrReqState;   // shared with the dock reqBar — one source of truth
     const reqCard = (rq) => {
       const p = parseWranglerIssue(rq.body);
       const st = reqState(rq);
@@ -9304,24 +9350,35 @@ function buildPopupEl(o, overlay, opts = {}) {
       bodyClass: 'req-wrap', body: inner });
     overlay.appendChild(pop);
   } else if (o.kind === 'notifications') {
-    // §18f Notifications — recently-RESOLVED Mr. Wrangler fixes, surfaced in-app so a reporter
-    // sees their glitch got fixed (with the verdict) without ever opening GitHub.
-    const list = visibleNotifs();   // §246 — dismissed resolved-fix chips stay cleared
+    // §18f Notifications — Mr. Wrangler updates surfaced in-app so a reporter sees the outcome
+    // without opening GitHub. TWO kinds, and they must NOT be conflated (Jac, 2026-06-28): a
+    // CLOSED/merged fix is genuinely "Resolved"; an OPEN `wrangler-needs-jac` item (backend sends
+    // kind:'needs', merged:false) still "Needs your decision". The renderer honors n.kind so an
+    // awaiting-you item never reads "Resolved" and pile up looking done.
+    const list = visibleNotifs();   // §246 — dismissed chips stay cleared
     const muted = notifsMuted();
     const inner = !backendPassword
       ? '<div class="req-empty">Sign in to see notifications.</div>'
       : (!notifLoaded && notifLoading ? '<div class="req-empty">Loading…</div>'
-        : (!list.length ? '<div class="req-empty"><span class="req-empty-ic">🔔</span><p>All clear.</p><span>Resolved fixes you reported show here. When Mr. Wrangler finishes one, refresh the app to see the change.</span></div>'
-          : list.map((n) => `<div class="req-card has-closex">
-              <div class="req-head"><span class="req-num">${n.merged ? '✅' : 'ⓘ'} #${n.number}</span><span class="req-title">${esc(n.title)}</span><span class="spacer"></span>${closeX('js-notif-dismiss', { data: { num: n.number }, hover: true })}</div>
-              ${n.verdict ? `<div class="req-text">${esc(n.verdict).replace(/\n+/g, '<br>')}</div>` : '<div class="req-text muted">Resolved — refresh the app to see the change.</div>'}
-              <div class="req-acts"><span class="req-await">${n.closedAt ? 'Resolved ' + esc(fmtShortDate(String(n.closedAt).slice(0, 10))) : 'Resolved'}</span><a class="req-link" href="${esc(n.url)}" target="_blank" rel="noopener">GitHub ↗</a></div>
-            </div>`).join('')));
+        : (!list.length ? '<div class="req-empty"><span class="req-empty-ic">🔔</span><p>All clear.</p><span>Resolved fixes and items needing your decision show here. When Mr. Wrangler finishes one, refresh the app to see the change.</span></div>'
+          : list.map((n) => {
+              // An open wrangler-needs-jac item (backend kind:'needs') NEEDS YOU — never "Resolved".
+              const needs = n.kind === 'needs';
+              const dt = n.closedAt ? ' ' + esc(fmtShortDate(String(n.closedAt).slice(0, 10))) : '';
+              const stat = needs ? { pill: 'Needs you', color: 'red', ic: 'ⓘ', foot: 'Needs your decision' }
+                : n.merged ? { pill: 'Resolved', color: 'green', ic: '✅', foot: 'Resolved' + dt }
+                  : { pill: 'Closed', color: 'gray', ic: '✓', foot: 'Closed' + dt };
+              return `<div class="req-card has-closex${needs ? ' req-needs' : ''}">
+              <div class="req-head"><span class="req-num">${stat.ic} #${n.number}</span><span class="req-title">${esc(n.title)}</span><span class="spacer"></span><span class="pill c-${stat.color} req-state" data-r="R3b">${stat.pill}</span>${closeX('js-notif-dismiss', { data: { num: n.number }, hover: true })}</div>
+              ${n.verdict ? `<div class="req-text">${esc(n.verdict).replace(/\n+/g, '<br>')}</div>` : `<div class="req-text muted">${needs ? 'Mr. Wrangler needs your call on this one.' : 'Resolved — refresh the app to see the change.'}</div>`}
+              <div class="req-acts"><span class="req-await">${stat.foot}</span><a class="req-link" href="${esc(n.url)}" target="_blank" rel="noopener">GitHub ↗</a></div>
+            </div>`;
+            }).join('')));
     const foot = backendPassword
       ? `${list.length ? ghostPill('Dismiss all', { js: 'js-notif-dismissall', tip: 'Clear every resolved notification' }) : ''}${ghostPill(muted ? 'Unmute' : 'Mute', { js: 'js-notif-mute', tip: muted ? 'Show the unseen badge again' : 'Silence the unseen-count badge' })}`
       : '';
     const pop = el('div', 'popup'); pop.style.width = '460px';
-    pop.innerHTML = popupShell({ icon: I.bell, title: `Notifications${list.length ? ` · ${list.length}` : ''}${muted ? ' · muted' : ''}`, tag: 'Mr. Wrangler · resolved',
+    pop.innerHTML = popupShell({ icon: I.bell, title: `Notifications${list.length ? ` · ${list.length}` : ''}${muted ? ' · muted' : ''}`, tag: list.some((n) => n.kind === 'needs') ? 'Mr. Wrangler · needs you / resolved' : 'Mr. Wrangler · resolved',
       headRight: `<button class="iconbtn js-notif-refresh" data-tip="Refresh">${I.refresh || '⟳'}</button>`,
       bodyClass: 'req-wrap', body: inner, foot });
     overlay.appendChild(pop);
@@ -10896,7 +10953,7 @@ const canApproveRequests = () => roleTier(currentRole) >= tierRank('manager');
 async function refreshWranglerRequests() {
   if (typeof backendPassword === 'undefined' || !backendPassword || reqLoading) return;   // demo/offline → no inbox
   reqLoading = true;
-  try { const r = await backendCall('wranglerRequests', {}); if (r && r.ok && Array.isArray(r.requests)) { wranglerRequests = r.requests; reqLoaded = true; } } catch (e) {}
+  try { const r = await backendCall('wranglerRequests', {}); if (r && r.ok && Array.isArray(r.requests)) { wranglerRequests = r.requests.filter((x) => !x.state || x.state.toLowerCase() !== 'closed'); reqLoaded = true; } } catch (e) {}
   reqLoading = false;
   render(); if (state.overlay?.kind === 'requests') renderOverlay();
 }
@@ -10979,6 +11036,14 @@ function parseWranglerIssue(body) {
 }
 /* Re-open the Mr. Wrangler chat seeded from a filed request, so Jac can keep
    talking it through (same live AI). Each new turn syncs back to the issue. */
+// The state of a Mr. Wrangler request (shared by the approval inbox AND the dock reqBar so
+// they never disagree): needs-your-answer (red) · building (blue) · needs-your-OK (yellow).
+function wrReqState(rq) {
+  const labels = (rq && rq.labels) || (rq && rq.label ? [rq.label] : []);
+  if (labels.includes('wrangler-needs-jac')) return { key: 'needs', label: 'Needs your answer', color: 'red' };
+  if (labels.includes('wrangler-fix')) return { key: 'building', label: 'Building', color: 'blue' };
+  return { key: 'ok', label: 'Needs your OK', color: 'yellow' };
+}
 function openWranglerFromRequest(n) {
   const rq = wranglerRequests.find((x) => x.number === n); if (!rq) return;
   const { report, messages } = parseWranglerIssue(rq.body);
@@ -12561,6 +12626,7 @@ function onClick(e) {
   if (closest('.js-wr-unattach')) { e.stopPropagation(); const o = state.wrangler; if (o.open && o.attach) { o.attach.splice(Number(closest('.js-wr-unattach').dataset.i), 1); render(); } return; }   // §18d drop a pending image attachment
   if (closest('.js-wr-unfile')) { e.stopPropagation(); const o = state.wrangler; if (o.open && o.files) { o.files.splice(Number(closest('.js-wr-unfile').dataset.i), 1); render(); } return; }   // §18d drop a pending file attachment
   if (closest('.js-wrangler')) { e.stopPropagation(); if (state.wrangler.open) { wranglerRailSnapshot(); state.wrangler.open = false; return render(); } return wranglerNewChat(); }   // §18 toggle Mr. Wrangler dock — opening always starts a fresh chat (the last one waits on the §18g rail)
+  if (closest('.js-wrc-remove')) { e.stopPropagation(); return wrRailRemove(closest('.js-wrc-remove').dataset.wrcRm); }   // §18g rail: the × on a chat tab → REMOVE that conversation (not just close it)
   if (closest('[data-wrc-needs]')) { e.stopPropagation(); return openWranglerFromRequest(Number(closest('[data-wrc-needs]').dataset.wrcNeeds)); }   // §18g rail: a flashing "needs you" chat → reopen it seeded from the request
   if (closest('[data-wrc-open]')) { e.stopPropagation(); return wranglerRailOpen(closest('[data-wrc-open]').dataset.wrcOpen); }   // §18g rail: reopen a stored conversation
   if (closest('.js-notifications')) { e.stopPropagation(); openOverlay({ kind: 'notifications' }); markNotifsSeen(); refreshWranglerNotifications(); return; }   // §18f notification bell — in-app resolved-fix feed
@@ -16392,7 +16458,7 @@ function exposeTestApi() {
       rentalAllocated, itemRefunded, itemRefundable, lineRefunded, lineFullyRefunded, refundLines, rentalLineRefund, applyPayment, unitRentalPrice, rentalPrice, rentalDisplayName, setWoLinePhase, setWoPhase, woBottleneck,
       cleanUnitName, planUnitMigration, applyUnitMigration, openMigrationPreview,
       computeTransportPrice, isFueledType, unitTransport, rentalTransport,
-      wrValidatePlan, applyWranglerData, wrPlanNeedsApply, wrPlanSummary, wrFunnel, wrResolveCustomer, wrResolveUnit, wrResolveCategory, wrResolveVendor, wrResolvePart, wrResolveRental, wrChatFormat, wrFocusRecord, wrRecLabel, activeSession, invoiceMergeable, mergeInvoiceInto, parseWranglerAction, stripWranglerAction, parseCsvFile, wrFindAttachedCsv, wrRunAgent, wrApplyChangesTool, wranglerDigest, WR_TOOL_IMPL, WR_TOOLS,
+      wrValidatePlan, applyWranglerData, wrPlanNeedsApply, wrPlanSummary, wrFunnel, wrResolveCustomer, wrResolveUnit, wrResolveCategory, wrResolveVendor, wrResolvePart, wrResolveRental, wrChatFormat, wrFocusRecord, wrRecLabel, activeSession, invoiceMergeable, mergeInvoiceInto, parseWranglerAction, stripWranglerAction, parseCsvFile, wrFindAttachedCsv, wrRunAgent, wrApplyChangesTool, wranglerDigest, wrPruneOldChats, WR_CHAT_RETAIN_DAYS, WR_TOOL_IMPL, WR_TOOLS,
       latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore, wranglerRailLoad, wrOffloadChatImages, wrEvictChatBlobs, driveViewUrl, mergeWranglerRails,
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,

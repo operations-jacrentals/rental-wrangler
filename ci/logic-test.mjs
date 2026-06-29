@@ -495,6 +495,22 @@ try {
       ok(/find_\*/.test(dig), 'WR-slim: orientation points the model at the find_* tools');
     }
 
+    // 12j-janitor) Chat auto-prune (Jac) — drops old PLAIN chats on boot; keeps recent, request-linked, undated.
+    {
+      const now = Date.now(), day = 86400000, saved = T.__state.wranglerRail;
+      const old = (T.WR_CHAT_RETAIN_DAYS + 10) * day;
+      T.__state.wranglerRail = [
+        { id: 'jOld', ts: now - old },                         // old plain → prune
+        { id: 'jRecent', ts: now - 3 * day },                  // recent → keep
+        { id: 'jOldReq', ts: now - old, reqNumber: 99 },       // old but request-linked → keep
+        { id: 'jNoTs' },                                        // legacy, no ts → keep (never guessed-old)
+      ];
+      await T.wrPruneOldChats();
+      const ids = T.__state.wranglerRail.map((c) => c.id);
+      ok(!ids.includes('jOld') && ids.includes('jRecent') && ids.includes('jOldReq') && ids.includes('jNoTs'), 'WR-janitor: prunes old plain chats; keeps recent, request-linked, and undated');
+      T.__state.wranglerRail = saved;   // restore
+    }
+
     // 12k) Chat markdown — Wrangler's replies render **bold**/`code`, but stay XSS-safe (escape before format).
     {
       ok(/<strong>June 30, 2026<\/strong>/.test(T.wrChatFormat('Monday is **June 30, 2026**.')), 'WR-fmt: **bold** renders as <strong>');
