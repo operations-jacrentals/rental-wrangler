@@ -12061,6 +12061,7 @@ function startDrag() {
   }
   DRAG.ghost.style.transform = `translate(${DRAG.point.x + 12}px, ${DRAG.point.y - 14}px)`;
   dragLayer.appendChild(DRAG.ghost);
+  haptic([18, 28]);                                                     // §M-touch — firm pickup tick: "you've got it." iOS has NO Vibration API, so the chip ALSO pops in (the .drag-ghost lift animation) as the visible cue.
   try { dragLayer.setPointerCapture(a.pointerId); } catch (err) {}       // the stream survives the source row re-rendering away (sig-pad precedent)
   document.body.classList.add('dragging');
   document.body.dataset.drag = a.card || 'chatel';
