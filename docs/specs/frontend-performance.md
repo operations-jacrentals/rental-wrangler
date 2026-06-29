@@ -7,6 +7,15 @@
 **Maturity:** partial
 **Scope:** The techniques and guardrails that keep the single-file SPA fast — render-budget enforcement, list windowing, image downscaling, debounced/diffed saves, the rAF drag loop, Drive-upload throttling, IndexedDB, cache-busting — plus the three missing legs (service worker / offline shell, code splitting, and Web Vitals instrumentation).
 
+## ✅ Decisions — 2026-06-29 critique (Jac)
+
+- **D1 — Stay buildless for v1; split via native `import()` only (Q1).** No bundler (Vite/esbuild) yet — keep the simple paste-and-`?v=` deploy ritual. Code-split the heaviest non-first-paint flows (Google-Maps transport editor + dispatch map, Stripe payments, Mr. Wrangler authoring) using the browser's native dynamic `import()`, riding the service-worker cache rather than the manual token. **Revisit a bundler only if Phase-0 vitals prove the first chunk is the bottleneck.** *(Adopted the recommended default after walking Jac through the terms; the popup tool was erroring at decision time — Jac was leaning this way and can flip to a bundler later without rework, since native splitting is forward-compatible.)*
+- **D2 — Telemetry client-only first (Q2).** v1 ships speed instrumentation (LCP/INP/CLS + render-time histogram) to a dev-console getter + a `localStorage` ring buffer only — **nothing leaves the device**. The backend `perfReport` sink (a dedicated `_perf` tab) and any external analytics stay a **Phase-2 opt-in**, decided once we know what's worth watching. Payload stays metrics-only regardless. *(Adopted recommended default under the same popup-outage caveat; zero-leak, reversible.)*
+- **D3 — Offline writes OUT of scope for v1 (Q10).** The v1 service worker caches the app **shell only** (instant/offline open); offline edits still queue in memory and surface via the existing R25 "held, retrying" plate (lost on reload, as today). Persisting pending writes to IndexedDB is a real data-integrity design (must compose with diff-sync without resurrecting a stale edit over a newer remote row) — flagged a **strong Phase-3 candidate**, not built now.
+- **D4 — Adopt the conservative draft leans for the remaining forks:** SW update = **prompt-to-reload toast**, never auto-yank a mid-edit page (Q5); **suppress the update toast while offline/R25 active** (Q12); SW registered **production-origin only**, not staging (Q4); SW as a **classic script**, not an ES module, for max device compatibility (Q11); **vendor a pinned `web-vitals` micro-lib** the way Lucide icons are vendored, no runtime CDN (Q8); **keep per-call image downscale** — evidence legibility is a hard floor (Q7); render budget stays **measure/report, never auto-drop a computed value** (Q6); report **both** `render()` time and true INP (Q9); first chunk stays **one shared, flow-split (not role-variant)** for v1 (Q13).
+
+> **Note:** D1/D2 were taken as the recommended defaults during an AskUserQuestion outage. If Jac wants a bundler (D1→bundler) or a backend telemetry sink (D2→Sheet/external), both are clean swaps — flag for a quick confirm at next opportunity.
+
 ---
 
 ## 1. Goal & Problem
@@ -367,6 +376,8 @@ Concrete + testable. CI-gate impact called out.
 ---
 
 ## 11. Open Questions
+
+> **Resolved 2026-06-29:** Q1 → **D1** (stay buildless, native `import()` splitting). Q2 → **D2** (telemetry client-only first). Q10 → **D3** (offline writes out of v1). Q4/Q5/Q6/Q7/Q8/Q9/Q11/Q12/Q13 → **D4** (adopt conservative draft leans). Q3 (in-app vitals readout) → defer; if surfaced, a strip inside the Rulebook overlay, no new window.
 
 These are the unresolved forks for Jac. Each is phrased as a decision with trade-offs.
 
