@@ -11924,6 +11924,11 @@ function initDrag() {
 // instead (see the grid swipe tracker in boot). Frees the horizontal axis for navigation.
 function armReadyTimer(arm) { return setTimeout(() => { if (DRAG.armed === arm) arm.ready = true; }, 300); }
 function armMenuTimer(arm) {   // §M3 — hold-still opens the context menu: touch long-press OR mouse click-and-hold (the right-click equivalent)
+  // PHONE: a long-press is reserved for the DRAG (Jac, 2026-06-29). The menu timer used
+  // to fire at 500ms and DISARM the drag, so any hold longer than ~½s opened the context
+  // menu instead of grabbing the row. On a phone the long-press now always drags; the R20
+  // context menu stays a desktop affordance (right-click / mouse click-and-hold).
+  if (arm.touch && document.body.classList.contains('is-phone')) return null;
   return setTimeout(() => {
     if (DRAG.armed !== arm) return;
     const t = document.elementFromPoint(arm.x, arm.y);
