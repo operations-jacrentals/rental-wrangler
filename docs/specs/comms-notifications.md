@@ -9,6 +9,19 @@
 
 ---
 
+## ✅ Decisions — 2026-06-29 critique (Jac)
+
+These resolve the §11 Open Questions. **Priority note:** Jac wants this built **before GPS** (the SMS channel is the prerequisite for GPS stray alerts, `gps-tracking` D4) — and it also unblocks the dead Reputation KPI.
+
+- **D1 · SMS provider = MoceanAPI (resolves Q-3).** Jac has a **Mocean** account (moceanapi.com). Use Mocean as the SMS vendor; key named-only in GAS Script Properties (e.g. `MOCEAN_API_KEY` / `MOCEAN_FROM`), **never in repo**. SMS-first; email a later phase. The `sendCustomerMessage` contract stays provider-agnostic with a **Mocean adapter** server-side (so a future swap is server-only).
+- **D2 · Sends are OPEN to all signed-in users for now (resolves Q-1).** **No tier gate** on firing a customer message (quote or reminder) — any signed-in role may send, consistent with the open-visibility posture. The other server-side gates **stand and are not loosened**: customer-**isolation** (recipient resolved from the record's `customerId`, never a client `to`), the **var-allowlist** (no `cost`/`margin`/`bottomDollar` in any body), and **consent/opt-out**. (Tighten the tier later if it's ever abused.)
+- **D3 · Full hands-off automation + quiet hours (resolves Q-6).** The reminder sweep sends **silently/automatically** — SMS is hands-off, **no morning-approval step**. **But NO after-hours sends** — quiet hours enforced (America/Chicago). The dedup ledger + daily cost cap remain the runaway guards.
+- **D4 · Reputation is a multi-source COMPOSITE (resolves Q-3b; reframes §7.4).** The Reputation KPI is **not** a single review-star source — it aggregates **Google reviews + email engagement + vendor statuses + customer-account statuses + more** into a weighted composite. Define the full signal set + weights as a follow-up (ties to the `financials-kpi` KPI engine); this area feeds the review-request + email-engagement signals in. The ring stays null until enough signals land.
+
+**Defaults adopted:** Q-2 → consent `unknown` = implied for **transactional** (quotes/reminders; quick legal check, marketing needs express opt-in) · Q-16 → **hard-block opted-out**, no override · Q-7 → **record-only** recipients (no ad-hoc numbers) · Q-9/Q-17 → `messages` log is **server-only** (on-demand fetch; PII never synced) · Q-8b → history phone lines **masked** · Q-13/Q-14 → templates in a **server-side registry**, hardcoded v1 · Q-11 → channel **stop-on-fail** for automated · Q-15 → daily send-cap as an admin setting · Q-10 → quiet hours **America/Chicago**, server-computed.
+
+---
+
 ## 1. Goal & Problem
 
 ### 1.1 What this area is for
@@ -481,6 +494,8 @@ Each criterion is phrased so a test (or a manual repro on `localhost:9147`) can 
 ---
 
 ## 11. Open Questions
+
+> **Resolved 2026-06-29:** Q-3 → D1 (MoceanAPI SMS) · Q-1 → D2 (sends open to all; isolation+allowlist+consent still server-enforced) · Q-6 → D3 (hands-off auto + quiet hours) · Q-3b → D4 (Reputation = multi-source composite). Adopted Q-2/7/8b/9/10/11/13/14/15/16/17. See the Decisions block up top.
 
 > No seed questions were captured for this area; **every question below was surfaced from the code and the forks hit while drafting/hardening.** Each needs Jac's call before build. The gate-sensitive ones — Q-1 (send tier), Q-2 (consent model), Q-7 (ad-hoc recipient), Q-8/Q-8b (body/history PII), Q-9/Q-17 (sync vs. server-only log), Q-16 (opted-out override) — are the ones that must be settled BEFORE any send code ships, because each is a "wrong = live PII / pricing / compliance leak" call.
 
