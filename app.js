@@ -7900,6 +7900,19 @@ async function wrEnforceBudget() {
 /* Boot: migrate the legacy localStorage rail into IndexedDB (one-time), then load
    ALL stored chats into the in-memory rail (newest first). Keep-all retention —
    the size guarantee is enforced by the budget/offload layer, not by dropping. */
+// §18g Chat auto-janitor (Jac, 2026-06-29) — runs on every app open: silently drop plain Mr.
+// Wrangler chats older than the retention window so the rail stays self-cleaning without manual
+// ×-ing. SKIPS request-linked chats (managed via the inbox) and chats with no timestamp (legacy →
+// kept, never guessed-old). The × stays the manual escape hatch; this just stops the slow pile-up.
+const WR_CHAT_RETAIN_DAYS = 30;
+async function wrPruneOldChats() {
+  const cutoff = Date.now() - WR_CHAT_RETAIN_DAYS * 86400000;
+  const stale = (state.wranglerRail || []).filter((c) => !c.reqNumber && (c.ts || 0) > 0 && c.ts < cutoff);
+  if (!stale.length) return;
+  const ids = new Set(stale.map((c) => c.id));
+  for (const c of stale) { try { await wrStore.delChat(c.id); } catch (e) {} }
+  state.wranglerRail = state.wranglerRail.filter((c) => !ids.has(c.id));
+}
 async function wranglerRailLoad() {
   let legacy = null; try { legacy = localStorage.getItem('jactec.wranglerRail'); } catch (e) {}
   if (legacy) {
@@ -7915,6 +7928,7 @@ async function wranglerRailLoad() {
   try {
     const all = await wrStore.listChats();
     state.wranglerRail = (all || []).sort((a, b) => (b.ts || 0) - (a.ts || 0));
+    await wrPruneOldChats();   // §18g auto-janitor: drop plain chats past the retention window
     if (state.wranglerRail.length) render();
   } catch (e) { toast('⚠ Couldn’t load chat history — ' + ((e && e.message) || 'storage error')); }
   loadWranglerRail();   // cross-device: union the local rail with the role's backend rail
@@ -16444,7 +16458,7 @@ function exposeTestApi() {
       rentalAllocated, itemRefunded, itemRefundable, lineRefunded, lineFullyRefunded, refundLines, rentalLineRefund, applyPayment, unitRentalPrice, rentalPrice, rentalDisplayName, setWoLinePhase, setWoPhase, woBottleneck,
       cleanUnitName, planUnitMigration, applyUnitMigration, openMigrationPreview,
       computeTransportPrice, isFueledType, unitTransport, rentalTransport,
-      wrValidatePlan, applyWranglerData, wrPlanNeedsApply, wrPlanSummary, wrFunnel, wrResolveCustomer, wrResolveUnit, wrResolveCategory, wrResolveVendor, wrResolvePart, wrResolveRental, wrChatFormat, wrFocusRecord, wrRecLabel, activeSession, invoiceMergeable, mergeInvoiceInto, parseWranglerAction, stripWranglerAction, parseCsvFile, wrFindAttachedCsv, wrRunAgent, wrApplyChangesTool, wranglerDigest, WR_TOOL_IMPL, WR_TOOLS,
+      wrValidatePlan, applyWranglerData, wrPlanNeedsApply, wrPlanSummary, wrFunnel, wrResolveCustomer, wrResolveUnit, wrResolveCategory, wrResolveVendor, wrResolvePart, wrResolveRental, wrChatFormat, wrFocusRecord, wrRecLabel, activeSession, invoiceMergeable, mergeInvoiceInto, parseWranglerAction, stripWranglerAction, parseCsvFile, wrFindAttachedCsv, wrRunAgent, wrApplyChangesTool, wranglerDigest, wrPruneOldChats, WR_CHAT_RETAIN_DAYS, WR_TOOL_IMPL, WR_TOOLS,
       latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore, wranglerRailLoad, wrOffloadChatImages, wrEvictChatBlobs, driveViewUrl, mergeWranglerRails,
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
