@@ -11937,6 +11937,26 @@ function dragDown(e) {
   if (state.overlay) return;                                             // overlays own their clicks; the winpicker is non-modal (Task E — drag to select)
   if (e.target.closest('.tedit')) return;                                // the inline transport editor owns its pointers — let Google pan the map + drag the site pin (never arm an app/chat drag here)
   if (e.target.closest('.dispm')) return;                                // §2.3 the dispatch cockpit map owns its pointers too — Google handles pan/zoom, never the app drag engine
+  // §M3 — PHONE record-grab: a list row / open standard card is wall-to-wall pills +
+  // chat-els, leaving almost no bare space to grab — a finger-press lands on a pill ~2/3
+  // of the time, which on touch would either BAIL (.pill is in the bail list below) or
+  // hijack into a CHAT-TAG drag, so the record drag was effectively ungrabbable on a
+  // phone (Jac, 2026-06-29). On touch we resolve the whole row/card to its record FIRST:
+  // dragSourceAt already ranks a units pill as itself (the unit→rental link still wins),
+  // then a row, then an open standard card — so pressing ANYWHERE non-interactive on the
+  // row drags the record. Tap is unaffected (a press only LIFTS on a held horizontal
+  // move; a tap never does); chat-tag-dragging a single pill stays a desktop affordance.
+  if (e.pointerType === 'touch' && document.body.classList.contains('is-phone')
+      && !e.target.closest('input, textarea, select, button, .x, .inline-edit, .inline-input, .dropdown-menu, .ctx-menu')) {
+    const src = dragSourceAt(e.target);
+    if (src) {
+      DRAG.point.x = e.clientX; DRAG.point.y = e.clientY;
+      const armed = { card: src.card, rec: src.rec, x: e.clientX, y: e.clientY, pointerId: e.pointerId, touch: true, lp: null, rdy: null, ready: false };
+      armed.lp = armMenuTimer(armed);                       // §M3 — hold still → context menu
+      armed.rdy = armReadyTimer(armed);                     // a hold must precede the horizontal drag
+      DRAG.armed = armed; return;
+    }
+  }
   // §17 — a granular element marked [data-chat-el] (a pill/price/line/person) arms a
   // CHAT-TAG drag (tap still does its own thing; drag/long-press tags it into a chat).
   const chatEl = e.target.closest('[data-chat-el]');
