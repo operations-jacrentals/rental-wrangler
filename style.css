@@ -1169,6 +1169,42 @@ select.lf-in { appearance: none; cursor: pointer; }
 .wr-msg.user .wr-bub { background: var(--accent); color: #1a1205; font-weight: 500; border-bottom-right-radius: 4px; }
 .wr-bub.wr-think { color: var(--txt-3); font-style: italic; }
 .wr-err { color: var(--red); font-size: 12px; padding: 0 16px 6px; }
+/* R26 — Wrangler Ops PAUSED plate: a developer took the wheel (live jump-in), so the
+   dock is read-only until released. Red hazard rail + calm steel body + stamped label. */
+.wr-paused { position: relative; display: flex; flex-direction: column; gap: 1px; padding: 8px 14px 8px 22px; background: var(--red-bg); border-bottom: 1px solid var(--red); flex: 0 0 auto; }
+.wr-paused::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 8px; background: repeating-linear-gradient(135deg, var(--red) 0 7px, #14181d 7px 14px); }
+.wr-paused-ttl { font-family: 'Saira Condensed', sans-serif; text-transform: uppercase; letter-spacing: 2px; font-weight: 700; font-size: 13px; color: var(--red); -webkit-text-fill-color: color-mix(in srgb, var(--red) 70%, white); text-shadow: 0 0 3px var(--red), 0 0 7px color-mix(in srgb, var(--red) 55%, transparent); }
+.wr-paused-sub { font-size: 11.5px; color: var(--txt-2); }
+/* §18i Wrangler Ops — the developer inbox plate: DEV_PASSWORD gate, then a two-pane
+   chat list + transcript/composer. All tokens → themes for dark/light/ranch for free. */
+.wrops-body { padding: 0; }
+.wrops-gate { display: flex; flex-direction: column; gap: 10px; padding: 18px; }
+.wrops-gate-lead { font-size: 13px; color: var(--txt-2); }
+.wrops-key { height: 38px; border-radius: 9px; border: 1px solid var(--line); background: var(--panel-2); color: var(--txt); padding: 0 12px; font-size: 14px; letter-spacing: 1px; }
+.wrops-key:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.wrops-err { color: var(--red); font-size: 12px; }
+.wrops-wrap { display: grid; grid-template-columns: 280px 1fr; height: 62vh; min-height: 0; }
+.wrops-list { overflow-y: auto; border-right: 1px solid var(--line); display: flex; flex-direction: column; }
+.wrops-row { display: flex; flex-direction: column; gap: 4px; padding: 10px 13px; border: 0; border-bottom: 1px solid var(--line); background: transparent; text-align: left; cursor: pointer; color: var(--txt); width: 100%; }
+.wrops-row:hover { background: var(--panel-2); }
+.wrops-row.on { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
+.wrops-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.wrops-row-top { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.wrops-row-ttl { font-weight: 600; font-size: 13px; flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wrops-row-role { font-family: 'Saira Condensed', sans-serif; text-transform: uppercase; letter-spacing: 1.5px; font-size: 10px; color: var(--txt-3); flex: 0 0 auto; }
+.wrops-row-prev { font-size: 12px; color: var(--txt-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wrops-row-meta { display: flex; align-items: center; gap: 8px; }
+.wrops-age { font-size: 11px; color: var(--txt-3); margin-left: auto; }
+.wrops-pane { display: flex; flex-direction: column; min-width: 0; }
+.wrops-detail { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.wrops-transcript { flex: 1 1 auto; overflow-y: auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
+.wrops-driver { display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-top: 1px solid var(--line); }
+.wrops-driver .js-wrops-escalate { margin-left: auto; }
+.wrops-compose { display: flex; align-items: center; gap: 8px; padding: 11px 14px; border-top: 1px solid var(--line); }
+.wrops-in { flex: 1 1 auto; height: 38px; border-radius: 9px; border: 1px solid var(--line); background: var(--panel-2); color: var(--txt); padding: 0 12px; font-size: 13.5px; }
+.wrops-in:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.wrops-empty { color: var(--txt-3); font-size: 13px; text-align: center; padding: 30px 16px; line-height: 1.5; }
+@media (max-width: 700px) { .wrops-popup { width: 94vw !important; } .wrops-wrap { grid-template-columns: 1fr; height: 70vh; } .wrops-list { max-height: 38%; border-right: 0; border-bottom: 1px solid var(--line); } }
 .wr-compose { display: flex; align-items: center; gap: 8px; padding: 11px 14px; border-top: 1px solid var(--line); }
 /* §18d attach/paste images — paperclip stamp + pending thumbnails + sent-in-bubble.
    The chat takes a paste or a dropped file, Claude-style. */
