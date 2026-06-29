@@ -9,6 +9,17 @@
 
 ---
 
+## ✅ Decisions — 2026-06-29 critique (Jac)
+
+These resolve the §11 Open Questions and the §3 central gate question (D3).
+
+- **D1 · Per-role passwords + server-side tier enforcement (resolves OQ-1 & OQ-13). ⭐ Keystone.** Move from the **single shared team password** to **per-role passwords**: each role (staff / money / manager / admin) has its own password; the server maps **password → tier** and **enforces money + admin actions server-side** (`stripe*`, `recordManualPayment`, the fund-movement part of WO→invoice billing, `setConfig`, `seed`, accounting period-close/export). Revocation = rotate one role's password (no team-wide disruption). The `auth` reply's role becomes **authoritative** (server-derived), not advisory. **This unblocks the decisions that were waiting on it:** the **dual-approver refund** (`invoicing-payments` D2, which needs a second role-password), the **server-checked money writes** (`maintenance-shop` D2), and **accounting's deferred Q13**. A real `Code.gs` change → `/clasp`, Phase 3 hardening. *(Consistent with the open-visibility posture: per-role passwords gate money/admin **actions** + revocation, not data **visibility** — all roles still load all data.)*
+- **D2 · Drive media stays anyone-with-link (resolves OQ-7).** Keep `uc?export=view&id=` URLs for selfies/agreements (unguessable ids; accepted exposure). No signed-URL work.
+
+**Defaults adopted:** OQ-2 → `backendVersion` + capability negotiation · OQ-3 → CI lint asserting `PERSIST_KEYS`/`PERSIST_ID`/`IDX_MAP` key-parity · OQ-5 → per-entity sync applied/rejected counts · OQ-14 → **Stripe idempotency keys** on `stripeChargeInvoice`/`recordManualPayment` · OQ-12 → fix the `wrangler-needs-jac` label drift via `/clasp` (Phase 1) · OQ-6 → pricing floors stay **client-hide** (per `units-fleet` D1; no server-redaction) · OQ-11 → record-level last-clean-writer-wins + invoice action-locks (no field-level merge) · OQ-9 → no always-on sync pulse (silence = saved) · OQ-10/OQ-4 → admin Health plate + `health` probe deferred (optional) · OQ-8 → server audit log deferred (revisit with compliance) · OQ-15 → durable offline queue is `frontend-performance` scope.
+
+---
+
 ## 1. Goal & Problem
 
 ### What this area is for
@@ -384,6 +395,8 @@ Concrete, testable. CI-gate impact noted; recall port 8000 → **9147** before r
 ---
 
 ## 11. Open Questions
+
+> **Resolved 2026-06-29:** OQ-1 + OQ-13 → **D1 (per-role passwords + server-side tier enforcement — the keystone)** · OQ-7 → D2 (keep anyone-with-link). Adopted: OQ-2, OQ-3, OQ-5, OQ-14, OQ-12, OQ-6, OQ-11, OQ-9; deferred: OQ-10, OQ-4, OQ-8, OQ-15. See the Decisions block up top.
 
 > Seed list: none captured in the code-grounding map — all questions below were generated from the live code. Each is a real fork with trade-offs for Jac to settle.
 
