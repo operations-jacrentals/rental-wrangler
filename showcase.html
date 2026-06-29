@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>UI Candidates — Yard Data-Plate Showcase</title>
+<!--
+  LOCAL SANDBOX ONLY — not wired into the live app (index.html / app.js / style.css untouched).
+  Three Uiverse components, re-skinned into the JacRentals "yard data-plate" language for evaluation.
+  Open directly via file:// — no server required.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Saira+Condensed:wght@600;700;800&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #0b0c0f;
+    --bg-2: #101216;
+    --panel: #15171c;
+    --panel-2: #1b1e24;
+    --accent: #ff7a1a;          /* safety-orange */
+    --accent-soft: rgba(255,122,26,.14);
+    --accent-line: rgba(255,122,26,.5);
+    --yellow: #f5c542;          /* caution */
+    --red: #ff4242;
+    --tan: #c2925a;             /* worn leather (ranch seasoning) */
+    --tan-deep: #8a5a2b;
+    --ink: #1a1205;             /* dark ink on orange */
+    --txt: #e7eaef;
+    --txt-dim: #8b929e;
+    --border: rgba(255,255,255,.08);
+    --hazard: repeating-linear-gradient(135deg, var(--yellow) 0 13px, #14181d 13px 26px);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    font-family: "Geist", system-ui, sans-serif;
+    background:
+      radial-gradient(1200px 600px at 50% -10%, #16191f 0%, transparent 60%),
+      var(--bg);
+    color: var(--txt);
+    min-height: 100vh;
+    padding: 0 0 64px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .stamp {
+    font-family: "Saira Condensed", sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    font-weight: 700;
+  }
+
+  /* ---- Header: hazard stripe + wordmark ---------------------------------- */
+  header {
+    border-bottom: 1px solid var(--border);
+    background: linear-gradient(180deg, #1b2129, #0c0e11);
+    position: relative;
+  }
+  .hazard-bar { height: 8px; background: var(--hazard); }
+  .head-inner {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 26px 24px 22px;
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .wordmark {
+    font-family: "Saira Condensed", sans-serif;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 3px;
+    font-size: 26px;
+    color: var(--txt);
+  }
+  .wordmark b { color: var(--accent); }
+  .subtitle {
+    color: var(--txt-dim);
+    font-size: 13px;
+    letter-spacing: .3px;
+  }
+  .pill-local {
+    margin-left: auto;
+    font-family: "Saira Condensed", sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    font-weight: 700;
+    font-size: 11px;
+    color: var(--yellow);
+    border: 1px solid rgba(245,197,66,.4);
+    background: rgba(245,197,66,.1);
+    padding: 5px 11px;
+    border-radius: 4px;
+    align-self: center;
+  }
+
+  /* ---- Grid of data-plate cards ------------------------------------------ */
+  main {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 36px 24px 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 24px;
+  }
+
+  .plate {
+    position: relative;
+    background: linear-gradient(180deg, var(--panel-2), var(--panel));
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 22px 22px 26px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    box-shadow: 0 1px 0 rgba(255,255,255,.03) inset, 0 14px 30px rgba(0,0,0,.35);
+  }
+  /* corner rivets */
+  .plate::before, .plate::after,
+  .plate > .rivet-b, .plate > .rivet-c {
+    content: "";
+    position: absolute;
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #4a525e, #1a1d22 70%);
+    box-shadow: 0 1px 1px rgba(0,0,0,.6);
+  }
+  .plate::before { top: 9px; left: 9px; }
+  .plate::after { top: 9px; right: 9px; }
+  .plate > .rivet-b { bottom: 9px; left: 9px; }
+  .plate > .rivet-c { bottom: 9px; right: 9px; }
+
+  .plate-label {
+    font-family: "Saira Condensed", sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    font-weight: 700;
+    font-size: 13px;
+    color: var(--txt);
+    display: flex;
+    align-items: center;
+    gap: 9px;
+  }
+  .plate-label .idx {
+    color: var(--ink);
+    background: var(--accent);
+    border-radius: 3px;
+    font-size: 11px;
+    padding: 1px 6px;
+    letter-spacing: 1px;
+  }
+  .plate-credit { font-size: 11px; color: var(--txt-dim); letter-spacing: .3px; }
+
+  .stage {
+    background:
+      linear-gradient(180deg, #0e1015, #0a0b0e);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    min-height: 150px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 22px;
+    padding: 28px 18px;
+  }
+  .note { font-size: 12px; color: var(--txt-dim); line-height: 1.5; }
+  .note b { color: var(--tan); font-weight: 600; }
+
+  /* ====================================================================== */
+  /* 1 — DRAW-CHECKBOX (SelfMadeSystem original, re-skinned)                 */
+  /*    box outline draws on, fills safety-orange when branded               */
+  /* ====================================================================== */
+  .container {
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .container input { display: none; }
+  .container .draw-box {
+    overflow: visible;
+  }
+  .container .draw-box .path {
+    fill: none;
+    stroke: var(--txt-dim);
+    stroke-width: 6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    transition: stroke .25s ease, stroke-dashoffset .5s cubic-bezier(.4,0,.2,1), fill .35s ease .15s;
+  }
+  .container input:checked + .draw-box .path {
+    stroke: var(--accent);
+    fill: var(--accent-soft);
+    stroke-dasharray: 1;
+    stroke-dashoffset: 0;
+    animation: draw 0.6s cubic-bezier(.5,0,.3,1) forwards;
+  }
+  .container input:not(:checked) + .draw-box .path {
+    stroke-dasharray: 1;
+    stroke-dashoffset: 0;
+  }
+  @keyframes draw {
+    0%   { stroke-dashoffset: 1; }
+    100% { stroke-dashoffset: 0; }
+  }
+  .container:hover .draw-box .path { stroke: var(--accent-line); }
+  .container input:focus-visible + .draw-box {
+    outline: 2px solid var(--accent);
+    outline-offset: 4px;
+    border-radius: 6px;
+  }
+  .cb-caption {
+    font-family: "Saira Condensed", sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    font-weight: 700;
+    font-size: 15px;
+    color: var(--txt-dim);
+    transition: color .25s ease;
+  }
+  .container input:checked ~ .cb-caption { color: var(--accent); }
+
+  /* ====================================================================== */
+  /* 2 — KEYED "FANCY" BUTTON (cssbuttons-io original, re-skinned)           */
+  /*    offset hi-vis "keys" snap into the frame on hover/press             */
+  /* ====================================================================== */
+  .fancy {
+    position: relative;
+    display: inline-block;
+    text-decoration: none;
+    cursor: pointer;
+    padding: 14px 30px;
+    font-family: "Saira Condensed", sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 2.5px;
+    font-weight: 700;
+    font-size: 15px;
+    color: var(--accent);
+    background: linear-gradient(180deg, #1c222a, #0f1217);
+    border: 2px solid var(--accent-line);
+    border-radius: 3px;
+    transition: color .35s ease, background .35s ease, border-color .35s ease;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .fancy .text { position: relative; z-index: 2; }
+  .fancy .top-key,
+  .fancy .bottom-key-1,
+  .fancy .bottom-key-2 {
+    position: absolute;
+    background: var(--bg);
+    transition: width .4s ease, left .4s ease, right .4s ease;
+    z-index: 1;
+  }
+  .fancy .top-key {
+    height: 2px; width: 28px;
+    top: -2px; left: 16px;
+    background: var(--accent);
+  }
+  .fancy .bottom-key-1 {
+    height: 2px; width: 18px;
+    right: 26px; bottom: -2px;
+    background: var(--accent);
+  }
+  .fancy .bottom-key-2 {
+    height: 2px; width: 8px;
+    right: 16px; bottom: -2px;
+    background: var(--accent);
+  }
+  .fancy:hover, .fancy:focus-visible {
+    color: var(--ink);
+    background: linear-gradient(180deg, #ff8a2e, #ff7a1a);
+    border-color: var(--accent);
+    outline: none;
+  }
+  .fancy:focus-visible { box-shadow: 0 0 0 3px var(--accent-soft), 0 0 0 5px var(--accent); }
+  .fancy:hover .top-key { left: -2px; width: 0; }
+  .fancy:hover .bottom-key-1 { right: 0; width: 0; }
+  .fancy:hover .bottom-key-2 { right: 0; width: 0; }
+  .fancy:active { transform: translateY(1px); }
+
+  /* ====================================================================== */
+  /* 3 — DIAGONAL SWEEP BUTTON (adamgiebl original, re-skinned)              */
+  /*    a hi-vis bar sweeps across and fills on hover                       */
+  /* ====================================================================== */
+  .sweep {
+    border: none;
+    display: inline-block;
+    position: relative;
+    padding: 0.8em 2.6em;
+    font-size: 16px;
+    background: transparent;
+    cursor: pointer;
+    user-select: none;
+    overflow: hidden;
+    color: var(--accent);
+    z-index: 1;
+    font-family: "Saira Condensed", sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 2.5px;
+    font-weight: 700;
+    transition: color .3s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .sweep span {
+    position: absolute;
+    left: 0; top: 0;
+    width: 100%; height: 100%;
+    background: transparent;
+    z-index: -1;
+    border: 3px solid var(--accent);
+    border-radius: 2px;
+  }
+  .sweep span::before {
+    content: "";
+    display: block;
+    position: absolute;
+    width: 8%; height: 500%;
+    background: rgba(255,255,255,.08);
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%) rotate(-60deg);
+    transition: all 0.3s;
+  }
+  .sweep:hover span::before {
+    transform: translate(-50%, -50%) rotate(-90deg);
+    width: 100%;
+    background: var(--accent);
+  }
+  .sweep:hover { color: var(--ink); }
+  .sweep:active span::before { background: #e0680f; }
+  .sweep:focus-visible { outline: 2px solid var(--yellow); outline-offset: 3px; }
+
+  footer {
+    max-width: 1080px;
+    margin: 40px auto 0;
+    padding: 22px 24px 0;
+    border-top: 1px dashed rgba(194,146,90,.4); /* saddle-stitch divider */
+    color: var(--txt-dim);
+    font-size: 12px;
+    line-height: 1.6;
+  }
+  footer b { color: var(--tan); font-weight: 600; }
+
+  /* ---- Accessibility: respect reduced motion ----------------------------- */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: .001ms !important;
+      transition-duration: .001ms !important;
+    }
+    .container input:checked + .draw-box .path { animation: none; }
+  }
+</style>
+</head>
+<body>
+  <header>
+    <div class="hazard-bar"></div>
+    <div class="head-inner">
+      <div>
+        <div class="wordmark">Rental <b>Wrangler</b> · UI Candidates</div>
+        <div class="subtitle">Three found components, re-skinned to the yard data-plate language for a look-see.</div>
+      </div>
+      <span class="pill-local">Local Sandbox · Not Live</span>
+    </div>
+  </header>
+
+  <main>
+    <!-- 1 — Draw checkbox -->
+    <section class="plate">
+      <span class="rivet-b"></span><span class="rivet-c"></span>
+      <div>
+        <div class="plate-label"><span class="idx">01</span> Brand-It Checkbox</div>
+        <div class="plate-credit">orig. Uiverse · SelfMadeSystem — re-skinned</div>
+      </div>
+      <div class="stage">
+        <label class="container">
+          <input type="checkbox" />
+          <svg class="draw-box" viewBox="0 0 64 64" height="2.4em" width="2.4em">
+            <path d="M 0 16 V 56 A 8 8 90 0 0 8 64 H 56 A 8 8 90 0 0 64 56 V 8 A 8 8 90 0 0 56 0 H 8 A 8 8 90 0 0 0 8 V 16 L 32 48 L 64 16 V 8 A 8 8 90 0 0 56 0 H 8 A 8 8 90 0 0 0 8 V 56 A 8 8 90 0 0 8 64 H 56 A 8 8 90 0 0 64 56 V 16" pathLength="1" class="path"></path>
+          </svg>
+          <span class="cb-caption">Brand It</span>
+        </label>
+      </div>
+      <div class="note">Outline draws on and fills <b>safety-orange</b> when checked. Good fit for a "confirm / mark complete" toggle. Tab to it — focus ring + keyboard toggle work.</div>
+    </section>
+
+    <!-- 2 — Keyed fancy button -->
+    <section class="plate">
+      <span class="rivet-b"></span><span class="rivet-c"></span>
+      <div>
+        <div class="plate-label"><span class="idx">02</span> Keyed Action Button</div>
+        <div class="plate-credit">orig. Uiverse · cssbuttons-io — re-skinned</div>
+      </div>
+      <div class="stage">
+        <a class="fancy" href="#" role="button">
+          <span class="top-key"></span>
+          <span class="text">Saddle Up</span>
+          <span class="bottom-key-1"></span>
+          <span class="bottom-key-2"></span>
+        </a>
+      </div>
+      <div class="note">Offset hi-vis "keys" retract and the face ignites <b>orange</b> on hover/focus. Reads as an ignition-style primary action.</div>
+    </section>
+
+    <!-- 3 — Diagonal sweep button -->
+    <section class="plate">
+      <span class="rivet-b"></span><span class="rivet-c"></span>
+      <div>
+        <div class="plate-label"><span class="idx">03</span> Diagonal Sweep Button</div>
+        <div class="plate-credit">orig. Uiverse · adamgiebl — re-skinned</div>
+      </div>
+      <div class="stage">
+        <button class="sweep"><span></span>Round Up</button>
+      </div>
+      <div class="note">A bar sweeps diagonally and floods the frame <b>orange</b> on hover. A lighter-weight secondary action.</div>
+    </section>
+  </main>
+
+  <footer>
+    <b>Sandbox only.</b> This file is not imported anywhere in the app — <code>index.html</code>, <code>app.js</code>, and <code>style.css</code> are untouched. Open it straight off disk. If you like any of these, we'd give it a <code>data-r</code> rulebook stamp and wire it in properly through <code>/jactec-ui</code>.
+  </footer>
+</body>
+</html>
