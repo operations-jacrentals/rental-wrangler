@@ -9,6 +9,19 @@
 
 ---
 
+## ✅ Decisions — 2026-06-29 critique (Jac)
+
+These resolve the §11 Open Questions and **supersede the §3 target-state money-gate table** for the WO-billing surfaces.
+
+- **D1 · Shop WO billing stays OPEN to staff (resolves OQ-1; supersedes §3's gate table).** Keep the billed price (`woBillable`), markup tiers, the **Invoice** action, and **Bill: Yes/No** **visible and runnable by staff** — a mechanic billing the repair they did is "the only influence staff have on invoicing" and a legitimate part of the job (Jac). This **does** expose the marked-up price/margin to staff; accepted (trusted team). **No `canMoney()` gate is added to the Shop billing surfaces.** *(Contrast `rentals-dispatch` D1, which gated a Driver's silent window-extension billing — the distinction is workflow legitimacy: billing your own repair = yes; silently extending someone's rental = no.)*
+- **D2 · Server-check money writes, but WO-billing is staff-allowed by design (resolves OQ-11; ties to `backend-data` Q13).** Add the server-side `roleMoneyOk_` mirror so a **forged / no-auth payload cannot move money** — but the **WO→invoice line-add and the `billCustomer` flip are permitted at staff tier** (per D1), while genuine fund movement (charge / refund / payment / `amountPaid` writes) stays **money-tier** server-gated. The server check here = authenticated-caller validation + protecting payment movement, **not** blocking staff WO-billing. *(Reconciles D1 with the "yes, server-check" answer — flag if Jac meant to gate WO-billing server-side too.)*
+- **D3 · Service schedules — per-category manufacturer schedules + per-unit overrides (resolves OQ-2).** Replace the placeholder uniform `SERVICE_TASKS` with real **per-category** maker schedules (admin-editable in Settings) **plus per-unit overrides** for a specific machine. Task ids stay stable across the swap (§4.5 migration). **Production blocker** before relying on preventive maintenance.
+- **D4 · Field Call billing defaults to No (resolves OQ-6).** A field-call WO defaults `billCustomer:'No'` — the shop eats it unless someone explicitly decides to bill (customer-relations-conservative).
+
+**Defaults adopted:** OQ-7 → manager can override the photo-proof service completion · OQ-9 → confirm on a **backwards** hour-meter entry · OQ-10 → a cancelled WO with real work must be **reopened before billing** (no stranded cost) · OQ-8 → drivers can request a wash · OQ-4 → keep explicit Complete-WO (no auto-complete) · OQ-3 → 3-bar front page defaults for mechanic/M.Tech · OQ-5 → parts `partId` FK in Phase 3.
+
+---
+
 ## 1. Goal & Problem
 
 The Shop area is the **wrench side of the yard** — everything a mechanic, M.Tech, or driver does to keep the fleet rentable and to recover repair cost. It answers one operator question at a glance: **"What machine needs me, and what do I do to it next?"**
@@ -347,6 +360,8 @@ No lines → header phase. With lines → worst open line by `WO_SEV` (Part Need
 ---
 
 ## 11. Open Questions
+
+> **Resolved 2026-06-29:** OQ-1 → D1 (WO-billing stays OPEN to staff; §3 gate table superseded) · OQ-11 → D2 (server-check money writes, but WO-billing staff-allowed) · OQ-2 → D3 (per-category + per-unit service schedules) · OQ-6 → D4 (Field Call defaults to No). Adopted: OQ-7/8/9/10, OQ-3/4/5. See the Decisions block up top.
 
 (No seed questions were captured; all below are generated from reading the live code. **OQ-1 and OQ-11 are gate decisions — keep them on the main session, don't delegate; they touch margin visibility and money writes.**)
 
