@@ -2998,6 +2998,15 @@ body { font-variant-numeric: tabular-nums; }
 .drag-ghost { position: fixed; left: 0; top: 0; z-index: 9500; display: flex; align-items: center; gap: 7px; max-width: 240px; padding: 7px 12px; border-radius: 999px; background: var(--panel); border: 1px solid var(--accent); box-shadow: 0 0 0 2px var(--accent-line), 0 14px 34px -10px rgba(0,0,0,.65); color: var(--accent); font-size: 12.5px; font-weight: 700; pointer-events: none; will-change: transform; }
 .drag-ghost svg { width: 14px; height: 14px; flex: 0 0 auto; }
 .drag-ghost .dg-t { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+/* §M-touch — PICKUP CUE: the ghost chip POPS in the instant a drag lifts, so the user
+   SEES they've "got it" (the critical signal on iOS, which has no Vibration API; the
+   haptic in startDrag covers Android). Animate `scale` + `opacity` only — the JS engine
+   owns the `transform` (translate) every frame, so animating transform would fight it;
+   `scale` is an independent property that composes with it. Reduced-motion → steady. */
+@media (prefers-reduced-motion: no-preference) {
+  .drag-ghost { animation: ghostLift .16s ease-out; }
+  @keyframes ghostLift { from { scale: .66; opacity: 0; } to { scale: 1; opacity: 1; } }
+}
 /* §M2 ZIP ZONES (phone) — edge rails of valid drop-target cards during a drag. Steel
    data-plate tabs with a per-card hazard stripe (the ONLY colour — a transient drag
    overlay, so the one-orange rule holds for persistent UI). Drag onto one to jump to
