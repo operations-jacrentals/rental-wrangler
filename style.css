@@ -3052,6 +3052,19 @@ body.dragging .row.drop-ok { opacity: 1; }
    (touch-action must be in place BEFORE the gesture starts; once lifted, the
    engine's passive:false touchmove guard keeps the browser pan from firing) */
 .row { touch-action: pan-y; }
+/* iOS Safari: a touch-and-hold on text starts native text-selection + the callout
+   (the highlight + magnifier), which STEALS the gesture before the §M3 long-press can
+   arm the record drag (Jac, 2026-06-29 — "iphone keeps highlighting text instead of
+   long pressing"). Suppress selection + the callout on the phone grid's draggable
+   surfaces so the hold reaches the drag engine. Inputs / inline-edit fields re-enable
+   selection just below, so typing and editing still work. */
+.is-phone .grid .row, .is-phone .grid .card {
+  -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+}
+.is-phone .grid input, .is-phone .grid textarea, .is-phone .grid [contenteditable],
+.is-phone .grid .inline-edit, .is-phone .grid .inline-input {
+  -webkit-user-select: text; user-select: text; -webkit-touch-callout: default;
+}
 /* settings overlay — the Allow-overbooking R14 toggle rides the row's right edge */
 .set-row .seg { margin-left: auto; }
 
