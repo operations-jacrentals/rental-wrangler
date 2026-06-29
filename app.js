@@ -12021,12 +12021,11 @@ function dragMove(e) {
     const a = DRAG.armed; if (!a || e.pointerId !== a.pointerId) return;
     DRAG.point.x = e.clientX; DRAG.point.y = e.clientY;
     const dist = Math.hypot(e.clientX - a.x, e.clientY - a.y);
-    if (a.touch) {                                                       // §M3 — direction decides: horizontal lifts a drag, vertical lets the list scroll
+    if (a.touch) {                                                       // §M3 — the long-press DECIDES: before it fires, direction is navigation (vertical=scroll, horizontal=swipe); after it fires, ANY direction lifts the drag
       const adx = Math.abs(e.clientX - a.x), ady = Math.abs(e.clientY - a.y);
       if (adx < 8 && ady < 8) return;                                    // still inside the slop — a hold here becomes the menu
-      if (ady >= adx) { disarmDrag(); return; }                         // vertical intent → native scroll
-      if (!a.ready) { disarmDrag(); return; }                            // §M3 horizontal move BEFORE the long-press = a Back/Forward swipe (handled on pointerup), not a drag
-      return startDrag();                                                // held long enough → horizontal drag-to-link
+      if (a.ready) return startDrag();                                   // §M3 held long enough → grab now, in WHATEVER direction the finger moves (a real drag is rarely pure-horizontal). The direction gate below is only for the PRE-hold phase.
+      disarmDrag(); return;                                              // §M3 a move BEFORE the long-press is navigation, not a drag: vertical → native scroll, horizontal → a Back/Forward swipe (handled on pointerup)
     }
     if (dist > 6) startDrag();
     return;
