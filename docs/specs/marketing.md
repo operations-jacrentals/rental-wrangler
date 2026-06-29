@@ -9,6 +9,20 @@
 
 ---
 
+## ✅ Decisions — 2026-06-29 critique (Jac) — ⚠️ SCOPE EXPANSION
+
+Marketing is now **its own area** (Sales/Growth D2) and **bigger than the draft**: demand-gen core **+ social/ad management + full automation (including auto-published social posts)**. The spec body's internal-demand-gen sections stay, but a **social/ad-management + automation section needs to be built out**.
+
+- **D1 · Scope = demand-gen core + social/ad management + FULL automation (resolves Q1 + scope + Q13).** Beyond the internal core (utilization ranking → target-list → campaign → acquisition/retention split → hand to Sales), Marketing adds: **(a) social/ad management** — track + manage ad campaigns (Google Ads / Meta ad spend → leads, attribution), and **(b) full marketing automation** — campaigns send **automatically via the Mocean `comms-notifications` channel** (SMS/email, respecting consent + quiet hours + the dedup/cost guards) **AND auto-publish social media posts** to the connected platforms. The in-app "hand to Sales" stays as one path, but the north star is **automated outbound + social**.
+- **D2 · Marketing login = money-tier, and an OPTIONAL role (resolves Q2/Q3).** The Marketing lens/role carries **money-tier** — it sees dollar revenue-at-risk + resulting promo prices; it still does **NOT** see the `bottomDollar` margin floor (that stays gated). Marketing is an **optional role** — **nothing in the app requires a Marketing role to function.** Gates still compare **tier, never name** (Q2a).
+- **D3 · Real automated outbound (resolves Q13; supersedes "in-app handoff only").** Campaigns send for real via **Mocean comms**, and social posts **auto-publish** — not just an in-app handoff. Sequencing: `comms-notifications` (Mocean) is a **prerequisite** for the SMS/email send; the **social-platform + ad-platform integrations are a NEW external-integration layer** (Google Ads, Meta/Facebook, social posting APIs — server-side tokens named-only, additive on `backendCall`).
+
+**Defaults adopted:** Q2a → tier-based gates only · Q6 → no raw PII **CSV** export in v1 (the automated send *is* the egress path now — gated + consent-bound) · Q8 → a campaign is an **advisory offer**, never writes the rental price (real rate changes stay an Office/Admin money-action) · Q9 → `campaigns` as a **top-level entity** · Q15 → acquisition/retention split rides the **`financials-kpi` KPI engine** · Q7a → utilization ranking computed **clear of `categoryStats` dollar/margin fields** · Q14 → idle ranking uses prescriptive hazard-stripe coloring · Q10 → trailing-30d window, count Reserved+On-Rent+Returned, exclude Quote · Q11 → acquisition = first-ever invoice in month · Q12 → membership savings = trailing-actual, modeled fallback.
+
+> **Build-out note:** §4/§5/§6/§7 need a new **social/ad-management + automation** section (ad-platform + social-posting integration contract, an automated-send + auto-post engine with consent/quiet-hours/budget guards, and ad-attribution metrics). Treat that as the expansion this critique authorized.
+
+---
+
 ## 1. Goal & Problem
 
 ### 1.1 What this area is for
@@ -415,6 +429,8 @@ Outbound email/SMS deliverability, automated lead scoring, A/B testing, QuickBoo
 ---
 
 ## 11. Open Questions
+
+> **Resolved 2026-06-29 (scope expansion — see Decisions block):** Q1+scope → D1 (demand-gen + social/ad management + full automation incl. auto social posts) · Q2/Q3 → D2 (money-tier, OPTIONAL role) · Q13 → D3 (real automated outbound via Mocean + social auto-publish). Adopted: Q2a/Q6/Q7a/Q8/Q9/Q10/Q11/Q12/Q14/Q15.
 
 > No seed questions were captured for this area; all below are generated from the code and the role contract, surfaced for Jac. Each defaults to the **conservative** option until decided.
 
