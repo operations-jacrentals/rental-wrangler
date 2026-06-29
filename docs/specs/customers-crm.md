@@ -9,6 +9,19 @@
 
 ---
 
+## ✅ Decisions — 2026-06-29 critique (Jac)
+
+**Posture (important):** Jac runs a small, trusted single-yard team. Internal **visibility** of customer info is **open**; the gating that matters is **money *movement*** (and competitive secrets like the margin floor, gated in `units-fleet`). These resolve the §11 Open Questions and amend §3 / §6 / §7.
+
+- **D1 · Staff see the full customer card; gate only the money *actions* (resolves Q4/Q5/Q5b).** **Reverses** the draft's "collapse the payment block" idea. The payment-method **rows stay visible to every signed-in user** (brand · last4 · sign-state), as do the spend `_digest` and net terms — read-only. Only the **money action buttons** stay `canMoney()`-gated: Add card, Take payment / Charge, Set default, Sign, Remove, ACH add/verify. (This still closes the real shipped gap — today a staff/no-role view can *click* default/sign/remove — by wrapping those **actions** in `canMoney()`, while leaving the display open per Jac.)
+- **D2 · `idNumber` stays visible, plaintext, no mask, no gate (resolves Q6).** It's internal identity info the team may see. The **hard rule is unchanged**: never export it to the public repo / Pages / search blob / AI tool output. Internal UI display is fine.
+- **D3 · Anyone can blacklist, with an audit trail (resolves Q3).** There is **no blacklist UI today** — `Blacklisted` is in the `customerAccountType` registry (`config.js:113`) but absent from `NC_ACCOUNT_TYPES` (`app.js:14040`). Wire it into the account-type pills, **settable by any signed-in user (no tier gate)** via a **red hazard-stripe confirm** ("This blocks new rentals for this account"); stamp `blacklistedAt` + a `'Blacklisted by <role>'` `activityLog` entry (audit, not gate). **Soft gate:** blocks *new* rentals only, never retro-cancels live ones (read by `rentals-dispatch`).
+- **D4 · Customer merge → Phase 2 (resolves Q7).** Spec it now, build later — it's destructive and touches rentals/invoices.
+
+**Defaults adopted:** Q1 → `_digest` recomputes **client-side on load** (single-pass, bucketed by `customerId`, isolation-filtered) · Q2 → `payStatus` becomes **derived** from open invoices (kills drift). **Now moot** given the open-visibility posture: Q11 (role-fixture mainly needs to assert staff can't *click* money actions — keep as a light check) and Q12 (demo PII masking — dropped; `idNumber` isn't masked). Q8/Q9/Q10 stand at their recommendations.
+
+---
+
 ## 1. Goal & Problem
 
 ### 1.1 What this area is for
@@ -569,6 +582,8 @@ Run gates per CLAUDE.md (swap `8000→9147`, run, `git checkout -- ci/`).
 ---
 
 ## 11. Open Questions
+
+> **Resolved 2026-06-29:** Q4/Q5/Q5b → D1 (full card visible; gate only money *actions*) · Q6 → D2 (idNumber stays plaintext, internal-only) · Q3 → D3 (anyone can blacklist + audit; no UI exists yet) · Q7 → D4 (merge = Phase 2). Adopted: Q1 client-side recompute, Q2 derived payStatus. Q11 reduced to a click-gate check; Q12 dropped (open-visibility posture). See the Decisions block up top.
 
 | # | Question | Trade-off / options |
 |---|---|---|
