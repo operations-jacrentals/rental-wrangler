@@ -9,6 +9,18 @@
 
 ---
 
+## ✅ Decisions — 2026-06-29 critique (Jac)
+
+These resolve the §11 Open Questions and **change the Saved-Views model** (§2.10) from shared to personal.
+
+- **D1 · Views capture sort (resolves 11.1).** `applyView` restores `cs.sort` (field + dir) when present; a legacy view with no `sort` **leaves the current sort alone** (backward-safe). Frontend-only; `setViews` round-trips the new field verbatim.
+- **D2 · Replace shared Admin-curated Views with PERSONAL "my views" (resolves 11.4/11.6; reverses the §2.10 shared model).** Remove the single company-wide view set; **each login keeps its own private views.** Keyed by the logged-in identity: **per-role today** (per-role passwords — everyone sharing a role login shares its views), upgradable to **per-user** if individual logins arrive. Curating is open to the view's **owner** (no admin gate — they're personal). Backend: a per-identity views store (additive `getUserViews`/`setUserViews` keyed by the role/identity the server derives from the per-role password — `backend-data` D1). Migration: offer to seed each identity from the old shared set once, then they're personal (Jac to confirm seed-vs-drop). This also dissolves the shared-views LWW race (11.5) since views are per-identity.
+- **D3 · Keep substring matching, no relevance ranking (resolves 11.2).** Works well at yard scale; predictable + fast.
+
+**Defaults adopted:** 11.12 → keep the reverse-renter denorm capped at **name+company** (no phone/email/notes on fleet cards) · 11.14 → **add `ci/check-search-blob.mjs`** so a future blob edit can't silently fold a gated field (margin/`bottomDollar`/cost) — makes the §3.2 security invariant unskippable · 11.3 → defer `-prefix`/quoted text operators · 11.10 → defer index-scaling until felt · 11.7 → no margin/floor search column (money-gated `totColMatch` if ever) · 11.13 → search stays read-only (any bulk action re-asserts per-action gates).
+
+---
+
 ## 1. Goal & Problem
 
 **What this area is for.** Rental Wrangler is a three-column SPA that holds the entire yard — customers, rentals, units, categories, invoices, work orders, inspections, service, vendors, parts, receipts, files — on one screen. Search / Views is the connective tissue that lets a dispatcher, mechanic, or owner go from "show me everything" to "show me *exactly* the records I need to act on" without leaving the grid or opening a report builder.
@@ -350,6 +362,8 @@ Phase 1 (Views capture sort) — each criterion is independently testable:
 ---
 
 ## 11. Open Questions (for Jac)
+
+> **Resolved 2026-06-29:** 11.1 → D1 (views capture sort) · 11.4/11.6 → D2 (personal "my views", shared set removed, server-keyed by per-role identity) · 11.2 → D3 (keep substring). Adopted: 11.3/11.5/11.7/11.10/11.12/11.13/11.14. See the Decisions block up top.
 
 > No seed questions were captured for this area; all below are generated from reading the code. 11.12–11.14 are the gate/security forks surfaced while hardening §3/§5/§10 — answer these before any blob, view-shape, or bulk-action change ships.
 
