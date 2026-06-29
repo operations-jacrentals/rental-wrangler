@@ -99,34 +99,40 @@ While a Wrangler dock is **open**:
   `getWranglerChat(id, sinceCount=local message count)`. Returned messages are
   appended to `state.wrangler.messages[]` and rendered. (`lastTs` is chat-level,
   server-stamped on append — used for inbox sort/liveness, not message delivery.)
-- **Seamless rendering (per Jac, 2026-06-29):** developer messages (`dev:true`)
-  render **identically to a normal Mr. Wrangler assistant bubble** — no "Support"
-  label, no "a human joined" notice. To the customer it is one continuous Mr.
-  Wrangler. (The `dev:true`/`author` fields are retained internally for the audit
-  trail and dev tooling only; they never surface in the customer UI.)
-- **AI pause (silent):** when `driver === 'human'`, the local agent loop
-  (`wrRunAgent`) is **suppressed** — the customer's next message is still stored and
-  synced up via the normal path, but does **not** trigger an Anthropic call. No
-  customer-facing notice (consistent with the seamless choice). Normal behavior
-  resumes when `driver` flips back to `'ai'`.
-- **Fail-safe:** once a human has posted, `driver:'human'` is the persisted server
-  state. Even if a poll fails, the bot stays paused until an **explicit**
-  `setWranglerDriver('ai')` — we err toward never letting the AI talk over Jac.
+- **Paused banner + read-only composer (per Jac, 2026-06-29):** when
+  `driver === 'human'`, the customer's dock shows a prominent **hazard-stripe
+  banner** — *"You're Paused — Developers Are Working On This Live"* — and the
+  composer is **disabled** (read-only). The customer watches the developer work the
+  thread; they cannot send while paused. Banner clears and the composer re-enables
+  when `driver` flips back to `'ai'`.
+- **Single-writer concurrency (why the pause matters):** because the paused
+  customer writes **nothing** while `driver === 'human'`, the developer is the
+  **sole writer** of that chat row — so the whole-chat-replace sync can never clobber
+  an injected dev turn or the `driver` flag. No per-message ids, no append-twin
+  action, no merge logic needed; Phase 1's contract stands. On release, the
+  customer's local copy already holds the dev turns (pulled by the poller), so its
+  next normal full-rail push includes them — one more pull on resume closes the tiny
+  remaining window.
+- **Seamless in-thread (no per-message label):** individual developer turns
+  (`dev:true`) render like a normal assistant bubble — no "Support" tag per message.
+  The **banner** is the single, honest status signal that humans are on it. The
+  `dev:true`/`author` fields are retained for the audit trail only.
+- **AI pause:** while `driver === 'human'` the local agent loop (`wrRunAgent`) is
+  also suppressed (belt-and-suspenders — the composer is disabled anyway, but a
+  guard prevents any queued/programmatic send from firing an Anthropic call).
+- **Fail-safe:** once a human has taken the wheel, `driver:'human'` is the persisted
+  server state. Even through a failed poll the dock stays paused until an explicit
+  `setWranglerDriver('ai')`.
 - **Poll lifecycle:** starts on dock open, stops on close, exponential backoff on
   error (keep last-known state, silent to the customer).
+- **Live visibility before the jump-in:** so a developer can see an in-progress
+  conversation (which normally only syncs up on close), the open dock snapshots-up
+  on each turn (`wranglerRailSnapshot` → debounced push). That happens **before** any
+  pause, while the customer is still the only writer — so it stays single-writer too.
 
-**Honest limitation:** live reply only reaches a customer whose dock is **open**.
-If closed, the message waits for their next open and is surfaced via the existing
-**notification bell** (a normal Mr. Wrangler reply notification — still seamless).
-
-### Trade-off recorded: seamless impersonation
-
-Jac chose seamless (developer replies indistinguishable from the AI) over a
-labeled "Support" bubble. Benefit: a frictionless single-assistant experience.
-Trade-off: the customer is not told a human joined the thread. This is an
-intentional product decision for an owner-operated support tool; noted here so it
-is explicit and revisitable. The internal audit fields (`dev:true`, `author`)
-preserve a record of which turns were human even though the UI hides it.
+**Honest limitation:** the pause/jump-in only reaches a customer whose dock is
+**open**. If closed, the chat is no longer live; the developer can still read it in
+the inbox and a reply surfaces on the customer's next open via the notification bell.
 
 ---
 

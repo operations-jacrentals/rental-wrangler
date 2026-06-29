@@ -49,23 +49,25 @@ well-scoped UI against the settled contract and can drop to a Sonnet subagent th
 
 ---
 
-## Phase 2 — Customer dock: poller + silent AI pause + seamless rendering (`app.js`)
-**Stays on main — touches the agent-loop gate (`wrRunAgent`) and must never let the AI talk over Jac.**
-- **Poller** `wranglerDockPoll` near the dock mount (`mountWranglerDock`, ~`app.js:7715`): on a ~6–8s interval
-  while a dock is open + online, call `getWranglerChat(id, sinceTs=lastSeenTs)`; append new messages to
-  `state.wrangler.messages[]`, advance `lastSeenTs`, re-render. Start on open, clear on close, exponential
-  backoff on error (keep last-known state, silent).
-- **Seamless render:** a `dev:true` message renders **identically to a normal assistant bubble** — no label, no
-  "human joined" notice. `dev`/`author` retained in the message object for audit only; never surfaced.
-- **Silent AI pause:** in `wranglerSend`/`wrRunAgent` (~`app.js:10192`–`10222`), when the chat's `driver==='human'`,
-  store + sync the user's message but **short-circuit before the Anthropic call** (no agent loop). No notice.
-  Resume normally when `driver==='ai'`. **Fail-safe:** treat a failed poll as "driver unchanged" so a known
-  `human` keeps the bot quiet until an explicit release.
-- **Offline path:** unchanged sync-up; a queued dev reply surfaces on next open via the existing notification bell.
-- **Verify:** two browser profiles (or the existing rail-sync test harness) — dev appends a message, customer
-  dock shows it seamlessly within one poll; customer reply while `driver==='human'` does **not** trigger an API
-  call; release → next reply does. Smoke green.
-- **Model:** main session. **Commit:** *"Wrangler dock: poll for injected turns + silent AI pause while a human drives"*.
+## Phase 2 — Customer dock: poller + paused banner + AI pause (`app.js` + `style.css`)
+**Stays on main — touches the agent-loop gate (`wrRunAgent`). New UI (the banner) runs through `/jactec-ui`.**
+- **Live sync-up before the jump-in:** snapshot the open dock up on each turn so a developer can see an
+  in-progress chat (`wranglerRailSnapshot` → debounced push; pre-pause, still single-writer).
+- **Poller** `wranglerDockPoll` near the dock mount (`mountWranglerDock`, ~`app.js:7715`): ~6–8s while a dock is
+  open + online, call `getWranglerChat(id, sinceCount=o.messages.length)`; append returned dev turns to
+  `state.wrangler.messages[]`, set `o.driver`/banner, re-render. Start on open, clear on close, backoff on error.
+- **Paused banner + read-only composer:** when `o.driver==='human'`, render a **hazard-stripe banner**
+  *"You're Paused — Developers Are Working On This Live"* and **disable** the input. Clears when `driver==='ai'`.
+  New UI → `data-r="Rxx"` stamp via `/jactec-ui`.
+- **Seamless in-thread:** a `dev:true` message renders like a normal assistant bubble (no per-message label); the
+  banner is the status signal. `dev`/`author` retained for audit only.
+- **AI pause guard:** in `wranglerSend`/`wrRunAgent` (~`app.js:10192`–`10222`), if `o.driver==='human'`,
+  short-circuit before the Anthropic call (belt-and-suspenders; the composer is disabled anyway). **Fail-safe:** a
+  failed poll leaves `driver` unchanged so a known `human` stays paused until an explicit release.
+- **Single-writer:** paused customer writes nothing → developer is sole writer → no whole-chat clobber.
+- **Verify:** two browser profiles — dev appends, customer dock shows the banner + the turn within one poll, the
+  composer is disabled; release → banner clears, composer re-enables, customer can chat and the AI answers. Smoke green.
+- **Model:** main session; the banner styling/stamp via `/jactec-ui`. **Commit:** *"Wrangler dock: poll for dev turns + paused banner while a human drives"*.
 
 ---
 
