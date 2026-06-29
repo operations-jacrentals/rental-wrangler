@@ -73,9 +73,9 @@ ones below it. 🆕 marks an area added 2026-06-28 (no `area/` branch cut yet).
 
 | Area | Slug | Maturity | Priority (Jac) | Spec |
 |------|------|----------|----------------|------|
-| Customer Portal | `customer-portal` | ⬜ Greenfield | **Mid-Wants** (after core internal ops) | 📝 drafting |
-| Equipment Insurance | `equipment-insurance` | ⬜ Greenfield | **Later-Wants** | 📝 drafting |
-| Collections | `collections` | ⬜ Greenfield | **Later-Wants** (with the invoicing/accounting cluster) | 📝 drafting |
+| Customer Portal | `customer-portal` | ⬜ Greenfield | **Mid-Wants** (after core internal ops) | [📝 draft](./customer-portal.md) |
+| Equipment Insurance | `equipment-insurance` | ⬜ Greenfield | **Later-Wants** | [📝 draft](./equipment-insurance.md) |
+| Collections | `collections` | ⬜ Greenfield | **Later-Wants** (with the invoicing/accounting cluster) | [📝 draft](./collections.md) |
 
 - **Customer Portal** — external, customer-facing self-service: customers log in (a *separate, row-isolated* auth surface), see their on-rent units **live on a Google Map**, view order/spend history, **book** available + feature rentals, and **flag a unit for a field call** (pickup/delivery). Supersedes the "customer self-service portal" placeholder in `mobile-remote`. The load-bearing problem is external-customer auth + strict per-customer **data isolation** (the current single-team-password model doesn't provide it).
 - **Equipment Insurance** — a service JacRentals provides: an **owner-side** UI to select **which units are insured** and **which coverage/service types** each unit gets. Must be reconciled against the existing membership **"Rental Protection"** (the customer-facing damage-cap add-on) — related but distinct.
