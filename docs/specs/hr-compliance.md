@@ -9,6 +9,18 @@
 
 ---
 
+## ✅ Decisions — 2026-06-29 critique (Jac) — ⚠️ MAJOR SCOPE TRIM
+
+Jac trimmed this area hard. The **credential/compliance engine is dropped**; what remains is a lightweight **Employee roster in Settings** that serves as the identity hook for multi-driver dispatch + the Driving-Score KPI. The draft below over-builds; treat these decisions as authoritative and the credential/expiry/eligibility sections as **superseded**.
+
+- **D1 · Drop credential & compliance tracking (resolves Q1/Q2/Q3 → "Drop This").** No CDL / DOT-medical-card / MVR / equipment-cert numbers, **no expiry-aging engine**, no hazard-stripe expiry banner, and **no dispatch eligibility block/warn**. The "Compliance" half of the area is removed for now. (This deletes draft §4.2 credentials, §4.3 training, §6.3 expiry banner, §7.1–7.3 aging/eligibility, and the credential-PII gate machinery.)
+- **D2 · Employee roster lives in SETTINGS (resolves Q5 → "Settings").** Manage the employee list **in Settings** (alongside Roles & Logins) — **not** a back-office board and **not** a grid card. No `WINDOW_CATALOG` board entry; it's a Settings pane.
+- **D3 · Area re-aims to a lightweight Employee roster — the identity hook.** What remains: a simple roster (name, job title/`roleLabel`, status, `assignableAs` lanes e.g. driver/mechanic) that provides the **driver/employee identity** for: (a) the **multi-driver dispatch assignment** (`rentals-dispatch` D4/D6 — per-stop `driverId`), and (b) the **per-driver Driving Score** (`gps-tracking` D1, the `null` KPI ring). Still an additive `employees` entity (the §4.1 sync wiring stays), seeded with fake names, with `assignedEmployeeId` linkable to units/WOs. **No credential PII, no compliance, no expiry.**
+
+**Net effect:** "HR / Compliance" becomes essentially **"Employees"** — a small enabler for multi-driver + KPI identity, not a compliance system. The credential/compliance idea can return later as its own area if Jac revives it. The spec body's credential/aging/eligibility sections are retained only as a record of the dropped scope.
+
+---
+
 ## 1. Goal & Problem
 
 ### The business problem
