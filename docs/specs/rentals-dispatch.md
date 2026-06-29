@@ -9,6 +9,22 @@
 
 ---
 
+## ✅ Decisions — 2026-06-29 critique (Jac)
+
+These supersede the matching Open Questions and amend §2.7 / §3 / §4 / §5 / §6 / §8.
+
+- **D1 · Money gate — tighten the fragile-window save only (resolves OQ-1/OQ-2).** Wrap the fragile-window extension save (`winPickSave` → `billExtension`) in `canMoney()` so a `staff`-tier Driver cannot silently raise a customer balance. Leave invoice creation and the pre-invoice live-commit path **un-gated** (parity with `createInvoiceForRental`/`addCustomLine`). Collecting payment stays gated as today.
+- **D2 · Pre-login money exposure — render-gate (resolves OQ-15).** Keep the `canMoney()` no-role fallthrough (load-bearing for solo/owner-operator mode), but **never mount a money-action surface until `auth` has resolved a role.** A render-gate, not a permission change — closes the shared/kiosk pre-login window.
+- **D3 · Schedule storage — backend-synced (resolves OQ-4/OQ-7).** Move stop time/order off per-device localStorage to an additive backend `dispatchSchedule` slice with **stale-rev conflict rejection** (multiple dispatchers run the board). Keyed **per-driver** (see D6). ADDITIVE backend action → needs a `/clasp` deploy (prod-deploy STOP gate applies).
+- **D4 · Multi-driver is coming — hybrid assign model (supersedes the OQ-5 single-driver lock).** A stop reaches a driver two ways, **both supported**: (a) **auto-split** into per-driver runs (by region/load) as the starting suggestion, and (b) the dispatcher **drag-drops** a stop onto a driver to assign/override. Each **driver cab shows only that driver's assigned run.**
+- **D5 · Schedule UI — evolve the existing rail into driver lanes (resolves OQ-11).** The cockpit's existing drag-drop stop rail grows **driver lanes on the same surface as the map.** **Collapsed by default**; when opened, the dispatcher **clicks which drivers to show side-by-side** (scales 2–3 → 7+ with no fixed lane count). The retired free-form route arrows (`dispatchArrowsLS` / `autoDispatchRoute` / `drawDispatchArrows`) are **removed** — the orange route Polyline + the laned rail replace them.
+- **D6 · Data model — per-stop driver assignment.** Add `units[].leg.driverId` (absent → unassigned/auto-pool) so assignment is one-fact-one-place on the leg. The `dispatchSchedule` slice keys order/time **per driver**: `{ [dayISO]: { [driverId]: { order:[stopId], times:{stopId:"HH:MM"} } } }`. Driver identity ties to **`hr-compliance`** (employee/driver records).
+- **D7 · Mark-delivered stamps the driver.** Reusing the leg capture stays (OQ-6), but the capture now also records **which driver** completed it (`driverId` on the capture) so the per-driver run and any on-time KPI are attributable.
+
+**Still open:** OQ-13 (telematics feed contract — lock when Jac wires the feed) and OQ-14 (extend-a-`Returned`-rental — confirm intentional; low priority). All other OQs are resolved by their stated recommendations.
+
+---
+
 ## 1. Goal & Problem
 
 ### 1.1 What this area is for
@@ -461,6 +477,8 @@ Multi-unit event model, rate-blend optimizer, per-unit transport editor + Maps, 
 ---
 
 ## 11. Open Questions
+
+> **Resolved 2026-06-29:** OQ-1/OQ-2 → D1 · OQ-15 → D2 · OQ-4/OQ-7 → D3 · OQ-5 → D4 · OQ-11 → D5 · OQ-6 → D7. OQ-3/OQ-8/OQ-10/OQ-12 stand at their stated recommendations. **Only OQ-13 and OQ-14 remain genuinely open.** (See the Decisions block up top.)
 
 *(No seed questions were captured for this area; all below are generated from the code + specs.)*
 
