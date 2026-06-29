@@ -36,8 +36,9 @@ well-scoped UI against the settled contract and can drop to a Sonnet subagent th
 - New actions (route in the existing `doPost` dispatch beside `getWranglerRail`/`setWranglerRail`):
   - `getWranglerChatsAll` → `{ok, chats:[{id,role,title,lastTs,driver,msgCount,preview}], serverTs}` —
     flatten every role's rail; **metadata + last-message preview only** (no full transcripts).
-  - `getWranglerChat` → `{ok, messages:[ts>sinceTs], driver, lastTs}`. Accepts a dev call (`devKey`) **or** the
-    existing team-password gate for the customer's own chat. Filters by `sinceTs`.
+  - `getWranglerChat` → `{ok, messages:[past index sinceCount], total, driver, lastTs}`. Dev call (`devKey`) reads
+    any chat; a non-dev caller reads only a chat under its **own server-resolved role** (per-role isolation).
+    **Count cursor** (`sinceCount`) — Wrangler messages have no per-message timestamp.
   - `appendWranglerMessage` → append `message`, bump `lastTs`, **set `driver:'human'`**; `{ok,lastTs}` or
     `{ok:false,reason:'gone'}` if the chat was pruned.
   - `setWranglerDriver` → set `driver ∈ {'ai','human'}`; `{ok}`.
@@ -86,7 +87,7 @@ well-scoped UI against the settled contract and can drop to a Sonnet subagent th
 ## Phase 4 — Logic-test coverage (`ci/logic-test.mjs`)
 - driver transitions: `ai → human` on append, `human → ai` on release.
 - AI pause: `driver==='human'` → the agent loop is not invoked; `'ai'` → it is.
-- `getWranglerChat(id, sinceTs)` returns only `ts > sinceTs`.
+- `getWranglerChat(id, sinceCount)` returns only messages past index `sinceCount`; non-dev caller refused a foreign-role chat.
 - `getWranglerChatsAll` flattens chats across multiple roles into one list.
 - **Verify:** `node ci/logic-test.mjs` green incl. the new cases.
 - **Model:** Sonnet (tests against settled behavior). **Commit:** *"Tests: Wrangler Ops driver/pause/sinceTs/flatten"*.

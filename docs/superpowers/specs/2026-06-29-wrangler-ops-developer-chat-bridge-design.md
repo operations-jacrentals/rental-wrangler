@@ -81,7 +81,7 @@ otherwise. The key is never in the repo, never echoed, never logged.
 | Action | Input | Returns | Notes |
 |--------|-------|---------|-------|
 | `getWranglerChatsAll` | `{devKey}` | `{ok, chats:[{id, role, title, lastTs, driver, msgCount, preview}], serverTs}` | **Metadata only** (last-message preview, no full transcripts) so polling stays cheap. Flattens every role's rail into one list. |
-| `getWranglerChat` | `{devKey?, id, sinceTs}` | `{ok, messages:[…newer than sinceTs], driver, lastTs}` | Used by **both** sides. Customer dock omits `devKey` (its own chat, gated by team password as today); dev inbox passes `devKey`. Returns only messages with `ts > sinceTs`. |
+| `getWranglerChat` | `{devKey?, id, sinceCount}` | `{ok, messages:[…past index sinceCount], total, driver, lastTs}` | Used by **both** sides. Dev call (valid `devKey`) reads any chat; a non-dev caller reads a chat **only if it is stored under that caller's server-resolved role** (same per-role isolation as `getWranglerRail` — ids can't be enumerated across roles). **Count cursor** (`sinceCount` = messages the client already holds), because Wrangler messages carry no per-message timestamp. |
 | `appendWranglerMessage` | `{devKey, chatId, message}` | `{ok, lastTs}` or `{ok:false, reason:'gone'}` | Appends `message`, bumps `lastTs`, **sets `driver:'human'`** (takes the wheel). `gone` if the janitor pruned the chat. |
 | `setWranglerDriver` | `{devKey, chatId, driver}` | `{ok}` | `driver ∈ {'ai','human'}`. Explicit hand-back ("release the wheel"). |
 
@@ -96,8 +96,9 @@ no migration. (Track C — backend ships by `/clasp` paste, not git.)
 While a Wrangler dock is **open**:
 
 - **Poller** `wranglerDockPoll` (~6–8s, only when open + online): calls
-  `getWranglerChat(id, sinceTs=lastSeenTs)`. New messages are appended to
-  `state.wrangler.messages[]` and rendered.
+  `getWranglerChat(id, sinceCount=local message count)`. Returned messages are
+  appended to `state.wrangler.messages[]` and rendered. (`lastTs` is chat-level,
+  server-stamped on append — used for inbox sort/liveness, not message delivery.)
 - **Seamless rendering (per Jac, 2026-06-29):** developer messages (`dev:true`)
   render **identically to a normal Mr. Wrangler assistant bubble** — no "Support"
   label, no "a human joined" notice. To the customer it is one continuous Mr.
@@ -217,7 +218,8 @@ into this. No new escalation machinery is built in this MVP.
     `setWranglerDriver('ai')`.
   - AI pause: with `driver==='human'`, a new customer message does **not** invoke
     the agent loop; with `driver==='ai'` it does.
-  - `getWranglerChat(id, sinceTs)` returns only messages with `ts > sinceTs`.
+  - `getWranglerChat(id, sinceCount)` returns only messages past index `sinceCount`;
+    a non-dev caller is refused a chat stored under a different role.
   - `getWranglerChatsAll` flattens chats across multiple roles into one list.
 - `ci/smoke.mjs`: app still boots with the Ops view registered.
 - New UI (Ops inbox view + dev composer) runs through **`/jactec-ui`**:
