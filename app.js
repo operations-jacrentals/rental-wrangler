@@ -1916,7 +1916,7 @@ const state = {
   filterTerms: [],            // §5.4 — AND-narrowing filter terms (type + Enter)
   unitPick: null,             // { ids, from } — Invoice +WO narrows the Units list to the invoice's linked units (Phase 4)
   chat: { open: false, activeId: null, draft: '', chats: [] },   // §17 internal team dock (Phase 7): PERSISTENT chats (never deleted). Each = { id, tags, participants, messages, seen{userKey:lastViewedAt} }. Empty participants = dormant; reopen via a tagged element.
-  wrangler: { open: false, min: false, id: null, messages: [], busy: false, error: '', draft: '', attach: [], files: [], card: null, recId: null, recType: null, reqNumber: null, reqTitle: null, reqUrl: null },   // §18 Mr. Wrangler dock — id ties the live chat to its §18g rail snapshot; min collapses it to the header bar; survives minimize, restores conversation on reopen
+  wrangler: { open: false, min: false, id: null, messages: [], busy: false, error: '', draft: '', attach: [], files: [], card: null, recId: null, recType: null, reqNumber: null, reqTitle: null, reqUrl: null, driver: 'ai' },   // §18 Mr. Wrangler dock — id ties the live chat to its §18g rail snapshot; min collapses it to the header bar; survives minimize, restores conversation on reopen. driver: 'ai'|'human' — when a developer takes the wheel (Wrangler Ops bridge) the dock pauses (§18h)
   mobileCol: 0,               // §M1 — which column the phone shows (0 Yard · 1 Rentals · 2 Customers); drives swipe position + the per-column bottom strip
   woPartForm: null,           // woId whose "+ Add Part/Labor" inline form is open
   invLineForm: null,          // invoiceId whose "+ Add Custom" inline form is open
@@ -4389,6 +4389,7 @@ const RULE_META = {
   R23: ['Tooltip', 'data-tip → the one styled tip', 'every hover hint goes through data-tip — a native title attribute is a violation'],
   R24: ['Close ✕', 'closeX', 'red circle · white ✕ — the deliberate close/remove; hover-reveal variant on tabs'],
   R25: ['Sync banner', 'renderSyncBanner / #sync-banner', 'persistent “Not saving” plate — red hazard-stripe danger cap; raised when the backend sync is failing, hides on recovery. The ONE non-toast alert; lives on <body>, outside #app'],
+  R26: ['Paused banner', '.wr-paused (wranglerDockEl)', 'red hazard-rail plate inside the Mr. Wrangler dock — raised when a developer takes the wheel (Wrangler Ops live jump-in); the dock goes read-only until released'],
 };
 /* ════════════ APP-12 · DESIGN-SYSTEM CATALOG — the tabbed Rulebook (Jac 2026-06-14) ════
    The Rulebook grew from "stamped element rules" (R0–R24 above) into the WHOLE
@@ -7629,6 +7630,7 @@ function wrChatFormat(raw) {
 // §18 Mr. Wrangler dock — renders the floating dock HTML (mirrors wrangler overlay but as a dock).
 function wranglerDockEl() {
   const o = state.wrangler;
+  const paused = o.driver === 'human';   // §18h a developer (Wrangler Ops) took the wheel → dock is read-only
   const rec = (o.card && o.recId != null) ? recOf(entityCardOf(o.card, o.recType), o.recId) : null;
   const chip = rec ? `<span class="wr-chip">${CARD_ICON[entityCardOf(o.card, o.recType)] || ''}${esc(detailTitle(entityCardOf(o.card, o.recType), rec))}</span>` : '';
   const turns = o.messages.length
@@ -7707,13 +7709,15 @@ function wranglerDockEl() {
       <button class="iconbtn js-wr-close" aria-label="Close" data-tip="Close">×</button>
     </div>
     ${reqBar}
+    ${paused ? '<div class="wr-paused" data-r="R26"><span class="wr-paused-ttl">You’re Paused</span><span class="wr-paused-sub">Developers are working on this live</span></div>' : ''}
     <div class="wr-feed">${turns}${o.busy ? '<div class="wr-msg assistant"><span class="wr-av">🤠</span><div class="wr-bub wr-think">…wrangling an answer</div></div>' : ''}</div>
     ${o.error ? `<div class="wr-err">${esc(o.error)}</div>` : ''}
     ${attachRow}
-    <div class="wr-compose"><label class="wr-attach js-wr-attach" data-tip="Attach a screenshot or a CSV/text file"><input type="file" accept="image/*,.csv,.tsv,.txt,.md,.log,text/csv,text/plain" class="js-wr-file" hidden multiple>${I.paperclip || '📎'}</label><input class="wr-in js-wr-in" placeholder="Ask Mr. Wrangler, or tell him what's broken…" value="${esc(o.draft || '')}" ${o.busy ? 'disabled' : ''} /><button class="wr-send js-wr-send" ${o.busy ? 'disabled' : ''} aria-label="Ask">${I.chev}</button></div>`;
+    <div class="wr-compose"><label class="wr-attach js-wr-attach" data-tip="Attach a screenshot or a CSV/text file"><input type="file" accept="image/*,.csv,.tsv,.txt,.md,.log,text/csv,text/plain" class="js-wr-file" hidden multiple>${I.paperclip || '📎'}</label><input class="wr-in js-wr-in" placeholder="${paused ? 'Paused while developers work on this…' : "Ask Mr. Wrangler, or tell him what's broken…"}" value="${esc(o.draft || '')}" ${o.busy || paused ? 'disabled' : ''} /><button class="wr-send js-wr-send" ${o.busy || paused ? 'disabled' : ''} aria-label="Ask">${I.chev}</button></div>`;
 }
 function mountWranglerDock() {
   const d = document.querySelector('.wrangler-dock'); if (!d) return;
+  wranglerDockPollStart();                    // §18h Wrangler Ops: poll the open chat for developer jump-in turns (single-start)
   wrHydrateBlobs(state.wrangler.messages);   // resolve any image blob refs → object URLs, then repaint
   const inp = d.querySelector('.js-wr-in');
   if (inp) inp.addEventListener('paste', (ev) => {
@@ -7945,7 +7949,7 @@ function wranglerRailSnapshot() {
   const o = state.wrangler;
   if (!o.id || !(o.messages && o.messages.length)) return;
   const snap = { id: o.id, title: wranglerConvoTitle(o), ts: Date.now(), card: o.card, recId: o.recId, recType: o.recType, reqNumber: o.reqNumber, reqTitle: o.reqTitle, reqUrl: o.reqUrl,
-    messages: o.messages.map((m) => ({ role: m.role, content: m.content, images: m.images || null, files: m.files || null, action: m.action || null, filed: m.filed || false, issue: m.issue || null })) };
+    messages: o.messages.map((m) => ({ role: m.role, content: m.content, images: m.images || null, files: m.files || null, action: m.action || null, filed: m.filed || false, issue: m.issue || null, dev: m.dev || false, author: m.author || null })) };   // §18h preserve the dev/author audit markers through a sync-up
   const i = state.wranglerRail.findIndex((c) => c.id === snap.id);
   if (i >= 0) state.wranglerRail[i] = snap; else state.wranglerRail.unshift(snap);
   wranglerRailPersist(snap);   // → IndexedDB (keep all; ingest image blobs; loud on failure)
@@ -10221,6 +10225,7 @@ async function wrRunAgent(apiMessages, system, opts) {
 
 async function wranglerSend() {
   const o = state.wrangler; if (!o.open) return;
+  if (o.driver === 'human') return;   // §18h paused — a developer has the wheel; the composer is disabled, this guards the Enter-key path too (no Anthropic call fires)
   const inp = document.querySelector('.wrangler-dock .js-wr-in');
   const text = ((inp ? inp.value : o.draft) || '').trim();
   const imgs = (o.attach && o.attach.length) ? o.attach.slice() : null;
@@ -10233,6 +10238,7 @@ async function wranglerSend() {
   syncWranglerComment(o, 'user', text, imgs);   // §18e mirror the turn onto the issue thread
   wranglerClearNeedsAnswer(o.reqNumber);        // §18e answering a "Needs your answer" request clears it from the inbox
   o.draft = ''; o.attach = []; o.files = []; o.busy = true; o.error = ''; render();
+  wranglerRailSnapshot();   // §18h live-sync the open chat up so a developer can watch it in Wrangler Ops (driver is 'ai' here — guarded at the top)
   const system = WRANGLER_SYSTEM + WR_TOOLS_NOTE + (o.kpiTarget ? '\n\n' + wranglerKpiSystem() : '') + '\n\n' + wranglerContext(o);
   // Build the payload: images become a content-block array; CSV/text files fold
   // into the message text so Mr. Wrangler reads their rows.
@@ -10304,6 +10310,7 @@ async function wranglerSend() {
         else if (r.applied && r.focus) msg.focus = r.focus;   // apply_changes already wrote it in the loop → keep the "Open" link to the new record
         syncWranglerComment({ reqNumber: replyReqNum }, 'assistant', shown);   // §18e mirror onto the RIGHT issue thread
         if (!_onChat) wranglerRailPersist(_target);   // backgrounded chat → fold the reply into its snapshot
+        else if (state.wrangler.driver !== 'human') wranglerRailSnapshot();   // §18h live chat → sync up so a developer can watch the reply in Wrangler Ops
       }
     } else {
       o.messages.push({ role: 'assistant', content: "🤠 Demo mode — sign in to ask the real Mr. Wrangler (the live AI runs through the backend). Here's the snapshot I'd reason over:\n\n" + wranglerDigest() });
@@ -15913,6 +15920,35 @@ async function loadWranglerRail() {
     }
     if (localAhead) pushWranglerRailSoon(); else lastRailJson = JSON.stringify(state.wranglerRail);
   } catch (e) { /* offline → the refresh poll retries */ }
+}
+// §18h Wrangler Ops live bridge — while the dock is OPEN, poll its OWN chat for turns a
+// developer injected (the Wrangler Ops jump-in) and the driver flag. New dev turns append
+// seamlessly (rendered like any assistant bubble); driver==='human' flips the dock to the
+// read-only PAUSED state (R26). A self-rescheduling loop, started once; a cheap no-op tick
+// when the dock is closed/offline. The cursor is the local MESSAGE COUNT (Wrangler messages
+// carry no per-message timestamp), so a tick only ever pulls turns the client doesn't have.
+const WR_DOCK_POLL_MS = 7000;
+let _wrPollTimer = null;
+async function wranglerDockPollTick() {
+  const o = state.wrangler;
+  if (!(o.open && o.id) || typeof backendPassword === 'undefined' || !backendPassword || o.busy) return;
+  const id = o.id, sinceCount = o.messages.length;
+  let r; try { r = await backendCall('getWranglerChat', { id, sinceCount }); } catch (e) { return; }   // silent: keep last-known state
+  if (!r || !r.ok) return;
+  if (!o.open || o.id !== id) return;   // the dock hopped chats or closed during the await — drop this result
+  let changed = false;
+  if (Array.isArray(r.messages) && r.messages.length) {
+    r.messages.forEach((m) => o.messages.push({ role: m.role === 'user' ? 'user' : 'assistant', content: m.content || '', images: m.images || null, dev: !!m.dev, author: m.author || null }));
+    changed = true;
+  }
+  const drv = r.driver === 'human' ? 'human' : 'ai';
+  if (o.driver !== drv) { o.driver = drv; changed = true; }
+  if (changed) { render(); setTimeout(() => { const f = document.querySelector('.wrangler-dock .wr-feed'); if (f) f.scrollTop = f.scrollHeight; }, 0); }
+}
+function wranglerDockPollStart() {
+  if (_wrPollTimer) return;
+  const loop = () => { Promise.resolve(wranglerDockPollTick()).catch(() => {}).then(() => { _wrPollTimer = setTimeout(loop, WR_DOCK_POLL_MS); }); };
+  _wrPollTimer = setTimeout(loop, WR_DOCK_POLL_MS);
 }
 function saveSoon(ms) { if (booting || !backendPassword) return; clearTimeout(saveTimer); saveTimer = setTimeout(flushSave, ms || 1200); }
 // #247 — sync-health. A failing backend sync used to be SILENT (savePending → flat

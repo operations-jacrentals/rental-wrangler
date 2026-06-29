@@ -155,6 +155,27 @@ function appendWranglerMessage_(body) {
   } finally { lock.releaseLock(); }
 }
 
+/* ── PATCH to setWranglerRail_ (lives in wrangler-rail-sync-backend.gs) ──────
+ * THE single-writer guarantee, enforced server-side. A customer's normal rail
+ * sync (setWranglerRail) does a whole-row REPLACE. While the developer has taken
+ * over a chat (stored driver==='human'), that replace must NOT overwrite the row,
+ * or a mistimed customer push could wipe an injected dev turn / the driver flag.
+ * Guarding it on the SERVER closes the race no matter what the client's poll or
+ * debounce timing is — the client guard is then just an optimization.
+ *
+ * In setWranglerRail_'s upsert loop, replace the in-place write:
+ *     if (rowOf[id]) s.getRange(rowOf[id], 1, 1, 3).setValues([[String(role), id, js]]);
+ * with the guarded version:
+ *     if (rowOf[id]) {
+ *       var storedHuman = false;
+ *       try { storedHuman = JSON.parse(s.getRange(rowOf[id], 3).getValue()).driver === 'human'; } catch (e) {}
+ *       if (!storedHuman) s.getRange(rowOf[id], 1, 1, 3).setValues([[String(role), id, js]]);
+ *       // else: developer owns this chat right now — leave the dev-augmented row intact.
+ *     }
+ * (The deletion pass is unchanged: a human-driven chat is still in the client's
+ * payload, so `keep[id]` is set and it is never selected for deletion.)
+ * ───────────────────────────────────────────────────────────────────────── */
+
 /* ── 4) hand the wheel back (or take it) explicitly ───────────────────────── */
 function setWranglerDriver_(body) {
   if (!devOK_(body)) return { ok: false, error: 'auth' };
