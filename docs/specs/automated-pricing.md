@@ -9,6 +9,22 @@
 
 ---
 
+## ✅ Decisions — 2026-06-29 critique (Jac) — ⚠️ SCOPE EXPANSION
+
+Jac's direction makes this a **two-headed pricing engine** (rental + sale), bigger than the draft's rental-advisor scope. These supersede §1/§3/§4/§7/§8 where noted; **the spec body needs a revision pass to fully build out the sale-price engine + the basis model + the auto toggle.**
+
+- **D1 · Full automation for RENTAL rates, by category, demand × supply (supersedes "advisor-only").** The engine **fully automates** per-category rental rates from a **demand-and-supply** signal — not advisor-only. Whether each change still needs a Manager+ tap or runs fully automatic is a **Settings switch (D5)**.
+- **D2 · NEW: a SALE-price engine for `bottomDollar` + `askPrice` (scope expansion).** The engine **also computes the sale prices** used to sell units — `bottomDollar` (floor) and `askPrice` — derived as a **percentage of a configurable basis: % of cost · % of MSRP · % of option/list value · % of Auction Value.** This is net-new scope the draft listed as out-of-scope; it's now in. (Auction Value + MSRP bases come from **`market-research`** — see dependency note.)
+- **D3 · "Scale" + bases are Manager+ Settings (resolves OQ-9, reshaped).** In Settings, **Manager+** sets the **scale** and the **percentages** that derive `bottomDollar`/`askPrice` from cost / MSRP / option value / auction value. So the price floor is **not** a guessed formula from a sale number — the sale numbers are themselves *derived* from a basis Manager+ configures. The rental-rate floor derives from cost / the computed `bottomDollar`.
+- **D4 · Manager+ accepts and sees proposals (resolves OQ-1/OQ-2/OQ-3/OQ-14).** Accepting is **Manager+** (now server-verifiable via per-role passwords, `backend-data` D1). Proposals + their margin rationale are visible to **Manager+ only** — pricing strategy is management-only here (tighter than the open-visibility posture elsewhere, by Jac's explicit choice).
+- **D5 · Settings toggle — approve-each vs full-automation.** A Settings switch decides whether **Manager+ must accept every change** or the engine **runs fully automatic** (per-category or global granularity — TBD in the revision). This is the master control over D1's automation.
+
+**Dependency strengthened:** `market-research` is now a **harder dependency** — Auction Value, MSRP, and market rental-rate benchmarks feed both the demand-based rental pricing and the sale-price basis (D2/D3). Sequence market-research's data contract alongside this engine, not "Phase 2 optional."
+
+**Defaults adopted:** member/weekend rates stay manual · no per-customer pricing (PII-clear) · 90-day signal retention · both cron + boot snapshot · surge/discount thresholds ship as first-cut numbers Jac tunes in-app.
+
+---
+
 ## 1. Goal & Problem
 
 ### 1.1 The problem today
@@ -455,6 +471,8 @@ Testable, with CI-gate impact noted.
 ---
 
 ## 11. Open Questions (for Jac)
+
+> **Resolved 2026-06-29 (with a scope expansion — see the Decisions block):** OQ-1 → full automation, Manager+ accepts (D1/D4) · OQ-2/OQ-3 → Manager+ only sees proposals (D4) · OQ-9 → sale prices derived from a Manager+-set basis (% of cost/MSRP/option/auction), not a guessed floor formula (D2/D3) · plus a Settings approve-vs-auto toggle (D5) and a NEW sale-price engine (D2). `market-research` becomes a hard dependency. Adopted: OQ-5/OQ-7/OQ-10, thresholds. **The spec body needs a revision pass to build out the sale-price engine.**
 
 *(No seed questions were captured from the code-grounding map; all below are generated from the real code and the forks hit while drafting.)*
 
