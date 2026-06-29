@@ -7,6 +7,13 @@
 **Maturity:** shipped
 **Scope:** Owns Mr. Wrangler end-to-end — the chat dock, the system prompt, the agentic read/write tool loop, the action parse/apply/preview pipeline, the requests inbox, the Track B self-healing auto-fixer, and the cross-device rail.
 
+## ✅ Decisions — 2026-06-29 critique (Jac)
+
+- **D1 — Gate Wrangler's money ops + rate edits to the money tier (Q1/Q1b).** `billRental`, `recordPayment` (cash/check), **and** category rental-rate edits (`memberDaily`/`rate1Day`/`rate7Day`/`rate4Wk`/`weekend`) now require `roleTier(currentRole) >= tierRank('money')`, matching the in-app human-flow gate. A below-tier role's money/rate op via Wrangler is **refused with a clear message and produces no write**. This closes the privilege-escalation back door (Wrangler must never bypass a gate the human UI enforces). **Pin both the gate and the boundary case in `ci/logic-test.mjs`** so it can't drift. The hard fences (no card/ACH/refund/balance/`bottomDollar`/`msrp`/`askPrice`/`priceEach`/WO-`phase`/role/delete) stay exactly as-is on top of this.
+- **D2 — PII in the Track B repro packet: keep the issues repo private + scope the token (Q2).** No transcript redaction (preserve full repro fidelity); instead the `wrangler-fix`/`wrangler-request` issues live in a **private repo** and the auto-fixer's token is **scoped only to that repo**. Document this as a hard requirement in `wrangler-pipeline.md` — if the issues repo is ever public, the filing path must be disabled until redaction lands.
+- **D3 — Track B autonomy: FULL until 2026-07-30, then re-decide (Q3).** Keep **full auto-merge-on-green → Pages deploy** with no human in the loop, including money/auth/data-gate code paths, **through July 30, 2026**. The one-click revert PR + the 3 CI gates remain the safety net. **On/after 2026-07-30, re-prompt Jac** with the hold-for-review question (a "hold for human review" label on patches touching money/auth/gate code, auto-detected by changed file/region). Leave a dated TODO in `wrangler-pipeline.md` and the roadmap so this resurfaces.
+- **D4 — Carry forward draft defaults for the non-fork questions:** `startRental` keeps auto-apply (Q6); add a **Wrangler-provenance tag** on `billRental`/`recordPayment` money paths so an auditor can distinguish a Wrangler-assisted entry from a human one (Q13 — matters more now that D1 gates but doesn't forbid); add the **prompt-injection corpus case** to `ci/logic-test.mjs` (Q12); confirm the KPI `adminPw` never enters a transcript/rail/issue (Q10); stamp the dock controls `js-wr-send`/`js-wr-attach`/`js-wr-apply` + ask_user chips and regen `rule-usage.js` (Q7); dock stays exempt from `WINDOW_CATALOG` as a persistent surface (Q8).
+
 ---
 
 ## 1. Goal & Problem
@@ -427,6 +434,8 @@ Concrete, testable. CI-gate impact noted.
 ---
 
 ## 11. Open Questions (for Jac)
+
+> **Resolved 2026-06-29:** Q1/Q1b → **D1** (gate money ops + rate edits to money tier, pin in logic-test). Q2 → **D2** (private issues repo + scoped token, no redaction). Q3 → **D3** (full autonomy through **2026-07-30**, then re-prompt the hold-for-review question). Q6 (keep `startRental` auto-apply), Q7 (stamp dock controls), Q8 (dock exempt from catalog), Q10 (KPI cred never logged), Q12 (add injection-corpus test), Q13 (add Wrangler-provenance tag on money ops) → **D4** (adopt the conservative draft). Q4/Q5/Q9/Q11 (Tracks A/C order, parity scope, fenced-block deprecation, rail identity granularity) remain build-time calls.
 
 *(No seed questions were captured for this area; the following are surfaced from reading the code.)*
 
