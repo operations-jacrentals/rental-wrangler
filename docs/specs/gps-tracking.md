@@ -9,6 +9,19 @@
 
 ---
 
+## ✅ Decisions — 2026-06-29 critique (Jac)
+
+These resolve the §11 Open Questions and **supersede the single-driver / asset-only assumptions** (the `rentals-dispatch` D4 multi-driver decision changed that).
+
+- **D1 · Track trucks AND drivers; trucks are first-class GPS assets (resolves §11.5/§11.13).** The dispatch Google Map embed is wired to the **trucks' own live GPS** — so a **truck is a tracked entity with its own `gpsDeviceId`**, and `dispatchTruckPos` reads the **truck's live position directly** (not inferred from the hauled unit). The office Tracking board shows trucks + drivers + units, all live data. Combined with `rentals-dispatch` D4 (multi-driver), **per-driver tracking + Driving Score become real** (per-driver, not fleet-aggregate). *(Build note: decide whether trucks are a new mini-entity or units of a "truck" type — they need a device id + a driver assignment.)*
+- **D2 · On-rent coordinates open to all staff (resolves §11.6/§11.15).** Drop the money-tier coord gate — all signed-in staff see exact unit coordinates (consistent with the open-visibility posture). Still **never customer-facing**, never on a Pages-served surface.
+- **D3 · Engine hours — telematics auto-updates `currentHours`, manual stays as fallback/override (resolves §11.10).** A reported engine-hour reading updates `currentHours` (with a **monotonic / sane-range clamp** so a bad read can't corrupt service countdowns — ties to `maintenance-shop` OQ-9); manual entry remains available as fallback + override; position-only devices keep hours manual. (Jac: "both.")
+- **D4 · Build server-side SMS BEFORE GPS stray alerts (resolves §11.16 — sequencing).** Jac: "build SMS before GPS." The stray-alert path depends on **`comms-notifications` server-side outbound SMS**, so that capability is a **prerequisite** — prioritize comms SMS ahead of GPS **Phase 2** (geofence/stray). GPS **Phase 1** (status truth + live position dots + truck-linked dispatch map) still proceeds; only stray *alerting* waits on SMS.
+
+**Defaults adopted:** §11.7 → server-side poll for v1 (webhook Phase 3) · GPSWOX provider, provider-agnostic `gpsSnapshot` shape (§11.12) · §11.14 → fold config into `setConfig` · §11.1 → 2-consecutive-breach hysteresis, 250 m yard / 500 m jobsite defaults · §11.2 → blank `gpsDeviceId` = unmanaged (keeps manual status) · §11.11 → write to units tab (move to a `gpsState` tab only if row-churn fights other writers) · §11.3 → stray ledger Phase 3 · §11.4 → last-known only (no breadcrumb) in v1.
+
+---
+
 ## 1. Goal & Problem
 
 ### 1.1 The problem
@@ -361,6 +374,8 @@ score = 100 - clamp( w_speed*speedingEvents + w_harsh*harshEvents , 0, 100 )   /
 ---
 
 ## 11. Open Questions (for Jac)
+
+> **Resolved 2026-06-29:** §11.5/11.13 → D1 (track trucks + drivers; trucks are first-class GPS assets) · §11.6/11.15 → D2 (coords open to all staff) · §11.10 → D3 (telematics auto-updates hours + manual override) · §11.16 → D4 (build comms SMS before GPS stray alerts). Adopted: §11.1/2/3/4/7/11/12/14. **§11.9** Driving Score is now **per-driver** (multi-driver). See the Decisions block up top.
 
 1. **Stray hysteresis / fence radius.** How many consecutive out-of-fence fixes before we cry "stray," and what default yard radius (250 m?) and jobsite radius (500 m?)? Tighter = faster theft signal but more false alarms on big jobsites.
 2. **Manual-status reconcile at go-live.** When the feed turns on, mapped units get feed-driven status. Confirm the rule: *blank `gpsDeviceId` = feed ignores it, keeps manual.* Do you want a one-time "map devices" wizard, or hand-enter `gpsDeviceId` on each unit card?
