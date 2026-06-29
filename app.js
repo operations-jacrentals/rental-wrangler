@@ -2420,6 +2420,7 @@ function totColMatch(card, rec, col, value) {
   if (col === '__rentmonth') return (rec.startDate || '').slice(0, 7) === value;   // §13.4 — rental starting in month YYYY-MM
   if (col === '__datemonth') return (rec.date || '').slice(0, 7) === value;   // §13.4 — inspections / work orders dated in month YYYY-MM
   if (col === '__rstat') return rentalRevStatus(rec) === value;   // §13.4 — Revenue-by-Status bar (incl. Today/Tomorrow)
+  if (col === '__transport') return (rec.transportType || 'Self') === value;   // Transport pie — filter rentals by stored transport type (Delivery / Recovery / Round-Trip / Self)
   if (col === '__rentrange') { const [a, b] = String(value).split('|'); const d = (rec.startDate || '').slice(0, 10); return !!d && d >= a && d < b; }   // §13.4 — rental start in a timeline bucket [a,b)
   if (col === '__daterange') { const [a, b] = String(value).split('|'); const d = (rec.date || '').slice(0, 10); return !!d && d >= a && d < b; }   // §13.4 — inspection / WO dated in a timeline bucket
   if (col === '__fcrange') { const [a, b] = String(value).split('|'); return DATA.workOrders.some((w) => w.unitId === rec.unitId && w.woType === 'Field Call' && (w.date || '').slice(0, 10) >= a && (w.date || '').slice(0, 10) < b); }   // §13.4 — Field Call in a timeline bucket
@@ -8548,6 +8549,12 @@ function graphViewsFor(card) {
     const revStatus = Object.keys(rev).sort((a, b) => ordIdx(a) - ordIdx(b)).map((s) => ({ col: '__rstat', value: s, label: s, count: Math.round(rev[s].rev), red: Math.round(rev[s].red), color: s === 'Available' ? 'gray' : (getStatus('rentalStatus', s).color || 'gray') }));
     const ic = {}; R.forEach((r) => { const inv = r.invoiceId && IDX.invoice.get(r.invoiceId); const s = inv ? invoiceTotals(inv).status : 'No invoice'; ic[s] = (ic[s] || 0) + 1; });
     const invoice = Object.entries(ic).sort((a, b) => b[1] - a[1]).map(([s, n]) => ({ col: 'invoice', value: s === 'No invoice' ? '' : s, label: s, count: n, color: s === 'No invoice' ? 'gray' : (getStatus('invoiceStatus', s).color || 'gray') }));
+    // Transport (Jac #417) — break rentals down by their stored transportType so the office can
+    // filter Delivery vs pickup (Recovery / customer-Self) right alongside the status/invoice chips.
+    const tc = {}; R.forEach((r) => { const t = r.transportType || 'Self'; tc[t] = (tc[t] || 0) + 1; });
+    const TT_ORDER = ['Delivery', 'Recovery', 'Round-Trip', 'Self'];
+    const transport = Object.keys(tc).sort((a, b) => { const ia = TT_ORDER.indexOf(a), ib = TT_ORDER.indexOf(b); return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib); })
+      .map((t) => ({ col: '__transport', value: t, label: getStatus('transportType', t).label || t, count: tc[t], color: getStatus('transportType', t).color || 'gray' }));
     const rmonth = bk.map((m) => ({ col: '__rentrange', value: m.key, label: m.label, count: R.filter((r) => { const d = (r.startDate || '').slice(0, 10); return d >= m.a && d < m.b; }).length, color: 'blue' }));
     const byUnit = {}; Rw.forEach((r) => rentalUnits(r).forEach((eu) => { const u = IDX.unit.get(eu.unitId); if (u) byUnit[u.name] = (byUnit[u.name] || 0) + 1; }));
     const topUnits = Object.entries(byUnit).map(([name, n]) => ({ col: 'name', value: name, label: name, count: n, color: 'blue' })).sort((a, b) => b.count - a.count).slice(0, 8);
@@ -8560,6 +8567,7 @@ function graphViewsFor(card) {
     return [
       { key: 'status', title: 'Revenue by Status', kind: 'revbars', timed: true, segs: revStatus },
       { key: 'invoice', title: 'Invoice Status', kind: 'pie', segs: invoice },
+      { key: 'transport', title: 'Transport', kind: 'pie', segs: transport },
       { key: 'rmonth', title: 'Rentals Booked', kind: 'bars', color: 'blue', timed: true, segs: rmonth },
       { key: 'units', title: 'Most-Rented Units', kind: 'lead', timed: true, segs: topUnits },
       { key: 'nums', title: 'By the Numbers', kind: 'nums', segs: nums },
