@@ -9,6 +9,18 @@
 
 ---
 
+## ✅ Decisions — 2026-06-29 critique (Jac)
+
+These supersede the matching Open Questions and amend §3 / §5 / §6 / §7 / §8.
+
+- **D1 · Margin-floor display gate (resolves Q1 + Q10).** Gate **both** the `bottomDollar` `kv` **and** the back-derivable Category **ROI%** to **≥ money** tier (mirror `canMoney()` so the `#local` no-role demo is unaffected). Keep `msrp` / `askPrice` open (ask is customer-facing anyway). **Client-side display gate only** — the raw value still flows into `DATA` / sync and into `categoryStats` math untouched. The heavier **server-withheld secret is explicitly NOT taken** (no `backend-data` change); it covers the realistic screen-share/screenshot threat, not devtools-level access. **Security decision — stays on main, not delegated.**
+- **D2 · Lock the cost-field edits (resolves Q11).** `trueCost` / `purchasePrice` / `purchaseDate` become editable only at **≥ money** tier (they move ROI). Health / spec / hours / GPS `efld`s stay open to any signed-in operator (a Mechanic logging hours is the intended flow).
+- **D3 · First-class "Sell a unit" (resolves Q6).** A **Sell** flow captures **sale price + date**, closes out the unit's ROI cleanly, and writes a **revenue/accounting entry** — the integration seam with the **`accounting`** area. New UI → `/jactec-ui` + a `data-r` stamp; if it opens as a popup, a `WINDOW_CATALOG` entry + `check-window-catalog` re-run.
+
+**Kept at recommendation:** Q3 (`assignedMechanic` stays free-text until `hr-compliance` lands) · Q5 (clamp `currentHours` monotonic-up on sync to protect service countdowns — recommend adopt) · new quick-added unit stays **bookable before its first inspection** (shipped behavior; one-line `isUnitAvailableFor` change if it ever bites) · Q2/Q4/Q7/Q8/Q9 stand at their stated recommendations.
+
+---
+
 ## 1. Goal & Problem
 
 ### What this area is for
@@ -378,6 +390,8 @@ Concrete + testable. CI-gate impact called out.
 ---
 
 ## 11. Open Questions
+
+> **Resolved 2026-06-29:** Q1 → D1 (gate number + ROI to ≥money, display-only) · Q10 → D1 (display gate, not server-withheld) · Q11 → D2 (lock cost-field edits to ≥money) · Q6 → D3 (first-class Sell action). Q3/Q5 kept at recommendation; Q2/Q4/Q7/Q8/Q9 stand. See the Decisions block up top.
 
 > Seed list was empty — all questions below are generated from the code. Ordered by blast radius; **Q1 (margin-floor display gate) is the security decision and should be answered first.** Q1 + Q10 + Q11 are the pricing/data-sensitivity cluster and stay on the main session (not delegated); the rest are product forks.
 
