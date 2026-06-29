@@ -9,6 +9,20 @@
 
 ---
 
+## ✅ Decisions — 2026-06-29 critique (Jac)
+
+These resolve the §11 Open Questions.
+
+- **D1 · Auto-renewal = app-driven daily cron (resolves OQ #2; confirms prior art).** Jac: the billing-model decisions were settled last week — see `docs/superpowers/specs/2026-06-25-membership-*` — and he confirms **#1**, the daily Apps Script time-trigger (`membershipBillingCron`), **not** Stripe Subscriptions or lazy-on-open. Phase 2; ships via `/clasp`. Cross-check the prior-art spec before building so this doesn't re-decide what's already settled.
+- **D2 · Amend the agreement to "full month, no proration" (resolves OQ #3).** Rather than add a proration branch, change Membership Agreement §2 text (`agreements.js:79`) to **full-month-on-start-date, no first-month proration** — a new agreement version with Jac's sign-off. Code stays as-is; renewals charge a full cycle anchored to the enrollment day. (Resolves the contract-vs-code divergence in the code's favor.)
+- **D3 · Auto-renew stays default OFF / opt-in (resolves OQ #5).**
+- **D4 · Keep Sales' membership-charge authority (resolves OQ #16 + #1).** Sales (money-tier) keeps Enroll / Cancel / Pay-Cancellation — they close the membership and take the first payment in one motion. Now **server-enforceable** via per-role passwords (`backend-data` D1) so the `canMoney()` gate is real server-side. (Confirm a live login can never have an empty role — the `!currentRole → true` short-circuit is dev/demo only.)
+- **D5 · Move membership SIGN-UP into the account-level agreement popup (Jac, 2026-06-29) — placement fix.** Enrollment currently lives as a money-gated pill in the **Membership section of the customer card** (`membershipEnroll` overlay opened from `app.js:3263`). That's the wrong home: **sign-ups should live in the account-level agreement popup windows** (the onboarding/agreement flow — cf. the `customers-crm/signup-agreement-first-invoice` + `onboarding-single-window` work). The Membership card section still **shows** status/badges/economics, but the **Enroll action moves** into the agreement flow at the account level. Re-home the enroll trigger; keep the `membershipEnroll` overlay's internals, just change where it's launched from (and update `WINDOW_CATALOG`/`data-r` as the entry point moves). Coordinate with `customers-crm`.
+
+**Defaults adopted:** grace stays **7-day** (per the agreement) · cron runs under a **narrow system-billing actor** (renewal + lapse only, never arbitrary charges) · **server idempotency** per `(customerId, cycle)` so a retry can't double-charge · economics **never** customer-facing (a future portal shows fees + plan only) · membership revenue **rolls into** the Revenue Goal ring (expected, not a bug) · normalize "Annual"/"Yearly" to one stored term · organic lapse mirrors the manual cancel's Cancellation Invoice exactly.
+
+---
+
 ## 1. Goal & Problem
 
 ### 1.1 What this area is for
@@ -636,6 +650,8 @@ demo + PROD dual path.
 ---
 
 ## 11. Open Questions
+
+> **Resolved 2026-06-29:** OQ #2 → D1 (cron; prior-art decided) · OQ #3 → D2 (amend agreement, no proration) · OQ #5 → D3 (auto-renew OFF) · OQ #16/#1 → D4 (keep Sales authority, now server-enforced) · **+ D5 placement fix (sign-up moves to the account-level agreement popup).** Adopted: grace 7d, narrow cron actor, server idempotency, economics never customer-facing, revenue rolls into the ring. See the Decisions block up top.
 
 1. **Admin vs. Office money authority.** UI gate today is `canMoney()` (the `money`
    tier and above — Office, **Sales** (see OQ #16), Manager, Admin, Owner-bridge).
