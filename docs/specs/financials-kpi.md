@@ -9,6 +9,19 @@
 
 ---
 
+## ✅ Decisions — 2026-06-29 critique (Jac)
+
+These resolve the §11 Open Questions.
+
+- **D1 · Dollar rings stay OPEN to all internal logins (resolves Q1/Q2).** The internal dashboard is **login-gated and is NOT a customer surface** (customers use the separate portal/website; a logged-out visitor only ever sees the login, not real data). So keep the office/sales `$` rings + the `+$X` score-pops visible to every signed-in role — morale > secrecy, and the real boundary is the login + per-role passwords. **No new money gate.**
+- **D2 · Keep the "Coming 2026" plate (resolves Q11).** Don't un-blur the live rings yet; reveal them at a formal launch, not now.
+- **D3 · Add trend sparklines / direction arrows (resolves Q8).** A per-ring last-N-days trend backed by a lightweight **daily snapshot store** (additive backend) — turns a level into a direction. Phase 2.
+- **D4 · Manager+ can author KPIs (resolves Q4).** Open KPI authoring to **Manager+** (consistent with Manager+ accepting pricing changes), not Admin-only.
+
+**Defaults adopted:** Q3 → server-side `setConfig` admin-verify is now backed by **per-role passwords** (`backend-data` D1) · Q1a → block `agg:'sum'` on `customers` (`_totalPaid` stays filter-only) · Q9 → null rings keep "Coming soon" (GPS/comms will fill them; Driving Score is now **per-driver** via `gps-tracking` D1) · Q10 → orphan-key cleanup on role edit · Q5 → start-month revenue attribution · Q6 → goal rings may bind to `companyRevenueGoal()` · Q7 → default band `up` unless an inverse metric is detected.
+
+---
+
 ## 1. Goal & Problem
 
 ### 1.1 What this area is for
@@ -447,6 +460,8 @@ Concrete, testable. CI-gate impact noted.
 ---
 
 ## 11. Open Questions (for Jac)
+
+> **Resolved 2026-06-29:** Q1/Q2 → D1 (dollar rings open to all internal logins; not a customer surface) · Q11 → D2 (keep the plate) · Q8 → D3 (add trend sparklines) · Q4 → D4 (Manager+ authors KPIs). Adopted: Q3 (per-role-password server verify), Q1a, Q5/Q6/Q7/Q9/Q10. See the Decisions block up top.
 
 > No seed questions were supplied for this area; every question below is generated from reading the live code. **Q1, Q1a, Q2, Q3** are the security-weighted forks (money visibility, customer-spend summing, logged-out exposure, server-side write authority) and must be settled before any behavior change ships.
 

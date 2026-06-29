@@ -5,7 +5,7 @@
 **Area branch:** `area/fleet-spread`
 **Task branch:** `fleet-spread/spec` (proposed)
 **Maturity:** ⬜ Greenfield
-**Scope:** Make the app aware of *where* iron lives and earns — a first-class **Location/Yard** dimension (and the partner/co-owner arrangements that ride on it) so a single JacRentals DB can run more than one yard without forking, while every existing single-yard screen keeps working unchanged.
+**Scope:** A **capital-allocation / portfolio advisor over equipment categories** — derive, per category, how many invested dollars are tied up (Σ unit `trueCost`/`purchasePrice`), the return those dollars earn (ROI, revenue-per-dollar, utilization), and the demand pressure against them (lost-demand misses + utilization trend), then rank categories and recommend **buy / hold / sell more** so the next dollar of fleet capital goes where supply is short of demand and the return is highest. Output feeds purchasing decisions and the `automated-pricing` sale-side engine. (Multi-yard locations and partner co-ownership are explicitly **out of scope** — parked as separate concerns, see the Redefinition block D2/D3.)
 
 ---
 
@@ -27,330 +27,368 @@ So the real Fleet Spread is a **capital-allocation / portfolio advisor over cate
 - **D2 · Multi-yard / locations is a SEPARATE concern, not Fleet Spread.** Yards do exist as a concept and **Settings should dictate which yards each employee can access** (per-employee yard-access control) — but that's its own future area, not this one. Parked for a separate spec; not built into Fleet Spread.
 - **D3 · Partners / co-ownership is a SEPARATE, LAST-priority feature.** Jac: "I haven't said anything about partners… maybe a last-priority feature." Removed from Fleet Spread; parked as a low-priority future item.
 
-*(Everything from "## 1. Goal & Problem" down is the OLD wrong-premise draft, retained only until the re-author lands.)*
+*(The capital-allocation re-author follows. The old multi-yard / partner draft has been removed; D2/D3 above record where those parked concerns now live.)*
 
 ---
 
 ## 1. Goal & Problem
 
 ### 1.1 The problem
-Rental Wrangler is **single-location by construction**. The whole app assumes one yard in Sulphur, LA:
+JacRentals' fleet capital is spread across equipment **categories** — 12k excavators, skid steers, scissor lifts, light towers — and **nobody knows whether that spread is the right one.** Every dollar Jac has ever spent on iron is tied up in some category, but the app cannot answer the one question that decides the next purchase:
 
-- One Sheets DB, one password gate, one `PERSIST_KEYS` set (`app.js:15638`).
-- One transport-pricing origin: `YARD_ORIGIN = 'JacRentals, Sulphur, LA, USA'` (`config.js:474`), fed straight into the Google Maps **RouteMatrix** `origins:[YARD_ORIGIN]` call (`app.js:1531`, inside the `APP-06` transport editor). (Note: the live code uses `RouteMatrix.computeRouteMatrix`, not the deprecated DistanceMatrixService — the spec must patch the real call site.)
-- One Revenue Goal (`REVENUE_GOAL_DEFAULT = 150000`, `config.js:557`) summed across all units, all customers, no geographic split.
-- A vestigial `store` normalizer (`config.js:290`) that *collapses* every legacy store code — `'SUL'`, `'BMT'`, `'Pick One'` — down to the single string `'Sulphur'`. That map is the fossil of an older multi-store idea that was flattened, and it's the clearest proof the seam was deliberately closed.
-- The role doc states it plainly: *"Other tenants' data (not applicable — single-store, but worth noting if multi-location is ever added)"* (`role-roles.md:60`).
+> *"Should my next dollar go into another excavator or a skid steer? Which categories are over-invested for what they earn, and which are starved relative to the demand they'd serve?"*
 
-So the business questions a growing rental operation asks have **no home in the data model**:
+Today the inputs to that question exist in scattered, instantaneous form but are never assembled into a portfolio read:
 
-- *Which yard is U004 stabled at right now? Where does it return to?*
-- *Is the Beaumont yard hitting its own revenue number, or is Sulphur carrying it?*
-- *When a Lake Charles customer rents, which yard's transport clock starts — and which yard's iron is even eligible?*
-- *Partner Joe co-owns three excavators at 40% — what's his cut this month, and can his login see only his machines?*
+- **Invested dollars per category** is already summed — `categoryStats` (`app.js:1836`) computes `trueCost = Σ (u.trueCost || u.purchasePrice || 0)` for every category. But it's only shown as an ROI denominator on one category card; there is no cross-category ranking of "where the money lives."
+- **Return on that capital** is derived per category — `categoryStats` annualized `roi`, per-unit revenue (`avgRevUnit`), per-unit expense (`avgExpUnit`) (`app.js:1836`–1862). Again, per-card only; never ranked across the fleet.
+- **Utilization / supply** is derived — `categoryRentable` (`app.js:1809`) gives rentable/total per category, `categoryAvailableCount` (`app.js:1707`) gives free-units-for-a-window. There is no rolled-up "how hard is this category working" signal.
+- **Demand pressure** — lost-demand misses (a customer turned away at 0-available) and utilization trend — is the explicit subject of the **`market-research`** area (its D1 builds external feeds + the 0-available capture, its D3 brands the miss at the button). That demand signal has no consumer today.
 
-None of these are answerable. The fields don't exist; the math is yard-blind; there is no partner concept at all.
+So the most consequential financial decision the yard makes — **where to put the next chunk of capital** — is a gut call against a dashboard that shows each category in isolation and never says "this one is starved, that one is bloated."
 
 ### 1.2 What this area is for
-Introduce a **Location dimension** as an *additive, optional* attribute on the entities that physically have a place (Units, and by inheritance Rentals/Transport), plus a thin **Partner/co-owner** ledger layer on top of Units. The north star is that JacRentals can stand up a second yard — or onboard a co-ownership deal — **without a code fork and without breaking the single-yard experience for the 99% case that stays one yard.**
+Fleet Spread is the **portfolio advisor over categories.** It assembles the four signals above into one ranked board and, per category, recommends **BUY MORE · HOLD · SELL DOWN** — "this category earns $X per invested dollar, runs at Y% utilization, and turned away Z jobs last quarter; it is starved → buy" vs. "this category sits on $X of idle capital at Z% utilization with no missed demand → sell down / don't reinvest."
 
-This is explicitly a **Want** (tier), priority #11. It is *strategic optionality*, not a current operational need. The spec is deliberately phased so Phase 1 ships the data spine + a yard filter (real value, low risk) and the harder money/partner/isolation questions are surfaced as Open Questions for Jac rather than silently decided.
+It is **read-mostly intelligence**, almost entirely **derived** — it owns essentially no new stored data. It reads `units-fleet`'s cost/ROI/utilization derivations and `market-research`'s demand signal, ranks, and advises. Its output **feeds purchasing** (the human buy/sell decision) and the **`automated-pricing` sale-side engine** (whose D2/D3 derive `bottomDollar`/`askPrice` from a cost/MSRP/auction-value basis — a "SELL DOWN" verdict from Fleet Spread is the trigger to list units at those derived sale prices).
+
+This is a **Want** (strategic optionality), not an operational Need — the yard rents fine without it, but it removes the single biggest blind spot in **capital allocation**.
 
 ### 1.3 North star
-> One DB, many yards. Open the app and it looks **exactly like today** when there's one yard. Add a second yard and every list, map, KPI, and transport quote becomes yard-aware — each yard sees its own iron and its own number, transport prices from the *right* origin, and a co-owner login sees only the machines they own. Nothing about the single-yard path regresses.
+> When Jac has cash to deploy or a slow category to trim, the decision is one board away: every category ranked by **how hard its invested dollars are working** and **how much demand is pushing on it**, with a plain **buy / hold / sell** stamp on each — so the next dollar of fleet capital always goes where supply is shortest of demand and the return is highest, and idle capital gets flagged for sale into the automated-pricing engine.
 
 ---
 
 ## 2. Current State (Baseline)
 
-Mapped against live code on 2026-06-28. **Everything in this area is greenfield** — the table records what exists *adjacent* to build on, not what's shipped for Fleet Spread.
+**This area is greenfield** — there is no Fleet Spread board, no capital-allocation rollup, no buy/hold/sell recommendation anywhere in code. But unlike a true blank slate, **every input signal already exists or is specced adjacent.** The table records what's there to build *on*, not what's shipped for Fleet Spread.
 
-| Concern | State | Anchor |
+| Signal this area needs | State | Anchor |
 |---|---|---|
-| Location field on any entity | ❌ Missing | — |
-| Yard / store concept | 🟡 Fossil only — `store` map flattens all codes → `'Sulphur'` | `config.js:290` |
-| Transport origin | 🟡 Single hardcoded const | `config.js:474` (`YARD_ORIGIN`), `app.js:1531` |
-| Revenue Goal | 🟡 Single global number | `config.js:557` (`REVENUE_GOAL_DEFAULT`), `COMPANY_DEFAULTS.revenueGoal` `app.js:3119`, KPI engine `APP-21` `app.js:7167` |
-| Persisted entities | ✅ 11 entity arrays, schema-less | `app.js:15638` (`PERSIST_KEYS`) |
-| Backend sync | ✅ Diff-based upsert/delete on one `backendCall` entry | `APP-38` `app.js:15650` (`backendCall`), diff `computeChanges` `app.js:15693` |
-| Money-action gate | ✅ Single tier check `canMoney()` = role tier ≥ `money` (rank 2) | `app.js:14166`, banner `APP-35` `app.js:14143` |
-| Role / permission tiers | ✅ 5-tier ladder, customizable roles | `config.js:326` (`ROLE_TIERS`), `BUILTIN_ROLE_TIERS` `config.js:340`, `tierRank` `config.js:334` |
-| Customer-isolation pattern | ❌ None — every signed-in role sees every record (full `load` ships the whole DB) | (no per-record scoping anywhere) |
-| Fleet status pill | ✅ Purchased/Onboard/Active/Inactive/For Sale/Sold | `config.js:78–83` |
-| Saved Views / filters | ✅ Field-driven view registry incl. fleet-status views | `config.js:400` (`SORT_FIELDS`), views sync `getViews/setViews` `app.js:11532` |
-| Flag color engine | ✅ Per-entity computed R/Y/G | `APP-11` `app.js:3700`, spec `flag-color-system.md` |
-| Popup inventory | ✅ `WINDOW_CATALOG` (admin Rulebook "Windows" tab) | `APP-27` `app.js:9789`, const `app.js:9796` |
+| **Invested $ per category** (`Σ trueCost\|\|purchasePrice`) | ✅ Already summed in `categoryStats` | `categoryStats` `app.js:1836` (`trueCost = sum(u.trueCost\|\|u.purchasePrice\|\|0)`) |
+| **Category ROI** (annualized lifetime, cost-basis-gated) | ✅ Derived | `categoryStats.roi` `app.js:1836`–1862 (`lifetimeRoi`, gated on real `trueCost`) |
+| **Per-unit revenue / expense per category** | ✅ Derived | `avgRevUnit` / `avgExpUnit` `app.js:1856`; `unitTotalRevenue` `app.js:1783` |
+| **Rentable / total supply per category** | ✅ Derived | `categoryRentable` `app.js:1809`, `isUnitRentable` `app.js:1808` |
+| **Available-units-for-a-window count** | ✅ Derived | `categoryAvailableCount` `app.js:1707` |
+| **Utilization (instantaneous)** | 🟡 Computed per-render, never stored as a trend | category mix bars `categoryMix` `app.js:1797`, `categoryRentalMix` `app.js:1824` |
+| **Lost-demand misses + demand trend** | ⬜ Specced, not built | `market-research` `demandSignals` entity + D3 0-available capture (`docs/specs/market-research.md`) |
+| **Sale-price basis (cost/MSRP/auction %)** | ⬜ Specced, not built | `automated-pricing` D2/D3 — the downstream of a "sell" verdict |
+| **Money-tier visibility gate** | ✅ Shipped | `canMoney()` `app.js:14166` (`!currentRole \|\| roleTier ≥ tierRank('money')`) |
+| **Margin-floor (`bottomDollar`) display gate** | ✅ Decided in `units-fleet` D1 (≥ money) | `units-fleet` D1; `bottomDollar` is a live ROI input `app.js:1852` |
+| **Back-office board pattern** (list-shell to reuse) | ✅ Shipped | `BACKOFFICE_BOARDS` `config.js:371`, board popup `app.js:9378`, `BOARD_DEF` `app.js:11150`, menu `app.js:13863` |
+| **Popup inventory / window catalog** | ✅ Shipped | `WINDOW_CATALOG` `app.js:9796`, `ci/check-window-catalog.mjs` |
+| **R-rulebook stamp machinery** | ✅ Shipped | `data-r` stamps + `ci/gen-rule-usage.mjs` |
 
 **Key takeaways for the build:**
-- The schema-less Sheets backend means **adding a `locationId` field to a unit is free** — no migration, no DDL. Records without the field simply read as "the home yard."
-- There is **no customer-isolation machinery to extend** — partner-scoped visibility (§3) would be the app's *first* per-record visibility gate. That is the single most security-sensitive decision in this area and is treated conservatively.
-- The `store` fossil tells us the intended normalization shape already (codes → human label); a real `LOCATIONS` registry is its natural successor.
+- **The hard math is already written.** `categoryStats` already produces invested-$, ROI, and per-unit revenue per category; `categoryRentable` already produces supply. Fleet Spread is mostly **assembly + ranking + a verdict function** over derivations that ship today — not new financial code.
+- **The one genuinely missing internal signal is a utilization *trend*** (a time series). Utilization is computed instantaneously per render; there is no stored history. This area can either (a) read the *current* utilization snapshot only (cheap, no new store), or (b) consume the `pricingSignals` daily snapshot that **`automated-pricing` §4.3** already proposes to build (`SNAP-…` per category/day). **Lean: reuse `automated-pricing`'s snapshot rather than build a parallel one** (Open Q FS-3).
+- **Demand is owned next door.** The lost-demand and demand-trend signal is `market-research`'s `demandSignals`. Fleet Spread is its first real **consumer** — it must not re-implement capture, only read the rollup (`missesByCategory`, est-value, buy-pressure per `market-research` §7.2).
+- **No new persistence is needed for the core.** The recommendation is derived live, exactly like ROI. The only candidate stored field is an optional per-category override (target allocation / pinned buy-hold-sell), §4.
 
 ---
 
 ## 3. Users, Roles & Data Gates
 
-### 3.1 Roles that touch this area
-Of the 15 role lenses (5 shipped built-ins + custom), the ones materially affected:
+Permissions key off **TIERS, never role names** (`ROLE_TIERS` `config.js:326`, `tierRank` `config.js:334`; ladder `staff(1) < money(2) < manager(3) < admin(4) < developer(5)`). The 15-role `jactec-ui` lens maps onto these 5 tiers.
 
-| Role / tier | Interest in Fleet Spread |
-|---|---|
-| **Owner / Admin** (admin tier) | Stands up yards, defines partner deals, sees the whole spread + per-yard P&L + each partner's cut. The only tier that can create/edit a Location or Partner. |
-| **Manager** (manager tier) | Per-yard operational view; may be scoped to one yard (Open Q 11-G). Can move a unit between yards. |
-| **Office / Sales** (money tier) | Filter rentals/invoices by yard; transport quotes from the correct origin; per-yard Revenue Goal progress. |
-| **Asset Manager** (custom, money-ish) | Per-yard utilization and per-partner asset performance — "is *this yard's* iron earning its keep." |
-| **Driver / Mechanic / M.Tech** (staff tier) | Mostly yard-as-filter — *which yard is this machine at, where does it go back to.* No money, no partner cut. |
-| **Partner / Co-owner** (NEW role, see Open Q 11-C) | The app's first **isolated** login: sees only units they co-own + the revenue/expense lines on those units. Never sees other partners' deals, never sees full-fleet money. |
+### 3.1 Who touches Fleet Spread
+Fleet Spread is a **capital-allocation / money-strategy view** — its core figures (invested $, ROI, revenue-per-dollar, lost-revenue) are money figures.
 
-### 3.2 Data gates — SPEC THESE EXPLICITLY (do not loosen silently)
+| Role / lens | Tier | Interest in Fleet Spread |
+|---|---|---|
+| **Owner / Admin** | admin | The primary consumer. Deploys capital, decides buy/sell, sees the whole spread + every figure + the margin floor. |
+| **Fleet Manager** (Owner-adjacent) | manager/admin | The day-to-day driver — utilization × ROI × misses → purchasing recommendation. |
+| **Office / Sales** | money | May read the spread to understand "why we're pushing/parking a category"; sees invested-$/ROI/revenue-per-dollar (money-tier entitled). |
+| **Mechanic / M.Tech / Driver** | staff | Operational only — they may legitimately see *supply/utilization* counts, but **not** the invested-$ / ROI / lost-revenue figures (margin-adjacent). |
 
-1. **Location create/edit = Admin only.** Standing up a yard or renaming one is an Admin-tier (`tierRank >= 4`) action, gated like Settings/category edits. Reusing the existing tier ladder (`config.js:334`), *not* a new password.
+### 3.2 Gate decisions — SPEC THESE EXPLICITLY (surfaced, not silently set)
 
-2. **Partner co-ownership math = Money-tier+ to view margin, Admin to edit the deal.** A partner's *cut* is derived from revenue **and cost** (margin), so it inherits the existing pricing-floor (`bottomDollar`/`trueCost`) visibility gate. A staff-tier user must **never** see partner-cut dollars (they expose cost basis). Surface as Open Q 11-E.
+1. **Capital figures = `money`-tier+ to view.** Invested $, ROI, revenue-per-dollar, and the lost-revenue (`estValue`) rollup are money figures and gate on `canMoney()` (`app.js:14166`). A `staff` viewer who reaches the board sees only **operational** columns (unit count, rentable/total, utilization %) — the dollar columns return a locked `🔒`, never a number. **Enforced by NOT emitting the figure into the DOM** (the `row()` returns `🔒`), never by CSS `display:none` (a `staff` user can inspect that away) — same discipline as `market-research` §4.5 / `automated-pricing` §6.
 
-3. **Partner-login isolation = the new hard gate.** If a Partner role ships (Open Q 11-C), its login must see **only** records where the unit's `partnerId` (or split table) includes them. This is **per-record visibility**, which the app has never done. Two sub-decisions, both deferred to Jac:
-   - **Where the filter lives** — client-side filter (fast, but the full DB still ships to the browser → not real isolation, PII-adjacent leak risk) vs. server-side scoped `load` (true isolation, but a new partner-scoped GAS action + a way for the server to know "who is this login"). **Recommendation: do NOT ship a partner login until server-side scoping exists.** Client-only "isolation" over a public-Pages app is theater. (Open Q 11-C / 11-F.)
-   - **What a partner sees of the *customer*** — a co-owner needs to know their machine is on rent and earning, but the renting customer's PII (name, address, card) is JacRentals' relationship, not the partner's. Default: partner sees unit + utilization + their revenue line, **not** customer identity. (Open Q 11-D.)
+2. **The margin floor (`bottomDollar`) is NEVER shown here, at any tier-display.** `bottomDollar` is the sale-side floor; `units-fleet` D1 already gates its display to ≥ money and never exposes it on a customer surface. Fleet Spread's "SELL DOWN" verdict may *reference* that a category is a sell candidate, but it **must not render the floor number** — the sell price the floor implies is `automated-pricing`'s gated surface, not this board's. (Open Q FS-7.)
 
-4. **Per-yard money does NOT change any existing global gate.** Splitting the Revenue Goal by yard is a *display/grouping* change. The underlying money-action gate `canMoney()` (`app.js:14166`, banner `APP-35` `app.js:14143`) — `!currentRole || roleTier(currentRole) >= tierRank('money')`, i.e. tier rank ≥ 2 — and pricing-floor (`bottomDollar`/`trueCost`) visibility are **untouched**. No money *action* (charge/refund/lock/card-on-file) is added by this area in Phase 1. Yard CRUD (Phase 2) and partner-deal edits (Phase 3) are **Admin-tier** (rank ≥ 4) writes, *stricter* than `canMoney`; re-stabling a unit (Phase 2) is Manager-tier+ (rank ≥ 3). Each handler MUST re-check its tier server-agnostically at click time (defence-in-depth, matching the `canMoney` re-check pattern at `app.js:12417`+), never rely on the button being hidden.
+3. **Jac's open-visibility posture — note, don't over-gate.** Adjacent areas have *loosened* cost visibility (`accounting` D1: cost/spend/aggregate P&L open to all signed-in users; `market-research` D2: market comps public). **The one thing that stays secret everywhere is the margin floor / `bottomDollar` itself.** So there is a real, surfaced fork (FS-6): does Fleet Spread follow `units-fleet`'s **closed** posture (invested-$/ROI gated to money — the conservative default proposed here, since this board *concentrates* the most cost-sensitive numbers into one ranked screen), or `accounting`'s **open** posture (cost is open; only the floor stays secret)? **This spec defaults closed and flags it — it does not silently decide.**
 
-5. **No PII into the spec or config.** Yard addresses are *business* addresses (fine to store). Partner identities are **people** — store `partnerId` + a display name only; **never** SSN, banking/payout details, tax ID, home address, or any partner PII in the repo, `config.js`, or the `data.js` demo seed (the repo is public via Pages). Partner payout banking, if ever needed, lives **server-side only** in the GAS config Sheet, referenced by name — see §5.2.
+4. **Default-deny on every figure branch.** An unknown/blank tier resolves to rank 0 and sees no capital figure (matching the `canMoney() && currentRole` discipline in `market-research` §4.5 / `automated-pricing` — a no-role `#local` demo must not leak the whole capital spread). The verdict stamp (buy/hold/sell) is itself derived from money figures, so a `staff` viewer sees an operational board **without** the verdict column, or a non-numeric badge only (FS-6 decides which).
 
-6. **Default-deny on every yard-aware visibility branch.** The yard badge, filter, Spread Board, partner panel, and `loadScoped` response all default to *showing less*: an unknown/blank tier resolves to rank 0 (`tierRank` `config.js:334`) and sees no money, no partner cut, and no cross-yard money rollup. New gates are added by *raising* the floor, never by widening an existing `canMoney` check.
+5. **No money MOVES here, and no rate/price is written.** Fleet Spread **records nothing and changes no number** — it surfaces a recommendation. It never writes a rate, never sets a sale price, never charges. The only optional write is a human-set per-category override (§4.2), which is a `manager`+ action. The buy/sell *execution* (actually buying iron, or listing a unit) is the human's job downstream — Fleet Spread advises.
+
+### 3.3 Customer isolation / PII
+Fleet Spread operates entirely on **categories and aggregate fleet economics** — no customer record, name, balance, or card enters any figure or recommendation. The demand signal it reads from `market-research` is already FK-only (`demandSignals.customerId`, no PII denorm, `market-research` §3.3); Fleet Spread reads the **rollup counts**, not the underlying customer rows. → **No customer-isolation surface is introduced by this area.** No PII, no secret, no model id, no password enters the spec or any config it touches (repo is public via Pages).
 
 ---
 
 ## 4. Data Model
 
-### 4.1 New entity — `Location` (a yard)
-A new top-level registry. Two shape options (Open Q 11-A): a real persisted entity vs. a config-only list. Proposed shape if persisted:
+Fleet Spread is **almost entirely derived** — its primary output is computed live from `units-fleet` and `market-research` data, exactly like ROI is computed today. **The default is ZERO new stored fields.** Two small, optional persisted additions are surfaced as forks, not assumed.
+
+### 4.1 Derived per-category "spread row" (NOT stored — computed at render)
+The core object the board renders, assembled once per board open from live data:
 
 ```js
+// derived, never persisted — the unit of the Fleet Spread board
 {
-  locationId: 'L-SUL',          // stable id; home yard seeded as L-SUL
-  name: 'Sulphur Yard',         // human label (replaces YARD_ORIGIN string)
-  short: 'SUL',                 // the legacy store-code, reused as the badge
-  address: 'JacRentals, Sulphur, LA, USA',  // transport origin for THIS yard
-  lat: null, lng: null,         // optional, for the spread map (maps-location)
-  isHome: true,                 // exactly one home yard; the single-yard default
-  active: true,
-  revenueGoal: null,            // null → inherits REVENUE_GOAL_DEFAULT (config.js:557)
-  notes: '',
+  categoryId,                 // → categories[].categoryId
+  name,                       // category.name
+  // — SUPPLY (units-fleet) —
+  unitCount,                  // DATA.units where categoryId match
+  rentable, total,            // categoryRentable(categoryId)            app.js:1809
+  utilization,                // current util (or trailing avg if snapshot available)
+  // — INVESTED CAPITAL (units-fleet / categoryStats) —
+  invested,                   // categoryStats.trueCost  (Σ trueCost||purchasePrice) app.js:1836  [money+]
+  // — RETURN (units-fleet / categoryStats) —
+  revenue,                    // Σ unitTotalRevenue over the category               [money+]
+  roi,                        // categoryStats.roi (annualized)                     [money+]
+  revPerDollar,               // revenue / invested  (the core efficiency number)   [money+]
+  // — DEMAND (market-research) —
+  misses,                     // missesByCategory[categoryId] count, trailing window [money+ for value]
+  missValue,                  // Σ estValue of those misses (lost revenue)          [money+]
+  // — VERDICT (derived, §7) —
+  buyPressure,                // composite score (§7.3)
+  verdict,                    // 'buy' | 'hold' | 'sell'   (§7.4)
+  // — optional human override (§4.2, only if FS-1 lands) —
+  targetPct, pinnedVerdict,   // null unless set
 }
 ```
 
-- **Where it lives:** a new `locations` array in `DATA`, added to `PERSIST_KEYS` (`app.js:15638`) + `PERSIST_ID` (`app.js:15687`, id field `locationId`) + `IDX_MAP` (`app.js:15711`). Schema-less Sheets → a new `locations` tab appears on first save, zero migration.
-- **Backward-compat:** if `DATA.locations` is empty, the app **synthesizes one home yard** from `YARD_ORIGIN` at boot. Single-yard installs never see a Location anywhere.
+Every field here is **read from an existing derivation** (`categoryStats`, `categoryRentable`, `market-research` rollups) — nothing here is a new source of truth.
 
-### 4.2 New optional fields on existing entities (additive, schema-less)
+### 4.2 Optional new stored fields on `category` (additive, schema-less — gated on Open Qs)
+Only if Jac wants the board to be more than pure advice:
 
-| Entity | New field | Meaning | Default when absent |
-|---|---|---|---|
-| **Unit** | `locationId` | the yard this unit is stabled at / returns to | home yard (`isHome`) |
-| **Unit** | `partnerId` *(or split)* | co-owner ref, or array of `{partnerId, pct}` splits | none (JacRentals owns 100%) |
-| **Rental** | `originLocationId` | yard the iron left from (snapshot at dispatch) | unit's `locationId` |
-| **Invoice** | `locationId` | yard credited for this revenue (derived from rental's units) | derived; not stored if unambiguous |
-| **Expense** | `locationId` | yard a cost is booked against (optional) | home yard |
+| Field | Type | Default (absent) | Meaning | Gated on |
+|---|---|---|---|---|
+| `targetAllocationPct` | number \| null | `null` | Admin/Manager-set target % of total fleet capital this category *should* hold; the board shows actual-vs-target. | **FS-2** — does the board just advise, or hold target allocations? |
+| `spreadVerdictPin` | `'buy'\|'hold'\|'sell'\|null` | `null` | A human override of the derived verdict (e.g. "I know this category is seasonal — HOLD regardless of the score"). | **FS-1** |
+| `spreadNote` | string | `''` | A one-line rationale for a pin/target. | with the above |
 
-**Migration concern:** because every field is optional with a sane default, **no backfill is required**. A unit with no `locationId` *is* a home-yard unit by the resolver `unitLocationId(u)` (§7.1). Adding fields to the diff-sync (`computeChanges`, `app.js:15693`) is automatic — it diffs whole records by `JSON.stringify`, so new fields ride along with no code change.
+- **Schema-less / additive:** these ride the existing diff-sync (`computeChanges`) with zero migration — absent reads as "no override / no target," identical to today. They sit on the existing `categories` tab; **no new entity, no new Sheets tab.**
+- **If neither FS-1 nor FS-2 lands, the data model is empty** — Fleet Spread stores nothing and is 100% derived. That is the proposed v1 default.
 
-### 4.3 New entity — `Partner` (co-owner) — Phase 3, gated on Open Q 11-C
-```js
-{
-  partnerId: 'P-001',
-  name: 'Joe Landry',           // display only — NO PII beyond a name
-  defaultPct: 40,               // their default split if a unit just lists partnerId
-  loginEnabled: false,          // does this partner get a scoped login? (Open Q 11-C/F)
-  notes: '',
-}
+### 4.3 Relationships (by id — all existing)
 ```
-Relationship by id: `Unit.partnerId → Partner.partnerId`; the partner's cut is computed per §7.3 from that unit's rental revenue minus its allocated cost. **Persisted only if Phase 3 ships;** Phase 1/2 do not touch partners.
-
-### 4.4 Relationships (by id)
+Category(categoryId) ──< Unit(categoryId)              → invested$, supply, ROI  (units-fleet)
+Category(categoryId) ──< demandSignals(categoryId)      → misses, lost revenue   (market-research)
+Category(categoryId) ── (read by) automated-pricing      → sale-price basis on a 'sell' verdict
 ```
-Location(locationId) ─┬─< Unit(locationId)
-                      ├─< Expense(locationId)
-                      └─ origin string drives Rental.originLocationId snapshot
+No new relationship is introduced — Fleet Spread is a *reader* across the existing category-keyed spine.
 
-Partner(partnerId) ──< Unit(partnerId)   (Phase 3)
-Unit ──< Rental(unitId) ──< Invoice(rentalIds)   (existing spine, unchanged)
-```
+### 4.4 Migration concerns
+None for the derived core (it computes over live data). The two optional category fields (§4.2) are additive-with-default → **no backfill, no migration**. A backend that predates this area simply has categories without the fields, which read as null/empty.
 
 ---
 
 ## 5. Backend / Integration Contract
 
-The backend is one additive entry point (`backendCall`, `app.js:15650`). **No existing action changes shape.** New behavior is purely the new `locations` tab riding the existing `load`/diff-sync, plus (Phase 3) one *new* scoped action.
+**Likely ZERO new backend.** Fleet Spread derives over data the client already holds — `categoryStats`, `categoryRentable`, and (once it lands) `market-research`'s `demandSignals` are all in `DATA` after the existing `load`. The board computes the spread rows in the browser, exactly as `categoryStats` is computed today. **No new GAS action is required for the core.**
 
-### 5.1 Phase 1/2 — zero new backend *actions*, but a registry touch in 3 client maps
-- `locations` joins **four client-side maps in lockstep** — this is the concrete edit list:
-  - `PERSIST_KEYS` (`app.js:15638`) → add `'locations'` so it round-trips through `load`/flush.
-  - `PERSIST_ID` (`app.js:15687`) → `locations:'locationId'` so the diff-sync keys records by id.
-  - `IDX_MAP` (`app.js:15711`) → `locations:'location'` so the live multi-user refresh + `IDX.location` lookup work (the `yardAddress` resolver in §7.2 reads `IDX.location?.get(...)`).
-  - `DATA.locations = []` initialized at boot, with the home-yard synthesis (§4.1) filling it when empty.
-- With those four lines, `locations` syncs through the *existing* `load` (returns it in `r.data.locations`, applied by the `PERSIST_KEYS.forEach` in `loadFromBackend` `app.js:15672`) and the existing diff-based upsert/delete flush — **no new action, no new code path.**
-- **The GAS `Code.gs` may still need a one-line additive tab registration** if the backend hardcodes its tab list (cannot read `Code.gs` — gitignored — flagged as Open Q 11-B). If the backend is fully generic over the keys the client sends, even that is free; if it allow-lists tabs, a `/clasp` **additive** deploy (a new `locations` tab/key, no existing action changed) gates Phase 1 sync. This is the one cross-system sequencing item — coordinate with `backend-data`.
+### 5.1 Persistence (only if FS-1/FS-2 land)
+The two optional category fields (§4.2) persist through the **existing** diff-sync — adding them to the seed shape and writing them where edited is the whole change; `computeChanges` carries them on the `categories` tab. **No new action, no new tab.**
 
-### 5.2 Phase 3 — ONE new additive action (only if partner-login isolation ships)
-Contract (proposed):
+### 5.2 Market-research feed dependency
+The demand signal (`missesByCategory`, `missValue`, buy-pressure) is produced by `market-research`. Two integration modes:
+- **In-memory read (default, v1):** `market-research`'s `demandSignals` already ride the shared `load`/diff-sync (it's a `PERSIST_KEYS` entity in that spec), so the rollup is computable client-side with no extra call. Fleet Spread just calls `market-research`'s rollup helper (§7.2 there) over `DATA.demandSignals`.
+- **External feed (later):** `market-research`'s `marketFetch` (auction/MSRP/competitor) is **upstream of `automated-pricing`'s sale basis**, not of Fleet Spread directly. Fleet Spread does not call any external feed itself.
 
-```
-action: 'loadScoped'
-payload: { action:'loadScoped', password:<partner-login-pw>, partnerId:'P-001' }
-returns: { ok:true, data:{ units:[…only this partner's units…],
-                           rentals:[…on those units…],
-                           // NO customers, NO full invoices, NO other yards' iron
-                           revenueByUnit:{ unitId: <gross> } },
-          settings:{ /* minimal, partner-safe */ } }
-```
+### 5.3 No external integration of its own
+Fleet Spread introduces **no new external integration** — no Maps, no Stripe, no LLM. (A future "Mr. Wrangler, where should I put my next $50k?" agentic read is a possible Phase-2 nicety, gated on the wrangler full-action work, and would receive **category aggregates only** — no PII, no model id/key in the repo — mirroring `automated-pricing` §5.5. Out of v1.)
 
-- **Server-side enforcement is the whole point** — the scope MUST be applied in GAS, never trusted from the client, because the repo is public via Pages. The client **never sends `partnerId` as the authority**; the partner-scoped login *password* is the only credential, and GAS derives the `partnerId` from it server-side (the `partnerId` in the payload above is illustrative of the *response* shape, not a client-supplied filter the server trusts). A client that guesses another partner's id gets nothing extra — the server keys off the password→partnerId map alone.
-- **Auth:** partner logins are a distinct password class (a named secret, **never** in the repo). The mapping password→partnerId lives in the GAS config Sheet, not the client. A partner password MUST NOT also satisfy the main `load`/`backendCall` shared-password gate — i.e. presenting a partner password to action `load` returns `{ok:false,error:'scope-required'}`, never the full DB. This split prevents a partner credential from ever pulling an unscoped snapshot.
-- **What the response MUST strip server-side (default-deny):** no `customers` array, no `customer` identity fields denormed onto rentals, no `bottomDollar`/`trueCost`/cost-basis fields on units, no other partners' splits, no `invoices` beyond the partner's own revenue lines, no other yards' iron, no `settings` beyond a minimal partner-safe subset (company name/logo only — never role passwords, KPI DSL, or pricing config).
-- **Failure handling:** reuses `backendCall`'s defensive `{ok:false,error}` contract (`app.js:15650`+; the parse-defensive block returns `{ok:false,error}` on any non-JSON GAS error/quota/auth HTML, `app.js:15663–15667`). A partner login that fails scope returns `{ok:false,error:'scope-denied'}`; the client shows an empty, locked state and **never falls back to the full `load`** (an explicit guard: a `loadScoped` failure must not trigger a retry against `load`). A transient `http-5xx`/`bad-json` shows "Couldn't reach the yard — retry," never an unscoped read.
-- **No diff-sync from a partner login:** partner logins are **read-only**. The `computeChanges` upsert/delete flush (`app.js:15693`) is disabled for the scoped session — a co-owner can view their iron's performance but cannot write to the shared DB. (Open Q 11-C/F.)
-
-### 5.3 External integrations
-- **Google Maps (existing):** transport pricing must origin from the **rental's yard**, not the global `YARD_ORIGIN`. The Distance Matrix call (`app.js:1531`) changes `origins:[YARD_ORIGIN]` → `origins:[ yardAddress(r) ]`. Pure read; no new key, no new API. (See §7.2.)
-- **No new external integration** is introduced by this area. Telematics (`gps-tracking`) and maps spine (`maps-location`) are *dependencies*, not parts of this spec.
+### 5.4 Failure handling
+- The board is **read-only and derived**; if `market-research` hasn't shipped yet, the demand columns render an "—" / "no demand data" state and the verdict falls back to a **supply+ROI-only** score (graceful degradation — §7.5), never a crash.
+- An optional override write (FS-1/FS-2) rides the normal `saveSoon()` debounce + diff-sync; an offline write queues and re-syncs like any field. No money action is involved, so no live-verify is required (unlike `automated-pricing`'s rate accept).
 
 ---
 
 ## 6. UX / UI — yard data-plate language
 
-Everything below is the **"yard data-plate"** system: dark steel panels (`linear-gradient(180deg,#1b2129,#0c0e11)`), corner **rivets**, **Saira Condensed** stamped uppercase labels (~2px tracking), the ONE safety-orange accent (`--accent #ff7a1a`) reserved for primary/ignition actions and brand chrome only (never as a status color — status stays in the R/Y/G flag system), the hi-vis **hazard stripe** for danger/abort, and the **subtle leather-tan ranch twist mostly in voice/copy** (a yard is a "corral"; moving a unit is "**re-stabling**" or "**trailering over**"; a partner deal is a "**brand split**" — the brand double-meaning earns its keep here). All new UI runs through the **`jactec-ui`** skill before showing Jac.
+All surfaces in the **yard data-plate** system: dark steel panels (`linear-gradient(180deg,#1b2129,#0c0e11)`), corner **rivets**, the hi-vis **hazard stripe** signature, **Saira Condensed** stamped uppercase labels (~2px tracking), the ONE safety-orange `#ff7a1a` accent reserved for the primary/ignition action and brand chrome only (status meaning stays in the R/Y/G flag system — orange is never a status), and a **light wrangler/ranch seasoning in copy** ("Fleet Spread", "Where the iron-money lives", "Round up the spread", a buy verdict reads "**Saddle up — buy**", a sell reads "**Trim the herd**"). Every new element gets a `data-r` stamp; a new popup gets a `WINDOW_CATALOG` entry — both **CI-enforced**. All new UI runs through the **`jactec-ui`** skill (screenshot + self-critique) before showing Jac.
 
-### 6.1 The Yard Badge (Phase 1) — the smallest possible footprint
-A stamped, condensed **yard short-code chip** (e.g. `SUL`) on the unit card/row, styled as a riveted data-plate tag, **not** a status pill (status color is owned by the flag engine). Tan saddle-stitch hairline border to lean the ranch twist *visually but quietly*.
+### 6.1 Surface choice — a back-office board (not a 7th grid card)
+The 6-card grid (`GRID_CARDS`) is fixed 3×2 and owns the operational entities. Fleet Spread is **back-office strategy intel**, so it follows the Parts/Vendors/Expenses/Files precedent (`BACKOFFICE_BOARDS` `config.js:371`) — and the `market-research` boards alongside it: **one new back-office board** (`id:'spread'`, title "Fleet Spread"), reached from the board menu (`app.js:13863`) / Tools tray, rendered by the existing board popup (`app.js:9378`) + a new `BOARD_DEF` entry.
 
-- **Single-yard installs:** the badge is **hidden entirely** — one yard means the dimension is noise. It only appears once `activeYards().length >= 2`. This is the core "looks exactly like today" promise (AC #1 regression guard).
-- **R-rulebook stamp:** the badge is a new visible element → it needs a `data-r="Rxx"` stamp at the **next free rule id** (do not reuse an existing id; the `ci/gen-rule-usage.mjs` duplicate-rule guard fails on a clash). After stamping, regenerate `rule-usage.js` by running `ci/gen-rule-usage.mjs` **without** `--check`; the `--check` drift guard then passes in CI. The yard **filter** segment (§6.2), the **Spread Board** tiles (§6.3), the **Re-stable** action (§6.4), and the **Partner Cut** panel (§6.5) each likewise earn their own next-free `data-r` id. Add a short `RULE_META` row describing each so it renders in the admin Rulebook (`APP-12`).
+- **Reuse, not free:** a board's *list shell* is reused, but its **columns + per-row gating are new code** in `BOARD_DEF` (`app.js:11150`) — the `row()` carries the `canMoney()` gate inline (§6.4), exactly as `market-research` §4.5 establishes.
+- Because it rides the catalogued `kind:'board'` popup, **no new popup *kind*** is strictly required for the ranked list. *(If a richer "spread detail / what-if" overlay is wanted later, that IS a new popup → `WINDOW_CATALOG` + `check-window-catalog` — flagged in §9, deferred from v1.)*
 
-### 6.2 The Yard Filter (Phase 1)
-A segmented yard selector in the toolbar (same control family as `SHOP_SEGMENTS`, `config.js:366`), appearing **only when 2+ yards exist**. "All Yards" is the default; clicking a yard scopes every card (Units, Rentals, Shop, Invoices) to that yard; clicking the active segment clears back to All. Saved as a Saved View so a Beaumont manager can pin their yard (`config.js:400` view registry).
+### 6.2 The Fleet Spread board (ranked data-plate list)
+A steel panel with a hazard-stripe header rail and the Saira stamp **"FLEET SPREAD"**, listing every category **ranked by capital efficiency × demand** (default sort: buy-pressure desc — the most starved/under-invested at the top). Each category is a riveted data-plate strip:
 
-### 6.3 Spread Board (Phase 2) — a new popup
-A new overlay (the **"Spread"** board) reachable from the header, showing per-yard tiles: each tile a steel data-plate with the yard's name (Saira stamp), unit count, on-rent count, utilization %, and **per-yard Revenue Goal progress** (a small ring reusing the KPI ring engine, `APP-21` `app.js:7167`). Optionally a mini-map of yard pins (gated on `maps-location`).
+```
+┌─[rivet]──────────────────────────────────────────────────[rivet]─┐
+│ ▌ 12K EXCAVATOR                                  ▓ SADDLE UP ▓     │  ← verdict stamp (hazard-cap)
+│   Invested $182,000 · ROI 31% · $1.84 rev/$ invested              │  ← capital row  [money+]
+│   5 units · 4 rentable · 96% util · 3 misses ($4,200 lost)        │  ← supply+demand row
+└─[rivet]──────────────────────────────────────────────────[rivet]─┘
+┌──────────────────────────────────────────────────────────────────┐
+│ ▌ LIGHT TOWER                                       TRIM THE HERD  │  ← sell verdict
+│   Invested $46,000 · ROI 6% · $0.41 rev/$ invested                │
+│   8 units · 8 rentable · 18% util · 0 misses                      │
+└──────────────────────────────────────────────────────────────────┘
+```
 
-- **New popup → `WINDOW_CATALOG` entry required** (`APP-27` `app.js:9789`, const `app.js:9796`); `ci/check-window-catalog.mjs` fails CI if a popup is added without a catalog row. Add `{ kind:'spreadBoard', title:'Spread Board', … }` and wire it through `buildPopupEl`/`openOverlay` like every other overlay.
-- **Money-rollup gating:** the per-yard Revenue Goal ring and on-rent revenue are **money figures** — visible only to `canMoney()` (rank ≥ 2). A staff-tier user opening the board sees the operational tiles (unit count, on-rent count, utilization) but the revenue ring renders as a locked/blank state, not a number. Cross-yard *money* rollup is Manager-tier+ (rank ≥ 3) so a single-yard Office user can't infer another yard's P&L.
-- States: **empty** (one yard → board not offered at all), **loading** (skeleton steel plates), **error** (a yard with no address shows a hazard-stripe "no origin set" warning).
+- **Verdict stamp** colored via the **flag system** (R/Y/G), not orange: **BUY** = a positive/green-ish "go" stamp (starved + earning), **HOLD** = neutral yellow, **SELL** = red "trim" (idle capital, no demand). The stamp is the board's one **bold** element (boldness spent in one place per `jactec-ui`).
+- **Capital row** (`Invested · ROI · rev/$`) renders **only under `canMoney()`** — a `staff` viewer sees the supply+demand row alone, no dollar, no verdict (or a non-numeric verdict badge per FS-6).
+- **Sortable** by the existing board sort chrome: by buy-pressure (default), invested $, ROI, rev-per-dollar, utilization, or misses.
+- **A small "spread bar"** at the top (optional, FS-2): a single horizontal stacked bar showing each category's *share of total invested capital* — the literal "spread" of dollars across categories at a glance, each segment colored by verdict. If `targetAllocationPct` is set, a thin tick shows target vs actual.
 
-### 6.4 Move-a-unit flow (Phase 2)
-On a unit detail, a **Manager-tier+** (rank ≥ 3) action **"Re-stable…"** (ranch-twist copy) opens a small yard picker (reuse the shared dropdown `openDropdown`, `APP-30` `app.js:11412`; mirror `openFleetDropdown` `app.js:11462` for the yard menu). Changing `locationId` logs an append-only History entry via `logAction` (the customer/record history helper, e.g. `app.js:401`) with actor/timestamp/from→to — satisfying the Owner audit-trail requirement (`role-roles.md` audit Q2). The handler re-checks `roleTier(currentRole) >= tierRank('manager')` at click time before mutating, and toasts "Re-stabling is Manager/Admin only." otherwise. Ignition-orange confirm button.
+### 6.3 States
+- **Empty** (no categories with cost basis) → a stamped "No capital to spread yet — set unit costs to read the spread" plate.
+- **Demand data absent** (`market-research` not shipped) → the misses columns read "—" and a small "demand feed not wired" note; verdict degrades to supply+ROI-only (§7.5).
+- **Loading** → the standard skeleton steel plates.
+- **`staff` viewer** → operational-only board (supply/utilization), capital row + verdict suppressed (DOM-absent, not CSS-hidden).
 
-### 6.5 Partner Cut panel (Phase 3) — gated UI
-On a co-owned unit, a Money-tier+ panel showing the brand-split %, the unit's gross this period, allocated cost, and the partner's cut. **Hidden below money tier.** If a Partner login exists, their dashboard is a *stripped* single-card view (their units only) — never the 6-card grid.
+### 6.4 The `BOARD_DEF` row renderer (gate lives HERE, concretely)
+Follows the shipped `BOARD_DEF` pattern (`app.js:11150`); the money gate is enforced **inside `row()`** so a `staff` viewer never receives the figure in the DOM:
+
+```js
+// app.js — BOARD_DEF addition (sketch; final renderer per jactec-ui pass)
+spread: {
+  cols: ['Category', 'Units', 'Util', /*money+:*/ 'Invested', 'ROI', 'Rev/$', 'Misses', 'Verdict'],
+  row: (cat) => {
+    const s     = spreadRow(cat);                  // §7 assembly over categoryStats + demand rollup
+    const money = canMoney() && currentRole;       // never trust bare canMoney() for a no-role demo (§3.2/4)
+    return [
+      esc(cat.name),
+      `${s.rentable}/${s.total}`,
+      pct(s.utilization),
+      money ? fmtMoney(s.invested)        : '🔒',
+      money ? (s.roi==null ? '—' : s.roi+'%') : '🔒',
+      money ? s.revPerDollar.toFixed(2)   : '🔒',
+      money ? (s.missValue ? `${s.misses} ($${fmtK(s.missValue)})` : String(s.misses)) : verdictBadgeOperationalOnly(s),
+      money ? verdictStamp(s.verdict)     : '🔒',   // FS-6: or a non-$ operational badge
+    ];
+  },
+},
+```
+
+### 6.5 Cross-surface tie-in (optional, gated)
+- A **count/verdict chip** could surface on the **Categories card header** ("2 starved · 1 to trim") linking to the board — money+ only. (Mirrors `automated-pricing`'s "3 advised" chip; FS-5 decides placement.)
+- A **"SELL candidate"** badge on a category in `units-fleet` could deep-link a "sell down" verdict into `automated-pricing`'s sale-price flow (the cost/MSRP/auction basis). This is the buy/sell→pricing seam (FS-7); v1 may show the verdict without wiring the action.
 
 ### 6.6 Mobile reflow
-The app is desktop-first (min-width 1180px). The yard badge and filter must survive the phone reflow of the 3-column grid (per `jactec-ui` mobile sub-capability): badge collapses into the row's stamp cluster; the yard filter becomes a bottom-sheet selector. Spread Board tiles stack 1-wide on phones.
+Desktop-first (min-width 1180px). Per `jactec-ui` mobile rules: the board becomes a bottom-sheet; each category collapses to a stacked snap-card (verdict stamp + the two rows); the spread bar stacks full-width. Respect `prefers-reduced-motion` on the bar fill; visible focus rings; 44px touch targets.
 
-### 6.7 Quality floor (jactec-ui)
-Responsive, visible focus rings, `prefers-reduced-motion` respected on the ring fills and board transitions, no acid-green/cream-serif AI-default slop. Boldness spent in **one** place: the Spread Board's per-yard data-plate tiles.
+### 6.7 R-rulebook & catalog obligations (CI-enforced)
+- Every new element (board rows, verdict stamp, spread bar, any override control) gets a `data-r="Rxx"` stamp at the **next free rule id** (the `gen-rule-usage.mjs` duplicate-rule guard fails on a clash); regenerate `rule-usage.js` (drop `--check`). Reuse an existing rule where the element matches.
+- **No new popup in v1** (the board reuses the catalogued `board` window) → `check-window-catalog.mjs` is unaffected *unless* a richer spread-detail overlay is added (then a `WINDOW_CATALOG` entry is required).
+- If a chapter banner is added for the Fleet Spread code, regenerate the Code Atlas (`tools/gen-code-map.mjs`).
 
 ---
 
 ## 7. Business Rules / Derivations / Money
 
-### 7.1 Yard resolution (the single most-used helper)
-```js
-// The home yard: the one isHome row, or a synthesized SUL plate from YARD_ORIGIN
-// when DATA.locations is empty (single-yard install — §4.1 backward-compat).
-function homeYard() {
-  return DATA.locations.find((l) => l.isHome)
-      || { locationId: 'L-SUL', name: 'Sulphur Yard', short: 'SUL',
-           address: YARD_ORIGIN, isHome: true, active: true, revenueGoal: null };
-}
+All figures are **derived live** (none stored, except the optional overrides §4.2). The board is assembled once per open, not per row, for perf.
 
-// A unit's effective yard: explicit field, else the home yard. NEVER returns null.
-function unitLocationId(u) {
-  return (u && u.locationId) || homeYard().locationId;
-}
+### 7.1 Invested capital per category (the "spread")
+```
+invested(cat)   = categoryStats(cat).trueCost              // = Σ (u.trueCost || u.purchasePrice || 0)   app.js:1836
+totalInvested   = Σ invested(cat) over all categories
+investedShare   = invested(cat) / totalInvested            // this category's slice of the spread (the "spread bar")
+```
+This is the literal **Fleet Spread** — where every fleet dollar lives, by category. `invested` reuses `categoryStats`' existing sum verbatim; **no new cost math.** A category with no cost basis (`invested === 0`) is excluded from ROI/efficiency ranking (shown but unranked — same guard `categoryStats` uses for ROI, `app.js:1849`).
 
-// The yards that gate every piece of multi-yard UI. Returning < 2 means
-// "single-yard mode" → badge/filter/Spread Board are all hidden (AC #1).
-function activeYards() {
-  return DATA.locations.filter((l) => l.active !== false);
-}
+### 7.2 Return on that capital
 ```
-Every yard-aware derivation funnels through `unitLocationId` so an un-tagged unit is *always* a home-yard unit — no record is ever "yard-orphaned." Every piece of multi-yard *UI* gates on `activeYards().length >= 2`, so a single-yard install renders byte-for-byte as today.
+revenue(cat)     = Σ unitTotalRevenue(u.unitId) for units in cat     // app.js:1783 (already summed in categoryStats)
+roi(cat)         = categoryStats(cat).roi                            // annualized lifetime ROI, app.js:1836–1862
+revPerDollar(cat)= invested(cat) ? revenue(cat) / invested(cat) : null   // the core efficiency number
+```
+- **`revPerDollar`** ("revenue per invested dollar") is the headline efficiency metric — a category earning $1.84 per invested dollar is working its capital far harder than one earning $0.41. It's the cleanest cross-category comparison (ROI is annualized and cost-basis-sensitive; rev-per-dollar is a raw efficiency read).
+- **`bottomDollar` is NOT shown** here even though `categoryStats.roi` bakes it in as residual sale value (`app.js:1852`) — the ROI *percentage* is shown (money+), the floor *dollar* is not (§3.2 rule 2; `units-fleet` D1).
 
-### 7.2 Transport pricing origin (the one money path that changes)
-Today every quote prices from `YARD_ORIGIN` (`app.js:1531`). It becomes:
-```js
-function yardAddress(rental) {
-  const u = IDX.unit.get(primaryUnitId(rental));
-  const loc = u && IDX.location?.get(unitLocationId(u));
-  return (loc && loc.address) || YARD_ORIGIN;   // fallback = today's behavior, exactly
-}
-// origins: [ yardAddress(r) ]   ← was [YARD_ORIGIN]
+### 7.3 Demand-vs-supply "buy pressure" score
+The composite that drives the verdict and the default sort. Combines **utilization** (supply working hard), **lost demand** (unmet demand), and **return** (efficient capital):
 ```
-- **Edge case — multi-unit rental spanning two yards:** a rental whose units live at *different* yards has no single origin. Phase 1 rule: transport prices from the **primary unit's** yard; a hazard-stripe note flags "units span 2 yards — verify transport." (Open Q 11-H — is cross-yard transport even allowed, or must a rental be single-yard?)
-- **Round-trip / recovery legs** still use the same yard as both origin and return; no change to `legsForType`.
+util       = utilization(cat)                  // 0..1; current snapshot or trailing avg (FS-3)
+missSignal = normalized misses (count, weighted by reason per market-research §7.2:
+             'dont-stock' & 'no-availability' weight highest)
+returnSig  = normalized revPerDollar(cat) (or roi) across the fleet
 
-### 7.3 Partner cut (Phase 3 money)
-For a co-owned unit over a period:
+buyPressure(cat) = wU*util + wM*missSignal + wR*returnSig      // weights wU/wM/wR — FS-4
 ```
-unitGross    = Σ rental revenue lines (kind:'rental') for that unit in-period
-unitCost     = Σ allocated WO/service/transport cost booked to that unit in-period
-unitMargin   = unitGross − unitCost
-partnerCut   = unitMargin × (split.pct / 100)        // margin-share model (DEFAULT, Open Q 11-E)
-   — OR —
-partnerCut   = unitGross  × (split.pct / 100)        // gross-share model (alternative)
-```
-**This is unsettled and money-sensitive** — margin-share exposes cost basis (gated), gross-share is simpler but ignores who pays for repairs. Surfaced as Open Q 11-E; **no formula ships without Jac picking the model.** Cut figures are Money-tier+ only.
+- **High buyPressure** = high utilization + unmet demand + strong return → **the capital is starved; the next dollar belongs here.**
+- **Low buyPressure** = idle units, no missed demand, weak return → **over-invested; trim.**
+- The exact weights (`wU/wM/wR`) and normalization are **first-cut numbers Jac must tune** (FS-4) — they encode his read of the yard's demand rhythm, exactly as `automated-pricing` §7.3's thresholds are Jac-tuned.
 
-### 7.4 Per-yard Revenue Goal
+### 7.4 Verdict: BUY · HOLD · SELL (the recommendation)
 ```
-yardGoal(loc)     = loc.revenueGoal ?? REVENUE_GOAL_DEFAULT      // config.js:557
-yardRevenue(loc)  = Σ invoice revenue where invoice's credited yard === loc.locationId
+verdict(cat) =
+  spreadVerdictPin (if set, §4.2)               // human override always wins
+  : buyPressure(cat) >= BUY_THRESHOLD   ? 'buy'   // starved + earning → deploy capital here
+  : buyPressure(cat) <= SELL_THRESHOLD  ? 'sell'  // idle capital, no demand → trim / list for sale
+  :                                       'hold'
 ```
-- **Credited yard** = the yard of the rental's primary unit at *dispatch time* (snapshot `originLocationId`), so re-stabling a unit later doesn't retroactively move historical revenue between yards.
-- The **global** Revenue Goal stays the sum of yard revenues = total revenue (no double-count), so the existing top-bar KPI ring is unchanged in single-yard mode and equals the spread total in multi-yard mode.
+- **BUY** → recommend purchasing another unit in this category (feeds the human purchasing decision).
+- **SELL** → recommend listing idle units for sale; this is the **trigger into `automated-pricing`'s sale-side engine** (D2/D3 there derive `bottomDollar`/`askPrice` from a cost/MSRP/auction-value basis). Fleet Spread says *what* to sell; automated-pricing prices it. **Fleet Spread never sets the sale price itself.**
+- **HOLD** → the spread is balanced for this category; no action.
+- Thresholds (`BUY_THRESHOLD`/`SELL_THRESHOLD`) ship as first-cut numbers, Jac-tuned (FS-4). The exact **scoring formula is the single biggest open fork** (FS-4) — it's a business judgment, not a universal.
 
-### 7.5 Edge cases
-- A unit `For Sale`/`Sold`/`Inactive` keeps its `locationId` for history but is excluded from a yard's *active* utilization.
-- Deleting a yard with units attached is **blocked** — must re-stable or retire its units first (hazard-stripe confirm).
-- The home yard cannot be deleted and cannot be set inactive (it's the default-resolution target).
+### 7.5 Graceful degradation when demand data is absent
+If `market-research` hasn't shipped (`DATA.demandSignals` empty/undefined):
+```
+buyPressure(cat) = wU*util + wR*returnSig       // misses term dropped, weights renormalized
+```
+The board still ranks by utilization × return and emits buy/hold/sell on those two signals — it simply can't see unmet demand yet. The misses columns render "—" and a note flags the partial signal. **Fleet Spread is useful day-one on internal signals alone**, and gets sharper when demand capture lands.
+
+### 7.6 No money moves; nothing is written to a rate or price
+This area **records and surfaces** capital figures and a recommendation but **takes no payment, changes no rate, sets no sale price, and buys/sells no iron.** The only optional write is a human override (§4.2), a `manager`+ action carrying no money mutation. The verdict is advice; execution is human + downstream (`automated-pricing` for the sell price). This keeps the money gate a **visibility** gate (§3.2), never an action gate.
+
+### 7.7 Edge cases
+| Case | Rule |
+|---|---|
+| Category with `invested === 0` (no cost basis) | shown but **unranked** for efficiency; verdict suppressed or "needs cost" — never a fake ∞ rev/$ (mirrors `categoryStats` ROI guard `app.js:1849`) |
+| Single-unit category swinging 0↔100% util | use a trailing-avg utilization (via the snapshot, FS-3) before a verdict, not an instantaneous 0/100 (mirrors `automated-pricing` §7.1) |
+| `rentableUnits === 0` (whole category Failed/Sold) | utilization **undefined**, not 100% — emit no BUY (it's out of service, not booked); flag "fleet down" |
+| Sold/For-Sale units | excluded from rentable supply (`categoryRentable` already excludes `Sold`, `app.js:1810`); their cost basis still counts toward historical invested unless retired |
+| A SELL verdict on a category with active demand | the score already weighs misses; a category with misses won't read SELL — but if a human pins SELL (§4.2) it wins, with the note explaining why |
+| `staff`-tier viewer | capital row + verdict suppressed (DOM-absent); operational row shown |
 
 ---
 
 ## 8. Phasing & Milestones
 
-### Phase 1 — Yard data spine + filter (MVP)
-**In scope:** `Location` entity + home-yard synthesis; `locationId` on units (+ resolver); yard badge (hidden at 1 yard); yard filter segment; transport origin per-yard (`yardAddress`); Saved-View pinning; History logging on re-stable; `data.js` demo seed of 1 home yard only (so demo looks unchanged). **Out of scope:** partners, partner logins, scoped backend, Spread Board, cross-yard transport rules.
+### Phase 1 — Derived spread board (MVP, in-scope for v1)
+1. `spreadRow(cat)` assembly over `categoryStats` (invested/ROI/rev-per-dollar) + `categoryRentable` (supply/util) — **internal signals only**, no demand dependency required (degrades per §7.5).
+2. One back-office board (`id:'spread'`) via the existing board popup + a new `BOARD_DEF` entry with the inline `canMoney()` gate.
+3. The buy-pressure score + verdict (supply × return), first-cut weights/thresholds; the spread bar (share of invested capital).
+4. Tier gates per §3.2 (capital figures + verdict money+; operational counts open).
+5. `data-r` stamps + (no new popup) — reuse the `board` window.
+6. **In scope:** the derived board, ranking, buy/hold/sell on internal signals, the gates, demo seed renders non-empty.
+7. **Out of scope:** demand-weighted verdict (needs `market-research`), target allocations / pins (FS-1/FS-2), the sell→automated-pricing wire, any agentic read.
 
-### Phase 2 — Spread Board + management
-**In scope:** Spread Board popup (per-yard tiles + per-yard Revenue Goal ring); Re-stable flow; per-yard utilization; yard CRUD (Admin); cross-yard transport warning. **Out of scope:** partners, isolation.
+### Phase 2 — Demand-weighted + the pricing/purchasing wire
+- Consume `market-research`'s `demandSignals` rollup → the full buy-pressure score (§7.3) with the misses term.
+- The **sell→`automated-pricing`** seam (a SELL verdict deep-links the cost/MSRP/auction sale-price basis).
+- Optional category chip on the Categories card (FS-5).
 
-### Phase 3 — Partners / co-ownership (gated on Open Qs)
-**In scope:** `Partner` entity; `partnerId`/split on units; Partner Cut panel (Money-tier+); the partner-cut formula Jac picks; **and only if Jac approves server-side scoping** → the `loadScoped` action + isolated Partner login. **Out of scope of v1 entirely if Jac says client-only is acceptable — it isn't shippable, see §3.2.**
+### Phase 3 — Active capital management (gated on Open Qs)
+- `targetAllocationPct` + actual-vs-target spread (FS-2); `spreadVerdictPin` human overrides (FS-1).
+- Optional Mr. Wrangler agentic read ("where should the next $50k go?") — category aggregates only, no PII/secret.
 
 ---
 
 ## 9. Acceptance Criteria
 
 **Phase 1 (testable):**
-1. With `DATA.locations` empty, the app renders **byte-for-byte equivalent** to today — no badge, no filter, transport prices from `YARD_ORIGIN`. (Regression guard.)
-2. Adding a 2nd active yard makes the yard badge + filter appear; filtering Units/Rentals/Invoices to a yard shows only that yard's records.
-3. A unit with no `locationId` resolves to the home yard everywhere (`unitLocationId`).
-4. A rental whose unit lives at yard B prices transport from yard B's address.
-5. Re-stabling a unit writes a History entry (`logAction`) with actor/timestamp/from→to and is logged **before** sync; a sub-Manager tier clicking the action is rejected with a toast (handler re-checks tier, not just hidden UI).
-6. `locations` round-trips through `load` + diff-sync (upsert + delete) with no whole-state reseed; a `locations` upsert appears in the `computeChanges` output and a deleted yard appears in `deletes`.
-7. On the Spread Board, a **staff-tier** session sees unit/on-rent/utilization counts but the per-yard Revenue Goal ring renders locked/blank (no money figure); a **money-tier** session sees its own yard's revenue; cross-yard money rollup requires Manager-tier+ (gate test).
-8. Renaming/deactivating the currently-filtered yard on another device drops the local view to "All Yards" without an empty stranded card (multi-user refresh test).
+1. `spreadRow(cat)` returns `invested` equal to `categoryStats(cat).trueCost`, `roi` equal to `categoryStats(cat).roi`, and `revPerDollar = revenue/invested` (null when invested 0) — **assert against the live derivations**, proving no parallel cost math. → `ci/logic-test.mjs`.
+2. A category with `invested === 0` is shown but excluded from efficiency ranking and emits no fake `∞` rev/$ or verdict. → `logic-test`.
+3. The board ranks categories by buy-pressure desc by default; re-sorting by invested/ROI/util works via the board chrome. → manual on `:9147`.
+4. **With a `staff`-tier role, NO invested-$/ROI/rev-per-dollar/missValue/verdict string appears in the DOM** of the board (not merely CSS-hidden) — `row()` returned `🔒`/operational-only for those cells. → `ci/smoke.mjs` (assert absence in rendered HTML) + manual role-switch.
+4b. A **no-role `#local` demo** (`!currentRole`) is treated as below-money for the capital columns (gate is `canMoney() && currentRole`) — same figures suppressed. → smoke with no role set.
+5. **The `bottomDollar` floor number never appears on the board at any tier** (only the ROI% that encodes it, money+). → `logic-test`/code review + manual.
+6. With `DATA.demandSignals` empty, the board still renders and ranks on internal signals (misses columns "—", verdict from supply×return), no crash. → `logic-test` + smoke.
+7. A SELL verdict references the automated-pricing sale basis without rendering the floor dollar. → manual + code review.
+8. Every new UI element carries a `data-r` stamp; `gen-rule-usage.mjs --check` passes (regenerate first). → CI.
+9. No new popup → `check-window-catalog.mjs` unaffected; if a spread-detail overlay is added, it MUST be catalogued. → CI.
+10. If a chapter banner is added for the Fleet Spread code, the Code Atlas is regenerated. → `tools/gen-code-map.mjs --check`.
+11. `ci/smoke.mjs` / `ci/logic-test.mjs` boot with the new board (port-8000→9147 swap per CLAUDE.md); `?v=` cache-bust token bumped on deploy.
 
-**CI-gate impact:**
-- `ci/gen-rule-usage.mjs --check` — must pass after the badge/filter get `data-r` stamps (regenerate first).
-- `ci/check-window-catalog.mjs` — Phase 2 Spread Board popup MUST be added to `WINDOW_CATALOG` or CI fails.
-- `node tools/gen-code-map.mjs --check` — if a new chapter banner is added (e.g. a "Locations" section), regenerate the Code Atlas.
-- `ci/smoke.mjs` / `ci/logic-test.mjs` — add a `unitLocationId` resolver test + a transport-origin test; run on port 9147 per CLAUDE.md.
-- **Cache-bust** the shared `?v=` token on deploy.
-
-**Phase 3 (security-gated):**
-9. A Partner login (if shipped) receives **only** its units from a *server-scoped* response — verified by inspecting the raw network payload and confirming it contains **no other yard's units, no `customers` array, no customer identity denormed on rentals, no `bottomDollar`/`trueCost`, and no other partner's split.** (If this can't be proven by reading the wire response server-side, Phase 3 does not ship — this is the §3.2/§10 critical gate.)
-10. A partner password presented to the plain `load` action returns `scope-required`, never the full DB (credential-class split, Open Q 11-M).
-11. A partner session cannot write: the diff-sync flush is disabled; an attempted mutation produces no `computeChanges` upsert (read-only test, Open Q 11-O).
+**CI-gate impact summary:**
+- `ci/gen-rule-usage.mjs --check` — new board/verdict/spread-bar elements need `data-r` stamps; regenerate `rule-usage.js`.
+- `ci/check-window-catalog.mjs` — unaffected in v1 (reuses `board` window); required only if a new overlay is added.
+- `ci/logic-test.mjs` — unit the §7 derivations (invested = `categoryStats.trueCost`, rev-per-dollar, buy-pressure, verdict, `invested===0` guard, demand-absent degradation).
+- `ci/smoke.mjs` — boot with the board; assert capital strings absent from `staff`-role HTML (AC-4).
+- `tools/gen-code-map.mjs --check` — regenerate if a banner is added.
+- **No new CI gate is introduced.**
 
 ---
 
@@ -358,59 +396,58 @@ yardRevenue(loc)  = Σ invoice revenue where invoice's credited yard === loc.loc
 
 | Risk | Severity | Mitigation |
 |---|---|---|
-| **Partner "isolation" done client-side** leaks the full DB (incl. customer PII) to a co-owner's browser over public Pages | 🔴 Critical | Hard rule: no partner login without server-side `loadScoped`. Treated as the §3 gate decision, escalated to Jac, never delegated. |
-| Single-yard regression — a yard badge/filter shows for the 1-yard case | 🟡 | Gate all yard UI on `activeYards().length >= 2`; AC #1 is the regression guard. |
-| Cross-yard rental has ambiguous transport origin | 🟡 | Phase-1 rule = primary unit's yard + warning; Open Q 11-H decides if cross-yard is allowed at all. |
-| Revenue double-count when summing yard goals vs. global | 🟡 | Credited-yard is a single snapshot; global = Σ yards by construction (§7.4). |
-| Margin-share partner cut leaks cost basis to a sub-money role | 🔴 | Partner-cut figures Money-tier+ only; formula choice is an Open Q, ships nothing until picked. |
-| Backend tab not auto-registered (can't read `Code.gs`) | 🟡 | Flag as Open Q 11-B; if GAS hardcodes tabs, a one-line additive registration is needed before Phase 1 sync works. |
-| Deleting a yard orphans units | 🟢 | Block delete while units attached; home yard undeletable (§7.5). |
-| Historical revenue moves when a unit re-stables | 🟡 | Snapshot `originLocationId` at dispatch; re-stable never rewrites history (§7.4). |
-| Multi-user: two managers re-stable the same unit | 🟢 | Existing diff-sync last-writer-wins on the `locationId` field; both writes logged via `logAction`. The refresh loop adopts the remote `locationId` only for records the local user hasn't touched (`refreshFromBackend` clean-vs-`lastSaved` rule), so an in-progress edit isn't clobbered. |
-| Remote yard rename/deactivate while a user is filtered to it | 🟡 | Filtered-yard removal drops the view to "All Yards" + toast rather than rendering an empty stranded card (Open Q 11-N). |
-| Offline / sync blip during re-stable | 🟡 | `locationId` change is held in the debounced `saveSoon` queue like any field; on reconnect the diff flush sends it. History entry is written locally first so the audit trail survives a failed sync; never silently dropped. |
-| Performance: per-yard derivations recomputed on every render | 🟢 | `unitLocationId`/`yardAddress` are O(1) `IDX` map lookups; the Spread Board aggregates once per open, not per row. Yard badge is a pure string read. Stays inside the 100ms render budget (`PERF_BUDGET_MS` `config.js:557` region). |
-| Partner password reused as the shared `load` password | 🔴 | Distinct credential class; a partner password to plain `load` returns `scope-required`, never the full DB (Open Q 11-M, §5.2). Server-side enforced; never a client check. |
-| Cost-basis leak via the per-yard Revenue Goal ring on the Spread Board | 🔴 | Revenue/utilization-revenue figures gated to `canMoney()`; cross-yard money rollup gated to Manager-tier+. Staff sees operational counts only (§6.3). |
+| **Capital-figure leak** — the board concentrates invested-$/ROI/rev-per-dollar/lost-revenue into one ranked screen; a `staff` screen-share/screenshot exposes the whole capital spread | 🔴 | Gate **in `row()`** so the figure is never emitted (returns `🔒`), never CSS-hidden; AC-4 asserts DOM-absence; the verdict (derived from money figures) is suppressed too; FS-6 decides open-vs-closed posture (default closed) — **security decision, stays on main, not delegated** |
+| **Margin-floor (`bottomDollar`) leak** via a SELL verdict or rev/$ | 🔴 | Never render the floor dollar on this board at any tier (§3.2 rule 2); show ROI% (money+) but not the floor it encodes; the sale price is `automated-pricing`'s gated surface |
+| **No-role demo sees the whole spread** (`canMoney()===true` when `!currentRole`) | 🔴 | Capital columns gate on `canMoney() && currentRole` (§6.4); AC-4b |
+| **Bad recommendation drives a bad buy** — a wrong scoring formula sends Jac to over-buy a category | 🟠 | The verdict is **advice, not action** (§7.6); thresholds/weights are Jac-tuned (FS-4); a human pin (FS-1) always overrides; nothing is bought/sold automatically |
+| **Thin signal** — single-unit category swings util 0↔100% | 🟡 | trailing-avg utilization via the snapshot (FS-3); `rentableUnits===0` → undefined not 100% (§7.7) |
+| **Demand data absent** (`market-research` not shipped) | 🟡 | Graceful degradation to supply+ROI score (§7.5); board is useful day-one |
+| **Parallel cost math drifts from `categoryStats`** | 🟡 | Fleet Spread MUST read `categoryStats`/`categoryRentable`, never re-implement the sums; AC-1 asserts equality |
+| **Open-vs-closed visibility fork decided silently** | 🟠 | FS-6 surfaced explicitly; default closed (conservative); not delegated |
+| **Performance** — per-category derivations on every render | 🟢 | Assemble the spread once per board open (not per row), reusing `categoryStats` (already O(units)); stays in the render budget |
+| **Demo seed leaks real costs/PII** | 🔴 | Derived from existing seed categories/units (already non-PII mock data); no new seed of real cost numbers; repo is public via Pages |
 
 ---
 
-## 11. Open Questions
+## 11. Open Questions (for Jac)
 
-*(No seed questions were captured for this area; all below are generated from the code + design tensions above.)*
+*(No seed questions were captured for this re-authored area; all below are generated from the code + the gate/scoring tensions above. FS-4 — the scoring/verdict formula — and FS-6 — the visibility posture — are the highest-stakes forks.)*
 
 | # | Question | Trade-off |
 |---|---|---|
-| **11-A** | Is `Location` a **persisted entity** (a `locations` Sheets tab) or a **config-only list** (lives in Settings/`config.js`)? | Persisted = editable in-app, syncs, scales to many yards, but adds a tab + needs the home-yard synthesis. Config-only = simpler, no backend touch, but yard edits need a config push and don't sync per-device. **Lean: persisted** (matches the schema-less ethos and the `store` fossil's intent). |
-| **11-B** | Does the GAS backend auto-handle a new `locations` key, or does `Code.gs` hardcode its tab list (needs a one-line additive register)? | Can't read `Code.gs` (gitignored). If generic → free. If hardcoded → a `/clasp` additive deploy gates Phase 1 sync. |
-| **11-C** | Do we ship a **scoped Partner login** at all, or is co-ownership only an *internal* bookkeeping view (Owner sees the split; the partner gets a PDF/email, not a login)? | A login is a big surface + the app's first isolation gate. An internal-only view is far safer and may be all Jac needs. **Lean: internal-only for v1; revisit login later.** |
-| **11-D** | If a Partner login *does* ship, does the partner see the **renting customer's identity**, or only "Unit on rent, $X earned"? | Customer PII is JacRentals' relationship. **Lean: hide customer identity from partners.** |
-| **11-E** | Partner cut = **margin-share** (gross − allocated cost) or **gross-share** (% of rental revenue)? | Margin-share is fair but exposes cost basis (gated) and needs robust cost allocation. Gross-share is simple but ignores who funds repairs. **No formula ships until Jac picks.** |
-| **11-F** | If partner isolation is client-side only, is that acceptable to Jac given the public-Pages exposure? | **Strong recommendation: NO.** Client-only over public Pages = no real isolation. Documented as a blocker, not a choice to make lightly. |
-| **11-G** | Should a **Manager role be scopeable to one yard** (a Beaumont manager who can't see Sulphur), or do all internal roles always see all yards (yard is just a filter)? | Per-yard manager scoping is real multi-tenancy and reuses the isolation machinery from 11-C. Filter-only is trivial. **Lean: filter-only for v1.** |
-| **11-H** | Can a single rental span **two yards' units**, or must every rental be single-yard? | Cross-yard rentals complicate transport origin + revenue credit. Single-yard rentals keep the math clean. **Lean: discourage but don't hard-block; warn + price from primary unit.** |
-| **11-I** | Does **transport between yards** (re-stabling iron on a flatbed) get priced/tracked as an internal transport cost, or is it off-book? | Could book a yard-to-yard `Expense` per move; or ignore it. Affects per-yard P&L accuracy. **Lean: optional Expense, off by default.** |
-| **11-J** | What is the **home-yard's name/short-code** — keep "Sulphur" / `SUL` from the `store` fossil, or let Jac rename? | Reusing `SUL` honors the legacy badge; trivial either way. Cosmetic. |
-| **11-K** | Does **per-yard Revenue Goal** roll *up* into the existing single top-bar ring (sum), or replace it with a yard-switchable ring? | Sum keeps the top bar stable; switchable is richer but changes a shipped KPI surface (Owner audit Q3 — "don't surprise a ring"). **Lean: sum at top, per-yard on the Spread Board.** |
-| **11-L** | Should the **yard filter persist as a Saved View** (a manager pins their yard) or reset to "All Yards" each session? | Persisting matches the per-yard manager workflow; resetting avoids "why am I only seeing half the fleet" confusion for Owner. **Lean: persist as an opt-in Saved View, default All.** |
-| **11-M** | If a Partner login ships, must its password be a **wholly separate credential class** from the shared `backendCall` password, such that a partner password presented to plain `load` is rejected? | A separate class prevents a partner credential from ever pulling an unscoped snapshot (the §5.2 split). But it adds a second password surface to manage server-side. **Strong lean: YES, separate class — anything less risks a full-DB read from a partner login.** |
-| **11-N** | Does the **live multi-user refresh** (`refreshFromBackend`, polling `load`) adopt new `locations` rows like any other entity, and does adding/renaming a yard on one device propagate to others mid-session without disturbing an active yard filter? | `locations` rides the existing refresh via `IDX_MAP` so adoption is free; but a yard the user has *filtered to* getting renamed/deactivated remotely needs a graceful reflow (don't strand the user on a vanished yard → fall back to "All Yards"). **Lean: adopt rows normally; on filtered-yard removal, drop to All Yards + toast.** |
-| **11-O** | Should a **partner login be read-only** (no diff-sync writes), as §5.2 proposes, or could a co-owner ever edit anything (e.g. a note on their own unit)? | Read-only is the conservative default and keeps the shared DB un-writable from the lowest-trust login. Any write surface from a scoped login multiplies the isolation risk. **Lean: read-only for v1, no exceptions.** |
-| **11-P** | Is the **home-yard synthesis** (§4.1) computed purely at boot (ephemeral, never persisted), or is the synthesized `L-SUL` row **written back** to the `locations` tab on first multi-yard setup? | Ephemeral keeps single-yard installs with a literally-empty tab (truest "looks like today"). Persisting on first 2nd-yard add makes the home yard a real editable record. **Lean: ephemeral until a 2nd yard is added, then persist the home row so both are first-class.** |
+| **FS-1** | **Does Fleet Spread just *advise*, or also let a human *pin* a verdict** (`spreadVerdictPin`, §4.2) that overrides the derived score? | Pure advice = zero stored data, simplest, the board is a live read. Pins = Jac can say "HOLD this seasonal category regardless," but adds a stored field + a `manager`+ write. **Lean: advise-only for v1; pins in Phase 3.** |
+| **FS-2** | **Does it hold *target allocations* (`targetAllocationPct`) — "this category *should* be 20% of fleet capital" — or only show actual share?** | Targets turn the board into a real portfolio tool (actual-vs-target gap drives buy/sell), but require Jac to set targets per category and add a stored field. Actual-only is a pure read. **Lean: actual share + the spread bar for v1; targets later.** |
+| **FS-3** | **Utilization input: instantaneous (current render) or a trailing average from a stored snapshot?** | Instantaneous = zero new store, but a single-unit category whipsaws. Trailing avg = stabler verdicts, but needs a time series. **Lean: reuse `automated-pricing`'s `pricingSignals` daily snapshot (§4.3 there) rather than build a parallel one** — sequence with that area. |
+| **FS-4** | **The exact buy/hold/sell *scoring formula* — weights (`wU/wM/wR`) and thresholds.** This is a business judgment, not a universal. | Utilization-heavy = chases occupancy; demand-heavy = chases unmet demand; return-heavy = chases efficiency. Jac knows the yard's rhythm. **No verdict ships until Jac picks the weights/thresholds** (first-cut numbers proposed, tunable in-app like `automated-pricing` §7.3). |
+| **FS-5** | **Does a buy/sell count chip surface on the Categories card header** (like automated-pricing's "3 advised"), or live only on the board? | Chip = always-visible nudge for managers; board-only = less UI surface. Money+ either way. **Lean: board-only for v1; chip Phase 2.** |
+| **FS-6** | **Visibility posture: follow `units-fleet`'s CLOSED gate (invested-$/ROI/verdict to ≥money — proposed default) or `accounting`'s OPEN posture (cost is open; only the floor stays secret)?** | This board *concentrates* the most cost-sensitive numbers into one ranked screen, so the conservative default gates the capital figures to money+. But Jac has loosened cost visibility elsewhere (`accounting` D1). **Default closed and flagged — security decision, stays on main, not delegated.** Which posture? |
+| **FS-7** | **How tightly does a SELL verdict tie into `automated-pricing`'s purchasing/sale engine** — just *advise* "consider selling," or *deep-link* into the cost/MSRP/auction sale-price flow (and a BUY verdict into a purchasing checklist)? | Advise-only = clean separation, Fleet Spread stays read-only. Deep-link = one-tap from "trim the herd" to a priced sale listing, but couples the two areas. **Lean: advise + a (gated) deep-link button in Phase 2; never auto-list.** |
+| **FS-8** | **Who sees the board at all** — money+ (it's a capital view) or manager+ (capital *strategy* is management-only, the tighter posture `automated-pricing` D4 took for proposals)? | Money+ = Office/Sales understand the push/park; manager+ = strategy stays with management. **Lean: money+ to *view operational + capital figures*; the *verdict/strategy* surface follows the FS-6 posture.** |
+| **FS-9** | **Does "invested" use historical acquisition cost only, or mark-to-market** (current resale/auction value of the units)? | Acquisition cost = what `categoryStats` already sums, zero new data. Mark-to-market = a truer "capital currently tied up" but needs the auction-value feed (`market-research`/`automated-pricing` basis) per unit. **Lean: acquisition cost for v1; mark-to-market when the auction feed lands.** |
 
 ---
 
 ## 12. Dependencies & Sequencing
 
-**Must land first (or be co-designed):**
-- `units-fleet` ✅ — the `Unit` entity that gains `locationId`/`partnerId` is owned here; coordinate the field additions.
-- `rentals-dispatch` ✅ — transport-origin change (`app.js:1531`) and `originLocationId` snapshot live in the dispatch/quote flow.
-- `financials-kpi` ✅ — per-yard Revenue Goal reuses the KPI ring engine (`APP-21`); the goal-split must not disturb the shipped global ring.
-- `maps-location` ✅ — the Spread Board's optional yard-pin map mounts on the shared maps spine; yard `lat/lng` feed it.
-- `backend-data` ✅ — the `locations` tab + any `loadScoped` action are additive on the single `backendCall`; sequence the GAS deploy (11-B).
+### 12.1 Cross-area dependencies
+| Dependency | Direction | Why |
+|---|---|---|
+| **`units-fleet`** ✅ shipped | **upstream (hard)** | The whole capital + return + supply signal: `categoryStats` (invested $, ROI, rev/unit `app.js:1836`), `categoryRentable` (supply `app.js:1809`), `unitTotalRevenue` (`app.js:1783`). Fleet Spread is a *reader* of these — it must reuse them, never re-derive. Also owns the `bottomDollar` margin-floor gate (D1) Fleet Spread honors. |
+| **`market-research`** ⬜ specced | **upstream (soft — degrades without it)** | The demand signal: `demandSignals` (lost-demand misses) + the demand-trend rollup (its §7.2 `missesByCategory`, buy-pressure). Fleet Spread is its first real *consumer*. v1 degrades gracefully if it's not yet shipped (§7.5). |
+| **`automated-pricing`** ⬜ specced | **downstream consumer** | A SELL verdict feeds its sale-side engine (D2/D3: `bottomDollar`/`askPrice` derived from cost/MSRP/auction basis). Fleet Spread says *what* to sell; automated-pricing prices it. May also share the `pricingSignals` utilization snapshot (FS-3). |
+| **`financials-kpi`** ✅ shipped | **lateral / optional downstream** | A future "capital efficiency" KPI ring could read the spread rollup; reuses the ring engine (`APP-21`). Not a v1 dependency. |
+| **`accounting`** ⬜ specced (partial) | **lateral** | Sets the open-cost-visibility posture (D1) that FS-6 weighs against; the realized-margin-per-category surface (`accounting` D3, money-gated) overlaps Fleet Spread's return read — coordinate so the two agree on "revenue − attributed cost." |
+| **`backend-data`** ✅ shipped | **upstream** | The derived core needs **no new action**; the optional override fields (§4.2) ride the existing diff-sync. |
 
-**Soft / later:**
-- `gps-tracking` 🟡 — once live telematics land, "which yard is this machine *actually* near" can auto-suggest re-stabling. Nice-to-have, not a Phase-1 dependency.
-- `hr-compliance` ⬜ — if per-yard staffing/roles ever matter, the yard dimension is reused; out of scope here.
+### 12.2 What must land / be decided first
+1. **Nothing blocks Phase 1** — `units-fleet`'s derivations are shipped; the board is computable today on internal signals alone.
+2. **Resolve FS-4 (the scoring/verdict formula) and FS-6 (visibility posture) on the main session before build** — FS-4 is a business judgment that shapes every verdict; FS-6 is a margin/capital-visibility security call. Neither is delegated, neither silently set.
+3. **`market-research` is the soft prerequisite for the *demand-weighted* verdict (Phase 2)** — Phase 1 ships without it (§7.5); the misses term plugs in when that area lands.
+4. **`automated-pricing` is the downstream of a SELL verdict (Phase 2)** — Fleet Spread does not block on it; the sell→price wire is built once both exist.
 
-**Sequencing recommendation:** Phase 1 (spine + filter) is safe and high-value — build it first behind the `>= 2 yards` gate. Phase 2 (Spread Board) follows once a 2nd yard is real. **Phase 3 (partners) is blocked** on Jac resolving 11-C/11-E/11-F — do not start partner code until the isolation + money-model decisions are made on the main session (never delegated, per CLAUDE.md's auth/PII rule).
+### 12.3 Sequencing recommendation
+Phase 1 (the derived spread board on internal signals) is **safe, high-value, and unblocked** — build it first, gated per FS-6. Phase 2 (demand-weighting + the pricing/purchasing wire) follows `market-research` and `automated-pricing`. Phase 3 (target allocations, human pins, agentic read) waits on FS-1/FS-2 and the wrangler work. Keep the FS-4 scoring formula and the FS-6 gate on the main session.
+
+---
+
+*End of re-authored DRAFT — every numbered decision (especially §3 gates, §7.3/7.4 scoring, and §11) is open for Jac's critique before any branch is cut.*
