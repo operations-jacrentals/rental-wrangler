@@ -7479,11 +7479,11 @@ function commsRailEl() {
   // the live chat first if it's a brand-new one not yet snapshotted onto the rail
   let liveTab = '';
   if (wrOpen && state.wrangler.id && !state.wrangler.reqNumber && !snaps.some((c) => c.id === state.wrangler.id) && (state.wrangler.messages || []).length) {
-    liveTab = `<button class="crail-tab is-active" data-wrc-open="${esc(state.wrangler.id)}" role="tab" aria-selected="true" data-tip="Current chat with Mr. Wrangler"><span class="crail-dot"></span><span class="crail-t">${trim(wranglerConvoTitle(state.wrangler) || 'New chat')}</span></button>`;
+    liveTab = `<button class="crail-tab is-active" data-wrc-open="${esc(state.wrangler.id)}" role="tab" aria-selected="true" data-tip="Current chat with Mr. Wrangler"><span class="crail-dot"></span><span class="crail-t">${trim(wranglerConvoTitle(state.wrangler) || 'New chat')}</span><span class="crail-x js-wrc-remove" data-wrc-rm="${esc(state.wrangler.id)}" aria-label="Remove this chat" data-tip="Remove this chat">×</span></button>`;
   }
   const snapTabs = snaps.map((c) => {
     const active = wrOpen && state.wrangler.id === c.id;
-    return `<button class="crail-tab${active ? ' is-active' : ''}" data-wrc-open="${esc(c.id)}" role="tab" aria-selected="${active}" data-tip="Reopen this chat with Mr. Wrangler"><span class="crail-dot"></span><span class="crail-t">${trim(c.title || 'Chat')}</span></button>`;
+    return `<button class="crail-tab${active ? ' is-active' : ''}" data-wrc-open="${esc(c.id)}" role="tab" aria-selected="${active}" data-tip="Reopen this chat with Mr. Wrangler"><span class="crail-dot"></span><span class="crail-t">${trim(c.title || 'Chat')}</span><span class="crail-x js-wrc-remove" data-wrc-rm="${esc(c.id)}" aria-label="Remove this chat" data-tip="Remove this chat">×</span></button>`;
   }).join('');
   const wrTabs = reqTabs + liveTab + snapTabs;
   // ── 💬 TEAM ──
@@ -7939,6 +7939,17 @@ function wranglerRailSnapshot() {
 // Start a fresh conversation (snapshotting whatever was open first).
 function wranglerNewChat(seed) {
   openWranglerDock(Object.assign({ messages: [], draft: '', attach: [], files: [], card: null, recId: null, recType: null, reqNumber: null, reqTitle: null, reqUrl: null, id: wranglerNewId() }, seed || {}));
+}
+// §18g REMOVE a Mr. Wrangler conversation entirely (the × on its rail tab) — closing the dock
+// only snapshots a chat back onto the rail, so this is the only way to actually clear one. If the
+// chat is the one open in the dock, close the dock WITHOUT re-snapshotting it.
+function wrRailRemove(id) {
+  if (!id) return;
+  const o = state.wrangler;
+  if (o.id === id) { o.open = false; o.min = false; o.id = null; o.messages = []; o.reqNumber = null; o.reqTitle = null; o.reqUrl = null; }   // drop the live one; cleared so it isn't re-snapshotted on the next open
+  state.wranglerRail = (state.wranglerRail || []).filter((c) => c.id !== id);
+  try { wrStore.delChat(id); } catch (e) {}   // also from IndexedDB so it doesn't reload next boot
+  render();
 }
 // Re-open a stored conversation from the rail.
 function wranglerRailOpen(id) {
@@ -12601,6 +12612,7 @@ function onClick(e) {
   if (closest('.js-wr-unattach')) { e.stopPropagation(); const o = state.wrangler; if (o.open && o.attach) { o.attach.splice(Number(closest('.js-wr-unattach').dataset.i), 1); render(); } return; }   // §18d drop a pending image attachment
   if (closest('.js-wr-unfile')) { e.stopPropagation(); const o = state.wrangler; if (o.open && o.files) { o.files.splice(Number(closest('.js-wr-unfile').dataset.i), 1); render(); } return; }   // §18d drop a pending file attachment
   if (closest('.js-wrangler')) { e.stopPropagation(); if (state.wrangler.open) { wranglerRailSnapshot(); state.wrangler.open = false; return render(); } return wranglerNewChat(); }   // §18 toggle Mr. Wrangler dock — opening always starts a fresh chat (the last one waits on the §18g rail)
+  if (closest('.js-wrc-remove')) { e.stopPropagation(); return wrRailRemove(closest('.js-wrc-remove').dataset.wrcRm); }   // §18g rail: the × on a chat tab → REMOVE that conversation (not just close it)
   if (closest('[data-wrc-needs]')) { e.stopPropagation(); return openWranglerFromRequest(Number(closest('[data-wrc-needs]').dataset.wrcNeeds)); }   // §18g rail: a flashing "needs you" chat → reopen it seeded from the request
   if (closest('[data-wrc-open]')) { e.stopPropagation(); return wranglerRailOpen(closest('[data-wrc-open]').dataset.wrcOpen); }   // §18g rail: reopen a stored conversation
   if (closest('.js-notifications')) { e.stopPropagation(); openOverlay({ kind: 'notifications' }); markNotifsSeen(); refreshWranglerNotifications(); return; }   // §18f notification bell — in-app resolved-fix feed
