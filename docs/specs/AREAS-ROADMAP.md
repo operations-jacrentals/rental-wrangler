@@ -5,9 +5,12 @@
 **Owner:** Jac
 **Scope:** The 24 original `area/*` domains of Rental Wrangler **+ 3 areas added 2026-06-29** (Customer Portal, Equipment Insurance, Collections) = **27 areas.** The public **marketing website** is explicitly a *separate* service (see "Out of scope").
 
-> **All 24 area specs now exist as 📝 first drafts** (linked in the **Spec** column),
-> authored against each area's live code baseline and awaiting Jac's critique — one
-> at a time. Drafts surface every fork as an Open Question rather than silently deciding.
+> **All 27 area specs are ✅ critiqued** (linked in the **Spec** column). Each was authored
+> against its live code baseline, then critiqued one-at-a-time with Jac on **2026-06-29** —
+> every fork resolved via popup and recorded in a dated `## ✅ Decisions — 2026-06-29 critique (Jac)`
+> block at the top of each spec, with a `> Resolved 2026-06-29:` pointer in its §11/Open-Questions.
+> Remaining items are explicitly build-time calls or cross-area blockers (e.g. `backend-data`
+> server-tier trust), noted in each spec — not open critique forks.
 
 ---
 
@@ -39,43 +42,43 @@ ones below it. 🆕 marks an area added 2026-06-28 (no `area/` branch cut yet).
 
 | # | Area | Slug | Maturity | Spec |
 |---|------|------|----------|------|
-| 1 | Rentals / Dispatch | `rentals-dispatch` | ✅ Shipped | [📝 draft](./rentals-dispatch.md) |
-| 2 | Units / Fleet | `units-fleet` | ✅ Shipped | [📝 draft](./units-fleet.md) |
-| 3 | Invoicing / Payments | `invoicing-payments` | ✅ Shipped | [📝 draft](./invoicing-payments.md) |
-| 4 | Customers / CRM | `customers-crm` | ✅ Shipped | [📝 draft](./customers-crm.md) |
-| 5 | Accounting 🆕 | `accounting` | 🟡 Partial | [📝 draft](./accounting.md) |
-| 6 | Maintenance / Shop | `maintenance-shop` | ✅ Shipped | [📝 draft](./maintenance-shop.md) |
-| 7 | Backend / Data | `backend-data` | ✅ Shipped | [📝 draft](./backend-data.md) |
+| 1 | Rentals / Dispatch | `rentals-dispatch` | ✅ Shipped | [✅ critiqued](./rentals-dispatch.md) |
+| 2 | Units / Fleet | `units-fleet` | ✅ Shipped | [✅ critiqued](./units-fleet.md) |
+| 3 | Invoicing / Payments | `invoicing-payments` | ✅ Shipped | [✅ critiqued](./invoicing-payments.md) |
+| 4 | Customers / CRM | `customers-crm` | ✅ Shipped | [✅ critiqued](./customers-crm.md) |
+| 5 | Accounting 🆕 | `accounting` | 🟡 Partial | [✅ critiqued](./accounting.md) |
+| 6 | Maintenance / Shop | `maintenance-shop` | ✅ Shipped | [✅ critiqued](./maintenance-shop.md) |
+| 7 | Backend / Data | `backend-data` | ✅ Shipped | [✅ critiqued](./backend-data.md) |
 
 ### WANTS — high-value growth & operations intel
 
 | # | Area | Slug | Maturity | Spec |
 |---|------|------|----------|------|
-| 8 | GPS / Tracking 🆕 | `gps-tracking` | 🟡 Partial (seam) | [📝 draft](./gps-tracking.md) |
-| 9 | Automated Pricing 🆕 | `automated-pricing` | ⬜ Greenfield | [📝 draft](./automated-pricing.md) |
-| 10 | Market Research 🆕 | `market-research` | ⬜ Greenfield | [📝 draft](./market-research.md) |
-| 11 | Fleet Spread 🆕 | `fleet-spread` | ⬜ Greenfield | [📝 draft](./fleet-spread.md) |
-| 12 | Financials / KPI | `financials-kpi` | ✅ Shipped | [📝 draft](./financials-kpi.md) |
-| 13 | Search / Views | `search-views` | ✅ Shipped | [📝 draft](./search-views.md) |
-| 14 | Memberships | `memberships` | ✅ Shipped | [📝 draft](./memberships.md) |
-| 15 | Comms / Notifications | `comms-notifications` | 🟡 Partial | [📝 draft](./comms-notifications.md) |
-| 16 | HR / Compliance | `hr-compliance` | ⬜ Greenfield | [📝 draft](./hr-compliance.md) |
-| 17 | Maps / Location | `maps-location` | ✅ Shipped | [📝 draft](./maps-location.md) |
-| 18 | Sales / Growth | `sales-growth` | 🟡 Partial | [📝 draft](./sales-growth.md) |
-| 19 | Marketing 🆕 | `marketing` | ⬜ Greenfield | [📝 draft](./marketing.md) |
-| 20 | Security Cameras 🆕 | `security-cameras` | ⬜ Greenfield | [📝 draft](./security-cameras.md) |
-| 21 | Mobile / Remote | `mobile-remote` | 🟡 Partial | [📝 draft](./mobile-remote.md) |
-| 22 | Wrangler AI | `wrangler-ai` | ✅ Shipped | [📝 draft](./wrangler-ai.md) |
-| 23 | Design System | `design-system` | ✅ Shipped | [📝 draft](./design-system.md) |
-| 24 | Frontend Performance | `frontend-performance` | 🟡 Partial | [📝 draft](./frontend-performance.md) |
+| 8 | GPS / Tracking 🆕 | `gps-tracking` | 🟡 Partial (seam) | [✅ critiqued](./gps-tracking.md) |
+| 9 | Automated Pricing 🆕 | `automated-pricing` | ⬜ Greenfield | [✅ critiqued](./automated-pricing.md) |
+| 10 | Market Research 🆕 | `market-research` | ⬜ Greenfield | [✅ critiqued](./market-research.md) |
+| 11 | Fleet Spread 🆕 | `fleet-spread` | ⬜ Greenfield | [✅ critiqued](./fleet-spread.md) |
+| 12 | Financials / KPI | `financials-kpi` | ✅ Shipped | [✅ critiqued](./financials-kpi.md) |
+| 13 | Search / Views | `search-views` | ✅ Shipped | [✅ critiqued](./search-views.md) |
+| 14 | Memberships | `memberships` | ✅ Shipped | [✅ critiqued](./memberships.md) |
+| 15 | Comms / Notifications | `comms-notifications` | 🟡 Partial | [✅ critiqued](./comms-notifications.md) |
+| 16 | HR / Compliance | `hr-compliance` | ⬜ Greenfield | [✅ critiqued](./hr-compliance.md) |
+| 17 | Maps / Location | `maps-location` | ✅ Shipped | [✅ critiqued](./maps-location.md) |
+| 18 | Sales / Growth | `sales-growth` | 🟡 Partial | [✅ critiqued](./sales-growth.md) |
+| 19 | Marketing 🆕 | `marketing` | ⬜ Greenfield | [✅ critiqued](./marketing.md) |
+| 20 | Security Cameras 🆕 | `security-cameras` | ⬜ Greenfield | [✅ critiqued](./security-cameras.md) |
+| 21 | Mobile / Remote | `mobile-remote` | 🟡 Partial | [✅ critiqued](./mobile-remote.md) |
+| 22 | Wrangler AI | `wrangler-ai` | ✅ Shipped | [✅ critiqued](./wrangler-ai.md) |
+| 23 | Design System | `design-system` | ✅ Shipped | [✅ critiqued](./design-system.md) |
+| 24 | Frontend Performance | `frontend-performance` | 🟡 Partial | [✅ critiqued](./frontend-performance.md) |
 
 ### 🆕 Added 2026-06-29 (Jac) — all Wants; placement set 2026-06-29
 
 | Area | Slug | Maturity | Priority (Jac) | Spec |
 |------|------|----------|----------------|------|
-| Customer Portal | `customer-portal` | ⬜ Greenfield | **Mid-Wants** (after core internal ops) | [📝 draft](./customer-portal.md) |
-| Equipment Insurance | `equipment-insurance` | ⬜ Greenfield | **Later-Wants** | [📝 draft](./equipment-insurance.md) |
-| Collections | `collections` | ⬜ Greenfield | **Later-Wants** (with the invoicing/accounting cluster) | [📝 draft](./collections.md) |
+| Customer Portal | `customer-portal` | ⬜ Greenfield | **Mid-Wants** (after core internal ops) | [✅ critiqued](./customer-portal.md) |
+| Equipment Insurance | `equipment-insurance` | ⬜ Greenfield | **Later-Wants** | [✅ critiqued](./equipment-insurance.md) |
+| Collections | `collections` | ⬜ Greenfield | **Later-Wants** (with the invoicing/accounting cluster) | [✅ critiqued](./collections.md) |
 
 - **Customer Portal** — external, customer-facing self-service: customers log in (a *separate, row-isolated* auth surface), see their on-rent units **live on a Google Map**, view order/spend history, **book** available + feature rentals, and **flag a unit for a field call** (pickup/delivery). Supersedes the "customer self-service portal" placeholder in `mobile-remote`. The load-bearing problem is external-customer auth + strict per-customer **data isolation** (the current single-team-password model doesn't provide it).
 - **Equipment Insurance** — a service JacRentals provides: an **owner-side** UI to select **which units are insured** and **which coverage/service types** each unit gets. Must be reconciled against the existing membership **"Rental Protection"** (the customer-facing damage-cap add-on) — related but distinct.
