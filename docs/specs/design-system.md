@@ -7,6 +7,13 @@
 **Maturity:** ✅ Shipped (deeply enforced)
 **Scope:** The visual language of Rental Wrangler and the machinery that enforces it — the token/theme layer, the R0–R25 stamped rulebook + one builder per rule, the flag-driven color engine, the admin Rulebook overlay (now including the live Windows catalog), `DESIGN.md`, the three CI drift guards, and the `jactec-ui` skill that builds and polices all of it.
 
+## ✅ Decisions — 2026-06-29 critique (Jac)
+
+- **D1 — Ship the flag-settings UI fully; ALL flags toggleable (Q6).** The parked per-entity flag toggle + severity-override UI ships (persisted in `config.settings.flagOverrides` via existing `setConfig`). **No flag is hardcoded non-disableable** — an admin may toggle/re-severity *any* flag, including the money/credit/blacklist safety flags (`unpaid-balance`, `no-card`, `blacklist`). Jac accepts the trade-off (an admin can hide a credit/money signal). *Mitigation to bake in regardless:* turning off a safety flag is an `adminUnlocked()`-gated, server-`setConfig`-gated act and should `logAction` an audit line so a disabled safety flag is traceable; default state stays the hardcoded `FLAG_META` (all on).
+- **D2 — Dark-only stays the brand stance; NO user-facing theme switcher (Q7).** "Steel yard at night" remains the single identity. The light theme (`[data-theme="light"]`) stays an internal/accessibility fallback only — not exposed as a user toggle. This closes Q7 **and** Q12 (no new theme-write path needed; `setConfig` gate untouched). The `config.settings.theme` proposed field (§4.3) is therefore **not** added in v1.
+- **D3 — Promote token contrast to a hard, build-failing gate now (Q4).** `ci/check-design-md.mjs` contrast findings move from advisory (warn) to **ERROR-level (build-failing)**. Clear any existing warnings first, then flip the gate; a legitimate brand-orange ratio that trips it gets an explicit, reviewed allowlist entry rather than a silent pass. AC #4 updates accordingly.
+- **D4 — Adopt the doc truth-ups as-is (Q1/Q2/Q5/Q9/Q11):** correct CLAUDE.md / roadmap / `rulebook.md` / `DESIGN.md` to **R0–R25** (sync banner counts) and to the **5-tier ladder** (dev tools = `devUnlocked` tier 5, Settings recolor = `adminUnlocked` tier 4, money = `canMoney` tier 2 — drop "15 roles"/"admin-gated" prose); mark the **Windows catalog SHIPPED**; add the **`RB_FOUNDATION` drift guard** (Q5) and a **prose-doc rule-count CI cross-check** (Q9) so the docs can't re-drift. Q3 (preview money/PII scrub) stays **gate-as-is, do not loosen** — scrubbing only becomes mandatory if a preview ever leaves the developer-only context. Q8 (Figma/DESIGN.md export) and Q10 (hard ranch-twist cap) deferred — keep ranch-twist voice-governed, no numeric cap yet.
+
 ---
 
 ## 1. Goal & Problem
@@ -378,6 +385,8 @@ Concrete, testable. CI-gate impact noted.
 ---
 
 ## 11. Open Questions
+
+> **Resolved 2026-06-29:** Q6 → **D1** (ship flag-settings UI, ALL flags toggleable incl. safety flags; add an audit line on disable). Q7/Q12 → **D2** (dark-only brand stance, no user theme switcher, no new theme-write path). Q4 → **D3** (contrast → hard build-failing gate). Q1/Q2/Q5/Q9/Q11 → **D4** (adopt doc truth-ups: R0–R25, 5-tier ladder, Windows-catalog shipped, add `RB_FOUNDATION` drift guard + prose rule-count cross-check). Q3 → keep preview gate as-is, no scrub/loosening. Q8/Q10 → deferred.
 
 Seed questions: **none provided** for this area. The following 12 are all generated from reading the live code — each is a real fork for Jac, phrased as a question with its trade-off and a conservative default where one exists.
 
