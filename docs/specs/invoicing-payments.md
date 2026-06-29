@@ -9,6 +9,19 @@
 
 ---
 
+## ✅ Decisions — 2026-06-29 critique (Jac)
+
+These resolve the §11 Open Questions and amend §3 / §5 / §6 / §8.
+
+- **D1 · Partial refunds — keep PARKED until a validated backend deploy (resolves Q1).** The over-refund risk exists **only** if the flag is flipped before the server cap ships. Done right it is safe: the server re-caps `amountCents` at the live remaining balance in **integer cents under a `LockService` lock**, so a client-invented over-cap is clamped, never honored; a zero-remaining invoice is rejected `nothing-to-refund`. **Keep `PARTIAL_REFUNDS_ENABLED = false` for now.** Ship only in a dedicated `/clasp` session: deploy the `amountCents` validation → verify on a real test invoice → *then* flip the flag + bump `?v=`. Never unattended. (Sequence is the risk, not the feature.)
+- **D2 · Dual-approver refunds via a Settings toggle (resolves Q2/Q15, + Q3/Q16 reason).** Add **Settings → Company → "Require a second approver for refunds"**. When ON, confirming a refund opens a popup requiring a **second, *different* user** to enter their password (money-tier+); the server logs **both** the initiator (`role`, from the call password) and the **approver** on the ledger entry — a two-person, "both responsible" control. A **structured refund reason** (enum + optional note) is captured on the same step. Default **ON** recommended (Jac to confirm). New popup → `WINDOW_CATALOG` entry + `data-r` stamps.
+- **D3 · No new retire statuses now (resolves Q6/Q14).** An empty/zero invoice already "stealth-clears" a *never-paid mistake*, so no `Void` is added. **Flagged:** a bad-debt **Write-off** is still needed for a *partially-paid uncollectable* (real money that must net out as a loss, not sit in Collections forever) — **deferred to the `accounting` spec (#5)**, where it's properly an accounting event.
+- **D4 · Deposits + surcharges as default-OFF Settings toggles (resolves Q11/Q12/Q20).** Add **Settings → Company** toggles, **both default OFF**: **"Damage deposit / hold"** and **"Card surcharge / convenience fee."** Enabling either introduces its own line type that MUST declare per Q20: (a) taxable vs exempt, (b) revenue/KPI netting, (c) **no cost/margin on the print doc** (§3.5). Confirm LA legality before enabling surcharge.
+
+**Defaults adopted (no objection):** Q5 → collections threshold becomes a **Settings → Company** value (default 120d) · Q9 → keep unverified-bank charging **blocked** until the `SM…` verify · Q10 → add a **CI string-scan** asserting no `cost`/`margin`/`bottomDollar` token in the print/PDF/quote template · Q18 → **every AI-initiated payment requires an explicit human Apply (never auto)** · Q19 → a fully-paid invoice **auto-locks**, unlock stays money-tier. **Still standing:** Q17 (keep manual methods = cash/check only; revisit with `accounting` reconciliation) · Q7 invoice delivery (cross-area with `comms-notifications`).
+
+---
+
 ## 1. Goal & Problem
 
 **What this area is for.** Invoicing/Payments is the money spine of Rental Wrangler. Every other card (Rentals, Shop/WOs, Memberships, Customers) eventually *bills into* an invoice, and an invoice is the only place money is collected, recorded, or returned. It turns the priced rental window, the billable work order, and the membership enrollment into a single customer‑facing document with a subtotal, Louisiana sales tax, a due date, an aging status, and a payment/refund history.
@@ -397,6 +410,8 @@ For any code change (Phase 2+):
 ---
 
 ## 11. Open Questions
+
+> **Resolved 2026-06-29:** Q1 → D1 (keep parked; ship only via a validated clasp deploy) · Q2/Q15/Q3/Q16 → D2 (dual-approver refund Settings toggle + reason) · Q6/Q14 → D3 (no new statuses; bad-debt Write-off deferred to `accounting`) · Q11/Q12/Q20 → D4 (deposit + surcharge as default-off Settings toggles). Adopted: Q5 (Settings value), Q9 (keep blocked), Q10 (CI margin-scan), Q18 (AI payment always needs human Apply), Q19 (auto-lock paid). Q17/Q7 stand. See the Decisions block up top.
 
 1. **Ship partial refunds now?** The UI is built and gated. Flip `PARTIAL_REFUNDS_ENABLED` after deploying the additive `amountCents` backend — or leave parked? Trade‑off: real customer value vs. the shared‑backend over‑refund risk until the server validates the cap.
 2. **Refund authority.** Should refunds (especially > $X, or a *full* refund) require **manager+** tier rather than the same `money` tier as taking a payment? Trade‑off: friction vs. blast radius of an erroneous/abusive refund. (Today refund == money tier.)
