@@ -7,6 +7,13 @@
 **Maturity:** ⬜ Greenfield (nothing built — this spec proposes the whole area from the existing maps/GPS/backend spine)
 **Scope:** Embed and surface live + recorded yard/property camera feeds inside Rental Wrangler so staff can watch the lot, verify a unit's position before/after a haul, and pull footage for an incident — without leaving the app or logging into the NVR's own console.
 
+## ✅ Decisions — 2026-06-29 critique (Jac)
+
+- **D1 — Streaming protocol stays provider-agnostic (hardware TBD).** The NVR/camera brand isn't chosen yet, so the spec must NOT hard-pick HLS-restream vs WebRTC vs vendor-embed. Model the stream layer as a **pluggable broker**: GAS exposes `cameraLive` which returns a short-TTL, server-signed playback descriptor `{ kind: 'hls'|'webrtc'|'embed', url, expiresAt }`; the front-end picks the player by `kind`. Real NVR credentials/host live in **GAS Script Properties (named-only)** and never reach the browser. Decide the concrete transport when the hardware is bought; nothing else in the spec depends on which one wins.
+- **D2 — Per-camera visibility configured in Settings (not a flat tier floor).** Each `cameras[]` record carries a visibility config: which **tiers** and which **yards** may view it (e.g. gate cam = all staff, office/interior cam = admin-only). The camera wall renders only the cameras the current login is allowed to see. Manager+ still gates recorded playback/export; Admin gates config. This is stricter-where-it-matters and open-where-it-helps, matching the GPS "coords open to all staff" instinct without exposing interior/office cams to everyone.
+- **D3 — Record video + audio; 90-day retention on Google Drive.** Capture **audio as well as video** (Jac's call — accept the one-party-consent posture for LA; surface a "this property is under audio/video surveillance" signage note in the rollout checklist). Recorded footage is archived to **Google Drive** (reuse the existing inspection-evidence offload spine) with **~90-day retention**, after which un-pinned footage rolls off.
+- **D4 — Clip-capture pins to records; export is Admin-only, default-off, audit-logged.** Manager+ can grab a clip from live/recorded and **pin it to a unit / WO / dispute record** (same pattern as the per-record photo capture today); pinned clips survive the 90-day rolloff. **Exporting/downloading footage off-platform is Admin-only, default-off, and audit-logged.**
+
 ---
 
 ## 1. Goal & Problem
@@ -344,6 +351,8 @@ Motion/intrusion events from the NVR → a yard "stray after-hours" alert that *
 ---
 
 ## 11. Open Questions (for Jac)
+
+> **Resolved 2026-06-29:** Q1/Q12 (protocol & broker topology) → **D1**: provider-agnostic pluggable broker; GAS signs short-TTL playback descriptors `{kind,url,expiresAt}`, real restreaming/transcode lives on a separate box once hardware is chosen; NVR creds in Script Properties named-only. Q4/Q5 (access & tier split) → **D2**: per-camera visibility (tiers + yards) configured in Settings — not a flat money floor; Manager+ for recorded playback/export, Admin for config. Q6 (retention/audio/export) → **D3/D4**: record **video + audio**, **90-day** retention on **Google Drive**, un-pinned footage rolls off; clip-capture pins to records (survives rolloff); export Admin-only, default-off, audit-logged. Q9 (customer-facing) → **permanently internal-only for now** (no customer footage links in scope). Remaining (Q2 status cutoffs, Q3 NVR clock, Q7 audit-log shape, Q8 nearest-camera, Q10 motion/GPS fusion, Q11 bandwidth, Q13 Settings-vs-hardcoded registry) stay as build-time calls for the implementing task.
 
 *(No seed questions were captured for this area; the following are generated from the code + the streaming/security reality.)*
 
