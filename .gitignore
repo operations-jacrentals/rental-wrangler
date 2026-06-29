@@ -40,3 +40,6 @@ backend/
 .gate-smoke.mjs
 .gate-logic.mjs
 .gate-render.mjs
+
+# Local-only test credentials for agent click-through (NEVER committed)
+test-creds.local.json
