@@ -9085,6 +9085,16 @@ function buildPopupEl(o, overlay, opts = {}) {
     const pop = el('div', 'popup'); pop.style.width = '430px';
     pop.innerHTML = popupShell({ icon: I.horseshoe || CARD_ICON.customers || '', title: 'Saddle Up — Membership', tag: `Customer · enroll`, body, foot });
     overlay.appendChild(pop);
+  } else if (o.kind === 'wranglerOps') {
+    // §18i Wrangler Ops — the DEV_PASSWORD-gated developer inbox (the dev side of the live
+    // chat bridge). Gate body until unlocked, then a two-pane list + transcript/composer.
+    const foot = o.authed
+      ? `<button class="pill ghost js-close" data-r="R18">Close</button>`
+      : `<button class="pill ghost js-close" data-r="R18">Close</button><button class="pill ignition js-wrops-unlock" data-r="R17"${o.busy ? ' disabled' : ''}>${o.busy ? 'Checking…' : 'Unlock'}</button>`;
+    const pop = el('div', 'popup wrops-popup'); pop.style.width = o.authed ? '760px' : '380px';
+    pop.innerHTML = popupShell({ icon: I.horseshoe || '🤠', title: 'Wrangler Ops', tag: 'Developer · live chats', body: wranglerOpsBody(o), foot, bodyClass: 'wrops-body' });
+    overlay.appendChild(pop);
+    if (!opts.preview && !o._focused) { o._focused = true; setTimeout(() => { const f = pop.querySelector('.js-wrops-key') || pop.querySelector('.js-wrops-in'); if (f) f.focus(); }, 0); }   // focus ONCE on open — not on every poll re-render (that would steal the caret)
   } else if (o.kind === 'comment') {
     // Phase 6 (Jac redesign) — a SIMPLE comment card that floods with the picked color.
     // Traffic-light dots top-left pick the color; the card body becomes that solid color.
@@ -9885,6 +9895,7 @@ const WINDOW_CATALOG = [
   { kind: 'verifyAch',     label: 'Verify ACH',              tag: 'Customer · verify ACH',     sample: () => { const c = (DATA.customers || []).find((x) => (x.achAccounts || []).length); return c ? { customerId: c.customerId, bankId: c.achAccounts[0].id } : {}; } },
   { kind: 'payment',       label: 'Take Payment',            tag: 'Invoice · payment',         sample: () => ({ invoiceId: ((DATA.invoices || [])[0] || {}).invoiceId }) },
   { kind: 'membershipEnroll', label: 'Membership Enrollment', tag: 'Customer · enroll',         sample: () => ({ custId: ((DATA.customers || [])[0] || {}).customerId, plan: 'Monthly', addOns: { transport: false, protection: false }, autoRenew: false, startDate: TODAY_ISO, busy: false, error: '' }) },
+  { kind: 'wranglerOps',   label: 'Wrangler Ops',            tag: 'Developer · live chats',   sample: () => ({ authed: false, devKey: '', err: '', chats: [], openId: null, msgs: [], driver: 'ai', draft: '', busy: false }) },
 ];
 /* Build an INERT preview popup for a catalog kind (or null if a record guard trips
    or it throws). Reuses buildPopupEl with {preview:true} — the REAL popup — into a
@@ -11903,6 +11914,16 @@ function initDrag() {
   document.addEventListener('pointermove', dragMove);
   document.addEventListener('pointerup', dragUp);
   document.addEventListener('pointercancel', () => cancelDrag());                       // touch scroll stole the gesture = clean cancel, never a drop
+  // §18i Wrangler Ops — a ~600ms long-press on the 🤠 launcher opens the developer inbox
+  // (invisible to normal users; the inbox itself is DEV_PASSWORD-gated). A tap is unchanged
+  // (the click handler swallows the trailing click when the long-press fired).
+  document.addEventListener('pointerdown', (e) => {
+    const btn = e.target.closest && e.target.closest('.js-wrangler'); if (!btn) return;
+    _wrLaunchFired = false; clearTimeout(_wrLaunchTimer);
+    _wrLaunchTimer = setTimeout(() => { _wrLaunchFired = true; try { if (navigator.vibrate) navigator.vibrate(15); } catch (e2) {} openWranglerOps(); }, 600);
+  });
+  const _wrLaunchEnd = () => clearTimeout(_wrLaunchTimer);
+  document.addEventListener('pointerup', _wrLaunchEnd); document.addEventListener('pointercancel', _wrLaunchEnd); document.addEventListener('pointermove', (e) => { if (_wrLaunchTimer && (Math.abs(e.movementX) > 4 || Math.abs(e.movementY) > 4)) _wrLaunchEnd(); });
   window.addEventListener('blur', () => cancelDrag());                                  // tab/window switch can eat pointerup — never leave a stuck drag
   document.addEventListener('visibilitychange', () => { if (document.hidden) cancelDrag(); });
   // Esc cancels a live drag AHEAD of the winpicker/overlay/pick chain — capture
@@ -12632,7 +12653,12 @@ function onClick(e) {
   if (closest('.js-wr-kpi-lock')) { e.stopPropagation(); lockKpiFromWrangler(Number(closest('.js-wr-kpi-lock').dataset.mi)); return; }   // Mr. Wrangler locks in an authored KPI ring
   if (closest('.js-wr-unattach')) { e.stopPropagation(); const o = state.wrangler; if (o.open && o.attach) { o.attach.splice(Number(closest('.js-wr-unattach').dataset.i), 1); render(); } return; }   // §18d drop a pending image attachment
   if (closest('.js-wr-unfile')) { e.stopPropagation(); const o = state.wrangler; if (o.open && o.files) { o.files.splice(Number(closest('.js-wr-unfile').dataset.i), 1); render(); } return; }   // §18d drop a pending file attachment
-  if (closest('.js-wrangler')) { e.stopPropagation(); if (state.wrangler.open) { wranglerRailSnapshot(); state.wrangler.open = false; return render(); } return wranglerNewChat(); }   // §18 toggle Mr. Wrangler dock — opening always starts a fresh chat (the last one waits on the §18g rail)
+  if (closest('.js-wrangler')) { e.stopPropagation(); if (_wrLaunchFired) { _wrLaunchFired = false; return; }   // §18i a long-press already opened Wrangler Ops — swallow the trailing click (don't toggle the dock)
+    if (state.wrangler.open) { wranglerRailSnapshot(); state.wrangler.open = false; return render(); } return wranglerNewChat(); }   // §18 toggle Mr. Wrangler dock — opening always starts a fresh chat (the last one waits on the §18g rail)
+  if (closest('.js-wrops-unlock')) { e.stopPropagation(); const k = document.querySelector('.overlay .js-wrops-key'); return wranglerOpsUnlock(k ? k.value : ''); }   // §18i Wrangler Ops: unlock with the dev key
+  if (closest('.js-wrops-open')) { e.stopPropagation(); return wranglerOpsOpenChat(closest('.js-wrops-open').dataset.id); }   // §18i open a chat in the inbox
+  if (closest('.js-wrops-send')) { e.stopPropagation(); const i = document.querySelector('.overlay .js-wrops-in'); return wranglerOpsSend(i ? i.value : ''); }   // §18i send a turn / take the wheel
+  if (closest('.js-wrops-release')) { e.stopPropagation(); return wranglerOpsRelease(); }   // §18i hand the wheel back to the AI
   if (closest('.js-wrc-remove')) { e.stopPropagation(); return wrRailRemove(closest('.js-wrc-remove').dataset.wrcRm); }   // §18g rail: the × on a chat tab → REMOVE that conversation (not just close it)
   if (closest('[data-wrc-needs]')) { e.stopPropagation(); return openWranglerFromRequest(Number(closest('[data-wrc-needs]').dataset.wrcNeeds)); }   // §18g rail: a flashing "needs you" chat → reopen it seeded from the request
   if (closest('[data-wrc-open]')) { e.stopPropagation(); return wranglerRailOpen(closest('[data-wrc-open]').dataset.wrcOpen); }   // §18g rail: reopen a stored conversation
@@ -13729,6 +13755,8 @@ function onInput(e) {
   if (e.target.classList.contains('js-fb-text')) { if (state.overlay?.kind === 'feedback') state.overlay.text = e.target.value; return; }
   if (e.target.classList.contains('js-cmt-text')) { if (state.overlay?.kind === 'comment') state.overlay.text = e.target.value; return; }
   if (e.target.classList.contains('js-wr-in')) { if (state.wrangler.open) state.wrangler.draft = e.target.value; return; }
+  if (e.target.classList.contains('js-wrops-in')) { if (state.overlay && state.overlay.kind === 'wranglerOps') state.overlay.draft = e.target.value; return; }   // §18i keep the composer draft through poll re-renders
+  if (e.target.classList.contains('js-wrops-key')) { if (state.overlay && state.overlay.kind === 'wranglerOps') state.overlay.devKey = e.target.value; return; }   // §18i keep the gate key through re-renders
   if (e.target.classList.contains('chat-input')) { state.chat.draft = e.target.value; return; }
   // Company Files live search → re-render the board popup and restore the caret.
   if (e.target.classList.contains('js-files-query')) {
@@ -15950,6 +15978,126 @@ function wranglerDockPollStart() {
   const loop = () => { Promise.resolve(wranglerDockPollTick()).catch(() => {}).then(() => { _wrPollTimer = setTimeout(loop, WR_DOCK_POLL_MS); }); };
   _wrPollTimer = setTimeout(loop, WR_DOCK_POLL_MS);
 }
+// ── §18i Wrangler Ops — the developer inbox (the dev side of the live bridge) ──
+// A DEV_PASSWORD-gated popup (kind 'wranglerOps') that lists EVERY role's Mr. Wrangler
+// chat (getWranglerChatsAll) and lets the developer open one and jump in: a turn sent
+// here takes the wheel (appendWranglerMessage → driver='human'; the customer dock pauses
+// via R26), and "Release to AI" hands it back (setWranglerDriver). Invisible to normal
+// users — opened only by a long-press on the 🤠 launcher. The key is cached in-session.
+let _wrOpsKey = '';
+const WR_OPS_POLL_MS = 7000;
+let _wrOpsPollTimer = null;
+let _wrLaunchTimer = null, _wrLaunchFired = false;   // §18i 🤠 launcher long-press → Wrangler Ops
+function openWranglerOps() {
+  openOverlay({ kind: 'wranglerOps', authed: !!_wrOpsKey, devKey: '', err: '', chats: [], openId: null, msgs: [], driver: 'ai', draft: '', busy: false });
+  wranglerOpsPollStart();
+  if (_wrOpsKey) wranglerOpsLoad();
+}
+async function wranglerOpsLoad() {
+  const o = state.overlay; if (!o || o.kind !== 'wranglerOps' || !_wrOpsKey) return;
+  let r; try { r = await backendCall('getWranglerChatsAll', { devKey: _wrOpsKey }); } catch (e) { return; }
+  if (!state.overlay || state.overlay.kind !== 'wranglerOps') return;
+  if (r && r.ok) { o.authed = true; o.err = ''; o.chats = r.chats || []; }
+  else if (r && r.error === 'auth') { _wrOpsKey = ''; o.authed = false; o.err = 'That dev key didn’t match.'; }
+  renderOverlay();
+}
+async function wranglerOpsUnlock(key) {
+  _wrOpsKey = (key || '').trim();
+  const o = state.overlay; if (!o) return;
+  if (!_wrOpsKey) { flashOr('.overlay .js-wrops-key', 'Enter the dev key.'); return; }
+  o.busy = true; renderOverlay();
+  await wranglerOpsLoad();
+  if (state.overlay === o) { o.busy = false; if (!o.authed) flashOr('.overlay .js-wrops-key', o.err || 'Wrong key.'); renderOverlay(); }
+}
+async function wranglerOpsOpenChat(id) {
+  const o = state.overlay; if (!o || o.kind !== 'wranglerOps') return;
+  o.openId = id; o.msgs = []; o.driver = 'ai'; renderOverlay();
+  let r; try { r = await backendCall('getWranglerChat', { devKey: _wrOpsKey, id, sinceCount: 0 }); } catch (e) { return; }
+  if (!state.overlay || state.overlay.openId !== id) return;     // switched chats during the await
+  if (r && r.ok) { o.msgs = r.messages || []; o.driver = r.driver === 'human' ? 'human' : 'ai'; renderOverlay(); }
+}
+async function wranglerOpsSend(text) {
+  const o = state.overlay; if (!o || o.kind !== 'wranglerOps' || !o.openId) return;
+  text = (text || '').trim(); if (!text || o.busy) return;
+  o.busy = true; renderOverlay();
+  let r; try { r = await backendCall('appendWranglerMessage', { devKey: _wrOpsKey, chatId: o.openId, message: { content: text, author: 'Jac' } }); } catch (e) { o.busy = false; renderOverlay(); return; }
+  if (state.overlay === o) {
+    if (r && r.ok) { o.draft = ''; o.msgs.push({ role: 'assistant', content: text, dev: true, author: 'Jac' }); o.driver = 'human'; }
+    else if (r && r.reason === 'gone') { o.err = 'That chat was pruned.'; o.openId = null; }
+    o.busy = false; renderOverlay();
+  }
+}
+async function wranglerOpsRelease() {
+  const o = state.overlay; if (!o || o.kind !== 'wranglerOps' || !o.openId) return;
+  let r; try { r = await backendCall('setWranglerDriver', { devKey: _wrOpsKey, chatId: o.openId, driver: 'ai' }); } catch (e) { return; }
+  if (state.overlay === o && r && r.ok) { o.driver = 'ai'; renderOverlay(); }
+}
+// Poll while the inbox is open: refresh the list, and the open chat's new turns + driver.
+async function wranglerOpsPollTick() {
+  const o = state.overlay; if (!o || o.kind !== 'wranglerOps' || !o.authed || !_wrOpsKey || o.busy) return;
+  try {
+    const lr = await backendCall('getWranglerChatsAll', { devKey: _wrOpsKey });
+    if (state.overlay !== o) return;
+    if (lr && lr.ok) o.chats = lr.chats || [];
+    if (o.openId) {
+      const id = o.openId, cr = await backendCall('getWranglerChat', { devKey: _wrOpsKey, id, sinceCount: o.msgs.length });
+      if (state.overlay === o && o.openId === id && cr && cr.ok) {
+        if (Array.isArray(cr.messages) && cr.messages.length) cr.messages.forEach((m) => o.msgs.push(m));
+        o.driver = cr.driver === 'human' ? 'human' : 'ai';
+      }
+    }
+    // Don't yank the caret while the developer is typing in the composer/gate — update
+    // state silently this tick; the next idle tick (or any click) repaints.
+    const typing = document.activeElement && (document.activeElement.classList.contains('js-wrops-in') || document.activeElement.classList.contains('js-wrops-key'));
+    if (state.overlay === o && !typing) renderOverlay();
+  } catch (e) { /* silent — keep last-known */ }
+}
+function wranglerOpsPollStart() {
+  if (_wrOpsPollTimer) return;
+  const loop = () => { Promise.resolve(wranglerOpsPollTick()).catch(() => {}).then(() => {
+    if (state.overlay && state.overlay.kind === 'wranglerOps') _wrOpsPollTimer = setTimeout(loop, WR_OPS_POLL_MS);
+    else _wrOpsPollTimer = null;   // inbox closed → stop the loop (restarts on next open)
+  }); };
+  _wrOpsPollTimer = setTimeout(loop, WR_OPS_POLL_MS);
+}
+function wrOpsAgo(ts) {
+  if (!ts) return '';
+  const s = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+  if (s < 60) return 'just now';
+  const m = Math.floor(s / 60); if (m < 60) return m + 'm';
+  const h = Math.floor(m / 60); if (h < 24) return h + 'h';
+  return Math.floor(h / 24) + 'd';
+}
+function wranglerOpsRow(c, openId) {
+  const live = (Date.now() - (c.lastTs || 0)) < 120000;
+  const drv = c.driver === 'human' ? badge('You · live', 'yellow') : badge('AI', 'gray');
+  return `<button class="wrops-row${c.id === openId ? ' on' : ''} js-wrops-open" data-id="${esc(c.id)}">
+    <span class="wrops-row-top"><span class="ag-dot${live ? ' mid' : ''}"></span><span class="wrops-row-ttl">${esc(c.title || 'New chat')}</span><span class="wrops-row-role">${esc(c.role || '')}</span></span>
+    <span class="wrops-row-prev">${esc(c.preview || '—')}</span>
+    <span class="wrops-row-meta">${drv}<span class="wrops-age">${esc(wrOpsAgo(c.lastTs))}</span></span>
+  </button>`;
+}
+function wranglerOpsDetail(o) {
+  const paused = o.driver === 'human';
+  const turns = o.msgs.length
+    ? o.msgs.map((m) => { const txt = typeof m.content === 'string' ? wrChatFormat(m.content) : '<span class="muted">[attachment]</span>'; return `<div class="wr-msg ${m.role === 'user' ? 'user' : 'assistant'}">${m.role !== 'user' ? '<span class="wr-av">🤠</span>' : ''}<div class="wr-bub">${txt}</div></div>`; }).join('')
+    : '<div class="wrops-empty">No messages in this chat.</div>';
+  const driverBar = `<div class="wrops-driver">${paused ? badge('You have the wheel', 'yellow') : badge('AI is driving', 'gray')}${paused ? '<button class="pill ghost js-wrops-release" data-r="R18">Release to AI</button>' : ''}</div>`;
+  const composer = `<div class="wrops-compose"><input class="wrops-in js-wrops-in" placeholder="${paused ? 'Type as Mr. Wrangler…' : 'Type to take the wheel…'}" value="${esc(o.draft || '')}" ${o.busy ? 'disabled' : ''} /><button class="pill ignition js-wrops-send" data-r="R17" ${o.busy ? 'disabled' : ''}>${paused ? 'Send' : 'Take the wheel'}</button></div>`;
+  return `<div class="wrops-detail"><div class="wrops-transcript">${turns}</div>${driverBar}${composer}</div>`;
+}
+function wranglerOpsBody(o) {
+  if (!o.authed) {
+    return `<div class="wrops-gate">
+      <p class="wrops-gate-lead">Developer access — enter the Wrangler Ops key.</p>
+      <input type="password" class="wrops-key js-wrops-key" placeholder="DEV_PASSWORD" autocomplete="off" value="${esc(o.devKey || '')}" />
+      ${o.err ? `<p class="wrops-err">${esc(o.err)}</p>` : ''}
+    </div>`;
+  }
+  const list = o.chats.length ? o.chats.map((c) => wranglerOpsRow(c, o.openId)).join('') : '<div class="wrops-empty">No chats yet — they appear here as people use Mr. Wrangler.</div>';
+  const pane = o.openId ? wranglerOpsDetail(o) : '<div class="wrops-empty">Pick a chat to read it — or jump in.</div>';
+  return `<div class="wrops-wrap"><div class="wrops-list">${list}</div><div class="wrops-pane">${pane}</div></div>`;
+}
 function saveSoon(ms) { if (booting || !backendPassword) return; clearTimeout(saveTimer); saveTimer = setTimeout(flushSave, ms || 1200); }
 // #247 — sync-health. A failing backend sync used to be SILENT (savePending → flat
 // 1.2s retry, no signal), so writes vanished with no warning. Now: track consecutive
@@ -16365,6 +16513,8 @@ function boot() {
     }
     if (e.target.classList.contains('nc-in') && e.key === 'Enter' && e.target.tagName !== 'SELECT') { e.preventDefault(); return saveNewCustomer(); }
     if (e.target.classList.contains('js-wr-in') && e.key === 'Enter') { e.preventDefault(); return wranglerSend(); }   // §18
+    if (e.target.classList.contains('js-wrops-in') && e.key === 'Enter') { e.preventDefault(); return wranglerOpsSend(e.target.value); }   // §18i send / take the wheel
+    if (e.target.classList.contains('js-wrops-key') && e.key === 'Enter') { e.preventDefault(); return wranglerOpsUnlock(e.target.value); }   // §18i unlock the inbox
     if (e.target.classList.contains('chat-input') && e.key === 'Enter') { e.preventDefault(); return chatSend(); }
     // §M3 — one predictable back/dismiss chain (shared with the Android back button):
     // winpicker → overlay → Mr. Wrangler dock → team chat dock.

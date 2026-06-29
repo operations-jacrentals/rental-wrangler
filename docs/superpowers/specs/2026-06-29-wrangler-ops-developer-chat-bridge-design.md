@@ -138,8 +138,11 @@ the inbox and a reply surfaces on the customer's next open via the notification 
 
 ## 6. Unit C — developer Wrangler Ops inbox (`app.js`)
 
-- A **dev-only view**, invisible and inert without the `DEV_PASSWORD` (entered
-  through an Owner-only unlock; not present in any normal role's navigation).
+- A **dev-only popup** (`kind: 'wranglerOps'`), invisible and inert without the
+  `DEV_PASSWORD`. **Entry point (per Jac, 2026-06-29):** a **~600ms long-press on the
+  🤠 Mr. Wrangler launcher** opens it (a tap is unchanged) — zero footprint for normal
+  users. The key is entered in a gate field and **cached in-session** so it isn't
+  re-typed each open; a wrong key flashes (`attnFlash`) and never unlocks.
 - **List:** polls `getWranglerChatsAll` (~6–8s), rows sorted by `lastTs`. Each row:
   role/user, title, last preview, age, a **"live" dot** when active in the last
   ~2 min, and the **driver** state (AI vs you).
