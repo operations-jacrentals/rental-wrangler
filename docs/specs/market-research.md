@@ -9,6 +9,20 @@
 
 ---
 
+## ✅ Decisions — 2026-06-29 critique (Jac)
+
+These resolve the §11 Open Questions and **invert the §3 visibility gate** (comps are public, not staff-hidden).
+
+- **D1 · External feeds are the HEADLINE, not Phase 3 (resolves OQ-8).** Prioritize auto-pull feeds: **auction value** (Ritchie Bros / IronPlanet), **MSRP**, and **competitor rental rates** — server-side API keys (named-only), with manual entry as backup. These feed the `automated-pricing` **sale-price basis** (auction/MSRP, D2/D3 there) and the demand pricing. Build the `marketFetch` action in **v1**. Run a legal/ToS review before the competitor-rate scrape specifically.
+- **D2 · Market comps are PUBLIC / customer-facing — but the margin floor stays secret (resolves OQ-1, OQ-14; inverts §3.2).** Show market comps + **our advertised rates** openly, **including to customers on the website + the customer portal** ("the market charges $X, we charge $Y" — a transparency / sales tool). **HARD LINE (unchanged):** never expose `bottomDollar` / cost / margin / the floor-delta on any surface — those stay money-gated and **never reach a customer-facing surface.** So: market + our-rate numbers = public; the *margin* = secret. (Reframes AC-4: assert the **floor/margin** never appears on a public/customer surface, rather than hiding comps from staff. Internal lost-demand *value* — `estValue`, buy-pressure — stays money/manager-internal.)
+- **D3 · Build lost-demand capture into the existing 0-available button (resolves OQ-5) — Phase 1.** The rental workflow already shows a 0-available availability indicator; wire the "brand the miss" capture **into that button** so a turn-away is logged at the moment it happens. Coordinate with `rentals-dispatch`'s availability render.
+
+**Cross-area:** D2 makes Market Research a **customer-portal + website data source** (public comp display) — note the new dependency on `customer-portal` and that the (out-of-scope) marketing website may consume this via an export/API.
+
+**Defaults adopted:** OQ-13 → market-research is **upstream**, ships first · OQ-3 → money edits own captures, manager+ deletes · OQ-16 → `estValue` pre-fills from the category rate · OQ-2 → market-above-ours = green "room to raise" · OQ-12 → derive reason colors from one source · OQ-4 → two boards · OQ-9 → `MC####`/`DS####` ids · OQ-10 → standalone entities · OQ-7 → confirm tab auto-create with the backend owner · OQ-11 → Wrangler capture Phase 2.
+
+---
+
 ## 1. Goal & Problem
 
 ### 1.1 The problem
@@ -646,6 +660,8 @@ charts/graphs beyond the simple tally.
 ---
 
 ## 11. Open Questions (for Jac)
+
+> **Resolved 2026-06-29:** OQ-8 → D1 (external feeds are the headline) · OQ-1/OQ-14 → D2 (comps public/customer-facing, margin floor stays secret) · OQ-5 → D3 (capture into the 0-available button, Phase 1). Adopted: OQ-2/3/4/7/9/10/11/12/13/16. See the Decisions block up top.
 
 *(No seed questions were captured for this area; all below are generated from the
 code and the gate analysis above.)*
