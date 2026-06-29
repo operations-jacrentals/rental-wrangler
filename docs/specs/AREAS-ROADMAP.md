@@ -3,7 +3,7 @@
 **Date:** 2026-06-28 (specs drafted 2026-06-29)
 **Status:** LIVING INDEX — the table of contents for all per-area specs
 **Owner:** Jac
-**Scope:** All 24 long-lived `area/*` domains of Rental Wrangler
+**Scope:** The 24 original `area/*` domains of Rental Wrangler **+ 3 areas added 2026-06-29** (Customer Portal, Equipment Insurance, Collections) = **27 areas.** The public **marketing website** is explicitly a *separate* service (see "Out of scope").
 
 > **All 24 area specs now exist as 📝 first drafts** (linked in the **Spec** column),
 > authored against each area's live code baseline and awaiting Jac's critique — one
@@ -68,6 +68,22 @@ ones below it. 🆕 marks an area added 2026-06-28 (no `area/` branch cut yet).
 | 22 | Wrangler AI | `wrangler-ai` | ✅ Shipped | [📝 draft](./wrangler-ai.md) |
 | 23 | Design System | `design-system` | ✅ Shipped | [📝 draft](./design-system.md) |
 | 24 | Frontend Performance | `frontend-performance` | 🟡 Partial | [📝 draft](./frontend-performance.md) |
+
+### 🆕 Added 2026-06-29 (Jac) — priority placement pending
+
+| # | Area | Slug | Maturity | Spec |
+|---|------|------|----------|------|
+| — | Customer Portal | `customer-portal` | ⬜ Greenfield | 📝 drafting |
+| — | Equipment Insurance | `equipment-insurance` | ⬜ Greenfield | 📝 drafting |
+| — | Collections | `collections` | ⬜ Greenfield | 📝 drafting |
+
+- **Customer Portal** — external, customer-facing self-service: customers log in (a *separate, row-isolated* auth surface), see their on-rent units **live on a Google Map**, view order/spend history, **book** available + feature rentals, and **flag a unit for a field call** (pickup/delivery). Supersedes the "customer self-service portal" placeholder in `mobile-remote`. The load-bearing problem is external-customer auth + strict per-customer **data isolation** (the current single-team-password model doesn't provide it).
+- **Equipment Insurance** — a service JacRentals provides: an **owner-side** UI to select **which units are insured** and **which coverage/service types** each unit gets. Must be reconciled against the existing membership **"Rental Protection"** (the customer-facing damage-cap add-on) — related but distinct.
+- **Collections** — turns the existing 120-day **Collections** aging tier into an actionable feature: route an uncollectable invoice to a **3rd-party collections service** (outbound integration), track status, and reconcile recoveries back. Resolves the invoicing/accounting "uncollectable" thread.
+
+### Out of scope — separate services (not `area/*` in this project)
+
+- **Marketing website** — JacRentals' public website carries many tools that **do not need to be linked into this software project** (Jac, 2026-06-29). Tracked as a separate service, not an area here.
 
 ---
 
