@@ -9,6 +9,17 @@
 
 ---
 
+## ✅ Decisions — 2026-06-29 critique (Jac)
+
+These resolve the §11 Open Questions.
+
+- **D1 · Gate transport address editing to money-tier (resolves Q1/§3.1A — closes the live security gap).** Wrap the transport **write** handlers (`js-tedit-save`, `js-ttype`, the type-locking `js-tnode`) in `canMoney()` — only **money-tier+** (Office/Sales/Manager/Admin) may set/change a transport address or type; `staff` (drivers) **view only** (`js-tedit-open` stays ungated). *(Tighter than Shop WO-billing, which stayed open — by Jac's call, because transport pricing is a customer money commitment, not a staff member billing their own work.)*
+- **D2 · Site minimap on the detail card + click-to-expand large popup (resolves Q5).** Add a **read-only minimap thumbnail** of the saved pin on the rental/unit detail card; **clicking it opens a large map popup** (full-size view). The large popup is a **new `WINDOW_CATALOG` kind** + `data-r` stamps. (The "Open in Google Maps" deep-link Q6 was *not* selected — skip for now.)
+
+**Defaults adopted:** Q3 → dispatch run **synced per-driver** (`rentals-dispatch` D3) · Q2 → drivers **view** their run, the dispatcher reorders/assigns (multi-driver, `rentals-dispatch` D4) · Q15 → **persist the geocode cache** (write `sitePin` back on first successful dispatch geocode) to cut repeat Google cost · Q4 → add `recoveryPin` · Q8 → keep the committed **referrer-locked key as primary** (`mapsKey` backend fallback) · Q11 → transport rates stay **static `config.js`** constants, **not** pulled into `automated-pricing` · Q10 → the multi-yard origin seam stays exposed but its owner is the **parked multi-location concern** (fleet-spread was re-aimed to capital-allocation; multi-yard is now a separate parked item, not this area).
+
+---
+
 ## 1. Goal & Problem
 
 **What this area is for.** Rental Wrangler is a heavy-equipment yard tool. Almost every rental ships from one yard (Sulphur, LA) to a job site and comes back. Maps/Location owns the three places geography enters the app:
@@ -358,6 +369,8 @@ If P1+ ships, additionally:
 ---
 
 ## 11. Open Questions
+
+> **Resolved 2026-06-29:** Q1 → D1 (gate transport edit to money-tier) · Q5 → D2 (card minimap + click-to-expand large popup). Adopted: Q2/Q3 (synced per-driver run, dispatcher reorders), Q4 (recoveryPin), Q8, Q11, Q15; Q6 deep-link skipped; Q10 multi-yard seam = parked multi-location concern. See the Decisions block up top.
 
 > No seed questions were captured for this area; all below are generated from the code.
 
