@@ -9,6 +9,18 @@
 
 ---
 
+## ✅ Decisions — 2026-06-29 critique (Jac)
+
+These resolve the §11 Open Questions.
+
+- **D1 · A dedicated top-level Sales/Pipeline board — drop the confusing "Round-Up" name (resolves Q1).** The board is the **pipeline cockpit**: a daily *who-to-contact-today* worklist (overdue + due follow-ups, soonest-first) **plus** a Kanban of leads by funnel stage (drag to move stage → `setFunnelStage` + `logAction`). Rename the spec's "Round-Up" to a **plain "Sales"/"Pipeline"** surface (ranch flavor stays light in *copy*, not the surface name). Lives as **its own top-level card** (Sales needs a home now that Marketing splits out — D2). *(Jac can redirect placement/name; he asked what it was, so this is my default pick.)*
+- **D2 · Marketing splits to its own area #19 (resolves Q12).** Sales/Growth scope **ends at pipeline + quoting**; campaigns / outreach / referrals move to the **Marketing** area. The draft's Phase-4 growth toolkit relocates there.
+- **D3 · Build the used-equipment quote tool; send via comms (resolves Q13 + scope).** Build the `salesQuote` model + Quote popup + `saveSalesQuote`/`quotePdf`/`acceptSalesQuote`→invoice, and **send the quote through the Mocean SMS / `comms-notifications` channel** (D1 there). `costBasis`/margin gated **money-tier** (mirrors the `units-fleet` `bottomDollar` gate + the `automated-pricing` sale-price engine D2/D3) and **server-stripped** for sub-money callers; the customer-facing PDF never carries cost/margin.
+
+**Defaults adopted:** Q11/Q15 → **fix the Pipeline ring** (exclude `Don't Contact` + closed terminals `Paid`/`Signed`, dedupe member-also-lead, make the target admin-settable like `companyRevenueGoal`) · `recomputeDigests` (P2) so Active-Rate is honest · Q3 → wire `salesAction` + the follow-up "due today" styling in **Phase 1** · Q8 → prescriptive **R/Y/G** for overdue follow-ups · Q4/Q17 → `nextFollowUp` recomputed in the same path that writes a `Scheduled:` line · Q5 → staff may log a follow-up on a customer card they can already open, but the **cross-customer board is money+** · Q9 → `salesQuotes` as a **top-level entity** (easier to list/seam to invoices) · Q16 → a smuggled `costBasis` from a sub-manager caller is **dropped + logged**, never persisted/returned.
+
+---
+
 ## 1. Goal & Problem
 
 ### 1.1 What this area is for
@@ -364,6 +376,8 @@ Telematics, security cameras, QuickBooks reconciliation, automated lead scoring,
 ---
 
 ## 11. Open Questions
+
+> **Resolved 2026-06-29:** Q1 → D1 (own Sales/Pipeline board, "Round-Up" renamed) · Q12 → D2 (Marketing splits to #19) · Q13/scope → D3 (used-equipment quote tool, send via Mocean comms). Adopted: Q3/Q4/Q5/Q7/Q8/Q9/Q11/Q15/Q16/Q17. See the Decisions block up top.
 
 > Seed open questions: none were captured for this area. The following are generated from the code and surfaced for Jac.
 
