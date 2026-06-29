@@ -12659,6 +12659,7 @@ function onClick(e) {
   if (closest('.js-wrops-open')) { e.stopPropagation(); return wranglerOpsOpenChat(closest('.js-wrops-open').dataset.id); }   // §18i open a chat in the inbox
   if (closest('.js-wrops-send')) { e.stopPropagation(); const i = document.querySelector('.overlay .js-wrops-in'); return wranglerOpsSend(i ? i.value : ''); }   // §18i send a turn / take the wheel
   if (closest('.js-wrops-release')) { e.stopPropagation(); return wranglerOpsRelease(); }   // §18i hand the wheel back to the AI
+  if (closest('.js-wrops-escalate')) { e.stopPropagation(); return wranglerOpsEscalate(); }   // §18i (Phase 6) escalate the chat to Claude Code via the existing Thread Mirror
   if (closest('.js-wrc-remove')) { e.stopPropagation(); return wrRailRemove(closest('.js-wrc-remove').dataset.wrcRm); }   // §18g rail: the × on a chat tab → REMOVE that conversation (not just close it)
   if (closest('[data-wrc-needs]')) { e.stopPropagation(); return openWranglerFromRequest(Number(closest('[data-wrc-needs]').dataset.wrcNeeds)); }   // §18g rail: a flashing "needs you" chat → reopen it seeded from the request
   if (closest('[data-wrc-open]')) { e.stopPropagation(); return wranglerRailOpen(closest('[data-wrc-open]').dataset.wrcOpen); }   // §18g rail: reopen a stored conversation
@@ -16032,6 +16033,24 @@ async function wranglerOpsRelease() {
   let r; try { r = await backendCall('setWranglerDriver', { devKey: _wrOpsKey, chatId: o.openId, driver: 'ai' }); } catch (e) { return; }
   if (state.overlay === o && r && r.ok) { o.driver = 'ai'; renderOverlay(); }
 }
+// §18i (Phase 6 seam) Escalate → Claude Code: file THIS chat as a wrangler-fix issue
+// (the existing Thread Mirror / auto-fix path) a Claude agent can pick up. Falls back to
+// a pre-filled issue tab when the backend can't file (no GITHUB_TOKEN / offline).
+async function wranglerOpsEscalate() {
+  const o = state.overlay; if (!o || o.kind !== 'wranglerOps' || !o.openId || o.busy) return;
+  const chat = (o.chats || []).find((c) => c.id === o.openId) || {};
+  const transcript = (o.msgs || []).filter((m) => typeof m.content === 'string' && m.content)
+    .map((m) => `${m.role === 'user' ? '**User**' : (m.dev ? '**Jac (dev)**' : '**Mr. Wrangler**')}: ${m.content}`).join('\n\n') || '(no message)';
+  const title = ('Wrangler Ops — ' + (chat.title || ('chat ' + o.openId))).replace(/\s+/g, ' ').slice(0, 80);
+  const body = ['_Escalated from Wrangler Ops (developer inbox)._', '', '### Chat', `- **Role:** ${chat.role || '—'}`, `- **Chat id:** ${o.openId}`, '', '### Conversation', transcript, '', '_A Claude agent can pick this up; the CI gates guard it before it ships to live._'].join('\n');
+  o.busy = true; renderOverlay();
+  let filed = null;
+  try { const r = await backendCall('wranglerFile', { title, body, label: 'wrangler-fix', images: [] }); if (r && r.ok && r.number) filed = r.number; } catch (e) {}
+  if (state.overlay === o) o.busy = false;
+  if (filed) toast(`Escalated → #${filed} — a Claude agent can take it. 🤠`);
+  else { window.open(wranglerIssueUrl(title, body, 'wrangler-fix'), '_blank', 'noopener'); toast('Opening a fix ticket — tap “Submit new issue” to escalate. 🤠'); }
+  if (state.overlay === o) renderOverlay();
+}
 // Poll while the inbox is open: refresh the list, and the open chat's new turns + driver.
 async function wranglerOpsPollTick() {
   const o = state.overlay; if (!o || o.kind !== 'wranglerOps' || !o.authed || !_wrOpsKey || o.busy) return;
@@ -16082,7 +16101,7 @@ function wranglerOpsDetail(o) {
   const turns = o.msgs.length
     ? o.msgs.map((m) => { const txt = typeof m.content === 'string' ? wrChatFormat(m.content) : '<span class="muted">[attachment]</span>'; return `<div class="wr-msg ${m.role === 'user' ? 'user' : 'assistant'}">${m.role !== 'user' ? '<span class="wr-av">🤠</span>' : ''}<div class="wr-bub">${txt}</div></div>`; }).join('')
     : '<div class="wrops-empty">No messages in this chat.</div>';
-  const driverBar = `<div class="wrops-driver">${paused ? badge('You have the wheel', 'yellow') : badge('AI is driving', 'gray')}${paused ? '<button class="pill ghost js-wrops-release" data-r="R18">Release to AI</button>' : ''}</div>`;
+  const driverBar = `<div class="wrops-driver">${paused ? badge('You have the wheel', 'yellow') : badge('AI is driving', 'gray')}${paused ? '<button class="pill ghost js-wrops-release" data-r="R18">Release to AI</button>' : ''}<button class="pill c-commit js-wrops-escalate" data-r="R17" data-tip="File this chat as a wrangler-fix issue a Claude agent can pick up"${o.busy ? ' disabled' : ''}>Escalate → Claude Code</button></div>`;
   const composer = `<div class="wrops-compose"><input class="wrops-in js-wrops-in" placeholder="${paused ? 'Type as Mr. Wrangler…' : 'Type to take the wheel…'}" value="${esc(o.draft || '')}" ${o.busy ? 'disabled' : ''} /><button class="pill ignition js-wrops-send" data-r="R17" ${o.busy ? 'disabled' : ''}>${paused ? 'Send' : 'Take the wheel'}</button></div>`;
   return `<div class="wrops-detail"><div class="wrops-transcript">${turns}</div>${driverBar}${composer}</div>`;
 }
