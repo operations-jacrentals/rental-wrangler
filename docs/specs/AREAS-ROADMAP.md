@@ -1,9 +1,13 @@
 # Areas Roadmap — the master spec index
 
-**Date:** 2026-06-28
+**Date:** 2026-06-28 (specs drafted 2026-06-29)
 **Status:** LIVING INDEX — the table of contents for all per-area specs
 **Owner:** Jac
 **Scope:** All 24 long-lived `area/*` domains of Rental Wrangler
+
+> **All 24 area specs now exist as 📝 first drafts** (linked in the **Spec** column),
+> authored against each area's live code baseline and awaiting Jac's critique — one
+> at a time. Drafts surface every fork as an Open Question rather than silently deciding.
 
 ---
 
@@ -35,35 +39,35 @@ ones below it. 🆕 marks an area added 2026-06-28 (no `area/` branch cut yet).
 
 | # | Area | Slug | Maturity | Spec |
 |---|------|------|----------|------|
-| 1 | Rentals / Dispatch | `rentals-dispatch` | ✅ Shipped | ☐ not started |
-| 2 | Units / Fleet | `units-fleet` | ✅ Shipped | ☐ not started |
-| 3 | Invoicing / Payments | `invoicing-payments` | ✅ Shipped | ☐ not started |
-| 4 | Customers / CRM | `customers-crm` | ✅ Shipped | ☐ not started |
-| 5 | Accounting 🆕 | `accounting` | 🟡 Partial | ☐ not started |
-| 6 | Maintenance / Shop | `maintenance-shop` | ✅ Shipped | ☐ not started |
-| 7 | Backend / Data | `backend-data` | ✅ Shipped | ☐ not started |
+| 1 | Rentals / Dispatch | `rentals-dispatch` | ✅ Shipped | [📝 draft](./rentals-dispatch.md) |
+| 2 | Units / Fleet | `units-fleet` | ✅ Shipped | [📝 draft](./units-fleet.md) |
+| 3 | Invoicing / Payments | `invoicing-payments` | ✅ Shipped | [📝 draft](./invoicing-payments.md) |
+| 4 | Customers / CRM | `customers-crm` | ✅ Shipped | [📝 draft](./customers-crm.md) |
+| 5 | Accounting 🆕 | `accounting` | 🟡 Partial | [📝 draft](./accounting.md) |
+| 6 | Maintenance / Shop | `maintenance-shop` | ✅ Shipped | [📝 draft](./maintenance-shop.md) |
+| 7 | Backend / Data | `backend-data` | ✅ Shipped | [📝 draft](./backend-data.md) |
 
 ### WANTS — high-value growth & operations intel
 
 | # | Area | Slug | Maturity | Spec |
 |---|------|------|----------|------|
-| 8 | GPS / Tracking 🆕 | `gps-tracking` | 🟡 Partial (seam) | ☐ not started |
-| 9 | Automated Pricing 🆕 | `automated-pricing` | ⬜ Greenfield | ☐ not started |
-| 10 | Market Research 🆕 | `market-research` | ⬜ Greenfield | ☐ not started |
-| 11 | Fleet Spread 🆕 | `fleet-spread` | ⬜ Greenfield | ☐ not started |
-| 12 | Financials / KPI | `financials-kpi` | ✅ Shipped | ☐ not started |
-| 13 | Search / Views | `search-views` | ✅ Shipped | ☐ not started |
-| 14 | Memberships | `memberships` | ✅ Shipped | ☐ not started |
-| 15 | Comms / Notifications | `comms-notifications` | 🟡 Partial | ☐ not started |
-| 16 | HR / Compliance | `hr-compliance` | ⬜ Greenfield | ☐ not started |
-| 17 | Maps / Location | `maps-location` | ✅ Shipped | ☐ not started |
-| 18 | Sales / Growth | `sales-growth` | 🟡 Partial | ☐ not started |
-| 19 | Marketing 🆕 | `marketing` | ⬜ Greenfield | ☐ not started |
-| 20 | Security Cameras 🆕 | `security-cameras` | ⬜ Greenfield | ☐ not started |
-| 21 | Mobile / Remote | `mobile-remote` | 🟡 Partial | ☐ not started |
-| 22 | Wrangler AI | `wrangler-ai` | ✅ Shipped | ☐ not started |
-| 23 | Design System | `design-system` | ✅ Shipped | ☐ not started |
-| 24 | Frontend Performance | `frontend-performance` | 🟡 Partial | ☐ not started |
+| 8 | GPS / Tracking 🆕 | `gps-tracking` | 🟡 Partial (seam) | [📝 draft](./gps-tracking.md) |
+| 9 | Automated Pricing 🆕 | `automated-pricing` | ⬜ Greenfield | [📝 draft](./automated-pricing.md) |
+| 10 | Market Research 🆕 | `market-research` | ⬜ Greenfield | [📝 draft](./market-research.md) |
+| 11 | Fleet Spread 🆕 | `fleet-spread` | ⬜ Greenfield | [📝 draft](./fleet-spread.md) |
+| 12 | Financials / KPI | `financials-kpi` | ✅ Shipped | [📝 draft](./financials-kpi.md) |
+| 13 | Search / Views | `search-views` | ✅ Shipped | [📝 draft](./search-views.md) |
+| 14 | Memberships | `memberships` | ✅ Shipped | [📝 draft](./memberships.md) |
+| 15 | Comms / Notifications | `comms-notifications` | 🟡 Partial | [📝 draft](./comms-notifications.md) |
+| 16 | HR / Compliance | `hr-compliance` | ⬜ Greenfield | [📝 draft](./hr-compliance.md) |
+| 17 | Maps / Location | `maps-location` | ✅ Shipped | [📝 draft](./maps-location.md) |
+| 18 | Sales / Growth | `sales-growth` | 🟡 Partial | [📝 draft](./sales-growth.md) |
+| 19 | Marketing 🆕 | `marketing` | ⬜ Greenfield | [📝 draft](./marketing.md) |
+| 20 | Security Cameras 🆕 | `security-cameras` | ⬜ Greenfield | [📝 draft](./security-cameras.md) |
+| 21 | Mobile / Remote | `mobile-remote` | 🟡 Partial | [📝 draft](./mobile-remote.md) |
+| 22 | Wrangler AI | `wrangler-ai` | ✅ Shipped | [📝 draft](./wrangler-ai.md) |
+| 23 | Design System | `design-system` | ✅ Shipped | [📝 draft](./design-system.md) |
+| 24 | Frontend Performance | `frontend-performance` | 🟡 Partial | [📝 draft](./frontend-performance.md) |
 
 ---
 
