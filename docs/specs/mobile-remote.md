@@ -10,6 +10,12 @@ gestures, haptics, bottom-sheets, safe-area, the PWA shell) **and** the future
 row-isolated customer self-service portal — making Rental Wrangler usable in the
 yard, in the cab, and (eventually) in the customer's hand.
 
+## ✅ Decisions — 2026-06-29 critique (Jac)
+
+- **D1 — `customer-portal` owns the portal; mobile-remote owns only the shell.** Half B (auth, customer isolation, data gates, screens, `customerPortal*` backend actions, the office "send link" dialog) is **moved to the `customer-portal` spec** as the single source of truth — so the two specs can't drift on the security model. mobile-remote keeps **only** the device layer: responsive reflow, bottom-sheets, gestures/haptics, safe-area, the PWA shell (manifest/service-worker/install), and the *mobile presentation* of whatever screens the portal defines. §3.2 and the §6.2 "half B" material below now read as **reference/pointer** to `customer-portal`; the canonical contract lives there.
+- **D2 — Portal auth = magic link ONLY.** No OTP code-entry path. A texted/emailed one-tap URL (short expiry, single-use) → revocable session. (Recorded here for continuity; the authoritative auth spec now lives in `customer-portal`.)
+- **D3 — Half A offline = shell-cache only (read-tolerant).** Ship A1 (install prompt) and A2 (service-worker shell) now — both are dependency-free. The SW caches the static app shell so a dead-zone load isn't blank; **cache version follows the `?v=` deploy token**; backend reads/writes stay **online-only** (no offline write queue in v1 — avoids merge hazards with the diff-sync engine). The "last synced HH:MM" stamp (§11.14) applies to any cached money figure.
+
 ---
 
 ## 1. Goal & Problem
@@ -611,6 +617,8 @@ backend), portal payments.
 ---
 
 ## 11. Open Questions
+
+> **Resolved 2026-06-29:** 11.1 (auth model) → **D2**: magic link **only**, no OTP. 11.4/11.5/11.7/11.11/11.12/11.13 (pay-from-portal, who-can-issue, portal rulebook discipline, hosting/route, customer voice, brute-force hardening) → **moved to `customer-portal`** per **D1** — mobile-remote no longer owns the portal's security/feature model, only its mobile shell; resolve those in `customer-portal`. 11.6/11.14 (offline depth & money freshness) → **D3**: shell-cache only, online-only backend, "last synced" stamp on cached money. 11.8 (install nudge — once after 2nd session, dismissible) and 11.15 (`mobileCol` integer-normalize in A1) → **adopt the conservative draft as-is**. 11.9/11.10 (push, tablet polish) stay parked / deferred per draft.
 
 *(No seed questions were supplied for this area; every question below was surfaced
 from reading the live code + the security gates. Each carries a draft answer Jac
