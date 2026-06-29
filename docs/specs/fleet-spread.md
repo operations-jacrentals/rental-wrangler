@@ -9,6 +9,28 @@
 
 ---
 
+## ⚠️ REDEFINITION — 2026-06-29 critique (Jac) — this spec is being RE-AUTHORED
+
+**The draft below built the WRONG area.** Jac's actual meaning:
+
+> **Fleet Spread = capital-allocation efficiency across equipment *categories*.** It's about *where the invested dollars are spread* — how much capital is tied up in each category — and whether that spread is the most efficient use of money given **supply and demand**. The question it answers: *"should my next dollar go into another excavator or a skid steer? Which categories are over-/under-invested relative to the demand and utilization they earn?"*
+
+So the real Fleet Spread is a **capital-allocation / portfolio advisor over categories**, built from:
+- **Invested dollars per category** (Σ unit `trueCost`/`purchasePrice` — `units-fleet`),
+- **Return on that capital** (category ROI / revenue-per-dollar-invested / utilization — `units-fleet`, `financials-kpi`),
+- **Demand pressure** (lost-demand misses + utilization from `market-research` D1/D3),
+- **Supply** (how many units in each category),
+→ a ranked **buy / hold / sell** recommendation per category, feeding purchasing and the `automated-pricing` sale-side engine.
+
+**Decisions:**
+- **D1 · Re-author this spec to the capital-allocation meaning.** The yard/partner content below is superseded. (A re-authored draft is being generated.)
+- **D2 · Multi-yard / locations is a SEPARATE concern, not Fleet Spread.** Yards do exist as a concept and **Settings should dictate which yards each employee can access** (per-employee yard-access control) — but that's its own future area, not this one. Parked for a separate spec; not built into Fleet Spread.
+- **D3 · Partners / co-ownership is a SEPARATE, LAST-priority feature.** Jac: "I haven't said anything about partners… maybe a last-priority feature." Removed from Fleet Spread; parked as a low-priority future item.
+
+*(Everything from "## 1. Goal & Problem" down is the OLD wrong-premise draft, retained only until the re-author lands.)*
+
+---
+
 ## 1. Goal & Problem
 
 ### 1.1 The problem
