@@ -4234,6 +4234,7 @@ function flashOr(sel, msg) {
  *  Replace opens the inline editor · Add Comment logs to History ·
  *  Ask Mr. Wrangler copies a debug reference for Claude. */
 let ctxTarget = null;
+let ctxRecord = null;   // §17b — the record the menu opened on ({card, recId}), for the "+ Target" link actions
 // §13.4 graph-chrome right-click menu — tracks which card it was opened on so runCtxAction can act without
 // the ctxOutside closer; the chosen state persists per device, per card (loadGvChrome).
 let ctxGvCard = null;
@@ -4259,10 +4260,16 @@ function closeCtxMenu() { const m = document.getElementById('rw-ctx'); if (m) m.
 function openCtxMenu(e, hit) {
   closeCtxMenu();
   ctxTarget = hit;
+  // §17b — resolve the pressed record → its menu-driven LINK actions ("+ Target").
+  const rr = hit && hit.el ? cardRecordAt(hit.el) : null;
+  const ent = rr ? entityCardOf(rr.card, rr.recType) : null;
+  ctxRecord = ent ? { card: ent, recId: rr.recId } : null;
+  const linkItems = ctxRecord ? linkActionsFor(ctxRecord.card, recOf(ctxRecord.card, ctxRecord.recId)) : [];
   const m = document.createElement('div');
   m.className = 'ctx-menu'; m.id = 'rw-ctx';
   const item = (act, label) => `<button class="dd-item" data-ctx="${act}">${label}</button>`;
-  m.innerHTML = [
+  const linkSec = linkItems.length ? linkItems.map((a) => `<button class="dd-item" data-ctx="link:${a.target}">${CARD_ICON[a.target] || ''}${esc(a.label)}</button>`).join('') + '<div class="menu-sep"></div>' : '';
+  m.innerHTML = linkSec + [
     item('cut', '✂️ Cut'), item('copy', '📋 Copy'), item('paste', '📥 Paste'), item('clear', '🧹 Clear'),
     '<div class="menu-sep"></div>',
     item('search', '🔎 Search'), item('gsearch', '🌐 Global Search'), item('replace', '✏️ Replace'),
@@ -4314,6 +4321,13 @@ function runCtxAction(act) {
     else if (act === 'gv-sort') saveGvChrome(card, { sort: !gvSortHidden(card) });
     else if (act === 'gv-reset') saveGvChrome(card, { pills: false, sort: false });
     return render();
+  }
+  if (act.startsWith('link:')) {   // §17b — menu-driven linking
+    const target = act.slice(5); const rec = ctxRecord;
+    closeCtxMenu(); document.removeEventListener('mousedown', ctxOutside); ctxRecord = null;
+    if (!rec) return;
+    if (rec.card === 'units' && target === 'workOrders') return startUnitWorkOrder(rec.recId);   // §4a create-WO → land on the unit
+    return enterLinking(rec.card, rec.recId, target);
   }
   const tg = ctxTarget; closeCtxMenu(); document.removeEventListener('mousedown', ctxOutside);
   if (!tg) return;
@@ -6770,6 +6784,7 @@ function cardEl(cardDef, session) {
   } else {
     body.appendChild(listView(cardDef, session));
   }
+  const lb = linkBanner(card); if (lb) { const w = el('div'); w.innerHTML = lb; if (w.firstElementChild) node.appendChild(w.firstElementChild); }   // §17b — linking-mode banner above the list
   node.appendChild(body);
   return node;
 }
@@ -9122,6 +9137,21 @@ function buildPopupEl(o, overlay, opts = {}) {
       <div class="cmt-card-foot">${rec ? `<span class="cmt-hint">${esc(detailTitle(entityCardOf(o.card, o.recType), rec))}</span>` : '<span></span>'}<button class="cmt-post js-cmt-save">Post</button></div>`;
     overlay.appendChild(pop);
     if (!opts.preview) setTimeout(() => pop.querySelector('.cmt-input')?.focus(), 0);
+  } else if (o.kind === 'linkConfirm') {
+    // §17b — confirm a menu-driven link. PRICE only for invoice links (B2); confirm runs dispatchDrop.
+    const srcRec = recOf(o.srcCard, o.srcId), tgtRec = recOf(o.targetCard, o.targetId);
+    const srcT = srcRec ? detailTitle(o.srcCard, srcRec) : String(o.srcId);
+    const tgtT = tgtRec ? detailTitle(o.targetCard, tgtRec) : String(o.targetId);
+    const isMoney = (o.srcCard === 'invoices' || o.targetCard === 'invoices');
+    const pop = el('div', 'popup'); pop.style.width = '360px';
+    pop.innerHTML = popupShell({
+      icon: CARD_ICON[o.targetCard] || '',
+      title: `Add to ${LINK_TARGET_LABEL[o.targetCard] || o.targetCard}?`,
+      tag: 'Link · confirm',
+      body: `<div class="lc-body"><div class="lc-line">Add <b>${esc(srcT)}</b> to <b>${esc(tgtT)}</b>?</div>${linkPriceText(o.srcCard, srcRec, o.targetCard, tgtRec)}</div>`,
+      foot: `${ghostPill('Cancel', { js: 'js-close' })}${actionPill(isMoney ? 'money' : 'commit', isMoney ? 'Confirm — bill it' : 'Confirm', { js: 'js-link-confirm' })}`,
+    });
+    overlay.appendChild(pop);
   } else if (o.kind === 'rulebook') {
     // THE VISUAL RULEBOOK (SPEC v8) — every example is emitted by the REAL
     // builder, so this reference can never drift from the code.
@@ -9882,6 +9912,7 @@ const WINDOW_CATALOG = [
   { kind: 'qr',            label: 'Share session (QR)',      tag: 'Share · session',          sample: () => ({}) },
   { kind: 'migrateUnits',  label: 'Round up missing units',  tag: 'Units · migrate',          sample: () => ({ plan: [{ name: 'Sample Unit', action: 'create', unitId: 'U000', categoryId: ((DATA.categories || [])[0] || {}).categoryId, count: 1 }] }) },
   { kind: 'comment',       label: 'Comment note',            tag: 'Note · comment',           sample: () => ({ card: 'units', recId: ((DATA.units || [])[0] || {}).unitId, recType: null, color: 'yellow' }) },
+  { kind: 'linkConfirm',   label: 'Confirm link',            tag: 'Link · confirm',           sample: () => ({ srcCard: 'rentals', srcId: ((DATA.rentals || [])[0] || {}).rentalId, targetCard: 'invoices', targetId: ((DATA.invoices || [])[0] || {}).invoiceId }) },
   { kind: 'rulebook',      label: 'The R-Rulebook',          tag: 'SPEC v8 · design system',  sample: () => ({}) },
   { kind: 'partform',      label: 'Add / Edit Part · Task',  tag: 'Work order · line',         sample: () => ({ woId: ((DATA.workOrders || [])[0] || {}).woId }) },
   { kind: 'receiptform',   label: 'New / Edit Receipt',      tag: 'Expense · receipt',         sample: () => ({}) },
@@ -11892,6 +11923,92 @@ function invoiceUnitIds(inv) {
   return [...ids];
 }
 
+/* ── §17b — MENU-DRIVEN LINKING: the "+ Target" actions for the R20 context menu
+   (2026-06-29, replaces mobile drag). The set is DROP_MATRIX[src] ∩ the acting
+   role's capability, minus targets that can't apply to THIS source right now. The
+   menu omission is UX only — dispatchDrop re-fires every hard gate on confirm. ── */
+const LINK_TARGET_LABEL = { rentals: 'Rental', invoices: 'Invoice', customers: 'Customer', units: 'Unit', workOrders: 'Work Order' };
+/* §10-B1 role gate: any link that touches an INVOICE is billing → money tier; any
+   link that touches a CUSTOMER is PII/CRM → above ops-only 'staff' (money tier+ in
+   the shipped ladder). Operational links (units↔rentals, unit→WO) stay open to staff. */
+function linkRoleAllows(srcCard, tgt) {
+  if (tgt === 'invoices' || srcCard === 'invoices') return canMoney();
+  if (tgt === 'customers' || srcCard === 'customers') return canMoney();
+  return true;
+}
+/* Source-level preconditions — omit an action that can't possibly apply to this
+   record now (the per-target instance gate still dims rows on the target card). */
+function linkActionPossible(srcCard, rec, tgt) {
+  if (srcCard === 'units' && tgt === 'invoices') return !!unbilledOpenWOForUnit(rec.unitId);   // §7.6 needs a billable open WO
+  if (srcCard === 'rentals' && tgt === 'invoices') return !rec.invoiceId;                       // already invoiced → nothing to add
+  if (srcCard === 'invoices') return !rec.locked;                                               // a locked invoice takes no new links
+  if (srcCard === 'workOrders' && tgt === 'invoices') return woBillable(rec) > 0;
+  return true;
+}
+/* The ordered "+ Target" actions for a pressed record. `create:true` = a NEW record
+   on the target card (not a DROP_MATRIX link): only the unit "+ Work Order" today. */
+function linkActionsFor(srcCard, rec) {
+  if (!srcCard || !rec) return [];
+  const out = [];
+  const targets = DROP_MATRIX[srcCard];
+  if (targets) for (const tgt of Object.keys(targets)) {
+    if (!linkActionPossible(srcCard, rec, tgt)) continue;
+    if (!linkRoleAllows(srcCard, tgt)) continue;
+    out.push({ target: tgt, label: '+ ' + (LINK_TARGET_LABEL[tgt] || tgt) });
+  }
+  if (srcCard === 'units' && linkRoleAllows('units', 'workOrders')) out.push({ target: 'workOrders', create: true, label: '+ Work Order' });   // a WO is CREATED for a unit → lands on the unit (§4a)
+  return out;
+}
+
+/* ── §17b — LINKING MODE: a "+ Target" menu action navigates to the target card in
+   list+search; tapping a target there opens the confirm popup; confirm runs the
+   existing dispatchDrop (reuses every §7.5/§7.6 hard gate + History). ── */
+function enterLinking(srcCard, srcId, targetCard) {
+  state.linking = { srcCard, srcId, targetCard };
+  const sess = activeSession();
+  const col = COLUMN_OF[targetCard];
+  if (sess.cols && col) { sess.cols[col] = targetCard; const idx = COLUMNS.findIndex((c) => c.id === col); if (idx >= 0) state.mobileCol = idx; }   // §M1 reveal + flip the phone column
+  const cs = sess.cards[targetCard];
+  if (cs) { cs.mode = 'list'; cs.recId = null; cs.recType = null; cs.search = ''; cs.listLimit = undefined; }
+  render();
+  setTimeout(() => { try { document.querySelector(`.card[data-card="${targetCard}"] .card-search, .card[data-card="${targetCard}"] input`)?.focus(); } catch (e) {} }, 40);
+}
+function cancelLinking() { if (state.linking) { state.linking = null; render(); } }
+function startUnitWorkOrder(unitId) { pillTo('units', unitId); }   // §4a — "+ Work Order" just lands on the unit (WO creation lives on the unit's card)
+/* The hazard-stripe banner shown atop the target card while linking. */
+function linkBanner(card) {
+  const L = state.linking; if (!L || L.targetCard !== card) return '';
+  const srcRec = recOf(L.srcCard, L.srcId);
+  const srcT = srcRec ? detailTitle(L.srcCard, srcRec) : String(L.srcId);
+  const tgt = LINK_TARGET_LABEL[L.targetCard] || L.targetCard;
+  return `<div class="link-banner"><span class="lb-txt">Linking <b>${esc(srcT)}</b> → pick a ${esc(tgt)} <span class="lb-sub">(or +New)</span></span>${ghostPill('Cancel', { js: 'js-link-cancel' })}</div>`;
+}
+/* Customer-facing PRICE only (B2) — shown when a link bills onto an invoice. */
+function linkPriceText(srcCard, srcRec, targetCard, tgtRec) {
+  if (srcCard !== 'invoices' && targetCard !== 'invoices') return '';
+  const billCard = srcCard === 'invoices' ? targetCard : srcCard;
+  const billRec = srcCard === 'invoices' ? tgtRec : srcRec;
+  let amt = null;
+  try {
+    if (billCard === 'rentals') amt = rentalPrice(billRec);
+    else if (billCard === 'workOrders') amt = woBillable(billRec);
+    else if (billCard === 'units') { const w = unbilledOpenWOForUnit(billRec.unitId); amt = w ? woBillable(w) : null; }
+  } catch (e) {}
+  return amt != null ? `<div class="lc-price">Bills <b>${money(amt)}</b> onto the invoice.</div>` : `<div class="lc-price muted">The amount is set on the invoice.</div>`;
+}
+function openLinkConfirm(targetId) {
+  const L = state.linking; if (!L) return;
+  if (!recOf(L.srcCard, L.srcId) || !recOf(L.targetCard, targetId)) return;
+  openOverlay({ kind: 'linkConfirm', srcCard: L.srcCard, srcId: L.srcId, targetCard: L.targetCard, targetId });
+}
+function doLinkConfirm() {
+  const o = state.overlay; if (!o || o.kind !== 'linkConfirm') return;
+  const srcRec = recOf(o.srcCard, o.srcId), tgtRec = recOf(o.targetCard, o.targetId);
+  closeOverlay(); state.linking = null;
+  if (!srcRec || !tgtRec) return;
+  dispatchDrop({ entity: o.srcCard, id: o.srcId, rec: srcRec }, { entity: o.targetCard, rec: tgtRec });   // reuses every hard gate + History; toasts its own failures
+}
+
 /** §M-touch — haptic reinforcement for a COMMITTED gesture (one pulse, never on
  *  scroll/hover). Best-effort: Android/Chrome only — iOS Safari has no Vibration
  *  API, so this is reinforcement, never the sole signal. Gated on the per-device
@@ -11951,12 +12068,7 @@ function initDrag() {
 // move lifts a drag. A quick horizontal flick (before this fires) is a Back/Forward swipe
 // instead (see the grid swipe tracker in boot). Frees the horizontal axis for navigation.
 function armReadyTimer(arm) { return setTimeout(() => { if (DRAG.armed === arm) arm.ready = true; }, 300); }
-function armMenuTimer(arm) {   // §M3 — hold-still opens the context menu: touch long-press OR mouse click-and-hold (the right-click equivalent)
-  // PHONE: a long-press is reserved for the DRAG (Jac, 2026-06-29). The menu timer used
-  // to fire at 500ms and DISARM the drag, so any hold longer than ~½s opened the context
-  // menu instead of grabbing the row. On a phone the long-press now always drags; the R20
-  // context menu stays a desktop affordance (right-click / mouse click-and-hold).
-  if (arm.touch && document.body.classList.contains('is-phone')) return null;
+function armMenuTimer(arm) {   // §M3 — hold-still opens the context menu: touch long-press OR mouse click-and-hold (the right-click equivalent). On phones this is now the PRIMARY linking entry (menu-driven linking replaced drag, 2026-06-29).
   return setTimeout(() => {
     if (DRAG.armed !== arm) return;
     const t = document.elementFromPoint(arm.x, arm.y);
@@ -11970,25 +12082,19 @@ function dragDown(e) {
   if (state.overlay) return;                                             // overlays own their clicks; the winpicker is non-modal (Task E — drag to select)
   if (e.target.closest('.tedit')) return;                                // the inline transport editor owns its pointers — let Google pan the map + drag the site pin (never arm an app/chat drag here)
   if (e.target.closest('.dispm')) return;                                // §2.3 the dispatch cockpit map owns its pointers too — Google handles pan/zoom, never the app drag engine
-  // §M3 — PHONE record-grab: a list row / open standard card is wall-to-wall pills +
-  // chat-els, leaving almost no bare space to grab — a finger-press lands on a pill ~2/3
-  // of the time, which on touch would either BAIL (.pill is in the bail list below) or
-  // hijack into a CHAT-TAG drag, so the record drag was effectively ungrabbable on a
-  // phone (Jac, 2026-06-29). On touch we resolve the whole row/card to its record FIRST:
-  // dragSourceAt already ranks a units pill as itself (the unit→rental link still wins),
-  // then a row, then an open standard card — so pressing ANYWHERE non-interactive on the
-  // row drags the record. Tap is unaffected (a press only LIFTS on a held horizontal
-  // move; a tap never does); chat-tag-dragging a single pill stays a desktop affordance.
+  // §M3 — PHONE: drag-to-link is RETIRED on phones (2026-06-29). A long-press now opens
+  // the R20 context menu, which carries the menu-driven LINKING actions (+ Rental / +
+  // Invoice / …). Arm a MENU-ONLY long-press: no drag is ever lifted on a phone. A move
+  // before the timer cancels it (native scroll / Back-Forward swipe stay intact); a quick
+  // tap releases before the timer (its click fires normally). The interactive-control
+  // skip keeps inputs/buttons native; selection-suppression (style.css, .is-phone .grid)
+  // stops iOS from starting text-selection before the long-press registers.
   if (e.pointerType === 'touch' && document.body.classList.contains('is-phone')
       && !e.target.closest('input, textarea, select, button, .x, .inline-edit, .inline-input, .dropdown-menu, .ctx-menu')) {
-    const src = dragSourceAt(e.target);
-    if (src) {
-      DRAG.point.x = e.clientX; DRAG.point.y = e.clientY;
-      const armed = { card: src.card, rec: src.rec, x: e.clientX, y: e.clientY, pointerId: e.pointerId, touch: true, lp: null, rdy: null, ready: false };
-      armed.lp = armMenuTimer(armed);                       // §M3 — hold still → context menu
-      armed.rdy = armReadyTimer(armed);                     // a hold must precede the horizontal drag
-      DRAG.armed = armed; return;
-    }
+    DRAG.point.x = e.clientX; DRAG.point.y = e.clientY;
+    const arm = { menuOnly: true, x: e.clientX, y: e.clientY, pointerId: e.pointerId, touch: true, lp: null, rdy: null, ready: false };
+    arm.lp = armMenuTimer(arm);                             // hold ~500ms still → openCtxMenuAt (the R20 menu)
+    DRAG.armed = arm; return;
   }
   // §17 — a granular element marked [data-chat-el] (a pill/price/line/person) arms a
   // CHAT-TAG drag (tap still does its own thing; drag/long-press tags it into a chat).
@@ -12991,6 +13097,19 @@ function onClick(e) {
     if (host) scrollToSect(host.dataset.card, sectEl.dataset.sect);
     return;
   }
+
+  // §17b — LINKING MODE: Cancel the banner, or tap a target-card row/pill to pick the
+  // link target → confirm popup (pre-empts normal row/pill navigation).
+  if (state.linking) {
+    if (closest('.js-link-cancel')) { e.stopPropagation(); return cancelLinking(); }
+    const lrow = closest('.row[data-rec]'), lpill = closest('[data-pill-card]');
+    if (lrow || lpill) {
+      const pc = lrow ? entityCardOf(lrow.dataset.card, lrow.dataset.type) : entityCardOf(lpill.dataset.pillCard, null);
+      const pid = lrow ? lrow.dataset.rec : lpill.dataset.pillRec;
+      if (pc === state.linking.targetCard && pid != null) { e.stopPropagation(); e.preventDefault(); return openLinkConfirm(pid); }
+    }
+  }
+  if (closest('.js-link-confirm')) { e.stopPropagation(); return doLinkConfirm(); }
 
   // universal pill rule — single-click navigates; double-click anchors; ctrl+click = new
   // tab (handled by the early hotkey branch). Same discriminator as rows (#1).
@@ -16504,7 +16623,7 @@ function seedDemoRequests() {
    the backend-backed production path. */
 function exposeTestApi() {
   try {
-    window.__rw = { DATA, IDX, TODAY_ISO, itemPaid, lineKey, rentalUnits, unitEntry, isPrimaryUnit,
+    window.__rw = { DATA, IDX, TODAY_ISO, itemPaid, lineKey, rentalUnits, unitEntry, isPrimaryUnit, linkActionsFor, linkActionPossible, DROP_MATRIX,
       unitStatus, rentalUnitStatuses, unitsUniform, rentalStatusDisplay, rentalMirrorStatus, rentalDisplayStatus,
       allUnitsTerminal, unitTerminal, unitVoided, rentalLineItems, transportLineItems, extensionPreview, billExtension, unitBilledRental, unitBilledSeries, retroPricingOn, rentalInvoices, rentalActiveInvoice, invoiceChunks, createInvoiceForRental, syncRentalPrimary,
       addUnitToRental, removeUnitFromRental, removeUnitInvoiceLine, unitLinePaid, invoiceTotals, allocLines,
