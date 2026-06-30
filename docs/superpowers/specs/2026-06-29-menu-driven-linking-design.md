@@ -55,6 +55,13 @@ For the record's entity type `src`, list one **"+ ‹Target›"** item per valid
 
 - Items whose matrix gate is impossible *right now* for this specific source
   (e.g. unit→invoice with no billable WO) are **omitted** (not shown dead).
+- **🔴 Role-authority gate (from the `/role` audit).** `DROP_MATRIX` encodes data
+  *validity*, NOT *who may act*. The action list is `DROP_MATRIX[src]` **∩ the
+  acting role's capability**: **+ Invoice** (money, Tier 2) shows only for
+  Office/Owner; **+ Customer** only for roles entitled to customer PII
+  (Sales/Office/Owner — not Dispatcher/Mechanic/Driver); operational links stay
+  within each role's tier. The mutation **re-checks authority server-side** — the
+  menu omission is UX, not the security boundary.
 - **§4a — unit "+Work Order":** a WO is *created for* a unit, not linked to an
   existing one, so this is **not** the search-link flow. It navigates straight to
   that unit's record (standard view) where WO creation already lives. (Only on a
@@ -87,7 +94,9 @@ A new catalogued popup (`WINDOW_CATALOG` entry; `data-r` stamped):
 - Title/body: *"Add ‹unit Beacon› to ‹rental 6/29–7/2›?"* naming both records.
 - **Money:** for **Add to an invoice**, show the **price impact** — the rental/
   line/WO amount that will be billed (pulled from the same pricing the mutation
-  uses) — so money is never added blindly.
+  uses) — so money is never added blindly. **🔴 Show the customer-facing PRICE
+  only — never cost / Bottom Dollar / Ask / ROI / part-cost** (margin floors are
+  radioactive on any shared/over-the-shoulder surface; `/role` step-3 hard-fail).
 - Buttons: **Confirm** (R17 — *green* when it takes money, *blue* otherwise) /
   **Cancel** (R18 ghost).
 - On confirm: call the **existing `dispatchDrop(payload, target)`** path so every
@@ -123,17 +132,35 @@ are deleted; the mouse path is unchanged.
 - New UI elements (Link menu items, linking banner, confirm popup) are emitted
   through builders / stamped `data-r`; the banner uses the **hazard-stripe** motif
   (active, attention) per the yard data-plate language.
+- **🔴 Icons: library glyphs only (no emoji).** The live R20 menu currently uses
+  emoji (✂️📋🔎🤠…) — an icon-rule violation. New linking items use `I.*` (Lucide,
+  via `icons.js`); migrate the existing emoji items to library glyphs in the same
+  pass (or, at minimum, never add more emoji).
 - New popup → **`WINDOW_CATALOG`** entry (CI-enforced).
 - `rule-usage.js` regenerated; `code-map` regenerated; AA contrast + focus +
   reduced-motion respected.
 
-## 10. Roles / data-sensitivity (pre-build `/role` audit)
+## 10. Roles / data-sensitivity — `/role` audit results (2026-06-29)
 
-- **Add to an invoice** = money → confirm shows price; mutation keeps all §7.5/§7.6
-  money gates. The audit must confirm no margin/cost leak in the confirm popup
-  (show *price*, never cost/bottom-dollar) and that customer-isolation gates hold
-  server-consistently.
-- Linking actions must respect role authority (who can bill / assign customers).
+Audit run against the full R20 menu + the new linking actions. Findings folded in:
+
+**🔴 Blockers (binding):**
+- **B1 — role-authority gate (§4):** action list = `DROP_MATRIX[src]` ∩ acting
+  role's capability; **+ Invoice** Office/Owner-only (Tier 2 money), **+ Customer**
+  PII-entitled roles only. Mutation re-checks **server-side**.
+- **B2 — confirm popup shows PRICE only (§6):** never cost / Bottom Dollar / Ask /
+  ROI / part-cost (radioactive margin floors).
+
+**🟡 Gaps (address in build):**
+- Cut/Clear/Replace must inherit each field's write-gate (route through
+  `startInlineEdit`, don't bypass).
+- Every link (esp. + Invoice) auto-writes an attributed History entry (reuse
+  `dispatchDrop` logging — verify).
+- "Ask Mr. Wrangler" must not ship margin/PII context for low-tier roles.
+
+**✅ Clears:** Search/Global Search (read-only); Add Comment/Start chat (internal);
+`dispatchDrop` reuse keeps §7.5/§7.6 locked/customer-scoping/double-bill gates; not
+a customer-facing surface (no T7 portal isolation), provided B2 holds.
 
 ## 11. Verification
 
