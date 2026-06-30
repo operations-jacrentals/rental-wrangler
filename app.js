@@ -11864,6 +11864,43 @@ function invoiceUnitIds(inv) {
   return [...ids];
 }
 
+/* ── §17b — MENU-DRIVEN LINKING: the "+ Target" actions for the R20 context menu
+   (2026-06-29, replaces mobile drag). The set is DROP_MATRIX[src] ∩ the acting
+   role's capability, minus targets that can't apply to THIS source right now. The
+   menu omission is UX only — dispatchDrop re-fires every hard gate on confirm. ── */
+const LINK_TARGET_LABEL = { rentals: 'Rental', invoices: 'Invoice', customers: 'Customer', units: 'Unit', workOrders: 'Work Order' };
+/* §10-B1 role gate: any link that touches an INVOICE is billing → money tier; any
+   link that touches a CUSTOMER is PII/CRM → above ops-only 'staff' (money tier+ in
+   the shipped ladder). Operational links (units↔rentals, unit→WO) stay open to staff. */
+function linkRoleAllows(srcCard, tgt) {
+  if (tgt === 'invoices' || srcCard === 'invoices') return canMoney();
+  if (tgt === 'customers' || srcCard === 'customers') return canMoney();
+  return true;
+}
+/* Source-level preconditions — omit an action that can't possibly apply to this
+   record now (the per-target instance gate still dims rows on the target card). */
+function linkActionPossible(srcCard, rec, tgt) {
+  if (srcCard === 'units' && tgt === 'invoices') return !!unbilledOpenWOForUnit(rec.unitId);   // §7.6 needs a billable open WO
+  if (srcCard === 'rentals' && tgt === 'invoices') return !rec.invoiceId;                       // already invoiced → nothing to add
+  if (srcCard === 'invoices') return !rec.locked;                                               // a locked invoice takes no new links
+  if (srcCard === 'workOrders' && tgt === 'invoices') return woBillable(rec) > 0;
+  return true;
+}
+/* The ordered "+ Target" actions for a pressed record. `create:true` = a NEW record
+   on the target card (not a DROP_MATRIX link): only the unit "+ Work Order" today. */
+function linkActionsFor(srcCard, rec) {
+  if (!srcCard || !rec) return [];
+  const out = [];
+  const targets = DROP_MATRIX[srcCard];
+  if (targets) for (const tgt of Object.keys(targets)) {
+    if (!linkActionPossible(srcCard, rec, tgt)) continue;
+    if (!linkRoleAllows(srcCard, tgt)) continue;
+    out.push({ target: tgt, label: '+ ' + (LINK_TARGET_LABEL[tgt] || tgt) });
+  }
+  if (srcCard === 'units' && linkRoleAllows('units', 'workOrders')) out.push({ target: 'workOrders', create: true, label: '+ Work Order' });   // a WO is CREATED for a unit → lands on the unit (§4a)
+  return out;
+}
+
 /** §M-touch — haptic reinforcement for a COMMITTED gesture (one pulse, never on
  *  scroll/hover). Best-effort: Android/Chrome only — iOS Safari has no Vibration
  *  API, so this is reinforcement, never the sole signal. Gated on the per-device
@@ -16465,7 +16502,7 @@ function seedDemoRequests() {
    the backend-backed production path. */
 function exposeTestApi() {
   try {
-    window.__rw = { DATA, IDX, TODAY_ISO, itemPaid, lineKey, rentalUnits, unitEntry, isPrimaryUnit,
+    window.__rw = { DATA, IDX, TODAY_ISO, itemPaid, lineKey, rentalUnits, unitEntry, isPrimaryUnit, linkActionsFor, linkActionPossible, DROP_MATRIX,
       unitStatus, rentalUnitStatuses, unitsUniform, rentalStatusDisplay, rentalMirrorStatus, rentalDisplayStatus,
       allUnitsTerminal, unitTerminal, unitVoided, rentalLineItems, transportLineItems, extensionPreview, billExtension, unitBilledRental, unitBilledSeries, retroPricingOn, rentalInvoices, rentalActiveInvoice, invoiceChunks, createInvoiceForRental, syncRentalPrimary,
       addUnitToRental, removeUnitFromRental, removeUnitInvoiceLine, unitLinePaid, invoiceTotals, allocLines,
