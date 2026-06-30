@@ -850,10 +850,16 @@ function rentalPrice(r) {
     || (sd === 6 && ed === 1 && days === 2);                   // Sat → Mon
   if (weekendWindow) return { price: cat.weekend, rate: 'WKND', days };
 
+  // Cheapest blend — tile the window with 4-Week + 7-Day blocks + a 1-Day remainder, AND
+  // allow rounding the remainder UP to one more whole block when that block is cheaper than
+  // the days it replaces. So a 6-day rental caps at the 7-Day rate (not 6×daily), and 3 weeks
+  // + 6 days caps at the 4-Week rate: we never bill MORE for fewer days than the next tier
+  // costs. The ceil bounds (vs floor) are what let a higher tier cover a partial sub-tier.
   let best = null;
-  for (let mm = 0; mm <= Math.floor(days / 28); mm++) {
-    for (let ww = 0; ww <= Math.floor((days - 28 * mm) / 7); ww++) {
-      const dd = days - 28 * mm - 7 * ww;
+  for (let mm = 0; mm <= Math.ceil(days / 28); mm++) {
+    const wkCeil = Math.max(0, Math.ceil((days - 28 * mm) / 7));
+    for (let ww = 0; ww <= wkCeil; ww++) {
+      const dd = Math.max(0, days - 28 * mm - 7 * ww);
       const total = mm * cat.rate4Wk + ww * cat.rate7Day + dd * cat.rate1Day;
       if (best == null || total < best.total) best = { total, mm, ww, dd };
     }
