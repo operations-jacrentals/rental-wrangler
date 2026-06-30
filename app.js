@@ -2149,12 +2149,16 @@ function showCategoryUnits(categoryId) {
   const cat = IDX.category.get(categoryId); if (!cat) return;
   const s = activeSession(), us = s.cards.units; if (!us) return;
   us.search = cat.name; us.listLimit = undefined; us.mode = 'list'; us.recId = null; us.recType = null;
+  let unitsSlot = null;
   if (s.cols) {
     const slots = ['left', 'middle', 'right'].filter((k) => k in s.cols);
     if (!slots.some((k) => s.cols[k] === 'units')) s.cols[(slots.find((k) => s.cols[k] === 'categories')) || slots[0]] = 'units';
+    unitsSlot = slots.find((k) => s.cols[k] === 'units');
   }
   state.focusedCard = 'units';
-  if (state.mobileCol !== undefined) state.mobileCol = 'units';   // mobile single-column → show Units
+  // mobile single-column → flip to the column that now holds Units. mobileCol is a
+  // NUMERIC COLUMNS index (not a member id) — writing the string broke the phone hop.
+  if (unitsSlot) { const idx = COLUMNS.findIndex((c) => c.id === unitsSlot); if (idx >= 0) state.mobileCol = idx; }
   render();
 }
 /** Universal pill rule (§0.2): clicking any pill forces its target card into
