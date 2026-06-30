@@ -4303,6 +4303,14 @@ function openCtxMenuAt(target, x, y) {
   const hit = leaf ? (ruleOf(leaf) || { r: null, el: leaf }) : null;
   if (hit) return openCtxMenu({ clientX: x, clientY: y }, hit);
   if (!card) return;
+  // §17b PHONE: a long-press on EMPTY space (row gaps, an open standard card) still opens
+  // the menu on the record there, so linking works from ANYWHERE on a row/card — not just
+  // a leaf. The right-click "go Back / clear anchor" on empty space stays a DESKTOP-only
+  // convention; a phone long-press must never silently navigate Back. (Jac, 2026-06-30)
+  if (document.body.classList.contains('is-phone')) {
+    if (cardRecordAt(target)) return openCtxMenu({ clientX: x, clientY: y }, { r: null, el: target });
+    return;   // truly empty list space → do nothing (never Back on a phone long-press)
+  }
   const dc = card.dataset.card, now = performance.now();
   if (now - lastCtx.t < 450 && lastCtx.card === dc) { lastCtx = { t: 0, card: null }; return clearAnchor(); }   // double right-click
   lastCtx = { t: now, card: dc };
