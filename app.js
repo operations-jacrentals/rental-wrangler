@@ -4240,7 +4240,7 @@ function openCtxMenu(e, hit) {
   const m = document.createElement('div');
   m.className = 'ctx-menu'; m.id = 'rw-ctx';
   const item = (act, label) => `<button class="dd-item" data-ctx="${act}">${label}</button>`;
-  const linkSec = linkItems.length ? linkItems.map((a) => item('link:' + a.target, esc(a.label))).join('') + '<div class="menu-sep"></div>' : '';
+  const linkSec = linkItems.length ? linkItems.map((a) => `<button class="dd-item" data-ctx="link:${a.target}">${CARD_ICON[a.target] || ''}${esc(a.label)}</button>`).join('') + '<div class="menu-sep"></div>' : '';
   m.innerHTML = linkSec + [
     item('cut', '✂️ Cut'), item('copy', '📋 Copy'), item('paste', '📥 Paste'), item('clear', '🧹 Clear'),
     '<div class="menu-sep"></div>',

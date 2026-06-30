@@ -2738,6 +2738,7 @@ input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
 .ctx-menu::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 6px; background: repeating-linear-gradient(180deg, var(--yellow) 0 11px, #14181d 11px 22px); }
 .ctx-menu .dd-item { display: flex; align-items: center; gap: 9px; width: 100%; padding: 7px 10px; border-radius: 8px; background: none; border: none; color: var(--txt); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; text-align: left; }
 .ctx-menu .dd-item:hover { background: var(--panel-2); }
+.ctx-menu .dd-item svg { width: 15px; height: 15px; flex: 0 0 auto; }   /* §17b — library glyphs on the link actions (sized to match the row) */
 .ctx-menu .menu-sep { height: 1px; background: var(--line); margin: 4px 0; }
 
 /* +Work Order on the Units card — floats alone, centered, no card backing (Jac 2026-06-12) */
@@ -3007,6 +3008,23 @@ body { font-variant-numeric: tabular-nums; }
   .drag-ghost { animation: ghostLift .16s ease-out; }
   @keyframes ghostLift { from { scale: .66; opacity: 0; } to { scale: 1; opacity: 1; } }
 }
+/* §17b — LINKING MODE banner: hi-vis hazard stripe as plate CHROME (left cap), the
+   prompt itself on a calm steel field (simple-on-complex). Stamped sub-label in Saira. */
+.link-banner { display: flex; align-items: center; gap: 10px; margin: 0 0 8px; padding: 9px 12px 9px 16px;
+  border: 1px solid var(--accent-line); border-radius: 12px; background: linear-gradient(180deg, #1b2129, #0c0e11);
+  position: relative; overflow: hidden; }
+.link-banner::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 6px;
+  background: repeating-linear-gradient(135deg, var(--yellow, #f5c542) 0 8px, #14181d 8px 16px); }
+.link-banner .lb-txt { flex: 1; min-width: 0; font-size: 12.5px; color: var(--txt); }
+.link-banner .lb-txt b { color: var(--accent); font-weight: 700; }
+.link-banner .lb-sub { color: var(--txt-3); font-family: 'Saira Condensed', sans-serif; text-transform: uppercase; letter-spacing: 1.2px; font-size: 11px; margin-left: 5px; }
+/* §17b — link confirm popup body */
+.lc-body { padding: 4px 2px 2px; }
+.lc-line { font-size: 13.5px; color: var(--txt); line-height: 1.5; }
+.lc-line b { color: var(--accent); font-weight: 700; }
+.lc-price { margin-top: 10px; font-size: 13px; color: var(--txt); }
+.lc-price b { color: var(--green); font-weight: 700; }
+.lc-price.muted { color: var(--txt-3); }
 /* §M2 ZIP ZONES (phone) — edge rails of valid drop-target cards during a drag. Steel
    data-plate tabs with a per-card hazard stripe (the ONLY colour — a transient drag
    overlay, so the one-orange rule holds for persistent UI). Drag onto one to jump to
