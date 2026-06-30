@@ -12016,6 +12016,18 @@ function doLinkConfirm() {
   if (!srcRec || !tgtRec) return;
   dispatchDrop({ entity: o.srcCard, id: o.srcId, rec: srcRec }, { entity: o.targetCard, rec: tgtRec });   // reuses every hard gate + History; toasts its own failures
 }
+/* §17b — +New AUTO-LINK: tapping +New on the target card while linking creates the
+   record AND links the source straight to it — no confirm tap (creating it IS the
+   intent; "auto-linked as the details open", Jac). Called at the end of each immediate
+   create path (rental/invoice/unit); a no-op unless we're linking to that target. The
+   create fn already anchored/opened the new record, so dispatchDrop just adds the link. */
+function maybeAutoLink(targetCard, newId) {
+  const L = state.linking; if (!L || L.targetCard !== targetCard) return;
+  const srcRec = recOf(L.srcCard, L.srcId), tgtRec = recOf(targetCard, newId);
+  state.linking = null;
+  if (!srcRec || !tgtRec) return;
+  dispatchDrop({ entity: L.srcCard, id: L.srcId, rec: srcRec }, { entity: targetCard, rec: tgtRec });   // reuses every hard gate + History
+}
 
 /** §M-touch — haptic reinforcement for a COMMITTED gesture (one pulse, never on
  *  scroll/hover). Best-effort: Android/Chrome only — iOS Safari has no Vibration
@@ -14229,6 +14241,7 @@ function quickAddUnitFromSearch(value) {
   const cs = activeSession().cards.units; cs.search = ''; cs.filterTerms = [];
   openStandard('units', id);
   toast(`${name} added — set its category, hours, and inspection.`);
+  maybeAutoLink('units', id);   // §17b — if a "+ Unit" link was in progress, link the source to this new unit
   return true;
 }
 function nextCategoryId() {
@@ -15064,6 +15077,7 @@ function startNewInvoice(customerId) {
   if (!cust) { const s = activeSession(); if (s.cols) s.cols.right = 'customers'; }
   toast(cust ? `New invoice for ${cust.name} — drag rentals onto it.` : 'New invoice — drag a customer and rentals onto it.');
   render();
+  maybeAutoLink('invoices', id);   // §17b — if a "+ Invoice" link was in progress, bill the source onto this new invoice
 }
 
 function startNewRental(customerId) {
@@ -15080,6 +15094,7 @@ function startNewRental(customerId) {
   const s = activeSession(); if (s.cols) { s.cols.left = 'units'; s.cols.right = 'customers'; }
   toast(cust ? `New Quote for ${cust.name} — drag a unit onto it, then pick the window.` : 'New Quote — drag a unit and a customer onto it, then pick the window.');
   render();
+  maybeAutoLink('rentals', id);   // §17b — if a "+ Rental" link was in progress, link the source to this new Quote
 }
 
 /* ── Wave 2 (Jac 2026-06-12): pick mode is DEAD. Linking happens by DRAG (§15c
