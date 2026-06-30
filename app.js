@@ -850,10 +850,16 @@ function rentalPrice(r) {
     || (sd === 6 && ed === 1 && days === 2);                   // Sat → Mon
   if (weekendWindow) return { price: cat.weekend, rate: 'WKND', days };
 
+  // Cheapest blend — tile the window with 4-Week + 7-Day blocks + a 1-Day remainder, AND
+  // allow rounding the remainder UP to one more whole block when that block is cheaper than
+  // the days it replaces. So a 6-day rental caps at the 7-Day rate (not 6×daily), and 3 weeks
+  // + 6 days caps at the 4-Week rate: we never bill MORE for fewer days than the next tier
+  // costs. The ceil bounds (vs floor) are what let a higher tier cover a partial sub-tier.
   let best = null;
-  for (let mm = 0; mm <= Math.floor(days / 28); mm++) {
-    for (let ww = 0; ww <= Math.floor((days - 28 * mm) / 7); ww++) {
-      const dd = days - 28 * mm - 7 * ww;
+  for (let mm = 0; mm <= Math.ceil(days / 28); mm++) {
+    const wkCeil = Math.max(0, Math.ceil((days - 28 * mm) / 7));
+    for (let ww = 0; ww <= wkCeil; ww++) {
+      const dd = Math.max(0, days - 28 * mm - 7 * ww);
       const total = mm * cat.rate4Wk + ww * cat.rate7Day + dd * cat.rate1Day;
       if (best == null || total < best.total) best = { total, mm, ww, dd };
     }
@@ -2408,9 +2414,20 @@ function rowMatches(card, rec, query, terms) {
   for (const col in byCol) { if (!byCol[col].some((v) => totColMatch(card, rec, col, v))) return false; }
   return blobMatches(IDX.search.get(card + ':' + idOf(card, rec)), q2, terms2b.filter((t) => !t.col));
 }
+// §11 transport-leg filter — mirrors the Office dispatch grid (dispatchEvents):
+// a rental has the 'delivery' leg when ANY unit ships Delivery/Round-Trip, the
+// 'pickup' leg when ANY unit ships Recovery/Round-Trip. Round-Trip has both legs,
+// Self has neither — so the operator's "Delivery vs Pickup" lens lines up with
+// the trucks that actually roll. The stored field calls a pickup 'Recovery'.
+const TRANSPORT_LEG_TYPES = { delivery: ['Delivery', 'Round-Trip'], pickup: ['Round-Trip', 'Recovery'] };
+function rentalHasLeg(r, leg) {
+  const types = TRANSPORT_LEG_TYPES[leg];
+  return !!types && rentalUnits(r).some((eu) => eu.transportType && types.includes(eu.transportType));
+}
 // A1 — exact match for a filter term's {col, value}, per record.
 function totColMatch(card, rec, col, value) {
   if (col === '__date') return dateTermHits(card, rec, value);   // §5.4d date-picker filter term
+  if (col === '__transport') return card === 'rentals' && rentalHasLeg(rec, value);   // §11 Delivery/Pickup leg filter
   if (col === '__wo') return DATA.workOrders.some((w) => w.unitId === rec.unitId && w.phase !== 'Complete' && !w.cancelled && (value === 'open' || w.phase === 'Part Ordered' || (w.lineItems || []).some((l) => l.phase === 'Part Ordered')));
   if (col === '__cond') return rec.inspectionStatus === value;
   if (col === '__svc') { const s = topServiceForUnit(rec); return !!rec.washRequested || !!(s && s.remaining < 0); }   // service-due: overdue service or wash requested
@@ -2488,6 +2505,17 @@ function addFilterTerm(scope, raw) {
   if (v === 'date' || v === 'dates') {   // §5.4d — the keyword opens the date/range picker instead of pinning the word
     if (scope === 'global') state.query = ''; else activeSession().cards[scope].search = '';
     return openDateSearch(scope);
+  }
+  // §11 — on the Rentals board, "delivery"/"pickup" pin a leg-scoped chip (mirrors the
+  // Office dispatch grid) instead of a blob word, so "pickup" actually filters (the stored
+  // type is 'Recovery') and "delivery" also catches Round-Trips. Pinnable/clearable like a
+  // status chip, and ANDs with them. Left as plain text in global search (other cards).
+  const leg = scope === 'rentals' ? ({ delivery: 'delivery', deliveries: 'delivery', pickup: 'pickup', pickups: 'pickup', 'pick up': 'pickup' })[v] : null;
+  if (leg) {
+    const arr = termsFor(scope);
+    if (!arr.some((ft) => ft.col === '__transport' && ft.value === leg)) arr.push({ t: leg, col: '__transport', value: leg, neg: false });
+    activeSession().cards[scope].search = '';
+    return afterFilterChange(scope);
   }
   const arr = termsFor(scope);
   if (!arr.some((ft) => ft.t === v)) arr.push({ t: v, neg: false });
