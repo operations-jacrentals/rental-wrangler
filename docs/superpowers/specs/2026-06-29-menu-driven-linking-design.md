@@ -12,7 +12,7 @@ long-press fought text-selection, the context-menu timer, and direction
 discrimination. After five rounds it still wasn't reliable on iOS.
 
 **Pivot (Jac):** replace the drag with a **guided, menu-driven linking flow** —
-long-press a record → pick an "Add to a …" action → land on the target card to
+long-press a record → pick a "+ ‹Target›" action → land on the target card to
 search → tap the target → confirm. It is explicit, discoverable, and reuses the
 real cards instead of fighting touch gestures.
 
@@ -41,16 +41,17 @@ gesture finesse, and money never added blindly.
 
 ## 4. Menu actions
 
-For the record's entity type `src`, list one **"Add to a ‹target›"** item per
-valid `target` in `DROP_MATRIX[src]`, in our voice:
+For the record's entity type `src`, list one **"+ ‹Target›"** item per valid
+`target` in `DROP_MATRIX[src]` — terse, matching the app's existing `+New` / R5b
+"+Thing" add language:
 
 | Source | Items (from DROP_MATRIX) |
 |---|---|
-| unit | **Add to a rental**, **Add to an invoice** (only when a billable open WO exists — the matrix gate), **+ Work Order** (§4a) |
-| rental | **Add a unit**, **Put on an invoice**, **Assign a customer** |
-| customer | **Start a rental**, **Add to an invoice** |
-| invoice | **Add a rental**, **Assign a customer**, **Add a unit**, **Add a work order** |
-| workOrder | **Put on an invoice** |
+| unit | **+ Rental**, **+ Invoice** (only when a billable open WO exists — the matrix gate), **+ Work Order** (§4a) |
+| rental | **+ Unit**, **+ Invoice**, **+ Customer** |
+| customer | **+ Rental**, **+ Invoice** |
+| invoice | **+ Rental**, **+ Customer**, **+ Unit**, **+ Work Order** |
+| workOrder | **+ Invoice** |
 
 - Items whose matrix gate is impossible *right now* for this specific source
   (e.g. unit→invoice with no billable WO) are **omitted** (not shown dead).
@@ -61,7 +62,7 @@ valid `target` in `DROP_MATRIX[src]`, in our voice:
 
 ## 5. Linking mode
 
-Selecting an "Add to a ‹target›" action:
+Selecting a "+ ‹Target›" action:
 
 1. Sets transient `state.linking = { srcCard, srcId, srcType, targetCard }`.
 2. Navigates to `targetCard` in **list + search** mode (search focused), on phone
