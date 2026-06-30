@@ -4206,6 +4206,7 @@ function flashOr(sel, msg) {
  *  Replace opens the inline editor · Add Comment logs to History ·
  *  Ask Mr. Wrangler copies a debug reference for Claude. */
 let ctxTarget = null;
+let ctxRecord = null;   // §17b — the record the menu opened on ({card, recId}), for the "+ Target" link actions
 // §13.4 graph-chrome right-click menu — tracks which card it was opened on so runCtxAction can act without
 // the ctxOutside closer; the chosen state persists per device, per card (loadGvChrome).
 let ctxGvCard = null;
@@ -4231,10 +4232,16 @@ function closeCtxMenu() { const m = document.getElementById('rw-ctx'); if (m) m.
 function openCtxMenu(e, hit) {
   closeCtxMenu();
   ctxTarget = hit;
+  // §17b — resolve the pressed record → its menu-driven LINK actions ("+ Target").
+  const rr = hit && hit.el ? cardRecordAt(hit.el) : null;
+  const ent = rr ? entityCardOf(rr.card, rr.recType) : null;
+  ctxRecord = ent ? { card: ent, recId: rr.recId } : null;
+  const linkItems = ctxRecord ? linkActionsFor(ctxRecord.card, recOf(ctxRecord.card, ctxRecord.recId)) : [];
   const m = document.createElement('div');
   m.className = 'ctx-menu'; m.id = 'rw-ctx';
   const item = (act, label) => `<button class="dd-item" data-ctx="${act}">${label}</button>`;
-  m.innerHTML = [
+  const linkSec = linkItems.length ? linkItems.map((a) => item('link:' + a.target, esc(a.label))).join('') + '<div class="menu-sep"></div>' : '';
+  m.innerHTML = linkSec + [
     item('cut', '✂️ Cut'), item('copy', '📋 Copy'), item('paste', '📥 Paste'), item('clear', '🧹 Clear'),
     '<div class="menu-sep"></div>',
     item('search', '🔎 Search'), item('gsearch', '🌐 Global Search'), item('replace', '✏️ Replace'),
@@ -4286,6 +4293,13 @@ function runCtxAction(act) {
     else if (act === 'gv-sort') saveGvChrome(card, { sort: !gvSortHidden(card) });
     else if (act === 'gv-reset') saveGvChrome(card, { pills: false, sort: false });
     return render();
+  }
+  if (act.startsWith('link:')) {   // §17b — menu-driven linking
+    const target = act.slice(5); const rec = ctxRecord;
+    closeCtxMenu(); document.removeEventListener('mousedown', ctxOutside); ctxRecord = null;
+    if (!rec) return;
+    if (rec.card === 'units' && target === 'workOrders') return startUnitWorkOrder(rec.recId);   // §4a create-WO → land on the unit
+    return enterLinking(rec.card, rec.recId, target);
   }
   const tg = ctxTarget; closeCtxMenu(); document.removeEventListener('mousedown', ctxOutside);
   if (!tg) return;
@@ -6742,6 +6756,7 @@ function cardEl(cardDef, session) {
   } else {
     body.appendChild(listView(cardDef, session));
   }
+  const lb = linkBanner(card); if (lb) { const w = el('div'); w.innerHTML = lb; if (w.firstElementChild) node.appendChild(w.firstElementChild); }   // §17b — linking-mode banner above the list
   node.appendChild(body);
   return node;
 }
@@ -9094,6 +9109,21 @@ function buildPopupEl(o, overlay, opts = {}) {
       <div class="cmt-card-foot">${rec ? `<span class="cmt-hint">${esc(detailTitle(entityCardOf(o.card, o.recType), rec))}</span>` : '<span></span>'}<button class="cmt-post js-cmt-save">Post</button></div>`;
     overlay.appendChild(pop);
     if (!opts.preview) setTimeout(() => pop.querySelector('.cmt-input')?.focus(), 0);
+  } else if (o.kind === 'linkConfirm') {
+    // §17b — confirm a menu-driven link. PRICE only for invoice links (B2); confirm runs dispatchDrop.
+    const srcRec = recOf(o.srcCard, o.srcId), tgtRec = recOf(o.targetCard, o.targetId);
+    const srcT = srcRec ? detailTitle(o.srcCard, srcRec) : String(o.srcId);
+    const tgtT = tgtRec ? detailTitle(o.targetCard, tgtRec) : String(o.targetId);
+    const isMoney = (o.srcCard === 'invoices' || o.targetCard === 'invoices');
+    const pop = el('div', 'popup'); pop.style.width = '360px';
+    pop.innerHTML = popupShell({
+      icon: CARD_ICON[o.targetCard] || '',
+      title: `Add to ${LINK_TARGET_LABEL[o.targetCard] || o.targetCard}?`,
+      tag: 'Link · confirm',
+      body: `<div class="lc-body"><div class="lc-line">Add <b>${esc(srcT)}</b> to <b>${esc(tgtT)}</b>?</div>${linkPriceText(o.srcCard, srcRec, o.targetCard, tgtRec)}</div>`,
+      foot: `${ghostPill('Cancel', { js: 'js-close' })}${actionPill(isMoney ? 'money' : 'commit', isMoney ? 'Confirm — bill it' : 'Confirm', { js: 'js-link-confirm' })}`,
+    });
+    overlay.appendChild(pop);
   } else if (o.kind === 'rulebook') {
     // THE VISUAL RULEBOOK (SPEC v8) — every example is emitted by the REAL
     // builder, so this reference can never drift from the code.
@@ -9854,6 +9884,7 @@ const WINDOW_CATALOG = [
   { kind: 'qr',            label: 'Share session (QR)',      tag: 'Share · session',          sample: () => ({}) },
   { kind: 'migrateUnits',  label: 'Round up missing units',  tag: 'Units · migrate',          sample: () => ({ plan: [{ name: 'Sample Unit', action: 'create', unitId: 'U000', categoryId: ((DATA.categories || [])[0] || {}).categoryId, count: 1 }] }) },
   { kind: 'comment',       label: 'Comment note',            tag: 'Note · comment',           sample: () => ({ card: 'units', recId: ((DATA.units || [])[0] || {}).unitId, recType: null, color: 'yellow' }) },
+  { kind: 'linkConfirm',   label: 'Confirm link',            tag: 'Link · confirm',           sample: () => ({ srcCard: 'rentals', srcId: ((DATA.rentals || [])[0] || {}).rentalId, targetCard: 'invoices', targetId: ((DATA.invoices || [])[0] || {}).invoiceId }) },
   { kind: 'rulebook',      label: 'The R-Rulebook',          tag: 'SPEC v8 · design system',  sample: () => ({}) },
   { kind: 'partform',      label: 'Add / Edit Part · Task',  tag: 'Work order · line',         sample: () => ({ woId: ((DATA.workOrders || [])[0] || {}).woId }) },
   { kind: 'receiptform',   label: 'New / Edit Receipt',      tag: 'Expense · receipt',         sample: () => ({}) },
@@ -11901,6 +11932,55 @@ function linkActionsFor(srcCard, rec) {
   return out;
 }
 
+/* ── §17b — LINKING MODE: a "+ Target" menu action navigates to the target card in
+   list+search; tapping a target there opens the confirm popup; confirm runs the
+   existing dispatchDrop (reuses every §7.5/§7.6 hard gate + History). ── */
+function enterLinking(srcCard, srcId, targetCard) {
+  state.linking = { srcCard, srcId, targetCard };
+  const sess = activeSession();
+  const col = COLUMN_OF[targetCard];
+  if (sess.cols && col) { sess.cols[col] = targetCard; const idx = COLUMNS.findIndex((c) => c.id === col); if (idx >= 0) state.mobileCol = idx; }   // §M1 reveal + flip the phone column
+  const cs = sess.cards[targetCard];
+  if (cs) { cs.mode = 'list'; cs.recId = null; cs.recType = null; cs.search = ''; cs.listLimit = undefined; }
+  render();
+  setTimeout(() => { try { document.querySelector(`.card[data-card="${targetCard}"] .card-search, .card[data-card="${targetCard}"] input`)?.focus(); } catch (e) {} }, 40);
+}
+function cancelLinking() { if (state.linking) { state.linking = null; render(); } }
+function startUnitWorkOrder(unitId) { pillTo('units', unitId); }   // §4a — "+ Work Order" just lands on the unit (WO creation lives on the unit's card)
+/* The hazard-stripe banner shown atop the target card while linking. */
+function linkBanner(card) {
+  const L = state.linking; if (!L || L.targetCard !== card) return '';
+  const srcRec = recOf(L.srcCard, L.srcId);
+  const srcT = srcRec ? detailTitle(L.srcCard, srcRec) : String(L.srcId);
+  const tgt = LINK_TARGET_LABEL[L.targetCard] || L.targetCard;
+  return `<div class="link-banner"><span class="lb-txt">Linking <b>${esc(srcT)}</b> → pick a ${esc(tgt)} <span class="lb-sub">(or +New)</span></span>${ghostPill('Cancel', { js: 'js-link-cancel' })}</div>`;
+}
+/* Customer-facing PRICE only (B2) — shown when a link bills onto an invoice. */
+function linkPriceText(srcCard, srcRec, targetCard, tgtRec) {
+  if (srcCard !== 'invoices' && targetCard !== 'invoices') return '';
+  const billCard = srcCard === 'invoices' ? targetCard : srcCard;
+  const billRec = srcCard === 'invoices' ? tgtRec : srcRec;
+  let amt = null;
+  try {
+    if (billCard === 'rentals') amt = rentalPrice(billRec);
+    else if (billCard === 'workOrders') amt = woBillable(billRec);
+    else if (billCard === 'units') { const w = unbilledOpenWOForUnit(billRec.unitId); amt = w ? woBillable(w) : null; }
+  } catch (e) {}
+  return amt != null ? `<div class="lc-price">Bills <b>${money(amt)}</b> onto the invoice.</div>` : `<div class="lc-price muted">The amount is set on the invoice.</div>`;
+}
+function openLinkConfirm(targetId) {
+  const L = state.linking; if (!L) return;
+  if (!recOf(L.srcCard, L.srcId) || !recOf(L.targetCard, targetId)) return;
+  openOverlay({ kind: 'linkConfirm', srcCard: L.srcCard, srcId: L.srcId, targetCard: L.targetCard, targetId });
+}
+function doLinkConfirm() {
+  const o = state.overlay; if (!o || o.kind !== 'linkConfirm') return;
+  const srcRec = recOf(o.srcCard, o.srcId), tgtRec = recOf(o.targetCard, o.targetId);
+  closeOverlay(); state.linking = null;
+  if (!srcRec || !tgtRec) return;
+  dispatchDrop({ entity: o.srcCard, id: o.srcId, rec: srcRec }, { entity: o.targetCard, rec: tgtRec });   // reuses every hard gate + History; toasts its own failures
+}
+
 /** §M-touch — haptic reinforcement for a COMMITTED gesture (one pulse, never on
  *  scroll/hover). Best-effort: Android/Chrome only — iOS Safari has no Vibration
  *  API, so this is reinforcement, never the sole signal. Gated on the per-device
@@ -12989,6 +13069,19 @@ function onClick(e) {
     if (host) scrollToSect(host.dataset.card, sectEl.dataset.sect);
     return;
   }
+
+  // §17b — LINKING MODE: Cancel the banner, or tap a target-card row/pill to pick the
+  // link target → confirm popup (pre-empts normal row/pill navigation).
+  if (state.linking) {
+    if (closest('.js-link-cancel')) { e.stopPropagation(); return cancelLinking(); }
+    const lrow = closest('.row[data-rec]'), lpill = closest('[data-pill-card]');
+    if (lrow || lpill) {
+      const pc = lrow ? entityCardOf(lrow.dataset.card, lrow.dataset.type) : entityCardOf(lpill.dataset.pillCard, null);
+      const pid = lrow ? lrow.dataset.rec : lpill.dataset.pillRec;
+      if (pc === state.linking.targetCard && pid != null) { e.stopPropagation(); e.preventDefault(); return openLinkConfirm(pid); }
+    }
+  }
+  if (closest('.js-link-confirm')) { e.stopPropagation(); return doLinkConfirm(); }
 
   // universal pill rule — single-click navigates; double-click anchors; ctrl+click = new
   // tab (handled by the early hotkey branch). Same discriminator as rows (#1).
