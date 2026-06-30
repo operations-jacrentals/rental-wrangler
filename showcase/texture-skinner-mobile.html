@@ -103,6 +103,18 @@ body{font-family:var(--font); color:var(--txt); background:#06070a; font-size:13
 .pill.blue{color:var(--blue);background:var(--blue-bg);border-color:var(--blue)}
 .pill.gout{color:var(--green);background:transparent;border-color:var(--green)}
 .pill.plain{color:var(--gray);background:transparent;border-color:var(--line)}
+/* date-driven "due" pill — hazard striped, carries proximity motion (mv/fl) */
+.dpill{display:inline-flex;align-items:center;gap:5px;font-family:var(--stamp);text-transform:uppercase;letter-spacing:.6px;
+  font-weight:800;font-size:11px;padding:6px 10px;border-radius:10px;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.85);
+  background-size:26px 26px;background-repeat:repeat;--bc:var(--red)}
+.dpill svg{width:13px;height:13px}
+.dpill.r{--bc:var(--red);background-image:linear-gradient(135deg,var(--red) 0 25%,#1a0808 25% 50%,var(--red) 50% 75%,#1a0808 75% 100%)}
+.dpill.y{--bc:var(--yellow);background-image:linear-gradient(135deg,var(--yellow) 0 25%,#14181d 25% 50%,var(--yellow) 50% 75%,#14181d 75% 100%)}
+.dpill.mv{animation:stripeP .9s linear infinite}
+.dpill.fl{animation:backglow 1.2s ease-in-out infinite}
+.dpill.mv.fl{animation:stripeP .9s linear infinite, backglow 1.2s ease-in-out infinite}
+.duestrip{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 10px 2px}
+.duestrip .t-label{margin-right:2px}
 
 /* ===================================================== BUTTON RULEBOOK ===== */
 /* color carrier: --bc drives text/border/glow per status */
@@ -352,12 +364,12 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid 
         <div class="rows">
           <div class="urow skin" data-skin="card"><div class="pills"><span class="pill green"><svg><use href="#i-clip"/></svg>Passed</span><span class="pill gout">No Orders</span></div><div class="mid">0 HRS · To…</div><span class="nm green">3IN TRASH…</span><svg class="cat"><use href="#i-drop"/></svg><div class="rail green"></div></div>
           <div class="urow skin" data-skin="card"><div class="pills"><span class="pill green"><svg><use href="#i-clip"/></svg>Passed</span><span class="pill gout">No Orders</span></div><div class="mid">0 HRS · Too…</div><span class="nm green">60# RED31…</span><svg class="cat"><use href="#i-exc"/></svg><div class="rail green"></div></div>
-          <div class="urow skin" data-skin="card"><div class="pills"><span class="pill green"><svg><use href="#i-clip"/></svg>Passed</span><span class="pill red">1130 Hrs Overdue</span></div><div class="mid">1,229.9 HRS · 4k…</div><span class="nm red">ALA…</span><svg class="cat"><use href="#i-exc"/></svg><div class="rail red"></div></div>
+          <div class="urow skin" data-skin="card"><div class="pills"><span class="pill green"><svg><use href="#i-clip"/></svg>Passed</span><span class="dpill r auto"><svg><use href="#i-alert"/></svg>1130 Hrs Overdue</span></div><div class="mid">1,229.9 HRS · 4k…</div><span class="nm red">ALA…</span><svg class="cat"><use href="#i-exc"/></svg><div class="rail red"></div></div>
           <div class="urow skin" data-skin="card"><div class="pills"><span class="pill green"><svg><use href="#i-clip"/></svg>Passed</span><span class="pill green">100 Hrs Remaining</span></div><div class="mid">0 HRS · Trailer 3k</div><span class="nm yellow">AUSTIN</span><svg class="cat"><use href="#i-cube"/></svg><div class="rail yellow"></div></div>
           <div class="urow skin" data-skin="card"><div class="pills"><span class="pill red"><svg><use href="#i-clip"/></svg>Failed</span><span class="pill red"><svg><use href="#i-wrench"/></svg>Part Needed?</span></div><div class="mid">80 HRS · Buggy</div><span class="nm pink">BABA</span><svg class="cat"><use href="#i-exc"/></svg><div class="rail red"></div></div>
           <div class="urow skin" data-skin="card"><div class="pills"><span class="pill green"><svg><use href="#i-clip"/></svg>On Rent</span><span class="pill gout">No Orders</span></div><div class="mid">1,176.7 HRS · 4k E…</div><span class="nm green">BA…</span><svg class="cat"><use href="#i-exc"/></svg><div class="rail green"></div></div>
           <div class="urow skin" data-skin="card"><div class="pills"><span class="pill yellow"><svg><use href="#i-clip"/></svg>Not Ready</span><span class="pill gout">No Orders</span></div><div class="mid">0 HRS</div><span class="nm yellow">BEACON</span><svg class="cat"><use href="#i-exc"/></svg><div class="rail yellow"></div></div>
-          <div class="urow anchored skin" data-skin="card"><div class="pills"><span class="pill red"><svg><use href="#i-clip"/></svg>Failed</span><span class="pill red">436 Hrs Overdue</span></div><div class="mid">536.4 HRS · Skid Ste…</div><span class="nm pink">B…</span><svg class="cat"><use href="#i-exc"/></svg><div class="rail red"></div></div>
+          <div class="urow anchored skin" data-skin="card"><div class="pills"><span class="pill red"><svg><use href="#i-clip"/></svg>Failed</span><span class="dpill r auto">436 Hrs Overdue</span></div><div class="mid">536.4 HRS · Skid Ste…</div><span class="nm pink">B…</span><svg class="cat"><use href="#i-exc"/></svg><div class="rail red"></div></div>
           <div class="urow skin" data-skin="card"><div class="pills"><span class="pill gout"><svg><use href="#i-clip"/></svg>No Show</span><span class="pill red"><svg><use href="#i-wrench"/></svg>Part Needed?</span></div><div class="mid">450.9 HRS…</div><span class="nm yellow">BOBA FETT…</span><svg class="cat"><use href="#i-exc"/></svg><div class="rail yellow"></div></div>
           <div class="urow skin" data-skin="card"><div class="pills"><span class="pill green"><svg><use href="#i-clip"/></svg>Passed</span><span class="pill gout">No Orders</span></div><div class="mid">1,200 HRS · 12…</div><span class="nm green">BOUDI…</span><svg class="cat"><use href="#i-exc"/></svg><div class="rail green"></div></div>
           <div class="urow skin" data-skin="card"><div class="pills"><span class="pill green"><svg><use href="#i-clip"/></svg>On Rent</span><span class="pill red"><svg><use href="#i-wrench"/></svg>Part Needed</span></div><div class="mid">2,335.3 H…</div><span class="nm pink">BRASS MON…</span><svg class="cat"><use href="#i-exc"/></svg><div class="rail red"></div></div>
@@ -385,6 +397,11 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid 
       <div class="cpanels">
         <div class="cpanel skin" data-skin="subpanel"><span class="t-label">Membership</span><span class="dd">N/A ▾</span><button class="btn primary b"><svg class="bi"><use href="#i-check"/></svg>Saddle Up — Enroll</button></div>
         <div class="cpanel skin" data-skin="subpanel"><span class="t-label">Used Sales</span><span class="dd">N/A ▾</span><button class="btn add"><svg class="bi"><use href="#i-plus"/></svg>Category</button></div>
+      </div>
+      <div class="duestrip"><span class="t-label">Attention</span>
+        <span class="dpill r auto"><svg><use href="#i-alert"/></svg>Payment Due · Today</span>
+        <span class="dpill y auto"><svg><use href="#i-cal"/></svg>Service · Jul 2</span>
+        <span class="dpill r auto"><svg><use href="#i-bell"/></svg>Follow-up · Today</span>
       </div>
       <div class="actbar"><span class="t-section">Actions</span><button class="btn add"><svg class="bi"><use href="#i-plus"/></svg>Log Actions</button><button class="btn add"><svg class="bi"><use href="#i-plus"/></svg>Schedule Actions</button><span class="t-section">Schedule</span></div>
       <div class="chartcard skin" data-skin="subpanel">
@@ -435,9 +452,9 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid 
 
         <div class="rbsec"><h3>Motion by date-distance</h3>
           <div class="rbgrid" id="motionDemo">
-            <button class="btn primary r mv fl"><svg class="bi"><use href="#i-alert"/></svg>Due</button>
-            <button class="btn secondary y mv fl"><svg class="bi"><use href="#i-alert"/></svg>Due</button>
-            <button class="btn ghost r mv fl"><svg class="bi"><use href="#i-alert"/></svg><span class="u">Due</span></button>
+            <button class="btn primary r auto mv fl"><svg class="bi"><use href="#i-alert"/></svg>Due</button>
+            <button class="btn secondary y auto mv fl"><svg class="bi"><use href="#i-alert"/></svg>Due</button>
+            <button class="btn ghost r auto mv fl"><svg class="bi"><use href="#i-alert"/></svg><span class="u">Due</span></button>
           </div>
           <div class="t-small" style="margin-top:8px">Drive these with the console <b>Urgency</b> control: <b>Today</b> = stripes scroll + glow-behind · <b>±1&nbsp;day</b> = scroll only · <b>3+&nbsp;days</b> = static. (Stamped-glow / inner-lining / underline still show on hover.)</div>
         </div>
@@ -522,7 +539,7 @@ function applyView(){document.querySelectorAll('.screen').forEach(s=>s.classList
   document.querySelectorAll('.nav .n').forEach(n=>{const m=n.dataset.nav;n.classList.toggle('act',!!m&&m===S.view);
     if(m===S.view){const lbl={units:'Units',customer:'Customers',rulebook:'Kit'}[S.view];n.innerHTML='<svg><use href="#i-'+(S.view==='customer'?'person':S.view==='rulebook'?'grid':'tag')+'"/></svg>'+lbl;}
     else if(m){n.innerHTML='<svg><use href="#i-'+(m==='customer'?'person':m==='rulebook'?'grid':'tag')+'"/></svg>';}});}
-function applyUrgency(){const u=S.urgency;document.querySelectorAll('#motionDemo .btn').forEach(b=>{b.classList.toggle('mv',u!=='far');b.classList.toggle('fl',u==='today');});
+function applyUrgency(){const u=S.urgency;document.querySelectorAll('.auto').forEach(b=>{b.classList.toggle('mv',u!=='far');b.classList.toggle('fl',u==='today');});
   document.querySelectorAll('#urgSeg button').forEach(x=>x.classList.toggle('on',x.dataset.u===u));
   document.querySelectorAll('.mv,.fl').forEach(e=>e.style.animationPlayState=S.motion?'running':'paused');}
 function applyAll(){applyGlobals();SURFS.forEach(applySurface);applyView();applyUrgency();}
