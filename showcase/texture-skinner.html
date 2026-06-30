@@ -5,463 +5,533 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>Texture Skinner — Rental Wrangler (showcase)</title>
 <!--
-  STANDALONE SHOWCASE — not part of the live app.
-  Nothing in index.html / app.js / style.css references this file; it is opened
-  directly and cannot affect the live app or the staging mirror. It mirrors the
-  yard data-plate tokens so it reads as the same system, but is fully self-contained.
-  Textures live in ../assets/textures/ (committed in this branch).
+  STANDALONE SHOWCASE — not part of the live app. Nothing in index.html/app.js/
+  style.css references it; it can't affect the live app or staging. Phone replica
+  of the real Units + Customer screens + a Component Rulebook (buttons / ghost
+  links / type / motion per Jac's spec sketch). Customer data is FICTIONAL (PII
+  guard). Textures load from ../assets/textures/.
 -->
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Saira+Condensed:wght@600;700;800&display=swap" rel="stylesheet" />
 <style>
-/* ============================================================= TOKENS ===== */
+/* ===================================================== TOKENS ===== */
 :root{
   --bg:#0b0c0f; --bg-2:#101216; --panel:#15171c; --panel-2:#1b1e24;
   --card:#14161b; --card-head:#191c22; --line:#262a31; --line-soft:#1f232a;
   --txt:#e9edf4; --txt-2:#a7afbc; --txt-3:#6b7480; --track:#22262e;
   --accent:#ff7a1a; --accent-soft:rgba(255,122,26,.14); --accent-line:rgba(255,122,26,.5); --on-orange:#1a1205;
-  --green:#34d399; --yellow:#f5c542; --red:#ff4242; --blue:#5b9dff; --purple:#b07cf5; --gray:#8b94a3; --brown:#c79366;
-  --green-bg:rgba(52,211,153,.14); --yellow-bg:rgba(245,197,66,.14); --red-bg:rgba(255,66,66,.18);
-  --blue-bg:rgba(91,157,255,.14); --purple-bg:rgba(176,124,245,.14); --gray-bg:rgba(139,148,163,.14);
+  --green:#34d399; --yellow:#f5c542; --red:#ff4242; --blue:#5b9dff; --purple:#b07cf5; --gray:#8b94a3;
+  --green-bg:rgba(52,211,153,.13); --yellow-bg:rgba(245,197,66,.13); --red-bg:rgba(255,66,66,.15);
+  --blue-bg:rgba(91,157,255,.13); --purple-bg:rgba(176,124,245,.13); --gray-bg:rgba(139,148,163,.12);
   --radius:14px; --chip-radius:11px;
   --shadow:0 18px 50px -24px rgba(0,0,0,.75); --chip-shadow:0 6px 16px -10px rgba(0,0,0,.7);
-  --steel-1:#1b222c; --steel-2:#0d1116; --rivet:#4a525e; --rivet-pit:#0b0f14; --tan:#c2925a; --tan-deep:#8a5a2b;
-  --add-blue:#18b6ff;
+  --steel-1:#1b222c; --steel-2:#0d1116; --rivet:#4a525e; --rivet-pit:#0b0f14; --tan:#c2925a;
   --font:"Geist",-apple-system,"Segoe UI",sans-serif;
   --stamp:"Saira Condensed",system-ui,sans-serif;
-  /* live skin knobs (set by JS) */
-  --tile:320px; --scrim:.55; --g:0; --c:1; --tint:0;
+  --tile:320px; --scrim:.5; --g:0; --c:1; --tint:0;
 }
 [data-theme="light"]{
-  --bg:#eef1f6; --bg-2:#e6eaf1; --panel:#fff; --panel-2:#eef1f6;
-  --card:#fff; --card-head:#eef1f6; --line:#cfd6e1; --line-soft:#e1e6ee;
-  --txt:#141821; --txt-2:#414b5a; --txt-3:#69727f; --track:#dde2ea;
-  --on-orange:#2a1400;
-  --green:#0c8f5f; --yellow:#956f00; --red:#d52a2a; --blue:#1864d6; --purple:#7a37c9; --gray:#566072; --brown:#855526;
-  --green-bg:rgba(12,143,95,.13); --yellow-bg:rgba(149,111,0,.14); --red-bg:rgba(213,42,42,.13);
-  --blue-bg:rgba(24,100,214,.12); --purple-bg:rgba(122,55,201,.12); --gray-bg:rgba(86,96,114,.12);
-  --steel-1:#dfe5ee; --steel-2:#eef1f6; --rivet:#9aa3b1; --rivet-pit:#c2c9d4; --tan:#855526; --tan-deep:#6a4420;
-  --shadow:0 18px 50px -24px rgba(40,55,80,.35); --chip-shadow:0 6px 16px -10px rgba(40,55,80,.3);
+  --bg:#eef1f6; --bg-2:#e6eaf1; --panel:#fff; --panel-2:#eef1f6; --card:#fff; --card-head:#eef1f6;
+  --line:#cfd6e1; --line-soft:#e1e6ee; --txt:#141821; --txt-2:#414b5a; --txt-3:#69727f; --track:#dde2ea; --on-orange:#2a1400;
+  --green:#0c8f5f; --yellow:#956f00; --red:#d52a2a; --blue:#1864d6; --purple:#7a37c9; --gray:#566072;
+  --green-bg:rgba(12,143,95,.12); --yellow-bg:rgba(149,111,0,.13); --red-bg:rgba(213,42,42,.12);
+  --blue-bg:rgba(24,100,214,.11); --purple-bg:rgba(122,55,201,.11); --gray-bg:rgba(86,96,114,.1);
+  --steel-1:#dfe5ee; --steel-2:#eef1f6; --rivet:#9aa3b1; --rivet-pit:#c2c9d4; --tan:#855526;
 }
 *{box-sizing:border-box}
 html,body{margin:0;height:100%}
-body{
-  font-family:var(--font); color:var(--txt); background:var(--bg-2);
-  font-size:13px; line-height:1.4; -webkit-font-smoothing:antialiased;
-  display:grid; grid-template-columns:1fr 340px; height:100dvh; overflow:hidden;
-}
-.stamp{font-family:var(--stamp); text-transform:uppercase; letter-spacing:1.6px; font-weight:700}
+body{font-family:var(--font); color:var(--txt); background:#06070a; font-size:13px; line-height:1.4;
+  -webkit-font-smoothing:antialiased; display:grid; grid-template-columns:1fr 340px; height:100dvh; overflow:hidden}
 
-/* ============================================================ SKIN LAYER === */
+/* ===================================================== SKIN LAYER ===== */
 .skin{position:relative; isolation:isolate}
 .skin>*{position:relative; z-index:1}
-.skin.has-tex::before{
-  content:""; position:absolute; inset:0; z-index:0; pointer-events:none;
-  background-image:var(--tex,none); background-size:var(--bgsize,320px);
-  background-repeat:var(--bgrep,repeat); background-position:center;
-  filter:grayscale(var(--g)) contrast(var(--c));
-}
-.skin.has-tex::after{
-  content:""; position:absolute; inset:0; z-index:0; pointer-events:none;
-  background:
-    linear-gradient(0deg, rgba(255,122,26,var(--tint)), rgba(255,122,26,var(--tint))),
-    linear-gradient(180deg, rgba(8,10,14,var(--scrim)), rgba(8,10,14, calc(var(--scrim) + .14)));
-}
-[data-theme="light"] .skin.has-tex::after{
-  background:
-    linear-gradient(0deg, rgba(255,122,26,var(--tint)), rgba(255,122,26,var(--tint))),
-    linear-gradient(180deg, rgba(238,241,246,var(--scrim)), rgba(238,241,246, calc(var(--scrim) + .14)));
-}
+.skin.has-tex::before{content:"";position:absolute;inset:0;z-index:0;pointer-events:none;
+  background-image:var(--tex,none);background-size:var(--bgsize,320px);background-repeat:var(--bgrep,repeat);
+  background-position:center;filter:grayscale(var(--g)) contrast(var(--c))}
+.skin.has-tex::after{content:"";position:absolute;inset:0;z-index:0;pointer-events:none;
+  background:linear-gradient(0deg,rgba(255,122,26,var(--tint)),rgba(255,122,26,var(--tint))),
+    linear-gradient(180deg,rgba(8,10,14,var(--scrim)),rgba(8,10,14,calc(var(--scrim) + .14)))}
+[data-theme="light"] .skin.has-tex::after{background:
+  linear-gradient(0deg,rgba(255,122,26,var(--tint)),rgba(255,122,26,var(--tint))),
+  linear-gradient(180deg,rgba(238,241,246,var(--scrim)),rgba(238,241,246,calc(var(--scrim) + .14)))}
 
-/* ================================================================ STAGE ==== */
-.stage{overflow:auto; padding:0; background:var(--bg)}
-.stage::-webkit-scrollbar{width:10px} .stage::-webkit-scrollbar-thumb{background:var(--line); border-radius:8px}
+/* ===================================================== PHONE FRAME ===== */
+.phonewrap{display:grid;place-items:center;overflow:auto;padding:22px;background:
+  radial-gradient(120% 80% at 50% 0,#12151b,#06070a)}
+.phone{width:412px;max-width:100%;height:872px;max-height:calc(100dvh - 44px);border-radius:42px;
+  border:1px solid #20242c;background:var(--bg);box-shadow:0 40px 90px -30px #000, inset 0 0 0 6px #0a0c10;
+  overflow:hidden;display:flex;flex-direction:column;position:relative}
+.statusbar{display:flex;justify-content:space-between;align-items:center;padding:12px 26px 4px;font-weight:600;color:var(--txt);flex:0 0 auto}
+.statusbar .sig{display:flex;gap:7px;align-items:center;font-size:13px}
+.batt{display:inline-flex;align-items:center;gap:3px}.batt b{display:inline-block;width:22px;height:12px;border:1px solid var(--txt-2);border-radius:3px;position:relative}
+.batt b::after{content:"";position:absolute;inset:1px;right:5px;background:var(--txt);border-radius:1px}
+.scroller{flex:1;overflow:auto;-webkit-overflow-scrolling:touch}
+.scroller::-webkit-scrollbar{width:0}
 
-/* header / app bar */
-.appbar{
-  display:flex; align-items:center; gap:14px; padding:13px 18px;
-  background:linear-gradient(180deg,var(--steel-1),var(--steel-2));
-  border-bottom:1px solid var(--line); position:sticky; top:0;
-}
-.wordmark{font-family:var(--stamp); text-transform:uppercase; letter-spacing:2px; font-weight:800; font-size:18px; color:var(--txt); display:flex; align-items:center; gap:8px}
-.wordmark .star{color:var(--tan); font-size:13px; transform:translateY(-1px)}
-.nav{display:flex; gap:6px; margin-left:8px}
-.tab{font-family:var(--stamp); text-transform:uppercase; letter-spacing:1.4px; font-weight:700; font-size:12px;
-  color:var(--txt-2); padding:7px 13px; border-radius:999px; border:1px solid transparent; cursor:pointer; background:none}
-.tab.sel{background:var(--accent); color:var(--on-orange)}
-.tab:not(.sel):hover{color:var(--txt); background:var(--accent-soft)}
-.appbar .spacer{flex:1}
+/* topbar */
+.topbar{display:flex;gap:8px;padding:10px 12px;overflow-x:auto}
+.tbtn{flex:0 0 auto;height:44px;min-width:44px;padding:0 12px;border-radius:13px;border:1px solid var(--line);
+  background:linear-gradient(180deg,var(--steel-1),var(--steel-2));display:flex;align-items:center;gap:7px;color:var(--txt-2);position:relative}
+.tbtn .ic{width:20px;height:20px;display:block}
+.tbtn b{font-family:var(--font);font-weight:600;color:var(--txt);font-size:14px}
+.tbtn .bdg{position:absolute;top:-5px;right:-5px;background:var(--accent);color:var(--on-orange);font-size:10px;font-weight:800;
+  border-radius:999px;min-width:18px;height:18px;display:grid;place-items:center;padding:0 4px;font-family:var(--stamp)}
+/* brand row */
+.brandrow{display:flex;align-items:center;gap:12px;padding:6px 14px 10px;position:relative;overflow:hidden}
+.logo{width:64px;height:64px;border-radius:16px;background:linear-gradient(150deg,#ffb259,var(--accent));
+  display:grid;place-items:center;flex:0 0 auto;box-shadow:0 6px 16px -6px var(--accent)}
+.logo svg{width:46px;height:46px;color:#1a1205}
+.blobs{position:absolute;inset:0 0 0 80px;z-index:0;filter:blur(26px);opacity:.5;background:
+  radial-gradient(circle at 18% 50%,#7a6a14,transparent 40%),radial-gradient(circle at 42% 60%,#1f6b3a,transparent 38%),
+  radial-gradient(circle at 70% 45%,#16414f,transparent 40%),radial-gradient(circle at 90% 55%,#3a2a10,transparent 40%)}
+.coming{position:relative;z-index:1;margin-left:auto;margin-right:14px;font-family:var(--stamp);text-transform:uppercase;
+  letter-spacing:2px;font-weight:800;color:var(--txt);font-size:15px}
+.coming b{color:var(--yellow)}
+/* search everything */
+.search{margin:2px 12px 10px;height:54px;border-radius:16px;border:1px solid var(--line);
+  background:var(--panel);display:flex;align-items:center;gap:10px;padding:0 16px;color:var(--txt-3);font-size:17px}
+.search svg{width:22px;height:22px}
 
-/* sections */
-.wrap{padding:18px; display:flex; flex-direction:column; gap:18px}
-.section{
-  border:1px solid var(--line); border-radius:var(--radius); padding:14px;
-  background:var(--panel);
-}
-.section>.sec-head{font-family:var(--stamp); text-transform:uppercase; letter-spacing:1.8px; font-weight:700;
-  font-size:12px; color:var(--txt-2); text-align:center; margin:2px 0 12px}
-.grid3{display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:12px}
+/* ===================================================== STATUS PILLS ===== */
+.pill{display:inline-flex;align-items:center;gap:5px;font-family:var(--stamp);text-transform:uppercase;
+  letter-spacing:.6px;font-weight:700;font-size:11px;padding:6px 9px;border-radius:10px;border:1px solid transparent;white-space:nowrap}
+.pill svg{width:13px;height:13px}
+.pill.green{color:var(--green);background:var(--green-bg);border-color:var(--green)}
+.pill.yellow{color:var(--yellow);background:var(--yellow-bg);border-color:var(--yellow)}
+.pill.red{color:var(--red);background:var(--red-bg);border-color:var(--red)}
+.pill.blue{color:var(--blue);background:var(--blue-bg);border-color:var(--blue)}
+.pill.gout{color:var(--green);background:transparent;border-color:var(--green)}
+.pill.plain{color:var(--gray);background:transparent;border-color:var(--line)}
 
-/* data-plate card */
-.card{
-  position:relative; border:1px solid var(--line); border-radius:var(--radius); overflow:hidden;
-  background:linear-gradient(180deg,var(--steel-1),var(--steel-2));
-  box-shadow:var(--shadow); padding:14px 13px 13px;
-}
-.card>.haz{position:absolute; top:0; left:0; right:0; height:5px; z-index:2;
-  background:repeating-linear-gradient(135deg,var(--yellow) 0 13px,#14181d 13px 26px)}
-.card.danger>.haz{background:repeating-linear-gradient(135deg,var(--red) 0 13px,#1a0808 13px 26px)}
-.rivet{position:absolute; width:6px; height:6px; border-radius:50%; z-index:2;
-  background:radial-gradient(circle at 35% 30%,var(--rivet),var(--rivet-pit) 70%);
-  box-shadow:0 0 0 1px rgba(0,0,0,.5), inset 0 0 1px rgba(255,255,255,.4)}
-.rivet.tl{top:11px;left:11px} .rivet.tr{top:11px;right:11px} .rivet.bl{bottom:11px;left:11px} .rivet.br{bottom:11px;right:11px}
-.card .title{display:flex; align-items:center; gap:8px; margin:4px 4px 11px}
-.c-titlecard{display:inline-flex; align-items:center; gap:7px; background:var(--card);
-  border:1px solid var(--accent-line); border-radius:var(--chip-radius); padding:6px 10px; font-weight:700; color:var(--txt)}
-.c-titlecard .ic{color:var(--accent)}
-/* calm milled-recess well — DATA sits here, never on raw texture */
-.well{background:rgba(11,15,24,.42); border:1px solid rgba(150,178,222,.16); border-radius:10px; padding:9px 11px;
-  box-shadow:inset 0 1px 0 rgba(150,178,222,.10), 0 2px 8px -3px rgba(0,0,0,.55)}
-[data-theme="light"] .well{background:rgba(255,255,255,.6); border-color:rgba(40,60,90,.12); box-shadow:inset 0 1px 0 rgba(255,255,255,.6)}
-.kv{display:flex; justify-content:space-between; gap:10px; padding:3px 0}
-.kv .k{color:var(--txt-3); font-family:var(--stamp); text-transform:uppercase; letter-spacing:1.2px; font-size:11px}
-.kv .v{color:var(--txt); font-weight:600} .kv .v.derived{font-style:italic; color:var(--txt-2); font-weight:500}
-.cardrow{display:flex; flex-wrap:wrap; gap:7px; align-items:center; margin-top:10px}
+/* ===================================================== BUTTON RULEBOOK ===== */
+/* color carrier: --bc drives text/border/glow per status */
+.btn{--bc:var(--green);position:relative;display:inline-flex;align-items:center;gap:7px;cursor:pointer;
+  font-family:var(--stamp);text-transform:uppercase;letter-spacing:1px;font-weight:800;font-size:13px;
+  padding:11px 16px;border-radius:11px;border:1px solid transparent;background:transparent;color:var(--bc);transition:box-shadow .12s ease-out}
+.btn.r{--bc:var(--red)} .btn.y{--bc:var(--yellow)} .btn.g{--bc:var(--green)} .btn.b{--bc:var(--blue)} .btn.o{--bc:var(--accent)}
+/* PRIMARY — solid fill, light/dark ink (green/blue/orange) ; red/yellow -> hazard-striped fill */
+.btn.primary{color:#fff;border:none;background:var(--bc);box-shadow:inset 0 1px 0 rgba(255,255,255,.35)}
+.btn.primary.o{color:var(--on-orange);background:linear-gradient(180deg,#ff9038,var(--accent))}
+.btn.primary.b{color:#fff;background:linear-gradient(180deg,#7db0ff,var(--blue))}
+.btn.primary.g{color:#06281c;background:linear-gradient(180deg,#5fe3b6,var(--green))}
+.btn.primary.r{color:#fff;background:repeating-linear-gradient(135deg,var(--red) 0 13px,#1a0808 13px 26px)}
+.btn.primary.y{color:#1a1205;background:repeating-linear-gradient(135deg,var(--yellow) 0 13px,#14181d 13px 26px)}
+.btn.primary.r,.btn.primary.y{text-shadow:0 1px 2px rgba(0,0,0,.55)}
+.btn.primary:hover{box-shadow:0 0 0 1px var(--bc),0 0 18px -2px var(--bc)}      /* hover = stamped glow */
+/* SECONDARY — outline + colored ; red/yellow border becomes striped */
+.btn.secondary{border:1px solid var(--bc);color:var(--bc);background:transparent}
+.btn.secondary.r{border-color:transparent;background:
+  linear-gradient(var(--bg),var(--bg)) padding-box,
+  repeating-linear-gradient(135deg,var(--red) 0 8px,#1a0808 8px 16px) border-box;border:2px solid transparent}
+.btn.secondary.y{border-color:transparent;background:
+  linear-gradient(var(--bg),var(--bg)) padding-box,
+  repeating-linear-gradient(135deg,var(--yellow) 0 8px,#14181d 8px 16px) border-box;border:2px solid transparent}
+.btn.secondary:hover{box-shadow:inset 0 0 0 2px var(--bc)}                        /* hover = inner lining */
+/* GHOST — leading dot + bold colored text ; hover underline ; red/yellow striped underline */
+.btn.ghost{padding:9px 6px;background:transparent;border:none;color:var(--bc)}
+.btn.ghost::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--bc);flex:0 0 auto}
+.btn.ghost .u{position:relative;padding-bottom:2px}
+.btn.ghost:hover .u{box-shadow:inset 0 -2px 0 var(--bc)}
+.btn.ghost.r .u,.btn.ghost.y .u{box-shadow:none;background-repeat:repeat-x;background-position:0 100%;background-size:12px 3px;padding-bottom:4px}
+.btn.ghost.r .u{background-image:repeating-linear-gradient(135deg,var(--red) 0 4px,transparent 4px 8px)}
+.btn.ghost.y .u{background-image:repeating-linear-gradient(135deg,var(--yellow) 0 4px,transparent 4px 8px)}
+/* DISABLED — checkerboard */
+.btn.disabled{cursor:not-allowed;color:var(--txt-3);border:none;
+  background:conic-gradient(#2a2f37 90deg,#171a20 90deg 180deg,#2a2f37 180deg 270deg,#171a20 270deg) 0 0/14px 14px}
+.btn.disabled:hover{background-position:7px 7px}                                  /* hover = checker swapped */
+/* dashed add (the +Category / +Log Actions style) */
+.btn.add{border:1.5px dashed var(--blue);color:var(--blue);background:transparent;border-radius:12px;
+  font-family:var(--font);text-transform:none;letter-spacing:0;font-weight:600;font-size:14px}
+.btn.add::before{content:"";display:none}
 
-/* pills */
-.pill{display:inline-flex; align-items:center; gap:6px; font-family:var(--stamp); text-transform:uppercase;
-  letter-spacing:1px; font-weight:700; font-size:11px; padding:5px 11px; border-radius:999px; border:1px solid transparent}
-.pill .dot{width:7px; height:7px; border-radius:50%}
-.pill.green{color:var(--green); background:var(--green-bg); border-color:var(--green)} .pill.green .dot{background:var(--green)}
-.pill.yellow{color:var(--yellow); background:var(--yellow-bg); border-color:var(--yellow)} .pill.yellow .dot{background:var(--yellow)}
-.pill.red{color:var(--red); background:var(--red-bg); border-color:var(--red)} .pill.red .dot{background:var(--red)}
-.pill.blue{color:var(--blue); background:var(--blue-bg); border-color:var(--blue)} .pill.blue .dot{background:var(--blue)}
-.pill.purple{color:var(--purple); background:var(--purple-bg); border-color:var(--purple)} .pill.purple .dot{background:var(--purple)}
-.badge{display:inline-flex; align-items:center; font-family:var(--stamp); text-transform:uppercase; letter-spacing:1px;
-  font-weight:700; font-size:11px; padding:5px 10px; border-radius:999px; color:var(--gray); background:var(--gray-bg); border:1px solid var(--line)}
-.refpill{display:inline-flex; align-items:center; gap:6px; font-weight:600; font-size:12px; padding:5px 11px; border-radius:999px;
-  color:var(--accent); background:transparent; border:1px solid var(--accent-line); cursor:pointer}
-.refpill .x{opacity:.6; font-weight:700}
+/* MOTION — moving = stripes scroll (barber-pole) ; flashing = glow BEHIND the button */
+@keyframes barber{to{background-position:26px 0}}
+@keyframes barber8{to{background-position:16px 0}}
+@keyframes ulmove{to{background-position:12px 100%}}
+@keyframes backglow{0%,100%{box-shadow:0 0 0 0 transparent}50%{box-shadow:0 0 22px 3px var(--bc)}}
+.mv.primary.r,.mv.primary.y{animation:barber .7s linear infinite}
+.mv.secondary.r,.mv.secondary.y{animation:barber8 .7s linear infinite}
+.mv.ghost.r .u,.mv.ghost.y .u{animation:ulmove .7s linear infinite}
+.fl{animation:backglow 1.1s ease-in-out infinite}
+.mv.fl.primary.r,.mv.fl.primary.y{animation:barber .7s linear infinite, backglow 1.1s ease-in-out infinite}
+.mv.fl.secondary.r,.mv.fl.secondary.y{animation:barber8 .7s linear infinite, backglow 1.1s ease-in-out infinite}
 
-/* buttons */
-.btnrow{display:flex; flex-wrap:wrap; gap:10px; align-items:center}
-.ignite{position:relative; overflow:hidden; font-family:var(--stamp); text-transform:uppercase; letter-spacing:1px; font-weight:800;
-  font-size:13px; color:var(--on-orange); border:none; cursor:pointer; padding:11px 18px; border-radius:11px;
-  background:linear-gradient(180deg,#ff9038,var(--accent));
-  box-shadow:0 6px 16px -6px var(--accent), inset 0 1px 0 rgba(255,255,255,.4)}
-.ignite.skin.has-tex::after{background:
-  linear-gradient(0deg, rgba(255,122,26,calc(.45 + var(--tint))), rgba(255,122,26,calc(.30 + var(--tint))));mix-blend-mode:normal}
-.ignite .lbl{position:relative; z-index:2}
-.armed{font-family:var(--stamp); text-transform:uppercase; letter-spacing:1px; font-weight:800; font-size:13px;
-  background:transparent; color:var(--accent); border:1px solid var(--accent); padding:10px 17px; border-radius:11px; cursor:pointer}
-.ghost{font-family:var(--stamp); text-transform:uppercase; letter-spacing:1px; font-weight:700; font-size:12px;
-  background:transparent; color:var(--txt-2); border:1px solid var(--line); padding:9px 15px; border-radius:11px; cursor:pointer}
-.ghost:hover{color:var(--txt); border-color:var(--txt-3)}
-.act{font-family:var(--stamp); text-transform:uppercase; letter-spacing:1px; font-weight:700; font-size:12px;
-  padding:9px 14px; border-radius:11px; border:1px solid; cursor:pointer; background:transparent}
-.act.commit{color:var(--blue); border-color:var(--blue)} .act.money{color:var(--green); border-color:var(--green)}
-.act.danger{color:var(--red); border-color:var(--red)}
+/* ===================================================== TYPE SCALE ===== */
+.t-title{font-family:var(--stamp);text-transform:uppercase;letter-spacing:1px;font-weight:800;font-size:26px;color:var(--txt);line-height:1}
+.t-section{font-family:var(--stamp);text-transform:uppercase;letter-spacing:1.6px;font-weight:700;font-size:16px;color:var(--txt-2)}
+.t-label{font-family:var(--stamp);text-transform:uppercase;letter-spacing:1.4px;font-weight:700;font-size:11px;color:var(--txt-3)}
+.t-body{font-family:var(--font);font-weight:500;font-size:14px;color:var(--txt)}
+.t-small{font-family:var(--font);font-weight:400;font-size:11.5px;color:var(--txt-3)}
 
-/* KPI ring */
-.kpiwrap{display:flex; gap:16px; align-items:center; flex-wrap:wrap}
-.ring{position:relative; width:128px; height:128px; border-radius:50%; display:grid; place-items:center;
-  border:1px solid var(--line); background:linear-gradient(180deg,var(--steel-1),var(--steel-2))}
-.ring svg{position:absolute; inset:0; transform:rotate(-90deg)} .ring .trk{fill:none; stroke:var(--track); stroke-width:9}
-.ring .arc{fill:none; stroke:var(--accent); stroke-width:9; stroke-linecap:round;
-  stroke-dasharray:339.292; stroke-dashoffset:339.292; transition:stroke-dashoffset .5s ease-out}
-.ring .hub{position:relative; z-index:2; text-align:center}
-.ring .hub b{font-family:var(--stamp); font-size:28px; font-weight:800; color:var(--txt); display:block; line-height:1}
-.ring .hub span{font-family:var(--stamp); text-transform:uppercase; letter-spacing:1.4px; font-size:10px; color:var(--txt-3)}
-.kpilabels{display:flex; flex-direction:column; gap:7px}
+/* ===================================================== UNITS SCREEN ===== */
+.screen{display:none;padding:0 0 8px}
+.screen.on{display:block}
+.listpanel{margin:0 10px 10px;border:1px solid var(--line);border-radius:18px;overflow:hidden;
+  background:var(--panel-2)}
+.haz{height:7px;background:repeating-linear-gradient(135deg,var(--yellow) 0 14px,#14181d 14px 28px)}
+.haz.blue{background:repeating-linear-gradient(135deg,var(--blue) 0 14px,#14181d 14px 28px)}
+.rows{padding:10px}
+.urow{position:relative;display:flex;align-items:center;gap:7px;padding:11px 16px 11px 10px;margin-bottom:9px;
+  border:1px solid var(--line);border-radius:13px;background:linear-gradient(180deg,var(--steel-1),var(--steel-2));overflow:hidden}
+.urow.anchored{border-color:var(--accent);box-shadow:0 0 0 1.5px var(--accent-line),0 0 16px -4px var(--accent)}
+.urow .pills{display:flex;gap:6px;flex:0 1 auto;min-width:0}
+.urow .mid{flex:1;min-width:14px;text-align:right;color:var(--txt-2);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.urow .nm{font-family:var(--font);font-weight:700;font-size:13px;margin-left:6px;white-space:nowrap;max-width:74px;overflow:hidden;text-overflow:ellipsis;flex:0 0 auto}
+.urow .nm.green{color:var(--green)}.urow .nm.yellow{color:var(--yellow)}.urow .nm.red{color:#ff7a8a}.urow .nm.pink{color:#f06fb0}
+.urow .cat{width:26px;height:26px;flex:0 0 auto;color:var(--txt-3)}
+.urow .rail{position:absolute;top:6px;bottom:6px;right:0;width:5px;border-radius:6px}
+.rail.green{background:var(--green)}.rail.yellow{background:var(--yellow)}.rail.red{background:var(--red)}
+.botbar{display:flex;gap:9px;align-items:center;padding:10px}
+.botbar .iconbtn{width:52px;height:52px;border-radius:13px;border:1px solid var(--line);
+  background:linear-gradient(180deg,var(--steel-1),var(--steel-2));display:grid;place-items:center;color:var(--txt-2)}
+.botbar .sf{flex:1;height:52px;border-radius:13px;border:1px solid var(--line);background:var(--panel);
+  display:flex;align-items:center;padding:0 14px;color:var(--txt-3);font-size:15px}
+.botbar .sort{height:52px;border-radius:13px;border:1px solid var(--line);background:var(--panel);
+  display:flex;align-items:center;gap:8px;padding:0 12px;color:var(--txt);font-size:14px}
+.botbar .sort .ar{color:var(--accent);font-size:12px;display:flex;flex-direction:column;line-height:.8}
 
-/* footer */
-.foot{position:relative; margin-top:4px; padding:18px; border-top:1px dashed var(--tan);
-  background:linear-gradient(180deg,var(--steel-1),var(--steel-2)); border-radius:0 0 var(--radius) var(--radius)}
-.foot .fr{display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap}
-.foot .brand{font-family:var(--stamp); text-transform:uppercase; letter-spacing:2px; font-weight:800; color:var(--txt); display:flex; align-items:center; gap:7px}
-.foot .brand .star{color:var(--tan)}
-.foot .tag{color:var(--txt-3); font-style:italic}
+/* ===================================================== CUSTOMER SCREEN ===== */
+.chead{position:relative;margin:0 10px;border:1px solid var(--line);border-radius:18px 18px 0 0;overflow:hidden;
+  background:linear-gradient(180deg,var(--steel-1),var(--steel-2))}
+.chead .hrow{display:flex;align-items:center;gap:10px;padding:12px;flex-wrap:wrap}
+.titlechip{display:inline-flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--accent-line);
+  border-radius:12px;padding:8px 12px;font-family:var(--stamp);text-transform:uppercase;letter-spacing:1px;font-weight:800;font-size:15px;color:var(--txt)}
+.titlechip svg{width:16px;height:16px;color:var(--accent)}
+.cmeta{display:flex;flex-direction:column;gap:3px;font-size:13px}
+.cmeta .r1{color:var(--txt);font-weight:600}.cmeta .r2{color:var(--txt-3)}
+.cflags{display:flex;flex-direction:column;gap:4px;font-size:13px;font-weight:600}
+.cflags .blue{color:var(--blue)}.cflags .org{color:var(--accent)}.cflags .red{color:#ff7a8a}
+.gate{margin-left:auto;align-self:stretch;display:flex;align-items:center;padding:0 14px;font-family:var(--stamp);
+  text-transform:uppercase;letter-spacing:1px;font-weight:800;color:var(--yellow);background:var(--yellow-bg);border-left:1px solid var(--yellow)}
+.cpanels{display:grid;grid-template-columns:1fr 1fr;gap:1px;margin:0 10px;background:var(--line);
+  border:1px solid var(--line);border-top:none}
+.cpanel{background:var(--panel-2);padding:14px 12px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:10px}
+.dd{display:inline-flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--line);border-radius:12px;
+  padding:10px 18px;color:var(--txt);font-weight:700;font-size:16px}
+.actbar{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:12px 10px 8px;color:var(--txt-3)}
+.chartcard{position:relative;margin:0 10px 10px;border:1px solid var(--line);border-radius:16px;overflow:hidden;
+  background:linear-gradient(180deg,#13161c,#0d1014)}
+.chartcard .body{padding:14px 12px}
+.newbadge{display:inline-block;font-family:var(--stamp);text-transform:uppercase;letter-spacing:1px;font-weight:800;font-size:12px;
+  color:var(--txt);background:var(--gray-bg);border:1px solid var(--line);border-radius:9px;padding:6px 12px;box-shadow:0 0 14px -4px var(--accent)}
+.legend{float:right;display:flex;gap:12px;font-size:12px;color:var(--txt-2)}
+.legend i{display:inline-block;width:14px;height:3px;border-radius:2px;vertical-align:middle;margin-right:4px}
+.months{display:flex;justify-content:space-between;font-family:var(--stamp);font-size:10px;letter-spacing:1px;color:var(--txt-3);margin-top:4px}
+.cap{color:var(--txt-3);font-size:12.5px;margin-top:10px;font-style:italic}
+.acct{margin:0 10px;border:1px solid var(--line);border-top:none;border-radius:0 0 16px 16px;padding:14px 12px;background:var(--panel-2)}
+.acct .row{display:flex;justify-content:space-between;align-items:center}
 
-/* ============================================================== CONSOLE ==== */
-.console{background:var(--panel); border-left:1px solid var(--line); display:flex; flex-direction:column; overflow:hidden}
-.console .chead{position:relative; padding:14px 16px; border-bottom:1px solid var(--line); background:linear-gradient(180deg,var(--steel-1),var(--steel-2))}
-.console .chead .haz{position:absolute; top:0; left:0; right:0; height:4px;
-  background:repeating-linear-gradient(135deg,var(--yellow) 0 13px,#14181d 13px 26px)}
-.console h1{margin:6px 0 2px; font-family:var(--stamp); text-transform:uppercase; letter-spacing:1.8px; font-weight:800; font-size:15px}
-.console .sub{color:var(--txt-3); font-size:11px}
-.console .body{overflow:auto; padding:14px 16px; display:flex; flex-direction:column; gap:16px}
-.grp .glabel{font-family:var(--stamp); text-transform:uppercase; letter-spacing:1.6px; font-size:11px; color:var(--txt-3); margin-bottom:8px; border-bottom:1px solid var(--line-soft); padding-bottom:5px}
-.field{display:grid; grid-template-columns:84px 1fr; align-items:center; gap:10px; margin-bottom:8px}
-.field>label{font-family:var(--stamp); text-transform:uppercase; letter-spacing:1px; font-size:11px; color:var(--txt-2)}
-select{width:100%; font-family:var(--font); font-size:12px; color:var(--txt); background:var(--card); border:1px solid var(--line);
-  border-radius:9px; padding:7px 8px; cursor:pointer}
-input[type=range]{width:100%; accent-color:var(--accent)}
-.rngrow{display:grid; grid-template-columns:84px 1fr 38px; align-items:center; gap:8px; margin-bottom:9px}
-.rngrow .num{font-variant-numeric:tabular-nums; color:var(--txt-2); font-size:11px; text-align:right}
-.toggles{display:flex; gap:8px; flex-wrap:wrap}
-.tg{font-family:var(--stamp); text-transform:uppercase; letter-spacing:1px; font-size:11px; font-weight:700; padding:7px 11px;
-  border-radius:9px; border:1px solid var(--line); color:var(--txt-2); background:transparent; cursor:pointer}
-.tg.on{color:var(--accent); border-color:var(--accent); background:var(--accent-soft)}
-.cfoot{padding:12px 16px; border-top:1px solid var(--line); display:flex; gap:8px; flex-wrap:wrap; background:var(--panel-2)}
-.cfoot button{flex:1; min-width:84px; font-family:var(--stamp); text-transform:uppercase; letter-spacing:1px; font-weight:700; font-size:12px;
-  padding:9px 10px; border-radius:9px; cursor:pointer; border:1px solid var(--line); background:transparent; color:var(--txt-2)}
-.cfoot button.prime{background:linear-gradient(180deg,#ff9038,var(--accent)); color:var(--on-orange); border:none}
-.cfoot button:hover{color:var(--txt)}
-.savednote{font-size:10.5px; color:var(--txt-3); padding:0 16px 12px; background:var(--panel-2); font-style:italic}
+/* ===================================================== RULEBOOK SCREEN ===== */
+.rb{padding:12px}
+.rbsec{margin-bottom:18px}
+.rbsec h3{margin:0 0 10px;font-family:var(--stamp);text-transform:uppercase;letter-spacing:1.6px;font-size:13px;color:var(--txt-2);
+  border-bottom:1px solid var(--line-soft);padding-bottom:6px}
+.rbgrid{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.rbcol{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;text-align:center}
+.rbcol .h{font-family:var(--stamp);text-transform:uppercase;letter-spacing:1px;font-size:10px;color:var(--txt-3)}
+.typestack{display:flex;flex-direction:column;gap:8px}
+
+/* ===================================================== BOTTOM NAV ===== */
+.nav{display:flex;align-items:center;gap:4px;padding:10px 8px;border-top:1px solid var(--line);
+  background:linear-gradient(180deg,var(--steel-1),var(--steel-2));flex:0 0 auto}
+.nav .n{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--txt-3);padding:6px 2px;border-radius:12px;cursor:pointer;background:none;border:none}
+.nav .n svg{width:24px;height:24px}
+.nav .n.act{flex:2;flex-direction:row;justify-content:center;gap:8px;color:var(--on-orange);
+  background:linear-gradient(180deg,#ff9038,var(--accent));font-family:var(--stamp);text-transform:uppercase;letter-spacing:1px;font-weight:800;font-size:13px}
+.pager{display:flex;gap:0;margin:6px 10px 10px;border:1px solid var(--line);border-radius:14px;overflow:hidden;width:140px}
+.pager button{flex:1;background:var(--panel);border:none;color:var(--txt-2);padding:12px;font-size:18px;cursor:pointer;border-right:1px solid var(--line)}
+.pager button:last-child{border-right:none}
+
+/* ===================================================== CONSOLE ===== */
+.console{background:var(--panel);border-left:1px solid var(--line);display:flex;flex-direction:column;overflow:hidden}
+.console .chd{position:relative;padding:14px 16px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,var(--steel-1),var(--steel-2))}
+.console .chd .haz{position:absolute;top:0;left:0;right:0;height:4px}
+.console h1{margin:6px 0 2px;font-family:var(--stamp);text-transform:uppercase;letter-spacing:1.6px;font-weight:800;font-size:15px}
+.console .sub{color:var(--txt-3);font-size:11px}
+.console .body{overflow:auto;padding:14px 16px;display:flex;flex-direction:column;gap:16px}
+.seg{display:flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.seg button{flex:1;background:transparent;border:none;border-right:1px solid var(--line);color:var(--txt-2);
+  font-family:var(--stamp);text-transform:uppercase;letter-spacing:1px;font-weight:700;font-size:11px;padding:9px 4px;cursor:pointer}
+.seg button:last-child{border-right:none}
+.seg button.on{background:var(--accent);color:var(--on-orange)}
+.glabel{font-family:var(--stamp);text-transform:uppercase;letter-spacing:1.6px;font-size:11px;color:var(--txt-3);margin-bottom:8px;border-bottom:1px solid var(--line-soft);padding-bottom:5px}
+.field{display:grid;grid-template-columns:80px 1fr;align-items:center;gap:10px;margin-bottom:8px}
+.field>label{font-family:var(--stamp);text-transform:uppercase;letter-spacing:1px;font-size:11px;color:var(--txt-2)}
+select{width:100%;font-family:var(--font);font-size:12px;color:var(--txt);background:var(--card);border:1px solid var(--line);border-radius:9px;padding:7px 8px;cursor:pointer}
+.rngrow{display:grid;grid-template-columns:80px 1fr 38px;align-items:center;gap:8px;margin-bottom:9px}
+.rngrow .num{font-variant-numeric:tabular-nums;color:var(--txt-2);font-size:11px;text-align:right}
+input[type=range]{width:100%;accent-color:var(--accent)}
+.toggles{display:flex;gap:8px;flex-wrap:wrap}
+.tg{font-family:var(--stamp);text-transform:uppercase;letter-spacing:1px;font-size:11px;font-weight:700;padding:7px 11px;border-radius:9px;border:1px solid var(--line);color:var(--txt-2);background:transparent;cursor:pointer}
+.tg.on{color:var(--accent);border-color:var(--accent);background:var(--accent-soft)}
+.cfoot{padding:12px 16px;border-top:1px solid var(--line);display:flex;gap:8px;flex-wrap:wrap;background:var(--panel-2)}
+.cfoot button{flex:1;min-width:84px;font-family:var(--stamp);text-transform:uppercase;letter-spacing:1px;font-weight:700;font-size:12px;padding:9px 10px;border-radius:9px;cursor:pointer;border:1px solid var(--line);background:transparent;color:var(--txt-2)}
+.cfoot button.prime{background:linear-gradient(180deg,#ff9038,var(--accent));color:var(--on-orange);border:none}
+.savednote{font-size:10.5px;color:var(--txt-3);padding:0 16px 12px;background:var(--panel-2);font-style:italic}
 
 /* a11y + motion */
-a,button,select,input,.tab,.refpill,.tg{outline:none}
-button:focus-visible,select:focus-visible,input:focus-visible,.tab:focus-visible,.refpill:focus-visible,.tg:focus-visible{
-  outline:2px solid var(--accent); outline-offset:2px}
-@media (prefers-reduced-motion:reduce){ .ring .arc{transition:none} }
-
-/* responsive — console drops under the stage on narrow screens */
-@media (max-width:820px){
-  body{grid-template-columns:1fr; grid-template-rows:1fr auto; height:100dvh}
-  .console{border-left:none; border-top:1px solid var(--line); max-height:46dvh}
+button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+@media (prefers-reduced-motion:reduce){.mv,.fl,.mv.fl{animation:none!important}}
+@media (max-width:860px){
+  body{grid-template-columns:1fr;grid-template-rows:1fr auto}
+  .console{border-left:none;border-top:1px solid var(--line);max-height:48dvh}
+  .phonewrap{padding:12px}
 }
 </style>
 </head>
 <body>
 
-<!-- ============================ PREVIEW STAGE (skinnable surface: bg) ===== -->
-<main class="stage skin" data-skin="bg">
-  <!-- header -->
-  <header class="appbar skin" data-skin="header">
-    <div class="wordmark"><span class="star">★</span>RENTAL WRANGLER</div>
-    <nav class="nav">
-      <button class="tab sel">Units</button>
-      <button class="tab">Rentals</button>
-      <button class="tab">Customers</button>
-    </nav>
-    <div class="spacer"></div>
-    <button class="ignite skin" data-skin="button"><span class="lbl">＋ New Rental</span></button>
-  </header>
+<!-- ============ inline icon symbols ============ -->
+<svg width="0" height="0" style="position:absolute"><defs>
+<symbol id="i-bell" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 8a6 6 0 1112 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10 21a2 2 0 004 0"/></symbol>
+<symbol id="i-receipt" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 3h14v18l-3-2-2 2-2-2-2 2-2-2-3 2z"/><path d="M8 8h8M8 12h8"/></symbol>
+<symbol id="i-qr" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h3v3M20 14v7M14 20h3"/></symbol>
+<symbol id="i-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+<symbol id="i-chat" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></symbol>
+<symbol id="i-inbox" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5 5h14l3 7v6a2 2 0 01-2 2H4a2 2 0 01-2-2v-6z"/></symbol>
+<symbol id="i-puck" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="6" y="3" width="12" height="18" rx="6"/><path d="M12 7v4"/></symbol>
+<symbol id="i-cam" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7h4l2-2h6l2 2h4v12H3z"/><circle cx="12" cy="13" r="3.5"/></symbol>
+<symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></symbol>
+<symbol id="i-clip" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4h6v3H9z"/><path d="M8 12l2 2 4-4"/></symbol>
+<symbol id="i-wrench" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 7a4 4 0 00-5 5l-6 6 2 2 6-6a4 4 0 005-5l-2.5 2.5L14 12l-1.5-1.5L15 8z"/></symbol>
+<symbol id="i-exc" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 20h18"/><rect x="3" y="14" width="8" height="5" rx="1"/><path d="M11 16l4-6 3 1"/><path d="M11 12l6-3"/><circle cx="5" cy="20" r="1.4"/><circle cx="9" cy="20" r="1.4"/></symbol>
+<symbol id="i-cube" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 2l9 5v10l-9 5-9-5V7z"/><path d="M12 12l9-5M12 12v10M12 12L3 7"/></symbol>
+<symbol id="i-drop" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3s6 7 6 11a6 6 0 01-12 0c0-4 6-11 6-11z"/></symbol>
+<symbol id="i-tag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12V4h8l9 9-8 8-9-9z"/><circle cx="7.5" cy="7.5" r="1.5"/></symbol>
+<symbol id="i-hammer" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 6l4 4-7 7-4-4z"/><path d="M11 9L7 5 4 8l4 4"/><path d="M11 13l-6 6"/></symbol>
+<symbol id="i-cal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 9h18M8 3v4M16 3v4"/></symbol>
+<symbol id="i-grid" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></symbol>
+<symbol id="i-person" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></symbol>
+<symbol id="i-gear" viewBox="0 0 24 24" fill="currentColor"><path d="M12 8a4 4 0 100 8 4 4 0 000-8zm9 4a7 7 0 00-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 00-2-1.2l-.4-2.6H10l-.4 2.6a7 7 0 00-2 1.2l-2.4-1-2 3.4 2 1.6A7 7 0 003 12c0 .4 0 .8.1 1.2l-2 1.6 2 3.4 2.4-1a7 7 0 002 1.2l.4 2.6h4l.4-2.6a7 7 0 002-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2z"/></symbol>
+<symbol id="i-bars" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 20V10M10 20V4M16 20v-8M22 20H2"/></symbol>
+</defs></svg>
 
-  <div class="wrap">
-    <!-- KPI section -->
-    <section class="section skin" data-skin="section">
-      <div class="sec-head">Yard Dashboard</div>
-      <div class="kpiwrap">
-        <div class="ring skin" data-skin="ring">
-          <svg viewBox="0 0 128 128"><circle class="trk" cx="64" cy="64" r="54"/><circle class="arc" id="arc" cx="64" cy="64" r="54"/></svg>
-          <div class="hub"><b id="ringPct">68%</b><span>Utilized</span></div>
-        </div>
-        <div class="kpilabels">
-          <div class="well"><div class="kv"><span class="k">Revenue</span><span class="v">$101,400</span></div></div>
-          <div class="well"><div class="kv"><span class="k">Goal</span><span class="v derived">$150,000</span></div></div>
-          <div class="well"><div class="kv"><span class="k">Fleet Out</span><span class="v">17 / 25</span></div></div>
-        </div>
-      </div>
-    </section>
+<!-- ===================================================== PHONE ===== -->
+<div class="phonewrap">
+<div class="phone skin" data-skin="bg" id="phone">
+  <div class="statusbar"><span>10:28</span><span class="sig">●●●● 5G <span class="batt"><b></b></span></span></div>
+  <div class="scroller">
 
-    <!-- cards section -->
-    <section class="section skin" data-skin="section">
-      <div class="sec-head">Round-Up — Active Yard</div>
-      <div class="grid3">
-        <!-- card 1 -->
-        <article class="card skin" data-skin="card">
-          <i class="haz"></i><span class="rivet tl"></span><span class="rivet tr"></span><span class="rivet bl"></span><span class="rivet br"></span>
-          <div class="title"><span class="c-titlecard"><span class="ic">◆</span>CAT 320 Excavator</span></div>
-          <div class="well">
-            <div class="kv"><span class="k">Hours</span><span class="v">480 hrs</span></div>
-            <div class="kv"><span class="k">Day Rate</span><span class="v">$640</span></div>
-            <div class="kv"><span class="k">Annualized ROI</span><span class="v derived">2.4×</span></div>
-          </div>
-          <div class="cardrow">
-            <span class="pill green"><span class="dot"></span>Ready</span>
-            <span class="badge">No GPS</span>
-            <span class="refpill">Acme Grading <span class="x">✕</span></span>
-          </div>
-        </article>
-        <!-- card 2 -->
-        <article class="card skin" data-skin="card">
-          <i class="haz"></i><span class="rivet tl"></span><span class="rivet tr"></span><span class="rivet bl"></span><span class="rivet br"></span>
-          <div class="title"><span class="c-titlecard"><span class="ic">◆</span>RO-2041 · Skid Steer</span></div>
-          <div class="well">
-            <div class="kv"><span class="k">Out</span><span class="v">Jun 24</span></div>
-            <div class="kv"><span class="k">Due Back</span><span class="v">Jul 02</span></div>
-            <div class="kv"><span class="k">Balance</span><span class="v derived">$1,280</span></div>
-          </div>
-          <div class="cardrow">
-            <span class="pill yellow"><span class="dot"></span>Out</span>
-            <span class="badge">7-Day</span>
-            <span class="refpill">Bayou Builders <span class="x">✕</span></span>
-          </div>
-        </article>
-        <!-- card 3 (danger) -->
-        <article class="card danger skin" data-skin="card">
-          <i class="haz"></i><span class="rivet tl"></span><span class="rivet tr"></span><span class="rivet bl"></span><span class="rivet br"></span>
-          <div class="title"><span class="c-titlecard"><span class="ic">◆</span>Genie S-65 Boom</span></div>
-          <div class="well">
-            <div class="kv"><span class="k">Status</span><span class="v">Failed Insp.</span></div>
-            <div class="kv"><span class="k">Down Since</span><span class="v">Jun 19</span></div>
-            <div class="kv"><span class="k">WO</span><span class="v derived">#WO-118</span></div>
-          </div>
-          <div class="cardrow">
-            <span class="pill red"><span class="dot"></span>Down</span>
-            <span class="pill purple"><span class="dot"></span>Scheduled</span>
-          </div>
-        </article>
-      </div>
-    </section>
-
-    <!-- controls/elements section -->
-    <section class="section skin" data-skin="section">
-      <div class="sec-head">Buttons, Pills &amp; Actions</div>
-      <div class="btnrow" style="margin-bottom:12px">
-        <button class="ignite skin" data-skin="button"><span class="lbl">Saddle Up</span></button>
-        <button class="armed">Armed</button>
-        <button class="act commit">Save</button>
-        <button class="act money">Take Payment</button>
-        <button class="act danger">Release to Cancel</button>
-        <button class="ghost">Cancel</button>
-      </div>
-      <div class="btnrow">
-        <span class="pill green"><span class="dot"></span>Ready</span>
-        <span class="pill yellow"><span class="dot"></span>Caution</span>
-        <span class="pill red"><span class="dot"></span>Danger</span>
-        <span class="pill blue"><span class="dot"></span>Link</span>
-        <span class="pill purple"><span class="dot"></span>Scheduled</span>
-        <span class="badge">480 HRS</span>
-        <span class="refpill">Linked Record <span class="x">✕</span></span>
-      </div>
-    </section>
-  </div>
-
-  <!-- footer -->
-  <footer class="foot skin" data-skin="footer">
-    <div class="fr">
-      <div class="brand"><span class="star">★</span>JacRentals · Sulphur, LA</div>
-      <div class="tag">Wrangle the whole yard.</div>
+    <!-- topbar -->
+    <div class="topbar skin" data-skin="topbar">
+      <div class="tbtn"><svg class="ic"><use href="#i-bell"/></svg><span class="bdg">9+</span></div>
+      <div class="tbtn"><svg class="ic"><use href="#i-receipt"/></svg><b>Receipt</b></div>
+      <div class="tbtn"><svg class="ic"><use href="#i-qr"/></svg></div>
+      <div class="tbtn"><svg class="ic"><use href="#i-eye"/></svg></div>
+      <div class="tbtn"><svg class="ic"><use href="#i-chat"/></svg></div>
+      <div class="tbtn" style="font-size:20px">🤠</div>
+      <div class="tbtn"><svg class="ic"><use href="#i-inbox"/></svg><span class="bdg">4</span></div>
+      <div class="tbtn"><svg class="ic"><use href="#i-puck"/></svg></div>
+      <div class="tbtn"><svg class="ic"><use href="#i-cam"/></svg></div>
     </div>
-  </footer>
-</main>
 
-<!-- ================================ CONTROL CONSOLE (tool chrome) ========= -->
+    <!-- brand row -->
+    <div class="brandrow">
+      <div class="blobs"></div>
+      <div class="logo"><svg><use href="#i-gear"/></svg></div>
+      <div class="coming">COMING <b>2026</b></div>
+    </div>
+
+    <!-- search everything -->
+    <div class="search skin" data-skin="search"><svg><use href="#i-search"/></svg>Search everything…</div>
+
+    <!-- ============ UNITS SCREEN ============ -->
+    <section class="screen on" data-view="units">
+      <div class="listpanel skin" data-skin="panel">
+        <div class="haz"></div>
+        <div class="rows">
+          <div class="urow skin" data-skin="card"><div class="pills"><span class="pill green"><svg><use href="#i-clip"/></svg>Passed</span><span class="pill gout">No Orders</span></div><div class="mid">0 HRS · To…</div><span class="nm green">3IN TRASH…</span><svg class="cat"><use href="#i-drop"/></svg><div class="rail green"></div></div>
+          <div class="urow skin" data-skin="card"><div class="pills"><span class="pill green"><svg><use href="#i-clip"/></svg>Passed</span><span class="pill gout">No Orders</span></div><div class="mid">0 HRS · Too…</div><span class="nm green">60# RED31…</span><svg class="cat"><use href="#i-exc"/></svg><div class="rail green"></div></div>
+          <div class="urow skin" data-skin="card"><div class="pills"><span class="pill green"><svg><use href="#i-clip"/></svg>Passed</span><span class="pill red">1130 Hrs Overdue</span></div><div class="mid">1,229.9 HRS · 4k…</div><span class="nm red">ALA…</span><svg class="cat"><use href="#i-exc"/></svg><div class="rail red"></div></div>
+          <div class="urow skin" data-skin="card"><div class="pills"><span class="pill green"><svg><use href="#i-clip"/></svg>Passed</span><span class="pill green">100 Hrs Remaining</span></div><div class="mid">0 HRS · Trailer 3k</div><span class="nm yellow">AUSTIN</span><svg class="cat"><use href="#i-cube"/></svg><div class="rail yellow"></div></div>
+          <div class="urow skin" data-skin="card"><div class="pills"><span class="pill red"><svg><use href="#i-clip"/></svg>Failed</span><span class="pill red"><svg><use href="#i-wrench"/></svg>Part Needed?</span></div><div class="mid">80 HRS · Buggy</div><span class="nm pink">BABA</span><svg class="cat"><use href="#i-exc"/></svg><div class="rail red"></div></div>
+          <div class="urow skin" data-skin="card"><div class="pills"><span class="pill green"><svg><use href="#i-clip"/></svg>On Rent</span><span class="pill gout">No Orders</span></div><div class="mid">1,176.7 HRS · 4k E…</div><span class="nm green">BA…</span><svg class="cat"><use href="#i-exc"/></svg><div class="rail green"></div></div>
+          <div class="urow skin" data-skin="card"><div class="pills"><span class="pill yellow"><svg><use href="#i-clip"/></svg>Not Ready</span><span class="pill gout">No Orders</span></div><div class="mid">0 HRS</div><span class="nm yellow">BEACON</span><svg class="cat"><use href="#i-exc"/></svg><div class="rail yellow"></div></div>
+          <div class="urow anchored skin" data-skin="card"><div class="pills"><span class="pill red"><svg><use href="#i-clip"/></svg>Failed</span><span class="pill red">436 Hrs Overdue</span></div><div class="mid">536.4 HRS · Skid Ste…</div><span class="nm pink">B…</span><svg class="cat"><use href="#i-exc"/></svg><div class="rail red"></div></div>
+          <div class="urow skin" data-skin="card"><div class="pills"><span class="pill gout"><svg><use href="#i-clip"/></svg>No Show</span><span class="pill red"><svg><use href="#i-wrench"/></svg>Part Needed?</span></div><div class="mid">450.9 HRS…</div><span class="nm yellow">BOBA FETT…</span><svg class="cat"><use href="#i-exc"/></svg><div class="rail yellow"></div></div>
+          <div class="urow skin" data-skin="card"><div class="pills"><span class="pill green"><svg><use href="#i-clip"/></svg>Passed</span><span class="pill gout">No Orders</span></div><div class="mid">1,200 HRS · 12…</div><span class="nm green">BOUDI…</span><svg class="cat"><use href="#i-exc"/></svg><div class="rail green"></div></div>
+          <div class="urow skin" data-skin="card"><div class="pills"><span class="pill green"><svg><use href="#i-clip"/></svg>On Rent</span><span class="pill red"><svg><use href="#i-wrench"/></svg>Part Needed</span></div><div class="mid">2,335.3 H…</div><span class="nm pink">BRASS MON…</span><svg class="cat"><use href="#i-exc"/></svg><div class="rail red"></div></div>
+        </div>
+      </div>
+      <div class="botbar">
+        <div class="iconbtn skin" data-skin="button"><svg width="22" height="22"><use href="#i-bars"/></svg></div>
+        <div class="sf">Search units…</div>
+        <div class="sort">Name <span class="ar" style="color:var(--accent)">▲<br>▼</span></div>
+      </div>
+    </section>
+
+    <!-- ============ CUSTOMER SCREEN ============ -->
+    <section class="screen" data-view="customer">
+      <div class="chead skin" data-skin="card">
+        <div class="haz blue"></div>
+        <div class="hrow">
+          <span class="titlechip"><svg><use href="#i-person"/></svg>Dale Riggs</span>
+          <div class="cmeta"><span class="r1">(337) 555‑0142</span><span class="r2">Non‑Business</span></div>
+          <div class="cflags"><span class="blue">New Customer</span><span class="org">No Show</span></div>
+          <div class="cflags"><span class="red">No Card</span></div>
+          <div class="gate">Incom…</div>
+        </div>
+      </div>
+      <div class="cpanels">
+        <div class="cpanel skin" data-skin="subpanel"><span class="t-label">Membership</span><span class="dd">N/A ▾</span><button class="btn primary b">Saddle Up — Enroll</button></div>
+        <div class="cpanel skin" data-skin="subpanel"><span class="t-label">Used Sales</span><span class="dd">N/A ▾</span><button class="btn add">＋Category</button></div>
+      </div>
+      <div class="actbar"><span class="t-section">Actions</span><button class="btn add">＋Log Actions</button><button class="btn add">＋Schedule Actions</button><span class="t-section">Schedule</span></div>
+      <div class="chartcard skin" data-skin="subpanel">
+        <div class="haz"></div>
+        <div class="body">
+          <span class="newbadge">New</span>
+          <span class="legend"><span><i style="background:var(--accent)"></i>Spend</span><span><i style="background:#c79366"></i>Days rented</span></span>
+          <svg viewBox="0 0 320 150" style="width:100%;height:150px;display:block;margin-top:10px">
+            <defs><linearGradient id="fill" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="var(--accent)" stop-opacity=".45"/><stop offset="1" stop-color="var(--accent)" stop-opacity="0"/></linearGradient></defs>
+            <path d="M8 110 L43 110 L78 110 L113 110 L148 110 L183 112 L218 118 L253 108 L288 28 L288 150 L8 150 Z" fill="url(#fill)"/>
+            <path d="M8 110 L43 110 L78 110 L113 110 L148 110 L183 112 L218 118 L253 108 L288 28" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linejoin="round"/>
+            <circle cx="288" cy="28" r="5" fill="var(--accent)" stroke="#1a1205" stroke-width="2"/>
+          </svg>
+          <div class="months"><span>OCT</span><span>NOV</span><span>DEC</span><span>JAN</span><span>FEB</span><span>MAR</span><span>APR</span><span>MAY</span><span>JUN</span></div>
+          <div class="cap">No rental cadence yet — needs a few rentals to read the pattern.</div>
+        </div>
+      </div>
+      <div class="acct skin" data-skin="subpanel">
+        <div class="t-label" style="text-align:center;margin-bottom:8px">Account</div>
+        <div class="row"><span class="t-body" style="font-weight:700">Dale Riggs</span><span class="pill plain">Non‑Business</span></div>
+        <div class="t-small">(337) 555‑0142</div>
+      </div>
+      <div class="pager"><button>‹</button><button>›</button></div>
+    </section>
+
+    <!-- ============ RULEBOOK SCREEN ============ -->
+    <section class="screen" data-view="rulebook">
+      <div class="rb">
+        <div class="rbsec"><h3>Buttons — Green / Default</h3><div class="rbgrid">
+          <button class="btn primary g">Button</button><button class="btn secondary g">Button</button><button class="btn ghost g"><span class="u">Button</span></button><button class="btn disabled">Button</button>
+        </div><div class="t-small" style="margin-top:8px">Primary · Secondary · Ghost · Disabled — hover for glow / inner-lining / underline / checker-swap</div></div>
+
+        <div class="rbsec"><h3>Red — Danger (hazard striped)</h3><div class="rbgrid">
+          <button class="btn primary r">Button</button><button class="btn secondary r">Button</button><button class="btn ghost r"><span class="u">Button</span></button>
+        </div></div>
+
+        <div class="rbsec"><h3>Yellow — Caution (hazard striped)</h3><div class="rbgrid">
+          <button class="btn primary y">Button</button><button class="btn secondary y">Button</button><button class="btn ghost y"><span class="u">Button</span></button>
+        </div></div>
+
+        <div class="rbsec"><h3>App accents — Blue / Orange</h3><div class="rbgrid">
+          <button class="btn primary o">Ignition</button><button class="btn primary b">Commit</button><button class="btn add">＋Add Record</button><button class="btn ghost b"><span class="u">Link</span></button>
+        </div></div>
+
+        <div class="rbsec"><h3>Type scale</h3><div class="typestack">
+          <span class="t-title">Title</span><span class="t-section">Section</span><span class="t-label">Label</span><span class="t-body">Body — the readable Geist voice for content.</span><span class="t-small">Small — finest supporting note.</span>
+        </div></div>
+
+        <div class="rbsec"><h3>Motion by date-distance</h3>
+          <div class="rbcol"><span class="h">Today (≤1d)</span><span class="h">±1 day</span><span class="h">3+ days</span>
+            <button class="btn primary r mv fl">Today</button><button class="btn primary r mv">Near</button><button class="btn primary r">Far</button>
+            <button class="btn secondary y mv fl">Today</button><button class="btn secondary y mv">Near</button><button class="btn secondary y">Far</button>
+            <button class="btn ghost r mv fl"><span class="u">Today</span></button><button class="btn ghost r mv"><span class="u">Near</span></button><button class="btn ghost r"><span class="u">Far</span></button>
+          </div>
+          <div class="t-small" style="margin-top:8px">Stripes scroll = "moving"; glow behind = "flashing". Today = move + glow · ±1 day = move · 3+ days = static.</div>
+        </div>
+      </div>
+    </section>
+
+  </div><!-- /scroller -->
+
+  <!-- bottom nav -->
+  <nav class="nav skin" data-skin="nav">
+    <button class="n act" data-nav="units"><svg><use href="#i-tag"/></svg>Units</button>
+    <button class="n" data-nav="customer"><svg><use href="#i-person"/></svg></button>
+    <button class="n"><svg><use href="#i-hammer"/></svg></button>
+    <button class="n"><svg><use href="#i-cal"/></svg></button>
+    <button class="n" data-nav="rulebook"><svg><use href="#i-grid"/></svg></button>
+    <button class="n"><svg><use href="#i-exc"/></svg></button>
+    <button class="n"><svg><use href="#i-receipt"/></svg></button>
+  </nav>
+</div>
+</div>
+
+<!-- ===================================================== CONSOLE ===== -->
 <aside class="console">
-  <div class="chead"><div class="haz"></div>
-    <h1>Texture Skinner</h1>
-    <div class="sub">Assign any of 36 textures to each surface · live · saved</div>
+  <div class="chd"><div class="haz"></div>
+    <h1>Texture Skinner</h1><div class="sub">Real screens + component rulebook · live · saved</div>
   </div>
   <div class="body">
-    <div class="grp">
-      <div class="glabel">Surfaces</div>
-      <div class="field"><label>Background</label><select data-surf="bg"></select></div>
-      <div class="field"><label>Header</label><select data-surf="header"></select></div>
-      <div class="field"><label>Section</label><select data-surf="section"></select></div>
-      <div class="field"><label>Card</label><select data-surf="card"></select></div>
-      <div class="field"><label>Button</label><select data-surf="button"></select></div>
-      <div class="field"><label>KPI Ring</label><select data-surf="ring"></select></div>
-      <div class="field"><label>Footer</label><select data-surf="footer"></select></div>
+    <div><div class="glabel">View</div>
+      <div class="seg" id="viewSeg"><button data-v="units" class="on">Units</button><button data-v="customer">Customer</button><button data-v="rulebook">Rulebook</button></div>
     </div>
-    <div class="grp">
-      <div class="glabel">Treatment</div>
+    <div><div class="glabel">Surfaces</div>
+      <div class="field"><label>Background</label><select data-surf="bg"></select></div>
+      <div class="field"><label>Top Bar</label><select data-surf="topbar"></select></div>
+      <div class="field"><label>Search</label><select data-surf="search"></select></div>
+      <div class="field"><label>Panel</label><select data-surf="panel"></select></div>
+      <div class="field"><label>Cards</label><select data-surf="card"></select></div>
+      <div class="field"><label>Sub-Panel</label><select data-surf="subpanel"></select></div>
+      <div class="field"><label>Buttons</label><select data-surf="button"></select></div>
+      <div class="field"><label>Bottom Nav</label><select data-surf="nav"></select></div>
+    </div>
+    <div><div class="glabel">Treatment</div>
       <div class="rngrow"><label>Scrim</label><input type="range" id="kScrim" min="0" max="90" step="1"><span class="num" id="nScrim"></span></div>
-      <div class="rngrow"><label>Tile Size</label><input type="range" id="kTile" min="120" max="560" step="10"><span class="num" id="nTile"></span></div>
+      <div class="rngrow"><label>Tile</label><input type="range" id="kTile" min="120" max="560" step="10"><span class="num" id="nTile"></span></div>
       <div class="rngrow"><label>Grayscale</label><input type="range" id="kGray" min="0" max="100" step="1"><span class="num" id="nGray"></span></div>
       <div class="rngrow"><label>Contrast</label><input type="range" id="kCon" min="60" max="160" step="1"><span class="num" id="nCon"></span></div>
     </div>
-    <div class="grp">
-      <div class="glabel">Toggles</div>
-      <div class="toggles">
-        <button class="tg" id="tgTint">Accent Tint</button>
-        <button class="tg" id="tgTheme">Light Theme</button>
-      </div>
-    </div>
+    <div><div class="glabel">Toggles</div><div class="toggles">
+      <button class="tg" id="tgTint">Accent Tint</button><button class="tg" id="tgTheme">Light Theme</button><button class="tg on" id="tgMotion">Motion</button>
+    </div></div>
   </div>
   <div class="savednote" id="saved">Selections save automatically to this browser.</div>
-  <div class="cfoot">
-    <button id="bRand">Randomize</button>
-    <button id="bReset">Reset</button>
-    <button id="bCopy" class="prime">Copy CSS</button>
-  </div>
+  <div class="cfoot"><button id="bRand">Randomize</button><button id="bReset">Reset</button><button id="bCopy" class="prime">Copy CSS</button></div>
 </aside>
 
 <script>
 const TILES=['tex-leather-cream','tex-leather-tan','tex-leather-brown','tex-leather-saddle','tex-leather-distressed','tex-leather-charcoal','tex-leather-black','tex-leather-onyx','tex-burlap','tex-grillcloth','tex-hazard-stripes','tex-metal-riveted','tex-metal-tech','tex-metal-scuffed','tex-metal-grunge','tex-metal-grime','tex-metal-noir','tex-metal-rust','tex-metal-tread','tex-metal-tread-dark','tex-metal-studs','tex-metal-domes','tex-metal-perf','tex-metal-corrugated','tex-metal-mesh'];
 const SCENES=['scene-cowboy-sky','scene-stars','scene-sky','scene-hay','scene-yard','scene-forklift','scene-factory','scene-machine','scene-clamp','scene-panel','scene-dials'];
 const ALL=[...TILES,...SCENES];
-const SURFS=['bg','header','section','card','button','ring','footer'];
+const SURFS=['bg','topbar','search','panel','card','subpanel','button','nav'];
 const PATH='../assets/textures/';
-const KEY='rw-tex-skinner-v1';
-const DEFAULT={map:{bg:'tex-metal-noir',header:'tex-metal-riveted',section:'tex-metal-grime',card:'tex-metal-tech',button:'',ring:'tex-leather-onyx',footer:'tex-leather-saddle'},scrim:55,tile:320,gray:0,contrast:100,tint:false,theme:'dark'};
+const KEY='rw-tex-skinner-v2';
+const DEFAULT={map:{bg:'tex-metal-noir',topbar:'tex-metal-riveted',search:'',panel:'tex-metal-grime',card:'tex-metal-tech',subpanel:'tex-leather-charcoal',button:'',nav:'tex-metal-tread-dark'},scrim:50,tile:320,gray:0,contrast:100,tint:false,theme:'dark',motion:true,view:'units'};
 let S=load();
-
-function load(){ try{const v=JSON.parse(localStorage.getItem(KEY)); if(v&&v.map) return Object.assign(JSON.parse(JSON.stringify(DEFAULT)),v);}catch(e){} return JSON.parse(JSON.stringify(DEFAULT)); }
-function save(){ localStorage.setItem(KEY,JSON.stringify(S)); flashSaved(); }
-let savedT; function flashSaved(){ const n=document.getElementById('saved'); n.textContent='Saved ✓'; clearTimeout(savedT); savedT=setTimeout(()=>n.textContent='Selections save automatically to this browser.',1100); }
-
-function isScene(n){ return n && n.startsWith('scene-'); }
-
-function applySurface(key){
-  const name=S.map[key]||'';
-  document.querySelectorAll('[data-skin="'+key+'"]').forEach(el=>{
-    if(!name){ el.classList.remove('has-tex'); el.style.removeProperty('--tex'); return; }
-    el.classList.add('has-tex');
-    el.style.setProperty('--tex',"url('"+PATH+name+".jpg')");
-    if(isScene(name)){ el.style.setProperty('--bgsize','cover'); el.style.setProperty('--bgrep','no-repeat'); }
-    else{ el.style.setProperty('--bgsize',S.tile+'px'); el.style.setProperty('--bgrep','repeat'); }
-  });
-}
-function applyGlobals(){
-  const r=document.documentElement.style;
-  r.setProperty('--scrim',(S.scrim/100).toFixed(2));
-  r.setProperty('--g',(S.gray/100).toFixed(2));
-  r.setProperty('--c',(S.contrast/100).toFixed(2));
-  r.setProperty('--tint',S.tint?'0.16':'0');
+function load(){try{const v=JSON.parse(localStorage.getItem(KEY));if(v&&v.map)return Object.assign(JSON.parse(JSON.stringify(DEFAULT)),v);}catch(e){}return JSON.parse(JSON.stringify(DEFAULT));}
+let savedT;function save(){localStorage.setItem(KEY,JSON.stringify(S));const n=document.getElementById('saved');n.textContent='Saved ✓';clearTimeout(savedT);savedT=setTimeout(()=>n.textContent='Selections save automatically to this browser.',1100);}
+const isScene=n=>n&&n.startsWith('scene-');
+function applySurface(k){const name=S.map[k]||'';document.querySelectorAll('[data-skin="'+k+'"]').forEach(el=>{
+  if(!name){el.classList.remove('has-tex');el.style.removeProperty('--tex');return;}
+  el.classList.add('has-tex');el.style.setProperty('--tex',"url('"+PATH+name+".jpg')");
+  if(isScene(name)){el.style.setProperty('--bgsize','cover');el.style.setProperty('--bgrep','no-repeat');}
+  else{el.style.setProperty('--bgsize',S.tile+'px');el.style.setProperty('--bgrep','repeat');}});}
+function applyGlobals(){const r=document.documentElement.style;r.setProperty('--scrim',(S.scrim/100).toFixed(2));
+  r.setProperty('--g',(S.gray/100).toFixed(2));r.setProperty('--c',(S.contrast/100).toFixed(2));r.setProperty('--tint',S.tint?'0.16':'0');
   document.documentElement.setAttribute('data-theme',S.theme);
-}
-function applyAll(){ applyGlobals(); SURFS.forEach(applySurface); }
-
-/* build selects */
-function optgroup(lbl,items,sel){ return '<optgroup label="'+lbl+'">'+items.map(n=>'<option value="'+n+'"'+(n===sel?' selected':'')+'>'+n.replace(/^(tex|scene)-/,'')+'</option>').join('')+'</optgroup>'; }
-document.querySelectorAll('select[data-surf]').forEach(sel=>{
-  const k=sel.dataset.surf, cur=S.map[k]||'';
-  sel.innerHTML='<option value=""'+(cur===''?' selected':'')+'>— none —</option>'+optgroup('Surface tiles',TILES,cur)+optgroup('Scene backdrops',SCENES,cur);
-  sel.addEventListener('change',()=>{ S.map[k]=sel.value; applySurface(k); save(); });
-});
-
-/* ranges */
-function wireRange(id,numId,prop,fmt){
-  const el=document.getElementById(id), n=document.getElementById(numId);
-  el.value=S[prop]; n.textContent=fmt(S[prop]);
-  el.addEventListener('input',()=>{ S[prop]=+el.value; n.textContent=fmt(S[prop]); if(prop==='tile'){SURFS.forEach(applySurface);} else applyGlobals(); save(); });
-}
-wireRange('kScrim','nScrim','scrim',v=>v+'%');
-wireRange('kTile','nTile','tile',v=>v+'px');
-wireRange('kGray','nGray','gray',v=>v+'%');
-wireRange('kCon','nCon','contrast',v=>v+'%');
-
-/* toggles */
-const tgTint=document.getElementById('tgTint'), tgTheme=document.getElementById('tgTheme');
-function paintToggles(){ tgTint.classList.toggle('on',S.tint); tgTheme.classList.toggle('on',S.theme==='light'); }
-tgTint.addEventListener('click',()=>{ S.tint=!S.tint; paintToggles(); applyGlobals(); save(); });
-tgTheme.addEventListener('click',()=>{ S.theme=S.theme==='light'?'dark':'light'; paintToggles(); applyGlobals(); save(); });
-
-/* footer buttons */
-document.getElementById('bRand').addEventListener('click',()=>{
-  SURFS.forEach(k=>{ S.map[k]=ALL[Math.floor(Math.random()*ALL.length)]; });
-  syncSelects(); applyAll(); save();
-});
-document.getElementById('bReset').addEventListener('click',()=>{
-  S=JSON.parse(JSON.stringify(DEFAULT)); syncSelects(); syncRanges(); paintToggles(); applyAll(); save();
-});
-document.getElementById('bCopy').addEventListener('click',async()=>{
-  const lines=[':root{'];
-  SURFS.forEach(k=>{ const n=S.map[k]; if(n) lines.push("  --tex-"+k+": url('assets/textures/"+n+".jpg');  /* "+(isScene(n)?'cover':S.tile+'px tile')+" */"); });
-  lines.push("  --tex-scrim: "+(S.scrim/100).toFixed(2)+"; --tex-grayscale: "+(S.gray/100).toFixed(2)+"; --tex-contrast: "+(S.contrast/100).toFixed(2)+";");
-  lines.push('}');
-  const css=lines.join('\n');
-  try{ await navigator.clipboard.writeText(css); }catch(e){}
-  const b=document.getElementById('bCopy'); const o=b.textContent; b.textContent='Copied ✓'; setTimeout(()=>b.textContent=o,1100);
-});
-function syncSelects(){ document.querySelectorAll('select[data-surf]').forEach(s=>s.value=S.map[s.dataset.surf]||''); }
-function syncRanges(){ kScrim.value=S.scrim;nScrim.textContent=S.scrim+'%'; kTile.value=S.tile;nTile.textContent=S.tile+'px'; kGray.value=S.gray;nGray.textContent=S.gray+'%'; kCon.value=S.contrast;nCon.textContent=S.contrast+'%'; }
-
-/* boot */
-paintToggles(); applyAll();
-requestAnimationFrame(()=>{ document.getElementById('arc').style.strokeDashoffset=(339.292*(1-0.68)).toFixed(1); });
+  document.querySelectorAll('.mv,.fl').forEach(e=>e.style.animationPlayState=S.motion?'running':'paused');}
+function applyView(){document.querySelectorAll('.screen').forEach(s=>s.classList.toggle('on',s.dataset.view===S.view));
+  document.querySelectorAll('#viewSeg button').forEach(b=>b.classList.toggle('on',b.dataset.v===S.view));
+  document.querySelectorAll('.nav .n').forEach(n=>{const m=n.dataset.nav;n.classList.toggle('act',!!m&&m===S.view);
+    if(m===S.view){const lbl={units:'Units',customer:'Customers',rulebook:'Kit'}[S.view];n.innerHTML='<svg><use href="#i-'+(S.view==='customer'?'person':S.view==='rulebook'?'grid':'tag')+'"/></svg>'+lbl;}
+    else if(m){n.innerHTML='<svg><use href="#i-'+(m==='customer'?'person':m==='rulebook'?'grid':'tag')+'"/></svg>';}});}
+function applyAll(){applyGlobals();SURFS.forEach(applySurface);applyView();}
+function optg(l,a,s){return '<optgroup label="'+l+'">'+a.map(n=>'<option value="'+n+'"'+(n===s?' selected':'')+'>'+n.replace(/^(tex|scene)-/,'')+'</option>').join('')+'</optgroup>';}
+document.querySelectorAll('select[data-surf]').forEach(sel=>{const k=sel.dataset.surf,c=S.map[k]||'';
+  sel.innerHTML='<option value=""'+(c===''?' selected':'')+'>— none —</option>'+optg('Surface tiles',TILES,c)+optg('Scene backdrops',SCENES,c);
+  sel.addEventListener('change',()=>{S.map[k]=sel.value;applySurface(k);save();});});
+function wireR(id,nid,p,f){const e=document.getElementById(id),n=document.getElementById(nid);e.value=S[p];n.textContent=f(S[p]);
+  e.addEventListener('input',()=>{S[p]=+e.value;n.textContent=f(S[p]);if(p==='tile')SURFS.forEach(applySurface);else applyGlobals();save();});}
+wireR('kScrim','nScrim','scrim',v=>v+'%');wireR('kTile','nTile','tile',v=>v+'px');wireR('kGray','nGray','gray',v=>v+'%');wireR('kCon','nCon','contrast',v=>v+'%');
+const tgTint=document.getElementById('tgTint'),tgTheme=document.getElementById('tgTheme'),tgMotion=document.getElementById('tgMotion');
+function paintTg(){tgTint.classList.toggle('on',S.tint);tgTheme.classList.toggle('on',S.theme==='light');tgMotion.classList.toggle('on',S.motion);}
+tgTint.onclick=()=>{S.tint=!S.tint;paintTg();applyGlobals();save();};
+tgTheme.onclick=()=>{S.theme=S.theme==='light'?'dark':'light';paintTg();applyGlobals();save();};
+tgMotion.onclick=()=>{S.motion=!S.motion;paintTg();applyGlobals();save();};
+document.querySelectorAll('#viewSeg button').forEach(b=>b.onclick=()=>{S.view=b.dataset.v;applyView();save();});
+document.querySelectorAll('.nav .n[data-nav]').forEach(n=>n.onclick=()=>{S.view=n.dataset.nav;applyView();save();});
+document.getElementById('bRand').onclick=()=>{SURFS.forEach(k=>S.map[k]=ALL[Math.floor(Math.random()*ALL.length)]);syncSel();applyAll();save();};
+document.getElementById('bReset').onclick=()=>{S=JSON.parse(JSON.stringify(DEFAULT));syncSel();syncR();paintTg();applyAll();save();};
+document.getElementById('bCopy').onclick=async()=>{const L=[':root{'];SURFS.forEach(k=>{const n=S.map[k];if(n)L.push("  --tex-"+k+": url('assets/textures/"+n+".jpg');  /* "+(isScene(n)?'cover':S.tile+'px tile')+" */");});
+  L.push("  --tex-scrim: "+(S.scrim/100).toFixed(2)+"; --tex-grayscale: "+(S.gray/100).toFixed(2)+"; --tex-contrast: "+(S.contrast/100).toFixed(2)+";");L.push('}');
+  try{await navigator.clipboard.writeText(L.join('\n'));}catch(e){}const b=document.getElementById('bCopy'),o=b.textContent;b.textContent='Copied ✓';setTimeout(()=>b.textContent=o,1100);};
+function syncSel(){document.querySelectorAll('select[data-surf]').forEach(s=>s.value=S.map[s.dataset.surf]||'');}
+function syncR(){kScrim.value=S.scrim;nScrim.textContent=S.scrim+'%';kTile.value=S.tile;nTile.textContent=S.tile+'px';kGray.value=S.gray;nGray.textContent=S.gray+'%';kCon.value=S.contrast;nCon.textContent=S.contrast+'%';}
+paintTg();applyAll();
 </script>
 </body>
 </html>
