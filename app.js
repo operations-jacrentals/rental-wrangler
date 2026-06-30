@@ -11923,12 +11923,7 @@ function initDrag() {
 // move lifts a drag. A quick horizontal flick (before this fires) is a Back/Forward swipe
 // instead (see the grid swipe tracker in boot). Frees the horizontal axis for navigation.
 function armReadyTimer(arm) { return setTimeout(() => { if (DRAG.armed === arm) arm.ready = true; }, 300); }
-function armMenuTimer(arm) {   // §M3 — hold-still opens the context menu: touch long-press OR mouse click-and-hold (the right-click equivalent)
-  // PHONE: a long-press is reserved for the DRAG (Jac, 2026-06-29). The menu timer used
-  // to fire at 500ms and DISARM the drag, so any hold longer than ~½s opened the context
-  // menu instead of grabbing the row. On a phone the long-press now always drags; the R20
-  // context menu stays a desktop affordance (right-click / mouse click-and-hold).
-  if (arm.touch && document.body.classList.contains('is-phone')) return null;
+function armMenuTimer(arm) {   // §M3 — hold-still opens the context menu: touch long-press OR mouse click-and-hold (the right-click equivalent). On phones this is now the PRIMARY linking entry (menu-driven linking replaced drag, 2026-06-29).
   return setTimeout(() => {
     if (DRAG.armed !== arm) return;
     const t = document.elementFromPoint(arm.x, arm.y);
@@ -11942,25 +11937,19 @@ function dragDown(e) {
   if (state.overlay) return;                                             // overlays own their clicks; the winpicker is non-modal (Task E — drag to select)
   if (e.target.closest('.tedit')) return;                                // the inline transport editor owns its pointers — let Google pan the map + drag the site pin (never arm an app/chat drag here)
   if (e.target.closest('.dispm')) return;                                // §2.3 the dispatch cockpit map owns its pointers too — Google handles pan/zoom, never the app drag engine
-  // §M3 — PHONE record-grab: a list row / open standard card is wall-to-wall pills +
-  // chat-els, leaving almost no bare space to grab — a finger-press lands on a pill ~2/3
-  // of the time, which on touch would either BAIL (.pill is in the bail list below) or
-  // hijack into a CHAT-TAG drag, so the record drag was effectively ungrabbable on a
-  // phone (Jac, 2026-06-29). On touch we resolve the whole row/card to its record FIRST:
-  // dragSourceAt already ranks a units pill as itself (the unit→rental link still wins),
-  // then a row, then an open standard card — so pressing ANYWHERE non-interactive on the
-  // row drags the record. Tap is unaffected (a press only LIFTS on a held horizontal
-  // move; a tap never does); chat-tag-dragging a single pill stays a desktop affordance.
+  // §M3 — PHONE: drag-to-link is RETIRED on phones (2026-06-29). A long-press now opens
+  // the R20 context menu, which carries the menu-driven LINKING actions (+ Rental / +
+  // Invoice / …). Arm a MENU-ONLY long-press: no drag is ever lifted on a phone. A move
+  // before the timer cancels it (native scroll / Back-Forward swipe stay intact); a quick
+  // tap releases before the timer (its click fires normally). The interactive-control
+  // skip keeps inputs/buttons native; selection-suppression (style.css, .is-phone .grid)
+  // stops iOS from starting text-selection before the long-press registers.
   if (e.pointerType === 'touch' && document.body.classList.contains('is-phone')
       && !e.target.closest('input, textarea, select, button, .x, .inline-edit, .inline-input, .dropdown-menu, .ctx-menu')) {
-    const src = dragSourceAt(e.target);
-    if (src) {
-      DRAG.point.x = e.clientX; DRAG.point.y = e.clientY;
-      const armed = { card: src.card, rec: src.rec, x: e.clientX, y: e.clientY, pointerId: e.pointerId, touch: true, lp: null, rdy: null, ready: false };
-      armed.lp = armMenuTimer(armed);                       // §M3 — hold still → context menu
-      armed.rdy = armReadyTimer(armed);                     // a hold must precede the horizontal drag
-      DRAG.armed = armed; return;
-    }
+    DRAG.point.x = e.clientX; DRAG.point.y = e.clientY;
+    const arm = { menuOnly: true, x: e.clientX, y: e.clientY, pointerId: e.pointerId, touch: true, lp: null, rdy: null, ready: false };
+    arm.lp = armMenuTimer(arm);                             // hold ~500ms still → openCtxMenuAt (the R20 menu)
+    DRAG.armed = arm; return;
   }
   // §17 — a granular element marked [data-chat-el] (a pill/price/line/person) arms a
   // CHAT-TAG drag (tap still does its own thing; drag/long-press tags it into a chat).
