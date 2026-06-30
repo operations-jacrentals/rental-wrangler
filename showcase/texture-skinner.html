@@ -108,7 +108,7 @@ body{font-family:var(--font); color:var(--txt); background:#06070a; font-size:13
   font-weight:800;font-size:11px;padding:6px 10px;border-radius:10px;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.85);
   background-size:26px 26px;background-repeat:repeat;--bc:var(--red)}
 .dpill svg{width:13px;height:13px}
-.dpill.r{--bc:var(--red);background-image:linear-gradient(135deg,var(--red) 0 25%,#1a0808 25% 50%,var(--red) 50% 75%,#1a0808 75% 100%)}
+.dpill.r{--bc:var(--red);background-image:linear-gradient(135deg,var(--red) 0 25%,#14181d 25% 50%,var(--red) 50% 75%,#14181d 75% 100%)}
 .dpill.y{--bc:var(--yellow);background-image:linear-gradient(135deg,var(--yellow) 0 25%,#14181d 25% 50%,var(--yellow) 50% 75%,#14181d 75% 100%)}
 .dpill.mv{animation:stripeP .9s linear infinite}
 .dpill.fl{animation:backglow 1.2s ease-in-out infinite}
@@ -122,7 +122,11 @@ body{font-family:var(--font); color:var(--txt); background:#06070a; font-size:13
   font-family:var(--stamp);text-transform:uppercase;letter-spacing:1px;font-weight:800;font-size:13px;
   padding:11px 16px;border-radius:11px;border:1px solid transparent;background:transparent;color:var(--bc);transition:box-shadow .12s ease-out}
 .btn .bi{width:15px;height:15px;flex:0 0 auto}
-.btn.r{--bc:var(--red)} .btn.y{--bc:var(--yellow)} .btn.g{--bc:var(--green)} .btn.b{--bc:var(--blue)} .btn.o{--bc:var(--accent)}
+.btn.r{--bc:var(--red)} .btn.y{--bc:var(--yellow)} .btn.g{--bc:var(--green)} .btn.b{--bc:var(--blue)} .btn.o{--bc:var(--accent)} .btn.n{--bc:var(--gray)}
+/* compact size for in-row / in-card status buttons */
+.btn.sm{padding:6px 9px;font-size:11px;letter-spacing:.5px;gap:5px;border-radius:10px}
+.btn.sm .bi{width:13px;height:13px}
+.btn.sm.secondary.r,.btn.sm.secondary.y{border-width:2px}
 /* PRIMARY — solid fill, white ink (green/yellow/blue) ; red/yellow -> hazard-striped fill */
 .btn.primary{color:#fff;border:none;background:var(--bc);box-shadow:inset 0 1px 0 rgba(255,255,255,.3)}
 .btn.primary.o{color:var(--on-orange);background:linear-gradient(180deg,#ff9038,var(--accent))}
@@ -130,7 +134,7 @@ body{font-family:var(--font); color:var(--txt); background:#06070a; font-size:13
 .btn.primary.g{color:#fff;background:linear-gradient(180deg,color-mix(in srgb,var(--green) 78%,#fff),var(--green));text-shadow:0 1px 2px rgba(0,0,0,.4)}
 /* seamless diagonal stripe = a tiled 4-stop gradient (scrolls smoothly, no jump) */
 .btn.primary.r{color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.85);
-  background-image:linear-gradient(135deg,var(--red) 0 25%,#1a0808 25% 50%,var(--red) 50% 75%,#1a0808 75% 100%);
+  background-image:linear-gradient(135deg,var(--red) 0 25%,#14181d 25% 50%,var(--red) 50% 75%,#14181d 75% 100%);
   background-size:26px 26px;background-repeat:repeat}
 .btn.primary.y{color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.9);
   background-image:linear-gradient(135deg,var(--yellow) 0 25%,#14181d 25% 50%,var(--yellow) 50% 75%,#14181d 75% 100%);
@@ -138,15 +142,14 @@ body{font-family:var(--font); color:var(--txt); background:#06070a; font-size:13
 .btn.primary:hover{box-shadow:0 0 0 1px var(--bc),0 0 18px -2px var(--bc)}      /* hover = stamped glow */
 /* SECONDARY — outline + colored (R/Y/G) ; red/yellow border becomes striped */
 .btn.secondary{border:1px solid var(--bc);color:var(--bc);background:transparent}
-.btn.secondary.r,.btn.secondary.y{border:3px solid transparent;background-repeat:no-repeat,repeat;background-size:auto,13px 13px;background-position:0 0,0 0}
+.btn.secondary.r,.btn.secondary.y{border:3px solid transparent;background-repeat:no-repeat,repeat;background-size:auto,26px 26px;background-position:0 0,0 0}
 .btn.secondary.r{background-image:linear-gradient(var(--bg),var(--bg)),
-  linear-gradient(135deg,var(--red) 0 25%,#1a0808 25% 50%,var(--red) 50% 75%,#1a0808 75% 100%);background-origin:padding-box,border-box;background-clip:padding-box,border-box}
+  linear-gradient(135deg,var(--red) 0 25%,#14181d 25% 50%,var(--red) 50% 75%,#14181d 75% 100%);background-origin:padding-box,border-box;background-clip:padding-box,border-box}
 .btn.secondary.y{background-image:linear-gradient(var(--bg),var(--bg)),
   linear-gradient(135deg,var(--yellow) 0 25%,#14181d 25% 50%,var(--yellow) 50% 75%,#14181d 75% 100%);background-origin:padding-box,border-box;background-clip:padding-box,border-box}
 .btn.secondary:hover{box-shadow:inset 0 0 0 2px var(--bc)}                        /* hover = inner lining */
 /* GHOST — leading dot + bold colored text ; hover underline ; red/yellow striped underline */
-.btn.ghost{padding:9px 6px;background:transparent;border:none;color:var(--bc)}
-.btn.ghost::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--bc);flex:0 0 auto}
+.btn.ghost{padding:9px 6px;background:transparent;border:none;color:var(--bc)}   /* leading glyph = parent icon (.bi), not a dot */
 .btn.ghost .u{position:relative;padding-bottom:2px}
 .btn.ghost:hover .u{box-shadow:inset 0 -2px 0 var(--bc)}
 .btn.ghost.r .u,.btn.ghost.y .u{box-shadow:none;background-repeat:repeat-x;background-position:0 100%;background-size:12px 3px;padding-bottom:4px}
@@ -163,7 +166,7 @@ body{font-family:var(--font); color:var(--txt); background:#06070a; font-size:13
 
 /* MOTION — moving = stripes scroll (smooth) ; flashing = glow BEHIND the button */
 @keyframes stripeP{to{background-position:26px 0}}                 /* primary: shift one full tile */
-@keyframes stripeS{to{background-position:0 0,13px 0}}            /* secondary: scroll only the border layer */
+@keyframes stripeS{to{background-position:0 0,26px 0}}            /* secondary: scroll only the border layer (matches primary tile) */
 @keyframes ulmove{to{background-position:12px 100%}}
 @keyframes backglow{0%,100%{box-shadow:0 0 0 0 transparent}50%{box-shadow:0 0 22px 4px var(--bc)}}
 .mv.primary.r,.mv.primary.y{animation:stripeP .9s linear infinite}
@@ -362,17 +365,17 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid 
       <div class="listpanel skin" data-skin="panel">
         <div class="haz"></div>
         <div class="rows">
-          <div class="urow skin" data-skin="card"><div class="pills"><span class="pill green"><svg><use href="#i-clip"/></svg>Passed</span><span class="pill gout">No Orders</span></div><div class="mid">0 HRS · To…</div><span class="nm green">3IN TRASH…</span><svg class="cat"><use href="#i-drop"/></svg><div class="rail green"></div></div>
-          <div class="urow skin" data-skin="card"><div class="pills"><span class="pill green"><svg><use href="#i-clip"/></svg>Passed</span><span class="pill gout">No Orders</span></div><div class="mid">0 HRS · Too…</div><span class="nm green">60# RED31…</span><svg class="cat"><use href="#i-exc"/></svg><div class="rail green"></div></div>
-          <div class="urow skin" data-skin="card"><div class="pills"><span class="pill green"><svg><use href="#i-clip"/></svg>Passed</span><span class="dpill r auto"><svg><use href="#i-alert"/></svg>1130 Hrs Overdue</span></div><div class="mid">1,229.9 HRS · 4k…</div><span class="nm red">ALA…</span><svg class="cat"><use href="#i-exc"/></svg><div class="rail red"></div></div>
-          <div class="urow skin" data-skin="card"><div class="pills"><span class="pill green"><svg><use href="#i-clip"/></svg>Passed</span><span class="pill green">100 Hrs Remaining</span></div><div class="mid">0 HRS · Trailer 3k</div><span class="nm yellow">AUSTIN</span><svg class="cat"><use href="#i-cube"/></svg><div class="rail yellow"></div></div>
-          <div class="urow skin" data-skin="card"><div class="pills"><span class="pill red"><svg><use href="#i-clip"/></svg>Failed</span><span class="pill red"><svg><use href="#i-wrench"/></svg>Part Needed?</span></div><div class="mid">80 HRS · Buggy</div><span class="nm pink">BABA</span><svg class="cat"><use href="#i-exc"/></svg><div class="rail red"></div></div>
-          <div class="urow skin" data-skin="card"><div class="pills"><span class="pill green"><svg><use href="#i-clip"/></svg>On Rent</span><span class="pill gout">No Orders</span></div><div class="mid">1,176.7 HRS · 4k E…</div><span class="nm green">BA…</span><svg class="cat"><use href="#i-exc"/></svg><div class="rail green"></div></div>
-          <div class="urow skin" data-skin="card"><div class="pills"><span class="pill yellow"><svg><use href="#i-clip"/></svg>Not Ready</span><span class="pill gout">No Orders</span></div><div class="mid">0 HRS</div><span class="nm yellow">BEACON</span><svg class="cat"><use href="#i-exc"/></svg><div class="rail yellow"></div></div>
-          <div class="urow anchored skin" data-skin="card"><div class="pills"><span class="pill red"><svg><use href="#i-clip"/></svg>Failed</span><span class="dpill r auto">436 Hrs Overdue</span></div><div class="mid">536.4 HRS · Skid Ste…</div><span class="nm pink">B…</span><svg class="cat"><use href="#i-exc"/></svg><div class="rail red"></div></div>
-          <div class="urow skin" data-skin="card"><div class="pills"><span class="pill gout"><svg><use href="#i-clip"/></svg>No Show</span><span class="pill red"><svg><use href="#i-wrench"/></svg>Part Needed?</span></div><div class="mid">450.9 HRS…</div><span class="nm yellow">BOBA FETT…</span><svg class="cat"><use href="#i-exc"/></svg><div class="rail yellow"></div></div>
-          <div class="urow skin" data-skin="card"><div class="pills"><span class="pill green"><svg><use href="#i-clip"/></svg>Passed</span><span class="pill gout">No Orders</span></div><div class="mid">1,200 HRS · 12…</div><span class="nm green">BOUDI…</span><svg class="cat"><use href="#i-exc"/></svg><div class="rail green"></div></div>
-          <div class="urow skin" data-skin="card"><div class="pills"><span class="pill green"><svg><use href="#i-clip"/></svg>On Rent</span><span class="pill red"><svg><use href="#i-wrench"/></svg>Part Needed</span></div><div class="mid">2,335.3 H…</div><span class="nm pink">BRASS MON…</span><svg class="cat"><use href="#i-exc"/></svg><div class="rail red"></div></div>
+          <div class="urow skin" data-skin="card"><div class="pills"><button class="btn sm primary g"><svg class="bi"><use href="#i-drop"/></svg>Passed</button><button class="btn sm secondary g"><svg class="bi"><use href="#i-drop"/></svg>No Orders</button></div><div class="mid">0 HRS · To…</div><span class="nm green">3IN TRAS…</span><div class="rail green"></div></div>
+          <div class="urow skin" data-skin="card"><div class="pills"><button class="btn sm primary g"><svg class="bi"><use href="#i-exc"/></svg>Passed</button><button class="btn sm secondary g"><svg class="bi"><use href="#i-exc"/></svg>No Orders</button></div><div class="mid">0 HRS · Too…</div><span class="nm green">60# RED3…</span><div class="rail green"></div></div>
+          <div class="urow skin" data-skin="card"><div class="pills"><button class="btn sm primary g"><svg class="bi"><use href="#i-exc"/></svg>Passed</button><span class="dpill r auto"><svg><use href="#i-exc"/></svg>1130 Overdue</span></div><div class="mid">1,229.9 HRS</div><span class="nm red">ALA…</span><div class="rail red"></div></div>
+          <div class="urow skin" data-skin="card"><div class="pills"><button class="btn sm primary g"><svg class="bi"><use href="#i-cube"/></svg>Passed</button><button class="btn sm secondary g"><svg class="bi"><use href="#i-cube"/></svg>100 Hrs</button></div><div class="mid">0 HRS · Trailer</div><span class="nm yellow">AUSTIN</span><div class="rail yellow"></div></div>
+          <div class="urow skin" data-skin="card"><div class="pills"><button class="btn sm primary r"><svg class="bi"><use href="#i-exc"/></svg>Failed</button><button class="btn sm secondary r"><svg class="bi"><use href="#i-exc"/></svg>Part Needed?</button></div><div class="mid">80 HRS</div><span class="nm pink">BABA</span><div class="rail red"></div></div>
+          <div class="urow skin" data-skin="card"><div class="pills"><button class="btn sm primary g"><svg class="bi"><use href="#i-exc"/></svg>On Rent</button><button class="btn sm secondary g"><svg class="bi"><use href="#i-exc"/></svg>No Orders</button></div><div class="mid">1,176.7 HRS</div><span class="nm green">BA…</span><div class="rail green"></div></div>
+          <div class="urow skin" data-skin="card"><div class="pills"><button class="btn sm primary y"><svg class="bi"><use href="#i-exc"/></svg>Not Ready</button><button class="btn sm secondary g"><svg class="bi"><use href="#i-exc"/></svg>No Orders</button></div><div class="mid">0 HRS</div><span class="nm yellow">BEACON</span><div class="rail yellow"></div></div>
+          <div class="urow anchored skin" data-skin="card"><div class="pills"><button class="btn sm primary r"><svg class="bi"><use href="#i-exc"/></svg>Failed</button><span class="dpill r auto"><svg><use href="#i-exc"/></svg>436 Overdue</span></div><div class="mid">536.4 HRS</div><span class="nm pink">B…</span><div class="rail red"></div></div>
+          <div class="urow skin" data-skin="card"><div class="pills"><button class="btn sm primary y"><svg class="bi"><use href="#i-exc"/></svg>No Show</button><button class="btn sm secondary r"><svg class="bi"><use href="#i-exc"/></svg>Part Needed?</button></div><div class="mid">450.9 HRS</div><span class="nm yellow">BOBA FE…</span><div class="rail yellow"></div></div>
+          <div class="urow skin" data-skin="card"><div class="pills"><button class="btn sm primary g"><svg class="bi"><use href="#i-exc"/></svg>Passed</button><button class="btn sm secondary g"><svg class="bi"><use href="#i-exc"/></svg>No Orders</button></div><div class="mid">1,200 HRS</div><span class="nm green">BOUDI…</span><div class="rail green"></div></div>
+          <div class="urow skin" data-skin="card"><div class="pills"><button class="btn sm primary g"><svg class="bi"><use href="#i-exc"/></svg>On Rent</button><button class="btn sm secondary r"><svg class="bi"><use href="#i-exc"/></svg>Part Needed</button></div><div class="mid">2,335.3 HRS</div><span class="nm pink">BRASS…</span><div class="rail red"></div></div>
         </div>
       </div>
       <div class="botbar">
@@ -389,19 +392,22 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid 
         <div class="hrow">
           <span class="titlechip"><svg><use href="#i-person"/></svg>Dale Riggs</span>
           <div class="cmeta"><span class="r1">(337) 555‑0142</span><span class="r2">Non‑Business</span></div>
-          <div class="cflags"><span class="blue">New Customer</span><span class="org">No Show</span></div>
-          <div class="cflags"><span class="red">No Card</span></div>
-          <div class="gate">Incom…</div>
+          <div class="cflags">
+            <button class="btn ghost b sm"><svg class="bi"><use href="#i-person"/></svg><span class="u">New Customer</span></button>
+            <button class="btn ghost o sm"><svg class="bi"><use href="#i-person"/></svg><span class="u">No Show</span></button>
+            <button class="btn ghost r sm"><svg class="bi"><use href="#i-person"/></svg><span class="u">No Card</span></button>
+          </div>
+          <button class="btn primary y sm" style="margin-left:auto;align-self:center"><svg class="bi"><use href="#i-person"/></svg>Incomplete</button>
         </div>
       </div>
       <div class="cpanels">
-        <div class="cpanel skin" data-skin="subpanel"><span class="t-label">Membership</span><span class="dd">N/A ▾</span><button class="btn primary b"><svg class="bi"><use href="#i-check"/></svg>Saddle Up — Enroll</button></div>
-        <div class="cpanel skin" data-skin="subpanel"><span class="t-label">Used Sales</span><span class="dd">N/A ▾</span><button class="btn add"><svg class="bi"><use href="#i-plus"/></svg>Category</button></div>
+        <div class="cpanel skin" data-skin="subpanel"><span class="t-label">Membership</span><button class="btn secondary n sm"><svg class="bi"><use href="#i-person"/></svg>N/A ▾</button><button class="btn primary b"><svg class="bi"><use href="#i-person"/></svg>Saddle Up — Enroll</button></div>
+        <div class="cpanel skin" data-skin="subpanel"><span class="t-label">Used Sales</span><button class="btn secondary n sm"><svg class="bi"><use href="#i-person"/></svg>N/A ▾</button><button class="btn add"><svg class="bi"><use href="#i-plus"/></svg>Category</button></div>
       </div>
       <div class="duestrip"><span class="t-label">Attention</span>
-        <span class="dpill r auto"><svg><use href="#i-alert"/></svg>Payment Due · Today</span>
-        <span class="dpill y auto"><svg><use href="#i-cal"/></svg>Service · Jul 2</span>
-        <span class="dpill r auto"><svg><use href="#i-bell"/></svg>Follow-up · Today</span>
+        <span class="dpill r auto"><svg><use href="#i-person"/></svg>Payment Due · Today</span>
+        <span class="dpill y auto"><svg><use href="#i-person"/></svg>Service · Jul 2</span>
+        <span class="dpill r auto"><svg><use href="#i-person"/></svg>Follow-up · Today</span>
       </div>
       <div class="actbar"><span class="t-section">Actions</span><button class="btn add"><svg class="bi"><use href="#i-plus"/></svg>Log Actions</button><button class="btn add"><svg class="bi"><use href="#i-plus"/></svg>Schedule Actions</button><span class="t-section">Schedule</span></div>
       <div class="chartcard skin" data-skin="subpanel">
@@ -432,7 +438,7 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid 
       <div class="rb">
         <div class="rbsec"><h3>Buttons — Green / Default</h3><div class="rbgrid">
           <button class="btn primary g"><svg class="bi"><use href="#i-check"/></svg>Button</button><button class="btn secondary g"><svg class="bi"><use href="#i-check"/></svg>Button</button><button class="btn ghost g"><svg class="bi"><use href="#i-check"/></svg><span class="u">Button</span></button><button class="btn disabled"><svg class="bi"><use href="#i-alert"/></svg>Button</button>
-        </div><div class="t-small" style="margin-top:8px">Primary · Secondary · Ghost · Disabled — hover for glow / inner-lining / underline / checker-swap</div></div>
+        </div><div class="t-small" style="margin-top:8px">Primary · Secondary · Ghost · Disabled — hover for glow / inner-lining / underline / checker-swap. Each button's leading icon (incl. the ghost link) is the <b>parent record's icon</b> — unit category on Units, person on Customer.</div></div>
 
         <div class="rbsec"><h3>Red — Danger (hazard striped)</h3><div class="rbgrid">
           <button class="btn primary r"><svg class="bi"><use href="#i-alert"/></svg>Button</button><button class="btn secondary r"><svg class="bi"><use href="#i-alert"/></svg>Button</button><button class="btn ghost r"><svg class="bi"><use href="#i-alert"/></svg><span class="u">Button</span></button>
