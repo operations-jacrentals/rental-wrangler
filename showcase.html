@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>UI Candidates + Live-Wire Status-Motion — Yard Sandbox</title>
+<!--
+  LOCAL SANDBOX ONLY — not wired into the live app (index.html / app.js / style.css untouched).
+  Part 1: three Uiverse components re-skinned into the yard data-plate language.
+  Part 2: "Live-Wire" — a prototype of the status-motion system (jolt / wash / creep,
+          tempo-as-clock, hover personalities). Feel it before we spec it.
+  Open directly via file:// — no server required.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Saira+Condensed:wght@600;700;800&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #0b0c0f;
+    --bg-2: #101216;
+    --panel: #15171c;
+    --panel-2: #1b1e24;
+    --accent: #ff7a1a;
+    --accent-soft: rgba(255,122,26,.14);
+    --accent-line: rgba(255,122,26,.5);
+    --yellow: #f5c542;
+    --yellow-bg: rgba(245,197,66,.15);
+    --red: #ff4242;
+    --red-bg: rgba(255,66,66,.16);
+    --green: #27c08a;
+    --green-bg: rgba(39,192,138,.16);
+    --tan: #c2925a;
+    --tan-deep: #8a5a2b;
+    --ink: #1a1205;
+    --txt: #e7eaef;
+    --txt-dim: #8b929e;
+    --border: rgba(255,255,255,.08);
+    --hazard: repeating-linear-gradient(135deg, var(--yellow) 0 13px, #14181d 13px 26px);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    font-family: "Geist", system-ui, sans-serif;
+    background:
+      radial-gradient(1200px 600px at 50% -10%, #16191f 0%, transparent 60%),
+      var(--bg);
+    color: var(--txt);
+    min-height: 100vh;
+    padding: 0 0 64px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ---- Header ------------------------------------------------------------ */
+  header { border-bottom: 1px solid var(--border); background: linear-gradient(180deg, #1b2129, #0c0e11); }
+  .hazard-bar { height: 8px; background: var(--hazard); }
+  .head-inner { max-width: 1080px; margin: 0 auto; padding: 26px 24px 22px; display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; }
+  .wordmark { font-family: "Saira Condensed", sans-serif; font-weight: 800; text-transform: uppercase; letter-spacing: 3px; font-size: 26px; }
+  .wordmark b { color: var(--accent); }
+  .subtitle { color: var(--txt-dim); font-size: 13px; }
+  .pill-local { margin-left: auto; font-family: "Saira Condensed", sans-serif; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 700; font-size: 11px; color: var(--yellow); border: 1px solid rgba(245,197,66,.4); background: rgba(245,197,66,.1); padding: 5px 11px; border-radius: 4px; align-self: center; }
+
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+  .section-title { font-family: "Saira Condensed", sans-serif; text-transform: uppercase; letter-spacing: 2.5px; font-weight: 800; font-size: 20px; margin: 36px 0 4px; }
+  .section-sub { color: var(--txt-dim); font-size: 13px; margin: 0 0 4px; }
+
+  /* ---- Part 1: source-device cards --------------------------------------- */
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px; margin-top: 20px; }
+  .plate { position: relative; background: linear-gradient(180deg, var(--panel-2), var(--panel)); border: 1px solid var(--border); border-radius: 10px; padding: 22px 22px 26px; display: flex; flex-direction: column; gap: 18px; box-shadow: 0 1px 0 rgba(255,255,255,.03) inset, 0 14px 30px rgba(0,0,0,.35); }
+  .plate::before, .plate::after, .plate > .rivet-b, .plate > .rivet-c { content: ""; position: absolute; width: 6px; height: 6px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #4a525e, #1a1d22 70%); box-shadow: 0 1px 1px rgba(0,0,0,.6); }
+  .plate::before { top: 9px; left: 9px; } .plate::after { top: 9px; right: 9px; }
+  .plate > .rivet-b { bottom: 9px; left: 9px; } .plate > .rivet-c { bottom: 9px; right: 9px; }
+  .plate-label { font-family: "Saira Condensed", sans-serif; text-transform: uppercase; letter-spacing: 2px; font-weight: 700; font-size: 13px; display: flex; align-items: center; gap: 9px; }
+  .plate-label .idx { color: var(--ink); background: var(--accent); border-radius: 3px; font-size: 11px; padding: 1px 6px; letter-spacing: 1px; }
+  .plate-credit { font-size: 11px; color: var(--txt-dim); }
+  .stage { background: linear-gradient(180deg, #0e1015, #0a0b0e); border: 1px solid var(--border); border-radius: 8px; min-height: 150px; display: flex; align-items: center; justify-content: center; gap: 22px; padding: 28px 18px; }
+  .note { font-size: 12px; color: var(--txt-dim); line-height: 1.5; }
+  .note b { color: var(--tan); font-weight: 600; }
+
+  /* 1 — draw checkbox */
+  .container { cursor: pointer; display: inline-flex; align-items: center; gap: 12px; }
+  .container input { display: none; }
+  .container .draw-box { overflow: visible; }
+  .container .draw-box .path { fill: none; stroke: var(--txt-dim); stroke-width: 6; stroke-linecap: round; stroke-linejoin: round; transition: stroke .25s ease, fill .35s ease .15s; stroke-dasharray: 1; stroke-dashoffset: 0; }
+  .container input:checked + .draw-box .path { stroke: var(--accent); fill: var(--accent-soft); animation: draw 0.6s cubic-bezier(.5,0,.3,1) forwards; }
+  @keyframes draw { 0% { stroke-dashoffset: 1; } 100% { stroke-dashoffset: 0; } }
+  .container:hover .draw-box .path { stroke: var(--accent-line); }
+  .container input:focus-visible + .draw-box { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 6px; }
+  .cb-caption { font-family: "Saira Condensed", sans-serif; text-transform: uppercase; letter-spacing: 2px; font-weight: 700; font-size: 15px; color: var(--txt-dim); transition: color .25s ease; }
+  .container input:checked ~ .cb-caption { color: var(--accent); }
+
+  /* 2 — keyed fancy button */
+  .fancy { position: relative; display: inline-block; text-decoration: none; cursor: pointer; padding: 14px 30px; font-family: "Saira Condensed", sans-serif; text-transform: uppercase; letter-spacing: 2.5px; font-weight: 700; font-size: 15px; color: var(--accent); background: linear-gradient(180deg, #1c222a, #0f1217); border: 2px solid var(--accent-line); border-radius: 3px; transition: color .35s ease, background .35s ease, border-color .35s ease; -webkit-tap-highlight-color: transparent; }
+  .fancy .text { position: relative; z-index: 2; }
+  .fancy .top-key, .fancy .bottom-key-1, .fancy .bottom-key-2 { position: absolute; transition: width .4s ease, left .4s ease, right .4s ease; z-index: 1; background: var(--accent); height: 2px; }
+  .fancy .top-key { width: 28px; top: -2px; left: 16px; }
+  .fancy .bottom-key-1 { width: 18px; right: 26px; bottom: -2px; }
+  .fancy .bottom-key-2 { width: 8px; right: 16px; bottom: -2px; }
+  .fancy:hover, .fancy:focus-visible { color: var(--ink); background: linear-gradient(180deg, #ff8a2e, #ff7a1a); border-color: var(--accent); outline: none; }
+  .fancy:focus-visible { box-shadow: 0 0 0 3px var(--accent-soft), 0 0 0 5px var(--accent); }
+  .fancy:hover .top-key { left: -2px; width: 0; }
+  .fancy:hover .bottom-key-1, .fancy:hover .bottom-key-2 { right: 0; width: 0; }
+  .fancy:active { transform: translateY(1px); }
+
+  /* 3 — diagonal sweep button */
+  .sweep { border: none; display: inline-block; position: relative; padding: 0.8em 2.6em; font-size: 16px; background: transparent; cursor: pointer; user-select: none; overflow: hidden; color: var(--accent); z-index: 1; font-family: "Saira Condensed", sans-serif; text-transform: uppercase; letter-spacing: 2.5px; font-weight: 700; transition: color .3s; -webkit-tap-highlight-color: transparent; }
+  .sweep span { position: absolute; left: 0; top: 0; width: 100%; height: 100%; z-index: -1; border: 3px solid var(--accent); border-radius: 2px; }
+  .sweep span::before { content: ""; display: block; position: absolute; width: 8%; height: 500%; background: rgba(255,255,255,.08); top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-60deg); transition: all 0.3s; }
+  .sweep:hover span::before { transform: translate(-50%, -50%) rotate(-90deg); width: 100%; background: var(--accent); }
+  .sweep:hover { color: var(--ink); }
+  .sweep:active span::before { background: #e0680f; }
+  .sweep:focus-visible { outline: 2px solid var(--yellow); outline-offset: 3px; }
+
+  /* ====================================================================== */
+  /* PART 2 — "LIVE-WIRE" STATUS-MOTION PROTOTYPE                            */
+  /* ====================================================================== */
+  .northstar { margin: 14px 0 0; padding: 14px 18px; border-left: 3px solid var(--accent); background: var(--accent-soft); border-radius: 0 6px 6px 0; font-size: 14px; line-height: 1.5; }
+  .northstar b { color: var(--accent); }
+
+  .proto-block { position: relative; border: 1px solid var(--border); border-radius: 10px; background: linear-gradient(180deg, var(--panel-2), var(--panel)); padding: 18px 20px 24px; margin-top: 22px; }
+  .proto-label { font-family: "Saira Condensed", sans-serif; text-transform: uppercase; letter-spacing: 2px; font-weight: 700; font-size: 13px; color: var(--txt); margin-bottom: 14px; }
+  .proto-label .idx { color: var(--ink); background: var(--accent); border-radius: 3px; font-size: 11px; padding: 1px 6px; margin-right: 6px; }
+  .proto-stage { background: linear-gradient(180deg, #0e1015, #0a0b0e); border: 1px solid var(--border); border-radius: 8px; padding: 26px 22px; display: flex; align-items: center; gap: 28px; flex-wrap: wrap; }
+
+  /* --- the demo unit tile --- */
+  .unit-tile { position: relative; width: 210px; height: 124px; border-radius: 8px; background: linear-gradient(180deg, #12151a, #0c0e12); border: 1px solid var(--border); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; overflow: hidden; flex: 0 0 auto; }
+  .unit-tile .tile-name { font-family: "Saira Condensed", sans-serif; text-transform: uppercase; letter-spacing: 2px; font-weight: 800; font-size: 22px; }
+  .unit-tile .tile-status { font-family: "Saira Condensed", sans-serif; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 600; font-size: 12px; color: var(--txt-dim); transition: color .3s ease; }
+  .unit-tile.s-red .tile-status { color: var(--red); }
+  .unit-tile.s-yellow .tile-status { color: var(--yellow); }
+  .unit-tile.s-green .tile-status { color: var(--green); }
+
+  /* perimeter zip overlay (SVG rect, normalized pathLength=100) */
+  .zip-svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  .zip-svg rect { fill: none; stroke: transparent; stroke-width: 3; opacity: 0; transition: opacity .3s ease; }
+  /* RED ambient — a short segment races the border, fast, forever (urgent loop) */
+  .unit-tile.s-red .zip-svg rect { stroke: var(--red); stroke-dasharray: 16 84; opacity: 1; animation: race var(--zip-period, 2.2s) linear infinite; }
+  /* JOLT — one hard fast lap + a shudder, then JS settles into s-red */
+  .unit-tile.s-jolt { animation: shudder .18s linear 1; }
+  .unit-tile.s-jolt .zip-svg rect { stroke: var(--red); stroke-dasharray: 16 84; opacity: 1; animation: race .34s linear 1; }
+  /* YELLOW — solid border that creeps in then breathes (patient) */
+  .unit-tile.s-yellow .zip-svg rect { stroke: var(--yellow); stroke-dasharray: none; opacity: 1; animation: creepIn .9s ease-out both, breathe var(--pulse, 2.2s) ease-in-out .9s infinite; }
+  /* GREEN — silent. no ambient. only the wash transition animates it. */
+  .unit-tile.s-green .zip-svg rect { stroke: var(--green); stroke-dasharray: none; opacity: .8; }
+
+  @keyframes race { to { stroke-dashoffset: -100; } }
+  @keyframes shudder { 0%,100% { transform: translateX(0); } 20% { transform: translateX(-2px); } 60% { transform: translateX(2px); } 85% { transform: translateX(-1px); } }
+  @keyframes creepIn { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes breathe { 0%,100% { opacity: .38; } 50% { opacity: 1; } }
+
+  /* wash overlay — green floods L→R, one-shot (resolution) */
+  .wash-overlay { position: absolute; inset: 0; background: linear-gradient(90deg, var(--green-bg), rgba(39,192,138,.30)); transform: translateX(-101%); pointer-events: none; }
+  .unit-tile.s-wash .wash-overlay { animation: wash .5s cubic-bezier(.2,.7,.2,1) forwards; }
+  @keyframes wash { to { transform: translateX(0); } }
+
+  /* brand stamp — pressed in only on genuine completion (milestone green) */
+  .brand-stamp { position: absolute; font-size: 30px; color: var(--green); opacity: 0; transform: scale(1.6) rotate(-14deg); pointer-events: none; filter: drop-shadow(0 0 6px rgba(39,192,138,.5)); }
+  .unit-tile.s-brand .brand-stamp { animation: stamp .32s cubic-bezier(.2,.8,.2,1) forwards; }
+  @keyframes stamp { 0% { opacity: 0; transform: scale(1.6) rotate(-14deg); } 55% { opacity: 1; } 100% { opacity: 1; transform: scale(1) rotate(0); } }
+
+  /* --- control buttons --- */
+  .proto-controls { display: flex; flex-direction: column; gap: 9px; }
+  .ctl { font-family: "Saira Condensed", sans-serif; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 700; font-size: 13px; cursor: pointer; padding: 9px 16px; border-radius: 4px; border: 1px solid var(--border); background: linear-gradient(180deg, #1c222a, #0f1217); color: var(--txt); transition: border-color .2s ease, color .2s ease, background .2s ease; text-align: left; min-width: 200px; }
+  .ctl:hover { border-color: var(--accent-line); }
+  .ctl .verb { color: var(--txt-dim); font-weight: 600; }
+  .ctl[data-fire="jolt"]:hover { color: var(--red); border-color: var(--red); }
+  .ctl[data-fire="creep"]:hover { color: var(--yellow); border-color: var(--yellow); }
+  .ctl[data-fire="wash"]:hover, .ctl[data-fire="brand"]:hover { color: var(--green); border-color: var(--green); }
+  .ctl:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* --- tempo clock --- */
+  .tempo-row { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; }
+  .sm-pill { font-family: "Saira Condensed", sans-serif; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 700; font-size: 12px; padding: 6px 12px; border-radius: 999px; border: 1.5px solid var(--yellow); color: var(--yellow); background: var(--yellow-bg); position: relative; }
+  .sm-pill.tempo::after { content: ""; position: absolute; inset: -3px; border-radius: 999px; border: 1.5px solid var(--yellow); animation: breathe var(--pulse, 2.2s) ease-in-out infinite; pointer-events: none; }
+  input[type=range] { accent-color: var(--accent); width: 220px; }
+  .tempo-readout { font-family: "Saira Condensed", sans-serif; letter-spacing: 1px; font-weight: 700; color: var(--txt); min-width: 92px; }
+  .tempo-cap { font-size: 11px; color: var(--txt-dim); }
+
+  /* --- hover personalities row --- */
+  .hover-row { display: flex; gap: 22px; flex-wrap: wrap; align-items: center; }
+  .smb { position: relative; font-family: "Saira Condensed", sans-serif; text-transform: uppercase; letter-spacing: 2px; font-weight: 700; font-size: 14px; padding: 12px 26px; border-radius: 4px; background: transparent; cursor: pointer; overflow: hidden; border: 2px solid; -webkit-tap-highlight-color: transparent; }
+  .smb .lbl { position: relative; z-index: 2; }
+  .smb .hb { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; }
+  .smb .hb rect { fill: none; stroke-width: 3; opacity: 0; }
+  /* red: zip on hover */
+  .smb.red { border-color: var(--red); color: var(--red); }
+  .smb.red:hover .hb rect, .smb.red:focus-visible .hb rect { stroke: var(--red); stroke-dasharray: 16 84; opacity: 1; animation: race .9s linear infinite; }
+  /* yellow: breathe on hover */
+  .smb.yellow { border-color: var(--yellow); color: var(--yellow); }
+  .smb.yellow:hover .hb rect, .smb.yellow:focus-visible .hb rect { stroke: var(--yellow); opacity: 1; animation: breathe 1.6s ease-in-out infinite; }
+  /* green: sweep-fill + settle on hover */
+  .smb.green { border-color: var(--green); color: var(--green); transition: color .35s ease; }
+  .smb.green .fill { position: absolute; inset: 0; background: var(--green); transform: translateX(-101%); transition: transform .4s cubic-bezier(.2,.7,.2,1); z-index: 1; }
+  .smb.green:hover .fill, .smb.green:focus-visible .fill { transform: translateX(0); }
+  .smb.green:hover, .smb.green:focus-visible { color: var(--ink); }
+  .smb:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+  footer { max-width: 1080px; margin: 40px auto 0; padding: 22px 24px 0; border-top: 1px dashed rgba(194,146,90,.4); color: var(--txt-dim); font-size: 12px; line-height: 1.6; }
+  footer b { color: var(--tan); font-weight: 600; }
+
+  /* ---- Reduced motion: kill loops/transitions, KEEP the information ------ */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
+    .zip-svg rect, .smb .hb rect { animation: none !important; opacity: 1 !important; stroke-dasharray: none !important; }
+    .wash-overlay, .unit-tile.s-wash .wash-overlay { animation: none !important; transform: translateX(0) !important; }
+    .brand-stamp, .unit-tile.s-brand .brand-stamp { animation: none !important; opacity: 1 !important; transform: none !important; }
+    .sm-pill.tempo::after { animation: none !important; }
+    .smb.green .fill { transition: none !important; }
+    /* the COLOR still carries the status — motion was only ever the delight layer */
+  }
+</style>
+</head>
+<body>
+  <header>
+    <div class="hazard-bar"></div>
+    <div class="head-inner">
+      <div>
+        <div class="wordmark">Rental <b>Wrangler</b> · Yard Sandbox</div>
+        <div class="subtitle">Found components, re-skinned — plus a live prototype of the status-motion system.</div>
+      </div>
+      <span class="pill-local">Local Sandbox · Not Live</span>
+    </div>
+  </header>
+
+  <div class="wrap">
+    <!-- ============ PART 1 ============ -->
+    <h2 class="section-title">Part 1 · Source devices</h2>
+    <p class="section-sub">The three found components, re-skinned. These are the motion vocabulary Part 2 is built from.</p>
+    <div class="grid">
+      <section class="plate">
+        <span class="rivet-b"></span><span class="rivet-c"></span>
+        <div><div class="plate-label"><span class="idx">01</span> Brand-It Checkbox</div><div class="plate-credit">orig. Uiverse · SelfMadeSystem — re-skinned</div></div>
+        <div class="stage">
+          <label class="container"><input type="checkbox" />
+            <svg class="draw-box" viewBox="0 0 64 64" height="2.4em" width="2.4em"><path d="M 0 16 V 56 A 8 8 90 0 0 8 64 H 56 A 8 8 90 0 0 64 56 V 8 A 8 8 90 0 0 56 0 H 8 A 8 8 90 0 0 0 8 V 16 L 32 48 L 64 16 V 8 A 8 8 90 0 0 56 0 H 8 A 8 8 90 0 0 0 8 V 56 A 8 8 90 0 0 8 64 H 56 A 8 8 90 0 0 64 56 V 16" pathLength="1" class="path"></path></svg>
+            <span class="cb-caption">Brand It</span>
+          </label>
+        </div>
+        <div class="note">The <b>DRAW</b> primitive — outline strokes on, fills accent. Powers green-check confirms + the brand stamp.</div>
+      </section>
+      <section class="plate">
+        <span class="rivet-b"></span><span class="rivet-c"></span>
+        <div><div class="plate-label"><span class="idx">02</span> Keyed Action Button</div><div class="plate-credit">orig. Uiverse · cssbuttons-io — re-skinned</div></div>
+        <div class="stage"><a class="fancy" href="#" role="button"><span class="top-key"></span><span class="text">Saddle Up</span><span class="bottom-key-1"></span><span class="bottom-key-2"></span></a></div>
+        <div class="note">Ignition-style primary. <b>Orange = action</b>, and it stays OUT of the status tree so the accent never dilutes.</div>
+      </section>
+      <section class="plate">
+        <span class="rivet-b"></span><span class="rivet-c"></span>
+        <div><div class="plate-label"><span class="idx">03</span> Diagonal Sweep Button</div><div class="plate-credit">orig. Uiverse · adamgiebl — re-skinned</div></div>
+        <div class="stage"><button class="sweep"><span></span>Round Up</button></div>
+        <div class="note">The <b>SWEEP</b> primitive — a bar floods across a face. Powers the green "wash" resolution motion.</div>
+      </section>
+    </div>
+
+    <!-- ============ PART 2 ============ -->
+    <h2 class="section-title">Part 2 · "Live-Wire" status-motion</h2>
+    <p class="section-sub">red / yellow / green expressed through the primitives above. Sandbox prototype — timings are first-draft.</p>
+    <div class="northstar">
+      <b>North-star rule:</b> Getting worse is sudden &amp; loud. Getting better is smooth &amp; quiet. Staying bad is a patient loop. Being fine is silent.
+    </div>
+
+    <!-- Block 1: transition grammar -->
+    <div class="proto-block">
+      <div class="proto-label"><span class="idx">①</span> Transition grammar — fire an event, feel the verb</div>
+      <div class="proto-stage">
+        <div class="unit-tile" id="tile">
+          <svg class="zip-svg" viewBox="0 0 100 100" preserveAspectRatio="none"><rect x="1.5" y="1.5" width="97" height="97" rx="6" pathLength="100" vector-effect="non-scaling-stroke"></rect></svg>
+          <div class="wash-overlay"></div>
+          <div class="tile-name">CAT 305</div>
+          <div class="tile-status" id="tileStatus">Idle</div>
+          <div class="brand-stamp">★</div>
+        </div>
+        <div class="proto-controls">
+          <button class="ctl" data-fire="jolt">Escalate <span class="verb">· jolt (→ red)</span></button>
+          <button class="ctl" data-fire="creep">Warn <span class="verb">· creep (→ yellow)</span></button>
+          <button class="ctl" data-fire="wash">Resolve <span class="verb">· wash (→ green)</span></button>
+          <button class="ctl" data-fire="brand">Complete <span class="verb">· wash + brand</span></button>
+          <button class="ctl" data-fire="reset">Reset <span class="verb">· idle</span></button>
+        </div>
+      </div>
+      <div class="note" style="margin-top:12px">Red <b>jolts</b> then settles into a patient loop. Green <b>washes</b> once and goes silent forever. Yellow <b>creeps</b> in. Milestone completions get the <b>brand</b> stamp. (On a phone each also fires a haptic twin — no-op on desktop.)</div>
+    </div>
+
+    <!-- Block 2: tempo clock -->
+    <div class="proto-block">
+      <div class="proto-label"><span class="idx">②</span> Tempo as a clock — same yellow, the pulse counts down</div>
+      <div class="proto-stage">
+        <div class="tempo-row">
+          <span class="sm-pill tempo" id="tempoPill">Due soon</span>
+          <input type="range" id="tempoRange" min="0" max="7" step="0.5" value="7" aria-label="days until due" />
+          <span class="tempo-readout" id="tempoReadout">7 days out</span>
+        </div>
+      </div>
+      <div class="note" style="margin-top:12px"><b>Drag toward 0</b> — the breathe quickens as the deadline nears. Clamped to a floor so it never strobes. Under reduced-motion this collapses to the number, which is why the readout always shows.</div>
+    </div>
+
+    <!-- Block 3: hover personalities -->
+    <div class="proto-block">
+      <div class="proto-label"><span class="idx">③</span> Interaction layer — hover each (status owns the border)</div>
+      <div class="proto-stage">
+        <div class="hover-row">
+          <button class="smb red"><svg class="hb" viewBox="0 0 100 100" preserveAspectRatio="none"><rect x="1.5" y="1.5" width="97" height="97" rx="4" pathLength="100" vector-effect="non-scaling-stroke"></rect></svg><span class="lbl">Abort</span></button>
+          <button class="smb yellow"><svg class="hb" viewBox="0 0 100 100" preserveAspectRatio="none"><rect x="1.5" y="1.5" width="97" height="97" rx="4" pathLength="100" vector-effect="non-scaling-stroke"></rect></svg><span class="lbl">Hold</span></button>
+          <button class="smb green"><span class="fill"></span><span class="lbl">Ready</span></button>
+        </div>
+      </div>
+      <div class="note" style="margin-top:12px">Red <b>zips</b> the border (urgent), yellow <b>breathes</b> (patient), green <b>sweep-fills</b> and settles (go). Same three personalities as the transitions — one language.</div>
+    </div>
+  </div>
+
+  <footer>
+    <b>Sandbox only.</b> Not imported anywhere — <code>index.html</code>, <code>app.js</code>, <code>style.css</code> untouched. Open straight off disk. If the feel lands, we lock timings + resolve the open tensions (red-split, budget eviction, reduced-motion equivalents) in a spec, then stamp it into the rulebook via <code>/jactec-ui</code>.
+  </footer>
+
+<script>
+  (function () {
+    var tile = document.getElementById('tile');
+    var statusEl = document.getElementById('tileStatus');
+    var STATES = ['s-jolt', 's-red', 's-creep', 's-yellow', 's-wash', 's-green', 's-brand'];
+    var settleTimer = null;
+
+    function buzz(pattern) {
+      if (navigator.vibrate) { try { navigator.vibrate(pattern); } catch (e) {} }
+    }
+    function clearStates() {
+      if (settleTimer) { clearTimeout(settleTimer); settleTimer = null; }
+      STATES.forEach(function (c) { tile.classList.remove(c); });
+      void tile.offsetWidth; // force reflow so re-fired animations restart
+    }
+
+    var actions = {
+      jolt: function () {
+        clearStates();
+        tile.classList.add('s-jolt');
+        statusEl.textContent = 'Fault · blocked';
+        buzz([45, 35, 45]); // sharp double-buzz = alarm
+        settleTimer = setTimeout(function () {
+          tile.classList.remove('s-jolt');
+          tile.classList.add('s-red'); // settle into the patient loop
+          statusEl.textContent = 'On rent · overdue';
+        }, 340);
+      },
+      creep: function () {
+        clearStates();
+        tile.classList.add('s-yellow');
+        statusEl.textContent = 'Due soon';
+        // no buzz — it crept in, you didn't feel it
+      },
+      wash: function () {
+        clearStates();
+        tile.classList.add('s-wash');
+        statusEl.textContent = 'Returned';
+        buzz(22); // one gentle confirm tap
+        settleTimer = setTimeout(function () {
+          tile.classList.remove('s-wash');
+          tile.classList.add('s-green');
+        }, 500);
+      },
+      brand: function () {
+        clearStates();
+        tile.classList.add('s-wash', 's-brand');
+        statusEl.textContent = 'Complete';
+        buzz(22);
+        settleTimer = setTimeout(function () {
+          tile.classList.remove('s-wash');
+          tile.classList.add('s-green');
+        }, 500);
+      },
+      reset: function () {
+        clearStates();
+        statusEl.textContent = 'Idle';
+      }
+    };
+
+    document.querySelectorAll('.ctl').forEach(function (b) {
+      b.addEventListener('click', function () { actions[b.dataset.fire](); });
+    });
+
+    // --- tempo clock ---
+    var range = document.getElementById('tempoRange');
+    var pill = document.getElementById('tempoPill');
+    var readout = document.getElementById('tempoReadout');
+    var FLOOR = 0.55, CEIL = 2.4; // seconds
+    function updateTempo() {
+      var days = parseFloat(range.value);
+      var period = FLOOR + (days / 7) * (CEIL - FLOOR);
+      pill.style.setProperty('--pulse', period.toFixed(2) + 's');
+      if (days <= 0) { readout.textContent = 'Due now'; pill.textContent = 'Due now'; }
+      else { readout.textContent = days + (days === 1 ? ' day out' : ' days out'); pill.textContent = 'Due soon'; }
+    }
+    range.addEventListener('input', updateTempo);
+    updateTempo();
+  })();
+</script>
+</body>
+</html>
