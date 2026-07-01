@@ -2148,7 +2148,11 @@ function openStandard(card, recId, recType) {
 function showCategoryUnits(categoryId) {
   const cat = IDX.category.get(categoryId); if (!cat) return;
   const s = activeSession(), us = s.cards.units; if (!us) return;
-  us.search = cat.name; us.listLimit = undefined; us.mode = 'list'; us.recId = null; us.recType = null;
+  // Match the pill's count: narrow Units to this category's AVAILABLE units, not the
+  // whole category. The 'available' token engages the §10 availability lens (rowMatches)
+  // and makes availWin resolve to the in-scope window (open rental window, else "now"),
+  // so the list mirrors exactly what the pill was tallying.
+  us.search = `${cat.name} available`; us.listLimit = undefined; us.mode = 'list'; us.recId = null; us.recType = null;
   let unitsSlot = null;
   if (s.cols) {
     const slots = ['left', 'middle', 'right'].filter((k) => k in s.cols);
@@ -11842,12 +11846,18 @@ function applyTitles() {
   });
 }
 
+/* Hover affordances (tooltip + record preview) are MOUSE-only. On a touch device the
+ * first tap synthesizes a `mouseover`, so arming a tooltip/preview there is exactly what
+ * made the first tap "act like hover" and cost a second tap to open a list row. Gate both
+ * to hover-capable pointers — covers phones AND touch tablets, not just the width-based
+ * is-phone (Jac 2026-07-01). */
+const HOVER_CAPABLE = window.matchMedia('(hover: hover)').matches;
 /* Custom tooltip (matches the app, not the OS) — shows full text after ~0.5s. */
 let tipTimer, tipEl;
 function initTooltip() {
   tipEl = el('div', 'tooltip'); document.body.appendChild(tipEl);
   document.addEventListener('mouseover', (e) => {
-    if (DRAG.active) return;   // §15c — no tooltips mid-drag
+    if (!HOVER_CAPABLE || DRAG.active) return;   // §15c — no tooltips mid-drag; never on touch (first-tap hover)
     const t = e.target.closest('[data-tip]');
     if (!t) return;
     clearTimeout(tipTimer);
@@ -16559,7 +16569,7 @@ function boot() {
   document.addEventListener('mousemove', (e) => { lastMouse.x = e.clientX; lastMouse.y = e.clientY; });
   // hover preview (#1): float a record's Standard view after a short hover on a row/pill
   document.addEventListener('mouseover', (e) => {
-    if (!state.previewsOn || DRAG.active) return;       // previews off (per device) — and NEVER mid-drag (§15c)
+    if (!HOVER_CAPABLE || !state.previewsOn || DRAG.active) return;   // never on touch (first-tap hover eats the tap); previews off (per device); and NEVER mid-drag (§15c)
     if (e.target.closest('.hover-preview')) return;     // hovering INSIDE the open preview must NOT re-trigger/close it — let it persist so you can scroll/interact (the preview's own mouseenter/leave manage it)
     // interactive controls are CLICK targets, not preview triggers — the popup kept
     // landing under the cursor while aiming at the status dropdown (Jac 2026-06-12).
