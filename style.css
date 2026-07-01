@@ -2513,7 +2513,7 @@ body.rw-inspect .c-titlecard:hover { outline: 2px solid #18b6ff; outline-offset:
 .flag.c-gray { background: none; color: var(--gray); border: none; }
 /* GHOST tier (R9 flag = ghost link, plate .btn.ghost): danger carries an always-on
    hazard-striped underline; other colors underline on hover (rule above). */
-.flag.c-red, .flag.c-yellow { background-repeat: repeat-x; background-position: 0 100%; background-size: 11px 3px; padding-bottom: 3px; }
+.flag.c-red, .flag.c-yellow { background-repeat: repeat-x; background-position: 0 100%; background-size: 11px 2.1px; padding-bottom: 3px; }   /* striped underline 30% thinner (was 3px) */
 .flag.c-red    { background-image: repeating-linear-gradient(135deg, var(--red) 0 4px, transparent 4px 8px); }
 .flag.c-yellow { background-image: repeating-linear-gradient(135deg, var(--yellow) 0 4px, transparent 4px 8px); }
 .flag.c-red:hover, .flag.c-yellow:hover { text-decoration: none; }   /* striped underline already present */
