@@ -1825,6 +1825,7 @@ function categoryNextAvailable(categoryId) {
     if (u.categoryId !== categoryId || u.fleetStatus !== 'Active' || u.inspectionStatus === 'Failed') continue;
     const r = activeRentalForUnit(u.unitId);
     if (!r || !r.endDate) continue;
+    if (r.endDate < TODAY_ISO) continue;   // return date already passed (overdue) → not a real "next available"
     let iso = r.endDate, min = null;
     const em = timeToMin(r.endTime);
     if (em != null) { min = em + TURN_MIN; while (min >= 1440) { min -= 1440; iso = addDays(iso, 1); } }
@@ -1834,17 +1835,23 @@ function categoryNextAvailable(categoryId) {
   return best;
 }
 /* §10 why-none — the terse reason a category has 0 units free, for the sales lead plate
-   when there's no next-return date to show (Jac 2026-07-01). Ordered from "nothing to rent"
-   to "out on rent": no units → all off-fleet (Sold/Inactive/For Sale) → every Active unit
-   Failed → else rentable units exist but all out (with no return date on record, else a
-   NEXT date would have shown instead). */
+   when there's no next-return date to show (Jac 2026-07-01). Judged on the ACTIVE fleet only
+   (so it never contradicts the PASS/NR/FAIL tally, which is also Active-only). Ordered from
+   "nothing to rent" to "out": no units → all off-fleet (Sold/Inactive/For Sale) → every Active
+   unit Failed → out but its return date already passed (Overdue) → else out (On rent, no
+   return date on record — else a future NEXT date would have shown instead). */
 function categoryUnavailReason(categoryId) {
   const units = DATA.units.filter((u) => u.categoryId === categoryId);
   if (!units.length) return 'No units';
   const active = units.filter((u) => u.fleetStatus === 'Active');
   if (!active.length) return 'Off fleet';
-  if (!active.some((u) => u.inspectionStatus !== 'Failed')) return 'All failed';
-  return 'On rent';
+  if (!active.some((u) => u.inspectionStatus !== 'Failed')) return 'Failed';
+  const overdue = active.some((u) => {
+    if (u.inspectionStatus === 'Failed') return false;
+    const r = activeRentalForUnit(u.unitId);
+    return r && r.endDate && r.endDate < TODAY_ISO;   // out, and its scheduled return has passed
+  });
+  return overdue ? 'Overdue' : 'On rent';
 }
 /** A unit's current rental bucket (mirrors §12.4 Rental Status into 3 buckets). */
 function unitRentalBucket(u) {
@@ -4962,7 +4969,11 @@ const ROWS = {
     //   [1-Day · 7-Day · 4-Week stacked rates]          ← the rate card, vertical
     // The whole plate's border carries the rentable-health color (--catr-hl), exactly
     // like the rentals mini-card's --rcc-hl.
-    const mix = categoryMix(c.categoryId);   // {Ready, 'Not Ready', Failed, total} — feeds the 3 tally buttons
+    // PASS/NR/FAIL over the ACTIVE fleet only — a Sold/Inactive/For-Sale unit isn't rentable
+    // inventory, so counting its inspection here made the tally contradict availability (e.g.
+    // "All failed" next to PASS 2). Same Active universe as availN + categoryUnavailReason.
+    const mix = { Ready: 0, 'Not Ready': 0, Failed: 0 };
+    DATA.units.forEach((u) => { if (u.categoryId === c.categoryId && u.fleetStatus === 'Active' && mix[u.inspectionStatus] != null) mix[u.inspectionStatus]++; });
     // FREE units (inspection-AGNOSTIC): Active fleet, not out on a rental for the window
     // (or right now). Their inspection makeup colors BOTH the plate border and the name
     // (Jac 2026-06-25): any free unit Ready → green · else any Not Ready → yellow · else
