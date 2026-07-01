@@ -1833,6 +1833,19 @@ function categoryNextAvailable(categoryId) {
   }
   return best;
 }
+/* §10 why-none — the terse reason a category has 0 units free, for the sales lead plate
+   when there's no next-return date to show (Jac 2026-07-01). Ordered from "nothing to rent"
+   to "out on rent": no units → all off-fleet (Sold/Inactive/For Sale) → every Active unit
+   Failed → else rentable units exist but all out (with no return date on record, else a
+   NEXT date would have shown instead). */
+function categoryUnavailReason(categoryId) {
+  const units = DATA.units.filter((u) => u.categoryId === categoryId);
+  if (!units.length) return 'No units';
+  const active = units.filter((u) => u.fleetStatus === 'Active');
+  if (!active.length) return 'Off fleet';
+  if (!active.some((u) => u.inspectionStatus !== 'Failed')) return 'All failed';
+  return 'On rent';
+}
 /** A unit's current rental bucket (mirrors §12.4 Rental Status into 3 buckets). */
 function unitRentalBucket(u) {
   const r = activeRentalForUnit(u.unitId);
@@ -4971,7 +4984,8 @@ const ROWS = {
     //   LEAD [ AVAIL n  |  NEXT wkday·time ]  ·  [ PASS ] [ NR ] [ FAIL ]
     // Lead = availability: ≥1 free now → green "AVAIL" count (taps to the category's
     // available units); 0 free → red "NEXT" free-date (soonest rental end + 4h turnaround,
-    // white date text), tapping jumps to THAT unit; 0 and nothing out to return → red "AVAIL 0".
+    // white date text), tapping jumps to THAT unit; 0 free with no return date on record →
+    // red "NONE" plate stamping the one-word reason why (On rent / All failed / Off fleet…).
     const next = availN === 0 ? categoryNextAvailable(c.categoryId) : null;
     // Compact syntax (Jac 2026-07-01): a weekday inside the next 7 days (else Mon-DD),
     // and time as just the hour + a/p — keeps the lead short so the trio gets more room.
@@ -4986,7 +5000,9 @@ const ROWS = {
       const nu = IDX.unit.get(next.unitId);
       lead = `<button class="catr-cell catr-lead catr-lead-next js-cat-next" data-unit="${esc(next.unitId)}" style="--ct:var(--red);--ct-bg:var(--red-bg)" data-tip="Next free: ${esc(nu ? nu.name : 'unit')} on ${esc(when)} (4-hr turnaround) — tap to open it"><span class="cc-k">NEXT</span><span class="cc-v cc-date">${esc(when)}</span></button>`;
     } else {
-      lead = `<button class="catr-cell catr-lead js-cat-avail" data-cat="${esc(c.categoryId)}" style="--ct:var(--red);--ct-bg:var(--red-bg)" data-tip="No rentable units free — none are out to come back, either"><span class="cc-k">AVAIL</span><span class="cc-v">0</span></button>`;
+      // 0 free and no return date to show → tell the salesperson WHY in one word (Jac).
+      const why = categoryUnavailReason(c.categoryId);
+      lead = `<div class="catr-cell catr-lead catr-lead-none" style="--ct:var(--red);--ct-bg:var(--red-bg)" data-tip="None available — ${esc(why.toLowerCase())}"><span class="cc-k">NONE</span><span class="cc-v cc-date">${esc(why)}</span></div>`;
     }
     // The three status plates (Passed · Not Ready · Failed inspection) filter Units to that
     // status in this category via the established js-fleet-filter path (like the detail mixbar).
