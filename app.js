@@ -4114,12 +4114,12 @@ const badge = (label, color = 'gray', focal) => `<span class="pill c-${color}${f
 function gatePill(set, value, js, data, { truck } = {}) {
   const st = getStatus(set, value);
   const tk = truck ? `<span class="truck">${I.truck}</span>` : '';
-  return `<span class="pill gate c-${st.color} ${js}" data-r="R1"${dataAttrs(data)}>${tk}${ovIcon(st)}${esc(st.label)} ${I.chev}</span>`;
+  return `<span class="pill gate c-${st.color} ${js}" data-r="R1"${dataAttrs(data)}>${tk}${ovIcon(st)}${esc(st.label)}<span class="gate-chev">${I.chev}</span></span>`;
 }
 /** R1: a gate with a custom label (e.g. ETA-as-status on WO lines). */
 function gatePillRaw(label, color, js, data, noChev) {
   // R1: chevron ONLY on real dropdowns — popup-opening gates pass noChev
-  return `<span class="pill gate c-${color} ${js}" data-r="R1"${dataAttrs(data)}>${esc(label)}${noChev ? '' : ' ' + I.chev}</span>`;
+  return `<span class="pill gate c-${color} ${js}" data-r="R1"${dataAttrs(data)}>${esc(label)}${noChev ? '' : `<span class="gate-chev">${I.chev}</span>`}</span>`;
 }
 /* §20 MASTER GATE — the rental-status dropdown in the Day Timeline / row. Usable
    (bulk-sets every unit) only while units are UNIFORM; one diverging unit LOCKS it
@@ -4130,17 +4130,17 @@ function masterGate(r, { truck } = {}) {
   if (d.mixed) {
     return `<span class="pill gate c-gray locked" data-r="R1" data-tip="Units have mixed statuses — match them all, or use each unit's own gate below">${tk}${esc(d.label)}</span>`;
   }
-  return `<span class="pill gate c-${d.color} js-status-pill" data-r="R1" data-rec="${esc(r.rentalId)}">${tk}${esc(d.label)} ${I.chev}</span>`;
+  return `<span class="pill gate c-${d.color} js-status-pill" data-r="R1" data-rec="${esc(r.rentalId)}">${tk}${esc(d.label)}<span class="gate-chev">${I.chev}</span></span>`;
 }
 /* §20 per-unit status gate — shown on each unit chip when a rental holds >1 unit. */
 function unitStatusGate(r, eu) {
   const st = getStatus('rentalStatus', unitStatus(r, eu));
-  return `<span class="pill gate c-${st.color} js-unit-status" data-r="R1" data-rec="${esc(r.rentalId)}" data-unit="${esc(eu.unitId)}">${esc(st.label)} ${I.chev}</span>`;
+  return `<span class="pill gate c-${st.color} js-unit-status" data-r="R1" data-rec="${esc(r.rentalId)}" data-unit="${esc(eu.unitId)}">${esc(st.label)}<span class="gate-chev">${I.chev}</span></span>`;
 }
 /** R1: funnel-stage gate (§7.1). */
 function funnelPill(custId, which, stage) {
   const st = getStatus('funnelStage', stage);
-  return `<span class="pill gate c-${st.color} js-funnel" data-r="R1" data-rec="${esc(custId)}" data-which="${which}">${esc(st.label)} ${I.chev}</span>`;
+  return `<span class="pill gate c-${st.color} js-funnel" data-r="R1" data-rec="${esc(custId)}" data-which="${which}">${esc(st.label)}<span class="gate-chev">${I.chev}</span></span>`;
 }
 /** R4: a DERIVED pill — rides another pill in the same section; no bg/border,
  *  destination icon + ink color only; sits directly RIGHT of its parent. */
@@ -6370,7 +6370,7 @@ const DETAIL = {
     const journey = (w.lineItems || []).map((li, idx) => {
       const ven = li.vendorId ? IDX.vendor?.get?.(li.vendorId) || DATA.vendors.find((v) => v.vendorId === li.vendorId) : null;
       const venName = ven?.name || li.vendor || '';
-      return `<div class="hitem"><span data-r="R1" class="pill gate c-${getStatus('woPhase', li.phase).color} js-wophase-line" data-rec="${w.woId}" data-idx="${idx}" style="min-width:88px;justify-content:center">${esc(getStatus('woPhase', li.phase).label)} ${I.chev}</span><span>${esc(li.part)}</span><span class="spacer"></span><span class="muted">${li.eta ? fmtShortDate(li.eta) + ' · ' : ''}${li.hours || 0}h${venName ? ' · ' : ''}${venName ? (ven ? linkName(venName, { js: 'js-vendor-open', data: { rec: ven.vendorId } }) : esc(venName)) : ''}</span><b>${money(li.cost)}</b></div>`;
+      return `<div class="hitem"><span data-r="R1" class="pill gate c-${getStatus('woPhase', li.phase).color} js-wophase-line" data-rec="${w.woId}" data-idx="${idx}" style="min-width:88px;justify-content:center">${esc(getStatus('woPhase', li.phase).label)}<span class="gate-chev">${I.chev}</span></span><span>${esc(li.part)}</span><span class="spacer"></span><span class="muted">${li.eta ? fmtShortDate(li.eta) + ' · ' : ''}${li.hours || 0}h${venName ? ' · ' : ''}${venName ? (ven ? linkName(venName, { js: 'js-vendor-open', data: { rec: ven.vendorId } }) : esc(venName)) : ''}</span><b>${money(li.cost)}</b></div>`;
     }).join('');
     const billable = partsCost > 0 || labor > 0;
     const alreadyBilled = DATA.invoices.some((i) => (i.lineItems || []).some((li) => li.kind === 'WO' && li.ref === w.woId));

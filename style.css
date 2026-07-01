@@ -2961,6 +2961,14 @@ body { font-variant-numeric: tabular-nums; }
 .pill.gate.dim.c-purple { background:transparent; color:var(--purple); border-color:color-mix(in srgb,var(--purple) 42%,transparent); }
 .pill.gate.dim.c-gray   { background:transparent; color:var(--txt-2);  border-color:var(--line); }
 .pill.gate.dim svg { color:currentColor; filter:none; }
+/* Primary tier has NO border + no ec-red glow — the fill alone defines the shape
+   (re-asserted after .pill.c-red so red/yellow primaries stay borderless). */
+.pill.gate, .pill.focal { border-color:transparent; box-shadow:0 1px 2px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.18); }
+/* A GATE (dropdown) is the ONE variant of the base pill: a chevron in a small box
+   on the right edge (the dropdown affordance). Non-gate focal pills have neither. */
+.pill.gate .gate-chev { display:inline-flex; align-items:center; justify-content:center; width:17px; height:17px; margin-left:7px; margin-right:-3px; border:1px solid rgba(255,255,255,.5); border-radius:5px; background:rgba(0,0,0,.16); flex:0 0 auto; }
+.pill.gate .gate-chev svg { width:11px; height:11px; }
+.pill.gate.dim .gate-chev { border-color:currentColor; background:transparent; opacity:.85; }
 .cr-sub { flex: 0 1 auto; min-width: 0; font-size: 11.5px; color: var(--txt-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cr-pay { flex: 0 0 auto; font-size: 13px; font-weight: 700; font-style: italic; white-space: nowrap; }
 .cr-pay.spend { color: var(--green); }
