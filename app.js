@@ -4970,8 +4970,8 @@ const ROWS = {
     // The availability row is ONE bank of four equal-height stamped plates (.catr-cell):
     //   LEAD [ AVAIL n  |  NEXT wkday·time ]  ·  [ PASS ] [ NR ] [ FAIL ]
     // Lead = availability: ≥1 free now → green "AVAIL" count (taps to the category's
-    // available units); 0 free → purple "NEXT" free-date (soonest rental end + 4h
-    // turnaround), tapping jumps to THAT unit; 0 and nothing out to return → red "AVAIL 0".
+    // available units); 0 free → red "NEXT" free-date (soonest rental end + 4h turnaround,
+    // white date text), tapping jumps to THAT unit; 0 and nothing out to return → red "AVAIL 0".
     const next = availN === 0 ? categoryNextAvailable(c.categoryId) : null;
     // Compact syntax (Jac 2026-07-01): a weekday inside the next 7 days (else Mon-DD),
     // and time as just the hour + a/p — keeps the lead short so the trio gets more room.
@@ -4984,7 +4984,7 @@ const ROWS = {
       const dlabel = (nd && daysAhead >= 0 && daysAhead <= 7) ? DOW3[nd.getDay()] : fmtShortDate(next.iso).replace(' 0', ' ');
       const when = `${dlabel}${next.min != null ? ` ${compactClock(next.min)}` : ''}`;
       const nu = IDX.unit.get(next.unitId);
-      lead = `<button class="catr-cell catr-lead catr-lead-next js-cat-next" data-unit="${esc(next.unitId)}" style="--ct:var(--purple);--ct-bg:var(--purple-bg)" data-tip="Next free: ${esc(nu ? nu.name : 'unit')} on ${esc(when)} (4-hr turnaround) — tap to open it"><span class="cc-k">NEXT</span><span class="cc-v cc-date">${esc(when)}</span></button>`;
+      lead = `<button class="catr-cell catr-lead catr-lead-next js-cat-next" data-unit="${esc(next.unitId)}" style="--ct:var(--red);--ct-bg:var(--red-bg)" data-tip="Next free: ${esc(nu ? nu.name : 'unit')} on ${esc(when)} (4-hr turnaround) — tap to open it"><span class="cc-k">NEXT</span><span class="cc-v cc-date">${esc(when)}</span></button>`;
     } else {
       lead = `<button class="catr-cell catr-lead js-cat-avail" data-cat="${esc(c.categoryId)}" style="--ct:var(--red);--ct-bg:var(--red-bg)" data-tip="No rentable units free — none are out to come back, either"><span class="cc-k">AVAIL</span><span class="cc-v">0</span></button>`;
     }
