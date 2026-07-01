@@ -1747,7 +1747,7 @@ function openWOForUnit(unitId) {
  *  decimals; we round only at the render layer so the module stays faithful). */
 const svcText = (s) => (s.status === 'past-due'
   ? `${Math.abs(Math.round(s.remaining))} HRS overdue`
-  : `${Math.round(s.remaining)} HRS remaining`);
+  : `${Math.round(s.remaining)} HRS remain`);
 
 // Wash is a recurring service interval (every 100 engine-hours), pinned to the TOP of
 // the Services list. Passed via opts.tasks so the reference module stays byte-identical.
@@ -4719,15 +4719,21 @@ function unitWoSoPill(u) {
   return svc ? badge(svcText(svc), svc.color) : badge('No Orders', 'green');
 }
 /* The unit mini-card's top-right FLAG corner (R9): the signals NOT already carried by
-   the two status pills — overbooked, GPS trouble, out-of-active-fleet. ≤2, most severe
-   first; overbooked pulses (R9b). Empty stack when the unit is clean. */
+   the two status pills — overbooked, GPS trouble, out-of-active-fleet. The corner is a
+   COMPACT icon-mark so it never steals width from the name (Jac 2026-07-01): one
+   severity-coloured alert glyph, its label in the R23 data-tip. Several trips collapse
+   to the same glyph + a count, tip listing them all. One mark → every card stays one
+   line tall (no stretched blank rows). Most-severe colour wins; overbooked pulses (R9b). */
 function unitCardFlags(u) {
   const f = [];
-  if (unitOverbooked(u.unitId)) f.push(flagEl('Overbooked', 'red', { alert: true }));
-  if (u.gpsStatus === 'Not Reporting') f.push(flagEl('No GPS', 'red'));
-  else if (u.gpsStatus === 'Verify') f.push(flagEl('GPS?', 'yellow'));
-  if (u.fleetStatus && u.fleetStatus !== 'Active') { const fs = getStatus('unitFleetStatus', u.fleetStatus); f.push(flagEl(fs.label, fs.color)); }
-  return flagsStack(f.slice(0, 2));
+  if (unitOverbooked(u.unitId)) f.push({ label: 'Overbooked', color: 'red', alert: true });
+  if (u.gpsStatus === 'Not Reporting') f.push({ label: 'No GPS', color: 'red' });
+  else if (u.gpsStatus === 'Verify') f.push({ label: 'GPS?', color: 'yellow' });
+  if (u.fleetStatus && u.fleetStatus !== 'Active') { const fs = getStatus('unitFleetStatus', u.fleetStatus); f.push({ label: fs.label, color: fs.color }); }
+  if (!f.length) return '';
+  if (f.length === 1) return flagsStack([flagEl('', f[0].color, { icon: I.alert, alert: f[0].alert, title: f[0].label })]);
+  const worst = f.some((x) => x.color === 'red') ? 'red' : f.some((x) => x.color === 'yellow') ? 'yellow' : 'gray';
+  return flagsStack([flagEl(String(f.length), worst, { icon: I.alert, alert: worst === 'red', title: f.map((x) => x.label).join(' · ') })]);
 }
 
 /* ════════════════════════════════════════════════════════════════════════
