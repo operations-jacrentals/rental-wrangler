@@ -983,7 +983,7 @@ select.lf-in { appearance: none; cursor: pointer; }
 /* R3 status pills + R3b data badges — stamped data-plate: Saira caps, squared
    corners, a touch larger for legibility (Jac 2026-06-23). Gates (R1), ref/link
    pills (R2), and derived pills (R4) keep their own shapes. */
-.pill[data-badge], .pill[data-r="R3b"] {
+.pill[data-badge], .pill[data-r="R3b"], .pill.gate {
   border-radius: 5px;
   font-family: 'Saira Condensed', system-ui, sans-serif;
   text-transform: uppercase;
@@ -2978,7 +2978,7 @@ body { font-variant-numeric: tabular-nums; }
 /* Primary tier has NO border at all — the FILL reaches the edge (a 1px transparent
    border still leaves a dark ring via background-origin, so zero it). Scoped to
    :not(.dim) so a demoted (Secondary) gate keeps its striped border. */
-.pill.gate:not(.dim), .pill.focal { border:0; background-origin:border-box; box-shadow:0 1px 2px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.18); }
+.pill.gate:not(.dim), .pill.focal { border:2.25px solid transparent; background-origin:border-box; background-clip:border-box; box-shadow:0 1px 2px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.18); }   /* transparent 2.25px border = same box width as Secondary; fill covers it (border-box) so no frame */
 /* A GATE (dropdown) is IDENTICAL to a Primary/Secondary pill — its LEADING icon is
    just swapped for a chevron (the dropdown affordance). No box, divider, or section:
    the chevron rides in the icon slot and inherits the pill's ink like any icon. */
