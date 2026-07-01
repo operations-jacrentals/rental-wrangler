@@ -1809,12 +1809,29 @@ function categoryMix(categoryId) {
 /* §9 RENTABLE fleet — Jac's definition, lifted verbatim from the Ready-Rate KPI: a
    unit counts as rentable when its fleetStatus isn't Inactive/Sold/For-Sale AND its
    inspection isn't Failed. Sold units have left the yard, so they're out of inventory
-   too. One source for the category mini-card's rentable/total health tally. */
+   too. Drives the mini-card's "N Avail" count + the §10 availability lens. */
 const RENTABLE_SKIP_FLEET = new Set(['Inactive', 'Sold', 'For Sale']);
 const isUnitRentable = (u) => !RENTABLE_SKIP_FLEET.has(u.fleetStatus) && u.inspectionStatus !== 'Failed';
-function categoryRentable(categoryId) {
-  const inv = DATA.units.filter((u) => u.categoryId === categoryId && u.fleetStatus !== 'Sold');   // Sold left the yard → not inventory
-  return { rentable: inv.filter(isUnitRentable).length, total: inv.length };
+const DOW3 = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];   // short weekday for the mini-card NEXT plate
+/* §10 next-available — when a category has 0 units free right now, the soonest one frees:
+   the EARLIEST rental END among the category's rentable (Active, inspection≠Failed) units,
+   plus a 4-hour yard turnaround after that rental's end time (Jac 2026-07-01). Returns
+   { unitId, iso, min } (min = minutes-into-day it's ready, or null when the ending rental
+   carries no end time) or null when nothing is out to come back. */
+function categoryNextAvailable(categoryId) {
+  const TURN_MIN = 240;   // 4-hour turnaround after a rental's end time
+  let best = null;
+  for (const u of DATA.units) {
+    if (u.categoryId !== categoryId || u.fleetStatus !== 'Active' || u.inspectionStatus === 'Failed') continue;
+    const r = activeRentalForUnit(u.unitId);
+    if (!r || !r.endDate) continue;
+    let iso = r.endDate, min = null;
+    const em = timeToMin(r.endTime);
+    if (em != null) { min = em + TURN_MIN; while (min >= 1440) { min -= 1440; iso = addDays(iso, 1); } }
+    const key = iso + (min == null ? '9999' : String(min).padStart(4, '0'));   // no-time sorts last within its day
+    if (!best || key < best.key) best = { unitId: u.unitId, iso, min, key };
+  }
+  return best;
 }
 /** A unit's current rental bucket (mirrors §12.4 Rental Status into 3 buckets). */
 function unitRentalBucket(u) {
@@ -2164,6 +2181,22 @@ function showCategoryUnits(categoryId) {
   // NUMERIC COLUMNS index (not a member id) — writing the string broke the phone hop.
   if (unitsSlot) { const idx = COLUMNS.findIndex((c) => c.id === unitsSlot); if (idx >= 0) state.mobileCol = idx; }
   render();
+}
+/** A category mini-card's NEXT plate → open the specific unit that frees up soonest, in
+ *  the Units card (Jac 2026-07-01). Mirrors showCategoryUnits' column plumbing, but lands
+ *  on that unit's Standard detail (openStandard) rather than a filtered list. */
+function showNextAvailableUnit(unitId) {
+  const u = IDX.unit.get(unitId); if (!u) return;
+  const s = activeSession(); if (!s.cards.units) return;
+  let unitsSlot = null;
+  if (s.cols) {
+    const slots = ['left', 'middle', 'right'].filter((k) => k in s.cols);
+    if (!slots.some((k) => s.cols[k] === 'units')) s.cols[(slots.find((k) => s.cols[k] === 'categories')) || slots[0]] = 'units';
+    unitsSlot = slots.find((k) => s.cols[k] === 'units');
+  }
+  state.focusedCard = 'units';
+  if (unitsSlot) { const idx = COLUMNS.findIndex((c) => c.id === unitsSlot); if (idx >= 0) state.mobileCol = idx; }
+  openStandard('units', unitId, null);   // openStandard re-renders
 }
 /** Universal pill rule (§0.2): clicking any pill forces its target card into
  *  standard mode. WO/Inspection/Service pills now resolve to the Shop card. */
@@ -4912,12 +4945,11 @@ const ROWS = {
     // MINI-CARD (Jac 2026-06-25): the category as a vertical unit data-plate. The
     // Categories list renders these 3-across (2 when narrow) — see the .list grid.
     //   [icon · stamped NAME]
-    //   [Availability slot · rentable/inventory slot]   ← two equal pills, Units-style
+    //   [Avail/NEXT slot · PASS·NR·FAIL tally trio]      ← left half + three status buttons
     //   [1-Day · 7-Day · 4-Week stacked rates]          ← the rate card, vertical
     // The whole plate's border carries the rentable-health color (--catr-hl), exactly
     // like the rentals mini-card's --rcc-hl.
-    const r = categoryRentable(c.categoryId);
-    const tallyColor = r.total === 0 ? 'gray' : r.rentable === 0 ? 'red' : r.rentable < r.total ? 'yellow' : 'green';
+    const mix = categoryMix(c.categoryId);   // {Ready, 'Not Ready', Failed, total} — feeds the 3 tally buttons
     // FREE units (inspection-AGNOSTIC): Active fleet, not out on a rental for the window
     // (or right now). Their inspection makeup colors BOTH the plate border and the name
     // (Jac 2026-06-25): any free unit Ready → green · else any Not Ready → yellow · else
@@ -4935,13 +4967,42 @@ const ROWS = {
       ? categoryAvailableCount(c.categoryId, availWin.start, availWin.end, availWin.selfId)
       : free.filter(isUnitRentable).length;
     const availTip = availWin ? `${availN} available for the selected rental window` : `${availN} rentable and free to go out right now`;
+    // The availability row is ONE bank of four equal-height stamped plates (.catr-cell):
+    //   LEAD [ AVAIL n  |  NEXT wkday·time ]  ·  [ PASS ] [ NR ] [ FAIL ]
+    // Lead = availability: ≥1 free now → green "AVAIL" count (taps to the category's
+    // available units); 0 free → red "NEXT" free-date (soonest rental end + 4h turnaround,
+    // white date text), tapping jumps to THAT unit; 0 and nothing out to return → red "AVAIL 0".
+    const next = availN === 0 ? categoryNextAvailable(c.categoryId) : null;
+    // Compact syntax (Jac 2026-07-01): a weekday inside the next 7 days (else Mon-DD),
+    // and time as just the hour + a/p — keeps the lead short so the trio gets more room.
+    const compactClock = (min) => { if (min == null) return ''; let h = Math.floor(min / 60); const ap = h < 12 ? 'a' : 'p'; h = h % 12 || 12; return `${h}${ap}`; };
+    let lead;
+    if (availN > 0) {
+      lead = `<button class="catr-cell catr-lead js-cat-avail" data-cat="${esc(c.categoryId)}" style="--ct:var(--green);--ct-bg:var(--green-bg)" data-tip="${esc(availTip)} — tap to open these units"><span class="cc-k">AVAIL</span><span class="cc-v">${availN}</span></button>`;
+    } else if (next) {
+      const nd = parseISO(next.iso), daysAhead = nd ? Math.round((nd - TODAY) / 86400000) : 99;
+      const dlabel = (nd && daysAhead >= 0 && daysAhead <= 7) ? DOW3[nd.getDay()] : fmtShortDate(next.iso).replace(' 0', ' ');
+      const when = `${dlabel}${next.min != null ? ` ${compactClock(next.min)}` : ''}`;
+      const nu = IDX.unit.get(next.unitId);
+      lead = `<button class="catr-cell catr-lead catr-lead-next js-cat-next" data-unit="${esc(next.unitId)}" style="--ct:var(--red);--ct-bg:var(--red-bg)" data-tip="Next free: ${esc(nu ? nu.name : 'unit')} on ${esc(when)} (4-hr turnaround) — tap to open it"><span class="cc-k">NEXT</span><span class="cc-v cc-date">${esc(when)}</span></button>`;
+    } else {
+      lead = `<button class="catr-cell catr-lead js-cat-avail" data-cat="${esc(c.categoryId)}" style="--ct:var(--red);--ct-bg:var(--red-bg)" data-tip="No rentable units free — none are out to come back, either"><span class="cc-k">AVAIL</span><span class="cc-v">0</span></button>`;
+    }
+    // The three status plates (Passed · Not Ready · Failed inspection) filter Units to that
+    // status in this category via the established js-fleet-filter path (like the detail mixbar).
+    const tally = (label, count, color, status, tip) =>
+      `<button class="catr-cell js-fleet-filter" data-cat="${esc(c.categoryId)}" data-status="${esc(status)}" data-kind="inspection" style="--ct:var(--${color});--ct-bg:var(--${color}-bg)" data-tip="${esc(tip)}"><span class="cc-k">${label}</span><span class="cc-v">${count}</span></button>`;
+    const tallyRow = `${
+      tally('PASS', mix.Ready, 'green', 'Ready', `${mix.Ready} passed inspection — tap to filter Units`)
+    }${
+      tally('NR', mix['Not Ready'], 'yellow', 'Not Ready', `${mix['Not Ready']} not ready — tap to filter Units`)
+    }${
+      tally('FAIL', mix.Failed, 'red', 'Failed', `${mix.Failed} failed inspection — tap to filter Units`)
+    }`;
     const rate = (label, v) => `<div class="catr-rate"><span class="catr-rk">${label}</span><span class="catr-rv${v ? '' : ' none'}">${v ? money(v) : '—'}</span></div>`;
     return `<div class="catr" style="--catr-hl:var(--${hl})">
       <div class="catr-head"><span class="catr-cat">${categoryIconFor(c.name)}</span><span class="r-title catr-name${hl === 'red' ? ' ec-red' : ''}" style="color:${nameColor}" data-tip="${esc(c.name)}">${esc(c.name)}</span></div>
-      <div class="catr-pills">
-        <div class="catr-slot js-cat-avail" data-cat="${esc(c.categoryId)}" data-tip="${esc(availTip)} — tap to open these units">${badge(`${availN} Avail`, availN > 0 ? 'green' : 'red')}</div>
-        <div class="catr-slot" data-tip="${r.rentable} of ${r.total} units rentable — in-yard, inspection not failed">${badge(`${r.rentable}/${r.total}`, tallyColor)}</div>
-      </div>
+      <div class="catr-pills">${lead}${tallyRow}</div>
       <div class="catr-rates">${rate('1-Day', c.rate1Day)}${rate('7-Day', c.rate7Day)}${rate('4-Week', c.rate4Wk)}${rate('Weekend', c.weekend)}</div>
     </div>`;
   },
@@ -13121,6 +13182,8 @@ function onClick(e) {
   // a category mini-card's Availability pill → jump to the Units card, narrowed to
   // that category's units (Jac 2026-06-25 — replaces the clunkier availability hop)
   if (closest('.js-cat-avail')) { e.stopPropagation(); return showCategoryUnits(closest('.js-cat-avail').dataset.cat); }
+  // the NEXT plate (0 free now) → jump straight to the unit that frees up soonest
+  if (closest('.js-cat-next')) { e.stopPropagation(); return showNextAvailableUnit(closest('.js-cat-next').dataset.unit); }
 
   // a flag naming a section WITHOUT a nav target scrolls within its own card
   // (e.g. "No Card" → Cards on File — Jac 2026-06-12)
