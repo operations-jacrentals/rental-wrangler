@@ -2969,6 +2969,38 @@ body { font-variant-numeric: tabular-nums; }
 .pill.gate .gate-chev { display:inline-flex; align-items:center; justify-content:center; width:17px; height:17px; margin-left:7px; margin-right:-3px; border:1px solid rgba(255,255,255,.5); border-radius:5px; background:rgba(0,0,0,.16); flex:0 0 auto; }
 .pill.gate .gate-chev svg { width:11px; height:11px; }
 .pill.gate.dim .gate-chev { border-color:currentColor; background:transparent; opacity:.85; }
+/* ══ RULEBOOK — reference IMG_2262 (Jac 2026-07-01): ONE button family, ONE shape.
+   The ONLY per-element variant is a gate's chevron box. PRIMARY = FILL (striped for
+   danger, solid otherwise), white ink, NO border. SECONDARY = hazard-striped BORDER
+   (danger) / solid colored border (others) over a dark interior + colored ink; the
+   danger border goes SOLID on hover. Radius unified so nothing reads "box vs pill". */
+.pill.gate, .pill[data-r="R3"] { border-radius: 6px; }           /* rounded-RECT, not stadium — matches reference */
+/* SECONDARY (R3, not focal) — dark interior, 2px border slot, colored ink, no glow */
+.pill[data-r="R3"]:not(.focal) { background:#0f1318; border:2px solid transparent; box-shadow:none; }
+.pill[data-r="R3"]:not(.focal).c-green  { color:var(--green);  border-color:color-mix(in srgb,var(--green) 60%,transparent); }
+.pill[data-r="R3"]:not(.focal).c-blue   { color:var(--blue);   border-color:color-mix(in srgb,var(--blue) 60%,transparent); }
+.pill[data-r="R3"]:not(.focal).c-navy   { color:var(--navy);   border-color:color-mix(in srgb,var(--navy) 60%,transparent); }
+.pill[data-r="R3"]:not(.focal).c-purple { color:var(--purple); border-color:color-mix(in srgb,var(--purple) 60%,transparent); }
+.pill[data-r="R3"]:not(.focal).c-pink   { color:var(--pink);   border-color:color-mix(in srgb,var(--pink) 60%,transparent); }
+.pill[data-r="R3"]:not(.focal).c-brown  { color:var(--brown);  border-color:color-mix(in srgb,var(--brown) 60%,transparent); }
+.pill[data-r="R3"]:not(.focal).c-orange { color:var(--orange); border-color:var(--accent-line); }
+.pill[data-r="R3"]:not(.focal).c-gray   { color:var(--txt-2);  border-color:var(--line); }
+/* danger SECONDARY — hazard-striped BORDER (same 135°/11px stripe as the PRIMARY fill),
+   also applied to a demoted (G2 dim) gate so the whole family shares one look */
+.pill[data-r="R3"]:not(.focal).c-red, .pill.gate.dim.c-red {
+  color:var(--red); border:2px solid transparent;
+  background: linear-gradient(#0f1318,#0f1318) padding-box,
+              repeating-linear-gradient(135deg, var(--red) 0 11px, #14181d 11px 22px) border-box; }
+.pill[data-r="R3"]:not(.focal).c-yellow, .pill.gate.dim.c-yellow {
+  color:var(--yellow); border:2px solid transparent;
+  background: linear-gradient(#0f1318,#0f1318) padding-box,
+              repeating-linear-gradient(135deg, var(--yellow) 0 11px, #14181d 11px 22px) border-box; }
+/* danger SECONDARY → SOLID border on hover (Jac) */
+.pill[data-r="R3"]:not(.focal).c-red:hover    { background: linear-gradient(#0f1318,#0f1318) padding-box, var(--red) border-box; }
+.pill[data-r="R3"]:not(.focal).c-yellow:hover { background: linear-gradient(#0f1318,#0f1318) padding-box, var(--yellow) border-box; }
+/* SECONDARY ink — solid colored, beating the ec-red .t pinkish fill (2939) */
+.pill[data-r="R3"]:not(.focal).c-red .t    { color:var(--red);    -webkit-text-fill-color:var(--red);    text-shadow:none; }
+.pill[data-r="R3"]:not(.focal).c-yellow .t { color:var(--yellow); -webkit-text-fill-color:var(--yellow); text-shadow:none; }
 .cr-sub { flex: 0 1 auto; min-width: 0; font-size: 11.5px; color: var(--txt-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cr-pay { flex: 0 0 auto; font-size: 13px; font-weight: 700; font-style: italic; white-space: nowrap; }
 .cr-pay.spend { color: var(--green); }
