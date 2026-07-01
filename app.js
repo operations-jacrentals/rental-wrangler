@@ -2148,7 +2148,11 @@ function openStandard(card, recId, recType) {
 function showCategoryUnits(categoryId) {
   const cat = IDX.category.get(categoryId); if (!cat) return;
   const s = activeSession(), us = s.cards.units; if (!us) return;
-  us.search = cat.name; us.listLimit = undefined; us.mode = 'list'; us.recId = null; us.recType = null;
+  // Match the pill's count: narrow Units to this category's AVAILABLE units, not the
+  // whole category. The 'available' token engages the §10 availability lens (rowMatches)
+  // and makes availWin resolve to the in-scope window (open rental window, else "now"),
+  // so the list mirrors exactly what the pill was tallying.
+  us.search = `${cat.name} available`; us.listLimit = undefined; us.mode = 'list'; us.recId = null; us.recType = null;
   let unitsSlot = null;
   if (s.cols) {
     const slots = ['left', 'middle', 'right'].filter((k) => k in s.cols);
