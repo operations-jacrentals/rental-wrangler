@@ -2939,6 +2939,19 @@ body { font-variant-numeric: tabular-nums; }
 .pill.c-red .t { color: var(--red); -webkit-text-fill-color: color-mix(in srgb, var(--red) 65%, white); text-shadow: 0 0 3px var(--red), 0 0 7px color-mix(in srgb, var(--red) 60%, transparent); }
 /* ec-red border glow on red status pills */
 .pill.c-red { border-color: color-mix(in srgb, var(--red) 55%, transparent); box-shadow: 0 0 4px color-mix(in srgb, var(--red) 25%, transparent); }
+/* ══ PRIMARY-tier ink is ALWAYS white (fix: beat the ec-red .t fill on red/yellow
+   focal+gate pills so Primary reads solid-white, distinct from Secondary outline).
+   Higher specificity than `.pill.c-red .t`, and placed after it. ══ */
+.pill.gate .t, .pill.focal .t,
+.pill.gate.c-red .t, .pill.focal.c-red .t,
+.pill.gate.c-yellow .t, .pill.focal.c-yellow .t { color:#fff; -webkit-text-fill-color:#fff; }
+.pill.gate svg, .pill.focal svg,
+.pill.gate.c-red svg, .pill.focal.c-red svg { color:#fff; -webkit-text-fill-color:#fff; }
+/* darker shadow so white ink pops on the hazard-striped fills (yellow strongest) */
+.pill.gate.c-red .t, .pill.focal.c-red .t { text-shadow:0 1px 3px rgba(0,0,0,.9), 0 0 2px rgba(0,0,0,.8); }
+.pill.gate.c-yellow .t, .pill.focal.c-yellow .t { text-shadow:0 1px 2px #000, 0 0 4px rgba(0,0,0,.95); }
+.pill.gate.c-red svg, .pill.focal.c-red svg,
+.pill.gate.c-yellow svg, .pill.focal.c-yellow svg { filter:drop-shadow(0 1px 2px rgba(0,0,0,.9)); }
 .cr-sub { flex: 0 1 auto; min-width: 0; font-size: 11.5px; color: var(--txt-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cr-pay { flex: 0 0 auto; font-size: 13px; font-weight: 700; font-style: italic; white-space: nowrap; }
 .cr-pay.spend { color: var(--green); }
