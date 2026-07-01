@@ -16,7 +16,7 @@
   /* status colors (base = text/border tone, -bg = soft fill) */
   --green:#358a5d;  --green-bg:rgba(53,138,93,.14);
   --yellow:#ffe000; --yellow-bg:rgba(255,224,0,.15);
-  --red:#ff1040;    --red-bg:rgba(255,16,64,.18);
+  --red:#ff1040;    --red-bg:rgba(255,16,64,.11);
   --blue:#5b9dff;   --blue-bg:rgba(91,157,255,.14);
   --navy:#6f8bdb;   --navy-bg:rgba(70,102,196,.18);
   --purple:#b07cf5; --purple-bg:rgba(176,124,245,.16);
@@ -1000,14 +1000,14 @@ select.lf-in { appearance: none; cursor: pointer; }
    Urgency stays color + (Phase-2) motion — it never promotes tier. Scoped by
    data-r / class so R2 refs, R3b badges, R4 derived pills are untouched. */
 .pill.gate, .pill.focal { border-color: transparent; color: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.18); }
-.pill.gate.c-green,  .pill.focal.c-green  { background: linear-gradient(180deg, color-mix(in srgb, var(--green) 90%, #fff), var(--green)); text-shadow: 0 1px 2px rgba(0,0,0,.4); }
-.pill.gate.c-blue,   .pill.focal.c-blue   { background: linear-gradient(180deg, color-mix(in srgb, var(--blue) 90%, #fff), var(--blue)); }
+.pill.gate.c-green,  .pill.focal.c-green  { background: linear-gradient(180deg, var(--green), color-mix(in srgb, var(--green) 88%, #000)); text-shadow: 0 1px 2px rgba(0,0,0,.4); }
+.pill.gate.c-blue,   .pill.focal.c-blue   { background: linear-gradient(180deg, var(--blue), color-mix(in srgb, var(--blue) 88%, #000)); }
 .pill.gate.c-navy,   .pill.focal.c-navy   { background: var(--navy); }
 .pill.gate.c-purple, .pill.focal.c-purple { background: var(--purple); }
 .pill.gate.c-pink,   .pill.focal.c-pink   { background: var(--pink); }
 .pill.gate.c-brown,  .pill.focal.c-brown  { background: var(--brown); }
 .pill.gate.c-gray,   .pill.focal.c-gray   { background: var(--gray); }
-.pill.gate.c-orange, .pill.focal.c-orange { background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 90%, #fff), var(--accent)); color: var(--on-orange); }
+.pill.gate.c-orange, .pill.focal.c-orange { background: linear-gradient(180deg, var(--accent), color-mix(in srgb, var(--accent) 88%, #000)); color: var(--on-orange); }
 /* danger PRIMARY — seamless diagonal hazard tile (scrolls smoothly for motion), plate recipe */
 .pill.gate.c-red,    .pill.focal.c-red    { background-image: linear-gradient(135deg, var(--red) 0 25%, #14181d 25% 50%, var(--red) 50% 75%, #14181d 75% 100%); background-size: 26px 26px; text-shadow: 0 1px 3px rgba(0,0,0,.85); }
 .pill.gate.c-yellow, .pill.focal.c-yellow { background-image: linear-gradient(135deg, var(--yellow) 0 25%, #14181d 25% 50%, var(--yellow) 50% 75%, #14181d 75% 100%); background-size: 26px 26px; text-shadow: 0 1px 3px rgba(0,0,0,.9); }
