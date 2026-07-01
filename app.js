@@ -5827,9 +5827,8 @@ const DETAIL = {
       <div class="rd-head-r">${masterGate(r, { truck })}<div class="rd-head-bal">${invPill}${rdBal}</div></div>
     </div>`;
 
-    /* Not-Ready blocker — jumps to unit pills; sits above the calendar. */
-    const blockN = units.filter((eu) => { const bu = IDX.unit.get(eu.unitId); return bu && bu.inspectionStatus !== 'Ready' && !unitVoided(r, eu); }).length;
-    const blocker = blockN ? `<button class="tl-blocker js-tl-blocker" data-rec="${esc(r.rentalId)}" data-tip="Jump to the machines that aren't ready"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>${blockN} machine${blockN > 1 ? 's' : ''} Not Ready →</button>` : '';
+    /* Not-Ready blocker RETIRED (Jac 2026-06-30): status colors now carry the warning;
+       the dedicated red bar is redundant. (Removed from the render below too.) */
 
     /* Calendar: the INLINE editable window calendar (popup retired — Jac 2026-06-25).
        Tap a day to set start, tap another to set end; the left Categories/Units card
@@ -5886,7 +5885,6 @@ const DETAIL = {
 
     const rentalSec = `<div class="section sec-${stColor} rentalsec">
       ${rdHead}
-      ${blocker ? `<div class="rd-blocker">${blocker}</div>` : ''}
       ${calHtml}
       <div class="stalls rd-units">${stallsHtml}</div>
       ${rdFoot}
