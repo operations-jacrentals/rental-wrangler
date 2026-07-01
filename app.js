@@ -5928,7 +5928,7 @@ const DETAIL = {
       <div class="kv"><span class="v inline-edit" data-edit="unitHours" data-rec="${u.unitId}">${num(u.currentHours)} HRS</span></div>
     </div></div>`;
     const gps = `<div class="section"><h4>GPS</h4><div class="fieldstack">
-      ${kvPills(u.gpsStatus ? statusPill('gpsStatus', u.gpsStatus) : badge('No GPS'))}
+      ${kvPills(u.gpsStatus ? statusPill('gpsStatus', u.gpsStatus, { focal: true }) : badge('No GPS'))}
       ${efld('units', u, 'unitId', 'gpsType', 'GPS unit/type')}
       ${efld('units', u, 'unitId', 'gpsPlacement', 'Placement')}
     </div></div>`;
