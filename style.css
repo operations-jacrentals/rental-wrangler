@@ -2976,7 +2976,7 @@ body { font-variant-numeric: tabular-nums; }
    danger, solid otherwise), white ink, NO border. SECONDARY = hazard-striped BORDER
    (danger) / solid colored border (others) over a dark interior + colored ink; the
    danger border goes SOLID on hover. Radius unified so nothing reads "box vs pill". */
-.pill.gate, .pill[data-r="R3"] { border-radius: 11px; gap: 0; }   /* plate shape: radius 11px, icon touches text (gap 0) */
+.pill.gate, .pill[data-r="R3"] { border-radius: 7px; gap: 0; }    /* rounded-RECT at real pill heights (~0.27×h, plate proportion) — NOT a stadium; icon touches text (gap 0) */
 /* SECONDARY (R3, not focal) — outline + colored ink (plate .btn.secondary): 1px solid
    colored border for non-danger; red/yellow become a striped BORDER → solid on hover. */
 .pill[data-r="R3"]:not(.focal) { background:transparent; border:1px solid var(--line); box-shadow:none; }
