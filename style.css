@@ -2484,7 +2484,9 @@ body.rw-inspect .c-titlecard:hover { outline: 2px solid #18b6ff; outline-offset:
 
 /* GATE pill — a status DROPDOWN that moves the record forward: big silhouette +
    chevron. Colors come from the normal .c-* classes; chevron only on real dropdowns. */
-.pill.gate { height: 28px; padding: 0 12px; border-radius: 10px; font-size: 12px; }
+/* Gate matches the status-pill size exactly — Primary / Secondary / Gate are all one
+   size (Jac). (Mobile keeps its larger touch target via the .is-phone rule below.) */
+.pill.gate { height: 22px; padding: 0 10px; font-size: 11px; }
 .pill.gate svg { width: 12px; height: 12px; }
 .pill.gate:hover { filter: brightness(1.18); }
 
@@ -2968,8 +2970,8 @@ body { font-variant-numeric: tabular-nums; }
 .pill.gate:not(.dim), .pill.focal { border:0; background-origin:border-box; box-shadow:0 1px 2px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.18); }
 /* A GATE (dropdown) is the ONE variant of the base pill: a chevron in a small box
    on the right edge (the dropdown affordance). Non-gate focal pills have neither. */
-.pill.gate .gate-chev { display:inline-flex; align-items:center; justify-content:center; width:17px; height:17px; margin-left:7px; margin-right:-3px; border:1px solid rgba(255,255,255,.5); border-radius:5px; background:rgba(0,0,0,.16); flex:0 0 auto; }
-.pill.gate .gate-chev svg { width:11px; height:11px; }
+.pill.gate .gate-chev { display:inline-flex; align-items:center; justify-content:center; width:15px; height:15px; margin-left:6px; margin-right:-2px; border:1px solid rgba(255,255,255,.5); border-radius:4px; background:rgba(0,0,0,.16); flex:0 0 auto; }
+.pill.gate .gate-chev svg { width:10px; height:10px; }
 .pill.gate.dim .gate-chev { border-color:currentColor; background:transparent; opacity:.85; }
 /* ══ RULEBOOK — reference IMG_2262 (Jac 2026-07-01): ONE button family, ONE shape.
    The ONLY per-element variant is a gate's chevron box. PRIMARY = FILL (striped for
