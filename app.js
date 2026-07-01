@@ -5546,7 +5546,7 @@ function woSectionHtml(w) {
       <span class="derived">Parts ${money(Math.max(0, billed - laborBilled))} + Hrs ${money(laborBilled)} = ${money(billed)}</span>
       ${w.cancelled
         ? `<span class="pill c-gray" style="height:26px;font-size:11px" data-tip="This work order is cancelled">Cancelled</span>${actionPill('commit', 'Reopen WO', { js: 'js-wo-reopen', h: 26, data: { rec: w.woId } })}`
-        : `${addBtn('Invoice', { link: true, icon: CARD_ICON.invoices, js: 'js-bill-wo', h: 26, data: { rec: w.woId } })}<button class="pill ghost js-wo-cancel" data-r="R18" data-rec="${esc(w.woId)}" style="height:26px;font-size:11px">Cancel WO</button>${actionPill('commit', 'Complete WO', { js: 'js-wo-complete', h: 26, data: { rec: w.woId } })}`}
+        : `${addBtn('Invoice', { link: true, icon: CARD_ICON.invoices, js: 'js-bill-wo', h: 26, data: { rec: w.woId } })}<button class="pill ghost js-wo-cancel" data-r="R18" data-rec="${esc(w.woId)}" style="height:26px;font-size:11px">Cancel WO</button>${actionPill('commit', 'Complete WO', { js: `js-wo-complete ramp${bn.color === 'green' ? ' ready' : ''}`, h: 26, data: { rec: w.woId } })}`}
     </div>
   </div>`;
 }
@@ -5877,7 +5877,7 @@ const DETAIL = {
     const canComplete = allUnitsTerminal(r);
     const crBtn = cancelish
       ? actionPill('danger', 'Cancel Rental', { js: 'js-cancel-rental', h: 26, data: { rec: r.rentalId } })
-      : actionPill('commit', 'Complete Rental', { js: `js-complete-rental${canComplete ? '' : ' locked'}`, h: 26, data: { rec: r.rentalId } });
+      : actionPill('commit', 'Complete Rental', { js: `js-complete-rental ramp${canComplete ? ' ready' : ' locked'}`, h: 26, data: { rec: r.rentalId } });   // G1: Secondary until every unit terminal → then Primary blue
     const fcRow = r.fieldCall ? actionPill('danger', 'Field Call active — clear', { js: 'js-clear-fc', data: { rec: r.rentalId } }) : '';
     // §ext — extending is now inline: tap a later end date in the calendar above; a fragile
     // (invoiced/out) rental stages it behind the Confirm card with the money preview.
