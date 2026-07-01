@@ -929,7 +929,8 @@ select.lf-in { appearance: none; cursor: pointer; }
 
 /* ── §6.2 #6 Pills (registry-driven; never hardcoded) ────────────────────── */
 .pill {
-  display: inline-flex; align-items: center; gap: 5px; height: 19px; padding: 0 9px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px; height: 19px; padding: 0 9px;
+  line-height: 1;   /* tight line box so UPPERCASE caps optically center (1.4× leading made them ride high) */
   border-radius: 999px; font-size: 10px; font-weight: 700; letter-spacing: .2px; white-space: nowrap;
   box-shadow: 0 1px 2px rgba(0,0,0,.25); border: 1px solid transparent; cursor: pointer;
 }
@@ -2997,7 +2998,7 @@ body { font-variant-numeric: tabular-nums; }
   background-origin: padding-box, border-box; background-clip: padding-box, border-box;
   background-repeat: no-repeat, repeat; background-size: auto, 26px 26px; }
 .pill[data-r="R3"]:not(.focal).c-yellow, .pill.gate.dim.c-yellow {
-  color:var(--yellow); border:2px solid transparent;   /* 2px (not 2.25) — bright yellow blooms, so a hair thinner reads equal to the rest */
+  color:var(--yellow); border:2.25px solid transparent;   /* all secondary borders uniform 2.25px */
   background-image: linear-gradient(var(--bg,#0b0c0f),var(--bg,#0b0c0f)),
     linear-gradient(135deg, var(--yellow) 0 25%, #14181d 25% 50%, var(--yellow) 50% 75%, #14181d 75% 100%);
   background-origin: padding-box, border-box; background-clip: padding-box, border-box;
