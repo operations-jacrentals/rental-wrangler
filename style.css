@@ -2952,6 +2952,15 @@ body { font-variant-numeric: tabular-nums; }
 .pill.gate.c-yellow .t, .pill.focal.c-yellow .t { text-shadow:0 1px 2px #000, 0 0 4px rgba(0,0,0,.95); }
 .pill.gate.c-red svg, .pill.focal.c-red svg,
 .pill.gate.c-yellow svg, .pill.focal.c-yellow svg { filter:drop-shadow(0 1px 2px rgba(0,0,0,.9)); }
+/* G2 — a demoted (non-bottleneck) WO-line gate reads Secondary: outline + colored ink */
+.pill.gate.dim { box-shadow:none; }
+.pill.gate.dim.c-green  { background:transparent; color:var(--green);  border-color:color-mix(in srgb,var(--green) 42%,transparent); }
+.pill.gate.dim.c-yellow { background:transparent; color:var(--yellow); border-color:color-mix(in srgb,var(--yellow) 42%,transparent); text-shadow:none; }
+.pill.gate.dim.c-red    { background:transparent; color:var(--red);    border-color:color-mix(in srgb,var(--red) 42%,transparent); text-shadow:none; }
+.pill.gate.dim.c-blue   { background:transparent; color:var(--blue);   border-color:color-mix(in srgb,var(--blue) 42%,transparent); }
+.pill.gate.dim.c-purple { background:transparent; color:var(--purple); border-color:color-mix(in srgb,var(--purple) 42%,transparent); }
+.pill.gate.dim.c-gray   { background:transparent; color:var(--txt-2);  border-color:var(--line); }
+.pill.gate.dim svg { color:currentColor; filter:none; }
 .cr-sub { flex: 0 1 auto; min-width: 0; font-size: 11.5px; color: var(--txt-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cr-pay { flex: 0 0 auto; font-size: 13px; font-weight: 700; font-style: italic; white-space: nowrap; }
 .cr-pay.spend { color: var(--green); }

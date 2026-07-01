@@ -5520,13 +5520,17 @@ function woSectionHtml(w) {
     : w.woType === 'Failed'
       ? flagEl('Failed Inspection', 'red', { icon: CARD_ICON.inspections, card: w.inspectionId ? 'inspections' : null, recId: w.inspectionId || null, title: w.inspectionId ? 'Open the failed inspection' : 'WO type: failed inspection' })
       : flagEl(w.assignedMechanic || 'Mechanic', 'gray', { icon: CARD_ICON.customers, title: 'WO type: opened by a mechanic' });
+  // G2: only the bottleneck (worst OPEN) line's gate is Primary; siblings dim to Secondary.
+  const _openL = (w.lineItems || []).map((l, i) => ({ i, ph: l.phase, eta: l.eta })).filter((l) => l.ph !== 'Complete');
+  _openL.sort((a, b) => ((WO_SEV[a.ph] ?? 9) - (WO_SEV[b.ph] ?? 9)) || String(a.eta || '~').localeCompare(String(b.eta || '~')));
+  const bottleIdx = _openL.length ? _openL[0].i : -1;
   const lines = (w.lineItems || []).map((li, idx) => {
     const ph = getStatus('woPhase', li.phase);
     const lbl = li.eta && (li.phase === 'Part Ordered' || li.phase === 'Part is Local') ? `ETA ${fmtShortDate(li.eta)}` : ph.label;
     const ven = li.vendorId ? IDX.vendor?.get?.(li.vendorId) || DATA.vendors.find((v) => v.vendorId === li.vendorId) : null;
     const tip = [ven ? `Vendor: ${ven.name}` : '', li.url ? li.url : '', li.aiPending ? '🤠 Mr. Wrangler will fill the empty fields' : ''].filter(Boolean).join(' · ');
     // the description re-opens the part popup; vendor/url live in its tooltip
-    return `<div class="woline">${gatePillRaw(lbl, ph.color, 'js-wophase-line', { rec: w.woId, idx })}<span class="js-partedit" data-rec="${w.woId}" data-idx="${idx}" style="cursor:pointer"${tip ? ` data-tip="${esc(tip)}"` : ''}>${li.aiPending ? '✨ ' : ''}${esc(li.part)}${ven ? ' ' + linkName(ven.name, { js: 'js-vendor-open', data: { rec: ven.vendorId } }) : ''}</span><span class="nums"><b>${money(li.cost)}</b><span>${li.hours || 0}h</span></span></div>`;
+    return `<div class="woline">${gatePillRaw(lbl, ph.color, `js-wophase-line${idx === bottleIdx ? '' : ' dim'}`, { rec: w.woId, idx })}<span class="js-partedit" data-rec="${w.woId}" data-idx="${idx}" style="cursor:pointer"${tip ? ` data-tip="${esc(tip)}"` : ''}>${li.aiPending ? '✨ ' : ''}${esc(li.part)}${ven ? ' ' + linkName(ven.name, { js: 'js-vendor-open', data: { rec: ven.vendorId } }) : ''}</span><span class="nums"><b>${money(li.cost)}</b><span>${li.hours || 0}h</span></span></div>`;
   }).join('');
   const woBg = woBackdrop(w);
   // R9b: a WO left open past the window with NO parts/labor reads $0 by omission, not by
