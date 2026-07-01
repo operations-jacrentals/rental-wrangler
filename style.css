@@ -2973,6 +2973,23 @@ body { font-variant-numeric: tabular-nums; }
 .catr-slot.js-cat-avail .pill { transition: box-shadow .12s, border-color .12s; }
 .catr-slot.js-cat-avail:hover .pill { border-color: var(--accent-line); box-shadow: 0 0 0 1px var(--accent-line); }
 .catr-slot.js-cat-avail:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 999px; }
+/* SLOT 2 → three fleet-tally buttons (Passed · Not Ready · Failed): a stamped status
+   letter over its count, tinted by the inspection status via --ct/--ct-bg. The trio fills
+   the old rentable/total pill's half; each cell filters Units to that status. */
+.catr-tally-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+.catr-tally { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; padding: 3px 2px; min-width: 0; border: 1px solid var(--ct, var(--line)); border-radius: 8px; background: var(--ct-bg, transparent); transition: box-shadow .12s, border-color .12s; }
+.catr-tally .ct-k { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .6px; font-weight: 700; font-size: 8.5px; line-height: 1; color: var(--txt-3); }
+.catr-tally .ct-v { font-size: 13px; font-weight: 800; line-height: 1; color: var(--ct, var(--txt)); }
+.catr-tally:hover { box-shadow: 0 0 0 1px var(--ct); }
+.catr-tally:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* the NEXT plate takes SLOT 1 when nothing is free right now: a stamped "NEXT:" over the
+   soonest free date · time. Purple = a scheduled-future moment (registry); tap opens that
+   unit. Same left-half real estate as the "N Avail" pill it replaces in that state. */
+.catr-next { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; padding: 3px 4px; border: 1px solid var(--purple); border-radius: 8px; background: var(--purple-bg); transition: box-shadow .12s, border-color .12s; }
+.catr-next .cn-k { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1px; font-weight: 700; font-size: 8.5px; line-height: 1; color: var(--purple); }
+.catr-next .cn-v { max-width: 100%; font-size: 11px; font-weight: 700; line-height: 1.05; color: var(--txt); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.catr-next:hover { box-shadow: 0 0 0 1px var(--purple); }
+.catr-next:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 /* the rate card: a stamped period label on the left, the money value on the right,
    set off by a single saddle-stitch seam from the status pills above. */
 .catr-rates { margin-top: auto; display: flex; flex-direction: column; gap: 2px; border-top: 1px dashed var(--line); padding-top: 6px; }
