@@ -3006,9 +3006,9 @@ body { font-variant-numeric: tabular-nums; }
    dim) gate. The gradient fills the box, then a padding-box/border-box mask XORs the
    centre away, leaving stripes only on the 2.25px ring. Plate recipe. */
 .pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-red, .pill.gate.dim.c-red {
-  color:var(--red); border:2.25px solid transparent; background:transparent; position:relative; isolation:isolate; }
+  color:var(--red); border:none; background:transparent; position:relative; isolation:isolate; }
 .pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-yellow, .pill.gate.dim.c-yellow {
-  color:var(--yellow); border:2.25px solid transparent; background:transparent; position:relative; isolation:isolate; }   /* all secondary borders uniform 2.25px */
+  color:var(--yellow); border:none; background:transparent; position:relative; isolation:isolate; }   /* NO real border → the masked ::before ring (inset:0) spans the FULL border-box, matching the primary fill's height (a transparent border shrank the ring to the padding box → secondary read shorter). */
 .pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-red::before, .pill.gate.dim.c-red::before,
 .pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-yellow::before, .pill.gate.dim.c-yellow::before {
   content:''; position:absolute; inset:0; z-index:-1; border-radius:inherit; padding:2.25px; pointer-events:none;
@@ -3019,11 +3019,9 @@ body { font-variant-numeric: tabular-nums; }
   background-image: linear-gradient(135deg, var(--red) 0 25%, #14181d 25% 50%, var(--red) 50% 75%, #14181d 75% 100%); }   /* red/charcoal hazard tape (white stripes read "candy cane" — reverted, Jac 2026-07-01). White ink still reads: it sits on the transparent interior over the dark card, not on the ring. */
 .pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-yellow::before, .pill.gate.dim.c-yellow::before {
   background-image: linear-gradient(135deg, var(--yellow) 0 25%, #14181d 25% 50%, var(--yellow) 50% 75%, #14181d 75% 100%); }
-/* danger SECONDARY → SOLID border on hover (plate); drop the striped ring */
-.pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-red:hover    { border-color:var(--red);    }
-.pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-yellow:hover { border-color:var(--yellow); }
-.pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-red:hover::before,
-.pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-yellow:hover::before { display:none; }
+/* danger SECONDARY → SOLID ring on hover (plate): the masked ::before goes solid */
+.pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-red:hover::before    { background:var(--red);    }
+.pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-yellow:hover::before { background:var(--yellow); }
 /* SECONDARY ink — red danger goes WHITE to match the red PRIMARY (Jac 2026-07-01);
    with the red/white tape border + transparent interior, white on the dark card reads
    at full contrast. Yellow stays colored (yellow ink is legible; white would wash). */
@@ -3074,9 +3072,9 @@ body.is-phone .card[data-card="units"] .list { grid-template-columns: repeat(2, 
 .uc-catname { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .uc-pills { display: flex; flex-direction: column; gap: 6px; }
 .uc-slot { display: flex; }
-.uc-slot .pill { width: 100%; font-size: 10px; padding: 0 8px; gap: 4px; letter-spacing: .1px; justify-content: center; align-items: center; overflow: hidden; }   /* icon + label ride together, centred as one group (both horizontally and vertically) */
+.uc-slot .pill { width: 100%; font-size: 10px; padding: 0 8px; gap: 4px; letter-spacing: .1px; justify-content: center; align-items: center; }   /* icon + label ride together, centred as one group; NO overflow:hidden here (the label handles its own ellipsis) so nothing clips the glyphs */
 .uc-slot .pill svg { flex: 0 0 auto; }
-.uc-slot .pill .t { overflow: hidden; text-overflow: ellipsis; min-width: 0; transform: translateY(1px); }   /* all-caps have no descenders → the glyph block optically rides high in the (mathematically centred) line-box; nudge it down so its visual centre lands on the icon's centre */
+.uc-slot .pill .t { overflow: hidden; text-overflow: ellipsis; min-width: 0; line-height: 1.5; }   /* line-height ≥ glyph height so the ellipsis clip is horizontal-only — a tight 1.0 line sliced the letter bottoms. The line-box is flex-centred, so caps sit optically centred without a nudge. */
 .ur { display: flex; align-items: center; gap: 9px; min-width: 0; padding: 8px 11px 8px 8px; border-right: 3px solid var(--ur-hl, var(--line)); }
 .ur-cat { flex: 0 0 auto; width: 22px; height: 22px; color: var(--txt-2); display: flex; align-items: center; justify-content: center; }
 .ur-cat svg { width: 19px; height: 19px; display: block; }
