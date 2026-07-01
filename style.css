@@ -3026,7 +3026,7 @@ body { font-variant-numeric: tabular-nums; }
    with the red/white tape border + transparent interior, white on the dark card reads
    at full contrast. Yellow stays colored (yellow ink is legible; white would wash). */
 .pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-red .t,
-.pill.gate.dim.c-red .t, .pill.gate.dim.c-red { color:#fff; -webkit-text-fill-color:#fff; text-shadow:0 1px 3px rgba(0,0,0,.9), 0 0 2px rgba(0,0,0,.8); }
+.pill.gate.dim.c-red .t, .pill.gate.dim.c-red { color:#fff; -webkit-text-fill-color:#fff; text-shadow:0 1px 1px rgba(0,0,0,.5); }   /* light shadow only — white on the dark transparent interior is already high-contrast; the primary's heavy shadow (for white-on-bright-fill) was muddying it */
 .pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-red svg, .pill.gate.dim.c-red svg { color:#fff; -webkit-text-fill-color:#fff; filter:drop-shadow(0 1px 2px rgba(0,0,0,.9)); }
 .pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-yellow .t { color:var(--yellow); -webkit-text-fill-color:var(--yellow); text-shadow:none; }
 .cr-sub { flex: 0 1 auto; min-width: 0; font-size: 11.5px; color: var(--txt-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
