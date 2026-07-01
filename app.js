@@ -4656,12 +4656,7 @@ function rowViz(card, rec) {
   // rentable/total pill carry fleet health now (Jac 2026-06-25). The §10 window-red
   // tint above still applies when a window leaves 0 available.
   if (card === 'serviceOrders') { const s = topServiceForUnit(rec); if (s) return `<div class="row-viz" style="background:linear-gradient(90deg, var(--${s.color}-bg), transparent 60%)"></div>`; }
-  if (card === 'units') {
-    // colour each unit row by its INSPECTION status as a left gradient (same style as
-    // Inspection / Service / WO rows): Ready=green, Not Ready=yellow, Failed=red.
-    const c = getStatus('unitInspectionStatus', rec.inspectionStatus).color;
-    return `<div class="row-viz" style="background:linear-gradient(90deg, var(--${c}-bg), transparent 60%)"></div>`;
-  }
+  if (card === 'units') return '';   // Jac 2026-07-01: the old inspection-status wash is retired — the mini-card's colored border (--ur-hl) + status pills carry health now.
   if (card === 'invoices') { const s = invoiceTotals(rec).status; return `<div class="row-viz" style="background:linear-gradient(90deg, var(--${getStatus('invoiceStatus', s).color}-bg), transparent 70%)"></div>`; }
   return '';
 }

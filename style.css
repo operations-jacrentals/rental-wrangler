@@ -3016,7 +3016,7 @@ body { font-variant-numeric: tabular-nums; }
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0); -webkit-mask-composite: xor;
   mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0); mask-composite: exclude; }
 .pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-red::before, .pill.gate.dim.c-red::before {
-  background-image: linear-gradient(135deg, var(--red) 0 25%, #14181d 25% 50%, var(--red) 50% 75%, #14181d 75% 100%); }
+  background-image: linear-gradient(135deg, var(--red) 0 25%, #eef1f6 25% 50%, var(--red) 50% 75%, #eef1f6 75% 100%); }   /* red/WHITE hazard tape (Jac 2026-07-01) — lets the ink go white to match the red PRIMARY */
 .pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-yellow::before, .pill.gate.dim.c-yellow::before {
   background-image: linear-gradient(135deg, var(--yellow) 0 25%, #14181d 25% 50%, var(--yellow) 50% 75%, #14181d 75% 100%); }
 /* danger SECONDARY → SOLID border on hover (plate); drop the striped ring */
@@ -3024,9 +3024,12 @@ body { font-variant-numeric: tabular-nums; }
 .pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-yellow:hover { border-color:var(--yellow); }
 .pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-red:hover::before,
 .pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-yellow:hover::before { display:none; }
-/* SECONDARY ink — solid colored, beating the ec-red .t pinkish fill (2939) */
-.pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-red .t    { color:var(--red);    -webkit-text-fill-color:var(--red);    -webkit-text-stroke:0.3px rgba(255,255,255,.3); text-shadow:0 0 1.4px rgba(255,255,255,.35); }   /* soft (blurred) white outline so red ink reads on the striped border */
-.pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-red svg   { filter: drop-shadow(0 0 1.4px rgba(255,255,255,.35)); }   /* same soft white halo on the icon, at 50% the text's white */
+/* SECONDARY ink — red danger goes WHITE to match the red PRIMARY (Jac 2026-07-01);
+   with the red/white tape border + transparent interior, white on the dark card reads
+   at full contrast. Yellow stays colored (yellow ink is legible; white would wash). */
+.pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-red .t,
+.pill.gate.dim.c-red .t, .pill.gate.dim.c-red { color:#fff; -webkit-text-fill-color:#fff; text-shadow:0 1px 3px rgba(0,0,0,.9), 0 0 2px rgba(0,0,0,.8); }
+.pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-red svg, .pill.gate.dim.c-red svg { color:#fff; -webkit-text-fill-color:#fff; filter:drop-shadow(0 1px 2px rgba(0,0,0,.9)); }
 .pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-yellow .t { color:var(--yellow); -webkit-text-fill-color:var(--yellow); text-shadow:none; }
 .cr-sub { flex: 0 1 auto; min-width: 0; font-size: 11.5px; color: var(--txt-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cr-pay { flex: 0 0 auto; font-size: 13px; font-weight: 700; font-style: italic; white-space: nowrap; }
@@ -3054,6 +3057,10 @@ body.is-phone .card[data-card="units"] .list { grid-template-columns: repeat(2, 
 .ucard { height: 100%; display: flex; flex-direction: column; gap: 7px; padding: 9px 9px; border: 2px solid var(--ur-hl, var(--line)); border-radius: 12px; overflow: hidden; }
 .uc-top { display: flex; align-items: center; justify-content: space-between; gap: 6px; }   /* corner mark optically centres on the name line */
 .uc-name { flex: 1 1 auto; min-width: 0; font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .5px; font-weight: 700; font-size: 14px; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Danger name: crisp lighter red, NO red halo (the glow blurred it illegible — Jac
+   2026-07-01). A subtle dark shadow separates it from the panel; the red card border
+   already flags danger, so the name only needs to READ. */
+.uc-name.ec-red { -webkit-text-fill-color: color-mix(in srgb, var(--red) 45%, white); text-shadow: 0 1px 2px rgba(0,0,0,.7); }
 .uc-flags { flex: 0 0 auto; }
 /* Corner ALERT mark — a compact icon (+count for several) so it never steals width
    from the name; label(s) live in the R23 data-tip. Suppress the R9 striped
@@ -3067,8 +3074,9 @@ body.is-phone .card[data-card="units"] .list { grid-template-columns: repeat(2, 
 .uc-catname { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .uc-pills { display: flex; flex-direction: column; gap: 6px; }
 .uc-slot { display: flex; }
-.uc-slot .pill { width: 100%; font-size: 10px; padding: 0 5px; letter-spacing: .1px; gap: 3px; text-align: center; justify-content: center; overflow: hidden; }   /* a hair smaller/tighter than a standalone pill so full labels fit at 2-across */
-.uc-slot .pill .t { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.uc-slot .pill { position: relative; width: 100%; font-size: 10px; padding: 0 16px; letter-spacing: .1px; overflow: hidden; }   /* symmetric padding clears the leading icon so the LABEL is always dead-centre — icon or not */
+.uc-slot .pill svg { position: absolute; left: 6px; top: 50%; transform: translateY(-50%); }   /* leading icon out of flow → never shoves the centred label off-centre */
+.uc-slot .pill .t { display: block; width: 100%; text-align: center; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .ur { display: flex; align-items: center; gap: 9px; min-width: 0; padding: 8px 11px 8px 8px; border-right: 3px solid var(--ur-hl, var(--line)); }
 .ur-cat { flex: 0 0 auto; width: 22px; height: 22px; color: var(--txt-2); display: flex; align-items: center; justify-content: center; }
 .ur-cat svg { width: 19px; height: 19px; display: block; }
