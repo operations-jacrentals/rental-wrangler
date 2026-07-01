@@ -3016,7 +3016,7 @@ body { font-variant-numeric: tabular-nums; }
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0); -webkit-mask-composite: xor;
   mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0); mask-composite: exclude; }
 .pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-red::before, .pill.gate.dim.c-red::before {
-  background-image: linear-gradient(135deg, var(--red) 0 25%, #eef1f6 25% 50%, var(--red) 50% 75%, #eef1f6 75% 100%); }   /* red/WHITE hazard tape (Jac 2026-07-01) — lets the ink go white to match the red PRIMARY */
+  background-image: linear-gradient(135deg, var(--red) 0 25%, #14181d 25% 50%, var(--red) 50% 75%, #14181d 75% 100%); }   /* red/charcoal hazard tape (white stripes read "candy cane" — reverted, Jac 2026-07-01). White ink still reads: it sits on the transparent interior over the dark card, not on the ring. */
 .pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-yellow::before, .pill.gate.dim.c-yellow::before {
   background-image: linear-gradient(135deg, var(--yellow) 0 25%, #14181d 25% 50%, var(--yellow) 50% 75%, #14181d 75% 100%); }
 /* danger SECONDARY → SOLID border on hover (plate); drop the striped ring */
@@ -3074,9 +3074,9 @@ body.is-phone .card[data-card="units"] .list { grid-template-columns: repeat(2, 
 .uc-catname { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .uc-pills { display: flex; flex-direction: column; gap: 6px; }
 .uc-slot { display: flex; }
-.uc-slot .pill { position: relative; width: 100%; font-size: 10px; padding: 0 16px; letter-spacing: .1px; overflow: hidden; }   /* symmetric padding clears the leading icon so the LABEL is always dead-centre — icon or not */
-.uc-slot .pill svg { position: absolute; left: 6px; top: 50%; transform: translateY(-50%); }   /* leading icon out of flow → never shoves the centred label off-centre */
-.uc-slot .pill .t { display: block; width: 100%; text-align: center; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.uc-slot .pill { width: 100%; font-size: 10px; padding: 0 8px; gap: 4px; letter-spacing: .1px; justify-content: center; align-items: center; overflow: hidden; }   /* icon + label ride together, centred as one group (both horizontally and vertically) */
+.uc-slot .pill svg { flex: 0 0 auto; }
+.uc-slot .pill .t { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .ur { display: flex; align-items: center; gap: 9px; min-width: 0; padding: 8px 11px 8px 8px; border-right: 3px solid var(--ur-hl, var(--line)); }
 .ur-cat { flex: 0 0 auto; width: 22px; height: 22px; color: var(--txt-2); display: flex; align-items: center; justify-content: center; }
 .ur-cat svg { width: 19px; height: 19px; display: block; }
