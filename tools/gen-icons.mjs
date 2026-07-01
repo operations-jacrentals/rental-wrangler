@@ -33,7 +33,7 @@ const LUCIDE = {
     truck: 'truck', back: 'chevron-left', list: 'list', sun: 'sun', moon: 'moon',
     qr: 'qr-code', mouse: 'mouse', video: 'video', camera: 'camera', droplet: 'droplet',
     table: 'table', graph: 'chart-column', sliders: 'sliders-horizontal', inbox: 'inbox',
-    bell: 'bell', eye: 'eye', eyeOff: 'eye-off', feedback: 'message-square-text',
+    bell: 'bell', alert: 'triangle-alert', eye: 'eye', eyeOff: 'eye-off', feedback: 'message-square-text',
     box: 'box', doc: 'file', lock: 'lock', lockOpen: 'lock-open',
     chevL: 'chevron-left', chevR: 'chevron-right', chat: 'message-circle',
   },
@@ -83,7 +83,7 @@ const CUSTOM = {
 const ORDER = {
   I: ['circle', 'plus', 'search', 'x', 'filter', 'grid', 'truck', 'back', 'list', 'mark',
       'sun', 'moon', 'hardhat', 'horseshoe', 'bluesteel', 'qr', 'mouse', 'video', 'camera',
-      'droplet', 'table', 'graph', 'sliders', 'inbox', 'bell', 'eye', 'eyeOff', 'feedback',
+      'droplet', 'table', 'graph', 'sliders', 'inbox', 'bell', 'alert', 'eye', 'eyeOff', 'feedback',
       'box', 'doc', 'lock', 'lockOpen', 'chev', 'chevL', 'chevR', 'chat'],
   CARD_ICON: ['customers', 'rentals', 'categories', 'units', 'invoices', 'workOrders',
       'serviceOrders', 'inspections', 'inspectionsPending', 'shop', 'parts', 'vendors',

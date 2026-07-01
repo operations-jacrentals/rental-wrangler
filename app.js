@@ -1747,7 +1747,7 @@ function openWOForUnit(unitId) {
  *  decimals; we round only at the render layer so the module stays faithful). */
 const svcText = (s) => (s.status === 'past-due'
   ? `${Math.abs(Math.round(s.remaining))} HRS overdue`
-  : `${Math.round(s.remaining)} HRS remaining`);
+  : `${Math.round(s.remaining)} HRS remain`);
 
 // Wash is a recurring service interval (every 100 engine-hours), pinned to the TOP of
 // the Services list. Passed via opts.tasks so the reference module stays byte-identical.
@@ -1757,10 +1757,10 @@ const SVC_OPTS = { tasks: UNIT_SVC_TASKS, hoursField: 'currentHours', baselineFi
 const unitServiceRows = (u) => serviceOrdersForUnit(u, u.serviceCompletions || {}, SVC_OPTS);
 /** The service pill(s) for a row: a submitted Wash Request overrides the countdown
  *  language to a single blue "Wash Requested" pill; otherwise status + countdown. */
-function svcPills(s) {
+function svcPills(s, focal) {
   if (!s) return '';
-  if (s.washRequested) return badge('Wash Requested', 'blue');                 // R3
-  return badge(getStatus('serviceStatus', s.status).label, s.color) + badge(svcText(s), s.color);   // R3
+  if (s.washRequested) return badge('Wash Requested', 'blue', focal);          // R3
+  return badge(getStatus('serviceStatus', s.status).label, s.color, focal) + badge(svcText(s), s.color);   // R3 (urgency = focal on the shop service row)
 }
 /** Most-urgent active service order for a unit (derived via the reference module).
  *  A pending wash request floats the wash task to the top regardless of its countdown. */
@@ -4109,17 +4109,17 @@ function entityPill(card, rec, { x, xData } = {}) {
   return `<span class="pill entity-stamp c-${flag}" data-r="R2" data-pill-card="${card}" data-pill-rec="${esc(id)}"${chat}>${CARD_ICON[card] || ''}<span class="t">${esc(name)}</span>${xb}</span>`;
 }
 /** R3b: a DATA CHIP — a plain fact (480 HRS, No GPS), independent of R3. */
-const badge = (label, color = 'gray') => `<span class="pill c-${color}" data-r="R3b"><span class="t">${esc(label)}</span></span>`;
+const badge = (label, color = 'gray', focal) => `<span class="pill c-${color}${focal ? ' focal' : ''}" data-r="R3b"><span class="t">${esc(label)}</span></span>`;
 /** R1: a GATE pill — a status DROPDOWN that moves the record forward. */
 function gatePill(set, value, js, data, { truck } = {}) {
   const st = getStatus(set, value);
   const tk = truck ? `<span class="truck">${I.truck}</span>` : '';
-  return `<span class="pill gate c-${st.color} ${js}" data-r="R1"${dataAttrs(data)}>${tk}${ovIcon(st)}${esc(st.label)} ${I.chev}</span>`;
+  return `<span class="pill gate c-${st.color} ${js}" data-r="R1"${dataAttrs(data)}>${tk}${I.chev}${esc(st.label)}</span>`;
 }
 /** R1: a gate with a custom label (e.g. ETA-as-status on WO lines). */
 function gatePillRaw(label, color, js, data, noChev) {
-  // R1: chevron ONLY on real dropdowns — popup-opening gates pass noChev
-  return `<span class="pill gate c-${color} ${js}" data-r="R1"${dataAttrs(data)}>${esc(label)}${noChev ? '' : ' ' + I.chev}</span>`;
+  // R1: leading chevron = the dropdown affordance; popup-opening gates pass noChev
+  return `<span class="pill gate c-${color} ${js}" data-r="R1"${dataAttrs(data)}>${noChev ? '' : I.chev}${esc(label)}</span>`;
 }
 /* §20 MASTER GATE — the rental-status dropdown in the Day Timeline / row. Usable
    (bulk-sets every unit) only while units are UNIFORM; one diverging unit LOCKS it
@@ -4130,17 +4130,17 @@ function masterGate(r, { truck } = {}) {
   if (d.mixed) {
     return `<span class="pill gate c-gray locked" data-r="R1" data-tip="Units have mixed statuses — match them all, or use each unit's own gate below">${tk}${esc(d.label)}</span>`;
   }
-  return `<span class="pill gate c-${d.color} js-status-pill" data-r="R1" data-rec="${esc(r.rentalId)}">${tk}${esc(d.label)} ${I.chev}</span>`;
+  return `<span class="pill gate c-${d.color} js-status-pill" data-r="R1" data-rec="${esc(r.rentalId)}">${tk}${I.chev}${esc(d.label)}</span>`;
 }
 /* §20 per-unit status gate — shown on each unit chip when a rental holds >1 unit. */
 function unitStatusGate(r, eu) {
   const st = getStatus('rentalStatus', unitStatus(r, eu));
-  return `<span class="pill gate c-${st.color} js-unit-status" data-r="R1" data-rec="${esc(r.rentalId)}" data-unit="${esc(eu.unitId)}">${esc(st.label)} ${I.chev}</span>`;
+  return `<span class="pill gate c-${st.color} js-unit-status" data-r="R1" data-rec="${esc(r.rentalId)}" data-unit="${esc(eu.unitId)}">${I.chev}${esc(st.label)}</span>`;
 }
 /** R1: funnel-stage gate (§7.1). */
 function funnelPill(custId, which, stage) {
   const st = getStatus('funnelStage', stage);
-  return `<span class="pill gate c-${st.color} js-funnel" data-r="R1" data-rec="${esc(custId)}" data-which="${which}">${esc(st.label)} ${I.chev}</span>`;
+  return `<span class="pill gate c-${st.color} js-funnel" data-r="R1" data-rec="${esc(custId)}" data-which="${which}">${I.chev}${esc(st.label)}</span>`;
 }
 /** R4: a DERIVED pill — rides another pill in the same section; no bg/border,
  *  destination icon + ink color only; sits directly RIGHT of its parent. */
@@ -4656,12 +4656,7 @@ function rowViz(card, rec) {
   // rentable/total pill carry fleet health now (Jac 2026-06-25). The §10 window-red
   // tint above still applies when a window leaves 0 available.
   if (card === 'serviceOrders') { const s = topServiceForUnit(rec); if (s) return `<div class="row-viz" style="background:linear-gradient(90deg, var(--${s.color}-bg), transparent 60%)"></div>`; }
-  if (card === 'units') {
-    // colour each unit row by its INSPECTION status as a left gradient (same style as
-    // Inspection / Service / WO rows): Ready=green, Not Ready=yellow, Failed=red.
-    const c = getStatus('unitInspectionStatus', rec.inspectionStatus).color;
-    return `<div class="row-viz" style="background:linear-gradient(90deg, var(--${c}-bg), transparent 60%)"></div>`;
-  }
+  if (card === 'units') return '';   // Jac 2026-07-01: the old inspection-status wash is retired — the mini-card's colored border (--ur-hl) + status pills carry health now.
   if (card === 'invoices') { const s = invoiceTotals(rec).status; return `<div class="row-viz" style="background:linear-gradient(90deg, var(--${getStatus('invoiceStatus', s).color}-bg), transparent 70%)"></div>`; }
   return '';
 }
@@ -4717,6 +4712,23 @@ function unitWoSoPill(u) {
   if (wo) return statusPill('woPhase', wo.phase, { card: 'workOrders', recId: wo.woId });
   const svc = topServiceForUnit(u);
   return svc ? badge(svcText(svc), svc.color) : badge('No Orders', 'green');
+}
+/* The unit mini-card's top-right FLAG corner (R9): the signals NOT already carried by
+   the two status pills — overbooked, GPS trouble, out-of-active-fleet. The corner is a
+   COMPACT icon-mark so it never steals width from the name (Jac 2026-07-01): one
+   severity-coloured alert glyph, its label in the R23 data-tip. Several trips collapse
+   to the same glyph + a count, tip listing them all. One mark → every card stays one
+   line tall (no stretched blank rows). Most-severe colour wins; overbooked pulses (R9b). */
+function unitCardFlags(u) {
+  const f = [];
+  if (unitOverbooked(u.unitId)) f.push({ label: 'Overbooked', color: 'red', alert: true });
+  if (u.gpsStatus === 'Not Reporting') f.push({ label: 'No GPS', color: 'red' });
+  else if (u.gpsStatus === 'Verify') f.push({ label: 'GPS?', color: 'yellow' });
+  if (u.fleetStatus && u.fleetStatus !== 'Active') { const fs = getStatus('unitFleetStatus', u.fleetStatus); f.push({ label: fs.label, color: fs.color }); }
+  if (!f.length) return '';
+  if (f.length === 1) return flagsStack([flagEl('', f[0].color, { icon: I.alert, alert: f[0].alert, title: f[0].label })]);
+  const worst = f.some((x) => x.color === 'red') ? 'red' : f.some((x) => x.color === 'yellow') ? 'yellow' : 'gray';
+  return flagsStack([flagEl(String(f.length), worst, { icon: I.alert, alert: worst === 'red', title: f.map((x) => x.label).join(' · ') })]);
 }
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -4885,18 +4897,21 @@ const ROWS = {
   },
 
   units: (u) => {
-    // Layout: [pills LEFT] · [HRS·cat NAME right-aligned] · [cat icon] · [border-right stripe]
+    // MINI-CARD (Jac 2026-07-01): the unit as a vertical data-plate, laid out in a
+    // grid (auto-fit — more per screen on wide columns). Row 1: NAME + flag corner.
+    // Row 2: category icon + category name. Row 3: the two status pills, STACKED so
+    // labels never clip. Hours dropped (freed the top-right for flags). Border carries
+    // the entity-health color (--ur-hl), like the category/rentals mini-cards.
     const cat = IDX.category.get(u.categoryId);
     const hl = getEntityColor('units', u);
     const nameColor = (hl === 'red' || hl === 'yellow' || hl === 'green') ? `var(--${hl})` : hl === 'gray' ? 'var(--txt-3)' : 'var(--txt)';
-    const sub = [`${num(u.currentHours)} HRS`, cat ? esc(cat.name) : ''].filter(Boolean).join(' · ');
-    return `<div class="ur" style="--ur-hl:var(--${hl})">
-      <div class="ur-pills"><div class="ur-pill-slot">${unitRentalInspPill(u)}</div><div class="ur-pill-slot">${unitWoSoPill(u)}</div></div>
-      <div class="ur-id">
-        <span class="ur-sub">${sub}</span>
-        <span class="r-title ur-name${hl === 'red' ? ' ec-red' : ''}" style="color:${nameColor}">${esc(u.name)}</span>
+    return `<div class="ucard" style="--ur-hl:var(--${hl})">
+      <div class="uc-top">
+        <span class="r-title uc-name${hl === 'red' ? ' ec-red' : ''}" style="color:${nameColor}">${esc(u.name)}</span>
+        <span class="uc-flags">${unitCardFlags(u)}</span>
       </div>
-      <span class="ur-cat">${categoryIconFor(cat && cat.name)}</span>
+      <div class="uc-cat"><span class="uc-caticon">${categoryIconFor(cat && cat.name)}</span><span class="uc-catname">${cat ? esc(cat.name) : '—'}</span></div>
+      <div class="uc-pills"><div class="uc-slot">${unitRentalInspPill(u)}</div><div class="uc-slot">${unitWoSoPill(u)}</div></div>
     </div>`;
   },
 
@@ -4932,7 +4947,7 @@ const ROWS = {
       <div class="catr-head"><span class="catr-cat">${categoryIconFor(c.name)}</span><span class="r-title catr-name${hl === 'red' ? ' ec-red' : ''}" style="color:${nameColor}" data-tip="${esc(c.name)}">${esc(c.name)}</span></div>
       <div class="catr-pills">
         <div class="catr-slot js-cat-avail" data-cat="${esc(c.categoryId)}" data-tip="${esc(availTip)} — tap to open these units">${badge(`${availN} Avail`, availN > 0 ? 'green' : 'red')}</div>
-        <div class="catr-slot" data-tip="${r.rentable} of ${r.total} units rentable — in-yard, inspection not failed">${badge(`${r.rentable}/${r.total}`, tallyColor)}</div>
+        <div class="catr-slot" data-tip="${r.rentable} of ${r.total} units rentable — in-yard, inspection not failed">${badge(`${r.rentable}/${r.total}`, tallyColor, true)}</div>
       </div>
       <div class="catr-rates">${rate('1-Day', c.rate1Day)}${rate('7-Day', c.rate7Day)}${rate('4-Week', c.rate4Wk)}${rate('Weekend', c.weekend)}</div>
     </div>`;
@@ -4991,7 +5006,7 @@ const ROWS = {
     return `<div class="row-1"><span class="r-title">${esc(u.name)}</span><span class="r-fields">
         <span>${esc(top?.name || 'Service')}</span><span>Every ${top?.intervalHours || '—'} HRS</span></span></div>
       <div class="row-2">
-        ${svcPills(top)}
+        ${svcPills(top, true)}
         ${ar ? statusPill('rentalStatus', rentalDisplayStatus(ar), { card: 'rentals', recId: ar.rentalId }) : ''}
       </div>`;
   },
@@ -5520,13 +5535,17 @@ function woSectionHtml(w) {
     : w.woType === 'Failed'
       ? flagEl('Failed Inspection', 'red', { icon: CARD_ICON.inspections, card: w.inspectionId ? 'inspections' : null, recId: w.inspectionId || null, title: w.inspectionId ? 'Open the failed inspection' : 'WO type: failed inspection' })
       : flagEl(w.assignedMechanic || 'Mechanic', 'gray', { icon: CARD_ICON.customers, title: 'WO type: opened by a mechanic' });
+  // G2: only the bottleneck (worst OPEN) line's gate is Primary; siblings dim to Secondary.
+  const _openL = (w.lineItems || []).map((l, i) => ({ i, ph: l.phase, eta: l.eta })).filter((l) => l.ph !== 'Complete');
+  _openL.sort((a, b) => ((WO_SEV[a.ph] ?? 9) - (WO_SEV[b.ph] ?? 9)) || String(a.eta || '~').localeCompare(String(b.eta || '~')));
+  const bottleIdx = _openL.length ? _openL[0].i : -1;
   const lines = (w.lineItems || []).map((li, idx) => {
     const ph = getStatus('woPhase', li.phase);
     const lbl = li.eta && (li.phase === 'Part Ordered' || li.phase === 'Part is Local') ? `ETA ${fmtShortDate(li.eta)}` : ph.label;
     const ven = li.vendorId ? IDX.vendor?.get?.(li.vendorId) || DATA.vendors.find((v) => v.vendorId === li.vendorId) : null;
     const tip = [ven ? `Vendor: ${ven.name}` : '', li.url ? li.url : '', li.aiPending ? '🤠 Mr. Wrangler will fill the empty fields' : ''].filter(Boolean).join(' · ');
     // the description re-opens the part popup; vendor/url live in its tooltip
-    return `<div class="woline">${gatePillRaw(lbl, ph.color, 'js-wophase-line', { rec: w.woId, idx })}<span class="js-partedit" data-rec="${w.woId}" data-idx="${idx}" style="cursor:pointer"${tip ? ` data-tip="${esc(tip)}"` : ''}>${li.aiPending ? '✨ ' : ''}${esc(li.part)}${ven ? ' ' + linkName(ven.name, { js: 'js-vendor-open', data: { rec: ven.vendorId } }) : ''}</span><span class="nums"><b>${money(li.cost)}</b><span>${li.hours || 0}h</span></span></div>`;
+    return `<div class="woline">${gatePillRaw(lbl, ph.color, `js-wophase-line${idx === bottleIdx ? '' : ' dim'}`, { rec: w.woId, idx })}<span class="js-partedit" data-rec="${w.woId}" data-idx="${idx}" style="cursor:pointer"${tip ? ` data-tip="${esc(tip)}"` : ''}>${li.aiPending ? '✨ ' : ''}${esc(li.part)}${ven ? ' ' + linkName(ven.name, { js: 'js-vendor-open', data: { rec: ven.vendorId } }) : ''}</span><span class="nums"><b>${money(li.cost)}</b><span>${li.hours || 0}h</span></span></div>`;
   }).join('');
   const woBg = woBackdrop(w);
   // R9b: a WO left open past the window with NO parts/labor reads $0 by omission, not by
@@ -6366,7 +6385,7 @@ const DETAIL = {
     const journey = (w.lineItems || []).map((li, idx) => {
       const ven = li.vendorId ? IDX.vendor?.get?.(li.vendorId) || DATA.vendors.find((v) => v.vendorId === li.vendorId) : null;
       const venName = ven?.name || li.vendor || '';
-      return `<div class="hitem"><span data-r="R1" class="pill gate c-${getStatus('woPhase', li.phase).color} js-wophase-line" data-rec="${w.woId}" data-idx="${idx}" style="min-width:88px;justify-content:center">${esc(getStatus('woPhase', li.phase).label)} ${I.chev}</span><span>${esc(li.part)}</span><span class="spacer"></span><span class="muted">${li.eta ? fmtShortDate(li.eta) + ' · ' : ''}${li.hours || 0}h${venName ? ' · ' : ''}${venName ? (ven ? linkName(venName, { js: 'js-vendor-open', data: { rec: ven.vendorId } }) : esc(venName)) : ''}</span><b>${money(li.cost)}</b></div>`;
+      return `<div class="hitem"><span data-r="R1" class="pill gate c-${getStatus('woPhase', li.phase).color} js-wophase-line" data-rec="${w.woId}" data-idx="${idx}" style="min-width:88px;justify-content:center">${I.chev}${esc(getStatus('woPhase', li.phase).label)}</span><span>${esc(li.part)}</span><span class="spacer"></span><span class="muted">${li.eta ? fmtShortDate(li.eta) + ' · ' : ''}${li.hours || 0}h${venName ? ' · ' : ''}${venName ? (ven ? linkName(venName, { js: 'js-vendor-open', data: { rec: ven.vendorId } }) : esc(venName)) : ''}</span><b>${money(li.cost)}</b></div>`;
     }).join('');
     const billable = partsCost > 0 || labor > 0;
     const alreadyBilled = DATA.invoices.some((i) => (i.lineItems || []).some((li) => li.kind === 'WO' && li.ref === w.woId));
