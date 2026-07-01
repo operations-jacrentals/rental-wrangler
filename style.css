@@ -3034,7 +3034,26 @@ body { font-variant-numeric: tabular-nums; }
    Pills first → eye aligns status near the rental calendar center (Jac 2026-06-23).
    Equal-width pill slots so all rows share the same column rhythm. ── */
 .row[data-card="units"] { padding: 0; }
-.row[data-card="units"] .row-content { padding: 0; }
+.row[data-card="units"] .row-content { padding: 0; height: 100%; }
+/* UNIT MINI-CARD (Jac 2026-07-01) — units render as a grid of vertical data-plates:
+   auto-fit so a wide column packs 2–3 across (more per screen), one across when narrow. */
+.card[data-card="units"] .list { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); grid-auto-rows: min-content; gap: 7px; }
+.card[data-card="units"] .list .newrow,
+.card[data-card="units"] .list .empty-new,
+.card[data-card="units"] .list .empty,
+.card[data-card="units"] .list .showmore { grid-column: 1 / -1; }
+.ucard { height: 100%; display: flex; flex-direction: column; gap: 7px; padding: 9px 10px; border: 2px solid var(--ur-hl, var(--line)); border-radius: 12px; overflow: hidden; }
+.uc-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; }
+.uc-name { flex: 1 1 auto; min-width: 0; font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .5px; font-weight: 700; font-size: 14px; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.uc-flags { flex: 0 0 auto; }
+.uc-cat { display: flex; align-items: center; gap: 6px; color: var(--txt-2); font-size: 12px; min-width: 0; }
+.uc-caticon { flex: 0 0 auto; width: 18px; height: 18px; color: var(--txt-3); display: flex; align-items: center; justify-content: center; }
+.uc-caticon svg { width: 17px; height: 17px; display: block; }
+.uc-catname { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.uc-pills { display: flex; flex-direction: column; gap: 6px; }
+.uc-slot { display: flex; }
+.uc-slot .pill { width: 100%; padding: 0 6px; letter-spacing: .2px; text-align: center; justify-content: center; overflow: hidden; }   /* tighter than a standalone pill so full labels fit at 2-across on a phone */
+.uc-slot .pill .t { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .ur { display: flex; align-items: center; gap: 9px; min-width: 0; padding: 8px 11px 8px 8px; border-right: 3px solid var(--ur-hl, var(--line)); }
 .ur-cat { flex: 0 0 auto; width: 22px; height: 22px; color: var(--txt-2); display: flex; align-items: center; justify-content: center; }
 .ur-cat svg { width: 19px; height: 19px; display: block; }

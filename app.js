@@ -4718,6 +4718,17 @@ function unitWoSoPill(u) {
   const svc = topServiceForUnit(u);
   return svc ? badge(svcText(svc), svc.color) : badge('No Orders', 'green');
 }
+/* The unit mini-card's top-right FLAG corner (R9): the signals NOT already carried by
+   the two status pills — overbooked, GPS trouble, out-of-active-fleet. ≤2, most severe
+   first; overbooked pulses (R9b). Empty stack when the unit is clean. */
+function unitCardFlags(u) {
+  const f = [];
+  if (unitOverbooked(u.unitId)) f.push(flagEl('Overbooked', 'red', { alert: true }));
+  if (u.gpsStatus === 'Not Reporting') f.push(flagEl('No GPS', 'red'));
+  else if (u.gpsStatus === 'Verify') f.push(flagEl('GPS?', 'yellow'));
+  if (u.fleetStatus && u.fleetStatus !== 'Active') { const fs = getStatus('unitFleetStatus', u.fleetStatus); f.push(flagEl(fs.label, fs.color)); }
+  return flagsStack(f.slice(0, 2));
+}
 
 /* ════════════════════════════════════════════════════════════════════════
    APP-14 · §6b PER-CARD ROWS
@@ -4885,18 +4896,21 @@ const ROWS = {
   },
 
   units: (u) => {
-    // Layout: [pills LEFT] · [HRS·cat NAME right-aligned] · [cat icon] · [border-right stripe]
+    // MINI-CARD (Jac 2026-07-01): the unit as a vertical data-plate, laid out in a
+    // grid (auto-fit — more per screen on wide columns). Row 1: NAME + flag corner.
+    // Row 2: category icon + category name. Row 3: the two status pills, STACKED so
+    // labels never clip. Hours dropped (freed the top-right for flags). Border carries
+    // the entity-health color (--ur-hl), like the category/rentals mini-cards.
     const cat = IDX.category.get(u.categoryId);
     const hl = getEntityColor('units', u);
     const nameColor = (hl === 'red' || hl === 'yellow' || hl === 'green') ? `var(--${hl})` : hl === 'gray' ? 'var(--txt-3)' : 'var(--txt)';
-    const sub = [`${num(u.currentHours)} HRS`, cat ? esc(cat.name) : ''].filter(Boolean).join(' · ');
-    return `<div class="ur" style="--ur-hl:var(--${hl})">
-      <div class="ur-pills"><div class="ur-pill-slot">${unitRentalInspPill(u)}</div><div class="ur-pill-slot">${unitWoSoPill(u)}</div></div>
-      <div class="ur-id">
-        <span class="ur-sub">${sub}</span>
-        <span class="r-title ur-name${hl === 'red' ? ' ec-red' : ''}" style="color:${nameColor}">${esc(u.name)}</span>
+    return `<div class="ucard" style="--ur-hl:var(--${hl})">
+      <div class="uc-top">
+        <span class="r-title uc-name${hl === 'red' ? ' ec-red' : ''}" style="color:${nameColor}">${esc(u.name)}</span>
+        <span class="uc-flags">${unitCardFlags(u)}</span>
       </div>
-      <span class="ur-cat">${categoryIconFor(cat && cat.name)}</span>
+      <div class="uc-cat"><span class="uc-caticon">${categoryIconFor(cat && cat.name)}</span><span class="uc-catname">${cat ? esc(cat.name) : '—'}</span></div>
+      <div class="uc-pills"><div class="uc-slot">${unitRentalInspPill(u)}</div><div class="uc-slot">${unitWoSoPill(u)}</div></div>
     </div>`;
   },
 
