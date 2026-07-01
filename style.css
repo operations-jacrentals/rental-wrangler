@@ -2486,7 +2486,7 @@ body.rw-inspect .c-titlecard:hover { outline: 2px solid #18b6ff; outline-offset:
    chevron. Colors come from the normal .c-* classes; chevron only on real dropdowns. */
 /* Gate matches the status-pill size exactly — Primary / Secondary / Gate are all one
    size (Jac). (Mobile keeps its larger touch target via the .is-phone rule below.) */
-.pill.gate { height: 22px; padding: 0 10px; font-size: 11px; }
+.pill.gate { height: 22px; padding: 0 9px; font-size: 11px; }   /* identical to a status pill; only the leading icon differs (chevron) */
 .pill.gate svg { width: 12px; height: 12px; }
 .pill.gate:hover { filter: brightness(1.18); }
 
@@ -2968,11 +2968,9 @@ body { font-variant-numeric: tabular-nums; }
    border still leaves a dark ring via background-origin, so zero it). Scoped to
    :not(.dim) so a demoted (Secondary) gate keeps its striped border. */
 .pill.gate:not(.dim), .pill.focal { border:0; background-origin:border-box; box-shadow:0 1px 2px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.18); }
-/* A GATE (dropdown) is the ONE variant of the base pill: a chevron in a small box
-   on the right edge (the dropdown affordance). Non-gate focal pills have neither. */
-.pill.gate .gate-chev { display:inline-flex; align-items:center; justify-content:center; width:15px; height:15px; margin-left:6px; margin-right:-2px; border:1px solid rgba(255,255,255,.5); border-radius:4px; background:rgba(0,0,0,.16); flex:0 0 auto; }
-.pill.gate .gate-chev svg { width:10px; height:10px; }
-.pill.gate.dim .gate-chev { border-color:currentColor; background:transparent; opacity:.85; }
+/* A GATE (dropdown) is IDENTICAL to a Primary/Secondary pill — its LEADING icon is
+   just swapped for a chevron (the dropdown affordance). No box, divider, or section:
+   the chevron rides in the icon slot and inherits the pill's ink like any icon. */
 /* ══ RULEBOOK — reference IMG_2262 (Jac 2026-07-01): ONE button family, ONE shape.
    The ONLY per-element variant is a gate's chevron box. PRIMARY = FILL (striped for
    danger, solid otherwise), white ink, NO border. SECONDARY = hazard-striped BORDER
@@ -2981,7 +2979,7 @@ body { font-variant-numeric: tabular-nums; }
 .pill.gate, .pill[data-r="R3"] { border-radius: 7px; gap: 0; }    /* rounded-RECT at real pill heights (~0.27×h, plate proportion) — NOT a stadium; icon touches text (gap 0) */
 /* SECONDARY (R3, not focal) — outline + colored ink (plate .btn.secondary): 1px solid
    colored border for non-danger; red/yellow become a striped BORDER → solid on hover. */
-.pill[data-r="R3"]:not(.focal) { background:transparent; border:1px solid var(--line); box-shadow:none; }
+.pill[data-r="R3"]:not(.focal) { background:transparent; border:2.25px solid var(--line); box-shadow:none; }   /* border width matches the striped-border tiers */
 .pill[data-r="R3"]:not(.focal).c-green  { color:var(--green);  border-color:var(--green); }
 .pill[data-r="R3"]:not(.focal).c-blue   { color:var(--blue);   border-color:var(--blue); }
 .pill[data-r="R3"]:not(.focal).c-navy   { color:var(--navy);   border-color:var(--navy); }
@@ -2993,13 +2991,13 @@ body { font-variant-numeric: tabular-nums; }
 /* danger SECONDARY — hazard-striped BORDER (same seamless 26px tile as PRIMARY fill),
    dark interior (page bg), also applied to a demoted (G2 dim) gate. Plate recipe. */
 .pill[data-r="R3"]:not(.focal).c-red, .pill.gate.dim.c-red {
-  color:var(--red); border:3px solid transparent;
+  color:var(--red); border:2.25px solid transparent;
   background-image: linear-gradient(var(--bg,#0b0c0f),var(--bg,#0b0c0f)),
     linear-gradient(135deg, var(--red) 0 25%, #14181d 25% 50%, var(--red) 50% 75%, #14181d 75% 100%);
   background-origin: padding-box, border-box; background-clip: padding-box, border-box;
   background-repeat: no-repeat, repeat; background-size: auto, 26px 26px; }
 .pill[data-r="R3"]:not(.focal).c-yellow, .pill.gate.dim.c-yellow {
-  color:var(--yellow); border:3px solid transparent;
+  color:var(--yellow); border:2px solid transparent;   /* 2px (not 2.25) — bright yellow blooms, so a hair thinner reads equal to the rest */
   background-image: linear-gradient(var(--bg,#0b0c0f),var(--bg,#0b0c0f)),
     linear-gradient(135deg, var(--yellow) 0 25%, #14181d 25% 50%, var(--yellow) 50% 75%, #14181d 75% 100%);
   background-origin: padding-box, border-box; background-clip: padding-box, border-box;
