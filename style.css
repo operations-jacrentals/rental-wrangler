@@ -992,6 +992,32 @@ select.lf-in { appearance: none; cursor: pointer; }
   height: 22px;
 }
 
+/* ══ R-Rulebook v2 TIERS (spec 2026-06-30) — ONE focal Primary per container ══
+   PRIMARY = R1 gate + any .focal status → solid fill, white ink, hazard-striped
+   red/yellow. SECONDARY = R3 status NOT .focal → outline (soft fill dropped).
+   ADD (R5b) = solid blue border. G1 commit buttons ramp via .ramp/.ramp.ready.
+   Urgency stays color + (Phase-2) motion — it never promotes tier. Scoped by
+   data-r / class so R2 refs, R3b badges, R4 derived pills are untouched. */
+.pill.gate, .pill.focal { border-color: transparent; color: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.18); }
+.pill.gate.c-green,  .pill.focal.c-green  { background: var(--green); }
+.pill.gate.c-blue,   .pill.focal.c-blue   { background: var(--blue); }
+.pill.gate.c-navy,   .pill.focal.c-navy   { background: var(--navy); }
+.pill.gate.c-purple, .pill.focal.c-purple { background: var(--purple); }
+.pill.gate.c-pink,   .pill.focal.c-pink   { background: var(--pink); }
+.pill.gate.c-brown,  .pill.focal.c-brown  { background: var(--brown); }
+.pill.gate.c-gray,   .pill.focal.c-gray   { background: var(--gray); }
+.pill.gate.c-orange, .pill.focal.c-orange { background: var(--orange); color: var(--on-orange); }
+.pill.gate.c-red,    .pill.focal.c-red    { background: repeating-linear-gradient(135deg, var(--red) 0 11px, #14181d 11px 22px); text-shadow: 0 1px 2px rgba(0,0,0,.75); }
+.pill.gate.c-yellow, .pill.focal.c-yellow { background: repeating-linear-gradient(135deg, var(--yellow) 0 11px, #14181d 11px 22px); text-shadow: 0 1px 2px rgba(0,0,0,.85); }
+.pill.gate .chev, .pill.gate svg { opacity: .92; }
+/* SECONDARY — read-only status not designated the container's focal element */
+.pill[data-r="R3"]:not(.focal) { background: transparent; box-shadow: none; }
+/* ADD (R5b) — solid blue border (was dashed) */
+.add-field.anchor { border-style: solid; }
+/* G1 — commit/blue-action buttons ramp: Secondary until preconditions met (.ready) */
+.pill.ramp:not(.ready) { background: transparent; color: var(--txt-3); border-color: var(--line); box-shadow: none; }
+.pill.ramp.ready { background: var(--blue); color: #fff; border-color: transparent; }
+
 /* ── Standard mode (§0.2 / §12) ──────────────────────────────────────────── */
 .detail { padding: 12px; display: flex; flex-direction: column; gap: 12px; }
 .detail-head { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
