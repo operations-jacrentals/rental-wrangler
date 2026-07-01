@@ -2948,6 +2948,7 @@ body { font-variant-numeric: tabular-nums; }
 .rcc-uname.ec-red,
 .ur-name.ec-red,
 .catr-name.ec-red,
+.uc-name.ec-red,
 .rcc-bal.overdue,
 .cr-pay.over,
 .pill.c-red .t { color: var(--red); -webkit-text-fill-color: color-mix(in srgb, var(--red) 65%, white); text-shadow: 0 0 3px var(--red), 0 0 7px color-mix(in srgb, var(--red) 60%, transparent); }
@@ -2999,23 +3000,30 @@ body { font-variant-numeric: tabular-nums; }
 .pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-brown  { color:var(--brown);  border-color:var(--brown); }
 .pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-orange { color:var(--orange); border-color:var(--accent); }
 .pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-gray   { color:var(--txt-2);  border-color:var(--line); }
-/* danger SECONDARY — hazard-striped BORDER (same seamless 26px tile as PRIMARY fill),
-   dark interior (page bg), also applied to a demoted (G2 dim) gate. Plate recipe. */
+/* danger SECONDARY — hazard-striped BORDER (same seamless 26px tile as PRIMARY fill)
+   drawn as a MASKED ring so the interior stays fully TRANSPARENT (the card's status
+   tint shows through — Jac 2026-07-01, no dark fill), also applied to a demoted (G2
+   dim) gate. The gradient fills the box, then a padding-box/border-box mask XORs the
+   centre away, leaving stripes only on the 2.25px ring. Plate recipe. */
 .pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-red, .pill.gate.dim.c-red {
-  color:var(--red); border:2.25px solid transparent;
-  background-image: linear-gradient(var(--bg,#0b0c0f),var(--bg,#0b0c0f)),
-    linear-gradient(135deg, var(--red) 0 25%, #14181d 25% 50%, var(--red) 50% 75%, #14181d 75% 100%);
-  background-origin: padding-box, border-box; background-clip: padding-box, border-box;
-  background-repeat: no-repeat, repeat; background-size: auto, 26px 26px; }
+  color:var(--red); border:2.25px solid transparent; background:transparent; position:relative; isolation:isolate; }
 .pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-yellow, .pill.gate.dim.c-yellow {
-  color:var(--yellow); border:2.25px solid transparent;   /* all secondary borders uniform 2.25px */
-  background-image: linear-gradient(var(--bg,#0b0c0f),var(--bg,#0b0c0f)),
-    linear-gradient(135deg, var(--yellow) 0 25%, #14181d 25% 50%, var(--yellow) 50% 75%, #14181d 75% 100%);
-  background-origin: padding-box, border-box; background-clip: padding-box, border-box;
-  background-repeat: no-repeat, repeat; background-size: auto, 26px 26px; }
-/* danger SECONDARY → SOLID border on hover (plate) */
-.pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-red:hover    { border-color:var(--red);    background-image:none; }
-.pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-yellow:hover { border-color:var(--yellow); background-image:none; }
+  color:var(--yellow); border:2.25px solid transparent; background:transparent; position:relative; isolation:isolate; }   /* all secondary borders uniform 2.25px */
+.pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-red::before, .pill.gate.dim.c-red::before,
+.pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-yellow::before, .pill.gate.dim.c-yellow::before {
+  content:''; position:absolute; inset:0; z-index:-1; border-radius:inherit; padding:2.25px; pointer-events:none;
+  background-size:26px 26px;
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0); -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0); mask-composite: exclude; }
+.pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-red::before, .pill.gate.dim.c-red::before {
+  background-image: linear-gradient(135deg, var(--red) 0 25%, #14181d 25% 50%, var(--red) 50% 75%, #14181d 75% 100%); }
+.pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-yellow::before, .pill.gate.dim.c-yellow::before {
+  background-image: linear-gradient(135deg, var(--yellow) 0 25%, #14181d 25% 50%, var(--yellow) 50% 75%, #14181d 75% 100%); }
+/* danger SECONDARY → SOLID border on hover (plate); drop the striped ring */
+.pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-red:hover    { border-color:var(--red);    }
+.pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-yellow:hover { border-color:var(--yellow); }
+.pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-red:hover::before,
+.pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-yellow:hover::before { display:none; }
 /* SECONDARY ink — solid colored, beating the ec-red .t pinkish fill (2939) */
 .pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-red .t    { color:var(--red);    -webkit-text-fill-color:var(--red);    -webkit-text-stroke:0.3px rgba(255,255,255,.3); text-shadow:0 0 1.4px rgba(255,255,255,.35); }   /* soft (blurred) white outline so red ink reads on the striped border */
 .pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-red svg   { filter: drop-shadow(0 0 1.4px rgba(255,255,255,.35)); }   /* same soft white halo on the icon, at 50% the text's white */
@@ -3044,18 +3052,18 @@ body.is-phone .card[data-card="units"] .list { grid-template-columns: repeat(2, 
 .card[data-card="units"] .list .empty,
 .card[data-card="units"] .list .showmore { grid-column: 1 / -1; }
 .ucard { height: 100%; display: flex; flex-direction: column; gap: 7px; padding: 9px 9px; border: 2px solid var(--ur-hl, var(--line)); border-radius: 12px; overflow: hidden; }
-.uc-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; }
+.uc-top { display: flex; align-items: center; justify-content: space-between; gap: 6px; }   /* corner mark optically centres on the name line */
 .uc-name { flex: 1 1 auto; min-width: 0; font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .5px; font-weight: 700; font-size: 14px; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .uc-flags { flex: 0 0 auto; }
 /* Corner ALERT mark — a compact icon (+count for several) so it never steals width
    from the name; label(s) live in the R23 data-tip. Suppress the R9 striped
    text-underline (this is a mark, not a text flag) and size the glyph up for legibility. */
 .uc-flags .flags { height: auto; }
-.uc-flags .flag { height: 18px; padding: 0 1px; gap: 2px; font-size: 11px; background-image: none; padding-bottom: 0; }
-.uc-flags .flag svg { width: 15px; height: 15px; }
-.uc-cat { display: flex; align-items: center; gap: 6px; color: var(--txt-2); font-size: 12px; min-width: 0; }
-.uc-caticon { flex: 0 0 auto; width: 18px; height: 18px; color: var(--txt-3); display: flex; align-items: center; justify-content: center; }
-.uc-caticon svg { width: 17px; height: 17px; display: block; }
+.uc-flags .flag { height: 16px; padding: 0 1px; gap: 2px; font-size: 11px; background-image: none; padding-bottom: 0; }
+.uc-flags .flag svg { width: 14px; height: 14px; }
+.uc-cat { display: flex; align-items: center; gap: 5px; color: var(--txt-2); font-size: 12px; min-width: 0; }
+.uc-caticon { flex: 0 0 auto; width: 16px; height: 16px; color: var(--txt-3); display: flex; align-items: center; justify-content: flex-start; }   /* glyph hugs the same left rail as the name above; sized to sit with the 12px label, not out-weigh it */
+.uc-caticon svg { width: 15px; height: 15px; display: block; }
 .uc-catname { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .uc-pills { display: flex; flex-direction: column; gap: 6px; }
 .uc-slot { display: flex; }
