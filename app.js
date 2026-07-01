@@ -1812,6 +1812,7 @@ function categoryMix(categoryId) {
    too. Drives the mini-card's "N Avail" count + the §10 availability lens. */
 const RENTABLE_SKIP_FLEET = new Set(['Inactive', 'Sold', 'For Sale']);
 const isUnitRentable = (u) => !RENTABLE_SKIP_FLEET.has(u.fleetStatus) && u.inspectionStatus !== 'Failed';
+const DOW3 = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];   // short weekday for the mini-card NEXT plate
 /* §10 next-available — when a category has 0 units free right now, the soonest one frees:
    the EARLIEST rental END among the category's rentable (Active, inspection≠Failed) units,
    plus a 4-hour yard turnaround after that rental's end time (Jac 2026-07-01). Returns
@@ -4966,37 +4967,42 @@ const ROWS = {
       ? categoryAvailableCount(c.categoryId, availWin.start, availWin.end, availWin.selfId)
       : free.filter(isUnitRentable).length;
     const availTip = availWin ? `${availN} available for the selected rental window` : `${availN} rentable and free to go out right now`;
-    // SLOT 1 — availability. ≥1 free now → the green "N Avail" count (taps to the
-    // category's available units, unchanged). 0 free → the NEXT plate: the soonest a unit
-    // frees (earliest rental end + 4h turnaround), tapping jumps straight to THAT unit.
+    // The availability row is ONE bank of four equal-height stamped plates (.catr-cell):
+    //   LEAD [ AVAIL n  |  NEXT wkday·time ]  ·  [ PASS ] [ NR ] [ FAIL ]
+    // Lead = availability: ≥1 free now → green "AVAIL" count (taps to the category's
+    // available units); 0 free → purple "NEXT" free-date (soonest rental end + 4h
+    // turnaround), tapping jumps to THAT unit; 0 and nothing out to return → red "AVAIL 0".
     const next = availN === 0 ? categoryNextAvailable(c.categoryId) : null;
-    const nextClock = (min) => min == null ? '' : fmtClock(`${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`);
-    let availSlot;
+    // Compact syntax (Jac 2026-07-01): a weekday inside the next 7 days (else Mon-DD),
+    // and time as just the hour + a/p — keeps the lead short so the trio gets more room.
+    const compactClock = (min) => { if (min == null) return ''; let h = Math.floor(min / 60); const ap = h < 12 ? 'a' : 'p'; h = h % 12 || 12; return `${h}${ap}`; };
+    let lead;
     if (availN > 0) {
-      availSlot = `<div class="catr-slot js-cat-avail" data-cat="${esc(c.categoryId)}" data-tip="${esc(availTip)} — tap to open these units">${badge(`${availN} Avail`, 'green')}</div>`;
+      lead = `<button class="catr-cell catr-lead js-cat-avail" data-cat="${esc(c.categoryId)}" style="--ct:var(--green);--ct-bg:var(--green-bg)" data-tip="${esc(availTip)} — tap to open these units"><span class="cc-k">AVAIL</span><span class="cc-v">${availN}</span></button>`;
     } else if (next) {
-      const when = `${fmtShortDate(next.iso)}${next.min != null ? ` · ${nextClock(next.min)}` : ''}`;
+      const nd = parseISO(next.iso), daysAhead = nd ? Math.round((nd - TODAY) / 86400000) : 99;
+      const dlabel = (nd && daysAhead >= 0 && daysAhead <= 7) ? DOW3[nd.getDay()] : fmtShortDate(next.iso).replace(' 0', ' ');
+      const when = `${dlabel}${next.min != null ? ` ${compactClock(next.min)}` : ''}`;
       const nu = IDX.unit.get(next.unitId);
-      availSlot = `<button class="catr-slot catr-next js-cat-next" data-unit="${esc(next.unitId)}" data-tip="Next free: ${esc(nu ? nu.name : 'unit')} on ${esc(when)} (4-hr turnaround) — tap to open it"><span class="cn-k">NEXT:</span><span class="cn-v">${esc(when)}</span></button>`;
+      lead = `<button class="catr-cell catr-lead catr-lead-next js-cat-next" data-unit="${esc(next.unitId)}" style="--ct:var(--purple);--ct-bg:var(--purple-bg)" data-tip="Next free: ${esc(nu ? nu.name : 'unit')} on ${esc(when)} (4-hr turnaround) — tap to open it"><span class="cc-k">NEXT</span><span class="cc-v cc-date">${esc(when)}</span></button>`;
     } else {
-      availSlot = `<div class="catr-slot js-cat-avail" data-cat="${esc(c.categoryId)}" data-tip="No rentable units free — none are out to come back, either">${badge('0 Avail', 'red')}</div>`;
+      lead = `<button class="catr-cell catr-lead js-cat-avail" data-cat="${esc(c.categoryId)}" style="--ct:var(--red);--ct-bg:var(--red-bg)" data-tip="No rentable units free — none are out to come back, either"><span class="cc-k">AVAIL</span><span class="cc-v">0</span></button>`;
     }
-    // SLOT 2 → three fleet-tally buttons (Passed · Not Ready · Failed inspection), each
-    // filtering Units to that status in this category — the old rentable/total pill's real
-    // estate. Routes through the established js-fleet-filter path (like the detail mixbar).
+    // The three status plates (Passed · Not Ready · Failed inspection) filter Units to that
+    // status in this category via the established js-fleet-filter path (like the detail mixbar).
     const tally = (label, count, color, status, tip) =>
-      `<button class="catr-tally js-fleet-filter" data-cat="${esc(c.categoryId)}" data-status="${esc(status)}" data-kind="inspection" style="--ct:var(--${color});--ct-bg:var(--${color}-bg)" data-tip="${esc(tip)}"><span class="ct-k">${label}</span><span class="ct-v">${count}</span></button>`;
-    const tallyRow = `<div class="catr-tally-row">${
+      `<button class="catr-cell js-fleet-filter" data-cat="${esc(c.categoryId)}" data-status="${esc(status)}" data-kind="inspection" style="--ct:var(--${color});--ct-bg:var(--${color}-bg)" data-tip="${esc(tip)}"><span class="cc-k">${label}</span><span class="cc-v">${count}</span></button>`;
+    const tallyRow = `${
       tally('PASS', mix.Ready, 'green', 'Ready', `${mix.Ready} passed inspection — tap to filter Units`)
     }${
       tally('NR', mix['Not Ready'], 'yellow', 'Not Ready', `${mix['Not Ready']} not ready — tap to filter Units`)
     }${
       tally('FAIL', mix.Failed, 'red', 'Failed', `${mix.Failed} failed inspection — tap to filter Units`)
-    }</div>`;
+    }`;
     const rate = (label, v) => `<div class="catr-rate"><span class="catr-rk">${label}</span><span class="catr-rv${v ? '' : ' none'}">${v ? money(v) : '—'}</span></div>`;
     return `<div class="catr" style="--catr-hl:var(--${hl})">
       <div class="catr-head"><span class="catr-cat">${categoryIconFor(c.name)}</span><span class="r-title catr-name${hl === 'red' ? ' ec-red' : ''}" style="color:${nameColor}" data-tip="${esc(c.name)}">${esc(c.name)}</span></div>
-      <div class="catr-pills">${availSlot}${tallyRow}</div>
+      <div class="catr-pills">${lead}${tallyRow}</div>
       <div class="catr-rates">${rate('1-Day', c.rate1Day)}${rate('7-Day', c.rate7Day)}${rate('4-Week', c.rate4Wk)}${rate('Weekend', c.weekend)}</div>
     </div>`;
   },
