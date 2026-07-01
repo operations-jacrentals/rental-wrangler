@@ -1757,10 +1757,10 @@ const SVC_OPTS = { tasks: UNIT_SVC_TASKS, hoursField: 'currentHours', baselineFi
 const unitServiceRows = (u) => serviceOrdersForUnit(u, u.serviceCompletions || {}, SVC_OPTS);
 /** The service pill(s) for a row: a submitted Wash Request overrides the countdown
  *  language to a single blue "Wash Requested" pill; otherwise status + countdown. */
-function svcPills(s) {
+function svcPills(s, focal) {
   if (!s) return '';
-  if (s.washRequested) return badge('Wash Requested', 'blue');                 // R3
-  return badge(getStatus('serviceStatus', s.status).label, s.color) + badge(svcText(s), s.color);   // R3
+  if (s.washRequested) return badge('Wash Requested', 'blue', focal);          // R3
+  return badge(getStatus('serviceStatus', s.status).label, s.color, focal) + badge(svcText(s), s.color);   // R3 (urgency = focal on the shop service row)
 }
 /** Most-urgent active service order for a unit (derived via the reference module).
  *  A pending wash request floats the wash task to the top regardless of its countdown. */
@@ -4109,7 +4109,7 @@ function entityPill(card, rec, { x, xData } = {}) {
   return `<span class="pill entity-stamp c-${flag}" data-r="R2" data-pill-card="${card}" data-pill-rec="${esc(id)}"${chat}>${CARD_ICON[card] || ''}<span class="t">${esc(name)}</span>${xb}</span>`;
 }
 /** R3b: a DATA CHIP — a plain fact (480 HRS, No GPS), independent of R3. */
-const badge = (label, color = 'gray') => `<span class="pill c-${color}" data-r="R3b"><span class="t">${esc(label)}</span></span>`;
+const badge = (label, color = 'gray', focal) => `<span class="pill c-${color}${focal ? ' focal' : ''}" data-r="R3b"><span class="t">${esc(label)}</span></span>`;
 /** R1: a GATE pill — a status DROPDOWN that moves the record forward. */
 function gatePill(set, value, js, data, { truck } = {}) {
   const st = getStatus(set, value);
@@ -4932,7 +4932,7 @@ const ROWS = {
       <div class="catr-head"><span class="catr-cat">${categoryIconFor(c.name)}</span><span class="r-title catr-name${hl === 'red' ? ' ec-red' : ''}" style="color:${nameColor}" data-tip="${esc(c.name)}">${esc(c.name)}</span></div>
       <div class="catr-pills">
         <div class="catr-slot js-cat-avail" data-cat="${esc(c.categoryId)}" data-tip="${esc(availTip)} — tap to open these units">${badge(`${availN} Avail`, availN > 0 ? 'green' : 'red')}</div>
-        <div class="catr-slot" data-tip="${r.rentable} of ${r.total} units rentable — in-yard, inspection not failed">${badge(`${r.rentable}/${r.total}`, tallyColor)}</div>
+        <div class="catr-slot" data-tip="${r.rentable} of ${r.total} units rentable — in-yard, inspection not failed">${badge(`${r.rentable}/${r.total}`, tallyColor, true)}</div>
       </div>
       <div class="catr-rates">${rate('1-Day', c.rate1Day)}${rate('7-Day', c.rate7Day)}${rate('4-Week', c.rate4Wk)}${rate('Weekend', c.weekend)}</div>
     </div>`;
@@ -4991,7 +4991,7 @@ const ROWS = {
     return `<div class="row-1"><span class="r-title">${esc(u.name)}</span><span class="r-fields">
         <span>${esc(top?.name || 'Service')}</span><span>Every ${top?.intervalHours || '—'} HRS</span></span></div>
       <div class="row-2">
-        ${svcPills(top)}
+        ${svcPills(top, true)}
         ${ar ? statusPill('rentalStatus', rentalDisplayStatus(ar), { card: 'rentals', recId: ar.rentalId }) : ''}
       </div>`;
   },
