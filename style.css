@@ -999,16 +999,17 @@ select.lf-in { appearance: none; cursor: pointer; }
    Urgency stays color + (Phase-2) motion — it never promotes tier. Scoped by
    data-r / class so R2 refs, R3b badges, R4 derived pills are untouched. */
 .pill.gate, .pill.focal { border-color: transparent; color: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.18); }
-.pill.gate.c-green,  .pill.focal.c-green  { background: var(--green); }
-.pill.gate.c-blue,   .pill.focal.c-blue   { background: var(--blue); }
+.pill.gate.c-green,  .pill.focal.c-green  { background: linear-gradient(180deg, color-mix(in srgb, var(--green) 78%, #fff), var(--green)); text-shadow: 0 1px 2px rgba(0,0,0,.4); }
+.pill.gate.c-blue,   .pill.focal.c-blue   { background: linear-gradient(180deg, #7db0ff, var(--blue)); }
 .pill.gate.c-navy,   .pill.focal.c-navy   { background: var(--navy); }
 .pill.gate.c-purple, .pill.focal.c-purple { background: var(--purple); }
 .pill.gate.c-pink,   .pill.focal.c-pink   { background: var(--pink); }
 .pill.gate.c-brown,  .pill.focal.c-brown  { background: var(--brown); }
 .pill.gate.c-gray,   .pill.focal.c-gray   { background: var(--gray); }
-.pill.gate.c-orange, .pill.focal.c-orange { background: var(--orange); color: var(--on-orange); }
-.pill.gate.c-red,    .pill.focal.c-red    { background: repeating-linear-gradient(135deg, var(--red) 0 11px, #14181d 11px 22px); text-shadow: 0 1px 2px rgba(0,0,0,.75); }
-.pill.gate.c-yellow, .pill.focal.c-yellow { background: repeating-linear-gradient(135deg, var(--yellow) 0 11px, #14181d 11px 22px); text-shadow: 0 1px 2px rgba(0,0,0,.85); }
+.pill.gate.c-orange, .pill.focal.c-orange { background: linear-gradient(180deg, #ff9038, var(--accent)); color: var(--on-orange); }
+/* danger PRIMARY — seamless diagonal hazard tile (scrolls smoothly for motion), plate recipe */
+.pill.gate.c-red,    .pill.focal.c-red    { background-image: linear-gradient(135deg, var(--red) 0 25%, #14181d 25% 50%, var(--red) 50% 75%, #14181d 75% 100%); background-size: 26px 26px; text-shadow: 0 1px 3px rgba(0,0,0,.85); }
+.pill.gate.c-yellow, .pill.focal.c-yellow { background-image: linear-gradient(135deg, var(--yellow) 0 25%, #14181d 25% 50%, var(--yellow) 50% 75%, #14181d 75% 100%); background-size: 26px 26px; text-shadow: 0 1px 3px rgba(0,0,0,.9); }
 .pill.gate .chev, .pill.gate svg { opacity: .92; }
 /* SECONDARY — read-only status not designated the container's focal element */
 .pill[data-r="R3"]:not(.focal) { background: transparent; box-shadow: none; }
@@ -2975,30 +2976,35 @@ body { font-variant-numeric: tabular-nums; }
    danger, solid otherwise), white ink, NO border. SECONDARY = hazard-striped BORDER
    (danger) / solid colored border (others) over a dark interior + colored ink; the
    danger border goes SOLID on hover. Radius unified so nothing reads "box vs pill". */
-.pill.gate, .pill[data-r="R3"] { border-radius: 6px; }           /* rounded-RECT, not stadium — matches reference */
-/* SECONDARY (R3, not focal) — dark interior, 2px border slot, colored ink, no glow */
-.pill[data-r="R3"]:not(.focal) { background:#0f1318; border:2px solid transparent; box-shadow:none; }
-.pill[data-r="R3"]:not(.focal).c-green  { color:var(--green);  border-color:color-mix(in srgb,var(--green) 60%,transparent); }
-.pill[data-r="R3"]:not(.focal).c-blue   { color:var(--blue);   border-color:color-mix(in srgb,var(--blue) 60%,transparent); }
-.pill[data-r="R3"]:not(.focal).c-navy   { color:var(--navy);   border-color:color-mix(in srgb,var(--navy) 60%,transparent); }
-.pill[data-r="R3"]:not(.focal).c-purple { color:var(--purple); border-color:color-mix(in srgb,var(--purple) 60%,transparent); }
-.pill[data-r="R3"]:not(.focal).c-pink   { color:var(--pink);   border-color:color-mix(in srgb,var(--pink) 60%,transparent); }
-.pill[data-r="R3"]:not(.focal).c-brown  { color:var(--brown);  border-color:color-mix(in srgb,var(--brown) 60%,transparent); }
-.pill[data-r="R3"]:not(.focal).c-orange { color:var(--orange); border-color:var(--accent-line); }
+.pill.gate, .pill[data-r="R3"] { border-radius: 11px; gap: 0; }   /* plate shape: radius 11px, icon touches text (gap 0) */
+/* SECONDARY (R3, not focal) — outline + colored ink (plate .btn.secondary): 1px solid
+   colored border for non-danger; red/yellow become a striped BORDER → solid on hover. */
+.pill[data-r="R3"]:not(.focal) { background:transparent; border:1px solid var(--line); box-shadow:none; }
+.pill[data-r="R3"]:not(.focal).c-green  { color:var(--green);  border-color:var(--green); }
+.pill[data-r="R3"]:not(.focal).c-blue   { color:var(--blue);   border-color:var(--blue); }
+.pill[data-r="R3"]:not(.focal).c-navy   { color:var(--navy);   border-color:var(--navy); }
+.pill[data-r="R3"]:not(.focal).c-purple { color:var(--purple); border-color:var(--purple); }
+.pill[data-r="R3"]:not(.focal).c-pink   { color:var(--pink);   border-color:var(--pink); }
+.pill[data-r="R3"]:not(.focal).c-brown  { color:var(--brown);  border-color:var(--brown); }
+.pill[data-r="R3"]:not(.focal).c-orange { color:var(--orange); border-color:var(--accent); }
 .pill[data-r="R3"]:not(.focal).c-gray   { color:var(--txt-2);  border-color:var(--line); }
-/* danger SECONDARY — hazard-striped BORDER (same 135°/11px stripe as the PRIMARY fill),
-   also applied to a demoted (G2 dim) gate so the whole family shares one look */
+/* danger SECONDARY — hazard-striped BORDER (same seamless 26px tile as PRIMARY fill),
+   dark interior (page bg), also applied to a demoted (G2 dim) gate. Plate recipe. */
 .pill[data-r="R3"]:not(.focal).c-red, .pill.gate.dim.c-red {
-  color:var(--red); border:2px solid transparent;
-  background: linear-gradient(#0f1318,#0f1318) padding-box,
-              repeating-linear-gradient(135deg, var(--red) 0 11px, #14181d 11px 22px) border-box; }
+  color:var(--red); border:3px solid transparent;
+  background-image: linear-gradient(var(--bg,#0b0c0f),var(--bg,#0b0c0f)),
+    linear-gradient(135deg, var(--red) 0 25%, #14181d 25% 50%, var(--red) 50% 75%, #14181d 75% 100%);
+  background-origin: padding-box, border-box; background-clip: padding-box, border-box;
+  background-repeat: no-repeat, repeat; background-size: auto, 26px 26px; }
 .pill[data-r="R3"]:not(.focal).c-yellow, .pill.gate.dim.c-yellow {
-  color:var(--yellow); border:2px solid transparent;
-  background: linear-gradient(#0f1318,#0f1318) padding-box,
-              repeating-linear-gradient(135deg, var(--yellow) 0 11px, #14181d 11px 22px) border-box; }
-/* danger SECONDARY → SOLID border on hover (Jac) */
-.pill[data-r="R3"]:not(.focal).c-red:hover    { background: linear-gradient(#0f1318,#0f1318) padding-box, var(--red) border-box; }
-.pill[data-r="R3"]:not(.focal).c-yellow:hover { background: linear-gradient(#0f1318,#0f1318) padding-box, var(--yellow) border-box; }
+  color:var(--yellow); border:3px solid transparent;
+  background-image: linear-gradient(var(--bg,#0b0c0f),var(--bg,#0b0c0f)),
+    linear-gradient(135deg, var(--yellow) 0 25%, #14181d 25% 50%, var(--yellow) 50% 75%, #14181d 75% 100%);
+  background-origin: padding-box, border-box; background-clip: padding-box, border-box;
+  background-repeat: no-repeat, repeat; background-size: auto, 26px 26px; }
+/* danger SECONDARY → SOLID border on hover (plate) */
+.pill[data-r="R3"]:not(.focal).c-red:hover    { border-color:var(--red);    background-image:none; }
+.pill[data-r="R3"]:not(.focal).c-yellow:hover { border-color:var(--yellow); background-image:none; }
 /* SECONDARY ink — solid colored, beating the ec-red .t pinkish fill (2939) */
 .pill[data-r="R3"]:not(.focal).c-red .t    { color:var(--red);    -webkit-text-fill-color:var(--red);    text-shadow:none; }
 .pill[data-r="R3"]:not(.focal).c-yellow .t { color:var(--yellow); -webkit-text-fill-color:var(--yellow); text-shadow:none; }
