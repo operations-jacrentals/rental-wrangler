@@ -2198,6 +2198,7 @@ function openStandard(card, recId, recType) {
 function showCategoryUnits(categoryId) {
   const cat = IDX.category.get(categoryId); if (!cat) return;
   const s = activeSession(), us = s.cards.units; if (!us) return;
+  pushCardHistory(us, true);   // record the pre-jump view + column layout so Back returns to the category card (Jac 2026-07-02)
   // Match the pill's count: narrow Units to this category's AVAILABLE units, not the
   // whole category. The 'available' token engages the §10 availability lens (rowMatches)
   // and makes availWin resolve to the in-scope window (open rental window, else "now"),
@@ -2221,6 +2222,7 @@ function showCategoryUnits(categoryId) {
 function showNextAvailableUnit(unitId) {
   const u = IDX.unit.get(unitId); if (!u) return;
   const s = activeSession(); if (!s.cards.units) return;
+  pushCardHistory(s.cards.units, true);   // record the pre-jump view + column layout so Back returns to the category card; openStandard's own push dedups against this (Jac 2026-07-02)
   let unitsSlot = null;
   if (s.cols) {
     const slots = ['left', 'middle', 'right'].filter((k) => k in s.cols);
@@ -2275,19 +2277,45 @@ function clearAnchor() {
    the other cards and the tab anchor. A view is a {mode,recId,recType} snapshot.
    Back/forward chevrons (and right-click = Back) step through it. */
 const cardSnap = (cs) => ({ mode: cs.mode, recId: cs.recId, recType: cs.recType || null });
+// A "full" view snapshot — additionally captures the list search/limit AND the column
+// layout (which slot holds which card + the focused/mobile column). Used for the CROSS-
+// COLUMN jumps a category mini-card makes into Units (showCategoryUnits / showNext-
+// AvailableUnit swap Categories → Units): a plain cardSnap can't reverse the swap or the
+// narrowed search, so those jumps record a viewSnap and Back restores the whole category
+// view — bringing back the mini-cards exactly where they were (Jac 2026-07-02).
+function viewSnap(cs) {
+  const s = activeSession();
+  return { mode: cs.mode, recId: cs.recId, recType: cs.recType || null,
+    search: cs.search, listLimit: cs.listLimit,
+    cols: s.cols ? { ...s.cols } : null, focusedCard: state.focusedCard, mobileCol: state.mobileCol };
+}
+// Restore the column layout carried by a viewSnap (a no-op for plain cardSnaps, which
+// have no 'cols' key — so ordinary same-card Back/Forward never touches the layout).
+function restoreLayout(snap) {
+  if (!snap || !('cols' in snap)) return;
+  const s = activeSession();
+  if (snap.cols) s.cols = { ...snap.cols };
+  if (snap.focusedCard !== undefined) state.focusedCard = snap.focusedCard;
+  if (snap.mobileCol !== undefined) state.mobileCol = snap.mobileCol;
+}
 const sameSnap = (a, b) => a && b && a.mode === b.mode && String(a.recId) === String(b.recId);
 const HIST_CAP = 50;
 // Record the card's CURRENT view before we change it; opening a new view clears the
-// forward branch (standard back/forward semantics).
-function pushCardHistory(cs) {
+// forward branch (standard back/forward semantics). `full` records a viewSnap (search +
+// column layout) for cross-column jumps that a plain snapshot couldn't reverse.
+function pushCardHistory(cs, full) {
   if (!cs) return;
-  const snap = cardSnap(cs);
+  const snap = full ? viewSnap(cs) : cardSnap(cs);
   const top = cs.backStack[cs.backStack.length - 1];
   if (!sameSnap(top, snap)) cs.backStack.push(snap);
   if (cs.backStack.length > HIST_CAP) cs.backStack.shift();
   cs.fwdStack = [];
 }
-function applySnap(cs, snap) { cs.mode = snap.mode; cs.recId = snap.recId; cs.recType = snap.recType || null; }
+function applySnap(cs, snap) {
+  cs.mode = snap.mode; cs.recId = snap.recId; cs.recType = snap.recType || null;
+  if ('search' in snap) { cs.search = snap.search; cs.listLimit = snap.listLimit; }   // viewSnap → restore the narrowed list too
+  restoreLayout(snap);                                                                // viewSnap → un-swap the column (bring the category cards back)
+}
 // Step this one card back / forward through its own history (other cards untouched).
 function cardBack(card) {
   const cs = activeSession().cards[card]; if (!cs) return;
@@ -2303,16 +2331,20 @@ function cardBack(card) {
     }
     return;
   }
-  cs.fwdStack.push(cardSnap(cs));
-  applySnap(cs, cs.backStack.pop());
+  const prev = cs.backStack.pop();
+  // Reversing a cross-column jump: the snapshot we leave behind for Forward must carry the
+  // CURRENT search + layout too, else Forward couldn't re-do the jump.
+  cs.fwdStack.push('cols' in prev ? viewSnap(cs) : cardSnap(cs));
+  applySnap(cs, prev);
   if (cs.mode === 'standard' && cs.recId != null) ackComments(recOf(entityCardOf(card, cs.recType), cs.recId));
   sweepEmptyDrafts(cs.recId);   // #8 — sweep the abandoned empty draft we stepped away from (keep the one we land on)
   render();
 }
 function cardFwd(card) {
   const cs = activeSession().cards[card]; if (!cs || !cs.fwdStack.length) return;
-  cs.backStack.push(cardSnap(cs));
-  applySnap(cs, cs.fwdStack.pop());
+  const nxt = cs.fwdStack.pop();
+  cs.backStack.push('cols' in nxt ? viewSnap(cs) : cardSnap(cs));
+  applySnap(cs, nxt);
   if (cs.mode === 'standard' && cs.recId != null) ackComments(recOf(entityCardOf(card, cs.recType), cs.recId));
   render();
 }
