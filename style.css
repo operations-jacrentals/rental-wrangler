@@ -2973,6 +2973,9 @@ body { font-variant-numeric: tabular-nums; }
 .catr-cell .cc-k { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .8px; font-weight: 700; font-size: 8.5px; line-height: 1; color: var(--txt-3); }
 .catr-cell .cc-v { max-width: 100%; font-size: 14px; font-weight: 800; line-height: 1; color: var(--ct, var(--txt)); }
 .catr-cell .cc-v.cc-date { font-size: 10.5px; font-weight: 700; color: var(--txt); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* the NONE reason word ("End Dates?", "For Sale"…) runs a touch smaller + tighter than a
+   date so the longer ones fit the narrow lead without ellipsis. */
+.catr-cell .cc-v.cc-why { font-size: 9px; font-weight: 700; line-height: 1.05; color: var(--txt); text-align: center; white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .catr-cell:hover { box-shadow: 0 0 0 1px var(--ct); }
 .catr-cell:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 /* the "NONE" reason plate is purely informational (no unit to open / status to filter) —
