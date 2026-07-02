@@ -1669,16 +1669,29 @@ function activeRentalForUnit(unitId) {
    same-day return frees the unit for a same-day re-rent. Computed live against
    the open rental-window calendar (winpicker) each render — §10 tinting. */
 let availWin = null;   // {start,end,time,selfId} set each render while the calendar is open
-function rentalOverlaps(r, selS, selE) {
-  const rs = parseISO(r.startDate), re = parseISO(r.endDate);
+/* §20 physically-OUT statuses — the machine is in the customer's hands until it's
+   Returned (Reserved/Today/Tomorrow = not yet picked up; Returned = back in the yard). */
+const OUT_RENTAL_STATUSES = new Set(['On Rent', 'End Rent', 'Off Rent']);
+function rentalOverlaps(r, selS, selE, endISO) {
+  const rs = parseISO(r.startDate), re = parseISO(endISO || r.endDate);
   if (!rs || !re || !selS || !selE) return false;
   return re > selS && selE > rs;   // touching boundaries do NOT conflict (same-day handoff)
 }
 function rentalsOverlappingUnit(unitId, startISO, endISO, selfId) {
   const selS = parseISO(startISO), selE = parseISO(endISO);
   if (!selS || !selE) return [];
-  return DATA.rentals.filter((r) => rentalHasUnit(r, unitId) && r.rentalId !== selfId
-    && ACTIVE_RENTAL.has(r.status) && r.status !== 'Quote' && rentalOverlaps(r, selS, selE));
+  return DATA.rentals.filter((r) => {
+    if (!rentalHasUnit(r, unitId) || r.rentalId === selfId) return false;
+    if (!ACTIVE_RENTAL.has(r.status) || r.status === 'Quote') return false;
+    // §10 a unit that is physically OUT (On/End/Off Rent) past its scheduled return is
+    // still occupying the machine until someone marks it Returned — so an OVERDUE rental
+    // keeps blocking a same-/near-window re-rent instead of "freeing" on its end date.
+    // Otherwise the availability tool double-books a unit that's still in the field, and
+    // the Units card shows a still-out unit as "Available". Judge by the unit's OWN status.
+    const eu = unitEntry(r, unitId);
+    const overdueOut = OUT_RENTAL_STATUSES.has(eu ? unitStatus(r, eu) : r.status) && r.endDate && r.endDate < TODAY_ISO;
+    return rentalOverlaps(r, selS, selE, overdueOut ? '9999-12-31' : r.endDate);
+  });
 }
 /* §10 OVERBOOKED (drag build, Jac) — DERIVED LIVE, never stored. A rental is
    overbooked when another active rental occupies its unit for an overlapping
