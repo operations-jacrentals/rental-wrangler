@@ -16368,7 +16368,7 @@ window.addEventListener('beforeunload', (e) => {
   e.preventDefault(); e.returnValue = '';
 });
 function renderLogin(msg) {
-  $('#app').innerHTML = `<div class="login-screen"><video id="login-video" class="login-video" src="assets/login-intro.mp4?v=20260623l" muted loop playsinline preload="auto" aria-hidden="true"></video><form class="login-box" id="login-form">
+  $('#app').innerHTML = `<div class="login-screen"><video id="login-video" class="login-video" src="assets/login-intro.mp4?v=20260702a" muted loop playsinline preload="auto" aria-hidden="true"></video><form class="login-box" id="login-form">
     <span class="rivet tl"></span><span class="rivet tr"></span><span class="rivet bl"></span><span class="rivet br"></span>
     <div class="login-plate">
       <img class="login-logo" src="assets/jac-rentals-logo.jpg" alt="Jac Rentals" />
@@ -16382,7 +16382,7 @@ function renderLogin(msg) {
         <label class="login-lbl" for="login-pw">Team password</label>
         <input id="login-pw" type="password" class="login-input" placeholder="••••••••" autocomplete="current-password" />
       </div>
-      <button type="submit" class="login-btn" data-r="R17" id="login-go">Clock In</button>
+      <button type="submit" class="login-btn" data-r="R17" id="login-go">Saddle Up?</button>
       <div class="login-err" id="login-err">${msg ? esc(msg) : ''}</div>
     </div>
   </form></div>`;
