@@ -4772,7 +4772,15 @@ function unitRentalInspPill(u) {
   const ar = activeRentalForUnit(u.unitId);
   let text, color;
   if (availWin) {
-    if (isUnitAvailableFor(u, availWin.start, availWin.end, availWin.selfId)) { text = 'Available'; color = 'green'; }
+    // §10 — a unit already committed to the very rental whose window is being scoped must
+    // NOT read "Available": availWin.selfId is excluded from the overlap so the rental can't
+    // self-conflict (right for the red tint), but that leaves the unit ON this rental with no
+    // other occupant → falsely "Available". Show its real per-unit status instead. Voided
+    // units fall through — they're genuinely free to re-add. (#436)
+    const selfR = availWin.selfId ? IDX.rental.get(availWin.selfId) : null;
+    const selfEu = (selfR && selfR.status !== 'Quote' && ACTIVE_RENTAL.has(selfR.status)) ? unitEntry(selfR, u.unitId) : null;
+    if (selfEu && !unitVoided(selfR, selfEu)) { text = unitStatus(selfR, selfEu); color = (u.inspectionStatus === 'Failed' || unitOverbooked(u.unitId)) ? 'red' : insp.color; }
+    else if (isUnitAvailableFor(u, availWin.start, availWin.end, availWin.selfId)) { text = 'Available'; color = 'green'; }
     else if (u.fleetStatus !== 'Active') { text = getStatus('unitFleetStatus', u.fleetStatus).label; color = 'red'; }
     else if (u.inspectionStatus === 'Failed') { text = 'Failed'; color = 'red'; }
     else { const cf = rentalsOverlappingUnit(u.unitId, availWin.start, availWin.end, availWin.selfId)[0]; text = cf ? 'Booked' : 'Unavailable'; color = 'red'; }
