@@ -3011,7 +3011,8 @@ body { font-variant-numeric: tabular-nums; }
   color:var(--yellow); border:none; background:transparent; position:relative; isolation:isolate; }   /* NO real border → the masked ::before ring (inset:0) spans the FULL border-box, matching the primary fill's height (a transparent border shrank the ring to the padding box → secondary read shorter). */
 .pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-red::before, .pill.gate.dim.c-red::before,
 .pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-yellow::before, .pill.gate.dim.c-yellow::before {
-  content:''; position:absolute; inset:0; z-index:-1; border-radius:inherit; padding:2.25px; pointer-events:none;
+  content:''; position:absolute; inset:0; z-index:-1; border-radius:inherit; padding:2px; pointer-events:none;
+  transform:translateZ(0);   /* promote the ring to its own layer so it rasterizes on the pixel grid → uniform thickness on all sides (a masked ring otherwise antialiases unevenly at fractional pill positions) */
   background-size:26px 26px;
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0); -webkit-mask-composite: xor;
   mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0); mask-composite: exclude; }
