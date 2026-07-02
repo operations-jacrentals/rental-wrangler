@@ -1850,21 +1850,27 @@ function categoryNextAvailable(categoryId) {
 /* §10 why-none — the terse reason a category has 0 units free, for the sales lead plate
    when there's no next-return date to show (Jac 2026-07-01). Judged on the ACTIVE fleet only
    (so it never contradicts the PASS/NR/FAIL tally, which is also Active-only). Ordered from
-   "nothing to rent" to "out": no units → all off-fleet (Sold/Inactive/For Sale) → every Active
-   unit Failed → out but its return date already passed (Overdue) → else out (On rent, no
-   return date on record — else a future NEXT date would have shown instead). */
+   "nothing to rent" to "out": no units (N/A) → all off-fleet, named specifically (Sold /
+   For Sale / Inactive) → every Active unit Failed → out with its return date already passed
+   (Overdue) → else out with no end date on record → "End Dates?" (a data prompt — this should
+   be impossible once end dates are entered, else a future NEXT date would have shown). */
 function categoryUnavailReason(categoryId) {
   const units = DATA.units.filter((u) => u.categoryId === categoryId);
-  if (!units.length) return 'No units';
+  if (!units.length) return 'N/A';
   const active = units.filter((u) => u.fleetStatus === 'Active');
-  if (!active.length) return 'Off fleet';
+  if (!active.length) {
+    // name the actual off-fleet status (Sold / For Sale / Inactive) rather than a vague umbrella
+    const counts = {};
+    units.forEach((u) => { counts[u.fleetStatus] = (counts[u.fleetStatus] || 0) + 1; });
+    return Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0] || 'Off fleet';
+  }
   if (!active.some((u) => u.inspectionStatus !== 'Failed')) return 'Failed';
   const overdue = active.some((u) => {
     if (u.inspectionStatus === 'Failed') return false;
     const r = activeRentalForUnit(u.unitId);
     return r && r.endDate && r.endDate < TODAY_ISO;   // out, and its scheduled return has passed
   });
-  return overdue ? 'Overdue' : 'On rent';
+  return overdue ? 'Overdue' : 'End Dates?';   // out but no end date recorded → prompt to enter it
 }
 /** A unit's current rental bucket (mirrors §12.4 Rental Status into 3 buckets). */
 function unitRentalBucket(u) {
@@ -4544,7 +4550,7 @@ const RB_FOUNDATION = {
     'ONE orange, ONE meaning: the selected tab · ignition · primary action. Never decorative.',
     rbSw('var(--accent)', 'Accent', 'selected · ignition', 'var(--on-orange)')],
   'color-status': ['◐', 'Status palette', '--green / --yellow / --red / --blue / --navy / --purple / --gray',
-    'Registry status colors — each carries a fixed meaning on every card (Ready · caution · danger · link…).',
+    'Registry status colors — each carries a fixed meaning on every card (Passed · caution · danger · link…).',
     ['var(--green)', 'var(--yellow)', 'var(--red)', 'var(--blue)', 'var(--navy)', 'var(--purple)', 'var(--gray)'].map((c) => `<span class="rb-sw" style="background:${c}"></span>`).join('')],
   'color-semantic': ['▣', 'Action-color law', 'commit = blue · money = green · danger = red',
     'Action INTENT, not status: blue commits/saves · green takes money · solid red confirms destructive.',
@@ -5034,7 +5040,7 @@ const ROWS = {
     } else {
       // 0 free and no return date to show → tell the salesperson WHY in one word (Jac).
       const why = categoryUnavailReason(c.categoryId);
-      lead = `<div class="catr-cell catr-lead catr-lead-none" style="--ct:var(--red);--ct-bg:var(--red-bg)" data-tip="None available — ${esc(why.toLowerCase())}"><span class="cc-k">NONE</span><span class="cc-v cc-date">${esc(why)}</span></div>`;
+      lead = `<div class="catr-cell catr-lead catr-lead-none" style="--ct:var(--red);--ct-bg:var(--red-bg)" data-tip="None available — ${esc(why.toLowerCase())}"><span class="cc-k">NONE</span><span class="cc-v cc-why">${esc(why)}</span></div>`;
     }
     // The three status plates (Passed · Not Ready · Failed inspection) filter Units to that
     // status in this category via the established js-fleet-filter path (like the detail mixbar).
@@ -7281,7 +7287,8 @@ function legacyKpiPct(roleId) {
   if (roleId === 'mtech') {
     const fc = R.filter((r) => r.fieldCall).length;
     const successful = R.length ? Math.round((1 - fc / R.length) * 100) : 100;
-    // Ready Rate — Ready ÷ rentable fleet, excluding Failed inspections + Inactive/Sold/For-Sale fleetStatus (Jac).
+    // Pass Rate — Passed ÷ rentable fleet, excluding Failed inspections + Inactive/Sold/For-Sale fleetStatus (Jac).
+    // (stored inspection value is still 'Ready' for live-DB compatibility; the term users see is 'Passed'.)
     const skipFleet = new Set(['Inactive', 'Sold', 'For Sale']);
     const eligible = DATA.units.filter((u) => !skipFleet.has(u.fleetStatus) && u.inspectionStatus !== 'Failed');
     const readyRate = pctOf(eligible.filter((u) => u.inspectionStatus === 'Ready').length, eligible.length);
@@ -7323,11 +7330,11 @@ function legacyKpiPct(roleId) {
 }
 // Plain-English explanation of each KPI's formula — shown on hover in the role popup.
 const KPI_HELP = {
-  'Healthy Fleet':          'Share of your fleet that’s rentable right now (Ready + Not-Ready units ÷ total fleet).',
+  'Healthy Fleet':          'Share of your fleet that’s rentable right now (Passed + Not-Ready units ÷ total fleet).',
   'WO Completion Rate':     'Work orders marked Complete ÷ all live work orders (cancelled ones excluded). Higher = the shop is keeping up.',
   'Parts Breakeven':        'How much of your parts cost is recovered by earnings from billed work orders. Full ring = billed WOs cover the parts.',
   'Successful Rentals':     'Rentals that went out without a breakdown — 1 minus the share of rentals that got a Field Call.',
-  'Ready Rate':             'Share of the rentable fleet that’s Ready to rent — Ready ÷ eligible units (Failed, Inactive, Sold & For-Sale excluded).',
+  'Pass Rate':              'Share of the rentable fleet that’s Passed inspection — Passed ÷ eligible units (Failed, Inactive, Sold & For-Sale excluded).',
   'WO Rate (20% goal)':     'Progress toward the goal: 20% of the last 30 days’ inspections spawning a work order is healthy (catching problems). Full ring at 20%.',
   'On-Time':                'Rentals you actually delivered/handled ÷ rentals scheduled (excludes quotes, cancels, no-shows).',
   'Wash Completion':        'Of the units flagged for a wash, how many got washed (washed ÷ wash-requested).',
@@ -15663,7 +15670,7 @@ function setInspResult(id, val) {
   const n = IDX.insp.get(id); if (!n) return;
   n.checklist = val;
   const u = IDX.unit.get(n.unitId);
-  if (u) { u.inspectionStatus = val === 'Pass' ? 'Ready' : 'Failed'; reindex('units', u); logAction(u, `Inspection ${val === 'Pass' ? 'passed → Ready' : 'failed → Failed'}`); }
+  if (u) { u.inspectionStatus = val === 'Pass' ? 'Ready' : 'Failed'; reindex('units', u); logAction(u, `Inspection ${val === 'Pass' ? 'passed' : 'failed'}`); }   // stored value stays 'Ready' (live-DB compatible); users see "Passed" via the registry label
   logAction(n, `Checklist → ${val}`);
   reindexDraft('inspections', n);
   if (val === 'Fail') {
