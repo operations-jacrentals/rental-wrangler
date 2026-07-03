@@ -1026,6 +1026,30 @@ function billChunkUnits(inv, r, ns, ne, prevEnd, retro, kind, contInvId) {
   });
   return { delta: Math.round(delta * 100) / 100, count };
 }
+/** RETRO spill — a fresh continuation chunk that honors retroactive pricing across the whole
+ *  SERIES: bill cheapest(fullStart→fullEnd) MINUS everything already billed for the unit on the
+ *  series (rental + extension lines), so already-billed/PAID days count toward the cheaper
+ *  full-window tier ("a week paid rolls into a month", spec §2.1) even when the active invoice
+ *  was paid-in-full and had to spill to a new invoice (§2.2 — the settled one is never reopened).
+ *  When the spill seams on a 28-day mark this equals cheapest(segment) (the prior behavior); it
+ *  only differs when a paid chunk ended OFF a 28-day mark (the reported 1-day→7-day case). */
+function billSpillRetro(inv, r, fullStart, fullEnd, segStart, segEnd, contInvId) {
+  let delta = 0, count = 0;
+  rentalUnits(r).forEach((eu) => {
+    if (unitVoided(r, eu)) return;
+    const u = IDX.unit.get(eu.unitId); if (!u) return;
+    const billed = unitBilledSeries(r, eu.unitId);
+    // Retro re-tier ONLY when there are real rental/extension lines to credit (cheapest(full window)
+    // − already billed, so paid days roll into the cheaper tier). A hand-typed manual line has no
+    // known window → fall back to pricing just the added segment (never double-bill it).
+    const p = billed > 0.005
+      ? rentalPrice({ categoryId: u.categoryId, startDate: fullStart, endDate: fullEnd, customerId: r.customerId })
+      : rentalPrice({ categoryId: u.categoryId, startDate: segStart, endDate: segEnd, customerId: r.customerId });
+    const d = Math.round(((p ? p.price : 0) - (billed > 0.005 ? billed : 0)) * 100) / 100;
+    if (d > 0.005) { inv.lineItems.push({ kind: 'rental', ref: r.rentalId, unitId: eu.unitId, lid: lineLid(), label: `${u.name} · ${p ? p.rate : '—'}${contInvId ? ` · Ext of ${invoiceShort(contInvId)}` : ''}`, amount: d }); delta += d; count++; }
+  });
+  return { delta: Math.round(delta * 100) / 100, count };
+}
 /** Retroactive reconcile of an OPEN chunk: re-price each unit's rental line in `inv` to
  *  cheapest(ns,ne) — UP or DOWN (the 4-Week rate can make more days cheaper). Unpaid lines
  *  are re-priced in place (collapsing any prior extension lines into the base rental line);
@@ -1083,6 +1107,7 @@ function previewExtensionDelta(r, prevEnd, newEnd, prevStart, newStart) {
     return { covStart: invCovStart(inv, r), covEnd: invCovEnd(inv, r), locked: !!inv.locked, closed: tot.paid > 0 && tot.balance <= 0, billed, paid };
   };
   const chunks = invs.map(chunkOf);
+  const seriesStart = chunks[0] ? chunks[0].covStart : (prevStart || r.startDate);   // earliest covered start (retro spill credits back to here)
   let delta = 0;
   const reconcile = (c, ns, ne) => units.forEach((eu) => {     // retro re-price chunk to cheapest(ns→ne) − billed
     const target = priceOf(eu, ns, ne), billed = c.billed[eu.unitId] || 0, d = target - billed;
@@ -1094,6 +1119,19 @@ function previewExtensionDelta(r, prevEnd, newEnd, prevStart, newStart) {
     const amt = priceOf(eu, ns, ne); if (amt > 0.005) { delta += amt; c.billed[eu.unitId] = (c.billed[eu.unitId] || 0) + amt; }
   });
   const spill = (ns, ne) => { const c = { covStart: ns, covEnd: ne, locked: false, closed: false, billed: {}, paid: {} }; standalone(c, ns, ne); return c; };
+  // retro spill mirror of billSpillRetro: charge cheapest(full window) − everything billed on the series
+  // so far (fallback to the added segment when there's no rental/extension line to credit — manual line).
+  const retroSpill = (fullStart, fullEnd, segStart, segEnd) => {
+    const c = { covStart: segStart, covEnd: segEnd, locked: false, closed: false, billed: {}, paid: {} };
+    units.forEach((eu) => {
+      const seriesBilled = chunks.reduce((a, ch) => a + (ch.billed[eu.unitId] || 0), 0);
+      const d = seriesBilled > 0.005
+        ? Math.round((priceOf(eu, fullStart, fullEnd) - seriesBilled) * 100) / 100
+        : Math.round(priceOf(eu, segStart, segEnd) * 100) / 100;
+      if (d > 0.005) { delta += d; c.billed[eu.unitId] = d; }
+    });
+    return c;
+  };
   const daysOf = (c) => Math.max(0, dayDiff(parseISO(c.covStart), parseISO(c.covEnd)));
   let guard = 0;
   // BACK — grow the active (latest) chunk's covEnd toward targetEnd, spilling fresh chunks.
@@ -1101,7 +1139,7 @@ function previewExtensionDelta(r, prevEnd, newEnd, prevStart, newStart) {
   let coveredEnd = active.covEnd || prevEnd || r.startDate;
   while (targetEnd && coveredEnd && dayDiff(parseISO(coveredEnd), parseISO(targetEnd)) > 0 && guard++ < 200) {
     const room = INV_CAP_DAYS - daysOf(active);
-    if (active.locked || active.closed || room <= 0) { const ce = minISO(addDaysISO(coveredEnd, INV_CAP_DAYS), targetEnd); active = spill(coveredEnd, ce); chunks.push(active); coveredEnd = ce; }
+    if (active.locked || active.closed || room <= 0) { const ce = minISO(addDaysISO(coveredEnd, INV_CAP_DAYS), targetEnd); active = retro ? retroSpill(seriesStart, ce, coveredEnd, ce) : spill(coveredEnd, ce); chunks.push(active); coveredEnd = ce; }
     else { const grow = Math.min(room, dayDiff(parseISO(coveredEnd), parseISO(targetEnd))); const nce = addDaysISO(coveredEnd, grow); retro ? reconcile(active, active.covStart, nce) : standalone(active, coveredEnd, nce); active.covEnd = nce; coveredEnd = nce; }
   }
   // FRONT — grow the earliest chunk's covStart toward targetStart, spilling fresh chunks.
@@ -1109,7 +1147,7 @@ function previewExtensionDelta(r, prevEnd, newEnd, prevStart, newStart) {
   let coveredStart = earliest.covStart || prevStart || r.startDate;
   while (targetStart && coveredStart && dayDiff(parseISO(targetStart), parseISO(coveredStart)) > 0 && guard++ < 200) {
     const room = INV_CAP_DAYS - daysOf(earliest);
-    if (earliest.locked || earliest.closed || room <= 0) { const cs = maxISO(addDaysISO(coveredStart, -INV_CAP_DAYS), targetStart); earliest = spill(cs, coveredStart); chunks.unshift(earliest); coveredStart = cs; }
+    if (earliest.locked || earliest.closed || room <= 0) { const cs = maxISO(addDaysISO(coveredStart, -INV_CAP_DAYS), targetStart); earliest = retro ? retroSpill(cs, targetEnd, cs, coveredStart) : spill(cs, coveredStart); chunks.unshift(earliest); coveredStart = cs; }
     else { const grow = Math.min(room, dayDiff(parseISO(targetStart), parseISO(coveredStart))); const ncs = addDaysISO(coveredStart, -grow); retro ? reconcile(earliest, ncs, earliest.covEnd) : standalone(earliest, ncs, coveredStart); earliest.covStart = ncs; coveredStart = ncs; }
   }
   return Math.round(delta * 100) / 100;
@@ -1144,6 +1182,7 @@ function billExtension(r, prevEnd, prevStart) {
   const targetEnd = r.endDate;
   let active = rentalActiveInvoice(r); if (!active) return null;
   if (!active.covStart) { active.covStart = prevStart || r.startDate; active.covEnd = prevEnd || r.endDate; active.covOf = r.rentalId; }   // backfill legacy from the OLD window
+  const seriesStart = invCovStart(rentalInvoices(r)[0], r) || prevStart || r.startDate;   // the whole series' earliest covered start (a retro spill credits back to here)
   let coveredEnd = active.covEnd || prevEnd || r.startDate;
   const sum = { count: 0, subtotalDelta: 0, invoiceIds: [], newInvoices: 0, retro, invoiceId: r.invoiceId };
   let guard = 0;
@@ -1155,7 +1194,8 @@ function billExtension(r, prevEnd, prevStart) {
     if (active.locked || closed || room <= 0) {                                  // spill → fresh chunk invoice
       const chunkEnd = minISO(addDaysISO(coveredEnd, INV_CAP_DAYS), targetEnd);
       active = createContinuationInvoice(r, coveredEnd, chunkEnd);
-      const res = billChunkUnits(active, r, coveredEnd, chunkEnd, coveredEnd, retro, 'rental', r.invoiceId);
+      const res = retro ? billSpillRetro(active, r, seriesStart, chunkEnd, coveredEnd, chunkEnd, r.invoiceId)   // retro: credit the already-billed series → cheapest(full window), even when a paid chunk forced the spill (§2.1/§2.2)
+        : billChunkUnits(active, r, coveredEnd, chunkEnd, coveredEnd, false, 'rental', r.invoiceId);
       reindex('invoices', active);
       sum.newInvoices++; sum.count += res.count; sum.subtotalDelta += res.delta; sum.invoiceIds.push(active.invoiceId);
       coveredEnd = chunkEnd;
@@ -1184,7 +1224,8 @@ function billExtension(r, prevEnd, prevStart) {
     if (earliest.locked || closed || room <= 0) {                                // spill → fresh FRONT chunk invoice
       const chunkStart = maxISO(addDaysISO(coveredStart, -INV_CAP_DAYS), targetStart);
       earliest = createContinuationInvoice(r, chunkStart, coveredStart);
-      const res = billChunkUnits(earliest, r, chunkStart, coveredStart, chunkStart, retro, 'rental', r.invoiceId);
+      const res = retro ? billSpillRetro(earliest, r, chunkStart, targetEnd, chunkStart, coveredStart, r.invoiceId)   // retro front spill: credit the series across the WHOLE window (symmetric to the back spill)
+        : billChunkUnits(earliest, r, chunkStart, coveredStart, chunkStart, false, 'rental', r.invoiceId);
       reindex('invoices', earliest);
       sum.newInvoices++; sum.count += res.count; sum.subtotalDelta += res.delta; sum.invoiceIds.push(earliest.invoiceId);
       coveredStart = chunkStart;

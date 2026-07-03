@@ -1220,7 +1220,9 @@ try {
       // FRONT extension (start −1) — the reported "go BACK a day" case: paid invoice spills the added FRONT day
       scenario('front · unpaid · auto line', false, true, SB, E0);
       const pvFront = scenario('front · PAID · auto line (start back a day)', true, true, SB, E0);
-      ok(pvFront != null && Math.abs(pvFront - pf(cu.categoryId, SB, S0)) < 0.01, `front+paid: added charge = the added FRONT segment ($${pf(cu.categoryId, SB, S0)}) — start back a day bills the added day`);
+      // #425: a paid AUTO-line front extension re-tiers the WHOLE window too — added charge =
+      // cheapest(full window) − already-billed (credits the paid days toward the cheaper tier).
+      ok(pvFront != null && Math.abs(pvFront - (pf(cu.categoryId, SB, E0) - pf(cu.categoryId, S0, E0))) < 0.01, `front+paid: added charge = cheapest(full window) − billed ($${(pf(cu.categoryId, SB, E0) - pf(cu.categoryId, S0, E0)).toFixed(2)}), the retroactive re-tier`);
       // COMBINED front+back in one save — composes correctly (a single open chunk re-prices to the full window)
       scenario('combined front+back · unpaid · auto line', false, true, SB, E1);
       scenario('combined front+back · PAID · auto line', true, true, SB, E1);
@@ -1233,6 +1235,54 @@ try {
       ok(Math.abs(pvMoveBack || 0) < 0.01, `move backward bills nothing — not an extension (got ${pvMoveBack})`);
       scenario('MOVE forward · unpaid', false, true, SP1, E1);
     }
+
+    // 32c) RETRO RE-TIER ACROSS A PAID INVOICE (#425) — extending a PAID rental across a rate-tier
+    //      boundary must credit the already-paid days toward the cheaper full-window tier ("a week
+    //      paid rolls into a month", spec §2.1) — even though a paid-in-full chunk spills to a NEW
+    //      continuation invoice (§2.2 never reopens the settled one). Before the fix the spill priced
+    //      the added segment STANDALONE, so a paid 1-day → 7-day rental billed 1×daily + the 7-day
+    //      rate (over-charged a full day) instead of just the 7-day rate.
+    {
+      const pf = (catId, s, e) => { const p = T.rentalPrice({ categoryId: catId, startDate: s, endDate: e, customerId: 'C0009' }); return p ? p.price : 0; };
+      const S0 = '2099-05-01', E1 = '2099-05-02', E7 = '2099-05-08';   // 1 day → 7 days (crosses 1-Day → 7-Day tier)
+      const af4 = T.DATA.units.filter((u) => u.fleetStatus === 'Active');
+      // need a category where a week is genuinely cheaper than 7×daily (so the tier crossing matters)
+      const cu = af4.find((u) => { const d = pf(u.categoryId, S0, E1), w = pf(u.categoryId, S0, E7); return d > 0 && w > 0 && w < 7 * d; }) || af4[0];
+      const full7 = pf(cu.categoryId, S0, E7);
+      const seriesSub = (r) => T.rentalInvoices(r).reduce((a, iv) => a + iv.lineItems.filter((l) => l.kind === 'rental' || l.kind === 'extension').reduce((s, l) => s + (+l.amount || 0), 0), 0);
+      const run = (paid, units) => {
+        const rid = 'R-425', iid = 'I-425';
+        const r = { rentalId: rid, customerId: 'C0009', unitId: units[0].unitId, categoryId: units[0].categoryId, startDate: S0, endDate: E1, startTime: '', status: 'On Rent', transportType: 'Self', deliveryAddress: '', transportMiles: null, invoiceId: iid, units: units.map((u) => ({ unitId: u.unitId, transportType: 'Self', transportMiles: null })), notes: '', actions: [], mock: true };
+        T.DATA.rentals.push(r); T.IDX.rental.set(rid, r);
+        const inv = { invoiceId: iid, customerId: 'C0009', rentalIds: [rid], date: T.TODAY_ISO, dueDate: T.TODAY_ISO, po: '', amountPaid: 0, lineItems: [], covOf: rid, covStart: S0, covEnd: E1, mock: true };
+        T.rentalLineItems(r).forEach((li) => inv.lineItems.push(li));
+        T.DATA.invoices.push(inv); T.IDX.invoice.set(iid, inv);
+        if (paid) { inv.amountPaid = T.invoiceTotals(inv).total; inv.allocations = {}; inv.lineItems.forEach((l) => { inv.allocations[T.lineKey(l)] = l.amount; }); }
+        const pv = T.extensionPreview(r, S0, E7);
+        const before = seriesSub(r);
+        r.endDate = E7; T.billExtension(r, E1, S0);
+        const total = seriesSub(r), actual = Math.round((total - before) * 100) / 100;
+        const settledInvUntouched = !paid || T.invoiceTotals(inv).paid === inv.amountPaid;   // paid line never re-priced (refund-first)
+        T.rentalInvoices(r).forEach((iv) => { const i = T.DATA.invoices.findIndex((o) => o.invoiceId === iv.invoiceId); if (i >= 0) T.DATA.invoices.splice(i, 1); T.IDX.invoice.delete(iv.invoiceId); });
+        const ri = T.DATA.rentals.findIndex((o) => o.rentalId === rid); if (ri >= 0) T.DATA.rentals.splice(ri, 1); T.IDX.rental.delete(rid);
+        return { total, actual, pv: pv ? pv.subtotalDelta : null, settledInvUntouched };
+      };
+      const un = run(false, [cu]);
+      ok(Math.abs(un.total - full7) < 0.01, `#425 UNPAID 1→7: series total == cheapest(7 days)=$${full7} (got ${un.total})`);
+      const pd = run(true, [cu]);
+      ok(Math.abs(pd.total - full7) < 0.01, `#425 PAID 1→7: paid day rolls into the weekly tier — total == $${full7}, NOT daily+weekly (got ${pd.total})`);
+      ok(pd.settledInvUntouched, '#425 PAID 1→7: the settled invoice is never reopened (paid line untouched, refund-first)');
+      ok(pd.pv != null && Math.abs(pd.pv - pd.actual) < 0.01, `#425 PAID 1→7: preview == actual posting (preview ${pd.pv} vs billed ${pd.actual})`);
+      // multi-unit paid: each unit re-tiers independently against its own paid day
+      const cu2 = af4.find((u) => u.unitId !== cu.unitId && (() => { const d = pf(u.categoryId, S0, E1), w = pf(u.categoryId, S0, E7); return d > 0 && w > 0 && w < 7 * d; })());
+      if (cu2) {
+        const md = run(true, [cu, cu2]);
+        const want = pf(cu.categoryId, S0, E7) + pf(cu2.categoryId, S0, E7);
+        ok(Math.abs(md.total - want) < 0.01, `#425 PAID multi-unit 1→7: each unit re-tiers to its own weekly rate (total $${want}, got ${md.total})`);
+        ok(md.pv != null && Math.abs(md.pv - md.actual) < 0.01, '#425 PAID multi-unit: preview == actual');
+      }
+    }
+
     // === F1 — membership fee math (spec §2): no proration; protection = 15% of BASE only; 10.75% tax ===
     {
       const PR = { monthlyBase: 299, annualBase: 2691, monthlyTransport: 500, annualTransport: 4500, protectionPct: 15, protectionCapMonthly: 2000 };
