@@ -16,6 +16,10 @@ import { DATA } from './data.js';
 import { createCascade } from './cascade.js';
 import { serviceOrdersForUnit, completeService, SERVICE_TASKS } from './service-countdown.js';
 import * as CFG from './config.js';
+// §13.6 Round-Up chart engines — vendored pinned bundles (never CDN at runtime: a module
+// import failure would kill the whole boot, so these ship in-repo like the Lucide icons).
+import * as Plot from './vendor/plot.min.js';                                  // Observable Plot 0.6.17 (ISC)
+import { pie as d3pie, arc as d3arc } from './vendor/d3-shape.min.js';         // d3-shape 3.2.0 (ISC) — donut geometry, Phase D
 import { AGREEMENTS, AGREEMENT_VERSIONS, AGREEMENT_CURRENT } from './agreements.js';
 import { ico, I, CARD_ICON, RING_ICON, CATEGORY_ICON } from './icons.js';
 import {
@@ -7632,12 +7636,14 @@ function headerEl() {
   const comingPlate = `<button class="coming-plate js-roadmap" data-tip="What's coming in 2026" aria-label="Coming 2026 — open the roadmap">
       <span class="cp-stamp">Coming <b>2026</b></span>
     </button>`;
+  const ruPlate = `<button class="ru-plate js-ru-open" data-tip="The Round-Up — the reports board" aria-label="Open the Round-Up reports board">${I.graph}<span>Round-Up</span></button>`;
   const rings = ROLES.map((role) => roleRing(role.id, role.label, kpiFor(role.id), role.color)).join('') + comingPlate;
   // §M1 — phone-only TOP TOOLBAR: the full tool set opened up across the top of the screen
   // (logo + rings stay on their own row above it). Notifications + Requests live here too.
   const nu = unseenNotifs();
   const notifBtn = `<button class="iconbtn js-notifications" data-tip="Notifications">${I.bell}${nu ? `<span class="bb-badge">${nu > 9 ? '9+' : nu}</span>` : ''}</button>`;
-  const topBar = `<div class="top-toolbar">${notifBtn}${bottomBarInner()}</div>`;
+  const ruBtn = `<button class="iconbtn js-ru-open" data-tip="The Round-Up — the reports board">${I.graph}</button>`;
+  const topBar = `<div class="top-toolbar">${ruBtn}${notifBtn}${bottomBarInner()}</div>`;
   // Decluttered top: logo + rings on one row, the tool bar across the next.
   h.innerHTML = `
     <button class="logo js-logo" aria-label="Jac Rentals"></button>
@@ -7648,6 +7654,7 @@ function headerEl() {
         <div class="header-tabs tabstrip">${tabStrip(state.tabs)}</div>
         ${state.tabs.length ? `<span class="closeall-slot">${ghostPill('Close all', { js: 'js-closeall-menu', tip: 'Close all tabs' })}</span>` : ''}
         <span class="spacer"></span>
+        ${ruPlate}
         ${currentUser ? `<span class="hello-name">${esc(currentUser)}</span>` : ''}
       </div>
       <div class="toolbar">
@@ -9539,6 +9546,115 @@ function graphPanelV2(card, src, cs) {
   return `${head}<div class="ug-body${anyHist ? '' : ' ug-nohist'}">${rail}${chart}</div>`;
 }
 
+/* §13.6 THE ROUND-UP (Jac 2026-07-03) — part of the APP-25 Graph chapter, not a new chapter.
+   The clean-sheet full-screen reporting board (spec:
+   docs/superpowers/specs/2026-07-03-roundup-reporting-board-design.md). One overlay kind
+   ('roundup'): a left TIME SPINE (Today/Wk/Mo/30/60/90/All + a Custom R22 date-range) scoping
+   every windowed panel, and stamped sections (Money · Rentals · Shop · Fleet · Customers) of
+   Observable-Plot / d3-shape panels. Panels land per the phase plan (docs/superpowers/plans/
+   2026-07-03-roundup-reporting-board-plan.md); unbuilt ones render honest placeholders.
+   Marks will NAVIGATE to the owning card with the filter applied (Phase B+). */
+const RU_PERIODS = [
+  { k: 'today', label: 'Today' }, { k: 'wk', label: 'This Wk' }, { k: 'mo', label: 'This Mo' },
+  { k: '30', label: '30 Days' }, { k: '60', label: '60 Days' }, { k: '90', label: '90 Days' }, { k: 'all', label: 'All' },
+];
+let _ruRange = null;   // { k, a, b } — a inclusive ISO (null = all-time), b EXCLUSIVE ISO
+function ruRangeLoad() {
+  if (_ruRange) return _ruRange;
+  try { const v = JSON.parse(localStorage.getItem('jactec.ruRange') || 'null'); if (v && v.k) _ruRange = v; } catch (e) {}
+  return _ruRange || (_ruRange = { k: 'all', a: null, b: null });
+}
+function ruResolve() {
+  const r = ruRangeLoad();
+  if (r.k === 'custom' && r.a && r.b) return { k: 'custom', a: r.a, b: r.b, label: `${fmtShortDate(r.a)} – ${fmtShortDate(addDaysISO(r.b, -1))}` };
+  const p = RU_PERIODS.find((x) => x.k === r.k) || RU_PERIODS[RU_PERIODS.length - 1];
+  const tomorrow = addDaysISO(TODAY_ISO, 1);
+  if (p.k === 'all') return { k: 'all', a: null, b: null, label: 'All time' };
+  if (p.k === 'today') return { k: 'today', a: TODAY_ISO, b: tomorrow, label: 'Today' };
+  return { k: p.k, a: uCutoff(p.k), b: tomorrow, label: p.label };
+}
+function ruSave(r) { _ruRange = r; try { localStorage.setItem('jactec.ruRange', JSON.stringify(r)); } catch (e) {} }
+function ruApplyCustom(o) {
+  if (!o) return;
+  const a = o.ruFrom, b = o.ruTo;
+  if (!a || !b) { flashOr('.ru-custom .datefield', 'Pick both dates first.'); return; }
+  if (a > b) { flashOr('.ru-custom .datefield', 'From must be on or before To.'); return; }
+  ruSave({ k: 'custom', a, b: addDaysISO(b, 1) });
+  o.ruCustomOpen = false; state.datepick = null; renderOverlay();
+}
+// resolve a design token to a concrete color at render time — Plot parses channel strings
+// as colors/columns and does NOT recognize var(); recomputed every mount, so themes stay live
+const ruColor = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || '#8b94a3';
+/* Plot bar panel — Jac's chart law baked in: value rides the bar (never a detached row),
+   dotted gridlines + Y axis on a nice scale, bottom-anchored, no legend (hover = plain name). */
+function ruBarsSVG({ data, money = false, w = 620, h = 250 }) {
+  return Plot.plot({
+    width: w, height: h, marginLeft: 48, marginRight: 12, marginTop: 20, marginBottom: 28,
+    style: { background: 'transparent', fontFamily: "'Saira Condensed', system-ui, sans-serif", fontSize: '11.5px' },
+    x: { label: null, tickSize: 0, padding: 0.25 },
+    y: { label: null, nice: true, tickFormat: money ? ((v) => uMoneyK(v)) : undefined },
+    marks: [
+      Plot.gridY({ stroke: ruColor('--line'), strokeDasharray: '2,3', strokeOpacity: 0.8 }),
+      Plot.barY(data, { x: 'label', y: 'value', fill: 'fill', rx: 4, title: 'name' }),
+      Plot.text(data, { x: 'label', y: 'value', text: (d) => (money ? uMoneyK(d.value) : String(d.value)), dy: -8, fill: ruColor('--txt-2'), fontWeight: 700 }),
+      Plot.ruleY([0], { stroke: ruColor('--line-soft') }),
+    ],
+  });
+}
+// Phase-A pathfinder — proves the vendored engine, token resolution, fonts and the mount pass
+function ruUnitsPerCategory() {
+  const byCat = {}; DATA.units.forEach((u) => { if (u.categoryId) byCat[u.categoryId] = (byCat[u.categoryId] || 0) + 1; });
+  const blue = ruColor('--blue');
+  const data = DATA.categories.map((c) => ({ label: c.name, name: c.name, value: byCat[c.categoryId] || 0, fill: blue }))
+    .filter((d) => d.value > 0).sort((a, b) => b.value - a.value).slice(0, 12);
+  return ruBarsSVG({ data });
+}
+// panel builders land here phase by phase; sections list what is coming so the board is honest
+const RU_PANELS = { 'units-per-cat': { build: ruUnitsPerCategory } };
+const RU_SECTIONS = [
+  { id: 'money', label: 'Money', panels: [
+    { id: 'rev-cat', title: 'Revenue by Category', phase: 'B' }, { id: 'exp-cat', title: 'Expenses by Category', phase: 'B' },
+    { id: 'rev-status', title: 'Revenue by Rental Status', phase: 'B' }, { id: 'top-spend', title: 'Top Customers', phase: 'B' },
+    { id: 'balances', title: 'Biggest Open Balances', phase: 'B' } ] },
+  { id: 'rentals', label: 'Rentals', panels: [
+    { id: 'bookings', title: 'Bookings Over Time', phase: 'C' }, { id: 'inv-status', title: 'Invoice Status', phase: 'D' },
+    { id: 'rent-tiles', title: 'By the Numbers', phase: 'D' } ] },
+  { id: 'shop', label: 'Shop', panels: [
+    { id: 'insp-trend', title: 'Inspections Over Time', phase: 'C' }, { id: 'wo-phase', title: 'Work Orders by Bottleneck', phase: 'D' },
+    { id: 'field-calls', title: 'Field Calls', phase: 'C' }, { id: 'svc-urgency', title: 'Service Urgency', phase: 'D' } ] },
+  { id: 'fleet', label: 'Fleet', panels: [
+    { id: 'fleet-mix', title: 'Fleet Mix', phase: 'D' }, { id: 'units-per-cat', title: 'Units per Category' } ] },
+  { id: 'customers', label: 'Customers', panels: [
+    { id: 'accounts', title: 'Account Types · Pay Status', phase: 'D' }, { id: 'card-health', title: 'Card Health', phase: 'D' } ] },
+];
+function roundupBody(o) {
+  const r = ruResolve();
+  const spine = RU_PERIODS.map((p) => `<button class="ru-per${r.k === p.k ? ' on' : ''} js-ru-per" data-k="${p.k}">${esc(p.label)}</button>`).join('')
+    + `<button class="ru-per ru-per-custom${r.k === 'custom' ? ' on' : ''} js-ru-custom" data-tip="Pick an exact date range">${r.k === 'custom' ? esc(r.label) : 'Custom…'}</button>`
+    + (o.ruCustomOpen ? `<div class="ru-custom">
+        <div class="ru-custom-row"><span class="ru-custom-l">From</span>${dateField('ruFrom', o.ruFrom)}</div>
+        <div class="ru-custom-row"><span class="ru-custom-l">To</span>${dateField('ruTo', o.ruTo)}</div>
+        <div class="ru-custom-row">${ghostPill('Cancel', { js: 'js-ru-cancel' })}${actionPill('commit', 'Apply', { js: 'js-ru-apply' })}</div>
+      </div>` : '');
+  const panel = (p) => RU_PANELS[p.id]
+    ? `<div class="ru-panel"><div class="ru-panel-h">${esc(p.title)}</div><div class="ru-plotmount" data-panel="${p.id}"></div></div>`
+    : `<div class="ru-panel ru-ph"><div class="ru-panel-h">${esc(p.title)}</div><div class="ru-ph-note">Corral open — this chart lands in phase ${esc(p.phase || '?')}.</div></div>`;
+  const secs = RU_SECTIONS.map((sec) => `<section class="ru-sec" data-sec="${sec.id}">
+      <h4 class="ru-sec-h">${esc(sec.label)}</h4>
+      <div class="ru-grid">${sec.panels.map(panel).join('')}</div>
+    </section>`).join('');
+  return `<div class="ru-layout"><nav class="ru-spine" aria-label="Timeframe">${spine}</nav><div class="ru-main">${secs}</div></div>`;
+}
+// post-render pass: build each mounted panel fresh (stateless — regenerated every render,
+// nothing to track or dispose). A panel that throws reports itself loudly, never blanks.
+function ruMountCharts() {
+  document.querySelectorAll('.ru-plotmount[data-panel]').forEach((m) => {
+    const p = RU_PANELS[m.dataset.panel]; if (!p) return;
+    try { m.replaceChildren(p.build(ruResolve())); }
+    catch (e) { m.innerHTML = `<div class="ru-err">Chart failed — ${esc(String(e && e.message || e))}</div>`; }
+  });
+}
+
 function cardGraphBody(card) {
   if (card === 'units') {
     const g = unitGraphData();
@@ -9730,6 +9846,7 @@ function renderOverlay() {
   { const _nb = overlay.querySelector('.set-pane') || overlay.querySelector('.popup-body'); if (_nb && _ovScroll[o.kind]) _nb.scrollTop = _ovScroll[o.kind]; }   // restore scroll on a same-overlay re-render (settings pane / sign / selfie no longer jump to top)
 
   _ovLastKind = o.kind;
+  if (o.kind === 'roundup') { ruMountCharts(); if (o.section && !o._scrolled) { o._scrolled = true; document.querySelector(`.ru-sec[data-sec="${o.section}"]`)?.scrollIntoView({ block: 'start' }); } }
   if (o.kind === 'partform') document.querySelector('.overlay .js-pf2-desc')?.focus();   // Jac: Part/Task field focused by default
   if (o.kind === 'newCustomer') setupSignaturePad();
   if (o.kind === 'payment') { setupPayAlloc(); setupRefundAlloc(); }   // live counters for the §19 pay + §19b refund allocation rows
@@ -10207,6 +10324,15 @@ function buildPopupEl(o, overlay, opts = {}) {
       <div class="popup-body board-body">${board.id === 'files' && o.fileForm ? `<div class="kv pillrow" style="gap:7px;margin:0 0 10px"><input class="lf-in js-ff-name" placeholder="File name" style="flex:2;min-width:140px"><input class="lf-in js-ff-link" placeholder="Link (URL)" style="flex:2;min-width:140px">${fileDrop(o.fileUpload ? '✓ ' + esc(o.fileUpload.name) : 'Upload photo / document', { js: 'js-ff-file', accept: 'image/*,application/pdf,.doc,.docx,.xls,.xlsx,.csv,.txt', done: !!o.fileUpload, icon: I.camera })}${ghostPill('Cancel', { js: 'js-ff-cancel' })}${actionPill('commit', 'Add file', { js: 'js-ff-save' })}</div>` : ''}${boardTable(board.id, o.fileSearch)}</div>`;
     }
     overlay.appendChild(pop);
+  } else if (o.kind === 'roundup') {
+    const pop = el('div', 'popup board-popup ru-popup');
+    pop.innerHTML = `
+      <div class="popup-head ru-head">
+        <span class="c-icon" style="color:var(--accent);display:inline-flex">${I.graph}</span>
+        <h3>The Round-Up</h3><span class="ru-tag">Reports · ${esc(ruResolve().label)}</span>
+        <span class="spacer"></span><button class="x js-close">${I.x}</button></div>
+      <div class="popup-body ru-body">${roundupBody(o)}</div>`;
+    overlay.appendChild(pop);
   } else if (o.kind === 'boardview') {
     const session = activeSession();
     const n = boardViewRecords(o, session).length;
@@ -10619,6 +10745,7 @@ const WINDOW_CATALOG = [
   { kind: 'roadmap',       label: 'Coming in 2026',          tag: 'Roadmap · the docket',      sample: () => ({}) },
   { kind: 'feedback',      label: 'Report a bug or request', tag: 'Mr. Wrangler · report',     sample: () => ({}) },
   { kind: 'board',         label: 'Back-office board',       tag: 'Back office · records',     sample: () => ({ board: (BACKOFFICE_BOARDS[0] || {}).id }) },
+  { kind: 'roundup',       label: 'The Round-Up',            tag: 'Reports · board',           sample: () => ({}) },
   { kind: 'boardview',     label: 'Board View',              tag: 'Card · board view',         sample: () => ({ card: 'units', query: '', sort: {}, calc: {}, colOrder: null, extraRows: [], cellData: {}, seq: 0 }) },
   { kind: 'tools',         label: 'Tools tray',              tag: 'Yard · toolbox',            sample: () => ({}) },
   { kind: 'settings',      label: 'Settings',                tag: 'Admin · settings',          sample: () => ({}) },
@@ -13572,6 +13699,11 @@ function onClick(e) {
   if (closest('.js-ug-tab')) { e.stopPropagation(); const b = closest('.js-ug-tab'); return uSetMetric(b.dataset.card, b.dataset.src, b.dataset.metric); }   // §13.5 V2 — select metric group
   if (closest('.js-ug-per')) { e.stopPropagation(); const b = closest('.js-ug-per'); return uSetPeriod(b.dataset.card, b.dataset.src, b.dataset.period); }   // §13.5 V2 — toggle timeframe
   if (closest('.js-ug-seg')) { e.stopPropagation(); const b = closest('.js-ug-seg'); return uToggleSeg(b.dataset.card, b.dataset.src, b.dataset.metric, b.dataset.col, b.dataset.value, b.dataset.label); }   // §13.5 V2 — slice/tile/bar/bucket filter
+  if (closest('.js-ru-open')) { e.stopPropagation(); return openOverlay({ kind: 'roundup', section: closest('.js-ru-open').dataset.section || null }); }   // §13.6 Round-Up
+  if (closest('.js-ru-per')) { e.stopPropagation(); const k = closest('.js-ru-per').dataset.k; ruSave(k === 'all' ? { k: 'all', a: null, b: null } : { k }); return renderOverlay(); }
+  if (closest('.js-ru-custom')) { e.stopPropagation(); const o = state.overlay; if (o) { o.ruCustomOpen = !o.ruCustomOpen; if (o.ruCustomOpen) { const r = ruResolve(); o.ruFrom = o.ruFrom || r.a || TODAY_ISO; o.ruTo = o.ruTo || (r.b ? addDaysISO(r.b, -1) : TODAY_ISO); } else state.datepick = null; } return renderOverlay(); }
+  if (closest('.js-ru-apply')) { e.stopPropagation(); return ruApplyCustom(state.overlay); }
+  if (closest('.js-ru-cancel')) { e.stopPropagation(); const o = state.overlay; if (o) { o.ruCustomOpen = false; state.datepick = null; } return renderOverlay(); }
   if (closest('.js-bv-sort') && !closest('.js-bv-inscol')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview') { const key = closest('.js-bv-sort').dataset.col; if (o.sort?.key === key) o.sort.dir = o.sort.dir === 'asc' ? 'desc' : 'asc'; else o.sort = { key, dir: 'asc' }; renderOverlay(); } return; }
   if (closest('.js-bv-addcol')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview') { o.colOrder = o.colOrder || []; o.colOrder.push({ kind: 'extra', id: 'xc' + (++o.seq), label: '' }); renderOverlay(); } return; }
   if (closest('.js-bv-inscol')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview' && o.colOrder) { const after = Number(closest('.js-bv-inscol').dataset.after); o.colOrder.splice(after + 1, 0, { kind: 'extra', id: 'xc' + (++o.seq), label: '' }); renderOverlay(); } return; }
