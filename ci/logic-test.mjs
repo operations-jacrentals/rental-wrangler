@@ -33,6 +33,8 @@ let failed = false;
 try {
   await page.goto('http://localhost:8000/#local', { waitUntil: 'domcontentloaded', timeout: 20000 });
   await page.waitForFunction(() => !!window.__rw, { timeout: 20000 });
+  await page.evaluate(() => window.__rwBootRail);   // let offlineBoot's async wranglerRailLoad() finish before any test
+                                                      // touches wranglerRail — else it can land mid-test and wipe fixtures (race)
 
   const results = await page.evaluate(async () => {
     const T = window.__rw; const out = []; const ok = (c, m) => out.push({ ok: !!c, m });
@@ -1214,13 +1216,19 @@ try {
       };
       // BACK extension (end +1) — the #358 fix
       scenario('back · unpaid · auto line', false, true, S0, E1);
-      scenario('back · PAID · auto line', true, true, S0, E1);
+      // #444 — a PAID rental extended re-prices the FULL window, crediting the paid days toward
+      // cheapest(window) (retro contract: delta = full − billed), capped at the added segment so an
+      // untracked/weekend charge can't inflate it. So the charge = min(full−billed, added segment).
+      const expBack = Math.min(pf(cu.categoryId, S0, E1) - pf(cu.categoryId, S0, E0), pf(cu.categoryId, E0, E1));
+      const pvBackPaid = scenario('back · PAID · auto line (#444)', true, true, S0, E1);
+      ok(pvBackPaid != null && Math.abs(pvBackPaid - expBack) < 0.01, `back+paid: charge = retro credit capped at the segment = min(full−billed, seg) ($${Math.round(expBack * 100) / 100}) (#444)`);
       const pvManual = scenario('back · PAID · manual ×1 line (orig bug)', true, false, S0, E1);
-      ok(pvManual != null && Math.abs(pvManual - pf(cu.categoryId, E0, E1)) < 0.01, `back+paid+manual: added charge = the added segment ($${pf(cu.categoryId, E0, E1)}), not the full window ($${pf(cu.categoryId, S0, E1)})`);
+      ok(pvManual != null && Math.abs(pvManual - pf(cu.categoryId, E0, E1)) < 0.01, `back+paid+manual: an UNTRACKED manual line can't be credited → charge caps at the added segment ($${pf(cu.categoryId, E0, E1)}), not the full window ($${pf(cu.categoryId, S0, E1)})`);
       // FRONT extension (start −1) — the reported "go BACK a day" case: paid invoice spills the added FRONT day
       scenario('front · unpaid · auto line', false, true, SB, E0);
-      const pvFront = scenario('front · PAID · auto line (start back a day)', true, true, SB, E0);
-      ok(pvFront != null && Math.abs(pvFront - pf(cu.categoryId, SB, S0)) < 0.01, `front+paid: added charge = the added FRONT segment ($${pf(cu.categoryId, SB, S0)}) — start back a day bills the added day`);
+      const expFront = Math.min(pf(cu.categoryId, SB, E0) - pf(cu.categoryId, S0, E0), pf(cu.categoryId, SB, S0));
+      const pvFront = scenario('front · PAID · auto line (start back a day, #444)', true, true, SB, E0);
+      ok(pvFront != null && Math.abs(pvFront - expFront) < 0.01, `front+paid: charge = retro credit capped at the segment = min(full−billed, seg) ($${Math.round(expFront * 100) / 100}) (#444)`);
       // COMBINED front+back in one save — composes correctly (a single open chunk re-prices to the full window)
       scenario('combined front+back · unpaid · auto line', false, true, SB, E1);
       scenario('combined front+back · PAID · auto line', true, true, SB, E1);
@@ -1232,6 +1240,37 @@ try {
       const pvMoveBack = scenario('MOVE backward · PAID (drop back day, add front day)', true, true, SB, SP1);
       ok(Math.abs(pvMoveBack || 0) < 0.01, `move backward bills nothing — not an extension (got ${pvMoveBack})`);
       scenario('MOVE forward · unpaid', false, true, SP1, E1);
+    }
+    // 32c) #444 — a PAID 1-day rental extended ACROSS a rate tier (daily → weekly) must re-price the
+    //      WHOLE window at the cheapest tier, crediting the paid day, NOT bill the added days on top of
+    //      it. Before the fix, the paid (closed) invoice spilled a continuation that priced the added
+    //      6 days standalone (≈ the weekly rate) — so total = daily + weekly, a tier's worth of overcharge.
+    {
+      const pf = (catId, s, e) => { const p = T.rentalPrice({ categoryId: catId, startDate: s, endDate: e, customerId: 'C0009' }); return p ? p.price : 0; };
+      const af = T.DATA.units.filter((u) => u.fleetStatus === 'Active');
+      // pick a unit whose category actually tiers (weekly beats 7×daily) so the boundary is crossed
+      const cu = af.find((u) => { const c = T.IDX.category.get(u.categoryId); return c && c.rate1Day > 0 && c.rate7Day > 0 && c.rate7Day < 7 * c.rate1Day; });
+      if (cu) {
+        const S0 = '2099-08-01', E1 = '2099-08-02', E7 = '2099-08-08';   // 1-day window → 7 days
+        const rid = 'R-444', iid = 'I-444';
+        const r = { rentalId: rid, customerId: 'C0009', unitId: cu.unitId, categoryId: cu.categoryId, startDate: S0, endDate: E1, startTime: '', status: 'On Rent', transportType: 'Self', deliveryAddress: '', transportMiles: null, invoiceId: iid, units: [{ unitId: cu.unitId, transportType: 'Self', transportMiles: null }], notes: '', actions: [], mock: true };
+        T.DATA.rentals.push(r); T.IDX.rental.set(rid, r);
+        const inv = { invoiceId: iid, customerId: 'C0009', rentalIds: [rid], date: T.TODAY_ISO, dueDate: T.TODAY_ISO, po: '', amountPaid: 0, lineItems: [], covOf: rid, covStart: S0, covEnd: E1, mock: true };
+        T.rentalLineItems(r).forEach((li) => inv.lineItems.push(li));
+        T.DATA.invoices.push(inv); T.IDX.invoice.set(iid, inv);
+        inv.amountPaid = T.invoiceTotals(inv).total; const l0 = inv.lineItems[0]; inv.allocations = { [T.lineKey(l0)]: l0.amount };   // pay in full → closed
+        const seriesSub = () => T.rentalInvoices(r).reduce((a, iv) => a + iv.lineItems.filter((l) => l.kind === 'rental' || l.kind === 'extension').reduce((s, l) => s + (+l.amount || 0), 0), 0);
+        const paidDay = pf(cu.categoryId, S0, E1), cheapest7 = pf(cu.categoryId, S0, E7);
+        const pv = T.extensionPreview(r, S0, E7);
+        const before = seriesSub();
+        r.startDate = S0; r.endDate = E7; T.billExtension(r, E1, S0);
+        const posted = Math.round((seriesSub() - before) * 100) / 100;
+        ok(Math.abs(posted - (cheapest7 - paidDay)) < 0.01, `#444: paid 1-day extended to 7 days bills full − paid ($${Math.round((cheapest7 - paidDay) * 100) / 100}), not the added days on top (posted $${posted})`);
+        ok(Math.abs(seriesSub() - cheapest7) < 0.01, `#444: series total after extend == cheapest(7-day window) $${cheapest7} — no tier overcharge (got $${Math.round(seriesSub() * 100) / 100})`);
+        ok(pv && Math.abs(pv.subtotalDelta - posted) < 0.01, `#444: the picker preview equals the posted extension ($${pv ? pv.subtotalDelta : 'null'})`);
+        T.rentalInvoices(r).forEach((iv) => { const i = T.DATA.invoices.findIndex((o) => o.invoiceId === iv.invoiceId); if (i >= 0) T.DATA.invoices.splice(i, 1); T.IDX.invoice.delete(iv.invoiceId); });
+        const ri = T.DATA.rentals.findIndex((o) => o.rentalId === rid); if (ri >= 0) T.DATA.rentals.splice(ri, 1); T.IDX.rental.delete(rid);
+      } else { ok(true, '#444: no tiering category in the demo set — skipped'); }
     }
     // === F1 — membership fee math (spec §2): no proration; protection = 15% of BASE only; 10.75% tax ===
     {
