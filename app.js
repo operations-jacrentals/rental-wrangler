@@ -4056,6 +4056,10 @@ function getEntityColor(entityType, rec) {
   const fl = getEntityFlags(entityType, rec);
   return fl.length ? fl[0].severity : 'green';
 }
+/** Pick the more-severe of a set of registry colors (danger → plain). Used to make the
+ *  unit mini-card border mirror the LOUDER of its two visible pills (Jac 2026-07-01). */
+const COLOR_SEVERITY = { red: 6, yellow: 5, orange: 4, purple: 3, blue: 2, green: 1, gray: 0 };
+const worseColor = (...cs) => cs.reduce((a, b) => ((COLOR_SEVERITY[b] ?? 1) > (COLOR_SEVERITY[a] ?? 1) ? b : a), 'gray');
 /** Map a statusPill `set` → its entity type (only the 5 PRIMARY status sets are
  *  flag-colored; secondary sets like unitInspectionStatus keep their registry color). */
 const PRIMARY_SET_ENTITY = { rentalStatus: 'rentals', unitFleetStatus: 'units', woPhase: 'workOrders', invoiceStatus: 'invoices', customerPayStatus: 'customers' };
@@ -4688,25 +4692,36 @@ function categoryIconFor(name) {
    verdict / inspection label; COLOR is inspection-driven (mechanics' card) and only
    goes red on a catastrophe (Failed inspection, overbooked). Built via statusPill's
    color/label override so it stays an R3 pill. */
+/** The RENTAL+INSPECTION pill's COLOR (extracted so the card border can mirror it). */
+function unitRentalInspColor(u) {
+  if (availWin) return isUnitAvailableFor(u, availWin.start, availWin.end, availWin.selfId) ? 'green' : 'red';
+  if (activeRentalForUnit(u.unitId)) return (u.inspectionStatus === 'Failed' || unitOverbooked(u.unitId)) ? 'red' : getStatus('unitInspectionStatus', u.inspectionStatus).color;
+  return getStatus('unitInspectionStatus', u.inspectionStatus).color;   // Passed / Not Ready / Failed
+}
 function unitRentalInspPill(u) {
-  const insp = getStatus('unitInspectionStatus', u.inspectionStatus);
   const ar = activeRentalForUnit(u.unitId);
-  let text, color;
+  let text;
   if (availWin) {
-    if (isUnitAvailableFor(u, availWin.start, availWin.end, availWin.selfId)) { text = 'Available'; color = 'green'; }
-    else if (u.fleetStatus !== 'Active') { text = getStatus('unitFleetStatus', u.fleetStatus).label; color = 'red'; }
-    else if (u.inspectionStatus === 'Failed') { text = 'Failed'; color = 'red'; }
-    else { const cf = rentalsOverlappingUnit(u.unitId, availWin.start, availWin.end, availWin.selfId)[0]; text = cf ? 'Booked' : 'Unavailable'; color = 'red'; }
+    if (isUnitAvailableFor(u, availWin.start, availWin.end, availWin.selfId)) text = 'Available';
+    else if (u.fleetStatus !== 'Active') text = getStatus('unitFleetStatus', u.fleetStatus).label;
+    else if (u.inspectionStatus === 'Failed') text = 'Failed';
+    else { const cf = rentalsOverlappingUnit(u.unitId, availWin.start, availWin.end, availWin.selfId)[0]; text = cf ? 'Booked' : 'Unavailable'; }
   } else if (ar) {
     text = rentalDisplayStatus(ar);
-    color = (u.inspectionStatus === 'Failed' || unitOverbooked(u.unitId)) ? 'red' : insp.color;   // inspection drives; catastrophe → red
   } else {
-    text = insp.label; color = insp.color;            // Passed / Not Ready / Failed
+    text = getStatus('unitInspectionStatus', u.inspectionStatus).label;
   }
-  return statusPill('unitInspectionStatus', u.inspectionStatus, { card: 'units', recId: u.unitId, previewColor: color, previewLabel: text, focal: true });   // Units row headline = focal Primary
+  return statusPill('unitInspectionStatus', u.inspectionStatus, { card: 'units', recId: u.unitId, previewColor: unitRentalInspColor(u), previewLabel: text, focal: true });   // Units row headline = focal Primary
 }
 /* The unit row's WORK-ORDER+SERVICE pill (Jac): an open WO's journey bottleneck takes
    precedence (flag-colored woPhase); otherwise the nearest service order by hours. */
+/** The WO+SERVICE pill's COLOR (extracted so the card border can mirror it). */
+function unitWoSoColor(u) {
+  const wo = openWOForUnit(u.unitId);
+  if (wo) return getEntityColor('workOrders', wo);
+  const svc = topServiceForUnit(u);
+  return svc ? svc.color : 'green';
+}
 function unitWoSoPill(u) {
   const wo = openWOForUnit(u.unitId);
   if (wo) return statusPill('woPhase', wo.phase, { card: 'workOrders', recId: wo.woId });
@@ -4725,6 +4740,11 @@ function unitCardFlags(u) {
   if (u.gpsStatus === 'Not Reporting') f.push({ label: 'No GPS', color: 'red' });
   else if (u.gpsStatus === 'Verify') f.push({ label: 'GPS?', color: 'yellow' });
   if (u.fleetStatus && u.fleetStatus !== 'Active') { const fs = getStatus('unitFleetStatus', u.fleetStatus); f.push({ label: fs.label, color: fs.color }); }
+  // The border now mirrors the two pills, so surface the warnings the pills DON'T show
+  // (Jac 2026-07-01): a due/past-due SERVICE that an open WO is hiding in pill 2, and a
+  // requested wash. GPS/overbooked/fleet above are likewise pill-less signals.
+  if (openWOForUnit(u.unitId)) { const s = topServiceForUnit(u); if (s && (s.status === 'past-due' || s.status === 'due-soon')) f.push({ label: svcText(s), color: s.color, alert: s.status === 'past-due' }); }
+  if (u.washRequested) f.push({ label: 'Wash Due', color: 'yellow' });
   if (!f.length) return '';
   if (f.length === 1) return flagsStack([flagEl('', f[0].color, { icon: I.alert, alert: f[0].alert, title: f[0].label })]);
   const worst = f.some((x) => x.color === 'red') ? 'red' : f.some((x) => x.color === 'yellow') ? 'yellow' : 'gray';
@@ -4903,7 +4923,7 @@ const ROWS = {
     // labels never clip. Hours dropped (freed the top-right for flags). Border carries
     // the entity-health color (--ur-hl), like the category/rentals mini-cards.
     const cat = IDX.category.get(u.categoryId);
-    const hl = getEntityColor('units', u);
+    const hl = worseColor(unitRentalInspColor(u), unitWoSoColor(u));   // border mirrors the LOUDER of the two visible pills (Jac 2026-07-01); pill-less warnings ride the ⚠ corner
     const nameColor = (hl === 'red' || hl === 'yellow' || hl === 'green') ? `var(--${hl})` : hl === 'gray' ? 'var(--txt-3)' : 'var(--txt)';
     return `<div class="ucard" style="--ur-hl:var(--${hl})">
       <div class="uc-top">
