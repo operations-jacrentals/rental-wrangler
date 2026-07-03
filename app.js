@@ -1011,17 +1011,36 @@ function createContinuationInvoice(r, covStart, covEnd) {
   return inv;
 }
 /** Bill per-unit charges for [ns,ne] onto `inv` (kind = 'rental' fresh chunk · 'extension'
- *  grow). prevEnd = the unit's already-billed-through end (=ns for a fresh chunk). */
-function billChunkUnits(inv, r, ns, ne, prevEnd, retro, kind, contInvId) {
+ *  grow). prevEnd = the unit's already-billed-through end (=ns for a fresh chunk).
+ *  `fullWin` (retro spill only) = the WHOLE covered window [start,end] this chunk completes:
+ *  the continuation then credits ALL prior series billing toward cheapest(fullWin) (delta =
+ *  full-window − billedSeries), so an already-billed — even PAID — sub-tier day counts toward
+ *  the blended rate instead of being re-billed. Positive only (refund-first: a paid chunk is
+ *  never reduced). Without fullWin the added segment is priced standalone (OFF path, #444). */
+function billChunkUnits(inv, r, ns, ne, prevEnd, retro, kind, contInvId, fullWin) {
   let delta = 0, count = 0;
   rentalUnits(r).forEach((eu) => {
     if (unitVoided(r, eu)) return;
     const u = IDX.unit.get(eu.unitId); if (!u) return;
-    const d = unitExtensionDelta(inv, r, eu, ns, ne, prevEnd, retro);
-    if (d.amount > 0.005) {
+    let amount, rate;
+    if (retro && fullWin) {
+      // Credit ALL prior series billing toward cheapest(fullWin); but cap at pricing the added
+      // segment alone, so an UNTRACKED prior charge (a manual 'item' line invisible to
+      // unitBilledSeries) can't inflate the credit into a double-charge (#444 · logic-test 32b).
+      const pFull = rentalPrice({ categoryId: u.categoryId, startDate: fullWin.start, endDate: fullWin.end, customerId: r.customerId });
+      const pSeg = rentalPrice({ categoryId: u.categoryId, startDate: ns, endDate: ne, customerId: r.customerId });
+      const credit = Math.max(0, Math.round(((pFull ? pFull.price : 0) - unitBilledSeries(r, eu.unitId)) * 100) / 100);
+      const seg = pSeg ? Math.round(pSeg.price * 100) / 100 : 0;
+      if (credit <= seg) { amount = credit; rate = pFull ? pFull.rate : '—'; }
+      else { amount = seg; rate = pSeg ? pSeg.rate : '—'; }
+    } else {
+      const d = unitExtensionDelta(inv, r, eu, ns, ne, prevEnd, retro);
+      amount = d.amount; rate = d.rate;
+    }
+    if (amount > 0.005) {
       const tail = kind === 'extension' ? ` · Extension → ${fmtShortDate(ne)}` : (contInvId ? ` · Ext of ${invoiceShort(contInvId)}` : '');
-      inv.lineItems.push({ kind, ref: r.rentalId, unitId: eu.unitId, lid: lineLid(), label: `${u.name} · ${d.rate}${tail}`, amount: d.amount });
-      delta += d.amount; count++;
+      inv.lineItems.push({ kind, ref: r.rentalId, unitId: eu.unitId, lid: lineLid(), label: `${u.name} · ${rate}${tail}`, amount });
+      delta += amount; count++;
     }
   });
   return { delta: Math.round(delta * 100) / 100, count };
@@ -1083,6 +1102,7 @@ function previewExtensionDelta(r, prevEnd, newEnd, prevStart, newStart) {
     return { covStart: invCovStart(inv, r), covEnd: invCovEnd(inv, r), locked: !!inv.locked, closed: tot.paid > 0 && tot.balance <= 0, billed, paid };
   };
   const chunks = invs.map(chunkOf);
+  const winStart = chunks[0].covStart;   // #444 true series start — mirrors billExtension's retro-spill credit
   let delta = 0;
   const reconcile = (c, ns, ne) => units.forEach((eu) => {     // retro re-price chunk to cheapest(ns→ne) − billed
     const target = priceOf(eu, ns, ne), billed = c.billed[eu.unitId] || 0, d = target - billed;
@@ -1093,7 +1113,20 @@ function previewExtensionDelta(r, prevEnd, newEnd, prevStart, newStart) {
   const standalone = (c, ns, ne) => units.forEach((eu) => {    // OFF grow / spill: the added segment priced on its own
     const amt = priceOf(eu, ns, ne); if (amt > 0.005) { delta += amt; c.billed[eu.unitId] = (c.billed[eu.unitId] || 0) + amt; }
   });
-  const spill = (ns, ne) => { const c = { covStart: ns, covEnd: ne, locked: false, closed: false, billed: {}, paid: {} }; standalone(c, ns, ne); return c; };
+  const seriesBilled = (uId) => chunks.reduce((a, c) => a + (c.billed[uId] || 0), 0);
+  // #444 retro spill: the continuation credits ALL prior series billing toward cheapest(fullWin),
+  // so an already-billed (even PAID) sub-tier day counts toward the blend, not re-billed. Positive
+  // only (refund-first). Without fullStart (OFF), the added segment is priced standalone.
+  const spill = (ns, ne, fullStart, fullEnd) => {
+    const c = { covStart: ns, covEnd: ne, locked: false, closed: false, billed: {}, paid: {} };
+    if (retro && fullStart) units.forEach((eu) => {
+      const credit = Math.max(0, Math.round((priceOf(eu, fullStart, fullEnd) - seriesBilled(eu.unitId)) * 100) / 100);
+      const amt = Math.min(credit, priceOf(eu, ns, ne));   // cap at the added segment (untracked manual line can't inflate the credit)
+      if (amt > 0.005) { delta += amt; c.billed[eu.unitId] = amt; }
+    });
+    else standalone(c, ns, ne);
+    return c;
+  };
   const daysOf = (c) => Math.max(0, dayDiff(parseISO(c.covStart), parseISO(c.covEnd)));
   let guard = 0;
   // BACK — grow the active (latest) chunk's covEnd toward targetEnd, spilling fresh chunks.
@@ -1101,15 +1134,16 @@ function previewExtensionDelta(r, prevEnd, newEnd, prevStart, newStart) {
   let coveredEnd = active.covEnd || prevEnd || r.startDate;
   while (targetEnd && coveredEnd && dayDiff(parseISO(coveredEnd), parseISO(targetEnd)) > 0 && guard++ < 200) {
     const room = INV_CAP_DAYS - daysOf(active);
-    if (active.locked || active.closed || room <= 0) { const ce = minISO(addDaysISO(coveredEnd, INV_CAP_DAYS), targetEnd); active = spill(coveredEnd, ce); chunks.push(active); coveredEnd = ce; }
+    if (active.locked || active.closed || room <= 0) { const ce = minISO(addDaysISO(coveredEnd, INV_CAP_DAYS), targetEnd); active = spill(coveredEnd, ce, winStart, ce); chunks.push(active); coveredEnd = ce; }
     else { const grow = Math.min(room, dayDiff(parseISO(coveredEnd), parseISO(targetEnd))); const nce = addDaysISO(coveredEnd, grow); retro ? reconcile(active, active.covStart, nce) : standalone(active, coveredEnd, nce); active.covEnd = nce; coveredEnd = nce; }
   }
+  const winEnd = coveredEnd;   // #444 latest covered end after the back loop
   // FRONT — grow the earliest chunk's covStart toward targetStart, spilling fresh chunks.
   let earliest = chunks[0];
   let coveredStart = earliest.covStart || prevStart || r.startDate;
   while (targetStart && coveredStart && dayDiff(parseISO(targetStart), parseISO(coveredStart)) > 0 && guard++ < 200) {
     const room = INV_CAP_DAYS - daysOf(earliest);
-    if (earliest.locked || earliest.closed || room <= 0) { const cs = maxISO(addDaysISO(coveredStart, -INV_CAP_DAYS), targetStart); earliest = spill(cs, coveredStart); chunks.unshift(earliest); coveredStart = cs; }
+    if (earliest.locked || earliest.closed || room <= 0) { const cs = maxISO(addDaysISO(coveredStart, -INV_CAP_DAYS), targetStart); earliest = spill(cs, coveredStart, cs, winEnd); chunks.unshift(earliest); coveredStart = cs; }
     else { const grow = Math.min(room, dayDiff(parseISO(targetStart), parseISO(coveredStart))); const ncs = addDaysISO(coveredStart, -grow); retro ? reconcile(earliest, ncs, earliest.covEnd) : standalone(earliest, ncs, coveredStart); earliest.covStart = ncs; coveredStart = ncs; }
   }
   return Math.round(delta * 100) / 100;
@@ -1144,6 +1178,7 @@ function billExtension(r, prevEnd, prevStart) {
   const targetEnd = r.endDate;
   let active = rentalActiveInvoice(r); if (!active) return null;
   if (!active.covStart) { active.covStart = prevStart || r.startDate; active.covEnd = prevEnd || r.endDate; active.covOf = r.rentalId; }   // backfill legacy from the OLD window
+  const winStart = invCovStart(rentalInvoices(r)[0] || active, r);   // #444 true series start — retro spills price cheapest(winStart→chunkEnd), crediting the whole series
   let coveredEnd = active.covEnd || prevEnd || r.startDate;
   const sum = { count: 0, subtotalDelta: 0, invoiceIds: [], newInvoices: 0, retro, invoiceId: r.invoiceId };
   let guard = 0;
@@ -1155,7 +1190,7 @@ function billExtension(r, prevEnd, prevStart) {
     if (active.locked || closed || room <= 0) {                                  // spill → fresh chunk invoice
       const chunkEnd = minISO(addDaysISO(coveredEnd, INV_CAP_DAYS), targetEnd);
       active = createContinuationInvoice(r, coveredEnd, chunkEnd);
-      const res = billChunkUnits(active, r, coveredEnd, chunkEnd, coveredEnd, retro, 'rental', r.invoiceId);
+      const res = billChunkUnits(active, r, coveredEnd, chunkEnd, coveredEnd, retro, 'rental', r.invoiceId, retro ? { start: winStart, end: chunkEnd } : null);
       reindex('invoices', active);
       sum.newInvoices++; sum.count += res.count; sum.subtotalDelta += res.delta; sum.invoiceIds.push(active.invoiceId);
       coveredEnd = chunkEnd;
@@ -1175,6 +1210,7 @@ function billExtension(r, prevEnd, prevStart) {
   // Symmetric to the back loop: grow the earliest OPEN chunk's covStart earlier (retro reconcile /
   // OFF standalone), or spill a fresh ≤28-day continuation chunk when it's paid/locked/full.
   const targetStart = r.startDate;
+  const winEnd = coveredEnd;   // #444 latest covered end after the back loop — front retro spills price cheapest(chunkStart→winEnd)
   let earliest = rentalInvoices(r)[0] || active;
   let coveredStart = earliest.covStart || prevStart || r.startDate;
   while (targetStart && coveredStart && dayDiff(parseISO(targetStart), parseISO(coveredStart)) > 0 && guard++ < 60) {
@@ -1184,7 +1220,7 @@ function billExtension(r, prevEnd, prevStart) {
     if (earliest.locked || closed || room <= 0) {                                // spill → fresh FRONT chunk invoice
       const chunkStart = maxISO(addDaysISO(coveredStart, -INV_CAP_DAYS), targetStart);
       earliest = createContinuationInvoice(r, chunkStart, coveredStart);
-      const res = billChunkUnits(earliest, r, chunkStart, coveredStart, chunkStart, retro, 'rental', r.invoiceId);
+      const res = billChunkUnits(earliest, r, chunkStart, coveredStart, chunkStart, retro, 'rental', r.invoiceId, retro ? { start: chunkStart, end: winEnd } : null);
       reindex('invoices', earliest);
       sum.newInvoices++; sum.count += res.count; sum.subtotalDelta += res.delta; sum.invoiceIds.push(earliest.invoiceId);
       coveredStart = chunkStart;
@@ -1850,21 +1886,27 @@ function categoryNextAvailable(categoryId) {
 /* §10 why-none — the terse reason a category has 0 units free, for the sales lead plate
    when there's no next-return date to show (Jac 2026-07-01). Judged on the ACTIVE fleet only
    (so it never contradicts the PASS/NR/FAIL tally, which is also Active-only). Ordered from
-   "nothing to rent" to "out": no units → all off-fleet (Sold/Inactive/For Sale) → every Active
-   unit Failed → out but its return date already passed (Overdue) → else out (On rent, no
-   return date on record — else a future NEXT date would have shown instead). */
+   "nothing to rent" to "out": no units (N/A) → all off-fleet, named specifically (Sold /
+   For Sale / Inactive) → every Active unit Failed → out with its return date already passed
+   (Overdue) → else out with no end date on record → "End Dates?" (a data prompt — this should
+   be impossible once end dates are entered, else a future NEXT date would have shown). */
 function categoryUnavailReason(categoryId) {
   const units = DATA.units.filter((u) => u.categoryId === categoryId);
-  if (!units.length) return 'No units';
+  if (!units.length) return 'N/A';
   const active = units.filter((u) => u.fleetStatus === 'Active');
-  if (!active.length) return 'Off fleet';
+  if (!active.length) {
+    // name the actual off-fleet status (Sold / For Sale / Inactive) rather than a vague umbrella
+    const counts = {};
+    units.forEach((u) => { counts[u.fleetStatus] = (counts[u.fleetStatus] || 0) + 1; });
+    return Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0] || 'Off fleet';
+  }
   if (!active.some((u) => u.inspectionStatus !== 'Failed')) return 'Failed';
   const overdue = active.some((u) => {
     if (u.inspectionStatus === 'Failed') return false;
     const r = activeRentalForUnit(u.unitId);
     return r && r.endDate && r.endDate < TODAY_ISO;   // out, and its scheduled return has passed
   });
-  return overdue ? 'Overdue' : 'On rent';
+  return overdue ? 'Overdue' : 'End Dates?';   // out but no end date recorded → prompt to enter it
 }
 /** A unit's current rental bucket (mirrors §12.4 Rental Status into 3 buckets). */
 function unitRentalBucket(u) {
@@ -2198,6 +2240,7 @@ function openStandard(card, recId, recType) {
 function showCategoryUnits(categoryId) {
   const cat = IDX.category.get(categoryId); if (!cat) return;
   const s = activeSession(), us = s.cards.units; if (!us) return;
+  pushCardHistory(us, true);   // record the pre-jump view + column layout so Back returns to the category card (Jac 2026-07-02)
   // Match the pill's count: narrow Units to this category's AVAILABLE units, not the
   // whole category. The 'available' token engages the §10 availability lens (rowMatches)
   // and makes availWin resolve to the in-scope window (open rental window, else "now"),
@@ -2221,6 +2264,7 @@ function showCategoryUnits(categoryId) {
 function showNextAvailableUnit(unitId) {
   const u = IDX.unit.get(unitId); if (!u) return;
   const s = activeSession(); if (!s.cards.units) return;
+  pushCardHistory(s.cards.units, true);   // record the pre-jump view + column layout so Back returns to the category card; openStandard's own push dedups against this (Jac 2026-07-02)
   let unitsSlot = null;
   if (s.cols) {
     const slots = ['left', 'middle', 'right'].filter((k) => k in s.cols);
@@ -2275,19 +2319,45 @@ function clearAnchor() {
    the other cards and the tab anchor. A view is a {mode,recId,recType} snapshot.
    Back/forward chevrons (and right-click = Back) step through it. */
 const cardSnap = (cs) => ({ mode: cs.mode, recId: cs.recId, recType: cs.recType || null });
+// A "full" view snapshot — additionally captures the list search/limit AND the column
+// layout (which slot holds which card + the focused/mobile column). Used for the CROSS-
+// COLUMN jumps a category mini-card makes into Units (showCategoryUnits / showNext-
+// AvailableUnit swap Categories → Units): a plain cardSnap can't reverse the swap or the
+// narrowed search, so those jumps record a viewSnap and Back restores the whole category
+// view — bringing back the mini-cards exactly where they were (Jac 2026-07-02).
+function viewSnap(cs) {
+  const s = activeSession();
+  return { mode: cs.mode, recId: cs.recId, recType: cs.recType || null,
+    search: cs.search, listLimit: cs.listLimit,
+    cols: s.cols ? { ...s.cols } : null, focusedCard: state.focusedCard, mobileCol: state.mobileCol };
+}
+// Restore the column layout carried by a viewSnap (a no-op for plain cardSnaps, which
+// have no 'cols' key — so ordinary same-card Back/Forward never touches the layout).
+function restoreLayout(snap) {
+  if (!snap || !('cols' in snap)) return;
+  const s = activeSession();
+  if (snap.cols) s.cols = { ...snap.cols };
+  if (snap.focusedCard !== undefined) state.focusedCard = snap.focusedCard;
+  if (snap.mobileCol !== undefined) state.mobileCol = snap.mobileCol;
+}
 const sameSnap = (a, b) => a && b && a.mode === b.mode && String(a.recId) === String(b.recId);
 const HIST_CAP = 50;
 // Record the card's CURRENT view before we change it; opening a new view clears the
-// forward branch (standard back/forward semantics).
-function pushCardHistory(cs) {
+// forward branch (standard back/forward semantics). `full` records a viewSnap (search +
+// column layout) for cross-column jumps that a plain snapshot couldn't reverse.
+function pushCardHistory(cs, full) {
   if (!cs) return;
-  const snap = cardSnap(cs);
+  const snap = full ? viewSnap(cs) : cardSnap(cs);
   const top = cs.backStack[cs.backStack.length - 1];
   if (!sameSnap(top, snap)) cs.backStack.push(snap);
   if (cs.backStack.length > HIST_CAP) cs.backStack.shift();
   cs.fwdStack = [];
 }
-function applySnap(cs, snap) { cs.mode = snap.mode; cs.recId = snap.recId; cs.recType = snap.recType || null; }
+function applySnap(cs, snap) {
+  cs.mode = snap.mode; cs.recId = snap.recId; cs.recType = snap.recType || null;
+  if ('search' in snap) { cs.search = snap.search; cs.listLimit = snap.listLimit; }   // viewSnap → restore the narrowed list too
+  restoreLayout(snap);                                                                // viewSnap → un-swap the column (bring the category cards back)
+}
 // Step this one card back / forward through its own history (other cards untouched).
 function cardBack(card) {
   const cs = activeSession().cards[card]; if (!cs) return;
@@ -2303,16 +2373,20 @@ function cardBack(card) {
     }
     return;
   }
-  cs.fwdStack.push(cardSnap(cs));
-  applySnap(cs, cs.backStack.pop());
+  const prev = cs.backStack.pop();
+  // Reversing a cross-column jump: the snapshot we leave behind for Forward must carry the
+  // CURRENT search + layout too, else Forward couldn't re-do the jump.
+  cs.fwdStack.push('cols' in prev ? viewSnap(cs) : cardSnap(cs));
+  applySnap(cs, prev);
   if (cs.mode === 'standard' && cs.recId != null) ackComments(recOf(entityCardOf(card, cs.recType), cs.recId));
   sweepEmptyDrafts(cs.recId);   // #8 — sweep the abandoned empty draft we stepped away from (keep the one we land on)
   render();
 }
 function cardFwd(card) {
   const cs = activeSession().cards[card]; if (!cs || !cs.fwdStack.length) return;
-  cs.backStack.push(cardSnap(cs));
-  applySnap(cs, cs.fwdStack.pop());
+  const nxt = cs.fwdStack.pop();
+  cs.backStack.push('cols' in nxt ? viewSnap(cs) : cardSnap(cs));
+  applySnap(cs, nxt);
   if (cs.mode === 'standard' && cs.recId != null) ackComments(recOf(entityCardOf(card, cs.recType), cs.recId));
   render();
 }
@@ -2411,8 +2485,14 @@ function pillTo(card, recId) {
   if (recId == null) return;
   // 3-column display: a link pill forces its column to reveal the target card.
   const revealCol = (member) => { const cs = activeSession(); const col = COLUMN_OF[member]; if (cs.cols && col) { cs.cols[col] = member; const idx = COLUMNS.findIndex((c) => c.id === col); if (idx >= 0) state.mobileCol = idx; } };   // §M1 — also flip the visible phone column so a cross-column link lands where you can see it
-  if (SHOP_TYPES.includes(card)) { if (recOf(card, recId)) { revealCol(card); openStandard('shop', recId, card); } return; }
-  if (recOf(card, recId)) { revealCol(card); openStandard(card, recId); }
+  // If revealing the target SWAPS its column — hiding the card you're on now (e.g. an invoice
+  // → its customer, both in the right column; or a unit → its category, both left) — record the
+  // pre-swap view + column layout on the DESTINATION card so Back returns you to the card you
+  // left, exactly where it was. Same viewSnap mechanism the categories → units jump uses; no-op
+  // when the target is already visible in its own column (no swap). (Jac 2026-07-03)
+  const noteSwap = (member) => { const s = activeSession(), col = COLUMN_OF[member]; if (s.cols && col && s.cols[col] !== member) pushCardHistory(s.cards[SHOP_TYPES.includes(member) ? 'shop' : member], true); };
+  if (SHOP_TYPES.includes(card)) { if (recOf(card, recId)) { noteSwap(card); revealCol(card); openStandard('shop', recId, card); } return; }
+  if (recOf(card, recId)) { noteSwap(card); revealCol(card); openStandard(card, recId); }
 }
 
 /* ── global search (§5.4) ────────────────────────────────────────────────── */
@@ -2503,6 +2583,8 @@ function totColMatch(card, rec, col, value) {
   if (col === '__date') return dateTermHits(card, rec, value);   // §5.4d date-picker filter term
   if (col === '__transport') return card === 'rentals' && rentalHasLeg(rec, value);   // §11 Delivery/Pickup leg filter
   if (col === '__wo') return DATA.workOrders.some((w) => w.unitId === rec.unitId && w.phase !== 'Complete' && !w.cancelled && (value === 'open' || w.phase === 'Part Ordered' || (w.lineItems || []).some((l) => l.phase === 'Part Ordered')));
+  if (col === '__wop') return DATA.workOrders.some((w) => w.unitId === rec.unitId && w.phase !== 'Complete' && !w.cancelled && (w.phase || '—') === value);   // §13.5 — unit has an open WO stuck at this phase (bottleneck)
+  if (col === '__insp') return value === 'Ready' ? rec.inspectionStatus === 'Ready' : rec.inspectionStatus !== 'Ready';   // §13.5 — Passed vs Not Ready (Failed folds into Not Ready; Jac retired the Failed bucket)
   if (col === '__cond') return rec.inspectionStatus === value;
   if (col === '__svc') { const s = topServiceForUnit(rec); return !!rec.washRequested || !!(s && s.remaining < 0); }   // service-due: overdue service or wash requested
   if (col === '__fleet') { const [cat, status, kind] = String(value).split('|'); if (rec.categoryId !== cat) return false; return kind === 'rental' ? unitRentalBucket(rec) === status : rec.inspectionStatus === status; }   // A1 — fleet-bar segment = category + inspection/rental status
@@ -3965,7 +4047,7 @@ function openWranglerForKpi(roleId, idx) {
   if (o) closeOverlay();
   state.wrangler.kpiTarget = kt;
   openWranglerDock({
-    messages: [{ role: 'assistant', content: `🤠 Let's wrangle the ${role.label} role's Ring ${idx + 1} (now “${ring.label || '—'}”). Tell me in plain English what this ring should measure — I'll ask anything I need, prove it against your live yard data, and lock it in.` }],
+    messages: [{ role: 'assistant', content: `🤠 Let's wrangle the ${role.label} role's Ring ${idx + 1} (now “${ring.label || '—'}”). Tell me in plain English what this ring should measure — I'll ask anything I need, prove it against your live yard data, and lock it in.`, at: Date.now() }],
     draft: '',
   });
 }
@@ -4559,7 +4641,7 @@ const RB_FOUNDATION = {
     'ONE orange, ONE meaning: the selected tab · ignition · primary action. Never decorative.',
     rbSw('var(--accent)', 'Accent', 'selected · ignition', 'var(--on-orange)')],
   'color-status': ['◐', 'Status palette', '--green / --yellow / --red / --blue / --navy / --purple / --gray',
-    'Registry status colors — each carries a fixed meaning on every card (Ready · caution · danger · link…).',
+    'Registry status colors — each carries a fixed meaning on every card (Passed · caution · danger · link…).',
     ['var(--green)', 'var(--yellow)', 'var(--red)', 'var(--blue)', 'var(--navy)', 'var(--purple)', 'var(--gray)'].map((c) => `<span class="rb-sw" style="background:${c}"></span>`).join('')],
   'color-semantic': ['▣', 'Action-color law', 'commit = blue · money = green · danger = red',
     'Action INTENT, not status: blue commits/saves · green takes money · solid red confirms destructive.',
@@ -5049,7 +5131,7 @@ const ROWS = {
     } else {
       // 0 free and no return date to show → tell the salesperson WHY in one word (Jac).
       const why = categoryUnavailReason(c.categoryId);
-      lead = `<div class="catr-cell catr-lead catr-lead-none" style="--ct:var(--red);--ct-bg:var(--red-bg)" data-tip="None available — ${esc(why.toLowerCase())}"><span class="cc-k">NONE</span><span class="cc-v cc-date">${esc(why)}</span></div>`;
+      lead = `<div class="catr-cell catr-lead catr-lead-none" style="--ct:var(--red);--ct-bg:var(--red-bg)" data-tip="None available — ${esc(why.toLowerCase())}"><span class="cc-k">NONE</span><span class="cc-v cc-why">${esc(why)}</span></div>`;
     }
     // The three status plates (Passed · Not Ready · Failed inspection) filter Units to that
     // status in this category via the established js-fleet-filter path (like the detail mixbar).
@@ -5919,6 +6001,11 @@ const DETAIL = {
     // trail and lives on the Invoice card; re-billing creates a fresh invoice (createInvoiceForRental).
     const invFullyRefunded = (iv) => invoiceTotals(iv).status === 'Refunded';
     const liveInvs = invs.filter((iv) => !invFullyRefunded(iv));
+    // #414 — a $0-total invoice bills NOTHING for the rental's time (a pure credit / overpayment
+    // slot, e.g. a payment recorded before any line was built). Like a fully-refunded one it holds
+    // no live charge, so it must NOT block the +Invoice affordance — otherwise the rental can never
+    // be billed. It still shows as a pill for the trail; re-billing opens a fresh invoice.
+    const invHoldsCharge = (iv) => !invFullyRefunded(iv) && invoiceTotals(iv).total > 0;
     const inv = invs[0] || (r.invoiceId ? IDX.invoice.get(r.invoiceId) : null);
     const liveInv = liveInvs[0] || null;
     const invT = liveInv ? invoiceTotals(liveInv) : null;
@@ -5932,12 +6019,13 @@ const DETAIL = {
     const paidForThis = inv ? rentalAllocated(inv, r.rentalId) : 0;
     const createInvBtn = addBtn('Invoice', { link: true, js: 'js-create-invoice', h: 26, data: { rec: r.rentalId } });
     // Render every invoice pill (a fully-refunded one carries a ↩ + "re-bill" tip); then offer
-    // +Invoice whenever there is no LIVE invoice left — so a refund restores the re-bill path (#378).
+    // +Invoice whenever no linked invoice actually holds a charge — so a refund (#378) OR a
+    // $0-total credit slot (#414) restores the re-bill path.
     const invPill = (invs.length
       ? invs.map((iv, k) => { const refunded = invFullyRefunded(iv);
           const tip = refunded ? 'Refunded — use +Invoice to re-bill on a fresh invoice' : (invs.length > 1 ? 'Invoice ' + (k + 1) + ' of ' + invs.length + (iv.contOf ? ' — continuation (28-day cap)' : '') : '');
           return `<span class="pill ref link" data-r="R2" data-pill-card="invoices" data-pill-rec="${esc(iv.invoiceId)}"${tip ? ` data-tip="${esc(tip)}"` : ''}>${refunded ? '↩ ' : ''}${CARD_ICON.invoices}${esc(invoiceShort(iv.invoiceId))}${k === 0 && paidForThis <= 0 ? `<span class="x" data-x="inv-remove" data-tip="unlink — allowed while $0 is assigned to this rental; afterwards refund first">✕</span>` : ''}</span>`; }).join('')
-      : '') + (liveInvs.length ? '' : createInvBtn);
+      : '') + (invs.some(invHoldsCharge) ? '' : createInvBtn);
 
     /* Balance (paid / total) for the header right side — summed across the invoice series. */
     const rentLines = rentalLineItems(r);
@@ -7390,7 +7478,8 @@ function legacyKpiPct(roleId) {
   if (roleId === 'mtech') {
     const fc = R.filter((r) => r.fieldCall).length;
     const successful = R.length ? Math.round((1 - fc / R.length) * 100) : 100;
-    // Ready Rate — Ready ÷ rentable fleet, excluding Failed inspections + Inactive/Sold/For-Sale fleetStatus (Jac).
+    // Pass Rate — Passed ÷ rentable fleet, excluding Failed inspections + Inactive/Sold/For-Sale fleetStatus (Jac).
+    // (stored inspection value is still 'Ready' for live-DB compatibility; the term users see is 'Passed'.)
     const skipFleet = new Set(['Inactive', 'Sold', 'For Sale']);
     const eligible = DATA.units.filter((u) => !skipFleet.has(u.fleetStatus) && u.inspectionStatus !== 'Failed');
     const readyRate = pctOf(eligible.filter((u) => u.inspectionStatus === 'Ready').length, eligible.length);
@@ -7432,11 +7521,11 @@ function legacyKpiPct(roleId) {
 }
 // Plain-English explanation of each KPI's formula — shown on hover in the role popup.
 const KPI_HELP = {
-  'Healthy Fleet':          'Share of your fleet that’s rentable right now (Ready + Not-Ready units ÷ total fleet).',
+  'Healthy Fleet':          'Share of your fleet that’s rentable right now (Passed + Not-Ready units ÷ total fleet).',
   'WO Completion Rate':     'Work orders marked Complete ÷ all live work orders (cancelled ones excluded). Higher = the shop is keeping up.',
   'Parts Breakeven':        'How much of your parts cost is recovered by earnings from billed work orders. Full ring = billed WOs cover the parts.',
   'Successful Rentals':     'Rentals that went out without a breakdown — 1 minus the share of rentals that got a Field Call.',
-  'Ready Rate':             'Share of the rentable fleet that’s Ready to rent — Ready ÷ eligible units (Failed, Inactive, Sold & For-Sale excluded).',
+  'Pass Rate':              'Share of the rentable fleet that’s Passed inspection — Passed ÷ eligible units (Failed, Inactive, Sold & For-Sale excluded).',
   'WO Rate (20% goal)':     'Progress toward the goal: 20% of the last 30 days’ inspections spawning a work order is healthy (catching problems). Full ring at 20%.',
   'On-Time':                'Rentals you actually delivered/handled ÷ rentals scheduled (excludes quotes, cancels, no-shows).',
   'Wash Completion':        'Of the units flagged for a wash, how many got washed (washed ÷ wash-requested).',
@@ -7752,7 +7841,16 @@ function commsRailEl() {
     const active = wrOpen && (state.wrangler.reqNumber === rq.number || state.wrangler.id === 'req' + rq.number);
     return `<button class="crail-tab ${cls}${active ? ' is-active' : ''}" data-wrc-needs="${rq.number}" role="tab" aria-selected="${active}" data-tip="${tip}"><span class="crail-dot"></span><span class="crail-t">${trim(rq.title || ('Request #' + rq.number))}</span></button>`;
   }).join('');
-  const snaps = (state.wranglerRail || []).filter((c) => !c.reqNumber);
+  // §18g A chat is "resolved" — take it off the rail — once the bug it filed is fixed/closed:
+  // it filed at least one issue (message m.issue) and NONE of those are still open. Guarded on a
+  // loaded requests list so a failed/empty fetch never hides live chats. Non-destructive — the chat
+  // stays in the store, it just leaves the tab bar (Jac 2026-07-03 — "take away the resolved ones").
+  const wrChatResolved = (c) => {
+    if (!reqLoaded) return false;
+    const filed = (c.messages || []).map((m) => m.issue).filter((n) => n != null);
+    return filed.length > 0 && filed.every((n) => !wranglerRequests.some((rq) => rq.number === n));
+  };
+  const snaps = (state.wranglerRail || []).filter((c) => !c.reqNumber && !wrChatResolved(c));
   // the live chat first if it's a brand-new one not yet snapshotted onto the rail
   let liveTab = '';
   if (wrOpen && state.wrangler.id && !state.wrangler.reqNumber && !snaps.some((c) => c.id === state.wrangler.id) && (state.wrangler.messages || []).length) {
@@ -7903,6 +8001,19 @@ function wrChatFormat(raw) {
   s = s.replace(/`([^`]+)`/g, '<code>$1</code>');           // `inline code`
   return s.replace(/\n/g, '<br>');
 }
+// §18g — stamp a Mr. Wrangler message with its send time so a glance tells you how current the
+// conversation is. Time-only within a day; the day is prepended when it rolls over (and on the
+// first message). Chats saved before we recorded per-message times simply show none.
+function wrMsgStamp(at, prevAt) {
+  if (!at) return '';
+  const d = new Date(at);
+  const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  if (prevAt && new Date(prevAt).toDateString() === d.toDateString()) return time;
+  const day = d.toDateString() === new Date().toDateString()
+    ? 'Today'
+    : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return day + ' · ' + time;
+}
 // §18 Mr. Wrangler dock — renders the floating dock HTML (mirrors wrangler overlay but as a dock).
 function wranglerDockEl() {
   const o = state.wrangler;
@@ -7948,7 +8059,9 @@ function wranglerDockEl() {
         const txt = m.content ? wrChatFormat(m.content) : '';
         // ask_user option chips (Stage 2b) — tappable only while THIS question is the live pending one.
         const ask = (m.askOptions && m.askOptions.length && o.ask) ? `<div class="wr-ask">${m.askOptions.map((opt) => `<button class="wr-askbtn js-wr-ask" data-ans="${esc(opt)}">${esc(opt)}</button>`).join('')}</div>` : '';
-        return `<div class="wr-msg ${m.role}">${m.role === 'assistant' ? '<span class="wr-av">🤠</span>' : ''}<div class="wr-bub">${imgs}${files}${txt}${act}${ask}</div></div>`;
+        const stamp = wrMsgStamp(m.at, i > 0 ? o.messages[i - 1].at : null);   // §18g when this turn happened — currency at a glance
+        const time = stamp ? `<span class="wr-time">${esc(stamp)}</span>` : '';
+        return `<div class="wr-msg ${m.role}">${m.role === 'assistant' ? '<span class="wr-av">🤠</span>' : ''}<div class="wr-bub-wrap"><div class="wr-bub">${imgs}${files}${txt}${act}${ask}</div>${time}</div></div>`;
       }).join('')
     : (o.reqNumber
         ? '<div class="wr-empty">That’s the request up top. Reply here to talk it over with Mr. Wrangler, or use the buttons above to Approve or Dismiss it.</div>'
@@ -8966,11 +9079,11 @@ function gvRestore(src, cs, idx) {
   cs.filterTerms = cs.filterTerms || [];
   for (const s of sel) cs.filterTerms.push({ t: s.t, col: s.col, value: s.value, neg: false, g: k });
 }
-function gvOpen(card, src) { const cs = activeSession().cards[card]; cs.graphView = true; gvRestore(src, cs, cs.graphIdx || 0); cs.listLimit = undefined; render(); }
+function gvOpen(card, src) { const cs = activeSession().cards[card]; cs.graphView = true; if (GV2[src]) { gvStripTerms(cs); cs.listLimit = undefined; return render(); } gvRestore(src, cs, cs.graphIdx || 0); cs.listLimit = undefined; render(); }
 function gvChevron(card, src, dir) { const cs = activeSession().cards[card]; gvSaveCurrent(src, cs); gvRestore(src, cs, (cs.graphIdx || 0) + dir); cs.listLimit = undefined; render(); }
 // Idempotent close-sync: any path that flips graphView off (record open, invoice surface,
 // switch to Shop 'all') leaves g-terms behind — save them to memory + strip them.
-function gvSyncClosed(src, cs) { if (cs.graphView) return; if (!(cs.filterTerms || []).some((t) => t.g)) return; gvSaveCurrent(src, cs); gvStripTerms(cs); }
+function gvSyncClosed(src, cs) { if (cs.graphView) return; if (!(cs.filterTerms || []).some((t) => t.g)) return; if (GV2[src]) { gvStripTerms(cs); return; } gvSaveCurrent(src, cs); gvStripTerms(cs); }
 function toggleGraphSeg(card, src, col, value, label) {
   const cs = activeSession().cards[card]; const views = graphViewsFor(src); if (!views) return;
   const k = gvKey(src, views[gvClampIdx(cs.graphIdx, views.length)]);
@@ -9058,6 +9171,7 @@ function gvRenderView(card, src, cs, v) {
   return '';
 }
 function graphPanelHtml(card, src, cs) {
+  if (GV2[src]) return graphPanelV2(card, src, cs);   // §13.5 V2 chrome — every card + shop segment (shop 'all' keeps its stackbars front page)
   const views = graphViewsFor(src); if (!views) return '';
   const idx = gvClampIdx(cs.graphIdx, views.length), v = views[idx];
   const dots = views.map((_, i) => `<i class="${i === idx ? 'on' : ''}"></i>`).join('');
@@ -9079,6 +9193,393 @@ function openGvWinMenu(anchorEl, card, src) {
   const opt = (d, lbl) => `<button class="dd-item js-gvwin-opt${cur === d ? ' on' : ''}" data-card="${esc(card)}" data-src="${esc(src)}" data-win="${d}">${lbl}</button>`;
   openDropdown(anchorEl, opt(0, 'All time') + GV_WIN_OPTS.map((d) => opt(d, `Last ${d} days`)).join(''));
 }
+
+/* §13.5 GRAPH V2 (Jac 2026-07-03) — part of the APP-25 Graph chapter, not a new chapter.
+   The redesigned per-card graph section, rolled out from Units to EVERY card (Jac):
+   named GROUP TABS on top (replacing chevrons; related data sets are FIXED side by side —
+   no user-driven compare), a left TIME-RAIL of toggle periods (Wk/Mo/30/60/90; none
+   selected = the default "current" snapshot — click the active one to drop back), COUNTS
+   FOLDED ONTO THE CHART (no side pill column, no per-chart titles, no legends — hover +
+   aria name each mark). A snapshot pie MORPHS into a time-series (stacked proportional-
+   area / trajectory) where a dated source exists; snapshot-only metrics hide the rail.
+   Sources: every grid card + each Shop segment. The Shop 'all' front page (the mechanic
+   landing worklist) keeps its stackbars — it is a worklist, not a carousel. Filters reuse
+   the same col/value pairs each list already matches, tagged g="<src>:<metric>". */
+const U_PERIODS = [{ k: 'wk', label: 'Wk', full: 'This week' }, { k: 'mo', label: 'Mo', full: 'This month' }, { k: '30', label: '30d', full: 'Last 30 days' }, { k: '60', label: '60d', full: 'Last 60 days' }, { k: '90', label: '90d', full: 'Last 90 days' }];
+/* Tabs are GROUPS: related data sets are FIXED side by side (Jac). Keyed by SOURCE —
+   a grid card id, or a Shop segment id ('inspections'/'workOrders'/'serviceOrders'). */
+const GV2 = {
+  units: { groups: [
+    { key: 'inspection', label: 'Inspection', metrics: ['inspection', 'service'] },
+    { key: 'fleet', label: 'Fleet', metrics: ['fleet'] },
+    { key: 'shop', label: 'WO', metrics: ['shop', 'fc'] },
+    { key: 'nums', label: '#s', metrics: ['nums'] },
+  ] },
+  rentals: { groups: [
+    { key: 'revenue', label: 'Revenue', metrics: ['revenue'] },
+    { key: 'booked', label: 'Booked', metrics: ['booked'] },
+    { key: 'invoice', label: 'Invoices', metrics: ['rinvoice'] },
+    { key: 'nums', label: '#s', metrics: ['rnums'] },
+  ] },
+  customers: { groups: [
+    { key: 'account', label: 'Accounts', metrics: ['caccount', 'cpay'] },
+    { key: 'spend', label: 'Top Spend', metrics: ['cspend'] },
+    { key: 'nums', label: '#s', metrics: ['cnums'] },
+  ] },
+  categories: { groups: [{ key: 'cats', label: 'Categories', metrics: ['catunits'] }] },
+  invoices: { groups: [{ key: 'inv', label: 'Invoices', metrics: ['istatus', 'ibal'] }] },
+  inspections: { groups: [{ key: 'results', label: 'Inspections', metrics: ['iresult'] }] },
+  workOrders: { groups: [{ key: 'wo', label: 'Work Orders', metrics: ['wophase', 'wotype'] }] },
+  serviceOrders: { groups: [{ key: 'svc', label: 'Service', metrics: ['sstatus'] }] },
+};
+// metrics with a time dimension (the rail applies); everything else is snapshot-only
+const GV2_HIST = { inspection: true, fc: true, revenue: true, booked: true, iresult: true, wophase: true };
+// per-metric display labels (column headers when a tab shows a pair)
+const GV2_LABEL = { inspection: 'Inspection', service: 'Service Orders', fleet: 'Fleet', shop: 'Work Orders', fc: 'Field Calls', nums: '#s',
+  revenue: 'Revenue', booked: 'Booked', rinvoice: 'Invoice Status', rnums: '#s', caccount: 'Account Types', cpay: 'Pay Status', cspend: 'Top Customers', cnums: '#s',
+  catunits: 'Units per Category', istatus: 'Payment Status', ibal: 'Biggest Balances', iresult: 'Results', wophase: 'By Phase', wotype: 'By Type', sstatus: 'Service Status' };
+const U_DARKINK = new Set(['green', 'yellow', 'orange', 'brown', 'gray']);   // slices that carry dark ink labels (else white)
+const uISO = (d) => d.toISOString().slice(0, 10);
+function uDays(p) { if (p === 'wk') return 7; if (p === 'mo') return TODAY.getDate(); return Number(p) || 0; }
+function uCutoff(p) {
+  if (p === 'wk') { const d = new Date(TODAY); const back = (d.getDay() + 6) % 7; d.setDate(d.getDate() - back); return uISO(d); }   // Monday of this week
+  if (p === 'mo') return uISO(new Date(TODAY.getFullYear(), TODAY.getMonth(), 1));
+  const n = Number(p); if (n) { const d = new Date(TODAY); d.setDate(d.getDate() - n + 1); return uISO(d); }
+  return null;
+}
+const uInWin = (iso, cut) => !cut || (!!iso && iso.slice(0, 10) >= cut);
+const uBuckets = (p) => gvBuckets(uDays(p));   // reuse the tested bucket engine (adapts daily/weekly/monthly)
+// compact money for bar tops ($12,345 → $12k) — the full figure rides the hover tip
+const uMoneyK = (v) => v >= 10000 ? '$' + Math.round(v / 1000) + 'k' : v >= 1000 ? '$' + (Math.round(v / 100) / 10) + 'k' : '$' + Math.round(v);
+// x-axis labels: at most ~5 evenly-spaced (incl. first + last) so weekly/daily buckets never collide
+function uXAxis(bk, dx, h) {
+  const n = bk.length; if (!n) return '';
+  const show = new Set(n <= 6 ? bk.map((_, i) => i) : [0, 1, 2, 3, 4].map((k) => Math.round(k * (n - 1) / 4)));
+  return bk.map((b, i) => show.has(i) ? `<text class="ug-xlab" x="${(i * dx).toFixed(1)}" y="${h + 12}" text-anchor="${i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle'}" fill="var(--txt-3)">${esc(b.label)}</text>` : '').join('');
+}
+// state transitions — per-source metric + period live on the card session (cs.gvm/gvp maps
+// keyed by src, so the one Shop session carries an independent choice per segment)
+function uSetMetric(card, src, key) { const cs = activeSession().cards[card]; if (!cs) return; (cs.gvm = cs.gvm || {})[src] = key; gvStripTerms(cs); cs.listLimit = undefined; render(); }
+function uSetPeriod(card, src, p) { const cs = activeSession().cards[card]; if (!cs) return; cs.gvp = cs.gvp || {}; cs.gvp[src] = (cs.gvp[src] === p) ? '' : p; gvStripTerms(cs); cs.listLimit = undefined; render(); }
+function uToggleSeg(card, src, metric, col, value, label) {
+  const cs = activeSession().cards[card]; if (!cs) return;
+  const gk = src + ':' + metric;
+  const i = (cs.filterTerms || []).findIndex((t) => t.g === gk && t.col === col && String(t.value) === String(value));
+  if (i >= 0) cs.filterTerms.splice(i, 1); else (cs.filterTerms = cs.filterTerms || []).push({ t: label, col, value, neg: false, g: gk });
+  cs.listLimit = undefined; render();
+}
+// ── renderers (ctx = {cs, card, src, metric}) ──
+function uSegAttrs(ctx, s) {
+  const on = gvSegOn(ctx.cs, s.col, s.value);
+  // aria-label carries the name (the visible legend was removed — hover/data-tip + SR name it)
+  return `js-ug-seg${on ? ' on' : ''}" data-card="${ctx.card}" data-src="${esc(ctx.src)}" data-metric="${ctx.metric}" data-col="${esc(s.col)}" data-value="${esc(String(s.value))}" data-label="${esc(s.label)}" aria-label="${esc(s.label)}${on ? ' — filter on' : ''}" data-tip="${on ? 'Remove filter' : 'Filter to ' + esc(s.label)}`;
+}
+// donut with counts ON the slices (thin slices pop just outside with a leader); slices are the filter.
+function uDonut(ctx, segs, size, noun, empty) {
+  size = size || 152; noun = noun || 'UNITS'; const r = size / 2, cx = r, cy = r, inner = r * 0.58, mid = (inner + r - 1) / 2;
+  const total = segs.reduce((a, s) => a + (s.count || 0), 0);
+  const box = (inner2) => `<div class="ug-chartbox">${inner2}</div>`;
+  if (!total) return box(`<svg viewBox="-20 -20 ${size + 40} ${size + 40}" width="${size + 40}" height="${size + 40}" class="ug-donut"><circle cx="${cx}" cy="${cy}" r="${r - 1}" fill="none" stroke="var(--line)" stroke-width="2" stroke-dasharray="3 4"/><circle cx="${cx}" cy="${cy}" r="${inner}" fill="var(--bg)"/></svg><div class="ug-empty">${esc(empty || 'No data yet.')}</div>`);
+  const at = (a, rad) => [cx + rad * Math.cos(a), cy + rad * Math.sin(a)];
+  const nz = segs.filter((s) => s.count > 0);
+  let a0 = -Math.PI / 2, slc = '', lbl = '';
+  const inkFor = (s) => (U_DARKINK.has(s.color) ? '#0c0e12' : '#fff');
+  if (nz.length === 1) {
+    const s = nz[0]; slc = `<circle class="ug-slice ${uSegAttrs(ctx, s)}" tabindex="0" role="button" cx="${cx}" cy="${cy}" r="${r - 1}" fill="var(--${s.color})"/>`;
+    const [lx, ly] = at(0, mid); lbl = `<text x="${lx.toFixed(1)}" y="${(ly + 5).toFixed(1)}" text-anchor="middle" fill="${inkFor(s)}" pointer-events="none">${s.count}</text>`;
+  } else {
+    segs.forEach((s) => {
+      if (!s.count) return; const a1 = a0 + s.count / total * Math.PI * 2, am = (a0 + a1) / 2, frac = s.count / total;
+      const [x0, y0] = at(a0, r - 1), [x1, y1] = at(a1, r - 1), lg = (a1 - a0) > Math.PI ? 1 : 0;
+      slc += `<path class="ug-slice ${uSegAttrs(ctx, s)}" tabindex="0" role="button" d="M${cx},${cy} L${x0.toFixed(1)},${y0.toFixed(1)} A${r - 1},${r - 1} 0 ${lg} 1 ${x1.toFixed(1)},${y1.toFixed(1)} Z" fill="var(--${s.color})"/>`;
+      if (frac >= 0.16) { const [lx, ly] = at(am, mid); lbl += `<text x="${lx.toFixed(1)}" y="${(ly + 5).toFixed(1)}" text-anchor="middle" fill="${inkFor(s)}" pointer-events="none">${s.count}</text>`; }
+      else { const [ix, iy] = at(am, r - 3), [ox, oy] = at(am, r + 10); lbl += `<line x1="${ix.toFixed(1)}" y1="${iy.toFixed(1)}" x2="${ox.toFixed(1)}" y2="${oy.toFixed(1)}" stroke="var(--${s.color})" stroke-width="1.4"/><text x="${ox.toFixed(1)}" y="${(oy + (oy < cy ? -2 : 9)).toFixed(1)}" text-anchor="${ox < cx ? 'end' : 'start'}" fill="var(--${s.color})" pointer-events="none">${s.count}</text>`; }
+      a0 = a1;
+    });
+  }
+  return box(`<svg viewBox="-20 -20 ${size + 40} ${size + 40}" width="${size + 40}" height="${size + 40}" class="ug-donut">${slc}${lbl}<circle cx="${cx}" cy="${cy}" r="${inner}" fill="var(--bg)" pointer-events="none"/><text class="ug-donut-tot" x="${cx}" y="${(cy - 2).toFixed(1)}" text-anchor="middle" fill="var(--txt)" pointer-events="none">${total}</text><text class="ug-donut-sub" x="${cx}" y="${(cy + 13).toFixed(1)}" text-anchor="middle" fill="var(--txt-3)" pointer-events="none">${esc(noun)}</text></svg>`);
+}
+// read-only stacked proportional-area with right-edge band-% labels; `names` gives each band a hover tip
+function uArea(bk, data, emptyMsg, names) {
+  names = names || {};
+  const w = 250, h = 120, n = data.length;
+  if (!data.some((d) => d.n > 0)) return `<div class="ug-chartbox"><div class="ug-empty">${esc(emptyMsg)}</div></div>`;
+  const dx = w / (n - 1 || 1), yb = (c) => h - c * h;
+  const poly = (sel) => { const up = [], dn = []; data.forEach((d, i) => { const x = i * dx, below = sel === 'g' ? 0 : sel === 'y' ? d.g : d.g + d.y; up.push([x, yb(below + d[sel])]); dn.push([x, yb(below)]); }); dn.reverse(); return up.concat(dn).map((p) => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' '); };
+  const grid = [0, .5, 1].map((f) => `<line x1="0" y1="${(h * f).toFixed(1)}" x2="${w}" y2="${(h * f).toFixed(1)}" stroke="var(--line)" stroke-width="1" opacity=".5"/>`).join('');
+  const last = data[n - 1];
+  const lab = (sel) => { const below = sel === 'g' ? 0 : sel === 'y' ? last.g : last.g + last.y, y = yb(below + last[sel] / 2), pct = Math.round(last[sel] * 100), ink = sel === 'r' ? '#fff' : '#0c0e12'; return pct >= 8 ? `<text class="ug-band" x="${w - 4}" y="${(y + 3).toFixed(1)}" text-anchor="end" fill="${ink}">${pct}%</text>` : ''; };
+  const tip = (sel) => names[sel] ? ` data-tip="${esc(names[sel])}"` : '';
+  const xlab = uXAxis(bk, dx, h);
+  return `<div class="ug-chartbox"><svg viewBox="0 -2 ${w} ${h + 18}" width="100%" class="ug-area" preserveAspectRatio="xMidYMid meet">${grid}<polygon points="${poly('g')}" fill="var(--green)" opacity=".85"${tip('g')}/><polygon points="${poly('y')}" fill="var(--yellow)" opacity=".85"${tip('y')}/><polygon points="${poly('r')}" fill="var(--red)" opacity=".85"${tip('r')}/>${lab('r')}${lab('y')}${lab('g')}${xlab}</svg></div>`;
+}
+// trajectory line; buckets are clickable filters via `col` (e.g. __fcrange / __rentrange / __daterange)
+function uTraj(ctx, bk, values, color, emptyMsg, col) {
+  const w = 250, h = 120, n = values.length;
+  if (!values.some((v) => v > 0)) return `<div class="ug-chartbox"><div class="ug-empty">${esc(emptyMsg)}</div></div>`;
+  const dx = w / (n - 1 || 1), mx = Math.max(...values) * 1.15 || 1, pt = (v, i) => [i * dx, h - v / mx * h];
+  const line = values.map((v, i) => { const [x, y] = pt(v, i); return (i ? 'L' : 'M') + x.toFixed(1) + ' ' + y.toFixed(1); }).join(' ');
+  const area = `M0 ${h} ` + values.map((v, i) => { const [x, y] = pt(v, i); return 'L' + x.toFixed(1) + ' ' + y.toFixed(1); }).join(' ') + ` L${w} ${h} Z`;
+  const [ex, ey] = pt(values[n - 1], n - 1);
+  const grid = [0, .5, 1].map((f) => `<line x1="0" y1="${(h * f).toFixed(1)}" x2="${w}" y2="${(h * f).toFixed(1)}" stroke="var(--line)" stroke-width="1" opacity=".5"/>`).join('');
+  const nums = values.map((v, i) => { const [x, y] = pt(v, i); return v ? `<text class="ug-xlab" x="${x.toFixed(1)}" y="${(y - 6).toFixed(1)}" text-anchor="middle" fill="var(--txt-2)">${v}</text>` : ''; }).join('');
+  const hits = bk.map((b, i) => { const s = { col, value: b.key, label: b.label }, x = i * dx; return `<rect class="ug-hit ${uSegAttrs(ctx, s)}" tabindex="0" role="button" x="${(x - dx / 2).toFixed(1)}" y="0" width="${dx.toFixed(1)}" height="${h}" fill="transparent"/>`; }).join('');
+  const xlab = uXAxis(bk, dx, h);
+  return `<div class="ug-chartbox"><svg viewBox="0 -2 ${w} ${h + 18}" width="100%" class="ug-traj" preserveAspectRatio="xMidYMid meet">${grid}<path d="${area}" fill="var(--${color})" opacity=".12"/><path d="${line}" fill="none" stroke="var(--${color})" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/><circle cx="${ex.toFixed(1)}" cy="${ey.toFixed(1)}" r="4.5" fill="var(--${color})" stroke="var(--bg)" stroke-width="2"/>${nums}${xlab}${hits}</svg></div>`;
+}
+// vertical bars (counts) — direct labels on top, name below, each bar the filter
+function uBars(ctx, segs, color, emptyMsg) {
+  if (!segs.length || !segs.some((s) => s.count > 0)) return `<div class="ug-empty">${esc(emptyMsg || 'No data yet.')}</div>`;
+  const max = Math.max(1, ...segs.map((s) => s.count || 0));
+  return `<div class="ug-bars">${segs.map((s) => {
+    const h = Math.round((s.count / max) * 100);
+    const fill = s.count ? `<div class="ug-bar-fill" style="height:${h}%;background:var(--${s.color || color || 'blue'})"></div>` : '<div class="ug-bar-fill ug-bar-zero"></div>';
+    return `<button class="ug-barcol ${uSegAttrs(ctx, s)}"><span class="ug-bar-n">${s.count || ''}</span><span class="ug-bar-track">${fill}</span><span class="ug-bar-x">${esc(s.label)}</span></button>`;
+  }).join('')}</div>`;
+}
+// revenue bars — height = $, a red cap = the uncollected share; compact $ on top (full on hover)
+function uRevBars(ctx, segs, emptyMsg) {
+  if (!segs.length || !segs.some((s) => s.count > 0)) return `<div class="ug-empty">${esc(emptyMsg || 'No revenue in this window.')}</div>`;
+  const max = Math.max(1, ...segs.map((s) => s.count || 0));
+  return `<div class="ug-bars ug-revbars">${segs.map((s) => {
+    const h = Math.round((s.count / max) * 100);
+    const redPct = (s.red && s.count) ? Math.max(0, Math.min(100, Math.round((s.red / s.count) * 100))) : 0;
+    const fill = s.count ? `<div class="ug-bar-fill" style="height:${h}%;background:var(--${s.color || 'gray'})">${redPct ? `<div class="ug-bar-red" style="height:${redPct}%"></div>` : ''}</div>` : '<div class="ug-bar-fill ug-bar-zero"></div>';
+    const tipMore = s.red ? ` · ${money(s.red)} uncollected` : '';
+    return `<button class="ug-barcol ${uSegAttrs(ctx, { ...s, label: s.label + ' — ' + money(s.count) + tipMore })}"><span class="ug-bar-n">${s.count ? uMoneyK(s.count) : ''}</span><span class="ug-bar-track">${fill}</span><span class="ug-bar-x">${esc(s.label)}</span></button>`;
+  }).join('')}</div>`;
+}
+function uTiles(ctx, items) {
+  return `<div class="ug-tiles">${items.map((s) => `<button class="ug-tile ${uSegAttrs(ctx, s)}"><span class="ug-tile-v">${esc(String(s.disp != null ? s.disp : s.count))}</span><span class="ug-tile-l">${esc(s.label)}</span></button>`).join('')}</div>`;
+}
+function uLead(ctx, rows, empty) {
+  if (!rows.length) return `<div class="ug-empty">${esc(empty || 'No data yet.')}</div>`;
+  return `<div class="ug-lead">${rows.map((s, i) => `<button class="ug-lead-row ${uSegAttrs(ctx, s)}"><span class="ug-lead-n">${i + 1}</span><span class="ug-lead-name">${esc(s.label)}</span><span class="ug-lead-c">${esc(String(s.disp != null ? s.disp : s.count))}</span></button>`).join('')}</div>`;
+}
+// per-metric chart: snapshot when no period armed, else the time-series form.
+// Metric keys are globally unique, so one dispatcher serves every source.
+function gv2MetricChart(cs, card, src, metric, period, small) {
+  const ctx = { cs, card, src, metric };
+  const dsize = small ? 144 : 196;   // legends removed → more room, bigger donuts
+  // ── Units ──
+  if (metric === 'inspection') {
+    // Passed vs Not Ready only — Failed is retired (folds into Not Ready), no red (Jac)
+    const f = fleetInsp();
+    const segs = [
+      { col: '__insp', value: 'Ready', label: getStatus('unitInspectionStatus', 'Ready').label || 'Passed', count: f.Ready || 0, color: 'green' },
+      { col: '__insp', value: 'notready', label: 'Not Ready', count: (f['Not Ready'] || 0) + (f.Failed || 0), color: 'yellow' },
+    ];
+    if (!period) return uDonut(ctx, segs, dsize, 'UNITS', 'No units yet.');
+    const bk = uBuckets(period);
+    // cumulative outcome mix through the window — a running status STATE (Fail folds into Not Ready)
+    let cg = 0, cyl = 0;
+    const data = bk.map((b) => { DATA.inspections.forEach((n) => { const d = (n.date || '').slice(0, 10); if (d >= b.a && d < b.b) { if (inspResult(n).color === 'green') cg++; else cyl++; } }); const t = cg + cyl; return { g: t ? cg / t : 0, y: t ? cyl / t : 0, r: 0, n: t }; });
+    return uArea(bk, data, 'No inspections in this window.', { g: 'Passed', y: 'Not Ready' });
+  }
+  if (metric === 'fleet') {
+    const fn = {}; DATA.units.forEach((u) => { const s = u.fleetStatus || '—'; fn[s] = (fn[s] || 0) + 1; });
+    const segs = Object.entries(fn).sort((a, b) => b[1] - a[1]).map(([s, n]) => ({ col: 'fleet', value: s, label: s, count: n, color: getStatus('unitFleetStatus', s).color || 'gray' }));
+    return uDonut(ctx, segs, dsize, 'UNITS', 'No units yet.');
+  }
+  if (metric === 'service') {   // Service Orders — a unit's service urgency (col __svcstat filters the units list)
+    let over = 0, soon = 0, ok = 0, wash = 0;
+    DATA.units.forEach((u) => { if (u.washRequested) { wash++; return; } const s = topServiceForUnit(u); if (!s) { ok++; return; } if (s.status === 'past-due') over++; else if (s.status === 'due-soon') soon++; else ok++; });
+    const segs = [{ col: '__svcstat', value: 'past-due', label: 'Overdue', count: over, color: 'red' }, { col: '__svcstat', value: 'due-soon', label: 'Due Soon', count: soon, color: 'yellow' }, { col: '__svcstat', value: 'on-schedule', label: 'On Schedule', count: ok, color: 'green' }, { col: '__svcstat', value: 'wash', label: 'Wash', count: wash, color: 'blue' }];
+    return uDonut(ctx, segs, dsize, 'UNITS', 'No units yet.');
+  }
+  if (metric === 'shop') {
+    // Work Orders split by BOTTLENECK phase (Jac) — where open WOs are stuck; count = WOs per phase
+    const openWO = DATA.workOrders.filter((w) => w.phase !== 'Complete' && !w.cancelled);
+    const byPhase = {}; openWO.forEach((w) => { const ph = w.phase || '—'; byPhase[ph] = (byPhase[ph] || 0) + 1; });
+    const order = Object.keys(STATUS.woPhase).filter((ph) => ph !== 'Complete');
+    const phs = order.filter((ph) => byPhase[ph]).concat(Object.keys(byPhase).filter((ph) => ph !== 'Complete' && !order.includes(ph)));
+    const segs = phs.map((ph) => ({ col: '__wop', value: ph, label: getStatus('woPhase', ph).label || ph, count: byPhase[ph], color: getStatus('woPhase', ph).color || 'gray' }));
+    return uDonut(ctx, segs, dsize, 'WOs', 'No open work orders.');
+  }
+  if (metric === 'fc') {
+    // ONE Field Calls tab (Jac): leaderboard = the snapshot (which units call most), trajectory = the windowed trend.
+    const fc = DATA.workOrders.filter((w) => w.woType === 'Field Call');
+    if (!period) {
+      const by = {}; fc.forEach((w) => { if (w.unitId) by[w.unitId] = (by[w.unitId] || 0) + 1; });
+      const rows = Object.entries(by).map(([uid, n]) => ({ col: 'name', value: IDX.unit.get(uid)?.name || uid, label: IDX.unit.get(uid)?.name || uid, count: n })).sort((a, b) => b.count - a.count).slice(0, 8);
+      return uLead(ctx, rows, 'No field calls yet.');
+    }
+    const bk = uBuckets(period);
+    const vals = bk.map((b) => new Set(fc.filter((w) => { const d = (w.date || '').slice(0, 10); return d >= b.a && d < b.b; }).map((w) => w.unitId)).size);
+    return uTraj(ctx, bk, vals, 'blue', 'No field calls in this window.', '__fcrange');
+  }
+  if (metric === 'nums') {
+    const fn = {}; DATA.units.forEach((u) => { const s = u.fleetStatus || '—'; fn[s] = (fn[s] || 0) + 1; });
+    const open = new Set(DATA.workOrders.filter((w) => w.phase !== 'Complete' && !w.cancelled).map((w) => w.unitId));
+    const ord = new Set(DATA.workOrders.filter((w) => w.phase !== 'Complete' && !w.cancelled && (w.phase === 'Part Ordered' || (w.lineItems || []).some((l) => l.phase === 'Part Ordered'))).map((w) => w.unitId));
+    const nU = (set) => DATA.units.filter((u) => set.has(u.unitId)).length;
+    const items = [
+      { col: '__fc', value: '1', label: 'Field Calls', count: new Set(DATA.workOrders.filter((w) => w.woType === 'Field Call').map((w) => w.unitId)).size, color: 'red' },
+      { col: '__wo', value: 'open', label: 'Work Orders', count: nU(open), color: 'yellow' },
+      { col: '__wo', value: 'ordered', label: 'Parts Ordered', count: nU(ord), color: 'blue' },
+      { col: 'wash', value: 'Wash Requested', label: 'Wash', count: DATA.units.filter((u) => u.washRequested).length, color: 'blue' },
+      { col: 'fleet', value: 'For Sale', label: 'For Sale', count: fn['For Sale'] || 0, color: 'green' },
+    ];
+    return uTiles(ctx, items);
+  }
+  // ── Rentals ──
+  if (metric === 'revenue') {
+    // bar HEIGHT = summed rental revenue by status; RED cap = the uncollected share (unpaid + refunded)
+    const cut = uCutoff(period);
+    const REV_RED = new Set(['On Rent', 'End Rent', 'Off Rent', 'Returned']);
+    const rev = {};
+    DATA.rentals.forEach((r) => {
+      if (cut && !uInWin(r.startDate, cut)) return;
+      const s = rentalRevStatus(r), p = (rentalPrice(r) || {}).price || 0;
+      if (!p) return;
+      const b = rev[s] || (rev[s] = { rev: 0, red: 0 });
+      b.rev += p;
+      if (REV_RED.has(s)) {
+        const inv = r.invoiceId && IDX.invoice.get(r.invoiceId);
+        let frac = 1;   // not yet invoiced → the whole active-rental revenue is still uncollected
+        if (inv) { const t = invoiceTotals(inv); frac = t.total > 0 ? Math.max(0, Math.min(1, (t.balance + (Number(inv.refundedAmount) || 0)) / t.total)) : 0; }
+        b.red += p * frac;
+      }
+    });
+    const ordIdx = (s) => { const k = RENTAL_BAR_ORDER.indexOf(s); return k < 0 ? 99 : k; };
+    const segs = Object.keys(rev).sort((a, b) => ordIdx(a) - ordIdx(b)).map((s) => ({ col: '__rstat', value: s, label: s, count: Math.round(rev[s].rev), red: Math.round(rev[s].red), color: s === 'Available' ? 'gray' : (getStatus('rentalStatus', s).color || 'gray') }));
+    return uRevBars(ctx, segs, 'No revenue in this window.');
+  }
+  if (metric === 'booked') {
+    // snapshot = most-rented units leaderboard; windowed = bookings trajectory (mirrors Field Calls)
+    if (!period) {
+      const byUnit = {}; DATA.rentals.forEach((r) => rentalUnits(r).forEach((eu) => { const u = IDX.unit.get(eu.unitId); if (u) byUnit[u.name] = (byUnit[u.name] || 0) + 1; }));
+      const rows = Object.entries(byUnit).map(([name, n]) => ({ col: 'name', value: name, label: name, count: n })).sort((a, b) => b.count - a.count).slice(0, 8);
+      return uLead(ctx, rows, 'No rentals yet.');
+    }
+    const bk = uBuckets(period);
+    const vals = bk.map((b) => DATA.rentals.filter((r) => { const d = (r.startDate || '').slice(0, 10); return d >= b.a && d < b.b; }).length);
+    return uTraj(ctx, bk, vals, 'blue', 'No rentals booked in this window.', '__rentrange');
+  }
+  if (metric === 'rinvoice') {
+    const ic = {}; DATA.rentals.forEach((r) => { const inv = r.invoiceId && IDX.invoice.get(r.invoiceId); const s = inv ? invoiceTotals(inv).status : 'No invoice'; ic[s] = (ic[s] || 0) + 1; });
+    const segs = Object.entries(ic).sort((a, b) => b[1] - a[1]).map(([s, n]) => ({ col: 'invoice', value: s === 'No invoice' ? '' : s, label: s, count: n, color: s === 'No invoice' ? 'gray' : (getStatus('invoiceStatus', s).color || 'gray') }));
+    return uDonut(ctx, segs, dsize, 'RENTALS', 'No rentals yet.');
+  }
+  if (metric === 'rnums') {
+    const sc = {}; DATA.rentals.forEach((r) => { const s = rentalDisplayStatus(r); sc[s] = (sc[s] || 0) + 1; });
+    const ym = TODAY_ISO.slice(0, 7);
+    const items = [
+      { col: 'status', value: 'On Rent', label: 'On Rent', count: sc['On Rent'] || 0, color: 'green' },
+      { col: 'status', value: 'Quote', label: 'Quotes', count: sc['Quote'] || 0, color: 'gray' },
+      { col: 'status', value: 'No Show', label: 'No Show', count: sc['No Show'] || 0, color: 'red' },
+      { col: '__rentmonth', value: ym, label: 'This Month', count: DATA.rentals.filter((r) => (r.startDate || '').slice(0, 7) === ym).length, color: 'blue' },
+    ];
+    return uTiles(ctx, items);
+  }
+  // ── Customers ──
+  if (metric === 'caccount') {
+    const ac = {}; DATA.customers.forEach((c) => { const t = c.accountType || 'Non-Business'; ac[t] = (ac[t] || 0) + 1; });
+    const segs = Object.entries(ac).sort((a, b) => b[1] - a[1]).map(([t, n]) => ({ col: 'account', value: t, label: t, count: n, color: getStatus('customerAccountType', t).color || 'gray' }));
+    return uDonut(ctx, segs, dsize, 'CUST', 'No customers yet.');
+  }
+  if (metric === 'cpay') {
+    const pc = {}; DATA.customers.forEach((c) => { const p = c.payStatus || ''; pc[p] = (pc[p] || 0) + 1; });
+    const segs = Object.entries(pc).sort((a, b) => b[1] - a[1]).map(([p, n]) => ({ col: 'pay', value: p, label: p || 'None', count: n, color: getStatus('customerPayStatus', p).color || 'gray' }));
+    return uDonut(ctx, segs, dsize, 'CUST', 'No customers yet.');
+  }
+  if (metric === 'cspend') {
+    const rows = DATA.customers.map((c) => ({ c, paid: c._digest?.totalPaid || 0 })).filter((x) => x.paid > 0).sort((a, b) => b.paid - a.paid).slice(0, 8)
+      .map((x) => ({ col: 'name', value: x.c.name, label: x.c.name, count: Math.round(x.paid), disp: money(x.paid) }));
+    return uLead(ctx, rows, 'No payments yet.');
+  }
+  if (metric === 'cnums') {
+    // Business/Non-Business tiles retired — they duplicate the Accounts donut (Jac kills redundancy)
+    const items = [{ col: 'card', value: 'No Card', label: 'No Card', count: DATA.customers.filter((c) => cardFlag(c) === 'none').length, color: 'red' }];
+    return uTiles(ctx, items);
+  }
+  // ── Categories ──
+  if (metric === 'catunits') {
+    const byCat = {}; DATA.units.forEach((u) => { if (u.categoryId) byCat[u.categoryId] = (byCat[u.categoryId] || 0) + 1; });
+    const segs = DATA.categories.map((c) => ({ col: 'name', value: c.name, label: c.name, count: byCat[c.categoryId] || 0, color: 'blue' })).sort((a, b) => b.count - a.count).slice(0, 10);
+    return uBars(ctx, segs, 'blue', 'No categories yet.');
+  }
+  // ── Invoices ──
+  if (metric === 'istatus') {
+    const sc = {}; DATA.invoices.forEach((i) => { const s = invoiceTotals(i).status; sc[s] = (sc[s] || 0) + 1; });
+    const segs = Object.entries(sc).sort((a, b) => b[1] - a[1]).map(([s, n]) => ({ col: 'status', value: s, label: s, count: n, color: getStatus('invoiceStatus', s).color || 'gray' }));
+    return uDonut(ctx, segs, dsize, 'INV', 'No invoices yet.');
+  }
+  if (metric === 'ibal') {
+    const byCust = {}; DATA.invoices.forEach((i) => { const t = invoiceTotals(i); if (t.balance > 0 && t.status !== 'Refunded') { const n = IDX.customer.get(i.customerId)?.name || i.customerId || '—'; byCust[n] = (byCust[n] || 0) + t.balance; } });
+    const rows = Object.entries(byCust).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([n, bal]) => ({ col: 'customer', value: n, label: n, count: Math.round(bal), disp: money(bal) }));
+    return uLead(ctx, rows, 'No open balances.');
+  }
+  // ── Shop · Inspections segment ──
+  if (metric === 'iresult') {
+    if (!period) {
+      const N = DATA.inspections.filter((n) => shopItemMode('inspections', n, false));   // the open queue — same population the shop list shows
+      const rc = {}; N.forEach((n) => { const r = inspResult(n); (rc[r.label] = rc[r.label] || { label: r.label, color: r.color, count: 0 }).count++; });
+      const segs = Object.values(rc).map((x) => ({ col: 'result', value: x.label, label: x.label, count: x.count, color: x.color }));
+      return uDonut(ctx, segs, dsize, 'INSP', 'No open inspections.');
+    }
+    const bk = uBuckets(period);
+    // cumulative outcome mix of ALL inspections performed through the window (Pass / pending / Fail)
+    let cg = 0, cyl = 0, cr = 0;
+    const data = bk.map((b) => { DATA.inspections.forEach((n) => { const d = (n.date || '').slice(0, 10); if (d >= b.a && d < b.b) { const cc = inspResult(n).color; if (cc === 'green') cg++; else if (cc === 'red') cr++; else cyl++; } }); const t = cg + cyl + cr; return { g: t ? cg / t : 0, y: t ? cyl / t : 0, r: t ? cr / t : 0, n: t }; });
+    return uArea(bk, data, 'No inspections in this window.', { g: 'Pass', y: 'Not Ready', r: 'Fail' });
+  }
+  // ── Shop · Work Orders segment ──
+  if (metric === 'wophase') {
+    const W = DATA.workOrders.filter((w) => shopItemMode('workOrders', w, false));   // the open queue — same population the shop list shows
+    if (!period) {
+      const pc = {}; W.forEach((w) => { const ph = w.phase || '—'; pc[ph] = (pc[ph] || 0) + 1; });
+      const order = Object.keys(STATUS.woPhase).filter((ph) => ph !== 'Complete');
+      const phs = order.filter((ph) => pc[ph]).concat(Object.keys(pc).filter((ph) => !order.includes(ph)));
+      const segs = phs.map((ph) => ({ col: 'phase', value: ph, label: getStatus('woPhase', ph).label || ph, count: pc[ph], color: getStatus('woPhase', ph).color || 'gray' }));
+      return uDonut(ctx, segs, dsize, 'WOs', 'No open work orders.');
+    }
+    const bk = uBuckets(period);
+    const vals = bk.map((b) => W.filter((w) => { const d = (w.date || '').slice(0, 10); return d >= b.a && d < b.b; }).length);
+    return uTraj(ctx, bk, vals, 'blue', 'No work orders in this window.', '__daterange');
+  }
+  if (metric === 'wotype') {
+    const W = DATA.workOrders.filter((w) => shopItemMode('workOrders', w, false));
+    const tc = {}; W.forEach((w) => { const t = w.woType || '—'; tc[t] = (tc[t] || 0) + 1; });
+    const segs = Object.entries(tc).sort((a, b) => b[1] - a[1]).map(([t, n]) => ({ col: 'type', value: t, label: t, count: n, color: getStatus('woType', t).color || 'gray' }));
+    return uDonut(ctx, segs, dsize, 'WOs', 'No open work orders.');
+  }
+  // ── Shop · Service Orders segment ──
+  if (metric === 'sstatus') {
+    let overdue = 0, soon = 0, ok = 0, wash = 0;
+    DATA.units.forEach((u) => { if (u.washRequested) { wash++; return; } const s = topServiceForUnit(u); if (!s) { ok++; return; } if (s.status === 'past-due') overdue++; else if (s.status === 'due-soon') soon++; else ok++; });
+    const segs = [
+      { col: '__svcstat', value: 'past-due', label: 'Overdue', count: overdue, color: 'red' },
+      { col: '__svcstat', value: 'due-soon', label: 'Due Soon', count: soon, color: 'yellow' },
+      { col: '__svcstat', value: 'on-schedule', label: 'On Schedule', count: ok, color: 'green' },
+      { col: '__svcstat', value: 'wash', label: 'Wash', count: wash, color: 'blue' },
+    ];
+    return uDonut(ctx, segs, dsize, 'UNITS', 'No units yet.');
+  }
+  return '';
+}
+const uRail = (card, src, period) => `<div class="ug-rail" role="group" aria-label="Timeframe">${U_PERIODS.map((p) => `<button class="ug-per${period === p.k ? ' on' : ''} js-ug-per" data-card="${card}" data-src="${esc(src)}" data-period="${p.k}" data-tip="${period === p.k ? 'Back to current' : 'Trend · ' + p.full}">${esc(p.label)}</button>`).join('')}</div>`;
+function graphPanelV2(card, src, cs) {
+  const cfg = GV2[src]; if (!cfg) return '';
+  cs.gvm = cs.gvm || {}; cs.gvp = cs.gvp || {};
+  let key = cs.gvm[src] || (src === 'units' && cs.uMetric) || cfg.groups[0].key;   // uMetric = pre-rollout Units sessions
+  let group = cfg.groups.find((g) => g.key === key); if (!group) { group = cfg.groups[0]; key = group.key; }
+  const metrics = group.metrics, anyHist = metrics.some((m) => GV2_HIST[m]);
+  const period = anyHist ? (cs.gvp[src] || '') : '';
+  const tabs = cfg.groups.map((g) => `<button class="ug-tab${g.key === key ? ' on' : ''} js-ug-tab" data-card="${card}" data-src="${esc(src)}" data-metric="${g.key}" data-tip="${esc(g.label)}">${esc(g.label)}</button>`).join('');
+  const head = `<div class="ug-tabs" role="tablist">${tabs}</div>`;
+  const rail = anyHist ? uRail(card, src, period) : '';
+  let chart;
+  if (metrics.length > 1) {
+    const col = (m) => `<div class="ug-col"><div class="ug-col-h">${esc(GV2_LABEL[m])}</div><div class="ug-chart">${gv2MetricChart(cs, card, src, m, GV2_HIST[m] ? period : '', true)}</div></div>`;
+    chart = `<div class="ug-twoup">${metrics.map(col).join('')}</div>`;
+  } else {
+    const m = metrics[0];
+    chart = `<div class="ug-chart">${gv2MetricChart(cs, card, src, m, GV2_HIST[m] ? period : '', false)}</div>`;
+  }
+  return `${head}<div class="ug-body${anyHist ? '' : ' ug-nohist'}">${rail}${chart}</div>`;
+}
+
 function cardGraphBody(card) {
   if (card === 'units') {
     const g = unitGraphData();
@@ -10265,14 +10766,45 @@ function wranglerDigest() {
     `  ${x.name} [${x.categoryId}]: 1-day ${money(x.rate1Day)} · 7-day ${money(x.rate7Day)} · 4-wk ${money(x.rate4Wk)} · weekend ${money(x.weekend)} · member/day ${money(x.memberDaily)}${x.fuelType ? ' · ' + x.fuelType : ''}`).join('\n'));
   return lines.join('\n');
 }
+// §18e — a compact index of issues Mr. Wrangler has ALREADY filed: open ones via
+// wranglerRequests + recently closed/resolved via wranglerNotifs, deduped by number.
+// Pure: reads the two loaded lists → a short string ('' when none). Lets the model
+// catch a duplicate BEFORE filing a new one (see DUPLICATE CHECK in WRANGLER_SYSTEM).
+function wrIssueIndex() {
+  const seen = new Set(), lines = [];
+  const add = (n, title, state) => {
+    if (n == null || seen.has(n)) return; seen.add(n);
+    lines.push(`#${n} · "${String(title || '').replace(/\s+/g, ' ').slice(0, 70)}" · ${state}`);
+  };
+  (wranglerRequests || []).forEach((rq) => {
+    const st = wrReqState(rq);
+    add(rq.number, rq.title, st.key === 'building' ? 'building' : st.key === 'needs' ? 'open — needs your answer' : 'open — needs your OK');
+  });
+  (wranglerNotifs || []).forEach((n) => {
+    add(n.number, n.title, n.kind === 'needs' ? 'open — needs you' : n.merged ? 'fixed' : 'closed');
+  });
+  return lines.slice(0, 40).join('\n');
+}
 function wranglerContext(o) {
   let ctx = 'YARD ORIENTATION (use the find_* tools for any specific record):\n' + wranglerDigest();
+  const filed = wrIssueIndex();
+  if (filed) ctx += '\n\nALREADY FILED — issues already filed (check this BEFORE filing a new fix/request; on a match, follow the DUPLICATE CHECK protocol instead of filing a duplicate):\n' + filed;
   if (o.card && o.recId != null) {
     const ec = entityCardOf(o.card, o.recType), rec = recOf(ec, o.recId);
     if (rec) ctx += `\n\nFOCUSED RECORD — ${ec}: ${detailTitle(ec, rec)}\n` + JSON.stringify(rec).slice(0, 4000);
   }
   return ctx;
 }
+// §18e DUPLICATE CHECK protocol — appended to the system so Mr. Wrangler dedupes against
+// the ALREADY FILED index before filing. Kept as its own template literal (not woven into
+// the escaped WRANGLER_SYSTEM string) so it stays readable + easy to tune.
+const WR_DEDUP_NOTE = `
+
+DUPLICATE CHECK — before you emit a fix or request block, check the ALREADY FILED list in your context. If the problem the user is describing matches an issue already on that list, do NOT file a new one. Instead call ask_user with the single best match — a question like "Looks like this is already reported — #NNN '<title>' (open, or already fixed). What do you want to do?" and options ["Add my note to #NNN","File a new one anyway","It's already fixed — just refresh"], but DROP the "already fixed" option unless that match's state is 'fixed'. Then act on their pick:
+- "Add my note to #NNN" → call the note_on_issue tool with that issue number and a one-paragraph summary of their report; do NOT file a new issue.
+- "File a new one anyway" → go ahead and emit the normal fix/request block.
+- "It's already fixed — just refresh" → file nothing; tell them it's fixed in #NNN and to hard-refresh (Ctrl/Cmd+Shift+R) to load it.
+Only trigger this on a genuine match — a novel bug still files normally, with no chips.`;
 // Attach an image to the next Wrangler message (file picker, paste, or drop). The
 // backend wranglerReply_ accepts image content blocks; we downscale first to keep
 // the payload light. "Add files" = images for now (what a glitch report needs).
@@ -10447,6 +10979,18 @@ const WR_TOOL_IMPL = {
     });
     return { startDate: start, endDate: end, customer: cust ? cust.name : null, total: Math.round(total * 100) / 100, units: per };
   },
+  // §18e — add a comment to an ALREADY-filed issue (the "Add my note to #NNN" duplicate-check
+  // branch), reusing the wranglerComment backend action. Never creates a new issue.
+  async note_on_issue(input) {
+    const number = Number(input && input.number);
+    const text = String((input && input.text) || '').trim();
+    if (!number || !text) return { error: 'need an issue number and text' };
+    if (typeof backendPassword === 'undefined' || !backendPassword) return { error: 'not signed in — can’t post a comment' };
+    try {
+      const r = await backendCall('wranglerComment', { number, role: 'user', text });
+      return (r && r.ok) ? { ok: true, number, note: `added the note to #${number}` } : { error: (r && r.error) || 'comment failed' };
+    } catch (e) { return { error: String((e && e.message) || e) }; }
+  },
 };
 // Anthropic tool schemas — forwarded verbatim to the model by the Stage 0 pass-through.
 const WR_TOOLS = [
@@ -10460,6 +11004,7 @@ const WR_TOOLS = [
   { name: 'check_unit_availability', description: 'Check whether a unit is free for a date window. Returns available + any conflicting rentals. Dates are YYYY-MM-DD.', input_schema: { type: 'object', properties: { unit: { type: 'string' }, startDate: { type: 'string' }, endDate: { type: 'string' } }, required: ['unit', 'startDate', 'endDate'] } },
   { name: 'price_rental', description: 'Quote the price for renting one or more units over a window (uses the live pricing engine; member rates apply if the customer is given). Dates are YYYY-MM-DD. Read-only — does not create anything.', input_schema: { type: 'object', properties: { units: { type: 'array', items: { type: 'string' } }, startDate: { type: 'string' }, endDate: { type: 'string' }, customer: { type: 'string' } }, required: ['units', 'startDate', 'endDate'] } },
   { name: 'ask_user', description: "Ask the user ONE short follow-up question when you genuinely can't proceed — a real ambiguity (two customers match, which unit, missing a required detail). Pass a clear `question` and, when the choice is between known options, an `options` array (e.g. the matching customers) so they can just tap one. Use this SPARINGLY — never to confirm an obvious reading or something a find_* tool can answer. The user's answer comes back so you continue.", input_schema: { type: 'object', properties: { question: { type: 'string' }, options: { type: 'array', items: { type: 'string' } } }, required: ['question'] } },
+  { name: 'note_on_issue', description: 'Add a comment to an issue that has ALREADY been filed (one from the ALREADY FILED list) instead of filing a duplicate. Use ONLY after the user chooses "Add my note to #NNN" in the DUPLICATE CHECK. Pass the issue `number` and a one-paragraph `text` summarizing their new report. Does NOT create a new issue.', input_schema: { type: 'object', properties: { number: { type: 'number', description: 'the existing issue number to comment on' }, text: { type: 'string', description: "one-paragraph summary of the user's report to append" } }, required: ['number', 'text'] } },
   { name: 'apply_changes', description: "WRITE changes: create/update/import records or run an operation. Pass `ops` — the SAME op shapes documented above ({op:'create'|'update'|'import'|'csv-import', entity, fields|rows|id} and {op:'operate', name:'startRental'|'billRental'|'recordPayment', params}). It validates against the allowlist and the safety fences and RETURNS what resolved or got dropped, so if a link drops (e.g. a category that doesn't exist yet) you can create it first and call again. Safe single edits apply immediately; consequential ones (bulk, pricing, billing, payments, several records) are staged for the user to tap Apply — word those as a preview, never as saved. This is the ONLY write path — never charge a card/ACH, refund, touch a balance, change roles/passwords, hard-delete, or complete a WO.", input_schema: { type: 'object', properties: { title: { type: 'string', description: 'short label for the change' }, ops: { type: 'array', items: { type: 'object' }, description: 'the operations to apply' } }, required: ['ops'] } },
 ];
 const WR_TOOLS_NOTE = "\n\nLOOKING THINGS UP — you have live read-only tools (find_customers, find_units, find_categories, find_vendors, find_rentals, find_invoices, find_work_orders, check_unit_availability, price_rental) that query the FULL records, not just the snapshot. PREFER them: when the user names a customer/unit/rental, look it up to confirm it exists and get its id before you answer or emit an action; check availability before booking; quote with price_rental rather than guessing. Don't ask the user for something a tool can find. For WRITES, prefer the apply_changes tool: call it with the ops array (same shapes as the wrangler-action block) and it returns exactly what resolved or got dropped, so you can fix a dropped link and try again — much better than emitting a blind block. Safe single edits auto-apply; consequential ones come back staged for the user's Apply (word those as a preview). You may still emit a wrangler-action block as a fallback, but don't ALSO emit one for a write you already made with apply_changes. When you truly need to disambiguate before acting, call ask_user (with tappable options when the choice is between known records) instead of guessing or burying the question in prose — but only when a tool can't resolve it.";
@@ -10507,7 +11052,7 @@ async function wrRunAgent(apiMessages, system, opts) {
       try {
         if (tu.name === 'apply_changes') out = await wrApplyChangesTool(tu.input || {}, ctx, opts);
         else if (tu.name === 'ask_user') { const ans = opts.ask ? await opts.ask(tu.input || {}) : null; out = { answer: (ans == null || ans === '') ? '(no answer given — use your best judgement and proceed)' : String(ans) }; }
-        else { const impl = WR_TOOL_IMPL[tu.name]; out = impl ? impl(tu.input || {}) : { error: `unknown tool ${tu.name}` }; }
+        else { const impl = WR_TOOL_IMPL[tu.name]; out = impl ? await impl(tu.input || {}) : { error: `unknown tool ${tu.name}` }; }
       } catch (e) { out = { error: String((e && e.message) || e) }; }
       if (opts.onTool) { try { opts.onTool(tu.name, tu.input, out); } catch (e) {} }
       results.push({ type: 'tool_result', tool_use_id: tu.id, content: JSON.stringify(out) });
@@ -10528,11 +11073,11 @@ async function wranglerSend() {
   // rather than starting a fresh turn. Tapping an option chip resolves it the same way.
   if (o.ask && o.ask.resolve) { if (!text) { if (inp) inp.focus(); return; } o.draft = ''; if (inp) inp.value = ''; o.ask.resolve(text); return; }
   if ((!text && !imgs && !files) || o.busy) { if (inp) inp.focus(); return; }
-  o.messages.push({ role: 'user', content: text, images: imgs, files });
+  o.messages.push({ role: 'user', content: text, images: imgs, files, at: Date.now() });
   syncWranglerComment(o, 'user', text, imgs);   // §18e mirror the turn onto the issue thread
   wranglerClearNeedsAnswer(o.reqNumber);        // §18e answering a "Needs your answer" request clears it from the inbox
   o.draft = ''; o.attach = []; o.files = []; o.busy = true; o.error = ''; render();
-  const system = WRANGLER_SYSTEM + WR_TOOLS_NOTE + (o.kpiTarget ? '\n\n' + wranglerKpiSystem() : '') + '\n\n' + wranglerContext(o);
+  const system = WRANGLER_SYSTEM + WR_TOOLS_NOTE + WR_DEDUP_NOTE + (o.kpiTarget ? '\n\n' + wranglerKpiSystem() : '') + '\n\n' + wranglerContext(o);
   // Build the payload: images become a content-block array; CSV/text files fold
   // into the message text so Mr. Wrangler reads their rows.
   const fileBlock = (m) => (m.files && m.files.length)
@@ -10567,8 +11112,8 @@ async function wranglerSend() {
       // options and wait for a tap/typed reply, which resumes the loop. Tied to the live dock only.
       const askFn = (input) => new Promise((resolve) => {
         const options = Array.isArray(input.options) ? input.options.slice(0, 6).map(String) : [];
-        o.messages.push({ role: 'assistant', content: String((input && input.question) || 'Which one?'), askOptions: options });
-        o.ask = { resolve: (answer) => { o.ask = null; o.busy = true; if (answer != null && answer !== '') o.messages.push({ role: 'user', content: String(answer) }); render(); resolve(answer == null ? null : String(answer)); } };
+        o.messages.push({ role: 'assistant', content: String((input && input.question) || 'Which one?'), askOptions: options, at: Date.now() });
+        o.ask = { resolve: (answer) => { o.ask = null; o.busy = true; if (answer != null && answer !== '') o.messages.push({ role: 'user', content: String(answer), at: Date.now() }); render(); resolve(answer == null ? null : String(answer)); } };
         o.busy = false; render();
         setTimeout(() => { const f = document.querySelector('.wrangler-dock .wr-feed'); if (f) f.scrollTop = f.scrollHeight; }, 0);
       });
@@ -10597,7 +11142,7 @@ async function wranglerSend() {
       else if (!shown) shown = act ? (act.action === 'data' ? (autoPlan ? 'Done — ' + wrPlanSummary(autoPlan) + '.' : 'Here’s what I’ll change — preview it and hit apply when it looks right.') : act.action === 'kpi' ? 'Here’s the KPI — lock it in when the live number looks right.' : act.action === 'request' ? 'Got it — I’ll send this to the developer to OK.' : act.action === 'plan' ? 'Here’s the plan — tap Build when it’s right.' : 'On it — I’ll fix this right now and let you know when I’m done.') : (r.applied ? 'Done — applied your changes. 🤠' : '(no answer)');
       const _target = _onChat ? o : state.wranglerRail.find((c) => c.id === replyChatId);
       if (_target) {
-        const msg = { role: 'assistant', content: shown, action: act || null, filed: false };
+        const msg = { role: 'assistant', content: shown, action: act || null, filed: false, at: Date.now() };
         _target.messages.push(msg);
         if (autoPlan) { msg.filed = true; Promise.resolve(applyWranglerData(autoPlan)).then((res) => { if (res && res.failed) { msg.filed = false; } else if (res && res.focus) { msg.focus = res.focus; } render(); }); }   // simple safe edit / booking → write it now; stash the focus target for the "Open" link
         else if (r.applied && r.focus) msg.focus = r.focus;   // apply_changes already wrote it in the loop → keep the "Open" link to the new record
@@ -10605,7 +11150,7 @@ async function wranglerSend() {
         if (!_onChat) wranglerRailPersist(_target);   // backgrounded chat → fold the reply into its snapshot
       }
     } else {
-      o.messages.push({ role: 'assistant', content: "🤠 Demo mode — sign in to ask the real Mr. Wrangler (the live AI runs through the backend). Here's the snapshot I'd reason over:\n\n" + wranglerDigest() });
+      o.messages.push({ role: 'assistant', content: "🤠 Demo mode — sign in to ask the real Mr. Wrangler (the live AI runs through the backend). Here's the snapshot I'd reason over:\n\n" + wranglerDigest(), at: Date.now() });
     }
     if (state.wrangler.id === replyChatId) { o.busy = false; render(); setTimeout(() => { const f = document.querySelector('.wrangler-dock .wr-feed'); if (f) f.scrollTop = f.scrollHeight; }, 0); } else render();   // only clear/scroll the dock if it's still THIS chat
   } catch (e) { if (state.wrangler.id === replyChatId) { o.busy = false; o.error = wranglerErrMsg(e && e.message); render(); } }
@@ -13129,6 +13674,9 @@ function onClick(e) {
   if (closest('.js-gv-seg')) { e.stopPropagation(); const b = closest('.js-gv-seg'); return toggleGraphSeg(b.dataset.card, b.dataset.src || b.dataset.card, b.dataset.col, b.dataset.value, b.dataset.label); }   // §13.4 toggle a slice/bar/row/number → search entry
   if (closest('.js-gvwin')) { e.stopPropagation(); const b = closest('.js-gvwin'); return openGvWinMenu(b, b.dataset.card, b.dataset.src); }   // §13.4 open the timeline window menu
   if (closest('.js-gvwin-opt')) { e.stopPropagation(); const b = closest('.js-gvwin-opt'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); const cs = activeSession().cards[b.dataset.card]; if (cs) { gvStripTerms(cs); cs.listLimit = undefined; } saveGvWin(b.dataset.src, Number(b.dataset.win)); return render(); }   // §13.4 pick a window → clear stale bucket filters + re-render
+  if (closest('.js-ug-tab')) { e.stopPropagation(); const b = closest('.js-ug-tab'); return uSetMetric(b.dataset.card, b.dataset.src, b.dataset.metric); }   // §13.5 V2 — select metric group
+  if (closest('.js-ug-per')) { e.stopPropagation(); const b = closest('.js-ug-per'); return uSetPeriod(b.dataset.card, b.dataset.src, b.dataset.period); }   // §13.5 V2 — toggle timeframe
+  if (closest('.js-ug-seg')) { e.stopPropagation(); const b = closest('.js-ug-seg'); return uToggleSeg(b.dataset.card, b.dataset.src, b.dataset.metric, b.dataset.col, b.dataset.value, b.dataset.label); }   // §13.5 V2 — slice/tile/bar/bucket filter
   if (closest('.js-bv-sort') && !closest('.js-bv-inscol')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview') { const key = closest('.js-bv-sort').dataset.col; if (o.sort?.key === key) o.sort.dir = o.sort.dir === 'asc' ? 'desc' : 'asc'; else o.sort = { key, dir: 'asc' }; renderOverlay(); } return; }
   if (closest('.js-bv-addcol')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview') { o.colOrder = o.colOrder || []; o.colOrder.push({ kind: 'extra', id: 'xc' + (++o.seq), label: '' }); renderOverlay(); } return; }
   if (closest('.js-bv-inscol')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview' && o.colOrder) { const after = Number(closest('.js-bv-inscol').dataset.after); o.colOrder.splice(after + 1, 0, { kind: 'extra', id: 'xc' + (++o.seq), label: '' }); renderOverlay(); } return; }
@@ -13380,7 +13928,7 @@ function onClick(e) {
   if (xEl) { e.stopPropagation(); return handlePillX(xEl); }
 
   // shop segment switch — clicking the active segment toggles back to All
-  if (closest('.js-shopseg')) { const seg = closest('.js-shopseg').dataset.seg; const cs = activeSession().cards.shop; const next = (cs.segment === seg) ? 'all' : seg; if (cs.graphView) { const oldSrc = (cs.segment && cs.segment !== 'all') ? cs.segment : 'shop'; const newSrc = (next !== 'all') ? next : 'shop'; gvSaveCurrent(oldSrc, cs); cs.segment = next; gvRestore(newSrc, cs, cs.graphIdx || 0); cs.listLimit = undefined; return render(); } cs.segment = next; render(); return; }   // §13.4 — segment switch re-sources the open carousel
+  if (closest('.js-shopseg')) { const seg = closest('.js-shopseg').dataset.seg; const cs = activeSession().cards.shop; const next = (cs.segment === seg) ? 'all' : seg; if (cs.graphView) { const oldSrc = (cs.segment && cs.segment !== 'all') ? cs.segment : 'shop'; const newSrc = (next !== 'all') ? next : 'shop'; if (GV2[newSrc] || GV2[oldSrc]) { gvStripTerms(cs); cs.segment = next; cs.listLimit = undefined; return render(); } gvSaveCurrent(oldSrc, cs); cs.segment = next; gvRestore(newSrc, cs, cs.graphIdx || 0); cs.listLimit = undefined; return render(); } cs.segment = next; render(); return; }   // §13.4/§13.5 — segment switch re-sources the open graph (V2 srcs: clean strip, no legacy auto-select)
 
   // row / header action buttons (anchor / new tab) — recType is set for Shop items
   const anchorBtn = closest('.js-anchor');
@@ -15840,7 +16388,7 @@ function setInspResult(id, val) {
   const n = IDX.insp.get(id); if (!n) return;
   n.checklist = val;
   const u = IDX.unit.get(n.unitId);
-  if (u) { u.inspectionStatus = val === 'Pass' ? 'Ready' : 'Failed'; reindex('units', u); logAction(u, `Inspection ${val === 'Pass' ? 'passed → Ready' : 'failed → Failed'}`); }
+  if (u) { u.inspectionStatus = val === 'Pass' ? 'Ready' : 'Failed'; reindex('units', u); logAction(u, `Inspection ${val === 'Pass' ? 'passed' : 'failed'}`); }   // stored value stays 'Ready' (live-DB compatible); users see "Passed" via the registry label
   logAction(n, `Checklist → ${val}`);
   reindexDraft('inspections', n);
   if (val === 'Fail') {
@@ -16545,7 +17093,7 @@ window.addEventListener('beforeunload', (e) => {
   e.preventDefault(); e.returnValue = '';
 });
 function renderLogin(msg) {
-  $('#app').innerHTML = `<div class="login-screen"><video id="login-video" class="login-video" src="assets/login-intro.mp4?v=20260623l" muted loop playsinline preload="auto" aria-hidden="true"></video><form class="login-box" id="login-form">
+  $('#app').innerHTML = `<div class="login-screen"><video id="login-video" class="login-video" src="assets/login-intro.mp4?v=20260702a" muted loop playsinline preload="auto" aria-hidden="true"></video><form class="login-box" id="login-form">
     <span class="rivet tl"></span><span class="rivet tr"></span><span class="rivet bl"></span><span class="rivet br"></span>
     <div class="login-plate">
       <img class="login-logo" src="assets/jac-rentals-logo.jpg" alt="Jac Rentals" />
@@ -16559,7 +17107,7 @@ function renderLogin(msg) {
         <label class="login-lbl" for="login-pw">Team password</label>
         <input id="login-pw" type="password" class="login-input" placeholder="••••••••" autocomplete="current-password" />
       </div>
-      <button type="submit" class="login-btn" data-r="R17" id="login-go">Clock In</button>
+      <button type="submit" class="login-btn" data-r="R17" id="login-go">Saddle Up?</button>
       <div class="login-err" id="login-err">${msg ? esc(msg) : ''}</div>
     </div>
   </form></div>`;
@@ -16629,7 +17177,9 @@ async function attemptLogin() {
   const btn = document.getElementById('login-go'); if (btn) { btn.textContent = 'Signing in…'; btn.disabled = true; }
   // Roll the Mr. Wrangler intro behind the box while the (slow) backend load runs — a little entertainment for the wait.
   const screen = document.querySelector('.login-screen'); if (screen) screen.classList.add('signing-in');
-  const vid = document.getElementById('login-video'); if (vid) { try { const p = vid.play(); if (p && p.catch) p.catch(() => {}); } catch (e) {} }
+  // The Saddle Up click is a genuine user gesture, so unmuting here lets the intro's
+  // audio play under the browser's autoplay policy (a muted-only clip would stay silent).
+  const vid = document.getElementById('login-video'); if (vid) { try { vid.muted = false; const p = vid.play(); if (p && p.catch) p.catch(() => {}); } catch (e) {} }
   try {
     // Ask the backend for the role. The role-aware backend returns it; an older
     // backend (pre-roles) replies "unknown action" → we proceed without a role
@@ -16670,6 +17220,13 @@ function boot() {
   applySettings();   // Settings Board: apply admin status overrides (color/icon) before the first render
   if (settingsReverted) setTimeout(() => { try { toast('Customizations reset to defaults (recovery mode).'); } catch (e) {} }, 800);
   initTooltip();
+  // §13.5 — the Units graph legend was removed (hover names each slice); its donut slices /
+  // trajectory buckets are SVG, so make a focused one keyboard-activatable (Enter/Space → filter).
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const t = e.target;
+    if (t && t.classList && t.classList.contains('js-ug-seg')) { e.preventDefault(); t.dispatchEvent(new MouseEvent('click', { bubbles: true })); }
+  });
   applyViewportClass();
   const onVP = () => { applyViewportClass(); if (!booting) render(); };
   window.matchMedia('(max-width: 640px)').addEventListener('change', onVP);
@@ -16904,7 +17461,7 @@ function boot() {
 
 // #local — render straight from data.js with NO backend (offline/demo + dev smoke test).
 // saveSoon() already no-ops without a password, so edits stay in-memory only.
-function offlineBoot() { buildIndexes(); state.cascade = createCascade(DATA); seedDemoRequests(); booting = false; render(); exposeTestApi(); wranglerRailLoad(); }
+function offlineBoot() { buildIndexes(); state.cascade = createCascade(DATA); seedDemoRequests(); booting = false; render(); exposeTestApi(); window.__rwBootRail = wranglerRailLoad(); }
 /* #local demo only: a sample Requests-inbox entry so the review/continue flow is
    visible without a backend. Real installs fetch live requests via the backend. */
 function seedDemoRequests() {

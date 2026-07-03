@@ -303,7 +303,7 @@ export const ROLES = [
   { id: 'mechanic', label: 'Mechanic', color: 'blue',
     kpis: ['Healthy Fleet', 'WO Completion Rate', 'Parts Breakeven'] },
   { id: 'mtech', label: 'M.Tech', color: 'purple',
-    kpis: ['Successful Rentals', 'Ready Rate', 'WO Rate (20% goal)'] },
+    kpis: ['Successful Rentals', 'Pass Rate', 'WO Rate (20% goal)'] },
   { id: 'driver', label: 'Driver', color: 'green',
     kpis: ['On-Time', 'Wash Completion', 'Driving Score'] },
   { id: 'office', label: 'Office', color: 'orange',
