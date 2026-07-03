@@ -6953,6 +6953,7 @@ function columnEl(col, session) {
   if (!document.body.classList.contains('is-phone')) {
     const lb = card.querySelector('.card-body .listbar'), body = card.querySelector('.card-body');
     if (lb && body) card.insertBefore(lb, body);
+    const st = card.querySelector('.card-body .rus'); if (st && body) card.insertBefore(st, body);   // §13.7 — flex-basis 25% resolves against .card, the full column
   }
   wrap.appendChild(card);
   return wrap;
@@ -7082,7 +7083,7 @@ function listView(cardDef, session) {
   wrap.appendChild(bar);
   // §13.4 — Graph carousel: an interactive panel ABOVE the list (the list renders below,
   // filtered by the chart's g-tagged search terms). Legacy cards still full-replace the list.
-  if (cs.graphView) { cs.graphView = false; gvStripTerms(cs); }   // §13.6 — in-column graphs retired (stale pre-Round-Up session state)
+  if (cs.graphView && !state.searchMode && RUS_TABS[card]) { const g = el('div', 'rus'); g.innerHTML = rusHtml(card, card, cs); wrap.appendChild(g); }   // §13.7 gauge strip — this card's Round-Up charts, 25% of the column
   // Phase 4 — Units narrowed to an invoice's linked units (Invoice +WO) → removable chip
   if (card === 'units' && state.unitPick) {
     const n = state.unitPick.ids.length;
@@ -7302,7 +7303,8 @@ function shopListView(session, byType, forcedSeg) {
   // interactive carousel ABOVE the list (list filters to the graph terms below); the
   // 'all' overview (and column-pinned shop tabs) keep the legacy combined dashboard.
   if (cs.graphView && !state.searchMode) {
-    if (graphViewsFor(gsrc)) { const g = el('div', 'gv-panel'); g.innerHTML = graphPanelHtml('shop', gsrc, cs); wrap.appendChild(g); }   // 'all' → the stackbars worklist (mechanic landing); segments have no in-column graph (§13.6)
+    if (graphViewsFor(gsrc)) { const g = el('div', 'gv-panel'); g.innerHTML = graphPanelHtml('shop', gsrc, cs); wrap.appendChild(g); }   // 'all' → the stackbars worklist (mechanic landing) — untouched
+    else if (RUS_TABS[gsrc]) { const g = el('div', 'rus'); g.innerHTML = rusHtml('shop', gsrc, cs); wrap.appendChild(g); }   // §13.7 — a segment's gauge strip
     else { cs.graphView = false; gvStripTerms(cs); }
   }
 
@@ -8872,6 +8874,7 @@ function openGvWinMenu(anchorEl, card, src) {
   openDropdown(anchorEl, opt(0, 'All time') + GV_WIN_OPTS.map((d) => opt(d, `Last ${d} days`)).join(''));
 }
 
+let _ruSize = null;   // §13.7 ambient size hint — set around a gauge-strip mount so engines fit the 25% box
 // shared chart helpers (born in the retired §13.5 Graph V2; the Round-Up inherits them)
 const U_DARKINK = new Set(['green', 'yellow', 'orange', 'brown', 'gray']);   // slices that carry dark ink labels (else white)
 const uISO = (d) => d.toISOString().slice(0, 10);
@@ -8926,6 +8929,7 @@ const ruColor = (name) => getComputedStyle(document.documentElement).getProperty
 /* Plot bar panel — Jac's chart law baked in: value rides the bar (never a detached row),
    dotted gridlines + Y axis on a nice scale, bottom-anchored, no legend (hover = plain name). */
 function ruBarsSVG({ data, money = false, w = 620, h = 250, overlayMarks = [], labelMarks = [] }) {
+  if (_ruSize) { w = _ruSize.w; h = _ruSize.h; }
   return Plot.plot({
     width: w, height: h, marginLeft: 48, marginRight: 12, marginTop: 22, marginBottom: data.length > 6 ? 54 : 28,
     style: { background: 'transparent', fontFamily: "'Saira Condensed', system-ui, sans-serif", fontSize: '11.5px' },
@@ -8984,7 +8988,7 @@ function ruNavigate(card, col, value, seg) {
   closeOverlay();
   const s = activeSession();
   const colId = COLUMN_OF[card]; if (colId && s.cols) { s.cols[colId] = card; const idx = COLUMNS.findIndex((c) => c.id === colId); if (idx >= 0) state.mobileCol = idx; }
-  const cs = s.cards[card]; if (cs) { cs.mode = 'list'; cs.recId = null; cs.recType = null; cs.graphView = false; if (seg) cs.segment = seg; }
+  const cs = s.cards[card]; if (cs) { cs.mode = 'list'; cs.recId = null; cs.recType = null; if (seg) cs.segment = seg; }   // graphView survives — a strip mark filters the list below it
   addColFilter(card, col, value);
 }
 // ── Money rollups (range-aware; the §13.5 cutoff-only versions retire in Phase E) ──
@@ -9081,10 +9085,19 @@ function ruBuckets(rg) {
   return out;
 }
 // trajectory line: endpoint emphasized, counts above points, dots are the nav targets
-function ruLineSVG({ bk, vals, color, w = 620, h = 230 }) {
+function ruLineSVG({ bk, vals, color, w = 620, h = 230, extra = null }) {
+  if (_ruSize) { w = _ruSize.w; h = _ruSize.h; }
   const n = bk.length, pts = bk.map((b, i) => ({ i, label: b.label, v: vals[i] }));
   const show = new Set(n <= 6 ? pts.map((p) => p.i) : [0, 1, 2, 3, 4].map((k) => Math.round(k * (n - 1) / 4)));
   const ink = ruColor(color);
+  // extra: {vals, color, label} — a quieter context series drawn UNDER the main line
+  // (no dots/labels of its own; a small stamped end-label names it, color + label per R-a11y)
+  const xpts = extra ? bk.map((b, i) => ({ i, v: extra.vals[i] })) : null;
+  const xink = extra ? ruColor(extra.color) : null;
+  const extraMarks = extra ? [
+    Plot.line(xpts, { x: 'i', y: 'v', stroke: xink, strokeWidth: 1.5, strokeDasharray: '4,3', strokeOpacity: 0.9 }),
+    Plot.text([xpts[n - 1]], { x: 'i', y: 'v', text: () => (extra.label || '').toUpperCase(), dy: 11, dx: -2, textAnchor: 'end', fill: xink, fontWeight: 800, fontSize: 9.5 }),
+  ] : [];
   return Plot.plot({
     width: w, height: h, marginLeft: 40, marginRight: 18, marginTop: 22, marginBottom: 28,
     style: { background: 'transparent', fontFamily: "'Saira Condensed', system-ui, sans-serif", fontSize: '11.5px' },
@@ -9092,6 +9105,7 @@ function ruLineSVG({ bk, vals, color, w = 620, h = 230 }) {
     y: { label: null, nice: true, tickFormat: (v) => (Number.isInteger(v) ? String(v) : '') },
     marks: [
       Plot.gridY({ stroke: ruColor('--line'), strokeDasharray: '2,3', strokeOpacity: 0.8 }),
+      ...extraMarks,
       Plot.areaY(pts, { x: 'i', y: 'v', fill: ink, fillOpacity: 0.1 }),
       Plot.line(pts, { x: 'i', y: 'v', stroke: ink, strokeWidth: 2 }),
       Plot.dot(pts, { x: 'i', y: 'v', r: (d) => (d.i === n - 1 ? 5 : 3.5), fill: ink, title: 'label' }),
@@ -9102,6 +9116,7 @@ function ruLineSVG({ bk, vals, color, w = 620, h = 230 }) {
 }
 // stacked proportional area (read-only): bands of a running mix, right-edge % labels
 function ruAreaSVG({ bk, bands, w = 620, h = 230 }) {
+  if (_ruSize) { w = _ruSize.w; h = _ruSize.h; }
   // bands: [{name, color, vals(fractions per bucket, bands sum ≤1)}] bottom-up
   const n = bk.length;
   const show = new Set(n <= 6 ? bk.map((_, i) => i) : [0, 1, 2, 3, 4].map((k) => Math.round(k * (n - 1) / 4)));
@@ -9136,7 +9151,9 @@ function ruBookings(rg) {
   const bk = ruBuckets(rg);
   const vals = bk.map((b) => DATA.rentals.filter((r2) => { const d = (r2.startDate || '').slice(0, 10); return d >= b.a && d < b.b; }).length);
   const rows = bk.map((b, i) => ({ card: 'rentals', col: '__rentrange', navValue: b.key, name: `${b.label} — ${vals[i]} booked`, tip: `${b.label} — ${vals[i]} booked` }));
-  const chart = vals.some((v) => v > 0) ? ruWireNav(ruLineSVG({ bk, vals, color: '--blue' }), rows, 'circle') : ruEmpty('No rentals booked in this window.');
+  // N5 Successful Rentals — the quiet green context line: rentals that reached Returned, by end date
+  const done = bk.map((b) => DATA.rentals.filter((r2) => rentalDisplayStatus(r2) === 'Returned' && (r2.endDate || '').slice(0, 10) >= b.a && (r2.endDate || '').slice(0, 10) < b.b).length);
+  const chart = vals.some((v) => v > 0) ? ruWireNav(ruLineSVG({ bk, vals, color: '--blue', extra: done.some((v) => v > 0) ? { vals: done, color: '--green', label: 'Returned' } : null }), rows, 'circle') : ruEmpty('No rentals booked in this window.');
   const sc = {}; DATA.rentals.forEach((r2) => { const s = rentalDisplayStatus(r2); sc[s] = (sc[s] || 0) + 1; });
   const seg = (st) => ({ label: st, count: sc[st] || 0, color: getStatus('rentalStatus', st).color || 'gray' });
   return ruDuo(chart, ruReality({ num: sc['On Rent'] || 0, noun: 'On Rent now', segs: ['On Rent', 'Today', 'Tomorrow', 'Reserved'].map(seg) }));
@@ -9177,7 +9194,8 @@ function ruFieldCalls(rg) {
   return d;
 }
 // ── Phase D: d3-shape donuts + stat tiles (Plot has no pie mark — pie()/arc() build the annulus) ──
-function ruDonutSVG({ segs, size = 190, noun = 'UNITS' }) {
+function ruDonutSVG({ segs, size = 0, noun = 'UNITS' }) {
+  size = size || (_ruSize ? Math.max(110, Math.min(_ruSize.h - 40, _ruSize.w - 70, 220)) : 190);
   const total = segs.reduce((a, s2) => a + (s2.count || 0), 0);
   const live = segs.filter((s2) => s2.count > 0);
   const r = size / 2, inner = r * 0.58, mid = (inner + r - 1) / 2, pad = 30;
@@ -9288,6 +9306,75 @@ function ruCardHealth() {   // card on file — snapshot by nature; values match
   return ruDonutSVG({ segs, noun: 'CUST' });
 }
 // panel builders land here phase by phase; sections list what is coming so the board is honest
+/* ── Manager metrics M1 (spec 2026-07-03-manager-metrics-design.md) ── */
+function ruNetSales(rg) {   // N1 — payments net of refunds, bucketed by invoice date
+  const bk = ruBuckets(rg);
+  const vals = bk.map((b) => DATA.invoices.reduce((a, inv) => { const d = (inv.date || '').slice(0, 10); if (!(d >= b.a && d < b.b)) return a; return a + invoiceTotals(inv).paid - (Number(inv.refundedAmount) || 0); }, 0));
+  if (!vals.some((v) => Math.abs(v) > 0.005)) return ruEmpty('No payments in this window.');
+  const green = ruColor('--green');
+  const rows = bk.map((b, i) => ({ label: b.label, name: `${b.label} — ${money(vals[i])} net`, value: Math.round(vals[i]), fill: green, card: 'invoices', col: '__daterange', navValue: b.key, tip: `${b.label} — ${money(vals[i])} collected net of refunds` }));
+  return ruWireNav(ruBarsSVG({ data: rows, money: true }), rows);
+}
+function ruRefunds(rg) {   // N2 — refunded $ (bucketed by the invoice's issue date — refunds carry no own date)
+  const bk = ruBuckets(rg);
+  const vals = bk.map((b) => DATA.invoices.reduce((a, inv) => { const d = (inv.date || '').slice(0, 10); return d >= b.a && d < b.b ? a + (Number(inv.refundedAmount) || 0) : a; }, 0));
+  if (!vals.some((v) => v > 0.005)) return ruEmpty('No refunds in this window — good.');
+  const red = ruColor('--red');
+  const rows = bk.map((b, i) => ({ label: b.label, name: `${b.label} — ${money(vals[i])} refunded`, value: Math.round(vals[i]), fill: red, card: 'invoices', col: 'invoice', navValue: 'Refunded', tip: `${b.label} — ${money(vals[i])} refunded` }));
+  return ruWireNav(ruBarsSVG({ data: rows, money: true }), rows);
+}
+function ruAging() {   // N3 — AR aging: open balances by days past due (inherently current)
+  const B = [{ k: 'Current', a: -1e9, b: 1 , color: '--gray' }, { k: '1–30', a: 1, b: 31, color: '--yellow' }, { k: '31–60', a: 31, b: 61, color: '--red' }, { k: '61–90', a: 61, b: 91, color: '--red' }, { k: '90+', a: 91, b: 1e9, color: '--red' }];
+  const sums = B.map(() => ({ v: 0, n: 0 }));
+  DATA.invoices.forEach((inv) => {
+    const t = invoiceTotals(inv); if (t.balance <= 0.005) return;
+    const late = inv.dueDate ? Math.floor((parseISO(TODAY_ISO) - parseISO(inv.dueDate.slice(0, 10))) / 86400000) : 0;
+    const bi = B.findIndex((x) => late >= x.a && late < x.b); if (bi >= 0) { sums[bi].v += t.balance; sums[bi].n++; }
+  });
+  if (!sums.some((s) => s.n)) return ruEmpty('No open balances — the book is clean.');
+  const rows = B.map((x, i) => ({ label: x.k, name: `${x.k}: ${sums[i].n} open — ${money(sums[i].v)}`, value: Math.round(sums[i].v), fill: ruColor(x.color), card: 'invoices', col: 'invoice', navValue: x.k === 'Current' ? 'Unpaid' : 'Late', tip: `${x.k} days past due: ${sums[i].n} invoice${sums[i].n === 1 ? '' : 's'} — ${money(sums[i].v)} open` })).filter((d) => d.value > 0);
+  return ruWireNav(ruBarsSVG({ data: rows, money: true }), rows);
+}
+function ruVoided(rg) {   // N4 — cancellations + no-shows per bucket, reality = split right now
+  const bk = ruBuckets(rg);
+  const isVoid = (r2) => { const s = rentalDisplayStatus(r2); return s === 'Cancelled' || s === 'No Show'; };
+  const vals = bk.map((b) => DATA.rentals.filter((r2) => isVoid(r2) && (r2.startDate || '').slice(0, 10) >= b.a && (r2.startDate || '').slice(0, 10) < b.b).length);
+  const rows = bk.map((b, i) => ({ card: 'rentals', col: '__rentrange', navValue: b.key, name: `${b.label} — ${vals[i]} voided`, tip: `${b.label} — ${vals[i]} cancelled / no-show` }));
+  const chart = vals.some((v) => v > 0) ? ruWireNav(ruLineSVG({ bk, vals, color: '--red' }), rows, 'circle') : ruEmpty('No cancellations or no-shows in this window.');
+  const cc = DATA.rentals.filter((r2) => rentalDisplayStatus(r2) === 'Cancelled').length, nn = DATA.rentals.filter((r2) => rentalDisplayStatus(r2) === 'No Show').length;
+  return ruDuo(chart, ruReality({ num: cc + nn, noun: 'voided all-time', segs: [
+    { label: 'Cancelled', count: cc, color: getStatus('rentalStatus', 'Cancelled').color || 'gray' },
+    { label: 'No Show', count: nn, color: getStatus('rentalStatus', 'No Show').color || 'red' } ] }));
+}
+function ruCustActive() {   // N6 — the profile activity meter (server digest activePct), Members split out
+  let am = 0, an = 0, off = 0;
+  DATA.customers.forEach((c) => {
+    const active = (c._digest?.activePct || 0) > 0;
+    const member = /Member/.test(c.accountType || '') && c.accountType !== 'Member Incomplete';
+    if (!active) off++; else if (member) am++; else an++;
+  });
+  const segs = [
+    { name: 'Active Members', count: am, color: 'green', card: 'customers', col: 'accountType', navValue: 'Member', tip: `${am} members active` },
+    { name: 'Active', count: an, color: 'blue', tip: `${an} non-member customers active` },
+    { name: 'Inactive', count: off, color: 'gray', tip: `${off} customers with no recent activity` },
+  ].filter((s) => s.count > 0);
+  return segs.length ? ruDonutSVG({ segs, noun: 'CUSTOMERS' }) : ruEmpty('No customers yet.');
+}
+function ruMemberships() {   // N7 — membership standing incl. Cancelled (a cancellation invoice, not re-activated)
+  const counts = {};
+  DATA.customers.forEach((c) => {
+    let s = membershipStatus(c); if (s === 'None') return;
+    if ((s === 'Lapsed' || s === 'Incomplete') && DATA.invoices.some((inv) => inv.membershipCancellation && inv.customerId === c.customerId)) s = 'Cancelled';
+    counts[s] = (counts[s] || 0) + 1;
+  });
+  const META = [
+    { s: 'Active', color: 'green' }, { s: 'Past Due', color: 'yellow' }, { s: 'Lapsed', color: 'red' },
+    { s: 'Cancelled', color: 'gray' }, { s: 'Incomplete', color: 'purple' },
+  ];
+  const segs = META.filter((m) => counts[m.s]).map((m) => ({
+    name: m.s, count: counts[m.s], color: m.color, card: 'customers', col: 'accountType', navValue: 'Member', tip: `${counts[m.s]} ${m.s.toLowerCase()} membership${counts[m.s] === 1 ? '' : 's'}` }));
+  return segs.length ? ruDonutSVG({ segs, noun: 'MEMBERS' }) : ruEmpty('No memberships yet.');
+}
 const RU_PANELS = {
   'units-per-cat': { build: ruUnitsPerCategory },
   'rev-cat': { build: ruRevByCat }, 'exp-cat': { build: ruExpByCat }, 'rev-status': { build: ruRevByStatus },
@@ -9297,14 +9384,19 @@ const RU_PANELS = {
   'inv-status': { build: ruInvoiceStatus }, 'rent-tiles': { build: ruRentTiles },
   'wo-phase': { build: ruWoPhase }, 'svc-urgency': { build: ruSvcUrgency },
   'fleet-mix': { build: ruFleetMix }, 'accounts': { build: ruAccounts }, 'card-health': { build: ruCardHealth },
+  'net-sales': { build: ruNetSales }, 'refunds': { build: ruRefunds }, 'aging': { build: ruAging },
+  'voided': { build: ruVoided }, 'cust-active': { build: ruCustActive }, 'memberships': { build: ruMemberships },
 };
 const RU_SECTIONS = [
   { id: 'money', label: 'Money', panels: [
     { id: 'rev-cat', title: 'Revenue by Category', phase: 'B' }, { id: 'exp-cat', title: 'Expenses by Category', phase: 'B' },
-    { id: 'rev-status', title: 'Revenue by Rental Status', phase: 'B' }, { id: 'top-spend', title: 'Top Customers', phase: 'B' },
+    { id: 'rev-status', title: 'Revenue by Rental Status', phase: 'B' }, { id: 'net-sales', title: 'Net Sales', phase: 'M1' },
+    { id: 'refunds', title: 'Refunds', phase: 'M1' }, { id: 'aging', title: 'Invoice Aging', phase: 'M1' },
+    { id: 'top-spend', title: 'Top Customers', phase: 'B' },
     { id: 'balances', title: 'Biggest Open Balances', phase: 'B' } ] },
   { id: 'rentals', label: 'Rentals', panels: [
-    { id: 'bookings', title: 'Bookings Over Time', phase: 'C' }, { id: 'inv-status', title: 'Invoice Status', phase: 'D' },
+    { id: 'bookings', title: 'Bookings Over Time', phase: 'C' }, { id: 'voided', title: 'Cancellations & No-Shows', phase: 'M1' },
+    { id: 'inv-status', title: 'Invoice Status', phase: 'D' },
     { id: 'rent-tiles', title: 'By the Numbers', phase: 'D' } ] },
   { id: 'shop', label: 'Shop', panels: [
     { id: 'insp-trend', title: 'Inspections Over Time', phase: 'C' }, { id: 'wo-trend', title: 'Work Orders Opened', phase: 'C' },
@@ -9313,9 +9405,48 @@ const RU_SECTIONS = [
   { id: 'fleet', label: 'Fleet', panels: [
     { id: 'fleet-mix', title: 'Fleet Mix', phase: 'D' }, { id: 'units-per-cat', title: 'Units per Category' } ] },
   { id: 'customers', label: 'Customers', panels: [
-    { id: 'accounts', title: 'Account Types · Pay Status', phase: 'D' }, { id: 'card-health', title: 'Card Health', phase: 'D' } ] },
+    { id: 'accounts', title: 'Account Types · Pay Status', phase: 'D' }, { id: 'card-health', title: 'Card Health', phase: 'D' },
+    { id: 'cust-active', title: 'Active vs Inactive', phase: 'M1' }, { id: 'memberships', title: 'Memberships', phase: 'M1' } ] },
 ];
-const RU_SECTION_OF = { units: 'fleet', categories: 'money', shop: 'shop', rentals: 'rentals', customers: 'customers', invoices: 'money' };   // card graph icon → its board section
+/* §13.7 GAUGE STRIP (Jac 2026-07-03) — the card's Round-Up charts IN-COLUMN, at the top
+   of the list rows, strictly 25% of the card column's height. One panel at a time behind
+   stamped tabs (orange INK when selected, never a chip); a slim left rail is the board's
+   time spine shrunk down — it drives the SAME global range as the board (one timeframe
+   everywhere). Picking a NEW custom range stays a board power; an active custom range
+   shows here as stamped orange text (click clears to All). Marks stay nav targets — in
+   the strip a click filters the list right below it. The Round-Up board itself remains
+   on the header Round-Up button. */
+const RUS_TABS = {
+  units: [{ p: 'fleet-mix', l: 'Fleet' }, { p: 'units-per-cat', l: 'Categories' }, { p: 'field-calls', l: 'Field Calls' }],
+  categories: [{ p: 'rev-cat', l: 'Revenue' }, { p: 'exp-cat', l: 'Expenses' }],
+  rentals: [{ p: 'bookings', l: 'Bookings' }, { p: 'voided', l: 'Voided' }, { p: 'rev-status', l: 'Revenue' }, { p: 'inv-status', l: 'Invoices' }, { p: 'rent-tiles', l: '#s' }],
+  customers: [{ p: 'accounts', l: 'Accounts' }, { p: 'cust-active', l: 'Active' }, { p: 'memberships', l: 'Members' }, { p: 'card-health', l: 'Cards' }, { p: 'top-spend', l: 'Top Spend' }],
+  invoices: [{ p: 'balances', l: 'Balances' }, { p: 'net-sales', l: 'Net' }, { p: 'refunds', l: 'Refunds' }, { p: 'aging', l: 'Aging' }, { p: 'top-spend', l: 'Top Spend' }],
+  inspections: [{ p: 'insp-trend', l: 'Inspections' }],
+  workOrders: [{ p: 'wo-trend', l: 'Opened' }, { p: 'wo-phase', l: 'Bottleneck' }],
+  serviceOrders: [{ p: 'svc-urgency', l: 'Urgency' }],
+};
+const RUS_PER_LABEL = { today: 'Td', wk: 'Wk', mo: 'Mo', 30: '30d', 60: '60d', 90: '90d', all: 'All' };
+function rusHtml(card, src, cs) {
+  const tabs = RUS_TABS[src] || []; if (!tabs.length) return '';
+  let sel = (cs.rusTab || {})[src]; if (!tabs.some((t) => t.p === sel)) sel = tabs[0].p;
+  const r = ruResolve();
+  const tabBtns = tabs.map((t) => `<button class="rus-tab${t.p === sel ? ' on' : ''} js-rus-tab" data-card="${card}" data-src="${esc(src)}" data-panel="${t.p}">${esc(t.l)}</button>`).join('');
+  const rail = RU_PERIODS.map((p) => `<button class="rus-per${r.k === p.k ? ' on' : ''} js-rus-per" data-k="${p.k}" data-tip="${esc(p.label)}">${RUS_PER_LABEL[p.k] || p.k}</button>`).join('')
+    + (r.k === 'custom' ? `<button class="rus-per on js-rus-per" data-k="all" data-tip="Custom range (set on the Round-Up) — click to clear back to All">${esc(r.label)}</button>` : '');
+  return `<div class="rus-tabs" role="tablist">${tabBtns}</div><div class="rus-body"><nav class="rus-rail" aria-label="Timeframe">${rail}</nav><div class="rus-mount" data-panel="${sel}"></div></div>`;
+}
+// post-render mount pass for the strips (the board's pass walks .ru-plotmount; this one
+// measures the 25% box first so the engines render at native text size instead of scaling)
+function ruMountStrips() {
+  document.querySelectorAll('.rus-mount[data-panel]').forEach((m) => {
+    const p = RU_PANELS[m.dataset.panel]; if (!p) return;
+    _ruSize = { w: Math.max(220, m.clientWidth - 8), h: Math.max(110, m.clientHeight - 6) };
+    try { m.replaceChildren(p.build(ruResolve())); }
+    catch (e) { m.innerHTML = `<div class="ru-err">Chart failed — ${esc(String(e && e.message || e))}</div>`; }
+    _ruSize = null;
+  });
+}
 function roundupBody(o) {
   const r = ruResolve();
   const spine = RU_PERIODS.map((p) => `<button class="ru-per${r.k === p.k ? ' on' : ''} js-ru-per" data-k="${p.k}">${esc(p.label)}</button>`).join('')
@@ -12248,6 +12379,7 @@ function render() {
   mountTransportEditor();   // inline transport editor: mount the live map + wire the address field
   mountWranglerDock();   // §18 wire paste + drag-drop image input on the wrangler dock after each render
   mountDispatchMap();   // §2.3 office cockpit: re-parent the singleton dispatch map + refresh pins/route/truck
+  ruMountStrips();   // §13.7 gauge strips — build each open strip's chart into its measured 25% box
   applyTitles();   // full text on hover wherever we truncate (custom ~0.5s tooltip)
   drawDispatchArrows();   // §2.3 — paint free-form route legs over the dispatch run (needs live geometry)
   scoreTick();     // §11 gamification — pop +X over any ring whose metric just rose
@@ -13261,14 +13393,13 @@ function onClick(e) {
   if (closest('.js-ff-cancel')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'board') { o.fileForm = false; o.fileUpload = null; renderOverlay(); } return; }
   if (closest('.js-ff-save')) { e.stopPropagation(); return saveFileForm(); }
   if (closest('.js-vendor-tax')) { e.stopPropagation(); const b = closest('.js-vendor-tax'); const v = recOf('vendors', b.dataset.rec); if (v) { const ex = b.dataset.val === '1'; if (!!v.salesTaxExempt !== ex) { v.salesTaxExempt = ex; reindex('vendors', v); logAction(v, `Sales tax → ${ex ? 'Exempt' : 'Taxed'}`); } if (state.overlay?.kind === 'board') renderOverlay(); render(); } return; }
-  if (closest('.js-cardgraph')) { e.stopPropagation(); const b = closest('.js-cardgraph'); const card = b.dataset.card, src = b.dataset.src || card; const cs = activeSession().cards[card];
-    if (card === 'shop' && src === 'shop') { if (!cs.graphView) return gvOpen('shop', 'shop'); cs.graphView = false; return render(); }   // the 'all' stackbars worklist (mechanic landing) — untouched
-    if (cs && cs.graphView) { cs.graphView = false; gvStripTerms(cs); }
-    return openOverlay({ kind: 'roundup', section: RU_SECTION_OF[card] || null }); }   // §13.6 — the chart icon opens the Round-Up at this card's section
+  if (closest('.js-cardgraph')) { e.stopPropagation(); const b = closest('.js-cardgraph'); const card = b.dataset.card, src = b.dataset.src || card; const cs = activeSession().cards[card]; if (!cs.graphView) { if (graphViewsFor(src)) return gvOpen(card, src); cs.graphView = true; return render(); } cs.graphView = false; return render(); }   // §13.7 gauge-strip toggle (Shop 'all': the stackbars worklist)
   if (closest('.js-gv-chev')) { e.stopPropagation(); const b = closest('.js-gv-chev'); return gvChevron(b.dataset.card, b.dataset.src || b.dataset.card, Number(b.dataset.dir)); }   // §13.4 cycle the active graph view
   if (closest('.js-gv-seg')) { e.stopPropagation(); const b = closest('.js-gv-seg'); return toggleGraphSeg(b.dataset.card, b.dataset.src || b.dataset.card, b.dataset.col, b.dataset.value, b.dataset.label); }   // §13.4 toggle a slice/bar/row/number → search entry
   if (closest('.js-gvwin')) { e.stopPropagation(); const b = closest('.js-gvwin'); return openGvWinMenu(b, b.dataset.card, b.dataset.src); }   // §13.4 open the timeline window menu
   if (closest('.js-gvwin-opt')) { e.stopPropagation(); const b = closest('.js-gvwin-opt'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); const cs = activeSession().cards[b.dataset.card]; if (cs) { gvStripTerms(cs); cs.listLimit = undefined; } saveGvWin(b.dataset.src, Number(b.dataset.win)); return render(); }   // §13.4 pick a window → clear stale bucket filters + re-render
+  if (closest('.js-rus-tab')) { e.stopPropagation(); const b = closest('.js-rus-tab'); const cs = activeSession().cards[b.dataset.card]; if (cs) { (cs.rusTab = cs.rusTab || {})[b.dataset.src] = b.dataset.panel; render(); } return; }   // §13.7 strip panel tab
+  if (closest('.js-rus-per')) { e.stopPropagation(); const k = closest('.js-rus-per').dataset.k; ruSave(k === 'all' ? { k: 'all', a: null, b: null } : { k }); return render(); }   // §13.7 strip rail → the same global range the board reads
   if (closest('.js-ru-open')) { e.stopPropagation(); return openOverlay({ kind: 'roundup', section: closest('.js-ru-open').dataset.section || null }); }   // §13.6 Round-Up
   if (closest('.js-ru-per')) { e.stopPropagation(); const k = closest('.js-ru-per').dataset.k; ruSave(k === 'all' ? { k: 'all', a: null, b: null } : { k }); return renderOverlay(); }
   if (closest('.js-ru-custom')) { e.stopPropagation(); const o = state.overlay; if (o) { o.ruCustomOpen = !o.ruCustomOpen; if (o.ruCustomOpen) { const r = ruResolve(); o.ruFrom = o.ruFrom || r.a || TODAY_ISO; o.ruTo = o.ruTo || (r.b ? addDaysISO(r.b, -1) : TODAY_ISO); } else state.datepick = null; } return renderOverlay(); }
@@ -13512,7 +13643,7 @@ function onClick(e) {
   if (xEl) { e.stopPropagation(); return handlePillX(xEl); }
 
   // shop segment switch — clicking the active segment toggles back to All
-  if (closest('.js-shopseg')) { const seg = closest('.js-shopseg').dataset.seg; const cs = activeSession().cards.shop; const next = (cs.segment === seg) ? 'all' : seg; if (cs.graphView) { gvStripTerms(cs); if (next !== 'all') cs.graphView = false; }   /* §13.6 — segment graphs live on the Round-Up; 'all' returns to the worklist */ cs.segment = next; cs.listLimit = undefined; return render(); }
+  if (closest('.js-shopseg')) { const seg = closest('.js-shopseg').dataset.seg; const cs = activeSession().cards.shop; const next = (cs.segment === seg) ? 'all' : seg; if (cs.graphView) gvStripTerms(cs);   /* §13.7 — the strip (or 'all' worklist) stays open across a segment switch */ cs.segment = next; cs.listLimit = undefined; return render(); }
 
   // row / header action buttons (anchor / new tab) — recType is set for Shop items
   const anchorBtn = closest('.js-anchor');
