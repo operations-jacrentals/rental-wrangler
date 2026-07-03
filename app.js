@@ -4045,7 +4045,7 @@ function openWranglerForKpi(roleId, idx) {
   if (o) closeOverlay();
   state.wrangler.kpiTarget = kt;
   openWranglerDock({
-    messages: [{ role: 'assistant', content: `🤠 Let's wrangle the ${role.label} role's Ring ${idx + 1} (now “${ring.label || '—'}”). Tell me in plain English what this ring should measure — I'll ask anything I need, prove it against your live yard data, and lock it in.` }],
+    messages: [{ role: 'assistant', content: `🤠 Let's wrangle the ${role.label} role's Ring ${idx + 1} (now “${ring.label || '—'}”). Tell me in plain English what this ring should measure — I'll ask anything I need, prove it against your live yard data, and lock it in.`, at: Date.now() }],
     draft: '',
   });
 }
@@ -7881,6 +7881,19 @@ function wrChatFormat(raw) {
   s = s.replace(/`([^`]+)`/g, '<code>$1</code>');           // `inline code`
   return s.replace(/\n/g, '<br>');
 }
+// §18g — stamp a Mr. Wrangler message with its send time so a glance tells you how current the
+// conversation is. Time-only within a day; the day is prepended when it rolls over (and on the
+// first message). Chats saved before we recorded per-message times simply show none.
+function wrMsgStamp(at, prevAt) {
+  if (!at) return '';
+  const d = new Date(at);
+  const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  if (prevAt && new Date(prevAt).toDateString() === d.toDateString()) return time;
+  const day = d.toDateString() === new Date().toDateString()
+    ? 'Today'
+    : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return day + ' · ' + time;
+}
 // §18 Mr. Wrangler dock — renders the floating dock HTML (mirrors wrangler overlay but as a dock).
 function wranglerDockEl() {
   const o = state.wrangler;
@@ -7926,7 +7939,9 @@ function wranglerDockEl() {
         const txt = m.content ? wrChatFormat(m.content) : '';
         // ask_user option chips (Stage 2b) — tappable only while THIS question is the live pending one.
         const ask = (m.askOptions && m.askOptions.length && o.ask) ? `<div class="wr-ask">${m.askOptions.map((opt) => `<button class="wr-askbtn js-wr-ask" data-ans="${esc(opt)}">${esc(opt)}</button>`).join('')}</div>` : '';
-        return `<div class="wr-msg ${m.role}">${m.role === 'assistant' ? '<span class="wr-av">🤠</span>' : ''}<div class="wr-bub">${imgs}${files}${txt}${act}${ask}</div></div>`;
+        const stamp = wrMsgStamp(m.at, i > 0 ? o.messages[i - 1].at : null);   // §18g when this turn happened — currency at a glance
+        const time = stamp ? `<span class="wr-time">${esc(stamp)}</span>` : '';
+        return `<div class="wr-msg ${m.role}">${m.role === 'assistant' ? '<span class="wr-av">🤠</span>' : ''}<div class="wr-bub-wrap"><div class="wr-bub">${imgs}${files}${txt}${act}${ask}</div>${time}</div></div>`;
       }).join('')
     : (o.reqNumber
         ? '<div class="wr-empty">That’s the request up top. Reply here to talk it over with Mr. Wrangler, or use the buttons above to Approve or Dismiss it.</div>'
@@ -10500,7 +10515,7 @@ async function wranglerSend() {
   // rather than starting a fresh turn. Tapping an option chip resolves it the same way.
   if (o.ask && o.ask.resolve) { if (!text) { if (inp) inp.focus(); return; } o.draft = ''; if (inp) inp.value = ''; o.ask.resolve(text); return; }
   if ((!text && !imgs && !files) || o.busy) { if (inp) inp.focus(); return; }
-  o.messages.push({ role: 'user', content: text, images: imgs, files });
+  o.messages.push({ role: 'user', content: text, images: imgs, files, at: Date.now() });
   syncWranglerComment(o, 'user', text, imgs);   // §18e mirror the turn onto the issue thread
   wranglerClearNeedsAnswer(o.reqNumber);        // §18e answering a "Needs your answer" request clears it from the inbox
   o.draft = ''; o.attach = []; o.files = []; o.busy = true; o.error = ''; render();
@@ -10539,8 +10554,8 @@ async function wranglerSend() {
       // options and wait for a tap/typed reply, which resumes the loop. Tied to the live dock only.
       const askFn = (input) => new Promise((resolve) => {
         const options = Array.isArray(input.options) ? input.options.slice(0, 6).map(String) : [];
-        o.messages.push({ role: 'assistant', content: String((input && input.question) || 'Which one?'), askOptions: options });
-        o.ask = { resolve: (answer) => { o.ask = null; o.busy = true; if (answer != null && answer !== '') o.messages.push({ role: 'user', content: String(answer) }); render(); resolve(answer == null ? null : String(answer)); } };
+        o.messages.push({ role: 'assistant', content: String((input && input.question) || 'Which one?'), askOptions: options, at: Date.now() });
+        o.ask = { resolve: (answer) => { o.ask = null; o.busy = true; if (answer != null && answer !== '') o.messages.push({ role: 'user', content: String(answer), at: Date.now() }); render(); resolve(answer == null ? null : String(answer)); } };
         o.busy = false; render();
         setTimeout(() => { const f = document.querySelector('.wrangler-dock .wr-feed'); if (f) f.scrollTop = f.scrollHeight; }, 0);
       });
@@ -10569,7 +10584,7 @@ async function wranglerSend() {
       else if (!shown) shown = act ? (act.action === 'data' ? (autoPlan ? 'Done — ' + wrPlanSummary(autoPlan) + '.' : 'Here’s what I’ll change — preview it and hit apply when it looks right.') : act.action === 'kpi' ? 'Here’s the KPI — lock it in when the live number looks right.' : act.action === 'request' ? 'Got it — I’ll send this to the developer to OK.' : act.action === 'plan' ? 'Here’s the plan — tap Build when it’s right.' : 'On it — I’ll fix this right now and let you know when I’m done.') : (r.applied ? 'Done — applied your changes. 🤠' : '(no answer)');
       const _target = _onChat ? o : state.wranglerRail.find((c) => c.id === replyChatId);
       if (_target) {
-        const msg = { role: 'assistant', content: shown, action: act || null, filed: false };
+        const msg = { role: 'assistant', content: shown, action: act || null, filed: false, at: Date.now() };
         _target.messages.push(msg);
         if (autoPlan) { msg.filed = true; Promise.resolve(applyWranglerData(autoPlan)).then((res) => { if (res && res.failed) { msg.filed = false; } else if (res && res.focus) { msg.focus = res.focus; } render(); }); }   // simple safe edit / booking → write it now; stash the focus target for the "Open" link
         else if (r.applied && r.focus) msg.focus = r.focus;   // apply_changes already wrote it in the loop → keep the "Open" link to the new record
@@ -10577,7 +10592,7 @@ async function wranglerSend() {
         if (!_onChat) wranglerRailPersist(_target);   // backgrounded chat → fold the reply into its snapshot
       }
     } else {
-      o.messages.push({ role: 'assistant', content: "🤠 Demo mode — sign in to ask the real Mr. Wrangler (the live AI runs through the backend). Here's the snapshot I'd reason over:\n\n" + wranglerDigest() });
+      o.messages.push({ role: 'assistant', content: "🤠 Demo mode — sign in to ask the real Mr. Wrangler (the live AI runs through the backend). Here's the snapshot I'd reason over:\n\n" + wranglerDigest(), at: Date.now() });
     }
     if (state.wrangler.id === replyChatId) { o.busy = false; render(); setTimeout(() => { const f = document.querySelector('.wrangler-dock .wr-feed'); if (f) f.scrollTop = f.scrollHeight; }, 0); } else render();   // only clear/scroll the dock if it's still THIS chat
   } catch (e) { if (state.wrangler.id === replyChatId) { o.busy = false; o.error = wranglerErrMsg(e && e.message); render(); } }
