@@ -9605,16 +9605,20 @@ function ruApplyCustom(o) {
 const ruColor = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || '#8b94a3';
 /* Plot bar panel — Jac's chart law baked in: value rides the bar (never a detached row),
    dotted gridlines + Y axis on a nice scale, bottom-anchored, no legend (hover = plain name). */
-function ruBarsSVG({ data, money = false, w = 620, h = 250 }) {
+function ruBarsSVG({ data, money = false, w = 620, h = 250, overlayMarks = [], labelMarks = [] }) {
   return Plot.plot({
-    width: w, height: h, marginLeft: 48, marginRight: 12, marginTop: 20, marginBottom: 28,
+    width: w, height: h, marginLeft: 48, marginRight: 12, marginTop: 22, marginBottom: data.length > 6 ? 54 : 28,
     style: { background: 'transparent', fontFamily: "'Saira Condensed', system-ui, sans-serif", fontSize: '11.5px' },
-    x: { label: null, tickSize: 0, padding: 0.25 },
+    // data order (not Plot's alphabetical default); crowded axes rotate + truncate — hover carries the full name
+    x: { label: null, tickSize: 0, padding: 0.25, domain: data.map((d) => d.label),
+      tickRotate: data.length > 6 ? -33 : 0, tickFormat: (v) => (String(v).length > 14 ? String(v).slice(0, 13) + '…' : v) },
     y: { label: null, nice: true, tickFormat: money ? ((v) => uMoneyK(v)) : undefined },
     marks: [
       Plot.gridY({ stroke: ruColor('--line'), strokeDasharray: '2,3', strokeOpacity: 0.8 }),
       Plot.barY(data, { x: 'label', y: 'value', fill: 'fill', rx: 4, title: 'name' }),
+      ...overlayMarks,
       Plot.text(data, { x: 'label', y: 'value', text: (d) => (money ? uMoneyK(d.value) : String(d.value)), dy: -8, fill: ruColor('--txt-2'), fontWeight: 700 }),
+      ...labelMarks,
       Plot.ruleY([0], { stroke: ruColor('--line-soft') }),
     ],
   });
@@ -9627,8 +9631,127 @@ function ruUnitsPerCategory() {
     .filter((d) => d.value > 0).sort((a, b) => b.value - a.value).slice(0, 12);
   return ruBarsSVG({ data });
 }
+// range membership — BOTH bounds (custom ranges have a real upper edge, unlike the old cutoffs)
+const ruIn = (iso, rg) => { const d = (iso || '').slice(0, 10); if (!d) return false; if (rg.a && d < rg.a) return false; if (rg.b && d >= rg.b) return false; return true; };
+const ruBounded = (rg) => !!(rg.a || rg.b);
+const ruEmpty = (msg) => { const d = document.createElement('div'); d.className = 'ru-empty'; d.textContent = msg; return d; };
+/* stamp rendered marks as NAVIGATION targets. Plot renders one element per datum per mark,
+   in input order — callers pass the concatenated row list matching the rect order (base layer
+   first, then overlay layers). Verified against live data in the harness. */
+function ruWireNav(node, rows) {
+  const rects = node.querySelectorAll('rect');
+  rows.forEach((row, i) => {
+    const r2 = rects[i]; if (!r2) return;
+    r2.classList.add('js-ru-nav');
+    r2.setAttribute('tabindex', '0'); r2.setAttribute('role', 'button');
+    r2.setAttribute('data-navcard', row.card); r2.setAttribute('data-navcol', row.col); r2.setAttribute('data-navvalue', String(row.navValue));
+    r2.setAttribute('aria-label', row.name); r2.setAttribute('data-tip', row.tip || row.name);
+  });
+  return node;
+}
+// leaderboard rows as a DOM node (HTML, not a chart) — each row navigates
+function ruLeadNode(rows, empty) {
+  const d = document.createElement('div');
+  if (!rows.length) { d.className = 'ru-empty'; d.textContent = empty; return d; }
+  d.className = 'ru-lead';
+  d.innerHTML = rows.map((r2, i) => `<button class="ru-lead-row js-ru-nav" data-navcard="${r2.card}" data-navcol="${esc(r2.col)}" data-navvalue="${esc(String(r2.navValue))}" data-tip="${esc(r2.tip || r2.name)}" aria-label="${esc(r2.name)}"><span class="ru-lead-n">${i + 1}</span><span class="ru-lead-name">${esc(r2.name)}</span><span class="ru-lead-c">${esc(r2.disp)}</span></button>`).join('');
+  return d;
+}
+// close the board and land on the owning card with the filter pill applied — the board is a
+// launchpad into the records, not a dead end (generalizes the js-notready pattern)
+function ruNavigate(card, col, value) {
+  closeOverlay();
+  const s = activeSession();
+  const colId = COLUMN_OF[card]; if (colId && s.cols) { s.cols[colId] = card; const idx = COLUMNS.findIndex((c) => c.id === colId); if (idx >= 0) state.mobileCol = idx; }
+  const cs = s.cards[card]; if (cs) { cs.mode = 'list'; cs.recId = null; cs.recType = null; cs.graphView = false; }
+  addColFilter(card, col, value);
+}
+// ── Money rollups (range-aware; the §13.5 cutoff-only versions retire in Phase E) ──
+function ruCatMoney(rg) {
+  const rev = {}, cnt = {}, exp = {}, basis = {};
+  DATA.rentals.forEach((rr) => {
+    if (ruBounded(rg) && !ruIn(rr.startDate, rg)) return;
+    const us = rentalUnits(rr).map((eu) => IDX.unit.get(eu.unitId)).filter((u) => u && u.categoryId);
+    if (!us.length) return;
+    const share = ((rentalPrice(rr) || {}).price || 0) / us.length;
+    us.forEach((u) => { rev[u.categoryId] = (rev[u.categoryId] || 0) + share; cnt[u.categoryId] = (cnt[u.categoryId] || 0) + 1; });
+  });
+  DATA.workOrders.forEach((w) => {
+    if (w.cancelled) return; if (ruBounded(rg) && !ruIn(w.date, rg)) return;
+    const u = IDX.unit.get(w.unitId); if (!u || !u.categoryId) return;
+    const c = (w.lineItems || []).reduce((a, li) => a + (Number(li.cost) || 0), 0);
+    if (c) exp[u.categoryId] = (exp[u.categoryId] || 0) + c;
+  });
+  DATA.units.forEach((u) => { if (!u.categoryId) return; const b = Number(u.trueCost) || Number(u.purchasePrice) || 0; if (b) basis[u.categoryId] = (basis[u.categoryId] || 0) + b; });
+  return { rev, cnt, exp, basis };
+}
+function ruRevByCat(rg) {
+  const A = ruCatMoney(rg), green = ruColor('--green'), red = ruColor('--red');
+  const rows = Object.entries(A.rev).map(([id, v]) => {
+    const name = IDX.category.get(id)?.name || id, ex = A.exp[id] || 0, basis = A.basis[id] || 0;
+    const roi = basis > 0 ? Math.round((v - ex) / basis * 100) : null;
+    return { label: name, name, value: Math.round(v), roi, fill: green, card: 'categories', col: 'name', navValue: name,
+      tip: `${name} — ${money(v)} rev · ${money(ex)} exp${roi != null ? ' · ROI ' + (roi >= 0 ? '+' : '') + roi + '%' : ' · no cost basis'}` };
+  }).filter((d) => d.value > 0).sort((a, b) => b.value - a.value).slice(0, 12);
+  if (!rows.length) return ruEmpty('No revenue in this range.');
+  const roiRows = rg.k === 'all' ? rows.filter((d) => d.roi != null) : [];   // ROI = lifetime economics; windowed rev over lifetime basis would mislead
+  const node = ruBarsSVG({ data: rows, money: true, labelMarks: roiRows.length ? [Plot.text(roiRows, { x: 'label', y: 'value', text: (d) => (d.roi >= 0 ? '+' : '') + d.roi + '% ROI', dy: -22, fill: (d) => (d.roi >= 0 ? green : red), fontWeight: 800 })] : [] });
+  return ruWireNav(node, rows);
+}
+function ruExpByCat(rg) {
+  const A = ruCatMoney(rg), red = ruColor('--red');
+  const rows = Object.entries(A.exp).map(([id, v]) => { const name = IDX.category.get(id)?.name || id;
+    return { label: name, name, value: Math.round(v), fill: red, card: 'categories', col: 'name', navValue: name, tip: `${name} — ${money(v)} in WO parts` }; })
+    .filter((d) => d.value > 0).sort((a, b) => b.value - a.value).slice(0, 12);
+  if (!rows.length) return ruEmpty('No expenses in this range.');
+  return ruWireNav(ruBarsSVG({ data: rows, money: true }), rows);
+}
+function ruRevByStatus(rg) {
+  const REV_RED = new Set(['On Rent', 'End Rent', 'Off Rent', 'Returned']);
+  const rev = {};
+  DATA.rentals.forEach((r2) => {
+    if (ruBounded(rg) && !ruIn(r2.startDate, rg)) return;
+    const st = rentalRevStatus(r2), p = (rentalPrice(r2) || {}).price || 0;
+    if (!p) return;
+    const b = rev[st] || (rev[st] = { rev: 0, red: 0 });
+    b.rev += p;
+    if (REV_RED.has(st)) {
+      const inv = r2.invoiceId && IDX.invoice.get(r2.invoiceId);
+      let frac = 1;
+      if (inv) { const t = invoiceTotals(inv); frac = t.total > 0 ? Math.max(0, Math.min(1, (t.balance + (Number(inv.refundedAmount) || 0)) / t.total)) : 0; }
+      b.red += p * frac;
+    }
+  });
+  const ordIdx = (st) => { const k = RENTAL_BAR_ORDER.indexOf(st); return k < 0 ? 99 : k; };
+  const redC = ruColor('--red');
+  const rows = Object.keys(rev).sort((a, b) => ordIdx(a) - ordIdx(b)).map((st) => ({
+    label: st, name: st, value: Math.round(rev[st].rev), red: Math.round(rev[st].red),
+    fill: ruColor('--' + (st === 'Available' ? 'gray' : (getStatus('rentalStatus', st).color || 'gray'))),
+    card: 'rentals', col: '__rstat', navValue: st,
+    tip: `${st} — ${money(rev[st].rev)}${rev[st].red ? ' · ' + money(rev[st].red) + ' uncollected' : ''}` }));
+  if (!rows.length) return ruEmpty('No revenue in this range.');
+  const capRows = rows.filter((d) => d.red > 0);
+  const node = ruBarsSVG({ data: rows, money: true, overlayMarks: capRows.length ? [Plot.barY(capRows, { x: 'label', y1: (d) => d.value - d.red, y2: (d) => d.value, fill: redC })] : [] });
+  return ruWireNav(node, rows.concat(capRows));   // overlay rects render after the base layer
+}
+function ruTopSpend(rg) {
+  const by = {};
+  DATA.invoices.forEach((i2) => { if (ruBounded(rg) && !ruIn(i2.date, rg)) return; const t = invoiceTotals(i2), paid = Math.max(0, (t.total || 0) - (t.balance || 0)); if (!paid) return; const n = IDX.customer.get(i2.customerId)?.name; if (n) by[n] = (by[n] || 0) + paid; });
+  const rows = Object.entries(by).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([n, p]) => ({ name: n, disp: money(p), card: 'customers', col: 'name', navValue: n, tip: `${n} — ${money(p)} paid` }));
+  return ruLeadNode(rows, 'No payments in this range.');
+}
+function ruBalances() {   // open balances are inherently CURRENT — the range does not apply
+  const by = {};
+  DATA.invoices.forEach((i2) => { const t = invoiceTotals(i2); if (t.balance > 0 && t.status !== 'Refunded') { const n = IDX.customer.get(i2.customerId)?.name || i2.customerId || '—'; by[n] = (by[n] || 0) + t.balance; } });
+  const rows = Object.entries(by).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([n, bal]) => ({ name: n, disp: money(bal), card: 'invoices', col: 'customer', navValue: n, tip: `${n} — ${money(bal)} open` }));
+  return ruLeadNode(rows, 'No open balances.');
+}
 // panel builders land here phase by phase; sections list what is coming so the board is honest
-const RU_PANELS = { 'units-per-cat': { build: ruUnitsPerCategory } };
+const RU_PANELS = {
+  'units-per-cat': { build: ruUnitsPerCategory },
+  'rev-cat': { build: ruRevByCat }, 'exp-cat': { build: ruExpByCat }, 'rev-status': { build: ruRevByStatus },
+  'top-spend': { build: ruTopSpend }, 'balances': { build: ruBalances },
+};
 const RU_SECTIONS = [
   { id: 'money', label: 'Money', panels: [
     { id: 'rev-cat', title: 'Revenue by Category', phase: 'B' }, { id: 'exp-cat', title: 'Expenses by Category', phase: 'B' },
@@ -13722,6 +13845,7 @@ function onClick(e) {
   if (closest('.js-ru-custom')) { e.stopPropagation(); const o = state.overlay; if (o) { o.ruCustomOpen = !o.ruCustomOpen; if (o.ruCustomOpen) { const r = ruResolve(); o.ruFrom = o.ruFrom || r.a || TODAY_ISO; o.ruTo = o.ruTo || (r.b ? addDaysISO(r.b, -1) : TODAY_ISO); } else state.datepick = null; } return renderOverlay(); }
   if (closest('.js-ru-apply')) { e.stopPropagation(); return ruApplyCustom(state.overlay); }
   if (closest('.js-ru-cancel')) { e.stopPropagation(); const o = state.overlay; if (o) { o.ruCustomOpen = false; state.datepick = null; } return renderOverlay(); }
+  if (closest('.js-ru-nav')) { e.stopPropagation(); const b = closest('.js-ru-nav'); return ruNavigate(b.dataset.navcard, b.dataset.navcol, b.dataset.navvalue); }   // §13.6 — board mark → the owning card, filtered
   if (closest('.js-bv-sort') && !closest('.js-bv-inscol')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview') { const key = closest('.js-bv-sort').dataset.col; if (o.sort?.key === key) o.sort.dir = o.sort.dir === 'asc' ? 'desc' : 'asc'; else o.sort = { key, dir: 'asc' }; renderOverlay(); } return; }
   if (closest('.js-bv-addcol')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview') { o.colOrder = o.colOrder || []; o.colOrder.push({ kind: 'extra', id: 'xc' + (++o.seq), label: '' }); renderOverlay(); } return; }
   if (closest('.js-bv-inscol')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview' && o.colOrder) { const after = Number(closest('.js-bv-inscol').dataset.after); o.colOrder.splice(after + 1, 0, { kind: 'extra', id: 'xc' + (++o.seq), label: '' }); renderOverlay(); } return; }
@@ -17256,7 +17380,7 @@ function boot() {
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter' && e.key !== ' ') return;
     const t = e.target;
-    if (t && t.classList && t.classList.contains('js-ug-seg')) { e.preventDefault(); t.dispatchEvent(new MouseEvent('click', { bubbles: true })); }
+    if (t && t.classList && (t.classList.contains('js-ug-seg') || t.classList.contains('js-ru-nav'))) { e.preventDefault(); t.dispatchEvent(new MouseEvent('click', { bubbles: true })); }
   });
   applyViewportClass();
   const onVP = () => { applyViewportClass(); if (!booting) render(); };
