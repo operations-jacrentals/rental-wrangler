@@ -230,7 +230,6 @@ export const FLAG_META = {
     { id: 'unit-due-soon',   label: 'Service Due Soon',       severity: 'yellow' },
     { id: 'partial-payment', label: 'Partial Payment',        severity: 'yellow' },
     { id: 'card-expiring',   label: 'Card Expiring',          severity: 'yellow' },
-    { id: 'complete-rental', label: 'Complete Rental',        severity: 'yellow' },
   ],
   units: [
     { id: 'inspection-failed',    label: 'Failed Inspection', severity: 'red'    },
@@ -395,7 +394,7 @@ export const COLUMN_OF = {
 /* ── In-card sort fields (SPEC §12 locked table) ─────────────────────────── */
 export const SORT_FIELDS = {
   customers:     [{ field: 'activePct', label: 'Active %', dir: 'desc' }, { field: 'name', label: 'Name', dir: 'asc' }, { field: 'totalPaid', label: 'Total Paid', dir: 'desc' }, { field: 'lastInvoice', label: 'Last Invoice', dir: 'desc' }, { field: 'payStatus', label: 'Pay Status', dir: 'asc' }],
-  rentals:       [{ field: 'startDate', label: 'Start date', dir: 'asc' }, { field: 'endDate', label: 'End date', dir: 'asc' }, { field: 'status', label: 'Status', dir: 'asc' }, { field: 'customer', label: 'Customer', dir: 'asc' }, { field: 'price', label: 'Rental Price', dir: 'desc' }],
+  rentals:       [{ field: 'startDate', label: 'Start date', dir: 'asc' }, { field: 'endDate', label: 'End date', dir: 'asc' }, { field: 'status', label: 'Status', dir: 'asc' }, { field: 'customer', label: 'Customer', dir: 'asc' }, { field: 'price', label: 'Rental Price', dir: 'desc' }, { field: 'done', label: 'Completed', dir: 'desc' }],
   categories:    [{ field: 'name', label: 'Name', dir: 'asc' }, { field: 'roi', label: 'ROI', dir: 'desc' }, { field: 'unitCount', label: 'Unit count', dir: 'desc' }, { field: 'avgHours', label: 'Avg Hours', dir: 'desc' }, { field: 'rate1Day', label: '1-Day rate', dir: 'desc' }],
   units:         [{ field: 'name', label: 'Name', dir: 'asc' }, { field: 'currentHours', label: 'Current Hours', dir: 'desc' }, { field: 'inspectionStatus', label: 'Inspection', dir: 'asc' }, { field: 'fleetStatus', label: 'Fleet', dir: 'asc' }, { field: 'category', label: 'Category', dir: 'asc' }, { field: 'repairCost', label: 'Repair Cost', dir: 'desc' }, { field: 'soldInactive', label: 'Sold/Inactive', dir: 'asc' }, { field: 'allFleet', label: 'All Units (any status)', dir: 'asc' }],
   invoices:      [{ field: 'dueDate', label: 'Due Date', dir: 'asc' }, { field: 'date', label: 'Date', dir: 'desc' }, { field: 'balance', label: 'Balance', dir: 'desc' }, { field: 'status', label: 'Status', dir: 'asc' }, { field: 'customer', label: 'Customer', dir: 'asc' }],

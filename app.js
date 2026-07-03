@@ -254,15 +254,23 @@ function rentalStatusDisplay(r) {
   if (ss.length <= 1) { const k = ss[0] || rentalDisplayStatus(r); const st = getStatus('rentalStatus', k); return { label: st.label, color: getEntityColor('rentals', r), key: k, mixed: false }; }
   return { label: ss.join('/'), color: 'gray', key: null, mixed: true };
 }
-/* TERMINAL = the unit has reached an end state; Complete Rental unlocks only when
-   EVERY unit is terminal (Returned, or Cancelled/No Show — those stay on the
-   rental record but their invoice line is removed). */
+/* TERMINAL = the unit has reached an end state (Returned, or Cancelled/No Show —
+   those stay on the rental record but their invoice line is removed). Terminal
+   gates ARE the rental's completion (Jac 2026-07-03): the old Complete Rental
+   button is retired — staff never clicked it and done rentals crowded the card. */
 const TERMINAL_UNIT = new Set(['Returned', 'Cancelled', 'No Show']);
 const unitTerminal = (r, eu) => TERMINAL_UNIT.has(unitStatus(r, eu));
 /* VOIDED = No Show / Cancelled — stays on the rental record but is NOT billed
    (no rental or transport line). Returned is terminal but still billed. */
 const unitVoided = (r, eu) => unitStatus(r, eu) === 'No Show' || unitStatus(r, eu) === 'Cancelled';
 const allUnitsTerminal = (r) => rentalUnits(r).length > 0 && rentalUnits(r).every((eu) => unitTerminal(r, eu));
+/* CLEARED = the rental is done and hides from the DEFAULT Rentals list. Derived,
+   never stored: every unit terminal (multi-unit safe — ONE active unit keeps the
+   whole rental visible), incl. the derived stale-reservation No Show. Zero-unit
+   rentals clear only when Cancelled/No Show (a live Quote stays). r.completed is
+   honored for records stamped by the retired Complete Rental button. */
+const rentalCleared = (r) => r.completed === true
+  || (rentalUnits(r).length ? allUnitsTerminal(r) : (r.status === 'Cancelled' || r.status === 'No Show'));
 /* ── §14 multi-card helpers ── */
 const customerCards = (c) => (c && Array.isArray(c.cards)) ? c.cards.filter((k) => k.status !== 'removed') : [];
 const defaultCard = (c) => { const ks = customerCards(c); return ks.find((k) => k.isDefault) || ks[0] || null; };
@@ -4144,7 +4152,6 @@ const FLAG_COND = {
     'unit-due-soon':    (r) => rentalUnitRecords(r).some((u) => { const s = topServiceForUnit(u); return !!s && s.status === 'due-soon'; }),
     'partial-payment':  (r) => { const c = IDX.customer.get(r.customerId); return !!c && c.payStatus === 'Partial'; },
     'card-expiring':    (r) => { const c = IDX.customer.get(r.customerId); return !!c && cardFlag(c) === 'expiring'; },
-    'complete-rental':  (r) => allUnitsTerminal(r) && !r.completed,
   },
   units: {
     'inspection-failed':    (u) => u.inspectionStatus === 'Failed',
@@ -4202,11 +4209,12 @@ function getEntityFlags(entityType, rec) {
   for (const f of meta) { let on = false; try { on = !!(cond[f.id] && cond[f.id](rec)); } catch (e) { on = false; } if (on) out.push(f); }
   return out.sort((a, b) => (FLAG_SEVERITY_RANK[b.severity] || 0) - (FLAG_SEVERITY_RANK[a.severity] || 0));
 }
-/** Formally archived → gray, no flag evaluation (§6: rentals on Complete Rental;
- *  invoices on Refund). Cancelled/No Show stay R/Y until completed (§6.2). */
+/** Formally archived → gray, no flag evaluation (§6: rentals when CLEARED — every
+ *  unit at a terminal gate; invoices on Refund). Terminal gates are the completion
+ *  (Jac 2026-07-03) — cleared rentals gray instantly, no button click needed. */
 function entityArchived(entityType, rec) {
   if (!rec) return false;
-  if (entityType === 'rentals') return rec.completed === true;
+  if (entityType === 'rentals') return rentalCleared(rec);
   if (entityType === 'invoices') return rec.refunded === true || invoiceTotals(rec).status === 'Refunded';
   return false;
 }
@@ -4793,6 +4801,19 @@ const unitsVisible = (rows, cs) => {
   if (f === 'allFleet') return rows;                            // show everything, any fleet status
   if (f === 'soldInactive') return rows.filter(isSoldInactive); // only Sold/Inactive
   return rows.filter((u) => u.fleetStatus === 'Active');        // default: Active only (For Sale/Sold/Inactive hidden)
+};
+// CLEARED rentals (every unit at a terminal gate — see rentalCleared) hide from the
+// DEFAULT Rentals list so the card stays a live work queue (Jac 2026-07-03). They
+// still show — grayed — when: (a) the "Completed" sort is selected (ONLY cleared,
+// mirrors Units' Sold/Inactive), (b) the card is CASCADED from an anchored record
+// (a customer/invoice/unit's rental history), or (c) a search is active — looking
+// something up is explicit intent, so search always reaches history.
+const rentalsVisible = (rows, session, cs) => {
+  if (cs && cs.sort && cs.sort.field === 'done') return rows.filter(rentalCleared);   // only cleared
+  const searching = state.searchMode || !!(cs && ((cs.search || '').trim() || (cs.filterTerms || []).length));
+  const cascaded = !!(session && session.anchor && session.anchor.card !== 'rentals' && session.cascade && !(cs && cs.released));
+  if (searching || cascaded) return rows;                       // reveal: search or connected-record history
+  return rows.filter((r) => !rentalCleared(r));                 // default: the live work queue
 };
 // Invoice Payment-Method filter (#337) — classify a recorded payment method into the
 // five filter buckets. Unpaid invoices have no recorded method ('' → excluded by any
@@ -6082,16 +6103,13 @@ const DETAIL = {
         }).join('')
       : `<div class="stall stall-empty rd-unit rd-unit-empty">${pickUnitBtn}<span class="muted" style="font-size:12px">drag a unit on, or cancel the quote</span></div>`;
 
-    /* Footer: field call left · Complete/Cancel right (Jac spec). */
-    const cancelish = ['Cancelled', 'No Show'].includes(r.status);
-    const canComplete = allUnitsTerminal(r);
-    const crBtn = cancelish
-      ? actionPill('danger', 'Cancel Rental', { js: 'js-cancel-rental', h: 26, data: { rec: r.rentalId } })
-      : actionPill('commit', 'Complete Rental', { js: `js-complete-rental${canComplete ? '' : ' locked'}`, h: 26, data: { rec: r.rentalId } });
+    /* Footer: field call only. The Complete/Cancel Rental buttons are RETIRED
+       (Jac 2026-07-03) — terminal gates on every unit ARE the completion; the
+       rental clears from the default list on its own (see rentalCleared). */
     const fcRow = r.fieldCall ? actionPill('danger', 'Field Call active — clear', { js: 'js-clear-fc', data: { rec: r.rentalId } }) : '';
     // §ext — extending is now inline: tap a later end date in the calendar above; a fragile
     // (invoiced/out) rental stages it behind the Confirm card with the money preview.
-    const rdFoot = `<div class="rd-foot"><div class="rd-foot-l">${fcRow}</div><div class="rd-foot-r">${crBtn}</div></div>`;
+    const rdFoot = fcRow ? `<div class="rd-foot"><div class="rd-foot-l">${fcRow}</div></div>` : '';
 
     const rentalSec = `<div class="section sec-${stColor} rentalsec">
       ${rdHead}
@@ -6770,6 +6788,7 @@ function sortRows(card, rows, sort) {
       case 'name': return ROW_META[card](rec).title.toLowerCase();
       case 'startDate': return parseISO(rec.startDate)?.getTime() || 0;
       case 'endDate': return parseISO(rec.endDate)?.getTime() || 0;
+      case 'done': return parseISO(rec.endDate || rec.startDate)?.getTime() || 0;   // "Completed" view: most recently ended first (dir desc)
       case 'price': return rentalPrice(rec)?.price || 0;
       case 'status': return rec.status || '';
       case 'currentHours': return rec.currentHours || 0;
@@ -6788,13 +6807,11 @@ function sortRows(card, rows, sort) {
   };
   const dir = sort.dir === 'desc' ? -1 : 1;
   return [...rows].sort((a, b) => {
-    // Genuinely-completed rentals sink to the bottom so the active queue leads — they stay
-    // searchable/viewable, just below. Cancelled/No-Show are NOT counted: they're not
-    // "completed" until the Complete button is clicked, so they stay up where they can be
-    // worked (mirrors the cancelish check in the rental footer). (Jac 2026-06-24)
+    // Cleared rentals sink below the live queue in the views that reveal them (cascade /
+    // search / "Completed" sort — the default list already hides them). Terminal gates are
+    // the completion now, so Cancelled/No-Show sink too. (Jac 2026-07-03)
     if (card === 'rentals') {
-      const done = (r) => r.completed && r.status !== 'Cancelled' && r.status !== 'No Show';
-      const ac = done(a) ? 1 : 0, bc = done(b) ? 1 : 0; if (ac !== bc) return ac - bc;
+      const ac = rentalCleared(a) ? 1 : 0, bc = rentalCleared(b) ? 1 : 0; if (ac !== bc) return ac - bc;
     }
     const va = val(a), vb = val(b); return va < vb ? -dir : va > vb ? dir : 0;
   });
@@ -6849,7 +6866,7 @@ const memberIcon = (m) => (m === 'calendar' ? I.grid : (CARD_ICON[m] || ''));
 function memberCount(member, session) {
   if (member === 'calendar') return dispatchEvents().length;
   if (SHOP_TYPES.includes(member)) { try { return (shopItemsByType(session)[member] || []).length; } catch { return 0; } }
-  try { let r = listFor(member, session); if (member === 'units') r = unitsVisible(r, session.cards.units); return r.length; } catch { return 0; }
+  try { let r = listFor(member, session); if (member === 'units') r = unitsVisible(r, session.cards.units); if (member === 'rentals') r = rentalsVisible(r, session, session.cards.rentals); return r.length; } catch { return 0; }
 }
 /** How many Shop items in this view NEED work — drives the red alert on the tab:
  *  pending inspections, open work orders, overdue/wash-requested services. */
@@ -7056,6 +7073,7 @@ function listView(cardDef, session) {
 
   let rows = listFor(card, session);
   if (card === 'units') rows = unitsVisible(rows, cs);   // default: Active only — hide non-Active fleet (or reveal via the sort) (#2/#34)
+  if (card === 'rentals') rows = rentalsVisible(rows, session, cs);   // default: live work queue — cleared (all-terminal) rentals hidden; cascade/search/"Completed" sort reveal
   // §10 — under an availability window the Units list IS the rentable fleet, so it must
   // match the availability COUNT, which already drops every non-Active unit (§9 via
   // isUnitAvailableFor/categoryAvailableCount). Hide For-Sale/Sold/Inactive here too, or a
@@ -13872,18 +13890,8 @@ function onClick(e) {
   if (closest('.js-split-open')) { const b = closest('.js-split-open'); e.stopPropagation(); const r = IDX.rental.get(b.dataset.rec); if (r) openOverlay({ kind: 'splitUnit', rentalId: b.dataset.rec, unitId: b.dataset.unit, splitStart: r.startDate, splitEnd: r.endDate }); return; }
   if (closest('.js-split-go')) { const o = state.overlay; if (!o || o.kind !== 'splitUnit') return; const sib = splitUnitToNewRental(o.rentalId, o.unitId, o.splitStart, o.splitEnd); if (sib) { closeOverlay(); try { anchorRecord('rentals', sib.rentalId); } catch (err) { render(); } } return; }
   if (closest('.js-hchip')) { const b = closest('.js-hchip'); const o = state.overlay; if (o?.kind === 'board') { o.histKind = o.histKind === b.dataset.kind ? null : b.dataset.kind; return renderOverlay(); } const session = activeSession(); const cs = session.cards[b.dataset.card] || session.cards.shop; cs.histKind = cs.histKind === b.dataset.kind ? null : b.dataset.kind; return render(); }
-  if (closest('.js-complete-rental')) {
-    const b = closest('.js-complete-rental'); const r = IDX.rental.get(b.dataset.rec); if (!r) return;
-    // Locked gates ALWAYS speak (Jac: "Complete Rental doesn't do anything") — the old
-    // flashOr stayed silent whenever its on-screen target existed, so a locked click read as dead.
-    if (!rentalUnits(r).length) { attnFlash('[data-slot="unit"]'); return toast('🔒 No units on this rental — drag one on, or cancel the rental.'); }
-    if (!allUnitsTerminal(r)) { attnFlash(`.js-yard[data-cap="end"][data-rec="${r.rentalId}"]`); return toast('🔒 Return every unit first (or mark No Show / Cancel) to complete the rental.'); }
-    r.completed = true; reindex('rentals', r); logAction(r, 'Rental completed'); toast('Rental completed ✓'); return reanchorRender();
-  }
-  if (closest('.js-cancel-rental')) {
-    const b = closest('.js-cancel-rental'); const r = IDX.rental.get(b.dataset.rec); if (!r) return;
-    r.completed = true; reindex('rentals', r); logAction(r, 'Rental cancelled — closed'); toast('Rental closed (cancelled).'); return reanchorRender();
-  }
+  // .js-complete-rental / .js-cancel-rental RETIRED (Jac 2026-07-03) — terminal gates
+  // on every unit are the completion; rentals clear from the default list on their own.
   if (closest('.js-insp-wash')) { const b = closest('.js-insp-wash'); e.stopPropagation(); return setInspWash(b.dataset.rec, b.dataset.val); }
   if (closest('.js-insp-result')) { const b = closest('.js-insp-result'); e.stopPropagation(); return setInspResult(b.dataset.rec, b.dataset.val); }
   if (closest('.js-insp-bill')) { const b = closest('.js-insp-bill'); e.stopPropagation(); return setInspBill(b.dataset.rec, b.dataset.val); }
@@ -17530,7 +17538,7 @@ function exposeTestApi() {
   try {
     window.__rw = { DATA, IDX, TODAY_ISO, itemPaid, lineKey, rentalUnits, unitEntry, isPrimaryUnit, linkActionsFor, linkActionPossible, DROP_MATRIX,
       unitStatus, rentalUnitStatuses, unitsUniform, rentalStatusDisplay, rentalMirrorStatus, rentalDisplayStatus,
-      allUnitsTerminal, unitTerminal, unitVoided, rentalLineItems, transportLineItems, extensionPreview, billExtension, unitBilledRental, unitBilledSeries, retroPricingOn, rentalInvoices, rentalActiveInvoice, invoiceChunks, createInvoiceForRental, syncRentalPrimary,
+      allUnitsTerminal, unitTerminal, unitVoided, rentalCleared, rentalLineItems, transportLineItems, extensionPreview, billExtension, unitBilledRental, unitBilledSeries, retroPricingOn, rentalInvoices, rentalActiveInvoice, invoiceChunks, createInvoiceForRental, syncRentalPrimary,
       addUnitToRental, removeUnitFromRental, removeUnitInvoiceLine, unitLinePaid, invoiceTotals, allocLines,
       rentalAllocated, itemRefunded, itemRefundable, lineRefunded, lineFullyRefunded, refundLines, rentalLineRefund, applyPayment, unitRentalPrice, rentalPrice, rentalDisplayName, setWoLinePhase, setWoPhase, woBottleneck,
       cleanUnitName, planUnitMigration, applyUnitMigration, openMigrationPreview,
