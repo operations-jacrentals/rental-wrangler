@@ -2443,8 +2443,14 @@ function pillTo(card, recId) {
   if (recId == null) return;
   // 3-column display: a link pill forces its column to reveal the target card.
   const revealCol = (member) => { const cs = activeSession(); const col = COLUMN_OF[member]; if (cs.cols && col) { cs.cols[col] = member; const idx = COLUMNS.findIndex((c) => c.id === col); if (idx >= 0) state.mobileCol = idx; } };   // §M1 — also flip the visible phone column so a cross-column link lands where you can see it
-  if (SHOP_TYPES.includes(card)) { if (recOf(card, recId)) { revealCol(card); openStandard('shop', recId, card); } return; }
-  if (recOf(card, recId)) { revealCol(card); openStandard(card, recId); }
+  // If revealing the target SWAPS its column — hiding the card you're on now (e.g. an invoice
+  // → its customer, both in the right column; or a unit → its category, both left) — record the
+  // pre-swap view + column layout on the DESTINATION card so Back returns you to the card you
+  // left, exactly where it was. Same viewSnap mechanism the categories → units jump uses; no-op
+  // when the target is already visible in its own column (no swap). (Jac 2026-07-03)
+  const noteSwap = (member) => { const s = activeSession(), col = COLUMN_OF[member]; if (s.cols && col && s.cols[col] !== member) pushCardHistory(s.cards[SHOP_TYPES.includes(member) ? 'shop' : member], true); };
+  if (SHOP_TYPES.includes(card)) { if (recOf(card, recId)) { noteSwap(card); revealCol(card); openStandard('shop', recId, card); } return; }
+  if (recOf(card, recId)) { noteSwap(card); revealCol(card); openStandard(card, recId); }
 }
 
 /* ── global search (§5.4) ────────────────────────────────────────────────── */
