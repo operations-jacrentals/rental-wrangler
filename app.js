@@ -9856,6 +9856,117 @@ function ruFieldCalls(rg) {
   if (lead.length) { const h2 = document.createElement('div'); h2.className = 'ru-sub-h'; h2.textContent = 'Worst offenders'; d.append(h2, ruLeadNode(lead, '')); }
   return d;
 }
+// ── Phase D: d3-shape donuts + stat tiles (Plot has no pie mark — pie()/arc() build the annulus) ──
+function ruDonutSVG({ segs, size = 190, noun = 'UNITS' }) {
+  const total = segs.reduce((a, s2) => a + (s2.count || 0), 0);
+  const live = segs.filter((s2) => s2.count > 0);
+  const r = size / 2, inner = r * 0.58, mid = (inner + r - 1) / 2, pad = 30;
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', `${-pad} ${-pad} ${size + pad * 2} ${size + pad * 2}`);
+  svg.setAttribute('class', 'ru-donut');
+  const g = document.createElementNS(NS, 'g');
+  g.setAttribute('transform', `translate(${r},${r})`);
+  svg.append(g);
+  const txt = (x, y, s2, fill, cls, anchor) => { const e = document.createElementNS(NS, 'text'); e.setAttribute('x', x.toFixed(1)); e.setAttribute('y', y.toFixed(1)); e.setAttribute('text-anchor', anchor || 'middle'); e.setAttribute('fill', fill); if (cls) e.setAttribute('class', cls); e.textContent = s2; g.append(e); };
+  const at = (ang, rad) => [Math.sin(ang) * rad, -Math.cos(ang) * rad];   // d3 angles: 0 at 12 o'clock, clockwise
+  const arcs = d3pie().value((d) => d.count).sort(null)(live);            // sort:null keeps input order — slice i IS seg i
+  const arcGen = d3arc().innerRadius(inner).outerRadius(r - 1);
+  const outLbls = [];
+  arcs.forEach((a) => {
+    const s2 = a.data, p = document.createElementNS(NS, 'path');
+    p.setAttribute('d', live.length === 1 ? arcGen({ startAngle: 0, endAngle: Math.PI * 2 }) : arcGen(a));
+    p.setAttribute('fill', ruColor('--' + s2.color));
+    p.setAttribute('class', 'ru-slice');
+    if (s2.card) { p.classList.add('js-ru-nav'); p.setAttribute('tabindex', '0'); p.setAttribute('role', 'button'); p.setAttribute('data-navcard', s2.card); p.setAttribute('data-navcol', s2.col); p.setAttribute('data-navvalue', String(s2.navValue)); if (s2.seg) p.setAttribute('data-navseg', s2.seg); }
+    p.setAttribute('aria-label', s2.name); p.setAttribute('data-tip', s2.tip || s2.name);
+    g.append(p);
+    const am = (a.startAngle + a.endAngle) / 2, frac = s2.count / total;
+    if (frac >= 0.14) { const [lx, ly] = at(am, mid); txt(lx, ly + 4.5, String(s2.count), U_DARKINK.has(s2.color) ? '#0c0e12' : '#fff', 'ru-slice-n'); }
+    else { const [ix, iy] = at(am, r - 3); outLbls.push({ s: s2, am, ix, iy }); }
+  });
+  // callout fan — spread thin slivers angularly (≥13px arc gap) so a cluster never overprints
+  if (outLbls.length) {
+    const rr = r + 10, gap = 13 / rr;
+    outLbls.sort((a, b) => a.am - b.am);
+    for (let i = 1; i < outLbls.length; i++) if (outLbls[i].am < outLbls[i - 1].am + gap) outLbls[i].am = outLbls[i - 1].am + gap;
+    outLbls.forEach((o) => {
+      const [ox, oy] = at(o.am, rr);
+      const ln = document.createElementNS(NS, 'line');
+      ln.setAttribute('x1', o.ix.toFixed(1)); ln.setAttribute('y1', o.iy.toFixed(1)); ln.setAttribute('x2', ox.toFixed(1)); ln.setAttribute('y2', oy.toFixed(1));
+      ln.setAttribute('stroke', ruColor('--' + o.s.color)); ln.setAttribute('stroke-width', '1.2'); ln.setAttribute('opacity', '.9');
+      g.append(ln);
+      txt(ox, oy + (oy < 0 ? -3 : 9), String(o.s.count), ruColor('--' + o.s.color), 'ru-slice-n', ox < 0 ? 'end' : 'start');
+    });
+  }
+  txt(0, -2, String(total), ruColor('--txt'), 'ru-donut-tot');
+  txt(0, 14, noun, ruColor('--txt-3'), 'ru-donut-sub');
+  return svg;
+}
+// ── Phase D panels ──
+function ruInvoiceStatus(rg) {
+  const ic = {};
+  DATA.rentals.forEach((r2) => { if (ruBounded(rg) && !ruIn(r2.startDate, rg)) return; const inv = r2.invoiceId && IDX.invoice.get(r2.invoiceId); const s = inv ? invoiceTotals(inv).status : 'No invoice'; ic[s] = (ic[s] || 0) + 1; });
+  const segs = Object.entries(ic).sort((a, b) => b[1] - a[1]).map(([s, n2]) => ({
+    name: s, count: n2, color: s === 'No invoice' ? 'gray' : (getStatus('invoiceStatus', s).color || 'gray'),
+    card: 'rentals', col: 'invoice', navValue: s === 'No invoice' ? '' : s, tip: `${s} — ${n2} rentals` }));
+  if (!segs.length) return ruEmpty('No rentals in this range.');
+  return ruDonutSVG({ segs, noun: 'RENTALS' });
+}
+function ruRentTiles() {   // the counts are inherently CURRENT — the range does not apply
+  const sc = {}; DATA.rentals.forEach((r2) => { const s = rentalDisplayStatus(r2); sc[s] = (sc[s] || 0) + 1; });
+  const ym = TODAY_ISO.slice(0, 7);
+  const items = [
+    { label: 'On Rent', count: sc['On Rent'] || 0, color: 'green', col: 'status', navValue: 'On Rent' },
+    { label: 'Quotes', count: sc['Quote'] || 0, color: 'gray', col: 'status', navValue: 'Quote' },
+    { label: 'No Show', count: sc['No Show'] || 0, color: 'red', col: 'status', navValue: 'No Show' },
+    { label: 'This Month', count: DATA.rentals.filter((r2) => (r2.startDate || '').slice(0, 7) === ym).length, color: 'blue', col: '__rentmonth', navValue: ym },
+  ];
+  const d = document.createElement('div'); d.className = 'ru-tiles';
+  d.innerHTML = items.map((it) => `<button class="ru-tile js-ru-nav" data-navcard="rentals" data-navcol="${esc(it.col)}" data-navvalue="${esc(String(it.navValue))}" data-tip="${esc(it.label)} — ${it.count}" aria-label="${esc(it.label)}"><span class="ru-tile-n" style="color:var(--${it.color})">${it.count}</span><span class="ru-tile-l">${esc(it.label)}</span></button>`).join('');
+  return d;
+}
+function ruWoPhase() {   // open WOs by bottleneck phase — open = inherently current
+  const openWO = DATA.workOrders.filter((w) => w.phase !== 'Complete' && !w.cancelled);
+  if (!openWO.length) return ruEmpty('No open work orders.');
+  const byPhase = {}; openWO.forEach((w) => { const ph = w.phase || '—'; byPhase[ph] = (byPhase[ph] || 0) + 1; });
+  const order = Object.keys(STATUS.woPhase).filter((ph) => ph !== 'Complete');
+  const phs = order.filter((ph) => byPhase[ph]).concat(Object.keys(byPhase).filter((ph) => ph !== 'Complete' && !order.includes(ph)));
+  const segs = phs.map((ph) => { const lbl = getStatus('woPhase', ph).label || ph; return { name: lbl, count: byPhase[ph], color: getStatus('woPhase', ph).color || 'gray', card: 'units', col: '__wop', navValue: ph, tip: `${lbl} — ${byPhase[ph]} WOs` }; });
+  return ruDonutSVG({ segs, noun: 'WOs' });
+}
+function ruSvcUrgency() {   // a unit's service urgency — snapshot by nature
+  let over = 0, soon = 0, ok = 0, wash = 0;
+  DATA.units.forEach((u) => { if (u.washRequested) { wash++; return; } const s = topServiceForUnit(u); if (!s) { ok++; return; } if (s.status === 'past-due') over++; else if (s.status === 'due-soon') soon++; else ok++; });
+  const mk = (v, lbl, count, color) => ({ name: lbl, count, color, card: 'shop', seg: 'serviceOrders', col: '__svcstat', navValue: v, tip: `${lbl} — ${count} units` });
+  const segs = [mk('past-due', 'Overdue', over, 'red'), mk('due-soon', 'Due Soon', soon, 'yellow'), mk('on-schedule', 'On Schedule', ok, 'green'), mk('wash', 'Wash', wash, 'blue')];
+  if (!DATA.units.length) return ruEmpty('No units yet.');
+  return ruDonutSVG({ segs, noun: 'UNITS' });
+}
+function ruFleetMix() {   // fleet status — snapshot by nature
+  if (!DATA.units.length) return ruEmpty('No units yet.');
+  const fn = {}; DATA.units.forEach((u) => { const s = u.fleetStatus || '—'; fn[s] = (fn[s] || 0) + 1; });
+  const segs = Object.entries(fn).sort((a, b) => b[1] - a[1]).map(([s, n2]) => ({ name: s, count: n2, color: getStatus('unitFleetStatus', s).color || 'gray', card: 'units', col: 'fleet', navValue: s, tip: `${s} — ${n2} units` }));
+  return ruDonutSVG({ segs, noun: 'UNITS' });
+}
+function ruAccounts() {   // two donuts: account types + pay status — snapshots by nature
+  if (!DATA.customers.length) return ruEmpty('No customers yet.');
+  const ac = {}, pc = {};
+  DATA.customers.forEach((c) => { const t2 = c.accountType || 'Non-Business'; ac[t2] = (ac[t2] || 0) + 1; const p = c.payStatus || ''; pc[p] = (pc[p] || 0) + 1; });
+  const mk = (obj, col, set) => Object.entries(obj).sort((a, b) => b[1] - a[1]).map(([k, n2]) => ({ name: k || 'None', count: n2, color: getStatus(set, k).color || 'gray', card: 'customers', col, navValue: k, tip: `${k || 'None'} — ${n2} customers` }));
+  const cell = (svg2, lbl) => { const c = document.createElement('div'); c.className = 'ru-donut-cell'; c.append(svg2); const h2 = document.createElement('div'); h2.className = 'ru-sub-h ru-sub-c'; h2.textContent = lbl; c.append(h2); return c; };
+  const wrap = document.createElement('div'); wrap.className = 'ru-donut-pair';
+  wrap.append(cell(ruDonutSVG({ segs: mk(ac, 'account', 'customerAccountType'), size: 150, noun: 'CUST' }), 'Account type'),
+    cell(ruDonutSVG({ segs: mk(pc, 'pay', 'customerPayStatus'), size: 150, noun: 'CUST' }), 'Pay status'));
+  return wrap;
+}
+function ruCardHealth() {   // card on file — snapshot by nature; values match the list's Card column
+  if (!DATA.customers.length) return ruEmpty('No customers yet.');
+  const cc = { ok: 0, expiring: 0, none: 0 };
+  DATA.customers.forEach((c) => { cc[cardFlag(c)]++; });
+  const segs = ['none', 'expiring', 'ok'].map((k) => { const m = CARD_FLAG_META[k]; return { name: m.label, count: cc[k], color: m.color, card: 'customers', col: 'card', navValue: m.label, tip: `${m.label} — ${cc[k]} customers` }; });
+  return ruDonutSVG({ segs, noun: 'CUST' });
+}
 // panel builders land here phase by phase; sections list what is coming so the board is honest
 const RU_PANELS = {
   'units-per-cat': { build: ruUnitsPerCategory },
@@ -9863,6 +9974,9 @@ const RU_PANELS = {
   'top-spend': { build: ruTopSpend }, 'balances': { build: ruBalances },
   'bookings': { build: ruBookings }, 'insp-trend': { build: ruInspTrend },
   'wo-trend': { build: ruWoTrend }, 'field-calls': { build: ruFieldCalls },
+  'inv-status': { build: ruInvoiceStatus }, 'rent-tiles': { build: ruRentTiles },
+  'wo-phase': { build: ruWoPhase }, 'svc-urgency': { build: ruSvcUrgency },
+  'fleet-mix': { build: ruFleetMix }, 'accounts': { build: ruAccounts }, 'card-health': { build: ruCardHealth },
 };
 const RU_SECTIONS = [
   { id: 'money', label: 'Money', panels: [
