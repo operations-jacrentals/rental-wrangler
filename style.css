@@ -847,7 +847,10 @@ select.lf-in { appearance: none; cursor: pointer; }
    this below Row 1: text-only quick-filter toggles (multi-select AND) + the graph toggle. Kept in
    the yard data-plate language — steel chips, the ONE orange accent for active, Saira Condensed
    stamped labels; a composite (∑) wears a saddle-stitch tan dashed border until it's armed. */
-.optrow { flex: 0 0 auto; display: flex; flex-wrap: wrap; align-items: center; gap: 5px 6px; padding: 0 8px 7px; min-width: 0; }   /* WRAPS so every option stays reachable — no clipping (Jac) */
+.optrow { flex: 0 0 auto; display: flex; flex-wrap: nowrap; align-items: center; gap: 6px; padding: 0 8px 7px; min-width: 0; }   /* ONE row, always (Jac / spec §4) — overflow folds into the ⋯ menu, never a wrap */
+.optrow .opts { flex: 1 1 auto; min-width: 0; display: flex; flex-wrap: nowrap; align-items: center; gap: 6px; overflow: hidden; }   /* the measuring box — foldOptRow hides clipped chips + hands them to the ⋯ menu */
+.is-phone .optrow .opts { overflow-x: auto; scrollbar-width: none; }   /* phones swipe instead of folding */
+.is-phone .optrow .opts::-webkit-scrollbar { display: none; }
 /* one chip frame for the WHOLE row — options, the graph toggle, and the ⋯ all match (Jac: no odd-one-out) */
 .optrow .opt { flex: 0 0 auto; height: 26px; padding: 0 10px; display: inline-flex; align-items: center; justify-content: center; gap: 5px; border-radius: var(--chip-radius); border: 1px solid var(--line); background: var(--panel); color: var(--txt-2); font-family: 'Saira Condensed', system-ui, sans-serif; font-size: 12px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; white-space: nowrap; cursor: pointer; box-shadow: var(--chip-shadow); }
 .optrow .opt:hover { color: var(--accent); border-color: var(--accent-line); }
@@ -855,22 +858,15 @@ select.lf-in { appearance: none; cursor: pointer; }
 .optrow .opt.combo { border-style: dashed; border-color: var(--tan, #c2925a); }   /* composite ∑ — a union of states, saddle-stitch dashed */
 .optrow .opt.combo.on { border-style: solid; border-color: var(--accent); }
 .optrow .opt:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.optrow .opt-graph, .optrow .opt-more { padding: 0 9px; }   /* icon/glyph-only chips — a touch narrower than the text options */
+.optrow .opt-graph, .optrow .opt-more { flex: 0 0 auto; padding: 0 9px; }   /* icon/glyph-only chips, pinned OUTSIDE the fold box so they never disappear */
 .optrow .opt-graph svg { width: 15px; height: 15px; }
-.optrow .opt-more { font-size: 15px; letter-spacing: 1px; }
+.optrow .opt-more { font-size: 15px; letter-spacing: 1px; position: relative; }
+.optrow .opt-more.has-fold::after { content: ''; position: absolute; top: 3px; right: 3px; width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }   /* a dot = filters are folded in here */
 .is-phone .optrow .opt { min-height: 32px; }
 /* Visible focus on the header controls the app's per-element focus doesn't already cover. */
-.listbar .gear:focus-visible, .cvrow .cview:focus-visible, .cvrow .cvnew:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-/* Row 3 — personal CUSTOM VIEWS (phase 6). Opens from the ⋯. A view is the ONLY filter button
-   that carries an icon (a saved search + pinned filters + sort); +New starts the capture flow. */
-.cvrow { flex: 0 0 auto; display: flex; flex-wrap: wrap; align-items: center; gap: 5px 6px; padding: 0 8px 8px; min-width: 0; }   /* wraps too — every saved view reachable */
-.cvrow .cview { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 10px; border-radius: var(--chip-radius); border: 1px solid var(--line); background: var(--panel); color: var(--txt-2); font-family: 'Saira Condensed', system-ui, sans-serif; font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; white-space: nowrap; cursor: pointer; box-shadow: var(--chip-shadow); }
-.cvrow .cview svg { width: 13px; height: 13px; flex: 0 0 auto; }
-.cvrow .cview:hover { color: var(--accent); border-color: var(--accent-line); }
-.cvrow .cvnew { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 4px; height: 26px; padding: 0 10px; border-radius: var(--chip-radius); border: 1px dashed var(--tan, #c2925a); background: transparent; color: var(--txt-3); font-family: 'Saira Condensed', system-ui, sans-serif; font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; cursor: pointer; }   /* saddle-stitch dashed — a new/blank affordance */
-.cvrow .cvnew svg { width: 12px; height: 12px; }
-.cvrow .cvnew:hover { color: var(--accent); border-color: var(--accent-line); }
-.is-phone .cvrow .cview, .is-phone .cvrow .cvnew { min-height: 32px; }
+.listbar .gear:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* Custom Views live in the ⋯ dropdown (spec §4/§5 — folded filters above the views); size their glyphs. */
+.dropdown-menu .dd-item svg { width: 14px; height: 14px; flex: 0 0 auto; }
 /* Icon-picker popup grid (phase 6 · the iconPick window). */
 .ipick-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
 .ipick-cell { display: grid; place-items: center; aspect-ratio: 1; border-radius: 10px; border: 1px solid var(--line); background: var(--panel-2); color: var(--txt-2); cursor: pointer; }
@@ -3441,6 +3437,7 @@ body.dragging .row.drop-ok { opacity: 1; }
    texture never bleeds through the controls (Jac) */
 [data-theme="bluedsteel"] .listbar { background: linear-gradient(180deg, #0c1320 80%, transparent); }
 [data-theme="bluedsteel"] .card > .listbar { background: #0c1320; }
+[data-theme="bluedsteel"] .hrow > .listbar { background: none; }   /* the merged one-row header carries NO plate behind the search (Jac) — the theme strip is for the standalone listbar only */
 
 /* global search bar (.searchwrap, the top "Search everything…") — was a flat panel;
    now a blued-steel plate: the same plate material + a machined top lip as the cards,

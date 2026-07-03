@@ -1967,7 +1967,7 @@ function categoryStats(cat) {
    its own anchored main card + cascade. */
 function freshSession() {
   const cards = {};
-  for (const c of GRID_CARDS) cards[c.id] = { mode: 'list', recId: null, recType: null, search: '', filterTerms: [], historySearch: '', sort: loadSort(c.id), backStack: [], fwdStack: [], segment: c.id === 'shop' ? 'all' : null, graphIdx: 0, graphSel: {}, optionsOpen: false, activeOptions: [], customOpen: false };   // §13.4 graphIdx = active carousel view; graphSel = remembered selection per view · optionsOpen/activeOptions = the gear's Row-2 quick-filters (phase 4 card-header)
+  for (const c of GRID_CARDS) cards[c.id] = { mode: 'list', recId: null, recType: null, search: '', filterTerms: [], historySearch: '', sort: loadSort(c.id), backStack: [], fwdStack: [], segment: c.id === 'shop' ? 'all' : null, graphIdx: 0, graphSel: {}, optionsOpen: false, activeOptions: [] };   // §13.4 graphIdx = active carousel view; graphSel = remembered selection per view · optionsOpen/activeOptions = the gear's Row-2 quick-filters (phase 4 card-header)
   // 3-column layout: which member card is visible in each column (display-only;
   // rides inside the session so item-tabs / pause-resume restore it for free).
   const cols = {}; for (const col of COLUMNS) cols[col.id] = col.default;
@@ -4426,7 +4426,7 @@ function openCtxMenu(e, hit) {
   const item = (act, label) => `<button class="dd-item" data-ctx="${act}">${label}</button>`;
   const linkSec = linkItems.length ? linkItems.map((a) => `<button class="dd-item" data-ctx="link:${a.target}">${CARD_ICON[a.target] || ''}${esc(a.label)}</button>`).join('') + '<div class="menu-sep"></div>' : '';
   // Phase 6 — right-click a personal Custom View button → Remove View (prepended, so it's the first item).
-  const cvEl = hit && hit.el ? hit.el.closest('.cview') : null;
+  const cvEl = hit && hit.el ? hit.el.closest('.js-cview') : null;
   const cvSec = cvEl ? `<button class="dd-item" data-ctx="rmview:${cvEl.dataset.card}:${cvEl.dataset.idx}">${I.x} Remove View</button><div class="menu-sep"></div>` : '';
   m.innerHTML = cvSec + linkSec + [
     item('cut', '✂️ Cut'), item('copy', '📋 Copy'), item('paste', '📥 Paste'), item('clear', '🧹 Clear'),
@@ -4454,6 +4454,10 @@ function openCtxMenuAt(target, x, y) {
   // would otherwise match). Shop is scoped out — its dir button keeps its graph-chrome menu.
   const sd = target.closest('.js-sortdir');
   if (sd && sd.dataset.card !== 'shop') return openSortMenu(sd.dataset.card, sd);
+  // Phase 6 — a Custom View item lives in the ⋯ dropdown (on <body>, outside any .card), so it
+  // needs its own early branch for the right-click/long-press "Remove View" menu.
+  const cv = target.closest('.js-cview');
+  if (cv) return openCtxMenu({ clientX: x, clientY: y }, { r: null, el: cv });
   const card = target.closest('.card'); if (!card && !target.closest('.overlay .popup')) return;
   // §13.4 — inside an OPEN graph view, right-click/long-press the panel (or the Views & sort
   // control above it) opens the graph-chrome menu instead of the per-element Wrangler menu,
@@ -4505,6 +4509,7 @@ function runCtxAction(act) {
   if (act.startsWith('rmview:')) {   // phase 6 — remove a personal Custom View
     const [, card, idx] = act.split(':');
     closeCtxMenu(); document.removeEventListener('mousedown', ctxOutside);
+    document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove());   // the ⋯ menu's indices just went stale
     const views = loadCViews(card).slice(); views.splice(Number(idx), 1); saveCViews(card, views);
     return render();
   }
@@ -7026,6 +7031,36 @@ const CARD_OPTIONS = {
 const optionAllowed = (tier) => (tier === 'money' || tier === 'crm') ? canMoney() : true;
 const entitledOptions = (card) => (CARD_OPTIONS[card] || []).filter((o) => optionAllowed(o.tier));
 const COMBO_TIP = { bill: 'Overdue · Unpaid · Quotes · Off Rent · billing issues', out: 'On Rent · End Rent · Off Rent' };   // composites (∑) spell out the states they bundle
+/* Row 2 is ONE row (spec §4): after paint, hide any option chip that would clip past the .opts box
+   and remember it per card — the ⋯ menu lists the folded ones (above the Custom Views), so every
+   filter stays reachable without a wrap or a scrollbar. Phones scroll the row instead (no fold). */
+const OPT_FOLD = {};
+function foldOptRow(row, card) {
+  if (!row.isConnected) return;                                    // a newer render replaced this row
+  if (document.body.classList.contains('is-phone')) { OPT_FOLD[card] = []; return; }
+  const box = row.querySelector('.opts'); if (!box) return;
+  OPT_FOLD[card] = [];
+  const br = box.getBoundingClientRect();
+  for (const k of [...box.children]) {
+    k.style.display = '';
+    if (k.getBoundingClientRect().right > br.right + 0.5) { k.style.display = 'none'; OPT_FOLD[card].push(k.dataset.opt); }
+  }
+  row.querySelector('.opt-more')?.classList.toggle('has-fold', OPT_FOLD[card].length > 0);
+}
+/* The ⋯ MENU (spec §4/§5): folded quick-filters on top, then the operator's personal Custom
+   Views + "+ New view". A floating dropdown — the header never grows a third row. */
+function openMoreMenu(card, anchorEl) {
+  const cs = activeSession().cards[card];
+  const active = cs.activeOptions || [];
+  const folded = entitledOptions(card).filter((o) => (OPT_FOLD[card] || []).includes(o.id));
+  let html = '';
+  if (folded.length) html += `<div class="dd-sec">More filters</div>` + folded.map((o) => `<button class="dd-item js-opt${active.includes(o.id) ? ' on' : ''}" data-card="${card}" data-opt="${o.id}">${esc(o.label)}<span class="tick">✓</span></button>`).join('');
+  const cviews = loadCViews(card);
+  html += `<div class="dd-sec">Custom views</div>`
+    + cviews.map((v, i) => `<button class="dd-item js-cview" data-card="${card}" data-idx="${i}">${I[v.icon] || I.filter}${esc(v.name)}</button>`).join('')
+    + `<button class="dd-item js-cvnew" data-card="${card}">${I.plus} New view…</button>`;
+  openDropdown(anchorEl, html, { align: 'right' });
+}
 function memberCardEl(member, session) {
   if (member === 'calendar') return calendarCardEl(session);
   if (member === 'shop') return shopCardEl({ id: 'shop', title: 'Shop' }, session);   // the wrench "Shop" member = the COMBINED view (segment bar + 3-bar front-page graph), no forcedSeg
@@ -7118,20 +7153,14 @@ function listView(cardDef, session) {
     const active = cs.activeOptions || [];
     const row = el('div', 'optrow');
     row.innerHTML =
-      opts.map((o) => `<button class="opt${o.combo ? ' combo' : ''}${active.includes(o.id) ? ' on' : ''} js-opt" data-card="${card}" data-opt="${o.id}" data-tip="${esc(COMBO_TIP[o.id] || o.label)}" aria-pressed="${active.includes(o.id) ? 'true' : 'false'}">${esc(o.short || o.label)}</button>`).join('')
+      `<div class="opts">${opts.map((o) => `<button class="opt${o.combo ? ' combo' : ''}${active.includes(o.id) ? ' on' : ''} js-opt" data-card="${card}" data-opt="${o.id}" data-tip="${esc(COMBO_TIP[o.id] || o.label)}" aria-pressed="${active.includes(o.id) ? 'true' : 'false'}">${esc(o.short || o.label)}</button>`).join('')}</div>`
       + `<button class="opt opt-graph js-cardgraph${cs.graphView ? ' on' : ''}" data-card="${card}" data-tip="${cs.graphView ? 'Back to list' : 'Graph view'}" aria-label="Graph view">${I.graph}</button>`
-      + `<button class="opt opt-more js-cvmore${cs.customOpen ? ' on' : ''}" data-card="${card}" data-tip="Custom views" aria-label="Custom views" aria-expanded="${cs.customOpen ? 'true' : 'false'}">⋯</button>`;
+      + `<button class="opt opt-more js-cvmore" data-card="${card}" data-tip="More filters &amp; custom views" aria-label="More filters and custom views">⋯</button>`;
     wrap.appendChild(row);
-    // Phase 6 — Row 3: personal Custom Views (opens from the ⋯). Each is an icon+label button that
-    // re-applies its saved search + pinned filters + sort; a +New at the end starts the capture flow.
-    if (cs.customOpen) {
-      const cviews = loadCViews(card);
-      const crow = el('div', 'cvrow');
-      crow.innerHTML =
-        cviews.map((v, i) => `<button class="cview js-cview" data-card="${card}" data-idx="${i}" data-tip="${esc(v.name)}">${I[v.icon] || I.filter}<span class="cv-lbl">${esc(v.name)}</span></button>`).join('')
-        + `<button class="cvnew js-cvnew" data-card="${card}" data-tip="Save the current search + filters + sort as a view" aria-label="New view">${I.plus}New</button>`;
-      wrap.appendChild(crow);
-    }
+    // Row 2 is ONE row (Jac / spec §4): options that don't fit fold into the ⋯ MENU (above the
+    // Custom Views) — never a wrap, never a third row. Measure after paint (the node attaches
+    // when render() lands); phones scroll the row instead, so no fold there.
+    requestAnimationFrame(() => foldOptRow(row, card));
   }
   // §13.4 — Graph carousel: an interactive panel ABOVE the list (the list renders below,
   // filtered by the chart's g-tagged search terms). Legacy cards still full-replace the list.
@@ -13669,7 +13698,7 @@ function onClick(e) {
   if (closest('.js-vendor-tax')) { e.stopPropagation(); const b = closest('.js-vendor-tax'); const v = recOf('vendors', b.dataset.rec); if (v) { const ex = b.dataset.val === '1'; if (!!v.salesTaxExempt !== ex) { v.salesTaxExempt = ex; reindex('vendors', v); logAction(v, `Sales tax → ${ex ? 'Exempt' : 'Taxed'}`); } if (state.overlay?.kind === 'board') renderOverlay(); render(); } return; }
   if (closest('.js-cardgraph')) { e.stopPropagation(); const b = closest('.js-cardgraph'); const card = b.dataset.card, src = b.dataset.src || card; const cs = activeSession().cards[card]; if (!cs.graphView) { if (graphViewsFor(src)) return gvOpen(card, src); cs.graphView = true; return render(); } cs.graphView = false; return render(); }   // §13.4 per-card Graph carousel toggle (legacy / Shop-'all': dashboard)
   if (closest('.js-cardgear')) { e.stopPropagation(); const cs = activeSession().cards[closest('.js-cardgear').dataset.card]; if (cs) { cs.optionsOpen = !cs.optionsOpen; render(); } return; }   // phase 4 — gear drops/collapses the Row 2 options
-  if (closest('.js-opt')) { e.stopPropagation(); const b = closest('.js-opt'); const cs = activeSession().cards[b.dataset.card]; if (cs) { const set = new Set(cs.activeOptions || []); set.has(b.dataset.opt) ? set.delete(b.dataset.opt) : set.add(b.dataset.opt); cs.activeOptions = [...set]; cs.listLimit = undefined; render(); } return; }   // phase 4 — multi-select AND toggle a quick-filter option
+  if (closest('.js-opt')) { e.stopPropagation(); const b = closest('.js-opt'); const cs = activeSession().cards[b.dataset.card]; if (cs) { const set = new Set(cs.activeOptions || []); set.has(b.dataset.opt) ? set.delete(b.dataset.opt) : set.add(b.dataset.opt); cs.activeOptions = [...set]; cs.listLimit = undefined; document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); render(); } return; }   // phase 4 — multi-select AND toggle a quick-filter option (also from the ⋯ menu)
   if (closest('.js-gv-chev')) { e.stopPropagation(); const b = closest('.js-gv-chev'); return gvChevron(b.dataset.card, b.dataset.src || b.dataset.card, Number(b.dataset.dir)); }   // §13.4 cycle the active graph view
   if (closest('.js-gv-seg')) { e.stopPropagation(); const b = closest('.js-gv-seg'); return toggleGraphSeg(b.dataset.card, b.dataset.src || b.dataset.card, b.dataset.col, b.dataset.value, b.dataset.label); }   // §13.4 toggle a slice/bar/row/number → search entry
   if (closest('.js-gvwin')) { e.stopPropagation(); const b = closest('.js-gvwin'); return openGvWinMenu(b, b.dataset.card, b.dataset.src); }   // §13.4 open the timeline window menu
@@ -13915,9 +13944,9 @@ function onClick(e) {
   if (closest('.js-sortfield')) { const b = closest('.js-sortfield'); const cs = activeSession().cards[b.dataset.card]; const f = SORT_FIELDS[b.dataset.card].find((x) => x.field === b.dataset.field); if (f) { cs.sort = { ...f }; saveSort(b.dataset.card, cs.sort); } document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); render(); return; }
   if (closest('.js-paymethod')) { const cs = activeSession().cards.invoices; cs.payMethod = closest('.js-paymethod').dataset.method; document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); render(); return; }   // §337
   if (closest('.js-sortdir')) { const card = closest('.js-sortdir').dataset.card; const cs = activeSession().cards[card]; cs.sort.dir = cs.sort.dir === 'asc' ? 'desc' : 'asc'; saveSort(card, cs.sort); render(); return; }
-  if (closest('.js-cvmore')) { const cs = activeSession().cards[closest('.js-cvmore').dataset.card]; if (cs) { cs.customOpen = !cs.customOpen; render(); } return; }   // phase 6 — ⋯ toggles Row 3 (custom views)
-  if (closest('.js-cview')) { const b = closest('.js-cview'); return applyCView(b.dataset.card, loadCViews(b.dataset.card)[Number(b.dataset.idx)]); }   // phase 6 — apply a personal view (search + filters + sort)
-  if (closest('.js-cvnew')) { const card = closest('.js-cvnew').dataset.card; const cs = activeSession().cards[card]; state.overlay = { kind: 'iconPick', card, search: cs.search || '', terms: (cs.filterTerms || []).map((t) => ({ ...t })), sort: { ...cs.sort }, suggested: viewLabel(cs.search, cs.filterTerms) }; renderOverlay(); return; }   // phase 6 — +New → icon picker
+  if (closest('.js-cvmore')) { const b = closest('.js-cvmore'); return openMoreMenu(b.dataset.card, b); }   // ⋯ → the More menu (folded filters + custom views) — never a third row
+  if (closest('.js-cview')) { const b = closest('.js-cview'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return applyCView(b.dataset.card, loadCViews(b.dataset.card)[Number(b.dataset.idx)]); }   // phase 6 — apply a personal view (search + filters + sort)
+  if (closest('.js-cvnew')) { const card = closest('.js-cvnew').dataset.card; const cs = activeSession().cards[card]; document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); state.overlay = { kind: 'iconPick', card, search: cs.search || '', terms: (cs.filterTerms || []).map((t) => ({ ...t })), sort: { ...cs.sort }, suggested: viewLabel(cs.search, cs.filterTerms) }; renderOverlay(); return; }   // phase 6 — +New → icon picker
   if (closest('.js-iconpick')) { const b = closest('.js-iconpick'); const o = state.overlay; if (o && o.kind === 'iconPick') { const nm = (typeof prompt === 'function' ? prompt('Name this view:', o.suggested || 'View') : (o.suggested || 'View')); if (nm && nm.trim()) { const views = loadCViews(o.card).slice(); if (!views.some((v) => v.name.toLowerCase() === nm.trim().toLowerCase())) { views.push({ name: nm.trim(), search: o.search || '', terms: (o.terms || []).map((t) => ({ ...t })), sort: (o.sort && o.sort.field) ? { ...o.sort } : null, icon: b.dataset.icon }); saveCViews(o.card, views); } } closeOverlay(); render(); } return; }   // phase 6 — pick glyph → name → save
 
   // inline edit (click a value → input)
@@ -17405,7 +17434,7 @@ function boot() {
     // card-to-List never fired. Dismiss it and re-resolve the row beneath the cursor.
     let target = e.target;
     if (target.closest('.hover-preview')) { hideHoverPreview(); target = document.elementFromPoint(e.clientX, e.clientY) || target; }
-    if (!target.closest('.card') && !target.closest('.overlay .popup')) return;
+    if (!target.closest('.card') && !target.closest('.overlay .popup') && !target.closest('.js-cview')) return;   // .js-cview: a Custom View in the ⋯ dropdown (on <body>) — right-click = Remove View
     e.preventDefault();
     if (performance.now() - lastTouchCtx < 700) return;                        // §M3 — our touch long-press already opened it; swallow the trailing native event
     hideHoverPreview();                                                        // clear any preview still mid-fuse so it can't reappear over the menu
