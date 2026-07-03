@@ -2045,10 +2045,18 @@ body.is-phone .set-tab-l { flex: 0 0 auto; }
 .ru-lead-n { color: var(--txt-3); font-weight: 700; font-size: 11px; }
 .ru-lead-name { font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ru-lead-c { font-weight: 800; font-size: 13px; color: var(--txt-2); font-variant-numeric: tabular-nums; }
-.ru-plotmount rect.js-ru-nav { cursor: pointer; }
-.ru-plotmount rect.js-ru-nav:hover { filter: brightness(1.18); }
-.ru-plotmount rect.js-ru-nav:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.ru-plotmount rect.js-ru-nav, .ru-plotmount circle.js-ru-nav { cursor: pointer; }
+.ru-plotmount rect.js-ru-nav:hover, .ru-plotmount circle.js-ru-nav:hover { filter: brightness(1.18); }
+.ru-plotmount rect.js-ru-nav:focus-visible, .ru-plotmount circle.js-ru-nav:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .ru-plotmount text { pointer-events: none; }
+.ru-duo { display: flex; gap: 14px; align-items: stretch; }
+.ru-duo-chart { flex: 1; min-width: 0; }
+.ru-real { width: 92px; flex: none; display: flex; flex-direction: column; justify-content: center; gap: 3px; padding-left: 14px; border-left: 1px dashed var(--tan, #c2925a); }   /* saddle-stitch divider — trend left, "right now" right */
+.ru-real-n { font-family: 'Saira Condensed', system-ui, sans-serif; font-weight: 800; font-size: 34px; line-height: 1; color: var(--txt); }
+.ru-real-l { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1px; font-weight: 700; font-size: 10px; color: var(--txt-3); }
+.ru-real-bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; margin-top: 5px; }
+.ru-real-seg { min-width: 3px; }
+.ru-sub-h { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.2px; font-weight: 700; font-size: 10px; color: var(--txt-3); margin: 6px 0 2px; }
 @media (max-width: 900px) { .ru-layout { grid-template-columns: 1fr; } .ru-spine { flex-direction: row; flex-wrap: wrap; border-right: none; border-bottom: 1px solid var(--line); padding: 10px 12px; } .ru-grid { grid-template-columns: 1fr; } }
 @media (prefers-reduced-motion: reduce) { .ru-per { transition: none; } }
 
