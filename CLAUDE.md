@@ -103,10 +103,22 @@ Reference implementations: `.login-*` and `.cancel-arc` blocks in `style.css`.
   use `node tools/gen-icons.mjs --check` locally to catch drift.
 - **Bespoke marks are the only exception** and stay in `icons.js`: the steel
   logo (`bluesteel`), `horseshoe`, `hardhat`/`mtech`, the `mark`, the rounded
-  `circle` placeholder, the Tabler **backhoe** excavator (`categories`), the
-  `clipboard-question` (`inspectionsPending`, no Lucide equivalent), and the
+  `circle` placeholder, the Tabler **backhoe** (`CARD_ICON.units` /
+  `CATEGORY_ICON.excavator`), the Tabler **bulldozer** (`CATEGORY_ICON.skidsteer`,
+  added 2026-07-03 for the skid-steer/dozer/loader family — no Lucide equivalent),
+  the `clipboard-question` (`inspectionsPending`, no Lucide equivalent), and the
   gate-timeline status glyphs (`GATE_ICON`, still in `app.js`). Don't replace
   these with library icons without asking.
+- **Category icons are FAMILY-level, not per-model** (Jac, 2026-07-03): the real
+  fleet has ~50 rate-card categories (see the `Fleet_Categories` sheet in Drive),
+  not the 5 in the `data.js` demo seed. `categoryIconFor()` in `app.js` keyword-matches
+  a category name onto one of ~13 equipment-family glyphs in `CATEGORY_ICON`
+  (excavator, skid steer/dozer, lift, attachment, roller/compaction, trencher,
+  stump grinder, buggy, generator, compressor, pump, trailer, tractor, small-tool
+  catch-all) — every size/model in a family shares its icon. An unmatched name falls
+  to the neutral `box` glyph, not a machine shape, so a miss is visible instead of
+  silently wrong. Add a new family only when an existing one is a genuine mismatch —
+  don't reach for per-model glyphs.
 
 ## Don't
 

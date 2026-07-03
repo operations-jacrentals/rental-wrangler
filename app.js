@@ -4851,24 +4851,35 @@ function customerSpectrumViz(c) {
   return `<div class="row-viz" style="background:linear-gradient(90deg, var(--red-bg), var(--orange-bg), var(--yellow-bg), var(--green-bg)); clip-path: inset(0 ${100 - pct}% 0 0)"></div>`;
 }
 /* A library glyph representing a unit's CATEGORY (Jac) — keyword-resolved from the
-   category name onto the vendored CATEGORY_ICON map (Lucide + the Tabler backhoe).
-   Never hand-authored; unknowns fall back to the backhoe (heavy-equipment default). */
+   category name onto the vendored CATEGORY_ICON map (Lucide + two bespoke Tabler marks).
+   FAMILY-LEVEL (Jac, 2026-07-03): the real fleet has ~50 rate-card categories (attachments,
+   6 excavator sizes, 2 skid steers, compaction, etc.) — every size/model within a family
+   shares one glyph rather than each getting its own. Order matters: more specific families
+   (attachment / skid-steer) are checked before broader ones (excavator/lift) so e.g. an
+   "Att. Breaker, Skid" attachment doesn't get mistaken for a skid steer. Never hand-authored;
+   a genuinely unmatched name (or an admin bucket like "Uncategorized") falls to a neutral
+   box glyph — NOT a machine shape — so a miss is visually obvious instead of silently wrong. */
 function categoryIconFor(name) {
   const n = (name || '').toLowerCase();
-  if (/excavat|backhoe|dig|skid|loader|dozer|bobcat|track\s?hoe|mini.?ex/.test(n)) return CATEGORY_ICON.excavator;
-  if (/scissor|boom|man.?lift|aerial|telehandl|fork|\blift\b/.test(n)) return CATEGORY_ICON.lift;
-  if (/light/.test(n)) return CATEGORY_ICON.light;
-  if (/tower/.test(n)) return CATEGORY_ICON.tower;
+  if (/stump|grinder/.test(n)) return CATEGORY_ICON.grinder;
+  if (/trench/.test(n)) return CATEGORY_ICON.trencher;
+  if (/att\.|attach|attatch|grapple|box.?blade|bush.?hog|\bforks?\b|breaker|auger/.test(n)) return CATEGORY_ICON.attachment;
+  if (/skid|dozer|track.?loader|bobcat/.test(n)) return CATEGORY_ICON.skidsteer;
+  if (/excavat|backhoe|mini.?ex/.test(n)) return CATEGORY_ICON.excavator;
+  if (/scissor|boom|man.?lift|aerial|telehandl|towable.?lift|\blift\b/.test(n)) return CATEGORY_ICON.lift;
+  if (/roller|tamper|rammer/.test(n)) return CATEGORY_ICON.roller;
+  if (/buggy/.test(n)) return CATEGORY_ICON.buggy;
   if (/generat|\bpower\b|genset|geny/.test(n)) return CATEGORY_ICON.generator;
   if (/compress|\bair\b/.test(n)) return CATEGORY_ICON.compressor;
-  if (/pump|water/.test(n)) return CATEGORY_ICON.pump;
-  if (/dump|hauler|flatbed|\btruck\b/.test(n)) return CATEGORY_ICON.truck;
-  if (/tractor|mower|brush|broom/.test(n)) return CATEGORY_ICON.tractor;
-  if (/trailer|container/.test(n)) return CATEGORY_ICON.trailer;
+  if (/pump|water|sump/.test(n)) return CATEGORY_ICON.pump;
+  if (/trailer|dump/.test(n)) return CATEGORY_ICON.trailer;
+  if (/hauler|flatbed|\btruck\b/.test(n)) return CATEGORY_ICON.truck;
+  if (/tractor/.test(n)) return CATEGORY_ICON.tractor;
+  if (/light|tower/.test(n)) return CATEGORY_ICON.tower;
   if (/fuel|tank/.test(n)) return CATEGORY_ICON.fuel;
   if (/heat|furnace/.test(n)) return CATEGORY_ICON.heater;
-  if (/saw|cut/.test(n)) return CATEGORY_ICON.saw;
-  return CATEGORY_ICON.excavator;
+  if (/saw|cut|chainsaw|chipper|trowel|float|buffer|sander|tiller|sod|splitter|jack.?hammer|metal.?break|pallet.?jack|snake|blade/.test(n)) return CATEGORY_ICON.saw;
+  return CATEGORY_ICON.box;
 }
 /* The unit row's RENTAL+INSPECTION pill (Jac): text = rental status / availability
    verdict / inspection label; COLOR is inspection-driven (mechanics' card) and only

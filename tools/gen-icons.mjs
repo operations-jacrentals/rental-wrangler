@@ -38,17 +38,21 @@ const LUCIDE = {
     chevL: 'chevron-left', chevR: 'chevron-right', chat: 'message-circle',
   },
   CARD_ICON: {
-    customers: 'user', rentals: 'calendar', units: 'tag', invoices: 'receipt',
+    customers: 'user', rentals: 'calendar', categories: 'tag', invoices: 'receipt',
     workOrders: 'wrench', serviceOrders: 'heart', inspections: 'clipboard-check',
     shop: 'hammer', parts: 'package', vendors: 'store', expenses: 'receipt-text',
     files: 'folder',
   },
   RING_ICON: { driver: 'truck', office: 'building', sales: 'trending-up' },
   // Per-category unit glyphs — keyword-resolved by categoryIconFor() in app.js.
+  // Families cover the ~50 real fleet categories (Fleet_Categories rate sheet), not
+  // just the 5-record demo seed — see docs/handoffs or ask Jac for the source sheet.
   CATEGORY_ICON: {
-    lift: 'forklift', light: 'lightbulb', generator: 'zap', compressor: 'wind',
+    lift: 'forklift', generator: 'zap', compressor: 'wind',
     pump: 'droplet', truck: 'truck', tractor: 'tractor', trailer: 'container',
-    fuel: 'fuel', heater: 'flame', tower: 'radio-tower', saw: 'wrench', box: 'box',
+    fuel: 'fuel', heater: 'flame', tower: 'radio-tower',
+    attachment: 'puzzle', roller: 'barrel', trencher: 'pickaxe', grinder: 'cog',
+    buggy: 'car-front', saw: 'scissors', box: 'box',
   },
 };
 
@@ -64,8 +68,10 @@ const CUSTOM = {
     chev: `'<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 9l6 6 6-6"/></svg>'`,
   },
   CARD_ICON: {
-    // Tabler "backhoe" (MIT) — Lucide has no excavator.
-    categories: `ico('<path d="M2 17a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/><path d="M11 17a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/><path d="M13 19h-9"/><path d="M4 15h9"/><path d="M8 12v-5h2a3 3 0 0 1 3 3v5"/><path d="M5 15v-2a1 1 0 0 1 1 -1h7"/><path d="M21.12 9.88l-3.12 -4.88l-5 5"/><path d="M21.12 9.88a3 3 0 0 1 -2.12 5.12a3 3 0 0 1 -2.12 -.88l4.24 -4.24"/>')`,
+    // Tabler "backhoe" (MIT) — Lucide has no excavator. (Jac, 2026-07-03: was on
+    // `categories` — swapped onto `units` because a literal machine glyph reads as
+    // "a unit", not "a category"; `categories` now uses the Lucide tag/label glyph.)
+    units: `ico('<path d="M2 17a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/><path d="M11 17a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/><path d="M13 19h-9"/><path d="M4 15h9"/><path d="M8 12v-5h2a3 3 0 0 1 3 3v5"/><path d="M5 15v-2a1 1 0 0 1 1 -1h7"/><path d="M21.12 9.88l-3.12 -4.88l-5 5"/><path d="M21.12 9.88a3 3 0 0 1 -2.12 5.12a3 3 0 0 1 -2.12 -.88l4.24 -4.24"/>')`,
     // clipboard-question — not in Lucide; bespoke clipboard + "?".
     inspectionsPending: `ico('<rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M10 12.3a2 2 0 1 1 2.7 1.9c-.6.3-1 .7-1 1.4"/><path d="M11.7 17.8h.01"/>')`,
   },
@@ -74,8 +80,10 @@ const CUSTOM = {
     mtech: `ico('<path d="M2 18a1 1 0 0 0 1 1h18a1 1 0 0 0 1-1v-1a1 1 0 0 0-1-1H3a1 1 0 0 0-1 1Z"/><path d="M10 10V5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v5"/><path d="M4 15v-3a6 6 0 0 1 6-6"/><path d="M14 6a6 6 0 0 1 6 6v3"/>')`,
   },
   CATEGORY_ICON: {
-    // excavator / skid / backhoe family reuses the vendored Tabler backhoe.
-    excavator: `CARD_ICON.categories`,
+    // excavator / backhoe family reuses the vendored Tabler backhoe (now on CARD_ICON.units).
+    excavator: `CARD_ICON.units`,
+    // Tabler "bulldozer" (MIT) — Lucide has no skid-steer/loader/dozer equivalent.
+    skidsteer: `ico('<path d="M2 17a2 2 0 1 0 4 0a2 2 0 0 0 -4 0"/><path d="M12 17a2 2 0 1 0 4 0a2 2 0 0 0 -4 0"/><path d="M19 13v4a2 2 0 0 0 2 2h1"/><path d="M14 19h-10"/><path d="M4 15h10"/><path d="M9 11v-5h2a3 3 0 0 1 3 3v6"/><path d="M5 15v-3a1 1 0 0 1 1 -1h8"/><path d="M19 17h-3"/>')`,
   },
 };
 
@@ -89,8 +97,9 @@ const ORDER = {
       'serviceOrders', 'inspections', 'inspectionsPending', 'shop', 'parts', 'vendors',
       'expenses', 'files'],
   RING_ICON: ['mechanic', 'mtech', 'driver', 'office', 'sales'],
-  CATEGORY_ICON: ['excavator', 'lift', 'light', 'generator', 'compressor', 'pump',
-    'truck', 'tractor', 'trailer', 'fuel', 'heater', 'tower', 'saw', 'box'],
+  CATEGORY_ICON: ['excavator', 'skidsteer', 'lift', 'attachment', 'roller', 'trencher',
+    'grinder', 'buggy', 'generator', 'compressor', 'pump', 'truck', 'tractor', 'trailer',
+    'fuel', 'heater', 'tower', 'saw', 'box'],
 };
 
 async function fetchInner(lucideName) {
