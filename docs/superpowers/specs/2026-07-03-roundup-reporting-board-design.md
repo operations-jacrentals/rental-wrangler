@@ -44,6 +44,7 @@ Today's Graph V2 took four live-review rounds (spacing, labels, collisions, chip
 ### Layout (yard data-plate, full screen)
 - Full-screen overlay on the existing overlay shell (`state.overlay` + `renderOverlay()`), steel panel, corner rivets, stamped `ROUND-UP` wordmark, standard close-✕ (R24). Esc/back behaves like every other overlay.
 - **Left spine** (sticky): the timeframe control, top-to-bottom — plain stamped text, orange ink for the active period, a thin vertical rule connecting them (the reference's spine, in steel).
+- **Custom date range (v1 — Jac: "important").** Below the presets, a **Custom…** spine entry opens a compact from/to popover built on the existing **R22 `dateField`** (the app-styled picker — never the native control). Applying it makes the spine show the active range as stamped text (e.g. `5/1 – 6/15`, orange ink); clicking it again clears back to **All**. Plumbing: the preset periods generalize from "cutoff → today" to a range object `{a, b}` (ISO, inclusive/exclusive) — presets emit `{a: cutoff, b: tomorrow}`, Custom emits the picked pair; `uBuckets`' granularity adaptation (daily/weekly/monthly by span) already keys off day-count and consumes the range's span directly. Every windowed rollup and trend panel takes the range; snapshot panels ignore it, as with presets. Guardrails: from ≤ to enforced with an R19 attention-flash (never a dead-end error), empty-range impossible by construction.
 - **Main area**: responsive panel grid (CSS grid, 2–3 panels per row on desktop, 1 on phone). Panels are uniform-height **within a row** by grid nature — the "same size" requirement solves itself at full-screen scale.
 - Each panel: stamped condensed header (e.g. `REVENUE BY CATEGORY`), the chart, and (for trend panels) the today's-reality snapshot pinned right. No legends — direct labels + hover names, as decided today.
 
@@ -106,8 +107,8 @@ Real-login harness against live data: every section, every timeframe, zero conso
 
 The old system ships intact in git history through PR #459. The removal pass (step 6) is a **separate commit** from the new-board commits, so reverting just that commit restores the in-column panels while keeping the Round-Up — a real safety hatch, not a full unwind.
 
-## 10. Open items for Jac
+## 10. Open items — resolved
 
-1. **The name** — "Round-Up" (yard voice, sanctioned vernacular). Alternative: plain "Reports". One word from you settles it.
-2. **Section order** — spec'd Money-first (owner's-eye view). Say the word if Shop-first or Fleet-first reads better for daily use.
-3. **Custom date range** on the time spine (a from/to picker beyond the presets) — deferred by default; say if you want it in v1.
+1. **The name** — "Round-Up" stands (no objection raised).
+2. **Section order** — Money-first stands (no objection raised).
+3. **Custom date range** — **IN v1** (Jac: "Date range picker is important"). Design in §4 (Left spine → Custom date range).
