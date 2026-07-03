@@ -856,6 +856,30 @@ select.lf-in { appearance: none; cursor: pointer; }
 .is-phone .optrow .opts { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; scrollbar-width: none; }   /* phone: swipe every option */
 .is-phone .optrow .opts::-webkit-scrollbar { display: none; }
 .is-phone .optrow .opt { min-height: 32px; }
+/* ⋯ = the Row-2 button that drops Row 3 (Custom Views). Text glyph like the ▲▼ sortdir. */
+.optrow .opt-more { flex: 0 0 auto; width: 30px; height: 26px; display: grid; place-items: center; border-radius: var(--chip-radius); border: 1px solid var(--line); background: var(--panel); color: var(--txt-2); font-size: 16px; line-height: 1; letter-spacing: 1px; cursor: pointer; box-shadow: var(--chip-shadow); }
+.optrow .opt-more:hover { color: var(--accent); border-color: var(--accent-line); }
+.optrow .opt-more.on { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+/* Row 3 — personal CUSTOM VIEWS (phase 6). Opens from the ⋯. A view is the ONLY filter button
+   that carries an icon (a saved search + pinned filters + sort); +New starts the capture flow. */
+.cvrow { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; padding: 0 10px 8px; min-width: 0; }
+.cvrow .cvs { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 6px; overflow: hidden; }   /* desktop: truncate (no scrollbar in the 3-col grid) */
+.is-phone .cvrow .cvs { overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }   /* phone: swipe */
+.is-phone .cvrow .cvs::-webkit-scrollbar { display: none; }
+.cvrow .cview { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 10px; border-radius: var(--chip-radius); border: 1px solid var(--line); background: var(--panel); color: var(--txt-2); font-family: 'Saira Condensed', system-ui, sans-serif; font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; white-space: nowrap; cursor: pointer; box-shadow: var(--chip-shadow); }
+.cvrow .cview svg { width: 13px; height: 13px; flex: 0 0 auto; }
+.cvrow .cview:hover { color: var(--accent); border-color: var(--accent-line); }
+.cvrow .cvnew { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 4px; height: 26px; padding: 0 10px; border-radius: var(--chip-radius); border: 1px dashed var(--tan, #c2925a); background: transparent; color: var(--txt-3); font-family: 'Saira Condensed', system-ui, sans-serif; font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; cursor: pointer; }   /* saddle-stitch dashed — a new/blank affordance */
+.cvrow .cvnew svg { width: 12px; height: 12px; }
+.cvrow .cvnew:hover { color: var(--accent); border-color: var(--accent-line); }
+.is-phone .cvrow .cview, .is-phone .cvrow .cvnew { min-height: 32px; }
+/* Icon-picker popup grid (phase 6 · the iconPick window). */
+.ipick-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
+.ipick-cell { display: grid; place-items: center; aspect-ratio: 1; border-radius: 10px; border: 1px solid var(--line); background: var(--panel-2); color: var(--txt-2); cursor: pointer; }
+.ipick-cell:hover { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+.ipick-cell svg { width: 18px; height: 18px; }
+.ipick-cell:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.is-phone .ipick-grid { grid-template-columns: repeat(5, 1fr); }
 
 /* reusable floating dropdown menu (sort fields, status options) — Tier 3 SELECTOR-LIST:
    steel panel + a left hazard rail (the signature), no orange halo (dialogs keep that). */

@@ -1925,7 +1925,7 @@ function categoryStats(cat) {
    its own anchored main card + cascade. */
 function freshSession() {
   const cards = {};
-  for (const c of GRID_CARDS) cards[c.id] = { mode: 'list', recId: null, recType: null, search: '', filterTerms: [], historySearch: '', sort: loadSort(c.id), backStack: [], fwdStack: [], segment: c.id === 'shop' ? 'all' : null, graphIdx: 0, graphSel: {}, optionsOpen: false, activeOptions: [] };   // §13.4 graphIdx = active carousel view; graphSel = remembered selection per view · optionsOpen/activeOptions = the gear's Row-2 quick-filters (phase 4 card-header)
+  for (const c of GRID_CARDS) cards[c.id] = { mode: 'list', recId: null, recType: null, search: '', filterTerms: [], historySearch: '', sort: loadSort(c.id), backStack: [], fwdStack: [], segment: c.id === 'shop' ? 'all' : null, graphIdx: 0, graphSel: {}, optionsOpen: false, activeOptions: [], customOpen: false };   // §13.4 graphIdx = active carousel view; graphSel = remembered selection per view · optionsOpen/activeOptions = the gear's Row-2 quick-filters (phase 4 card-header)
   // 3-column layout: which member card is visible in each column (display-only;
   // rides inside the session so item-tabs / pause-resume restore it for free).
   const cols = {}; for (const col of COLUMNS) cols[col.id] = col.default;
@@ -4343,7 +4343,10 @@ function openCtxMenu(e, hit) {
   m.className = 'ctx-menu'; m.id = 'rw-ctx';
   const item = (act, label) => `<button class="dd-item" data-ctx="${act}">${label}</button>`;
   const linkSec = linkItems.length ? linkItems.map((a) => `<button class="dd-item" data-ctx="link:${a.target}">${CARD_ICON[a.target] || ''}${esc(a.label)}</button>`).join('') + '<div class="menu-sep"></div>' : '';
-  m.innerHTML = linkSec + [
+  // Phase 6 — right-click a personal Custom View button → Remove View (prepended, so it's the first item).
+  const cvEl = hit && hit.el ? hit.el.closest('.cview') : null;
+  const cvSec = cvEl ? `<button class="dd-item" data-ctx="rmview:${cvEl.dataset.card}:${cvEl.dataset.idx}">${I.x} Remove View</button><div class="menu-sep"></div>` : '';
+  m.innerHTML = cvSec + linkSec + [
     item('cut', '✂️ Cut'), item('copy', '📋 Copy'), item('paste', '📥 Paste'), item('clear', '🧹 Clear'),
     '<div class="menu-sep"></div>',
     item('search', '🔎 Search'), item('gsearch', '🌐 Global Search'), item('replace', '✏️ Replace'),
@@ -4416,6 +4419,12 @@ function runCtxAction(act) {
     if (!rec) return;
     if (rec.card === 'units' && target === 'workOrders') return startUnitWorkOrder(rec.recId);   // §4a create-WO → land on the unit
     return enterLinking(rec.card, rec.recId, target);
+  }
+  if (act.startsWith('rmview:')) {   // phase 6 — remove a personal Custom View
+    const [, card, idx] = act.split(':');
+    closeCtxMenu(); document.removeEventListener('mousedown', ctxOutside);
+    const views = loadCViews(card).slice(); views.splice(Number(idx), 1); saveCViews(card, views);
+    return render();
   }
   const tg = ctxTarget; closeCtxMenu(); document.removeEventListener('mousedown', ctxOutside);
   if (!tg) return;
@@ -7022,8 +7031,19 @@ function listView(cardDef, session) {
     const row = el('div', 'optrow');
     row.innerHTML =
       `<div class="opts">${opts.map((o) => `<button class="opt${o.combo ? ' combo' : ''}${active.includes(o.id) ? ' on' : ''} js-opt" data-card="${card}" data-opt="${o.id}"${COMBO_TIP[o.id] ? ` data-tip="${esc(COMBO_TIP[o.id])}"` : ''} aria-pressed="${active.includes(o.id) ? 'true' : 'false'}">${esc(o.label)}</button>`).join('')}</div>`
-      + `<button class="bv-btn opt-graph js-cardgraph${cs.graphView ? ' on' : ''}" data-card="${card}" data-tip="${cs.graphView ? 'Back to list' : 'Graph view'}" aria-label="Graph view">${I.graph}</button>`;
+      + `<button class="bv-btn opt-graph js-cardgraph${cs.graphView ? ' on' : ''}" data-card="${card}" data-tip="${cs.graphView ? 'Back to list' : 'Graph view'}" aria-label="Graph view">${I.graph}</button>`
+      + `<button class="opt-more js-cvmore${cs.customOpen ? ' on' : ''}" data-card="${card}" data-tip="Custom views" aria-label="Custom views" aria-expanded="${cs.customOpen ? 'true' : 'false'}">⋯</button>`;
     wrap.appendChild(row);
+    // Phase 6 — Row 3: personal Custom Views (opens from the ⋯). Each is an icon+label button that
+    // re-applies its saved search + pinned filters + sort; a +New at the end starts the capture flow.
+    if (cs.customOpen) {
+      const cviews = loadCViews(card);
+      const crow = el('div', 'cvrow');
+      crow.innerHTML =
+        `<div class="cvs">${cviews.map((v, i) => `<button class="cview js-cview" data-card="${card}" data-idx="${i}" data-tip="${esc(v.name)}">${I[v.icon] || I.filter}<span class="cv-lbl">${esc(v.name)}</span></button>`).join('')}</div>`
+        + `<button class="cvnew js-cvnew" data-card="${card}" data-tip="Save the current search + filters + sort as a view" aria-label="New view">${I.plus}New</button>`;
+      wrap.appendChild(crow);
+    }
   }
   // §13.4 — Graph carousel: an interactive panel ABOVE the list (the list renders below,
   // filtered by the chart's g-tagged search terms). Legacy cards still full-replace the list.
@@ -9272,6 +9292,11 @@ function buildPopupEl(o, overlay, opts = {}) {
         <p class="muted" style="margin-top:6px;font-size:11px">${esc(o.caption || 'Scan to open this session on another device (single shared login — §1/§4.2).')}</p>
       </div>` });
     overlay.appendChild(pop);
+  } else if (o.kind === 'iconPick') {   // phase 6 — pick a glyph for a new personal Custom View
+    const pop = el('div', 'popup'); pop.style.width = '340px';
+    const grid = CVIEW_ICONS.map((n) => `<button class="ipick-cell js-iconpick" data-icon="${n}" data-tip="${esc(n)}" aria-label="${esc(n)}">${I[n] || ''}</button>`).join('');
+    pop.innerHTML = popupShell({ icon: I.grid, title: 'Pick an icon', tag: 'Custom view · icon', body: `<div class="ipick-grid">${grid}</div><p class="muted" style="margin-top:10px;font-size:11px;text-align:center">Pick a glyph, then name your view.</p>` });
+    overlay.appendChild(pop);
   } else if (o.kind === 'migrateUnits') {
     // Round up missing units — preview the create/link plan before writing anything.
     const creates = o.plan.filter((p) => p.action === 'create').length;
@@ -10124,6 +10149,7 @@ const openOverlay = (o) => { state.datepick = null; _ovScroll[o.kind] = 0; state
    popup is listed" stays literally true. label = human name · tag = the popup's tag. */
 const WINDOW_CATALOG = [
   { kind: 'qr',            label: 'Share session (QR)',      tag: 'Share · session',          sample: () => ({}) },
+  { kind: 'iconPick',      label: 'Pick an icon',            tag: 'Custom view · icon',       sample: () => ({ card: 'units', search: '', terms: [], sort: {}, suggested: 'View' }) },
   { kind: 'migrateUnits',  label: 'Round up missing units',  tag: 'Units · migrate',          sample: () => ({ plan: [{ name: 'Sample Unit', action: 'create', unitId: 'U000', categoryId: ((DATA.categories || [])[0] || {}).categoryId, count: 1 }] }) },
   { kind: 'comment',       label: 'Comment note',            tag: 'Note · comment',           sample: () => ({ card: 'units', recId: ((DATA.units || [])[0] || {}).unitId, recType: null, color: 'yellow' }) },
   { kind: 'linkConfirm',   label: 'Confirm link',            tag: 'Link · confirm',           sample: () => ({ srcCard: 'rentals', srcId: ((DATA.rentals || [])[0] || {}).rentalId, targetCard: 'invoices', targetId: ((DATA.invoices || [])[0] || {}).invoiceId }) },
@@ -11894,6 +11920,39 @@ async function pushViewsToBackend() {                             // mirror loca
   if (typeof backendPassword === 'undefined' || !backendPassword) return;   // demo → localStorage only
   try { await backendCall('setViews', { views: GLOBAL_VIEWS || {} }); } catch (e) { /* offline → re-syncs on next change */ }
 }
+/* Phase 6 — PERSONAL Custom Views (Row 3), distinct from the company-shared views above (which
+   phase 7 retires). Per OPERATOR, local-only, keyed by commentUserKey() so a shared terminal
+   isolates each hand's set; the cache is cleared on logout (switchUser) as a belt-and-suspenders.
+   The view shape adds `sort` + `icon` over the shared shape: { name, search, terms, sort, icon }.
+   The admin Add gate is dropped — every hand curates their OWN set (§5). */
+const CVIEWS_LS = 'jactec.cviews';   // { [userKey]: { [card]: View[] } }
+let CVIEWS_CACHE = null;
+function _cviewsAll() {
+  if (CVIEWS_CACHE) return CVIEWS_CACHE;
+  let m = null; try { m = JSON.parse(localStorage.getItem(CVIEWS_LS) || 'null'); } catch (e) {}
+  CVIEWS_CACHE = (m && typeof m === 'object') ? m : {};
+  return CVIEWS_CACHE;
+}
+function loadCViews(card) { const u = _cviewsAll()[commentUserKey()]; return (u && u[card]) || []; }
+function saveCViews(card, views) {
+  const all = _cviewsAll(); const k = commentUserKey();
+  (all[k] = all[k] || {})[card] = views; CVIEWS_CACHE = all;
+  try { localStorage.setItem(CVIEWS_LS, JSON.stringify(all)); } catch (e) {}
+}
+/* Applying a Custom View restores its search + pinned chips AND its sort (the shared views leave
+   sort alone). It runs through the SAME filter pipeline — cs.search/filterTerms → rowMatches over
+   the already role-scoped listFor/unitsVisible rows — so §16 holds: it only narrows, never widens. */
+function applyCView(card, v) {
+  if (!v) return;
+  const cs = activeSession().cards[card];
+  cs.search = v.search || '';
+  cs.filterTerms = (v.terms || []).map((t) => ({ ...t }));
+  if (v.sort && v.sort.field) { cs.sort = { ...v.sort }; saveSort(card, cs.sort); }
+  cs.mode = 'list'; cs.recId = null; cs.listLimit = undefined;
+  render();
+}
+// Icon-picker palette — vendored Lucide glyphs (icons.js `I`), never hand-drawn; yard-flavored.
+const CVIEW_ICONS = ['filter', 'list', 'grid', 'table', 'box', 'files', 'doc', 'bell', 'inbox', 'eye', 'lock', 'truck', 'trailer', 'fuel', 'droplet', 'camera', 'graph', 'sliders', 'parts', 'tractor', 'lift', 'saw', 'tower', 'hardhat', 'horseshoe', 'circle'];
 // A view captures the WHOLE filter state — the live search text AND the pinned
 // filter chips (cs.filterTerms) — so ANY filter you build is saveable (Jac 2026-06-13).
 function viewSig(search, terms) {
@@ -13305,6 +13364,10 @@ function onClick(e) {
   if (closest('.js-sortfield')) { const b = closest('.js-sortfield'); const cs = activeSession().cards[b.dataset.card]; const f = SORT_FIELDS[b.dataset.card].find((x) => x.field === b.dataset.field); if (f) { cs.sort = { ...f }; saveSort(b.dataset.card, cs.sort); } document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); render(); return; }
   if (closest('.js-paymethod')) { const cs = activeSession().cards.invoices; cs.payMethod = closest('.js-paymethod').dataset.method; document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); render(); return; }   // §337
   if (closest('.js-sortdir')) { const card = closest('.js-sortdir').dataset.card; const cs = activeSession().cards[card]; cs.sort.dir = cs.sort.dir === 'asc' ? 'desc' : 'asc'; saveSort(card, cs.sort); render(); return; }
+  if (closest('.js-cvmore')) { const cs = activeSession().cards[closest('.js-cvmore').dataset.card]; if (cs) { cs.customOpen = !cs.customOpen; render(); } return; }   // phase 6 — ⋯ toggles Row 3 (custom views)
+  if (closest('.js-cview')) { const b = closest('.js-cview'); return applyCView(b.dataset.card, loadCViews(b.dataset.card)[Number(b.dataset.idx)]); }   // phase 6 — apply a personal view (search + filters + sort)
+  if (closest('.js-cvnew')) { const card = closest('.js-cvnew').dataset.card; const cs = activeSession().cards[card]; state.overlay = { kind: 'iconPick', card, search: cs.search || '', terms: (cs.filterTerms || []).map((t) => ({ ...t })), sort: { ...cs.sort }, suggested: viewLabel(cs.search, cs.filterTerms) }; renderOverlay(); return; }   // phase 6 — +New → icon picker
+  if (closest('.js-iconpick')) { const b = closest('.js-iconpick'); const o = state.overlay; if (o && o.kind === 'iconPick') { const nm = (typeof prompt === 'function' ? prompt('Name this view:', o.suggested || 'View') : (o.suggested || 'View')); if (nm && nm.trim()) { const views = loadCViews(o.card).slice(); if (!views.some((v) => v.name.toLowerCase() === nm.trim().toLowerCase())) { views.push({ name: nm.trim(), search: o.search || '', terms: (o.terms || []).map((t) => ({ ...t })), sort: (o.sort && o.sort.field) ? { ...o.sort } : null, icon: b.dataset.icon }); saveCViews(o.card, views); } } closeOverlay(); render(); } return; }   // phase 6 — pick glyph → name → save
 
   // inline edit (click a value → input)
   if (closest('.inline-edit')) { e.stopPropagation(); const _ie = closest('.inline-edit'); if (_ie.dataset.admin === '1' && !adminUnlocked()) return requireAdmin('Categories and pricing are Admin-only.', () => startInlineEdit(_ie)); return startInlineEdit(_ie); }
@@ -14370,7 +14433,7 @@ function openLogoMenu(anchorEl) {
 // Switch user — clear this session's password/role (name stays remembered) → login.
 function switchUser() {
   document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove());
-  backendPassword = ''; currentRole = ''; booting = true;
+  backendPassword = ''; currentRole = ''; CVIEWS_CACHE = null; booting = true;   // §16 — drop the personal-views cache so the next hand on a shared terminal starts clean
   sessionStorage.removeItem('jactec.pw'); sessionStorage.removeItem('jactec.role');
   renderLogin();
 }

@@ -35,11 +35,11 @@ new popups get `WINDOW_CATALOG` entries.
 
 ---
 
-## Progress — 2026-07-03 (phase 4 shipped; next → phase 5)
+## Progress — 2026-07-03 (phases 4–6 shipped; next → phase 7)
 
-Phases 1–3 shipped on `claude/wrangler-dashboard-space-h2nu0i` (PR #447). **Phase 4 continues
+Phases 1–3 shipped on `claude/wrangler-dashboard-space-h2nu0i` (PR #447). **Phases 4–6 continue
 the feature on `claude/wrangler-dashboard-space-vdijk0`** (based off the phase-1–3 tip; per Jac,
-this branch's PR carries phases 1–4 and supersedes #447). All gates green.
+this branch's PR #452 carries phases 1–6 and supersedes #447). All gates green.
 - **Phase 1 ✅** icon-first toggle — `colTabButtonsHtml` + `aria-label`, `style.css`
   `.coltab:not(.on) .ct-lbl { display:none }`.
 - **Phase 2 ✅** one-row header — `columnEl` wraps toggle + listbar in `.hrow`; listbar =
@@ -69,7 +69,34 @@ this branch's PR carries phases 1–4 and supersedes #447). All gates green.
   with its function in phase 6. Desktop overflow currently **truncates** (clips) — the `⋯`
   overflow-fold also lands in phase 6.
 
-**Next → Phase 5:** right-click / long-press the ▲▼ → a sort-only menu of `SORT_FIELDS[card]`.
+- **Phase 5 ✅** sort-field menu. `openSortMenu(card, anchorEl)` clones openViewMenu's Sort section
+  → `.js-sortfield` buttons through the existing `openDropdown`; the already-live handler commits.
+  Intercept `.js-sortdir` at the top of `openCtxMenuAt` (before the `.card` bail → works in the phone
+  dock; before leaf resolution → not the R20 menu). Phone long-press armed explicitly in `dragDown`.
+  Shop scoped out. Verified `#local` 15/15 (right-click opens sort-only menu, re-sorts, left-click
+  still flips dir, no R20 shadow). **NOT catalogued** — a floater like every sibling menu; the plan's
+  "add a WINDOW_CATALOG entry" line rested on a misread (that guard tracks buildPopupEl modals only).
+- **Phase 6 ✅** personal Custom Views (Row 3). NEW per-operator local layer (`loadCViews`/`saveCViews`
+  keyed by `commentUserKey()`, cache cleared on `switchUser` — §16), **parallel to the shared views**
+  (which phase 7 retires), so nothing breaks. View = `{name, search, terms, sort, icon}`. The `⋯` (built
+  now) toggles `customOpen` → Row 3 = icon+label `.cview` buttons + `+New`. Create: `+New` → `iconPick`
+  popup (grid of vendored Lucide glyphs, **catalogued** — window catalog now 32) → name → save. Apply
+  sets search+terms+sort (through the same role-scoped filter pipeline — §16 holds). Remove: right-click
+  a view → R20 "Remove View" (`rmview:` in `runCtxAction`). Verified `#local` 14/14 (create/apply/remove
+  + per-operator isolation) + smoke + logic 400/400.
+
+**Phase-6 decisions (main session):**
+- **Personal views = a NEW parallel layer, not a conversion.** Today's Views are company-shared +
+  backend-synced (a deliberate Jac call, 2026-06-13). Rather than repurpose them, phase 6 adds a
+  separate per-operator local store for Row 3; the shared system is untouched until phase 7 retires it.
+  Isolation is inherent (per-`commentUserKey()` bucket) + cache-cleared on logout. Flagged to Jac.
+- **`⋯`/Custom Views create path = the `+New` button** (discoverable), not the §9 right-click-search
+  "+View" — the search `<input>` is excluded from the ctx menu (`openCtxMenuAt` input-bail), and `+New`
+  is cleaner. The §9 search-bar shortcut is deferred. Remove View DOES use the R20 menu (the view button
+  reaches it cleanly). The icon `⋯` is a text glyph like the ▲▼ arrows (no library glyph needed).
+
+**Next → Phase 7:** cleanup — fully retire `openViewMenu`, remove orphaned `.sort`/`listbar` CSS,
+role-projection + isolation verification sweep, all gates, and the jactec-ui self-critique screenshot pass.
 
 **Notes for next session:** gear icon is Lucide `sliders` (Jac may want a literal cog via
 `gen-icons.mjs`). `lost`/`unitWhen` predicates are best-effort (try-guarded) — spot-check when
