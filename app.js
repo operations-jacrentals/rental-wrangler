@@ -9186,10 +9186,15 @@ function ruFieldCalls(rg) {
   const vals = bk.map((b) => new Set(fc.filter((w) => { const d = (w.date || '').slice(0, 10); return d >= b.a && d < b.b; }).map((w) => w.unitId)).size);
   const rows = bk.map((b, i) => ({ card: 'units', col: '__fcrange', navValue: b.key, name: `${b.label} — ${vals[i]} units called`, tip: `${b.label} — ${vals[i]} units with field calls` }));
   const chart = vals.some((v) => v > 0) ? ruWireNav(ruLineSVG({ bk, vals, color: '--red' }), rows, 'circle') : ruEmpty('No field calls in this window.');
+  // N9 (manager ask): days since the last field call — the streak IS the reality figure
+  const lastFC = fc.reduce((m, w) => ((w.date || '') > m ? w.date.slice(0, 10) : m), '');
+  const streak = lastFC ? Math.max(0, Math.floor((parseISO(TODAY_ISO) - parseISO(lastFC)) / 86400000)) : null;
+  const inRange = fc.filter((w) => !ruBounded(rg) || ruIn(w.date, rg)).length;
+  const duo = ruDuo(chart, ruReality({ num: streak == null ? '—' : streak, noun: streak == null ? 'field calls ever' : `day${streak === 1 ? '' : 's'} since a field call`, segs: [{ label: 'Field calls in range', count: inRange, color: 'red' }] }));
   const by = {}; fc.forEach((w) => { if (!w.unitId) return; if (ruBounded(rg) && !ruIn(w.date, rg)) return; by[w.unitId] = (by[w.unitId] || 0) + 1; });
   const lead = Object.entries(by).sort((a, b) => b[1] - a[1]).slice(0, 5)
     .map(([uid, n2]) => { const nm = IDX.unit.get(uid)?.name || uid; return { name: nm, disp: String(n2), card: 'units', col: 'name', navValue: nm, tip: `${nm} — ${n2} field calls` }; });
-  const d = document.createElement('div'); d.append(chart);
+  const d = document.createElement('div'); d.append(duo);
   if (lead.length) { const h2 = document.createElement('div'); h2.className = 'ru-sub-h'; h2.textContent = 'Worst offenders'; d.append(h2, ruLeadNode(lead, '')); }
   return d;
 }
@@ -9306,6 +9311,40 @@ function ruCardHealth() {   // card on file — snapshot by nature; values match
   return ruDonutSVG({ segs, noun: 'CUST' });
 }
 // panel builders land here phase by phase; sections list what is coming so the board is honest
+/* ── Manager metrics M2 — Shop (spec 2026-07-03-manager-metrics-design.md) ── */
+function ruBilledWos(rg) {   // N8 — WOs billed to a customer, per bucket (count; parts $ rides the tip)
+  const bk = ruBuckets(rg);
+  const W = DATA.workOrders.filter((w) => !w.cancelled && w.billCustomer === 'Yes' && (w.lineItems || []).some((li) => (li.cost || 0) > 0 || (li.hours || 0) > 0));
+  const green = ruColor('--green');
+  const rows = bk.map((b) => {
+    const hit = W.filter((w) => { const d = (w.date || '').slice(0, 10); return d >= b.a && d < b.b; });
+    const parts = hit.reduce((a, w) => a + (w.lineItems || []).reduce((x, li) => x + (Number(li.cost) || 0), 0), 0);
+    return { label: b.label, name: `${b.label} — ${hit.length} billed`, value: hit.length, fill: green, card: 'shop', seg: 'workOrders', col: '__daterange', navValue: b.key, tip: `${b.label} — ${hit.length} billed WO${hit.length === 1 ? '' : 's'} · ${money(parts)} in parts` };
+  });
+  if (!rows.some((r2) => r2.value > 0)) return ruEmpty('No billed work orders in this window.');
+  return ruWireNav(ruBarsSVG({ data: rows }), rows);
+}
+function ruWorkByRole(rg) {   // N10 — the manager's "Units of Work": completed work per role, range-scoped
+  const inR = (iso) => !ruBounded(rg) || ruIn(iso, rg);
+  const blue = ruColor('--blue');
+  const woDone = DATA.workOrders.filter((w) => !w.cancelled && w.phase === 'Complete' && inR(w.date)).length;
+  const insp = DATA.inspections.filter((n2) => inR(n2.date)).length;
+  const delivered = DATA.rentals.filter((r2) => inR(r2.startDate) && ['On Rent', 'End Rent', 'Off Rent', 'Returned'].includes(rentalDisplayStatus(r2))).length;
+  const returned = DATA.rentals.filter((r2) => inR(r2.endDate) && rentalDisplayStatus(r2) === 'Returned').length;
+  const collected = DATA.invoices.filter((inv) => inR(inv.date) && invoiceTotals(inv).status === 'Paid').length;
+  const rows = [
+    { label: 'WOs Done', name: 'Work orders completed (Mechanic)', value: woDone, card: 'shop', seg: 'workOrders', col: '__wop', navValue: 'Complete', tip: `${woDone} WOs opened in range, now Complete — Mechanic` },
+    { label: 'Inspections', name: 'Inspections performed (M-Tech)', value: insp, card: 'shop', seg: 'inspections', col: '__daterange', navValue: 'range', tip: `${insp} inspections in range — M-Tech` },
+    { label: 'Delivered', name: 'Rentals put on rent (Driver/Yard)', value: delivered, card: 'rentals', col: '__rentrange', navValue: 'range', tip: `${delivered} rentals started in range that went out — Driver/Yard` },
+    { label: 'Returned', name: 'Rentals returned (Driver/Yard)', value: returned, card: 'rentals', col: '__rentrange', navValue: 'range', tip: `${returned} rentals returned in range — Driver/Yard` },
+    { label: 'Collected', name: 'Invoices collected (Office)', value: collected, card: 'invoices', col: 'invoice', navValue: 'Paid', tip: `${collected} invoices issued in range, paid in full — Office` },
+  ].map((r2) => ({ ...r2, fill: blue }));
+  // range-nav values: the whole visible range as one bucket key
+  const key = (rg.a || '0000-01-01') + '|' + (rg.b || '9999-12-31');
+  rows.forEach((r2) => { if (r2.navValue === 'range') r2.navValue = key; });
+  if (!rows.some((r2) => r2.value > 0)) return ruEmpty('No completed work in this window.');
+  return ruWireNav(ruBarsSVG({ data: rows }), rows);
+}
 /* ── Manager metrics M1 (spec 2026-07-03-manager-metrics-design.md) ── */
 function ruNetSales(rg) {   // N1 — payments net of refunds, bucketed by invoice date
   const bk = ruBuckets(rg);
@@ -9385,6 +9424,7 @@ const RU_PANELS = {
   'wo-phase': { build: ruWoPhase }, 'svc-urgency': { build: ruSvcUrgency },
   'fleet-mix': { build: ruFleetMix }, 'accounts': { build: ruAccounts }, 'card-health': { build: ruCardHealth },
   'net-sales': { build: ruNetSales }, 'refunds': { build: ruRefunds }, 'aging': { build: ruAging },
+  'billed-wos': { build: ruBilledWos }, 'work-by-role': { build: ruWorkByRole },
   'voided': { build: ruVoided }, 'cust-active': { build: ruCustActive }, 'memberships': { build: ruMemberships },
 };
 const RU_SECTIONS = [
@@ -9400,7 +9440,8 @@ const RU_SECTIONS = [
     { id: 'rent-tiles', title: 'By the Numbers', phase: 'D' } ] },
   { id: 'shop', label: 'Shop', panels: [
     { id: 'insp-trend', title: 'Inspections Over Time', phase: 'C' }, { id: 'wo-trend', title: 'Work Orders Opened', phase: 'C' },
-    { id: 'wo-phase', title: 'Work Orders by Bottleneck', phase: 'D' },
+    { id: 'wo-phase', title: 'Work Orders by Bottleneck', phase: 'D' }, { id: 'billed-wos', title: 'Billed Work Orders', phase: 'M2' },
+    { id: 'work-by-role', title: 'Work by Role', phase: 'M2' },
     { id: 'field-calls', title: 'Field Calls', phase: 'C' }, { id: 'svc-urgency', title: 'Service Urgency', phase: 'D' } ] },
   { id: 'fleet', label: 'Fleet', panels: [
     { id: 'fleet-mix', title: 'Fleet Mix', phase: 'D' }, { id: 'units-per-cat', title: 'Units per Category' } ] },
@@ -9423,7 +9464,7 @@ const RUS_TABS = {
   customers: [{ p: 'accounts', l: 'Accounts' }, { p: 'cust-active', l: 'Active' }, { p: 'memberships', l: 'Members' }, { p: 'card-health', l: 'Cards' }, { p: 'top-spend', l: 'Top Spend' }],
   invoices: [{ p: 'balances', l: 'Balances' }, { p: 'net-sales', l: 'Net' }, { p: 'refunds', l: 'Refunds' }, { p: 'aging', l: 'Aging' }, { p: 'top-spend', l: 'Top Spend' }],
   inspections: [{ p: 'insp-trend', l: 'Inspections' }],
-  workOrders: [{ p: 'wo-trend', l: 'Opened' }, { p: 'wo-phase', l: 'Bottleneck' }],
+  workOrders: [{ p: 'wo-trend', l: 'Opened' }, { p: 'wo-phase', l: 'Bottleneck' }, { p: 'billed-wos', l: 'Billed' }],
   serviceOrders: [{ p: 'svc-urgency', l: 'Urgency' }],
 };
 const RUS_PER_LABEL = { today: 'Td', wk: 'Wk', mo: 'Mo', 30: '30d', 60: '60d', 90: '90d', all: 'All' };
