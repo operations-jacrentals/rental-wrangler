@@ -23,7 +23,11 @@
  *      gate (so any signed-in role can read — Jac's 2026-07-03 call):
  *        if (action === 'unitDaily') return json(unitDaily_(body));
  *   3. Run installUnitDailyTrigger() ONCE from the Apps Script editor
- *      (or transiently via a temp menu) — it self-deduplicates.
+ *      (Run button) — the editor will prompt to authorize the new
+ *      trigger permission (script.scriptapp) on first run; approve it.
+ *      This CANNOT be automated: web-app executions lack that scope,
+ *      and adding a scope requires owner re-consent — which IS the
+ *      editor run. Deployed to prod @57, 2026-07-03.
  */
 
 var UNITDAILY_TAB = 'unitDaily';
