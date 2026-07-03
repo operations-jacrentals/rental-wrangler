@@ -9062,7 +9062,7 @@ function openGvWinMenu(anchorEl, card, src) {
    is armed. Units-GATED (other cards keep the shared carousel). Filters reuse the same
    col/value pairs the units list already matches, tagged g="units:<metric>". */
 const U_PERIODS = [{ k: 'wk', label: 'This Wk' }, { k: 'mo', label: 'This Mo' }, { k: '30', label: '30 Days' }, { k: '60', label: '60 Days' }, { k: '90', label: '90 Days' }];
-const U_HIST = { inspection: true, fleet: false, shop: false, fc: true, nums: false };   // which metrics support a time-series
+const U_HIST = { inspection: true, service: false, fleet: false, shop: false, fc: true, nums: false };   // which metrics support a time-series
 const U_DARKINK = new Set(['green', 'yellow', 'orange', 'brown', 'gray']);   // slices that carry dark ink labels (else white)
 const uISO = (d) => d.toISOString().slice(0, 10);
 function uDays(p) { if (p === 'wk') return 7; if (p === 'mo') return TODAY.getDate(); return Number(p) || 0; }
@@ -9081,9 +9081,8 @@ function uXAxis(bk, dx, h) {
   return bk.map((b, i) => show.has(i) ? `<text class="ug-xlab" x="${(i * dx).toFixed(1)}" y="${h + 12}" text-anchor="${i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle'}" fill="var(--txt-3)">${esc(b.label)}</text>` : '').join('');
 }
 // state transitions
-function uSetMetric(key) { const cs = activeSession().cards.units; if (!cs) return; if (cs.uCompare) { const cur = uPair(cs, cs.uMetric || 'inspection'); if (key !== cur[0]) cs.uPair = [key, cur[0]]; } cs.uMetric = key; gvStripTerms(cs); cs.listLimit = undefined; render(); }
+function uSetMetric(key) { const cs = activeSession().cards.units; if (!cs) return; cs.uMetric = key; gvStripTerms(cs); cs.listLimit = undefined; render(); }
 function uSetPeriod(p) { const cs = activeSession().cards.units; if (!cs) return; cs.uPeriod = (cs.uPeriod === p) ? '' : p; gvStripTerms(cs); cs.listLimit = undefined; render(); }
-function uToggleCompare() { const cs = activeSession().cards.units; if (!cs) return; cs.uCompare = !cs.uCompare; if (cs.uCompare) cs.uPair = uPair(cs, cs.uMetric || 'inspection'); gvStripTerms(cs); cs.listLimit = undefined; render(); }
 function uToggleSeg(col, value, label, metric) {
   const cs = activeSession().cards.units; if (!cs) return;
   const gk = 'units:' + metric;
@@ -9180,6 +9179,12 @@ function uMetricChart(cs, metric, period, small) {
     const segs = Object.entries(fn).sort((a, b) => b[1] - a[1]).map(([s, n]) => ({ col: 'fleet', value: s, label: s, count: n, color: getStatus('unitFleetStatus', s).color || 'gray' }));
     return uDonut(cs, metric, segs, dsize) + uCaption(cs, metric, segs, true);
   }
+  if (metric === 'service') {   // Service Orders — a unit's service urgency (col __svcstat filters the units list)
+    let over = 0, soon = 0, ok = 0, wash = 0;
+    DATA.units.forEach((u) => { if (u.washRequested) { wash++; return; } const s = topServiceForUnit(u); if (!s) { ok++; return; } if (s.status === 'past-due') over++; else if (s.status === 'due-soon') soon++; else ok++; });
+    const segs = [{ col: '__svcstat', value: 'past-due', label: 'Overdue', count: over, color: 'red' }, { col: '__svcstat', value: 'due-soon', label: 'Due Soon', count: soon, color: 'yellow' }, { col: '__svcstat', value: 'on-schedule', label: 'On Schedule', count: ok, color: 'green' }, { col: '__svcstat', value: 'wash', label: 'Wash', count: wash, color: 'blue' }];
+    return uDonut(cs, metric, segs, dsize) + uCaption(cs, metric, segs, true);
+  }
   if (metric === 'shop') {
     const open = new Set(DATA.workOrders.filter((w) => w.phase !== 'Complete' && !w.cancelled).map((w) => w.unitId));
     const ord = new Set(DATA.workOrders.filter((w) => w.phase !== 'Complete' && !w.cancelled && (w.phase === 'Part Ordered' || (w.lineItems || []).some((l) => l.phase === 'Part Ordered'))).map((w) => w.unitId));
@@ -9215,33 +9220,34 @@ function uMetricChart(cs, metric, period, small) {
   ];
   return uTiles(cs, metric, items);
 }
-const U_METRICS = [['inspection', 'Inspection'], ['fleet', 'Fleet'], ['shop', 'Shop'], ['fc', 'Field Calls'], ['nums', '#s']];
-const U_LABEL = Object.fromEntries(U_METRICS);
-const uValidMetric = (k) => U_METRICS.some(([x]) => x === k);
-// §13.5 Phase 2 — the compare PAIR (two metrics side by side); newest click is primary
-function uPair(cs, metric) {
-  let pr = Array.isArray(cs.uPair) ? cs.uPair.filter(uValidMetric) : [];
-  if (!pr.includes(metric)) pr.unshift(metric);
-  if (pr.length < 2) pr.push(U_METRICS.find(([k]) => k !== pr[0])[0]);
-  return pr.slice(0, 2);
-}
+// §13.5 — per-metric display labels (used as column headers when a tab shows a pair)
+const U_MLABEL = { inspection: 'Inspection', service: 'Service Orders', fleet: 'Fleet', shop: 'Shop', fc: 'Field Calls', nums: '#s' };
+// Tabs are GROUPS: related data sets are FIXED side by side (Jac) — no user-driven "compare".
+// Inspection + Service Orders ride together; extend this list to pair other related sets.
+const U_GROUPS = [
+  { key: 'inspection', label: 'Inspection', metrics: ['inspection', 'service'] },
+  { key: 'fleet', label: 'Fleet', metrics: ['fleet'] },
+  { key: 'shop', label: 'Shop', metrics: ['shop'] },
+  { key: 'fc', label: 'Field Calls', metrics: ['fc'] },
+  { key: 'nums', label: '#s', metrics: ['nums'] },
+];
 const uRail = (period) => `<div class="ug-rail" role="group" aria-label="Timeframe">${U_PERIODS.map((p) => `<button class="ug-per${period === p.k ? ' on' : ''} js-ug-per" data-period="${p.k}" data-tip="${period === p.k ? 'Back to current' : 'Trend · ' + p.label}">${esc(p.label)}</button>`).join('')}</div>`;
 function unitsGraphPanel(cs) {
-  let metric = cs.uMetric || 'inspection';
-  if (!uValidMetric(metric)) metric = 'inspection';   // guard a stale/removed metric key
-  const compare = !!cs.uCompare;
-  const period = cs.uPeriod || '';
-  const on = compare ? new Set(uPair(cs, metric)) : new Set([metric]);
-  const tabs = U_METRICS.map(([k, l]) => `<button class="ug-tab${on.has(k) ? ' on' : ''} js-ug-tab" data-metric="${k}" data-tip="${esc(l)}">${esc(l)}</button>`).join('');
-  const cmp = `<button class="ug-cmp js-ug-cmp${compare ? ' on' : ''}" data-tip="${compare ? 'Single view' : 'Compare two metrics'}">2-Up</button>`;
-  const head = `<div class="ug-tabs" role="tablist">${tabs}${cmp}</div>`;
-  if (compare) {
-    const pr = uPair(cs, metric), anyHist = U_HIST[pr[0]] || U_HIST[pr[1]];
-    const col = (m) => `<div class="ug-col"><div class="ug-col-h">${esc(U_LABEL[m])}</div><div class="ug-chart">${uMetricChart(cs, m, U_HIST[m] ? period : '', true)}</div></div>`;
-    return `${head}<div class="ug-body${anyHist ? '' : ' ug-nohist'}">${anyHist ? uRail(period) : ''}<div class="ug-twoup">${col(pr[0])}${col(pr[1])}</div></div>`;
+  let key = cs.uMetric || 'inspection';
+  let group = U_GROUPS.find((g) => g.key === key); if (!group) { group = U_GROUPS[0]; key = group.key; }
+  const metrics = group.metrics, period = cs.uPeriod || '', anyHist = metrics.some((m) => U_HIST[m]);
+  const tabs = U_GROUPS.map((g) => `<button class="ug-tab${g.key === key ? ' on' : ''} js-ug-tab" data-metric="${g.key}" data-tip="${esc(g.label)}">${esc(g.label)}</button>`).join('');
+  const head = `<div class="ug-tabs" role="tablist">${tabs}</div>`;
+  const rail = anyHist ? uRail(period) : '';
+  let chart;
+  if (metrics.length > 1) {
+    const col = (m) => `<div class="ug-col"><div class="ug-col-h">${esc(U_MLABEL[m])}</div><div class="ug-chart">${uMetricChart(cs, m, U_HIST[m] ? period : '', true)}</div></div>`;
+    chart = `<div class="ug-twoup">${metrics.map(col).join('')}</div>`;
+  } else {
+    const m = metrics[0];
+    chart = `<div class="ug-chart">${uMetricChart(cs, m, U_HIST[m] ? period : '', false)}</div>`;
   }
-  const hist = !!U_HIST[metric];
-  return `${head}<div class="ug-body${hist ? '' : ' ug-nohist'}">${hist ? uRail(period) : ''}<div class="ug-chart">${uMetricChart(cs, metric, hist ? period : '', false)}</div></div>`;
+  return `${head}<div class="ug-body${anyHist ? '' : ' ug-nohist'}">${rail}${chart}</div>`;
 }
 
 function cardGraphBody(card) {
@@ -13232,7 +13238,6 @@ function onClick(e) {
   if (closest('.js-gvwin-opt')) { e.stopPropagation(); const b = closest('.js-gvwin-opt'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); const cs = activeSession().cards[b.dataset.card]; if (cs) { gvStripTerms(cs); cs.listLimit = undefined; } saveGvWin(b.dataset.src, Number(b.dataset.win)); return render(); }   // §13.4 pick a window → clear stale bucket filters + re-render
   if (closest('.js-ug-tab')) { e.stopPropagation(); return uSetMetric(closest('.js-ug-tab').dataset.metric); }   // §13.5 Units V2 — select metric
   if (closest('.js-ug-per')) { e.stopPropagation(); return uSetPeriod(closest('.js-ug-per').dataset.period); }   // §13.5 Units V2 — toggle timeframe
-  if (closest('.js-ug-cmp')) { e.stopPropagation(); return uToggleCompare(); }   // §13.5 Phase 2 — toggle two-up compare
   if (closest('.js-ug-seg')) { e.stopPropagation(); const b = closest('.js-ug-seg'); return uToggleSeg(b.dataset.col, b.dataset.value, b.dataset.label, b.dataset.metric); }   // §13.5 Units V2 — slice/caption/tile filter
   if (closest('.js-bv-sort') && !closest('.js-bv-inscol')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview') { const key = closest('.js-bv-sort').dataset.col; if (o.sort?.key === key) o.sort.dir = o.sort.dir === 'asc' ? 'desc' : 'asc'; else o.sort = { key, dir: 'asc' }; renderOverlay(); } return; }
   if (closest('.js-bv-addcol')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview') { o.colOrder = o.colOrder || []; o.colOrder.push({ kind: 'extra', id: 'xc' + (++o.seq), label: '' }); renderOverlay(); } return; }

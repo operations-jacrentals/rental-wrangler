@@ -72,7 +72,8 @@ Each metric declares: its **Current (snapshot)** form, its **Windowed (time-seri
 
 | Metric | Current (snapshot) | Windowed (time-series) | Dated source | Time-series? |
 |---|---|---|---|---|
-| **Inspection** | donut: fleet readiness now — Passed/Not Ready/Failed of all units (green/yellow/red), count on each slice, total in center | **stacked proportional-area** of inspection **outcomes** over the window (Pass/pending/Fail from `DATA.inspections` by `date`), band-edge % labels + today-snapshot | `inspections.date` + `inspResult()` | ✅ (see §6 denominator note) |
+| **Inspection** *(paired with Service Orders in one tab)* | donut: fleet readiness now — Passed/Not Ready/Failed of all units (green/yellow/red), count on each slice, total in center | **stacked proportional-area** of inspection **outcomes** over the window (Pass/pending/Fail from `DATA.inspections` by `date`), band-edge % labels | `inspections.date` + `inspResult()` | ✅ (see §6 denominator note) |
+| **Service Orders** *(paired with Inspection)* | donut: service urgency — Overdue/Due Soon/On Schedule/Wash (`topServiceForUnit`); filters units via `__svcstat` | — no dated history → current only | `units` (current) | ❌ today |
 | **Shop** | **FIX (shipped)**: two independent count tiles — *Work Orders* + *Parts Ordered* (Parts ⊆ WOs, so a summing pie would double-count) — renamed from "Open WOs" per Jac | — (WO-phase-over-time deferred) | `workOrders` | current-only for now |
 | **Field Calls** *(combined — was two tabs; Jac)* | leaderboard (top units by FC count) | **trajectory line** — FC count per bucket, clickable buckets | `workOrders(woType='Field Call').date` | ✅ |
 | **Fleet** | donut: fleet composition (Active/Onboard/Inactive/…) | — no dated history → **Current only** (no rail). **Fleet history is a confirmed future need (Jac)** — see §10 | `units.fleetStatus` (current only) | ❌ today |
@@ -131,7 +132,7 @@ Jac's mental model: *"show the performance numbers of the current graph in a dif
 ## 10. Phasing
 
 - **Phase 1 (shipped):** the in-column redesign — tabs, left time-rail, in-chart counts, no titles/Current-label, caption-key filter, pie→time-series morph for the history-backed metrics, snapshot-only handling for the rest, + the three correctness fixes. Units only.
-- **Phase 2 (shipped):** two-up (side-by-side pair) via a "2-Up" toggle using the reclaimed width; each column labeled; shared time-rail. Field Calls combined into one tab; "Open WOs" → "Work Orders".
+- **Phase 2 (shipped):** **fixed side-by-side groups** (Jac: no user-driven "compare" — that was overkill). Related data sets ride together in one tab: **Inspection + Service Orders** share a screen (each its own labeled column, donut, and filters) under the shared time-rail. Service Orders added as a Units metric (service urgency: Overdue/Due Soon/On Schedule/Wash, filtering the units list via `__svcstat`). Field Calls combined into one tab; "Open WOs" → "Work Orders". Pattern is extensible — other naturally-related sets can be grouped the same way (e.g. Field Calls + Work Orders) on request.
 - **Phase 3 / future:**
   - **Fleet history (confirmed need, Jac):** we store only current `fleetStatus`, so a "fleet increasing/decreasing by area over time" trend can't be derived retroactively. Requires **recording a periodic (daily) fleet snapshot** to the backend (new stored series) — start capturing now so the trend accrues. This also unlocks true readiness-over-time for Inspection. **Backend work → ships via `/clasp`, not this PR.**
   - Windowed **filtering** on the stacked-area/trajectory marks (Phase 1/2 windowed marks are read-only except FC buckets).
