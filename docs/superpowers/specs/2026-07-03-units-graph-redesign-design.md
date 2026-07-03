@@ -73,11 +73,10 @@ Each metric declares: its **Current (snapshot)** form, its **Windowed (time-seri
 | Metric | Current (snapshot) | Windowed (time-series) | Dated source | Time-series? |
 |---|---|---|---|---|
 | **Inspection** | donut: fleet readiness now — Passed/Not Ready/Failed of all units (green/yellow/red), count on each slice, total in center | **stacked proportional-area** of inspection **outcomes** over the window (Pass/pending/Fail from `DATA.inspections` by `date`), band-edge % labels + today-snapshot | `inspections.date` + `inspResult()` | ✅ (see §6 denominator note) |
-| **Shop · Open WOs** | donut — **FIX**: mutually-exclusive slices *Parts Ordered* vs *Open (no parts)* so the total is honest (distinct units) | **stacked proportional-area** of open-WO **phases** over the window (`workOrders` by `date` + `phase`) | `workOrders.date` + `phase` | ✅ |
-| **Field Calls** | count (as a stat tile / number) | **trajectory line** — FC count per bucket, emphasized endpoint + today value (this is today's bar view, upgraded) | `workOrders(woType='Field Call').date` | ✅ |
-| **Most Field Calls** | leaderboard (top units by FC count) | same, windowed (already windowed today) | same | ✅ |
-| **Fleet** | donut: fleet composition (Active/Onboard/Inactive/…) | — no dated history → **Current only** (rail collapsed) | `units.fleetStatus` (current only) | ❌ |
-| **By the Numbers** | stat tiles (FC / Open WOs / Parts / Wash / For Sale) | tiles stay; optional per-tile sparkline where a dated source exists (stretch) | mixed | ⚠️ partial |
+| **Shop** | **FIX (shipped)**: two independent count tiles — *Work Orders* + *Parts Ordered* (Parts ⊆ WOs, so a summing pie would double-count) — renamed from "Open WOs" per Jac | — (WO-phase-over-time deferred) | `workOrders` | current-only for now |
+| **Field Calls** *(combined — was two tabs; Jac)* | leaderboard (top units by FC count) | **trajectory line** — FC count per bucket, clickable buckets | `workOrders(woType='Field Call').date` | ✅ |
+| **Fleet** | donut: fleet composition (Active/Onboard/Inactive/…) | — no dated history → **Current only** (no rail). **Fleet history is a confirmed future need (Jac)** — see §10 | `units.fleetStatus` (current only) | ❌ today |
+| **By the Numbers** | stat tiles (FC / Work Orders / Parts / Wash / For Sale) | tiles stay; optional per-tile sparkline where a dated source exists (stretch) | mixed | ⚠️ partial |
 
 Fixes folded in: Shop overlap (row 2), empty states for every windowed form (§7), and the removal of auto-orange-smallest (§7).
 
@@ -131,9 +130,12 @@ Jac's mental model: *"show the performance numbers of the current graph in a dif
 
 ## 10. Phasing
 
-- **Phase 1 (this spec):** the in-column redesign — tabs, left time-rail, in-chart counts, no titles/Current-label, caption-key filter, pie→time-series morph for the three history-backed metrics, snapshot-only handling for the rest, + the three correctness fixes. Units only.
-- **Phase 2:** two-up (side-by-side pair) using the reclaimed width.
-- **Phase 3 / future:** roll the pattern to the other cards' carousels; a dedicated **wide performance board** (reference-faithful stacked dashboard, its own surface) for an office monitor; **daily snapshot history** to enable true readiness-over-time trajectories.
+- **Phase 1 (shipped):** the in-column redesign — tabs, left time-rail, in-chart counts, no titles/Current-label, caption-key filter, pie→time-series morph for the history-backed metrics, snapshot-only handling for the rest, + the three correctness fixes. Units only.
+- **Phase 2 (shipped):** two-up (side-by-side pair) via a "2-Up" toggle using the reclaimed width; each column labeled; shared time-rail. Field Calls combined into one tab; "Open WOs" → "Work Orders".
+- **Phase 3 / future:**
+  - **Fleet history (confirmed need, Jac):** we store only current `fleetStatus`, so a "fleet increasing/decreasing by area over time" trend can't be derived retroactively. Requires **recording a periodic (daily) fleet snapshot** to the backend (new stored series) — start capturing now so the trend accrues. This also unlocks true readiness-over-time for Inspection. **Backend work → ships via `/clasp`, not this PR.**
+  - Windowed **filtering** on the stacked-area/trajectory marks (Phase 1/2 windowed marks are read-only except FC buckets).
+  - Roll the pattern to the other cards' carousels; a dedicated **wide performance board** (reference-faithful) for an office monitor.
 
 ## 11. Open decisions (for Jac's redline)
 
