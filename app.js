@@ -9237,31 +9237,31 @@ function uTraj(ctx, bk, values, color, emptyMsg, col, small) {
   const xlab = uXAxis(bk, dx, h);
   return `<div class="ug-chartbox"><svg viewBox="-8 -2 ${w + 16} ${h + 18}" width="100%" class="ug-traj" preserveAspectRatio="xMidYMid meet">${grid}<path d="${area}" fill="var(--${color})" opacity=".12"/><path d="${line}" fill="none" stroke="var(--${color})" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/><circle cx="${ex.toFixed(1)}" cy="${ey.toFixed(1)}" r="4.5" fill="var(--${color})" stroke="var(--bg)" stroke-width="2"/>${nums}${xlab}${hits}</svg></div>`;
 }
-// vertical bars (counts) — direct labels on top, name below, each bar the filter
+// vertical bars — bottom-anchored plot with a LEFT Y-AXIS + dotted gridlines (Jac); the
+// value rides INSIDE the bar top (or just above a short bar), never a detached top row.
 function uBars(ctx, segs, color, emptyMsg, opts) {
   opts = opts || {};
   if (!segs.length || !segs.some((s) => s.count > 0)) return `<div class="ug-empty">${esc(emptyMsg || 'No data yet.')}</div>`;
   const max = Math.max(1, ...segs.map((s) => s.count || 0));
-  const hasTop = segs.some((s) => s.top != null);
-  return `<div class="ug-bars">${segs.map((s) => {
-    const h = Math.round((s.count / max) * 100);
-    const fill = s.count ? `<div class="ug-bar-fill" style="height:${h}%;background:var(--${s.color || color || 'blue'})"></div>` : '<div class="ug-bar-fill ug-bar-zero"></div>';
-    const top = hasTop ? `<span class="ug-bar-t"${s.topColor ? ` style="color:${s.topColor}"` : ''}>${s.top != null ? esc(String(s.top)) : ''}</span>` : '';
-    const n = opts.money ? (s.count ? uMoneyK(s.count) : '') : (s.count || '');
-    return `<button class="ug-barcol ${uSegAttrs(ctx, s)}">${top}<span class="ug-bar-n">${n}</span><span class="ug-bar-track">${fill}</span><span class="ug-bar-x">${esc(s.label)}</span></button>`;
-  }).join('')}</div>`;
+  const mag = Math.pow(10, Math.floor(Math.log10(max)));
+  const nice = (max / mag <= 1 ? 1 : max / mag <= 2 ? 2 : max / mag <= 5 ? 5 : 10) * mag;   // axis top = a "nice" ceiling
+  const fmt = (v) => opts.money ? uMoneyK(v) : String(v % 1 ? Math.round(v * 10) / 10 : v);
+  const grid = `<div class="ug-grid" aria-hidden="true"><div class="ug-gridline" style="bottom:100%"><span>${fmt(nice)}</span></div><div class="ug-gridline" style="bottom:50%"><span>${fmt(nice / 2)}</span></div><div class="ug-gridline ug-grid0" style="bottom:0"><span>0</span></div></div>`;
+  const bars = segs.map((s) => {
+    const h = Math.max(1, Math.round((s.count / nice) * 100));
+    const isIn = s.count && h >= 16, ink = isIn ? (U_DARKINK.has(s.color || color) ? '#0c0e12' : '#fff') : 'var(--txt-2)';
+    const val = s.count ? `<span class="ug-bar-v" style="bottom:calc(${h}% ${isIn ? '- 14px' : '+ 3px'});color:${ink}">${fmt(s.count)}</span>` : '';
+    const roi = s.top != null ? `<span class="ug-bar-r" style="bottom:calc(${h}% + ${isIn || !s.count ? 3 : 16}px);color:${s.topColor || 'var(--txt-3)'}">${esc(String(s.top))}</span>` : '';
+    const red = (s.red && s.count) ? `<div class="ug-bar-red" style="height:${Math.max(0, Math.min(100, Math.round((s.red / s.count) * 100)))}%"></div>` : '';
+    const fill = s.count ? `<div class="ug-bar-fill" style="height:${h}%;background:var(--${s.color || color || 'blue'})">${red}</div>` : '<div class="ug-bar-fill ug-bar-zero"></div>';
+    return `<button class="ug-barcol ${uSegAttrs(ctx, s)}"><span class="ug-bar-track">${fill}${val}${roi}</span><span class="ug-bar-x">${esc(s.label)}</span></button>`;
+  }).join('');
+  return `<div class="ug-bars">${grid}${bars}</div>`;
 }
-// revenue bars — height = $, a red cap = the uncollected share; compact $ on top (full on hover)
+// revenue bars — same axis engine; red cap = uncollected share, $ detail on hover
 function uRevBars(ctx, segs, emptyMsg) {
-  if (!segs.length || !segs.some((s) => s.count > 0)) return `<div class="ug-empty">${esc(emptyMsg || 'No revenue in this window.')}</div>`;
-  const max = Math.max(1, ...segs.map((s) => s.count || 0));
-  return `<div class="ug-bars ug-revbars">${segs.map((s) => {
-    const h = Math.round((s.count / max) * 100);
-    const redPct = (s.red && s.count) ? Math.max(0, Math.min(100, Math.round((s.red / s.count) * 100))) : 0;
-    const fill = s.count ? `<div class="ug-bar-fill" style="height:${h}%;background:var(--${s.color || 'gray'})">${redPct ? `<div class="ug-bar-red" style="height:${redPct}%"></div>` : ''}</div>` : '<div class="ug-bar-fill ug-bar-zero"></div>';
-    const tipMore = s.red ? ` · ${money(s.red)} uncollected` : '';
-    return `<button class="ug-barcol ${uSegAttrs(ctx, { ...s, tip: s.label + ' — ' + money(s.count) + tipMore })}"><span class="ug-bar-n">${s.count ? uMoneyK(s.count) : ''}</span><span class="ug-bar-track">${fill}</span><span class="ug-bar-x">${esc(s.label)}</span></button>`;
-  }).join('')}</div>`;
+  segs.forEach((s) => { s.tip = s.label + ' — ' + money(s.count) + (s.red ? ` · ${money(s.red)} uncollected` : ''); });
+  return uBars(ctx, segs, 'gray', emptyMsg || 'No revenue in this window.', { money: true });
 }
 function uTiles(ctx, items) {
   return `<div class="ug-tiles">${items.map((s) => `<button class="ug-tile ${uSegAttrs(ctx, s)}"><span class="ug-tile-v">${esc(String(s.disp != null ? s.disp : s.count))}</span><span class="ug-tile-l">${esc(s.label)}</span></button>`).join('')}</div>`;
