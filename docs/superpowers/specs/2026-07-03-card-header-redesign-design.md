@@ -1,7 +1,7 @@
 # Card header redesign — one-row header, gear options & Custom Views — design
 
 **Date:** 2026-07-03
-**Status:** Design (awaiting review) → `/role` audit → implementation plan
+**Status:** Design **approved** (Jac, 2026-07-03) → `/role` audit → implementation plan
 **Branch:** `claude/wrangler-dashboard-space-h2nu0i`
 **Mockups (hosted):**
 - One-row + space reclaim — `claude.ai/code/artifact/0a9e2a2e-e7d3-4694-a06a-07203471bb25`
@@ -80,10 +80,10 @@ toggle plus an overflow control:
   no-icon rule applies to filters). Lit orange when graph view is active.
 - **⋯ three-dot** — at the end of the row. Opens Row 3 (Custom Views).
 
-**Selection model:** **single active option at a time** — tapping an option
-applies its filter and lights it orange; tapping it again (or another) clears/
-replaces it. Options AND with the free-text search + pinned chips. (Multi-select
-is a possible later enhancement — see §12.)
+**Selection model:** **multi-select (AND)** — options toggle independently and
+stack; several can be active at once (e.g. On Rent + Not Ready), each lit orange.
+Active options AND together and AND with the free-text search + pinned chips. A
+composite (Bill/Out) contributes its internal union as one AND-term.
 
 **Overflow:**
 - **Desktop:** the row **truncates** to the card width (a horizontal scrollbar
@@ -92,8 +92,9 @@ is a possible later enhancement — see §12.)
 - **Mobile:** the row **scrolls horizontally** (`overflow-x:auto`), so every
   default is swipeable.
 
-**Default removal / reset:** defaults are removable like any option; the full
-default set is restorable from the gear/settings menu.
+**Defaults are fixed:** the per-card default options are permanent (not
+removable); only Custom Views (Row 3) are user-added/removed. No removed-default
+state to persist.
 
 ## 5. Row 3 — Custom Views (opens from the ⋯)
 
@@ -102,9 +103,10 @@ buttons that carry icons). A Custom View captures the current **search text +
 pinned filters + sort** (the existing `viewSig` model, promoted from the
 `openViewMenu` list to a button row). A **+ New** affordance sits at the end.
 
-**Scope (proposed — confirm §12):** Custom Views are **shared team-wide** (like
-today's `loadViews`/`saveViews`), and creation is **un-gated** (anyone can add,
-dropping the current admin-only `Add view` gate).
+**Scope:** Custom Views are **personal per operator** — each logged-in user keeps
+their own set; the team shares only the defaults. Creation is un-gated (anyone
+adds their own), dropping the current admin-only `Add view` gate. Storage keys to
+`currentUser` (§10).
 
 ## 6. Default options — per card
 
@@ -138,7 +140,7 @@ status/derivation helpers; exact predicates finalize during planning.
 | Active | active customers (has live rental / not lost) |
 | Lost | lost customers |
 | Member Funnel | in the membership funnel |
-| Used Funnel | in the used-equipment **Sales** funnel *(confirm §12)* |
+| Used Funnel | in the used-equipment **Sales** funnel (distinct pipeline from membership — §10 note) |
 | Members | `accountType` ∈ member types |
 | Business | `accountType = Business` |
 | Non-Business | `accountType = Non-Business` |
@@ -203,13 +205,19 @@ options) and a tooltip listing the bundled states.
   predicate }]`. Composites (`Bill`, `Out`) carry a predicate function; single
   gate/derived options carry the status set + value. Reuses existing helpers
   (`deriveDisplayStatus`, `unitStatus`, `invoiceTotals`, `rentalDisplayStatus`).
-- **Custom Views:** reuse `loadViews`/`saveViews` (`app.js:11794`), extended with
-  an **`icon`** field (Lucide name) and dropping the admin-only add gate. Storage
-  shape stays `{ name, search, terms, sort, icon }`.
+- **Custom Views (personal):** extend `loadViews`/`saveViews` (`app.js:11794`) to
+  key storage by **operator** (`currentUser`) instead of one shared set, add an
+  **`icon`** field (Lucide name), and drop the admin-only add gate. Per-view shape
+  `{ name, search, terms, sort, icon }`.
 - **Sort fields:** unchanged (`SORT_FIELDS[card]`).
-- **Active option / gear-open state:** per-card UI state on
-  `session.cards[card]` (e.g. `activeOption`, `optionsOpen`, `customOpen`),
-  alongside the existing `search`/`filterTerms`/`sort`/`graphView`.
+- **Active options / open state:** per-card UI state on `session.cards[card]` —
+  `activeOptions` (a **set/array**, since options multi-select AND) plus
+  `optionsOpen` / `customOpen` for the gear and ⋯ rows — alongside the existing
+  `search`/`filterTerms`/`sort`/`graphView`.
+- **Used-equipment Sales funnel:** a pipeline **distinct** from the membership
+  funnel. If the data doesn't already carry a sales-funnel stage separate from
+  `membershipStage`/`funnelStage`, that field is defined during planning — flag it
+  before the Customers `Used Funnel` predicate can be built.
 
 ## 11. Components touched
 
@@ -228,16 +236,16 @@ options) and a tooltip listing the bundled states.
   Row 3 `.cv`, sort ▲▼ inline (drop `.sort .dir` seam), gear button, desktop
   truncation vs mobile `overflow-x:auto`.
 
-## 12. Decisions to confirm (at review)
+## 12. Decisions (resolved with Jac, 2026-07-03)
 
-1. **Custom View scope** — shared team-wide (proposed) vs personal per user.
-2. **Option selection** — single-active (proposed) vs multi-select AND.
-3. **"Used Funnel"** — is this the used-equipment **Sales** funnel, distinct from
-   the membership funnel? (Names the predicate.)
-4. **Desktop truncation** — overflow defaults fold into the **⋯** menu
-   (proposed); confirm that's where they should go vs simply hidden.
-5. **Default removal** — confirm defaults are user-removable with a
-   restore-defaults action in the gear menu.
+1. **Custom View scope — personal per operator** (keyed to `currentUser`, not a
+   shared set). §5, §10.
+2. **Option selection — multi-select (AND)** — options stack. §4.
+3. **"Used Funnel" — the used-equipment Sales funnel,** a pipeline distinct from
+   membership. §6, §10 note.
+4. **Desktop overflow — truncate;** excess defaults fold into the **⋯** menu.
+   Mobile scrolls horizontally. §4.
+5. **Defaults are fixed** (not removable); only Custom Views add/remove. §4.
 
 ## 13. R-Rulebook · icons · CI
 
