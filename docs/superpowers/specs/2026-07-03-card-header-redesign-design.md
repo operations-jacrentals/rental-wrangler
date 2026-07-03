@@ -1,7 +1,7 @@
 # Card header redesign — one-row header, gear options & Custom Views — design
 
 **Date:** 2026-07-03
-**Status:** Design **approved** (Jac, 2026-07-03) → `/role` audit → implementation plan
+**Status:** Design **approved** (Jac, 2026-07-03) · **/role audit passed** — fixes folded (§16) → implementation plan
 **Branch:** `claude/wrangler-dashboard-space-h2nu0i`
 **Mockups (hosted):**
 - One-row + space reclaim — `claude.ai/code/artifact/0a9e2a2e-e7d3-4694-a06a-07203471bb25`
@@ -128,7 +128,7 @@ status/derivation helpers; exact predicates finalize during planning.
 | --- | --- |
 | Not Ready | `unitInspectionStatus = Not Ready` |
 | Failed | `unitInspectionStatus = Failed` |
-| Available | fleet `Active` AND not currently out |
+| Available | **canonical availability** — rentable now: `Active` AND not out AND not Failed / Not Ready / For Sale / Inactive / Sold (§16) |
 | Today | units on a rental going out **today** |
 | Tomorrow | units on a rental going out **tomorrow** |
 | Reserved | units on a `Reserved` rental |
@@ -208,7 +208,9 @@ options) and a tooltip listing the bundled states.
 - **Custom Views (personal):** extend `loadViews`/`saveViews` (`app.js:11794`) to
   key storage by **operator** (`currentUser`) instead of one shared set, add an
   **`icon`** field (Lucide name), and drop the admin-only add gate. Per-view shape
-  `{ name, search, terms, sort, icon }`.
+  `{ name, search, terms, sort, icon }`. **Isolation (§16):** key server-side, or
+  at minimum namespace per operator **and clear on logout**, so a shared terminal
+  never serves one operator's views to the next.
 - **Sort fields:** unchanged (`SORT_FIELDS[card]`).
 - **Active options / open state:** per-card UI state on `session.cards[card]` —
   `activeOptions` (a **set/array**, since options multi-select AND) plus
@@ -275,3 +277,36 @@ options) and a tooltip listing the bundled states.
 - Manual (local `serve.mjs`, `localhost:9147`): icon-first toggle label follows
   selection; ▲▼ direction + right-click sort-field menu; `+View` → icon picker →
   Row 3; `Remove View`; desktop truncation vs mobile horizontal scroll.
+- Mobile: the sort ▲▼ long-press target and the icon-picker cells meet the ≥44 px
+  touch floor; `+View` / `Remove View` are reachable by long-press.
+- Role projection (§16): each role sees only the options its tier allows — money
+  and funnel filters absent for operational roles; no option widens a list.
+
+## 16. Access & role projection (from /role audit, 2026-07-03)
+
+The audit cleared the fundamentals — no margin-floor exposure, no authority
+escalation, no new gates — but flagged that the options surface must be
+**role-projected**, not built role-blind. Enforcement is **server-side**; hiding an
+option in the UI is presentation, not access control.
+
+- **Options & Custom Views are gated to the data tier each filter reads** — render
+  only what a role may see, mirroring the field-level gating the cards already do:
+  - **Money-state** filters — Rentals `Bill`, Invoices `Unpaid / Late / Partial /
+    Refunded / Collections` — **Office / Owner only**. Not shown to Dispatcher /
+    Driver / Mechanic / M.Tech (they know a rental exists and where it goes, never
+    its balance). The Invoices card is already Office/Owner, which covers its set;
+    the Rentals `Bill` option needs explicit suppression for the operational roles.
+  - **CRM / funnel** filters — Customers `Member Funnel`, `Used Funnel`, `Lost` —
+    **Sales / Marketing / Office / Owner only**. Operational roles get only the thin
+    customer slice (name / account-type), never funnel-stage segmentation.
+  - **Maintenance / availability** filters — Units `Not Ready`, `Failed`,
+    `Available`, `Out` — shop / fleet / asset / owner (availability is broadly OK).
+- **Filters only ever narrow the already-authorized list.** Every option and
+  custom-view predicate runs over the role-scoped set the card already produces
+  (`listFor(card, session)` / `unitsVisible(...)`), never a raw query. A filter can
+  subtract rows; it can never add a row the role couldn't otherwise reach. (Custom
+  views are user-authored predicates, so this guarantee is stated explicitly.)
+- **Personal Custom Views isolate per operator** (§5, §10) — server-side or
+  namespaced-per-`currentUser` + cleared on logout.
+- **Internal-only surface** — these cards and options must never project into the
+  customer self-service portal (a separate, row-isolated build).
