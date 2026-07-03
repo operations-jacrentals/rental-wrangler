@@ -6887,17 +6887,35 @@ function toggleGroupCollapsed(card, key) {
   try { localStorage.setItem('jactec.collapsedGroups', JSON.stringify(COLLAPSED_GROUPS)); } catch (e) {}
 }
 /* Custom GROUP ORDER — drag-to-reorder a card's group headers (Jac 2026-07-04),
-   remembered PER ROLE (currentRole, keyed so Admin/Mechanic/Sales/... each keep their
-   own order). Local-only for now (localStorage) — a role signed in on a different
-   device won't see it yet; true cross-device sync needs the backend deploy bridge
-   (blocked this session: APPS_SCRIPT_ID isn't set). The key shape (role:card → array
-   of group keys) is exactly what that swap will read/write, so the UI won't change. */
+   remembered PER ROLE (Admin/Mechanic/Sales/... each keep their own order), synced
+   through the backend (getGroupOrder/setGroupOrder — any signed-in role reads/writes
+   their OWN slice, no Admin gate) so it follows a role across devices. localStorage
+   is the instant local cache + the offline/#local-demo fallback. Shape mirrors the
+   backend 1:1: { [role]: { [card]: [orderedGroupKeys] } }. */
 const GROUP_ORDER = (() => { try { return JSON.parse(localStorage.getItem('jactec.groupOrder') || '{}'); } catch (e) { return {}; } })();
-const groupOrderKey = (card) => (currentRole || 'shared') + ':' + card;
-function customGroupOrder(card) { return GROUP_ORDER[groupOrderKey(card)] || null; }
+function customGroupOrder(card) { const r = GROUP_ORDER[currentRole || 'shared']; return (r && r[card]) || null; }
+let groupOrderSaveTimer = null;
 function saveGroupOrder(card, keys) {
-  GROUP_ORDER[groupOrderKey(card)] = keys;
+  const role = currentRole || 'shared';
+  (GROUP_ORDER[role] || (GROUP_ORDER[role] = {}))[card] = keys;
   try { localStorage.setItem('jactec.groupOrder', JSON.stringify(GROUP_ORDER)); } catch (e) {}
+  if (typeof backendPassword !== 'undefined' && backendPassword) {
+    clearTimeout(groupOrderSaveTimer);
+    groupOrderSaveTimer = setTimeout(() => { backendCall('setGroupOrder', { order: GROUP_ORDER[role] }).catch(() => {}); }, 600);
+  }
+}
+/* Boot: pull this role's saved group order from the backend (mirrors loadGlobalViews).
+   A no-op in #local/offline demo mode — localStorage is the only source there. */
+async function loadGroupOrderFromBackend() {
+  if (typeof backendPassword === 'undefined' || !backendPassword) return;
+  try {
+    const r = await backendCall('getGroupOrder');
+    if (r && r.ok && r.order && typeof r.order === 'object' && Object.keys(r.order).length) {
+      GROUP_ORDER[currentRole || 'shared'] = r.order;
+      try { localStorage.setItem('jactec.groupOrder', JSON.stringify(GROUP_ORDER)); } catch (e) {}
+      render();
+    }
+  } catch (e) { /* offline → keep local cache */ }
 }
 function appendGroupedSections(list, rows, cs, card) {
   const def = GROUP_DEFS[card];
@@ -16611,6 +16629,7 @@ function finishLoad() {
   snapshotSaved();                                              // baseline = what the backend currently holds
   buildIndexes(); state.cascade = createCascade(DATA); booting = false; render();
   loadGlobalViews();                                            // pull the shared, company-wide view set
+  loadGroupOrderFromBackend();                                  // pull THIS role's saved card-group order
   loadChats();                                                  // pull the shared team-chat threads (§ team-chat sync)
   wranglerRailLoad();                                           // load the Mr. Wrangler rail from IndexedDB (+ one-time localStorage migration)
   refreshWranglerRequests();                                    // §18e populate the approval-inbox badge
