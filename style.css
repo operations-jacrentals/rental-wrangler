@@ -3229,7 +3229,6 @@ body.is-phone .card[data-card="units"] .list { grid-template-columns: repeat(2, 
    move (one crisp beat, no bounce/loop — same .12s control timing as the rest of the
    system). `mo-none` (the box/unmatched fallback) is deliberately inert. ── */
 .cat-glyph { display: inline-flex; transition: transform .12s cubic-bezier(.2,.7,.2,1), color .12s ease; }
-.ur:hover .cat-glyph, .catr:hover .cat-glyph { color: var(--accent); }
 .ur:hover .mo-dig,     .catr:hover .mo-dig     { transform: translateY(1.5px) rotate(-8deg); }
 .ur:hover .mo-chop,    .catr:hover .mo-chop    { transform: rotate(-14deg); }
 .ur:hover .mo-spin,    .catr:hover .mo-spin    { transform: rotate(80deg); }
@@ -3251,15 +3250,19 @@ body.is-phone .card[data-card="units"] .list { grid-template-columns: repeat(2, 
 
 /* ── ANIMATED CATEGORY GLYPHS (Jac, 2026-07-03) — the excavator / boom-lift / skid-steer
    families render CATEGORY_ANIM loops (icons-anim.js, converted from Jac's supplied
-   Lottie artwork). Ambient 3s loops, currentColor strokes (.k2 = dimmed secondary);
-   pivots work because the SVG nests translate(p) › animated group › translate(-a) at
-   each Lottie anchor. Jac explicitly opted into ambient icon motion here (overrides the
-   one-orchestrated-moment default); reduced-motion freezes every loop to the rest pose. ── */
+   Lottie artwork). PAUSED at the rest pose until the parent row/card (.ur/.catr) is
+   hovered (Jac, 2026-07-03: icons should NOT move until hovered, and never tint orange);
+   currentColor strokes (.k2 = dimmed secondary); pivots work because the SVG nests
+   translate(p) › animated group › translate(-a) at each Lottie anchor.
+   Reduced-motion keeps them frozen entirely. ── */
 .catanim { width: 1em; height: 1em; display: inline-block; overflow: visible; }
 .catanim .k2 { opacity: .55; }
 .catanim g { transform-box: view-box; transform-origin: 0 0; }
 /* travel groups animate via translate; rotate groups pivot at their Lottie anchor
    because the markup nests translate(p) > [anim] > translate(-a). */
+.catanim [class*="xc-"], .catanim [class*="bl-"], .catanim [class*="sk-"] { animation-play-state: paused; }
+.ur:hover .catanim [class*="xc-"], .ur:hover .catanim [class*="bl-"], .ur:hover .catanim [class*="sk-"],
+.catr:hover .catanim [class*="xc-"], .catr:hover .catanim [class*="bl-"], .catr:hover .catanim [class*="sk-"] { animation-play-state: running; }
 .catanim .xc-run { animation: caXcRun 3s ease-in-out infinite; }
 .catanim .xc-bob { animation: caXcBob 1.5s ease-in-out infinite; }
 .catanim .xc-dig { animation: caXcDig 3s ease-in-out infinite; }
