@@ -4047,7 +4047,7 @@ function openWranglerForKpi(roleId, idx) {
   if (o) closeOverlay();
   state.wrangler.kpiTarget = kt;
   openWranglerDock({
-    messages: [{ role: 'assistant', content: `🤠 Let's wrangle the ${role.label} role's Ring ${idx + 1} (now “${ring.label || '—'}”). Tell me in plain English what this ring should measure — I'll ask anything I need, prove it against your live yard data, and lock it in.` }],
+    messages: [{ role: 'assistant', content: `🤠 Let's wrangle the ${role.label} role's Ring ${idx + 1} (now “${ring.label || '—'}”). Tell me in plain English what this ring should measure — I'll ask anything I need, prove it against your live yard data, and lock it in.`, at: Date.now() }],
     draft: '',
   });
 }
@@ -5986,6 +5986,11 @@ const DETAIL = {
     // trail and lives on the Invoice card; re-billing creates a fresh invoice (createInvoiceForRental).
     const invFullyRefunded = (iv) => invoiceTotals(iv).status === 'Refunded';
     const liveInvs = invs.filter((iv) => !invFullyRefunded(iv));
+    // #414 — a $0-total invoice bills NOTHING for the rental's time (a pure credit / overpayment
+    // slot, e.g. a payment recorded before any line was built). Like a fully-refunded one it holds
+    // no live charge, so it must NOT block the +Invoice affordance — otherwise the rental can never
+    // be billed. It still shows as a pill for the trail; re-billing opens a fresh invoice.
+    const invHoldsCharge = (iv) => !invFullyRefunded(iv) && invoiceTotals(iv).total > 0;
     const inv = invs[0] || (r.invoiceId ? IDX.invoice.get(r.invoiceId) : null);
     const liveInv = liveInvs[0] || null;
     const invT = liveInv ? invoiceTotals(liveInv) : null;
@@ -5999,12 +6004,13 @@ const DETAIL = {
     const paidForThis = inv ? rentalAllocated(inv, r.rentalId) : 0;
     const createInvBtn = addBtn('Invoice', { link: true, js: 'js-create-invoice', h: 26, data: { rec: r.rentalId } });
     // Render every invoice pill (a fully-refunded one carries a ↩ + "re-bill" tip); then offer
-    // +Invoice whenever there is no LIVE invoice left — so a refund restores the re-bill path (#378).
+    // +Invoice whenever no linked invoice actually holds a charge — so a refund (#378) OR a
+    // $0-total credit slot (#414) restores the re-bill path.
     const invPill = (invs.length
       ? invs.map((iv, k) => { const refunded = invFullyRefunded(iv);
           const tip = refunded ? 'Refunded — use +Invoice to re-bill on a fresh invoice' : (invs.length > 1 ? 'Invoice ' + (k + 1) + ' of ' + invs.length + (iv.contOf ? ' — continuation (28-day cap)' : '') : '');
           return `<span class="pill ref link" data-r="R2" data-pill-card="invoices" data-pill-rec="${esc(iv.invoiceId)}"${tip ? ` data-tip="${esc(tip)}"` : ''}>${refunded ? '↩ ' : ''}${CARD_ICON.invoices}${esc(invoiceShort(iv.invoiceId))}${k === 0 && paidForThis <= 0 ? `<span class="x" data-x="inv-remove" data-tip="unlink — allowed while $0 is assigned to this rental; afterwards refund first">✕</span>` : ''}</span>`; }).join('')
-      : '') + (liveInvs.length ? '' : createInvBtn);
+      : '') + (invs.some(invHoldsCharge) ? '' : createInvBtn);
 
     /* Balance (paid / total) for the header right side — summed across the invoice series. */
     const rentLines = rentalLineItems(r);
@@ -7726,7 +7732,16 @@ function commsRailEl() {
     const active = wrOpen && (state.wrangler.reqNumber === rq.number || state.wrangler.id === 'req' + rq.number);
     return `<button class="crail-tab ${cls}${active ? ' is-active' : ''}" data-wrc-needs="${rq.number}" role="tab" aria-selected="${active}" data-tip="${tip}"><span class="crail-dot"></span><span class="crail-t">${trim(rq.title || ('Request #' + rq.number))}</span></button>`;
   }).join('');
-  const snaps = (state.wranglerRail || []).filter((c) => !c.reqNumber);
+  // §18g A chat is "resolved" — take it off the rail — once the bug it filed is fixed/closed:
+  // it filed at least one issue (message m.issue) and NONE of those are still open. Guarded on a
+  // loaded requests list so a failed/empty fetch never hides live chats. Non-destructive — the chat
+  // stays in the store, it just leaves the tab bar (Jac 2026-07-03 — "take away the resolved ones").
+  const wrChatResolved = (c) => {
+    if (!reqLoaded) return false;
+    const filed = (c.messages || []).map((m) => m.issue).filter((n) => n != null);
+    return filed.length > 0 && filed.every((n) => !wranglerRequests.some((rq) => rq.number === n));
+  };
+  const snaps = (state.wranglerRail || []).filter((c) => !c.reqNumber && !wrChatResolved(c));
   // the live chat first if it's a brand-new one not yet snapshotted onto the rail
   let liveTab = '';
   if (wrOpen && state.wrangler.id && !state.wrangler.reqNumber && !snaps.some((c) => c.id === state.wrangler.id) && (state.wrangler.messages || []).length) {
@@ -7877,6 +7892,19 @@ function wrChatFormat(raw) {
   s = s.replace(/`([^`]+)`/g, '<code>$1</code>');           // `inline code`
   return s.replace(/\n/g, '<br>');
 }
+// §18g — stamp a Mr. Wrangler message with its send time so a glance tells you how current the
+// conversation is. Time-only within a day; the day is prepended when it rolls over (and on the
+// first message). Chats saved before we recorded per-message times simply show none.
+function wrMsgStamp(at, prevAt) {
+  if (!at) return '';
+  const d = new Date(at);
+  const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  if (prevAt && new Date(prevAt).toDateString() === d.toDateString()) return time;
+  const day = d.toDateString() === new Date().toDateString()
+    ? 'Today'
+    : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return day + ' · ' + time;
+}
 // §18 Mr. Wrangler dock — renders the floating dock HTML (mirrors wrangler overlay but as a dock).
 function wranglerDockEl() {
   const o = state.wrangler;
@@ -7922,7 +7950,9 @@ function wranglerDockEl() {
         const txt = m.content ? wrChatFormat(m.content) : '';
         // ask_user option chips (Stage 2b) — tappable only while THIS question is the live pending one.
         const ask = (m.askOptions && m.askOptions.length && o.ask) ? `<div class="wr-ask">${m.askOptions.map((opt) => `<button class="wr-askbtn js-wr-ask" data-ans="${esc(opt)}">${esc(opt)}</button>`).join('')}</div>` : '';
-        return `<div class="wr-msg ${m.role}">${m.role === 'assistant' ? '<span class="wr-av">🤠</span>' : ''}<div class="wr-bub">${imgs}${files}${txt}${act}${ask}</div></div>`;
+        const stamp = wrMsgStamp(m.at, i > 0 ? o.messages[i - 1].at : null);   // §18g when this turn happened — currency at a glance
+        const time = stamp ? `<span class="wr-time">${esc(stamp)}</span>` : '';
+        return `<div class="wr-msg ${m.role}">${m.role === 'assistant' ? '<span class="wr-av">🤠</span>' : ''}<div class="wr-bub-wrap"><div class="wr-bub">${imgs}${files}${txt}${act}${ask}</div>${time}</div></div>`;
       }).join('')
     : (o.reqNumber
         ? '<div class="wr-empty">That’s the request up top. Reply here to talk it over with Mr. Wrangler, or use the buttons above to Approve or Dismiss it.</div>'
@@ -10431,14 +10461,45 @@ function wranglerDigest() {
     `  ${x.name} [${x.categoryId}]: 1-day ${money(x.rate1Day)} · 7-day ${money(x.rate7Day)} · 4-wk ${money(x.rate4Wk)} · weekend ${money(x.weekend)} · member/day ${money(x.memberDaily)}${x.fuelType ? ' · ' + x.fuelType : ''}`).join('\n'));
   return lines.join('\n');
 }
+// §18e — a compact index of issues Mr. Wrangler has ALREADY filed: open ones via
+// wranglerRequests + recently closed/resolved via wranglerNotifs, deduped by number.
+// Pure: reads the two loaded lists → a short string ('' when none). Lets the model
+// catch a duplicate BEFORE filing a new one (see DUPLICATE CHECK in WRANGLER_SYSTEM).
+function wrIssueIndex() {
+  const seen = new Set(), lines = [];
+  const add = (n, title, state) => {
+    if (n == null || seen.has(n)) return; seen.add(n);
+    lines.push(`#${n} · "${String(title || '').replace(/\s+/g, ' ').slice(0, 70)}" · ${state}`);
+  };
+  (wranglerRequests || []).forEach((rq) => {
+    const st = wrReqState(rq);
+    add(rq.number, rq.title, st.key === 'building' ? 'building' : st.key === 'needs' ? 'open — needs your answer' : 'open — needs your OK');
+  });
+  (wranglerNotifs || []).forEach((n) => {
+    add(n.number, n.title, n.kind === 'needs' ? 'open — needs you' : n.merged ? 'fixed' : 'closed');
+  });
+  return lines.slice(0, 40).join('\n');
+}
 function wranglerContext(o) {
   let ctx = 'YARD ORIENTATION (use the find_* tools for any specific record):\n' + wranglerDigest();
+  const filed = wrIssueIndex();
+  if (filed) ctx += '\n\nALREADY FILED — issues already filed (check this BEFORE filing a new fix/request; on a match, follow the DUPLICATE CHECK protocol instead of filing a duplicate):\n' + filed;
   if (o.card && o.recId != null) {
     const ec = entityCardOf(o.card, o.recType), rec = recOf(ec, o.recId);
     if (rec) ctx += `\n\nFOCUSED RECORD — ${ec}: ${detailTitle(ec, rec)}\n` + JSON.stringify(rec).slice(0, 4000);
   }
   return ctx;
 }
+// §18e DUPLICATE CHECK protocol — appended to the system so Mr. Wrangler dedupes against
+// the ALREADY FILED index before filing. Kept as its own template literal (not woven into
+// the escaped WRANGLER_SYSTEM string) so it stays readable + easy to tune.
+const WR_DEDUP_NOTE = `
+
+DUPLICATE CHECK — before you emit a fix or request block, check the ALREADY FILED list in your context. If the problem the user is describing matches an issue already on that list, do NOT file a new one. Instead call ask_user with the single best match — a question like "Looks like this is already reported — #NNN '<title>' (open, or already fixed). What do you want to do?" and options ["Add my note to #NNN","File a new one anyway","It's already fixed — just refresh"], but DROP the "already fixed" option unless that match's state is 'fixed'. Then act on their pick:
+- "Add my note to #NNN" → call the note_on_issue tool with that issue number and a one-paragraph summary of their report; do NOT file a new issue.
+- "File a new one anyway" → go ahead and emit the normal fix/request block.
+- "It's already fixed — just refresh" → file nothing; tell them it's fixed in #NNN and to hard-refresh (Ctrl/Cmd+Shift+R) to load it.
+Only trigger this on a genuine match — a novel bug still files normally, with no chips.`;
 // Attach an image to the next Wrangler message (file picker, paste, or drop). The
 // backend wranglerReply_ accepts image content blocks; we downscale first to keep
 // the payload light. "Add files" = images for now (what a glitch report needs).
@@ -10613,6 +10674,18 @@ const WR_TOOL_IMPL = {
     });
     return { startDate: start, endDate: end, customer: cust ? cust.name : null, total: Math.round(total * 100) / 100, units: per };
   },
+  // §18e — add a comment to an ALREADY-filed issue (the "Add my note to #NNN" duplicate-check
+  // branch), reusing the wranglerComment backend action. Never creates a new issue.
+  async note_on_issue(input) {
+    const number = Number(input && input.number);
+    const text = String((input && input.text) || '').trim();
+    if (!number || !text) return { error: 'need an issue number and text' };
+    if (typeof backendPassword === 'undefined' || !backendPassword) return { error: 'not signed in — can’t post a comment' };
+    try {
+      const r = await backendCall('wranglerComment', { number, role: 'user', text });
+      return (r && r.ok) ? { ok: true, number, note: `added the note to #${number}` } : { error: (r && r.error) || 'comment failed' };
+    } catch (e) { return { error: String((e && e.message) || e) }; }
+  },
 };
 // Anthropic tool schemas — forwarded verbatim to the model by the Stage 0 pass-through.
 const WR_TOOLS = [
@@ -10626,6 +10699,7 @@ const WR_TOOLS = [
   { name: 'check_unit_availability', description: 'Check whether a unit is free for a date window. Returns available + any conflicting rentals. Dates are YYYY-MM-DD.', input_schema: { type: 'object', properties: { unit: { type: 'string' }, startDate: { type: 'string' }, endDate: { type: 'string' } }, required: ['unit', 'startDate', 'endDate'] } },
   { name: 'price_rental', description: 'Quote the price for renting one or more units over a window (uses the live pricing engine; member rates apply if the customer is given). Dates are YYYY-MM-DD. Read-only — does not create anything.', input_schema: { type: 'object', properties: { units: { type: 'array', items: { type: 'string' } }, startDate: { type: 'string' }, endDate: { type: 'string' }, customer: { type: 'string' } }, required: ['units', 'startDate', 'endDate'] } },
   { name: 'ask_user', description: "Ask the user ONE short follow-up question when you genuinely can't proceed — a real ambiguity (two customers match, which unit, missing a required detail). Pass a clear `question` and, when the choice is between known options, an `options` array (e.g. the matching customers) so they can just tap one. Use this SPARINGLY — never to confirm an obvious reading or something a find_* tool can answer. The user's answer comes back so you continue.", input_schema: { type: 'object', properties: { question: { type: 'string' }, options: { type: 'array', items: { type: 'string' } } }, required: ['question'] } },
+  { name: 'note_on_issue', description: 'Add a comment to an issue that has ALREADY been filed (one from the ALREADY FILED list) instead of filing a duplicate. Use ONLY after the user chooses "Add my note to #NNN" in the DUPLICATE CHECK. Pass the issue `number` and a one-paragraph `text` summarizing their new report. Does NOT create a new issue.', input_schema: { type: 'object', properties: { number: { type: 'number', description: 'the existing issue number to comment on' }, text: { type: 'string', description: "one-paragraph summary of the user's report to append" } }, required: ['number', 'text'] } },
   { name: 'apply_changes', description: "WRITE changes: create/update/import records or run an operation. Pass `ops` — the SAME op shapes documented above ({op:'create'|'update'|'import'|'csv-import', entity, fields|rows|id} and {op:'operate', name:'startRental'|'billRental'|'recordPayment', params}). It validates against the allowlist and the safety fences and RETURNS what resolved or got dropped, so if a link drops (e.g. a category that doesn't exist yet) you can create it first and call again. Safe single edits apply immediately; consequential ones (bulk, pricing, billing, payments, several records) are staged for the user to tap Apply — word those as a preview, never as saved. This is the ONLY write path — never charge a card/ACH, refund, touch a balance, change roles/passwords, hard-delete, or complete a WO.", input_schema: { type: 'object', properties: { title: { type: 'string', description: 'short label for the change' }, ops: { type: 'array', items: { type: 'object' }, description: 'the operations to apply' } }, required: ['ops'] } },
 ];
 const WR_TOOLS_NOTE = "\n\nLOOKING THINGS UP — you have live read-only tools (find_customers, find_units, find_categories, find_vendors, find_rentals, find_invoices, find_work_orders, check_unit_availability, price_rental) that query the FULL records, not just the snapshot. PREFER them: when the user names a customer/unit/rental, look it up to confirm it exists and get its id before you answer or emit an action; check availability before booking; quote with price_rental rather than guessing. Don't ask the user for something a tool can find. For WRITES, prefer the apply_changes tool: call it with the ops array (same shapes as the wrangler-action block) and it returns exactly what resolved or got dropped, so you can fix a dropped link and try again — much better than emitting a blind block. Safe single edits auto-apply; consequential ones come back staged for the user's Apply (word those as a preview). You may still emit a wrangler-action block as a fallback, but don't ALSO emit one for a write you already made with apply_changes. When you truly need to disambiguate before acting, call ask_user (with tappable options when the choice is between known records) instead of guessing or burying the question in prose — but only when a tool can't resolve it.";
@@ -10673,7 +10747,7 @@ async function wrRunAgent(apiMessages, system, opts) {
       try {
         if (tu.name === 'apply_changes') out = await wrApplyChangesTool(tu.input || {}, ctx, opts);
         else if (tu.name === 'ask_user') { const ans = opts.ask ? await opts.ask(tu.input || {}) : null; out = { answer: (ans == null || ans === '') ? '(no answer given — use your best judgement and proceed)' : String(ans) }; }
-        else { const impl = WR_TOOL_IMPL[tu.name]; out = impl ? impl(tu.input || {}) : { error: `unknown tool ${tu.name}` }; }
+        else { const impl = WR_TOOL_IMPL[tu.name]; out = impl ? await impl(tu.input || {}) : { error: `unknown tool ${tu.name}` }; }
       } catch (e) { out = { error: String((e && e.message) || e) }; }
       if (opts.onTool) { try { opts.onTool(tu.name, tu.input, out); } catch (e) {} }
       results.push({ type: 'tool_result', tool_use_id: tu.id, content: JSON.stringify(out) });
@@ -10694,11 +10768,11 @@ async function wranglerSend() {
   // rather than starting a fresh turn. Tapping an option chip resolves it the same way.
   if (o.ask && o.ask.resolve) { if (!text) { if (inp) inp.focus(); return; } o.draft = ''; if (inp) inp.value = ''; o.ask.resolve(text); return; }
   if ((!text && !imgs && !files) || o.busy) { if (inp) inp.focus(); return; }
-  o.messages.push({ role: 'user', content: text, images: imgs, files });
+  o.messages.push({ role: 'user', content: text, images: imgs, files, at: Date.now() });
   syncWranglerComment(o, 'user', text, imgs);   // §18e mirror the turn onto the issue thread
   wranglerClearNeedsAnswer(o.reqNumber);        // §18e answering a "Needs your answer" request clears it from the inbox
   o.draft = ''; o.attach = []; o.files = []; o.busy = true; o.error = ''; render();
-  const system = WRANGLER_SYSTEM + WR_TOOLS_NOTE + (o.kpiTarget ? '\n\n' + wranglerKpiSystem() : '') + '\n\n' + wranglerContext(o);
+  const system = WRANGLER_SYSTEM + WR_TOOLS_NOTE + WR_DEDUP_NOTE + (o.kpiTarget ? '\n\n' + wranglerKpiSystem() : '') + '\n\n' + wranglerContext(o);
   // Build the payload: images become a content-block array; CSV/text files fold
   // into the message text so Mr. Wrangler reads their rows.
   const fileBlock = (m) => (m.files && m.files.length)
@@ -10733,8 +10807,8 @@ async function wranglerSend() {
       // options and wait for a tap/typed reply, which resumes the loop. Tied to the live dock only.
       const askFn = (input) => new Promise((resolve) => {
         const options = Array.isArray(input.options) ? input.options.slice(0, 6).map(String) : [];
-        o.messages.push({ role: 'assistant', content: String((input && input.question) || 'Which one?'), askOptions: options });
-        o.ask = { resolve: (answer) => { o.ask = null; o.busy = true; if (answer != null && answer !== '') o.messages.push({ role: 'user', content: String(answer) }); render(); resolve(answer == null ? null : String(answer)); } };
+        o.messages.push({ role: 'assistant', content: String((input && input.question) || 'Which one?'), askOptions: options, at: Date.now() });
+        o.ask = { resolve: (answer) => { o.ask = null; o.busy = true; if (answer != null && answer !== '') o.messages.push({ role: 'user', content: String(answer), at: Date.now() }); render(); resolve(answer == null ? null : String(answer)); } };
         o.busy = false; render();
         setTimeout(() => { const f = document.querySelector('.wrangler-dock .wr-feed'); if (f) f.scrollTop = f.scrollHeight; }, 0);
       });
@@ -10763,7 +10837,7 @@ async function wranglerSend() {
       else if (!shown) shown = act ? (act.action === 'data' ? (autoPlan ? 'Done — ' + wrPlanSummary(autoPlan) + '.' : 'Here’s what I’ll change — preview it and hit apply when it looks right.') : act.action === 'kpi' ? 'Here’s the KPI — lock it in when the live number looks right.' : act.action === 'request' ? 'Got it — I’ll send this to the developer to OK.' : act.action === 'plan' ? 'Here’s the plan — tap Build when it’s right.' : 'On it — I’ll fix this right now and let you know when I’m done.') : (r.applied ? 'Done — applied your changes. 🤠' : '(no answer)');
       const _target = _onChat ? o : state.wranglerRail.find((c) => c.id === replyChatId);
       if (_target) {
-        const msg = { role: 'assistant', content: shown, action: act || null, filed: false };
+        const msg = { role: 'assistant', content: shown, action: act || null, filed: false, at: Date.now() };
         _target.messages.push(msg);
         if (autoPlan) { msg.filed = true; Promise.resolve(applyWranglerData(autoPlan)).then((res) => { if (res && res.failed) { msg.filed = false; } else if (res && res.focus) { msg.focus = res.focus; } render(); }); }   // simple safe edit / booking → write it now; stash the focus target for the "Open" link
         else if (r.applied && r.focus) msg.focus = r.focus;   // apply_changes already wrote it in the loop → keep the "Open" link to the new record
@@ -10771,7 +10845,7 @@ async function wranglerSend() {
         if (!_onChat) wranglerRailPersist(_target);   // backgrounded chat → fold the reply into its snapshot
       }
     } else {
-      o.messages.push({ role: 'assistant', content: "🤠 Demo mode — sign in to ask the real Mr. Wrangler (the live AI runs through the backend). Here's the snapshot I'd reason over:\n\n" + wranglerDigest() });
+      o.messages.push({ role: 'assistant', content: "🤠 Demo mode — sign in to ask the real Mr. Wrangler (the live AI runs through the backend). Here's the snapshot I'd reason over:\n\n" + wranglerDigest(), at: Date.now() });
     }
     if (state.wrangler.id === replyChatId) { o.busy = false; render(); setTimeout(() => { const f = document.querySelector('.wrangler-dock .wr-feed'); if (f) f.scrollTop = f.scrollHeight; }, 0); } else render();   // only clear/scroll the dock if it's still THIS chat
   } catch (e) { if (state.wrangler.id === replyChatId) { o.busy = false; o.error = wranglerErrMsg(e && e.message); render(); } }
@@ -17020,7 +17094,7 @@ function boot() {
 
 // #local — render straight from data.js with NO backend (offline/demo + dev smoke test).
 // saveSoon() already no-ops without a password, so edits stay in-memory only.
-function offlineBoot() { buildIndexes(); state.cascade = createCascade(DATA); seedDemoRequests(); booting = false; render(); exposeTestApi(); wranglerRailLoad(); }
+function offlineBoot() { buildIndexes(); state.cascade = createCascade(DATA); seedDemoRequests(); booting = false; render(); exposeTestApi(); window.__rwBootRail = wranglerRailLoad(); }
 /* #local demo only: a sample Requests-inbox entry so the review/continue flow is
    visible without a backend. Real installs fetch live requests via the backend. */
 function seedDemoRequests() {

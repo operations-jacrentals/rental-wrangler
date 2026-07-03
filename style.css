@@ -1160,14 +1160,17 @@ select.lf-in { appearance: none; cursor: pointer; }
 .wr-pop .popup-head .wr-chip.muted { color: var(--txt-3); }
 .wr-feed { flex: 1 1 auto; overflow-y: auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; min-height: 150px; }
 .wr-empty { color: var(--txt-3); font-size: 13px; text-align: center; padding: 30px 14px; line-height: 1.55; }
-.wr-msg { display: flex; gap: 8px; align-items: flex-end; max-width: 92%; }
+.wr-msg { display: flex; gap: 8px; align-items: flex-start; max-width: 92%; }
 .wr-msg.user { align-self: flex-end; }
 .wr-msg.assistant { align-self: flex-start; }
-.wr-av { flex: 0 0 auto; font-size: 19px; line-height: 1; }
+.wr-av { flex: 0 0 auto; font-size: 19px; line-height: 1; margin-top: 3px; }
 .wr-bub { padding: 9px 13px; border-radius: 13px; font-size: 13.5px; line-height: 1.5; word-wrap: break-word; }
 .wr-msg.assistant .wr-bub { background: #232c37; color: var(--txt); border-bottom-left-radius: 4px; }
 .wr-msg.user .wr-bub { background: var(--accent); color: #1a1205; font-weight: 500; border-bottom-right-radius: 4px; }
 .wr-bub.wr-think { color: var(--txt-3); font-style: italic; }
+.wr-bub-wrap { display: flex; flex-direction: column; gap: 3px; min-width: 0; align-items: flex-start; }
+.wr-msg.user .wr-bub-wrap { align-items: flex-end; }
+.wr-time { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .5px; font-size: 9.5px; font-weight: 700; color: var(--txt-3); padding: 0 3px; }
 .wr-err { color: var(--red); font-size: 12px; padding: 0 16px 6px; }
 .wr-compose { display: flex; align-items: center; gap: 8px; padding: 11px 14px; border-top: 1px solid var(--line); }
 /* §18d attach/paste images — paperclip stamp + pending thumbnails + sent-in-bubble.
