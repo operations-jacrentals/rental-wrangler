@@ -3120,6 +3120,30 @@ body { font-variant-numeric: tabular-nums; }
 .catr-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .catr-cat { flex: 0 0 auto; width: 18px; height: 18px; color: var(--txt-2); display: flex; align-items: center; justify-content: center; }
 .catr-cat svg { width: 17px; height: 17px; display: block; }
+/* ── CATEGORY GLYPH HOVER MOTION (Jac, 2026-07-03) — hovering the unit row (.ur) or the
+   category mini-card (.catr) nudges its category icon with a short, per-family CSS-only
+   move (one crisp beat, no bounce/loop — same .12s control timing as the rest of the
+   system). `mo-none` (the box/unmatched fallback) is deliberately inert. ── */
+.cat-glyph { display: inline-flex; transition: transform .12s cubic-bezier(.2,.7,.2,1), color .12s ease; }
+.ur:hover .cat-glyph, .catr:hover .cat-glyph { color: var(--accent); }
+.ur:hover .mo-dig,     .catr:hover .mo-dig     { transform: translateY(1.5px) rotate(-8deg); }
+.ur:hover .mo-chop,    .catr:hover .mo-chop    { transform: rotate(-14deg); }
+.ur:hover .mo-spin,    .catr:hover .mo-spin    { transform: rotate(80deg); }
+.ur:hover .mo-raise,   .catr:hover .mo-raise   { transform: translateY(-1.5px) rotate(7deg); }
+.ur:hover .mo-snap,    .catr:hover .mo-snap    { transform: scale(1.14); }
+.ur:hover .mo-press,   .catr:hover .mo-press   { transform: translateY(2px) scale(.94); }
+.ur:hover .mo-roll,    .catr:hover .mo-roll    { transform: translateX(2px) rotate(14deg); }
+.ur:hover .mo-spark,   .catr:hover .mo-spark   { transform: scale(1.16); }
+.ur:hover .mo-puff,    .catr:hover .mo-puff    { transform: translateX(2px) scale(1.06); }
+.ur:hover .mo-drip,    .catr:hover .mo-drip    { transform: translateY(2px) scale(.92); }
+.ur:hover .mo-slosh,   .catr:hover .mo-slosh   { transform: rotate(-9deg); }
+.ur:hover .mo-flicker, .catr:hover .mo-flicker { transform: scale(1.1) rotate(-5deg); }
+.ur:hover .mo-pulse,   .catr:hover .mo-pulse   { transform: scale(1.12); }
+.ur:hover .mo-none,    .catr:hover .mo-none    { transform: none; }
+@media (prefers-reduced-motion: reduce) {
+  .cat-glyph { transition: color .12s ease; }
+  .ur:hover .cat-glyph, .catr:hover .cat-glyph { transform: none !important; }
+}
 .catr-name { flex: 1 1 auto; min-width: 0; font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .6px; font-weight: 700; font-size: 13px; line-height: 1.1; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 /* the availability row is one bank of four equal-height stamped plates:
    [ AVAIL n | NEXT date ] · [ PASS ] [ NR ] [ FAIL ]. Every plate is the same

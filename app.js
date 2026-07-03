@@ -4850,36 +4850,49 @@ function customerSpectrumViz(c) {
   const pct = c._digest?.activePct ?? 0;
   return `<div class="row-viz" style="background:linear-gradient(90deg, var(--red-bg), var(--orange-bg), var(--yellow-bg), var(--green-bg)); clip-path: inset(0 ${100 - pct}% 0 0)"></div>`;
 }
+// Per-family hover-motion archetype (Jac, 2026-07-03) — see .cat-glyph / .mo-* in style.css.
+// `box` (the unmatched/admin fallback) is deliberately `mo-none`: it stays inert so the
+// "this one's unrecognized" signal isn't undercut by a flourish that implies a real match.
+const CATEGORY_MOTION = {
+  excavator: 'mo-dig', skidsteer: 'mo-dig', trencher: 'mo-chop', grinder: 'mo-spin',
+  lift: 'mo-raise', attachment: 'mo-snap', roller: 'mo-press', buggy: 'mo-roll',
+  generator: 'mo-spark', compressor: 'mo-puff', pump: 'mo-drip', truck: 'mo-roll',
+  tractor: 'mo-roll', trailer: 'mo-roll', fuel: 'mo-slosh', heater: 'mo-flicker',
+  tower: 'mo-pulse', saw: 'mo-chop', box: 'mo-none',
+};
 /* A library glyph representing a unit's CATEGORY (Jac) — keyword-resolved from the
-   category name onto the vendored CATEGORY_ICON map (Lucide + two bespoke Tabler marks).
+   category name onto the vendored CATEGORY_ICON map (Lucide + several bespoke Tabler marks).
    FAMILY-LEVEL (Jac, 2026-07-03): the real fleet has ~50 rate-card categories (attachments,
    6 excavator sizes, 2 skid steers, compaction, etc.) — every size/model within a family
    shares one glyph rather than each getting its own. Order matters: more specific families
    (attachment / skid-steer) are checked before broader ones (excavator/lift) so e.g. an
    "Att. Breaker, Skid" attachment doesn't get mistaken for a skid steer. Never hand-authored;
    a genuinely unmatched name (or an admin bucket like "Uncategorized") falls to a neutral
-   box glyph — NOT a machine shape — so a miss is visually obvious instead of silently wrong. */
+   box glyph — NOT a machine shape — so a miss is visually obvious instead of silently wrong.
+   Wrapped in .cat-glyph so the parent row/card hover triggers a per-family CSS-only motion
+   (never JS-driven, degrades to a plain color change under prefers-reduced-motion). */
 function categoryIconFor(name) {
   const n = (name || '').toLowerCase();
-  if (/stump|grinder/.test(n)) return CATEGORY_ICON.grinder;
-  if (/trench/.test(n)) return CATEGORY_ICON.trencher;
-  if (/att\.|attach|attatch|grapple|box.?blade|bush.?hog|\bforks?\b|breaker|auger/.test(n)) return CATEGORY_ICON.attachment;
-  if (/skid|dozer|track.?loader|bobcat/.test(n)) return CATEGORY_ICON.skidsteer;
-  if (/excavat|backhoe|mini.?ex/.test(n)) return CATEGORY_ICON.excavator;
-  if (/scissor|boom|man.?lift|aerial|telehandl|towable.?lift|\blift\b/.test(n)) return CATEGORY_ICON.lift;
-  if (/roller|tamper|rammer/.test(n)) return CATEGORY_ICON.roller;
-  if (/buggy/.test(n)) return CATEGORY_ICON.buggy;
-  if (/generat|\bpower\b|genset|geny/.test(n)) return CATEGORY_ICON.generator;
-  if (/compress|\bair\b/.test(n)) return CATEGORY_ICON.compressor;
-  if (/pump|water|sump/.test(n)) return CATEGORY_ICON.pump;
-  if (/trailer|dump/.test(n)) return CATEGORY_ICON.trailer;
-  if (/hauler|flatbed|\btruck\b/.test(n)) return CATEGORY_ICON.truck;
-  if (/tractor/.test(n)) return CATEGORY_ICON.tractor;
-  if (/light|tower/.test(n)) return CATEGORY_ICON.tower;
-  if (/fuel|tank/.test(n)) return CATEGORY_ICON.fuel;
-  if (/heat|furnace/.test(n)) return CATEGORY_ICON.heater;
-  if (/saw|cut|chainsaw|chipper|trowel|float|buffer|sander|tiller|sod|splitter|jack.?hammer|metal.?break|pallet.?jack|snake|blade/.test(n)) return CATEGORY_ICON.saw;
-  return CATEGORY_ICON.box;
+  let key = 'box';
+  if (/stump|grinder/.test(n)) key = 'grinder';
+  else if (/trench/.test(n)) key = 'trencher';
+  else if (/att\.|attach|attatch|grapple|box.?blade|bush.?hog|\bforks?\b|breaker|auger/.test(n)) key = 'attachment';
+  else if (/skid|dozer|track.?loader|bobcat/.test(n)) key = 'skidsteer';
+  else if (/excavat|backhoe|mini.?ex/.test(n)) key = 'excavator';
+  else if (/scissor|boom|man.?lift|aerial|telehandl|towable.?lift|\blift\b/.test(n)) key = 'lift';
+  else if (/roller|tamper|rammer/.test(n)) key = 'roller';
+  else if (/buggy/.test(n)) key = 'buggy';
+  else if (/generat|\bpower\b|genset|geny/.test(n)) key = 'generator';
+  else if (/compress|\bair\b/.test(n)) key = 'compressor';
+  else if (/pump|water|sump/.test(n)) key = 'pump';
+  else if (/trailer|dump/.test(n)) key = 'trailer';
+  else if (/hauler|flatbed|\btruck\b/.test(n)) key = 'truck';
+  else if (/tractor/.test(n)) key = 'tractor';
+  else if (/light|tower/.test(n)) key = 'tower';
+  else if (/fuel|tank/.test(n)) key = 'fuel';
+  else if (/heat|furnace/.test(n)) key = 'heater';
+  else if (/saw|cut|chainsaw|chipper|trowel|float|buffer|sander|tiller|sod|splitter|jack.?hammer|metal.?break|pallet.?jack|snake|blade/.test(n)) key = 'saw';
+  return `<span class="cat-glyph ${CATEGORY_MOTION[key]}">${CATEGORY_ICON[key]}</span>`;
 }
 /* The unit row's RENTAL+INSPECTION pill (Jac): text = rental status / availability
    verdict / inspection label; COLOR is inspection-driven (mechanics' card) and only
