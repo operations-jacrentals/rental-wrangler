@@ -105,10 +105,17 @@ Reference implementations: `.login-*` and `.cancel-arc` blocks in `style.css`.
   logo (`bluesteel`), `horseshoe`, `hardhat`/`mtech`, the `mark`, the rounded
   `circle` placeholder, the Tabler **backhoe** (`CARD_ICON.units` /
   `CATEGORY_ICON.excavator`), the Tabler **bulldozer** (`CATEGORY_ICON.skidsteer`,
-  added 2026-07-03 for the skid-steer/dozer/loader family — no Lucide equivalent),
-  the `clipboard-question` (`inspectionsPending`, no Lucide equivalent), and the
-  gate-timeline status glyphs (`GATE_ICON`, still in `app.js`). Don't replace
-  these with library icons without asking.
+  skid-steer/dozer/loader family), the Tabler **crane** (`CATEGORY_ICON.lift`,
+  reads as a boom/telehandler better than Lucide's warehouse forklift), the Tabler
+  **caravan** (`CATEGORY_ICON.trailer`), the Tabler **garden-cart**
+  (`CATEGORY_ICON.buggy`, tagged "wheelbarrow" upstream), the Tabler **hammer**
+  (`CATEGORY_ICON.saw`, the small-tool catch-all — a different path than the
+  Lucide hammer already on `CARD_ICON.shop`, so the two don't collide), the
+  bespoke **sawblade** (`CATEGORY_ICON.grinder`, added 2026-07-03 — computed via
+  trig, not hand-drawn freeform art; no Lucide/Tabler icon is a literal serrated
+  cutting disc), the `clipboard-question` (`inspectionsPending`, no Lucide
+  equivalent), and the gate-timeline status glyphs (`GATE_ICON`, still in
+  `app.js`). Don't replace these with library icons without asking.
 - **Category icons are FAMILY-level, not per-model** (Jac, 2026-07-03): the real
   fleet has ~50 rate-card categories (see the `Fleet_Categories` sheet in Drive),
   not the 5 in the `data.js` demo seed. `categoryIconFor()` in `app.js` keyword-matches
