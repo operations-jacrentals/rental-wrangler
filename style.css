@@ -1921,7 +1921,9 @@ body.is-phone .set-tab-l { flex: 0 0 auto; }
 @media (prefers-reduced-motion: reduce) { .gv-bars .gv-barcol:hover .gv-bar-fill { filter: none; } }
 
 /* ── §13.5 Units graph V2 — tabs · time-rail · in-chart labels ─────────────── */
-.ug-tabs { display: flex; gap: 4px; padding: 4px 2px 8px; border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }
+.ug-tabs { display: flex; gap: 4px; padding: 4px 2px 6px; overflow-x: auto; scrollbar-width: none; }
+/* signature — the hi-vis hazard-stripe plate seam under the tabs (chrome, never behind data) */
+.ug-haz { height: 5px; margin: 0 2px 8px; border-radius: 2px; opacity: .85; background: repeating-linear-gradient(135deg, var(--yellow) 0 12px, #14181d 12px 24px); }
 .ug-tabs::-webkit-scrollbar { display: none; }
 .ug-tab { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1px; font-weight: 700; font-size: 11px; padding: 5px 10px; border-radius: 8px; border: 1px solid transparent; color: var(--txt-2); white-space: nowrap; cursor: pointer; background: none; transition: color .12s, border-color .12s; }
 .ug-tab:hover { color: var(--txt); border-color: var(--line); }
