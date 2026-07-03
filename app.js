@@ -6808,13 +6808,15 @@ function columnEl(col, session) {
   // stamp the VIEW identity (list vs which record) so render() keys scroll memory by it
   const cs = card.dataset.card && session.cards ? session.cards[card.dataset.card] : null;
   card.dataset.view = (cs && cs.mode === 'standard' && cs.recId != null) ? `${cs.recType || ''}:${cs.recId}` : 'list';
-  if (!document.body.classList.contains('is-phone')) card.insertBefore(colTabsEl(col, active, session), card.firstChild);   // toggles live INSIDE the card top on desktop; on phones they move to the footer dock (§M1)
-  // Desktop: freeze the search/sort bar out of the scroll too — a full-width card
-  // header so the card-body scrollbar runs ONLY through the list below it, never in
-  // a gutter alongside the bar (the "funny" gap). On phones render() relocates the bar to the bottom dock instead.
+  // Desktop: ONE header row (Jac 2026-07-03) — merge the toggle with the list search/sort
+  // bar so a card opens at one row. List mode (there IS a .listbar) → wrap both in a .hrow;
+  // record mode (no listbar) → the toggle row rides alone above the card-head. On phones the
+  // toggle lives in the footer dock and render() relocates the .listbar there (§M1).
   if (!document.body.classList.contains('is-phone')) {
-    const lb = card.querySelector('.card-body .listbar'), body = card.querySelector('.card-body');
-    if (lb && body) card.insertBefore(lb, body);
+    const tab = colTabsEl(col, active, session);
+    const lb = card.querySelector('.card-body .listbar');
+    if (lb) { const hrow = el('div', 'hrow'); hrow.appendChild(tab); hrow.appendChild(lb); card.insertBefore(hrow, card.firstChild); }
+    else card.insertBefore(tab, card.firstChild);
   }
   wrap.appendChild(card);
   return wrap;
@@ -6932,15 +6934,12 @@ function listView(cardDef, session) {
   const cascChip = cascaded ? `<span class="casc-chip" data-tip="Cascaded from ${esc(anchorName)} — clear to browse all & add">🔗<span class="cc-name">${esc(anchorName)}</span>${closeX('js-uncascade', { data: { card } })}</span>` : '';
   bar.innerHTML = `
     ${cardJog(card, cs)}
-    <button class="bv-btn js-cardgraph${cs.graphView ? ' on' : ''}" data-card="${card}" data-tip="${cs.graphView ? 'Back to list' : 'Graph view'}">${I.graph}</button>
     <div class="mini-searchwrap${cterms.length || cascChip ? ' has-terms' : ''}${cs.search.trim() || cterms.length ? ' has-query' : ''}">
       ${cascChip}${cterms.map((ft, i) => filterTermPill(ft, i, card)).join('')}
       <input class="mini-search" placeholder="${cterms.length ? 'Add filter — Enter to pin…' : `Search ${esc(cardDef.title.toLowerCase())}…`}" value="${esc(cs.search)}" data-card="${card}" />
     </div>
-    ${(cs.graphView && gvSortHidden(card)) ? '' : `<div class="sort">
-      <button class="sortbtn js-sortmenu${av ? ' viewing' : ''}" data-card="${card}" data-tip="Views &amp; sort">${esc(av ? av.name : curField.label)} ${I.chev}</button>
-      <button class="dir js-sortdir" data-card="${card}"><span class="${cs.sort.dir === 'asc' ? 'on' : ''}">▲</span><span class="${cs.sort.dir === 'desc' ? 'on' : ''}">▼</span></button>
-    </div>`}`;
+    <button class="sortdir js-sortdir" data-card="${card}" data-tip="Sort direction" aria-label="Sort direction"><span class="${cs.sort.dir === 'asc' ? 'on' : ''}">▲</span><span class="${cs.sort.dir === 'desc' ? 'on' : ''}">▼</span></button>
+    <button class="gear js-cardgear" data-card="${card}" data-tip="Options" aria-label="Options">${I.sliders}</button>`;
   wrap.appendChild(bar);
   // §13.4 — Graph carousel: an interactive panel ABOVE the list (the list renders below,
   // filtered by the chart's g-tagged search terms). Legacy cards still full-replace the list.

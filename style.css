@@ -824,6 +824,23 @@ select.lf-in { appearance: none; cursor: pointer; }
 .sort .dir span.on { color: var(--accent); }
 .sort > button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
+/* ── Card-header ONE ROW (Jac 2026-07-03): toggle + search(fills the gap) + inline ▲▼ + gear.
+   Merges the old toggle row (.tabrow) and the list search/sort bar (.listbar) onto a single
+   line so a card opens at ~one row. Built in columnEl (desktop, list mode). ── */
+.hrow { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; padding: 13px 10px 8px; }   /* pad-top clears the 6px hazard stripe + rivets (was the .tabrow margin) */
+.hrow > .tabrow { display: flex; flex: 0 0 auto; margin: 0; min-width: 0; }   /* toggle sits LEFT — override the centering grid */
+.hrow > .tabrow .col-tabs { margin: 0; }
+.hrow > .listbar { flex: 1 1 auto; min-width: 0; padding: 0; background: none; position: static; box-shadow: none; }   /* search fills the remaining width */
+.listbar .sortdir { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; justify-content: center; width: 26px; height: 32px; padding: 0; border: 0; background: transparent; cursor: pointer; }   /* sort direction, inline at the search's right — no divider (Jac) */
+.listbar .sortdir span { font-size: 9px; line-height: 1.05; color: var(--txt-3); }
+.listbar .sortdir span.on { color: var(--accent); }
+.listbar .sortdir:hover span { color: var(--txt-2); }
+.listbar .sortdir:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+.listbar .gear { flex: 0 0 auto; width: 32px; height: 32px; display: grid; place-items: center; border-radius: var(--chip-radius); background: var(--panel); border: 1px solid var(--line); color: var(--txt-2); box-shadow: var(--chip-shadow); cursor: pointer; }   /* the ONE options button — Row 2 wired in phase 4 */
+.listbar .gear:hover { color: var(--accent); border-color: var(--accent-line); }
+.listbar .gear.on { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+.listbar .gear svg { width: 16px; height: 16px; }
+
 /* reusable floating dropdown menu (sort fields, status options) — Tier 3 SELECTOR-LIST:
    steel panel + a left hazard rail (the signature), no orange halo (dialogs keep that). */
 .dropdown-menu { position: fixed; z-index: 9100; width: max-content; min-width: 150px; max-width: min(92vw, 340px); padding: 6px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--chip-radius); box-shadow: var(--shadow), 0 0 0 1px rgba(0,0,0,.4); }   /* width:max-content hugs the widest item label; min/max keep it from getting awkwardly narrow or stretching wide */
