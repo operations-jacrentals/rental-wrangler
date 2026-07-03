@@ -1925,7 +1925,7 @@ function categoryStats(cat) {
    its own anchored main card + cascade. */
 function freshSession() {
   const cards = {};
-  for (const c of GRID_CARDS) cards[c.id] = { mode: 'list', recId: null, recType: null, search: '', filterTerms: [], historySearch: '', sort: loadSort(c.id), backStack: [], fwdStack: [], segment: c.id === 'shop' ? 'all' : null, graphIdx: 0, graphSel: {} };   // §13.4 graphIdx = active carousel view; graphSel = remembered selection per view
+  for (const c of GRID_CARDS) cards[c.id] = { mode: 'list', recId: null, recType: null, search: '', filterTerms: [], historySearch: '', sort: loadSort(c.id), backStack: [], fwdStack: [], segment: c.id === 'shop' ? 'all' : null, graphIdx: 0, graphSel: {}, optionsOpen: false, activeOptions: [] };   // §13.4 graphIdx = active carousel view; graphSel = remembered selection per view · optionsOpen/activeOptions = the gear's Row-2 quick-filters (phase 4 card-header)
   // 3-column layout: which member card is visible in each column (display-only;
   // rides inside the session so item-tabs / pause-resume restore it for free).
   const cols = {}; for (const col of COLUMNS) cols[col.id] = col.default;
@@ -6912,6 +6912,17 @@ const CARD_OPTIONS = {
     { id: 'collections', label: 'Collections', tier: 'money', test: (i) => invoiceTotals(i).status === 'Collections' },
   ],
 };
+/* Phase 4 — options entitlement + tooltips (card-header redesign, Jac 2026-07-03).
+   Role-project the options AT RENDER (§16): an option shows only if the role may see its data
+   tier. The tier ladder (config.js) has NO separate sales/CRM tier — `office` AND `sales` both
+   map to `money` — so 'money' and 'crm' BOTH gate at ≥ money (canMoney()), which excludes
+   exactly the operational roles §16 names (mechanic/mtech/driver = staff) while admitting
+   office/sales/manager/admin/owner. 'ops' = anyone who sees the card. Hiding an option is
+   presentation; the real guarantee is that every predicate runs over the ALREADY role-scoped
+   list (listFor/unitsVisible), so a filter only NARROWS, never widens. */
+const optionAllowed = (tier) => (tier === 'money' || tier === 'crm') ? canMoney() : true;
+const entitledOptions = (card) => (CARD_OPTIONS[card] || []).filter((o) => optionAllowed(o.tier));
+const COMBO_TIP = { bill: 'Overdue · Unpaid · Quotes · Off Rent · billing issues', out: 'On Rent · End Rent · Off Rent' };   // composites (∑) spell out the states they bundle
 function memberCardEl(member, session) {
   if (member === 'calendar') return calendarCardEl(session);
   if (member === 'shop') return shopCardEl({ id: 'shop', title: 'Shop' }, session);   // the wrench "Shop" member = the COMBINED view (segment bar + 3-bar front-page graph), no forcedSeg
@@ -6992,8 +7003,22 @@ function listView(cardDef, session) {
       <input class="mini-search" placeholder="${cterms.length ? 'Add filter — Enter to pin…' : `Search ${esc(cardDef.title.toLowerCase())}…`}" value="${esc(cs.search)}" data-card="${card}" />
     </div>
     <button class="sortdir js-sortdir" data-card="${card}" data-tip="Sort direction" aria-label="Sort direction"><span class="${cs.sort.dir === 'asc' ? 'on' : ''}">▲</span><span class="${cs.sort.dir === 'desc' ? 'on' : ''}">▼</span></button>
-    <button class="gear js-cardgear" data-card="${card}" data-tip="Options" aria-label="Options">${I.sliders}</button>`;
+    <button class="gear js-cardgear${cs.optionsOpen || (cs.activeOptions || []).length ? ' on' : ''}" data-card="${card}" data-tip="Options" aria-label="Options" aria-expanded="${cs.optionsOpen ? 'true' : 'false'}">${I.sliders}</button>`;
   wrap.appendChild(bar);
+  // Phase 4 — Row 2: the gear drops the card's quick-filter OPTIONS (role-projected §16) + the
+  // graph toggle (moved here from Row 1 in phase 2). Text-only multi-select toggles that AND
+  // together (filter below); the gear stays lit while any option is active, so a collapsed Row 2
+  // still signals a live filter. Desktop truncates to the card width (a scrollbar reads as broken
+  // in the 3-col grid — the phase-6 ⋯ folds the overflow); phone swipes. (⋯ / Custom Views = phase 6.)
+  if (cs.optionsOpen && !state.searchMode) {
+    const opts = entitledOptions(card);
+    const active = cs.activeOptions || [];
+    const row = el('div', 'optrow');
+    row.innerHTML =
+      `<div class="opts">${opts.map((o) => `<button class="opt${o.combo ? ' combo' : ''}${active.includes(o.id) ? ' on' : ''} js-opt" data-card="${card}" data-opt="${o.id}"${COMBO_TIP[o.id] ? ` data-tip="${esc(COMBO_TIP[o.id])}"` : ''} aria-pressed="${active.includes(o.id) ? 'true' : 'false'}">${esc(o.label)}</button>`).join('')}</div>`
+      + `<button class="bv-btn opt-graph js-cardgraph${cs.graphView ? ' on' : ''}" data-card="${card}" data-tip="${cs.graphView ? 'Back to list' : 'Graph view'}" aria-label="Graph view">${I.graph}</button>`;
+    wrap.appendChild(row);
+  }
   // §13.4 — Graph carousel: an interactive panel ABOVE the list (the list renders below,
   // filtered by the chart's g-tagged search terms). Legacy cards still full-replace the list.
   if (cs.graphView && !state.searchMode) {
@@ -7027,6 +7052,12 @@ function listView(cardDef, session) {
   }
   if (card === 'invoices' && cs.payMethod && cs.payMethod !== 'all') rows = rows.filter((i) => invMethodClass(i) === cs.payMethod);   // §337 stacks with search/status/sort
   if (cs.search.trim() || (cs.filterTerms || []).length) { rows = rows.filter((rec) => rowMatches(card, rec, cs.search, cs.filterTerms)); }
+  // Phase 4 — quick-filter options: AND every ACTIVE, ENTITLED option over the already
+  // role-scoped rows (§16 — narrows only, never widens). The entitled-guard drops a stale id
+  // left over from a role change; the try-guard means a best-effort predicate (lost / unitWhen)
+  // can't throw the whole list away — a bad rec just fails that one option.
+  const actOpts = entitledOptions(card).filter((o) => (cs.activeOptions || []).includes(o.id));
+  if (actOpts.length) rows = rows.filter((rec) => actOpts.every((o) => { try { return o.test(rec); } catch { return false; } }));
   rows = sortRows(card, rows, cs.sort);
   // §10 — while a rental window is in scope, order Units: available+Ready, available+Not
   // Ready, available+Failed, then anything unavailable. Categories: available first.
@@ -13004,6 +13035,8 @@ function onClick(e) {
   if (closest('.js-ff-save')) { e.stopPropagation(); return saveFileForm(); }
   if (closest('.js-vendor-tax')) { e.stopPropagation(); const b = closest('.js-vendor-tax'); const v = recOf('vendors', b.dataset.rec); if (v) { const ex = b.dataset.val === '1'; if (!!v.salesTaxExempt !== ex) { v.salesTaxExempt = ex; reindex('vendors', v); logAction(v, `Sales tax → ${ex ? 'Exempt' : 'Taxed'}`); } if (state.overlay?.kind === 'board') renderOverlay(); render(); } return; }
   if (closest('.js-cardgraph')) { e.stopPropagation(); const b = closest('.js-cardgraph'); const card = b.dataset.card, src = b.dataset.src || card; const cs = activeSession().cards[card]; if (!cs.graphView) { if (graphViewsFor(src)) return gvOpen(card, src); cs.graphView = true; return render(); } cs.graphView = false; return render(); }   // §13.4 per-card Graph carousel toggle (legacy / Shop-'all': dashboard)
+  if (closest('.js-cardgear')) { e.stopPropagation(); const cs = activeSession().cards[closest('.js-cardgear').dataset.card]; if (cs) { cs.optionsOpen = !cs.optionsOpen; render(); } return; }   // phase 4 — gear drops/collapses the Row 2 options
+  if (closest('.js-opt')) { e.stopPropagation(); const b = closest('.js-opt'); const cs = activeSession().cards[b.dataset.card]; if (cs) { const set = new Set(cs.activeOptions || []); set.has(b.dataset.opt) ? set.delete(b.dataset.opt) : set.add(b.dataset.opt); cs.activeOptions = [...set]; cs.listLimit = undefined; render(); } return; }   // phase 4 — multi-select AND toggle a quick-filter option
   if (closest('.js-gv-chev')) { e.stopPropagation(); const b = closest('.js-gv-chev'); return gvChevron(b.dataset.card, b.dataset.src || b.dataset.card, Number(b.dataset.dir)); }   // §13.4 cycle the active graph view
   if (closest('.js-gv-seg')) { e.stopPropagation(); const b = closest('.js-gv-seg'); return toggleGraphSeg(b.dataset.card, b.dataset.src || b.dataset.card, b.dataset.col, b.dataset.value, b.dataset.label); }   // §13.4 toggle a slice/bar/row/number → search entry
   if (closest('.js-gvwin')) { e.stopPropagation(); const b = closest('.js-gvwin'); return openGvWinMenu(b, b.dataset.card, b.dataset.src); }   // §13.4 open the timeline window menu

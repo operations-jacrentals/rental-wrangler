@@ -840,6 +840,22 @@ select.lf-in { appearance: none; cursor: pointer; }
 .listbar .gear:hover { color: var(--accent); border-color: var(--accent-line); }
 .listbar .gear.on { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
 .listbar .gear svg { width: 16px; height: 16px; }
+/* Row 2 — card-header OPTIONS (phase 4 · card-header redesign, Jac 2026-07-03). The gear drops
+   this below Row 1: text-only quick-filter toggles (multi-select AND) + the graph toggle. Kept in
+   the yard data-plate language — steel chips, the ONE orange accent for active, Saira Condensed
+   stamped labels; a composite (∑) wears a saddle-stitch tan dashed border until it's armed. */
+.optrow { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; padding: 0 10px 8px; min-width: 0; }
+.optrow .opts { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 6px; overflow: hidden; }   /* desktop: truncate to the card width — a scrollbar reads as broken in the 3-col grid (phase-6 ⋯ folds the overflow) */
+.optrow .opt { flex: 0 0 auto; height: 26px; padding: 0 11px; border-radius: var(--chip-radius); border: 1px solid var(--line); background: var(--panel); color: var(--txt-2); font-family: 'Saira Condensed', system-ui, sans-serif; font-size: 12px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; white-space: nowrap; cursor: pointer; box-shadow: var(--chip-shadow); }
+.optrow .opt:hover { color: var(--accent); border-color: var(--accent-line); }
+.optrow .opt.on { background: var(--accent); color: var(--on-orange); border-color: var(--accent); }
+.optrow .opt.combo { border-style: dashed; border-color: var(--tan, #c2925a); }   /* composite ∑ — a union of states, saddle-stitch dashed */
+.optrow .opt.combo.on { border-style: solid; border-color: var(--accent); }
+.optrow .opt:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.optrow .opt-graph { flex: 0 0 auto; }   /* the graph toggle stays visible at the row's right even when the options truncate */
+.is-phone .optrow .opts { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; scrollbar-width: none; }   /* phone: swipe every option */
+.is-phone .optrow .opts::-webkit-scrollbar { display: none; }
+.is-phone .optrow .opt { min-height: 32px; }
 
 /* reusable floating dropdown menu (sort fields, status options) — Tier 3 SELECTOR-LIST:
    steel panel + a left hazard rail (the signature), no orange halo (dialogs keep that). */

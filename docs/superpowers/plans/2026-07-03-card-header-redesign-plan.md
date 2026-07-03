@@ -35,33 +35,51 @@ new popups get `WINDOW_CATALOG` entries.
 
 ---
 
-## Progress — 2026-07-03 (paused after phase 3, awaiting Jac's local drive)
+## Progress — 2026-07-03 (phase 4 shipped; next → phase 5)
 
-Shipped on `claude/wrangler-dashboard-space-h2nu0i` (PR #447), **all no-browser gates
-green**; NOT yet driven in a browser (built in a cloud session — Jac verifies locally
-before phase 4):
+Phases 1–3 shipped on `claude/wrangler-dashboard-space-h2nu0i` (PR #447). **Phase 4 continues
+the feature on `claude/wrangler-dashboard-space-vdijk0`** (based off the phase-1–3 tip; per Jac,
+this branch's PR carries phases 1–4 and supersedes #447). All gates green.
 - **Phase 1 ✅** icon-first toggle — `colTabButtonsHtml` + `aria-label`, `style.css`
   `.coltab:not(.on) .ct-lbl { display:none }`.
 - **Phase 2 ✅** one-row header — `columnEl` wraps toggle + listbar in `.hrow`; listbar =
   search (fills) + inline ▲▼ + gear (`I.sliders`). Graph + sort-field chip **removed from
-  the row** (graph → phase 4, sort field → phase 5). Gear is an **inert placeholder**
-  (`js-cardgear`, no handler yet).
+  the row** (graph → phase 4, sort field → phase 5).
 - **Phase 3 ✅** `CARD_OPTIONS` map in **app.js** (not config.js — predicates need app
   helpers). Per-card `{ id, label, tier, combo, test }`; composites Bill/Out; Available =
-  canonical availability. Pure data, unused until phase 4.
+  canonical availability.
+- **Phase 4 ✅** gear → Row 2. `js-cardgear`/`js-opt` handlers; `optionsOpen`/`activeOptions`
+  on the card session (array, not Set — survives the array-shaped session copy). `listView`
+  renders `.optrow` = entitled options (`.opt`, `.opt.combo` dashed) inside a truncating
+  `.opts` box + the graph `bv-btn` (moved here, always-visible right). AND-filter over the
+  already role-scoped rows in `listView` (entitled-guard + try-guard). Gear stays lit while a
+  filter is active so a collapsed Row 2 still signals it; **the filter persists on collapse.**
+  Verified end-to-end in `#local` (20/20: toggle/filter/persist + the §16 gate) + smoke + logic 400/400.
 
-**Next → Phase 4:** gear toggles `session.cards[card].optionsOpen`; render Row 2 from the
-**entitled** `CARD_OPTIONS[card]` (role-gate by `tier`: `money`→`canMoney()`, `crm`→sales
-tier, `ops`→all) as text buttons + the graph `bv-btn` moved here + a `⋯`; `activeOptions`
-Set → AND-filter over the already role-scoped list (`listFor`/`unitsVisible`) in `listView`;
-desktop truncates, mobile scrolls; wire the `js-cardgear` click.
+**Phase-4 decisions (resolved on the main session — gate-sensitive, per CLAUDE.md):**
+- **`crm` tier gates at `canMoney()` (≥ money), same as `money`.** The tier ladder
+  (`config.js` `ROLE_TIERS`) has **no separate sales/CRM tier** — `office` AND `sales` both map
+  to `money`. The plan's `tierRank('sales')` returns **0** (unknown) → would show CRM filters to
+  *everyone incl. operational staff* (a §16 leak). `≥ money` excludes exactly the operational
+  roles §16 names (mechanic/mtech/driver = staff) while admitting office/sales/manager/admin/
+  owner. Real guarantee stays: predicates run over the already role-scoped list (narrow-only).
+  A finer sales/CRM tier would be a separate role-system change.
+- **`⋯` deferred to phase 6.** Its only job is to open Row 3 (Custom Views, phase 6); no
+  ellipsis glyph exists in `icons.js` and a dead placeholder button adds nothing. It arrives
+  with its function in phase 6. Desktop overflow currently **truncates** (clips) — the `⋯`
+  overflow-fold also lands in phase 6.
+
+**Next → Phase 5:** right-click / long-press the ▲▼ → a sort-only menu of `SORT_FIELDS[card]`.
 
 **Notes for next session:** gear icon is Lucide `sliders` (Jac may want a literal cog via
-`gen-icons.mjs`). `lost`/`unitWhen` predicates are best-effort — verify when driven. **Run
-ALL no-browser gates before each push** (smoke/logic run in CI): `node --check app.js` ·
-`gen-rule-usage --check` · `check-window-catalog` · `gen-code-map` (regen + commit the map;
-don't use a `════` banner in a non-chapter comment or it miscounts APP-NN). Sibling: janitor
-race fix on `wrangler-fix/janitor-boot-race` (PR #449, draft, CI green) — awaiting merge.
+`gen-icons.mjs`). `lost`/`unitWhen` predicates are best-effort (try-guarded) — spot-check when
+driven. **Run ALL no-browser gates before each push** (smoke/logic run in CI): `node --check
+app.js` · `gen-rule-usage --check` · `check-window-catalog` · `gen-code-map` (regen + commit the
+map; don't use a `════` banner in a non-chapter comment or it miscounts APP-NN). Cloud tip: the
+browser gates DO run here — `npm i --no-save playwright@1.48.0`, then launch with
+`executablePath:'/opt/pw-browsers/chromium_headless_shell-1194/chrome-linux/headless_shell'`
+(the pinned 1.48 browser build mismatches; old-headless needs the headless-shell). Sibling:
+janitor race fix on `wrangler-fix/janitor-boot-race` (PR #449, draft, CI green) — awaiting merge.
 
 ## Phase 1 — Icon-first toggle (isolated, visual)
 1. `colTabButtonsHtml` (6831): keep icon + count on every member; render `.ct-lbl`
