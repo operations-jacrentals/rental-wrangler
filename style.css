@@ -3060,6 +3060,12 @@ body.is-phone .card[data-card="units"] .list { grid-template-columns: repeat(2, 
    2026-07-01). A subtle dark shadow separates it from the panel; the red card border
    already flags danger, so the name only needs to READ. */
 .uc-name.ec-red { -webkit-text-fill-color: color-mix(in srgb, var(--red) 45%, white); text-shadow: 0 1px 2px rgba(0,0,0,.7); }
+/* Stage section divider (Jac 2026-07-03): a stamped stage label + a thin full-width
+   dashed rule in the stage color, spanning every grid column. Sort orders within. */
+.uc-sec { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; margin: 9px 2px 2px; }
+.card[data-card="units"] .list > .uc-sec:first-child { margin-top: 9px; }   /* clear the card's hazard-stripe top cap */
+.uc-sec-label { flex: 0 0 auto; font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 700; font-size: 10.5px; line-height: 1; color: var(--sec, var(--txt-2)); }
+.uc-sec::after { content: ''; flex: 1 1 auto; border-top: 1.5px dashed var(--sec, var(--line)); opacity: .5; }
 .uc-flags { flex: 0 0 auto; }
 /* Corner ALERT mark — a compact icon (+count for several) so it never steals width
    from the name; label(s) live in the R23 data-tip. Suppress the R9 striped
