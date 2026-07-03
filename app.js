@@ -9063,7 +9063,7 @@ function openGvWinMenu(anchorEl, card, src) {
    pie MORPHS into a time-series (stacked proportional-area / trajectory) when a period
    is armed. Units-GATED (other cards keep the shared carousel). Filters reuse the same
    col/value pairs the units list already matches, tagged g="units:<metric>". */
-const U_PERIODS = [{ k: 'wk', label: 'This Wk' }, { k: 'mo', label: 'This Mo' }, { k: '30', label: '30 Days' }, { k: '60', label: '60 Days' }, { k: '90', label: '90 Days' }];
+const U_PERIODS = [{ k: 'wk', label: 'Wk', full: 'This week' }, { k: 'mo', label: 'Mo', full: 'This month' }, { k: '30', label: '30d', full: 'Last 30 days' }, { k: '60', label: '60d', full: 'Last 60 days' }, { k: '90', label: '90d', full: 'Last 90 days' }];
 const U_HIST = { inspection: true, service: false, fleet: false, shop: false, fc: true, nums: false };   // which metrics support a time-series
 const U_DARKINK = new Set(['green', 'yellow', 'orange', 'brown', 'gray']);   // slices that carry dark ink labels (else white)
 const uISO = (d) => d.toISOString().slice(0, 10);
@@ -9160,7 +9160,7 @@ function uLead(cs, metric, rows, empty) {
 }
 // per-metric chart: snapshot when no period armed, else the time-series form
 function uMetricChart(cs, metric, period, small) {
-  const dsize = small ? 112 : 152;
+  const dsize = small ? 144 : 196;   // legends removed → more room, bigger donuts
   if (metric === 'inspection') {
     // Passed vs Not Ready only — Failed is retired (folds into Not Ready), no red (Jac)
     const f = fleetInsp();
@@ -9229,11 +9229,10 @@ const U_MLABEL = { inspection: 'Inspection', service: 'Service Orders', fleet: '
 const U_GROUPS = [
   { key: 'inspection', label: 'Inspection', metrics: ['inspection', 'service'] },
   { key: 'fleet', label: 'Fleet', metrics: ['fleet'] },
-  { key: 'shop', label: 'WO', metrics: ['shop'] },
-  { key: 'fc', label: 'Field Calls', metrics: ['fc'] },
+  { key: 'shop', label: 'WO', metrics: ['shop', 'fc'] },   // Work Orders + Field Calls share one screen (Jac)
   { key: 'nums', label: '#s', metrics: ['nums'] },
 ];
-const uRail = (period) => `<div class="ug-rail" role="group" aria-label="Timeframe">${U_PERIODS.map((p) => `<button class="ug-per${period === p.k ? ' on' : ''} js-ug-per" data-period="${p.k}" data-tip="${period === p.k ? 'Back to current' : 'Trend · ' + p.label}">${esc(p.label)}</button>`).join('')}</div>`;
+const uRail = (period) => `<div class="ug-rail" role="group" aria-label="Timeframe">${U_PERIODS.map((p) => `<button class="ug-per${period === p.k ? ' on' : ''} js-ug-per" data-period="${p.k}" data-tip="${period === p.k ? 'Back to current' : 'Trend · ' + p.full}">${esc(p.label)}</button>`).join('')}</div>`;
 function unitsGraphPanel(cs) {
   let key = cs.uMetric || 'inspection';
   let group = U_GROUPS.find((g) => g.key === key); if (!group) { group = U_GROUPS[0]; key = group.key; }
