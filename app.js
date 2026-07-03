@@ -6948,6 +6948,7 @@ function columnEl(col, session) {
   if (!document.body.classList.contains('is-phone')) {
     const lb = card.querySelector('.card-body .listbar'), body = card.querySelector('.card-body');
     if (lb && body) card.insertBefore(lb, body);
+    const st = card.querySelector('.card-body .rus'); if (st && body) card.insertBefore(st, body);   // §13.7 — flex-basis 25% resolves against .card, the full column
   }
   wrap.appendChild(card);
   return wrap;
@@ -7077,7 +7078,7 @@ function listView(cardDef, session) {
   wrap.appendChild(bar);
   // §13.4 — Graph carousel: an interactive panel ABOVE the list (the list renders below,
   // filtered by the chart's g-tagged search terms). Legacy cards still full-replace the list.
-  if (cs.graphView) { cs.graphView = false; gvStripTerms(cs); }   // §13.6 — in-column graphs retired (stale pre-Round-Up session state)
+  if (cs.graphView && !state.searchMode && RUS_TABS[card]) { const g = el('div', 'rus'); g.innerHTML = rusHtml(card, card, cs); wrap.appendChild(g); }   // §13.7 gauge strip — this card's Round-Up charts, 25% of the column
   // Phase 4 — Units narrowed to an invoice's linked units (Invoice +WO) → removable chip
   if (card === 'units' && state.unitPick) {
     const n = state.unitPick.ids.length;
@@ -7297,7 +7298,8 @@ function shopListView(session, byType, forcedSeg) {
   // interactive carousel ABOVE the list (list filters to the graph terms below); the
   // 'all' overview (and column-pinned shop tabs) keep the legacy combined dashboard.
   if (cs.graphView && !state.searchMode) {
-    if (graphViewsFor(gsrc)) { const g = el('div', 'gv-panel'); g.innerHTML = graphPanelHtml('shop', gsrc, cs); wrap.appendChild(g); }   // 'all' → the stackbars worklist (mechanic landing); segments have no in-column graph (§13.6)
+    if (graphViewsFor(gsrc)) { const g = el('div', 'gv-panel'); g.innerHTML = graphPanelHtml('shop', gsrc, cs); wrap.appendChild(g); }   // 'all' → the stackbars worklist (mechanic landing) — untouched
+    else if (RUS_TABS[gsrc]) { const g = el('div', 'rus'); g.innerHTML = rusHtml('shop', gsrc, cs); wrap.appendChild(g); }   // §13.7 — a segment's gauge strip
     else { cs.graphView = false; gvStripTerms(cs); }
   }
 
@@ -8867,6 +8869,7 @@ function openGvWinMenu(anchorEl, card, src) {
   openDropdown(anchorEl, opt(0, 'All time') + GV_WIN_OPTS.map((d) => opt(d, `Last ${d} days`)).join(''));
 }
 
+let _ruSize = null;   // §13.7 ambient size hint — set around a gauge-strip mount so engines fit the 25% box
 // shared chart helpers (born in the retired §13.5 Graph V2; the Round-Up inherits them)
 const U_DARKINK = new Set(['green', 'yellow', 'orange', 'brown', 'gray']);   // slices that carry dark ink labels (else white)
 const uISO = (d) => d.toISOString().slice(0, 10);
@@ -8921,6 +8924,7 @@ const ruColor = (name) => getComputedStyle(document.documentElement).getProperty
 /* Plot bar panel — Jac's chart law baked in: value rides the bar (never a detached row),
    dotted gridlines + Y axis on a nice scale, bottom-anchored, no legend (hover = plain name). */
 function ruBarsSVG({ data, money = false, w = 620, h = 250, overlayMarks = [], labelMarks = [] }) {
+  if (_ruSize) { w = _ruSize.w; h = _ruSize.h; }
   return Plot.plot({
     width: w, height: h, marginLeft: 48, marginRight: 12, marginTop: 22, marginBottom: data.length > 6 ? 54 : 28,
     style: { background: 'transparent', fontFamily: "'Saira Condensed', system-ui, sans-serif", fontSize: '11.5px' },
@@ -8979,7 +8983,7 @@ function ruNavigate(card, col, value, seg) {
   closeOverlay();
   const s = activeSession();
   const colId = COLUMN_OF[card]; if (colId && s.cols) { s.cols[colId] = card; const idx = COLUMNS.findIndex((c) => c.id === colId); if (idx >= 0) state.mobileCol = idx; }
-  const cs = s.cards[card]; if (cs) { cs.mode = 'list'; cs.recId = null; cs.recType = null; cs.graphView = false; if (seg) cs.segment = seg; }
+  const cs = s.cards[card]; if (cs) { cs.mode = 'list'; cs.recId = null; cs.recType = null; if (seg) cs.segment = seg; }   // graphView survives — a strip mark filters the list below it
   addColFilter(card, col, value);
 }
 // ── Money rollups (range-aware; the §13.5 cutoff-only versions retire in Phase E) ──
@@ -9077,6 +9081,7 @@ function ruBuckets(rg) {
 }
 // trajectory line: endpoint emphasized, counts above points, dots are the nav targets
 function ruLineSVG({ bk, vals, color, w = 620, h = 230 }) {
+  if (_ruSize) { w = _ruSize.w; h = _ruSize.h; }
   const n = bk.length, pts = bk.map((b, i) => ({ i, label: b.label, v: vals[i] }));
   const show = new Set(n <= 6 ? pts.map((p) => p.i) : [0, 1, 2, 3, 4].map((k) => Math.round(k * (n - 1) / 4)));
   const ink = ruColor(color);
@@ -9097,6 +9102,7 @@ function ruLineSVG({ bk, vals, color, w = 620, h = 230 }) {
 }
 // stacked proportional area (read-only): bands of a running mix, right-edge % labels
 function ruAreaSVG({ bk, bands, w = 620, h = 230 }) {
+  if (_ruSize) { w = _ruSize.w; h = _ruSize.h; }
   // bands: [{name, color, vals(fractions per bucket, bands sum ≤1)}] bottom-up
   const n = bk.length;
   const show = new Set(n <= 6 ? bk.map((_, i) => i) : [0, 1, 2, 3, 4].map((k) => Math.round(k * (n - 1) / 4)));
@@ -9172,7 +9178,8 @@ function ruFieldCalls(rg) {
   return d;
 }
 // ── Phase D: d3-shape donuts + stat tiles (Plot has no pie mark — pie()/arc() build the annulus) ──
-function ruDonutSVG({ segs, size = 190, noun = 'UNITS' }) {
+function ruDonutSVG({ segs, size = 0, noun = 'UNITS' }) {
+  size = size || (_ruSize ? Math.max(110, Math.min(_ruSize.h - 40, _ruSize.w - 70, 220)) : 190);
   const total = segs.reduce((a, s2) => a + (s2.count || 0), 0);
   const live = segs.filter((s2) => s2.count > 0);
   const r = size / 2, inner = r * 0.58, mid = (inner + r - 1) / 2, pad = 30;
@@ -9310,7 +9317,45 @@ const RU_SECTIONS = [
   { id: 'customers', label: 'Customers', panels: [
     { id: 'accounts', title: 'Account Types · Pay Status', phase: 'D' }, { id: 'card-health', title: 'Card Health', phase: 'D' } ] },
 ];
-const RU_SECTION_OF = { units: 'fleet', categories: 'money', shop: 'shop', rentals: 'rentals', customers: 'customers', invoices: 'money' };   // card graph icon → its board section
+/* §13.7 GAUGE STRIP (Jac 2026-07-03) — the card's Round-Up charts IN-COLUMN, at the top
+   of the list rows, strictly 25% of the card column's height. One panel at a time behind
+   stamped tabs (orange INK when selected, never a chip); a slim left rail is the board's
+   time spine shrunk down — it drives the SAME global range as the board (one timeframe
+   everywhere). Picking a NEW custom range stays a board power; an active custom range
+   shows here as stamped orange text (click clears to All). Marks stay nav targets — in
+   the strip a click filters the list right below it. The Round-Up board itself remains
+   on the header Round-Up button. */
+const RUS_TABS = {
+  units: [{ p: 'fleet-mix', l: 'Fleet' }, { p: 'units-per-cat', l: 'Categories' }, { p: 'field-calls', l: 'Field Calls' }],
+  categories: [{ p: 'rev-cat', l: 'Revenue' }, { p: 'exp-cat', l: 'Expenses' }],
+  rentals: [{ p: 'bookings', l: 'Bookings' }, { p: 'rev-status', l: 'Revenue' }, { p: 'inv-status', l: 'Invoices' }, { p: 'rent-tiles', l: '#s' }],
+  customers: [{ p: 'accounts', l: 'Accounts' }, { p: 'card-health', l: 'Cards' }, { p: 'top-spend', l: 'Top Spend' }],
+  invoices: [{ p: 'balances', l: 'Balances' }, { p: 'top-spend', l: 'Top Spend' }],
+  inspections: [{ p: 'insp-trend', l: 'Inspections' }],
+  workOrders: [{ p: 'wo-trend', l: 'Opened' }, { p: 'wo-phase', l: 'Bottleneck' }],
+  serviceOrders: [{ p: 'svc-urgency', l: 'Urgency' }],
+};
+const RUS_PER_LABEL = { today: 'Td', wk: 'Wk', mo: 'Mo', 30: '30d', 60: '60d', 90: '90d', all: 'All' };
+function rusHtml(card, src, cs) {
+  const tabs = RUS_TABS[src] || []; if (!tabs.length) return '';
+  let sel = (cs.rusTab || {})[src]; if (!tabs.some((t) => t.p === sel)) sel = tabs[0].p;
+  const r = ruResolve();
+  const tabBtns = tabs.map((t) => `<button class="rus-tab${t.p === sel ? ' on' : ''} js-rus-tab" data-card="${card}" data-src="${esc(src)}" data-panel="${t.p}">${esc(t.l)}</button>`).join('');
+  const rail = RU_PERIODS.map((p) => `<button class="rus-per${r.k === p.k ? ' on' : ''} js-rus-per" data-k="${p.k}" data-tip="${esc(p.label)}">${RUS_PER_LABEL[p.k] || p.k}</button>`).join('')
+    + (r.k === 'custom' ? `<button class="rus-per on js-rus-per" data-k="all" data-tip="Custom range (set on the Round-Up) — click to clear back to All">${esc(r.label)}</button>` : '');
+  return `<div class="rus-tabs" role="tablist">${tabBtns}</div><div class="rus-body"><nav class="rus-rail" aria-label="Timeframe">${rail}</nav><div class="rus-mount" data-panel="${sel}"></div></div>`;
+}
+// post-render mount pass for the strips (the board's pass walks .ru-plotmount; this one
+// measures the 25% box first so the engines render at native text size instead of scaling)
+function ruMountStrips() {
+  document.querySelectorAll('.rus-mount[data-panel]').forEach((m) => {
+    const p = RU_PANELS[m.dataset.panel]; if (!p) return;
+    _ruSize = { w: Math.max(220, m.clientWidth - 8), h: Math.max(110, m.clientHeight - 6) };
+    try { m.replaceChildren(p.build(ruResolve())); }
+    catch (e) { m.innerHTML = `<div class="ru-err">Chart failed — ${esc(String(e && e.message || e))}</div>`; }
+    _ruSize = null;
+  });
+}
 function roundupBody(o) {
   const r = ruResolve();
   const spine = RU_PERIODS.map((p) => `<button class="ru-per${r.k === p.k ? ' on' : ''} js-ru-per" data-k="${p.k}">${esc(p.label)}</button>`).join('')
@@ -12243,6 +12288,7 @@ function render() {
   mountTransportEditor();   // inline transport editor: mount the live map + wire the address field
   mountWranglerDock();   // §18 wire paste + drag-drop image input on the wrangler dock after each render
   mountDispatchMap();   // §2.3 office cockpit: re-parent the singleton dispatch map + refresh pins/route/truck
+  ruMountStrips();   // §13.7 gauge strips — build each open strip's chart into its measured 25% box
   applyTitles();   // full text on hover wherever we truncate (custom ~0.5s tooltip)
   drawDispatchArrows();   // §2.3 — paint free-form route legs over the dispatch run (needs live geometry)
   scoreTick();     // §11 gamification — pop +X over any ring whose metric just rose
@@ -13256,14 +13302,13 @@ function onClick(e) {
   if (closest('.js-ff-cancel')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'board') { o.fileForm = false; o.fileUpload = null; renderOverlay(); } return; }
   if (closest('.js-ff-save')) { e.stopPropagation(); return saveFileForm(); }
   if (closest('.js-vendor-tax')) { e.stopPropagation(); const b = closest('.js-vendor-tax'); const v = recOf('vendors', b.dataset.rec); if (v) { const ex = b.dataset.val === '1'; if (!!v.salesTaxExempt !== ex) { v.salesTaxExempt = ex; reindex('vendors', v); logAction(v, `Sales tax → ${ex ? 'Exempt' : 'Taxed'}`); } if (state.overlay?.kind === 'board') renderOverlay(); render(); } return; }
-  if (closest('.js-cardgraph')) { e.stopPropagation(); const b = closest('.js-cardgraph'); const card = b.dataset.card, src = b.dataset.src || card; const cs = activeSession().cards[card];
-    if (card === 'shop' && src === 'shop') { if (!cs.graphView) return gvOpen('shop', 'shop'); cs.graphView = false; return render(); }   // the 'all' stackbars worklist (mechanic landing) — untouched
-    if (cs && cs.graphView) { cs.graphView = false; gvStripTerms(cs); }
-    return openOverlay({ kind: 'roundup', section: RU_SECTION_OF[card] || null }); }   // §13.6 — the chart icon opens the Round-Up at this card's section
+  if (closest('.js-cardgraph')) { e.stopPropagation(); const b = closest('.js-cardgraph'); const card = b.dataset.card, src = b.dataset.src || card; const cs = activeSession().cards[card]; if (!cs.graphView) { if (graphViewsFor(src)) return gvOpen(card, src); cs.graphView = true; return render(); } cs.graphView = false; return render(); }   // §13.7 gauge-strip toggle (Shop 'all': the stackbars worklist)
   if (closest('.js-gv-chev')) { e.stopPropagation(); const b = closest('.js-gv-chev'); return gvChevron(b.dataset.card, b.dataset.src || b.dataset.card, Number(b.dataset.dir)); }   // §13.4 cycle the active graph view
   if (closest('.js-gv-seg')) { e.stopPropagation(); const b = closest('.js-gv-seg'); return toggleGraphSeg(b.dataset.card, b.dataset.src || b.dataset.card, b.dataset.col, b.dataset.value, b.dataset.label); }   // §13.4 toggle a slice/bar/row/number → search entry
   if (closest('.js-gvwin')) { e.stopPropagation(); const b = closest('.js-gvwin'); return openGvWinMenu(b, b.dataset.card, b.dataset.src); }   // §13.4 open the timeline window menu
   if (closest('.js-gvwin-opt')) { e.stopPropagation(); const b = closest('.js-gvwin-opt'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); const cs = activeSession().cards[b.dataset.card]; if (cs) { gvStripTerms(cs); cs.listLimit = undefined; } saveGvWin(b.dataset.src, Number(b.dataset.win)); return render(); }   // §13.4 pick a window → clear stale bucket filters + re-render
+  if (closest('.js-rus-tab')) { e.stopPropagation(); const b = closest('.js-rus-tab'); const cs = activeSession().cards[b.dataset.card]; if (cs) { (cs.rusTab = cs.rusTab || {})[b.dataset.src] = b.dataset.panel; render(); } return; }   // §13.7 strip panel tab
+  if (closest('.js-rus-per')) { e.stopPropagation(); const k = closest('.js-rus-per').dataset.k; ruSave(k === 'all' ? { k: 'all', a: null, b: null } : { k }); return render(); }   // §13.7 strip rail → the same global range the board reads
   if (closest('.js-ru-open')) { e.stopPropagation(); return openOverlay({ kind: 'roundup', section: closest('.js-ru-open').dataset.section || null }); }   // §13.6 Round-Up
   if (closest('.js-ru-per')) { e.stopPropagation(); const k = closest('.js-ru-per').dataset.k; ruSave(k === 'all' ? { k: 'all', a: null, b: null } : { k }); return renderOverlay(); }
   if (closest('.js-ru-custom')) { e.stopPropagation(); const o = state.overlay; if (o) { o.ruCustomOpen = !o.ruCustomOpen; if (o.ruCustomOpen) { const r = ruResolve(); o.ruFrom = o.ruFrom || r.a || TODAY_ISO; o.ruTo = o.ruTo || (r.b ? addDaysISO(r.b, -1) : TODAY_ISO); } else state.datepick = null; } return renderOverlay(); }
@@ -13507,7 +13552,7 @@ function onClick(e) {
   if (xEl) { e.stopPropagation(); return handlePillX(xEl); }
 
   // shop segment switch — clicking the active segment toggles back to All
-  if (closest('.js-shopseg')) { const seg = closest('.js-shopseg').dataset.seg; const cs = activeSession().cards.shop; const next = (cs.segment === seg) ? 'all' : seg; if (cs.graphView) { gvStripTerms(cs); if (next !== 'all') cs.graphView = false; }   /* §13.6 — segment graphs live on the Round-Up; 'all' returns to the worklist */ cs.segment = next; cs.listLimit = undefined; return render(); }
+  if (closest('.js-shopseg')) { const seg = closest('.js-shopseg').dataset.seg; const cs = activeSession().cards.shop; const next = (cs.segment === seg) ? 'all' : seg; if (cs.graphView) gvStripTerms(cs);   /* §13.7 — the strip (or 'all' worklist) stays open across a segment switch */ cs.segment = next; cs.listLimit = undefined; return render(); }
 
   // row / header action buttons (anchor / new tab) — recType is set for Shop items
   const anchorBtn = closest('.js-anchor');

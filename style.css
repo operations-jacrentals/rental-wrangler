@@ -1960,10 +1960,10 @@ body.is-phone .set-tab-l { flex: 0 0 auto; }
 .ru-lead-n { color: var(--txt-3); font-weight: 700; font-size: 11px; }
 .ru-lead-name { font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ru-lead-c { font-weight: 800; font-size: 13px; color: var(--txt-2); font-variant-numeric: tabular-nums; }
-.ru-plotmount rect.js-ru-nav, .ru-plotmount circle.js-ru-nav { cursor: pointer; }
-.ru-plotmount rect.js-ru-nav:hover, .ru-plotmount circle.js-ru-nav:hover { filter: brightness(1.18); }
-.ru-plotmount rect.js-ru-nav:focus-visible, .ru-plotmount circle.js-ru-nav:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.ru-plotmount text { pointer-events: none; }
+.ru-plotmount .js-ru-nav, .rus-mount .js-ru-nav { cursor: pointer; }
+.ru-plotmount svg .js-ru-nav:hover, .rus-mount svg .js-ru-nav:hover { filter: brightness(1.18); }
+.ru-plotmount svg .js-ru-nav:focus-visible, .rus-mount svg .js-ru-nav:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.ru-plotmount text, .rus-mount text { pointer-events: none; }
 .ru-duo { display: flex; gap: 14px; align-items: stretch; }
 .ru-duo-chart { flex: 1; min-width: 0; }
 .ru-real { width: 92px; flex: none; display: flex; flex-direction: column; justify-content: center; gap: 3px; padding-left: 14px; border-left: 1px dashed var(--tan, #c2925a); }   /* saddle-stitch divider — trend left, "right now" right */
@@ -1978,9 +1978,6 @@ body.is-phone .set-tab-l { flex: 0 0 auto; }
 .ru-donut .ru-slice-n { font-size: 13px; font-weight: 700; }
 .ru-donut .ru-donut-tot { font-size: 27px; font-weight: 800; }
 .ru-donut .ru-donut-sub { font-size: 10px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; }
-.ru-plotmount path.js-ru-nav { cursor: pointer; }
-.ru-plotmount path.js-ru-nav:hover { filter: brightness(1.18); }
-.ru-plotmount path.js-ru-nav:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .ru-donut-pair { display: flex; gap: 10px; justify-content: center; }
 .ru-donut-cell { flex: 1; min-width: 0; }
 .ru-donut-cell svg.ru-donut { max-width: 190px; }
@@ -1992,6 +1989,27 @@ body.is-phone .set-tab-l { flex: 0 0 auto; }
 .ru-tile-l { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1px; font-weight: 700; font-size: 10px; color: var(--txt-3); }
 @media (max-width: 900px) { .ru-layout { grid-template-columns: 1fr; } .ru-spine { flex-direction: row; flex-wrap: wrap; border-right: none; border-bottom: 1px solid var(--line); padding: 10px 12px; } .ru-grid { grid-template-columns: 1fr; } }
 @media (prefers-reduced-motion: reduce) { .ru-per { transition: none; } }
+
+/* ── §13.7 gauge strip — the card's Round-Up charts in-column, 25% of the column ── */
+.rus { flex: 0 0 25%; min-height: 0; display: flex; flex-direction: column; margin: 0 8px 4px; border: 1px solid var(--line); border-radius: 12px; background: linear-gradient(180deg, var(--card-head), var(--card)); color: var(--txt-3); overflow: hidden; }   /* color themes Plot's currentColor axes */
+.is-phone .rus { flex: none; height: 25dvh; }   /* phone: the strip rides inside the scroll column — 25% of the viewport ≈ the column */
+.rus-tabs { display: flex; gap: 2px; padding: 3px 8px 2px; border-bottom: 1px solid var(--line-soft); overflow-x: auto; scrollbar-width: none; justify-content: center; justify-content: safe center; flex: none; }
+.rus-tabs::-webkit-scrollbar { display: none; }
+.rus-tab { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1px; font-weight: 700; font-size: 10.5px; padding: 1px 7px; border: none; background: none; color: var(--txt-3); white-space: nowrap; cursor: pointer; transition: color .12s; }
+.rus-tab:hover { color: var(--txt); }
+.rus-tab.on { color: var(--accent); }
+.rus-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.rus-body { flex: 1; min-height: 0; display: flex; gap: 6px; padding: 2px 8px 5px; }
+.rus-rail { display: flex; flex-direction: column; justify-content: center; gap: 1px; flex: none; min-width: 30px; }
+.rus-per { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .6px; font-weight: 700; font-size: 9.5px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 72px; padding: 0 2px; border: none; background: none; color: var(--txt-3); cursor: pointer; transition: color .12s; }
+.rus-per:hover { color: var(--txt); }
+.rus-per.on { color: var(--accent); }
+.rus-per:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.rus-mount { flex: 1; min-width: 0; min-height: 0; overflow: auto; }
+.rus-mount svg { display: block; max-width: 100%; max-height: 100%; width: auto; height: auto; margin: 0 auto; }
+.rus-mount .ru-duo { height: 100%; }
+.rus-mount .ru-empty { padding: 10px 4px; }
+@media (prefers-reduced-motion: reduce) { .rus-tab, .rus-per { transition: none; } }
 
 .board-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .board-table th { position: sticky; top: 0; z-index: 1; text-align: left; padding: 10px 14px; background: var(--card-head); color: var(--txt-3); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; border-bottom: 1px solid var(--line); white-space: nowrap; }
