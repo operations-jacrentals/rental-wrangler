@@ -6523,7 +6523,10 @@ const DETAIL = {
           ${st.roi != null ? kv(`${st.roi}%`, { sfx: 'ROI', derived: true }) : ''}
           ${kv(money(st.avgRevUnit), { sfx: '/unit revenue', derived: true })}${kv(money(st.avgExpUnit), { sfx: '/unit expenses', derived: true })}
           ${kv(money(c.msrp), { sfx: 'MSRP' })}${kv(money(c.askPrice), { sfx: 'ask' })}${kv(money(c.bottomDollar), { sfx: 'bottom dollar' })}
-          ${kv('—', { sfx: 'time / dollar util (backend)', derived: true })}
+          ${catUtilKv(c)}
+          ${efld('categories', c, 'categoryId', 'usefulLifeHours', 'Useful life (hrs)', { type: 'number', admin: true, fmt: (v) => num(v) + ' HRS', sfx: 'useful life' })}
+          ${efld('categories', c, 'categoryId', 'endOfLifeYears', 'End of life (yrs)', { type: 'number', admin: true, fmt: (v) => v + ' YRS', sfx: 'end of life' })}
+          ${c.usefulLifeHours > 0 && c.endOfLifeYears > 0 ? kv(`${num(Math.round(c.usefulLifeHours / (c.endOfLifeYears * 12)))} HRS/MO`, { sfx: 'expected pace', derived: true }) : ''}
         </div>
         <div class="side r">${unitRows || '<span class="muted" style="font-size:12px">No units</span>'}</div>
       </div></div>`;
@@ -8928,7 +8931,7 @@ function ruApplyCustom(o) {
 const ruColor = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || '#8b94a3';
 /* Plot bar panel — Jac's chart law baked in: value rides the bar (never a detached row),
    dotted gridlines + Y axis on a nice scale, bottom-anchored, no legend (hover = plain name). */
-function ruBarsSVG({ data, money = false, w = 620, h = 250, overlayMarks = [], labelMarks = [] }) {
+function ruBarsSVG({ data, money = false, w = 620, h = 250, overlayMarks = [], labelMarks = [], fmt = null }) {
   if (_ruSize) { w = _ruSize.w; h = _ruSize.h; }
   return Plot.plot({
     width: w, height: h, marginLeft: 48, marginRight: 12, marginTop: 22, marginBottom: data.length > 6 ? 54 : 28,
@@ -8941,7 +8944,7 @@ function ruBarsSVG({ data, money = false, w = 620, h = 250, overlayMarks = [], l
       Plot.gridY({ stroke: ruColor('--line'), strokeDasharray: '2,3', strokeOpacity: 0.8 }),
       Plot.barY(data, { x: 'label', y: 'value', fill: 'fill', rx: 4, title: 'name' }),
       ...overlayMarks,
-      Plot.text(data, { x: 'label', y: 'value', text: (d) => (money ? uMoneyK(d.value) : String(d.value)), dy: -8, fill: ruColor('--txt-2'), fontWeight: 700 }),
+      Plot.text(data, { x: 'label', y: 'value', text: (d) => (fmt ? fmt(d.value) : money ? uMoneyK(d.value) : String(d.value)), dy: -8, fill: ruColor('--txt-2'), fontWeight: 700 }),
       ...labelMarks,
       Plot.ruleY([0], { stroke: ruColor('--line-soft') }),
     ],
@@ -9311,6 +9314,76 @@ function ruCardHealth() {   // card on file — snapshot by nature; values match
   return ruDonutSVG({ segs, noun: 'CUST' });
 }
 // panel builders land here phase by phase; sections list what is coming so the board is honest
+/* ── Manager metrics M3 — Fleet utilization (spec §3, proxy basis until the M4
+   hour snapshots accumulate; Jac 2026-07-03: visible to every logged-in role) ── */
+// per-category on-rent day rollup over a bounded window (the proxy for time utilization)
+function catUtilKv(c) {
+  const { days, note, rented, fleet } = ruCatUtilProxy({ k: 'all', a: null, b: null });
+  const n2 = fleet[c.categoryId] || 0; if (!n2) return '';
+  const t = Math.min(100, Math.round((rented[c.categoryId] || 0) / (n2 * days) * 100));
+  return kv(`${t}%`, { sfx: `time util${note}`, derived: true });
+}
+function ruUtilWindow(rg) {
+  // his formula is a rolling 30 days — unbounded ranges fall back to exactly that
+  if (ruBounded(rg) && rg.a && rg.b) return { a: rg.a, b: rg.b, note: '' };
+  const b = TODAY_ISO, a0 = parseISO(TODAY_ISO); a0.setDate(a0.getDate() - 30);
+  return { a: uISO(a0), b, note: ' (rolling 30d)' };
+}
+function ruCatUtilProxy(rg) {
+  const { a, b, note } = ruUtilWindow(rg);
+  const days = Math.max(1, Math.round((parseISO(b) - parseISO(a)) / 86400000));
+  const rented = {};   // categoryId → Σ on-rent days inside [a,b)
+  DATA.rentals.forEach((r2) => {
+    const s = rentalDisplayStatus(r2); if (s === 'Cancelled' || s === 'No Show' || s === 'Quote') return;
+    const rs = (r2.startDate || '').slice(0, 10), re = (r2.endDate || r2.startDate || '').slice(0, 10);
+    if (!rs) return;
+    const lo = rs > a ? rs : a, hi = re < b ? re : b; if (lo >= hi) return;
+    const d = Math.round((parseISO(hi) - parseISO(lo)) / 86400000); if (d <= 0) return;
+    rentalUnits(r2).forEach((eu) => { const u = IDX.unit.get(eu.unitId); if (u && u.categoryId) rented[u.categoryId] = (rented[u.categoryId] || 0) + d; });
+  });
+  const fleet = {};   // categoryId → unit count (available days = units × window days)
+  DATA.units.forEach((u) => { if (u.categoryId) fleet[u.categoryId] = (fleet[u.categoryId] || 0) + 1; });
+  return { days, note, rented, fleet };
+}
+function ruTimeUtil(rg) {   // proxy: days on rent ÷ available days per category — swaps to (Δhours ÷ expected)×100 once M4 history exists
+  const { days, note, rented, fleet } = ruCatUtilProxy(rg);
+  const blue = ruColor('--blue');
+  const rows = Object.keys(fleet).map((id) => {
+    const nm = IDX.category.get(id)?.name || id;
+    const pct = Math.min(100, Math.round((rented[id] || 0) / (fleet[id] * days) * 100));
+    return { label: nm, name: `${nm} — ${pct}% time utilization${note}`, value: pct, fill: blue, card: 'categories', col: 'name', navValue: nm, tip: `${nm}: on rent ${rented[id] || 0} of ${fleet[id] * days} unit-days${note} — ${pct}%` };
+  }).filter((d) => d.value > 0).sort((x, y) => y.value - x.value).slice(0, 12);
+  if (!rows.length) return ruEmpty('Nothing on rent in this window.');
+  return ruWireNav(ruBarsSVG({ data: rows, fmt: (v) => v + '%' }), rows);
+}
+function ruDollarUtil(rg) {   // annualized range revenue ÷ fleet cost basis, per category
+  const { a, b, note } = ruUtilWindow(rg);
+  const days = Math.max(1, Math.round((parseISO(b) - parseISO(a)) / 86400000));
+  const A = ruCatMoney({ k: 'x', a, b });
+  const green = ruColor('--green');
+  const rows = Object.entries(A.rev).map(([id, rev]) => {
+    const basis = A.basis[id] || 0;   // same trueCost-||-purchasePrice basis the board's ROI already shows
+    if (basis <= 0) return null;
+    const pct = Math.round((rev / days * 365) / basis * 100);
+    const nm = IDX.category.get(id)?.name || id;
+    return { label: nm, name: `${nm} — ${pct}% dollar utilization`, value: pct, fill: green, card: 'categories', col: 'name', navValue: nm, tip: `${nm}: ${money(rev)} rev${note} annualized ÷ ${money(basis)} fleet cost — ${pct}%` };
+  }).filter((d) => d && d.value > 0).sort((x, y) => y.value - x.value).slice(0, 12);
+  if (!rows.length) return ruEmpty('No revenue against a recorded cost basis yet — set true cost or purchase price on units.');
+  return ruWireNav(ruBarsSVG({ data: rows, fmt: (v) => v + '%' }), rows);
+}
+function ruCostPerHour() {   // per-unit maintenance $ per meter hour — the manager's problem-unit finder (snapshot)
+  const spend = {};
+  DATA.workOrders.forEach((w) => { if (w.cancelled || !w.unitId) return; const c = (w.lineItems || []).reduce((x, li) => x + (Number(li.cost) || 0), 0); if (c > 0) spend[w.unitId] = (spend[w.unitId] || 0) + c; });
+  const rows = Object.entries(spend).map(([uid, cost]) => {
+    const u = IDX.unit.get(uid); if (!u) return null;
+    const hrs = Math.max(0, (Number(u.currentHours) || 0) - (Number(u.purchaseHours) || 0));
+    if (hrs < 50) return null;   // too few metered hours to judge — noise, not signal
+    const cph = cost / hrs;
+    return { name: u.name, disp: money(cph) + '/hr', v: cph, card: 'units', col: 'name', navValue: u.name, tip: `${u.name}: ${money(cost)} maintenance over ${num(hrs)} hrs — ${money(cph)}/hr` };
+  }).filter(Boolean).sort((x, y) => y.v - x.v).slice(0, 8);
+  if (!rows.length) return ruEmpty('No unit has both maintenance spend and ≥50 metered hours yet.');
+  return ruLeadNode(rows, '');
+}
 /* ── Manager metrics M2 — Shop (spec 2026-07-03-manager-metrics-design.md) ── */
 function ruBilledWos(rg) {   // N8 — WOs billed to a customer, per bucket (count; parts $ rides the tip)
   const bk = ruBuckets(rg);
@@ -9425,6 +9498,7 @@ const RU_PANELS = {
   'fleet-mix': { build: ruFleetMix }, 'accounts': { build: ruAccounts }, 'card-health': { build: ruCardHealth },
   'net-sales': { build: ruNetSales }, 'refunds': { build: ruRefunds }, 'aging': { build: ruAging },
   'billed-wos': { build: ruBilledWos }, 'work-by-role': { build: ruWorkByRole },
+  'time-util': { build: ruTimeUtil }, 'dollar-util': { build: ruDollarUtil }, 'cost-hour': { build: ruCostPerHour },
   'voided': { build: ruVoided }, 'cust-active': { build: ruCustActive }, 'memberships': { build: ruMemberships },
 };
 const RU_SECTIONS = [
@@ -9444,7 +9518,9 @@ const RU_SECTIONS = [
     { id: 'work-by-role', title: 'Work by Role', phase: 'M2' },
     { id: 'field-calls', title: 'Field Calls', phase: 'C' }, { id: 'svc-urgency', title: 'Service Urgency', phase: 'D' } ] },
   { id: 'fleet', label: 'Fleet', panels: [
-    { id: 'fleet-mix', title: 'Fleet Mix', phase: 'D' }, { id: 'units-per-cat', title: 'Units per Category' } ] },
+    { id: 'fleet-mix', title: 'Fleet Mix', phase: 'D' }, { id: 'units-per-cat', title: 'Units per Category' } ,
+    { id: 'time-util', title: 'Time Utilization', phase: 'M3' }, { id: 'dollar-util', title: 'Dollar Utilization', phase: 'M3' },
+    { id: 'cost-hour', title: 'Unit Cost per Hour', phase: 'M3' } ] },
   { id: 'customers', label: 'Customers', panels: [
     { id: 'accounts', title: 'Account Types · Pay Status', phase: 'D' }, { id: 'card-health', title: 'Card Health', phase: 'D' },
     { id: 'cust-active', title: 'Active vs Inactive', phase: 'M1' }, { id: 'memberships', title: 'Memberships', phase: 'M1' } ] },
@@ -9458,8 +9534,8 @@ const RU_SECTIONS = [
    the strip a click filters the list right below it. The Round-Up board itself remains
    on the header Round-Up button. */
 const RUS_TABS = {
-  units: [{ p: 'fleet-mix', l: 'Fleet' }, { p: 'units-per-cat', l: 'Categories' }, { p: 'field-calls', l: 'Field Calls' }],
-  categories: [{ p: 'rev-cat', l: 'Revenue' }, { p: 'exp-cat', l: 'Expenses' }],
+  units: [{ p: 'fleet-mix', l: 'Fleet' }, { p: 'units-per-cat', l: 'Categories' }, { p: 'field-calls', l: 'Field Calls' }, { p: 'cost-hour', l: '$/Hr' }],
+  categories: [{ p: 'rev-cat', l: 'Revenue' }, { p: 'exp-cat', l: 'Expenses' }, { p: 'time-util', l: 'Time Util' }, { p: 'dollar-util', l: '$ Util' }],
   rentals: [{ p: 'bookings', l: 'Bookings' }, { p: 'voided', l: 'Voided' }, { p: 'rev-status', l: 'Revenue' }, { p: 'inv-status', l: 'Invoices' }, { p: 'rent-tiles', l: '#s' }],
   customers: [{ p: 'accounts', l: 'Accounts' }, { p: 'cust-active', l: 'Active' }, { p: 'memberships', l: 'Members' }, { p: 'card-health', l: 'Cards' }, { p: 'top-spend', l: 'Top Spend' }],
   invoices: [{ p: 'balances', l: 'Balances' }, { p: 'net-sales', l: 'Net' }, { p: 'refunds', l: 'Refunds' }, { p: 'aging', l: 'Aging' }, { p: 'top-spend', l: 'Top Spend' }],
