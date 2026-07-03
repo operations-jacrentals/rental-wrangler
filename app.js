@@ -6826,9 +6826,10 @@ function appendWindowed(list, rows, cs, card, renderRow) {
     list.appendChild(btn);
   }
 }
-/* Units column — PERMANENT stage sections (Jac 2026-07-03). The whole list is grouped
-   by each unit's rental stage, in urgency order, each led by a thin full-width dashed
-   divider in the stage color; the active sort still orders units WITHIN a section. */
+/* ── Grouped card lists (Jac 2026-07-03) — Units / Rentals / Customers / Invoices split
+   into COLLAPSIBLE groups, each led by a thin full-width dashed divider in the group's
+   color, a live count, and a collapse chevron. The active sort orders records WITHIN a
+   group; a collapsed group persists per device (localStorage). ── */
 const UNIT_SECTIONS = [
   { key: 'Today',        label: 'Today',           color: 'red' },
   { key: 'Tomorrow',     label: 'Tomorrow',        color: 'yellow' },
@@ -6841,7 +6842,7 @@ const UNIT_SECTIONS = [
   { key: 'Attention',    label: 'Needs Attention', color: 'red' },
   { key: 'Out of Fleet', label: 'Out of Fleet',    color: 'gray' },
 ];
-/** A unit's stage bucket for the Units column sections. Rental stage (Today/Tomorrow
+/** A unit's stage bucket for the Units column groups. Rental stage (Today/Tomorrow
     broken out of Reserved) when tied to a rental; else Available / Not Ready / Attention
     (Failed) / Out of Fleet from its own condition. */
 function unitStageKey(u) {
@@ -6858,23 +6859,55 @@ function unitStageKey(u) {
   if (u.inspectionStatus === 'Not Ready') return 'Not Ready';
   return 'Available';
 }
-function appendUnitSections(list, rows, cs, card) {
+/** Per-card grouping: keyOf(rec) → a group key; sections = ordered {key,label?,color}.
+    Records whose key isn't listed fall into a trailing gray bucket (never dropped). */
+const GROUP_DEFS = {
+  units: { keyOf: unitStageKey, sections: UNIT_SECTIONS },
+  rentals: { keyOf: (r) => rentalRevStatus(r), sections: [
+    { key: 'Today', color: 'red' }, { key: 'Tomorrow', color: 'yellow' }, { key: 'Reserved', color: 'purple' },
+    { key: 'On Rent', color: 'green' }, { key: 'Off Rent', color: 'blue' }, { key: 'End Rent', color: 'yellow' },
+    { key: 'Returned', color: 'gray' }, { key: 'No Show', color: 'red' }, { key: 'Cancelled', color: 'gray' }, { key: 'Quote', color: 'blue' },
+  ] },
+  customers: { keyOf: (c) => c.payStatus || 'Current', sections: [
+    { key: 'Unpaid', color: 'red' }, { key: 'Partial', color: 'yellow' }, { key: 'Current', color: 'green' },
+  ] },
+  invoices: { keyOf: (i) => { const s = invoiceTotals(i).status; return /^Late/.test(s) ? 'Late' : s; }, sections: [
+    { key: 'Collections', color: 'red' }, { key: 'Late', color: 'red' }, { key: 'Unpaid', color: 'yellow' },
+    { key: 'Partial', color: 'yellow' }, { key: 'Not Due', color: 'blue' }, { key: 'Paid', color: 'green' }, { key: 'Refunded', color: 'gray' },
+  ] },
+};
+// Collapsed groups, remembered per device: { "<card>:<groupKey>": 1 }.
+const COLLAPSED_GROUPS = (() => { try { return JSON.parse(localStorage.getItem('jactec.collapsedGroups') || '{}'); } catch (e) { return {}; } })();
+const groupCollapsed = (card, key) => !!COLLAPSED_GROUPS[card + ':' + key];
+function toggleGroupCollapsed(card, key) {
+  const k = card + ':' + key;
+  if (COLLAPSED_GROUPS[k]) delete COLLAPSED_GROUPS[k]; else COLLAPSED_GROUPS[k] = 1;
+  try { localStorage.setItem('jactec.collapsedGroups', JSON.stringify(COLLAPSED_GROUPS)); } catch (e) {}
+}
+function appendGroupedSections(list, rows, cs, card) {
+  const def = GROUP_DEFS[card];
   const limit = cs.listLimit || VIRT_CAP;
   const buckets = new Map();
-  for (const u of rows) { const k = unitStageKey(u); if (!buckets.has(k)) buckets.set(k, []); buckets.get(k).push(u); }
+  for (const rec of rows) { const k = def.keyOf(rec) || '—'; if (!buckets.has(k)) buckets.set(k, []); buckets.get(k).push(rec); }
+  const known = new Set(def.sections.map((s) => s.key));
+  const secs = def.sections.filter((s) => buckets.has(s.key))
+    .concat([...buckets.keys()].filter((k) => !known.has(k)).map((k) => ({ key: k, color: 'gray' })));   // leftover keys → trailing gray group (never dropped)
   let shown = 0, remaining = 0;
-  for (const sec of UNIT_SECTIONS) {
+  for (const sec of secs) {
     const group = buckets.get(sec.key);
     if (!group || !group.length) continue;
+    const collapsed = groupCollapsed(card, sec.key);
+    const hd = el('div', 'grp-hd js-group-toggle' + (collapsed ? ' is-collapsed' : ''));
+    hd.dataset.card = card; hd.dataset.group = sec.key;
+    hd.setAttribute('style', `--sec:var(--${sec.color})`);
+    hd.innerHTML = `<span class="grp-chev">${I.chevR}</span><span class="grp-label">${esc(sec.label || sec.key)} · ${group.length}</span>`;
+    list.appendChild(hd);
+    if (collapsed) continue;   // header only — cards hidden, and they don't consume the window
     const canShow = limit - shown;
     if (canShow <= 0) { remaining += group.length; continue; }
     const take = group.slice(0, canShow);
     remaining += group.length - take.length;
-    const hd = el('div', 'uc-sec');
-    hd.setAttribute('style', `--sec:var(--${sec.color})`);
-    hd.innerHTML = `<span class="uc-sec-label">${esc(sec.label)} · ${group.length}</span>`;
-    list.appendChild(hd);
-    take.forEach((u) => list.appendChild(rowEl(card, u)));
+    take.forEach((rec) => list.appendChild(rowEl(card, rec)));
     shown += take.length;
   }
   if (remaining > 0) { const btn = el('button', 'showmore js-showmore', `↓ Show more · ${remaining} hidden`); btn.dataset.card = card; list.appendChild(btn); }
@@ -7168,8 +7201,8 @@ function listView(cardDef, session) {
       const hint = PLUS_NEW.has(card) ? ` — use <b>+ New</b> above` : '';
       list.appendChild(el('div', 'empty', `No ${esc(cardDef.singular)}${session.anchor ? ' related' : hint}.`));
     }
-  } else if (card === 'units' && !availWin) {
-    appendUnitSections(list, rows, cs, card);   // permanent stage sections (Jac 2026-07-03)
+  } else if (GROUP_DEFS[card] && !(availWin && card === 'units')) {
+    appendGroupedSections(list, rows, cs, card);   // collapsible stage/status groups (Jac 2026-07-03)
   } else {
     appendWindowed(list, rows, cs, card, (rec) => list.appendChild(rowEl(card, rec)));
   }
@@ -13382,6 +13415,7 @@ function onClick(e) {
   if (closest('.js-cardback')) { e.stopPropagation(); return cardBack(closest('.js-cardback').dataset.card); }
   if (closest('.js-cardfwd')) { e.stopPropagation(); return cardFwd(closest('.js-cardfwd').dataset.card); }
 
+  if (closest('.js-group-toggle')) { const h = closest('.js-group-toggle'); e.stopPropagation(); toggleGroupCollapsed(h.dataset.card, h.dataset.group); return render(); }   // collapse/expand a card group (persists per device)
   if (closest('.js-showmore')) { const b = closest('.js-showmore'); e.stopPropagation(); const cs = activeSession().cards[b.dataset.card]; if (cs) { cs.listLimit = (cs.listLimit || VIRT_CAP) + SHOW_MORE_BATCH; render(); } return; }
   if (closest('.js-tolist')) { e.stopPropagation(); return cardToList(closest('.card').dataset.card); }
   // a category mini-card's Availability pill → jump to the Units card, narrowed to
