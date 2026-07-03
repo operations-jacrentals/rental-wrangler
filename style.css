@@ -2676,10 +2676,9 @@ body.rw-inspect .c-titlecard:hover { outline: 2px solid #18b6ff; outline-offset:
 .rd-unit-id { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .rd-unit-rate { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--txt-2); white-space: nowrap; flex-shrink: 0; }
 .rd-dur { font-weight: 600; color: var(--txt); }
-/* footer: complete/cancel left · invoice total right */
+/* footer: field call only (Complete/Cancel Rental retired 2026-07-03 — terminal gates complete the rental) */
 .rd-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
 .rd-foot-l { display: flex; align-items: center; gap: 8px; }
-.rd-foot-r { display: flex; align-items: center; gap: 8px; margin-left: auto; }
 .rd-inv-total { font-size: 15px; font-weight: 800; color: var(--txt); text-decoration: underline; font-variant-numeric: tabular-nums; }
 
 /* §20 route rail — linear House(Jac)─Person(Job Site)─House(Jac) stepper; the rail
