@@ -35,6 +35,34 @@ new popups get `WINDOW_CATALOG` entries.
 
 ---
 
+## Progress — 2026-07-03 (paused after phase 3, awaiting Jac's local drive)
+
+Shipped on `claude/wrangler-dashboard-space-h2nu0i` (PR #447), **all no-browser gates
+green**; NOT yet driven in a browser (built in a cloud session — Jac verifies locally
+before phase 4):
+- **Phase 1 ✅** icon-first toggle — `colTabButtonsHtml` + `aria-label`, `style.css`
+  `.coltab:not(.on) .ct-lbl { display:none }`.
+- **Phase 2 ✅** one-row header — `columnEl` wraps toggle + listbar in `.hrow`; listbar =
+  search (fills) + inline ▲▼ + gear (`I.sliders`). Graph + sort-field chip **removed from
+  the row** (graph → phase 4, sort field → phase 5). Gear is an **inert placeholder**
+  (`js-cardgear`, no handler yet).
+- **Phase 3 ✅** `CARD_OPTIONS` map in **app.js** (not config.js — predicates need app
+  helpers). Per-card `{ id, label, tier, combo, test }`; composites Bill/Out; Available =
+  canonical availability. Pure data, unused until phase 4.
+
+**Next → Phase 4:** gear toggles `session.cards[card].optionsOpen`; render Row 2 from the
+**entitled** `CARD_OPTIONS[card]` (role-gate by `tier`: `money`→`canMoney()`, `crm`→sales
+tier, `ops`→all) as text buttons + the graph `bv-btn` moved here + a `⋯`; `activeOptions`
+Set → AND-filter over the already role-scoped list (`listFor`/`unitsVisible`) in `listView`;
+desktop truncates, mobile scrolls; wire the `js-cardgear` click.
+
+**Notes for next session:** gear icon is Lucide `sliders` (Jac may want a literal cog via
+`gen-icons.mjs`). `lost`/`unitWhen` predicates are best-effort — verify when driven. **Run
+ALL no-browser gates before each push** (smoke/logic run in CI): `node --check app.js` ·
+`gen-rule-usage --check` · `check-window-catalog` · `gen-code-map` (regen + commit the map;
+don't use a `════` banner in a non-chapter comment or it miscounts APP-NN). Sibling: janitor
+race fix on `wrangler-fix/janitor-boot-race` (PR #449, draft, CI green) — awaiting merge.
+
 ## Phase 1 — Icon-first toggle (isolated, visual)
 1. `colTabButtonsHtml` (6831): keep icon + count on every member; render `.ct-lbl`
    **only** on the active member. Alert ring (Shop) unchanged.
