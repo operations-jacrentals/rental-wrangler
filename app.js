@@ -16816,7 +16816,7 @@ function boot() {
 
 // #local — render straight from data.js with NO backend (offline/demo + dev smoke test).
 // saveSoon() already no-ops without a password, so edits stay in-memory only.
-function offlineBoot() { buildIndexes(); state.cascade = createCascade(DATA); seedDemoRequests(); booting = false; render(); exposeTestApi(); wranglerRailLoad(); }
+function offlineBoot() { buildIndexes(); state.cascade = createCascade(DATA); seedDemoRequests(); booting = false; render(); exposeTestApi(); window.__rwBootRail = wranglerRailLoad(); }
 /* #local demo only: a sample Requests-inbox entry so the review/continue flow is
    visible without a backend. Real installs fetch live requests via the backend. */
 function seedDemoRequests() {
