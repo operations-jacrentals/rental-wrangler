@@ -9638,13 +9638,14 @@ const ruEmpty = (msg) => { const d = document.createElement('div'); d.className 
 /* stamp rendered marks as NAVIGATION targets. Plot renders one element per datum per mark,
    in input order — callers pass the concatenated row list matching the rect order (base layer
    first, then overlay layers). Verified against live data in the harness. */
-function ruWireNav(node, rows) {
-  const rects = node.querySelectorAll('rect');
+function ruWireNav(node, rows, sel = 'rect') {
+  const rects = node.querySelectorAll(sel);
   rows.forEach((row, i) => {
     const r2 = rects[i]; if (!r2) return;
     r2.classList.add('js-ru-nav');
     r2.setAttribute('tabindex', '0'); r2.setAttribute('role', 'button');
     r2.setAttribute('data-navcard', row.card); r2.setAttribute('data-navcol', row.col); r2.setAttribute('data-navvalue', String(row.navValue));
+    if (row.seg) r2.setAttribute('data-navseg', row.seg);
     r2.setAttribute('aria-label', row.name); r2.setAttribute('data-tip', row.tip || row.name);
   });
   return node;
@@ -9659,11 +9660,11 @@ function ruLeadNode(rows, empty) {
 }
 // close the board and land on the owning card with the filter pill applied — the board is a
 // launchpad into the records, not a dead end (generalizes the js-notready pattern)
-function ruNavigate(card, col, value) {
+function ruNavigate(card, col, value, seg) {
   closeOverlay();
   const s = activeSession();
   const colId = COLUMN_OF[card]; if (colId && s.cols) { s.cols[colId] = card; const idx = COLUMNS.findIndex((c) => c.id === colId); if (idx >= 0) state.mobileCol = idx; }
-  const cs = s.cards[card]; if (cs) { cs.mode = 'list'; cs.recId = null; cs.recType = null; cs.graphView = false; }
+  const cs = s.cards[card]; if (cs) { cs.mode = 'list'; cs.recId = null; cs.recType = null; cs.graphView = false; if (seg) cs.segment = seg; }
   addColFilter(card, col, value);
 }
 // ── Money rollups (range-aware; the §13.5 cutoff-only versions retire in Phase E) ──
@@ -9746,11 +9747,122 @@ function ruBalances() {   // open balances are inherently CURRENT — the range 
   const rows = Object.entries(by).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([n, bal]) => ({ name: n, disp: money(bal), card: 'invoices', col: 'customer', navValue: n, tip: `${n} — ${money(bal)} open` }));
   return ruLeadNode(rows, 'No open balances.');
 }
+// ── Phase C: trend engines + today's-reality snapshots (reference image: trend left, 'right now' right) ──
+// buckets over an arbitrary range (custom ranges have real edges; gvBuckets only walks back from today)
+function ruBuckets(rg) {
+  if (!ruBounded(rg)) return gvBuckets(null);   // All time → last 6 months
+  const A = parseISO(rg.a), B = parseISO(rg.b);
+  const days = Math.max(1, Math.round((B - A) / 86400000));
+  const clamp = (x) => (x < rg.a ? rg.a : x > rg.b ? rg.b : x);
+  const out = [], push = (a, b, label) => { const aa = clamp(a), bb = clamp(b); if (aa < bb) out.push({ key: aa + '|' + bb, label, a: aa, b: bb }); };
+  if (days <= 14) for (let i = 0; i < days; i++) { const a = new Date(A); a.setDate(a.getDate() + i); const b = new Date(a); b.setDate(b.getDate() + 1); push(uISO(a), uISO(b), `${a.getMonth() + 1}/${a.getDate()}`); }
+  else if (days <= 92) for (let t = new Date(A); t < B; t.setDate(t.getDate() + 7)) { const b = new Date(t); b.setDate(b.getDate() + 7); push(uISO(t), uISO(b), `${t.getMonth() + 1}/${t.getDate()}`); }
+  else for (let t = new Date(A.getFullYear(), A.getMonth(), 1); t < B; t = new Date(t.getFullYear(), t.getMonth() + 1, 1)) { const b = new Date(t.getFullYear(), t.getMonth() + 1, 1); push(uISO(t), uISO(b), t.toLocaleString('en-US', { month: 'short' })); }
+  return out;
+}
+// trajectory line: endpoint emphasized, counts above points, dots are the nav targets
+function ruLineSVG({ bk, vals, color, w = 620, h = 230 }) {
+  const n = bk.length, pts = bk.map((b, i) => ({ i, label: b.label, v: vals[i] }));
+  const show = new Set(n <= 6 ? pts.map((p) => p.i) : [0, 1, 2, 3, 4].map((k) => Math.round(k * (n - 1) / 4)));
+  const ink = ruColor(color);
+  return Plot.plot({
+    width: w, height: h, marginLeft: 40, marginRight: 18, marginTop: 22, marginBottom: 28,
+    style: { background: 'transparent', fontFamily: "'Saira Condensed', system-ui, sans-serif", fontSize: '11.5px' },
+    x: { type: 'point', label: null, tickSize: 0, domain: pts.map((p) => p.i), tickFormat: (i) => (show.has(i) ? bk[i].label : '') },
+    y: { label: null, nice: true, tickFormat: (v) => (Number.isInteger(v) ? String(v) : '') },
+    marks: [
+      Plot.gridY({ stroke: ruColor('--line'), strokeDasharray: '2,3', strokeOpacity: 0.8 }),
+      Plot.areaY(pts, { x: 'i', y: 'v', fill: ink, fillOpacity: 0.1 }),
+      Plot.line(pts, { x: 'i', y: 'v', stroke: ink, strokeWidth: 2 }),
+      Plot.dot(pts, { x: 'i', y: 'v', r: (d) => (d.i === n - 1 ? 5 : 3.5), fill: ink, title: 'label' }),
+      Plot.text(pts.filter((p) => p.v > 0), { x: 'i', y: 'v', text: (d) => String(d.v), dy: -11, fill: ruColor('--txt-2'), fontWeight: 700 }),
+      Plot.ruleY([0], { stroke: ruColor('--line-soft') }),
+    ],
+  });
+}
+// stacked proportional area (read-only): bands of a running mix, right-edge % labels
+function ruAreaSVG({ bk, bands, w = 620, h = 230 }) {
+  // bands: [{name, color, vals(fractions per bucket, bands sum ≤1)}] bottom-up
+  const n = bk.length;
+  const show = new Set(n <= 6 ? bk.map((_, i) => i) : [0, 1, 2, 3, 4].map((k) => Math.round(k * (n - 1) / 4)));
+  let base = bk.map(() => 0);
+  const areas = [], labels = [];
+  bands.forEach((bd) => {
+    const pts = bk.map((b, i) => ({ i, y0: base[i], y1: base[i] + bd.vals[i] }));
+    areas.push(Plot.areaY(pts, { x: 'i', y1: 'y0', y2: 'y1', fill: ruColor(bd.color), fillOpacity: 0.85, title: () => bd.name }));
+    const lastPct = Math.round(bd.vals[n - 1] * 100);
+    if (lastPct >= 8) labels.push(Plot.text([{ i: n - 1, y: base[n - 1] + bd.vals[n - 1] / 2 }], { x: 'i', y: 'y', text: () => lastPct + '%', dx: -4, textAnchor: 'end', fill: bd.ink || '#0c0e12', fontWeight: 800 }));
+    base = base.map((v, i) => v + bd.vals[i]);
+  });
+  return Plot.plot({
+    width: w, height: h, marginLeft: 40, marginRight: 18, marginTop: 14, marginBottom: 28,
+    style: { background: 'transparent', fontFamily: "'Saira Condensed', system-ui, sans-serif", fontSize: '11.5px' },
+    x: { type: 'point', label: null, tickSize: 0, domain: bk.map((_, i) => i), tickFormat: (i) => (show.has(i) ? bk[i].label : '') },
+    y: { label: null, domain: [0, 1], ticks: [0, 0.5, 1], tickFormat: (v) => Math.round(v * 100) + '%' },
+    marks: [Plot.gridY({ stroke: ruColor('--line'), strokeDasharray: '2,3', strokeOpacity: 0.8 }), ...areas, ...labels],
+  });
+}
+// the pinned 'right now' column — big stamped number + mini status bar (the reference's right edge)
+function ruReality({ num, noun, segs }) {
+  const live = (segs || []).filter((s2) => s2.count > 0);
+  const bar = live.length ? `<div class="ru-real-bar">${live.map((s2) => `<span class="ru-real-seg" style="flex:${s2.count};background:var(--${s2.color})" data-tip="${esc(s2.label)} — ${s2.count}"></span>`).join('')}</div>` : '';
+  const d = document.createElement('div'); d.className = 'ru-real';
+  d.innerHTML = `<div class="ru-real-n">${num}</div><div class="ru-real-l">${esc(noun)}</div>${bar}`;
+  return d;
+}
+function ruDuo(chart, right) { const d = document.createElement('div'); d.className = 'ru-duo'; const c = document.createElement('div'); c.className = 'ru-duo-chart'; c.append(chart); d.append(c); if (right) d.append(right); return d; }
+// ── Phase C panels ──
+function ruBookings(rg) {
+  const bk = ruBuckets(rg);
+  const vals = bk.map((b) => DATA.rentals.filter((r2) => { const d = (r2.startDate || '').slice(0, 10); return d >= b.a && d < b.b; }).length);
+  const rows = bk.map((b, i) => ({ card: 'rentals', col: '__rentrange', navValue: b.key, name: `${b.label} — ${vals[i]} booked`, tip: `${b.label} — ${vals[i]} booked` }));
+  const chart = vals.some((v) => v > 0) ? ruWireNav(ruLineSVG({ bk, vals, color: '--blue' }), rows, 'circle') : ruEmpty('No rentals booked in this window.');
+  const sc = {}; DATA.rentals.forEach((r2) => { const s = rentalDisplayStatus(r2); sc[s] = (sc[s] || 0) + 1; });
+  const seg = (st) => ({ label: st, count: sc[st] || 0, color: getStatus('rentalStatus', st).color || 'gray' });
+  return ruDuo(chart, ruReality({ num: sc['On Rent'] || 0, noun: 'On Rent now', segs: ['On Rent', 'Today', 'Tomorrow', 'Reserved'].map(seg) }));
+}
+function ruInspTrend(rg) {
+  const bk = ruBuckets(rg);
+  let cg = 0, cy = 0;   // running outcome STATE through the window (Fail folds into Not Ready — honest denominator)
+  const mix = bk.map((b) => { DATA.inspections.forEach((n2) => { const d = (n2.date || '').slice(0, 10); if (d >= b.a && d < b.b) { if (inspResult(n2).color === 'green') cg++; else cy++; } }); const t = cg + cy; return { g: t ? cg / t : 0, y: t ? cy / t : 0, t }; });
+  const chart = mix.some((m) => m.t) ? ruAreaSVG({ bk, bands: [
+    { name: 'Passed', color: '--green', vals: mix.map((m) => m.g) },
+    { name: 'Not Ready', color: '--yellow', vals: mix.map((m) => m.y) },
+  ] }) : ruEmpty('No inspections in this window.');
+  const f = fleetInsp(), ready = f.Ready || 0, nr = (f['Not Ready'] || 0) + (f.Failed || 0);
+  return ruDuo(chart, ruReality({ num: ready, noun: 'Ready now', segs: [{ label: 'Passed', count: ready, color: 'green' }, { label: 'Not Ready', count: nr, color: 'yellow' }] }));
+}
+function ruWoTrend(rg) {
+  const bk = ruBuckets(rg);
+  const W = DATA.workOrders.filter((w) => !w.cancelled);
+  const vals = bk.map((b) => W.filter((w) => { const d = (w.date || '').slice(0, 10); return d >= b.a && d < b.b; }).length);
+  const rows = bk.map((b, i) => ({ card: 'shop', seg: 'workOrders', col: '__daterange', navValue: b.key, name: `${b.label} — ${vals[i]} opened`, tip: `${b.label} — ${vals[i]} WOs opened` }));
+  const chart = vals.some((v) => v > 0) ? ruWireNav(ruLineSVG({ bk, vals, color: '--yellow' }), rows, 'circle') : ruEmpty('No work orders in this window.');
+  const open = W.filter((w) => w.phase !== 'Complete');
+  const byPhase = {}; open.forEach((w) => { const ph = w.phase || '—'; byPhase[ph] = (byPhase[ph] || 0) + 1; });
+  const segs = Object.entries(byPhase).sort((a, b) => b[1] - a[1]).map(([ph, n2]) => ({ label: getStatus('woPhase', ph).label || ph, count: n2, color: getStatus('woPhase', ph).color || 'gray' }));
+  return ruDuo(chart, ruReality({ num: open.length, noun: 'Open now', segs }));
+}
+function ruFieldCalls(rg) {
+  const fc = DATA.workOrders.filter((w) => w.woType === 'Field Call');
+  const bk = ruBuckets(rg);
+  const vals = bk.map((b) => new Set(fc.filter((w) => { const d = (w.date || '').slice(0, 10); return d >= b.a && d < b.b; }).map((w) => w.unitId)).size);
+  const rows = bk.map((b, i) => ({ card: 'units', col: '__fcrange', navValue: b.key, name: `${b.label} — ${vals[i]} units called`, tip: `${b.label} — ${vals[i]} units with field calls` }));
+  const chart = vals.some((v) => v > 0) ? ruWireNav(ruLineSVG({ bk, vals, color: '--red' }), rows, 'circle') : ruEmpty('No field calls in this window.');
+  const by = {}; fc.forEach((w) => { if (!w.unitId) return; if (ruBounded(rg) && !ruIn(w.date, rg)) return; by[w.unitId] = (by[w.unitId] || 0) + 1; });
+  const lead = Object.entries(by).sort((a, b) => b[1] - a[1]).slice(0, 5)
+    .map(([uid, n2]) => { const nm = IDX.unit.get(uid)?.name || uid; return { name: nm, disp: String(n2), card: 'units', col: 'name', navValue: nm, tip: `${nm} — ${n2} field calls` }; });
+  const d = document.createElement('div'); d.append(chart);
+  if (lead.length) { const h2 = document.createElement('div'); h2.className = 'ru-sub-h'; h2.textContent = 'Worst offenders'; d.append(h2, ruLeadNode(lead, '')); }
+  return d;
+}
 // panel builders land here phase by phase; sections list what is coming so the board is honest
 const RU_PANELS = {
   'units-per-cat': { build: ruUnitsPerCategory },
   'rev-cat': { build: ruRevByCat }, 'exp-cat': { build: ruExpByCat }, 'rev-status': { build: ruRevByStatus },
   'top-spend': { build: ruTopSpend }, 'balances': { build: ruBalances },
+  'bookings': { build: ruBookings }, 'insp-trend': { build: ruInspTrend },
+  'wo-trend': { build: ruWoTrend }, 'field-calls': { build: ruFieldCalls },
 };
 const RU_SECTIONS = [
   { id: 'money', label: 'Money', panels: [
@@ -9761,7 +9873,8 @@ const RU_SECTIONS = [
     { id: 'bookings', title: 'Bookings Over Time', phase: 'C' }, { id: 'inv-status', title: 'Invoice Status', phase: 'D' },
     { id: 'rent-tiles', title: 'By the Numbers', phase: 'D' } ] },
   { id: 'shop', label: 'Shop', panels: [
-    { id: 'insp-trend', title: 'Inspections Over Time', phase: 'C' }, { id: 'wo-phase', title: 'Work Orders by Bottleneck', phase: 'D' },
+    { id: 'insp-trend', title: 'Inspections Over Time', phase: 'C' }, { id: 'wo-trend', title: 'Work Orders Opened', phase: 'C' },
+    { id: 'wo-phase', title: 'Work Orders by Bottleneck', phase: 'D' },
     { id: 'field-calls', title: 'Field Calls', phase: 'C' }, { id: 'svc-urgency', title: 'Service Urgency', phase: 'D' } ] },
   { id: 'fleet', label: 'Fleet', panels: [
     { id: 'fleet-mix', title: 'Fleet Mix', phase: 'D' }, { id: 'units-per-cat', title: 'Units per Category' } ] },
@@ -13845,7 +13958,7 @@ function onClick(e) {
   if (closest('.js-ru-custom')) { e.stopPropagation(); const o = state.overlay; if (o) { o.ruCustomOpen = !o.ruCustomOpen; if (o.ruCustomOpen) { const r = ruResolve(); o.ruFrom = o.ruFrom || r.a || TODAY_ISO; o.ruTo = o.ruTo || (r.b ? addDaysISO(r.b, -1) : TODAY_ISO); } else state.datepick = null; } return renderOverlay(); }
   if (closest('.js-ru-apply')) { e.stopPropagation(); return ruApplyCustom(state.overlay); }
   if (closest('.js-ru-cancel')) { e.stopPropagation(); const o = state.overlay; if (o) { o.ruCustomOpen = false; state.datepick = null; } return renderOverlay(); }
-  if (closest('.js-ru-nav')) { e.stopPropagation(); const b = closest('.js-ru-nav'); return ruNavigate(b.dataset.navcard, b.dataset.navcol, b.dataset.navvalue); }   // §13.6 — board mark → the owning card, filtered
+  if (closest('.js-ru-nav')) { e.stopPropagation(); const b = closest('.js-ru-nav'); return ruNavigate(b.dataset.navcard, b.dataset.navcol, b.dataset.navvalue, b.dataset.navseg); }   // §13.6 — board mark → the owning card, filtered
   if (closest('.js-bv-sort') && !closest('.js-bv-inscol')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview') { const key = closest('.js-bv-sort').dataset.col; if (o.sort?.key === key) o.sort.dir = o.sort.dir === 'asc' ? 'desc' : 'asc'; else o.sort = { key, dir: 'asc' }; renderOverlay(); } return; }
   if (closest('.js-bv-addcol')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview') { o.colOrder = o.colOrder || []; o.colOrder.push({ kind: 'extra', id: 'xc' + (++o.seq), label: '' }); renderOverlay(); } return; }
   if (closest('.js-bv-inscol')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'boardview' && o.colOrder) { const after = Number(closest('.js-bv-inscol').dataset.after); o.colOrder.splice(after + 1, 0, { kind: 'extra', id: 'xc' + (++o.seq), label: '' }); renderOverlay(); } return; }
