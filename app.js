@@ -8852,7 +8852,7 @@ function graphViewsFor(card) {
     const account = Object.entries(ac).sort((a, b) => b[1] - a[1]).map(([t, n]) => ({ col: 'account', value: t, label: t, count: n, color: getStatus('customerAccountType', t).color || 'gray' }));
     const pcN = {}; C.forEach((c) => { const p = c.payStatus || ''; pcN[p] = (pcN[p] || 0) + 1; });
     const pay = Object.entries(pcN).sort((a, b) => b[1] - a[1]).map(([p, n]) => ({ col: 'pay', value: p, label: p || 'None', count: n, color: getStatus('customerPayStatus', p).color || 'gray' }));
-    const topSpend = C.map((c) => ({ c, paid: c._digest?.totalPaid || 0 })).filter((x) => x.paid > 0).sort((a, b) => b.paid - a.paid).slice(0, 8).map((x) => ({ col: 'name', value: x.c.name, label: x.c.name, count: Math.round(x.paid), disp: money(x.paid), color: 'green' }));
+    const topSpend = C.map((c) => ({ c, paid: c._digest?.totalPaid || 0 })).filter((x) => x.paid > 0).sort((a, b) => b.paid - a.paid).slice(0, 6).map((x) => ({ col: 'name', value: x.c.name, label: x.c.name, count: Math.round(x.paid), disp: money(x.paid), color: 'green' }));
     const nums = [
       { col: 'account', value: 'Business', label: 'Business', count: ac['Business'] || 0, color: 'blue' },
       { col: 'account', value: 'Non-Business', label: 'Non-Business', count: ac['Non-Business'] || 0, color: 'gray' },
@@ -8878,7 +8878,7 @@ function graphViewsFor(card) {
     const sc = {}; INV.forEach((i) => { const s = invoiceTotals(i).status; sc[s] = (sc[s] || 0) + 1; });
     const status = Object.entries(sc).sort((a, b) => b[1] - a[1]).map(([s, n]) => ({ col: 'status', value: s, label: s, count: n, color: getStatus('invoiceStatus', s).color || 'gray' }));
     const byCust = {}; INV.forEach((i) => { const t = invoiceTotals(i); if (t.balance > 0 && t.status !== 'Refunded') { const n = IDX.customer.get(i.customerId)?.name || i.customerId || '—'; byCust[n] = (byCust[n] || 0) + t.balance; } });
-    const topBal = Object.entries(byCust).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([n, bal]) => ({ col: 'customer', value: n, label: n, count: Math.round(bal), disp: money(bal), color: 'red' }));
+    const topBal = Object.entries(byCust).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([n, bal]) => ({ col: 'customer', value: n, label: n, count: Math.round(bal), disp: money(bal), color: 'red' }));
     return [
       { key: 'status', title: 'Payment Status', kind: 'pie', segs: status },
       { key: 'balances', title: 'Biggest Balances', kind: 'lead', segs: topBal },
@@ -9115,20 +9115,25 @@ const GV2 = {
   customers: { groups: [
     { key: 'account', label: 'Accounts', metrics: ['caccount', 'cpay'] },
     { key: 'spend', label: 'Top Spend', metrics: ['cspend'] },
-    { key: 'nums', label: '#s', metrics: ['cnums'] },
+    { key: 'cards', label: 'Cards', metrics: ['ccards'] },
   ] },
-  categories: { groups: [{ key: 'cats', label: 'Categories', metrics: ['catunits'] }] },
+  categories: { groups: [
+    { key: 'crev', label: 'Revenue', metrics: ['crev'] },
+    { key: 'cexp', label: 'Expenses', metrics: ['cexp'] },
+    { key: 'crent', label: 'Rentals', metrics: ['crent'] },
+    { key: 'cats', label: 'Units', metrics: ['catunits'] },
+  ] },
   invoices: { groups: [{ key: 'inv', label: 'Invoices', metrics: ['istatus', 'ibal'] }] },
   inspections: { groups: [{ key: 'results', label: 'Inspections', metrics: ['iresult'] }] },
   workOrders: { groups: [{ key: 'wo', label: 'Work Orders', metrics: ['wophase', 'wotype'] }] },
   serviceOrders: { groups: [{ key: 'svc', label: 'Service', metrics: ['sstatus'] }] },
 };
 // metrics with a time dimension (the rail applies); everything else is snapshot-only
-const GV2_HIST = { inspection: true, fc: true, revenue: true, booked: true, iresult: true, wophase: true };
+const GV2_HIST = { inspection: true, fc: true, revenue: true, booked: true, iresult: true, wophase: true, crev: true, cexp: true, crent: true };
 // per-metric display labels (column headers when a tab shows a pair)
 const GV2_LABEL = { inspection: 'Inspection', service: 'Service Orders', fleet: 'Fleet', shop: 'Work Orders', fc: 'Field Calls', nums: '#s',
   revenue: 'Revenue', booked: 'Booked', rinvoice: 'Invoice Status', rnums: '#s', caccount: 'Account Types', cpay: 'Pay Status', cspend: 'Top Customers', cnums: '#s',
-  catunits: 'Units per Category', istatus: 'Payment Status', ibal: 'Biggest Balances', iresult: 'Results', wophase: 'By Phase', wotype: 'By Type', sstatus: 'Service Status' };
+  catunits: 'Units per Category', crev: 'Revenue by Category', cexp: 'Expenses by Category', crent: 'Rentals by Category', ccards: 'Cards', istatus: 'Payment Status', ibal: 'Biggest Balances', iresult: 'Results', wophase: 'By Phase', wotype: 'By Type', sstatus: 'Service Status' };
 const U_DARKINK = new Set(['green', 'yellow', 'orange', 'brown', 'gray']);   // slices that carry dark ink labels (else white)
 const uISO = (d) => d.toISOString().slice(0, 10);
 function uDays(p) { if (p === 'wk') return 7; if (p === 'mo') return TODAY.getDate(); return Number(p) || 0; }
@@ -9163,17 +9168,18 @@ function uToggleSeg(card, src, metric, col, value, label) {
 function uSegAttrs(ctx, s) {
   const on = gvSegOn(ctx.cs, s.col, s.value);
   // aria-label carries the name (the visible legend was removed — hover/data-tip + SR name it)
-  return `js-ug-seg${on ? ' on' : ''}" data-card="${ctx.card}" data-src="${esc(ctx.src)}" data-metric="${ctx.metric}" data-col="${esc(s.col)}" data-value="${esc(String(s.value))}" data-label="${esc(s.label)}" aria-label="${esc(s.label)}${on ? ' — filter on' : ''}" data-tip="${on ? 'Remove filter' : 'Filter to ' + esc(s.label)}`;
+  return `js-ug-seg${on ? ' on' : ''}" data-card="${ctx.card}" data-src="${esc(ctx.src)}" data-metric="${ctx.metric}" data-col="${esc(s.col)}" data-value="${esc(String(s.value))}" data-label="${esc(s.label)}" aria-label="${esc(s.label)}${on ? ' — filter on' : ''}" data-tip="${esc(s.tip || s.label)}`;
 }
 // donut with counts ON the slices (thin slices pop just outside with a leader); slices are the filter.
 function uDonut(ctx, segs, size, noun, empty) {
   size = size || 152; noun = noun || 'UNITS'; const r = size / 2, cx = r, cy = r, inner = r * 0.58, mid = (inner + r - 1) / 2;
   const total = segs.reduce((a, s) => a + (s.count || 0), 0);
   const box = (inner2) => `<div class="ug-chartbox">${inner2}</div>`;
-  if (!total) return box(`<svg viewBox="-20 -20 ${size + 40} ${size + 40}" width="${size + 40}" height="${size + 40}" class="ug-donut"><circle cx="${cx}" cy="${cy}" r="${r - 1}" fill="none" stroke="var(--line)" stroke-width="2" stroke-dasharray="3 4"/><circle cx="${cx}" cy="${cy}" r="${inner}" fill="var(--bg)"/></svg><div class="ug-empty">${esc(empty || 'No data yet.')}</div>`);
+  if (!total) return box(`<svg viewBox="-16 -16 ${size + 32} ${size + 32}" width="${size + 32}" height="${size + 32}" class="ug-donut"><circle cx="${cx}" cy="${cy}" r="${r - 1}" fill="none" stroke="var(--line)" stroke-width="2" stroke-dasharray="3 4"/><circle cx="${cx}" cy="${cy}" r="${inner}" fill="var(--bg)"/></svg><div class="ug-empty">${esc(empty || 'No data yet.')}</div>`);
   const at = (a, rad) => [cx + rad * Math.cos(a), cy + rad * Math.sin(a)];
   const nz = segs.filter((s) => s.count > 0);
   let a0 = -Math.PI / 2, slc = '', lbl = '';
+  const outLbls = [];
   const inkFor = (s) => (U_DARKINK.has(s.color) ? '#0c0e12' : '#fff');
   if (nz.length === 1) {
     const s = nz[0]; slc = `<circle class="ug-slice ${uSegAttrs(ctx, s)}" tabindex="0" role="button" cx="${cx}" cy="${cy}" r="${r - 1}" fill="var(--${s.color})"/>`;
@@ -9184,16 +9190,29 @@ function uDonut(ctx, segs, size, noun, empty) {
       const [x0, y0] = at(a0, r - 1), [x1, y1] = at(a1, r - 1), lg = (a1 - a0) > Math.PI ? 1 : 0;
       slc += `<path class="ug-slice ${uSegAttrs(ctx, s)}" tabindex="0" role="button" d="M${cx},${cy} L${x0.toFixed(1)},${y0.toFixed(1)} A${r - 1},${r - 1} 0 ${lg} 1 ${x1.toFixed(1)},${y1.toFixed(1)} Z" fill="var(--${s.color})"/>`;
       if (frac >= 0.16) { const [lx, ly] = at(am, mid); lbl += `<text x="${lx.toFixed(1)}" y="${(ly + 5).toFixed(1)}" text-anchor="middle" fill="${inkFor(s)}" pointer-events="none">${s.count}</text>`; }
-      else { const [ix, iy] = at(am, r - 3), [ox, oy] = at(am, r + 10); lbl += `<line x1="${ix.toFixed(1)}" y1="${iy.toFixed(1)}" x2="${ox.toFixed(1)}" y2="${oy.toFixed(1)}" stroke="var(--${s.color})" stroke-width="1.4"/><text x="${ox.toFixed(1)}" y="${(oy + (oy < cy ? -2 : 9)).toFixed(1)}" text-anchor="${ox < cx ? 'end' : 'start'}" fill="var(--${s.color})" pointer-events="none">${s.count}</text>`; }
+      else { const [ix, iy] = at(am, r - 3); outLbls.push({ s, am, ix, iy }); }
       a0 = a1;
     });
+    // collision pass — fan the callouts ANGULARLY around the rim (≥13px arc gap) so a cluster
+    // of thin slivers spreads outward like proper callouts instead of overprinting (Jac's shots)
+    if (outLbls.length) {
+      const rr = r + 9, gap = 13 / rr;
+      outLbls.sort((a, b) => a.am - b.am);
+      for (let i = 1; i < outLbls.length; i++) if (outLbls[i].am < outLbls[i - 1].am + gap) outLbls[i].am = outLbls[i - 1].am + gap;
+      outLbls.forEach((o) => {
+        const [ox, oy] = at(o.am, rr);
+        const ty = Math.max(-4, Math.min(size + 13, oy + (oy < cy ? -1 : 8)));
+        lbl += `<line x1="${o.ix.toFixed(1)}" y1="${o.iy.toFixed(1)}" x2="${ox.toFixed(1)}" y2="${oy.toFixed(1)}" stroke="var(--${o.s.color})" stroke-width="1.2" opacity=".9"/>`;
+        lbl += `<text x="${ox.toFixed(1)}" y="${ty.toFixed(1)}" text-anchor="${ox < cx ? 'end' : 'start'}" fill="var(--${o.s.color})" pointer-events="none">${o.s.count}</text>`;
+      });
+    }
   }
-  return box(`<svg viewBox="-20 -20 ${size + 40} ${size + 40}" width="${size + 40}" height="${size + 40}" class="ug-donut">${slc}${lbl}<circle cx="${cx}" cy="${cy}" r="${inner}" fill="var(--bg)" pointer-events="none"/><text class="ug-donut-tot" x="${cx}" y="${(cy - 2).toFixed(1)}" text-anchor="middle" fill="var(--txt)" pointer-events="none">${total}</text><text class="ug-donut-sub" x="${cx}" y="${(cy + 13).toFixed(1)}" text-anchor="middle" fill="var(--txt-3)" pointer-events="none">${esc(noun)}</text></svg>`);
+  return box(`<svg viewBox="-16 -16 ${size + 32} ${size + 32}" width="${size + 32}" height="${size + 32}" class="ug-donut">${slc}${lbl}<circle cx="${cx}" cy="${cy}" r="${inner}" fill="var(--bg)" pointer-events="none"/><text class="ug-donut-tot" x="${cx}" y="${(cy - 2).toFixed(1)}" text-anchor="middle" fill="var(--txt)" pointer-events="none">${total}</text><text class="ug-donut-sub" x="${cx}" y="${(cy + 13).toFixed(1)}" text-anchor="middle" fill="var(--txt-3)" pointer-events="none">${esc(noun)}</text></svg>`);
 }
 // read-only stacked proportional-area with right-edge band-% labels; `names` gives each band a hover tip
-function uArea(bk, data, emptyMsg, names) {
+function uArea(bk, data, emptyMsg, names, small) {
   names = names || {};
-  const w = 250, h = 120, n = data.length;
+  const w = small ? 250 : 340, h = 104, n = data.length;   // wider viewBox = shorter rendered chart (svg scales to width)
   if (!data.some((d) => d.n > 0)) return `<div class="ug-chartbox"><div class="ug-empty">${esc(emptyMsg)}</div></div>`;
   const dx = w / (n - 1 || 1), yb = (c) => h - c * h;
   const poly = (sel) => { const up = [], dn = []; data.forEach((d, i) => { const x = i * dx, below = sel === 'g' ? 0 : sel === 'y' ? d.g : d.g + d.y; up.push([x, yb(below + d[sel])]); dn.push([x, yb(below)]); }); dn.reverse(); return up.concat(dn).map((p) => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' '); };
@@ -9205,27 +9224,31 @@ function uArea(bk, data, emptyMsg, names) {
   return `<div class="ug-chartbox"><svg viewBox="0 -2 ${w} ${h + 18}" width="100%" class="ug-area" preserveAspectRatio="xMidYMid meet">${grid}<polygon points="${poly('g')}" fill="var(--green)" opacity=".85"${tip('g')}/><polygon points="${poly('y')}" fill="var(--yellow)" opacity=".85"${tip('y')}/><polygon points="${poly('r')}" fill="var(--red)" opacity=".85"${tip('r')}/>${lab('r')}${lab('y')}${lab('g')}${xlab}</svg></div>`;
 }
 // trajectory line; buckets are clickable filters via `col` (e.g. __fcrange / __rentrange / __daterange)
-function uTraj(ctx, bk, values, color, emptyMsg, col) {
-  const w = 250, h = 120, n = values.length;
+function uTraj(ctx, bk, values, color, emptyMsg, col, small) {
+  const w = small ? 250 : 340, h = 104, n = values.length;
   if (!values.some((v) => v > 0)) return `<div class="ug-chartbox"><div class="ug-empty">${esc(emptyMsg)}</div></div>`;
   const dx = w / (n - 1 || 1), mx = Math.max(...values) * 1.15 || 1, pt = (v, i) => [i * dx, h - v / mx * h];
   const line = values.map((v, i) => { const [x, y] = pt(v, i); return (i ? 'L' : 'M') + x.toFixed(1) + ' ' + y.toFixed(1); }).join(' ');
   const area = `M0 ${h} ` + values.map((v, i) => { const [x, y] = pt(v, i); return 'L' + x.toFixed(1) + ' ' + y.toFixed(1); }).join(' ') + ` L${w} ${h} Z`;
   const [ex, ey] = pt(values[n - 1], n - 1);
   const grid = [0, .5, 1].map((f) => `<line x1="0" y1="${(h * f).toFixed(1)}" x2="${w}" y2="${(h * f).toFixed(1)}" stroke="var(--line)" stroke-width="1" opacity=".5"/>`).join('');
-  const nums = values.map((v, i) => { const [x, y] = pt(v, i); return v ? `<text class="ug-xlab" x="${x.toFixed(1)}" y="${(y - 6).toFixed(1)}" text-anchor="middle" fill="var(--txt-2)">${v}</text>` : ''; }).join('');
+  const nums = values.map((v, i) => { const [x, y] = pt(v, i); return v ? `<text class="ug-xlab" x="${x.toFixed(1)}" y="${(y - 6).toFixed(1)}" text-anchor="${i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle'}" fill="var(--txt-2)">${v}</text>` : ''; }).join('');
   const hits = bk.map((b, i) => { const s = { col, value: b.key, label: b.label }, x = i * dx; return `<rect class="ug-hit ${uSegAttrs(ctx, s)}" tabindex="0" role="button" x="${(x - dx / 2).toFixed(1)}" y="0" width="${dx.toFixed(1)}" height="${h}" fill="transparent"/>`; }).join('');
   const xlab = uXAxis(bk, dx, h);
-  return `<div class="ug-chartbox"><svg viewBox="0 -2 ${w} ${h + 18}" width="100%" class="ug-traj" preserveAspectRatio="xMidYMid meet">${grid}<path d="${area}" fill="var(--${color})" opacity=".12"/><path d="${line}" fill="none" stroke="var(--${color})" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/><circle cx="${ex.toFixed(1)}" cy="${ey.toFixed(1)}" r="4.5" fill="var(--${color})" stroke="var(--bg)" stroke-width="2"/>${nums}${xlab}${hits}</svg></div>`;
+  return `<div class="ug-chartbox"><svg viewBox="-8 -2 ${w + 16} ${h + 18}" width="100%" class="ug-traj" preserveAspectRatio="xMidYMid meet">${grid}<path d="${area}" fill="var(--${color})" opacity=".12"/><path d="${line}" fill="none" stroke="var(--${color})" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/><circle cx="${ex.toFixed(1)}" cy="${ey.toFixed(1)}" r="4.5" fill="var(--${color})" stroke="var(--bg)" stroke-width="2"/>${nums}${xlab}${hits}</svg></div>`;
 }
 // vertical bars (counts) — direct labels on top, name below, each bar the filter
-function uBars(ctx, segs, color, emptyMsg) {
+function uBars(ctx, segs, color, emptyMsg, opts) {
+  opts = opts || {};
   if (!segs.length || !segs.some((s) => s.count > 0)) return `<div class="ug-empty">${esc(emptyMsg || 'No data yet.')}</div>`;
   const max = Math.max(1, ...segs.map((s) => s.count || 0));
+  const hasTop = segs.some((s) => s.top != null);
   return `<div class="ug-bars">${segs.map((s) => {
     const h = Math.round((s.count / max) * 100);
     const fill = s.count ? `<div class="ug-bar-fill" style="height:${h}%;background:var(--${s.color || color || 'blue'})"></div>` : '<div class="ug-bar-fill ug-bar-zero"></div>';
-    return `<button class="ug-barcol ${uSegAttrs(ctx, s)}"><span class="ug-bar-n">${s.count || ''}</span><span class="ug-bar-track">${fill}</span><span class="ug-bar-x">${esc(s.label)}</span></button>`;
+    const top = hasTop ? `<span class="ug-bar-t"${s.topColor ? ` style="color:${s.topColor}"` : ''}>${s.top != null ? esc(String(s.top)) : ''}</span>` : '';
+    const n = opts.money ? (s.count ? uMoneyK(s.count) : '') : (s.count || '');
+    return `<button class="ug-barcol ${uSegAttrs(ctx, s)}">${top}<span class="ug-bar-n">${n}</span><span class="ug-bar-track">${fill}</span><span class="ug-bar-x">${esc(s.label)}</span></button>`;
   }).join('')}</div>`;
 }
 // revenue bars — height = $, a red cap = the uncollected share; compact $ on top (full on hover)
@@ -9237,7 +9260,7 @@ function uRevBars(ctx, segs, emptyMsg) {
     const redPct = (s.red && s.count) ? Math.max(0, Math.min(100, Math.round((s.red / s.count) * 100))) : 0;
     const fill = s.count ? `<div class="ug-bar-fill" style="height:${h}%;background:var(--${s.color || 'gray'})">${redPct ? `<div class="ug-bar-red" style="height:${redPct}%"></div>` : ''}</div>` : '<div class="ug-bar-fill ug-bar-zero"></div>';
     const tipMore = s.red ? ` · ${money(s.red)} uncollected` : '';
-    return `<button class="ug-barcol ${uSegAttrs(ctx, { ...s, label: s.label + ' — ' + money(s.count) + tipMore })}"><span class="ug-bar-n">${s.count ? uMoneyK(s.count) : ''}</span><span class="ug-bar-track">${fill}</span><span class="ug-bar-x">${esc(s.label)}</span></button>`;
+    return `<button class="ug-barcol ${uSegAttrs(ctx, { ...s, tip: s.label + ' — ' + money(s.count) + tipMore })}"><span class="ug-bar-n">${s.count ? uMoneyK(s.count) : ''}</span><span class="ug-bar-track">${fill}</span><span class="ug-bar-x">${esc(s.label)}</span></button>`;
   }).join('')}</div>`;
 }
 function uTiles(ctx, items) {
@@ -9247,11 +9270,31 @@ function uLead(ctx, rows, empty) {
   if (!rows.length) return `<div class="ug-empty">${esc(empty || 'No data yet.')}</div>`;
   return `<div class="ug-lead">${rows.map((s, i) => `<button class="ug-lead-row ${uSegAttrs(ctx, s)}"><span class="ug-lead-n">${i + 1}</span><span class="ug-lead-name">${esc(s.label)}</span><span class="ug-lead-c">${esc(String(s.disp != null ? s.disp : s.count))}</span></button>`).join('')}</div>`;
 }
+// categories money rollup — rental revenue split evenly across a rental's units' categories,
+// WO parts cost per category, and the units' cost basis (trueCost, else purchasePrice) for ROI
+function uCatAgg(cut) {
+  const rev = {}, rent = {}, exp = {}, basis = {};
+  DATA.rentals.forEach((r) => {
+    if (cut && !uInWin(r.startDate, cut)) return;
+    const us = rentalUnits(r).map((eu) => IDX.unit.get(eu.unitId)).filter((u) => u && u.categoryId);
+    if (!us.length) return;
+    const share = ((rentalPrice(r) || {}).price || 0) / us.length;
+    us.forEach((u) => { rev[u.categoryId] = (rev[u.categoryId] || 0) + share; rent[u.categoryId] = (rent[u.categoryId] || 0) + 1; });
+  });
+  DATA.workOrders.forEach((w) => {
+    if (w.cancelled) return; if (cut && !uInWin(w.date, cut)) return;
+    const u = IDX.unit.get(w.unitId); if (!u || !u.categoryId) return;
+    const c = (w.lineItems || []).reduce((a, li) => a + (Number(li.cost) || 0), 0);
+    if (c) exp[u.categoryId] = (exp[u.categoryId] || 0) + c;
+  });
+  DATA.units.forEach((u) => { if (!u.categoryId) return; const b = Number(u.trueCost) || Number(u.purchasePrice) || 0; if (b) basis[u.categoryId] = (basis[u.categoryId] || 0) + b; });
+  return { rev, rent, exp, basis };
+}
 // per-metric chart: snapshot when no period armed, else the time-series form.
 // Metric keys are globally unique, so one dispatcher serves every source.
 function gv2MetricChart(cs, card, src, metric, period, small) {
   const ctx = { cs, card, src, metric };
-  const dsize = small ? 144 : 196;   // legends removed → more room, bigger donuts
+  const dsize = small ? 108 : 144;   // −30% vertical pass (Jac) — the section height is the constraint
   // ── Units ──
   if (metric === 'inspection') {
     // Passed vs Not Ready only — Failed is retired (folds into Not Ready), no red (Jac)
@@ -9265,7 +9308,7 @@ function gv2MetricChart(cs, card, src, metric, period, small) {
     // cumulative outcome mix through the window — a running status STATE (Fail folds into Not Ready)
     let cg = 0, cyl = 0;
     const data = bk.map((b) => { DATA.inspections.forEach((n) => { const d = (n.date || '').slice(0, 10); if (d >= b.a && d < b.b) { if (inspResult(n).color === 'green') cg++; else cyl++; } }); const t = cg + cyl; return { g: t ? cg / t : 0, y: t ? cyl / t : 0, r: 0, n: t }; });
-    return uArea(bk, data, 'No inspections in this window.', { g: 'Passed', y: 'Not Ready' });
+    return uArea(bk, data, 'No inspections in this window.', { g: 'Passed', y: 'Not Ready' }, small);
   }
   if (metric === 'fleet') {
     const fn = {}; DATA.units.forEach((u) => { const s = u.fleetStatus || '—'; fn[s] = (fn[s] || 0) + 1; });
@@ -9292,12 +9335,12 @@ function gv2MetricChart(cs, card, src, metric, period, small) {
     const fc = DATA.workOrders.filter((w) => w.woType === 'Field Call');
     if (!period) {
       const by = {}; fc.forEach((w) => { if (w.unitId) by[w.unitId] = (by[w.unitId] || 0) + 1; });
-      const rows = Object.entries(by).map(([uid, n]) => ({ col: 'name', value: IDX.unit.get(uid)?.name || uid, label: IDX.unit.get(uid)?.name || uid, count: n })).sort((a, b) => b.count - a.count).slice(0, 8);
+      const rows = Object.entries(by).map(([uid, n]) => ({ col: 'name', value: IDX.unit.get(uid)?.name || uid, label: IDX.unit.get(uid)?.name || uid, count: n })).sort((a, b) => b.count - a.count).slice(0, 6);
       return uLead(ctx, rows, 'No field calls yet.');
     }
     const bk = uBuckets(period);
     const vals = bk.map((b) => new Set(fc.filter((w) => { const d = (w.date || '').slice(0, 10); return d >= b.a && d < b.b; }).map((w) => w.unitId)).size);
-    return uTraj(ctx, bk, vals, 'blue', 'No field calls in this window.', '__fcrange');
+    return uTraj(ctx, bk, vals, 'blue', 'No field calls in this window.', '__fcrange', small);
   }
   if (metric === 'nums') {
     const fn = {}; DATA.units.forEach((u) => { const s = u.fleetStatus || '—'; fn[s] = (fn[s] || 0) + 1; });
@@ -9340,12 +9383,12 @@ function gv2MetricChart(cs, card, src, metric, period, small) {
     // snapshot = most-rented units leaderboard; windowed = bookings trajectory (mirrors Field Calls)
     if (!period) {
       const byUnit = {}; DATA.rentals.forEach((r) => rentalUnits(r).forEach((eu) => { const u = IDX.unit.get(eu.unitId); if (u) byUnit[u.name] = (byUnit[u.name] || 0) + 1; }));
-      const rows = Object.entries(byUnit).map(([name, n]) => ({ col: 'name', value: name, label: name, count: n })).sort((a, b) => b.count - a.count).slice(0, 8);
+      const rows = Object.entries(byUnit).map(([name, n]) => ({ col: 'name', value: name, label: name, count: n })).sort((a, b) => b.count - a.count).slice(0, 6);
       return uLead(ctx, rows, 'No rentals yet.');
     }
     const bk = uBuckets(period);
     const vals = bk.map((b) => DATA.rentals.filter((r) => { const d = (r.startDate || '').slice(0, 10); return d >= b.a && d < b.b; }).length);
-    return uTraj(ctx, bk, vals, 'blue', 'No rentals booked in this window.', '__rentrange');
+    return uTraj(ctx, bk, vals, 'blue', 'No rentals booked in this window.', '__rentrange', small);
   }
   if (metric === 'rinvoice') {
     const ic = {}; DATA.rentals.forEach((r) => { const inv = r.invoiceId && IDX.invoice.get(r.invoiceId); const s = inv ? invoiceTotals(inv).status : 'No invoice'; ic[s] = (ic[s] || 0) + 1; });
@@ -9375,16 +9418,41 @@ function gv2MetricChart(cs, card, src, metric, period, small) {
     return uDonut(ctx, segs, dsize, 'CUST', 'No customers yet.');
   }
   if (metric === 'cspend') {
-    const rows = DATA.customers.map((c) => ({ c, paid: c._digest?.totalPaid || 0 })).filter((x) => x.paid > 0).sort((a, b) => b.paid - a.paid).slice(0, 8)
-      .map((x) => ({ col: 'name', value: x.c.name, label: x.c.name, count: Math.round(x.paid), disp: money(x.paid) }));
+    // from INVOICES (paid = total − balance) — the _digest.totalPaid field is demo-seed-only, so live showed empty (Jac)
+    const by = {};
+    DATA.invoices.forEach((i) => { const t = invoiceTotals(i), paid = Math.max(0, (t.total || 0) - (t.balance || 0)); if (!paid) return; const n = IDX.customer.get(i.customerId)?.name; if (n) by[n] = (by[n] || 0) + paid; });
+    const rows = Object.entries(by).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([n, p]) => ({ col: 'name', value: n, label: n, count: Math.round(p), disp: money(p) }));
     return uLead(ctx, rows, 'No payments yet.');
   }
-  if (metric === 'cnums') {
-    // Business/Non-Business tiles retired — they duplicate the Accounts donut (Jac kills redundancy)
-    const items = [{ col: 'card', value: 'No Card', label: 'No Card', count: DATA.customers.filter((c) => cardFlag(c) === 'none').length, color: 'red' }];
-    return uTiles(ctx, items);
+  if (metric === 'ccards') {
+    // card health donut — replaces the one-tile #s tab (Jac: not valuable); values match the list's Card column
+    const cc = { ok: 0, expiring: 0, none: 0 };
+    DATA.customers.forEach((c) => { cc[cardFlag(c)]++; });
+    const segs = ['none', 'expiring', 'ok'].map((k) => ({ col: 'card', value: CARD_FLAG_META[k].label, label: CARD_FLAG_META[k].label, count: cc[k], color: CARD_FLAG_META[k].color }));
+    return uDonut(ctx, segs, dsize, 'CUST', 'No customers yet.');
   }
   // ── Categories ──
+  if (metric === 'crev' || metric === 'cexp' || metric === 'crent') {
+    // Owner-decided (Jac 2026-07-03): revenue/ROI/expense by category render for ALL internal
+    // roles — a deliberate exception to the T1 margin-tier default; recorded in the spec.
+    const cut = uCutoff(period), A = uCatAgg(cut);
+    const catName = (id) => IDX.category.get(id)?.name || id;
+    const pick = metric === 'crev' ? A.rev : metric === 'cexp' ? A.exp : A.rent;
+    const segs = Object.entries(pick).map(([id, v]) => ({ id, col: 'name', value: catName(id), label: catName(id), count: Math.round(v) })).sort((a, b) => b.count - a.count).slice(0, 10);
+    if (metric === 'crev') {
+      segs.forEach((s) => {
+        const rv = A.rev[s.id] || 0, ex = A.exp[s.id] || 0, basis = A.basis[s.id] || 0;
+        const roi = basis > 0 ? Math.round((rv - ex) / basis * 100) : null;
+        s.color = 'green';
+        if (!period && roi != null) { s.top = (roi >= 0 ? '+' : '') + roi + '%'; s.topColor = roi >= 0 ? 'var(--green)' : 'var(--red)'; }
+        s.tip = `${s.label} — ${money(rv)} rev · ${money(ex)} exp${roi != null ? ' · ROI ' + (roi >= 0 ? '+' : '') + roi + '%' : ' · no cost basis'}`;
+      });
+      return uBars(ctx, segs, 'green', 'No revenue in this window.', { money: true });
+    }
+    if (metric === 'cexp') { segs.forEach((s) => { s.color = 'red'; s.tip = `${s.label} — ${money(A.exp[s.id] || 0)} in WO parts`; }); return uBars(ctx, segs, 'red', 'No expenses in this window.', { money: true }); }
+    segs.forEach((s) => { s.color = 'blue'; });
+    return uBars(ctx, segs, 'blue', 'No rentals in this window.');
+  }
   if (metric === 'catunits') {
     const byCat = {}; DATA.units.forEach((u) => { if (u.categoryId) byCat[u.categoryId] = (byCat[u.categoryId] || 0) + 1; });
     const segs = DATA.categories.map((c) => ({ col: 'name', value: c.name, label: c.name, count: byCat[c.categoryId] || 0, color: 'blue' })).sort((a, b) => b.count - a.count).slice(0, 10);
@@ -9398,7 +9466,7 @@ function gv2MetricChart(cs, card, src, metric, period, small) {
   }
   if (metric === 'ibal') {
     const byCust = {}; DATA.invoices.forEach((i) => { const t = invoiceTotals(i); if (t.balance > 0 && t.status !== 'Refunded') { const n = IDX.customer.get(i.customerId)?.name || i.customerId || '—'; byCust[n] = (byCust[n] || 0) + t.balance; } });
-    const rows = Object.entries(byCust).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([n, bal]) => ({ col: 'customer', value: n, label: n, count: Math.round(bal), disp: money(bal) }));
+    const rows = Object.entries(byCust).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([n, bal]) => ({ col: 'customer', value: n, label: n, count: Math.round(bal), disp: money(bal) }));
     return uLead(ctx, rows, 'No open balances.');
   }
   // ── Shop · Inspections segment ──
@@ -9413,7 +9481,7 @@ function gv2MetricChart(cs, card, src, metric, period, small) {
     // cumulative outcome mix of ALL inspections performed through the window (Pass / pending / Fail)
     let cg = 0, cyl = 0, cr = 0;
     const data = bk.map((b) => { DATA.inspections.forEach((n) => { const d = (n.date || '').slice(0, 10); if (d >= b.a && d < b.b) { const cc = inspResult(n).color; if (cc === 'green') cg++; else if (cc === 'red') cr++; else cyl++; } }); const t = cg + cyl + cr; return { g: t ? cg / t : 0, y: t ? cyl / t : 0, r: t ? cr / t : 0, n: t }; });
-    return uArea(bk, data, 'No inspections in this window.', { g: 'Pass', y: 'Not Ready', r: 'Fail' });
+    return uArea(bk, data, 'No inspections in this window.', { g: 'Pass', y: 'Not Ready', r: 'Fail' }, small);
   }
   // ── Shop · Work Orders segment ──
   if (metric === 'wophase') {
@@ -9427,7 +9495,7 @@ function gv2MetricChart(cs, card, src, metric, period, small) {
     }
     const bk = uBuckets(period);
     const vals = bk.map((b) => W.filter((w) => { const d = (w.date || '').slice(0, 10); return d >= b.a && d < b.b; }).length);
-    return uTraj(ctx, bk, vals, 'blue', 'No work orders in this window.', '__daterange');
+    return uTraj(ctx, bk, vals, 'blue', 'No work orders in this window.', '__daterange', small);
   }
   if (metric === 'wotype') {
     const W = DATA.workOrders.filter((w) => shopItemMode('workOrders', w, false));
