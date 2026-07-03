@@ -134,9 +134,11 @@ registry + totals, the standard-view detail renderers, and the merged Shop card.
   windowed render, the 3-column shell entry.
 - **`APP-18 · 3-Column Layout** — `app.js:6371`. The display-only 3-wide shell
   over the cards. `columnEl`, `memberCardEl`, `goToCard`, mobile card switching.
-- **`APP-19 · §10 Shop Card** — `app.js:6652`. Work Orders + Service Orders +
-  Inspections merged into one card. `shopItemsByType`, `shopUrgency`,
-  `shopCardEl`, `shopRowColor`.
+  (The dedicated Shop card — formerly `APP-19` — was removed, Jac 2026-07-04:
+  redundant with the shop work already embedded in the Units detail. Work
+  orders/inspections/service are reached via the owning unit or the
+  back-office boards; every chapter number below `APP-19` shifted down by one
+  — this doc's Act-by-Act numbers past this point are pending a refresh pass.)
 
 ## Act V — Header, KPIs, Comms & Graphs
 *The top band (logo + KPI rings), the bottom comms band, the admin KPI engine,
