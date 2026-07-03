@@ -4873,11 +4873,12 @@ function unitWoSoPill(u) {
   return svc ? badge(svcText(svc), svc.color) : badge('No Orders', 'green');
 }
 /* The unit mini-card's top-right FLAG corner (R9): the signals NOT already carried by
-   the two status pills — overbooked, GPS trouble, out-of-active-fleet. The corner is a
-   COMPACT icon-mark so it never steals width from the name (Jac 2026-07-01): one
-   severity-coloured alert glyph, its label in the R23 data-tip. Several trips collapse
-   to the same glyph + a count, tip listing them all. One mark → every card stays one
-   line tall (no stretched blank rows). Most-severe colour wins; overbooked pulses (R9b). */
+   the two status pills — overbooked, GPS trouble, out-of-active-fleet. Renders the REAL
+   flag text (R9 flagEl, no icon substitute — Jac 2026-07-03), truncated by CSS ellipsis
+   so it never steals width from the name; several trips show the MOST-SEVERE label +
+   "+N" for the rest, full list in the R23 data-tip. One line → every card stays one line
+   tall (no stretched blank rows). Overbooked pulses (R9b). */
+const FLAG_SEV = { red: 2, yellow: 1, gray: 0 };
 function unitCardFlags(u) {
   const f = [];
   if (unitOverbooked(u.unitId)) f.push({ label: 'Overbooked', color: 'red', alert: true });
@@ -4890,9 +4891,10 @@ function unitCardFlags(u) {
   if (openWOForUnit(u.unitId)) { const s = topServiceForUnit(u); if (s && (s.status === 'past-due' || s.status === 'due-soon')) f.push({ label: svcText(s), color: s.color, alert: s.status === 'past-due' }); }
   if (u.washRequested) f.push({ label: 'Wash Due', color: 'yellow' });
   if (!f.length) return '';
-  if (f.length === 1) return flagsStack([flagEl('', f[0].color, { icon: I.alert, alert: f[0].alert, title: f[0].label })]);
-  const worst = f.some((x) => x.color === 'red') ? 'red' : f.some((x) => x.color === 'yellow') ? 'yellow' : 'gray';
-  return flagsStack([flagEl(String(f.length), worst, { icon: I.alert, alert: worst === 'red', title: f.map((x) => x.label).join(' · ') })]);
+  f.sort((a, b) => (FLAG_SEV[b.color] ?? 0) - (FLAG_SEV[a.color] ?? 0));
+  const top = f[0];
+  if (f.length === 1) return flagsStack([flagEl(top.label, top.color, { alert: top.alert, title: top.label })]);
+  return flagsStack([flagEl(`${top.label} +${f.length - 1}`, top.color, { alert: top.alert, title: f.map((x) => x.label).join(' · ') })]);
 }
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -12165,7 +12167,12 @@ function initTooltip() {
       const r = t.getBoundingClientRect();
       tipEl.style.maxWidth = 'none';
       tipEl.style.left = Math.max(8, Math.min(r.left, window.innerWidth - tipEl.offsetWidth - 8)) + 'px';
-      tipEl.style.top = (r.bottom + 6 > window.innerHeight - 30 ? r.top - 30 : r.bottom + 6) + 'px';
+      // Default ABOVE the element (Jac 2026-07-03): a tip anchored below sat right where
+      // the cursor/finger already is, hidden under it. Drop below only when there's no
+      // room above (near the top of the viewport). Measured offsetHeight (not a fixed
+      // guess) so a longer tip that wraps to 2+ lines still clears the target with no overlap.
+      const th = tipEl.offsetHeight || 30;
+      tipEl.style.top = (r.top - th - 6 < 8 ? r.bottom + 6 : r.top - th - 6) + 'px';
       tipEl.classList.add('show');
     }, 500);
   });

@@ -3056,10 +3056,9 @@ body.is-phone .card[data-card="units"] .list { grid-template-columns: repeat(2, 
 .ucard { height: 100%; display: flex; flex-direction: column; gap: 7px; padding: 9px 9px; border: 2px solid var(--ur-hl, var(--line)); border-radius: 12px; overflow: hidden; }
 .uc-top { display: flex; align-items: center; justify-content: space-between; gap: 6px; }   /* corner mark optically centres on the name line */
 .uc-name { flex: 1 1 auto; min-width: 0; font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .5px; font-weight: 700; font-size: 14px; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-/* Danger name: crisp lighter red, NO red halo (the glow blurred it illegible — Jac
-   2026-07-01). A subtle dark shadow separates it from the panel; the red card border
-   already flags danger, so the name only needs to READ. */
-.uc-name.ec-red { -webkit-text-fill-color: color-mix(in srgb, var(--red) 45%, white); text-shadow: 0 1px 2px rgba(0,0,0,.7); }
+/* (2026-07-01 one-off override reverted, Jac 2026-07-03: use our DESIGNED red text
+   treatment — the shared ec-red group above, same 65%-white mix + halo as every other
+   red row name (cr-name/ur-name/catr-name) — instead of a bespoke card-only variant. */
 /* Collapsible group header (Jac 2026-07-03) — a chevron + stamped group label + a thin
    full-width dashed rule in the group color, spanning every column. Click toggles
    collapse. Used by the Units / Rentals / Customers / Invoices grouped lists. */
@@ -3072,13 +3071,14 @@ body.is-phone .card[data-card="units"] .list { grid-template-columns: repeat(2, 
 .grp-hd::after { content: ''; flex: 1 1 auto; border-top: 1.5px dashed var(--sec, var(--line)); opacity: .5; }
 .grp-hd:hover .grp-label, .grp-hd:hover .grp-chev { filter: brightness(1.2); }
 @media (prefers-reduced-motion: reduce) { .grp-chev svg { transition: none; } }
-.uc-flags { flex: 0 0 auto; }
-/* Corner ALERT mark — a compact icon (+count for several) so it never steals width
-   from the name; label(s) live in the R23 data-tip. Suppress the R9 striped
-   text-underline (this is a mark, not a text flag) and size the glyph up for legibility. */
-.uc-flags .flags { height: auto; }
-.uc-flags .flag { height: 16px; padding: 0 1px; gap: 2px; font-size: 11px; background-image: none; padding-bottom: 0; }
-.uc-flags .flag svg { width: 14px; height: 14px; }
+.uc-flags { flex: 0 0 auto; min-width: 0; max-width: 46px; }
+/* Corner FLAG (Jac 2026-07-03) — the REAL flag text (R9), not an icon substitute;
+   ellipsis-truncated so it never steals width from the name. Several trips show the
+   worst-severity label + "+N", full list in the R23 data-tip. Suppress the R9 striped
+   text-underline (too busy this small) and force inline-block so ellipsis is reliable
+   (the base .flag is inline-flex, tuned for an icon+label pair this corner no longer has). */
+.uc-flags .flags { height: auto; min-width: 0; }
+.uc-flags .flag { display: inline-block; max-width: 100%; height: auto; padding: 0 1px; font-size: 10px; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; background-image: none; padding-bottom: 0; }
 .uc-cat { display: flex; align-items: center; gap: 5px; color: var(--txt-2); font-size: 12px; min-width: 0; }
 .uc-caticon { flex: 0 0 auto; width: 16px; height: 16px; color: var(--txt-3); display: flex; align-items: center; justify-content: flex-start; }   /* glyph hugs the same left rail as the name above; sized to sit with the 12px label, not out-weigh it */
 .uc-caticon svg { width: 15px; height: 15px; display: block; }
