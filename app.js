@@ -7730,7 +7730,16 @@ function commsRailEl() {
     const active = wrOpen && (state.wrangler.reqNumber === rq.number || state.wrangler.id === 'req' + rq.number);
     return `<button class="crail-tab ${cls}${active ? ' is-active' : ''}" data-wrc-needs="${rq.number}" role="tab" aria-selected="${active}" data-tip="${tip}"><span class="crail-dot"></span><span class="crail-t">${trim(rq.title || ('Request #' + rq.number))}</span></button>`;
   }).join('');
-  const snaps = (state.wranglerRail || []).filter((c) => !c.reqNumber);
+  // §18g A chat is "resolved" — take it off the rail — once the bug it filed is fixed/closed:
+  // it filed at least one issue (message m.issue) and NONE of those are still open. Guarded on a
+  // loaded requests list so a failed/empty fetch never hides live chats. Non-destructive — the chat
+  // stays in the store, it just leaves the tab bar (Jac 2026-07-03 — "take away the resolved ones").
+  const wrChatResolved = (c) => {
+    if (!reqLoaded) return false;
+    const filed = (c.messages || []).map((m) => m.issue).filter((n) => n != null);
+    return filed.length > 0 && filed.every((n) => !wranglerRequests.some((rq) => rq.number === n));
+  };
+  const snaps = (state.wranglerRail || []).filter((c) => !c.reqNumber && !wrChatResolved(c));
   // the live chat first if it's a brand-new one not yet snapshotted onto the rail
   let liveTab = '';
   if (wrOpen && state.wrangler.id && !state.wrangler.reqNumber && !snaps.some((c) => c.id === state.wrangler.id) && (state.wrangler.messages || []).length) {
