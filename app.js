@@ -1809,7 +1809,7 @@ function openWOForUnit(unitId) {
  *  decimals; we round only at the render layer so the module stays faithful). */
 const svcText = (s) => (s.status === 'past-due'
   ? `${Math.abs(Math.round(s.remaining))} HRS overdue`
-  : `${Math.round(s.remaining)} HRS remaining`);
+  : `${Math.round(s.remaining)} HRS remain`);
 
 // Wash is a recurring service interval (every 100 engine-hours), pinned to the TOP of
 // the Services list. Passed via opts.tasks so the reference module stays byte-identical.
@@ -1819,10 +1819,10 @@ const SVC_OPTS = { tasks: UNIT_SVC_TASKS, hoursField: 'currentHours', baselineFi
 const unitServiceRows = (u) => serviceOrdersForUnit(u, u.serviceCompletions || {}, SVC_OPTS);
 /** The service pill(s) for a row: a submitted Wash Request overrides the countdown
  *  language to a single blue "Wash Requested" pill; otherwise status + countdown. */
-function svcPills(s) {
+function svcPills(s, focal) {
   if (!s) return '';
-  if (s.washRequested) return badge('Wash Requested', 'blue');                 // R3
-  return badge(getStatus('serviceStatus', s.status).label, s.color) + badge(svcText(s), s.color);   // R3
+  if (s.washRequested) return badge('Wash Requested', 'blue', focal);          // R3
+  return badge(getStatus('serviceStatus', s.status).label, s.color, focal) + badge(svcText(s), s.color);   // R3 (urgency = focal on the shop service row)
 }
 /** Most-urgent active service order for a unit (derived via the reference module).
  *  A pending wash request floats the wash task to the top regardless of its countdown. */
@@ -4225,11 +4225,15 @@ function getEntityColor(entityType, rec) {
   const fl = getEntityFlags(entityType, rec);
   return fl.length ? fl[0].severity : 'green';
 }
+/** Pick the more-severe of a set of registry colors (danger → plain). Used to make the
+ *  unit mini-card border mirror the LOUDER of its two visible pills (Jac 2026-07-01). */
+const COLOR_SEVERITY = { red: 6, yellow: 5, orange: 4, purple: 3, blue: 2, green: 1, gray: 0 };
+const worseColor = (...cs) => cs.reduce((a, b) => ((COLOR_SEVERITY[b] ?? 1) > (COLOR_SEVERITY[a] ?? 1) ? b : a), 'gray');
 /** Map a statusPill `set` → its entity type (only the 5 PRIMARY status sets are
  *  flag-colored; secondary sets like unitInspectionStatus keep their registry color). */
 const PRIMARY_SET_ENTITY = { rentalStatus: 'rentals', unitFleetStatus: 'units', woPhase: 'workOrders', invoiceStatus: 'invoices', customerPayStatus: 'customers' };
 
-function statusPill(set, value, { card, recId, x, truck, previewColor, previewIcon, previewLabel, flag } = {}) {
+function statusPill(set, value, { card, recId, x, truck, previewColor, previewIcon, previewLabel, flag, focal } = {}) {
   const st = getStatus(set, value);
   // Color: Settings-Board preview override wins; else a PRIMARY status set computes
   // its flag-driven color from the record (R/Y/G/gray); else the registry color.
@@ -4249,7 +4253,7 @@ function statusPill(set, value, { card, recId, x, truck, previewColor, previewIc
   const crec = card ? recOf(card, recId) : null;
   const chatLbl = st.label + (crec ? ' — ' + (detailTitle(card, crec) || recId) : '');
   const chat = card ? ` data-chat-el data-chat-label="${esc(chatLbl)}" data-chat-color="${esc(st.color)}" data-chat-card="${esc(card)}" data-chat-rec="${esc(recId)}"` : '';
-  return `<span class="pill c-${color}${truck ? ' truck' : ''}" data-r="R3" data-badge${data}${chat}>${tk}${ic}<span class="t">${esc(label)}</span>${xb}</span>`;
+  return `<span class="pill c-${color}${truck ? ' truck' : ''}${focal ? ' focal' : ''}" data-r="R3" data-badge${data}${chat}>${tk}${ic}<span class="t">${esc(label)}</span>${xb}</span>`;
 }
 function refPill(card, recId, label, { x, xData } = {}) {
   const xb = x ? `<span class="x" data-x="${esc(x)}"${xData != null ? ` data-id="${esc(xData)}"` : ''}>✕</span>` : '';
@@ -4278,17 +4282,17 @@ function entityPill(card, rec, { x, xData } = {}) {
   return `<span class="pill entity-stamp c-${flag}" data-r="R2" data-pill-card="${card}" data-pill-rec="${esc(id)}"${chat}>${CARD_ICON[card] || ''}<span class="t">${esc(name)}</span>${xb}</span>`;
 }
 /** R3b: a DATA CHIP — a plain fact (480 HRS, No GPS), independent of R3. */
-const badge = (label, color = 'gray') => `<span class="pill c-${color}" data-r="R3b"><span class="t">${esc(label)}</span></span>`;
+const badge = (label, color = 'gray', focal) => `<span class="pill c-${color}${focal ? ' focal' : ''}" data-r="R3b"><span class="t">${esc(label)}</span></span>`;
 /** R1: a GATE pill — a status DROPDOWN that moves the record forward. */
 function gatePill(set, value, js, data, { truck } = {}) {
   const st = getStatus(set, value);
   const tk = truck ? `<span class="truck">${I.truck}</span>` : '';
-  return `<span class="pill gate c-${st.color} ${js}" data-r="R1"${dataAttrs(data)}>${tk}${ovIcon(st)}${esc(st.label)} ${I.chev}</span>`;
+  return `<span class="pill gate c-${st.color} ${js}" data-r="R1"${dataAttrs(data)}>${tk}${I.chev}${esc(st.label)}</span>`;
 }
 /** R1: a gate with a custom label (e.g. ETA-as-status on WO lines). */
 function gatePillRaw(label, color, js, data, noChev) {
-  // R1: chevron ONLY on real dropdowns — popup-opening gates pass noChev
-  return `<span class="pill gate c-${color} ${js}" data-r="R1"${dataAttrs(data)}>${esc(label)}${noChev ? '' : ' ' + I.chev}</span>`;
+  // R1: leading chevron = the dropdown affordance; popup-opening gates pass noChev
+  return `<span class="pill gate c-${color} ${js}" data-r="R1"${dataAttrs(data)}>${noChev ? '' : I.chev}${esc(label)}</span>`;
 }
 /* §20 MASTER GATE — the rental-status dropdown in the Day Timeline / row. Usable
    (bulk-sets every unit) only while units are UNIFORM; one diverging unit LOCKS it
@@ -4299,17 +4303,17 @@ function masterGate(r, { truck } = {}) {
   if (d.mixed) {
     return `<span class="pill gate c-gray locked" data-r="R1" data-tip="Units have mixed statuses — match them all, or use each unit's own gate below">${tk}${esc(d.label)}</span>`;
   }
-  return `<span class="pill gate c-${d.color} js-status-pill" data-r="R1" data-rec="${esc(r.rentalId)}">${tk}${esc(d.label)} ${I.chev}</span>`;
+  return `<span class="pill gate c-${d.color} js-status-pill" data-r="R1" data-rec="${esc(r.rentalId)}">${tk}${I.chev}${esc(d.label)}</span>`;
 }
 /* §20 per-unit status gate — shown on each unit chip when a rental holds >1 unit. */
 function unitStatusGate(r, eu) {
   const st = getStatus('rentalStatus', unitStatus(r, eu));
-  return `<span class="pill gate c-${st.color} js-unit-status" data-r="R1" data-rec="${esc(r.rentalId)}" data-unit="${esc(eu.unitId)}">${esc(st.label)} ${I.chev}</span>`;
+  return `<span class="pill gate c-${st.color} js-unit-status" data-r="R1" data-rec="${esc(r.rentalId)}" data-unit="${esc(eu.unitId)}">${I.chev}${esc(st.label)}</span>`;
 }
 /** R1: funnel-stage gate (§7.1). */
 function funnelPill(custId, which, stage) {
   const st = getStatus('funnelStage', stage);
-  return `<span class="pill gate c-${st.color} js-funnel" data-r="R1" data-rec="${esc(custId)}" data-which="${which}">${esc(st.label)} ${I.chev}</span>`;
+  return `<span class="pill gate c-${st.color} js-funnel" data-r="R1" data-rec="${esc(custId)}" data-which="${which}">${I.chev}${esc(st.label)}</span>`;
 }
 /** R4: a DERIVED pill — rides another pill in the same section; no bg/border,
  *  destination icon + ink color only; sits directly RIGHT of its parent. */
@@ -4838,12 +4842,7 @@ function rowViz(card, rec) {
   // rentable/total pill carry fleet health now (Jac 2026-06-25). The §10 window-red
   // tint above still applies when a window leaves 0 available.
   if (card === 'serviceOrders') { const s = topServiceForUnit(rec); if (s) return `<div class="row-viz" style="background:linear-gradient(90deg, var(--${s.color}-bg), transparent 60%)"></div>`; }
-  if (card === 'units') {
-    // colour each unit row by its INSPECTION status as a left gradient (same style as
-    // Inspection / Service / WO rows): Ready=green, Not Ready=yellow, Failed=red.
-    const c = getStatus('unitInspectionStatus', rec.inspectionStatus).color;
-    return `<div class="row-viz" style="background:linear-gradient(90deg, var(--${c}-bg), transparent 60%)"></div>`;
-  }
+  if (card === 'units') return '';   // Jac 2026-07-01: the old inspection-status wash is retired — the mini-card's colored border (--ur-hl) + status pills carry health now.
   if (card === 'invoices') { const s = invoiceTotals(rec).status; return `<div class="row-viz" style="background:linear-gradient(90deg, var(--${getStatus('invoiceStatus', s).color}-bg), transparent 70%)"></div>`; }
   return '';
 }
@@ -4899,42 +4898,95 @@ function categoryIconFor(name) {
   if (CATEGORY_ANIM[key]) return `<span class="cat-glyph">${CATEGORY_ANIM[key]}</span>`;
   return `<span class="cat-glyph ${CATEGORY_MOTION[key]}">${CATEGORY_ICON[key]}</span>`;
 }
-/* The unit row's RENTAL+INSPECTION pill (Jac): text = rental status / availability
-   verdict / inspection label; COLOR is inspection-driven (mechanics' card) and only
-   goes red on a catastrophe (Failed inspection, overbooked). Built via statusPill's
-   color/label override so it stays an R3 pill. */
-function unitRentalInspPill(u) {
+/* The unit row's RENTAL+INSPECTION pill — the "driving button" (Jac 2026-07-03).
+   It says what you can DO with the unit right now: AVAILABLE (passed, active, free),
+   or its rental stage + the window dates when tied to a rental (RESERVED · JUL 5–8),
+   or the mechanic state (NOT READY / FAILED). A FAILED inspection while the unit is on
+   a rental is a breakdown mid-job = FIELD CALL, not a bench Failed. Color: green ok,
+   yellow caution, red danger/field-call. Returned as {label,color} so the card border
+   (worseColor of the two pills) can mirror the exact color the pill renders. Folds in
+   the #436 self-rental fix (a unit on the very rental being scoped shows its real
+   status, never a false "Available"). */
+/** Readable rental window for a card pill — "Jul 5–8" (same month) / "Jul 28 – Aug 5"
+    (spans months) / "Jul 5" (start only). Legible on a card vs the timeline's compact
+    SPEC fmtWindow ("Sa13-Tu16"). */
+function cardWindow(startISO, endISO) {
+  const s = parseISO(startISO), e = parseISO(endISO);
+  if (!s) return '';
+  const sd = fmtShortDate(startISO).replace(' 0', ' ');   // "Jul 05" → "Jul 5"
+  if (!e) return sd;
+  if (s.getMonth() === e.getMonth() && s.getFullYear() === e.getFullYear()) return `${sd}–${e.getDate()}`;   // Jul 5–8
+  return `${sd} – ${fmtShortDate(endISO).replace(' 0', ' ')}`;   // Jul 28 – Aug 5
+}
+function unitPrimaryState(u) {
   const insp = getStatus('unitInspectionStatus', u.inspectionStatus);
-  const ar = activeRentalForUnit(u.unitId);
-  let text, color;
-  if (availWin) {
-    // §10 — a unit already committed to the very rental whose window is being scoped must
-    // NOT read "Available": availWin.selfId is excluded from the overlap so the rental can't
-    // self-conflict (right for the red tint), but that leaves the unit ON this rental with no
-    // other occupant → falsely "Available". Show its real per-unit status instead. Voided
-    // units fall through — they're genuinely free to re-add. (#436)
+  if (availWin) {   // availability lens active — the pill IS the avail verdict
+    // #436 — a unit already committed to the very rental being scoped must NOT read
+    // "Available" (selfId is excluded from the overlap, leaving it falsely free); show
+    // its real per-unit status. Voided units fall through — genuinely free to re-add.
     const selfR = availWin.selfId ? IDX.rental.get(availWin.selfId) : null;
     const selfEu = (selfR && selfR.status !== 'Quote' && ACTIVE_RENTAL.has(selfR.status)) ? unitEntry(selfR, u.unitId) : null;
-    if (selfEu && !unitVoided(selfR, selfEu)) { text = unitStatus(selfR, selfEu); color = (u.inspectionStatus === 'Failed' || unitOverbooked(u.unitId)) ? 'red' : insp.color; }
-    else if (isUnitAvailableFor(u, availWin.start, availWin.end, availWin.selfId)) { text = 'Available'; color = 'green'; }
-    else if (u.fleetStatus !== 'Active') { text = getStatus('unitFleetStatus', u.fleetStatus).label; color = 'red'; }
-    else if (u.inspectionStatus === 'Failed') { text = 'Failed'; color = 'red'; }
-    else { const cf = rentalsOverlappingUnit(u.unitId, availWin.start, availWin.end, availWin.selfId)[0]; text = cf ? 'Booked' : 'Unavailable'; color = 'red'; }
-  } else if (ar) {
-    text = rentalDisplayStatus(ar);
-    color = (u.inspectionStatus === 'Failed' || unitOverbooked(u.unitId)) ? 'red' : insp.color;   // inspection drives; catastrophe → red
-  } else {
-    text = insp.label; color = insp.color;            // Passed / Not Ready / Failed
+    if (selfEu && !unitVoided(selfR, selfEu)) return { label: unitStatus(selfR, selfEu), color: (u.inspectionStatus === 'Failed' || unitOverbooked(u.unitId)) ? 'red' : insp.color };
+    if (isUnitAvailableFor(u, availWin.start, availWin.end, availWin.selfId)) return { label: 'Available', color: 'green' };
+    if (u.fleetStatus !== 'Active') return { label: getStatus('unitFleetStatus', u.fleetStatus).label, color: 'red' };
+    if (u.inspectionStatus === 'Failed') return { label: 'Failed', color: 'red' };
+    const cf = rentalsOverlappingUnit(u.unitId, availWin.start, availWin.end, availWin.selfId)[0];
+    return { label: cf ? 'Booked' : 'Unavailable', color: 'red' };
   }
-  return statusPill('unitInspectionStatus', u.inspectionStatus, { card: 'units', recId: u.unitId, previewColor: color, previewLabel: text });
+  const ar = activeRentalForUnit(u.unitId);
+  if (ar) {   // tied to a rental → stage + window dates
+    const win = cardWindow(ar.startDate, ar.endDate);
+    const failed = u.inspectionStatus === 'Failed';
+    const status = failed ? 'Field Call' : rentalDisplayStatus(ar);   // breakdown mid-rental = field call, not "Failed"
+    return { label: win ? `${status} · ${win}` : status, color: (failed || unitOverbooked(u.unitId)) ? 'red' : insp.color };
+  }
+  if (u.inspectionStatus === 'Failed') return { label: 'Failed', color: 'red' };
+  if (u.inspectionStatus === 'Not Ready') return { label: 'Not Ready', color: 'yellow' };
+  if (u.fleetStatus === 'Active') return { label: 'Available', color: 'green' };   // passed · active · free → rentable
+  return { label: insp.label, color: insp.color };   // passed but out of fleet → plain inspection state
+}
+function unitRentalInspPill(u) {
+  const st = unitPrimaryState(u);
+  return statusPill('unitInspectionStatus', u.inspectionStatus, { card: 'units', recId: u.unitId, previewColor: st.color, previewLabel: st.label, focal: true });   // Units row headline = focal Primary
 }
 /* The unit row's WORK-ORDER+SERVICE pill (Jac): an open WO's journey bottleneck takes
    precedence (flag-colored woPhase); otherwise the nearest service order by hours. */
+/** The WO+SERVICE pill's COLOR (extracted so the card border can mirror it). */
+function unitWoSoColor(u) {
+  const wo = openWOForUnit(u.unitId);
+  if (wo) return getEntityColor('workOrders', wo);
+  const svc = topServiceForUnit(u);
+  return svc ? svc.color : 'green';
+}
 function unitWoSoPill(u) {
   const wo = openWOForUnit(u.unitId);
   if (wo) return statusPill('woPhase', wo.phase, { card: 'workOrders', recId: wo.woId });
   const svc = topServiceForUnit(u);
   return svc ? badge(svcText(svc), svc.color) : badge('No Orders', 'green');
+}
+/* The unit mini-card's top-right FLAG corner (R9): the signals NOT already carried by
+   the two status pills — overbooked, GPS trouble, out-of-active-fleet. Renders the REAL
+   flag text (R9 flagEl, no icon substitute — Jac 2026-07-03), truncated by CSS ellipsis
+   so it never steals width from the name; several trips show the MOST-SEVERE label +
+   "+N" for the rest, full list in the R23 data-tip. One line → every card stays one line
+   tall (no stretched blank rows). Overbooked pulses (R9b). */
+const FLAG_SEV = { red: 2, yellow: 1, gray: 0 };
+function unitCardFlags(u) {
+  const f = [];
+  if (unitOverbooked(u.unitId)) f.push({ label: 'Overbooked', color: 'red', alert: true });
+  if (u.gpsStatus === 'Not Reporting') f.push({ label: 'No GPS', color: 'red' });
+  else if (u.gpsStatus === 'Verify') f.push({ label: 'GPS?', color: 'yellow' });
+  if (u.fleetStatus && u.fleetStatus !== 'Active') { const fs = getStatus('unitFleetStatus', u.fleetStatus); f.push({ label: fs.label, color: fs.color }); }
+  // The border now mirrors the two pills, so surface the warnings the pills DON'T show
+  // (Jac 2026-07-01): a due/past-due SERVICE that an open WO is hiding in pill 2, and a
+  // requested wash. GPS/overbooked/fleet above are likewise pill-less signals.
+  if (openWOForUnit(u.unitId)) { const s = topServiceForUnit(u); if (s && (s.status === 'past-due' || s.status === 'due-soon')) f.push({ label: svcText(s), color: s.color, alert: s.status === 'past-due' }); }
+  if (u.washRequested) f.push({ label: 'Wash Due', color: 'yellow' });
+  if (!f.length) return '';
+  f.sort((a, b) => (FLAG_SEV[b.color] ?? 0) - (FLAG_SEV[a.color] ?? 0));
+  const top = f[0];
+  if (f.length === 1) return flagsStack([flagEl(top.label, top.color, { alert: top.alert, title: top.label })]);
+  return flagsStack([flagEl(`${top.label} +${f.length - 1}`, top.color, { alert: top.alert, title: f.map((x) => x.label).join(' · ') })]);
 }
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -5088,7 +5140,7 @@ const ROWS = {
 
     // Row: name · phone·type · pay-$ ← LEFT  ·  [acct pill][funnel pill] → RIGHT.
     // Both status pills shown always; equal-width grid slots; margin-left:auto pushes them right.
-    const acctPill = statusPill('customerAccountType', c.accountType || 'Non-Business');
+    const acctPill = statusPill('customerAccountType', c.accountType || 'Non-Business', { focal: true });   // Customers row headline = focal Primary
     return `<div class="cr">
       <div class="cr-id">
         <span class="r-title cr-name${fc === 'red' ? ' ec-red' : ''}" style="color:${nameColor}">${esc(c.name)}</span>
@@ -5103,18 +5155,21 @@ const ROWS = {
   },
 
   units: (u) => {
-    // Layout: [pills LEFT] · [HRS·cat NAME right-aligned] · [cat icon] · [border-right stripe]
+    // MINI-CARD (Jac 2026-07-01): the unit as a vertical data-plate, laid out in a
+    // grid (auto-fit — more per screen on wide columns). Row 1: NAME + flag corner.
+    // Row 2: category icon + category name. Row 3: the two status pills, STACKED so
+    // labels never clip. Hours dropped (freed the top-right for flags). Border carries
+    // the entity-health color (--ur-hl), like the category/rentals mini-cards.
     const cat = IDX.category.get(u.categoryId);
-    const hl = getEntityColor('units', u);
+    const hl = worseColor(unitPrimaryState(u).color, unitWoSoColor(u));   // border mirrors the LOUDER of the two visible pills (Jac 2026-07-01); pill-less warnings ride the ⚠ corner
     const nameColor = (hl === 'red' || hl === 'yellow' || hl === 'green') ? `var(--${hl})` : hl === 'gray' ? 'var(--txt-3)' : 'var(--txt)';
-    const sub = [`${num(u.currentHours)} HRS`, cat ? esc(cat.name) : ''].filter(Boolean).join(' · ');
-    return `<div class="ur" style="--ur-hl:var(--${hl})">
-      <div class="ur-pills"><div class="ur-pill-slot">${unitRentalInspPill(u)}</div><div class="ur-pill-slot">${unitWoSoPill(u)}</div></div>
-      <div class="ur-id">
-        <span class="ur-sub">${sub}</span>
-        <span class="r-title ur-name${hl === 'red' ? ' ec-red' : ''}" style="color:${nameColor}">${esc(u.name)}</span>
+    return `<div class="ucard" style="--ur-hl:var(--${hl})">
+      <div class="uc-top">
+        <span class="r-title uc-name${hl === 'red' ? ' ec-red' : ''}" style="color:${nameColor}">${esc(u.name)}</span>
+        <span class="uc-flags">${unitCardFlags(u)}</span>
       </div>
-      <span class="ur-cat">${categoryIconFor(cat && cat.name)}</span>
+      <div class="uc-cat"><span class="uc-caticon">${categoryIconFor(cat && cat.name)}</span><span class="uc-catname">${cat ? esc(cat.name) : '—'}</span></div>
+      <div class="uc-pills"><div class="uc-slot">${unitRentalInspPill(u)}</div><div class="uc-slot">${unitWoSoPill(u)}</div></div>
     </div>`;
   },
 
@@ -5148,45 +5203,47 @@ const ROWS = {
       ? categoryAvailableCount(c.categoryId, availWin.start, availWin.end, availWin.selfId)
       : free.filter(isUnitRentable).length;
     const availTip = availWin ? `${availN} available for the selected rental window` : `${availN} rentable and free to go out right now`;
-    // The availability row is ONE bank of four equal-height stamped plates (.catr-cell):
-    //   LEAD [ AVAIL n  |  NEXT wkday·time ]  ·  [ PASS ] [ NR ] [ FAIL ]
-    // Lead = availability: ≥1 free now → green "AVAIL" count (taps to the category's
-    // available units); 0 free → red "NEXT" free-date (soonest rental end + 4h turnaround,
-    // white date text), tapping jumps to THAT unit; 0 free with no return date on record →
-    // red "NONE" plate stamping the one-word reason why (On rent / All failed / Off fleet…).
+    // The availability row, rendered in the rulebook R3b pill language (badge()): a full-
+    //   width LEAD pill over a PASS · NR · FAIL trio.
+    //   LEAD  [ N Avail  |  Next wkday·time  |  None · reason ]
+    //   TRIO  [ n Pass ] [ n NR ] [ n Fail ]
+    // Lead = availability: ≥1 free now → green "N Avail" (taps to the category's available
+    // units); 0 free → red "Next" free-date (soonest rental end + 4h turnaround), tapping
+    // jumps to THAT unit; 0 free with no return date on record → red "None · reason" pill
+    // stamping the one-word why (On rent / All failed / Off fleet…) — inert, nothing to open.
     const next = availN === 0 ? categoryNextAvailable(c.categoryId) : null;
     // Compact syntax (Jac 2026-07-01): a weekday inside the next 7 days (else Mon-DD),
     // and time as just the hour + a/p — keeps the lead short so the trio gets more room.
     const compactClock = (min) => { if (min == null) return ''; let h = Math.floor(min / 60); const ap = h < 12 ? 'a' : 'p'; h = h % 12 || 12; return `${h}${ap}`; };
     let lead;
     if (availN > 0) {
-      lead = `<button class="catr-cell catr-lead js-cat-avail" data-cat="${esc(c.categoryId)}" style="--ct:var(--green);--ct-bg:var(--green-bg)" data-tip="${esc(availTip)} — tap to open these units"><span class="cc-k">AVAIL</span><span class="cc-v">${availN}</span></button>`;
+      lead = `<button class="catr-slot js-cat-avail" data-cat="${esc(c.categoryId)}" data-tip="${esc(availTip)} — tap to open these units">${badge(`${availN} Avail`, 'green', true)}</button>`;
     } else if (next) {
       const nd = parseISO(next.iso), daysAhead = nd ? Math.round((nd - TODAY) / 86400000) : 99;
       const dlabel = (nd && daysAhead >= 0 && daysAhead <= 7) ? DOW3[nd.getDay()] : fmtShortDate(next.iso).replace(' 0', ' ');
       const when = `${dlabel}${next.min != null ? ` ${compactClock(next.min)}` : ''}`;
       const nu = IDX.unit.get(next.unitId);
-      lead = `<button class="catr-cell catr-lead catr-lead-next js-cat-next" data-unit="${esc(next.unitId)}" style="--ct:var(--red);--ct-bg:var(--red-bg)" data-tip="Next free: ${esc(nu ? nu.name : 'unit')} on ${esc(when)} (4-hr turnaround) — tap to open it"><span class="cc-k">NEXT</span><span class="cc-v cc-date">${esc(when)}</span></button>`;
+      lead = `<button class="catr-slot js-cat-next" data-unit="${esc(next.unitId)}" data-tip="Next free: ${esc(nu ? nu.name : 'unit')} on ${esc(when)} (4-hr turnaround) — tap to open it">${badge(`Next ${when}`, 'red')}</button>`;
     } else {
       // 0 free and no return date to show → tell the salesperson WHY in one word (Jac).
       const why = categoryUnavailReason(c.categoryId);
-      lead = `<div class="catr-cell catr-lead catr-lead-none" style="--ct:var(--red);--ct-bg:var(--red-bg)" data-tip="None available — ${esc(why.toLowerCase())}"><span class="cc-k">NONE</span><span class="cc-v cc-why">${esc(why)}</span></div>`;
+      lead = `<div class="catr-slot catr-slot-none" data-tip="None available — ${esc(why.toLowerCase())}">${badge(`None · ${why}`, 'red')}</div>`;
     }
-    // The three status plates (Passed · Not Ready · Failed inspection) filter Units to that
+    // The three status pills (Passed · Not Ready · Failed inspection) filter Units to that
     // status in this category via the established js-fleet-filter path (like the detail mixbar).
     const tally = (label, count, color, status, tip) =>
-      `<button class="catr-cell js-fleet-filter" data-cat="${esc(c.categoryId)}" data-status="${esc(status)}" data-kind="inspection" style="--ct:var(--${color});--ct-bg:var(--${color}-bg)" data-tip="${esc(tip)}"><span class="cc-k">${label}</span><span class="cc-v">${count}</span></button>`;
+      `<button class="catr-slot js-fleet-filter" data-cat="${esc(c.categoryId)}" data-status="${esc(status)}" data-kind="inspection" data-tip="${esc(tip)}">${badge(`${count} ${label}`, color)}</button>`;
     const tallyRow = `${
-      tally('PASS', mix.Ready, 'green', 'Ready', `${mix.Ready} passed inspection — tap to filter Units`)
+      tally('Pass', mix.Ready, 'green', 'Ready', `${mix.Ready} passed inspection — tap to filter Units`)
     }${
       tally('NR', mix['Not Ready'], 'yellow', 'Not Ready', `${mix['Not Ready']} not ready — tap to filter Units`)
     }${
-      tally('FAIL', mix.Failed, 'red', 'Failed', `${mix.Failed} failed inspection — tap to filter Units`)
+      tally('Fail', mix.Failed, 'red', 'Failed', `${mix.Failed} failed inspection — tap to filter Units`)
     }`;
     const rate = (label, v) => `<div class="catr-rate"><span class="catr-rk">${label}</span><span class="catr-rv${v ? '' : ' none'}">${v ? money(v) : '—'}</span></div>`;
     return `<div class="catr" style="--catr-hl:var(--${hl})">
       <div class="catr-head"><span class="catr-cat">${categoryIconFor(c.name)}</span><span class="r-title catr-name${hl === 'red' ? ' ec-red' : ''}" style="color:${nameColor}" data-tip="${esc(c.name)}">${esc(c.name)}</span></div>
-      <div class="catr-pills">${lead}${tallyRow}</div>
+      <div class="catr-pills">${lead}<div class="catr-tally-row">${tallyRow}</div></div>
       <div class="catr-rates">${rate('1-Day', c.rate1Day)}${rate('7-Day', c.rate7Day)}${rate('4-Week', c.rate4Wk)}${rate('Weekend', c.weekend)}</div>
     </div>`;
   },
@@ -5203,7 +5260,7 @@ const ROWS = {
     const win = winR ? fmtWindow(winR.startDate, winR.endDate) : '';
     return `<div class="row-1"><span class="r-title">${esc(i.invoiceId)}</span><span class="r-fields">
         <span>${esc(cust?.name || '')}</span><span class="r-key"><b style="color:var(--${paidColor})">${money(t.paid)}</b> / <b style="color:var(--green)">${money(t.total)}</b></span><span>${esc(fmtShortDate(i.dueDate))}</span></span></div>
-      <div class="row-2">${statusPill('invoiceStatus', t.status, { card: 'invoices', recId: i.invoiceId })}${rentalPills}${win ? `<span class="r-key">${esc(win)}</span>` : ''}</div>`;
+      <div class="row-2">${statusPill('invoiceStatus', t.status, { card: 'invoices', recId: i.invoiceId, focal: true })}${rentalPills}${win ? `<span class="r-key">${esc(win)}</span>` : ''}</div>`;
   },
 
   workOrders: (w) => {
@@ -5216,7 +5273,7 @@ const ROWS = {
         <span class="r-fields"><span>${fmtShortDate(w.date)}</span></span></div>
       <div class="row-2">
         ${badge(getStatus('woType', w.woType).label, getStatus('woType', w.woType).color)}
-        ${statusPill('woPhase', w.phase, { card: 'workOrders', recId: w.woId })}
+        ${statusPill('woPhase', w.phase, { card: 'workOrders', recId: w.woId, focal: true })}
         ${unit ? statusPill('unitInspectionStatus', unit.inspectionStatus, { card: 'units', recId: unit.unitId }) : ''}
         ${badge(getStatus('billCustomer', w.billCustomer).label, getStatus('billCustomer', w.billCustomer).color)}
         ${w.billCustomer === 'Yes' && cust ? refPill('customers', w.customerId, cust.name) : ''}
@@ -5230,7 +5287,7 @@ const ROWS = {
     const ar = unit ? activeRentalForUnit(unit.unitId) : null;
     return `<div class="row-1"><span class="r-title">${esc(`${unit?.name || '—'} — ${fmtShortDate(n.date)}`)}</span></div>
       <div class="row-2">
-        <span class="pill c-${ir.color}" data-pill-card="inspections" data-pill-rec="${esc(n.inspectionId)}">${esc(ir.label)}</span>
+        <span class="pill c-${ir.color} focal" data-pill-card="inspections" data-pill-rec="${esc(n.inspectionId)}">${esc(ir.label)}</span>
         ${badge('Wash: ' + (n.wash || 'Pending'), n.wash === 'Yes' ? 'green' : 'gray')}
         ${badge(getStatus('billCustomer', n.billCustomer).label, getStatus('billCustomer', n.billCustomer).color)}
         ${n.woId ? refPill('workOrders', n.woId, 'WO') : ''}
@@ -5244,7 +5301,7 @@ const ROWS = {
     return `<div class="row-1"><span class="r-title">${esc(u.name)}</span><span class="r-fields">
         <span>${esc(top?.name || 'Service')}</span><span>Every ${top?.intervalHours || '—'} HRS</span></span></div>
       <div class="row-2">
-        ${svcPills(top)}
+        ${svcPills(top, true)}
         ${ar ? statusPill('rentalStatus', rentalDisplayStatus(ar), { card: 'rentals', recId: ar.rentalId }) : ''}
       </div>`;
   },
@@ -5773,13 +5830,17 @@ function woSectionHtml(w) {
     : w.woType === 'Failed'
       ? flagEl('Failed Inspection', 'red', { icon: CARD_ICON.inspections, card: w.inspectionId ? 'inspections' : null, recId: w.inspectionId || null, title: w.inspectionId ? 'Open the failed inspection' : 'WO type: failed inspection' })
       : flagEl(w.assignedMechanic || 'Mechanic', 'gray', { icon: CARD_ICON.customers, title: 'WO type: opened by a mechanic' });
+  // G2: only the bottleneck (worst OPEN) line's gate is Primary; siblings dim to Secondary.
+  const _openL = (w.lineItems || []).map((l, i) => ({ i, ph: l.phase, eta: l.eta })).filter((l) => l.ph !== 'Complete');
+  _openL.sort((a, b) => ((WO_SEV[a.ph] ?? 9) - (WO_SEV[b.ph] ?? 9)) || String(a.eta || '~').localeCompare(String(b.eta || '~')));
+  const bottleIdx = _openL.length ? _openL[0].i : -1;
   const lines = (w.lineItems || []).map((li, idx) => {
     const ph = getStatus('woPhase', li.phase);
     const lbl = li.eta && (li.phase === 'Part Ordered' || li.phase === 'Part is Local') ? `ETA ${fmtShortDate(li.eta)}` : ph.label;
     const ven = li.vendorId ? IDX.vendor?.get?.(li.vendorId) || DATA.vendors.find((v) => v.vendorId === li.vendorId) : null;
     const tip = [ven ? `Vendor: ${ven.name}` : '', li.url ? li.url : '', li.aiPending ? '🤠 Mr. Wrangler will fill the empty fields' : ''].filter(Boolean).join(' · ');
     // the description re-opens the part popup; vendor/url live in its tooltip
-    return `<div class="woline">${gatePillRaw(lbl, ph.color, 'js-wophase-line', { rec: w.woId, idx })}<span class="js-partedit" data-rec="${w.woId}" data-idx="${idx}" style="cursor:pointer"${tip ? ` data-tip="${esc(tip)}"` : ''}>${li.aiPending ? '✨ ' : ''}${esc(li.part)}${ven ? ' ' + linkName(ven.name, { js: 'js-vendor-open', data: { rec: ven.vendorId } }) : ''}</span><span class="nums"><b>${money(li.cost)}</b><span>${li.hours || 0}h</span></span></div>`;
+    return `<div class="woline">${gatePillRaw(lbl, ph.color, `js-wophase-line${idx === bottleIdx ? '' : ' dim'}`, { rec: w.woId, idx })}<span class="js-partedit" data-rec="${w.woId}" data-idx="${idx}" style="cursor:pointer"${tip ? ` data-tip="${esc(tip)}"` : ''}>${li.aiPending ? '✨ ' : ''}${esc(li.part)}${ven ? ' ' + linkName(ven.name, { js: 'js-vendor-open', data: { rec: ven.vendorId } }) : ''}</span><span class="nums"><b>${money(li.cost)}</b><span>${li.hours || 0}h</span></span></div>`;
   }).join('');
   const woBg = woBackdrop(w);
   // R9b: a WO left open past the window with NO parts/labor reads $0 by omission, not by
@@ -5799,7 +5860,7 @@ function woSectionHtml(w) {
       <span class="derived">Parts ${money(Math.max(0, billed - laborBilled))} + Hrs ${money(laborBilled)} = ${money(billed)}</span>
       ${w.cancelled
         ? `<span class="pill c-gray" style="height:26px;font-size:11px" data-tip="This work order is cancelled">Cancelled</span>${actionPill('commit', 'Reopen WO', { js: 'js-wo-reopen', h: 26, data: { rec: w.woId } })}`
-        : `${addBtn('Invoice', { link: true, icon: CARD_ICON.invoices, js: 'js-bill-wo', h: 26, data: { rec: w.woId } })}<button class="pill ghost js-wo-cancel" data-r="R18" data-rec="${esc(w.woId)}" style="height:26px;font-size:11px">Cancel WO</button>${actionPill('commit', 'Complete WO', { js: 'js-wo-complete', h: 26, data: { rec: w.woId } })}`}
+        : `${addBtn('Invoice', { link: true, icon: CARD_ICON.invoices, js: 'js-bill-wo', h: 26, data: { rec: w.woId } })}<button class="pill ghost js-wo-cancel" data-r="R18" data-rec="${esc(w.woId)}" style="height:26px;font-size:11px">Cancel WO</button>${actionPill('commit', 'Complete WO', { js: `js-wo-complete ramp${bn.color === 'green' ? ' ready' : ''}`, h: 26, data: { rec: w.woId } })}`}
     </div>
   </div>`;
 }
@@ -6086,9 +6147,8 @@ const DETAIL = {
       <div class="rd-head-r">${masterGate(r, { truck })}<div class="rd-head-bal">${invPill}${rdBal}</div></div>
     </div>`;
 
-    /* Not-Ready blocker — jumps to unit pills; sits above the calendar. */
-    const blockN = units.filter((eu) => { const bu = IDX.unit.get(eu.unitId); return bu && bu.inspectionStatus !== 'Ready' && !unitVoided(r, eu); }).length;
-    const blocker = blockN ? `<button class="tl-blocker js-tl-blocker" data-rec="${esc(r.rentalId)}" data-tip="Jump to the machines that aren't ready"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>${blockN} machine${blockN > 1 ? 's' : ''} Not Ready →</button>` : '';
+    /* Not-Ready blocker RETIRED (Jac 2026-06-30): status colors now carry the warning;
+       the dedicated red bar is redundant. (Removed from the render below too.) */
 
     /* Calendar: the INLINE editable window calendar (popup retired — Jac 2026-06-25).
        Tap a day to set start, tap another to set end; the left Categories/Units card
@@ -6142,7 +6202,6 @@ const DETAIL = {
 
     const rentalSec = `<div class="section sec-${stColor} rentalsec">
       ${rdHead}
-      ${blocker ? `<div class="rd-blocker">${blocker}</div>` : ''}
       ${calHtml}
       <div class="stalls rd-units">${stallsHtml}</div>
       ${rdFoot}
@@ -6186,7 +6245,7 @@ const DETAIL = {
       <div class="kv"><span class="v inline-edit" data-edit="unitHours" data-rec="${u.unitId}">${num(u.currentHours)} HRS</span></div>
     </div></div>`;
     const gps = `<div class="section"><h4>GPS</h4><div class="fieldstack">
-      ${kvPills(u.gpsStatus ? statusPill('gpsStatus', u.gpsStatus) : badge('No GPS'))}
+      ${kvPills(u.gpsStatus ? statusPill('gpsStatus', u.gpsStatus, { focal: true }) : badge('No GPS'))}
       ${efld('units', u, 'unitId', 'gpsType', 'GPS unit/type')}
       ${efld('units', u, 'unitId', 'gpsPlacement', 'Placement')}
     </div></div>`;
@@ -6627,7 +6686,7 @@ const DETAIL = {
     const journey = (w.lineItems || []).map((li, idx) => {
       const ven = li.vendorId ? IDX.vendor?.get?.(li.vendorId) || DATA.vendors.find((v) => v.vendorId === li.vendorId) : null;
       const venName = ven?.name || li.vendor || '';
-      return `<div class="hitem"><span data-r="R1" class="pill gate c-${getStatus('woPhase', li.phase).color} js-wophase-line" data-rec="${w.woId}" data-idx="${idx}" style="min-width:88px;justify-content:center">${esc(getStatus('woPhase', li.phase).label)} ${I.chev}</span><span>${esc(li.part)}</span><span class="spacer"></span><span class="muted">${li.eta ? fmtShortDate(li.eta) + ' · ' : ''}${li.hours || 0}h${venName ? ' · ' : ''}${venName ? (ven ? linkName(venName, { js: 'js-vendor-open', data: { rec: ven.vendorId } }) : esc(venName)) : ''}</span><b>${money(li.cost)}</b></div>`;
+      return `<div class="hitem"><span data-r="R1" class="pill gate c-${getStatus('woPhase', li.phase).color} js-wophase-line" data-rec="${w.woId}" data-idx="${idx}" style="min-width:88px;justify-content:center">${I.chev}${esc(getStatus('woPhase', li.phase).label)}</span><span>${esc(li.part)}</span><span class="spacer"></span><span class="muted">${li.eta ? fmtShortDate(li.eta) + ' · ' : ''}${li.hours || 0}h${venName ? ' · ' : ''}${venName ? (ven ? linkName(venName, { js: 'js-vendor-open', data: { rec: ven.vendorId } }) : esc(venName)) : ''}</span><b>${money(li.cost)}</b></div>`;
     }).join('');
     const billable = partsCost > 0 || labor > 0;
     const alreadyBilled = DATA.invoices.some((i) => (i.lineItems || []).some((li) => li.kind === 'WO' && li.ref === w.woId));
@@ -6865,6 +6924,130 @@ function appendWindowed(list, rows, cs, card, renderRow) {
     btn.dataset.card = card;
     list.appendChild(btn);
   }
+}
+/* ── Grouped card lists (Jac 2026-07-03) — Units / Rentals / Customers / Invoices split
+   into COLLAPSIBLE groups, each led by a thin full-width dashed divider in the group's
+   color, a live count, and a collapse chevron. The active sort orders records WITHIN a
+   group; a collapsed group persists per device (localStorage). ── */
+const UNIT_SECTIONS = [
+  { key: 'Not Ready',    label: 'Not Ready',       color: 'yellow' },
+  { key: 'Attention',    label: 'Needs Attention', color: 'red' },
+  { key: 'Today',        label: 'Today',           color: 'orange' },
+  { key: 'Tomorrow',     label: 'Tomorrow',        color: 'yellow' },
+  { key: 'Reserved',     label: 'Reserved',        color: 'purple' },
+  { key: 'Off Rent',     label: 'Off Rent',        color: 'blue' },
+  { key: 'End Rent',     label: 'End Rent',        color: 'yellow' },
+  { key: 'On Rent',      label: 'On Rent',         color: 'green' },
+  { key: 'Available',    label: 'Available',       color: 'green' },
+  { key: 'Out of Fleet', label: 'Out of Fleet',    color: 'gray' },
+];
+/** A unit's stage bucket for the Units column groups. Rental stage (Today/Tomorrow
+    broken out of Reserved) when tied to a rental; else Available / Not Ready / Attention
+    (Failed) / Out of Fleet from its own condition. */
+function unitStageKey(u) {
+  if (u.fleetStatus && u.fleetStatus !== 'Active') return 'Out of Fleet';
+  const ar = activeRentalForUnit(u.unitId);
+  if (ar) {
+    const eu = unitEntry(ar, u.unitId);
+    let st = eu ? unitStatus(ar, eu) : rentalDisplayStatus(ar);
+    if (st === 'Reserved') { const n = dayDiff(TODAY, parseISO(ar.startDate)); if (n === 0) st = 'Today'; else if (n === 1) st = 'Tomorrow'; }
+    if (['Today', 'Tomorrow', 'Reserved', 'On Rent', 'Off Rent', 'End Rent'].includes(st)) return st;
+    return 'On Rent';   // any other active stage folds under On Rent
+  }
+  if (u.inspectionStatus === 'Failed') return 'Attention';
+  if (u.inspectionStatus === 'Not Ready') return 'Not Ready';
+  return 'Available';
+}
+/** Per-card grouping: keyOf(rec) → a group key; sections = ordered {key,label?,color}.
+    Records whose key isn't listed fall into a trailing gray bucket (never dropped). */
+const GROUP_DEFS = {
+  units: { keyOf: unitStageKey, sections: UNIT_SECTIONS },
+  rentals: { keyOf: (r) => rentalRevStatus(r), sections: [
+    { key: 'Today', color: 'red' }, { key: 'Tomorrow', color: 'yellow' }, { key: 'Reserved', color: 'purple' },
+    { key: 'On Rent', color: 'green' }, { key: 'Off Rent', color: 'blue' }, { key: 'End Rent', color: 'yellow' },
+    { key: 'Returned', color: 'gray' }, { key: 'No Show', color: 'red' }, { key: 'Cancelled', color: 'gray' }, { key: 'Quote', color: 'blue' },
+  ] },
+  customers: { keyOf: (c) => c.payStatus || 'Current', sections: [
+    { key: 'Unpaid', color: 'red' }, { key: 'Partial', color: 'yellow' }, { key: 'Current', color: 'green' },
+  ] },
+  invoices: { keyOf: (i) => { const s = invoiceTotals(i).status; return /^Late/.test(s) ? 'Late' : s; }, sections: [
+    { key: 'Collections', color: 'red' }, { key: 'Late', color: 'red' }, { key: 'Unpaid', color: 'yellow' },
+    { key: 'Partial', color: 'yellow' }, { key: 'Not Due', color: 'blue' }, { key: 'Paid', color: 'green' }, { key: 'Refunded', color: 'gray' },
+  ] },
+};
+// Collapsed groups, remembered per device: { "<card>:<groupKey>": 1 }.
+const COLLAPSED_GROUPS = (() => { try { return JSON.parse(localStorage.getItem('jactec.collapsedGroups') || '{}'); } catch (e) { return {}; } })();
+const groupCollapsed = (card, key) => !!COLLAPSED_GROUPS[card + ':' + key];
+function toggleGroupCollapsed(card, key) {
+  const k = card + ':' + key;
+  if (COLLAPSED_GROUPS[k]) delete COLLAPSED_GROUPS[k]; else COLLAPSED_GROUPS[k] = 1;
+  try { localStorage.setItem('jactec.collapsedGroups', JSON.stringify(COLLAPSED_GROUPS)); } catch (e) {}
+}
+/* Custom GROUP ORDER — drag-to-reorder a card's group headers (Jac 2026-07-04),
+   remembered PER ROLE (Admin/Mechanic/Sales/... each keep their own order), synced
+   through the backend (getGroupOrder/setGroupOrder — any signed-in role reads/writes
+   their OWN slice, no Admin gate) so it follows a role across devices. localStorage
+   is the instant local cache + the offline/#local-demo fallback. Shape mirrors the
+   backend 1:1: { [role]: { [card]: [orderedGroupKeys] } }. */
+const GROUP_ORDER = (() => { try { return JSON.parse(localStorage.getItem('jactec.groupOrder') || '{}'); } catch (e) { return {}; } })();
+function customGroupOrder(card) { const r = GROUP_ORDER[currentRole || 'shared']; return (r && r[card]) || null; }
+let groupOrderSaveTimer = null;
+function saveGroupOrder(card, keys) {
+  const role = currentRole || 'shared';
+  (GROUP_ORDER[role] || (GROUP_ORDER[role] = {}))[card] = keys;
+  try { localStorage.setItem('jactec.groupOrder', JSON.stringify(GROUP_ORDER)); } catch (e) {}
+  if (typeof backendPassword !== 'undefined' && backendPassword) {
+    clearTimeout(groupOrderSaveTimer);
+    groupOrderSaveTimer = setTimeout(() => { backendCall('setGroupOrder', { order: GROUP_ORDER[role] }).catch(() => {}); }, 600);
+  }
+}
+/* Boot: pull this role's saved group order from the backend (mirrors loadGlobalViews).
+   A no-op in #local/offline demo mode — localStorage is the only source there. */
+async function loadGroupOrderFromBackend() {
+  if (typeof backendPassword === 'undefined' || !backendPassword) return;
+  try {
+    const r = await backendCall('getGroupOrder');
+    if (r && r.ok && r.order && typeof r.order === 'object' && Object.keys(r.order).length) {
+      GROUP_ORDER[currentRole || 'shared'] = r.order;
+      try { localStorage.setItem('jactec.groupOrder', JSON.stringify(GROUP_ORDER)); } catch (e) {}
+      render();
+    }
+  } catch (e) { /* offline → keep local cache */ }
+}
+function appendGroupedSections(list, rows, cs, card) {
+  const def = GROUP_DEFS[card];
+  const limit = cs.listLimit || VIRT_CAP;
+  const buckets = new Map();
+  for (const rec of rows) { const k = def.keyOf(rec) || '—'; if (!buckets.has(k)) buckets.set(k, []); buckets.get(k).push(rec); }
+  const known = new Set(def.sections.map((s) => s.key));
+  let secs = def.sections.filter((s) => buckets.has(s.key))
+    .concat([...buckets.keys()].filter((k) => !known.has(k)).map((k) => ({ key: k, color: 'gray' })));   // leftover keys → trailing gray group (never dropped)
+  const custom = customGroupOrder(card);
+  if (custom) {
+    const rank = new Map(custom.map((k, i) => [k, i]));
+    secs = secs.map((s, i) => [s, rank.has(s.key) ? rank.get(s.key) : 1000 + i])   // never-dragged key (e.g. a brand-new status) → keeps its default relative spot, appended after every ranked one
+      .sort((a, b) => a[1] - b[1]).map((p) => p[0]);
+  }
+  let shown = 0, remaining = 0;
+  for (const sec of secs) {
+    const group = buckets.get(sec.key);
+    if (!group || !group.length) continue;
+    const collapsed = groupCollapsed(card, sec.key);
+    const hd = el('div', 'grp-hd js-group-toggle' + (collapsed ? ' is-collapsed' : '') + (sec.color === 'red' ? ' sec-danger' : ''));
+    hd.dataset.card = card; hd.dataset.group = sec.key;
+    hd.draggable = true;   // drag-to-reorder (native DnD — matches the dispatch-rail stop reorder pattern)
+    hd.setAttribute('style', `--sec:var(--${sec.color})`);
+    hd.innerHTML = `<span class="grp-grip" data-tip="Drag to reorder">⠿</span><span class="grp-chev">${I.chevR}</span><span class="grp-label">${esc(sec.label || sec.key)} · ${group.length}</span>`;
+    list.appendChild(hd);
+    if (collapsed) continue;   // header only — cards hidden, and they don't consume the window
+    const canShow = limit - shown;
+    if (canShow <= 0) { remaining += group.length; continue; }
+    const take = group.slice(0, canShow);
+    remaining += group.length - take.length;
+    take.forEach((rec) => list.appendChild(rowEl(card, rec)));
+    shown += take.length;
+  }
+  if (remaining > 0) { const btn = el('button', 'showmore js-showmore', `↓ Show more · ${remaining} hidden`); btn.dataset.card = card; list.appendChild(btn); }
 }
 
 // The open record's display title, mirroring each card's old detail-head title.
@@ -7154,6 +7337,8 @@ function listView(cardDef, session) {
       const hint = PLUS_NEW.has(card) ? ` — use <b>+ New</b> above` : '';
       list.appendChild(el('div', 'empty', `No ${esc(cardDef.singular)}${session.anchor ? ' related' : hint}.`));
     }
+  } else if (GROUP_DEFS[card] && !(availWin && card === 'units')) {
+    appendGroupedSections(list, rows, cs, card);   // collapsible stage/status groups (Jac 2026-07-03)
   } else {
     appendWindowed(list, rows, cs, card, (rec) => list.appendChild(rowEl(card, rec)));
   }
@@ -12534,7 +12719,12 @@ function initTooltip() {
       const r = t.getBoundingClientRect();
       tipEl.style.maxWidth = 'none';
       tipEl.style.left = Math.max(8, Math.min(r.left, window.innerWidth - tipEl.offsetWidth - 8)) + 'px';
-      tipEl.style.top = (r.bottom + 6 > window.innerHeight - 30 ? r.top - 30 : r.bottom + 6) + 'px';
+      // Default ABOVE the element (Jac 2026-07-03): a tip anchored below sat right where
+      // the cursor/finger already is, hidden under it. Drop below only when there's no
+      // room above (near the top of the viewport). Measured offsetHeight (not a fixed
+      // guess) so a longer tip that wraps to 2+ lines still clears the target with no overlap.
+      const th = tipEl.offsetHeight || 30;
+      tipEl.style.top = (r.top - th - 6 < 8 ? r.bottom + 6 : r.top - th - 6) + 'px';
       tipEl.classList.add('show');
     }, 500);
   });
@@ -13782,6 +13972,7 @@ function onClick(e) {
   if (closest('.js-cardback')) { e.stopPropagation(); return cardBack(closest('.js-cardback').dataset.card); }
   if (closest('.js-cardfwd')) { e.stopPropagation(); return cardFwd(closest('.js-cardfwd').dataset.card); }
 
+  if (closest('.js-group-toggle')) { const h = closest('.js-group-toggle'); e.stopPropagation(); toggleGroupCollapsed(h.dataset.card, h.dataset.group); return render(); }   // collapse/expand a card group (persists per device)
   if (closest('.js-showmore')) { const b = closest('.js-showmore'); e.stopPropagation(); const cs = activeSession().cards[b.dataset.card]; if (cs) { cs.listLimit = (cs.listLimit || VIRT_CAP) + SHOW_MORE_BATCH; render(); } return; }
   if (closest('.js-tolist')) { e.stopPropagation(); return cardToList(closest('.card').dataset.card); }
   // a category mini-card's Availability pill → jump to the Units card, narrowed to
@@ -16950,6 +17141,7 @@ function finishLoad() {
   snapshotSaved();                                              // baseline = what the backend currently holds
   buildIndexes(); state.cascade = createCascade(DATA); booting = false; render();
   loadGlobalViews();                                            // pull the shared, company-wide view set
+  loadGroupOrderFromBackend();                                  // pull THIS role's saved card-group order
   loadChats();                                                  // pull the shared team-chat threads (§ team-chat sync)
   wranglerRailLoad();                                           // load the Mr. Wrangler rail from IndexedDB (+ one-time localStorage migration)
   refreshWranglerRequests();                                    // §18e populate the approval-inbox badge
@@ -17145,6 +17337,62 @@ function boot() {
     state.dispFocusId = dispDragId; dispDragId = null; render();   // keep the moved stop highlighted so it stays trackable after the reorder
   });
   document.addEventListener('dragend', () => { dispDragId = null; document.querySelectorAll('.disp-dragging').forEach((n) => n.classList.remove('disp-dragging')); document.querySelectorAll('.disprail.dragging').forEach((n) => n.classList.remove('dragging')); });
+  // Card GROUP header reorder (Jac 2026-07-04) — native drag, same self-contained
+  // pattern as the dispatch-rail stop reorder above. Reorders Units/Rentals/Customers/
+  // Invoices groups; persisted per role via saveGroupOrder (see its comment for the
+  // pending backend-sync note).
+  let grpDragKey = null, grpDragCard = null, grpDragOverEl = null;
+  document.addEventListener('dragstart', (e) => {
+    const hd = e.target.closest && e.target.closest('.grp-hd'); if (!hd) return;
+    grpDragKey = hd.dataset.group; grpDragCard = hd.dataset.card;
+    if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', grpDragKey); } catch (x) {} }
+    hd.classList.add('grp-dragging');
+  });
+  document.addEventListener('dragover', (e) => {
+    if (!grpDragKey) return;
+    const hd = e.target.closest && e.target.closest('.grp-hd');
+    if (!hd || hd.dataset.card !== grpDragCard) return;
+    e.preventDefault();
+    if (grpDragOverEl !== hd) { if (grpDragOverEl) grpDragOverEl.classList.remove('grp-dragover'); hd.classList.add('grp-dragover'); grpDragOverEl = hd; }
+  });
+  document.addEventListener('drop', (e) => {
+    if (!grpDragKey) return;
+    const hd = e.target.closest && e.target.closest('.grp-hd');
+    if (!hd || hd.dataset.card !== grpDragCard) return;
+    e.preventDefault();
+    const overKey = hd.dataset.group;
+    if (overKey !== grpDragKey) {
+      const list = hd.closest('.list');
+      if (list) {
+        const keys = [...list.querySelectorAll('.grp-hd')].map((h) => h.dataset.group);
+        const from = keys.indexOf(grpDragKey); if (from !== -1) keys.splice(from, 1);
+        const to = keys.indexOf(overKey);
+        keys.splice(to < 0 ? keys.length : to, 0, grpDragKey);
+        saveGroupOrder(grpDragCard, keys);
+        render();
+      }
+    }
+  });
+  document.addEventListener('dragend', () => {
+    grpDragKey = null; grpDragCard = null;
+    if (grpDragOverEl) { grpDragOverEl.classList.remove('grp-dragover'); grpDragOverEl = null; }
+    document.querySelectorAll('.grp-dragging').forEach((n) => n.classList.remove('grp-dragging'));
+  });
+  // Ctrl/Cmd+G — collapse or expand EVERY visible group in one keystroke (Jac
+  // 2026-07-04): if any is expanded, collapse them all; once all are collapsed,
+  // the same keystroke expands them all back.
+  document.addEventListener('keydown', (e) => {
+    if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'g') return;
+    if (e.target.closest && e.target.closest('input, textarea, select, [contenteditable]')) return;   // never hijack typing
+    const heads = [...document.querySelectorAll('.grp-hd')]; if (!heads.length) return;
+    e.preventDefault();
+    const anyExpanded = heads.some((h) => !h.classList.contains('is-collapsed'));
+    heads.forEach((h) => {
+      const isCollapsed = groupCollapsed(h.dataset.card, h.dataset.group);
+      if (anyExpanded ? !isCollapsed : isCollapsed) toggleGroupCollapsed(h.dataset.card, h.dataset.group);
+    });
+    render();
+  });
   // §2.3 route arrows — keyboard parity: Enter/Space arms or lands a leg; Escape cancels the draw.
   document.addEventListener('keydown', (e) => {
     const pt = e.target.closest && e.target.closest('.js-disp-arrowpt');

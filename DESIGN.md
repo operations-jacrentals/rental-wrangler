@@ -33,7 +33,7 @@ colors:
   text-3: "#6b7480"
   track: "#22262e"
   # — Status registry: each hue means ONE thing everywhere
-  ready: "#34d399"               # green  — ready / active
+  ready: "#358a5d"               # green  — ready / active (muted: "done" stays quiet)
   caution: "#ffe000"             # yellow — caution
   danger: "#ff1040"              # red    — danger / overdue / failed
   link: "#5b9dff"               # blue   — link / commit action

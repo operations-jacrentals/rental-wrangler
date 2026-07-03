@@ -14,9 +14,9 @@
   --txt: #e9edf4; --txt-2: #a7afbc; --txt-3: #6b7480; --track: #22262e; --on-orange: #1a1205;
 
   /* status colors (base = text/border tone, -bg = soft fill) */
-  --green:#34d399;  --green-bg:rgba(52,211,153,.14);
+  --green:#358a5d;  --green-bg:rgba(53,138,93,.14);
   --yellow:#ffe000; --yellow-bg:rgba(255,224,0,.15);
-  --red:#ff1040;    --red-bg:rgba(255,16,64,.18);
+  --red:#ff1040;    --red-bg:rgba(255,16,64,.11);
   --blue:#5b9dff;   --blue-bg:rgba(91,157,255,.14);
   --navy:#6f8bdb;   --navy-bg:rgba(70,102,196,.18);
   --purple:#b07cf5; --purple-bg:rgba(176,124,245,.16);
@@ -929,7 +929,8 @@ select.lf-in { appearance: none; cursor: pointer; }
 
 /* ── §6.2 #6 Pills (registry-driven; never hardcoded) ────────────────────── */
 .pill {
-  display: inline-flex; align-items: center; gap: 5px; height: 19px; padding: 0 9px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px; height: 19px; padding: 0 9px;
+  line-height: 1;   /* tight line box so UPPERCASE caps optically center (1.4× leading made them ride high) */
   border-radius: 999px; font-size: 10px; font-weight: 700; letter-spacing: .2px; white-space: nowrap;
   box-shadow: 0 1px 2px rgba(0,0,0,.25); border: 1px solid transparent; cursor: pointer;
 }
@@ -982,7 +983,7 @@ select.lf-in { appearance: none; cursor: pointer; }
 /* R3 status pills + R3b data badges — stamped data-plate: Saira caps, squared
    corners, a touch larger for legibility (Jac 2026-06-23). Gates (R1), ref/link
    pills (R2), and derived pills (R4) keep their own shapes. */
-.pill[data-badge], .pill[data-r="R3b"] {
+.pill[data-badge], .pill[data-r="R3b"], .pill.gate {
   border-radius: 5px;
   font-family: 'Saira Condensed', system-ui, sans-serif;
   text-transform: uppercase;
@@ -991,6 +992,33 @@ select.lf-in { appearance: none; cursor: pointer; }
   font-size: 11px;
   height: 22px;
 }
+
+/* ══ R-Rulebook v2 TIERS (spec 2026-06-30) — ONE focal Primary per container ══
+   PRIMARY = R1 gate + any .focal status → solid fill, white ink, hazard-striped
+   red/yellow. SECONDARY = R3 status NOT .focal → outline (soft fill dropped).
+   ADD (R5b) = solid blue border. G1 commit buttons ramp via .ramp/.ramp.ready.
+   Urgency stays color + (Phase-2) motion — it never promotes tier. Scoped by
+   data-r / class so R2 refs, R3b badges, R4 derived pills are untouched. */
+.pill.gate, .pill.focal { border-color: transparent; color: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.18); }
+.pill.gate.c-green,  .pill.focal.c-green  { background: linear-gradient(180deg, var(--green), color-mix(in srgb, var(--green) 88%, #000)); text-shadow: 0 1px 2px rgba(0,0,0,.4); }
+.pill.gate.c-blue,   .pill.focal.c-blue   { background: linear-gradient(180deg, var(--blue), color-mix(in srgb, var(--blue) 88%, #000)); }
+.pill.gate.c-navy,   .pill.focal.c-navy   { background: var(--navy); }
+.pill.gate.c-purple, .pill.focal.c-purple { background: var(--purple); }
+.pill.gate.c-pink,   .pill.focal.c-pink   { background: var(--pink); }
+.pill.gate.c-brown,  .pill.focal.c-brown  { background: var(--brown); }
+.pill.gate.c-gray,   .pill.focal.c-gray   { background: var(--gray); }
+.pill.gate.c-orange, .pill.focal.c-orange { background: linear-gradient(180deg, var(--accent), color-mix(in srgb, var(--accent) 88%, #000)); color: var(--on-orange); }
+/* danger PRIMARY — seamless diagonal hazard tile (scrolls smoothly for motion), plate recipe */
+.pill.gate.c-red,    .pill.focal.c-red    { background-image: linear-gradient(135deg, var(--red) 0 25%, #14181d 25% 50%, var(--red) 50% 75%, #14181d 75% 100%); background-size: 26px 26px; text-shadow: 0 1px 3px rgba(0,0,0,.85); }
+.pill.gate.c-yellow, .pill.focal.c-yellow { background-image: linear-gradient(135deg, var(--yellow) 0 25%, #14181d 25% 50%, var(--yellow) 50% 75%, #14181d 75% 100%); background-size: 26px 26px; text-shadow: 0 1px 3px rgba(0,0,0,.9); }
+.pill.gate .chev, .pill.gate svg { opacity: .92; }
+/* SECONDARY — read-only status not designated the container's focal element */
+.pill:is([data-r="R3"],[data-r="R3b"]):not(.focal) { background: transparent; box-shadow: none; }
+/* ADD (R5b) — solid blue border (was dashed) */
+.add-field.anchor { border-style: solid; }
+/* G1 — commit/blue-action buttons ramp: Secondary until preconditions met (.ready) */
+.pill.ramp:not(.ready) { background: transparent; color: var(--txt-3); border-color: var(--line); box-shadow: none; }
+.pill.ramp.ready { background: var(--blue); color: #fff; border-color: transparent; }
 
 /* ── Standard mode (§0.2 / §12) ──────────────────────────────────────────── */
 .detail { padding: 12px; display: flex; flex-direction: column; gap: 12px; }
@@ -1799,7 +1827,11 @@ select.inline-input:focus-visible { outline: 2px solid var(--accent); outline-of
 .insp-opt-row { display: flex; align-items: center; gap: 8px; }
 .insp-opt-lbl { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; color: var(--txt); }
 .insp-opt-well .co-in { flex: 1 1 140px; min-width: 0; }
-.pill.is-disabled { opacity: .45; }
+/* DISABLED tier (plate .btn.disabled) — checkerboard, muted ink, not-allowed */
+.pill.is-disabled { opacity: 1; color: var(--txt-3); border-color: transparent; cursor: not-allowed;
+  background: conic-gradient(var(--track) 90deg, var(--panel) 90deg 180deg, var(--track) 180deg 270deg, var(--panel) 270deg) 0 0 / 14px 14px; }
+.pill.is-disabled .t { color: var(--txt-3); -webkit-text-fill-color: var(--txt-3); text-shadow: none; }
+.pill.is-disabled svg { color: var(--txt-3); -webkit-text-fill-color: var(--txt-3); }
 body.is-phone .kpi-board { flex-direction: column-reverse; }
 body.is-phone .kpi-preview { align-self: center; }
 body.is-phone .kpi-row { flex-wrap: wrap; }
@@ -2549,7 +2581,9 @@ body.rw-inspect .c-titlecard:hover { outline: 2px solid #18b6ff; outline-offset:
 
 /* GATE pill — a status DROPDOWN that moves the record forward: big silhouette +
    chevron. Colors come from the normal .c-* classes; chevron only on real dropdowns. */
-.pill.gate { height: 28px; padding: 0 12px; border-radius: 10px; font-size: 12px; }
+/* Gate matches the status-pill size exactly — Primary / Secondary / Gate are all one
+   size (Jac). (Mobile keeps its larger touch target via the .is-phone rule below.) */
+.pill.gate { height: 22px; padding: 0 9px; font-size: 11px; }   /* identical to a status pill; only the leading icon differs (chevron) */
 .pill.gate svg { width: 12px; height: 12px; }
 .pill.gate:hover { filter: brightness(1.18); }
 
@@ -2569,6 +2603,12 @@ body.rw-inspect .c-titlecard:hover { outline: 2px solid #18b6ff; outline-offset:
 .flag.c-blue { background: none; color: var(--blue); border: none; }
 .flag.c-purple { background: none; color: var(--purple); border: none; }
 .flag.c-gray { background: none; color: var(--gray); border: none; }
+/* GHOST tier (R9 flag = ghost link, plate .btn.ghost): danger carries an always-on
+   hazard-striped underline; other colors underline on hover (rule above). */
+.flag.c-red, .flag.c-yellow { background-repeat: repeat-x; background-position: 0 100%; background-size: 11px 2.1px; padding-bottom: 3px; }   /* striped underline 30% thinner (was 3px) */
+.flag.c-red    { background-image: repeating-linear-gradient(135deg, var(--red) 0 4px, transparent 4px 8px); }
+.flag.c-yellow { background-image: repeating-linear-gradient(135deg, var(--yellow) 0 4px, transparent 4px 8px); }
+.flag.c-red:hover, .flag.c-yellow:hover { text-decoration: none; }   /* striped underline already present */
 
 /* SECTION STATUS COLORS — header + border follow the live status */
 .section.sec-green { border-color: color-mix(in srgb, var(--green) 45%, transparent); }
@@ -2999,11 +3039,88 @@ body { font-variant-numeric: tabular-nums; }
 .rcc-uname.ec-red,
 .ur-name.ec-red,
 .catr-name.ec-red,
+.uc-name.ec-red,
 .rcc-bal.overdue,
 .cr-pay.over,
 .pill.c-red .t { color: var(--red); -webkit-text-fill-color: color-mix(in srgb, var(--red) 65%, white); text-shadow: 0 0 3px var(--red), 0 0 7px color-mix(in srgb, var(--red) 60%, transparent); }
 /* ec-red border glow on red status pills */
 .pill.c-red { border-color: color-mix(in srgb, var(--red) 55%, transparent); box-shadow: 0 0 4px color-mix(in srgb, var(--red) 25%, transparent); }
+/* ══ PRIMARY-tier ink is ALWAYS white (fix: beat the ec-red .t fill on red/yellow
+   focal+gate pills so Primary reads solid-white, distinct from Secondary outline).
+   Higher specificity than `.pill.c-red .t`, and placed after it. ══ */
+.pill.gate .t, .pill.focal .t,
+.pill.gate.c-red .t, .pill.focal.c-red .t,
+.pill.gate.c-yellow .t, .pill.focal.c-yellow .t { color:#fff; -webkit-text-fill-color:#fff; }
+.pill.gate svg, .pill.focal svg,
+.pill.gate.c-red svg, .pill.focal.c-red svg { color:#fff; -webkit-text-fill-color:#fff; }
+/* darker shadow so white ink pops on the hazard-striped fills (yellow strongest) */
+.pill.gate.c-red .t, .pill.focal.c-red .t { text-shadow:0 1px 3px rgba(0,0,0,.9), 0 0 2px rgba(0,0,0,.8); }
+.pill.gate.c-yellow .t, .pill.focal.c-yellow .t { text-shadow:0 1px 2px #000, 0 0 4px rgba(0,0,0,.95); }
+.pill.gate.c-red svg, .pill.focal.c-red svg,
+.pill.gate.c-yellow svg, .pill.focal.c-yellow svg { filter:drop-shadow(0 1px 2px rgba(0,0,0,.9)); }
+/* G2 — a demoted (non-bottleneck) WO-line gate reads Secondary: outline + colored ink */
+.pill.gate.dim { box-shadow:none; }
+.pill.gate.dim.c-green  { background:transparent; color:var(--green);  border-color:color-mix(in srgb,var(--green) 42%,transparent); }
+.pill.gate.dim.c-yellow { background:transparent; color:var(--yellow); border-color:color-mix(in srgb,var(--yellow) 42%,transparent); text-shadow:none; }
+.pill.gate.dim.c-red    { background:transparent; color:var(--red);    border-color:color-mix(in srgb,var(--red) 42%,transparent); text-shadow:none; }
+.pill.gate.dim.c-blue   { background:transparent; color:var(--blue);   border-color:color-mix(in srgb,var(--blue) 42%,transparent); }
+.pill.gate.dim.c-purple { background:transparent; color:var(--purple); border-color:color-mix(in srgb,var(--purple) 42%,transparent); }
+.pill.gate.dim.c-gray   { background:transparent; color:var(--txt-2);  border-color:var(--line); }
+.pill.gate.dim svg { color:currentColor; filter:none; }
+/* Primary tier has NO border at all — the FILL reaches the edge (a 1px transparent
+   border still leaves a dark ring via background-origin, so zero it). Scoped to
+   :not(.dim) so a demoted (Secondary) gate keeps its striped border. */
+.pill.gate:not(.dim), .pill.focal { border:2.25px solid transparent; background-origin:border-box; background-clip:border-box; box-shadow:0 2px 4px rgba(0,0,0,.5); }   /* transparent 2.25px border = same box width as Secondary; fill covers it (border-box) so no frame. Drop shadow only — no inset highlight (it traced an inner "bubble" once the border offset it inward). */
+/* A GATE (dropdown) is IDENTICAL to a Primary/Secondary pill — its LEADING icon is
+   just swapped for a chevron (the dropdown affordance). No box, divider, or section:
+   the chevron rides in the icon slot and inherits the pill's ink like any icon. */
+/* ══ RULEBOOK — reference IMG_2262 (Jac 2026-07-01): ONE button family, ONE shape.
+   The ONLY per-element variant is a gate's chevron box. PRIMARY = FILL (striped for
+   danger, solid otherwise), white ink, NO border. SECONDARY = hazard-striped BORDER
+   (danger) / solid colored border (others) over a dark interior + colored ink; the
+   danger border goes SOLID on hover. Radius unified so nothing reads "box vs pill". */
+.pill.gate, .pill:is([data-r="R3"],[data-r="R3b"]) { border-radius: 7px; gap: 0; }    /* rounded-RECT at real pill heights (~0.27×h, plate proportion) — NOT a stadium; icon touches text (gap 0) */
+/* SECONDARY (R3, not focal) — outline + colored ink (plate .btn.secondary): 1px solid
+   colored border for non-danger; red/yellow become a striped BORDER → solid on hover. */
+.pill:is([data-r="R3"],[data-r="R3b"]):not(.focal) { background:transparent; border:2.25px solid var(--line); box-shadow:none; }   /* border width matches the striped-border tiers */
+.pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-green  { color:var(--green);  border-color:var(--green); }
+.pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-blue   { color:var(--blue);   border-color:var(--blue); }
+.pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-navy   { color:var(--navy);   border-color:var(--navy); }
+.pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-purple { color:var(--purple); border-color:var(--purple); }
+.pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-pink   { color:var(--pink);   border-color:var(--pink); }
+.pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-brown  { color:var(--brown);  border-color:var(--brown); }
+.pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-orange { color:var(--orange); border-color:var(--accent); }
+.pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-gray   { color:var(--txt-2);  border-color:var(--line); }
+/* danger SECONDARY — hazard-striped BORDER (same seamless 26px tile as PRIMARY fill)
+   drawn as a MASKED ring so the interior stays fully TRANSPARENT (the card's status
+   tint shows through — Jac 2026-07-01, no dark fill), also applied to a demoted (G2
+   dim) gate. The gradient fills the box, then a padding-box/border-box mask XORs the
+   centre away, leaving stripes only on the 2.25px ring. Plate recipe. */
+.pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-red, .pill.gate.dim.c-red {
+  color:var(--red); border:none; background:transparent; position:relative; isolation:isolate; }
+.pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-yellow, .pill.gate.dim.c-yellow {
+  color:var(--yellow); border:none; background:transparent; position:relative; isolation:isolate; }   /* NO real border → the masked ::before ring (inset:0) spans the FULL border-box, matching the primary fill's height (a transparent border shrank the ring to the padding box → secondary read shorter). */
+.pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-red::before, .pill.gate.dim.c-red::before,
+.pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-yellow::before, .pill.gate.dim.c-yellow::before {
+  content:''; position:absolute; inset:0; z-index:-1; border-radius:inherit; padding:2px; pointer-events:none;
+  transform:translateZ(0);   /* promote the ring to its own layer so it rasterizes on the pixel grid → uniform thickness on all sides (a masked ring otherwise antialiases unevenly at fractional pill positions) */
+  background-size:26px 26px;
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0); -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0); mask-composite: exclude; }
+.pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-red::before, .pill.gate.dim.c-red::before {
+  background-image: linear-gradient(135deg, var(--red) 0 25%, #14181d 25% 50%, var(--red) 50% 75%, #14181d 75% 100%); }   /* red/charcoal hazard tape (white stripes read "candy cane" — reverted, Jac 2026-07-01). White ink still reads: it sits on the transparent interior over the dark card, not on the ring. */
+.pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-yellow::before, .pill.gate.dim.c-yellow::before {
+  background-image: linear-gradient(135deg, var(--yellow) 0 25%, #14181d 25% 50%, var(--yellow) 50% 75%, #14181d 75% 100%); }
+/* danger SECONDARY → SOLID ring on hover (plate): the masked ::before goes solid */
+.pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-red:hover::before    { background:var(--red);    }
+.pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-yellow:hover::before { background:var(--yellow); }
+/* SECONDARY ink — red danger goes WHITE to match the red PRIMARY (Jac 2026-07-01);
+   with the red/white tape border + transparent interior, white on the dark card reads
+   at full contrast. Yellow stays colored (yellow ink is legible; white would wash). */
+.pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-red .t,
+.pill.gate.dim.c-red .t, .pill.gate.dim.c-red { color:#fff; -webkit-text-fill-color:#fff; text-shadow:0 1px 1px rgba(0,0,0,.5); }   /* light shadow only — white on the dark transparent interior is already high-contrast; the primary's heavy shadow (for white-on-bright-fill) was muddying it */
+.pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-red svg, .pill.gate.dim.c-red svg { color:#fff; -webkit-text-fill-color:#fff; filter:drop-shadow(0 1px 2px rgba(0,0,0,.9)); }
+.pill:is([data-r="R3"],[data-r="R3b"]):not(.focal).c-yellow .t { color:var(--yellow); -webkit-text-fill-color:var(--yellow); text-shadow:none; }
 .cr-sub { flex: 0 1 auto; min-width: 0; font-size: 11.5px; color: var(--txt-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cr-pay { flex: 0 0 auto; font-size: 13px; font-weight: 700; font-style: italic; white-space: nowrap; }
 .cr-pay.spend { color: var(--green); }
@@ -3018,7 +3135,61 @@ body { font-variant-numeric: tabular-nums; }
    Pills first → eye aligns status near the rental calendar center (Jac 2026-06-23).
    Equal-width pill slots so all rows share the same column rhythm. ── */
 .row[data-card="units"] { padding: 0; }
-.row[data-card="units"] .row-content { padding: 0; }
+.row[data-card="units"] .row-content { padding: 0; height: 100%; }
+/* UNIT MINI-CARD (Jac 2026-07-01) — units render as a grid of vertical data-plates:
+   auto-fit so a wide column packs 2–3 across (more per screen), one across when narrow. */
+.card[data-card="units"] .list { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); grid-auto-rows: min-content; gap: 7px; }   /* auto-fit, NO cap: fills as many as (column width ÷ 140) — 3 across in a standard desktop column, 2 on a phone, more on wider screens. Cards are uniform 1-line-flag height, so rows never stretch. */
+body.is-phone .card[data-card="units"] .list { grid-template-columns: repeat(2, minmax(0, 1fr)); }   /* mobile floor: always ≥2 across */
+.card[data-card="units"] .list .newrow,
+.card[data-card="units"] .list .empty-new,
+.card[data-card="units"] .list .empty,
+.card[data-card="units"] .list .showmore { grid-column: 1 / -1; }
+.ucard { height: 100%; display: flex; flex-direction: column; gap: 7px; padding: 9px 9px; border: 2px solid var(--ur-hl, var(--line)); border-radius: 12px; overflow: hidden; }
+.uc-top { display: flex; align-items: center; justify-content: space-between; gap: 6px; }   /* corner mark optically centres on the name line */
+.uc-name { flex: 1 1 auto; min-width: 0; font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .5px; font-weight: 700; font-size: 14px; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Danger name: crisp lighter red, NO red halo (the glow blurred it illegible — Jac
+   2026-07-01). A subtle dark shadow separates it from the panel; the red card border
+   already flags danger, so the name only needs to READ. (Restored 2026-07-03 — the
+   "use our designed red" note was about the GROUP HEADERS below, not this name.) */
+.uc-name.ec-red { -webkit-text-fill-color: color-mix(in srgb, var(--red) 45%, white); text-shadow: 0 1px 2px rgba(0,0,0,.7); }
+/* Collapsible group header (Jac 2026-07-03) — a chevron + stamped group label + a thin
+   full-width dashed rule in the group color, spanning every column. Click toggles
+   collapse. Used by the Units / Rentals / Customers / Invoices grouped lists. */
+.grp-hd { position: relative; grid-column: 1 / -1; display: flex; align-items: center; gap: 6px; margin: 2px 2px 2px; cursor: pointer; user-select: none; }
+.list > .grp-hd:first-child { margin-top: 5px; }   /* clear the card's hazard-stripe top cap */
+/* Drag-to-reorder (Jac 2026-07-04) — same ⠿ grip language as .dt-grip (dispatch rail).
+   A tap anywhere on the header still toggles collapse; a drag on the grip reorders. */
+.grp-grip { flex: 0 0 auto; color: var(--txt-3); font-size: 10px; cursor: grab; line-height: 1; }
+.grp-hd.grp-dragging { opacity: .4; }
+.grp-hd.grp-dragover::before { content: ''; position: absolute; left: 0; right: 0; top: -2px; height: 2px; background: var(--blue); border-radius: 2px; }   /* drop-line indicator — blue (commit-intent), never orange (reserved for selected/ignition/linked) */
+.grp-chev { flex: 0 0 auto; display: inline-flex; color: var(--sec, var(--txt-2)); }
+.grp-chev svg { width: 11px; height: 11px; transform: rotate(90deg); transition: transform .15s ease; }   /* expanded → points down */
+.grp-hd.is-collapsed .grp-chev svg { transform: rotate(0deg); }                                           /* collapsed → points right */
+.grp-label { flex: 0 0 auto; font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1px; font-weight: 700; font-size: 9.1px; line-height: 1; color: var(--sec, var(--txt-2)); }   /* +15% back up from 7.9px (Jac 2026-07-04) */
+.grp-hd::after { content: ''; flex: 1 1 auto; border-top: 1.5px dashed var(--sec, var(--line)); opacity: .5; }
+.grp-hd:hover .grp-label, .grp-hd:hover .grp-chev { filter: brightness(1.2); }
+@media (prefers-reduced-motion: reduce) { .grp-chev svg { transition: none; } }
+/* Red group header (Needs Attention / No Show / Unpaid / Collections / Late) — raw
+   --red at this tiny 7.9px stamped size read illegible (Jac 2026-07-03). Same lighter
+   mix as the danger card name, NO glow — a halo would blur type this small even worse. */
+.grp-hd.sec-danger .grp-label, .grp-hd.sec-danger .grp-chev { color: color-mix(in srgb, var(--red) 45%, white); }
+.uc-flags { flex: 0 0 auto; min-width: 0; max-width: 46px; }
+/* Corner FLAG (Jac 2026-07-03) — the REAL flag text (R9), not an icon substitute;
+   ellipsis-truncated so it never steals width from the name. Several trips show the
+   worst-severity label + "+N", full list in the R23 data-tip. Suppress the R9 striped
+   text-underline (too busy this small) and force inline-block so ellipsis is reliable
+   (the base .flag is inline-flex, tuned for an icon+label pair this corner no longer has). */
+.uc-flags .flags { height: auto; min-width: 0; }
+.uc-flags .flag { display: inline-block; max-width: 100%; height: auto; padding: 0 1px; font-size: 10px; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; background-image: none; padding-bottom: 0; }
+.uc-cat { display: flex; align-items: center; gap: 5px; color: var(--txt-2); font-size: 12px; min-width: 0; }
+.uc-caticon { flex: 0 0 auto; width: 16px; height: 16px; color: var(--txt-3); display: flex; align-items: center; justify-content: flex-start; }   /* glyph hugs the same left rail as the name above; sized to sit with the 12px label, not out-weigh it */
+.uc-caticon svg { width: 15px; height: 15px; display: block; }
+.uc-catname { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.uc-pills { display: flex; flex-direction: column; gap: 6px; }
+.uc-slot { display: flex; }
+.uc-slot .pill { width: 100%; font-size: 10px; padding: 0 8px; gap: 4px; letter-spacing: .1px; justify-content: center; align-items: center; }   /* icon + label ride together, centred as one group; NO overflow:hidden here (the label handles its own ellipsis) so nothing clips the glyphs */
+.uc-slot .pill svg { flex: 0 0 auto; }
+.uc-slot .pill .t { overflow: hidden; text-overflow: ellipsis; min-width: 0; line-height: 1.5; }   /* line-height ≥ glyph height so the ellipsis clip is horizontal-only — a tight 1.0 line sliced the letter bottoms. The line-box is flex-centred, so caps sit optically centred without a nudge. */
 .ur { display: flex; align-items: center; gap: 9px; min-width: 0; padding: 8px 11px 8px 8px; border-right: 3px solid var(--ur-hl, var(--line)); }
 .ur-cat { flex: 0 0 auto; width: 22px; height: 22px; color: var(--txt-2); display: flex; align-items: center; justify-content: center; }
 .ur-cat svg { width: 19px; height: 19px; display: block; }
@@ -3121,25 +3292,22 @@ body { font-variant-numeric: tabular-nums; }
   .catanim *, .catanim { animation: none !important; }
 }
 .catr-name { flex: 1 1 auto; min-width: 0; font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .6px; font-weight: 700; font-size: 13px; line-height: 1.1; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-/* the availability row is one bank of four equal-height stamped plates:
-   [ AVAIL n | NEXT date ] · [ PASS ] [ NR ] [ FAIL ]. Every plate is the same
-   .catr-cell (stamped label over value, tinted by --ct/--ct-bg); the lead is wider
-   and clickable (units / the next-free unit), the three others filter Units by status.
-   Grid stretch keeps all four the same height — one clean row, not three shapes. */
-.catr-pills { display: grid; grid-template-columns: 1.4fr 1fr 1fr 1fr; gap: 4px; align-items: stretch; }
-.catr-cell { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-width: 0; padding: 4px 3px; border: 1px solid var(--ct, var(--line)); border-radius: 8px; background: var(--ct-bg, transparent); cursor: pointer; transition: box-shadow .12s, border-color .12s; }
-.catr-cell .cc-k { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .8px; font-weight: 700; font-size: 8.5px; line-height: 1; color: var(--txt-3); }
-.catr-cell .cc-v { max-width: 100%; font-size: 14px; font-weight: 800; line-height: 1; color: var(--ct, var(--txt)); }
-.catr-cell .cc-v.cc-date { font-size: 10.5px; font-weight: 700; color: var(--txt); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-/* the NONE reason word ("End Dates?", "For Sale"…) runs a touch smaller + tighter than a
-   date so the longer ones fit the narrow lead without ellipsis. */
-.catr-cell .cc-v.cc-why { font-size: 9px; font-weight: 700; line-height: 1.05; color: var(--txt); text-align: center; white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.catr-cell:hover { box-shadow: 0 0 0 1px var(--ct); }
-.catr-cell:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-/* the "NONE" reason plate is purely informational (no unit to open / status to filter) —
-   drop the click affordance so it doesn't read as tappable. */
-.catr-cell.catr-lead-none { cursor: default; }
-.catr-cell.catr-lead-none:hover { box-shadow: none; }
+/* the availability row in the rulebook R3b pill language: a full-width LEAD pill
+   (N Avail / Next date / None·reason) over a PASS · NR · FAIL trio. Each slot is the
+   click target (the whole slot, not just the pill) — lead opens units / the next-free
+   unit, the trio filters Units by inspection status; the None lead is inert. */
+.catr-pills { display: flex; flex-direction: column; gap: 5px; }
+.catr-tally-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; }
+/* the trio runs 3-across in a ~200px card — trim pad + type so "n Pass" fits without
+   ellipsis (the dense-grid legible-minimum override, per the design language). */
+.catr-tally-row .pill { padding: 0 5px; font-size: 9px; letter-spacing: .1px; gap: 3px; }
+.catr-slot { display: flex; align-items: center; justify-content: center; min-width: 0; }
+.catr-slot .pill { width: 100%; text-align: center; justify-content: center; overflow: hidden; }
+.catr-slot .pill .t { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+button.catr-slot { cursor: pointer; padding: 0; background: none; border: 0; font: inherit; }
+.catr-slot.js-cat-avail .pill, .catr-slot.js-cat-next .pill, .catr-slot.js-fleet-filter .pill { transition: box-shadow .12s, border-color .12s; }
+.catr-slot.js-cat-avail:hover .pill, .catr-slot.js-cat-next:hover .pill, .catr-slot.js-fleet-filter:hover .pill { border-color: var(--accent-line); box-shadow: 0 0 0 1px var(--accent-line); }
+.catr-slot.js-cat-avail:focus-visible, .catr-slot.js-cat-next:focus-visible, .catr-slot.js-fleet-filter:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 999px; }
 /* the rate card: a stamped period label on the left, the money value on the right,
    set off by a single saddle-stitch seam from the status pills above. */
 .catr-rates { margin-top: auto; display: flex; flex-direction: column; gap: 2px; border-top: 1px dashed var(--line); padding-top: 6px; }
