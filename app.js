@@ -6833,15 +6833,15 @@ function appendWindowed(list, rows, cs, card, renderRow) {
    color, a live count, and a collapse chevron. The active sort orders records WITHIN a
    group; a collapsed group persists per device (localStorage). ── */
 const UNIT_SECTIONS = [
-  { key: 'Today',        label: 'Today',           color: 'red' },
-  { key: 'Tomorrow',     label: 'Tomorrow',        color: 'yellow' },
-  { key: 'Reserved',     label: 'Reserved',        color: 'purple' },
-  { key: 'On Rent',      label: 'On Rent',         color: 'green' },
-  { key: 'Off Rent',     label: 'Off Rent',        color: 'blue' },
-  { key: 'End Rent',     label: 'End Rent',        color: 'yellow' },
-  { key: 'Available',    label: 'Available',       color: 'green' },
   { key: 'Not Ready',    label: 'Not Ready',       color: 'yellow' },
   { key: 'Attention',    label: 'Needs Attention', color: 'red' },
+  { key: 'Today',        label: 'Today',           color: 'orange' },
+  { key: 'Tomorrow',     label: 'Tomorrow',        color: 'yellow' },
+  { key: 'Reserved',     label: 'Reserved',        color: 'purple' },
+  { key: 'Off Rent',     label: 'Off Rent',        color: 'blue' },
+  { key: 'End Rent',     label: 'End Rent',        color: 'yellow' },
+  { key: 'On Rent',      label: 'On Rent',         color: 'green' },
+  { key: 'Available',    label: 'Available',       color: 'green' },
   { key: 'Out of Fleet', label: 'Out of Fleet',    color: 'gray' },
 ];
 /** A unit's stage bucket for the Units column groups. Rental stage (Today/Tomorrow
@@ -6886,14 +6886,33 @@ function toggleGroupCollapsed(card, key) {
   if (COLLAPSED_GROUPS[k]) delete COLLAPSED_GROUPS[k]; else COLLAPSED_GROUPS[k] = 1;
   try { localStorage.setItem('jactec.collapsedGroups', JSON.stringify(COLLAPSED_GROUPS)); } catch (e) {}
 }
+/* Custom GROUP ORDER — drag-to-reorder a card's group headers (Jac 2026-07-04),
+   remembered PER ROLE (currentRole, keyed so Admin/Mechanic/Sales/... each keep their
+   own order). Local-only for now (localStorage) — a role signed in on a different
+   device won't see it yet; true cross-device sync needs the backend deploy bridge
+   (blocked this session: APPS_SCRIPT_ID isn't set). The key shape (role:card → array
+   of group keys) is exactly what that swap will read/write, so the UI won't change. */
+const GROUP_ORDER = (() => { try { return JSON.parse(localStorage.getItem('jactec.groupOrder') || '{}'); } catch (e) { return {}; } })();
+const groupOrderKey = (card) => (currentRole || 'shared') + ':' + card;
+function customGroupOrder(card) { return GROUP_ORDER[groupOrderKey(card)] || null; }
+function saveGroupOrder(card, keys) {
+  GROUP_ORDER[groupOrderKey(card)] = keys;
+  try { localStorage.setItem('jactec.groupOrder', JSON.stringify(GROUP_ORDER)); } catch (e) {}
+}
 function appendGroupedSections(list, rows, cs, card) {
   const def = GROUP_DEFS[card];
   const limit = cs.listLimit || VIRT_CAP;
   const buckets = new Map();
   for (const rec of rows) { const k = def.keyOf(rec) || '—'; if (!buckets.has(k)) buckets.set(k, []); buckets.get(k).push(rec); }
   const known = new Set(def.sections.map((s) => s.key));
-  const secs = def.sections.filter((s) => buckets.has(s.key))
+  let secs = def.sections.filter((s) => buckets.has(s.key))
     .concat([...buckets.keys()].filter((k) => !known.has(k)).map((k) => ({ key: k, color: 'gray' })));   // leftover keys → trailing gray group (never dropped)
+  const custom = customGroupOrder(card);
+  if (custom) {
+    const rank = new Map(custom.map((k, i) => [k, i]));
+    secs = secs.map((s, i) => [s, rank.has(s.key) ? rank.get(s.key) : 1000 + i])   // never-dragged key (e.g. a brand-new status) → keeps its default relative spot, appended after every ranked one
+      .sort((a, b) => a[1] - b[1]).map((p) => p[0]);
+  }
   let shown = 0, remaining = 0;
   for (const sec of secs) {
     const group = buckets.get(sec.key);
@@ -6901,8 +6920,9 @@ function appendGroupedSections(list, rows, cs, card) {
     const collapsed = groupCollapsed(card, sec.key);
     const hd = el('div', 'grp-hd js-group-toggle' + (collapsed ? ' is-collapsed' : '') + (sec.color === 'red' ? ' sec-danger' : ''));
     hd.dataset.card = card; hd.dataset.group = sec.key;
+    hd.draggable = true;   // drag-to-reorder (native DnD — matches the dispatch-rail stop reorder pattern)
     hd.setAttribute('style', `--sec:var(--${sec.color})`);
-    hd.innerHTML = `<span class="grp-chev">${I.chevR}</span><span class="grp-label">${esc(sec.label || sec.key)} · ${group.length}</span>`;
+    hd.innerHTML = `<span class="grp-grip" data-tip="Drag to reorder">⠿</span><span class="grp-chev">${I.chevR}</span><span class="grp-label">${esc(sec.label || sec.key)} · ${group.length}</span>`;
     list.appendChild(hd);
     if (collapsed) continue;   // header only — cards hidden, and they don't consume the window
     const canShow = limit - shown;
@@ -16779,6 +16799,62 @@ function boot() {
     state.dispFocusId = dispDragId; dispDragId = null; render();   // keep the moved stop highlighted so it stays trackable after the reorder
   });
   document.addEventListener('dragend', () => { dispDragId = null; document.querySelectorAll('.disp-dragging').forEach((n) => n.classList.remove('disp-dragging')); document.querySelectorAll('.disprail.dragging').forEach((n) => n.classList.remove('dragging')); });
+  // Card GROUP header reorder (Jac 2026-07-04) — native drag, same self-contained
+  // pattern as the dispatch-rail stop reorder above. Reorders Units/Rentals/Customers/
+  // Invoices groups; persisted per role via saveGroupOrder (see its comment for the
+  // pending backend-sync note).
+  let grpDragKey = null, grpDragCard = null, grpDragOverEl = null;
+  document.addEventListener('dragstart', (e) => {
+    const hd = e.target.closest && e.target.closest('.grp-hd'); if (!hd) return;
+    grpDragKey = hd.dataset.group; grpDragCard = hd.dataset.card;
+    if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', grpDragKey); } catch (x) {} }
+    hd.classList.add('grp-dragging');
+  });
+  document.addEventListener('dragover', (e) => {
+    if (!grpDragKey) return;
+    const hd = e.target.closest && e.target.closest('.grp-hd');
+    if (!hd || hd.dataset.card !== grpDragCard) return;
+    e.preventDefault();
+    if (grpDragOverEl !== hd) { if (grpDragOverEl) grpDragOverEl.classList.remove('grp-dragover'); hd.classList.add('grp-dragover'); grpDragOverEl = hd; }
+  });
+  document.addEventListener('drop', (e) => {
+    if (!grpDragKey) return;
+    const hd = e.target.closest && e.target.closest('.grp-hd');
+    if (!hd || hd.dataset.card !== grpDragCard) return;
+    e.preventDefault();
+    const overKey = hd.dataset.group;
+    if (overKey !== grpDragKey) {
+      const list = hd.closest('.list');
+      if (list) {
+        const keys = [...list.querySelectorAll('.grp-hd')].map((h) => h.dataset.group);
+        const from = keys.indexOf(grpDragKey); if (from !== -1) keys.splice(from, 1);
+        const to = keys.indexOf(overKey);
+        keys.splice(to < 0 ? keys.length : to, 0, grpDragKey);
+        saveGroupOrder(grpDragCard, keys);
+        render();
+      }
+    }
+  });
+  document.addEventListener('dragend', () => {
+    grpDragKey = null; grpDragCard = null;
+    if (grpDragOverEl) { grpDragOverEl.classList.remove('grp-dragover'); grpDragOverEl = null; }
+    document.querySelectorAll('.grp-dragging').forEach((n) => n.classList.remove('grp-dragging'));
+  });
+  // Ctrl/Cmd+G — collapse or expand EVERY visible group in one keystroke (Jac
+  // 2026-07-04): if any is expanded, collapse them all; once all are collapsed,
+  // the same keystroke expands them all back.
+  document.addEventListener('keydown', (e) => {
+    if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'g') return;
+    if (e.target.closest && e.target.closest('input, textarea, select, [contenteditable]')) return;   // never hijack typing
+    const heads = [...document.querySelectorAll('.grp-hd')]; if (!heads.length) return;
+    e.preventDefault();
+    const anyExpanded = heads.some((h) => !h.classList.contains('is-collapsed'));
+    heads.forEach((h) => {
+      const isCollapsed = groupCollapsed(h.dataset.card, h.dataset.group);
+      if (anyExpanded ? !isCollapsed : isCollapsed) toggleGroupCollapsed(h.dataset.card, h.dataset.group);
+    });
+    render();
+  });
   // §2.3 route arrows — keyboard parity: Enter/Space arms or lands a leg; Escape cancels the draw.
   document.addEventListener('keydown', (e) => {
     const pt = e.target.closest && e.target.closest('.js-disp-arrowpt');
