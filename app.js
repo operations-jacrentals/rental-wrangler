@@ -4363,6 +4363,12 @@ let lastCtx = { t: 0, card: null };   // §R20 single vs double right-click trac
 function openCtxMenuAt(target, x, y) {
   if (!target || !target.closest) return;
   if (target.closest('input, textarea, .inline-input')) return;
+  // Phase 5 — right-click / long-press the ▲▼ sort-direction button opens the sort-FIELD menu,
+  // never the R20 leaf/clipboard menu. BEFORE the .card bail so it also works in the phone footer
+  // dock (the listbar is relocated out of the card there); BEFORE the leaf resolution (a <button>
+  // would otherwise match). Shop is scoped out — its dir button keeps its graph-chrome menu.
+  const sd = target.closest('.js-sortdir');
+  if (sd && sd.dataset.card !== 'shop') return openSortMenu(sd.dataset.card, sd);
   const card = target.closest('.card'); if (!card && !target.closest('.overlay .popup')) return;
   // §13.4 — inside an OPEN graph view, right-click/long-press the panel (or the Views & sort
   // control above it) opens the graph-chrome menu instead of the per-element Wrangler menu,
@@ -11933,6 +11939,18 @@ function openViewMenu(card, anchorEl) {
   }
   openDropdown(anchorEl, html, { align: 'right' });
 }
+/* Phase 5 — sort-ONLY floating menu (right-click / long-press the ▲▼ .js-sortdir button). Emits
+   the SAME .js-sortfield buttons as openViewMenu's Sort section above, so the already-live handler
+   commits the pick (`cs.sort = {...f}` → saveSort → render) — no new dispatch. A floater like every
+   sibling menu (openViewMenu, the graph/status dropdowns), so it is intentionally NOT in
+   WINDOW_CATALOG — that CI guard tracks buildPopupEl MODAL kinds only; a dropdown entry would fail
+   it as stale. The retired openViewMenu is fully removed in phase 7. */
+function openSortMenu(card, anchorEl) {
+  const cs = activeSession().cards[card]; const fields = SORT_FIELDS[card];
+  if (!cs || !fields || !fields.length) return;
+  const html = fields.map((f) => `<button class="dd-item js-sortfield${f.field === cs.sort.field ? ' on' : ''}" data-card="${card}" data-field="${f.field}">${esc(f.label)}<span class="tick">✓</span></button>`).join('');
+  openDropdown(anchorEl, html, { align: 'right' });
+}
 /** Clicked card → orange border (§0.1 visual feedback; not an anchor). */
 function setFocusedCard(cardId) {
   if (state.focusedCard === cardId) return;
@@ -12315,6 +12333,14 @@ function dragDown(e) {
   // tap releases before the timer (its click fires normally). The interactive-control
   // skip keeps inputs/buttons native; selection-suppression (style.css, .is-phone .grid)
   // stops iOS from starting text-selection before the long-press registers.
+  // Phase 5 — the ▲▼ sort button is a <button>, excluded by the generic arm below; arm a menu-only
+  // long-press for it explicitly so a HOLD opens the sort-field menu (a short tap still flips the
+  // direction via the js-sortdir click handler, since the timer only suppresses the click if it fires).
+  if (e.pointerType === 'touch' && document.body.classList.contains('is-phone') && e.target.closest('.js-sortdir')) {
+    DRAG.point.x = e.clientX; DRAG.point.y = e.clientY;
+    const arm = { menuOnly: true, x: e.clientX, y: e.clientY, pointerId: e.pointerId, touch: true, lp: null, rdy: null, ready: false };
+    arm.lp = armMenuTimer(arm); DRAG.armed = arm; return;
+  }
   if (e.pointerType === 'touch' && document.body.classList.contains('is-phone')
       && !e.target.closest('input, textarea, select, button, .x, .inline-edit, .inline-input, .dropdown-menu, .ctx-menu')) {
     DRAG.point.x = e.clientX; DRAG.point.y = e.clientY;
