@@ -10252,14 +10252,45 @@ function wranglerDigest() {
     `  ${x.name} [${x.categoryId}]: 1-day ${money(x.rate1Day)} · 7-day ${money(x.rate7Day)} · 4-wk ${money(x.rate4Wk)} · weekend ${money(x.weekend)} · member/day ${money(x.memberDaily)}${x.fuelType ? ' · ' + x.fuelType : ''}`).join('\n'));
   return lines.join('\n');
 }
+// §18e — a compact index of issues Mr. Wrangler has ALREADY filed: open ones via
+// wranglerRequests + recently closed/resolved via wranglerNotifs, deduped by number.
+// Pure: reads the two loaded lists → a short string ('' when none). Lets the model
+// catch a duplicate BEFORE filing a new one (see DUPLICATE CHECK in WRANGLER_SYSTEM).
+function wrIssueIndex() {
+  const seen = new Set(), lines = [];
+  const add = (n, title, state) => {
+    if (n == null || seen.has(n)) return; seen.add(n);
+    lines.push(`#${n} · "${String(title || '').replace(/\s+/g, ' ').slice(0, 70)}" · ${state}`);
+  };
+  (wranglerRequests || []).forEach((rq) => {
+    const st = wrReqState(rq);
+    add(rq.number, rq.title, st.key === 'building' ? 'building' : st.key === 'needs' ? 'open — needs your answer' : 'open — needs your OK');
+  });
+  (wranglerNotifs || []).forEach((n) => {
+    add(n.number, n.title, n.kind === 'needs' ? 'open — needs you' : n.merged ? 'fixed' : 'closed');
+  });
+  return lines.slice(0, 40).join('\n');
+}
 function wranglerContext(o) {
   let ctx = 'YARD ORIENTATION (use the find_* tools for any specific record):\n' + wranglerDigest();
+  const filed = wrIssueIndex();
+  if (filed) ctx += '\n\nALREADY FILED — issues already filed (check this BEFORE filing a new fix/request; on a match, follow the DUPLICATE CHECK protocol instead of filing a duplicate):\n' + filed;
   if (o.card && o.recId != null) {
     const ec = entityCardOf(o.card, o.recType), rec = recOf(ec, o.recId);
     if (rec) ctx += `\n\nFOCUSED RECORD — ${ec}: ${detailTitle(ec, rec)}\n` + JSON.stringify(rec).slice(0, 4000);
   }
   return ctx;
 }
+// §18e DUPLICATE CHECK protocol — appended to the system so Mr. Wrangler dedupes against
+// the ALREADY FILED index before filing. Kept as its own template literal (not woven into
+// the escaped WRANGLER_SYSTEM string) so it stays readable + easy to tune.
+const WR_DEDUP_NOTE = `
+
+DUPLICATE CHECK — before you emit a fix or request block, check the ALREADY FILED list in your context. If the problem the user is describing matches an issue already on that list, do NOT file a new one. Instead call ask_user with the single best match — a question like "Looks like this is already reported — #NNN '<title>' (open, or already fixed). What do you want to do?" and options ["Add my note to #NNN","File a new one anyway","It's already fixed — just refresh"], but DROP the "already fixed" option unless that match's state is 'fixed'. Then act on their pick:
+- "Add my note to #NNN" → call the note_on_issue tool with that issue number and a one-paragraph summary of their report; do NOT file a new issue.
+- "File a new one anyway" → go ahead and emit the normal fix/request block.
+- "It's already fixed — just refresh" → file nothing; tell them it's fixed in #NNN and to hard-refresh (Ctrl/Cmd+Shift+R) to load it.
+Only trigger this on a genuine match — a novel bug still files normally, with no chips.`;
 // Attach an image to the next Wrangler message (file picker, paste, or drop). The
 // backend wranglerReply_ accepts image content blocks; we downscale first to keep
 // the payload light. "Add files" = images for now (what a glitch report needs).
@@ -10434,6 +10465,18 @@ const WR_TOOL_IMPL = {
     });
     return { startDate: start, endDate: end, customer: cust ? cust.name : null, total: Math.round(total * 100) / 100, units: per };
   },
+  // §18e — add a comment to an ALREADY-filed issue (the "Add my note to #NNN" duplicate-check
+  // branch), reusing the wranglerComment backend action. Never creates a new issue.
+  async note_on_issue(input) {
+    const number = Number(input && input.number);
+    const text = String((input && input.text) || '').trim();
+    if (!number || !text) return { error: 'need an issue number and text' };
+    if (typeof backendPassword === 'undefined' || !backendPassword) return { error: 'not signed in — can’t post a comment' };
+    try {
+      const r = await backendCall('wranglerComment', { number, role: 'user', text });
+      return (r && r.ok) ? { ok: true, number, note: `added the note to #${number}` } : { error: (r && r.error) || 'comment failed' };
+    } catch (e) { return { error: String((e && e.message) || e) }; }
+  },
 };
 // Anthropic tool schemas — forwarded verbatim to the model by the Stage 0 pass-through.
 const WR_TOOLS = [
@@ -10447,6 +10490,7 @@ const WR_TOOLS = [
   { name: 'check_unit_availability', description: 'Check whether a unit is free for a date window. Returns available + any conflicting rentals. Dates are YYYY-MM-DD.', input_schema: { type: 'object', properties: { unit: { type: 'string' }, startDate: { type: 'string' }, endDate: { type: 'string' } }, required: ['unit', 'startDate', 'endDate'] } },
   { name: 'price_rental', description: 'Quote the price for renting one or more units over a window (uses the live pricing engine; member rates apply if the customer is given). Dates are YYYY-MM-DD. Read-only — does not create anything.', input_schema: { type: 'object', properties: { units: { type: 'array', items: { type: 'string' } }, startDate: { type: 'string' }, endDate: { type: 'string' }, customer: { type: 'string' } }, required: ['units', 'startDate', 'endDate'] } },
   { name: 'ask_user', description: "Ask the user ONE short follow-up question when you genuinely can't proceed — a real ambiguity (two customers match, which unit, missing a required detail). Pass a clear `question` and, when the choice is between known options, an `options` array (e.g. the matching customers) so they can just tap one. Use this SPARINGLY — never to confirm an obvious reading or something a find_* tool can answer. The user's answer comes back so you continue.", input_schema: { type: 'object', properties: { question: { type: 'string' }, options: { type: 'array', items: { type: 'string' } } }, required: ['question'] } },
+  { name: 'note_on_issue', description: 'Add a comment to an issue that has ALREADY been filed (one from the ALREADY FILED list) instead of filing a duplicate. Use ONLY after the user chooses "Add my note to #NNN" in the DUPLICATE CHECK. Pass the issue `number` and a one-paragraph `text` summarizing their new report. Does NOT create a new issue.', input_schema: { type: 'object', properties: { number: { type: 'number', description: 'the existing issue number to comment on' }, text: { type: 'string', description: "one-paragraph summary of the user's report to append" } }, required: ['number', 'text'] } },
   { name: 'apply_changes', description: "WRITE changes: create/update/import records or run an operation. Pass `ops` — the SAME op shapes documented above ({op:'create'|'update'|'import'|'csv-import', entity, fields|rows|id} and {op:'operate', name:'startRental'|'billRental'|'recordPayment', params}). It validates against the allowlist and the safety fences and RETURNS what resolved or got dropped, so if a link drops (e.g. a category that doesn't exist yet) you can create it first and call again. Safe single edits apply immediately; consequential ones (bulk, pricing, billing, payments, several records) are staged for the user to tap Apply — word those as a preview, never as saved. This is the ONLY write path — never charge a card/ACH, refund, touch a balance, change roles/passwords, hard-delete, or complete a WO.", input_schema: { type: 'object', properties: { title: { type: 'string', description: 'short label for the change' }, ops: { type: 'array', items: { type: 'object' }, description: 'the operations to apply' } }, required: ['ops'] } },
 ];
 const WR_TOOLS_NOTE = "\n\nLOOKING THINGS UP — you have live read-only tools (find_customers, find_units, find_categories, find_vendors, find_rentals, find_invoices, find_work_orders, check_unit_availability, price_rental) that query the FULL records, not just the snapshot. PREFER them: when the user names a customer/unit/rental, look it up to confirm it exists and get its id before you answer or emit an action; check availability before booking; quote with price_rental rather than guessing. Don't ask the user for something a tool can find. For WRITES, prefer the apply_changes tool: call it with the ops array (same shapes as the wrangler-action block) and it returns exactly what resolved or got dropped, so you can fix a dropped link and try again — much better than emitting a blind block. Safe single edits auto-apply; consequential ones come back staged for the user's Apply (word those as a preview). You may still emit a wrangler-action block as a fallback, but don't ALSO emit one for a write you already made with apply_changes. When you truly need to disambiguate before acting, call ask_user (with tappable options when the choice is between known records) instead of guessing or burying the question in prose — but only when a tool can't resolve it.";
@@ -10494,7 +10538,7 @@ async function wrRunAgent(apiMessages, system, opts) {
       try {
         if (tu.name === 'apply_changes') out = await wrApplyChangesTool(tu.input || {}, ctx, opts);
         else if (tu.name === 'ask_user') { const ans = opts.ask ? await opts.ask(tu.input || {}) : null; out = { answer: (ans == null || ans === '') ? '(no answer given — use your best judgement and proceed)' : String(ans) }; }
-        else { const impl = WR_TOOL_IMPL[tu.name]; out = impl ? impl(tu.input || {}) : { error: `unknown tool ${tu.name}` }; }
+        else { const impl = WR_TOOL_IMPL[tu.name]; out = impl ? await impl(tu.input || {}) : { error: `unknown tool ${tu.name}` }; }
       } catch (e) { out = { error: String((e && e.message) || e) }; }
       if (opts.onTool) { try { opts.onTool(tu.name, tu.input, out); } catch (e) {} }
       results.push({ type: 'tool_result', tool_use_id: tu.id, content: JSON.stringify(out) });
@@ -10519,7 +10563,7 @@ async function wranglerSend() {
   syncWranglerComment(o, 'user', text, imgs);   // §18e mirror the turn onto the issue thread
   wranglerClearNeedsAnswer(o.reqNumber);        // §18e answering a "Needs your answer" request clears it from the inbox
   o.draft = ''; o.attach = []; o.files = []; o.busy = true; o.error = ''; render();
-  const system = WRANGLER_SYSTEM + WR_TOOLS_NOTE + (o.kpiTarget ? '\n\n' + wranglerKpiSystem() : '') + '\n\n' + wranglerContext(o);
+  const system = WRANGLER_SYSTEM + WR_TOOLS_NOTE + WR_DEDUP_NOTE + (o.kpiTarget ? '\n\n' + wranglerKpiSystem() : '') + '\n\n' + wranglerContext(o);
   // Build the payload: images become a content-block array; CSV/text files fold
   // into the message text so Mr. Wrangler reads their rows.
   const fileBlock = (m) => (m.files && m.files.length)
