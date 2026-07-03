@@ -6859,6 +6859,59 @@ function colActionsHtml(active, session) {
   const dt = ec === 'shop' ? ` data-type="${esc(cs.recType)}"` : '';
   return `<div class="c-actions"><button class="hbtn js-tolist" data-tip="${anchored ? 'Browse list (pick another to anchor)' : 'Back to list'}">${I.list}</button><button class="hbtn js-anchor" data-rec="${esc(cs.recId)}"${dt} data-tip="Anchor (⊞)">${I.circle}</button><button class="hbtn js-newtab" data-rec="${esc(cs.recId)}"${dt} data-tip="New tab (+)">${I.plus}</button></div>`;
 }
+/* CARD OPTIONS (phase 3 · card-header redesign — Jac 2026-07-03).
+   Per-card default quick-filter "options" that drop from the gear (Row 2). Each is
+   { id, label, tier, combo?, test(rec) } — a one-tap filter applied OVER the already
+   role-scoped list (it only narrows, never widens — §16). `tier` gates who sees the option
+   (phase 7): 'money' → Office/Owner, 'crm' → Sales/Marketing/Office/Owner, 'ops' → anyone
+   who sees the card. Predicates REUSE the authoritative derivations — never re-derive.
+   `combo` marks a composite (a union of states), rendered with a dashed border. */
+const unitRentalNow = (u) => activeRentalForUnit(u.unitId);
+const unitIsOut = (u) => { const r = unitRentalNow(u); if (!r) return false; const eu = unitEntry(r, u.unitId); return OUT_RENTAL_STATUSES.has(eu ? unitStatus(r, eu) : r.status); };
+const unitAvailableNow = (u) => u.fleetStatus === 'Active' && u.inspectionStatus === 'Ready' && !unitRentalNow(u);   // canonical availability (§16): excludes Failed/Not Ready/For Sale/Inactive/Sold/out
+const unitWhen = (u, when) => { const r = unitRentalNow(u); return !!r && rentalRevStatus(r) === when; };
+const CARD_OPTIONS = {
+  rentals: [
+    { id: 'today',    label: 'Today',    tier: 'ops',   test: (r) => rentalRevStatus(r) === 'Today' },
+    { id: 'tomorrow', label: 'Tomorrow', tier: 'ops',   test: (r) => rentalRevStatus(r) === 'Tomorrow' },
+    { id: 'reserved', label: 'Reserved', tier: 'ops',   test: (r) => rentalDisplayStatus(r) === 'Reserved' },
+    { id: 'onrent',   label: 'On Rent',  tier: 'ops',   test: (r) => rentalDisplayStatus(r) === 'On Rent' },
+    { id: 'endrent',  label: 'End Rent', tier: 'ops',   test: (r) => rentalDisplayStatus(r) === 'End Rent' },
+    { id: 'bill',     label: 'Bill',     tier: 'money', combo: true, test: (r) => {   // ∑ overdue · unpaid · quotes · off rent · billing issues
+        const ds = rentalDisplayStatus(r);
+        if (r.status === 'Quote' || ds === 'Off Rent') return true;
+        if (OUT_RENTAL_STATUSES.has(ds) && r.endDate && r.endDate < TODAY_ISO) return true;   // still out past its end date
+        const c = IDX.customer.get(r.customerId); return !!c && (c.payStatus === 'Unpaid' || c.payStatus === 'Partial');
+      } },
+  ],
+  units: [
+    { id: 'notready',  label: 'Not Ready', tier: 'ops', test: (u) => u.inspectionStatus === 'Not Ready' },
+    { id: 'failed',    label: 'Failed',    tier: 'ops', test: (u) => u.inspectionStatus === 'Failed' },
+    { id: 'available', label: 'Available', tier: 'ops', test: (u) => unitAvailableNow(u) },
+    { id: 'today',     label: 'Today',     tier: 'ops', test: (u) => unitWhen(u, 'Today') },
+    { id: 'tomorrow',  label: 'Tomorrow',  tier: 'ops', test: (u) => unitWhen(u, 'Tomorrow') },
+    { id: 'reserved',  label: 'Reserved',  tier: 'ops', test: (u) => { const r = unitRentalNow(u); return !!r && rentalDisplayStatus(r) === 'Reserved'; } },
+    { id: 'out',       label: 'Out',       tier: 'ops', combo: true, test: (u) => unitIsOut(u) },   // ∑ On Rent · End Rent · Off Rent
+  ],
+  customers: [
+    { id: 'active',       label: 'Active',        tier: 'ops',   test: (c) => (c._digest?.activePct || 0) > 0 },
+    { id: 'lost',         label: 'Lost',          tier: 'crm',   test: (c) => (c._digest?.activePct || 0) <= 0 && (c._digest?.totalPaid || 0) > 0 },   // former customer, now inactive
+    { id: 'memberfunnel', label: 'Member Funnel', tier: 'crm',   test: (c) => !!c.membershipStage && c.membershipStage !== 'N/A' },
+    { id: 'usedfunnel',   label: 'Used Funnel',   tier: 'crm',   test: (c) => !!c.usedSalesStage && c.usedSalesStage !== 'N/A' },   // used-equipment sales pipeline
+    { id: 'members',      label: 'Members',       tier: 'ops',   test: (c) => /Member/.test(c.accountType || '') && c.accountType !== 'Member Incomplete' },
+    { id: 'business',     label: 'Business',      tier: 'ops',   test: (c) => /^Business/.test(c.accountType || '') },
+    { id: 'nonbusiness',  label: 'Non-Business',  tier: 'ops',   test: (c) => /^Non-Business/.test(c.accountType || '') },
+    { id: 'unpaid',       label: 'Unpaid',        tier: 'money', test: (c) => c.payStatus === 'Unpaid' },
+  ],
+  invoices: [
+    { id: 'notdue',      label: 'Not Due',     tier: 'money', test: (i) => invoiceTotals(i).status === 'Not Due' },
+    { id: 'unpaid',      label: 'Unpaid',      tier: 'money', test: (i) => invoiceTotals(i).status === 'Unpaid' },
+    { id: 'late',        label: 'Late',        tier: 'money', test: (i) => /^Late/.test(invoiceTotals(i).status) },   // Late · Late+30/60/90
+    { id: 'partial',     label: 'Partial',     tier: 'money', test: (i) => invoiceTotals(i).status === 'Partial' },
+    { id: 'refunded',    label: 'Refunded',    tier: 'money', test: (i) => invoiceTotals(i).status === 'Refunded' },
+    { id: 'collections', label: 'Collections', tier: 'money', test: (i) => invoiceTotals(i).status === 'Collections' },
+  ],
+};
 function memberCardEl(member, session) {
   if (member === 'calendar') return calendarCardEl(session);
   if (member === 'shop') return shopCardEl({ id: 'shop', title: 'Shop' }, session);   // the wrench "Shop" member = the COMBINED view (segment bar + 3-bar front-page graph), no forcedSeg
