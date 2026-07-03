@@ -6899,7 +6899,7 @@ function appendGroupedSections(list, rows, cs, card) {
     const group = buckets.get(sec.key);
     if (!group || !group.length) continue;
     const collapsed = groupCollapsed(card, sec.key);
-    const hd = el('div', 'grp-hd js-group-toggle' + (collapsed ? ' is-collapsed' : ''));
+    const hd = el('div', 'grp-hd js-group-toggle' + (collapsed ? ' is-collapsed' : '') + (sec.color === 'red' ? ' sec-danger' : ''));
     hd.dataset.card = card; hd.dataset.group = sec.key;
     hd.setAttribute('style', `--sec:var(--${sec.color})`);
     hd.innerHTML = `<span class="grp-chev">${I.chevR}</span><span class="grp-label">${esc(sec.label || sec.key)} · ${group.length}</span>`;
