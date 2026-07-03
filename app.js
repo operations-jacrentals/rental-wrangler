@@ -9223,13 +9223,13 @@ function uMetricChart(cs, metric, period, small) {
   return uTiles(cs, metric, items);
 }
 // §13.5 — per-metric display labels (used as column headers when a tab shows a pair)
-const U_MLABEL = { inspection: 'Inspection', service: 'Service Orders', fleet: 'Fleet', shop: 'Shop', fc: 'Field Calls', nums: '#s' };
+const U_MLABEL = { inspection: 'Inspection', service: 'Service Orders', fleet: 'Fleet', shop: 'Work Orders', fc: 'Field Calls', nums: '#s' };
 // Tabs are GROUPS: related data sets are FIXED side by side (Jac) — no user-driven "compare".
 // Inspection + Service Orders ride together; extend this list to pair other related sets.
 const U_GROUPS = [
   { key: 'inspection', label: 'Inspection', metrics: ['inspection', 'service'] },
   { key: 'fleet', label: 'Fleet', metrics: ['fleet'] },
-  { key: 'shop', label: 'Shop', metrics: ['shop'] },
+  { key: 'shop', label: 'WO', metrics: ['shop'] },
   { key: 'fc', label: 'Field Calls', metrics: ['fc'] },
   { key: 'nums', label: '#s', metrics: ['nums'] },
 ];
