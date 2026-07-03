@@ -6939,9 +6939,8 @@ function colTabButtonsHtml(col, active, session) {
   // chip are absorbed into it (the graph's Services + Not Ready bars).
   const coltabBtn = (m, on, { alert = false, count = null } = {}) =>
     `<button class="coltab js-coltab${on ? ' on' : ''}${alert ? ' alert' : ''}" data-col="${col.id}" data-member="${m}" aria-label="${esc(MEMBER_TITLE[m] || m)}" data-tip="${esc(MEMBER_TITLE[m] || m)}${alert ? ' — needs attention' : ''}">`
-      + `<span class="ct-ico">${memberIcon(m)}</span>`
+      + `<span class="ct-ico">${memberIcon(m)}${count != null ? `<span class="ct-n">${count}</span>` : ''}</span>`
       + `<span class="ct-lbl">${esc(MEMBER_TITLE[m] || m)}</span>`
-      + (count != null ? `<span class="ct-n">${count}</span>` : '')
       + `</button>`;
   let out = col.members.filter((m) => !SHOP_TYPES.includes(m)).map((m) => coltabBtn(m, m === active, { count: memberCount(m, session) })).join('');
   if (col.members.some((m) => SHOP_TYPES.includes(m))) {   // this column owns the shop → append the wrench Shop toggle
@@ -6974,10 +6973,11 @@ const unitIsOut = (u) => { const r = unitRentalNow(u); if (!r) return false; con
 const unitAvailableNow = (u) => u.fleetStatus === 'Active' && u.inspectionStatus === 'Ready' && !unitRentalNow(u);   // canonical availability (§16): excludes Failed/Not Ready/For Sale/Inactive/Sold/out
 const unitWhen = (u, when) => { const r = unitRentalNow(u); return !!r && rentalRevStatus(r) === when; };
 const CARD_OPTIONS = {
+  // `short` = the abbreviated button label (Jac); `label` stays the full name for the hover tooltip.
   rentals: [
     { id: 'today',    label: 'Today',    tier: 'ops',   test: (r) => rentalRevStatus(r) === 'Today' },
-    { id: 'tomorrow', label: 'Tomorrow', tier: 'ops',   test: (r) => rentalRevStatus(r) === 'Tomorrow' },
-    { id: 'reserved', label: 'Reserved', tier: 'ops',   test: (r) => rentalDisplayStatus(r) === 'Reserved' },
+    { id: 'tomorrow', label: 'Tomorrow', short: 'Tmrw',  tier: 'ops',   test: (r) => rentalRevStatus(r) === 'Tomorrow' },
+    { id: 'reserved', label: 'Reserved', short: 'Resvd', tier: 'ops',   test: (r) => rentalDisplayStatus(r) === 'Reserved' },
     { id: 'onrent',   label: 'On Rent',  tier: 'ops',   test: (r) => rentalDisplayStatus(r) === 'On Rent' },
     { id: 'endrent',  label: 'End Rent', tier: 'ops',   test: (r) => rentalDisplayStatus(r) === 'End Rent' },
     { id: 'bill',     label: 'Bill',     tier: 'money', combo: true, test: (r) => {   // ∑ overdue · unpaid · quotes · off rent · billing issues
@@ -6988,22 +6988,22 @@ const CARD_OPTIONS = {
       } },
   ],
   units: [
-    { id: 'notready',  label: 'Not Ready', tier: 'ops', test: (u) => u.inspectionStatus === 'Not Ready' },
+    { id: 'notready',  label: 'Not Ready', short: 'Not Rdy', tier: 'ops', test: (u) => u.inspectionStatus === 'Not Ready' },
     { id: 'failed',    label: 'Failed',    tier: 'ops', test: (u) => u.inspectionStatus === 'Failed' },
-    { id: 'available', label: 'Available', tier: 'ops', test: (u) => unitAvailableNow(u) },
+    { id: 'available', label: 'Available', short: 'Avail',   tier: 'ops', test: (u) => unitAvailableNow(u) },
     { id: 'today',     label: 'Today',     tier: 'ops', test: (u) => unitWhen(u, 'Today') },
-    { id: 'tomorrow',  label: 'Tomorrow',  tier: 'ops', test: (u) => unitWhen(u, 'Tomorrow') },
-    { id: 'reserved',  label: 'Reserved',  tier: 'ops', test: (u) => { const r = unitRentalNow(u); return !!r && rentalDisplayStatus(r) === 'Reserved'; } },
+    { id: 'tomorrow',  label: 'Tomorrow',  short: 'Tmrw',    tier: 'ops', test: (u) => unitWhen(u, 'Tomorrow') },
+    { id: 'reserved',  label: 'Reserved',  short: 'Resvd',   tier: 'ops', test: (u) => { const r = unitRentalNow(u); return !!r && rentalDisplayStatus(r) === 'Reserved'; } },
     { id: 'out',       label: 'Out',       tier: 'ops', combo: true, test: (u) => unitIsOut(u) },   // ∑ On Rent · End Rent · Off Rent
   ],
   customers: [
     { id: 'active',       label: 'Active',        tier: 'ops',   test: (c) => (c._digest?.activePct || 0) > 0 },
     { id: 'lost',         label: 'Lost',          tier: 'crm',   test: (c) => (c._digest?.activePct || 0) <= 0 && (c._digest?.totalPaid || 0) > 0 },   // former customer, now inactive
-    { id: 'memberfunnel', label: 'Member Funnel', tier: 'crm',   test: (c) => !!c.membershipStage && c.membershipStage !== 'N/A' },
-    { id: 'usedfunnel',   label: 'Used Funnel',   tier: 'crm',   test: (c) => !!c.usedSalesStage && c.usedSalesStage !== 'N/A' },   // used-equipment sales pipeline
+    { id: 'memberfunnel', label: 'Member Funnel', short: 'Mbr Fnl',  tier: 'crm',   test: (c) => !!c.membershipStage && c.membershipStage !== 'N/A' },
+    { id: 'usedfunnel',   label: 'Used Funnel',   short: 'Used Fnl', tier: 'crm',   test: (c) => !!c.usedSalesStage && c.usedSalesStage !== 'N/A' },   // used-equipment sales pipeline
     { id: 'members',      label: 'Members',       tier: 'ops',   test: (c) => /Member/.test(c.accountType || '') && c.accountType !== 'Member Incomplete' },
-    { id: 'business',     label: 'Business',      tier: 'ops',   test: (c) => /^Business/.test(c.accountType || '') },
-    { id: 'nonbusiness',  label: 'Non-Business',  tier: 'ops',   test: (c) => /^Non-Business/.test(c.accountType || '') },
+    { id: 'business',     label: 'Business',      short: 'Biz',      tier: 'ops',   test: (c) => /^Business/.test(c.accountType || '') },
+    { id: 'nonbusiness',  label: 'Non-Business',  short: 'Non-Biz',  tier: 'ops',   test: (c) => /^Non-Business/.test(c.accountType || '') },
     { id: 'unpaid',       label: 'Unpaid',        tier: 'money', test: (c) => c.payStatus === 'Unpaid' },
   ],
   invoices: [
@@ -7011,8 +7011,8 @@ const CARD_OPTIONS = {
     { id: 'unpaid',      label: 'Unpaid',      tier: 'money', test: (i) => invoiceTotals(i).status === 'Unpaid' },
     { id: 'late',        label: 'Late',        tier: 'money', test: (i) => /^Late/.test(invoiceTotals(i).status) },   // Late · Late+30/60/90
     { id: 'partial',     label: 'Partial',     tier: 'money', test: (i) => invoiceTotals(i).status === 'Partial' },
-    { id: 'refunded',    label: 'Refunded',    tier: 'money', test: (i) => invoiceTotals(i).status === 'Refunded' },
-    { id: 'collections', label: 'Collections', tier: 'money', test: (i) => invoiceTotals(i).status === 'Collections' },
+    { id: 'refunded',    label: 'Refunded',    short: 'Refund',  tier: 'money', test: (i) => invoiceTotals(i).status === 'Refunded' },
+    { id: 'collections', label: 'Collections', short: 'Collect', tier: 'money', test: (i) => invoiceTotals(i).status === 'Collections' },
   ],
 };
 /* Phase 4 — options entitlement + tooltips (card-header redesign, Jac 2026-07-03).
@@ -7104,8 +7104,8 @@ function listView(cardDef, session) {
     <div class="mini-searchwrap${cterms.length || cascChip ? ' has-terms' : ''}${cs.search.trim() || cterms.length ? ' has-query' : ''}">
       ${cascChip}${cterms.map((ft, i) => filterTermPill(ft, i, card)).join('')}
       <input class="mini-search" placeholder="${cterms.length ? 'Add filter — Enter to pin…' : `Search ${esc(cardDef.title.toLowerCase())}…`}" value="${esc(cs.search)}" data-card="${card}" />
+      <button class="sortdir js-sortdir" data-card="${card}" data-tip="Sort direction" aria-label="Sort direction"><span class="${cs.sort.dir === 'asc' ? 'on' : ''}">▲</span><span class="${cs.sort.dir === 'desc' ? 'on' : ''}">▼</span></button>
     </div>
-    <button class="sortdir js-sortdir" data-card="${card}" data-tip="Sort direction" aria-label="Sort direction"><span class="${cs.sort.dir === 'asc' ? 'on' : ''}">▲</span><span class="${cs.sort.dir === 'desc' ? 'on' : ''}">▼</span></button>
     <button class="gear js-cardgear${cs.optionsOpen || (cs.activeOptions || []).length ? ' on' : ''}" data-card="${card}" data-tip="Options" aria-label="Options" aria-expanded="${cs.optionsOpen ? 'true' : 'false'}">${I.sliders}</button>`;
   wrap.appendChild(bar);
   // Phase 4 — Row 2: the gear drops the card's quick-filter OPTIONS (role-projected §16) + the
@@ -7118,9 +7118,9 @@ function listView(cardDef, session) {
     const active = cs.activeOptions || [];
     const row = el('div', 'optrow');
     row.innerHTML =
-      `<div class="opts">${opts.map((o) => `<button class="opt${o.combo ? ' combo' : ''}${active.includes(o.id) ? ' on' : ''} js-opt" data-card="${card}" data-opt="${o.id}"${COMBO_TIP[o.id] ? ` data-tip="${esc(COMBO_TIP[o.id])}"` : ''} aria-pressed="${active.includes(o.id) ? 'true' : 'false'}">${esc(o.label)}</button>`).join('')}</div>`
-      + `<button class="bv-btn opt-graph js-cardgraph${cs.graphView ? ' on' : ''}" data-card="${card}" data-tip="${cs.graphView ? 'Back to list' : 'Graph view'}" aria-label="Graph view">${I.graph}</button>`
-      + `<button class="opt-more js-cvmore${cs.customOpen ? ' on' : ''}" data-card="${card}" data-tip="Custom views" aria-label="Custom views" aria-expanded="${cs.customOpen ? 'true' : 'false'}">⋯</button>`;
+      opts.map((o) => `<button class="opt${o.combo ? ' combo' : ''}${active.includes(o.id) ? ' on' : ''} js-opt" data-card="${card}" data-opt="${o.id}" data-tip="${esc(COMBO_TIP[o.id] || o.label)}" aria-pressed="${active.includes(o.id) ? 'true' : 'false'}">${esc(o.short || o.label)}</button>`).join('')
+      + `<button class="opt opt-graph js-cardgraph${cs.graphView ? ' on' : ''}" data-card="${card}" data-tip="${cs.graphView ? 'Back to list' : 'Graph view'}" aria-label="Graph view">${I.graph}</button>`
+      + `<button class="opt opt-more js-cvmore${cs.customOpen ? ' on' : ''}" data-card="${card}" data-tip="Custom views" aria-label="Custom views" aria-expanded="${cs.customOpen ? 'true' : 'false'}">⋯</button>`;
     wrap.appendChild(row);
     // Phase 6 — Row 3: personal Custom Views (opens from the ⋯). Each is an icon+label button that
     // re-applies its saved search + pinned filters + sort; a +New at the end starts the capture flow.
@@ -7128,7 +7128,7 @@ function listView(cardDef, session) {
       const cviews = loadCViews(card);
       const crow = el('div', 'cvrow');
       crow.innerHTML =
-        `<div class="cvs">${cviews.map((v, i) => `<button class="cview js-cview" data-card="${card}" data-idx="${i}" data-tip="${esc(v.name)}">${I[v.icon] || I.filter}<span class="cv-lbl">${esc(v.name)}</span></button>`).join('')}</div>`
+        cviews.map((v, i) => `<button class="cview js-cview" data-card="${card}" data-idx="${i}" data-tip="${esc(v.name)}">${I[v.icon] || I.filter}<span class="cv-lbl">${esc(v.name)}</span></button>`).join('')
         + `<button class="cvnew js-cvnew" data-card="${card}" data-tip="Save the current search + filters + sort as a view" aria-label="New view">${I.plus}New</button>`;
       wrap.appendChild(crow);
     }
