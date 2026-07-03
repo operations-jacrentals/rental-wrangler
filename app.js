@@ -5984,6 +5984,11 @@ const DETAIL = {
     // trail and lives on the Invoice card; re-billing creates a fresh invoice (createInvoiceForRental).
     const invFullyRefunded = (iv) => invoiceTotals(iv).status === 'Refunded';
     const liveInvs = invs.filter((iv) => !invFullyRefunded(iv));
+    // #414 — a $0-total invoice bills NOTHING for the rental's time (a pure credit / overpayment
+    // slot, e.g. a payment recorded before any line was built). Like a fully-refunded one it holds
+    // no live charge, so it must NOT block the +Invoice affordance — otherwise the rental can never
+    // be billed. It still shows as a pill for the trail; re-billing opens a fresh invoice.
+    const invHoldsCharge = (iv) => !invFullyRefunded(iv) && invoiceTotals(iv).total > 0;
     const inv = invs[0] || (r.invoiceId ? IDX.invoice.get(r.invoiceId) : null);
     const liveInv = liveInvs[0] || null;
     const invT = liveInv ? invoiceTotals(liveInv) : null;
@@ -5997,12 +6002,13 @@ const DETAIL = {
     const paidForThis = inv ? rentalAllocated(inv, r.rentalId) : 0;
     const createInvBtn = addBtn('Invoice', { link: true, js: 'js-create-invoice', h: 26, data: { rec: r.rentalId } });
     // Render every invoice pill (a fully-refunded one carries a ↩ + "re-bill" tip); then offer
-    // +Invoice whenever there is no LIVE invoice left — so a refund restores the re-bill path (#378).
+    // +Invoice whenever no linked invoice actually holds a charge — so a refund (#378) OR a
+    // $0-total credit slot (#414) restores the re-bill path.
     const invPill = (invs.length
       ? invs.map((iv, k) => { const refunded = invFullyRefunded(iv);
           const tip = refunded ? 'Refunded — use +Invoice to re-bill on a fresh invoice' : (invs.length > 1 ? 'Invoice ' + (k + 1) + ' of ' + invs.length + (iv.contOf ? ' — continuation (28-day cap)' : '') : '');
           return `<span class="pill ref link" data-r="R2" data-pill-card="invoices" data-pill-rec="${esc(iv.invoiceId)}"${tip ? ` data-tip="${esc(tip)}"` : ''}>${refunded ? '↩ ' : ''}${CARD_ICON.invoices}${esc(invoiceShort(iv.invoiceId))}${k === 0 && paidForThis <= 0 ? `<span class="x" data-x="inv-remove" data-tip="unlink — allowed while $0 is assigned to this rental; afterwards refund first">✕</span>` : ''}</span>`; }).join('')
-      : '') + (liveInvs.length ? '' : createInvBtn);
+      : '') + (invs.some(invHoldsCharge) ? '' : createInvBtn);
 
     /* Balance (paid / total) for the header right side — summed across the invoice series. */
     const rentLines = rentalLineItems(r);
