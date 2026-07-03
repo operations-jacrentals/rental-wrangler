@@ -9080,11 +9080,19 @@ function ruBuckets(rg) {
   return out;
 }
 // trajectory line: endpoint emphasized, counts above points, dots are the nav targets
-function ruLineSVG({ bk, vals, color, w = 620, h = 230 }) {
+function ruLineSVG({ bk, vals, color, w = 620, h = 230, extra = null }) {
   if (_ruSize) { w = _ruSize.w; h = _ruSize.h; }
   const n = bk.length, pts = bk.map((b, i) => ({ i, label: b.label, v: vals[i] }));
   const show = new Set(n <= 6 ? pts.map((p) => p.i) : [0, 1, 2, 3, 4].map((k) => Math.round(k * (n - 1) / 4)));
   const ink = ruColor(color);
+  // extra: {vals, color, label} — a quieter context series drawn UNDER the main line
+  // (no dots/labels of its own; a small stamped end-label names it, color + label per R-a11y)
+  const xpts = extra ? bk.map((b, i) => ({ i, v: extra.vals[i] })) : null;
+  const xink = extra ? ruColor(extra.color) : null;
+  const extraMarks = extra ? [
+    Plot.line(xpts, { x: 'i', y: 'v', stroke: xink, strokeWidth: 1.5, strokeDasharray: '4,3', strokeOpacity: 0.9 }),
+    Plot.text([xpts[n - 1]], { x: 'i', y: 'v', text: () => (extra.label || '').toUpperCase(), dy: 11, dx: -2, textAnchor: 'end', fill: xink, fontWeight: 800, fontSize: 9.5 }),
+  ] : [];
   return Plot.plot({
     width: w, height: h, marginLeft: 40, marginRight: 18, marginTop: 22, marginBottom: 28,
     style: { background: 'transparent', fontFamily: "'Saira Condensed', system-ui, sans-serif", fontSize: '11.5px' },
@@ -9092,6 +9100,7 @@ function ruLineSVG({ bk, vals, color, w = 620, h = 230 }) {
     y: { label: null, nice: true, tickFormat: (v) => (Number.isInteger(v) ? String(v) : '') },
     marks: [
       Plot.gridY({ stroke: ruColor('--line'), strokeDasharray: '2,3', strokeOpacity: 0.8 }),
+      ...extraMarks,
       Plot.areaY(pts, { x: 'i', y: 'v', fill: ink, fillOpacity: 0.1 }),
       Plot.line(pts, { x: 'i', y: 'v', stroke: ink, strokeWidth: 2 }),
       Plot.dot(pts, { x: 'i', y: 'v', r: (d) => (d.i === n - 1 ? 5 : 3.5), fill: ink, title: 'label' }),
@@ -9137,7 +9146,9 @@ function ruBookings(rg) {
   const bk = ruBuckets(rg);
   const vals = bk.map((b) => DATA.rentals.filter((r2) => { const d = (r2.startDate || '').slice(0, 10); return d >= b.a && d < b.b; }).length);
   const rows = bk.map((b, i) => ({ card: 'rentals', col: '__rentrange', navValue: b.key, name: `${b.label} — ${vals[i]} booked`, tip: `${b.label} — ${vals[i]} booked` }));
-  const chart = vals.some((v) => v > 0) ? ruWireNav(ruLineSVG({ bk, vals, color: '--blue' }), rows, 'circle') : ruEmpty('No rentals booked in this window.');
+  // N5 Successful Rentals — the quiet green context line: rentals that reached Returned, by end date
+  const done = bk.map((b) => DATA.rentals.filter((r2) => rentalDisplayStatus(r2) === 'Returned' && (r2.endDate || '').slice(0, 10) >= b.a && (r2.endDate || '').slice(0, 10) < b.b).length);
+  const chart = vals.some((v) => v > 0) ? ruWireNav(ruLineSVG({ bk, vals, color: '--blue', extra: done.some((v) => v > 0) ? { vals: done, color: '--green', label: 'Returned' } : null }), rows, 'circle') : ruEmpty('No rentals booked in this window.');
   const sc = {}; DATA.rentals.forEach((r2) => { const s = rentalDisplayStatus(r2); sc[s] = (sc[s] || 0) + 1; });
   const seg = (st) => ({ label: st, count: sc[st] || 0, color: getStatus('rentalStatus', st).color || 'gray' });
   return ruDuo(chart, ruReality({ num: sc['On Rent'] || 0, noun: 'On Rent now', segs: ['On Rent', 'Today', 'Tomorrow', 'Reserved'].map(seg) }));
@@ -9290,6 +9301,75 @@ function ruCardHealth() {   // card on file — snapshot by nature; values match
   return ruDonutSVG({ segs, noun: 'CUST' });
 }
 // panel builders land here phase by phase; sections list what is coming so the board is honest
+/* ── Manager metrics M1 (spec 2026-07-03-manager-metrics-design.md) ── */
+function ruNetSales(rg) {   // N1 — payments net of refunds, bucketed by invoice date
+  const bk = ruBuckets(rg);
+  const vals = bk.map((b) => DATA.invoices.reduce((a, inv) => { const d = (inv.date || '').slice(0, 10); if (!(d >= b.a && d < b.b)) return a; return a + invoiceTotals(inv).paid - (Number(inv.refundedAmount) || 0); }, 0));
+  if (!vals.some((v) => Math.abs(v) > 0.005)) return ruEmpty('No payments in this window.');
+  const green = ruColor('--green');
+  const rows = bk.map((b, i) => ({ label: b.label, name: `${b.label} — ${money(vals[i])} net`, value: Math.round(vals[i]), fill: green, card: 'invoices', col: '__daterange', navValue: b.key, tip: `${b.label} — ${money(vals[i])} collected net of refunds` }));
+  return ruWireNav(ruBarsSVG({ data: rows, money: true }), rows);
+}
+function ruRefunds(rg) {   // N2 — refunded $ (bucketed by the invoice's issue date — refunds carry no own date)
+  const bk = ruBuckets(rg);
+  const vals = bk.map((b) => DATA.invoices.reduce((a, inv) => { const d = (inv.date || '').slice(0, 10); return d >= b.a && d < b.b ? a + (Number(inv.refundedAmount) || 0) : a; }, 0));
+  if (!vals.some((v) => v > 0.005)) return ruEmpty('No refunds in this window — good.');
+  const red = ruColor('--red');
+  const rows = bk.map((b, i) => ({ label: b.label, name: `${b.label} — ${money(vals[i])} refunded`, value: Math.round(vals[i]), fill: red, card: 'invoices', col: 'invoice', navValue: 'Refunded', tip: `${b.label} — ${money(vals[i])} refunded` }));
+  return ruWireNav(ruBarsSVG({ data: rows, money: true }), rows);
+}
+function ruAging() {   // N3 — AR aging: open balances by days past due (inherently current)
+  const B = [{ k: 'Current', a: -1e9, b: 1 , color: '--gray' }, { k: '1–30', a: 1, b: 31, color: '--yellow' }, { k: '31–60', a: 31, b: 61, color: '--red' }, { k: '61–90', a: 61, b: 91, color: '--red' }, { k: '90+', a: 91, b: 1e9, color: '--red' }];
+  const sums = B.map(() => ({ v: 0, n: 0 }));
+  DATA.invoices.forEach((inv) => {
+    const t = invoiceTotals(inv); if (t.balance <= 0.005) return;
+    const late = inv.dueDate ? Math.floor((parseISO(TODAY_ISO) - parseISO(inv.dueDate.slice(0, 10))) / 86400000) : 0;
+    const bi = B.findIndex((x) => late >= x.a && late < x.b); if (bi >= 0) { sums[bi].v += t.balance; sums[bi].n++; }
+  });
+  if (!sums.some((s) => s.n)) return ruEmpty('No open balances — the book is clean.');
+  const rows = B.map((x, i) => ({ label: x.k, name: `${x.k}: ${sums[i].n} open — ${money(sums[i].v)}`, value: Math.round(sums[i].v), fill: ruColor(x.color), card: 'invoices', col: 'invoice', navValue: x.k === 'Current' ? 'Unpaid' : 'Late', tip: `${x.k} days past due: ${sums[i].n} invoice${sums[i].n === 1 ? '' : 's'} — ${money(sums[i].v)} open` })).filter((d) => d.value > 0);
+  return ruWireNav(ruBarsSVG({ data: rows, money: true }), rows);
+}
+function ruVoided(rg) {   // N4 — cancellations + no-shows per bucket, reality = split right now
+  const bk = ruBuckets(rg);
+  const isVoid = (r2) => { const s = rentalDisplayStatus(r2); return s === 'Cancelled' || s === 'No Show'; };
+  const vals = bk.map((b) => DATA.rentals.filter((r2) => isVoid(r2) && (r2.startDate || '').slice(0, 10) >= b.a && (r2.startDate || '').slice(0, 10) < b.b).length);
+  const rows = bk.map((b, i) => ({ card: 'rentals', col: '__rentrange', navValue: b.key, name: `${b.label} — ${vals[i]} voided`, tip: `${b.label} — ${vals[i]} cancelled / no-show` }));
+  const chart = vals.some((v) => v > 0) ? ruWireNav(ruLineSVG({ bk, vals, color: '--red' }), rows, 'circle') : ruEmpty('No cancellations or no-shows in this window.');
+  const cc = DATA.rentals.filter((r2) => rentalDisplayStatus(r2) === 'Cancelled').length, nn = DATA.rentals.filter((r2) => rentalDisplayStatus(r2) === 'No Show').length;
+  return ruDuo(chart, ruReality({ num: cc + nn, noun: 'voided all-time', segs: [
+    { label: 'Cancelled', count: cc, color: getStatus('rentalStatus', 'Cancelled').color || 'gray' },
+    { label: 'No Show', count: nn, color: getStatus('rentalStatus', 'No Show').color || 'red' } ] }));
+}
+function ruCustActive() {   // N6 — the profile activity meter (server digest activePct), Members split out
+  let am = 0, an = 0, off = 0;
+  DATA.customers.forEach((c) => {
+    const active = (c._digest?.activePct || 0) > 0;
+    const member = /Member/.test(c.accountType || '') && c.accountType !== 'Member Incomplete';
+    if (!active) off++; else if (member) am++; else an++;
+  });
+  const segs = [
+    { name: 'Active Members', count: am, color: 'green', card: 'customers', col: 'accountType', navValue: 'Member', tip: `${am} members active` },
+    { name: 'Active', count: an, color: 'blue', tip: `${an} non-member customers active` },
+    { name: 'Inactive', count: off, color: 'gray', tip: `${off} customers with no recent activity` },
+  ].filter((s) => s.count > 0);
+  return segs.length ? ruDonutSVG({ segs, noun: 'CUSTOMERS' }) : ruEmpty('No customers yet.');
+}
+function ruMemberships() {   // N7 — membership standing incl. Cancelled (a cancellation invoice, not re-activated)
+  const counts = {};
+  DATA.customers.forEach((c) => {
+    let s = membershipStatus(c); if (s === 'None') return;
+    if ((s === 'Lapsed' || s === 'Incomplete') && DATA.invoices.some((inv) => inv.membershipCancellation && inv.customerId === c.customerId)) s = 'Cancelled';
+    counts[s] = (counts[s] || 0) + 1;
+  });
+  const META = [
+    { s: 'Active', color: 'green' }, { s: 'Past Due', color: 'yellow' }, { s: 'Lapsed', color: 'red' },
+    { s: 'Cancelled', color: 'gray' }, { s: 'Incomplete', color: 'purple' },
+  ];
+  const segs = META.filter((m) => counts[m.s]).map((m) => ({
+    name: m.s, count: counts[m.s], color: m.color, card: 'customers', col: 'accountType', navValue: 'Member', tip: `${counts[m.s]} ${m.s.toLowerCase()} membership${counts[m.s] === 1 ? '' : 's'}` }));
+  return segs.length ? ruDonutSVG({ segs, noun: 'MEMBERS' }) : ruEmpty('No memberships yet.');
+}
 const RU_PANELS = {
   'units-per-cat': { build: ruUnitsPerCategory },
   'rev-cat': { build: ruRevByCat }, 'exp-cat': { build: ruExpByCat }, 'rev-status': { build: ruRevByStatus },
@@ -9299,14 +9379,19 @@ const RU_PANELS = {
   'inv-status': { build: ruInvoiceStatus }, 'rent-tiles': { build: ruRentTiles },
   'wo-phase': { build: ruWoPhase }, 'svc-urgency': { build: ruSvcUrgency },
   'fleet-mix': { build: ruFleetMix }, 'accounts': { build: ruAccounts }, 'card-health': { build: ruCardHealth },
+  'net-sales': { build: ruNetSales }, 'refunds': { build: ruRefunds }, 'aging': { build: ruAging },
+  'voided': { build: ruVoided }, 'cust-active': { build: ruCustActive }, 'memberships': { build: ruMemberships },
 };
 const RU_SECTIONS = [
   { id: 'money', label: 'Money', panels: [
     { id: 'rev-cat', title: 'Revenue by Category', phase: 'B' }, { id: 'exp-cat', title: 'Expenses by Category', phase: 'B' },
-    { id: 'rev-status', title: 'Revenue by Rental Status', phase: 'B' }, { id: 'top-spend', title: 'Top Customers', phase: 'B' },
+    { id: 'rev-status', title: 'Revenue by Rental Status', phase: 'B' }, { id: 'net-sales', title: 'Net Sales', phase: 'M1' },
+    { id: 'refunds', title: 'Refunds', phase: 'M1' }, { id: 'aging', title: 'Invoice Aging', phase: 'M1' },
+    { id: 'top-spend', title: 'Top Customers', phase: 'B' },
     { id: 'balances', title: 'Biggest Open Balances', phase: 'B' } ] },
   { id: 'rentals', label: 'Rentals', panels: [
-    { id: 'bookings', title: 'Bookings Over Time', phase: 'C' }, { id: 'inv-status', title: 'Invoice Status', phase: 'D' },
+    { id: 'bookings', title: 'Bookings Over Time', phase: 'C' }, { id: 'voided', title: 'Cancellations & No-Shows', phase: 'M1' },
+    { id: 'inv-status', title: 'Invoice Status', phase: 'D' },
     { id: 'rent-tiles', title: 'By the Numbers', phase: 'D' } ] },
   { id: 'shop', label: 'Shop', panels: [
     { id: 'insp-trend', title: 'Inspections Over Time', phase: 'C' }, { id: 'wo-trend', title: 'Work Orders Opened', phase: 'C' },
@@ -9315,7 +9400,8 @@ const RU_SECTIONS = [
   { id: 'fleet', label: 'Fleet', panels: [
     { id: 'fleet-mix', title: 'Fleet Mix', phase: 'D' }, { id: 'units-per-cat', title: 'Units per Category' } ] },
   { id: 'customers', label: 'Customers', panels: [
-    { id: 'accounts', title: 'Account Types · Pay Status', phase: 'D' }, { id: 'card-health', title: 'Card Health', phase: 'D' } ] },
+    { id: 'accounts', title: 'Account Types · Pay Status', phase: 'D' }, { id: 'card-health', title: 'Card Health', phase: 'D' },
+    { id: 'cust-active', title: 'Active vs Inactive', phase: 'M1' }, { id: 'memberships', title: 'Memberships', phase: 'M1' } ] },
 ];
 /* §13.7 GAUGE STRIP (Jac 2026-07-03) — the card's Round-Up charts IN-COLUMN, at the top
    of the list rows, strictly 25% of the card column's height. One panel at a time behind
@@ -9328,9 +9414,9 @@ const RU_SECTIONS = [
 const RUS_TABS = {
   units: [{ p: 'fleet-mix', l: 'Fleet' }, { p: 'units-per-cat', l: 'Categories' }, { p: 'field-calls', l: 'Field Calls' }],
   categories: [{ p: 'rev-cat', l: 'Revenue' }, { p: 'exp-cat', l: 'Expenses' }],
-  rentals: [{ p: 'bookings', l: 'Bookings' }, { p: 'rev-status', l: 'Revenue' }, { p: 'inv-status', l: 'Invoices' }, { p: 'rent-tiles', l: '#s' }],
-  customers: [{ p: 'accounts', l: 'Accounts' }, { p: 'card-health', l: 'Cards' }, { p: 'top-spend', l: 'Top Spend' }],
-  invoices: [{ p: 'balances', l: 'Balances' }, { p: 'top-spend', l: 'Top Spend' }],
+  rentals: [{ p: 'bookings', l: 'Bookings' }, { p: 'voided', l: 'Voided' }, { p: 'rev-status', l: 'Revenue' }, { p: 'inv-status', l: 'Invoices' }, { p: 'rent-tiles', l: '#s' }],
+  customers: [{ p: 'accounts', l: 'Accounts' }, { p: 'cust-active', l: 'Active' }, { p: 'memberships', l: 'Members' }, { p: 'card-health', l: 'Cards' }, { p: 'top-spend', l: 'Top Spend' }],
+  invoices: [{ p: 'balances', l: 'Balances' }, { p: 'net-sales', l: 'Net' }, { p: 'refunds', l: 'Refunds' }, { p: 'aging', l: 'Aging' }, { p: 'top-spend', l: 'Top Spend' }],
   inspections: [{ p: 'insp-trend', l: 'Inspections' }],
   workOrders: [{ p: 'wo-trend', l: 'Opened' }, { p: 'wo-phase', l: 'Bottleneck' }],
   serviceOrders: [{ p: 'svc-urgency', l: 'Urgency' }],
