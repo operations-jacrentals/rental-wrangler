@@ -6867,6 +6867,9 @@ function memberCount(member, session) {
   if (SHOP_TYPES.includes(member)) { try { return (shopItemsByType(session)[member] || []).length; } catch { return 0; } }
   try { let r = listFor(member, session); if (member === 'units') r = unitsVisible(r, session.cards.units); return r.length; } catch { return 0; }
 }
+/* Real counts run to 4 digits (2230 customers) — a bare "2230" sprawls across a 16px glyph.
+   K-format ≥1000 (1222 → 1.2K); the exact number rides the R23 tooltip. */
+const ctFmt = (n) => n >= 1000 ? ((n / 1000).toFixed(n < 9950 ? 1 : 0).replace(/\.0$/, '')) + 'K' : String(n);
 /** How many Shop items in this view NEED work — drives the red alert on the tab:
  *  pending inspections, open work orders, overdue/wash-requested services. */
 function shopAlertCount(member, session) {
@@ -6944,7 +6947,7 @@ function colTabButtonsHtml(col, active, session) {
   // chip are absorbed into it (the graph's Services + Not Ready bars).
   const coltabBtn = (m, on, { alert = false, count = null } = {}) =>
     `<button class="coltab js-coltab${on ? ' on' : ''}${alert ? ' alert' : ''}" data-col="${col.id}" data-member="${m}" aria-label="${esc(MEMBER_TITLE[m] || m)}" data-tip="${esc(MEMBER_TITLE[m] || m)}${alert ? ' — needs attention' : ''}">`
-      + `<span class="ct-ico">${memberIcon(m)}${count != null ? `<span class="ct-n">${count}</span>` : ''}</span>`
+      + `<span class="ct-ico">${memberIcon(m)}${count != null ? `<span class="ct-n" data-tip="${count}">${ctFmt(count)}</span>` : ''}</span>`
       + `<span class="ct-lbl">${esc(MEMBER_TITLE[m] || m)}</span>`
       + `</button>`;
   let out = col.members.filter((m) => !SHOP_TYPES.includes(m)).map((m) => coltabBtn(m, m === active, { count: memberCount(m, session) })).join('');
