@@ -33,6 +33,8 @@ let failed = false;
 try {
   await page.goto('http://localhost:8000/#local', { waitUntil: 'domcontentloaded', timeout: 20000 });
   await page.waitForFunction(() => !!window.__rw, { timeout: 20000 });
+  await page.evaluate(() => window.__rwBootRail);   // let offlineBoot's async wranglerRailLoad() finish before any test
+                                                      // touches wranglerRail — else it can land mid-test and wipe fixtures (race)
 
   const results = await page.evaluate(async () => {
     const T = window.__rw; const out = []; const ok = (c, m) => out.push({ ok: !!c, m });
