@@ -475,9 +475,10 @@ body.is-phone { touch-action: manipulation; }
 .coltab .ct-lbl { white-space: nowrap; min-width: 0; }     /* active label shows in FULL — no ellipsis (Jac) */
 .coltab:not(.on) .ct-lbl { display: none; }     /* icon-first toggle: only the active member spells its name (Jac, 2026-07-03) */
 .coltab .ct-ico { position: relative; display: inline-flex; flex: 0 0 auto; } .coltab .ct-ico svg { width: 16px; height: 16px; }
-/* count = a superscript badge floating at the icon's top-right, NOT its own slot in the row (Jac) */
-.coltab .ct-n { position: absolute; top: -6px; right: -7px; min-width: 14px; height: 14px; padding: 0 3px; display: grid; place-items: center; font-size: 9px; font-weight: 800; line-height: 1; color: var(--txt); background: var(--bg-2); border-radius: 999px; box-shadow: 0 0 0 1.5px var(--card); pointer-events: none; }
-.coltab.on .ct-n { color: var(--on-orange); background: var(--yellow); box-shadow: 0 0 0 1.5px var(--accent); }   /* on the orange tab: a stamped hi-vis count */
+/* count = a BARE superscript number at the icon's top-right — no chip (Jac). Dark ink on the
+   orange active tab, light ink elsewhere; a whisper of shadow lifts it off the surface. */
+.coltab .ct-n { position: absolute; top: -6px; right: -6px; font-size: 9px; font-weight: 800; line-height: 1; color: var(--txt); text-shadow: 0 1px 2px var(--card); pointer-events: none; }
+.coltab.on .ct-n { color: var(--on-orange); text-shadow: none; }
 /* red "needs work" alert on a Shop tab (pending inspections / open WOs / overdue service) */
 .coltab.alert:not(.on) { color: var(--txt); background: var(--bg-2); box-shadow: inset 0 0 0 1px var(--red), 0 0 5px color-mix(in srgb, var(--red) 30%, transparent); }   /* rule 1: red border + red icon + light ink + dark bg */
 .coltab.alert:not(.on) .ct-ico { color: var(--red); filter: drop-shadow(0 0 3px color-mix(in srgb, var(--red) 55%, transparent)); }
