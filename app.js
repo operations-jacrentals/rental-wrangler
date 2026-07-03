@@ -22,6 +22,7 @@ import * as Plot from './vendor/plot.min.js';                                  /
 import { pie as d3pie, arc as d3arc } from './vendor/d3-shape.min.js';         // d3-shape 3.2.0 (ISC) — donut geometry, Phase D
 import { AGREEMENTS, AGREEMENT_VERSIONS, AGREEMENT_CURRENT } from './agreements.js';
 import { ico, I, CARD_ICON, RING_ICON, CATEGORY_ICON } from './icons.js';
+import { CATEGORY_ANIM } from './icons-anim.js';
 import {
   getStatus, STATUS, ROLES, ROLE_TIERS, tierRank, BUILTIN_ROLE_TIERS, GRID_CARDS, BACKOFFICE_BOARDS, SORT_FIELDS,
   SHOP_TYPES, SHOP_SEGMENTS, COLUMNS, COLUMN_OF,
@@ -4870,7 +4871,10 @@ const CATEGORY_MOTION = {
    a genuinely unmatched name (or an admin bucket like "Uncategorized") falls to a neutral
    box glyph — NOT a machine shape — so a miss is visually obvious instead of silently wrong.
    Wrapped in .cat-glyph so the parent row/card hover triggers a per-family CSS-only motion
-   (never JS-driven, degrades to a plain color change under prefers-reduced-motion). */
+   (never JS-driven, degrades to a plain color change under prefers-reduced-motion).
+   ANIMATED VARIANTS (Jac, 2026-07-03): the excavator / lift / skid-steer families render
+   the CATEGORY_ANIM ambient loops (icons-anim.js — converted from Jac's supplied Lottie
+   artwork) instead of the static glyph; reduced-motion freezes them to the rest pose. */
 function categoryIconFor(name) {
   const n = (name || '').toLowerCase();
   let key = 'box';
@@ -4892,6 +4896,7 @@ function categoryIconFor(name) {
   else if (/fuel|tank/.test(n)) key = 'fuel';
   else if (/heat|furnace/.test(n)) key = 'heater';
   else if (/saw|cut|chainsaw|chipper|trowel|float|buffer|sander|tiller|sod|splitter|jack.?hammer|metal.?break|pallet.?jack|snake|blade/.test(n)) key = 'saw';
+  if (CATEGORY_ANIM[key]) return `<span class="cat-glyph">${CATEGORY_ANIM[key]}</span>`;
   return `<span class="cat-glyph ${CATEGORY_MOTION[key]}">${CATEGORY_ICON[key]}</span>`;
 }
 /* The unit row's RENTAL+INSPECTION pill (Jac): text = rental status / availability

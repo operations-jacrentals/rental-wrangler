@@ -3077,6 +3077,46 @@ body { font-variant-numeric: tabular-nums; }
   .cat-glyph { transition: color .12s ease; }
   .ur:hover .cat-glyph, .catr:hover .cat-glyph { transform: none !important; }
 }
+
+/* ── ANIMATED CATEGORY GLYPHS (Jac, 2026-07-03) — the excavator / boom-lift / skid-steer
+   families render CATEGORY_ANIM loops (icons-anim.js, converted from Jac's supplied
+   Lottie artwork). Ambient 3s loops, currentColor strokes (.k2 = dimmed secondary);
+   pivots work because the SVG nests translate(p) › animated group › translate(-a) at
+   each Lottie anchor. Jac explicitly opted into ambient icon motion here (overrides the
+   one-orchestrated-moment default); reduced-motion freezes every loop to the rest pose. ── */
+.catanim { width: 1em; height: 1em; display: inline-block; overflow: visible; }
+.catanim .k2 { opacity: .55; }
+.catanim g { transform-box: view-box; transform-origin: 0 0; }
+/* travel groups animate via translate; rotate groups pivot at their Lottie anchor
+   because the markup nests translate(p) > [anim] > translate(-a). */
+.catanim .xc-run { animation: caXcRun 3s ease-in-out infinite; }
+.catanim .xc-bob { animation: caXcBob 1.5s ease-in-out infinite; }
+.catanim .xc-dig { animation: caXcDig 3s ease-in-out infinite; }
+.catanim .xc-rock { animation: caXcRock 3s ease-in-out infinite; }
+@keyframes caXcRun { 0%{transform:translateX(0)} 17%{transform:translateX(-64px)} 75%{transform:translateX(59px)} 100%{transform:translateX(0)} }
+@keyframes caXcBob { 0%,100%{transform:translateY(0)} 50%{transform:translateY(6px)} }
+@keyframes caXcDig { 0%,100%{transform:rotate(0)} 17%,75%{transform:rotate(2.7deg)} }
+@keyframes caXcRock { 0%,16%{transform:translateX(0) scale(.04);opacity:0} 30%{opacity:1} 75%{transform:translateX(120px) scale(1);opacity:1} 90%,100%{transform:translateX(197px) scale(1);opacity:0} }
+.catanim .bl-run { animation: caBlRun 3s ease-in-out infinite; }
+.catanim .bl-rock { animation: caBlRock 3s ease-in-out infinite; }
+.catanim .bl-a1 { animation: caBlA1 3s ease-in-out infinite; }
+.catanim .bl-a2 { animation: caBlA2 3s ease-in-out infinite; }
+@keyframes caBlRun { 0%,16%{transform:translateX(0)} 40%{transform:translateX(132px)} 65%{transform:translateX(-55px)} 81%,100%{transform:translateX(0)} }
+@keyframes caBlRock { 0%,18%,100%{transform:rotate(0)} 42%,65%{transform:rotate(-3deg)} 75%{transform:rotate(0)} }
+@keyframes caBlA1 { 0%,100%{transform:rotate(0)} 15%,65%{transform:rotate(-27deg)} 77%{transform:rotate(0)} }
+@keyframes caBlA2 { 0%,8%,100%{transform:rotate(0)} 21%,59%{transform:rotate(32deg)} 71%{transform:rotate(0)} }
+.catanim .sk-run { animation: caSkRun 3s ease-in-out infinite; }
+.catanim .sk-rock { animation: caSkRock 3s ease-in-out infinite; }
+.catanim .sk-scoop { animation: caSkScoop 3s ease-in-out infinite; }
+.catanim .sk-fly1 { stroke-dasharray: 90; animation: caSkFly 3s linear infinite; }
+.catanim .sk-fly2 { stroke-dasharray: 160; animation: caSkFly 3s linear infinite .35s; }
+@keyframes caSkRun { 0%{transform:translateX(0)} 17%{transform:translateX(-37px)} 35%{transform:translateX(50px)} 46%,65%{transform:translateX(51px)} 100%{transform:translateX(0)} }
+@keyframes caSkRock { 0%,20%,57%,100%{transform:rotate(0)} 44%{transform:rotate(-11deg)} }
+@keyframes caSkScoop { 0%,88%,100%{transform:rotate(0)} 17%,74%{transform:rotate(-30deg)} }
+@keyframes caSkFly { 0%,30%{stroke-dashoffset:0;opacity:0} 40%{opacity:1} 60%,100%{stroke-dashoffset:-180;opacity:0} }
+@media (prefers-reduced-motion: reduce) {
+  .catanim *, .catanim { animation: none !important; }
+}
 .catr-name { flex: 1 1 auto; min-width: 0; font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .6px; font-weight: 700; font-size: 13px; line-height: 1.1; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 /* the availability row is one bank of four equal-height stamped plates:
    [ AVAIL n | NEXT date ] · [ PASS ] [ NR ] [ FAIL ]. Every plate is the same
