@@ -6833,7 +6833,7 @@ function colTabButtonsHtml(col, active, session) {
   // "Shop" toggle that opens the shop graph; the old Service-heart toggle + Not-Ready
   // chip are absorbed into it (the graph's Services + Not Ready bars).
   const coltabBtn = (m, on, { alert = false, count = null } = {}) =>
-    `<button class="coltab js-coltab${on ? ' on' : ''}${alert ? ' alert' : ''}" data-col="${col.id}" data-member="${m}" data-tip="${esc(MEMBER_TITLE[m] || m)}${alert ? ' — needs attention' : ''}">`
+    `<button class="coltab js-coltab${on ? ' on' : ''}${alert ? ' alert' : ''}" data-col="${col.id}" data-member="${m}" aria-label="${esc(MEMBER_TITLE[m] || m)}" data-tip="${esc(MEMBER_TITLE[m] || m)}${alert ? ' — needs attention' : ''}">`
       + `<span class="ct-ico">${memberIcon(m)}</span>`
       + `<span class="ct-lbl">${esc(MEMBER_TITLE[m] || m)}</span>`
       + (count != null ? `<span class="ct-n">${count}</span>` : '')
