@@ -2738,6 +2738,7 @@ input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
 .ctx-menu::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 6px; background: repeating-linear-gradient(180deg, var(--yellow) 0 11px, #14181d 11px 22px); }
 .ctx-menu .dd-item { display: flex; align-items: center; gap: 9px; width: 100%; padding: 7px 10px; border-radius: 8px; background: none; border: none; color: var(--txt); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; text-align: left; }
 .ctx-menu .dd-item:hover { background: var(--panel-2); }
+.ctx-menu .dd-item svg { width: 15px; height: 15px; flex: 0 0 auto; }   /* §17b — library glyphs on the link actions (sized to match the row) */
 .ctx-menu .menu-sep { height: 1px; background: var(--line); margin: 4px 0; }
 
 /* +Work Order on the Units card — floats alone, centered, no card backing (Jac 2026-06-12) */
@@ -2962,16 +2963,25 @@ body { font-variant-numeric: tabular-nums; }
 .catr-cat { flex: 0 0 auto; width: 18px; height: 18px; color: var(--txt-2); display: flex; align-items: center; justify-content: center; }
 .catr-cat svg { width: 17px; height: 17px; display: block; }
 .catr-name { flex: 1 1 auto; min-width: 0; font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .6px; font-weight: 700; font-size: 13px; line-height: 1.1; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-.catr-pills { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
-.catr-slot { display: flex; align-items: center; justify-content: center; }
-.catr-slot .pill { width: 100%; text-align: center; justify-content: center; overflow: hidden; }
-.catr-slot .pill .t { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-/* the Availability slot is a shortcut into the Units card — give it a clear hit
-   affordance (the whole slot is the click target, not just the pill). */
-.catr-slot.js-cat-avail { cursor: pointer; }
-.catr-slot.js-cat-avail .pill { transition: box-shadow .12s, border-color .12s; }
-.catr-slot.js-cat-avail:hover .pill { border-color: var(--accent-line); box-shadow: 0 0 0 1px var(--accent-line); }
-.catr-slot.js-cat-avail:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 999px; }
+/* the availability row is one bank of four equal-height stamped plates:
+   [ AVAIL n | NEXT date ] · [ PASS ] [ NR ] [ FAIL ]. Every plate is the same
+   .catr-cell (stamped label over value, tinted by --ct/--ct-bg); the lead is wider
+   and clickable (units / the next-free unit), the three others filter Units by status.
+   Grid stretch keeps all four the same height — one clean row, not three shapes. */
+.catr-pills { display: grid; grid-template-columns: 1.4fr 1fr 1fr 1fr; gap: 4px; align-items: stretch; }
+.catr-cell { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-width: 0; padding: 4px 3px; border: 1px solid var(--ct, var(--line)); border-radius: 8px; background: var(--ct-bg, transparent); cursor: pointer; transition: box-shadow .12s, border-color .12s; }
+.catr-cell .cc-k { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .8px; font-weight: 700; font-size: 8.5px; line-height: 1; color: var(--txt-3); }
+.catr-cell .cc-v { max-width: 100%; font-size: 14px; font-weight: 800; line-height: 1; color: var(--ct, var(--txt)); }
+.catr-cell .cc-v.cc-date { font-size: 10.5px; font-weight: 700; color: var(--txt); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* the NONE reason word ("End Dates?", "For Sale"…) runs a touch smaller + tighter than a
+   date so the longer ones fit the narrow lead without ellipsis. */
+.catr-cell .cc-v.cc-why { font-size: 9px; font-weight: 700; line-height: 1.05; color: var(--txt); text-align: center; white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.catr-cell:hover { box-shadow: 0 0 0 1px var(--ct); }
+.catr-cell:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* the "NONE" reason plate is purely informational (no unit to open / status to filter) —
+   drop the click affordance so it doesn't read as tappable. */
+.catr-cell.catr-lead-none { cursor: default; }
+.catr-cell.catr-lead-none:hover { box-shadow: none; }
 /* the rate card: a stamped period label on the left, the money value on the right,
    set off by a single saddle-stitch seam from the status pills above. */
 .catr-rates { margin-top: auto; display: flex; flex-direction: column; gap: 2px; border-top: 1px dashed var(--line); padding-top: 6px; }
@@ -3007,6 +3017,23 @@ body { font-variant-numeric: tabular-nums; }
   .drag-ghost { animation: ghostLift .16s ease-out; }
   @keyframes ghostLift { from { scale: .66; opacity: 0; } to { scale: 1; opacity: 1; } }
 }
+/* §17b — LINKING MODE banner: hi-vis hazard stripe as plate CHROME (left cap), the
+   prompt itself on a calm steel field (simple-on-complex). Stamped sub-label in Saira. */
+.link-banner { display: flex; align-items: center; gap: 10px; margin: 0 0 8px; padding: 9px 12px 9px 16px;
+  border: 1px solid var(--accent-line); border-radius: 12px; background: linear-gradient(180deg, #1b2129, #0c0e11);
+  position: relative; z-index: 4; flex: 0 0 auto; overflow: hidden; }   /* flex:0 0 auto — NEVER shrink (a height-constrained phone card was squashing it to a sliver); z-index above the card-body fade */
+.link-banner::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 6px;
+  background: repeating-linear-gradient(135deg, var(--yellow, #f5c542) 0 8px, #14181d 8px 16px); }
+.link-banner .lb-txt { flex: 1; min-width: 0; font-size: 12.5px; color: var(--txt); }
+.link-banner .lb-txt b { color: var(--accent); font-weight: 700; }
+.link-banner .lb-sub { color: var(--txt-3); font-family: 'Saira Condensed', sans-serif; text-transform: uppercase; letter-spacing: 1.2px; font-size: 11px; margin-left: 5px; }
+/* §17b — link confirm popup body */
+.lc-body { padding: 4px 2px 2px; }
+.lc-line { font-size: 13.5px; color: var(--txt); line-height: 1.5; }
+.lc-line b { color: var(--accent); font-weight: 700; }
+.lc-price { margin-top: 10px; font-size: 13px; color: var(--txt); }
+.lc-price b { color: var(--green); font-weight: 700; }
+.lc-price.muted { color: var(--txt-3); }
 /* §M2 ZIP ZONES (phone) — edge rails of valid drop-target cards during a drag. Steel
    data-plate tabs with a per-card hazard stripe (the ONLY colour — a transient drag
    overlay, so the one-orange rule holds for persistent UI). Drag onto one to jump to

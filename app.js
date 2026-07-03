@@ -850,10 +850,16 @@ function rentalPrice(r) {
     || (sd === 6 && ed === 1 && days === 2);                   // Sat → Mon
   if (weekendWindow) return { price: cat.weekend, rate: 'WKND', days };
 
+  // Cheapest blend — tile the window with 4-Week + 7-Day blocks + a 1-Day remainder, AND
+  // allow rounding the remainder UP to one more whole block when that block is cheaper than
+  // the days it replaces. So a 6-day rental caps at the 7-Day rate (not 6×daily), and 3 weeks
+  // + 6 days caps at the 4-Week rate: we never bill MORE for fewer days than the next tier
+  // costs. The ceil bounds (vs floor) are what let a higher tier cover a partial sub-tier.
   let best = null;
-  for (let mm = 0; mm <= Math.floor(days / 28); mm++) {
-    for (let ww = 0; ww <= Math.floor((days - 28 * mm) / 7); ww++) {
-      const dd = days - 28 * mm - 7 * ww;
+  for (let mm = 0; mm <= Math.ceil(days / 28); mm++) {
+    const wkCeil = Math.max(0, Math.ceil((days - 28 * mm) / 7));
+    for (let ww = 0; ww <= wkCeil; ww++) {
+      const dd = Math.max(0, days - 28 * mm - 7 * ww);
       const total = mm * cat.rate4Wk + ww * cat.rate7Day + dd * cat.rate1Day;
       if (best == null || total < best.total) best = { total, mm, ww, dd };
     }
@@ -1005,17 +1011,36 @@ function createContinuationInvoice(r, covStart, covEnd) {
   return inv;
 }
 /** Bill per-unit charges for [ns,ne] onto `inv` (kind = 'rental' fresh chunk · 'extension'
- *  grow). prevEnd = the unit's already-billed-through end (=ns for a fresh chunk). */
-function billChunkUnits(inv, r, ns, ne, prevEnd, retro, kind, contInvId) {
+ *  grow). prevEnd = the unit's already-billed-through end (=ns for a fresh chunk).
+ *  `fullWin` (retro spill only) = the WHOLE covered window [start,end] this chunk completes:
+ *  the continuation then credits ALL prior series billing toward cheapest(fullWin) (delta =
+ *  full-window − billedSeries), so an already-billed — even PAID — sub-tier day counts toward
+ *  the blended rate instead of being re-billed. Positive only (refund-first: a paid chunk is
+ *  never reduced). Without fullWin the added segment is priced standalone (OFF path, #444). */
+function billChunkUnits(inv, r, ns, ne, prevEnd, retro, kind, contInvId, fullWin) {
   let delta = 0, count = 0;
   rentalUnits(r).forEach((eu) => {
     if (unitVoided(r, eu)) return;
     const u = IDX.unit.get(eu.unitId); if (!u) return;
-    const d = unitExtensionDelta(inv, r, eu, ns, ne, prevEnd, retro);
-    if (d.amount > 0.005) {
+    let amount, rate;
+    if (retro && fullWin) {
+      // Credit ALL prior series billing toward cheapest(fullWin); but cap at pricing the added
+      // segment alone, so an UNTRACKED prior charge (a manual 'item' line invisible to
+      // unitBilledSeries) can't inflate the credit into a double-charge (#444 · logic-test 32b).
+      const pFull = rentalPrice({ categoryId: u.categoryId, startDate: fullWin.start, endDate: fullWin.end, customerId: r.customerId });
+      const pSeg = rentalPrice({ categoryId: u.categoryId, startDate: ns, endDate: ne, customerId: r.customerId });
+      const credit = Math.max(0, Math.round(((pFull ? pFull.price : 0) - unitBilledSeries(r, eu.unitId)) * 100) / 100);
+      const seg = pSeg ? Math.round(pSeg.price * 100) / 100 : 0;
+      if (credit <= seg) { amount = credit; rate = pFull ? pFull.rate : '—'; }
+      else { amount = seg; rate = pSeg ? pSeg.rate : '—'; }
+    } else {
+      const d = unitExtensionDelta(inv, r, eu, ns, ne, prevEnd, retro);
+      amount = d.amount; rate = d.rate;
+    }
+    if (amount > 0.005) {
       const tail = kind === 'extension' ? ` · Extension → ${fmtShortDate(ne)}` : (contInvId ? ` · Ext of ${invoiceShort(contInvId)}` : '');
-      inv.lineItems.push({ kind, ref: r.rentalId, unitId: eu.unitId, lid: lineLid(), label: `${u.name} · ${d.rate}${tail}`, amount: d.amount });
-      delta += d.amount; count++;
+      inv.lineItems.push({ kind, ref: r.rentalId, unitId: eu.unitId, lid: lineLid(), label: `${u.name} · ${rate}${tail}`, amount });
+      delta += amount; count++;
     }
   });
   return { delta: Math.round(delta * 100) / 100, count };
@@ -1077,6 +1102,7 @@ function previewExtensionDelta(r, prevEnd, newEnd, prevStart, newStart) {
     return { covStart: invCovStart(inv, r), covEnd: invCovEnd(inv, r), locked: !!inv.locked, closed: tot.paid > 0 && tot.balance <= 0, billed, paid };
   };
   const chunks = invs.map(chunkOf);
+  const winStart = chunks[0].covStart;   // #444 true series start — mirrors billExtension's retro-spill credit
   let delta = 0;
   const reconcile = (c, ns, ne) => units.forEach((eu) => {     // retro re-price chunk to cheapest(ns→ne) − billed
     const target = priceOf(eu, ns, ne), billed = c.billed[eu.unitId] || 0, d = target - billed;
@@ -1087,7 +1113,20 @@ function previewExtensionDelta(r, prevEnd, newEnd, prevStart, newStart) {
   const standalone = (c, ns, ne) => units.forEach((eu) => {    // OFF grow / spill: the added segment priced on its own
     const amt = priceOf(eu, ns, ne); if (amt > 0.005) { delta += amt; c.billed[eu.unitId] = (c.billed[eu.unitId] || 0) + amt; }
   });
-  const spill = (ns, ne) => { const c = { covStart: ns, covEnd: ne, locked: false, closed: false, billed: {}, paid: {} }; standalone(c, ns, ne); return c; };
+  const seriesBilled = (uId) => chunks.reduce((a, c) => a + (c.billed[uId] || 0), 0);
+  // #444 retro spill: the continuation credits ALL prior series billing toward cheapest(fullWin),
+  // so an already-billed (even PAID) sub-tier day counts toward the blend, not re-billed. Positive
+  // only (refund-first). Without fullStart (OFF), the added segment is priced standalone.
+  const spill = (ns, ne, fullStart, fullEnd) => {
+    const c = { covStart: ns, covEnd: ne, locked: false, closed: false, billed: {}, paid: {} };
+    if (retro && fullStart) units.forEach((eu) => {
+      const credit = Math.max(0, Math.round((priceOf(eu, fullStart, fullEnd) - seriesBilled(eu.unitId)) * 100) / 100);
+      const amt = Math.min(credit, priceOf(eu, ns, ne));   // cap at the added segment (untracked manual line can't inflate the credit)
+      if (amt > 0.005) { delta += amt; c.billed[eu.unitId] = amt; }
+    });
+    else standalone(c, ns, ne);
+    return c;
+  };
   const daysOf = (c) => Math.max(0, dayDiff(parseISO(c.covStart), parseISO(c.covEnd)));
   let guard = 0;
   // BACK — grow the active (latest) chunk's covEnd toward targetEnd, spilling fresh chunks.
@@ -1095,15 +1134,16 @@ function previewExtensionDelta(r, prevEnd, newEnd, prevStart, newStart) {
   let coveredEnd = active.covEnd || prevEnd || r.startDate;
   while (targetEnd && coveredEnd && dayDiff(parseISO(coveredEnd), parseISO(targetEnd)) > 0 && guard++ < 200) {
     const room = INV_CAP_DAYS - daysOf(active);
-    if (active.locked || active.closed || room <= 0) { const ce = minISO(addDaysISO(coveredEnd, INV_CAP_DAYS), targetEnd); active = spill(coveredEnd, ce); chunks.push(active); coveredEnd = ce; }
+    if (active.locked || active.closed || room <= 0) { const ce = minISO(addDaysISO(coveredEnd, INV_CAP_DAYS), targetEnd); active = spill(coveredEnd, ce, winStart, ce); chunks.push(active); coveredEnd = ce; }
     else { const grow = Math.min(room, dayDiff(parseISO(coveredEnd), parseISO(targetEnd))); const nce = addDaysISO(coveredEnd, grow); retro ? reconcile(active, active.covStart, nce) : standalone(active, coveredEnd, nce); active.covEnd = nce; coveredEnd = nce; }
   }
+  const winEnd = coveredEnd;   // #444 latest covered end after the back loop
   // FRONT — grow the earliest chunk's covStart toward targetStart, spilling fresh chunks.
   let earliest = chunks[0];
   let coveredStart = earliest.covStart || prevStart || r.startDate;
   while (targetStart && coveredStart && dayDiff(parseISO(targetStart), parseISO(coveredStart)) > 0 && guard++ < 200) {
     const room = INV_CAP_DAYS - daysOf(earliest);
-    if (earliest.locked || earliest.closed || room <= 0) { const cs = maxISO(addDaysISO(coveredStart, -INV_CAP_DAYS), targetStart); earliest = spill(cs, coveredStart); chunks.unshift(earliest); coveredStart = cs; }
+    if (earliest.locked || earliest.closed || room <= 0) { const cs = maxISO(addDaysISO(coveredStart, -INV_CAP_DAYS), targetStart); earliest = spill(cs, coveredStart, cs, winEnd); chunks.unshift(earliest); coveredStart = cs; }
     else { const grow = Math.min(room, dayDiff(parseISO(targetStart), parseISO(coveredStart))); const ncs = addDaysISO(coveredStart, -grow); retro ? reconcile(earliest, ncs, earliest.covEnd) : standalone(earliest, ncs, coveredStart); earliest.covStart = ncs; coveredStart = ncs; }
   }
   return Math.round(delta * 100) / 100;
@@ -1138,6 +1178,7 @@ function billExtension(r, prevEnd, prevStart) {
   const targetEnd = r.endDate;
   let active = rentalActiveInvoice(r); if (!active) return null;
   if (!active.covStart) { active.covStart = prevStart || r.startDate; active.covEnd = prevEnd || r.endDate; active.covOf = r.rentalId; }   // backfill legacy from the OLD window
+  const winStart = invCovStart(rentalInvoices(r)[0] || active, r);   // #444 true series start — retro spills price cheapest(winStart→chunkEnd), crediting the whole series
   let coveredEnd = active.covEnd || prevEnd || r.startDate;
   const sum = { count: 0, subtotalDelta: 0, invoiceIds: [], newInvoices: 0, retro, invoiceId: r.invoiceId };
   let guard = 0;
@@ -1149,7 +1190,7 @@ function billExtension(r, prevEnd, prevStart) {
     if (active.locked || closed || room <= 0) {                                  // spill → fresh chunk invoice
       const chunkEnd = minISO(addDaysISO(coveredEnd, INV_CAP_DAYS), targetEnd);
       active = createContinuationInvoice(r, coveredEnd, chunkEnd);
-      const res = billChunkUnits(active, r, coveredEnd, chunkEnd, coveredEnd, retro, 'rental', r.invoiceId);
+      const res = billChunkUnits(active, r, coveredEnd, chunkEnd, coveredEnd, retro, 'rental', r.invoiceId, retro ? { start: winStart, end: chunkEnd } : null);
       reindex('invoices', active);
       sum.newInvoices++; sum.count += res.count; sum.subtotalDelta += res.delta; sum.invoiceIds.push(active.invoiceId);
       coveredEnd = chunkEnd;
@@ -1169,6 +1210,7 @@ function billExtension(r, prevEnd, prevStart) {
   // Symmetric to the back loop: grow the earliest OPEN chunk's covStart earlier (retro reconcile /
   // OFF standalone), or spill a fresh ≤28-day continuation chunk when it's paid/locked/full.
   const targetStart = r.startDate;
+  const winEnd = coveredEnd;   // #444 latest covered end after the back loop — front retro spills price cheapest(chunkStart→winEnd)
   let earliest = rentalInvoices(r)[0] || active;
   let coveredStart = earliest.covStart || prevStart || r.startDate;
   while (targetStart && coveredStart && dayDiff(parseISO(targetStart), parseISO(coveredStart)) > 0 && guard++ < 60) {
@@ -1178,7 +1220,7 @@ function billExtension(r, prevEnd, prevStart) {
     if (earliest.locked || closed || room <= 0) {                                // spill → fresh FRONT chunk invoice
       const chunkStart = maxISO(addDaysISO(coveredStart, -INV_CAP_DAYS), targetStart);
       earliest = createContinuationInvoice(r, chunkStart, coveredStart);
-      const res = billChunkUnits(earliest, r, chunkStart, coveredStart, chunkStart, retro, 'rental', r.invoiceId);
+      const res = billChunkUnits(earliest, r, chunkStart, coveredStart, chunkStart, retro, 'rental', r.invoiceId, retro ? { start: chunkStart, end: winEnd } : null);
       reindex('invoices', earliest);
       sum.newInvoices++; sum.count += res.count; sum.subtotalDelta += res.delta; sum.invoiceIds.push(earliest.invoiceId);
       coveredStart = chunkStart;
@@ -1663,16 +1705,29 @@ function activeRentalForUnit(unitId) {
    same-day return frees the unit for a same-day re-rent. Computed live against
    the open rental-window calendar (winpicker) each render — §10 tinting. */
 let availWin = null;   // {start,end,time,selfId} set each render while the calendar is open
-function rentalOverlaps(r, selS, selE) {
-  const rs = parseISO(r.startDate), re = parseISO(r.endDate);
+/* §20 physically-OUT statuses — the machine is in the customer's hands until it's
+   Returned (Reserved/Today/Tomorrow = not yet picked up; Returned = back in the yard). */
+const OUT_RENTAL_STATUSES = new Set(['On Rent', 'End Rent', 'Off Rent']);
+function rentalOverlaps(r, selS, selE, endISO) {
+  const rs = parseISO(r.startDate), re = parseISO(endISO || r.endDate);
   if (!rs || !re || !selS || !selE) return false;
   return re > selS && selE > rs;   // touching boundaries do NOT conflict (same-day handoff)
 }
 function rentalsOverlappingUnit(unitId, startISO, endISO, selfId) {
   const selS = parseISO(startISO), selE = parseISO(endISO);
   if (!selS || !selE) return [];
-  return DATA.rentals.filter((r) => rentalHasUnit(r, unitId) && r.rentalId !== selfId
-    && ACTIVE_RENTAL.has(r.status) && r.status !== 'Quote' && rentalOverlaps(r, selS, selE));
+  return DATA.rentals.filter((r) => {
+    if (!rentalHasUnit(r, unitId) || r.rentalId === selfId) return false;
+    if (!ACTIVE_RENTAL.has(r.status) || r.status === 'Quote') return false;
+    // §10 a unit that is physically OUT (On/End/Off Rent) past its scheduled return is
+    // still occupying the machine until someone marks it Returned — so an OVERDUE rental
+    // keeps blocking a same-/near-window re-rent instead of "freeing" on its end date.
+    // Otherwise the availability tool double-books a unit that's still in the field, and
+    // the Units card shows a still-out unit as "Available". Judge by the unit's OWN status.
+    const eu = unitEntry(r, unitId);
+    const overdueOut = OUT_RENTAL_STATUSES.has(eu ? unitStatus(r, eu) : r.status) && r.endDate && r.endDate < TODAY_ISO;
+    return rentalOverlaps(r, selS, selE, overdueOut ? '9999-12-31' : r.endDate);
+  });
 }
 /* §10 OVERBOOKED (drag build, Jac) — DERIVED LIVE, never stored. A rental is
    overbooked when another active rental occupies its unit for an overlapping
@@ -1803,12 +1858,55 @@ function categoryMix(categoryId) {
 /* §9 RENTABLE fleet — Jac's definition, lifted verbatim from the Ready-Rate KPI: a
    unit counts as rentable when its fleetStatus isn't Inactive/Sold/For-Sale AND its
    inspection isn't Failed. Sold units have left the yard, so they're out of inventory
-   too. One source for the category mini-card's rentable/total health tally. */
+   too. Drives the mini-card's "N Avail" count + the §10 availability lens. */
 const RENTABLE_SKIP_FLEET = new Set(['Inactive', 'Sold', 'For Sale']);
 const isUnitRentable = (u) => !RENTABLE_SKIP_FLEET.has(u.fleetStatus) && u.inspectionStatus !== 'Failed';
-function categoryRentable(categoryId) {
-  const inv = DATA.units.filter((u) => u.categoryId === categoryId && u.fleetStatus !== 'Sold');   // Sold left the yard → not inventory
-  return { rentable: inv.filter(isUnitRentable).length, total: inv.length };
+const DOW3 = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];   // short weekday for the mini-card NEXT plate
+/* §10 next-available — when a category has 0 units free right now, the soonest one frees:
+   the EARLIEST rental END among the category's rentable (Active, inspection≠Failed) units,
+   plus a 4-hour yard turnaround after that rental's end time (Jac 2026-07-01). Returns
+   { unitId, iso, min } (min = minutes-into-day it's ready, or null when the ending rental
+   carries no end time) or null when nothing is out to come back. */
+function categoryNextAvailable(categoryId) {
+  const TURN_MIN = 240;   // 4-hour turnaround after a rental's end time
+  let best = null;
+  for (const u of DATA.units) {
+    if (u.categoryId !== categoryId || u.fleetStatus !== 'Active' || u.inspectionStatus === 'Failed') continue;
+    const r = activeRentalForUnit(u.unitId);
+    if (!r || !r.endDate) continue;
+    if (r.endDate < TODAY_ISO) continue;   // return date already passed (overdue) → not a real "next available"
+    let iso = r.endDate, min = null;
+    const em = timeToMin(r.endTime);
+    if (em != null) { min = em + TURN_MIN; while (min >= 1440) { min -= 1440; iso = addDays(iso, 1); } }
+    const key = iso + (min == null ? '9999' : String(min).padStart(4, '0'));   // no-time sorts last within its day
+    if (!best || key < best.key) best = { unitId: u.unitId, iso, min, key };
+  }
+  return best;
+}
+/* §10 why-none — the terse reason a category has 0 units free, for the sales lead plate
+   when there's no next-return date to show (Jac 2026-07-01). Judged on the ACTIVE fleet only
+   (so it never contradicts the PASS/NR/FAIL tally, which is also Active-only). Ordered from
+   "nothing to rent" to "out": no units (N/A) → all off-fleet, named specifically (Sold /
+   For Sale / Inactive) → every Active unit Failed → out with its return date already passed
+   (Overdue) → else out with no end date on record → "End Dates?" (a data prompt — this should
+   be impossible once end dates are entered, else a future NEXT date would have shown). */
+function categoryUnavailReason(categoryId) {
+  const units = DATA.units.filter((u) => u.categoryId === categoryId);
+  if (!units.length) return 'N/A';
+  const active = units.filter((u) => u.fleetStatus === 'Active');
+  if (!active.length) {
+    // name the actual off-fleet status (Sold / For Sale / Inactive) rather than a vague umbrella
+    const counts = {};
+    units.forEach((u) => { counts[u.fleetStatus] = (counts[u.fleetStatus] || 0) + 1; });
+    return Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0] || 'Off fleet';
+  }
+  if (!active.some((u) => u.inspectionStatus !== 'Failed')) return 'Failed';
+  const overdue = active.some((u) => {
+    if (u.inspectionStatus === 'Failed') return false;
+    const r = activeRentalForUnit(u.unitId);
+    return r && r.endDate && r.endDate < TODAY_ISO;   // out, and its scheduled return has passed
+  });
+  return overdue ? 'Overdue' : 'End Dates?';   // out but no end date recorded → prompt to enter it
 }
 /** A unit's current rental bucket (mirrors §12.4 Rental Status into 3 buckets). */
 function unitRentalBucket(u) {
@@ -2142,14 +2240,40 @@ function openStandard(card, recId, recType) {
 function showCategoryUnits(categoryId) {
   const cat = IDX.category.get(categoryId); if (!cat) return;
   const s = activeSession(), us = s.cards.units; if (!us) return;
-  us.search = cat.name; us.listLimit = undefined; us.mode = 'list'; us.recId = null; us.recType = null;
+  pushCardHistory(us, true);   // record the pre-jump view + column layout so Back returns to the category card (Jac 2026-07-02)
+  // Match the pill's count: narrow Units to this category's AVAILABLE units, not the
+  // whole category. The 'available' token engages the §10 availability lens (rowMatches)
+  // and makes availWin resolve to the in-scope window (open rental window, else "now"),
+  // so the list mirrors exactly what the pill was tallying.
+  us.search = `${cat.name} available`; us.listLimit = undefined; us.mode = 'list'; us.recId = null; us.recType = null;
+  let unitsSlot = null;
   if (s.cols) {
     const slots = ['left', 'middle', 'right'].filter((k) => k in s.cols);
     if (!slots.some((k) => s.cols[k] === 'units')) s.cols[(slots.find((k) => s.cols[k] === 'categories')) || slots[0]] = 'units';
+    unitsSlot = slots.find((k) => s.cols[k] === 'units');
   }
   state.focusedCard = 'units';
-  if (state.mobileCol !== undefined) state.mobileCol = 'units';   // mobile single-column → show Units
+  // mobile single-column → flip to the column that now holds Units. mobileCol is a
+  // NUMERIC COLUMNS index (not a member id) — writing the string broke the phone hop.
+  if (unitsSlot) { const idx = COLUMNS.findIndex((c) => c.id === unitsSlot); if (idx >= 0) state.mobileCol = idx; }
   render();
+}
+/** A category mini-card's NEXT plate → open the specific unit that frees up soonest, in
+ *  the Units card (Jac 2026-07-01). Mirrors showCategoryUnits' column plumbing, but lands
+ *  on that unit's Standard detail (openStandard) rather than a filtered list. */
+function showNextAvailableUnit(unitId) {
+  const u = IDX.unit.get(unitId); if (!u) return;
+  const s = activeSession(); if (!s.cards.units) return;
+  pushCardHistory(s.cards.units, true);   // record the pre-jump view + column layout so Back returns to the category card; openStandard's own push dedups against this (Jac 2026-07-02)
+  let unitsSlot = null;
+  if (s.cols) {
+    const slots = ['left', 'middle', 'right'].filter((k) => k in s.cols);
+    if (!slots.some((k) => s.cols[k] === 'units')) s.cols[(slots.find((k) => s.cols[k] === 'categories')) || slots[0]] = 'units';
+    unitsSlot = slots.find((k) => s.cols[k] === 'units');
+  }
+  state.focusedCard = 'units';
+  if (unitsSlot) { const idx = COLUMNS.findIndex((c) => c.id === unitsSlot); if (idx >= 0) state.mobileCol = idx; }
+  openStandard('units', unitId, null);   // openStandard re-renders
 }
 /** Universal pill rule (§0.2): clicking any pill forces its target card into
  *  standard mode. WO/Inspection/Service pills now resolve to the Shop card. */
@@ -2195,19 +2319,45 @@ function clearAnchor() {
    the other cards and the tab anchor. A view is a {mode,recId,recType} snapshot.
    Back/forward chevrons (and right-click = Back) step through it. */
 const cardSnap = (cs) => ({ mode: cs.mode, recId: cs.recId, recType: cs.recType || null });
+// A "full" view snapshot — additionally captures the list search/limit AND the column
+// layout (which slot holds which card + the focused/mobile column). Used for the CROSS-
+// COLUMN jumps a category mini-card makes into Units (showCategoryUnits / showNext-
+// AvailableUnit swap Categories → Units): a plain cardSnap can't reverse the swap or the
+// narrowed search, so those jumps record a viewSnap and Back restores the whole category
+// view — bringing back the mini-cards exactly where they were (Jac 2026-07-02).
+function viewSnap(cs) {
+  const s = activeSession();
+  return { mode: cs.mode, recId: cs.recId, recType: cs.recType || null,
+    search: cs.search, listLimit: cs.listLimit,
+    cols: s.cols ? { ...s.cols } : null, focusedCard: state.focusedCard, mobileCol: state.mobileCol };
+}
+// Restore the column layout carried by a viewSnap (a no-op for plain cardSnaps, which
+// have no 'cols' key — so ordinary same-card Back/Forward never touches the layout).
+function restoreLayout(snap) {
+  if (!snap || !('cols' in snap)) return;
+  const s = activeSession();
+  if (snap.cols) s.cols = { ...snap.cols };
+  if (snap.focusedCard !== undefined) state.focusedCard = snap.focusedCard;
+  if (snap.mobileCol !== undefined) state.mobileCol = snap.mobileCol;
+}
 const sameSnap = (a, b) => a && b && a.mode === b.mode && String(a.recId) === String(b.recId);
 const HIST_CAP = 50;
 // Record the card's CURRENT view before we change it; opening a new view clears the
-// forward branch (standard back/forward semantics).
-function pushCardHistory(cs) {
+// forward branch (standard back/forward semantics). `full` records a viewSnap (search +
+// column layout) for cross-column jumps that a plain snapshot couldn't reverse.
+function pushCardHistory(cs, full) {
   if (!cs) return;
-  const snap = cardSnap(cs);
+  const snap = full ? viewSnap(cs) : cardSnap(cs);
   const top = cs.backStack[cs.backStack.length - 1];
   if (!sameSnap(top, snap)) cs.backStack.push(snap);
   if (cs.backStack.length > HIST_CAP) cs.backStack.shift();
   cs.fwdStack = [];
 }
-function applySnap(cs, snap) { cs.mode = snap.mode; cs.recId = snap.recId; cs.recType = snap.recType || null; }
+function applySnap(cs, snap) {
+  cs.mode = snap.mode; cs.recId = snap.recId; cs.recType = snap.recType || null;
+  if ('search' in snap) { cs.search = snap.search; cs.listLimit = snap.listLimit; }   // viewSnap → restore the narrowed list too
+  restoreLayout(snap);                                                                // viewSnap → un-swap the column (bring the category cards back)
+}
 // Step this one card back / forward through its own history (other cards untouched).
 function cardBack(card) {
   const cs = activeSession().cards[card]; if (!cs) return;
@@ -2223,16 +2373,20 @@ function cardBack(card) {
     }
     return;
   }
-  cs.fwdStack.push(cardSnap(cs));
-  applySnap(cs, cs.backStack.pop());
+  const prev = cs.backStack.pop();
+  // Reversing a cross-column jump: the snapshot we leave behind for Forward must carry the
+  // CURRENT search + layout too, else Forward couldn't re-do the jump.
+  cs.fwdStack.push('cols' in prev ? viewSnap(cs) : cardSnap(cs));
+  applySnap(cs, prev);
   if (cs.mode === 'standard' && cs.recId != null) ackComments(recOf(entityCardOf(card, cs.recType), cs.recId));
   sweepEmptyDrafts(cs.recId);   // #8 — sweep the abandoned empty draft we stepped away from (keep the one we land on)
   render();
 }
 function cardFwd(card) {
   const cs = activeSession().cards[card]; if (!cs || !cs.fwdStack.length) return;
-  cs.backStack.push(cardSnap(cs));
-  applySnap(cs, cs.fwdStack.pop());
+  const nxt = cs.fwdStack.pop();
+  cs.backStack.push('cols' in nxt ? viewSnap(cs) : cardSnap(cs));
+  applySnap(cs, nxt);
   if (cs.mode === 'standard' && cs.recId != null) ackComments(recOf(entityCardOf(card, cs.recType), cs.recId));
   render();
 }
@@ -2331,8 +2485,14 @@ function pillTo(card, recId) {
   if (recId == null) return;
   // 3-column display: a link pill forces its column to reveal the target card.
   const revealCol = (member) => { const cs = activeSession(); const col = COLUMN_OF[member]; if (cs.cols && col) { cs.cols[col] = member; const idx = COLUMNS.findIndex((c) => c.id === col); if (idx >= 0) state.mobileCol = idx; } };   // §M1 — also flip the visible phone column so a cross-column link lands where you can see it
-  if (SHOP_TYPES.includes(card)) { if (recOf(card, recId)) { revealCol(card); openStandard('shop', recId, card); } return; }
-  if (recOf(card, recId)) { revealCol(card); openStandard(card, recId); }
+  // If revealing the target SWAPS its column — hiding the card you're on now (e.g. an invoice
+  // → its customer, both in the right column; or a unit → its category, both left) — record the
+  // pre-swap view + column layout on the DESTINATION card so Back returns you to the card you
+  // left, exactly where it was. Same viewSnap mechanism the categories → units jump uses; no-op
+  // when the target is already visible in its own column (no swap). (Jac 2026-07-03)
+  const noteSwap = (member) => { const s = activeSession(), col = COLUMN_OF[member]; if (s.cols && col && s.cols[col] !== member) pushCardHistory(s.cards[SHOP_TYPES.includes(member) ? 'shop' : member], true); };
+  if (SHOP_TYPES.includes(card)) { if (recOf(card, recId)) { noteSwap(card); revealCol(card); openStandard('shop', recId, card); } return; }
+  if (recOf(card, recId)) { noteSwap(card); revealCol(card); openStandard(card, recId); }
 }
 
 /* ── global search (§5.4) ────────────────────────────────────────────────── */
@@ -2408,9 +2568,20 @@ function rowMatches(card, rec, query, terms) {
   for (const col in byCol) { if (!byCol[col].some((v) => totColMatch(card, rec, col, v))) return false; }
   return blobMatches(IDX.search.get(card + ':' + idOf(card, rec)), q2, terms2b.filter((t) => !t.col));
 }
+// §11 transport-leg filter — mirrors the Office dispatch grid (dispatchEvents):
+// a rental has the 'delivery' leg when ANY unit ships Delivery/Round-Trip, the
+// 'pickup' leg when ANY unit ships Recovery/Round-Trip. Round-Trip has both legs,
+// Self has neither — so the operator's "Delivery vs Pickup" lens lines up with
+// the trucks that actually roll. The stored field calls a pickup 'Recovery'.
+const TRANSPORT_LEG_TYPES = { delivery: ['Delivery', 'Round-Trip'], pickup: ['Round-Trip', 'Recovery'] };
+function rentalHasLeg(r, leg) {
+  const types = TRANSPORT_LEG_TYPES[leg];
+  return !!types && rentalUnits(r).some((eu) => eu.transportType && types.includes(eu.transportType));
+}
 // A1 — exact match for a filter term's {col, value}, per record.
 function totColMatch(card, rec, col, value) {
   if (col === '__date') return dateTermHits(card, rec, value);   // §5.4d date-picker filter term
+  if (col === '__transport') return card === 'rentals' && rentalHasLeg(rec, value);   // §11 Delivery/Pickup leg filter
   if (col === '__wo') return DATA.workOrders.some((w) => w.unitId === rec.unitId && w.phase !== 'Complete' && !w.cancelled && (value === 'open' || w.phase === 'Part Ordered' || (w.lineItems || []).some((l) => l.phase === 'Part Ordered')));
   if (col === '__cond') return rec.inspectionStatus === value;
   if (col === '__svc') { const s = topServiceForUnit(rec); return !!rec.washRequested || !!(s && s.remaining < 0); }   // service-due: overdue service or wash requested
@@ -2488,6 +2659,17 @@ function addFilterTerm(scope, raw) {
   if (v === 'date' || v === 'dates') {   // §5.4d — the keyword opens the date/range picker instead of pinning the word
     if (scope === 'global') state.query = ''; else activeSession().cards[scope].search = '';
     return openDateSearch(scope);
+  }
+  // §11 — on the Rentals board, "delivery"/"pickup" pin a leg-scoped chip (mirrors the
+  // Office dispatch grid) instead of a blob word, so "pickup" actually filters (the stored
+  // type is 'Recovery') and "delivery" also catches Round-Trips. Pinnable/clearable like a
+  // status chip, and ANDs with them. Left as plain text in global search (other cards).
+  const leg = scope === 'rentals' ? ({ delivery: 'delivery', deliveries: 'delivery', pickup: 'pickup', pickups: 'pickup', 'pick up': 'pickup' })[v] : null;
+  if (leg) {
+    const arr = termsFor(scope);
+    if (!arr.some((ft) => ft.col === '__transport' && ft.value === leg)) arr.push({ t: leg, col: '__transport', value: leg, neg: false });
+    activeSession().cards[scope].search = '';
+    return afterFilterChange(scope);
   }
   const arr = termsFor(scope);
   if (!arr.some((ft) => ft.t === v)) arr.push({ t: v, neg: false });
@@ -4206,6 +4388,7 @@ function flashOr(sel, msg) {
  *  Replace opens the inline editor · Add Comment logs to History ·
  *  Ask Mr. Wrangler copies a debug reference for Claude. */
 let ctxTarget = null;
+let ctxRecord = null;   // §17b — the record the menu opened on ({card, recId}), for the "+ Target" link actions
 // §13.4 graph-chrome right-click menu — tracks which card it was opened on so runCtxAction can act without
 // the ctxOutside closer; the chosen state persists per device, per card (loadGvChrome).
 let ctxGvCard = null;
@@ -4231,10 +4414,16 @@ function closeCtxMenu() { const m = document.getElementById('rw-ctx'); if (m) m.
 function openCtxMenu(e, hit) {
   closeCtxMenu();
   ctxTarget = hit;
+  // §17b — resolve the pressed record → its menu-driven LINK actions ("+ Target").
+  const rr = hit && hit.el ? cardRecordAt(hit.el) : null;
+  const ent = rr ? entityCardOf(rr.card, rr.recType) : null;
+  ctxRecord = ent ? { card: ent, recId: rr.recId } : null;
+  const linkItems = ctxRecord ? linkActionsFor(ctxRecord.card, recOf(ctxRecord.card, ctxRecord.recId)) : [];
   const m = document.createElement('div');
   m.className = 'ctx-menu'; m.id = 'rw-ctx';
   const item = (act, label) => `<button class="dd-item" data-ctx="${act}">${label}</button>`;
-  m.innerHTML = [
+  const linkSec = linkItems.length ? linkItems.map((a) => `<button class="dd-item" data-ctx="link:${a.target}">${CARD_ICON[a.target] || ''}${esc(a.label)}</button>`).join('') + '<div class="menu-sep"></div>' : '';
+  m.innerHTML = linkSec + [
     item('cut', '✂️ Cut'), item('copy', '📋 Copy'), item('paste', '📥 Paste'), item('clear', '🧹 Clear'),
     '<div class="menu-sep"></div>',
     item('search', '🔎 Search'), item('gsearch', '🌐 Global Search'), item('replace', '✏️ Replace'),
@@ -4268,6 +4457,14 @@ function openCtxMenuAt(target, x, y) {
   const hit = leaf ? (ruleOf(leaf) || { r: null, el: leaf }) : null;
   if (hit) return openCtxMenu({ clientX: x, clientY: y }, hit);
   if (!card) return;
+  // §17b PHONE: a long-press on EMPTY space (row gaps, an open standard card) still opens
+  // the menu on the record there, so linking works from ANYWHERE on a row/card — not just
+  // a leaf. The right-click "go Back / clear anchor" on empty space stays a DESKTOP-only
+  // convention; a phone long-press must never silently navigate Back. (Jac, 2026-06-30)
+  if (document.body.classList.contains('is-phone')) {
+    if (cardRecordAt(target)) return openCtxMenu({ clientX: x, clientY: y }, { r: null, el: target });
+    return;   // truly empty list space → do nothing (never Back on a phone long-press)
+  }
   const dc = card.dataset.card, now = performance.now();
   if (now - lastCtx.t < 450 && lastCtx.card === dc) { lastCtx = { t: 0, card: null }; return clearAnchor(); }   // double right-click
   lastCtx = { t: now, card: dc };
@@ -4286,6 +4483,13 @@ function runCtxAction(act) {
     else if (act === 'gv-sort') saveGvChrome(card, { sort: !gvSortHidden(card) });
     else if (act === 'gv-reset') saveGvChrome(card, { pills: false, sort: false });
     return render();
+  }
+  if (act.startsWith('link:')) {   // §17b — menu-driven linking
+    const target = act.slice(5); const rec = ctxRecord;
+    closeCtxMenu(); document.removeEventListener('mousedown', ctxOutside); ctxRecord = null;
+    if (!rec) return;
+    if (rec.card === 'units' && target === 'workOrders') return startUnitWorkOrder(rec.recId);   // §4a create-WO → land on the unit
+    return enterLinking(rec.card, rec.recId, target);
   }
   const tg = ctxTarget; closeCtxMenu(); document.removeEventListener('mousedown', ctxOutside);
   if (!tg) return;
@@ -4420,7 +4624,7 @@ const RB_FOUNDATION = {
     'ONE orange, ONE meaning: the selected tab · ignition · primary action. Never decorative.',
     rbSw('var(--accent)', 'Accent', 'selected · ignition', 'var(--on-orange)')],
   'color-status': ['◐', 'Status palette', '--green / --yellow / --red / --blue / --navy / --purple / --gray',
-    'Registry status colors — each carries a fixed meaning on every card (Ready · caution · danger · link…).',
+    'Registry status colors — each carries a fixed meaning on every card (Passed · caution · danger · link…).',
     ['var(--green)', 'var(--yellow)', 'var(--red)', 'var(--blue)', 'var(--navy)', 'var(--purple)', 'var(--gray)'].map((c) => `<span class="rb-sw" style="background:${c}"></span>`).join('')],
   'color-semantic': ['▣', 'Action-color law', 'commit = blue · money = green · danger = red',
     'Action INTENT, not status: blue commits/saves · green takes money · solid red confirms destructive.',
@@ -4648,7 +4852,15 @@ function unitRentalInspPill(u) {
   const ar = activeRentalForUnit(u.unitId);
   let text, color;
   if (availWin) {
-    if (isUnitAvailableFor(u, availWin.start, availWin.end, availWin.selfId)) { text = 'Available'; color = 'green'; }
+    // §10 — a unit already committed to the very rental whose window is being scoped must
+    // NOT read "Available": availWin.selfId is excluded from the overlap so the rental can't
+    // self-conflict (right for the red tint), but that leaves the unit ON this rental with no
+    // other occupant → falsely "Available". Show its real per-unit status instead. Voided
+    // units fall through — they're genuinely free to re-add. (#436)
+    const selfR = availWin.selfId ? IDX.rental.get(availWin.selfId) : null;
+    const selfEu = (selfR && selfR.status !== 'Quote' && ACTIVE_RENTAL.has(selfR.status)) ? unitEntry(selfR, u.unitId) : null;
+    if (selfEu && !unitVoided(selfR, selfEu)) { text = unitStatus(selfR, selfEu); color = (u.inspectionStatus === 'Failed' || unitOverbooked(u.unitId)) ? 'red' : insp.color; }
+    else if (isUnitAvailableFor(u, availWin.start, availWin.end, availWin.selfId)) { text = 'Available'; color = 'green'; }
     else if (u.fleetStatus !== 'Active') { text = getStatus('unitFleetStatus', u.fleetStatus).label; color = 'red'; }
     else if (u.inspectionStatus === 'Failed') { text = 'Failed'; color = 'red'; }
     else { const cf = rentalsOverlappingUnit(u.unitId, availWin.start, availWin.end, availWin.selfId)[0]; text = cf ? 'Booked' : 'Unavailable'; color = 'red'; }
@@ -4854,12 +5066,15 @@ const ROWS = {
     // MINI-CARD (Jac 2026-06-25): the category as a vertical unit data-plate. The
     // Categories list renders these 3-across (2 when narrow) — see the .list grid.
     //   [icon · stamped NAME]
-    //   [Availability slot · rentable/inventory slot]   ← two equal pills, Units-style
+    //   [Avail/NEXT slot · PASS·NR·FAIL tally trio]      ← left half + three status buttons
     //   [1-Day · 7-Day · 4-Week stacked rates]          ← the rate card, vertical
     // The whole plate's border carries the rentable-health color (--catr-hl), exactly
     // like the rentals mini-card's --rcc-hl.
-    const r = categoryRentable(c.categoryId);
-    const tallyColor = r.total === 0 ? 'gray' : r.rentable === 0 ? 'red' : r.rentable < r.total ? 'yellow' : 'green';
+    // PASS/NR/FAIL over the ACTIVE fleet only — a Sold/Inactive/For-Sale unit isn't rentable
+    // inventory, so counting its inspection here made the tally contradict availability (e.g.
+    // "All failed" next to PASS 2). Same Active universe as availN + categoryUnavailReason.
+    const mix = { Ready: 0, 'Not Ready': 0, Failed: 0 };
+    DATA.units.forEach((u) => { if (u.categoryId === c.categoryId && u.fleetStatus === 'Active' && mix[u.inspectionStatus] != null) mix[u.inspectionStatus]++; });
     // FREE units (inspection-AGNOSTIC): Active fleet, not out on a rental for the window
     // (or right now). Their inspection makeup colors BOTH the plate border and the name
     // (Jac 2026-06-25): any free unit Ready → green · else any Not Ready → yellow · else
@@ -4877,13 +5092,45 @@ const ROWS = {
       ? categoryAvailableCount(c.categoryId, availWin.start, availWin.end, availWin.selfId)
       : free.filter(isUnitRentable).length;
     const availTip = availWin ? `${availN} available for the selected rental window` : `${availN} rentable and free to go out right now`;
+    // The availability row is ONE bank of four equal-height stamped plates (.catr-cell):
+    //   LEAD [ AVAIL n  |  NEXT wkday·time ]  ·  [ PASS ] [ NR ] [ FAIL ]
+    // Lead = availability: ≥1 free now → green "AVAIL" count (taps to the category's
+    // available units); 0 free → red "NEXT" free-date (soonest rental end + 4h turnaround,
+    // white date text), tapping jumps to THAT unit; 0 free with no return date on record →
+    // red "NONE" plate stamping the one-word reason why (On rent / All failed / Off fleet…).
+    const next = availN === 0 ? categoryNextAvailable(c.categoryId) : null;
+    // Compact syntax (Jac 2026-07-01): a weekday inside the next 7 days (else Mon-DD),
+    // and time as just the hour + a/p — keeps the lead short so the trio gets more room.
+    const compactClock = (min) => { if (min == null) return ''; let h = Math.floor(min / 60); const ap = h < 12 ? 'a' : 'p'; h = h % 12 || 12; return `${h}${ap}`; };
+    let lead;
+    if (availN > 0) {
+      lead = `<button class="catr-cell catr-lead js-cat-avail" data-cat="${esc(c.categoryId)}" style="--ct:var(--green);--ct-bg:var(--green-bg)" data-tip="${esc(availTip)} — tap to open these units"><span class="cc-k">AVAIL</span><span class="cc-v">${availN}</span></button>`;
+    } else if (next) {
+      const nd = parseISO(next.iso), daysAhead = nd ? Math.round((nd - TODAY) / 86400000) : 99;
+      const dlabel = (nd && daysAhead >= 0 && daysAhead <= 7) ? DOW3[nd.getDay()] : fmtShortDate(next.iso).replace(' 0', ' ');
+      const when = `${dlabel}${next.min != null ? ` ${compactClock(next.min)}` : ''}`;
+      const nu = IDX.unit.get(next.unitId);
+      lead = `<button class="catr-cell catr-lead catr-lead-next js-cat-next" data-unit="${esc(next.unitId)}" style="--ct:var(--red);--ct-bg:var(--red-bg)" data-tip="Next free: ${esc(nu ? nu.name : 'unit')} on ${esc(when)} (4-hr turnaround) — tap to open it"><span class="cc-k">NEXT</span><span class="cc-v cc-date">${esc(when)}</span></button>`;
+    } else {
+      // 0 free and no return date to show → tell the salesperson WHY in one word (Jac).
+      const why = categoryUnavailReason(c.categoryId);
+      lead = `<div class="catr-cell catr-lead catr-lead-none" style="--ct:var(--red);--ct-bg:var(--red-bg)" data-tip="None available — ${esc(why.toLowerCase())}"><span class="cc-k">NONE</span><span class="cc-v cc-why">${esc(why)}</span></div>`;
+    }
+    // The three status plates (Passed · Not Ready · Failed inspection) filter Units to that
+    // status in this category via the established js-fleet-filter path (like the detail mixbar).
+    const tally = (label, count, color, status, tip) =>
+      `<button class="catr-cell js-fleet-filter" data-cat="${esc(c.categoryId)}" data-status="${esc(status)}" data-kind="inspection" style="--ct:var(--${color});--ct-bg:var(--${color}-bg)" data-tip="${esc(tip)}"><span class="cc-k">${label}</span><span class="cc-v">${count}</span></button>`;
+    const tallyRow = `${
+      tally('PASS', mix.Ready, 'green', 'Ready', `${mix.Ready} passed inspection — tap to filter Units`)
+    }${
+      tally('NR', mix['Not Ready'], 'yellow', 'Not Ready', `${mix['Not Ready']} not ready — tap to filter Units`)
+    }${
+      tally('FAIL', mix.Failed, 'red', 'Failed', `${mix.Failed} failed inspection — tap to filter Units`)
+    }`;
     const rate = (label, v) => `<div class="catr-rate"><span class="catr-rk">${label}</span><span class="catr-rv${v ? '' : ' none'}">${v ? money(v) : '—'}</span></div>`;
     return `<div class="catr" style="--catr-hl:var(--${hl})">
       <div class="catr-head"><span class="catr-cat">${categoryIconFor(c.name)}</span><span class="r-title catr-name${hl === 'red' ? ' ec-red' : ''}" style="color:${nameColor}" data-tip="${esc(c.name)}">${esc(c.name)}</span></div>
-      <div class="catr-pills">
-        <div class="catr-slot js-cat-avail" data-cat="${esc(c.categoryId)}" data-tip="${esc(availTip)} — tap to open these units">${badge(`${availN} Avail`, availN > 0 ? 'green' : 'red')}</div>
-        <div class="catr-slot" data-tip="${r.rentable} of ${r.total} units rentable — in-yard, inspection not failed">${badge(`${r.rentable}/${r.total}`, tallyColor)}</div>
-      </div>
+      <div class="catr-pills">${lead}${tallyRow}</div>
       <div class="catr-rates">${rate('1-Day', c.rate1Day)}${rate('7-Day', c.rate7Day)}${rate('4-Week', c.rate4Wk)}${rate('Weekend', c.weekend)}</div>
     </div>`;
   },
@@ -6748,6 +6995,7 @@ function cardEl(cardDef, session) {
   } else {
     body.appendChild(listView(cardDef, session));
   }
+  const lb = linkBanner(card); if (lb) { const w = el('div'); w.innerHTML = lb; if (w.firstElementChild) node.appendChild(w.firstElementChild); }   // §17b — linking-mode banner above the list
   node.appendChild(body);
   return node;
 }
@@ -7119,7 +7367,8 @@ function legacyKpiPct(roleId) {
   if (roleId === 'mtech') {
     const fc = R.filter((r) => r.fieldCall).length;
     const successful = R.length ? Math.round((1 - fc / R.length) * 100) : 100;
-    // Ready Rate — Ready ÷ rentable fleet, excluding Failed inspections + Inactive/Sold/For-Sale fleetStatus (Jac).
+    // Pass Rate — Passed ÷ rentable fleet, excluding Failed inspections + Inactive/Sold/For-Sale fleetStatus (Jac).
+    // (stored inspection value is still 'Ready' for live-DB compatibility; the term users see is 'Passed'.)
     const skipFleet = new Set(['Inactive', 'Sold', 'For Sale']);
     const eligible = DATA.units.filter((u) => !skipFleet.has(u.fleetStatus) && u.inspectionStatus !== 'Failed');
     const readyRate = pctOf(eligible.filter((u) => u.inspectionStatus === 'Ready').length, eligible.length);
@@ -7161,11 +7410,11 @@ function legacyKpiPct(roleId) {
 }
 // Plain-English explanation of each KPI's formula — shown on hover in the role popup.
 const KPI_HELP = {
-  'Healthy Fleet':          'Share of your fleet that’s rentable right now (Ready + Not-Ready units ÷ total fleet).',
+  'Healthy Fleet':          'Share of your fleet that’s rentable right now (Passed + Not-Ready units ÷ total fleet).',
   'WO Completion Rate':     'Work orders marked Complete ÷ all live work orders (cancelled ones excluded). Higher = the shop is keeping up.',
   'Parts Breakeven':        'How much of your parts cost is recovered by earnings from billed work orders. Full ring = billed WOs cover the parts.',
   'Successful Rentals':     'Rentals that went out without a breakdown — 1 minus the share of rentals that got a Field Call.',
-  'Ready Rate':             'Share of the rentable fleet that’s Ready to rent — Ready ÷ eligible units (Failed, Inactive, Sold & For-Sale excluded).',
+  'Pass Rate':              'Share of the rentable fleet that’s Passed inspection — Passed ÷ eligible units (Failed, Inactive, Sold & For-Sale excluded).',
   'WO Rate (20% goal)':     'Progress toward the goal: 20% of the last 30 days’ inspections spawning a work order is healthy (catching problems). Full ring at 20%.',
   'On-Time':                'Rentals you actually delivered/handled ÷ rentals scheduled (excludes quotes, cancels, no-shows).',
   'Wash Completion':        'Of the units flagged for a wash, how many got washed (washed ÷ wash-requested).',
@@ -9100,6 +9349,21 @@ function buildPopupEl(o, overlay, opts = {}) {
       <div class="cmt-card-foot">${rec ? `<span class="cmt-hint">${esc(detailTitle(entityCardOf(o.card, o.recType), rec))}</span>` : '<span></span>'}<button class="cmt-post js-cmt-save">Post</button></div>`;
     overlay.appendChild(pop);
     if (!opts.preview) setTimeout(() => pop.querySelector('.cmt-input')?.focus(), 0);
+  } else if (o.kind === 'linkConfirm') {
+    // §17b — confirm a menu-driven link. PRICE only for invoice links (B2); confirm runs dispatchDrop.
+    const srcRec = recOf(o.srcCard, o.srcId), tgtRec = recOf(o.targetCard, o.targetId);
+    const srcT = srcRec ? detailTitle(o.srcCard, srcRec) : String(o.srcId);
+    const tgtT = tgtRec ? detailTitle(o.targetCard, tgtRec) : String(o.targetId);
+    const isMoney = (o.srcCard === 'invoices' || o.targetCard === 'invoices');
+    const pop = el('div', 'popup'); pop.style.width = '360px';
+    pop.innerHTML = popupShell({
+      icon: CARD_ICON[o.targetCard] || '',
+      title: `Add to ${LINK_TARGET_LABEL[o.targetCard] || o.targetCard}?`,
+      tag: 'Link · confirm',
+      body: `<div class="lc-body"><div class="lc-line">Add <b>${esc(srcT)}</b> to <b>${esc(tgtT)}</b>?</div>${linkPriceText(o.srcCard, srcRec, o.targetCard, tgtRec)}</div>`,
+      foot: `${ghostPill('Cancel', { js: 'js-close' })}${actionPill(isMoney ? 'money' : 'commit', isMoney ? 'Confirm — bill it' : 'Confirm', { js: 'js-link-confirm' })}`,
+    });
+    overlay.appendChild(pop);
   } else if (o.kind === 'rulebook') {
     // THE VISUAL RULEBOOK (SPEC v8) — every example is emitted by the REAL
     // builder, so this reference can never drift from the code.
@@ -9860,6 +10124,7 @@ const WINDOW_CATALOG = [
   { kind: 'qr',            label: 'Share session (QR)',      tag: 'Share · session',          sample: () => ({}) },
   { kind: 'migrateUnits',  label: 'Round up missing units',  tag: 'Units · migrate',          sample: () => ({ plan: [{ name: 'Sample Unit', action: 'create', unitId: 'U000', categoryId: ((DATA.categories || [])[0] || {}).categoryId, count: 1 }] }) },
   { kind: 'comment',       label: 'Comment note',            tag: 'Note · comment',           sample: () => ({ card: 'units', recId: ((DATA.units || [])[0] || {}).unitId, recType: null, color: 'yellow' }) },
+  { kind: 'linkConfirm',   label: 'Confirm link',            tag: 'Link · confirm',           sample: () => ({ srcCard: 'rentals', srcId: ((DATA.rentals || [])[0] || {}).rentalId, targetCard: 'invoices', targetId: ((DATA.invoices || [])[0] || {}).invoiceId }) },
   { kind: 'rulebook',      label: 'The R-Rulebook',          tag: 'SPEC v8 · design system',  sample: () => ({}) },
   { kind: 'partform',      label: 'Add / Edit Part · Task',  tag: 'Work order · line',         sample: () => ({ woId: ((DATA.workOrders || [])[0] || {}).woId }) },
   { kind: 'receiptform',   label: 'New / Edit Receipt',      tag: 'Expense · receipt',         sample: () => ({}) },
@@ -11777,12 +12042,18 @@ function applyTitles() {
   });
 }
 
+/* Hover affordances (tooltip + record preview) are MOUSE-only. On a touch device the
+ * first tap synthesizes a `mouseover`, so arming a tooltip/preview there is exactly what
+ * made the first tap "act like hover" and cost a second tap to open a list row. Gate both
+ * to hover-capable pointers — covers phones AND touch tablets, not just the width-based
+ * is-phone (Jac 2026-07-01). */
+const HOVER_CAPABLE = window.matchMedia('(hover: hover)').matches;
 /* Custom tooltip (matches the app, not the OS) — shows full text after ~0.5s. */
 let tipTimer, tipEl;
 function initTooltip() {
   tipEl = el('div', 'tooltip'); document.body.appendChild(tipEl);
   document.addEventListener('mouseover', (e) => {
-    if (DRAG.active) return;   // §15c — no tooltips mid-drag
+    if (!HOVER_CAPABLE || DRAG.active) return;   // §15c — no tooltips mid-drag; never on touch (first-tap hover)
     const t = e.target.closest('[data-tip]');
     if (!t) return;
     clearTimeout(tipTimer);
@@ -11870,6 +12141,104 @@ function invoiceUnitIds(inv) {
   return [...ids];
 }
 
+/* ── §17b — MENU-DRIVEN LINKING: the "+ Target" actions for the R20 context menu
+   (2026-06-29, replaces mobile drag). The set is DROP_MATRIX[src] ∩ the acting
+   role's capability, minus targets that can't apply to THIS source right now. The
+   menu omission is UX only — dispatchDrop re-fires every hard gate on confirm. ── */
+const LINK_TARGET_LABEL = { rentals: 'Rental', invoices: 'Invoice', customers: 'Customer', units: 'Unit', workOrders: 'Work Order' };
+/* §10-B1 role gate: any link that touches an INVOICE is billing → money tier; any
+   link that touches a CUSTOMER is PII/CRM → above ops-only 'staff' (money tier+ in
+   the shipped ladder). Operational links (units↔rentals, unit→WO) stay open to staff. */
+function linkRoleAllows(srcCard, tgt) {
+  if (tgt === 'invoices' || srcCard === 'invoices') return canMoney();
+  if (tgt === 'customers' || srcCard === 'customers') return canMoney();
+  return true;
+}
+/* Source-level preconditions — omit an action that can't possibly apply to this
+   record now (the per-target instance gate still dims rows on the target card). */
+function linkActionPossible(srcCard, rec, tgt) {
+  if (srcCard === 'units' && tgt === 'invoices') return !!unbilledOpenWOForUnit(rec.unitId);   // §7.6 needs a billable open WO
+  if (srcCard === 'rentals' && tgt === 'invoices') return !rec.invoiceId;                       // already invoiced → nothing to add
+  if (srcCard === 'invoices') return !rec.locked;                                               // a locked invoice takes no new links
+  if (srcCard === 'workOrders' && tgt === 'invoices') return woBillable(rec) > 0;
+  return true;
+}
+/* The ordered "+ Target" actions for a pressed record. `create:true` = a NEW record
+   on the target card (not a DROP_MATRIX link): only the unit "+ Work Order" today. */
+function linkActionsFor(srcCard, rec) {
+  if (!srcCard || !rec) return [];
+  const out = [];
+  const targets = DROP_MATRIX[srcCard];
+  if (targets) for (const tgt of Object.keys(targets)) {
+    if (!linkActionPossible(srcCard, rec, tgt)) continue;
+    if (!linkRoleAllows(srcCard, tgt)) continue;
+    out.push({ target: tgt, label: '+ ' + (LINK_TARGET_LABEL[tgt] || tgt) });
+  }
+  if (srcCard === 'units' && linkRoleAllows('units', 'workOrders')) out.push({ target: 'workOrders', create: true, label: '+ Work Order' });   // a WO is CREATED for a unit → lands on the unit (§4a)
+  return out;
+}
+
+/* ── §17b — LINKING MODE: a "+ Target" menu action navigates to the target card in
+   list+search; tapping a target there opens the confirm popup; confirm runs the
+   existing dispatchDrop (reuses every §7.5/§7.6 hard gate + History). ── */
+function enterLinking(srcCard, srcId, targetCard) {
+  state.linking = { srcCard, srcId, targetCard };
+  const sess = activeSession();
+  const col = COLUMN_OF[targetCard];
+  if (sess.cols && col) { sess.cols[col] = targetCard; const idx = COLUMNS.findIndex((c) => c.id === col); if (idx >= 0) state.mobileCol = idx; }   // §M1 reveal + flip the phone column
+  const cs = sess.cards[targetCard];
+  if (cs) { cs.mode = 'list'; cs.recId = null; cs.recType = null; cs.search = ''; cs.listLimit = undefined; }
+  render();
+  setTimeout(() => { try { document.querySelector(`.card[data-card="${targetCard}"] .card-search, .card[data-card="${targetCard}"] input`)?.focus(); } catch (e) {} }, 40);
+}
+function cancelLinking() { if (state.linking) { state.linking = null; render(); } }
+function startUnitWorkOrder(unitId) { pillTo('units', unitId); }   // §4a — "+ Work Order" just lands on the unit (WO creation lives on the unit's card)
+/* The hazard-stripe banner shown atop the target card while linking. */
+function linkBanner(card) {
+  const L = state.linking; if (!L || L.targetCard !== card) return '';
+  const srcRec = recOf(L.srcCard, L.srcId);
+  const srcT = srcRec ? detailTitle(L.srcCard, srcRec) : String(L.srcId);
+  const tgt = LINK_TARGET_LABEL[L.targetCard] || L.targetCard;
+  return `<div class="link-banner"><span class="lb-txt">Linking <b>${esc(srcT)}</b> → pick a ${esc(tgt)} <span class="lb-sub">(or +New)</span></span>${ghostPill('Cancel', { js: 'js-link-cancel' })}</div>`;
+}
+/* Customer-facing PRICE only (B2) — shown when a link bills onto an invoice. */
+function linkPriceText(srcCard, srcRec, targetCard, tgtRec) {
+  if (srcCard !== 'invoices' && targetCard !== 'invoices') return '';
+  const billCard = srcCard === 'invoices' ? targetCard : srcCard;
+  const billRec = srcCard === 'invoices' ? tgtRec : srcRec;
+  let amt = null;
+  try {
+    if (billCard === 'rentals') amt = rentalPrice(billRec);
+    else if (billCard === 'workOrders') amt = woBillable(billRec);
+    else if (billCard === 'units') { const w = unbilledOpenWOForUnit(billRec.unitId); amt = w ? woBillable(w) : null; }
+  } catch (e) {}
+  return amt != null ? `<div class="lc-price">Bills <b>${money(amt)}</b> onto the invoice.</div>` : `<div class="lc-price muted">The amount is set on the invoice.</div>`;
+}
+function openLinkConfirm(targetId) {
+  const L = state.linking; if (!L) return;
+  if (!recOf(L.srcCard, L.srcId) || !recOf(L.targetCard, targetId)) return;
+  openOverlay({ kind: 'linkConfirm', srcCard: L.srcCard, srcId: L.srcId, targetCard: L.targetCard, targetId });
+}
+function doLinkConfirm() {
+  const o = state.overlay; if (!o || o.kind !== 'linkConfirm') return;
+  const srcRec = recOf(o.srcCard, o.srcId), tgtRec = recOf(o.targetCard, o.targetId);
+  closeOverlay(); state.linking = null;
+  if (!srcRec || !tgtRec) return;
+  dispatchDrop({ entity: o.srcCard, id: o.srcId, rec: srcRec }, { entity: o.targetCard, rec: tgtRec });   // reuses every hard gate + History; toasts its own failures
+}
+/* §17b — +New AUTO-LINK: tapping +New on the target card while linking creates the
+   record AND links the source straight to it — no confirm tap (creating it IS the
+   intent; "auto-linked as the details open", Jac). Called at the end of each immediate
+   create path (rental/invoice/unit); a no-op unless we're linking to that target. The
+   create fn already anchored/opened the new record, so dispatchDrop just adds the link. */
+function maybeAutoLink(targetCard, newId) {
+  const L = state.linking; if (!L || L.targetCard !== targetCard) return;
+  const srcRec = recOf(L.srcCard, L.srcId), tgtRec = recOf(targetCard, newId);
+  state.linking = null;
+  if (!srcRec || !tgtRec) return;
+  dispatchDrop({ entity: L.srcCard, id: L.srcId, rec: srcRec }, { entity: targetCard, rec: tgtRec });   // reuses every hard gate + History
+}
+
 /** §M-touch — haptic reinforcement for a COMMITTED gesture (one pulse, never on
  *  scroll/hover). Best-effort: Android/Chrome only — iOS Safari has no Vibration
  *  API, so this is reinforcement, never the sole signal. Gated on the per-device
@@ -11929,12 +12298,7 @@ function initDrag() {
 // move lifts a drag. A quick horizontal flick (before this fires) is a Back/Forward swipe
 // instead (see the grid swipe tracker in boot). Frees the horizontal axis for navigation.
 function armReadyTimer(arm) { return setTimeout(() => { if (DRAG.armed === arm) arm.ready = true; }, 300); }
-function armMenuTimer(arm) {   // §M3 — hold-still opens the context menu: touch long-press OR mouse click-and-hold (the right-click equivalent)
-  // PHONE: a long-press is reserved for the DRAG (Jac, 2026-06-29). The menu timer used
-  // to fire at 500ms and DISARM the drag, so any hold longer than ~½s opened the context
-  // menu instead of grabbing the row. On a phone the long-press now always drags; the R20
-  // context menu stays a desktop affordance (right-click / mouse click-and-hold).
-  if (arm.touch && document.body.classList.contains('is-phone')) return null;
+function armMenuTimer(arm) {   // §M3 — hold-still opens the context menu: touch long-press OR mouse click-and-hold (the right-click equivalent). On phones this is now the PRIMARY linking entry (menu-driven linking replaced drag, 2026-06-29).
   return setTimeout(() => {
     if (DRAG.armed !== arm) return;
     const t = document.elementFromPoint(arm.x, arm.y);
@@ -11948,25 +12312,19 @@ function dragDown(e) {
   if (state.overlay) return;                                             // overlays own their clicks; the winpicker is non-modal (Task E — drag to select)
   if (e.target.closest('.tedit')) return;                                // the inline transport editor owns its pointers — let Google pan the map + drag the site pin (never arm an app/chat drag here)
   if (e.target.closest('.dispm')) return;                                // §2.3 the dispatch cockpit map owns its pointers too — Google handles pan/zoom, never the app drag engine
-  // §M3 — PHONE record-grab: a list row / open standard card is wall-to-wall pills +
-  // chat-els, leaving almost no bare space to grab — a finger-press lands on a pill ~2/3
-  // of the time, which on touch would either BAIL (.pill is in the bail list below) or
-  // hijack into a CHAT-TAG drag, so the record drag was effectively ungrabbable on a
-  // phone (Jac, 2026-06-29). On touch we resolve the whole row/card to its record FIRST:
-  // dragSourceAt already ranks a units pill as itself (the unit→rental link still wins),
-  // then a row, then an open standard card — so pressing ANYWHERE non-interactive on the
-  // row drags the record. Tap is unaffected (a press only LIFTS on a held horizontal
-  // move; a tap never does); chat-tag-dragging a single pill stays a desktop affordance.
+  // §M3 — PHONE: drag-to-link is RETIRED on phones (2026-06-29). A long-press now opens
+  // the R20 context menu, which carries the menu-driven LINKING actions (+ Rental / +
+  // Invoice / …). Arm a MENU-ONLY long-press: no drag is ever lifted on a phone. A move
+  // before the timer cancels it (native scroll / Back-Forward swipe stay intact); a quick
+  // tap releases before the timer (its click fires normally). The interactive-control
+  // skip keeps inputs/buttons native; selection-suppression (style.css, .is-phone .grid)
+  // stops iOS from starting text-selection before the long-press registers.
   if (e.pointerType === 'touch' && document.body.classList.contains('is-phone')
       && !e.target.closest('input, textarea, select, button, .x, .inline-edit, .inline-input, .dropdown-menu, .ctx-menu')) {
-    const src = dragSourceAt(e.target);
-    if (src) {
-      DRAG.point.x = e.clientX; DRAG.point.y = e.clientY;
-      const armed = { card: src.card, rec: src.rec, x: e.clientX, y: e.clientY, pointerId: e.pointerId, touch: true, lp: null, rdy: null, ready: false };
-      armed.lp = armMenuTimer(armed);                       // §M3 — hold still → context menu
-      armed.rdy = armReadyTimer(armed);                     // a hold must precede the horizontal drag
-      DRAG.armed = armed; return;
-    }
+    DRAG.point.x = e.clientX; DRAG.point.y = e.clientY;
+    const arm = { menuOnly: true, x: e.clientX, y: e.clientY, pointerId: e.pointerId, touch: true, lp: null, rdy: null, ready: false };
+    arm.lp = armMenuTimer(arm);                             // hold ~500ms still → openCtxMenuAt (the R20 menu)
+    DRAG.armed = arm; return;
   }
   // §17 — a granular element marked [data-chat-el] (a pill/price/line/person) arms a
   // CHAT-TAG drag (tap still does its own thing; drag/long-press tags it into a chat).
@@ -12959,6 +13317,8 @@ function onClick(e) {
   // a category mini-card's Availability pill → jump to the Units card, narrowed to
   // that category's units (Jac 2026-06-25 — replaces the clunkier availability hop)
   if (closest('.js-cat-avail')) { e.stopPropagation(); return showCategoryUnits(closest('.js-cat-avail').dataset.cat); }
+  // the NEXT plate (0 free now) → jump straight to the unit that frees up soonest
+  if (closest('.js-cat-next')) { e.stopPropagation(); return showNextAvailableUnit(closest('.js-cat-next').dataset.unit); }
 
   // a flag naming a section WITHOUT a nav target scrolls within its own card
   // (e.g. "No Card" → Cards on File — Jac 2026-06-12)
@@ -12969,6 +13329,19 @@ function onClick(e) {
     if (host) scrollToSect(host.dataset.card, sectEl.dataset.sect);
     return;
   }
+
+  // §17b — LINKING MODE: Cancel the banner, or tap a target-card row/pill to pick the
+  // link target → confirm popup (pre-empts normal row/pill navigation).
+  if (state.linking) {
+    if (closest('.js-link-cancel')) { e.stopPropagation(); return cancelLinking(); }
+    const lrow = closest('.row[data-rec]'), lpill = closest('[data-pill-card]');
+    if (lrow || lpill) {
+      const pc = lrow ? entityCardOf(lrow.dataset.card, lrow.dataset.type) : entityCardOf(lpill.dataset.pillCard, null);
+      const pid = lrow ? lrow.dataset.rec : lpill.dataset.pillRec;
+      if (pc === state.linking.targetCard && pid != null) { e.stopPropagation(); e.preventDefault(); return openLinkConfirm(pid); }
+    }
+  }
+  if (closest('.js-link-confirm')) { e.stopPropagation(); return doLinkConfirm(); }
 
   // universal pill rule — single-click navigates; double-click anchors; ctrl+click = new
   // tab (handled by the early hotkey branch). Same discriminator as rows (#1).
@@ -14080,6 +14453,7 @@ function quickAddUnitFromSearch(value) {
   const cs = activeSession().cards.units; cs.search = ''; cs.filterTerms = [];
   openStandard('units', id);
   toast(`${name} added — set its category, hours, and inspection.`);
+  maybeAutoLink('units', id);   // §17b — if a "+ Unit" link was in progress, link the source to this new unit
   return true;
 }
 function nextCategoryId() {
@@ -14915,6 +15289,7 @@ function startNewInvoice(customerId) {
   if (!cust) { const s = activeSession(); if (s.cols) s.cols.right = 'customers'; }
   toast(cust ? `New invoice for ${cust.name} — drag rentals onto it.` : 'New invoice — drag a customer and rentals onto it.');
   render();
+  maybeAutoLink('invoices', id);   // §17b — if a "+ Invoice" link was in progress, bill the source onto this new invoice
 }
 
 function startNewRental(customerId) {
@@ -14931,6 +15306,7 @@ function startNewRental(customerId) {
   const s = activeSession(); if (s.cols) { s.cols.left = 'units'; s.cols.right = 'customers'; }
   toast(cust ? `New Quote for ${cust.name} — drag a unit onto it, then pick the window.` : 'New Quote — drag a unit and a customer onto it, then pick the window.');
   render();
+  maybeAutoLink('rentals', id);   // §17b — if a "+ Rental" link was in progress, link the source to this new Quote
 }
 
 /* ── Wave 2 (Jac 2026-06-12): pick mode is DEAD. Linking happens by DRAG (§15c
@@ -15374,7 +15750,7 @@ function setInspResult(id, val) {
   const n = IDX.insp.get(id); if (!n) return;
   n.checklist = val;
   const u = IDX.unit.get(n.unitId);
-  if (u) { u.inspectionStatus = val === 'Pass' ? 'Ready' : 'Failed'; reindex('units', u); logAction(u, `Inspection ${val === 'Pass' ? 'passed → Ready' : 'failed → Failed'}`); }
+  if (u) { u.inspectionStatus = val === 'Pass' ? 'Ready' : 'Failed'; reindex('units', u); logAction(u, `Inspection ${val === 'Pass' ? 'passed' : 'failed'}`); }   // stored value stays 'Ready' (live-DB compatible); users see "Passed" via the registry label
   logAction(n, `Checklist → ${val}`);
   reindexDraft('inspections', n);
   if (val === 'Fail') {
@@ -16079,7 +16455,7 @@ window.addEventListener('beforeunload', (e) => {
   e.preventDefault(); e.returnValue = '';
 });
 function renderLogin(msg) {
-  $('#app').innerHTML = `<div class="login-screen"><video id="login-video" class="login-video" src="assets/login-intro.mp4?v=20260623l" muted loop playsinline preload="auto" aria-hidden="true"></video><form class="login-box" id="login-form">
+  $('#app').innerHTML = `<div class="login-screen"><video id="login-video" class="login-video" src="assets/login-intro.mp4?v=20260702a" muted loop playsinline preload="auto" aria-hidden="true"></video><form class="login-box" id="login-form">
     <span class="rivet tl"></span><span class="rivet tr"></span><span class="rivet bl"></span><span class="rivet br"></span>
     <div class="login-plate">
       <img class="login-logo" src="assets/jac-rentals-logo.jpg" alt="Jac Rentals" />
@@ -16093,7 +16469,7 @@ function renderLogin(msg) {
         <label class="login-lbl" for="login-pw">Team password</label>
         <input id="login-pw" type="password" class="login-input" placeholder="••••••••" autocomplete="current-password" />
       </div>
-      <button type="submit" class="login-btn" data-r="R17" id="login-go">Clock In</button>
+      <button type="submit" class="login-btn" data-r="R17" id="login-go">Saddle Up?</button>
       <div class="login-err" id="login-err">${msg ? esc(msg) : ''}</div>
     </div>
   </form></div>`;
@@ -16163,7 +16539,9 @@ async function attemptLogin() {
   const btn = document.getElementById('login-go'); if (btn) { btn.textContent = 'Signing in…'; btn.disabled = true; }
   // Roll the Mr. Wrangler intro behind the box while the (slow) backend load runs — a little entertainment for the wait.
   const screen = document.querySelector('.login-screen'); if (screen) screen.classList.add('signing-in');
-  const vid = document.getElementById('login-video'); if (vid) { try { const p = vid.play(); if (p && p.catch) p.catch(() => {}); } catch (e) {} }
+  // The Saddle Up click is a genuine user gesture, so unmuting here lets the intro's
+  // audio play under the browser's autoplay policy (a muted-only clip would stay silent).
+  const vid = document.getElementById('login-video'); if (vid) { try { vid.muted = false; const p = vid.play(); if (p && p.catch) p.catch(() => {}); } catch (e) {} }
   try {
     // Ask the backend for the role. The role-aware backend returns it; an older
     // backend (pre-roles) replies "unknown action" → we proceed without a role
@@ -16391,7 +16769,7 @@ function boot() {
   document.addEventListener('mousemove', (e) => { lastMouse.x = e.clientX; lastMouse.y = e.clientY; });
   // hover preview (#1): float a record's Standard view after a short hover on a row/pill
   document.addEventListener('mouseover', (e) => {
-    if (!state.previewsOn || DRAG.active) return;       // previews off (per device) — and NEVER mid-drag (§15c)
+    if (!HOVER_CAPABLE || !state.previewsOn || DRAG.active) return;   // never on touch (first-tap hover eats the tap); previews off (per device); and NEVER mid-drag (§15c)
     if (e.target.closest('.hover-preview')) return;     // hovering INSIDE the open preview must NOT re-trigger/close it — let it persist so you can scroll/interact (the preview's own mouseenter/leave manage it)
     // interactive controls are CLICK targets, not preview triggers — the popup kept
     // landing under the cursor while aiming at the status dropdown (Jac 2026-06-12).
@@ -16482,7 +16860,7 @@ function seedDemoRequests() {
    the backend-backed production path. */
 function exposeTestApi() {
   try {
-    window.__rw = { DATA, IDX, TODAY_ISO, itemPaid, lineKey, rentalUnits, unitEntry, isPrimaryUnit,
+    window.__rw = { DATA, IDX, TODAY_ISO, itemPaid, lineKey, rentalUnits, unitEntry, isPrimaryUnit, linkActionsFor, linkActionPossible, DROP_MATRIX,
       unitStatus, rentalUnitStatuses, unitsUniform, rentalStatusDisplay, rentalMirrorStatus, rentalDisplayStatus,
       allUnitsTerminal, unitTerminal, unitVoided, rentalLineItems, transportLineItems, extensionPreview, billExtension, unitBilledRental, unitBilledSeries, retroPricingOn, rentalInvoices, rentalActiveInvoice, invoiceChunks, createInvoiceForRental, syncRentalPrimary,
       addUnitToRental, removeUnitFromRental, removeUnitInvoiceLine, unitLinePaid, invoiceTotals, allocLines,

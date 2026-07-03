@@ -4,48 +4,48 @@
 
 # Code Atlas — generated chapter index (Part I · The Frontend)
 
-## app.js — 16619 lines, 38 chapters
+## app.js — 17003 lines, 38 chapters
 
 | ID | Lines | Anchors | Chapter title | Key symbols |
 |----|------:|---------|---------------|-------------|
 | APP-01 | 29–61 | §0.7 | §0.7 GLITCH CAPTURE — a small ring buffer of recent JS errors, so when you | ERR_LOG, logErr, WRANGLER_REPO, wranglerIssueUrl |
 | APP-02 | 62–77 | §1 | §1 UTILITIES & FORMATTING — $, el, esc, money, num, dates | $, el, esc, money, money2, num, TODAY, dayDiff, SINGULAR |
 | APP-03 | 78–828 | §2 §3 | §2 INDEXES & SEARCH — built once on load (SPEC §3: never scan per keystroke) | IDX, parseCustomerName, fullName, migrationDirty, migrateCustomers, legacyUnitEntry, migrateRentals, rentalUnits, rentalUnitIds, rentalHasUnit, unitEntry, isPrimaryUnit, …(+82) |
-| APP-04 | 829–929 | §3 §10 | §3 DERIVATIONS (SPEC §10) — money, availability, statuses, countdowns | RATE_LABELS, rentalPrice, catRatesUnset, unitRentalPrice, rentalLineItems, unitFueled, transportCost, rentalTransport, unitTransport, transportLineItems |
-| APP-05 | 930–1289 | — | RENTAL EXTENSIONS (Jac 2026-06-25) | retroPricingOn, unitBilledRental, unitExtensionDelta, INV_CAP_DAYS, rentalInvoices, rentalActiveInvoice, invCovStart, invCovEnd, invCoveredDays, minISO, maxISO, isWindowExtension, …(+16) |
-| APP-06 | 1290–1863 | — | INLINE TRANSPORT EDITOR + GOOGLE MAPS (Jac 2026-06-15) | _mapsKey, ensureMapsKey, loadGoogleMaps, afterMapsLoad, mapsReady, YARD_CENTER, _teMap, openTransportEdit, closeTransportEdit, transportEditorHtml, mountTransportEditor, teQuery, …(+48) |
-| APP-07 | 1864–2509 | §4 §0.1 | §4 STATE & SESSIONS — one normalized object + the session model (SPEC §0.1) | freshSession, columnOfMember, SORT_LS_KEY, loadSort, saveSort, entityCardOf, state, activeSession, maxInvoiceSeq, nextInvoiceId, setAnchor, anchorRecord, …(+60) |
-| APP-08 | 2510–2517 | §5a | §5a ICONS — inline SVG (stroke-based, currentColor) | — |
-| APP-09 | 2518–3904 | — | SETTINGS BOARD — admin customization (config.settings). | STATUS_ICONS, SETTINGS_STATUS_SETS, STATUS_DEFAULTS, ovIcon, loadAdminSettings, applyStatusOverrides, settingsReverted, applySettings, persistAdminSettings, hasSettingsBackup, pageDefaultSlice, resetPageSettings, …(+94) |
-| APP-10 | 3905–3925 | §5 | §5 UI BUILDERS — ONE function per design rule (the SPEC v8 rulebook). | SET_CARD, dataAttrs |
-| APP-11 | 3926–4392 | — | FLAG-DRIVEN COLOR ENGINE — SPEC docs/specs/flag-color-system.md | openWOsForRental, rentalUnitRecords, woHasEta, FLAG_COND, getEntityFlags, entityArchived, getEntityColor, PRIMARY_SET_ENTITY, statusPill, refPill, unitPill, entityPill, …(+33) |
-| APP-12 | 4393–4560 | — | DESIGN-SYSTEM CATALOG — the tabbed Rulebook (Jac 2026-06-14) | rbSw, RB_FOUNDATION, RB_TABS, CLASS_RULE, ruleOf, refPath, onInspectMove |
-| APP-13 | 4561–4671 | §6 | §6 LIST ROWS — row meta + the universal row template | ROW_META, isSoldInactive, unitsVisible, INV_METHOD_OPTS, INV_METHOD_LABEL, invMethodClass, rowViz, customerSpectrumViz, categoryIconFor, unitRentalInspPill, unitWoSoPill |
-| APP-14 | 4672–4949 | §6b | §6b PER-CARD ROWS | rowEl, genericRow, ROWS |
-| APP-15 | 4950–5146 | §7 | §7 COLUMN REGISTRY & FOOTER TOTALS — one source of truth per card | pillS, C, CARD_COLUMNS, cardColumns, boardSegmentFor, aggColumn, AGG_CALCS, AGG_LABEL, fmtAggValue, LIST_LAYOUT_KEY, LIST_LAYOUTS, DEFAULT_LAYOUT, …(+11) |
-| APP-16 | 5147–6480 | §8 | §8 DETAIL RENDERERS — kv/efld/notes · v2 helpers (yard tool, WO sections, | kv, kvPills, efld, notesSection, openWOsForUnit, latestInspForUnit, WO_SEV, woBottleneck, unitWorstBottleneck, unitCondLock, newInspectionForUnit, yardToolHtml, …(+38) |
-| APP-17 | 6481–6575 | §9 | §9 CARDS & GRID — cardEl, listView, the 3-column shell | listFor, collection, sortRows, VIRT_CAP, SHOW_MORE_BATCH, appendWindowed, detailTitle |
-| APP-18 | 6576–6856 | — | 3-COLUMN LAYOUT (display-only shell over the existing cards). | GRID_CARD_BY_ID, MEMBER_TITLE, memberIcon, memberCount, shopAlertCount, wave2ListOverride, columnEl, colTabsEl, colTabButtonsHtml, colActionsHtml, memberCardEl, calendarCardEl, …(+3) |
-| APP-19 | 6857–7050 | §10 | §10 SHOP CARD — merged Work Orders + Service Orders + Inspections | shopItemMode, shopItemsByType, shopUrgency, shopSort, shopCardEl, shopItemMatches, shopListView, shopRowColor, shopRowEl |
-| APP-20 | 7051–7174 | §11 | §11 HEADER, KPI & BOTTOM BAR | bandColor, ring3SVG, ringsSVG, pctOf, fleetInsp, legacyKpiPct, KPI_HELP |
-| APP-21 | 7175–7339 | §11b | §11b KPI METRIC ENGINE — admin-definable KPIs (Settings → KPIs & Rings). | KPI_ENTITY, KPI_DERIVED, KPI_TOKENS, kpiField, kpiVal, kpiCond, kpiRows, kpiAgg, kpiBand, kpiTarget, kpiEval, KPI_DEFAULTS, …(+11) |
-| APP-22 | 7340–7549 | — | COMING 2026 — the roadmap morale plate (Jac 2026-06-23) | ROADMAP_ITEMS, ROADMAP_AREAS, headerEl, THEME_NEXT, bottomBarInner, bottomBarEl, commsUtilsEl, commsRailEl, activeMobileCard, currentMobileMember, MOBILE_CARDS, goToCard, …(+1) |
-| APP-23 | 7550–8371 | §17 | §17 INTERNAL TEAM DOCK (Jac, Phase 7) — a bottom-bar chat built on the Phase-6 | chatComments, chatUnreadCount, chatById, activeChat, chatRoleOn, chatsTagging, chatMarkSeen, chatUnseenForRec, newChat, openChat, chatFeed, CHAT_AV, …(+71) |
-| APP-24 | 8372–8477 | §13.3 | §13.3 CARD GRAPH VIEW (Phase 4) — a per-card charts overlay, sibling to the | pieSVG, gvLegend, gvBars, unitGraphData, gvNumTile, gvPieTile, gvBarTile, gvLeadTile, gvTableTile, gvMonths6, GV_WIN_OPTS, GV_WIN_KEY, …(+6) |
-| APP-25 | 8478–8923 | §13.4 | §13.4 GRAPH CAROUSEL (Jac 2026-06-16) — the per-card Graph is a deck of | gvClampIdx, gvKey, gvSegOn, gvSmallest, graphViewsFor, gvSaveCurrent, gvStripTerms, gvRestore, gvOpen, gvChevron, gvSyncClosed, toggleGraphSeg, …(+8) |
-| APP-26 | 8924–9845 | §12 | §12 OVERLAYS & BOARDS — renderOverlay kinds + back-office board popups | _ovScroll, _popDrag, wirePopupDrag, backGuard, swipeFired, anyDismissable, dismissTopSheet, syncBackGuard, renderOverlay, buildPopupEl, openOverlay |
-| APP-27 | 9846–9940 | — | RB-WINDOWS catalog (Jac 2026-06-22) — the admin Rulebook's index of | WINDOW_CATALOG, previewOverlayFor, STANDALONE_SURFACES, feedbackContext, sendFeedback |
-| APP-28 | 9941–10356 | §18 | §18 MR. WRANGLER — the in-app AI (Claude via the Apps Script backend). | WRANGLER_SYSTEM, wranglerDigest, wranglerContext, wranglerAttachAny, wranglerAttachFile, parseCsvFile, wranglerAttachTextFile, wranglerImageBlock, wranglerErrMsg, WR_TOOL_LIMIT, wrCustOpenBalance, WR_TOOL_IMPL, …(+9) |
-| APP-29 | 10357–11407 | — | Mr. Wrangler ACTS on your data (Jac 2026-06-16) | WR_FUNNEL, wrFunnel, WR_ACCT, wrAccount, WR_EDITABLE, WR_REQUIRED, WR_NUMERIC, WR_MONEY_FIELDS, wrPlanNeedsApply, WR_IDX, wrGet, wrNorm, …(+99) |
-| APP-30 | 11408–11677 | §13 | §13 DROPDOWNS — openDropdown + status/fleet/funnel/sort menus | GTI, GATE_ICON, GATE_TL, GTCHK, gateTimeline, openDropdown, openStatusDropdown, openFleetDropdown, setUnitFleet, openReconcileDropdown, setExpenseReconcile, MEMBERSHIP_FUNNEL_ORDER, …(+18) |
-| APP-31 | 11678–11802 | §14 | §14 RENDER PIPELINE + toast | renderCount, scrollMemo, render, applyTitles, initTooltip, hideTip, toast |
-| APP-32 | 11803–11806 | §15 | §15 EVENT HANDLERS — onClick/onInput/onChange (single listener tree) | — |
-| APP-33 | 11807–13304 | §15c | §15c DRAG & DROP LINK ENGINE (DRAGDROP-DESIGN.md) — custom pointer engine. | DRAG, DRAG_SOURCES, dragLayer, DROP_MATRIX, woDroppableToInvoice, invoiceUnitIds, haptic, initDrag, armReadyTimer, armMenuTimer, dragDown, dragSourceAt, …(+39) |
-| APP-34 | 13305–14232 | §16 | §16 ACTIONS / MUTATIONS — every state change funnels through here | setUnitCondition, pendingInspForUnit, openChecklist, completeChecklist, setUnitWash, captureUnit, setUnitCapture, yardCapture, saveYardCapture, uploadCaptureMedia, offloadPhotoNow, offloadPhoto, …(+39) |
-| APP-35 | 14233–15271 | §17 | §17 STRIPE / PAYMENTS — card-on-file + invoice charging (client side). | _stripe, _pubKey, ensurePubKey, getStripe, canMoney, brandName, hasCardOnFile, commitAction, cardOneLabel, cardLabel, friendlyPayErr, openAddCard, …(+73) |
-| APP-36 | 15272–15718 | §5.4d | §5.4d — DATE SEARCH PICKER. A standalone calendar that REUSES the rental | openDateSearch, closeDateSearch, dsMonth, dsToday, dsClear, dsPickDay, dsDone, dateSearchEl, positionDateSearch, setInspWash, setInspResult, recordServiceCompletion, …(+19) |
-| APP-37 | 15719–15721 | §18 | §18 PERSISTENCE & BOOT | — |
-| APP-38 | 15722–16619 | §18b | §18b BACKEND SYNC — Google Sheets via the Apps Script web app | BACKEND_URL, PERSIST_KEYS, backendPassword, booting, saveTimer, driveViewUrl, backendCall, dataSnapshot, loadFromBackend, PERSIST_ID, lastSaved, snapshotSaved, …(+43) |
+| APP-04 | 829–935 | §3 §10 | §3 DERIVATIONS (SPEC §10) — money, availability, statuses, countdowns | RATE_LABELS, rentalPrice, catRatesUnset, unitRentalPrice, rentalLineItems, unitFueled, transportCost, rentalTransport, unitTransport, transportLineItems |
+| APP-05 | 936–1331 | — | RENTAL EXTENSIONS (Jac 2026-06-25) | retroPricingOn, unitBilledRental, unitExtensionDelta, INV_CAP_DAYS, rentalInvoices, rentalActiveInvoice, invCovStart, invCovEnd, invCoveredDays, minISO, maxISO, isWindowExtension, …(+16) |
+| APP-06 | 1332–1961 | — | INLINE TRANSPORT EDITOR + GOOGLE MAPS (Jac 2026-06-15) | _mapsKey, ensureMapsKey, loadGoogleMaps, afterMapsLoad, mapsReady, YARD_CENTER, _teMap, openTransportEdit, closeTransportEdit, transportEditorHtml, mountTransportEditor, teQuery, …(+51) |
+| APP-07 | 1962–2691 | §4 §0.1 | §4 STATE & SESSIONS — one normalized object + the session model (SPEC §0.1) | freshSession, columnOfMember, SORT_LS_KEY, loadSort, saveSort, entityCardOf, state, activeSession, maxInvoiceSeq, nextInvoiceId, setAnchor, anchorRecord, …(+65) |
+| APP-08 | 2692–2699 | §5a | §5a ICONS — inline SVG (stroke-based, currentColor) | — |
+| APP-09 | 2700–4086 | — | SETTINGS BOARD — admin customization (config.settings). | STATUS_ICONS, SETTINGS_STATUS_SETS, STATUS_DEFAULTS, ovIcon, loadAdminSettings, applyStatusOverrides, settingsReverted, applySettings, persistAdminSettings, hasSettingsBackup, pageDefaultSlice, resetPageSettings, …(+94) |
+| APP-10 | 4087–4107 | §5 | §5 UI BUILDERS — ONE function per design rule (the SPEC v8 rulebook). | SET_CARD, dataAttrs |
+| APP-11 | 4108–4596 | — | FLAG-DRIVEN COLOR ENGINE — SPEC docs/specs/flag-color-system.md | openWOsForRental, rentalUnitRecords, woHasEta, FLAG_COND, getEntityFlags, entityArchived, getEntityColor, PRIMARY_SET_ENTITY, statusPill, refPill, unitPill, entityPill, …(+34) |
+| APP-12 | 4597–4764 | — | DESIGN-SYSTEM CATALOG — the tabbed Rulebook (Jac 2026-06-14) | rbSw, RB_FOUNDATION, RB_TABS, CLASS_RULE, ruleOf, refPath, onInspectMove |
+| APP-13 | 4765–4883 | §6 | §6 LIST ROWS — row meta + the universal row template | ROW_META, isSoldInactive, unitsVisible, INV_METHOD_OPTS, INV_METHOD_LABEL, invMethodClass, rowViz, customerSpectrumViz, categoryIconFor, unitRentalInspPill, unitWoSoPill |
+| APP-14 | 4884–5196 | §6b | §6b PER-CARD ROWS | rowEl, genericRow, ROWS |
+| APP-15 | 5197–5393 | §7 | §7 COLUMN REGISTRY & FOOTER TOTALS — one source of truth per card | pillS, C, CARD_COLUMNS, cardColumns, boardSegmentFor, aggColumn, AGG_CALCS, AGG_LABEL, fmtAggValue, LIST_LAYOUT_KEY, LIST_LAYOUTS, DEFAULT_LAYOUT, …(+11) |
+| APP-16 | 5394–6733 | §8 | §8 DETAIL RENDERERS — kv/efld/notes · v2 helpers (yard tool, WO sections, | kv, kvPills, efld, notesSection, openWOsForUnit, latestInspForUnit, WO_SEV, woBottleneck, unitWorstBottleneck, unitCondLock, newInspectionForUnit, yardToolHtml, …(+38) |
+| APP-17 | 6734–6828 | §9 | §9 CARDS & GRID — cardEl, listView, the 3-column shell | listFor, collection, sortRows, VIRT_CAP, SHOW_MORE_BATCH, appendWindowed, detailTitle |
+| APP-18 | 6829–7110 | — | 3-COLUMN LAYOUT (display-only shell over the existing cards). | GRID_CARD_BY_ID, MEMBER_TITLE, memberIcon, memberCount, shopAlertCount, wave2ListOverride, columnEl, colTabsEl, colTabButtonsHtml, colActionsHtml, memberCardEl, calendarCardEl, …(+3) |
+| APP-19 | 7111–7304 | §10 | §10 SHOP CARD — merged Work Orders + Service Orders + Inspections | shopItemMode, shopItemsByType, shopUrgency, shopSort, shopCardEl, shopItemMatches, shopListView, shopRowColor, shopRowEl |
+| APP-20 | 7305–7429 | §11 | §11 HEADER, KPI & BOTTOM BAR | bandColor, ring3SVG, ringsSVG, pctOf, fleetInsp, legacyKpiPct, KPI_HELP |
+| APP-21 | 7430–7594 | §11b | §11b KPI METRIC ENGINE — admin-definable KPIs (Settings → KPIs & Rings). | KPI_ENTITY, KPI_DERIVED, KPI_TOKENS, kpiField, kpiVal, kpiCond, kpiRows, kpiAgg, kpiBand, kpiTarget, kpiEval, KPI_DEFAULTS, …(+11) |
+| APP-22 | 7595–7804 | — | COMING 2026 — the roadmap morale plate (Jac 2026-06-23) | ROADMAP_ITEMS, ROADMAP_AREAS, headerEl, THEME_NEXT, bottomBarInner, bottomBarEl, commsUtilsEl, commsRailEl, activeMobileCard, currentMobileMember, MOBILE_CARDS, goToCard, …(+1) |
+| APP-23 | 7805–8626 | §17 | §17 INTERNAL TEAM DOCK (Jac, Phase 7) — a bottom-bar chat built on the Phase-6 | chatComments, chatUnreadCount, chatById, activeChat, chatRoleOn, chatsTagging, chatMarkSeen, chatUnseenForRec, newChat, openChat, chatFeed, CHAT_AV, …(+71) |
+| APP-24 | 8627–8732 | §13.3 | §13.3 CARD GRAPH VIEW (Phase 4) — a per-card charts overlay, sibling to the | pieSVG, gvLegend, gvBars, unitGraphData, gvNumTile, gvPieTile, gvBarTile, gvLeadTile, gvTableTile, gvMonths6, GV_WIN_OPTS, GV_WIN_KEY, …(+6) |
+| APP-25 | 8733–9178 | §13.4 | §13.4 GRAPH CAROUSEL (Jac 2026-06-16) — the per-card Graph is a deck of | gvClampIdx, gvKey, gvSegOn, gvSmallest, graphViewsFor, gvSaveCurrent, gvStripTerms, gvRestore, gvOpen, gvChevron, gvSyncClosed, toggleGraphSeg, …(+8) |
+| APP-26 | 9179–10115 | §12 | §12 OVERLAYS & BOARDS — renderOverlay kinds + back-office board popups | _ovScroll, _popDrag, wirePopupDrag, backGuard, swipeFired, anyDismissable, dismissTopSheet, syncBackGuard, renderOverlay, buildPopupEl, openOverlay |
+| APP-27 | 10116–10211 | — | RB-WINDOWS catalog (Jac 2026-06-22) — the admin Rulebook's index of | WINDOW_CATALOG, previewOverlayFor, STANDALONE_SURFACES, feedbackContext, sendFeedback |
+| APP-28 | 10212–10627 | §18 | §18 MR. WRANGLER — the in-app AI (Claude via the Apps Script backend). | WRANGLER_SYSTEM, wranglerDigest, wranglerContext, wranglerAttachAny, wranglerAttachFile, parseCsvFile, wranglerAttachTextFile, wranglerImageBlock, wranglerErrMsg, WR_TOOL_LIMIT, wrCustOpenBalance, WR_TOOL_IMPL, …(+9) |
+| APP-29 | 10628–11678 | — | Mr. Wrangler ACTS on your data (Jac 2026-06-16) | WR_FUNNEL, wrFunnel, WR_ACCT, wrAccount, WR_EDITABLE, WR_REQUIRED, WR_NUMERIC, WR_MONEY_FIELDS, wrPlanNeedsApply, WR_IDX, wrGet, wrNorm, …(+99) |
+| APP-30 | 11679–11948 | §13 | §13 DROPDOWNS — openDropdown + status/fleet/funnel/sort menus | GTI, GATE_ICON, GATE_TL, GTCHK, gateTimeline, openDropdown, openStatusDropdown, openFleetDropdown, setUnitFleet, openReconcileDropdown, setExpenseReconcile, MEMBERSHIP_FUNNEL_ORDER, …(+18) |
+| APP-31 | 11949–12079 | §14 | §14 RENDER PIPELINE + toast | renderCount, scrollMemo, render, applyTitles, HOVER_CAPABLE, initTooltip, hideTip, toast |
+| APP-32 | 12080–12083 | §15 | §15 EVENT HANDLERS — onClick/onInput/onChange (single listener tree) | — |
+| APP-33 | 12084–13683 | §15c | §15c DRAG & DROP LINK ENGINE (DRAGDROP-DESIGN.md) — custom pointer engine. | DRAG, DRAG_SOURCES, dragLayer, DROP_MATRIX, woDroppableToInvoice, invoiceUnitIds, LINK_TARGET_LABEL, linkRoleAllows, linkActionPossible, linkActionsFor, enterLinking, cancelLinking, …(+51) |
+| APP-34 | 13684–14612 | §16 | §16 ACTIONS / MUTATIONS — every state change funnels through here | setUnitCondition, pendingInspForUnit, openChecklist, completeChecklist, setUnitWash, captureUnit, setUnitCapture, yardCapture, saveYardCapture, uploadCaptureMedia, offloadPhotoNow, offloadPhoto, …(+39) |
+| APP-35 | 14613–15653 | §17 | §17 STRIPE / PAYMENTS — card-on-file + invoice charging (client side). | _stripe, _pubKey, ensurePubKey, getStripe, canMoney, brandName, hasCardOnFile, commitAction, cardOneLabel, cardLabel, friendlyPayErr, openAddCard, …(+73) |
+| APP-36 | 15654–16100 | §5.4d | §5.4d — DATE SEARCH PICKER. A standalone calendar that REUSES the rental | openDateSearch, closeDateSearch, dsMonth, dsToday, dsClear, dsPickDay, dsDone, dateSearchEl, positionDateSearch, setInspWash, setInspResult, recordServiceCompletion, …(+19) |
+| APP-37 | 16101–16103 | §18 | §18 PERSISTENCE & BOOT | — |
+| APP-38 | 16104–17003 | §18b | §18b BACKEND SYNC — Google Sheets via the Apps Script web app | BACKEND_URL, PERSIST_KEYS, backendPassword, booting, saveTimer, driveViewUrl, backendCall, dataSnapshot, loadFromBackend, PERSIST_ID, lastSaved, snapshotSaved, …(+43) |
 
 ## config.js — 559 lines, 0 chapters
 
