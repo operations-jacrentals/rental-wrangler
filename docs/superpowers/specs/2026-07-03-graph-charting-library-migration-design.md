@@ -1,7 +1,7 @@
 # Graph Section — Charting Library Migration (Observable Plot + D3-shape)
 
 - **Date:** 2026-07-03
-- **Status:** Draft for review
+- **Status:** SUPERSEDED IN PART by `2026-07-03-roundup-reporting-board-design.md` (Jac: "completely throw out what we have and make it all brand new"). **§4 (library choice + rejected alternatives) still stands and is referenced by the successor.** §5–§7 (swap-internals-keep-chrome integration) are dead — the in-column graph panels are being removed entirely, not re-skinned.
 - **Branch:** `claude/units-card-graphs-review-n5c67n` (continues the graph-redesign work)
 - **Depends on:** the shipped §13.5 "Graph V2" redesign (tabs, time-rail, fixed groups, fixed-height panels — PRs #450/#456/#457/#459). This migration replaces the **mark-rendering internals only**; the chrome around them (tabs, rail, group pairing, panel layout, filter state) is unchanged.
 
