@@ -116,6 +116,13 @@ Reference implementations: `.login-*` and `.cancel-arc` blocks in `style.css`.
   cutting disc), the `clipboard-question` (`inspectionsPending`, no Lucide
   equivalent), and the gate-timeline status glyphs (`GATE_ICON`, still in
   `app.js`). Don't replace these with library icons without asking.
+- **Animated category glyphs** (Jac, 2026-07-03): the excavator / lift / skid-steer
+  families render ambient animated SVG loops from `icons-anim.js` (`CATEGORY_ANIM`) —
+  converted BY HAND from Lottie artwork Jac supplied (LottieFiles), NOT from
+  `tools/gen-icons.mjs` and NOT hand-drawn. Keyframes live in `style.css`
+  ("ANIMATED CATEGORY GLYPHS"); reduced-motion freezes to the rest pose. If Jac
+  supplies more Lottie files, convert the same way (nested translate(p)›anim›translate(-a)
+  groups so CSS rotations pivot at the Lottie anchors) — don't add lottie-web.
 - **Category icons are FAMILY-level, not per-model** (Jac, 2026-07-03): the real
   fleet has ~50 rate-card categories (see the `Fleet_Categories` sheet in Drive),
   not the 5 in the `data.js` demo seed. `categoryIconFor()` in `app.js` keyword-matches

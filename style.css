@@ -1992,10 +1992,10 @@ body.is-phone .set-tab-l { flex: 0 0 auto; }
 .ru-lead-n { color: var(--txt-3); font-weight: 700; font-size: 11px; }
 .ru-lead-name { font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ru-lead-c { font-weight: 800; font-size: 13px; color: var(--txt-2); font-variant-numeric: tabular-nums; }
-.ru-plotmount rect.js-ru-nav, .ru-plotmount circle.js-ru-nav { cursor: pointer; }
-.ru-plotmount rect.js-ru-nav:hover, .ru-plotmount circle.js-ru-nav:hover { filter: brightness(1.18); }
-.ru-plotmount rect.js-ru-nav:focus-visible, .ru-plotmount circle.js-ru-nav:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.ru-plotmount text { pointer-events: none; }
+.ru-plotmount .js-ru-nav, .rus-mount .js-ru-nav { cursor: pointer; }
+.ru-plotmount svg .js-ru-nav:hover, .rus-mount svg .js-ru-nav:hover { filter: brightness(1.18); }
+.ru-plotmount svg .js-ru-nav:focus-visible, .rus-mount svg .js-ru-nav:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.ru-plotmount text, .rus-mount text { pointer-events: none; }
 .ru-duo { display: flex; gap: 14px; align-items: stretch; }
 .ru-duo-chart { flex: 1; min-width: 0; }
 .ru-real { width: 92px; flex: none; display: flex; flex-direction: column; justify-content: center; gap: 3px; padding-left: 14px; border-left: 1px dashed var(--tan, #c2925a); }   /* saddle-stitch divider — trend left, "right now" right */
@@ -2010,9 +2010,6 @@ body.is-phone .set-tab-l { flex: 0 0 auto; }
 .ru-donut .ru-slice-n { font-size: 13px; font-weight: 700; }
 .ru-donut .ru-donut-tot { font-size: 27px; font-weight: 800; }
 .ru-donut .ru-donut-sub { font-size: 10px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; }
-.ru-plotmount path.js-ru-nav { cursor: pointer; }
-.ru-plotmount path.js-ru-nav:hover { filter: brightness(1.18); }
-.ru-plotmount path.js-ru-nav:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .ru-donut-pair { display: flex; gap: 10px; justify-content: center; }
 .ru-donut-cell { flex: 1; min-width: 0; }
 .ru-donut-cell svg.ru-donut { max-width: 190px; }
@@ -2024,6 +2021,27 @@ body.is-phone .set-tab-l { flex: 0 0 auto; }
 .ru-tile-l { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1px; font-weight: 700; font-size: 10px; color: var(--txt-3); }
 @media (max-width: 900px) { .ru-layout { grid-template-columns: 1fr; } .ru-spine { flex-direction: row; flex-wrap: wrap; border-right: none; border-bottom: 1px solid var(--line); padding: 10px 12px; } .ru-grid { grid-template-columns: 1fr; } }
 @media (prefers-reduced-motion: reduce) { .ru-per { transition: none; } }
+
+/* ── §13.7 gauge strip — the card's Round-Up charts in-column, 25% of the column ── */
+.rus { flex: 0 0 25%; min-height: 0; display: flex; flex-direction: column; margin: 0 8px 4px; border: 1px solid var(--line); border-radius: 12px; background: linear-gradient(180deg, var(--card-head), var(--card)); color: var(--txt-3); overflow: hidden; }   /* color themes Plot's currentColor axes */
+.is-phone .rus { flex: none; height: 25dvh; }   /* phone: the strip rides inside the scroll column — 25% of the viewport ≈ the column */
+.rus-tabs { display: flex; gap: 2px; padding: 3px 8px 2px; border-bottom: 1px solid var(--line-soft); overflow-x: auto; scrollbar-width: none; justify-content: center; justify-content: safe center; flex: none; }
+.rus-tabs::-webkit-scrollbar { display: none; }
+.rus-tab { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1px; font-weight: 700; font-size: 10.5px; padding: 1px 7px; border: none; background: none; color: var(--txt-3); white-space: nowrap; cursor: pointer; transition: color .12s; }
+.rus-tab:hover { color: var(--txt); }
+.rus-tab.on { color: var(--accent); }
+.rus-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.rus-body { flex: 1; min-height: 0; display: flex; gap: 6px; padding: 2px 8px 5px; }
+.rus-rail { display: flex; flex-direction: column; justify-content: center; gap: 1px; flex: none; min-width: 30px; }
+.rus-per { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .6px; font-weight: 700; font-size: 9.5px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 72px; padding: 0 2px; border: none; background: none; color: var(--txt-3); cursor: pointer; transition: color .12s; }
+.rus-per:hover { color: var(--txt); }
+.rus-per.on { color: var(--accent); }
+.rus-per:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.rus-mount { flex: 1; min-width: 0; min-height: 0; overflow: auto; }
+.rus-mount svg { display: block; max-width: 100%; max-height: 100%; width: auto; height: auto; margin: 0 auto; }
+.rus-mount .ru-duo { height: 100%; }
+.rus-mount .ru-empty { padding: 10px 4px; }
+@media (prefers-reduced-motion: reduce) { .rus-tab, .rus-per { transition: none; } }
 
 .board-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .board-table th { position: sticky; top: 0; z-index: 1; text-align: left; padding: 10px 14px; background: var(--card-head); color: var(--txt-3); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; border-bottom: 1px solid var(--line); white-space: nowrap; }
@@ -3229,6 +3247,46 @@ body.is-phone .card[data-card="units"] .list { grid-template-columns: repeat(2, 
 @media (prefers-reduced-motion: reduce) {
   .cat-glyph { transition: color .12s ease; }
   .ur:hover .cat-glyph, .catr:hover .cat-glyph { transform: none !important; }
+}
+
+/* ── ANIMATED CATEGORY GLYPHS (Jac, 2026-07-03) — the excavator / boom-lift / skid-steer
+   families render CATEGORY_ANIM loops (icons-anim.js, converted from Jac's supplied
+   Lottie artwork). Ambient 3s loops, currentColor strokes (.k2 = dimmed secondary);
+   pivots work because the SVG nests translate(p) › animated group › translate(-a) at
+   each Lottie anchor. Jac explicitly opted into ambient icon motion here (overrides the
+   one-orchestrated-moment default); reduced-motion freezes every loop to the rest pose. ── */
+.catanim { width: 1em; height: 1em; display: inline-block; overflow: visible; }
+.catanim .k2 { opacity: .55; }
+.catanim g { transform-box: view-box; transform-origin: 0 0; }
+/* travel groups animate via translate; rotate groups pivot at their Lottie anchor
+   because the markup nests translate(p) > [anim] > translate(-a). */
+.catanim .xc-run { animation: caXcRun 3s ease-in-out infinite; }
+.catanim .xc-bob { animation: caXcBob 1.5s ease-in-out infinite; }
+.catanim .xc-dig { animation: caXcDig 3s ease-in-out infinite; }
+.catanim .xc-rock { animation: caXcRock 3s ease-in-out infinite; }
+@keyframes caXcRun { 0%{transform:translateX(0)} 17%{transform:translateX(-64px)} 75%{transform:translateX(59px)} 100%{transform:translateX(0)} }
+@keyframes caXcBob { 0%,100%{transform:translateY(0)} 50%{transform:translateY(6px)} }
+@keyframes caXcDig { 0%,100%{transform:rotate(0)} 17%,75%{transform:rotate(2.7deg)} }
+@keyframes caXcRock { 0%,16%{transform:translateX(0) scale(.04);opacity:0} 30%{opacity:1} 75%{transform:translateX(120px) scale(1);opacity:1} 90%,100%{transform:translateX(197px) scale(1);opacity:0} }
+.catanim .bl-run { animation: caBlRun 3s ease-in-out infinite; }
+.catanim .bl-rock { animation: caBlRock 3s ease-in-out infinite; }
+.catanim .bl-a1 { animation: caBlA1 3s ease-in-out infinite; }
+.catanim .bl-a2 { animation: caBlA2 3s ease-in-out infinite; }
+@keyframes caBlRun { 0%,16%{transform:translateX(0)} 40%{transform:translateX(132px)} 65%{transform:translateX(-55px)} 81%,100%{transform:translateX(0)} }
+@keyframes caBlRock { 0%,18%,100%{transform:rotate(0)} 42%,65%{transform:rotate(-3deg)} 75%{transform:rotate(0)} }
+@keyframes caBlA1 { 0%,100%{transform:rotate(0)} 15%,65%{transform:rotate(-27deg)} 77%{transform:rotate(0)} }
+@keyframes caBlA2 { 0%,8%,100%{transform:rotate(0)} 21%,59%{transform:rotate(32deg)} 71%{transform:rotate(0)} }
+.catanim .sk-run { animation: caSkRun 3s ease-in-out infinite; }
+.catanim .sk-rock { animation: caSkRock 3s ease-in-out infinite; }
+.catanim .sk-scoop { animation: caSkScoop 3s ease-in-out infinite; }
+.catanim .sk-fly1 { stroke-dasharray: 90; animation: caSkFly 3s linear infinite; }
+.catanim .sk-fly2 { stroke-dasharray: 160; animation: caSkFly 3s linear infinite .35s; }
+@keyframes caSkRun { 0%{transform:translateX(0)} 17%{transform:translateX(-37px)} 35%{transform:translateX(50px)} 46%,65%{transform:translateX(51px)} 100%{transform:translateX(0)} }
+@keyframes caSkRock { 0%,20%,57%,100%{transform:rotate(0)} 44%{transform:rotate(-11deg)} }
+@keyframes caSkScoop { 0%,88%,100%{transform:rotate(0)} 17%,74%{transform:rotate(-30deg)} }
+@keyframes caSkFly { 0%,30%{stroke-dashoffset:0;opacity:0} 40%{opacity:1} 60%,100%{stroke-dashoffset:-180;opacity:0} }
+@media (prefers-reduced-motion: reduce) {
+  .catanim *, .catanim { animation: none !important; }
 }
 .catr-name { flex: 1 1 auto; min-width: 0; font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .6px; font-weight: 700; font-size: 13px; line-height: 1.1; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 /* the availability row in the rulebook R3b pill language: a full-width LEAD pill
