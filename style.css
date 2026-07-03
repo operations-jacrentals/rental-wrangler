@@ -3117,16 +3117,22 @@ body.is-phone .card[data-card="units"] .list { grid-template-columns: repeat(2, 
 .catr-cat { flex: 0 0 auto; width: 18px; height: 18px; color: var(--txt-2); display: flex; align-items: center; justify-content: center; }
 .catr-cat svg { width: 17px; height: 17px; display: block; }
 .catr-name { flex: 1 1 auto; min-width: 0; font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .6px; font-weight: 700; font-size: 13px; line-height: 1.1; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-.catr-pills { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
-.catr-slot { display: flex; align-items: center; justify-content: center; }
+/* the availability row in the rulebook R3b pill language: a full-width LEAD pill
+   (N Avail / Next date / None·reason) over a PASS · NR · FAIL trio. Each slot is the
+   click target (the whole slot, not just the pill) — lead opens units / the next-free
+   unit, the trio filters Units by inspection status; the None lead is inert. */
+.catr-pills { display: flex; flex-direction: column; gap: 5px; }
+.catr-tally-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; }
+/* the trio runs 3-across in a ~200px card — trim pad + type so "n Pass" fits without
+   ellipsis (the dense-grid legible-minimum override, per the design language). */
+.catr-tally-row .pill { padding: 0 5px; font-size: 9px; letter-spacing: .1px; gap: 3px; }
+.catr-slot { display: flex; align-items: center; justify-content: center; min-width: 0; }
 .catr-slot .pill { width: 100%; text-align: center; justify-content: center; overflow: hidden; }
 .catr-slot .pill .t { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-/* the Availability slot is a shortcut into the Units card — give it a clear hit
-   affordance (the whole slot is the click target, not just the pill). */
-.catr-slot.js-cat-avail { cursor: pointer; }
-.catr-slot.js-cat-avail .pill { transition: box-shadow .12s, border-color .12s; }
-.catr-slot.js-cat-avail:hover .pill { border-color: var(--accent-line); box-shadow: 0 0 0 1px var(--accent-line); }
-.catr-slot.js-cat-avail:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 999px; }
+button.catr-slot { cursor: pointer; padding: 0; background: none; border: 0; font: inherit; }
+.catr-slot.js-cat-avail .pill, .catr-slot.js-cat-next .pill, .catr-slot.js-fleet-filter .pill { transition: box-shadow .12s, border-color .12s; }
+.catr-slot.js-cat-avail:hover .pill, .catr-slot.js-cat-next:hover .pill, .catr-slot.js-fleet-filter:hover .pill { border-color: var(--accent-line); box-shadow: 0 0 0 1px var(--accent-line); }
+.catr-slot.js-cat-avail:focus-visible, .catr-slot.js-cat-next:focus-visible, .catr-slot.js-fleet-filter:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 999px; }
 /* the rate card: a stamped period label on the left, the money value on the right,
    set off by a single saddle-stitch seam from the status pills above. */
 .catr-rates { margin-top: auto; display: flex; flex-direction: column; gap: 2px; border-top: 1px dashed var(--line); padding-top: 6px; }
