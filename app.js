@@ -9248,7 +9248,7 @@ function unitsGraphPanel(cs) {
     const m = metrics[0];
     chart = `<div class="ug-chart">${uMetricChart(cs, m, U_HIST[m] ? period : '', false)}</div>`;
   }
-  return `${head}<div class="ug-haz" aria-hidden="true"></div><div class="ug-body${anyHist ? '' : ' ug-nohist'}">${rail}${chart}</div>`;
+  return `${head}<div class="ug-body${anyHist ? '' : ' ug-nohist'}">${rail}${chart}</div>`;
 }
 
 function cardGraphBody(card) {
