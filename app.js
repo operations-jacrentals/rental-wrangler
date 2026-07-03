@@ -2583,6 +2583,8 @@ function totColMatch(card, rec, col, value) {
   if (col === '__date') return dateTermHits(card, rec, value);   // §5.4d date-picker filter term
   if (col === '__transport') return card === 'rentals' && rentalHasLeg(rec, value);   // §11 Delivery/Pickup leg filter
   if (col === '__wo') return DATA.workOrders.some((w) => w.unitId === rec.unitId && w.phase !== 'Complete' && !w.cancelled && (value === 'open' || w.phase === 'Part Ordered' || (w.lineItems || []).some((l) => l.phase === 'Part Ordered')));
+  if (col === '__wop') return DATA.workOrders.some((w) => w.unitId === rec.unitId && w.phase !== 'Complete' && !w.cancelled && (w.phase || '—') === value);   // §13.5 — unit has an open WO stuck at this phase (bottleneck)
+  if (col === '__insp') return value === 'Ready' ? rec.inspectionStatus === 'Ready' : rec.inspectionStatus !== 'Ready';   // §13.5 — Passed vs Not Ready (Failed folds into Not Ready; Jac retired the Failed bucket)
   if (col === '__cond') return rec.inspectionStatus === value;
   if (col === '__svc') { const s = topServiceForUnit(rec); return !!rec.washRequested || !!(s && s.remaining < 0); }   // service-due: overdue service or wash requested
   if (col === '__fleet') { const [cat, status, kind] = String(value).split('|'); if (rec.categoryId !== cat) return false; return kind === 'rental' ? unitRentalBucket(rec) === status : rec.inspectionStatus === status; }   // A1 — fleet-bar segment = category + inspection/rental status
@@ -9093,11 +9095,12 @@ function uToggleSeg(col, value, label, metric) {
 // ── renderers ──
 function uSegAttrs(cs, metric, s) {
   const on = gvSegOn(cs, s.col, s.value);
-  return `js-ug-seg${on ? ' on' : ''}" data-metric="${metric}" data-col="${esc(s.col)}" data-value="${esc(String(s.value))}" data-label="${esc(s.label)}" data-tip="${on ? 'Remove filter' : 'Filter to ' + esc(s.label)}`;
+  // aria-label carries the name (the visible legend was removed — hover/data-tip + SR name it)
+  return `js-ug-seg${on ? ' on' : ''}" data-metric="${metric}" data-col="${esc(s.col)}" data-value="${esc(String(s.value))}" data-label="${esc(s.label)}" aria-label="${esc(s.label)}${on ? ' — filter on' : ''}" data-tip="${on ? 'Remove filter' : 'Filter to ' + esc(s.label)}`;
 }
 // donut with counts ON the slices (thin slices pop just outside with a leader); slices are the filter.
-function uDonut(cs, metric, segs, size) {
-  size = size || 152; const r = size / 2, cx = r, cy = r, inner = r * 0.58, mid = (inner + r - 1) / 2;
+function uDonut(cs, metric, segs, size, noun) {
+  size = size || 152; noun = noun || 'UNITS'; const r = size / 2, cx = r, cy = r, inner = r * 0.58, mid = (inner + r - 1) / 2;
   const total = segs.reduce((a, s) => a + (s.count || 0), 0);
   const box = (inner2) => `<div class="ug-chartbox">${inner2}</div>`;
   if (!total) return box(`<svg viewBox="-14 -14 ${size + 28} ${size + 28}" width="${size + 28}" height="${size + 28}" class="ug-donut"><circle cx="${cx}" cy="${cy}" r="${r - 1}" fill="none" stroke="var(--line)" stroke-width="2" stroke-dasharray="3 4"/><circle cx="${cx}" cy="${cy}" r="${inner}" fill="var(--bg)"/></svg><div class="ug-empty">No units yet.</div>`);
@@ -9106,22 +9109,23 @@ function uDonut(cs, metric, segs, size) {
   let a0 = -Math.PI / 2, slc = '', lbl = '';
   const inkFor = (s) => (U_DARKINK.has(s.color) ? '#0c0e12' : '#fff');
   if (nz.length === 1) {
-    const s = nz[0]; slc = `<circle class="ug-slice ${uSegAttrs(cs, metric, s)}" cx="${cx}" cy="${cy}" r="${r - 1}" fill="var(--${s.color})"/>`;
+    const s = nz[0]; slc = `<circle class="ug-slice ${uSegAttrs(cs, metric, s)}" tabindex="0" role="button" cx="${cx}" cy="${cy}" r="${r - 1}" fill="var(--${s.color})"/>`;
     const [lx, ly] = at(0, mid); lbl = `<text x="${lx.toFixed(1)}" y="${(ly + 5).toFixed(1)}" text-anchor="middle" fill="${inkFor(s)}" pointer-events="none">${s.count}</text>`;
   } else {
     segs.forEach((s) => {
       if (!s.count) return; const a1 = a0 + s.count / total * Math.PI * 2, am = (a0 + a1) / 2, frac = s.count / total;
       const [x0, y0] = at(a0, r - 1), [x1, y1] = at(a1, r - 1), lg = (a1 - a0) > Math.PI ? 1 : 0;
-      slc += `<path class="ug-slice ${uSegAttrs(cs, metric, s)}" d="M${cx},${cy} L${x0.toFixed(1)},${y0.toFixed(1)} A${r - 1},${r - 1} 0 ${lg} 1 ${x1.toFixed(1)},${y1.toFixed(1)} Z" fill="var(--${s.color})"/>`;
+      slc += `<path class="ug-slice ${uSegAttrs(cs, metric, s)}" tabindex="0" role="button" d="M${cx},${cy} L${x0.toFixed(1)},${y0.toFixed(1)} A${r - 1},${r - 1} 0 ${lg} 1 ${x1.toFixed(1)},${y1.toFixed(1)} Z" fill="var(--${s.color})"/>`;
       if (frac >= 0.16) { const [lx, ly] = at(am, mid); lbl += `<text x="${lx.toFixed(1)}" y="${(ly + 5).toFixed(1)}" text-anchor="middle" fill="${inkFor(s)}" pointer-events="none">${s.count}</text>`; }
       else { const [ix, iy] = at(am, r - 3), [ox, oy] = at(am, r + 10); lbl += `<line x1="${ix.toFixed(1)}" y1="${iy.toFixed(1)}" x2="${ox.toFixed(1)}" y2="${oy.toFixed(1)}" stroke="var(--${s.color})" stroke-width="1.4"/><text x="${ox.toFixed(1)}" y="${(oy + (oy < cy ? -2 : 9)).toFixed(1)}" text-anchor="${ox < cx ? 'end' : 'start'}" fill="var(--${s.color})" pointer-events="none">${s.count}</text>`; }
       a0 = a1;
     });
   }
-  return box(`<svg viewBox="-14 -14 ${size + 28} ${size + 28}" width="${size + 28}" height="${size + 28}" class="ug-donut">${slc}${lbl}<circle cx="${cx}" cy="${cy}" r="${inner}" fill="var(--bg)" pointer-events="none"/><text class="ug-donut-tot" x="${cx}" y="${(cy - 2).toFixed(1)}" text-anchor="middle" fill="var(--txt)" pointer-events="none">${total}</text><text class="ug-donut-sub" x="${cx}" y="${(cy + 13).toFixed(1)}" text-anchor="middle" fill="var(--txt-3)" pointer-events="none">UNITS</text></svg>`);
+  return box(`<svg viewBox="-14 -14 ${size + 28} ${size + 28}" width="${size + 28}" height="${size + 28}" class="ug-donut">${slc}${lbl}<circle cx="${cx}" cy="${cy}" r="${inner}" fill="var(--bg)" pointer-events="none"/><text class="ug-donut-tot" x="${cx}" y="${(cy - 2).toFixed(1)}" text-anchor="middle" fill="var(--txt)" pointer-events="none">${total}</text><text class="ug-donut-sub" x="${cx}" y="${(cy + 13).toFixed(1)}" text-anchor="middle" fill="var(--txt-3)" pointer-events="none">${esc(noun)}</text></svg>`);
 }
-// read-only stacked proportional-area with right-edge band-% labels
-function uArea(bk, data, emptyMsg) {
+// read-only stacked proportional-area with right-edge band-% labels; `names` gives each band a hover tip
+function uArea(bk, data, emptyMsg, names) {
+  names = names || {};
   const w = 250, h = 120, n = data.length;
   if (!data.some((d) => d.n > 0)) return `<div class="ug-chartbox"><div class="ug-empty">${esc(emptyMsg)}</div></div>`;
   const dx = w / (n - 1 || 1), yb = (c) => h - c * h;
@@ -9129,8 +9133,9 @@ function uArea(bk, data, emptyMsg) {
   const grid = [0, .5, 1].map((f) => `<line x1="0" y1="${(h * f).toFixed(1)}" x2="${w}" y2="${(h * f).toFixed(1)}" stroke="var(--line)" stroke-width="1" opacity=".5"/>`).join('');
   const last = data[n - 1];
   const lab = (sel) => { const below = sel === 'g' ? 0 : sel === 'y' ? last.g : last.g + last.y, y = yb(below + last[sel] / 2), pct = Math.round(last[sel] * 100), ink = sel === 'r' ? '#fff' : '#0c0e12'; return pct >= 8 ? `<text class="ug-band" x="${w - 4}" y="${(y + 3).toFixed(1)}" text-anchor="end" fill="${ink}">${pct}%</text>` : ''; };
+  const tip = (sel) => names[sel] ? ` data-tip="${esc(names[sel])}"` : '';
   const xlab = uXAxis(bk, dx, h);
-  return `<div class="ug-chartbox"><svg viewBox="0 -2 ${w} ${h + 18}" width="100%" class="ug-area" preserveAspectRatio="xMidYMid meet">${grid}<polygon points="${poly('g')}" fill="var(--green)" opacity=".85"/><polygon points="${poly('y')}" fill="var(--yellow)" opacity=".85"/><polygon points="${poly('r')}" fill="var(--red)" opacity=".85"/>${lab('r')}${lab('y')}${lab('g')}${xlab}</svg></div>`;
+  return `<div class="ug-chartbox"><svg viewBox="0 -2 ${w} ${h + 18}" width="100%" class="ug-area" preserveAspectRatio="xMidYMid meet">${grid}<polygon points="${poly('g')}" fill="var(--green)" opacity=".85"${tip('g')}/><polygon points="${poly('y')}" fill="var(--yellow)" opacity=".85"${tip('y')}/><polygon points="${poly('r')}" fill="var(--red)" opacity=".85"${tip('r')}/>${lab('r')}${lab('y')}${lab('g')}${xlab}</svg></div>`;
 }
 // trajectory line, clickable buckets (filter units by field call in that bucket)
 function uTraj(cs, metric, bk, values, color, emptyMsg) {
@@ -9146,13 +9151,6 @@ function uTraj(cs, metric, bk, values, color, emptyMsg) {
   const xlab = uXAxis(bk, dx, h);
   return `<div class="ug-chartbox"><svg viewBox="0 -2 ${w} ${h + 18}" width="100%" class="ug-traj" preserveAspectRatio="xMidYMid meet">${grid}<path d="${area}" fill="var(--${color})" opacity=".12"/><path d="${line}" fill="none" stroke="var(--${color})" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/><circle cx="${ex.toFixed(1)}" cy="${ey.toFixed(1)}" r="4.5" fill="var(--${color})" stroke="var(--bg)" stroke-width="2"/>${nums}${xlab}${hits}</svg></div>`;
 }
-function uCaption(cs, metric, segs, clickable) {
-  return `<div class="ug-cap${clickable ? ' ug-cap-click' : ''}">${segs.map((s) => {
-    const inner = `<i style="background:var(--${s.color})"></i>${esc(s.label)}`;
-    if (!clickable) return `<span class="ug-leg">${inner}</span>`;
-    return `<button class="ug-leg ${uSegAttrs(cs, metric, s)}">${inner}</button>`;
-  }).join('')}</div>`;
-}
 function uTiles(cs, metric, items) {
   return `<div class="ug-tiles">${items.map((s) => `<button class="ug-tile ${uSegAttrs(cs, metric, s)}"><span class="ug-tile-v">${esc(String(s.disp != null ? s.disp : s.count))}</span><span class="ug-tile-l">${esc(s.label)}</span></button>`).join('')}</div>`;
 }
@@ -9164,34 +9162,38 @@ function uLead(cs, metric, rows, empty) {
 function uMetricChart(cs, metric, period, small) {
   const dsize = small ? 112 : 152;
   if (metric === 'inspection') {
+    // Passed vs Not Ready only — Failed is retired (folds into Not Ready), no red (Jac)
     const f = fleetInsp();
-    const segs = [['Ready', 'green'], ['Not Ready', 'yellow'], ['Failed', 'red']].map(([v, c]) => ({ col: 'inspection', value: v, label: getStatus('unitInspectionStatus', v).label || v, count: f[v] || 0, color: c }));
-    if (!period) return uDonut(cs, metric, segs, dsize) + uCaption(cs, metric, segs, true);
+    const segs = [
+      { col: '__insp', value: 'Ready', label: getStatus('unitInspectionStatus', 'Ready').label || 'Passed', count: f.Ready || 0, color: 'green' },
+      { col: '__insp', value: 'notready', label: 'Not Ready', count: (f['Not Ready'] || 0) + (f.Failed || 0), color: 'yellow' },
+    ];
+    if (!period) return uDonut(cs, metric, segs, dsize);
     const bk = uBuckets(period);
-    // cumulative outcome mix through the window — a running status STATE (smooth, full-width,
-    // right edge = the window's overall mix) rather than a per-bucket flow that spikes when sparse
-    let cg = 0, cyl = 0, cr = 0;
-    const data = bk.map((b) => { DATA.inspections.forEach((n) => { const d = (n.date || '').slice(0, 10); if (d >= b.a && d < b.b) { const cc = inspResult(n).color; if (cc === 'green') cg++; else if (cc === 'red') cr++; else cyl++; } }); const t = cg + cyl + cr; return { g: t ? cg / t : 0, y: t ? cyl / t : 0, r: t ? cr / t : 0, n: t }; });
-    return uArea(bk, data, 'No inspections in this window.') + uCaption(cs, metric, segs, false);
+    // cumulative outcome mix through the window — a running status STATE (Fail folds into Not Ready)
+    let cg = 0, cyl = 0;
+    const data = bk.map((b) => { DATA.inspections.forEach((n) => { const d = (n.date || '').slice(0, 10); if (d >= b.a && d < b.b) { if (inspResult(n).color === 'green') cg++; else cyl++; } }); const t = cg + cyl; return { g: t ? cg / t : 0, y: t ? cyl / t : 0, r: 0, n: t }; });
+    return uArea(bk, data, 'No inspections in this window.', { g: 'Passed', y: 'Not Ready' });
   }
   if (metric === 'fleet') {
     const fn = {}; DATA.units.forEach((u) => { const s = u.fleetStatus || '—'; fn[s] = (fn[s] || 0) + 1; });
     const segs = Object.entries(fn).sort((a, b) => b[1] - a[1]).map(([s, n]) => ({ col: 'fleet', value: s, label: s, count: n, color: getStatus('unitFleetStatus', s).color || 'gray' }));
-    return uDonut(cs, metric, segs, dsize) + uCaption(cs, metric, segs, true);
+    return uDonut(cs, metric, segs, dsize);
   }
   if (metric === 'service') {   // Service Orders — a unit's service urgency (col __svcstat filters the units list)
     let over = 0, soon = 0, ok = 0, wash = 0;
     DATA.units.forEach((u) => { if (u.washRequested) { wash++; return; } const s = topServiceForUnit(u); if (!s) { ok++; return; } if (s.status === 'past-due') over++; else if (s.status === 'due-soon') soon++; else ok++; });
     const segs = [{ col: '__svcstat', value: 'past-due', label: 'Overdue', count: over, color: 'red' }, { col: '__svcstat', value: 'due-soon', label: 'Due Soon', count: soon, color: 'yellow' }, { col: '__svcstat', value: 'on-schedule', label: 'On Schedule', count: ok, color: 'green' }, { col: '__svcstat', value: 'wash', label: 'Wash', count: wash, color: 'blue' }];
-    return uDonut(cs, metric, segs, dsize) + uCaption(cs, metric, segs, true);
+    return uDonut(cs, metric, segs, dsize);
   }
   if (metric === 'shop') {
-    const open = new Set(DATA.workOrders.filter((w) => w.phase !== 'Complete' && !w.cancelled).map((w) => w.unitId));
-    const ord = new Set(DATA.workOrders.filter((w) => w.phase !== 'Complete' && !w.cancelled && (w.phase === 'Part Ordered' || (w.lineItems || []).some((l) => l.phase === 'Part Ordered'))).map((w) => w.unitId));
-    const nU = (set) => DATA.units.filter((u) => set.has(u.unitId)).length;
-    // honest, independent counts (Parts-Ordered is a SUBSET of Open) — two tiles, not a summing pie
-    const items = [{ col: '__wo', value: 'open', label: 'Work Orders', count: nU(open), color: 'red' }, { col: '__wo', value: 'ordered', label: 'Parts Ordered', count: nU(ord), color: 'yellow' }];
-    return uTiles(cs, metric, items);
+    // Work Orders split by BOTTLENECK phase (Jac) — where open WOs are stuck; count = WOs per phase
+    const openWO = DATA.workOrders.filter((w) => w.phase !== 'Complete' && !w.cancelled);
+    const byPhase = {}; openWO.forEach((w) => { const ph = w.phase || '—'; byPhase[ph] = (byPhase[ph] || 0) + 1; });
+    const order = Object.keys(STATUS.woPhase).filter((ph) => ph !== 'Complete');
+    const phs = order.filter((ph) => byPhase[ph]).concat(Object.keys(byPhase).filter((ph) => ph !== 'Complete' && !order.includes(ph)));
+    const segs = phs.map((ph) => ({ col: '__wop', value: ph, label: getStatus('woPhase', ph).label || ph, count: byPhase[ph], color: getStatus('woPhase', ph).color || 'gray' }));
+    return uDonut(cs, metric, segs, dsize, 'WOs');
   }
   if (metric === 'fc') {
     // ONE Field Calls tab (Jac): leaderboard = the snapshot (which units call most),
@@ -16778,6 +16780,13 @@ function boot() {
   applySettings();   // Settings Board: apply admin status overrides (color/icon) before the first render
   if (settingsReverted) setTimeout(() => { try { toast('Customizations reset to defaults (recovery mode).'); } catch (e) {} }, 800);
   initTooltip();
+  // §13.5 — the Units graph legend was removed (hover names each slice); its donut slices /
+  // trajectory buckets are SVG, so make a focused one keyboard-activatable (Enter/Space → filter).
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const t = e.target;
+    if (t && t.classList && t.classList.contains('js-ug-seg')) { e.preventDefault(); t.dispatchEvent(new MouseEvent('click', { bubbles: true })); }
+  });
   applyViewportClass();
   const onVP = () => { applyViewportClass(); if (!booting) render(); };
   window.matchMedia('(max-width: 640px)').addEventListener('change', onVP);

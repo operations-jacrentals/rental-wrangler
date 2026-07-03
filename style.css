@@ -1943,12 +1943,13 @@ body.is-phone .set-tab-l { flex: 0 0 auto; }
 .ug-slice { cursor: pointer; stroke: var(--card); stroke-width: 1.5; transition: filter .12s; }
 .ug-slice:hover { filter: brightness(1.12); }
 .ug-slice.on { stroke: var(--accent); stroke-width: 3; }
-.ug-slice:focus-visible { outline: none; }
+.ug-slice:focus-visible { stroke: var(--accent); stroke-width: 3; outline: none; }
 .ug-area, .ug-traj { display: block; }
 .ug-area text.ug-band { font-family: 'Saira Condensed', system-ui, sans-serif; font-size: 10px; font-weight: 800; }
 .ug-xlab { font-family: 'Saira Condensed', system-ui, sans-serif; font-size: 9px; letter-spacing: .3px; }
 .ug-hit { cursor: pointer; }
 .ug-hit.on { fill: var(--accent-soft) !important; }
+.ug-hit:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .ug-cap { display: flex; flex-wrap: wrap; gap: 5px 10px; justify-content: center; }
 .ug-leg { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--txt-2); }
 .ug-leg i { width: 9px; height: 9px; border-radius: 2px; flex: 0 0 auto; }
