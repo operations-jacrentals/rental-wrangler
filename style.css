@@ -860,6 +860,10 @@ select.lf-in { appearance: none; cursor: pointer; }
 .optrow .opt-more { flex: 0 0 auto; width: 30px; height: 26px; display: grid; place-items: center; border-radius: var(--chip-radius); border: 1px solid var(--line); background: var(--panel); color: var(--txt-2); font-size: 16px; line-height: 1; letter-spacing: 1px; cursor: pointer; box-shadow: var(--chip-shadow); }
 .optrow .opt-more:hover { color: var(--accent); border-color: var(--accent-line); }
 .optrow .opt-more.on { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+/* Visible focus on every new Row-2/3 control (the app has no catch-all button:focus-visible) —
+   incl. the gear + graph, which predate this but sit in the reshaped header. */
+.listbar .gear:focus-visible, .optrow .opt-more:focus-visible, .optrow .opt-graph:focus-visible,
+.cvrow .cview:focus-visible, .cvrow .cvnew:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 /* Row 3 — personal CUSTOM VIEWS (phase 6). Opens from the ⋯. A view is the ONLY filter button
    that carries an icon (a saved search + pinned filters + sort); +New starts the capture flow. */
 .cvrow { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; padding: 0 10px 8px; min-width: 0; }

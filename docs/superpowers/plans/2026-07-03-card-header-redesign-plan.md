@@ -35,7 +35,7 @@ new popups get `WINDOW_CATALOG` entries.
 
 ---
 
-## Progress — 2026-07-03 (phases 4–6 shipped; next → phase 7)
+## Progress — 2026-07-03 (phases 4–7 shipped — BUILD COMPLETE)
 
 Phases 1–3 shipped on `claude/wrangler-dashboard-space-h2nu0i` (PR #447). **Phases 4–6 continue
 the feature on `claude/wrangler-dashboard-space-vdijk0`** (based off the phase-1–3 tip; per Jac,
@@ -95,8 +95,24 @@ this branch's PR #452 carries phases 1–6 and supersedes #447). All gates green
   is cleaner. The §9 search-bar shortcut is deferred. Remove View DOES use the R20 menu (the view button
   reaches it cleanly). The icon `⋯` is a text glyph like the ▲▼ arrows (no library glyph needed).
 
-**Next → Phase 7:** cleanup — fully retire `openViewMenu`, remove orphaned `.sort`/`listbar` CSS,
-role-projection + isolation verification sweep, all gates, and the jactec-ui self-critique screenshot pass.
+- **Phase 7 ✅** cleanup + self-critique. Removed the dead `sf`/`curField`/`activeView` vars in
+  `listView` (orphaned by phase 2's chip removal). **jactec-ui self-critique screenshot pass** (dark +
+  light + phone) caught & fixed TWO real defects: (1) `CVIEW_ICONS` referenced equipment names
+  (`tractor`/`saw`/`lift`/…) that live in `CATEGORY_ICON`, **not `I`** → blank picker cells + funnel
+  fallback; now uses only confirmed `I` keys. (2) `:focus-visible` was missing on `.opt-more`/`.cview`/
+  `.cvnew`/`.opt-graph`/`.gear` (the app has no catch-all) → added. Light-theme parity confirmed (all
+  new CSS is token-only; `var(--tan,#c2925a)` matches the sibling saddle-stitch convention). Phone
+  reflow verified (hazard cap, swipeable options + custom views, +New; Row 1 in the footer dock).
+  Regression sweep green: smoke · logic 400/400 · phase E2Es 20/20 · 15/15 · 14/14.
+
+**Phase-7 decision:** `openViewMenu` is **NOT fully retired** — it's now SHOP-ONLY (`js-sortmenu`,
+`app.js`), and Shop is out of scope for this redesign (spec §2, "shop deferred — may be removed"). Its
+`.sort`/`listbar` CSS is still live for Shop. Full retirement (+ that CSS cleanup) waits on Shop coming
+into scope. The 5 list cards no longer touch it.
+
+**BUILD COMPLETE** — phases 1–7 on PR #452. Still a **draft awaiting Jac's local drive** before it's a
+promotion candidate; nothing is on `main`. Two deferrals carried forward (both documented above): the
+§9 right-click-search "+View" shortcut, and the desktop options-overflow `⋯`-fold.
 
 **Notes for next session:** gear icon is Lucide `sliders` (Jac may want a literal cog via
 `gen-icons.mjs`). `lost`/`unitWhen` predicates are best-effort (try-guarded) — spot-check when

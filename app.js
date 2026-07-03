@@ -7001,9 +7001,9 @@ function listView(cardDef, session) {
   gvSyncClosed(card, cs);   // §13.4 — graph closed but g-terms linger (record open / invoice surface) → save + drop them before the bar's pills render
   const wrap = el('div');
   // sort/search bar
-  const sf = SORT_FIELDS[card];
-  const curField = sf.find((f) => f.field === cs.sort.field) || sf[0];
-  const av = activeView(card, cs);   // §5.5 the View button shows the active view's name, else the sort field
+  // (phase 7 cleanup) the old sort-button label vars — sf/curField/activeView — were orphaned
+  // when phase 2 dropped the "Views & sort" chip from the listbar; the sort field is now the
+  // right-click menu (phase 5) and views are Row 3 (phase 6). Removed as dead code.
   const bar = el('div', 'listbar');
   const cterms = cs.filterTerms || [];
   // §0.1 — a cascaded card shows the cascade as a clearable chip at the front of its
@@ -11951,8 +11951,10 @@ function applyCView(card, v) {
   cs.mode = 'list'; cs.recId = null; cs.listLimit = undefined;
   render();
 }
-// Icon-picker palette — vendored Lucide glyphs (icons.js `I`), never hand-drawn; yard-flavored.
-const CVIEW_ICONS = ['filter', 'list', 'grid', 'table', 'box', 'files', 'doc', 'bell', 'inbox', 'eye', 'lock', 'truck', 'trailer', 'fuel', 'droplet', 'camera', 'graph', 'sliders', 'parts', 'tractor', 'lift', 'saw', 'tower', 'hardhat', 'horseshoe', 'circle'];
+// Icon-picker palette — ONLY keys that exist in the `I` map (icons.js export const I, lines 13-58);
+// vendored Lucide glyphs + a couple of bespoke marks (mark/horseshoe/hardhat), never hand-drawn.
+// (Equipment glyphs like tractor/lift/saw live in CATEGORY_ICON, not `I` — using them would render blank.)
+const CVIEW_ICONS = ['filter', 'list', 'grid', 'table', 'box', 'doc', 'bell', 'inbox', 'eye', 'lock', 'truck', 'droplet', 'camera', 'video', 'graph', 'sliders', 'search', 'chat', 'feedback', 'mouse', 'circle', 'mark', 'horseshoe', 'hardhat'];
 // A view captures the WHOLE filter state — the live search text AND the pinned
 // filter chips (cs.filterTerms) — so ANY filter you build is saveable (Jac 2026-06-13).
 function viewSig(search, terms) {
@@ -12003,7 +12005,8 @@ function openViewMenu(card, anchorEl) {
    commits the pick (`cs.sort = {...f}` → saveSort → render) — no new dispatch. A floater like every
    sibling menu (openViewMenu, the graph/status dropdowns), so it is intentionally NOT in
    WINDOW_CATALOG — that CI guard tracks buildPopupEl MODAL kinds only; a dropdown entry would fail
-   it as stale. The retired openViewMenu is fully removed in phase 7. */
+   it as stale. openViewMenu is now SHOP-ONLY (the 5 list cards moved to this menu + Row 3); its full
+   retirement waits on Shop coming into scope (spec §2 — "shop deferred, may be removed"). */
 function openSortMenu(card, anchorEl) {
   const cs = activeSession().cards[card]; const fields = SORT_FIELDS[card];
   if (!cs || !fields || !fields.length) return;
