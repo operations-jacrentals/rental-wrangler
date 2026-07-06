@@ -4290,7 +4290,12 @@ const FLAG_COND = {
     'no-card':          (r) => { const c = IDX.customer.get(r.customerId); return !!c && cardFlag(c) === 'none'; },
     'unsigned-card':    (r) => { const c = IDX.customer.get(r.customerId); if (!c || !hasValidCard(c)) return false; return !cardCurrentSigning(c, defaultCard(c)); },
     'unit-failed':      (r) => rentalUnitRecords(r).some((u) => u.inspectionStatus === 'Failed'),
-    'off-rent-overdue': (r) => r.status === 'Off Rent',
+    // §10 Overdue Return — fires on the stored Off Rent status AND on any rental still
+    // physically OUT (On/End Rent) whose scheduled return has passed. Mirrors the start-side
+    // `no-show` derivation and the same OUT_RENTAL_STATUSES + endDate<TODAY "overdue out" test
+    // the availability engine already uses (rentalsOverlappingUnit, categoryUnavailReason), so a
+    // window that ended without the unit coming back stops reading plain-green "On Rent".
+    'off-rent-overdue': (r) => r.status === 'Off Rent' || (OUT_RENTAL_STATUSES.has(r.status) && !!r.endDate && r.endDate < TODAY_ISO),
     'no-show':          (r) => r.status === 'Reserved' && !!r.startDate && parseISO(r.startDate) < TODAY,
     'starts-today':     (r) => r.status === 'Reserved' && !!r.startDate && dayDiff(TODAY, parseISO(r.startDate)) === 0,
     'starts-tomorrow':  (r) => r.status === 'Reserved' && !!r.startDate && dayDiff(TODAY, parseISO(r.startDate)) === 1,
