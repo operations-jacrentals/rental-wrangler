@@ -4855,7 +4855,8 @@ function customerSpectrumViz(c) {
 // "this one's unrecognized" signal isn't undercut by a flourish that implies a real match.
 const CATEGORY_MOTION = {
   excavator: 'mo-dig', skidsteer: 'mo-dig', trencher: 'mo-chop', grinder: 'mo-spin',
-  lift: 'mo-raise', attachment: 'mo-snap', roller: 'mo-press', buggy: 'mo-roll',
+  lift: 'mo-raise', scissor: 'mo-raise', telehandler: 'mo-raise',
+  attachment: 'mo-snap', roller: 'mo-press', buggy: 'mo-roll',
   generator: 'mo-spark', compressor: 'mo-puff', pump: 'mo-drip', truck: 'mo-roll',
   tractor: 'mo-roll', trailer: 'mo-roll', fuel: 'mo-slosh', heater: 'mo-flicker',
   tower: 'mo-pulse', saw: 'mo-chop', box: 'mo-none',
@@ -4871,9 +4872,11 @@ const CATEGORY_MOTION = {
    box glyph — NOT a machine shape — so a miss is visually obvious instead of silently wrong.
    Wrapped in .cat-glyph so the parent row/card hover triggers a per-family CSS-only motion
    (never JS-driven, degrades to a plain color change under prefers-reduced-motion).
-   ANIMATED VARIANTS (Jac, 2026-07-03): the excavator / lift / skid-steer families render
-   the CATEGORY_ANIM ambient loops (icons-anim.js — converted from Jac's supplied Lottie
-   artwork) instead of the static glyph; reduced-motion freezes them to the rest pose. */
+   ANIMATED VARIANTS (Jac, 2026-07-03): the boom-lift and skid-steer families render
+   the CATEGORY_ANIM hover-play loops (icons-anim.js — converted from Jac's supplied
+   Lottie artwork) instead of the static glyph. The excavator Lottie was dropped —
+   it read as a track loader, not a boom-arm digger (Jac) — so that family stays on
+   the static Tabler backhoe until correct artwork arrives. */
 function categoryIconFor(name) {
   const n = (name || '').toLowerCase();
   let key = 'box';
@@ -4882,7 +4885,9 @@ function categoryIconFor(name) {
   else if (/att\.|attach|attatch|grapple|box.?blade|bush.?hog|\bforks?\b|breaker|auger/.test(n)) key = 'attachment';
   else if (/skid|dozer|track.?loader|bobcat/.test(n)) key = 'skidsteer';
   else if (/excavat|backhoe|mini.?ex/.test(n)) key = 'excavator';
-  else if (/scissor|boom|man.?lift|aerial|telehandl|towable.?lift|\blift\b/.test(n)) key = 'lift';
+  else if (/scissor/.test(n)) key = 'scissor';
+  else if (/telehandl|lull|telescopic.?fork|fork.?lift/.test(n)) key = 'telehandler';
+  else if (/boom|man.?lift|aerial|towable.?lift|\blift\b/.test(n)) key = 'lift';
   else if (/roller|tamper|rammer/.test(n)) key = 'roller';
   else if (/buggy/.test(n)) key = 'buggy';
   else if (/generat|\bpower\b|genset|geny/.test(n)) key = 'generator';

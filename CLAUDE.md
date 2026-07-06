@@ -113,21 +113,28 @@ Reference implementations: `.login-*` and `.cancel-arc` blocks in `style.css`.
   Lucide hammer already on `CARD_ICON.shop`, so the two don't collide), the
   bespoke **sawblade** (`CATEGORY_ICON.grinder`, added 2026-07-03 — computed via
   trig, not hand-drawn freeform art; no Lucide/Tabler icon is a literal serrated
-  cutting disc), the `clipboard-question` (`inspectionsPending`, no Lucide
+  cutting disc), the bespoke **scissor lift** (`CATEGORY_ICON.scissor`, added
+  2026-07-03 — platform/X-frame/base simple geometry; no library icon exists and
+  a scissor lift is not a boom lift), the `clipboard-question` (`inspectionsPending`, no Lucide
   equivalent), and the gate-timeline status glyphs (`GATE_ICON`, still in
   `app.js`). Don't replace these with library icons without asking.
-- **Animated category glyphs** (Jac, 2026-07-03): the excavator / lift / skid-steer
-  families render ambient animated SVG loops from `icons-anim.js` (`CATEGORY_ANIM`) —
+- **Animated category glyphs** (Jac, 2026-07-03): the boom-lift / skid-steer
+  families render animated SVG loops from `icons-anim.js` (`CATEGORY_ANIM`) — PAUSED
+  until the parent row/card is hovered (Jac: no motion until hover, no orange tint) —
   converted BY HAND from Lottie artwork Jac supplied (LottieFiles), NOT from
   `tools/gen-icons.mjs` and NOT hand-drawn. Keyframes live in `style.css`
   ("ANIMATED CATEGORY GLYPHS"); reduced-motion freezes to the rest pose. If Jac
   supplies more Lottie files, convert the same way (nested translate(p)›anim›translate(-a)
-  groups so CSS rotations pivot at the Lottie anchors) — don't add lottie-web.
+  groups so CSS rotations pivot at the Lottie anchors) — don't add lottie-web. The
+  excavator conversion was DROPPED (2026-07-03: its artwork read as a track loader,
+  not a boom-arm digger) — that family stays on the static Tabler backhoe until
+  correct artwork arrives.
 - **Category icons are FAMILY-level, not per-model** (Jac, 2026-07-03): the real
   fleet has ~50 rate-card categories (see the `Fleet_Categories` sheet in Drive),
   not the 5 in the `data.js` demo seed. `categoryIconFor()` in `app.js` keyword-matches
-  a category name onto one of ~13 equipment-family glyphs in `CATEGORY_ICON`
-  (excavator, skid steer/dozer, lift, attachment, roller/compaction, trencher,
+  a category name onto one of ~15 equipment-family glyphs in `CATEGORY_ICON`
+  (excavator, skid steer/dozer, boom lift, scissor lift (bespoke X-frame glyph),
+  telehandler (Lucide forklift), attachment, roller/compaction, trencher,
   stump grinder, buggy, generator, compressor, pump, trailer, tractor, small-tool
   catch-all) — every size/model in a family shares its icon. An unmatched name falls
   to the neutral `box` glyph, not a machine shape, so a miss is visible instead of

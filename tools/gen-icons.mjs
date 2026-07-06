@@ -52,6 +52,7 @@ const LUCIDE = {
     pump: 'droplet', truck: 'truck', tractor: 'tractor',
     fuel: 'fuel', heater: 'flame', tower: 'radio-tower',
     attachment: 'toy-brick', roller: 'weight', trencher: 'pickaxe',
+    telehandler: 'forklift',
     box: 'box',
   },
 };
@@ -86,6 +87,9 @@ const CUSTOM = {
     skidsteer: `ico('<path d="M2 17a2 2 0 1 0 4 0a2 2 0 0 0 -4 0"/><path d="M12 17a2 2 0 1 0 4 0a2 2 0 0 0 -4 0"/><path d="M19 13v4a2 2 0 0 0 2 2h1"/><path d="M14 19h-10"/><path d="M4 15h10"/><path d="M9 11v-5h2a3 3 0 0 1 3 3v6"/><path d="M5 15v-3a1 1 0 0 1 1 -1h8"/><path d="M19 17h-3"/>')`,
     // Tabler "crane" (MIT) — Lucide's forklift read as a warehouse lift, not a boom/scissor/towable lift.
     lift: `ico('<path d="M6 21h6"/><path d="M9 21v-18l-6 6h18"/><path d="M9 3l10 6"/><path d="M17 9v4a2 2 0 1 1 -2 2"/>')`,
+    // bespoke scissor lift (Jac, 2026-07-03: a scissor lift is not a boom lift) —
+    // platform / X-frame / base+wheels, simple geometry like the sawblade precedent.
+    scissor: `ico('<rect x="3" y="3" width="18" height="4" rx="1"/><path d="m5 7 14 9"/><path d="m19 7-14 9"/><path d="M4 16h16"/><circle cx="7.5" cy="20" r="1.6"/><circle cx="16.5" cy="20" r="1.6"/>')`,
     // Tabler "caravan" (MIT, Jac 2026-07-03) — a towed box on a hitch reads as "trailer" better than Lucide's shipping container.
     trailer: `ico('<path d="M7 18a2 2 0 1 0 4 0a2 2 0 0 0 -4 0"/><path d="M11 18h7a2 2 0 0 0 2 -2v-7a2 2 0 0 0 -2 -2h-9.5a5.5 5.5 0 0 0 -5.5 5.5v3.5a2 2 0 0 0 2 2h2"/><path d="M8 7l7 -3l1 3"/><path d="M13 11m0 .5a.5 .5 0 0 1 .5 -.5h2a.5 .5 0 0 1 .5 .5v2a.5 .5 0 0 1 -.5 .5h-2a.5 .5 0 0 1 -.5 -.5z"/><path d="M20 16h2"/>')`,
     // Tabler "garden-cart" (MIT, Jac 2026-07-03) — tagged "wheelbarrow": single front wheel, angled tub, two rear handles.
@@ -110,7 +114,7 @@ const ORDER = {
       'serviceOrders', 'inspections', 'inspectionsPending', 'shop', 'parts', 'vendors',
       'expenses', 'files'],
   RING_ICON: ['mechanic', 'mtech', 'driver', 'office', 'sales'],
-  CATEGORY_ICON: ['excavator', 'skidsteer', 'lift', 'attachment', 'roller', 'trencher',
+  CATEGORY_ICON: ['excavator', 'skidsteer', 'lift', 'scissor', 'telehandler', 'attachment', 'roller', 'trencher',
     'grinder', 'buggy', 'generator', 'compressor', 'pump', 'truck', 'tractor', 'trailer',
     'fuel', 'heater', 'tower', 'saw', 'box'],
 };
