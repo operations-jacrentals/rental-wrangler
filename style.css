@@ -1577,6 +1577,11 @@ select.inline-input:focus-visible { outline: 2px solid var(--accent); outline-of
 .popup .lf-in { height: 32px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--txt); font: inherit; font-size: 12px; padding: 0 9px; }
 .popup .lf-in:focus { outline: none; border-color: var(--accent-line); }
 .lineform .pill { cursor: pointer; }
+/* Merge/fold picker (#482): the actions column is flex-shrink:0, so the long
+   "Fold another unpaid invoice…" blurb would set its max-content width and push
+   the column — and its right-aligned "Merge in" buttons — off-screen with no
+   wrap. Bound the card so the text wraps and the buttons stay in view. */
+.mergeform { width: min(300px, 74vw); }
 
 /* §0.6 History section — dotted separator + background shift, pinned bottom */
 .history { border-top: 2px dotted var(--line); background: var(--bg-2); border-radius: 0 0 12px 12px; padding: 12px; }
