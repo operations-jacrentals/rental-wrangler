@@ -1,5 +1,39 @@
 # Backend deploy queue — ready the moment auth is unblocked (2026-07-06)
 
+## ✅ STATUS 2026-07-06: queue DEPLOYED (prod version 62)
+- **perfReport** — DEPLOYED. Router + `perfReport_` handler live; verified end-to-end (a
+  synthetic POST landed a `_perf` row with the correct 11 columns). Client flush still lives
+  only on `build/areas-sprint`, so organic rows begin once that frontend ships to prod.
+- **unitDaily** — was ALREADY live (@57, 2026-07-03); the live `Code.js` was byte-identical
+  to `unit-daily-snapshots.gs`, so nothing to re-splice. (Confirm `installUnitDailyTrigger()`
+  has been run once in the editor if no `unitDaily` rows are accruing.)
+
+## ⛔ HOW to deploy this web app (learned the hard way, 2026-07-06)
+The Apps Script **REST API can `push` but CANNOT `deploy`** this web app: updating the
+deployment via the API **breaks its anonymous access** — the entryPoint still reports
+`ANYONE_ANONYMOUS` but the `/exec` URL 403s ("Access Denied — you need access") for anonymous
+callers, i.e. **the whole live backend goes DOWN**. An API rollback does NOT fix it. This
+took prod down briefly on 2026-07-06; recovery was an **editor** redeploy.
+**The deploy recipe that works:**
+1. `push` HEAD via the service account (safe — content only) — see the flow below.
+2. **Deploy from the Apps Script EDITOR**: open the project → Deploy → Manage deployments →
+   Edit the prod deployment → **New version**, Execute as **Me (operations@jacrentals.com)**,
+   Who has access **Anyone** → Deploy. Same exec URL; anonymous access preserved.
+   (The `deploy` subcommand in `gas-deploy-service-account.mjs` is now GUARDED against this.)
+
+### Auth for `push`: service account + DOMAIN-WIDE DELEGATION (configured 2026-07-06)
+A bare service account can't call the Apps Script API (its per-user API toggle can't be set
+for a SA identity → 403 "User has not enabled the Apps Script API", even with the project API
+on). Fix in place: the SA (`clasp-deployer@rental-wrangler-deploy.iam.gserviceaccount.com`,
+client_id `108241190981526622554`) has **domain-wide delegation** for the four `script.*` /
+`drive.file` scopes, and `push` impersonates a real user via `GAS_IMPERSONATE_SUBJECT`:
+```bash
+GAS_SA_KEY_B64=... GAS_IMPERSONATE_SUBJECT=operations@jacrentals.com \
+  node docs/handoffs/gas-deploy-service-account.mjs push
+```
+`operations@jacrentals.com` must have the Apps Script API toggle on at
+script.google.com/home/usersettings (it does) and edit access to the script (it owns it).
+
 ## Auth status (2026-07-06): clasp's user-OAuth is BLOCKED by Google's RAPT re-auth policy
 
 Confirmed with a **brand-new** OAuth consent (not a stale token) — it fails
@@ -31,22 +65,27 @@ https://script.google.com/d/1hw9A7Id3YIoiSCBkNFeDaKGRv-VtljFFIuBdQG5QULrgS0DjQhQ
 
 ## The queue (all ADDITIVE — splice into Code.gs, one push, one redeploy)
 
-| # | Item | Source | Wire-up | Post-deploy |
+| # | Item | Source | Wire-up | Status |
 |---|---|---|---|---|
-| 1 | **perfReport** — Web-Vitals sink → `_perf` tab (5k-row FIFO, metrics-only by construction) | `perf-report-backend.gs` | `if (action === 'perfReport') return perfReport_(body);` | Nothing — the client already flushes (fire-and-forget); data appears as sessions run |
-| 2 | **unitDaily snapshots (M4)** — daily unit hours/fleet-status history | `unit-daily-snapshots.gs` | router line per that file + run `installUnitDailyTrigger()` ONCE | Unblocks KPI trend sparklines + true hour-based utilization |
+| 1 | **perfReport** — Web-Vitals sink → `_perf` tab (5k-row FIFO, metrics-only by construction) | `perf-report-backend.gs` | `if (action === 'perfReport') return json(perfReport_(body));` (wrap in `json()` — `handle()` must return a ContentService output, not the bare `{ok:true}` the source's comment shows) | ✅ DEPLOYED @62 (2026-07-06) |
+| 2 | **unitDaily snapshots (M4)** — daily unit hours/fleet-status history | `unit-daily-snapshots.gs` | router line per that file + run `installUnitDailyTrigger()` ONCE | ✅ Already live @57 (2026-07-03) |
 
-Deploy flow via the service account (same deployment id, same exec URL — the script never
-calls a bare "new deployment" path, so the URL the app already calls stays fixed):
+Deploy flow (same deployment id, same exec URL). **`push` via the API, then deploy from the
+EDITOR** — the API `deploy` breaks anonymous access (see the ⛔ section above):
 ```bash
 npm i --no-save googleapis   # ephemeral, not committed
-#  splice both .gs files' contents into ~/rw-backend/Code.js (pull via the web editor's
-#  file view if clasp pull is also blocked, or via the Drive API — Code.js is not in git)
-GAS_SA_KEY_B64=... node docs/handoffs/gas-deploy-service-account.mjs push
-GAS_SA_KEY_B64=... node docs/handoffs/gas-deploy-service-account.mjs deploy "perfReport sink + unitDaily snapshots"
+#  pull the LIVE Code.js first (projects.getContent via the SA, or the web editor / Drive API
+#  — Code.js is not in git), splice the .gs addition(s) into ~/rw-backend/Code.js, node --check.
+GAS_SA_KEY_B64=... GAS_IMPERSONATE_SUBJECT=operations@jacrentals.com \
+  node docs/handoffs/gas-deploy-service-account.mjs push
+#  then: Apps Script editor → Deploy → Manage deployments → Edit prod → New version,
+#        Who has access: Anyone → Deploy.
 ```
-Verify: `curl -s -L -G --data-urlencode "action=load" --data-urlencode "password=<role-pw>" "$EXEC_URL" | head -c 120`
-then run one app session and confirm a `_perf` row lands; run `installUnitDailyTrigger()` in the editor once.
+Verify (anonymous, no secret needed — a wrong password returns JSON, proving the exec URL
+serves anonymously again after the editor deploy):
+`curl -sS -L -H 'Content-Type: text/plain;charset=utf-8' --data '{"action":"auth","password":"__wrong__"}' "$EXEC_URL"`
+→ expect `{"ok":false,"error":"unauthorized"}` (HTML/403 = anonymous access still broken).
+For a write path, POST the new action with a role password and read the tab back.
 
 ## NOT in the queue (bigger, later)
 - Collections Phase-2 outbound (`collectionsSend` + agency token) — needs the vendor pick first (spec collections OQ-13)

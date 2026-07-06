@@ -13,8 +13,13 @@
  *   5. The key, base64'd, in the GAS_SA_KEY_B64 env secret.
  *
  * USAGE:
- *   GAS_SA_KEY_B64=... node gas-deploy-service-account.mjs push   # push local Code.js + manifest
- *   GAS_SA_KEY_B64=... node gas-deploy-service-account.mjs deploy "description"  # new version + update the live deployment
+ *   GAS_SA_KEY_B64=... node gas-deploy-service-account.mjs push   # push local Code.js + manifest to HEAD (SAFE — content only)
+ *   ...then DEPLOY FROM THE APPS SCRIPT EDITOR (New version, Who has access: Anyone).
+ *
+ * ⛔ The `deploy` subcommand is GUARDED and should NOT be used for this web app: a REST-API
+ * deploy breaks the deployment's anonymous access (the /exec URL 403s for anonymous callers
+ * → the live backend goes DOWN), and an API rollback does not fix it. Only an editor redeploy
+ * restores anonymous access. Confirmed live 2026-07-06. See the note above deploy().
  *
  * DOMAIN-WIDE DELEGATION (required for the Apps Script REST API): a plain service
  * account can't call script.googleapis.com — the API's per-USER enablement toggle
@@ -79,6 +84,24 @@ async function push(dir) {
 }
 
 async function deploy(description) {
+  // ⛔ DANGER (confirmed live 2026-07-06): updating this web-app deployment via the Apps
+  // Script REST API BREAKS its anonymous access. The entryPoint still REPORTS
+  // ANYONE_ANONYMOUS, but the /exec URL then 403s ("Access Denied — you need access") for
+  // anonymous callers — i.e. the whole app's backend goes DOWN, because the API can't
+  // (re)establish the anonymous web-app grant regardless of the manifest's webapp.access.
+  // Rolling the version back via the API does NOT fix it either. The ONLY working fix is a
+  // redeploy through the Apps Script EDITOR (Deploy → Manage deployments → Edit → New
+  // version → Who has access: Anyone). So: `push` HEAD via this tool (safe — content only),
+  // then DEPLOY FROM THE EDITOR. This `deploy` command is kept for reference but is guarded.
+  if (process.env.GAS_DEPLOY_FORCE_ANON_BREAK_ACK !== 'yes-break-anonymous-access') {
+    console.error(
+      'REFUSING to deploy: the REST-API deploy breaks this web app\'s anonymous access and\n' +
+      'takes the live backend DOWN (see the note above this function). Push HEAD with\n' +
+      '`push`, then deploy from the Apps Script editor (New version, Who has access: Anyone).\n' +
+      'If you truly know what you are doing, re-run with\n' +
+      '  GAS_DEPLOY_FORCE_ANON_BREAK_ACK=yes-break-anonymous-access');
+    process.exit(2);
+  }
   const script = await scriptClient();
   const ver = await script.projects.versions.create({ scriptId: SCRIPT_ID, requestBody: { description: description || 'deploy' } });
   const versionNumber = ver.data.versionNumber;
