@@ -3468,11 +3468,14 @@ function membershipSectionHtml(c) {
   // invoice Pay/Charge/Refund row (5868) and Add-Card (canMoney). Print Agreement is not a money
   // action, so it stays visible to every role. (Handlers re-check canMoney() as defence-in-depth.)
   const mayMoney = canMoney();
-  const enrollBtn = (!isMem && mayMoney) ? actionPill('commit', status === 'Incomplete' ? 'Complete Enrollment' : 'Saddle Up — Enroll', { js: 'js-mem-enroll', h: 26, data: { rec: c.customerId } }) : '';
+  // Sign-up moved to the ACCOUNT-LEVEL agreement popup (spec memberships D5, Jac 2026-06-29):
+  // enrollment starts where the agreement is signed, not in this status section. Lifecycle
+  // actions on an EXISTING membership (cancel / pay-cancellation / print) stay here.
   const cancelBtn = (isMem && mayMoney) ? actionPill('danger', 'Cancel Membership', { js: 'js-mem-cancel', h: 26, data: { rec: c.customerId } }) : '';
   const payCxlBtn = (cxlInv && mayMoney) ? actionPill('money', 'Pay Cancellation ' + money2(invoiceTotals(cxlInv).balance), { js: 'js-mem-paycxl', h: 26, data: { rec: c.customerId } }) : '';
   const printBtn = stageSet ? actionPill('commit', 'Print Agreement', { js: 'js-print-magreement', h: 26, data: { rec: c.customerId } }) : '';
-  const actions = [enrollBtn, cancelBtn, payCxlBtn, printBtn].filter(Boolean).join('');
+  const enrollHint = (!isMem && mayMoney) ? `<div class="kv" style="justify-content:center"><span class="muted" style="font-size:10.5px">Enroll from the account agreement — open Agreement on this card</span></div>` : '';
+  const actions = [cancelBtn, payCxlBtn, printBtn].filter(Boolean).join('');
   return `<div class="section"><h4>Membership</h4><div class="fieldstack centered">
     ${kvPills(funnelPill(c.customerId, 'membership', c.membershipStage || 'N/A'))}
     ${stateBadge ? kvPills(stateBadge) : ''}
@@ -3481,6 +3484,7 @@ function membershipSectionHtml(c) {
     ${planBadges}
     ${membershipEconomicsHtml(c)}
     ${actions ? `<div class="kv pillrow">${actions}</div>` : ''}
+    ${enrollHint}
   </div></div>`;
 }
 /* ── F5 — enrollment / cancel / reactivate orchestration ──────────────────────────
@@ -10481,9 +10485,15 @@ function buildPopupEl(o, overlay, opts = {}) {
     const c = IDX.customer.get(o.recId);
     if (!c) { return false; }
     const ag = AGREEMENTS[c.agreementType] || AGREEMENTS.rental;
+    // Membership SIGN-UP lives here, at the account-level agreement (spec memberships D5,
+    // Jac 2026-06-29) — not in the customer card's Membership status section. Money-gated
+    // like every enroll path; the js-mem-enroll handler re-checks canMoney() as defence.
+    const magStatus = membershipStatus(c);
+    const magIsMem = magStatus === 'Active' || magStatus === 'Past Due';
+    const enrollFoot = (!magIsMem && canMoney()) ? `<button class="pill ignition js-mem-enroll" data-r="R17" data-rec="${c.customerId}">${magStatus === 'Incomplete' ? 'Complete Enrollment' : 'Saddle Up — Enroll'}</button>` : '';
     const pop = el('div', 'popup nc-popup');
     pop.innerHTML = popupShell({ icon: CARD_ICON.customers || '', title: ag.title, tag: 'Customer · agreement',
-      foot: `<button class="pill ghost js-close" data-r="R18">Close</button><button class="pill ignition js-edit-customer" data-r="R17" data-rec="${c.customerId}">Edit account</button>`,
+      foot: `<button class="pill ghost js-close" data-r="R18">Close</button>${enrollFoot}<button class="pill ignition js-edit-customer" data-r="R17" data-rec="${c.customerId}">Edit account</button>`,
       body: `
         <div class="nc-ag-meta">${esc(fullName(c))}${c.agreementSignedAt ? ` · accepted ${esc(c.agreementSignedAt)}` : ' · not yet signed'}</div>
         <div class="nc-agreement" tabindex="0">${esc(ag.text)}</div>
@@ -16751,8 +16761,11 @@ function mergeInvoiceInto(keepId, absorbId) {
   if (!invoiceMergeable(keep)) { toast(`Blocked: invoice ${invoiceShort(keepId)} has a payment or lock — can't merge into it (refund/unlock first).`); return; }
   if (!invoiceMergeable(src)) { toast(`Blocked: invoice ${invoiceShort(absorbId)} has a payment or lock — refund/unlock it before merging.`); return; }
   if (keep.customerId !== src.customerId) { toast('Blocked: those invoices belong to different customers.'); return; }
-  // move every line over, re-minting lids so allocations can never collide on the keeper
-  const moved = (src.lineItems || []).map((li) => Object.assign({}, li, { lid: lineLid() }));
+  // move every line over, re-minting lids so allocations can never collide on the keeper.
+  // Each moved line is stamped with its ORIGIN invoice (spec collections D3, Jac 2026-06-29) so a
+  // merged invoice stays auditable back to every source — the prerequisite for placing a merged
+  // debt stack with a collections agency. An existing originInvoiceId (a re-merge) is preserved.
+  const moved = (src.lineItems || []).map((li) => Object.assign({}, li, { lid: lineLid(), originInvoiceId: li.originInvoiceId || absorbId }));
   moved.forEach((li) => keep.lineItems.push(li));
   // union rentalIds + relink the absorbed invoice's rentals to the keeper (§7.5: one invoice per rental)
   (src.rentalIds || []).forEach((rid) => {
