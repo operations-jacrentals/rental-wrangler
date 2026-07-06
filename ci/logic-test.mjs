@@ -633,6 +633,26 @@ try {
       const ri = T.DATA.rentals.indexOf(rN); if (ri >= 0) T.DATA.rentals.splice(ri, 1); T.IDX.rental.delete(rN.rentalId);
     }
 
+    // 12j9) Sale-price engine (spec automated-pricing D1/D3, Jac 2026-06-29): scale off cost or
+    // MSRP, $25 rounding, off when unconfigured; lost-demand capture appends (market-research D3).
+    {
+      const co0 = T.__state.settings.company;
+      const cat = T.DATA.categories.find((c) => Number(c.msrp) > 0) || T.DATA.categories[0];
+      T.__state.settings.company = { ...(co0 || {}), salePriceBasis: 'msrp', saleBottomPct: 50, saleAskPct: 80, salePriceMode: 'approve' };
+      const s1 = T.salePriceSuggest(cat);
+      ok(!!s1 && s1.basis === 'msrp' && s1.bottom === Math.round(cat.msrp * 0.5 / 25) * 25 && s1.ask === Math.round(cat.msrp * 0.8 / 25) * 25, 'SPE: MSRP basis scales bottom/ask on $25 steps');
+      T.__state.settings.company = { ...(co0 || {}), salePriceBasis: 'cost', saleBottomPct: 55, salePriceMode: 'approve' };
+      const s2 = T.salePriceSuggest(cat);
+      const base = T.categoryCostBasis(cat);
+      if (base) ok(s2.base === base && s2.bottom === Math.round(base * 0.55 / 25) * 25 && s2.ask == null, 'SPE: cost basis uses avg unit cost; unset ask % stays null');
+      T.__state.settings.company = co0;
+      ok(T.salePriceSuggest(cat) === null || !T.salePricingCfg().on, 'SPE: engine is OFF when no percents are configured');
+      const ld0 = (cat.lostDemand || []).length;
+      cat.lostDemand = cat.lostDemand || []; cat.lostDemand.push({ when: T.TODAY_ISO, window: null, by: 'test' });
+      ok(cat.lostDemand.length === ld0 + 1, 'LOST: a lost-demand ask appends to the category record');
+      cat.lostDemand.pop();
+    }
+
     // 12k) Chat markdown — Wrangler's replies render **bold**/`code`, but stay XSS-safe (escape before format).
     {
       ok(/<strong>June 30, 2026<\/strong>/.test(T.wrChatFormat('Monday is **June 30, 2026**.')), 'WR-fmt: **bold** renders as <strong>');
