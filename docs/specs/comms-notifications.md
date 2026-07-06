@@ -9,6 +9,24 @@
 
 ---
 
+## ✅ Addendum — 2026-07-06 (Jac): customer THREADS in the chat dock
+
+- **D5 · Customer conversations live in the bottom chat rail** — the same dock surface as
+  team chat / Mr. Wrangler: a per-customer THREAD the operator talks in, not just one-shot
+  sends. Two-way: inbound replies (SMS via the Mocean inbound webhook; email via the
+  operations@ inbox) land in the customer's thread.
+- **D6 · Channel per message: text OR email**, picked in the composer. SMS rides the
+  Phase-1 `sendCustomerMessage` pipe; email is a sibling channel through the same gates
+  (isolation, allowlist, consent, quiet-hours-for-automated, cap, server-only log).
+- **D7 · Email FROM picker.** Sending an email offers a dropdown of the app's CONNECTED
+  addresses so the operator chooses which one it goes out as. Implementation direction:
+  the backend runs as operations@jacrentals.com — GmailApp send-as ALIASES are the
+  "connected emails" (server enumerates `GmailApp.getAliases()`; adding an address =
+  adding a Gmail send-as alias, no new OAuth). Server validates the chosen from against
+  the alias list (client choice is advisory, never trusted).
+- **Scope note:** this IS Phase 2 (with the reminder sweep + STOP webhook + Settings →
+  Notifications pane). Phase 1 (the one-shot SMS pipe) shipped 2026-07-06.
+
 ## ✅ Decisions — 2026-06-29 critique (Jac)
 
 These resolve the §11 Open Questions. **Priority note:** Jac wants this built **before GPS** (the SMS channel is the prerequisite for GPS stray alerts, `gps-tracking` D4) — and it also unblocks the dead Reputation KPI.
