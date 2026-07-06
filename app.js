@@ -1403,6 +1403,7 @@ const YARD_CENTER = { lat: 30.2366, lng: -93.3774 };   // Sulphur, LA — map de
 let _teMap = null, _teMarker = null, _teSession = null, _teDebounce = null;
 /** Open the inline editor for a unit's transport leg (delivery|recovery). */
 function openTransportEdit(rentalId, unitId, leg) {
+  if (!canMoney()) { toast('Transport & site editing is Office/Admin only.'); return; }   // spec maps-location D1 (Jac 2026-06-29): a site/leg edit reprices transport — money tier, whole edit
   const r = IDX.rental.get(rentalId); if (!r) return;
   const eu = unitId ? unitEntry(r, unitId) : null;
   const T = eu || r;
@@ -3467,11 +3468,14 @@ function membershipSectionHtml(c) {
   // invoice Pay/Charge/Refund row (5868) and Add-Card (canMoney). Print Agreement is not a money
   // action, so it stays visible to every role. (Handlers re-check canMoney() as defence-in-depth.)
   const mayMoney = canMoney();
-  const enrollBtn = (!isMem && mayMoney) ? actionPill('commit', status === 'Incomplete' ? 'Complete Enrollment' : 'Saddle Up — Enroll', { js: 'js-mem-enroll', h: 26, data: { rec: c.customerId } }) : '';
+  // Sign-up moved to the ACCOUNT-LEVEL agreement popup (spec memberships D5, Jac 2026-06-29):
+  // enrollment starts where the agreement is signed, not in this status section. Lifecycle
+  // actions on an EXISTING membership (cancel / pay-cancellation / print) stay here.
   const cancelBtn = (isMem && mayMoney) ? actionPill('danger', 'Cancel Membership', { js: 'js-mem-cancel', h: 26, data: { rec: c.customerId } }) : '';
   const payCxlBtn = (cxlInv && mayMoney) ? actionPill('money', 'Pay Cancellation ' + money2(invoiceTotals(cxlInv).balance), { js: 'js-mem-paycxl', h: 26, data: { rec: c.customerId } }) : '';
   const printBtn = stageSet ? actionPill('commit', 'Print Agreement', { js: 'js-print-magreement', h: 26, data: { rec: c.customerId } }) : '';
-  const actions = [enrollBtn, cancelBtn, payCxlBtn, printBtn].filter(Boolean).join('');
+  const enrollHint = (!isMem && mayMoney) ? `<div class="kv" style="justify-content:center"><span class="muted" style="font-size:10.5px">Enroll from the account agreement — open Agreement on this card</span></div>` : '';
+  const actions = [cancelBtn, payCxlBtn, printBtn].filter(Boolean).join('');
   return `<div class="section"><h4>Membership</h4><div class="fieldstack centered">
     ${kvPills(funnelPill(c.customerId, 'membership', c.membershipStage || 'N/A'))}
     ${stateBadge ? kvPills(stateBadge) : ''}
@@ -3480,6 +3484,7 @@ function membershipSectionHtml(c) {
     ${planBadges}
     ${membershipEconomicsHtml(c)}
     ${actions ? `<div class="kv pillrow">${actions}</div>` : ''}
+    ${enrollHint}
   </div></div>`;
 }
 /* ── F5 — enrollment / cancel / reactivate orchestration ──────────────────────────
@@ -5532,9 +5537,12 @@ function efld(card, rec, idField, field, ph, opts = {}) {
   const pfx = opts.pfx ? `<span class="pfx">${esc(opts.pfx)}</span>` : '';
   const sfx = (has && opts.sfx) ? `<span class="sfx">${esc(opts.sfx)}</span>` : '';
   // opts.admin → the edit is gated behind requireAdmin (Admin/Owner pass, others get the password popup);
+  // opts.money → the edit requires the money tier (canMoney) — display stays open, editing refuses below tier
+  //   (spec units-fleet D2: cost-field edits lock to money; no password escalation, a flat refusal);
   // opts.editKind → swap the startInlineEdit branch (e.g. 'unitCategory' opens a <select>).
   const adm = opts.admin ? ' data-admin="1"' : '';
-  return `<div class="kv${opts.wrap ? ' wrap' : ''}">${pfx}<span class="v inline-edit" data-edit="${opts.editKind || 'field'}" data-card="${card}" data-field="${field}" data-rec="${esc(String(rec[idField]))}" data-ph="${esc(ph)}" data-type="${opts.type || 'text'}"${opts.dot ? ' data-dot="1"' : ''}${adm}${opts.wrap ? ' style="white-space:normal"' : ''}>${disp}</span>${sfx}</div>`;
+  const mny = opts.money ? ' data-money="1"' : '';
+  return `<div class="kv${opts.wrap ? ' wrap' : ''}">${pfx}<span class="v inline-edit" data-edit="${opts.editKind || 'field'}" data-card="${card}" data-field="${field}" data-rec="${esc(String(rec[idField]))}" data-ph="${esc(ph)}" data-type="${opts.type || 'text'}"${opts.dot ? ' data-dot="1"' : ''}${adm}${mny}${opts.wrap ? ' style="white-space:normal"' : ''}>${disp}</span>${sfx}</div>`;
 }
 
 /* Card anatomy (Jac 2026-06-10): Section 0 = Notes on EVERY standard view.
@@ -6257,16 +6265,16 @@ const DETAIL = {
     const investment = `<div class="section"><h4>Investment</h4>
       <div class="split">
         <div class="side">
-          ${efld('units', u, 'unitId', 'purchasePrice', 'Purchase price', { type: 'number', sfx: 'paid', fmt: money })}
+          ${efld('units', u, 'unitId', 'purchasePrice', 'Purchase price', { type: 'number', sfx: 'paid', fmt: money, money: true })}
           ${efld('units', u, 'unitId', 'purchaseDate', 'Purchase date', { type: 'date', sfx: 'purchased', fmt: yr })}
-          ${efld('units', u, 'unitId', 'trueCost', 'True cost', { type: 'number', sfx: 'true cost', fmt: money })}
+          ${efld('units', u, 'unitId', 'trueCost', 'True cost', { type: 'number', sfx: 'true cost', fmt: money, money: true })}
           ${efld('units', u, 'unitId', 'purchaseHours', 'Hours at purchase', { type: 'number', sfx: 'at purchase', fmt: (v) => num(v) + ' HRS' })}
         </div>
         <div class="side r">
           ${kv(money(totalRev), { pfx: 'Total Revenue', derived: true })}
           ${kv(money(avgRevMo), { pfx: 'Monthly', derived: true })}
           ${kv(money(repair), { pfx: 'Work Orders', derived: true })}
-          ${kv(`${money(profit)}${roi != null ? ` · (${roi}%)` : ''}`, { pfx: 'Profit', derived: true })}
+          ${kv(`${money(profit)}${roi != null && canMoney() ? ` · (${roi}%)` : ''}`, { pfx: 'Profit', derived: true })}
         </div>
       </div>
       <div style="display:flex;justify-content:flex-end;margin-top:8px">${gatePill('unitFleetStatus', u.fleetStatus, 'js-fleetstatus', { rec: u.unitId })}</div></div>`;
@@ -6579,9 +6587,9 @@ const DETAIL = {
     const investment = `<div class="section"><h4>Investment</h4>
       <div class="split">
         <div class="side">
-          ${st.roi != null ? kv(`${st.roi}%`, { sfx: 'ROI', derived: true }) : ''}
+          ${st.roi != null && canMoney() ? kv(`${st.roi}%`, { sfx: 'ROI', derived: true }) : ''}
           ${kv(money(st.avgRevUnit), { sfx: '/unit revenue', derived: true })}${kv(money(st.avgExpUnit), { sfx: '/unit expenses', derived: true })}
-          ${kv(money(c.msrp), { sfx: 'MSRP' })}${kv(money(c.askPrice), { sfx: 'ask' })}${kv(money(c.bottomDollar), { sfx: 'bottom dollar' })}
+          ${kv(money(c.msrp), { sfx: 'MSRP' })}${kv(money(c.askPrice), { sfx: 'ask' })}${canMoney() ? kv(money(c.bottomDollar), { sfx: 'bottom dollar' }) : ''}
           ${catUtilKv(c)}
           ${efld('categories', c, 'categoryId', 'usefulLifeHours', 'Useful life (hrs)', { type: 'number', admin: true, fmt: (v) => num(v) + ' HRS', sfx: 'useful life' })}
           ${efld('categories', c, 'categoryId', 'endOfLifeYears', 'End of life (yrs)', { type: 'number', admin: true, fmt: (v) => v + ' YRS', sfx: 'end of life' })}
@@ -8167,14 +8175,14 @@ function wranglerDockEl() {
           const goto = m.focus && m.focus.id ? ` <button class="wr-goto js-wr-goto" data-ent="${esc(m.focus.entity)}" data-id="${esc(m.focus.id)}">${esc(wrRecLabel(m.focus.entity, m.focus.id))} →</button>` : '';
           act = m.filed
             ? `<span class="wr-actdone">✓ Applied — ${esc(sum)}</span>${goto}`
-            : `<div class="wr-apply"><div class="wr-apply-sum">Preview: ${esc(sum)}</div>${cut}${skip}${plan.ops.length ? `<button class="wr-actbtn wr-actbtn-build js-wr-apply" data-mi="${i}">✓ Apply these changes</button>` : '<span class="wr-apply-none">Nothing here I can safely apply.</span>'}</div>`;
+            : `<div class="wr-apply"><div class="wr-apply-sum">Preview: ${esc(sum)}</div>${cut}${skip}${plan.ops.length ? `<button class="wr-actbtn wr-actbtn-build js-wr-apply" data-r="R17" data-mi="${i}">✓ Apply these changes</button>` : '<span class="wr-apply-none">Nothing here I can safely apply.</span>'}</div>`;
         } else if (m.action && m.action.action === 'kpi') {
           const v = m.action._kpi || (m.action._kpi = wrValidateKpi(m.action));
           const valTxt = v.value == null ? '—' : v.value + '%';
           act = m.filed
             ? `<span class="wr-actdone">✓ Locked in — ${esc(v.ring.label)} (${esc(valTxt)})</span>`
             : v.ok
-              ? `<div class="wr-apply"><div class="wr-apply-sum">${esc(v.role)} · Ring ${v.idx + 1}: <b>${esc(v.ring.label)}</b> — live <b>${esc(valTxt)}</b></div><div class="wr-kpi-readback">${esc(kpiMetricReadback(v.ring.metric))}</div><button class="wr-actbtn wr-actbtn-build js-wr-kpi-lock" data-mi="${i}">✓ Lock in this KPI</button></div>`
+              ? `<div class="wr-apply"><div class="wr-apply-sum">${esc(v.role)} · Ring ${v.idx + 1}: <b>${esc(v.ring.label)}</b> — live <b>${esc(valTxt)}</b></div><div class="wr-kpi-readback">${esc(kpiMetricReadback(v.ring.metric))}</div><button class="wr-actbtn wr-actbtn-build js-wr-kpi-lock" data-r="R17" data-mi="${i}">✓ Lock in this KPI</button></div>`
               : `<div class="wr-apply"><div class="wr-apply-skip">can’t build that yet: ${esc(v.issues.join('; '))}</div></div>`;
         } else if (m.action) {
           const ak = m.action.action;
@@ -8184,7 +8192,7 @@ function wranglerDockEl() {
             ? `<span class="wr-actdone">✓ ${doneLbl}${m.issue ? ` · #${m.issue}` : ''}</span>`
             : m.filing
               ? `<span class="wr-actdone" style="color:var(--txt-3)">…filing</span>`
-              : `<button class="wr-actbtn${ak === 'plan' ? ' wr-actbtn-build' : ''} js-wr-act" data-mi="${i}">${btnLbl}</button>`;
+              : `<button class="wr-actbtn${ak === 'plan' ? ' wr-actbtn-build' : ''} js-wr-act" data-r="R17" data-mi="${i}">${btnLbl}</button>`;
         }
         const imgs = (m.images && m.images.length) ? `<div class="wr-bub-imgs">${m.images.map((img) => { const s = wrImgSrc(img); return s ? `<img src="${esc(s)}" alt="attached image">` : ''; }).join('')}</div>` : '';
         const files = (m.files && m.files.length) ? `<div class="wr-bub-files">${m.files.map((f) => `<span class="wr-file-chip" data-tip="${esc(f.name)}">${I.paperclip || '📎'}<span class="wr-file-n">${esc(f.name)}</span></span>`).join('')}</div>` : '';
@@ -8232,7 +8240,7 @@ function wranglerDockEl() {
     <div class="wr-feed">${turns}${o.busy ? '<div class="wr-msg assistant"><span class="wr-av">🤠</span><div class="wr-bub wr-think">…wrangling an answer</div></div>' : ''}</div>
     ${o.error ? `<div class="wr-err">${esc(o.error)}</div>` : ''}
     ${attachRow}
-    <div class="wr-compose"><label class="wr-attach js-wr-attach" data-tip="Attach a screenshot or a CSV/text file"><input type="file" accept="image/*,.csv,.tsv,.txt,.md,.log,text/csv,text/plain" class="js-wr-file" hidden multiple>${I.paperclip || '📎'}</label><input class="wr-in js-wr-in" placeholder="Ask Mr. Wrangler, or tell him what's broken…" value="${esc(o.draft || '')}" ${o.busy ? 'disabled' : ''} /><button class="wr-send js-wr-send" ${o.busy ? 'disabled' : ''} aria-label="Ask">${I.chev}</button></div>`;
+    <div class="wr-compose"><label class="wr-attach js-wr-attach" data-r="R21" data-tip="Attach a screenshot or a CSV/text file"><input type="file" accept="image/*,.csv,.tsv,.txt,.md,.log,text/csv,text/plain" class="js-wr-file" hidden multiple>${I.paperclip || '📎'}</label><input class="wr-in js-wr-in" placeholder="Ask Mr. Wrangler, or tell him what's broken…" value="${esc(o.draft || '')}" ${o.busy ? 'disabled' : ''} /><button class="wr-send js-wr-send" data-r="R17" ${o.busy ? 'disabled' : ''} aria-label="Ask">${I.chev}</button></div>`;
 }
 function mountWranglerDock() {
   const d = document.querySelector('.wrangler-dock'); if (!d) return;
@@ -10477,9 +10485,15 @@ function buildPopupEl(o, overlay, opts = {}) {
     const c = IDX.customer.get(o.recId);
     if (!c) { return false; }
     const ag = AGREEMENTS[c.agreementType] || AGREEMENTS.rental;
+    // Membership SIGN-UP lives here, at the account-level agreement (spec memberships D5,
+    // Jac 2026-06-29) — not in the customer card's Membership status section. Money-gated
+    // like every enroll path; the js-mem-enroll handler re-checks canMoney() as defence.
+    const magStatus = membershipStatus(c);
+    const magIsMem = magStatus === 'Active' || magStatus === 'Past Due';
+    const enrollFoot = (!magIsMem && canMoney()) ? `<button class="pill ignition js-mem-enroll" data-r="R17" data-rec="${c.customerId}">${magStatus === 'Incomplete' ? 'Complete Enrollment' : 'Saddle Up — Enroll'}</button>` : '';
     const pop = el('div', 'popup nc-popup');
     pop.innerHTML = popupShell({ icon: CARD_ICON.customers || '', title: ag.title, tag: 'Customer · agreement',
-      foot: `<button class="pill ghost js-close" data-r="R18">Close</button><button class="pill ignition js-edit-customer" data-r="R17" data-rec="${c.customerId}">Edit account</button>`,
+      foot: `<button class="pill ghost js-close" data-r="R18">Close</button>${enrollFoot}<button class="pill ignition js-edit-customer" data-r="R17" data-rec="${c.customerId}">Edit account</button>`,
       body: `
         <div class="nc-ag-meta">${esc(fullName(c))}${c.agreementSignedAt ? ` · accepted ${esc(c.agreementSignedAt)}` : ' · not yet signed'}</div>
         <div class="nc-agreement" tabindex="0">${esc(ag.text)}</div>
@@ -11422,6 +11436,9 @@ function wrValidatePlan(act) {
     if (raw.op === 'operate') {   // named business operation (e.g. billRental) — validated by its registry entry
       const def = WR_OPERATIONS[raw.name];
       if (!def) { issues.push(`I don’t know how to “${raw.name}” yet`); return; }
+      // Money-tier gate (spec wrangler-ai D1, Jac 2026-06-29): Wrangler must never be a back door
+      // around the human-flow money gate — billing + payments require the SAME tier the UI enforces.
+      if (def.money && !canMoney()) { issues.push(`invoicing and payments are Office/Admin only — this login can’t move money through Mr. Wrangler`); return; }
       const v = def.validate(raw.params || {});
       if (v.issue) { issues.push(v.issue); return; }
       ops.push({ op: 'operate', name: raw.name, params: raw.params || {}, summary: v.summary });
@@ -11483,6 +11500,12 @@ function wrValidatePlan(act) {
       const t = rr.rec;
       if (!t) { issues.push(`no ${ent.label} “${raw.id}”`); return; }
       const c = wrCleanFields(raw.entity, raw.fields);
+      // Money-tier gate on rate authoring (spec wrangler-ai D1): a rate poisons every future
+      // quote — rate fields match the human rate-edit gate, stripped (never written) below money tier.
+      if (!canMoney()) {
+        const mk = Object.keys(c.out).filter((k) => WR_MONEY_FIELDS.has(k));
+        if (mk.length) { mk.forEach((k) => { delete c.out[k]; }); issues.push(`rate changes are Office/Admin only — skipped ${mk.join(', ')}`); }
+      }
       if (Object.keys(c.out).length) ops.push({ op: 'update', entity: raw.entity, id: idOf(raw.entity, t), fields: c.out, target: t });
     } else {
       if (!ent.create) { issues.push(`${ent.label}s can’t be created this way`); return; }
@@ -11587,6 +11610,7 @@ const WR_CREATE = {
 // See specs/…wrangler-full-action-parity (Stage 2).
 const WR_OPERATIONS = {
   billRental: {
+    money: true,   // requires canMoney() — gated in wrValidatePlan (spec wrangler-ai D1)
     // Pick the rental: by rentalId, OR by customer (name/phone) → their one un-invoiced rental.
     _pick(p) {
       if (p && p.rentalId) { const r = IDX.rental.get(p.rentalId); return r ? { rental: r } : { issue: `no rental “${p.rentalId}”` }; }
@@ -11614,9 +11638,10 @@ const WR_OPERATIONS = {
       return { summary: `invoice ${label} for ${cust ? cust.name : r.customerId} (${fmtWindow(r.startDate, r.endDate)})${pick.picked > 1 ? ` — most recent of ${pick.picked}` : ''}` };
     },
     selfToasts: true,   // createInvoiceForRental already toasts; don't add a second
-    apply(p) { const pick = this._pick(p); if (pick.issue || !pick.rental) return null; createInvoiceForRental(pick.rental.rentalId); return { entity: 'invoices', id: IDX.rental.get(pick.rental.rentalId)?.invoiceId || null }; },   // wraps the REAL billing path (pricing engine, 28-day cap, nav + toast)
+    apply(p) { const pick = this._pick(p); if (pick.issue || !pick.rental) return null; createInvoiceForRental(pick.rental.rentalId); const invId = IDX.rental.get(pick.rental.rentalId)?.invoiceId || null; const inv = invId ? IDX.invoice.get(invId) : null; if (inv) logAction(inv, 'Invoiced via Mr. Wrangler'); return { entity: 'invoices', id: invId }; },   // wraps the REAL billing path (pricing engine, 28-day cap, nav + toast); provenance stamp per spec wrangler-ai D4
   },
   recordPayment: {
+    money: true,   // requires canMoney() — gated in wrValidatePlan (spec wrangler-ai D1)
     // Record a CASH or CHECK payment on an existing invoice (by invoiceId, OR by customer → their one open
     // invoice). The backend is authoritative (caps at the live balance). NEVER a card/ACH charge — method is
     // cash|check only, enforced here AND in postManualPayment.
@@ -11655,6 +11680,7 @@ const WR_OPERATIONS = {
       let amt = (p.amount != null) ? Number(p.amount) : t.balance;
       amt = Math.min(amt, t.balance);
       await postManualPayment({ invoiceId: inv.invoiceId, amountCents: Math.round(amt * 100), method, checkNum: method === 'check' ? String(p.checkNum || '').trim() : '' });
+      logAction(inv, `${money2(amt)} ${method} payment recorded via Mr. Wrangler`);   // provenance stamp (spec wrangler-ai D4) — an auditor can tell a Wrangler-assisted entry from a human one
       return { entity: 'invoices', id: inv.invoiceId };   // bring the user to the invoice that was paid
     },
   },
@@ -13943,7 +13969,7 @@ function onClick(e) {
   if (closest('.js-sortdir')) { const card = closest('.js-sortdir').dataset.card; const cs = activeSession().cards[card]; cs.sort.dir = cs.sort.dir === 'asc' ? 'desc' : 'asc'; saveSort(card, cs.sort); render(); return; }
 
   // inline edit (click a value → input)
-  if (closest('.inline-edit')) { e.stopPropagation(); const _ie = closest('.inline-edit'); if (_ie.dataset.admin === '1' && !adminUnlocked()) return requireAdmin('Categories and pricing are Admin-only.', () => startInlineEdit(_ie)); return startInlineEdit(_ie); }
+  if (closest('.inline-edit')) { e.stopPropagation(); const _ie = closest('.inline-edit'); if (_ie.dataset.admin === '1' && !adminUnlocked()) return requireAdmin('Categories and pricing are Admin-only.', () => startInlineEdit(_ie)); if (_ie.dataset.money === '1' && !canMoney()) return toast('Cost fields are Office/Admin only.'); return startInlineEdit(_ie); }
 
   // X-to-swap / remove on pills (handle before the pill-open)
   const xEl = closest('.x');
@@ -16735,8 +16761,11 @@ function mergeInvoiceInto(keepId, absorbId) {
   if (!invoiceMergeable(keep)) { toast(`Blocked: invoice ${invoiceShort(keepId)} has a payment or lock — can't merge into it (refund/unlock first).`); return; }
   if (!invoiceMergeable(src)) { toast(`Blocked: invoice ${invoiceShort(absorbId)} has a payment or lock — refund/unlock it before merging.`); return; }
   if (keep.customerId !== src.customerId) { toast('Blocked: those invoices belong to different customers.'); return; }
-  // move every line over, re-minting lids so allocations can never collide on the keeper
-  const moved = (src.lineItems || []).map((li) => Object.assign({}, li, { lid: lineLid() }));
+  // move every line over, re-minting lids so allocations can never collide on the keeper.
+  // Each moved line is stamped with its ORIGIN invoice (spec collections D3, Jac 2026-06-29) so a
+  // merged invoice stays auditable back to every source — the prerequisite for placing a merged
+  // debt stack with a collections agency. An existing originInvoiceId (a re-merge) is preserved.
+  const moved = (src.lineItems || []).map((li) => Object.assign({}, li, { lid: lineLid(), originInvoiceId: li.originInvoiceId || absorbId }));
   moved.forEach((li) => keep.lineItems.push(li));
   // union rentalIds + relink the absorbed invoice's rentals to the keeper (§7.5: one invoice per rental)
   (src.rentalIds || []).forEach((rid) => {
