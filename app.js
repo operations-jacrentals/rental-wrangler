@@ -1783,6 +1783,52 @@ function isUnitAvailableFor(u, startISO, endISO, selfId) {
   if (u.inspectionStatus === 'Failed') return false;
   return rentalsOverlappingUnit(u.unitId, startISO, endISO, selfId).length === 0;
 }
+/* ── Sale-price engine (spec automated-pricing D1/D3, Jac 2026-06-29) ──────────────
+   Suggests a category's used-sale BOTTOM DOLLAR + ASKING PRICE from an owner-set scale:
+   a % of the category's avg unit cost, or a % of its MSRP. Manager+ SEES suggestions and
+   ACCEPTS them (writes c.bottomDollar / c.askPrice); Settings picks approve-vs-auto.
+   AUTO mode applies drift only under a manager+ session — a staff login never writes
+   pricing. Config rides settings.salePricing { basis:'cost'|'msrp', bottomPct, askPct,
+   mode:'approve'|'auto' } (additive blob; absent = engine off). */
+function salePricingCfg() {
+  const co = (state.settings && state.settings.company) || {};
+  const num = (v, d) => (isFinite(Number(v)) && Number(v) > 0 ? Number(v) : d);
+  return { basis: co.salePriceBasis === 'msrp' ? 'msrp' : 'cost', bottomPct: num(co.saleBottomPct, 0), askPct: num(co.saleAskPct, 0), mode: co.salePriceMode === 'auto' ? 'auto' : 'approve', on: !!(num(co.saleBottomPct, 0) || num(co.saleAskPct, 0)) };
+}
+function categoryCostBasis(c) {
+  const us = DATA.units.filter((u) => u.categoryId === c.categoryId && (Number(u.trueCost) || Number(u.purchasePrice)));
+  if (!us.length) return 0;
+  return Math.round(us.reduce((a, u) => a + (Number(u.trueCost) || Number(u.purchasePrice) || 0), 0) / us.length);
+}
+function salePriceSuggest(c) {
+  const cfg = salePricingCfg(); if (!cfg.on) return null;
+  const base = cfg.basis === 'msrp' ? (Number(c.msrp) || 0) : categoryCostBasis(c);
+  if (!base) return null;
+  const r2 = (x) => Math.round(x / 25) * 25;   // sale prices land on clean $25 steps
+  return { basis: cfg.basis, base, bottom: cfg.bottomPct ? r2(base * cfg.bottomPct / 100) : null, ask: cfg.askPct ? r2(base * cfg.askPct / 100) : null, mode: cfg.mode };
+}
+/* AUTO mode: apply drifted suggestions once per boot — manager+ sessions only. */
+function salePricingAutoApply() {
+  const cfg = salePricingCfg();
+  if (!cfg.on || cfg.mode !== 'auto') return;
+  if (currentRole && roleTier(currentRole) < tierRank('manager')) return;   // never auto-write pricing under a sub-manager login
+  let n = 0;
+  DATA.categories.forEach((c) => {
+    const sug = salePriceSuggest(c); if (!sug) return;
+    const patch = [];
+    if (sug.bottom != null && Number(c.bottomDollar) !== sug.bottom) { c.bottomDollar = sug.bottom; patch.push(`bottom ${money(sug.bottom)}`); }
+    if (sug.ask != null && Number(c.askPrice) !== sug.ask) { c.askPrice = sug.ask; patch.push(`ask ${money(sug.ask)}`); }
+    if (patch.length) { logAction(c, `Sale-price engine (auto, ${sug.basis} basis): ${patch.join(' · ')}`); reindex('categories', c); n++; }
+  });
+  if (n) toast(`Sale-price engine updated ${n} categor${n === 1 ? 'y' : 'ies'} (auto mode).`);
+}
+/* Lost-demand capture (spec market-research D3, Jac 2026-06-29): a customer asked for a
+   category with 0 available — one tap logs the ask onto cat.lostDemand[] (additive, rides
+   the generic sync). Volume of asks per category feeds purchasing/fleet-spread decisions. */
+function lostDemandBtn(c) {
+  const n = (c.lostDemand || []).length;
+  return `<button class="catr-slot js-lost-demand" data-r="R5b" data-cat="${esc(c.categoryId)}" data-tip="A customer wanted one and none were free — log the lost ask${n ? ` (${n} logged)` : ''}"><span class="add-field anchor" style="height:20px;font-size:10px">+Lost${n ? ` ${n}` : ''}</span></button>`;
+}
 function categoryAvailableCount(catId, startISO, endISO, selfId) {
   return DATA.units.filter((u) => u.categoryId === catId && isUnitAvailableFor(u, startISO, endISO, selfId)).length;
 }
@@ -3806,6 +3852,16 @@ function settingsCompanyPane(o) {
         ${segCtl([{ label: 'Off', js: 'js-retro-set', data: { val: 'off' }, on: retro ? null : 'gray' }, { label: 'On', js: 'js-retro-set', data: { val: 'on' }, on: retro ? 'green' : null }])}
       </label>
       <p class="set-note"><strong>On</strong> (default): extending a rental bills the cheapest price for <strong>all</strong> the days rented — what's already paid counts toward it (a week paid rolls into the month). <strong>Off</strong>: the extension is billed as a fresh rental of just the added days; the original invoice price stays as it was.</p>
+      <div class="set-pane-head" style="margin-top:14px"><h4>Used-Sale Price Engine</h4><p>Suggests each category's <strong>Bottom Dollar</strong> and <strong>Asking Price</strong> from a scale you set — % of avg unit cost, or % of MSRP (spec automated-pricing, Jac 2026-06-29). Leave the percents blank to keep the engine off.</p></div>
+      <label class="co-fld co-fld-toggle"><span class="kpi-cap">PRICE BASIS</span>
+        ${segCtl([{ label: '% of Cost', js: 'js-spe-basis', data: { val: 'cost' }, on: (co.salePriceBasis || 'cost') === 'cost' ? 'green' : null }, { label: '% of MSRP', js: 'js-spe-basis', data: { val: 'msrp' }, on: co.salePriceBasis === 'msrp' ? 'green' : null }])}
+      </label>
+      <label class="co-fld co-fld-goal"><span class="kpi-cap">BOTTOM DOLLAR %</span><span class="co-goal-wrap"><input class="co-in co-in-num js-co-field" data-f="saleBottomPct" value="${co.saleBottomPct != null ? esc(co.saleBottomPct) : ''}" placeholder="e.g. 55" inputmode="numeric" autocomplete="off"/><span class="co-goal-suffix">%</span></span></label>
+      <label class="co-fld co-fld-goal"><span class="kpi-cap">ASKING PRICE %</span><span class="co-goal-wrap"><input class="co-in co-in-num js-co-field" data-f="saleAskPct" value="${co.saleAskPct != null ? esc(co.saleAskPct) : ''}" placeholder="e.g. 80" inputmode="numeric" autocomplete="off"/><span class="co-goal-suffix">%</span></span></label>
+      <label class="co-fld co-fld-toggle"><span class="kpi-cap">APPLY MODE</span>
+        ${segCtl([{ label: 'Manager approves', js: 'js-spe-mode', data: { val: 'approve' }, on: (co.salePriceMode || 'approve') === 'approve' ? 'green' : null }, { label: 'Full auto', js: 'js-spe-mode', data: { val: 'auto' }, on: co.salePriceMode === 'auto' ? 'yellow' : null }])}
+      </label>
+      <p class="set-note"><strong>Manager approves</strong>: suggestions show on each category's Investment plate with an Accept button (Manager+). <strong>Full auto</strong>: drifted prices apply themselves at boot — only while a Manager+ is signed in, and every change lands in the category's audit log.</p>
       <div class="co-preview">
         <span class="kpi-cap">RECEIPT PREVIEW</span>
         <div class="co-receipt"><div class="co-receipt-brand">${esc(companyDraftName(co))}</div><div class="co-receipt-sub">${esc(companyDraftTagline(co))}</div></div>
@@ -5325,11 +5381,11 @@ const ROWS = {
       const dlabel = (nd && daysAhead >= 0 && daysAhead <= 7) ? DOW3[nd.getDay()] : fmtShortDate(next.iso).replace(' 0', ' ');
       const when = `${dlabel}${next.min != null ? ` ${compactClock(next.min)}` : ''}`;
       const nu = IDX.unit.get(next.unitId);
-      lead = `<button class="catr-slot js-cat-next" data-unit="${esc(next.unitId)}" data-tip="Next free: ${esc(nu ? nu.name : 'unit')} on ${esc(when)} (4-hr turnaround) — tap to open it">${badge(`Next ${when}`, 'red')}</button>`;
+      lead = `<button class="catr-slot js-cat-next" data-unit="${esc(next.unitId)}" data-tip="Next free: ${esc(nu ? nu.name : 'unit')} on ${esc(when)} (4-hr turnaround) — tap to open it">${badge(`Next ${when}`, 'red')}</button>${lostDemandBtn(c)}`;
     } else {
       // 0 free and no return date to show → tell the salesperson WHY in one word (Jac).
       const why = categoryUnavailReason(c.categoryId);
-      lead = `<div class="catr-slot catr-slot-none" data-tip="None available — ${esc(why.toLowerCase())}">${badge(`None · ${why}`, 'red')}</div>`;
+      lead = `<div class="catr-slot catr-slot-none" data-tip="None available — ${esc(why.toLowerCase())}">${badge(`None · ${why}`, 'red')}</div>${lostDemandBtn(c)}`;
     }
     // The three status pills (Passed · Not Ready · Failed inspection) filter Units to that
     // status in this category via the established js-fleet-filter path (like the detail mixbar).
@@ -6704,6 +6760,7 @@ const DETAIL = {
     const fleet = `<div class="section"><h4>Fleet Summary</h4><div class="fieldstack">
       ${st.forSale ? kvPills(badge(st.forSale + ' For Sale', 'purple')) : ''}
       ${kv(`${num(st.avgHours)} HRS`, { sfx: 'avg hours', derived: true })}
+      ${(c.lostDemand || []).length ? kv(`${(c.lostDemand || []).length}`, { sfx: 'lost-demand asks', derived: true }) : ''}
       ${c.description ? kv(c.description, { wrap: true }) : ''}
     </div></div>`;
     // every unit in the category — R2 linked pill + R4 derived status pill (Jac 2026-06-12)
@@ -6720,6 +6777,13 @@ const DETAIL = {
           ${st.roi != null && canMoney() ? kv(`${st.roi}%`, { sfx: 'ROI', derived: true }) : ''}
           ${kv(money(st.avgRevUnit), { sfx: '/unit revenue', derived: true })}${kv(money(st.avgExpUnit), { sfx: '/unit expenses', derived: true })}
           ${kv(money(c.msrp), { sfx: 'MSRP' })}${kv(money(c.askPrice), { sfx: 'ask' })}${canMoney() ? kv(money(c.bottomDollar), { sfx: 'bottom dollar' }) : ''}
+          ${(() => {   // sale-price engine suggestion (spec automated-pricing D1/D3) — Manager+ sees + accepts
+            if (!currentRole || roleTier(currentRole) < tierRank('manager')) { if (currentRole) return ''; }
+            const sug = salePriceSuggest(c); if (!sug || sug.mode !== 'approve') return '';
+            const drift = (sug.bottom != null && Number(c.bottomDollar) !== sug.bottom) || (sug.ask != null && Number(c.askPrice) !== sug.ask);
+            if (!drift) return '';
+            return `<div class="kv" style="gap:7px">${kv(`${sug.bottom != null ? money(sug.bottom) : '—'} / ${sug.ask != null ? money(sug.ask) : '—'}`, { sfx: `engine bottom/ask (${sug.basis === 'msrp' ? '% MSRP' : '% cost'})`, derived: true })}${actionPill('commit', 'Accept', { js: 'js-spe-accept', h: 22, data: { rec: c.categoryId } })}</div>`;
+          })()}
           ${catUtilKv(c)}
           ${efld('categories', c, 'categoryId', 'usefulLifeHours', 'Useful life (hrs)', { type: 'number', admin: true, fmt: (v) => num(v) + ' HRS', sfx: 'useful life' })}
           ${efld('categories', c, 'categoryId', 'endOfLifeYears', 'End of life (yrs)', { type: 'number', admin: true, fmt: (v) => v + ' YRS', sfx: 'end of life' })}
@@ -13733,6 +13797,8 @@ function onClick(e) {
   // Rental Rules tab
   if (closest('.js-rule-set')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-rule-set'); if (o) { o.draftSettings = o.draftSettings || {}; o.draftSettings.rentalRules = o.draftSettings.rentalRules || { ...((state.settings && state.settings.rentalRules) || {}) }; o.draftSettings.rentalRules[b.dataset.rule] = b.dataset.val === 'required' ? 'required' : 'off'; reSettings(); } return; }
   if (closest('.js-retro-set')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-retro-set'); if (o) { o.draftSettings = o.draftSettings || {}; o.draftSettings.company = o.draftSettings.company || { ...((state.settings && state.settings.company) || {}) }; o.draftSettings.company.retroactivePricing = b.dataset.val === 'on'; reSettings(); } return; }
+  if (closest('.js-spe-basis')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-spe-basis'); if (o) { o.draftSettings = o.draftSettings || {}; o.draftSettings.company = o.draftSettings.company || { ...((state.settings && state.settings.company) || {}) }; o.draftSettings.company.salePriceBasis = b.dataset.val; reSettings(); } return; }
+  if (closest('.js-spe-mode')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-spe-mode'); if (o) { o.draftSettings = o.draftSettings || {}; o.draftSettings.company = o.draftSettings.company || { ...((state.settings && state.settings.company) || {}) }; o.draftSettings.company.salePriceMode = b.dataset.val; reSettings(); } return; }
   // Custom Fields tab
   if (closest('.js-cf-entity')) { e.stopPropagation(); const o = state.overlay; if (o) { o.cfEntity = closest('.js-cf-entity').dataset.ent; reSettings(); } return; }
   if (closest('.js-cf-type')) { e.stopPropagation(); const o = state.overlay; if (o) { o.cfDraft = { ...(o.cfDraft || { label: '', type: 'text', required: false }), type: closest('.js-cf-type').dataset.type }; reSettings(); } return; }
@@ -13832,6 +13898,8 @@ function onClick(e) {
   if (closest('.js-refund-invoice')) { e.stopPropagation(); if (state.overlay) { state.overlay.confirmRefund = true; state.overlay.error = ''; renderOverlay(); } return; }
   if (closest('.js-refund-cancel')) { e.stopPropagation(); if (state.overlay) { state.overlay.confirmRefund = false; state.overlay.refundAlloc = null; renderOverlay(); } return; }
   if (closest('.js-refund-confirm')) { e.stopPropagation(); return refundInvoiceFlow(closest('.js-refund-confirm').dataset.rec); }
+  if (closest('.js-spe-accept')) { e.stopPropagation(); if (currentRole && roleTier(currentRole) < tierRank('manager')) { toast('Accepting engine prices is Manager-tier and up.'); return; } const c = IDX.category.get(closest('.js-spe-accept').dataset.rec); const sug = c && salePriceSuggest(c); if (!sug) return; const patch = []; if (sug.bottom != null && Number(c.bottomDollar) !== sug.bottom) { c.bottomDollar = sug.bottom; patch.push(`bottom ${money(sug.bottom)}`); } if (sug.ask != null && Number(c.askPrice) !== sug.ask) { c.askPrice = sug.ask; patch.push(`ask ${money(sug.ask)}`); } if (patch.length) { logAction(c, `Sale-price engine accepted (${sug.basis} basis): ${patch.join(' · ')}`); reindex('categories', c); toast(`${c.name} — engine prices accepted.`); } render(); return; }
+  if (closest('.js-lost-demand')) { e.stopPropagation(); const b = closest('.js-lost-demand'); const c = IDX.category.get(b.dataset.cat); if (!c) return; c.lostDemand = c.lostDemand || []; const aw = state.availWin; c.lostDemand.push({ when: TODAY_ISO, window: aw ? { start: aw.start, end: aw.end } : null, by: currentRole || '' }); logAction(c, `Lost demand logged — a customer wanted one, none free${aw ? ` (${fmtWindow(aw.start, aw.end)})` : ''}`); reindex('categories', c); toast(`Lost ask logged for ${c.name} — ${c.lostDemand.length} on record.`); render(); return; }
   if (closest('.js-blacklist')) { e.stopPropagation(); const b = closest('.js-blacklist'); const c = IDX.customer.get(b.dataset.rec); if (!c || c.accountType === 'Blacklisted') return; if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = 'Click again — blacklist'; return; } c._prevAccountType = c.accountType || ''; c.accountType = 'Blacklisted'; c.blacklistedAt = TODAY_ISO; c.activityLog = c.activityLog || []; c.activityLog.push({ when: TODAY_ISO, text: `Blacklisted by ${currentRole || 'operator'}` }); reindex('customers', c); toast(`${c.name} blacklisted — new rentals blocked.`); render(); return; }   // spec customers-crm D3: ANY role can blacklist; the audit trail is the control
   if (closest('.js-blacklist-lift')) { e.stopPropagation(); const c = IDX.customer.get(closest('.js-blacklist-lift').dataset.rec); if (!c || c.accountType !== 'Blacklisted') return; c.accountType = c._prevAccountType || 'Non-Business'; delete c._prevAccountType; c.activityLog = c.activityLog || []; c.activityLog.push({ when: TODAY_ISO, text: `Blacklist lifted by ${currentRole || 'operator'}` }); reindex('customers', c); toast(`${c.name} — blacklist lifted.`); render(); return; }
   if (closest('.js-flag-ov')) { e.stopPropagation(); const o = state.overlay; if (!o || o.kind !== 'settings') return; const b = closest('.js-flag-ov'); captureTeamEdits(o); if (!o.draftSettings) o.draftSettings = JSON.parse(JSON.stringify((o.config && o.config.settings) || state.settings || {})); const ov = o.draftSettings.flagOverrides || (o.draftSettings.flagOverrides = {}); const m = ov[b.dataset.ent] || (ov[b.dataset.ent] = {}); const cur = m[b.dataset.id] || {}; if (b.dataset.val === 'off') cur.off = true; else delete cur.off; if (Object.keys(cur).length) m[b.dataset.id] = cur; else delete m[b.dataset.id]; reSettings(); return; }
@@ -17473,6 +17541,7 @@ function finishLoad() {
   buildIndexes(); state.cascade = createCascade(DATA); booting = false; render();
   // (views no longer pull from the backend — personal per-device "my views", spec search-views D2)
   loadGroupOrderFromBackend();                                  // pull THIS role's saved card-group order
+  salePricingAutoApply();                                       // used-sale price engine, auto mode (manager+ sessions only)
   loadChats();                                                  // pull the shared team-chat threads (§ team-chat sync)
   wranglerRailLoad();                                           // load the Mr. Wrangler rail from IndexedDB (+ one-time localStorage migration)
   refreshWranglerRequests();                                    // §18e populate the approval-inbox badge
@@ -17940,7 +18009,7 @@ function exposeTestApi() {
       latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore, wranglerRailLoad, wrOffloadChatImages, wrEvictChatBlobs, driveViewUrl, mergeWranglerRails,
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
-      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, setFunnelStage, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, addMonthsISO, openMembershipEnroll, membershipEnrollCommit, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, getEntityColor, getEntityFlags, isEmptyMockDraft, sweepEmptyDrafts, createInvoiceForRental, syncRentalLines, rentalLineItems, setRole: (r) => { currentRole = r || ''; render(); },
+      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, setFunnelStage, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, addMonthsISO, openMembershipEnroll, membershipEnrollCommit, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, getEntityColor, getEntityFlags, isEmptyMockDraft, sweepEmptyDrafts, createInvoiceForRental, syncRentalLines, rentalLineItems, salePriceSuggest, salePricingCfg, categoryCostBasis, setRole: (r) => { currentRole = r || ''; render(); },
       openCustomerForm, renderOverlay, render, cardComplete, cardCaptureState, cardHasSelfie, cardHasSignature, captureSelfie, captureSignature, __state: state };   // UI drivers for headless screenshot/e2e tests
 
   } catch (e) { /* no window (non-browser) */ }
