@@ -85,11 +85,11 @@ const CUSTOM = {
     // rejected — no icon set draws real rental equipment; simple computed geometry,
     // same precedent as the sawblade/scissor) ──
     dozer: `ico('<path d="M2 17a2 2 0 1 0 4 0a2 2 0 0 0 -4 0"/><path d="M12 17a2 2 0 1 0 4 0a2 2 0 0 0 -4 0"/><path d="M19 13v4a2 2 0 0 0 2 2h1"/><path d="M14 19h-10"/><path d="M4 15h10"/><path d="M9 11v-5h2a3 3 0 0 1 3 3v6"/><path d="M5 15v-3a1 1 0 0 1 1 -1h8"/><path d="M19 17h-3"/>')`,
-    roller: `ico('<circle cx="6.5" cy="15.5" r="3.5"/><path d="M6.5 15.5h.01"/><circle cx="17.5" cy="15.5" r="3.5"/><path d="M17.5 15.5h.01"/><path d="M3.5 13v-1a3 3 0 0 1 3-3h11a3 3 0 0 1 3 3v1"/><path d="M10.5 12.5h3"/><path d="M13.5 9 15.5 5"/><path d="M14 5h3"/>')`,
+    roller: `ico('<circle cx="6.4" cy="15.8" r="3.2"/><path d="M6.4 15.8h.01"/><circle cx="17.6" cy="15.8" r="3.2"/><path d="M17.6 15.8h.01"/><rect x="3.2" y="8.5" width="17.6" height="4.5" rx="1"/><path d="M15 8.5 17 4"/><path d="M15.5 4h3.5"/>')`,
     tamper: `ico('<rect x="8.1" y="1.6" width="7.8" height="6" rx="2.2"/><path d="M10.6 4.7h2.8"/><path d="M8.1 6.2H3a1.45 1.45 0 0 1 0-2.9"/><path d="M15.9 4.6H21a1.45 1.45 0 0 1 0 2.9"/><path d="M10.6 7.6v11.7"/><path d="M13.4 7.6v11.7"/><path d="M14.2 19.3H9.8l.8 4.2h2.8z"/><path d="M19 17.6l-1.4 1.4 1.4 1.4-1.4 1.4"/><path d="M5 17.6l1.4 1.4L5 20.4l1.4 1.4"/>')`,
     trencher: `ico('<rect x="11" y="15.5" width="9" height="4" rx="2"/><path d="M14 17.5h3"/><rect x="12.5" y="10" width="7" height="5.5" rx="1"/><path d="M13.5 12.8 5 5.5"/><path d="M4.5 3.2 6.6 5.1 5.9 6.9 8 8.8 7.3 10.6 9.4 12.5 8.7 14.3 11 15.5"/><path d="M4.5 3.2 5 5.5"/>')`,
-    telehandler: `ico('<circle cx="7.5" cy="17.5" r="2.3"/><circle cx="17" cy="17.5" r="2.3"/><path d="M9.8 17.5h4.9"/><path d="M5.2 17.2 4.5 14h11"/><path d="M20 13.5 7.5 4.5"/><path d="M19 15.5 13 11.2"/><path d="M15.5 14h4.5v3.5"/><path d="M7.5 4.5v3.4h-3.4"/>')`,
-    towablelift: `ico('<path d="M2 18h4"/><path d="M6 18h9"/><circle cx="10.5" cy="20" r="1.7"/><path d="M7.5 18 5.5 21.5"/><path d="M13.5 18 15.5 21.5"/><path d="M13 18 10 10.5 15.5 7.2"/><rect x="15" y="3.5" width="5.5" height="3.7" rx=".5"/>')`,
+    telehandler: `ico('<rect x="4" y="12.5" width="13.5" height="4" rx="1"/><circle cx="7.5" cy="18.6" r="2.1"/><circle cx="15" cy="18.6" r="2.1"/><path d="M17 12.5 6.5 4.8"/><path d="M17 12.5 11.5 8.4"/><path d="M6.5 4.8 6.5 8 3 8"/>')`,
+    towablelift: `ico('<path d="M2 18h3.5"/><path d="M5.5 18h9.5"/><circle cx="10" cy="20" r="1.8"/><path d="M6.5 18 4.8 21.3"/><path d="M13.8 18 15.5 21.3"/><path d="M13 18 10.2 10 16 6.3"/><path d="M10.2 10h.01"/><rect x="15.3" y="3" width="6" height="4" rx=".5"/>')`,
     // Tabler "bulldozer" (MIT) — Lucide has no skid-steer/loader/dozer equivalent.
     skidsteer: `ico('<path d="M2 17a2 2 0 1 0 4 0a2 2 0 0 0 -4 0"/><path d="M12 17a2 2 0 1 0 4 0a2 2 0 0 0 -4 0"/><path d="M19 13v4a2 2 0 0 0 2 2h1"/><path d="M14 19h-10"/><path d="M4 15h10"/><path d="M9 11v-5h2a3 3 0 0 1 3 3v6"/><path d="M5 15v-3a1 1 0 0 1 1 -1h8"/><path d="M19 17h-3"/>')`,
     // Tabler "crane" (MIT) — Lucide's forklift read as a warehouse lift, not a boom/scissor/towable lift.
@@ -110,7 +110,7 @@ const CUSTOM = {
     // Bespoke sawblade (Jac 2026-07-03): no Lucide/Tabler icon is a literal serrated cutting disc, so this is
     // computed geometry (9 teeth via trig, r=9.2 peak / r=7.0 valley, viewBox 0 0 24 24) rather than hand-drawn
     // freeform art — distinct from the "cog" settings-gear glyph it replaced.
-    grinder: `ico('<circle cx="11.5" cy="12" r="4.4"/><path d="M11.5 12h.01"/><path d="M15.90 12.00L17.80 12.00"/><path d="M14.87 14.83L16.33 16.05"/><path d="M12.26 16.33L12.59 18.20"/><path d="M9.30 15.81L8.35 17.46"/><path d="M21.5 3.5 14.6 8.3"/><path d="M17.5 20.5v-3h4v3"/><path d="M15.5 20.5h7"/>')`,
+    grinder: `ico('<circle cx="11" cy="12.5" r="4.3"/><path d="M11 12.5h.01"/><path d="M15.28 12.13L17.28 11.95"/><path d="M14.52 14.97L16.16 16.11"/><path d="M12.11 16.65L12.63 18.59"/><path d="M9.18 16.40L8.34 18.21"/><path d="M7.10 14.32L5.29 15.16"/><path d="M20.5 4 14 8.9"/><path d="M19.2 2.6l2.6 2.8"/><path d="M17 20.5v-4h4.5v4"/><path d="M15.5 20.5H23"/>')`,
   },
 };
 
