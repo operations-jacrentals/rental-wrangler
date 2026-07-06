@@ -14,6 +14,31 @@
 
 ---
 
+## Build log — 2026-07-06 autonomous sprint (staging drops 1–7, all gates green)
+
+Shipped to `staging` (never `main`), per-area against the 2026-06-29 decisions:
+
+| Area | Built |
+|---|---|
+| `wrangler-ai` | Money-tier gate on billRental/recordPayment/rate edits + provenance stamps + injection-corpus CI pins + dock R-stamps (D1/D4) |
+| `units-fleet` | bottomDollar+ROI display gated to money; cost-field edits money-locked (D1/D2) |
+| `maps-location` | Transport/site edit money-gated (D1) |
+| `memberships` | Sign-up moved to the account-level agreement popup (D5) |
+| `invoicing-payments` | Merged lines carry `originInvoiceId`; No-Show billing refusal + re-date line restore + sweep can't eat linked invoices (2026-07-06 bug chain) |
+| `search-views` | Personal per-device My Views, sort captured, any role saves (D1-D3) |
+| `collections` | Phase 1: queue → gray In-Collections off aging, auto-blacklist+recall, merge/refund freeze, back-office board (outbound = Phase 2, blocked on backend trust) |
+| `equipment-insurance` | Phase 1: unit.insurance{} coverage config, 3-rider catalog, coverage flags, premium/insured-value admin-only, Insurance expense category |
+| `frontend-performance` | P0+P1: Web-Vitals + render histogram (`__perf()`), offline SW shell (prod-only, allowlist-by-construction), update toast, install nudge |
+| `design-system` | Contrast → hard CI gate (6 allowlisted pairs pending Jac review), RB_FOUNDATION drift guard, flag-override engine + Settings → Flags pane, R25 truth-ups |
+| `sales-growth` | Sales Pipeline back-office board (D1) |
+| `hr-compliance` | Settings → Team Roster pane (trimmed scope, no compliance PII) |
+| `customers-crm` | Blacklist/Lift action, any role, audited (D3) |
+| `market-research` | Lost-demand capture on the 0-available lead + per-category ask tally (D3) |
+| `automated-pricing` | Used-SALE price engine: % of cost/MSRP scale in Settings, Manager+ accept or full-auto (manager-session-only), $25 steps, audited (D1/D3). Rental-RATE automation needs Jac's formula — not yet specced numerically. |
+| `financials-kpi` | Sparklines DEFERRED — need M4 snapshot consumption; backend action deploy parked on clasp re-arm. |
+
+**Next session queue:** rentals-dispatch driver-laned rail + `units[].leg.driverId` (D5/D6, big); maintenance-shop per-category/per-unit service schedules (D3); Flags editor severity polish; portal scaffold (blocked on comms).
+
 ## What this is
 
 Per-area specs are the unit of design work (one `docs/specs/<slug>.md` per area, written
