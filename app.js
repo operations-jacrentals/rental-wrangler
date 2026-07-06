@@ -13919,7 +13919,8 @@ function onClick(e) {
   if (closest('.js-charge-invoice')) { e.stopPropagation(); return chargeInvoiceFlow(closest('.js-charge-invoice').dataset.rec); }
   if (closest('.js-record-payment')) { e.stopPropagation(); return recordManualPayment(closest('.js-record-payment').dataset.rec); }
   if (closest('.js-print-invoice')) { e.stopPropagation(); return printInvoice(closest('.js-print-invoice').dataset.rec); }
-  if (closest('.js-send-email')) { e.stopPropagation(); return sendInvoiceEmail(closest('.js-send-email').dataset.rec); }
+  if (closest('.js-send-email')) { e.stopPropagation(); const b = closest('.js-send-email'); return sendInvoiceEmail(b.dataset.rec, b); }   // anchor rides along for the D7 FROM dropdown
+  if (closest('.js-email-from-pick')) { e.stopPropagation(); const b = closest('.js-email-from-pick'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return emailQuoteSend(b.dataset.rec, b.dataset.from); }
   if (closest('.js-send-text')) { e.stopPropagation(); return sendInvoiceText(closest('.js-send-text').dataset.rec); }
   if (closest('.js-pay-addcard')) { e.stopPropagation(); const b = closest('.js-pay-addcard'); return openAddCard(b.dataset.rec, { returnTo: 'payment', invoiceId: b.dataset.inv }); }
   if (closest('.js-refund-invoice')) { e.stopPropagation(); if (state.overlay) { state.overlay.confirmRefund = true; state.overlay.error = ''; renderOverlay(); } return; }
@@ -16292,17 +16293,56 @@ function invoiceQuoteSummary(inv) {
     'Thank you for your business — much obliged.',
   ].join('\n');
 }
-// Open the device's mail client pre-filled to the customer with the quote inlined, then
-// stamp a timestamped "Emailed" note on the invoice history (logAction → §R13).
-function sendInvoiceEmail(invoiceId) {
+// Email a quote — SERVER send through the comms pipe (spec D6), with the D7 FROM picker:
+// when the shop has more than one connected address (send-as aliases, enumerated server-
+// side), the operator picks which one it goes out as; the server validates the choice.
+// Demo/#local (no backend password) keeps the old mailto: deep-link.
+let _commsAliases = null;   // fetched once per session; server-authoritative
+async function commsAliasList() {
+  if (_commsAliases) return _commsAliases;
+  try { const r = await backendCall('commsAliases'); if (r && r.ok && Array.isArray(r.aliases) && r.aliases.length) _commsAliases = r.aliases; } catch (e) {}
+  return _commsAliases || [];
+}
+async function emailQuoteSend(invoiceId, from) {
+  const inv = IDX.invoice.get(invoiceId); if (!inv) return;
+  toast('Sending email…');
+  let r; try { r = await backendCall('sendCustomerMessage', { channel: 'email', entity: 'invoice', recId: inv.invoiceId, customerId: inv.customerId, template: 'quote', from: from || '' }); }
+  catch (e) { r = { ok: false, reason: 'network' }; }
+  if (r && r.ok) {
+    logAction(inv, `Emailed quote to ${r.maskedTo || 'customer'}${r.fromUsed ? ` (from ${r.fromUsed})` : ''}`);
+    render();
+    toast(`Quote emailed to ${r.maskedTo || 'the customer'}.`);
+    return;
+  }
+  const why = {
+    'no-email': 'No email on file — add one on the account.',
+    'opted-out': 'This customer has opted out of email — hard stop.',
+    'cap': 'Daily send cap reached — raise SMS_DAILY_CAP if this run is legit.',
+    'isolation': 'Record/customer mismatch — reload and try again.',
+    'provider': 'The mail send failed server-side — if this is the first email ever, the backend still needs its one-time Gmail permission (editor → Run → authorize).',
+    'network': 'Couldn’t reach the backend — try again.',
+  }[r && r.reason] || 'Email didn’t send — try again.';
+  toast(why);
+}
+async function sendInvoiceEmail(invoiceId, anchorEl) {
   const inv = IDX.invoice.get(invoiceId); if (!inv) return;
   const cust = inv.customerId ? IDX.customer.get(inv.customerId) : null;
   if (!cust || !cust.email) { toast('No email on file for this customer.'); return; }   // guard — button is disabled, this is belt-and-suspenders
-  const subject = `Quote from ${companyName()} – ${inv.invoiceId}`;
-  window.location.href = `mailto:${encodeURIComponent(cust.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(invoiceQuoteSummary(inv))}`;
-  logAction(inv, `Emailed quote to ${cust.email}`);
-  render();
-  toast(`Opening email to ${cust.email}…`);
+  if (!backendPassword) {   // demo/offline — the pre-pipe mailto path, unchanged
+    const subject = `Quote from ${companyName()} – ${inv.invoiceId}`;
+    window.location.href = `mailto:${encodeURIComponent(cust.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(invoiceQuoteSummary(inv))}`;
+    logAction(inv, `Emailed quote to ${cust.email}`);
+    render();
+    toast(`Opening email to ${cust.email}…`);
+    return;
+  }
+  const aliases = await commsAliasList();
+  if (aliases.length > 1 && anchorEl && document.contains(anchorEl)) {   // D7 — pick which connected address it goes out as
+    const html = aliases.map((a) => `<button class="dd-item js-email-from-pick" data-rec="${esc(invoiceId)}" data-from="${esc(a)}">${esc(a)}</button>`).join('');
+    openDropdown(anchorEl, html, { align: 'left' });
+    return;
+  }
+  return emailQuoteSend(invoiceId, aliases[0] || '');
 }
 // Text a quote — SERVER send via the comms pipe (spec comms D1/D2: sendCustomerMessage →
 // Mocean adapter; recipient/body/gates all resolved server-side — the client passes only

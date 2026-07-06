@@ -2,7 +2,8 @@
  *
  * ADDITIVE splice for Code.gs (gitignored; pushed via the service-account path —
  * see docs/handoffs/BACKEND-DEPLOY-QUEUE.md; go-live is Jac's editor deploy).
- * First server-side customer channel: SMS via MoceanAPI (spec comms D1).
+ * Server-side customer channels: SMS via MoceanAPI (spec D1) + EMAIL via GmailApp
+ * as operations@ with send-as alias FROM picker (spec D6/D7, Jac 2026-07-06).
  *
  * SECRETS (Script Properties, set in the editor — NEVER in this repo):
  *   MOCEAN_TOKEN                        — Bearer API token (preferred auth)
@@ -32,6 +33,7 @@
  * WIRE-UP: add to handle()'s router (after the unauthorized gate):
  *     if (action === 'sendCustomerMessage') return json(sendCustomerMessage_(body, role));
  *     if (action === 'messagesFor') return json(messagesFor_(body, role));
+ *     if (action === 'commsAliases') return json(commsAliases_(body, role));
  */
 
 var SMS_TEMPLATES = {   // server-side registry (spec Q-13/Q-14: hardcoded v1). {vars} are server-derived only.
@@ -40,6 +42,30 @@ var SMS_TEMPLATES = {   // server-side registry (spec Q-13/Q-14: hardcoded v1). 
   'reminder-return': 'Hi {firstName}, a reminder from {companyName}: your rental is due back {endDate}. Need more time? Call us{companyPhoneSuffix}. Reply STOP to opt out.',
 };
 var SMS_ENTITY_SHEET = { invoice: 'invoices', rental: 'rentals', customer: 'customers' };
+
+// EMAIL templates (spec D6) — subject/body pairs; same server-derived-vals-only law as SMS.
+var EMAIL_TEMPLATES = {
+  'quote': {
+    subject: 'Quote {invoiceId} from {companyName}',
+    body: 'Hi {firstName},\n\nYour quote {invoiceId} from {companyName} is ready:\n\n{quoteLines}\nTotal: {total}\n\nReply to this email or call us{companyPhoneSuffix} with any questions.\n\n— {companyName}',
+  },
+  'reminder-start': { subject: 'Your rental starts {startDate}', body: 'Hi {firstName},\n\nA reminder from {companyName}: your rental starts {startDate}.\n\nReply or call us{companyPhoneSuffix} with any questions.\n\n— {companyName}' },
+  'reminder-return': { subject: 'Your rental is due back {endDate}', body: 'Hi {firstName},\n\nA reminder from {companyName}: your rental is due back {endDate}. Need more time? Reply or call us{companyPhoneSuffix}.\n\n— {companyName}' },
+};
+function smsMaskEmail_(em) {
+  var m = String(em || '').split('@');
+  return m.length === 2 ? m[0].slice(0, 1) + '\u2022\u2022\u2022@' + m[1] : '\u2022\u2022\u2022';
+}
+// The FROM dropdown data (spec D7): the primary address + configured send-as aliases.
+// Addresses the SHOP owns — fine for any signed-in role to list.
+function commsAliases_(body, role) {
+  var out = [];
+  try { var me = Session.getEffectiveUser().getEmail(); if (me) out.push(me); } catch (e) {}
+  if (!out.length) out.push('operations@jacrentals.com');   // the account the backend executes as (scope-free fallback)
+  try { out = out.concat(GmailApp.getAliases() || []); } catch (e) {}   // fills out after the owner grants the Gmail scope
+  var seen = {}; out = out.filter(function (a) { a = String(a || '').toLowerCase(); if (!a || seen[a]) return false; seen[a] = true; return true; });
+  return { ok: true, aliases: out };
+}
 
 function messagesSheet_() {
   var sh = ss().getSheetByName('messages');
@@ -68,8 +94,9 @@ function smsCountToday_(rows) {
 }
 function sendCustomerMessage_(body, role) {
   body = body || {};
+  var channel = body.channel === 'email' ? 'email' : 'sms';
   var template = String(body.template || '');
-  var tpl = SMS_TEMPLATES[template];
+  var tpl = channel === 'email' ? EMAIL_TEMPLATES[template] : SMS_TEMPLATES[template];
   if (!tpl) return { ok: false, reason: 'unknown-template' };
   var entity = String(body.entity || ''), sheetName = SMS_ENTITY_SHEET[entity];
   if (!sheetName) return { ok: false, reason: 'unknown-entity' };
@@ -80,24 +107,31 @@ function sendCustomerMessage_(body, role) {
   if (!custId || String(body.customerId || '') !== String(custId)) return { ok: false, reason: 'isolation' };
   var cust = entity === 'customer' ? rec : readRecord_('customers', custId);
   if (!cust) return { ok: false, reason: 'not-found' };
-  var to = smsNormalizePhone_(cust.phone);
-  if (!to) return { ok: false, reason: 'no-phone' };
-  var consent = (cust.commsConsent && cust.commsConsent.sms) || 'unknown';
+  var to = channel === 'email' ? String(cust.email || '').trim() : smsNormalizePhone_(cust.phone);
+  if (!to || (channel === 'email' && to.indexOf('@') === -1)) return { ok: false, reason: channel === 'email' ? 'no-email' : 'no-phone' };
+  var consent = (cust.commsConsent && cust.commsConsent[channel]) || 'unknown';
   if (consent === 'opted-out') return { ok: false, reason: 'opted-out' };   // spec Q-16: hard block, no override
   var auto = !!body.auto;                                                    // the Phase-2 sweep passes auto:true
   if (auto && smsQuietNow_()) return { ok: false, reason: 'quiet-hours' };
   var sh = messagesSheet_();
   var rows = sh.getLastRow() ? sh.getRange(1, 1, sh.getLastRow(), 2).getValues() : [];
   var cap = Number(PropertiesService.getScriptProperties().getProperty('SMS_DAILY_CAP')) || 50;
-  if (smsCountToday_(rows) >= cap) return { ok: false, reason: 'cap' };
+  if (smsCountToday_(rows) >= cap) return { ok: false, reason: 'cap' };      // one shared outbound cap, both channels
   if (auto) {                                                                // dedup ledger (automated only)
-    var dupKey = template + '|' + body.recId + '|' + todayIso_();
+    var dupKey = channel + '|' + template + '|' + body.recId + '|' + todayIso_();
     for (var i = 0; i < rows.length; i++) { try { if (JSON.parse(rows[i][1]).dedupKey === dupKey) return { ok: false, reason: 'duplicate' }; } catch (e) {} }
   }
   // server-derived template values ONLY (spec §3.3 — the allowlist by construction)
   var cfg = {}; try { cfg = getConfigObj().settings || {}; } catch (e) {}
   var company = (cfg.company && cfg.company.name) || 'JacRentals';
   var yardPhone = (cfg.company && cfg.company.phone) || '';
+  var quoteLines = '';
+  if (entity === 'invoice') {
+    quoteLines = (rec.lineItems || []).map(function (li) {
+      return '  \u2022 ' + String(li.label || li.kind || 'Item') + ' \u2014 $' + (Number(li.amount) || 0).toFixed(2);
+    }).join('\n');
+    if (quoteLines) quoteLines += '\n';
+  }
   var vals = {
     firstName: cust.firstName || String(cust.name || '').split(/\s+/)[0] || 'there',
     companyName: company,
@@ -106,34 +140,53 @@ function sendCustomerMessage_(body, role) {
     total: entity === 'invoice' ? '$' + (computeInvoiceCents_(rec) / 100).toFixed(2) : '',
     startDate: rec.startDate || '',
     endDate: rec.endDate || '',
+    quoteLines: quoteLines,
   };
-  var text = tpl.replace(/\{(\w+)\}/g, function (_, k) { return vals[k] !== undefined ? vals[k] : ''; });
-  var props = PropertiesService.getScriptProperties();
-  var mtoken = props.getProperty('MOCEAN_TOKEN');   // preferred: Bearer token (Mocean's current auth)
-  var apiKey = props.getProperty('MOCEAN_API_KEY'), apiSecret = props.getProperty('MOCEAN_API_SECRET'), from = props.getProperty('MOCEAN_FROM');
-  if (!from || (!mtoken && (!apiKey || !apiSecret))) return { ok: false, reason: 'not-configured' };
-  var status = 'failed', providerId = '', providerErr = '';
-  try {
-    var payload = { 'mocean-from': from, 'mocean-to': to, 'mocean-text': text, 'mocean-resp-format': 'json' };
-    var opts = { method: 'post', muteHttpExceptions: true, payload: payload };
-    if (mtoken) opts.headers = { Authorization: 'Bearer ' + mtoken };
-    else { payload['mocean-api-key'] = apiKey; payload['mocean-api-secret'] = apiSecret; }
-    var res = UrlFetchApp.fetch('https://rest.moceanapi.com/rest/2/sms', opts);
-    var out = JSON.parse(res.getContentText() || '{}');
-    var m0 = out && out.messages && out.messages[0];
-    if (m0 && Number(m0.status) === 0) { status = 'sent'; providerId = m0['message-id'] || ''; }
-    else providerErr = String((m0 && m0.err_msg) || out.err_msg || res.getResponseCode()).slice(0, 80);   // stored in the log row for diagnosis — never sent to the client
-  } catch (e) { status = 'failed'; providerErr = 'fetch-error'; }
+  var fill = function (t) { return String(t).replace(/\{(\w+)\}/g, function (_, k) { return vals[k] !== undefined ? vals[k] : ''; }); };
+  var status = 'failed', providerId = '', providerErr = '', fromUsed = '', text = '', subject = '';
+  if (channel === 'email') {
+    // D7 — the FROM picker: the client's choice is ADVISORY, validated against the real
+    // alias list server-side; anything unrecognized falls back to the primary address.
+    var aliases = commsAliases_({}, role).aliases || [];
+    fromUsed = aliases[0] || '';
+    var want = String(body.from || '').toLowerCase();
+    for (var a = 0; a < aliases.length; a++) { if (String(aliases[a]).toLowerCase() === want) { fromUsed = aliases[a]; break; } }
+    subject = fill(tpl.subject); text = fill(tpl.body);
+    try {
+      var mailOpts = { name: company };
+      if (fromUsed && aliases[0] && fromUsed.toLowerCase() !== String(aliases[0]).toLowerCase()) mailOpts.from = fromUsed;
+      GmailApp.sendEmail(to, subject, text, mailOpts);
+      status = 'sent';
+    } catch (e) { status = 'failed'; providerErr = String(e && e.message || e).slice(0, 80); }
+  } else {
+    text = fill(tpl);
+    var props = PropertiesService.getScriptProperties();
+    var mtoken = props.getProperty('MOCEAN_TOKEN');   // preferred: Bearer token (Mocean's current auth)
+    var apiKey = props.getProperty('MOCEAN_API_KEY'), apiSecret = props.getProperty('MOCEAN_API_SECRET'), from = props.getProperty('MOCEAN_FROM');
+    if (!from || (!mtoken && (!apiKey || !apiSecret))) return { ok: false, reason: 'not-configured' };
+    fromUsed = from;
+    try {
+      var payload = { 'mocean-from': from, 'mocean-to': to, 'mocean-text': text, 'mocean-resp-format': 'json' };
+      var opts = { method: 'post', muteHttpExceptions: true, payload: payload };
+      if (mtoken) opts.headers = { Authorization: 'Bearer ' + mtoken };
+      else { payload['mocean-api-key'] = apiKey; payload['mocean-api-secret'] = apiSecret; }
+      var res = UrlFetchApp.fetch('https://rest.moceanapi.com/rest/2/sms', opts);
+      var out = JSON.parse(res.getContentText() || '{}');
+      var m0 = out && out.messages && out.messages[0];
+      if (m0 && Number(m0.status) === 0) { status = 'sent'; providerId = m0['message-id'] || ''; }
+      else providerErr = String((m0 && m0.err_msg) || out.err_msg || res.getResponseCode()).slice(0, 80);   // stored in the log row for diagnosis — never sent to the client
+    } catch (e) { status = 'failed'; providerErr = 'fetch-error'; }
+  }
   var msgId = 'MSG-' + Utilities.getUuid().slice(0, 8);
   var row = {   // full row is SERVER-ONLY (`to` + body never reach the client/repo)
-    msgId: msgId, channel: 'sms', direction: 'outbound', entity: entity, recId: String(body.recId),
-    customerId: String(custId), template: template, to: to, body: text, status: status,
+    msgId: msgId, channel: channel, direction: 'outbound', entity: entity, recId: String(body.recId),
+    customerId: String(custId), template: template, to: to, from: fromUsed, subject: subject, body: text, status: status,
     providerId: providerId, providerErr: providerErr, by: role || '', auto: auto, quiet: smsQuietNow_(),
-    dedupKey: template + '|' + body.recId + '|' + todayIso_(), when: new Date().toISOString(),
+    dedupKey: channel + '|' + template + '|' + body.recId + '|' + todayIso_(), when: new Date().toISOString(),
   };
   messagesSheet_().appendRow([msgId, JSON.stringify(row)]);
   if (status !== 'sent') return { ok: false, reason: 'provider', msgId: msgId };
-  return { ok: true, msgId: msgId, status: status, maskedTo: smsMaskPhone_(cust.phone) };
+  return { ok: true, msgId: msgId, status: status, channel: channel, maskedTo: channel === 'email' ? smsMaskEmail_(to) : smsMaskPhone_(cust.phone), fromUsed: channel === 'email' ? fromUsed : '' };
 }
 // The REDACTED projection the client may render (spec Q-9: PII never synced).
 function messagesFor_(body, role) {
