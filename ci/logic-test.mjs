@@ -577,6 +577,19 @@ try {
       T.DATA.units.pop();
     }
 
+    // 12j6) Flag overrides (spec design-system D1, Jac 2026-06-29): ALL flags admin-overridable —
+    // off hides the flag; severity override recolors it; default = shipped FLAG_META.
+    {
+      const failedU = { unitId: 'U-FLAGOV', inspectionStatus: 'Failed', fleetStatus: 'Active' };   // synthetic: exactly ONE flag fires
+      ok(T.getEntityColor('units', failedU) === 'red', 'FLAG-OV: baseline — a Failed unit is red');
+      const pre = T.__state.settings.flagOverrides;
+      T.__state.settings.flagOverrides = { units: { 'inspection-failed': { off: true } } };
+      ok(T.getEntityColor('units', failedU) === 'green', 'FLAG-OV: disabling inspection-failed removes its red (green = no active flag)');
+      T.__state.settings.flagOverrides = { units: { 'inspection-failed': { severity: 'yellow' } } };
+      ok(T.getEntityColor('units', failedU) === 'yellow', 'FLAG-OV: severity override recolors the flag to yellow');
+      T.__state.settings.flagOverrides = pre;
+    }
+
     // 12k) Chat markdown — Wrangler's replies render **bold**/`code`, but stay XSS-safe (escape before format).
     {
       ok(/<strong>June 30, 2026<\/strong>/.test(T.wrChatFormat('Monday is **June 30, 2026**.')), 'WR-fmt: **bold** renders as <strong>');

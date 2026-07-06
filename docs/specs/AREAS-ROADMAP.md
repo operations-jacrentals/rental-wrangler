@@ -346,12 +346,12 @@ Stages 2–3.
 **Depends on.** `backend-data`, `rentals-dispatch`, `units-fleet`, `invoicing-payments`, `customers-crm`, `maintenance-shop`, `accounting`, `frontend-performance`.
 
 ## 23 · Design System — `design-system` ✅
-**Scope.** Owns the visual language + enforcement: the R0–R24 stamped rulebook, the token/theme CSS, the
+**Scope.** Owns the visual language + enforcement: the R0–R25 stamped rulebook, the token/theme CSS, the
 per-rule builders, the admin Rulebook overlay, `DESIGN.md`, the CI guards, and the `jactec-ui` skill.
 
 **Today.** Deeply enforced and shipped: the full token layer, one builder per rule (`APP-10`), the
 flag-color engine (`APP-11`), `RULE_META` + the admin Rulebook (`APP-12`), `DESIGN.md`, three CI gates,
-and the `jactec-ui` skill. *Planned-unbuilt:* the Windows Catalog popup inventory (`buildPopupEl` refactor).
+and the `jactec-ui` skill. *Windows Catalog: SHIPPED* (`WINDOW_CATALOG` + `check-window-catalog.mjs` CI guard).
 
 **Anchors.** `APP-10` (app.js:4040), `APP-11` (app.js:3700), `APP-12` (app.js:4349), style.css:8, DESIGN.md.
 **Depends on.** `search-views`, `frontend-performance`, `wrangler-ai`.

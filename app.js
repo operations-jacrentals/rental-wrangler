@@ -4239,8 +4239,19 @@ function getEntityFlags(entityType, rec) {
   if (!rec) return [];
   const meta = FLAG_META[entityType], cond = FLAG_COND[entityType];
   if (!meta || !cond) return [];
+  // Admin flag overrides (spec design-system D1, Jac 2026-06-29): settings.flagOverrides =
+  // { [entity]: { [flagId]: { off:true } | { severity:'red'|'yellow'|'green' } } }. ALL flags are
+  // overridable — including the money/credit safety flags (Jac's explicit call); turning one off
+  // is an adminUnlocked+setConfig-gated act, audited at the Settings write. Default = FLAG_META as-is.
+  const ovAll = (state.settings && state.settings.flagOverrides) || {};
+  const ov = ovAll[entityType] || {};
   const out = [];
-  for (const f of meta) { let on = false; try { on = !!(cond[f.id] && cond[f.id](rec)); } catch (e) { on = false; } if (on) out.push(f); }
+  for (const f of meta) {
+    const o = ov[f.id];
+    if (o && o.off) continue;                                        // owner disabled this flag
+    let on = false; try { on = !!(cond[f.id] && cond[f.id](rec)); } catch (e) { on = false; }
+    if (on) out.push(o && o.severity && FLAG_SEVERITY_RANK[o.severity] ? { ...f, severity: o.severity } : f);
+  }
   return out.sort((a, b) => (FLAG_SEVERITY_RANK[b.severity] || 0) - (FLAG_SEVERITY_RANK[a.severity] || 0));
 }
 /** Formally archived → gray, no flag evaluation (§6: rentals when CLEARED — every
@@ -17834,7 +17845,7 @@ function exposeTestApi() {
       latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore, wranglerRailLoad, wrOffloadChatImages, wrEvictChatBlobs, driveViewUrl, mergeWranglerRails,
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
-      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, setFunnelStage, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, addMonthsISO, openMembershipEnroll, membershipEnrollCommit, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, setRole: (r) => { currentRole = r || ''; render(); },
+      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, setFunnelStage, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, addMonthsISO, openMembershipEnroll, membershipEnrollCommit, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, getEntityColor, getEntityFlags, setRole: (r) => { currentRole = r || ''; render(); },
       openCustomerForm, renderOverlay, render, cardComplete, cardCaptureState, cardHasSelfie, cardHasSignature, captureSelfie, captureSignature, __state: state };   // UI drivers for headless screenshot/e2e tests
 
   } catch (e) { /* no window (non-browser) */ }
