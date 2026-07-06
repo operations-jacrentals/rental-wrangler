@@ -87,7 +87,7 @@ const CUSTOM = {
     dozer: `ico('<path d="M2 17a2 2 0 1 0 4 0a2 2 0 0 0 -4 0"/><path d="M12 17a2 2 0 1 0 4 0a2 2 0 0 0 -4 0"/><path d="M19 13v4a2 2 0 0 0 2 2h1"/><path d="M14 19h-10"/><path d="M4 15h10"/><path d="M9 11v-5h2a3 3 0 0 1 3 3v6"/><path d="M5 15v-3a1 1 0 0 1 1 -1h8"/><path d="M19 17h-3"/>')`,
     roller: `ico('<circle cx="6" cy="15.5" r="4"/><path d="M6 15.5h.01"/><path d="M10 13h8.5a2 2 0 0 1 2 2v3.5h-2.5"/><path d="M12.5 13V8h5v5"/><circle cx="15.5" cy="18.5" r="2.2"/><path d="M10 18.5h3.3"/>')`,
     tamper: `ico('<path d="M4.5 3 9 11"/><path d="M3 4.5 6 2.5"/><rect x="8" y="10" width="8" height="5" rx="1"/><path d="M6.5 18.5 8 15h8l1.5 3.5z"/><path d="M8.5 21.5h2"/><path d="M13.5 21.5h2"/>')`,
-    trencher: `ico('<path d="M4.5 4.5 9.5 10.5"/><path d="M3 6 6 3.8"/><rect x="8.5" y="10.5" width="6" height="4.5" rx="1"/><circle cx="10.5" cy="17.5" r="1.9"/><path d="M14.5 12.7 20.5 18.8"/><path d="M13.8 15.5 18 19.8"/><path d="M20.5 18.8 18 19.8"/><path d="M3 20.5h9.5"/>')`,
+    trencher: `ico('<path d="M3.5 4.5 8 9.5"/><path d="M2.2 6 5.2 3.8"/><rect x="7" y="9.5" width="6" height="4.5" rx="1"/><circle cx="9.5" cy="16.5" r="1.9"/><path d="M13 11.5 20.3 18.3a1.6 1.6 0 0 1-2.2 2.3L11 14"/><path d="M15.3 13.6l-1.2 1.3"/><path d="M17.6 15.7l-1.2 1.3"/><path d="M2.5 20.5h9"/>')`,
     telehandler: `ico('<circle cx="7.5" cy="17.5" r="2.3"/><circle cx="17" cy="17.5" r="2.3"/><path d="M9.8 17.5h4.9"/><path d="M5.2 17.2 4.5 14h11"/><path d="M20 13.5 7.5 4.5"/><path d="M19 15.5 13 11.2"/><path d="M15.5 14h4.5v3.5"/><path d="M7.5 4.5v3.4h-3.4"/>')`,
     towablelift: `ico('<path d="M2 18h4"/><path d="M6 18h9"/><circle cx="10.5" cy="20" r="1.7"/><path d="M7.5 18 5.5 21.5"/><path d="M13.5 18 15.5 21.5"/><path d="M13 18 10 10.5 15.5 7.2"/><rect x="15" y="3.5" width="5.5" height="3.7" rx=".5"/>')`,
     attachment: `ico('<rect x="8" y="2.5" width="8" height="4" rx="1"/><path d="M12 6.5V19"/><path d="M12 21.5 12 19"/><path d="m12 21.5-1.8-2.1"/><path d="M7.5 9.2c3 2 6 -2 9 0"/><path d="M8.3 13c2.6 1.8 4.8 -1.8 7.4 0"/><path d="M9.3 16.6c1.9 1.4 3.5 -1.4 5.4 0"/>')`,
@@ -101,14 +101,14 @@ const CUSTOM = {
     // Tabler "caravan" (MIT, Jac 2026-07-03) — a towed box on a hitch reads as "trailer" better than Lucide's shipping container.
     trailer: `ico('<path d="M7 18a2 2 0 1 0 4 0a2 2 0 0 0 -4 0"/><path d="M11 18h7a2 2 0 0 0 2 -2v-7a2 2 0 0 0 -2 -2h-9.5a5.5 5.5 0 0 0 -5.5 5.5v3.5a2 2 0 0 0 2 2h2"/><path d="M8 7l7 -3l1 3"/><path d="M13 11m0 .5a.5 .5 0 0 1 .5 -.5h2a.5 .5 0 0 1 .5 .5v2a.5 .5 0 0 1 -.5 .5h-2a.5 .5 0 0 1 -.5 -.5z"/><path d="M20 16h2"/>')`,
     // bespoke concrete power buggy (Jac, 2026-07-04: the garden-cart/wheelbarrow was rejected).
-    buggy: `ico('<path d="M2.5 8.5h11l-1.8 6.5H5z"/><path d="M13.5 8.5 19 5.5"/><path d="M19 5.5h2"/><path d="M11.7 15h3.8"/><circle cx="7.5" cy="17.5" r="2.5"/><circle cx="15.5" cy="17.5" r="2.5"/>')`,
+    buggy: `ico('<path d="M11.5 7.5v8H6a3.5 3.5 0 0 1-3.5-3.5V7.5z"/><path d="M2 7.5h11"/><path d="M11.5 11h4.5a3 3 0 0 1 3 3v1.5"/><path d="M19 15.5V13l2.5-1.5"/><circle cx="7.5" cy="18" r="2.4"/><circle cx="16" cy="18" r="2.4"/>')`,
     // Tabler "hammer" (MIT, Jac 2026-07-03) — distinct path from Lucide's hammer already on CARD_ICON.shop,
     // so the small-tool catch-all doesn't collide with the Shop card's glyph.
     saw: `ico('<path d="M11.414 10l-7.383 7.418a2.091 2.091 0 0 0 0 2.967a2.11 2.11 0 0 0 2.976 0l7.407 -7.385"/><path d="M18.121 15.293l2.586 -2.586a1 1 0 0 0 0 -1.414l-7.586 -7.586a1 1 0 0 0 -1.414 0l-2.586 2.586a1 1 0 0 0 0 1.414l7.586 7.586a1 1 0 0 0 1.414 0z"/>')`,
     // Bespoke sawblade (Jac 2026-07-03): no Lucide/Tabler icon is a literal serrated cutting disc, so this is
     // computed geometry (9 teeth via trig, r=9.2 peak / r=7.0 valley, viewBox 0 0 24 24) rather than hand-drawn
     // freeform art — distinct from the "cog" settings-gear glyph it replaced.
-    grinder: `ico('<path d="M11.00,2.90L13.43,5.90L16.37,5.13L15.97,8.97L18.60,10.50L15.60,12.93L16.37,15.87L12.53,15.47L11.00,18.10L8.57,15.10L5.63,15.87L6.03,12.03L3.40,10.50L6.40,8.07L5.63,5.13L9.47,5.53Z"/><circle cx="11" cy="10.5" r="1.6"/><path d="M15 19.5h6"/><path d="M17 19.5v-3h3.5v3"/>')`,
+    grinder: `ico('<circle cx="8.5" cy="9.5" r="5.5"/><path d="M8.5 9.5h.01"/><path d="M13.81 10.92L15.84 11.47"/><path d="M12.71 13.04L14.32 14.39"/><path d="M10.82 14.48L11.71 16.39"/><path d="M8.50 15.00L8.50 17.10"/><path d="M6.18 14.48L5.29 16.39"/><path d="M15 20.5v-4h4.5v4"/><path d="M13.5 20.5 21 20.5"/><path d="M2.5 20.5h4"/>')`,
   },
 };
 
