@@ -590,6 +590,23 @@ try {
       T.__state.settings.flagOverrides = pre;
     }
 
+    // 12j7) Draft sweep must NOT eat an ATTACHED invoice (Jac bug 2026-07-06: adding a transport
+    // address navigated -> sweep deleted the linked-but-unbilled mock invoice off the rental).
+    {
+      const rr = T.DATA.rentals.find((r) => r.customerId);
+      const att = { invoiceId: 'INV-SWEEPA', customerId: rr.customerId, rentalIds: [rr.rentalId], date: T.TODAY_ISO, dueDate: T.TODAY_ISO, amountPaid: 0, lineItems: [], mock: true };
+      const orphan = { invoiceId: 'INV-SWEEPB', customerId: rr.customerId, rentalIds: [], date: T.TODAY_ISO, dueDate: T.TODAY_ISO, amountPaid: 0, lineItems: [], mock: true };
+      const prevLink = rr.invoiceId;
+      T.DATA.invoices.push(att, orphan); T.IDX.invoice.set(att.invoiceId, att); T.IDX.invoice.set(orphan.invoiceId, orphan);
+      rr.invoiceId = att.invoiceId;
+      ok(T.isEmptyMockDraft('invoices', att) === false, 'SWEEP: an invoice linked to a rental is NOT an abandoned draft');
+      ok(T.isEmptyMockDraft('invoices', orphan) === true, 'SWEEP: a free-floating empty mock invoice still is');
+      T.sweepEmptyDrafts('X-nothing');
+      ok(!!T.IDX.invoice.get('INV-SWEEPA') && rr.invoiceId === 'INV-SWEEPA', 'SWEEP: navigation keeps the attached invoice + the rental link');
+      ok(!T.IDX.invoice.get('INV-SWEEPB'), 'SWEEP: navigation still deletes the abandoned orphan draft');
+      const ix = T.DATA.invoices.indexOf(att); if (ix >= 0) T.DATA.invoices.splice(ix, 1); T.IDX.invoice.delete('INV-SWEEPA'); rr.invoiceId = prevLink;
+    }
+
     // 12k) Chat markdown — Wrangler's replies render **bold**/`code`, but stay XSS-safe (escape before format).
     {
       ok(/<strong>June 30, 2026<\/strong>/.test(T.wrChatFormat('Monday is **June 30, 2026**.')), 'WR-fmt: **bold** renders as <strong>');

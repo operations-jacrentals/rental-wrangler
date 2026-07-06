@@ -1450,7 +1450,11 @@ function mountTransportEditor() {
   const input = document.querySelector('.js-taddr');
   if (input && !input.dataset.wired) {
     input.dataset.wired = '1';
-    setTimeout(() => { try { input.focus(); const n = input.value.length; input.setSelectionRange(n, n); } catch (e) {} }, 0);
+    // Desktop only: auto-focus = type-immediately ergonomics. On the PHONE this fired on EVERY
+    // render while the editor was open (the wired flag resets with each DOM rebuild) — each focus
+    // scrolled the bottom-of-card editor into view + popped the keyboard (Jac bug 2026-07-06:
+    // "every transport action jumps me to the bottom"). Phone: tap the field to type.
+    if (!document.body.classList.contains('is-phone')) setTimeout(() => { try { input.focus(); const n = input.value.length; input.setSelectionRange(n, n); } catch (e) {} }, 0);
     input.addEventListener('input', () => teQuery(input.value));
     input.addEventListener('keydown', teKeydown);
   }
@@ -2206,7 +2210,10 @@ function openCloseAllMenu(anchorEl) {
 // (computeChanges) so they never reach the backend until they earn real content.
 function isEmptyMockDraft(card, rec) {
   if (!rec || !rec.mock) return false;
-  if (card === 'invoices') return !(rec.lineItems || []).length && !(Number(rec.amountPaid) || 0);
+  // An invoice LINKED to a rental is not abandoned (Jac bug 2026-07-06: adding a transport
+  // address navigated → sweep deleted the attached-but-not-yet-billed mock invoice and cleared
+  // r.invoiceId). Mirrors the rentals branch below, where a link (!rec.invoiceId) counts as content.
+  if (card === 'invoices') return !(rec.lineItems || []).length && !(Number(rec.amountPaid) || 0) && !(rec.rentalIds || []).length && !DATA.rentals.some((r) => r.invoiceId === rec.invoiceId);
   if (card === 'rentals')  return !(rentalUnits(rec) || []).length && !rec.customerId && !rec.startDate && !rec.invoiceId;
   return false;
 }
@@ -17923,7 +17930,7 @@ function exposeTestApi() {
       latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore, wranglerRailLoad, wrOffloadChatImages, wrEvictChatBlobs, driveViewUrl, mergeWranglerRails,
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
-      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, setFunnelStage, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, addMonthsISO, openMembershipEnroll, membershipEnrollCommit, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, getEntityColor, getEntityFlags, setRole: (r) => { currentRole = r || ''; render(); },
+      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, setFunnelStage, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, addMonthsISO, openMembershipEnroll, membershipEnrollCommit, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, getEntityColor, getEntityFlags, isEmptyMockDraft, sweepEmptyDrafts, setRole: (r) => { currentRole = r || ''; render(); },
       openCustomerForm, renderOverlay, render, cardComplete, cardCaptureState, cardHasSelfie, cardHasSignature, captureSelfie, captureSignature, __state: state };   // UI drivers for headless screenshot/e2e tests
 
   } catch (e) { /* no window (non-browser) */ }
