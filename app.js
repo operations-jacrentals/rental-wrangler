@@ -16304,20 +16304,46 @@ function sendInvoiceEmail(invoiceId) {
   render();
   toast(`Opening email to ${cust.email}…`);
 }
-// Open the device's SMS app pre-filled to the customer, then stamp a "Texted" note.
-function sendInvoiceText(invoiceId) {
+// Text a quote — SERVER send via the comms pipe (spec comms D1/D2: sendCustomerMessage →
+// Mocean adapter; recipient/body/gates all resolved server-side — the client passes only
+// ids + a template name, never a `to` or a body). Demo/#local mode (no backend password)
+// keeps the old device deep-link so offline demos still work.
+async function sendInvoiceText(invoiceId) {
   const inv = IDX.invoice.get(invoiceId); if (!inv) return;
   const cust = inv.customerId ? IDX.customer.get(inv.customerId) : null;
   if (!cust || !cust.phone) { toast('No phone on file for this customer.'); return; }
-  const t = invoiceTotals(inv);
-  const first = cust.firstName || (cust.name || '').trim().split(/\s+/)[0] || 'there';
-  const yard = companyPhone();
-  const msg = `Hi ${first}, your quote from ${companyName()} is ready – ${money2(t.total)} – reply or call us${yard ? ' at ' + yard : ''}.`;
-  const tel = String(cust.phone).replace(/[^0-9+]/g, '');
-  window.location.href = `sms:${tel}?&body=${encodeURIComponent(msg)}`;   // `?&body=` is the cross-platform (iOS + Android) separator
-  logAction(inv, `Texted quote to ${cust.phone}`);
-  render();
-  toast(`Opening text to ${cust.phone}…`);
+  if (!backendPassword) {   // demo/offline — the pre-pipe deep-link path, unchanged
+    const t = invoiceTotals(inv);
+    const first = cust.firstName || (cust.name || '').trim().split(/\s+/)[0] || 'there';
+    const yard = companyPhone();
+    const msg = `Hi ${first}, your quote from ${companyName()} is ready – ${money2(t.total)} – reply or call us${yard ? ' at ' + yard : ''}.`;
+    const tel = String(cust.phone).replace(/[^0-9+]/g, '');
+    window.location.href = `sms:${tel}?&body=${encodeURIComponent(msg)}`;   // `?&body=` is the cross-platform (iOS + Android) separator
+    logAction(inv, `Texted quote to ${cust.phone}`);
+    render();
+    toast(`Opening text to ${cust.phone}…`);
+    return;
+  }
+  toast('Sending text…');
+  let r; try { r = await backendCall('sendCustomerMessage', { entity: 'invoice', recId: inv.invoiceId, customerId: inv.customerId, template: 'quote' }); }
+  catch (e) { r = { ok: false, reason: 'network' }; }
+  if (r && r.ok) {
+    logAction(inv, `SMS quote sent to ${r.maskedTo || 'customer'}`);
+    render();
+    toast(`Quote texted to ${r.maskedTo || 'the customer'}.`);
+    return;
+  }
+  const why = {   // server refusal → say what's wrong and where to fix it (R19 voice)
+    'no-phone': 'No phone on file — add one on the account.',
+    'opted-out': 'This customer has opted out of texts — hard stop.',
+    'not-configured': 'SMS isn’t wired yet — Mocean keys go in the backend Script Properties.',
+    'cap': 'Daily text cap reached — raise SMS_DAILY_CAP if this run is legit.',
+    'quiet-hours': 'Quiet hours (8pm–8am) — the message can go out in the morning.',
+    'isolation': 'Record/customer mismatch — reload and try again.',
+    'provider': 'Mocean rejected the send — check the number and Mocean balance.',
+    'network': 'Couldn’t reach the backend — try again.',
+  }[r && r.reason] || 'Text didn’t send — try again.';
+  toast(why);
 }
 // Lock (seal pricing) or unlock an invoice via the backend (Office/Admin).
 async function lockInvoiceFlow(invoiceId, lock) {
