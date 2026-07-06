@@ -18,6 +18,36 @@ The Rental Wrangler backend is a Google Apps Script web app. It ships through **
 ## Backend identifiers
 Read the `scriptId`, prod `deployment id`, and `exec URL` from `references/backend-ids.local.md` (gitignored — never published). If that file is absent (e.g. a fresh cloud container), take them from env vars `RW_SCRIPT_ID` / `RW_PROD_DEPLOYMENT_ID` / `EXEC_URL`, or ask Jac. **Never hardcode them in this committed file.**
 
+## ⚠️ PRIMARY DEPLOY METHOD IS NOW THE SERVICE ACCOUNT (Jac, 2026-07-06 — read this before touching clasp auth)
+
+**clasp's user-OAuth is currently BROKEN, and it's not a stale-token problem.** Confirmed
+2026-07-06: even a **brand-new** token, minted from a completely fresh consent screen
+in a **cloud session** (not just the local desktop — the earlier "desktop isn't a deploy
+env" framing below is now superseded), fails **immediately** with
+`invalid_grant / invalid_rapt`. This is Google Workspace enforcing a re-authentication
+policy on the `cloud-platform` scope for `jacrentals.com`, enforced **server-side per API
+call** — a CLI exchanging a refresh token can never satisfy it. **Do not spend time
+re-running `clasp login` anywhere hoping it'll take — it won't, until the Workspace admin
+changes that policy (Admin Console → Security → Reauthentication).**
+
+**The working replacement: a service account (JWT auth, not subject to RAPT).**
+- Credential: the **`GAS_SA_KEY_B64`** env secret (same pattern as `CLASPRC_JSON_B64` — a
+  base64'd service-account JSON key, set in the environment's Environment Variables).
+- Deploy tool: **`docs/handoffs/gas-deploy-service-account.mjs`** — calls the Apps Script
+  REST API directly (`projects.updateContent` = push, `projects.versions.create` +
+  `projects.deployments.update` = deploy to the SAME exec URL). No clasp involved.
+- **Full runbook + the current pending queue: `docs/handoffs/BACKEND-DEPLOY-QUEUE.md`.**
+  **This file lives on the `staging` branch, not `main`** — if you're on `main` and can't
+  find it, `git fetch origin staging && git checkout staging` first (a session got stuck
+  on exactly this on 2026-07-06).
+- Usage: `GAS_SA_KEY_B64=$GAS_SA_KEY_B64 node docs/handoffs/gas-deploy-service-account.mjs push`
+  then `... deploy "description"`. Same STOP-gate rules apply — confirm the diff with Jac
+  before the `deploy` call, every time.
+
+The clasp steps below are kept for reference (local *reads* via the Drive connector still
+work fine, and if Google's reauth policy ever changes, clasp deploy would work again) —
+but **do not attempt a clasp deploy as the default path anymore.**
+
 ## Step 1 — Wire clasp auth, then VERIFY with clasp itself (never by file path)
 Auth is "wired" only if **`clasp show-authorized-user` says so** — a credentials *file existing* proves nothing (clasp 3.x doesn't reliably read the old `~/.clasprc.json` default path, so `test -f` gives false readings). Write the secret to an explicit file, point clasp at it with `clasp_config_auth`, then confirm with clasp's own command:
 ```bash
@@ -70,4 +100,8 @@ No `RW_PW` set? You can only test the **auth-rejection** path — ask Jac for a 
 clasp (backend), GitHub, Google Drive, Gmail, Figma, HeyGen are available in the clasp-enabled **cloud** session — that's the deploy environment, and this runbook is written for it (Linux/bash). The local Windows desktop is **not** a deploy environment and its clasp can't make live calls (expired token + RAPT-blocked refresh) — to read the backend locally use the Drive-connector method above; to deploy, use a cloud session. (NB: `show-authorized-user → loggedIn:true` only proves a creds *file* exists — NOT that the token works.)
 
 ## Note for /start
-This skill is referenced by the startup skill: at session start, if clasp is installed, `/start` checks auth with `clasp show-authorized-user --json` and **only if `loggedIn: true`** treats the backend as reachable via `/clasp` (then: don't ask how to access the backend, use clasp). If `loggedIn: false`, `/start` reports it's installed-but-not-authed and how to fix — see `/start` §1.
+`/start` checks for **`GAS_SA_KEY_B64`** (the service-account deploy path, current) rather
+than clasp auth as the litmus test for "backend deploy reachable" — see `/start` §1. clasp's
+`show-authorized-user --json` can say `loggedIn:true` while every actual deploy call still
+fails RAPT, so that check alone is not proof anything works; `GAS_SA_KEY_B64` presence +
+`docs/handoffs/BACKEND-DEPLOY-QUEUE.md` (on `staging`) is the real source of truth.
