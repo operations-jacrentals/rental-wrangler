@@ -1403,6 +1403,7 @@ const YARD_CENTER = { lat: 30.2366, lng: -93.3774 };   // Sulphur, LA — map de
 let _teMap = null, _teMarker = null, _teSession = null, _teDebounce = null;
 /** Open the inline editor for a unit's transport leg (delivery|recovery). */
 function openTransportEdit(rentalId, unitId, leg) {
+  if (!canMoney()) { toast('Transport & site editing is Office/Admin only.'); return; }   // spec maps-location D1 (Jac 2026-06-29): a site/leg edit reprices transport — money tier, whole edit
   const r = IDX.rental.get(rentalId); if (!r) return;
   const eu = unitId ? unitEntry(r, unitId) : null;
   const T = eu || r;
@@ -5532,9 +5533,12 @@ function efld(card, rec, idField, field, ph, opts = {}) {
   const pfx = opts.pfx ? `<span class="pfx">${esc(opts.pfx)}</span>` : '';
   const sfx = (has && opts.sfx) ? `<span class="sfx">${esc(opts.sfx)}</span>` : '';
   // opts.admin → the edit is gated behind requireAdmin (Admin/Owner pass, others get the password popup);
+  // opts.money → the edit requires the money tier (canMoney) — display stays open, editing refuses below tier
+  //   (spec units-fleet D2: cost-field edits lock to money; no password escalation, a flat refusal);
   // opts.editKind → swap the startInlineEdit branch (e.g. 'unitCategory' opens a <select>).
   const adm = opts.admin ? ' data-admin="1"' : '';
-  return `<div class="kv${opts.wrap ? ' wrap' : ''}">${pfx}<span class="v inline-edit" data-edit="${opts.editKind || 'field'}" data-card="${card}" data-field="${field}" data-rec="${esc(String(rec[idField]))}" data-ph="${esc(ph)}" data-type="${opts.type || 'text'}"${opts.dot ? ' data-dot="1"' : ''}${adm}${opts.wrap ? ' style="white-space:normal"' : ''}>${disp}</span>${sfx}</div>`;
+  const mny = opts.money ? ' data-money="1"' : '';
+  return `<div class="kv${opts.wrap ? ' wrap' : ''}">${pfx}<span class="v inline-edit" data-edit="${opts.editKind || 'field'}" data-card="${card}" data-field="${field}" data-rec="${esc(String(rec[idField]))}" data-ph="${esc(ph)}" data-type="${opts.type || 'text'}"${opts.dot ? ' data-dot="1"' : ''}${adm}${mny}${opts.wrap ? ' style="white-space:normal"' : ''}>${disp}</span>${sfx}</div>`;
 }
 
 /* Card anatomy (Jac 2026-06-10): Section 0 = Notes on EVERY standard view.
@@ -6257,16 +6261,16 @@ const DETAIL = {
     const investment = `<div class="section"><h4>Investment</h4>
       <div class="split">
         <div class="side">
-          ${efld('units', u, 'unitId', 'purchasePrice', 'Purchase price', { type: 'number', sfx: 'paid', fmt: money })}
+          ${efld('units', u, 'unitId', 'purchasePrice', 'Purchase price', { type: 'number', sfx: 'paid', fmt: money, money: true })}
           ${efld('units', u, 'unitId', 'purchaseDate', 'Purchase date', { type: 'date', sfx: 'purchased', fmt: yr })}
-          ${efld('units', u, 'unitId', 'trueCost', 'True cost', { type: 'number', sfx: 'true cost', fmt: money })}
+          ${efld('units', u, 'unitId', 'trueCost', 'True cost', { type: 'number', sfx: 'true cost', fmt: money, money: true })}
           ${efld('units', u, 'unitId', 'purchaseHours', 'Hours at purchase', { type: 'number', sfx: 'at purchase', fmt: (v) => num(v) + ' HRS' })}
         </div>
         <div class="side r">
           ${kv(money(totalRev), { pfx: 'Total Revenue', derived: true })}
           ${kv(money(avgRevMo), { pfx: 'Monthly', derived: true })}
           ${kv(money(repair), { pfx: 'Work Orders', derived: true })}
-          ${kv(`${money(profit)}${roi != null ? ` · (${roi}%)` : ''}`, { pfx: 'Profit', derived: true })}
+          ${kv(`${money(profit)}${roi != null && canMoney() ? ` · (${roi}%)` : ''}`, { pfx: 'Profit', derived: true })}
         </div>
       </div>
       <div style="display:flex;justify-content:flex-end;margin-top:8px">${gatePill('unitFleetStatus', u.fleetStatus, 'js-fleetstatus', { rec: u.unitId })}</div></div>`;
@@ -6579,9 +6583,9 @@ const DETAIL = {
     const investment = `<div class="section"><h4>Investment</h4>
       <div class="split">
         <div class="side">
-          ${st.roi != null ? kv(`${st.roi}%`, { sfx: 'ROI', derived: true }) : ''}
+          ${st.roi != null && canMoney() ? kv(`${st.roi}%`, { sfx: 'ROI', derived: true }) : ''}
           ${kv(money(st.avgRevUnit), { sfx: '/unit revenue', derived: true })}${kv(money(st.avgExpUnit), { sfx: '/unit expenses', derived: true })}
-          ${kv(money(c.msrp), { sfx: 'MSRP' })}${kv(money(c.askPrice), { sfx: 'ask' })}${kv(money(c.bottomDollar), { sfx: 'bottom dollar' })}
+          ${kv(money(c.msrp), { sfx: 'MSRP' })}${kv(money(c.askPrice), { sfx: 'ask' })}${canMoney() ? kv(money(c.bottomDollar), { sfx: 'bottom dollar' }) : ''}
           ${catUtilKv(c)}
           ${efld('categories', c, 'categoryId', 'usefulLifeHours', 'Useful life (hrs)', { type: 'number', admin: true, fmt: (v) => num(v) + ' HRS', sfx: 'useful life' })}
           ${efld('categories', c, 'categoryId', 'endOfLifeYears', 'End of life (yrs)', { type: 'number', admin: true, fmt: (v) => v + ' YRS', sfx: 'end of life' })}
@@ -11422,6 +11426,9 @@ function wrValidatePlan(act) {
     if (raw.op === 'operate') {   // named business operation (e.g. billRental) — validated by its registry entry
       const def = WR_OPERATIONS[raw.name];
       if (!def) { issues.push(`I don’t know how to “${raw.name}” yet`); return; }
+      // Money-tier gate (spec wrangler-ai D1, Jac 2026-06-29): Wrangler must never be a back door
+      // around the human-flow money gate — billing + payments require the SAME tier the UI enforces.
+      if (def.money && !canMoney()) { issues.push(`invoicing and payments are Office/Admin only — this login can’t move money through Mr. Wrangler`); return; }
       const v = def.validate(raw.params || {});
       if (v.issue) { issues.push(v.issue); return; }
       ops.push({ op: 'operate', name: raw.name, params: raw.params || {}, summary: v.summary });
@@ -11483,6 +11490,12 @@ function wrValidatePlan(act) {
       const t = rr.rec;
       if (!t) { issues.push(`no ${ent.label} “${raw.id}”`); return; }
       const c = wrCleanFields(raw.entity, raw.fields);
+      // Money-tier gate on rate authoring (spec wrangler-ai D1): a rate poisons every future
+      // quote — rate fields match the human rate-edit gate, stripped (never written) below money tier.
+      if (!canMoney()) {
+        const mk = Object.keys(c.out).filter((k) => WR_MONEY_FIELDS.has(k));
+        if (mk.length) { mk.forEach((k) => { delete c.out[k]; }); issues.push(`rate changes are Office/Admin only — skipped ${mk.join(', ')}`); }
+      }
       if (Object.keys(c.out).length) ops.push({ op: 'update', entity: raw.entity, id: idOf(raw.entity, t), fields: c.out, target: t });
     } else {
       if (!ent.create) { issues.push(`${ent.label}s can’t be created this way`); return; }
@@ -11587,6 +11600,7 @@ const WR_CREATE = {
 // See specs/…wrangler-full-action-parity (Stage 2).
 const WR_OPERATIONS = {
   billRental: {
+    money: true,   // requires canMoney() — gated in wrValidatePlan (spec wrangler-ai D1)
     // Pick the rental: by rentalId, OR by customer (name/phone) → their one un-invoiced rental.
     _pick(p) {
       if (p && p.rentalId) { const r = IDX.rental.get(p.rentalId); return r ? { rental: r } : { issue: `no rental “${p.rentalId}”` }; }
@@ -11614,9 +11628,10 @@ const WR_OPERATIONS = {
       return { summary: `invoice ${label} for ${cust ? cust.name : r.customerId} (${fmtWindow(r.startDate, r.endDate)})${pick.picked > 1 ? ` — most recent of ${pick.picked}` : ''}` };
     },
     selfToasts: true,   // createInvoiceForRental already toasts; don't add a second
-    apply(p) { const pick = this._pick(p); if (pick.issue || !pick.rental) return null; createInvoiceForRental(pick.rental.rentalId); return { entity: 'invoices', id: IDX.rental.get(pick.rental.rentalId)?.invoiceId || null }; },   // wraps the REAL billing path (pricing engine, 28-day cap, nav + toast)
+    apply(p) { const pick = this._pick(p); if (pick.issue || !pick.rental) return null; createInvoiceForRental(pick.rental.rentalId); const invId = IDX.rental.get(pick.rental.rentalId)?.invoiceId || null; const inv = invId ? IDX.invoice.get(invId) : null; if (inv) logAction(inv, 'Invoiced via Mr. Wrangler'); return { entity: 'invoices', id: invId }; },   // wraps the REAL billing path (pricing engine, 28-day cap, nav + toast); provenance stamp per spec wrangler-ai D4
   },
   recordPayment: {
+    money: true,   // requires canMoney() — gated in wrValidatePlan (spec wrangler-ai D1)
     // Record a CASH or CHECK payment on an existing invoice (by invoiceId, OR by customer → their one open
     // invoice). The backend is authoritative (caps at the live balance). NEVER a card/ACH charge — method is
     // cash|check only, enforced here AND in postManualPayment.
@@ -11655,6 +11670,7 @@ const WR_OPERATIONS = {
       let amt = (p.amount != null) ? Number(p.amount) : t.balance;
       amt = Math.min(amt, t.balance);
       await postManualPayment({ invoiceId: inv.invoiceId, amountCents: Math.round(amt * 100), method, checkNum: method === 'check' ? String(p.checkNum || '').trim() : '' });
+      logAction(inv, `${money2(amt)} ${method} payment recorded via Mr. Wrangler`);   // provenance stamp (spec wrangler-ai D4) — an auditor can tell a Wrangler-assisted entry from a human one
       return { entity: 'invoices', id: inv.invoiceId };   // bring the user to the invoice that was paid
     },
   },
@@ -13943,7 +13959,7 @@ function onClick(e) {
   if (closest('.js-sortdir')) { const card = closest('.js-sortdir').dataset.card; const cs = activeSession().cards[card]; cs.sort.dir = cs.sort.dir === 'asc' ? 'desc' : 'asc'; saveSort(card, cs.sort); render(); return; }
 
   // inline edit (click a value → input)
-  if (closest('.inline-edit')) { e.stopPropagation(); const _ie = closest('.inline-edit'); if (_ie.dataset.admin === '1' && !adminUnlocked()) return requireAdmin('Categories and pricing are Admin-only.', () => startInlineEdit(_ie)); return startInlineEdit(_ie); }
+  if (closest('.inline-edit')) { e.stopPropagation(); const _ie = closest('.inline-edit'); if (_ie.dataset.admin === '1' && !adminUnlocked()) return requireAdmin('Categories and pricing are Admin-only.', () => startInlineEdit(_ie)); if (_ie.dataset.money === '1' && !canMoney()) return toast('Cost fields are Office/Admin only.'); return startInlineEdit(_ie); }
 
   // X-to-swap / remove on pills (handle before the pill-open)
   const xEl = closest('.x');
