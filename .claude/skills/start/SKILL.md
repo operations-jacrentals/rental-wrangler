@@ -37,6 +37,13 @@ Also check that the app password secret is present (do NOT echo it):
 - Show how the current branch differs from the integration branch when available: `git diff --stat origin/staging...HEAD` (or vs `origin/main`).
 - Recall memory: read `MEMORY.md` and surface anything relevant to this session's topic (e.g. `[[jactec-skill-build-plan]]`, `[[jactec-tooling]]`, `[[jactec-design-prefs]]`).
 
+## 2b. Specs are the north star — keep them current
+Every area has (or should have) a living spec at `docs/specs/<area>.md`, indexed in `docs/specs/AREAS-ROADMAP.md`. Treat it as the working source of truth for that area, not a one-time planning doc:
+- **Before building in an area:** read its spec so the work matches the agreed direction, not just what's convenient to code.
+- **After building/changing something meaningful in an area:** update its spec (what shipped, what changed, what's now deferred) and update the `AREAS-ROADMAP.md` build-log line for it. Do this as part of finishing the task, not as a separate later chore.
+- **If a NEW area is created:** write a spec for it under `docs/specs/` (use `/brainstorming` first if the shape isn't settled) and add it to `AREAS-ROADMAP.md` — an area doesn't get a task branch without a corresponding spec.
+- Specs currently live on `staging` / `area/backend-data` (not necessarily `main`) — if you can't find `docs/specs/` on your current branch, fetch/merge from `staging` before assuming it doesn't exist.
+
 ## 3. Route to a TASK BRANCH off the right area — DO NOT switch without an OK
 The app is organized into long-lived **area branches** (`area/*`), each owning a domain. You do **not** work on an area branch directly — you branch a short-lived **task branch off it** (`<domain>/<task>`), so multiple sessions can work the SAME area in parallel without colliding. Flow: **`<domain>/<task>` → `area/<domain>` → `staging` (THE FINISH LINE) → `main` (explicit-only)**.
 
