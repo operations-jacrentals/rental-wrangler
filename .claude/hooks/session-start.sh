@@ -35,10 +35,17 @@ printf '%s' "$cred" > "$HOME/.clasprc.json"
 chmod 600 "$HOME/.clasprc.json"
 
 # 2) Bind a working dir to the Apps Script project (Script ID from env).
+proj="no ~/rw-backend (APPS_SCRIPT_ID unset)"
 if [ -n "${APPS_SCRIPT_ID:-}" ]; then
   mkdir -p "$HOME/rw-backend"
   printf '{"scriptId":"%s","rootDir":"%s"}\n' "$APPS_SCRIPT_ID" "$HOME/rw-backend" > "$HOME/rw-backend/.clasp.json"
+  proj="project at ~/rw-backend"
 fi
 
-# clasp itself is installed lazily at deploy time (keeps session start instant).
-echo "clasp deploy bridge: credential wired (~/.clasprc.json), project at ~/rw-backend. To deploy the backend, see docs/handoffs/backend-deploy-via-clasp.md."
+# 3) Report TRUTHFULLY. The real deploy-bridge litmus is the SERVICE-ACCOUNT push path
+# (GAS_SA_KEY_B64 + impersonation) — clasp's user-OAuth is RAPT-blocked for this Workspace
+# and `loggedIn:true` proves only that a creds FILE exists (see /clasp SKILL.md). clasp
+# itself is installed lazily at use time (keeps session start instant).
+sa="GAS_SA_KEY_B64 unset — backend PUSH unavailable (see docs/handoffs/BACKEND-DEPLOY-QUEUE.md setup)"
+if [ -n "${GAS_SA_KEY_B64:-}" ]; then sa="service-account push path ready (GAS_SA_KEY_B64 set; go-live stays Jac's editor deploy)"; fi
+echo "clasp deploy bridge: credential file wired (~/.clasprc.json — NB user-OAuth is RAPT-blocked, reads/deploys via clasp will fail); ${proj}; ${sa}. Runbook: .claude/skills/clasp/SKILL.md + docs/handoffs/BACKEND-DEPLOY-QUEUE.md."
