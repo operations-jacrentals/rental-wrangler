@@ -16,6 +16,15 @@
  *   GAS_SA_KEY_B64=... node gas-deploy-service-account.mjs push   # push local Code.js + manifest
  *   GAS_SA_KEY_B64=... node gas-deploy-service-account.mjs deploy "description"  # new version + update the live deployment
  *
+ * DOMAIN-WIDE DELEGATION (required for the Apps Script REST API): a plain service
+ * account can't call script.googleapis.com — the API's per-USER enablement toggle
+ * (script.google.com/home/usersettings) can't be set for a service-account identity,
+ * so every call 403s with "User has not enabled the Apps Script API" even when the
+ * API is enabled at the GCP-project level. The fix is for the SA to impersonate a real
+ * Workspace user who HAS that toggle on (and edits the script). Set GAS_IMPERSONATE_SUBJECT
+ * to that user (e.g. operations@jacrentals.com), and authorize the SA's client_id for
+ * the SCOPES below in Admin Console → Security → API Controls → Domain-wide Delegation.
+ *
  * Requires the `googleapis` npm package (installed ephemerally: `npm i --no-save googleapis`).
  * Never logs the key or any token.
  */
@@ -36,7 +45,13 @@ function auth() {
   const b64 = process.env.GAS_SA_KEY_B64;
   if (!b64) throw new Error('GAS_SA_KEY_B64 is not set — see docs/handoffs/BACKEND-DEPLOY-QUEUE.md setup steps.');
   const key = JSON.parse(Buffer.from(b64, 'base64').toString('utf8'));
-  return new google.auth.GoogleAuth({ credentials: key, scopes: SCOPES });
+  const opts = { credentials: key, scopes: SCOPES };
+  // Domain-wide delegation: impersonate a real Workspace user (the Apps Script API can't
+  // be enabled for a bare service-account identity — see the header note). Without a
+  // subject the API 403s "User has not enabled the Apps Script API".
+  const subject = process.env.GAS_IMPERSONATE_SUBJECT;
+  if (subject) opts.clientOptions = { subject };
+  return new google.auth.GoogleAuth(opts);
 }
 
 async function scriptClient() {
