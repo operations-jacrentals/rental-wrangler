@@ -5,7 +5,8 @@
  * First server-side customer channel: SMS via MoceanAPI (spec comms D1).
  *
  * SECRETS (Script Properties, set in the editor — NEVER in this repo):
- *   MOCEAN_API_KEY / MOCEAN_API_SECRET  — the Mocean credential pair
+ *   MOCEAN_TOKEN                        — Bearer API token (preferred auth)
+ *   MOCEAN_API_KEY / MOCEAN_API_SECRET  — legacy credential pair (fallback)
  *   MOCEAN_FROM                         — sender id or number
  *   SMS_DAILY_CAP                       — optional, default 50 (runaway guard)
  *
@@ -108,23 +109,26 @@ function sendCustomerMessage_(body, role) {
   };
   var text = tpl.replace(/\{(\w+)\}/g, function (_, k) { return vals[k] !== undefined ? vals[k] : ''; });
   var props = PropertiesService.getScriptProperties();
+  var mtoken = props.getProperty('MOCEAN_TOKEN');   // preferred: Bearer token (Mocean's current auth)
   var apiKey = props.getProperty('MOCEAN_API_KEY'), apiSecret = props.getProperty('MOCEAN_API_SECRET'), from = props.getProperty('MOCEAN_FROM');
-  if (!apiKey || !apiSecret || !from) return { ok: false, reason: 'not-configured' };
-  var status = 'failed', providerId = '';
+  if (!from || (!mtoken && (!apiKey || !apiSecret))) return { ok: false, reason: 'not-configured' };
+  var status = 'failed', providerId = '', providerErr = '';
   try {
-    var res = UrlFetchApp.fetch('https://rest.moceanapi.com/rest/2/sms', {
-      method: 'post', muteHttpExceptions: true,
-      payload: { 'mocean-api-key': apiKey, 'mocean-api-secret': apiSecret, 'mocean-from': from, 'mocean-to': to, 'mocean-text': text, 'mocean-resp-format': 'json' },
-    });
+    var payload = { 'mocean-from': from, 'mocean-to': to, 'mocean-text': text, 'mocean-resp-format': 'json' };
+    var opts = { method: 'post', muteHttpExceptions: true, payload: payload };
+    if (mtoken) opts.headers = { Authorization: 'Bearer ' + mtoken };
+    else { payload['mocean-api-key'] = apiKey; payload['mocean-api-secret'] = apiSecret; }
+    var res = UrlFetchApp.fetch('https://rest.moceanapi.com/rest/2/sms', opts);
     var out = JSON.parse(res.getContentText() || '{}');
     var m0 = out && out.messages && out.messages[0];
     if (m0 && Number(m0.status) === 0) { status = 'sent'; providerId = m0['message-id'] || ''; }
-  } catch (e) { status = 'failed'; }
+    else providerErr = String((m0 && m0.err_msg) || out.err_msg || res.getResponseCode()).slice(0, 80);   // stored in the log row for diagnosis — never sent to the client
+  } catch (e) { status = 'failed'; providerErr = 'fetch-error'; }
   var msgId = 'MSG-' + Utilities.getUuid().slice(0, 8);
   var row = {   // full row is SERVER-ONLY (`to` + body never reach the client/repo)
     msgId: msgId, channel: 'sms', direction: 'outbound', entity: entity, recId: String(body.recId),
     customerId: String(custId), template: template, to: to, body: text, status: status,
-    providerId: providerId, by: role || '', auto: auto, quiet: smsQuietNow_(),
+    providerId: providerId, providerErr: providerErr, by: role || '', auto: auto, quiet: smsQuietNow_(),
     dedupKey: template + '|' + body.recId + '|' + todayIso_(), when: new Date().toISOString(),
   };
   messagesSheet_().appendRow([msgId, JSON.stringify(row)]);

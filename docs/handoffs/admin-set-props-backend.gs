@@ -14,7 +14,7 @@
  * WIRE-UP: add to handle()'s router (pw is in scope, same as the getConfig route):
  *     if (action === 'adminSetProps') return json(adminSetProps_(body, pw));
  */
-var ADMIN_PROP_ALLOWLIST = ['MOCEAN_API_KEY', 'MOCEAN_API_SECRET', 'MOCEAN_FROM', 'SMS_DAILY_CAP'];
+var ADMIN_PROP_ALLOWLIST = ['MOCEAN_TOKEN', 'MOCEAN_API_KEY', 'MOCEAN_API_SECRET', 'MOCEAN_FROM', 'SMS_DAILY_CAP'];
 
 function adminSetProps_(body, pw) {
   if (!isAdmin(pw)) return { ok: false, error: 'forbidden' };
