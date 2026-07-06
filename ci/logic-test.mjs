@@ -653,6 +653,27 @@ try {
       cat.lostDemand.pop();
     }
 
+    // 12j10) Dispatch driver assignment (spec rentals-dispatch D6/D7, Jac 2026-06-29).
+    {
+      const pre = T.__state.settings.employees;
+      T.__state.settings.employees = [
+        { id: 'EMPAAA', name: 'Big Al', role: 'Driver', phone: '', note: '' },
+        { id: 'EMPBBB', name: 'Slim', role: 'Mechanic', phone: '', note: '' },
+      ];
+      const ds = T.driverRoster();
+      ok(ds.length === 1 && ds[0].id === 'EMPAAA' && ds[0].name === 'Big Al', 'DRV: roster filters to Driver-role hands');
+      ok(T.driverName('EMPAAA') === 'Big Al' && T.legDriverField('Deliver') === 'deliveryDriverId' && T.legDriverField('Pick up') === 'recoveryDriverId', 'DRV: name lookup + per-LEG field mapping (D6)');
+      const rD = T.DATA.rentals.find((x) => x.transportType && x.transportType !== 'Self' && (T.rentalUnits(x) || []).length && x.startDate);
+      if (rD) {
+        const eu = T.rentalUnits(rD)[0];
+        const prevD = eu.deliveryDriverId; eu.deliveryDriverId = 'EMPAAA';
+        const ev = T.dispatchEvents().find((x) => x.rentalId === rD.rentalId && x.task === 'Deliver');
+        ok(!!ev && ev.driverId === 'EMPAAA', 'DRV: the dispatch event carries its leg driver');
+        eu.deliveryDriverId = prevD;
+      }
+      T.__state.settings.employees = pre;
+    }
+
     // 12k) Chat markdown — Wrangler's replies render **bold**/`code`, but stay XSS-safe (escape before format).
     {
       ok(/<strong>June 30, 2026<\/strong>/.test(T.wrChatFormat('Monday is **June 30, 2026**.')), 'WR-fmt: **bold** renders as <strong>');
