@@ -8171,14 +8171,14 @@ function wranglerDockEl() {
           const goto = m.focus && m.focus.id ? ` <button class="wr-goto js-wr-goto" data-ent="${esc(m.focus.entity)}" data-id="${esc(m.focus.id)}">${esc(wrRecLabel(m.focus.entity, m.focus.id))} →</button>` : '';
           act = m.filed
             ? `<span class="wr-actdone">✓ Applied — ${esc(sum)}</span>${goto}`
-            : `<div class="wr-apply"><div class="wr-apply-sum">Preview: ${esc(sum)}</div>${cut}${skip}${plan.ops.length ? `<button class="wr-actbtn wr-actbtn-build js-wr-apply" data-mi="${i}">✓ Apply these changes</button>` : '<span class="wr-apply-none">Nothing here I can safely apply.</span>'}</div>`;
+            : `<div class="wr-apply"><div class="wr-apply-sum">Preview: ${esc(sum)}</div>${cut}${skip}${plan.ops.length ? `<button class="wr-actbtn wr-actbtn-build js-wr-apply" data-r="R17" data-mi="${i}">✓ Apply these changes</button>` : '<span class="wr-apply-none">Nothing here I can safely apply.</span>'}</div>`;
         } else if (m.action && m.action.action === 'kpi') {
           const v = m.action._kpi || (m.action._kpi = wrValidateKpi(m.action));
           const valTxt = v.value == null ? '—' : v.value + '%';
           act = m.filed
             ? `<span class="wr-actdone">✓ Locked in — ${esc(v.ring.label)} (${esc(valTxt)})</span>`
             : v.ok
-              ? `<div class="wr-apply"><div class="wr-apply-sum">${esc(v.role)} · Ring ${v.idx + 1}: <b>${esc(v.ring.label)}</b> — live <b>${esc(valTxt)}</b></div><div class="wr-kpi-readback">${esc(kpiMetricReadback(v.ring.metric))}</div><button class="wr-actbtn wr-actbtn-build js-wr-kpi-lock" data-mi="${i}">✓ Lock in this KPI</button></div>`
+              ? `<div class="wr-apply"><div class="wr-apply-sum">${esc(v.role)} · Ring ${v.idx + 1}: <b>${esc(v.ring.label)}</b> — live <b>${esc(valTxt)}</b></div><div class="wr-kpi-readback">${esc(kpiMetricReadback(v.ring.metric))}</div><button class="wr-actbtn wr-actbtn-build js-wr-kpi-lock" data-r="R17" data-mi="${i}">✓ Lock in this KPI</button></div>`
               : `<div class="wr-apply"><div class="wr-apply-skip">can’t build that yet: ${esc(v.issues.join('; '))}</div></div>`;
         } else if (m.action) {
           const ak = m.action.action;
@@ -8188,7 +8188,7 @@ function wranglerDockEl() {
             ? `<span class="wr-actdone">✓ ${doneLbl}${m.issue ? ` · #${m.issue}` : ''}</span>`
             : m.filing
               ? `<span class="wr-actdone" style="color:var(--txt-3)">…filing</span>`
-              : `<button class="wr-actbtn${ak === 'plan' ? ' wr-actbtn-build' : ''} js-wr-act" data-mi="${i}">${btnLbl}</button>`;
+              : `<button class="wr-actbtn${ak === 'plan' ? ' wr-actbtn-build' : ''} js-wr-act" data-r="R17" data-mi="${i}">${btnLbl}</button>`;
         }
         const imgs = (m.images && m.images.length) ? `<div class="wr-bub-imgs">${m.images.map((img) => { const s = wrImgSrc(img); return s ? `<img src="${esc(s)}" alt="attached image">` : ''; }).join('')}</div>` : '';
         const files = (m.files && m.files.length) ? `<div class="wr-bub-files">${m.files.map((f) => `<span class="wr-file-chip" data-tip="${esc(f.name)}">${I.paperclip || '📎'}<span class="wr-file-n">${esc(f.name)}</span></span>`).join('')}</div>` : '';
@@ -8236,7 +8236,7 @@ function wranglerDockEl() {
     <div class="wr-feed">${turns}${o.busy ? '<div class="wr-msg assistant"><span class="wr-av">🤠</span><div class="wr-bub wr-think">…wrangling an answer</div></div>' : ''}</div>
     ${o.error ? `<div class="wr-err">${esc(o.error)}</div>` : ''}
     ${attachRow}
-    <div class="wr-compose"><label class="wr-attach js-wr-attach" data-tip="Attach a screenshot or a CSV/text file"><input type="file" accept="image/*,.csv,.tsv,.txt,.md,.log,text/csv,text/plain" class="js-wr-file" hidden multiple>${I.paperclip || '📎'}</label><input class="wr-in js-wr-in" placeholder="Ask Mr. Wrangler, or tell him what's broken…" value="${esc(o.draft || '')}" ${o.busy ? 'disabled' : ''} /><button class="wr-send js-wr-send" ${o.busy ? 'disabled' : ''} aria-label="Ask">${I.chev}</button></div>`;
+    <div class="wr-compose"><label class="wr-attach js-wr-attach" data-r="R21" data-tip="Attach a screenshot or a CSV/text file"><input type="file" accept="image/*,.csv,.tsv,.txt,.md,.log,text/csv,text/plain" class="js-wr-file" hidden multiple>${I.paperclip || '📎'}</label><input class="wr-in js-wr-in" placeholder="Ask Mr. Wrangler, or tell him what's broken…" value="${esc(o.draft || '')}" ${o.busy ? 'disabled' : ''} /><button class="wr-send js-wr-send" data-r="R17" ${o.busy ? 'disabled' : ''} aria-label="Ask">${I.chev}</button></div>`;
 }
 function mountWranglerDock() {
   const d = document.querySelector('.wrangler-dock'); if (!d) return;
