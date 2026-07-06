@@ -12543,10 +12543,11 @@ function addInterestedCategory(custId, catId) {
    just drops its search into the card's search bar (visible + clearable like any
    search), replacing bespoke filter "modes". The View menu = Add-view (when the
    current search isn't already a view) + Views + Sort. */
-// Views are GLOBAL / company-wide (Jac 2026-06-13): ONE shared set, synced to the
-// backend so they follow every device + login. The localStorage mirror keeps the
-// demo and offline working; a one-time migration folds the old per-card keys in.
-// Curating the set (add/remove) is an Admin action; everyone can apply a view.
+// Views are PERSONAL "my views" (spec search-views D2, Jac 2026-06-29 — supersedes the
+// 2026-06-13 shared/company-wide set): per-device, stored in localStorage only, no backend
+// sync, no admin curation — every operator saves and deletes their OWN views freely.
+// A view captures search + pinned chips + SORT (D1). The old shared-set localStorage
+// mirror seeds the personal set on first run (nothing is lost in the switch).
 const VIEWS_LS_ALL = 'jactec.views.all';
 const VIEW_CARDS = ['units', 'categories', 'rentals', 'customers', 'invoices', 'shop', 'expenses'];
 let GLOBAL_VIEWS = null;
@@ -12564,15 +12565,8 @@ function loadViews(card) { return _viewsMap()[card] || []; }
 function saveViews(card, views) {
   const m = _viewsMap(); m[card] = views; GLOBAL_VIEWS = m;
   try { localStorage.setItem(VIEWS_LS_ALL, JSON.stringify(m)); } catch (e) {}
-  pushViewsToBackend();                                           // async, online only
-}
-async function loadGlobalViews() {                                // boot: pull the shared set from the server
-  if (typeof backendPassword === 'undefined' || !backendPassword) return;   // demo/offline → localStorage only
-  try { const r = await backendCall('getViews'); if (r && r.ok && r.views && typeof r.views === 'object') { GLOBAL_VIEWS = r.views; try { localStorage.setItem(VIEWS_LS_ALL, JSON.stringify(r.views)); } catch (e) {} render(); } } catch (e) { /* unknown action / offline → keep localStorage */ }
-}
-async function pushViewsToBackend() {                             // mirror local changes up to the server
-  if (typeof backendPassword === 'undefined' || !backendPassword) return;   // demo → localStorage only
-  try { await backendCall('setViews', { views: GLOBAL_VIEWS || {} }); } catch (e) { /* offline → re-syncs on next change */ }
+  // No backend push — views are personal/per-device (D2). The getViews/setViews GAS
+  // actions stay deployed but unused (additive backend: nothing breaks by not calling them).
 }
 // A view captures the WHOLE filter state — the live search text AND the pinned
 // filter chips (cs.filterTerms) — so ANY filter you build is saveable (Jac 2026-06-13).
@@ -12594,6 +12588,7 @@ function applyView(card, v) {
   const cs = activeSession().cards[card];
   cs.search = v.search || '';
   cs.filterTerms = (v.terms || []).map((t) => ({ ...t }));   // restore the pinned chips too
+  if (v.sort && v.sort.field) { cs.sort = { ...v.sort }; saveSort(card, cs.sort); }   // views capture SORT too (spec search-views D1, Jac 2026-06-29)
   cs.mode = 'list'; cs.recId = null; cs.listLimit = undefined;
   render();
 }
@@ -12603,9 +12598,9 @@ function openViewMenu(card, anchorEl) {
   const curSig = viewSig(cs.search, cs.filterTerms);
   const hasFilter = (cs.search || '').trim() || (cs.filterTerms || []).length;   // search text OR pinned chips
   const onView = views.some((v) => viewSig(v.search, v.terms) === curSig);
-  const admin = adminUnlocked();   // curating the shared set is an Admin action; anyone can apply
+  // Personal "my views" (D2): every operator curates their OWN per-device set — no admin gate.
   let html = '';
-  if (hasFilter && !onView && admin) { const lbl = viewLabel(cs.search, cs.filterTerms); html += `<button class="dd-item js-addview" data-card="${card}">${I.plus} Add view “${esc(lbl.length > 22 ? lbl.slice(0, 22) + '…' : lbl)}”</button>`; }
+  if (hasFilter && !onView) { const lbl = viewLabel(cs.search, cs.filterTerms); html += `<button class="dd-item js-addview" data-card="${card}">${I.plus} Add view “${esc(lbl.length > 22 ? lbl.slice(0, 22) + '…' : lbl)}”</button>`; }
   if (views.length) {
     html += `<div class="dd-sec">Views</div>`;
     html += views.map((v, i) => `<button class="dd-item js-applyview${viewSig(v.search, v.terms) === curSig ? ' on' : ''}" data-card="${card}" data-idx="${i}">${esc(v.name)}<span class="tick">✓</span><span class="x js-delview" data-card="${card}" data-name="${esc(v.name)}" data-tip="Delete view">${I.x}</span></button>`).join('');
@@ -13963,7 +13958,7 @@ function onClick(e) {
   if (closest('.js-sortmenu')) { const b = closest('.js-sortmenu'); return openViewMenu(b.dataset.card, b); }
   if (closest('.js-delview')) { e.stopPropagation(); const b = closest('.js-delview'); const card = b.dataset.card; saveViews(card, loadViews(card).filter((v) => v.name !== b.dataset.name)); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); const anchor = document.querySelector(`.js-sortmenu[data-card="${card}"]`); if (anchor) openViewMenu(card, anchor); else render(); return; }
   if (closest('.js-applyview')) { const b = closest('.js-applyview'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return applyView(b.dataset.card, loadViews(b.dataset.card)[Number(b.dataset.idx)]); }
-  if (closest('.js-addview')) { if (!adminUnlocked()) { document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return; } const b = closest('.js-addview'); const card = b.dataset.card; const cs = activeSession().cards[card]; const search = (cs.search || '').trim(); const terms = (cs.filterTerms || []).map((t) => ({ ...t })); const suggested = viewLabel(search, terms); const name = (typeof prompt === 'function' ? prompt('Name this view:', suggested) : suggested); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); if (name && name.trim()) { const views = loadViews(card); if (!views.some((v) => v.name.toLowerCase() === name.trim().toLowerCase())) { views.push({ name: name.trim(), search, terms }); saveViews(card, views); } } render(); return; }
+  if (closest('.js-addview')) { const b = closest('.js-addview'); const card = b.dataset.card; const cs = activeSession().cards[card]; const search = (cs.search || '').trim(); const terms = (cs.filterTerms || []).map((t) => ({ ...t })); const sort = cs.sort && cs.sort.field ? { ...cs.sort } : null; const suggested = viewLabel(search, terms); const name = (typeof prompt === 'function' ? prompt('Name this view:', suggested) : suggested); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); if (name && name.trim()) { const views = loadViews(card); if (!views.some((v) => v.name.toLowerCase() === name.trim().toLowerCase())) { views.push({ name: name.trim(), search, terms, ...(sort ? { sort } : {}) }); saveViews(card, views); } } render(); return; }   // personal my-views: any role saves its own (D2); sort captured (D1)
   if (closest('.js-sortfield')) { const b = closest('.js-sortfield'); const cs = activeSession().cards[b.dataset.card]; const f = SORT_FIELDS[b.dataset.card].find((x) => x.field === b.dataset.field); if (f) { cs.sort = { ...f }; saveSort(b.dataset.card, cs.sort); } document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); render(); return; }
   if (closest('.js-paymethod')) { const cs = activeSession().cards.invoices; cs.payMethod = closest('.js-paymethod').dataset.method; document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); render(); return; }   // §337
   if (closest('.js-sortdir')) { const card = closest('.js-sortdir').dataset.card; const cs = activeSession().cards[card]; cs.sort.dir = cs.sort.dir === 'asc' ? 'desc' : 'asc'; saveSort(card, cs.sort); render(); return; }
@@ -17169,7 +17164,7 @@ function renderLogin(msg) {
 function finishLoad() {
   snapshotSaved();                                              // baseline = what the backend currently holds
   buildIndexes(); state.cascade = createCascade(DATA); booting = false; render();
-  loadGlobalViews();                                            // pull the shared, company-wide view set
+  // (views no longer pull from the backend — personal per-device "my views", spec search-views D2)
   loadGroupOrderFromBackend();                                  // pull THIS role's saved card-group order
   loadChats();                                                  // pull the shared team-chat threads (§ team-chat sync)
   wranglerRailLoad();                                           // load the Mr. Wrangler rail from IndexedDB (+ one-time localStorage migration)
