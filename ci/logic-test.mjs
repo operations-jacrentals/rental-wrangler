@@ -607,6 +607,32 @@ try {
       const ix = T.DATA.invoices.indexOf(att); if (ix >= 0) T.DATA.invoices.splice(ix, 1); T.IDX.invoice.delete('INV-SWEEPA'); rr.invoiceId = prevLink;
     }
 
+    // 12j8) No-Show billing holes (Jac bug 2026-07-06, the root of the "empty attached invoice"):
+    // (a) billing an all-No-Show rental must REFUSE, never mint a silent empty invoice;
+    // (b) rentalLineItems filters voided units (the §20 rule the refusal rides on);
+    // (c) re-dating back to a valid window makes the unit billable again + syncRentalLines restores its line.
+    {
+      const u0 = T.DATA.units.find((u) => u.fleetStatus === 'Active');
+      const cust = T.DATA.customers.find((c) => c.customerId);
+      const rN = { rentalId: 'R-NOSHOWBILL', customerId: cust.customerId, unitId: u0.unitId, categoryId: u0.categoryId, rentalName: 'NoShow bill test', startDate: '2026-06-01', endDate: '2026-06-03', startTime: '', status: 'Reserved', transportType: 'Self', deliveryAddress: '', po: '', invoiceId: null, units: [{ unitId: u0.unitId, status: 'Reserved', transportType: 'Self' }], notes: '', actions: [], mock: true };
+      T.DATA.rentals.push(rN); T.IDX.rental.set(rN.rentalId, rN);
+      ok(T.rentalLineItems(rN).length === 0, 'NOSHOW: a stale Reserved rental has zero billable lines (derived No Show is voided)');
+      const invCountBefore = T.DATA.invoices.length;
+      T.createInvoiceForRental(rN.rentalId);
+      ok(T.DATA.invoices.length === invCountBefore && !rN.invoiceId, 'NOSHOW: billing an all-No-Show rental REFUSES — no empty invoice minted');
+      // re-date to a valid future window → unit un-voids → billable again
+      rN.startDate = '2099-07-10'; rN.endDate = '2099-07-12';
+      ok(T.rentalLineItems(rN).length === 1, 'NOSHOW: re-dating to a valid window makes the unit billable again');
+      // and the restore primitive puts a missing line back on an attached invoice
+      const invR = { invoiceId: 'INV-NOSHOWFIX', customerId: cust.customerId, rentalIds: [rN.rentalId], date: T.TODAY_ISO, dueDate: T.TODAY_ISO, amountPaid: 0, lineItems: [], mock: true };
+      T.DATA.invoices.push(invR); T.IDX.invoice.set(invR.invoiceId, invR); rN.invoiceId = invR.invoiceId;
+      T.syncRentalLines(rN);
+      ok(invR.lineItems.filter((li) => li.kind === 'rental' && li.unitId === u0.unitId).length === 1, 'NOSHOW: syncRentalLines restores the missing unit line after un-void (the winPickSave re-date path)');
+      // cleanup
+      const ii = T.DATA.invoices.indexOf(invR); if (ii >= 0) T.DATA.invoices.splice(ii, 1); T.IDX.invoice.delete(invR.invoiceId);
+      const ri = T.DATA.rentals.indexOf(rN); if (ri >= 0) T.DATA.rentals.splice(ri, 1); T.IDX.rental.delete(rN.rentalId);
+    }
+
     // 12k) Chat markdown — Wrangler's replies render **bold**/`code`, but stay XSS-safe (escape before format).
     {
       ok(/<strong>June 30, 2026<\/strong>/.test(T.wrChatFormat('Monday is **June 30, 2026**.')), 'WR-fmt: **bold** renders as <strong>');
