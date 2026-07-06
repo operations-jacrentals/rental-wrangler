@@ -4,7 +4,7 @@
 > - ✅ **Tier-aware backend deployed** (via the Apps Script UI — clasp deploy is
 >   blocked by the jacrentals.com Google Workspace reauth policy). Backend now
 >   accepts arbitrary role keys and gates money/admin by tier (`roleTierRank_`).
-> - ✅ **Developer login seeded** — `auth("Jacob5133")` → role `developer`,
+> - ✅ **Developer login seeded** — `auth("<developer password — set in-app, NEVER in the repo>")` → role `developer`,
 >   money + admin tier confirmed. `developer` key now persists in the config.
 > - ✅ **Owner → Manager** staged via `settings.roleMeta` (Owner login keeps its
 >   password, resolves to Manager tier server-side; admin demotion confirmed —
@@ -33,7 +33,7 @@ committed** (the repo is public via Pages).
      is locked out). *(Optional: change the password here too if desired.)*
 4. **Add the Developer login:**
    - Click **+Role**. On the new card, set **Label** = `Developer`, **Tier** =
-     **Developer**, and **Password** = `Jacob5133`.
+     **Developer**, and **Password** = `<developer password — set in-app, NEVER in the repo>`.
    - Developer tier is what unlocks the dev tools (Design Lint / Inspector /
      Rulebook). Until this exists, **no login sees the dev tools** (they moved off
      Admin).
@@ -43,7 +43,7 @@ committed** (the repo is public via Pages).
 
 ## Verify
 
-- Sign out, sign back in as **Developer** (`Jacob5133`): the bottom-bar dev tools
+- Sign out, sign back in as **Developer** (`<developer password — set in-app, NEVER in the repo>`): the bottom-bar dev tools
   (🔍 Inspector, lint eye, Rulebook doc) are visible.
 - Sign in as **Admin**: business powers intact (Settings opens, pricing edits,
   approvals), but the raw dev tools are **not** shown.
