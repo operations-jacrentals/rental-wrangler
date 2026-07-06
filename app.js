@@ -4858,7 +4858,7 @@ const CATEGORY_MOTION = {
   lift: 'mo-raise', scissor: 'mo-raise', telehandler: 'mo-raise', towablelift: 'mo-raise',
   attachment: 'mo-spin', roller: 'mo-roll', tamper: 'mo-press', buggy: 'mo-roll',
   generator: 'mo-spark', compressor: 'mo-puff', pump: 'mo-drip', truck: 'mo-roll',
-  tractor: 'mo-roll', trailer: 'mo-roll', fuel: 'mo-slosh', heater: 'mo-flicker',
+  tractor: 'mo-roll', trailer: 'mo-roll', dumptrailer: 'mo-raise', fuel: 'mo-slosh', heater: 'mo-flicker',
   tower: 'mo-pulse', saw: 'mo-chop', box: 'mo-none',
 };
 /* A library glyph representing a unit's CATEGORY (Jac) — keyword-resolved from the
@@ -4896,7 +4896,8 @@ function categoryIconFor(name) {
   else if (/generat|\bpower\b|genset|geny/.test(n)) key = 'generator';
   else if (/compress|\bair\b/.test(n)) key = 'compressor';
   else if (/pump|water|sump/.test(n)) key = 'pump';
-  else if (/trailer|dump/.test(n)) key = 'trailer';
+  else if (/dump/.test(n)) key = 'dumptrailer';
+  else if (/trailer|container/.test(n)) key = 'trailer';
   else if (/hauler|flatbed|\btruck\b/.test(n)) key = 'truck';
   else if (/tractor/.test(n)) key = 'tractor';
   else if (/light|tower/.test(n)) key = 'tower';
