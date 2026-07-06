@@ -1577,6 +1577,11 @@ select.inline-input:focus-visible { outline: 2px solid var(--accent); outline-of
 .popup .lf-in { height: 32px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--txt); font: inherit; font-size: 12px; padding: 0 9px; }
 .popup .lf-in:focus { outline: none; border-color: var(--accent-line); }
 .lineform .pill { cursor: pointer; }
+/* Merge/fold picker (#482): the actions column is flex-shrink:0, so the long
+   "Fold another unpaid invoice…" blurb would set its max-content width and push
+   the column — and its right-aligned "Merge in" buttons — off-screen with no
+   wrap. Bound the card so the text wraps and the buttons stay in view. */
+.mergeform { width: min(300px, 74vw); }
 
 /* §0.6 History section — dotted separator + background shift, pinned bottom */
 .history { border-top: 2px dotted var(--line); background: var(--bg-2); border-radius: 0 0 12px 12px; padding: 12px; }
@@ -3260,17 +3265,6 @@ body.is-phone .card[data-card="units"] .list { grid-template-columns: repeat(2, 
 .catanim g { transform-box: view-box; transform-origin: 0 0; }
 /* travel groups animate via translate; rotate groups pivot at their Lottie anchor
    because the markup nests translate(p) > [anim] > translate(-a). */
-.catanim [class*="xc-"], .catanim [class*="bl-"], .catanim [class*="sk-"] { animation-play-state: paused; }
-.ur:hover .catanim [class*="xc-"], .ur:hover .catanim [class*="bl-"], .ur:hover .catanim [class*="sk-"],
-.catr:hover .catanim [class*="xc-"], .catr:hover .catanim [class*="bl-"], .catr:hover .catanim [class*="sk-"] { animation-play-state: running; }
-.catanim .xc-run { animation: caXcRun 3s ease-in-out infinite; }
-.catanim .xc-bob { animation: caXcBob 1.5s ease-in-out infinite; }
-.catanim .xc-dig { animation: caXcDig 3s ease-in-out infinite; }
-.catanim .xc-rock { animation: caXcRock 3s ease-in-out infinite; }
-@keyframes caXcRun { 0%{transform:translateX(0)} 17%{transform:translateX(-64px)} 75%{transform:translateX(59px)} 100%{transform:translateX(0)} }
-@keyframes caXcBob { 0%,100%{transform:translateY(0)} 50%{transform:translateY(6px)} }
-@keyframes caXcDig { 0%,100%{transform:rotate(0)} 17%,75%{transform:rotate(2.7deg)} }
-@keyframes caXcRock { 0%,16%{transform:translateX(0) scale(.04);opacity:0} 30%{opacity:1} 75%{transform:translateX(120px) scale(1);opacity:1} 90%,100%{transform:translateX(197px) scale(1);opacity:0} }
 .catanim .bl-run { animation: caBlRun 3s ease-in-out infinite; }
 .catanim .bl-rock { animation: caBlRock 3s ease-in-out infinite; }
 .catanim .bl-a1 { animation: caBlA1 3s ease-in-out infinite; }
@@ -3288,6 +3282,11 @@ body.is-phone .card[data-card="units"] .list { grid-template-columns: repeat(2, 
 @keyframes caSkRock { 0%,20%,57%,100%{transform:rotate(0)} 44%{transform:rotate(-11deg)} }
 @keyframes caSkScoop { 0%,88%,100%{transform:rotate(0)} 17%,74%{transform:rotate(-30deg)} }
 @keyframes caSkFly { 0%,30%{stroke-dashoffset:0;opacity:0} 40%{opacity:1} 60%,100%{stroke-dashoffset:-180;opacity:0} }
+/* paused-until-hover MUST come after the animation shorthands above — the
+   shorthand resets play-state to running, so declaration order is load-bearing. */
+.catanim [class*="bl-"], .catanim [class*="sk-"] { animation-play-state: paused; }
+.ur:hover .catanim [class*="bl-"], .ur:hover .catanim [class*="sk-"],
+.catr:hover .catanim [class*="bl-"], .catr:hover .catanim [class*="sk-"] { animation-play-state: running; }
 @media (prefers-reduced-motion: reduce) {
   .catanim *, .catanim { animation: none !important; }
 }

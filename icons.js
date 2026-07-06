@@ -94,14 +94,17 @@ export const CATEGORY_ICON = {
   // ── bespoke marks (kept) ──
   excavator: CARD_ICON.units,
   skidsteer: ico('<path d="M2 17a2 2 0 1 0 4 0a2 2 0 0 0 -4 0"/><path d="M12 17a2 2 0 1 0 4 0a2 2 0 0 0 -4 0"/><path d="M19 13v4a2 2 0 0 0 2 2h1"/><path d="M14 19h-10"/><path d="M4 15h10"/><path d="M9 11v-5h2a3 3 0 0 1 3 3v6"/><path d="M5 15v-3a1 1 0 0 1 1 -1h8"/><path d="M19 17h-3"/>'),
+  dozer: ico('<path d="M2 17a2 2 0 1 0 4 0a2 2 0 0 0 -4 0"/><path d="M12 17a2 2 0 1 0 4 0a2 2 0 0 0 -4 0"/><path d="M19 13v4a2 2 0 0 0 2 2h1"/><path d="M14 19h-10"/><path d="M4 15h10"/><path d="M9 11v-5h2a3 3 0 0 1 3 3v6"/><path d="M5 15v-3a1 1 0 0 1 1 -1h8"/><path d="M19 17h-3"/>'),
   lift: ico('<path d="M6 21h6"/><path d="M9 21v-18l-6 6h18"/><path d="M9 3l10 6"/><path d="M17 9v4a2 2 0 1 1 -2 2"/>'),
-  // ── Lucide 1.21.0 (verbatim) ──
-  attachment: ico('<rect width="18" height="12" x="3" y="8" rx="1"/><path d="M10 8V5c0-.6-.4-1-1-1H6a1 1 0 0 0-1 1v3"/><path d="M19 8V5c0-.6-.4-1-1-1h-3a1 1 0 0 0-1 1v3"/>'),
-  roller: ico('<circle cx="12" cy="5" r="3"/><path d="M6.5 8a2 2 0 0 0-1.905 1.46L2.1 18.5A2 2 0 0 0 4 21h16a2 2 0 0 0 1.925-2.54L19.4 9.5A2 2 0 0 0 17.48 8Z"/>'),
-  trencher: ico('<path d="m14 13-8.381 8.38a1 1 0 0 1-3.001-3L11 9.999"/><path d="M15.973 4.027A13 13 0 0 0 5.902 2.373c-1.398.342-1.092 2.158.277 2.601a19.9 19.9 0 0 1 5.822 3.024"/><path d="M16.001 11.999a19.9 19.9 0 0 1 3.024 5.824c.444 1.369 2.26 1.676 2.603.278A13 13 0 0 0 20 8.069"/><path d="M18.352 3.352a1.205 1.205 0 0 0-1.704 0l-5.296 5.296a1.205 1.205 0 0 0 0 1.704l2.296 2.296a1.205 1.205 0 0 0 1.704 0l5.296-5.296a1.205 1.205 0 0 0 0-1.704z"/>'),
-  // ── bespoke marks (kept) ──
-  grinder: ico('<path d="M12.0 2.8 L14.39 5.42 L17.91 4.95 L18.06 8.5 L21.06 10.4 L18.89 13.22 L19.97 16.6 L16.5 17.36 L15.15 20.65 L12.0 19.0 L8.85 20.65 L7.5 17.36 L4.03 16.6 L5.11 13.22 L2.94 10.4 L5.94 8.5 L6.09 4.95 L9.61 5.42 Z"/><circle cx="12" cy="12" r="2.4"/>'),
-  buggy: ico('<path d="M17.5 17.5m-2.5 0a2.5 2.5 0 1 0 5 0a2.5 2.5 0 1 0 -5 0"/><path d="M6 8v11a1 1 0 0 0 1.806 .591l3.694 -5.091v.055"/><path d="M6 8h15l-3.5 7l-7.1 -.747a4 4 0 0 1 -3.296 -2.493l-2.853 -7.13a1 1 0 0 0 -.928 -.63h-1.323"/>'),
+  scissor: ico('<rect x="3" y="3" width="18" height="4" rx="1"/><path d="m5 7 14 9"/><path d="m19 7-14 9"/><path d="M4 16h16"/><circle cx="7.5" cy="20" r="1.6"/><circle cx="16.5" cy="20" r="1.6"/>'),
+  telehandler: ico('<circle cx="7.5" cy="17.5" r="2.3"/><circle cx="17" cy="17.5" r="2.3"/><path d="M9.8 17.5h4.9"/><path d="M5.2 17.2 4.5 14h11"/><path d="M20 13.5 7.5 4.5"/><path d="M19 15.5 13 11.2"/><path d="M15.5 14h4.5v3.5"/><path d="M7.5 4.5v3.4h-3.4"/>'),
+  towablelift: ico('<path d="M2 18h4"/><path d="M6 18h9"/><circle cx="10.5" cy="20" r="1.7"/><path d="M7.5 18 5.5 21.5"/><path d="M13.5 18 15.5 21.5"/><path d="M13 18 10 10.5 15.5 7.2"/><rect x="15" y="3.5" width="5.5" height="3.7" rx=".5"/>'),
+  attachment: ico('<rect x="8" y="2.5" width="8" height="4" rx="1"/><path d="M12 6.5V19"/><path d="M12 21.5 12 19"/><path d="m12 21.5-1.8-2.1"/><path d="M7.5 9.2c3 2 6 -2 9 0"/><path d="M8.3 13c2.6 1.8 4.8 -1.8 7.4 0"/><path d="M9.3 16.6c1.9 1.4 3.5 -1.4 5.4 0"/>'),
+  roller: ico('<circle cx="6" cy="15.5" r="4"/><path d="M6 15.5h.01"/><path d="M10 13h8.5a2 2 0 0 1 2 2v3.5h-2.5"/><path d="M12.5 13V8h5v5"/><circle cx="15.5" cy="18.5" r="2.2"/><path d="M10 18.5h3.3"/>'),
+  tamper: ico('<path d="M4.5 3 9 11"/><path d="M3 4.5 6 2.5"/><rect x="8" y="10" width="8" height="5" rx="1"/><path d="M6.5 18.5 8 15h8l1.5 3.5z"/><path d="M8.5 21.5h2"/><path d="M13.5 21.5h2"/>'),
+  trencher: ico('<rect x="10" y="15.5" width="9.5" height="4" rx="2"/><path d="M13 17.5h3.5"/><rect x="11.5" y="10" width="7.5" height="5.5" rx="1"/><path d="M12.5 12.5 4.2 5.2"/><path d="M14.5 10.5 6.3 3.3"/><path d="M4.2 5.2 6.3 3.3"/><path d="M6.5 6.5 5 8"/><path d="M9 8.7 7.5 10.2"/>'),
+  grinder: ico('<path d="M3 4.5 7.5 10"/><path d="M2 6.5 4.5 4"/><rect x="6.5" y="8.5" width="7" height="5" rx="1"/><circle cx="9" cy="16.5" r="1.7"/><circle cx="12.5" cy="16.5" r="1.7"/><circle cx="18" cy="14.5" r="3.6"/><path d="M18 14.5h.01"/><path d="M18 18.1v1.9"/><path d="M20.5 17l1.4 1.4"/><path d="M15.5 17 14 18.4"/><path d="M14.5 12.5h-1"/>'),
+  buggy: ico('<path d="M11.5 7.5v8H6a3.5 3.5 0 0 1-3.5-3.5V7.5z"/><path d="M2 7.5h11"/><path d="M11.5 11h4.5a3 3 0 0 1 3 3v1.5"/><path d="M19 15.5V13l2.5-1.5"/><circle cx="7.5" cy="18" r="2.4"/><circle cx="16" cy="18" r="2.4"/>'),
   // ── Lucide 1.21.0 (verbatim) ──
   generator: ico('<path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>'),
   compressor: ico('<path d="M12.8 19.6A2 2 0 1 0 14 16H2"/><path d="M17.5 8a2.5 2.5 0 1 1 2 4H2"/><path d="M9.8 4.4A2 2 0 1 1 11 8H2"/>'),
@@ -109,12 +112,13 @@ export const CATEGORY_ICON = {
   truck: ico('<path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/>'),
   tractor: ico('<path d="m10 11 11 .9a1 1 0 0 1 .8 1.1l-.665 4.158a1 1 0 0 1-.988.842H20"/><path d="M16 18h-5"/><path d="M18 5a1 1 0 0 0-1 1v5.573"/><path d="M3 4h8.129a1 1 0 0 1 .99.863L13 11.246"/><path d="M4 11V4"/><path d="M7 15h.01"/><path d="M8 10.1V4"/><circle cx="18" cy="18" r="2"/><circle cx="7" cy="15" r="5"/>'),
   // ── bespoke marks (kept) ──
-  trailer: ico('<path d="M7 18a2 2 0 1 0 4 0a2 2 0 0 0 -4 0"/><path d="M11 18h7a2 2 0 0 0 2 -2v-7a2 2 0 0 0 -2 -2h-9.5a5.5 5.5 0 0 0 -5.5 5.5v3.5a2 2 0 0 0 2 2h2"/><path d="M8 7l7 -3l1 3"/><path d="M13 11m0 .5a.5 .5 0 0 1 .5 -.5h2a.5 .5 0 0 1 .5 .5v2a.5 .5 0 0 1 -.5 .5h-2a.5 .5 0 0 1 -.5 -.5z"/><path d="M20 16h2"/>'),
+  trailer: ico('<path d="M2 13.5h4"/><path d="M3.5 13.5v3"/><path d="M2.5 16.5h2"/><path d="M6 13.5h1.5"/><rect x="7.5" y="9.5" width="14" height="6" rx="1"/><circle cx="13" cy="17.5" r="2.2"/><path d="M15.2 15.5h5"/><path d="M7.5 15.5h3.3"/>'),
+  dumptrailer: ico('<path d="M2 16.5h4.5"/><path d="M2.5 16.5v1.8"/><path d="M6.5 16.5h10.5"/><path d="M17.7 15.7 8.3 8.9 10 6.5 19.5 13.3z"/><path d="M13.5 15.5l2.6-3.4"/><circle cx="10.5" cy="18.7" r="1.9"/><circle cx="15" cy="18.7" r="1.9"/>'),
   // ── Lucide 1.21.0 (verbatim) ──
   fuel: ico('<path d="M14 13h2a2 2 0 0 1 2 2v2a2 2 0 0 0 4 0v-6.998a2 2 0 0 0-.59-1.42L18 5"/><path d="M14 21V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v16"/><path d="M2 21h13"/><path d="M3 9h11"/>'),
   heater: ico('<path d="M12 3q1 4 4 6.5t3 5.5a1 1 0 0 1-14 0 5 5 0 0 1 1-3 1 1 0 0 0 5 0c0-2-1.5-3-1.5-5q0-2 2.5-4"/>'),
-  tower: ico('<path d="M4.9 16.1C1 12.2 1 5.8 4.9 1.9"/><path d="M7.8 4.7a6.14 6.14 0 0 0-.8 7.5"/><circle cx="12" cy="9" r="2"/><path d="M16.2 4.8c2 2 2.26 5.11.8 7.47"/><path d="M19.1 1.9a9.96 9.96 0 0 1 0 14.1"/><path d="M9.5 18h5"/><path d="m8 22 4-11 4 11"/>'),
   // ── bespoke marks (kept) ──
+  tower: ico('<rect x="3" y="2.5" width="3.6" height="3" rx=".6"/><rect x="8" y="2.5" width="3.6" height="3" rx=".6"/><rect x="3" y="6.5" width="3.6" height="3" rx=".6"/><rect x="8" y="6.5" width="3.6" height="3" rx=".6"/><path d="M7.3 9.5V18"/><path d="M10.5 18v-3.5a1.5 1.5 0 0 1 1.5-1.5h6a2 2 0 0 1 2 2v3"/><path d="M2 18h14"/><circle cx="17.5" cy="19.6" r="1.8"/><path d="M4 18v-2"/>'),
   saw: ico('<path d="M11.414 10l-7.383 7.418a2.091 2.091 0 0 0 0 2.967a2.11 2.11 0 0 0 2.976 0l7.407 -7.385"/><path d="M18.121 15.293l2.586 -2.586a1 1 0 0 0 0 -1.414l-7.586 -7.586a1 1 0 0 0 -1.414 0l-2.586 2.586a1 1 0 0 0 0 1.414l7.586 7.586a1 1 0 0 0 1.414 0z"/>'),
   // ── Lucide 1.21.0 (verbatim) ──
   box: ico('<path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>'),

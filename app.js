@@ -5012,10 +5012,11 @@ function customerSpectrumViz(c) {
 // `box` (the unmatched/admin fallback) is deliberately `mo-none`: it stays inert so the
 // "this one's unrecognized" signal isn't undercut by a flourish that implies a real match.
 const CATEGORY_MOTION = {
-  excavator: 'mo-dig', skidsteer: 'mo-dig', trencher: 'mo-chop', grinder: 'mo-spin',
-  lift: 'mo-raise', attachment: 'mo-snap', roller: 'mo-press', buggy: 'mo-roll',
+  excavator: 'mo-dig', skidsteer: 'mo-dig', dozer: 'mo-dig', trencher: 'mo-chop', grinder: 'mo-spin',
+  lift: 'mo-raise', scissor: 'mo-raise', telehandler: 'mo-raise', towablelift: 'mo-raise',
+  attachment: 'mo-spin', roller: 'mo-roll', tamper: 'mo-press', buggy: 'mo-roll',
   generator: 'mo-spark', compressor: 'mo-puff', pump: 'mo-drip', truck: 'mo-roll',
-  tractor: 'mo-roll', trailer: 'mo-roll', fuel: 'mo-slosh', heater: 'mo-flicker',
+  tractor: 'mo-roll', trailer: 'mo-roll', dumptrailer: 'mo-raise', fuel: 'mo-slosh', heater: 'mo-flicker',
   tower: 'mo-pulse', saw: 'mo-chop', box: 'mo-none',
 };
 /* A library glyph representing a unit's CATEGORY (Jac) — keyword-resolved from the
@@ -5029,24 +5030,32 @@ const CATEGORY_MOTION = {
    box glyph — NOT a machine shape — so a miss is visually obvious instead of silently wrong.
    Wrapped in .cat-glyph so the parent row/card hover triggers a per-family CSS-only motion
    (never JS-driven, degrades to a plain color change under prefers-reduced-motion).
-   ANIMATED VARIANTS (Jac, 2026-07-03): the excavator / lift / skid-steer families render
-   the CATEGORY_ANIM ambient loops (icons-anim.js — converted from Jac's supplied Lottie
-   artwork) instead of the static glyph; reduced-motion freezes them to the rest pose. */
+   ANIMATED VARIANTS (Jac, 2026-07-03): the boom-lift and skid-steer families render
+   the CATEGORY_ANIM hover-play loops (icons-anim.js — converted from Jac's supplied
+   Lottie artwork) instead of the static glyph. The excavator Lottie was dropped —
+   it read as a track loader, not a boom-arm digger (Jac) — so that family stays on
+   the static Tabler backhoe until correct artwork arrives. */
 function categoryIconFor(name) {
   const n = (name || '').toLowerCase();
   let key = 'box';
   if (/stump|grinder/.test(n)) key = 'grinder';
   else if (/trench/.test(n)) key = 'trencher';
   else if (/att\.|attach|attatch|grapple|box.?blade|bush.?hog|\bforks?\b|breaker|auger/.test(n)) key = 'attachment';
-  else if (/skid|dozer|track.?loader|bobcat/.test(n)) key = 'skidsteer';
+  else if (/dozer/.test(n)) key = 'dozer';
+  else if (/skid|track.?loader|bobcat/.test(n)) key = 'skidsteer';
   else if (/excavat|backhoe|mini.?ex/.test(n)) key = 'excavator';
-  else if (/scissor|boom|man.?lift|aerial|telehandl|towable.?lift|\blift\b/.test(n)) key = 'lift';
-  else if (/roller|tamper|rammer/.test(n)) key = 'roller';
+  else if (/scissor/.test(n)) key = 'scissor';
+  else if (/telehandl|lull|telescopic.?fork|fork.?lift/.test(n)) key = 'telehandler';
+  else if (/towable/.test(n)) key = 'towablelift';
+  else if (/boom|man.?lift|aerial|\blift\b/.test(n)) key = 'lift';
+  else if (/tamper|rammer|compactor/.test(n)) key = 'tamper';
+  else if (/roller/.test(n)) key = 'roller';
   else if (/buggy/.test(n)) key = 'buggy';
   else if (/generat|\bpower\b|genset|geny/.test(n)) key = 'generator';
   else if (/compress|\bair\b/.test(n)) key = 'compressor';
   else if (/pump|water|sump/.test(n)) key = 'pump';
-  else if (/trailer|dump/.test(n)) key = 'trailer';
+  else if (/dump/.test(n)) key = 'dumptrailer';
+  else if (/trailer|container/.test(n)) key = 'trailer';
   else if (/hauler|flatbed|\btruck\b/.test(n)) key = 'truck';
   else if (/tractor/.test(n)) key = 'tractor';
   else if (/light|tower/.test(n)) key = 'tower';
@@ -6848,7 +6857,7 @@ const DETAIL = {
     // Merge (#64): a customer's other UNPAID invoices can fold into this one. Money-safe
     // by construction — only $0-paid, unlocked, un-refunded bills qualify (invoiceMergeable).
     const mergeables = (canMoney() && invoiceMergeable(i)) ? DATA.invoices.filter((o) => o.invoiceId !== i.invoiceId && o.customerId === i.customerId && invoiceMergeable(o)) : [];
-    const mergePicker = `<div class="lineform"><div class="muted" style="font-size:12px;margin-bottom:7px">Fold another unpaid invoice for ${esc(cust ? cust.name : 'this customer')} into ${esc(i.invoiceId)} — its lines move over and the original is removed.</div>${mergeables.map((o) => { const ot = invoiceTotals(o); const n = (o.lineItems || []).length; return `<div class="hitem"><b class="derived">${esc(invoiceShort(o.invoiceId))}</b><span class="muted" style="font-size:11px">${n} line${n === 1 ? '' : 's'} · ${money2(ot.total)}</span><span class="spacer"></span>${actionPill('commit', 'Merge in', { js: 'js-merge-pick', h: 24, data: { keep: i.invoiceId, rec: o.invoiceId } })}</div>`; }).join('')}<div class="pillrow" style="justify-content:flex-end;margin-top:7px">${ghostPill('Done', { js: 'js-merge-cancel' })}</div></div>`;
+    const mergePicker = `<div class="lineform mergeform"><div class="muted" style="font-size:12px;margin-bottom:7px">Fold another unpaid invoice for ${esc(cust ? cust.name : 'this customer')} into ${esc(i.invoiceId)} — its lines move over and the original is removed.</div>${mergeables.map((o) => { const ot = invoiceTotals(o); const n = (o.lineItems || []).length; return `<div class="hitem"><b class="derived">${esc(invoiceShort(o.invoiceId))}</b><span class="muted" style="font-size:11px">${n} line${n === 1 ? '' : 's'} · ${money2(ot.total)}</span><span class="spacer"></span>${actionPill('commit', 'Merge in', { js: 'js-merge-pick', h: 24, data: { keep: i.invoiceId, rec: o.invoiceId } })}</div>`; }).join('')}<div class="pillrow" style="justify-content:flex-end;margin-top:7px">${ghostPill('Done', { js: 'js-merge-cancel' })}</div></div>`;
     const manageRow = state.invLineForm === i.invoiceId ? lineForm
       : (state.invMergePick === i.invoiceId && mergeables.length) ? mergePicker
       : locked
