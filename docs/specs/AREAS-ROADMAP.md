@@ -37,7 +37,7 @@ Shipped to `staging` (never `main`), per-area against the 2026-06-29 decisions:
 | `automated-pricing` | Used-SALE price engine: % of cost/MSRP scale in Settings, Manager+ accept or full-auto (manager-session-only), $25 steps, audited (D1/D3). Rental-RATE automation needs Jac's formula — not yet specced numerically. |
 | `financials-kpi` | Sparklines DEFERRED — need M4 snapshot consumption; backend action deploy parked on clasp re-arm. |
 
-**Next session queue:** rentals-dispatch driver-laned rail + `units[].leg.driverId` (D5/D6, big); maintenance-shop per-category/per-unit service schedules (D3); Flags editor severity polish; portal scaffold (blocked on comms).
+**Next session queue:** rentals-dispatch driver-laned rail + `units[].leg.driverId` (D5/D6, big); **No-Show semantics review (Jac, 2026-07-06 — its own later PR):** the derived stale-Reserved→No-Show rule and everything riding it (voided-unit billing filter, un-void/re-date paths, dispatch/UX for reviving a stale reservation) gets a dedicated design pass + PR — the 2026-07-06 hole-fixes (refuse empty bill, restore lines on re-date, sweep guard) are stopgaps inside today's rule, not the final shape; maintenance-shop per-category/per-unit service schedules (D3); Flags editor severity polish; portal scaffold (blocked on comms).
 
 ## What this is
 

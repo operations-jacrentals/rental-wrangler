@@ -11,6 +11,9 @@
 
 ## ✅ Decisions — 2026-06-29 critique (Jac)
 
+> **Flagged 2026-07-06 (Jac): No-Show semantics = a LATER dedicated project/PR.** The derived stale-Reserved→No-Show rule (app.js `unitStatus`), the voided-unit billing filter (`rentalLineItems`), and the un-void paths (status vs re-date) need a design pass of their own — the 2026-07-06 fixes (billing refusal on all-No-Show, line restore on re-date, sweep guard for linked invoices) patched the holes but did not redesign the rule.
+
+
 These supersede the matching Open Questions and amend §2.7 / §3 / §4 / §5 / §6 / §8.
 
 - **D1 · Money gate — tighten the fragile-window save only (resolves OQ-1/OQ-2).** Wrap the fragile-window extension save (`winPickSave` → `billExtension`) in `canMoney()` so a `staff`-tier Driver cannot silently raise a customer balance. Leave invoice creation and the pre-invoice live-commit path **un-gated** (parity with `createInvoiceForRental`/`addCustomLine`). Collecting payment stays gated as today.
