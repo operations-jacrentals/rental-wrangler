@@ -47,11 +47,20 @@ Being 50 behind `main` is normal — `/start` §3 refreshes an area from `main` 
 
 ## Recommended next actions (Jac's call)
 
-1. **Sync `main` → `staging`** (5 commits) so today's glyph + fold-invoice fixes can't regress at the next promotion.
-2. **Promotion decision:** `staging` now holds the entire sprint + Rulebook 1b. When ready: bump `?v=`, force the mirror sync, run the combined Staging E2E, then ONE PR `staging` → `main`.
-3. **After promotion, refresh the parked area branches** from the new `main` so they reflect their domains again (or formally adopt the sprint's staging-first flow and update `/start`/branch-map to match).
-4. **Merge `area/backend-data` → `staging`** when the deploy-queue story is settled (and reconcile #485 vs #486).
-5. **Backlog PR sweep:** close the sprint-obsoleted ones, retarget the rest to their areas.
-6. **Branch janitor** on the 3 stray branches.
+## Outcomes — executed same-day (this session, with Jac's popup sign-off)
+
+- ✅ **`main` → `staging` synced** (merge `44fe43c`): glyphs #476–478 + fold-invoice #483/484 now in staging. `?v=` bumped to `20260706i`; conflicts (token, generated code map) resolved; smoke + logic 439/439 + all drift guards green on the merged tree before push. Mirror picks it up on its 10-min cron (couldn't force `sync-staging.yml` — mirror repo outside session scope).
+- ✅ **Backlog sweep:** #367 + #372 closed as shipped (evidence in closing comments); #364/#365/#375 → `area/design-system`, #366/#370 → `area/units-fleet`, #368/#374 → `area/search-views`, #369 → `area/invoicing-payments`, #371/#373 → `area/customers-crm`, #376 → `area/rentals-dispatch` (bases retargeted). All 13 were ticket-doc placeholders; every verdict verified against staging/main code.
+- ✅ **Non-draft triage executed:** #297, #292, #418 closed as superseded/retired-architecture (evidence in comments). #481's "smoke" failure was actually the **code-map drift guard** — merged current main in, regenerated the map, pushed; **CI now green**. #446 was verified genuinely unshipped and green — awaiting Jac's merge call.
+- ✅ **ACH money-gate gap fixed** (found triaging #336: card half shipped in #335, ACH half never landed — `+ACH`/`openAddBank`/`js-add-ach` had no `canMoney()` gate). Fix on `customers-crm/ach-money-gate` → **PR #489** into the freshly main-refreshed `area/customers-crm`; mirrors the card pattern at all three sites; all gates green locally (note: `ci.yml` only runs on PRs targeting `main`, so area-targeted PRs rely on the local gate run). #336 can close once #489 lands.
+- Repo note for future cloud sessions: the container clone is **shallow** — `git merge` across old branch points fails with "refusing to merge unrelated histories" until `git fetch --unshallow origin`.
+
+## Remaining next actions (Jac's call)
+
+1. **Promotion decision:** `staging` now holds the entire sprint + Rulebook 1b + today's synced fixes. When ready: bump `?v=`, force the mirror sync, run the combined Staging E2E, then ONE PR `staging` → `main`.
+2. **After promotion, refresh the parked area branches** from the new `main` so they reflect their domains again (or formally adopt the sprint's staging-first flow and update `/start`/branch-map to match).
+3. **Merge `area/backend-data` → `staging`** when the deploy-queue story is settled (and reconcile #485 vs #486).
+4. **Review/merge calls:** #446 and #481 (both green, both real fixes), #488 (this report), #489 (ACH gate → area).
+5. **Branch janitor** on the 3 stray branches.
 
 From the roadmap's own "Next session queue": rentals-dispatch driver-laned rail (`units[].leg.driverId`, big), the No-Show semantics design pass, maintenance-shop per-category/per-unit service schedules, Flags-editor severity polish, portal scaffold (blocked on comms).
