@@ -85,7 +85,7 @@ const CUSTOM = {
     // rejected — no icon set draws real rental equipment; simple computed geometry,
     // same precedent as the sawblade/scissor) ──
     dozer: `ico('<path d="M2 17a2 2 0 1 0 4 0a2 2 0 0 0 -4 0"/><path d="M12 17a2 2 0 1 0 4 0a2 2 0 0 0 -4 0"/><path d="M19 13v4a2 2 0 0 0 2 2h1"/><path d="M14 19h-10"/><path d="M4 15h10"/><path d="M9 11v-5h2a3 3 0 0 1 3 3v6"/><path d="M5 15v-3a1 1 0 0 1 1 -1h8"/><path d="M19 17h-3"/>')`,
-    roller: `ico('<circle cx="6" cy="15.5" r="4"/><path d="M6 15.5h.01"/><path d="M10 13h8.5a2 2 0 0 1 2 2v3.5h-2.5"/><path d="M12.5 13V8h5v5"/><circle cx="15.5" cy="18.5" r="2.2"/><path d="M10 18.5h3.3"/>')`,
+    roller: `ico('<circle cx="17" cy="15" r="4.5"/><path d="M17 15h.01"/><rect x="4" y="10.5" width="7.5" height="5" rx="1"/><path d="M5.5 10.5V7"/><path d="M10 10.5V7"/><path d="M4 7h7.5"/><circle cx="6.5" cy="18.3" r="2"/><path d="M8.5 18.8h4"/>')`,
     tamper: `ico('<path d="M4.5 3 9 11"/><path d="M3 4.5 6 2.5"/><rect x="8" y="10" width="8" height="5" rx="1"/><path d="M6.5 18.5 8 15h8l1.5 3.5z"/><path d="M8.5 21.5h2"/><path d="M13.5 21.5h2"/>')`,
     trencher: `ico('<rect x="10" y="15.5" width="9.5" height="4" rx="2"/><path d="M13 17.5h3.5"/><rect x="11.5" y="10" width="7.5" height="5.5" rx="1"/><path d="M12.5 12.5 4.2 5.2"/><path d="M14.5 10.5 6.3 3.3"/><path d="M4.2 5.2 6.3 3.3"/><path d="M6.5 6.5 5 8"/><path d="M9 8.7 7.5 10.2"/>')`,
     telehandler: `ico('<circle cx="7.5" cy="17.5" r="2.3"/><circle cx="17" cy="17.5" r="2.3"/><path d="M9.8 17.5h4.9"/><path d="M5.2 17.2 4.5 14h11"/><path d="M20 13.5 7.5 4.5"/><path d="M19 15.5 13 11.2"/><path d="M15.5 14h4.5v3.5"/><path d="M7.5 4.5v3.4h-3.4"/>')`,
