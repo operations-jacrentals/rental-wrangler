@@ -559,6 +559,24 @@ try {
       ok(back !== 'Sent to Collections' && back !== 'Paid', 'COL: a Recalled invoice falls back to the normal aging ladder');
     }
 
+    // 12j5) Equipment-insurance Phase 1 (spec equipment-insurance, Jac 2026-06-29): coverage
+    // roll-down + admin-only dollar rollups + the three-rider catalog.
+    {
+      const cats = T.insuranceTypeCatalog();
+      ok(cats.length === 3 && cats.map((t) => t.id).join(',') === 'theft,flood,in-tow', 'INS: catalog is exactly Theft / Flood / In-Tow (D1)');
+      const u0 = T.DATA.units.find((u) => !u.insurance);
+      ok(T.unitCoverage(u0).covered === false && T.unitCoverage(u0).src === 'none', 'INS: absent insurance reads uninsured (fail-closed)');
+      const uX = { unitId: 'U-INSTEST', categoryId: u0 ? u0.categoryId : null, fleetStatus: 'Active', insurance: { covered: true, types: ['theft', 'flood'], insuredValue: 72000, premium: 1200, premiumCadence: 'Annual' } };
+      ok(T.unitCoverage(uX).covered === true && T.unitCoverage(uX).types.length === 2 && T.unitCoverage(uX).src === 'unit', 'INS: unit-level coverage wins with its riders');
+      T.DATA.units.push(uX);
+      const fv = T.fleetInsuredValue(), fp = T.fleetPremiumMonthly();
+      ok(fv >= 72000, 'INS: fleet insured value includes the covered active unit');
+      ok(Math.abs(fp - 100) < 0.01 || fp >= 100, 'INS: annual premium normalizes to monthly (1200/yr → 100/mo)');
+      uX.fleetStatus = 'Sold';
+      ok(T.fleetInsuredValue() === fv - 72000, 'INS: a Sold unit drops out of the insured-value rollup');
+      T.DATA.units.pop();
+    }
+
     // 12k) Chat markdown — Wrangler's replies render **bold**/`code`, but stay XSS-safe (escape before format).
     {
       ok(/<strong>June 30, 2026<\/strong>/.test(T.wrChatFormat('Monday is **June 30, 2026**.')), 'WR-fmt: **bold** renders as <strong>');

@@ -28,7 +28,7 @@ import {
   SHOP_TYPES, SHOP_SEGMENTS, COLUMNS, COLUMN_OF,
   legacyTransportPrice, computeTransportPrice, isFueledType, legsForType, YARD_ORIGIN, GOOGLE_MAPS_KEY,
   fmtWindow, fmtShortDate, showsTruck, parseISO, TODAY_ISO, invoiceShort, TRANSPORT_MAP,
-  FLAG_META, FLAG_SEVERITY_RANK,
+  FLAG_META, FLAG_SEVERITY_RANK, INSURANCE_COVERAGE_TYPES,
 } from './config.js';
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -4148,6 +4148,26 @@ const rentalUnitRecords = (r) => rentalUnitIds(r).map((id) => IDX.unit.get(id)).
 // A WO carries an ETA when the WO or any of its lines has an `eta` date set.
 const woHasEta = (w) => !!(w.eta || (w.lineItems || []).some((li) => li.eta));
 
+/* ── Equipment-insurance coverage (spec equipment-insurance Phase 1, Jac 2026-06-29) ──
+ * The YARD's asset policy on a unit — additive unit.insurance{}; absent = uninsured.
+ * Effective coverage rolls down: unit's own insurance if present, else the category
+ * insuranceDefault (Phase-2 surface; read-ready now), else uninsured. NOT the same as
+ * membership Rental Protection (customer-side, anything up to $2,000 on the rental). */
+function insuranceTypeCatalog() {
+  const o = (state.settings && Array.isArray(state.settings.insuranceTypes) && state.settings.insuranceTypes.length) ? state.settings.insuranceTypes : INSURANCE_COVERAGE_TYPES;
+  return o.map((t) => ({ id: t.id, label: t.label }));
+}
+function unitCoverage(u) {
+  if (u && u.insurance && u.insurance.covered !== undefined) return { covered: !!u.insurance.covered, types: u.insurance.types || [], src: 'unit' };
+  const cat = u && IDX.category.get(u.categoryId);
+  if (cat && cat.insuranceDefault && cat.insuranceDefault.covered !== undefined) return { covered: !!cat.insuranceDefault.covered, types: cat.insuranceDefault.types || [], src: 'category' };
+  return { covered: false, types: [], src: 'none' };
+}
+/* Owner rollups (admin-only render; helpers open for tests). Excludes out-of-service units. */
+const INS_OUT = new Set(['Sold', 'Inactive', 'For Sale']);
+function fleetInsuredValue() { return (DATA.units || []).filter((u) => unitCoverage(u).covered && !INS_OUT.has(u.fleetStatus)).reduce((a, u) => a + (Number(u.insurance?.insuredValue) || 0), 0); }
+function fleetPremiumMonthly() { return Math.round((DATA.units || []).filter((u) => unitCoverage(u).covered && !INS_OUT.has(u.fleetStatus)).reduce((a, u) => { const p = Number(u.insurance?.premium) || 0; return a + (String(u.insurance?.premiumCadence || 'Monthly') === 'Annual' ? p / 12 : p); }, 0) * 100) / 100; }
+
 const FLAG_COND = {
   rentals: {
     'fc':               (r) => openWOsForRental(r).some((w) => w.woType === 'Field Call'),
@@ -4174,6 +4194,8 @@ const FLAG_COND = {
     'service-due-soon':     (u) => { const s = topServiceForUnit(u); return !!s && s.status === 'due-soon'; },
     'wash-requested':       (u) => !!u.washRequested,
     'gps-verify':           (u) => u.gpsStatus === 'Verify',
+    'coverage-expired':     (u) => { const ins = u.insurance || {}; return !!ins.covered && !!ins.expires && ins.expires < TODAY_ISO; },
+    'uninsured-active':     (u) => !unitCoverage(u).covered && !!activeRentalForUnit(u.unitId),
   },
   workOrders: {
     'part-needed':         (w) => w.phase === 'Part Needed',
@@ -5534,7 +5556,7 @@ const kvPills = (html) => `<div class="kv pillrow">${html}</div>`;
    so a one-field change auto-saves per-record. Empty value renders "+ placeholder".
    opts: { type:'text'|'number'|'date', pfx, sfx, wrap, fmt(value) }. */
 function efld(card, rec, idField, field, ph, opts = {}) {
-  const raw = rec[field];
+  const raw = field.includes('.') ? field.split('.').reduce((o, k) => (o == null ? o : o[k]), rec) : rec[field];   // dotted path → nested read (e.g. insurance.premium)
   const has = raw !== '' && raw != null;
   const phDisp = String(ph).replace(/^Add\s+/i, '');   // rule 8/12: drop "Add" + space (data-ph keeps full prompt)
   const dotColor = opts.dot ? rec[field + 'Color'] : '';   // rule 8: notes carry a 3-color dot tag
@@ -6263,6 +6285,35 @@ const DETAIL = {
       ${efld('units', u, 'unitId', 'gpsType', 'GPS unit/type')}
       ${efld('units', u, 'unitId', 'gpsPlacement', 'Placement')}
     </div></div>`;
+    /* COVERAGE — the yard's own equipment insurance on this unit (spec equipment-insurance
+       Phase 1, Jac 2026-06-29). STATUS + riders are open to every role (a driver must know a
+       machine is uninsured before it leaves the yard); insurer/policy/dates render at ≥money;
+       PREMIUM + INSURED VALUE are ADMIN-ONLY and OMITTED from the DOM below that (D5 — cost/
+       margin-adjacent, never merely CSS-hidden). Editing is admin-gated (requireAdmin). */
+    const cov = unitCoverage(u);
+    const ins = u.insurance || {};
+    const covTypes = insuranceTypeCatalog();
+    const riderBadges = cov.covered
+      ? (cov.types.length ? cov.types.map((tid) => badge((covTypes.find((t) => t.id === tid) || { label: tid }).label, 'navy')).join('') : badge('No riders set', 'yellow'))
+      : '';
+    const covEditable = adminUnlocked();
+    const covToggle = covEditable
+      ? segCtl([{ label: 'Insured', js: 'js-cov-toggle', data: { rec: u.unitId, val: '1' }, on: cov.covered ? 'green' : null }, { label: 'Uninsured', js: 'js-cov-toggle', data: { rec: u.unitId, val: '' }, on: !cov.covered ? 'red' : null }])
+      : kvPills(cov.covered ? badge('Insured ✓', 'green') : badge('Uninsured', 'gray'));
+    const riderCtl = (covEditable && cov.covered)
+      ? segCtl(covTypes.map((t) => ({ label: t.label, js: 'js-cov-type', data: { rec: u.unitId, id: t.id }, on: (ins.types || []).includes(t.id) ? 'green' : null })))
+      : (cov.covered ? kvPills(riderBadges) : '');
+    const coverage = `<div class="section"><h4>Coverage</h4><div class="fieldstack centered">
+      <div class="kv" style="justify-content:center">${covToggle}</div>
+      ${riderCtl ? `<div class="kv" style="justify-content:center">${riderCtl}</div>` : ''}
+      ${cov.covered && canMoney() ? `
+        ${efld('units', u, 'unitId', 'insurance.policyRef', 'Policy #', { admin: true, pfx: 'Policy' })}
+        ${efld('units', u, 'unitId', 'insurance.effective', 'Effective', { type: 'date', admin: true, sfx: 'effective', fmt: fmtShortDate })}
+        ${efld('units', u, 'unitId', 'insurance.expires', 'Expires', { type: 'date', admin: true, sfx: 'expires', fmt: fmtShortDate })}` : ''}
+      ${cov.covered && adminUnlocked() ? `
+        ${efld('units', u, 'unitId', 'insurance.insuredValue', 'Insured value', { type: 'number', admin: true, fmt: money, sfx: 'insured value' })}
+        ${efld('units', u, 'unitId', 'insurance.premium', 'Premium', { type: 'number', admin: true, fmt: money, sfx: `premium / ${ins.premiumCadence === 'Annual' ? 'yr' : 'mo'}` })}` : ''}
+    </div></div>`;
     /* INVESTMENT — left = entry · right = derived, ordered per Jac:
        Total Revenue → Monthly → Work Orders → Profit · (ROI%) */
     const invested = Number(u.trueCost) || Number(u.purchasePrice) || 0;
@@ -6326,6 +6377,7 @@ const DETAIL = {
       ${woSecs}
       <div class="add-row">${addBtn('Work Order', { js: 'js-new-wo-unit', link: true, data: { rec: u.unitId } })}</div>
       <div class="detail-cols">${specs}${gps}</div>
+      ${coverage}
       ${investment}
       ${notes.bottom}
       ${historySection('units', u, cs, hchips)}
@@ -13637,6 +13689,8 @@ function onClick(e) {
   if (closest('.js-refund-invoice')) { e.stopPropagation(); if (state.overlay) { state.overlay.confirmRefund = true; state.overlay.error = ''; renderOverlay(); } return; }
   if (closest('.js-refund-cancel')) { e.stopPropagation(); if (state.overlay) { state.overlay.confirmRefund = false; state.overlay.refundAlloc = null; renderOverlay(); } return; }
   if (closest('.js-refund-confirm')) { e.stopPropagation(); return refundInvoiceFlow(closest('.js-refund-confirm').dataset.rec); }
+  if (closest('.js-cov-toggle')) { e.stopPropagation(); const b = closest('.js-cov-toggle'); const doIt = () => { const u = IDX.unit.get(b.dataset.rec); if (!u) return; u.insurance = u.insurance || {}; const nv = b.dataset.val === '1'; if (!!u.insurance.covered !== nv) { u.insurance.covered = nv; logAction(u, nv ? 'Branded covered — yard equipment insurance ON' : 'Coverage dropped — yard equipment insurance OFF'); reindex('units', u); } render(); }; if (!adminUnlocked()) return requireAdmin('Equipment insurance is Owner-only.', doIt); return doIt(); }
+  if (closest('.js-cov-type')) { e.stopPropagation(); const b = closest('.js-cov-type'); const doIt = () => { const u = IDX.unit.get(b.dataset.rec); if (!u) return; u.insurance = u.insurance || {}; const ts = new Set(u.insurance.types || []); const id = b.dataset.id; ts.has(id) ? ts.delete(id) : ts.add(id); u.insurance.types = [...ts]; logAction(u, `Coverage riders → ${u.insurance.types.join(', ') || 'none'}`); reindex('units', u); render(); }; if (!adminUnlocked()) return requireAdmin('Equipment insurance is Owner-only.', doIt); return doIt(); }
   if (closest('.js-col-queue')) { e.stopPropagation(); if (currentRole && roleTier(currentRole) < tierRank('manager')) { toast('Collections is Manager-tier and up.'); return; } return openOverlay({ kind: 'collectionsSend', invoiceId: closest('.js-col-queue').dataset.rec }); }
   if (closest('.js-col-queue-confirm')) {
     e.stopPropagation();
@@ -14227,12 +14281,14 @@ function startInlineEdit(span) {
   } else if (kind === 'field') {
     // Generic per-card field editor (text / number / date) — routes through recOf+reindex.
     const card = span.dataset.card, f = span.dataset.field, type = span.dataset.type || 'text';
+    const dotGet = (r, path) => path.split('.').reduce((o, k) => (o == null ? o : o[k]), r);
+    const dotSet = (r, path, v) => { const ks = path.split('.'); let o = r; for (let i = 0; i < ks.length - 1; i++) { if (typeof o[ks[i]] !== 'object' || o[ks[i]] == null) o[ks[i]] = {}; o = o[ks[i]]; } o[ks[ks.length - 1]] = v; };
     const rec = recOf(card, recId);
-    input.value = (rec && rec[f] != null) ? rec[f] : '';
+    input.value = (rec && (f.includes('.') ? dotGet(rec, f) : rec[f]) != null) ? (f.includes('.') ? dotGet(rec, f) : rec[f]) : '';
     input.placeholder = span.dataset.ph || '';
     if (type === 'number') input.type = 'number';
     else if (type === 'date') input.type = 'date';
-    commit = () => { if (done) return; done = true; if (rec) { let v = input.value.trim(); if (type === 'number') v = (v === '' ? null : Number(v)); const old = rec[f]; const oldDot = rec[f + 'Color'] || ''; const newDot = (span.dataset.dot === '1' && v) ? (input._dotPick ?? oldDot) : ''; if (String(old ?? '') !== String(v ?? '') || oldDot !== newDot) { rec[f] = v; if (span.dataset.dot === '1') rec[f + 'Color'] = newDot; reindex(card, rec); logAction(rec, `${humanizeField(f)}: ${auditVal(old)} → ${auditVal(v)}`); } } render(); if (state.overlay?.kind === 'board') renderOverlay(); };
+    commit = () => { if (done) return; done = true; if (rec) { let v = input.value.trim(); if (type === 'number') v = (v === '' ? null : Number(v)); const dotted = f.includes('.'); const old = dotted ? dotGet(rec, f) : rec[f]; const oldDot = rec[f + 'Color'] || ''; const newDot = (span.dataset.dot === '1' && v) ? (input._dotPick ?? oldDot) : ''; if (String(old ?? '') !== String(v ?? '') || oldDot !== newDot) { if (dotted) dotSet(rec, f, v); else rec[f] = v; if (span.dataset.dot === '1') rec[f + 'Color'] = newDot; reindex(card, rec); logAction(rec, `${humanizeField(f)}: ${auditVal(old)} → ${auditVal(v)}`); } } render(); if (state.overlay?.kind === 'board') renderOverlay(); };
   } else if (kind === 'unitCategory') {
     // Admin-gated category link for a unit — a <select> of categories (the gate fires
     // in the click handler before we get here). Drops back to "No category" on the blank.
@@ -16144,7 +16200,7 @@ let currentRole = (() => { try { return sessionStorage.getItem('jactec.role') ||
 function nowClock() { const d = new Date(); let h = d.getHours(); const ap = h < 12 ? 'AM' : 'PM'; h = h % 12 || 12; return `${h}:${String(d.getMinutes()).padStart(2, '0')} ${ap}`; }
 function logAction(rec, text) { if (!rec) return; rec.actions = rec.actions || []; rec.actions.push({ when: TODAY_ISO, clock: nowClock(), text, by: currentUser || '', seq: actionSeq++ }); saveSoon(); }
 // Humanize a field key + format a value for an audit line ("Phone: (337)… → (337)…").
-const humanizeField = (f) => ({ po: 'PO', eta: 'ETA', accountNotes: 'Notes', assignedMechanic: 'Mechanic', gpsType: 'GPS type', gpsPlacement: 'GPS placement', purchasePrice: 'Purchase price', purchaseDate: 'Purchase date', trueCost: 'True cost', purchaseHours: 'Hours at purchase', currentHours: 'Hours', startHours: 'Start hours', returnHours: 'Return hours', rentalName: 'Name', woReport: 'Report', firstName: 'First name', lastName: 'Last name' }[f] || (f.charAt(0).toUpperCase() + f.slice(1).replace(/([A-Z])/g, ' $1')));
+const humanizeField = (f) => ({ po: 'PO', eta: 'ETA', 'insurance.policyRef': 'Policy #', 'insurance.effective': 'Coverage effective', 'insurance.expires': 'Coverage expires', 'insurance.insuredValue': 'Insured value', 'insurance.premium': 'Premium', accountNotes: 'Notes', assignedMechanic: 'Mechanic', gpsType: 'GPS type', gpsPlacement: 'GPS placement', purchasePrice: 'Purchase price', purchaseDate: 'Purchase date', trueCost: 'True cost', purchaseHours: 'Hours at purchase', currentHours: 'Hours', startHours: 'Start hours', returnHours: 'Return hours', rentalName: 'Name', woReport: 'Report', firstName: 'First name', lastName: 'Last name' }[f] || (f.charAt(0).toUpperCase() + f.slice(1).replace(/([A-Z])/g, ' $1')));
 const auditVal = (v) => { const s = String(v ?? '').trim(); return s ? (s.length > 28 ? s.slice(0, 28) + '…' : s) : '(empty)'; };
 
 /* §12.6 — WO phase changes (header pill + per-line journey pills) via a woPhase
@@ -17699,7 +17755,7 @@ function exposeTestApi() {
       latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore, wranglerRailLoad, wrOffloadChatImages, wrEvictChatBlobs, driveViewUrl, mergeWranglerRails,
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
-      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, setFunnelStage, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, addMonthsISO, openMembershipEnroll, membershipEnrollCommit, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, setRole: (r) => { currentRole = r || ''; render(); },
+      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, setFunnelStage, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, addMonthsISO, openMembershipEnroll, membershipEnrollCommit, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, setRole: (r) => { currentRole = r || ''; render(); },
       openCustomerForm, renderOverlay, render, cardComplete, cardCaptureState, cardHasSelfie, cardHasSignature, captureSelfie, captureSignature, __state: state };   // UI drivers for headless screenshot/e2e tests
 
   } catch (e) { /* no window (non-browser) */ }
