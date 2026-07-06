@@ -3628,6 +3628,8 @@ const SETTINGS_TABS = [
   { id: 'inspections',   label: 'Inspections',      icon: CARD_ICON.inspections,  v1: true },
   { id: 'requirements',  label: 'Rental Rules',     icon: STATUS_ICONS.shield,    v1: true },
   { id: 'kpis',          label: 'KPIs & Rings',     icon: STATUS_ICONS.gauge,     v1: true },
+  { id: 'flags',         label: 'Flags & Alerts',   icon: STATUS_ICONS.alert,     v1: true },
+  { id: 'team',          label: 'Team Roster',      icon: I.lock,                 v1: true },
   { id: 'notifications', label: 'Notifications',    icon: I.bell,                 note: 'Team chat on/off, driver dispatch alerts, customer reminders & cadence.' },
   { id: 'integrations',  label: 'Integrations',     icon: STATUS_ICONS.zap,       note: 'Stripe, Maps, telematics feed — references & toggles (secrets stay server-side).' },
 ];
@@ -3639,6 +3641,13 @@ function setDraftStatus(o, set, val, patch) {
   const next = { ...(o.draftSettings.status[set][val] || {}), ...patch };
   if (!next.color) delete next.color; if (!next.icon) delete next.icon; if (!next.label) delete next.label;   // empties → fall back to the shipped default
   if (Object.keys(next).length) o.draftSettings.status[set][val] = next; else delete o.draftSettings.status[set][val];
+}
+function captureTeamEdits(o) {   // keep typed roster edits across re-renders + into Save
+  const root = document.querySelector('.settings-popup .popup-body'); if (!root) return;
+  const inputs = root.querySelectorAll('.set-input[data-emp]'); if (!inputs.length) return;
+  if (!o.draftSettings) o.draftSettings = JSON.parse(JSON.stringify((o.config && o.config.settings) || state.settings || {}));
+  const emps = o.draftSettings.employees || (o.draftSettings.employees = []);
+  inputs.forEach((i) => { const idx = Number(i.dataset.i); if (emps[idx]) emps[idx][i.dataset.emp] = i.value; });
 }
 function captureLoginEdits(o) {   // keep typed-but-unsaved password + label edits across a re-render
   const root = document.querySelector('.settings-popup .popup-body'); if (!root) return;
@@ -3669,6 +3678,46 @@ function ensureRoleMeta(o) {
 }
 // Just the active tab's pane HTML — so an in-pane edit can repaint ONLY the pane
 // (rerenderSettingsPane) instead of tearing down the whole overlay (renderOverlay), which flashed.
+/* ── Settings → Flags & Alerts (spec design-system D1, Jac 2026-06-29) ─────────────
+   Owner tunes the prescriptive flag engine: turn ANY flag off (including the money/credit
+   safety flags — Jac's explicit call) or override its severity. Stored in
+   settings.flagOverrides — absent = the shipped FLAG_META default. Every change is a
+   draft until Save (setConfig, admin-password-gated server-side); disables are audited
+   into settings.flagAuditLog so a hidden safety flag is always traceable. */
+function settingsFlagsPane(o) {
+  if (!o.draftSettings) o.draftSettings = JSON.parse(JSON.stringify((o.config && o.config.settings) || state.settings || {}));
+  const ov = o.draftSettings.flagOverrides || {};
+  const ENT_LBL = { rentals: 'Rentals', units: 'Units', workOrders: 'Work Orders', invoices: 'Invoices', customers: 'Customers' };
+  const rows = Object.keys(FLAG_META).map((ent) => {
+    const items = (FLAG_META[ent] || []).map((f) => {
+      const oo = (ov[ent] || {})[f.id] || {};
+      const sev = oo.severity || f.severity;
+      const off = !!oo.off;
+      const sevCtl = segCtl(['red', 'yellow', 'green'].map((sv) => ({ label: sv === 'red' ? 'R' : sv === 'yellow' ? 'Y' : 'G', js: 'js-flag-sev', data: { ent, id: f.id, sev: sv }, on: (!off && sev === sv) ? sv : null })));
+      const onCtl = segCtl([{ label: 'On', js: 'js-flag-ov', data: { ent, id: f.id, val: 'on' }, on: !off ? 'green' : null }, { label: 'Off', js: 'js-flag-ov', data: { ent, id: f.id, val: 'off' }, on: off ? 'red' : null }]);
+      const changed = oo.off || oo.severity ? `<span class="muted" style="font-size:10px">edited</span>` : '';
+      return `<div class="set-row" style="gap:9px;align-items:center"><span style="flex:1;min-width:150px;${off ? 'opacity:.45' : ''}">${flagEl(f.label, sev)} ${esc(f.label)}</span>${sevCtl}${onCtl}${changed}</div>`;
+    }).join('');
+    return `<div class="set-sec"><h4 class="set-h">${esc(ENT_LBL[ent] || ent)}</h4>${items}</div>`;
+  }).join('');
+  return `<div class="set-pane"><div class="muted" style="font-size:11.5px;margin-bottom:9px">Every flag is owner-tunable — Off hides it everywhere; R/Y/G overrides its severity. Defaults return by flipping back. Disabling a money/credit flag is audited.</div>${rows}</div>`;
+}
+/* ── Settings → Team Roster (spec hr-compliance trimmed scope, Jac 2026-06-29) ──────
+   The employee list — name · role · phone · note. Deliberately NO credentials/medical/
+   compliance PII (dropped from scope). Feeds the future multi-driver identity +
+   Driving Score hooks. Rides settings.employees (additive blob). */
+function settingsTeamPane(o) {
+  if (!o.draftSettings) o.draftSettings = JSON.parse(JSON.stringify((o.config && o.config.settings) || state.settings || {}));
+  const emps = o.draftSettings.employees || [];
+  const roleOpts = ROLES.map((r) => r.label || r.id);
+  const rows = emps.map((em, i) => `<div class="set-row" style="gap:7px">
+    <input class="set-input" data-emp="name" data-i="${i}" placeholder="Name" value="${esc(em.name || '')}" style="flex:2;min-width:110px" />
+    <select class="set-input" data-emp="role" data-i="${i}" style="flex:1;min-width:90px">${roleOpts.map((r) => `<option${(em.role || '') === r ? ' selected' : ''}>${esc(r)}</option>`).join('')}</select>
+    <input class="set-input" data-emp="phone" data-i="${i}" placeholder="Phone" value="${esc(em.phone || '')}" style="flex:1;min-width:90px" />
+    <input class="set-input" data-emp="note" data-i="${i}" placeholder="Note" value="${esc(em.note || '')}" style="flex:2;min-width:110px" />
+    ${closeX('js-emp-del', { data: { i } })}</div>`).join('');
+  return `<div class="set-pane"><div class="muted" style="font-size:11.5px;margin-bottom:9px">The crew — name, role, phone, note. No credentials or compliance PII lives here (dropped from scope, Jac 2026-06-29).</div>${rows || '<div class="muted" style="font-size:12px">No hands on the roster yet.</div>'}<div class="kv pillrow" style="margin-top:9px">${addBtn('Hand', { link: true, js: 'js-emp-add' })}</div></div>`;
+}
 function settingsPaneFor(o) {
   if (o.tab === 'statuses') return settingsStatusesPane(o);
   if (o.tab === 'logins') return settingsLoginsPane(o);
@@ -3677,6 +3726,8 @@ function settingsPaneFor(o) {
   if (o.tab === 'requirements') return settingsRulesPane(o);
   if (o.tab === 'fields') return settingsFieldsPane(o);
   if (o.tab === 'inspections') return settingsInspectionsPane(o);
+  if (o.tab === 'flags') return settingsFlagsPane(o);
+  if (o.tab === 'team') return settingsTeamPane(o);
   return settingsPlannedPane(SETTINGS_TABS.find((t) => t.id === o.tab));
 }
 function settingsBoardHtml(o) {
@@ -6562,6 +6613,9 @@ const DETAIL = {
         </div>
         <div class="side r">
           ${kvPills(`${badge(acct.label, acct.color)}${c.requiresPO ? badge('PO Required', 'yellow') : ''}${c.rentalProtection ? badge('Protected', 'blue') : ''}${agPill}`)}
+          <div class="kv" style="justify-content:flex-end">${c.accountType === 'Blacklisted'
+            ? ghostPill('Lift blacklist', { js: 'js-blacklist-lift', h: 24, data: { rec: c.customerId } })
+            : actionPill('danger', 'Blacklist', { js: 'js-blacklist', h: 24, data: { rec: c.customerId } })}</div>
           ${kv(money(d.totalPaid), { pfx: 'Total', derived: true })}
           ${kv(`${d.visits || 0}`, { pfx: 'Visits', derived: true })}
           ${kv(`${d.years || 0} yrs`, { pfx: 'Customer for', derived: true })}
@@ -13658,7 +13712,7 @@ function onClick(e) {
   if (closest('.js-overbook')) { e.stopPropagation(); const on = closest('.js-overbook').dataset.val === '1'; state.overbookOn = on; try { localStorage.setItem('jactec.overbook', on ? '1' : '0'); } catch (err) {} toast(on ? 'Overbooking allowed — conflicting links get a pulsing red Overbooked flag.' : 'Overbooking blocked — a conflicting unit drop is refused.'); reSettings(); return; }
   if (closest('.js-haptics')) { e.stopPropagation(); const on = closest('.js-haptics').dataset.val === '1'; state.hapticsOff = !on; try { localStorage.setItem('jactec.hapticsOff', on ? '0' : '1'); } catch (err) {} if (on) haptic([12, 30, 12]); reSettings(); return; }   // §M-touch — toggle + a sample buzz when turning ON
   // Settings Board — tab rail + Statuses & Icons editing
-  if (closest('.js-set-tab')) { e.stopPropagation(); const o = state.overlay; if (o) { captureLoginEdits(o); o.tab = closest('.js-set-tab').dataset.tab; o.iconFor = null; o.error = null; o.resetArm = false; reSettings(); } return; }
+  if (closest('.js-set-tab')) { e.stopPropagation(); const o = state.overlay; if (o) { captureLoginEdits(o); captureTeamEdits(o); o.tab = closest('.js-set-tab').dataset.tab; o.iconFor = null; o.error = null; o.resetArm = false; reSettings(); } return; }
   if (closest('.js-set-pick')) { e.stopPropagation(); const o = state.overlay; if (o) { o.setSel = closest('.js-set-pick').dataset.set; o.iconFor = null; reSettings(); } return; }
   if (closest('.js-set-color')) { e.stopPropagation(); const o = state.overlay, b = closest('.js-set-color'); if (o) { setDraftStatus(o, b.dataset.set, b.dataset.val, { color: b.dataset.color }); reSettings(); } return; }
   if (closest('.js-set-icon-open')) { e.stopPropagation(); const o = state.overlay, k = closest('.js-set-icon-open').dataset.key; if (o) { o.iconFor = o.iconFor === k ? null : k; reSettings(); } return; }
@@ -13771,6 +13825,12 @@ function onClick(e) {
   if (closest('.js-refund-invoice')) { e.stopPropagation(); if (state.overlay) { state.overlay.confirmRefund = true; state.overlay.error = ''; renderOverlay(); } return; }
   if (closest('.js-refund-cancel')) { e.stopPropagation(); if (state.overlay) { state.overlay.confirmRefund = false; state.overlay.refundAlloc = null; renderOverlay(); } return; }
   if (closest('.js-refund-confirm')) { e.stopPropagation(); return refundInvoiceFlow(closest('.js-refund-confirm').dataset.rec); }
+  if (closest('.js-blacklist')) { e.stopPropagation(); const b = closest('.js-blacklist'); const c = IDX.customer.get(b.dataset.rec); if (!c || c.accountType === 'Blacklisted') return; if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = 'Click again — blacklist'; return; } c._prevAccountType = c.accountType || ''; c.accountType = 'Blacklisted'; c.blacklistedAt = TODAY_ISO; c.activityLog = c.activityLog || []; c.activityLog.push({ when: TODAY_ISO, text: `Blacklisted by ${currentRole || 'operator'}` }); reindex('customers', c); toast(`${c.name} blacklisted — new rentals blocked.`); render(); return; }   // spec customers-crm D3: ANY role can blacklist; the audit trail is the control
+  if (closest('.js-blacklist-lift')) { e.stopPropagation(); const c = IDX.customer.get(closest('.js-blacklist-lift').dataset.rec); if (!c || c.accountType !== 'Blacklisted') return; c.accountType = c._prevAccountType || 'Non-Business'; delete c._prevAccountType; c.activityLog = c.activityLog || []; c.activityLog.push({ when: TODAY_ISO, text: `Blacklist lifted by ${currentRole || 'operator'}` }); reindex('customers', c); toast(`${c.name} — blacklist lifted.`); render(); return; }
+  if (closest('.js-flag-ov')) { e.stopPropagation(); const o = state.overlay; if (!o || o.kind !== 'settings') return; const b = closest('.js-flag-ov'); captureTeamEdits(o); if (!o.draftSettings) o.draftSettings = JSON.parse(JSON.stringify((o.config && o.config.settings) || state.settings || {})); const ov = o.draftSettings.flagOverrides || (o.draftSettings.flagOverrides = {}); const m = ov[b.dataset.ent] || (ov[b.dataset.ent] = {}); const cur = m[b.dataset.id] || {}; if (b.dataset.val === 'off') cur.off = true; else delete cur.off; if (Object.keys(cur).length) m[b.dataset.id] = cur; else delete m[b.dataset.id]; reSettings(); return; }
+  if (closest('.js-flag-sev')) { e.stopPropagation(); const o = state.overlay; if (!o || o.kind !== 'settings') return; const b = closest('.js-flag-sev'); captureTeamEdits(o); if (!o.draftSettings) o.draftSettings = JSON.parse(JSON.stringify((o.config && o.config.settings) || state.settings || {})); const ov = o.draftSettings.flagOverrides || (o.draftSettings.flagOverrides = {}); const m = ov[b.dataset.ent] || (ov[b.dataset.ent] = {}); const cur = m[b.dataset.id] || {}; const def = (FLAG_META[b.dataset.ent] || []).find((f) => f.id === b.dataset.id); if (def && def.severity === b.dataset.sev) delete cur.severity; else cur.severity = b.dataset.sev; delete cur.off; if (Object.keys(cur).length) m[b.dataset.id] = cur; else delete m[b.dataset.id]; reSettings(); return; }
+  if (closest('.js-emp-add')) { e.stopPropagation(); const o = state.overlay; if (!o || o.kind !== 'settings') return; captureTeamEdits(o); if (!o.draftSettings) o.draftSettings = JSON.parse(JSON.stringify((o.config && o.config.settings) || state.settings || {})); (o.draftSettings.employees || (o.draftSettings.employees = [])).push({ name: '', role: (ROLES[0] && (ROLES[0].label || ROLES[0].id)) || '', phone: '', note: '' }); reSettings(); return; }
+  if (closest('.js-emp-del')) { e.stopPropagation(); const o = state.overlay; if (!o || o.kind !== 'settings') return; const i = Number(closest('.js-emp-del').dataset.i); captureTeamEdits(o); (o.draftSettings.employees || []).splice(i, 1); reSettings(); return; }
   if (closest('.js-sales-schedule')) { e.stopPropagation(); return openOverlay({ kind: 'schedule', customerId: closest('.js-sales-schedule').dataset.rec }); }
   if (closest('.js-install-go')) { e.stopPropagation(); try { localStorage.setItem('jactec.installNudged', '1'); } catch (er) {} const ev = state._installEvt; closeOverlay(); if (ev) { ev.prompt(); } return; }
   if (closest('.js-install-later')) { e.stopPropagation(); try { localStorage.setItem('jactec.installNudged', '1'); } catch (er) {} closeOverlay(); return; }
@@ -15268,6 +15328,16 @@ async function openSettings() {
 async function saveSettings() {
   const o = state.overlay; if (!o || o.kind !== 'settings') return;
   const root = document.querySelector('.settings-popup .popup-body'); if (!root) return;
+  captureTeamEdits(o);   // roster inputs → draft
+  // Audit trail for flag disables (spec design-system D1): a turned-off safety flag must be traceable.
+  if (o.draftSettings && o.draftSettings.flagOverrides) {
+    const prevOv = (state.settings && state.settings.flagOverrides) || {};
+    const log = o.draftSettings.flagAuditLog || (o.draftSettings.flagAuditLog = []);
+    Object.entries(o.draftSettings.flagOverrides).forEach(([ent, m]) => Object.entries(m).forEach(([id, oo]) => {
+      if (oo.off && !((prevOv[ent] || {})[id] || {}).off) log.push({ when: TODAY_ISO, text: `Flag ${ent}/${id} turned OFF`, by: currentRole || 'admin' });
+    }));
+    if (log.length > 50) log.splice(0, log.length - 50);
+  }
   // Logins inputs only exist while the Logins tab is open — when they're absent, keep the
   // passwords from o.config so saving from another tab can't wipe them.
   const haveLogins = !!root.querySelector('.set-input[data-role]');
