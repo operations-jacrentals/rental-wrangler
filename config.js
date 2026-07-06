@@ -95,6 +95,9 @@ const RAW_STATUS = {
     'Late+60':     { label: 'Late +60',    color: 'red'    },
     'Late+90':     { label: 'Late +90',    color: 'red'    },
     'Collections': { label: 'Collections', color: 'red'    },
+    // Stored placement marker beats the derived aging tier (spec collections §4.2/§7.1, Jac 2026-06-29):
+    // gray-adjacent = off the active R/Y/G aging ladder — the balance left active chasing.
+    'Sent to Collections': { label: 'In Collections', color: 'gray' },
     'Paid':        { label: 'Paid',        color: 'green'  },
     'Refunded':    { label: 'Refunded',    color: 'gray'   },
   },
@@ -368,10 +371,11 @@ export const SHOP_SEGMENTS = [
   { id: 'serviceOrders', label: 'Service'     },
 ];
 export const BACKOFFICE_BOARDS = [
-  { id: 'parts',    title: 'Parts'                },
-  { id: 'vendors',  title: 'Vendors'              },
-  { id: 'expenses', title: 'Expenses & Receipts'  },
-  { id: 'files',    title: 'Company Files'        },
+  { id: 'parts',       title: 'Parts'                },
+  { id: 'vendors',     title: 'Vendors'              },
+  { id: 'expenses',    title: 'Expenses & Receipts'  },
+  { id: 'files',       title: 'Company Files'        },
+  { id: 'collections', title: 'Collections'          },   // invoices queued for collections (spec collections Phase 1)
 ];
 
 /* ── 3-column layout (display only) ───────────────────────────────────────

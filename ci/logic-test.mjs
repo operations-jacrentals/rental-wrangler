@@ -545,6 +545,20 @@ try {
       ok(floor.ops.length === 0, 'WR-inject: bottomDollar stays fenced off the allowlist even when "instructed"');
     }
 
+    // 12j4) Collections Phase 1 (spec collections, Jac 2026-06-29): the stored queue marker
+    // out-ranks the derived aging tier; placed invoices freeze (no merge/refund); recall reverts.
+    {
+      const cInv = { invoiceId: 'INV-COLTEST', customerId: 'C0009', rentalIds: [], date: '2026-01-01', dueDate: '2026-01-15', amountPaid: 0, lineItems: [{ lid: 'L1', kind: 'custom', label: 'x', amount: 500 }] };
+      const pre = T.invoiceTotals(cInv).status;
+      ok(pre === 'Collections' || /Late/.test(pre), 'COL: un-queued old invoice sits on the red aging ladder');
+      cInv.collections = { status: 'Queued', queuedAt: T.TODAY_ISO, reason: 'Uncollectable in-house', placedBalanceCents: 55375 };
+      ok(T.invoiceTotals(cInv).status === 'Sent to Collections', 'COL: stored Queued marker beats derived aging — reads Sent to Collections');
+      ok(T.invoiceMergeable(cInv) === false, 'COL: a queued invoice cannot merge');
+      cInv.collections.status = 'Recalled';
+      const back = T.invoiceTotals(cInv).status;
+      ok(back !== 'Sent to Collections' && back !== 'Paid', 'COL: a Recalled invoice falls back to the normal aging ladder');
+    }
+
     // 12k) Chat markdown — Wrangler's replies render **bold**/`code`, but stay XSS-safe (escape before format).
     {
       ok(/<strong>June 30, 2026<\/strong>/.test(T.wrChatFormat('Monday is **June 30, 2026**.')), 'WR-fmt: **bold** renders as <strong>');

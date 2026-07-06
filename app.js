@@ -1656,6 +1656,8 @@ function armTransportNode(rentalId, unitId, node) {
 
 /** Invoice subtotal / tax / total / paid / balance / derived status (§10 + aging). */
 const TAX_RATE = 0.1075;   // §10 sales tax — 10.75% (Jac 2026-06-07); honors exemptions
+/** Active collections placement on an invoice (spec collections Phase 1). 'Recalled' = back in-house. */
+const invoiceCollectionsActive = (inv) => !!(inv && inv.collections && inv.collections.status && inv.collections.status !== 'Recalled');
 function invoiceTotals(inv) {
   const subtotal = (inv.lineItems || []).reduce((a, li) => a + (Number(li.amount) || 0), 0);
   const cust = inv.customerId ? IDX.customer.get(inv.customerId) : null;
@@ -1668,7 +1670,11 @@ function invoiceTotals(inv) {
   const balance = total - paid;
   let status;
   if (inv.refunded) status = 'Refunded';
-  else if (total > 0 && paid >= total) status = 'Paid';
+  else if (total > 0 && paid >= total) status = 'Paid';   // money arrived — Paid beats a queued placement
+  // Stored collections marker beats the derived aging tier (spec collections §7.1, Jac 2026-06-29):
+  // a queued/placed invoice reads 'Sent to Collections' (gray, off active aging) regardless of age;
+  // a Recalled one falls back to the normal ladder (the office is chasing it again).
+  else if (invoiceCollectionsActive(inv)) status = 'Sent to Collections';
   else if (paid > 0) status = 'Partial';
   else {
     const due = parseISO(inv.dueDate);
@@ -4221,7 +4227,7 @@ function getEntityFlags(entityType, rec) {
 function entityArchived(entityType, rec) {
   if (!rec) return false;
   if (entityType === 'rentals') return rentalCleared(rec);
-  if (entityType === 'invoices') return rec.refunded === true || invoiceTotals(rec).status === 'Refunded';
+  if (entityType === 'invoices') return rec.refunded === true || invoiceTotals(rec).status === 'Refunded' || invoiceCollectionsActive(rec);   // in-collections = off the active books (gray)
   return false;
 }
 /** Computed status color: 'gray' (archived) · highest active-flag severity · 'green'. */
@@ -6633,13 +6639,23 @@ const DETAIL = {
     const poCell = cust?.requiresPO && !i.po
       ? `<span class="req inline-edit" data-r="R6" data-edit="invoicePO" data-rec="${i.invoiceId}">PO #</span>`
       : `<span class="${i.po ? 'pill ghost' : 'add-field'} inline-edit" data-r="${i.po ? 'R18' : 'R5c'}" data-edit="invoicePO" data-rec="${i.invoiceId}"${i.po ? '' : ' style="height:26px"'}>${esc(i.po ? 'PO ' + i.po : '+PO')}</span>`;
-    const payCell = canMoney() && cust
+    // Collections (spec collections Phase 1, Jac 2026-06-29): manager-tier queues a late unpaid
+    // invoice for the agency (LOCAL queue — the outbound placement is Phase 2, blocked on
+    // backend-data server-tier trust). Queuing AUTO-blacklists the account (D2); Recall reverts.
+    const mgrTier = !currentRole || roleTier(currentRole) >= tierRank('manager');
+    const colCell = (() => {
+      if (!mgrTier || !cust) return '';
+      if (invoiceCollectionsActive(i)) return `${badge('In Collections · ' + esc(i.collections.status), 'gray')}${ghostPill('Recall', { js: 'js-col-recall', data: { rec: i.invoiceId } })}`;
+      const late = ['Late', 'Late+30', 'Late+60', 'Late+90', 'Collections'].includes(t.status);
+      return (late && t.balance > 0.005 && !i.locked && !i.refunded) ? actionPill('danger', 'Wrangle to Collections', { js: 'js-col-queue', h: 26, data: { rec: i.invoiceId } }) : '';
+    })();
+    const payCell = (canMoney() && cust
       ? (t.status === 'Refunded'
           ? `${badge('Refunded')}${actionPill('commit', 'Details', { js: 'js-pay-invoice', data: { rec: i.invoiceId } })}`
           : t.balance <= 0 && t.paid > 0
             ? `${badge(`Paid${i.paymentMethod ? ' · ' + i.paymentMethod : ''}`, 'green')}${actionPill('danger', 'Refund', { js: 'js-pay-invoice', data: { rec: i.invoiceId } })}`
             : `${actionPill('money', hasCardOnFile(cust) ? (t.paid > 0 ? 'Pay balance ' : 'Pay ') + money2(t.balance) : 'Take payment', { js: 'js-pay-invoice', data: { rec: i.invoiceId } })}${hasCardOnFile(cust) ? `<span class="muted" style="font-size:11px">${esc(cardLabel(cust))}</span>` : ''}`)
-      : '';
+      : '') + colCell;
     const lineForm = `<div class="lineform"><input class="lf-in js-lf-label" placeholder="Custom line description" /><div class="lineform-row"><input class="lf-in js-lf-amt" type="number" min="0" placeholder="Amount $" /></div><div class="pillrow" style="justify-content:flex-end">${ghostPill('Cancel', { js: 'js-line-cancel' })}${actionPill('commit', 'Add line', { js: 'js-line-save', data: { rec: i.invoiceId } })}</div></div>`;
     // Merge (#64): a customer's other UNPAID invoices can fold into this one. Money-safe
     // by construction — only $0-paid, unlocked, un-refunded bills qualify (invoiceMergeable).
@@ -10499,6 +10515,25 @@ function buildPopupEl(o, overlay, opts = {}) {
         <div class="nc-agreement" tabindex="0">${esc(ag.text)}</div>
         ${c.signature ? `<div class="nc-ag-sigline"><span class="nc-cap-lbl">Signature</span><img class="nc-thumb sig" src="${esc(c.signature)}" alt="signature" /></div>` : ''}` });
     overlay.appendChild(pop);
+  } else if (o.kind === 'collectionsSend') {
+    // Queue an invoice for Collections (spec collections Phase 1 — LOCAL queue; the outbound
+    // agency placement is Phase 2, blocked on backend-data server-tier trust). Manager-tier.
+    // Queuing AUTO-blacklists the account (D2, Jac 2026-06-29) — stated plainly on the plate.
+    const inv = IDX.invoice.get(o.invoiceId);
+    if (!inv) { return false; }
+    const t = invoiceTotals(inv);
+    const cust = IDX.customer.get(inv.customerId);
+    const daysPast = (() => { try { const due = parseISO(inv.dueDate); return due ? Math.max(0, dayDiff(due, TODAY)) : 0; } catch (e) { return 0; } })();
+    const pop = el('div', 'popup nc-popup col-popup');
+    pop.innerHTML = popupShell({ icon: CARD_ICON.invoices || '', title: 'Send to Collections', tag: 'Invoice · collections', danger: true,
+      foot: `<button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill c-danger js-col-queue-confirm" data-r="R17" data-rec="${esc(inv.invoiceId)}">Queue for Collections</button>`,
+      body: `
+        <div class="nc-ag-meta">${esc(cust ? cust.name : 'No customer')} · ${esc(invoiceShort(inv.invoiceId))}</div>
+        <div class="kv" style="justify-content:center">${kv(money2(t.balance), { sfx: `balance handed over · ${daysPast} days past` })}</div>
+        <label class="pay-field"><span>Reason</span><select class="lf-in js-col-reason"><option>Uncollectable in-house</option><option>Customer unresponsive</option><option>Disputed — exhausted</option><option>Business closed</option><option>Other</option></select></label>
+        <label class="pay-field"><span>Note</span><input class="lf-in js-col-note" placeholder="Optional note for the record" /></label>
+        <div class="muted" style="font-size:11.5px;margin-top:8px">This queues the debt for the collections agency and takes it off active aging. <b>It also blacklists the account</b> (blocks new rentals). A Recall reverses both.</div>` });
+    overlay.appendChild(pop);
   } else if (o.kind === 'checklist') {
     // Required-checklist takeover (Settings → Inspections): replaces the sheet until completed;
     // closing keeps it as a pending inspection. Any item Fail → overall Fail → existing auto-WO.
@@ -10768,6 +10803,7 @@ const WINDOW_CATALOG = [
   { kind: 'settings',      label: 'Settings',                tag: 'Admin · settings',          sample: () => ({}) },
   { kind: 'newCustomer',   label: 'New / Edit Customer',     tag: 'Customer · account',        sample: () => ({ editId: null, draft: { firstName: '', lastName: '', company: '', phone: '', email: '', industry: '', accountType: 'Non-Business', requiresPO: undefined, rentalProtection: undefined, accountNotes: '', idNumber: '', netDays: '', custom: {} } }) },
   { kind: 'agreement',     label: 'Signed agreement',        tag: 'Customer · agreement',      sample: () => ({ recId: ((DATA.customers || [])[0] || {}).customerId }) },
+  { kind: 'collectionsSend', label: 'Send to Collections',   tag: 'Invoice · collections',     sample: () => ({ invoiceId: ((DATA.invoices || [])[0] || {}).invoiceId }) },
   { kind: 'checklist',     label: 'Inspection checklist',    tag: 'Inspection · checklist',    sample: () => ({ unitId: ((DATA.units || [])[0] || {}).unitId, inspId: ((DATA.inspections || [])[0] || {}).inspectionId }) },
   { kind: 'inspection',    label: 'Failure report',          tag: 'Inspection · failure',      sample: () => ({ recId: ((DATA.inspections || [])[0] || {}).inspectionId }) },
   { kind: 'service',       label: 'Complete service',        tag: 'Service · complete',        sample: () => ({ unitId: ((DATA.units || [])[0] || {}).unitId, taskId: 'svc-wash' }) },
@@ -12164,7 +12200,7 @@ function vendorTotals(vendorId) {
 const receiptParts = (expenseId) => DATA.parts.filter((p) => p.receiptId === expenseId);
 const receiptLineTotal = (expenseId) => receiptParts(expenseId).reduce((a, p) => a + (Number(p.receiptQty) || 1) * (Number(p.priceEach) || 0), 0);
 const reviewState = (iso) => { const d = parseISO(iso); if (!d) return ''; if (d < TODAY) return badge('Overdue', 'red'); return (d - TODAY) / 86400000 <= 30 ? badge('Review soon', 'yellow') : ''; };   // 3-state (audit fix): overdue was invisible under the old d >= TODAY clause
-const boardRows = (boardId) => ({ parts: DATA.parts, vendors: DATA.vendors, expenses: DATA.expenses, files: DATA.companyFiles }[boardId] || []);
+const boardRows = (boardId) => ({ parts: DATA.parts, vendors: DATA.vendors, expenses: DATA.expenses, files: DATA.companyFiles, collections: (DATA.invoices || []).filter(invoiceCollectionsActive) }[boardId] || []);
 const BOARD_DEF = {
   parts: {
     cols: ['Part', 'Vendor', 'Cost', 'Qty', 'Product #', 'Order from'],
@@ -12181,6 +12217,10 @@ const BOARD_DEF = {
   expenses: {
     cols: ['Vendor', 'Date', 'Amount', 'Reconcile', 'Method', 'Category', 'WO'],
     row: (e) => [esc(IDX.vendor.get(e.vendorId)?.name || '—'), esc(fmtShortDate(e.date)), (e.aiPending ? '✨ ' : '') + money(e.amount), gatePill('expenseReconcile', e.reconcile, 'js-reconcile', { rec: e.expenseId }), badge(e.method, getStatus('paymentMethod', e.method).color), badge(e.category, getStatus('expenseCategory', e.category).color), e.woId ? refPill('workOrders', e.woId, e.woId) : '—'],
+  },
+  collections: {
+    cols: ['Customer', 'Invoice', 'Placed balance', 'Status', 'Queued', 'Reason'],
+    row: (i) => { const c = IDX.customer.get(i.customerId); const col = i.collections || {}; return [c ? refPill('customers', i.customerId, c.name) : '—', refPill('invoices', i.invoiceId, invoiceShort(i.invoiceId)), money((col.placedBalanceCents || 0) / 100), badge(col.status || '—', 'gray'), esc(col.queuedAt ? fmtShortDate(col.queuedAt) : '—'), esc(col.reason || '—')]; },
   },
   files: {
     cols: ['Title', 'Type', 'Group', 'Review-By'],
@@ -13597,6 +13637,43 @@ function onClick(e) {
   if (closest('.js-refund-invoice')) { e.stopPropagation(); if (state.overlay) { state.overlay.confirmRefund = true; state.overlay.error = ''; renderOverlay(); } return; }
   if (closest('.js-refund-cancel')) { e.stopPropagation(); if (state.overlay) { state.overlay.confirmRefund = false; state.overlay.refundAlloc = null; renderOverlay(); } return; }
   if (closest('.js-refund-confirm')) { e.stopPropagation(); return refundInvoiceFlow(closest('.js-refund-confirm').dataset.rec); }
+  if (closest('.js-col-queue')) { e.stopPropagation(); if (currentRole && roleTier(currentRole) < tierRank('manager')) { toast('Collections is Manager-tier and up.'); return; } return openOverlay({ kind: 'collectionsSend', invoiceId: closest('.js-col-queue').dataset.rec }); }
+  if (closest('.js-col-queue-confirm')) {
+    e.stopPropagation();
+    if (currentRole && roleTier(currentRole) < tierRank('manager')) { toast('Collections is Manager-tier and up.'); return; }
+    const inv = IDX.invoice.get(closest('.js-col-queue-confirm').dataset.rec); if (!inv || invoiceCollectionsActive(inv)) return;
+    const t = invoiceTotals(inv); if (t.balance <= 0.005) { toast('Nothing to place — the balance is $0.'); return; }
+    const reason = document.querySelector('.js-col-reason')?.value || 'Uncollectable in-house';
+    const note = (document.querySelector('.js-col-note')?.value || '').trim();
+    inv.collections = { status: 'Queued', queuedAt: TODAY_ISO, reason, note, placedBalanceCents: Math.round(t.balance * 100), by: currentRole || '' };
+    const cust = IDX.customer.get(inv.customerId);
+    if (cust && cust.accountType !== 'Blacklisted') {   // AUTO-blacklist on placement (spec collections D2)
+      inv.collections.prevAccountType = cust.accountType || '';
+      cust.accountType = 'Blacklisted';
+      cust.activityLog = cust.activityLog || [];
+      cust.activityLog.push({ when: TODAY_ISO, text: `Sent invoice ${invoiceShort(inv.invoiceId)} to Collections & blacklisted by ${currentRole || 'operator'}` });
+      reindex('customers', cust);
+    }
+    logAction(inv, `Queued for Collections (${reason}) — ${money2(t.balance)} off active aging, by ${currentRole || 'operator'}`);
+    reindex('invoices', inv); closeOverlay(); toast(`${invoiceShort(inv.invoiceId)} queued for Collections — off the active books.`);
+    return;
+  }
+  if (closest('.js-col-recall')) {
+    e.stopPropagation();
+    if (currentRole && roleTier(currentRole) < tierRank('manager')) { toast('Collections is Manager-tier and up.'); return; }
+    const inv = IDX.invoice.get(closest('.js-col-recall').dataset.rec); if (!inv || !invoiceCollectionsActive(inv)) return;
+    inv.collections.status = 'Recalled'; inv.collections.recalledAt = TODAY_ISO;
+    const cust = IDX.customer.get(inv.customerId);
+    if (cust && cust.accountType === 'Blacklisted' && inv.collections.prevAccountType !== undefined) {   // lift only what the queue set (D2 note)
+      cust.accountType = inv.collections.prevAccountType || 'Non-Business';
+      cust.activityLog = cust.activityLog || [];
+      cust.activityLog.push({ when: TODAY_ISO, text: `Recalled ${invoiceShort(inv.invoiceId)} from Collections — blacklist lifted by ${currentRole || 'operator'}` });
+      reindex('customers', cust);
+    }
+    logAction(inv, `Recalled from Collections — back to normal aging, by ${currentRole || 'operator'}`);
+    reindex('invoices', inv); toast(`${invoiceShort(inv.invoiceId)} recalled — back on the aging ladder.`);
+    return;
+  }
   if (closest('.js-lock-invoice')) { e.stopPropagation(); return lockInvoiceFlow(closest('.js-lock-invoice').dataset.rec, true); }
   if (closest('.js-unlock-invoice')) { e.stopPropagation(); return lockInvoiceFlow(closest('.js-unlock-invoice').dataset.rec, false); }
   if (closest('.js-ring')) return openOverlay({ kind: 'role', role: closest('.js-ring').dataset.role });
@@ -15733,6 +15810,8 @@ async function chargeInvoiceFlow(invoiceId) {
 // Refund the captured amount back to the card (full). Reduces amountPaid; a full
 // refund flips the invoice to Refunded. The server is authoritative.
 async function refundInvoiceFlow(invoiceId) {
+  { const _i = IDX.invoice.get(invoiceId); if (_i && invoiceCollectionsActive(_i)) { toast('Blocked: this invoice is in Collections — recall it first.'); return; } }   // spec collections §7.7
+
   const o = state.overlay; if (!o || o.kind !== 'payment') return;
   const inv = IDX.invoice.get(invoiceId); if (!inv) return;
   // §19b per-line / partial refund (#125) — GATED behind PARTIAL_REFUNDS_ENABLED. When OFF
@@ -16746,7 +16825,7 @@ function addWOToInvoice(invoiceId, woId) {
    or refund. It only ever removes a $0-paid invoice — exactly what sweepEmptyDrafts
    already does for empty drafts. Same customer only. */
 function invoiceMergeable(i) {
-  return !!i && !!i.customerId && !i.locked && !i.refunded && !i.achProcessing && (Number(i.amountPaid) || 0) === 0;
+  return !!i && !!i.customerId && !i.locked && !i.refunded && !i.achProcessing && (Number(i.amountPaid) || 0) === 0 && !invoiceCollectionsActive(i);   // in-collections invoices are frozen (spec collections §7.3)
 }
 /* Fold the absorbed invoice's lines into the keeper, relink its rentals, then delete
    it. (The 1.2s sync diff sees the vanished id and pushes a backend delete — §18b.) */
