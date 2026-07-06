@@ -390,6 +390,7 @@ export const BACKOFFICE_BOARDS = [
   { id: 'expenses',    title: 'Expenses & Receipts'  },
   { id: 'files',       title: 'Company Files'        },
   { id: 'collections', title: 'Collections'          },   // invoices queued for collections (spec collections Phase 1)
+  { id: 'pipeline',    title: 'Sales Pipeline'       },   // the top-level sales board (spec sales-growth D1, Jac 2026-06-29)
 ];
 
 /* ── 3-column layout (display only) ───────────────────────────────────────

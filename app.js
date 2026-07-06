@@ -12271,7 +12271,8 @@ function vendorTotals(vendorId) {
 const receiptParts = (expenseId) => DATA.parts.filter((p) => p.receiptId === expenseId);
 const receiptLineTotal = (expenseId) => receiptParts(expenseId).reduce((a, p) => a + (Number(p.receiptQty) || 1) * (Number(p.priceEach) || 0), 0);
 const reviewState = (iso) => { const d = parseISO(iso); if (!d) return ''; if (d < TODAY) return badge('Overdue', 'red'); return (d - TODAY) / 86400000 <= 30 ? badge('Review soon', 'yellow') : ''; };   // 3-state (audit fix): overdue was invisible under the old d >= TODAY clause
-const boardRows = (boardId) => ({ parts: DATA.parts, vendors: DATA.vendors, expenses: DATA.expenses, files: DATA.companyFiles, collections: (DATA.invoices || []).filter(invoiceCollectionsActive) }[boardId] || []);
+const inPipeline = (c) => (c.usedSalesStage && c.usedSalesStage !== 'N/A') || (c.membershipStage && c.membershipStage !== 'N/A') || !!c.salesAction;
+const boardRows = (boardId) => ({ parts: DATA.parts, vendors: DATA.vendors, expenses: DATA.expenses, files: DATA.companyFiles, collections: (DATA.invoices || []).filter(invoiceCollectionsActive), pipeline: (DATA.customers || []).filter(inPipeline) }[boardId] || []);
 const BOARD_DEF = {
   parts: {
     cols: ['Part', 'Vendor', 'Cost', 'Qty', 'Product #', 'Order from'],
@@ -12288,6 +12289,12 @@ const BOARD_DEF = {
   expenses: {
     cols: ['Vendor', 'Date', 'Amount', 'Reconcile', 'Method', 'Category', 'WO'],
     row: (e) => [esc(IDX.vendor.get(e.vendorId)?.name || '—'), esc(fmtShortDate(e.date)), (e.aiPending ? '✨ ' : '') + money(e.amount), gatePill('expenseReconcile', e.reconcile, 'js-reconcile', { rec: e.expenseId }), badge(e.method, getStatus('paymentMethod', e.method).color), badge(e.category, getStatus('expenseCategory', e.category).color), e.woId ? refPill('workOrders', e.woId, e.woId) : '—'],
+  },
+  pipeline: {
+    // The top-level Sales board (spec sales-growth D1): every account with a LIVE funnel stage
+    // or a scheduled next action — the dual funnels + the follow-up in one sweep.
+    cols: ['Customer', 'Used-Equipment', 'Membership', 'Next action', 'Interested in'],
+    row: (c) => [refPill('customers', c.customerId, c.name), funnelPill(c.customerId, 'usedSales', c.usedSalesStage || 'N/A'), funnelPill(c.customerId, 'membership', c.membershipStage || 'N/A'), c.salesAction ? esc(c.salesAction) : addBtn('Action', { js: 'js-sales-schedule', data: { rec: c.customerId } }), (c.interestedCategoryIds || []).map((id) => IDX.category.get(id)?.name).filter(Boolean).map((n) => badge(n, 'blue')).join('') || '—'],
   },
   collections: {
     cols: ['Customer', 'Invoice', 'Placed balance', 'Status', 'Queued', 'Reason'],
@@ -13764,6 +13771,7 @@ function onClick(e) {
   if (closest('.js-refund-invoice')) { e.stopPropagation(); if (state.overlay) { state.overlay.confirmRefund = true; state.overlay.error = ''; renderOverlay(); } return; }
   if (closest('.js-refund-cancel')) { e.stopPropagation(); if (state.overlay) { state.overlay.confirmRefund = false; state.overlay.refundAlloc = null; renderOverlay(); } return; }
   if (closest('.js-refund-confirm')) { e.stopPropagation(); return refundInvoiceFlow(closest('.js-refund-confirm').dataset.rec); }
+  if (closest('.js-sales-schedule')) { e.stopPropagation(); return openOverlay({ kind: 'schedule', customerId: closest('.js-sales-schedule').dataset.rec }); }
   if (closest('.js-install-go')) { e.stopPropagation(); try { localStorage.setItem('jactec.installNudged', '1'); } catch (er) {} const ev = state._installEvt; closeOverlay(); if (ev) { ev.prompt(); } return; }
   if (closest('.js-install-later')) { e.stopPropagation(); try { localStorage.setItem('jactec.installNudged', '1'); } catch (er) {} closeOverlay(); return; }
   if (closest('.js-cov-toggle')) { e.stopPropagation(); const b = closest('.js-cov-toggle'); const doIt = () => { const u = IDX.unit.get(b.dataset.rec); if (!u) return; u.insurance = u.insurance || {}; const nv = b.dataset.val === '1'; if (!!u.insurance.covered !== nv) { u.insurance.covered = nv; logAction(u, nv ? 'Branded covered — yard equipment insurance ON' : 'Coverage dropped — yard equipment insurance OFF'); reindex('units', u); } render(); }; if (!adminUnlocked()) return requireAdmin('Equipment insurance is Owner-only.', doIt); return doIt(); }
