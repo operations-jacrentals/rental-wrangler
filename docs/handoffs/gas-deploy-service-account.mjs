@@ -13,6 +13,7 @@
  *   5. The key, base64'd, in the GAS_SA_KEY_B64 env secret.
  *
  * USAGE:
+ *   GAS_SA_KEY_B64=... node gas-deploy-service-account.mjs pull   # fetch live Code.js + manifest (authoritative, like clasp pull)
  *   GAS_SA_KEY_B64=... node gas-deploy-service-account.mjs push   # push local Code.js + manifest
  *   GAS_SA_KEY_B64=... node gas-deploy-service-account.mjs deploy "description"  # new version + update the live deployment
  *
@@ -63,6 +64,23 @@ async function push(dir) {
   console.log(`Pushed ${files.length} file(s) to script ${SCRIPT_ID}.`);
 }
 
+// Fetches the authoritative live source so a splice builds on what's actually deployed
+// (mirrors `clasp pull`) — writes each remote file into `dir` (default ~/rw-backend).
+async function pull(dir) {
+  const script = await scriptClient();
+  const target = dir || (process.env.RW_BACKEND_DIR || `${process.env.HOME}/rw-backend`);
+  const { mkdirSync, writeFileSync } = await import('fs');
+  mkdirSync(target, { recursive: true });
+  const res = await script.projects.getContent({ scriptId: SCRIPT_ID });
+  const files = res.data.files || [];
+  for (const f of files) {
+    const ext = f.type === 'JSON' ? '.json' : f.type === 'HTML' ? '.html' : '.js';
+    const name = f.name === 'appsscript' ? 'appsscript.json' : `${f.name}${ext}`;
+    writeFileSync(join(target, name), f.source, 'utf8');
+  }
+  console.log(`Pulled ${files.length} file(s) from script ${SCRIPT_ID} into ${target}.`);
+}
+
 async function deploy(description) {
   const script = await scriptClient();
   const ver = await script.projects.versions.create({ scriptId: SCRIPT_ID, requestBody: { description: description || 'deploy' } });
@@ -77,5 +95,6 @@ async function deploy(description) {
 
 const [, , cmd, arg] = process.argv;
 if (cmd === 'push') await push(arg);
+else if (cmd === 'pull') await pull(arg);
 else if (cmd === 'deploy') await deploy(arg);
-else { console.error('Usage: node gas-deploy-service-account.mjs push|deploy [arg]'); process.exit(1); }
+else { console.error('Usage: node gas-deploy-service-account.mjs push|pull|deploy [arg]'); process.exit(1); }
