@@ -8863,44 +8863,73 @@ const _lsJSON = (k) => { try { return JSON.parse(localStorage.getItem(k) || '{}'
 const _lsSave = (k, o) => { try { localStorage.setItem(k, JSON.stringify(o)); } catch (e) {} };
 const dispatchOrderLS = () => _lsJSON('jactec.dispatchOrder');
 const dispatchTimesLS = () => _lsJSON('jactec.dispatchTimes');
-// §2.3 free-form route arrows (Jac): the dispatcher can draw arbitrary directional
-// "from here → there" legs between any two stop icons, on TOP of the top-to-bottom run
-// order. Stored per-day as [fromNode, toNode] pairs (node = a stop id or 'home:in'/'home:out').
-const dispatchArrowsLS = () => _lsJSON('jactec.dispatchArrows');
-const HOME_IN = 'home:in', HOME_OUT = 'home:out';   // the yard, start-of-day and end-of-day nodes
-// Click an icon to arm it (the leg's "from"); click a second to draw the arrow; click the
-// same one again — or Esc — to cancel; re-drawing an existing leg removes it (toggle).
-function dispatchArrowClick(day, node) {
-  if (state.dispArm == null) { state.dispArm = node; return render(); }
-  if (state.dispArm === node) { state.dispArm = null; return render(); }      // tapped self → cancel
-  const all = dispatchArrowsLS(); const legs = all[day] || [];
-  const i = legs.findIndex(([a, b]) => a === state.dispArm && b === node);
-  if (i !== -1) legs.splice(i, 1); else legs.push([state.dispArm, node]);      // toggle the leg
-  all[day] = legs; _lsSave('jactec.dispatchArrows', all);
-  state.dispArm = null; render();
+/* §2.3 D6 (spec rentals-dispatch) — the per-driver schedule slice:
+   { [dayISO]: { [driverId|'pool']: { order:[stopId], times:{ [stopId]:'HH:MM' } } } }.
+   'pool' = the unassigned lane. Local-first today; D3 later moves this SAME shape to an
+   additive backend `dispatchSchedule` action (stale-rev rejection), so it's a drop-in swap.
+   The legacy flat jactec.dispatchOrder/{day:[ids]} + jactec.dispatchTimes/{stopId} keys stay
+   readable as fallbacks (solo view still writes them), so nothing a dispatcher set is lost. */
+const dispatchSchedLS = () => _lsJSON('jactec.dispatchSchedule');
+const laneKeyOf = (s) => s.driverId || 'pool';
+function schedLane(day, laneKey) { const all = dispatchSchedLS(); return (all[day] && all[day][laneKey]) || { order: [], times: {} }; }
+function schedSaveLane(day, laneKey, lane) {
+  const all = dispatchSchedLS();
+  (all[day] || (all[day] = {}))[laneKey] = lane;
+  _lsSave('jactec.dispatchSchedule', all);
 }
-function removeDispatchArrow(day, from, to) {
-  const all = dispatchArrowsLS(); const legs = all[day] || [];
-  const i = legs.findIndex(([a, b]) => a === from && b === to); if (i === -1) return;
-  legs.splice(i, 1); all[day] = legs; _lsSave('jactec.dispatchArrows', all); render();
+// Move a stop's schedule entries (time + order slot) when it changes lanes, so a re-assigned
+// stop keeps its set time and the old lane doesn't hold a ghost slot.
+function schedMoveStop(day, stopId, fromKey, toKey) {
+  if (fromKey === toKey) return;
+  const from = schedLane(day, fromKey), to = schedLane(day, toKey);
+  const t = from.times[stopId];
+  delete from.times[stopId];
+  from.order = from.order.filter((id) => id !== stopId);
+  if (t !== undefined) to.times[stopId] = t;
+  if (!to.order.includes(stopId)) to.order.push(stopId);
+  schedSaveLane(day, fromKey, from); schedSaveLane(day, toKey, to);
 }
+// D4/D6 — THE one assignment path (the stop's driver badge, a lane drop, and Round up all
+// land here): writes the per-leg driver on the unit entry, moves the stop's schedule slot
+// (time + order) to the new lane on the stop's own day, logs, reindexes. UI renders after.
+function assignStopDriver(rentalId, unitId, task, driverId) {
+  const r = IDX.rental.get(rentalId); if (!r) return false;
+  const eu = unitEntry(r, unitId) || (r.units || [])[0]; if (!eu) return false;
+  const f = legDriverField(task); const nv = driverId || null;
+  if ((eu[f] || null) === nv) return false;
+  const day = task === 'Deliver' ? r.startDate : r.endDate;
+  if (day) schedMoveStop(day, `${rentalId}|${eu.unitId || ''}|${task}`, (eu[f] || 'pool'), (nv || 'pool'));
+  eu[f] = nv;
+  logAction(r, `${IDX.unit.get(eu.unitId)?.name || 'Unit'} — ${task === 'Deliver' ? 'delivery' : 'recovery'} driver → ${nv ? driverName(nv) : 'unassigned'}`);
+  reindex('rentals', r);
+  return true;
+}
+// Which driver lanes the dispatcher has open, per device (a VIEW pref, not data — D5:
+// "the dispatcher clicks which drivers to show"). Pruned against the live roster on read.
+const dispatchLanesLS = () => { const v = _lsJSON('jactec.dispatchLanes'); const ids = Array.isArray(v.show) ? v.show : []; const roster = driverRoster().map((d) => d.id); return ids.filter((id) => roster.includes(id)); };
+const dispatchLanesSave = (ids) => _lsSave('jactec.dispatchLanes', { show: ids });
 const addDaysISO = (iso, n) => { const d = parseISO(iso); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
-// §2.3 — Auto-route: draw the legs connecting the yard → every stop in its run order → yard,
-// so a driver sees the whole route in one click instead of clicking icon-to-icon. (Jac follow-up)
-function autoDispatchRoute(day) {
-  const stops = dispatchDayStops(day);
-  if (!stops.length) return;
-  const chain = [HOME_IN, ...stops.map((s) => s.id), HOME_OUT];
-  const legs = [];
-  for (let i = 0; i < chain.length - 1; i++) legs.push([chain[i], chain[i + 1]]);
-  const all = dispatchArrowsLS(); all[day] = legs; _lsSave('jactec.dispatchArrows', all);
-  state.dispArm = null; render();
-}
 const dispatchDayLabel = (iso) => { const d = parseISO(iso); return d ? d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : iso; };
 function dispatchDayStops(day) {
-  const times = dispatchTimesLS();
-  const stops = dispatchEvents().filter((ev) => ev.date === day).map((ev) => ({ ...ev, id: dispatchStopId(ev), time: times[dispatchStopId(ev)] ?? ev.time ?? '' }));
+  const legacyTimes = dispatchTimesLS();
+  const sched = dispatchSchedLS()[day] || {};
+  const stops = dispatchEvents().filter((ev) => ev.date === day).map((ev) => {
+    const id = dispatchStopId(ev), lane = ev.driverId || 'pool';
+    const lt = sched[lane] && sched[lane].times ? sched[lane].times[id] : undefined;   // D6 per-lane time wins, legacy flat key falls back
+    return { ...ev, id, lane, time: lt !== undefined ? lt : (legacyTimes[id] ?? ev.time ?? '') };
+  });
   const order = dispatchOrderLS()[day] || [];
+  return stops.sort((a, b) => {
+    const ia = order.indexOf(a.id), ib = order.indexOf(b.id);
+    if (ia !== -1 || ib !== -1) return (ia === -1 ? 1e9 : ia) - (ib === -1 ? 1e9 : ib);
+    return (a.time || '~').localeCompare(b.time || '~');
+  });
+}
+// D5/D6 — one driver's run for the day: the merged list filtered to a lane, re-sorted by
+// that lane's own order (a lane reorder must not fight the merged/legacy order).
+function dispatchLaneStops(day, laneKey, all) {
+  const stops = (all || dispatchDayStops(day)).filter((s) => s.lane === laneKey);
+  const order = schedLane(day, laneKey).order;
   return stops.sort((a, b) => {
     const ia = order.indexOf(a.id), ib = order.indexOf(b.id);
     if (ia !== -1 || ib !== -1) return (ia === -1 ? 1e9 : ia) - (ib === -1 ? 1e9 : ib);
@@ -8942,7 +8971,7 @@ function dispatchFocusStop(stopId) {
   if (_dispMap && pos) { _dispMap.panTo(pos); if (_dispMap.getZoom() < 14) _dispMap.setZoom(14); }
   document.querySelectorAll('.disp-tok.focus').forEach((n) => n.classList.remove('focus'));
   const esc1 = (window.CSS && CSS.escape) ? CSS.escape(stopId) : stopId.replace(/["\\]/g, '\\$&');
-  const tok = document.querySelector(`.disp-tok[data-id="${esc1}"]`); if (tok) tok.classList.add('focus');
+  document.querySelectorAll(`.disp-tok[data-id="${esc1}"]`).forEach((tok) => tok.classList.add('focus'));   // the token exists in BOTH the merged strip and its lane
 }
 /* §2.3 DISPATCH = the OFFICE COCKPIT (Phase 1, Jac): a FULL-PANE live map of the day's
    run + a minimal schedule rail floating on the right that widens on hover/focus to
@@ -8967,77 +8996,56 @@ function dispatchGridBody() {
   const nextId = dispatchNextId(stops);
   const scheduled = stops.filter((s) => timeToMin(s.time) != null);
   const unscheduled = stops.filter((s) => timeToMin(s.time) == null);   // §2.3 "No set time" pinned to the TOP of the rail (Jac)
-  const tokenEl = (s) => {
+  const tokenEl = (s, inDriverLane) => {
     const kind = dispatchKind(s);
     const done = stopDone(s), isNext = s.id === nextId;
     const flag = done ? badge('Done', 'green') : (isNext ? `<span class="dt-next">${I.truck} Next</span>` : '');
-    return `<div class="disp-tok js-disp-tok kind-${kind}${done ? ' done' : ''}${isNext ? ' next' : ''}${s.id === state.dispFocusId ? ' focus' : ''}${s.pin ? '' : ' nopin'}" draggable="true" data-id="${esc(s.id)}" data-rec="${esc(s.rentalId)}" data-unit="${esc(s.unitId || '')}">
+    const driverChip = inDriverLane ? '' : (s.driverId   // inside a driver's lane the lane IS the driver — don't repeat it
+      ? `<button class="catr-slot js-stop-driver" data-id="${esc(s.id)}" data-rec="${esc(s.rentalId)}" data-unit="${esc(s.unitId || '')}" data-task="${esc(s.task)}" data-tip="Driver on this leg — tap to change">${badge(driverName(s.driverId), 'navy')}</button>`
+      : (driverRoster().length ? `<button class="catr-slot js-stop-driver" data-r="R5b" data-id="${esc(s.id)}" data-rec="${esc(s.rentalId)}" data-unit="${esc(s.unitId || '')}" data-task="${esc(s.task)}" data-tip="Assign a driver to this leg"><span class="add-field anchor" style="height:20px;font-size:10px">+Driver</span></button>` : ''));
+    return `<div class="disp-tok js-disp-tok kind-${kind}${done ? ' done' : ''}${isNext ? ' next' : ''}${s.id === state.dispFocusId ? ' focus' : ''}${s.pin ? '' : ' nopin'}" draggable="true" data-id="${esc(s.id)}" data-rec="${esc(s.rentalId)}" data-unit="${esc(s.unitId || '')}" data-lane="${esc(s.lane)}" data-task="${esc(s.task)}">
       <div class="dt-rail"><span class="dt-dot"></span><b class="dt-mini">${timeToMin(s.time) != null ? esc(fmtClock(s.time)) : '—'}</b></div>
       <div class="dt-full">
-        <div class="dt-r1"><span class="dt-grip" data-tip="Drag to reorder · or type a time">⠿</span><input class="dt-time js-disp-time" data-id="${esc(s.id)}" value="${esc(s.time || '')}" placeholder="—:—" maxlength="8" aria-label="Stop time" data-tip="Set the stop time — reorders the run" /><span class="spacer"></span>${flag}</div>
-        <div class="dt-r2">${badge(kind === 'deliver' ? 'Deliver' : 'Recover', kind === 'deliver' ? 'blue' : 'brown')}${refPill('rentals', s.rentalId, s.cust)}${s.unitId ? unitPill(s.unitId) : ''}${s.driverId
-          ? `<button class="catr-slot js-stop-driver" data-id="${esc(s.id)}" data-rec="${esc(s.rentalId)}" data-unit="${esc(s.unitId || '')}" data-task="${esc(s.task)}" data-tip="Driver on this leg — tap to change">${badge(driverName(s.driverId), 'navy')}</button>`
-          : (driverRoster().length ? `<button class="catr-slot js-stop-driver" data-r="R5b" data-id="${esc(s.id)}" data-rec="${esc(s.rentalId)}" data-unit="${esc(s.unitId || '')}" data-task="${esc(s.task)}" data-tip="Assign a driver to this leg"><span class="add-field anchor" style="height:20px;font-size:10px">+Driver</span></button>` : '')}</div>
+        <div class="dt-r1"><span class="dt-grip" data-tip="Drag to reorder — or drop on a driver's lane to assign">⠿</span><input class="dt-time js-disp-time" data-id="${esc(s.id)}" data-lane="${esc(s.lane)}" value="${esc(s.time || '')}" placeholder="—:—" maxlength="8" aria-label="Stop time" data-tip="Set the stop time — reorders the run" /><span class="spacer"></span>${flag}</div>
+        <div class="dt-r2">${badge(kind === 'deliver' ? 'Deliver' : 'Recover', kind === 'deliver' ? 'blue' : 'brown')}${refPill('rentals', s.rentalId, s.cust)}${s.unitId ? unitPill(s.unitId) : ''}${driverChip}</div>
         ${s.addr ? `<div class="dt-addr js-site-go" data-rec="${esc(s.rentalId)}" data-unit="${esc(s.unitId || '')}" data-tip="Open the site / set the map pin">${s.pin ? '' : '⚠ '}${esc(s.addr)}</div>` : ''}
       </div>
     </div>`;
   };
   const sec = (t) => `<div class="dr-sec">${t}</div>`;
+  const listOf = (arr, inDriverLane) => {
+    const un = arr.filter((s) => timeToMin(s.time) == null), schd = arr.filter((s) => timeToMin(s.time) != null);   // "No set time" pinned on top, same law as the merged rail
+    const tok = (s) => tokenEl(s, inDriverLane);
+    return (un.length ? sec('No set time') + un.map(tok).join('') : '') + (schd.length ? (un.length ? sec('Scheduled') : '') + schd.map(tok).join('') : '');
+  };
   const railRows = (unscheduled.length ? sec('No set time') + unscheduled.map(tokenEl).join('') : '')
     + (scheduled.length ? (unscheduled.length ? sec('Scheduled') : '') + scheduled.map(tokenEl).join('') : '');
-  // The map is the full pane; the rail is a minimal time strip floating on the right that
-  // widens on hover/focus to let the office adjust the run. "No set time" sits up top.
-  const rail = `<div class="disprail js-disprail" data-day="${esc(day)}" tabindex="0" data-tip="Hover to adjust the run">
-    <div class="dr-head"><span class="dr-chev">‹</span><span class="dr-title">Run · ${stops.length} stop${stops.length === 1 ? '' : 's'}</span></div>
-    <div class="dr-list">${railRows}</div>
+  // D5 driver lanes — the same rail shape repeated per driver on the same map surface.
+  // Collapsed stays the one 90px strip; expanded shows the Unassigned pool + the lanes the
+  // dispatcher picked (+Lanes), panning horizontally past ~3. Solo view (no lanes picked)
+  // is EXACTLY the pre-lane rail, so the owner-operator flow is untouched.
+  const roster = driverRoster(), shown = dispatchLanesLS(), laned = shown.length > 0;
+  const lanesBtn = roster.length ? `<button class="catr-slot js-disp-lanes" data-r="R5b" data-tip="Corral the run into driver lanes — pick who's showing"><span class="add-field anchor" style="height:20px;font-size:10px">${laned ? `Lanes · ${shown.length}` : '+Lanes'}</span></button>` : '';
+  const laneEl = (key) => {
+    const ls = dispatchLaneStops(day, key, stops);
+    const isPool = key === 'pool';
+    const done = ls.filter(stopDone).length;
+    const iso = state.dispLaneIso === key;
+    const roundup = isPool && ls.length && shown.length ? actionPill('commit', 'Round up', { js: 'js-disp-roundup', h: 20 }) : '';
+    // header: name + done/total progress (the Onfleet fraction); click = isolate this run on the map.
+    // Round up rides the TOP OF THE POOL LIST ("round up everything below"), not the crowded head.
+    return `<div class="dr-lane${isPool ? ' pool' : ''}" data-lane="${esc(key)}">
+      <div class="dl-head js-disp-laneiso${iso ? ' iso' : ''}" data-lane="${esc(key)}" data-tip="${iso ? 'Showing only this run on the map — tap to show all' : 'Tap to trace only this run on the map · drop a stop here to hand it over'}"><span class="dl-name">${isPool ? 'Unassigned' : esc(driverName(key))}</span><span class="spacer"></span>${badge(`${done}/${ls.length}`, ls.length && done === ls.length ? 'green' : 'gray')}</div>
+      <div class="dl-list">${roundup}${listOf(ls, !isPool) || `<div class="dl-empty">${isPool ? 'Every stop is assigned' : 'Drag a stop here to assign'}</div>`}</div>
+    </div>`;
+  };
+  const lanesRow = laned ? `<div class="dr-lanes">${laneEl('pool')}${shown.map(laneEl).join('')}</div>` : '';
+  const rail = `<div class="disprail js-disprail${laned ? ' lanes' : ''}" data-day="${esc(day)}" tabindex="0" style="--dr-lanes:${shown.length + 1}" data-tip="${laned ? 'Hover to work the driver lanes' : 'Hover to adjust the run'}">
+    <div class="dr-head"><span class="dr-chev">‹</span><span class="dr-title">${laned ? 'Runs' : 'Run'} · ${stops.length} stop${stops.length === 1 ? '' : 's'}</span><span class="spacer"></span>${lanesBtn}</div>
+    ${lanesRow}<div class="dr-list">${railRows}</div>
   </div>`;
   const foot = `<div class="disp-foot"><span class="disp-livedot"></span><span class="disp-live">Live · auto-notifies the driver on change</span></div>`;
   return `${head}<div class="disp-cockpit"><div class="dispm js-dispmount" data-day="${esc(day)}"></div>${rail}</div>${foot}`;
-}
-/* §2.3 — paint the free-form route legs as an SVG overlay in the route's left gutter,
-   AFTER the DOM lands (we need each icon's real geometry). Pure post-render decor: each
-   leg bows into the gutter so non-adjacent / backtracking legs stay legible, with an
-   arrowhead at the destination. The armed icon is highlighted via the .armed class. */
-function drawDispatchArrows() {
-  const route = document.querySelector('.js-disp-route'); if (!route) return;
-  route.querySelector('.disp-arrows')?.remove();
-  const day = route.dataset.day, arm = state.dispArm;
-  route.querySelectorAll('.js-disp-arrowpt').forEach((n) => n.classList.toggle('armed', arm != null && n.dataset.node === arm));
-  const legs = dispatchArrowsLS()[day] || [];
-  if (!legs.length) return;
-  const rr = route.getBoundingClientRect(), top = route.scrollTop;
-  const RAIL = 19;   // legs live in the route's left rail (its padding-left), clear of the rows
-  // node anchor = rail-x, aligned to the icon's vertical center (content coords so it scrolls)
-  const yOf = (node) => {
-    const i = route.querySelector(`.js-disp-arrowpt[data-node="${CSS.escape(node)}"]`); if (!i) return null;
-    const r = i.getBoundingClientRect(); return r.top - rr.top + top + r.height / 2;
-  };
-  const NS = 'http://www.w3.org/2000/svg';
-  const svg = document.createElementNS(NS, 'svg');
-  svg.setAttribute('class', 'disp-arrows');
-  svg.setAttribute('width', rr.width); svg.setAttribute('height', route.scrollHeight);
-  svg.setAttribute('viewBox', `0 0 ${rr.width} ${route.scrollHeight}`);
-  svg.innerHTML = `<defs><marker id="dispArrowHead" markerWidth="7" markerHeight="7" refX="5.2" refY="3" orient="auto-start-reverse"><path d="M0,0 L6,3 L0,6 Z" fill="var(--accent)"/></marker></defs>`;
-  legs.forEach(([a, b], idx) => {
-    const ya = yOf(a), yb = yOf(b); if (ya == null || yb == null) return;
-    // bow left within the rail, deeper for longer legs / stacked legs so they don't overlap
-    const bow = Math.min(13, 4 + Math.abs(yb - ya) * 0.03) + (idx % 3) * 2;
-    const cx = RAIL - bow;
-    const d = `M ${RAIL} ${ya.toFixed(1)} C ${cx.toFixed(1)} ${ya.toFixed(1)}, ${cx.toFixed(1)} ${yb.toFixed(1)}, ${RAIL} ${yb.toFixed(1)}`;
-    // a fat invisible hit-path makes the thin leg easy to click away
-    const hit = document.createElementNS(NS, 'path');
-    hit.setAttribute('d', d); hit.setAttribute('class', 'disp-arrow-hit js-disp-arrow');
-    hit.setAttribute('data-from', a); hit.setAttribute('data-to', b);
-    hit.setAttribute('fill', 'none'); hit.setAttribute('stroke', 'transparent'); hit.setAttribute('stroke-width', '13');
-    const line = document.createElementNS(NS, 'path');
-    line.setAttribute('d', d); line.setAttribute('class', 'disp-arrow-line');
-    line.setAttribute('fill', 'none'); line.setAttribute('marker-end', 'url(#dispArrowHead)');
-    const dot = document.createElementNS(NS, 'circle');   // the leg's origin
-    dot.setAttribute('cx', RAIL); dot.setAttribute('cy', ya.toFixed(1)); dot.setAttribute('r', '2.6');
-    dot.setAttribute('class', 'disp-arrow-dot');
-    svg.appendChild(hit); svg.appendChild(line); svg.appendChild(dot);
-  });
-  route.appendChild(svg);
 }
 /* §2.3 OFFICE COCKPIT MAP. The Map is a SINGLETON (_dispMapEl) RE-PARENTED into the
    fresh mount point each render (render() rebuilds the DOM) so it never reloads/flickers;
@@ -9063,20 +9071,26 @@ function mountDispatchMap() {
 function refreshDispatchMap(day, fit) {
   if (!_dispMap) return;
   const stops = dispatchDayStops(day), nextId = dispatchNextId(stops);
+  // D5 route isolation: with a lane isolated, the orange route + truck trace ONLY that
+  // driver's run (in its own lane order); every pin stays visible so nothing disappears.
+  const iso = state.dispLaneIso && (state.dispLaneIso === 'pool' || dispatchLanesLS().includes(state.dispLaneIso)) ? state.dispLaneIso : null;
+  const routeStops = iso ? dispatchLaneStops(day, iso, stops) : stops;
   _dispMarkers.forEach((m) => m.setMap(null)); _dispMarkers = [];
   if (_dispRoute) { _dispRoute.setMap(null); _dispRoute = null; }
   const bounds = new google.maps.LatLngBounds(); bounds.extend(YARD_CENTER);
   _dispMarkers.push(new google.maps.Marker({ map: _dispMap, position: YARD_CENTER, title: 'JAC Yard · Sulphur', zIndex: 5,
     icon: { path: google.maps.SymbolPath.BACKWARD_CLOSED_ARROW, scale: 5, fillColor: '#ff7a1a', fillOpacity: 1, strokeColor: '#1a1205', strokeWeight: 2 } }));
-  const path = [YARD_CENTER], need = []; let placed = 0;
+  const posOf = (s) => (s.pin && Number.isFinite(s.pin.lat)) ? s.pin : _dispGeo[s.addr];
+  const need = []; let placed = 0;
   stops.forEach((s) => {
-    const p = (s.pin && Number.isFinite(s.pin.lat)) ? s.pin : _dispGeo[s.addr];
-    if (p) { placeDispatchPin(s, p, s.id === nextId, stopDone(s)); bounds.extend(p); path.push(p); placed++; }
+    const p = posOf(s);
+    if (p) { placeDispatchPin(s, p, s.id === nextId, stopDone(s)); bounds.extend(p); placed++; }
     else if (s.addr) need.push(s);
   });
-  path.push(YARD_CENTER);
+  // the route path follows routeStops' OWN order (lane order under isolation, merged run otherwise)
+  const path = [YARD_CENTER, ...routeStops.map(posOf).filter(Boolean), YARD_CENTER];
   _dispRoute = new google.maps.Polyline({ map: _dispMap, path, strokeColor: '#ff7a1a', strokeOpacity: .9, strokeWeight: 3 });   // straight legs — no Directions/quota
-  _dispMarkers.push(new google.maps.Marker({ map: _dispMap, position: dispatchTruckPos(stops), title: 'Driver', zIndex: 999,
+  _dispMarkers.push(new google.maps.Marker({ map: _dispMap, position: dispatchTruckPos(routeStops), title: 'Driver', zIndex: 999,
     icon: { path: google.maps.SymbolPath.CIRCLE, scale: 9, fillColor: '#18b6ff', fillOpacity: .22, strokeColor: '#18b6ff', strokeWeight: 2 } }));
   if (fit && placed) _dispMap.fitBounds(bounds, 46);   // only fit once a real stop is located (single-point fit zooms absurdly)
   need.forEach((s) => dispGeocode(s.addr, day));   // resolve pinless stops, then refresh once each lands
@@ -12969,7 +12983,6 @@ function render() {
   mountDispatchMap();   // §2.3 office cockpit: re-parent the singleton dispatch map + refresh pins/route/truck
   ruMountStrips();   // §13.7 gauge strips — build each open strip's chart into its measured 25% box
   applyTitles();   // full text on hover wherever we truncate (custom ~0.5s tooltip)
-  drawDispatchArrows();   // §2.3 — paint free-form route legs over the dispatch run (needs live geometry)
   scoreTick();     // §11 gamification — pop +X over any ring whose metric just rose
   if (DRAG.active) { reapplyDragDecor(); buildZipZones(); }   // §15c — re-stamp drop targets + rebuild the §M2 zip rails after ANY mid-drag rebuild (the card swap IS a render)
   const dt = performance.now() - t0;
@@ -13921,7 +13934,16 @@ function onClick(e) {
   if (closest('.js-refund-cancel')) { e.stopPropagation(); if (state.overlay) { state.overlay.confirmRefund = false; state.overlay.refundAlloc = null; renderOverlay(); } return; }
   if (closest('.js-refund-confirm')) { e.stopPropagation(); return refundInvoiceFlow(closest('.js-refund-confirm').dataset.rec); }
   if (closest('.js-stop-driver')) { e.stopPropagation(); const b = closest('.js-stop-driver'); const ds = driverRoster(); if (!ds.length) { toast('Add drivers on Settings → Team Roster first.'); return; } const html = ds.map((d) => `<button class="dd-item js-stop-driver-pick" data-rec="${esc(b.dataset.rec)}" data-unit="${esc(b.dataset.unit)}" data-task="${esc(b.dataset.task)}" data-driver="${esc(d.id)}">${esc(d.name)}</button>`).join('') + `<button class="dd-item js-stop-driver-pick" data-rec="${esc(b.dataset.rec)}" data-unit="${esc(b.dataset.unit)}" data-task="${esc(b.dataset.task)}" data-driver="">— Unassign —</button>`; openDropdown(b, html, { align: 'left' }); return; }
-  if (closest('.js-stop-driver-pick')) { e.stopPropagation(); const b = closest('.js-stop-driver-pick'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); const r = IDX.rental.get(b.dataset.rec); if (!r) return; const eu = unitEntry(r, b.dataset.unit) || (r.units || [])[0]; if (!eu) return; const f = legDriverField(b.dataset.task); const nv = b.dataset.driver || null; if ((eu[f] || null) !== nv) { eu[f] = nv; logAction(r, `${IDX.unit.get(eu.unitId)?.name || 'Unit'} — ${b.dataset.task === 'Deliver' ? 'delivery' : 'recovery'} driver → ${nv ? driverName(nv) : 'unassigned'}`); reindex('rentals', r); } render(); return; }
+  if (closest('.js-stop-driver-pick')) { e.stopPropagation(); const b = closest('.js-stop-driver-pick'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); assignStopDriver(b.dataset.rec, b.dataset.unit, b.dataset.task, b.dataset.driver || null); render(); return; }
+  // D5 — pick which driver lanes are showing (a per-device view pref; '' = back to the solo rail)
+  if (closest('.js-disp-lanes')) { e.stopPropagation(); const b = closest('.js-disp-lanes'); const ds = driverRoster(); if (!ds.length) { toast('Add drivers on Settings → Team Roster first.'); return; } const shown = dispatchLanesLS(); const html = ds.map((d) => `<button class="dd-item js-disp-lane-pick${shown.includes(d.id) ? ' on' : ''}" data-driver="${esc(d.id)}">${shown.includes(d.id) ? '✓ ' : ''}${esc(d.name)}</button>`).join('') + `<button class="dd-item js-disp-lane-pick" data-driver="">— Solo rail —</button>`; openDropdown(b, html, { align: 'left' }); return; }
+  if (closest('.js-disp-lane-pick')) { e.stopPropagation(); const b = closest('.js-disp-lane-pick'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); const id = b.dataset.driver; if (!id) { dispatchLanesSave([]); state.dispLaneIso = null; } else { const shown = dispatchLanesLS(); dispatchLanesSave(shown.includes(id) ? shown.filter((x) => x !== id) : [...shown, id]); } render(); return; }
+  // D5 + research (Bringg/Routific route isolation): tap a lane head → the map traces only that
+  // run; tap again → back to the whole day. A view toggle, not data — never persisted.
+  if (closest('.js-disp-laneiso') && !closest('.js-disp-roundup')) { e.stopPropagation(); const key = closest('.js-disp-laneiso').dataset.lane; state.dispLaneIso = state.dispLaneIso === key ? null : key; const day = state.dispatchDay || TODAY_ISO; render(); refreshDispatchMap(day, true); return; }
+  // D4 — Round up: split the unassigned pool across the OPEN lanes, round-robin in run order
+  // (a starting suggestion the dispatcher then drags around — region/load smarts come later).
+  if (closest('.js-disp-roundup')) { e.stopPropagation(); const day = state.dispatchDay || TODAY_ISO; const shown = dispatchLanesLS(); if (!shown.length) return; const pool = dispatchLaneStops(day, 'pool'); if (!pool.length) return; pool.forEach((s, i) => assignStopDriver(s.rentalId, s.unitId, s.task, shown[i % shown.length])); toast(`Rounded up ${pool.length} stop${pool.length === 1 ? '' : 's'} across ${shown.length} driver${shown.length === 1 ? '' : 's'}.`); render(); return; }
   if (closest('.js-spe-accept')) { e.stopPropagation(); if (currentRole && roleTier(currentRole) < tierRank('manager')) { toast('Accepting engine prices is Manager-tier and up.'); return; } const c = IDX.category.get(closest('.js-spe-accept').dataset.rec); const sug = c && salePriceSuggest(c); if (!sug) return; const patch = []; if (sug.bottom != null && Number(c.bottomDollar) !== sug.bottom) { c.bottomDollar = sug.bottom; patch.push(`bottom ${money(sug.bottom)}`); } if (sug.ask != null && Number(c.askPrice) !== sug.ask) { c.askPrice = sug.ask; patch.push(`ask ${money(sug.ask)}`); } if (patch.length) { logAction(c, `Sale-price engine accepted (${sug.basis} basis): ${patch.join(' · ')}`); reindex('categories', c); toast(`${c.name} — engine prices accepted.`); } render(); return; }
   if (closest('.js-lost-demand')) { e.stopPropagation(); const b = closest('.js-lost-demand'); const c = IDX.category.get(b.dataset.cat); if (!c) return; c.lostDemand = c.lostDemand || []; const aw = state.availWin; c.lostDemand.push({ when: TODAY_ISO, window: aw ? { start: aw.start, end: aw.end } : null, by: currentRole || '' }); logAction(c, `Lost demand logged — a customer wanted one, none free${aw ? ` (${fmtWindow(aw.start, aw.end)})` : ''}`); reindex('categories', c); toast(`Lost ask logged for ${c.name} — ${c.lostDemand.length} on record.`); render(); return; }
   if (closest('.js-blacklist')) { e.stopPropagation(); const b = closest('.js-blacklist'); const c = IDX.customer.get(b.dataset.rec); if (!c || c.accountType === 'Blacklisted') return; if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = 'Click again — blacklist'; return; } c._prevAccountType = c.accountType || ''; c.accountType = 'Blacklisted'; c.blacklistedAt = TODAY_ISO; c.activityLog = c.activityLog || []; c.activityLog.push({ when: TODAY_ISO, text: `Blacklisted by ${currentRole || 'operator'}` }); reindex('customers', c); toast(`${c.name} blacklisted — new rentals blocked.`); render(); return; }   // spec customers-crm D3: ANY role can blacklist; the audit trail is the control
@@ -14131,14 +14153,9 @@ function onClick(e) {
     return render();
   }
   // §2.3 dispatch timeline — day nav + open a stop's rental (Phase 6)
-  if (closest('.js-disp-day')) { e.stopPropagation(); state.dispArm = null; state.dispatchDay = addDaysISO(state.dispatchDay || TODAY_ISO, Number(closest('.js-disp-day').dataset.dir)); return render(); }
-  if (closest('.js-disp-today')) { e.stopPropagation(); state.dispArm = null; state.dispatchDay = TODAY_ISO; return render(); }
+  if (closest('.js-disp-day')) { e.stopPropagation(); state.dispatchDay = addDaysISO(state.dispatchDay || TODAY_ISO, Number(closest('.js-disp-day').dataset.dir)); return render(); }
+  if (closest('.js-disp-today')) { e.stopPropagation(); state.dispatchDay = TODAY_ISO; return render(); }
   // §2.3 free-form route arrows — these win over the stop-open below (the icon lives inside the row)
-  if (closest('.js-disp-arrow')) { e.stopPropagation(); const a = closest('.js-disp-arrow'); return removeDispatchArrow(state.dispatchDay || TODAY_ISO, a.dataset.from, a.dataset.to); }
-  if (closest('.js-disp-arrowpt')) { e.stopPropagation(); const route = closest('.js-disp-route'); return dispatchArrowClick(route ? route.dataset.day : (state.dispatchDay || TODAY_ISO), closest('.js-disp-arrowpt').dataset.node); }
-  if (closest('.js-disp-arm-cancel')) { e.stopPropagation(); state.dispArm = null; return render(); }
-  if (closest('.js-disp-autoroute')) { e.stopPropagation(); return autoDispatchRoute(state.dispatchDay || TODAY_ISO); }
-  if (closest('.js-disp-clearlegs')) { e.stopPropagation(); const all = dispatchArrowsLS(); delete all[state.dispatchDay || TODAY_ISO]; _lsSave('jactec.dispatchArrows', all); state.dispArm = null; return render(); }
   if (closest('.js-disp-stop') && !closest('.js-disp-time') && !closest('.disp-grip') && !closest('.js-site-go')) { e.stopPropagation(); return anchorRecord('rentals', closest('.js-disp-stop').dataset.rec); }
   if (closest('.js-disp-tok') && !closest('.dt-time') && !closest('.dt-grip') && !closest('.js-site-go') && !closest('.pill')) { e.stopPropagation(); return dispatchFocusStop(closest('.js-disp-tok').dataset.id); }   // §2.3 cockpit: tap a rail stop → focus it on the map (the customer pill opens the rental)
   if (closest('.js-new-wo-unit')) { e.stopPropagation(); return startNewWorkOrder(closest('.js-new-wo-unit').dataset.rec); }
@@ -15302,8 +15319,12 @@ function onChange(e) {
     reader.readAsDataURL(file);
     return;
   }
-  if (e.target.classList.contains('js-disp-time')) {   // §2.3 dispatch stop time (per-device)
-    const t = dispatchTimesLS(); const v = e.target.value.trim(); t[e.target.dataset.id] = v; _lsSave('jactec.dispatchTimes', t);
+  if (e.target.classList.contains('js-disp-time')) {   // §2.3 dispatch stop time — D6: stored under the stop's lane
+    const day = (e.target.closest('.disprail') && e.target.closest('.disprail').dataset.day) || state.dispatchDay || TODAY_ISO;
+    const laneKey = e.target.dataset.lane || 'pool';
+    const v = e.target.value.trim();
+    const lane = schedLane(day, laneKey); lane.times[e.target.dataset.id] = v; schedSaveLane(day, laneKey, lane);
+    const t = dispatchTimesLS(); if (t[e.target.dataset.id] !== undefined) { delete t[e.target.dataset.id]; _lsSave('jactec.dispatchTimes', t); }   // retire the legacy flat key for this stop
     if (e.target.closest('.disprail') && timeToMin(v) != null) render();   // cockpit: a complete time re-sorts the token on the rail = retime/reorder
     return;
   }
@@ -17766,18 +17787,39 @@ function boot() {
   // so the grid's custom pointer engine isn't involved). Reorders the day's run.
   let dispDragId = null;   // §2.3 cockpit rail: drag a stop token up/down to set the run order (overrides time-sort)
   document.addEventListener('dragstart', (e) => { const s = e.target.closest && e.target.closest('.js-disp-tok'); if (s) { dispDragId = s.dataset.id; if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', s.dataset.id); } catch (x) {} } s.classList.add('disp-dragging'); const rail = s.closest('.disprail'); if (rail) rail.classList.add('dragging'); } });   // pin the rail OPEN for the whole drag (hover is lost mid-drag)
-  document.addEventListener('dragover', (e) => { if (dispDragId && e.target.closest && e.target.closest('.disprail')) e.preventDefault(); });
+  document.addEventListener('dragover', (e) => {
+    if (!dispDragId || !e.target.closest || !e.target.closest('.disprail')) return;
+    e.preventDefault();
+    // D4 — arm the lane under the cursor (orange outline = "release to assign here")
+    const lane = e.target.closest('.dr-lane');
+    document.querySelectorAll('.dr-lane.armed').forEach((n) => { if (n !== lane) n.classList.remove('armed'); });
+    if (lane) lane.classList.add('armed');
+  });
   document.addEventListener('drop', (e) => {
     const rail = e.target.closest && e.target.closest('.disprail'); if (!dispDragId || !rail) return; e.preventDefault();
-    const ids = [...rail.querySelectorAll('.js-disp-tok')].map((n) => n.dataset.id);
+    const dragId = dispDragId; dispDragId = null;
     const over = e.target.closest('.js-disp-tok');
-    const from = ids.indexOf(dispDragId); if (from !== -1) ids.splice(from, 1);
-    const to = over && over.dataset.id !== dispDragId ? ids.indexOf(over.dataset.id) : ids.length;
-    ids.splice(to < 0 ? ids.length : to, 0, dispDragId);
-    const ord = dispatchOrderLS(); ord[rail.dataset.day] = ids; _lsSave('jactec.dispatchOrder', ord);
-    state.dispFocusId = dispDragId; dispDragId = null; render();   // keep the moved stop highlighted so it stays trackable after the reorder
+    const laneEl = e.target.closest('.dr-lane');
+    const tok = rail.querySelector(`.js-disp-tok[data-id="${(window.CSS && CSS.escape) ? CSS.escape(dragId) : dragId}"]`);
+    if (laneEl && tok) {
+      // D4/D6 — laned drop: assign if the lane changed, then write THIS lane's own order
+      const toLane = laneEl.dataset.lane;
+      if (tok.dataset.lane !== toLane) assignStopDriver(tok.dataset.rec, tok.dataset.unit, tok.dataset.task, toLane === 'pool' ? null : toLane);
+      const ids = [...laneEl.querySelectorAll('.js-disp-tok')].map((n) => n.dataset.id).filter((id) => id !== dragId);
+      const to = over && over.dataset.id !== dragId ? ids.indexOf(over.dataset.id) : ids.length;
+      ids.splice(to < 0 ? ids.length : to, 0, dragId);
+      const lane = schedLane(rail.dataset.day, toLane); lane.order = ids; schedSaveLane(rail.dataset.day, toLane, lane);
+    } else {
+      // solo rail — the pre-lane flat reorder, unchanged (legacy key keeps old installs intact)
+      const ids = [...rail.querySelectorAll('.dr-list .js-disp-tok')].map((n) => n.dataset.id);
+      const from = ids.indexOf(dragId); if (from !== -1) ids.splice(from, 1);
+      const to = over && over.dataset.id !== dragId ? ids.indexOf(over.dataset.id) : ids.length;
+      ids.splice(to < 0 ? ids.length : to, 0, dragId);
+      const ord = dispatchOrderLS(); ord[rail.dataset.day] = ids; _lsSave('jactec.dispatchOrder', ord);
+    }
+    state.dispFocusId = dragId; render();   // keep the moved stop highlighted so it stays trackable after the reorder
   });
-  document.addEventListener('dragend', () => { dispDragId = null; document.querySelectorAll('.disp-dragging').forEach((n) => n.classList.remove('disp-dragging')); document.querySelectorAll('.disprail.dragging').forEach((n) => n.classList.remove('dragging')); });
+  document.addEventListener('dragend', () => { dispDragId = null; document.querySelectorAll('.disp-dragging').forEach((n) => n.classList.remove('disp-dragging')); document.querySelectorAll('.disprail.dragging').forEach((n) => n.classList.remove('dragging')); document.querySelectorAll('.dr-lane.armed').forEach((n) => n.classList.remove('armed')); });
   // Card GROUP header reorder (Jac 2026-07-04) — native drag, same self-contained
   // pattern as the dispatch-rail stop reorder above. Reorders Units/Rentals/Customers/
   // Invoices groups; persisted per role via saveGroupOrder (see its comment for the
@@ -17834,14 +17876,7 @@ function boot() {
     });
     render();
   });
-  // §2.3 route arrows — keyboard parity: Enter/Space arms or lands a leg; Escape cancels the draw.
   document.addEventListener('keydown', (e) => {
-    const pt = e.target.closest && e.target.closest('.js-disp-arrowpt');
-    if (pt && (e.key === 'Enter' || e.key === ' ')) {
-      e.preventDefault(); const route = pt.closest('.js-disp-route');
-      return dispatchArrowClick(route ? route.dataset.day : (state.dispatchDay || TODAY_ISO), pt.dataset.node);
-    }
-    if (e.key === 'Escape' && state.dispArm != null) { e.preventDefault(); e.stopPropagation(); state.dispArm = null; render(); }
     // §20 route-rail: keyboard-activate a stop, Esc disarms the pending route pick
     const rn = e.target.closest && e.target.closest('.js-tnode');
     if (rn && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); return armTransportNode(rn.dataset.rec, rn.dataset.unit || null, rn.dataset.node); }
