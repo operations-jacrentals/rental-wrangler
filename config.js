@@ -390,6 +390,7 @@ export const BACKOFFICE_BOARDS = [
   { id: 'expenses',    title: 'Expenses & Receipts'  },
   { id: 'files',       title: 'Company Files'        },
   { id: 'collections', title: 'Collections'          },   // invoices queued for collections (spec collections Phase 1)
+  { id: 'pipeline',    title: 'Sales Pipeline'       },   // the top-level sales board (spec sales-growth D1, Jac 2026-06-29)
 ];
 
 /* ── 3-column layout (display only) ───────────────────────────────────────
@@ -573,3 +574,5 @@ export const TODAY_ISO = (() => {
 })();
 export const REVENUE_GOAL_DEFAULT = 150000; // SPEC §10 Revenue Goal default
 export const PERF_BUDGET_MS = 100;          // SPEC §3 hard interaction budget
+export const PERF_VITALS_ON = true;         // master kill-switch for Web-Vitals/render instrumentation (spec frontend-performance P0)
+export const PERF_SAMPLE_RATE = 1;          // fraction of sessions that flush a perfReport (1 = all, tune down at scale)

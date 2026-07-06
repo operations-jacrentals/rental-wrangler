@@ -4239,8 +4239,19 @@ function getEntityFlags(entityType, rec) {
   if (!rec) return [];
   const meta = FLAG_META[entityType], cond = FLAG_COND[entityType];
   if (!meta || !cond) return [];
+  // Admin flag overrides (spec design-system D1, Jac 2026-06-29): settings.flagOverrides =
+  // { [entity]: { [flagId]: { off:true } | { severity:'red'|'yellow'|'green' } } }. ALL flags are
+  // overridable — including the money/credit safety flags (Jac's explicit call); turning one off
+  // is an adminUnlocked+setConfig-gated act, audited at the Settings write. Default = FLAG_META as-is.
+  const ovAll = (state.settings && state.settings.flagOverrides) || {};
+  const ov = ovAll[entityType] || {};
   const out = [];
-  for (const f of meta) { let on = false; try { on = !!(cond[f.id] && cond[f.id](rec)); } catch (e) { on = false; } if (on) out.push(f); }
+  for (const f of meta) {
+    const o = ov[f.id];
+    if (o && o.off) continue;                                        // owner disabled this flag
+    let on = false; try { on = !!(cond[f.id] && cond[f.id](rec)); } catch (e) { on = false; }
+    if (on) out.push(o && o.severity && FLAG_SEVERITY_RANK[o.severity] ? { ...f, severity: o.severity } : f);
+  }
   return out.sort((a, b) => (FLAG_SEVERITY_RANK[b.severity] || 0) - (FLAG_SEVERITY_RANK[a.severity] || 0));
 }
 /** Formally archived → gray, no flag evaluation (§6: rentals when CLEARED — every
@@ -10586,6 +10597,13 @@ function buildPopupEl(o, overlay, opts = {}) {
         <label class="pay-field"><span>Note</span><input class="lf-in js-col-note" placeholder="Optional note for the record" /></label>
         <div class="muted" style="font-size:11.5px;margin-top:8px">This queues the debt for the collections agency and takes it off active aging. <b>It also blacklists the account</b> (blocks new rentals). A Recall reverses both.</div>` });
     overlay.appendChild(pop);
+  } else if (o.kind === 'installNudge') {
+    // A1 — one-time Add-to-Home-Screen sheet (spec frontend-performance P1 / mobile-remote D3).
+    const pop = el('div', 'popup nc-popup');
+    pop.innerHTML = popupShell({ icon: CARD_ICON.units || '', title: 'Saddle Up — Add to Home Screen', tag: 'App · install',
+      foot: `<button class="pill ghost js-install-later" data-r="R18">Not now</button><button class="pill ignition js-install-go" data-r="R17">Add it</button>`,
+      body: `<div class="muted" style="font-size:12.5px;line-height:1.5">Pin Rental Wrangler to your home screen — full-screen, one tap from the yard, no browser chrome. You can always do it later from the browser menu.</div>` });
+    overlay.appendChild(pop);
   } else if (o.kind === 'checklist') {
     // Required-checklist takeover (Settings → Inspections): replaces the sheet until completed;
     // closing keeps it as a pending inspection. Any item Fail → overall Fail → existing auto-WO.
@@ -10856,6 +10874,7 @@ const WINDOW_CATALOG = [
   { kind: 'newCustomer',   label: 'New / Edit Customer',     tag: 'Customer · account',        sample: () => ({ editId: null, draft: { firstName: '', lastName: '', company: '', phone: '', email: '', industry: '', accountType: 'Non-Business', requiresPO: undefined, rentalProtection: undefined, accountNotes: '', idNumber: '', netDays: '', custom: {} } }) },
   { kind: 'agreement',     label: 'Signed agreement',        tag: 'Customer · agreement',      sample: () => ({ recId: ((DATA.customers || [])[0] || {}).customerId }) },
   { kind: 'collectionsSend', label: 'Send to Collections',   tag: 'Invoice · collections',     sample: () => ({ invoiceId: ((DATA.invoices || [])[0] || {}).invoiceId }) },
+  { kind: 'installNudge',  label: 'Add to Home Screen',      tag: 'App · install',             sample: () => ({}) },
   { kind: 'checklist',     label: 'Inspection checklist',    tag: 'Inspection · checklist',    sample: () => ({ unitId: ((DATA.units || [])[0] || {}).unitId, inspId: ((DATA.inspections || [])[0] || {}).inspectionId }) },
   { kind: 'inspection',    label: 'Failure report',          tag: 'Inspection · failure',      sample: () => ({ recId: ((DATA.inspections || [])[0] || {}).inspectionId }) },
   { kind: 'service',       label: 'Complete service',        tag: 'Service · complete',        sample: () => ({ unitId: ((DATA.units || [])[0] || {}).unitId, taskId: 'svc-wash' }) },
@@ -12252,7 +12271,8 @@ function vendorTotals(vendorId) {
 const receiptParts = (expenseId) => DATA.parts.filter((p) => p.receiptId === expenseId);
 const receiptLineTotal = (expenseId) => receiptParts(expenseId).reduce((a, p) => a + (Number(p.receiptQty) || 1) * (Number(p.priceEach) || 0), 0);
 const reviewState = (iso) => { const d = parseISO(iso); if (!d) return ''; if (d < TODAY) return badge('Overdue', 'red'); return (d - TODAY) / 86400000 <= 30 ? badge('Review soon', 'yellow') : ''; };   // 3-state (audit fix): overdue was invisible under the old d >= TODAY clause
-const boardRows = (boardId) => ({ parts: DATA.parts, vendors: DATA.vendors, expenses: DATA.expenses, files: DATA.companyFiles, collections: (DATA.invoices || []).filter(invoiceCollectionsActive) }[boardId] || []);
+const inPipeline = (c) => (c.usedSalesStage && c.usedSalesStage !== 'N/A') || (c.membershipStage && c.membershipStage !== 'N/A') || !!c.salesAction;
+const boardRows = (boardId) => ({ parts: DATA.parts, vendors: DATA.vendors, expenses: DATA.expenses, files: DATA.companyFiles, collections: (DATA.invoices || []).filter(invoiceCollectionsActive), pipeline: (DATA.customers || []).filter(inPipeline) }[boardId] || []);
 const BOARD_DEF = {
   parts: {
     cols: ['Part', 'Vendor', 'Cost', 'Qty', 'Product #', 'Order from'],
@@ -12269,6 +12289,12 @@ const BOARD_DEF = {
   expenses: {
     cols: ['Vendor', 'Date', 'Amount', 'Reconcile', 'Method', 'Category', 'WO'],
     row: (e) => [esc(IDX.vendor.get(e.vendorId)?.name || '—'), esc(fmtShortDate(e.date)), (e.aiPending ? '✨ ' : '') + money(e.amount), gatePill('expenseReconcile', e.reconcile, 'js-reconcile', { rec: e.expenseId }), badge(e.method, getStatus('paymentMethod', e.method).color), badge(e.category, getStatus('expenseCategory', e.category).color), e.woId ? refPill('workOrders', e.woId, e.woId) : '—'],
+  },
+  pipeline: {
+    // The top-level Sales board (spec sales-growth D1): every account with a LIVE funnel stage
+    // or a scheduled next action — the dual funnels + the follow-up in one sweep.
+    cols: ['Customer', 'Used-Equipment', 'Membership', 'Next action', 'Interested in'],
+    row: (c) => [refPill('customers', c.customerId, c.name), funnelPill(c.customerId, 'usedSales', c.usedSalesStage || 'N/A'), funnelPill(c.customerId, 'membership', c.membershipStage || 'N/A'), c.salesAction ? esc(c.salesAction) : addBtn('Action', { js: 'js-sales-schedule', data: { rec: c.customerId } }), (c.interestedCategoryIds || []).map((id) => IDX.category.get(id)?.name).filter(Boolean).map((n) => badge(n, 'blue')).join('') || '—'],
   },
   collections: {
     cols: ['Customer', 'Invoice', 'Placed balance', 'Status', 'Queued', 'Reason'],
@@ -12801,6 +12827,7 @@ function render() {
   if (DRAG.active) { reapplyDragDecor(); buildZipZones(); }   // §15c — re-stamp drop targets + rebuild the §M2 zip rails after ANY mid-drag rebuild (the card swap IS a render)
   const dt = performance.now() - t0;
   renderCount++;
+  perfRecordRender(dt);   // histogram (P0) — arithmetic only, no DOM work
   if (dt > CFG.PERF_BUDGET_MS) console.warn(`[perf] render ${renderCount} took ${dt.toFixed(1)}ms (budget ${CFG.PERF_BUDGET_MS}ms)`);
 }
 /** Flag any element that's actually truncated with data-tip (full text) so the
@@ -12847,6 +12874,61 @@ function initTooltip() {
 }
 const hideTip = () => { clearTimeout(tipTimer); if (tipEl) tipEl.classList.remove('show'); };
 let toastTimer;
+/* ── §Perf — Web-Vitals + render-time instrumentation (spec frontend-performance P0/D2,
+   Jac 2026-06-29). Client captures LCP/INP/CLS via PerformanceObserver + a render-time
+   histogram off the existing budget hook; window.__perf() reads it live; one fire-and-forget
+   perfReport flush per session (sampled) feeds the backend _perf sink WHEN the additive GAS
+   action exists — until then the call fails silently (a failed report must be
+   indistinguishable from no telemetry; it never raises R25, never retries hot).
+   METRICS ONLY: no PII, no dollars, no record ids, never the password (role ID only). */
+/* ── §Perf/SW — offline shell registration + the update-ready toast (spec frontend-performance
+   P1, Jac 2026-06-29). PRODUCTION origin ONLY (Q4: the staging mirror re-clones on a cron and a
+   SW there could pin a snapshot no refresh fixes; localhost would break the dev loop + CI smoke).
+   Update model = PROMPT, never yank (Q5): when a new SW is waiting, offer one reload; suppressed
+   while an overlay is open or the operator is typing (the P11 guard instinct), re-offered next boot. */
+function swInit() {
+  try {
+    if (!('serviceWorker' in navigator)) return;
+    if (location.hostname !== 'app.jacrentals.com') return;   // production only — staging mirror + localhost stay SW-free
+    const token = (document.querySelector('script[src*="app.js?v="]')?.src.match(/v=([\w-]+)/) || [])[1] || 'dev';
+    navigator.serviceWorker.register('sw.js?v=' + token).then((reg) => {
+      const offer = (w) => {
+        if (!w || document.querySelector('.sw-toast')) return;
+        const show = () => {
+          if (state.overlay || document.activeElement && /INPUT|TEXTAREA/.test(document.activeElement.tagName)) { setTimeout(show, 15000); return; }
+          const t = el('div', 'sw-toast');
+          t.setAttribute('role', 'status');
+          t.innerHTML = `<span class="sw-toast-stripe"></span><span class="sw-toast-msg">FRESH SUPPLIES IN — a newer build’s saddled up.</span><button class="pill ignition js-sw-reload" data-r="R17">Reload</button>${closeX('js-sw-dismiss')}`;
+          document.body.appendChild(t);
+          t.querySelector('.js-sw-reload').addEventListener('click', () => { try { w.postMessage('skipWaiting'); } catch (e) {} location.reload(); });
+          t.querySelector('.js-sw-dismiss').addEventListener('click', () => t.remove());
+        };
+        show();
+      };
+      if (reg.waiting) offer(reg.waiting);
+      reg.addEventListener('updatefound', () => { const nw = reg.installing; if (nw) nw.addEventListener('statechange', () => { if (nw.state === 'installed' && navigator.serviceWorker.controller) offer(reg.waiting || nw); }); });
+    }).catch(() => {});
+  } catch (e) {}
+}
+
+const PERF = { lcp: null, inp: null, cls: 0, renders: [], over: 0, flushed: false };
+function perfInit() {
+  if (!CFG.PERF_VITALS_ON || typeof PerformanceObserver === 'undefined') return;
+  try { new PerformanceObserver((l) => { const e = l.getEntries().pop(); if (e) PERF.lcp = Math.round(e.startTime); }).observe({ type: 'largest-contentful-paint', buffered: true }); } catch (e) {}
+  try { new PerformanceObserver((l) => { l.getEntries().forEach((e) => { const d = e.processingEnd && e.startTime != null ? Math.round(e.duration) : 0; if (d > (PERF.inp || 0)) PERF.inp = d; }); }).observe({ type: 'event', buffered: true, durationThreshold: 40 }); } catch (e) {}
+  try { new PerformanceObserver((l) => { l.getEntries().forEach((e) => { if (!e.hadRecentInput) PERF.cls += e.value; }); }).observe({ type: 'layout-shift', buffered: true }); } catch (e) {}
+  window.__perf = () => { const r = PERF.renders.slice().sort((a, b) => a - b); const q = (f) => r.length ? r[Math.min(r.length - 1, Math.floor(f * r.length))] : 0; return { lcp: PERF.lcp, inp: PERF.inp, cls: Math.round(PERF.cls * 1000) / 1000, renders: { n: r.length, p50: q(0.5), p95: q(0.95), over: PERF.over } }; };
+  // one best-effort flush per session, on first hidden (sampled; metrics-only payload)
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'hidden' || PERF.flushed || Math.random() > CFG.PERF_SAMPLE_RATE) return;
+    PERF.flushed = true;
+    if (typeof backendPassword === 'undefined' || !backendPassword) return;   // demo/offline → nothing leaves the device
+    const v = window.__perf();
+    try { backendCall('perfReport', { build: (document.querySelector('script[src*="app.js?v="]')?.src.match(/v=([\w-]+)/) || [])[1] || '', device: document.body.classList.contains('is-phone') ? 'phone' : document.body.classList.contains('is-narrow') ? 'tablet' : 'desktop', role: currentRole || '', vitals: { lcp: v.lcp, inp: v.inp, cls: v.cls }, renders: v.renders, ts: Date.now() }).catch(() => {}); } catch (e) {}
+  });
+}
+function perfRecordRender(dt) { if (!CFG.PERF_VITALS_ON) return; PERF.renders.push(Math.round(dt)); if (PERF.renders.length > 2000) PERF.renders.splice(0, 1000); if (dt > CFG.PERF_BUDGET_MS) PERF.over++; }
+
 function toast(msg) {
   const t = $('#toast'); t.textContent = msg; t.classList.add('show');
   clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 2200);
@@ -13689,6 +13771,9 @@ function onClick(e) {
   if (closest('.js-refund-invoice')) { e.stopPropagation(); if (state.overlay) { state.overlay.confirmRefund = true; state.overlay.error = ''; renderOverlay(); } return; }
   if (closest('.js-refund-cancel')) { e.stopPropagation(); if (state.overlay) { state.overlay.confirmRefund = false; state.overlay.refundAlloc = null; renderOverlay(); } return; }
   if (closest('.js-refund-confirm')) { e.stopPropagation(); return refundInvoiceFlow(closest('.js-refund-confirm').dataset.rec); }
+  if (closest('.js-sales-schedule')) { e.stopPropagation(); return openOverlay({ kind: 'schedule', customerId: closest('.js-sales-schedule').dataset.rec }); }
+  if (closest('.js-install-go')) { e.stopPropagation(); try { localStorage.setItem('jactec.installNudged', '1'); } catch (er) {} const ev = state._installEvt; closeOverlay(); if (ev) { ev.prompt(); } return; }
+  if (closest('.js-install-later')) { e.stopPropagation(); try { localStorage.setItem('jactec.installNudged', '1'); } catch (er) {} closeOverlay(); return; }
   if (closest('.js-cov-toggle')) { e.stopPropagation(); const b = closest('.js-cov-toggle'); const doIt = () => { const u = IDX.unit.get(b.dataset.rec); if (!u) return; u.insurance = u.insurance || {}; const nv = b.dataset.val === '1'; if (!!u.insurance.covered !== nv) { u.insurance.covered = nv; logAction(u, nv ? 'Branded covered — yard equipment insurance ON' : 'Coverage dropped — yard equipment insurance OFF'); reindex('units', u); } render(); }; if (!adminUnlocked()) return requireAdmin('Equipment insurance is Owner-only.', doIt); return doIt(); }
   if (closest('.js-cov-type')) { e.stopPropagation(); const b = closest('.js-cov-type'); const doIt = () => { const u = IDX.unit.get(b.dataset.rec); if (!u) return; u.insurance = u.insurance || {}; const ts = new Set(u.insurance.types || []); const id = b.dataset.id; ts.has(id) ? ts.delete(id) : ts.add(id); u.insurance.types = [...ts]; logAction(u, `Coverage riders → ${u.insurance.types.join(', ') || 'none'}`); reindex('units', u); render(); }; if (!adminUnlocked()) return requireAdmin('Equipment insurance is Owner-only.', doIt); return doIt(); }
   if (closest('.js-col-queue')) { e.stopPropagation(); if (currentRole && roleTier(currentRole) < tierRank('manager')) { toast('Collections is Manager-tier and up.'); return; } return openOverlay({ kind: 'collectionsSend', invoiceId: closest('.js-col-queue').dataset.rec }); }
@@ -17411,6 +17496,19 @@ function boot() {
     if (t && t.classList && t.classList.contains('js-ru-nav')) { e.preventDefault(); t.dispatchEvent(new MouseEvent('click', { bubbles: true })); }
   });
   applyViewportClass();
+  perfInit();                                   // Web-Vitals + render-histogram capture (spec frontend-performance P0)
+  swInit();                                     // offline shell — service worker, PRODUCTION origin only (P1)
+  // A1 install nudge (spec frontend-performance / mobile-remote): capture the prompt; offer ONCE,
+  // after the 2nd visit, dismissible forever (localStorage). iOS has no beforeinstallprompt — skipped.
+  try {
+    const visits = (Number(localStorage.getItem('jactec.visits')) || 0) + 1;
+    localStorage.setItem('jactec.visits', String(visits));
+    window.addEventListener('beforeinstallprompt', (ev) => {
+      if (localStorage.getItem('jactec.installNudged')) return;
+      ev.preventDefault(); state._installEvt = ev;
+      if (visits >= 2 && !state.overlay) { openOverlay({ kind: 'installNudge' }); }
+    });
+  } catch (e) {}
   const onVP = () => { applyViewportClass(); if (!booting) render(); };
   window.matchMedia('(max-width: 640px)').addEventListener('change', onVP);
   window.matchMedia('(max-width: 1024px)').addEventListener('change', onVP);
@@ -17755,7 +17853,7 @@ function exposeTestApi() {
       latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore, wranglerRailLoad, wrOffloadChatImages, wrEvictChatBlobs, driveViewUrl, mergeWranglerRails,
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
-      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, setFunnelStage, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, addMonthsISO, openMembershipEnroll, membershipEnrollCommit, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, setRole: (r) => { currentRole = r || ''; render(); },
+      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, setFunnelStage, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, addMonthsISO, openMembershipEnroll, membershipEnrollCommit, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, getEntityColor, getEntityFlags, setRole: (r) => { currentRole = r || ''; render(); },
       openCustomerForm, renderOverlay, render, cardComplete, cardCaptureState, cardHasSelfie, cardHasSignature, captureSelfie, captureSignature, __state: state };   // UI drivers for headless screenshot/e2e tests
 
   } catch (e) { /* no window (non-browser) */ }
