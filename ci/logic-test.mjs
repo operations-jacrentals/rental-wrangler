@@ -731,7 +731,8 @@ try {
       // MOBILE: it flips the phone's visible column to where the record lives (the bug Jac hit)
       ok(T.__state.mobileCol === 2, 'WR-focus (mobile): the phone column flips to the record (customers → right/2)');
       const wo = T.DATA.workOrders[0];
-      if (wo) { T.wrFocusRecord('workOrders', wo.woId); const sc = T.activeSession().cards.shop; ok(sc.mode === 'standard' && sc.recId === wo.woId && sc.recType === 'workOrders' && T.__state.mobileCol === 0, 'WR-focus: a shop record (work order) shows on the shop card + flips to the yard column'); }
+      // Shop retirement (Jac 2026-07-07): a work-order reference opens its OWNING UNIT on the Units card.
+      if (wo) { T.wrFocusRecord('workOrders', wo.woId); const uc = T.activeSession().cards.units; ok(uc.mode === 'standard' && uc.recId === wo.unitId && T.__state.mobileCol === 0, 'WR-focus: a work order opens its owning unit + flips to the yard column'); }
     }
 
     // 12o) Bookings auto-apply + a clickable "Open" link (Jac): startRental no longer needs the Apply tap,
