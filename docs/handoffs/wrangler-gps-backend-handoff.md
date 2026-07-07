@@ -26,6 +26,29 @@ Sections 1–7 below (data model, auth model, usage-computation flow, API
 surface, gotchas) are accurate regardless of hosting and are the real value
 of this doc — that's what Track B's frontend integration is built against.
 
+## Addendum — from Cameron's raw session transcript (2026-07-07)
+
+Cameron also shared his full Claude Code development transcript. Two things
+worth recording that aren't in the README or the doc below:
+
+- **Yanmar account confirmed JacRentals-owned** (`sales@jacrentals.com` login).
+  No credential migration needed for Yanmar.
+- **Historical Hapn incident (already fixed in the code we forked):** early on,
+  `backfillIgnitionEvents` ran in full on every server restart (in addition to
+  the hourly cron), which exhausted Hapn's account-level API quota on
+  `api.iotgps.io` (AWS API Gateway `LimitExceededException`, HTTP 429) and made
+  Hapn units disappear from the dashboard. Fix: don't run the backfill at boot.
+  Confirmed still fixed in the forked `server.js` — the startup listener only
+  warms the Hapn token and Yanmar login, it does not call
+  `backfillIgnitionEvents`. **Regression trap for later:** if anyone adds a
+  startup-time backfill call back in, this will recur — Hapn's quota is a hard
+  account-level ceiling, not something a retry/backoff fixes.
+- **Not found in the transcript:** any statement of who owns the Deere or
+  Bouncie developer-portal app registrations. Searched for org-ID mentions,
+  `developer.deere.com`, account/signup language, and Cameron's own saved
+  memory index — none of it says whose account. Still needs to come from
+  Cameron directly (see the open item in the Railway runbook).
+
 ---
 
 ## Original doc
