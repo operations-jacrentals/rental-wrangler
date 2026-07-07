@@ -140,7 +140,7 @@ function sendCustomerMessage_(body, role) {
     companyName: company,
     companyPhoneSuffix: yardPhone ? ' at ' + yardPhone : '',
     invoiceId: entity === 'invoice' ? (rec.invoiceId || '') : '',
-    total: entity === 'invoice' ? '$' + (computeInvoiceCents_(rec) / 100).toFixed(2) : '',
+    total: entity === 'invoice' ? '$' + (computeInvoiceCents_(rec).totalCents / 100).toFixed(2) : '',   // returns {totalCents, balanceCents} — not a number
     startDate: rec.startDate || '',
     endDate: rec.endDate || '',
     quoteLines: quoteLines,
