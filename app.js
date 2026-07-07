@@ -17820,16 +17820,43 @@ function gpsEventTime(at) {
   const hh = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
   return `${fmtShortDate(d.toISOString())} · ${fmtClock(hh)}`;
 }
-/* The whole feed block for a mapped unit's GPS section. */
+/* LIVE alert rows merged into the feed from the current fleet snapshot (§6a). Today:
+   Bouncie check-engine (mil/DTCs) — the one provider-alert shape we have cleanly. Hapn
+   `/device/:imei/alerts` + Yanmar `/machine/:id/alerts` live-fetch merge is a follow-up
+   (their response shapes need real samples to normalize safely). */
+function gpsLiveAlertRows(u) {
+  const m = unitGpsLiveMachine(u);
+  if (!m) return [];
+  const rows = [];
+  if (m.source === 'bouncie' && m.mil && m.mil.milOn) {
+    const dtcs = m.mil.qualifiedDtcList || [];
+    const at = m.mil.lastUpdated || null;
+    if (dtcs.length) {
+      dtcs.forEach((d) => {
+        const name = Array.isArray(d.name) ? d.name.join(', ') : (d.name || 'Check engine');
+        rows.push(gpsEventRow({ type: 'alert', at, detail: { severity: 'critical', message: `Check engine · ${d.code || ''} ${name}`.replace(/\s+/g, ' ').trim() } }));
+      });
+    } else {
+      rows.push(gpsEventRow({ type: 'alert', at, detail: { severity: 'critical', message: 'Check engine light on' } }));
+    }
+  }
+  return rows;
+}
+
+/* The whole feed block for a mapped unit's GPS section — live alerts on top of the
+   durable device_events history. */
 function gpsFeedHtml(u) {
   const e = ensureGpsEvents(u);
   if (!e) return '';   // unmapped or GPS not configured
   const head = `<div class="gps-feed-head"><span class="gfh-lbl">GPS History</span>${ghostPill('Refresh', { js: 'js-gps-events-refresh', data: { rec: u.unitId } })}</div>`;
-  let body;
-  if (e.state === 'loading') body = `<div class="gps-feed-empty">Reading signal history…</div>`;
-  else if (e.state === 'error') body = `<div class="gps-feed-empty">${e.error === 'notdeployed' ? 'History not available yet.' : 'Couldn’t load history — try Refresh.'}</div>`;
-  else if (!e.events.length) body = `<div class="gps-feed-empty">No GPS events yet.</div>`;
-  else body = e.events.map(gpsEventRow).join('');
+  const liveRows = gpsLiveAlertRows(u).join('');
+  const evRows = (e.state === 'loaded') ? e.events.map(gpsEventRow).join('') : '';
+  const note = e.state === 'loading' ? 'Reading signal history…'
+    : e.state === 'error' ? (e.error === 'notdeployed' ? 'History not available yet.' : 'Couldn’t load history — try Refresh.')
+      : '';
+  const body = (liveRows || evRows)
+    ? liveRows + evRows + (note ? `<div class="gps-feed-empty">${note}</div>` : '')
+    : `<div class="gps-feed-empty">${note || 'No GPS events yet.'}</div>`;
   return `<div class="gps-feed-wrap">${head}<div class="gps-feed">${body}</div></div>`;
 }
 
