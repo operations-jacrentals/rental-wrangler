@@ -7874,7 +7874,7 @@ function legacyKpiPct(roleId) {
     const scheduled = R.filter((r) => !['Quote', 'Cancelled', 'No Show'].includes(r.status)).length;
     const washes = N.filter((n) => n.wash === 'Yes').length;
     const washReq = N.filter((n) => n.wash === 'Yes' || n.wash === 'No').length;
-    return [pctOf(delivered, scheduled), pctOf(washes, washReq), null];        // Driving Score = GPS backend
+    return [pctOf(delivered, scheduled), pctOf(washes, washReq), drivingScoreValue()];   // Driving Score = fleet Bouncie safety score (null until loaded)
   }
   if (roleId === 'office') {
     const billed = INV.reduce((a, i) => a + invoiceTotals(i).total, 0);
@@ -7908,7 +7908,7 @@ const KPI_HELP = {
   'WO Rate (20% goal)':     'Progress toward the goal: 20% of the last 30 days’ inspections spawning a work order is healthy (catching problems). Full ring at 20%.',
   'On-Time':                'Rentals you actually delivered/handled ÷ rentals scheduled (excludes quotes, cancels, no-shows).',
   'Wash Completion':        'Of the units flagged for a wash, how many got washed (washed ÷ wash-requested).',
-  'Driving Score':          'Driving-safety score from the GPS backend — placeholder until that’s connected.',
+  'Driving Score':          'Fleet driving-safety score from Bouncie truck trips (hard braking/acceleration per mile + speeding) over the last few weeks — a team metric, 100 = clean. Blank until trips load or if no trucks report.',
   'Invoice Collection Rate':'Of all money invoiced, how much you’ve collected (dollars collected ÷ dollars billed).',
   'Show Rate':              'Of customers who reserved, how many actually showed up (not a No-Show).',
   'Reputation':             'Reputation score from customer email reviews — placeholder until the email backend is connected.',
@@ -8055,7 +8055,7 @@ function legacyKpiRaw(roleId) {
   const c = (v) => ({ v, unit: '' }), usd = (v) => ({ v, unit: '$' });
   if (roleId === 'mechanic') return [c(f.Ready + f['Not Ready']), c(W.filter((w) => w.phase === 'Complete').length), c(W.filter((w) => (w.lineItems || []).some((li) => (li.cost || 0) > 0 || (li.hours || 0) > 0) && w.billCustomer === 'Yes').length)];
   if (roleId === 'mtech') return [c(R.length - R.filter((r) => r.fieldCall).length), c(f.Ready), c(N.filter((n) => !n.woId).length)];
-  if (roleId === 'driver') return [c(R.filter((r) => ['On Rent', 'End Rent', 'Off Rent', 'Returned'].includes(r.status)).length), c(N.filter((n) => n.wash === 'Yes').length), c(0)];
+  if (roleId === 'driver') return [c(R.filter((r) => ['On Rent', 'End Rent', 'Off Rent', 'Returned'].includes(r.status)).length), c(N.filter((n) => n.wash === 'Yes').length), c(drivingScoreValue() || 0)];
   if (roleId === 'office') return [usd(INV.reduce((a, i) => a + invoiceTotals(i).paid - (Number(i.refundedAmount) || 0), 0)), c(R.filter((r) => ['On Rent', 'End Rent', 'Off Rent', 'Returned'].includes(r.status)).length), c(0)];
   if (roleId === 'sales') {
     const ym = TODAY_ISO.slice(0, 7);
@@ -17893,6 +17893,52 @@ function gpsShutdownControl(u, machine) {
   </div>`;
 }
 
+/* ── FLEET DRIVING SCORE (spec §5 step 7) ─────────────────────────────────────
+   Lights the driver scorecard's stubbed "Driving Score" ring with real Bouncie
+   trip data. It's a FLEET/TEAM metric (like the other two driver rings — delivery
+   rate, wash rate — which are also fleet-wide, not per-individual): telematics is
+   per-truck and Rental Wrangler has no driver↔trip attribution, so a per-DRIVER
+   score isn't honestly computable — a fleet safety score is. 100 = clean driving;
+   we penalize hard-braking + hard-acceleration per 100 mi and a speeding-trip share.
+   Weights are a conservative, TUNABLE v1 (Jac's to adjust). null until loaded / when
+   there are no Bouncie trucks or trips — never a faked number. */
+const DS_PENALTY_PER_100MI = 4;    // each hard event per 100 mi ≈ −4 pts
+const DS_SPEEDING_MPH = 80;        // a trip whose maxSpeed exceeds this counts as speeding
+const DS_SPEEDING_WEIGHT = 20;     // up to −20 pts for an all-speeding record
+const DS_WINDOW_DAYS = 21;         // rolling window of trips to score
+let _drivingScore = null;          // 0–100 fleet score, or null (unknown/unavailable)
+let _drivingScoreAt = 0;
+const drivingScoreValue = () => _drivingScore;
+
+async function refreshDrivingScore() {
+  if (!gpsConfigured()) return;
+  try {
+    const vehicles = await gpsProviderDevices('bouncie').catch(() => []);
+    if (!vehicles.length) { _drivingScore = null; _drivingScoreAt = Date.now(); return; }
+    const sinceISO = new Date(Date.now() - DS_WINDOW_DAYS * 86400000).toISOString();
+    const untilISO = new Date().toISOString();
+    let hard = 0, miles = 0, trips = 0, speeding = 0;
+    for (const v of vehicles) {
+      const imei = v.imei || v.id; if (!imei) continue;
+      let r; try {
+        r = await gpsFetch(`/api/bouncie/vehicle/${encodeURIComponent(imei)}/trips?starts-after=${encodeURIComponent(sinceISO)}&ends-before=${encodeURIComponent(untilISO)}`);
+      } catch { continue; }   // one truck's failure never poisons the fleet score
+      for (const t of ((r && r.trips) || [])) {
+        trips++;
+        hard += (Number(t.hardBrakingCount ?? t.hardBrakingCounts) || 0) + (Number(t.hardAccelerationCount ?? t.hardAccelerationCounts) || 0);
+        miles += Number(t.distance ?? t.tripDistance) || 0;
+        if ((Number(t.maxSpeed) || 0) > DS_SPEEDING_MPH) speeding++;
+      }
+    }
+    if (!trips || miles <= 0) { _drivingScore = null; _drivingScoreAt = Date.now(); return; }   // no data → honest null, not 0
+    const hardPer100 = (hard / miles) * 100;
+    const speedShare = speeding / trips;
+    _drivingScore = Math.max(0, Math.min(100, Math.round(100 - hardPer100 * DS_PENALTY_PER_100MI - speedShare * DS_SPEEDING_WEIGHT)));
+    _drivingScoreAt = Date.now();
+  } catch (e) { logErr('gps', 'driving-score: ' + ((e && e.message) || e)); }
+  if (!booting) render();
+}
+
 const dataSnapshot = () => { const s = {}; PERSIST_KEYS.forEach((k) => { s[k] = DATA[k] || []; }); return s; };
 async function loadFromBackend() {
   const r = await backendCall('load');
@@ -18319,7 +18365,7 @@ async function attemptLogin() {
     try { localStorage.setItem('jactec.user', name); } catch {}
     try { sessionStorage.setItem('jactec.role', role); } catch {}
     sessionStorage.setItem('jactec.pw', pw);
-    gpsLogin(pw).then((ok) => { if (ok) { refreshGpsLive(); startGpsViewPoll(); } });   // silent GPS login (§5) → one live snapshot (§5 step 3) + the view-scoped 30s refresh (§5 step 4); fire-and-forget, never blocks main login
+    gpsLogin(pw).then((ok) => { if (ok) { refreshGpsLive(); startGpsViewPoll(); refreshDrivingScore(); } });   // silent GPS login (§5) → live snapshot (step 3) + view-scoped refresh (step 4) + fleet driving score (step 7); fire-and-forget, never blocks main login
     await loadFromBackend();
     finishLoad();
     applyShopRoleLanding();   // shop roles (Mechanic / M.Tech) land on the Shop graph
