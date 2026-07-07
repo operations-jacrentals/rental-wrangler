@@ -2061,10 +2061,22 @@ const activeSession = () => (state.activeTabId ? state.tabs.find((t) => t.id ===
 function maxInvoiceSeq() {
   return (DATA.invoices || []).reduce((m, inv) => { const n = /^(\d+)i/.exec(String(inv.invoiceId || '')); return n ? Math.max(m, +n[1]) : m; }, 0);
 }
+/** Invoice ids this session MINTED — lets the refresh poll tell an id COLLISION apart from
+ *  a normal remote edit. If a number we just minted already belonged to ANOTHER customer's
+ *  bill on the backend (an 18s-poll race — see the collision history above), the poll would
+ *  otherwise adopt their record in place and swap our invoice's customer + amount. Gating on
+ *  this set lets healInvoiceIdCollision re-issue OURS instead (§inv-collision, Jac 2026-07-07). */
+const mintedInvoiceIds = new Set();
 /** Next unique invoice id — a monotonic counter so deleting a Quote-stage invoice can't
- *  reuse a number. Always jumps past the current max in the data, so it can't collide
- *  with invoices loaded at login or pushed in by the live-refresh poll mid-session. */
-const nextInvoiceId = () => { state.invoiceSeq = Math.max(state.invoiceSeq || 0, maxInvoiceSeq()) + 1; return CFG.invoiceId(TODAY_ISO, state.invoiceSeq); };
+ *  reuse a number. Jumps past the current max in the data AND past any id already in the
+ *  local index, so it can't collide with invoices loaded at login or pushed in by the
+ *  live-refresh poll. (A same-day number minted by ANOTHER session before it has polled in
+ *  can't be seen here — that residual race is caught downstream by healInvoiceIdCollision.) */
+const nextInvoiceId = () => {
+  let seq = Math.max(state.invoiceSeq || 0, maxInvoiceSeq());
+  let id; do { id = CFG.invoiceId(TODAY_ISO, ++seq); } while (IDX.invoice && IDX.invoice.has(id));
+  state.invoiceSeq = seq; mintedInvoiceIds.add(id); return id;
+};
 
 /* ── session actions ──────────────────────────────────────────────────────
    `recType` is only meaningful for the Shop card (which holds inspections /
@@ -16897,6 +16909,34 @@ function computeChanges() {
 // NEVER delete on refresh (a transient blip can't wipe data).
 const IDX_MAP = { categories: 'category', units: 'unit', customers: 'customer', invoices: 'invoice', rentals: 'rental', workOrders: 'wo', inspections: 'insp', vendors: 'vendor', parts: 'part', companyFiles: 'file', expenses: 'expense' };
 let refreshing = false, refreshTimer = null;
+/** §inv-collision (Jac 2026-07-07) — TRUE when a remote invoice shares an id WE minted this
+ *  session but is a genuinely DIFFERENT bill (no rental in common). That means our new
+ *  invoice number was already taken by another customer's invoice on the backend — the 18s
+ *  poll would otherwise overwrite our bill's customer + amount with theirs. Gated on
+ *  mintedInvoiceIds AND on a disjoint rental link, so a normal remote EDIT of our own bill
+ *  (added line, even a customer reassignment that keeps the rental link) is never mistaken
+ *  for a collision. Membership invoices carry no rentalIds, so they're excluded here. */
+function isInvoiceIdCollision(id, local, remote) {
+  if (!mintedInvoiceIds.has(id)) return false;
+  const mine = local.rentalIds || []; if (!mine.length) return false;
+  const theirs = new Set(remote.rentalIds || []);
+  return !mine.some((rid) => theirs.has(rid));   // no shared rental → not our bill → a collision
+}
+/** Re-issue OUR colliding invoice a fresh number, repoint its rental link + continuation
+ *  chain, and let the pre-existing bill keep the old id locally — so neither invoice is lost
+ *  (the poll's default adopt-in-place would silently replace ours with theirs). */
+function healInvoiceIdCollision(oldId, local, remote, saved) {
+  const freshId = nextInvoiceId();                       // guaranteed free (bumps past the local max + index)
+  IDX.invoice.delete(oldId);
+  local.invoiceId = freshId; IDX.invoice.set(freshId, local); reindex('invoices', local);   // move OUR bill to the fresh id
+  (DATA.rentals || []).forEach((r) => { if (String(r.invoiceId) === oldId) { r.invoiceId = freshId; reindex('rentals', r); } });
+  (DATA.invoices || []).forEach((iv) => { if (iv !== local && String(iv.contOf) === oldId) iv.contOf = freshId; });
+  logAction(local, `Number reissued ${invoiceShort(oldId)} → ${invoiceShort(freshId)} — ${invoiceShort(oldId)} was already used by another bill`);
+  DATA.invoices.push(remote); IDX.invoice.set(oldId, remote); reindex('invoices', remote);   // the pre-existing bill takes the old id
+  saved.set(oldId, JSON.stringify(remote));               // remote matches the backend → clean; freshId isn't in `saved` → our bill re-saves under it
+  toast(`Invoice ${invoiceShort(oldId)} clashed with an existing bill — yours was reissued as ${invoiceShort(freshId)}.`);
+  saveSoon();                                             // persist the re-id + the repointed rental
+}
 async function refreshFromBackend() {
   if (refreshing || booting || !backendPassword || saving || savePending || !lastSaved) return;
   if (document.hidden || DRAG.active || DRAG.armed || state.winEdit || state.overlay || hoverNode) return;   // don't disrupt active work
@@ -16917,6 +16957,9 @@ async function refreshFromBackend() {
         if (!local) { DATA[k].push(remote); IDX[IDX_MAP[k]]?.set(id, remote); reindex(k, remote); saved.set(id, rjs); applied++; return; }   // new record from another user
         const ljs = JSON.stringify(local);
         if (ljs === rjs) { saved.set(id, rjs); return; }
+        if (k === 'invoices' && isInvoiceIdCollision(id, local, remote)) {   // §inv-collision — our minted number already belonged to a different bill; re-issue ours, keep both
+          healInvoiceIdCollision(id, local, remote, saved); applied++; return;
+        }
         if (saved.get(id) === ljs) {   // local is CLEAN (no pending edit) → adopt the remote version in place (keeps IDX refs)
           Object.keys(local).forEach((kk) => { if (!(kk in remote)) delete local[kk]; });
           Object.assign(local, remote); reindex(k, local); saved.set(id, rjs); applied++;
@@ -17641,6 +17684,7 @@ function exposeTestApi() {
     window.__rw = { DATA, IDX, TODAY_ISO, itemPaid, lineKey, rentalUnits, unitEntry, isPrimaryUnit, linkActionsFor, linkActionPossible, DROP_MATRIX,
       unitStatus, rentalUnitStatuses, unitsUniform, rentalStatusDisplay, rentalMirrorStatus, rentalDisplayStatus,
       allUnitsTerminal, unitTerminal, unitVoided, rentalCleared, rentalLineItems, transportLineItems, extensionPreview, billExtension, unitBilledRental, unitBilledSeries, retroPricingOn, rentalInvoices, rentalActiveInvoice, invoiceChunks, createInvoiceForRental, syncRentalPrimary,
+      nextInvoiceId, maxInvoiceSeq, mintedInvoiceIds, isInvoiceIdCollision, healInvoiceIdCollision, reindex,
       addUnitToRental, removeUnitFromRental, removeUnitInvoiceLine, unitLinePaid, invoiceTotals, allocLines,
       rentalAllocated, itemRefunded, itemRefundable, lineRefunded, lineFullyRefunded, refundLines, rentalLineRefund, applyPayment, unitRentalPrice, rentalPrice, rentalDisplayName, setWoLinePhase, setWoPhase, woBottleneck,
       cleanUnitName, planUnitMigration, applyUnitMigration, openMigrationPreview,

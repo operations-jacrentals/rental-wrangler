@@ -1438,6 +1438,41 @@ try {
       T.__state.overlay = null;
     }
 
+    // §inv-collision (Jac 2026-07-07) — a locally-minted invoice NUMBER that already belongs to
+    // a DIFFERENT customer's bill (the 18s-poll race) must NOT be silently adopted; the poll
+    // re-issues OURS and keeps both. Locks the fix so the customer/amount swap can't regress.
+    {
+      const cust = T.DATA.customers[0], cust2 = T.DATA.customers[1] || cust;
+      const myId = T.nextInvoiceId();                                   // registers in mintedInvoiceIds
+      const myRental = { rentalId: 'RENT_MINE_X', customerId: cust.customerId, unitId: null, invoiceId: myId, status: 'Reserved', mock: true };
+      T.DATA.rentals.push(myRental); T.IDX.rental.set(myRental.rentalId, myRental); T.reindex('rentals', myRental);
+      const mine = { invoiceId: myId, customerId: cust.customerId, rentalIds: ['RENT_MINE_X'], date: T.TODAY_ISO, amountPaid: 0, lineItems: [{ kind: 'rental', lid: 'L1', amount: 89 }], mock: true };
+      T.DATA.invoices.push(mine); T.IDX.invoice.set(myId, mine); T.reindex('invoices', mine);
+      const remote = { invoiceId: myId, customerId: cust2.customerId, rentalIds: ['RENT_OTHER_Y'], date: T.TODAY_ISO, amountPaid: 321.18, lineItems: [{ kind: 'rental', lid: 'R1', amount: 300 }] };
+
+      ok(T.isInvoiceIdCollision(myId, mine, remote) === true, 'collision: a minted id shared with a different-rental bill is flagged');
+      const cf = Object.assign(Object.assign({}, mine), remote);         // what the OLD adopt-in-place did
+      ok(cf.customerId === cust2.customerId, 'collision: WITHOUT the guard, adopt-in-place would swap our customer (the pre-fix bug)');
+
+      const savedMap = new Map([[myId, JSON.stringify(mine)]]);
+      T.healInvoiceIdCollision(myId, mine, remote, savedMap);
+      ok(mine.invoiceId !== myId, 'heal: our invoice got a fresh number');
+      ok(mine.customerId === cust.customerId, 'heal: our invoice keeps OUR customer (not swapped)');
+      ok(myRental.invoiceId === mine.invoiceId, 'heal: our rental is repointed to the fresh number');
+      ok(T.IDX.invoice.get(myId) === remote, 'heal: the pre-existing bill keeps the old number');
+      ok(T.IDX.invoice.get(mine.invoiceId) === mine, 'heal: our bill is indexed under the fresh number');
+      ok(T.DATA.invoices.filter((v) => v.invoiceId === myId).length === 1, 'heal: exactly one invoice holds the old number (no duplicate id)');
+
+      const myId2 = T.nextInvoiceId();
+      const mine2 = { invoiceId: myId2, customerId: cust.customerId, rentalIds: ['RENT_MINE_Z'], date: T.TODAY_ISO, amountPaid: 0, lineItems: [] };
+      const remoteEdit = { invoiceId: myId2, customerId: cust2.customerId, rentalIds: ['RENT_MINE_Z'], date: T.TODAY_ISO, amountPaid: 0, lineItems: [{ kind: 'custom', lid: 'C1', amount: 5 }] };
+      ok(T.isInvoiceIdCollision(myId2, mine2, remoteEdit) === false, 'collision: a remote edit of our OWN bill (shared rental) is NOT flagged, even with a customer change');
+
+      T.DATA.invoices = T.DATA.invoices.filter((v) => v !== mine && v !== remote);
+      T.DATA.rentals = T.DATA.rentals.filter((v) => v !== myRental);
+      T.IDX.invoice.delete(myId); T.IDX.invoice.delete(mine.invoiceId); T.IDX.rental.delete('RENT_MINE_X');
+    }
+
     return out;
   });
 
