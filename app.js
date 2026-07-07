@@ -13919,7 +13919,8 @@ function onClick(e) {
   if (closest('.js-charge-invoice')) { e.stopPropagation(); return chargeInvoiceFlow(closest('.js-charge-invoice').dataset.rec); }
   if (closest('.js-record-payment')) { e.stopPropagation(); return recordManualPayment(closest('.js-record-payment').dataset.rec); }
   if (closest('.js-print-invoice')) { e.stopPropagation(); return printInvoice(closest('.js-print-invoice').dataset.rec); }
-  if (closest('.js-send-email')) { e.stopPropagation(); return sendInvoiceEmail(closest('.js-send-email').dataset.rec); }
+  if (closest('.js-send-email')) { e.stopPropagation(); const b = closest('.js-send-email'); return sendInvoiceEmail(b.dataset.rec, b); }   // anchor rides along for the D7 FROM dropdown
+  if (closest('.js-email-from-pick')) { e.stopPropagation(); const b = closest('.js-email-from-pick'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return emailQuoteSend(b.dataset.rec, b.dataset.from); }
   if (closest('.js-send-text')) { e.stopPropagation(); return sendInvoiceText(closest('.js-send-text').dataset.rec); }
   if (closest('.js-pay-addcard')) { e.stopPropagation(); const b = closest('.js-pay-addcard'); return openAddCard(b.dataset.rec, { returnTo: 'payment', invoiceId: b.dataset.inv }); }
   if (closest('.js-refund-invoice')) { e.stopPropagation(); if (state.overlay) { state.overlay.confirmRefund = true; state.overlay.error = ''; renderOverlay(); } return; }
@@ -16292,32 +16293,97 @@ function invoiceQuoteSummary(inv) {
     'Thank you for your business — much obliged.',
   ].join('\n');
 }
-// Open the device's mail client pre-filled to the customer with the quote inlined, then
-// stamp a timestamped "Emailed" note on the invoice history (logAction → §R13).
-function sendInvoiceEmail(invoiceId) {
+// Email a quote — SERVER send through the comms pipe (spec D6), with the D7 FROM picker:
+// when the shop has more than one connected address (send-as aliases, enumerated server-
+// side), the operator picks which one it goes out as; the server validates the choice.
+// Demo/#local (no backend password) keeps the old mailto: deep-link.
+let _commsAliases = null;   // fetched once per session; server-authoritative
+async function commsAliasList() {
+  if (_commsAliases) return _commsAliases;
+  try { const r = await backendCall('commsAliases'); if (r && r.ok && Array.isArray(r.aliases) && r.aliases.length) _commsAliases = r.aliases; } catch (e) {}
+  return _commsAliases || [];
+}
+async function emailQuoteSend(invoiceId, from) {
+  const inv = IDX.invoice.get(invoiceId); if (!inv) return;
+  toast('Sending email…');
+  let r; try { r = await backendCall('sendCustomerMessage', { channel: 'email', entity: 'invoice', recId: inv.invoiceId, customerId: inv.customerId, template: 'quote', from: from || '' }); }
+  catch (e) { r = { ok: false, reason: 'network' }; }
+  if (r && r.ok) {
+    logAction(inv, `Emailed quote to ${r.maskedTo || 'customer'}${r.fromUsed ? ` (from ${r.fromUsed})` : ''}`);
+    render();
+    toast(`Quote emailed to ${r.maskedTo || 'the customer'}.`);
+    return;
+  }
+  const why = {
+    'no-email': 'No email on file — add one on the account.',
+    'opted-out': 'This customer has opted out of email — hard stop.',
+    'cap': 'Daily send cap reached — raise SMS_DAILY_CAP if this run is legit.',
+    'isolation': 'Record/customer mismatch — reload and try again.',
+    'provider': 'The mail send failed server-side — if this is the first email ever, the backend still needs its one-time Gmail permission (editor → Run → authorize).',
+    'network': 'Couldn’t reach the backend — try again.',
+  }[r && r.reason] || 'Email didn’t send — try again.';
+  toast(why);
+}
+async function sendInvoiceEmail(invoiceId, anchorEl) {
   const inv = IDX.invoice.get(invoiceId); if (!inv) return;
   const cust = inv.customerId ? IDX.customer.get(inv.customerId) : null;
   if (!cust || !cust.email) { toast('No email on file for this customer.'); return; }   // guard — button is disabled, this is belt-and-suspenders
-  const subject = `Quote from ${companyName()} – ${inv.invoiceId}`;
-  window.location.href = `mailto:${encodeURIComponent(cust.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(invoiceQuoteSummary(inv))}`;
-  logAction(inv, `Emailed quote to ${cust.email}`);
-  render();
-  toast(`Opening email to ${cust.email}…`);
+  if (!backendPassword) {   // demo/offline — the pre-pipe mailto path, unchanged
+    const subject = `Quote from ${companyName()} – ${inv.invoiceId}`;
+    window.location.href = `mailto:${encodeURIComponent(cust.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(invoiceQuoteSummary(inv))}`;
+    logAction(inv, `Emailed quote to ${cust.email}`);
+    render();
+    toast(`Opening email to ${cust.email}…`);
+    return;
+  }
+  const aliases = await commsAliasList();
+  if (aliases.length > 1 && anchorEl && document.contains(anchorEl)) {   // D7 — pick which connected address it goes out as
+    const html = aliases.map((a) => `<button class="dd-item js-email-from-pick" data-rec="${esc(invoiceId)}" data-from="${esc(a)}">${esc(a)}</button>`).join('');
+    openDropdown(anchorEl, html, { align: 'left' });
+    return;
+  }
+  return emailQuoteSend(invoiceId, aliases[0] || '');
 }
-// Open the device's SMS app pre-filled to the customer, then stamp a "Texted" note.
-function sendInvoiceText(invoiceId) {
+// Text a quote — SERVER send via the comms pipe (spec comms D1/D2: sendCustomerMessage →
+// Mocean adapter; recipient/body/gates all resolved server-side — the client passes only
+// ids + a template name, never a `to` or a body). Demo/#local mode (no backend password)
+// keeps the old device deep-link so offline demos still work.
+async function sendInvoiceText(invoiceId) {
   const inv = IDX.invoice.get(invoiceId); if (!inv) return;
   const cust = inv.customerId ? IDX.customer.get(inv.customerId) : null;
   if (!cust || !cust.phone) { toast('No phone on file for this customer.'); return; }
-  const t = invoiceTotals(inv);
-  const first = cust.firstName || (cust.name || '').trim().split(/\s+/)[0] || 'there';
-  const yard = companyPhone();
-  const msg = `Hi ${first}, your quote from ${companyName()} is ready – ${money2(t.total)} – reply or call us${yard ? ' at ' + yard : ''}.`;
-  const tel = String(cust.phone).replace(/[^0-9+]/g, '');
-  window.location.href = `sms:${tel}?&body=${encodeURIComponent(msg)}`;   // `?&body=` is the cross-platform (iOS + Android) separator
-  logAction(inv, `Texted quote to ${cust.phone}`);
-  render();
-  toast(`Opening text to ${cust.phone}…`);
+  if (!backendPassword) {   // demo/offline — the pre-pipe deep-link path, unchanged
+    const t = invoiceTotals(inv);
+    const first = cust.firstName || (cust.name || '').trim().split(/\s+/)[0] || 'there';
+    const yard = companyPhone();
+    const msg = `Hi ${first}, your quote from ${companyName()} is ready – ${money2(t.total)} – reply or call us${yard ? ' at ' + yard : ''}.`;
+    const tel = String(cust.phone).replace(/[^0-9+]/g, '');
+    window.location.href = `sms:${tel}?&body=${encodeURIComponent(msg)}`;   // `?&body=` is the cross-platform (iOS + Android) separator
+    logAction(inv, `Texted quote to ${cust.phone}`);
+    render();
+    toast(`Opening text to ${cust.phone}…`);
+    return;
+  }
+  toast('Sending text…');
+  let r; try { r = await backendCall('sendCustomerMessage', { entity: 'invoice', recId: inv.invoiceId, customerId: inv.customerId, template: 'quote' }); }
+  catch (e) { r = { ok: false, reason: 'network' }; }
+  if (r && r.ok) {
+    logAction(inv, `SMS quote sent to ${r.maskedTo || 'customer'}`);
+    render();
+    toast(`Quote texted to ${r.maskedTo || 'the customer'}.`);
+    return;
+  }
+  const why = {   // server refusal → say what's wrong and where to fix it (R19 voice)
+    'no-phone': 'No phone on file — add one on the account.',
+    'opted-out': 'This customer has opted out of texts — hard stop.',
+    'not-configured': 'SMS isn’t wired yet — Mocean keys go in the backend Script Properties.',
+    'cap': 'Daily text cap reached — raise SMS_DAILY_CAP if this run is legit.',
+    'quiet-hours': 'Quiet hours (8pm–8am) — the message can go out in the morning.',
+    'isolation': 'Record/customer mismatch — reload and try again.',
+    'provider': 'Mocean rejected the send — check the number and Mocean balance.',
+    'network': 'Couldn’t reach the backend — try again.',
+  }[r && r.reason] || 'Text didn’t send — try again.';
+  toast(why);
 }
 // Lock (seal pricing) or unlock an invoice via the backend (Office/Admin).
 async function lockInvoiceFlow(invoiceId, lock) {
