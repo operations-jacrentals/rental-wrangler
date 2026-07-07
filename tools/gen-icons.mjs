@@ -86,8 +86,9 @@ const CUSTOM = {
     // same precedent as the sawblade/scissor) ──
     dozer: `ico('<path d="M2 17a2 2 0 1 0 4 0a2 2 0 0 0 -4 0"/><path d="M12 17a2 2 0 1 0 4 0a2 2 0 0 0 -4 0"/><path d="M19 13v4a2 2 0 0 0 2 2h1"/><path d="M14 19h-10"/><path d="M4 15h10"/><path d="M9 11v-5h2a3 3 0 0 1 3 3v6"/><path d="M5 15v-3a1 1 0 0 1 1 -1h8"/><path d="M19 17h-3"/>')`,
     roller: `ico('<circle cx="6.4" cy="15.8" r="3.2"/><path d="M6.4 15.8h.01"/><circle cx="17.6" cy="15.8" r="3.2"/><path d="M17.6 15.8h.01"/><rect x="3.2" y="8.5" width="17.6" height="4.5" rx="1"/><path d="M15 8.5 17 4"/><path d="M15.5 4h3.5"/>')`,
-    tamper: `ico('<rect x="8.1" y="1.6" width="7.8" height="6" rx="2.2"/><path d="M10.6 4.7h2.8"/><path d="M8.1 6.2H3a1.45 1.45 0 0 1 0-2.9"/><path d="M15.9 4.6H21a1.45 1.45 0 0 1 0 2.9"/><path d="M10.6 7.6v11.7"/><path d="M13.4 7.6v11.7"/><path d="M14.2 19.3H9.8l.8 4.2h2.8z"/><path d="M19 17.6l-1.4 1.4 1.4 1.4-1.4 1.4"/><path d="M5 17.6l1.4 1.4L5 20.4l1.4 1.4"/>')`,
-    trencher: `ico('<rect x="11" y="15.5" width="9" height="4" rx="2"/><path d="M14 17.5h3"/><rect x="12.5" y="10" width="7" height="5.5" rx="1"/><path d="M13.5 12.8 5 5.5"/><path d="M4.5 3.2 6.6 5.1 5.9 6.9 8 8.8 7.3 10.6 9.4 12.5 8.7 14.3 11 15.5"/><path d="M4.5 3.2 5 5.5"/>')`,
+    tamper: `ico('<path d="M4.5 3 9 11"/><path d="M3 4.5 6 2.5"/><rect x="8" y="10" width="8" height="5" rx="1"/><path d="M6.5 18.5 8 15h8l1.5 3.5z"/><path d="M8.5 21.5h2"/><path d="M13.5 21.5h2"/>')`,
+    // chain blade (ladder rungs) + engine box + tracked undercarriage with tread lugs
+    trencher: `ico('<rect x="4.5" y="7" width="7.5" height="6" rx="1"/><path d="M11.15 13.12 19.65 20.92"/><path d="M12.85 11.28 21.35 19.08"/><path d="M13.99 15.72 15.68 13.88"/><path d="M16.82 18.32 18.51 16.48"/><path d="M2 15.5a2.25 2.25 0 0 1 2.25 -2.25h7.5a2.25 2.25 0 0 1 2.25 2.25 2.25 2.25 0 0 1 -2.25 2.25h-7.5a2.25 2.25 0 0 1 -2.25 -2.25z"/><path d="M4.3 17.75v1.6"/><path d="M6.7 17.75v1.6"/><path d="M9.1 17.75v1.6"/><path d="M11.5 17.75v1.6"/>')`,
     telehandler: `ico('<rect x="4" y="12.5" width="13.5" height="4" rx="1"/><circle cx="7.5" cy="18.6" r="2.1"/><circle cx="15" cy="18.6" r="2.1"/><path d="M17 12.5 6.5 4.8"/><path d="M17 12.5 11.5 8.4"/><path d="M6.5 4.8 6.5 8 3 8"/>')`,
     towablelift: `ico('<path d="M2 18h3.5"/><path d="M5.5 18h9.5"/><circle cx="10" cy="20" r="1.8"/><path d="M6.5 18 4.8 21.3"/><path d="M13.8 18 15.5 21.3"/><path d="M13 18 10.2 10 16 6.3"/><path d="M10.2 10h.01"/><rect x="15.3" y="3" width="6" height="4" rx=".5"/>')`,
     // Tabler "bulldozer" (MIT) — Lucide has no skid-steer/loader/dozer equivalent.
@@ -110,7 +111,7 @@ const CUSTOM = {
     // Bespoke sawblade (Jac 2026-07-03): no Lucide/Tabler icon is a literal serrated cutting disc, so this is
     // computed geometry (9 teeth via trig, r=9.2 peak / r=7.0 valley, viewBox 0 0 24 24) rather than hand-drawn
     // freeform art — distinct from the "cog" settings-gear glyph it replaced.
-    grinder: `ico('<circle cx="11" cy="12.5" r="4.3"/><path d="M11 12.5h.01"/><path d="M15.28 12.13L17.28 11.95"/><path d="M14.52 14.97L16.16 16.11"/><path d="M12.11 16.65L12.63 18.59"/><path d="M9.18 16.40L8.34 18.21"/><path d="M7.10 14.32L5.29 15.16"/><path d="M20.5 4 14 8.9"/><path d="M19.2 2.6l2.6 2.8"/><path d="M17 20.5v-4h4.5v4"/><path d="M15.5 20.5H23"/>')`,
+    grinder: `ico('<path d="M10.80 13.00L9.10 14.15L9.86 15.88L7.81 15.81L7.41 17.66L5.79 16.40L4.39 17.66L3.82 15.69L1.94 15.88L2.64 13.95L1.00 13.00L2.70 11.85L1.94 10.12L3.99 10.19L4.39 8.34L6.01 9.60L7.41 8.34L7.98 10.31L9.86 10.12L9.16 12.05ZM7.050000000000001 13a1.15 1.15 0 1 0-2.3 0a1.15 1.15 0 1 0 2.3 0Z" fill="currentColor" stroke="none" fill-rule="evenodd"/><path d="M9.6 11.9 12 10.8"/><rect x="11.5" y="9" width="7.5" height="6" rx="1"/><rect x="12" y="15" width="7" height="3.6" rx="1.8"/><path d="M15.5 16.8h.01"/>')`,
   },
 };
 
