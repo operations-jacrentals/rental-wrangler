@@ -6429,9 +6429,19 @@ const DETAIL = {
     const gpsMapped = !!(u.gpsProvider && u.gpsDeviceId);
     const gsUnit = unitGpsStatus(u);   // live-derived status (§5 step 3); null = untracked
     const gpsStale = gsUnit && !gsUnit.live && gpsMapped;   // backend unreachable → showing last-known
+    // §5 step 4 — enriched, on-open live detail from the fleet snapshot (last seen + map +
+    // engine). Only when we have LIVE data for this unit; the 30s view poll keeps it fresh.
+    const gpsM = (gsUnit && gsUnit.live) ? gsUnit.machine : null;
+    const gpsMapHref = (gpsM && gpsM.lat != null && gpsM.lng != null) ? `https://www.google.com/maps?q=${gpsM.lat},${gpsM.lng}` : '';
+    const gpsSeen = gpsM ? gpsRelTime(gpsM.lastSeen) : '';
     const gps = `<div class="section"><h4>GPS</h4><div class="fieldstack">
       ${kvPills((gsUnit ? statusPill('gpsStatus', gsUnit.status, { focal: true }) : badge('No GPS')) + (gpsMapped ? '' : addBtn('Connect GPS', { link: true, js: 'js-gps-connect', data: { rec: u.unitId } })))}
       ${gpsStale ? `<div class="kv" style="justify-content:center"><span class="muted" style="font-size:11px">Last known — live link down</span></div>` : ''}
+      ${gpsM ? `<div class="kv" style="justify-content:center;gap:8px;flex-wrap:wrap">
+        ${gpsSeen ? `<span class="muted" style="font-size:11px">Last seen ${esc(gpsSeen)}</span>` : ''}
+        ${gpsMapHref ? `<a class="gps-maplink" href="${gpsMapHref}" target="_blank" rel="noopener">${esc(gpsM.address || 'View on map')}</a>` : ''}
+        ${badge(gpsM.engineOn ? 'Engine On' : 'Engine Off', gpsM.engineOn ? 'green' : 'gray')}
+      </div>` : ''}
       ${gpsMapped ? `<div class="kv"><span class="v muted" style="font-size:11px">${esc(u.gpsProvider)} · ${esc(u.gpsDeviceId)}</span>${ghostPill('Reconnect', { js: 'js-gps-connect', data: { rec: u.unitId } })}</div>` : ''}
       ${efld('units', u, 'unitId', 'gpsType', 'GPS unit/type')}
       ${efld('units', u, 'unitId', 'gpsPlacement', 'Placement')}
@@ -17723,6 +17733,34 @@ function unitGpsStatus(u) {
   return null;
 }
 
+/* Short relative time for the "last seen" line (§5 step 4). */
+function gpsRelTime(ts) {
+  const t = ts ? new Date(ts).getTime() : NaN;
+  if (Number.isNaN(t)) return '';
+  const s = Math.max(0, Math.round((Date.now() - t) / 1000));
+  if (s < 60) return 'just now';
+  const m = Math.round(s / 60); if (m < 60) return `${m}m ago`;
+  const h = Math.round(m / 60); if (h < 24) return `${h}h ago`;
+  return `${Math.round(h / 24)}d ago`;
+}
+
+/* Live refresh while VIEWING a mapped unit (§5 step 4). One global 30s tick that only
+   hits the backend when a mapped unit is the active tab's anchor — so it's scoped to
+   "you're looking at it," not an always-on fleet poll, and there's no per-popup interval
+   to leak (the tick self-checks). refreshGpsLive is one consolidated call for all four
+   providers, so this stays a single request, not N per-unit polls. */
+let _gpsViewTimer = null;
+function startGpsViewPoll() {
+  clearInterval(_gpsViewTimer);
+  _gpsViewTimer = setInterval(() => {
+    const a = activeSession() && activeSession().anchor;
+    if (!a || a.card !== 'units') return;                 // only while a unit is open
+    const u = IDX.unit.get(a.recId);
+    if (!u || !u.gpsProvider || !u.gpsDeviceId) return;   // ...and it's mapped to a tracker
+    refreshGpsLive();                                     // re-renders when the snapshot lands
+  }, 30000);
+}
+
 const dataSnapshot = () => { const s = {}; PERSIST_KEYS.forEach((k) => { s[k] = DATA[k] || []; }); return s; };
 async function loadFromBackend() {
   const r = await backendCall('load');
@@ -18149,7 +18187,7 @@ async function attemptLogin() {
     try { localStorage.setItem('jactec.user', name); } catch {}
     try { sessionStorage.setItem('jactec.role', role); } catch {}
     sessionStorage.setItem('jactec.pw', pw);
-    gpsLogin(pw).then((ok) => { if (ok) refreshGpsLive(); });   // silent GPS login (§5) → then one live fleet snapshot (§5 step 3); fire-and-forget, never blocks main login
+    gpsLogin(pw).then((ok) => { if (ok) { refreshGpsLive(); startGpsViewPoll(); } });   // silent GPS login (§5) → one live snapshot (§5 step 3) + the view-scoped 30s refresh (§5 step 4); fire-and-forget, never blocks main login
     await loadFromBackend();
     finishLoad();
     applyShopRoleLanding();   // shop roles (Mechanic / M.Tech) land on the Shop graph
