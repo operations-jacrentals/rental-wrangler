@@ -6445,6 +6445,7 @@ const DETAIL = {
       ${gpsMapped ? `<div class="kv"><span class="v muted" style="font-size:11px">${esc(u.gpsProvider)} · ${esc(u.gpsDeviceId)}</span>${ghostPill('Reconnect', { js: 'js-gps-connect', data: { rec: u.unitId } })}</div>` : ''}
       ${efld('units', u, 'unitId', 'gpsType', 'GPS unit/type')}
       ${efld('units', u, 'unitId', 'gpsPlacement', 'Placement')}
+      ${gpsMapped ? gpsFeedHtml(u) : ''}
     </div></div>`;
     /* COVERAGE — the yard's own equipment insurance on this unit (spec equipment-insurance
        Phase 1, Jac 2026-06-29). STATUS + riders are open to every role (a driver must know a
@@ -14556,6 +14557,7 @@ function onClick(e) {
   if (closest('.js-gps-poll-retry')) { e.stopPropagation(); const o = state.overlay; if (!o || o.kind !== 'gpsConnect') return; return gpsConnectStartPoll(o); }
   if (closest('.js-gps-save')) { e.stopPropagation(); return gpsConnectSave(false); }
   if (closest('.js-gps-save-anyway')) { e.stopPropagation(); return gpsConnectSave(true); }
+  if (closest('.js-gps-events-refresh')) { e.stopPropagation(); const u = IDX.unit.get(closest('.js-gps-events-refresh').dataset.rec); if (u) { invalidateGpsEvents(u); render(); } return; }   // §6a — re-pull the device history feed
 
   // universal pill rule — single-click navigates; double-click anchors; ctrl+click = new
   // tab (handled by the early hotkey branch). Same discriminator as rows (#1).
@@ -17759,6 +17761,69 @@ function startGpsViewPoll() {
     if (!u || !u.gpsProvider || !u.gpsDeviceId) return;   // ...and it's mapped to a tracker
     refreshGpsLive();                                     // re-renders when the snapshot lands
   }, 30000);
+}
+
+/* ── GPS STATUS & ALERT HISTORY FEED (spec §6a) ───────────────────────────────
+   A read-only, chat-feed-styled timeline in a mapped unit's GPS section, fetched
+   from the device_events log (backend plan A3c) lazily on first render and cached
+   per device. Degrades gracefully — until A3c is deployed, gpsDeviceEvents 404s and
+   the feed shows "history unavailable," never an error. Shows shutdown commands (the
+   safety audit) today; provider alerts + status transitions accrue as those writers
+   land. Cache is invalidated after a shutdown command so the audit shows immediately. */
+const _gpsEvents = new Map();   // key `${provider}:${deviceId}` → { state, events, at, error }
+const gpsEventsKey = (u) => `${String(u.gpsProvider || '').toLowerCase()}:${u.gpsDeviceId}`;
+function ensureGpsEvents(u) {
+  if (!u.gpsProvider || !u.gpsDeviceId || !gpsConfigured()) return null;
+  const key = gpsEventsKey(u);
+  const hit = _gpsEvents.get(key);
+  if (hit) return hit;
+  const entry = { state: 'loading', events: [], at: 0, error: '' };
+  _gpsEvents.set(key, entry);
+  gpsDeviceEvents(String(u.gpsProvider).toLowerCase(), u.gpsDeviceId)
+    .then((r) => { entry.state = 'loaded'; entry.events = (r && r.events) || []; entry.at = Date.now(); })
+    .catch((e) => { entry.state = 'error'; entry.error = (e && e.status === 404) ? 'notdeployed' : 'error'; })
+    .finally(() => render());   // async — safe; re-renders once the fetch settles
+  return entry;
+}
+function invalidateGpsEvents(u) { if (u && u.gpsProvider && u.gpsDeviceId) _gpsEvents.delete(gpsEventsKey(u)); }
+
+/* One event → its feed row (icon + text + timestamp, colored by severity). */
+function gpsEventRow(ev) {
+  const d = ev.detail || {};
+  let icon, color, text;
+  if (ev.type === 'shutdown_command') {
+    const failed = d.outcome === 'failed';
+    const immob = d.action === 'immobilize' || d.enabled === true;
+    icon = failed ? I.alert : (immob ? I.lock : I.lockOpen);
+    color = failed ? 'red' : (immob ? 'red' : 'green');
+    text = `${immob ? 'Starter cut — immobilized' : 'Starter restored'}${failed ? ' · FAILED' : ''}${ev.actor ? ` · ${esc(ev.actor)}` : ''}`;
+  } else if (ev.type === 'alert') {
+    icon = I.alert; color = d.severity === 'critical' ? 'red' : 'yellow';
+    text = esc(d.message || d.text || 'Alert');
+  } else {   // status_change
+    const to = d.to || d.status || '';
+    color = (getStatus('gpsStatus', to) || {}).color || 'gray';
+    icon = I.bell; text = `Status → ${esc(to)}`;
+  }
+  return `<div class="gps-feed-row"><span class="gfr-ic c-${color}">${icon}</span><span class="gfr-txt">${text}</span><span class="gfr-ts">${esc(gpsEventTime(ev.at))}</span></div>`;
+}
+function gpsEventTime(at) {
+  const d = at ? new Date(at) : null;
+  if (!d || Number.isNaN(d.getTime())) return '';
+  const hh = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  return `${fmtShortDate(d.toISOString())} · ${fmtClock(hh)}`;
+}
+/* The whole feed block for a mapped unit's GPS section. */
+function gpsFeedHtml(u) {
+  const e = ensureGpsEvents(u);
+  if (!e) return '';   // unmapped or GPS not configured
+  const head = `<div class="gps-feed-head"><span class="gfh-lbl">GPS History</span>${ghostPill('Refresh', { js: 'js-gps-events-refresh', data: { rec: u.unitId } })}</div>`;
+  let body;
+  if (e.state === 'loading') body = `<div class="gps-feed-empty">Reading signal history…</div>`;
+  else if (e.state === 'error') body = `<div class="gps-feed-empty">${e.error === 'notdeployed' ? 'History not available yet.' : 'Couldn’t load history — try Refresh.'}</div>`;
+  else if (!e.events.length) body = `<div class="gps-feed-empty">No GPS events yet.</div>`;
+  else body = e.events.map(gpsEventRow).join('');
+  return `<div class="gps-feed-wrap">${head}<div class="gps-feed">${body}</div></div>`;
 }
 
 const dataSnapshot = () => { const s = {}; PERSIST_KEYS.forEach((k) => { s[k] = DATA[k] || []; }); return s; };

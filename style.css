@@ -2111,6 +2111,19 @@ body.is-phone .set-tab-l { flex: 0 0 auto; }
 .gps-maplink:hover { color: color-mix(in srgb, var(--blue) 82%, var(--txt)); }
 .gps-maplink:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
 
+/* GPS status & alert history feed (spec §6a) — a compact read-only timeline in the
+   unit's GPS section, mirroring the chat-feed language (scrollable, timestamped rows). */
+.gps-feed-wrap { width: 100%; margin-top: 4px; }
+.gps-feed-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.gps-feed-head .gfh-lbl { font-family: 'Saira Condensed', var(--font); text-transform: uppercase; letter-spacing: 1.4px; font-weight: 700; font-size: 10.5px; color: var(--txt-3); }
+.gps-feed { display: flex; flex-direction: column; gap: 6px; max-height: 190px; overflow-y: auto; padding: 8px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); }
+.gps-feed-empty { color: var(--txt-3); font-size: 11.5px; text-align: center; padding: 14px 8px; }
+.gps-feed-row { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--txt-2); }
+.gps-feed-row .gfr-ic { flex: 0 0 auto; display: inline-flex; }
+.gps-feed-row .gfr-ic svg { width: 13px; height: 13px; }
+.gps-feed-row .gfr-txt { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gps-feed-row .gfr-ts { flex: 0 0 auto; color: var(--txt-3); font-size: 10.5px; }
+
 /* List-rows customiser panel */
 .bv-customize { display: flex; flex-wrap: wrap; gap: 14px 28px; align-items: flex-start; padding: 14px 16px; background: var(--accent-soft); border-bottom: 1px solid var(--accent-line); }
 .bv-pick-group { min-width: 190px; }
