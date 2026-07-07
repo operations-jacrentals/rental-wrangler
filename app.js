@@ -4952,7 +4952,14 @@ function unitPrimaryState(u) {
     const win = cardWindow(ar.startDate, ar.endDate);
     const failed = u.inspectionStatus === 'Failed';
     const status = failed ? 'Field Call' : rentalDisplayStatus(ar);   // breakdown mid-rental = field call, not "Failed"
-    return { label: win ? `${status} · ${win}` : status, color: (failed || unitOverbooked(u.unitId)) ? 'red' : insp.color };
+    // §10 Overdue Return (#509) — an out unit whose scheduled return has passed reads RED,
+    // mirroring the rental-entity flag #481 added (FLAG_COND 'off-rent-overdue') and the
+    // availability engine's per-unit overdue-out test (rentalsOverlappingUnit). Without this
+    // the unit's headline pill stayed inspection-color green while its rental card already
+    // showed overdue — the same "still ON RENT after the return date" gap, on the unit side.
+    const eu = unitEntry(ar, u.unitId);
+    const overdueOut = OUT_RENTAL_STATUSES.has(eu ? unitStatus(ar, eu) : ar.status) && !!ar.endDate && ar.endDate < TODAY_ISO;
+    return { label: win ? `${status} · ${win}` : status, color: (failed || unitOverbooked(u.unitId) || overdueOut) ? 'red' : insp.color };
   }
   if (u.inspectionStatus === 'Failed') return { label: 'Failed', color: 'red' };
   if (u.inspectionStatus === 'Not Ready') return { label: 'Not Ready', color: 'yellow' };
