@@ -37,6 +37,7 @@
  *     if (action === 'sendCustomerMessage') return json(sendCustomerMessage_(body, role));
  *     if (action === 'messagesFor') return json(messagesFor_(body, role, pw));
  *     if (action === 'commsAliases') return json(commsAliases_(body, role));
+ *     if (action === 'commsThreads') return json(commsThreads_(body, role));
  */
 
 var SMS_TEMPLATES = {   // server-side registry (spec Q-13/Q-14: hardcoded v1). {vars} are server-derived only.
@@ -99,8 +100,11 @@ function sendCustomerMessage_(body, role) {
   body = body || {};
   var channel = body.channel === 'email' ? 'email' : 'sms';
   var template = String(body.template || '');
-  var tpl = channel === 'email' ? EMAIL_TEMPLATES[template] : SMS_TEMPLATES[template];
-  if (!tpl) return { ok: false, reason: 'unknown-template' };
+  var isFree = template === 'freeform';   // D5 dock threads: operator-typed text, no vars ever
+  var freeText = isFree ? String(body.text || '').trim().slice(0, 600) : '';
+  var tpl = isFree ? null : (channel === 'email' ? EMAIL_TEMPLATES[template] : SMS_TEMPLATES[template]);
+  if (!isFree && !tpl) return { ok: false, reason: 'unknown-template' };
+  if (isFree && !freeText) return { ok: false, reason: 'empty' };
   var entity = String(body.entity || ''), sheetName = SMS_ENTITY_SHEET[entity];
   if (!sheetName) return { ok: false, reason: 'unknown-entity' };
   var rec = readRecord_(sheetName, String(body.recId || ''));
@@ -154,7 +158,7 @@ function sendCustomerMessage_(body, role) {
     fromUsed = aliases[0] || '';
     var want = String(body.from || '').toLowerCase();
     for (var a = 0; a < aliases.length; a++) { if (String(aliases[a]).toLowerCase() === want) { fromUsed = aliases[a]; break; } }
-    subject = fill(tpl.subject); text = fill(tpl.body);
+    if (isFree) { subject = 'Message from ' + company; text = freeText; } else { subject = fill(tpl.subject); text = fill(tpl.body); }
     try {
       var mailOpts = { name: company };
       if (fromUsed && aliases[0] && fromUsed.toLowerCase() !== String(aliases[0]).toLowerCase()) mailOpts.from = fromUsed;
@@ -162,7 +166,7 @@ function sendCustomerMessage_(body, role) {
       status = 'sent';
     } catch (e) { status = 'failed'; providerErr = String(e && e.message || e).slice(0, 80); }
   } else {
-    text = fill(tpl);
+    text = isFree ? freeText : fill(tpl);
     var props = PropertiesService.getScriptProperties();
     var twSid = props.getProperty('TWILIO_SID'), twTok = props.getProperty('TWILIO_TOKEN'), twFrom = props.getProperty('TWILIO_FROM');
     var mtoken = props.getProperty('MOCEAN_TOKEN'), apiKey = props.getProperty('MOCEAN_API_KEY'), apiSecret = props.getProperty('MOCEAN_API_SECRET'), moFrom = props.getProperty('MOCEAN_FROM');
@@ -213,18 +217,40 @@ function sendCustomerMessage_(body, role) {
 function messagesFor_(body, role, pw) {
   body = body || {};
   var admin = false; try { admin = isAdmin(pw); } catch (e) {}
+  var byCust = String(body.customerId || '');   // thread mode: all messages for one customer, bodies included
   var sh = messagesSheet_();
   var rows = sh.getLastRow() ? sh.getRange(1, 1, sh.getLastRow(), 2).getValues() : [];
   var out = [];
   for (var i = 0; i < rows.length; i++) {
     try {
       var m = JSON.parse(rows[i][1]);
-      if (m.entity === body.entity && String(m.recId) === String(body.recId)) {
+      if (byCust ? String(m.customerId) === byCust : (m.entity === body.entity && String(m.recId) === String(body.recId))) {
         var p = { msgId: m.msgId, channel: m.channel, provider: m.provider, direction: m.direction, entity: m.entity, recId: m.recId, customerId: m.customerId, template: m.template, status: m.status, when: m.when };
-        if (admin) p.providerErr = m.providerErr || '';   // diagnostics for ADMIN callers only — still no `to`/body
+        if (admin) p.providerErr = m.providerErr || '';   // diagnostics for ADMIN callers only — still no raw `to`
+        if (byCust) { p.body = m.body || ''; p.subject = m.subject || ''; p.maskedTo = m.channel === 'email' ? smsMaskEmail_(m.to) : smsMaskPhone_(m.to); p.fromUsed = m.from || ''; }
         out.push(p);
       }
     } catch (e) {}
   }
   return { ok: true, messages: out };
+}
+
+// D5 dock threads — the thread LIST: one entry per customer with message history.
+// Snippet only (80 chars of the last body); any signed-in role, same posture as sends.
+function commsThreads_(body, role) {
+  var sh = messagesSheet_();
+  var rows = sh.getLastRow() ? sh.getRange(1, 1, sh.getLastRow(), 2).getValues() : [];
+  var byCust = {};
+  for (var i = 0; i < rows.length; i++) {
+    try {
+      var m = JSON.parse(rows[i][1]);
+      if (!m.customerId) continue;
+      var t = byCust[m.customerId] || (byCust[m.customerId] = { customerId: String(m.customerId), count: 0 });
+      t.count++;
+      if (!t.lastWhen || String(m.when) > String(t.lastWhen)) { t.lastWhen = m.when; t.lastChannel = m.channel; t.lastDirection = m.direction; t.lastSnippet = String(m.body || '').slice(0, 80); t.lastStatus = m.status; }
+    } catch (e) {}
+  }
+  var out = Object.keys(byCust).map(function (k) { return byCust[k]; });
+  out.sort(function (a, b) { return String(b.lastWhen).localeCompare(String(a.lastWhen)); });
+  return { ok: true, threads: out };
 }
