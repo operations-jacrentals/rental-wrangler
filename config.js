@@ -43,6 +43,15 @@ export const STRIPE_PUBLISHABLE_KEY = 'pk_live_51TdOu3DEE4GXf0zT7xBP4KQ5vxK21P8n
  * Property GOOGLE_MAPS_KEY via backendCall('mapsKey')); empty → offline/mock map. */
 export const GOOGLE_MAPS_KEY = 'AIzaSyBDI79RRj31RTWfHFUNWQZ5AO4wHLihIc8';
 
+/* ── WranglerGPS backend URL (telematics integration, spec 2026-07-07) ─────────
+ * Our OWN redeploy of the forked WranglerGPS service (Node/Express + Postgres on
+ * Railway) — the live-telemetry backend the GPS section talks to directly. Public
+ * by design, exactly like GOOGLE_MAPS_KEY above: the URL alone is useless without
+ * the team password (POST /auth/login → x-auth-token on every call). Empty string
+ * disables the integration cleanly (the app renders without live GPS). Swap this if
+ * the service moves (e.g. behind a gps.jacrentals.com custom domain). */
+export const GPS_BACKEND_URL = 'https://wranglergps-production-c2ad.up.railway.app';
+
 /* ── Status registry (SPEC §8 canonical values + §6.2 #7 colors) ──────────
  * STATUS[set][value] = { label, color }. `slug` and `value` are derived.
  * Every set the app renders a pill for lives here. Legacy→canonical import

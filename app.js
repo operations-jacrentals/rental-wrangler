@@ -26,7 +26,7 @@ import { CATEGORY_ANIM } from './icons-anim.js';
 import {
   getStatus, STATUS, ROLES, ROLE_TIERS, tierRank, BUILTIN_ROLE_TIERS, GRID_CARDS, BACKOFFICE_BOARDS, SORT_FIELDS,
   SHOP_TYPES, SHOP_SEGMENTS, COLUMNS, COLUMN_OF,
-  legacyTransportPrice, computeTransportPrice, isFueledType, legsForType, YARD_ORIGIN, GOOGLE_MAPS_KEY,
+  legacyTransportPrice, computeTransportPrice, isFueledType, legsForType, YARD_ORIGIN, GOOGLE_MAPS_KEY, GPS_BACKEND_URL,
   fmtWindow, fmtShortDate, showsTruck, parseISO, TODAY_ISO, invoiceShort, TRANSPORT_MAP,
   FLAG_META, FLAG_SEVERITY_RANK, INSURANCE_COVERAGE_TYPES,
 } from './config.js';
@@ -17226,6 +17226,203 @@ async function backendCall(action, extra) {
   if (!res.ok && body && body.ok === undefined) body = { ok: false, error: 'http-' + res.status };
   return body;
 }
+
+/* ── GPS BACKEND CLIENT (WranglerGPS integration · spec docs/superpowers/specs/
+   2026-07-07-wrangler-gps-integration-design.md) ───────────────────────────────
+   Talks DIRECTLY to our own redeploy of the forked WranglerGPS telematics service
+   (GPS_BACKEND_URL — Node/Express + Postgres on Railway), NOT through the Apps
+   Script backend above: live location + ignition need real-time round-trips, and
+   proxying them through GAS would add latency and burn its URL-fetch quota (spec §4).
+   Separate service, separate auth (team password → x-auth-token, cached in memory).
+   Every call degrades gracefully — a GPS outage must never break the rest of the
+   app; the unit card still renders, just without live telemetry.
+
+   The four-provider fleet merge MIRRORS the fork's frontend hooks/useFleet.js so the
+   normalized machine shape stays identical to that already-debugged code — canonical
+   shape in docs/handoffs/wrangler-gps-backend-handoff.md §1. This is a sub-section of
+   the BACKEND SYNC chapter (backend I/O), not its own APP-NN chapter. */
+let gpsToken = '';                                        // in-memory session token; never persisted
+const gpsBase = () => (GPS_BACKEND_URL || '').replace(/\/$/, '');
+const gpsConfigured = () => !!gpsBase();
+
+/* One authed round-trip to the GPS backend. JSON in/out, 30s timeout (reuses
+   withTimeout). Throws a tagged Error on non-2xx (callers decide how to degrade);
+   never returns a failure disguised as success. */
+async function gpsFetch(path, opts = {}) {
+  if (!gpsConfigured()) throw new Error('gps-not-configured');
+  const headers = Object.assign({ 'x-auth-token': gpsToken }, opts.headers || {});
+  if (opts.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
+  const res = await withTimeout(fetch(gpsBase() + path, Object.assign({}, opts, { headers })), 30000, 'GPS backend');
+  const text = await res.text();
+  let body = null; try { body = JSON.parse(text); } catch {}
+  if (!res.ok) { const e = new Error('gps-http-' + res.status); e.status = res.status; e.body = body; throw e; }
+  return body;
+}
+
+/* Silent login on Rental Wrangler sign-in — same team password, token cached for the
+   session. Best-effort + never throws: a GPS-login failure must NOT block main login. */
+async function gpsLogin(pw) {
+  gpsToken = '';
+  try {
+    if (!gpsConfigured()) return false;
+    const res = await withTimeout(
+      fetch(gpsBase() + '/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: pw }) }),
+      15000, 'GPS login');
+    const b = await res.json().catch(() => null);
+    if (res.ok && b && b.token) { gpsToken = b.token; return true; }
+  } catch (e) { logErr('gps', 'login: ' + ((e && e.message) || e)); }
+  return false;
+}
+
+/* Hapn responses arrive in a few possible envelopes — same defensive unwrap useFleet
+   uses so a shape tweak upstream doesn't silently empty the fleet. */
+function gpsUnwrap(d) {
+  if (Array.isArray(d)) return d;
+  return (d && (d.result?.items || d.items || d.devices)) || [];
+}
+
+/* Normalize one provider's raw record into the canonical machine shape (useFleet.js
+   §1). `extra` carries cross-call context (Hapn's status row + starter states). */
+function gpsNormalize(source, raw, extra = {}) {
+  if (source === 'hapn') {
+    const st = extra.status || {};
+    const lat = st.latitude ?? st.lat ?? null, lng = st.longitude ?? st.lng ?? null;
+    const speed = parseFloat(st.speed ?? 0) || 0;
+    const ap = raw.assetProfile || {};
+    return {
+      id: String(raw.imei || raw.id), source: 'hapn', imei: raw.imei ? String(raw.imei) : null,
+      name: String(raw.name || raw.imei || 'Unknown'),
+      make: ap.make ? String(ap.make) : null,
+      model: ap.model ? String(ap.model) : (raw.model?.name ? String(raw.model.name) : null),
+      lat: lat != null ? parseFloat(lat) : null, lng: lng != null ? parseFloat(lng) : null,
+      speed, moving: speed > 0, engineOn: st.reportType !== '0' && !!st.sendTime,
+      lastSeen: st.sendTime ?? st.timestamp ?? raw.modified ?? null,
+      engineHours: st.hoursOfOperation ? parseFloat(st.hoursOfOperation) : null,
+      address: st.address ? String(st.address) : null,
+      battery: st.externalVoltage ?? st.battery ?? null,
+      starterEnabled: (extra.starterStates && raw.imei in extra.starterStates) ? extra.starterStates[raw.imei] : true,
+    };
+  }
+  if (source === 'deere') {
+    return {
+      id: String(raw.id || raw.principalId), source: 'deere', principalId: String(raw.principalId),
+      imei: null, name: String(raw.name || raw.serialNumber || 'JD Machine'),
+      make: raw.make ?? null, model: raw.model ?? null,
+      lat: raw.location?.lat ?? null, lng: raw.location?.lon ?? null,
+      speed: null, moving: false, engineOn: raw.engineState === 1,
+      lastSeen: raw.lastContact ?? null, engineHours: raw.engineHours ?? null,
+      battery: raw.batteryVoltage ?? null, address: null,
+    };
+  }
+  if (source === 'yanmar') {
+    return {
+      id: String(raw.id), source: 'yanmar', contractId: raw.contractId != null ? String(raw.contractId) : null,
+      imei: null, name: raw.name || 'Yanmar Machine', make: 'YANMAR', model: raw.model || null,
+      lat: raw.lat ?? null, lng: raw.lng ?? null, speed: null, moving: false,
+      engineOn: raw.engineOn ?? false, lastSeen: raw.lastSeen ?? null,
+      engineHours: raw.engineHours ?? null, address: raw.address ?? null,
+    };
+  }
+  if (source === 'bouncie') {
+    const stats = raw.stats || {}, loc = stats.location || {};
+    return {
+      id: String(raw.imei), source: 'bouncie', imei: String(raw.imei),
+      name: raw.nickName || `${raw.model?.year || ''} ${raw.model?.make || ''} ${raw.model?.name || ''}`.trim() || 'Vehicle',
+      make: raw.model?.make ?? null, model: raw.model?.name ?? null,
+      lat: loc.lat ?? null, lng: loc.lon ?? null, speed: stats.speed ?? null,
+      moving: (stats.speed ?? 0) > 0, engineOn: stats.isRunning ?? false,
+      lastSeen: stats.lastUpdated ?? null, engineHours: null, address: loc.address ?? null,
+      mil: stats.mil ?? null, odometer: stats.odometer ?? null, fuelLevel: stats.fuelLevel ?? null,
+    };
+  }
+  return null;
+}
+
+/* Full four-provider fleet snapshot, merged client-side (mirrors useFleet.js).
+   Partial-failure tolerant via allSettled — one provider down still returns the rest.
+   Returns a flat array of normalized machines; callers key by id/imei to drive the
+   real gpsStatus pill (spec §5). Deere/Yanmar/Bouncie machine lists are only fetched
+   when their status reports `authenticated` (matches useFleet's two-phase pattern). */
+async function gpsFleetStatus() {
+  const [devicesR, statusR, deereR, starterR, yanmarR, bouncieR] = await Promise.allSettled([
+    gpsFetch('/api/hapn/devices'),
+    gpsFetch('/api/hapn/fleet-status'),
+    gpsFetch('/api/deere/status'),
+    gpsFetch('/api/hapn/starter-status'),
+    gpsFetch('/api/yanmar/status'),
+    gpsFetch('/api/bouncie/status'),
+  ]);
+  const val = (r) => (r.status === 'fulfilled' ? r.value : null);
+  const out = [];
+
+  // Hapn
+  const starterStates = val(starterR)?.result?.states || {};
+  const statusMap = {};
+  gpsUnwrap(val(statusR)).forEach((s) => { if (s?.imei) statusMap[s.imei] = s; });
+  gpsUnwrap(val(devicesR)).forEach((d) => out.push(gpsNormalize('hapn', d, { status: statusMap[d.imei] || {}, starterStates })));
+
+  // Deere / Yanmar / Bouncie — only when authenticated (second-phase machine lists)
+  const phase2 = [];
+  if (val(deereR)?.authenticated)  phase2.push(gpsFetch('/api/deere/machines').then((d) => (d?.values || []).map((m) => gpsNormalize('deere', m))).catch(() => []));
+  if (val(yanmarR)?.authenticated) phase2.push(gpsFetch('/api/yanmar/machines').then((d) => (d?.machines || []).map((m) => gpsNormalize('yanmar', m))).catch(() => []));
+  if (val(bouncieR)?.authenticated) phase2.push(gpsFetch('/api/bouncie/vehicles').then((d) => (d?.vehicles || []).map((m) => gpsNormalize('bouncie', m))).catch(() => []));
+  (await Promise.all(phase2)).forEach((list) => list.forEach((m) => m && out.push(m)));
+
+  return out.filter(Boolean);
+}
+
+/* Live detail for ONE mapped device (the enriched GPS section, on popup open, spec §5).
+   Hapn has a direct per-device status endpoint; the others come from their machine
+   list filtered to the mapped id. Returns a normalized machine or null. */
+async function gpsUnitStatus(provider, deviceId) {
+  const p = String(provider || '').toLowerCase(); const key = String(deviceId || '');
+  if (!p || !key) return null;
+  if (p === 'hapn') {
+    const [devR, stR, starterR] = await Promise.allSettled([
+      gpsFetch(`/api/hapn/device/${encodeURIComponent(key)}/status`),
+      gpsFetch('/api/hapn/fleet-status'),
+      gpsFetch('/api/hapn/starter-status'),
+    ]);
+    const dev = (devR.status === 'fulfilled' && devR.value) ? devR.value : { imei: key };
+    const status = gpsUnwrap(stR.status === 'fulfilled' ? stR.value : null).find((s) => s?.imei === key) || (devR.status === 'fulfilled' ? devR.value : {}) || {};
+    const starterStates = (starterR.status === 'fulfilled' ? starterR.value : null)?.result?.states || {};
+    return gpsNormalize('hapn', dev.imei ? dev : { imei: key }, { status, starterStates });
+  }
+  const list = await gpsProviderDevices(p).catch(() => []);
+  const match = list.find((m) => String(m.id ?? m.principalId ?? m.contractId ?? m.imei) === key);
+  return match ? gpsNormalize(p, match) : null;
+}
+
+/* Provider machine/vehicle lists — powers the connect-wizard picker (spec §5a step 2)
+   for Deere/Yanmar/Bouncie, and gpsUnitStatus above. Raw provider records (the wizard
+   presents id + name for the operator to pick). */
+async function gpsProviderDevices(provider) {
+  switch (String(provider || '').toLowerCase()) {
+    case 'hapn':    return gpsUnwrap(await gpsFetch('/api/hapn/devices'));
+    case 'deere':   return (await gpsFetch('/api/deere/machines'))?.values || [];
+    case 'yanmar':  return (await gpsFetch('/api/yanmar/machines'))?.machines || [];
+    case 'bouncie': return (await gpsFetch('/api/bouncie/vehicles'))?.vehicles || [];
+    default: return [];
+  }
+}
+
+/* Hapn starter-interrupt (the remote-shutdown relay, spec §6/§7). NB: this cuts the
+   STARTER so the engine can't be re-started — it does NOT kill a running engine.
+   `enabled: true` engages the interrupt (immobilize); `false` restores normal start.
+   Hapn-only; the backend also logs the command server-side (device_events, plan A3c). */
+async function gpsStarterInterrupt(imei, enabled) {
+  return gpsFetch(`/api/hapn/device/${encodeURIComponent(imei)}/starter-interrupt`, {
+    method: 'POST', body: JSON.stringify({ enabled: !!enabled }),
+  });
+}
+
+/* GPS status & alert history feed source (spec §6a). Reads the per-device event log
+   (plan A3c — the device_events table + route). Until A3c ships on the backend this
+   throws gps-http-404; callers render an empty/"history unavailable" state. */
+async function gpsDeviceEvents(source, key) {
+  return gpsFetch(`/api/device/${encodeURIComponent(source)}/${encodeURIComponent(key)}/events`);
+}
+
 const dataSnapshot = () => { const s = {}; PERSIST_KEYS.forEach((k) => { s[k] = DATA[k] || []; }); return s; };
 async function loadFromBackend() {
   const r = await backendCall('load');
@@ -17652,6 +17849,7 @@ async function attemptLogin() {
     try { localStorage.setItem('jactec.user', name); } catch {}
     try { sessionStorage.setItem('jactec.role', role); } catch {}
     sessionStorage.setItem('jactec.pw', pw);
+    gpsLogin(pw);   // silent, best-effort GPS-backend login (§5) — fire-and-forget, never blocks main login
     await loadFromBackend();
     finishLoad();
     applyShopRoleLanding();   // shop roles (Mechanic / M.Tech) land on the Shop graph
