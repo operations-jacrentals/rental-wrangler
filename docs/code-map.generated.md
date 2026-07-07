@@ -4,7 +4,7 @@
 
 # Code Atlas — generated chapter index (Part I · The Frontend)
 
-## app.js — 17742 lines, 38 chapters
+## app.js — 17749 lines, 38 chapters
 
 | ID | Lines | Anchors | Chapter title | Key symbols |
 |----|------:|---------|---------------|-------------|
@@ -42,10 +42,10 @@
 | APP-32 | 12756–12759 | §15 | §15 EVENT HANDLERS — onClick/onInput/onChange (single listener tree) | — |
 | APP-33 | 12760–14358 | §15c | §15c DRAG & DROP LINK ENGINE (DRAGDROP-DESIGN.md) — custom pointer engine. | DRAG, DRAG_SOURCES, dragLayer, DROP_MATRIX, woDroppableToInvoice, invoiceUnitIds, LINK_TARGET_LABEL, linkRoleAllows, linkActionPossible, linkActionsFor, enterLinking, cancelLinking, …(+51) |
 | APP-34 | 14359–15287 | §16 | §16 ACTIONS / MUTATIONS — every state change funnels through here | setUnitCondition, pendingInspForUnit, openChecklist, completeChecklist, setUnitWash, captureUnit, setUnitCapture, yardCapture, saveYardCapture, uploadCaptureMedia, offloadPhotoNow, offloadPhoto, …(+39) |
-| APP-35 | 15288–16328 | §17 | §17 STRIPE / PAYMENTS — card-on-file + invoice charging (client side). | _stripe, _pubKey, ensurePubKey, getStripe, canMoney, brandName, hasCardOnFile, commitAction, cardOneLabel, cardLabel, friendlyPayErr, openAddCard, …(+73) |
-| APP-36 | 16329–16775 | §5.4d | §5.4d — DATE SEARCH PICKER. A standalone calendar that REUSES the rental | openDateSearch, closeDateSearch, dsMonth, dsToday, dsClear, dsPickDay, dsDone, dateSearchEl, positionDateSearch, setInspWash, setInspResult, recordServiceCompletion, …(+19) |
-| APP-37 | 16776–16778 | §18 | §18 PERSISTENCE & BOOT | — |
-| APP-38 | 16779–17742 | §18b | §18b BACKEND SYNC — Google Sheets via the Apps Script web app | BACKEND_URL, PERSIST_KEYS, backendPassword, booting, saveTimer, driveViewUrl, backendCall, dataSnapshot, loadFromBackend, PERSIST_ID, lastSaved, snapshotSaved, …(+43) |
+| APP-35 | 15288–16335 | §17 | §17 STRIPE / PAYMENTS — card-on-file + invoice charging (client side). | _stripe, _pubKey, ensurePubKey, getStripe, canMoney, brandName, hasCardOnFile, commitAction, cardOneLabel, cardLabel, friendlyPayErr, openAddCard, …(+73) |
+| APP-36 | 16336–16782 | §5.4d | §5.4d — DATE SEARCH PICKER. A standalone calendar that REUSES the rental | openDateSearch, closeDateSearch, dsMonth, dsToday, dsClear, dsPickDay, dsDone, dateSearchEl, positionDateSearch, setInspWash, setInspResult, recordServiceCompletion, …(+19) |
+| APP-37 | 16783–16785 | §18 | §18 PERSISTENCE & BOOT | — |
+| APP-38 | 16786–17749 | §18b | §18b BACKEND SYNC — Google Sheets via the Apps Script web app | BACKEND_URL, PERSIST_KEYS, backendPassword, booting, saveTimer, driveViewUrl, backendCall, dataSnapshot, loadFromBackend, PERSIST_ID, lastSaved, snapshotSaved, …(+43) |
 
 ## config.js — 558 lines, 0 chapters
 
