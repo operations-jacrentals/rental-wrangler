@@ -2074,6 +2074,12 @@ function saveSort(card, sort) {
 }
 // the entity-card a record belongs to (Shop holds 3 entity types via recType)
 const entityCardOf = (card, recType) => (card === 'shop' ? recType : card);
+// Shop retirement (Jac 2026-07-07): a WO / inspection / serviceOrder reference now
+// opens its OWNING UNIT — this resolves the unitId for any of the 3 shop entity types
+// (a serviceOrder id IS a unitId; SINGULAR.serviceOrders === 'unit').
+const unitOfShopRec = (type, id) => (type === 'workOrders' ? (IDX.wo.get(id)?.unitId || null)
+  : type === 'inspections' ? (IDX.insp.get(id)?.unitId || null)
+  : id);
 
 const state = {
   data: DATA,
@@ -2368,7 +2374,7 @@ function cardRecordAt(target) {
   const pill = target.closest && target.closest('[data-pill-card]');
   if (pill && pill.dataset.pillRec != null) {
     const pc = pill.dataset.pillCard;
-    return SHOP_TYPES.includes(pc) ? { card: 'shop', recId: pill.dataset.pillRec, recType: pc } : { card: pc, recId: pill.dataset.pillRec, recType: null };
+    return SHOP_TYPES.includes(pc) ? { card: 'units', recId: unitOfShopRec(pc, pill.dataset.pillRec), recType: null } : { card: pc, recId: pill.dataset.pillRec, recType: null };   // Shop retirement: WO/insp/svc pills act on their owning unit
   }
   const row = target.closest && target.closest('.row');
   if (row && row.dataset.rec) return { card: row.dataset.card, recId: row.dataset.rec, recType: row.dataset.type || null };
@@ -2558,7 +2564,7 @@ function showHoverPreview(target) {
    (e.g. "No Card" → Cards on File) — smooth scroll + the R19 glow. */
 function scrollToSect(card, sect) {
   setTimeout(() => {
-    const ec = SHOP_TYPES.includes(card) ? 'shop' : card;
+    const ec = SHOP_TYPES.includes(card) ? 'units' : card;   // Shop retirement: WO/insp/svc sections live on the unit
     const n = document.querySelector(`.card[data-card="${ec}"] .${sect}`);
     if (n) { n.scrollIntoView({ behavior: 'smooth', block: 'start' }); attnFlash(`.card[data-card="${ec}"] .${sect}`); }
   }, 60);
@@ -2572,8 +2578,13 @@ function pillTo(card, recId) {
   // pre-swap view + column layout on the DESTINATION card so Back returns you to the card you
   // left, exactly where it was. Same viewSnap mechanism the categories → units jump uses; no-op
   // when the target is already visible in its own column (no swap). (Jac 2026-07-03)
-  const noteSwap = (member) => { const s = activeSession(), col = COLUMN_OF[member]; if (s.cols && col && s.cols[col] !== member) pushCardHistory(s.cards[SHOP_TYPES.includes(member) ? 'shop' : member], true); };
-  if (SHOP_TYPES.includes(card)) { if (recOf(card, recId)) { noteSwap(card); revealCol(card); openStandard('shop', recId, card); } return; }
+  const noteSwap = (member) => { const s = activeSession(), col = COLUMN_OF[member]; if (s.cols && col && s.cols[col] !== member) pushCardHistory(s.cards[member], true); };
+  // Shop retirement (Jac 2026-07-07): a WO / inspection / serviceOrder pill opens its OWNING UNIT.
+  if (SHOP_TYPES.includes(card)) {
+    const uid = unitOfShopRec(card, recId);
+    if (uid && IDX.unit.get(uid)) { noteSwap('units'); revealCol('units'); openStandard('units', uid); }
+    return;
+  }
   if (recOf(card, recId)) { noteSwap(card); revealCol(card); openStandard(card, recId); }
 }
 
@@ -2665,7 +2676,7 @@ function totColMatch(card, rec, col, value) {
   if (col === '__date') return dateTermHits(card, rec, value);   // §5.4d date-picker filter term
   if (col === '__transport') return card === 'rentals' && rentalHasLeg(rec, value);   // §11 Delivery/Pickup leg filter
   if (col === '__wo') return DATA.workOrders.some((w) => w.unitId === rec.unitId && w.phase !== 'Complete' && !w.cancelled && (value === 'open' || w.phase === 'Part Ordered' || (w.lineItems || []).some((l) => l.phase === 'Part Ordered')));
-  if (col === '__wop') return DATA.workOrders.some((w) => w.unitId === rec.unitId && w.phase !== 'Complete' && !w.cancelled && (w.phase || '—') === value);   // §13.5 — unit has an open WO stuck at this phase (bottleneck)
+  if (col === '__wop') return DATA.workOrders.some((w) => w.unitId === rec.unitId && !w.cancelled && (w.phase || '—') === value);   // §13.5 — unit has a WO at this phase (open = bottleneck; 'Complete' matches finished WOs for the Round-Up drill)
   if (col === '__insp') return value === 'Ready' ? rec.inspectionStatus === 'Ready' : rec.inspectionStatus !== 'Ready';   // §13.5 — Passed vs Not Ready (Failed folds into Not Ready; Jac retired the Failed bucket)
   if (col === '__cond') return rec.inspectionStatus === value;
   if (col === '__svc') { const s = topServiceForUnit(rec); return !!rec.washRequested || !!(s && s.remaining < 0); }   // service-due: overdue service or wash requested
@@ -2678,6 +2689,8 @@ function totColMatch(card, rec, col, value) {
   if (col === '__rentrange') { const [a, b] = String(value).split('|'); const d = (rec.startDate || '').slice(0, 10); return !!d && d >= a && d < b; }   // §13.4 — rental start in a timeline bucket [a,b)
   if (col === '__daterange') { const [a, b] = String(value).split('|'); const d = (rec.date || '').slice(0, 10); return !!d && d >= a && d < b; }   // §13.4 — inspection / WO dated in a timeline bucket
   if (col === '__fcrange') { const [a, b] = String(value).split('|'); return DATA.workOrders.some((w) => w.unitId === rec.unitId && w.woType === 'Field Call' && (w.date || '').slice(0, 10) >= a && (w.date || '').slice(0, 10) < b); }   // §13.4 — Field Call in a timeline bucket
+  if (col === '__worange') { const [a, b] = String(value).split('|'); return DATA.workOrders.some((w) => w.unitId === rec.unitId && !w.cancelled && (w.date || '').slice(0, 10) >= a && (w.date || '').slice(0, 10) < b); }   // Shop retirement — unit has a WO dated in a timeline bucket (Round-Up WO drills land on Units)
+  if (col === '__insprange') { const [a, b] = String(value).split('|'); return DATA.inspections.some((n2) => n2.unitId === rec.unitId && (n2.date || '').slice(0, 10) >= a && (n2.date || '').slice(0, 10) < b); }   // Shop retirement — unit inspected in a timeline bucket
   if (col === '__svcstat') {   // §13.4 — a unit's service urgency (mirrors the serviceOrders status pie)
     if (value === 'wash') return !!rec.washRequested;
     if (rec.washRequested) return false;
@@ -2687,7 +2700,7 @@ function totColMatch(card, rec, col, value) {
     if (value === 'on-schedule') return !s || (s.status !== 'past-due' && s.status !== 'due-soon');
     return false;
   }
-  if (col === '__wophase') return card === 'workOrders' && (rec.phase || '—') === value;   // shop front-page WO bar: match this phase AND exclude non-WO items (the normal 'phase' fallback would let them through)
+  if (col === '__wophase') return card === 'workOrders' && (rec.phase || '—') === value;   // WO-row phase match (excludes non-WO items; units use __wop instead)
   const c = cardColumns(card, activeSession()).find((x) => x.key === col);
   return c ? String(c.get(rec)) === String(value) : true;
 }
@@ -6048,6 +6061,32 @@ function woSectionHtml(w) {
     </div>
   </div>`;
 }
+/* Per-unit SERVICES section (Shop retirement, Jac 2026-07-07): the recurring
+   countdown list — wash pinned to the top, then most-urgent first — with the
+   same js-svc-complete completion flow the Shop card used. Section header +
+   border follow the worst task's live status (R11). */
+function serviceTasksHtml(u, { title = 'Services' } = {}) {
+  const all = unitServiceRows(u);
+  const wash = all.find((s) => s.taskId === 'svc-wash');
+  const rows = wash ? [wash, ...all.filter((s) => s.taskId !== 'svc-wash')] : all;
+  const lastFor = (taskId) => { const ls = (u.serviceLog || []).filter((l) => l.taskId === taskId); return ls.length ? ls[ls.length - 1] : null; };
+  const list = rows.map((s) => {
+    const last = lastFor(s.taskId);
+    const washReq = s.taskId === 'svc-wash' && u.washRequested;
+    return `<div class="svc-task">
+      <div class="svc-task-top">
+        <button class="pill c-${washReq ? 'blue' : s.color} js-svc-complete" data-unit="${u.unitId}" data-task="${s.taskId}" data-tip="${washReq ? 'Log the wash as done' : 'Log a completion'}" style="min-width:78px;justify-content:center">${esc(washReq ? 'Wash Now' : getStatus('serviceStatus', s.status).label)}</button>
+        <span class="svc-name">${esc(s.name)}</span>
+        <span class="spacer"></span>
+        ${washReq ? `<span class="pill c-blue" data-r="R3b"><span class="t">Wash Requested</span></span>` : `<b>${esc(svcText(s))}</b>`}
+      </div>
+      <div class="svc-task-sub muted">Every ${s.intervalHours} HRS${last ? ` · last ${esc(fmtShortDate(last.date))} @ ${num(last.hours)} HRS` : ' · never serviced'}</div>
+    </div>`;
+  }).join('');
+  const worst = rows.find((s) => s.taskId !== 'svc-wash') || rows[0];   // section tint = worst NON-wash task (wash rides pinned, not alarming)
+  const tint = worst && ['red', 'yellow', 'green'].includes(worst.color) ? ` sec-${worst.color}` : '';
+  return `<div class="section${tint}"><h4>${esc(title)}</h4><div class="hlog">${list}</div></div>`;
+}
 /* ITEM BALANCE — every invoice line item carries its own balance. A partial
    payment is assigned per line item through the payment popup; allocations are
    PRE-TAX dollars keyed per LINE (a rental + its transport share a `ref`, so the
@@ -6509,6 +6548,7 @@ const DETAIL = {
         ${li2?.description ? `<div class="kv" style="justify-content:center"><span class="muted">Latest:</span> <span style="font-size:12.5px">${esc(li2.description)}</span></div>` : ''}
       </div>
     </div>`;
+    const svcSec = serviceTasksHtml(u);   // Shop retirement (Jac 2026-07-07): services live ON the unit
     const woSecs = openWOsForUnit(u.unitId).map(woSectionHtml).join('');
     const notes = notesSection('units', u, 'unitId');
     const hchips = [
@@ -6522,6 +6562,7 @@ const DETAIL = {
       <div class="detail-head"><span class="d-title">${esc(u.name)}</span></div>
       ${notes.top}
       ${inspSec}
+      ${svcSec}
       ${woSecs}
       <div class="add-row">${addBtn('Work Order', { js: 'js-new-wo-unit', link: true, data: { rec: u.unitId } })}</div>
       <div class="detail-cols">${specs}${gps}</div>
@@ -6979,26 +7020,11 @@ const DETAIL = {
        pill + hours live in the title; Reference moved into the completion popup). The
        STATUS pill gates the popup; each task shows its last service date+hours. ── */
   serviceOrders: (u, cs) => {
-    const all = unitServiceRows(u);
-    const wash = all.find((s) => s.taskId === 'svc-wash');     // Wash pinned to the top of the list
-    const rows = wash ? [wash, ...all.filter((s) => s.taskId !== 'svc-wash')] : all;
-    const top = topServiceForUnit(u) || rows[0];
+    // Shop retirement (Jac 2026-07-07): the task list now lives in serviceTasksHtml
+    // (shared with the unit detail). This renderer dies with the Shop card.
+    const top = topServiceForUnit(u) || unitServiceRows(u)[0];
     const ar = activeRentalForUnit(u.unitId);
-    const lastFor = (taskId) => { const ls = (u.serviceLog || []).filter((l) => l.taskId === taskId); return ls.length ? ls[ls.length - 1] : null; };
-    const list = rows.map((s) => {
-      const last = lastFor(s.taskId);
-      const washReq = s.taskId === 'svc-wash' && u.washRequested;
-      return `<div class="svc-task">
-        <div class="svc-task-top">
-          <button class="pill c-${washReq ? 'blue' : s.color} js-svc-complete" data-unit="${u.unitId}" data-task="${s.taskId}" data-tip="${washReq ? 'Log the wash as done' : 'Log a completion'}" style="min-width:78px;justify-content:center">${esc(washReq ? 'Wash Now' : getStatus('serviceStatus', s.status).label)}</button>
-          <span class="svc-name">${esc(s.name)}</span>
-          <span class="spacer"></span>
-          ${washReq ? `<span class="pill c-blue" data-r="R3b"><span class="t">Wash Requested</span></span>` : `<b>${esc(svcText(s))}</b>`}
-        </div>
-        <div class="svc-task-sub muted">Every ${s.intervalHours} HRS${last ? ` · last ${esc(fmtShortDate(last.date))} @ ${num(last.hours)} HRS` : ' · never serviced'}</div>
-      </div>`;
-    }).join('');
-    const tasks = `<div class="section"><h4>Service Tasks</h4><div class="hlog">${list}</div></div>`;
+    const tasks = serviceTasksHtml(u, { title: 'Service Tasks' });
     const headTop = top ? (top.washRequested ? `<span class="pill c-blue">Wash Requested</span>` : `<span class="pill c-${top.color}">${esc(getStatus('serviceStatus', top.status).label)}</span>`) : '';
     const notes = notesSection('units', u, 'unitId');
     return `<div class="detail">
@@ -7519,7 +7545,8 @@ function listView(cardDef, session) {
   wrap.appendChild(bar);
   // §13.4 — Graph carousel: an interactive panel ABOVE the list (the list renders below,
   // filtered by the chart's g-tagged search terms). Legacy cards still full-replace the list.
-  if (cs.graphView && !state.searchMode && RUS_TABS[card]) { const g = el('div', 'rus'); g.innerHTML = rusHtml(card, card, cs); wrap.appendChild(g); }   // §13.7 gauge strip — this card's Round-Up charts, 25% of the column
+  if (cs.graphView && !state.searchMode && graphViewsFor(card)) { const g = el('div', 'gv-panel'); g.innerHTML = graphPanelHtml(card, card, cs); wrap.appendChild(g); }   // units → the stackbars worklist (mechanic front page, ex-Shop)
+  else if (cs.graphView && !state.searchMode && RUS_TABS[card]) { const g = el('div', 'rus'); g.innerHTML = rusHtml(card, card, cs); wrap.appendChild(g); }   // §13.7 gauge strip — this card's Round-Up charts, 25% of the column
   // Phase 4 — Units narrowed to an invoice's linked units (Invoice +WO) → removable chip
   if (card === 'units' && state.unitPick) {
     const n = state.unitPick.ids.length;
@@ -9212,27 +9239,30 @@ function gvSmallest(view) { const live = (view.segs || []).filter((s) => s.count
 // A graph view = { key, title, kind:'pie'|'bars'|'lead'|'nums', color?, segs:[{col,value,label,count,color}] }.
 // Each seg's {col,value} is exactly a filter term, so a click maps straight to the list.
 function graphViewsFor(card) {
-  // §13.6 — per-card views retired; the Round-Up board took over. Only the Shop 'all'
-  // stackbars worklist (the mechanic landing front page) still renders in-column.
-  if (card === 'shop') {
-    // The Shop "front page" (wrench toggle): one stacked-bar view of what needs the
-    // crew's attention right now — Not Ready · Services · Work Orders.
+  // §13.6 — per-card views retired; the Round-Up board took over. Only the UNITS
+  // stackbars worklist (the mechanic landing front page — moved home from the retired
+  // Shop card, Jac 2026-07-07) still renders in-column.
+  if (card === 'units') {
+    // The yard "front page" (Units graph toggle): one stacked-bar view of what needs
+    // the crew's attention right now — Not Ready · Services · Work Orders. Every
+    // segment click filters THE UNITS LIST (g-tagged term), so the chart drives the rows.
     const notReady = DATA.units.filter((u) => u.inspectionStatus === 'Not Ready').length;
     let svcOver = 0, svcDue = 0;
     DATA.units.forEach((u) => { if (u.washRequested) return; const s = topServiceForUnit(u); if (!s) return; if (s.status === 'past-due') svcOver++; else if (s.status === 'due-soon') svcDue++; });
     const woByPhase = {}; DATA.workOrders.filter((w) => w.phase !== 'Complete' && !w.cancelled).forEach((w) => { const ph = w.phase || '—'; woByPhase[ph] = (woByPhase[ph] || 0) + 1; });
-    const woParts = Object.keys(STATUS.woPhase).filter((ph) => ph !== 'Complete' && woByPhase[ph]).map((ph) => ({ col: '__wophase', value: ph, label: getStatus('woPhase', ph).label || ph, count: woByPhase[ph], color: getStatus('woPhase', ph).color || 'gray' }));
+    const woParts = Object.keys(STATUS.woPhase).filter((ph) => ph !== 'Complete' && woByPhase[ph]).map((ph) => ({ col: '__wop', value: ph, label: getStatus('woPhase', ph).label || ph, count: woByPhase[ph], color: getStatus('woPhase', ph).color || 'gray' }));
     const bars = [
-      // Not Ready reuses the established js-notready affordance (route to the Units list,
-      // filtered to Not-Ready) rather than a graph filter — same behavior the old chip had.
-      { label: 'Not Ready', count: notReady, color: 'yellow', js: 'js-notready', tip: `${notReady} Not Ready — open the Units list` },
+      // Not Ready reuses the established js-notready affordance (adds the removable
+      // __cond pill to the Units search bar) rather than a graph filter — same behavior
+      // the old chip had.
+      { label: 'Not Ready', count: notReady, color: 'yellow', js: 'js-notready', tip: `${notReady} Not Ready — filter the list` },
       { label: 'Services', parts: [
         { col: '__svcstat', value: 'past-due', label: 'Overdue', count: svcOver, color: 'red' },
         { col: '__svcstat', value: 'due-soon', label: 'Due', count: svcDue, color: 'yellow' },
       ] },
       { label: 'Work Orders', parts: woParts },
     ];
-    return [{ key: 'shopfront', title: 'Shop', kind: 'stackbars', segs: bars }];
+    return [{ key: 'worklist', title: 'Worklist', kind: 'stackbars', segs: bars }];
   }
   return null;
 }
@@ -9624,7 +9654,7 @@ function ruWoTrend(rg) {
   const bk = ruBuckets(rg);
   const W = DATA.workOrders.filter((w) => !w.cancelled);
   const vals = bk.map((b) => W.filter((w) => { const d = (w.date || '').slice(0, 10); return d >= b.a && d < b.b; }).length);
-  const rows = bk.map((b, i) => ({ card: 'shop', seg: 'workOrders', col: '__daterange', navValue: b.key, name: `${b.label} — ${vals[i]} opened`, tip: `${b.label} — ${vals[i]} WOs opened` }));
+  const rows = bk.map((b, i) => ({ card: 'units', col: '__worange', navValue: b.key, name: `${b.label} — ${vals[i]} opened`, tip: `${b.label} — ${vals[i]} WOs opened` }));   // Shop retirement: drill to Units with WOs in the bucket
   const chart = vals.some((v) => v > 0) ? ruWireNav(ruLineSVG({ bk, vals, color: '--yellow' }), rows, 'circle') : ruEmpty('No work orders in this window.');
   const open = W.filter((w) => w.phase !== 'Complete');
   const byPhase = {}; open.forEach((w) => { const ph = w.phase || '—'; byPhase[ph] = (byPhase[ph] || 0) + 1; });
@@ -9732,7 +9762,7 @@ function ruWoPhase() {   // open WOs by bottleneck phase — open = inherently c
 function ruSvcUrgency() {   // a unit's service urgency — snapshot by nature
   let over = 0, soon = 0, ok = 0, wash = 0;
   DATA.units.forEach((u) => { if (u.washRequested) { wash++; return; } const s = topServiceForUnit(u); if (!s) { ok++; return; } if (s.status === 'past-due') over++; else if (s.status === 'due-soon') soon++; else ok++; });
-  const mk = (v, lbl, count, color) => ({ name: lbl, count, color, card: 'shop', seg: 'serviceOrders', col: '__svcstat', navValue: v, tip: `${lbl} — ${count} units` });
+  const mk = (v, lbl, count, color) => ({ name: lbl, count, color, card: 'units', col: '__svcstat', navValue: v, tip: `${lbl} — ${count} units` });   // Shop retirement: service urgency filters the Units list
   const segs = [mk('past-due', 'Overdue', over, 'red'), mk('due-soon', 'Due Soon', soon, 'yellow'), mk('on-schedule', 'On Schedule', ok, 'green'), mk('wash', 'Wash', wash, 'blue')];
   if (!DATA.units.length) return ruEmpty('No units yet.');
   return ruDonutSVG({ segs, noun: 'UNITS' });
@@ -9840,7 +9870,7 @@ function ruBilledWos(rg) {   // N8 — WOs billed to a customer, per bucket (cou
   const rows = bk.map((b) => {
     const hit = W.filter((w) => { const d = (w.date || '').slice(0, 10); return d >= b.a && d < b.b; });
     const parts = hit.reduce((a, w) => a + (w.lineItems || []).reduce((x, li) => x + (Number(li.cost) || 0), 0), 0);
-    return { label: b.label, name: `${b.label} — ${hit.length} billed`, value: hit.length, fill: green, card: 'shop', seg: 'workOrders', col: '__daterange', navValue: b.key, tip: `${b.label} — ${hit.length} billed WO${hit.length === 1 ? '' : 's'} · ${money(parts)} in parts` };
+    return { label: b.label, name: `${b.label} — ${hit.length} billed`, value: hit.length, fill: green, card: 'units', col: '__worange', navValue: b.key, tip: `${b.label} — ${hit.length} billed WO${hit.length === 1 ? '' : 's'} · ${money(parts)} in parts` };
   });
   if (!rows.some((r2) => r2.value > 0)) return ruEmpty('No billed work orders in this window.');
   return ruWireNav(ruBarsSVG({ data: rows }), rows);
@@ -9854,8 +9884,8 @@ function ruWorkByRole(rg) {   // N10 — the manager's "Units of Work": complete
   const returned = DATA.rentals.filter((r2) => inR(r2.endDate) && rentalDisplayStatus(r2) === 'Returned').length;
   const collected = DATA.invoices.filter((inv) => inR(inv.date) && invoiceTotals(inv).status === 'Paid').length;
   const rows = [
-    { label: 'WOs Done', name: 'Work orders completed (Mechanic)', value: woDone, card: 'shop', seg: 'workOrders', col: '__wop', navValue: 'Complete', tip: `${woDone} WOs opened in range, now Complete — Mechanic` },
-    { label: 'Inspections', name: 'Inspections performed (M-Tech)', value: insp, card: 'shop', seg: 'inspections', col: '__daterange', navValue: 'range', tip: `${insp} inspections in range — M-Tech` },
+    { label: 'WOs Done', name: 'Work orders completed (Mechanic)', value: woDone, card: 'units', col: '__wop', navValue: 'Complete', tip: `${woDone} WOs opened in range, now Complete — Mechanic` },
+    { label: 'Inspections', name: 'Inspections performed (M-Tech)', value: insp, card: 'units', col: '__insprange', navValue: 'range', tip: `${insp} inspections in range — M-Tech` },
     { label: 'Delivered', name: 'Rentals put on rent (Driver/Yard)', value: delivered, card: 'rentals', col: '__rentrange', navValue: 'range', tip: `${delivered} rentals started in range that went out — Driver/Yard` },
     { label: 'Returned', name: 'Rentals returned (Driver/Yard)', value: returned, card: 'rentals', col: '__rentrange', navValue: 'range', tip: `${returned} rentals returned in range — Driver/Yard` },
     { label: 'Collected', name: 'Invoices collected (Office)', value: collected, card: 'invoices', col: 'invoice', navValue: 'Paid', tip: `${collected} invoices issued in range, paid in full — Office` },
@@ -12076,8 +12106,8 @@ const WR_OPERATIONS = {
   },
 };
 // "Bring them to it" (Jac) — jump the user to whatever Wrangler just touched, for EVERY board: grid cards
-// focus in place, shop types anchor a tab, back-office boards open their detail popup. Best-effort, never throws.
-const WR_SHOP_TYPES = new Set(['inspections', 'workOrders', 'serviceOrders']);
+// focus in place, WO/inspection/service records open their owning UNIT (via pillTo — Shop retirement),
+// back-office boards open their detail popup. Best-effort, never throws.
 const WR_BOARD_TYPES = new Set(['vendors', 'parts', 'expenses', 'files']);
 function wrFocusRecord(entity, id) {
   if (!entity || !id) return;
@@ -14114,7 +14144,7 @@ function onClick(e) {
   if (closest('.js-chat-send')) { e.stopPropagation(); return chatSend(); }
   if (closest('[data-chat-untag]')) { e.stopPropagation(); const id = closest('[data-chat-untag]').dataset.chatUntag; const c = activeChat(); if (c) c.tags = c.tags.filter((t) => t.id !== id); pushChatsSoon(); return render(); }
   if (closest('[data-chat-role]')) { e.stopPropagation(); return chatToggleRole(closest('[data-chat-role]').dataset.chatRole); }
-  if (closest('[data-chat-open]')) { e.stopPropagation(); const [card, recId] = closest('[data-chat-open]').dataset.chatOpen.split('|'); return anchorRecord(SHOP_TYPES.includes(card) ? 'shop' : card, recId, SHOP_TYPES.includes(card) ? card : null); }
+  if (closest('[data-chat-open]')) { e.stopPropagation(); const [card, recId] = closest('[data-chat-open]').dataset.chatOpen.split('|'); return SHOP_TYPES.includes(card) ? anchorRecord('units', unitOfShopRec(card, recId)) : anchorRecord(card, recId, null); }   // Shop retirement: chat flags on WO/insp/svc land on the owning unit
   if (closest('[data-team-open]')) { e.stopPropagation(); return openChat(closest('[data-team-open]').dataset.teamOpen); }   // §17 comms rail: open a team thread in its own tab
   if (closest('.js-fb-type')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'feedback') { const ta = document.querySelector('.overlay .js-fb-text'); if (ta) o.text = ta.value; o.fbType = closest('.js-fb-type').dataset.val; renderOverlay(); } return; }
   if (closest('.js-fb-shot-x')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'feedback') { const ta = document.querySelector('.overlay .js-fb-text'); if (ta) o.text = ta.value; o.shot = ''; renderOverlay(); } return; }
@@ -14476,7 +14506,7 @@ function onClick(e) {
     if (state.overlay?.kind === 'board') closeOverlay();   // a link pill inside the board popup navigates the grid — close the popup first
     const pc = pill.dataset.pillCard, prec = castId(pc, pill.dataset.pillRec);
     const psect = pill.dataset.sect;
-    const anchor = SHOP_TYPES.includes(pc) ? { card: 'shop', recId: prec, recType: pc } : { card: pc, recId: prec, recType: null };
+    const anchor = SHOP_TYPES.includes(pc) ? { card: 'units', recId: unitOfShopRec(pc, prec), recType: null } : { card: pc, recId: prec, recType: null };   // Shop retirement: WO/insp/svc pills anchor their owning unit
     return deferOrAnchor('pill:' + pc + ':' + prec, () => { pillTo(pc, prec); if (psect) scrollToSect(pc, psect); }, anchor);
   }
 
@@ -16489,7 +16519,7 @@ function startNewInspection(unitId) {
   const draft = { inspectionId: id, unitId: u.unitId, date: TODAY_ISO, wash: '', checklist: '', billCustomer: 'No', customerId: null, woId: null, photo: '', description: '', mock: true };
   DATA.inspections.push(draft); IDX.insp.set(id, draft); reindex('inspections', draft);
   logAction(draft, 'Inspection created');
-  anchorRecord('shop', id, 'inspections');
+  anchorRecord('units', u.unitId);   // Shop retirement: the unit detail's Inspection section drives the flow
   toast(`New inspection for ${u.name} — run Wash → Checklist.`);
 }
 function startNewWorkOrder(unitId) {
@@ -17762,14 +17792,15 @@ async function shareSession() {
     caption: tabs.length ? `Scan to open your ${tabs.length} open tab${tabs.length === 1 ? '' : 's'} on another device — sign in with the shared password.`
       : 'Scan to open Rental Wrangler on another device — sign in with the shared password.' });
 }
-// Shop roles (Mechanic / M.Tech) get the Shop card + its 3-bar graph as the landing view
-// — quick access to the crew's worklist. A default only; they can navigate anywhere after.
+// Shop roles (Mechanic / M.Tech) land on the UNITS card with the service lens open —
+// the stackbars worklist graph + Service-Due sort (Shop retirement, Jac 2026-07-07).
+// A default only; they can navigate anywhere after.
 function applyShopRoleLanding() {
   if (currentRole !== 'mechanic' && currentRole !== 'mtech') return;
   const s = activeSession(); if (!s) return;
-  if (s.cols) s.cols.left = 'shop';
-  const sc = s.cards.shop; if (sc) { sc.segment = 'all'; sc.graphView = true; sc.mode = 'list'; sc.recId = null; sc.recType = null; }
-  const li = COLUMNS.findIndex((c) => c.id === 'left'); if (li >= 0) state.mobileCol = li;   // phone: make the Shop column the active one
+  if (s.cols) s.cols.left = 'units';
+  const uc = s.cards.units; if (uc) { uc.graphView = true; uc.mode = 'list'; uc.recId = null; uc.recType = null; uc.sort = { field: 'countdown', dir: 'asc' }; }
+  const li = COLUMNS.findIndex((c) => c.id === 'left'); if (li >= 0) state.mobileCol = li;   // phone: make the Units column the active one
   render();
 }
 async function attemptLogin() {
@@ -17801,7 +17832,7 @@ async function attemptLogin() {
     sessionStorage.setItem('jactec.pw', pw);
     await loadFromBackend();
     finishLoad();
-    applyShopRoleLanding();   // shop roles (Mechanic / M.Tech) land on the Shop graph
+    applyShopRoleLanding();   // shop roles (Mechanic / M.Tech) land on the Units service lens
   } catch (e) {
     backendPassword = ''; sessionStorage.removeItem('jactec.pw'); sessionStorage.removeItem('jactec.role');
     renderLogin(/unauthorized/i.test(String(e && e.message)) ? 'That password wasn’t recognized.' : "Couldn't reach the database. Check your connection and try again.");
