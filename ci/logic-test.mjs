@@ -92,6 +92,13 @@ try {
     ok(T.rentalStatusDisplay({ units: [{ status: 'On Rent' }, { status: 'On Rent' }] }).mixed === false, 'uniform units → not mixed');
     const mix = T.rentalStatusDisplay({ startDate: today, units: [{ status: 'On Rent' }, { status: 'Reserved' }] });
     ok(mix.mixed === true && /On Rent/.test(mix.label) && /(Today|Reserved)/.test(mix.label), `divergent units → mix label ("${mix.label}")`);
+    // 4b) §10 overdue-out relabel (#509, approved by Jac): a unit still out ('On Rent'/'End
+    //     Rent') past its return date DISPLAYS "Overdue"; a future window keeps its word;
+    //     display-only, so the stored key is untouched.
+    ok(T.rentalStatusDisplay({ endDate: '2000-01-01', units: [{ status: 'On Rent' }] }).label === 'Overdue', 'On Rent past return date → "Overdue" label');
+    ok(T.rentalStatusDisplay({ endDate: '2000-01-01', units: [{ status: 'On Rent' }] }).key === 'On Rent', 'overdue relabel is display-only — stored key stays On Rent');
+    ok(T.rentalStatusDisplay({ endDate: '2099-01-01', units: [{ status: 'On Rent' }] }).label === 'On Rent', 'On Rent within window keeps "On Rent"');
+    ok(T.rentalStatusDisplay({ endDate: '2000-01-01', units: [{ status: 'End Rent' }] }).label === 'Overdue', 'End Rent past return date → "Overdue" label');
 
     // 5) rentalMirrorStatus — an active unit beats a terminal one (keeps ACTIVE_RENTAL true)
     ok(T.rentalMirrorStatus({ units: [{ status: 'Returned' }, { status: 'On Rent' }] }) === 'On Rent', 'mirror: active beats terminal');
