@@ -235,8 +235,12 @@ function messagesFor_(body, role, pw) {
   return { ok: true, messages: out };
 }
 
-// D5 dock threads — the thread LIST: one entry per customer with message history.
+// D5/D8 dock threads — the thread LIST: one entry per customer with message history.
 // Snippet only (80 chars of the last body); any signed-in role, same posture as sends.
+// D8 (2026-07-07, ADDITIVE — needs a redeploy): each thread also carries a per-CHANNEL
+// `channels` rollup ({ sms: {…}, email: {…} }) so the client can seat the same customer
+// as a conversation in BOTH the Texts and the Email rail categories. The v74 top-level
+// last* fields stay (the shipped client falls back to them when `channels` is absent).
 function commsThreads_(body, role) {
   var sh = messagesSheet_();
   var rows = sh.getLastRow() ? sh.getRange(1, 1, sh.getLastRow(), 2).getValues() : [];
@@ -245,9 +249,13 @@ function commsThreads_(body, role) {
     try {
       var m = JSON.parse(rows[i][1]);
       if (!m.customerId) continue;
-      var t = byCust[m.customerId] || (byCust[m.customerId] = { customerId: String(m.customerId), count: 0 });
+      var t = byCust[m.customerId] || (byCust[m.customerId] = { customerId: String(m.customerId), count: 0, channels: {} });
       t.count++;
       if (!t.lastWhen || String(m.when) > String(t.lastWhen)) { t.lastWhen = m.when; t.lastChannel = m.channel; t.lastDirection = m.direction; t.lastSnippet = String(m.body || '').slice(0, 80); t.lastStatus = m.status; }
+      var chKey = m.channel === 'email' ? 'email' : 'sms';
+      var ch = t.channels[chKey] || (t.channels[chKey] = { count: 0 });
+      ch.count++;
+      if (!ch.lastWhen || String(m.when) > String(ch.lastWhen)) { ch.lastWhen = m.when; ch.lastDirection = m.direction; ch.lastSnippet = String(m.body || '').slice(0, 80); ch.lastStatus = m.status; }
     } catch (e) {}
   }
   var out = Object.keys(byCust).map(function (k) { return byCust[k]; });

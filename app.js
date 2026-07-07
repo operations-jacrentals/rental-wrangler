@@ -2066,6 +2066,34 @@ function saveSort(card, sort) {
 // the entity-card a record belongs to (Shop holds 3 entity types via recType)
 const entityCardOf = (card, recType) => (card === 'shop' ? recType : card);
 
+/* ── D8 THE COMMS RAIL — per-device session persistence (spec comms D8).
+   { cat, sessions: { team|text|email|wrangler: { tabs:[customerId…], open:{id:true},
+   menuOpen } } }. Sessions persist like the item-tab rail (jactec.commsRail), but
+   `cat` is NEVER restored — login/boot = an EMPTY rail ("quiet start" is inherent;
+   nothing shows until the user reaches for a chip). */
+const COMMS_LS_KEY = 'jactec.commsRail';
+const COMMS_CATS = ['team', 'text', 'email', 'wrangler'];
+const commsFreshSessions = () => Object.fromEntries(COMMS_CATS.map((k) => [k, { tabs: [], open: {}, menuOpen: false }]));
+function loadCommsRail() {
+  const rail = { cat: null, sessions: commsFreshSessions() };
+  try {
+    const saved = JSON.parse(localStorage.getItem(COMMS_LS_KEY) || '{}');
+    COMMS_CATS.forEach((k) => {
+      const s = saved.sessions && saved.sessions[k]; if (!s) return;
+      rail.sessions[k] = { tabs: Array.isArray(s.tabs) ? s.tabs.map(String) : [], open: (s.open && typeof s.open === 'object') ? s.open : {}, menuOpen: !!s.menuOpen };
+    });
+  } catch (e) {}
+  return rail;
+}
+function saveCommsRail() { try { localStorage.setItem(COMMS_LS_KEY, JSON.stringify({ sessions: state.commsRail.sessions })); } catch (e) {} }
+/* 'Ended' conversations (spec D8: End ≠ delete — the server history persists forever;
+   the conversation just leaves the All list + rail). v1 is a CLIENT-side per-device
+   set of `customerId|channel` keys — the server-side ended flag is Phase B. */
+const COMMS_ENDED_KEY = 'jactec.commsEnded';
+function commsEndedSet() { try { return new Set(JSON.parse(localStorage.getItem(COMMS_ENDED_KEY) || '[]')); } catch (e) { return new Set(); } }
+function commsEnd(customerId, channel) { const s = commsEndedSet(); s.add(String(customerId) + '|' + channel); try { localStorage.setItem(COMMS_ENDED_KEY, JSON.stringify([...s])); } catch (e) {} }
+function commsUnend(customerId, channel) { const s = commsEndedSet(); if (s.delete(String(customerId) + '|' + channel)) { try { localStorage.setItem(COMMS_ENDED_KEY, JSON.stringify([...s])); } catch (e) {} } }
+
 const state = {
   data: DATA,
   theme: 'bluedsteel',   // Blued Steel is the only theme now — Yard mode removed (Jac 2026-06-15)
@@ -2095,6 +2123,7 @@ const state = {
   previewsOn: (() => { try { return localStorage.getItem('jactec.previewsOff') !== '1'; } catch (e) { return true; } })(),   // hover previews (per device)
   overbookOn: (() => { try { return localStorage.getItem('jactec.overbook') === '1'; } catch (e) { return false; } })(),   // §10 allow-overbooking policy (per device, default OFF — drag build)
   hapticsOff: (() => { try { return localStorage.getItem('jactec.hapticsOff') === '1'; } catch (e) { return false; } })(),   // §M-touch Vibration-API feedback (per device, default ON; Android-only, no-op on iOS)
+  commsRail: loadCommsRail(),   // D8 THE COMMS RAIL — { cat, sessions } per device; cat always null at boot (empty rail at login)
   wranglerRail: [],   // §18g the bottom-right rail of past Mr. Wrangler conversations (per device), each a snapshot { id, title, ts, card, recId, recType, reqNumber, reqTitle, reqUrl, messages }. Loaded async from IndexedDB (wranglerRailLoad) — IndexedDB replaced the localStorage rail that silently overflowed.
   settings: loadAdminSettings(),   // Settings Board admin customization (config.settings); mirrored to localStorage, applied at boot via applySettings()
 };
@@ -4605,7 +4634,11 @@ function openCtxMenu(e, hit) {
   m.className = 'ctx-menu'; m.id = 'rw-ctx';
   const item = (act, label) => `<button class="dd-item" data-ctx="${act}">${label}</button>`;
   const linkSec = linkItems.length ? linkItems.map((a) => `<button class="dd-item" data-ctx="link:${a.target}">${CARD_ICON[a.target] || ''}${esc(a.label)}</button>`).join('') + '<div class="menu-sep"></div>' : '';
-  m.innerHTML = linkSec + [
+  // D8 comms block — on a customer, Text… / Email… start (or resurrect) that
+  // conversation onto the rail. ('Ask Mr. Wrangler about…' rides D8 Phase B.)
+  const ctxCust = ctxRecord && ctxRecord.card === 'customers' ? recOf('customers', ctxRecord.recId) : null;
+  const commsSec = ctxCust ? `<button class="dd-item" data-ctx="commsText">${I.messageSquare}Text ${esc((ctxCust.firstName || fullName(ctxCust) || 'customer').trim().split(/\s+/)[0])}…</button><button class="dd-item" data-ctx="commsEmail">${I.mail}Email ${esc((ctxCust.firstName || fullName(ctxCust) || 'customer').trim().split(/\s+/)[0])}…</button><div class="menu-sep"></div>` : '';
+  m.innerHTML = commsSec + linkSec + [
     item('cut', '✂️ Cut'), item('copy', '📋 Copy'), item('paste', '📥 Paste'), item('clear', '🧹 Clear'),
     '<div class="menu-sep"></div>',
     item('search', '🔎 Search'), item('gsearch', '🌐 Global Search'), item('replace', '✏️ Replace'),
@@ -4665,6 +4698,11 @@ function runCtxAction(act) {
     else if (act === 'gv-sort') saveGvChrome(card, { sort: !gvSortHidden(card) });
     else if (act === 'gv-reset') saveGvChrome(card, { pills: false, sort: false });
     return render();
+  }
+  if (act === 'commsText' || act === 'commsEmail') {   // D8 — start/resume a customer conversation from the R20 menu
+    const rec = ctxRecord; closeCtxMenu(); document.removeEventListener('mousedown', ctxOutside); ctxRecord = null;
+    if (rec && rec.card === 'customers') commsOpenConv(act === 'commsText' ? 'text' : 'email', rec.recId);
+    return;
   }
   if (act.startsWith('link:')) {   // §17b — menu-driven linking
     const target = act.slice(5); const rec = ctxRecord;
@@ -6743,6 +6781,7 @@ const DETAIL = {
       ${activity}
       ${activeBar}
       ${account}
+      ${commsCustSectionHtml(c)}
       ${paymentMethodsSection(c)}
       ${notes.bottom}
       ${historySection('customers', c, cs)}
@@ -8147,12 +8186,11 @@ function bottomBarInner(opts = {}) {
   // rules 5/6: LEFT = labeled actions (icon LEADS label, no "+"), Wash joins them;
   // RIGHT (after divider) = icon-only utilities. The +New collapse button is dropped (Jac).
   return `
+    ${commsChipsHtml()}
     <button class="iconbtn js-newitem" data-new="receipt">${CARD_ICON.expenses}Receipt</button>
     <span class="bb-sep"></span>
     <button class="iconbtn js-qr" data-tip="Share session (QR)">${I.qr}</button>
     <button class="iconbtn${state.previewsOn ? '' : ' off'} js-previews" data-tip="${state.previewsOn ? 'Hover previews: on' : 'Hover previews: off'}">${state.previewsOn ? I.eye : I.eyeOff}</button>
-    <button class="iconbtn js-chat-toggle${state.chat.open ? ' on' : ''}" data-tip="New team chat — flagged comments + tagged context">${I.chat}${(() => { const n = chatUnreadCount(); return n ? `<span class="bb-badge">${n > 9 ? '9+' : n}</span>` : ''; })()}</button>
-    <button class="iconbtn js-wrangler" data-tip="New chat with Mr. Wrangler — ask the yard AI, or report a bug" style="font-size:16px">🤠</button>
     ${opts.noInbox ? '' : `<button class="iconbtn js-requests" data-tip="Requests for your OK — review what Mr. Wrangler filed">${I.inbox}${wranglerRequests.length ? `<span class="bb-badge">${wranglerRequests.length > 9 ? '9+' : wranglerRequests.length}</span>` : ''}</button>`}
     <button class="iconbtn js-hotkeys" data-tip="Mouse &amp; keyboard shortcuts">${I.mouse}</button>
     ${devUnlocked() ? `<button class="iconbtn js-lint${document.body.classList.contains('rw-lint') ? ' on' : ''}" data-tip="Design lint — flash anything that bypassed the UI builders (R0)">${I.eye}</button>
@@ -8187,6 +8225,11 @@ function commsUtilsEl() {
 // REPLACES the old Requests inbox on desktop; each opens ONLY its own thread
 // (data-wrc-needs / data-wrc-open / data-team-open).
 function commsRailEl() {
+  // D8 THE COMMS RAIL — a summoned Texts/Email session takes the rail (one category
+  // at a time; a sibling chip or a re-click sweeps it clean). // D8 Phase B: team
+  // threads + Mr. Wrangler chats migrate onto this same session-tab engine; until
+  // then they keep their existing tabs below and their chips bridge to the docks.
+  if (state.commsRail.cat === 'text' || state.commsRail.cat === 'email') return commsSessTabsHtml();
   const trim = (t, n = 24) => { t = String(t || '').replace(/\s+/g, ' ').trim(); return esc(t.length > n ? t.slice(0, n - 1) + '…' : t); };
   // ── 🤠 WRANGLER ── every open request is its own tab (the inbox lived here before)
   const reqStateKey = (rq) => { const L = rq.labels || []; return L.includes('wrangler-needs-jac') ? 'needs' : L.includes('wrangler-fix') ? 'building' : 'ok'; };
@@ -12967,6 +13010,7 @@ function render() {
   if (state.chat.open) { const d = el('div', 'chat-dock', ''); d.dataset.drop = 'chat'; d.innerHTML = chatDockEl(); $('#app').appendChild(d); }
   // §18 — Mr. Wrangler dock floats alongside the team chat (or alone at bottom-right)
   if (state.wrangler.open) { const d = el('div', 'wrangler-dock' + (state.chat.open ? ' wr-beside-chat' : '') + (state.wrangler.min ? ' wr-min' : '')); d.innerHTML = wranglerDockEl(); $('#app').appendChild(d); }
+  mountCommsPops();   // D8 comms rail — open Texts/Email windows float above their own tabs
   // §18e/§17 — the bell + Requests inbox now live in the bottom comms band (bb-utils),
   // always visible; the docks float above it. (The old floating fab-stack is retired.)
   mountTransportEditor();   // inline transport editor: mount the live map + wire the address field
@@ -13473,7 +13517,7 @@ function dropTargetAt(x, y, under) {
   if (!n || !n.closest) return null;
   if (n.closest('.winpicker-float, .overlay, .dropdown-menu, .ctx-menu')) return null;   // floaters are dead zones
   // §17 — dropping ANY dragged element into the team dock (or its launcher) tags it
-  const chatHit = n.closest('.chat-dock, .js-chat-toggle');
+  const chatHit = n.closest('.chat-dock, .js-comms-chip[data-cat="team"]');   // D8: the Team chip replaced the old js-chat-toggle launcher
   if (chatHit) return { chat: true, node: chatHit };
   if (DRAG.payload.chatEl) return null;                                  // a granular chat-element only drops on chat zones (pad/dock)
   const accept = DROP_MATRIX[DRAG.payload.entity] || {};
@@ -14055,7 +14099,6 @@ function onClick(e) {
   if (closest('.js-mtools')) { e.stopPropagation(); return openOverlay({ kind: 'tools' }); }   // §M1 phone footer → the global tool tray as a sheet
   if (closest('[data-gocard]')) { e.stopPropagation(); return goToCard(closest('[data-gocard]').dataset.gocard); }   // §M1 footer card-toggle bar → jump to that card
   if (closest('.js-ext-chat')) { e.stopPropagation(); return toast('External customer & vendor chats arrive with the messaging backend.'); }
-  if (closest('.js-chat-toggle')) { e.stopPropagation(); state.chat.open = !state.chat.open; return render(); }
   if (closest('.js-chat-close')) { e.stopPropagation(); state.chat.open = false; return render(); }
   if (closest('.js-chat-back')) { e.stopPropagation(); state.chat.activeId = null; return render(); }   // back to the all-flags overview (chat persists)
   if (closest('.js-chat-send')) { e.stopPropagation(); return chatSend(); }
@@ -14063,6 +14106,20 @@ function onClick(e) {
   if (closest('[data-chat-role]')) { e.stopPropagation(); return chatToggleRole(closest('[data-chat-role]').dataset.chatRole); }
   if (closest('[data-chat-open]')) { e.stopPropagation(); const [card, recId] = closest('[data-chat-open]').dataset.chatOpen.split('|'); return anchorRecord(SHOP_TYPES.includes(card) ? 'shop' : card, recId, SHOP_TYPES.includes(card) ? card : null); }
   if (closest('[data-team-open]')) { e.stopPropagation(); return openChat(closest('[data-team-open]').dataset.teamOpen); }   // §17 comms rail: open a team thread in its own tab
+  // D8 THE COMMS RAIL — toolbar chips · session tabs · Messenger windows · ALL menu
+  if (closest('.js-comms-chip')) { e.stopPropagation(); return commsToggleCat(closest('.js-comms-chip').dataset.cat); }
+  if (closest('[data-comms-hide]')) { e.stopPropagation(); return commsHideTab(closest('[data-comms-hide]').dataset.commsHide); }   // ✕ hides from the rail only — never ends
+  if (closest('.js-comms-all')) { e.stopPropagation(); const s = commsSess(); if (s) { s.menuOpen = !s.menuOpen; saveCommsRail(); } return render(); }
+  if (closest('.js-comms-menu-x')) { e.stopPropagation(); const s = commsSess(); if (s) { s.menuOpen = false; saveCommsRail(); } return render(); }
+  if (closest('[data-comms-tab]')) { e.stopPropagation(); return commsToggleTab(closest('[data-comms-tab]').dataset.commsTab); }
+  if (closest('.js-comms-end')) { e.stopPropagation(); return commsEndConv(closest('.js-comms-end').dataset.cust); }
+  if (closest('.js-comms-mopen')) { e.stopPropagation(); return commsOpenConv(state.commsRail.cat, closest('.js-comms-mopen').dataset.cust); }
+  if (closest('.js-comms-mend')) { e.stopPropagation(); return commsEndConv(closest('.js-comms-mend').dataset.cust); }
+  if (closest('.js-comms-send')) { e.stopPropagation(); return commsSend(closest('.js-comms-send').dataset.cust); }
+  if (closest('.js-comms-from')) { e.stopPropagation(); return commsFromMenu(closest('.js-comms-from')); }
+  if (closest('.js-comms-from-pick')) { e.stopPropagation(); const b = closest('.js-comms-from-pick'); commsFromSel.set(String(b.dataset.cust), b.dataset.from); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return render(); }
+  if (closest('.js-comms-copen')) { e.stopPropagation(); const b = closest('.js-comms-copen'); return commsOpenConv(commsCatOfChannel(b.dataset.channel), b.dataset.cust); }   // customer profile → Open
+  if (closest('.js-comms-cend')) { e.stopPropagation(); const b = closest('.js-comms-cend'); return commsEndConv(b.dataset.cust, commsCatOfChannel(b.dataset.channel)); }     // customer profile → End
   if (closest('.js-fb-type')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'feedback') { const ta = document.querySelector('.overlay .js-fb-text'); if (ta) o.text = ta.value; o.fbType = closest('.js-fb-type').dataset.val; renderOverlay(); } return; }
   if (closest('.js-fb-shot-x')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'feedback') { const ta = document.querySelector('.overlay .js-fb-text'); if (ta) o.text = ta.value; o.shot = ''; renderOverlay(); } return; }
   if (closest('[data-cmt-color]')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'comment') { const ta = document.querySelector('.overlay .js-cmt-text'); if (ta) o.text = ta.value; o.color = closest('[data-cmt-color]').dataset.cmtColor; renderOverlay(); } return; }
@@ -14078,7 +14135,6 @@ function onClick(e) {
   if (closest('.js-wr-kpi-lock')) { e.stopPropagation(); lockKpiFromWrangler(Number(closest('.js-wr-kpi-lock').dataset.mi)); return; }   // Mr. Wrangler locks in an authored KPI ring
   if (closest('.js-wr-unattach')) { e.stopPropagation(); const o = state.wrangler; if (o.open && o.attach) { o.attach.splice(Number(closest('.js-wr-unattach').dataset.i), 1); render(); } return; }   // §18d drop a pending image attachment
   if (closest('.js-wr-unfile')) { e.stopPropagation(); const o = state.wrangler; if (o.open && o.files) { o.files.splice(Number(closest('.js-wr-unfile').dataset.i), 1); render(); } return; }   // §18d drop a pending file attachment
-  if (closest('.js-wrangler')) { e.stopPropagation(); if (state.wrangler.open) { wranglerRailSnapshot(); state.wrangler.open = false; return render(); } return wranglerNewChat(); }   // §18 toggle Mr. Wrangler dock — opening always starts a fresh chat (the last one waits on the §18g rail)
   if (closest('.js-wrc-remove')) { e.stopPropagation(); return wrRailRemove(closest('.js-wrc-remove').dataset.wrcRm); }   // §18g rail: the × on a chat tab → REMOVE that conversation (not just close it)
   if (closest('[data-wrc-needs]')) { e.stopPropagation(); return openWranglerFromRequest(Number(closest('[data-wrc-needs]').dataset.wrcNeeds)); }   // §18g rail: a flashing "needs you" chat → reopen it seeded from the request
   if (closest('[data-wrc-open]')) { e.stopPropagation(); return wranglerRailOpen(closest('[data-wrc-open]').dataset.wrcOpen); }   // §18g rail: reopen a stored conversation
@@ -15196,6 +15252,7 @@ function onInput(e) {
   if (e.target.classList.contains('js-cmt-text')) { if (state.overlay?.kind === 'comment') state.overlay.text = e.target.value; return; }
   if (e.target.classList.contains('js-wr-in')) { if (state.wrangler.open) state.wrangler.draft = e.target.value; return; }
   if (e.target.classList.contains('chat-input')) { state.chat.draft = e.target.value; return; }
+  if (e.target.classList.contains('js-comms-in')) { commsDrafts.set(state.commsRail.cat + '|' + e.target.dataset.cust, e.target.value); return; }   // D8 window composer — draft survives re-renders
   // Company Files live search → re-render the board popup and restore the caret.
   if (e.target.classList.contains('js-files-query')) {
     if (state.overlay?.kind === 'board') { state.overlay.fileSearch = e.target.value; const sel = e.target.selectionStart; renderOverlay(); const q = document.querySelector('.js-files-query'); if (q) { q.focus(); q.setSelectionRange(sel, sel); } }
@@ -17614,6 +17671,7 @@ window.addEventListener('beforeunload', (e) => {
   e.preventDefault(); e.returnValue = '';
 });
 function renderLogin(msg) {
+  if (state.commsRail) { state.commsRail.cat = null; state.commsRail.sessions && Object.values(state.commsRail.sessions).forEach((s) => { s.menuOpen = false; }); }   // D8 — clock-in = an EMPTY rail (sessions persist per device, nothing summons itself)
   $('#app').innerHTML = `<div class="login-screen"><video id="login-video" class="login-video" src="assets/login-intro.mp4?v=20260702a" muted loop playsinline preload="auto" aria-hidden="true"></video><form class="login-box" id="login-form">
     <span class="rivet tl"></span><span class="rivet tr"></span><span class="rivet bl"></span><span class="rivet br"></span>
     <div class="login-plate">
@@ -17976,6 +18034,7 @@ function boot() {
     if (e.target.classList.contains('nc-in') && e.key === 'Enter' && e.target.tagName !== 'SELECT') { e.preventDefault(); return saveNewCustomer(); }
     if (e.target.classList.contains('js-wr-in') && e.key === 'Enter') { e.preventDefault(); return wranglerSend(); }   // §18
     if (e.target.classList.contains('chat-input') && e.key === 'Enter') { e.preventDefault(); return chatSend(); }
+    if (e.target.classList.contains('js-comms-in') && e.key === 'Enter') { e.preventDefault(); return commsSend(e.target.dataset.cust); }   // D8 — Enter fires the ignition Send
     // §M3 — one predictable back/dismiss chain (shared with the Android back button):
     // winpicker → overlay → Mr. Wrangler dock → team chat dock.
     if (e.key === 'Escape') dismissTopSheet();
@@ -18222,6 +18281,333 @@ async function reseedFromFile() {
     renderLogin('Reseed failed — live data unchanged.');
   }
 }
+/* ════════════════════════════════════════════════════════════════════════
+   APP-39 · D8 THE COMMS RAIL (spec comms-notifications D8, Jac 2026-07-07) —
+   the four-category comms surface on the bottom bar: Team · Texts · Email ·
+   Mr. Wrangler as glyph chips (bottom-left, saddle-stitch divider), each
+   summoning its category's LAST SESSION of conversation tabs onto the rail
+   (one category at a time; login = empty rail). Tabs pop Messenger-style
+   windows ABOVE their own tab; the dashed blue ALL tab lists every un-ended
+   conversation with Open / End. Texts + Email are LIVE (commsThreads /
+   messagesFor / sendCustomerMessage freeform — Phase 2a backend); Team and
+   Mr. Wrangler chips are Phase-A BRIDGES to their existing docks.
+   Open / End language everywhere — never "Close".
+   ════════════════════════════════════════════════════════════════════════ */
+const COMMS_CAT_META = {
+  team:     { label: 'Team',        icon: () => I.users,         channel: null,    tip: 'Team — the shop-floor chat' },
+  text:     { label: 'Texts',       icon: () => I.messageSquare, channel: 'sms',   tip: 'Texts — customer SMS threads' },
+  email:    { label: 'Email',       icon: () => I.mail,          channel: 'email', tip: 'Email — customer email threads' },
+  wrangler: { label: 'Mr. Wrangler', icon: () => I.lasso,        channel: null,    tip: 'Mr. Wrangler — ask the yard AI, or report a bug' },
+};
+const commsOnline = () => typeof backendPassword !== 'undefined' && !!backendPassword;
+const commsSess = () => (state.commsRail.cat ? state.commsRail.sessions[state.commsRail.cat] : null);
+const commsCatOfChannel = (channel) => (channel === 'email' ? 'email' : 'text');
+/* ── live thread data (Phase 2a backend) ─────────────────────────────────── */
+let commsThreads = null;            // [{ customerId, count, lastWhen, lastChannel, lastDirection, lastSnippet, lastStatus, channels? }]
+let commsThreadsAt = 0, commsThreadsLoading = false;
+function refreshCommsThreads(force) {
+  if (!commsOnline()) return;                       // demo/#local — chips render, sessions show the connect note
+  if (commsThreadsLoading || (!force && Date.now() - commsThreadsAt < 30000)) return;
+  commsThreadsLoading = true;
+  backendCall('commsThreads').then((r) => {
+    commsThreadsLoading = false;
+    if (r && r.ok && Array.isArray(r.threads)) { commsThreads = r.threads; commsThreadsAt = Date.now(); render(); }
+  }).catch(() => { commsThreadsLoading = false; });
+}
+/* A thread's presence in ONE channel. Backend ≥v75 sends a per-channel `channels`
+   rollup (the same customer can be a conversation in BOTH Texts and Email); the
+   v74 shape only carries the LAST message's channel — fall back to that. */
+function commsThreadChannel(t, channel) {
+  if (t && t.channels && typeof t.channels === 'object') return t.channels[channel] || null;
+  return t && t.lastChannel === channel ? t : null;
+}
+function commsThreadsFor(cat) {
+  const channel = COMMS_CAT_META[cat] && COMMS_CAT_META[cat].channel;
+  if (!channel || !commsThreads) return [];
+  const ended = commsEndedSet();
+  return commsThreads.filter((t) => commsThreadChannel(t, channel) && !ended.has(String(t.customerId) + '|' + channel));
+}
+/* Status grammar (registry semantics, spec D8): red = Unseen · yellow = Reply? ·
+   green = Replied. v1 has no inbound pipe yet, so: last outbound landed = green,
+   failed send = red. `lastDirection === 'inbound'` is already honored (red) so the
+   Phase-B inbound webhook flips statuses with no client change. */
+function commsConvStatus(t, channel) {
+  const ch = commsThreadChannel(t, channel);
+  if (!ch) return 'gray';                          // no history yet (fresh conversation off the R20 menu)
+  if (ch.lastDirection === 'inbound') return 'red';
+  return ch.lastStatus === 'failed' ? 'red' : 'green';
+}
+function commsCatWorst(cat) {
+  if (!COMMS_CAT_META[cat].channel) return null;   // Team / Mr. Wrangler: bridge chips carry no dot yet (D8 Phase B)
+  const list = commsThreadsFor(cat);
+  if (!list.length) return null;
+  const rank = { red: 0, yellow: 1, green: 2, gray: 3 };
+  let worst = null;
+  list.forEach((t) => { const s = commsConvStatus(t, COMMS_CAT_META[cat].channel); if (!worst || rank[s] < rank[worst]) worst = s; });
+  return worst === 'gray' ? null : worst;
+}
+/* ── per-customer thread messages (messagesFor — bodies + maskedTo + fromUsed) ── */
+const commsMsgs = new Map();        // customerId -> { loading, at, messages }
+function commsFetchMsgs(customerId, force) {
+  if (!commsOnline()) return null;
+  let entry = commsMsgs.get(String(customerId));
+  if (entry && (entry.loading || (!force && Date.now() - entry.at < 30000))) return entry;
+  entry = { loading: true, at: entry ? entry.at : 0, messages: entry ? entry.messages : null };
+  commsMsgs.set(String(customerId), entry);
+  backendCall('messagesFor', { customerId }).then((r) => {
+    entry.loading = false;
+    if (r && r.ok && Array.isArray(r.messages)) { entry.messages = r.messages; entry.at = Date.now(); render(); }
+  }).catch(() => { entry.loading = false; });
+  return entry;
+}
+const commsDrafts = new Map();      // `${cat}|${customerId}` -> composer draft (survives re-renders)
+const commsSending = new Set();     // in-flight send keys (disables the ignition)
+const commsFromSel = new Map();     // customerId -> chosen FROM alias (D7 picker)
+let commsAliasesKicked = false;
+function commsAliasesEnsure() {     // lazy one-shot alias fetch for the email FROM picker
+  if (commsAliasesKicked || !commsOnline()) return;
+  commsAliasesKicked = true;
+  commsAliasList().then((a) => { if (a && a.length) render(); });
+}
+/* ── the four toolbar chips (bottom-left, before the tool buttons) ────────── */
+function commsChipsHtml() {
+  const chip = (cat) => {
+    const meta = COMMS_CAT_META[cat];
+    const on = cat === 'team' ? state.chat.open : cat === 'wrangler' ? (state.wrangler.open && !state.wrangler.min) : state.commsRail.cat === cat;
+    const worst = commsCatWorst(cat);
+    const n = cat === 'team' ? chatUnreadCount() : 0;
+    return `<button class="iconbtn comms-chip js-comms-chip${on ? ' on' : ''}" data-cat="${cat}" data-tip="${esc(meta.tip)}" aria-pressed="${on}">${meta.icon()}${worst ? `<span class="cc-dot c-${worst}" aria-hidden="true"></span>` : ''}${n ? `<span class="bb-badge">${n > 9 ? '9+' : n}</span>` : ''}</button>`;
+  };
+  return `<span class="comms-chips" role="group" aria-label="Comms — Team, Texts, Email, Mr. Wrangler">${COMMS_CATS.map(chip).join('')}</span><span class="bb-sep bb-stitch" aria-hidden="true"></span>`;
+}
+/* ── the summoned session's tabs on the rail (ALL first, then conversations) ── */
+function commsSessTabsHtml() {
+  const cat = state.commsRail.cat, meta = COMMS_CAT_META[cat], sess = state.commsRail.sessions[cat];
+  if (!commsOnline()) return '<span class="crail-empty">Connect to the backend to wrangle customer threads.</span>';
+  const threads = commsThreadsFor(cat);
+  const byId = new Map(threads.map((t) => [String(t.customerId), t]));
+  const ended = commsEndedSet();
+  const all = `<button class="crail-tab comms-all js-comms-all${sess.menuOpen ? ' is-active' : ''}" role="tab" aria-selected="${sess.menuOpen}" data-tip="Every un-ended ${meta.label} conversation — Open / End"><span class="crail-t">All · ${threads.length}</span></button>`;
+  const tabs = sess.tabs.filter((id) => !ended.has(String(id) + '|' + meta.channel)).map((id) => {
+    const t = byId.get(String(id)) || null;
+    const c = IDX.customer.get(id);
+    const name = (c && fullName(c)) || String(id);
+    const st = commsConvStatus(t, meta.channel);
+    const open = !!sess.open[id];
+    return `<button class="crail-tab comms-tab st-${st}${open ? ' is-active' : ''}" data-comms-tab="${esc(id)}" role="tab" aria-selected="${open}" data-tip="${esc(name)} — ${open ? 'tuck the window away' : 'open the window'}"><span class="crail-t">${esc(name)}</span><span class="crail-x" data-comms-hide="${esc(id)}" role="button" aria-label="Hide from the rail — does NOT end it" data-tip="Hide from the rail — does NOT end it">×</span></button>`;
+  }).join('');
+  return `<div class="crail-group comms-group">${all}${tabs}</div>`;
+}
+/* ── Messenger-style conversation window (above its own tab) ─────────────── */
+function commsPopupHtml(cat, t, id) {
+  const meta = COMMS_CAT_META[cat];
+  const c = IDX.customer.get(id);
+  const name = (c && fullName(c)) || String(id);
+  const st = commsConvStatus(t, meta.channel);
+  const entry = commsFetchMsgs(id);
+  const msgs = ((entry && entry.messages) || []).filter((m) => m.channel === meta.channel)
+    .sort((a, b) => String(a.when || '').localeCompare(String(b.when || '')));
+  const stamp = (m) => { const d = m.when ? new Date(m.when) : null; return (d && !isNaN(d)) ? d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''; };
+  const rows = msgs.map((m) => {
+    const me = m.direction !== 'inbound';
+    const metaLine = me
+      ? [m.status === 'failed' ? '✕ Failed' : 'Sent', m.maskedTo || '', m.fromUsed ? 'from ' + m.fromUsed : '', stamp(m)].filter(Boolean).join(' · ')
+      : [name, stamp(m)].filter(Boolean).join(' · ');
+    return `<div class="cp-row${me ? ' me' : ''}"><div class="cp-cell"><div class="cp-bub${me ? ' me' : ''}${m.status === 'failed' ? ' failed' : ''}">${esc(m.body || m.subject || '(no text)')}</div><div class="cp-meta">${esc(metaLine)}</div></div></div>`;
+  }).join('') || `<div class="cp-empty">${entry && entry.loading ? 'Rounding up the thread…' : 'No messages yet — say the word.'}</div>`;
+  // D7 FROM picker — only for email, only when the shop has >1 connected alias
+  let fromRow = '';
+  if (meta.channel === 'email') {
+    commsAliasesEnsure();
+    const aliases = _commsAliases || [];
+    if (aliases.length > 1) {
+      const sel = commsFromSel.get(String(id)) || aliases[0];
+      fromRow = `<div class="cp-fromrow"><button class="cp-from js-comms-from" data-cust="${esc(id)}" data-tip="Which connected address this goes out as">from ${esc(sel)}${I.chev}</button></div>`;
+    }
+  }
+  const key = cat + '|' + id;
+  const sending = commsSending.has(key);
+  const first = ((c && (c.firstName || fullName(c))) || '').trim().split(/\s+/)[0] || 'them';
+  return `<div class="cp-cap" aria-hidden="true"></div>
+    <div class="cp-head"><span class="cp-dot c-${st}" aria-hidden="true"></span><span class="cp-cat">${esc(meta.label)}</span><span class="cp-who">${esc(name)}</span><span class="spacer"></span>${ghostPill('End', { js: 'js-comms-end', data: { cust: id }, tip: 'End the conversation — the history stays on the profile' })}</div>
+    <div class="cp-feed">${rows}</div>
+    ${fromRow}
+    <div class="cp-compose"><input class="cp-in js-comms-in" data-cust="${esc(id)}" placeholder="${meta.channel === 'sms' ? 'Text' : 'Email'} ${esc(first)}…" aria-label="Message ${esc(name)}" value="${esc(commsDrafts.get(key) || '')}" maxlength="600" /><button class="cp-send js-comms-send" data-cust="${esc(id)}"${sending ? ' disabled' : ''}>${sending ? 'Sending…' : 'Send'}</button></div>`;
+}
+/* ── the ALL menu: every un-ended conversation, Open / End per row ────────── */
+function commsMenuHtml(cat) {
+  const meta = COMMS_CAT_META[cat];
+  const rows = commsThreadsFor(cat).map((t) => {
+    const id = String(t.customerId), c = IDX.customer.get(id);
+    const st = commsConvStatus(t, meta.channel);
+    const ch = commsThreadChannel(t, meta.channel) || t;
+    const snip = (ch.lastDirection === 'inbound' ? 'them: ' : 'you: ') + (ch.lastSnippet || '');
+    return `<div class="cm-row"><span class="cp-dot c-${st}" aria-hidden="true"></span><span class="cm-who">${esc((c && fullName(c)) || id)}</span><span class="cm-snip">${esc(snip)}</span>${actionPill('commit', 'Open', { js: 'js-comms-mopen', h: 22, data: { cust: id } })}${ghostPill('End', { js: 'js-comms-mend', data: { cust: id }, tip: 'End it — the history stays on the profile' })}</div>`;
+  }).join('') || '<div class="cp-empty">Nothing on the line — right-click a customer to start one.</div>';
+  return `<div class="cp-cap" aria-hidden="true"></div>
+    <div class="cp-head"><span class="cp-cat">${esc(meta.label)}</span><span class="cp-who">Open &amp; un-ended</span><span class="spacer"></span><button class="cp-x js-comms-menu-x" aria-label="Tuck the list away" data-tip="Tuck away — nothing ends">${I.x}</button></div>
+    <div class="cp-feed cp-list">${rows}</div>`;
+}
+/* Mount the open windows ABOVE their own tabs (Messenger metaphor) — called at the
+   end of render() while a Texts/Email session is summoned. Desktop-only in Phase A
+   (phones have no rail; the D8 mobile bottom-sheet reflow rides Phase B). */
+function mountCommsPops() {
+  const cat = state.commsRail.cat;
+  if ((cat !== 'text' && cat !== 'email') || document.body.classList.contains('is-phone')) return;
+  const sess = state.commsRail.sessions[cat];
+  const bar = document.querySelector('.bottombar');
+  if (!bar) return;
+  const host = el('div', 'comms-pops');
+  $('#app').appendChild(host);
+  const bottom = Math.max(56, Math.round(window.innerHeight - bar.getBoundingClientRect().top) + 8);
+  let lastRight = 0;   // adjacent tabs would stack their windows — nudge each clear of the previous
+  const place = (node, anchor, w) => {
+    const r = anchor.getBoundingClientRect();
+    let left = Math.max(8, Math.min(r.left - 30, window.innerWidth - w - 8));
+    if (left < lastRight + 8) left = Math.min(lastRight + 8, window.innerWidth - w - 8);
+    lastRight = left + w;
+    node.style.left = left + 'px';
+    node.style.bottom = bottom + 'px';
+  };
+  const threads = commsThreadsFor(cat);
+  document.querySelectorAll('.comms-rail [data-comms-tab]').forEach((tb) => {
+    const id = tb.dataset.commsTab;
+    if (!sess.open[id]) return;
+    const t = threads.find((x) => String(x.customerId) === String(id)) || null;
+    const node = el('div', 'comms-pop');
+    node.innerHTML = commsPopupHtml(cat, t, id);
+    host.appendChild(node); place(node, tb, 300);
+    const feed = node.querySelector('.cp-feed'); if (feed) feed.scrollTop = feed.scrollHeight;
+  });
+  if (sess.menuOpen && commsOnline()) {
+    const at = document.querySelector('.comms-rail .js-comms-all');
+    if (at) { const node = el('div', 'comms-pop comms-menu'); node.innerHTML = commsMenuHtml(cat); host.appendChild(node); place(node, at, 340); }
+  }
+}
+/* ── actions ─────────────────────────────────────────────────────────────── */
+function commsToggleCat(cat) {
+  // D8 Phase B: team threads + Mr. Wrangler chats migrate onto this same session-tab
+  // engine; until then their chips BRIDGE to the existing docks (no rail session).
+  if (cat === 'team') { state.chat.open = !state.chat.open; return render(); }
+  if (cat === 'wrangler') {
+    if (state.wrangler.open) { wranglerRailSnapshot(); state.wrangler.open = false; return render(); }
+    return wranglerNewChat();
+  }
+  const rail = state.commsRail;
+  if (rail.cat === cat) rail.cat = null;                 // same chip again → sweep the rail clean
+  else { rail.cat = cat; refreshCommsThreads(); }        // summon the last session (tabs + open windows, per device)
+  saveCommsRail(); render();
+}
+function commsToggleTab(id) {
+  const s = commsSess(); if (!s) return;
+  if (s.open[id]) delete s.open[id];
+  else { s.open[id] = true; commsFetchMsgs(id); }
+  saveCommsRail(); render();
+}
+function commsHideTab(id) {   // the tab ✕ HIDES from the rail only — it never ends a conversation
+  const s = commsSess(); if (!s) return;
+  s.tabs = s.tabs.filter((x) => String(x) !== String(id));
+  delete s.open[id];
+  saveCommsRail(); render();
+}
+/* Open (or resurrect — conversations never really end) a customer conversation onto
+   the rail in the right category, window up. Entry: the R20 menu, the ALL list, and
+   the customer profile's Comms section. */
+function commsOpenConv(cat, customerId) {
+  const meta = COMMS_CAT_META[cat]; if (!meta || !meta.channel) return;
+  commsUnend(customerId, meta.channel);                  // any new open resurrects an ended thread (phone-contact model)
+  const rail = state.commsRail;
+  rail.cat = cat;
+  const s = rail.sessions[cat];
+  if (!s.tabs.some((x) => String(x) === String(customerId))) s.tabs.push(String(customerId));
+  s.open[String(customerId)] = true; s.menuOpen = false;
+  saveCommsRail(); refreshCommsThreads(); commsFetchMsgs(customerId); render();
+  if (!commsOnline()) toast('Connect to the backend to wrangle customer threads.');
+}
+function commsEndConv(customerId, cat) {
+  cat = cat || state.commsRail.cat;
+  const meta = COMMS_CAT_META[cat]; if (!meta || !meta.channel) return;
+  commsEnd(customerId, meta.channel);                    // client-side v1 — the server 'ended' flag is Phase B
+  const s = state.commsRail.sessions[cat];
+  s.tabs = s.tabs.filter((x) => String(x) !== String(customerId));
+  delete s.open[String(customerId)];
+  saveCommsRail(); render();
+  toast('Conversation ended — the history stays on the profile.');
+}
+function commsFromMenu(btn) {   // D7 — pick which connected address the email goes out as
+  const id = btn.dataset.cust, aliases = _commsAliases || [];
+  const sel = commsFromSel.get(String(id)) || aliases[0] || '';
+  openDropdown(btn, aliases.map((a) => `<button class="dd-item js-comms-from-pick${a === sel ? ' on' : ''}" data-cust="${esc(id)}" data-from="${esc(a)}">${esc(a)}</button>`).join(''), { align: 'left' });
+}
+async function commsSend(customerId) {
+  const cat = state.commsRail.cat;
+  const meta = COMMS_CAT_META[cat]; if (!meta || !meta.channel) return;
+  const key = cat + '|' + customerId;
+  const text = (commsDrafts.get(key) || '').trim();
+  if (!text || commsSending.has(key)) return;
+  if (!commsOnline()) { toast('Connect to the backend to wrangle customer threads.'); return; }
+  const cust = IDX.customer.get(customerId);
+  const from = meta.channel === 'email' ? (commsFromSel.get(String(customerId)) || ((_commsAliases || [])[0] || '')) : '';
+  commsSending.add(key); render();
+  let r; try { r = await backendCall('sendCustomerMessage', { channel: meta.channel, entity: 'customer', recId: customerId, customerId, template: 'freeform', text, from }); }
+  catch (e) { r = { ok: false, reason: 'network' }; }
+  commsSending.delete(key);
+  if (r && r.ok) {
+    commsDrafts.delete(key);
+    // optimistic feed + thread rollup; the next commsThreads poll re-truths it from the server log
+    const now = new Date().toISOString();
+    const entry = commsMsgs.get(String(customerId));
+    if (entry && Array.isArray(entry.messages)) entry.messages.push({ msgId: r.msgId, channel: meta.channel, direction: 'outbound', status: 'sent', when: now, body: text, maskedTo: r.maskedTo || '', fromUsed: r.fromUsed || '' });
+    if (commsThreads) {
+      let t = commsThreads.find((x) => String(x.customerId) === String(customerId));
+      if (!t) { t = { customerId: String(customerId), count: 0 }; commsThreads.push(t); }
+      t.count = (t.count || 0) + 1;
+      t.lastWhen = now; t.lastChannel = meta.channel; t.lastDirection = 'outbound'; t.lastSnippet = text.slice(0, 80); t.lastStatus = 'sent';
+      if (t.channels && t.channels[meta.channel]) { const ch = t.channels[meta.channel]; ch.lastWhen = now; ch.lastDirection = 'outbound'; ch.lastSnippet = text.slice(0, 80); ch.lastStatus = 'sent'; }
+      else if (t.channels) t.channels[meta.channel] = { lastWhen: now, lastDirection: 'outbound', lastSnippet: text.slice(0, 80), lastStatus: 'sent' };
+    }
+    if (cust) logAction(cust, `${meta.channel === 'sms' ? 'Texted' : 'Emailed'} ${r.maskedTo || 'customer'}`);   // History stays stamped, masked (spec Q-8b)
+    refreshCommsThreads(true);
+    haptic([12, 30, 12]);
+    render();
+    return;
+  }
+  render();
+  const why = {   // server refusal → say what's wrong and where to fix it (R19 voice)
+    'no-phone': 'No phone on file — add one on the account.',
+    'no-email': 'No email on file — add one on the account.',
+    'opted-out': `This customer has opted out of ${meta.channel === 'sms' ? 'texts' : 'email'} — hard stop.`,
+    'not-configured': 'SMS isn’t wired yet — Mocean keys go in the backend Script Properties.',
+    'cap': 'Daily send cap reached — raise SMS_DAILY_CAP if this run is legit.',
+    'quiet-hours': 'Quiet hours (8pm–8am) — the message can go out in the morning.',
+    'isolation': 'Record/customer mismatch — reload and try again.',
+    'provider': 'The send failed server-side — check the line and try again.',
+    'empty': 'Nothing to send — type a message first.',
+    'network': 'Couldn’t reach the backend — try again.',
+  }[r && r.reason] || 'Didn’t send — try again.';
+  toast(why);
+}
+/* ── customer profile: the compact Comms section (one row per channel) ────── */
+function commsCustSectionHtml(c) {
+  if (!commsOnline() || !c || !c.customerId) return '';
+  const entry = commsFetchMsgs(c.customerId);           // lazy fetch when the card opens; 30s cache per render cycle
+  const msgs = (entry && entry.messages) || [];
+  if (!msgs.length) return '';
+  const ended = commsEndedSet();
+  const row = (channel) => {
+    const list = msgs.filter((m) => m.channel === channel);
+    if (!list.length) return '';
+    const last = list.reduce((a, b) => (String(a.when || '') > String(b.when || '') ? a : b));
+    const me = last.direction !== 'inbound';
+    const st = me ? (last.status === 'failed' ? 'red' : 'green') : 'red';
+    const isEnded = ended.has(String(c.customerId) + '|' + channel);
+    return `<div class="kv comms-line"><span class="cp-dot c-${st}" aria-hidden="true"></span>${badge(channel === 'sms' ? 'Text' : 'Email', 'gray')}<span class="comms-snip">${esc((me ? 'you: ' : 'them: ') + (last.body || last.subject || ''))}</span>${actionPill('commit', 'Open', { js: 'js-comms-copen', h: 24, data: { cust: c.customerId, channel } })}${isEnded ? '' : ghostPill('End', { js: 'js-comms-cend', data: { cust: c.customerId, channel }, tip: 'End it — the history stays right here' })}</div>`;
+  };
+  const rows = row('sms') + row('email');
+  return rows ? `<div class="section comms-sec"><h4>Comms</h4><div class="fieldstack">${rows}</div></div>` : '';
+}
+
+
 boot();
 
 // expose for console/debugging + future DATA WIRING
