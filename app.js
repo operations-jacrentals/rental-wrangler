@@ -252,7 +252,7 @@ function rentalStatusDisplay(r) {
   const ss = rentalUnitStatuses(r);
   // COLOR is flag-driven (R/Y/G/gray, SPEC flag-color-system); the LABEL stays the
   // lifecycle status. Mixed-unit rentals keep the gray "mix" label + gray color.
-  if (ss.length <= 1) { const k = ss[0] || rentalDisplayStatus(r); const st = getStatus('rentalStatus', k); return { label: st.label, color: getEntityColor('rentals', r), key: k, mixed: false }; }
+  if (ss.length <= 1) { const k = ss[0] || rentalDisplayStatus(r); const st = getStatus('rentalStatus', k); const label = overdueOutStatus(k, r.endDate) ? 'Overdue' : st.label; return { label, color: getEntityColor('rentals', r), key: k, mixed: false }; }
   return { label: ss.join('/'), color: 'gray', key: null, mixed: true };
 }
 /* TERMINAL = the unit has reached an end state (Returned, or Cancelled/No Show —
@@ -1721,6 +1721,14 @@ let availWin = null;   // {start,end,time,selfId} set each render while the cale
 /* §20 physically-OUT statuses — the machine is in the customer's hands until it's
    Returned (Reserved/Today/Tomorrow = not yet picked up; Returned = back in the yard). */
 const OUT_RENTAL_STATUSES = new Set(['On Rent', 'End Rent', 'Off Rent']);
+/* §10 Overdue-out DISPLAY relabel (#509, approved by Jac): a unit still physically out
+   and reading On Rent / End Rent past its scheduled return DISPLAYS "Overdue" instead of
+   the stale lifecycle word. DISPLAY-ONLY — the STORED status is untouched (statuses are
+   user-selected, and the unit must stay "out" for availability/billing/transport). This
+   mirrors the start-side No-Show derivation (a Reserved rental whose start passed reads
+   "No Show") and rides on top of the #481 'off-rent-overdue' red flag/color. */
+const overdueOutStatus = (statusKey, endDate) =>
+  (statusKey === 'On Rent' || statusKey === 'End Rent') && !!endDate && endDate < TODAY_ISO;
 function rentalOverlaps(r, selS, selE, endISO) {
   const rs = parseISO(r.startDate), re = parseISO(endISO || r.endDate);
   if (!rs || !re || !selS || !selE) return false;
@@ -4951,8 +4959,19 @@ function unitPrimaryState(u) {
   if (ar) {   // tied to a rental → stage + window dates
     const win = cardWindow(ar.startDate, ar.endDate);
     const failed = u.inspectionStatus === 'Failed';
-    const status = failed ? 'Field Call' : rentalDisplayStatus(ar);   // breakdown mid-rental = field call, not "Failed"
-    return { label: win ? `${status} · ${win}` : status, color: (failed || unitOverbooked(u.unitId)) ? 'red' : insp.color };
+    let status = failed ? 'Field Call' : rentalDisplayStatus(ar);   // breakdown mid-rental = field call, not "Failed"
+    // §10 Overdue Return (#509) — an out unit whose scheduled return has passed reads RED
+    // and its pill word flips to "Overdue" (approved by Jac), mirroring the rental-entity
+    // flag #481 added (FLAG_COND 'off-rent-overdue') and the availability engine's per-unit
+    // overdue-out test (rentalsOverlappingUnit). Without this the unit's headline pill stayed
+    // inspection-color green reading "On Rent" while its rental card already showed overdue —
+    // the same "still ON RENT after the return date" gap, on the unit side. Stored status is
+    // untouched (display-only relabel, per overdueOutStatus).
+    const eu = unitEntry(ar, u.unitId);
+    const euStatus = eu ? unitStatus(ar, eu) : ar.status;
+    const overdueOut = OUT_RENTAL_STATUSES.has(euStatus) && !!ar.endDate && ar.endDate < TODAY_ISO;
+    if (!failed && overdueOutStatus(euStatus, ar.endDate)) status = 'Overdue';
+    return { label: win ? `${status} · ${win}` : status, color: (failed || unitOverbooked(u.unitId) || overdueOut) ? 'red' : insp.color };
   }
   if (u.inspectionStatus === 'Failed') return { label: 'Failed', color: 'red' };
   if (u.inspectionStatus === 'Not Ready') return { label: 'Not Ready', color: 'yellow' };
