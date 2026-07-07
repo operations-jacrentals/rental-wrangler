@@ -1455,6 +1455,21 @@ select.lf-in { appearance: none; cursor: pointer; }
 .comms-sec .comms-line .pill { flex: 0 0 auto; }
 .comms-sec .comms-snip { flex: 1 1 auto; min-width: 0; color: var(--txt-2); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .comms-chip:focus-visible, .cp-x:focus-visible, .cp-from:focus-visible, .cp-send:focus-visible, .cp-in:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* ── D9 — Team + Mr. Wrangler windows on the rail (their docks are phone-only now).
+   The window reuses each dock's INNER classes verbatim (the machinery's selectors),
+   so the rules here only re-fit the shell: sizing, and the team "mine" bubble riding
+   blue (the orange them-bubble pair stays reserved for CUSTOMER conversations). */
+.comms-pop.team-pop { width: 340px; max-height: min(480px, 60dvh); }
+.comms-pop .chat-rail { padding: 8px 10px; }
+.comms-pop .chat-feed { padding: 10px 11px; gap: 9px; min-height: 110px; }
+.comms-pop .cbub.me { background: var(--bub-me); color: var(--on-bub-me); font-weight: 500; }
+.comms-pop.wrangler-dock { right: auto; width: 380px; max-height: min(520px, 62dvh); z-index: auto;
+  background: linear-gradient(180deg, var(--panel-2), var(--panel)); box-shadow: var(--shadow); }   /* rail windows follow the theme — the always-dark plate stays a DOCK (phone) trait */
+.comms-pop .wr-feed { padding: 12px 13px; min-height: 110px; }
+/* neutral them-bubbles token up inside the rail windows (the docks hardcode #232c37 on their dark plates) */
+.comms-pop .cbub, .comms-pop .wr-msg.assistant .wr-bub { background: var(--bg-2); color: var(--txt); border: 1px solid var(--line); }
+.comms-pop .cbub.me { border: none; }
+.cm-row.cm-new { justify-content: center; border-bottom: none; padding: 9px 10px; }
 
 /* §17 INTERNAL TEAM DOCK (Jac, Phase 7) — headerless: tagged-element pill rail on top,
    chat bubbles, role tab-bar at the bottom. Floats bottom-right. Yard data-plate steel. */

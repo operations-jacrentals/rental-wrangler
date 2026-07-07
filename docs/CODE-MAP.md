@@ -212,15 +212,17 @@ that is the real database.*
   client: load on sign-in, debounced save, snapshots. `BACKEND_URL`,
   `backendCall`, `loadFromBackend`, `dataSnapshot`, `PERSIST_KEYS`. _Debug here
   when:_ data won't save/load or the password gate fails.
-- **`APP-39 · D8 The Comms Rail** — the four-category comms surface on the
-  bottom bar (spec `comms-notifications.md` D8): the Team · Texts · Email ·
-  Mr. Wrangler toolbar chips, per-device session tabs (`state.commsRail`,
-  `jactec.commsRail`), Messenger-style windows above their own tabs, the ALL
-  menu, freeform sends (`commsSend` → `sendCustomerMessage`), the R20 Text…/
-  Email… entries, and the customer-profile Comms section
-  (`commsCustSectionHtml`). Team/Wrangler chips are Phase-A bridges to the
-  APP-23/APP-28 docks. _Debug here when:_ a chip, rail tab, comms window, or
-  customer thread misbehaves.
+- **`APP-39 · D8/D9 The Comms Rail** — the four-category comms surface on the
+  bottom bar (spec `comms-notifications.md` D8 + D9): the Team · Texts · Email ·
+  Mr. Wrangler toolbar chips (each wearing its category's worst status dot),
+  per-device session tabs (`state.commsRail`, `jactec.commsRail`), the SINGLE
+  open conversation window above its own tab (D9 single-open law — `lastOpen`),
+  the ALL menu (Open / End / + New chat), freeform sends (`commsSend` →
+  `sendCustomerMessage`), the R20 Text…/Email… entries, and the customer-profile
+  Comms section (`commsCustSectionHtml`). Team and Mr. Wrangler are LIVE rail
+  sessions riding the APP-23 chat store and the APP-28 wrangler machinery — the
+  old docks survive as phone-only bottom sheets. _Debug here when:_ a chip, rail
+  tab, comms window, or customer thread misbehaves.
 
 ---
 
