@@ -26,7 +26,7 @@ import { CATEGORY_ANIM } from './icons-anim.js';
 import {
   getStatus, STATUS, ROLES, ROLE_TIERS, tierRank, BUILTIN_ROLE_TIERS, GRID_CARDS, BACKOFFICE_BOARDS, SORT_FIELDS,
   SHOP_TYPES, SHOP_SEGMENTS, COLUMNS, COLUMN_OF,
-  legacyTransportPrice, computeTransportPrice, isFueledType, legsForType, YARD_ORIGIN, GOOGLE_MAPS_KEY,
+  legacyTransportPrice, computeTransportPrice, isFueledType, legsForType, YARD_ORIGIN, GOOGLE_MAPS_KEY, GPS_BACKEND_URL,
   fmtWindow, fmtShortDate, showsTruck, parseISO, TODAY_ISO, invoiceShort, TRANSPORT_MAP,
   FLAG_META, FLAG_SEVERITY_RANK, INSURANCE_COVERAGE_TYPES,
 } from './config.js';
@@ -5146,8 +5146,11 @@ const FLAG_SEV = { red: 2, yellow: 1, gray: 0 };
 function unitCardFlags(u) {
   const f = [];
   if (unitOverbooked(u.unitId)) f.push({ label: 'Overbooked', color: 'red', alert: true });
-  if (u.gpsStatus === 'Not Reporting') f.push({ label: 'No GPS', color: 'red' });
-  else if (u.gpsStatus === 'Verify') f.push({ label: 'GPS?', color: 'yellow' });
+  const gsFlag = unitGpsStatus(u);   // live-derived (falls back to stored) — §5 step 3
+  if (gsFlag) {
+    if (gsFlag.status === 'Not Reporting') f.push({ label: 'No GPS', color: 'red' });
+    else if (gsFlag.status === 'Verify') f.push({ label: 'GPS?', color: 'yellow' });
+  }
   if (u.fleetStatus && u.fleetStatus !== 'Active') { const fs = getStatus('unitFleetStatus', u.fleetStatus); f.push({ label: fs.label, color: fs.color }); }
   // The border now mirrors the two pills, so surface the warnings the pills DON'T show
   // (Jac 2026-07-01): a due/past-due SERVICE that an open WO is hiding in pill 2, and a
@@ -6419,10 +6422,31 @@ const DETAIL = {
       ${efld('units', u, 'unitId', 'weight', 'Weight')}
       <div class="kv"><span class="v inline-edit" data-edit="unitHours" data-rec="${u.unitId}">${num(u.currentHours)} HRS</span></div>
     </div></div>`;
+    // GPS connect wizard (spec §5a) — mapping now happens through a guided popup
+    // (provider → identify → confirmed live signal) instead of hand-typing gpsProvider/
+    // gpsDeviceId; the "No GPS" badge grows a +Connect add, an already-mapped unit gets
+    // a quiet Reconnect affordance beside its provider · device-id.
+    const gpsMapped = !!(u.gpsProvider && u.gpsDeviceId);
+    const gsUnit = unitGpsStatus(u);   // live-derived status (§5 step 3); null = untracked
+    const gpsStale = gsUnit && !gsUnit.live && gpsMapped;   // backend unreachable → showing last-known
+    // §5 step 4 — enriched, on-open live detail from the fleet snapshot (last seen + map +
+    // engine). Only when we have LIVE data for this unit; the 30s view poll keeps it fresh.
+    const gpsM = (gsUnit && gsUnit.live) ? gsUnit.machine : null;
+    const gpsMapHref = (gpsM && gpsM.lat != null && gpsM.lng != null) ? `https://www.google.com/maps?q=${gpsM.lat},${gpsM.lng}` : '';
+    const gpsSeen = gpsM ? gpsRelTime(gpsM.lastSeen) : '';
     const gps = `<div class="section"><h4>GPS</h4><div class="fieldstack">
-      ${kvPills(u.gpsStatus ? statusPill('gpsStatus', u.gpsStatus, { focal: true }) : badge('No GPS'))}
+      ${kvPills((gsUnit ? statusPill('gpsStatus', gsUnit.status, { focal: true }) : badge('No GPS')) + (gpsMapped ? '' : addBtn('Connect GPS', { link: true, js: 'js-gps-connect', data: { rec: u.unitId } })))}
+      ${gpsStale ? `<div class="kv" style="justify-content:center"><span class="muted" style="font-size:11px">Last known — live link down</span></div>` : ''}
+      ${gpsM ? `<div class="kv" style="justify-content:center;gap:8px;flex-wrap:wrap">
+        ${gpsSeen ? `<span class="muted" style="font-size:11px">Last seen ${esc(gpsSeen)}</span>` : ''}
+        ${gpsMapHref ? `<a class="gps-maplink" href="${gpsMapHref}" target="_blank" rel="noopener">${esc(gpsM.address || 'View on map')}</a>` : ''}
+        ${badge(gpsM.engineOn ? 'Engine On' : 'Engine Off', gpsM.engineOn ? 'green' : 'gray')}
+      </div>` : ''}
+      ${gpsMapped ? `<div class="kv"><span class="v muted" style="font-size:11px">${esc(u.gpsProvider)} · ${esc(u.gpsDeviceId)}</span>${ghostPill('Reconnect', { js: 'js-gps-connect', data: { rec: u.unitId } })}</div>` : ''}
       ${efld('units', u, 'unitId', 'gpsType', 'GPS unit/type')}
       ${efld('units', u, 'unitId', 'gpsPlacement', 'Placement')}
+      ${gpsShutdownControl(u, gpsM)}
+      ${gpsMapped ? gpsFeedHtml(u) : ''}
     </div></div>`;
     /* COVERAGE — the yard's own equipment insurance on this unit (spec equipment-insurance
        Phase 1, Jac 2026-06-29). STATUS + riders are open to every role (a driver must know a
@@ -7850,7 +7874,7 @@ function legacyKpiPct(roleId) {
     const scheduled = R.filter((r) => !['Quote', 'Cancelled', 'No Show'].includes(r.status)).length;
     const washes = N.filter((n) => n.wash === 'Yes').length;
     const washReq = N.filter((n) => n.wash === 'Yes' || n.wash === 'No').length;
-    return [pctOf(delivered, scheduled), pctOf(washes, washReq), null];        // Driving Score = GPS backend
+    return [pctOf(delivered, scheduled), pctOf(washes, washReq), drivingScoreValue()];   // Driving Score = fleet Bouncie safety score (null until loaded)
   }
   if (roleId === 'office') {
     const billed = INV.reduce((a, i) => a + invoiceTotals(i).total, 0);
@@ -7884,7 +7908,7 @@ const KPI_HELP = {
   'WO Rate (20% goal)':     'Progress toward the goal: 20% of the last 30 days’ inspections spawning a work order is healthy (catching problems). Full ring at 20%.',
   'On-Time':                'Rentals you actually delivered/handled ÷ rentals scheduled (excludes quotes, cancels, no-shows).',
   'Wash Completion':        'Of the units flagged for a wash, how many got washed (washed ÷ wash-requested).',
-  'Driving Score':          'Driving-safety score from the GPS backend — placeholder until that’s connected.',
+  'Driving Score':          'Fleet driving-safety score from Bouncie truck trips (hard braking/acceleration per mile + speeding) over the last few weeks — a team metric, 100 = clean. Blank until trips load or if no trucks report.',
   'Invoice Collection Rate':'Of all money invoiced, how much you’ve collected (dollars collected ÷ dollars billed).',
   'Show Rate':              'Of customers who reserved, how many actually showed up (not a No-Show).',
   'Reputation':             'Reputation score from customer email reviews — placeholder until the email backend is connected.',
@@ -8031,7 +8055,7 @@ function legacyKpiRaw(roleId) {
   const c = (v) => ({ v, unit: '' }), usd = (v) => ({ v, unit: '$' });
   if (roleId === 'mechanic') return [c(f.Ready + f['Not Ready']), c(W.filter((w) => w.phase === 'Complete').length), c(W.filter((w) => (w.lineItems || []).some((li) => (li.cost || 0) > 0 || (li.hours || 0) > 0) && w.billCustomer === 'Yes').length)];
   if (roleId === 'mtech') return [c(R.length - R.filter((r) => r.fieldCall).length), c(f.Ready), c(N.filter((n) => !n.woId).length)];
-  if (roleId === 'driver') return [c(R.filter((r) => ['On Rent', 'End Rent', 'Off Rent', 'Returned'].includes(r.status)).length), c(N.filter((n) => n.wash === 'Yes').length), c(0)];
+  if (roleId === 'driver') return [c(R.filter((r) => ['On Rent', 'End Rent', 'Off Rent', 'Returned'].includes(r.status)).length), c(N.filter((n) => n.wash === 'Yes').length), c(drivingScoreValue() || 0)];
   if (roleId === 'office') return [usd(INV.reduce((a, i) => a + invoiceTotals(i).paid - (Number(i.refundedAmount) || 0), 0)), c(R.filter((r) => ['On Rent', 'End Rent', 'Off Rent', 'Returned'].includes(r.status)).length), c(0)];
   if (roleId === 'sales') {
     const ym = TODAY_ISO.slice(0, 7);
@@ -10205,6 +10229,78 @@ function buildPopupEl(o, overlay, opts = {}) {
       foot: `${ghostPill('Cancel', { js: 'js-close' })}${actionPill(isMoney ? 'money' : 'commit', isMoney ? 'Confirm — bill it' : 'Confirm', { js: 'js-link-confirm' })}`,
     });
     overlay.appendChild(pop);
+  } else if (o.kind === 'gpsConnect') {
+    // §5a — the connect-a-device wizard: provider → identify the device → live
+    // first-contact poll → save. gpsProvider/gpsDeviceId are written to the unit ONLY
+    // once contact is confirmed (or an explicit "Save anyway" override) — never a
+    // hand-typed, unverified mapping. State lives on the overlay (o.step/o.provider/…);
+    // the async pieces (device-list load, the poll loop, the write) are gpsConnectLoadDevices
+    // / gpsConnectStartPoll+gpsConnectPollTick / gpsConnectSave, just above the GPS client.
+    const u = IDX.unit.get(o.unitId);
+    if (!u) { return false; }
+    o.step = o.step || 'provider'; o.provider = o.provider || 'Hapn';
+    const stepNum = { provider: 1, identify: 2, poll: 3 }[o.step] || 1;
+    const stepLbl = o.step === 'identify' ? (o.provider === 'Hapn' ? 'Identify the tracker' : 'Pick the machine') : (o.step === 'poll' ? 'Confirm signal' : 'Provider');
+    let body, foot;
+
+    if (o.step === 'provider') {
+      body = `
+        <div class="kpi-cap" style="margin-bottom:9px">${stepNum} · ${esc(stepLbl)}</div>
+        ${segCtl(GPS_PROVIDERS.map((p) => ({ label: p, js: 'js-gps-provider', data: { val: p }, on: o.provider === p ? 'orange' : '' })))}
+        <p class="set-note" style="margin-top:10px">${o.provider === 'Hapn'
+          ? 'Wrangle in a tracker by IMEI — read it off the hardware. It must already be activated on the Hapn account.'
+          : `Round up a machine already authorized on the ${esc(o.provider)} account — nothing to activate here.`}</p>`;
+      foot = `${ghostPill('Cancel', { js: 'js-close' })}${actionPill('commit', 'Continue', { js: 'js-gps-continue' })}`;
+    } else if (o.step === 'identify' && o.provider === 'Hapn') {
+      body = `
+        <div class="kpi-cap" style="margin-bottom:9px">${stepNum} · ${esc(stepLbl)}</div>
+        <input class="lf-in js-gps-imei-input" style="width:100%" placeholder="Tracker IMEI" value="${esc(o.imei || '')}">
+        <p class="set-note" style="margin-top:8px">Printed on the tracker — a technician reads it off the hardware.</p>`;
+      foot = `${ghostPill('Back', { js: 'js-gps-back' })}${actionPill('commit', 'Continue', { js: 'js-gps-identify-continue' })}`;
+    } else if (o.step === 'identify') {
+      const q = (o.deviceQuery || '').trim().toLowerCase();
+      const all = o.devices || [];
+      const list = q ? all.filter((raw) => `${gpsRawDeviceLabel(o.provider, raw)} ${gpsRawDeviceSub(o.provider, raw)}`.toLowerCase().includes(q)) : all;
+      const rows = list.map((raw) => {
+        const id = gpsRawDeviceId(o.provider, raw), label = gpsRawDeviceLabel(o.provider, raw), sub = gpsRawDeviceSub(o.provider, raw);
+        return `<button type="button" class="gps-dev-row js-gps-device-pick" data-r="R2" data-devid="${esc(id)}" data-devlabel="${esc(label)}">${CARD_ICON.units}<span class="gdr-name">${esc(label)}</span>${sub ? `<span class="gdr-sub">${esc(sub)}</span>` : ''}</button>`;
+      }).join('');
+      body = `
+        <div class="kpi-cap" style="margin-bottom:9px">${stepNum} · ${esc(stepLbl)}</div>
+        <div class="bv-searchwrap" style="width:100%;margin:0 0 10px"><span class="s-icon">${I.search}</span><input class="bv-query js-gps-search" placeholder="Search ${esc(o.provider)} machines…" value="${esc(o.deviceQuery || '')}"></div>
+        ${o.devicesLoading ? `<div class="set-loading" style="min-height:140px"><div class="set-loading-bar" aria-hidden="true"></div><div class="set-loading-lbl">Rounding up ${esc(o.provider)} machines…</div></div>`
+          : o.devicesError ? `<p class="set-err" style="text-align:left">${esc(o.devicesError)}</p>`
+          : list.length ? `<div class="gps-dev-list">${rows}</div>`
+          : `<p class="muted" style="font-size:12px">No ${q ? 'matching' : 'authorized'} machines${q ? ` for “${esc(o.deviceQuery)}”` : ' on this account yet'}.</p>`}`;
+      foot = ghostPill('Back', { js: 'js-gps-back' });
+    } else {   // 'poll' — the live first-contact confirmation (§5a step 3)
+      const UI = {
+        waiting:   { color: 'yellow', icon: I.search, label: 'Waiting for signal…' },
+        seen:      { color: 'yellow', icon: I.search, label: 'Device seen — confirming…' },
+        reporting: { color: 'green',  icon: '✓',       label: 'Reporting' },
+        timeout:   { color: 'red',    icon: I.alert,   label: 'Not responding yet' },
+      }[o.pollState] || { color: 'yellow', icon: I.search, label: 'Waiting for signal…' };
+      const sub = o.pollState === 'reporting' ? 'Live contact confirmed — ready to save.'
+        : o.pollState === 'timeout' ? 'Check the tracker’s power/signal — Save anyway if it may just be catching up.'
+        : `Attempt ${o.pollAttempt || 0} of ${o.pollMax || 8}`;
+      body = `
+        <div class="kpi-cap" style="margin-bottom:9px">${stepNum} · ${esc(stepLbl)}</div>
+        <div class="set-loading" style="min-height:160px">
+          <span class="gps-poll-ic c-${UI.color}">${UI.icon}</span>
+          ${(o.pollState === 'waiting' || o.pollState === 'seen') ? '<div class="set-loading-bar" aria-hidden="true"></div>' : ''}
+          <div class="set-loading-lbl">${esc(UI.label)}</div>
+          <p class="set-note">${esc(sub)}</p>
+        </div>`;
+      foot = o.pollState === 'reporting'
+        ? `${ghostPill('Back', { js: 'js-gps-back' })}${actionPill('commit', 'Save', { js: 'js-gps-save' })}`
+        : o.pollState === 'timeout'
+          ? `${ghostPill('Back', { js: 'js-gps-back' })}${ghostPill('Try again', { js: 'js-gps-poll-retry' })}${actionPill('danger', 'Save anyway', { js: 'js-gps-save-anyway' })}`
+          : ghostPill('Cancel', { js: 'js-close' });
+    }
+
+    const pop = el('div', 'popup'); pop.style.width = '400px';
+    pop.innerHTML = popupShell({ icon: CARD_ICON.units || '', title: 'Connect GPS Device', tag: `Unit · GPS · ${u.name}`, body, foot });
+    overlay.appendChild(pop);
   } else if (o.kind === 'rulebook') {
     // THE VISUAL RULEBOOK (SPEC v8) — every example is emitted by the REAL
     // builder, so this reference can never drift from the code.
@@ -11007,6 +11103,7 @@ const WINDOW_CATALOG = [
   { kind: 'migrateUnits',  label: 'Round up missing units',  tag: 'Units · migrate',          sample: () => ({ plan: [{ name: 'Sample Unit', action: 'create', unitId: 'U000', categoryId: ((DATA.categories || [])[0] || {}).categoryId, count: 1 }] }) },
   { kind: 'comment',       label: 'Comment note',            tag: 'Note · comment',           sample: () => ({ card: 'units', recId: ((DATA.units || [])[0] || {}).unitId, recType: null, color: 'yellow' }) },
   { kind: 'linkConfirm',   label: 'Confirm link',            tag: 'Link · confirm',           sample: () => ({ srcCard: 'rentals', srcId: ((DATA.rentals || [])[0] || {}).rentalId, targetCard: 'invoices', targetId: ((DATA.invoices || [])[0] || {}).invoiceId }) },
+  { kind: 'gpsConnect',    label: 'Connect GPS device',      tag: 'Unit · GPS',                sample: () => ({ unitId: ((DATA.units || [])[0] || {}).unitId, step: 'provider', provider: 'Hapn' }) },
   { kind: 'rulebook',      label: 'The R-Rulebook',          tag: 'SPEC v8 · design system',  sample: () => ({}) },
   { kind: 'partform',      label: 'Add / Edit Part · Task',  tag: 'Work order · line',         sample: () => ({ woId: ((DATA.workOrders || [])[0] || {}).woId }) },
   { kind: 'receiptform',   label: 'New / Edit Receipt',      tag: 'Expense · receipt',         sample: () => ({}) },
@@ -12409,7 +12506,7 @@ function setupSignaturePad() {
     cv.addEventListener('pointerleave', stash);
   });
 }
-const closeOverlay = () => { destroyCardElement(); stopAgCam(); try { if (_sigWin && !_sigWin.closed) _sigWin.close(); } catch (e) {} _sigWin = null; state.datepick = null; state.overlay = null; renderOverlay(); };
+const closeOverlay = () => { destroyCardElement(); stopAgCam(); try { if (_sigWin && !_sigWin.closed) _sigWin.close(); } catch (e) {} _sigWin = null; clearTimeout(_gpsPollTimer); state.datepick = null; state.overlay = null; renderOverlay(); };
 
 /* ── Back-office boards (§7.9–7.12): spreadsheet-style tables ─────────────── */
 function vendorTotals(vendorId) {
@@ -14405,6 +14502,69 @@ function onClick(e) {
   }
   if (closest('.js-link-confirm')) { e.stopPropagation(); return doLinkConfirm(); }
 
+  // §5a — the connect-a-device wizard (gpsConnect popup)
+  if (closest('.js-gps-connect')) {
+    e.stopPropagation();
+    const uid = closest('.js-gps-connect').dataset.rec;
+    const u = IDX.unit.get(uid); if (!u) return;
+    return openOverlay({ kind: 'gpsConnect', unitId: uid, step: 'provider', provider: u.gpsProvider || 'Hapn',
+      imei: '', deviceQuery: '', devices: null, devicesLoading: false, devicesError: '',
+      deviceId: '', deviceLabel: '', pollState: 'idle', pollAttempt: 0, pollMax: 8, pollMachine: null, pollError: '' });
+  }
+  if (closest('.js-gps-provider')) {
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'gpsConnect') return;
+    const p = closest('.js-gps-provider').dataset.val; if (!p || p === o.provider) return;
+    o.provider = p; o.devices = null; o.devicesError = ''; o.deviceQuery = ''; o.imei = ''; o.deviceId = ''; o.deviceLabel = '';
+    return renderOverlay();
+  }
+  if (closest('.js-gps-continue')) {
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'gpsConnect') return;
+    o.step = 'identify';
+    renderOverlay();
+    if (o.provider !== 'Hapn') gpsConnectLoadDevices(o);   // fire-and-forget — self-guards on state.overlay
+    return;
+  }
+  if (closest('.js-gps-identify-continue')) {
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'gpsConnect') return;
+    const input = document.querySelector('.overlay .js-gps-imei-input');
+    const imei = ((input ? input.value : o.imei) || '').trim();
+    if (!imei) return flashOr('.overlay .js-gps-imei-input', 'Enter the tracker IMEI first.');
+    o.imei = imei; o.deviceId = imei; o.deviceLabel = imei; o.step = 'poll';
+    renderOverlay();
+    gpsConnectStartPoll(o);
+    return;
+  }
+  if (closest('.js-gps-device-pick')) {
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'gpsConnect') return;
+    const btn = closest('.js-gps-device-pick');
+    const devId = btn.dataset.devid || ''; if (!devId) return;
+    o.deviceId = devId; o.deviceLabel = btn.dataset.devlabel || devId; o.step = 'poll';
+    renderOverlay();
+    gpsConnectStartPoll(o);
+    return;
+  }
+  if (closest('.js-gps-back')) {
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'gpsConnect') return;
+    clearTimeout(_gpsPollTimer);
+    if (o.step === 'poll') { o.step = 'identify'; o.pollState = 'idle'; o.pollAttempt = 0; o.pollMachine = null; o.pollError = ''; }
+    else if (o.step === 'identify') { o.step = 'provider'; }
+    return renderOverlay();
+  }
+  if (closest('.js-gps-poll-retry')) { e.stopPropagation(); const o = state.overlay; if (!o || o.kind !== 'gpsConnect') return; return gpsConnectStartPoll(o); }
+  if (closest('.js-gps-save')) { e.stopPropagation(); return gpsConnectSave(false); }
+  if (closest('.js-gps-save-anyway')) { e.stopPropagation(); return gpsConnectSave(true); }
+  if (closest('.js-gps-events-refresh')) { e.stopPropagation(); const u = IDX.unit.get(closest('.js-gps-events-refresh').dataset.rec); if (u) { invalidateGpsEvents(u); render(); } return; }   // §6a — re-pull the device history feed
+  // §6/§7 — remote shutdown (Hapn starter-interrupt). Arm → confirm; role-gated + audited.
+  if (closest('.js-gps-arm')) { e.stopPropagation(); if (!canGpsShutdown()) return; const b = closest('.js-gps-arm'); return gpsArmShutdown(b.dataset.rec, b.dataset.dev); }
+  if (closest('.js-gps-disarm')) { e.stopPropagation(); return gpsDisarm(); }
+  if (closest('.js-gps-kill-confirm')) { e.stopPropagation(); if (!canGpsShutdown()) return; const b = closest('.js-gps-kill-confirm'); if (!_gpsArmed || _gpsArmed.unitId !== b.dataset.rec) return gpsDisarm(); return gpsFireShutdown(b.dataset.rec, b.dataset.dev, false); }   // enable=false → immobilize
+  if (closest('.js-gps-restore')) { e.stopPropagation(); if (!canGpsShutdown()) return; const b = closest('.js-gps-restore'); return gpsFireShutdown(b.dataset.rec, b.dataset.dev, true); }   // enable=true → restore
+
   // universal pill rule — single-click navigates; double-click anchors; ctrl+click = new
   // tab (handled by the early hotkey branch). Same discriminator as rows (#1).
   const pill = closest('[data-pill-card]');
@@ -15194,6 +15354,14 @@ function onInput(e) {
   if (e.target.classList.contains('js-fb-text')) { if (state.overlay?.kind === 'feedback') state.overlay.text = e.target.value; return; }
   if (e.target.classList.contains('js-cmt-text')) { if (state.overlay?.kind === 'comment') state.overlay.text = e.target.value; return; }
   if (e.target.classList.contains('js-wr-in')) { if (state.wrangler.open) state.wrangler.draft = e.target.value; return; }
+  // §5a connect wizard — Hapn IMEI (store only, no re-render; committed on Continue).
+  if (e.target.classList.contains('js-gps-imei-input')) { if (state.overlay?.kind === 'gpsConnect') state.overlay.imei = e.target.value; return; }
+  // §5a connect wizard — live device-list filter (re-render + restore caret, like js-files-query).
+  if (e.target.classList.contains('js-gps-search')) {
+    const o = state.overlay;
+    if (o?.kind === 'gpsConnect') { o.deviceQuery = e.target.value; const sel = e.target.selectionStart; renderOverlay(); const q = document.querySelector('.overlay .js-gps-search'); if (q) { q.focus(); q.setSelectionRange(sel, sel); } }
+    return;
+  }
   if (e.target.classList.contains('chat-input')) { state.chat.draft = e.target.value; return; }
   // Company Files live search → re-render the board popup and restore the caret.
   if (e.target.classList.contains('js-files-query')) {
@@ -17226,6 +17394,578 @@ async function backendCall(action, extra) {
   if (!res.ok && body && body.ok === undefined) body = { ok: false, error: 'http-' + res.status };
   return body;
 }
+
+/* ── GPS BACKEND CLIENT (WranglerGPS integration · spec docs/superpowers/specs/
+   2026-07-07-wrangler-gps-integration-design.md) ───────────────────────────────
+   Talks DIRECTLY to our own redeploy of the forked WranglerGPS telematics service
+   (GPS_BACKEND_URL — Node/Express + Postgres on Railway), NOT through the Apps
+   Script backend above: live location + ignition need real-time round-trips, and
+   proxying them through GAS would add latency and burn its URL-fetch quota (spec §4).
+   Separate service, separate auth (team password → x-auth-token, cached in memory).
+   Every call degrades gracefully — a GPS outage must never break the rest of the
+   app; the unit card still renders, just without live telemetry.
+
+   The four-provider fleet merge MIRRORS the fork's frontend hooks/useFleet.js so the
+   normalized machine shape stays identical to that already-debugged code — canonical
+   shape in docs/handoffs/wrangler-gps-backend-handoff.md §1. This is a sub-section of
+   the BACKEND SYNC chapter (backend I/O), not its own APP-NN chapter. */
+let gpsToken = '';                                        // in-memory session token; never persisted
+const gpsBase = () => (GPS_BACKEND_URL || '').replace(/\/$/, '');
+const gpsConfigured = () => !!gpsBase();
+
+/* One authed round-trip to the GPS backend. JSON in/out, 30s timeout (reuses
+   withTimeout). Throws a tagged Error on non-2xx (callers decide how to degrade);
+   never returns a failure disguised as success. */
+async function gpsFetch(path, opts = {}) {
+  if (!gpsConfigured()) throw new Error('gps-not-configured');
+  const headers = Object.assign({ 'x-auth-token': gpsToken }, opts.headers || {});
+  if (opts.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
+  const res = await withTimeout(fetch(gpsBase() + path, Object.assign({}, opts, { headers })), 30000, 'GPS backend');
+  const text = await res.text();
+  let body = null; try { body = JSON.parse(text); } catch {}
+  if (!res.ok) { const e = new Error('gps-http-' + res.status); e.status = res.status; e.body = body; throw e; }
+  return body;
+}
+
+/* Silent login on Rental Wrangler sign-in — same team password, token cached for the
+   session. Best-effort + never throws: a GPS-login failure must NOT block main login. */
+async function gpsLogin(pw) {
+  gpsToken = '';
+  try {
+    if (!gpsConfigured()) return false;
+    const res = await withTimeout(
+      fetch(gpsBase() + '/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: pw }) }),
+      15000, 'GPS login');
+    const b = await res.json().catch(() => null);
+    if (res.ok && b && b.token) { gpsToken = b.token; return true; }
+  } catch (e) { logErr('gps', 'login: ' + ((e && e.message) || e)); }
+  return false;
+}
+
+/* Hapn responses arrive in a few possible envelopes — same defensive unwrap useFleet
+   uses so a shape tweak upstream doesn't silently empty the fleet. */
+function gpsUnwrap(d) {
+  if (Array.isArray(d)) return d;
+  return (d && (d.result?.items || d.items || d.devices)) || [];
+}
+
+/* Normalize one provider's raw record into the canonical machine shape (useFleet.js
+   §1). `extra` carries cross-call context (Hapn's status row + starter states). */
+function gpsNormalize(source, raw, extra = {}) {
+  if (source === 'hapn') {
+    const st = extra.status || {};
+    const lat = st.latitude ?? st.lat ?? null, lng = st.longitude ?? st.lng ?? null;
+    const speed = parseFloat(st.speed ?? 0) || 0;
+    const ap = raw.assetProfile || {};
+    return {
+      id: String(raw.imei || raw.id), source: 'hapn', imei: raw.imei ? String(raw.imei) : null,
+      name: String(raw.name || raw.imei || 'Unknown'),
+      make: ap.make ? String(ap.make) : null,
+      model: ap.model ? String(ap.model) : (raw.model?.name ? String(raw.model.name) : null),
+      lat: lat != null ? parseFloat(lat) : null, lng: lng != null ? parseFloat(lng) : null,
+      speed, moving: speed > 0, engineOn: st.reportType !== '0' && !!st.sendTime,
+      lastSeen: st.sendTime ?? st.timestamp ?? raw.modified ?? null,
+      engineHours: st.hoursOfOperation ? parseFloat(st.hoursOfOperation) : null,
+      address: st.address ? String(st.address) : null,
+      battery: st.externalVoltage ?? st.battery ?? null,
+      starterEnabled: (extra.starterStates && raw.imei in extra.starterStates) ? extra.starterStates[raw.imei] : true,
+    };
+  }
+  if (source === 'deere') {
+    return {
+      id: String(raw.id || raw.principalId), source: 'deere', principalId: String(raw.principalId),
+      imei: null, name: String(raw.name || raw.serialNumber || 'JD Machine'),
+      make: raw.make ?? null, model: raw.model ?? null,
+      lat: raw.location?.lat ?? null, lng: raw.location?.lon ?? null,
+      speed: null, moving: false, engineOn: raw.engineState === 1,
+      lastSeen: raw.lastContact ?? null, engineHours: raw.engineHours ?? null,
+      battery: raw.batteryVoltage ?? null, address: null,
+    };
+  }
+  if (source === 'yanmar') {
+    return {
+      id: String(raw.id), source: 'yanmar', contractId: raw.contractId != null ? String(raw.contractId) : null,
+      imei: null, name: raw.name || 'Yanmar Machine', make: 'YANMAR', model: raw.model || null,
+      lat: raw.lat ?? null, lng: raw.lng ?? null, speed: null, moving: false,
+      engineOn: raw.engineOn ?? false, lastSeen: raw.lastSeen ?? null,
+      engineHours: raw.engineHours ?? null, address: raw.address ?? null,
+    };
+  }
+  if (source === 'bouncie') {
+    const stats = raw.stats || {}, loc = stats.location || {};
+    return {
+      id: String(raw.imei), source: 'bouncie', imei: String(raw.imei),
+      name: raw.nickName || `${raw.model?.year || ''} ${raw.model?.make || ''} ${raw.model?.name || ''}`.trim() || 'Vehicle',
+      make: raw.model?.make ?? null, model: raw.model?.name ?? null,
+      lat: loc.lat ?? null, lng: loc.lon ?? null, speed: stats.speed ?? null,
+      moving: (stats.speed ?? 0) > 0, engineOn: stats.isRunning ?? false,
+      lastSeen: stats.lastUpdated ?? null, engineHours: null, address: loc.address ?? null,
+      mil: stats.mil ?? null, odometer: stats.odometer ?? null, fuelLevel: stats.fuelLevel ?? null,
+    };
+  }
+  return null;
+}
+
+/* Full four-provider fleet snapshot, merged client-side (mirrors useFleet.js).
+   Partial-failure tolerant via allSettled — one provider down still returns the rest.
+   Returns a flat array of normalized machines; callers key by id/imei to drive the
+   real gpsStatus pill (spec §5). Deere/Yanmar/Bouncie machine lists are only fetched
+   when their status reports `authenticated` (matches useFleet's two-phase pattern). */
+async function gpsFleetStatus() {
+  const [devicesR, statusR, deereR, starterR, yanmarR, bouncieR] = await Promise.allSettled([
+    gpsFetch('/api/hapn/devices'),
+    gpsFetch('/api/hapn/fleet-status'),
+    gpsFetch('/api/deere/status'),
+    gpsFetch('/api/hapn/starter-status'),
+    gpsFetch('/api/yanmar/status'),
+    gpsFetch('/api/bouncie/status'),
+  ]);
+  const val = (r) => (r.status === 'fulfilled' ? r.value : null);
+  const out = [];
+
+  // Hapn
+  const starterStates = val(starterR)?.result?.states || {};
+  const statusMap = {};
+  gpsUnwrap(val(statusR)).forEach((s) => { if (s?.imei) statusMap[s.imei] = s; });
+  gpsUnwrap(val(devicesR)).forEach((d) => out.push(gpsNormalize('hapn', d, { status: statusMap[d.imei] || {}, starterStates })));
+
+  // Deere / Yanmar / Bouncie — only when authenticated (second-phase machine lists)
+  const phase2 = [];
+  if (val(deereR)?.authenticated)  phase2.push(gpsFetch('/api/deere/machines').then((d) => (d?.values || []).map((m) => gpsNormalize('deere', m))).catch(() => []));
+  if (val(yanmarR)?.authenticated) phase2.push(gpsFetch('/api/yanmar/machines').then((d) => (d?.machines || []).map((m) => gpsNormalize('yanmar', m))).catch(() => []));
+  if (val(bouncieR)?.authenticated) phase2.push(gpsFetch('/api/bouncie/vehicles').then((d) => (d?.vehicles || []).map((m) => gpsNormalize('bouncie', m))).catch(() => []));
+  (await Promise.all(phase2)).forEach((list) => list.forEach((m) => m && out.push(m)));
+
+  return out.filter(Boolean);
+}
+
+/* Live detail for ONE mapped device (the enriched GPS section, on popup open, spec §5).
+   Hapn has a direct per-device status endpoint; the others come from their machine
+   list filtered to the mapped id. Returns a normalized machine or null. */
+async function gpsUnitStatus(provider, deviceId) {
+  const p = String(provider || '').toLowerCase(); const key = String(deviceId || '');
+  if (!p || !key) return null;
+  if (p === 'hapn') {
+    const [devR, stR, starterR] = await Promise.allSettled([
+      gpsFetch(`/api/hapn/device/${encodeURIComponent(key)}/status`),
+      gpsFetch('/api/hapn/fleet-status'),
+      gpsFetch('/api/hapn/starter-status'),
+    ]);
+    const dev = (devR.status === 'fulfilled' && devR.value) ? devR.value : { imei: key };
+    const status = gpsUnwrap(stR.status === 'fulfilled' ? stR.value : null).find((s) => s?.imei === key) || (devR.status === 'fulfilled' ? devR.value : {}) || {};
+    const starterStates = (starterR.status === 'fulfilled' ? starterR.value : null)?.result?.states || {};
+    return gpsNormalize('hapn', dev.imei ? dev : { imei: key }, { status, starterStates });
+  }
+  const list = await gpsProviderDevices(p).catch(() => []);
+  const match = list.find((m) => String(m.id ?? m.principalId ?? m.contractId ?? m.imei) === key);
+  return match ? gpsNormalize(p, match) : null;
+}
+
+/* Provider machine/vehicle lists — powers the connect-wizard picker (spec §5a step 2)
+   for Deere/Yanmar/Bouncie, and gpsUnitStatus above. Raw provider records (the wizard
+   presents id + name for the operator to pick). */
+async function gpsProviderDevices(provider) {
+  switch (String(provider || '').toLowerCase()) {
+    case 'hapn':    return gpsUnwrap(await gpsFetch('/api/hapn/devices'));
+    case 'deere':   return (await gpsFetch('/api/deere/machines'))?.values || [];
+    case 'yanmar':  return (await gpsFetch('/api/yanmar/machines'))?.machines || [];
+    case 'bouncie': return (await gpsFetch('/api/bouncie/vehicles'))?.vehicles || [];
+    default: return [];
+  }
+}
+
+/* ── CONNECT-A-DEVICE WIZARD (spec §5a) — the gpsConnect popup's control layer.
+   The popup markup lives in buildPopupEl (o.kind === 'gpsConnect'); the pieces below
+   are the async/stateful bits a pure render function can't own: loading a provider's
+   device list, running the live first-contact poll, and the confirmed write to the
+   unit. Every async step re-checks `state.overlay === o` before touching it or
+   scheduling more work, so a closed/switched popup can never keep ticking. */
+const GPS_PROVIDERS = ['Hapn', 'Deere', 'Yanmar', 'Bouncie'];
+let _gpsPollTimer = null;   // module-level so closeOverlay/back-nav can always cancel it
+
+/* Pull an id/label/sub-line out of ONE provider's raw record shape (§5a step 2 — Hapn:
+   .imei/.name · Deere: .principalId/.name/.serialNumber · Yanmar: .id/.name · Bouncie:
+   .imei/.nickName/.model). Kept separate from gpsNormalize (which needs a live status
+   call too) so the picker list renders instantly off the device list alone. */
+function gpsRawDeviceId(provider, raw) {
+  switch (provider) {
+    case 'Deere':   return String(raw.principalId ?? raw.id ?? '');
+    case 'Yanmar':  return String(raw.id ?? '');
+    case 'Bouncie': return String(raw.imei ?? '');
+    default:        return String(raw.imei ?? raw.id ?? '');   // Hapn
+  }
+}
+function gpsRawDeviceLabel(provider, raw) {
+  switch (provider) {
+    case 'Deere':   return raw.name || raw.serialNumber || 'JD Machine';
+    case 'Yanmar':  return raw.name || 'Yanmar Machine';
+    case 'Bouncie': return raw.nickName || raw.model || 'Vehicle';
+    default:        return raw.name || raw.imei || 'Unnamed tracker';   // Hapn
+  }
+}
+function gpsRawDeviceSub(provider, raw) {
+  switch (provider) {
+    case 'Deere':   return raw.serialNumber ? `S/N ${raw.serialNumber}` : '';
+    case 'Bouncie': return raw.model ? String(raw.model) : '';
+    case 'Hapn':    return raw.imei ? `IMEI ${raw.imei}` : '';
+    default:        return '';
+  }
+}
+/* Load the searchable picker list for Deere/Yanmar/Bouncie (§5a step 2). Fire-and-
+   forget from the click handler that advances into the identify step; guards every
+   write behind `state.overlay === o` so a Back/close mid-flight can't stomp a newer
+   popup state. */
+async function gpsConnectLoadDevices(o) {
+  o.devicesLoading = true; o.devicesError = ''; o.devices = null; renderOverlay();
+  let list = [];
+  try { list = await gpsProviderDevices(String(o.provider || '').toLowerCase()); }
+  catch (e) {
+    if (state.overlay !== o) return;
+    o.devicesLoading = false; o.devicesError = 'Couldn’t reach the GPS backend — check the connection and try again.';
+    return renderOverlay();
+  }
+  if (state.overlay !== o) return;
+  o.devicesLoading = false; o.devices = Array.isArray(list) ? list : [];
+  renderOverlay();
+}
+/* Start (or restart) the live first-contact poll (§5a step 3): every 3s, up to
+   o.pollMax attempts. States: waiting → seen (first contact) → reporting (a SECOND
+   consecutive contacted poll — avoids confirming on a single flaky ping) → timeout
+   (cap hit, never confirmed twice). Always terminates — never a silent hang. */
+function gpsConnectStartPoll(o) {
+  clearTimeout(_gpsPollTimer);
+  o.pollState = 'waiting'; o.pollAttempt = 0; o.pollMachine = null; o.pollError = '';
+  renderOverlay();
+  gpsConnectPollTick(o);
+}
+async function gpsConnectPollTick(o) {
+  if (state.overlay !== o || o.step !== 'poll') return;   // popup closed/backed-out — self-cancel
+  o.pollAttempt += 1;
+  let machine = null;
+  try { machine = await gpsUnitStatus(String(o.provider || '').toLowerCase(), o.deviceId); }
+  catch (e) { o.pollError = (e && e.message) || 'gps-error'; }
+  if (state.overlay !== o || o.step !== 'poll') return;   // changed while the call was in flight
+  const contacted = !!(machine && (machine.lastSeen != null || (machine.lat != null && machine.lng != null)));
+  const wasSeen = o.pollState === 'seen';
+  o.pollMachine = machine;
+  if (contacted && wasSeen) { o.pollState = 'reporting'; return renderOverlay(); }   // 2nd consecutive contact — confirmed
+  if (o.pollAttempt >= o.pollMax) { o.pollState = 'timeout'; return renderOverlay(); }   // cap hit, never confirmed
+  o.pollState = contacted ? 'seen' : 'waiting';
+  renderOverlay();
+  _gpsPollTimer = setTimeout(() => gpsConnectPollTick(o), 3000);
+}
+/* Write gpsProvider/gpsDeviceId to the unit — ONLY on confirmed contact (pollState
+   'reporting') or an explicit "Save anyway" override (§5a step 4). */
+function gpsConnectSave(anyway) {
+  const o = state.overlay; if (!o || o.kind !== 'gpsConnect') return;
+  if (o.pollState !== 'reporting' && !anyway) return;
+  const u = IDX.unit.get(o.unitId); if (!u) return closeOverlay();
+  u.gpsProvider = o.provider; u.gpsDeviceId = o.deviceId;
+  reindex('units', u);
+  logAction(u, `GPS → ${o.provider} · ${o.deviceId}${o.pollState === 'reporting' ? ' (confirmed reporting)' : ' (saved without confirmed contact)'}`);
+  clearTimeout(_gpsPollTimer);
+  closeOverlay();
+  toast(o.pollState === 'reporting' ? `GPS connected — ${u.name} is reporting. ✓` : `GPS mapped — ${u.name} saved without confirmed signal yet.`);
+}
+
+/* Hapn starter-interrupt (the remote-shutdown relay, spec §6/§7). Cuts the STARTER so
+   the engine can't be RE-STARTED — it does NOT kill a running engine. Polarity matches
+   the original app (LiveTracking.jsx): `enabled:false` CUTS the starter (immobilize);
+   `enabled:true` RESTORES it. `by` = the acting role, recorded in the audit trail.
+   Hapn-only; the backend logs every attempt server-side (device_events, plan A3c). */
+async function gpsStarterInterrupt(imei, enabled, by) {
+  return gpsFetch(`/api/hapn/device/${encodeURIComponent(imei)}/starter-interrupt`, {
+    method: 'POST', body: JSON.stringify({ enabled: !!enabled, by: by || undefined }),
+  });
+}
+
+/* GPS status & alert history feed source (spec §6a). Reads the per-device event log
+   (plan A3c — the device_events table + route). Until A3c ships on the backend this
+   throws gps-http-404; callers render an empty/"history unavailable" state. */
+async function gpsDeviceEvents(source, key) {
+  return gpsFetch(`/api/device/${encodeURIComponent(source)}/${encodeURIComponent(key)}/events`);
+}
+
+/* ── LIVE gpsStatus (spec §5 step 3) ──────────────────────────────────────────
+   One fleet snapshot per app load (refreshGpsLive) → an in-memory map keyed by every
+   provider id type. `unitGpsStatus(u)` derives the DISPLAYED status from it (freshness
+   of the tracker's last ping), falling back to the STORED u.gpsStatus only when the
+   backend never answered — never presenting stale data as live without saying so.
+   No telemetry is copied into Sheets (spec §4): this map is memory-only, per session.
+   Thresholds are tracker-health, not machine-usage — a healthy tracker still sends
+   position pings (Hapn GTFRI) with the engine off, so a long silence = the tracker,
+   not the machine, is dark. Tunable. */
+const GPS_FRESH_MS = 6 * 3600 * 1000;    // last ping < 6h  → Reporting
+const GPS_STALE_MS = 72 * 3600 * 1000;   // < 72h → Verify; older/none → Not Reporting
+let gpsLive = null;      // Map(deviceKey → normalized machine) from the last good snapshot
+let gpsLiveAt = 0;       // ms of the last SUCCESSFUL snapshot (0 = never fetched)
+let gpsLiveErr = false;  // most recent refresh failed (we keep the last good map)
+
+async function refreshGpsLive() {
+  if (!gpsConfigured()) return;
+  let list;
+  try { list = await gpsFleetStatus(); }
+  catch (e) { gpsLiveErr = true; logErr('gps', 'fleet-status: ' + ((e && e.message) || e)); return; }
+  const map = new Map();
+  for (const m of (list || [])) {
+    if (!m) continue;
+    for (const k of [m.id, m.imei, m.principalId, m.contractId]) if (k != null) map.set(String(k), m);
+  }
+  gpsLive = map; gpsLiveAt = Date.now(); gpsLiveErr = false;
+  if (!booting) render();   // live data landed → refresh the pills
+}
+
+/** The live machine for a mapped unit, or null. */
+function unitGpsLiveMachine(u) {
+  if (!gpsLive || !u.gpsDeviceId) return null;
+  return gpsLive.get(String(u.gpsDeviceId)) || null;
+}
+/** Displayed GPS status: { status, live, asOf, mapped, machine? } or null (untracked).
+ *  live=true → derived from the fleet snapshot; live=false → stored-field fallback. */
+function unitGpsStatus(u) {
+  const mapped = !!(u.gpsProvider && u.gpsDeviceId);
+  if (mapped && gpsLiveAt > 0) {
+    const m = unitGpsLiveMachine(u);
+    if (!m) return { status: 'Not Reporting', live: true, asOf: gpsLiveAt, mapped: true };   // tracker absent from the snapshot
+    const t = m.lastSeen ? new Date(m.lastSeen).getTime() : NaN;
+    let status;
+    if (!Number.isNaN(t)) {
+      const age = Date.now() - t;
+      status = age < GPS_FRESH_MS ? 'Reporting' : age < GPS_STALE_MS ? 'Verify' : 'Not Reporting';
+    } else {
+      status = (m.lat != null && m.lng != null) ? 'Verify' : 'Not Reporting';   // seen once, no timestamp
+    }
+    return { status, live: true, asOf: gpsLiveAt, mapped: true, machine: m };
+  }
+  // backend never answered (or the unit isn't mapped) → fall back to the stored field
+  if (u.gpsStatus) return { status: u.gpsStatus, live: false, asOf: gpsLiveAt, mapped };
+  return null;
+}
+
+/* Short relative time for the "last seen" line (§5 step 4). */
+function gpsRelTime(ts) {
+  const t = ts ? new Date(ts).getTime() : NaN;
+  if (Number.isNaN(t)) return '';
+  const s = Math.max(0, Math.round((Date.now() - t) / 1000));
+  if (s < 60) return 'just now';
+  const m = Math.round(s / 60); if (m < 60) return `${m}m ago`;
+  const h = Math.round(m / 60); if (h < 24) return `${h}h ago`;
+  return `${Math.round(h / 24)}d ago`;
+}
+
+/* Live refresh while VIEWING a mapped unit (§5 step 4). One global 30s tick that only
+   hits the backend when a mapped unit is the active tab's anchor — so it's scoped to
+   "you're looking at it," not an always-on fleet poll, and there's no per-popup interval
+   to leak (the tick self-checks). refreshGpsLive is one consolidated call for all four
+   providers, so this stays a single request, not N per-unit polls. */
+let _gpsViewTimer = null;
+function startGpsViewPoll() {
+  clearInterval(_gpsViewTimer);
+  _gpsViewTimer = setInterval(() => {
+    const a = activeSession() && activeSession().anchor;
+    if (!a || a.card !== 'units') return;                 // only while a unit is open
+    const u = IDX.unit.get(a.recId);
+    if (!u || !u.gpsProvider || !u.gpsDeviceId) return;   // ...and it's mapped to a tracker
+    refreshGpsLive();                                     // re-renders when the snapshot lands
+  }, 30000);
+}
+
+/* ── GPS STATUS & ALERT HISTORY FEED (spec §6a) ───────────────────────────────
+   A read-only, chat-feed-styled timeline in a mapped unit's GPS section, fetched
+   from the device_events log (backend plan A3c) lazily on first render and cached
+   per device. Degrades gracefully — until A3c is deployed, gpsDeviceEvents 404s and
+   the feed shows "history unavailable," never an error. Shows shutdown commands (the
+   safety audit) today; provider alerts + status transitions accrue as those writers
+   land. Cache is invalidated after a shutdown command so the audit shows immediately. */
+const _gpsEvents = new Map();   // key `${provider}:${deviceId}` → { state, events, at, error }
+const gpsEventsKey = (u) => `${String(u.gpsProvider || '').toLowerCase()}:${u.gpsDeviceId}`;
+function ensureGpsEvents(u) {
+  if (!u.gpsProvider || !u.gpsDeviceId || !gpsConfigured()) return null;
+  const key = gpsEventsKey(u);
+  const hit = _gpsEvents.get(key);
+  if (hit) return hit;
+  const entry = { state: 'loading', events: [], at: 0, error: '' };
+  _gpsEvents.set(key, entry);
+  gpsDeviceEvents(String(u.gpsProvider).toLowerCase(), u.gpsDeviceId)
+    .then((r) => { entry.state = 'loaded'; entry.events = (r && r.events) || []; entry.at = Date.now(); })
+    .catch((e) => { entry.state = 'error'; entry.error = (e && e.status === 404) ? 'notdeployed' : 'error'; })
+    .finally(() => render());   // async — safe; re-renders once the fetch settles
+  return entry;
+}
+function invalidateGpsEvents(u) { if (u && u.gpsProvider && u.gpsDeviceId) _gpsEvents.delete(gpsEventsKey(u)); }
+
+/* One event → its feed row (icon + text + timestamp, colored by severity). */
+function gpsEventRow(ev) {
+  const d = ev.detail || {};
+  let icon, color, text;
+  if (ev.type === 'shutdown_command') {
+    const failed = d.outcome === 'failed';
+    const immob = d.action === 'immobilize' || d.enabled === false;   // enabled:false = starter cut
+    icon = failed ? I.alert : (immob ? I.lock : I.lockOpen);
+    color = failed ? 'red' : (immob ? 'red' : 'green');
+    text = `${immob ? 'Starter cut — immobilized' : 'Starter restored'}${failed ? ' · FAILED' : ''}${ev.actor ? ` · ${esc(ev.actor)}` : ''}`;
+  } else if (ev.type === 'alert') {
+    icon = I.alert; color = d.severity === 'critical' ? 'red' : 'yellow';
+    text = esc(d.message || d.text || 'Alert');
+  } else {   // status_change
+    const to = d.to || d.status || '';
+    color = (getStatus('gpsStatus', to) || {}).color || 'gray';
+    icon = I.bell; text = `Status → ${esc(to)}`;
+  }
+  return `<div class="gps-feed-row"><span class="gfr-ic c-${color}">${icon}</span><span class="gfr-txt">${text}</span><span class="gfr-ts">${esc(gpsEventTime(ev.at))}</span></div>`;
+}
+function gpsEventTime(at) {
+  const d = at ? new Date(at) : null;
+  if (!d || Number.isNaN(d.getTime())) return '';
+  const hh = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  return `${fmtShortDate(d.toISOString())} · ${fmtClock(hh)}`;
+}
+/* LIVE alert rows merged into the feed from the current fleet snapshot (§6a). Today:
+   Bouncie check-engine (mil/DTCs) — the one provider-alert shape we have cleanly. Hapn
+   `/device/:imei/alerts` + Yanmar `/machine/:id/alerts` live-fetch merge is a follow-up
+   (their response shapes need real samples to normalize safely). */
+function gpsLiveAlertRows(u) {
+  const m = unitGpsLiveMachine(u);
+  if (!m) return [];
+  const rows = [];
+  if (m.source === 'bouncie' && m.mil && m.mil.milOn) {
+    const dtcs = m.mil.qualifiedDtcList || [];
+    const at = m.mil.lastUpdated || null;
+    if (dtcs.length) {
+      dtcs.forEach((d) => {
+        const name = Array.isArray(d.name) ? d.name.join(', ') : (d.name || 'Check engine');
+        rows.push(gpsEventRow({ type: 'alert', at, detail: { severity: 'critical', message: `Check engine · ${d.code || ''} ${name}`.replace(/\s+/g, ' ').trim() } }));
+      });
+    } else {
+      rows.push(gpsEventRow({ type: 'alert', at, detail: { severity: 'critical', message: 'Check engine light on' } }));
+    }
+  }
+  return rows;
+}
+
+/* The whole feed block for a mapped unit's GPS section — live alerts on top of the
+   durable device_events history. */
+function gpsFeedHtml(u) {
+  const e = ensureGpsEvents(u);
+  if (!e) return '';   // unmapped or GPS not configured
+  const head = `<div class="gps-feed-head"><span class="gfh-lbl">GPS History</span>${ghostPill('Refresh', { js: 'js-gps-events-refresh', data: { rec: u.unitId } })}</div>`;
+  const liveRows = gpsLiveAlertRows(u).join('');
+  const evRows = (e.state === 'loaded') ? e.events.map(gpsEventRow).join('') : '';
+  const note = e.state === 'loading' ? 'Reading signal history…'
+    : e.state === 'error' ? (e.error === 'notdeployed' ? 'History not available yet.' : 'Couldn’t load history — try Refresh.')
+      : '';
+  const body = (liveRows || evRows)
+    ? liveRows + evRows + (note ? `<div class="gps-feed-empty">${note}</div>` : '')
+    : `<div class="gps-feed-empty">${note || 'No GPS events yet.'}</div>`;
+  return `<div class="gps-feed-wrap">${head}<div class="gps-feed">${body}</div></div>`;
+}
+
+/* ── REMOTE SHUTDOWN (Hapn starter-interrupt · spec §6/§7) ────────────────────
+   Authority (Jac 2026-07-07): Owner/Admin + Manager + Mechanic/M.Tech ONLY. The
+   control is ABSENT from the DOM for every other role (D5 omit-don't-hide), never
+   merely disabled. IMPORTANT — this is a CLIENT-side gate + a server-side AUDIT (who
+   did it), NOT a server-ENFORCED per-role permission: the GPS backend authenticates
+   one shared team token and can't tell Rental Wrangler roles apart. So it's an
+   accountability control among trusted internal staff, not a boundary against an
+   untrusted actor — a truly enforced gate needs per-role backend auth (follow-up).
+   Immobilize is a two-step ARM → CONFIRM (auto-disarms) so it can't fire by accident;
+   restore is the safe direction, one deliberate tap. */
+const GPS_SHUTDOWN_ROLES = ['owner', 'admin', 'manager', 'mechanic', 'mtech'];
+function canGpsShutdown() { return GPS_SHUTDOWN_ROLES.includes(String(currentRole || '').toLowerCase()); }
+
+let _gpsArmed = null;      // { unitId, deviceId } — the currently ARMED immobilize
+let _gpsArmTimer = null;
+function gpsArmShutdown(unitId, deviceId) {
+  clearTimeout(_gpsArmTimer);
+  _gpsArmed = { unitId, deviceId };
+  render();
+  _gpsArmTimer = setTimeout(() => { _gpsArmed = null; render(); }, 4000);   // auto-disarm after 4s
+}
+function gpsDisarm() { clearTimeout(_gpsArmTimer); _gpsArmed = null; render(); }
+/* enable=false → CUT the starter (immobilize); enable=true → RESTORE. Explicit
+   success/failure toast, no auto-retry; the backend audits both outcomes. */
+async function gpsFireShutdown(unitId, deviceId, enable) {
+  clearTimeout(_gpsArmTimer); _gpsArmed = null;
+  const u = IDX.unit.get(unitId);
+  const nm = u ? u.name : deviceId;
+  try {
+    await gpsStarterInterrupt(deviceId, enable, currentRole || 'operator');
+    toast(enable ? `Starter restored — ${nm} can start.` : `Starter CUT — ${nm} immobilized.`);
+  } catch (e) {
+    toast(`Shutdown command FAILED — no change to ${nm}. (${(e && e.message) || 'error'})`);
+  }
+  if (u) invalidateGpsEvents(u);   // refresh the audit feed (success AND failure were logged)
+  refreshGpsLive();                // pull the new starter state
+  render();
+}
+
+/* The shutdown control for a mapped Hapn unit — Hapn-only + role-gated (absent for
+   others). `machine` = the live machine (for the current starter state), may be null. */
+function gpsShutdownControl(u, machine) {
+  if (u.gpsProvider !== 'Hapn' || !u.gpsDeviceId || !canGpsShutdown()) return '';
+  const dev = esc(u.gpsDeviceId);
+  const immobilized = machine && machine.starterEnabled === false;   // starterEnabled:false = starter cut
+  if (immobilized) {   // safe direction — one deliberate tap
+    return `<div class="kv" style="justify-content:center">${actionPill('commit', 'Restore starter', { js: 'js-gps-restore', data: { rec: u.unitId, dev: u.gpsDeviceId } })}</div>`;
+  }
+  const armed = _gpsArmed && _gpsArmed.unitId === u.unitId;
+  return `<div class="gps-hazard${armed ? ' hot' : ''}">
+    <div class="gh-cap"></div>
+    <div class="gh-row">
+      ${armed
+    ? `${actionPill('danger', 'Confirm — cut starter', { js: 'js-gps-kill-confirm', data: { rec: u.unitId, dev: u.gpsDeviceId } })}${ghostPill('Disarm', { js: 'js-gps-disarm' })}`
+    : actionPill('danger', 'Immobilize', { js: 'js-gps-arm', data: { rec: u.unitId, dev: u.gpsDeviceId } })}
+    </div>
+    <div class="gh-note">${armed ? 'Cuts the starter — the engine can’t be re-started. Auto-disarms.' : 'Owner/Manager/Mechanic only · cuts the starter (not a running engine)'}</div>
+  </div>`;
+}
+
+/* ── FLEET DRIVING SCORE (spec §5 step 7) ─────────────────────────────────────
+   Lights the driver scorecard's stubbed "Driving Score" ring with real Bouncie
+   trip data. It's a FLEET/TEAM metric (like the other two driver rings — delivery
+   rate, wash rate — which are also fleet-wide, not per-individual): telematics is
+   per-truck and Rental Wrangler has no driver↔trip attribution, so a per-DRIVER
+   score isn't honestly computable — a fleet safety score is. 100 = clean driving;
+   we penalize hard-braking + hard-acceleration per 100 mi and a speeding-trip share.
+   Weights are a conservative, TUNABLE v1 (Jac's to adjust). null until loaded / when
+   there are no Bouncie trucks or trips — never a faked number. */
+const DS_PENALTY_PER_100MI = 4;    // each hard event per 100 mi ≈ −4 pts
+const DS_SPEEDING_MPH = 80;        // a trip whose maxSpeed exceeds this counts as speeding
+const DS_SPEEDING_WEIGHT = 20;     // up to −20 pts for an all-speeding record
+const DS_WINDOW_DAYS = 21;         // rolling window of trips to score
+let _drivingScore = null;          // 0–100 fleet score, or null (unknown/unavailable)
+let _drivingScoreAt = 0;
+const drivingScoreValue = () => _drivingScore;
+
+async function refreshDrivingScore() {
+  if (!gpsConfigured()) return;
+  try {
+    const vehicles = await gpsProviderDevices('bouncie').catch(() => []);
+    if (!vehicles.length) { _drivingScore = null; _drivingScoreAt = Date.now(); return; }
+    const sinceISO = new Date(Date.now() - DS_WINDOW_DAYS * 86400000).toISOString();
+    const untilISO = new Date().toISOString();
+    let hard = 0, miles = 0, trips = 0, speeding = 0;
+    for (const v of vehicles) {
+      const imei = v.imei || v.id; if (!imei) continue;
+      let r; try {
+        r = await gpsFetch(`/api/bouncie/vehicle/${encodeURIComponent(imei)}/trips?starts-after=${encodeURIComponent(sinceISO)}&ends-before=${encodeURIComponent(untilISO)}`);
+      } catch { continue; }   // one truck's failure never poisons the fleet score
+      for (const t of ((r && r.trips) || [])) {
+        trips++;
+        hard += (Number(t.hardBrakingCount ?? t.hardBrakingCounts) || 0) + (Number(t.hardAccelerationCount ?? t.hardAccelerationCounts) || 0);
+        miles += Number(t.distance ?? t.tripDistance) || 0;
+        if ((Number(t.maxSpeed) || 0) > DS_SPEEDING_MPH) speeding++;
+      }
+    }
+    if (!trips || miles <= 0) { _drivingScore = null; _drivingScoreAt = Date.now(); return; }   // no data → honest null, not 0
+    const hardPer100 = (hard / miles) * 100;
+    const speedShare = speeding / trips;
+    _drivingScore = Math.max(0, Math.min(100, Math.round(100 - hardPer100 * DS_PENALTY_PER_100MI - speedShare * DS_SPEEDING_WEIGHT)));
+    _drivingScoreAt = Date.now();
+  } catch (e) { logErr('gps', 'driving-score: ' + ((e && e.message) || e)); }
+  if (!booting) render();
+}
+
 const dataSnapshot = () => { const s = {}; PERSIST_KEYS.forEach((k) => { s[k] = DATA[k] || []; }); return s; };
 async function loadFromBackend() {
   const r = await backendCall('load');
@@ -17652,6 +18392,7 @@ async function attemptLogin() {
     try { localStorage.setItem('jactec.user', name); } catch {}
     try { sessionStorage.setItem('jactec.role', role); } catch {}
     sessionStorage.setItem('jactec.pw', pw);
+    gpsLogin(pw).then((ok) => { if (ok) { refreshGpsLive(); startGpsViewPoll(); refreshDrivingScore(); } });   // silent GPS login (§5) → live snapshot (step 3) + view-scoped refresh (step 4) + fleet driving score (step 7); fire-and-forget, never blocks main login
     await loadFromBackend();
     finishLoad();
     applyShopRoleLanding();   // shop roles (Mechanic / M.Tech) land on the Shop graph

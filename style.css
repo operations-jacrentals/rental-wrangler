@@ -2089,6 +2089,53 @@ body.is-phone .set-tab-l { flex: 0 0 auto; }
 .bv-table tfoot .bv-sumlabel { color: var(--accent); font-weight: 800; }
 .bv-calc { background: var(--panel); color: var(--txt-2); border: 1px solid var(--line); border-radius: 6px; font-size: 11px; padding: 1px 3px; }
 .bv-mini.on { color: var(--accent); border-color: var(--accent-line); background: var(--accent-soft); }
+
+/* ── GPS CONNECT WIZARD (spec §5a) — device picker rows (step 2, Deere/Yanmar/Bouncie)
+   + the live first-contact poll icon (step 3). Search box reuses .bv-searchwrap/.bv-query
+   verbatim; the in-flight skeleton reuses .set-loading/.set-loading-bar verbatim. ── */
+.gps-dev-list { display: flex; flex-direction: column; gap: 6px; max-height: 260px; overflow: auto; }
+.gps-dev-row { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 9px 12px;
+  border-radius: 10px; background: var(--panel); border: 1px solid var(--line); color: var(--txt);
+  font: inherit; font-size: 12.5px; cursor: pointer; transition: border-color .12s, background .12s; }
+.gps-dev-row svg { width: 15px; height: 15px; flex: 0 0 auto; color: var(--txt-3); }
+.gps-dev-row:hover { border-color: var(--accent-line); background: var(--accent-soft); }
+.gps-dev-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.gps-dev-row .gdr-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
+.gps-dev-row .gdr-sub { flex: 0 0 auto; color: var(--txt-3); font-size: 11px; }
+.gps-poll-ic { display: inline-flex; align-items: center; justify-content: center; width: 46px; height: 46px;
+  border-radius: 50%; font-size: 20px; font-weight: 800; }
+.gps-poll-ic svg { width: 20px; height: 20px; }
+/* Enriched GPS section (step 4): the external "last seen" map link. External nav, so a
+   plain anchor — blue like the registry link tone, never orange. */
+.gps-maplink { color: var(--blue); font-size: 11px; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.gps-maplink:hover { color: color-mix(in srgb, var(--blue) 82%, var(--txt)); }
+.gps-maplink:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+
+/* GPS status & alert history feed (spec §6a) — a compact read-only timeline in the
+   unit's GPS section, mirroring the chat-feed language (scrollable, timestamped rows). */
+.gps-feed-wrap { width: 100%; margin-top: 4px; }
+.gps-feed-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.gps-feed-head .gfh-lbl { font-family: 'Saira Condensed', var(--font); text-transform: uppercase; letter-spacing: 1.4px; font-weight: 700; font-size: 10.5px; color: var(--txt-3); }
+.gps-feed { display: flex; flex-direction: column; gap: 6px; max-height: 190px; overflow-y: auto; padding: 8px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); }
+.gps-feed-empty { color: var(--txt-3); font-size: 11.5px; text-align: center; padding: 14px 8px; }
+.gps-feed-row { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--txt-2); }
+.gps-feed-row .gfr-ic { flex: 0 0 auto; display: inline-flex; }
+.gps-feed-row .gfr-ic svg { width: 13px; height: 13px; }
+.gps-feed-row .gfr-txt { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gps-feed-row .gfr-ts { flex: 0 0 auto; color: var(--txt-3); font-size: 10.5px; }
+
+/* Remote-shutdown hazard control (spec §6/§7) — the ignition-critical action. Borrows
+   the cancel-arc's hazard language: caution-yellow stripe cap, red "hot" variant once
+   ARMED. The buttons inside are stamped actionPills (R17); this frame is chrome. */
+.gps-hazard { width: 100%; border-radius: 12px; overflow: hidden; background: var(--panel); border: 1px solid var(--line); margin-top: 2px; }
+.gps-hazard .gh-cap { height: 7px; background: repeating-linear-gradient(135deg, var(--yellow) 0 13px, #14181d 13px 26px); }
+.gps-hazard.hot { border-color: color-mix(in srgb, var(--red) 55%, var(--line)); box-shadow: inset 0 0 34px -14px color-mix(in srgb, var(--red) 55%, transparent); }
+.gps-hazard.hot .gh-cap { background: repeating-linear-gradient(135deg, var(--red) 0 13px, #1a0808 13px 26px); }
+.gps-hazard .gh-row { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 10px 10px 6px; }
+.gps-hazard .gh-note { font-size: 10px; color: var(--txt-3); text-align: center; padding: 0 12px 9px; line-height: 1.35; }
+.gps-hazard.hot .gh-note { color: color-mix(in srgb, var(--red) 68%, var(--txt-3)); }
+@media (prefers-reduced-motion: no-preference) { .gps-hazard.hot { transition: box-shadow .15s ease, border-color .15s ease; } }
+
 /* List-rows customiser panel */
 .bv-customize { display: flex; flex-wrap: wrap; gap: 14px 28px; align-items: flex-start; padding: 14px 16px; background: var(--accent-soft); border-bottom: 1px solid var(--accent-line); }
 .bv-pick-group { min-width: 190px; }
@@ -2810,6 +2857,7 @@ body.rw-inspect .c-titlecard:hover { outline: 2px solid #18b6ff; outline-offset:
 .seg button.on-green { background: var(--green); color: #04150d; }
 .seg button.on-red { background: var(--red); color: #fff; }
 .seg button.on-yellow { background: var(--yellow); color: #1a1205; }
+.seg button.on-orange { background: var(--accent); color: var(--on-orange); }   /* the connect wizard's provider pick — the ONE orange, selected segment (spec §5a) */
 
 /* ── Inline transport editor (Jac 2026-06-15) — replaces the Transport·Site popup ── */
 .tedit { display: flex; flex-direction: column; gap: 8px; padding: 11px; border-radius: 13px;
