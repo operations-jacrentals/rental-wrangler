@@ -2124,6 +2124,18 @@ body.is-phone .set-tab-l { flex: 0 0 auto; }
 .gps-feed-row .gfr-txt { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gps-feed-row .gfr-ts { flex: 0 0 auto; color: var(--txt-3); font-size: 10.5px; }
 
+/* Remote-shutdown hazard control (spec §6/§7) — the ignition-critical action. Borrows
+   the cancel-arc's hazard language: caution-yellow stripe cap, red "hot" variant once
+   ARMED. The buttons inside are stamped actionPills (R17); this frame is chrome. */
+.gps-hazard { width: 100%; border-radius: 12px; overflow: hidden; background: var(--panel); border: 1px solid var(--line); margin-top: 2px; }
+.gps-hazard .gh-cap { height: 7px; background: repeating-linear-gradient(135deg, var(--yellow) 0 13px, #14181d 13px 26px); }
+.gps-hazard.hot { border-color: color-mix(in srgb, var(--red) 55%, var(--line)); box-shadow: inset 0 0 34px -14px color-mix(in srgb, var(--red) 55%, transparent); }
+.gps-hazard.hot .gh-cap { background: repeating-linear-gradient(135deg, var(--red) 0 13px, #1a0808 13px 26px); }
+.gps-hazard .gh-row { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 10px 10px 6px; }
+.gps-hazard .gh-note { font-size: 10px; color: var(--txt-3); text-align: center; padding: 0 12px 9px; line-height: 1.35; }
+.gps-hazard.hot .gh-note { color: color-mix(in srgb, var(--red) 68%, var(--txt-3)); }
+@media (prefers-reduced-motion: no-preference) { .gps-hazard.hot { transition: box-shadow .15s ease, border-color .15s ease; } }
+
 /* List-rows customiser panel */
 .bv-customize { display: flex; flex-wrap: wrap; gap: 14px 28px; align-items: flex-start; padding: 14px 16px; background: var(--accent-soft); border-bottom: 1px solid var(--accent-line); }
 .bv-pick-group { min-width: 190px; }

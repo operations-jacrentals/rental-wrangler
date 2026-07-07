@@ -6445,6 +6445,7 @@ const DETAIL = {
       ${gpsMapped ? `<div class="kv"><span class="v muted" style="font-size:11px">${esc(u.gpsProvider)} · ${esc(u.gpsDeviceId)}</span>${ghostPill('Reconnect', { js: 'js-gps-connect', data: { rec: u.unitId } })}</div>` : ''}
       ${efld('units', u, 'unitId', 'gpsType', 'GPS unit/type')}
       ${efld('units', u, 'unitId', 'gpsPlacement', 'Placement')}
+      ${gpsShutdownControl(u, gpsM)}
       ${gpsMapped ? gpsFeedHtml(u) : ''}
     </div></div>`;
     /* COVERAGE — the yard's own equipment insurance on this unit (spec equipment-insurance
@@ -14558,6 +14559,11 @@ function onClick(e) {
   if (closest('.js-gps-save')) { e.stopPropagation(); return gpsConnectSave(false); }
   if (closest('.js-gps-save-anyway')) { e.stopPropagation(); return gpsConnectSave(true); }
   if (closest('.js-gps-events-refresh')) { e.stopPropagation(); const u = IDX.unit.get(closest('.js-gps-events-refresh').dataset.rec); if (u) { invalidateGpsEvents(u); render(); } return; }   // §6a — re-pull the device history feed
+  // §6/§7 — remote shutdown (Hapn starter-interrupt). Arm → confirm; role-gated + audited.
+  if (closest('.js-gps-arm')) { e.stopPropagation(); if (!canGpsShutdown()) return; const b = closest('.js-gps-arm'); return gpsArmShutdown(b.dataset.rec, b.dataset.dev); }
+  if (closest('.js-gps-disarm')) { e.stopPropagation(); return gpsDisarm(); }
+  if (closest('.js-gps-kill-confirm')) { e.stopPropagation(); if (!canGpsShutdown()) return; const b = closest('.js-gps-kill-confirm'); if (!_gpsArmed || _gpsArmed.unitId !== b.dataset.rec) return gpsDisarm(); return gpsFireShutdown(b.dataset.rec, b.dataset.dev, false); }   // enable=false → immobilize
+  if (closest('.js-gps-restore')) { e.stopPropagation(); if (!canGpsShutdown()) return; const b = closest('.js-gps-restore'); return gpsFireShutdown(b.dataset.rec, b.dataset.dev, true); }   // enable=true → restore
 
   // universal pill rule — single-click navigates; double-click anchors; ctrl+click = new
   // tab (handled by the early hotkey branch). Same discriminator as rows (#1).
@@ -17662,13 +17668,14 @@ function gpsConnectSave(anyway) {
   toast(o.pollState === 'reporting' ? `GPS connected — ${u.name} is reporting. ✓` : `GPS mapped — ${u.name} saved without confirmed signal yet.`);
 }
 
-/* Hapn starter-interrupt (the remote-shutdown relay, spec §6/§7). NB: this cuts the
-   STARTER so the engine can't be re-started — it does NOT kill a running engine.
-   `enabled: true` engages the interrupt (immobilize); `false` restores normal start.
-   Hapn-only; the backend also logs the command server-side (device_events, plan A3c). */
-async function gpsStarterInterrupt(imei, enabled) {
+/* Hapn starter-interrupt (the remote-shutdown relay, spec §6/§7). Cuts the STARTER so
+   the engine can't be RE-STARTED — it does NOT kill a running engine. Polarity matches
+   the original app (LiveTracking.jsx): `enabled:false` CUTS the starter (immobilize);
+   `enabled:true` RESTORES it. `by` = the acting role, recorded in the audit trail.
+   Hapn-only; the backend logs every attempt server-side (device_events, plan A3c). */
+async function gpsStarterInterrupt(imei, enabled, by) {
   return gpsFetch(`/api/hapn/device/${encodeURIComponent(imei)}/starter-interrupt`, {
-    method: 'POST', body: JSON.stringify({ enabled: !!enabled }),
+    method: 'POST', body: JSON.stringify({ enabled: !!enabled, by: by || undefined }),
   });
 }
 
@@ -17793,7 +17800,7 @@ function gpsEventRow(ev) {
   let icon, color, text;
   if (ev.type === 'shutdown_command') {
     const failed = d.outcome === 'failed';
-    const immob = d.action === 'immobilize' || d.enabled === true;
+    const immob = d.action === 'immobilize' || d.enabled === false;   // enabled:false = starter cut
     icon = failed ? I.alert : (immob ? I.lock : I.lockOpen);
     color = failed ? 'red' : (immob ? 'red' : 'green');
     text = `${immob ? 'Starter cut — immobilized' : 'Starter restored'}${failed ? ' · FAILED' : ''}${ev.actor ? ` · ${esc(ev.actor)}` : ''}`;
@@ -17824,6 +17831,66 @@ function gpsFeedHtml(u) {
   else if (!e.events.length) body = `<div class="gps-feed-empty">No GPS events yet.</div>`;
   else body = e.events.map(gpsEventRow).join('');
   return `<div class="gps-feed-wrap">${head}<div class="gps-feed">${body}</div></div>`;
+}
+
+/* ── REMOTE SHUTDOWN (Hapn starter-interrupt · spec §6/§7) ────────────────────
+   Authority (Jac 2026-07-07): Owner/Admin + Manager + Mechanic/M.Tech ONLY. The
+   control is ABSENT from the DOM for every other role (D5 omit-don't-hide), never
+   merely disabled. IMPORTANT — this is a CLIENT-side gate + a server-side AUDIT (who
+   did it), NOT a server-ENFORCED per-role permission: the GPS backend authenticates
+   one shared team token and can't tell Rental Wrangler roles apart. So it's an
+   accountability control among trusted internal staff, not a boundary against an
+   untrusted actor — a truly enforced gate needs per-role backend auth (follow-up).
+   Immobilize is a two-step ARM → CONFIRM (auto-disarms) so it can't fire by accident;
+   restore is the safe direction, one deliberate tap. */
+const GPS_SHUTDOWN_ROLES = ['owner', 'admin', 'manager', 'mechanic', 'mtech'];
+function canGpsShutdown() { return GPS_SHUTDOWN_ROLES.includes(String(currentRole || '').toLowerCase()); }
+
+let _gpsArmed = null;      // { unitId, deviceId } — the currently ARMED immobilize
+let _gpsArmTimer = null;
+function gpsArmShutdown(unitId, deviceId) {
+  clearTimeout(_gpsArmTimer);
+  _gpsArmed = { unitId, deviceId };
+  render();
+  _gpsArmTimer = setTimeout(() => { _gpsArmed = null; render(); }, 4000);   // auto-disarm after 4s
+}
+function gpsDisarm() { clearTimeout(_gpsArmTimer); _gpsArmed = null; render(); }
+/* enable=false → CUT the starter (immobilize); enable=true → RESTORE. Explicit
+   success/failure toast, no auto-retry; the backend audits both outcomes. */
+async function gpsFireShutdown(unitId, deviceId, enable) {
+  clearTimeout(_gpsArmTimer); _gpsArmed = null;
+  const u = IDX.unit.get(unitId);
+  const nm = u ? u.name : deviceId;
+  try {
+    await gpsStarterInterrupt(deviceId, enable, currentRole || 'operator');
+    toast(enable ? `Starter restored — ${nm} can start.` : `Starter CUT — ${nm} immobilized.`);
+  } catch (e) {
+    toast(`Shutdown command FAILED — no change to ${nm}. (${(e && e.message) || 'error'})`);
+  }
+  if (u) invalidateGpsEvents(u);   // refresh the audit feed (success AND failure were logged)
+  refreshGpsLive();                // pull the new starter state
+  render();
+}
+
+/* The shutdown control for a mapped Hapn unit — Hapn-only + role-gated (absent for
+   others). `machine` = the live machine (for the current starter state), may be null. */
+function gpsShutdownControl(u, machine) {
+  if (u.gpsProvider !== 'Hapn' || !u.gpsDeviceId || !canGpsShutdown()) return '';
+  const dev = esc(u.gpsDeviceId);
+  const immobilized = machine && machine.starterEnabled === false;   // starterEnabled:false = starter cut
+  if (immobilized) {   // safe direction — one deliberate tap
+    return `<div class="kv" style="justify-content:center">${actionPill('commit', 'Restore starter', { js: 'js-gps-restore', data: { rec: u.unitId, dev: u.gpsDeviceId } })}</div>`;
+  }
+  const armed = _gpsArmed && _gpsArmed.unitId === u.unitId;
+  return `<div class="gps-hazard${armed ? ' hot' : ''}">
+    <div class="gh-cap"></div>
+    <div class="gh-row">
+      ${armed
+    ? `${actionPill('danger', 'Confirm — cut starter', { js: 'js-gps-kill-confirm', data: { rec: u.unitId, dev: u.gpsDeviceId } })}${ghostPill('Disarm', { js: 'js-gps-disarm' })}`
+    : actionPill('danger', 'Immobilize', { js: 'js-gps-arm', data: { rec: u.unitId, dev: u.gpsDeviceId } })}
+    </div>
+    <div class="gh-note">${armed ? 'Cuts the starter — the engine can’t be re-started. Auto-disarms.' : 'Owner/Manager/Mechanic only · cuts the starter (not a running engine)'}</div>
+  </div>`;
 }
 
 const dataSnapshot = () => { const s = {}; PERSIST_KEYS.forEach((k) => { s[k] = DATA[k] || []; }); return s; };
