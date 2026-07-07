@@ -78,7 +78,7 @@ const num = (n) => (n == null ? '—' : Number(n).toLocaleString('en-US', { maxi
 const TODAY = parseISO(TODAY_ISO);
 const dayDiff = (a, b) => Math.round((b - a) / 86400000);
 
-const SINGULAR = { customers: 'customer', rentals: 'rental', units: 'unit', invoices: 'invoice', categories: 'category', workOrders: 'workOrder', inspections: 'inspection', serviceOrders: 'unit' };
+const SINGULAR = { customers: 'customer', rentals: 'rental', units: 'unit', invoices: 'invoice', categories: 'category', workOrders: 'workOrder', inspections: 'inspection', serviceOrders: 'unit', models: 'model' };
 
 /* ════════════════════════════════════════════════════════════════════════
    APP-03 · §2 INDEXES & SEARCH — built once on load (SPEC §3: never scan per keystroke)
@@ -695,6 +695,7 @@ function buildIndexes() {
   migrateInvoiceLines();
   IDX.unit     = new Map(DATA.units.map((u) => [u.unitId, u]));
   IDX.category = new Map(DATA.categories.map((c) => [c.categoryId, c]));
+  IDX.model    = new Map((DATA.models || []).map((m) => [m.modelId, m]));
   IDX.customer = new Map(DATA.customers.map((c) => [c.customerId, c]));
   IDX.invoice  = new Map(DATA.invoices.map((i) => [i.invoiceId, i]));
   IDX.rental   = new Map(DATA.rentals.map((r) => [r.rentalId, r]));
@@ -1873,7 +1874,15 @@ const svcText = (s) => (s.status === 'past-due'
 const WASH_TASK = { taskId: 'svc-wash', name: 'Wash / Detail', intervalHours: 100, parts: [] };
 const UNIT_SVC_TASKS = [WASH_TASK, ...SERVICE_TASKS];
 const SVC_OPTS = { tasks: UNIT_SVC_TASKS, hoursField: 'currentHours', baselineField: 'purchaseHours' };
-const unitServiceRows = (u) => serviceOrdersForUnit(u, u.serviceCompletions || {}, SVC_OPTS);
+// Real per-model schedules (Jac 2026-07-07) win when the unit has picked a model
+// with sourced tasks; otherwise fall back to the generic placeholder — an honest
+// miss (same spirit as categoryIconFor's neutral box glyph) rather than a silent
+// wrong number.
+const unitServiceRows = (u) => {
+  const modelTasks = u.modelId && IDX.model.get(u.modelId)?.tasks;
+  const tasks = (modelTasks && modelTasks.length) ? [WASH_TASK, ...modelTasks] : UNIT_SVC_TASKS;
+  return serviceOrdersForUnit(u, u.serviceCompletions || {}, { ...SVC_OPTS, tasks });
+};
 /** The service pill(s) for a row: a submitted Wash Request overrides the countdown
  *  language to a single blue "Wash Requested" pill; otherwise status + countdown. */
 function svcPills(s, focal) {
@@ -6415,7 +6424,7 @@ const DETAIL = {
       ${efld('units', u, 'unitId', 'serial', 'Add serial', { pfx: 'S/N' })}
       ${efld('units', u, 'unitId', 'year', 'Year', { type: 'number' })}
       ${efld('units', u, 'unitId', 'make', 'Make')}
-      ${efld('units', u, 'unitId', 'model', 'Model')}
+      ${efld('units', u, 'unitId', 'modelId', 'Model', { editKind: 'unitModel', admin: true, link: true, fmt: (id) => IDX.model.get(id)?.name || 'Unknown model' })}
       ${efld('units', u, 'unitId', 'weight', 'Weight')}
       <div class="kv"><span class="v inline-edit" data-edit="unitHours" data-rec="${u.unitId}">${num(u.currentHours)} HRS</span></div>
     </div></div>`;
@@ -6777,6 +6786,20 @@ const DETAIL = {
       ${(c.lostDemand || []).length ? kv(`${(c.lostDemand || []).length}`, { sfx: 'lost-demand asks', derived: true }) : ''}
       ${c.description ? kv(c.description, { wrap: true }) : ''}
     </div></div>`;
+    // MODELS (Jac 2026-07-07): the category derives which models a unit can pick —
+    // real per-model maintenance schedules live here, editable via the modelSchedule popup.
+    const catModels = (DATA.models || []).filter((mo) => mo.categoryId === c.categoryId);
+    const modelRows = catModels.map((mo) => `<div class="kv unit-line">${linkName(mo.name, { js: 'js-model-open', data: { rec: mo.modelId } })}${badge(mo.tasks.length + (mo.tasks.length === 1 ? ' task' : ' tasks'))}</div>`).join('');
+    const addModelRow = cs?.addingModel
+      ? `<div class="kv pillrow" style="gap:7px">
+          <input class="lf-in js-am-name" placeholder="Model name" style="flex:1">
+          ${ghostPill('Cancel', { js: 'js-am-cancel' })}${actionPill('commit', 'Add', { js: 'js-am-save', data: { rec: c.categoryId } })}
+        </div>`
+      : kvPills(addBtn('Model', { line: true, js: 'js-add-model', h: 26, data: { rec: c.categoryId } }));
+    const models = `<div class="section"><h4>Models</h4><div class="fieldstack">
+      ${modelRows || '<span class="muted" style="font-size:12px">No models yet — units in this category use the generic service schedule.</span>'}
+      ${addModelRow}
+    </div></div>`;
     // every unit in the category — R2 linked pill + R4 derived status pill (Jac 2026-06-12)
     const catUnits = DATA.units.filter((u) => u.categoryId === c.categoryId);
     const unitRows = catUnits.map((u) => {
@@ -6811,6 +6834,7 @@ const DETAIL = {
       ${bars}
       ${notes.top}
       <div class="detail-cols">${pricing}${fleet}</div>
+      ${models}
       ${investment}
       ${notes.bottom}
       ${historySection('categories', c, cs)}
@@ -10356,6 +10380,34 @@ function buildPopupEl(o, overlay, opts = {}) {
         <input class="lf-in js-pf2-vendor" placeholder="Vendor" value="${esc(ven?.name || '')}" style="width:100%;margin-bottom:4px">
         <p class="muted" style="font-size:11px;margin:4px 0 4px">✨ Empty fields are filled by Mr. Wrangler after saving: the photo is reviewed for the description/cost/url, and hours are estimated from the category + industry standards.</p>` });
     overlay.appendChild(pop);
+  } else if (o.kind === 'modelSchedule') {
+    // A model's real maintenance schedule (Jac 2026-07-07) — replaces the generic
+    // 250/500/1000hr placeholder for any unit that picks this model.
+    const mo = IDX.model.get(o.modelId);
+    const rows = (mo?.tasks || []).map((t, idx) => `<div class="woline">
+        <span class="js-svctask-edit" data-rec="${esc(o.modelId)}" data-idx="${idx}" style="cursor:pointer">${esc(t.name)}</span>
+        <span class="nums"><b>${t.intervalHours != null ? t.intervalHours + 'h' : '—'}</b>${t.parts?.length ? `<span>${t.parts.length} part${t.parts.length === 1 ? '' : 's'}</span>` : ''}</span>
+        ${closeX('js-svctask-remove', { data: { rec: o.modelId, idx } })}
+      </div>`).join('');
+    const pop = el('div', 'popup'); pop.style.width = '420px';
+    pop.innerHTML = popupShell({ icon: CARD_ICON.workOrders, title: mo?.name || 'Model schedule', tag: 'Category · model',
+      foot: `${ghostPill('Close', { js: 'js-close' })}`,
+      body: `
+        ${rows || '<p class="muted" style="font-size:12.5px;text-align:center;margin:6px 0 12px">No tasks yet — this model falls back to the generic schedule until you add some.</p>'}
+        <div class="wototals">${addBtn('Task', { anchor: true, js: 'js-add-svctask', h: 26, data: { rec: o.modelId } })}</div>` });
+    overlay.appendChild(pop);
+  } else if (o.kind === 'svctaskform') {
+    // Add/edit one maintenance-schedule task row on a model.
+    const mo = IDX.model.get(o.modelId);
+    const t = o.idx != null ? (mo?.tasks || [])[o.idx] : null;
+    const pop = el('div', 'popup'); pop.style.width = '380px';
+    pop.innerHTML = popupShell({ icon: CARD_ICON.workOrders, title: `${t ? 'Edit' : 'Add'} Task`, tag: 'Model · schedule',
+      foot: `${ghostPill('Cancel', { js: 'js-close' })}${actionPill('commit', t ? 'Save' : 'Add task', { js: 'js-svctaskform-save' })}`,
+      body: `
+        <input class="lf-in js-st-name" placeholder="Task name" value="${esc(t?.name || '')}" style="width:100%;margin-bottom:7px">
+        <input class="lf-in js-st-hours" type="number" min="0" placeholder="Interval (hours)" value="${t?.intervalHours ?? ''}" style="width:100%;margin-bottom:7px">
+        <input class="lf-in js-st-parts" placeholder="Parts (comma-separated, optional)" value="${esc((t?.parts || []).join(', '))}" style="width:100%">` });
+    overlay.appendChild(pop);
   } else if (o.kind === 'receiptform') {
     // Receipt popup (Jac: "Receipts use popups and reconcile against parts") — the
     // partform anatomy: photo + every field optional, ✨ Mr. Wrangler fills the blanks.
@@ -11009,6 +11061,8 @@ const WINDOW_CATALOG = [
   { kind: 'linkConfirm',   label: 'Confirm link',            tag: 'Link · confirm',           sample: () => ({ srcCard: 'rentals', srcId: ((DATA.rentals || [])[0] || {}).rentalId, targetCard: 'invoices', targetId: ((DATA.invoices || [])[0] || {}).invoiceId }) },
   { kind: 'rulebook',      label: 'The R-Rulebook',          tag: 'SPEC v8 · design system',  sample: () => ({}) },
   { kind: 'partform',      label: 'Add / Edit Part · Task',  tag: 'Work order · line',         sample: () => ({ woId: ((DATA.workOrders || [])[0] || {}).woId }) },
+  { kind: 'modelSchedule', label: 'Model maintenance schedule', tag: 'Category · model',       sample: () => ({ modelId: ((DATA.models || [])[0] || {}).modelId }) },
+  { kind: 'svctaskform',   label: 'Add / Edit schedule task', tag: 'Model · schedule',          sample: () => ({ modelId: ((DATA.models || [])[0] || {}).modelId, idx: null }) },
   { kind: 'receiptform',   label: 'New / Edit Receipt',      tag: 'Expense · receipt',         sample: () => ({}) },
   { kind: 'capture',       label: 'Log yard journey',        tag: 'Yard journey · log',        sample: () => ({ rentalId: ((DATA.rentals || [])[0] || {}).rentalId, cap: 'start' }) },
   { kind: 'wodone',        label: 'Complete Work Order?',    tag: 'Work order · confirm',      sample: () => ({ woId: ((DATA.workOrders || [])[0] || {}).woId }) },
@@ -11606,7 +11660,7 @@ function wrPlanNeedsApply(plan) {
   }
   return records > 1;   // several records in one go → let the user review them together
 }
-const WR_IDX = { customers: () => IDX.customer, units: () => IDX.unit, categories: () => IDX.category, rentals: () => IDX.rental, vendors: () => IDX.vendor, parts: () => IDX.part, expenses: () => IDX.expense, inspections: () => IDX.insp, workOrders: () => IDX.wo };
+const WR_IDX = { customers: () => IDX.customer, units: () => IDX.unit, categories: () => IDX.category, rentals: () => IDX.rental, vendors: () => IDX.vendor, parts: () => IDX.part, expenses: () => IDX.expense, inspections: () => IDX.insp, workOrders: () => IDX.wo, models: () => IDX.model };
 const wrGet = (entity, id) => (WR_IDX[entity] ? WR_IDX[entity]().get(id) : null);
 // ── Name resolution (Jac 2026-06-26) — Mr. Wrangler talks in NAMES (the digest gives names), so the
 // operations + foreign-key fields resolve a human reference (id | name | phone-suffix for customers) to the
@@ -14244,6 +14298,15 @@ function onClick(e) {
   if (closest('.js-pf2-save')) { e.stopPropagation(); return savePartForm(); }
   if (closest('.js-part-save')) { const b = closest('.js-part-save'); e.stopPropagation(); const root = b.closest('.lineform'); const part = root.querySelector('.js-pf-part')?.value; const cost = Number(root.querySelector('.js-pf-cost')?.value) || 0; const hours = Number(root.querySelector('.js-pf-hours')?.value) || 0; state.woPartForm = null; return addPartToWO(b.dataset.rec, part || 'Part', cost, hours); }
   if (closest('.js-part-cancel')) { e.stopPropagation(); state.woPartForm = null; return render(); }
+  // MODELS (Jac 2026-07-07): category-scoped models + their editable maintenance schedules.
+  if (closest('.js-add-model')) { e.stopPropagation(); activeSession().cards.categories.addingModel = true; return render(); }
+  if (closest('.js-am-cancel')) { e.stopPropagation(); activeSession().cards.categories.addingModel = false; return render(); }
+  if (closest('.js-am-save')) { const b = closest('.js-am-save'); e.stopPropagation(); return saveNewModel(b.dataset.rec); }
+  if (closest('.js-model-open')) { const b = closest('.js-model-open'); e.stopPropagation(); return openOverlay({ kind: 'modelSchedule', modelId: b.dataset.rec }); }
+  if (closest('.js-add-svctask')) { const b = closest('.js-add-svctask'); e.stopPropagation(); return openOverlay({ kind: 'svctaskform', modelId: b.dataset.rec, idx: null }); }
+  if (closest('.js-svctask-edit')) { const b = closest('.js-svctask-edit'); e.stopPropagation(); return openOverlay({ kind: 'svctaskform', modelId: b.dataset.rec, idx: Number(b.dataset.idx) }); }
+  if (closest('.js-svctask-remove')) { const b = closest('.js-svctask-remove'); e.stopPropagation(); return removeSvcTask(b.dataset.rec, Number(b.dataset.idx)); }
+  if (closest('.js-svctaskform-save')) { e.stopPropagation(); return saveSvcTaskForm(); }
   // inspection gated flow (§9): Wash → Checklist → result
   if (closest('.js-open-insp')) { e.stopPropagation(); return openOverlay({ kind: 'inspection', recId: closest('.js-open-insp').dataset.rec }); }
   if (closest('[data-ctx]')) return runCtxAction(closest('[data-ctx]').dataset.ctx);   // R20 context menu
@@ -14548,6 +14611,49 @@ function startInlineEdit(span) {
     span.replaceWith(sel); sel.focus();
     sel.addEventListener('change', commitCat);
     sel.addEventListener('blur', commitCat);
+    return;
+  } else if (kind === 'unitModel') {
+    // Category-scoped model link for a unit (Jac 2026-07-07): a <select> of the
+    // unit's OWN category's models, plus a "+ Add new model…" sentinel that swaps
+    // to a plain text input (find-or-create, mirrors savePartForm's idiom). A unit
+    // with no category yet can't pick a model — the category derives the options.
+    const u = IDX.unit.get(recId);
+    if (!u || !u.categoryId) { toast('Set a category first.'); render(); return; }
+    const opts2 = (DATA.models || []).filter((mo) => mo.categoryId === u.categoryId);
+    const sel = el('select', 'inline-input');
+    sel.innerHTML = ['<option value="">— No model —</option>']
+      .concat(opts2.map((mo) => `<option value="${esc(mo.modelId)}"${u.modelId === mo.modelId ? ' selected' : ''}>${esc(mo.name)}</option>`))
+      .concat(['<option value="__new__">+ Add new model…</option>'])
+      .join('');
+    const commitModel = () => {
+      if (done) return; done = true;
+      if (u) { const old = u.modelId; const v = sel.value || null; if ((old || '') !== (v || '')) { u.modelId = v; reindex('units', u); logAction(u, `Model: ${auditVal(IDX.model.get(old)?.name || '')} → ${auditVal(IDX.model.get(v)?.name || '')}`); } }
+      render();
+    };
+    sel.addEventListener('change', () => {
+      if (sel.value !== '__new__') return commitModel();
+      // swap the select for a name input; committing creates the model then assigns it
+      done = true;
+      const input = el('input', 'inline-input'); input.placeholder = 'New model name';
+      let idone = false;
+      const commitNew = () => {
+        if (idone) return; idone = true;
+        const name = input.value.trim();
+        if (name && u) {
+          const mo = { modelId: 'MOD-C' + (state.seq++), categoryId: u.categoryId, name, tasks: [], mock: true };
+          DATA.models.push(mo); IDX.model.set(mo.modelId, mo); reindex('models', mo);
+          logAction(mo, `Model added to ${IDX.category.get(u.categoryId)?.name || 'category'}`);
+          const old = u.modelId; u.modelId = mo.modelId; reindex('units', u);
+          logAction(u, `Model: ${auditVal(IDX.model.get(old)?.name || '')} → ${auditVal(mo.name)}`);
+        }
+        render();
+      };
+      sel.replaceWith(input); input.focus();
+      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); commitNew(); } else if (e.key === 'Escape') { idone = true; render(); } });
+      input.addEventListener('blur', commitNew);
+    });
+    span.replaceWith(sel); sel.focus();
+    sel.addEventListener('blur', commitModel);
     return;
   } else { return; }
   if (kind === 'field' && span.dataset.dot === '1') {
@@ -15055,6 +15161,47 @@ function savePartForm() {
   // in-memory base64 FIRST, so chain the offload after the autofill resolves.
   const offloadLinePhoto = () => { if (photo) offloadPhoto(li, 'photo', 'wopart_' + w.woId + '_' + lineKey(li), w, 'workOrders'); };
   if (willFill) autofillPartLine(w, li, photo).then(offloadLinePhoto, offloadLinePhoto); else offloadLinePhoto();   // §18g fire-and-forget photo autofill (offload even if the AI read fails)
+}
+/* MODELS (Jac 2026-07-07): a category derives which models a unit can pick; each
+   model carries its own real maintenance-schedule task list (service-countdown.js
+   shape: {taskId,name,intervalHours,parts}), editable here, replacing the generic
+   placeholder for any unit that picks it (see unitServiceRows). */
+function saveNewModel(categoryId) {
+  const cs = activeSession().cards.categories;
+  const name = (document.querySelector('.js-am-name')?.value || '').trim();
+  if (!name) return attnFlash('.js-am-name');   // R19: need a name
+  const mo = { modelId: 'MOD-C' + (state.seq++), categoryId, name, tasks: [], mock: true };
+  DATA.models.push(mo); IDX.model.set(mo.modelId, mo); reindex('models', mo);
+  logAction(mo, `Model added to ${IDX.category.get(categoryId)?.name || 'category'}`);
+  cs.addingModel = false;
+  toast(`${name} added — open it to build its maintenance schedule.`);
+  render();
+}
+function removeSvcTask(modelId, idx) {
+  const mo = IDX.model.get(modelId); if (!mo || !mo.tasks[idx]) return;
+  const [gone] = mo.tasks.splice(idx, 1);
+  reindex('models', mo); logAction(mo, `Removed task: ${auditVal(gone.name)}`);
+  toast('Task removed.'); renderOverlay();
+}
+function saveSvcTaskForm() {
+  const o = state.overlay; if (!o || o.kind !== 'svctaskform') return;
+  const mo = IDX.model.get(o.modelId); if (!mo) return closeOverlay();
+  const g = (c) => (document.querySelector(c)?.value || '').trim();
+  const name = g('.js-st-name'), hours = g('.js-st-hours'), partsRaw = g('.js-st-parts');
+  if (!name) return attnFlash('.js-st-name');   // R19: a task needs a name
+  mo.tasks = mo.tasks || [];
+  const parts = partsRaw ? partsRaw.split(',').map((p) => p.trim()).filter(Boolean) : [];
+  if (o.idx != null) {
+    const t = mo.tasks[o.idx]; if (!t) return closeOverlay();   // stale edit index — removed after the popup opened
+    t.name = name; t.intervalHours = hours !== '' ? Number(hours) || 0 : null; t.parts = parts;
+    logAction(mo, `Edited task: ${auditVal(name)}`);
+  } else {
+    mo.tasks.push({ taskId: 'svc-c' + (state.seq++), name, intervalHours: hours !== '' ? Number(hours) || 0 : null, parts, source: 'Added in-app' });
+    logAction(mo, `Added task: ${auditVal(name)}`);
+  }
+  reindex('models', mo);
+  state.overlay = { kind: 'modelSchedule', modelId: o.modelId };   // back to the list, not fully closed
+  toast('Schedule saved.'); renderOverlay();
 }
 /* Receipt popup save (§7.11): creates/updates the expense; vendor name-match or
    auto-create (the savePartForm idiom); empty AI-fillable fields flag aiPending ✨;
@@ -17201,7 +17348,7 @@ function mergeInvoiceInto(keepId, absorbId) {
    demo data on first run, and auto-saves (debounced) after every change.
    Single shared password (sent with every call; the URL alone is useless). */
 const BACKEND_URL = 'https://script.google.com/macros/s/AKfycbzHahzgJqOYe9o4GKlRVGh-A7USRn1k4Dvyy4ajLh8EYCqVxofouM28qs8trNlObZw/exec';
-const PERSIST_KEYS = ['categories', 'units', 'customers', 'invoices', 'rentals', 'workOrders', 'inspections', 'vendors', 'parts', 'companyFiles', 'expenses'];
+const PERSIST_KEYS = ['categories', 'units', 'customers', 'invoices', 'rentals', 'workOrders', 'inspections', 'vendors', 'parts', 'companyFiles', 'expenses', 'models'];
 let backendPassword = sessionStorage.getItem('jactec.pw') || '';
 let booting = true;                       // suppresses saves during initial load
 let saveTimer = null, saving = false, savePending = false;
@@ -17250,7 +17397,7 @@ async function loadFromBackend() {
 // a snapshot of what the backend last held and, on each flush, send only the
 // records that changed (upserts) or vanished (deletes). A one-field edit becomes
 // a few-hundred-byte, sub-second call.
-const PERSIST_ID = { categories: 'categoryId', units: 'unitId', customers: 'customerId', invoices: 'invoiceId', rentals: 'rentalId', workOrders: 'woId', inspections: 'inspectionId', vendors: 'vendorId', parts: 'partId', companyFiles: 'fileId', expenses: 'expenseId' };
+const PERSIST_ID = { categories: 'categoryId', units: 'unitId', customers: 'customerId', invoices: 'invoiceId', rentals: 'rentalId', workOrders: 'woId', inspections: 'inspectionId', vendors: 'vendorId', parts: 'partId', companyFiles: 'fileId', expenses: 'expenseId', models: 'modelId' };
 let lastSaved = null;   // { entity: Map(id → JSON) } — the last successfully-persisted state
 function snapshotSaved() {
   lastSaved = {};
@@ -17274,7 +17421,7 @@ function computeChanges() {
 // other user reloaded). Poll the backend and adopt remote changes for records the
 // local user HASN'T touched (clean === lastSaved); keep in-progress local edits;
 // NEVER delete on refresh (a transient blip can't wipe data).
-const IDX_MAP = { categories: 'category', units: 'unit', customers: 'customer', invoices: 'invoice', rentals: 'rental', workOrders: 'wo', inspections: 'insp', vendors: 'vendor', parts: 'part', companyFiles: 'file', expenses: 'expense' };
+const IDX_MAP = { categories: 'category', units: 'unit', customers: 'customer', invoices: 'invoice', rentals: 'rental', workOrders: 'wo', inspections: 'insp', vendors: 'vendor', parts: 'part', companyFiles: 'file', expenses: 'expense', models: 'model' };
 let refreshing = false, refreshTimer = null;
 async function refreshFromBackend() {
   if (refreshing || booting || !backendPassword || saving || savePending || !lastSaved) return;
