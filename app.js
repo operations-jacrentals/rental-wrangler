@@ -4896,9 +4896,12 @@ function actionPill(kind, label, { js, data, h } = {}) {
 }
 /** R18: the ONE quiet/neutral action — Cancel, Close, secondary tools.
  *  `disabled` greys it (is-disabled) and drops the js hook so it's inert; pair with `tip`
- *  (R23 data-tip) to explain why (e.g. "No email on file"). */
-function ghostPill(label, { js, data, tip, disabled } = {}) {
-  return `<button class="pill ghost${disabled ? ' is-disabled' : ''}${js && !disabled ? ' ' + js : ''}" data-r="R18"${dataAttrs(data)}${tip ? ` data-tip="${esc(tip)}"` : ''}${disabled ? ' aria-disabled="true"' : ''}>${esc(label)}</button>`;
+ *  (R23 data-tip) to explain why (e.g. "No email on file"). `icon` renders an icon-only
+ *  circular chip (same ghost weight, sized to match a badge) instead of the text label —
+ *  the label still becomes the a11y name + the R23 tooltip (e.g. a row's Duplicate action). */
+function ghostPill(label, { js, data, tip, disabled, icon } = {}) {
+  const tipAttr = icon ? (tip || label) : tip;
+  return `<button class="pill ghost${icon ? ' icon-only' : ''}${disabled ? ' is-disabled' : ''}${js && !disabled ? ' ' + js : ''}" data-r="R18"${dataAttrs(data)}${tipAttr ? ` data-tip="${esc(tipAttr)}"` : ''}${icon ? ` aria-label="${esc(label)}"` : ''}${disabled ? ' aria-disabled="true"' : ''}>${icon || esc(label)}</button>`;
 }
 /** The popup PLATE — every overlay's shell, so they all read as one bolted data-plate.
  *  Hazard cap (red `danger` variant for abort/destroy) + corner rivets + stamped Saira
@@ -4946,7 +4949,7 @@ const RULE_META = {
   R15: ['Journey', 'yardToolHtml / miniJourneyHtml', 'yard +Start/+FC/+End + Jac─Site─Jac transport; white = video owed'],
   R16: ['Window calendar', 'rdcal-edit / winPickerEl (inline)', 'the rental window — an INLINE editable month calendar in the detail (popup retired 2026-06-25); tap start→end, the left Units/Categories card shows availability live, fragile rentals stage with an inline Confirm panel below the calendar'],
   R17: ['Action pill', 'actionPill', 'commit = blue · money = green · danger = solid red; .locked = gated'],
-  R18: ['Ghost', 'ghostPill', 'the ONE quiet action — Cancel / Close / Exit / Clear'],
+  R18: ['Ghost', 'ghostPill', 'the ONE quiet action — Cancel / Close / Exit / Clear, or an icon-only row secondary (e.g. Duplicate)'],
   R19: ['Attention flash', 'attnFlash / flashOr', 'a glow that points AT the next action — replaces an error message when the fix is on screen'],
   R20: ['Context menu', 'openCtxMenu (right-click · long-press)', 'right-click/long-press any element: Cut · Copy · Paste · Search · Replace · Add Comment · Ask Mr. Wrangler'],
   R21: ['File drop', 'fileDrop', 'the MASSIVE popup add-file zone — R5b blue dashed at full size'],
@@ -7002,10 +7005,15 @@ const DETAIL = {
     // MODELS (Jac 2026-07-07): the category derives which models a unit can pick —
     // real per-model maintenance schedules live here, editable via the modelSchedule popup.
     const catModels = (DATA.models || []).filter((mo) => mo.categoryId === c.categoryId);
-    const modelRows = catModels.map((mo) => `<div class="kv unit-line">${linkName(mo.name, { js: 'js-model-open', data: { rec: mo.modelId } })}${badge(mo.tasks.length + (mo.tasks.length === 1 ? ' task' : ' tasks'))}</div>`).join('');
+    // Duplicate (Jac 2026-07-07): a per-row R18 icon-only action reuses the SAME inline
+    // "+ Add Model" input below — js-model-dup just pre-arms it with a source to clone
+    // from (cs.dupFrom) rather than opening a separate popup.
+    const modelRows = catModels.map((mo) => `<div class="kv unit-line">${linkName(mo.name, { js: 'js-model-open', data: { rec: mo.modelId } })}${badge(mo.tasks.length + (mo.tasks.length === 1 ? ' task' : ' tasks'))}${ghostPill('Duplicate', { js: 'js-model-dup', data: { rec: mo.modelId }, icon: I.copy })}</div>`).join('');
+    const dupSrc = cs?.dupFrom ? IDX.model.get(cs.dupFrom) : null;
     const addModelRow = cs?.addingModel
       ? `<div class="kv pillrow" style="gap:7px">
-          <input class="lf-in js-am-name" placeholder="Model name" style="flex:1">
+          ${dupSrc ? `<span class="muted" style="font-size:11px;width:100%">Duplicating ${esc(dupSrc.name)} — rename below</span>` : ''}
+          <input class="lf-in js-am-name" placeholder="Model name" style="flex:1" value="${dupSrc ? esc(dupSrc.name + ' copy') : ''}">
           ${ghostPill('Cancel', { js: 'js-am-cancel' })}${actionPill('commit', 'Add', { js: 'js-am-save', data: { rec: c.categoryId } })}
         </div>`
       : kvPills(addBtn('Model', { line: true, js: 'js-add-model', h: 26, data: { rec: c.categoryId } }));
@@ -14331,7 +14339,8 @@ function onClick(e) {
   if (closest('.js-part-cancel')) { e.stopPropagation(); state.woPartForm = null; return render(); }
   // MODELS (Jac 2026-07-07): category-scoped models + their editable maintenance schedules.
   if (closest('.js-add-model')) { e.stopPropagation(); activeSession().cards.categories.addingModel = true; return render(); }
-  if (closest('.js-am-cancel')) { e.stopPropagation(); activeSession().cards.categories.addingModel = false; return render(); }
+  if (closest('.js-model-dup')) { const b = closest('.js-model-dup'); e.stopPropagation(); const cs = activeSession().cards.categories; cs.dupFrom = b.dataset.rec; cs.addingModel = true; return render(); }
+  if (closest('.js-am-cancel')) { e.stopPropagation(); const cs = activeSession().cards.categories; cs.addingModel = false; cs.dupFrom = null; return render(); }
   if (closest('.js-am-save')) { const b = closest('.js-am-save'); e.stopPropagation(); return saveNewModel(b.dataset.rec); }
   if (closest('.js-model-open')) { const b = closest('.js-model-open'); e.stopPropagation(); return openOverlay({ kind: 'modelSchedule', modelId: b.dataset.rec }); }
   if (closest('.js-add-svctask')) { const b = closest('.js-add-svctask'); e.stopPropagation(); return openOverlay({ kind: 'svctaskform', modelId: b.dataset.rec, idx: null }); }
@@ -15233,11 +15242,19 @@ function saveNewModel(categoryId) {
   const cs = activeSession().cards.categories;
   const name = (document.querySelector('.js-am-name')?.value || '').trim();
   if (!name) return attnFlash('.js-am-name');   // R19: need a name
-  const mo = { modelId: 'MOD-C' + (state.seq++), categoryId, name, tasks: [], mock: true };
+  // Duplicate (Jac 2026-07-07): cs.dupFrom names a source model to clone tasks from —
+  // a shallow per-task clone ({...t}) is enough since task fields are primitives/string
+  // arrays; taskIds are reused verbatim (they only need to be unique within a unit's
+  // own service-completion bookkeeping, not globally).
+  const dupSrc = cs.dupFrom ? IDX.model.get(cs.dupFrom) : null;
+  const tasks = dupSrc ? dupSrc.tasks.map((t) => ({ ...t })) : [];
+  const mo = { modelId: 'MOD-C' + (state.seq++), categoryId, name, tasks, mock: true };
   DATA.models.push(mo); IDX.model.set(mo.modelId, mo); reindex('models', mo);
-  logAction(mo, `Model added to ${IDX.category.get(categoryId)?.name || 'category'}`);
-  cs.addingModel = false;
-  toast(`${name} added — open it to build its maintenance schedule.`);
+  logAction(mo, dupSrc ? `Model duplicated from ${dupSrc.name}` : `Model added to ${IDX.category.get(categoryId)?.name || 'category'}`);
+  cs.addingModel = false; cs.dupFrom = null;
+  toast(dupSrc
+    ? `${name} added — duplicated ${tasks.length} ${tasks.length === 1 ? 'task' : 'tasks'} from ${dupSrc.name}.`
+    : `${name} added — open it to build its maintenance schedule.`);
   render();
 }
 function removeSvcTask(modelId, idx) {

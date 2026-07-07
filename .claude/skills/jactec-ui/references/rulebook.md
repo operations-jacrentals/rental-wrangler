@@ -31,7 +31,7 @@ you change a rule. Debug in this language: "that pill violates R4 — fix `dPill
 | **R15** | Journey | `yardToolHtml` / `miniJourneyHtml` | Yard +Start/+FC/+End + Jac─Site─Jac transport; white = video owed. Per-unit. |
 | **R16** | Day timeline | the rentals `timeline` | The rental window in day cells; centered gate + naked price·rate; cells tint by status. |
 | **R17** | Action pill | `actionPill` | commit = blue · money = green · danger = solid red; `.locked` = gated. |
-| **R18** | Ghost | `ghostPill` | The ONE quiet action — Cancel / Close / Exit / Clear. |
+| **R18** | Ghost | `ghostPill` | The ONE quiet action — Cancel / Close / Exit / Clear — or, with `icon`, an icon-only row secondary (e.g. Duplicate) sized to match a badge. |
 | **R19** | Attention flash | `attnFlash(sel)` / `flashOr(sel,msg)` | A glow that points AT the on-screen fix instead of an error message. |
 | **R20** | Wrangler menu | `openCtxMenu` / `runCtxAction` | Right-click / long-press a REAL control → Cut/Copy/Paste/Clear/Search/Replace/Add Comment/Ask Mr. Wrangler. Never on bare `.row`/dead space. |
 | **R21** | File drop | `fileDrop` | The MASSIVE popup add-file zone — R5b blue dashed at full size. |
