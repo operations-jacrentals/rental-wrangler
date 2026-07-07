@@ -35,7 +35,7 @@
  *
  * WIRE-UP: add to handle()'s router (after the unauthorized gate):
  *     if (action === 'sendCustomerMessage') return json(sendCustomerMessage_(body, role));
- *     if (action === 'messagesFor') return json(messagesFor_(body, role));
+ *     if (action === 'messagesFor') return json(messagesFor_(body, role, pw));
  *     if (action === 'commsAliases') return json(commsAliases_(body, role));
  */
 
@@ -210,8 +210,9 @@ function sendCustomerMessage_(body, role) {
   return { ok: true, msgId: msgId, status: status, channel: channel, maskedTo: channel === 'email' ? smsMaskEmail_(to) : smsMaskPhone_(cust.phone), fromUsed: channel === 'email' ? fromUsed : '' };
 }
 // The REDACTED projection the client may render (spec Q-9: PII never synced).
-function messagesFor_(body, role) {
+function messagesFor_(body, role, pw) {
   body = body || {};
+  var admin = false; try { admin = isAdmin(pw); } catch (e) {}
   var sh = messagesSheet_();
   var rows = sh.getLastRow() ? sh.getRange(1, 1, sh.getLastRow(), 2).getValues() : [];
   var out = [];
@@ -219,7 +220,9 @@ function messagesFor_(body, role) {
     try {
       var m = JSON.parse(rows[i][1]);
       if (m.entity === body.entity && String(m.recId) === String(body.recId)) {
-        out.push({ msgId: m.msgId, channel: m.channel, direction: m.direction, entity: m.entity, recId: m.recId, customerId: m.customerId, template: m.template, status: m.status, when: m.when });
+        var p = { msgId: m.msgId, channel: m.channel, provider: m.provider, direction: m.direction, entity: m.entity, recId: m.recId, customerId: m.customerId, template: m.template, status: m.status, when: m.when };
+        if (admin) p.providerErr = m.providerErr || '';   // diagnostics for ADMIN callers only — still no `to`/body
+        out.push(p);
       }
     } catch (e) {}
   }
