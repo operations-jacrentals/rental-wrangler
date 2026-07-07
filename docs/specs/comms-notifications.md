@@ -9,6 +9,40 @@
 
 ---
 
+## ✅ Addendum — 2026-07-07 (Jac, PM): D9 SINGLE-OPEN + ALL FOUR CATEGORIES LIVE
+
+Two revisions to D8, both Jac's direct calls:
+
+- **SINGLE-OPEN LAW (revokes D8's "multiple at once"):** at most ONE conversation
+  popup is open at any time, across ALL categories. Opening any conversation — a
+  rail tab click, an ALL-menu **Open**, the R20 context menu, the profile Comms
+  section, or a chip summoning a remembered session — closes whatever popup was
+  open first. Tabs stay plural on the rail; the POPUP is singular. A session
+  remembers only its LAST-open conversation, so a chip re-summon restores exactly
+  one popup. (Jac: "Open one and the previous closes.")
+- **Team + Mr. Wrangler migrate onto the engine NOW (Phase B lands in this same
+  branch/PR):** the D8 bridge chips (which still toggled the old docks) become
+  real rail sessions, and the old bottom-bar team-chat dock and Mr. Wrangler dock
+  SURFACES retire. Their message machinery (stores, send paths, seen/unread
+  logic, backend sync) is REUSED, not rebuilt:
+  - **Team:** tabs = the existing team chats (`CHAT…` records; title = the chat's
+    tag/label). Popup = that chat's feed + composer riding the existing store +
+    `chatSend`/`chatMarkSeen`. ALL menu lists chats (Open / End — End hides the
+    chat from the rail and marks it ended client-side like customer threads; any
+    new message or ALL-menu Open resurrects). A **+ New chat** affordance in the
+    ALL menu reuses `newChat()`.
+  - **Mr. Wrangler:** tabs = the wrangler chat sessions the dock already keeps
+    (the wranglerRail snapshot/load store). Popup = the wrangler feed + composer
+    riding the existing send machinery (`wranglerSend` et al.) — attachments/
+    tools buttons come along only where the existing composer markup can be
+    reused as-is; anything that can't reuse cleanly stays a dock-only feature
+    dropped with the dock (Jac favors the simpler rail). **+ New chat** in the
+    ALL menu = `wranglerNewChat()` routed onto the rail.
+  - **Chips get real status dots** (worst-of, registry grammar): Red = unseen
+    (team `chatUnreadCount` / wrangler unseen), Yellow = last message isn't
+    yours (awaiting your reply), Green = otherwise. Same rules the customer
+    categories already apply.
+
 ## ✅ Addendum — 2026-07-07 (Jac): D8 THE COMMS RAIL (supersedes D5's single-dock surface)
 
 Approved via clickable mock v3 (claude.ai/code/artifact/d802e634-a9f9-41cf-a016-0cf0f863be9a).
