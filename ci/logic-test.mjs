@@ -719,6 +719,26 @@ try {
       ok(T.__state.wrangler.min === true, 'WR-reserve: dock minimizes after the booking so the user lands on the rental');
     }
 
+    // 12m2) SERVICE SNOOZE (backlog #43, Jac 2026-07-07): snooze SILENCES the alarm
+    // (topServiceForUnit skips it), wake restores it, completing the task clears it.
+    {
+      const su = { unitId: 'U-SNZ1', name: 'Snooze Rig', categoryId: T.DATA.categories[0].categoryId, assignedMechanic: '', currentHours: 900, inspectionStatus: 'Ready', fleetStatus: 'Active', purchaseHours: 0, serviceCompletions: {} };
+      T.DATA.units.push(su); T.IDX.unit.set(su.unitId, su);
+      const top0 = T.topServiceForUnit(su);
+      ok(top0 && top0.status === 'past-due', 'snooze: fixture unit starts with a past-due top service');
+      T.snoozeService(su.unitId, top0.taskId, 7);
+      ok(T.svcSnoozedUntil(su, top0.taskId) > T.TODAY_ISO, 'snooze: 7-day snooze stamps a future until-date');
+      const top1 = T.topServiceForUnit(su);
+      ok(!top1 || top1.taskId !== top0.taskId, 'snooze: the snoozed task no longer drives the alarm (Jac: snooze silences)');
+      T.snoozeService(su.unitId, top0.taskId, null);
+      ok(T.topServiceForUnit(su)?.taskId === top0.taskId, 'snooze: wake restores the alarm');
+      T.snoozeService(su.unitId, top0.taskId, 14);
+      T.recordServiceCompletion(su.unitId, top0.taskId, 900);
+      ok(!T.svcSnoozedUntil(su, top0.taskId), 'snooze: completing the task clears its snooze');
+      ok((su.serviceLog || []).some((l) => l.taskId === top0.taskId), 'snooze: the completion itself logged normally');
+      T.__state.overlay = null;
+    }
+
     // 12n) Bring-them-to-it for ANY board (Jac) — wrFocusRecord jumps to the record wherever it lives.
     {
       const ven = T.DATA.vendors[0];

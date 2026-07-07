@@ -1890,12 +1890,39 @@ function svcPills(s, focal) {
   if (s.washRequested) return badge('Wash Requested', 'blue', focal);          // R3
   return badge(getStatus('serviceStatus', s.status).label, s.color, focal) + badge(svcText(s), s.color);   // R3 (urgency = focal on the shop service row)
 }
+/* SNOOZE (backlog #43, Jac 2026-07-07): a mechanic mutes ONE task's alarm until a date.
+   Jac's law: snooze SILENCES the alarm everywhere — row pills, the Units-tab alert, the
+   worklist graph, the countdown sort — all via topServiceForUnit skipping snoozed tasks.
+   The task row itself still tells the truth ("Snoozed thru … · was N HRS overdue").
+   Expired snoozes are inert; completing a task clears its snooze. */
+const svcSnoozedUntil = (u, taskId) => {
+  const until = (u.serviceSnoozes || {})[taskId];
+  return until && until > TODAY_ISO ? until : null;
+};
+function snoozeService(unitId, taskId, days) {
+  const u = IDX.unit.get(unitId); if (!u) return;
+  const t = unitServiceRows(u).find((s) => s.taskId === taskId);
+  u.serviceSnoozes = u.serviceSnoozes || {};
+  if (days == null) {   // wake — the alarm is live again
+    delete u.serviceSnoozes[taskId];
+    reindex('units', u); logAction(u, `Woke ${t?.name || taskId} — service alarm live`);
+    toast('Snooze cleared — the countdown is live.');
+  } else {
+    const until = addDaysISO(TODAY_ISO, days);
+    u.serviceSnoozes[taskId] = until;
+    reindex('units', u); logAction(u, `Snoozed ${t?.name || taskId} until ${fmtShortDate(until)}`);
+    toast(`Snoozed ${days} days — quiet until ${fmtShortDate(until)}.`);
+  }
+  render();
+}
 /** Most-urgent active service order for a unit (derived via the reference module).
- *  A pending wash request floats the wash task to the top regardless of its countdown. */
+ *  A pending wash request floats the wash task to the top regardless of its countdown.
+ *  Snoozed tasks are SKIPPED (Jac: snoozing silences the alarm — the next-urgent
+ *  unsnoozed task drives the pills/alerts instead). */
 function topServiceForUnit(unit) {
   const rows = unitServiceRows(unit);
   if (unit.washRequested) { const w = rows.find((s) => s.taskId === 'svc-wash'); if (w) return { ...w, washRequested: true }; }
-  const active = rows.filter((s) => s.status !== 'ok');
+  const active = rows.filter((s) => s.status !== 'ok' && !svcSnoozedUntil(unit, s.taskId));
   return active[0] || null;
 }
 /** Total repair cost for a unit = Σ its WO line-item costs (SPEC §12.4). */
@@ -6064,27 +6091,41 @@ function woSectionHtml(w) {
    countdown list — wash pinned to the top, then most-urgent first — with the
    same js-svc-complete completion flow the Shop card used. Section header +
    border follow the worst task's live status (R11). */
+const SVC_LIST_CAP = 6;   // real per-model schedules run 20+ tasks — cap the section, expand on demand
 function serviceTasksHtml(u, { title = 'Services' } = {}) {
   const all = unitServiceRows(u);
   const wash = all.find((s) => s.taskId === 'svc-wash');
   const rows = wash ? [wash, ...all.filter((s) => s.taskId !== 'svc-wash')] : all;
   const lastFor = (taskId) => { const ls = (u.serviceLog || []).filter((l) => l.taskId === taskId); return ls.length ? ls[ls.length - 1] : null; };
-  const list = rows.map((s) => {
+  const expanded = state.svcExpand === u.unitId;
+  const shown = expanded ? rows : rows.slice(0, SVC_LIST_CAP);
+  const list = shown.map((s) => {
     const last = lastFor(s.taskId);
     const washReq = s.taskId === 'svc-wash' && u.washRequested;
+    const sn = svcSnoozedUntil(u, s.taskId);   // backlog #43 — snoozed = alarm muted, row stays honest
+    const pillColor = sn ? 'gray' : (washReq ? 'blue' : s.color);
+    const pillLabel = sn ? 'Snoozed' : (washReq ? 'Wash Now' : getStatus('serviceStatus', s.status).label);
+    const sub = sn
+      ? `Snoozed thru ${esc(fmtShortDate(sn))} · was ${esc(svcText(s))} · every ${s.intervalHours} HRS`
+      : `Every ${s.intervalHours} HRS${last ? ` · last ${esc(fmtShortDate(last.date))} @ ${num(last.hours)} HRS` : ' · never serviced'}`;
     return `<div class="svc-task">
       <div class="svc-task-top">
-        <button class="pill c-${washReq ? 'blue' : s.color} js-svc-complete" data-unit="${u.unitId}" data-task="${s.taskId}" data-tip="${washReq ? 'Log the wash as done' : 'Log a completion'}" style="min-width:78px;justify-content:center">${esc(washReq ? 'Wash Now' : getStatus('serviceStatus', s.status).label)}</button>
+        <button class="pill c-${pillColor} js-svc-complete" data-unit="${u.unitId}" data-task="${s.taskId}" data-tip="${washReq ? 'Log the wash as done' : 'Log a completion'}" style="min-width:78px;justify-content:center">${esc(pillLabel)}</button>
         <span class="svc-name">${esc(s.name)}</span>
         <span class="spacer"></span>
-        ${washReq ? `<span class="pill c-blue" data-r="R3b"><span class="t">Wash Requested</span></span>` : `<b>${esc(svcText(s))}</b>`}
+        ${washReq && !sn ? `<span class="pill c-blue" data-r="R3b"><span class="t">Wash Requested</span></span>` : sn ? '' : `<b>${esc(svcText(s))}</b>`}
+        <button class="pill ghost js-svc-snooze" data-r="R18" data-rec="${u.unitId}" data-task="${s.taskId}" data-snoozed="${sn ? 1 : 0}" data-tip="${sn ? 'Snoozed — wake or extend' : 'Quiet this alarm for a while'}">${sn ? 'Wake' : 'Snooze'}</button>
       </div>
-      <div class="svc-task-sub muted">Every ${s.intervalHours} HRS${last ? ` · last ${esc(fmtShortDate(last.date))} @ ${num(last.hours)} HRS` : ' · never serviced'}</div>
+      <div class="svc-task-sub muted">${sub}</div>
     </div>`;
   }).join('');
-  const worst = rows.find((s) => s.taskId !== 'svc-wash') || rows[0];   // section tint = worst NON-wash task (wash rides pinned, not alarming)
+  const more = rows.length > SVC_LIST_CAP
+    ? `<div class="kv" style="justify-content:center">${ghostPill(expanded ? 'Show fewer' : `Show all ${rows.length} tasks`, { js: 'js-svc-expand', data: { rec: u.unitId } })}</div>`
+    : '';
+  // section tint = worst NON-wash, NON-snoozed task (snooze silences the section too — Jac's law)
+  const worst = rows.find((s) => s.taskId !== 'svc-wash' && !svcSnoozedUntil(u, s.taskId)) || rows[0];
   const tint = worst && ['red', 'yellow', 'green'].includes(worst.color) ? ` sec-${worst.color}` : '';
-  return `<div class="section${tint}"><h4>${esc(title)}</h4><div class="hlog">${list}</div></div>`;
+  return `<div class="section${tint}"><h4>${esc(title)}</h4><div class="hlog">${list}</div>${more}</div>`;
 }
 /* ITEM BALANCE — every invoice line item carries its own balance. A partial
    payment is assigned per line item through the payment popup; allocations are
@@ -14074,6 +14115,18 @@ function onClick(e) {
   if (closest('.js-bill-wo')) { e.stopPropagation(); return billWOToInvoice(closest('.js-bill-wo').dataset.rec); }
   if (closest('.js-wo-bill')) { const b = closest('.js-wo-bill'); e.stopPropagation(); const w = IDX.wo.get(b.dataset.rec); if (w) { w.billCustomer = w.billCustomer === 'Yes' ? 'No' : 'Yes'; reindex('workOrders', w); logAction(w, `Bill customer → ${w.billCustomer}`); render(); } return; }
   if (closest('.js-svc-complete')) { const b = closest('.js-svc-complete'); e.stopPropagation(); state.svcPhoto = null; return openOverlay({ kind: 'service', unitId: b.dataset.unit, taskId: b.dataset.task }); }
+  // SNOOZE (backlog #43): quiet one task's alarm for a while — 7/14/30 days, or wake it
+  if (closest('.js-svc-snooze')) {
+    const b = closest('.js-svc-snooze'); e.stopPropagation();
+    const mk = (days, lbl) => `<button class="dd-item js-svc-snooze-pick" data-rec="${esc(b.dataset.rec)}" data-task="${esc(b.dataset.task)}" data-days="${days}">${lbl}</button>`;
+    return openDropdown(b, (b.dataset.snoozed === '1' ? mk('', 'Wake now — alarm live') : '') + mk('7', 'Snooze 7 days') + mk('14', 'Snooze 14 days') + mk('30', 'Snooze 30 days'), { align: 'right' });
+  }
+  if (closest('.js-svc-snooze-pick')) {
+    const b = closest('.js-svc-snooze-pick'); e.stopPropagation();
+    document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove());
+    return snoozeService(b.dataset.rec, b.dataset.task, b.dataset.days === '' ? null : Number(b.dataset.days));
+  }
+  if (closest('.js-svc-expand')) { const b = closest('.js-svc-expand'); e.stopPropagation(); state.svcExpand = state.svcExpand === b.dataset.rec ? null : b.dataset.rec; return render(); }
   if (closest('.js-svc-save')) { const b = closest('.js-svc-save'); e.stopPropagation(); if (!state.svcPhoto) { flashOr('.overlay .insp-photo, .overlay .insp-rephoto, .overlay .cap-drop', 'Photo proof is required to complete a service.'); return; } const root = b.closest('.popup'); return recordServiceCompletion(b.dataset.unit, b.dataset.task, root.querySelector('.js-svc-hours')?.value, root.querySelector('.js-svc-date')?.value, root.querySelector('.js-svc-notes')?.value, state.svcPhoto); }
   // invoice line-item add buttons → point at the card to DRAG FROM (Wave 2)
   if (closest('.js-add-line')) {
@@ -16814,7 +16867,9 @@ function recordServiceCompletion(unitId, taskId, hours, date, note, photo) {
   u.serviceLog = u.serviceLog || [];
   u.serviceLog.push({ taskId, hours: Number(hours) || 0, date: when, note: note || '', photo: photo || '' });
   if (taskId === 'svc-wash') u.washRequested = false;   // a logged wash clears the request + resets the 100-HR countdown
-  const tn = UNIT_SVC_TASKS.find((x) => x.taskId === taskId);
+  if (u.serviceSnoozes && u.serviceSnoozes[taskId]) delete u.serviceSnoozes[taskId];   // completing wakes the alarm (backlog #43)
+  // name from the unit's REAL schedule first (per-model tasks aren't in the generic list)
+  const tn = unitServiceRows(u).find((x) => x.taskId === taskId) || UNIT_SVC_TASKS.find((x) => x.taskId === taskId);
   logAction(u, `Serviced: ${tn?.name || taskId} @ ${num(hours)} HRS (${fmtShortDate(when)})`);
   toast(taskId === 'svc-wash' ? 'Wash logged — countdown reset.' : 'Service completed — countdown reset.');
   state.overlay = null;
@@ -17997,7 +18052,7 @@ function exposeTestApi() {
       latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore, wranglerRailLoad, wrOffloadChatImages, wrEvictChatBlobs, driveViewUrl, mergeWranglerRails,
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
-      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, setFunnelStage, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, addMonthsISO, openMembershipEnroll, membershipEnrollCommit, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, getEntityColor, getEntityFlags, isEmptyMockDraft, sweepEmptyDrafts, createInvoiceForRental, syncRentalLines, rentalLineItems, salePriceSuggest, salePricingCfg, categoryCostBasis, driverRoster, driverName, legDriverField, dispatchEvents, applyShopRoleLanding, setRole: (r) => { currentRole = r || ''; render(); },
+      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, setFunnelStage, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, addMonthsISO, openMembershipEnroll, membershipEnrollCommit, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, getEntityColor, getEntityFlags, isEmptyMockDraft, sweepEmptyDrafts, createInvoiceForRental, syncRentalLines, rentalLineItems, salePriceSuggest, salePricingCfg, categoryCostBasis, driverRoster, driverName, legDriverField, dispatchEvents, applyShopRoleLanding, topServiceForUnit, snoozeService, svcSnoozedUntil, unitServiceRows, recordServiceCompletion, setRole: (r) => { currentRole = r || ''; render(); },
       openCustomerForm, renderOverlay, render, cardComplete, cardCaptureState, cardHasSelfie, cardHasSignature, captureSelfie, captureSignature, __state: state };   // UI drivers for headless screenshot/e2e tests
 
   } catch (e) { /* no window (non-browser) */ }
