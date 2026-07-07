@@ -7910,7 +7910,9 @@ function headerEl() {
   const nu = unseenNotifs();
   const notifBtn = `<button class="iconbtn js-notifications" data-tip="Notifications">${I.bell}${nu ? `<span class="bb-badge">${nu > 9 ? '9+' : nu}</span>` : ''}</button>`;
   const ruBtn = `<button class="iconbtn js-ru-open" data-tip="The Round-Up — the reports board">${I.graph}</button>`;
-  const topBar = `<div class="top-toolbar">${ruBtn}${notifBtn}${bottomBarInner()}</div>`;
+  const tn = visibleTransportAlerts().length;   // #515 transport reminders
+  const trBtn = `<button class="iconbtn js-transport-alerts" data-tip="Transports due — call the customer">${I.truck}${tn ? `<span class="bb-badge">${tn > 9 ? '9+' : tn}</span>` : ''}</button>`;
+  const topBar = `<div class="top-toolbar">${ruBtn}${trBtn}${notifBtn}${bottomBarInner()}</div>`;
   // Decluttered top: logo + rings on one row, the tool bar across the next.
   h.innerHTML = `
     <button class="logo js-logo" aria-label="Jac Rentals"></button>
@@ -7984,7 +7986,10 @@ function bottomBarEl() {
 function commsUtilsEl() {
   const nu = unseenNotifs();
   const notifBadge = nu ? `<span class="fab-badge">${nu > 9 ? '9+' : nu}</span>` : '';
-  return `<button class="fab js-notifications" data-tip="Notifications — resolved fixes">${I.bell}${notifBadge}</button>`;
+  const tn = visibleTransportAlerts().length;
+  const trBadge = tn ? `<span class="fab-badge">${tn > 9 ? '9+' : tn}</span>` : '';   // #515 — deliveries/pickups due to call
+  return `<button class="fab js-transport-alerts" data-tip="Transports due — call the customer">${I.truck}${trBadge}</button>`
+    + `<button class="fab js-notifications" data-tip="Notifications — resolved fixes">${I.bell}${notifBadge}</button>`;
 }
 // The conversation rail: Wrangler + Team channels (split by a thin divider, no section
 // labels), each conversation a SEPARATE tab. 🤠 Wrangler — one tab per OPEN request
@@ -10287,6 +10292,36 @@ function buildPopupEl(o, overlay, opts = {}) {
       headRight: `<button class="iconbtn js-notif-refresh" data-tip="Refresh">${I.refresh || '⟳'}</button>`,
       bodyClass: 'req-wrap', body: inner, foot });
     overlay.appendChild(pop);
+  } else if (o.kind === 'transport-alerts') {
+    // Scheduled Transport Reminder Alerts (#515) — the deliveries/pickups DUE in the window,
+    // one dismissible "call the customer" card per leg. Live from transportAlerts() (→
+    // dispatchEvents, the same source as the Office run) so it can't drift; the footer segment
+    // adjusts the window (today + N days). Delivery = blue · Pickup = brown, matching the
+    // dispatch cockpit's kind colors. Re-derived on every render — no reload to see a new one.
+    const days = tralertDays();
+    const list = visibleTransportAlerts();
+    const relDay = (d) => (d === TODAY_ISO ? 'Today' : d === addDaysISO(TODAY_ISO, 1) ? 'Tomorrow' : dispatchDayLabel(d));
+    const spanNote = days === 0 ? 'today' : days === 1 ? 'today or tomorrow' : `in the next ${days + 1} days`;
+    const inner = !list.length
+      ? `<div class="req-empty"><span class="req-empty-ic">🚚</span><p>All clear.</p><span>No deliveries or pickups due ${spanNote}. Newly scheduled transports show up here on their own — no refresh needed.</span></div>`
+      : list.map((a) => {
+          const when = `${relDay(a.date)}${a.time ? ' · ' + fmtClock(a.time) : ' · no set time'}`;
+          const where = [a.unitId ? unitPill(a.unitId) : esc(a.unit), a.address ? esc(a.address) : ''].filter(Boolean).join(' · ');
+          return `<div class="req-card">
+              <div class="req-head">${badge(a.type, a.color)}<span class="req-title">${esc(a.customer)}</span><span class="spacer"></span><span class="req-await">${esc(when)}</span></div>
+              <div class="req-text">${where}</div>
+              <div class="req-acts"><span class="spacer"></span>${actionPill('blue', 'Called', { js: 'js-tralert-called', data: { key: a.key } })}</div>
+            </div>`;
+        }).join('');
+    const winSeg = segCtl([
+      { label: 'Today', js: 'js-tralert-win', data: { days: 0 }, on: days === 0 ? 'blue' : undefined },
+      { label: '+ Tomorrow', js: 'js-tralert-win', data: { days: 1 }, on: days === 1 ? 'blue' : undefined },
+      { label: 'This week', js: 'js-tralert-win', data: { days: 6 }, on: days >= 6 ? 'blue' : undefined },
+    ]);
+    const foot = `${winSeg}<span class="spacer"></span>${list.length ? ghostPill('Mark all called', { js: 'js-tralert-allcalled', tip: 'Clear every reminder in this window' }) : ''}`;
+    const pop = el('div', 'popup'); pop.style.width = '460px';
+    pop.innerHTML = popupShell({ icon: I.truck, title: `Transports Due${list.length ? ` · ${list.length}` : ''}`, tag: 'Dispatch · call the customer', bodyClass: 'req-wrap', body: inner, foot });
+    overlay.appendChild(pop);
   } else if (o.kind === 'hotkeys') {
     const rows = [
       { d: 'click',    n: 'Click',              t: 'Open a record to view it — in its own card, nothing else moves.' },
@@ -10390,9 +10425,11 @@ function buildPopupEl(o, overlay, opts = {}) {
     // carries Requests, so we add the Notifications bell.
     const nu = unseenNotifs();
     const notifBtn = `<button class="iconbtn js-notifications" data-tip="Notifications">${I.bell}<span>Notifications</span>${nu ? `<span class="bb-badge">${nu > 9 ? '9+' : nu}</span>` : ''}</button>`;
+    const tn = visibleTransportAlerts().length;   // #515 transport reminders
+    const trBtn = `<button class="iconbtn js-transport-alerts" data-tip="Transports due — call the customer">${I.truck}<span>Transports Due</span>${tn ? `<span class="bb-badge">${tn > 9 ? '9+' : tn}</span>` : ''}</button>`;
     const pop = el('div', 'popup'); pop.style.width = '360px';
     pop.innerHTML = popupShell({ icon: I.sliders || I.menu || '', title: 'Tools', tag: 'Yard · toolbox',
-      body: `<div class="tools-tray">${notifBtn}${bottomBarInner()}</div>` });
+      body: `<div class="tools-tray">${trBtn}${notifBtn}${bottomBarInner()}</div>` });
     overlay.appendChild(pop);
   } else if (o.kind === 'settings') {
     o.config = o.config || { roles: {}, admin: '' };
@@ -10777,6 +10814,7 @@ const WINDOW_CATALOG = [
   { kind: 'role',          label: 'Role KPIs',               tag: 'Role · scorecard',          sample: () => ({ role: (ROLES[0] || {}).id }) },
   { kind: 'requests',      label: 'Requests inbox',          tag: 'Mr. Wrangler · approvals',  sample: () => ({}) },
   { kind: 'notifications', label: 'Notifications',           tag: 'Mr. Wrangler · resolved',   sample: () => ({}) },
+  { kind: 'transport-alerts', label: 'Transports Due',       tag: 'Dispatch · call the customer', sample: () => ({}) },
   { kind: 'hotkeys',       label: 'Mouse shortcuts',         tag: 'Operator · controls',       sample: () => ({}) },
   { kind: 'roadmap',       label: 'Coming in 2026',          tag: 'Roadmap · the docket',      sample: () => ({}) },
   { kind: 'feedback',      label: 'Report a bug or request', tag: 'Mr. Wrangler · report',     sample: () => ({}) },
@@ -11969,6 +12007,32 @@ function markNotifsSeen() { const mx = wranglerNotifs.reduce((a, n) => Math.max(
 function dismissNotif(num) { const s = loadDismissedNotifs(); s.add(num); saveDismissedNotifs(s); render(); if (state.overlay?.kind === 'notifications') renderOverlay(); }
 function dismissAllNotifs() { const s = loadDismissedNotifs(); wranglerNotifs.forEach((n) => s.add(n.number)); saveDismissedNotifs(s); render(); if (state.overlay?.kind === 'notifications') renderOverlay(); }
 function toggleNotifsMuted() { setNotifsMuted(!notifsMuted()); render(); if (state.overlay?.kind === 'notifications') renderOverlay(); }
+/* ── Scheduled Transport Reminder Alerts (#515) — the delivery/pickup LEGS due in the near
+   window, so the team calls the customer before the truck rolls. Derived LIVE from
+   dispatchEvents() (the SAME source as the Office dispatch grid + the find_transports tool,
+   so the reminder can't drift from the run) — every render re-derives, so a newly scheduled
+   transport shows without a reload. Window = today + N days ahead (default 1 = today→tomorrow,
+   matching the dispatch run), adjustable per-device. A "Called" dismiss clears one leg so it
+   won't nag again (§246 idiom), keyed per leg+date so a RESCHEDULE surfaces a fresh reminder;
+   the store self-prunes past-window keys so it can't grow forever. */
+const TRALERT_DAYS_KEY = 'jactec.transportAlertDays';       // per-device window: today + N days ahead
+const TRALERT_CALLED_KEY = 'jactec.transportAlertsCalled';  // leg keys the team has dismissed ("Called")
+const tralertDays = () => { try { const n = parseInt(localStorage.getItem(TRALERT_DAYS_KEY), 10); return Number.isFinite(n) ? Math.max(0, Math.min(6, n)) : 1; } catch (e) { return 1; } };
+const setTralertDays = (n) => { try { localStorage.setItem(TRALERT_DAYS_KEY, String(Math.max(0, Math.min(6, n)))); } catch (e) {} };
+const loadCalledAlerts = () => { try { return new Set(JSON.parse(localStorage.getItem(TRALERT_CALLED_KEY) || '[]')); } catch (e) { return new Set(); } };
+const saveCalledAlerts = (set) => { try { localStorage.setItem(TRALERT_CALLED_KEY, JSON.stringify([...set].filter((k) => String(k).split('|').pop() >= TODAY_ISO))); } catch (e) {} };
+const tralertKey = (ev) => `${ev.rentalId}|${ev.unitId || ''}|${ev.task}|${ev.date}`;   // per leg + date — a reschedule = a fresh reminder
+const TRALERT_LEG = { Deliver: 'Delivery', 'Pick up': 'Pickup' };
+function transportAlerts() {
+  const from = TODAY_ISO, through = addDaysISO(TODAY_ISO, tralertDays());
+  return dispatchEvents()
+    .filter((ev) => ev.date >= from && ev.date <= through)
+    .map((ev) => ({ key: tralertKey(ev), rentalId: ev.rentalId, unitId: ev.unitId, customer: ev.cust, unit: ev.unit,
+      type: TRALERT_LEG[ev.task] || ev.task, color: ev.color === 'blue' ? 'blue' : 'brown', address: ev.addr || '', date: ev.date, time: ev.time || '' }));
+}
+const visibleTransportAlerts = () => { const called = loadCalledAlerts(); return transportAlerts().filter((a) => !called.has(a.key)); };
+function callTransportAlert(key) { const s = loadCalledAlerts(); s.add(key); saveCalledAlerts(s); render(); if (state.overlay?.kind === 'transport-alerts') renderOverlay(); }
+function callAllTransportAlerts() { const s = loadCalledAlerts(); transportAlerts().forEach((a) => s.add(a.key)); saveCalledAlerts(s); render(); if (state.overlay?.kind === 'transport-alerts') renderOverlay(); }
 async function refreshWranglerNotifications() {
   if (typeof backendPassword === 'undefined' || !backendPassword || notifLoading) return;   // demo/offline → no feed
   notifLoading = true;
@@ -13738,6 +13802,10 @@ function onClick(e) {
   if (closest('.js-notif-dismiss')) { e.stopPropagation(); return dismissNotif(Number(closest('.js-notif-dismiss').dataset.num)); }   // §246 clear one
   if (closest('.js-notif-dismissall')) { e.stopPropagation(); return dismissAllNotifs(); }   // §246 clear all
   if (closest('.js-notif-mute')) { e.stopPropagation(); return toggleNotifsMuted(); }   // §246 mute/unmute the badge
+  if (closest('.js-transport-alerts')) { e.stopPropagation(); return openOverlay({ kind: 'transport-alerts' }); }   // #515 transport reminders — deliveries/pickups due
+  if (closest('.js-tralert-called')) { e.stopPropagation(); return callTransportAlert(closest('.js-tralert-called').dataset.key); }   // #515 dismiss one leg ("Called")
+  if (closest('.js-tralert-allcalled')) { e.stopPropagation(); return callAllTransportAlerts(); }   // #515 clear the whole window
+  if (closest('.js-tralert-win')) { e.stopPropagation(); setTralertDays(Number(closest('.js-tralert-win').dataset.days)); render(); renderOverlay(); return; }   // #515 adjust the window
   if (closest('.js-requests')) { e.stopPropagation(); openOverlay({ kind: 'requests' }); refreshWranglerRequests(); return; }   // §18e approval inbox
   if (closest('.js-req-refresh')) { e.stopPropagation(); return refreshWranglerRequests(); }
   if (closest('.js-req-chat')) { e.stopPropagation(); return openWranglerFromRequest(Number(closest('.js-req-chat').dataset.n)); }   // §18e continue the conversation
