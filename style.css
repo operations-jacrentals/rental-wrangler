@@ -873,17 +873,6 @@ select.lf-in { appearance: none; cursor: pointer; }
 .gt-a .gt-node { color: var(--on-orange); background: linear-gradient(180deg, #ff9038, var(--accent)); box-shadow: 0 0 0 3px var(--accent-soft); }
 .gt-a .gt-lbl { color: var(--accent); font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: .6px; font-weight: 800; font-size: 13.5px; }
 
-/* ── Shop card (merged Work Orders + Service Orders + Inspections) ───────── */
-.shopbar { display: flex; align-items: center; gap: 6px; padding: 6px 10px 4px; flex-wrap: wrap; }
-.shop-seg { display: inline-flex; align-items: center; height: 28px; padding: 0 11px; border-radius: var(--chip-radius); background: var(--panel); border: 1px solid var(--line); color: var(--txt-2); font-size: 11px; font-weight: 600; box-shadow: var(--chip-shadow); white-space: nowrap; }
-.shop-seg:hover { border-color: var(--accent-line); color: var(--txt); }
-.shop-seg.on { background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent); }
-.shop-seg .seg-n { margin-left: 6px; opacity: .7; font-weight: 700; }
-/* each Shop row carries a small type glyph (inspection/WO/service) on the left */
-.row .shop-type { position: absolute; left: 9px; top: 50%; transform: translateY(-50%); z-index: 1; width: 18px; height: 18px; color: var(--txt-3); }
-.row .shop-type svg { width: 18px; height: 18px; }
-.row.shop-row .row-content { padding-left: 26px; }
-
 /* ── §6.2 Item rows are cards/chips ──────────────────────────────────────── */
 .list { padding: 4px 8px 8px; display: flex; flex-direction: column; gap: 7px; }   /* even title→search→firstRow gaps (≈10px each) */
 .row {
@@ -1024,10 +1013,10 @@ select.lf-in { appearance: none; cursor: pointer; }
 .detail { padding: 12px; display: flex; flex-direction: column; gap: 12px; }
 .detail-head { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
 .detail-head .d-title { font-size: 16px; font-weight: 700; }
-/* §0.6 — the open record's title now lives in the card header (non-shop cards), so
-   hide the in-body title; collapse the head entirely when only the title was there. */
-.card:not([data-card="shop"]) .detail-head .d-title { display: none; }
-.card:not([data-card="shop"]) .detail-head:has(> .d-title:only-child) { display: none; }
+/* §0.6 — the open record's title lives in the card header, so hide the in-body
+   title; collapse the head entirely when only the title was there. */
+.card .detail-head .d-title { display: none; }
+.card .detail-head:has(> .d-title:only-child) { display: none; }
 /* the open record's title in the card header */
 .card-head .c-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 

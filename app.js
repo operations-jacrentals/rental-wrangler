@@ -25,7 +25,7 @@ import { ico, I, CARD_ICON, RING_ICON, CATEGORY_ICON } from './icons.js';
 import { CATEGORY_ANIM } from './icons-anim.js';
 import {
   getStatus, STATUS, ROLES, ROLE_TIERS, tierRank, BUILTIN_ROLE_TIERS, GRID_CARDS, BACKOFFICE_BOARDS, SORT_FIELDS,
-  SHOP_TYPES, SHOP_SEGMENTS, COLUMNS, COLUMN_OF,
+  SHOP_TYPES, COLUMNS, COLUMN_OF,
   legacyTransportPrice, computeTransportPrice, isFueledType, legsForType, YARD_ORIGIN, GOOGLE_MAPS_KEY,
   fmtWindow, fmtShortDate, showsTruck, parseISO, TODAY_ISO, invoiceShort, TRANSPORT_MAP,
   FLAG_META, FLAG_SEVERITY_RANK, INSURANCE_COVERAGE_TYPES,
@@ -2046,7 +2046,7 @@ function categoryStats(cat) {
    its own anchored main card + cascade. */
 function freshSession() {
   const cards = {};
-  for (const c of GRID_CARDS) cards[c.id] = { mode: 'list', recId: null, recType: null, search: '', filterTerms: [], historySearch: '', sort: loadSort(c.id), backStack: [], fwdStack: [], segment: c.id === 'shop' ? 'all' : null, graphIdx: 0, graphSel: {} };   // §13.4 graphIdx = active carousel view; graphSel = remembered selection per view
+  for (const c of GRID_CARDS) cards[c.id] = { mode: 'list', recId: null, recType: null, search: '', filterTerms: [], historySearch: '', sort: loadSort(c.id), backStack: [], fwdStack: [], segment: null, graphIdx: 0, graphSel: {} };   // §13.4 graphIdx = active carousel view; graphSel = remembered selection per view
   // 3-column layout: which member card is visible in each column (display-only;
   // rides inside the session so item-tabs / pause-resume restore it for free).
   const cols = {}; for (const col of COLUMNS) cols[col.id] = col.default;
@@ -5599,14 +5599,13 @@ const CARD_COLUMNS = {
     C('hours', 'Hours', 'num', (u) => u.currentHours ?? null, { agg: 'avg' }),
   ],
 };
-/** Columns for a card; the Shop card resolves to its active segment's entity. */
+/** Columns for a card. (Shop retirement: no segment resolution — cards map 1:1.) */
 function cardColumns(card, session) {
-  if (card === 'shop') { const seg = boardSegmentFor(session); return CARD_COLUMNS[seg] || []; }
   return CARD_COLUMNS[card] || [];
 }
 function boardSegmentFor(session) {
-  const cs = session?.cards?.shop; const seg = cs?.segment;
-  return (seg && seg !== 'all') ? seg : 'workOrders';
+  // Retired with the Shop card — kept only so stale saved Board Views resolve safely.
+  return 'workOrders';
 }
 /** Aggregate a column over rows → {kind, ...} for the totals + board summary. */
 function aggColumn(col, rows) {
@@ -7343,30 +7342,25 @@ function detailTitle(card, rec) {
 /* ════════════════════════════════════════════════════════════════════════
  * APP-18 · 3-COLUMN LAYOUT (display-only shell over the existing cards).
  * Each column paints ONE active "member" card; the rest are a tab/icon away.
- * The 3 shop members (inspections/serviceOrders/workOrders) still render via the
- * single 'shop' engine card with its segment pinned — NO engine/anchor/cascade
- * change. session.cols (set in freshSession) holds the active member per column.
+ * (Shop retirement, Jac 2026-07-07: the left column is Units + Categories —
+ * WO/service/inspection work lives inside each unit's detail view.)
+ * session.cols (set in freshSession) holds the active member per column.
  * ════════════════════════════════════════════════════════════════════════ */
 const GRID_CARD_BY_ID = Object.fromEntries(GRID_CARDS.map((c) => [c.id, c]));
 const MEMBER_TITLE = (() => {
-  const m = {}; GRID_CARDS.forEach((c) => { m[c.id] = c.title; });
-  SHOP_SEGMENTS.forEach((s) => { m[s.id] = s.label; }); m.calendar = 'Calendar'; return m;
+  const m = {}; GRID_CARDS.forEach((c) => { m[c.id] = c.title; }); m.calendar = 'Calendar'; return m;
 })();
 const memberIcon = (m) => (m === 'calendar' ? I.grid : (CARD_ICON[m] || ''));
 // Tab row count for a member (search-aware; mirrors the card's own count chip).
 function memberCount(member, session) {
   if (member === 'calendar') return dispatchEvents().length;
-  if (SHOP_TYPES.includes(member)) { try { return (shopItemsByType(session)[member] || []).length; } catch { return 0; } }
   try { let r = listFor(member, session); if (member === 'units') r = unitsVisible(r, session.cards.units); if (member === 'rentals') r = rentalsVisible(r, session, session.cards.rentals); return r.length; } catch { return 0; }
 }
-/** How many Shop items in this view NEED work — drives the red alert on the tab:
- *  pending inspections, open work orders, overdue/wash-requested services. */
-function shopAlertCount(member, session) {
-  let items = []; try { items = shopItemsByType(session)[member] || []; } catch { return 0; }
-  if (member === 'inspections') return items.filter((n) => !inspComplete(n)).length;
-  if (member === 'workOrders') return items.filter((w) => w.phase !== 'Complete' && !w.cancelled).length;
-  if (member === 'serviceOrders') return items.filter((u) => { const s = topServiceForUnit(u); return u.washRequested || (s && s.remaining < 0); }).length;
-  return 0;
+/** How many units NEED the crew — drives the red alert on the Units tab (the
+ *  retired Shop wrench's signal, moved home): Not Ready, wash requested, or a
+ *  past-due service on any Active unit. */
+function unitsAlertCount() {
+  try { return DATA.units.filter((u) => u.fleetStatus === 'Active' && (u.inspectionStatus === 'Not Ready' || u.washRequested || ((topServiceForUnit(u) || {}).remaining < 0))).length; } catch { return 0; }
 }
 /* ── Wave 2 (the modes died): the side lists stay FULL while the anchored
    Quote/invoice still needs links, so there's always something to DRAG on.
@@ -7430,38 +7424,28 @@ function colTabsEl(col, active, session) {
 /* The coltab buttons themselves (no wrapper) — shared by the desktop in-card tab row
    (colTabsEl) AND the phone footer (mobileDockEl), so a toggle looks identical in both. */
 function colTabButtonsHtml(col, active, session) {
-  // The 3 shop sub-types (inspections/workOrders/serviceOrders) fold into ONE wrench
-  // "Shop" toggle that opens the shop graph; the old Service-heart toggle + Not-Ready
-  // chip are absorbed into it (the graph's Services + Not Ready bars).
+  // Shop retirement: the wrench toggle is gone — the Units tab carries its red
+  // "needs attention" alert (unitsAlertCount) and the worklist graph lives on
+  // the Units card itself.
   const coltabBtn = (m, on, { alert = false, count = null } = {}) =>
     `<button class="coltab js-coltab${on ? ' on' : ''}${alert ? ' alert' : ''}" data-col="${col.id}" data-member="${m}" data-tip="${esc(MEMBER_TITLE[m] || m)}${alert ? ' — needs attention' : ''}">`
       + `<span class="ct-ico">${memberIcon(m)}</span>`
       + `<span class="ct-lbl">${esc(MEMBER_TITLE[m] || m)}</span>`
       + (count != null ? `<span class="ct-n">${count}</span>` : '')
       + `</button>`;
-  let out = col.members.filter((m) => !SHOP_TYPES.includes(m)).map((m) => coltabBtn(m, m === active, { count: memberCount(m, session) })).join('');
-  if (col.members.some((m) => SHOP_TYPES.includes(m))) {   // this column owns the shop → append the wrench Shop toggle
-    const shopActive = active === 'shop' || SHOP_TYPES.includes(active);
-    const alertN = SHOP_TYPES.reduce((a, ty) => a + shopAlertCount(ty, session), 0);   // total items needing the crew
-    out += coltabBtn('shop', shopActive, { alert: alertN > 0, count: alertN });
-  }
-  return out;
+  return col.members.map((m) => coltabBtn(m, m === active, { count: memberCount(m, session), alert: m === 'units' && unitsAlertCount() > 0 })).join('');
 }
 /* Jac 2026-06-12: the nav cluster (List / Anchor / New tab) rides the TOGGLE row,
    not the title row — the item header gets room to breathe and head gates align right. */
 function colActionsHtml(active, session) {
   if (active === 'calendar' || state.searchMode) return '';
-  const ec = SHOP_TYPES.includes(active) ? 'shop' : active;
-  const cs = session.cards[ec];
-  if (!cs || cs.mode !== 'standard' || cs.recId == null || (ec === 'shop' && !cs.recType)) return '';
-  const anchored = session.anchor?.card === ec;
-  const dt = ec === 'shop' ? ` data-type="${esc(cs.recType)}"` : '';
-  return `<div class="c-actions"><button class="hbtn js-tolist" data-tip="${anchored ? 'Browse list (pick another to anchor)' : 'Back to list'}">${I.list}</button><button class="hbtn js-anchor" data-rec="${esc(cs.recId)}"${dt} data-tip="Anchor (⊞)">${I.circle}</button><button class="hbtn js-newtab" data-rec="${esc(cs.recId)}"${dt} data-tip="New tab (+)">${I.plus}</button></div>`;
+  const cs = session.cards[active];
+  if (!cs || cs.mode !== 'standard' || cs.recId == null) return '';
+  const anchored = session.anchor?.card === active;
+  return `<div class="c-actions"><button class="hbtn js-tolist" data-tip="${anchored ? 'Browse list (pick another to anchor)' : 'Back to list'}">${I.list}</button><button class="hbtn js-anchor" data-rec="${esc(cs.recId)}" data-tip="Anchor (⊞)">${I.circle}</button><button class="hbtn js-newtab" data-rec="${esc(cs.recId)}" data-tip="New tab (+)">${I.plus}</button></div>`;
 }
 function memberCardEl(member, session) {
   if (member === 'calendar') return calendarCardEl(session);
-  if (member === 'shop') return shopCardEl({ id: 'shop', title: 'Shop' }, session);   // the wrench "Shop" member = the COMBINED view (segment bar + 3-bar front-page graph), no forcedSeg
-  if (SHOP_TYPES.includes(member)) return shopCardEl({ id: 'shop', title: MEMBER_TITLE[member] }, session, member);
   return cardEl(GRID_CARD_BY_ID[member], session);
 }
 function calendarCardEl(session) {
@@ -7476,7 +7460,6 @@ function calendarCardEl(session) {
 
 function cardEl(cardDef, session) {
   const card = cardDef.id;
-  if (card === 'shop') return shopCardEl(cardDef, session);   // merged WO + Service + Inspections
   const cs = session.cards[card];
   const anchored = session.anchor?.card === card;
   const node = el('div', 'card' + (anchored ? ' anchored' : '') + (state.searchMode ? ' search-glow' : '') + (state.focusedCard === card ? ' card-focus' : ''));
@@ -7625,202 +7608,7 @@ function listView(cardDef, session) {
 const PLUS_NEW = new Set(['rentals', 'invoices', 'customers']);
 
 /* ════════════════════════════════════════════════════════════════════════
-   APP-19 · §10 SHOP CARD — merged Work Orders + Service Orders + Inspections
-   ────────────────────────────────────────────────────────────────────────
-   ITERATE HERE: this whole block is the Shop card's presentation. The grid
-   plumbing (anchor/cascade/tabs/standard-mode) routes through it via the
-   `recType` thread, so alternate Shop layouts only need these functions.
-   ════════════════════════════════════════════════════════════════════════ */
-
-/** Active queue vs completed archive. Default = the work queue (pending
- *  inspections, open WOs, all services). The "Completed" sort flips to the
- *  archive: resolved inspections + completed WOs (services aren't archived here). */
-function shopItemMode(ty, rec, complete) {
-  if (ty === 'inspections') return complete ? inspComplete(rec) : !inspComplete(rec);
-  if (ty === 'workOrders') return complete ? (rec.phase === 'Complete' || rec.cancelled) : (rec.phase !== 'Complete' && !rec.cancelled);   // cancelled = terminal: lives in the "done" list (findable + reopenable), out of "open"
-  if (ty === 'serviceOrders') return !complete;
-  return true;
-}
-/** The in-scope records for each Shop sub-type (cascade subset / search / all),
- *  filtered to the active queue or the completed archive. */
-function shopItemsByType(session) {
-  const complete = session.cards.shop.sort.field === 'complete';
-  const out = {};
-  const q = state.query.trim().toLowerCase();
-  const browsing = session.anchor?.card === 'shop' && session.cards.shop.mode === 'list';   // js-tolist "browse"
-  for (const ty of SHOP_TYPES) {
-    let recs;
-    if (state.searchMode) {
-      const blobKey = ty === 'serviceOrders' ? 'units' : ty;
-      recs = collection(ty).filter((rec) => matchesSearch(IDX.search.get(blobKey + ':' + idOf(ty, rec))));
-    } else if (browsing) {
-      recs = collection(ty);
-    } else if (session.anchor && session.cascade) {
-      recs = session.cascade[ty] || [];
-    } else {
-      recs = collection(ty);
-    }
-    out[ty] = recs.filter((rec) => shopItemMode(ty, rec, complete));
-  }
-  return out;
-}
-/** Urgency score for the default Shop sort (higher = needs attention sooner). */
-function shopUrgency(it) {
-  const r = it.rec;
-  if (it.type === 'inspections') return r.checklist === 'Fail' ? 90 : 20;
-  if (it.type === 'workOrders') return r.phase === 'Complete' ? 10 : (r.woType === 'Failed' ? 95 : 60);
-  if (it.type === 'serviceOrders') { if (r.washRequested) return 85; const s = topServiceForUnit(r); return s ? (s.status === 'past-due' ? 100 : 70) : 5; }
-  return 0;
-}
-function shopSort(items, sort) {
-  const val = (it) => {
-    const r = it.rec;
-    switch (sort.field) {
-      case 'urgency': return shopUrgency(it);
-      case 'date': case 'complete': return parseISO(r.date)?.getTime() || 0;
-      case 'unit': return (IDX.unit.get(r.unitId)?.name || '').toLowerCase();
-      case 'type': return it.type;
-      default: return shopUrgency(it);
-    }
-  };
-  const dir = sort.dir === 'desc' ? -1 : 1;
-  return [...items].sort((a, b) => { const va = val(a), vb = val(b); return va < vb ? -dir : va > vb ? dir : 0; });
-}
-
-function shopCardEl(cardDef, session, forcedSeg) {
-  const cs = session.cards.shop;
-  const anchored = session.anchor?.card === 'shop';
-  const byType = shopItemsByType(session);
-  const total = forcedSeg ? (byType[forcedSeg] || []).length : SHOP_TYPES.reduce((a, ty) => a + byType[ty].length, 0);
-  const node = el('div', 'card' + (anchored ? ' anchored' : '') + (state.searchMode ? ' search-glow' : '') + (state.focusedCard === 'shop' ? ' card-focus' : ''));
-  node.dataset.card = 'shop';
-
-  const inStandard = !state.searchMode && cs.mode === 'standard' && cs.recId != null && cs.recType && !cs.graphView;
-  // List mode → no header (column tab names it). Standard → slim header: record name
-  // (hidden when anchored, since the item tab shows it) + actions. (#2.3)
-  if (inStandard) {
-    const rec = recOf(cs.recType, cs.recId);
-    const nm = rec ? esc(detailTitle(cs.recType, rec) || MEMBER_TITLE[cs.recType] || cardDef.title) : '';
-    const head = el('div', 'card-head');
-    head.innerHTML = `
-      <span class="c-titlecard"><span class="c-icon">${CARD_ICON[cs.recType] || CARD_ICON.shop}</span><span class="c-title">${nm}</span></span>`;
-    node.appendChild(head);
-  }
-
-  const body = el('div', 'card-body');
-  if (inStandard) {
-    const rec = recOf(cs.recType, cs.recId);
-    body.innerHTML = rec && DETAIL[cs.recType] ? DETAIL[cs.recType](rec, cs) : '<div class="empty">Record not found.</div>';
-  } else {
-    body.appendChild(shopListView(session, byType, forcedSeg));
-  }
-  node.appendChild(body);
-  return node;
-}
-
-// §13.4 — a shop row matches like rowMatches (col terms OR within a column, AND across
-// columns, NOT excludes) but resolves each item by its own shop type + the
-// serviceOrders→units search blob. Lets the graph carousel's col-tagged terms filter the
-// shop list (the old path was blob-only and ignored col terms).
-function shopItemMatches(it, query, terms) {
-  const card = it.type, rec = it.rec, terms2 = dateScopedTerms(card, terms || []);   // §5.4d per-type date scoping (Shop mixes WOs/inspections with date-less types)
-  const byCol = {};
-  for (const t of terms2) { if (!t.col) continue; if (t.neg) { if (totColMatch(card, rec, t.col, t.value)) return false; } else (byCol[t.col] = byCol[t.col] || []).push(t.value); }
-  for (const col in byCol) { if (!byCol[col].some((v) => totColMatch(card, rec, col, v))) return false; }
-  return blobMatches(IDX.search.get((card === 'serviceOrders' ? 'units' : card) + ':' + idOf(card, rec)), query, terms2.filter((t) => !t.col));
-}
-
-function shopListView(session, byType, forcedSeg) {
-  const cs = session.cards.shop;
-  const gsrc = forcedSeg || (cs.segment && cs.segment !== 'all' ? cs.segment : 'shop');   // §13.4 the view source: a pinned tab or the active segment ('shop' = combined 'all')
-  gvSyncClosed(gsrc, cs);   // graph closed but g-terms linger → save + drop before the bar's pills render
-  const wrap = el('div');
-  const counts = { all: SHOP_TYPES.reduce((a, ty) => a + byType[ty].length, 0) };
-  SHOP_TYPES.forEach((ty) => { counts[ty] = byType[ty].length; });
-
-  // segment control — hidden when the column already pins a single type via its tab
-  if (!forcedSeg) {
-    const segbar = el('div', 'shopbar');
-    segbar.innerHTML = SHOP_SEGMENTS.map((s) => `<button class="shop-seg ${cs.segment === s.id ? 'on' : ''} js-shopseg" data-seg="${s.id}">${esc(s.label)}<span class="seg-n">${counts[s.id] || 0}</span></button>`).join('');
-    wrap.appendChild(segbar);
-  }
-
-  // search + sort (reuses the standard list-bar chrome)
-  const sf = SORT_FIELDS.shop; const curField = sf.find((f) => f.field === cs.sort.field) || sf[0];
-  // a Shop sub-type maps straight to a CARD_COLUMNS entity, so its Board View just
-  // opens that entity ('all' has no single shape → default to Work Orders).
-  const boardCard = forcedSeg || (cs.segment !== 'all' ? cs.segment : 'workOrders');
-  const bar = el('div', 'listbar');
-  const sterms = cs.filterTerms || [];
-  bar.innerHTML = `
-    <button class="bv-btn js-cardgraph${cs.graphView ? ' on' : ''}" data-card="shop" data-src="${esc(gsrc)}" data-tip="${cs.graphView ? 'Back to list' : 'Graph view'}">${I.graph}</button>
-    <div class="mini-searchwrap${sterms.length ? ' has-terms' : ''}${cs.search.trim() || sterms.length ? ' has-query' : ''}">
-      ${sterms.map((ft, i) => filterTermPill(ft, i, 'shop')).join('')}
-      <input class="mini-search" placeholder="${sterms.length ? 'Add filter — Enter to pin…' : 'Search shop…'}" value="${esc(cs.search)}" data-card="shop" />
-    </div>
-    <div class="sort">
-      <button class="sortbtn js-sortmenu" data-card="shop">${esc(curField.label)} ${I.chev}</button>
-      <button class="dir js-sortdir" data-card="shop"><span class="${cs.sort.dir === 'asc' ? 'on' : ''}">▲</span><span class="${cs.sort.dir === 'desc' ? 'on' : ''}">▼</span></button>
-    </div>`;
-  wrap.appendChild(bar);
-
-  // §13.4 — Graph carousel. Segment tabs stay visible; a specific segment shows its
-  // interactive carousel ABOVE the list (list filters to the graph terms below); the
-  // 'all' overview (and column-pinned shop tabs) keep the legacy combined dashboard.
-  if (cs.graphView && !state.searchMode) {
-    if (graphViewsFor(gsrc)) { const g = el('div', 'gv-panel'); g.innerHTML = graphPanelHtml('shop', gsrc, cs); wrap.appendChild(g); }   // 'all' → the stackbars worklist (mechanic landing) — untouched
-    else if (RUS_TABS[gsrc]) { const g = el('div', 'rus'); g.innerHTML = rusHtml('shop', gsrc, cs); wrap.appendChild(g); }   // §13.7 — a segment's gauge strip
-    else { cs.graphView = false; gvStripTerms(cs); }
-  }
-
-  // items for the active segment (a column tab pins forcedSeg)
-  const segActive = forcedSeg || cs.segment;
-  let items = segActive === 'all'
-    ? SHOP_TYPES.flatMap((ty) => byType[ty].map((rec) => ({ type: ty, rec })))
-    : byType[segActive].map((rec) => ({ type: segActive, rec }));
-  if (cs.search.trim() || (cs.filterTerms || []).length) {
-    items = items.filter((it) => shopItemMatches(it, cs.search, cs.filterTerms));
-  }
-  items = shopSort(items, cs.sort);
-
-  const list = el('div', 'list');
-  if (!items.length) {
-    // creation lives in ONE place — the header + New menu (no per-card +New)
-    list.appendChild(el('div', 'empty', `No shop items${session.anchor ? ' related' : ' — use <b>+ New</b> above'}.`));
-  } else {
-    appendWindowed(list, items, cs, 'shop', (it) => list.appendChild(shopRowEl(it.type, it.rec)));
-  }
-  wrap.appendChild(list);
-  return wrap;
-}
-
-/** A Shop list row = the entity's own list row + a small type glyph on the left. */
-/** The status color that tints a Shop row, so the user sees at a glance what each
- *  item needs: inspection result (Not Ready=yellow…), WO phase/bottleneck (Part
- *  Ordered=blue…), or service urgency (past-due=red…). */
-function shopRowColor(type, rec) {
-  if (type === 'inspections') return inspResult(rec).color;
-  if (type === 'workOrders') return getStatus('woPhase', rec.phase).color;
-  if (type === 'serviceOrders') { if (rec.washRequested) return 'blue'; const s = topServiceForUnit(rec); return s ? s.color : 'green'; }
-  return 'gray';
-}
-function shopRowEl(type, rec) {
-  const id = idOf(type, rec);
-  const color = shopRowColor(type, rec);
-  const node = el('div', 'row shop-row');
-  node.dataset.card = 'shop'; node.dataset.type = type; node.dataset.rec = id;
-  node.innerHTML = `<div class="row-viz" style="background:linear-gradient(90deg, var(--${color}-bg), transparent 62%)"></div>
-    <div class="shop-type" style="color:var(--${color})" data-tip="${esc(SHOP_SEGMENTS.find((s) => s.id === type)?.label || type)}">${(type === 'inspections' && !inspComplete(rec)) ? CARD_ICON.inspectionsPending : CARD_ICON[type]}</div>
-    <div class="r-actions">
-      <button class="rbtn js-roweye${state.previewsOn ? '' : ' off'}" data-tip="${state.previewsOn ? 'Hover: preview · Click: previews OFF app-wide' : 'Previews are OFF — click to turn on'}">${state.previewsOn ? I.eye : I.eyeOff}</button>
-      <button class="rbtn js-newtab" data-type="${type}" data-rec="${id}" data-tip="Open in new tab (+)">${I.plus}</button>
-    </div>
-    <div class="row-content">${rowInnerHTML(type, rec)}</div>`;
-  return node;
-}
-
-/* ════════════════════════════════════════════════════════════════════════
-   APP-20 · §11 HEADER, KPI & BOTTOM BAR
+   APP-19 · §11 HEADER, KPI & BOTTOM BAR
    ════════════════════════════════════════════════════════════════════════ */
 /** Apple-style band coloring (§11): 0-25 red · 25-50 orange · 50-75 yellow ·
  *  75-100 green · 95-100 glowing green. */
@@ -7945,7 +7733,7 @@ const KPI_HELP = {
 };
 
 /* ════════════════════════════════════════════════════════════════════════
-   APP-21 · §11b KPI METRIC ENGINE — admin-definable KPIs (Settings → KPIs & Rings).
+   APP-20 · §11b KPI METRIC ENGINE — admin-definable KPIs (Settings → KPIs & Rings).
    A SAFE, declarative spec (no eval, Pages-public-safe): a metric is filters +
    an aggregate over an entity allowlist, evaluated by kpiEval(). The shipped 15
    KPIs route through kind:'builtin' (the legacy math above), so with no admin
@@ -8109,7 +7897,7 @@ function scorePop(roleId, ringIdx, delta, unit) {
   btn.appendChild(pop);                                            // floats up + fades (CSS), then removed
   setTimeout(() => pop.remove(), 760);
 }
-/* ════════════ APP-22 · COMING 2026 — the roadmap morale plate (Jac 2026-06-23) ════════
+/* ════════════ APP-21 · COMING 2026 — the roadmap morale plate (Jac 2026-06-23) ════════
    The KPI rings ride behind a blur (the metrics engine isn't wired up yet). Rather
    than leave dead frosted glass up top, the rings wear a "Coming 2026" data-plate
    that opens this roadmap — what's on the docket plus every area of the yard we're
@@ -8292,29 +8080,24 @@ function commsRailEl() {
 function activeMobileCard() {
   const colObj = COLUMNS[Math.max(0, Math.min(2, state.mobileCol))];
   const s = activeSession();
-  const member = (s.cols && s.cols[colObj.id]) || colObj.default;
-  return SHOP_TYPES.includes(member) ? 'shop' : member;
+  return (s.cols && s.cols[colObj.id]) || colObj.default;
 }
-// §M1 — the card the phone is currently showing (the active column's member). Fold the
-// shop sub-types to 'shop' (mirror activeMobileCard) so the footer toggle highlight + the
-// swipe-step index track the single Shop entry instead of failing to match.
+// §M1 — the card the phone is currently showing (the active column's member).
 function currentMobileMember() {
   const colObj = COLUMNS[Math.max(0, Math.min(2, state.mobileCol))];
   const s = activeSession();
-  const m = (s.cols && s.cols[colObj.id]) || colObj.default;
-  return SHOP_TYPES.includes(m) ? 'shop' : m;
+  return (s.cols && s.cols[colObj.id]) || colObj.default;
 }
-// §M1 — the flat card list the phone toggle bar offers. The 3 shop sub-types fold into one
-// 'shop' entry (the wrench), matching desktop; it opens the 3-bar shop graph.
-const MOBILE_CARDS = ['units', 'categories', 'shop', 'rentals', 'calendar', 'customers', 'invoices'];
+// §M1 — the flat card list the phone toggle bar offers. (Shop retirement: the wrench
+// entry is gone — the Units card carries the worklist graph.)
+const MOBILE_CARDS = ['units', 'categories', 'rentals', 'calendar', 'customers', 'invoices'];
 // §M1 — jump straight to a card (flattens the 3-column model on phones): set the column +
-// member, flip the visible column, and show that card's LIST (or, for Shop, its graph).
+// member, flip the visible column, and show that card's LIST.
 function goToCard(member) {
   const s = activeSession(); const col = COLUMN_OF[member];
   if (s.cols && col) s.cols[col] = member;
   const idx = COLUMNS.findIndex((c) => c.id === col); if (idx >= 0) state.mobileCol = idx;
-  if (member === 'shop') { const sc = s.cards.shop; if (sc) { sc.segment = 'all'; sc.graphView = true; sc.mode = 'list'; sc.recId = null; sc.recType = null; } }
-  else { const mc = s.cards[member]; if (mc) { mc.mode = 'list'; mc.recId = null; mc.recType = null; } }
+  const mc = s.cards[member]; if (mc) { mc.mode = 'list'; mc.recId = null; mc.recType = null; }
   render();
 }
 // §M1 phone footer — ONE card-toggle bar: every card collapsed to its icon, the SELECTED
@@ -8332,7 +8115,7 @@ function mobileDockEl() {
   return d;
 }
 /* ════════════════════════════════════════════════════════════════════════
-   APP-23 · §17 INTERNAL TEAM DOCK (Jac, Phase 7) — a bottom-bar chat built on the Phase-6
+   APP-22 · §17 INTERNAL TEAM DOCK (Jac, Phase 7) — a bottom-bar chat built on the Phase-6
    record comments: a live "what's flagged" feed, a rail of TAGGED elements
    (records / lines / pills / prices) shown as colored tabs you add + remove so a
    thread carries its own context, and role buttons that toggle who's included.
@@ -9182,7 +8965,7 @@ function tabBadge(card, rec) {
 }
 
 /* ════════════════════════════════════════════════════════════════════════
-   APP-24 · §13.3 CARD GRAPH VIEW — RETIRED (2026-07-03). The per-card tile
+   APP-23 · §13.3 CARD GRAPH VIEW — RETIRED (2026-07-03). The per-card tile
    dashboard (pieSVG/gvBars tiles + unit roster) was replaced by the §13.6
    Round-Up reporting board; the chapter number is kept so later APP-NN
    banners keep their ids. See PR #460–#464 + the removal PR for history.
@@ -9225,7 +9008,7 @@ function gvBuckets(days) {
   return out;
 }
 /* ════════════════════════════════════════════════════════════════════════
-   APP-25 · §13.4 GRAPH CAROUSEL (Jac 2026-06-16) — the per-card Graph is a deck of
+   APP-24 · §13.4 GRAPH CAROUSEL (Jac 2026-06-16) — the per-card Graph is a deck of
    INTERACTIVE views stacked ABOVE the list. Chevrons cycle the view; clicking a
    slice / bar / row / number TOGGLES a search entry (the one filtering pathway),
    so the chart drives the rows. Same-column toggles OR together. Each view
@@ -9368,7 +9151,7 @@ function uCutoff(p) {
 // compact money for bar tops ($12,345 → $12k) — the full figure rides the hover tip
 const uMoneyK = (v) => v >= 10000 ? '$' + Math.round(v / 1000) + 'k' : v >= 1000 ? '$' + (Math.round(v / 100) / 10) + 'k' : '$' + Math.round(v);
 
-/* §13.6 THE ROUND-UP (Jac 2026-07-03) — part of the APP-25 Graph chapter, not a new chapter.
+/* §13.6 THE ROUND-UP (Jac 2026-07-03) — part of the APP-24 Graph chapter, not a new chapter.
    The clean-sheet full-screen reporting board (spec:
    docs/superpowers/specs/2026-07-03-roundup-reporting-board-design.md). One overlay kind
    ('roundup'): a left TIME SPINE (Today/Wk/Mo/30/60/90/All + a Custom R22 date-range) scoping
@@ -10017,9 +9800,6 @@ const RUS_TABS = {
   rentals: [{ p: 'bookings', l: 'Bookings' }, { p: 'voided', l: 'Voided' }, { p: 'rev-status', l: 'Revenue' }, { p: 'inv-status', l: 'Invoices' }, { p: 'rent-tiles', l: '#s' }],
   customers: [{ p: 'accounts', l: 'Accounts' }, { p: 'cust-active', l: 'Active' }, { p: 'memberships', l: 'Members' }, { p: 'card-health', l: 'Cards' }, { p: 'top-spend', l: 'Top Spend' }],
   invoices: [{ p: 'balances', l: 'Balances' }, { p: 'net-sales', l: 'Net' }, { p: 'refunds', l: 'Refunds' }, { p: 'aging', l: 'Aging' }, { p: 'top-spend', l: 'Top Spend' }],
-  inspections: [{ p: 'insp-trend', l: 'Inspections' }],
-  workOrders: [{ p: 'wo-trend', l: 'Opened' }, { p: 'wo-phase', l: 'Bottleneck' }, { p: 'billed-wos', l: 'Billed' }],
-  serviceOrders: [{ p: 'svc-urgency', l: 'Urgency' }],
 };
 const RUS_PER_LABEL = { today: 'Td', wk: 'Wk', mo: 'Mo', 30: '30d', 60: '60d', 90: '90d', all: 'All' };
 function rusHtml(card, src, cs) {
@@ -10071,7 +9851,7 @@ function ruMountCharts() {
 }
 
 /* ════════════════════════════════════════════════════════════════════════
-   APP-26 · §12 OVERLAYS & BOARDS — renderOverlay kinds + back-office board popups
+   APP-25 · §12 OVERLAYS & BOARDS — renderOverlay kinds + back-office board popups
    ════════════════════════════════════════════════════════════════════════ */
 let _ovScroll = {}, _ovLastKind = null;   // keep a popup-body's scroll across its OWN re-renders (sign/selfie)
 let _popDrag = { x: 0, y: 0 }, _popDragKind = null;   // drag offset of the open popup; persists across its own re-renders, resets on kind change / close
@@ -11077,7 +10857,7 @@ function buildPopupEl(o, overlay, opts = {}) {
   return true;
 }
 const openOverlay = (o) => { state.datepick = null; _ovScroll[o.kind] = 0; state.overlay = o; renderOverlay(); };   // fresh open starts at top
-/* ════════════ APP-27 · RB-WINDOWS catalog (Jac 2026-06-22) — the admin Rulebook's index of
+/* ════════════ APP-26 · RB-WINDOWS catalog (Jac 2026-06-22) — the admin Rulebook's index of
    EVERY popup window. One entry per renderOverlay kind so the "Windows" tab can list
    it and (on expand) show an inert live preview via buildPopupEl. sample() returns
    representative args from the demo seed (DATA.*); a kind whose record we don't have
@@ -11179,7 +10959,7 @@ async function sendFeedback() {
   } catch (e) { o.busy = false; o.error = 'Couldn’t send — check your connection and try again.'; renderOverlay(); }
 }
 /* ════════════════════════════════════════════════════════════════════════
-   APP-28 · §18 MR. WRANGLER — the in-app AI (Claude via the Apps Script backend).
+   APP-27 · §18 MR. WRANGLER — the in-app AI (Claude via the Apps Script backend).
    The API key NEVER touches this public repo: the frontend POSTs to BACKEND_URL
    (action 'wrangler'); Code.gs calls api.anthropic.com with the key from a Script
    Property. Carries a compact data digest + (when opened from a record) its detail.
@@ -11342,7 +11122,7 @@ function wranglerErrMsg(reason) {
   return "Mr. Wrangler couldn't answer — check the connection / backend.";
 }
 
-/* Mr. Wrangler AGENTIC LOOP (Stage 1 — read tools) — part of APP-29 (Wrangler ACTS).
+/* Mr. Wrangler AGENTIC LOOP (Stage 1 — read tools) — part of APP-28 (Wrangler ACTS).
    Instead of one blind shot at a capped snapshot, Mr. Wrangler can LOOK THINGS UP: the
    backend `wrangler` action is now a generic Anthropic pass-through (Stage 0), so the
    whole tool catalog + the loop live here in app.js and ship via Pages — no clasp. Stage 1
@@ -11638,7 +11418,7 @@ const stripWranglerAction = (text) => String(text || '')
   .replace(/```wrangler-action\s*[\s\S]*$/, '')   // #152 also drop a truncated, unclosed fence
   .trim();
 
-/* ════════════ APP-29 · Mr. Wrangler ACTS on your data (Jac 2026-06-16) ════════════════
+/* ════════════ APP-28 · Mr. Wrangler ACTS on your data (Jac 2026-06-16) ════════════════
    add / update / bulk-import items — NEVER delete, NEVER money/card/auth/WO. Only
    safe, allowlisted fields. Every op previews in the chat before it writes. */
 const WR_FUNNEL = ['Inbound Lead', 'Outbound Lead', "Don't Contact", 'Contacted', 'Not A No!', 'Payment Discussed', 'Paid'];
@@ -12557,7 +12337,7 @@ function boardTable(boardId, query) {
 /* ── §13.2 BOARD VIEW — a per-card spreadsheet popup (sortable columns, search,
    a highlighted summary footer with switchable Sum/Avg/…, plus Add-Column /
    Add-Row scratch space for formulas). Driven by the CARD_COLUMNS registry. ── */
-function boardEntity(card, session) { return card === 'shop' ? boardSegmentFor(session) : card; }
+function boardEntity(card, session) { return card === 'shop' ? boardSegmentFor(session) : card; }   // 'shop' = stale saved Board Views only (card retired) → resolves to workOrders
 const ENTITY_LABEL = { inspections: 'Inspections', workOrders: 'Work Orders', serviceOrders: 'Service', units: 'Units', customers: 'Customers', rentals: 'Rentals', categories: 'Categories', invoices: 'Invoices' };
 function boardViewTitle(card, session) {
   if (card === 'shop') return ENTITY_LABEL[boardSegmentFor(session)] || 'Shop';
@@ -12713,7 +12493,7 @@ function bvCustomizePanel(card) {
 }
 
 /* ════════════════════════════════════════════════════════════════════════
-   APP-30 · §13 DROPDOWNS — openDropdown + status/fleet/funnel/sort menus
+   APP-29 · §13 DROPDOWNS — openDropdown + status/fleet/funnel/sort menus
    ════════════════════════════════════════════════════════════════════════ */
 /** Shared floating dropdown (matches board chrome) — used by the status pill
  *  dropdown and the in-card Sort menu. */
@@ -12903,7 +12683,7 @@ function addInterestedCategory(custId, catId) {
 // A view captures search + pinned chips + SORT (D1). The old shared-set localStorage
 // mirror seeds the personal set on first run (nothing is lost in the switch).
 const VIEWS_LS_ALL = 'jactec.views.all';
-const VIEW_CARDS = ['units', 'categories', 'rentals', 'customers', 'invoices', 'shop', 'expenses'];
+const VIEW_CARDS = ['units', 'categories', 'rentals', 'customers', 'invoices', 'expenses'];   // Shop retirement: 'shop' dropped
 let GLOBAL_VIEWS = null;
 function _viewsMap() {
   if (GLOBAL_VIEWS) return GLOBAL_VIEWS;
@@ -12978,7 +12758,7 @@ function setFocusedCard(cardId) {
 }
 
 /* ════════════════════════════════════════════════════════════════════════
-   APP-31 · §14 RENDER PIPELINE + toast
+   APP-30 · §14 RENDER PIPELINE + toast
    ════════════════════════════════════════════════════════════════════════ */
 let renderCount = 0;
 const scrollMemo = {};   // persistent scroll positions, keyed `card|view` (list vs which record)
@@ -13171,11 +12951,11 @@ function toast(msg) {
 }
 
 /* ════════════════════════════════════════════════════════════════════════
-   APP-32 · §15 EVENT HANDLERS — onClick/onInput/onChange (single listener tree)
+   APP-31 · §15 EVENT HANDLERS — onClick/onInput/onChange (single listener tree)
    ⚠ §16 ACTIONS/MUTATIONS interleave from here to §17 — see the SPEC v8 map
    ════════════════════════════════════════════════════════════════════════ */
 /* ════════════════════════════════════════════════════════════════════════
-   APP-33 · §15c DRAG & DROP LINK ENGINE (DRAGDROP-DESIGN.md) — custom pointer engine.
+   APP-32 · §15c DRAG & DROP LINK ENGINE (DRAGDROP-DESIGN.md) — custom pointer engine.
    Native HTML5 DnD rejected: the mid-drag column swap re-renders the source
    row, which silently kills native drags (and draggable breaks inline-edit).
    Everything drag-critical (ghost chip + cancel arc) lives in #drag-layer on
@@ -13458,7 +13238,6 @@ function dragSourceAt(target) {
   const row = target.closest('.row');                                   // .rtl rentals rows still carry card/rec on the .row wrapper
   if (row && row.dataset.rec != null) {
     let rc = row.dataset.card;
-    if (rc === 'shop') { const seg = activeSession().cards.shop?.segment; rc = (seg && seg !== 'all') ? seg : null; }   // §17 — a shop row resolves to its pinned segment (serviceOrders/workOrders/inspections)
     if (rc && DRAG_SOURCES.has(rc)) return { card: rc, rec: row.dataset.rec };
   }
   const cardNode = target.closest('.card[data-card]');
@@ -13688,7 +13467,7 @@ function zipToCard(entity) {
   if (idx < 0) return;
   if (s.cols) s.cols[COLUMNS[idx].id] = entity;
   state.mobileCol = idx;
-  const mc = s.cards[SHOP_TYPES.includes(entity) ? 'shop' : entity];
+  const mc = s.cards[entity];
   if (mc) { mc.mode = 'list'; mc.recId = null; mc.recType = null; }   // list mode → rows to drop on
   render();   // §15c hook re-stamps drop decor + rebuilds the zip rails for the new column
 }
@@ -14213,10 +13992,9 @@ function onClick(e) {
   if (closest('.js-coltab')) {
     const ct = closest('.js-coltab'); e.stopPropagation();
     const cs = activeSession(); if (cs.cols) cs.cols[ct.dataset.col] = ct.dataset.member;
-    if (ct.dataset.member === 'shop') { const sc = cs.cards.shop; if (sc) { sc.segment = 'all'; sc.graphView = true; sc.mode = 'list'; sc.recId = null; sc.recType = null; } }   // wrench Shop → the combined 3-bar graph front page
     // §M1 — on phones the footer toggle is the primary nav (no in-card List button): tapping a
     // card shows its LIST (the back chevron returns from a record). Desktop keeps per-member state.
-    else if (document.body.classList.contains('is-phone')) { const mc = cs.cards[ct.dataset.member]; if (mc) { mc.mode = 'list'; mc.recId = null; mc.recType = null; } }
+    if (document.body.classList.contains('is-phone')) { const mc = cs.cards[ct.dataset.member]; if (mc) { mc.mode = 'list'; mc.recId = null; mc.recType = null; } }
     return render();
   }
   // §2.3 dispatch timeline — day nav + open a stop's rental (Phase 6)
@@ -14374,7 +14152,7 @@ function onClick(e) {
   if (closest('.js-migrate-go')) { const o = state.overlay; if (!o || o.kind !== 'migrateUnits') return; const res = applyUnitMigration(o.plan); state.overlay = null; renderOverlay(); render(); toast(`Rounded up ${res.created} unit${res.created === 1 ? '' : 's'} and linked ${res.linked} rental${res.linked === 1 ? '' : 's'}.`); return; }
   if (closest('.js-split-open')) { const b = closest('.js-split-open'); e.stopPropagation(); const r = IDX.rental.get(b.dataset.rec); if (r) openOverlay({ kind: 'splitUnit', rentalId: b.dataset.rec, unitId: b.dataset.unit, splitStart: r.startDate, splitEnd: r.endDate }); return; }
   if (closest('.js-split-go')) { const o = state.overlay; if (!o || o.kind !== 'splitUnit') return; const sib = splitUnitToNewRental(o.rentalId, o.unitId, o.splitStart, o.splitEnd); if (sib) { closeOverlay(); try { anchorRecord('rentals', sib.rentalId); } catch (err) { render(); } } return; }
-  if (closest('.js-hchip')) { const b = closest('.js-hchip'); const o = state.overlay; if (o?.kind === 'board') { o.histKind = o.histKind === b.dataset.kind ? null : b.dataset.kind; return renderOverlay(); } const session = activeSession(); const cs = session.cards[b.dataset.card] || session.cards.shop; cs.histKind = cs.histKind === b.dataset.kind ? null : b.dataset.kind; return render(); }
+  if (closest('.js-hchip')) { const b = closest('.js-hchip'); const o = state.overlay; if (o?.kind === 'board') { o.histKind = o.histKind === b.dataset.kind ? null : b.dataset.kind; return renderOverlay(); } const session = activeSession(); const cs = session.cards[b.dataset.card] || session.cards.units; cs.histKind = cs.histKind === b.dataset.kind ? null : b.dataset.kind; return render(); }
   // .js-complete-rental / .js-cancel-rental RETIRED (Jac 2026-07-03) — terminal gates
   // on every unit are the completion; rentals clear from the default list on their own.
   if (closest('.js-insp-wash')) { const b = closest('.js-insp-wash'); e.stopPropagation(); return setInspWash(b.dataset.rec, b.dataset.val); }
@@ -14444,7 +14222,6 @@ function onClick(e) {
   if (xEl) { e.stopPropagation(); return handlePillX(xEl); }
 
   // shop segment switch — clicking the active segment toggles back to All
-  if (closest('.js-shopseg')) { const seg = closest('.js-shopseg').dataset.seg; const cs = activeSession().cards.shop; const next = (cs.segment === seg) ? 'all' : seg; if (cs.graphView) gvStripTerms(cs);   /* §13.7 — the strip (or 'all' worklist) stays open across a segment switch */ cs.segment = next; cs.listLimit = undefined; return render(); }
 
   // row / header action buttons (anchor / new tab) — recType is set for Shop items
   const anchorBtn = closest('.js-anchor');
@@ -14528,8 +14305,8 @@ function castId(card, raw) { return raw; }   // all our IDs are strings
 
 function handlePillX(xEl) {
   const kind = xEl.dataset.x;
-  // operate on the record open in the card that contains this pill. The Shop card
-  // holds 3 entity types, so resolve through its recType (recOf('shop',…) fails).
+  // operate on the record open in the card that contains this pill (recType resolves
+  // any legacy multi-entity card state via entityCardOf).
   const cardNode = xEl.closest('.card');
   const card = cardNode?.dataset.card;
   const session = activeSession();
@@ -14882,7 +14659,7 @@ function clearFieldCall(rentalId) {
 }
 
 /* ════════════════════════════════════════════════════════════════════════
-   APP-34 · §16 ACTIONS / MUTATIONS — every state change funnels through here
+   APP-33 · §16 ACTIONS / MUTATIONS — every state change funnels through here
    (status setters, drag links, Quotes, captures, site, WO/invoice lines, +New)
    ════════════════════════════════════════════════════════════════════════ */
 /* ── v2 BUILD actions: condition/wash segs · yard captures · site popup · WO complete ── */
@@ -15866,7 +15643,7 @@ function saveNewCustomer() {
   else { anchorRecord('customers', id); toast(`${c.name} added.`); }
 }
 /* ════════════════════════════════════════════════════════════════════════
- * APP-35 · §17 STRIPE / PAYMENTS — card-on-file + invoice charging (client side).
+ * APP-34 · §17 STRIPE / PAYMENTS — card-on-file + invoice charging (client side).
  * Card data is entered ONLY in Stripe's iframe (Card Element) and tokenized in
  * the browser; raw PAN/CVC never touches our code or the backend. The backend
  * owns the money math — the client never sends an amount.
@@ -16919,7 +16696,7 @@ function winPickerEl(r) {
 }
 
 /* ════════════════════════════════════════════════════════════════════════
-   APP-36 · §5.4d — DATE SEARCH PICKER. A standalone calendar that REUSES the rental
+   APP-35 · §5.4d — DATE SEARCH PICKER. A standalone calendar that REUSES the rental
    window-picker's look (.winpicker/.wp-*) but none of its rental/availability
    coupling. Type "date"/"dates"→Enter (or click a date chip) to open; tap one
    day or two to set a range; Done pins a `__date` filter term on the scope.
@@ -17369,10 +17146,10 @@ function mergeInvoiceInto(keepId, absorbId) {
 }
 
 /* ════════════════════════════════════════════════════════════════════════
-   APP-37 · §18 PERSISTENCE & BOOT
+   APP-36 · §18 PERSISTENCE & BOOT
    ════════════════════════════════════════════════════════════════════════ */
 /* ════════════════════════════════════════════════════════════════════════
-   APP-38 · §18b BACKEND SYNC — Google Sheets via the Apps Script web app
+   APP-37 · §18b BACKEND SYNC — Google Sheets via the Apps Script web app
    ════════════════════════════════════════════════════════════════════════
    The app loads its data from the Sheet on sign-in, seeds the Sheet from the
    demo data on first run, and auto-saves (debounced) after every change.
