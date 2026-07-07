@@ -48,7 +48,7 @@ const LUCIDE = {
   // Families cover the ~50 real fleet categories (Fleet_Categories rate sheet), not
   // just the 5-record demo seed — see docs/handoffs or ask Jac for the source sheet.
   CATEGORY_ICON: {
-    generator: 'zap', compressor: 'wind',
+    attachment: 'puzzle', generator: 'zap', compressor: 'wind',
     pump: 'droplet', truck: 'truck', tractor: 'tractor',
     fuel: 'fuel', heater: 'flame',
     box: 'box',
@@ -85,12 +85,11 @@ const CUSTOM = {
     // rejected — no icon set draws real rental equipment; simple computed geometry,
     // same precedent as the sawblade/scissor) ──
     dozer: `ico('<path d="M2 17a2 2 0 1 0 4 0a2 2 0 0 0 -4 0"/><path d="M12 17a2 2 0 1 0 4 0a2 2 0 0 0 -4 0"/><path d="M19 13v4a2 2 0 0 0 2 2h1"/><path d="M14 19h-10"/><path d="M4 15h10"/><path d="M9 11v-5h2a3 3 0 0 1 3 3v6"/><path d="M5 15v-3a1 1 0 0 1 1 -1h8"/><path d="M19 17h-3"/>')`,
-    roller: `ico('<circle cx="17" cy="15" r="4.5"/><path d="M17 15h.01"/><rect x="4" y="10.5" width="7.5" height="5" rx="1"/><path d="M5.5 10.5V7"/><path d="M10 10.5V7"/><path d="M4 7h7.5"/><circle cx="6.5" cy="18.3" r="2"/><path d="M8.5 18.8h4"/>')`,
-    tamper: `ico('<path d="M4.5 3 9 11"/><path d="M3 4.5 6 2.5"/><rect x="8" y="10" width="8" height="5" rx="1"/><path d="M6.5 18.5 8 15h8l1.5 3.5z"/><path d="M8.5 21.5h2"/><path d="M13.5 21.5h2"/>')`,
-    trencher: `ico('<rect x="10" y="15.5" width="9.5" height="4" rx="2"/><path d="M13 17.5h3.5"/><rect x="11.5" y="10" width="7.5" height="5.5" rx="1"/><path d="M12.5 12.5 4.2 5.2"/><path d="M14.5 10.5 6.3 3.3"/><path d="M4.2 5.2 6.3 3.3"/><path d="M6.5 6.5 5 8"/><path d="M9 8.7 7.5 10.2"/>')`,
-    telehandler: `ico('<circle cx="7.5" cy="17.5" r="2.3"/><circle cx="17" cy="17.5" r="2.3"/><path d="M9.8 17.5h4.9"/><path d="M5.2 17.2 4.5 14h11"/><path d="M20 13.5 7.5 4.5"/><path d="M19 15.5 13 11.2"/><path d="M15.5 14h4.5v3.5"/><path d="M7.5 4.5v3.4h-3.4"/>')`,
-    towablelift: `ico('<path d="M2 18h4"/><path d="M6 18h9"/><circle cx="10.5" cy="20" r="1.7"/><path d="M7.5 18 5.5 21.5"/><path d="M13.5 18 15.5 21.5"/><path d="M13 18 10 10.5 15.5 7.2"/><rect x="15" y="3.5" width="5.5" height="3.7" rx=".5"/>')`,
-    attachment: `ico('<rect x="8" y="2.5" width="8" height="4" rx="1"/><path d="M12 6.5V19"/><path d="M12 21.5 12 19"/><path d="m12 21.5-1.8-2.1"/><path d="M7.5 9.2c3 2 6 -2 9 0"/><path d="M8.3 13c2.6 1.8 4.8 -1.8 7.4 0"/><path d="M9.3 16.6c1.9 1.4 3.5 -1.4 5.4 0"/>')`,
+    roller: `ico('<circle cx="6.4" cy="15.8" r="3.2"/><path d="M6.4 15.8h.01"/><circle cx="17.6" cy="15.8" r="3.2"/><path d="M17.6 15.8h.01"/><rect x="3.2" y="8.5" width="17.6" height="4.5" rx="1"/><path d="M15 8.5 17 4"/><path d="M15.5 4h3.5"/>')`,
+    tamper: `ico('<rect x="8.1" y="1.6" width="7.8" height="6" rx="2.2"/><path d="M10.6 4.7h2.8"/><path d="M8.1 6.2H3a1.45 1.45 0 0 1 0-2.9"/><path d="M15.9 4.6H21a1.45 1.45 0 0 1 0 2.9"/><path d="M10.6 7.6v11.7"/><path d="M13.4 7.6v11.7"/><path d="M14.2 19.3H9.8l.8 4.2h2.8z"/><path d="M19 17.6l-1.4 1.4 1.4 1.4-1.4 1.4"/><path d="M5 17.6l1.4 1.4L5 20.4l1.4 1.4"/>')`,
+    trencher: `ico('<rect x="11" y="15.5" width="9" height="4" rx="2"/><path d="M14 17.5h3"/><rect x="12.5" y="10" width="7" height="5.5" rx="1"/><path d="M13.5 12.8 5 5.5"/><path d="M4.5 3.2 6.6 5.1 5.9 6.9 8 8.8 7.3 10.6 9.4 12.5 8.7 14.3 11 15.5"/><path d="M4.5 3.2 5 5.5"/>')`,
+    telehandler: `ico('<rect x="4" y="12.5" width="13.5" height="4" rx="1"/><circle cx="7.5" cy="18.6" r="2.1"/><circle cx="15" cy="18.6" r="2.1"/><path d="M17 12.5 6.5 4.8"/><path d="M17 12.5 11.5 8.4"/><path d="M6.5 4.8 6.5 8 3 8"/>')`,
+    towablelift: `ico('<path d="M2 18h3.5"/><path d="M5.5 18h9.5"/><circle cx="10" cy="20" r="1.8"/><path d="M6.5 18 4.8 21.3"/><path d="M13.8 18 15.5 21.3"/><path d="M13 18 10.2 10 16 6.3"/><path d="M10.2 10h.01"/><rect x="15.3" y="3" width="6" height="4" rx=".5"/>')`,
     // Tabler "bulldozer" (MIT) — Lucide has no skid-steer/loader/dozer equivalent.
     skidsteer: `ico('<path d="M2 17a2 2 0 1 0 4 0a2 2 0 0 0 -4 0"/><path d="M12 17a2 2 0 1 0 4 0a2 2 0 0 0 -4 0"/><path d="M19 13v4a2 2 0 0 0 2 2h1"/><path d="M14 19h-10"/><path d="M4 15h10"/><path d="M9 11v-5h2a3 3 0 0 1 3 3v6"/><path d="M5 15v-3a1 1 0 0 1 1 -1h8"/><path d="M19 17h-3"/>')`,
     // Tabler "crane" (MIT) — Lucide's forklift read as a warehouse lift, not a boom/scissor/towable lift.
@@ -99,19 +98,19 @@ const CUSTOM = {
     // platform / X-frame / base+wheels, simple geometry like the sawblade precedent.
     scissor: `ico('<rect x="3" y="3" width="18" height="4" rx="1"/><path d="m5 7 14 9"/><path d="m19 7-14 9"/><path d="M4 16h16"/><circle cx="7.5" cy="20" r="1.6"/><circle cx="16.5" cy="20" r="1.6"/>')`,
     // bespoke utility trailer (Jac reference art, 2026-07-06 — the caravan read as a camper).
-    trailer: `ico('<path d="M2 13.5h4"/><path d="M3.5 13.5v3"/><path d="M2.5 16.5h2"/><path d="M6 13.5h1.5"/><rect x="7.5" y="9.5" width="14" height="6" rx="1"/><circle cx="13" cy="17.5" r="2.2"/><path d="M15.2 15.5h5"/><path d="M7.5 15.5h3.3"/>')`,
+    trailer: `ico('<path d="M2 13.5h4"/><path d="M3.5 13.5v3"/><path d="M2.5 16.5h2"/><path d="M6 13.5h1.5"/><rect x="7.5" y="9.5" width="14" height="6" rx="1"/><circle cx="11.5" cy="17.7" r="2"/><circle cx="16.5" cy="17.7" r="2"/><path d="M7.5 15.5h1.8"/><path d="M18.7 15.5h2.8"/>')`,
     // bespoke dump trailer + light tower (Jac reference art, 2026-07-06)
     dumptrailer: `ico('<path d="M2 16.5h4.5"/><path d="M2.5 16.5v1.8"/><path d="M6.5 16.5h10.5"/><path d="M17.7 15.7 8.3 8.9 10 6.5 19.5 13.3z"/><path d="M13.5 15.5l2.6-3.4"/><circle cx="10.5" cy="18.7" r="1.9"/><circle cx="15" cy="18.7" r="1.9"/>')`,
-    tower: `ico('<rect x="3" y="2.5" width="3.6" height="3" rx=".6"/><rect x="8" y="2.5" width="3.6" height="3" rx=".6"/><rect x="3" y="6.5" width="3.6" height="3" rx=".6"/><rect x="8" y="6.5" width="3.6" height="3" rx=".6"/><path d="M7.3 9.5V18"/><path d="M10.5 18v-3.5a1.5 1.5 0 0 1 1.5-1.5h6a2 2 0 0 1 2 2v3"/><path d="M2 18h14"/><circle cx="17.5" cy="19.6" r="1.8"/><path d="M4 18v-2"/>')`,
+    tower: `ico('<rect x="2.5" y="2" width="4.2" height="3.4" rx=".5"/><rect x="8.3" y="2" width="4.2" height="3.4" rx=".5"/><rect x="2.5" y="7" width="4.2" height="3.4" rx=".5"/><rect x="8.3" y="7" width="4.2" height="3.4" rx=".5"/><path d="M7.5 10.4V18"/><path d="M11 18v-2.7a1.8 1.8 0 0 1 1.8-1.8h5.4a2.3 2.3 0 0 1 2.3 2.3V18"/><path d="M2 18h19"/><circle cx="17" cy="20" r="1.9"/>')`,
     // bespoke concrete power buggy (Jac, 2026-07-04: the garden-cart/wheelbarrow was rejected).
     buggy: `ico('<path d="M11.5 7.5v8H6a3.5 3.5 0 0 1-3.5-3.5V7.5z"/><path d="M2 7.5h11"/><path d="M11.5 11h4.5a3 3 0 0 1 3 3v1.5"/><path d="M19 15.5V13l2.5-1.5"/><circle cx="7.5" cy="18" r="2.4"/><circle cx="16" cy="18" r="2.4"/>')`,
     // Tabler "hammer" (MIT, Jac 2026-07-03) — distinct path from Lucide's hammer already on CARD_ICON.shop,
     // so the small-tool catch-all doesn't collide with the Shop card's glyph.
-    saw: `ico('<path d="M11.414 10l-7.383 7.418a2.091 2.091 0 0 0 0 2.967a2.11 2.11 0 0 0 2.976 0l7.407 -7.385"/><path d="M18.121 15.293l2.586 -2.586a1 1 0 0 0 0 -1.414l-7.586 -7.586a1 1 0 0 0 -1.414 0l-2.586 2.586a1 1 0 0 0 0 1.414l7.586 7.586a1 1 0 0 0 1.414 0z"/>')`,
+    saw: `ico('<path d="M9.00,11.52L16.67,3.85c1.13-1.13,2.97-1.13,4.11,0.00l0.00,0.00c1.13,1.13,1.13,2.97,0.00,4.11L13.12,15.62"/><path d="M6.77,21.95c-1.20,1.00-2.99,0.94-4.12-0.19L0.70,19.82l2.03-2.03"/><path d="M7.68,10.34l6.05,6.05L7.58,22.55l-4.63-4.63c-0.78-0.78-0.78-2.05,0.00-2.83L7.68,10.34z"/><path d="M8.64,15.44l-3.82-3.82c-0.72-0.72-1.88-0.72-2.60,0.00l0.00,0.00c-0.72,0.72-0.72,1.88,0.00,2.60l0.80,0.80"/><path d="M17.74,6.89L11.35,13.28"/><path d="M21.96 2.67L20.79 3.84"/><path d="M18.74 1.34L18.74 2.99"/><path d="M15.51 2.67L16.68 3.84"/><path d="M21.96 9.12L20.79 7.95"/><path d="M12.94 5.24L14.11 6.41"/><path d="M19.39 11.69L18.22 10.52"/><path d="M10.38 7.81L11.55 8.98"/><path d="M16.83 14.26L15.66 13.09"/><path d="M23.30 5.90L21.64 5.90"/>')`,
     // Bespoke sawblade (Jac 2026-07-03): no Lucide/Tabler icon is a literal serrated cutting disc, so this is
     // computed geometry (9 teeth via trig, r=9.2 peak / r=7.0 valley, viewBox 0 0 24 24) rather than hand-drawn
     // freeform art — distinct from the "cog" settings-gear glyph it replaced.
-    grinder: `ico('<path d="M3 4.5 7.5 10"/><path d="M2 6.5 4.5 4"/><rect x="6.5" y="8.5" width="7" height="5" rx="1"/><circle cx="9" cy="16.5" r="1.7"/><circle cx="12.5" cy="16.5" r="1.7"/><circle cx="18" cy="14.5" r="3.6"/><path d="M18 14.5h.01"/><path d="M18 18.1v1.9"/><path d="M20.5 17l1.4 1.4"/><path d="M15.5 17 14 18.4"/><path d="M14.5 12.5h-1"/>')`,
+    grinder: `ico('<circle cx="11" cy="12.5" r="4.3"/><path d="M11 12.5h.01"/><path d="M15.28 12.13L17.28 11.95"/><path d="M14.52 14.97L16.16 16.11"/><path d="M12.11 16.65L12.63 18.59"/><path d="M9.18 16.40L8.34 18.21"/><path d="M7.10 14.32L5.29 15.16"/><path d="M20.5 4 14 8.9"/><path d="M19.2 2.6l2.6 2.8"/><path d="M17 20.5v-4h4.5v4"/><path d="M15.5 20.5H23"/>')`,
   },
 };
 

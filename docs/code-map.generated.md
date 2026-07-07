@@ -67,7 +67,7 @@ Chapter **SVC** — no internal banners, the whole file is one chapter.
 
 Chapter **AGR** — no internal banners, the whole file is one chapter.
 
-## icons.js — 126 lines, 0 chapters
+## icons.js — 128 lines, 0 chapters
 
 Chapter **ICON** — no internal banners, the whole file is one chapter.
 
