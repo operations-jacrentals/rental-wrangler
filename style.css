@@ -3229,61 +3229,28 @@ body.is-phone .card[data-card="units"] .list { grid-template-columns: repeat(2, 
 .catr-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .catr-cat { flex: 0 0 auto; width: 18px; height: 18px; color: var(--txt-2); display: flex; align-items: center; justify-content: center; }
 .catr-cat svg { width: 17px; height: 17px; display: block; }
-/* ── CATEGORY GLYPH HOVER MOTION (Jac, 2026-07-03; converted to a 3-frame stepped loop
-   2026-07-07 — Jac: "three frames... a motion picture, simpler than full JS") — hovering
-   the unit row (.ur) or the category mini-card (.catr) cycles its category icon through
-   three discrete transform poses (a CSS `steps()` loop, not a smooth tween — a hard-cut
-   flipbook using the SAME static glyph 3 times, no new artwork per family). Paused at
-   rest; runs only while hovered. `mo-none` (the box/unmatched fallback) stays inert.
-   IMPORTANT: the `animation-play-state: running` hover overrides must stay AFTER the
-   base `animation:` shorthands below — same-specificity rules apply in source order,
-   so if the shorthand came second it would silently reset play-state back to running
-   (this bit us once already on the lift/skidsteer loops). ── */
-.cat-glyph { display: inline-flex; transition: color .12s ease; }
-@keyframes mo-dig-cy     { 0%, 100% { transform: none; } 33% { transform: translateY(1.5px) rotate(-8deg); } 66% { transform: translateY(-1px) rotate(3deg); } }
-@keyframes mo-chop-cy    { 0%, 100% { transform: none; } 33% { transform: rotate(-14deg); } 66% { transform: rotate(6deg); } }
-@keyframes mo-spin-cy    { 0%, 100% { transform: rotate(0deg); } 33% { transform: rotate(120deg); } 66% { transform: rotate(240deg); } }
-@keyframes mo-raise-cy   { 0%, 100% { transform: none; } 33% { transform: translateY(-1.5px) rotate(7deg); } 66% { transform: translateY(-.5px) rotate(3deg); } }
-@keyframes mo-snap-cy    { 0%, 100% { transform: scale(1); } 33% { transform: scale(1.14); } 66% { transform: scale(1.05); } }
-@keyframes mo-press-cy   { 0%, 100% { transform: none; } 33% { transform: translateY(2px) scale(.94); } 66% { transform: translateY(-1px) scale(1.03); } }
-@keyframes mo-roll-cy    { 0%, 100% { transform: rotate(0deg); } 33% { transform: translateX(1px) rotate(14deg); } 66% { transform: translateX(2px) rotate(28deg); } }
-@keyframes mo-spark-cy   { 0%, 100% { transform: scale(1); } 33% { transform: scale(1.16); } 66% { transform: scale(1.06); } }
-@keyframes mo-puff-cy    { 0%, 100% { transform: none; } 33% { transform: translateX(2px) scale(1.06); } 66% { transform: translateX(1px) scale(1.02); } }
-@keyframes mo-drip-cy    { 0%, 100% { transform: none; } 33% { transform: translateY(2px) scale(.92); } 66% { transform: translateY(3.5px) scale(.88); } }
-@keyframes mo-slosh-cy   { 0%, 100% { transform: rotate(0deg); } 33% { transform: rotate(-9deg); } 66% { transform: rotate(7deg); } }
-@keyframes mo-flicker-cy { 0%, 100% { transform: none; } 33% { transform: scale(1.1) rotate(-5deg); } 66% { transform: scale(.95) rotate(4deg); } }
-@keyframes mo-pulse-cy   { 0%, 100% { transform: scale(1); } 33% { transform: scale(1.12); } 66% { transform: scale(1.05); } }
-.mo-dig     { animation: mo-dig-cy     .9s steps(1,end) infinite; animation-play-state: paused; }
-.mo-chop    { animation: mo-chop-cy    .9s steps(1,end) infinite; animation-play-state: paused; }
-.mo-spin    { animation: mo-spin-cy    .9s steps(1,end) infinite; animation-play-state: paused; }
-.mo-raise   { animation: mo-raise-cy   .9s steps(1,end) infinite; animation-play-state: paused; }
-.mo-snap    { animation: mo-snap-cy    .9s steps(1,end) infinite; animation-play-state: paused; }
-.mo-press   { animation: mo-press-cy   .9s steps(1,end) infinite; animation-play-state: paused; }
-.mo-roll    { animation: mo-roll-cy    .9s steps(1,end) infinite; animation-play-state: paused; }
-.mo-spark   { animation: mo-spark-cy   .9s steps(1,end) infinite; animation-play-state: paused; }
-.mo-puff    { animation: mo-puff-cy    .9s steps(1,end) infinite; animation-play-state: paused; }
-.mo-drip    { animation: mo-drip-cy    .9s steps(1,end) infinite; animation-play-state: paused; }
-.mo-slosh   { animation: mo-slosh-cy   .9s steps(1,end) infinite; animation-play-state: paused; }
-.mo-flicker { animation: mo-flicker-cy .9s steps(1,end) infinite; animation-play-state: paused; }
-.mo-pulse   { animation: mo-pulse-cy   .9s steps(1,end) infinite; animation-play-state: paused; }
-.ur:hover .mo-dig,     .catr:hover .mo-dig,
-.ur:hover .mo-chop,    .catr:hover .mo-chop,
-.ur:hover .mo-spin,    .catr:hover .mo-spin,
-.ur:hover .mo-raise,   .catr:hover .mo-raise,
-.ur:hover .mo-snap,    .catr:hover .mo-snap,
-.ur:hover .mo-press,   .catr:hover .mo-press,
-.ur:hover .mo-roll,    .catr:hover .mo-roll,
-.ur:hover .mo-spark,   .catr:hover .mo-spark,
-.ur:hover .mo-puff,    .catr:hover .mo-puff,
-.ur:hover .mo-drip,    .catr:hover .mo-drip,
-.ur:hover .mo-slosh,   .catr:hover .mo-slosh,
-.ur:hover .mo-flicker, .catr:hover .mo-flicker,
-.ur:hover .mo-pulse,   .catr:hover .mo-pulse   { animation-play-state: running; }
+/* ── CATEGORY GLYPH HOVER MOTION (Jac, 2026-07-03) — hovering the unit row (.ur) or the
+   category mini-card (.catr) nudges its category icon with a short, per-family CSS-only
+   move (one crisp beat, no bounce/loop — same .12s control timing as the rest of the
+   system). `mo-none` (the box/unmatched fallback) is deliberately inert. ── */
+.cat-glyph { display: inline-flex; transition: transform .12s cubic-bezier(.2,.7,.2,1), color .12s ease; }
+.ur:hover .mo-dig,     .catr:hover .mo-dig     { transform: translateY(1.5px) rotate(-8deg); }
+.ur:hover .mo-chop,    .catr:hover .mo-chop    { transform: rotate(-14deg); }
+.ur:hover .mo-spin,    .catr:hover .mo-spin    { transform: rotate(80deg); }
+.ur:hover .mo-raise,   .catr:hover .mo-raise   { transform: translateY(-1.5px) rotate(7deg); }
+.ur:hover .mo-snap,    .catr:hover .mo-snap    { transform: scale(1.14); }
+.ur:hover .mo-press,   .catr:hover .mo-press   { transform: translateY(2px) scale(.94); }
+.ur:hover .mo-roll,    .catr:hover .mo-roll    { transform: translateX(2px) rotate(14deg); }
+.ur:hover .mo-spark,   .catr:hover .mo-spark   { transform: scale(1.16); }
+.ur:hover .mo-puff,    .catr:hover .mo-puff    { transform: translateX(2px) scale(1.06); }
+.ur:hover .mo-drip,    .catr:hover .mo-drip    { transform: translateY(2px) scale(.92); }
+.ur:hover .mo-slosh,   .catr:hover .mo-slosh   { transform: rotate(-9deg); }
+.ur:hover .mo-flicker, .catr:hover .mo-flicker { transform: scale(1.1) rotate(-5deg); }
+.ur:hover .mo-pulse,   .catr:hover .mo-pulse   { transform: scale(1.12); }
 .ur:hover .mo-none,    .catr:hover .mo-none    { transform: none; }
 @media (prefers-reduced-motion: reduce) {
   .cat-glyph { transition: color .12s ease; }
-  .mo-dig, .mo-chop, .mo-spin, .mo-raise, .mo-snap, .mo-press, .mo-roll, .mo-spark,
-  .mo-puff, .mo-drip, .mo-slosh, .mo-flicker, .mo-pulse { animation: none !important; transform: none !important; }
+  .ur:hover .cat-glyph, .catr:hover .cat-glyph { transform: none !important; }
 }
 
 /* ── ANIMATED CATEGORY GLYPHS (Jac, 2026-07-03) — the excavator / boom-lift / skid-steer
