@@ -1451,7 +1451,8 @@ select.lf-in { appearance: none; cursor: pointer; }
 .cm-who { flex: 0 0 auto; font-weight: 700; font-size: 12.5px; white-space: nowrap; }
 .cm-snip { flex: 1 1 auto; min-width: 0; color: var(--txt-2); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* customer profile — the compact Comms section (one row per channel with history) */
-.comms-sec .comms-line { display: flex; align-items: center; gap: 8px; }
+.comms-sec .comms-line { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; }
+.comms-sec .comms-line .pill { flex: 0 0 auto; }
 .comms-sec .comms-snip { flex: 1 1 auto; min-width: 0; color: var(--txt-2); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .comms-chip:focus-visible, .cp-x:focus-visible, .cp-from:focus-visible, .cp-send:focus-visible, .cp-in:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 

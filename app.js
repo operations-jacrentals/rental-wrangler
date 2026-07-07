@@ -17703,6 +17703,7 @@ function finishLoad() {
   wranglerRailLoad();                                           // load the Mr. Wrangler rail from IndexedDB (+ one-time localStorage migration)
   refreshWranglerRequests();                                    // §18e populate the approval-inbox badge
   refreshWranglerNotifications();                               // §18f populate the notification-bell badge
+  refreshCommsThreads();                                        // D8 comms rail — the chips wear their worst-of-category dots from clock-in (the rail itself stays empty)
   startRefreshPoll();                                           // live multi-user: poll for others' changes (§ refreshFromBackend)
   if (migrationDirty) { migrationDirty = false; saveSoon(); }   // push parsed first/last names up to the Sheet
   // #edit=<id> — desktop→phone handoff opens that customer's account form (§7.1).
