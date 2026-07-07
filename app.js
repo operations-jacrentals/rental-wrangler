@@ -6419,8 +6419,14 @@ const DETAIL = {
       ${efld('units', u, 'unitId', 'weight', 'Weight')}
       <div class="kv"><span class="v inline-edit" data-edit="unitHours" data-rec="${u.unitId}">${num(u.currentHours)} HRS</span></div>
     </div></div>`;
+    // GPS connect wizard (spec §5a) — mapping now happens through a guided popup
+    // (provider → identify → confirmed live signal) instead of hand-typing gpsProvider/
+    // gpsDeviceId; the "No GPS" badge grows a +Connect add, an already-mapped unit gets
+    // a quiet Reconnect affordance beside its provider · device-id.
+    const gpsMapped = !!(u.gpsProvider && u.gpsDeviceId);
     const gps = `<div class="section"><h4>GPS</h4><div class="fieldstack">
-      ${kvPills(u.gpsStatus ? statusPill('gpsStatus', u.gpsStatus, { focal: true }) : badge('No GPS'))}
+      ${kvPills((u.gpsStatus ? statusPill('gpsStatus', u.gpsStatus, { focal: true }) : badge('No GPS')) + (gpsMapped ? '' : addBtn('Connect GPS', { link: true, js: 'js-gps-connect', data: { rec: u.unitId } })))}
+      ${gpsMapped ? `<div class="kv"><span class="v muted" style="font-size:11px">${esc(u.gpsProvider)} · ${esc(u.gpsDeviceId)}</span>${ghostPill('Reconnect', { js: 'js-gps-connect', data: { rec: u.unitId } })}</div>` : ''}
       ${efld('units', u, 'unitId', 'gpsType', 'GPS unit/type')}
       ${efld('units', u, 'unitId', 'gpsPlacement', 'Placement')}
     </div></div>`;
@@ -10205,6 +10211,78 @@ function buildPopupEl(o, overlay, opts = {}) {
       foot: `${ghostPill('Cancel', { js: 'js-close' })}${actionPill(isMoney ? 'money' : 'commit', isMoney ? 'Confirm — bill it' : 'Confirm', { js: 'js-link-confirm' })}`,
     });
     overlay.appendChild(pop);
+  } else if (o.kind === 'gpsConnect') {
+    // §5a — the connect-a-device wizard: provider → identify the device → live
+    // first-contact poll → save. gpsProvider/gpsDeviceId are written to the unit ONLY
+    // once contact is confirmed (or an explicit "Save anyway" override) — never a
+    // hand-typed, unverified mapping. State lives on the overlay (o.step/o.provider/…);
+    // the async pieces (device-list load, the poll loop, the write) are gpsConnectLoadDevices
+    // / gpsConnectStartPoll+gpsConnectPollTick / gpsConnectSave, just above the GPS client.
+    const u = IDX.unit.get(o.unitId);
+    if (!u) { return false; }
+    o.step = o.step || 'provider'; o.provider = o.provider || 'Hapn';
+    const stepNum = { provider: 1, identify: 2, poll: 3 }[o.step] || 1;
+    const stepLbl = o.step === 'identify' ? (o.provider === 'Hapn' ? 'Identify the tracker' : 'Pick the machine') : (o.step === 'poll' ? 'Confirm signal' : 'Provider');
+    let body, foot;
+
+    if (o.step === 'provider') {
+      body = `
+        <div class="kpi-cap" style="margin-bottom:9px">${stepNum} · ${esc(stepLbl)}</div>
+        ${segCtl(GPS_PROVIDERS.map((p) => ({ label: p, js: 'js-gps-provider', data: { val: p }, on: o.provider === p ? 'orange' : '' })))}
+        <p class="set-note" style="margin-top:10px">${o.provider === 'Hapn'
+          ? 'Wrangle in a tracker by IMEI — read it off the hardware. It must already be activated on the Hapn account.'
+          : `Round up a machine already authorized on the ${esc(o.provider)} account — nothing to activate here.`}</p>`;
+      foot = `${ghostPill('Cancel', { js: 'js-close' })}${actionPill('commit', 'Continue', { js: 'js-gps-continue' })}`;
+    } else if (o.step === 'identify' && o.provider === 'Hapn') {
+      body = `
+        <div class="kpi-cap" style="margin-bottom:9px">${stepNum} · ${esc(stepLbl)}</div>
+        <input class="lf-in js-gps-imei-input" style="width:100%" placeholder="Tracker IMEI" value="${esc(o.imei || '')}">
+        <p class="set-note" style="margin-top:8px">Printed on the tracker — a technician reads it off the hardware.</p>`;
+      foot = `${ghostPill('Back', { js: 'js-gps-back' })}${actionPill('commit', 'Continue', { js: 'js-gps-identify-continue' })}`;
+    } else if (o.step === 'identify') {
+      const q = (o.deviceQuery || '').trim().toLowerCase();
+      const all = o.devices || [];
+      const list = q ? all.filter((raw) => `${gpsRawDeviceLabel(o.provider, raw)} ${gpsRawDeviceSub(o.provider, raw)}`.toLowerCase().includes(q)) : all;
+      const rows = list.map((raw) => {
+        const id = gpsRawDeviceId(o.provider, raw), label = gpsRawDeviceLabel(o.provider, raw), sub = gpsRawDeviceSub(o.provider, raw);
+        return `<button type="button" class="gps-dev-row js-gps-device-pick" data-r="R2" data-devid="${esc(id)}" data-devlabel="${esc(label)}">${CARD_ICON.units}<span class="gdr-name">${esc(label)}</span>${sub ? `<span class="gdr-sub">${esc(sub)}</span>` : ''}</button>`;
+      }).join('');
+      body = `
+        <div class="kpi-cap" style="margin-bottom:9px">${stepNum} · ${esc(stepLbl)}</div>
+        <div class="bv-searchwrap" style="width:100%;margin:0 0 10px"><span class="s-icon">${I.search}</span><input class="bv-query js-gps-search" placeholder="Search ${esc(o.provider)} machines…" value="${esc(o.deviceQuery || '')}"></div>
+        ${o.devicesLoading ? `<div class="set-loading" style="min-height:140px"><div class="set-loading-bar" aria-hidden="true"></div><div class="set-loading-lbl">Rounding up ${esc(o.provider)} machines…</div></div>`
+          : o.devicesError ? `<p class="set-err" style="text-align:left">${esc(o.devicesError)}</p>`
+          : list.length ? `<div class="gps-dev-list">${rows}</div>`
+          : `<p class="muted" style="font-size:12px">No ${q ? 'matching' : 'authorized'} machines${q ? ` for “${esc(o.deviceQuery)}”` : ' on this account yet'}.</p>`}`;
+      foot = ghostPill('Back', { js: 'js-gps-back' });
+    } else {   // 'poll' — the live first-contact confirmation (§5a step 3)
+      const UI = {
+        waiting:   { color: 'yellow', icon: I.search, label: 'Waiting for signal…' },
+        seen:      { color: 'yellow', icon: I.search, label: 'Device seen — confirming…' },
+        reporting: { color: 'green',  icon: '✓',       label: 'Reporting' },
+        timeout:   { color: 'red',    icon: I.alert,   label: 'Not responding yet' },
+      }[o.pollState] || { color: 'yellow', icon: I.search, label: 'Waiting for signal…' };
+      const sub = o.pollState === 'reporting' ? 'Live contact confirmed — ready to save.'
+        : o.pollState === 'timeout' ? 'Check the tracker’s power/signal — Save anyway if it may just be catching up.'
+        : `Attempt ${o.pollAttempt || 0} of ${o.pollMax || 8}`;
+      body = `
+        <div class="kpi-cap" style="margin-bottom:9px">${stepNum} · ${esc(stepLbl)}</div>
+        <div class="set-loading" style="min-height:160px">
+          <span class="gps-poll-ic c-${UI.color}">${UI.icon}</span>
+          ${(o.pollState === 'waiting' || o.pollState === 'seen') ? '<div class="set-loading-bar" aria-hidden="true"></div>' : ''}
+          <div class="set-loading-lbl">${esc(UI.label)}</div>
+          <p class="set-note">${esc(sub)}</p>
+        </div>`;
+      foot = o.pollState === 'reporting'
+        ? `${ghostPill('Back', { js: 'js-gps-back' })}${actionPill('commit', 'Save', { js: 'js-gps-save' })}`
+        : o.pollState === 'timeout'
+          ? `${ghostPill('Back', { js: 'js-gps-back' })}${ghostPill('Try again', { js: 'js-gps-poll-retry' })}${actionPill('danger', 'Save anyway', { js: 'js-gps-save-anyway' })}`
+          : ghostPill('Cancel', { js: 'js-close' });
+    }
+
+    const pop = el('div', 'popup'); pop.style.width = '400px';
+    pop.innerHTML = popupShell({ icon: CARD_ICON.units || '', title: 'Connect GPS Device', tag: `Unit · GPS · ${u.name}`, body, foot });
+    overlay.appendChild(pop);
   } else if (o.kind === 'rulebook') {
     // THE VISUAL RULEBOOK (SPEC v8) — every example is emitted by the REAL
     // builder, so this reference can never drift from the code.
@@ -11007,6 +11085,7 @@ const WINDOW_CATALOG = [
   { kind: 'migrateUnits',  label: 'Round up missing units',  tag: 'Units · migrate',          sample: () => ({ plan: [{ name: 'Sample Unit', action: 'create', unitId: 'U000', categoryId: ((DATA.categories || [])[0] || {}).categoryId, count: 1 }] }) },
   { kind: 'comment',       label: 'Comment note',            tag: 'Note · comment',           sample: () => ({ card: 'units', recId: ((DATA.units || [])[0] || {}).unitId, recType: null, color: 'yellow' }) },
   { kind: 'linkConfirm',   label: 'Confirm link',            tag: 'Link · confirm',           sample: () => ({ srcCard: 'rentals', srcId: ((DATA.rentals || [])[0] || {}).rentalId, targetCard: 'invoices', targetId: ((DATA.invoices || [])[0] || {}).invoiceId }) },
+  { kind: 'gpsConnect',    label: 'Connect GPS device',      tag: 'Unit · GPS',                sample: () => ({ unitId: ((DATA.units || [])[0] || {}).unitId, step: 'provider', provider: 'Hapn' }) },
   { kind: 'rulebook',      label: 'The R-Rulebook',          tag: 'SPEC v8 · design system',  sample: () => ({}) },
   { kind: 'partform',      label: 'Add / Edit Part · Task',  tag: 'Work order · line',         sample: () => ({ woId: ((DATA.workOrders || [])[0] || {}).woId }) },
   { kind: 'receiptform',   label: 'New / Edit Receipt',      tag: 'Expense · receipt',         sample: () => ({}) },
@@ -12409,7 +12488,7 @@ function setupSignaturePad() {
     cv.addEventListener('pointerleave', stash);
   });
 }
-const closeOverlay = () => { destroyCardElement(); stopAgCam(); try { if (_sigWin && !_sigWin.closed) _sigWin.close(); } catch (e) {} _sigWin = null; state.datepick = null; state.overlay = null; renderOverlay(); };
+const closeOverlay = () => { destroyCardElement(); stopAgCam(); try { if (_sigWin && !_sigWin.closed) _sigWin.close(); } catch (e) {} _sigWin = null; clearTimeout(_gpsPollTimer); state.datepick = null; state.overlay = null; renderOverlay(); };
 
 /* ── Back-office boards (§7.9–7.12): spreadsheet-style tables ─────────────── */
 function vendorTotals(vendorId) {
@@ -14405,6 +14484,63 @@ function onClick(e) {
   }
   if (closest('.js-link-confirm')) { e.stopPropagation(); return doLinkConfirm(); }
 
+  // §5a — the connect-a-device wizard (gpsConnect popup)
+  if (closest('.js-gps-connect')) {
+    e.stopPropagation();
+    const uid = closest('.js-gps-connect').dataset.rec;
+    const u = IDX.unit.get(uid); if (!u) return;
+    return openOverlay({ kind: 'gpsConnect', unitId: uid, step: 'provider', provider: u.gpsProvider || 'Hapn',
+      imei: '', deviceQuery: '', devices: null, devicesLoading: false, devicesError: '',
+      deviceId: '', deviceLabel: '', pollState: 'idle', pollAttempt: 0, pollMax: 8, pollMachine: null, pollError: '' });
+  }
+  if (closest('.js-gps-provider')) {
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'gpsConnect') return;
+    const p = closest('.js-gps-provider').dataset.val; if (!p || p === o.provider) return;
+    o.provider = p; o.devices = null; o.devicesError = ''; o.deviceQuery = ''; o.imei = ''; o.deviceId = ''; o.deviceLabel = '';
+    return renderOverlay();
+  }
+  if (closest('.js-gps-continue')) {
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'gpsConnect') return;
+    o.step = 'identify';
+    renderOverlay();
+    if (o.provider !== 'Hapn') gpsConnectLoadDevices(o);   // fire-and-forget — self-guards on state.overlay
+    return;
+  }
+  if (closest('.js-gps-identify-continue')) {
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'gpsConnect') return;
+    const input = document.querySelector('.overlay .js-gps-imei-input');
+    const imei = ((input ? input.value : o.imei) || '').trim();
+    if (!imei) return flashOr('.overlay .js-gps-imei-input', 'Enter the tracker IMEI first.');
+    o.imei = imei; o.deviceId = imei; o.deviceLabel = imei; o.step = 'poll';
+    renderOverlay();
+    gpsConnectStartPoll(o);
+    return;
+  }
+  if (closest('.js-gps-device-pick')) {
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'gpsConnect') return;
+    const btn = closest('.js-gps-device-pick');
+    const devId = btn.dataset.devid || ''; if (!devId) return;
+    o.deviceId = devId; o.deviceLabel = btn.dataset.devlabel || devId; o.step = 'poll';
+    renderOverlay();
+    gpsConnectStartPoll(o);
+    return;
+  }
+  if (closest('.js-gps-back')) {
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'gpsConnect') return;
+    clearTimeout(_gpsPollTimer);
+    if (o.step === 'poll') { o.step = 'identify'; o.pollState = 'idle'; o.pollAttempt = 0; o.pollMachine = null; o.pollError = ''; }
+    else if (o.step === 'identify') { o.step = 'provider'; }
+    return renderOverlay();
+  }
+  if (closest('.js-gps-poll-retry')) { e.stopPropagation(); const o = state.overlay; if (!o || o.kind !== 'gpsConnect') return; return gpsConnectStartPoll(o); }
+  if (closest('.js-gps-save')) { e.stopPropagation(); return gpsConnectSave(false); }
+  if (closest('.js-gps-save-anyway')) { e.stopPropagation(); return gpsConnectSave(true); }
+
   // universal pill rule — single-click navigates; double-click anchors; ctrl+click = new
   // tab (handled by the early hotkey branch). Same discriminator as rows (#1).
   const pill = closest('[data-pill-card]');
@@ -15194,6 +15330,14 @@ function onInput(e) {
   if (e.target.classList.contains('js-fb-text')) { if (state.overlay?.kind === 'feedback') state.overlay.text = e.target.value; return; }
   if (e.target.classList.contains('js-cmt-text')) { if (state.overlay?.kind === 'comment') state.overlay.text = e.target.value; return; }
   if (e.target.classList.contains('js-wr-in')) { if (state.wrangler.open) state.wrangler.draft = e.target.value; return; }
+  // §5a connect wizard — Hapn IMEI (store only, no re-render; committed on Continue).
+  if (e.target.classList.contains('js-gps-imei-input')) { if (state.overlay?.kind === 'gpsConnect') state.overlay.imei = e.target.value; return; }
+  // §5a connect wizard — live device-list filter (re-render + restore caret, like js-files-query).
+  if (e.target.classList.contains('js-gps-search')) {
+    const o = state.overlay;
+    if (o?.kind === 'gpsConnect') { o.deviceQuery = e.target.value; const sel = e.target.selectionStart; renderOverlay(); const q = document.querySelector('.overlay .js-gps-search'); if (q) { q.focus(); q.setSelectionRange(sel, sel); } }
+    return;
+  }
   if (e.target.classList.contains('chat-input')) { state.chat.draft = e.target.value; return; }
   // Company Files live search → re-render the board popup and restore the caret.
   if (e.target.classList.contains('js-files-query')) {
@@ -17404,6 +17548,100 @@ async function gpsProviderDevices(provider) {
     case 'bouncie': return (await gpsFetch('/api/bouncie/vehicles'))?.vehicles || [];
     default: return [];
   }
+}
+
+/* ── CONNECT-A-DEVICE WIZARD (spec §5a) — the gpsConnect popup's control layer.
+   The popup markup lives in buildPopupEl (o.kind === 'gpsConnect'); the pieces below
+   are the async/stateful bits a pure render function can't own: loading a provider's
+   device list, running the live first-contact poll, and the confirmed write to the
+   unit. Every async step re-checks `state.overlay === o` before touching it or
+   scheduling more work, so a closed/switched popup can never keep ticking. */
+const GPS_PROVIDERS = ['Hapn', 'Deere', 'Yanmar', 'Bouncie'];
+let _gpsPollTimer = null;   // module-level so closeOverlay/back-nav can always cancel it
+
+/* Pull an id/label/sub-line out of ONE provider's raw record shape (§5a step 2 — Hapn:
+   .imei/.name · Deere: .principalId/.name/.serialNumber · Yanmar: .id/.name · Bouncie:
+   .imei/.nickName/.model). Kept separate from gpsNormalize (which needs a live status
+   call too) so the picker list renders instantly off the device list alone. */
+function gpsRawDeviceId(provider, raw) {
+  switch (provider) {
+    case 'Deere':   return String(raw.principalId ?? raw.id ?? '');
+    case 'Yanmar':  return String(raw.id ?? '');
+    case 'Bouncie': return String(raw.imei ?? '');
+    default:        return String(raw.imei ?? raw.id ?? '');   // Hapn
+  }
+}
+function gpsRawDeviceLabel(provider, raw) {
+  switch (provider) {
+    case 'Deere':   return raw.name || raw.serialNumber || 'JD Machine';
+    case 'Yanmar':  return raw.name || 'Yanmar Machine';
+    case 'Bouncie': return raw.nickName || raw.model || 'Vehicle';
+    default:        return raw.name || raw.imei || 'Unnamed tracker';   // Hapn
+  }
+}
+function gpsRawDeviceSub(provider, raw) {
+  switch (provider) {
+    case 'Deere':   return raw.serialNumber ? `S/N ${raw.serialNumber}` : '';
+    case 'Bouncie': return raw.model ? String(raw.model) : '';
+    case 'Hapn':    return raw.imei ? `IMEI ${raw.imei}` : '';
+    default:        return '';
+  }
+}
+/* Load the searchable picker list for Deere/Yanmar/Bouncie (§5a step 2). Fire-and-
+   forget from the click handler that advances into the identify step; guards every
+   write behind `state.overlay === o` so a Back/close mid-flight can't stomp a newer
+   popup state. */
+async function gpsConnectLoadDevices(o) {
+  o.devicesLoading = true; o.devicesError = ''; o.devices = null; renderOverlay();
+  let list = [];
+  try { list = await gpsProviderDevices(String(o.provider || '').toLowerCase()); }
+  catch (e) {
+    if (state.overlay !== o) return;
+    o.devicesLoading = false; o.devicesError = 'Couldn’t reach the GPS backend — check the connection and try again.';
+    return renderOverlay();
+  }
+  if (state.overlay !== o) return;
+  o.devicesLoading = false; o.devices = Array.isArray(list) ? list : [];
+  renderOverlay();
+}
+/* Start (or restart) the live first-contact poll (§5a step 3): every 3s, up to
+   o.pollMax attempts. States: waiting → seen (first contact) → reporting (a SECOND
+   consecutive contacted poll — avoids confirming on a single flaky ping) → timeout
+   (cap hit, never confirmed twice). Always terminates — never a silent hang. */
+function gpsConnectStartPoll(o) {
+  clearTimeout(_gpsPollTimer);
+  o.pollState = 'waiting'; o.pollAttempt = 0; o.pollMachine = null; o.pollError = '';
+  renderOverlay();
+  gpsConnectPollTick(o);
+}
+async function gpsConnectPollTick(o) {
+  if (state.overlay !== o || o.step !== 'poll') return;   // popup closed/backed-out — self-cancel
+  o.pollAttempt += 1;
+  let machine = null;
+  try { machine = await gpsUnitStatus(String(o.provider || '').toLowerCase(), o.deviceId); }
+  catch (e) { o.pollError = (e && e.message) || 'gps-error'; }
+  if (state.overlay !== o || o.step !== 'poll') return;   // changed while the call was in flight
+  const contacted = !!(machine && (machine.lastSeen != null || (machine.lat != null && machine.lng != null)));
+  const wasSeen = o.pollState === 'seen';
+  o.pollMachine = machine;
+  if (contacted && wasSeen) { o.pollState = 'reporting'; return renderOverlay(); }   // 2nd consecutive contact — confirmed
+  if (o.pollAttempt >= o.pollMax) { o.pollState = 'timeout'; return renderOverlay(); }   // cap hit, never confirmed
+  o.pollState = contacted ? 'seen' : 'waiting';
+  renderOverlay();
+  _gpsPollTimer = setTimeout(() => gpsConnectPollTick(o), 3000);
+}
+/* Write gpsProvider/gpsDeviceId to the unit — ONLY on confirmed contact (pollState
+   'reporting') or an explicit "Save anyway" override (§5a step 4). */
+function gpsConnectSave(anyway) {
+  const o = state.overlay; if (!o || o.kind !== 'gpsConnect') return;
+  if (o.pollState !== 'reporting' && !anyway) return;
+  const u = IDX.unit.get(o.unitId); if (!u) return closeOverlay();
+  u.gpsProvider = o.provider; u.gpsDeviceId = o.deviceId;
+  reindex('units', u);
+  logAction(u, `GPS → ${o.provider} · ${o.deviceId}${o.pollState === 'reporting' ? ' (confirmed reporting)' : ' (saved without confirmed contact)'}`);
+  clearTimeout(_gpsPollTimer);
+  closeOverlay();
+  toast(o.pollState === 'reporting' ? `GPS connected — ${u.name} is reporting. ✓` : `GPS mapped — ${u.name} saved without confirmed signal yet.`);
 }
 
 /* Hapn starter-interrupt (the remote-shutdown relay, spec §6/§7). NB: this cuts the
