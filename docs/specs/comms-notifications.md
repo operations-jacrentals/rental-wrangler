@@ -9,6 +9,44 @@
 
 ---
 
+## ✅ Addendum — 2026-07-07 (Jac): D8 THE COMMS RAIL (supersedes D5's single-dock surface)
+
+Approved via clickable mock v3 (claude.ai/code/artifact/d802e634-a9f9-41cf-a016-0cf0f863be9a).
+D6 (channel per message) and D7 (email FROM picker) stand; the SURFACE changes:
+
+- **Four categories, never mixed on the rail:** Team · Texts · Email · Mr. Wrangler. One
+  category's session on the rail at a time.
+- **The bottom-left toolbar is the control surface:** four glyph chips (Lucide-sourced,
+  NEVER emoji), each wearing its category's WORST status as a corner dot. Click a chip →
+  that category's LAST SESSION (tabs + previously-open popups) lands on the rail; click it
+  again or click a sibling chip → clean sweep. Login = empty rail ("quiet start" is
+  inherent — nothing shows until the user reaches).
+- **Session tabs** (Chrome-tab metaphor, per-device persisted like the item-tab rail):
+  conversation name + status LEFT EDGE. The tab's ✕ HIDES it from the rail only — it
+  never ends a conversation.
+- **The ALL tab sits FIRST (leftmost)** in every session: dashed/blue, opens the
+  un-ended-conversations menu — status dot + name + snippet + **Open** (primary, blue) /
+  **End** (secondary, ghost) per row.
+- **Popups are Messenger-style:** each opens ABOVE ITS OWN TAB, multiple at once; hazard
+  cap; header = status dot + category stamp + name + **End** (secondary) top-right.
+- **Open/End language everywhere — never "Close".** Ending removes the conversation from
+  the All list and rail; the full history persists server-side forever (phone-contact
+  model) and resurrects on any new message or right-click restart.
+- **Status grammar (registry semantics):** Red = Unseen · Yellow = Reply? (seen, awaiting
+  your reply) · Green = Replied. Applied to toolbar chips (worst-of-category), tabs
+  (left edge), and menu rows (dots).
+- **Bubbles = Apple feel (Jac's explicit palette exception, 2026-07-07):** operator
+  messages in iMessage blue #0A84FF with white ink; customer replies in a soft orange
+  tint. Bubble radius 16px with the Apple corner-notch.
+- **Starting conversations:** the R20 context menu on any customer grows Text… / Email… /
+  Ask Mr. Wrangler about… entries.
+- **Customer profile:** a compact **Comms section** — last exchange per channel + Open +
+  End — while sends keep stamping the History timeline as today.
+- **Scope: all four categories, one system** — the old team-chat dock button, Mr. Wrangler
+  dock button, and their bottom-bar clutter retire into this rail (migration may land in
+  two PRs: rail engine + customer channels first, team/wrangler adapters second — but the
+  METAPHOR ships whole).
+
 ## ✅ Addendum — 2026-07-06 (Jac): customer THREADS in the chat dock
 
 - **D5 · Customer conversations live in the bottom chat rail** — the same dock surface as
