@@ -5146,8 +5146,11 @@ const FLAG_SEV = { red: 2, yellow: 1, gray: 0 };
 function unitCardFlags(u) {
   const f = [];
   if (unitOverbooked(u.unitId)) f.push({ label: 'Overbooked', color: 'red', alert: true });
-  if (u.gpsStatus === 'Not Reporting') f.push({ label: 'No GPS', color: 'red' });
-  else if (u.gpsStatus === 'Verify') f.push({ label: 'GPS?', color: 'yellow' });
+  const gsFlag = unitGpsStatus(u);   // live-derived (falls back to stored) — §5 step 3
+  if (gsFlag) {
+    if (gsFlag.status === 'Not Reporting') f.push({ label: 'No GPS', color: 'red' });
+    else if (gsFlag.status === 'Verify') f.push({ label: 'GPS?', color: 'yellow' });
+  }
   if (u.fleetStatus && u.fleetStatus !== 'Active') { const fs = getStatus('unitFleetStatus', u.fleetStatus); f.push({ label: fs.label, color: fs.color }); }
   // The border now mirrors the two pills, so surface the warnings the pills DON'T show
   // (Jac 2026-07-01): a due/past-due SERVICE that an open WO is hiding in pill 2, and a
@@ -6424,8 +6427,11 @@ const DETAIL = {
     // gpsDeviceId; the "No GPS" badge grows a +Connect add, an already-mapped unit gets
     // a quiet Reconnect affordance beside its provider · device-id.
     const gpsMapped = !!(u.gpsProvider && u.gpsDeviceId);
+    const gsUnit = unitGpsStatus(u);   // live-derived status (§5 step 3); null = untracked
+    const gpsStale = gsUnit && !gsUnit.live && gpsMapped;   // backend unreachable → showing last-known
     const gps = `<div class="section"><h4>GPS</h4><div class="fieldstack">
-      ${kvPills((u.gpsStatus ? statusPill('gpsStatus', u.gpsStatus, { focal: true }) : badge('No GPS')) + (gpsMapped ? '' : addBtn('Connect GPS', { link: true, js: 'js-gps-connect', data: { rec: u.unitId } })))}
+      ${kvPills((gsUnit ? statusPill('gpsStatus', gsUnit.status, { focal: true }) : badge('No GPS')) + (gpsMapped ? '' : addBtn('Connect GPS', { link: true, js: 'js-gps-connect', data: { rec: u.unitId } })))}
+      ${gpsStale ? `<div class="kv" style="justify-content:center"><span class="muted" style="font-size:11px">Last known — live link down</span></div>` : ''}
       ${gpsMapped ? `<div class="kv"><span class="v muted" style="font-size:11px">${esc(u.gpsProvider)} · ${esc(u.gpsDeviceId)}</span>${ghostPill('Reconnect', { js: 'js-gps-connect', data: { rec: u.unitId } })}</div>` : ''}
       ${efld('units', u, 'unitId', 'gpsType', 'GPS unit/type')}
       ${efld('units', u, 'unitId', 'gpsPlacement', 'Placement')}
@@ -17661,6 +17667,62 @@ async function gpsDeviceEvents(source, key) {
   return gpsFetch(`/api/device/${encodeURIComponent(source)}/${encodeURIComponent(key)}/events`);
 }
 
+/* ── LIVE gpsStatus (spec §5 step 3) ──────────────────────────────────────────
+   One fleet snapshot per app load (refreshGpsLive) → an in-memory map keyed by every
+   provider id type. `unitGpsStatus(u)` derives the DISPLAYED status from it (freshness
+   of the tracker's last ping), falling back to the STORED u.gpsStatus only when the
+   backend never answered — never presenting stale data as live without saying so.
+   No telemetry is copied into Sheets (spec §4): this map is memory-only, per session.
+   Thresholds are tracker-health, not machine-usage — a healthy tracker still sends
+   position pings (Hapn GTFRI) with the engine off, so a long silence = the tracker,
+   not the machine, is dark. Tunable. */
+const GPS_FRESH_MS = 6 * 3600 * 1000;    // last ping < 6h  → Reporting
+const GPS_STALE_MS = 72 * 3600 * 1000;   // < 72h → Verify; older/none → Not Reporting
+let gpsLive = null;      // Map(deviceKey → normalized machine) from the last good snapshot
+let gpsLiveAt = 0;       // ms of the last SUCCESSFUL snapshot (0 = never fetched)
+let gpsLiveErr = false;  // most recent refresh failed (we keep the last good map)
+
+async function refreshGpsLive() {
+  if (!gpsConfigured()) return;
+  let list;
+  try { list = await gpsFleetStatus(); }
+  catch (e) { gpsLiveErr = true; logErr('gps', 'fleet-status: ' + ((e && e.message) || e)); return; }
+  const map = new Map();
+  for (const m of (list || [])) {
+    if (!m) continue;
+    for (const k of [m.id, m.imei, m.principalId, m.contractId]) if (k != null) map.set(String(k), m);
+  }
+  gpsLive = map; gpsLiveAt = Date.now(); gpsLiveErr = false;
+  if (!booting) render();   // live data landed → refresh the pills
+}
+
+/** The live machine for a mapped unit, or null. */
+function unitGpsLiveMachine(u) {
+  if (!gpsLive || !u.gpsDeviceId) return null;
+  return gpsLive.get(String(u.gpsDeviceId)) || null;
+}
+/** Displayed GPS status: { status, live, asOf, mapped, machine? } or null (untracked).
+ *  live=true → derived from the fleet snapshot; live=false → stored-field fallback. */
+function unitGpsStatus(u) {
+  const mapped = !!(u.gpsProvider && u.gpsDeviceId);
+  if (mapped && gpsLiveAt > 0) {
+    const m = unitGpsLiveMachine(u);
+    if (!m) return { status: 'Not Reporting', live: true, asOf: gpsLiveAt, mapped: true };   // tracker absent from the snapshot
+    const t = m.lastSeen ? new Date(m.lastSeen).getTime() : NaN;
+    let status;
+    if (!Number.isNaN(t)) {
+      const age = Date.now() - t;
+      status = age < GPS_FRESH_MS ? 'Reporting' : age < GPS_STALE_MS ? 'Verify' : 'Not Reporting';
+    } else {
+      status = (m.lat != null && m.lng != null) ? 'Verify' : 'Not Reporting';   // seen once, no timestamp
+    }
+    return { status, live: true, asOf: gpsLiveAt, mapped: true, machine: m };
+  }
+  // backend never answered (or the unit isn't mapped) → fall back to the stored field
+  if (u.gpsStatus) return { status: u.gpsStatus, live: false, asOf: gpsLiveAt, mapped };
+  return null;
+}
+
 const dataSnapshot = () => { const s = {}; PERSIST_KEYS.forEach((k) => { s[k] = DATA[k] || []; }); return s; };
 async function loadFromBackend() {
   const r = await backendCall('load');
@@ -18087,7 +18149,7 @@ async function attemptLogin() {
     try { localStorage.setItem('jactec.user', name); } catch {}
     try { sessionStorage.setItem('jactec.role', role); } catch {}
     sessionStorage.setItem('jactec.pw', pw);
-    gpsLogin(pw);   // silent, best-effort GPS-backend login (§5) — fire-and-forget, never blocks main login
+    gpsLogin(pw).then((ok) => { if (ok) refreshGpsLive(); });   // silent GPS login (§5) → then one live fleet snapshot (§5 step 3); fire-and-forget, never blocks main login
     await loadFromBackend();
     finishLoad();
     applyShopRoleLanding();   // shop roles (Mechanic / M.Tech) land on the Shop graph
