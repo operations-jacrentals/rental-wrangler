@@ -6,7 +6,10 @@
  * as operations@ with send-as alias FROM picker (spec D6/D7, Jac 2026-07-06).
  *
  * SECRETS (Script Properties, set in the editor — NEVER in this repo):
- *   MOCEAN_TOKEN                        — Bearer API token (preferred auth)
+ *   TWILIO_SID / TWILIO_TOKEN           — Twilio credential pair (preferred provider when set)
+ *   TWILIO_FROM                         — the Twilio number, E.164 (+1...)
+ *   SMS_PROVIDER                        — optional override: 'twilio' | 'mocean' (default: auto — twilio if configured)
+ *   MOCEAN_TOKEN                        — Mocean Bearer API token (fallback provider)
  *   MOCEAN_API_KEY / MOCEAN_API_SECRET  — legacy credential pair (fallback)
  *   MOCEAN_FROM                         — sender id or number
  *   SMS_DAILY_CAP                       — optional, default 50 (runaway guard)
@@ -143,7 +146,7 @@ function sendCustomerMessage_(body, role) {
     quoteLines: quoteLines,
   };
   var fill = function (t) { return String(t).replace(/\{(\w+)\}/g, function (_, k) { return vals[k] !== undefined ? vals[k] : ''; }); };
-  var status = 'failed', providerId = '', providerErr = '', fromUsed = '', text = '', subject = '';
+  var status = 'failed', providerId = '', providerErr = '', fromUsed = '', text = '', subject = '', row_provider = channel === 'email' ? 'gmail' : '';
   if (channel === 'email') {
     // D7 — the FROM picker: the client's choice is ADVISORY, validated against the real
     // alias list server-side; anything unrecognized falls back to the primary address.
@@ -161,25 +164,43 @@ function sendCustomerMessage_(body, role) {
   } else {
     text = fill(tpl);
     var props = PropertiesService.getScriptProperties();
-    var mtoken = props.getProperty('MOCEAN_TOKEN');   // preferred: Bearer token (Mocean's current auth)
-    var apiKey = props.getProperty('MOCEAN_API_KEY'), apiSecret = props.getProperty('MOCEAN_API_SECRET'), from = props.getProperty('MOCEAN_FROM');
-    if (!from || (!mtoken && (!apiKey || !apiSecret))) return { ok: false, reason: 'not-configured' };
-    fromUsed = from;
-    try {
-      var payload = { 'mocean-from': from, 'mocean-to': to, 'mocean-text': text, 'mocean-resp-format': 'json' };
-      var opts = { method: 'post', muteHttpExceptions: true, payload: payload };
-      if (mtoken) opts.headers = { Authorization: 'Bearer ' + mtoken };
-      else { payload['mocean-api-key'] = apiKey; payload['mocean-api-secret'] = apiSecret; }
-      var res = UrlFetchApp.fetch('https://rest.moceanapi.com/rest/2/sms', opts);
-      var out = JSON.parse(res.getContentText() || '{}');
-      var m0 = out && out.messages && out.messages[0];
-      if (m0 && Number(m0.status) === 0) { status = 'sent'; providerId = m0['message-id'] || ''; }
-      else providerErr = String((m0 && m0.err_msg) || out.err_msg || res.getResponseCode()).slice(0, 80);   // stored in the log row for diagnosis — never sent to the client
-    } catch (e) { status = 'failed'; providerErr = 'fetch-error'; }
+    var twSid = props.getProperty('TWILIO_SID'), twTok = props.getProperty('TWILIO_TOKEN'), twFrom = props.getProperty('TWILIO_FROM');
+    var mtoken = props.getProperty('MOCEAN_TOKEN'), apiKey = props.getProperty('MOCEAN_API_KEY'), apiSecret = props.getProperty('MOCEAN_API_SECRET'), moFrom = props.getProperty('MOCEAN_FROM');
+    var pref = String(props.getProperty('SMS_PROVIDER') || '').toLowerCase();   // optional pin; default auto
+    var provider = pref === 'mocean' ? 'mocean' : (pref === 'twilio' || (twSid && twTok && twFrom)) ? 'twilio' : 'mocean';
+    if (provider === 'twilio') {
+      if (!twSid || !twTok || !twFrom) return { ok: false, reason: 'not-configured' };
+      fromUsed = twFrom;
+      try {
+        var tres = UrlFetchApp.fetch('https://api.twilio.com/2010-04-01/Accounts/' + encodeURIComponent(twSid) + '/Messages.json', {
+          method: 'post', muteHttpExceptions: true,
+          headers: { Authorization: 'Basic ' + Utilities.base64Encode(twSid + ':' + twTok) },
+          payload: { From: twFrom, To: '+' + to, Body: text },
+        });
+        var tout = JSON.parse(tres.getContentText() || '{}');
+        if (tres.getResponseCode() < 300 && tout.sid) { status = 'sent'; providerId = tout.sid; }
+        else providerErr = String(tout.message || tout.error_message || tres.getResponseCode()).slice(0, 80);
+      } catch (e) { status = 'failed'; providerErr = 'fetch-error'; }
+    } else {
+      if (!moFrom || (!mtoken && (!apiKey || !apiSecret))) return { ok: false, reason: 'not-configured' };
+      fromUsed = moFrom;
+      try {
+        var payload = { 'mocean-from': moFrom, 'mocean-to': to, 'mocean-text': text, 'mocean-resp-format': 'json' };
+        var opts = { method: 'post', muteHttpExceptions: true, payload: payload };
+        if (mtoken) opts.headers = { Authorization: 'Bearer ' + mtoken };
+        else { payload['mocean-api-key'] = apiKey; payload['mocean-api-secret'] = apiSecret; }
+        var res = UrlFetchApp.fetch('https://rest.moceanapi.com/rest/2/sms', opts);
+        var out = JSON.parse(res.getContentText() || '{}');
+        var m0 = out && out.messages && out.messages[0];
+        if (m0 && Number(m0.status) === 0) { status = 'sent'; providerId = m0['message-id'] || ''; }
+        else providerErr = String((m0 && m0.err_msg) || out.err_msg || res.getResponseCode()).slice(0, 80);   // logged server-side only
+      } catch (e) { status = 'failed'; providerErr = 'fetch-error'; }
+    }
+    row_provider = provider;
   }
   var msgId = 'MSG-' + Utilities.getUuid().slice(0, 8);
   var row = {   // full row is SERVER-ONLY (`to` + body never reach the client/repo)
-    msgId: msgId, channel: channel, direction: 'outbound', entity: entity, recId: String(body.recId),
+    msgId: msgId, channel: channel, provider: row_provider, direction: 'outbound', entity: entity, recId: String(body.recId),
     customerId: String(custId), template: template, to: to, from: fromUsed, subject: subject, body: text, status: status,
     providerId: providerId, providerErr: providerErr, by: role || '', auto: auto, quiet: smsQuietNow_(),
     dedupKey: channel + '|' + template + '|' + body.recId + '|' + todayIso_(), when: new Date().toISOString(),
