@@ -16229,7 +16229,12 @@ let actionSeq = 0;
 let currentUser = (() => { try { return localStorage.getItem('jactec.user') || ''; } catch { return ''; } })();
 let currentRole = (() => { try { return sessionStorage.getItem('jactec.role') || ''; } catch { return ''; } })();
 function nowClock() { const d = new Date(); let h = d.getHours(); const ap = h < 12 ? 'AM' : 'PM'; h = h % 12 || 12; return `${h}:${String(d.getMinutes()).padStart(2, '0')} ${ap}`; }
-function logAction(rec, text) { if (!rec) return; rec.actions = rec.actions || []; rec.actions.push({ when: TODAY_ISO, clock: nowClock(), text, by: currentUser || '', seq: actionSeq++ }); saveSoon(); }
+// Live local date, computed fresh at call time. TODAY_ISO is a module-load CONSTANT, so a
+// long-lived session (tab left open across midnight) freezes it a day (or more) behind —
+// pairing a stale `when` with a live `nowClock()` produced "Jul 07 · 11:59 AM" for a Jul 08
+// event. Stamp new log entries with the actual current date instead.
+function nowISO() { const d = new Date(), p = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; }
+function logAction(rec, text) { if (!rec) return; rec.actions = rec.actions || []; rec.actions.push({ when: nowISO(), clock: nowClock(), text, by: currentUser || '', seq: actionSeq++ }); saveSoon(); }
 // Humanize a field key + format a value for an audit line ("Phone: (337)… → (337)…").
 const humanizeField = (f) => ({ po: 'PO', eta: 'ETA', accountNotes: 'Notes', assignedMechanic: 'Mechanic', gpsType: 'GPS type', gpsPlacement: 'GPS placement', purchasePrice: 'Purchase price', purchaseDate: 'Purchase date', trueCost: 'True cost', purchaseHours: 'Hours at purchase', currentHours: 'Hours', startHours: 'Start hours', returnHours: 'Return hours', rentalName: 'Name', woReport: 'Report', firstName: 'First name', lastName: 'Last name' }[f] || (f.charAt(0).toUpperCase() + f.slice(1).replace(/([A-Z])/g, ' $1')));
 const auditVal = (v) => { const s = String(v ?? '').trim(); return s ? (s.length > 28 ? s.slice(0, 28) + '…' : s) : '(empty)'; };
