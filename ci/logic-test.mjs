@@ -1613,6 +1613,19 @@ try {
       T.__state.overlay = null;
     }
 
+    // === History money gate (units-fleet, Jac 2026-07-08) — histText() masks $ amounts
+    // in the History/audit log for non-money roles (client-side DISPLAY redaction only,
+    // same D1 bottomDollar philosophy); money-tier roles see amounts untouched. ===
+    {
+      T.setRole('driver');   // staff tier (1) — below money (2)
+      const masked = T.histText('Sold for $12,500 on Jul 1');
+      ok(/\$•••/.test(masked) && !/\$12,500/.test(masked), 'histText: non-money role masks a dollar amount in a History line');
+      ok(T.histText('Hours 1,265.9 HRS') === 'Hours 1,265.9 HRS', 'histText: non-$ numbers (hours, PO #s) are left untouched — no false-positive masking');
+      T.setRole('office');   // money tier (2) — amounts show normally
+      ok(T.histText('Sold for $12,500 on Jul 1') === 'Sold for $12,500 on Jul 1', 'histText: money-tier role sees the dollar amount unmasked');
+      T.setRole('');          // restore demo/no-role
+    }
+
     return out;
   });
 
