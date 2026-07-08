@@ -7928,13 +7928,11 @@ function headerEl() {
   const ruPlate = `<button class="ru-plate js-ru-open" data-tip="The Round-Up — the reports board" aria-label="Open the Round-Up reports board">${I.graph}<span>Round-Up</span></button>`;
   const rings = ROLES.map((role) => roleRing(role.id, role.label, kpiFor(role.id), role.color)).join('') + comingPlate;
   // §M1 — phone-only TOP TOOLBAR: the full tool set opened up across the top of the screen
-  // (logo + rings stay on their own row above it). Notifications + Requests live here too.
-  const nu = unseenNotifs();
-  const notifBtn = `<button class="iconbtn js-notifications" data-tip="Notifications">${I.bell}${nu ? `<span class="bb-badge">${nu > 9 ? '9+' : nu}</span>` : ''}</button>`;
+  // (logo + rings stay on their own row above it). Comms (chat/Wrangler/Requests/transport
+  // alerts/notifications) live behind the bell; QR/Previews/Hotkeys/dev tools live behind
+  // the wrench in bottomBarInner — grouped down from a flat run of a dozen-plus icons.
   const ruBtn = `<button class="iconbtn js-ru-open" data-tip="The Round-Up — the reports board">${I.graph}</button>`;
-  const tn = visibleTransportAlerts().length;   // #515 transport reminders
-  const trBtn = `<button class="iconbtn js-transport-alerts" data-tip="Transports due — call the customer">${I.truck}${tn ? `<span class="bb-badge">${tn > 9 ? '9+' : tn}</span>` : ''}</button>`;
-  const topBar = `<div class="top-toolbar">${ruBtn}${trBtn}${notifBtn}${bottomBarInner()}</div>`;
+  const topBar = `<div class="top-toolbar">${ruBtn}${commsBellBtn()}${bottomBarInner()}</div>`;
   // Decluttered top: logo + rings on one row, the tool bar across the next.
   h.innerHTML = `
     <button class="logo js-logo" aria-label="Jac Rentals"></button>
@@ -7971,48 +7969,75 @@ const THEME_NEXT = {
   light: { next: 'yard', icon: I.hardhat, tip: 'Yard mode' },
 };
 /** The action toolbar — pinned to the LEFT of the bottom comms band (the
- *  conversation rail fills the middle, bell + inbox sit at the right). On phones
- *  this same set opens up across the top header, so the inbox stays here (the
- *  desktop band passes {noInbox} since its right utils zone carries it). */
-function bottomBarInner(opts = {}) {
-  // rules 5/6: LEFT = labeled actions (icon LEADS label, no "+"), Wash joins them;
-  // RIGHT (after divider) = icon-only utilities. The +New collapse button is dropped (Jac).
+ *  conversation rail fills the middle, the Comms bell sits at the right). On
+ *  phones this same set opens up across the top header. Only Receipt (the
+ *  most-used action) stays a bare icon — everything else groups behind the
+ *  Tools wrench (QR / Previews / Hotkeys / dev+admin tools); Comms (chat /
+ *  Wrangler / Requests / transport alerts / notifications) groups behind the
+ *  bell (`commsBellBtn`, placed by the caller — see headerEl / commsUtilsEl). */
+function bottomBarInner() {
   return `
     <button class="iconbtn js-newitem" data-new="receipt">${CARD_ICON.expenses}Receipt</button>
     <span class="bb-sep"></span>
-    <button class="iconbtn js-qr" data-tip="Share session (QR)">${I.qr}</button>
-    <button class="iconbtn${state.previewsOn ? '' : ' off'} js-previews" data-tip="${state.previewsOn ? 'Hover previews: on' : 'Hover previews: off'}">${state.previewsOn ? I.eye : I.eyeOff}</button>
-    <button class="iconbtn js-chat-toggle${state.chat.open ? ' on' : ''}" data-tip="New team chat — flagged comments + tagged context">${I.chat}${(() => { const n = chatUnreadCount(); return n ? `<span class="bb-badge">${n > 9 ? '9+' : n}</span>` : ''; })()}</button>
-    <button class="iconbtn js-wrangler" data-tip="New chat with Mr. Wrangler — ask the yard AI, or report a bug" style="font-size:16px">🤠</button>
-    ${opts.noInbox ? '' : `<button class="iconbtn js-requests" data-tip="Requests for your OK — review what Mr. Wrangler filed">${I.inbox}${wranglerRequests.length ? `<span class="bb-badge">${wranglerRequests.length > 9 ? '9+' : wranglerRequests.length}</span>` : ''}</button>`}
-    <button class="iconbtn js-hotkeys" data-tip="Mouse &amp; keyboard shortcuts">${I.mouse}</button>
-    ${devUnlocked() ? `<button class="iconbtn js-lint${document.body.classList.contains('rw-lint') ? ' on' : ''}" data-tip="Design lint — flash anything that bypassed the UI builders (R0)">${I.eye}</button>
-    <button class="iconbtn js-inspect${state.inspect ? ' on' : ''}" data-tip="Design Inspector — hover names the rule, click copies the reference">${I.search}</button>
-    <button class="iconbtn js-rulebook" data-tip="The R-Rulebook — visual design reference (SPEC v8)">${I.doc}</button>` : ''}
-    ${adminUnlocked() ? `<button class="iconbtn js-photo-sweep" data-tip="Offload base64 photos to Drive — one-shot migration to de-bloat the payload">${I.camera}</button>` : ''}`;
+    ${toolsBtn()}`;
+}
+/** Tools wrench — QR / hover-previews / hotkeys, plus dev-unlocked (lint /
+ *  inspect / rulebook) and admin-unlocked (photo sweep) tools. One trigger
+ *  instead of a flat run of icon-only buttons. */
+function toolsMenuRows() {
+  const item = (js, icon, label, on) => `<button class="dd-item ${js}${on ? ' on' : ''}"><span class="mi-ico" style="display:inline-flex;color:var(--accent)">${icon}</span>${esc(label)}</button>`;
+  let html = item('js-qr', I.qr, 'Share session (QR)')
+    + item('js-previews', state.previewsOn ? I.eye : I.eyeOff, state.previewsOn ? 'Hover previews: on' : 'Hover previews: off', state.previewsOn)
+    + item('js-hotkeys', I.mouse, 'Mouse & keyboard shortcuts');
+  if (devUnlocked()) {
+    html += `<div class="menu-sep"></div>`
+      + item('js-lint', I.eye, 'Design lint (R0)', document.body.classList.contains('rw-lint'))
+      + item('js-inspect', I.search, 'Design Inspector', state.inspect)
+      + item('js-rulebook', I.doc, 'The R-Rulebook');
+  }
+  if (adminUnlocked()) html += `<div class="menu-sep"></div>` + item('js-photo-sweep', I.camera, 'Photo sweep to Drive');
+  return html;
+}
+function openToolsMenu(anchorEl) { openDropdown(anchorEl, `<div class="dd-sec">Tools</div>${toolsMenuRows()}`, { align: 'right' }); }
+function toolsBtn() {
+  return `<button class="iconbtn js-tools-menu" data-tip="Tools — QR, previews, shortcuts${devUnlocked() ? ', dev tools' : ''}">${I.sliders}</button>`;
+}
+/** Comms bell — Chat, Wrangler, transport alerts, and Notifications, one direct-
+ *  jump row each with its own badge; Requests joins them only where there's no
+ *  comms rail to surface open threads (phone — desktop keeps Requests on the
+ *  rail, {noInbox}). Badge counts roll up onto the bell itself. */
+function commsBellCount(opts = {}) {
+  return unseenNotifs() + visibleTransportAlerts().length + chatUnreadCount() + (opts.noInbox ? 0 : wranglerRequests.length);
+}
+function commsMenuRows(opts = {}) {
+  const item = (js, icon, label, n, on) => `<button class="dd-item ${js}${on ? ' on' : ''}"><span class="mi-ico" style="display:inline-flex;color:var(--accent)">${icon}</span>${esc(label)}${n ? `<span class="c-count" style="margin-left:auto">${n > 9 ? '9+' : n}</span>` : ''}</button>`;
+  return item('js-chat-toggle', I.chat, 'Team chat', chatUnreadCount(), state.chat.open)
+    + item('js-wrangler', `<span style="font-size:15px">🤠</span>`, 'Ask Mr. Wrangler', 0, state.wrangler.open)
+    + (opts.noInbox ? '' : item('js-requests', I.inbox, 'Requests for your OK', wranglerRequests.length, false))
+    + item('js-transport-alerts', I.truck, 'Transports due', visibleTransportAlerts().length, false)
+    + item('js-notifications', I.bell, 'Notifications', unseenNotifs(), false);
+}
+function openCommsMenu(anchorEl, opts = {}) { openDropdown(anchorEl, `<div class="dd-sec">Comms</div>${commsMenuRows(opts)}`, { align: 'right' }); }
+function commsBellBtn(opts = {}) {
+  const n = commsBellCount(opts);
+  const cls = opts.fab ? 'fab' : 'iconbtn', badgeCls = opts.fab ? 'fab-badge' : 'bb-badge';
+  return `<button class="${cls} js-comms-menu${opts.noInbox ? ' js-comms-noinbox' : ''}" data-tip="Comms — chat, Mr. Wrangler, requests, alerts, notifications">${I.bell}${n ? `<span class="${badgeCls}">${n > 9 ? '9+' : n}</span>` : ''}</button>`;
 }
 // §18g/§17 — the bottom COMMS BAND: toolbar pinned left · the conversation rail
 // fills the middle (every Mr. Wrangler request + chat and every team thread is its
 // OWN tab, so nothing funnels into one session) · bell + inbox at the right.
 function bottomBarEl() {
   const bar = el('div', 'bottombar');
-  bar.innerHTML = `<div class="bb-tools">${bottomBarInner({ noInbox: true })}</div>`
+  bar.innerHTML = `<div class="bb-tools">${bottomBarInner()}</div>`
     + `<div class="comms-rail" role="tablist" aria-label="Conversations">${commsRailEl()}</div>`
     + `<div class="bb-utils">${commsUtilsEl()}</div>`;
   return bar;
 }
-// The right-hand utility of the comms band — just the notification bell now. The
-// Requests inbox is retired on desktop: every open request is a tab in the rail (open
-// it to Approve/Dismiss). The inbox still exists for phones (top toolbar), which have
-// no rail. (resolved-fix feed = the bell.)
-function commsUtilsEl() {
-  const nu = unseenNotifs();
-  const notifBadge = nu ? `<span class="fab-badge">${nu > 9 ? '9+' : nu}</span>` : '';
-  const tn = visibleTransportAlerts().length;
-  const trBadge = tn ? `<span class="fab-badge">${tn > 9 ? '9+' : tn}</span>` : '';   // #515 — deliveries/pickups due to call
-  return `<button class="fab js-transport-alerts" data-tip="Transports due — call the customer">${I.truck}${trBadge}</button>`
-    + `<button class="fab js-notifications" data-tip="Notifications — resolved fixes">${I.bell}${notifBadge}</button>`;
-}
+// The right-hand utility of the comms band — the Comms bell (chat / Wrangler / transport
+// alerts / notifications). Requests stays off the bell here: every open request is already
+// a tab in the rail (open it to Approve/Dismiss). The bell's Requests row only appears on
+// phone (top toolbar), which has no rail. (resolved-fix feed = the bell's Notifications row.)
+function commsUtilsEl() { return commsBellBtn({ fab: true, noInbox: true }); }
 // The conversation rail: Wrangler + Team channels (split by a thin divider, no section
 // labels), each conversation a SEPARATE tab. 🤠 Wrangler — one tab per OPEN request
 // (needs-answer = red · needs-your-OK = yellow; both open the dock, which carries
@@ -10899,6 +10924,10 @@ const STANDALONE_SURFACES = [
     preview: () => `<div style="display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:10px;padding:6px 10px;background:var(--bg-2);min-width:280px">`
       + `<span style="display:inline-flex;color:var(--txt-3)">${I.search}</span>`
       + `<input class="search" placeholder="Search everything…" style="border:none;background:none;outline:none;color:var(--txt);flex:1;min-width:0" disabled>${badge('Type · Excavator')}</div>` },
+  { label: 'Comms bell menu', tag: 'Toolbar · chat · Wrangler · alerts · notifications', loc: 'app.js · commsMenuRows / openCommsMenu',
+    preview: () => `<div class="dropdown-menu" style="position:static;display:inline-block;min-width:220px;box-shadow:none"><div class="dd-sec">Comms</div>${commsMenuRows()}</div>` },
+  { label: 'Tools wrench menu', tag: 'Toolbar · QR · previews · hotkeys · dev tools', loc: 'app.js · toolsMenuRows / openToolsMenu',
+    preview: () => `<div class="dropdown-menu" style="position:static;display:inline-block;min-width:220px;box-shadow:none"><div class="dd-sec">Tools</div>${toolsMenuRows()}</div>` },
 ];
 /* ── §15 in-app feedback: bug/request → queued to the backend Feedback tab ── */
 function feedbackContext() {
@@ -13637,6 +13666,8 @@ function onClick(e) {
 
   // header / chrome
   if (closest('.js-logo')) return openLogoMenu(closest('.js-logo'));
+  if (closest('.js-comms-menu')) { e.stopPropagation(); const b = closest('.js-comms-menu'); return openCommsMenu(b, { noInbox: b.classList.contains('js-comms-noinbox') }); }
+  if (closest('.js-tools-menu')) { e.stopPropagation(); return openToolsMenu(closest('.js-tools-menu')); }
   if (closest('.js-switch-user')) { e.stopPropagation(); return switchUser(); }
   if (closest('.js-open-settings')) { e.stopPropagation(); return openSettings(); }
   if (closest('.js-set-reveal')) { e.stopPropagation(); const o = state.overlay; if (o) { captureLoginEdits(o); o.revealPw = !o.revealPw; reSettings(); } return; }   // toggle masked role passwords
@@ -13769,13 +13800,14 @@ function onClick(e) {
   if (closest('.js-roadmap')) return openOverlay({ kind: 'roadmap' });
   if (closest('.js-close')) return closeOverlay();
   if (closest('.js-theme')) { state.theme = (THEME_NEXT[state.theme] || THEME_NEXT.dark).next; try { localStorage.setItem('jactec.theme', state.theme); } catch (e) {} if (state.overlay && state.overlay.kind !== 'addCard') renderOverlay(); render(); return; }
-  if (closest('.js-qr')) return shareSession();
-  if (closest('.js-previews') || closest('.js-roweye')) { e.stopPropagation(); state.previewsOn = !state.previewsOn; if (!state.previewsOn) hideHoverPreview(); try { localStorage.setItem('jactec.previewsOff', state.previewsOn ? '0' : '1'); } catch (e) {} toast(state.previewsOn ? 'Hover previews on.' : 'Hover previews off — every eye runs red.'); return render(); }
-  if (closest('.js-hotkeys')) return openOverlay({ kind: 'hotkeys' });
+  if (closest('.js-qr')) { document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return shareSession(); }
+  if (closest('.js-previews') || closest('.js-roweye')) { e.stopPropagation(); state.previewsOn = !state.previewsOn; if (!state.previewsOn) hideHoverPreview(); try { localStorage.setItem('jactec.previewsOff', state.previewsOn ? '0' : '1'); } catch (e) {} toast(state.previewsOn ? 'Hover previews on.' : 'Hover previews off — every eye runs red.'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return render(); }
+  if (closest('.js-hotkeys')) { document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return openOverlay({ kind: 'hotkeys' }); }
   if (closest('.js-lint')) {   // R0 flash-lint toggle — persists per device
     const on = document.body.classList.toggle('rw-lint');
     try { localStorage.setItem('jactec.lint', on ? '1' : '0'); } catch (err) {}
     toast(on ? 'Design lint ON — anything flashing bypassed the UI builders.' : 'Design lint off.');
+    document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove());
     return render();
   }
   if (closest('.js-inspect')) {   // Design Inspector — hover names rules, click copies references
@@ -13783,6 +13815,7 @@ function onClick(e) {
     document.body.classList.toggle('rw-inspect', state.inspect);
     if (!state.inspect) { const t = document.getElementById('rw-tip'); if (t) t.style.display = 'none'; }
     toast(state.inspect ? '🔍 Inspector ON — hover anything to see its rule; CLICK to copy the reference for Claude. (Esc exits.)' : 'Inspector off.');
+    document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove());
     return render();
   }
   if (closest('.js-rbtab')) { e.stopPropagation(); if (state.overlay) state.overlay.rbTab = closest('.js-rbtab').dataset.tab; return renderOverlay(); }
@@ -13832,15 +13865,15 @@ function onClick(e) {
     }
     return;
   }
-  if (closest('.js-rulebook')) return openOverlay({ kind: 'rulebook' });
-  if (closest('.js-photo-sweep')) { e.stopPropagation(); return sweepPhotosToDrive(); }   // admin one-shot: offload base64 photos → Drive
+  if (closest('.js-rulebook')) { document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return openOverlay({ kind: 'rulebook' }); }
+  if (closest('.js-photo-sweep')) { e.stopPropagation(); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return sweepPhotosToDrive(); }   // admin one-shot: offload base64 photos → Drive
   if (closest('.js-feedback')) { e.stopPropagation(); return wranglerNewChat(); }   // §18d folded: the old bug/request form is now the one Mr. Wrangler chat
   // §17 internal team dock
   if (closest('[data-mcol]')) { e.stopPropagation(); state.mobileCol = +closest('[data-mcol]').dataset.mcol; return render(); }   // §M1 dot nav
   if (closest('.js-mtools')) { e.stopPropagation(); return openOverlay({ kind: 'tools' }); }   // §M1 phone footer → the global tool tray as a sheet
   if (closest('[data-gocard]')) { e.stopPropagation(); return goToCard(closest('[data-gocard]').dataset.gocard); }   // §M1 footer card-toggle bar → jump to that card
   if (closest('.js-ext-chat')) { e.stopPropagation(); return toast('External customer & vendor chats arrive with the messaging backend.'); }
-  if (closest('.js-chat-toggle')) { e.stopPropagation(); state.chat.open = !state.chat.open; return render(); }
+  if (closest('.js-chat-toggle')) { e.stopPropagation(); state.chat.open = !state.chat.open; document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return render(); }
   if (closest('.js-chat-close')) { e.stopPropagation(); state.chat.open = false; return render(); }
   if (closest('.js-chat-back')) { e.stopPropagation(); state.chat.activeId = null; return render(); }   // back to the all-flags overview (chat persists)
   if (closest('.js-chat-send')) { e.stopPropagation(); return chatSend(); }
@@ -13863,20 +13896,20 @@ function onClick(e) {
   if (closest('.js-wr-kpi-lock')) { e.stopPropagation(); lockKpiFromWrangler(Number(closest('.js-wr-kpi-lock').dataset.mi)); return; }   // Mr. Wrangler locks in an authored KPI ring
   if (closest('.js-wr-unattach')) { e.stopPropagation(); const o = state.wrangler; if (o.open && o.attach) { o.attach.splice(Number(closest('.js-wr-unattach').dataset.i), 1); render(); } return; }   // §18d drop a pending image attachment
   if (closest('.js-wr-unfile')) { e.stopPropagation(); const o = state.wrangler; if (o.open && o.files) { o.files.splice(Number(closest('.js-wr-unfile').dataset.i), 1); render(); } return; }   // §18d drop a pending file attachment
-  if (closest('.js-wrangler')) { e.stopPropagation(); if (state.wrangler.open) { wranglerRailSnapshot(); state.wrangler.open = false; return render(); } return wranglerNewChat(); }   // §18 toggle Mr. Wrangler dock — opening always starts a fresh chat (the last one waits on the §18g rail)
+  if (closest('.js-wrangler')) { e.stopPropagation(); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); if (state.wrangler.open) { wranglerRailSnapshot(); state.wrangler.open = false; return render(); } return wranglerNewChat(); }   // §18 toggle Mr. Wrangler dock — opening always starts a fresh chat (the last one waits on the §18g rail)
   if (closest('.js-wrc-remove')) { e.stopPropagation(); return wrRailRemove(closest('.js-wrc-remove').dataset.wrcRm); }   // §18g rail: the × on a chat tab → REMOVE that conversation (not just close it)
   if (closest('[data-wrc-needs]')) { e.stopPropagation(); return openWranglerFromRequest(Number(closest('[data-wrc-needs]').dataset.wrcNeeds)); }   // §18g rail: a flashing "needs you" chat → reopen it seeded from the request
   if (closest('[data-wrc-open]')) { e.stopPropagation(); return wranglerRailOpen(closest('[data-wrc-open]').dataset.wrcOpen); }   // §18g rail: reopen a stored conversation
-  if (closest('.js-notifications')) { e.stopPropagation(); openOverlay({ kind: 'notifications' }); markNotifsSeen(); refreshWranglerNotifications(); return; }   // §18f notification bell — in-app resolved-fix feed
+  if (closest('.js-notifications')) { e.stopPropagation(); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); openOverlay({ kind: 'notifications' }); markNotifsSeen(); refreshWranglerNotifications(); return; }   // §18f notification bell — in-app resolved-fix feed
   if (closest('.js-notif-refresh')) { e.stopPropagation(); return refreshWranglerNotifications(); }
   if (closest('.js-notif-dismiss')) { e.stopPropagation(); return dismissNotif(Number(closest('.js-notif-dismiss').dataset.num)); }   // §246 clear one
   if (closest('.js-notif-dismissall')) { e.stopPropagation(); return dismissAllNotifs(); }   // §246 clear all
   if (closest('.js-notif-mute')) { e.stopPropagation(); return toggleNotifsMuted(); }   // §246 mute/unmute the badge
-  if (closest('.js-transport-alerts')) { e.stopPropagation(); return openOverlay({ kind: 'transport-alerts' }); }   // #515 transport reminders — deliveries/pickups due
+  if (closest('.js-transport-alerts')) { e.stopPropagation(); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return openOverlay({ kind: 'transport-alerts' }); }   // #515 transport reminders — deliveries/pickups due
   if (closest('.js-tralert-called')) { e.stopPropagation(); return callTransportAlert(closest('.js-tralert-called').dataset.key); }   // #515 dismiss one leg ("Called")
   if (closest('.js-tralert-allcalled')) { e.stopPropagation(); return callAllTransportAlerts(); }   // #515 clear the whole window
   if (closest('.js-tralert-win')) { e.stopPropagation(); setTralertDays(Number(closest('.js-tralert-win').dataset.days)); render(); renderOverlay(); return; }   // #515 adjust the window
-  if (closest('.js-requests')) { e.stopPropagation(); openOverlay({ kind: 'requests' }); refreshWranglerRequests(); return; }   // §18e approval inbox
+  if (closest('.js-requests')) { e.stopPropagation(); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); openOverlay({ kind: 'requests' }); refreshWranglerRequests(); return; }   // §18e approval inbox
   if (closest('.js-req-refresh')) { e.stopPropagation(); return refreshWranglerRequests(); }
   if (closest('.js-req-chat')) { e.stopPropagation(); return openWranglerFromRequest(Number(closest('.js-req-chat').dataset.n)); }   // §18e continue the conversation
   if (closest('.js-req-approve')) { e.stopPropagation(); return approveRequest(Number(closest('.js-req-approve').dataset.n)); }
