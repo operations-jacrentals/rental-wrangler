@@ -73,7 +73,10 @@ per-role shutdown gating stays a client gate + server audit (unchanged limitatio
 ### Phasing (revised)
 - **Phase 1 — SHIPPED:** the seven items above (connect + live view + shutdown + score).
 - **Phase 2 — IN PROGRESS (2026-07-08, visibility-first, all roles per Jac):** see the sub-status below.
-- **Phase 3 — deferred:** Reports / Category Utilization (repair-vs-buy, over/under-capacity — needs mapping + a shared daily-snapshot job + banked history), Issues (fleet-wide fault-code aggregation), unit-anchored map lens, geofencing + stray alerts (§7.3, gated on `comms-notifications` SMS), event ledger, breadcrumb history, provider webhooks, auto engine-hours ingestion.
+- **Phase 3 — partly started:** **GPS Issues / Alerts view — ✅ SHIPPED** (`gpsIssues` popup, toolbar alert-triangle: check-engine `mil` · Not Reporting/disconnected · Verify · guarded low-battery — a needs-attention-only list off `gpsFleetRoster()`). Still deferred (each needs the deploy + live data or new backend): Reports / Category Utilization (repair-vs-buy, over/under-capacity — needs mapping + a shared daily-snapshot job + banked history), unit-anchored map lens, geofencing + stray alerts (§7.3, gated on `comms-notifications` SMS), event ledger, breadcrumb history, provider webhooks, auto engine-hours ingestion.
+
+### Hardening — adversarial code review (2026-07-08)
+A 5-dimension review (auth · matcher · apply-safety · shutdown · popups/XSS) with per-finding verification confirmed **12 bugs, all fixed** on this branch (+6 regression tests): matcher conflict-blindness (stale claims could bind a starter relay to the wrong unit), CSV formula-injection, an infinite live-signal poll, backend `gpsToken` GET-reachability (role pw + shutdown token in a logged URL — now POST-only), substring-serial over-trust, cross-unit device re-point, audit records person not role, unknown-starter-state hiding Restore, un-coerced provider lat/lng, fleet-map view reset on refresh, margin collapse, and a `Rammer`↔Ram make-family fold.
 
 ### Phase 2 sub-status (2026-07-08 — plan: `docs/superpowers/plans/2026-07-08-wrangler-gps-phase2-plan.md`)
 Visibility-first + bulk onboarding; Reports/Issues pushed to Phase 3. Fleet views are **all-roles** (Jac 2026-07-08 — declined the manager-only asset-protection gate). Milestones:
