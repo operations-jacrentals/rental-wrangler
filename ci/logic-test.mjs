@@ -1473,6 +1473,31 @@ try {
       T.IDX.invoice.delete(myId); T.IDX.invoice.delete(mine.invoiceId); T.IDX.rental.delete('RENT_MINE_X');
     }
 
+    // §wrangler-unlink (Jac 2026-07-08) — Mr. Wrangler can repair a mislinked rental by unlinking its
+    // invoice (frees it to re-bill), but MUST refuse while a payment is allocated to that rental (money-safe).
+    {
+      const cust = T.DATA.customers[0];
+      // (a) a $0-paid link → unlink validates and clears the invoiceId (the stale "invoiced" flag with it)
+      const r1 = { rentalId: 'DIAG-UR1', customerId: cust.customerId, invoiceId: 'DIAG-UI1', status: 'Reserved', mock: true };
+      const i1 = { invoiceId: 'DIAG-UI1', customerId: cust.customerId, rentalIds: ['DIAG-UR1'], date: T.TODAY_ISO, amountPaid: 0, lineItems: [{ kind: 'rental', ref: 'DIAG-UR1', lid: 'UL1', amount: 89 }], mock: true };
+      T.DATA.rentals.push(r1); T.IDX.rental.set('DIAG-UR1', r1); T.DATA.invoices.push(i1); T.IDX.invoice.set('DIAG-UI1', i1); T.reindex('rentals', r1); T.reindex('invoices', i1);
+      const v1 = T.WR_OPERATIONS.unlinkInvoice.validate({ rentalId: 'DIAG-UR1' });
+      ok(!v1.issue && /unlink/i.test(v1.summary || ''), 'unlinkInvoice: a $0-paid link validates (frees it to re-bill)');
+      T.WR_OPERATIONS.unlinkInvoice.apply({ rentalId: 'DIAG-UR1' });
+      ok(!r1.invoiceId, 'unlinkInvoice: apply clears the rental invoiceId (stale invoiced flag gone)');
+      // (b) an unlinked rental → refuses cleanly, no throw
+      ok(/isn.t linked|not.*linked/i.test(T.WR_OPERATIONS.unlinkInvoice.validate({ rentalId: 'DIAG-UR1' }).issue || ''), 'unlinkInvoice: refuses when the rental has no invoice');
+      // (c) money-safe guard — a payment allocated to THIS rental blocks the unlink (refund-first)
+      const r2 = { rentalId: 'DIAG-UR2', customerId: cust.customerId, invoiceId: 'DIAG-UI2', status: 'Reserved', mock: true };
+      // paid-in-full so itemPaid() credits the whole rental line → rentalAllocated > 0 → the guard must fire
+      const i2 = { invoiceId: 'DIAG-UI2', customerId: cust.customerId, rentalIds: ['DIAG-UR2'], date: T.TODAY_ISO, amountPaid: 200, lineItems: [{ kind: 'rental', ref: 'DIAG-UR2', lid: 'UL2', amount: 89 }], mock: true };
+      T.DATA.rentals.push(r2); T.IDX.rental.set('DIAG-UR2', r2); T.DATA.invoices.push(i2); T.IDX.invoice.set('DIAG-UI2', i2); T.reindex('rentals', r2); T.reindex('invoices', i2);
+      const v2 = T.WR_OPERATIONS.unlinkInvoice.validate({ rentalId: 'DIAG-UR2' });
+      ok(!!v2.issue && /payment|refund/i.test(v2.issue), 'unlinkInvoice: refuses while a payment is allocated to the rental (money-safe)');
+      T.DATA.rentals = T.DATA.rentals.filter((x) => x !== r1 && x !== r2); T.DATA.invoices = T.DATA.invoices.filter((x) => x !== i1 && x !== i2);
+      T.IDX.rental.delete('DIAG-UR1'); T.IDX.rental.delete('DIAG-UR2'); T.IDX.invoice.delete('DIAG-UI1'); T.IDX.invoice.delete('DIAG-UI2');
+    }
+
     return out;
   });
 
