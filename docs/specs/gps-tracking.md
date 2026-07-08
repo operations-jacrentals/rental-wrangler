@@ -89,6 +89,24 @@ Visibility-first + bulk onboarding; Reports/Issues pushed to Phase 3. Fleet view
 - **M6 — onboard the real fleet + reconcile the 4 legacy GPSWOX units (U001/U003/U004/U024) — Jac (human-in-the-loop):** run M5 against live accounts; needs Jac's confirm (safety: `gpsDeviceId` drives shutdown).
 - **M7 — enforcement:** WINDOW_CATALOG + `data-r` + rule-usage/code-map regen + gates + `?v=` bump per new surface (folded into each commit). **No visibility gate** (all-roles decision).
 
+### 2026-07-08 — session close-out: Yanmar reconnect gets its own branch/PR
+Everything through M7 above (login fix, all five GPS toolbar views, the matcher +
+onboarding, the review-hardening pass, and both `wranglergps` data-extraction/Bouncie
+PRs) is **merged and live on staging**, verified against real provider data. No open
+PRs remain on `claude/gps-rental-wrangler-integration-5dme8g` or in `wranglergps` — this
+session's branch is done and safe to archive.
+
+**Yanmar re-auth was deliberately parked last (Jac's call) and has NOT been started.**
+Per Jac (2026-07-08): when that work begins, it gets its **own fresh branch + its own
+PR** — never reopened on `claude/gps-rental-wrangler-integration-5dme8g` or appended to
+either merged `wranglergps` PR. Restart from `area/wrangler-gps` (rental-wrangler side,
+if any frontend touch-up is needed) / `main` (wranglergps backend side, if the Yanmar
+auth needs backend changes) at that time — same "restart the designated branch from the
+latest base" pattern used throughout this session. Scope, when picked up: Yanmar's
+account shows `authenticated: false` on the GPS backend (0 devices vs. 25 across the
+other three providers) — needs a re-auth on the GPS backend's Yanmar OAuth (was linked
+under `sales@jacrentals.com`).
+
 ---
 
 ## Original GPSWOX design (v1, retained as reference)
