@@ -34,8 +34,11 @@ const LUCIDE = {
     qr: 'qr-code', mouse: 'mouse', video: 'video', camera: 'camera', droplet: 'droplet',
     table: 'table', graph: 'chart-column', sliders: 'sliders-horizontal', inbox: 'inbox',
     bell: 'bell', alert: 'triangle-alert', eye: 'eye', eyeOff: 'eye-off', feedback: 'message-square-text',
-    box: 'box', doc: 'file', lock: 'lock', lockOpen: 'lock-open',
+    box: 'box', doc: 'file', copy: 'copy', lock: 'lock', lockOpen: 'lock-open',
     chevL: 'chevron-left', chevR: 'chevron-right', chat: 'message-circle',
+    linkOut: 'external-link',
+    // D8 comms-rail toolbar chips (Team · Texts · Email · Mr. Wrangler)
+    users: 'users', messageSquare: 'message-square', mail: 'mail', lasso: 'lasso',
   },
   CARD_ICON: {
     customers: 'user', rentals: 'calendar', categories: 'tag', invoices: 'receipt',
@@ -122,7 +125,8 @@ const ORDER = {
   I: ['circle', 'plus', 'search', 'x', 'filter', 'grid', 'truck', 'back', 'list', 'mark',
       'sun', 'moon', 'hardhat', 'horseshoe', 'bluesteel', 'qr', 'mouse', 'video', 'camera',
       'droplet', 'table', 'graph', 'sliders', 'inbox', 'bell', 'alert', 'eye', 'eyeOff', 'feedback',
-      'box', 'doc', 'lock', 'lockOpen', 'chev', 'chevL', 'chevR', 'chat'],
+      'box', 'doc', 'copy', 'lock', 'lockOpen', 'chev', 'chevL', 'chevR', 'chat', 'linkOut',
+      'users', 'messageSquare', 'mail', 'lasso'],
   CARD_ICON: ['customers', 'rentals', 'categories', 'units', 'invoices', 'workOrders',
       'serviceOrders', 'inspections', 'inspectionsPending', 'shop', 'parts', 'vendors',
       'expenses', 'files'],

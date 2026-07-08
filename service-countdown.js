@@ -111,10 +111,11 @@ export function serviceOrdersForUnit(unit, completions = {}, opts = {}) {
     const lastServiced = completions[t.taskId] != null ? Number(completions[t.taskId]) : baseline;
     const st = serviceStatus(currentHours, lastServiced, t.intervalHours);
     return {
-      taskId: t.taskId,
-      name: t.name,
-      intervalHours: t.intervalHours,
-      parts: t.parts,
+      // Spread the whole task first so extra fields a caller carries on the task
+      // object (e.g. `source` / `sourceUrl`, the manual-page citation added
+      // Jac 2026-07-07) ride through untouched — this must stay a superset of
+      // the task, never a hand-picked allowlist of keys.
+      ...t,
       ...st,
       color: serviceColor(st.status),
       label: serviceLabel(st),

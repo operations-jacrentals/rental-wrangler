@@ -43,6 +43,15 @@ export const STRIPE_PUBLISHABLE_KEY = 'pk_live_51TdOu3DEE4GXf0zT7xBP4KQ5vxK21P8n
  * Property GOOGLE_MAPS_KEY via backendCall('mapsKey')); empty → offline/mock map. */
 export const GOOGLE_MAPS_KEY = 'AIzaSyBDI79RRj31RTWfHFUNWQZ5AO4wHLihIc8';
 
+/* ── WranglerGPS backend URL (telematics integration, spec 2026-07-07) ─────────
+ * Our OWN redeploy of the forked WranglerGPS service (Node/Express + Postgres on
+ * Railway) — the live-telemetry backend the GPS section talks to directly. Public
+ * by design, exactly like GOOGLE_MAPS_KEY above: the URL alone is useless without
+ * the team password (POST /auth/login → x-auth-token on every call). Empty string
+ * disables the integration cleanly (the app renders without live GPS). Swap this if
+ * the service moves (e.g. behind a gps.jacrentals.com custom domain). */
+export const GPS_BACKEND_URL = 'https://wranglergps-production-c2ad.up.railway.app';
+
 /* ── Status registry (SPEC §8 canonical values + §6.2 #7 colors) ──────────
  * STATUS[set][value] = { label, color }. `slug` and `value` are derived.
  * Every set the app renders a pill for lives here. Legacy→canonical import
@@ -95,6 +104,9 @@ const RAW_STATUS = {
     'Late+60':     { label: 'Late +60',    color: 'red'    },
     'Late+90':     { label: 'Late +90',    color: 'red'    },
     'Collections': { label: 'Collections', color: 'red'    },
+    // Stored placement marker beats the derived aging tier (spec collections §4.2/§7.1, Jac 2026-06-29):
+    // gray-adjacent = off the active R/Y/G aging ladder — the balance left active chasing.
+    'Sent to Collections': { label: 'In Collections', color: 'gray' },
     'Paid':        { label: 'Paid',        color: 'green'  },
     'Refunded':    { label: 'Refunded',    color: 'gray'   },
   },
@@ -153,13 +165,14 @@ const RAW_STATUS = {
     'Reconciled':   { label: 'Reconciled',   color: 'green'  },
   },
   expenseCategory: {
-    'Parts':    { label: 'Parts',    color: 'blue'   },
-    'Fuel':     { label: 'Fuel',     color: 'orange' },
-    'Tools':    { label: 'Tools',    color: 'navy'   },
-    'Service':  { label: 'Service',  color: 'purple' },
-    'Shipping': { label: 'Shipping', color: 'brown'  },
-    'Supplies': { label: 'Supplies', color: 'gray'   },
-    'Other':    { label: 'Other',    color: 'gray'   },
+    'Parts':     { label: 'Parts',     color: 'blue'   },
+    'Fuel':      { label: 'Fuel',      color: 'orange' },
+    'Tools':     { label: 'Tools',     color: 'navy'   },
+    'Service':   { label: 'Service',   color: 'purple' },
+    'Shipping':  { label: 'Shipping',  color: 'brown'  },
+    'Supplies':  { label: 'Supplies',  color: 'gray'   },
+    'Insurance': { label: 'Insurance', color: 'navy'   },   // yard equipment-policy premiums — a COST, never revenue (spec equipment-insurance §7.3)
+    'Other':     { label: 'Other',     color: 'gray'   },
   },
   vendorType: {
     'Local':  { label: 'Local',  color: 'gray' },
@@ -240,6 +253,8 @@ export const FLAG_META = {
     { id: 'service-due-soon',     label: 'Service Due Soon',  severity: 'yellow' },
     { id: 'wash-requested',       label: 'Wash Requested',    severity: 'yellow' },
     { id: 'gps-verify',           label: 'GPS Verify',        severity: 'yellow' },
+    { id: 'coverage-expired',     label: 'Coverage Expired',  severity: 'red'    },   // insured but past insurance.expires (spec equipment-insurance D6)
+    { id: 'uninsured-active',     label: 'Uninsured On Rent', severity: 'yellow' },   // on rent with no yard coverage — the worst-case pre-warning
   ],
   workOrders: [
     { id: 'part-needed',         label: 'Part Needed',       severity: 'red'    },
@@ -347,47 +362,54 @@ export const BUILTIN_ROLE_TIERS = {
 };
 
 /* ── Card registry (SPEC §5.5 grid order + §0.4 back-office boards) ──────── */
-// 6-card grid (3×2): Work Orders + Service Orders + Inspections are merged into
-// the single "Shop" card. The cascade engine still resolves those 3 entity types
-// separately; the Shop card aggregates them.
-// Grid order (3×2): row 1 = Units · Categories · Rentals; row 2 = Shop · Invoices · Customers
+// 5-card grid: the Shop card was RETIRED (Jac 2026-07-07) — Work Orders, Service
+// Orders and Inspections live inside each Unit's detail view now; the cascade
+// engine still resolves those 3 entity types separately (SHOP_TYPES below), and
+// any reference to one opens its OWNING UNIT.
+// Grid order: row 1 = Units · Categories · Rentals; row 2 = Invoices · Customers
 export const GRID_CARDS = [
   { id: 'units',      title: 'Units',      singular: 'Unit'      },
   { id: 'categories', title: 'Categories', singular: 'Category'  },
   { id: 'rentals',    title: 'Rentals',    singular: 'Rental'    },
-  { id: 'shop',       title: 'Shop',       singular: 'Shop item' },
   { id: 'invoices',   title: 'Invoices',   singular: 'Invoice'   },
   { id: 'customers',  title: 'Customers',  singular: 'Customer'  },
 ];
+// The 3 unit-borne entity types the retired Shop card used to aggregate — still
+// the routing/entity vocabulary (pills, cascade, hover previews, Round-Up).
 export const SHOP_TYPES = ['inspections', 'workOrders', 'serviceOrders'];
-// No "All" button — default is all 3 types; clicking a segment filters, clicking
-// the active segment again clears back to all.
-export const SHOP_SEGMENTS = [
-  { id: 'inspections',   label: 'Inspections' },
-  { id: 'workOrders',    label: 'Work Orders' },
-  { id: 'serviceOrders', label: 'Service'     },
+/* ── Equipment-insurance coverage types (spec equipment-insurance D1, Jac 2026-06-29) ──
+ * The YARD's asset-policy riders — exactly three: Theft, Flood, In-Tow Damage (asset only).
+ * NOT the same thing as membership Rental Protection (customer-side, covers anything up to
+ * $2,000 on the rented unit). Owner-editable at runtime via settings.insuranceTypes
+ * (same repriceable-config pattern as the mem* keys); these are the shipped defaults. */
+export const INSURANCE_COVERAGE_TYPES = [
+  { id: 'theft',  label: 'Theft' },
+  { id: 'flood',  label: 'Flood' },
+  { id: 'in-tow', label: 'In-Tow Damage (asset only)' },
 ];
+
 export const BACKOFFICE_BOARDS = [
-  { id: 'parts',    title: 'Parts'                },
-  { id: 'vendors',  title: 'Vendors'              },
-  { id: 'expenses', title: 'Expenses & Receipts'  },
-  { id: 'files',    title: 'Company Files'        },
+  { id: 'parts',       title: 'Parts'                },
+  { id: 'vendors',     title: 'Vendors'              },
+  { id: 'expenses',    title: 'Expenses & Receipts'  },
+  { id: 'files',       title: 'Company Files'        },
+  { id: 'collections', title: 'Collections'          },   // invoices queued for collections (spec collections Phase 1)
+  { id: 'pipeline',    title: 'Sales Pipeline'       },   // the top-level sales board (spec sales-growth D1, Jac 2026-06-29)
 ];
 
 /* ── 3-column layout (display only) ───────────────────────────────────────
  * Each column shows ONE active "member" at a time; the rest are a tab away.
- * The 3 shop members (inspections/serviceOrders/workOrders) still render via
- * the single 'shop' engine card with its segment pinned — the engine, anchor,
- * cascade and recType are NOT aware of columns. 'calendar' is the
- * Office Dispatch grid relocated into the middle column (never a pill target).
- * COLUMN_OF maps a member → its column so a link pill can reveal it. */
+ * 'calendar' is the Office Dispatch grid relocated into the middle column
+ * (never a pill target). COLUMN_OF maps a member → its column so a link pill
+ * can reveal it. (Shop retirement 2026-07-07: the left column holds Units +
+ * Categories only — WO/service/inspection references reveal 'units'.) */
 export const COLUMNS = [
-  { id: 'left',   default: 'units',     members: ['units', 'categories', 'inspections', 'serviceOrders', 'workOrders'] },
+  { id: 'left',   default: 'units',     members: ['units', 'categories'] },
   { id: 'middle', default: 'rentals',   members: ['rentals', 'calendar'] },
   { id: 'right',  default: 'customers', members: ['customers', 'invoices'] },
 ];
 export const COLUMN_OF = {
-  units: 'left', categories: 'left', inspections: 'left', serviceOrders: 'left', workOrders: 'left', shop: 'left',
+  units: 'left', categories: 'left',
   rentals: 'middle', invoices: 'right', customers: 'right',
 };
 
@@ -396,12 +418,8 @@ export const SORT_FIELDS = {
   customers:     [{ field: 'activePct', label: 'Active %', dir: 'desc' }, { field: 'name', label: 'Name', dir: 'asc' }, { field: 'totalPaid', label: 'Total Paid', dir: 'desc' }, { field: 'lastInvoice', label: 'Last Invoice', dir: 'desc' }, { field: 'payStatus', label: 'Pay Status', dir: 'asc' }],
   rentals:       [{ field: 'startDate', label: 'Start date', dir: 'asc' }, { field: 'endDate', label: 'End date', dir: 'asc' }, { field: 'status', label: 'Status', dir: 'asc' }, { field: 'customer', label: 'Customer', dir: 'asc' }, { field: 'price', label: 'Rental Price', dir: 'desc' }, { field: 'done', label: 'Completed', dir: 'desc' }],
   categories:    [{ field: 'name', label: 'Name', dir: 'asc' }, { field: 'roi', label: 'ROI', dir: 'desc' }, { field: 'unitCount', label: 'Unit count', dir: 'desc' }, { field: 'avgHours', label: 'Avg Hours', dir: 'desc' }, { field: 'rate1Day', label: '1-Day rate', dir: 'desc' }],
-  units:         [{ field: 'name', label: 'Name', dir: 'asc' }, { field: 'currentHours', label: 'Current Hours', dir: 'desc' }, { field: 'inspectionStatus', label: 'Inspection', dir: 'asc' }, { field: 'fleetStatus', label: 'Fleet', dir: 'asc' }, { field: 'category', label: 'Category', dir: 'asc' }, { field: 'repairCost', label: 'Repair Cost', dir: 'desc' }, { field: 'soldInactive', label: 'Sold/Inactive', dir: 'asc' }, { field: 'allFleet', label: 'All Units (any status)', dir: 'asc' }],
+  units:         [{ field: 'name', label: 'Name', dir: 'asc' }, { field: 'countdown', label: 'Service Due', dir: 'asc' }, { field: 'currentHours', label: 'Current Hours', dir: 'desc' }, { field: 'inspectionStatus', label: 'Inspection', dir: 'asc' }, { field: 'fleetStatus', label: 'Fleet', dir: 'asc' }, { field: 'category', label: 'Category', dir: 'asc' }, { field: 'repairCost', label: 'Repair Cost', dir: 'desc' }, { field: 'soldInactive', label: 'Sold/Inactive', dir: 'asc' }, { field: 'allFleet', label: 'All Units (any status)', dir: 'asc' }],
   invoices:      [{ field: 'dueDate', label: 'Due Date', dir: 'asc' }, { field: 'date', label: 'Date', dir: 'desc' }, { field: 'balance', label: 'Balance', dir: 'desc' }, { field: 'status', label: 'Status', dir: 'asc' }, { field: 'customer', label: 'Customer', dir: 'asc' }],
-  workOrders:    [{ field: 'date', label: 'Date', dir: 'desc' }, { field: 'phase', label: 'Phase', dir: 'asc' }, { field: 'unit', label: 'Unit', dir: 'asc' }, { field: 'priceIfBilled', label: 'Price If Billed', dir: 'desc' }, { field: 'woType', label: 'WO Type', dir: 'asc' }],
-  serviceOrders: [{ field: 'countdown', label: 'Countdown', dir: 'asc' }, { field: 'unit', label: 'Unit', dir: 'asc' }, { field: 'task', label: 'Task', dir: 'asc' }, { field: 'status', label: 'Status', dir: 'asc' }],
-  inspections:   [{ field: 'date', label: 'Date', dir: 'desc' }, { field: 'result', label: 'Result', dir: 'asc' }, { field: 'unit', label: 'Unit', dir: 'asc' }],
-  shop:          [{ field: 'urgency', label: 'Urgency', dir: 'desc' }, { field: 'date', label: 'Date', dir: 'desc' }, { field: 'unit', label: 'Unit', dir: 'asc' }, { field: 'type', label: 'Type', dir: 'asc' }, { field: 'complete', label: 'Completed', dir: 'desc' }],
 };
 
 /* ── Transport city lookup (SPEC §10) ────────────────────────────────────
@@ -555,3 +573,5 @@ export const TODAY_ISO = (() => {
 })();
 export const REVENUE_GOAL_DEFAULT = 150000; // SPEC §10 Revenue Goal default
 export const PERF_BUDGET_MS = 100;          // SPEC §3 hard interaction budget
+export const PERF_VITALS_ON = true;         // master kill-switch for Web-Vitals/render instrumentation (spec frontend-performance P0)
+export const PERF_SAMPLE_RATE = 1;          // fraction of sessions that flush a perfReport (1 = all, tune down at scale)

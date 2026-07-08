@@ -3,6 +3,7 @@
 // the spec linter's core rules PLUS a drift guard, the way gen-rule-usage/check-window-
 // catalog guard the rulebook. Three jobs: (1) spec-lint DESIGN.md, (2) drift-check every
 // token against style.css :root, (3) cross-check the R-catalog against app.js RULE_META.
+import fs from 'node:fs';
 // ERRORS fail the build (exit 1); contrast / orphan / R-catalog findings are advisory.
 //   node ci/check-design-md.mjs            (Jac 2026-06-23)
 import { readFile } from 'fs/promises';
@@ -76,7 +77,22 @@ for (const c of comps) {
   const bg = resolve(c.spec, 'backgroundColor'), tx = resolve(c.spec, 'textColor');
   if (bg && tx && /^#/.test(bg) && /^#/.test(tx)) {
     const cr = ratio(bg, tx);
-    if (cr < 4.5) WARN(`contrast: \`${c.name}\` text ${tx} on ${bg} = ${cr.toFixed(2)}:1 (below AA 4.5:1)`);
+    // Contrast is a HARD, build-failing gate (spec design-system D3, Jac 2026-06-29). The
+    // allowlist below holds the pairs that predate the gate — each is an explicit, named
+    // exception awaiting Jac's brand review (muted micro-text + white-on-danger-red), NOT a
+    // silent pass. Fixing a pair = delete its row. Adding a row requires a review note.
+    const CONTRAST_ALLOWLIST = {
+      'data-chip':     'muted gray micro-fact text — 3.53:1, small-text brand choice, review with Jac',
+      'add-field':     'muted dashed empty-field prompt — 3.82:1, intentionally quiet, review with Jac',
+      'action-danger': 'white ink on danger red — 3.31:1, brand red; candidate: darker red-bg or dark ink',
+      'close-x':       'white ✕ on danger red — 3.31:1, same pair as action-danger',
+      'status-ready':  'green pill text on chip steel — 3.93:1; registry green, label+icon carry meaning too; review with Jac',
+      'status-danger': 'red pill text on chip steel — 4.29:1, a hair under AA; registry red; review with Jac',
+    };
+    if (cr < 4.5) {
+      if (CONTRAST_ALLOWLIST[c.name]) WARN(`contrast (allowlisted, review pending): \`${c.name}\` ${tx} on ${bg} = ${cr.toFixed(2)}:1 — ${CONTRAST_ALLOWLIST[c.name]}`);
+      else ERR(`contrast: \`${c.name}\` text ${tx} on ${bg} = ${cr.toFixed(2)}:1 (below AA 4.5:1) — fix the pair or add a REVIEWED allowlist row`);
+    }
   }
 }
 
@@ -130,6 +146,20 @@ if (metaRules.size) {
 
 // ── Report ─────────────────────────────────────────────────────────────────
 for (const m of infos) console.log('  · ' + m);
+// ── (4) RB_FOUNDATION drift guard (spec design-system D4/Q5, Jac 2026-06-29) ──
+// Every CSS custom property referenced in app.js's RB_FOUNDATION example rows must
+// exist in style.css — a foundation row can't silently cite a token that isn't real.
+try {
+  const appSrc = fs.readFileSync(new URL('../app.js', import.meta.url), 'utf8');
+  const fm = appSrc.match(/const RB_FOUNDATION = \{[\s\S]*?\n\};/);
+  if (fm) {
+    const cssSrc = fs.readFileSync(new URL('../style.css', import.meta.url), 'utf8');
+    const defined = new Set([...cssSrc.matchAll(/--([\w-]+)\s*:/g)].map((m) => m[1]));
+    const used = new Set([...fm[0].matchAll(/var\(--([\w-]+)[),]/g)].map((m) => m[1]));
+    for (const t of used) if (!defined.has(t)) ERR(`RB_FOUNDATION cites var(--${t}) — not defined in style.css (foundation drift)`);
+  }
+} catch (e) { WARN('RB_FOUNDATION guard skipped: ' + e.message); }
+
 for (const m of warns) console.warn('⚠ ' + m);
 if (errors.length) {
   for (const m of errors) console.error('✗ ' + m);
