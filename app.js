@@ -8087,9 +8087,22 @@ function currentMobileMember() {
   const m = (s.cols && s.cols[colObj.id]) || colObj.default;
   return SHOP_TYPES.includes(m) ? 'shop' : m;
 }
-// §M1 — the flat card list the phone toggle bar offers. The 3 shop sub-types fold into one
-// 'shop' entry (the wrench), matching desktop; it opens the 3-bar shop graph.
-const MOBILE_CARDS = ['units', 'categories', 'shop', 'rentals', 'calendar', 'customers', 'invoices'];
+// §M1 — the phone footer is 3 independent 2-way toggles, one per desktop column (left:
+// Units/Categories · middle: Rentals/Calendar · right: Customers/Invoices). Shop (Work
+// Orders/Service/Inspections) is being retired on mobile — reachable by search/link pill,
+// not from this rail.
+const MOBILE_TOGGLE_GROUPS = [
+  { col: 'left',   members: ['units', 'categories'] },
+  { col: 'middle', members: ['rentals', 'calendar'] },
+  { col: 'right',  members: ['customers', 'invoices'] },
+];
+// The 3 MAIN cards, left→right — what the footer swipe steps between (never a sub-card).
+const MAIN_CARDS = ['units', 'rentals', 'customers'];
+// Which main card a member (incl. a sub-card or a folded shop type) belongs to.
+function mainCardOfMember(m) {
+  const col = COLUMN_OF[SHOP_TYPES.includes(m) ? 'shop' : m];
+  return col === 'middle' ? 'rentals' : col === 'right' ? 'customers' : 'units';
+}
 // §M1 — jump straight to a card (flattens the 3-column model on phones): set the column +
 // member, flip the visible column, and show that card's LIST (or, for Shop, its graph).
 function goToCard(member) {
@@ -8100,18 +8113,25 @@ function goToCard(member) {
   else { const mc = s.cards[member]; if (mc) { mc.mode = 'list'; mc.recId = null; mc.recType = null; } }
   render();
 }
-// §M1 phone footer — ONE card-toggle bar: every card collapsed to its icon, the SELECTED
-// card expands to icon + stamped label. Tap an icon to jump to that card's list. The card's
-// search/sort row is moved DOWN into the .mdock-searchslot by render(). Swipe the dock
-// left/right to step through cards; the grid swipe is Back/Forward.
+// §M1 phone footer — THREE card-toggle bars (Units/Categories · Rentals/Calendar ·
+// Customers/Invoices), one per desktop column. Every member is an icon; ONLY the single
+// card the user is currently ON expands to icon + stamped label — every other icon, in
+// every group, stays icon-only (keeps 3 narrow toggles from fighting each other for label
+// width). Tap an icon to jump straight to that card's list. The card's search/sort row is
+// moved DOWN into .mdock-searchslot by render(). Swipe the dock left/right to step through
+// the 3 MAIN cards; the grid swipe is Back/Forward.
 function mobileDockEl() {
   const cur = currentMobileMember();
-  const togs = MOBILE_CARDS.map((m) => {
-    const on = m === cur;
-    return `<button class="mcard-tog${on ? ' on' : ''}" data-gocard="${m}" data-tip="${esc(MEMBER_TITLE[m] || m)}"><span class="mct-ico">${memberIcon(m)}</span>${on ? `<span class="mct-lbl">${esc(MEMBER_TITLE[m] || m)}</span>` : ''}</button>`;
-  }).join('');
+  const barHtml = (members) => {
+    const btns = members.map((m) => {
+      const on = m === cur;
+      return `<button class="mcard-tog${on ? ' on' : ''}" data-gocard="${m}" data-tip="${esc(MEMBER_TITLE[m] || m)}"><span class="mct-ico">${memberIcon(m)}</span>${on ? `<span class="mct-lbl">${esc(MEMBER_TITLE[m] || m)}</span>` : ''}</button>`;
+    }).join('');
+    return `<div class="mcard-bar">${btns}</div>`;
+  };
+  const groups = MOBILE_TOGGLE_GROUPS.map((g) => barHtml(g.members)).join('');
   const d = el('div', 'mobile-dock');
-  d.innerHTML = `<div class="mdock-searchslot"></div><div class="mdock-row"><div class="mcard-bar">${togs}</div></div>`;
+  d.innerHTML = `<div class="mdock-searchslot"></div><div class="mdock-row">${groups}</div>`;
   return d;
 }
 /* ════════════════════════════════════════════════════════════════════════
@@ -17476,14 +17496,25 @@ async function shareSession() {
     caption: tabs.length ? `Scan to open your ${tabs.length} open tab${tabs.length === 1 ? '' : 's'} on another device — sign in with the shared password.`
       : 'Scan to open Rental Wrangler on another device — sign in with the shared password.' });
 }
-// Shop roles (Mechanic / M.Tech) get the Shop card + its 3-bar graph as the landing view
-// — quick access to the crew's worklist. A default only; they can navigate anywhere after.
-function applyShopRoleLanding() {
-  if (currentRole !== 'mechanic' && currentRole !== 'mtech') return;
+// §M1 role landing — each role lands on the card they work from most, both as the desktop
+// column reveal and (since phones show one column at a time) the active phone column. A
+// default only — every role can navigate anywhere after. Driver's landing member is a
+// SUB-card (Calendar, the day's driver schedule) even though the footer swipe only steps
+// between the 3 MAIN cards — the middle toggle is how a driver gets back to it.
+const ROLE_LANDING = {
+  mechanic: { col: 'left' },                        // Units
+  mtech:    { col: 'left' },                         // Units
+  office:   { col: 'middle' },                       // Rentals
+  sales:    { col: 'right' },                        // Customers
+  driver:   { col: 'middle', member: 'calendar' },   // Calendar — the driver's day
+};
+function applyRoleLanding() {
+  const land = ROLE_LANDING[currentRole]; if (!land) return;
   const s = activeSession(); if (!s) return;
-  if (s.cols) s.cols.left = 'shop';
-  const sc = s.cards.shop; if (sc) { sc.segment = 'all'; sc.graphView = true; sc.mode = 'list'; sc.recId = null; sc.recType = null; }
-  const li = COLUMNS.findIndex((c) => c.id === 'left'); if (li >= 0) state.mobileCol = li;   // phone: make the Shop column the active one
+  const member = land.member || COLUMNS.find((c) => c.id === land.col).default;
+  if (s.cols) s.cols[land.col] = member;
+  const mc = s.cards[member]; if (mc) { mc.mode = 'list'; mc.recId = null; mc.recType = null; }
+  const idx = COLUMNS.findIndex((c) => c.id === land.col); if (idx >= 0) state.mobileCol = idx;   // phone: make that column the active one
   render();
 }
 async function attemptLogin() {
@@ -17515,7 +17546,7 @@ async function attemptLogin() {
     sessionStorage.setItem('jactec.pw', pw);
     await loadFromBackend();
     finishLoad();
-    applyShopRoleLanding();   // shop roles (Mechanic / M.Tech) land on the Shop graph
+    applyRoleLanding();   // each role lands on its default main/sub-card
   } catch (e) {
     backendPassword = ''; sessionStorage.removeItem('jactec.pw'); sessionStorage.removeItem('jactec.role');
     renderLogin(/unauthorized/i.test(String(e && e.message)) ? 'That password wasn’t recognized.' : "Couldn't reach the database. Check your connection and try again.");
@@ -17572,9 +17603,9 @@ function boot() {
     if (Math.abs(dx) < 55 || Math.abs(dx) < Math.abs(dy) * 1.3) return;            // not a clean horizontal swipe
     swipeFired = true;                                                             // swallow the trailing click (row/toggle)
     if (s.footer) {
-      const cur = currentMobileMember(); let i = MOBILE_CARDS.indexOf(cur); if (i < 0) i = 0;   // left → next card, right → previous
-      const next = Math.max(0, Math.min(MOBILE_CARDS.length - 1, i + (dx < 0 ? 1 : -1)));
-      if (next !== i) { goToCard(MOBILE_CARDS[next]); haptic(8); }
+      const cur = mainCardOfMember(currentMobileMember()); let i = MAIN_CARDS.indexOf(cur); if (i < 0) i = 0;   // fold a sub-card to its main card first; left → next, right → previous
+      const next = Math.max(0, Math.min(MAIN_CARDS.length - 1, i + (dx < 0 ? 1 : -1)));
+      if (next !== i) { goToCard(MAIN_CARDS[next]); haptic(8); }
     } else {
       const card = activeMobileCard();
       if (dx > 0) cardBack(card); else cardFwd(card);                              // swipe right → Back, left → Forward
