@@ -14621,10 +14621,7 @@ function onClick(e) {
   if (closest('.js-chat-close')) { e.stopPropagation(); state.chat.open = false; return render(); }
   if (closest('.js-chat-back')) { e.stopPropagation(); state.chat.activeId = null; return render(); }   // back to the all-flags overview (chat persists)
   if (closest('.js-chat-send')) { e.stopPropagation(); return chatSend(); }
-  if (closest('[data-chat-untag]')) { e.stopPropagation(); const id = closest('[data-chat-untag]').dataset.chatUntag; const c = activeChat(); if (c) c.tags = c.tags.filter((t) => t.id !== id); pushChatsSoon(); return render(); }
-  if (closest('[data-chat-role]')) { e.stopPropagation(); return chatToggleRole(closest('[data-chat-role]').dataset.chatRole); }
   if (closest('[data-chat-open]')) { e.stopPropagation(); const [card, recId] = closest('[data-chat-open]').dataset.chatOpen.split('|'); return SHOP_TYPES.includes(card) ? anchorRecord('units', unitOfShopRec(card, recId)) : anchorRecord(card, recId, null); }   // Shop retirement: chat flags on WO/insp/svc land on the owning unit
-  if (closest('[data-team-open]')) { e.stopPropagation(); return openChat(closest('[data-team-open]').dataset.teamOpen); }   // §17 comms rail: open a team thread in its own tab
   if (closest('[data-held-clear]')) { e.stopPropagation(); state.held = null; return render(); }   // drop the pasted-element attachment before sending
   if (closest('.js-chat-settings')) { e.stopPropagation(); return chatSettingsMenu(closest('.js-chat-settings')); }   // the gear menu
   if (closest('.js-chat-leave')) { e.stopPropagation(); closeMenus(); return chatLeave(); }   // voluntary exit — drops the chat off your rail
