@@ -1660,6 +1660,162 @@ try {
       T.setRole('');          // restore demo/no-role
     }
 
+    // === GPS M4 — fleet auto-match matcher (PURE; gpsDeviceId drives remote shutdown, so verify hard) ===
+    {
+      const mk = (id, extra) => Object.assign({ unitId: id, fleetStatus: 'Active' }, extra);
+
+      ok(T.gpsMakeFamily('John Deere') === 'deere' && T.gpsMakeFamily('JD') === 'deere' && T.gpsMakeFamily('DEERE') === 'deere', 'gps M4: make-family folds Deere synonyms');
+      ok(T.gpsMakeFamily('Bobcat') !== T.gpsMakeFamily('John Deere'), 'gps M4: Bobcat and Deere are distinct families');
+
+      // serial-exact (normalized) → confident
+      {
+        const r = T.gpsMatchFleet(
+          [mk('U-A', { name: 'Worm', make: 'JCB', model: '512-56', serial: 'JCB-512-3390' })],
+          [{ id: 'd1', source: 'hapn', make: 'JCB', model: '512-56', serialNumber: 'JCB5123390', name: 'Tracker 1' }]);
+        ok(r.proposals.length === 1 && r.proposals[0].unitId === 'U-A' && r.proposals[0].deviceId === 'd1', 'gps M4: serial match proposes the pair');
+        ok(r.proposals[0].serial === true && r.proposals[0].tier === 'confident', 'gps M4: normalized serial-exact → CONFIDENT');
+      }
+
+      // HARD make-family veto — a Bobcat unit never maps to a Deere-make device, even on a serial+name collision
+      {
+        const r = T.gpsMatchFleet(
+          [mk('U-B', { name: 'Dirt Dauber', make: 'Bobcat', model: 'S76', serial: 'BOB-S76-2210' })],
+          [{ id: 'jd1', source: 'deere', make: 'John Deere', model: '333G', serialNumber: 'BOB-S76-2210', name: 'Dirt Dauber' }]);
+        ok(r.proposals.length === 0, 'gps M4: make-family veto blocks Bobcat↔Deere despite identical serial+name');
+        ok(r.unmatchedUnits.includes('U-B') && r.unmatchedDevices.some((d) => d.key === 'jd1'), 'gps M4: vetoed unit + device fall to unmatched');
+      }
+
+      // contested device — two units lay equal (name-only) claim → single CONFLICT, 1:1 enforced
+      {
+        const r = T.gpsMatchFleet(
+          [mk('U-C1', { name: 'Twin' }), mk('U-C2', { name: 'Twin' })],
+          [{ id: 'dc', source: 'hapn', name: 'Twin' }]);
+        ok(r.proposals.length === 1 && r.proposals[0].tier === 'conflict', 'gps M4: one device, two equal claimants → single CONFLICT proposal');
+        ok(r.unmatchedUnits.length === 1, 'gps M4: the losing twin lands in unmatchedUnits (1:1)');
+      }
+
+      // already-mapped + Sold units are never proposed to
+      {
+        const r = T.gpsMatchFleet(
+          [mk('U-M', { name: 'Mapped', make: 'JCB', serial: 'SERIAL9', gpsProvider: 'hapn', gpsDeviceId: 'x' }),
+           mk('U-S', { name: 'Sold', make: 'JCB', serial: 'SERIAL9', fleetStatus: 'Sold' }),
+           mk('U-OK', { name: 'Open', make: 'JCB', serial: 'SERIAL9' })],
+          [{ id: 'dm', source: 'hapn', make: 'JCB', serialNumber: 'SERIAL9', name: 'x' }]);
+        ok(r.proposals.length === 1 && r.proposals[0].unitId === 'U-OK', 'gps M4: mapped + Sold units excluded; only the open unit is proposed');
+      }
+
+      // weak name-only signal → look (needs a human)
+      {
+        const r = T.gpsMatchFleet(
+          [mk('U-W', { name: 'Highrise' })],
+          [{ id: 'dw', source: 'hapn', name: 'Highrise scissor' }]);
+        ok(r.proposals.length === 1 && r.proposals[0].tier === 'look', 'gps M4: weak name-contains → NEEDS-A-LOOK');
+      }
+
+      // regression #3 — a coincidental serial SUBSTRING (+70) must NOT reach the auto-trust 'confident' tier
+      {
+        const r = T.gpsMatchFleet(
+          [mk('U-SS', { name: 'X', make: 'JCB', model: '512-56', serial: '2024000123456' })],
+          [{ id: 'dss', source: 'hapn', make: 'JCB', model: '512-56', serialNumber: '123456', name: 'Tracker' }]);
+        const p = r.proposals[0];
+        ok(p && p.serialExact === false && p.tier !== 'confident', 'gps M4: substring-serial match is NOT auto-trusted (only an exact serial → confident)');
+      }
+
+      // regression #2 — a genuine two-free-unit tie for a device is flagged CONFLICT even when a
+      // HIGHER stale claim from an already-assigned unit sits above it (stale-claim blindness fix)
+      {
+        const r = T.gpsMatchFleet(
+          [mk('U1', { name: 'One', make: 'JCB', model: 'X99', serial: 'EXACTSER1' }),
+           mk('U2', { name: 'One', make: 'JCB' }),
+           mk('U3', { name: 'One', make: 'JCB' })],
+          [{ id: 'G', source: 'hapn', make: 'JCB', serialNumber: 'EXACTSER1', name: 'Gee' },
+           { id: 'D', source: 'hapn', make: 'JCB', model: 'X99', name: 'One' }]);
+        const u1 = r.proposals.find((p) => p.unitId === 'U1');
+        const dProp = r.proposals.find((p) => p.deviceId === 'D');
+        ok(u1 && u1.deviceId === 'G' && u1.tier === 'confident', 'gps M4: exact-serial winner stays confident despite a higher stale claim on another device');
+        ok(dProp && dProp.tier === 'conflict', 'gps M4: genuine tie for a device → CONFLICT even under a higher stale claim (regression)');
+        ok(r.unmatchedUnits.length === 1, 'gps M4: the losing tied unit falls to unmatchedUnits (1:1)');
+      }
+    }
+
+    // === GPS M5 — "Round Up Trackers" bulk Apply write path (gpsApplyMappings /
+    // gpsUndoMappings) — the ONLY writer of gpsProvider/gpsDeviceId at fleet scale;
+    // verify hard (same reasoning as M4 — gpsDeviceId drives the Hapn remote-shutdown
+    // relay, so a wrong or double-mapped device would cut the wrong starter). ===
+    {
+      const mkU = (id, extra) => Object.assign({ unitId: id, fleetStatus: 'Active', gpsProvider: '', gpsDeviceId: '' }, extra);
+      const uOpen = mkU('U-RU1', { name: 'Roundup Open', make: 'JCB', serial: 'RU-SER-1' });
+      const uSold = mkU('U-RU2', { name: 'Roundup Sold', fleetStatus: 'Sold' });
+      const uMapped = mkU('U-RU3', { name: 'Roundup Mapped', gpsProvider: 'Hapn', gpsDeviceId: 'existing-dev' });
+      T.DATA.units.push(uOpen, uSold, uMapped);
+      T.IDX.unit.set('U-RU1', uOpen); T.IDX.unit.set('U-RU2', uSold); T.IDX.unit.set('U-RU3', uMapped);
+      const wo0 = T.DATA.workOrders[0]; const wo0PhaseBefore = wo0 ? wo0.phase : undefined;
+
+      // (a) a normal ticked proposal writes the right pair — provider folded to the
+      // CANONICAL case gpsConnectSave uses (gpsShutdownControl's Hapn check is case-strict)
+      {
+        const r1 = T.gpsApplyMappings([{ unitId: 'U-RU1', deviceId: 'ru-dev-1', provider: 'hapn' }]);
+        ok(r1.results.length === 1 && r1.results[0].ok === true, 'gps M5: apply reports ok:true for a valid unmapped unit');
+        ok(uOpen.gpsProvider === 'Hapn' && uOpen.gpsDeviceId === 'ru-dev-1', 'gps M5: apply writes the right gpsProvider (canonical-cased) + gpsDeviceId onto the unit');
+      }
+
+      // (b) Sold + already-mapped units are NEVER written, even handed a proposal directly
+      // (defense in depth — never trust the caller re-checked what the scan found earlier)
+      {
+        const r2 = T.gpsApplyMappings([
+          { unitId: 'U-RU2', deviceId: 'ru-dev-2', provider: 'deere' },
+          { unitId: 'U-RU3', deviceId: 'ru-dev-3', provider: 'yanmar' },
+        ]);
+        ok(r2.results.length === 2 && r2.results.every((x) => x.ok === false), 'gps M5: apply refuses Sold + already-mapped units, reporting ok:false for both (never silently "done")');
+        ok(!uSold.gpsProvider && !uSold.gpsDeviceId, 'gps M5: a Sold unit is left completely untouched');
+        ok(uMapped.gpsProvider === 'Hapn' && uMapped.gpsDeviceId === 'existing-dev', 'gps M5: an already-mapped unit keeps its EXISTING pairing — never silently overwritten');
+      }
+
+      // in-batch dedupe — two units ticked in the SAME Apply call can never claim one device
+      {
+        const uA = mkU('U-RU4', { name: 'Dupe A' }), uB = mkU('U-RU5', { name: 'Dupe B' });
+        T.DATA.units.push(uA, uB); T.IDX.unit.set('U-RU4', uA); T.IDX.unit.set('U-RU5', uB);
+        const r3 = T.gpsApplyMappings([{ unitId: 'U-RU4', deviceId: 'shared-dev', provider: 'hapn' }, { unitId: 'U-RU5', deviceId: 'shared-dev', provider: 'hapn' }]);
+        ok(r3.results[0].ok === true && r3.results[1].ok === false, 'gps M5: in-batch dedupe refuses a second claim on a device already written this call');
+        ok(uA.gpsDeviceId === 'shared-dev' && !uB.gpsDeviceId, 'gps M5: only the first claimant actually gets the device — the second stays unmapped, not silently paired');
+        T.IDX.unit.delete('U-RU4'); T.IDX.unit.delete('U-RU5');
+        ['U-RU4', 'U-RU5'].forEach((id) => { const i = T.DATA.units.findIndex((u) => u.unitId === id); if (i >= 0) T.DATA.units.splice(i, 1); });
+      }
+
+      // regression #6 — a device already bound to a DIFFERENT existing unit is refused (never
+      // re-point a live starter relay from one machine to another; U-RU3 holds 'existing-dev')
+      {
+        const uNew = mkU('U-RU6', { name: 'Wants existing dev' });
+        T.DATA.units.push(uNew); T.IDX.unit.set('U-RU6', uNew);
+        const r4 = T.gpsApplyMappings([{ unitId: 'U-RU6', deviceId: 'existing-dev', provider: 'hapn' }]);
+        ok(r4.results[0].ok === false, 'gps M5: apply refuses a device already assigned to a DIFFERENT existing unit (regression #6)');
+        ok(!uNew.gpsDeviceId && uMapped.gpsDeviceId === 'existing-dev', 'gps M5: that tracker stays on its original unit — never re-pointed to another machine');
+        T.IDX.unit.delete('U-RU6'); const i = T.DATA.units.findIndex((u) => u.unitId === 'U-RU6'); if (i >= 0) T.DATA.units.splice(i, 1);
+      }
+
+      // (c) never touches a work order — the bulk write only ever sets unit fields
+      ok(!wo0 || wo0.phase === wo0PhaseBefore, 'gps M5: applying GPS mappings never changes any work order\'s phase');
+
+      // gpsUndoMappings — the batch Undo reverts exactly the pairs it's handed
+      {
+        const r4 = T.gpsUndoMappings([{ unitId: 'U-RU1', prevProvider: '', prevDeviceId: '' }]);
+        ok(r4.results.length === 1 && r4.results[0].ok === true, 'gps M5: undo reports the reverted unit');
+        ok(!uOpen.gpsProvider && !uOpen.gpsDeviceId, 'gps M5: undo restores the pre-apply (unmapped) state');
+      }
+
+      // end-to-end: gpsMatchFleet's own proposals feed straight into gpsApplyMappings
+      {
+        const r5 = T.gpsMatchFleet([uOpen], [{ id: 'ru-dev-6', source: 'hapn', make: 'JCB', serialNumber: 'RUSER1', name: 'Tracker 6' }]);
+        ok(r5.proposals.length === 1, 'gps M5: matcher still proposes a pair for the (now unmapped again) unit');
+        const r6 = T.gpsApplyMappings(r5.proposals);
+        ok(r6.results[0].ok === true && uOpen.gpsProvider === 'Hapn' && uOpen.gpsDeviceId === 'ru-dev-6', 'gps M5: a real matcher proposal applies end-to-end with the canonical-cased provider');
+      }
+
+      // cleanup — the suite mutates shared DATA
+      ['U-RU1', 'U-RU2', 'U-RU3'].forEach((id) => T.IDX.unit.delete(id));
+      ['U-RU1', 'U-RU2', 'U-RU3'].forEach((id) => { const i = T.DATA.units.findIndex((u) => u.unitId === id); if (i >= 0) T.DATA.units.splice(i, 1); });
+    }
+
     return out;
   });
 

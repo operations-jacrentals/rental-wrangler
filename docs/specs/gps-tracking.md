@@ -19,7 +19,7 @@ We integrated a friend's standalone fleet-telematics app (**WranglerGPS**) inste
 
 ### Architecture (what changed vs. the GPSWOX design below)
 - **Provider(s):** FOUR, not one — **Hapn** (small equipment, ignition-based engine hours, starter-interrupt relay), **John Deere** Operations Center, **Yanmar** SmartAssist, **Bouncie** (OBD trucks). All connected live.
-- **Backend:** a **separate Node/Express + Postgres service** (the forked WranglerGPS, on Railway) — NOT an Apps Script `gpsPoll` action. The browser talks to it **directly** over HTTPS (`GPS_BACKEND_URL` in `config.js`), authed by the team password → an `x-auth-token`. Apps Script/Sheets stays the system of record only for the unit↔tracker **mapping**; no telemetry is copied into Sheets.
+- **Backend:** a **separate Node/Express + Postgres service** (the forked WranglerGPS, on Railway) — NOT an Apps Script `gpsPoll` action. The browser talks to it **directly** over HTTPS (`GPS_BACKEND_URL` in `config.js`) for all telemetry reads/writes, authed by an `x-auth-token`. **Auth is brokered server-side (see the 2026-07-08 note below): the browser never holds the GPS team password.** Apps Script/Sheets stays the system of record only for the unit↔tracker **mapping**; no telemetry is copied into Sheets.
 - **Status source:** `gpsStatus` is derived client-side from the live fleet snapshot's tracker-ping freshness (`<6h` Reporting · `<72h` Verify · older/absent Not Reporting), falling back to the stored field when the backend is unreachable ("Last known — live link down"). The `gps-offline`/`gps-verify` flags became truthful with zero flag-code change, exactly as the GPSWOX design intended — just a different source.
 
 ### What Phase 1 shipped (all on `area/wrangler-gps`, rental-wrangler #508)
@@ -30,6 +30,30 @@ We integrated a friend's standalone fleet-telematics app (**WranglerGPS**) inste
 5. **Status & alert history feed** — chat-feed-styled per-unit timeline from the backend `device_events` log, with live Bouncie check-engine (mil/DTC) alerts merged in.
 6. **Remote engine shutdown** — Hapn starter-interrupt, a two-step arm→confirm hazard control, **role-gated to Owner/Admin + Manager + Mechanic/M.Tech** (absent from the DOM for others), audited on every attempt. Polarity: `enabled:false` = immobilize.
 7. **Driving Score KPI** — the Driver ring lit with a **fleet** safety score from Bouncie trips (hard-braking/accel per mile + speeding); null (never faked) when no data; tunable weights.
+
+### 🔑 2026-07-08 — GPS login moved server-side (auth-architecture fix)
+Phase 1 shipped `gpsLogin` sending the **RW user's typed password** straight to the GPS
+service's `/auth/login`. That was broken: the GPS backend authenticates against a **single
+`DASHBOARD_PASSWORD`** that **no RW user types** (Jac signs in with his own password; each
+role has its own), so `/auth/login` 401'd for everyone → empty token → **no unit ever showed
+live GPS**, independent of the (also-missing) unit↔tracker mappings. Putting that one shared
+password in `config.js` was rejected — the repo is **public via Pages** and the token can
+drive **remote engine shutdown** (a `curl` bypasses any client gate).
+
+**Fix (shipped):** the GPS password now lives **only** in an Apps Script **Script Property**
+(`GPS_DASHBOARD_PASSWORD`), server-side. A new **additive** GAS action **`gpsToken`** verifies
+the caller is an authenticated RW role (`roleForPassword`), logs into the GPS service
+server-side, and returns **only** the `x-auth-token` (never the password, never the upstream
+error body). `app.js` `gpsLogin()` now calls `backendCall('gpsToken')` instead of posting the
+role password to the GPS service. Any signed-in role gets a token (GPS viewing is app-wide);
+per-role shutdown gating stays a client gate + server audit (unchanged limitation). Optional
+`GPS_BACKEND_URL` Script Property overrides the default endpoint.
+- **Deploy (backend):** `gpsToken` is additive to `Code.js` — pushed to HEAD via the service
+  account; **go-live is Jac's Apps Script editor New-version deploy** (STOP-gate). Jac must
+  also set the `GPS_DASHBOARD_PASSWORD` Script Property. Until both are done, `gpsToken`
+  returns `gps-not-configured`/`unknown action` and `gpsLogin` degrades silently (no regression).
+- **Deploy (frontend):** `app.js` changed → the `?v=` cache-bust token MUST be bumped on any
+  area→staging→main promotion (see the STAGING/DEPLOY NOTE above).
 
 ### Backend addition (fork `wranglergps#2`)
 `device_events` table (`source, device_key, type[status_change|alert|shutdown_command], detail, actor, at`) + `GET /api/device/:source/:key/events` + a shutdown-command audit write on every starter-interrupt. Additive; deploys via Railway on merge.
@@ -48,8 +72,22 @@ We integrated a friend's standalone fleet-telematics app (**WranglerGPS**) inste
 
 ### Phasing (revised)
 - **Phase 1 — SHIPPED:** the seven items above (connect + live view + shutdown + score).
-- **Phase 2 — in design (needs its own spec):** the four fleet-wide pages from the original WranglerGPS app — **Live Tracking map** (whole-fleet, resolve overlap with `area/maps-location`), **Tracker Health** roster, **Issues** (fleet-wide fault codes), **Reports / Category Utilization** (actual-vs-target hrs/day, over/under-capacity, repair-vs-buy — reconcile with `financials-kpi` + the manager-metrics T2 daily-snapshot). **Geofencing + stray alerts** (the §7.3 design, gated on `comms-notifications` server SMS per D4) land here too.
-- **Phase 3:** event ledger, breadcrumb history, optional provider webhooks, auto engine-hours (`currentHours`) ingestion.
+- **Phase 2 — IN PROGRESS (2026-07-08, visibility-first, all roles per Jac):** see the sub-status below.
+- **Phase 3 — partly started:** **GPS Issues / Alerts view — ✅ SHIPPED** (`gpsIssues` popup, toolbar alert-triangle: check-engine `mil` · Not Reporting/disconnected · Verify · guarded low-battery — a needs-attention-only list off `gpsFleetRoster()`). Still deferred (each needs the deploy + live data or new backend): Reports / Category Utilization (repair-vs-buy, over/under-capacity — needs mapping + a shared daily-snapshot job + banked history), unit-anchored map lens, geofencing + stray alerts (§7.3, gated on `comms-notifications` SMS), event ledger, breadcrumb history, provider webhooks, auto engine-hours ingestion.
+
+### Hardening — adversarial code review (2026-07-08)
+A 5-dimension review (auth · matcher · apply-safety · shutdown · popups/XSS) with per-finding verification confirmed **12 bugs, all fixed** on this branch (+6 regression tests): matcher conflict-blindness (stale claims could bind a starter relay to the wrong unit), CSV formula-injection, an infinite live-signal poll, backend `gpsToken` GET-reachability (role pw + shutdown token in a logged URL — now POST-only), substring-serial over-trust, cross-unit device re-point, audit records person not role, unknown-starter-state hiding Restore, un-coerced provider lat/lng, fleet-map view reset on refresh, margin collapse, and a `Rammer`↔Ram make-family fold.
+
+### Phase 2 sub-status (2026-07-08 — plan: `docs/superpowers/plans/2026-07-08-wrangler-gps-phase2-plan.md`)
+Visibility-first + bulk onboarding; Reports/Issues pushed to Phase 3. Fleet views are **all-roles** (Jac 2026-07-08 — declined the manager-only asset-protection gate). Milestones:
+- **M0 — verify the pipe:** GATED ON one editor **New-version deploy** of the already-HEAD-staged `gpsToken` action (the prod deployment is version-pinned, so a HEAD push alone isn't live). The GPS password is baked into `Code.js` as a server-side fallback (Jac 2026-07-08 — minimal steps; the `GPS_DASHBOARD_PASSWORD` Script Property still wins if set, as the rotation path), so **no Script-Property step is needed to go live** — just the one deploy click, which is editor-only (the REST/clasp deploy path breaks the web app's anonymous access — hard rule). Supersedes the earlier "set Railway DASHBOARD_PASSWORD = RW team password" idea (there is no single RW team password). After deploy, the M2 roster / M1 map ARE the verification surface.
+- **M2 — Tracker Health roster — ✅ SHIPPED** (`gpsHealth` popup): every tracker across all four providers off the live snapshot, bucketed by freshness, search + CSV + refresh; mapping-independent; also the login/account canary. Opened from the toolbar `I.truck` button.
+- **M3 — serialNumber threaded through `gpsNormalize` — ✅ SHIPPED:** matcher key (Hapn `assetProfile.serialNumber`, Deere/Yanmar `serialNumber`; Bouncie null).
+- **M4 — fleet auto-match matcher `gpsMatchFleet` — ✅ SHIPPED (pure, 10 logic-test checks):** serial-first, make-family HARD veto, greedy 1:1 with contested→conflict bucketing. No writes; wired to `window.__rw`.
+- **M1 — Fleet Map (`gpsFleet` popup) — ✅ SHIPPED:** device-first Google-map + asset sidebar off `gpsFleetRoster()`, reusing the map stack (`loadGoogleMaps`/`mountDispatchMap`/`mountGpsFleetMap`); markers color by engine via token reads; search + Running/Stopped/All filter + click-to-pan. Degrades to a roster-only view (calm plate over the placeholder) when the Maps key is absent. Opened from the toolbar grid button. Marker plotting against real lat/lng is unexercised by tests — verify on staging once a live snapshot exists.
+- **M5 — "Round Up Trackers" bulk onboarding — ✅ SHIPPED (`gpsRoundup` popup, toolbar list button):** review table over `gpsMatchFleet()` bucketed by tier + Manually-Assigned + No-Match, per-row override via the connect-wizard picker, expand-to-confirm side-by-side with an optional live poll, **MANDATORY confirm for shutdown-capable Hapn rows** (enforced at write-eligibility AND inside `gpsApplyMappings` — defense in depth). `gpsApplyMappings` writes the pair per unit (mirrors `gpsConnectSave`), hard-skips Sold/already-mapped, in-batch device-dedupes, and surfaces per-unit ok/fail so a partial batch is never silently "done"; `gpsUndoMappings` reverts. Never completes a WO. 12 logic-test checks. **The actual unblock — running it (M6) lights up every per-unit GPS surface.**
+- **M6 — onboard the real fleet + reconcile the 4 legacy GPSWOX units (U001/U003/U004/U024) — Jac (human-in-the-loop):** run M5 against live accounts; needs Jac's confirm (safety: `gpsDeviceId` drives shutdown).
+- **M7 — enforcement:** WINDOW_CATALOG + `data-r` + rule-usage/code-map regen + gates + `?v=` bump per new surface (folded into each commit). **No visibility gate** (all-roles decision).
 
 ---
 
