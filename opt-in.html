@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Text Alerts Sign-Up — JacRentals</title>
+<meta name="description" content="Sign up to receive service text alerts about your JacRentals equipment rentals — quotes, reminders, delivery and pickup alerts, and invoices." />
+<style>
+  :root{
+    --bg:#f7f6f3; --panel:#ffffff; --ink:#1c2126; --ink2:#4c555f; --line:#e3e0d9;
+    --accent:#c25a2b; --accent-ink:#7a3a1a; --field:#ffffff; --ok:#2f7d4f;
+    --serif:'Iowan Old Style','Palatino Linotype',Georgia,'Times New Roman',serif;
+    --sans:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#14171b; --panel:#1b1f24; --ink:#e7ebf0; --ink2:#a3acb6; --line:#2b3138; --accent:#e08a52; --accent-ink:#e08a52; --field:#12151a; --ok:#5fb98a; }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.6;font-size:17px}
+  .wrap{max-width:720px;margin:0 auto;padding:0 22px 80px}
+  header{border-bottom:3px solid var(--accent);margin-bottom:34px;padding:34px 0 18px}
+  .mark{font-family:var(--sans);font-weight:800;letter-spacing:.5px;font-size:15px;text-transform:uppercase;color:var(--accent-ink)}
+  h1{font-family:var(--serif);font-weight:600;font-size:38px;line-height:1.1;margin:10px 0 6px;text-wrap:balance}
+  .eff{color:var(--ink2);font-size:14px;margin:0}
+  h2{font-family:var(--serif);font-weight:600;font-size:23px;margin:38px 0 8px}
+  p{margin:0 0 14px;color:var(--ink)} p.lead{color:var(--ink2)}
+  ul{margin:0 0 14px;padding-left:22px} li{margin:0 0 8px}
+  a{color:var(--accent-ink);text-decoration:underline}
+  strong{font-weight:700}
+
+  form{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:22px 22px 24px;margin:22px 0 8px}
+  .field{margin:0 0 16px}
+  label.lbl{display:block;font-weight:700;font-size:14px;letter-spacing:.3px;margin:0 0 6px}
+  input[type=text],input[type=tel]{width:100%;font:inherit;color:var(--ink);background:var(--field);
+    border:1px solid var(--line);border-radius:8px;padding:12px 13px}
+  input[type=text]:focus,input[type=tel]:focus,button:focus-visible,input[type=checkbox]:focus-visible{
+    outline:3px solid var(--accent);outline-offset:2px}
+  .consent{display:flex;gap:12px;align-items:flex-start;background:var(--bg);
+    border:1px solid var(--line);border-radius:8px;padding:14px 16px;margin:6px 0 4px}
+  .consent input[type=checkbox]{margin-top:4px;width:20px;height:20px;flex:0 0 auto;accent-color:var(--accent)}
+  .consent label{font-size:14.5px;line-height:1.55;color:var(--ink)}
+  .fine{font-size:13px;color:var(--ink2);margin:12px 0 0}
+  button.submit{margin-top:18px;width:100%;font:inherit;font-weight:800;letter-spacing:.4px;
+    background:var(--accent);color:#fff;border:0;border-radius:9px;padding:14px 18px;cursor:pointer}
+  button.submit:hover{filter:brightness(1.05)}
+  .err{color:#b23b2e;font-size:13.5px;margin:8px 0 0;min-height:1px}
+  @media (prefers-color-scheme: dark){ .err{color:#f08a7d} }
+
+  .done{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--ok);
+    border-radius:12px;padding:22px;margin:22px 0}
+  .done h2{margin-top:0;color:var(--ok)}
+  [hidden]{display:none !important}
+
+  footer{margin-top:46px;padding-top:18px;border-top:1px solid var(--line);color:var(--ink2);font-size:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="mark">JacRentals</div>
+    <h1>Sign up for rental text alerts</h1>
+    <p class="eff">Heavy-equipment rental · Sulphur, Louisiana</p>
+  </header>
+
+  <p class="lead">Get service text messages from JacRentals about your own equipment rentals — so you never miss a quote, a return date, or a delivery.</p>
+
+  <h2>What you'll get</h2>
+  <ul>
+    <li>Rental quotes and totals</li>
+    <li>Reservation and return-date reminders</li>
+    <li>Delivery and pickup (ETA) alerts</li>
+    <li>Invoice and balance notices</li>
+    <li>Replies to questions you send us</li>
+  </ul>
+
+  <form id="optin" novalidate>
+    <div class="field">
+      <label class="lbl" for="name">Your name</label>
+      <input type="text" id="name" name="name" autocomplete="name" placeholder="First and last name" />
+    </div>
+    <div class="field">
+      <label class="lbl" for="phone">Mobile number</label>
+      <input type="tel" id="phone" name="phone" autocomplete="tel" inputmode="tel" placeholder="(337) 555-0134" />
+    </div>
+
+    <div class="consent">
+      <input type="checkbox" id="agree" name="agree" />
+      <label for="agree">
+        I agree to receive recurring automated service (transactional) text messages from
+        <strong>JacRentals</strong> at the mobile number provided — rental quotes and totals,
+        reservation and return-date reminders, delivery and pickup (ETA) alerts, invoice and
+        balance notices, and replies to my questions. <strong>Message frequency varies.</strong>
+        <strong>Message and data rates may apply.</strong> Reply <strong>STOP</strong> to opt out,
+        <strong>HELP</strong> for help. Consent is not a condition of any purchase or rental.
+        See our <a href="./sms-terms.html">SMS Terms &amp; Conditions</a> and
+        <a href="./privacy.html">Privacy Policy</a>.
+      </label>
+    </div>
+
+    <p class="err" id="err" role="alert" aria-live="polite"></p>
+
+    <button type="submit" class="submit">Text me my rental updates</button>
+
+    <p class="fine">JacRentals sends texts only to customers who have opted in. We do not sell or
+      share your mobile number or messaging consent with third parties or affiliates for their
+      marketing purposes.</p>
+  </form>
+
+  <div class="done" id="done" hidden aria-live="polite">
+    <h2>You're all set</h2>
+    <p id="doneMsg"></p>
+    <p class="fine">Changed your mind? Reply <strong>STOP</strong> to any message to cancel at any
+      time, or <strong>HELP</strong> for help. Message and data rates may apply.</p>
+  </div>
+
+  <footer>© 2026 JacRentals · Sulphur, Louisiana · Questions?
+    <a href="mailto:operations@jacrentals.com">operations@jacrentals.com</a></footer>
+</div>
+
+<script>
+  (function () {
+    var form = document.getElementById('optin');
+    var err  = document.getElementById('err');
+    var done = document.getElementById('done');
+    var doneMsg = document.getElementById('doneMsg');
+
+    function digits(s){ return (s || '').replace(/\D/g, ''); }
+
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var name  = document.getElementById('name').value.trim();
+      var phone = document.getElementById('phone').value.trim();
+      var agree = document.getElementById('agree').checked;
+
+      if (!name)                { err.textContent = 'Please enter your name.'; document.getElementById('name').focus(); return; }
+      if (digits(phone).length < 10) { err.textContent = 'Please enter a valid 10-digit mobile number.'; document.getElementById('phone').focus(); return; }
+      if (!agree)               { err.textContent = 'Please check the box to agree to receive text messages.'; document.getElementById('agree').focus(); return; }
+      err.textContent = '';
+
+      doneMsg.textContent = 'Thanks, ' + name + '. You’ll receive a one-time confirmation text at '
+        + phone + ' shortly. After that we’ll only text you about your own rentals — message '
+        + 'frequency varies, and message & data rates may apply.';
+      form.hidden = true;
+      done.hidden = false;
+      done.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  })();
+</script>
+</body>
+</html>
