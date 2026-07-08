@@ -15977,7 +15977,7 @@ function invoicePrintGroups(inv) {
     const days = (parseISO(start) && parseISO(end)) ? Math.max(1, dayDiff(parseISO(start), parseISO(end))) : 0;
     return {
       key, r, isOther: key === '__other', start,
-      title: (key === '__other') ? 'Additional charges' : 'Rental',
+      title: (key === '__other') ? 'Other' : 'Rental',
       window: (start && end) ? `${fmtShortDate(start)} – ${fmtShortDate(end)}` : '',
       dur: days ? prDuration(days) : '',
       prov: (key === '__other') ? '' : prGroupProvenance(inv, r, g.lines),
@@ -15993,7 +15993,14 @@ function invoicePrintGroups(inv) {
  *  duration). Transport keeps its leg descriptor; a manual line shows its plain label. */
 function prLineParts(li) {
   let rest = String(li.label || '').replace(/\s*·\s*Ext of\s+\S+\s*$/i, '').replace(/\s*·\s*Extension\s*→.*$/i, '');
-  if (li.kind === 'transport') return { icon: I.truck, name: 'Transport', cat: '', meta: rest.replace(/^Transport\s*·\s*/i, '') };
+  if (li.kind === 'transport') {
+    const r = li.ref ? IDX.rental.get(li.ref) : null;
+    const eu = (r && li.unitId) ? unitEntry(r, li.unitId) : null;
+    const type = (eu && eu.transportType) || (r && r.transportType) || rest.replace(/^Transport\s*·\s*/i, '');
+    const addr = (eu && eu.deliveryAddress) || (r && r.deliveryAddress) || '';
+    const miles = Number((eu && eu.transportMiles) || (r && r.transportMiles) || 0);
+    return { icon: I.truck, name: 'Transport', cat: '', meta: [type, addr, miles ? `${miles} mi` : ''].filter(Boolean).join(' · ') };
+  }
   const u = li.unitId ? IDX.unit.get(li.unitId) : null;
   if (u) {
     const cat = IDX.category.get(u.categoryId);
@@ -16040,9 +16047,11 @@ function printInvoice(invoiceId) {
   const paid = t.balance <= 0.005 && t.total > 0;
   const ink = prInvoiceInk(inv, t);   // is-paid (green) / is-open (yellow) / is-due (red)
   const bigDate = (fmtShortDate(inv.date) || '').toUpperCase();
+  const brandName = companyName().replace(/([a-z])([A-Z])/g, '$1 $2');   // "JacRentals" → "Jac Rentals" (proper case, spaced)
+  const custPhoto = cust ? latestCustomerSelfie(cust) : '';
 
-  // Each rental → a soft card with a CENTERED header (title · window · duration · provenance)
-  // and its per-rental subtotal pinned right; the unit lines sit inside on ledger rules.
+  // Each rental → a soft card with a single-line header: the bold title FIRST, then its window ·
+  // duration · provenance, and the per-rental subtotal pinned right; the unit lines sit inside.
   const cardHtml = (g) => {
     const lines = g.lines.map((li) => {
       const p = prLineParts(li);
@@ -16050,7 +16059,7 @@ function printInvoice(invoiceId) {
     }).join('');
     const meta = `${g.window ? `<span>${esc(g.window)}</span>` : ''}${g.dur ? `<span>${esc(g.dur)}</span>` : ''}${g.prov ? `<span class="pr-prov">${esc(g.prov)}</span>` : ''}`;
     return `<section class="pr-card">
-      <header class="pr-card-h"><span class="pr-card-sub">${money2(g.subtotal)}</span><div class="pr-card-t">${esc(g.title)}</div>${meta ? `<div class="pr-card-m">${meta}</div>` : ''}</header>
+      <header class="pr-card-h"><span class="pr-card-t">${esc(g.title)}</span>${meta ? `<span class="pr-card-m">${meta}</span>` : ''}<span class="pr-card-sub">${money2(g.subtotal)}</span></header>
       <div class="pr-card-lines">${lines}</div>
     </section>`;
   };
@@ -16077,7 +16086,7 @@ function printInvoice(invoiceId) {
   host.innerHTML = `
     <div class="pr-doc ${ink}">
       <div class="pr-head">
-        <div class="pr-brandwrap"><img class="pr-logo" src="assets/jac-rentals-logo.jpg" alt="${esc(companyName())}" /><div><div class="pr-brand">${esc(companyName())}</div><div class="pr-sub">${esc(companyTagline())} · Yard Log</div></div></div>
+        <div class="pr-brandwrap"><img class="pr-logo" src="assets/jac-rentals-logo.jpg" alt="${esc(brandName)}" /><div><div class="pr-brand">${esc(brandName)}</div><div class="pr-sub">${esc(companyTagline())}</div></div></div>
         <div class="pr-datestamp">${esc(bigDate)}</div>
       </div>
       <div class="pr-hazard" aria-hidden="true"></div>
@@ -16091,7 +16100,10 @@ function printInvoice(invoiceId) {
       </div>
       <div class="pr-groups">${groupsHtml}</div>
       <div class="pr-summary">
-        ${paid ? '<div class="pr-stamp" aria-hidden="true">Paid in Full</div>' : ''}
+        <div class="pr-cust">
+          ${custPhoto ? `<img class="pr-cust-photo" src="${esc(custPhoto)}" alt="" />` : ''}
+          ${paid ? `<div class="pr-stamp${custPhoto ? ' on-photo' : ''}" aria-hidden="true">Paid in Full</div>` : ''}
+        </div>
         <div class="pr-tot">
           <div><span>Grand Subtotal</span><span>${money2(t.subtotal)}</span></div>
           <div><span>Tax${t.exempt ? ' (exempt)' : ` (${(TAX_RATE * 100).toFixed(2)}%)`}</span><span>${t.exempt ? '—' : money2(t.tax)}</span></div>
@@ -16104,7 +16116,6 @@ function printInvoice(invoiceId) {
         ${logCol('Invoice Log', invoiceLog, false)}
         ${logCol('Rental Log', rentalLog, true)}
       </div>
-      <div class="pr-foot">Thank you for your business — much obliged. Questions on this ticket? Give the yard a holler${companyPhone() ? ` — ${esc(companyPhone())}` : ''}.</div>
     </div>`;
   document.body.classList.add('printing');
   const cleanup = () => { document.body.classList.remove('printing'); window.removeEventListener('afterprint', cleanup); };
