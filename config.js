@@ -571,9 +571,23 @@ export function parseInvoice(id) {
 // Live "today" — the real local date, so the window picker, Today/Tomorrow badges,
 // invoice aging, the monthly Revenue Goal, and weekend rates all track the actual day.
 // (Was a frozen demo date '2026-06-07'; seeded demo rentals now read relative to today.)
-export const TODAY_ISO = (() => {
+const computeTodayISO = () => {
   const d = new Date(), p = (n) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-})();
+};
+// LIVE, not frozen: an always-on shop machine keeps the SPA open across midnight,
+// which used to leave TODAY_ISO stuck on the load day — so every new action/inspection/
+// WO stamp got yesterday's date while nowClock() read the live time (History showed
+// e.g. "Jul 07 · 11:59 AM" for a Jul 08 event). refreshTodayISO() rolls it over; the
+// app calls it on render + the refresh poll, and ESM live bindings hand the fresh value
+// to every importer that reads TODAY_ISO at call time.
+export let TODAY_ISO = computeTodayISO();
+/** Re-evaluate "today"; returns true only when the calendar day actually rolled over. */
+export function refreshTodayISO() {
+  const next = computeTodayISO();
+  if (next === TODAY_ISO) return false;
+  TODAY_ISO = next;
+  return true;
+}
 export const REVENUE_GOAL_DEFAULT = 150000; // SPEC §10 Revenue Goal default
 export const PERF_BUDGET_MS = 100;          // SPEC §3 hard interaction budget
