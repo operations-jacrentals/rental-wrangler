@@ -8179,6 +8179,7 @@ function bottomBarInner(opts = {}) {
     <button class="iconbtn js-wrangler" data-tip="New chat with Mr. Wrangler — ask the yard AI, or report a bug" style="font-size:16px">🤠</button>
     ${opts.noInbox ? '' : `<button class="iconbtn js-requests" data-tip="Requests for your OK — review what Mr. Wrangler filed">${I.inbox}${wranglerRequests.length ? `<span class="bb-badge">${wranglerRequests.length > 9 ? '9+' : wranglerRequests.length}</span>` : ''}</button>`}
     <button class="iconbtn js-gps-health" data-tip="Tracker Health — every GPS device across the fleet">${I.truck}</button>
+    <button class="iconbtn js-gps-fleet" data-tip="Fleet Map — every GPS tracker on a live map">${I.grid}</button>
     <button class="iconbtn js-hotkeys" data-tip="Mouse &amp; keyboard shortcuts">${I.mouse}</button>
     ${devUnlocked() ? `<button class="iconbtn js-lint${document.body.classList.contains('rw-lint') ? ' on' : ''}" data-tip="Design lint — flash anything that bypassed the UI builders (R0)">${I.eye}</button>
     <button class="iconbtn js-inspect${state.inspect ? ' on' : ''}" data-tip="Design Inspector — hover names the rule, click copies the reference">${I.search}</button>
@@ -10114,6 +10115,7 @@ function renderOverlay() {
 
   _ovLastKind = o.kind;
   if (o.kind === 'roundup') { ruMountCharts(); if (o.section && !o._scrolled) { o._scrolled = true; document.querySelector(`.ru-sec[data-sec="${o.section}"]`)?.scrollIntoView({ block: 'start' }); } }
+  if (o.kind === 'gpsFleet') mountGpsFleetMap(o);   // Phase 2 M1 — mount/refresh the live map after the popup DOM lands
   if (o.kind === 'partform') document.querySelector('.overlay .js-pf2-desc')?.focus();   // Jac: Part/Task field focused by default
   if (o.kind === 'newCustomer') setupSignaturePad();
   if (o.kind === 'payment') { setupPayAlloc(); setupRefundAlloc(); }   // live counters for the §19 pay + §19b refund allocation rows
@@ -10351,6 +10353,66 @@ function buildPopupEl(o, overlay, opts = {}) {
       </div>`;
     const pop = el('div', 'popup gpsh-popup'); pop.style.width = '620px';
     pop.innerHTML = popupShell({ icon: I.truck || '', title: 'Tracker Health', tag: 'Fleet · GPS roster', body });
+    overlay.appendChild(pop);
+  } else if (o.kind === 'gpsFleet') {
+    // Phase 2 M1 — FLEET MAP: every GPS tracker plotted on a live Google map, mapping-
+    // independent (same gpsFleetRoster() source as Tracker Health). Wide two-pane popup —
+    // a map pane (mounted after render by mountGpsFleetMap, afterRender hook below) + an
+    // asset sidebar so the map still degrades gracefully to a roster-only view offline/no-key
+    // (mapsReady() false) or pre-snapshot (same canary banner language as gpsHealth).
+    o.q = o.q || ''; o.filter = o.filter || 'all'; o.sel = o.sel || '';
+    const roster = gpsConfigured() ? gpsFleetRoster() : [];
+    const q = o.q.trim().toLowerCase();
+    const matchRow = (r) => !q || `${r.name} ${r.serial || ''} ${gpsProvLabel(r.provider)} ${r.unit ? r.unit.name : ''}`.toLowerCase().includes(q);
+    const matchFilter = (r) => o.filter === 'all' || (o.filter === 'running' ? r.engineOn : !r.engineOn);
+    const shown = roster.filter(matchRow).filter(matchFilter)
+      .sort((a, b) => gpsProvLabel(a.provider).localeCompare(gpsProvLabel(b.provider)) || a.name.localeCompare(b.name));
+    const nAll = roster.length, nRunning = roster.filter((r) => r.engineOn).length;
+
+    const rowHtml = (r) => `<button class="gpsfm-row${o.sel === r.key ? ' sel' : ''} js-gpsfm-row" data-key="${esc(r.key)}">
+      <div class="gpsfm-row-top">
+        <span class="gpsfm-name">${esc(r.name)}${r.serial ? `<span class="gpsfm-ser">${esc(r.serial)}</span>` : ''}</span>
+      </div>
+      <div class="gpsfm-row-mid">${badge(gpsProvLabel(r.provider))}${badge(r.engineOn ? 'Engine On' : 'Engine Off', r.engineOn ? 'green' : 'gray')}</div>
+      <div class="gpsfm-row-bot">
+        ${statusPill('gpsStatus', r.status)}
+        <span class="gpsfm-seen">${r.lastSeen ? esc(gpsRelTime(r.lastSeen)) : '—'}</span>
+      </div>
+      <div class="gpsfm-row-map">${r.unit ? refPill('units', r.unit.unitId, r.unit.name) : badge('Unmapped', 'yellow')}</div>
+    </button>`;
+
+    const filterCtl = segCtl([
+      { label: `All ${nAll}`, js: 'js-gpsfm-filter', data: { val: 'all' }, on: o.filter === 'all' ? 'orange' : '' },
+      { label: `Running ${nRunning}`, js: 'js-gpsfm-filter', data: { val: 'running' }, on: o.filter === 'running' ? 'orange' : '' },
+      { label: `Stopped ${nAll - nRunning}`, js: 'js-gpsfm-filter', data: { val: 'stopped' }, on: o.filter === 'stopped' ? 'orange' : '' },
+    ]);
+    const banners = [
+      !mapsReady() ? 'Live map needs the Google Maps key — showing the roster.' : '',
+      !gpsConfigured() ? 'GPS backend isn’t configured (GPS_BACKEND_URL).'
+        : gpsLiveErr ? 'Live link down — showing the last good snapshot.'
+        : (gpsLiveAt === 0) ? 'No snapshot yet — the fleet is still checking in (or GPS login hasn’t returned a token).'
+        : '',
+    ].filter(Boolean);
+    const body = `
+      <div class="gpsfm-toolbar">
+        <div class="gpsfm-counts"><span class="gpsfm-big">${nAll}</span> ${nAll === 1 ? 'device' : 'devices'} · ${nRunning} running</div>
+        <div class="gpsfm-tools">
+          <div class="bv-searchwrap gpsfm-search"><span class="s-icon">${I.search}</span><input class="bv-query js-gpsfm-search" placeholder="Find a tracker…" value="${esc(o.q)}"></div>
+          ${filterCtl}
+          <button class="iconbtn iconbtn-bare js-gpsfm-refresh" data-tip="Refresh the snapshot">${I.refresh || '⟳'}</button>
+        </div>
+      </div>
+      ${banners.map((b) => `<div class="gpsfm-banner">${esc(b)}</div>`).join('')}
+      <div class="gpsfm-layout">
+        <div class="gpsfm-map js-gpsfm-map">${!mapsReady() ? `<div class="gpsfm-map-ph"><div class="gpsfm-map-ph-plate"><span class="map-pin" aria-hidden="true">${ICO_PIN}</span><span class="map-sub">Live map needs the Google Maps key.<br>The roster on the right still shows every tracker.</span></div></div>` : ''}</div>
+        <div class="gpsfm-side">
+          <div class="gpsfm-list">
+            ${shown.length ? shown.map(rowHtml).join('') : `<div class="gpsfm-empty">${nAll ? 'No trackers match that search.' : 'No trackers reporting on any provider account yet. If the GPS login was just deployed, sign out and back in; otherwise check the provider connections on the backend.'}</div>`}
+          </div>
+        </div>
+      </div>`;
+    const pop = el('div', 'popup gpsfm-popup');
+    pop.innerHTML = popupShell({ icon: I.truck || '', title: 'Fleet Map', tag: 'Fleet · GPS live', body, bodyClass: 'gpsfm-body' });
     overlay.appendChild(pop);
   } else if (o.kind === 'rulebook') {
     // THE VISUAL RULEBOOK (SPEC v8) — every example is emitted by the REAL
@@ -11156,6 +11218,7 @@ const WINDOW_CATALOG = [
   { kind: 'linkConfirm',   label: 'Confirm link',            tag: 'Link · confirm',           sample: () => ({ srcCard: 'rentals', srcId: ((DATA.rentals || [])[0] || {}).rentalId, targetCard: 'invoices', targetId: ((DATA.invoices || [])[0] || {}).invoiceId }) },
   { kind: 'gpsConnect',    label: 'Connect GPS device',      tag: 'Unit · GPS',                sample: () => ({ unitId: ((DATA.units || [])[0] || {}).unitId, step: 'provider', provider: 'Hapn' }) },
   { kind: 'gpsHealth',     label: 'Tracker Health',          tag: 'Fleet · GPS roster',        sample: () => ({ q: '', bucket: 'all' }) },
+  { kind: 'gpsFleet',      label: 'Fleet Map',               tag: 'Fleet · GPS map',           sample: () => ({ q: '', filter: 'all', sel: '' }) },
   { kind: 'rulebook',      label: 'The R-Rulebook',          tag: 'SPEC v8 · design system',  sample: () => ({}) },
   { kind: 'partform',      label: 'Add / Edit Part · Task',  tag: 'Work order · line',         sample: () => ({ woId: ((DATA.workOrders || [])[0] || {}).woId }) },
   { kind: 'receiptform',   label: 'New / Edit Receipt',      tag: 'Expense · receipt',         sample: () => ({}) },
@@ -14568,6 +14631,24 @@ function onClick(e) {
   if (closest('.js-gpsh-refresh')) { e.stopPropagation(); if (gpsConfigured()) refreshGpsLive(); return; }
   if (closest('.js-gpsh-csv')) { e.stopPropagation(); return gpsRosterCsv(); }
 
+  // Phase 2 M1 — Fleet Map (every GPS tracker on a live map, mapping-independent)
+  if (closest('.js-gps-fleet')) {
+    e.stopPropagation();
+    if (gpsConfigured() && (gpsLiveAt === 0 || Date.now() - gpsLiveAt > 60000)) refreshGpsLive();   // freshen on open — re-renders when the snapshot lands
+    return openOverlay({ kind: 'gpsFleet', q: '', filter: 'all', sel: '' });
+  }
+  if (closest('.js-gpsfm-filter')) {
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'gpsFleet') return;
+    o.filter = closest('.js-gpsfm-filter').dataset.val || 'all'; return renderOverlay();
+  }
+  if (closest('.js-gpsfm-refresh')) { e.stopPropagation(); if (gpsConfigured()) refreshGpsLive(); return; }
+  if (closest('.js-gpsfm-row')) {
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'gpsFleet') return;
+    o.sel = closest('.js-gpsfm-row').dataset.key || ''; return renderOverlay();
+  }
+
   // §5a — the connect-a-device wizard (gpsConnect popup)
   if (closest('.js-gps-connect')) {
     e.stopPropagation();
@@ -15432,6 +15513,12 @@ function onInput(e) {
   if (e.target.classList.contains('js-gpsh-search')) {
     const o = state.overlay;
     if (o?.kind === 'gpsHealth') { o.q = e.target.value; const sel = e.target.selectionStart; renderOverlay(); const q = document.querySelector('.overlay .js-gpsh-search'); if (q) { q.focus(); q.setSelectionRange(sel, sel); } }
+    return;
+  }
+  // Phase 2 M1 — Fleet Map live filter (same caret-restore pattern)
+  if (e.target.classList.contains('js-gpsfm-search')) {
+    const o = state.overlay;
+    if (o?.kind === 'gpsFleet') { o.q = e.target.value; const sel = e.target.selectionStart; renderOverlay(); const q = document.querySelector('.overlay .js-gpsfm-search'); if (q) { q.focus(); q.setSelectionRange(sel, sel); } }
     return;
   }
   if (e.target.classList.contains('chat-input')) { state.chat.draft = e.target.value; return; }
@@ -18011,6 +18098,53 @@ function gpsRosterCsv() {
     const a = el('a'); a.href = URL.createObjectURL(blob); a.download = `tracker-health-${TODAY_ISO}.csv`;
     document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   } catch (e) { toast('Could not build the CSV.'); }
+}
+
+/* ── FLEET MAP (Phase 2 M1) — every GPS tracker plotted on a live Google map, mapping-
+   INDEPENDENT (same gpsFleetRoster() source as Tracker Health). Singleton map, re-parented
+   into the fresh .js-gpsfm-map mount point each render (the proven mountDispatchMap /
+   mountTransportEditor pattern) so it never reloads/flickers — only markers refresh.
+   Degrades exactly like those: if !mapsReady() this just returns and the popup's own
+   markup already shows the roster-only placeholder, no live/offline branching needed here. */
+let _gpsFleetMap = null, _gpsFleetMarkers = [];
+function mountGpsFleetMap(o) {
+  const mount = document.querySelector('.js-gpsfm-map'); if (!mount) return;
+  if (!mapsReady()) {
+    loadGoogleMaps().then((g) => {
+      if (!g) return;                                                              // no key / offline — stays roster-only, never an error
+      if (state.overlay === o && state.overlay.kind === 'gpsFleet') renderOverlay();   // re-check the SAME popup is still open before touching it
+    });
+    return;
+  }
+  try {
+    if (!mount.querySelector('.gm-style')) {
+      _gpsFleetMap = new google.maps.Map(mount, { center: YARD_CENTER, zoom: 10, disableDefaultUI: true, zoomControl: true, gestureHandling: 'greedy', clickableIcons: false });
+      const repaint = () => { try { google.maps.event.trigger(_gpsFleetMap, 'resize'); } catch (e2) {} };   // first-open 0×0 paint fix (same as the dispatch/transport maps)
+      requestAnimationFrame(repaint); setTimeout(repaint, 250);
+    }
+    if (!_gpsFleetMap) return;
+    _gpsFleetMarkers.forEach((m) => m.setMap(null)); _gpsFleetMarkers = [];
+    const roster = gpsConfigured() ? gpsFleetRoster() : [];
+    const onColor = ruColor('--green'), offColor = ruColor('--gray'), ink = ruColor('--on-orange'), accent = ruColor('--accent');
+    const bounds = new google.maps.LatLngBounds(); let placed = 0, selPos = null;
+    roster.forEach((r) => {
+      const m = r.machine;
+      if (!m || m.lat == null || m.lng == null) return;
+      const pos = { lat: m.lat, lng: m.lng };
+      const sel = o.sel && o.sel === r.key;
+      if (sel) selPos = pos;
+      const mk = new google.maps.Marker({
+        map: _gpsFleetMap, position: pos, zIndex: sel ? 900 : (r.engineOn ? 50 : 10),
+        title: `${r.name} · ${gpsProvLabel(r.provider)} · ${r.engineOn ? 'Engine On' : 'Engine Off'}`,
+        icon: { path: google.maps.SymbolPath.CIRCLE, scale: sel ? 11 : 7, fillColor: r.engineOn ? onColor : offColor, fillOpacity: 1, strokeColor: sel ? accent : ink, strokeWeight: sel ? 3 : 2 },
+      });
+      mk.addListener('click', () => { o.sel = r.key; renderOverlay(); });
+      _gpsFleetMarkers.push(mk);
+      bounds.extend(pos); placed++;
+    });
+    if (selPos) { _gpsFleetMap.panTo(selPos); if (_gpsFleetMap.getZoom() < 14) _gpsFleetMap.setZoom(14); }
+    else if (placed) _gpsFleetMap.fitBounds(bounds, 46);   // only fit once a real device is located (single-point fit zooms absurdly)
+  } catch (e) { /* never strand the popup on a half-mounted map — the sidebar roster still renders */ }
 }
 
 /* ── GPS STATUS & ALERT HISTORY FEED (spec §6a) ───────────────────────────────
