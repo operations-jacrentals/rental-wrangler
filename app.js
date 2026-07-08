@@ -7351,11 +7351,12 @@ function detailTitle(card, rec) {
 const GRID_CARD_BY_ID = Object.fromEntries(GRID_CARDS.map((c) => [c.id, c]));
 const MEMBER_TITLE = (() => {
   const m = {}; GRID_CARDS.forEach((c) => { m[c.id] = c.title; });
-  SHOP_SEGMENTS.forEach((s) => { m[s.id] = s.label; }); m.calendar = 'Calendar'; return m;
+  SHOP_SEGMENTS.forEach((s) => { m[s.id] = s.label; }); m.calendar = 'Calendar'; m.sales = 'Sales'; return m;
 })();
 const memberIcon = (m) => (m === 'calendar' ? I.grid : (CARD_ICON[m] || ''));
 // Tab row count for a member (search-aware; mirrors the card's own count chip).
 function memberCount(member, session) {
+  if (member === 'sales') return null;   // "coming soon" placeholder — no count chip
   if (member === 'calendar') return dispatchEvents().length;
   if (SHOP_TYPES.includes(member)) { try { return (shopItemsByType(session)[member] || []).length; } catch { return 0; } }
   try { let r = listFor(member, session); if (member === 'units') r = unitsVisible(r, session.cards.units); if (member === 'rentals') r = rentalsVisible(r, session, session.cards.rentals); return r.length; } catch { return 0; }
@@ -7460,10 +7461,27 @@ function colActionsHtml(active, session) {
   return `<div class="c-actions"><button class="hbtn js-tolist" data-tip="${anchored ? 'Browse list (pick another to anchor)' : 'Back to list'}">${I.list}</button><button class="hbtn js-anchor" data-rec="${esc(cs.recId)}"${dt} data-tip="Anchor (⊞)">${I.circle}</button><button class="hbtn js-newtab" data-rec="${esc(cs.recId)}"${dt} data-tip="New tab (+)">${I.plus}</button></div>`;
 }
 function memberCardEl(member, session) {
+  if (member === 'sales') return salesCardEl(session);
   if (member === 'calendar') return calendarCardEl(session);
   if (member === 'shop') return shopCardEl({ id: 'shop', title: 'Shop' }, session);   // the wrench "Shop" member = the COMBINED view (segment bar + 3-bar front-page graph), no forcedSeg
   if (SHOP_TYPES.includes(member)) return shopCardEl({ id: 'shop', title: MEMBER_TITLE[member] }, session, member);
   return cardEl(GRID_CARD_BY_ID[member], session);
+}
+/* SALES — bespoke "coming soon" placeholder card holding the slot the retired Invoice card
+   vacated (mirrors calendarCardEl: no list/detail, no data model). The real Sales dashboard /
+   work-manager ships in PR 2; until then this reserves + labels the slot. */
+function salesCardEl(session) {
+  const node = el('div', 'card' + (state.searchMode ? ' search-glow' : ''));
+  node.dataset.card = 'sales';
+  const body = el('div', 'card-body sales-soon');
+  body.innerHTML = `<div class="soon-plate">`
+    + `<div class="soon-ico">${CARD_ICON.sales || ''}</div>`
+    + `<div class="soon-title">Sales</div>`
+    + `<div class="soon-tag">Coming soon</div>`
+    + `<div class="soon-sub">The sales dashboard &amp; work manager saddles up here.</div>`
+    + `</div>`;
+  node.appendChild(body);
+  return node;
 }
 function calendarCardEl(session) {
   const node = el('div', 'card' + (state.searchMode ? ' search-glow' : ''));
@@ -8311,7 +8329,7 @@ function currentMobileMember() {
 }
 // §M1 — the flat card list the phone toggle bar offers. The 3 shop sub-types fold into one
 // 'shop' entry (the wrench), matching desktop; it opens the 3-bar shop graph.
-const MOBILE_CARDS = ['units', 'categories', 'shop', 'rentals', 'calendar', 'customers', 'invoices'];
+const MOBILE_CARDS = ['units', 'categories', 'shop', 'rentals', 'calendar', 'customers', 'sales'];
 // §M1 — jump straight to a card (flattens the 3-column model on phones): set the column +
 // member, flip the visible column, and show that card's LIST (or, for Shop, its graph).
 function goToCard(member) {
