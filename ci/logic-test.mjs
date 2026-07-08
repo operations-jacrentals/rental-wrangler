@@ -1969,6 +1969,56 @@ try {
       T.IDX.invoice.delete(far.invoiceId); T.IDX.invoice.delete(cur.invoiceId);
     }
 
+    // ── §552 promotion-review fixes — lock r1 (PII scrub), r3 (collections gate), r4 (chunk split) ──
+    // r1 — the customer-safe printed-invoice log never leaks Collections/Recall notes or the acting staff role
+    {
+      const pii = { invoiceId: 'R1-PII', customerId: 'C0009', rentalIds: [], lineItems: [], actions: [
+        { when: T.TODAY_ISO, clock: '', seq: 2, text: 'Queued for Collections (Uncollectable) — $1,250.00 off active aging, by manager' },
+        { when: T.TODAY_ISO, clock: '', seq: 1, text: 'Rescheduled the window, by office' },
+      ] };
+      const log = T.invoiceAmendments(pii).invoiceLog;
+      ok(!log.some((a) => /collections|aging|\bby (manager|office)\b/i.test(a.text)), 'r1: Collections/aging/staff-role lines are scrubbed from the customer invoice log');
+      ok(log.some((a) => a.text === 'Rescheduled the window'), 'r1: a customer-safe line survives with its trailing ", by <role>" stripped');
+    }
+    // r3 — recall lifts the blacklist only when NO other collections invoice is still active
+    {
+      const mkI = (id, st) => { const iv = { invoiceId: id, customerId: 'R3-CUST', rentalIds: [], lineItems: [], collections: st ? { status: st } : undefined, mock: true }; T.DATA.invoices.push(iv); T.IDX.invoice.set(id, iv); return iv; };
+      const A = mkI('R3-A', 'Queued'), B = mkI('R3-B', 'Queued');
+      ok(T.collectionsHasOtherActive(A) === true, 'r3: a 2nd active collections invoice keeps the blacklist (recall of A must not lift)');
+      B.collections.status = 'Recalled';
+      ok(T.collectionsHasOtherActive(A) === false, 'r3: once nothing else is active, the recall may lift the blacklist');
+      T.DATA.invoices = T.DATA.invoices.filter((i) => i !== A && i !== B); T.IDX.invoice.delete('R3-A'); T.IDX.invoice.delete('R3-B');
+    }
+    // r4 — un-voiding a unit on a >28-day CHUNKED series bills it PER CHUNK, not a full-window line on chunk #1
+    {
+      const priced = (T.DATA.units || []).filter((u) => u.fleetStatus === 'Active' && u.categoryId
+        && (() => { const p = T.rentalPrice({ categoryId: u.categoryId, startDate: '2099-09-01', endDate: '2099-10-11', customerId: 'C0009' }); return p && p.price > 0; })());
+      if (priced.length >= 2) {
+        const uA = priced[0], uB = priced.find((u) => u.unitId !== uA.unitId);
+        const mkU = (u, status) => ({ unitId: u.unitId, status, transportType: 'Self', deliveryAddress: '', recoveryAddress: '', transportMiles: 0, startCapture: null, endCapture: null, fcCapture: null });
+        const r = { rentalId: 'R4-CHUNK', customerId: 'C0009', rentalName: 'chunk split', startDate: '2099-09-01', endDate: '2099-10-11', startTime: '', status: 'On Rent', transportType: 'Self', deliveryAddress: '', po: '', invoiceId: null, units: [mkU(uA, 'On Rent'), mkU(uB, 'On Rent')], notes: '', actions: [], mock: true };
+        T.DATA.rentals.push(r); T.IDX.rental.set('R4-CHUNK', r);
+        // build the chunked series by hand (avoids createInvoiceForRental's UI side effects) and bill ONLY uA
+        const chunks = T.invoiceChunks('2099-09-01', '2099-10-11');
+        const invs = chunks.map((ch, i) => {
+          const p = T.rentalPrice({ categoryId: uA.categoryId, startDate: ch.start, endDate: ch.end, customerId: 'C0009' });
+          const iv = { invoiceId: 'R4-INV' + i, customerId: 'C0009', rentalIds: ['R4-CHUNK'], date: T.TODAY_ISO, dueDate: T.TODAY_ISO, po: '', amountPaid: 0, lineItems: [{ kind: 'rental', ref: 'R4-CHUNK', unitId: uA.unitId, lid: 'a' + i, label: uA.name, amount: p ? Math.round(p.price * 100) / 100 : 0 }], covOf: 'R4-CHUNK', covStart: ch.start, covEnd: ch.end, contOf: i === 0 ? null : 'R4-INV0', mock: true };
+          T.DATA.invoices.push(iv); T.IDX.invoice.set(iv.invoiceId, iv); return iv;
+        });
+        r.invoiceId = 'R4-INV0';
+        ok(chunks.length >= 2, `r4: a >28-day window forms a multi-chunk series (${chunks.length} chunks)`);
+        const bBefore = invs.reduce((a, iv) => a + T.unitBilledRental(iv, 'R4-CHUNK', uB.unitId), 0);
+        ok(bBefore === 0, 'r4: unit B starts unbilled across the series');
+        T.syncRentalLines(r);
+        const chunksWithB = invs.filter((iv) => T.unitBilledRental(iv, 'R4-CHUNK', uB.unitId) > 0.005).length;
+        ok(chunksWithB === invs.length, `r4: the re-added unit bills on EVERY chunk, not just chunk #1 (${chunksWithB}/${invs.length})`);
+        const aDupes = invs.some((iv) => iv.lineItems.filter((li) => li.kind === 'rental' && li.unitId === uA.unitId).length > 1);
+        ok(!aDupes, 'r4: the already-billed unit A is not double-billed by the re-sync');
+        invs.forEach((iv) => { T.DATA.invoices = T.DATA.invoices.filter((x) => x !== iv); T.IDX.invoice.delete(iv.invoiceId); });
+        T.DATA.rentals = T.DATA.rentals.filter((x) => x !== r); T.IDX.rental.delete('R4-CHUNK');
+      } else { ok(true, 'r4: skipped — demo seed lacks 2 priced active units'); }
+    }
+
     return out;
   });
 
