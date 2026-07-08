@@ -1303,6 +1303,20 @@ function syncTransportLine(r) {
 function syncRentalLines(r) {
   if (!r || !r.invoiceId) return;
   const inv = IDX.invoice.get(r.invoiceId); if (!inv) return;
+  const series = rentalInvoices(r);
+  if (series.length > 1) {
+    // >28-day CHUNKED series (#552-r4): a re-added (un-voided) unit must bill PER CHUNK — the
+    // same path the initial build takes (createInvoiceForRental → billChunkUnits) — not a single
+    // full-window line dumped on chunk #1. billChunkUnits with emitZero=false prices each chunk's
+    // own window and skips units already billed on that chunk (delta ≈ 0), so ONLY genuinely
+    // missing lines get added, correctly split across the series.
+    series.forEach((cv) => {
+      const cs = invCovStart(cv, r), ce = invCovEnd(cv, r);
+      const res = billChunkUnits(cv, r, cs, ce, cs, retroPricingOn(), 'rental', cv.contOf || null, null, false);
+      if (res.count) reindex('invoices', cv);
+    });
+    return;
+  }
   const have = new Set((inv.lineItems || []).filter((li) => li.kind === 'rental' && li.ref === r.rentalId).map((li) => li.unitId));
   let changed = false;
   rentalLineItems(r).forEach((li) => { if (!have.has(li.unitId)) { inv.lineItems.push(li); changed = true; } });
@@ -1671,6 +1685,9 @@ function armTransportNode(rentalId, unitId, node) {
 const TAX_RATE = 0.1075;   // §10 sales tax — 10.75% (Jac 2026-06-07); honors exemptions
 /** Active collections placement on an invoice (spec collections Phase 1). 'Recalled' = back in-house. */
 const invoiceCollectionsActive = (inv) => !!(inv && inv.collections && inv.collections.status && inv.collections.status !== 'Recalled');
+/** Does ANOTHER invoice for this invoice's customer still sit in active Collections? Gates the
+ *  recall-lifts-blacklist decision so one recall can't un-blacklist while a 2nd is live (#552-r3). */
+function collectionsHasOtherActive(inv) { return !!inv && (DATA.invoices || []).some((i2) => i2 !== inv && i2.customerId === inv.customerId && invoiceCollectionsActive(i2)); }
 function invoiceTotals(inv) {
   const subtotal = (inv.lineItems || []).reduce((a, li) => a + (Number(li.amount) || 0), 0);
   const cust = inv.customerId ? IDX.customer.get(inv.customerId) : null;
@@ -8463,7 +8480,12 @@ function chatComments() {
 function chatUnreadCount() { const u = commentUserKey(); return chatComments().filter((c) => !(c.ack || []).includes(u)).length; }
 const chatById = (id) => state.chat.chats.find((c) => c.id === id) || null;
 const activeChat = () => chatById(state.chat.activeId);
-function chatsTagging(card, recId) { return state.chat.chats.filter((c) => (c.tags || []).some((t) => t.ref && t.ref.card === card && String(t.ref.recId) === String(recId))); }
+function chatsTagging(card, recId) {
+  const hit = (o) => o && o.card === card && String(o.recId) === String(recId);
+  return state.chat.chats.filter((c) =>
+    (c.tags || []).some((t) => t.ref && hit(t.ref)) ||               // legacy chat-level tags (passthrough)
+    (c.messages || []).some((m) => (m.refs || []).some(hit)));       // message-level record refs, post tags→refs migration (#552-r12)
+}
 function chatMarkSeen(chat) { const c = chat || activeChat(); if (c) c.seen[commentUserKey()] = Date.now(); }
 // an element re-flashes when ANY chat tagging it has messages this user hasn't seen (chats are never lost)
 function chatUnseenForRec(card, recId) {
@@ -8514,6 +8536,7 @@ function normalizeTeamChat(c) {
 function openChat(id, msg) {
   const c = chatById(id); if (!c) return;
   normalizeTeamChat(c);
+  if (String(state.chat.activeId) !== String(id)) state.chat.draft = '';   // don't carry a half-typed draft into another chat (#552-r8)
   state.chat.activeId = id;
   c.seen[commentUserKey()] = Date.now();
   pushChatsSoon();
@@ -15071,8 +15094,12 @@ function onClick(e) {
     const inv = IDX.invoice.get(closest('.js-col-recall').dataset.rec); if (!inv || !invoiceCollectionsActive(inv)) return;
     inv.collections.status = 'Recalled'; inv.collections.recalledAt = TODAY_ISO;
     const cust = IDX.customer.get(inv.customerId);
-    if (cust && cust.accountType === 'Blacklisted' && inv.collections.prevAccountType !== undefined) {   // lift only what the queue set (D2 note)
-      cust.accountType = inv.collections.prevAccountType || 'Non-Business';
+    // Lift the auto-blacklist only when NO other invoice for this customer is still in active Collections (#552-r3);
+    // prevAccountType is recorded only on the FIRST invoice that blacklisted them, so source it wherever it lives.
+    const otherColActive = collectionsHasOtherActive(inv);
+    const prevSrc = !otherColActive ? [inv, ...DATA.invoices.filter((i2) => i2.customerId === inv.customerId)].find((i2) => i2.collections && i2.collections.prevAccountType !== undefined) : null;
+    if (cust && cust.accountType === 'Blacklisted' && prevSrc) {   // lift only what a queue set, and only once nothing is still active (D2 note)
+      cust.accountType = prevSrc.collections.prevAccountType || 'Non-Business';
       cust.activityLog = cust.activityLog || [];
       cust.activityLog.push({ when: TODAY_ISO, text: `Recalled ${invoiceShort(inv.invoiceId)} from Collections — blacklist lifted by ${currentRole || 'operator'}` });
       reindex('customers', cust);
@@ -17879,11 +17906,12 @@ function prLineParts(li) {
  *  card/ACH, mechanic/GPS), internal-but-relevant wording translated to plain language, sorted
  *  MOST RECENT → oldest. rentalLog entries carry the rental name (which unit(s)). */
 function invoiceAmendments(inv) {
-  const DENY = /pricing (un)?locked|mr\.?\s*wrangler|added by|••|\bach\b|\bcard\b|mechanic|assigned|\bgps\b|\bhours\b/i;
+  const DENY = /pricing (un)?locked|mr\.?\s*wrangler|added by|••|\bach\b|\bcard\b|mechanic|assigned|\bgps\b|\bhours\b|collections?|recall|aging|blacklist/i;
   const scrub = (a, rname) => {
     let text = String(a.text || '');
     if (!text || DENY.test(text)) return null;
     text = text
+      .replace(/\s*[,—-]\s*by \S+\s*$/i, '')   // strip any trailing "— by <role>" staff attribution (never on a customer doc)
       .replace(/Merged in invoice\s+\S+.*$/i, 'Combined with a prior ticket')
       .replace(/Continuation (of|invoice)\b.*$/i, 'Continued on a new ticket (28-day billing)')
       .replace(/Transport type →/i, 'Transport set to');
@@ -17902,16 +17930,20 @@ function invoiceAmendments(inv) {
 /** Invoice status → the print doc's accent state: green (paid), yellow (open / not yet due),
  *  red (past due). Drives the date stamp, hazard stripe, Balance Due and the Paid stamp. */
 function prInvoiceInk(inv, t) {
-  if ((t || invoiceTotals(inv)).balance <= 0.005) return 'is-paid';
-  return /^(Late|Collections)/.test((t || invoiceTotals(inv)).status) ? 'is-due' : 'is-open';
+  const tt = t || invoiceTotals(inv);
+  if (inv.refunded || tt.status === 'Refunded') return 'is-refunded';   // settled by refund, NOT paid-green (#552-r2)
+  if (tt.balance <= 0.005) return 'is-paid';
+  return /^(Late|Collections)/.test(tt.status) ? 'is-due' : 'is-open';
 }
 function printInvoice(invoiceId) {
   const inv = IDX.invoice.get(invoiceId); if (!inv) return;
   const t = invoiceTotals(inv);
   const cust = inv.customerId ? IDX.customer.get(inv.customerId) : null;
   const groups = invoicePrintGroups(inv);
-  const paid = t.balance <= 0.005 && t.total > 0;
-  const ink = prInvoiceInk(inv, t);   // is-paid (green) / is-open (yellow) / is-due (red)
+  const refunded = t.refunded || t.status === 'Refunded';
+  const refAmt = Number(inv.refundedAmount) || 0;
+  const paid = t.balance <= 0.005 && t.total > 0 && !refunded;   // a refunded invoice reads $0 balance but is NOT "Paid in Full" (#552-r2)
+  const ink = prInvoiceInk(inv, t);   // is-paid (green) / is-open (yellow) / is-due (red) / is-refunded (gray)
   const bigDate = (fmtShortDate(inv.date) || '').toUpperCase();
   const brandName = companyName().replace(/([a-z])([A-Z])/g, '$1 $2');   // "JacRentals" → "Jac Rentals" (proper case, spaced)
   const custPhoto = cust ? latestCustomerSelfie(cust) : '';
@@ -17968,13 +18000,14 @@ function printInvoice(invoiceId) {
       <div class="pr-summary">
         <div class="pr-cust">
           ${custPhoto ? `<img class="pr-cust-photo" src="${esc(custPhoto)}" alt="" />` : ''}
-          ${paid ? `<div class="pr-stamp${custPhoto ? ' on-photo' : ''}" aria-hidden="true">Paid in Full</div>` : ''}
+          ${paid ? `<div class="pr-stamp${custPhoto ? ' on-photo' : ''}" aria-hidden="true">Paid in Full</div>` : refunded ? `<div class="pr-stamp${custPhoto ? ' on-photo' : ''}" aria-hidden="true">Refunded</div>` : ''}
         </div>
         <div class="pr-tot">
           <div><span>Grand Subtotal</span><span>${money2(t.subtotal)}</span></div>
           <div><span>Tax${t.exempt ? ' (exempt)' : ` (${(TAX_RATE * 100).toFixed(2)}%)`}</span><span>${t.exempt ? '—' : money2(t.tax)}</span></div>
           <div class="pr-big"><span>Total</span><span>${money2(t.total)}</span></div>
           ${paymentRows}
+          ${refunded && refAmt > 0 ? `<div class="pr-refund"><span>Refunded</span><span>-${money2(refAmt)}</span></div>` : ''}
           <div class="pr-due"><span>Balance Due</span><span>${money2(t.balance)}</span></div>
         </div>
       </div>
@@ -19149,8 +19182,13 @@ async function gpsFleetStatus() {
   ]);
   const val = (r) => (r.status === 'fulfilled' ? r.value : null);
   const out = [];
+  // Per-provider link health (#552-r7): a provider whose probe REJECTED, or that reports
+  // authenticated:false, or whose machine-list fetch throws, is "down" — its mapped units
+  // must read as last-known (link down), not a live device-down "Not Reporting".
+  const down = new Set();
 
   // Hapn
+  if (val(devicesR) === null) down.add('hapn');
   const starterStates = val(starterR)?.result?.states || {};
   const statusMap = {};
   gpsUnwrap(val(statusR)).forEach((s) => { if (s?.imei) statusMap[s.imei] = s; });
@@ -19158,11 +19196,14 @@ async function gpsFleetStatus() {
 
   // Deere / Yanmar / Bouncie — only when authenticated (second-phase machine lists)
   const phase2 = [];
-  if (val(deereR)?.authenticated)  phase2.push(gpsFetch('/api/deere/machines').then((d) => (d?.values || []).map((m) => gpsNormalize('deere', m))).catch(() => []));
-  if (val(yanmarR)?.authenticated) phase2.push(gpsFetch('/api/yanmar/machines').then((d) => (d?.machines || []).map((m) => gpsNormalize('yanmar', m))).catch(() => []));
-  if (val(bouncieR)?.authenticated) phase2.push(gpsFetch('/api/bouncie/vehicles').then((d) => (d?.vehicles || []).map((m) => gpsNormalize('bouncie', m))).catch(() => []));
+  const probe = { deere: val(deereR), yanmar: val(yanmarR), bouncie: val(bouncieR) };
+  for (const [p, v] of Object.entries(probe)) if (v === null || v.authenticated === false) down.add(p);
+  if (val(deereR)?.authenticated)  phase2.push(gpsFetch('/api/deere/machines').then((d) => (d?.values || []).map((m) => gpsNormalize('deere', m))).catch(() => { down.add('deere'); return []; }));
+  if (val(yanmarR)?.authenticated) phase2.push(gpsFetch('/api/yanmar/machines').then((d) => (d?.machines || []).map((m) => gpsNormalize('yanmar', m))).catch(() => { down.add('yanmar'); return []; }));
+  if (val(bouncieR)?.authenticated) phase2.push(gpsFetch('/api/bouncie/vehicles').then((d) => (d?.vehicles || []).map((m) => gpsNormalize('bouncie', m))).catch(() => { down.add('bouncie'); return []; }));
   (await Promise.all(phase2)).forEach((list) => list.forEach((m) => m && out.push(m)));
 
+  gpsProviderDown = down;
   return out.filter(Boolean);
 }
 
@@ -19549,6 +19590,7 @@ const GPS_STALE_MS = 72 * 3600 * 1000;   // < 72h → Verify; older/none → Not
 let gpsLive = null;      // Map(deviceKey → normalized machine) from the last good snapshot
 let gpsLiveAt = 0;       // ms of the last SUCCESSFUL snapshot (0 = never fetched)
 let gpsLiveErr = false;  // most recent refresh failed (we keep the last good map)
+let gpsProviderDown = new Set();   // providers whose link/auth failed THIS snapshot (#552-r7) — their mapped units read "last known", not live device-down
 
 async function refreshGpsLive() {
   if (!gpsConfigured()) return;
@@ -19575,7 +19617,11 @@ function unitGpsStatus(u) {
   const mapped = !!(u.gpsProvider && u.gpsDeviceId);
   if (mapped && gpsLiveAt > 0) {
     const m = unitGpsLiveMachine(u);
-    if (!m) return { status: 'Not Reporting', live: true, asOf: gpsLiveAt, mapped: true };   // tracker absent from the snapshot
+    if (!m) {
+      // Provider link/auth down → show last-known (live:false → "Last known — live link down"), NOT a live device-down alarm (#552-r7).
+      if (gpsProviderDown.has(String(u.gpsProvider || '').toLowerCase())) return { status: u.gpsStatus || 'Verify', live: false, asOf: gpsLiveAt, mapped: true };
+      return { status: 'Not Reporting', live: true, asOf: gpsLiveAt, mapped: true };   // tracker genuinely absent while the link is up
+    }
     const t = m.lastSeen ? new Date(m.lastSeen).getTime() : NaN;
     let status;
     if (!Number.isNaN(t)) {
@@ -19658,7 +19704,7 @@ const gpsProvLabel = (p) => GPS_PROV_LABEL[String(p || '').toLowerCase()] || (p 
 function gpsRowIssues(r) {
   const issues = [];
   const m = r.machine || {};
-  if (m.mil) issues.push({ label: 'Check Engine', color: 'red', sev: 3 });
+  if (m.mil && m.mil.milOn) issues.push({ label: 'Check Engine', color: 'red', sev: 3 });   // .mil is an object even when the light is OFF — test .milOn (matches gpsLiveAlertRows) (#552-r6)
   let days = null;
   if (r.lastSeen) { const t = new Date(r.lastSeen).getTime(); if (!Number.isNaN(t)) days = Math.floor((Date.now() - t) / 86400000); }
   if (r.status === 'Not Reporting') {
@@ -19844,9 +19890,15 @@ function mountGpsFleetMap(o) {
     if (!_gpsFleetMap) return;
     _gpsFleetMarkers.forEach((m) => m.setMap(null)); _gpsFleetMarkers = [];
     const roster = gpsConfigured() ? gpsFleetRoster() : [];
+    // Narrow the plotted pins to the SAME search + running/stopped filter the sidebar uses (#552-r13),
+    // so filtering/searching the list narrows the map too instead of always plotting the full roster.
+    const q = (o.q || '').trim().toLowerCase();
+    const matchRow = (r) => !q || `${r.name} ${r.serial || ''} ${gpsProvLabel(r.provider)} ${r.unit ? r.unit.name : ''}`.toLowerCase().includes(q);
+    const matchFilter = (r) => !o.filter || o.filter === 'all' || (o.filter === 'running' ? r.engineOn : !r.engineOn);
+    const shown = roster.filter(matchRow).filter(matchFilter);
     const onColor = ruColor('--green'), offColor = ruColor('--gray'), ink = ruColor('--on-orange'), accent = ruColor('--accent');
     const bounds = new google.maps.LatLngBounds(); let placed = 0, selPos = null;
-    roster.forEach((r) => {
+    shown.forEach((r) => {
       const m = r.machine;
       if (!m || m.lat == null || m.lng == null) return;
       const pos = { lat: m.lat, lng: m.lng };
@@ -19969,8 +20021,15 @@ function gpsFeedHtml(u) {
    untrusted actor — a truly enforced gate needs per-role backend auth (follow-up).
    Immobilize is a two-step ARM → CONFIRM (auto-disarms) so it can't fire by accident;
    restore is the safe direction, one deliberate tap. */
-const GPS_SHUTDOWN_ROLES = ['owner', 'admin', 'manager', 'mechanic', 'mtech'];
-function canGpsShutdown() { return GPS_SHUTDOWN_ROLES.includes(String(currentRole || '').toLowerCase()); }
+const GPS_SHUTDOWN_ROLES = ['owner', 'admin', 'manager', 'mechanic', 'mtech'];   // documented authority list (labels/reference)
+// Authority by TIER, not by role-id NAME (#552-r5): a custom Manager-tier role must qualify,
+// and a low-tier login literally id'd "manager" must not. Mechanic/M.Tech are the explicit
+// shop-staff exception (below Manager tier but granted per spec §6/§7 authority).
+function canGpsShutdown() {
+  const r = String(currentRole || '').toLowerCase();
+  if (r === 'mechanic' || r === 'mtech') return true;
+  return !currentRole || roleTier(currentRole) >= tierRank('manager');
+}
 
 let _gpsArmed = null;      // { unitId, deviceId } — the currently ARMED immobilize
 let _gpsArmTimer = null;
@@ -20230,6 +20289,8 @@ function mergeChats(remoteChats) {
     if (!titleDirty && (lc.title || '') !== (rc.title || '')) { lc.title = rc.title || ''; changed = true; }
     const membersDirty = pushed && !sameMembers(lc.members, pushed.members);
     if (!membersDirty && !sameMembers(lc.members, rc.members)) { lc.members = (rc.members || []).map(String); changed = true; }
+    const mutedDirty = pushed && !sameMembers(lc.muted, pushed.muted);
+    if (!mutedDirty && !sameMembers(lc.muted, rc.muted)) { lc.muted = (rc.muted || []).map(String); changed = true; }   // adopt remote mute state cross-device, unless this device has an unpushed change (#552-r11)
     if (rc.by && lc.by == null) lc.by = rc.by;
     const haveTag = new Set((lc.tags || []).map((t) => t.id));
     (rc.tags || []).forEach((t) => { if (t && t.id && !haveTag.has(t.id)) { (lc.tags = lc.tags || []).push(t); changed = true; } });   // legacy passthrough
@@ -20506,7 +20567,7 @@ function renderSchedBanner() {
     + closeX('js-sched-dismiss');
   if (!node) {
     node = document.createElement('div');
-    node.id = 'sched-banner'; node.dataset.r = 'R26';
+    node.id = 'sched-banner'; node.dataset.r = 'R27';   // R27 = Due-Today banner (R26 is Manual-link) — align stamp with the catalog (#552-r10)
     node.setAttribute('role', 'status'); node.setAttribute('aria-live', 'polite');
     document.body.appendChild(node);
   }
@@ -21059,7 +21120,7 @@ function exposeTestApi() {
       latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore, wranglerRailLoad, wrOffloadChatImages, wrEvictChatBlobs, driveViewUrl, mergeWranglerRails,
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
-      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, setFunnelStage, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, addMonthsISO, openMembershipEnroll, membershipEnrollCommit, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, getEntityColor, getEntityFlags, isEmptyMockDraft, sweepEmptyDrafts, createInvoiceForRental, syncRentalLines, rentalLineItems, salePriceSuggest, salePricingCfg, categoryCostBasis, driverRoster, driverName, legDriverField, dispatchEvents, applyRoleLanding, topServiceForUnit, snoozeService, svcSnoozedUntil, unitServiceRows, recordServiceCompletion, sellUnit, categoryStats, gpsMatchFleet, gpsMatchScore, gpsMakeFamily, gpsDeviceFamily, gpsApplyMappings, gpsUndoMappings, gpsRoundupRows, gpsCanonProvider, gpsUtilRollup, reindex, logAction, setRole: (r) => { currentRole = r || ''; render(); }, histText, canMoney,
+      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, setFunnelStage, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, addMonthsISO, openMembershipEnroll, membershipEnrollCommit, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, collectionsHasOtherActive, getEntityColor, getEntityFlags, isEmptyMockDraft, sweepEmptyDrafts, createInvoiceForRental, syncRentalLines, rentalLineItems, salePriceSuggest, salePricingCfg, categoryCostBasis, driverRoster, driverName, legDriverField, dispatchEvents, applyRoleLanding, topServiceForUnit, snoozeService, svcSnoozedUntil, unitServiceRows, recordServiceCompletion, sellUnit, categoryStats, gpsMatchFleet, gpsMatchScore, gpsMakeFamily, gpsDeviceFamily, gpsApplyMappings, gpsUndoMappings, gpsRoundupRows, gpsCanonProvider, gpsUtilRollup, reindex, logAction, setRole: (r) => { currentRole = r || ''; render(); }, histText, canMoney,
       openCustomerForm, renderOverlay, render, printInvoice, invoicePrintGroups, invoiceAmendments, cardComplete, cardCaptureState, cardHasSelfie, cardHasSignature, captureSelfie, captureSignature, __state: state };   // UI drivers for headless screenshot/e2e tests
 
   } catch (e) { /* no window (non-browser) */ }

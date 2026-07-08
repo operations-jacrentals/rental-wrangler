@@ -358,12 +358,12 @@ input { font-family: inherit; }
 .mcard-tog { display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; min-height: 44px; min-width: 44px; justify-content: center;
   padding: 0 9px; border: none; background: none; cursor: pointer; border-radius: 9px; color: var(--txt-2); transition: background .12s, color .12s; }
 .mcard-tog .mct-ico { display: inline-flex; } .mcard-tog .mct-ico svg { width: 19px; height: 19px; }
-.mcard-tog .mct-lbl { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1px; font-weight: 800; font-size: 13px; white-space: nowrap; }
+.mcard-tog .mct-lbl { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase; letter-spacing: 1px; font-weight: 800; font-size: 13px; white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; }   /* long label ellipsis-truncates instead of clipping the ⅓-width bar (#552-r14) */
 .mcard-tog.on { background: var(--accent); color: var(--on-orange, #1a1205); }   /* selected = ignition orange + dark ink */
 /* Fill the bar (Jac 2026-06-24): the icon toggles share the leftover width evenly so
    there's no dead space, while the selected (labelled) toggle keeps its natural size. */
 .mcard-bar .mcard-tog { flex: 1 1 0; }
-.mcard-bar .mcard-tog.on { flex: 0 0 auto; }
+.mcard-bar .mcard-tog.on { flex: 0 1 auto; min-width: 0; }   /* was 0 0 auto — let a long active label shrink+ellipsis on a narrow (320–360px) bar instead of overflow-clipping (#552-r14) */
 .mcard-tog:not(.on):active { background: rgba(255,255,255,.06); }
 .mdock-act { flex: 0 0 auto; position: relative; }
 /* ── §M2 Mobile drag — the chat drop-zone is the BOTTOM EDGE (full width) on phones,
@@ -4290,6 +4290,8 @@ body.dragging .row.drop-ok { opacity: 1; }
 .pr-doc.is-paid { --pr-accent: #2f9e44; --pr-stripe: #37b04d; }   /* paid in full → green */
 .pr-doc.is-open { --pr-accent: #e08a00; --pr-stripe: #ffc21c; }   /* open, not yet due → vibrant amber-gold */
 .pr-doc.is-due  { --pr-accent: #e11507; --pr-stripe: #ff3a20; }   /* past due → vibrant red */
+.pr-doc.is-refunded { --pr-accent: #6b7280; --pr-stripe: #9aa3af; }   /* settled by refund → gray, NOT paid-green (#552-r2) */
+.pr-tot .pr-refund { color: #b0281a; }   /* refund credit line reads red */
 /* Header — our logo + stamped wordmark, status-colored date stamp, hazard-stripe signature */
 .pr-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
 .pr-brandwrap { display: flex; align-items: center; gap: 11px; }
