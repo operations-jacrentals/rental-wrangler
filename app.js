@@ -3745,7 +3745,7 @@ function customerInvoicesSection(c, cs) {
     js: 'inv-add-pill js-inv-add-pill' + (linkingInv ? ' linking-show' : ''), data: { cust: c.customerId } });
   return `<div class="section inv-sec" data-cust="${esc(c.customerId)}"><h4>Invoices</h4>`
     + (invs.length ? invSummaryStrip(invs) : '')
-    + `<div class="inv-scroll">${body}</div>`
+    + `<div class="inv-scroll${openId ? ' expanded' : ''}">${body}</div>`
     + addPill
     + `</div>`;
 }
@@ -6802,16 +6802,17 @@ const DETAIL = {
     /* Jac order (2026-07-08 reorg): filled Notes ABOVE the funnel toggle (under the
        title) → the ONE funnel section (RENTAL | EQUIPMENT SALES toggle IS the header;
        each tab = funnel pill + account button + meta + Next-Actions list + Action Log)
-       → active bar → Account → Cards → (empty Notes) → History. The old side-by-side
+       → the Invoices section (sits directly BELOW the funnel, Jac 2026-07-08) → active
+       bar → Account → Cards → (empty Notes) → History. The old side-by-side
        membership/used-sales columns AND the Action Board are folded into funnelSectionHtml. */
     return `<div class="detail">
       <div class="detail-head">${title}</div>
       ${notes.top}
       ${funnelSectionHtml(c)}
+      ${customerInvoicesSection(c, cs)}
       ${activeBar}
       ${account}
       ${paymentMethodsSection(c)}
-      ${customerInvoicesSection(c, cs)}
       ${notes.bottom}
       ${historySection('customers', c, cs)}
     </div>`;
