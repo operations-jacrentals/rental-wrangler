@@ -4637,6 +4637,7 @@ const RULE_META = {
   R23: ['Tooltip', 'data-tip → the one styled tip', 'every hover hint goes through data-tip — a native title attribute is a violation'],
   R24: ['Close ✕', 'closeX', 'red circle · white ✕ — the deliberate close/remove; hover-reveal variant on tabs'],
   R25: ['Sync banner', 'renderSyncBanner / #sync-banner', 'persistent “Not saving” plate — red hazard-stripe danger cap; raised when the backend sync is failing, hides on recovery. The ONE non-toast alert; lives on <body>, outside #app'],
+  R26: ['Due-Today banner', 'renderSchedBanner / #sched-banner', 'top-of-screen reminder plate — caution-YELLOW hazard-stripe cap; lists the scheduled actions due today (customer · note · time), each customer an R2 link. Manual X only (never auto-clears), dismissal sticks for the session (sessionStorage). Like R25 it lives on <body>, outside #app'],
 };
 /* ════════════ APP-12 · DESIGN-SYSTEM CATALOG — the tabbed Rulebook (Jac 2026-06-14) ════
    The Rulebook grew from "stamped element rules" (R0–R24 above) into the WHOLE
@@ -7922,7 +7923,9 @@ function headerEl() {
   const nu = unseenNotifs();
   const notifBtn = `<button class="iconbtn js-notifications" data-tip="Notifications">${I.bell}${nu ? `<span class="bb-badge">${nu > 9 ? '9+' : nu}</span>` : ''}</button>`;
   const ruBtn = `<button class="iconbtn js-ru-open" data-tip="The Round-Up — the reports board">${I.graph}</button>`;
-  const topBar = `<div class="top-toolbar">${ruBtn}${notifBtn}${bottomBarInner()}</div>`;
+  const tn = visibleTransportAlerts().length;   // #515 transport reminders
+  const trBtn = `<button class="iconbtn js-transport-alerts" data-tip="Transports due — call the customer">${I.truck}${tn ? `<span class="bb-badge">${tn > 9 ? '9+' : tn}</span>` : ''}</button>`;
+  const topBar = `<div class="top-toolbar">${ruBtn}${trBtn}${notifBtn}${bottomBarInner()}</div>`;
   // Decluttered top: logo + rings on one row, the tool bar across the next.
   h.innerHTML = `
     <button class="logo js-logo" aria-label="Jac Rentals"></button>
@@ -7996,7 +7999,10 @@ function bottomBarEl() {
 function commsUtilsEl() {
   const nu = unseenNotifs();
   const notifBadge = nu ? `<span class="fab-badge">${nu > 9 ? '9+' : nu}</span>` : '';
-  return `<button class="fab js-notifications" data-tip="Notifications — resolved fixes">${I.bell}${notifBadge}</button>`;
+  const tn = visibleTransportAlerts().length;
+  const trBadge = tn ? `<span class="fab-badge">${tn > 9 ? '9+' : tn}</span>` : '';   // #515 — deliveries/pickups due to call
+  return `<button class="fab js-transport-alerts" data-tip="Transports due — call the customer">${I.truck}${trBadge}</button>`
+    + `<button class="fab js-notifications" data-tip="Notifications — resolved fixes">${I.bell}${notifBadge}</button>`;
 }
 // The conversation rail: Wrangler + Team channels (split by a thin divider, no section
 // labels), each conversation a SEPARATE tab. 🤠 Wrangler — one tab per OPEN request
@@ -10299,6 +10305,36 @@ function buildPopupEl(o, overlay, opts = {}) {
       headRight: `<button class="iconbtn js-notif-refresh" data-tip="Refresh">${I.refresh || '⟳'}</button>`,
       bodyClass: 'req-wrap', body: inner, foot });
     overlay.appendChild(pop);
+  } else if (o.kind === 'transport-alerts') {
+    // Scheduled Transport Reminder Alerts (#515) — the deliveries/pickups DUE in the window,
+    // one dismissible "call the customer" card per leg. Live from transportAlerts() (→
+    // dispatchEvents, the same source as the Office run) so it can't drift; the footer segment
+    // adjusts the window (today + N days). Delivery = blue · Pickup = brown, matching the
+    // dispatch cockpit's kind colors. Re-derived on every render — no reload to see a new one.
+    const days = tralertDays();
+    const list = visibleTransportAlerts();
+    const relDay = (d) => (d === TODAY_ISO ? 'Today' : d === addDaysISO(TODAY_ISO, 1) ? 'Tomorrow' : dispatchDayLabel(d));
+    const spanNote = days === 0 ? 'today' : days === 1 ? 'today or tomorrow' : `in the next ${days + 1} days`;
+    const inner = !list.length
+      ? `<div class="req-empty"><span class="req-empty-ic">🚚</span><p>All clear.</p><span>No deliveries or pickups due ${spanNote}. Newly scheduled transports show up here on their own — no refresh needed.</span></div>`
+      : list.map((a) => {
+          const when = `${relDay(a.date)}${a.time ? ' · ' + fmtClock(a.time) : ' · no set time'}`;
+          const where = [a.unitId ? unitPill(a.unitId) : esc(a.unit), a.address ? esc(a.address) : ''].filter(Boolean).join(' · ');
+          return `<div class="req-card">
+              <div class="req-head">${badge(a.type, a.color)}<span class="req-title">${esc(a.customer)}</span><span class="spacer"></span><span class="req-await">${esc(when)}</span></div>
+              <div class="req-text">${where}</div>
+              <div class="req-acts"><span class="spacer"></span>${actionPill('blue', 'Called', { js: 'js-tralert-called', data: { key: a.key } })}</div>
+            </div>`;
+        }).join('');
+    const winSeg = segCtl([
+      { label: 'Today', js: 'js-tralert-win', data: { days: 0 }, on: days === 0 ? 'blue' : undefined },
+      { label: '+ Tomorrow', js: 'js-tralert-win', data: { days: 1 }, on: days === 1 ? 'blue' : undefined },
+      { label: 'This week', js: 'js-tralert-win', data: { days: 6 }, on: days >= 6 ? 'blue' : undefined },
+    ]);
+    const foot = `${winSeg}<span class="spacer"></span>${list.length ? ghostPill('Mark all called', { js: 'js-tralert-allcalled', tip: 'Clear every reminder in this window' }) : ''}`;
+    const pop = el('div', 'popup'); pop.style.width = '460px';
+    pop.innerHTML = popupShell({ icon: I.truck, title: `Transports Due${list.length ? ` · ${list.length}` : ''}`, tag: 'Dispatch · call the customer', bodyClass: 'req-wrap', body: inner, foot });
+    overlay.appendChild(pop);
   } else if (o.kind === 'hotkeys') {
     const rows = [
       { d: 'click',    n: 'Click',              t: 'Open a record to view it — in its own card, nothing else moves.' },
@@ -10402,9 +10438,11 @@ function buildPopupEl(o, overlay, opts = {}) {
     // carries Requests, so we add the Notifications bell.
     const nu = unseenNotifs();
     const notifBtn = `<button class="iconbtn js-notifications" data-tip="Notifications">${I.bell}<span>Notifications</span>${nu ? `<span class="bb-badge">${nu > 9 ? '9+' : nu}</span>` : ''}</button>`;
+    const tn = visibleTransportAlerts().length;   // #515 transport reminders
+    const trBtn = `<button class="iconbtn js-transport-alerts" data-tip="Transports due — call the customer">${I.truck}<span>Transports Due</span>${tn ? `<span class="bb-badge">${tn > 9 ? '9+' : tn}</span>` : ''}</button>`;
     const pop = el('div', 'popup'); pop.style.width = '360px';
     pop.innerHTML = popupShell({ icon: I.sliders || I.menu || '', title: 'Tools', tag: 'Yard · toolbox',
-      body: `<div class="tools-tray">${notifBtn}${bottomBarInner()}</div>` });
+      body: `<div class="tools-tray">${trBtn}${notifBtn}${bottomBarInner()}</div>` });
     overlay.appendChild(pop);
   } else if (o.kind === 'settings') {
     o.config = o.config || { roles: {}, admin: '' };
@@ -10789,6 +10827,7 @@ const WINDOW_CATALOG = [
   { kind: 'role',          label: 'Role KPIs',               tag: 'Role · scorecard',          sample: () => ({ role: (ROLES[0] || {}).id }) },
   { kind: 'requests',      label: 'Requests inbox',          tag: 'Mr. Wrangler · approvals',  sample: () => ({}) },
   { kind: 'notifications', label: 'Notifications',           tag: 'Mr. Wrangler · resolved',   sample: () => ({}) },
+  { kind: 'transport-alerts', label: 'Transports Due',       tag: 'Dispatch · call the customer', sample: () => ({}) },
   { kind: 'hotkeys',       label: 'Mouse shortcuts',         tag: 'Operator · controls',       sample: () => ({}) },
   { kind: 'roadmap',       label: 'Coming in 2026',          tag: 'Roadmap · the docket',      sample: () => ({}) },
   { kind: 'feedback',      label: 'Report a bug or request', tag: 'Mr. Wrangler · report',     sample: () => ({}) },
@@ -12014,6 +12053,32 @@ function markNotifsSeen() { const mx = wranglerNotifs.reduce((a, n) => Math.max(
 function dismissNotif(num) { const s = loadDismissedNotifs(); s.add(num); saveDismissedNotifs(s); render(); if (state.overlay?.kind === 'notifications') renderOverlay(); }
 function dismissAllNotifs() { const s = loadDismissedNotifs(); wranglerNotifs.forEach((n) => s.add(n.number)); saveDismissedNotifs(s); render(); if (state.overlay?.kind === 'notifications') renderOverlay(); }
 function toggleNotifsMuted() { setNotifsMuted(!notifsMuted()); render(); if (state.overlay?.kind === 'notifications') renderOverlay(); }
+/* ── Scheduled Transport Reminder Alerts (#515) — the delivery/pickup LEGS due in the near
+   window, so the team calls the customer before the truck rolls. Derived LIVE from
+   dispatchEvents() (the SAME source as the Office dispatch grid + the find_transports tool,
+   so the reminder can't drift from the run) — every render re-derives, so a newly scheduled
+   transport shows without a reload. Window = today + N days ahead (default 1 = today→tomorrow,
+   matching the dispatch run), adjustable per-device. A "Called" dismiss clears one leg so it
+   won't nag again (§246 idiom), keyed per leg+date so a RESCHEDULE surfaces a fresh reminder;
+   the store self-prunes past-window keys so it can't grow forever. */
+const TRALERT_DAYS_KEY = 'jactec.transportAlertDays';       // per-device window: today + N days ahead
+const TRALERT_CALLED_KEY = 'jactec.transportAlertsCalled';  // leg keys the team has dismissed ("Called")
+const tralertDays = () => { try { const n = parseInt(localStorage.getItem(TRALERT_DAYS_KEY), 10); return Number.isFinite(n) ? Math.max(0, Math.min(6, n)) : 1; } catch (e) { return 1; } };
+const setTralertDays = (n) => { try { localStorage.setItem(TRALERT_DAYS_KEY, String(Math.max(0, Math.min(6, n)))); } catch (e) {} };
+const loadCalledAlerts = () => { try { return new Set(JSON.parse(localStorage.getItem(TRALERT_CALLED_KEY) || '[]')); } catch (e) { return new Set(); } };
+const saveCalledAlerts = (set) => { try { localStorage.setItem(TRALERT_CALLED_KEY, JSON.stringify([...set].filter((k) => String(k).split('|').pop() >= TODAY_ISO))); } catch (e) {} };
+const tralertKey = (ev) => `${ev.rentalId}|${ev.unitId || ''}|${ev.task}|${ev.date}`;   // per leg + date — a reschedule = a fresh reminder
+const TRALERT_LEG = { Deliver: 'Delivery', 'Pick up': 'Pickup' };
+function transportAlerts() {
+  const from = TODAY_ISO, through = addDaysISO(TODAY_ISO, tralertDays());
+  return dispatchEvents()
+    .filter((ev) => ev.date >= from && ev.date <= through)
+    .map((ev) => ({ key: tralertKey(ev), rentalId: ev.rentalId, unitId: ev.unitId, customer: ev.cust, unit: ev.unit,
+      type: TRALERT_LEG[ev.task] || ev.task, color: ev.color === 'blue' ? 'blue' : 'brown', address: ev.addr || '', date: ev.date, time: ev.time || '' }));
+}
+const visibleTransportAlerts = () => { const called = loadCalledAlerts(); return transportAlerts().filter((a) => !called.has(a.key)); };
+function callTransportAlert(key) { const s = loadCalledAlerts(); s.add(key); saveCalledAlerts(s); render(); if (state.overlay?.kind === 'transport-alerts') renderOverlay(); }
+function callAllTransportAlerts() { const s = loadCalledAlerts(); transportAlerts().forEach((a) => s.add(a.key)); saveCalledAlerts(s); render(); if (state.overlay?.kind === 'transport-alerts') renderOverlay(); }
 async function refreshWranglerNotifications() {
   if (typeof backendPassword === 'undefined' || !backendPassword || notifLoading) return;   // demo/offline → no feed
   notifLoading = true;
@@ -12779,6 +12844,7 @@ function render() {
   mountTransportEditor();   // inline transport editor: mount the live map + wire the address field
   mountWranglerDock();   // §18 wire paste + drag-drop image input on the wrangler dock after each render
   mountDispatchMap();   // §2.3 office cockpit: re-parent the singleton dispatch map + refresh pins/route/truck
+  renderSchedBanner();   // R26 — top "Due Today" scheduled-actions band (lives on <body>, survives the #app swap)
   ruMountStrips();   // §13.7 gauge strips — build each open strip's chart into its measured 25% box
   applyTitles();   // full text on hover wherever we truncate (custom ~0.5s tooltip)
   drawDispatchArrows();   // §2.3 — paint free-form route legs over the dispatch run (needs live geometry)
@@ -13511,6 +13577,9 @@ function onClick(e) {
     return openOverlay({ kind: 'comment', card: hit.card, recId: hit.recId, recType: hit.recType, color: (last && last.color) || 'yellow', text: last ? last.text : '' });
   }
 
+  // R26 — dismiss the top "Due Today" scheduled-actions band (manual X only; sticks for the session)
+  if (closest('.js-sched-dismiss')) { e.stopPropagation(); dismissSchedBanner(); return; }
+
   // clicked card → orange-border focus (§0.1 visual feedback; applied immediately,
   // independent of whatever else this click does — anchor stays a separate action)
   const fc = closest('.card');
@@ -13783,6 +13852,10 @@ function onClick(e) {
   if (closest('.js-notif-dismiss')) { e.stopPropagation(); return dismissNotif(Number(closest('.js-notif-dismiss').dataset.num)); }   // §246 clear one
   if (closest('.js-notif-dismissall')) { e.stopPropagation(); return dismissAllNotifs(); }   // §246 clear all
   if (closest('.js-notif-mute')) { e.stopPropagation(); return toggleNotifsMuted(); }   // §246 mute/unmute the badge
+  if (closest('.js-transport-alerts')) { e.stopPropagation(); return openOverlay({ kind: 'transport-alerts' }); }   // #515 transport reminders — deliveries/pickups due
+  if (closest('.js-tralert-called')) { e.stopPropagation(); return callTransportAlert(closest('.js-tralert-called').dataset.key); }   // #515 dismiss one leg ("Called")
+  if (closest('.js-tralert-allcalled')) { e.stopPropagation(); return callAllTransportAlerts(); }   // #515 clear the whole window
+  if (closest('.js-tralert-win')) { e.stopPropagation(); setTralertDays(Number(closest('.js-tralert-win').dataset.days)); render(); renderOverlay(); return; }   // #515 adjust the window
   if (closest('.js-requests')) { e.stopPropagation(); openOverlay({ kind: 'requests' }); refreshWranglerRequests(); return; }   // §18e approval inbox
   if (closest('.js-req-refresh')) { e.stopPropagation(); return refreshWranglerRequests(); }
   if (closest('.js-req-chat')) { e.stopPropagation(); return openWranglerFromRequest(Number(closest('.js-req-chat').dataset.n)); }   // §18e continue the conversation
@@ -17234,6 +17307,75 @@ function renderSyncBanner() {
   document.body.classList.add('sync-failing');
   requestAnimationFrame(() => el.classList.add('show'));
 }
+
+/* ── R26 — "Due Today" scheduled-actions banner (#517) ────────────────────────
+   Scheduled actions are customer.activityLog entries stamped `Scheduled: <note> @
+   <date> <time>` (see the schedule popup save). On the day of the action (from
+   midnight / app-open, since TODAY_ISO is fixed at load) we surface every one due
+   today as a dismissible top band — the reminder Jac asked for. Manual X only:
+   it NEVER auto-clears when the time passes or the action is logged. The dismiss
+   sticks for the browser session (sessionStorage, keyed to today's set) so a
+   refresh can't ghost it back, but a fresh app-open shows it again. Lives on
+   <body>, outside #app, like the R25 sync band. */
+function parseSchedText(text) {
+  const body = String(text || '').replace(/^Scheduled:\s*/, '');
+  // the popup appends " @ YYYY-MM-DD H:MM AM" — anchor on that tail so a note that
+  // itself contains "@" is never mistaken for the separator.
+  const m = /\s*@\s*\d{4}-\d{2}-\d{2}\s+(\d{1,2}:\d{2}\s*[AP]M)\s*$/i.exec(body);
+  return { note: (m ? body.slice(0, m.index) : body).trim() || 'Follow-up', time: m ? m[1].replace(/\s+/g, ' ').toUpperCase() : '' };
+}
+function schedActionsDueToday() {
+  const out = [];
+  (DATA.customers || []).forEach((c) => {
+    (c.activityLog || []).forEach((a) => {
+      if (a && a.when === TODAY_ISO && /^Scheduled:/.test(a.text || '')) {
+        const p = parseSchedText(a.text);
+        out.push({ customerId: c.customerId, name: fullName(c) || c.company || 'Customer', note: p.note, time: p.time });
+      }
+    });
+  });
+  return out.sort((a, b) => (timeToMin(a.time) ?? 1e9) - (timeToMin(b.time) ?? 1e9));   // earliest first, untimed last
+}
+const SCHED_DISMISS_KEY = 'jactec.schedBannerDismissed';
+const schedBannerSig = (items) => TODAY_ISO + '|' + items.map((i) => `${i.customerId}:${i.note}@${i.time}`).sort().join('~');
+function dismissSchedBanner() {
+  try { sessionStorage.setItem(SCHED_DISMISS_KEY, schedBannerSig(schedActionsDueToday())); } catch (e) {}
+  renderSchedBanner();
+}
+function renderSchedBanner() {
+  const items = schedActionsDueToday();
+  const sig = schedBannerSig(items);
+  let dismissed = false; try { dismissed = sessionStorage.getItem(SCHED_DISMISS_KEY) === sig; } catch (e) {}
+  let node = document.getElementById('sched-banner');
+  if (!items.length || dismissed) {   // nothing due, or the operator dismissed today's set
+    if (node) node.remove();
+    document.body.classList.remove('sched-due');
+    document.body.style.removeProperty('--sched-band');
+    return;
+  }
+  if (node && node.dataset.sig === sig) return;   // same set already on screen → don't thrash
+  const rows = items.map((i) =>
+    `<div class="scb-row">`
+    + `<span class="pill ref link scb-cust" data-r="R2" data-pill-card="customers" data-pill-rec="${esc(i.customerId)}" data-tip="${esc(i.name)}">${CARD_ICON.customers}${esc(i.name)}</span>`
+    + `<span class="scb-note">${esc(i.note)}</span>`
+    + (i.time ? `<span class="scb-time">${esc(i.time)}</span>` : `<span class="scb-time scb-anytime">Any time</span>`)
+    + `</div>`).join('');
+  const html = `<span class="scb-stripe" aria-hidden="true"></span>`
+    + `<div class="scb-plate"><span class="scb-stamp">${I.bell}<span>Due Today</span></span><span class="scb-count">${items.length}</span></div>`
+    + `<div class="scb-list">${rows}</div>`
+    + closeX('js-sched-dismiss');
+  if (!node) {
+    node = document.createElement('div');
+    node.id = 'sched-banner'; node.dataset.r = 'R26';
+    node.setAttribute('role', 'status'); node.setAttribute('aria-live', 'polite');
+    document.body.appendChild(node);
+  }
+  node.dataset.sig = sig;
+  node.innerHTML = html;
+  document.body.classList.add('sched-due');
+  // reserve the exact band height so the banner never covers the yard/header (variable rows)
+  requestAnimationFrame(() => { const n = document.getElementById('sched-banner'); if (n) document.body.style.setProperty('--sched-band', n.offsetHeight + 'px'); });
+}
 // Safety net: a debounced save that hasn't flushed yet — or a large bulk-import sync
 // still in flight — would be lost silently if the page closes/reloads first (#164).
 // If anything is still un-persisted, kick a final flush and let the browser show its
@@ -17245,7 +17387,7 @@ window.addEventListener('beforeunload', (e) => {
   e.preventDefault(); e.returnValue = '';
 });
 function renderLogin(msg) {
-  $('#app').innerHTML = `<div class="login-screen"><video id="login-video" class="login-video" src="assets/login-intro.mp4?v=20260702a" muted loop playsinline preload="auto" aria-hidden="true"></video><form class="login-box" id="login-form">
+  $('#app').innerHTML = `<div class="login-screen"><video id="login-video" class="login-video" src="assets/login-intro.mp4?v=20260708a" muted loop playsinline preload="auto" aria-hidden="true"></video><form class="login-box" id="login-form">
     <span class="rivet tl"></span><span class="rivet tr"></span><span class="rivet bl"></span><span class="rivet br"></span>
     <div class="login-plate">
       <img class="login-logo" src="assets/jac-rentals-logo.jpg" alt="Jac Rentals" />
@@ -17327,7 +17469,7 @@ async function attemptLogin() {
   if (!name) { const errEl = document.getElementById('login-err'); if (errEl) errEl.textContent = 'Please enter your name (edits are logged under it).'; document.getElementById('login-name')?.focus(); return; }
   if (!pw) return;
   backendPassword = pw;
-  const btn = document.getElementById('login-go'); if (btn) { btn.textContent = 'Signing in…'; btn.disabled = true; }
+  const btn = document.getElementById('login-go'); if (btn) { btn.textContent = 'Wrangling the herd…'; btn.disabled = true; }
   // Roll the Mr. Wrangler intro behind the box while the (slow) backend load runs — a little entertainment for the wait.
   const screen = document.querySelector('.login-screen'); if (screen) screen.classList.add('signing-in');
   // The Saddle Up click is a genuine user gesture, so unmuting here lets the intro's

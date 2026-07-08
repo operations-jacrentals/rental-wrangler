@@ -3837,3 +3837,46 @@ body.dragging .row.drop-ok { opacity: 1; }
 body.sync-failing #app { padding-top: 40px; }
 @media (prefers-reduced-motion: reduce) { #sync-banner { transition: none; } }
 @media (max-width: 560px) { #sync-banner .sb-sub { display: none; } }   /* keep the stamp + Retry on phones */
+
+/* ── R26 — "Due Today" scheduled-actions banner (#517) ─────────────────────────
+   Top-of-screen reminder band. Caution-YELLOW hazard stripe (the app's default
+   signature — NOT the red danger variant the R25 sync band reserves, NOT the
+   reserved orange accent) says "heads-up", not "emergency". Body-level like R25 so
+   render()'s #app swap can't wipe it; reserves its own top band via
+   body.sched-due so it never covers the yard. Themes off the tokens for free. */
+#sched-banner {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 9500;
+  display: flex; align-items: flex-start; gap: 14px;
+  padding: 10px 12px 9px 18px;
+  background: var(--panel); border-bottom: 1px solid var(--line); box-shadow: var(--shadow);
+  max-height: 42vh; overflow-y: auto;
+}
+body.sync-failing #sched-banner { top: 40px; }   /* an active R25 sync band outranks us — sit under it */
+#sched-banner .scb-stripe {
+  position: absolute; top: 0; left: 0; right: 0; height: 4px;
+  background: repeating-linear-gradient(135deg, var(--yellow) 0 13px, #14181d 13px 26px);
+}
+#sched-banner .scb-plate { display: flex; align-items: center; gap: 8px; flex-shrink: 0; padding-top: 2px; }
+#sched-banner .scb-stamp {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase;
+  letter-spacing: 1.4px; font-weight: 800; font-size: 14px; color: var(--yellow); white-space: nowrap;
+}
+#sched-banner .scb-stamp svg { width: 15px; height: 15px; }
+#sched-banner .scb-count {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 19px; height: 19px; padding: 0 5px; border-radius: 9px;
+  background: var(--yellow); color: #1a1205;
+  font-family: 'Saira Condensed', system-ui, sans-serif; font-weight: 800; font-size: 12px;
+}
+#sched-banner .scb-list { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; padding-top: 1px; }
+#sched-banner .scb-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12.5px; }
+#sched-banner .scb-note { color: var(--txt); min-width: 0; }
+#sched-banner .scb-time {
+  font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase;
+  letter-spacing: .8px; font-weight: 700; font-size: 11.5px; color: var(--yellow); white-space: nowrap;
+}
+#sched-banner .scb-time.scb-anytime { color: var(--txt-3); }
+#sched-banner .close-x { flex-shrink: 0; margin-top: 1px; }
+body.sched-due #app { padding-top: var(--sched-band, 46px); }
+body.sync-failing.sched-due #app { padding-top: calc(40px + var(--sched-band, 46px)); }
