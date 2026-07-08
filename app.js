@@ -8348,8 +8348,30 @@ function chatUnseenForRec(card, recId) {
 // in normalizeTeamChat() on load.
 function newChat(opts) {
   opts = opts || {};
+  // Creator = admin (tracked by `by`) — that alone grants them visibility + control, so
+  // members starts empty ("default no one"); the admin adds people deliberately.
   const c = { id: 'CHAT' + (state.seq++), title: opts.title || '', members: opts.members ? [...opts.members] : [], messages: [], seen: { [commentUserKey()]: Date.now() }, by: commentUserKey() };
   state.chat.chats.push(c); state.chat.activeId = c.id; pushChatsSoon(); return c;
+}
+// ── Team-chat identity + ownership (2026-07-08) ──
+// The current user resolved to a roster person, by matching the typed login name to a
+// Settings → Team Roster entry (the pragmatic login↔roster bind). null = not on the
+// roster (a demo / un-rostered login) → treated as an unbound viewer below.
+function myRosterId() {
+  const me = (currentUser || '').trim().toLowerCase(); if (!me) return null;
+  const hit = ((state.settings && state.settings.employees) || []).find((e) => (e.name || '').trim().toLowerCase() === me);
+  return hit ? String(hit.id) : null;
+}
+// The chat's creator owns it: only they add/remove members or rename. Legacy chats with
+// no recorded creator stay openly editable (back-compat — they predate the model).
+function chatIsAdmin(c) { return !c || !c.by || c.by === commentUserKey(); }
+const chatAmMember = (c) => { const m = myRosterId(); return !!m && (c.members || []).map(String).includes(String(m)); };
+// Visibility: the admin and members see a chat; a bound non-member does not (Leave hides
+// it). An unbound login (not on the roster) sees all — so demo / un-rostered use isn't empty.
+function chatVisibleToMe(c) {
+  if (chatIsAdmin(c)) return true;
+  const mine = myRosterId();
+  return !mine || (c.members || []).map(String).includes(String(mine));
 }
 // Bring a legacy (participants/tags) or partial chat up to the {title,members} shape.
 // Non-destructive: keeps every message; synthesizes a title from the old first-tag label.
@@ -8410,8 +8432,9 @@ function chatBubbleInner(it) {
   if (!t && !refs) return '<span class="cbub-t"></span>';
   return t + (refs ? `<span class="cbub-refs">${refs}</span>` : '') + (!t && !refs ? '' : '');
 }
-// The editable chat title (rename in place — its input carries data-chat-title).
+// The chat title — editable (rename in place) for the creator, static for members.
 function chatTitleInputHtml(c) {
+  if (!chatIsAdmin(c)) return `<span class="cp-who chat-title-ro">${esc(commsTeamLabel(c))}</span>`;
   return `<input class="chat-title-in" data-chat-title="${esc(c.id)}" value="${esc(c.title || '')}" placeholder="Name this chat…" aria-label="Chat title" maxlength="60" />`;
 }
 // The held element awaiting paste, shown in an internal composer; sends with the message.
@@ -8438,9 +8461,20 @@ const ROLE_BY_LABEL = () => { const m = {}; ROLES.forEach((r) => { m[r.label] = 
 function chatMemberBarHtml(c) {
   if (!c) return '';
   const emps = (state.settings && state.settings.employees) || [];
-  if (!emps.length) return `<div class="chat-rolebar chat-memberbar"><span class="mbar-hint">No crew on the roster yet — add hands in Settings → Team Roster.</span></div>`;
   const members = new Set((c.members || []).map(String));
   const rmap = ROLE_BY_LABEL();
+  // ── Members can't edit the roster — they see who's in, and a Leave if they're in it. ──
+  if (!chatIsAdmin(c)) {
+    const empById = new Map(emps.map((e) => [String(e.id), e]));
+    const chips = [...members].map((id) => {
+      const em = empById.get(id); const nm = (em && em.name) || 'Member';
+      const rc = (em && rmap[em.role] && rmap[em.role].color) || 'gray';
+      return `<span class="rtab is-static" style="--rc:var(--${rc})" data-tip="${esc(nm)} — in the chat"><span class="rtab-dot"></span><span class="rtab-l">${esc(nm)}</span></span>`;
+    }).join('') || '<span class="mbar-hint">No members yet.</span>';
+    return `<div class="chat-rolebar chat-memberbar chat-memberbar-ro" role="group" aria-label="Chat members">${chips}</div>`;   // Leave lives in the gear menu now
+  }
+  // ── Admin (creator): the full editable roster, grouped by role; default none. ──
+  if (!emps.length) return `<div class="chat-rolebar chat-memberbar"><span class="mbar-hint">No crew on the roster yet — add hands in Settings → Team Roster.</span></div>`;
   const byRole = new Map();
   emps.forEach((em) => { const k = em.role || 'Crew'; if (!byRole.has(k)) byRole.set(k, []); byRole.get(k).push(em); });
   const grps = [...byRole.entries()].map(([role, list]) => {
@@ -8452,7 +8486,7 @@ function chatMemberBarHtml(c) {
     }).join('');
     return `<div class="mrole-grp"><span class="mrole-h">${esc(role)}</span><div class="mrole-chips">${chips}</div></div>`;
   }).join('');
-  return `<div class="chat-rolebar chat-memberbar" role="group" aria-label="Chat members">${grps}</div>`;
+  return `<div class="chat-rolebar chat-memberbar" role="group" aria-label="Chat members — you're the creator">${grps}</div>`;
 }
 function chatDockEl() {
   chatMarkSeen();   // §17 — the open dock is "seen": clears the re-flash for this user
@@ -8462,7 +8496,7 @@ function chatDockEl() {
     return `<div class="chat-rail"><span class="chat-rail-hint">No chat open — tap <b>+ New chat</b> on the Team rail.</span><span class="rail-sp"></span><button class="rail-ico js-chat-close" aria-label="Close" data-tip="Close">${I.x}</button></div>
       <div class="chat-feed">${chatFeedRowsHtml(c)}</div>`;
   }
-  const rail = `<div class="chat-rail chat-titlebar">${chatTitleInputHtml(c)}<span class="rail-sp"></span><button class="rail-ico js-chat-back" aria-label="All chats" data-tip="All chats">${I.chevL}</button><button class="rail-ico js-chat-close" aria-label="Close chat" data-tip="Close">${I.x}</button></div>`;
+  const rail = `<div class="chat-rail chat-titlebar">${chatTitleInputHtml(c)}<span class="rail-sp"></span><button class="rail-ico js-chat-settings" aria-label="Chat settings" data-tip="Chat settings">${I.sliders}</button><button class="rail-ico js-chat-back" aria-label="All chats" data-tip="All chats">${I.chevL}</button><button class="rail-ico js-chat-close" aria-label="Close chat" data-tip="Close">${I.x}</button></div>`;
   return `${rail}
     <div class="chat-feed">${chatFeedRowsHtml(c)}</div>
     <div class="chat-compose">${chatHeldChipHtml()}<input class="chat-input" placeholder="Message the team…" value="${esc(state.chat.draft || '')}" aria-label="Message the team" /><button class="chat-send js-chat-send" aria-label="Send">${I.chev}</button></div>
@@ -8910,15 +8944,54 @@ function chatSend() {
 }
 function chatToggleMember(empId) {
   const c = activeChat(); if (!c) return;
+  if (!chatIsAdmin(c)) { toast('Only the chat’s creator can change who’s in it.'); return; }   // members can leave, not add
   const s = new Set((c.members || []).map(String)); const k = String(empId);
   if (s.has(k)) s.delete(k); else s.add(k);
   c.members = [...s];
   pushChatsSoon(); render();
 }
+// A member removes THEMSELVES (voluntary exit). Drops the chat off their rail (visibility).
+function chatLeave() {
+  const c = activeChat(); if (!c) return;
+  const mine = myRosterId(); if (!mine) return;
+  c.members = (c.members || []).filter((x) => String(x) !== String(mine));
+  if (String(state.chat.activeId) === String(c.id)) state.chat.activeId = null;   // fall back to the overview; it's off your rail now
+  pushChatsSoon(); render();
+  toast('You left the chat.');
+}
+// Per-user mute — a muted chat never raises its status dot for you (still readable).
+function chatMuted(c) { return !!c && (c.muted || []).includes(commentUserKey()); }
+function chatToggleMute() {
+  const c = activeChat(); if (!c) return;
+  const me = commentUserKey(), s = new Set(c.muted || []);
+  const nowMuted = !s.has(me);
+  if (nowMuted) s.add(me); else s.delete(me);
+  c.muted = [...s];
+  pushChatsSoon(); render();
+  toast(nowMuted ? 'Muted — this chat won’t raise an alert.' : 'Unmuted.');
+}
+// The gear menu — classic chat settings. Everyone: mark read + mute. Creator: rename +
+// end. Member: leave. (Leave/End live here so they're a deliberate, tucked-away action.)
+function chatSettingsMenu(btn) {
+  const c = activeChat(); if (!c) return;
+  const muted = chatMuted(c), admin = chatIsAdmin(c);
+  let html = `<button class="dd-item js-chat-markread">${I.eye}<span>Mark as read</span></button>`;
+  html += `<button class="dd-item${muted ? ' on' : ''} js-chat-mute">${I.bell}<span>${muted ? 'Unmute notifications' : 'Mute notifications'}</span></button>`;
+  if (admin) {
+    html += `<button class="dd-item js-chat-rename">${I.sliders}<span>Rename chat</span></button>`;
+    html += `<div class="dd-sep" aria-hidden="true"></div>`;
+    html += `<button class="dd-item danger js-chat-end" data-chat="${esc(c.id)}">${I.x}<span>End chat</span></button>`;
+  } else if (chatAmMember(c)) {
+    html += `<div class="dd-sep" aria-hidden="true"></div>`;
+    html += `<button class="dd-item danger js-chat-leave">${I.x}<span>Leave chat</span></button>`;
+  }
+  openDropdown(btn, html, { align: 'right', cls: 'chat-settings-menu' });
+}
+const closeMenus = () => document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove());
 // Rename a chat (title input on the window header). Debounced-sync; no re-render so the
 // caret doesn't jump — the tab label refreshes on the next render.
 function chatSetTitle(id, title) {
-  const c = chatById(id); if (!c) return;
+  const c = chatById(id); if (!c || !chatIsAdmin(c)) return;   // only the creator renames
   c.title = title; pushChatsSoon();
 }
 // Right-click → Copy to chat: HOLD this element so it can be pasted into an internal
@@ -14229,6 +14302,12 @@ function onClick(e) {
   if (closest('.js-chat-back')) { e.stopPropagation(); state.chat.activeId = null; return render(); }   // back to the all-flags overview (chat persists)
   if (closest('.js-chat-send')) { e.stopPropagation(); return chatSend(); }
   if (closest('[data-held-clear]')) { e.stopPropagation(); state.held = null; return render(); }   // drop the pasted-element attachment before sending
+  if (closest('.js-chat-settings')) { e.stopPropagation(); return chatSettingsMenu(closest('.js-chat-settings')); }   // the gear menu
+  if (closest('.js-chat-leave')) { e.stopPropagation(); closeMenus(); return chatLeave(); }   // voluntary exit — drops the chat off your rail
+  if (closest('.js-chat-mute')) { e.stopPropagation(); closeMenus(); return chatToggleMute(); }
+  if (closest('.js-chat-markread')) { e.stopPropagation(); closeMenus(); const c = activeChat(); if (c) { chatMarkSeen(c); pushChatsSoon(); } return render(); }
+  if (closest('.js-chat-rename')) { e.stopPropagation(); closeMenus(); setTimeout(() => { const i = document.querySelector('.chat-title-in'); if (i) { i.focus(); i.select(); } }, 0); return; }
+  if (closest('.js-chat-end')) { e.stopPropagation(); closeMenus(); return commsEndConv(closest('.js-chat-end').dataset.chat, 'team'); }   // admin ends the chat (phone-safe: cat pinned)
   if (closest('[data-chat-untag]')) { e.stopPropagation(); const id = closest('[data-chat-untag]').dataset.chatUntag; const c = activeChat(); if (c) c.tags = c.tags.filter((t) => t.id !== id); pushChatsSoon(); return render(); }
   if (closest('[data-chat-member]')) { e.stopPropagation(); return chatToggleMember(closest('[data-chat-member]').dataset.chatMember); }
   if (closest('[data-chat-open]')) { e.stopPropagation(); const [card, recId] = closest('[data-chat-open]').dataset.chatOpen.split('|'); return anchorRecord(SHOP_TYPES.includes(card) ? 'shop' : card, recId, SHOP_TYPES.includes(card) ? card : null); }
@@ -14239,7 +14318,7 @@ function onClick(e) {
   if (closest('.js-comms-all')) { e.stopPropagation(); const s = commsSess(); if (s) { s.menuOpen = !s.menuOpen; saveCommsRail(); } return render(); }
   if (closest('.js-comms-menu-x')) { e.stopPropagation(); const s = commsSess(); if (s) { s.menuOpen = false; saveCommsRail(); } return render(); }
   if (closest('[data-comms-tab]')) { e.stopPropagation(); return commsToggleTab(closest('[data-comms-tab]').dataset.commsTab); }
-  if (closest('.js-comms-end')) { e.stopPropagation(); return commsEndConv(closest('.js-comms-end').dataset.cust); }
+  if (closest('.js-comms-end')) { e.stopPropagation(); closeMenus(); return commsEndConv(closest('.js-comms-end').dataset.cust); }
   if (closest('.js-comms-mopen')) { e.stopPropagation(); return commsOpenConv(state.commsRail.cat, closest('.js-comms-mopen').dataset.cust); }
   if (closest('.js-comms-mend')) { e.stopPropagation(); return commsEndConv(closest('.js-comms-mend').dataset.cust); }
   if (closest('.js-comms-send')) { e.stopPropagation(); return commsSend(closest('.js-comms-send').dataset.cust); }
@@ -17578,7 +17657,7 @@ let chatPushTimer = null, lastChatsJson = null;
 // Preserve the {title, members} shape through sync; keep legacy tags/participants as
 // passthrough so a mixed old/new client fleet never loses data.
 function normalizeChat(c) {
-  return normalizeTeamChat({ id: c.id, title: c.title, members: Array.isArray(c.members) ? c.members : [], messages: c.messages || [], seen: c.seen || {}, by: c.by, tags: c.tags || [], participants: c.participants || [] });
+  return normalizeTeamChat({ id: c.id, title: c.title, members: Array.isArray(c.members) ? c.members : [], muted: Array.isArray(c.muted) ? c.muted : [], messages: c.messages || [], seen: c.seen || {}, by: c.by, tags: c.tags || [], participants: c.participants || [] });
 }
 function mergeChats(remoteChats) {
   if (!Array.isArray(remoteChats)) return { changed: false, localAhead: false };
@@ -18493,6 +18572,7 @@ function commsTeamChats() {   // every un-ended team chat, newest first (End res
     .map(normalizeTeamChat)
     // a chat shows once it has messages, members, OR is the one you're in (a just-created blank)
     .filter((c) => (c.messages || []).length || (c.members || []).length || String(c.id) === String(state.chat.activeId))
+    .filter((c) => chatVisibleToMe(c))   // admin + members only (a bound non-member who left drops off the rail)
     .filter((c) => !commsIsEnded(c.id, 'team', commsChatLastAt(c)))
     .sort((a, b) => commsChatLastAt(b) - commsChatLastAt(a));
 }
@@ -18500,6 +18580,7 @@ const commsTeamLabel = (c) => ((c.title || '').trim() || (c.tags && c.tags[0] &&
 function commsTeamStatus(c) {
   const msgs = c.messages || [];
   if (!msgs.length) return 'gray';                                   // fresh chat — nothing said yet
+  if (chatMuted(c)) return 'green';                                  // muted → never raises an alert dot
   const u = commentUserKey();
   if (commsChatLastAt(c) > (c.seen[u] || 0)) return 'red';           // unseen
   const last = msgs[msgs.length - 1];
@@ -18649,7 +18730,7 @@ function commsTeamPopupHtml(id) {
   normalizeTeamChat(c);
   chatMarkSeen(c);   // the open window is "seen" — clears the re-flash, mirrors the dock
   return `<div class="cp-cap" aria-hidden="true"></div>
-    <div class="cp-head"><span class="cp-dot c-${commsTeamStatus(c)}" aria-hidden="true"></span><span class="cp-cat">Team</span>${chatTitleInputHtml(c)}<span class="spacer"></span>${ghostPill('End', { js: 'js-comms-end', data: { cust: c.id }, tip: 'End the chat — a new message rounds it back up' })}</div>
+    <div class="cp-head"><span class="cp-dot c-${commsTeamStatus(c)}" aria-hidden="true"></span><span class="cp-cat">Team</span>${chatTitleInputHtml(c)}<span class="spacer"></span><button class="cp-gear js-chat-settings" aria-label="Chat settings" data-tip="Chat settings">${I.sliders}</button></div>
     <div class="cp-feed chat-feed">${chatFeedRowsHtml(c)}</div>
     <div class="chat-compose">${chatHeldChipHtml()}<input class="chat-input" placeholder="Message the team…" value="${esc(state.chat.draft || '')}" aria-label="Message the team" /><button class="chat-send js-chat-send" aria-label="Send">${I.chev}</button></div>
     ${chatMemberBarHtml(c)}`;

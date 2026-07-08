@@ -1542,6 +1542,24 @@ select.lf-in { appearance: none; cursor: pointer; }
 .chat-memberbar .rtab .rtab-l { max-width: 132px; font-size: 10.5px; }
 .chat-memberbar .rtab.on { border-color: var(--rc); background: rgba(255,255,255,.05); }
 .mbar-hint { font-size: 11px; color: var(--txt-3); font-style: italic; padding: 4px 4px; }
+/* read-only member view (non-creator): static chips + a Leave */
+.chat-memberbar-ro { align-items: center; }
+.chat-memberbar-ro .rtab.is-static { cursor: default; border: 1px solid var(--line); border-radius: 999px;
+  flex: 0 0 auto; flex-direction: row; gap: 5px; padding: 4px 10px 4px 8px; }
+.chat-memberbar-ro .rtab.is-static .rtab-dot { opacity: 1; }
+.chat-memberbar-ro .rtab.is-static .rtab-l { color: var(--txt-2); max-width: 132px; font-size: 10.5px; }
+.chat-title-ro { flex: 1 1 auto; min-width: 0; font-weight: 700; font-size: 13px; color: var(--txt); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 3px 5px; }
+/* the gear (chat settings) button in the window header */
+.cp-gear { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; flex: 0 0 auto;
+  border: none; background: none; color: var(--txt-3); cursor: pointer; border-radius: 7px; }
+.cp-gear svg { width: 16px; height: 16px; }
+.cp-gear:hover { background: rgba(255,255,255,.06); color: var(--txt); }
+.cp-gear:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* gear dropdown: a divider + a danger (leave/end) item */
+.dropdown-menu .dd-sep { height: 1px; margin: 5px 4px; background: var(--line); }
+.dropdown-menu .dd-item svg { width: 15px; height: 15px; flex: 0 0 auto; opacity: .8; }
+.dropdown-menu .dd-item.danger { color: var(--red); }
+.dropdown-menu .dd-item.danger:hover { background: rgba(255,66,66,.12); color: var(--red); }
 /* a pasted element chip inside a bubble — a live pointer; deleted → greyed */
 .cbub-refs { display: flex; flex-direction: column; gap: 5px; margin-top: 6px; }
 .chip-ref { display: inline-flex; align-items: center; gap: 7px; max-width: 100%; padding: 5px 9px; border-radius: 9px;
