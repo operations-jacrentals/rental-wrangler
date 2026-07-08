@@ -15988,45 +15988,49 @@ function invoicePrintGroups(inv) {
   groups.sort((a, b) => a.isOther ? 1 : b.isOther ? -1 : (a.start < b.start ? 1 : a.start > b.start ? -1 : 0));
   return groups;
 }
-/** One printed line row → { icon, name, cat, meta }, with the provenance tail stripped off
- *  the stored label (it now lives in the group header) and the unit's category surfaced. */
+/** One printed line row → { icon, name, cat, meta }. A unit line shows its glyph + name +
+ *  CATEGORY only (the per-day rate/qty is dropped — the card header now carries the window +
+ *  duration). Transport keeps its leg descriptor; a manual line shows its plain label. */
 function prLineParts(li) {
   let rest = String(li.label || '').replace(/\s*·\s*Ext of\s+\S+\s*$/i, '').replace(/\s*·\s*Extension\s*→.*$/i, '');
   if (li.kind === 'transport') return { icon: I.truck, name: 'Transport', cat: '', meta: rest.replace(/^Transport\s*·\s*/i, '') };
   const u = li.unitId ? IDX.unit.get(li.unitId) : null;
   if (u) {
     const cat = IDX.category.get(u.categoryId);
-    let meta = rest;
-    if (u.name && rest.startsWith(u.name + ' · ')) meta = rest.slice((u.name + ' · ').length);
-    else { const p = rest.split(' · '); if (p.length > 1) { p.shift(); meta = p.join(' · '); } }
-    return { icon: categoryIconFor(cat && cat.name), name: u.name, cat: (cat && cat.name) || '', meta };
+    return { icon: categoryIconFor(cat && cat.name), name: u.name, cat: (cat && cat.name) || '', meta: '' };
   }
   return { icon: '', name: rest, cat: '', meta: '' };
 }
-/** Customer-safe amendment log — the invoice's + its rentals' actions, scrubbed of internal
- *  ops detail (staff names via `by`, pricing locks, Mr. Wrangler, card/ACH, mechanic/GPS),
- *  internal-but-relevant wording translated to plain language, oldest→newest so the ticket
- *  reads like a running log. */
+/** Customer-safe amendment logs — SEPARATED: { invoiceLog, rentalLog }. Each is the record's
+ *  actions scrubbed of internal ops detail (staff names via `by`, pricing locks, Mr. Wrangler,
+ *  card/ACH, mechanic/GPS), internal-but-relevant wording translated to plain language, sorted
+ *  MOST RECENT → oldest. rentalLog entries carry the rental name (which unit(s)). */
 function invoiceAmendments(inv) {
   const DENY = /pricing (un)?locked|mr\.?\s*wrangler|added by|••|\bach\b|\bcard\b|mechanic|assigned|\bgps\b|\bhours\b/i;
-  const raw = [];
-  (inv.actions || []).forEach((a) => raw.push(a));
-  (inv.rentalIds || []).map((id) => IDX.rental.get(id)).filter(Boolean).forEach((r) => {
-    const rname = rentalUnitsLabel(r) || r.rentalName || '';
-    (r.actions || []).forEach((a) => raw.push(Object.assign({}, a, { rname })));
-  });
-  const out = [];
-  raw.forEach((a) => {
+  const scrub = (a, rname) => {
     let text = String(a.text || '');
-    if (!text || DENY.test(text)) return;
+    if (!text || DENY.test(text)) return null;
     text = text
       .replace(/Merged in invoice\s+\S+.*$/i, 'Combined with a prior ticket')
       .replace(/Continuation (of|invoice)\b.*$/i, 'Continued on a new ticket (28-day billing)')
       .replace(/Transport type →/i, 'Transport set to');
-    out.push({ when: a.when, clock: a.clock || '', seq: a.seq || 0, text, rname: a.rname || '' });
+    return { when: a.when, clock: a.clock || '', seq: a.seq || 0, text, rname: rname || '' };
+  };
+  const recent = (x, y) => (x.when < y.when ? 1 : x.when > y.when ? -1 : (y.seq - x.seq));   // most recent → oldest
+  const invoiceLog = (inv.actions || []).map((a) => scrub(a)).filter(Boolean).sort(recent);
+  const rentalLog = [];
+  (inv.rentalIds || []).map((id) => IDX.rental.get(id)).filter(Boolean).forEach((r) => {
+    const rname = rentalUnitsLabel(r) || r.rentalName || '';
+    (r.actions || []).forEach((a) => { const s = scrub(a, rname); if (s) rentalLog.push(s); });
   });
-  out.sort((x, y) => (x.when < y.when ? -1 : x.when > y.when ? 1 : x.seq - y.seq));
-  return out;
+  rentalLog.sort(recent);
+  return { invoiceLog, rentalLog };
+}
+/** Invoice status → the print doc's accent state: green (paid), yellow (open / not yet due),
+ *  red (past due). Drives the date stamp, hazard stripe, Balance Due and the Paid stamp. */
+function prInvoiceInk(inv, t) {
+  if ((t || invoiceTotals(inv)).balance <= 0.005) return 'is-paid';
+  return /^(Late|Collections)/.test((t || invoiceTotals(inv)).status) ? 'is-due' : 'is-open';
 }
 function printInvoice(invoiceId) {
   const inv = IDX.invoice.get(invoiceId); if (!inv) return;
@@ -16034,14 +16038,23 @@ function printInvoice(invoiceId) {
   const cust = inv.customerId ? IDX.customer.get(inv.customerId) : null;
   const groups = invoicePrintGroups(inv);
   const paid = t.balance <= 0.005 && t.total > 0;
+  const ink = prInvoiceInk(inv, t);   // is-paid (green) / is-open (yellow) / is-due (red)
   const bigDate = (fmtShortDate(inv.date) || '').toUpperCase();
 
-  const lineRows = (g) => g.lines.map((li) => {
-    const p = prLineParts(li);
-    return `<tr class="pr-line"><td class="pr-desc">${p.icon ? `<span class="pr-ic">${p.icon}</span>` : '<span class="pr-ic"></span>'}<span class="pr-txt"><span class="pr-nm">${esc(p.name)}</span>${p.cat ? `<span class="pr-cat">${esc(p.cat)}</span>` : ''}${p.meta ? `<span class="pr-mt">${esc(p.meta)}</span>` : ''}</span></td><td class="pr-amt r">${money2(Number(li.amount) || 0)}</td></tr>`;
-  }).join('');
-  const bodyRows = groups.length ? groups.map((g) => `<tr class="pr-grp"><td class="pr-grp-h"><span class="pr-grp-t">${esc(g.title)}</span>${g.window ? `<span class="pr-grp-win">${esc(g.window)}</span>` : ''}${g.dur ? `<span class="pr-grp-dur">${esc(g.dur)}</span>` : ''}${g.prov ? `<span class="pr-grp-prov">${esc(g.prov)}</span>` : ''}</td><td class="pr-grp-sub r">${money2(g.subtotal)}</td></tr>${lineRows(g)}`).join('')
-    : '<tr><td colspan="2" class="pr-empty">No line items.</td></tr>';
+  // Each rental → a soft card with a CENTERED header (title · window · duration · provenance)
+  // and its per-rental subtotal pinned right; the unit lines sit inside on ledger rules.
+  const cardHtml = (g) => {
+    const lines = g.lines.map((li) => {
+      const p = prLineParts(li);
+      return `<div class="pr-line"><span class="pr-desc">${p.icon ? `<span class="pr-ic">${p.icon}</span>` : '<span class="pr-ic"></span>'}<span class="pr-txt"><span class="pr-nm">${esc(p.name)}</span>${p.cat ? `<span class="pr-cat">${esc(p.cat)}</span>` : ''}${p.meta ? `<span class="pr-mt">${esc(p.meta)}</span>` : ''}</span></span><span class="pr-amt">${money2(Number(li.amount) || 0)}</span></div>`;
+    }).join('');
+    const meta = `${g.window ? `<span>${esc(g.window)}</span>` : ''}${g.dur ? `<span>${esc(g.dur)}</span>` : ''}${g.prov ? `<span class="pr-prov">${esc(g.prov)}</span>` : ''}`;
+    return `<section class="pr-card">
+      <header class="pr-card-h"><span class="pr-card-sub">${money2(g.subtotal)}</span><div class="pr-card-t">${esc(g.title)}</div>${meta ? `<div class="pr-card-m">${meta}</div>` : ''}</header>
+      <div class="pr-card-lines">${lines}</div>
+    </section>`;
+  };
+  const groupsHtml = groups.length ? groups.map(cardHtml).join('') : '<div class="pr-empty">No line items.</div>';
 
   const paymentRows = (inv.payments || []).length
     ? (inv.payments || []).map((pmt) => {
@@ -16055,48 +16068,43 @@ function printInvoice(invoiceId) {
       }).join('')
     : (t.paid ? `<div><span>Paid${inv.paymentMethod ? ' · ' + esc(inv.paymentMethod) : ''}</span><span>${money2(t.paid)}</span></div>` : '');
 
-  const amend = invoiceAmendments(inv);
-  const amendRows = amend.length
-    ? amend.map((a) => `<div class="pr-am-row"><span class="pr-am-when">${esc(fmtShortDate(a.when))}${a.clock ? ' · ' + esc(a.clock) : ''}</span><span class="pr-am-tx">${esc(a.text)}${a.rname ? ` <em>· ${esc(a.rname)}</em>` : ''}</span></div>`).join('')
-    : '<div class="pr-am-empty">No amendments — original ticket as written.</div>';
+  const { invoiceLog, rentalLog } = invoiceAmendments(inv);
+  const logRow = (a, withName) => `<div class="pr-am-row"><span class="pr-am-when">${esc(fmtShortDate(a.when))}${a.clock ? ' · ' + esc(a.clock) : ''}</span><span class="pr-am-tx">${esc(a.text)}${withName && a.rname ? ` <em>· ${esc(a.rname)}</em>` : ''}</span></div>`;
+  const logCol = (title, items, withName) => `<div class="pr-log"><div class="pr-log-h">${title}</div>${items.length ? items.map((a) => logRow(a, withName)).join('') : '<div class="pr-am-empty">No entries.</div>'}</div>`;
 
   let host = document.getElementById('print-root');
   if (!host) { host = document.createElement('div'); host.id = 'print-root'; document.body.appendChild(host); }
   host.innerHTML = `
-    <div class="pr-doc">
+    <div class="pr-doc ${ink}">
       <div class="pr-head">
-        <div class="pr-brandwrap"><span class="pr-mark">${I.bluesteel}</span><div><div class="pr-brand">${esc(companyName())}</div><div class="pr-sub">${esc(companyTagline())} · Yard Log</div></div></div>
+        <div class="pr-brandwrap"><img class="pr-logo" src="assets/jac-rentals-logo.jpg" alt="${esc(companyName())}" /><div><div class="pr-brand">${esc(companyName())}</div><div class="pr-sub">${esc(companyTagline())} · Yard Log</div></div></div>
         <div class="pr-datestamp">${esc(bigDate)}</div>
       </div>
       <div class="pr-hazard" aria-hidden="true"></div>
       <div class="pr-meta">
         <div><span class="pr-k">Invoice</span><span class="pr-v">${esc(inv.invoiceId)}</span></div>
         <div><span class="pr-k">Bill to</span><span class="pr-v">${esc(cust ? cust.name : '—')}</span></div>
-        <div><span class="pr-k">Date</span><span class="pr-v">${esc(fmtShortDate(inv.date) || '—')}</span></div>
+        <div><span class="pr-k">Created</span><span class="pr-v">${esc(fmtShortDate(inv.date) || '—')}</span></div>
         <div><span class="pr-k">Due</span><span class="pr-v">${esc(inv.dueDate ? fmtShortDate(inv.dueDate) : '—')}</span></div>
         ${inv.po ? `<div><span class="pr-k">PO</span><span class="pr-v">${esc(inv.po)}</span></div>` : ''}
-        ${inv.covStart && inv.covEnd ? `<div><span class="pr-k">Rental period</span><span class="pr-v">${esc(fmtShortDate(inv.covStart))} – ${esc(fmtShortDate(inv.covEnd))}</span></div>` : ''}
         ${inv.contOf ? `<div><span class="pr-k">Continuation of</span><span class="pr-v">${esc(invoiceShort(inv.contOf))} (28-day billing split)</span></div>` : ''}
       </div>
-      <table class="pr-lines"><thead><tr><th>Description</th><th class="r">Amount</th></tr></thead><tbody>${bodyRows}</tbody></table>
-      <div class="pr-tot">
-        <div><span>Grand Subtotal</span><span>${money2(t.subtotal)}</span></div>
-        <div><span>Tax${t.exempt ? ' (exempt)' : ` (${(TAX_RATE * 100).toFixed(2)}%)`}</span><span>${t.exempt ? '—' : money2(t.tax)}</span></div>
-        <div class="pr-big"><span>Total</span><span>${money2(t.total)}</span></div>
-        ${paymentRows}
-        <div class="pr-due"><span>Balance Due</span><span>${money2(t.balance)}</span></div>
+      <div class="pr-groups">${groupsHtml}</div>
+      <div class="pr-summary">
+        ${paid ? '<div class="pr-stamp" aria-hidden="true">Paid in Full</div>' : ''}
+        <div class="pr-tot">
+          <div><span>Grand Subtotal</span><span>${money2(t.subtotal)}</span></div>
+          <div><span>Tax${t.exempt ? ' (exempt)' : ` (${(TAX_RATE * 100).toFixed(2)}%)`}</span><span>${t.exempt ? '—' : money2(t.tax)}</span></div>
+          <div class="pr-big"><span>Total</span><span>${money2(t.total)}</span></div>
+          ${paymentRows}
+          <div class="pr-due"><span>Balance Due</span><span>${money2(t.balance)}</span></div>
+        </div>
       </div>
-      ${paid ? '<div class="pr-stamp" aria-hidden="true">Paid in Full</div>' : ''}
-      <div class="pr-sign">
-        <div class="pr-sig"><span class="pr-sig-r"></span><span class="pr-sig-l">Customer Signature</span></div>
-        <div class="pr-sig"><span class="pr-sig-r"></span><span class="pr-sig-l">Authorized By</span></div>
-        <div class="pr-sig"><span class="pr-sig-r"></span><span class="pr-sig-l">Date</span></div>
+      <div class="pr-logs">
+        ${logCol('Invoice Log', invoiceLog, false)}
+        ${logCol('Rental Log', rentalLog, true)}
       </div>
-      <div class="pr-amend">
-        <div class="pr-amend-h">Yard Log — Amendments</div>
-        ${amendRows}
-      </div>
-      <div class="pr-foot"><span class="pr-foot-thx">Thank you for your business — much obliged. Questions on this ticket? Give the yard a holler${companyPhone() ? ` — ${esc(companyPhone())}` : ''}.</span><span class="pr-foot-mark">A JacTec Service</span></div>
+      <div class="pr-foot">Thank you for your business — much obliged. Questions on this ticket? Give the yard a holler${companyPhone() ? ` — ${esc(companyPhone())}` : ''}.</div>
     </div>`;
   document.body.classList.add('printing');
   const cleanup = () => { document.body.classList.remove('printing'); window.removeEventListener('afterprint', cleanup); };

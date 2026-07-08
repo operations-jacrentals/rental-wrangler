@@ -3775,13 +3775,15 @@ body.dragging .row.drop-ok { opacity: 1; }
   border-image: repeating-linear-gradient(90deg, var(--tan) 0 7px, transparent 7px 13px) 1;
 }
 
-/* ── #109 printable invoice → a kraft "YARD LOG" page (2026-07-08): ledger rule-lines,
-   a stamped Saira header with a hazard-stripe signature rule, machine glyphs per unit
-   line, groups per rental, a red BALANCE DUE + PAID stamp, a signature block, and a
-   customer-safe Amendments log. On screen #print-root is hidden; @media print swaps the
-   whole dark app out for it. Colors are a self-contained PAPER palette (deliberately
-   outside the dark-app tokens — this is white-paper output) and forced to render with
-   print-color-adjust so the kraft tint, red, stripe and stamp actually print. ── */
+/* ── #109 printable invoice → a kraft "YARD LOG" page (2026-07-08): our logo, a stamped
+   Saira header with a status-colored date stamp + hazard-stripe signature rule, each rental
+   in a SOFT CARD with a centered header + per-rental subtotal, machine glyphs per unit line,
+   a Grand Subtotal + status-colored BALANCE DUE + PAID stamp, and SEPARATE Invoice / Rental
+   amendment logs. The accent ink follows payment status — green (paid) / yellow (open, not
+   yet due) / red (past due) — via the .is-paid/.is-open/.is-due modifier on .pr-doc. On
+   screen #print-root is hidden; @media print swaps the whole dark app out for it. Colors are
+   a self-contained PAPER palette (deliberately outside the dark-app tokens — white-paper
+   output) forced to render with print-color-adjust. ── */
 #print-root { display: none; }
 @media print {
   body.printing > *:not(#print-root) { display: none !important; }
@@ -3789,74 +3791,67 @@ body.dragging .row.drop-ok { opacity: 1; }
   @page { margin: 12mm; }
 }
 .pr-doc {
-  --pr-ink: #14181d; --pr-mut: #6f6656; --pr-red: #c0271f; --pr-tan: #8a5a2b;
+  --pr-ink: #14181d; --pr-mut: #6f6656; --pr-tan: #8a5a2b;
   --pr-paper: #f7f2ea; --pr-rule: #e4dac6; --pr-line: #cdbfa6;
+  --pr-accent: #9a6b00; --pr-stripe: #f5c542;   /* default = open/caution; overridden per status below */
   position: relative; max-width: 760px; margin: 0 auto; padding: 20px 24px 26px;
   color: var(--pr-ink); background: var(--pr-paper);
   font-family: Geist, system-ui, sans-serif; font-size: 12.5px; line-height: 1.5;
   -webkit-print-color-adjust: exact; print-color-adjust: exact;
 }
-/* Header — stamped wordmark + brand mark, huge red date stamp, hazard-stripe signature */
+.pr-doc.is-paid { --pr-accent: #2e8b3d; --pr-stripe: #37a84a; }   /* paid in full → green */
+.pr-doc.is-open { --pr-accent: #9a6b00; --pr-stripe: #f5c542; }   /* open, not yet due → yellow */
+.pr-doc.is-due  { --pr-accent: #c0271f; --pr-stripe: #d1362a; }   /* past due → red */
+/* Header — our logo + stamped wordmark, status-colored date stamp, hazard-stripe signature */
 .pr-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
 .pr-brandwrap { display: flex; align-items: center; gap: 11px; }
-.pr-mark { display: inline-flex; }
-.pr-mark svg { width: 40px; height: 40px; color: var(--pr-ink); }
+.pr-logo { width: 46px; height: 46px; flex: 0 0 46px; border-radius: 10px; object-fit: cover; }
 .pr-brand { font-family: 'Saira Condensed', sans-serif; font-weight: 800; font-size: 30px; letter-spacing: 1.2px; text-transform: uppercase; line-height: .95; }
 .pr-sub { font-family: 'Saira Condensed', sans-serif; font-size: 11px; letter-spacing: 1.4px; color: var(--pr-mut); text-transform: uppercase; margin-top: 2px; }
-.pr-datestamp { font-family: 'Saira Condensed', sans-serif; font-weight: 800; font-size: 34px; letter-spacing: 1px; color: var(--pr-red); line-height: .9; text-align: right; white-space: nowrap; }
-.pr-hazard { height: 7px; margin: 10px 0 16px; border-radius: 2px; background: repeating-linear-gradient(135deg, #f5c542 0 11px, #14181d 11px 22px); }
+.pr-datestamp { font-family: 'Saira Condensed', sans-serif; font-weight: 800; font-size: 34px; letter-spacing: 1px; color: var(--pr-accent); line-height: .9; text-align: right; white-space: nowrap; }
+.pr-hazard { height: 7px; margin: 10px 0 16px; border-radius: 2px; background: repeating-linear-gradient(135deg, var(--pr-stripe) 0 11px, #14181d 11px 22px); }
 /* Meta grid on saddle-stitch dotted rules */
 .pr-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 3px 26px; margin-bottom: 16px; }
 .pr-meta > div { display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px dotted var(--pr-line); padding: 3px 0; }
 .pr-k { font-family: 'Saira Condensed', sans-serif; text-transform: uppercase; letter-spacing: 1px; font-weight: 700; font-size: 10.5px; color: var(--pr-mut); }
 .pr-v { font-weight: 600; }
-/* Line table — ledger rule-lines, grouped by rental */
-.pr-lines { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
-.pr-lines thead th { font-family: 'Saira Condensed', sans-serif; text-transform: uppercase; letter-spacing: 1px; font-size: 10.5px; color: var(--pr-mut); text-align: left; border-bottom: 2px solid var(--pr-ink); padding: 5px 4px; }
-.pr-lines thead th.r, td.pr-amt, td.pr-grp-sub, .pr-tot .r { text-align: right; }
-.pr-empty { color: var(--pr-mut); font-style: italic; padding: 8px 4px; }
-/* Group header row (saddle-stitch top rule) */
-tr.pr-grp > td { padding: 9px 4px 4px; border-top: 2px dashed var(--pr-tan); vertical-align: bottom; break-inside: avoid; break-after: avoid; }
-.pr-lines tbody tr.pr-grp:first-child > td { border-top: none; }
-.pr-grp-h { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; }
-.pr-grp-t { font-family: 'Saira Condensed', sans-serif; text-transform: uppercase; letter-spacing: 1.2px; font-weight: 800; font-size: 12px; }
-.pr-grp-win { font-weight: 600; font-size: 12px; }
-.pr-grp-dur, .pr-grp-prov { font-family: 'Saira Condensed', sans-serif; text-transform: uppercase; letter-spacing: .6px; font-size: 10.5px; color: var(--pr-mut); }
-.pr-grp-prov { color: var(--pr-tan); }
-.pr-grp-sub { font-weight: 800; font-size: 12.5px; font-variant-numeric: tabular-nums; }
-/* Line rows */
-.pr-line td { padding: 5px 4px; border-bottom: 1px solid var(--pr-rule); }
-.pr-desc { display: flex; align-items: center; }
+/* Rental soft cards — centered header + per-rental subtotal, unit lines inside */
+.pr-groups { display: flex; flex-direction: column; gap: 9px; margin-bottom: 14px; }
+.pr-card { background: #fffdf8; border: 1px solid var(--pr-line); border-radius: 12px; padding: 9px 14px 6px; break-inside: avoid; }
+.pr-card-h { position: relative; text-align: center; padding-bottom: 6px; margin-bottom: 3px; border-bottom: 2px dashed var(--pr-tan); }
+.pr-card-t { font-family: 'Saira Condensed', sans-serif; text-transform: uppercase; letter-spacing: 1.4px; font-weight: 800; font-size: 13px; }
+.pr-card-m { font-family: 'Saira Condensed', sans-serif; text-transform: uppercase; letter-spacing: .6px; font-size: 10.5px; color: var(--pr-mut); margin-top: 1px; }
+.pr-card-m > span + span::before { content: ' · '; }
+.pr-card-m .pr-prov { color: var(--pr-tan); }
+.pr-card-sub { position: absolute; right: 0; top: 50%; transform: translateY(-50%); font-weight: 800; font-size: 13px; font-variant-numeric: tabular-nums; }
+.pr-line { display: flex; align-items: center; justify-content: space-between; padding: 4px 2px; border-bottom: 1px solid var(--pr-rule); }
+.pr-card-lines .pr-line:last-child { border-bottom: none; }
+.pr-desc { display: flex; align-items: center; min-width: 0; }
 .pr-ic { display: inline-flex; width: 17px; flex: 0 0 17px; margin-right: 9px; }
 .pr-ic svg { width: 17px; height: 17px; color: var(--pr-ink); vertical-align: middle; }
 .pr-ic .cat-glyph, .pr-ic .cat-glyph * { animation: none !important; }
 .pr-nm { font-weight: 600; }
 .pr-cat, .pr-mt { color: var(--pr-mut); }
 .pr-cat::before, .pr-mt::before { content: ' · '; }
-.pr-mt { font-variant-numeric: tabular-nums; }
-.pr-amt { font-variant-numeric: tabular-nums; white-space: nowrap; }
-/* Totals */
-.pr-tot { margin-left: auto; width: 300px; break-inside: avoid; }
+.pr-amt { font-variant-numeric: tabular-nums; white-space: nowrap; padding-left: 12px; font-weight: 600; }
+.pr-empty { color: var(--pr-mut); font-style: italic; padding: 8px 4px; }
+/* Totals — the PAID stamp (when paid) rides the open space to their left */
+.pr-summary { display: flex; align-items: center; break-inside: avoid; }
+.pr-tot { margin-left: auto; flex: 0 0 300px; }
 .pr-tot > div { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px dotted var(--pr-line); }
 .pr-tot .pr-big { font-weight: 800; font-size: 15px; border-bottom: 2px solid var(--pr-ink); }
-.pr-tot .pr-due { font-family: 'Saira Condensed', sans-serif; text-transform: uppercase; letter-spacing: 1px; font-weight: 800; font-size: 17px; color: var(--pr-red); border-bottom: none; padding-top: 8px; }
-/* PAID rubber stamp */
-.pr-stamp { position: absolute; right: 34px; bottom: 168px; transform: rotate(-11deg); font-family: 'Saira Condensed', sans-serif; text-transform: uppercase; letter-spacing: 2px; font-weight: 800; font-size: 22px; color: var(--pr-red); border: 3px solid var(--pr-red); border-radius: 6px; padding: 5px 14px; opacity: .82; }
-/* Signature block */
-.pr-sign { display: grid; grid-template-columns: 1fr 1fr 150px; gap: 22px; margin: 26px 0 6px; break-inside: avoid; }
-.pr-sig { display: flex; flex-direction: column; gap: 4px; }
-.pr-sig-r { border-bottom: 1.5px solid var(--pr-ink); height: 20px; }
-.pr-sig-l { font-family: 'Saira Condensed', sans-serif; text-transform: uppercase; letter-spacing: 1px; font-size: 10px; color: var(--pr-mut); }
-/* Amendments log */
-.pr-amend { margin-top: 18px; border-top: 2px dashed var(--pr-tan); padding-top: 10px; break-inside: avoid; }
-.pr-amend-h { font-family: 'Saira Condensed', sans-serif; text-transform: uppercase; letter-spacing: 1.4px; font-weight: 800; font-size: 12px; margin-bottom: 6px; }
-.pr-am-row { display: flex; gap: 12px; padding: 3px 0; border-bottom: 1px dotted var(--pr-line); font-size: 11.5px; }
-.pr-am-when { flex: 0 0 100px; font-family: 'Saira Condensed', sans-serif; letter-spacing: .5px; color: var(--pr-mut); text-transform: uppercase; font-size: 10.5px; padding-top: 1px; }
+.pr-tot .pr-due { font-family: 'Saira Condensed', sans-serif; text-transform: uppercase; letter-spacing: 1px; font-weight: 800; font-size: 17px; color: var(--pr-accent); border-bottom: none; padding-top: 8px; }
+/* PAID rubber stamp (only shown when paid → inherits the green accent) */
+.pr-stamp { margin-left: 34px; transform: rotate(-8deg); font-family: 'Saira Condensed', sans-serif; text-transform: uppercase; letter-spacing: 2px; font-weight: 800; font-size: 23px; color: var(--pr-accent); border: 3px solid var(--pr-accent); border-radius: 6px; padding: 6px 16px; opacity: .85; }
+/* Separated amendment logs — Invoice Log (left) · Rental Log (right) */
+.pr-logs { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; margin-top: 16px; padding-top: 10px; border-top: 2px dashed var(--pr-tan); break-inside: avoid; }
+.pr-log-h { font-family: 'Saira Condensed', sans-serif; text-transform: uppercase; letter-spacing: 1.4px; font-weight: 800; font-size: 12px; margin-bottom: 6px; }
+.pr-am-row { display: flex; gap: 10px; padding: 3px 0; border-bottom: 1px dotted var(--pr-line); font-size: 11px; }
+.pr-am-when { flex: 0 0 104px; font-family: 'Saira Condensed', sans-serif; letter-spacing: .3px; color: var(--pr-mut); text-transform: uppercase; font-size: 10px; padding-top: 1px; }
 .pr-am-tx em { color: var(--pr-mut); font-style: italic; }
-.pr-am-empty { color: var(--pr-mut); font-style: italic; font-size: 11.5px; }
+.pr-am-empty { color: var(--pr-mut); font-style: italic; font-size: 11px; }
 /* Footer */
-.pr-foot { margin-top: 22px; padding-top: 10px; border-top: 1px solid var(--pr-rule); display: flex; justify-content: space-between; align-items: baseline; gap: 16px; font-size: 11px; color: var(--pr-mut); }
-.pr-foot-mark { font-family: 'Saira Condensed', sans-serif; text-transform: uppercase; letter-spacing: 1.4px; font-weight: 700; white-space: nowrap; }
+.pr-foot { margin-top: 20px; padding-top: 10px; border-top: 1px solid var(--pr-rule); font-size: 11px; color: var(--pr-mut); }
 
 /* ── KPI MASK — remove this block to restore ring visibility (Jac) ── */
 .kpi-ring, .big-ring, .menu-team-ring { filter: blur(12px); pointer-events: none; }
