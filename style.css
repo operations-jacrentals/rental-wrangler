@@ -4223,7 +4223,18 @@ body.dragging .row.drop-ok { opacity: 1; }
 @media print {
   body.printing > *:not(#print-root) { display: none !important; }
   body.printing #print-root { display: block; }
-  @page { margin: 12mm; }
+  /* FULL-BLEED (2026-07-08): kill the white paper frame so the kraft reaches every sheet
+     edge. @page margin 0 drops the browser's paper margin; the kraft color rides on the
+     root canvas (html.printing) so it also paints BELOW a short invoice and on every page
+     of a multi-page one; and the doc trades its old page margin for its own inner padding
+     so text still sits a clean, even inset from the edge instead of jamming the paper edge.
+     (The browser's own header/footer — date/title/URL/page# — is a print-dialog setting we
+     can't remove from CSS; the Print button's tip points users to turn it off once.) */
+  @page { margin: 0; }
+  /* Both the root canvas AND the body carry the kraft (body's own dark app bg would otherwise
+     paint below a short invoice if the user enables "Background graphics"). exact = print it. */
+  html.printing, body.printing { background: #f7f2ea !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body.printing #print-root .pr-doc { max-width: none; margin: 0; padding: 16mm 18mm 16mm; }
 }
 .pr-doc {
   --pr-ink: #14181d; --pr-mut: #6f6656; --pr-tan: #8a5a2b;
