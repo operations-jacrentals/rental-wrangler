@@ -43,7 +43,7 @@ const units = [
   m({ unitId: 'U024', name: 'Brookie',       categoryId: 'CAT012', assignedMechanic: 'Cameron', currentHours: 2060.3, inspectionStatus: 'Ready',     fleetStatus: 'Active', purchaseHours: 70,   serviceCompletions: { 'svc-oil': 2000, 'svc-grease': 1900, 'svc-safety': 1980 }, serial: 'KUB-KX080-2041', year: 2022, make: 'Kubota', model: 'KX080-4', weight: '18,300 lbs', gpsType: 'GPSWOX', gpsPlacement: 'Cab roof', gpsStatus: 'Reporting', purchasePrice: 71000, purchaseDate: '2022-05-09', trueCost: 69200, notes: '' }),
   m({ unitId: 'U025', name: 'Milkshake',     categoryId: 'CAT012', assignedMechanic: '',        currentHours: 1513,   inspectionStatus: 'Ready',     fleetStatus: 'Active', purchaseHours: 0,    serviceCompletions: { 'svc-oil': 1450 } }),
   // CAT008 — Skid Steer 75hp
-  m({ unitId: 'U001', name: 'Dirt Dauber',   categoryId: 'CAT008', assignedMechanic: 'Cameron', currentHours: 1249.1, inspectionStatus: 'Ready',     fleetStatus: 'Active', purchaseHours: 60,   serviceCompletions: { 'svc-oil': 1200, 'svc-grease': 1150, 'svc-safety': 1220 }, serial: 'BOB-S76-2210', year: 2020, make: 'Bobcat', model: 'S76', weight: '9,400 lbs', gpsType: 'GPSWOX', gpsPlacement: 'Cab roof', gpsStatus: 'Verify', purchasePrice: 62000, purchaseDate: '2020-07-02', trueCost: 59800, notes: '' }),
+  m({ unitId: 'U001', name: 'Dirt Dauber',   categoryId: 'CAT008', modelId: 'MOD001', assignedMechanic: 'Cameron', currentHours: 1249.1, inspectionStatus: 'Ready',     fleetStatus: 'Active', purchaseHours: 60,   serviceCompletions: { 'svc-oil': 1200, 'svc-grease': 1150, 'svc-safety': 1220 }, serial: 'BOB-S76-2210', year: 2020, make: 'Bobcat', model: 'S76', weight: '9,400 lbs', gpsType: 'GPSWOX', gpsPlacement: 'Cab roof', gpsStatus: 'Verify', purchasePrice: 62000, purchaseDate: '2020-07-02', trueCost: 59800, notes: '' }),
   // CAT001 — Light Tower
   m({ unitId: 'U120', name: 'Beacon',        categoryId: 'CAT001', assignedMechanic: '',        currentHours: 480,    inspectionStatus: 'Ready',     fleetStatus: 'Active', purchaseHours: 0,    serviceCompletions: { 'svc-oil': 450 } }),
   m({ unitId: 'U121', name: 'Lumen',         categoryId: 'CAT001', assignedMechanic: '',        currentHours: 312,    inspectionStatus: 'Ready',     fleetStatus: 'Sold', purchaseHours: 0, serviceCompletions: {} }),
@@ -195,8 +195,13 @@ const expenses = [
    plus a source citation carried for traceability. -- */
 const models = [
   m({ modelId: 'MOD001', categoryId: 'CAT008', name: "Deere 317G", tasks: [
-      { taskId: "svc-air", name: "Clean Dust Unloader Valve", intervalHours: 50, parts: [], source: "john deere 317g SERVICE SHEET.pdf, p.1 -- interval grid highlighted at every 50hr column across all four blocks" },
-      { taskId: "svc-oil", name: "Change Engine Oil/Filter", intervalHours: 500, parts: [], source: "john deere 317g SERVICE SHEET.pdf, p.1 -- highlighted only at 500/1000/1500/2000hr columns" },
+      // sourceUrl demo note: real production models carry a Drive-hosted manual PDF here
+      // (`#page=N` deep-links to the cited page); these two are placeholder URLs so the
+      // "view in manual" link is exercisable in the offline #local demo seed (see data.js
+      // header note + CLAUDE.md) — NOT real Drive links. The rest of MOD001's tasks are
+      // left without one on purpose, to also prove the link is absent when there's no source.
+      { taskId: "svc-air", name: "Clean Dust Unloader Valve", intervalHours: 50, parts: [], source: "john deere 317g SERVICE SHEET.pdf, p.1 -- interval grid highlighted at every 50hr column across all four blocks", sourceUrl: "https://drive.google.com/file/d/DEMO_317G_MANUAL/view#page=1" },
+      { taskId: "svc-oil", name: "Change Engine Oil/Filter", intervalHours: 500, parts: [], source: "john deere 317g SERVICE SHEET.pdf, p.1 -- highlighted only at 500/1000/1500/2000hr columns", sourceUrl: "https://drive.google.com/file/d/DEMO_317G_MANUAL/view" },
       { taskId: "svc-fuel", name: "Replace Fuel Filter & Water Separator", intervalHours: 500, parts: [], source: "john deere 317g SERVICE SHEET.pdf, p.1 -- highlighted only at 500/1000/1500/2000hr columns" },
       { taskId: "svc-fuel-tank-drain", name: "Drain Fuel Tank", intervalHours: 500, parts: [], source: "john deere 317g SERVICE SHEET.pdf, p.1 -- highlighted only at 500/1000/1500/2000hr columns" },
       { taskId: "svc-hydraulic", name: "Drain Hydraulic Oil & Change Filter", intervalHours: 1000, parts: [], source: "john deere 317g SERVICE SHEET.pdf, p.1 -- row only present in 1000hr/2000hr blocks, highlighted at 1000hr/2000hr" },

@@ -4568,6 +4568,17 @@ function unruledElements() {
 function closeX(js, { data, hover } = {}) {
   return `<button class="close-x${hover ? ' hoveronly' : ''}${js ? ' ' + js : ''}" data-r="R24"${dataAttrs(data)} data-tip="Close">${I.x}</button>`;
 }
+/** R26: MANUAL LINK — icon-only ghost circle, opens a service task's cited OEM
+ *  manual page in a new tab (Jac 2026-07-07: every model task now carries a
+ *  sourceUrl alongside its `source` citation). Renders NOTHING when the caller
+ *  has no real sourceUrl — an honest miss, never a dead/fake link (same spirit
+ *  as categoryIconFor's neutral box glyph). `cite` (the task's rich `source`
+ *  text) rides as the tooltip when short enough to read at a glance. */
+function sourceLinkBtn(url, cite) {
+  if (!url) return '';
+  const tip = (cite && cite.length <= 140) ? cite : 'View in manual';
+  return `<a class="icon-link" data-r="R26" href="${esc(url)}" target="_blank" rel="noopener" data-tip="${esc(tip)}">${I.linkOut}</a>`;
+}
 /** R6: required-until-entered — white bg + dark ink, stays loud until satisfied. */
 function reqBtn(label, { js, data, icon } = {}) {
   return `<button class="req${js ? ' ' + js : ''}" data-r="R6"${dataAttrs(data)}>${icon || ''}${esc(label)}</button>`;
@@ -4824,6 +4835,7 @@ const RULE_META = {
   R23: ['Tooltip', 'data-tip → the one styled tip', 'every hover hint goes through data-tip — a native title attribute is a violation'],
   R24: ['Close ✕', 'closeX', 'red circle · white ✕ — the deliberate close/remove; hover-reveal variant on tabs'],
   R25: ['Sync banner', 'renderSyncBanner / #sync-banner', 'persistent “Not saving” plate — red hazard-stripe danger cap; raised when the backend sync is failing, hides on recovery. The ONE non-toast alert; lives on <body>, outside #app'],
+  R26: ['Manual link', 'sourceLinkBtn', 'small ghost-circle external-link icon beside a service task — opens its cited OEM manual page (task.sourceUrl) in a new tab; renders only when the task actually carries one'],
 };
 /* ════════════ APP-12 · DESIGN-SYSTEM CATALOG — the tabbed Rulebook (Jac 2026-06-14) ════
    The Rulebook grew from "stamped element rules" (R0–R24 above) into the WHOLE
@@ -4948,7 +4960,7 @@ const RB_TABS = [
   { id: 'fields', label: 'Fields & Adds', intro: 'Where you type, link, and add.',
     items: [{ r: 'R5' }, { r: 'R5b' }, { r: 'R5c' }, { r: 'R6' }, { r: 'R7' }, { r: 'R8' }, { r: 'R14' }, { r: 'R22' }] },
   { id: 'actions', label: 'Actions', intro: 'Buttons that DO something — colored by intent.',
-    items: [{ r: 'R17' }, { r: 'R18' }, { r: 'R24' }] },
+    items: [{ r: 'R17' }, { r: 'R18' }, { r: 'R24' }, { r: 'R26' }] },
   { id: 'upload', label: 'Upload & Capture', intro: 'Add-file zones and photo/site captures.',
     items: [{ r: 'R21' }, { f: 'upload-capture' }] },
   { id: 'data', label: 'Data & Behaviors', intro: 'Visualizations, plus the app’s behaviors — it flashes instead of erroring, right-clicks, tooltips, and self-lints.',
@@ -6114,6 +6126,7 @@ function serviceTasksHtml(u, { title = 'Services' } = {}) {
         <span class="svc-name">${esc(s.name)}</span>
         <span class="spacer"></span>
         ${washReq && !sn ? `<span class="pill c-blue" data-r="R3b"><span class="t">Wash Requested</span></span>` : sn ? '' : `<b>${esc(svcText(s))}</b>`}
+        ${sourceLinkBtn(s.sourceUrl, s.source)}
         <button class="pill ghost js-svc-snooze" data-r="R18" data-rec="${u.unitId}" data-task="${s.taskId}" data-snoozed="${sn ? 1 : 0}" data-tip="${sn ? 'Snoozed — wake or extend' : 'Quiet this alarm for a while'}">${sn ? 'Wake' : 'Snooze'}</button>
       </div>
       <div class="svc-task-sub muted">${sub}</div>
@@ -10110,6 +10123,7 @@ function buildPopupEl(o, overlay, opts = {}) {
       R9b: flagsStack([flagEl('No Card', 'red', { alert: true })]),
       R22: dateField('exampleDate', ''),
       R24: closeX('', {}),
+      R26: sourceLinkBtn('#', 'Example — john deere 317g SERVICE SHEET.pdf, p.1'),
       R19: '<span class="pill c-blue" style="animation:attnGlow 1.1s ease-in-out infinite;border-radius:10px"><span class="t">+Card</span></span>',
       R20: '<div class="ctx-menu" style="position:static;display:inline-block;min-width:0;box-shadow:none;padding:4px"><button class="dd-item">📋 Copy</button><div class="menu-sep"></div><button class="dd-item">🤠 Ask Mr. Wrangler</button></div>',
       R23: '<span class="pill c-gray" data-tip="The one styled tip"><span class="t">hover me</span></span>',
@@ -10235,10 +10249,13 @@ function buildPopupEl(o, overlay, opts = {}) {
     // A model's real maintenance schedule (Jac 2026-07-07) — replaces the generic
     // 250/500/1000hr placeholder for any unit that picks this model.
     const mo = IDX.model.get(o.modelId);
+    // .woline is a fixed 3-col grid (name | nums | ✕) everywhere else in the app —
+    // the source link rides IN the 3rd cell alongside the ✕ (one wrapper = one
+    // grid child) rather than as a bare 4th child, so the row never wraps.
     const rows = (mo?.tasks || []).map((t, idx) => `<div class="woline">
         <span class="js-svctask-edit" data-rec="${esc(o.modelId)}" data-idx="${idx}" style="cursor:pointer">${esc(t.name)}</span>
         <span class="nums"><b>${t.intervalHours != null ? t.intervalHours + 'h' : '—'}</b>${t.parts?.length ? `<span>${t.parts.length} part${t.parts.length === 1 ? '' : 's'}</span>` : ''}</span>
-        ${closeX('js-svctask-remove', { data: { rec: o.modelId, idx } })}
+        <span class="woline-acts">${sourceLinkBtn(t.sourceUrl, t.source)}${closeX('js-svctask-remove', { data: { rec: o.modelId, idx } })}</span>
       </div>`).join('');
     const pop = el('div', 'popup'); pop.style.width = '420px';
     pop.innerHTML = popupShell({ icon: CARD_ICON.workOrders, title: mo?.name || 'Model schedule', tag: 'Category · model',

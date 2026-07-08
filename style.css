@@ -210,6 +210,17 @@ input { font-family: inherit; }
 .close-x.hoveronly { opacity: 0; transition: opacity .12s; }
 .has-closex:hover .close-x.hoveronly, .close-x.hoveronly:hover { opacity: 1; }
 .tab.active .close-x { background: rgba(0,0,0,.28); }
+/* R26: MANUAL LINK — icon-only ghost circle beside a service task, opens its
+   cited OEM manual page in a new tab. Same footprint as .close-x (a task row's
+   other icon-sized affordance) but neutral ghost coloring, not red — this isn't
+   a remove. (Jac 2026-07-07) */
+.icon-link { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; padding: 0; border-radius: 50%; border: 1px solid var(--line); background: transparent; color: var(--txt-3); flex-shrink: 0; text-decoration: none; transition: color .12s, border-color .12s; }
+.icon-link svg { width: 11px; height: 11px; }
+.icon-link:hover { color: var(--txt); border-color: var(--accent-line); }
+.icon-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* the modelSchedule task row's 3rd grid cell — link + ✕ share it so .woline's
+   fixed 3-column grid (name | nums | actions) never gains a 4th, wrapping child. */
+.woline-acts { display: inline-flex; align-items: center; gap: 6px; }
 /* cascade chip — the anchor's cascade made visible + clearable at the front of a cascaded card's search bar */
 .casc-chip { display: inline-flex; align-items: center; gap: 5px; padding: 2px 4px 2px 8px; border-radius: 8px; background: var(--accent-soft); border: 1px solid var(--accent-line); color: var(--accent); font-size: 11.5px; font-weight: 700; white-space: nowrap; flex-shrink: 0; }
 .casc-chip .cc-name { max-width: 130px; overflow: hidden; text-overflow: ellipsis; }
