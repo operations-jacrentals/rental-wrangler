@@ -534,16 +534,38 @@ export function fmtShortDate(iso) {
   return `${MONTH_SHORT[d.getMonth()]} ${pad2(d.getDate())}`;
 }
 
-/** Invoice ID format ##iDDMmmYY — running number, 'i', day, 2-letter month abbrev,
- *  2-digit year (e.g. #1 on 2026-02-20 -> '01i20Fe26'). Date suffix is always 6 chars. */
+/** Invoice ID format ##MMDDYY (Jac 2026-07-08) — running number that resets PER MONTH,
+ *  2-letter UPPERCASE month abbrev, day, 2-digit year (e.g. the 228th July-2026 invoice on
+ *  the 8th -> '228JY0826'). No 'i' separator — the digit→letter→digit boundary parses it.
+ *  Legacy ids are the old ##iDDMmmYY form; invoiceShort / parseInvoice handle both so nothing
+ *  minted before the switch breaks. */
 export function invoiceId(iso, seq) {
   const d = parseISO(iso) || new Date(2026, 0, 1);
   const yy = String(d.getFullYear()).slice(-2);
-  return `${pad2(seq)}i${pad2(d.getDate())}${MONTH_ABBR[d.getMonth()]}${yy}`;
+  return `${pad2(seq)}${MONTH_ABBR[d.getMonth()].toUpperCase()}${pad2(d.getDate())}${yy}`;
 }
-/** Short label for an invoice id — the leading "##i" (everything before the 6-char
- *  DDMmmYY date suffix), so it works regardless of the running-number's digit count. */
-export const invoiceShort = (id) => { id = String(id || ''); return id.length > 6 ? id.slice(0, -6) : id; };
+/** Short pill label — number + month ("228JY"): drop the 4-char DDYY tail on a NEW-format id;
+ *  legacy ##iDDMmmYY ids drop their 6-char date suffix -> "##i". */
+export const invoiceShort = (id) => {
+  id = String(id || '');
+  if (/^\d+[A-Za-z]{2}\d{4}$/.test(id)) return id.slice(0, -4);   // NEW ##MMDDYY -> ##MM
+  return id.length > 6 ? id.slice(0, -6) : id;                    // legacy ##iDDMmmYY -> ##i
+};
+/** Month+year key that scopes the per-month invoice counter (e.g. 'JY26' for July 2026). */
+export function invoiceMonthKey(iso) {
+  const d = parseISO(iso) || new Date(2026, 0, 1);
+  return MONTH_ABBR[d.getMonth()].toUpperCase() + String(d.getFullYear()).slice(-2);
+}
+/** Parse any invoice id -> { seq, monthKey } | null. Handles the NEW ##MMDDYY form AND the
+ *  legacy ##iDDMmmYY form, so the per-month counter counts both across the transition. */
+export function parseInvoice(id) {
+  id = String(id || '');
+  let x = /^(\d+)([A-Za-z]{2})\d{2}(\d{2})$/.exec(id);      // NEW: seq, month, day, year
+  if (x) return { seq: +x[1], monthKey: x[2].toUpperCase() + x[3] };
+  x = /^(\d+)i\d{2}([A-Za-z]{2})(\d{2})$/.exec(id);         // legacy: seq, 'i', day, month, year
+  if (x) return { seq: +x[1], monthKey: x[2].toUpperCase() + x[3] };
+  return null;
+}
 
 /* ── Misc constants ──────────────────────────────────────────────────────── */
 // Live "today" — the real local date, so the window picker, Today/Tomorrow badges,
