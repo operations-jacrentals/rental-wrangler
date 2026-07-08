@@ -8510,6 +8510,20 @@ function wranglerDockEl() {
 // The wrangler conversation BODY — request bar, feed, error, attachments, composer.
 // Shared verbatim by the phone dock and the D9 rail window (the send/apply/attach
 // machinery keys off these classes: .js-wr-in, .js-wr-send, .wr-feed …).
+// The Wrangler composer's focus/paste row: a held element awaiting paste (becomes the
+// focus on send) + the currently-FOCUSED record (what Claude can see) with a clear ✕.
+// Pasting an element into Mr. Wrangler feeds him its data — he can't click a chip, so the
+// element rides in as context rather than a link (2026-07-08 rail spec, internal paste).
+function wranglerFocusRowHtml(o) {
+  const bits = [];
+  if (state.held) bits.push(chatHeldChipHtml());   // paste-ready — becomes the focus on send
+  if (o.card && o.recId != null) {
+    const ec = entityCardOf(o.card, o.recType), rec = recOf(ec, o.recId);
+    const label = rec ? (ROW_META[ec] ? ROW_META[ec](rec).title : String(o.recId)) : 'record removed';
+    bits.push(`<span class="wr-focus-chip${rec ? '' : ' chip-gone'}" data-tip="Mr. Wrangler is focused on this record — he can see its data"><span class="wf-i">${CARD_ICON[ec] || I.doc}</span><span class="wf-t">${esc(label)}</span><button class="wf-x" data-wr-unfocus aria-label="Clear focus" data-tip="Clear the focused record">${I.x}</button></span>`);
+  }
+  return bits.length ? `<div class="wr-focus-row">${bits.join('')}</div>` : '';
+}
 function wranglerDockBodyHtml() {
   const o = state.wrangler;
   const turns = o.messages.length
@@ -8584,6 +8598,7 @@ function wranglerDockBodyHtml() {
     ${reqBar}
     <div class="wr-feed">${turns}${o.busy ? '<div class="wr-msg assistant"><span class="wr-av">🤠</span><div class="wr-bub wr-think">…wrangling an answer</div></div>' : ''}</div>
     ${o.error ? `<div class="wr-err">${esc(o.error)}</div>` : ''}
+    ${wranglerFocusRowHtml(o)}
     ${attachRow}
     <div class="wr-compose"><label class="wr-attach js-wr-attach" data-r="R21" data-tip="Attach a screenshot or a CSV/text file"><input type="file" accept="image/*,.csv,.tsv,.txt,.md,.log,text/csv,text/plain" class="js-wr-file" hidden multiple>${I.paperclip || '📎'}</label><input class="wr-in js-wr-in" placeholder="Ask Mr. Wrangler, or tell him what's broken…" value="${esc(o.draft || '')}" ${o.busy ? 'disabled' : ''} /><button class="wr-send js-wr-send" data-r="R17" ${o.busy ? 'disabled' : ''} aria-label="Ask">${I.chev}</button></div>`;
 }
@@ -11574,10 +11589,14 @@ async function wranglerSend() {
   const text = ((inp ? inp.value : o.draft) || '').trim();
   const imgs = (o.attach && o.attach.length) ? o.attach.slice() : null;
   const files = (o.files && o.files.length) ? o.files.slice() : null;
+  // A pasted element focuses the chat on that record (Claude reads its data via
+  // wranglerContext) — consumed here so it applies to this turn and stays as context.
+  const pastedFocus = state.held;
+  if (pastedFocus) { o.card = pastedFocus.card; o.recId = pastedFocus.recId; o.recType = null; state.held = null; }
   // A typed reply while Mr. Wrangler has a pending ask_user question ANSWERS it (resumes the loop),
   // rather than starting a fresh turn. Tapping an option chip resolves it the same way.
-  if (o.ask && o.ask.resolve) { if (!text) { if (inp) inp.focus(); return; } o.draft = ''; if (inp) inp.value = ''; o.ask.resolve(text); return; }
-  if ((!text && !imgs && !files) || o.busy) { if (inp) inp.focus(); return; }
+  if (o.ask && o.ask.resolve) { if (!text) { if (pastedFocus) render(); if (inp) inp.focus(); return; } o.draft = ''; if (inp) inp.value = ''; o.ask.resolve(text); return; }
+  if ((!text && !imgs && !files) || o.busy) { if (pastedFocus) render(); if (inp) inp.focus(); return; }   // pasting a focus with no message still updates the chip
   o.messages.push({ role: 'user', content: text, images: imgs, files, at: Date.now() });
   syncWranglerComment(o, 'user', text, imgs);   // §18e mirror the turn onto the issue thread
   wranglerClearNeedsAnswer(o.reqNumber);        // §18e answering a "Needs your answer" request clears it from the inbox
@@ -14242,6 +14261,7 @@ function onClick(e) {
   if (closest('.js-wr-goto')) { e.stopPropagation(); const b = closest('.js-wr-goto'); wrFocusRecord(b.dataset.ent, b.dataset.id); state.wrangler.min = true; return render(); }   // the clickable "Open →" link → jump to the record + collapse the dock so it's revealed (esp. on mobile)   // Mr. Wrangler applies the previewed add/update/import; a failed async op (e.g. a payment that didn't go through) un-files so the user can retry
   if (closest('.js-wr-kpi-lock')) { e.stopPropagation(); lockKpiFromWrangler(Number(closest('.js-wr-kpi-lock').dataset.mi)); return; }   // Mr. Wrangler locks in an authored KPI ring
   if (closest('.js-wr-unattach')) { e.stopPropagation(); const o = state.wrangler; if (o.open && o.attach) { o.attach.splice(Number(closest('.js-wr-unattach').dataset.i), 1); render(); } return; }   // §18d drop a pending image attachment
+  if (closest('[data-wr-unfocus]')) { e.stopPropagation(); const o = state.wrangler; o.card = null; o.recId = null; o.recType = null; return render(); }   // clear the focused record (paste context)
   if (closest('.js-wr-unfile')) { e.stopPropagation(); const o = state.wrangler; if (o.open && o.files) { o.files.splice(Number(closest('.js-wr-unfile').dataset.i), 1); render(); } return; }   // §18d drop a pending file attachment
   if (closest('[data-wrc-needs]')) { e.stopPropagation(); return openWranglerFromRequest(Number(closest('[data-wrc-needs]').dataset.wrcNeeds)); }   // §18g rail: a flashing "needs you" request → reopen it seeded from the request (D9: lands on the rail window)
   if (closest('.js-notifications')) { e.stopPropagation(); openOverlay({ kind: 'notifications' }); markNotifsSeen(); refreshWranglerNotifications(); return; }   // §18f notification bell — in-app resolved-fix feed
