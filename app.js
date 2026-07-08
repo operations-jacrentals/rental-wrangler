@@ -9011,31 +9011,17 @@ function copyElement(el) {
 // Resolve a dragged payload into a chat tag — label from the record, color inherited
 // from any flag it already carries (else neutral). Granular-element sources (line/pill/
 // price) ride the same path once they're wired as drag sources.
-function chatTagFromPayload(p) {
-  const rec = p.rec, ec = p.entity;
+// Dropping a record on the chat pad COPIES it (held) to paste into a Team / Mr. Wrangler
+// chat — the drag equivalent of right-click → Copy to chat. (Replaces the retired
+// drop-to-tag / drop-to-new-chat flows, 2026-07-08 rail spec.)
+function chatDropCopy(p) {
+  const ec = p.entity, rec = p.rec;
+  if (p.chatEl && p.chatEl.ref) { state.held = { card: p.chatEl.ref.card, recId: p.chatEl.ref.recId, label: p.chatEl.label || 'Item' }; render(); toast(`Copied “${p.chatEl.label || 'item'}” — paste it into a chat.`); return; }
+  if (!ec || rec == null) return;
   const label = ROW_META[ec] ? ROW_META[ec](rec).title : (idOf(ec, rec) || 'Item');
-  const m = commentMarker(rec);
-  chatAddTag({ id: 'TAG:' + ec + ':' + p.id, label, color: m ? m.color : 'gray', ref: { card: ec, recId: p.id } });
-  toast(`Tagged “${label}” into the team chat.`);
-}
-// Drop on the bottom-right pad → spin up a NEW chat seeded with the dragged thing
-// (a granular element OR a whole record).
-function chatStartFromDrop(p) {
-  let tag;
-  if (p.chatEl) tag = { id: p.chatEl.id || ('TAG' + (state.seq++)), label: p.chatEl.label, color: p.chatEl.color || 'gray', ref: p.chatEl.ref || null };
-  else { const ec = p.entity, rec = p.rec; const label = ROW_META[ec] ? ROW_META[ec](rec).title : (idOf(ec, rec) || 'Item'); const m = commentMarker(rec); tag = { id: 'TAG:' + ec + ':' + p.id, label, color: m ? m.color : 'gray', ref: { card: ec, recId: p.id } }; }
-  // Dedup like startChatFromEl: a record/element already has a chat → REOPEN it, never spin a duplicate thread.
-  if (tag.ref) { const existing = chatsTagging(tag.ref.card, tag.ref.recId)[0]; if (existing) return openChat(existing.id, `Reopened the chat on this ${SINGULAR[tag.ref.card] || 'record'}.`); }
-  newChat(tag); chatShow(); render();
-  toast(`New chat started from “${tag.label}”.`);
-}
-// Tag an element into the chat (drag-drop) — records OR granular elements (line/pill/price).
-function chatAddTag(tag) {
-  if (!tag || !tag.label) return;
-  let c = activeChat(); if (!c) c = newChat();                          // dragging context in with no active chat opens one
-  if (tag.id && c.tags.some((t) => t.id === tag.id)) return;            // no dupes
-  c.tags.push({ id: tag.id || 'TAG' + (state.seq++), label: tag.label, color: tag.color || 'gray', ref: tag.ref || null });
-  chatShow(); pushChatsSoon(); render();
+  state.held = { card: ec, recId: p.id, label };
+  render();
+  toast(`Copied “${label}” — paste it into a Team or Mr. Wrangler chat.`);
 }
 function tabStrip(tabs) {
   tabs = tabs || state.tabs;
@@ -13509,10 +13495,10 @@ function initDrag() {
   dragLayer.id = 'drag-layer';
   dragArc = el('div', 'cancel-arc', '<div class="ca-inner"><svg class="ca-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h9a6 6 0 1 1 0 12H7"/><path d="M8 5 4 9l4 4"/></svg><span class="ca-label">Cancel</span></div>');
   dragLayer.appendChild(dragArc);
-  // §17 — "drop to start a chat" pad: a cancel-arc sibling pinned to the bottom-right
-  // footer. Appears during any drag; release a record OR a granular element on it to
-  // spin up a brand-new chat seeded with that thing.
-  chatDropPad = el('div', 'chat-drop', '<div class="cd-inner"><svg class="cd-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg><span class="cd-label">Drop to start a chat</span></div>');
+  // §17 — "drop to copy" pad: a cancel-arc sibling pinned to the bottom-right footer.
+  // Appears during any drag; release a record on it to COPY it (held) for pasting into a
+  // Team / Mr. Wrangler chat (2026-07-08 rail spec — replaces the old drop-to-new-chat).
+  chatDropPad = el('div', 'chat-drop', '<div class="cd-inner"><svg class="cd-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg><span class="cd-label">Drop to copy into a chat</span></div>');
   dragLayer.appendChild(chatDropPad);
   // §M2 — phone "zip zones": edge rails of valid drop-target cards. Dragging onto one
   // jumps to that card's column mid-drag (drag stays live), then you drop on the row.
@@ -13904,8 +13890,7 @@ function endDrag({ rerender } = {}) {
    R19-flash the newly linked pill on whatever card shows it (row/card fallback). ── */
 function dropFlash(sel, fallbackSel) { if (document.querySelector(sel)) attnFlash(sel); else if (fallbackSel && document.querySelector(fallbackSel)) attnFlash(fallbackSel); }
 function dispatchDrop(p, t) {
-  if (t.newChat) return chatStartFromDrop(p);                        // §17 — bottom-right pad = start a NEW chat
-  if (t.chat) return p.chatEl ? chatAddTag({ ...p.chatEl }) : chatTagFromPayload(p);   // dock = tag into the active chat
+  if (t.newChat || t.chat) return chatDropCopy(p);                   // §17 — drop on the chat pad = COPY the element to paste into a chat
   const pair = `${p.entity}>${t.entity}`;
   // UNIT ↔ RENTAL — ADD the unit to the rental (a Rental is an EVENT, §20);
   // gates fire per unit inside linkUnitToRental.
