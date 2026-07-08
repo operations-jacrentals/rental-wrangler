@@ -6,6 +6,9 @@
 **Maturity:** 🟢 Live (Phase 1)
 **Scope:** A live telematics layer for the fleet — real-time unit position, a self-healing `gpsStatus`, a per-unit status/alert history feed, role-gated **remote engine shutdown**, and the Driver "Driving Score" — sourced from **WranglerGPS**, a companion Node/Express + Postgres service (on our own Railway) that merges FOUR telematics providers. Phase 2 lifts this to fleet-wide pages (map, tracker health, issues, utilization reports).
 
+> ## 🚨 STAGING/DEPLOY NOTE — BUMP THE `?v=` CACHE TOKEN
+> This Phase-1 work changes **`app.js` AND `style.css`**. On any deploy (area → staging → main), you **MUST** bump the shared `?v=` cache-bust token in `index.html` to a value **newer than the target's current token** — otherwise GitHub Pages serves the *stale cached* `app.js`/`style.css` under the old token and **none of the GPS UI appears** (this has bitten past sessions). For staging: check `git show origin/staging:index.html | grep '?v='` first, set a newer token, then force the sync (`gh workflow run sync-staging.yml`) and verify the live bytes. The backend dependency (`device_events`) is already deployed on Railway, so the token bump is the **only** remaining gotcha.
+
 > **⚠️ v2 supersedes the GPSWOX approach below (§1–§12).** The original spec assumed ONE provider (GPSWOX) polled server-side through an Apps Script `gpsPoll`/`gpsSnapshot` action. What actually shipped is different and is authoritative — read the **"WranglerGPS integration (SHIPPED)"** section next. The GPSWOX sections are **retained as design reference** for the still-relevant parts (roles/gates thinking, geofencing/stray design, risks), but where they conflict with the shipped architecture, the shipped section wins.
 
 ---
