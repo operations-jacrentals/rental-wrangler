@@ -2255,6 +2255,10 @@ function setAnchor(session, card, recId, recType, opts = {}) {
   const m = entityCardOf(card, recType), col = columnOfMember(m);
   if (col && session.cols) session.cols[col] = m;
   ackComments(rec);   // anchoring opens the record in standard → viewing = acknowledged (Phase 6)
+  // Opening a mapped unit's detail should never show a snapshot that's gone stale from being
+  // idle elsewhere — freshen it here (same 60s staleness gate the fleet popups use), on top of
+  // the 30s poll that keeps it current WHILE you stay on the unit (Jac 2026-07-08).
+  if (entityCard === 'units' && gpsToken && rec && rec.gpsProvider && rec.gpsDeviceId && (gpsLiveAt === 0 || Date.now() - gpsLiveAt > 60000)) refreshGpsLive();
 }
 
 function anchorRecord(card, recId, recType) {
