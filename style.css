@@ -2203,6 +2203,77 @@ body.is-phone .set-tab-l { flex: 0 0 auto; }
   .gpsfm-search { width: 130px; }
 }
 
+/* ── ROUND UP TRACKERS (Phase 2 M5) — the bulk-onboarding review table over
+   gpsMatchFleet(). Same steel/plate language as Tracker Health + Fleet Map (badge/
+   statusPill/gps-maplink reused verbatim); the new device here is the tier-bucketed
+   row with an inline expand for the mandatory Hapn confirm + the device-swap picker
+   (reuses .gps-dev-row/.gps-dev-list verbatim — same picker language as the connect
+   wizard). Tokens only; the ONE orange marks the selected swap-provider tab, never
+   decoration. */
+.gpsru-popup { width: 900px; }
+.gpsru-cta { display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center; padding: 34px 20px; }
+.gpsru-cta-txt { max-width: 440px; font-size: 13px; color: var(--txt-2); line-height: 1.5; }
+.gpsru-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.gpsru-counts { font-size: 12px; color: var(--txt-2); }
+.gpsru-counts .gpsru-big { font-family: 'Saira Condensed', var(--font); font-weight: 800; font-size: 20px; letter-spacing: .5px; color: var(--txt); margin-right: 3px; }
+.gpsru-tools { display: flex; align-items: center; gap: 8px; }
+.gpsru-search { width: 220px; margin: 0; }
+.gpsru-banner { font-size: 11.5px; color: color-mix(in srgb, var(--yellow) 72%, var(--txt)); background: var(--yellow-bg);
+  border: 1px solid color-mix(in srgb, var(--yellow) 34%, transparent); border-radius: 10px; padding: 8px 12px; margin-bottom: 10px; }
+.gpsru-empty { color: var(--txt-3); font-size: 12px; text-align: center; padding: 30px 14px; line-height: 1.5; }
+.gpsru-bucket { margin-bottom: 14px; }
+.gpsru-bucket-head { display: flex; align-items: baseline; gap: 8px; margin: 0 0 7px; padding-bottom: 5px; border-bottom: 1.5px dashed var(--tan, #c2925a); opacity: .96; }   /* saddle-stitch — the ranch seasoning */
+.gpsru-bucket-lbl { font-family: 'Saira Condensed', var(--font); text-transform: uppercase; letter-spacing: 1.2px; font-weight: 800; font-size: 11.5px; }
+.gpsru-bucket-lbl.c-green { color: var(--green); }
+.gpsru-bucket-lbl.c-yellow { color: var(--yellow); }
+.gpsru-bucket-lbl.c-red { color: var(--red); }
+.gpsru-bucket-lbl.c-blue { color: var(--blue); }
+.gpsru-bucket-lbl.c-gray { color: var(--txt-3); }
+.gpsru-bucket-note { font-size: 10.5px; }
+.gpsru-row { border-radius: var(--chip-radius); background: var(--panel); border: 1px solid var(--line); margin-bottom: 6px; overflow: hidden; }
+.gpsru-row.conflict { border-color: color-mix(in srgb, var(--red) 40%, var(--line)); }
+.gpsru-row.needsconfirm { border-color: color-mix(in srgb, var(--yellow) 40%, var(--line)); }
+.gpsru-row.expanded { border-color: var(--accent-line); }
+.gpsru-row-main { display: grid; grid-template-columns: 22px minmax(0,1.3fr) 18px minmax(0,1.3fr) minmax(0,1fr) auto; align-items: center; gap: 10px; padding: 9px 11px; }
+.gpsru-check { display: flex; align-items: center; justify-content: center; padding: 4px; margin: -4px; }
+.gpsru-check input { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; }
+.gpsru-unit, .gpsru-dev { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.gpsru-unit-name, .gpsru-dev-name { font-weight: 700; color: var(--txt); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gpsru-unit-sub, .gpsru-dev-ser { font-family: ui-monospace, monospace; font-size: 10.5px; color: var(--txt-3); }
+.gpsru-dev-missing { font-size: 12px; }
+.gpsru-arrow { color: var(--txt-3); display: flex; align-items: center; justify-content: center; }
+.gpsru-arrow svg { width: 14px; height: 14px; }
+.gpsru-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
+.gpsru-reasons { font-size: 10.5px; text-transform: capitalize; }
+.gpsru-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.gpsru-detail { padding: 12px; border-top: 1px solid var(--line); background: var(--panel-2); }
+.gpsru-confirm-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 10px; }
+.gpsru-plate { padding: 10px 12px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); }
+.gpsru-plate-cap { font-family: 'Saira Condensed', var(--font); text-transform: uppercase; letter-spacing: 1.2px; font-size: 10px; font-weight: 700; color: var(--txt-3); margin-bottom: 4px; }
+.gpsru-plate-name { font-weight: 700; font-size: 13px; color: var(--txt); }
+.gpsru-plate-sub { font-size: 11px; margin-top: 2px; }
+.gpsru-detail-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.gpsru-hazard-note { margin: 9px 0 0; font-size: 10.5px; color: color-mix(in srgb, var(--yellow) 70%, var(--txt-3)); line-height: 1.4; }
+.gpsru-poll { display: flex; align-items: center; gap: 10px; }
+.gpsru-poll-txt { min-width: 0; }
+.gpsru-poll-lbl { font-weight: 700; font-size: 12.5px; color: var(--txt); }
+.gpsru-nomatch-row .gpsru-check { visibility: hidden; }
+.gpsru-nomatch-devs { display: flex; flex-wrap: wrap; gap: 6px; }
+.gpsru-nomatch-dev { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line); font-size: 11.5px; color: var(--txt-2); }
+.gpsru-result { border-radius: 10px; padding: 9px 12px; margin-bottom: 12px; background: var(--panel); border: 1px solid var(--line); }
+.gpsru-result.haswarn { border-color: color-mix(in srgb, var(--yellow) 45%, var(--line)); background: var(--yellow-bg); }
+.gpsru-result-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.gpsru-result-stamp { font-family: 'Saira Condensed', var(--font); text-transform: uppercase; letter-spacing: 1px; font-weight: 700; font-size: 11.5px; color: var(--txt); }
+.gpsru-result-list { margin: 8px 0 0; padding-left: 18px; font-size: 11.5px; color: var(--txt-2); line-height: 1.6; }
+@media (max-width: 940px) { .gpsru-popup { width: 94vw; } }
+@media (max-width: 640px) {
+  .gpsru-row-main { grid-template-columns: 20px minmax(0,1fr) auto; row-gap: 6px; }
+  .gpsru-arrow { display: none; }
+  .gpsru-dev, .gpsru-meta, .gpsru-actions { grid-column: 2 / -1; }
+  .gpsru-confirm-grid { grid-template-columns: 1fr; }
+  .gpsru-search { width: 140px; }
+}
+
 /* List-rows customiser panel */
 .bv-customize { display: flex; flex-wrap: wrap; gap: 14px 28px; align-items: flex-start; padding: 14px 16px; background: var(--accent-soft); border-bottom: 1px solid var(--accent-line); }
 .bv-pick-group { min-width: 190px; }

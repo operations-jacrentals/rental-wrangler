@@ -8180,6 +8180,7 @@ function bottomBarInner(opts = {}) {
     ${opts.noInbox ? '' : `<button class="iconbtn js-requests" data-tip="Requests for your OK — review what Mr. Wrangler filed">${I.inbox}${wranglerRequests.length ? `<span class="bb-badge">${wranglerRequests.length > 9 ? '9+' : wranglerRequests.length}</span>` : ''}</button>`}
     <button class="iconbtn js-gps-health" data-tip="Tracker Health — every GPS device across the fleet">${I.truck}</button>
     <button class="iconbtn js-gps-fleet" data-tip="Fleet Map — every GPS tracker on a live map">${I.grid}</button>
+    <button class="iconbtn js-gps-roundup" data-tip="Round Up Trackers — bulk-match the fleet to live GPS devices">${I.list}</button>
     <button class="iconbtn js-hotkeys" data-tip="Mouse &amp; keyboard shortcuts">${I.mouse}</button>
     ${devUnlocked() ? `<button class="iconbtn js-lint${document.body.classList.contains('rw-lint') ? ' on' : ''}" data-tip="Design lint — flash anything that bypassed the UI builders (R0)">${I.eye}</button>
     <button class="iconbtn js-inspect${state.inspect ? ' on' : ''}" data-tip="Design Inspector — hover names the rule, click copies the reference">${I.search}</button>
@@ -10414,6 +10415,212 @@ function buildPopupEl(o, overlay, opts = {}) {
     const pop = el('div', 'popup gpsfm-popup');
     pop.innerHTML = popupShell({ icon: I.truck || '', title: 'Fleet Map', tag: 'Fleet · GPS live', body, bodyClass: 'gpsfm-body' });
     overlay.appendChild(pop);
+  } else if (o.kind === 'gpsRoundup') {
+    // Phase 2 M5 — ROUND UP TRACKERS: the bulk-onboarding review table over
+    // gpsMatchFleet(). SCAN (gpsRoundupScan) → REVIEW bucketed by tier → per-row
+    // override/confirm → APPLY (gpsApplyMappings) writes gpsProvider/gpsDeviceId per
+    // unit, mirroring gpsConnectSave but batched, with per-unit partial-failure
+    // surfacing (R25 hazard style — a half-applied batch must never read "done").
+    // Hapn rows (the shutdown-capable provider) can't be Applied until their
+    // side-by-side confirm has been acknowledged — gpsDeviceId drives the remote
+    // starter relay, so a wrong bulk map cuts the wrong starter.
+    o.q = o.q || ''; o.sel = o.sel || {}; o.overrideDevice = o.overrideDevice || {}; o.confirmed = o.confirmed || {};
+    const rows = gpsRoundupRows(o);
+    const q = o.q.trim().toLowerCase();
+    const rowText = (r) => { const u = IDX.unit.get(r.unitId); return `${u ? u.name : ''} ${r.device ? (r.device.name || '') : ''} ${r.device ? (r.device.serialNumber || '') : ''}`.toLowerCase(); };
+    const matchRow = (r) => !q || rowText(r).includes(q);
+    const byTier = { confident: [], probable: [], look: [], conflict: [], manual: [] };
+    rows.filter(matchRow).forEach((r) => (byTier[r.tier] || byTier.look).push(r));
+
+    // ── per-row detail sub-renderers (closures over o — same idiom as gpsHealth/gpsFleet's rowHtml) ──
+    const pollHtml = () => {
+      const UI = {
+        waiting:   { color: 'yellow', icon: I.search, label: 'Waiting for signal…' },
+        seen:      { color: 'yellow', icon: I.search, label: 'Device seen — confirming…' },
+        reporting: { color: 'green',  icon: '✓',       label: 'Reporting' },
+        timeout:   { color: 'red',    icon: I.alert,   label: 'Not responding yet' },
+      }[o.pollState] || { color: 'yellow', icon: I.search, label: 'Waiting for signal…' };
+      return `<div class="gpsru-poll">
+        <span class="gps-poll-ic c-${UI.color}">${UI.icon}</span>
+        <div class="gpsru-poll-txt">
+          <div class="gpsru-poll-lbl">${esc(UI.label)}</div>
+          <div class="muted" style="font-size:11px">${o.pollState === 'timeout' ? 'It may just be catching up — try again, or confirm from the last-known data above.' : `Attempt ${o.pollAttempt || 0} of ${o.pollMax || 8}`}</div>
+        </div>
+        ${o.pollState === 'timeout' ? ghostPill('Try again', { js: 'js-gpsru-poll-start', data: { rec: o.pollUnitId } }) : ''}
+      </div>`;
+    };
+    const swapHtml = (r) => {
+      const provider = o.swapProvider || 'Hapn';
+      const sq = (o.swapQuery || '').trim().toLowerCase();
+      const takenByOther = new Set();
+      for (const u of (DATA.units || [])) if (u.gpsProvider && u.gpsDeviceId && u.unitId !== r.unitId) takenByOther.add(String(u.gpsDeviceId));
+      for (const [uid, ov1] of Object.entries(o.overrideDevice || {})) if (uid !== r.unitId && ov1) takenByOther.add(ov1.deviceId);
+      const list = (o.devices || []).filter((d) => String(d.source || '').toLowerCase() === provider.toLowerCase())
+        .filter((d) => !takenByOther.has(gpsDevKey(d)))
+        .filter((d) => !sq || `${d.name || ''} ${d.serialNumber || ''}`.toLowerCase().includes(sq))
+        .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+      const devRows = list.map((d) => `<button type="button" class="gps-dev-row js-gpsru-swap-pick" data-r="R2" data-rec="${esc(r.unitId)}" data-devid="${esc(gpsDevKey(d))}">${CARD_ICON.units}<span class="gdr-name">${esc(d.name || gpsDevKey(d))}</span>${d.serialNumber ? `<span class="gdr-sub">S/N ${esc(d.serialNumber)}</span>` : ''}</button>`).join('');
+      return `<div class="gpsru-detail">
+        ${segCtl(GPS_PROVIDERS.map((p) => ({ label: p, js: 'js-gpsru-swap-provider', data: { rec: r.unitId, val: p }, on: provider === p ? 'orange' : '' })))}
+        <div class="bv-searchwrap" style="width:100%;margin:9px 0"><span class="s-icon">${I.search}</span><input class="bv-query js-gpsru-swap-search" placeholder="Search ${esc(provider)} devices…" value="${esc(o.swapQuery || '')}"></div>
+        ${devRows ? `<div class="gps-dev-list">${devRows}</div>` : `<p class="muted" style="font-size:12px">No ${sq ? 'matching' : 'available'} ${esc(provider)} devices${(o.devices || []).length ? '' : ' — scan first'}.</p>`}
+        <div class="gpsru-detail-actions"><span class="spacer"></span>${ghostPill('Cancel', { js: 'js-gpsru-swap-cancel' })}</div>
+      </div>`;
+    };
+    const expandHtml = (r) => {
+      if (o.expandedMode === 'swap') return swapHtml(r);
+      if (!r.deviceId) return `<div class="gpsru-detail">
+        <p class="muted" style="font-size:12.5px">No tracker picked yet for this unit.</p>
+        <div class="gpsru-detail-actions">${ghostPill('Pick a device', { js: 'js-gpsru-swap-open', data: { rec: r.unitId } })}</div>
+      </div>`;
+      const u = IDX.unit.get(r.unitId);
+      const dev = r.device;
+      const mapHref = (dev && dev.lat != null && dev.lng != null) ? `https://www.google.com/maps?q=${dev.lat},${dev.lng}` : '';
+      const isHapn = String(r.provider || '').toLowerCase() === 'hapn';
+      const confirmed = !!(o.confirmed && o.confirmed[r.unitId]);
+      const polling = o.step === 'poll' && o.pollUnitId === r.unitId;
+      return `<div class="gpsru-detail">
+        <div class="gpsru-confirm-grid">
+          <div class="gpsru-plate">
+            <div class="gpsru-plate-cap">Unit</div>
+            <div class="gpsru-plate-name">${esc(u ? u.name : r.unitId)}</div>
+            <div class="gpsru-plate-sub muted">${esc([u && u.serial ? 'S/N ' + u.serial : '', u && u.make, u && u.model].filter(Boolean).join(' · ') || '—')}</div>
+          </div>
+          <div class="gpsru-plate">
+            <div class="gpsru-plate-cap">Device</div>
+            <div class="gpsru-plate-name">${dev ? esc(dev.name || r.deviceId) : '<span class="muted">No device</span>'}</div>
+            <div class="gpsru-plate-sub muted">${dev && dev.serialNumber ? 'S/N ' + esc(dev.serialNumber) : '—'}</div>
+            ${dev && dev.lastSeen ? `<div class="gpsru-plate-sub muted">Last seen ${esc(gpsRelTime(dev.lastSeen))}</div>` : ''}
+            ${mapHref ? `<a class="gps-maplink" href="${mapHref}" target="_blank" rel="noopener">${esc((dev && dev.address) || 'View on map')}</a>` : ''}
+          </div>
+        </div>
+        ${polling ? pollHtml() : `<div class="gpsru-detail-actions">
+          ${ghostPill('Test live signal', { js: 'js-gpsru-poll-start', data: { rec: r.unitId } })}
+          ${ghostPill('Swap device', { js: 'js-gpsru-swap-open', data: { rec: r.unitId } })}
+          ${ghostPill('Unmap', { js: 'js-gpsru-unmap', data: { rec: r.unitId } })}
+          <span class="spacer"></span>
+          ${confirmed ? badge('Match confirmed', 'green') : actionPill('commit', 'Confirm match', { js: 'js-gpsru-confirm', data: { rec: r.unitId } })}
+        </div>`}
+        ${isHapn ? `<p class="gpsru-hazard-note">Hapn drives the remote starter relay — this pairing must be confirmed before it can be Applied.</p>` : ''}
+      </div>`;
+    };
+    const rowHtml = (r) => {
+      const u = IDX.unit.get(r.unitId);
+      const uSub = u ? [u.serial ? `S/N ${u.serial}` : '', u.make, u.model].filter(Boolean).join(' · ') : '';
+      const dev = r.device;
+      const devStatus = dev ? gpsDeviceFresh(dev) : null;
+      const devSeen = dev && dev.lastSeen ? gpsRelTime(dev.lastSeen) : null;
+      const isHapn = String(r.provider || '').toLowerCase() === 'hapn';
+      const confirmed = !!(o.confirmed && o.confirmed[r.unitId]);
+      const needsConfirm = isHapn && !confirmed;
+      const checked = !!o.sel[r.unitId];
+      const expanded = o.expandedUnitId === r.unitId;
+      const reasonsText = r.overridden ? (r.tier === 'manual' ? 'Picked by hand' : 'Swapped by hand') : (r.reasons || []).join(', ');
+      return `<div class="gpsru-row${r.tier === 'conflict' ? ' conflict' : ''}${needsConfirm ? ' needsconfirm' : ''}${expanded ? ' expanded' : ''}">
+        <div class="gpsru-row-main">
+          <label class="gpsru-check"><input type="checkbox" class="js-gpsru-tick" data-rec="${esc(r.unitId)}"${checked ? ' checked' : ''}></label>
+          <div class="gpsru-unit"><span class="gpsru-unit-name">${esc(u ? u.name : r.unitId)}</span>${uSub ? `<span class="gpsru-unit-sub">${esc(uSub)}</span>` : ''}</div>
+          <span class="gpsru-arrow" aria-hidden="true">${I.chevR}</span>
+          <div class="gpsru-dev">
+            ${dev ? `${badge(gpsProvLabel(r.provider))}<span class="gpsru-dev-name">${esc(dev.name || r.deviceId)}</span>${dev.serialNumber ? `<span class="gpsru-dev-ser">${esc(dev.serialNumber)}</span>` : ''}`
+              : `<span class="gpsru-dev-missing muted">No device selected</span>`}
+          </div>
+          <div class="gpsru-meta">
+            ${devStatus ? statusPill('gpsStatus', devStatus) : ''}
+            ${devSeen ? `<span class="gpsru-seen muted">${esc(devSeen)}</span>` : ''}
+            ${reasonsText ? `<span class="gpsru-reasons muted">${esc(reasonsText)}</span>` : ''}
+          </div>
+          <div class="gpsru-actions">
+            ${needsConfirm ? badge('Confirm required', 'yellow') : (isHapn ? badge('Confirmed', 'green') : '')}
+            ${ghostPill(expanded ? 'Close' : (r.deviceId ? 'Review' : 'Pick device'), { js: r.deviceId ? 'js-gpsru-expand' : 'js-gpsru-swap-open', data: { rec: r.unitId } })}
+          </div>
+        </div>
+        ${expanded ? expandHtml(r) : ''}
+      </div>`;
+    };
+    const bucket = (label, color, list, note) => list.length ? `<div class="gpsru-bucket">
+      <div class="gpsru-bucket-head"><span class="gpsru-bucket-lbl c-${color}">${esc(label)} · ${list.length}</span>${note ? `<span class="gpsru-bucket-note muted">${esc(note)}</span>` : ''}</div>
+      ${list.map(rowHtml).join('')}
+    </div>` : '';
+    const resultHtml = () => {
+      const { results } = o.applyResult;
+      const okN = results.filter((x) => x.ok).length, fails = results.filter((x) => !x.ok);
+      return `<div class="gpsru-result${fails.length ? ' haswarn' : ''}">
+        <div class="gpsru-result-head">
+          <span class="gpsru-result-stamp">${fails.length ? `${okN} applied · ${fails.length} need attention` : `${okN} applied`}</span>
+          ${closeX('js-gpsru-dismiss-result')}
+        </div>
+        ${fails.length ? `<ul class="gpsru-result-list">${fails.map((x) => `<li><b>${esc(x.name || x.unitId)}</b> — ${esc(x.reason || 'not applied')}</li>`).join('')}</ul>` : ''}
+      </div>`;
+    };
+
+    let body;
+    if (!o.scanned) {
+      body = `<div class="gpsru-cta">
+        <p class="gpsru-cta-txt">Round up every unmapped, active unit against the live tracker fleet — a proposed pairing per unit, sorted by how sure the match is. Nothing writes until you Apply.</p>
+        ${o.scanError ? `<p class="set-err">${esc(o.scanError)}</p>` : ''}
+        ${actionPill('commit', 'Scan the Yard', { js: 'js-gpsru-scan' })}
+      </div>`;
+    } else if (o.scanning) {
+      body = `<div class="set-loading" style="min-height:220px">
+        <div class="set-loading-bar" aria-hidden="true"></div>
+        <div class="set-loading-lbl">Rounding up the fleet…</div>
+        <p class="set-note">Pulling every provider's live device list and matching it against the open units.</p>
+      </div>`;
+    } else {
+      const m = o.match || { proposals: [], unmatchedUnits: [], unmatchedDevices: [] };
+      const degraded = !gpsConfigured() ? 'GPS backend isn’t configured (GPS_BACKEND_URL).'
+        : gpsLiveErr ? 'Live link down — the scan used the last good snapshot.'
+        : (gpsLiveAt === 0) ? 'No snapshot yet — try scanning again in a moment.'
+        : '';
+      const noMatchUnits = m.unmatchedUnits.filter((uid) => !o.overrideDevice[uid]).map((uid) => IDX.unit.get(uid)).filter(Boolean)
+        .filter((u) => !q || u.name.toLowerCase().includes(q));
+      const noMatchDevices = m.unmatchedDevices.filter((d) => !q || `${d.name || ''}`.toLowerCase().includes(q));
+      const nProposed = m.proposals.length + byTier.manual.length;
+      const totallyEmpty = !(m.proposals.length || m.unmatchedUnits.length || m.unmatchedDevices.length);
+      body = `
+        <div class="gpsru-head">
+          <div class="gpsru-counts"><span class="gpsru-big">${nProposed}</span> proposed · ${m.unmatchedUnits.length} unit${m.unmatchedUnits.length === 1 ? '' : 's'} unmatched · ${m.unmatchedDevices.length} device${m.unmatchedDevices.length === 1 ? '' : 's'} unclaimed</div>
+          <div class="gpsru-tools">
+            <div class="bv-searchwrap gpsru-search"><span class="s-icon">${I.search}</span><input class="bv-query js-gpsru-search" placeholder="Find a unit or tracker…" value="${esc(o.q)}"></div>
+            <button class="iconbtn iconbtn-bare js-gpsru-scan" data-tip="Re-scan the yard">${I.refresh || '⟳'}</button>
+          </div>
+        </div>
+        ${degraded ? `<div class="gpsru-banner">${esc(degraded)}</div>` : ''}
+        ${o.applyResult ? resultHtml() : ''}
+        ${totallyEmpty ? `<div class="gpsru-empty">No unmapped, active units or live trackers found — the fleet is already wrangled, or nothing’s reporting yet.</div>` : `
+          ${bucket('Confident', 'green', byTier.confident, 'Serial match — pre-ticked')}
+          ${bucket('Probable', 'gray', byTier.probable, 'Strong signal — check before applying')}
+          ${bucket('Needs a Look', 'yellow', byTier.look, 'Weak signal — eyeball it')}
+          ${bucket('Conflict', 'red', byTier.conflict, 'Two units claim one tracker — never pre-ticked')}
+          ${bucket('Manually Assigned', 'blue', byTier.manual, 'Picked from the unmatched list below')}
+          ${noMatchUnits.length ? `<div class="gpsru-bucket">
+            <div class="gpsru-bucket-head"><span class="gpsru-bucket-lbl c-gray">No-Match Units · ${noMatchUnits.length}</span><span class="gpsru-bucket-note muted">No tracker proposed — pick one by hand</span></div>
+            ${noMatchUnits.map((u) => `<div class="gpsru-row gpsru-nomatch-row">
+              <div class="gpsru-row-main">
+                <span class="gpsru-check"></span>
+                <div class="gpsru-unit"><span class="gpsru-unit-name">${esc(u.name)}</span>${(u.serial || u.make) ? `<span class="gpsru-unit-sub">${esc([u.serial ? 'S/N ' + u.serial : '', u.make, u.model].filter(Boolean).join(' · '))}</span>` : ''}</div>
+                <span class="gpsru-arrow" aria-hidden="true"></span>
+                <div class="gpsru-dev"><span class="gpsru-dev-missing muted">No tracker matched</span></div>
+                <div class="gpsru-meta"></div>
+                <div class="gpsru-actions">${addBtn('Pick device', { js: 'js-gpsru-swap-open', data: { rec: u.unitId }, line: true, h: 26 })}</div>
+              </div>
+              ${o.expandedUnitId === u.unitId ? expandHtml({ unitId: u.unitId, provider: o.swapProvider || 'Hapn', deviceId: '', device: null, reasons: [] }) : ''}
+            </div>`).join('')}
+          </div>` : ''}
+          ${noMatchDevices.length ? `<div class="gpsru-bucket">
+            <div class="gpsru-bucket-head"><span class="gpsru-bucket-lbl c-gray">No-Match Devices · ${noMatchDevices.length}</span><span class="gpsru-bucket-note muted">Reporting, but no unit claims them — informational only</span></div>
+            <div class="gpsru-nomatch-devs">${noMatchDevices.map((d) => `<span class="gpsru-nomatch-dev">${badge(gpsProvLabel(d.provider))}<span>${esc(d.name || d.key)}</span></span>`).join('')}</div>
+          </div>` : ''}
+        `}`;
+    }
+    const nTicked = Object.values(o.sel).filter(Boolean).length;
+    const foot = (o.scanned && !o.scanning)
+      ? `${ghostPill('Close', { js: 'js-close' })}${o.lastApply ? ghostPill('Undo last apply', { js: 'js-gpsru-undo' }) : ''}<span class="spacer"></span><button class="pill c-commit js-gpsru-apply${nTicked ? '' : ' is-disabled'}" data-r="R17"${nTicked ? '' : ' disabled aria-disabled="true"'}>${nTicked ? `Apply ${nTicked}` : 'Apply'}</button>`
+      : ghostPill('Close', { js: 'js-close' });
+    const pop = el('div', 'popup gpsru-popup');
+    pop.innerHTML = popupShell({ icon: I.list || '', title: 'Round Up Trackers', tag: 'Fleet · GPS onboarding', body, foot });
+    overlay.appendChild(pop);
   } else if (o.kind === 'rulebook') {
     // THE VISUAL RULEBOOK (SPEC v8) — every example is emitted by the REAL
     // builder, so this reference can never drift from the code.
@@ -11219,6 +11426,7 @@ const WINDOW_CATALOG = [
   { kind: 'gpsConnect',    label: 'Connect GPS device',      tag: 'Unit · GPS',                sample: () => ({ unitId: ((DATA.units || [])[0] || {}).unitId, step: 'provider', provider: 'Hapn' }) },
   { kind: 'gpsHealth',     label: 'Tracker Health',          tag: 'Fleet · GPS roster',        sample: () => ({ q: '', bucket: 'all' }) },
   { kind: 'gpsFleet',      label: 'Fleet Map',               tag: 'Fleet · GPS map',           sample: () => ({ q: '', filter: 'all', sel: '' }) },
+  { kind: 'gpsRoundup',    label: 'Round Up Trackers',       tag: 'Fleet · GPS onboarding',    sample: () => ({ scanned: false }) },
   { kind: 'rulebook',      label: 'The R-Rulebook',          tag: 'SPEC v8 · design system',  sample: () => ({}) },
   { kind: 'partform',      label: 'Add / Edit Part · Task',  tag: 'Work order · line',         sample: () => ({ woId: ((DATA.workOrders || [])[0] || {}).woId }) },
   { kind: 'receiptform',   label: 'New / Edit Receipt',      tag: 'Expense · receipt',         sample: () => ({}) },
@@ -14649,6 +14857,112 @@ function onClick(e) {
     o.sel = closest('.js-gpsfm-row').dataset.key || ''; return renderOverlay();
   }
 
+  // Phase 2 M5 — Round Up Trackers (bulk-onboarding review table)
+  if (closest('.js-gps-roundup')) {
+    e.stopPropagation();
+    return openOverlay({ kind: 'gpsRoundup', scanned: false, scanning: false, scanError: '', match: null, devices: null,
+      q: '', sel: {}, overrideDevice: {}, confirmed: {}, expandedUnitId: null, expandedMode: 'confirm',
+      swapProvider: 'Hapn', swapQuery: '', applyResult: null, lastApply: null });
+  }
+  if (closest('.js-gpsru-scan')) { e.stopPropagation(); const o = state.overlay; if (!o || o.kind !== 'gpsRoundup') return; return gpsRoundupScan(o); }
+  if (closest('.js-gpsru-expand')) {
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'gpsRoundup') return;
+    const uid = closest('.js-gpsru-expand').dataset.rec;
+    if (o.step === 'poll') { clearTimeout(_gpsPollTimer); o.step = ''; o.pollUnitId = ''; }
+    o.expandedUnitId = (o.expandedUnitId === uid) ? null : uid;
+    o.expandedMode = 'confirm';
+    return renderOverlay();
+  }
+  if (closest('.js-gpsru-swap-open')) {
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'gpsRoundup') return;
+    const uid = closest('.js-gpsru-swap-open').dataset.rec;
+    const row = gpsRoundupRows(o).find((r) => r.unitId === uid);
+    if (o.step === 'poll') { clearTimeout(_gpsPollTimer); o.step = ''; o.pollUnitId = ''; }
+    o.expandedUnitId = uid; o.expandedMode = 'swap';
+    o.swapProvider = row ? gpsCanonProvider(row.provider) : 'Hapn'; o.swapQuery = '';
+    return renderOverlay();
+  }
+  if (closest('.js-gpsru-swap-cancel')) {
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'gpsRoundup') return;
+    o.expandedMode = 'confirm'; return renderOverlay();
+  }
+  if (closest('.js-gpsru-swap-provider')) {
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'gpsRoundup') return;
+    o.swapProvider = closest('.js-gpsru-swap-provider').dataset.val || 'Hapn'; o.swapQuery = '';
+    return renderOverlay();
+  }
+  if (closest('.js-gpsru-swap-pick')) {
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'gpsRoundup') return;
+    const btn = closest('.js-gpsru-swap-pick');
+    const uid = btn.dataset.rec, devId = btn.dataset.devid; if (!uid || !devId) return;
+    const dev = (o.devices || []).find((d) => gpsDevKey(d) === devId); if (!dev) return;
+    o.overrideDevice = o.overrideDevice || {};
+    o.overrideDevice[uid] = { provider: gpsCanonProvider(dev.source), deviceId: devId, label: dev.name || devId, device: dev };
+    o.confirmed = o.confirmed || {}; o.confirmed[uid] = false;   // device changed — must reconfirm
+    o.expandedMode = 'confirm';
+    return renderOverlay();
+  }
+  if (closest('.js-gpsru-unmap')) {
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'gpsRoundup') return;
+    const uid = closest('.js-gpsru-unmap').dataset.rec;
+    o.sel[uid] = false;
+    if (o.overrideDevice) delete o.overrideDevice[uid];
+    if (o.confirmed) delete o.confirmed[uid];
+    if (o.expandedUnitId === uid) o.expandedUnitId = null;
+    return renderOverlay();
+  }
+  if (closest('.js-gpsru-poll-start')) {
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'gpsRoundup') return;
+    const uid = closest('.js-gpsru-poll-start').dataset.rec;
+    const row = gpsRoundupRows(o).find((r) => r.unitId === uid); if (!row || !row.deviceId) return;
+    o.pollUnitId = uid; o.provider = row.provider; o.deviceId = row.deviceId; o.step = 'poll';
+    gpsConnectStartPoll(o);
+    return;
+  }
+  if (closest('.js-gpsru-confirm')) {
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'gpsRoundup') return;
+    const uid = closest('.js-gpsru-confirm').dataset.rec;
+    o.confirmed = o.confirmed || {}; o.confirmed[uid] = true;
+    return renderOverlay();
+  }
+  if (closest('.js-gpsru-dismiss-result')) { e.stopPropagation(); const o = state.overlay; if (!o || o.kind !== 'gpsRoundup') return; o.applyResult = null; return renderOverlay(); }
+  if (closest('.js-gpsru-apply')) {
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'gpsRoundup') return;
+    const rows = gpsRoundupRows(o);
+    const ticked = rows.filter((r) => o.sel[r.unitId]);
+    if (!ticked.length) return;
+    const blocked = ticked.filter((r) => String(r.provider).toLowerCase() === 'hapn' && !(o.confirmed && o.confirmed[r.unitId]));
+    const eligible = ticked.filter((r) => !blocked.includes(r));
+    const { results } = gpsApplyMappings(eligible);
+    const blockedResults = blocked.map((r) => ({ unitId: r.unitId, name: (IDX.unit.get(r.unitId) || {}).name || r.unitId, ok: false, reason: 'Needs the side-by-side confirm first — Hapn drives the remote starter' }));
+    const allResults = results.concat(blockedResults);
+    o.lastApply = { records: results.filter((x) => x.ok).map((x) => ({ unitId: x.unitId, prevProvider: x.prevProvider, prevDeviceId: x.prevDeviceId })), at: Date.now() };
+    o.applyResult = { results: allResults, at: Date.now() };
+    for (const r of ticked) delete o.sel[r.unitId];   // consumed — re-scan/re-tick to try again
+    render(); renderOverlay();
+    const okN = results.filter((x) => x.ok).length, failN = allResults.length - okN;
+    toast(failN ? `Wrangled ${okN} tracker${okN === 1 ? '' : 's'} onto units — ${failN} need attention below.` : `Wrangled ${okN} tracker${okN === 1 ? '' : 's'} onto units. ✓`);
+    return;
+  }
+  if (closest('.js-gpsru-undo')) {
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'gpsRoundup' || !o.lastApply) return;
+    const { results } = gpsUndoMappings(o.lastApply.records);
+    o.lastApply = null; o.applyResult = null;
+    render(); renderOverlay();
+    toast(`Undid ${results.length} tracker mapping${results.length === 1 ? '' : 's'}.`);
+    return;
+  }
+
   // §5a — the connect-a-device wizard (gpsConnect popup)
   if (closest('.js-gps-connect')) {
     e.stopPropagation();
@@ -15521,6 +15835,18 @@ function onInput(e) {
     if (o?.kind === 'gpsFleet') { o.q = e.target.value; const sel = e.target.selectionStart; renderOverlay(); const q = document.querySelector('.overlay .js-gpsfm-search'); if (q) { q.focus(); q.setSelectionRange(sel, sel); } }
     return;
   }
+  // Phase 2 M5 — Round Up Trackers review-table live filter (same caret-restore pattern)
+  if (e.target.classList.contains('js-gpsru-search')) {
+    const o = state.overlay;
+    if (o?.kind === 'gpsRoundup') { o.q = e.target.value; const sel = e.target.selectionStart; renderOverlay(); const q = document.querySelector('.overlay .js-gpsru-search'); if (q) { q.focus(); q.setSelectionRange(sel, sel); } }
+    return;
+  }
+  // Phase 2 M5 — per-row device-swap picker search
+  if (e.target.classList.contains('js-gpsru-swap-search')) {
+    const o = state.overlay;
+    if (o?.kind === 'gpsRoundup') { o.swapQuery = e.target.value; const sel = e.target.selectionStart; renderOverlay(); const q = document.querySelector('.overlay .js-gpsru-swap-search'); if (q) { q.focus(); q.setSelectionRange(sel, sel); } }
+    return;
+  }
   if (e.target.classList.contains('chat-input')) { state.chat.draft = e.target.value; return; }
   // Company Files live search → re-render the board popup and restore the caret.
   if (e.target.classList.contains('js-files-query')) {
@@ -15663,6 +15989,12 @@ function onChange(e) {
     saveListLayout(card, layout);
     render(); renderOverlay();
     return;
+  }
+  // Phase 2 M5 — Round Up Trackers row tick (include/exclude a proposal from Apply).
+  if (e.target.classList.contains('js-gpsru-tick')) {
+    const o = state.overlay; if (!o || o.kind !== 'gpsRoundup') return;
+    o.sel = o.sel || {}; o.sel[e.target.dataset.rec] = e.target.checked;
+    return renderOverlay();
   }
   // Customer form selfie: capture (phone camera via capture="user", or upload) → compress → store.
   if (e.target.classList.contains('js-nc-selfie')) {
@@ -17958,6 +18290,104 @@ function gpsConnectSave(anyway) {
   toast(o.pollState === 'reporting' ? `GPS connected — ${u.name} is reporting. ✓` : `GPS mapped — ${u.name} saved without confirmed signal yet.`);
 }
 
+/* ── ROUND UP TRACKERS (bulk onboarding · Phase 2 M5) ──────────────────────────────
+   The only WRITER of gpsProvider/gpsDeviceId at fleet scale — everything else here
+   (gpsMatchFleet, the picker helpers) only proposes. gpsRoundupScan pulls a fresh
+   live snapshot and runs the M4 matcher; gpsRoundupRows folds any per-row human
+   override (a device swap or a manual no-match pick) into the matcher's proposals for
+   the review table; gpsApplyMappings is the actual write — mirrors gpsConnectSave
+   (same u.gpsProvider/u.gpsDeviceId/reindex/logAction shape) but batched, with
+   PER-UNIT failure surfacing (R25 hazard style: a half-applied batch must never read
+   "done" — a silently-missing mapping is as safety-relevant as a wrong one) and an
+   in-batch dedupe guard (two ticked rows can never write the SAME device to two
+   different units). Never touches a work order. The mandatory Hapn side-by-side
+   confirm gate lives in the popup layer (buildPopupEl / the click handlers below) —
+   gpsApplyMappings itself is provider-agnostic and just writes what it's handed. */
+
+// gpsConnectSave writes the canonical-cased provider from GPS_PROVIDERS ('Hapn' etc,
+// matching gpsShutdownControl's strict `!== 'Hapn'` check); gpsMatchFleet's proposals
+// carry the LOWERCASE gpsNormalize `source` instead — fold back to canonical case here
+// so a bulk-onboarded Hapn unit's remote-shutdown control still lights up correctly.
+const GPS_PROVIDER_CANON = { hapn: 'Hapn', deere: 'Deere', yanmar: 'Yanmar', bouncie: 'Bouncie' };
+const gpsCanonProvider = (p) => GPS_PROVIDER_CANON[String(p || '').toLowerCase()] || (p || '');
+
+/* Kick off a scan: a fresh live snapshot (refreshGpsLive → gpsLive), then the M4
+   matcher over DATA.units + that snapshot. Re-checks state.overlay === o before
+   touching it, same self-guard as the connect wizard's async steps. */
+async function gpsRoundupScan(o) {
+  if (!o || o.kind !== 'gpsRoundup') return;
+  if (!gpsConfigured()) { o.scanned = true; o.scanning = false; o.scanError = 'GPS backend isn’t configured (GPS_BACKEND_URL).'; return renderOverlay(); }
+  o.scanning = true; o.scanError = ''; o.applyResult = null; renderOverlay();
+  await refreshGpsLive();
+  if (state.overlay !== o) return;   // popup closed mid-fetch
+  o.devices = gpsLive ? [...new Set(gpsLive.values())] : [];
+  o.match = gpsMatchFleet(DATA.units, o.devices);
+  o.sel = {}; for (const p of o.match.proposals) o.sel[p.unitId] = (p.tier === 'confident');
+  o.overrideDevice = {}; o.confirmed = {}; o.expandedUnitId = null; o.expandedMode = 'confirm';
+  o.scanned = true; o.scanning = false;
+  renderOverlay();
+}
+
+/* The review table's effective rows: the matcher's proposals with any per-row human
+   override folded in (device swapped, or a NO-MATCH unit manually paired) — a PURE
+   view merge, no state mutation. Overriding an existing proposal keeps its original
+   tier bucket (still the tier the matcher judged it); a brand-new pairing from the
+   unmatched-units list gets tier 'manual'. */
+function gpsRoundupRows(o) {
+  const m = o && o.match; if (!m) return [];
+  const ov = o.overrideDevice || {};
+  const rows = m.proposals.map((p) => {
+    const o2 = ov[p.unitId];
+    return o2 ? { ...p, deviceId: o2.deviceId, provider: o2.provider, device: o2.device || null, overridden: true } : { ...p };
+  });
+  for (const uid of m.unmatchedUnits) {
+    const o2 = ov[uid];
+    if (o2) rows.push({ unitId: uid, deviceId: o2.deviceId, provider: o2.provider, device: o2.device || null,
+      tier: 'manual', overridden: true, score: 0, margin: 0, contested: false, reasons: ['manual'], runnerUp: 0 });
+  }
+  return rows;
+}
+
+/* THE WRITE. `proposals` = the rows a human ticked (and, for Hapn, confirmed) —
+   filtering that decision is the popup's job; this stays a small, directly-testable
+   primitive. Re-validates EACH unit at write time (never trust the scan is still
+   fresh — Sold/already-mapped is a HARD skip, never a silent overwrite) and refuses
+   to write the same device to two different units within one call. Returns every
+   attempted unit's outcome — ok:true writes, ok:false explains why it didn't, so the
+   caller can never report "done" on a partial batch. Never touches DATA.workOrders. */
+function gpsApplyMappings(proposals) {
+  const results = []; const usedDevices = new Set();
+  for (const p of (proposals || [])) {
+    const u = IDX.unit.get(p.unitId);
+    if (!u) { results.push({ unitId: p.unitId, ok: false, reason: 'Unit not found' }); continue; }
+    if (u.fleetStatus === 'Sold') { results.push({ unitId: p.unitId, name: u.name, ok: false, reason: 'Unit is Sold — skipped' }); continue; }
+    if (u.gpsProvider && u.gpsDeviceId) { results.push({ unitId: p.unitId, name: u.name, ok: false, reason: 'Already mapped to a tracker — skipped' }); continue; }
+    if (!p.deviceId) { results.push({ unitId: p.unitId, name: u.name, ok: false, reason: 'No device selected' }); continue; }
+    if (usedDevices.has(p.deviceId)) { results.push({ unitId: p.unitId, name: u.name, ok: false, reason: 'That device is already assigned to another unit in this batch' }); continue; }
+    const provider = gpsCanonProvider(p.provider);
+    const prevProvider = u.gpsProvider || '', prevDeviceId = u.gpsDeviceId || '';
+    u.gpsProvider = provider; u.gpsDeviceId = p.deviceId;
+    reindex('units', u);
+    logAction(u, `GPS → ${provider} · ${p.deviceId} (bulk round-up)`);
+    usedDevices.add(p.deviceId);
+    results.push({ unitId: p.unitId, name: u.name, ok: true, provider, deviceId: p.deviceId, prevProvider, prevDeviceId });
+  }
+  return { results };
+}
+/* Revert the pairs a gpsApplyMappings call just wrote (the popup's batch Undo).
+   `records` = the ok:true results' {unitId, prevProvider, prevDeviceId}. */
+function gpsUndoMappings(records) {
+  const results = [];
+  for (const r of (records || [])) {
+    const u = IDX.unit.get(r.unitId); if (!u) continue;
+    u.gpsProvider = r.prevProvider || ''; u.gpsDeviceId = r.prevDeviceId || '';
+    reindex('units', u);
+    logAction(u, 'GPS mapping undone (bulk round-up)');
+    results.push({ unitId: r.unitId, ok: true });
+  }
+  return { results };
+}
+
 /* Hapn starter-interrupt (the remote-shutdown relay, spec §6/§7). Cuts the STARTER so
    the engine can't be RE-STARTED — it does NOT kill a running engine. Polarity matches
    the original app (LiveTracking.jsx): `enabled:false` CUTS the starter (immobilize);
@@ -19160,7 +19590,7 @@ function exposeTestApi() {
       latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore, wranglerRailLoad, wrOffloadChatImages, wrEvictChatBlobs, driveViewUrl, mergeWranglerRails,
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
-      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, setFunnelStage, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, addMonthsISO, openMembershipEnroll, membershipEnrollCommit, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, getEntityColor, getEntityFlags, isEmptyMockDraft, sweepEmptyDrafts, createInvoiceForRental, syncRentalLines, rentalLineItems, salePriceSuggest, salePricingCfg, categoryCostBasis, driverRoster, driverName, legDriverField, dispatchEvents, gpsMatchFleet, gpsMatchScore, gpsMakeFamily, gpsDeviceFamily, setRole: (r) => { currentRole = r || ''; render(); },
+      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, setFunnelStage, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, addMonthsISO, openMembershipEnroll, membershipEnrollCommit, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, getEntityColor, getEntityFlags, isEmptyMockDraft, sweepEmptyDrafts, createInvoiceForRental, syncRentalLines, rentalLineItems, salePriceSuggest, salePricingCfg, categoryCostBasis, driverRoster, driverName, legDriverField, dispatchEvents, gpsMatchFleet, gpsMatchScore, gpsMakeFamily, gpsDeviceFamily, gpsApplyMappings, gpsUndoMappings, gpsRoundupRows, gpsCanonProvider, reindex, logAction, setRole: (r) => { currentRole = r || ''; render(); },
       openCustomerForm, renderOverlay, render, cardComplete, cardCaptureState, cardHasSelfie, cardHasSignature, captureSelfie, captureSignature, __state: state };   // UI drivers for headless screenshot/e2e tests
 
   } catch (e) { /* no window (non-browser) */ }
