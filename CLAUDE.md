@@ -59,8 +59,20 @@ Reference implementations: `.login-*` and `.cancel-arc` blocks in `style.css`.
 ## Deploy & gates
 
 - **Deploy to live** (app.jacrentals.com via Pages): `main` is **branch-protected**
-  (required `smoke` CI check). Deploy path: feature branch -> PR -> squash-merge.
-  NEVER `git push origin HEAD:main` directly -- it will be rejected.
+  (required `smoke` CI check). Real deploy path: `<domain>/<task>` -> `area/<domain>`
+  -> `staging` -> ONE PR `staging` -> `main` (squash-merge), promoted on Jac's explicit
+  call (see `/start` skill, steps 3-4). NEVER `git push origin HEAD:main` directly -- it
+  will be rejected.
+- **PR base is never `main` by default -- not even for harness/web-launched sessions
+  (Jac, 2026-07-08).** A session that arrives on a pre-assigned branch (e.g. Claude Code
+  on the web's `claude/<slug>`) with instructions to "open a PR" is NOT being told to
+  target `main` -- those instructions almost never name a base branch, and defaulting to
+  the repo default silently skips the area-branch pipeline above. Read
+  `.claude/skills/start/references/branch-map.md`, pick the best-fitting `area/<domain>`,
+  and open the PR against THAT. Only Jac's own explicit `staging` -> `main` promotion
+  reaches `main`. If the matching area branch looks too stale/diverged to route onto
+  safely, stop and ask Jac (`AskUserQuestion`) which base to use for that PR -- don't
+  fall back to `main` to sidestep the question.
 - **Gates (must pass before push):** `node ci/smoke.mjs`,
   `node ci/logic-test.mjs`, `node ci/gen-rule-usage.mjs --check`,
   `node ci/check-window-catalog.mjs`, `node tools/gen-code-map.mjs --check`
