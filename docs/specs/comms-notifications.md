@@ -139,22 +139,26 @@ A glance at the bell or the chat dock tells the team what needs a human; the cus
 
 The live system is documented here **as canon**. Three sub-systems exist; only the first two are real channels.
 
-### 2.1 SHIPPED — Internal team chat (`APP-23`, app.js:7541)
+### 2.1 SHIPPED — Internal team chat (`APP-23`) — RESHAPED 2026-07-08
 
-A bottom-dock chat built on Phase-6 record comments.
+Reshaped from the Phase-6-comment dock into **user-created, titled, member-scoped threads**
+riding the v3 comms rail. Full design + rationale:
+`docs/superpowers/specs/2026-07-08-team-chat-rail-update-design.md`.
 
 | Piece | Where | Behavior |
 |---|---|---|
-| Comment feed | `chatComments()` app.js:7548 | Every `rec.comments[]` across customers/rentals/units/invoices/workOrders/categories, flattened into a "what's flagged" feed. |
-| Threads | `state.chat.chats[]` | Each chat = `{ id, tags[], participants[], messages[], seen{} }`. Threads are **never deleted** — a 0-participant chat goes dormant and is reopened via a tagged element. |
-| Tags | `chat.tags[]` | Colored chips referencing a record (`{card, recId}`); a thread "carries its own context." Added by right-click / long-press / drag-in. |
-| Roles | `chat.participants[]` | Role buttons toggle who's included (`chatToggleRole` app.js:7955). Default = all `ROLES`. |
-| Unread | `chatUnreadCount()` 7554, `chatUnseenForRec()` 7561 | Per-user `seen{}` map drives a re-flash on tagged elements and an unread count. |
-| Send | `chatSend()` app.js:7945 | Pushes a message `{id, by, when, at, text}`, marks self-seen, debounced sync, haptic tick. |
-| Sync | `pushChats/loadChats/mergeChats` app.js:15755–15807 | Mirrored through the backend `teamChats` Sheet tab. **UNION by id** (threads, messages, tags, participants) so two users never clobber. `setChats/getChats` GAS actions. |
-| Backend | `docs/handoffs/wrangler-rail-sync-backend.gs` | `getChats_/setChats_` upsert-only, never delete; one row per chat `[id, json]`. |
+| Threads | `state.chat.chats[]` | Each chat = `{ id, title, members[rosterId], messages[{…,refs?}], seen{}, by, muted[] }`. User-created + **titled** (editable in the window header); **never deleted**. Legacy `{tags,participants}` chats normalize on load (`normalizeTeamChat`). |
+| Ownership | `chatIsAdmin` · `chat.by` | The creator is the chat's **admin** — only they add/remove members or rename. Members get a read-only member list and can **voluntarily leave** (`chatLeave`). |
+| Members | `chatMemberBarHtml` | Named people from **Settings → Team Roster** (`settings.employees`), grouped by role; **default none**. Identity binds the login name → roster person (`myRosterId`, case-insensitive); an unbound login sees all (fallback). |
+| Copy → paste | `copyElement` · `state.held` · message `refs` | Right-click a record → **Copy to chat** (or drag onto the chat pad) → paste as a **live, clickable chip** (`chatRefChipHtml`; a deleted record greys out). Mr. Wrangler paste sets the chat's *focused record* instead (`wranglerContext`). **Internal-only** — never surfaces in a customer text/email composer. Retired the old right-click "start a chat" seed. |
+| Gear menu | `chatSettingsMenu` | Mark as read · Mute (per-user; a muted chat never raises a status dot) · Rename/End (admin) · Leave (member). |
+| Status | `commsTeamStatus` | Per-tab red/yellow/green = unseen / reply? / replied (muted → quiet). |
+| Flagged overview | `chatComments()` | The "what's flagged" record-comment feed still shows when no chat is open — its fate (Notifications / landing / drop) is **deferred**. |
+| Sync | `pushChats/loadChats/mergeChats` + `reconcileScopedChats` | Backend `teamChats` tab. Messages **union by id**; `title`/`members` are **admin-authoritative** (adopt the server's value unless a local edit is unpushed) so a Leave/kick/rename isn't clobbered by a racing poll. Client sends its identity (`me`/`rosterId`) and prunes scoped-out chats live. |
+| Backend privacy | `docs/handoffs/team-chat-privacy-backend.gs` (**DEPLOYED 2026-07-08**) | `getChats_` scopes reads to admin+members; `setChats_` authorizes writes (non-member self-leave only + own view-state, no injecting/tampering). Back-compatible (absent identity = old client → prior behavior). Identity is client-asserted behind the team password — a real filter for normal use, **not a crypto boundary** (true per-person privacy needs per-user auth). |
 
-`commentUserKey()` identifies the author (role/device-derived). Avatars: deterministic color + initials (`chatAvatarColor`, `chatInitials`).
+`commentUserKey()` identifies the author. Avatars: deterministic color + initials
+(`chatAvatarColor`, `chatInitials`).
 
 ### 2.2 SHIPPED — Mr.-Wrangler notification bell (§18f, app.js:10915)
 
@@ -212,7 +216,7 @@ Permissions key off **tiers** (`ROLE_TIERS`, config.js:326 — `staff`/`money`/`
 
 | Capability | Min tier | Server-enforced? | Rationale |
 |---|---|---|---|
-| Read/post in team chat | `staff` (1) | password gate (signed-in) | Any signed-in role; per-thread `participants[]` further scopes visibility. |
+| Read/post in team chat | `staff` (1) | password gate (signed-in) | Any signed-in role; a chat is scoped to its **admin + members** — enforced server-side by `getChats_`/`setChats_` (2026-07-08), not just the client. |
 | See the resolved-fix bell | `staff` (1) | n/a (read-only mirror) | Read-only system feed, no customer data. |
 | Approve Mr.-Wrangler requests | `manager` (3) | yes (existing) | Existing `canApproveRequests` app.js:10895. |
 | **Send a customer QUOTE** (exposes a committed price) | `money` (2) | **YES — `sendCustomerMessage` re-checks tier server-side** | Commits a price to the customer; a price commitment is a money action. Office/Sales are `money`. |
@@ -234,7 +238,7 @@ Permissions key off **tiers** (`ROLE_TIERS`, config.js:326 — `staff`/`money`/`
   2. assert that `recId`'s owner **equals** the supplied `customerId` (reject `{ok:false, reason:'isolation'}` on mismatch — a tampered client cannot send Customer A's record to Customer B);
   3. treat any client-supplied `to` as advisory/ignored (**OPEN Q-7**: forbid ad-hoc recipients entirely in v1).
 - **Inbound** (STOP/replies) is matched back to a customer **by the sending phone number** server-side; an inbound from an unknown number is logged but **never auto-attached** to an arbitrary customer (anti-spoof, see §10).
-- **Team chat** is internal-only and already role-scoped by `participants[]`; no customer ever sees it, and no customer PII is *authored into* a chat thread by this area (a reply-surface ping references the customer by id/name only — **OPEN Q-5**).
+- **Team chat** is internal-only and **server-side member-scoped** (admin + members, via `getChats_`/`setChats_`, 2026-07-08 — identity client-asserted behind the team password); no customer ever sees it, and no customer PII is *authored into* a chat thread by this area (a reply-surface ping references the customer by id/name only — **OPEN Q-5**).
 
 ### 3.3 Money / pricing-floor gating
 
@@ -254,7 +258,7 @@ Schema-less Sheets + additive JSON fields. Nothing renames or drops existing fie
 |---|---|---|
 | Customer | `customerId`, `phone`, `email`, `firstName`, `name`, `accountType`, `netDays` | `newCustomer` draft, app.js:9815 |
 | Invoice | `invoiceId`, `customerId`, `total` (via `invoiceTotals`) | app.js:14761 |
-| Chat thread | `{ id, tags[], participants[], messages[], seen{} }` | `state.chat.chats` |
+| Chat thread | `{ id, title, members[rosterId], messages[{…,refs?}], seen{}, by, muted[] }` | `state.chat.chats` |
 | Notif (system) | `{ number, title, verdict, url, closedAt, merged }` | `wranglerNotifs` |
 
 ### 4.2 Proposed — additive customer fields (consent)
@@ -342,8 +346,8 @@ Backend = Google Apps Script, schema-less Sheets, **additive actions** on the si
 
 | Action | Body | Returns | Notes |
 |---|---|---|---|
-| `getChats` | — | `{ ok, chats[] }` | team chat, all rows |
-| `setChats` | `{ chats }` | `{ ok, saved }` | upsert-only, never delete |
+| `getChats` | `{ me, rosterId }` | `{ ok, chats[] }` | team chat, **scoped to the caller** (admin + members); absent identity = old client → all rows |
+| `setChats` | `{ chats, me, rosterId }` | `{ ok, saved }` | **authorized** upsert (2026-07-08): owner=full, member=self-leave + own view-state + message-append, non-member=reject; messages unioned; never deletes |
 | `wranglerNotifications` | — | `{ ok, notifications[] }` | resolved-fix feed |
 | `wranglerRequests` / `wranglerApprove` / `wranglerDismiss` | — / `{number}` | `{ ok, … }` | requests inbox |
 
