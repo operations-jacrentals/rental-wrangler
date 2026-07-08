@@ -27,7 +27,7 @@ import {
   getStatus, STATUS, ROLES, ROLE_TIERS, tierRank, BUILTIN_ROLE_TIERS, GRID_CARDS, BACKOFFICE_BOARDS, SORT_FIELDS,
   SHOP_TYPES, COLUMNS, COLUMN_OF,
   legacyTransportPrice, computeTransportPrice, isFueledType, legsForType, YARD_ORIGIN, GOOGLE_MAPS_KEY, GPS_BACKEND_URL,
-  fmtWindow, fmtShortDate, showsTruck, parseISO, TODAY_ISO, invoiceShort, TRANSPORT_MAP,
+  fmtWindow, fmtShortDate, showsTruck, parseISO, TODAY_ISO, refreshTodayISO, invoiceShort, TRANSPORT_MAP,
   FLAG_META, FLAG_SEVERITY_RANK, INSURANCE_COVERAGE_TYPES,
 } from './config.js';
 
@@ -75,8 +75,11 @@ const money = (n) => { if (n == null) return '—'; const v = Math.round(Number(
 // printed/paid figure reads what's actually owed, to the cent, even on whole dollars.
 const money2 = (n) => (n == null ? '—' : '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 const num = (n) => (n == null ? '—' : Number(n).toLocaleString('en-US', { maximumFractionDigits: 1 }));
-const TODAY = parseISO(TODAY_ISO);
+let TODAY = parseISO(TODAY_ISO);   // live: refreshToday() rolls it over so an all-day-open tab never stamps yesterday
 const dayDiff = (a, b) => Math.round((b - a) / 86400000);
+// Keep "today" current on a long-lived tab. TODAY_ISO is an ESM live binding, so
+// every call-time reader picks up the new day for free; TODAY (a Date) is re-derived here.
+function refreshToday() { if (refreshTodayISO()) { TODAY = parseISO(TODAY_ISO); } }
 
 const SINGULAR = { customers: 'customer', rentals: 'rental', units: 'unit', invoices: 'invoice', categories: 'category', workOrders: 'workOrder', inspections: 'inspection', serviceOrders: 'unit', models: 'model' };
 
@@ -1032,7 +1035,7 @@ function createContinuationInvoice(r, covStart, covEnd) {
  *  full-window − billedSeries), so an already-billed — even PAID — sub-tier day counts toward
  *  the blended rate instead of being re-billed. Positive only (refund-first: a paid chunk is
  *  never reduced). Without fullWin the added segment is priced standalone (OFF path, #444). */
-function billChunkUnits(inv, r, ns, ne, prevEnd, retro, kind, contInvId, fullWin) {
+function billChunkUnits(inv, r, ns, ne, prevEnd, retro, kind, contInvId, fullWin, emitZero) {
   let delta = 0, count = 0;
   rentalUnits(r).forEach((eu) => {
     if (unitVoided(r, eu)) return;
@@ -1052,7 +1055,11 @@ function billChunkUnits(inv, r, ns, ne, prevEnd, retro, kind, contInvId, fullWin
       const d = unitExtensionDelta(inv, r, eu, ns, ne, prevEnd, retro);
       amount = d.amount; rate = d.rate;
     }
-    if (amount > 0.005) {
+    // Extension/continuation deltas only post when they actually charge (>0). But on the INITIAL
+    // multi-chunk build (emitZero — createInvoiceForRental) always emit one line per unit even at
+    // $0, matching the ≤28-day single-chunk rentalLineItems path — else a >28-day rental whose units
+    // sit on an unpriced category (catRatesUnset) creates a completely empty invoice (#537).
+    if (amount > 0.005 || (emitZero && amount > -0.005)) {
       const tail = kind === 'extension' ? ` · Extension → ${fmtShortDate(ne)}` : (contInvId ? ` · Ext of ${invoiceShort(contInvId)}` : '');
       inv.lineItems.push({ kind, ref: r.rentalId, unitId: eu.unitId, lid: lineLid(), label: `${u.name} · ${rate}${tail}`, amount });
       delta += amount; count++;
@@ -2197,7 +2204,8 @@ const state = {
   invMergePick: null,         // invoiceId whose "Merge invoice" picker is open (consolidate unpaid bills)
   dashboard: false,           // §5.3/§11 Office Dispatch Time Grid (grid-swap mode)
   seq: 1,
-  invoiceSeq: maxInvoiceSeq(),   // monotonic invoice number — derived from the highest running number actually present (NOT .length: see maxInvoiceSeq)
+  invoiceSeq: maxInvoiceSeq(),   // per-MONTH running number — highest present this month (NOT .length: see maxInvoiceSeq)
+  invoiceSeqMonth: CFG.invoiceMonthKey(TODAY_ISO),   // the month this counter belongs to; nextInvoiceId resets invoiceSeq on a month rollover
   previewsOn: (() => { try { return localStorage.getItem('jactec.previewsOff') !== '1'; } catch (e) { return true; } })(),   // hover previews (per device)
   overbookOn: (() => { try { return localStorage.getItem('jactec.overbook') === '1'; } catch (e) { return false; } })(),   // §10 allow-overbooking policy (per device, default OFF — drag build)
   hapticsOff: (() => { try { return localStorage.getItem('jactec.hapticsOff') === '1'; } catch (e) { return false; } })(),   // §M-touch Vibration-API feedback (per device, default ON; Android-only, no-op on iOS)
@@ -2206,21 +2214,34 @@ const state = {
   settings: loadAdminSettings(),   // Settings Board admin customization (config.settings); mirrored to localStorage, applied at boot via applySettings()
 };
 const activeSession = () => (state.activeTabId ? state.tabs.find((t) => t.id === state.activeTabId)?.session : state.defaultSession) || state.defaultSession;
-/** Highest running number actually present across invoices, parsed from each id's
- *  leading digits (e.g. '07i02Ju26' -> 7). The counter MUST come from the data, not
- *  the array: `DATA.invoices.length` started from the seed file (4) and was never
- *  recomputed after loadFromBackend swapped in the real invoices, so every login it
- *  restarted low and minted 05i…/06i… numbers that already existed on the backend —
- *  duplicate "##i" prefixes that the 18s refresh poll then leap-frogged in. `.length`
- *  also shrinks on discard (breaking the "never reused" invariant) and doesn't grow
- *  when the poll pushes remote invoices in. Mirrors nextUnitId/nextCategoryId. */
+/** Highest running number for the CURRENT MONTH — the invoice counter resets monthly (Jac
+ *  2026-07-08). Each id is parsed via CFG.parseInvoice (handles the new ##MMDDYY form AND the
+ *  legacy ##iDDMmmYY), scoped to this month+year: July keeps counting up, August restarts at 1.
+ *  MUST come from the data, not `.length` — that restarted low each login and minted numbers
+ *  already on the backend (duplicate prefixes the 18s poll then leap-frogged in), and it shrinks
+ *  on discard, breaking the "never reused" invariant. Mirrors nextUnitId/nextCategoryId. */
 function maxInvoiceSeq() {
-  return (DATA.invoices || []).reduce((m, inv) => { const n = /^(\d+)i/.exec(String(inv.invoiceId || '')); return n ? Math.max(m, +n[1]) : m; }, 0);
+  const cur = CFG.invoiceMonthKey(TODAY_ISO);
+  return (DATA.invoices || []).reduce((m, inv) => { const p = CFG.parseInvoice(inv.invoiceId); return (p && p.monthKey === cur) ? Math.max(m, p.seq) : m; }, 0);
 }
+/** Invoice ids this session MINTED — lets the refresh poll tell an id COLLISION apart from
+ *  a normal remote edit. If a number we just minted already belonged to ANOTHER customer's
+ *  bill on the backend (an 18s-poll race — see the collision history above), the poll would
+ *  otherwise adopt their record in place and swap our invoice's customer + amount. Gating on
+ *  this set lets healInvoiceIdCollision re-issue OURS instead (§inv-collision, Jac 2026-07-07). */
+const mintedInvoiceIds = new Set();
 /** Next unique invoice id — a monotonic counter so deleting a Quote-stage invoice can't
- *  reuse a number. Always jumps past the current max in the data, so it can't collide
- *  with invoices loaded at login or pushed in by the live-refresh poll mid-session. */
-const nextInvoiceId = () => { state.invoiceSeq = Math.max(state.invoiceSeq || 0, maxInvoiceSeq()) + 1; return CFG.invoiceId(TODAY_ISO, state.invoiceSeq); };
+ *  reuse a number. Jumps past the current max in the data AND past any id already in the
+ *  local index, so it can't collide with invoices loaded at login or pushed in by the
+ *  live-refresh poll. (A same-day number minted by ANOTHER session before it has polled in
+ *  can't be seen here — that residual race is caught downstream by healInvoiceIdCollision.) */
+const nextInvoiceId = () => {
+  const monthKey = CFG.invoiceMonthKey(TODAY_ISO);
+  if (state.invoiceSeqMonth !== monthKey) { state.invoiceSeqMonth = monthKey; state.invoiceSeq = 0; }   // per-month counter: drop the session high-water on a month rollover
+  let seq = Math.max(state.invoiceSeq || 0, maxInvoiceSeq());
+  let id; do { id = CFG.invoiceId(TODAY_ISO, ++seq); } while (IDX.invoice && IDX.invoice.has(id));
+  state.invoiceSeq = seq; mintedInvoiceIds.add(id); return id;
+};
 
 /* ── session actions ──────────────────────────────────────────────────────
    `recType` is only meaningful for the Shop card (which holds inspections /
@@ -8381,9 +8402,21 @@ function currentMobileMember() {
   const s = activeSession();
   return (s.cols && s.cols[colObj.id]) || colObj.default;
 }
-// §M1 — the flat card list the phone toggle bar offers. (Shop retirement: the wrench
-// entry is gone — the Units card carries the worklist graph.)
-const MOBILE_CARDS = ['units', 'categories', 'rentals', 'calendar', 'customers', 'invoices'];
+// §M1 — the phone footer is 3 independent 2-way toggles, one per desktop column (left:
+// Units/Categories · middle: Rentals/Calendar · right: Customers/Invoices). (Shop
+// retirement: the wrench entry is gone — the Units card carries the worklist graph.)
+const MOBILE_TOGGLE_GROUPS = [
+  { col: 'left',   members: ['units', 'categories'] },
+  { col: 'middle', members: ['rentals', 'calendar'] },
+  { col: 'right',  members: ['customers', 'invoices'] },
+];
+// The 3 MAIN cards, left→right — what the footer swipe steps between (never a sub-card).
+const MAIN_CARDS = ['units', 'rentals', 'customers'];
+// Which main card a member (incl. a sub-card) belongs to.
+function mainCardOfMember(m) {
+  const col = COLUMN_OF[m];
+  return col === 'middle' ? 'rentals' : col === 'right' ? 'customers' : 'units';
+}
 // §M1 — jump straight to a card (flattens the 3-column model on phones): set the column +
 // member, flip the visible column, and show that card's LIST.
 function goToCard(member) {
@@ -8393,18 +8426,25 @@ function goToCard(member) {
   const mc = s.cards[member]; if (mc) { mc.mode = 'list'; mc.recId = null; mc.recType = null; }
   render();
 }
-// §M1 phone footer — ONE card-toggle bar: every card collapsed to its icon, the SELECTED
-// card expands to icon + stamped label. Tap an icon to jump to that card's list. The card's
-// search/sort row is moved DOWN into the .mdock-searchslot by render(). Swipe the dock
-// left/right to step through cards; the grid swipe is Back/Forward.
+// §M1 phone footer — THREE card-toggle bars (Units/Categories · Rentals/Calendar ·
+// Customers/Invoices), one per desktop column. Every member is an icon; ONLY the single
+// card the user is currently ON expands to icon + stamped label — every other icon, in
+// every group, stays icon-only (keeps 3 narrow toggles from fighting each other for label
+// width). Tap an icon to jump straight to that card's list. The card's search/sort row is
+// moved DOWN into .mdock-searchslot by render(). Swipe the dock left/right to step through
+// the 3 MAIN cards; the grid swipe is Back/Forward.
 function mobileDockEl() {
   const cur = currentMobileMember();
-  const togs = MOBILE_CARDS.map((m) => {
-    const on = m === cur;
-    return `<button class="mcard-tog${on ? ' on' : ''}" data-gocard="${m}" data-tip="${esc(MEMBER_TITLE[m] || m)}"><span class="mct-ico">${memberIcon(m)}</span>${on ? `<span class="mct-lbl">${esc(MEMBER_TITLE[m] || m)}</span>` : ''}</button>`;
-  }).join('');
+  const barHtml = (members) => {
+    const btns = members.map((m) => {
+      const on = m === cur;
+      return `<button class="mcard-tog${on ? ' on' : ''}" data-gocard="${m}" data-tip="${esc(MEMBER_TITLE[m] || m)}"><span class="mct-ico">${memberIcon(m)}</span>${on ? `<span class="mct-lbl">${esc(MEMBER_TITLE[m] || m)}</span>` : ''}</button>`;
+    }).join('');
+    return `<div class="mcard-bar">${btns}</div>`;
+  };
+  const groups = MOBILE_TOGGLE_GROUPS.map((g) => barHtml(g.members)).join('');
   const d = el('div', 'mobile-dock');
-  d.innerHTML = `<div class="mdock-searchslot"></div><div class="mdock-row"><div class="mcard-bar">${togs}</div></div>`;
+  d.innerHTML = `<div class="mdock-searchslot"></div><div class="mdock-row">${groups}</div>`;
   return d;
 }
 /* ════════════════════════════════════════════════════════════════════════
@@ -8939,7 +8979,8 @@ async function wranglerRailLoad() {
   }
   try {
     const all = await wrStore.listChats();
-    state.wranglerRail = (all || []).sort((a, b) => (b.ts || 0) - (a.ts || 0));
+    const dismissed = loadDismissedChats();
+    state.wranglerRail = (all || []).filter((c) => c && !dismissed.has(c.id)).sort((a, b) => (b.ts || 0) - (a.ts || 0));   // never re-show a dismissed chat (defense-in-depth vs a cached remote winner)
     await wrPruneOldChats();   // §18g auto-janitor: drop plain chats past the retention window
     if (state.wranglerRail.length) render();
   } catch (e) { toast('⚠ Couldn’t load chat history — ' + ((e && e.message) || 'storage error')); }
@@ -8966,15 +9007,24 @@ function wranglerRailSnapshot() {
 function wranglerNewChat(seed) {
   openWranglerDock(Object.assign({ messages: [], draft: '', attach: [], files: [], card: null, recId: null, recType: null, reqNumber: null, reqTitle: null, reqUrl: null, id: wranglerNewId() }, seed || {}));
 }
+// §18g dismissal tombstones — the rail syncs cross-device (setWranglerRail / getWranglerRail),
+// so removing a chat from local state + IndexedDB alone lets the union-merge (mergeWranglerRails)
+// pull it straight back from the backend on the next login. This device-local set records what
+// the operator dismissed here so a stale or remote copy can never resurrect it. (Mirrors §246.)
+const WR_DISMISS_KEY = 'jactec.wranglerRailDismissed';
+const loadDismissedChats = () => { try { return new Set(JSON.parse(localStorage.getItem(WR_DISMISS_KEY) || '[]')); } catch (e) { return new Set(); } };
+const saveDismissedChats = (set) => { try { localStorage.setItem(WR_DISMISS_KEY, JSON.stringify([...set].slice(-500))); } catch (e) {} };   // ids only; cap the tail so it stays tiny
 // §18g REMOVE a Mr. Wrangler conversation entirely (the × on its rail tab) — closing the dock
 // only snapshots a chat back onto the rail, so this is the only way to actually clear one. If the
 // chat is the one open in the dock, close the dock WITHOUT re-snapshotting it.
 function wrRailRemove(id) {
   if (!id) return;
+  const s = loadDismissedChats(); s.add(id); saveDismissedChats(s);   // tombstone the dismissal so a cross-device merge can't bring it back
   const o = state.wrangler;
   if (o.id === id) { o.open = false; o.min = false; o.id = null; o.messages = []; o.reqNumber = null; o.reqTitle = null; o.reqUrl = null; }   // drop the live one; cleared so it isn't re-snapshotted on the next open
   state.wranglerRail = (state.wranglerRail || []).filter((c) => c.id !== id);
   try { wrStore.delChat(id); } catch (e) {}   // also from IndexedDB so it doesn't reload next boot
+  pushWranglerRailSoon();                      // propagate the removal to the backend rail, else getWranglerRail re-serves it on the next login
   render();
 }
 // Re-open a stored conversation from the rail.
@@ -12051,7 +12101,7 @@ async function sendFeedback() {
    (action 'wrangler'); Code.gs calls api.anthropic.com with the key from a Script
    Property. Carries a compact data digest + (when opened from a record) its detail.
    ════════════════════════════════════════════════════════════════════════ */
-const WRANGLER_SYSTEM = "You are Mr. Wrangler, the in-app AI for JacRentals — a heavy-equipment rental yard in Sulphur, Louisiana. You help the team make sense of their units, rentals, customers, invoices, work orders, and service, and you help triage bugs they report.\n\nSTYLE — keep it tight: answer in 1–3 sentences by default. Lead with the direct answer first; add at most one short supporting clause. Use a bullet list ONLY when enumerating multiple records, one line each. Don't restate the question, don't pad, and don't over-explain what you can't do — just answer.\n\nDATA — you have live read TOOLS that search the FULL records: find_customers, find_units, find_categories, find_vendors, find_rentals, find_transports, find_invoices, find_work_orders, check_unit_availability, and price_rental. Use them to look up anything specific. For \"what transports/deliveries/pickups are due today or tomorrow?\" use find_transports (it defaults to a today→tomorrow window and returns one leg per line — customer, unit, type, address, date, time); if it comes back empty, say plainly that nothing's due. Below is a short orientation only (today's date, the totals, and the categories with their rates) — not the full lists. Don't guess at a record you can look up, and only say a fact is missing after a tool comes back empty. Never invent records, names, or numbers.\n\nHELPING & FIXING — you're the assistant living inside the app (think Claude, but for this yard). The user might ask a question, describe a problem, or paste something — work out what they need and help. If they describe a BUG or glitch in the app itself (something not working, a dead control, a wrong layout or behavior), reproduce it in your head; if you're missing a detail, ask ONE quick follow-up (what they tapped + what they expected). Once you can state a clear repro, FILE A FIX by ending your reply with this exact fenced block:\n```wrangler-action\n{\"action\":\"fix\",\"title\":\"<short title>\",\"report\":\"<clear repro: steps, expected vs actual, any element involved>\"}\n```\nThat auto-ships obvious bugs (a dead control, a typo, a plainly wrong value).\nBut if it's a CHANGE or improvement (not an obvious bug), do NOT file it blind — talk it through first: lay out a SHORT, concrete PLAN of exactly what you'd change and where, then ask if that's good or needs adjusting. When you put a concrete plan on the table, end with:\n```wrangler-action\n{\"action\":\"plan\",\"title\":\"<short title>\",\"plan\":\"<numbered steps: what changes, where, and the resulting UX>\"}\n```\nJac reviews that plan and taps Build only when it's right — so take his tweaks and re-propose the plan until he's happy. Emit a block ONLY when ready — a clear repro for a fix, or a concrete plan for a change — never while still gathering detail; keep your visible words short and natural and never mention JSON, blocks, labels, or buttons.\n\nACTING ON DATA — you can DO things, not just answer. You can ADD (create), UPDATE, or BULK-IMPORT items for the user: customers, units, categories, vendors, parts, expenses, inspections, and work orders (and update notes/PO on rentals). Hard limits, always: NEVER hard-delete a record, NEVER charge a card or run an ACH, NEVER refund, NEVER touch a balance directly, NEVER change roles / permissions / passwords (security), and NEVER complete a work order. If the user asks to add/change something, or hands you lead/customer data to import (pasted rows, a list, a spreadsheet they paste in), DO IT — never say you can't or that Jac has to build it. Ask any quick follow-up you genuinely need first (which field, how their columns map, what membership stage), then end your reply with:\n```wrangler-action\n{\"action\":\"data\",\"title\":\"<what this does>\",\"ops\":[{\"op\":\"import\",\"entity\":\"customers\",\"rows\":[{\"firstName\":\"..\",\"lastName\":\"..\",\"phone\":\"..\",\"email\":\"..\",\"membershipStage\":\"..\"}]},{\"op\":\"create\",\"entity\":\"customers\",\"fields\":{}},{\"op\":\"update\",\"entity\":\"units\",\"id\":\"U003\",\"fields\":{\"notes\":\"..\"}}]}\n```\nA wrangler-action block is the ONLY thing that triggers a write, so whenever you add, update, or import you MUST end the reply with the block. Simple, single, safe edits (e.g. add one unit, fix a phone number) are applied AUTOMATICALLY the moment you emit the block — you may speak about those as done (e.g. say you added the unit Termite). Bigger or money-sensitive ones — bulk imports, rate/pricing changes, and invoicing a rental — instead show the user a preview to review and Apply first, so word THOSE as a preview (e.g. tell them to look over the import and tap Apply) and don't claim they're saved. When unsure which it'll be, describe the change plainly without promising either; the app shows the user the right control. Never claim a save without emitting the block. If the user PASTES a long list of rows (not a file) too big for one reply, import a smaller batch and tell them how many rows are still to send (but for an ATTACHED CSV file, never inline rows like this — always use the csv-import op described below, which expands every row locally with no size limit); never claim a save you didn't actually emit in a block. Map their funnel/membership words to one of: Inbound Lead, Outbound Lead, Contacted, Not A No!, Payment Discussed, Paid. Editable fields are name/contact/address/industry/notes/account-type/membership+sales stage (customers); name/category/mechanic/notes/specs/fleet-status (units); name/description/fuel + rental rates (member-daily, 1-day, 7-day, 4-week, weekend) (categories); name/phone/email/address/website/contact/type/notes (vendors); name/status/qty/website/order-email/product-number/notes (parts); notes/po (rentals); vendor/date/amount/category/method/notes (expenses); unit/date/wash/bill-customer/description (inspections); unit/customer/report/type/description/mechanic/eta/labor-hours (work orders — you can create or edit one but you can NEVER complete it or set its phase; only the Complete WO button does that; a work order is service on a UNIT, so if the user names only the customer just pass the customer and I'll attach their on-rent unit — I ask which only if they have none or several out) — anything else (used-sale prices, balances, payments/refunds, cards/ACH, roles/passwords) you must decline for now and explain you can't touch money movement or security yet. NAMES vs IDS — you can refer to any customer, unit, category, or vendor BY NAME (and a customer by phone), and the app resolves it to the right record; the find_* tools return each record's [id] if you want to be exact. When you set a unit's category (categoryId) or a part's vendor (vendorId), pass the category/vendor NAME or its [id] — but it must already exist (look it up with find_categories/find_vendors if unsure); if it's NEW, create that category/vendor FIRST (a separate action) so the link resolves, otherwise the link is dropped. If a name matches more than one record, ask which one rather than guessing. The find_* tools search the FULL records (not a list), so never refuse or demand an id just because a customer or unit isn't in the orientation — look it up by name or phone with a find_* tool and act on what it returns. If you can name who/what the user means, resolve it and proceed; the preview catches a true miss. Ask (with ask_user) only when a lookup is genuinely ambiguous — two real matches — or you have no name at all. You CAN invoice an EXISTING rental: emit an operate op `{\"op\":\"operate\",\"name\":\"billRental\",\"params\":{\"rentalId\":\"R-104\"}}` — this builds the invoice from the live pricing engine (you NEVER invent line items or amounts), and only works if that rental has a customer, dates, and units and isn't already invoiced. You may pass `\"customer\":\"<name>\"` instead of a rental id and I'll bill that customer's MOST RECENT un-invoiced rental — so just emit it with the customer name; do NOT ask for a rental id, even if you can't see the rental in the orientation (the engine searches the full records and the preview shows which one). You can also RECORD a CASH or CHECK payment on an invoice: emit `{\"op\":\"operate\",\"name\":\"recordPayment\",\"params\":{\"invoiceId\":\"INV-104\",\"method\":\"cash\"}}` — add \"amount\" to pay part of the balance (omit it to pay the balance in full), and for a check include \"checkNum\"; or pass \"customer\":\"<name>\" instead of an invoice id to pay that customer's one open invoice. You can NEVER charge a card or run an ACH, you cannot REFUND, and you cannot create a from-scratch/standalone invoice. You can PUT UNITS ON RENT for a customer (create a reserved booking): emit `{\"op\":\"operate\",\"name\":\"startRental\",\"params\":{\"customer\":\"Cameron Miller\",\"units\":[\"3in Trash Pump\"],\"startDate\":\"2026-06-30\",\"days\":1,\"startTime\":\"10:00 AM\"}}` — give startDate plus EITHER a duration (\"days\": 1 for a one-day rental, which runs to the next morning and bills as 1 day) OR an explicit \"endDate\" for a set range, and pass the pickup \"startTime\" (e.g. \"10:00 AM\") whenever the user gives a time. ALWAYS include the time and the duration when stated — a one-day 10am rental is startDate that morning, days 1, startTime 10:00 AM. Optional transport `\"transport\":{\"type\":\"Delivery\",\"miles\":10,\"address\":\"..\"}`. DON'T INTERROGATE — a salesperson should be able to reserve from one short line. From a message like \"Cameron Miller getting a jack hammer Tuesday for 3 days 8am\", just emit the booking: resolve the customer, treat \"3 days\" as days:3, use 8:00 AM, and if the unit name matches several units DON'T ask which — the app auto-picks an available one and the user sees it in the preview to swap. Don't quibble about end-of-day vs last-full-day, and don't make the user choose between interchangeable units. Ask a question ONLY when you truly can't proceed: no matching customer, or no available unit for that window. DATES — a weekday name (\"Wednesday\", \"Tuesday\") ALWAYS means the NEXT upcoming one (today or later), NEVER a date that already passed; resolve it to that date and book — do NOT ask \"did you mean this coming Wednesday?\". Don't ask the user to confirm an obvious date reading. It's priced automatically by the engine; the customer's agreement signature and the payment are SEPARATE steps you don't do. It's refused if a unit isn't Active, the customer is blacklisted, the dates are bad, or a unit is already booked for that window.\n\nLARGE CSV IMPORTS — when the user attaches a CSV file you will see a compact summary: column headers, up to 5 sample rows, and the total row count. For any attached CSV with 2 or more rows, ALWAYS use the csv-import op (never the inline import op) and DO NOT re-emit all the rows yourself — instead emit a csv-import op with just the column mapping. The app expands every row locally, so nothing gets cut off no matter how big the file:\n\`\`\`wrangler-action\n{\"action\":\"data\",\"title\":\"Import 234 customers from leads.csv\",\"ops\":[{\"op\":\"csv-import\",\"entity\":\"customers\",\"mapping\":{\"First Name\":\"firstName\",\"Last Name\":\"lastName\",\"Mobile\":\"phone\",\"E-mail\":\"email\"},\"skipIfEmpty\":[\"firstName\",\"lastName\"]}]}\n\`\`\`\nThe mapping keys are the CSV column headers EXACTLY as shown in the summary. The values are app field names (firstName, lastName, phone, email, company, address, industry, accountNotes, accountType, membershipStage, usedSalesStage for customers). Set skipIfEmpty to app fields that must not be blank. Map every column that clearly lines up with an app field even if the names differ (\"Mobile\" -> \"phone\"). If you are unsure about a column, ask first.\n\nA light wrangler/ranch flavor in voice is welcome — never campy.";
+const WRANGLER_SYSTEM = "You are Mr. Wrangler, the in-app AI for JacRentals — a heavy-equipment rental yard in Sulphur, Louisiana. You help the team make sense of their units, rentals, customers, invoices, work orders, and service, and you help triage bugs they report.\n\nSTYLE — keep it tight: answer in 1–3 sentences by default. Lead with the direct answer first; add at most one short supporting clause. Use a bullet list ONLY when enumerating multiple records, one line each. Don't restate the question, don't pad, and don't over-explain what you can't do — just answer.\n\nDATA — you have live read TOOLS that search the FULL records: find_customers, find_units, find_categories, find_vendors, find_rentals, find_transports, find_invoices, find_work_orders, check_unit_availability, and price_rental. Use them to look up anything specific. For \"what transports/deliveries/pickups are due today or tomorrow?\" use find_transports (it defaults to a today→tomorrow window and returns one leg per line — customer, unit, type, address, date, time); if it comes back empty, say plainly that nothing's due. Below is a short orientation only (today's date, the totals, and the categories with their rates) — not the full lists. Don't guess at a record you can look up, and only say a fact is missing after a tool comes back empty. Never invent records, names, or numbers.\n\nHELPING & FIXING — you're the assistant living inside the app (think Claude, but for this yard). The user might ask a question, describe a problem, or paste something — work out what they need and help. If they describe a BUG or glitch in the app itself (something not working, a dead control, a wrong layout or behavior), reproduce it in your head; if you're missing a detail, ask ONE quick follow-up (what they tapped + what they expected). Once you can state a clear repro, FILE A FIX by ending your reply with this exact fenced block:\n```wrangler-action\n{\"action\":\"fix\",\"title\":\"<short title>\",\"report\":\"<clear repro: steps, expected vs actual, any element involved>\"}\n```\nThat auto-ships obvious bugs (a dead control, a typo, a plainly wrong value).\nBut if it's a CHANGE or improvement (not an obvious bug), do NOT file it blind — talk it through first: lay out a SHORT, concrete PLAN of exactly what you'd change and where, then ask if that's good or needs adjusting. When you put a concrete plan on the table, end with:\n```wrangler-action\n{\"action\":\"plan\",\"title\":\"<short title>\",\"plan\":\"<numbered steps: what changes, where, and the resulting UX>\"}\n```\nJac reviews that plan and taps Build only when it's right — so take his tweaks and re-propose the plan until he's happy. Emit a block ONLY when ready — a clear repro for a fix, or a concrete plan for a change — never while still gathering detail; keep your visible words short and natural and never mention JSON, blocks, labels, or buttons.\n\nHONESTY — never imply you're doing something you can't actually do. If a task is beyond your tools — an engineering data repair, or anything money-moving or security you must never touch — say so plainly and briefly, and apologize; don't dress it up as progress. When you FILE a bug/fix for the team, say exactly that ('I've flagged this for the team') — do NOT say you're 'fixing it now', that it's 'in progress', or that the user should 'just ping you' as if you'll finish it; you filed a ticket, you did not perform the repair. Only speak of a change as done or under way when you've actually emitted a wrangler-action that performs it.\n\nACTING ON DATA — you can DO things, not just answer. You can ADD (create), UPDATE, or BULK-IMPORT items for the user: customers, units, categories, vendors, parts, expenses, inspections, and work orders (and update notes/PO on rentals). Hard limits, always: NEVER hard-delete a record, NEVER charge a card or run an ACH, NEVER refund, NEVER touch a balance directly, NEVER change roles / permissions / passwords (security), and NEVER complete a work order. If the user asks to add/change something, or hands you lead/customer data to import (pasted rows, a list, a spreadsheet they paste in), DO IT — never say you can't or that Jac has to build it. Ask any quick follow-up you genuinely need first (which field, how their columns map, what membership stage), then end your reply with:\n```wrangler-action\n{\"action\":\"data\",\"title\":\"<what this does>\",\"ops\":[{\"op\":\"import\",\"entity\":\"customers\",\"rows\":[{\"firstName\":\"..\",\"lastName\":\"..\",\"phone\":\"..\",\"email\":\"..\",\"membershipStage\":\"..\"}]},{\"op\":\"create\",\"entity\":\"customers\",\"fields\":{}},{\"op\":\"update\",\"entity\":\"units\",\"id\":\"U003\",\"fields\":{\"notes\":\"..\"}}]}\n```\nA wrangler-action block is the ONLY thing that triggers a write, so whenever you add, update, or import you MUST end the reply with the block. Simple, single, safe edits (e.g. add one unit, fix a phone number) are applied AUTOMATICALLY the moment you emit the block — you may speak about those as done (e.g. say you added the unit Termite). Bigger or money-sensitive ones — bulk imports, rate/pricing changes, and invoicing a rental — instead show the user a preview to review and Apply first, so word THOSE as a preview (e.g. tell them to look over the import and tap Apply) and don't claim they're saved. When unsure which it'll be, describe the change plainly without promising either; the app shows the user the right control. Never claim a save without emitting the block. If the user PASTES a long list of rows (not a file) too big for one reply, import a smaller batch and tell them how many rows are still to send (but for an ATTACHED CSV file, never inline rows like this — always use the csv-import op described below, which expands every row locally with no size limit); never claim a save you didn't actually emit in a block. Map their funnel/membership words to one of: Inbound Lead, Outbound Lead, Contacted, Not A No!, Payment Discussed, Paid. Editable fields are name/contact/address/industry/notes/account-type/membership+sales stage (customers); name/category/mechanic/notes/specs/fleet-status (units); name/description/fuel + rental rates (member-daily, 1-day, 7-day, 4-week, weekend) (categories); name/phone/email/address/website/contact/type/notes (vendors); name/status/qty/website/order-email/product-number/notes (parts); notes/po (rentals); vendor/date/amount/category/method/notes (expenses); unit/date/wash/bill-customer/description (inspections); unit/customer/report/type/description/mechanic/eta/labor-hours (work orders — you can create or edit one but you can NEVER complete it or set its phase; only the Complete WO button does that; a work order is service on a UNIT, so if the user names only the customer just pass the customer and I'll attach their on-rent unit — I ask which only if they have none or several out) — anything else (used-sale prices, balances, payments/refunds, cards/ACH, roles/passwords) you must decline for now and explain you can't touch money movement or security yet. NAMES vs IDS — you can refer to any customer, unit, category, or vendor BY NAME (and a customer by phone), and the app resolves it to the right record; the find_* tools return each record's [id] if you want to be exact. When you set a unit's category (categoryId) or a part's vendor (vendorId), pass the category/vendor NAME or its [id] — but it must already exist (look it up with find_categories/find_vendors if unsure); if it's NEW, create that category/vendor FIRST (a separate action) so the link resolves, otherwise the link is dropped. If a name matches more than one record, ask which one rather than guessing. The find_* tools search the FULL records (not a list), so never refuse or demand an id just because a customer or unit isn't in the orientation — look it up by name or phone with a find_* tool and act on what it returns. If you can name who/what the user means, resolve it and proceed; the preview catches a true miss. Ask (with ask_user) only when a lookup is genuinely ambiguous — two real matches — or you have no name at all. You CAN invoice an EXISTING rental: emit an operate op `{\"op\":\"operate\",\"name\":\"billRental\",\"params\":{\"rentalId\":\"R-104\"}}` — this builds the invoice from the live pricing engine (you NEVER invent line items or amounts), and only works if that rental has a customer, dates, and units and isn't already invoiced. You may pass `\"customer\":\"<name>\"` instead of a rental id and I'll bill that customer's MOST RECENT un-invoiced rental — so just emit it with the customer name; do NOT ask for a rental id, even if you can't see the rental in the orientation (the engine searches the full records and the preview shows which one). You can also RECORD a CASH or CHECK payment on an invoice: emit `{\"op\":\"operate\",\"name\":\"recordPayment\",\"params\":{\"invoiceId\":\"INV-104\",\"method\":\"cash\"}}` — add \"amount\" to pay part of the balance (omit it to pay the balance in full), and for a check include \"checkNum\"; or pass \"customer\":\"<name>\" instead of an invoice id to pay that customer's one open invoice. You can FIX a mislinked rental by UNLINKING its invoice — emit `{\"op\":\"operate\",\"name\":\"unlinkInvoice\",\"params\":{\"rentalId\":\"R-104\"}}` (or pass \"customer\":\"<name>\"); this clears the rental's invoice link (and the stale invoiced flag) so you can then re-bill it fresh with billRental. It's allowed only while $0 has been paid toward that rental on the invoice — if a payment is assigned there it must be refunded first, which you can't do. Use it to repair a rental stuck showing invoiced but pointing at the wrong or a vanished invoice. You can NEVER charge a card or run an ACH, you cannot REFUND, and you cannot create a from-scratch/standalone invoice. You can PUT UNITS ON RENT for a customer (create a reserved booking): emit `{\"op\":\"operate\",\"name\":\"startRental\",\"params\":{\"customer\":\"Cameron Miller\",\"units\":[\"3in Trash Pump\"],\"startDate\":\"2026-06-30\",\"days\":1,\"startTime\":\"10:00 AM\"}}` — give startDate plus EITHER a duration (\"days\": 1 for a one-day rental, which runs to the next morning and bills as 1 day) OR an explicit \"endDate\" for a set range, and pass the pickup \"startTime\" (e.g. \"10:00 AM\") whenever the user gives a time. ALWAYS include the time and the duration when stated — a one-day 10am rental is startDate that morning, days 1, startTime 10:00 AM. Optional transport `\"transport\":{\"type\":\"Delivery\",\"miles\":10,\"address\":\"..\"}`. DON'T INTERROGATE — a salesperson should be able to reserve from one short line. From a message like \"Cameron Miller getting a jack hammer Tuesday for 3 days 8am\", just emit the booking: resolve the customer, treat \"3 days\" as days:3, use 8:00 AM, and if the unit name matches several units DON'T ask which — the app auto-picks an available one and the user sees it in the preview to swap. Don't quibble about end-of-day vs last-full-day, and don't make the user choose between interchangeable units. Ask a question ONLY when you truly can't proceed: no matching customer, or no available unit for that window. DATES — a weekday name (\"Wednesday\", \"Tuesday\") ALWAYS means the NEXT upcoming one (today or later), NEVER a date that already passed; resolve it to that date and book — do NOT ask \"did you mean this coming Wednesday?\". Don't ask the user to confirm an obvious date reading. It's priced automatically by the engine; the customer's agreement signature and the payment are SEPARATE steps you don't do. It's refused if a unit isn't Active, the customer is blacklisted, the dates are bad, or a unit is already booked for that window.\n\nLARGE CSV IMPORTS — when the user attaches a CSV file you will see a compact summary: column headers, up to 5 sample rows, and the total row count. For any attached CSV with 2 or more rows, ALWAYS use the csv-import op (never the inline import op) and DO NOT re-emit all the rows yourself — instead emit a csv-import op with just the column mapping. The app expands every row locally, so nothing gets cut off no matter how big the file:\n\`\`\`wrangler-action\n{\"action\":\"data\",\"title\":\"Import 234 customers from leads.csv\",\"ops\":[{\"op\":\"csv-import\",\"entity\":\"customers\",\"mapping\":{\"First Name\":\"firstName\",\"Last Name\":\"lastName\",\"Mobile\":\"phone\",\"E-mail\":\"email\"},\"skipIfEmpty\":[\"firstName\",\"lastName\"]}]}\n\`\`\`\nThe mapping keys are the CSV column headers EXACTLY as shown in the summary. The values are app field names (firstName, lastName, phone, email, company, address, industry, accountNotes, accountType, membershipStage, usedSalesStage for customers). Set skipIfEmpty to app fields that must not be blank. Map every column that clearly lines up with an app field even if the names differ (\"Mobile\" -> \"phone\"). If you are unsure about a column, ask first.\n\nA light wrangler/ranch flavor in voice is welcome — never campy.";
 // The digest is Mr. Wrangler's whole window into the yard, so it carries the ACTUAL
 // records (not just counts): category rates, each unit's type/status, each rental's
 // date window + customer, customer balances, and open invoices/WOs. Sections cap at
@@ -12332,7 +12382,7 @@ const WR_TOOLS = [
   { name: 'price_rental', description: 'Quote the price for renting one or more units over a window (uses the live pricing engine; member rates apply if the customer is given). Dates are YYYY-MM-DD. Read-only — does not create anything.', input_schema: { type: 'object', properties: { units: { type: 'array', items: { type: 'string' } }, startDate: { type: 'string' }, endDate: { type: 'string' }, customer: { type: 'string' } }, required: ['units', 'startDate', 'endDate'] } },
   { name: 'ask_user', description: "Ask the user ONE short follow-up question when you genuinely can't proceed — a real ambiguity (two customers match, which unit, missing a required detail). Pass a clear `question` and, when the choice is between known options, an `options` array (e.g. the matching customers) so they can just tap one. Use this SPARINGLY — never to confirm an obvious reading or something a find_* tool can answer. The user's answer comes back so you continue.", input_schema: { type: 'object', properties: { question: { type: 'string' }, options: { type: 'array', items: { type: 'string' } } }, required: ['question'] } },
   { name: 'note_on_issue', description: 'Add a comment to an issue that has ALREADY been filed (one from the ALREADY FILED list) instead of filing a duplicate. Use ONLY after the user chooses "Add my note to #NNN" in the DUPLICATE CHECK. Pass the issue `number` and a one-paragraph `text` summarizing their new report. Does NOT create a new issue.', input_schema: { type: 'object', properties: { number: { type: 'number', description: 'the existing issue number to comment on' }, text: { type: 'string', description: "one-paragraph summary of the user's report to append" } }, required: ['number', 'text'] } },
-  { name: 'apply_changes', description: "WRITE changes: create/update/import records or run an operation. Pass `ops` — the SAME op shapes documented above ({op:'create'|'update'|'import'|'csv-import', entity, fields|rows|id} and {op:'operate', name:'startRental'|'billRental'|'recordPayment', params}). It validates against the allowlist and the safety fences and RETURNS what resolved or got dropped, so if a link drops (e.g. a category that doesn't exist yet) you can create it first and call again. Safe single edits apply immediately; consequential ones (bulk, pricing, billing, payments, several records) are staged for the user to tap Apply — word those as a preview, never as saved. This is the ONLY write path — never charge a card/ACH, refund, touch a balance, change roles/passwords, hard-delete, or complete a WO.", input_schema: { type: 'object', properties: { title: { type: 'string', description: 'short label for the change' }, ops: { type: 'array', items: { type: 'object' }, description: 'the operations to apply' } }, required: ['ops'] } },
+  { name: 'apply_changes', description: "WRITE changes: create/update/import records or run an operation. Pass `ops` — the SAME op shapes documented above ({op:'create'|'update'|'import'|'csv-import', entity, fields|rows|id} and {op:'operate', name:'startRental'|'billRental'|'recordPayment'|'unlinkInvoice', params}). It validates against the allowlist and the safety fences and RETURNS what resolved or got dropped, so if a link drops (e.g. a category that doesn't exist yet) you can create it first and call again. Safe single edits apply immediately; consequential ones (bulk, pricing, billing, payments, several records) are staged for the user to tap Apply — word those as a preview, never as saved. This is the ONLY write path — never charge a card/ACH, refund, touch a balance, change roles/passwords, hard-delete, or complete a WO.", input_schema: { type: 'object', properties: { title: { type: 'string', description: 'short label for the change' }, ops: { type: 'array', items: { type: 'object' }, description: 'the operations to apply' } }, required: ['ops'] } },
 ];
 const WR_TOOLS_NOTE = "\n\nLOOKING THINGS UP — you have live read-only tools (find_customers, find_units, find_categories, find_vendors, find_rentals, find_transports, find_invoices, find_work_orders, check_unit_availability, price_rental) that query the FULL records, not just the snapshot. PREFER them: when the user names a customer/unit/rental, look it up to confirm it exists and get its id before you answer or emit an action; check availability before booking; quote with price_rental rather than guessing. Don't ask the user for something a tool can find. For WRITES, prefer the apply_changes tool: call it with the ops array (same shapes as the wrangler-action block) and it returns exactly what resolved or got dropped, so you can fix a dropped link and try again — much better than emitting a blind block. Safe single edits auto-apply; consequential ones come back staged for the user's Apply (word those as a preview). You may still emit a wrangler-action block as a fallback, but don't ALSO emit one for a write you already made with apply_changes. When you truly need to disambiguate before acting, call ask_user (with tappable options when the choice is between known records) instead of guessing or burying the question in prose — but only when a tool can't resolve it.";
 // The agent loop: send → if the model calls tools, run them locally and feed results back →
@@ -12916,6 +12966,39 @@ const WR_OPERATIONS = {
       await postManualPayment({ invoiceId: inv.invoiceId, amountCents: Math.round(amt * 100), method, checkNum: method === 'check' ? String(p.checkNum || '').trim() : '' });
       logAction(inv, `${money2(amt)} ${method} payment recorded via Mr. Wrangler`);   // provenance stamp (spec wrangler-ai D4) — an auditor can tell a Wrangler-assisted entry from a human one
       return { entity: 'invoices', id: inv.invoiceId };   // bring the user to the invoice that was paid
+    },
+  },
+  unlinkInvoice: {
+    // Repair a mislinked rental — clear its invoiceId so it can be re-billed fresh (e.g. an invoice-number
+    // collision left it pointing at another customer's bill). Money-safe: mirrors the app's §7.4 inv-remove
+    // guard — refuse while ANY payment is allocated to THIS rental on that invoice (a refund is out of scope).
+    _pick(p) {
+      if (p && p.rentalId) { const r = IDX.rental.get(p.rentalId); return r ? { rental: r } : { issue: `no rental “${p.rentalId}”` }; }
+      const custRef = (p && (p.customer != null ? p.customer : p.customerId)) || '';
+      if (!custRef) return { issue: `which rental? give a rental id or the customer’s name` };
+      const cres = wrResolveCustomer(custRef);
+      if (cres.many) return { issue: `more than one customer matches “${custRef}” — which one?` };
+      if (!cres.rec) return { issue: `no customer matching “${custRef}”` };
+      const linked = (DATA.rentals || []).filter((r) => r.customerId === cres.rec.customerId && r.invoiceId);
+      if (!linked.length) return { issue: `no invoice-linked rental for ${cres.rec.name}` };
+      if (linked.length > 1) return { issue: `${cres.rec.name} has ${linked.length} invoice-linked rentals — say which rental id` };
+      return { rental: linked[0] };
+    },
+    validate(p) {
+      const pick = this._pick(p);
+      if (pick.issue) return { issue: pick.issue };
+      const r = pick.rental;
+      if (!r.invoiceId) return { issue: `rental ${r.rentalId} isn’t linked to an invoice` };
+      const inv = IDX.invoice.get(r.invoiceId);
+      if (inv && rentalAllocated(inv, r.rentalId) > 0.005) return { issue: `a payment is assigned to this rental on ${invoiceShort(r.invoiceId)} — that has to be refunded first, which I can’t do` };
+      return { summary: `unlink invoice ${invoiceShort(r.invoiceId)} from ${rentalUnitsLabel(r) || `rental ${r.rentalId}`} (frees it to re-bill)` };
+    },
+    apply(p) {
+      const pick = this._pick(p); if (pick.issue || !pick.rental) return null;
+      const r = pick.rental; const old = r.invoiceId;
+      r.invoiceId = null; reindex('rentals', r);
+      logAction(r, `Invoice ${invoiceShort(old)} unlinked — repair mislinked invoice (Mr. Wrangler)`);
+      return { entity: 'rentals', id: r.rentalId };
     },
   },
   startRental: {
@@ -13907,6 +13990,7 @@ let renderCount = 0;
 const scrollMemo = {};   // persistent scroll positions, keyed `card|view` (list vs which record)
 function render() {
   const t0 = performance.now();
+  refreshToday();   // roll "today" over before painting — an all-day-open tab must never stamp/read yesterday
   hideTip(); hideHoverPreview();
   // Preserve each card's scroll position across the DOM swap, so recording an action
   // or editing a field doesn't dump you back at the top of a scrolled card (§0.6).
@@ -18123,7 +18207,7 @@ function createInvoiceForRental(rentalId) {
     if (ch.idx === 0) { id = cid; r.invoiceId = cid; }
     else inv.contOf = id;
     if (chunks.length === 1) { rentalLineItems(r).forEach((li) => inv.lineItems.push(li)); }   // unchanged single-invoice path
-    else billChunkUnits(inv, r, ch.start, ch.end, ch.start, retroPricingOn(), 'rental', ch.idx === 0 ? null : id);   // per-chunk rental line(s)
+    else billChunkUnits(inv, r, ch.start, ch.end, ch.start, retroPricingOn(), 'rental', ch.idx === 0 ? null : id, null, true);   // per-chunk rental line(s) — emitZero: one line per unit even at $0 (#537)
     if (ch.idx === 0) {   // transport + Rental Protection surcharge (F4b) billed once, on the primary chunk
       transportLineItems(r).forEach((li) => inv.lineItems.push(li));
       protectionLineItems(r).forEach((li) => inv.lineItems.push(li));
@@ -20033,6 +20117,34 @@ function computeChanges() {
 // NEVER delete on refresh (a transient blip can't wipe data).
 const IDX_MAP = { categories: 'category', units: 'unit', customers: 'customer', invoices: 'invoice', rentals: 'rental', workOrders: 'wo', inspections: 'insp', vendors: 'vendor', parts: 'part', companyFiles: 'file', expenses: 'expense', models: 'model' };
 let refreshing = false, refreshTimer = null;
+/** §inv-collision (Jac 2026-07-07) — TRUE when a remote invoice shares an id WE minted this
+ *  session but is a genuinely DIFFERENT bill (no rental in common). That means our new
+ *  invoice number was already taken by another customer's invoice on the backend — the 18s
+ *  poll would otherwise overwrite our bill's customer + amount with theirs. Gated on
+ *  mintedInvoiceIds AND on a disjoint rental link, so a normal remote EDIT of our own bill
+ *  (added line, even a customer reassignment that keeps the rental link) is never mistaken
+ *  for a collision. Membership invoices carry no rentalIds, so they're excluded here. */
+function isInvoiceIdCollision(id, local, remote) {
+  if (!mintedInvoiceIds.has(id)) return false;
+  const mine = local.rentalIds || []; if (!mine.length) return false;
+  const theirs = new Set(remote.rentalIds || []);
+  return !mine.some((rid) => theirs.has(rid));   // no shared rental → not our bill → a collision
+}
+/** Re-issue OUR colliding invoice a fresh number, repoint its rental link + continuation
+ *  chain, and let the pre-existing bill keep the old id locally — so neither invoice is lost
+ *  (the poll's default adopt-in-place would silently replace ours with theirs). */
+function healInvoiceIdCollision(oldId, local, remote, saved) {
+  const freshId = nextInvoiceId();                       // guaranteed free (bumps past the local max + index)
+  IDX.invoice.delete(oldId);
+  local.invoiceId = freshId; IDX.invoice.set(freshId, local); reindex('invoices', local);   // move OUR bill to the fresh id
+  (DATA.rentals || []).forEach((r) => { if (String(r.invoiceId) === oldId) { r.invoiceId = freshId; reindex('rentals', r); } });
+  (DATA.invoices || []).forEach((iv) => { if (iv !== local && String(iv.contOf) === oldId) iv.contOf = freshId; });
+  logAction(local, `Number reissued ${invoiceShort(oldId)} → ${invoiceShort(freshId)} — ${invoiceShort(oldId)} was already used by another bill`);
+  DATA.invoices.push(remote); IDX.invoice.set(oldId, remote); reindex('invoices', remote);   // the pre-existing bill takes the old id
+  saved.set(oldId, JSON.stringify(remote));               // remote matches the backend → clean; freshId isn't in `saved` → our bill re-saves under it
+  toast(`Invoice ${invoiceShort(oldId)} clashed with an existing bill — yours was reissued as ${invoiceShort(freshId)}.`);
+  saveSoon();                                             // persist the re-id + the repointed rental
+}
 async function refreshFromBackend() {
   if (refreshing || booting || !backendPassword || saving || savePending || !lastSaved) return;
   if (document.hidden || DRAG.active || DRAG.armed || state.winEdit || state.overlay || hoverNode) return;   // don't disrupt active work
@@ -20053,6 +20165,9 @@ async function refreshFromBackend() {
         if (!local) { DATA[k].push(remote); IDX[IDX_MAP[k]]?.set(id, remote); reindex(k, remote); saved.set(id, rjs); applied++; return; }   // new record from another user
         const ljs = JSON.stringify(local);
         if (ljs === rjs) { saved.set(id, rjs); return; }
+        if (k === 'invoices' && isInvoiceIdCollision(id, local, remote)) {   // §inv-collision — our minted number already belonged to a different bill; re-issue ours, keep both
+          healInvoiceIdCollision(id, local, remote, saved); applied++; return;
+        }
         if (saved.get(id) === ljs) {   // local is CLEAN (no pending edit) → adopt the remote version in place (keeps IDX refs)
           Object.keys(local).forEach((kk) => { if (!(kk in remote)) delete local[kk]; });
           Object.assign(local, remote); reindex(k, local); saved.set(id, rjs); applied++;
@@ -20074,7 +20189,7 @@ async function refreshFromBackend() {
   } catch (e) { /* offline / blip → retry next tick */ }
   finally { refreshing = false; }
 }
-function startRefreshPoll() { clearInterval(refreshTimer); refreshTimer = setInterval(refreshFromBackend, 18000); }
+function startRefreshPoll() { clearInterval(refreshTimer); refreshTimer = setInterval(() => { refreshToday(); refreshFromBackend(); }, 18000); }
 
 // ── Team-chat sync (Jac 2026-06-15) ────────────────────────────────────────
 // Chat threads were browser-local, so one user's chat never reached another (a
@@ -20169,17 +20284,19 @@ async function loadChats() {
 // localAhead. The caller applies it to state + the IndexedDB cache.
 let railPushTimer = null, lastRailJson = null;
 function mergeWranglerRails(local, remote) {
-  const byId = new Map((local || []).map((c) => [c.id, c]));
+  const dismissed = loadDismissedChats();                                   // chats the operator dismissed on THIS device — never resurrect them
+  const byId = new Map((local || []).filter((c) => c && !dismissed.has(c.id)).map((c) => [c.id, c]));
   let changed = false, localAhead = false;
   (remote || []).forEach((rc) => {
     if (!rc || !rc.id) return;
+    if (dismissed.has(rc.id)) { localAhead = true; return; }                // dismissed here → drop it and flag a corrective push to clean the backend rail
     const lc = byId.get(rc.id);
     if (!lc) { byId.set(rc.id, rc); changed = true; }                       // a chat from another device
     else if ((rc.ts || 0) > (lc.ts || 0)) { byId.set(rc.id, rc); changed = true; }   // remote is newer → wins
     else if ((lc.ts || 0) > (rc.ts || 0)) { localAhead = true; }            // we're newer → push up
   });
   const remoteIds = new Set((remote || []).map((c) => c && c.id));
-  if ((local || []).some((c) => c && !remoteIds.has(c.id))) localAhead = true;   // a local-only chat → push up
+  if ((local || []).some((c) => c && !dismissed.has(c.id) && !remoteIds.has(c.id))) localAhead = true;   // a local-only chat → push up
   const merged = [...byId.values()].sort((a, b) => (b.ts || 0) - (a.ts || 0));
   return { merged, changed, localAhead };
 }
@@ -20196,11 +20313,12 @@ async function loadWranglerRail() {
   try {
     const r = await backendCall('getWranglerRail');
     if (!r || !r.ok || !Array.isArray(r.chats)) return;
+    const dismissed = loadDismissedChats();
     const localBefore = state.wranglerRail;
     const { merged, changed, localAhead } = mergeWranglerRails(localBefore, r.chats);
     if (changed) {
       const beforeById = new Map(localBefore.map((c) => [c.id, c]));
-      for (const rc of r.chats) { const lc = beforeById.get(rc.id); if (rc && rc.id && (!lc || (rc.ts || 0) > (lc.ts || 0))) { try { await wrStore.putChat(rc); } catch (e) {} } }   // cache the remote winners
+      for (const rc of r.chats) { const lc = beforeById.get(rc.id); if (rc && rc.id && !dismissed.has(rc.id) && (!lc || (rc.ts || 0) > (lc.ts || 0))) { try { await wrStore.putChat(rc); } catch (e) {} } }   // cache the remote winners (never a dismissed one)
       state.wranglerRail = merged; render();
     }
     if (localAhead) pushWranglerRailSoon(); else lastRailJson = JSON.stringify(state.wranglerRail);
@@ -20410,7 +20528,7 @@ window.addEventListener('beforeunload', (e) => {
 });
 function renderLogin(msg) {
   if (state.commsRail) { state.commsRail.cat = null; state.commsRail.sessions && Object.values(state.commsRail.sessions).forEach((s) => { s.menuOpen = false; }); }   // D8 — clock-in = an EMPTY rail (sessions persist per device, nothing summons itself)
-  $('#app').innerHTML = `<div class="login-screen"><video id="login-video" class="login-video" src="assets/login-intro.mp4?v=20260702a" muted loop playsinline preload="auto" aria-hidden="true"></video><form class="login-box" id="login-form">
+  $('#app').innerHTML = `<div class="login-screen"><video id="login-video" class="login-video" src="assets/login-intro.mp4?v=20260708a" muted loop playsinline preload="auto" aria-hidden="true"></video><form class="login-box" id="login-form">
     <span class="rivet tl"></span><span class="rivet tr"></span><span class="rivet bl"></span><span class="rivet br"></span>
     <div class="login-plate">
       <img class="login-logo" src="assets/jac-rentals-logo.jpg" alt="Jac Rentals" />
@@ -20478,15 +20596,32 @@ async function shareSession() {
     caption: tabs.length ? `Scan to open your ${tabs.length} open tab${tabs.length === 1 ? '' : 's'} on another device — sign in with the shared password.`
       : 'Scan to open Rental Wrangler on another device — sign in with the shared password.' });
 }
-// Shop roles (Mechanic / M.Tech) land on the UNITS card with the service lens open —
-// the stackbars worklist graph + Service-Due sort (Shop retirement, Jac 2026-07-07).
-// A default only; they can navigate anywhere after.
-function applyShopRoleLanding() {
-  if (currentRole !== 'mechanic' && currentRole !== 'mtech') return;
+// §M1 role landing — each role lands on the card they work from most, both as the desktop
+// column reveal and (since phones show one column at a time) the active phone column. A
+// default only — every role can navigate anywhere after. Mechanic/M.Tech land on Units with
+// the service lens open (stackbars worklist graph + Service-Due sort, Shop retirement, Jac
+// 2026-07-07). Driver's landing member is a SUB-card (Calendar, the day's driver schedule)
+// even though the footer swipe only steps between the 3 MAIN cards — the middle toggle is
+// how a driver gets back to it.
+const ROLE_LANDING = {
+  mechanic: { col: 'left', graphView: true, sort: { field: 'countdown', dir: 'asc' } },   // Units, service lens
+  mtech:    { col: 'left', graphView: true, sort: { field: 'countdown', dir: 'asc' } },   // Units, service lens
+  office:   { col: 'middle' },                       // Rentals
+  sales:    { col: 'right' },                        // Customers
+  driver:   { col: 'middle', member: 'calendar' },   // Calendar — the driver's day
+};
+function applyRoleLanding() {
+  const land = ROLE_LANDING[currentRole]; if (!land) return;
   const s = activeSession(); if (!s) return;
-  if (s.cols) s.cols.left = 'units';
-  const uc = s.cards.units; if (uc) { uc.graphView = true; uc.mode = 'list'; uc.recId = null; uc.recType = null; uc.sort = { field: 'countdown', dir: 'asc' }; }
-  const li = COLUMNS.findIndex((c) => c.id === 'left'); if (li >= 0) state.mobileCol = li;   // phone: make the Units column the active one
+  const member = land.member || COLUMNS.find((c) => c.id === land.col).default;
+  if (s.cols) s.cols[land.col] = member;
+  const mc = s.cards[member];
+  if (mc) {
+    mc.mode = 'list'; mc.recId = null; mc.recType = null;
+    if (land.graphView) mc.graphView = true;
+    if (land.sort) mc.sort = land.sort;
+  }
+  const idx = COLUMNS.findIndex((c) => c.id === land.col); if (idx >= 0) state.mobileCol = idx;   // phone: make that column the active one
   render();
 }
 async function attemptLogin() {
@@ -20495,7 +20630,7 @@ async function attemptLogin() {
   if (!name) { const errEl = document.getElementById('login-err'); if (errEl) errEl.textContent = 'Please enter your name (edits are logged under it).'; document.getElementById('login-name')?.focus(); return; }
   if (!pw) return;
   backendPassword = pw;
-  const btn = document.getElementById('login-go'); if (btn) { btn.textContent = 'Signing in…'; btn.disabled = true; }
+  const btn = document.getElementById('login-go'); if (btn) { btn.textContent = 'Wrangling the herd…'; btn.disabled = true; }
   // Roll the Mr. Wrangler intro behind the box while the (slow) backend load runs — a little entertainment for the wait.
   const screen = document.querySelector('.login-screen'); if (screen) screen.classList.add('signing-in');
   // The Saddle Up click is a genuine user gesture, so unmuting here lets the intro's
@@ -20519,7 +20654,7 @@ async function attemptLogin() {
     gpsLogin().then((ok) => { if (ok) { refreshGpsLive(); startGpsViewPoll(); refreshDrivingScore(); } });   // silent GPS login (§5, via GAS token proxy) → live snapshot (step 3) + view-scoped refresh (step 4) + fleet driving score (step 7); fire-and-forget, never blocks main login
     await loadFromBackend();
     finishLoad();
-    applyShopRoleLanding();   // shop roles (Mechanic / M.Tech) land on the Units service lens
+    applyRoleLanding();   // each role lands on its default main/sub-card
   } catch (e) {
     backendPassword = ''; sessionStorage.removeItem('jactec.pw'); sessionStorage.removeItem('jactec.role');
     renderLogin(/unauthorized/i.test(String(e && e.message)) ? 'That password wasn’t recognized.' : "Couldn't reach the database. Check your connection and try again.");
@@ -20589,9 +20724,9 @@ function boot() {
     if (Math.abs(dx) < 55 || Math.abs(dx) < Math.abs(dy) * 1.3) return;            // not a clean horizontal swipe
     swipeFired = true;                                                             // swallow the trailing click (row/toggle)
     if (s.footer) {
-      const cur = currentMobileMember(); let i = MOBILE_CARDS.indexOf(cur); if (i < 0) i = 0;   // left → next card, right → previous
-      const next = Math.max(0, Math.min(MOBILE_CARDS.length - 1, i + (dx < 0 ? 1 : -1)));
-      if (next !== i) { goToCard(MOBILE_CARDS[next]); haptic(8); }
+      const cur = mainCardOfMember(currentMobileMember()); let i = MAIN_CARDS.indexOf(cur); if (i < 0) i = 0;   // fold a sub-card to its main card first; left → next, right → previous
+      const next = Math.max(0, Math.min(MAIN_CARDS.length - 1, i + (dx < 0 ? 1 : -1)));
+      if (next !== i) { goToCard(MAIN_CARDS[next]); haptic(8); }
     } else {
       const card = activeMobileCard();
       if (dx > 0) cardBack(card); else cardFwd(card);                              // swipe right → Back, left → Forward
@@ -20914,15 +21049,17 @@ function exposeTestApi() {
     window.__rw = { DATA, IDX, TODAY_ISO, itemPaid, lineKey, rentalUnits, unitEntry, isPrimaryUnit, linkActionsFor, linkActionPossible, DROP_MATRIX,
       unitStatus, rentalUnitStatuses, unitsUniform, rentalStatusDisplay, rentalMirrorStatus, rentalDisplayStatus,
       allUnitsTerminal, unitTerminal, unitVoided, rentalCleared, rentalLineItems, transportLineItems, extensionPreview, billExtension, unitBilledRental, unitBilledSeries, retroPricingOn, rentalInvoices, rentalActiveInvoice, invoiceChunks, createInvoiceForRental, syncRentalPrimary,
+      nextInvoiceId, maxInvoiceSeq, mintedInvoiceIds, isInvoiceIdCollision, healInvoiceIdCollision, reindex,
+      CFG, invoiceShort,
       addUnitToRental, removeUnitFromRental, removeUnitInvoiceLine, unitLinePaid, invoiceTotals, allocLines,
       rentalAllocated, itemRefunded, itemRefundable, lineRefunded, lineFullyRefunded, refundLines, rentalLineRefund, applyPayment, unitRentalPrice, rentalPrice, rentalDisplayName, setWoLinePhase, setWoPhase, woBottleneck,
       cleanUnitName, planUnitMigration, applyUnitMigration, openMigrationPreview,
       computeTransportPrice, isFueledType, unitTransport, rentalTransport,
-      wrValidatePlan, applyWranglerData, wrPlanNeedsApply, wrPlanSummary, wrFunnel, wrResolveCustomer, wrResolveUnit, wrResolveCategory, wrResolveVendor, wrResolvePart, wrResolveRental, wrChatFormat, wrFocusRecord, wrRecLabel, activeSession, invoiceMergeable, mergeInvoiceInto, parseWranglerAction, stripWranglerAction, parseCsvFile, wrFindAttachedCsv, wrRunAgent, wrApplyChangesTool, wranglerDigest, wrPruneOldChats, WR_CHAT_RETAIN_DAYS, WR_TOOL_IMPL, WR_TOOLS,
+      wrValidatePlan, applyWranglerData, wrPlanNeedsApply, wrPlanSummary, wrFunnel, wrResolveCustomer, wrResolveUnit, wrResolveCategory, wrResolveVendor, wrResolvePart, wrResolveRental, wrChatFormat, wrFocusRecord, wrRecLabel, activeSession, invoiceMergeable, mergeInvoiceInto, parseWranglerAction, stripWranglerAction, parseCsvFile, wrFindAttachedCsv, wrRunAgent, wrApplyChangesTool, wranglerDigest, wrPruneOldChats, WR_CHAT_RETAIN_DAYS, WR_TOOL_IMPL, WR_TOOLS, WR_OPERATIONS,
       latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore, wranglerRailLoad, wrOffloadChatImages, wrEvictChatBlobs, driveViewUrl, mergeWranglerRails,
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
-      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, setFunnelStage, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, addMonthsISO, openMembershipEnroll, membershipEnrollCommit, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, getEntityColor, getEntityFlags, isEmptyMockDraft, sweepEmptyDrafts, createInvoiceForRental, syncRentalLines, rentalLineItems, salePriceSuggest, salePricingCfg, categoryCostBasis, driverRoster, driverName, legDriverField, dispatchEvents, applyShopRoleLanding, topServiceForUnit, snoozeService, svcSnoozedUntil, unitServiceRows, recordServiceCompletion, sellUnit, categoryStats, gpsMatchFleet, gpsMatchScore, gpsMakeFamily, gpsDeviceFamily, gpsApplyMappings, gpsUndoMappings, gpsRoundupRows, gpsCanonProvider, gpsUtilRollup, reindex, logAction, setRole: (r) => { currentRole = r || ''; render(); }, histText, canMoney,
+      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, setFunnelStage, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, addMonthsISO, openMembershipEnroll, membershipEnrollCommit, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, getEntityColor, getEntityFlags, isEmptyMockDraft, sweepEmptyDrafts, createInvoiceForRental, syncRentalLines, rentalLineItems, salePriceSuggest, salePricingCfg, categoryCostBasis, driverRoster, driverName, legDriverField, dispatchEvents, applyRoleLanding, topServiceForUnit, snoozeService, svcSnoozedUntil, unitServiceRows, recordServiceCompletion, sellUnit, categoryStats, gpsMatchFleet, gpsMatchScore, gpsMakeFamily, gpsDeviceFamily, gpsApplyMappings, gpsUndoMappings, gpsRoundupRows, gpsCanonProvider, gpsUtilRollup, reindex, logAction, setRole: (r) => { currentRole = r || ''; render(); }, histText, canMoney,
       openCustomerForm, renderOverlay, render, printInvoice, invoicePrintGroups, invoiceAmendments, cardComplete, cardCaptureState, cardHasSelfie, cardHasSignature, captureSelfie, captureSignature, __state: state };   // UI drivers for headless screenshot/e2e tests
 
   } catch (e) { /* no window (non-browser) */ }

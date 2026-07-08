@@ -1050,6 +1050,17 @@ try {
     m = T.mergeWranglerRails([], [C, B]);
     ok(m.merged.map((c) => c.id).join(',') === 'c,b' && m.changed === true, 'mergeWranglerRails: empty local → adopts remote, sorted newest-first');
 
+    // 18b) dismissal tombstone — a chat the operator removed HERE must never be resurrected by the
+    // cross-device merge, even though the backend copy still holds it (the reported bug: dismissed
+    // chats reappear on every login). wrRailRemove records the id in localStorage; the merge drops it.
+    try { localStorage.setItem('jactec.wranglerRailDismissed', JSON.stringify(['b'])); } catch (e) {}
+    m = T.mergeWranglerRails([], [B]);              // backend still serves the dismissed chat 'b'
+    ok(m.merged.length === 0, 'mergeWranglerRails: a dismissed chat is NOT resurrected from the backend');
+    ok(m.changed === false && m.localAhead === true, 'mergeWranglerRails: a dismissed remote chat flags a corrective push instead of re-adding');
+    m = T.mergeWranglerRails([A], [A2, B]);         // 'b' dismissed → dropped; live 'a' merges as usual
+    ok(!m.merged.some((c) => c.id === 'b') && !!m.merged.find((c) => c.id === 'a' && c.ts === 20), 'mergeWranglerRails: dismissal drops only the tombstoned chat, others merge normally');
+    try { localStorage.removeItem('jactec.wranglerRailDismissed'); } catch (e) {}
+
     // 19) KPIs & RINGS — admin-definable metric engine (step 1: defaults === today + DSL correctness)
     const ROLE_IDS = ['mechanic', 'mtech', 'driver', 'office', 'sales'];
     let kpiMatch = true, kpiRawMatch = true;
@@ -1873,6 +1884,89 @@ try {
       // cleanup — only IDX.category was touched (the fixture units were never added to
       // T.DATA.units/T.IDX.unit, since gpsUtilRollup takes its own units array)
       T.IDX.category.delete(cat.categoryId);
+    }
+
+    // §inv-collision (Jac 2026-07-07) — a locally-minted invoice NUMBER that already belongs to
+    // a DIFFERENT customer's bill (the 18s-poll race) must NOT be silently adopted; the poll
+    // re-issues OURS and keeps both. Locks the fix so the customer/amount swap can't regress.
+    {
+      const cust = T.DATA.customers[0], cust2 = T.DATA.customers[1] || cust;
+      const myId = T.nextInvoiceId();                                   // registers in mintedInvoiceIds
+      const myRental = { rentalId: 'RENT_MINE_X', customerId: cust.customerId, unitId: null, invoiceId: myId, status: 'Reserved', mock: true };
+      T.DATA.rentals.push(myRental); T.IDX.rental.set(myRental.rentalId, myRental); T.reindex('rentals', myRental);
+      const mine = { invoiceId: myId, customerId: cust.customerId, rentalIds: ['RENT_MINE_X'], date: T.TODAY_ISO, amountPaid: 0, lineItems: [{ kind: 'rental', lid: 'L1', amount: 89 }], mock: true };
+      T.DATA.invoices.push(mine); T.IDX.invoice.set(myId, mine); T.reindex('invoices', mine);
+      const remote = { invoiceId: myId, customerId: cust2.customerId, rentalIds: ['RENT_OTHER_Y'], date: T.TODAY_ISO, amountPaid: 321.18, lineItems: [{ kind: 'rental', lid: 'R1', amount: 300 }] };
+
+      ok(T.isInvoiceIdCollision(myId, mine, remote) === true, 'collision: a minted id shared with a different-rental bill is flagged');
+      const cf = Object.assign(Object.assign({}, mine), remote);         // what the OLD adopt-in-place did
+      ok(cf.customerId === cust2.customerId, 'collision: WITHOUT the guard, adopt-in-place would swap our customer (the pre-fix bug)');
+
+      const savedMap = new Map([[myId, JSON.stringify(mine)]]);
+      T.healInvoiceIdCollision(myId, mine, remote, savedMap);
+      ok(mine.invoiceId !== myId, 'heal: our invoice got a fresh number');
+      ok(mine.customerId === cust.customerId, 'heal: our invoice keeps OUR customer (not swapped)');
+      ok(myRental.invoiceId === mine.invoiceId, 'heal: our rental is repointed to the fresh number');
+      ok(T.IDX.invoice.get(myId) === remote, 'heal: the pre-existing bill keeps the old number');
+      ok(T.IDX.invoice.get(mine.invoiceId) === mine, 'heal: our bill is indexed under the fresh number');
+      ok(T.DATA.invoices.filter((v) => v.invoiceId === myId).length === 1, 'heal: exactly one invoice holds the old number (no duplicate id)');
+
+      const myId2 = T.nextInvoiceId();
+      const mine2 = { invoiceId: myId2, customerId: cust.customerId, rentalIds: ['RENT_MINE_Z'], date: T.TODAY_ISO, amountPaid: 0, lineItems: [] };
+      const remoteEdit = { invoiceId: myId2, customerId: cust2.customerId, rentalIds: ['RENT_MINE_Z'], date: T.TODAY_ISO, amountPaid: 0, lineItems: [{ kind: 'custom', lid: 'C1', amount: 5 }] };
+      ok(T.isInvoiceIdCollision(myId2, mine2, remoteEdit) === false, 'collision: a remote edit of our OWN bill (shared rental) is NOT flagged, even with a customer change');
+
+      T.DATA.invoices = T.DATA.invoices.filter((v) => v !== mine && v !== remote);
+      T.DATA.rentals = T.DATA.rentals.filter((v) => v !== myRental);
+      T.IDX.invoice.delete(myId); T.IDX.invoice.delete(mine.invoiceId); T.IDX.rental.delete('RENT_MINE_X');
+    }
+
+    // §wrangler-unlink (Jac 2026-07-08) — Mr. Wrangler can repair a mislinked rental by unlinking its
+    // invoice (frees it to re-bill), but MUST refuse while a payment is allocated to that rental (money-safe).
+    {
+      const cust = T.DATA.customers[0];
+      // (a) a $0-paid link → unlink validates and clears the invoiceId (the stale "invoiced" flag with it)
+      const r1 = { rentalId: 'DIAG-UR1', customerId: cust.customerId, invoiceId: 'DIAG-UI1', status: 'Reserved', mock: true };
+      const i1 = { invoiceId: 'DIAG-UI1', customerId: cust.customerId, rentalIds: ['DIAG-UR1'], date: T.TODAY_ISO, amountPaid: 0, lineItems: [{ kind: 'rental', ref: 'DIAG-UR1', lid: 'UL1', amount: 89 }], mock: true };
+      T.DATA.rentals.push(r1); T.IDX.rental.set('DIAG-UR1', r1); T.DATA.invoices.push(i1); T.IDX.invoice.set('DIAG-UI1', i1); T.reindex('rentals', r1); T.reindex('invoices', i1);
+      const v1 = T.WR_OPERATIONS.unlinkInvoice.validate({ rentalId: 'DIAG-UR1' });
+      ok(!v1.issue && /unlink/i.test(v1.summary || ''), 'unlinkInvoice: a $0-paid link validates (frees it to re-bill)');
+      T.WR_OPERATIONS.unlinkInvoice.apply({ rentalId: 'DIAG-UR1' });
+      ok(!r1.invoiceId, 'unlinkInvoice: apply clears the rental invoiceId (stale invoiced flag gone)');
+      // (b) an unlinked rental → refuses cleanly, no throw
+      ok(/isn.t linked|not.*linked/i.test(T.WR_OPERATIONS.unlinkInvoice.validate({ rentalId: 'DIAG-UR1' }).issue || ''), 'unlinkInvoice: refuses when the rental has no invoice');
+      // (c) money-safe guard — a payment allocated to THIS rental blocks the unlink (refund-first)
+      const r2 = { rentalId: 'DIAG-UR2', customerId: cust.customerId, invoiceId: 'DIAG-UI2', status: 'Reserved', mock: true };
+      // paid-in-full so itemPaid() credits the whole rental line → rentalAllocated > 0 → the guard must fire
+      const i2 = { invoiceId: 'DIAG-UI2', customerId: cust.customerId, rentalIds: ['DIAG-UR2'], date: T.TODAY_ISO, amountPaid: 200, lineItems: [{ kind: 'rental', ref: 'DIAG-UR2', lid: 'UL2', amount: 89 }], mock: true };
+      T.DATA.rentals.push(r2); T.IDX.rental.set('DIAG-UR2', r2); T.DATA.invoices.push(i2); T.IDX.invoice.set('DIAG-UI2', i2); T.reindex('rentals', r2); T.reindex('invoices', i2);
+      const v2 = T.WR_OPERATIONS.unlinkInvoice.validate({ rentalId: 'DIAG-UR2' });
+      ok(!!v2.issue && /payment|refund/i.test(v2.issue), 'unlinkInvoice: refuses while a payment is allocated to the rental (money-safe)');
+      T.DATA.rentals = T.DATA.rentals.filter((x) => x !== r1 && x !== r2); T.DATA.invoices = T.DATA.invoices.filter((x) => x !== i1 && x !== i2);
+      T.IDX.rental.delete('DIAG-UR1'); T.IDX.rental.delete('DIAG-UR2'); T.IDX.invoice.delete('DIAG-UI1'); T.IDX.invoice.delete('DIAG-UI2');
+    }
+
+    // §inv-id-format (Jac 2026-07-08) — new ##MMDDYY id (no 'i', month up front, counter PER MONTH);
+    // legacy ##iDDMmmYY still resolves; maxInvoiceSeq scopes to the current month.
+    {
+      const id = T.CFG.invoiceId(T.TODAY_ISO, 7);
+      ok(/^0*7[A-Z]{2}\d{4}$/.test(id) && !id.includes('i'), `new id is ##MMDDYY, no 'i' (${id})`);
+      ok(T.invoiceShort(id) === id.slice(0, -4), 'invoiceShort on a new id keeps num+month (drops DDYY)');
+      const p = T.CFG.parseInvoice(id);
+      ok(p && p.seq === 7 && p.monthKey === T.CFG.invoiceMonthKey(T.TODAY_ISO), 'parseInvoice round-trips a new id (seq + monthKey)');
+      ok(T.invoiceShort('228i07Jy26') === '228i', 'invoiceShort on a legacy id -> "228i"');
+      const lp = T.CFG.parseInvoice('228i07Jy26');
+      ok(lp && lp.seq === 228 && lp.monthKey === 'JY26', 'parseInvoice reads a legacy id (228, JY26)');
+      // per-month scoping: a different-month invoice is ignored; a current-month one counts
+      const base = T.maxInvoiceSeq();
+      const far = { invoiceId: '9999i07Ja20', customerId: null, rentalIds: [], date: '2020-01-07', lineItems: [], mock: true };
+      T.DATA.invoices.push(far); T.IDX.invoice.set(far.invoiceId, far); T.reindex('invoices', far);
+      ok(T.maxInvoiceSeq() === base, 'maxInvoiceSeq ignores an invoice from another month (per-month scope)');
+      const cur = { invoiceId: T.CFG.invoiceId(T.TODAY_ISO, base + 500), customerId: null, rentalIds: [], date: T.TODAY_ISO, lineItems: [], mock: true };
+      T.DATA.invoices.push(cur); T.IDX.invoice.set(cur.invoiceId, cur); T.reindex('invoices', cur);
+      ok(T.maxInvoiceSeq() === base + 500, 'maxInvoiceSeq counts a current-month invoice');
+      T.DATA.invoices = T.DATA.invoices.filter((v) => v !== far && v !== cur);
+      T.IDX.invoice.delete(far.invoiceId); T.IDX.invoice.delete(cur.invoiceId);
     }
 
     return out;
