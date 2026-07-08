@@ -72,8 +72,19 @@ per-role shutdown gating stays a client gate + server audit (unchanged limitatio
 
 ### Phasing (revised)
 - **Phase 1 — SHIPPED:** the seven items above (connect + live view + shutdown + score).
-- **Phase 2 — in design (needs its own spec):** the four fleet-wide pages from the original WranglerGPS app — **Live Tracking map** (whole-fleet, resolve overlap with `area/maps-location`), **Tracker Health** roster, **Issues** (fleet-wide fault codes), **Reports / Category Utilization** (actual-vs-target hrs/day, over/under-capacity, repair-vs-buy — reconcile with `financials-kpi` + the manager-metrics T2 daily-snapshot). **Geofencing + stray alerts** (the §7.3 design, gated on `comms-notifications` server SMS per D4) land here too.
-- **Phase 3:** event ledger, breadcrumb history, optional provider webhooks, auto engine-hours (`currentHours`) ingestion.
+- **Phase 2 — IN PROGRESS (2026-07-08, visibility-first, all roles per Jac):** see the sub-status below.
+- **Phase 3 — deferred:** Reports / Category Utilization (repair-vs-buy, over/under-capacity — needs mapping + a shared daily-snapshot job + banked history), Issues (fleet-wide fault-code aggregation), unit-anchored map lens, geofencing + stray alerts (§7.3, gated on `comms-notifications` SMS), event ledger, breadcrumb history, provider webhooks, auto engine-hours ingestion.
+
+### Phase 2 sub-status (2026-07-08 — plan: `docs/superpowers/plans/2026-07-08-wrangler-gps-phase2-plan.md`)
+Visibility-first + bulk onboarding; Reports/Issues pushed to Phase 3. Fleet views are **all-roles** (Jac 2026-07-08 — declined the manager-only asset-protection gate). Milestones:
+- **M0 — verify the pipe:** GATED ON the login fix (deploy `gpsToken` + set the `GPS_DASHBOARD_PASSWORD` Script Property). Supersedes the earlier "set Railway DASHBOARD_PASSWORD = RW team password" idea (there is no single RW team password). After deploy, the M2 roster IS the verification surface.
+- **M2 — Tracker Health roster — ✅ SHIPPED** (`gpsHealth` popup): every tracker across all four providers off the live snapshot, bucketed by freshness, search + CSV + refresh; mapping-independent; also the login/account canary. Opened from the toolbar `I.truck` button.
+- **M3 — serialNumber threaded through `gpsNormalize` — ✅ SHIPPED:** matcher key (Hapn `assetProfile.serialNumber`, Deere/Yanmar `serialNumber`; Bouncie null).
+- **M4 — fleet auto-match matcher `gpsMatchFleet` — ✅ SHIPPED (pure, 10 logic-test checks):** serial-first, make-family HARD veto, greedy 1:1 with contested→conflict bucketing. No writes; wired to `window.__rw`.
+- **M1 — Fleet Map (`gpsFleet` popup) — in build:** device-first Google-map + asset sidebar off `gpsFleetRoster()`, reusing the map stack (`loadGoogleMaps`/`mountDispatchMap`). Degrades to the list when the Maps key is absent.
+- **M5 — "Round Up Trackers" bulk onboarding — NEXT:** the review table over `gpsMatchFleet()` (CONFIDENT/PROBABLE/LOOK/CONFLICT/NO-MATCH), per-row override via the existing picker, MANDATORY side-by-side confirm for shutdown-capable Hapn rows, Apply → `gpsConnectSave` per unit with partial-failure surfacing. The only writer of the provider+deviceId pair — the actual unblock.
+- **M6 — onboard the real fleet + reconcile the 4 legacy GPSWOX units (U001/U003/U004/U024) — Jac (human-in-the-loop):** run M5 against live accounts; needs Jac's confirm (safety: `gpsDeviceId` drives shutdown).
+- **M7 — enforcement:** WINDOW_CATALOG + `data-r` + rule-usage/code-map regen + gates + `?v=` bump per new surface (folded into each commit). **No visibility gate** (all-roles decision).
 
 ---
 
