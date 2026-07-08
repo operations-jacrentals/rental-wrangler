@@ -17582,6 +17582,129 @@ async function gpsProviderDevices(provider) {
   }
 }
 
+/* ── FLEET AUTO-MATCH (bulk-onboarding matcher · Phase 2 M4) ─────────────────────
+   A PURE, side-effect-free function: given RW units and a live device snapshot (the
+   gpsFleetStatus() shape), propose unit↔device mappings for the "Round Up Trackers"
+   review table. Serial-first scoring, a HARD make-family veto (a Bobcat unit never
+   maps to a Deere-make device), and 1:1 uniqueness. It NEVER writes and NEVER touches
+   the DOM — every proposal is a suggestion a human confirms before gpsConnectSave runs,
+   because gpsDeviceId is the key remote engine-shutdown relays off (a wrong map cuts the
+   wrong starter). Unit-tested in ci/logic-test.mjs; exposed on window.__rw. */
+
+// Canonical make family from a raw make string. Folds common OEM synonyms so 'JD' /
+// 'John Deere' / 'DEERE' all read 'deere'. '' → null (unknown, never vetoes).
+function gpsMakeFamily(make) {
+  const s = String(make || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (!s) return null;
+  const FAM = [
+    ['deere', /(johndeere|deere|^jd$)/], ['yanmar', /yanmar/], ['bobcat', /bobcat/],
+    ['kubota', /kubota/], ['jcb', /jcb/], ['caterpillar', /(caterpillar|^cat[0-9]*$|^cat$)/],
+    ['case', /(caseih|^case)/], ['newholland', /newholland/], ['takeuchi', /takeuchi/],
+    ['komatsu', /komatsu/], ['volvo', /volvo/], ['ford', /ford/],
+    ['gm', /(chevrolet|chevy|gmc|^gm$)/], ['ram', /(^ram|dodge)/], ['toyota', /toyota/],
+    ['genie', /genie/], ['jlg', /jlg/], ['ditchwitch', /ditchwitch/],
+    ['wacker', /(wacker|neuson)/], ['toro', /toro/],
+  ];
+  for (const [fam, re] of FAM) if (re.test(s)) return fam;
+  return s;   // unknown but non-empty → its own family (two different unknowns still veto)
+}
+
+// A device's implied make family: explicit device.make, else the provider brand for the
+// single-brand telematics (Deere/Yanmar). Hapn + Bouncie are multi-brand → no implied
+// family, so they never veto on make (they lean on serial/name instead).
+function gpsDeviceFamily(dev) {
+  const explicit = gpsMakeFamily(dev && dev.make);
+  if (explicit) return explicit;
+  if (dev && dev.source === 'deere') return 'deere';
+  if (dev && dev.source === 'yanmar') return 'yanmar';
+  return null;
+}
+
+const gpsNormTok = (s) => String(s == null ? '' : s).toLowerCase().replace(/[^a-z0-9]/g, '');
+const gpsDevKey = (d) => String((d && (d.id ?? d.imei ?? d.principalId ?? d.contractId)) ?? '');
+
+// Score ONE (unit, device) pair. Returns { score, serial, reasons[] } or null if the
+// make-family veto fires (both makes known and different → never proposed).
+function gpsMatchScore(unit, dev) {
+  const uFam = gpsMakeFamily(unit && unit.make), dFam = gpsDeviceFamily(dev);
+  if (uFam && dFam && uFam !== dFam) return null;                     // HARD veto
+  let score = 0, serial = false; const reasons = [];
+  const uSer = gpsNormTok(unit.serial), dSer = gpsNormTok(dev.serialNumber);
+  if (uSer && dSer) {                                                 // serial — the strong key
+    if (uSer === dSer) { score += 100; serial = true; reasons.push('serial'); }
+    else if (uSer.length >= 6 && dSer.length >= 6 && (uSer.includes(dSer) || dSer.includes(uSer))) { score += 70; serial = true; reasons.push('serial~'); }
+  }
+  if (uFam && dFam && uFam === dFam) { score += 20; reasons.push('make'); }
+  const uMod = gpsNormTok(unit.model);
+  if (uMod && uMod.length >= 3) {
+    const dMod = gpsNormTok(dev.model), dName = gpsNormTok(dev.name);
+    if ((dMod && (dMod.includes(uMod) || uMod.includes(dMod))) || (dName && dName.includes(uMod))) { score += 25; reasons.push('model'); }
+  }
+  const uName = gpsNormTok(unit.name);
+  if (uName && uName.length >= 3) {
+    const dName = gpsNormTok(dev.name), dNick = gpsNormTok(dev.nickName);
+    if (dName === uName || dNick === uName) { score += 30; reasons.push('name'); }
+    else if ((dName && dName.includes(uName)) || (dNick && dNick.includes(uName))) { score += 12; reasons.push('name~'); }
+  }
+  return score > 0 ? { score, serial, reasons } : null;
+}
+
+/* Match a whole fleet. Greedy best-first with 1:1 enforcement + a runner-up margin, and
+   a per-device "contested" check so two units laying near-equal claim to one tracker land
+   in CONFLICT for a human to split (never silently assigned). Only UNMAPPED, non-Sold
+   units are proposed to (an existing mapping is never clobbered). Returns
+   { proposals[], unmatchedUnits[], unmatchedDevices[] }. proposal.tier ∈
+   confident · probable · look · conflict. */
+function gpsMatchFleet(units, devices, opts = {}) {
+  const CONFLICT_MARGIN = 25;
+  const openUnits = (units || []).filter((u) => u && u.unitId && !(u.gpsProvider && u.gpsDeviceId) && u.fleetStatus !== 'Sold');
+  const devs = (devices || []).filter((d) => d && gpsDevKey(d));
+
+  const pairs = [];
+  for (const u of openUnits) for (const d of devs) {
+    const sc = gpsMatchScore(u, d);
+    if (sc) pairs.push({ unitId: u.unitId, dk: gpsDevKey(d), device: d, score: sc.score, serial: sc.serial, reasons: sc.reasons });
+  }
+  pairs.sort((a, b) => b.score - a.score);
+
+  // per-unit top-two (unit-side margin) and per-device claim scores (contested detection)
+  const bestByUnit = {}, claimsByDev = {};
+  for (const p of pairs) {
+    (bestByUnit[p.unitId] = bestByUnit[p.unitId] || []).push(p);
+    (claimsByDev[p.dk] = claimsByDev[p.dk] || []).push(p.score);
+  }
+  const devContested = (dk, winnerScore) => {
+    // two units within the margin of each other for the SAME device → human splits it
+    const others = (claimsByDev[dk] || []).slice().sort((a, b) => b - a);
+    return others.length > 1 && (others[0] - others[1]) < CONFLICT_MARGIN && others[0] === winnerScore;
+  };
+
+  const takenUnit = new Set(), takenDev = new Set(); const proposals = [];
+  for (const p of pairs) {
+    if (takenUnit.has(p.unitId) || takenDev.has(p.dk)) continue;
+    const mine = bestByUnit[p.unitId] || [p];
+    const runnerUp = mine[1] ? mine[1].score : 0;
+    const margin = p.score - runnerUp;
+    const contested = devContested(p.dk, p.score);
+    let tier;
+    if (contested) tier = 'conflict';
+    else if (p.serial && p.score >= 100 && margin >= 30) tier = 'confident';
+    else if (p.score >= 45 && margin >= 20) tier = 'probable';
+    else tier = 'look';
+    proposals.push({ unitId: p.unitId, deviceId: p.dk, provider: p.device.source, device: p.device,
+      score: p.score, serial: p.serial, margin, contested, tier, reasons: p.reasons, runnerUp });
+    takenUnit.add(p.unitId); takenDev.add(p.dk);
+  }
+
+  const matchedUnits = new Set(proposals.map((x) => x.unitId));
+  const matchedDevs = new Set(proposals.map((x) => x.deviceId));
+  return {
+    proposals,
+    unmatchedUnits: openUnits.filter((u) => !matchedUnits.has(u.unitId)).map((u) => u.unitId),
+    unmatchedDevices: devs.filter((d) => !matchedDevs.has(gpsDevKey(d))).map((d) => ({ key: gpsDevKey(d), provider: String(d.source || ''), name: d.name || null })),
+  };
+}
+
 /* ── CONNECT-A-DEVICE WIZARD (spec §5a) — the gpsConnect popup's control layer.
    The popup markup lives in buildPopupEl (o.kind === 'gpsConnect'); the pieces below
    are the async/stateful bits a pure render function can't own: loading a provider's
@@ -18791,7 +18914,7 @@ function exposeTestApi() {
       latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore, wranglerRailLoad, wrOffloadChatImages, wrEvictChatBlobs, driveViewUrl, mergeWranglerRails,
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
-      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, setFunnelStage, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, addMonthsISO, openMembershipEnroll, membershipEnrollCommit, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, getEntityColor, getEntityFlags, isEmptyMockDraft, sweepEmptyDrafts, createInvoiceForRental, syncRentalLines, rentalLineItems, salePriceSuggest, salePricingCfg, categoryCostBasis, driverRoster, driverName, legDriverField, dispatchEvents, setRole: (r) => { currentRole = r || ''; render(); },
+      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, setFunnelStage, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, addMonthsISO, openMembershipEnroll, membershipEnrollCommit, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, getEntityColor, getEntityFlags, isEmptyMockDraft, sweepEmptyDrafts, createInvoiceForRental, syncRentalLines, rentalLineItems, salePriceSuggest, salePricingCfg, categoryCostBasis, driverRoster, driverName, legDriverField, dispatchEvents, gpsMatchFleet, gpsMatchScore, gpsMakeFamily, gpsDeviceFamily, setRole: (r) => { currentRole = r || ''; render(); },
       openCustomerForm, renderOverlay, render, cardComplete, cardCaptureState, cardHasSelfie, cardHasSignature, captureSelfie, captureSignature, __state: state };   // UI drivers for headless screenshot/e2e tests
 
   } catch (e) { /* no window (non-browser) */ }

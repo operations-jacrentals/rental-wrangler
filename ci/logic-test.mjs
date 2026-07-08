@@ -1592,6 +1592,59 @@ try {
       T.__state.overlay = null;
     }
 
+    // === GPS M4 — fleet auto-match matcher (PURE; gpsDeviceId drives remote shutdown, so verify hard) ===
+    {
+      const mk = (id, extra) => Object.assign({ unitId: id, fleetStatus: 'Active' }, extra);
+
+      ok(T.gpsMakeFamily('John Deere') === 'deere' && T.gpsMakeFamily('JD') === 'deere' && T.gpsMakeFamily('DEERE') === 'deere', 'gps M4: make-family folds Deere synonyms');
+      ok(T.gpsMakeFamily('Bobcat') !== T.gpsMakeFamily('John Deere'), 'gps M4: Bobcat and Deere are distinct families');
+
+      // serial-exact (normalized) → confident
+      {
+        const r = T.gpsMatchFleet(
+          [mk('U-A', { name: 'Worm', make: 'JCB', model: '512-56', serial: 'JCB-512-3390' })],
+          [{ id: 'd1', source: 'hapn', make: 'JCB', model: '512-56', serialNumber: 'JCB5123390', name: 'Tracker 1' }]);
+        ok(r.proposals.length === 1 && r.proposals[0].unitId === 'U-A' && r.proposals[0].deviceId === 'd1', 'gps M4: serial match proposes the pair');
+        ok(r.proposals[0].serial === true && r.proposals[0].tier === 'confident', 'gps M4: normalized serial-exact → CONFIDENT');
+      }
+
+      // HARD make-family veto — a Bobcat unit never maps to a Deere-make device, even on a serial+name collision
+      {
+        const r = T.gpsMatchFleet(
+          [mk('U-B', { name: 'Dirt Dauber', make: 'Bobcat', model: 'S76', serial: 'BOB-S76-2210' })],
+          [{ id: 'jd1', source: 'deere', make: 'John Deere', model: '333G', serialNumber: 'BOB-S76-2210', name: 'Dirt Dauber' }]);
+        ok(r.proposals.length === 0, 'gps M4: make-family veto blocks Bobcat↔Deere despite identical serial+name');
+        ok(r.unmatchedUnits.includes('U-B') && r.unmatchedDevices.some((d) => d.key === 'jd1'), 'gps M4: vetoed unit + device fall to unmatched');
+      }
+
+      // contested device — two units lay equal (name-only) claim → single CONFLICT, 1:1 enforced
+      {
+        const r = T.gpsMatchFleet(
+          [mk('U-C1', { name: 'Twin' }), mk('U-C2', { name: 'Twin' })],
+          [{ id: 'dc', source: 'hapn', name: 'Twin' }]);
+        ok(r.proposals.length === 1 && r.proposals[0].tier === 'conflict', 'gps M4: one device, two equal claimants → single CONFLICT proposal');
+        ok(r.unmatchedUnits.length === 1, 'gps M4: the losing twin lands in unmatchedUnits (1:1)');
+      }
+
+      // already-mapped + Sold units are never proposed to
+      {
+        const r = T.gpsMatchFleet(
+          [mk('U-M', { name: 'Mapped', make: 'JCB', serial: 'SERIAL9', gpsProvider: 'hapn', gpsDeviceId: 'x' }),
+           mk('U-S', { name: 'Sold', make: 'JCB', serial: 'SERIAL9', fleetStatus: 'Sold' }),
+           mk('U-OK', { name: 'Open', make: 'JCB', serial: 'SERIAL9' })],
+          [{ id: 'dm', source: 'hapn', make: 'JCB', serialNumber: 'SERIAL9', name: 'x' }]);
+        ok(r.proposals.length === 1 && r.proposals[0].unitId === 'U-OK', 'gps M4: mapped + Sold units excluded; only the open unit is proposed');
+      }
+
+      // weak name-only signal → look (needs a human)
+      {
+        const r = T.gpsMatchFleet(
+          [mk('U-W', { name: 'Highrise' })],
+          [{ id: 'dw', source: 'hapn', name: 'Highrise scissor' }]);
+        ok(r.proposals.length === 1 && r.proposals[0].tier === 'look', 'gps M4: weak name-contains → NEEDS-A-LOOK');
+      }
+    }
+
     return out;
   });
 
