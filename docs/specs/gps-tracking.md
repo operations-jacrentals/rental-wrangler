@@ -1,11 +1,61 @@
-# GPS / Tracking — SPEC v1 (DRAFT)
+# GPS / Tracking — SPEC v2
 
-**Date:** 2026-06-28
-**Status:** DRAFT — for critique
-**Area branch:** `area/gps-tracking`
-**Task branch:** `gps-tracking/spec` (proposed)
-**Maturity:** 🟡 Partial (seam only)
-**Scope:** Turn the metadata-only GPS seam into a live telematics layer — real-time unit position, a self-healing `gpsStatus`, geofence-based stray/yard alerting, and the Driver "Driving Score" — wired through ONE additive backend action that polls Jac's existing telematics provider (GPSWOX) server-side.
+**Date:** 2026-06-28 · **Updated:** 2026-07-07 (WranglerGPS integration shipped)
+**Status:** 🟢 Phase 1 SHIPPED — Phase 2 (fleet pages) in design
+**Area branch:** `area/wrangler-gps`
+**Maturity:** 🟢 Live (Phase 1)
+**Scope:** A live telematics layer for the fleet — real-time unit position, a self-healing `gpsStatus`, a per-unit status/alert history feed, role-gated **remote engine shutdown**, and the Driver "Driving Score" — sourced from **WranglerGPS**, a companion Node/Express + Postgres service (on our own Railway) that merges FOUR telematics providers. Phase 2 lifts this to fleet-wide pages (map, tracker health, issues, utilization reports).
+
+> ## 🚨 STAGING/DEPLOY NOTE — BUMP THE `?v=` CACHE TOKEN
+> This Phase-1 work changes **`app.js` AND `style.css`**. On any deploy (area → staging → main), you **MUST** bump the shared `?v=` cache-bust token in `index.html` to a value **newer than the target's current token** — otherwise GitHub Pages serves the *stale cached* `app.js`/`style.css` under the old token and **none of the GPS UI appears** (this has bitten past sessions). For staging: check `git show origin/staging:index.html | grep '?v='` first, set a newer token, then force the sync (`gh workflow run sync-staging.yml`) and verify the live bytes. The backend dependency (`device_events`) is already deployed on Railway, so the token bump is the **only** remaining gotcha.
+
+> **⚠️ v2 supersedes the GPSWOX approach below (§1–§12).** The original spec assumed ONE provider (GPSWOX) polled server-side through an Apps Script `gpsPoll`/`gpsSnapshot` action. What actually shipped is different and is authoritative — read the **"WranglerGPS integration (SHIPPED)"** section next. The GPSWOX sections are **retained as design reference** for the still-relevant parts (roles/gates thinking, geofencing/stray design, risks), but where they conflict with the shipped architecture, the shipped section wins.
+
+---
+
+## ✅ SHIPPED — 2026-07-07: WranglerGPS integration (Phase 1)
+
+We integrated a friend's standalone fleet-telematics app (**WranglerGPS**) instead of building a fresh GPSWOX poll. It was forked to `operations-jacrentals/wranglergps` (org-owned, not his personal GitHub), redeployed on **our own Railway + Postgres**, and its React frontend retired and rebuilt inside `app.js`. Design + plan: `docs/superpowers/specs/2026-07-07-wrangler-gps-integration-design.md` + the matching plan.
+
+### Architecture (what changed vs. the GPSWOX design below)
+- **Provider(s):** FOUR, not one — **Hapn** (small equipment, ignition-based engine hours, starter-interrupt relay), **John Deere** Operations Center, **Yanmar** SmartAssist, **Bouncie** (OBD trucks). All connected live.
+- **Backend:** a **separate Node/Express + Postgres service** (the forked WranglerGPS, on Railway) — NOT an Apps Script `gpsPoll` action. The browser talks to it **directly** over HTTPS (`GPS_BACKEND_URL` in `config.js`), authed by the team password → an `x-auth-token`. Apps Script/Sheets stays the system of record only for the unit↔tracker **mapping**; no telemetry is copied into Sheets.
+- **Status source:** `gpsStatus` is derived client-side from the live fleet snapshot's tracker-ping freshness (`<6h` Reporting · `<72h` Verify · older/absent Not Reporting), falling back to the stored field when the backend is unreachable ("Last known — live link down"). The `gps-offline`/`gps-verify` flags became truthful with zero flag-code change, exactly as the GPSWOX design intended — just a different source.
+
+### What Phase 1 shipped (all on `area/wrangler-gps`, rental-wrangler #508)
+1. **GPS client module** — silent login, the four-provider fleet merge (mirrors the fork's `useFleet.js`), live status, shutdown, event reads.
+2. **Connect-a-device wizard** (`gpsConnect` popup) — provider picker → Hapn IMEI / searchable machine list for Deere·Yanmar·Bouncie → live "waiting → seen → ✓ Reporting" confirm → saves `gpsProvider`+`gpsDeviceId` only on confirmed contact.
+3. **Live-driven `gpsStatus`** on the unit pill + card flags.
+4. **Enriched GPS section** — last-seen line, external map link, engine chip; a 30s refresh scoped to viewing a mapped unit.
+5. **Status & alert history feed** — chat-feed-styled per-unit timeline from the backend `device_events` log, with live Bouncie check-engine (mil/DTC) alerts merged in.
+6. **Remote engine shutdown** — Hapn starter-interrupt, a two-step arm→confirm hazard control, **role-gated to Owner/Admin + Manager + Mechanic/M.Tech** (absent from the DOM for others), audited on every attempt. Polarity: `enabled:false` = immobilize.
+7. **Driving Score KPI** — the Driver ring lit with a **fleet** safety score from Bouncie trips (hard-braking/accel per mile + speeding); null (never faked) when no data; tunable weights.
+
+### Backend addition (fork `wranglergps#2`)
+`device_events` table (`source, device_key, type[status_change|alert|shutdown_command], detail, actor, at`) + `GET /api/device/:source/:key/events` + a shutdown-command audit write on every starter-interrupt. Additive; deploys via Railway on merge.
+
+### Data model (shipped) — additive unit fields
+- `gpsProvider` ∈ {Hapn·Deere·Yanmar·Bouncie} + `gpsDeviceId` (the provider's IMEI/principalId/contractId). The join key. Blank = unmapped = "No GPS".
+- Existing `gpsType`/`gpsPlacement`/`gpsStatus` retained. Live position/engine/last-seen come from the backend snapshot **at render time — not stored on the unit** (contrast the GPSWOX design's `gpsLat/gpsLng/gpsStray` fields, which were not used).
+
+### Roles & gates (shipped)
+- **Viewing** GPS (status, location, history) — **all signed-in roles**.
+- **Remote shutdown** — Owner/Admin + Manager + Mechanic/M.Tech only. **NOTE:** this is a client-side gate + server-side **audit** (who), not a server-ENFORCED per-role permission — the GPS backend uses one shared team token and can't tell roles apart. Accountability control among trusted staff; a truly enforced gate needs per-role backend auth (follow-up).
+- **PII:** on-rent position still reveals a customer jobsite — internal-only, never customer-facing (unchanged from §3.3 below).
+
+### Known limitations / deferred (documented in-code)
+- No server-enforced-per-role shutdown gate (shared team token) · no "not wired for ignition" distinction yet (needs a backend message-type signal) · auto `status_change` cron population + Hapn/Yanmar live-alert merge deferred (shapes need real samples) · Driving-Score weights are a tunable v1 · Deere app is SANDBOX tier · geofencing/stray alerts (the GPSWOX §7.3 design) are **not built** — moved to Phase 2/3.
+
+### Phasing (revised)
+- **Phase 1 — SHIPPED:** the seven items above (connect + live view + shutdown + score).
+- **Phase 2 — in design (needs its own spec):** the four fleet-wide pages from the original WranglerGPS app — **Live Tracking map** (whole-fleet, resolve overlap with `area/maps-location`), **Tracker Health** roster, **Issues** (fleet-wide fault codes), **Reports / Category Utilization** (actual-vs-target hrs/day, over/under-capacity, repair-vs-buy — reconcile with `financials-kpi` + the manager-metrics T2 daily-snapshot). **Geofencing + stray alerts** (the §7.3 design, gated on `comms-notifications` server SMS per D4) land here too.
+- **Phase 3:** event ledger, breadcrumb history, optional provider webhooks, auto engine-hours (`currentHours`) ingestion.
+
+---
+
+## Original GPSWOX design (v1, retained as reference)
+
+> The sections below (§1–§12) are the pre-integration design. Read them for the roles/gates reasoning, the geofencing/stray model (still the Phase 2/3 plan), and the risk analysis. Where they describe a GPSWOX Apps Script poll, the shipped WranglerGPS architecture above supersedes them.
 
 ---
 

@@ -26,7 +26,7 @@ import { CATEGORY_ANIM } from './icons-anim.js';
 import {
   getStatus, STATUS, ROLES, ROLE_TIERS, tierRank, BUILTIN_ROLE_TIERS, GRID_CARDS, BACKOFFICE_BOARDS, SORT_FIELDS,
   SHOP_TYPES, COLUMNS, COLUMN_OF,
-  legacyTransportPrice, computeTransportPrice, isFueledType, legsForType, YARD_ORIGIN, GOOGLE_MAPS_KEY,
+  legacyTransportPrice, computeTransportPrice, isFueledType, legsForType, YARD_ORIGIN, GOOGLE_MAPS_KEY, GPS_BACKEND_URL,
   fmtWindow, fmtShortDate, showsTruck, parseISO, TODAY_ISO, invoiceShort, TRANSPORT_MAP,
   FLAG_META, FLAG_SEVERITY_RANK, INSURANCE_COVERAGE_TYPES,
 } from './config.js';
@@ -666,8 +666,9 @@ function achTabBody(c) {
       <button class="x js-bank-remove" data-rec="${c.customerId}" data-bank="${k.id}" data-tip="Remove bank account">${I.x}</button>
     </div>`).join('') : '<span class="muted" style="font-size:12px">No bank accounts on file.</span>';
   return `<div class="cards-list">${rows}</div>
-    ${consent ? `<div style="margin-top:10px">${addBtn('ACH', { link: true, js: 'js-add-ach', data: { rec: c.customerId } })}</div>`
-              : '<span class="muted" style="font-size:11px">Capture a selfie + signature (Edit account) before adding a bank account.</span>'}`;
+    ${!canMoney() ? ''
+      : consent ? `<div style="margin-top:10px">${addBtn('ACH', { link: true, js: 'js-add-ach', data: { rec: c.customerId } })}</div>`
+                : '<span class="muted" style="font-size:11px">Capture a selfie + signature (Edit account) before adding a bank account.</span>'}`;
 }
 
 /* §19 stable-key migration: give every existing invoice line a `lid` and remap
@@ -2112,6 +2113,56 @@ const unitOfShopRec = (type, id) => (type === 'workOrders' ? (IDX.wo.get(id)?.un
   : type === 'inspections' ? (IDX.insp.get(id)?.unitId || null)
   : id);
 
+/* ── D8/D9 THE COMMS RAIL — per-device session persistence (spec comms D8 + D9).
+   { cat, sessions: { team|text|email|wrangler: { tabs:[id…], lastOpen, hidden:[id…],
+   menuOpen } } }. D9 SINGLE-OPEN LAW: `lastOpen` replaces D8's `open:{}` multi-map —
+   a session remembers only its LAST-open conversation, so at most ONE window is
+   mounted at any time across all categories (a chip re-summon restores exactly one).
+   `tabs` = the pulled customer threads (Texts/Email); Team/Wrangler tabs derive from
+   their own stores, with `hidden` as the per-device ✕-hide set. Sessions persist like
+   the item-tab rail (jactec.commsRail), but `cat` is NEVER restored — login/boot = an
+   EMPTY rail ("quiet start" is inherent; nothing shows until the user reaches). */
+const COMMS_LS_KEY = 'jactec.commsRail';
+const COMMS_CATS = ['team', 'text', 'email', 'wrangler'];
+const commsFreshSessions = () => Object.fromEntries(COMMS_CATS.map((k) => [k, { tabs: [], lastOpen: null, hidden: [], menuOpen: false }]));
+function loadCommsRail() {
+  const rail = { cat: null, sessions: commsFreshSessions() };
+  try {
+    const saved = JSON.parse(localStorage.getItem(COMMS_LS_KEY) || '{}');
+    COMMS_CATS.forEach((k) => {
+      const s = saved.sessions && saved.sessions[k]; if (!s) return;
+      // D8→D9 migration: a stored `open:{}` multi-map folds to its first key (single-open)
+      const lastOpen = s.lastOpen != null ? String(s.lastOpen)
+        : (s.open && typeof s.open === 'object' && Object.keys(s.open)[0]) || null;
+      rail.sessions[k] = { tabs: Array.isArray(s.tabs) ? s.tabs.map(String) : [], lastOpen, hidden: Array.isArray(s.hidden) ? s.hidden.map(String) : [], menuOpen: !!s.menuOpen };
+    });
+  } catch (e) {}
+  return rail;
+}
+function saveCommsRail() { try { localStorage.setItem(COMMS_LS_KEY, JSON.stringify({ sessions: state.commsRail.sessions })); } catch (e) {} }
+/* 'Ended' conversations (spec D8: End ≠ delete — the full history persists forever;
+   the conversation just leaves the All list + rail). A CLIENT-side per-device map of
+   `id|channel` → ended-at epoch (D9: the timestamp lets Team/Wrangler chats RESURRECT
+   when a message NEWER than the End arrives; legacy array entries load as `true` =
+   ended until explicitly re-opened). Channels: sms · email · team · wrangler. */
+const COMMS_ENDED_KEY = 'jactec.commsEnded';
+function commsEndedMap() {
+  try {
+    const v = JSON.parse(localStorage.getItem(COMMS_ENDED_KEY) || '{}');
+    if (Array.isArray(v)) return Object.fromEntries(v.map((k) => [k, true]));   // legacy Set shape
+    return (v && typeof v === 'object') ? v : {};
+  } catch (e) { return {}; }
+}
+function commsEndedSet() { return new Set(Object.keys(commsEndedMap())); }
+/* Ended, honoring resurrection: a message newer than the End un-ends the conversation. */
+function commsIsEnded(id, channel, lastAt) {
+  const ts = commsEndedMap()[String(id) + '|' + channel];
+  if (ts === undefined) return false;
+  return !(typeof ts === 'number' && (lastAt || 0) > ts);
+}
+function commsEnd(customerId, channel) { const m = commsEndedMap(); m[String(customerId) + '|' + channel] = Date.now(); try { localStorage.setItem(COMMS_ENDED_KEY, JSON.stringify(m)); } catch (e) {} }
+function commsUnend(customerId, channel) { const m = commsEndedMap(); const k = String(customerId) + '|' + channel; if (k in m) { delete m[k]; try { localStorage.setItem(COMMS_ENDED_KEY, JSON.stringify(m)); } catch (e) {} } }
+
 const state = {
   data: DATA,
   theme: 'bluedsteel',   // Blued Steel is the only theme now — Yard mode removed (Jac 2026-06-15)
@@ -2129,7 +2180,8 @@ const state = {
   availWin: null,      // §10 persistent window scope for the "available" search (set by the picker; outlives it)
   filterTerms: [],            // §5.4 — AND-narrowing filter terms (type + Enter)
   unitPick: null,             // { ids, from } — Invoice +WO narrows the Units list to the invoice's linked units (Phase 4)
-  chat: { open: false, activeId: null, draft: '', chats: [] },   // §17 internal team dock (Phase 7): PERSISTENT chats (never deleted). Each = { id, tags, participants, messages, seen{userKey:lastViewedAt} }. Empty participants = dormant; reopen via a tagged element.
+  chat: { open: false, activeId: null, draft: '', chats: [] },   // §17 team chats (2026-07-08 rail spec): PERSISTENT titled threads (never deleted). Each = { id, title, members[personId], messages[{…,refs?}], seen{userKey:at}, by }. Members default none; visibility ungated pending the login↔roster bind (spec §7).
+  held: null,   // Copy→paste: the ONE held element awaiting paste into an internal (Team / Mr. Wrangler) chat — { card, recId, label }. Not persisted (cleared on refresh).
   wrangler: { open: false, min: false, id: null, messages: [], busy: false, error: '', draft: '', attach: [], files: [], card: null, recId: null, recType: null, reqNumber: null, reqTitle: null, reqUrl: null },   // §18 Mr. Wrangler dock — id ties the live chat to its §18g rail snapshot; min collapses it to the header bar; survives minimize, restores conversation on reopen
   mobileCol: 0,               // §M1 — which column the phone shows (0 Yard · 1 Rentals · 2 Customers); drives swipe position + the per-column bottom strip
   woPartForm: null,           // woId whose "+ Add Part/Labor" inline form is open
@@ -2141,6 +2193,7 @@ const state = {
   previewsOn: (() => { try { return localStorage.getItem('jactec.previewsOff') !== '1'; } catch (e) { return true; } })(),   // hover previews (per device)
   overbookOn: (() => { try { return localStorage.getItem('jactec.overbook') === '1'; } catch (e) { return false; } })(),   // §10 allow-overbooking policy (per device, default OFF — drag build)
   hapticsOff: (() => { try { return localStorage.getItem('jactec.hapticsOff') === '1'; } catch (e) { return false; } })(),   // §M-touch Vibration-API feedback (per device, default ON; Android-only, no-op on iOS)
+  commsRail: loadCommsRail(),   // D8 THE COMMS RAIL — { cat, sessions } per device; cat always null at boot (empty rail at login)
   wranglerRail: [],   // §18g the bottom-right rail of past Mr. Wrangler conversations (per device), each a snapshot { id, title, ts, card, recId, recType, reqNumber, reqTitle, reqUrl, messages }. Loaded async from IndexedDB (wranglerRailLoad) — IndexedDB replaced the localStorage rail that silently overflowed.
   settings: loadAdminSettings(),   // Settings Board admin customization (config.settings); mirrored to localStorage, applied at boot via applySettings()
 };
@@ -4788,12 +4841,16 @@ function openCtxMenu(e, hit) {
   m.className = 'ctx-menu'; m.id = 'rw-ctx';
   const item = (act, label) => `<button class="dd-item" data-ctx="${act}">${label}</button>`;
   const linkSec = linkItems.length ? linkItems.map((a) => `<button class="dd-item" data-ctx="link:${a.target}">${CARD_ICON[a.target] || ''}${esc(a.label)}</button>`).join('') + '<div class="menu-sep"></div>' : '';
-  m.innerHTML = linkSec + [
+  // D8 comms block — on a customer, Text… / Email… start (or resurrect) that
+  // conversation onto the rail. ('Ask Mr. Wrangler about…' rides D8 Phase B.)
+  const ctxCust = ctxRecord && ctxRecord.card === 'customers' ? recOf('customers', ctxRecord.recId) : null;
+  const commsSec = ctxCust ? `<button class="dd-item" data-ctx="commsText">${I.messageSquare}Text ${esc((ctxCust.firstName || fullName(ctxCust) || 'customer').trim().split(/\s+/)[0])}…</button><button class="dd-item" data-ctx="commsEmail">${I.mail}Email ${esc((ctxCust.firstName || fullName(ctxCust) || 'customer').trim().split(/\s+/)[0])}…</button><div class="menu-sep"></div>` : '';
+  m.innerHTML = commsSec + linkSec + [
     item('cut', '✂️ Cut'), item('copy', '📋 Copy'), item('paste', '📥 Paste'), item('clear', '🧹 Clear'),
     '<div class="menu-sep"></div>',
     item('search', '🔎 Search'), item('gsearch', '🌐 Global Search'), item('replace', '✏️ Replace'),
     '<div class="menu-sep"></div>',
-    item('comment', '💬 Add Comment'), item('startchat', '🧵 Start chat'), item('wrangler', '🤠 Ask Mr. Wrangler'),
+    item('comment', '💬 Add Comment'), item('copyel', '📋 Copy to chat'), item('wrangler', '🤠 Ask Mr. Wrangler'),
   ].join('');
   document.body.appendChild(m);
   m.style.left = Math.min(e.clientX, window.innerWidth - 205) + 'px';
@@ -4849,6 +4906,11 @@ function runCtxAction(act) {
     else if (act === 'gv-reset') saveGvChrome(card, { pills: false, sort: false });
     return render();
   }
+  if (act === 'commsText' || act === 'commsEmail') {   // D8 — start/resume a customer conversation from the R20 menu
+    const rec = ctxRecord; closeCtxMenu(); document.removeEventListener('mousedown', ctxOutside); ctxRecord = null;
+    if (rec && rec.card === 'customers') commsOpenConv(act === 'commsText' ? 'text' : 'email', rec.recId);
+    return;
+  }
   if (act.startsWith('link:')) {   // §17b — menu-driven linking
     const target = act.slice(5); const rec = ctxRecord;
     closeCtxMenu(); document.removeEventListener('mousedown', ctxOutside); ctxRecord = null;
@@ -4888,7 +4950,7 @@ function runCtxAction(act) {
     if (!hit) { toast('Right-click a record (or open one) to comment.'); return; }
     return openOverlay({ kind: 'comment', card: hit.card, recId: hit.recId, recType: hit.recType, color: 'yellow' });
   }
-  if (act === 'startchat') return startChatFromEl(el);   // §17 — start a team chat seeded from this element
+  if (act === 'copyel') return copyElement(el);   // §17 — copy this element; paste it into a Team / Mr. Wrangler chat as a live chip
   if (act === 'wrangler') {
     const hit = cardRecordAt(el);   // §18 — open Mr. Wrangler dock, record-aware when a record is under the cursor
     return openWranglerDock({ messages: [], draft: '', attach: [], card: hit ? hit.card : null, recId: hit ? hit.recId : null, recType: hit ? hit.recType : null, reqNumber: null, reqTitle: null, reqUrl: null });
@@ -5333,8 +5395,11 @@ const FLAG_SEV = { red: 2, yellow: 1, gray: 0 };
 function unitCardFlags(u) {
   const f = [];
   if (unitOverbooked(u.unitId)) f.push({ label: 'Overbooked', color: 'red', alert: true });
-  if (u.gpsStatus === 'Not Reporting') f.push({ label: 'No GPS', color: 'red' });
-  else if (u.gpsStatus === 'Verify') f.push({ label: 'GPS?', color: 'yellow' });
+  const gsFlag = unitGpsStatus(u);   // live-derived (falls back to stored) — §5 step 3
+  if (gsFlag) {
+    if (gsFlag.status === 'Not Reporting') f.push({ label: 'No GPS', color: 'red' });
+    else if (gsFlag.status === 'Verify') f.push({ label: 'GPS?', color: 'yellow' });
+  }
   if (u.fleetStatus && u.fleetStatus !== 'Active') { const fs = getStatus('unitFleetStatus', u.fleetStatus); f.push({ label: fs.label, color: fs.color }); }
   // The border now mirrors the two pills, so surface the warnings the pills DON'T show
   // (Jac 2026-07-01): a due/past-due SERVICE that an open WO is hiding in pill 2, and a
@@ -6646,10 +6711,31 @@ const DETAIL = {
       ${efld('units', u, 'unitId', 'weight', 'Weight')}
       <div class="kv"><span class="v inline-edit" data-edit="unitHours" data-rec="${u.unitId}">${num(u.currentHours)} HRS</span></div>
     </div></div>`;
+    // GPS connect wizard (spec §5a) — mapping now happens through a guided popup
+    // (provider → identify → confirmed live signal) instead of hand-typing gpsProvider/
+    // gpsDeviceId; the "No GPS" badge grows a +Connect add, an already-mapped unit gets
+    // a quiet Reconnect affordance beside its provider · device-id.
+    const gpsMapped = !!(u.gpsProvider && u.gpsDeviceId);
+    const gsUnit = unitGpsStatus(u);   // live-derived status (§5 step 3); null = untracked
+    const gpsStale = gsUnit && !gsUnit.live && gpsMapped;   // backend unreachable → showing last-known
+    // §5 step 4 — enriched, on-open live detail from the fleet snapshot (last seen + map +
+    // engine). Only when we have LIVE data for this unit; the 30s view poll keeps it fresh.
+    const gpsM = (gsUnit && gsUnit.live) ? gsUnit.machine : null;
+    const gpsMapHref = (gpsM && gpsM.lat != null && gpsM.lng != null) ? `https://www.google.com/maps?q=${gpsM.lat},${gpsM.lng}` : '';
+    const gpsSeen = gpsM ? gpsRelTime(gpsM.lastSeen) : '';
     const gps = `<div class="section"><h4>GPS</h4><div class="fieldstack">
-      ${kvPills(u.gpsStatus ? statusPill('gpsStatus', u.gpsStatus, { focal: true }) : badge('No GPS'))}
+      ${kvPills((gsUnit ? statusPill('gpsStatus', gsUnit.status, { focal: true }) : badge('No GPS')) + (gpsMapped ? '' : addBtn('Connect GPS', { link: true, js: 'js-gps-connect', data: { rec: u.unitId } })))}
+      ${gpsStale ? `<div class="kv" style="justify-content:center"><span class="muted" style="font-size:11px">Last known — live link down</span></div>` : ''}
+      ${gpsM ? `<div class="kv" style="justify-content:center;gap:8px;flex-wrap:wrap">
+        ${gpsSeen ? `<span class="muted" style="font-size:11px">Last seen ${esc(gpsSeen)}</span>` : ''}
+        ${gpsMapHref ? `<a class="gps-maplink" href="${gpsMapHref}" target="_blank" rel="noopener">${esc(gpsM.address || 'View on map')}</a>` : ''}
+        ${badge(gpsM.engineOn ? 'Engine On' : 'Engine Off', gpsM.engineOn ? 'green' : 'gray')}
+      </div>` : ''}
+      ${gpsMapped ? `<div class="kv"><span class="v muted" style="font-size:11px">${esc(u.gpsProvider)} · ${esc(u.gpsDeviceId)}</span>${ghostPill('Reconnect', { js: 'js-gps-connect', data: { rec: u.unitId } })}</div>` : ''}
       ${efld('units', u, 'unitId', 'gpsType', 'GPS unit/type')}
       ${efld('units', u, 'unitId', 'gpsPlacement', 'Placement')}
+      ${gpsShutdownControl(u, gpsM)}
+      ${gpsMapped ? gpsFeedHtml(u) : ''}
     </div></div>`;
     /* COVERAGE — the yard's own equipment insurance on this unit (spec equipment-insurance
        Phase 1, Jac 2026-06-29). STATUS + riders are open to every role (a driver must know a
@@ -6983,6 +7069,7 @@ const DETAIL = {
       ${activity}
       ${activeBar}
       ${account}
+      ${commsCustSectionHtml(c)}
       ${paymentMethodsSection(c)}
       ${notes.bottom}
       ${historySection('customers', c, cs)}
@@ -7885,7 +7972,7 @@ function legacyKpiPct(roleId) {
     const scheduled = R.filter((r) => !['Quote', 'Cancelled', 'No Show'].includes(r.status)).length;
     const washes = N.filter((n) => n.wash === 'Yes').length;
     const washReq = N.filter((n) => n.wash === 'Yes' || n.wash === 'No').length;
-    return [pctOf(delivered, scheduled), pctOf(washes, washReq), null];        // Driving Score = GPS backend
+    return [pctOf(delivered, scheduled), pctOf(washes, washReq), drivingScoreValue()];   // Driving Score = fleet Bouncie safety score (null until loaded)
   }
   if (roleId === 'office') {
     const billed = INV.reduce((a, i) => a + invoiceTotals(i).total, 0);
@@ -7919,7 +8006,7 @@ const KPI_HELP = {
   'WO Rate (20% goal)':     'Progress toward the goal: 20% of the last 30 days’ inspections spawning a work order is healthy (catching problems). Full ring at 20%.',
   'On-Time':                'Rentals you actually delivered/handled ÷ rentals scheduled (excludes quotes, cancels, no-shows).',
   'Wash Completion':        'Of the units flagged for a wash, how many got washed (washed ÷ wash-requested).',
-  'Driving Score':          'Driving-safety score from the GPS backend — placeholder until that’s connected.',
+  'Driving Score':          'Fleet driving-safety score from Bouncie truck trips (hard braking/acceleration per mile + speeding) over the last few weeks — a team metric, 100 = clean. Blank until trips load or if no trucks report.',
   'Invoice Collection Rate':'Of all money invoiced, how much you’ve collected (dollars collected ÷ dollars billed).',
   'Show Rate':              'Of customers who reserved, how many actually showed up (not a No-Show).',
   'Reputation':             'Reputation score from customer email reviews — placeholder until the email backend is connected.',
@@ -8066,7 +8153,7 @@ function legacyKpiRaw(roleId) {
   const c = (v) => ({ v, unit: '' }), usd = (v) => ({ v, unit: '$' });
   if (roleId === 'mechanic') return [c(f.Ready + f['Not Ready']), c(W.filter((w) => w.phase === 'Complete').length), c(W.filter((w) => (w.lineItems || []).some((li) => (li.cost || 0) > 0 || (li.hours || 0) > 0) && w.billCustomer === 'Yes').length)];
   if (roleId === 'mtech') return [c(R.length - R.filter((r) => r.fieldCall).length), c(f.Ready), c(N.filter((n) => !n.woId).length)];
-  if (roleId === 'driver') return [c(R.filter((r) => ['On Rent', 'End Rent', 'Off Rent', 'Returned'].includes(r.status)).length), c(N.filter((n) => n.wash === 'Yes').length), c(0)];
+  if (roleId === 'driver') return [c(R.filter((r) => ['On Rent', 'End Rent', 'Off Rent', 'Returned'].includes(r.status)).length), c(N.filter((n) => n.wash === 'Yes').length), c(drivingScoreValue() || 0)];
   if (roleId === 'office') return [usd(INV.reduce((a, i) => a + invoiceTotals(i).paid - (Number(i.refundedAmount) || 0), 0)), c(R.filter((r) => ['On Rent', 'End Rent', 'Off Rent', 'Returned'].includes(r.status)).length), c(0)];
   if (roleId === 'sales') {
     const ym = TODAY_ISO.slice(0, 7);
@@ -8182,12 +8269,11 @@ function bottomBarInner(opts = {}) {
   // rules 5/6: LEFT = labeled actions (icon LEADS label, no "+"), Wash joins them;
   // RIGHT (after divider) = icon-only utilities. The +New collapse button is dropped (Jac).
   return `
+    ${commsChipsHtml()}
     <button class="iconbtn js-newitem" data-new="receipt">${CARD_ICON.expenses}Receipt</button>
     <span class="bb-sep"></span>
     <button class="iconbtn js-qr" data-tip="Share session (QR)">${I.qr}</button>
     <button class="iconbtn${state.previewsOn ? '' : ' off'} js-previews" data-tip="${state.previewsOn ? 'Hover previews: on' : 'Hover previews: off'}">${state.previewsOn ? I.eye : I.eyeOff}</button>
-    <button class="iconbtn js-chat-toggle${state.chat.open ? ' on' : ''}" data-tip="New team chat — flagged comments + tagged context">${I.chat}${(() => { const n = chatUnreadCount(); return n ? `<span class="bb-badge">${n > 9 ? '9+' : n}</span>` : ''; })()}</button>
-    <button class="iconbtn js-wrangler" data-tip="New chat with Mr. Wrangler — ask the yard AI, or report a bug" style="font-size:16px">🤠</button>
     ${opts.noInbox ? '' : `<button class="iconbtn js-requests" data-tip="Requests for your OK — review what Mr. Wrangler filed">${I.inbox}${wranglerRequests.length ? `<span class="bb-badge">${wranglerRequests.length > 9 ? '9+' : wranglerRequests.length}</span>` : ''}</button>`}
     <button class="iconbtn js-hotkeys" data-tip="Mouse &amp; keyboard shortcuts">${I.mouse}</button>
     ${devUnlocked() ? `<button class="iconbtn js-lint${document.body.classList.contains('rw-lint') ? ' on' : ''}" data-tip="Design lint — flash anything that bypassed the UI builders (R0)">${I.eye}</button>
@@ -8195,9 +8281,9 @@ function bottomBarInner(opts = {}) {
     <button class="iconbtn js-rulebook" data-tip="The R-Rulebook — visual design reference (SPEC v8)">${I.doc}</button>` : ''}
     ${adminUnlocked() ? `<button class="iconbtn js-photo-sweep" data-tip="Offload base64 photos to Drive — one-shot migration to de-bloat the payload">${I.camera}</button>` : ''}`;
 }
-// §18g/§17 — the bottom COMMS BAND: toolbar pinned left · the conversation rail
-// fills the middle (every Mr. Wrangler request + chat and every team thread is its
-// OWN tab, so nothing funnels into one session) · bell + inbox at the right.
+// §18g/§17/D9 — the bottom COMMS BAND: toolbar (with the four comms chips) pinned
+// left · the conversation rail fills the middle (idle = the actionable Mr. Wrangler
+// request tabs; a summoned category session otherwise) · the bell at the right.
 function bottomBarEl() {
   const bar = el('div', 'bottombar');
   bar.innerHTML = `<div class="bb-tools">${bottomBarInner({ noInbox: true })}</div>`
@@ -8214,62 +8300,39 @@ function commsUtilsEl() {
   const notifBadge = nu ? `<span class="fab-badge">${nu > 9 ? '9+' : nu}</span>` : '';
   return `<button class="fab js-notifications" data-tip="Notifications — resolved fixes">${I.bell}${notifBadge}</button>`;
 }
-// The conversation rail: Wrangler + Team channels (split by a thin divider, no section
-// labels), each conversation a SEPARATE tab. 🤠 Wrangler — one tab per OPEN request
-// (needs-answer = red · needs-your-OK = yellow; both open the dock, which carries
-// Approve/Dismiss), the live chat, and every past chat. 💬 Team — one tab per active
-// thread. Tabs read as actionable via a STEADY tinted edge (no perpetual glow). The rail
-// REPLACES the old Requests inbox on desktop; each opens ONLY its own thread
-// (data-wrc-needs / data-wrc-open / data-team-open).
+// The conversation rail. Idle (no chip summoned) it carries ONLY the open Mr. Wrangler
+// REQUEST tabs (needs-answer = red · needs-your-OK = yellow; they replaced the desktop
+// Requests inbox — each opens its own conversation window with Approve/Dismiss). All
+// conversation tabs — Team, Texts, Email, Mr. Wrangler chats — ride the summoned
+// category session (D9; the old always-on team/wrangler tab groups retired).
 function commsRailEl() {
+  // D8/D9 THE COMMS RAIL — a summoned session takes the rail (one category at a time;
+  // a sibling chip or a re-click sweeps it clean). D9: ALL FOUR categories — Team and
+  // Mr. Wrangler chats now ride the same session-tab engine as Texts/Email (their old
+  // dock tab groups retired with the docks).
+  if (state.commsRail.cat) return commsSessTabsHtml();
   const trim = (t, n = 24) => { t = String(t || '').replace(/\s+/g, ' ').trim(); return esc(t.length > n ? t.slice(0, n - 1) + '…' : t); };
-  // ── 🤠 WRANGLER ── every open request is its own tab (the inbox lived here before)
+  // ── 🤠 WRANGLER REQUESTS ── every open request is its own tab (they replaced the
+  // desktop approval inbox, so they stay on the idle rail — actionable alerts, not chats).
   const reqStateKey = (rq) => { const L = rq.labels || []; return L.includes('wrangler-needs-jac') ? 'needs' : L.includes('wrangler-fix') ? 'building' : 'ok'; };
-  const open = (wranglerRequests || []);
-  const reqNums = new Set(open.map((rq) => rq.number));
   const wrOpen = state.wrangler.open;
-  const reqTabs = open.filter((rq) => reqStateKey(rq) !== 'building').map((rq) => {   // building = Mr. Wrangler working; not actionable, surfaces via the bell when done
+  const reqTabs = (wranglerRequests || []).filter((rq) => reqStateKey(rq) !== 'building').map((rq) => {   // building = Mr. Wrangler working; not actionable, surfaces via the bell when done
     const st = reqStateKey(rq), cls = st === 'needs' ? 'crail-needs' : 'crail-ok';
     const tip = st === 'needs' ? `Mr. Wrangler needs your answer — #${rq.number}` : `Needs your OK — #${rq.number}`;
     const active = wrOpen && (state.wrangler.reqNumber === rq.number || state.wrangler.id === 'req' + rq.number);
     return `<button class="crail-tab ${cls}${active ? ' is-active' : ''}" data-wrc-needs="${rq.number}" role="tab" aria-selected="${active}" data-tip="${tip}"><span class="crail-dot"></span><span class="crail-t">${trim(rq.title || ('Request #' + rq.number))}</span></button>`;
   }).join('');
-  // §18g A chat is "resolved" — take it off the rail — once the bug it filed is fixed/closed:
-  // it filed at least one issue (message m.issue) and NONE of those are still open. Guarded on a
-  // loaded requests list so a failed/empty fetch never hides live chats. Non-destructive — the chat
-  // stays in the store, it just leaves the tab bar (Jac 2026-07-03 — "take away the resolved ones").
-  const wrChatResolved = (c) => {
-    if (!reqLoaded) return false;
-    const filed = (c.messages || []).map((m) => m.issue).filter((n) => n != null);
-    return filed.length > 0 && filed.every((n) => !wranglerRequests.some((rq) => rq.number === n));
-  };
-  const snaps = (state.wranglerRail || []).filter((c) => !c.reqNumber && !wrChatResolved(c));
-  // the live chat first if it's a brand-new one not yet snapshotted onto the rail
-  let liveTab = '';
-  if (wrOpen && state.wrangler.id && !state.wrangler.reqNumber && !snaps.some((c) => c.id === state.wrangler.id) && (state.wrangler.messages || []).length) {
-    liveTab = `<button class="crail-tab is-active" data-wrc-open="${esc(state.wrangler.id)}" role="tab" aria-selected="true" data-tip="Current chat with Mr. Wrangler"><span class="crail-dot"></span><span class="crail-t">${trim(wranglerConvoTitle(state.wrangler) || 'New chat')}</span><span class="crail-x js-wrc-remove" data-wrc-rm="${esc(state.wrangler.id)}" aria-label="Remove this chat" data-tip="Remove this chat">×</span></button>`;
-  }
-  const snapTabs = snaps.map((c) => {
-    const active = wrOpen && state.wrangler.id === c.id;
-    return `<button class="crail-tab${active ? ' is-active' : ''}" data-wrc-open="${esc(c.id)}" role="tab" aria-selected="${active}" data-tip="Reopen this chat with Mr. Wrangler"><span class="crail-dot"></span><span class="crail-t">${trim(c.title || 'Chat')}</span><span class="crail-x js-wrc-remove" data-wrc-rm="${esc(c.id)}" aria-label="Remove this chat" data-tip="Remove this chat">×</span></button>`;
-  }).join('');
-  const wrTabs = reqTabs + liveTab + snapTabs;
-  // ── 💬 TEAM ──
-  const u = commentUserKey();
-  const teamChats = (state.chat.chats || []).filter((c) => c.participants.length && c.messages.length)
-    .sort((a, b) => Math.max(0, ...b.messages.map((m) => m.at || 0)) - Math.max(0, ...a.messages.map((m) => m.at || 0)));
-  const teamTabs = teamChats.map((c) => {
-    const active = state.chat.open && state.chat.activeId === c.id;
-    const unseen = c.messages.length && Math.max(...c.messages.map((m) => m.at || 0)) > (c.seen[u] || 0);
-    const tag = (c.tags && c.tags[0]) || null;
-    const label = (tag && tag.label) || 'Team chat';
-    return `<button class="crail-tab c-${(tag && tag.color) || 'gray'}${active ? ' is-active' : ''}${unseen ? ' is-unseen' : ''}" data-team-open="${esc(c.id)}" role="tab" aria-selected="${active}" data-tip="${esc(label)}"><span class="crail-dot"></span><span class="crail-t">${trim(label)}</span></button>`;
-  }).join('');
-  const groups = [];
-  if (wrTabs) groups.push(`<div class="crail-group">${wrTabs}</div>`);
-  if (teamTabs) groups.push(`<div class="crail-group">${teamTabs}</div>`);
-  return groups.length ? groups.join('<span class="crail-div" aria-hidden="true"></span>')
-    : '<span class="crail-empty">No conversations yet — start one from the tools on the left.</span>';
+  return reqTabs ? `<div class="crail-group">${reqTabs}</div>`
+    : '<span class="crail-empty">Quiet on the line — the chips at left round up a conversation.</span>';
+}
+// §18g A wrangler chat is "resolved" — take it off the rail — once the bug it filed is
+// fixed/closed: it filed at least one issue (message m.issue) and NONE of those are still
+// open. Guarded on a loaded requests list so a failed/empty fetch never hides live chats.
+// Non-destructive — the chat stays in the store, it just leaves the tab bar (Jac 2026-07-03).
+function wrChatResolved(c) {
+  if (!reqLoaded) return false;
+  const filed = (c.messages || []).map((m) => m.issue).filter((n) => n != null);
+  return filed.length > 0 && filed.every((n) => !wranglerRequests.some((rq) => rq.number === n));
 }
 // §M1 — phone-only per-column bottom strip: Yard→internal chat · Rentals→tool bar · Customers→external chats (shell).
 // §M1/§M3 — the active phone column's card id (state.cards key), for the grid Back/Fwd swipe.
@@ -8326,33 +8389,79 @@ function chatComments() {
 function chatUnreadCount() { const u = commentUserKey(); return chatComments().filter((c) => !(c.ack || []).includes(u)).length; }
 const chatById = (id) => state.chat.chats.find((c) => c.id === id) || null;
 const activeChat = () => chatById(state.chat.activeId);
-function chatRoleOn(id) { const c = activeChat(); return !!c && c.participants.includes(id); }
 function chatsTagging(card, recId) { return state.chat.chats.filter((c) => (c.tags || []).some((t) => t.ref && t.ref.card === card && String(t.ref.recId) === String(recId))); }
-function chatMarkSeen() { const c = activeChat(); if (c) c.seen[commentUserKey()] = Date.now(); }
+function chatMarkSeen(chat) { const c = chat || activeChat(); if (c) c.seen[commentUserKey()] = Date.now(); }
 // an element re-flashes when ANY chat tagging it has messages this user hasn't seen (chats are never lost)
 function chatUnseenForRec(card, recId) {
   const u = commentUserKey();
   return chatsTagging(card, recId).some((c) => c.messages.length && Math.max(...c.messages.map((m) => m.at || 0)) > (c.seen[u] || 0));
 }
-function newChat(tag) {
-  const c = { id: 'CHAT' + (state.seq++), tags: tag ? [tag] : [], participants: ROLES.map((r) => r.id), messages: [], seen: { [commentUserKey()]: Date.now() } };
+// A team chat is now a user-created, TITLED thread with chosen MEMBERS (roster people,
+// default none) — see the 2026-07-08 comms-rail spec. `tags`/`participants` retired
+// (record context now rides in as pasted chips, §Copy/paste). Legacy chats normalize
+// in normalizeTeamChat() on load.
+function newChat(opts) {
+  opts = opts || {};
+  // Creator = admin (tracked by `by`) — that alone grants them visibility + control, so
+  // members starts empty ("default no one"); the admin adds people deliberately.
+  const c = { id: 'CHAT' + (state.seq++), title: opts.title || '', members: opts.members ? [...opts.members] : [], messages: [], seen: { [commentUserKey()]: Date.now() }, by: commentUserKey() };
   state.chat.chats.push(c); state.chat.activeId = c.id; pushChatsSoon(); return c;
 }
-// Reopen a dormant/existing chat through one of its tagged elements — the chat is never lost;
-// the current user rejoins (their role selected) and the dock opens to it.
+// ── Team-chat identity + ownership (2026-07-08) ──
+// The current user resolved to a roster person, by matching the typed login name to a
+// Settings → Team Roster entry (the pragmatic login↔roster bind). null = not on the
+// roster (a demo / un-rostered login) → treated as an unbound viewer below.
+function myRosterId() {
+  const me = (currentUser || '').trim().toLowerCase(); if (!me) return null;
+  const hit = ((state.settings && state.settings.employees) || []).find((e) => (e.name || '').trim().toLowerCase() === me);
+  return hit ? String(hit.id) : null;
+}
+// The chat's creator owns it: only they add/remove members or rename. Legacy chats with
+// no recorded creator stay openly editable (back-compat — they predate the model).
+function chatIsAdmin(c) { return !c || !c.by || c.by === commentUserKey(); }
+const chatAmMember = (c) => { const m = myRosterId(); return !!m && (c.members || []).map(String).includes(String(m)); };
+// Visibility: the admin and members see a chat; a bound non-member does not (Leave hides
+// it). An unbound login (not on the roster) sees all — so demo / un-rostered use isn't empty.
+function chatVisibleToMe(c) {
+  if (chatIsAdmin(c)) return true;
+  const mine = myRosterId();
+  return !mine || (c.members || []).map(String).includes(String(mine));
+}
+// Bring a legacy (participants/tags) or partial chat up to the {title,members} shape.
+// Non-destructive: keeps every message; synthesizes a title from the old first-tag label.
+function normalizeTeamChat(c) {
+  if (!c || typeof c !== 'object') return c;
+  if (c.title == null) c.title = (c.tags && c.tags[0] && c.tags[0].label) || '';
+  if (!Array.isArray(c.members)) c.members = [];
+  return c;
+}
+// Reopen an existing chat and land it on the rail. Membership is edited on the member
+// rail (default none), not auto-joined by role — so opening no longer mutates a roster.
 function openChat(id, msg) {
   const c = chatById(id); if (!c) return;
+  normalizeTeamChat(c);
   state.chat.activeId = id;
-  const myRole = currentRole && ROLES.some((r) => r.id === currentRole) ? currentRole : null;
-  if (myRole) { if (!c.participants.includes(myRole)) c.participants.push(myRole); }
-  else if (!c.participants.length) c.participants = ROLES.map((r) => r.id);   // demo (no role) → everyone rejoins
   c.seen[commentUserKey()] = Date.now();
-  pushChatsSoon();                                  // a rejoin/participant change syncs to the team
-  state.chat.open = true; render();
+  pushChatsSoon();
+  chatShow(); render();
   if (msg) toast(msg);
 }
-function chatFeed() {
-  const c = activeChat();
+/* D9 — the ONE way to surface the active team chat: phones keep the bottom-sheet dock;
+   desktop lands it on the comms rail as the Team session's SINGLE open window
+   (single-open law — summoning it closes whatever window was up). */
+function chatShow() {
+  if (document.body.classList.contains('is-phone')) { state.chat.open = true; return; }
+  const id = state.chat.activeId; if (!id) return;
+  commsUnend(id, 'team');                           // any open resurrects an ended chat
+  const rail = state.commsRail;
+  if (rail.cat !== 'team') { commsLeaveCat(rail.cat); rail.cat = 'team'; }
+  const s = rail.sessions.team;
+  s.lastOpen = String(id); s.menuOpen = false;
+  s.hidden = (s.hidden || []).filter((x) => String(x) !== String(id));
+  saveCommsRail();
+}
+function chatFeed(chat) {
+  const c = chat || activeChat();
   if (!c) return chatComments();   // no active chat → the global "what's flagged" overview
   const refs = (c.tags || []).map((t) => t.ref).filter(Boolean);
   const comments = chatComments().filter((cm) => refs.some((r) => r.card === cm.card && String(r.recId) === String(cm.recId)));
@@ -8361,25 +8470,91 @@ function chatFeed() {
 const CHAT_AV = ['blue', 'orange', 'green', 'purple', 'yellow', 'red'];
 function chatInitials(name) { return (String(name || '?').replace(/\(.*?\)/g, '').trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('') || '?').toUpperCase(); }
 function chatAvatarColor(name) { let h = 0; const s = String(name || ''); for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return `var(--${CHAT_AV[h % CHAT_AV.length]})`; }
+// A pasted element chip — a LIVE pointer. Reflects the record's current title; clicking
+// opens it for any member (reuses the data-chat-open path). A deleted record greys out.
+function chatRefChipHtml(r) {
+  const ec = r.card, rec = recOf(ec, r.recId);
+  if (!rec) return `<span class="chip-ref chip-gone" data-tip="This record was removed">${I.x}<span class="cr-t">No longer available</span></span>`;
+  const label = ROW_META[ec] ? ROW_META[ec](rec).title : String(r.recId);
+  return `<button class="chip-ref" data-chat-open="${esc(ec)}|${esc(r.recId)}" data-tip="Open ${esc(label)}"><span class="cr-i">${CARD_ICON[ec] || I.doc}</span><span class="cr-t">${esc(label)}</span><span class="cr-go">${I.chev}</span></button>`;
+}
+// A message bubble's inner content — text and/or pasted chips (a chips-only message reads
+// "shared an item").
+function chatBubbleInner(it) {
+  const t = it.text ? `<span class="cbub-t">${esc(it.text)}</span>` : '';
+  const refs = (it.refs || []).map(chatRefChipHtml).join('');
+  if (!t && !refs) return '<span class="cbub-t"></span>';
+  return t + (refs ? `<span class="cbub-refs">${refs}</span>` : '') + (!t && !refs ? '' : '');
+}
+// The chat title — editable (rename in place) for the creator, static for members.
+function chatTitleInputHtml(c) {
+  if (!chatIsAdmin(c)) return `<span class="cp-who chat-title-ro">${esc(commsTeamLabel(c))}</span>`;
+  return `<input class="chat-title-in" data-chat-title="${esc(c.id)}" value="${esc(c.title || '')}" placeholder="Name this chat…" aria-label="Chat title" maxlength="60" />`;
+}
+// The held element awaiting paste, shown in an internal composer; sends with the message.
+function chatHeldChipHtml() {
+  const h = state.held; if (!h) return '';
+  return `<span class="held-chip" data-tip="Attached — sends with your message"><span class="hc-i">${CARD_ICON[h.card] || I.doc}</span><span class="hc-t">${esc(h.label || 'Item')}</span><button class="hc-x" data-held-clear aria-label="Clear attachment">${I.x}</button></span>`;
+}
+/* Shared team-chat feed rows (dock + D9 rail window): messages as bubbles (mine ride
+   `me`, carrying text and/or pasted chips), flagged comments as tappable cflag rows. */
+function chatFeedRowsHtml(c) {
+  const u = commentUserKey();
+  return chatFeed(c).map((it) => {
+    if (it.kind === 'msg') {
+      if (it.by === u) return `<div class="cbub-row me"><div class="cbub me">${chatBubbleInner(it)}</div></div>`;
+      return `<div class="cbub-row"><span class="cav" style="--av:${chatAvatarColor(it.by)}">${esc(chatInitials(it.by))}</span><div class="cbub-wrap"><span class="cbub-name">${esc(it.by || 'Team')}</span><div class="cbub">${chatBubbleInner(it)}</div></div></div>`;
+    }
+    return `<button class="cflag" data-chat-open="${esc(it.card)}|${esc(it.recId)}"><span class="cmt-marker c-${it.color}"></span><span class="cflag-b"><span class="cflag-t">${esc(it.text)}</span><span class="cflag-m">flagged · on ${esc(it.recName)}</span></span></button>`;
+  }).join('') || `<div class="chat-empty">${c ? 'No messages yet — say something, or paste a record in.' : 'Flagged comments show up here. Start a chat from the + on the Team rail.'}</div>`;
+}
+// The member rail — who's in the chat. People come from the Settings → Team Roster
+// (settings.employees), grouped under their role heading; default NONE until added.
+// Tinted by the person's role color so a glance reads the crew mix.
+const ROLE_BY_LABEL = () => { const m = {}; ROLES.forEach((r) => { m[r.label] = r; m[r.id] = r; }); return m; };
+function chatMemberBarHtml(c) {
+  if (!c) return '';
+  const emps = (state.settings && state.settings.employees) || [];
+  const members = new Set((c.members || []).map(String));
+  const rmap = ROLE_BY_LABEL();
+  // ── Members can't edit the roster — they see who's in, and a Leave if they're in it. ──
+  if (!chatIsAdmin(c)) {
+    const empById = new Map(emps.map((e) => [String(e.id), e]));
+    const chips = [...members].map((id) => {
+      const em = empById.get(id); const nm = (em && em.name) || 'Member';
+      const rc = (em && rmap[em.role] && rmap[em.role].color) || 'gray';
+      return `<span class="rtab is-static" style="--rc:var(--${rc})" data-tip="${esc(nm)} — in the chat"><span class="rtab-dot"></span><span class="rtab-l">${esc(nm)}</span></span>`;
+    }).join('') || '<span class="mbar-hint">No members yet.</span>';
+    return `<div class="chat-rolebar chat-memberbar chat-memberbar-ro" role="group" aria-label="Chat members">${chips}</div>`;   // Leave lives in the gear menu now
+  }
+  // ── Admin (creator): the full editable roster, grouped by role; default none. ──
+  if (!emps.length) return `<div class="chat-rolebar chat-memberbar"><span class="mbar-hint">No crew on the roster yet — add hands in Settings → Team Roster.</span></div>`;
+  const byRole = new Map();
+  emps.forEach((em) => { const k = em.role || 'Crew'; if (!byRole.has(k)) byRole.set(k, []); byRole.get(k).push(em); });
+  const grps = [...byRole.entries()].map(([role, list]) => {
+    const rc = (rmap[role] && rmap[role].color) || 'gray';
+    const chips = list.map((em) => {
+      const on = members.has(String(em.id));
+      const nm = em.name || 'Hand';
+      return `<button class="rtab${on ? ' on' : ''}" data-chat-member="${esc(em.id)}" style="--rc:var(--${rc})" data-tip="${esc(nm)} — ${on ? 'in the chat (tap to remove)' : 'tap to add'}"><span class="rtab-dot"></span><span class="rtab-l">${esc(nm)}</span></button>`;
+    }).join('');
+    return `<div class="mrole-grp"><span class="mrole-h">${esc(role)}</span><div class="mrole-chips">${chips}</div></div>`;
+  }).join('');
+  return `<div class="chat-rolebar chat-memberbar" role="group" aria-label="Chat members — you're the creator">${grps}</div>`;
+}
 function chatDockEl() {
   chatMarkSeen();   // §17 — the open dock is "seen": clears the re-flash for this user
   const c = activeChat();
-  const u = commentUserKey();
-  // tagged-element rail at the very top (no header, per Jac) — close/back ride the rail's end
-  const tagsHtml = c ? c.tags.map((t) => `<span class="chat-tag c-${t.color || 'gray'}" data-tip="${esc(t.label)}"><span class="ct-dot"></span><span class="ct-lbl">${esc(t.label)}</span><button class="x" data-chat-untag="${esc(t.id)}" aria-label="Remove ${esc(t.label)}">${I.x}</button></span>`).join('') : '<span class="chat-rail-hint">No chat open — right-click / long-press a record, or drag one in</span>';
-  const rail = `<div class="chat-rail">${tagsHtml}<span class="rail-sp"></span>${c ? `<button class="rail-ico js-chat-back" aria-label="All flags" data-tip="All flags">${I.chevL}</button>` : ''}<button class="rail-ico js-chat-close" aria-label="Close chat" data-tip="Close">${I.x}</button></div>`;
-  const feed = chatFeed().map((it) => {
-    if (it.kind === 'msg') {
-      if (it.by === u) return `<div class="cbub-row me"><div class="cbub me">${esc(it.text)}</div></div>`;
-      return `<div class="cbub-row"><span class="cav" style="--av:${chatAvatarColor(it.by)}">${esc(chatInitials(it.by))}</span><div class="cbub-wrap"><span class="cbub-name">${esc(it.by || 'Team')}</span><div class="cbub">${esc(it.text)}</div></div></div>`;
-    }
-    return `<button class="cflag" data-chat-open="${esc(it.card)}|${esc(it.recId)}"><span class="cmt-marker c-${it.color}"></span><span class="cflag-b"><span class="cflag-t">${esc(it.text)}</span><span class="cflag-m">flagged · on ${esc(it.recName)}</span></span></button>`;
-  }).join('') || `<div class="chat-empty">${c ? 'No messages yet — say something.' : 'Flagged comments show up here. Start a chat from any record or element.'}</div>`;
-  const roles = c ? `<div class="chat-rolebar">${ROLES.map((r) => `<button class="rtab${chatRoleOn(r.id) ? ' on' : ''}" data-chat-role="${esc(r.id)}" style="--rc:var(--${r.color})" data-tip="${esc(r.label)} — ${chatRoleOn(r.id) ? 'in the chat' : 'left out'}"><span class="rtab-dot"></span><span class="rtab-l">${esc(r.label)}</span></button>`).join('')}</div>` : '';
+  if (!c) {
+    // no chat open → the flagged-comments overview (deferred: fate revisited later)
+    return `<div class="chat-rail"><span class="chat-rail-hint">No chat open — tap <b>+ New chat</b> on the Team rail.</span><span class="rail-sp"></span><button class="rail-ico js-chat-close" aria-label="Close" data-tip="Close">${I.x}</button></div>
+      <div class="chat-feed">${chatFeedRowsHtml(c)}</div>`;
+  }
+  const rail = `<div class="chat-rail chat-titlebar">${chatTitleInputHtml(c)}<span class="rail-sp"></span><button class="rail-ico js-chat-settings" aria-label="Chat settings" data-tip="Chat settings">${I.sliders}</button><button class="rail-ico js-chat-back" aria-label="All chats" data-tip="All chats">${I.chevL}</button><button class="rail-ico js-chat-close" aria-label="Close chat" data-tip="Close">${I.x}</button></div>`;
   return `${rail}
-    <div class="chat-feed">${feed}</div>
-    <div class="chat-compose"><input class="chat-input" placeholder="${c ? 'Message the team…' : 'Type to start a team chat…'}" value="${esc(state.chat.draft || '')}" aria-label="Message the team" /><button class="chat-send js-chat-send" aria-label="Send">${I.chev}</button></div>
-    ${roles}`;
+    <div class="chat-feed">${chatFeedRowsHtml(c)}</div>
+    <div class="chat-compose">${chatHeldChipHtml()}<input class="chat-input" placeholder="Message the team…" value="${esc(state.chat.draft || '')}" aria-label="Message the team" /><button class="chat-send js-chat-send" aria-label="Send">${I.chev}</button></div>
+    ${chatMemberBarHtml(c)}`;
 }
 // Render Mr. Wrangler's message text — escape FIRST (no HTML injection), then apply the light markdown the
 // model actually emits: **bold**, `code`, and newlines. Only safe <strong>/<code>/<br> tags are introduced.
@@ -8402,11 +8577,43 @@ function wrMsgStamp(at, prevAt) {
     : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   return day + ' · ' + time;
 }
-// §18 Mr. Wrangler dock — renders the floating dock HTML (mirrors wrangler overlay but as a dock).
+// §18 Mr. Wrangler dock — renders the floating dock HTML (mirrors wrangler overlay but as
+// a dock). D9: the dock survives on PHONES only; desktop renders the same BODY inside the
+// comms-rail window (commsWranglerPopupHtml) — one body builder, two shells.
 function wranglerDockEl() {
   const o = state.wrangler;
   const rec = (o.card && o.recId != null) ? recOf(entityCardOf(o.card, o.recType), o.recId) : null;
   const chip = rec ? `<span class="wr-chip">${CARD_ICON[entityCardOf(o.card, o.recType)] || ''}${esc(detailTitle(entityCardOf(o.card, o.recType), rec))}</span>` : '';
+  return `
+    <div class="wr-dock-head">
+      <span style="font-size:18px">🤠</span>
+      <span class="wr-dock-title">Mr. Wrangler</span>
+      ${chip}
+      <span class="spacer"></span>
+      <button class="iconbtn js-wr-min" aria-label="${o.min ? 'Expand' : 'Minimize'}" data-tip="${o.min ? 'Expand' : 'Minimize'}">${I.chev}</button>
+      <button class="iconbtn js-wr-close" aria-label="Close" data-tip="Close">×</button>
+    </div>
+    ${wranglerDockBodyHtml()}`;
+}
+// The wrangler conversation BODY — request bar, feed, error, attachments, composer.
+// Shared verbatim by the phone dock and the D9 rail window (the send/apply/attach
+// machinery keys off these classes: .js-wr-in, .js-wr-send, .wr-feed …).
+// The Wrangler composer's focus/paste row: a held element awaiting paste (becomes the
+// focus on send) + the currently-FOCUSED record (what Claude can see) with a clear ✕.
+// Pasting an element into Mr. Wrangler feeds him its data — he can't click a chip, so the
+// element rides in as context rather than a link (2026-07-08 rail spec, internal paste).
+function wranglerFocusRowHtml(o) {
+  const bits = [];
+  if (state.held) bits.push(chatHeldChipHtml());   // paste-ready — becomes the focus on send
+  if (o.card && o.recId != null) {
+    const ec = entityCardOf(o.card, o.recType), rec = recOf(ec, o.recId);
+    const label = rec ? (ROW_META[ec] ? ROW_META[ec](rec).title : String(o.recId)) : 'record removed';
+    bits.push(`<span class="wr-focus-chip${rec ? '' : ' chip-gone'}" data-tip="Mr. Wrangler is focused on this record — he can see its data"><span class="wf-i">${CARD_ICON[ec] || I.doc}</span><span class="wf-t">${esc(label)}</span><button class="wf-x" data-wr-unfocus aria-label="Clear focus" data-tip="Clear the focused record">${I.x}</button></span>`);
+  }
+  return bits.length ? `<div class="wr-focus-row">${bits.join('')}</div>` : '';
+}
+function wranglerDockBodyHtml() {
+  const o = state.wrangler;
   const turns = o.messages.length
     ? o.messages.map((m, i) => {
         let act = '';
@@ -8476,17 +8683,10 @@ function wranglerDockEl() {
       ${acts}</div>`;
   })();
   return `
-    <div class="wr-dock-head">
-      <span style="font-size:18px">🤠</span>
-      <span class="wr-dock-title">Mr. Wrangler</span>
-      ${chip}
-      <span class="spacer"></span>
-      <button class="iconbtn js-wr-min" aria-label="${o.min ? 'Expand' : 'Minimize'}" data-tip="${o.min ? 'Expand' : 'Minimize'}">${I.chev}</button>
-      <button class="iconbtn js-wr-close" aria-label="Close" data-tip="Close">×</button>
-    </div>
     ${reqBar}
     <div class="wr-feed">${turns}${o.busy ? '<div class="wr-msg assistant"><span class="wr-av">🤠</span><div class="wr-bub wr-think">…wrangling an answer</div></div>' : ''}</div>
     ${o.error ? `<div class="wr-err">${esc(o.error)}</div>` : ''}
+    ${wranglerFocusRowHtml(o)}
     ${attachRow}
     <div class="wr-compose"><label class="wr-attach js-wr-attach" data-r="R21" data-tip="Attach a screenshot or a CSV/text file"><input type="file" accept="image/*,.csv,.tsv,.txt,.md,.log,text/csv,text/plain" class="js-wr-file" hidden multiple>${I.paperclip || '📎'}</label><input class="wr-in js-wr-in" placeholder="Ask Mr. Wrangler, or tell him what's broken…" value="${esc(o.draft || '')}" ${o.busy ? 'disabled' : ''} /><button class="wr-send js-wr-send" data-r="R17" ${o.busy ? 'disabled' : ''} aria-label="Ask">${I.chev}</button></div>`;
 }
@@ -8768,67 +8968,114 @@ function openWranglerDock(opts) {
   if (opts.reqNumber !== undefined) w.reqNumber = opts.reqNumber;
   if (opts.reqTitle !== undefined) w.reqTitle = opts.reqTitle;
   if (opts.reqUrl !== undefined) w.reqUrl = opts.reqUrl;
+  // D9 — desktop has no floating dock anymore: the conversation lands on the comms
+  // rail as the Mr. Wrangler session's SINGLE open window (single-open law).
+  if (!document.body.classList.contains('is-phone')) {
+    const rail = state.commsRail;
+    if (rail.cat !== 'wrangler') { commsLeaveCat(rail.cat); rail.cat = 'wrangler'; }
+    const s = rail.sessions.wrangler;
+    s.lastOpen = String(w.id); s.menuOpen = false;
+    s.hidden = (s.hidden || []).filter((x) => String(x) !== String(w.id));
+    commsUnend(w.id, 'wrangler');                    // any open resurrects an ended chat
+    saveCommsRail();
+  }
   render();
   setTimeout(() => { const i = document.querySelector('.wrangler-dock .js-wr-in'); if (i) i.focus(); const f = document.querySelector('.wrangler-dock .wr-feed'); if (f) f.scrollTop = f.scrollHeight; }, 0);
 }
 function chatSend() {
   const inp = document.querySelector('.chat-input');
   const text = ((inp ? inp.value : state.chat.draft) || '').trim();
-  if (!text) { if (inp) inp.focus(); return; }
+  const held = state.held;
+  if (!text && !held) { if (inp) inp.focus(); return; }                 // nothing to send (no text, no pasted chip)
   let c = activeChat(); if (!c) c = newChat();                          // typing with no active chat opens one to the team
-  c.messages.push({ id: 'MSG' + (state.seq++), by: commentUserKey(), when: TODAY_ISO, at: Date.now(), text });
+  const msg = { id: 'MSG' + (state.seq++), by: commentUserKey(), when: TODAY_ISO, at: Date.now(), text };
+  if (held) { msg.refs = [{ card: held.card, recId: held.recId }]; state.held = null; }   // paste the held element as a live chip
+  c.messages.push(msg);
   c.seen[commentUserKey()] = Date.now();                                // author has seen their own update
+  commsUnend(c.id, 'team');                                             // D9: any new message resurrects an Ended chat
   state.chat.draft = ''; saveSoon(); pushChatsSoon(); haptic([12, 30, 12]); render();   // §M-touch — success tick on a posted message
   setTimeout(() => { const i = document.querySelector('.chat-input'); if (i) i.focus(); const f = document.querySelector('.chat-feed'); if (f) f.scrollTop = f.scrollHeight; }, 0);
 }
-function chatToggleRole(id) {
+function chatToggleMember(empId) {
   const c = activeChat(); if (!c) return;
-  c.participants = c.participants.includes(id) ? c.participants.filter((x) => x !== id) : [...c.participants, id];
-  // never deleted — at 0 participants the chat goes dormant; reopen it via a tagged element (Jac)
+  if (!chatIsAdmin(c)) { toast('Only the chat’s creator can change who’s in it.'); return; }   // members can leave, not add
+  const s = new Set((c.members || []).map(String)); const k = String(empId);
+  if (s.has(k)) s.delete(k); else s.add(k);
+  c.members = [...s];
   pushChatsSoon(); render();
 }
-// Right-click → Start chat: OPEN the element's existing chat (rejoin) if it has one, else start fresh.
-function startChatFromEl(el) {
+// A member removes THEMSELVES (voluntary exit). Drops the chat off their rail (visibility).
+function chatLeave() {
+  const c = activeChat(); if (!c) return;
+  const mine = myRosterId(); if (!mine) return;
+  c.members = (c.members || []).filter((x) => String(x) !== String(mine));
+  if (String(state.chat.activeId) === String(c.id)) state.chat.activeId = null;   // fall back to the overview; it's off your rail now
+  pushChatsSoon(); render();
+  toast('You left the chat.');
+}
+// Per-user mute — a muted chat never raises its status dot for you (still readable).
+function chatMuted(c) { return !!c && (c.muted || []).includes(commentUserKey()); }
+function chatToggleMute() {
+  const c = activeChat(); if (!c) return;
+  const me = commentUserKey(), s = new Set(c.muted || []);
+  const nowMuted = !s.has(me);
+  if (nowMuted) s.add(me); else s.delete(me);
+  c.muted = [...s];
+  pushChatsSoon(); render();
+  toast(nowMuted ? 'Muted — this chat won’t raise an alert.' : 'Unmuted.');
+}
+// The gear menu — classic chat settings. Everyone: mark read + mute. Creator: rename +
+// end. Member: leave. (Leave/End live here so they're a deliberate, tucked-away action.)
+function chatSettingsMenu(btn) {
+  const c = activeChat(); if (!c) return;
+  const muted = chatMuted(c), admin = chatIsAdmin(c);
+  let html = `<button class="dd-item js-chat-markread">${I.eye}<span>Mark as read</span></button>`;
+  html += `<button class="dd-item${muted ? ' on' : ''} js-chat-mute">${I.bell}<span>${muted ? 'Unmute notifications' : 'Mute notifications'}</span></button>`;
+  if (admin) {
+    html += `<button class="dd-item js-chat-rename">${I.sliders}<span>Rename chat</span></button>`;
+    html += `<div class="dd-sep" aria-hidden="true"></div>`;
+    html += `<button class="dd-item danger js-chat-end" data-chat="${esc(c.id)}">${I.x}<span>End chat</span></button>`;
+  } else if (chatAmMember(c)) {
+    html += `<div class="dd-sep" aria-hidden="true"></div>`;
+    html += `<button class="dd-item danger js-chat-leave">${I.x}<span>Leave chat</span></button>`;
+  }
+  openDropdown(btn, html, { align: 'right', cls: 'chat-settings-menu' });
+}
+const closeMenus = () => document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove());
+// Rename a chat (title input on the window header). Debounced-sync; no re-render so the
+// caret doesn't jump — the tab label refreshes on the next render.
+function chatSetTitle(id, title) {
+  const c = chatById(id); if (!c || !chatIsAdmin(c)) return;   // only the creator renames
+  c.title = title; pushChatsSoon();
+}
+// Right-click → Copy to chat: HOLD this element so it can be pasted into an internal
+// (Team / Mr. Wrangler) chat as a live, clickable chip. Replaces the retired
+// "start a chat seeded from this element" flow (2026-07-08 rail spec) — the copied
+// element travels into any conversation, and every member can click through it.
+function copyElement(el) {
   const hit = cardRecordAt(el);
-  if (!hit) { toast('Right-click a record to start or open its chat.'); return; }
+  if (!hit) { toast('Right-click a record to copy it into a chat.'); return; }
   const ec = entityCardOf(hit.card, hit.recType), rec = recOf(ec, hit.recId);
   if (!rec) { toast('Record not found.'); return; }
-  const existing = chatsTagging(ec, hit.recId)[0];
-  if (existing) return openChat(existing.id, `Reopened the chat on this ${SINGULAR[ec] || 'record'}.`);
   const label = ROW_META[ec] ? ROW_META[ec](rec).title : String(hit.recId);
-  const m = commentMarker(rec);
-  newChat({ id: 'TAG:' + ec + ':' + hit.recId, label, color: m ? m.color : 'gray', ref: { card: ec, recId: hit.recId } });
-  state.chat.open = true; render();
-  toast(`Started a chat from "${label}".`);
+  state.held = { card: ec, recId: hit.recId, label };
+  render();
+  toast(`Copied “${label}” — paste it into a Team or Mr. Wrangler chat.`);
 }
 // Resolve a dragged payload into a chat tag — label from the record, color inherited
 // from any flag it already carries (else neutral). Granular-element sources (line/pill/
 // price) ride the same path once they're wired as drag sources.
-function chatTagFromPayload(p) {
-  const rec = p.rec, ec = p.entity;
+// Dropping a record on the chat pad COPIES it (held) to paste into a Team / Mr. Wrangler
+// chat — the drag equivalent of right-click → Copy to chat. (Replaces the retired
+// drop-to-tag / drop-to-new-chat flows, 2026-07-08 rail spec.)
+function chatDropCopy(p) {
+  const ec = p.entity, rec = p.rec;
+  if (p.chatEl && p.chatEl.ref) { state.held = { card: p.chatEl.ref.card, recId: p.chatEl.ref.recId, label: p.chatEl.label || 'Item' }; render(); toast(`Copied “${p.chatEl.label || 'item'}” — paste it into a chat.`); return; }
+  if (!ec || rec == null) return;
   const label = ROW_META[ec] ? ROW_META[ec](rec).title : (idOf(ec, rec) || 'Item');
-  const m = commentMarker(rec);
-  chatAddTag({ id: 'TAG:' + ec + ':' + p.id, label, color: m ? m.color : 'gray', ref: { card: ec, recId: p.id } });
-  toast(`Tagged “${label}” into the team chat.`);
-}
-// Drop on the bottom-right pad → spin up a NEW chat seeded with the dragged thing
-// (a granular element OR a whole record).
-function chatStartFromDrop(p) {
-  let tag;
-  if (p.chatEl) tag = { id: p.chatEl.id || ('TAG' + (state.seq++)), label: p.chatEl.label, color: p.chatEl.color || 'gray', ref: p.chatEl.ref || null };
-  else { const ec = p.entity, rec = p.rec; const label = ROW_META[ec] ? ROW_META[ec](rec).title : (idOf(ec, rec) || 'Item'); const m = commentMarker(rec); tag = { id: 'TAG:' + ec + ':' + p.id, label, color: m ? m.color : 'gray', ref: { card: ec, recId: p.id } }; }
-  // Dedup like startChatFromEl: a record/element already has a chat → REOPEN it, never spin a duplicate thread.
-  if (tag.ref) { const existing = chatsTagging(tag.ref.card, tag.ref.recId)[0]; if (existing) return openChat(existing.id, `Reopened the chat on this ${SINGULAR[tag.ref.card] || 'record'}.`); }
-  newChat(tag); state.chat.open = true; render();
-  toast(`New chat started from “${tag.label}”.`);
-}
-// Tag an element into the chat (drag-drop) — records OR granular elements (line/pill/price).
-function chatAddTag(tag) {
-  if (!tag || !tag.label) return;
-  let c = activeChat(); if (!c) c = newChat();                          // dragging context in with no active chat opens one
-  if (tag.id && c.tags.some((t) => t.id === tag.id)) return;            // no dupes
-  c.tags.push({ id: tag.id || 'TAG' + (state.seq++), label: tag.label, color: tag.color || 'gray', ref: tag.ref || null });
-  state.chat.open = true; pushChatsSoon(); render();
+  state.held = { card: ec, recId: p.id, label };
+  render();
+  toast(`Copied “${label}” — paste it into a Team or Mr. Wrangler chat.`);
 }
 function tabStrip(tabs) {
   tabs = tabs || state.tabs;
@@ -10235,6 +10482,78 @@ function buildPopupEl(o, overlay, opts = {}) {
       foot: `${ghostPill('Cancel', { js: 'js-close' })}${actionPill(isMoney ? 'money' : 'commit', isMoney ? 'Confirm — bill it' : 'Confirm', { js: 'js-link-confirm' })}`,
     });
     overlay.appendChild(pop);
+  } else if (o.kind === 'gpsConnect') {
+    // §5a — the connect-a-device wizard: provider → identify the device → live
+    // first-contact poll → save. gpsProvider/gpsDeviceId are written to the unit ONLY
+    // once contact is confirmed (or an explicit "Save anyway" override) — never a
+    // hand-typed, unverified mapping. State lives on the overlay (o.step/o.provider/…);
+    // the async pieces (device-list load, the poll loop, the write) are gpsConnectLoadDevices
+    // / gpsConnectStartPoll+gpsConnectPollTick / gpsConnectSave, just above the GPS client.
+    const u = IDX.unit.get(o.unitId);
+    if (!u) { return false; }
+    o.step = o.step || 'provider'; o.provider = o.provider || 'Hapn';
+    const stepNum = { provider: 1, identify: 2, poll: 3 }[o.step] || 1;
+    const stepLbl = o.step === 'identify' ? (o.provider === 'Hapn' ? 'Identify the tracker' : 'Pick the machine') : (o.step === 'poll' ? 'Confirm signal' : 'Provider');
+    let body, foot;
+
+    if (o.step === 'provider') {
+      body = `
+        <div class="kpi-cap" style="margin-bottom:9px">${stepNum} · ${esc(stepLbl)}</div>
+        ${segCtl(GPS_PROVIDERS.map((p) => ({ label: p, js: 'js-gps-provider', data: { val: p }, on: o.provider === p ? 'orange' : '' })))}
+        <p class="set-note" style="margin-top:10px">${o.provider === 'Hapn'
+          ? 'Wrangle in a tracker by IMEI — read it off the hardware. It must already be activated on the Hapn account.'
+          : `Round up a machine already authorized on the ${esc(o.provider)} account — nothing to activate here.`}</p>`;
+      foot = `${ghostPill('Cancel', { js: 'js-close' })}${actionPill('commit', 'Continue', { js: 'js-gps-continue' })}`;
+    } else if (o.step === 'identify' && o.provider === 'Hapn') {
+      body = `
+        <div class="kpi-cap" style="margin-bottom:9px">${stepNum} · ${esc(stepLbl)}</div>
+        <input class="lf-in js-gps-imei-input" style="width:100%" placeholder="Tracker IMEI" value="${esc(o.imei || '')}">
+        <p class="set-note" style="margin-top:8px">Printed on the tracker — a technician reads it off the hardware.</p>`;
+      foot = `${ghostPill('Back', { js: 'js-gps-back' })}${actionPill('commit', 'Continue', { js: 'js-gps-identify-continue' })}`;
+    } else if (o.step === 'identify') {
+      const q = (o.deviceQuery || '').trim().toLowerCase();
+      const all = o.devices || [];
+      const list = q ? all.filter((raw) => `${gpsRawDeviceLabel(o.provider, raw)} ${gpsRawDeviceSub(o.provider, raw)}`.toLowerCase().includes(q)) : all;
+      const rows = list.map((raw) => {
+        const id = gpsRawDeviceId(o.provider, raw), label = gpsRawDeviceLabel(o.provider, raw), sub = gpsRawDeviceSub(o.provider, raw);
+        return `<button type="button" class="gps-dev-row js-gps-device-pick" data-r="R2" data-devid="${esc(id)}" data-devlabel="${esc(label)}">${CARD_ICON.units}<span class="gdr-name">${esc(label)}</span>${sub ? `<span class="gdr-sub">${esc(sub)}</span>` : ''}</button>`;
+      }).join('');
+      body = `
+        <div class="kpi-cap" style="margin-bottom:9px">${stepNum} · ${esc(stepLbl)}</div>
+        <div class="bv-searchwrap" style="width:100%;margin:0 0 10px"><span class="s-icon">${I.search}</span><input class="bv-query js-gps-search" placeholder="Search ${esc(o.provider)} machines…" value="${esc(o.deviceQuery || '')}"></div>
+        ${o.devicesLoading ? `<div class="set-loading" style="min-height:140px"><div class="set-loading-bar" aria-hidden="true"></div><div class="set-loading-lbl">Rounding up ${esc(o.provider)} machines…</div></div>`
+          : o.devicesError ? `<p class="set-err" style="text-align:left">${esc(o.devicesError)}</p>`
+          : list.length ? `<div class="gps-dev-list">${rows}</div>`
+          : `<p class="muted" style="font-size:12px">No ${q ? 'matching' : 'authorized'} machines${q ? ` for “${esc(o.deviceQuery)}”` : ' on this account yet'}.</p>`}`;
+      foot = ghostPill('Back', { js: 'js-gps-back' });
+    } else {   // 'poll' — the live first-contact confirmation (§5a step 3)
+      const UI = {
+        waiting:   { color: 'yellow', icon: I.search, label: 'Waiting for signal…' },
+        seen:      { color: 'yellow', icon: I.search, label: 'Device seen — confirming…' },
+        reporting: { color: 'green',  icon: '✓',       label: 'Reporting' },
+        timeout:   { color: 'red',    icon: I.alert,   label: 'Not responding yet' },
+      }[o.pollState] || { color: 'yellow', icon: I.search, label: 'Waiting for signal…' };
+      const sub = o.pollState === 'reporting' ? 'Live contact confirmed — ready to save.'
+        : o.pollState === 'timeout' ? 'Check the tracker’s power/signal — Save anyway if it may just be catching up.'
+        : `Attempt ${o.pollAttempt || 0} of ${o.pollMax || 8}`;
+      body = `
+        <div class="kpi-cap" style="margin-bottom:9px">${stepNum} · ${esc(stepLbl)}</div>
+        <div class="set-loading" style="min-height:160px">
+          <span class="gps-poll-ic c-${UI.color}">${UI.icon}</span>
+          ${(o.pollState === 'waiting' || o.pollState === 'seen') ? '<div class="set-loading-bar" aria-hidden="true"></div>' : ''}
+          <div class="set-loading-lbl">${esc(UI.label)}</div>
+          <p class="set-note">${esc(sub)}</p>
+        </div>`;
+      foot = o.pollState === 'reporting'
+        ? `${ghostPill('Back', { js: 'js-gps-back' })}${actionPill('commit', 'Save', { js: 'js-gps-save' })}`
+        : o.pollState === 'timeout'
+          ? `${ghostPill('Back', { js: 'js-gps-back' })}${ghostPill('Try again', { js: 'js-gps-poll-retry' })}${actionPill('danger', 'Save anyway', { js: 'js-gps-save-anyway' })}`
+          : ghostPill('Cancel', { js: 'js-close' });
+    }
+
+    const pop = el('div', 'popup'); pop.style.width = '400px';
+    pop.innerHTML = popupShell({ icon: CARD_ICON.units || '', title: 'Connect GPS Device', tag: `Unit · GPS · ${u.name}`, body, foot });
+    overlay.appendChild(pop);
   } else if (o.kind === 'rulebook') {
     // THE VISUAL RULEBOOK (SPEC v8) — every example is emitted by the REAL
     // builder, so this reference can never drift from the code.
@@ -11107,6 +11426,7 @@ const WINDOW_CATALOG = [
   { kind: 'migrateUnits',  label: 'Round up missing units',  tag: 'Units · migrate',          sample: () => ({ plan: [{ name: 'Sample Unit', action: 'create', unitId: 'U000', categoryId: ((DATA.categories || [])[0] || {}).categoryId, count: 1 }] }) },
   { kind: 'comment',       label: 'Comment note',            tag: 'Note · comment',           sample: () => ({ card: 'units', recId: ((DATA.units || [])[0] || {}).unitId, recType: null, color: 'yellow' }) },
   { kind: 'linkConfirm',   label: 'Confirm link',            tag: 'Link · confirm',           sample: () => ({ srcCard: 'rentals', srcId: ((DATA.rentals || [])[0] || {}).rentalId, targetCard: 'invoices', targetId: ((DATA.invoices || [])[0] || {}).invoiceId }) },
+  { kind: 'gpsConnect',    label: 'Connect GPS device',      tag: 'Unit · GPS',                sample: () => ({ unitId: ((DATA.units || [])[0] || {}).unitId, step: 'provider', provider: 'Hapn' }) },
   { kind: 'rulebook',      label: 'The R-Rulebook',          tag: 'SPEC v8 · design system',  sample: () => ({}) },
   { kind: 'partform',      label: 'Add / Edit Part · Task',  tag: 'Work order · line',         sample: () => ({ woId: ((DATA.workOrders || [])[0] || {}).woId }) },
   { kind: 'modelSchedule', label: 'Model maintenance schedule', tag: 'Category · model',       sample: () => ({ modelId: ((DATA.models || [])[0] || {}).modelId }) },
@@ -11528,10 +11848,14 @@ async function wranglerSend() {
   const text = ((inp ? inp.value : o.draft) || '').trim();
   const imgs = (o.attach && o.attach.length) ? o.attach.slice() : null;
   const files = (o.files && o.files.length) ? o.files.slice() : null;
+  // A pasted element focuses the chat on that record (Claude reads its data via
+  // wranglerContext) — consumed here so it applies to this turn and stays as context.
+  const pastedFocus = state.held;
+  if (pastedFocus) { o.card = pastedFocus.card; o.recId = pastedFocus.recId; o.recType = null; state.held = null; }
   // A typed reply while Mr. Wrangler has a pending ask_user question ANSWERS it (resumes the loop),
   // rather than starting a fresh turn. Tapping an option chip resolves it the same way.
-  if (o.ask && o.ask.resolve) { if (!text) { if (inp) inp.focus(); return; } o.draft = ''; if (inp) inp.value = ''; o.ask.resolve(text); return; }
-  if ((!text && !imgs && !files) || o.busy) { if (inp) inp.focus(); return; }
+  if (o.ask && o.ask.resolve) { if (!text) { if (pastedFocus) render(); if (inp) inp.focus(); return; } o.draft = ''; if (inp) inp.value = ''; o.ask.resolve(text); return; }
+  if ((!text && !imgs && !files) || o.busy) { if (pastedFocus) render(); if (inp) inp.focus(); return; }   // pasting a focus with no message still updates the chip
   o.messages.push({ role: 'user', content: text, images: imgs, files, at: Date.now() });
   syncWranglerComment(o, 'user', text, imgs);   // §18e mirror the turn onto the issue thread
   wranglerClearNeedsAnswer(o.reqNumber);        // §18e answering a "Needs your answer" request clears it from the inbox
@@ -12512,7 +12836,7 @@ function setupSignaturePad() {
     cv.addEventListener('pointerleave', stash);
   });
 }
-const closeOverlay = () => { destroyCardElement(); stopAgCam(); try { if (_sigWin && !_sigWin.closed) _sigWin.close(); } catch (e) {} _sigWin = null; state.datepick = null; state.overlay = null; renderOverlay(); };
+const closeOverlay = () => { destroyCardElement(); stopAgCam(); try { if (_sigWin && !_sigWin.closed) _sigWin.close(); } catch (e) {} _sigWin = null; clearTimeout(_gpsPollTimer); state.datepick = null; state.overlay = null; renderOverlay(); };
 
 /* ── Back-office boards (§7.9–7.12): spreadsheet-style tables ─────────────── */
 function vendorTotals(vendorId) {
@@ -13072,10 +13396,12 @@ function render() {
   // §M3 — lock the column scroll behind any open sheet/overlay/dock on phones
   document.body.classList.toggle('sheet-open', !!(state.overlay || state.datesearch || state.chat.open || (state.wrangler.open && !state.wrangler.min)));   // a MINIMIZED Wrangler dock is a slim in-flow bar — it must NOT lock the page scroll (Jac, mobile)
   syncBackGuard();   // §M3 — keep the Android back-button guard in step with what's open
-  // §17 — the internal team dock floats bottom-right above the bar when open
-  if (state.chat.open) { const d = el('div', 'chat-dock', ''); d.dataset.drop = 'chat'; d.innerHTML = chatDockEl(); $('#app').appendChild(d); }
-  // §18 — Mr. Wrangler dock floats alongside the team chat (or alone at bottom-right)
-  if (state.wrangler.open) { const d = el('div', 'wrangler-dock' + (state.chat.open ? ' wr-beside-chat' : '') + (state.wrangler.min ? ' wr-min' : '')); d.innerHTML = wranglerDockEl(); $('#app').appendChild(d); }
+  // §17/§18 — the team + wrangler DOCKS are PHONE-only bottom sheets now (D9): desktop
+  // retired both surfaces onto the comms rail (their machinery is shared, not the shell).
+  const _phoneDocks = document.body.classList.contains('is-phone');
+  if (_phoneDocks && state.chat.open) { const d = el('div', 'chat-dock', ''); d.dataset.drop = 'chat'; d.innerHTML = chatDockEl(); $('#app').appendChild(d); }
+  if (_phoneDocks && state.wrangler.open) { const d = el('div', 'wrangler-dock' + (state.chat.open ? ' wr-beside-chat' : '') + (state.wrangler.min ? ' wr-min' : '')); d.innerHTML = wranglerDockEl(); $('#app').appendChild(d); }
+  mountCommsPops();   // D8/D9 comms rail — the session's single open window floats above its own tab
   // §18e/§17 — the bell + Requests inbox now live in the bottom comms band (bb-utils),
   // always visible; the docks float above it. (The old floating fab-stack is retired.)
   mountTransportEditor();   // inline transport editor: mount the live map + wire the address field
@@ -13375,10 +13701,10 @@ function initDrag() {
   dragLayer.id = 'drag-layer';
   dragArc = el('div', 'cancel-arc', '<div class="ca-inner"><svg class="ca-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h9a6 6 0 1 1 0 12H7"/><path d="M8 5 4 9l4 4"/></svg><span class="ca-label">Cancel</span></div>');
   dragLayer.appendChild(dragArc);
-  // §17 — "drop to start a chat" pad: a cancel-arc sibling pinned to the bottom-right
-  // footer. Appears during any drag; release a record OR a granular element on it to
-  // spin up a brand-new chat seeded with that thing.
-  chatDropPad = el('div', 'chat-drop', '<div class="cd-inner"><svg class="cd-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg><span class="cd-label">Drop to start a chat</span></div>');
+  // §17 — "drop to copy" pad: a cancel-arc sibling pinned to the bottom-right footer.
+  // Appears during any drag; release a record on it to COPY it (held) for pasting into a
+  // Team / Mr. Wrangler chat (2026-07-08 rail spec — replaces the old drop-to-new-chat).
+  chatDropPad = el('div', 'chat-drop', '<div class="cd-inner"><svg class="cd-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg><span class="cd-label">Drop to copy into a chat</span></div>');
   dragLayer.appendChild(chatDropPad);
   // §M2 — phone "zip zones": edge rails of valid drop-target cards. Dragging onto one
   // jumps to that card's column mid-drag (drag stays live), then you drop on the row.
@@ -13581,7 +13907,7 @@ function dropTargetAt(x, y, under) {
   if (!n || !n.closest) return null;
   if (n.closest('.winpicker-float, .overlay, .dropdown-menu, .ctx-menu')) return null;   // floaters are dead zones
   // §17 — dropping ANY dragged element into the team dock (or its launcher) tags it
-  const chatHit = n.closest('.chat-dock, .js-chat-toggle');
+  const chatHit = n.closest('.chat-dock, .comms-pop.team-pop, .js-comms-chip[data-cat="team"]');   // D8/D9: the Team chip + rail window replaced the old js-chat-toggle launcher/dock
   if (chatHit) return { chat: true, node: chatHit };
   if (DRAG.payload.chatEl) return null;                                  // a granular chat-element only drops on chat zones (pad/dock)
   const accept = DROP_MATRIX[DRAG.payload.entity] || {};
@@ -13769,8 +14095,7 @@ function endDrag({ rerender } = {}) {
    R19-flash the newly linked pill on whatever card shows it (row/card fallback). ── */
 function dropFlash(sel, fallbackSel) { if (document.querySelector(sel)) attnFlash(sel); else if (fallbackSel && document.querySelector(fallbackSel)) attnFlash(fallbackSel); }
 function dispatchDrop(p, t) {
-  if (t.newChat) return chatStartFromDrop(p);                        // §17 — bottom-right pad = start a NEW chat
-  if (t.chat) return p.chatEl ? chatAddTag({ ...p.chatEl }) : chatTagFromPayload(p);   // dock = tag into the active chat
+  if (t.newChat || t.chat) return chatDropCopy(p);                   // §17 — drop on the chat pad = COPY the element to paste into a chat
   const pair = `${p.entity}>${t.entity}`;
   // UNIT ↔ RENTAL — ADD the unit to the rental (a Rental is an EVENT, §20);
   // gates fire per unit inside linkUnitToRental.
@@ -14013,7 +14338,7 @@ function onClick(e) {
   if (closest('.js-card-default')) { e.stopPropagation(); const b = closest('.js-card-default'); return setCardDefault(b.dataset.rec, b.dataset.card); }
   if (closest('.js-card-remove')) { e.stopPropagation(); const b = closest('.js-card-remove'); return removeCard(b.dataset.rec, b.dataset.card); }
   if (closest('.js-pm-tab')) { e.stopPropagation(); state.pmTab = closest('.js-pm-tab').dataset.tab; return render(); }   // §14b Cards | ACH toggle
-  if (closest('.js-add-ach')) { e.stopPropagation(); return openAddBank(closest('.js-add-ach').dataset.rec); }
+  if (closest('.js-add-ach')) { e.stopPropagation(); if (!canMoney()) { toast('Bank accounts on file are Office/Admin only.'); return; } return openAddBank(closest('.js-add-ach').dataset.rec); }   // §14 same gate as js-add-card (canMoney)
   if (closest('.js-bank-default')) { e.stopPropagation(); const b = closest('.js-bank-default'); return setBankDefault(b.dataset.rec, b.dataset.bank); }
   if (closest('.js-bank-remove')) { e.stopPropagation(); const b = closest('.js-bank-remove'); return removeBank(b.dataset.rec, b.dataset.bank); }
   if (closest('.js-card-save')) { e.stopPropagation(); return saveCardFlow(closest('.js-card-save')); }
@@ -14027,7 +14352,8 @@ function onClick(e) {
   if (closest('.js-charge-invoice')) { e.stopPropagation(); return chargeInvoiceFlow(closest('.js-charge-invoice').dataset.rec); }
   if (closest('.js-record-payment')) { e.stopPropagation(); return recordManualPayment(closest('.js-record-payment').dataset.rec); }
   if (closest('.js-print-invoice')) { e.stopPropagation(); return printInvoice(closest('.js-print-invoice').dataset.rec); }
-  if (closest('.js-send-email')) { e.stopPropagation(); return sendInvoiceEmail(closest('.js-send-email').dataset.rec); }
+  if (closest('.js-send-email')) { e.stopPropagation(); const b = closest('.js-send-email'); return sendInvoiceEmail(b.dataset.rec, b); }   // anchor rides along for the D7 FROM dropdown
+  if (closest('.js-email-from-pick')) { e.stopPropagation(); const b = closest('.js-email-from-pick'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return emailQuoteSend(b.dataset.rec, b.dataset.from); }
   if (closest('.js-send-text')) { e.stopPropagation(); return sendInvoiceText(closest('.js-send-text').dataset.rec); }
   if (closest('.js-pay-addcard')) { e.stopPropagation(); const b = closest('.js-pay-addcard'); return openAddCard(b.dataset.rec, { returnTo: 'payment', invoiceId: b.dataset.inv }); }
   if (closest('.js-refund-invoice')) { e.stopPropagation(); if (state.overlay) { state.overlay.confirmRefund = true; state.overlay.error = ''; renderOverlay(); } return; }
@@ -14162,7 +14488,6 @@ function onClick(e) {
   if (closest('.js-mtools')) { e.stopPropagation(); return openOverlay({ kind: 'tools' }); }   // §M1 phone footer → the global tool tray as a sheet
   if (closest('[data-gocard]')) { e.stopPropagation(); return goToCard(closest('[data-gocard]').dataset.gocard); }   // §M1 footer card-toggle bar → jump to that card
   if (closest('.js-ext-chat')) { e.stopPropagation(); return toast('External customer & vendor chats arrive with the messaging backend.'); }
-  if (closest('.js-chat-toggle')) { e.stopPropagation(); state.chat.open = !state.chat.open; return render(); }
   if (closest('.js-chat-close')) { e.stopPropagation(); state.chat.open = false; return render(); }
   if (closest('.js-chat-back')) { e.stopPropagation(); state.chat.activeId = null; return render(); }   // back to the all-flags overview (chat persists)
   if (closest('.js-chat-send')) { e.stopPropagation(); return chatSend(); }
@@ -14170,6 +14495,29 @@ function onClick(e) {
   if (closest('[data-chat-role]')) { e.stopPropagation(); return chatToggleRole(closest('[data-chat-role]').dataset.chatRole); }
   if (closest('[data-chat-open]')) { e.stopPropagation(); const [card, recId] = closest('[data-chat-open]').dataset.chatOpen.split('|'); return SHOP_TYPES.includes(card) ? anchorRecord('units', unitOfShopRec(card, recId)) : anchorRecord(card, recId, null); }   // Shop retirement: chat flags on WO/insp/svc land on the owning unit
   if (closest('[data-team-open]')) { e.stopPropagation(); return openChat(closest('[data-team-open]').dataset.teamOpen); }   // §17 comms rail: open a team thread in its own tab
+  if (closest('[data-held-clear]')) { e.stopPropagation(); state.held = null; return render(); }   // drop the pasted-element attachment before sending
+  if (closest('.js-chat-settings')) { e.stopPropagation(); return chatSettingsMenu(closest('.js-chat-settings')); }   // the gear menu
+  if (closest('.js-chat-leave')) { e.stopPropagation(); closeMenus(); return chatLeave(); }   // voluntary exit — drops the chat off your rail
+  if (closest('.js-chat-mute')) { e.stopPropagation(); closeMenus(); return chatToggleMute(); }
+  if (closest('.js-chat-markread')) { e.stopPropagation(); closeMenus(); const c = activeChat(); if (c) { chatMarkSeen(c); pushChatsSoon(); } return render(); }
+  if (closest('.js-chat-rename')) { e.stopPropagation(); closeMenus(); setTimeout(() => { const i = document.querySelector('.chat-title-in'); if (i) { i.focus(); i.select(); } }, 0); return; }
+  if (closest('.js-chat-end')) { e.stopPropagation(); closeMenus(); return commsEndConv(closest('.js-chat-end').dataset.chat, 'team'); }   // admin ends the chat (phone-safe: cat pinned)
+  if (closest('[data-chat-member]')) { e.stopPropagation(); return chatToggleMember(closest('[data-chat-member]').dataset.chatMember); }
+  // D8/D9 THE COMMS RAIL — toolbar chips · session tabs · the single window · ALL menu
+  if (closest('.js-comms-chip')) { e.stopPropagation(); return commsToggleCat(closest('.js-comms-chip').dataset.cat); }
+  if (closest('.js-comms-new')) { e.stopPropagation(); return commsNewChat(); }   // D9 ALL menu: + New chat (team → newChat(), wrangler → wranglerNewChat())
+  if (closest('[data-comms-hide]')) { e.stopPropagation(); return commsHideTab(closest('[data-comms-hide]').dataset.commsHide); }   // ✕ hides from the rail only — never ends
+  if (closest('.js-comms-all')) { e.stopPropagation(); const s = commsSess(); if (s) { s.menuOpen = !s.menuOpen; saveCommsRail(); } return render(); }
+  if (closest('.js-comms-menu-x')) { e.stopPropagation(); const s = commsSess(); if (s) { s.menuOpen = false; saveCommsRail(); } return render(); }
+  if (closest('[data-comms-tab]')) { e.stopPropagation(); return commsToggleTab(closest('[data-comms-tab]').dataset.commsTab); }
+  if (closest('.js-comms-end')) { e.stopPropagation(); closeMenus(); return commsEndConv(closest('.js-comms-end').dataset.cust); }
+  if (closest('.js-comms-mopen')) { e.stopPropagation(); return commsOpenConv(state.commsRail.cat, closest('.js-comms-mopen').dataset.cust); }
+  if (closest('.js-comms-mend')) { e.stopPropagation(); return commsEndConv(closest('.js-comms-mend').dataset.cust); }
+  if (closest('.js-comms-send')) { e.stopPropagation(); return commsSend(closest('.js-comms-send').dataset.cust); }
+  if (closest('.js-comms-from')) { e.stopPropagation(); return commsFromMenu(closest('.js-comms-from')); }
+  if (closest('.js-comms-from-pick')) { e.stopPropagation(); const b = closest('.js-comms-from-pick'); commsFromSel.set(String(b.dataset.cust), b.dataset.from); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return render(); }
+  if (closest('.js-comms-copen')) { e.stopPropagation(); const b = closest('.js-comms-copen'); return commsOpenConv(commsCatOfChannel(b.dataset.channel), b.dataset.cust); }   // customer profile → Open
+  if (closest('.js-comms-cend')) { e.stopPropagation(); const b = closest('.js-comms-cend'); return commsEndConv(b.dataset.cust, commsCatOfChannel(b.dataset.channel)); }     // customer profile → End
   if (closest('.js-fb-type')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'feedback') { const ta = document.querySelector('.overlay .js-fb-text'); if (ta) o.text = ta.value; o.fbType = closest('.js-fb-type').dataset.val; renderOverlay(); } return; }
   if (closest('.js-fb-shot-x')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'feedback') { const ta = document.querySelector('.overlay .js-fb-text'); if (ta) o.text = ta.value; o.shot = ''; renderOverlay(); } return; }
   if (closest('[data-cmt-color]')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'comment') { const ta = document.querySelector('.overlay .js-cmt-text'); if (ta) o.text = ta.value; o.color = closest('[data-cmt-color]').dataset.cmtColor; renderOverlay(); } return; }
@@ -14184,11 +14532,9 @@ function onClick(e) {
   if (closest('.js-wr-goto')) { e.stopPropagation(); const b = closest('.js-wr-goto'); wrFocusRecord(b.dataset.ent, b.dataset.id); state.wrangler.min = true; return render(); }   // the clickable "Open →" link → jump to the record + collapse the dock so it's revealed (esp. on mobile)   // Mr. Wrangler applies the previewed add/update/import; a failed async op (e.g. a payment that didn't go through) un-files so the user can retry
   if (closest('.js-wr-kpi-lock')) { e.stopPropagation(); lockKpiFromWrangler(Number(closest('.js-wr-kpi-lock').dataset.mi)); return; }   // Mr. Wrangler locks in an authored KPI ring
   if (closest('.js-wr-unattach')) { e.stopPropagation(); const o = state.wrangler; if (o.open && o.attach) { o.attach.splice(Number(closest('.js-wr-unattach').dataset.i), 1); render(); } return; }   // §18d drop a pending image attachment
+  if (closest('[data-wr-unfocus]')) { e.stopPropagation(); const o = state.wrangler; o.card = null; o.recId = null; o.recType = null; return render(); }   // clear the focused record (paste context)
   if (closest('.js-wr-unfile')) { e.stopPropagation(); const o = state.wrangler; if (o.open && o.files) { o.files.splice(Number(closest('.js-wr-unfile').dataset.i), 1); render(); } return; }   // §18d drop a pending file attachment
-  if (closest('.js-wrangler')) { e.stopPropagation(); if (state.wrangler.open) { wranglerRailSnapshot(); state.wrangler.open = false; return render(); } return wranglerNewChat(); }   // §18 toggle Mr. Wrangler dock — opening always starts a fresh chat (the last one waits on the §18g rail)
-  if (closest('.js-wrc-remove')) { e.stopPropagation(); return wrRailRemove(closest('.js-wrc-remove').dataset.wrcRm); }   // §18g rail: the × on a chat tab → REMOVE that conversation (not just close it)
-  if (closest('[data-wrc-needs]')) { e.stopPropagation(); return openWranglerFromRequest(Number(closest('[data-wrc-needs]').dataset.wrcNeeds)); }   // §18g rail: a flashing "needs you" chat → reopen it seeded from the request
-  if (closest('[data-wrc-open]')) { e.stopPropagation(); return wranglerRailOpen(closest('[data-wrc-open]').dataset.wrcOpen); }   // §18g rail: reopen a stored conversation
+  if (closest('[data-wrc-needs]')) { e.stopPropagation(); return openWranglerFromRequest(Number(closest('[data-wrc-needs]').dataset.wrcNeeds)); }   // §18g rail: a flashing "needs you" request → reopen it seeded from the request (D9: lands on the rail window)
   if (closest('.js-notifications')) { e.stopPropagation(); openOverlay({ kind: 'notifications' }); markNotifsSeen(); refreshWranglerNotifications(); return; }   // §18f notification bell — in-app resolved-fix feed
   if (closest('.js-notif-refresh')) { e.stopPropagation(); return refreshWranglerNotifications(); }
   if (closest('.js-notif-dismiss')) { e.stopPropagation(); return dismissNotif(Number(closest('.js-notif-dismiss').dataset.num)); }   // §246 clear one
@@ -14541,6 +14887,69 @@ function onClick(e) {
     }
   }
   if (closest('.js-link-confirm')) { e.stopPropagation(); return doLinkConfirm(); }
+
+  // §5a — the connect-a-device wizard (gpsConnect popup)
+  if (closest('.js-gps-connect')) {
+    e.stopPropagation();
+    const uid = closest('.js-gps-connect').dataset.rec;
+    const u = IDX.unit.get(uid); if (!u) return;
+    return openOverlay({ kind: 'gpsConnect', unitId: uid, step: 'provider', provider: u.gpsProvider || 'Hapn',
+      imei: '', deviceQuery: '', devices: null, devicesLoading: false, devicesError: '',
+      deviceId: '', deviceLabel: '', pollState: 'idle', pollAttempt: 0, pollMax: 8, pollMachine: null, pollError: '' });
+  }
+  if (closest('.js-gps-provider')) {
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'gpsConnect') return;
+    const p = closest('.js-gps-provider').dataset.val; if (!p || p === o.provider) return;
+    o.provider = p; o.devices = null; o.devicesError = ''; o.deviceQuery = ''; o.imei = ''; o.deviceId = ''; o.deviceLabel = '';
+    return renderOverlay();
+  }
+  if (closest('.js-gps-continue')) {
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'gpsConnect') return;
+    o.step = 'identify';
+    renderOverlay();
+    if (o.provider !== 'Hapn') gpsConnectLoadDevices(o);   // fire-and-forget — self-guards on state.overlay
+    return;
+  }
+  if (closest('.js-gps-identify-continue')) {
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'gpsConnect') return;
+    const input = document.querySelector('.overlay .js-gps-imei-input');
+    const imei = ((input ? input.value : o.imei) || '').trim();
+    if (!imei) return flashOr('.overlay .js-gps-imei-input', 'Enter the tracker IMEI first.');
+    o.imei = imei; o.deviceId = imei; o.deviceLabel = imei; o.step = 'poll';
+    renderOverlay();
+    gpsConnectStartPoll(o);
+    return;
+  }
+  if (closest('.js-gps-device-pick')) {
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'gpsConnect') return;
+    const btn = closest('.js-gps-device-pick');
+    const devId = btn.dataset.devid || ''; if (!devId) return;
+    o.deviceId = devId; o.deviceLabel = btn.dataset.devlabel || devId; o.step = 'poll';
+    renderOverlay();
+    gpsConnectStartPoll(o);
+    return;
+  }
+  if (closest('.js-gps-back')) {
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'gpsConnect') return;
+    clearTimeout(_gpsPollTimer);
+    if (o.step === 'poll') { o.step = 'identify'; o.pollState = 'idle'; o.pollAttempt = 0; o.pollMachine = null; o.pollError = ''; }
+    else if (o.step === 'identify') { o.step = 'provider'; }
+    return renderOverlay();
+  }
+  if (closest('.js-gps-poll-retry')) { e.stopPropagation(); const o = state.overlay; if (!o || o.kind !== 'gpsConnect') return; return gpsConnectStartPoll(o); }
+  if (closest('.js-gps-save')) { e.stopPropagation(); return gpsConnectSave(false); }
+  if (closest('.js-gps-save-anyway')) { e.stopPropagation(); return gpsConnectSave(true); }
+  if (closest('.js-gps-events-refresh')) { e.stopPropagation(); const u = IDX.unit.get(closest('.js-gps-events-refresh').dataset.rec); if (u) { invalidateGpsEvents(u); render(); } return; }   // §6a — re-pull the device history feed
+  // §6/§7 — remote shutdown (Hapn starter-interrupt). Arm → confirm; role-gated + audited.
+  if (closest('.js-gps-arm')) { e.stopPropagation(); if (!canGpsShutdown()) return; const b = closest('.js-gps-arm'); return gpsArmShutdown(b.dataset.rec, b.dataset.dev); }
+  if (closest('.js-gps-disarm')) { e.stopPropagation(); return gpsDisarm(); }
+  if (closest('.js-gps-kill-confirm')) { e.stopPropagation(); if (!canGpsShutdown()) return; const b = closest('.js-gps-kill-confirm'); if (!_gpsArmed || _gpsArmed.unitId !== b.dataset.rec) return gpsDisarm(); return gpsFireShutdown(b.dataset.rec, b.dataset.dev, false); }   // enable=false → immobilize
+  if (closest('.js-gps-restore')) { e.stopPropagation(); if (!canGpsShutdown()) return; const b = closest('.js-gps-restore'); return gpsFireShutdown(b.dataset.rec, b.dataset.dev, true); }   // enable=true → restore
 
   // universal pill rule — single-click navigates; double-click anchors; ctrl+click = new
   // tab (handled by the early hotkey branch). Same discriminator as rows (#1).
@@ -15476,7 +15885,17 @@ function onInput(e) {
   if (e.target.classList.contains('js-fb-text')) { if (state.overlay?.kind === 'feedback') state.overlay.text = e.target.value; return; }
   if (e.target.classList.contains('js-cmt-text')) { if (state.overlay?.kind === 'comment') state.overlay.text = e.target.value; return; }
   if (e.target.classList.contains('js-wr-in')) { if (state.wrangler.open) state.wrangler.draft = e.target.value; return; }
+  if (e.target.classList.contains('chat-title-in')) { chatSetTitle(e.target.dataset.chatTitle, e.target.value); return; }   // rename in place, no re-render (caret stays put)
+  // §5a connect wizard — Hapn IMEI (store only, no re-render; committed on Continue).
+  if (e.target.classList.contains('js-gps-imei-input')) { if (state.overlay?.kind === 'gpsConnect') state.overlay.imei = e.target.value; return; }
+  // §5a connect wizard — live device-list filter (re-render + restore caret, like js-files-query).
+  if (e.target.classList.contains('js-gps-search')) {
+    const o = state.overlay;
+    if (o?.kind === 'gpsConnect') { o.deviceQuery = e.target.value; const sel = e.target.selectionStart; renderOverlay(); const q = document.querySelector('.overlay .js-gps-search'); if (q) { q.focus(); q.setSelectionRange(sel, sel); } }
+    return;
+  }
   if (e.target.classList.contains('chat-input')) { state.chat.draft = e.target.value; return; }
+  if (e.target.classList.contains('js-comms-in')) { commsDrafts.set(state.commsRail.cat + '|' + e.target.dataset.cust, e.target.value); return; }   // D8 window composer — draft survives re-renders
   // Company Files live search → re-render the board popup and restore the caret.
   if (e.target.classList.contains('js-files-query')) {
     if (state.overlay?.kind === 'board') { state.overlay.fileSearch = e.target.value; const sel = e.target.selectionStart; renderOverlay(); const q = document.querySelector('.js-files-query'); if (q) { q.focus(); q.setSelectionRange(sel, sel); } }
@@ -16036,7 +16455,7 @@ function friendlyPayErr(r) {
 }
 
 async function openAddCard(customerId, opts) { if (!canMoney()) { toast('Cards on file are Office/Admin only.'); return; } await ensurePubKey(); openOverlay({ kind: 'addCard', customerId, returnTo: (opts && opts.returnTo) || '', invoiceId: (opts && opts.invoiceId) || '' }); }
-async function openAddBank(customerId, opts) { await ensurePubKey(); openOverlay({ kind: 'addAch', customerId, returnTo: (opts && opts.returnTo) || '', invoiceId: (opts && opts.invoiceId) || '' }); }
+async function openAddBank(customerId, opts) { if (!canMoney()) { toast('Bank accounts on file are Office/Admin only.'); return; } await ensurePubKey(); openOverlay({ kind: 'addAch', customerId, returnTo: (opts && opts.returnTo) || '', invoiceId: (opts && opts.invoiceId) || '' }); }
 async function openVerifyBank(customerId, bankId) { await ensurePubKey(); openOverlay({ kind: 'verifyAch', customerId, bankId }); }
 async function openPayInvoice(invoiceId) { await ensurePubKey(); openOverlay({ kind: 'payment', invoiceId, busy: false, error: '' }); }
 
@@ -16574,32 +16993,97 @@ function invoiceQuoteSummary(inv) {
     'Thank you for your business — much obliged.',
   ].join('\n');
 }
-// Open the device's mail client pre-filled to the customer with the quote inlined, then
-// stamp a timestamped "Emailed" note on the invoice history (logAction → §R13).
-function sendInvoiceEmail(invoiceId) {
+// Email a quote — SERVER send through the comms pipe (spec D6), with the D7 FROM picker:
+// when the shop has more than one connected address (send-as aliases, enumerated server-
+// side), the operator picks which one it goes out as; the server validates the choice.
+// Demo/#local (no backend password) keeps the old mailto: deep-link.
+let _commsAliases = null;   // fetched once per session; server-authoritative
+async function commsAliasList() {
+  if (_commsAliases) return _commsAliases;
+  try { const r = await backendCall('commsAliases'); if (r && r.ok && Array.isArray(r.aliases) && r.aliases.length) _commsAliases = r.aliases; } catch (e) {}
+  return _commsAliases || [];
+}
+async function emailQuoteSend(invoiceId, from) {
+  const inv = IDX.invoice.get(invoiceId); if (!inv) return;
+  toast('Sending email…');
+  let r; try { r = await backendCall('sendCustomerMessage', { channel: 'email', entity: 'invoice', recId: inv.invoiceId, customerId: inv.customerId, template: 'quote', from: from || '' }); }
+  catch (e) { r = { ok: false, reason: 'network' }; }
+  if (r && r.ok) {
+    logAction(inv, `Emailed quote to ${r.maskedTo || 'customer'}${r.fromUsed ? ` (from ${r.fromUsed})` : ''}`);
+    render();
+    toast(`Quote emailed to ${r.maskedTo || 'the customer'}.`);
+    return;
+  }
+  const why = {
+    'no-email': 'No email on file — add one on the account.',
+    'opted-out': 'This customer has opted out of email — hard stop.',
+    'cap': 'Daily send cap reached — raise SMS_DAILY_CAP if this run is legit.',
+    'isolation': 'Record/customer mismatch — reload and try again.',
+    'provider': 'The mail send failed server-side — if this is the first email ever, the backend still needs its one-time Gmail permission (editor → Run → authorize).',
+    'network': 'Couldn’t reach the backend — try again.',
+  }[r && r.reason] || 'Email didn’t send — try again.';
+  toast(why);
+}
+async function sendInvoiceEmail(invoiceId, anchorEl) {
   const inv = IDX.invoice.get(invoiceId); if (!inv) return;
   const cust = inv.customerId ? IDX.customer.get(inv.customerId) : null;
   if (!cust || !cust.email) { toast('No email on file for this customer.'); return; }   // guard — button is disabled, this is belt-and-suspenders
-  const subject = `Quote from ${companyName()} – ${inv.invoiceId}`;
-  window.location.href = `mailto:${encodeURIComponent(cust.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(invoiceQuoteSummary(inv))}`;
-  logAction(inv, `Emailed quote to ${cust.email}`);
-  render();
-  toast(`Opening email to ${cust.email}…`);
+  if (!backendPassword) {   // demo/offline — the pre-pipe mailto path, unchanged
+    const subject = `Quote from ${companyName()} – ${inv.invoiceId}`;
+    window.location.href = `mailto:${encodeURIComponent(cust.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(invoiceQuoteSummary(inv))}`;
+    logAction(inv, `Emailed quote to ${cust.email}`);
+    render();
+    toast(`Opening email to ${cust.email}…`);
+    return;
+  }
+  const aliases = await commsAliasList();
+  if (aliases.length > 1 && anchorEl && document.contains(anchorEl)) {   // D7 — pick which connected address it goes out as
+    const html = aliases.map((a) => `<button class="dd-item js-email-from-pick" data-rec="${esc(invoiceId)}" data-from="${esc(a)}">${esc(a)}</button>`).join('');
+    openDropdown(anchorEl, html, { align: 'left' });
+    return;
+  }
+  return emailQuoteSend(invoiceId, aliases[0] || '');
 }
-// Open the device's SMS app pre-filled to the customer, then stamp a "Texted" note.
-function sendInvoiceText(invoiceId) {
+// Text a quote — SERVER send via the comms pipe (spec comms D1/D2: sendCustomerMessage →
+// Mocean adapter; recipient/body/gates all resolved server-side — the client passes only
+// ids + a template name, never a `to` or a body). Demo/#local mode (no backend password)
+// keeps the old device deep-link so offline demos still work.
+async function sendInvoiceText(invoiceId) {
   const inv = IDX.invoice.get(invoiceId); if (!inv) return;
   const cust = inv.customerId ? IDX.customer.get(inv.customerId) : null;
   if (!cust || !cust.phone) { toast('No phone on file for this customer.'); return; }
-  const t = invoiceTotals(inv);
-  const first = cust.firstName || (cust.name || '').trim().split(/\s+/)[0] || 'there';
-  const yard = companyPhone();
-  const msg = `Hi ${first}, your quote from ${companyName()} is ready – ${money2(t.total)} – reply or call us${yard ? ' at ' + yard : ''}.`;
-  const tel = String(cust.phone).replace(/[^0-9+]/g, '');
-  window.location.href = `sms:${tel}?&body=${encodeURIComponent(msg)}`;   // `?&body=` is the cross-platform (iOS + Android) separator
-  logAction(inv, `Texted quote to ${cust.phone}`);
-  render();
-  toast(`Opening text to ${cust.phone}…`);
+  if (!backendPassword) {   // demo/offline — the pre-pipe deep-link path, unchanged
+    const t = invoiceTotals(inv);
+    const first = cust.firstName || (cust.name || '').trim().split(/\s+/)[0] || 'there';
+    const yard = companyPhone();
+    const msg = `Hi ${first}, your quote from ${companyName()} is ready – ${money2(t.total)} – reply or call us${yard ? ' at ' + yard : ''}.`;
+    const tel = String(cust.phone).replace(/[^0-9+]/g, '');
+    window.location.href = `sms:${tel}?&body=${encodeURIComponent(msg)}`;   // `?&body=` is the cross-platform (iOS + Android) separator
+    logAction(inv, `Texted quote to ${cust.phone}`);
+    render();
+    toast(`Opening text to ${cust.phone}…`);
+    return;
+  }
+  toast('Sending text…');
+  let r; try { r = await backendCall('sendCustomerMessage', { entity: 'invoice', recId: inv.invoiceId, customerId: inv.customerId, template: 'quote' }); }
+  catch (e) { r = { ok: false, reason: 'network' }; }
+  if (r && r.ok) {
+    logAction(inv, `SMS quote sent to ${r.maskedTo || 'customer'}`);
+    render();
+    toast(`Quote texted to ${r.maskedTo || 'the customer'}.`);
+    return;
+  }
+  const why = {   // server refusal → say what's wrong and where to fix it (R19 voice)
+    'no-phone': 'No phone on file — add one on the account.',
+    'opted-out': 'This customer has opted out of texts — hard stop.',
+    'not-configured': 'SMS isn’t wired yet — Mocean keys go in the backend Script Properties.',
+    'cap': 'Daily text cap reached — raise SMS_DAILY_CAP if this run is legit.',
+    'quiet-hours': 'Quiet hours (8pm–8am) — the message can go out in the morning.',
+    'isolation': 'Record/customer mismatch — reload and try again.',
+    'provider': 'Mocean rejected the send — check the number and Mocean balance.',
+    'network': 'Couldn’t reach the backend — try again.',
+  }[r && r.reason] || 'Text didn’t send — try again.';
+  toast(why);
 }
 // Lock (seal pricing) or unlock an invoice via the backend (Office/Admin).
 async function lockInvoiceFlow(invoiceId, lock) {
@@ -17514,6 +17998,578 @@ async function backendCall(action, extra) {
   if (!res.ok && body && body.ok === undefined) body = { ok: false, error: 'http-' + res.status };
   return body;
 }
+
+/* ── GPS BACKEND CLIENT (WranglerGPS integration · spec docs/superpowers/specs/
+   2026-07-07-wrangler-gps-integration-design.md) ───────────────────────────────
+   Talks DIRECTLY to our own redeploy of the forked WranglerGPS telematics service
+   (GPS_BACKEND_URL — Node/Express + Postgres on Railway), NOT through the Apps
+   Script backend above: live location + ignition need real-time round-trips, and
+   proxying them through GAS would add latency and burn its URL-fetch quota (spec §4).
+   Separate service, separate auth (team password → x-auth-token, cached in memory).
+   Every call degrades gracefully — a GPS outage must never break the rest of the
+   app; the unit card still renders, just without live telemetry.
+
+   The four-provider fleet merge MIRRORS the fork's frontend hooks/useFleet.js so the
+   normalized machine shape stays identical to that already-debugged code — canonical
+   shape in docs/handoffs/wrangler-gps-backend-handoff.md §1. This is a sub-section of
+   the BACKEND SYNC chapter (backend I/O), not its own APP-NN chapter. */
+let gpsToken = '';                                        // in-memory session token; never persisted
+const gpsBase = () => (GPS_BACKEND_URL || '').replace(/\/$/, '');
+const gpsConfigured = () => !!gpsBase();
+
+/* One authed round-trip to the GPS backend. JSON in/out, 30s timeout (reuses
+   withTimeout). Throws a tagged Error on non-2xx (callers decide how to degrade);
+   never returns a failure disguised as success. */
+async function gpsFetch(path, opts = {}) {
+  if (!gpsConfigured()) throw new Error('gps-not-configured');
+  const headers = Object.assign({ 'x-auth-token': gpsToken }, opts.headers || {});
+  if (opts.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
+  const res = await withTimeout(fetch(gpsBase() + path, Object.assign({}, opts, { headers })), 30000, 'GPS backend');
+  const text = await res.text();
+  let body = null; try { body = JSON.parse(text); } catch {}
+  if (!res.ok) { const e = new Error('gps-http-' + res.status); e.status = res.status; e.body = body; throw e; }
+  return body;
+}
+
+/* Silent login on Rental Wrangler sign-in — same team password, token cached for the
+   session. Best-effort + never throws: a GPS-login failure must NOT block main login. */
+async function gpsLogin(pw) {
+  gpsToken = '';
+  try {
+    if (!gpsConfigured()) return false;
+    const res = await withTimeout(
+      fetch(gpsBase() + '/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: pw }) }),
+      15000, 'GPS login');
+    const b = await res.json().catch(() => null);
+    if (res.ok && b && b.token) { gpsToken = b.token; return true; }
+  } catch (e) { logErr('gps', 'login: ' + ((e && e.message) || e)); }
+  return false;
+}
+
+/* Hapn responses arrive in a few possible envelopes — same defensive unwrap useFleet
+   uses so a shape tweak upstream doesn't silently empty the fleet. */
+function gpsUnwrap(d) {
+  if (Array.isArray(d)) return d;
+  return (d && (d.result?.items || d.items || d.devices)) || [];
+}
+
+/* Normalize one provider's raw record into the canonical machine shape (useFleet.js
+   §1). `extra` carries cross-call context (Hapn's status row + starter states). */
+function gpsNormalize(source, raw, extra = {}) {
+  if (source === 'hapn') {
+    const st = extra.status || {};
+    const lat = st.latitude ?? st.lat ?? null, lng = st.longitude ?? st.lng ?? null;
+    const speed = parseFloat(st.speed ?? 0) || 0;
+    const ap = raw.assetProfile || {};
+    return {
+      id: String(raw.imei || raw.id), source: 'hapn', imei: raw.imei ? String(raw.imei) : null,
+      name: String(raw.name || raw.imei || 'Unknown'),
+      make: ap.make ? String(ap.make) : null,
+      model: ap.model ? String(ap.model) : (raw.model?.name ? String(raw.model.name) : null),
+      lat: lat != null ? parseFloat(lat) : null, lng: lng != null ? parseFloat(lng) : null,
+      speed, moving: speed > 0, engineOn: st.reportType !== '0' && !!st.sendTime,
+      lastSeen: st.sendTime ?? st.timestamp ?? raw.modified ?? null,
+      engineHours: st.hoursOfOperation ? parseFloat(st.hoursOfOperation) : null,
+      address: st.address ? String(st.address) : null,
+      battery: st.externalVoltage ?? st.battery ?? null,
+      starterEnabled: (extra.starterStates && raw.imei in extra.starterStates) ? extra.starterStates[raw.imei] : true,
+    };
+  }
+  if (source === 'deere') {
+    return {
+      id: String(raw.id || raw.principalId), source: 'deere', principalId: String(raw.principalId),
+      imei: null, name: String(raw.name || raw.serialNumber || 'JD Machine'),
+      make: raw.make ?? null, model: raw.model ?? null,
+      lat: raw.location?.lat ?? null, lng: raw.location?.lon ?? null,
+      speed: null, moving: false, engineOn: raw.engineState === 1,
+      lastSeen: raw.lastContact ?? null, engineHours: raw.engineHours ?? null,
+      battery: raw.batteryVoltage ?? null, address: null,
+    };
+  }
+  if (source === 'yanmar') {
+    return {
+      id: String(raw.id), source: 'yanmar', contractId: raw.contractId != null ? String(raw.contractId) : null,
+      imei: null, name: raw.name || 'Yanmar Machine', make: 'YANMAR', model: raw.model || null,
+      lat: raw.lat ?? null, lng: raw.lng ?? null, speed: null, moving: false,
+      engineOn: raw.engineOn ?? false, lastSeen: raw.lastSeen ?? null,
+      engineHours: raw.engineHours ?? null, address: raw.address ?? null,
+    };
+  }
+  if (source === 'bouncie') {
+    const stats = raw.stats || {}, loc = stats.location || {};
+    return {
+      id: String(raw.imei), source: 'bouncie', imei: String(raw.imei),
+      name: raw.nickName || `${raw.model?.year || ''} ${raw.model?.make || ''} ${raw.model?.name || ''}`.trim() || 'Vehicle',
+      make: raw.model?.make ?? null, model: raw.model?.name ?? null,
+      lat: loc.lat ?? null, lng: loc.lon ?? null, speed: stats.speed ?? null,
+      moving: (stats.speed ?? 0) > 0, engineOn: stats.isRunning ?? false,
+      lastSeen: stats.lastUpdated ?? null, engineHours: null, address: loc.address ?? null,
+      mil: stats.mil ?? null, odometer: stats.odometer ?? null, fuelLevel: stats.fuelLevel ?? null,
+    };
+  }
+  return null;
+}
+
+/* Full four-provider fleet snapshot, merged client-side (mirrors useFleet.js).
+   Partial-failure tolerant via allSettled — one provider down still returns the rest.
+   Returns a flat array of normalized machines; callers key by id/imei to drive the
+   real gpsStatus pill (spec §5). Deere/Yanmar/Bouncie machine lists are only fetched
+   when their status reports `authenticated` (matches useFleet's two-phase pattern). */
+async function gpsFleetStatus() {
+  const [devicesR, statusR, deereR, starterR, yanmarR, bouncieR] = await Promise.allSettled([
+    gpsFetch('/api/hapn/devices'),
+    gpsFetch('/api/hapn/fleet-status'),
+    gpsFetch('/api/deere/status'),
+    gpsFetch('/api/hapn/starter-status'),
+    gpsFetch('/api/yanmar/status'),
+    gpsFetch('/api/bouncie/status'),
+  ]);
+  const val = (r) => (r.status === 'fulfilled' ? r.value : null);
+  const out = [];
+
+  // Hapn
+  const starterStates = val(starterR)?.result?.states || {};
+  const statusMap = {};
+  gpsUnwrap(val(statusR)).forEach((s) => { if (s?.imei) statusMap[s.imei] = s; });
+  gpsUnwrap(val(devicesR)).forEach((d) => out.push(gpsNormalize('hapn', d, { status: statusMap[d.imei] || {}, starterStates })));
+
+  // Deere / Yanmar / Bouncie — only when authenticated (second-phase machine lists)
+  const phase2 = [];
+  if (val(deereR)?.authenticated)  phase2.push(gpsFetch('/api/deere/machines').then((d) => (d?.values || []).map((m) => gpsNormalize('deere', m))).catch(() => []));
+  if (val(yanmarR)?.authenticated) phase2.push(gpsFetch('/api/yanmar/machines').then((d) => (d?.machines || []).map((m) => gpsNormalize('yanmar', m))).catch(() => []));
+  if (val(bouncieR)?.authenticated) phase2.push(gpsFetch('/api/bouncie/vehicles').then((d) => (d?.vehicles || []).map((m) => gpsNormalize('bouncie', m))).catch(() => []));
+  (await Promise.all(phase2)).forEach((list) => list.forEach((m) => m && out.push(m)));
+
+  return out.filter(Boolean);
+}
+
+/* Live detail for ONE mapped device (the enriched GPS section, on popup open, spec §5).
+   Hapn has a direct per-device status endpoint; the others come from their machine
+   list filtered to the mapped id. Returns a normalized machine or null. */
+async function gpsUnitStatus(provider, deviceId) {
+  const p = String(provider || '').toLowerCase(); const key = String(deviceId || '');
+  if (!p || !key) return null;
+  if (p === 'hapn') {
+    const [devR, stR, starterR] = await Promise.allSettled([
+      gpsFetch(`/api/hapn/device/${encodeURIComponent(key)}/status`),
+      gpsFetch('/api/hapn/fleet-status'),
+      gpsFetch('/api/hapn/starter-status'),
+    ]);
+    const dev = (devR.status === 'fulfilled' && devR.value) ? devR.value : { imei: key };
+    const status = gpsUnwrap(stR.status === 'fulfilled' ? stR.value : null).find((s) => s?.imei === key) || (devR.status === 'fulfilled' ? devR.value : {}) || {};
+    const starterStates = (starterR.status === 'fulfilled' ? starterR.value : null)?.result?.states || {};
+    return gpsNormalize('hapn', dev.imei ? dev : { imei: key }, { status, starterStates });
+  }
+  const list = await gpsProviderDevices(p).catch(() => []);
+  const match = list.find((m) => String(m.id ?? m.principalId ?? m.contractId ?? m.imei) === key);
+  return match ? gpsNormalize(p, match) : null;
+}
+
+/* Provider machine/vehicle lists — powers the connect-wizard picker (spec §5a step 2)
+   for Deere/Yanmar/Bouncie, and gpsUnitStatus above. Raw provider records (the wizard
+   presents id + name for the operator to pick). */
+async function gpsProviderDevices(provider) {
+  switch (String(provider || '').toLowerCase()) {
+    case 'hapn':    return gpsUnwrap(await gpsFetch('/api/hapn/devices'));
+    case 'deere':   return (await gpsFetch('/api/deere/machines'))?.values || [];
+    case 'yanmar':  return (await gpsFetch('/api/yanmar/machines'))?.machines || [];
+    case 'bouncie': return (await gpsFetch('/api/bouncie/vehicles'))?.vehicles || [];
+    default: return [];
+  }
+}
+
+/* ── CONNECT-A-DEVICE WIZARD (spec §5a) — the gpsConnect popup's control layer.
+   The popup markup lives in buildPopupEl (o.kind === 'gpsConnect'); the pieces below
+   are the async/stateful bits a pure render function can't own: loading a provider's
+   device list, running the live first-contact poll, and the confirmed write to the
+   unit. Every async step re-checks `state.overlay === o` before touching it or
+   scheduling more work, so a closed/switched popup can never keep ticking. */
+const GPS_PROVIDERS = ['Hapn', 'Deere', 'Yanmar', 'Bouncie'];
+let _gpsPollTimer = null;   // module-level so closeOverlay/back-nav can always cancel it
+
+/* Pull an id/label/sub-line out of ONE provider's raw record shape (§5a step 2 — Hapn:
+   .imei/.name · Deere: .principalId/.name/.serialNumber · Yanmar: .id/.name · Bouncie:
+   .imei/.nickName/.model). Kept separate from gpsNormalize (which needs a live status
+   call too) so the picker list renders instantly off the device list alone. */
+function gpsRawDeviceId(provider, raw) {
+  switch (provider) {
+    case 'Deere':   return String(raw.principalId ?? raw.id ?? '');
+    case 'Yanmar':  return String(raw.id ?? '');
+    case 'Bouncie': return String(raw.imei ?? '');
+    default:        return String(raw.imei ?? raw.id ?? '');   // Hapn
+  }
+}
+function gpsRawDeviceLabel(provider, raw) {
+  switch (provider) {
+    case 'Deere':   return raw.name || raw.serialNumber || 'JD Machine';
+    case 'Yanmar':  return raw.name || 'Yanmar Machine';
+    case 'Bouncie': return raw.nickName || raw.model || 'Vehicle';
+    default:        return raw.name || raw.imei || 'Unnamed tracker';   // Hapn
+  }
+}
+function gpsRawDeviceSub(provider, raw) {
+  switch (provider) {
+    case 'Deere':   return raw.serialNumber ? `S/N ${raw.serialNumber}` : '';
+    case 'Bouncie': return raw.model ? String(raw.model) : '';
+    case 'Hapn':    return raw.imei ? `IMEI ${raw.imei}` : '';
+    default:        return '';
+  }
+}
+/* Load the searchable picker list for Deere/Yanmar/Bouncie (§5a step 2). Fire-and-
+   forget from the click handler that advances into the identify step; guards every
+   write behind `state.overlay === o` so a Back/close mid-flight can't stomp a newer
+   popup state. */
+async function gpsConnectLoadDevices(o) {
+  o.devicesLoading = true; o.devicesError = ''; o.devices = null; renderOverlay();
+  let list = [];
+  try { list = await gpsProviderDevices(String(o.provider || '').toLowerCase()); }
+  catch (e) {
+    if (state.overlay !== o) return;
+    o.devicesLoading = false; o.devicesError = 'Couldn’t reach the GPS backend — check the connection and try again.';
+    return renderOverlay();
+  }
+  if (state.overlay !== o) return;
+  o.devicesLoading = false; o.devices = Array.isArray(list) ? list : [];
+  renderOverlay();
+}
+/* Start (or restart) the live first-contact poll (§5a step 3): every 3s, up to
+   o.pollMax attempts. States: waiting → seen (first contact) → reporting (a SECOND
+   consecutive contacted poll — avoids confirming on a single flaky ping) → timeout
+   (cap hit, never confirmed twice). Always terminates — never a silent hang. */
+function gpsConnectStartPoll(o) {
+  clearTimeout(_gpsPollTimer);
+  o.pollState = 'waiting'; o.pollAttempt = 0; o.pollMachine = null; o.pollError = '';
+  renderOverlay();
+  gpsConnectPollTick(o);
+}
+async function gpsConnectPollTick(o) {
+  if (state.overlay !== o || o.step !== 'poll') return;   // popup closed/backed-out — self-cancel
+  o.pollAttempt += 1;
+  let machine = null;
+  try { machine = await gpsUnitStatus(String(o.provider || '').toLowerCase(), o.deviceId); }
+  catch (e) { o.pollError = (e && e.message) || 'gps-error'; }
+  if (state.overlay !== o || o.step !== 'poll') return;   // changed while the call was in flight
+  const contacted = !!(machine && (machine.lastSeen != null || (machine.lat != null && machine.lng != null)));
+  const wasSeen = o.pollState === 'seen';
+  o.pollMachine = machine;
+  if (contacted && wasSeen) { o.pollState = 'reporting'; return renderOverlay(); }   // 2nd consecutive contact — confirmed
+  if (o.pollAttempt >= o.pollMax) { o.pollState = 'timeout'; return renderOverlay(); }   // cap hit, never confirmed
+  o.pollState = contacted ? 'seen' : 'waiting';
+  renderOverlay();
+  _gpsPollTimer = setTimeout(() => gpsConnectPollTick(o), 3000);
+}
+/* Write gpsProvider/gpsDeviceId to the unit — ONLY on confirmed contact (pollState
+   'reporting') or an explicit "Save anyway" override (§5a step 4). */
+function gpsConnectSave(anyway) {
+  const o = state.overlay; if (!o || o.kind !== 'gpsConnect') return;
+  if (o.pollState !== 'reporting' && !anyway) return;
+  const u = IDX.unit.get(o.unitId); if (!u) return closeOverlay();
+  u.gpsProvider = o.provider; u.gpsDeviceId = o.deviceId;
+  reindex('units', u);
+  logAction(u, `GPS → ${o.provider} · ${o.deviceId}${o.pollState === 'reporting' ? ' (confirmed reporting)' : ' (saved without confirmed contact)'}`);
+  clearTimeout(_gpsPollTimer);
+  closeOverlay();
+  toast(o.pollState === 'reporting' ? `GPS connected — ${u.name} is reporting. ✓` : `GPS mapped — ${u.name} saved without confirmed signal yet.`);
+}
+
+/* Hapn starter-interrupt (the remote-shutdown relay, spec §6/§7). Cuts the STARTER so
+   the engine can't be RE-STARTED — it does NOT kill a running engine. Polarity matches
+   the original app (LiveTracking.jsx): `enabled:false` CUTS the starter (immobilize);
+   `enabled:true` RESTORES it. `by` = the acting role, recorded in the audit trail.
+   Hapn-only; the backend logs every attempt server-side (device_events, plan A3c). */
+async function gpsStarterInterrupt(imei, enabled, by) {
+  return gpsFetch(`/api/hapn/device/${encodeURIComponent(imei)}/starter-interrupt`, {
+    method: 'POST', body: JSON.stringify({ enabled: !!enabled, by: by || undefined }),
+  });
+}
+
+/* GPS status & alert history feed source (spec §6a). Reads the per-device event log
+   (plan A3c — the device_events table + route). Until A3c ships on the backend this
+   throws gps-http-404; callers render an empty/"history unavailable" state. */
+async function gpsDeviceEvents(source, key) {
+  return gpsFetch(`/api/device/${encodeURIComponent(source)}/${encodeURIComponent(key)}/events`);
+}
+
+/* ── LIVE gpsStatus (spec §5 step 3) ──────────────────────────────────────────
+   One fleet snapshot per app load (refreshGpsLive) → an in-memory map keyed by every
+   provider id type. `unitGpsStatus(u)` derives the DISPLAYED status from it (freshness
+   of the tracker's last ping), falling back to the STORED u.gpsStatus only when the
+   backend never answered — never presenting stale data as live without saying so.
+   No telemetry is copied into Sheets (spec §4): this map is memory-only, per session.
+   Thresholds are tracker-health, not machine-usage — a healthy tracker still sends
+   position pings (Hapn GTFRI) with the engine off, so a long silence = the tracker,
+   not the machine, is dark. Tunable. */
+const GPS_FRESH_MS = 6 * 3600 * 1000;    // last ping < 6h  → Reporting
+const GPS_STALE_MS = 72 * 3600 * 1000;   // < 72h → Verify; older/none → Not Reporting
+let gpsLive = null;      // Map(deviceKey → normalized machine) from the last good snapshot
+let gpsLiveAt = 0;       // ms of the last SUCCESSFUL snapshot (0 = never fetched)
+let gpsLiveErr = false;  // most recent refresh failed (we keep the last good map)
+
+async function refreshGpsLive() {
+  if (!gpsConfigured()) return;
+  let list;
+  try { list = await gpsFleetStatus(); }
+  catch (e) { gpsLiveErr = true; logErr('gps', 'fleet-status: ' + ((e && e.message) || e)); return; }
+  const map = new Map();
+  for (const m of (list || [])) {
+    if (!m) continue;
+    for (const k of [m.id, m.imei, m.principalId, m.contractId]) if (k != null) map.set(String(k), m);
+  }
+  gpsLive = map; gpsLiveAt = Date.now(); gpsLiveErr = false;
+  if (!booting) render();   // live data landed → refresh the pills
+}
+
+/** The live machine for a mapped unit, or null. */
+function unitGpsLiveMachine(u) {
+  if (!gpsLive || !u.gpsDeviceId) return null;
+  return gpsLive.get(String(u.gpsDeviceId)) || null;
+}
+/** Displayed GPS status: { status, live, asOf, mapped, machine? } or null (untracked).
+ *  live=true → derived from the fleet snapshot; live=false → stored-field fallback. */
+function unitGpsStatus(u) {
+  const mapped = !!(u.gpsProvider && u.gpsDeviceId);
+  if (mapped && gpsLiveAt > 0) {
+    const m = unitGpsLiveMachine(u);
+    if (!m) return { status: 'Not Reporting', live: true, asOf: gpsLiveAt, mapped: true };   // tracker absent from the snapshot
+    const t = m.lastSeen ? new Date(m.lastSeen).getTime() : NaN;
+    let status;
+    if (!Number.isNaN(t)) {
+      const age = Date.now() - t;
+      status = age < GPS_FRESH_MS ? 'Reporting' : age < GPS_STALE_MS ? 'Verify' : 'Not Reporting';
+    } else {
+      status = (m.lat != null && m.lng != null) ? 'Verify' : 'Not Reporting';   // seen once, no timestamp
+    }
+    return { status, live: true, asOf: gpsLiveAt, mapped: true, machine: m };
+  }
+  // backend never answered (or the unit isn't mapped) → fall back to the stored field
+  if (u.gpsStatus) return { status: u.gpsStatus, live: false, asOf: gpsLiveAt, mapped };
+  return null;
+}
+
+/* Short relative time for the "last seen" line (§5 step 4). */
+function gpsRelTime(ts) {
+  const t = ts ? new Date(ts).getTime() : NaN;
+  if (Number.isNaN(t)) return '';
+  const s = Math.max(0, Math.round((Date.now() - t) / 1000));
+  if (s < 60) return 'just now';
+  const m = Math.round(s / 60); if (m < 60) return `${m}m ago`;
+  const h = Math.round(m / 60); if (h < 24) return `${h}h ago`;
+  return `${Math.round(h / 24)}d ago`;
+}
+
+/* Live refresh while VIEWING a mapped unit (§5 step 4). One global 30s tick that only
+   hits the backend when a mapped unit is the active tab's anchor — so it's scoped to
+   "you're looking at it," not an always-on fleet poll, and there's no per-popup interval
+   to leak (the tick self-checks). refreshGpsLive is one consolidated call for all four
+   providers, so this stays a single request, not N per-unit polls. */
+let _gpsViewTimer = null;
+function startGpsViewPoll() {
+  clearInterval(_gpsViewTimer);
+  _gpsViewTimer = setInterval(() => {
+    const a = activeSession() && activeSession().anchor;
+    if (!a || a.card !== 'units') return;                 // only while a unit is open
+    const u = IDX.unit.get(a.recId);
+    if (!u || !u.gpsProvider || !u.gpsDeviceId) return;   // ...and it's mapped to a tracker
+    refreshGpsLive();                                     // re-renders when the snapshot lands
+  }, 30000);
+}
+
+/* ── GPS STATUS & ALERT HISTORY FEED (spec §6a) ───────────────────────────────
+   A read-only, chat-feed-styled timeline in a mapped unit's GPS section, fetched
+   from the device_events log (backend plan A3c) lazily on first render and cached
+   per device. Degrades gracefully — until A3c is deployed, gpsDeviceEvents 404s and
+   the feed shows "history unavailable," never an error. Shows shutdown commands (the
+   safety audit) today; provider alerts + status transitions accrue as those writers
+   land. Cache is invalidated after a shutdown command so the audit shows immediately. */
+const _gpsEvents = new Map();   // key `${provider}:${deviceId}` → { state, events, at, error }
+const gpsEventsKey = (u) => `${String(u.gpsProvider || '').toLowerCase()}:${u.gpsDeviceId}`;
+function ensureGpsEvents(u) {
+  if (!u.gpsProvider || !u.gpsDeviceId || !gpsConfigured()) return null;
+  const key = gpsEventsKey(u);
+  const hit = _gpsEvents.get(key);
+  if (hit) return hit;
+  const entry = { state: 'loading', events: [], at: 0, error: '' };
+  _gpsEvents.set(key, entry);
+  gpsDeviceEvents(String(u.gpsProvider).toLowerCase(), u.gpsDeviceId)
+    .then((r) => { entry.state = 'loaded'; entry.events = (r && r.events) || []; entry.at = Date.now(); })
+    .catch((e) => { entry.state = 'error'; entry.error = (e && e.status === 404) ? 'notdeployed' : 'error'; })
+    .finally(() => render());   // async — safe; re-renders once the fetch settles
+  return entry;
+}
+function invalidateGpsEvents(u) { if (u && u.gpsProvider && u.gpsDeviceId) _gpsEvents.delete(gpsEventsKey(u)); }
+
+/* One event → its feed row (icon + text + timestamp, colored by severity). */
+function gpsEventRow(ev) {
+  const d = ev.detail || {};
+  let icon, color, text;
+  if (ev.type === 'shutdown_command') {
+    const failed = d.outcome === 'failed';
+    const immob = d.action === 'immobilize' || d.enabled === false;   // enabled:false = starter cut
+    icon = failed ? I.alert : (immob ? I.lock : I.lockOpen);
+    color = failed ? 'red' : (immob ? 'red' : 'green');
+    text = `${immob ? 'Starter cut — immobilized' : 'Starter restored'}${failed ? ' · FAILED' : ''}${ev.actor ? ` · ${esc(ev.actor)}` : ''}`;
+  } else if (ev.type === 'alert') {
+    icon = I.alert; color = d.severity === 'critical' ? 'red' : 'yellow';
+    text = esc(d.message || d.text || 'Alert');
+  } else {   // status_change
+    const to = d.to || d.status || '';
+    color = (getStatus('gpsStatus', to) || {}).color || 'gray';
+    icon = I.bell; text = `Status → ${esc(to)}`;
+  }
+  return `<div class="gps-feed-row"><span class="gfr-ic c-${color}">${icon}</span><span class="gfr-txt">${text}</span><span class="gfr-ts">${esc(gpsEventTime(ev.at))}</span></div>`;
+}
+function gpsEventTime(at) {
+  const d = at ? new Date(at) : null;
+  if (!d || Number.isNaN(d.getTime())) return '';
+  const hh = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  return `${fmtShortDate(d.toISOString())} · ${fmtClock(hh)}`;
+}
+/* LIVE alert rows merged into the feed from the current fleet snapshot (§6a). Today:
+   Bouncie check-engine (mil/DTCs) — the one provider-alert shape we have cleanly. Hapn
+   `/device/:imei/alerts` + Yanmar `/machine/:id/alerts` live-fetch merge is a follow-up
+   (their response shapes need real samples to normalize safely). */
+function gpsLiveAlertRows(u) {
+  const m = unitGpsLiveMachine(u);
+  if (!m) return [];
+  const rows = [];
+  if (m.source === 'bouncie' && m.mil && m.mil.milOn) {
+    const dtcs = m.mil.qualifiedDtcList || [];
+    const at = m.mil.lastUpdated || null;
+    if (dtcs.length) {
+      dtcs.forEach((d) => {
+        const name = Array.isArray(d.name) ? d.name.join(', ') : (d.name || 'Check engine');
+        rows.push(gpsEventRow({ type: 'alert', at, detail: { severity: 'critical', message: `Check engine · ${d.code || ''} ${name}`.replace(/\s+/g, ' ').trim() } }));
+      });
+    } else {
+      rows.push(gpsEventRow({ type: 'alert', at, detail: { severity: 'critical', message: 'Check engine light on' } }));
+    }
+  }
+  return rows;
+}
+
+/* The whole feed block for a mapped unit's GPS section — live alerts on top of the
+   durable device_events history. */
+function gpsFeedHtml(u) {
+  const e = ensureGpsEvents(u);
+  if (!e) return '';   // unmapped or GPS not configured
+  const head = `<div class="gps-feed-head"><span class="gfh-lbl">GPS History</span>${ghostPill('Refresh', { js: 'js-gps-events-refresh', data: { rec: u.unitId } })}</div>`;
+  const liveRows = gpsLiveAlertRows(u).join('');
+  const evRows = (e.state === 'loaded') ? e.events.map(gpsEventRow).join('') : '';
+  const note = e.state === 'loading' ? 'Reading signal history…'
+    : e.state === 'error' ? (e.error === 'notdeployed' ? 'History not available yet.' : 'Couldn’t load history — try Refresh.')
+      : '';
+  const body = (liveRows || evRows)
+    ? liveRows + evRows + (note ? `<div class="gps-feed-empty">${note}</div>` : '')
+    : `<div class="gps-feed-empty">${note || 'No GPS events yet.'}</div>`;
+  return `<div class="gps-feed-wrap">${head}<div class="gps-feed">${body}</div></div>`;
+}
+
+/* ── REMOTE SHUTDOWN (Hapn starter-interrupt · spec §6/§7) ────────────────────
+   Authority (Jac 2026-07-07): Owner/Admin + Manager + Mechanic/M.Tech ONLY. The
+   control is ABSENT from the DOM for every other role (D5 omit-don't-hide), never
+   merely disabled. IMPORTANT — this is a CLIENT-side gate + a server-side AUDIT (who
+   did it), NOT a server-ENFORCED per-role permission: the GPS backend authenticates
+   one shared team token and can't tell Rental Wrangler roles apart. So it's an
+   accountability control among trusted internal staff, not a boundary against an
+   untrusted actor — a truly enforced gate needs per-role backend auth (follow-up).
+   Immobilize is a two-step ARM → CONFIRM (auto-disarms) so it can't fire by accident;
+   restore is the safe direction, one deliberate tap. */
+const GPS_SHUTDOWN_ROLES = ['owner', 'admin', 'manager', 'mechanic', 'mtech'];
+function canGpsShutdown() { return GPS_SHUTDOWN_ROLES.includes(String(currentRole || '').toLowerCase()); }
+
+let _gpsArmed = null;      // { unitId, deviceId } — the currently ARMED immobilize
+let _gpsArmTimer = null;
+function gpsArmShutdown(unitId, deviceId) {
+  clearTimeout(_gpsArmTimer);
+  _gpsArmed = { unitId, deviceId };
+  render();
+  _gpsArmTimer = setTimeout(() => { _gpsArmed = null; render(); }, 4000);   // auto-disarm after 4s
+}
+function gpsDisarm() { clearTimeout(_gpsArmTimer); _gpsArmed = null; render(); }
+/* enable=false → CUT the starter (immobilize); enable=true → RESTORE. Explicit
+   success/failure toast, no auto-retry; the backend audits both outcomes. */
+async function gpsFireShutdown(unitId, deviceId, enable) {
+  clearTimeout(_gpsArmTimer); _gpsArmed = null;
+  const u = IDX.unit.get(unitId);
+  const nm = u ? u.name : deviceId;
+  try {
+    await gpsStarterInterrupt(deviceId, enable, currentRole || 'operator');
+    toast(enable ? `Starter restored — ${nm} can start.` : `Starter CUT — ${nm} immobilized.`);
+  } catch (e) {
+    toast(`Shutdown command FAILED — no change to ${nm}. (${(e && e.message) || 'error'})`);
+  }
+  if (u) invalidateGpsEvents(u);   // refresh the audit feed (success AND failure were logged)
+  refreshGpsLive();                // pull the new starter state
+  render();
+}
+
+/* The shutdown control for a mapped Hapn unit — Hapn-only + role-gated (absent for
+   others). `machine` = the live machine (for the current starter state), may be null. */
+function gpsShutdownControl(u, machine) {
+  if (u.gpsProvider !== 'Hapn' || !u.gpsDeviceId || !canGpsShutdown()) return '';
+  const dev = esc(u.gpsDeviceId);
+  const immobilized = machine && machine.starterEnabled === false;   // starterEnabled:false = starter cut
+  if (immobilized) {   // safe direction — one deliberate tap
+    return `<div class="kv" style="justify-content:center">${actionPill('commit', 'Restore starter', { js: 'js-gps-restore', data: { rec: u.unitId, dev: u.gpsDeviceId } })}</div>`;
+  }
+  const armed = _gpsArmed && _gpsArmed.unitId === u.unitId;
+  return `<div class="gps-hazard${armed ? ' hot' : ''}">
+    <div class="gh-cap"></div>
+    <div class="gh-row">
+      ${armed
+    ? `${actionPill('danger', 'Confirm — cut starter', { js: 'js-gps-kill-confirm', data: { rec: u.unitId, dev: u.gpsDeviceId } })}${ghostPill('Disarm', { js: 'js-gps-disarm' })}`
+    : actionPill('danger', 'Immobilize', { js: 'js-gps-arm', data: { rec: u.unitId, dev: u.gpsDeviceId } })}
+    </div>
+    <div class="gh-note">${armed ? 'Cuts the starter — the engine can’t be re-started. Auto-disarms.' : 'Owner/Manager/Mechanic only · cuts the starter (not a running engine)'}</div>
+  </div>`;
+}
+
+/* ── FLEET DRIVING SCORE (spec §5 step 7) ─────────────────────────────────────
+   Lights the driver scorecard's stubbed "Driving Score" ring with real Bouncie
+   trip data. It's a FLEET/TEAM metric (like the other two driver rings — delivery
+   rate, wash rate — which are also fleet-wide, not per-individual): telematics is
+   per-truck and Rental Wrangler has no driver↔trip attribution, so a per-DRIVER
+   score isn't honestly computable — a fleet safety score is. 100 = clean driving;
+   we penalize hard-braking + hard-acceleration per 100 mi and a speeding-trip share.
+   Weights are a conservative, TUNABLE v1 (Jac's to adjust). null until loaded / when
+   there are no Bouncie trucks or trips — never a faked number. */
+const DS_PENALTY_PER_100MI = 4;    // each hard event per 100 mi ≈ −4 pts
+const DS_SPEEDING_MPH = 80;        // a trip whose maxSpeed exceeds this counts as speeding
+const DS_SPEEDING_WEIGHT = 20;     // up to −20 pts for an all-speeding record
+const DS_WINDOW_DAYS = 21;         // rolling window of trips to score
+let _drivingScore = null;          // 0–100 fleet score, or null (unknown/unavailable)
+let _drivingScoreAt = 0;
+const drivingScoreValue = () => _drivingScore;
+
+async function refreshDrivingScore() {
+  if (!gpsConfigured()) return;
+  try {
+    const vehicles = await gpsProviderDevices('bouncie').catch(() => []);
+    if (!vehicles.length) { _drivingScore = null; _drivingScoreAt = Date.now(); return; }
+    const sinceISO = new Date(Date.now() - DS_WINDOW_DAYS * 86400000).toISOString();
+    const untilISO = new Date().toISOString();
+    let hard = 0, miles = 0, trips = 0, speeding = 0;
+    for (const v of vehicles) {
+      const imei = v.imei || v.id; if (!imei) continue;
+      let r; try {
+        r = await gpsFetch(`/api/bouncie/vehicle/${encodeURIComponent(imei)}/trips?starts-after=${encodeURIComponent(sinceISO)}&ends-before=${encodeURIComponent(untilISO)}`);
+      } catch { continue; }   // one truck's failure never poisons the fleet score
+      for (const t of ((r && r.trips) || [])) {
+        trips++;
+        hard += (Number(t.hardBrakingCount ?? t.hardBrakingCounts) || 0) + (Number(t.hardAccelerationCount ?? t.hardAccelerationCounts) || 0);
+        miles += Number(t.distance ?? t.tripDistance) || 0;
+        if ((Number(t.maxSpeed) || 0) > DS_SPEEDING_MPH) speeding++;
+      }
+    }
+    if (!trips || miles <= 0) { _drivingScore = null; _drivingScoreAt = Date.now(); return; }   // no data → honest null, not 0
+    const hardPer100 = (hard / miles) * 100;
+    const speedShare = speeding / trips;
+    _drivingScore = Math.max(0, Math.min(100, Math.round(100 - hardPer100 * DS_PENALTY_PER_100MI - speedShare * DS_SPEEDING_WEIGHT)));
+    _drivingScoreAt = Date.now();
+  } catch (e) { logErr('gps', 'driving-score: ' + ((e && e.message) || e)); }
+  if (!booting) render();
+}
+
 const dataSnapshot = () => { const s = {}; PERSIST_KEYS.forEach((k) => { s[k] = DATA[k] || []; }); return s; };
 async function loadFromBackend() {
   const r = await backendCall('load');
@@ -17592,11 +18648,12 @@ async function refreshFromBackend() {
     });
     // also pull the shared team-chat threads so messages from other users land live
     try {
-      const cr = await backendCall('getChats');
+      const cr = await backendCall('getChats', chatSyncIdentity());
       if (cr && cr.ok && Array.isArray(cr.chats)) {
         const m = mergeChats(cr.chats);
+        const pruned = reconcileScopedChats(cr.chats);
         if (m.localAhead) pushChats(); else lastChatsJson = JSON.stringify(state.chat.chats);
-        if (m.changed) applied++;
+        if (m.changed || pruned) applied++;
       }
     } catch (e) { /* chat sync is best-effort */ }
     loadWranglerRail();   // also pull this role's Mr. Wrangler rail (cross-device) — best-effort, self-renders
@@ -17613,50 +18670,84 @@ function startRefreshPoll() { clearInterval(refreshTimer); refreshTimer = setInt
 // and pull in the refresh poll. Threads AND messages UNION by id, so two people
 // posting to the same thread never clobber each other (matches "chats are never lost").
 let chatPushTimer = null, lastChatsJson = null;
-function normalizeChat(c) { return { id: c.id, tags: c.tags || [], participants: c.participants || [], messages: c.messages || [], seen: c.seen || {} }; }
+// Preserve the {title, members} shape through sync; keep legacy tags/participants as
+// passthrough so a mixed old/new client fleet never loses data.
+function normalizeChat(c) {
+  return normalizeTeamChat({ id: c.id, title: c.title, members: Array.isArray(c.members) ? c.members : [], muted: Array.isArray(c.muted) ? c.muted : [], messages: c.messages || [], seen: c.seen || {}, by: c.by, tags: c.tags || [], participants: c.participants || [] });
+}
+const sameMembers = (a, b) => { a = (a || []).map(String).slice().sort(); b = (b || []).map(String).slice().sort(); return a.length === b.length && a.every((x, i) => x === b[i]); };
 function mergeChats(remoteChats) {
   if (!Array.isArray(remoteChats)) return { changed: false, localAhead: false };
   let changed = false, localAhead = false;
   const remoteById = new Map(remoteChats.filter((c) => c && c.id).map((c) => [c.id, c]));
   const localById = new Map(state.chat.chats.map((c) => [c.id, c]));
+  // The last snapshot we successfully synced — used to tell an UNPUSHED local edit
+  // (a rename/add/leave in flight) from a field we can safely adopt from the server.
+  const pushedById = new Map();
+  try { (JSON.parse(lastChatsJson || '[]') || []).forEach((c) => { if (c && c.id) pushedById.set(String(c.id), c); }); } catch (e) {}
   remoteChats.forEach((rc) => {
     if (!rc || !rc.id) return;
     const lc = localById.get(rc.id);
     if (!lc) { state.chat.chats.push(normalizeChat(rc)); changed = true; return; }   // a whole thread from another user
+    normalizeTeamChat(lc);
     const haveMsg = new Set((lc.messages || []).map((m) => m.id));
-    (rc.messages || []).forEach((m) => { if (m && m.id && !haveMsg.has(m.id)) { lc.messages.push(m); changed = true; } });
+    (rc.messages || []).forEach((m) => { if (m && m.id && !haveMsg.has(m.id)) { lc.messages.push(m); changed = true; } });   // messages UNION (never lose one)
     lc.messages.sort((a, b) => (a.at || 0) - (b.at || 0));
+    // `title` + `members` are ADMIN-authoritative, not union fields — the server holds the
+    // canonical set. Adopt the server's value UNLESS we hold an unpushed local edit (else a
+    // poll clobbers an in-flight rename / member-add / self-leave). This is the fix for the
+    // "Leave gets reverted" + "kicks/renames don't propagate live" races.
+    const pushed = pushedById.get(String(rc.id));
+    const titleDirty = pushed && (lc.title || '') !== (pushed.title || '');
+    if (!titleDirty && (lc.title || '') !== (rc.title || '')) { lc.title = rc.title || ''; changed = true; }
+    const membersDirty = pushed && !sameMembers(lc.members, pushed.members);
+    if (!membersDirty && !sameMembers(lc.members, rc.members)) { lc.members = (rc.members || []).map(String); changed = true; }
+    if (rc.by && lc.by == null) lc.by = rc.by;
     const haveTag = new Set((lc.tags || []).map((t) => t.id));
-    (rc.tags || []).forEach((t) => { if (t && t.id && !haveTag.has(t.id)) { lc.tags.push(t); changed = true; } });
-    (rc.participants || []).forEach((p) => { if (!lc.participants.includes(p)) { lc.participants.push(p); changed = true; } });
+    (rc.tags || []).forEach((t) => { if (t && t.id && !haveTag.has(t.id)) { (lc.tags = lc.tags || []).push(t); changed = true; } });   // legacy passthrough
     Object.keys(rc.seen || {}).forEach((k) => { if ((rc.seen[k] || 0) > (lc.seen[k] || 0)) lc.seen[k] = rc.seen[k]; });   // latest-seen wins (view state)
   });
-  state.chat.chats.forEach((lc) => {   // does local hold anything the server lacks? → we should push
+  state.chat.chats.forEach((lc) => {   // does local hold an unpushed edit the server lacks? → push
     const rc = remoteById.get(lc.id);
     if (!rc) { localAhead = true; return; }
     const rMsg = new Set((rc.messages || []).map((m) => m.id));
     if ((lc.messages || []).some((m) => !rMsg.has(m.id))) localAhead = true;
-    const rTag = new Set((rc.tags || []).map((t) => t.id));
-    if ((lc.tags || []).some((t) => !rTag.has(t.id))) localAhead = true;
-    if ((lc.participants || []).some((p) => !(rc.participants || []).includes(p))) localAhead = true;
+    if (!sameMembers(lc.members, rc.members)) localAhead = true;
+    if ((lc.title || '') !== (rc.title || '')) localAhead = true;
   });
   return { changed, localAhead };
 }
+// After a SCOPED load, drop local chats the server no longer returns for me (I was removed
+// or left) so they leave the rail live, not just on reload. Guards: only for a bound user
+// (unbound sees all → never prune); never drop a chat I own or the one I just created; a
+// no-op against an old backend that returns everything.
+function reconcileScopedChats(returnedChats) {
+  const mine = myRosterId(); if (!mine) return false;
+  const keep = new Set((returnedChats || []).map((c) => String(c.id)));
+  const before = state.chat.chats.length;
+  state.chat.chats = state.chat.chats.filter((c) => chatIsAdmin(c) || String(c.id) === String(state.chat.activeId) || keep.has(String(c.id)));
+  return state.chat.chats.length !== before;
+}
+// Identity sent with team-chat sync so the backend can scope a caller to THEIR chats
+// (admin + members). Self-asserted, gated behind the team password — a real server-side
+// filter for normal use, not a crypto boundary. Old backends ignore it (fully back-compat).
+const chatSyncIdentity = () => ({ me: commentUserKey(), rosterId: myRosterId() });
 async function pushChats() {
   if (!backendPassword) return;
   const js = JSON.stringify(state.chat.chats);
   if (js === lastChatsJson) return;                 // nothing new since the last successful push
-  try { const r = await backendCall('setChats', { chats: state.chat.chats }); if (r && r.ok) lastChatsJson = js; } catch (e) { /* offline → retries on next change/poll */ }
+  try { const r = await backendCall('setChats', { chats: state.chat.chats, ...chatSyncIdentity() }); if (r && r.ok) lastChatsJson = js; } catch (e) { /* offline → retries on next change/poll */ }
 }
 function pushChatsSoon() { if (booting || !backendPassword) return; clearTimeout(chatPushTimer); chatPushTimer = setTimeout(pushChats, 1200); }
 async function loadChats() {
   if (!backendPassword) return;
   try {
-    const r = await backendCall('getChats');
+    const r = await backendCall('getChats', chatSyncIdentity());
     if (!r || !r.ok || !Array.isArray(r.chats)) return;
     const { changed, localAhead } = mergeChats(r.chats);
+    const pruned = reconcileScopedChats(r.chats);
     if (localAhead) pushChats(); else lastChatsJson = JSON.stringify(state.chat.chats);   // mark synced (or send local-only threads up)
-    if (changed) render();
+    if (changed || pruned) render();
   } catch (e) { /* offline → the refresh poll retries */ }
 }
 // ── Cross-device Mr. Wrangler rail sync (per ROLE; mirrors team-chat sync) ──
@@ -17836,6 +18927,7 @@ window.addEventListener('beforeunload', (e) => {
   e.preventDefault(); e.returnValue = '';
 });
 function renderLogin(msg) {
+  if (state.commsRail) { state.commsRail.cat = null; state.commsRail.sessions && Object.values(state.commsRail.sessions).forEach((s) => { s.menuOpen = false; }); }   // D8 — clock-in = an EMPTY rail (sessions persist per device, nothing summons itself)
   $('#app').innerHTML = `<div class="login-screen"><video id="login-video" class="login-video" src="assets/login-intro.mp4?v=20260702a" muted loop playsinline preload="auto" aria-hidden="true"></video><form class="login-box" id="login-form">
     <span class="rivet tl"></span><span class="rivet tr"></span><span class="rivet bl"></span><span class="rivet br"></span>
     <div class="login-plate">
@@ -17867,6 +18959,7 @@ function finishLoad() {
   wranglerRailLoad();                                           // load the Mr. Wrangler rail from IndexedDB (+ one-time localStorage migration)
   refreshWranglerRequests();                                    // §18e populate the approval-inbox badge
   refreshWranglerNotifications();                               // §18f populate the notification-bell badge
+  refreshCommsThreads();                                        // D8 comms rail — the chips wear their worst-of-category dots from clock-in (the rail itself stays empty)
   startRefreshPoll();                                           // live multi-user: poll for others' changes (§ refreshFromBackend)
   if (migrationDirty) { migrationDirty = false; saveSoon(); }   // push parsed first/last names up to the Sheet
   // #edit=<id> — desktop→phone handoff opens that customer's account form (§7.1).
@@ -17941,6 +19034,7 @@ async function attemptLogin() {
     try { localStorage.setItem('jactec.user', name); } catch {}
     try { sessionStorage.setItem('jactec.role', role); } catch {}
     sessionStorage.setItem('jactec.pw', pw);
+    gpsLogin(pw).then((ok) => { if (ok) { refreshGpsLive(); startGpsViewPoll(); refreshDrivingScore(); } });   // silent GPS login (§5) → live snapshot (step 3) + view-scoped refresh (step 4) + fleet driving score (step 7); fire-and-forget, never blocks main login
     await loadFromBackend();
     finishLoad();
     applyShopRoleLanding();   // shop roles (Mechanic / M.Tech) land on the Units service lens
@@ -18199,6 +19293,7 @@ function boot() {
     if (e.target.classList.contains('nc-in') && e.key === 'Enter' && e.target.tagName !== 'SELECT') { e.preventDefault(); return saveNewCustomer(); }
     if (e.target.classList.contains('js-wr-in') && e.key === 'Enter') { e.preventDefault(); return wranglerSend(); }   // §18
     if (e.target.classList.contains('chat-input') && e.key === 'Enter') { e.preventDefault(); return chatSend(); }
+    if (e.target.classList.contains('js-comms-in') && e.key === 'Enter') { e.preventDefault(); return commsSend(e.target.dataset.cust); }   // D8 — Enter fires the ignition Send
     // §M3 — one predictable back/dismiss chain (shared with the Android back button):
     // winpicker → overlay → Mr. Wrangler dock → team chat dock.
     if (e.key === 'Escape') dismissTopSheet();
@@ -18445,6 +19540,541 @@ async function reseedFromFile() {
     renderLogin('Reseed failed — live data unchanged.');
   }
 }
+/* ════════════════════════════════════════════════════════════════════════
+   APP-38 · D8/D9 THE COMMS RAIL (spec comms-notifications D8 + D9, Jac
+   2026-07-07) — the four-category comms surface on the bottom bar: Team ·
+   Texts · Email · Mr. Wrangler as glyph chips (bottom-left, saddle-stitch
+   divider), each summoning its category's LAST SESSION of conversation tabs
+   onto the rail (one category at a time; login = empty rail). D9 SINGLE-OPEN
+   LAW: at most ONE conversation window is open at any time across ALL
+   categories — every open path closes whatever was up first; a session
+   remembers only its LAST-open conversation. The dashed blue ALL tab lists
+   every un-ended conversation with Open / End (+ New chat for Team/Wrangler).
+   ALL FOUR categories are live: Texts + Email ride commsThreads / messagesFor
+   / sendCustomerMessage (Phase 2a backend); Team rides the APP-23 chat store
+   (chatSend/chatMarkSeen — its dock is phone-only now); Mr. Wrangler rides
+   the §18 machinery (wranglerSend/wranglerRail — its dock is phone-only now).
+   Chips wear their category's WORST status dot (red Unseen · yellow Reply? ·
+   green quiet). Open / End language everywhere — never "Close".
+   ════════════════════════════════════════════════════════════════════════ */
+const COMMS_CAT_META = {
+  team:     { label: 'Team',        icon: () => I.users,         channel: null,    tip: 'Team — the shop-floor chat' },
+  text:     { label: 'Texts',       icon: () => I.messageSquare, channel: 'sms',   tip: 'Texts — customer SMS threads' },
+  email:    { label: 'Email',       icon: () => I.mail,          channel: 'email', tip: 'Email — customer email threads' },
+  wrangler: { label: 'Mr. Wrangler', icon: () => I.lasso,        channel: null,    tip: 'Mr. Wrangler — ask the yard AI, or report a bug' },
+};
+const commsOnline = () => typeof backendPassword !== 'undefined' && !!backendPassword;
+const commsSess = () => (state.commsRail.cat ? state.commsRail.sessions[state.commsRail.cat] : null);
+const commsCatOfChannel = (channel) => (channel === 'email' ? 'email' : 'text');
+/* ── live thread data (Phase 2a backend) ─────────────────────────────────── */
+let commsThreads = null;            // [{ customerId, count, lastWhen, lastChannel, lastDirection, lastSnippet, lastStatus, channels? }]
+let commsThreadsAt = 0, commsThreadsLoading = false;
+function refreshCommsThreads(force) {
+  if (!commsOnline()) return;                       // demo/#local — chips render, sessions show the connect note
+  if (commsThreadsLoading || (!force && Date.now() - commsThreadsAt < 30000)) return;
+  commsThreadsLoading = true;
+  backendCall('commsThreads').then((r) => {
+    commsThreadsLoading = false;
+    if (r && r.ok && Array.isArray(r.threads)) { commsThreads = r.threads; commsThreadsAt = Date.now(); render(); }
+  }).catch(() => { commsThreadsLoading = false; });
+}
+/* A thread's presence in ONE channel. Backend ≥v75 sends a per-channel `channels`
+   rollup (the same customer can be a conversation in BOTH Texts and Email); the
+   v74 shape only carries the LAST message's channel — fall back to that. */
+function commsThreadChannel(t, channel) {
+  if (t && t.channels && typeof t.channels === 'object') return t.channels[channel] || null;
+  return t && t.lastChannel === channel ? t : null;
+}
+function commsThreadsFor(cat) {
+  const channel = COMMS_CAT_META[cat] && COMMS_CAT_META[cat].channel;
+  if (!channel || !commsThreads) return [];
+  const ended = commsEndedSet();
+  return commsThreads.filter((t) => commsThreadChannel(t, channel) && !ended.has(String(t.customerId) + '|' + channel));
+}
+/* Status grammar (registry semantics, spec D8): red = Unseen · yellow = Reply? ·
+   green = Replied. v1 has no inbound pipe yet, so: last outbound landed = green,
+   failed send = red. `lastDirection === 'inbound'` is already honored (red) so the
+   Phase-B inbound webhook flips statuses with no client change. */
+function commsConvStatus(t, channel) {
+  const ch = commsThreadChannel(t, channel);
+  if (!ch) return 'gray';                          // no history yet (fresh conversation off the R20 menu)
+  if (ch.lastDirection === 'inbound') return 'red';
+  return ch.lastStatus === 'failed' ? 'red' : 'green';
+}
+const COMMS_ST_RANK = { red: 0, yellow: 1, green: 2, gray: 3 };
+/* D9 — the chip's WORST-of-category dot, same registry grammar everywhere:
+   red = Unseen · yellow = Reply? (last word isn't yours) · green = all quiet. */
+function commsCatWorst(cat) {
+  if (cat === 'team') return commsTeamWorst();
+  if (cat === 'wrangler') return commsWranglerWorst();
+  const list = commsThreadsFor(cat);
+  let worst = null;
+  list.forEach((t) => { const s = commsConvStatus(t, COMMS_CAT_META[cat].channel); if (!worst || COMMS_ST_RANK[s] < COMMS_ST_RANK[worst]) worst = s; });
+  return (!worst || worst === 'gray') ? 'green' : worst;   // nothing waiting = green (quiet line)
+}
+/* ── Team category (D9) — conversations derive from the APP-23 chat store ── */
+const commsChatLastAt = (c) => Math.max(0, ...(c.messages || []).map((m) => m.at || 0));
+function commsTeamChats() {   // every un-ended team chat, newest first (End resurrects on a newer message)
+  return (state.chat.chats || [])
+    .map(normalizeTeamChat)
+    // a chat shows once it has messages, members, OR is the one you're in (a just-created blank)
+    .filter((c) => (c.messages || []).length || (c.members || []).length || String(c.id) === String(state.chat.activeId))
+    .filter((c) => chatVisibleToMe(c))   // admin + members only (a bound non-member who left drops off the rail)
+    .filter((c) => !commsIsEnded(c.id, 'team', commsChatLastAt(c)))
+    .sort((a, b) => commsChatLastAt(b) - commsChatLastAt(a));
+}
+const commsTeamLabel = (c) => ((c.title || '').trim() || (c.tags && c.tags[0] && c.tags[0].label) || 'Untitled chat');
+function commsTeamStatus(c) {
+  const msgs = c.messages || [];
+  if (!msgs.length) return 'gray';                                   // fresh chat — nothing said yet
+  if (chatMuted(c)) return 'green';                                  // muted → never raises an alert dot
+  const u = commentUserKey();
+  if (commsChatLastAt(c) > (c.seen[u] || 0)) return 'red';           // unseen
+  const last = msgs[msgs.length - 1];
+  return last.by !== u ? 'yellow' : 'green';                         // their word last = Reply?
+}
+function commsTeamWorst() {
+  if (chatUnreadCount() > 0) return 'red';                           // unacked flagged comments count as unseen
+  let worst = null;
+  commsTeamChats().forEach((c) => { const s = commsTeamStatus(c); if (!worst || COMMS_ST_RANK[s] < COMMS_ST_RANK[worst]) worst = s; });
+  return (!worst || worst === 'gray') ? 'green' : worst;
+}
+/* ── Mr. Wrangler category (D9) — conversations derive from the §18g rail store
+   (snapshots) + the live state.wrangler chat; request-linked chats surface via the
+   idle rail's request tabs instead. ── */
+function commsWranglerConvs() {
+  const w = state.wrangler, out = [];
+  if (w.id && (w.open || (w.messages || []).length)) out.push({ id: String(w.id), title: wranglerConvoTitle(w), ts: Date.now(), live: true });
+  (state.wranglerRail || []).forEach((c) => {
+    if (String(c.id) === String(w.id)) return;                       // the live copy wins
+    if (c.reqNumber || wrChatResolved(c)) return;
+    out.push({ id: String(c.id), title: c.title || 'Chat', ts: c.ts || 0, live: false, snap: c });
+  });
+  return out.filter((x) => !commsIsEnded(x.id, 'wrangler', x.ts));
+}
+function commsWranglerStatus(x) {
+  if (x.live && state.wrangler.ask) return 'red';                    // Mr. Wrangler is waiting on your answer
+  const msgs = x.live ? (state.wrangler.messages || []) : ((x.snap && x.snap.messages) || []);
+  const last = msgs[msgs.length - 1];
+  if (!last) return 'gray';
+  return last.role === 'assistant' ? 'yellow' : 'green';             // his word last = Reply?
+}
+function commsWranglerWorst() {
+  if ((wranglerRequests || []).some((rq) => (rq.labels || []).includes('wrangler-needs-jac'))) return 'red';
+  if (state.wrangler.ask) return 'red';
+  let worst = null;
+  commsWranglerConvs().forEach((x) => { const s = commsWranglerStatus(x); if (!worst || COMMS_ST_RANK[s] < COMMS_ST_RANK[worst]) worst = s; });
+  return (!worst || worst === 'gray') ? 'green' : worst;
+}
+/* ── per-customer thread messages (messagesFor — bodies + maskedTo + fromUsed) ── */
+const commsMsgs = new Map();        // customerId -> { loading, at, messages }
+function commsFetchMsgs(customerId, force) {
+  if (!commsOnline()) return null;
+  let entry = commsMsgs.get(String(customerId));
+  if (entry && (entry.loading || (!force && Date.now() - entry.at < 30000))) return entry;
+  entry = { loading: true, at: entry ? entry.at : 0, messages: entry ? entry.messages : null };
+  commsMsgs.set(String(customerId), entry);
+  backendCall('messagesFor', { customerId }).then((r) => {
+    entry.loading = false;
+    if (r && r.ok && Array.isArray(r.messages)) { entry.messages = r.messages; entry.at = Date.now(); render(); }
+  }).catch(() => { entry.loading = false; });
+  return entry;
+}
+const commsDrafts = new Map();      // `${cat}|${customerId}` -> composer draft (survives re-renders)
+const commsSending = new Set();     // in-flight send keys (disables the ignition)
+const commsFromSel = new Map();     // customerId -> chosen FROM alias (D7 picker)
+let commsAliasesKicked = false;
+function commsAliasesEnsure() {     // lazy one-shot alias fetch for the email FROM picker
+  if (commsAliasesKicked || !commsOnline()) return;
+  commsAliasesKicked = true;
+  commsAliasList().then((a) => { if (a && a.length) render(); });
+}
+/* ── the four toolbar chips (bottom-left, before the tool buttons) ────────── */
+function commsChipsHtml() {
+  const phone = document.body.classList.contains('is-phone');
+  const chip = (cat) => {
+    const meta = COMMS_CAT_META[cat];
+    // phones have no rail — the team/wrangler chips still bridge to their bottom-sheet docks there
+    const on = phone
+      ? (cat === 'team' ? state.chat.open : cat === 'wrangler' ? (state.wrangler.open && !state.wrangler.min) : state.commsRail.cat === cat)
+      : state.commsRail.cat === cat;
+    const worst = commsCatWorst(cat);
+    return `<button class="iconbtn comms-chip js-comms-chip${on ? ' on' : ''}" data-cat="${cat}" data-tip="${esc(meta.tip)}" aria-pressed="${on}">${meta.icon()}${worst ? `<span class="cc-dot c-${worst}" aria-hidden="true"></span>` : ''}</button>`;
+  };
+  return `<span class="comms-chips" role="group" aria-label="Comms — Team, Texts, Email, Mr. Wrangler">${COMMS_CATS.map(chip).join('')}</span><span class="bb-sep bb-stitch" aria-hidden="true"></span>`;
+}
+/* ── the summoned session's tabs on the rail (ALL first, then conversations).
+   D9: one builder, four categories — a tab's is-active means "this is THE open
+   window" (single-open). The ✕ hides from the rail only, never ends. ── */
+function commsSessTabsHtml() {
+  const cat = state.commsRail.cat, meta = COMMS_CAT_META[cat], sess = state.commsRail.sessions[cat];
+  if (meta.channel && !commsOnline()) return '<span class="crail-empty">Connect to the backend to wrangle customer threads.</span>';
+  const hidden = new Set((sess.hidden || []).map(String));
+  const tab = (id, name, st) => {
+    const open = String(sess.lastOpen) === String(id);
+    return `<button class="crail-tab comms-tab st-${st}${open ? ' is-active' : ''}" data-comms-tab="${esc(id)}" role="tab" aria-selected="${open}" data-tip="${esc(name)} — ${open ? 'tuck the window away' : 'open the window'}"><span class="crail-t">${esc(name)}</span><span class="crail-x" data-comms-hide="${esc(id)}" role="button" aria-label="Hide from the rail — does NOT end it" data-tip="Hide from the rail — does NOT end it">×</span></button>`;
+  };
+  let count = 0, tabs = '';
+  if (cat === 'team') {
+    const chats = commsTeamChats(); count = chats.length;
+    tabs = chats.filter((c) => !hidden.has(String(c.id))).map((c) => tab(c.id, commsTeamLabel(c), commsTeamStatus(c))).join('');
+  } else if (cat === 'wrangler') {
+    const convs = commsWranglerConvs(); count = convs.length;
+    tabs = convs.filter((x) => !hidden.has(x.id)).map((x) => tab(x.id, x.title, commsWranglerStatus(x))).join('');
+  } else {
+    const threads = commsThreadsFor(cat); count = threads.length;
+    const byId = new Map(threads.map((t) => [String(t.customerId), t]));
+    const ended = commsEndedSet();
+    tabs = sess.tabs.filter((id) => !ended.has(String(id) + '|' + meta.channel)).map((id) => {
+      const c = IDX.customer.get(id);
+      return tab(id, (c && fullName(c)) || String(id), commsConvStatus(byId.get(String(id)) || null, meta.channel));
+    }).join('');
+  }
+  const all = `<button class="crail-tab comms-all js-comms-all${sess.menuOpen ? ' is-active' : ''}" role="tab" aria-selected="${sess.menuOpen}" data-tip="Every un-ended ${meta.label} conversation — Open / End"><span class="crail-t">All · ${count}</span></button>`;
+  return `<div class="crail-group comms-group">${all}${tabs}</div>`;
+}
+/* ── Messenger-style conversation window (above its own tab) ─────────────── */
+function commsPopupHtml(cat, t, id) {
+  const meta = COMMS_CAT_META[cat];
+  const c = IDX.customer.get(id);
+  const name = (c && fullName(c)) || String(id);
+  const st = commsConvStatus(t, meta.channel);
+  const entry = commsFetchMsgs(id);
+  const msgs = ((entry && entry.messages) || []).filter((m) => m.channel === meta.channel)
+    .sort((a, b) => String(a.when || '').localeCompare(String(b.when || '')));
+  const stamp = (m) => { const d = m.when ? new Date(m.when) : null; return (d && !isNaN(d)) ? d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''; };
+  const rows = msgs.map((m) => {
+    const me = m.direction !== 'inbound';
+    const metaLine = me
+      ? [m.status === 'failed' ? '✕ Failed' : 'Sent', m.maskedTo || '', m.fromUsed ? 'from ' + m.fromUsed : '', stamp(m)].filter(Boolean).join(' · ')
+      : [name, stamp(m)].filter(Boolean).join(' · ');
+    return `<div class="cp-row${me ? ' me' : ''}"><div class="cp-cell"><div class="cp-bub${me ? ' me' : ''}${m.status === 'failed' ? ' failed' : ''}">${esc(m.body || m.subject || '(no text)')}</div><div class="cp-meta">${esc(metaLine)}</div></div></div>`;
+  }).join('') || `<div class="cp-empty">${entry && entry.loading ? 'Rounding up the thread…' : 'No messages yet — say the word.'}</div>`;
+  // D7 FROM picker — only for email, only when the shop has >1 connected alias
+  let fromRow = '';
+  if (meta.channel === 'email') {
+    commsAliasesEnsure();
+    const aliases = _commsAliases || [];
+    if (aliases.length > 1) {
+      const sel = commsFromSel.get(String(id)) || aliases[0];
+      fromRow = `<div class="cp-fromrow"><button class="cp-from js-comms-from" data-cust="${esc(id)}" data-tip="Which connected address this goes out as">from ${esc(sel)}${I.chev}</button></div>`;
+    }
+  }
+  const key = cat + '|' + id;
+  const sending = commsSending.has(key);
+  const first = ((c && (c.firstName || fullName(c))) || '').trim().split(/\s+/)[0] || 'them';
+  return `<div class="cp-cap" aria-hidden="true"></div>
+    <div class="cp-head"><span class="cp-dot c-${st}" aria-hidden="true"></span><span class="cp-cat">${esc(meta.label)}</span><span class="cp-who">${esc(name)}</span><span class="spacer"></span>${ghostPill('End', { js: 'js-comms-end', data: { cust: id }, tip: 'End the conversation — the history stays on the profile' })}</div>
+    <div class="cp-feed">${rows}</div>
+    ${fromRow}
+    <div class="cp-compose"><input class="cp-in js-comms-in" data-cust="${esc(id)}" placeholder="${meta.channel === 'sms' ? 'Text' : 'Email'} ${esc(first)}…" aria-label="Message ${esc(name)}" value="${esc(commsDrafts.get(key) || '')}" maxlength="600" /><button class="cp-send js-comms-send" data-cust="${esc(id)}"${sending ? ' disabled' : ''}>${sending ? 'Sending…' : 'Send'}</button></div>`;
+}
+/* ── D9 Team window — the APP-23 chat riding the rail shell: same store, same
+   bubbles (yours ride blue up here; the orange pair stays customer-only), same
+   composer classes so chatSend / the Enter handler / drafts keep working. ── */
+function commsTeamPopupHtml(id) {
+  const c = chatById(String(id)); if (!c) return '';
+  normalizeTeamChat(c);
+  chatMarkSeen(c);   // the open window is "seen" — clears the re-flash, mirrors the dock
+  return `<div class="cp-cap" aria-hidden="true"></div>
+    <div class="cp-head"><span class="cp-dot c-${commsTeamStatus(c)}" aria-hidden="true"></span><span class="cp-cat">Team</span>${chatTitleInputHtml(c)}<span class="spacer"></span><button class="cp-gear js-chat-settings" aria-label="Chat settings" data-tip="Chat settings">${I.sliders}</button></div>
+    <div class="cp-feed chat-feed">${chatFeedRowsHtml(c)}</div>
+    <div class="chat-compose">${chatHeldChipHtml()}<input class="chat-input" placeholder="Message the team…" value="${esc(state.chat.draft || '')}" aria-label="Message the team" /><button class="chat-send js-chat-send" aria-label="Send">${I.chev}</button></div>
+    ${chatMemberBarHtml(c)}`;
+}
+/* ── D9 Mr. Wrangler window — the §18 conversation riding the rail shell: the
+   node ALSO wears .wrangler-dock so wranglerSend / paste / drag-drop / focus all
+   find their selectors untouched; only the chrome changed (dock head → cp-head). ── */
+function commsWranglerPopupHtml() {
+  const o = state.wrangler;
+  const st = commsWranglerStatus({ id: String(o.id), live: true });
+  return `<div class="cp-cap" aria-hidden="true"></div>
+    <div class="cp-head"><span class="cp-dot c-${st}" aria-hidden="true"></span><span class="cp-cat">Mr. Wrangler</span><span class="cp-who">${esc(wranglerConvoTitle(o))}</span><span class="spacer"></span>${ghostPill('End', { js: 'js-comms-end', data: { cust: o.id }, tip: 'End the conversation — the transcript stays stored' })}</div>
+    ${wranglerDockBodyHtml()}`;
+}
+/* ── the ALL menu: every un-ended conversation, Open / End per row (D9: Team and
+   Mr. Wrangler list their chats too, with a + New chat at the foot) ────────── */
+function commsMenuHtml(cat) {
+  const meta = COMMS_CAT_META[cat];
+  const row = (id, name, st, snip) => `<div class="cm-row"><span class="cp-dot c-${st}" aria-hidden="true"></span><span class="cm-who">${esc(name)}</span><span class="cm-snip">${esc(snip)}</span>${actionPill('commit', 'Open', { js: 'js-comms-mopen', h: 22, data: { cust: id } })}${ghostPill('End', { js: 'js-comms-mend', data: { cust: id }, tip: cat === 'team' || cat === 'wrangler' ? 'End it — the history stays stored' : 'End it — the history stays on the profile' })}</div>`;
+  let rows = '', empty = 'Nothing on the line — right-click a customer to start one.', newRow = '';
+  if (cat === 'team') {
+    rows = commsTeamChats().map((c) => {
+      const last = (c.messages || [])[c.messages.length - 1];
+      return row(c.id, commsTeamLabel(c), commsTeamStatus(c), last ? `${last.by === commentUserKey() ? 'you' : (last.by || 'them')}: ${last.text || ''}` : 'No messages yet');
+    }).join('');
+    empty = 'No team chats yet — saddle one up below.';
+    newRow = `<div class="cm-row cm-new">${addBtn('New chat', { js: 'js-comms-new', link: true })}</div>`;
+  } else if (cat === 'wrangler') {
+    rows = commsWranglerConvs().map((x) => {
+      const msgs = x.live ? (state.wrangler.messages || []) : ((x.snap && x.snap.messages) || []);
+      const last = msgs[msgs.length - 1];
+      return row(x.id, x.title, commsWranglerStatus(x), last ? `${last.role === 'assistant' ? '🤠' : 'you'}: ${(last.content || '').replace(/\s+/g, ' ')}` : 'No messages yet');
+    }).join('');
+    empty = 'Nothing on the line — ask Mr. Wrangler anything below.';
+    newRow = `<div class="cm-row cm-new">${addBtn('New chat', { js: 'js-comms-new', link: true })}</div>`;
+  } else {
+    rows = commsThreadsFor(cat).map((t) => {
+      const id = String(t.customerId), c = IDX.customer.get(id);
+      const ch = commsThreadChannel(t, meta.channel) || t;
+      return row(id, (c && fullName(c)) || id, commsConvStatus(t, meta.channel), (ch.lastDirection === 'inbound' ? 'them: ' : 'you: ') + (ch.lastSnippet || ''));
+    }).join('');
+  }
+  return `<div class="cp-cap" aria-hidden="true"></div>
+    <div class="cp-head"><span class="cp-cat">${esc(meta.label)}</span><span class="cp-who">Open &amp; un-ended</span><span class="spacer"></span><button class="cp-x js-comms-menu-x" aria-label="Tuck the list away" data-tip="Tuck away — nothing ends">${I.x}</button></div>
+    <div class="cp-feed cp-list">${rows || `<div class="cp-empty">${empty}</div>`}${newRow}</div>`;
+}
+/* Mount THE open window ABOVE its own tab (Messenger metaphor, D9 single-open: at
+   most one conversation window across all categories — the session's lastOpen) —
+   called at the end of render() while a session is summoned. Desktop-only
+   (phones have no rail; the D8 mobile bottom-sheet reflow rides later). */
+function mountCommsPops() {
+  const cat = state.commsRail.cat;
+  if (!cat || document.body.classList.contains('is-phone')) return;
+  const sess = state.commsRail.sessions[cat];
+  const bar = document.querySelector('.bottombar');
+  if (!bar) return;
+  const host = el('div', 'comms-pops');
+  $('#app').appendChild(host);
+  const bottom = Math.max(56, Math.round(window.innerHeight - bar.getBoundingClientRect().top) + 8);
+  let lastRight = 0;   // the window + the ALL menu would stack — nudge each clear of the previous
+  const place = (node, anchor, w) => {
+    const r = anchor.getBoundingClientRect();
+    let left = Math.max(8, Math.min(r.left - 30, window.innerWidth - w - 8));
+    if (left < lastRight + 8) left = Math.min(lastRight + 8, window.innerWidth - w - 8);
+    lastRight = left + w;
+    node.style.left = left + 'px';
+    node.style.bottom = bottom + 'px';
+  };
+  const id = sess.lastOpen != null ? String(sess.lastOpen) : null;
+  const tb = id ? document.querySelector(`.comms-rail [data-comms-tab="${id}"]`) : null;   // no tab (hidden/ended) → no window
+  if (id && tb) {
+    let html = '', w = 300, cls = 'comms-pop';
+    if (cat === 'team') { html = commsTeamPopupHtml(id); w = 340; cls += ' team-pop'; }
+    else if (cat === 'wrangler') {
+      // the window renders the LIVE chat only — every open path loads a snapshot into
+      // state.wrangler first (wranglerRailOpen), so a mismatch just means "not loaded yet"
+      if (state.wrangler.open && String(state.wrangler.id) === id) { html = commsWranglerPopupHtml(); w = 380; cls += ' wrangler-dock wr-pop'; }
+    } else {
+      const t = commsThreadsFor(cat).find((x) => String(x.customerId) === id) || null;
+      html = commsPopupHtml(cat, t, id);
+    }
+    if (html) {
+      const node = el('div', cls);
+      node.innerHTML = html;
+      if (cat === 'team') node.dataset.drop = 'chat';   // drag a record in = tag it into the chat (dock parity)
+      host.appendChild(node); place(node, tb, w);
+      const feed = node.querySelector('.cp-feed, .wr-feed'); if (feed) feed.scrollTop = feed.scrollHeight;
+    }
+  }
+  if (sess.menuOpen && (!COMMS_CAT_META[cat].channel || commsOnline())) {
+    const at = document.querySelector('.comms-rail .js-comms-all');
+    if (at) { const node = el('div', 'comms-pop comms-menu'); node.innerHTML = commsMenuHtml(cat); host.appendChild(node); place(node, at, 340); }
+  }
+}
+/* ── actions ─────────────────────────────────────────────────────────────── */
+/* Sweep a category's window off the rail when the rail leaves it (chip re-click,
+   sibling chip, or any cross-category open — the single-open law's broom). */
+function commsLeaveCat(cat) {
+  if (cat === 'wrangler' && state.wrangler.open && !document.body.classList.contains('is-phone')) {
+    wranglerRailSnapshot(); state.wrangler.open = false; state.wrangler.min = false;
+  }
+}
+function commsToggleCat(cat) {
+  const phone = document.body.classList.contains('is-phone');
+  if (phone && (cat === 'team' || cat === 'wrangler')) {
+    // phones have no rail — these chips keep bridging to the bottom-sheet docks (mobile reflow rides later)
+    if (cat === 'team') { state.chat.open = !state.chat.open; return render(); }
+    if (state.wrangler.open) { wranglerRailSnapshot(); state.wrangler.open = false; return render(); }
+    return wranglerNewChat();
+  }
+  const rail = state.commsRail;
+  if (rail.cat === cat) {                                // same chip again → sweep the rail clean
+    rail.cat = null; commsLeaveCat(cat);
+    saveCommsRail(); return render();
+  }
+  const prev = rail.cat;
+  rail.cat = cat; if (prev) commsLeaveCat(prev);
+  if (COMMS_CAT_META[cat].channel) refreshCommsThreads();
+  // summon the last session — its remembered LAST-open conversation is the ONE window restored
+  const s = rail.sessions[cat];
+  if (cat === 'team' && s.lastOpen) {
+    const c = chatById(String(s.lastOpen));
+    if (c && !commsIsEnded(c.id, 'team', commsChatLastAt(c))) state.chat.activeId = c.id;
+    else s.lastOpen = null;
+  }
+  if (cat === 'wrangler' && s.lastOpen) {
+    const idw = String(s.lastOpen);
+    if (String(state.wrangler.id) === idw) state.wrangler.open = true;
+    else if ((state.wranglerRail || []).some((c) => String(c.id) === idw)) { saveCommsRail(); return wranglerRailOpen(idw); }
+    else s.lastOpen = null;
+  }
+  saveCommsRail(); render();
+}
+function commsToggleTab(id) {
+  const cat = state.commsRail.cat, s = commsSess(); if (!s) return;
+  id = String(id);
+  if (String(s.lastOpen) === id) {                       // the open window's tab → tuck it away
+    s.lastOpen = null;
+    if (cat === 'wrangler') commsLeaveCat('wrangler');
+    saveCommsRail(); return render();
+  }
+  if (cat === 'team') return openChat(id);               // rejoin + seen + rail routing, one funnel
+  if (cat === 'wrangler') return commsOpenWrangler(id);
+  s.lastOpen = id; commsFetchMsgs(id);
+  saveCommsRail(); render();
+}
+function commsHideTab(id) {   // the tab ✕ HIDES from the rail only — it never ends a conversation
+  const cat = state.commsRail.cat, s = commsSess(); if (!s) return;
+  id = String(id);
+  if (COMMS_CAT_META[cat].channel) s.tabs = s.tabs.filter((x) => String(x) !== id);
+  else { s.hidden = s.hidden || []; if (!s.hidden.includes(id)) s.hidden.push(id); }   // team/wrangler tabs derive from their stores — hide per device
+  if (String(s.lastOpen) === id) { s.lastOpen = null; if (cat === 'wrangler') commsLeaveCat('wrangler'); }
+  saveCommsRail(); render();
+}
+/* Open (or resurrect — conversations never really end) a conversation onto the rail
+   in the right category, window up. Entry: the R20 menu, the ALL list, the customer
+   profile's Comms section, and the team/wrangler tab clicks. Single-open: landing
+   here closes whatever window was up (lastOpen replaces; category switch sweeps). */
+function commsOpenConv(cat, id) {
+  if (cat === 'team') return openChat(String(id));
+  if (cat === 'wrangler') return commsOpenWrangler(String(id));
+  const meta = COMMS_CAT_META[cat]; if (!meta || !meta.channel) return;
+  commsUnend(id, meta.channel);                          // any new open resurrects an ended thread (phone-contact model)
+  const rail = state.commsRail;
+  if (rail.cat !== cat) { commsLeaveCat(rail.cat); rail.cat = cat; }
+  const s = rail.sessions[cat];
+  if (!s.tabs.some((x) => String(x) === String(id))) s.tabs.push(String(id));
+  s.lastOpen = String(id); s.menuOpen = false;
+  saveCommsRail(); refreshCommsThreads(); commsFetchMsgs(id); render();
+  if (!commsOnline()) toast('Connect to the backend to wrangle customer threads.');
+}
+// Open/resurrect a Mr. Wrangler conversation onto the rail (live chat or a §18g snapshot).
+function commsOpenWrangler(id) {
+  id = String(id);
+  commsUnend(id, 'wrangler');
+  if (String(state.wrangler.id) === id) {
+    const rail = state.commsRail;
+    if (rail.cat !== 'wrangler') { commsLeaveCat(rail.cat); rail.cat = 'wrangler'; }
+    const s = rail.sessions.wrangler;
+    state.wrangler.open = true;
+    s.lastOpen = id; s.menuOpen = false;
+    s.hidden = (s.hidden || []).filter((x) => String(x) !== id);
+    saveCommsRail(); return render();
+  }
+  wranglerRailOpen(id);                                  // loads the snapshot → openWranglerDock routes it onto the rail
+}
+// The ALL menu's + New chat (D9): team reuses newChat(), wrangler reuses wranglerNewChat().
+function commsNewChat() {
+  const cat = state.commsRail.cat;
+  if (cat === 'team') { const c = newChat(); return openChat(c.id); }
+  if (cat === 'wrangler') return wranglerNewChat();
+}
+function commsEndConv(id, cat) {
+  cat = cat || state.commsRail.cat;
+  id = String(id);
+  const s = state.commsRail.sessions[cat];
+  if (cat === 'team') {
+    commsEnd(id, 'team');                                // client-side, per device — a newer message resurrects
+    if (String(s.lastOpen) === id) s.lastOpen = null;
+    if (String(state.chat.activeId) === id) state.chat.activeId = null;
+    saveCommsRail(); render();
+    toast('Chat ended — a new message rounds it back up.');
+    return;
+  }
+  if (cat === 'wrangler') {
+    const w = state.wrangler;
+    if (String(w.id) === id) {                           // snapshot FIRST, then end (ended-at > snapshot ts keeps it ended)
+      wranglerRailSnapshot();
+      w.open = false; w.min = false; w.id = null; w.messages = []; w.reqNumber = null; w.reqTitle = null; w.reqUrl = null;
+    }
+    commsEnd(id, 'wrangler');
+    if (String(s.lastOpen) === id) s.lastOpen = null;
+    saveCommsRail(); render();
+    toast('Conversation ended — the transcript stays stored.');
+    return;
+  }
+  const meta = COMMS_CAT_META[cat]; if (!meta || !meta.channel) return;
+  commsEnd(id, meta.channel);                            // client-side v1 — the server 'ended' flag is Phase B
+  s.tabs = s.tabs.filter((x) => String(x) !== id);
+  if (String(s.lastOpen) === id) s.lastOpen = null;
+  saveCommsRail(); render();
+  toast('Conversation ended — the history stays on the profile.');
+}
+function commsFromMenu(btn) {   // D7 — pick which connected address the email goes out as
+  const id = btn.dataset.cust, aliases = _commsAliases || [];
+  const sel = commsFromSel.get(String(id)) || aliases[0] || '';
+  openDropdown(btn, aliases.map((a) => `<button class="dd-item js-comms-from-pick${a === sel ? ' on' : ''}" data-cust="${esc(id)}" data-from="${esc(a)}">${esc(a)}</button>`).join(''), { align: 'left' });
+}
+async function commsSend(customerId) {
+  const cat = state.commsRail.cat;
+  const meta = COMMS_CAT_META[cat]; if (!meta || !meta.channel) return;
+  const key = cat + '|' + customerId;
+  const text = (commsDrafts.get(key) || '').trim();
+  if (!text || commsSending.has(key)) return;
+  if (!commsOnline()) { toast('Connect to the backend to wrangle customer threads.'); return; }
+  const cust = IDX.customer.get(customerId);
+  const from = meta.channel === 'email' ? (commsFromSel.get(String(customerId)) || ((_commsAliases || [])[0] || '')) : '';
+  commsSending.add(key); render();
+  let r; try { r = await backendCall('sendCustomerMessage', { channel: meta.channel, entity: 'customer', recId: customerId, customerId, template: 'freeform', text, from }); }
+  catch (e) { r = { ok: false, reason: 'network' }; }
+  commsSending.delete(key);
+  if (r && r.ok) {
+    commsDrafts.delete(key);
+    // optimistic feed + thread rollup; the next commsThreads poll re-truths it from the server log
+    const now = new Date().toISOString();
+    const entry = commsMsgs.get(String(customerId));
+    if (entry && Array.isArray(entry.messages)) entry.messages.push({ msgId: r.msgId, channel: meta.channel, direction: 'outbound', status: 'sent', when: now, body: text, maskedTo: r.maskedTo || '', fromUsed: r.fromUsed || '' });
+    if (commsThreads) {
+      let t = commsThreads.find((x) => String(x.customerId) === String(customerId));
+      if (!t) { t = { customerId: String(customerId), count: 0 }; commsThreads.push(t); }
+      t.count = (t.count || 0) + 1;
+      t.lastWhen = now; t.lastChannel = meta.channel; t.lastDirection = 'outbound'; t.lastSnippet = text.slice(0, 80); t.lastStatus = 'sent';
+      if (t.channels && t.channels[meta.channel]) { const ch = t.channels[meta.channel]; ch.lastWhen = now; ch.lastDirection = 'outbound'; ch.lastSnippet = text.slice(0, 80); ch.lastStatus = 'sent'; }
+      else if (t.channels) t.channels[meta.channel] = { lastWhen: now, lastDirection: 'outbound', lastSnippet: text.slice(0, 80), lastStatus: 'sent' };
+    }
+    if (cust) logAction(cust, `${meta.channel === 'sms' ? 'Texted' : 'Emailed'} ${r.maskedTo || 'customer'}`);   // History stays stamped, masked (spec Q-8b)
+    refreshCommsThreads(true);
+    haptic([12, 30, 12]);
+    render();
+    return;
+  }
+  render();
+  const why = {   // server refusal → say what's wrong and where to fix it (R19 voice)
+    'no-phone': 'No phone on file — add one on the account.',
+    'no-email': 'No email on file — add one on the account.',
+    'opted-out': `This customer has opted out of ${meta.channel === 'sms' ? 'texts' : 'email'} — hard stop.`,
+    'not-configured': 'SMS isn’t wired yet — Mocean keys go in the backend Script Properties.',
+    'cap': 'Daily send cap reached — raise SMS_DAILY_CAP if this run is legit.',
+    'quiet-hours': 'Quiet hours (8pm–8am) — the message can go out in the morning.',
+    'isolation': 'Record/customer mismatch — reload and try again.',
+    'provider': 'The send failed server-side — check the line and try again.',
+    'empty': 'Nothing to send — type a message first.',
+    'network': 'Couldn’t reach the backend — try again.',
+  }[r && r.reason] || 'Didn’t send — try again.';
+  toast(why);
+}
+/* ── customer profile: the compact Comms section (one row per channel) ────── */
+function commsCustSectionHtml(c) {
+  if (!commsOnline() || !c || !c.customerId) return '';
+  const entry = commsFetchMsgs(c.customerId);           // lazy fetch when the card opens; 30s cache per render cycle
+  const msgs = (entry && entry.messages) || [];
+  if (!msgs.length) return '';
+  const ended = commsEndedSet();
+  const row = (channel) => {
+    const list = msgs.filter((m) => m.channel === channel);
+    if (!list.length) return '';
+    const last = list.reduce((a, b) => (String(a.when || '') > String(b.when || '') ? a : b));
+    const me = last.direction !== 'inbound';
+    const st = me ? (last.status === 'failed' ? 'red' : 'green') : 'red';
+    const isEnded = ended.has(String(c.customerId) + '|' + channel);
+    return `<div class="kv comms-line"><span class="cp-dot c-${st}" aria-hidden="true"></span>${badge(channel === 'sms' ? 'Text' : 'Email', 'gray')}<span class="comms-snip">${esc((me ? 'you: ' : 'them: ') + (last.body || last.subject || ''))}</span>${actionPill('commit', 'Open', { js: 'js-comms-copen', h: 24, data: { cust: c.customerId, channel } })}${isEnded ? '' : ghostPill('End', { js: 'js-comms-cend', data: { cust: c.customerId, channel }, tip: 'End it — the history stays right here' })}</div>`;
+  };
+  const rows = row('sms') + row('email');
+  return rows ? `<div class="section comms-sec"><h4>Comms</h4><div class="fieldstack">${rows}</div></div>` : '';
+}
+
+
 boot();
 
 // expose for console/debugging + future DATA WIRING

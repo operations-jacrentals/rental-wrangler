@@ -1,4 +1,26 @@
-# Backend deploy queue — ready the moment auth is unblocked (2026-07-06)
+# Backend deploy queue — DEPLOYED (2026-07-06 late session); doc kept as the deploy runbook
+
+> **STATUS UPDATE (2026-07-06 ~23:00):** the queue below IS LIVE (perfReport + unitDaily
+> + the trigger installed by Jac), plus the comms pipe (sendCustomerMessage SMS+email,
+> messagesFor, commsAliases, adminSetProps) — prod versions v66–v70. Deploys now run
+> **via the Apps Script REST API** (SA + impersonation, versions.create → deployments.update
+> with full deploymentConfig, immediate JSON probe) — see /clasp SKILL.md §AMENDED. The
+> editor click is the FALLBACK/recovery path, no longer the only go-live.
+
+## ✅ DEPLOYED — team-chat privacy (2026-07-08, Jac editor deploy)
+- **What:** `getChats_` / `setChats_` replaced with scoped + authorized versions (+ helpers
+  `chatCanSee_` / `chatMergeMsgs_` / `chatMergeSeen_` / `chatAuthorizeWrite_`). Team-chat
+  membership is now a real server-side boundary (reads scoped to admin+members; writes
+  authorized — a non-member can't inject/tamper, only self-leave + own view-state). Spliced
+  from `docs/handoffs/team-chat-privacy-backend.gs` (adapted to the live `tryLock_`).
+- **Deploy:** SA `push` HEAD (service account) → Jac editor **New version** deploy. **Verified:**
+  auth-rejection POST → `{"ok":false,"error":"unauthorized"}` (anonymous access intact, JSON not
+  403/HTML); `getChats` with a bad password → `unauthorized` (gated, no chats leaked).
+- **Client side:** shipped on `claude/internal-chat-updates-vq6p7b` (sends `me`/`rosterId`;
+  prunes scoped-out chats live). Back-compat: absent `body.me` = old client → prior behavior,
+  so the current live frontend keeps working; scoping activates once the new frontend ships.
+- **Caveat:** identity is client-asserted (gated behind the team password) — a real filter,
+  not a crypto boundary; true per-person privacy needs per-user auth.
 
 ## ✅ STATUS 2026-07-06: queue DEPLOYED (prod version 62)
 - **perfReport** — DEPLOYED. Router + `perfReport_` handler live; verified end-to-end (a
