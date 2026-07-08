@@ -3110,6 +3110,23 @@ body { font-variant-numeric: tabular-nums; }
   border: 1px solid #b9d2f7; background: #eef4fe; border-radius: 6px; padding: 0 5px; margin-left: 5px; cursor: pointer; }
 .pr-line-src:hover { background: #dfeaff; }
 .pr-po-edit { font-size: 9.5px; color: #1864d6; border: 1px dashed #b9d2f7; border-radius: 5px; padding: 0 5px; margin-left: 4px; cursor: pointer; }
+/* §3.4 — the transient +Invoice DROP pill: create a fresh invoice for this customer from a
+   released rental/WO/unit. Inherits the R5b blue-add (.anchor) look; hidden until a valid
+   lineable drag OR an invoice menu-link is in flight; a full-width drop zone in the section.
+   Themes for free via tokens (dark/light/ranch). */
+.inv-add-pill { display: none; width: 100%; justify-content: center; margin-top: 7px; }
+.inv-add-pill svg { width: 15px; height: 15px; }
+body.dragging[data-drag="rentals"] .inv-add-pill,
+body.dragging[data-drag="units"] .inv-add-pill,
+body.dragging[data-drag="workOrders"] .inv-add-pill,
+.inv-add-pill.linking-show { display: inline-flex; }
+.inv-add-pill.drop-ok { box-shadow: 0 0 0 1px var(--accent-line); }
+.inv-add-pill.drop-hot { border-color: var(--accent) !important; color: var(--accent) !important;
+  box-shadow: 0 0 0 2px var(--accent-line), 0 0 26px -4px rgba(255,122,26,.5) !important; }
+/* embedded invoice rows / the expanded invoice as drop targets (they aren't `.row`/`.card`) */
+.inv-row.drop-ok, .inv-open.drop-ok { border-color: var(--accent-line); box-shadow: 0 0 0 1px var(--accent-line); cursor: copy; }
+.inv-row.drop-hot, .inv-open.drop-hot { border-color: var(--accent) !important;
+  box-shadow: 0 0 0 2px var(--accent-line), 0 0 26px -4px rgba(255,122,26,.5) !important; }
 @media (prefers-reduced-motion: reduce) { .inv-row { transition: none; } }
 
 /* R22 DATE FIELD + inline calendar (Jac 2026-06-12) — ONE date picker everywhere

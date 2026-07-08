@@ -3735,9 +3735,18 @@ function customerInvoicesSection(c, cs) {
       + `<span class="ir-chev">${I.chev}</span>`
       + `</div>`;
   }).join('') : '<div class="inv-empty muted">No invoices for this customer yet.</div>';
-  return `<div class="section inv-sec"><h4>Invoices</h4>`
+  // §3.4 — the standalone Invoice card is retired, so invoice-building re-homes HERE: the
+  // rows + the expanded invoice are desktop drag drop-targets, and this transient +Invoice
+  // pill creates a fresh invoice for THIS customer from a released rental/WO/unit (or a tap
+  // while menu-linking on a phone). Hidden until a valid drag / an invoice-link is in flight
+  // (see .inv-add-pill in style.css); routes through the same money builders drops use.
+  const linkingInv = !!(state.linking && state.linking.targetCard === 'invoices');
+  const addPill = addBtn('Invoice', { link: true, icon: CARD_ICON.invoices, h: 26,
+    js: 'inv-add-pill js-inv-add-pill' + (linkingInv ? ' linking-show' : ''), data: { cust: c.customerId } });
+  return `<div class="section inv-sec" data-cust="${esc(c.customerId)}"><h4>Invoices</h4>`
     + (invs.length ? invSummaryStrip(invs) : '')
     + `<div class="inv-scroll">${body}</div>`
+    + addPill
     + `</div>`;
 }
 /* ── F5 — enrollment / cancel / reactivate orchestration ──────────────────────────
@@ -13184,6 +13193,10 @@ const DRAG = { active: false, armed: null, payload: null, point: { x: 0, y: 0 },
 // units/rentals/customers/invoices link via DROP_MATRIX; categories + serviceOrders are
 // drag sources ONLY for chat-tagging (they're not in DROP_MATRIX, so no record links). §17
 const DRAG_SOURCES = new Set(['units', 'rentals', 'customers', 'invoices', 'categories', 'serviceOrders']);
+// §3.4 — payloads that produce an invoice LINE (so they can create a fresh invoice via
+// the embedded +Invoice drop pill). A customer→invoice link is a re-assignment, not a
+// line, so it drops on an invoice ROW only — never the create pill.
+const INV_LINEABLE = new Set(['rentals', 'units', 'workOrders']);
 let dragLayer = null, dragArc = null, chatDropPad = null, zipZones = null, zipDwell = null, zipCooldown = false;
 
 /* DROP_MATRIX — payload entity → { target entity: validator(srcRec, tgtRec) }.
@@ -13273,6 +13286,22 @@ function linkActionsFor(srcCard, rec) {
 function enterLinking(srcCard, srcId, targetCard) {
   state.linking = { srcCard, srcId, targetCard };
   const sess = activeSession();
+  // §3.4 — invoices are no longer a standalone card (COLUMN_OF has no 'invoices'), so the
+  // old COLUMN_OF reveal is dead for them. Reveal the SOURCE's customer instead and open
+  // it in Customer Details, where the embedded Invoices section (rows + the +Invoice create
+  // pill) is the pick surface: tap an invoice row → confirm; tap +Invoice → create + link.
+  if (targetCard === 'invoices') {
+    const custId = linkInvoiceCustomer(srcCard, recOf(srcCard, srcId));
+    if (custId != null && recOf('customers', custId)) {
+      if (sess.cols) sess.cols.right = 'customers';
+      const idx = COLUMNS.findIndex((c) => c.id === 'right'); if (idx >= 0) state.mobileCol = idx;
+      const ccs = sess.cards.customers; if (ccs) { ccs.mode = 'standard'; ccs.recId = custId; ccs.recType = null; ccs.search = ''; }
+      render();
+      setTimeout(() => { try { document.querySelector('.card[data-card="customers"] .inv-sec')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) {} }, 40);
+      return;
+    }
+    state.linking = null; toast('Assign a customer to this record first, then bill it to an invoice (§7.5).'); render(); return;
+  }
   const col = COLUMN_OF[targetCard];
   if (sess.cols && col) { sess.cols[col] = targetCard; const idx = COLUMNS.findIndex((c) => c.id === col); if (idx >= 0) state.mobileCol = idx; }   // §M1 reveal + flip the phone column
   const cs = sess.cards[targetCard];
@@ -13280,11 +13309,34 @@ function enterLinking(srcCard, srcId, targetCard) {
   render();
   setTimeout(() => { try { document.querySelector(`.card[data-card="${targetCard}"] .card-search, .card[data-card="${targetCard}"] input`)?.focus(); } catch (e) {} }, 40);
 }
+/* §3.4 — the customer whose embedded invoices are the pick surface when menu-linking a
+   rental / WO / unit onto an invoice (invoices are no longer a card). */
+function linkInvoiceCustomer(srcCard, rec) {
+  if (!rec) return null;
+  if (srcCard === 'rentals') return rec.customerId || null;
+  if (srcCard === 'workOrders') { if (rec.customerId) return rec.customerId; const ar = activeRentalForUnit(rec.unitId); return ar ? ar.customerId : null; }
+  if (srcCard === 'units') { const w = unbilledOpenWOForUnit(rec.unitId); if (w && w.customerId) return w.customerId; const ar = activeRentalForUnit(rec.unitId); return ar ? ar.customerId : null; }
+  if (srcCard === 'customers') return rec.customerId;
+  return null;
+}
+/* §3.4 — tap the embedded +Invoice pill while menu-linking = create a fresh invoice for
+   this customer and bill the linking source onto it (mirrors the desktop +Invoice drop). */
+function linkCreateInvoice(custId) {
+  const L = state.linking; if (!L) return;
+  const p = { entity: L.srcCard, id: L.srcId, rec: recOf(L.srcCard, L.srcId) };
+  state.linking = null;
+  if (!p.rec) { render(); return; }
+  dropCreateInvoiceWith(p, custId);
+}
 function cancelLinking() { if (state.linking) { state.linking = null; render(); } }
 function startUnitWorkOrder(unitId) { pillTo('units', unitId); }   // §4a — "+ Work Order" just lands on the unit (WO creation lives on the unit's card)
 /* The hazard-stripe banner shown atop the target card while linking. */
 function linkBanner(card) {
-  const L = state.linking; if (!L || L.targetCard !== card) return '';
+  const L = state.linking; if (!L) return '';
+  // §3.4 — an invoice link is picked on the CUSTOMERS card (embedded invoices), not an
+  // 'invoices' card, so surface the banner there too.
+  const onInvoiceCust = L.targetCard === 'invoices' && card === 'customers';
+  if (L.targetCard !== card && !onInvoiceCust) return '';
   const srcRec = recOf(L.srcCard, L.srcId);
   const srcT = srcRec ? detailTitle(L.srcCard, srcRec) : String(L.srcId);
   const tgt = LINK_TARGET_LABEL[L.targetCard] || L.targetCard;
@@ -13566,6 +13618,29 @@ function dropTargetAt(x, y, under) {
     }
     return null;
   }
+  // §3.4 — the embedded Invoices section (inside the OPEN customer card) is the invoice
+  // drop-target now: an inv-row / the expanded .inv-open resolves to THAT invoice; the
+  // transient +Invoice pill resolves to a NEW invoice for the section's customer. Keyed
+  // off the .inv-sec's data-cust, NOT a data-card="invoices" (that card is gone).
+  if (accept.invoices) {
+    const addPill = n.closest('.js-inv-add-pill');
+    if (addPill && INV_LINEABLE.has(DRAG.payload.entity)) {
+      const custId = addPill.dataset.cust;
+      if (recOf('customers', custId) && linkActionPossible(DRAG.payload.entity, DRAG.payload.rec, 'invoices'))
+        return { newInvoice: true, custId, node: addPill };
+    }
+    const invEl = n.closest('.inv-row, .inv-open');
+    if (invEl) {
+      const sec = invEl.closest('.inv-sec');
+      const custId = invEl.dataset.cust || (sec && sec.dataset.cust);
+      let invId = invEl.dataset.rec;
+      if (!invId && custId && state.custInvOpen) invId = state.custInvOpen[custId];   // the expanded .inv-open carries no data-rec
+      const inv = invId ? recOf('invoices', invId) : null;
+      if (inv && !(DRAG.payload.entity === 'invoices' && String(invId) === String(DRAG.payload.id))
+          && accept.invoices(DRAG.payload.rec, inv)) return { entity: 'invoices', id: invId, rec: inv, node: invEl };
+      return null;   // over the section but not a valid invoice target → dead (never fall through to the customer card)
+    }
+  }
   const cardNode = n.closest('.card');
   if (cardNode && accept[cardNode.dataset.card]) {
     const dc = cardNode.dataset.card;
@@ -13619,6 +13694,23 @@ function reapplyDragDecor() {
     const rec = recOf(dc, cs.recId);
     if (rec && accept[dc](DRAG.payload.rec, rec)) cardNode.classList.add('drop-ok');
   });
+  // §3.4 — glow the embedded invoice rows / expanded invoice / +Invoice create pill in
+  // the open customer card (they aren't `.row`/`.card[data-card]`, so the loops above miss them).
+  if (accept.invoices) {
+    document.querySelectorAll('.inv-sec').forEach((sec) => {
+      const custId = sec.dataset.cust;
+      sec.querySelectorAll('.inv-row, .inv-open').forEach((eln) => {
+        let invId = eln.dataset.rec; if (!invId && custId && state.custInvOpen) invId = state.custInvOpen[custId];
+        const inv = invId ? recOf('invoices', invId) : null;
+        if (inv && !(DRAG.payload.entity === 'invoices' && String(invId) === String(DRAG.payload.id))
+            && accept.invoices(DRAG.payload.rec, inv)) eln.classList.add('drop-ok');
+      });
+      if (INV_LINEABLE.has(DRAG.payload.entity) && custId && recOf('customers', custId)
+          && linkActionPossible(DRAG.payload.entity, DRAG.payload.rec, 'invoices')) {
+        const pill = sec.querySelector('.js-inv-add-pill'); if (pill) pill.classList.add('drop-ok');
+      }
+    });
+  }
 }
 /* ONE rAF loop per drag: a single elementFromPoint per frame feeds BOTH the
    hot-target highlight and the edge auto-scroll — pointermove never hit-tests,
@@ -13740,9 +13832,31 @@ function endDrag({ rerender } = {}) {
 /* ── DROP DISPATCH — route into §16, then say exactly what happened (toast) +
    R19-flash the newly linked pill on whatever card shows it (row/card fallback). ── */
 function dropFlash(sel, fallbackSel) { if (document.querySelector(sel)) attnFlash(sel); else if (fallbackSel && document.querySelector(fallbackSel)) attnFlash(fallbackSel); }
+/* §3.4 — a rental / WO / unit released on the customer card's transient +Invoice pill (or
+   the +Invoice tap while menu-linking): create a fresh invoice for THAT customer, bill the
+   payload onto it as line 1 via the SAME money builders the inv-row drops + tap buttons use
+   (no new charge/gate logic here — they re-fire their own §7.5/§7.6 gates), then SNAP to it
+   (openInvoice reveals the customer + expands the invoice inside Customer Details). Never
+   strands an empty invoice: if nothing bills (a gate blocked it), the draft is removed. */
+function dropCreateInvoiceWith(p, custId) {
+  const c = recOf('customers', custId); if (!c) return;
+  const id = nextInvoiceId();
+  const inv = { invoiceId: id, customerId: custId, rentalIds: [], date: TODAY_ISO, dueDate: dueForCustomer(custId), po: '', amountPaid: 0, lineItems: [], mock: true };
+  DATA.invoices.push(inv); IDX.invoice.set(id, inv); reindex('invoices', inv);
+  logAction(inv, `Invoice created for ${c.name}`);
+  if (p.entity === 'rentals') addRentalLineToInvoice(id, p.id);
+  else if (p.entity === 'workOrders') billWOToInvoiceExplicit(p.id, id);
+  else if (p.entity === 'units') { const w = unbilledOpenWOForUnit(p.rec.unitId); if (w) billWOToInvoiceExplicit(w.woId, id); }
+  if (!(inv.lineItems || []).length) {   // a gate blocked the bill (its own toast fired) — don't leave an empty draft
+    const idx = DATA.invoices.indexOf(inv); if (idx >= 0) DATA.invoices.splice(idx, 1); IDX.invoice.delete(id); return;
+  }
+  toast(`New invoice ${invoiceShort(id)} for ${c.name}.`);
+  openInvoice(id);   // §3.4 — snap to the new invoice, expanded in the embedded section
+}
 function dispatchDrop(p, t) {
   if (t.newChat) return chatStartFromDrop(p);                        // §17 — bottom-right pad = start a NEW chat
   if (t.chat) return p.chatEl ? chatAddTag({ ...p.chatEl }) : chatTagFromPayload(p);   // dock = tag into the active chat
+  if (t.newInvoice) return dropCreateInvoiceWith(p, t.custId);       // §3.4 — the embedded +Invoice pill: fresh invoice for this customer
   const pair = `${p.entity}>${t.entity}`;
   // UNIT ↔ RENTAL — ADD the unit to the rental (a Rental is an EVENT, §20);
   // gates fire per unit inside linkUnitToRental.
@@ -13998,7 +14112,8 @@ function onClick(e) {
   // time); the status pill toggles its action menu; the header ✕ collapses. All view-local.
   if (closest('.js-inv-statmenu')) { e.stopPropagation(); const b = closest('.js-inv-statmenu'); const cu = b.dataset.cust, rec = b.dataset.rec; state.custInvMenu = state.custInvMenu || {}; state.custInvMenu[cu] = (state.custInvMenu[cu] === rec) ? null : rec; return render(); }
   if (closest('.js-inv-collapse')) { e.stopPropagation(); const cu = closest('.js-inv-collapse').dataset.cust; if (state.custInvOpen) state.custInvOpen[cu] = null; if (state.custInvMenu) state.custInvMenu[cu] = null; return render(); }
-  if (closest('.js-inv-row')) { e.stopPropagation(); const b = closest('.js-inv-row'); const cu = b.dataset.cust, rec = b.dataset.rec; state.custInvOpen = state.custInvOpen || {}; state.custInvOpen[cu] = (state.custInvOpen[cu] === rec) ? null : rec; if (state.custInvMenu) state.custInvMenu[cu] = null; return render(); }
+  if (closest('.js-inv-add-pill')) { e.stopPropagation(); const b = closest('.js-inv-add-pill'); if (state.linking && state.linking.targetCard === 'invoices') { e.preventDefault(); return linkCreateInvoice(b.dataset.cust); } return; }   // §3.4 — otherwise drag-only (hidden except mid-drag)
+  if (closest('.js-inv-row')) { e.stopPropagation(); const b = closest('.js-inv-row'); if (state.linking && state.linking.targetCard === 'invoices' && b.dataset.rec) { e.preventDefault(); return openLinkConfirm(b.dataset.rec); }   /* §3.4 — pick this invoice as the menu-link target */ const cu = b.dataset.cust, rec = b.dataset.rec; state.custInvOpen = state.custInvOpen || {}; state.custInvOpen[cu] = (state.custInvOpen[cu] === rec) ? null : rec; if (state.custInvMenu) state.custInvMenu[cu] = null; return render(); }
   if (closest('.js-pay-invoice')) { e.stopPropagation(); return openPayInvoice(closest('.js-pay-invoice').dataset.rec); }
   if (closest('.js-pay-pick')) { e.stopPropagation(); if (state.overlay) { const b = closest('.js-pay-pick'); state.overlay.selectedCardId = b.dataset.card || b.dataset.bank; renderOverlay(); } return; }
   if (closest('.js-pay-method')) { e.stopPropagation(); if (state.overlay) { const nb = document.querySelector('.overlay .js-check-num'); if (nb) state.overlay.checkNum = nb.value.trim(); state.overlay.method = closest('.js-pay-method').dataset.method; state.overlay.error = ''; renderOverlay(); } return; }
@@ -17152,8 +17267,10 @@ function billWOToInvoice(woId) {
   let custId = w.customerId;
   if (!custId) { const ar = activeRentalForUnit(w.unitId); custId = ar?.customerId || null; }
   if (!custId) {
-    // no bill-to customer (unit isn't on an active rental) — bill by dragging instead
-    toast('No customer to bill — drag the unit onto the customer’s invoice instead (§7.6).');
+    // no bill-to customer (unit isn't on an active rental) — there's no customer to bill,
+    // so put the unit on a customer's rental first, then bill it (§3.4: invoices live in
+    // Customer Details now — the old "drag the unit onto the invoice" path needs a customer).
+    toast('No customer to bill this work order — put its unit on a customer’s rental first, then bill it (§7.6).');
     return;
   }
   let inv = DATA.invoices.find((i) => i.customerId === custId && !['Paid', 'Refunded'].includes(invoiceTotals(i).status));
