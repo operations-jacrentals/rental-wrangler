@@ -92,6 +92,13 @@ try {
     ok(T.rentalStatusDisplay({ units: [{ status: 'On Rent' }, { status: 'On Rent' }] }).mixed === false, 'uniform units → not mixed');
     const mix = T.rentalStatusDisplay({ startDate: today, units: [{ status: 'On Rent' }, { status: 'Reserved' }] });
     ok(mix.mixed === true && /On Rent/.test(mix.label) && /(Today|Reserved)/.test(mix.label), `divergent units → mix label ("${mix.label}")`);
+    // 4b) §10 overdue-out relabel (#509, approved by Jac): a unit still out ('On Rent'/'End
+    //     Rent') past its return date DISPLAYS "Overdue"; a future window keeps its word;
+    //     display-only, so the stored key is untouched.
+    ok(T.rentalStatusDisplay({ endDate: '2000-01-01', units: [{ status: 'On Rent' }] }).label === 'Overdue', 'On Rent past return date → "Overdue" label');
+    ok(T.rentalStatusDisplay({ endDate: '2000-01-01', units: [{ status: 'On Rent' }] }).key === 'On Rent', 'overdue relabel is display-only — stored key stays On Rent');
+    ok(T.rentalStatusDisplay({ endDate: '2099-01-01', units: [{ status: 'On Rent' }] }).label === 'On Rent', 'On Rent within window keeps "On Rent"');
+    ok(T.rentalStatusDisplay({ endDate: '2000-01-01', units: [{ status: 'End Rent' }] }).label === 'Overdue', 'End Rent past return date → "Overdue" label');
 
     // 5) rentalMirrorStatus — an active unit beats a terminal one (keeps ACTIVE_RENTAL true)
     ok(T.rentalMirrorStatus({ units: [{ status: 'Returned' }, { status: 'On Rent' }] }) === 'On Rent', 'mirror: active beats terminal');
@@ -719,6 +726,26 @@ try {
       ok(T.__state.wrangler.min === true, 'WR-reserve: dock minimizes after the booking so the user lands on the rental');
     }
 
+    // 12m2) SERVICE SNOOZE (backlog #43, Jac 2026-07-07): snooze SILENCES the alarm
+    // (topServiceForUnit skips it), wake restores it, completing the task clears it.
+    {
+      const su = { unitId: 'U-SNZ1', name: 'Snooze Rig', categoryId: T.DATA.categories[0].categoryId, assignedMechanic: '', currentHours: 900, inspectionStatus: 'Ready', fleetStatus: 'Active', purchaseHours: 0, serviceCompletions: {} };
+      T.DATA.units.push(su); T.IDX.unit.set(su.unitId, su);
+      const top0 = T.topServiceForUnit(su);
+      ok(top0 && top0.status === 'past-due', 'snooze: fixture unit starts with a past-due top service');
+      T.snoozeService(su.unitId, top0.taskId, 7);
+      ok(T.svcSnoozedUntil(su, top0.taskId) > T.TODAY_ISO, 'snooze: 7-day snooze stamps a future until-date');
+      const top1 = T.topServiceForUnit(su);
+      ok(!top1 || top1.taskId !== top0.taskId, 'snooze: the snoozed task no longer drives the alarm (Jac: snooze silences)');
+      T.snoozeService(su.unitId, top0.taskId, null);
+      ok(T.topServiceForUnit(su)?.taskId === top0.taskId, 'snooze: wake restores the alarm');
+      T.snoozeService(su.unitId, top0.taskId, 14);
+      T.recordServiceCompletion(su.unitId, top0.taskId, 900);
+      ok(!T.svcSnoozedUntil(su, top0.taskId), 'snooze: completing the task clears its snooze');
+      ok((su.serviceLog || []).some((l) => l.taskId === top0.taskId), 'snooze: the completion itself logged normally');
+      T.__state.overlay = null;
+    }
+
     // 12n) Bring-them-to-it for ANY board (Jac) — wrFocusRecord jumps to the record wherever it lives.
     {
       const ven = T.DATA.vendors[0];
@@ -731,7 +758,8 @@ try {
       // MOBILE: it flips the phone's visible column to where the record lives (the bug Jac hit)
       ok(T.__state.mobileCol === 2, 'WR-focus (mobile): the phone column flips to the record (customers → right/2)');
       const wo = T.DATA.workOrders[0];
-      if (wo) { T.wrFocusRecord('workOrders', wo.woId); const sc = T.activeSession().cards.shop; ok(sc.mode === 'standard' && sc.recId === wo.woId && sc.recType === 'workOrders' && T.__state.mobileCol === 0, 'WR-focus: a shop record (work order) shows on the shop card + flips to the yard column'); }
+      // Shop retirement (Jac 2026-07-07): a work-order reference opens its OWNING UNIT on the Units card.
+      if (wo) { T.wrFocusRecord('workOrders', wo.woId); const uc = T.activeSession().cards.units; ok(uc.mode === 'standard' && uc.recId === wo.unitId && T.__state.mobileCol === 0, 'WR-focus: a work order opens its owning unit + flips to the yard column'); }
     }
 
     // 12o) Bookings auto-apply + a clickable "Open" link (Jac): startRental no longer needs the Apply tap,
@@ -1590,6 +1618,46 @@ try {
       T.IDX.customer.delete('C-EN');
       if (inv) { const ix = T.DATA.invoices.indexOf(inv); if (ix >= 0) T.DATA.invoices.splice(ix, 1); T.IDX.invoice.delete(inv.invoiceId); }
       T.__state.overlay = null;
+    }
+
+    // === units-fleet D3 — Sell a unit: sellUnit() sets the sale terms, and a SOLD
+    // unit's ACTUAL salePrice replaces the assumed bottomDollar residual in
+    // categoryStats' lifetime-ROI math (unsold units keep the assumed residual) ===
+    {
+      const cat = { categoryId: 'CAT-SELL-TEST', name: 'Sell Test Cat', bottomDollar: 1000 };
+      const uA = { unitId: 'U-SELL-A', categoryId: 'CAT-SELL-TEST', name: 'Unit A', trueCost: 5000, fleetStatus: 'Active' };
+      const uB = { unitId: 'U-SELL-B', categoryId: 'CAT-SELL-TEST', name: 'Unit B', trueCost: 5000, fleetStatus: 'Active' };
+      T.DATA.categories.push(cat); T.IDX.category.set('CAT-SELL-TEST', cat);
+      T.DATA.units.push(uA, uB); T.IDX.unit.set('U-SELL-A', uA); T.IDX.unit.set('U-SELL-B', uB);
+
+      // both unsold: no revenue/repair, $10,000 trueCost, residual = 2 × $1,000 bottomDollar → ROI -80%
+      const before = T.categoryStats(cat);
+      ok(before.roi === -80, `categoryStats: unsold units both use the assumed bottomDollar residual (roi=${before.roi}, expected -80)`);
+
+      T.sellUnit('U-SELL-B', '4000', '2026-07-01', 'Test buyer');
+      ok(uB.fleetStatus === 'Sold' && uB.salePrice === 4000 && uB.saleDate === '2026-07-01' && uB.soldNote === 'Test buyer', 'sellUnit: sets fleetStatus/salePrice/saleDate/soldNote on the unit');
+
+      // Unit B's residual is now its REAL $4,000 sale price (not the $1,000 assumed bottomDollar);
+      // Unit A (still unsold) keeps the assumed residual → total residual $5,000 → ROI -50%
+      const after = T.categoryStats(cat);
+      ok(after.roi === -50 && after.roi !== before.roi, `categoryStats: a Sold unit's ACTUAL salePrice replaces its assumed residual (roi=${after.roi}, expected -50)`);
+
+      T.DATA.units = T.DATA.units.filter((u) => u.unitId !== 'U-SELL-A' && u.unitId !== 'U-SELL-B');
+      T.DATA.categories = T.DATA.categories.filter((c) => c.categoryId !== 'CAT-SELL-TEST');
+      T.IDX.unit.delete('U-SELL-A'); T.IDX.unit.delete('U-SELL-B'); T.IDX.category.delete('CAT-SELL-TEST');
+    }
+
+    // === History money gate (units-fleet, Jac 2026-07-08) — histText() masks $ amounts
+    // in the History/audit log for non-money roles (client-side DISPLAY redaction only,
+    // same D1 bottomDollar philosophy); money-tier roles see amounts untouched. ===
+    {
+      T.setRole('driver');   // staff tier (1) — below money (2)
+      const masked = T.histText('Sold for $12,500 on Jul 1');
+      ok(/\$•••/.test(masked) && !/\$12,500/.test(masked), 'histText: non-money role masks a dollar amount in a History line');
+      ok(T.histText('Hours 1,265.9 HRS') === 'Hours 1,265.9 HRS', 'histText: non-$ numbers (hours, PO #s) are left untouched — no false-positive masking');
+      T.setRole('office');   // money tier (2) — amounts show normally
+      ok(T.histText('Sold for $12,500 on Jul 1') === 'Sold for $12,500 on Jul 1', 'histText: money-tier role sees the dollar amount unmasked');
+      T.setRole('');          // restore demo/no-role
     }
 
     return out;

@@ -30,19 +30,47 @@ call** — a CLI exchanging a refresh token can never satisfy it. **Do not spend
 re-running `clasp login` anywhere hoping it'll take — it won't, until the Workspace admin
 changes that policy (Admin Console → Security → Reauthentication).**
 
-**The working replacement: a service account (JWT auth, not subject to RAPT).**
+**The working replacement: a service account (JWT auth, not subject to RAPT) — for `push`
+ONLY. The go-live deploy happens in the Apps Script EDITOR** (learned the hard way
+2026-07-06 — see the ⛔ below).
 - Credential: the **`GAS_SA_KEY_B64`** env secret (same pattern as `CLASPRC_JSON_B64` — a
   base64'd service-account JSON key, set in the environment's Environment Variables).
-- Deploy tool: **`docs/handoffs/gas-deploy-service-account.mjs`** — calls the Apps Script
-  REST API directly (`projects.updateContent` = push, `projects.versions.create` +
-  `projects.deployments.update` = deploy to the SAME exec URL). No clasp involved.
-- **Full runbook + the current pending queue: `docs/handoffs/BACKEND-DEPLOY-QUEUE.md`.**
-  **This file lives on the `staging` branch, not `main`** — if you're on `main` and can't
-  find it, `git fetch origin staging && git checkout staging` first (a session got stuck
-  on exactly this on 2026-07-06).
-- Usage: `GAS_SA_KEY_B64=$GAS_SA_KEY_B64 node docs/handoffs/gas-deploy-service-account.mjs push`
-  then `... deploy "description"`. Same STOP-gate rules apply — confirm the diff with Jac
-  before the `deploy` call, every time.
+- **Impersonation is REQUIRED:** a bare service account can't call the Apps Script API
+  (its per-user API toggle can't be set for a SA identity → every call 403s "User has not
+  enabled the Apps Script API", even with the project API enabled). The SA
+  (`clasp-deployer@rental-wrangler-deploy`, client_id `108241190981526622554`) has
+  **domain-wide delegation**; pass `GAS_IMPERSONATE_SUBJECT=operations@jacrentals.com`.
+- Push tool: **`docs/handoffs/gas-deploy-service-account.mjs`** — `projects.getContent` to
+  pull the LIVE code (splice additively into `~/rw-backend`), `projects.updateContent` to
+  push HEAD. Content-only, safe. No clasp involved.
+- **✅ AMENDED 2026-07-06 (late session): the REST-API deploy WORKS when done right.** The
+  earlier outage came from an incomplete deploymentConfig, not the API itself. The working
+  recipe (rehearsed on a sacrificial deployment, then used for prod v66–v70 the same night):
+  `projects.versions.create` → `projects.deployments.update` on the PROD deployment id with
+  a FULL deploymentConfig `{scriptId, versionNumber, description}`, authorized as the SA
+  **impersonating operations@** — anonymous access survives (verified by the JSON probe
+  immediately after, every time). ALWAYS: (1) rehearse pattern available in the session
+  scratchpad scripts; (2) probe `?action=load&password=__wrong__` right after — expect JSON
+  `{"ok":false,...}`; HTML = broken → editor rollback. The editor path below remains the
+  fallback and the recovery tool.
+- **⛔ The ORIGINAL 2026-07-06-morning warning (superseded above, kept for history):** `projects.deployments.update` on this web app
+  **breaks its anonymous access** — the entryPoint still *reports* `ANYONE_ANONYMOUS` but
+  the `/exec` URL 403s for anonymous callers, i.e. **the live backend goes DOWN** — and an
+  API rollback does NOT fix it (confirmed live 2026-07-06; brief prod outage). The script's
+  `deploy` subcommand is guarded and refuses. **Go-live = Apps Script editor**: Deploy →
+  Manage deployments → Edit the prod deployment → **New version**, Execute as *Me
+  (operations@)*, Who has access **Anyone** → Deploy (same exec URL). Jac performs this
+  click — it doubles as the STOP-gate.
+- Also unavailable: `scripts.run` (one-off function execution / trigger installs) 404s for
+  service accounts even with delegation — a known Google wall. Editor **Run** is the path
+  for trigger installs; don't burn a session retrying it.
+- **Full runbook + queue status: `docs/handoffs/BACKEND-DEPLOY-QUEUE.md`** (on
+  `area/backend-data` / `staging`, not `main` — `git fetch origin <branch>` first if missing).
+- Usage: `GAS_SA_KEY_B64=$GAS_SA_KEY_B64 GAS_IMPERSONATE_SUBJECT=operations@jacrentals.com \
+  node docs/handoffs/gas-deploy-service-account.mjs push` → then hand Jac the editor-deploy
+  step. Same STOP-gate rules — confirm the spliced diff with Jac before push, every time.
+  Verify after his deploy (anonymous, no secret): POST `{"action":"auth","password":"__wrong__"}`
+  to the exec URL → expect JSON `{"ok":false,...}`; an HTML/403 page = anonymous access broken.
 
 The clasp steps below are kept for reference (local *reads* via the Drive connector still
 work fine, and if Google's reauth policy ever changes, clasp deploy would work again) —
@@ -100,8 +128,10 @@ No `RW_PW` set? You can only test the **auth-rejection** path — ask Jac for a 
 clasp (backend), GitHub, Google Drive, Gmail, Figma, HeyGen are available in the clasp-enabled **cloud** session — that's the deploy environment, and this runbook is written for it (Linux/bash). The local Windows desktop is **not** a deploy environment and its clasp can't make live calls (expired token + RAPT-blocked refresh) — to read the backend locally use the Drive-connector method above; to deploy, use a cloud session. (NB: `show-authorized-user → loggedIn:true` only proves a creds *file* exists — NOT that the token works.)
 
 ## Note for /start
-`/start` checks for **`GAS_SA_KEY_B64`** (the service-account deploy path, current) rather
-than clasp auth as the litmus test for "backend deploy reachable" — see `/start` §1. clasp's
+`/start` checks for **`GAS_SA_KEY_B64`** (the service-account **push** path, current) rather
+than clasp auth as the litmus test for "backend push reachable" — see `/start` §1. clasp's
 `show-authorized-user --json` can say `loggedIn:true` while every actual deploy call still
-fails RAPT, so that check alone is not proof anything works; `GAS_SA_KEY_B64` presence +
-`docs/handoffs/BACKEND-DEPLOY-QUEUE.md` (on `staging`) is the real source of truth.
+fails RAPT, so that check alone is not proof anything works; `GAS_SA_KEY_B64` (+
+`GAS_IMPERSONATE_SUBJECT` at call time) + `docs/handoffs/BACKEND-DEPLOY-QUEUE.md` (on
+`area/backend-data`/`staging`) is the real source of truth. Remember: reachable = you can
+**push HEAD**; **go-live is always Jac's editor deploy** (see the ⛔ above).

@@ -1,6 +1,6 @@
 # Units / Fleet — SPEC v1 (DRAFT)
 
-**Date:** 2026-06-28
+**Date:** 2026-06-28 (updated 2026-07-08)
 **Status:** DRAFT — for critique
 **Area branch:** `area/units-fleet`
 **Task branch:** `units-fleet/spec` (proposed)
@@ -18,6 +18,17 @@ These supersede the matching Open Questions and amend §3 / §5 / §6 / §7 / §
 - **D3 · First-class "Sell a unit" (resolves Q6).** A **Sell** flow captures **sale price + date**, closes out the unit's ROI cleanly, and writes a **revenue/accounting entry** — the integration seam with the **`accounting`** area. New UI → `/jactec-ui` + a `data-r` stamp; if it opens as a popup, a `WINDOW_CATALOG` entry + `check-window-catalog` re-run.
 
 **Kept at recommendation:** Q3 (`assignedMechanic` stays free-text until `hr-compliance` lands) · Q5 (clamp `currentHours` monotonic-up on sync to protect service countdowns — recommend adopt) · new quick-added unit stays **bookable before its first inspection** (shipped behavior; one-line `isUnitAvailableFor` change if it ever bites) · Q2/Q4/Q7/Q8/Q9 stand at their stated recommendations.
+
+## ✅ Decisions — 2026-07-07/08 (Jac)
+
+A large slice shipped onto this area branch — see the new **§2.7** for the canon. Key decisions, all popup-confirmed:
+
+- **D4 · Models are a category-scoped sub-entity, not global.** A Category derives which Models a Unit may pick; each Model owns its real maintenance-schedule task list. A Model keyed off a real make/model is the join point for OEM service data. (`DATA.models`; §4.5.)
+- **D5 · Retire the standalone Shop card.** Work Orders, Service Orders & Inspections render inside a **Unit's own detail**; the Units card carries the cross-fleet worklist; mechanics land on Units at clock-in. Every WO/inspection/service reference resolves to the **owning unit**. (§2.7.)
+- **D6 · Snooze silences the alarm.** A snoozed service task is skipped by `topServiceForUnit` (row pills, Units alert, worklist, `__svcstat` filter, Service-Due sort all go quiet); the row itself stays honest; completion clears the snooze.
+- **D7 · "Hold their hands" mechanic surface.** The service popup shows fluid capacity/type + parts, deep-links each task to its cited OEM manual page, and lets the mechanic edit parts (remove / type-new / **browse the parts catalog**) — reusing the Work-Order `partform` and the parts board rather than parallel UI. Part edits persist to the **real model task** (affect every unit of that model).
+- **D8 · Sourced service data lives in PRODUCTION, not in these PRs.** 63 real models, 869 tasks, 34 Drive-hosted OEM manuals, and 233 fluid/part `detail` entries were loaded directly via the sync action (double-extracted + capacity-verified). The demo seed carries only a few illustrative examples. Manuals sourced from genuine OEM Operator's/Service manuals; blanks left honest where a manual doesn't specify.
+- **D9 · Gate ALL dollar amounts in the History/audit log by role (extends D1/D2).** Non-money roles never see `$` amounts in any History/audit line — a **client-side DISPLAY redaction only** (`histText()` masks `$12,500`→`$•••` when `!canMoney()`; the raw action text still stores/syncs untouched), same philosophy as the D1 `bottomDollar` display gate. Applied at the two audit-line render sites (`historySection`, the customer `activityLog` renderer); team chat is out of scope (comms, not the audit log). Surfaced by the Sell-a-unit "Sold for $X" line (D3), but applies to every money log line (payments, refunds, WO costs, membership totals). Security/margin decision — stays on main.
 
 ---
 
@@ -88,13 +99,24 @@ A repair tool for imported rentals whose machine was only a free-text `legacyUni
 `data.js:24` (categories) and `data.js:34` (units). A live backend replaces this object (`PERSIST_KEYS` → one Sheets tab per entity); all derived values (price, ROI, status, countdowns) are computed in `app.js`, never stored (`data.js:9` "one fact, one place").
 
 ### 2.5 Open task branch (in flight)
-`units-fleet/category-rows-scroll-group` — a scroll-grouping treatment for the category unit-roster rows. Noted in the roadmap; not yet merged. This spec should not pre-empt it but should note it in §8.
+The **Models + Services stack** (§2.7, PRs #504→#505→#506→#520→#521→#522→#527) is assembled on this area branch and is the primary open work, pending the area→staging push (owned by a separate session). Also noted: `units-fleet/category-rows-scroll-group` — a scroll-grouping treatment for the category unit-roster rows (roadmap; not yet merged). This spec should not pre-empt it but notes it in §8.
 
 ### 2.6 Explicitly NOT in this area today (and which area owns it)
 - **Live GPS / telematics feed, geofencing, stray alerts** → `gps-tracking` (only metadata + the `gpsStatus` registry live here).
-- **Work-order lifecycle, parts, the inspection checklist flow, service-order completion** → `maintenance-shop` (Units *renders* open-WO sections and the inspection segctl, but the engine is Shop's).
+- **Work-order lifecycle & the inspection checklist ENGINE** → `maintenance-shop`. NOTE (2026-07-07, §2.7): the standalone **Shop card is retired** — Units now *hosts the render surface* for open-WO sections, the per-unit Services list, and the inspection segctl, and carries the cross-fleet worklist; the deeper WO/inspection state machine remains shared with Shop.
 - **Rate automation / demand pricing** → `automated-pricing` (rates are static fields on the Category here).
 - **Multi-location / co-owned fleet** → `fleet-spread` (single-yard by design today).
+
+### 2.7 Shipped — Models entity, per-model service schedules & the mechanic service surface (2026-07-07/08)
+
+A major slice landed on this area branch (PRs #504→#505→#506→#520→#521→#522→#527). Live behavior, as canon:
+
+- **Models sub-entity** (`DATA.models`, id `modelId`; `IDX.model`; wired through `PERSIST_KEYS`/`PERSIST_ID`/`IDX_MAP`/`SINGULAR`/`WR_IDX`). A **Category derives which Models a Unit may pick**: the Unit's Model field is a category-scoped `<select>` (`editKind:'unitModel'` in `startInlineEdit`, mirroring `unitCategory`) with an inline "+ Add new model…" create. Shape: `{modelId, categoryId, name, tasks:[{taskId,name,intervalHours,parts,source,sourceUrl,detail}]}`. Managed from the **Category detail → Models section** (list + task-count badges + inline +Model), via the `modelSchedule` popup (view/manage tasks) and `svctaskform` popup (add/edit a task) — both in `WINDOW_CATALOG`. **Duplicate a model** (#520): a per-row Duplicate action clones a model + its task list under a new name.
+- **Per-model real service schedules** replace the generic 250/500/1000hr placeholder — `unitServiceRows(u)` prefers `IDX.model.get(u.modelId).tasks`, falling back **honestly** (visibly generic) when no model/tasks are set.
+- **Shop card RETIRED** (#505): Work Orders, Service Orders & Inspections render inside a **Unit's own detail** (Inspection → Services → WOs). The Units card carries the worklist (service-urgency sort + `__svcstat` filter + the stackbars graph via `graphViewsFor('units')`); mechanics land on Units at clock-in (`applyShopRoleLanding`). Any WO/inspection/service reference (KPI drills, invoice refs, search, Mr. Wrangler) resolves to the **owning unit** (`unitOfShopRec`).
+- **Service snooze** (#506, backlog #43): per-task Snooze (7/14/30d)/Wake ghost button; **snooze silences the alarm** (`svcSnoozedUntil`/`snoozeService`, `u.serviceSnoozes`; `topServiceForUnit` skips snoozed tasks); row stays honest ("Snoozed thru X · was Y overdue"); completion clears the snooze. Services list capped at 6 with a "Show all" expander.
+- **Mechanic service surface** (#521/#522/#527 — "hold their hands"): the service-completion popup shows a **"What you need"** block (fluid **capacity** + type, notes, parts/filters), a **manual deep-link** per task (`sourceLinkBtn`, R26 → `#page=N` into the OEM manual). Parts are editable — remove/edit reuse the WO `partform`, add via **`+Part`** (type-new) or **"Browse catalog"** (`js-svc-browseparts` → the parts board in `pickTarget` mode → `attachCatalogPart`, deduped by OEM/name) — and each opens a **side-by-side part-detail panel** (vendor/phone/cost, `cardSub` two-popup precedent). All part edits persist to the **real model task** (`svcRealTask` + `reindex('models',…)`), so they affect every unit of that model.
+- **Production data (NOT in these PRs — see D8):** 63 real models, 869 sourced tasks, 34 Drive-hosted OEM manuals, and 233 fluid/part `detail` entries loaded directly via the sync action. The demo seed carries only a few illustrative examples.
 
 ---
 
@@ -178,6 +200,9 @@ Units and Categories hold **no customer PII** directly. The only customer linkag
 ### 4.3 Relationships (by ID)
 ```
 Category (1) ──< Unit (many)              unit.categoryId → category.categoryId
+Category (1) ──< Model (many)             model.categoryId → category.categoryId
+Model (1) ──< Unit (many)                 unit.modelId → model.modelId   (a unit's Model is category-scoped)
+Model (1) ──< ServiceTask (embedded)      model.tasks[] — the per-model maintenance schedule
 Unit (1) ──< Rental (many)                rental.unitId / rental.units[].unitId → unit.unitId
 Unit (1) ──< WorkOrder (many)             wo.unitId → unit.unitId
 Unit (1) ──< Inspection (many)            insp.unitId → unit.unitId
@@ -185,6 +210,22 @@ Unit (1) ──< ServiceOrder (derived)       serviceOrdersForUnit(unit) — not
 Unit revenue/ROI ── derived from its Rentals (unitTotalRevenue app.js:1783)
 Unit repair $    ── derived from its WOs   (unitRepairCost app.js:1768)
 ```
+
+### 4.5 Model (`DATA.models`, id field `modelId`) — added 2026-07-07 (§2.7, D4)
+Category-scoped join point for real OEM service data. `IDX.model`; persisted like any entity (`PERSIST_KEYS`/`PERSIST_ID.models = 'modelId'`/`IDX_MAP.models = 'model'`). The GAS backend required `models` in its `ENTITIES`/`ID_FIELD` arrays (deployed) — without it `doSync` silently drops the entity.
+```
+Model {
+  modelId, categoryId, name,               // e.g. "Yanmar VIO55" under category "12k Excavator"
+  manualUrl?, manualTitle?,                 // the Drive-hosted OEM manual (per-model)
+  tasks: [ {
+    taskId, name, intervalHours, parts[],   // the maintenance-schedule row
+    source?, sourceUrl?,                     // human citation + deep-link (#page=N) to the manual page
+    detail?: { fluidType?, fluidCapacity?,   // "what you need" — the mechanic hand-holding data
+               partRefs?: [{ name, oem?, cost?, vendorId?, url?, photo? }], sourcePage?, notes? }
+  } ]
+}
+```
+Mechanic part edits (§2.7, D7) mutate the **live** `model.tasks[].detail.partRefs` (via `svcRealTask` + `reindex('models',…)`), so they persist for **every unit of that model** — an intentional "fix the reference once" behavior, not a per-unit override.
 
 ### 4.4 Schema-less / additive notes & migration concerns
 - Backend is **schema-less Sheets** — a new field is **additive**: add it to the seed shape, write/read it where rendered, and the diff-sync (`computeChanges`) carries it. No migration step for a pure add.

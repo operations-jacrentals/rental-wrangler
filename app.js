@@ -25,8 +25,8 @@ import { ico, I, CARD_ICON, RING_ICON, CATEGORY_ICON } from './icons.js';
 import { CATEGORY_ANIM } from './icons-anim.js';
 import {
   getStatus, STATUS, ROLES, ROLE_TIERS, tierRank, BUILTIN_ROLE_TIERS, GRID_CARDS, BACKOFFICE_BOARDS, SORT_FIELDS,
-  SHOP_TYPES, SHOP_SEGMENTS, COLUMNS, COLUMN_OF,
-  legacyTransportPrice, computeTransportPrice, isFueledType, legsForType, YARD_ORIGIN, GOOGLE_MAPS_KEY,
+  SHOP_TYPES, COLUMNS, COLUMN_OF,
+  legacyTransportPrice, computeTransportPrice, isFueledType, legsForType, YARD_ORIGIN, GOOGLE_MAPS_KEY, GPS_BACKEND_URL,
   fmtWindow, fmtShortDate, showsTruck, parseISO, TODAY_ISO, invoiceShort, TRANSPORT_MAP,
   FLAG_META, FLAG_SEVERITY_RANK, INSURANCE_COVERAGE_TYPES,
 } from './config.js';
@@ -78,7 +78,7 @@ const num = (n) => (n == null ? '—' : Number(n).toLocaleString('en-US', { maxi
 const TODAY = parseISO(TODAY_ISO);
 const dayDiff = (a, b) => Math.round((b - a) / 86400000);
 
-const SINGULAR = { customers: 'customer', rentals: 'rental', units: 'unit', invoices: 'invoice', categories: 'category', workOrders: 'workOrder', inspections: 'inspection', serviceOrders: 'unit' };
+const SINGULAR = { customers: 'customer', rentals: 'rental', units: 'unit', invoices: 'invoice', categories: 'category', workOrders: 'workOrder', inspections: 'inspection', serviceOrders: 'unit', models: 'model' };
 
 /* ════════════════════════════════════════════════════════════════════════
    APP-03 · §2 INDEXES & SEARCH — built once on load (SPEC §3: never scan per keystroke)
@@ -252,7 +252,7 @@ function rentalStatusDisplay(r) {
   const ss = rentalUnitStatuses(r);
   // COLOR is flag-driven (R/Y/G/gray, SPEC flag-color-system); the LABEL stays the
   // lifecycle status. Mixed-unit rentals keep the gray "mix" label + gray color.
-  if (ss.length <= 1) { const k = ss[0] || rentalDisplayStatus(r); const st = getStatus('rentalStatus', k); return { label: st.label, color: getEntityColor('rentals', r), key: k, mixed: false }; }
+  if (ss.length <= 1) { const k = ss[0] || rentalDisplayStatus(r); const st = getStatus('rentalStatus', k); const label = overdueOutStatus(k, r.endDate) ? 'Overdue' : st.label; return { label, color: getEntityColor('rentals', r), key: k, mixed: false }; }
   return { label: ss.join('/'), color: 'gray', key: null, mixed: true };
 }
 /* TERMINAL = the unit has reached an end state (Returned, or Cancelled/No Show —
@@ -666,8 +666,9 @@ function achTabBody(c) {
       <button class="x js-bank-remove" data-rec="${c.customerId}" data-bank="${k.id}" data-tip="Remove bank account">${I.x}</button>
     </div>`).join('') : '<span class="muted" style="font-size:12px">No bank accounts on file.</span>';
   return `<div class="cards-list">${rows}</div>
-    ${consent ? `<div style="margin-top:10px">${addBtn('ACH', { link: true, js: 'js-add-ach', data: { rec: c.customerId } })}</div>`
-              : '<span class="muted" style="font-size:11px">Capture a selfie + signature (Edit account) before adding a bank account.</span>'}`;
+    ${!canMoney() ? ''
+      : consent ? `<div style="margin-top:10px">${addBtn('ACH', { link: true, js: 'js-add-ach', data: { rec: c.customerId } })}</div>`
+                : '<span class="muted" style="font-size:11px">Capture a selfie + signature (Edit account) before adding a bank account.</span>'}`;
 }
 
 /* §19 stable-key migration: give every existing invoice line a `lid` and remap
@@ -695,6 +696,7 @@ function buildIndexes() {
   migrateInvoiceLines();
   IDX.unit     = new Map(DATA.units.map((u) => [u.unitId, u]));
   IDX.category = new Map(DATA.categories.map((c) => [c.categoryId, c]));
+  IDX.model    = new Map((DATA.models || []).map((m) => [m.modelId, m]));
   IDX.customer = new Map(DATA.customers.map((c) => [c.customerId, c]));
   IDX.invoice  = new Map(DATA.invoices.map((i) => [i.invoiceId, i]));
   IDX.rental   = new Map(DATA.rentals.map((r) => [r.rentalId, r]));
@@ -1732,6 +1734,14 @@ let availWin = null;   // {start,end,time,selfId} set each render while the cale
 /* §20 physically-OUT statuses — the machine is in the customer's hands until it's
    Returned (Reserved/Today/Tomorrow = not yet picked up; Returned = back in the yard). */
 const OUT_RENTAL_STATUSES = new Set(['On Rent', 'End Rent', 'Off Rent']);
+/* §10 Overdue-out DISPLAY relabel (#509, approved by Jac): a unit still physically out
+   and reading On Rent / End Rent past its scheduled return DISPLAYS "Overdue" instead of
+   the stale lifecycle word. DISPLAY-ONLY — the STORED status is untouched (statuses are
+   user-selected, and the unit must stay "out" for availability/billing/transport). This
+   mirrors the start-side No-Show derivation (a Reserved rental whose start passed reads
+   "No Show") and rides on top of the #481 'off-rent-overdue' red flag/color. */
+const overdueOutStatus = (statusKey, endDate) =>
+  (statusKey === 'On Rent' || statusKey === 'End Rent') && !!endDate && endDate < TODAY_ISO;
 function rentalOverlaps(r, selS, selE, endISO) {
   const rs = parseISO(r.startDate), re = parseISO(endISO || r.endDate);
   if (!rs || !re || !selS || !selE) return false;
@@ -1873,7 +1883,15 @@ const svcText = (s) => (s.status === 'past-due'
 const WASH_TASK = { taskId: 'svc-wash', name: 'Wash / Detail', intervalHours: 100, parts: [] };
 const UNIT_SVC_TASKS = [WASH_TASK, ...SERVICE_TASKS];
 const SVC_OPTS = { tasks: UNIT_SVC_TASKS, hoursField: 'currentHours', baselineField: 'purchaseHours' };
-const unitServiceRows = (u) => serviceOrdersForUnit(u, u.serviceCompletions || {}, SVC_OPTS);
+// Real per-model schedules (Jac 2026-07-07) win when the unit has picked a model
+// with sourced tasks; otherwise fall back to the generic placeholder — an honest
+// miss (same spirit as categoryIconFor's neutral box glyph) rather than a silent
+// wrong number.
+const unitServiceRows = (u) => {
+  const modelTasks = u.modelId && IDX.model.get(u.modelId)?.tasks;
+  const tasks = (modelTasks && modelTasks.length) ? [WASH_TASK, ...modelTasks] : UNIT_SVC_TASKS;
+  return serviceOrdersForUnit(u, u.serviceCompletions || {}, { ...SVC_OPTS, tasks });
+};
 /** The service pill(s) for a row: a submitted Wash Request overrides the countdown
  *  language to a single blue "Wash Requested" pill; otherwise status + countdown. */
 function svcPills(s, focal) {
@@ -1881,12 +1899,39 @@ function svcPills(s, focal) {
   if (s.washRequested) return badge('Wash Requested', 'blue', focal);          // R3
   return badge(getStatus('serviceStatus', s.status).label, s.color, focal) + badge(svcText(s), s.color);   // R3 (urgency = focal on the shop service row)
 }
+/* SNOOZE (backlog #43, Jac 2026-07-07): a mechanic mutes ONE task's alarm until a date.
+   Jac's law: snooze SILENCES the alarm everywhere — row pills, the Units-tab alert, the
+   worklist graph, the countdown sort — all via topServiceForUnit skipping snoozed tasks.
+   The task row itself still tells the truth ("Snoozed thru … · was N HRS overdue").
+   Expired snoozes are inert; completing a task clears its snooze. */
+const svcSnoozedUntil = (u, taskId) => {
+  const until = (u.serviceSnoozes || {})[taskId];
+  return until && until > TODAY_ISO ? until : null;
+};
+function snoozeService(unitId, taskId, days) {
+  const u = IDX.unit.get(unitId); if (!u) return;
+  const t = unitServiceRows(u).find((s) => s.taskId === taskId);
+  u.serviceSnoozes = u.serviceSnoozes || {};
+  if (days == null) {   // wake — the alarm is live again
+    delete u.serviceSnoozes[taskId];
+    reindex('units', u); logAction(u, `Woke ${t?.name || taskId} — service alarm live`);
+    toast('Snooze cleared — the countdown is live.');
+  } else {
+    const until = addDaysISO(TODAY_ISO, days);
+    u.serviceSnoozes[taskId] = until;
+    reindex('units', u); logAction(u, `Snoozed ${t?.name || taskId} until ${fmtShortDate(until)}`);
+    toast(`Snoozed ${days} days — quiet until ${fmtShortDate(until)}.`);
+  }
+  render();
+}
 /** Most-urgent active service order for a unit (derived via the reference module).
- *  A pending wash request floats the wash task to the top regardless of its countdown. */
+ *  A pending wash request floats the wash task to the top regardless of its countdown.
+ *  Snoozed tasks are SKIPPED (Jac: snoozing silences the alarm — the next-urgent
+ *  unsnoozed task drives the pills/alerts instead). */
 function topServiceForUnit(unit) {
   const rows = unitServiceRows(unit);
   if (unit.washRequested) { const w = rows.find((s) => s.taskId === 'svc-wash'); if (w) return { ...w, washRequested: true }; }
-  const active = rows.filter((s) => s.status !== 'ok');
+  const active = rows.filter((s) => s.status !== 'ok' && !svcSnoozedUntil(unit, s.taskId));
   return active[0] || null;
 }
 /** Total repair cost for a unit = Σ its WO line-item costs (SPEC §12.4). */
@@ -2017,7 +2062,11 @@ function categoryStats(cat) {
   // Without a purchase cost (units with no trueCost/purchasePrice), revenue ÷ repair-only
   // explodes to absurd %. Gate on `trueCost` (matches the §12.4 unit-level `invested ?`
   // guard) so a category with no acquisition cost reads '—', not a fake 900,000%.
-  const lifetimeRoi = trueCost ? ((totalRev + (cat.bottomDollar || 0) * us.length) - denom) / denom : null;
+  // D3 sell-a-unit (units-fleet spec): a SOLD unit's REALIZED salePrice replaces the
+  // assumed bottomDollar residual for that one unit; every still-unsold unit keeps the
+  // existing assumed-residual behavior. Surgical — only this one term changed.
+  const residual = us.reduce((a, u) => a + (u.fleetStatus === 'Sold' && Number(u.salePrice) ? Number(u.salePrice) : (cat.bottomDollar || 0)), 0);
+  const lifetimeRoi = trueCost ? ((totalRev + residual) - denom) / denom : null;
   const roi = lifetimeRoi != null ? Math.round(lifetimeRoi * (365 / avgDaysOwned) * 100) : null;
   return {
     count: us.length,
@@ -2037,7 +2086,7 @@ function categoryStats(cat) {
    its own anchored main card + cascade. */
 function freshSession() {
   const cards = {};
-  for (const c of GRID_CARDS) cards[c.id] = { mode: 'list', recId: null, recType: null, search: '', filterTerms: [], historySearch: '', sort: loadSort(c.id), backStack: [], fwdStack: [], segment: c.id === 'shop' ? 'all' : null, graphIdx: 0, graphSel: {} };   // §13.4 graphIdx = active carousel view; graphSel = remembered selection per view
+  for (const c of GRID_CARDS) cards[c.id] = { mode: 'list', recId: null, recType: null, search: '', filterTerms: [], historySearch: '', sort: loadSort(c.id), backStack: [], fwdStack: [], segment: null, graphIdx: 0, graphSel: {} };   // §13.4 graphIdx = active carousel view; graphSel = remembered selection per view
   // 3-column layout: which member card is visible in each column (display-only;
   // rides inside the session so item-tabs / pause-resume restore it for free).
   const cols = {}; for (const col of COLUMNS) cols[col.id] = col.default;
@@ -2065,6 +2114,62 @@ function saveSort(card, sort) {
 }
 // the entity-card a record belongs to (Shop holds 3 entity types via recType)
 const entityCardOf = (card, recType) => (card === 'shop' ? recType : card);
+// Shop retirement (Jac 2026-07-07): a WO / inspection / serviceOrder reference now
+// opens its OWNING UNIT — this resolves the unitId for any of the 3 shop entity types
+// (a serviceOrder id IS a unitId; SINGULAR.serviceOrders === 'unit').
+const unitOfShopRec = (type, id) => (type === 'workOrders' ? (IDX.wo.get(id)?.unitId || null)
+  : type === 'inspections' ? (IDX.insp.get(id)?.unitId || null)
+  : id);
+
+/* ── D8/D9 THE COMMS RAIL — per-device session persistence (spec comms D8 + D9).
+   { cat, sessions: { team|text|email|wrangler: { tabs:[id…], lastOpen, hidden:[id…],
+   menuOpen } } }. D9 SINGLE-OPEN LAW: `lastOpen` replaces D8's `open:{}` multi-map —
+   a session remembers only its LAST-open conversation, so at most ONE window is
+   mounted at any time across all categories (a chip re-summon restores exactly one).
+   `tabs` = the pulled customer threads (Texts/Email); Team/Wrangler tabs derive from
+   their own stores, with `hidden` as the per-device ✕-hide set. Sessions persist like
+   the item-tab rail (jactec.commsRail), but `cat` is NEVER restored — login/boot = an
+   EMPTY rail ("quiet start" is inherent; nothing shows until the user reaches). */
+const COMMS_LS_KEY = 'jactec.commsRail';
+const COMMS_CATS = ['team', 'text', 'email', 'wrangler'];
+const commsFreshSessions = () => Object.fromEntries(COMMS_CATS.map((k) => [k, { tabs: [], lastOpen: null, hidden: [], menuOpen: false }]));
+function loadCommsRail() {
+  const rail = { cat: null, sessions: commsFreshSessions() };
+  try {
+    const saved = JSON.parse(localStorage.getItem(COMMS_LS_KEY) || '{}');
+    COMMS_CATS.forEach((k) => {
+      const s = saved.sessions && saved.sessions[k]; if (!s) return;
+      // D8→D9 migration: a stored `open:{}` multi-map folds to its first key (single-open)
+      const lastOpen = s.lastOpen != null ? String(s.lastOpen)
+        : (s.open && typeof s.open === 'object' && Object.keys(s.open)[0]) || null;
+      rail.sessions[k] = { tabs: Array.isArray(s.tabs) ? s.tabs.map(String) : [], lastOpen, hidden: Array.isArray(s.hidden) ? s.hidden.map(String) : [], menuOpen: !!s.menuOpen };
+    });
+  } catch (e) {}
+  return rail;
+}
+function saveCommsRail() { try { localStorage.setItem(COMMS_LS_KEY, JSON.stringify({ sessions: state.commsRail.sessions })); } catch (e) {} }
+/* 'Ended' conversations (spec D8: End ≠ delete — the full history persists forever;
+   the conversation just leaves the All list + rail). A CLIENT-side per-device map of
+   `id|channel` → ended-at epoch (D9: the timestamp lets Team/Wrangler chats RESURRECT
+   when a message NEWER than the End arrives; legacy array entries load as `true` =
+   ended until explicitly re-opened). Channels: sms · email · team · wrangler. */
+const COMMS_ENDED_KEY = 'jactec.commsEnded';
+function commsEndedMap() {
+  try {
+    const v = JSON.parse(localStorage.getItem(COMMS_ENDED_KEY) || '{}');
+    if (Array.isArray(v)) return Object.fromEntries(v.map((k) => [k, true]));   // legacy Set shape
+    return (v && typeof v === 'object') ? v : {};
+  } catch (e) { return {}; }
+}
+function commsEndedSet() { return new Set(Object.keys(commsEndedMap())); }
+/* Ended, honoring resurrection: a message newer than the End un-ends the conversation. */
+function commsIsEnded(id, channel, lastAt) {
+  const ts = commsEndedMap()[String(id) + '|' + channel];
+  if (ts === undefined) return false;
+  return !(typeof ts === 'number' && (lastAt || 0) > ts);
+}
+function commsEnd(customerId, channel) { const m = commsEndedMap(); m[String(customerId) + '|' + channel] = Date.now(); try { localStorage.setItem(COMMS_ENDED_KEY, JSON.stringify(m)); } catch (e) {} }
+function commsUnend(customerId, channel) { const m = commsEndedMap(); const k = String(customerId) + '|' + channel; if (k in m) { delete m[k]; try { localStorage.setItem(COMMS_ENDED_KEY, JSON.stringify(m)); } catch (e) {} } }
 
 const state = {
   data: DATA,
@@ -2083,7 +2188,8 @@ const state = {
   availWin: null,      // §10 persistent window scope for the "available" search (set by the picker; outlives it)
   filterTerms: [],            // §5.4 — AND-narrowing filter terms (type + Enter)
   unitPick: null,             // { ids, from } — Invoice +WO narrows the Units list to the invoice's linked units (Phase 4)
-  chat: { open: false, activeId: null, draft: '', chats: [] },   // §17 internal team dock (Phase 7): PERSISTENT chats (never deleted). Each = { id, tags, participants, messages, seen{userKey:lastViewedAt} }. Empty participants = dormant; reopen via a tagged element.
+  chat: { open: false, activeId: null, draft: '', chats: [] },   // §17 team chats (2026-07-08 rail spec): PERSISTENT titled threads (never deleted). Each = { id, title, members[personId], messages[{…,refs?}], seen{userKey:at}, by }. Members default none; visibility ungated pending the login↔roster bind (spec §7).
+  held: null,   // Copy→paste: the ONE held element awaiting paste into an internal (Team / Mr. Wrangler) chat — { card, recId, label }. Not persisted (cleared on refresh).
   wrangler: { open: false, min: false, id: null, messages: [], busy: false, error: '', draft: '', attach: [], files: [], card: null, recId: null, recType: null, reqNumber: null, reqTitle: null, reqUrl: null },   // §18 Mr. Wrangler dock — id ties the live chat to its §18g rail snapshot; min collapses it to the header bar; survives minimize, restores conversation on reopen
   mobileCol: 0,               // §M1 — which column the phone shows (0 Yard · 1 Rentals · 2 Customers); drives swipe position + the per-column bottom strip
   woPartForm: null,           // woId whose "+ Add Part/Labor" inline form is open
@@ -2095,6 +2201,7 @@ const state = {
   previewsOn: (() => { try { return localStorage.getItem('jactec.previewsOff') !== '1'; } catch (e) { return true; } })(),   // hover previews (per device)
   overbookOn: (() => { try { return localStorage.getItem('jactec.overbook') === '1'; } catch (e) { return false; } })(),   // §10 allow-overbooking policy (per device, default OFF — drag build)
   hapticsOff: (() => { try { return localStorage.getItem('jactec.hapticsOff') === '1'; } catch (e) { return false; } })(),   // §M-touch Vibration-API feedback (per device, default ON; Android-only, no-op on iOS)
+  commsRail: loadCommsRail(),   // D8 THE COMMS RAIL — { cat, sessions } per device; cat always null at boot (empty rail at login)
   wranglerRail: [],   // §18g the bottom-right rail of past Mr. Wrangler conversations (per device), each a snapshot { id, title, ts, card, recId, recType, reqNumber, reqTitle, reqUrl, messages }. Loaded async from IndexedDB (wranglerRailLoad) — IndexedDB replaced the localStorage rail that silently overflowed.
   settings: loadAdminSettings(),   // Settings Board admin customization (config.settings); mirrored to localStorage, applied at boot via applySettings()
 };
@@ -2359,7 +2466,7 @@ function cardRecordAt(target) {
   const pill = target.closest && target.closest('[data-pill-card]');
   if (pill && pill.dataset.pillRec != null) {
     const pc = pill.dataset.pillCard;
-    return SHOP_TYPES.includes(pc) ? { card: 'shop', recId: pill.dataset.pillRec, recType: pc } : { card: pc, recId: pill.dataset.pillRec, recType: null };
+    return SHOP_TYPES.includes(pc) ? { card: 'units', recId: unitOfShopRec(pc, pill.dataset.pillRec), recType: null } : { card: pc, recId: pill.dataset.pillRec, recType: null };   // Shop retirement: WO/insp/svc pills act on their owning unit
   }
   const row = target.closest && target.closest('.row');
   if (row && row.dataset.rec) return { card: row.dataset.card, recId: row.dataset.rec, recType: row.dataset.type || null };
@@ -2549,7 +2656,7 @@ function showHoverPreview(target) {
    (e.g. "No Card" → Cards on File) — smooth scroll + the R19 glow. */
 function scrollToSect(card, sect) {
   setTimeout(() => {
-    const ec = SHOP_TYPES.includes(card) ? 'shop' : card;
+    const ec = SHOP_TYPES.includes(card) ? 'units' : card;   // Shop retirement: WO/insp/svc sections live on the unit
     const n = document.querySelector(`.card[data-card="${ec}"] .${sect}`);
     if (n) { n.scrollIntoView({ behavior: 'smooth', block: 'start' }); attnFlash(`.card[data-card="${ec}"] .${sect}`); }
   }, 60);
@@ -2563,8 +2670,13 @@ function pillTo(card, recId) {
   // pre-swap view + column layout on the DESTINATION card so Back returns you to the card you
   // left, exactly where it was. Same viewSnap mechanism the categories → units jump uses; no-op
   // when the target is already visible in its own column (no swap). (Jac 2026-07-03)
-  const noteSwap = (member) => { const s = activeSession(), col = COLUMN_OF[member]; if (s.cols && col && s.cols[col] !== member) pushCardHistory(s.cards[SHOP_TYPES.includes(member) ? 'shop' : member], true); };
-  if (SHOP_TYPES.includes(card)) { if (recOf(card, recId)) { noteSwap(card); revealCol(card); openStandard('shop', recId, card); } return; }
+  const noteSwap = (member) => { const s = activeSession(), col = COLUMN_OF[member]; if (s.cols && col && s.cols[col] !== member) pushCardHistory(s.cards[member], true); };
+  // Shop retirement (Jac 2026-07-07): a WO / inspection / serviceOrder pill opens its OWNING UNIT.
+  if (SHOP_TYPES.includes(card)) {
+    const uid = unitOfShopRec(card, recId);
+    if (uid && IDX.unit.get(uid)) { noteSwap('units'); revealCol('units'); openStandard('units', uid); }
+    return;
+  }
   if (recOf(card, recId)) { noteSwap(card); revealCol(card); openStandard(card, recId); }
 }
 
@@ -2656,7 +2768,7 @@ function totColMatch(card, rec, col, value) {
   if (col === '__date') return dateTermHits(card, rec, value);   // §5.4d date-picker filter term
   if (col === '__transport') return card === 'rentals' && rentalHasLeg(rec, value);   // §11 Delivery/Pickup leg filter
   if (col === '__wo') return DATA.workOrders.some((w) => w.unitId === rec.unitId && w.phase !== 'Complete' && !w.cancelled && (value === 'open' || w.phase === 'Part Ordered' || (w.lineItems || []).some((l) => l.phase === 'Part Ordered')));
-  if (col === '__wop') return DATA.workOrders.some((w) => w.unitId === rec.unitId && w.phase !== 'Complete' && !w.cancelled && (w.phase || '—') === value);   // §13.5 — unit has an open WO stuck at this phase (bottleneck)
+  if (col === '__wop') return DATA.workOrders.some((w) => w.unitId === rec.unitId && !w.cancelled && (w.phase || '—') === value);   // §13.5 — unit has a WO at this phase (open = bottleneck; 'Complete' matches finished WOs for the Round-Up drill)
   if (col === '__insp') return value === 'Ready' ? rec.inspectionStatus === 'Ready' : rec.inspectionStatus !== 'Ready';   // §13.5 — Passed vs Not Ready (Failed folds into Not Ready; Jac retired the Failed bucket)
   if (col === '__cond') return rec.inspectionStatus === value;
   if (col === '__svc') { const s = topServiceForUnit(rec); return !!rec.washRequested || !!(s && s.remaining < 0); }   // service-due: overdue service or wash requested
@@ -2669,6 +2781,8 @@ function totColMatch(card, rec, col, value) {
   if (col === '__rentrange') { const [a, b] = String(value).split('|'); const d = (rec.startDate || '').slice(0, 10); return !!d && d >= a && d < b; }   // §13.4 — rental start in a timeline bucket [a,b)
   if (col === '__daterange') { const [a, b] = String(value).split('|'); const d = (rec.date || '').slice(0, 10); return !!d && d >= a && d < b; }   // §13.4 — inspection / WO dated in a timeline bucket
   if (col === '__fcrange') { const [a, b] = String(value).split('|'); return DATA.workOrders.some((w) => w.unitId === rec.unitId && w.woType === 'Field Call' && (w.date || '').slice(0, 10) >= a && (w.date || '').slice(0, 10) < b); }   // §13.4 — Field Call in a timeline bucket
+  if (col === '__worange') { const [a, b] = String(value).split('|'); return DATA.workOrders.some((w) => w.unitId === rec.unitId && !w.cancelled && (w.date || '').slice(0, 10) >= a && (w.date || '').slice(0, 10) < b); }   // Shop retirement — unit has a WO dated in a timeline bucket (Round-Up WO drills land on Units)
+  if (col === '__insprange') { const [a, b] = String(value).split('|'); return DATA.inspections.some((n2) => n2.unitId === rec.unitId && (n2.date || '').slice(0, 10) >= a && (n2.date || '').slice(0, 10) < b); }   // Shop retirement — unit inspected in a timeline bucket
   if (col === '__svcstat') {   // §13.4 — a unit's service urgency (mirrors the serviceOrders status pie)
     if (value === 'wash') return !!rec.washRequested;
     if (rec.washRequested) return false;
@@ -2678,7 +2792,7 @@ function totColMatch(card, rec, col, value) {
     if (value === 'on-schedule') return !s || (s.status !== 'past-due' && s.status !== 'due-soon');
     return false;
   }
-  if (col === '__wophase') return card === 'workOrders' && (rec.phase || '—') === value;   // shop front-page WO bar: match this phase AND exclude non-WO items (the normal 'phase' fallback would let them through)
+  if (col === '__wophase') return card === 'workOrders' && (rec.phase || '—') === value;   // WO-row phase match (excludes non-WO items; units use __wop instead)
   const c = cardColumns(card, activeSession()).find((x) => x.key === col);
   return c ? String(c.get(rec)) === String(value) : true;
 }
@@ -4290,7 +4404,12 @@ const FLAG_COND = {
     'no-card':          (r) => { const c = IDX.customer.get(r.customerId); return !!c && cardFlag(c) === 'none'; },
     'unsigned-card':    (r) => { const c = IDX.customer.get(r.customerId); if (!c || !hasValidCard(c)) return false; return !cardCurrentSigning(c, defaultCard(c)); },
     'unit-failed':      (r) => rentalUnitRecords(r).some((u) => u.inspectionStatus === 'Failed'),
-    'off-rent-overdue': (r) => r.status === 'Off Rent',
+    // §10 Overdue Return — fires on the stored Off Rent status AND on any rental still
+    // physically OUT (On/End Rent) whose scheduled return has passed. Mirrors the start-side
+    // `no-show` derivation and the same OUT_RENTAL_STATUSES + endDate<TODAY "overdue out" test
+    // the availability engine already uses (rentalsOverlappingUnit, categoryUnavailReason), so a
+    // window that ended without the unit coming back stops reading plain-green "On Rent".
+    'off-rent-overdue': (r) => r.status === 'Off Rent' || (OUT_RENTAL_STATUSES.has(r.status) && !!r.endDate && r.endDate < TODAY_ISO),
     'no-show':          (r) => r.status === 'Reserved' && !!r.startDate && parseISO(r.startDate) < TODAY,
     'starts-today':     (r) => r.status === 'Reserved' && !!r.startDate && dayDiff(TODAY, parseISO(r.startDate)) === 0,
     'starts-tomorrow':  (r) => r.status === 'Reserved' && !!r.startDate && dayDiff(TODAY, parseISO(r.startDate)) === 1,
@@ -4514,6 +4633,136 @@ function unruledElements() {
 function closeX(js, { data, hover } = {}) {
   return `<button class="close-x${hover ? ' hoveronly' : ''}${js ? ' ' + js : ''}" data-r="R24"${dataAttrs(data)} data-tip="Close">${I.x}</button>`;
 }
+/** R26: MANUAL LINK — icon-only ghost circle, opens a service task's cited OEM
+ *  manual page in a new tab (Jac 2026-07-07: every model task now carries a
+ *  sourceUrl alongside its `source` citation). Renders NOTHING when the caller
+ *  has no real sourceUrl — an honest miss, never a dead/fake link (same spirit
+ *  as categoryIconFor's neutral box glyph). `cite` (the task's rich `source`
+ *  text) rides as the tooltip when short enough to read at a glance. */
+function sourceLinkBtn(url, cite) {
+  if (!url) return '';
+  const tip = (cite && cite.length <= 140) ? cite : 'View in manual';
+  return `<a class="icon-link" data-r="R26" href="${esc(url)}" target="_blank" rel="noopener" data-tip="${esc(tip)}">${I.linkOut}</a>`;
+}
+/* SERVICE DETAIL PANEL (Jac 2026-07-08 — "REALLY hold their hands"): a service task's
+ * optional `detail` object (fluidType/fluidCapacity/partRefs/notes) drives the "What
+ * you need" block in the service-completion popup. Parts are editable IN PLACE — they
+ * reuse the exact WO Work-Order line idiom (.woline row + closeX remove + the partform
+ * popup for add/edit) rather than inventing a parallel parts UI, per Jac's "this should
+ * nearly already exist because of Work Orders" note. Edits write to the REAL model task
+ * (unitServiceRows returns a merged/derived copy), never the copy — see
+ * removeSvcPartRef / savePartForm's taskTarget branch. */
+function svcRealTask(u, task) {
+  const mo = u && u.modelId ? IDX.model.get(u.modelId) : null;
+  return mo ? { mo, realTask: (mo.tasks || []).find((t) => t.taskId === task.taskId) || null } : { mo: null, realTask: null };
+}
+function svcNeedHtml(u, task) {
+  const { realTask } = svcRealTask(u, task);
+  const editable = !!realTask;
+  const d = task.detail || null;
+  if (!d) {
+    return (task.parts && task.parts.length)
+      ? `Parts: ${esc(task.parts.join(' · '))}`
+      : '<span class="muted">No detailed spec on file for this task yet.</span>';
+  }
+  const partRefs = d.partRefs || [];
+  const fluidHtml = (d.fluidType || d.fluidCapacity) ? `<div class="svc-fluid">${I.droplet}<span class="svc-fluid-txt">${d.fluidCapacity ? `<b>${esc(d.fluidCapacity)}</b>` : ''}${d.fluidCapacity && d.fluidType ? ' · ' : ''}${d.fluidType ? esc(d.fluidType) : ''}</span></div>` : '';
+  const notesHtml = d.notes ? `<div class="muted svc-notes">${esc(d.notes)}</div>` : '';
+  const rows = partRefs.map((pr, idx) => `
+    <div class="woline">
+      <span class="js-svc-part" data-idx="${idx}" style="cursor:pointer">${esc(pr.name || 'Part')}</span>
+      <span class="nums">${pr.cost != null ? `<b>${money(pr.cost)}</b>` : ''}<span>${esc(pr.oem || '—')}</span></span>
+      <span class="woline-acts">${editable ? closeX('js-svc-part-remove', { data: { unit: u.unitId, task: task.taskId, idx } }) : ''}</span>
+    </div>`).join('');
+  const partsBlock = (partRefs.length || editable) ? `
+    <div class="svc-parts-head">Parts / filters${editable ? '<span class="svc-editnote"> · edits this model’s schedule</span>' : ''}</div>
+    ${rows}
+    ${editable ? `<div class="svc-partadd">${addBtn('Part', { line: true, js: 'js-svc-addpart', h: 26, data: { unit: u.unitId, task: task.taskId } })}${actionPill('commit', 'Browse catalog', { js: 'js-svc-browseparts', data: { unit: u.unitId, task: task.taskId }, h: 26 })}</div>` : ''}` : '';
+  return `${fluidHtml}${notesHtml}${partsBlock}` || '<span class="muted">No detailed spec on file for this task yet.</span>';
+}
+/** The part-detail side panel — a SECOND .popup appended to the same overlay (the
+ * cardSub / newCustomer §14 side-by-side precedent), showing a clicked partRef's
+ * vendor/cost. Prefers values the mechanic already entered directly on the partRef
+ * (via partform); falls back to a DATA.parts catalog match by OEM/productNumber;
+ * an honest "not in catalog yet" when neither is on file. */
+function svcPartPanelEl(u, task, pr, idx) {
+  const norm = (s) => String(s || '').trim().toLowerCase();
+  const catalogPart = pr.oem ? DATA.parts.find((p) => p.productNumber && norm(p.productNumber) === norm(pr.oem)) : null;
+  const vendor = (pr.vendorId && (IDX.vendor.get(pr.vendorId) || DATA.vendors.find((v) => v.vendorId === pr.vendorId)))
+    || (catalogPart && catalogPart.vendorId && (IDX.vendor.get(catalogPart.vendorId) || DATA.vendors.find((v) => v.vendorId === catalogPart.vendorId))) || null;
+  const cost = pr.cost != null ? pr.cost : (catalogPart ? catalogPart.priceEach : null);
+  const url = pr.url || (catalogPart ? catalogPart.website : '');
+  const img = pr.photo || (catalogPart ? catalogPart.imageUrl : '');
+  const enriched = !!(vendor || cost != null || url || catalogPart);
+  const webUrl = (w) => (/^https?:\/\//i.test(w) ? w : 'https://' + w);
+  const vendorBlock = vendor ? `
+      <div class="svc-ref-head" style="margin-top:14px">Vendor</div>
+      <div class="svc-vendor-block">
+        <div class="svc-vendor-name">${esc(vendor.name || '')}</div>
+        ${vendor.primaryContact ? `<div class="muted" style="font-size:11.5px">${esc(vendor.primaryContact)}</div>` : ''}
+        ${vendor.phone ? linkName(vendor.phone, { js: 'js-open-link', data: { url: 'tel:' + String(vendor.phone).replace(/[^\d+]/g, '') } }) : ''}
+        ${vendor.email ? linkName(vendor.email, { js: 'js-open-link', data: { url: 'mailto:' + vendor.email } }) : ''}
+        ${vendor.website ? linkName(vendor.website, { js: 'js-open-link', data: { url: webUrl(vendor.website) } }) : ''}
+      </div>` : (enriched ? '' : `
+      <p class="muted" style="font-size:12px;margin-top:8px">Not in the parts catalog yet.</p>
+      <div class="svc-part-row">${linkName('Search this part number ↗', { js: 'js-open-link', data: { url: 'https://www.google.com/search?q=' + encodeURIComponent(pr.oem || pr.name || '') } })}</div>`);
+  const pp = el('div', 'popup svc-part-popup'); pp.style.width = '300px';
+  pp.innerHTML = popupShell({
+    icon: CARD_ICON.parts || '', title: pr.name || 'Part',
+    tag: catalogPart ? 'Parts catalog · match' : (enriched ? 'Service · part' : 'Parts catalog · not on file'),
+    closeJs: 'js-svc-part-close',
+    body: `
+      ${img ? `<img class="insp-thumb" src="${esc(img)}" alt="${esc(pr.name || 'part')}">` : ''}
+      <div class="muted" style="font-size:11px;margin-bottom:8px">OEM ${esc(pr.oem || '—')}${catalogPart ? ` · Catalog ${esc(catalogPart.productNumber || '')}` : ''}</div>
+      ${cost != null ? kv(money(cost), { pfx: 'Cost', derived: pr.cost == null }) : ''}
+      ${catalogPart && catalogPart.qtyOnHand != null ? kv(catalogPart.qtyOnHand + ' on hand', { pfx: 'Stock', derived: true }) : ''}
+      ${url ? `<div class="svc-part-row">${linkName(url.length > 30 ? 'Order / info ↗' : url, { js: 'js-open-link', data: { url: webUrl(url) } })}</div>` : ''}
+      ${vendorBlock}`,
+    foot: `${ghostPill('Close', { js: 'js-svc-part-close' })}${actionPill('commit', 'Edit', { js: 'js-svc-partedit', data: { unit: u.unitId, task: task.taskId, idx } })}`,
+  });
+  return pp;
+}
+function removeSvcPartRef(unitId, taskId, idx) {
+  const u = IDX.unit.get(unitId); if (!u) return;
+  const { mo, realTask } = svcRealTask(u, { taskId });
+  if (!realTask || !realTask.detail || !Array.isArray(realTask.detail.partRefs) || !realTask.detail.partRefs[idx]) return;
+  const [gone] = realTask.detail.partRefs.splice(idx, 1);
+  reindex('models', mo); logAction(mo, `Removed part ${auditVal(gone.name)} from ${realTask.name}`);
+  const o = state.overlay;
+  if (o && o.kind === 'service' && o.partRef && o.partRef.idx === idx) o.partRef = null;
+  else if (o && o.kind === 'service' && o.partRef && o.partRef.idx > idx) o.partRef.idx -= 1;   // keep pointing at the same part after the array shifts
+  toast('Part removed.'); renderOverlay();
+}
+/** Attach an EXISTING catalog part (DATA.parts) onto a service task's detail.partRefs —
+ * the "selection" half of the parts UX (Jac 2026-07-08), paired with the partform
+ * "create" half. Opened from the parts board in pick mode (js-svc-pick-part). Writes to
+ * the REAL model task (svcRealTask + reindex('models',…)), the same idiom as
+ * removeSvcPartRef / savePartForm's taskTarget branch — never the unitServiceRows copy.
+ * Only carries fields the catalog actually has (undefined, not '', so svcPartPanelEl's
+ * "not in catalog yet" fallback still behaves). Dedupes by OEM (when present) or name. */
+function attachCatalogPart(unitId, taskId, partId) {
+  const u = IDX.unit.get(unitId); if (!u) return;
+  const p = DATA.parts.find((x) => x.partId === partId); if (!p) return;
+  const { mo, realTask } = svcRealTask(u, { taskId });
+  if (!realTask) { toast('No editable schedule for this unit.'); return; }
+  realTask.detail = realTask.detail || {};
+  realTask.detail.partRefs = realTask.detail.partRefs || [];
+  const norm = (s) => String(s || '').trim().toLowerCase();
+  const oem = p.productNumber || '';
+  const dupe = realTask.detail.partRefs.some((pr) => (oem && pr.oem && norm(pr.oem) === norm(oem)) || (norm(pr.name) && norm(pr.name) === norm(p.name)));
+  if (dupe) { toast('Already on this service'); return; }
+  const rec = { name: p.name };
+  if (oem) rec.oem = oem;
+  if (p.priceEach != null) rec.cost = p.priceEach;
+  if (p.vendorId) rec.vendorId = p.vendorId;
+  if (p.website) rec.url = p.website;
+  if (p.imageUrl) rec.photo = p.imageUrl;
+  realTask.detail.partRefs.push(rec);
+  reindex('models', mo); logAction(mo, `Attached catalog part ${auditVal(p.name)} to ${realTask.name}`);
+  toast('Part attached.');
+  state.overlay = { kind: 'service', unitId, taskId };
+  renderOverlay();
+}
 /** R6: required-until-entered — white bg + dark ink, stays loud until satisfied. */
 function reqBtn(label, { js, data, icon } = {}) {
   return `<button class="req${js ? ' ' + js : ''}" data-r="R6"${dataAttrs(data)}>${icon || ''}${esc(label)}</button>`;
@@ -4600,12 +4849,16 @@ function openCtxMenu(e, hit) {
   m.className = 'ctx-menu'; m.id = 'rw-ctx';
   const item = (act, label) => `<button class="dd-item" data-ctx="${act}">${label}</button>`;
   const linkSec = linkItems.length ? linkItems.map((a) => `<button class="dd-item" data-ctx="link:${a.target}">${CARD_ICON[a.target] || ''}${esc(a.label)}</button>`).join('') + '<div class="menu-sep"></div>' : '';
-  m.innerHTML = linkSec + [
+  // D8 comms block — on a customer, Text… / Email… start (or resurrect) that
+  // conversation onto the rail. ('Ask Mr. Wrangler about…' rides D8 Phase B.)
+  const ctxCust = ctxRecord && ctxRecord.card === 'customers' ? recOf('customers', ctxRecord.recId) : null;
+  const commsSec = ctxCust ? `<button class="dd-item" data-ctx="commsText">${I.messageSquare}Text ${esc((ctxCust.firstName || fullName(ctxCust) || 'customer').trim().split(/\s+/)[0])}…</button><button class="dd-item" data-ctx="commsEmail">${I.mail}Email ${esc((ctxCust.firstName || fullName(ctxCust) || 'customer').trim().split(/\s+/)[0])}…</button><div class="menu-sep"></div>` : '';
+  m.innerHTML = commsSec + linkSec + [
     item('cut', '✂️ Cut'), item('copy', '📋 Copy'), item('paste', '📥 Paste'), item('clear', '🧹 Clear'),
     '<div class="menu-sep"></div>',
     item('search', '🔎 Search'), item('gsearch', '🌐 Global Search'), item('replace', '✏️ Replace'),
     '<div class="menu-sep"></div>',
-    item('comment', '💬 Add Comment'), item('startchat', '🧵 Start chat'), item('wrangler', '🤠 Ask Mr. Wrangler'),
+    item('comment', '💬 Add Comment'), item('copyel', '📋 Copy to chat'), item('wrangler', '🤠 Ask Mr. Wrangler'),
   ].join('');
   document.body.appendChild(m);
   m.style.left = Math.min(e.clientX, window.innerWidth - 205) + 'px';
@@ -4661,6 +4914,11 @@ function runCtxAction(act) {
     else if (act === 'gv-reset') saveGvChrome(card, { pills: false, sort: false });
     return render();
   }
+  if (act === 'commsText' || act === 'commsEmail') {   // D8 — start/resume a customer conversation from the R20 menu
+    const rec = ctxRecord; closeCtxMenu(); document.removeEventListener('mousedown', ctxOutside); ctxRecord = null;
+    if (rec && rec.card === 'customers') commsOpenConv(act === 'commsText' ? 'text' : 'email', rec.recId);
+    return;
+  }
   if (act.startsWith('link:')) {   // §17b — menu-driven linking
     const target = act.slice(5); const rec = ctxRecord;
     closeCtxMenu(); document.removeEventListener('mousedown', ctxOutside); ctxRecord = null;
@@ -4700,7 +4958,7 @@ function runCtxAction(act) {
     if (!hit) { toast('Right-click a record (or open one) to comment.'); return; }
     return openOverlay({ kind: 'comment', card: hit.card, recId: hit.recId, recType: hit.recType, color: 'yellow' });
   }
-  if (act === 'startchat') return startChatFromEl(el);   // §17 — start a team chat seeded from this element
+  if (act === 'copyel') return copyElement(el);   // §17 — copy this element; paste it into a Team / Mr. Wrangler chat as a live chip
   if (act === 'wrangler') {
     const hit = cardRecordAt(el);   // §18 — open Mr. Wrangler dock, record-aware when a record is under the cursor
     return openWranglerDock({ messages: [], draft: '', attach: [], card: hit ? hit.card : null, recId: hit ? hit.recId : null, recType: hit ? hit.recType : null, reqNumber: null, reqTitle: null, reqUrl: null });
@@ -4712,9 +4970,12 @@ function actionPill(kind, label, { js, data, h } = {}) {
 }
 /** R18: the ONE quiet/neutral action — Cancel, Close, secondary tools.
  *  `disabled` greys it (is-disabled) and drops the js hook so it's inert; pair with `tip`
- *  (R23 data-tip) to explain why (e.g. "No email on file"). */
-function ghostPill(label, { js, data, tip, disabled } = {}) {
-  return `<button class="pill ghost${disabled ? ' is-disabled' : ''}${js && !disabled ? ' ' + js : ''}" data-r="R18"${dataAttrs(data)}${tip ? ` data-tip="${esc(tip)}"` : ''}${disabled ? ' aria-disabled="true"' : ''}>${esc(label)}</button>`;
+ *  (R23 data-tip) to explain why (e.g. "No email on file"). `icon` renders an icon-only
+ *  circular chip (same ghost weight, sized to match a badge) instead of the text label —
+ *  the label still becomes the a11y name + the R23 tooltip (e.g. a row's Duplicate action). */
+function ghostPill(label, { js, data, tip, disabled, icon } = {}) {
+  const tipAttr = icon ? (tip || label) : tip;
+  return `<button class="pill ghost${icon ? ' icon-only' : ''}${disabled ? ' is-disabled' : ''}${js && !disabled ? ' ' + js : ''}" data-r="R18"${dataAttrs(data)}${tipAttr ? ` data-tip="${esc(tipAttr)}"` : ''}${icon ? ` aria-label="${esc(label)}"` : ''}${disabled ? ' aria-disabled="true"' : ''}>${icon || esc(label)}</button>`;
 }
 /** The popup PLATE — every overlay's shell, so they all read as one bolted data-plate.
  *  Hazard cap (red `danger` variant for abort/destroy) + corner rivets + stamped Saira
@@ -4762,7 +5023,7 @@ const RULE_META = {
   R15: ['Journey', 'yardToolHtml / miniJourneyHtml', 'yard +Start/+FC/+End + Jac─Site─Jac transport; white = video owed'],
   R16: ['Window calendar', 'rdcal-edit / winPickerEl (inline)', 'the rental window — an INLINE editable month calendar in the detail (popup retired 2026-06-25); tap start→end, the left Units/Categories card shows availability live, fragile rentals stage with an inline Confirm panel below the calendar'],
   R17: ['Action pill', 'actionPill', 'commit = blue · money = green · danger = solid red; .locked = gated'],
-  R18: ['Ghost', 'ghostPill', 'the ONE quiet action — Cancel / Close / Exit / Clear'],
+  R18: ['Ghost', 'ghostPill', 'the ONE quiet action — Cancel / Close / Exit / Clear, or an icon-only row secondary (e.g. Duplicate)'],
   R19: ['Attention flash', 'attnFlash / flashOr', 'a glow that points AT the next action — replaces an error message when the fix is on screen'],
   R20: ['Context menu', 'openCtxMenu (right-click · long-press)', 'right-click/long-press any element: Cut · Copy · Paste · Search · Replace · Add Comment · Ask Mr. Wrangler'],
   R21: ['File drop', 'fileDrop', 'the MASSIVE popup add-file zone — R5b blue dashed at full size'],
@@ -4770,6 +5031,8 @@ const RULE_META = {
   R23: ['Tooltip', 'data-tip → the one styled tip', 'every hover hint goes through data-tip — a native title attribute is a violation'],
   R24: ['Close ✕', 'closeX', 'red circle · white ✕ — the deliberate close/remove; hover-reveal variant on tabs'],
   R25: ['Sync banner', 'renderSyncBanner / #sync-banner', 'persistent “Not saving” plate — red hazard-stripe danger cap; raised when the backend sync is failing, hides on recovery. The ONE non-toast alert; lives on <body>, outside #app'],
+  R26: ['Manual link', 'sourceLinkBtn', 'small ghost-circle external-link icon beside a service task — opens its cited OEM manual page (task.sourceUrl) in a new tab; renders only when the task actually carries one'],
+  R27: ['Due-Today banner', 'renderSchedBanner / #sched-banner', 'top-of-screen reminder plate — caution-YELLOW hazard-stripe cap; lists the scheduled actions due today (customer · note · time), each customer an R2 link. Manual X only (never auto-clears), dismissal sticks for the session (sessionStorage). Like R25 it lives on <body>, outside #app'],
 };
 /* ════════════ APP-12 · DESIGN-SYSTEM CATALOG — the tabbed Rulebook (Jac 2026-06-14) ════
    The Rulebook grew from "stamped element rules" (R0–R24 above) into the WHOLE
@@ -4894,7 +5157,7 @@ const RB_TABS = [
   { id: 'fields', label: 'Fields & Adds', intro: 'Where you type, link, and add.',
     items: [{ r: 'R5' }, { r: 'R5b' }, { r: 'R5c' }, { r: 'R6' }, { r: 'R7' }, { r: 'R8' }, { r: 'R14' }, { r: 'R22' }] },
   { id: 'actions', label: 'Actions', intro: 'Buttons that DO something — colored by intent.',
-    items: [{ r: 'R17' }, { r: 'R18' }, { r: 'R24' }] },
+    items: [{ r: 'R17' }, { r: 'R18' }, { r: 'R24' }, { r: 'R26' }] },
   { id: 'upload', label: 'Upload & Capture', intro: 'Add-file zones and photo/site captures.',
     items: [{ r: 'R21' }, { f: 'upload-capture' }] },
   { id: 'data', label: 'Data & Behaviors', intro: 'Visualizations, plus the app’s behaviors — it flashes instead of erroring, right-clicks, tooltips, and self-lints.',
@@ -5104,8 +5367,19 @@ function unitPrimaryState(u) {
   if (ar) {   // tied to a rental → stage + window dates
     const win = cardWindow(ar.startDate, ar.endDate);
     const failed = u.inspectionStatus === 'Failed';
-    const status = failed ? 'Field Call' : rentalDisplayStatus(ar);   // breakdown mid-rental = field call, not "Failed"
-    return { label: win ? `${status} · ${win}` : status, color: (failed || unitOverbooked(u.unitId)) ? 'red' : insp.color };
+    let status = failed ? 'Field Call' : rentalDisplayStatus(ar);   // breakdown mid-rental = field call, not "Failed"
+    // §10 Overdue Return (#509) — an out unit whose scheduled return has passed reads RED
+    // and its pill word flips to "Overdue" (approved by Jac), mirroring the rental-entity
+    // flag #481 added (FLAG_COND 'off-rent-overdue') and the availability engine's per-unit
+    // overdue-out test (rentalsOverlappingUnit). Without this the unit's headline pill stayed
+    // inspection-color green reading "On Rent" while its rental card already showed overdue —
+    // the same "still ON RENT after the return date" gap, on the unit side. Stored status is
+    // untouched (display-only relabel, per overdueOutStatus).
+    const eu = unitEntry(ar, u.unitId);
+    const euStatus = eu ? unitStatus(ar, eu) : ar.status;
+    const overdueOut = OUT_RENTAL_STATUSES.has(euStatus) && !!ar.endDate && ar.endDate < TODAY_ISO;
+    if (!failed && overdueOutStatus(euStatus, ar.endDate)) status = 'Overdue';
+    return { label: win ? `${status} · ${win}` : status, color: (failed || unitOverbooked(u.unitId) || overdueOut) ? 'red' : insp.color };
   }
   if (u.inspectionStatus === 'Failed') return { label: 'Failed', color: 'red' };
   if (u.inspectionStatus === 'Not Ready') return { label: 'Not Ready', color: 'yellow' };
@@ -5141,8 +5415,11 @@ const FLAG_SEV = { red: 2, yellow: 1, gray: 0 };
 function unitCardFlags(u) {
   const f = [];
   if (unitOverbooked(u.unitId)) f.push({ label: 'Overbooked', color: 'red', alert: true });
-  if (u.gpsStatus === 'Not Reporting') f.push({ label: 'No GPS', color: 'red' });
-  else if (u.gpsStatus === 'Verify') f.push({ label: 'GPS?', color: 'yellow' });
+  const gsFlag = unitGpsStatus(u);   // live-derived (falls back to stored) — §5 step 3
+  if (gsFlag) {
+    if (gsFlag.status === 'Not Reporting') f.push({ label: 'No GPS', color: 'red' });
+    else if (gsFlag.status === 'Verify') f.push({ label: 'GPS?', color: 'yellow' });
+  }
   if (u.fleetStatus && u.fleetStatus !== 'Active') { const fs = getStatus('unitFleetStatus', u.fleetStatus); f.push({ label: fs.label, color: fs.color }); }
   // The border now mirrors the two pills, so surface the warnings the pills DON'T show
   // (Jac 2026-07-01): a due/past-due SERVICE that an open WO is hiding in pill 2, and a
@@ -5572,14 +5849,13 @@ const CARD_COLUMNS = {
     C('hours', 'Hours', 'num', (u) => u.currentHours ?? null, { agg: 'avg' }),
   ],
 };
-/** Columns for a card; the Shop card resolves to its active segment's entity. */
+/** Columns for a card. (Shop retirement: no segment resolution — cards map 1:1.) */
 function cardColumns(card, session) {
-  if (card === 'shop') { const seg = boardSegmentFor(session); return CARD_COLUMNS[seg] || []; }
   return CARD_COLUMNS[card] || [];
 }
 function boardSegmentFor(session) {
-  const cs = session?.cards?.shop; const seg = cs?.segment;
-  return (seg && seg !== 'all') ? seg : 'workOrders';
+  // Retired with the Shop card — kept only so stale saved Board Views resolve safely.
+  return 'workOrders';
 }
 /** Aggregate a column over rows → {kind, ...} for the totals + board summary. */
 function aggColumn(col, rows) {
@@ -6034,6 +6310,47 @@ function woSectionHtml(w) {
     </div>
   </div>`;
 }
+/* Per-unit SERVICES section (Shop retirement, Jac 2026-07-07): the recurring
+   countdown list — wash pinned to the top, then most-urgent first — with the
+   same js-svc-complete completion flow the Shop card used. Section header +
+   border follow the worst task's live status (R11). */
+const SVC_LIST_CAP = 6;   // real per-model schedules run 20+ tasks — cap the section, expand on demand
+function serviceTasksHtml(u, { title = 'Services' } = {}) {
+  const all = unitServiceRows(u);
+  const wash = all.find((s) => s.taskId === 'svc-wash');
+  const rows = wash ? [wash, ...all.filter((s) => s.taskId !== 'svc-wash')] : all;
+  const lastFor = (taskId) => { const ls = (u.serviceLog || []).filter((l) => l.taskId === taskId); return ls.length ? ls[ls.length - 1] : null; };
+  const expanded = state.svcExpand === u.unitId;
+  const shown = expanded ? rows : rows.slice(0, SVC_LIST_CAP);
+  const list = shown.map((s) => {
+    const last = lastFor(s.taskId);
+    const washReq = s.taskId === 'svc-wash' && u.washRequested;
+    const sn = svcSnoozedUntil(u, s.taskId);   // backlog #43 — snoozed = alarm muted, row stays honest
+    const pillColor = sn ? 'gray' : (washReq ? 'blue' : s.color);
+    const pillLabel = sn ? 'Snoozed' : (washReq ? 'Wash Now' : getStatus('serviceStatus', s.status).label);
+    const sub = sn
+      ? `Snoozed thru ${esc(fmtShortDate(sn))} · was ${esc(svcText(s))} · every ${s.intervalHours} HRS`
+      : `Every ${s.intervalHours} HRS${last ? ` · last ${esc(fmtShortDate(last.date))} @ ${num(last.hours)} HRS` : ' · never serviced'}`;
+    return `<div class="svc-task">
+      <div class="svc-task-top">
+        <button class="pill c-${pillColor} js-svc-complete" data-unit="${u.unitId}" data-task="${s.taskId}" data-tip="${washReq ? 'Log the wash as done' : 'Log a completion'}" style="min-width:78px;justify-content:center">${esc(pillLabel)}</button>
+        <span class="svc-name">${esc(s.name)}</span>
+        <span class="spacer"></span>
+        ${washReq && !sn ? `<span class="pill c-blue" data-r="R3b"><span class="t">Wash Requested</span></span>` : sn ? '' : `<b>${esc(svcText(s))}</b>`}
+        ${sourceLinkBtn(s.sourceUrl, s.source)}
+        <button class="pill ghost js-svc-snooze" data-r="R18" data-rec="${u.unitId}" data-task="${s.taskId}" data-snoozed="${sn ? 1 : 0}" data-tip="${sn ? 'Snoozed — wake or extend' : 'Quiet this alarm for a while'}">${sn ? 'Wake' : 'Snooze'}</button>
+      </div>
+      <div class="svc-task-sub muted">${sub}</div>
+    </div>`;
+  }).join('');
+  const more = rows.length > SVC_LIST_CAP
+    ? `<div class="kv" style="justify-content:center">${ghostPill(expanded ? 'Show fewer' : `Show all ${rows.length} tasks`, { js: 'js-svc-expand', data: { rec: u.unitId } })}</div>`
+    : '';
+  // section tint = worst NON-wash, NON-snoozed task (snooze silences the section too — Jac's law)
+  const worst = rows.find((s) => s.taskId !== 'svc-wash' && !svcSnoozedUntil(u, s.taskId)) || rows[0];
+  const tint = worst && ['red', 'yellow', 'green'].includes(worst.color) ? ` sec-${worst.color}` : '';
+  return `<div class="section${tint}"><h4>${esc(title)}</h4><div class="hlog">${list}</div>${more}</div>`;
+}
 /* ITEM BALANCE — every invoice line item carries its own balance. A partial
    payment is assigned per line item through the payment popup; allocations are
    PRE-TAX dollars keyed per LINE (a rental + its transport share a `ref`, so the
@@ -6410,14 +6727,35 @@ const DETAIL = {
       ${efld('units', u, 'unitId', 'serial', 'Add serial', { pfx: 'S/N' })}
       ${efld('units', u, 'unitId', 'year', 'Year', { type: 'number' })}
       ${efld('units', u, 'unitId', 'make', 'Make')}
-      ${efld('units', u, 'unitId', 'model', 'Model')}
+      ${efld('units', u, 'unitId', 'modelId', 'Model', { editKind: 'unitModel', admin: true, link: true, fmt: (id) => IDX.model.get(id)?.name || 'Unknown model' })}
       ${efld('units', u, 'unitId', 'weight', 'Weight')}
       <div class="kv"><span class="v inline-edit" data-edit="unitHours" data-rec="${u.unitId}">${num(u.currentHours)} HRS</span></div>
     </div></div>`;
+    // GPS connect wizard (spec §5a) — mapping now happens through a guided popup
+    // (provider → identify → confirmed live signal) instead of hand-typing gpsProvider/
+    // gpsDeviceId; the "No GPS" badge grows a +Connect add, an already-mapped unit gets
+    // a quiet Reconnect affordance beside its provider · device-id.
+    const gpsMapped = !!(u.gpsProvider && u.gpsDeviceId);
+    const gsUnit = unitGpsStatus(u);   // live-derived status (§5 step 3); null = untracked
+    const gpsStale = gsUnit && !gsUnit.live && gpsMapped;   // backend unreachable → showing last-known
+    // §5 step 4 — enriched, on-open live detail from the fleet snapshot (last seen + map +
+    // engine). Only when we have LIVE data for this unit; the 30s view poll keeps it fresh.
+    const gpsM = (gsUnit && gsUnit.live) ? gsUnit.machine : null;
+    const gpsMapHref = (gpsM && gpsM.lat != null && gpsM.lng != null) ? `https://www.google.com/maps?q=${gpsM.lat},${gpsM.lng}` : '';
+    const gpsSeen = gpsM ? gpsRelTime(gpsM.lastSeen) : '';
     const gps = `<div class="section"><h4>GPS</h4><div class="fieldstack">
-      ${kvPills(u.gpsStatus ? statusPill('gpsStatus', u.gpsStatus, { focal: true }) : badge('No GPS'))}
+      ${kvPills((gsUnit ? statusPill('gpsStatus', gsUnit.status, { focal: true }) : badge('No GPS')) + (gpsMapped ? '' : addBtn('Connect GPS', { link: true, js: 'js-gps-connect', data: { rec: u.unitId } })))}
+      ${gpsStale ? `<div class="kv" style="justify-content:center"><span class="muted" style="font-size:11px">Last known — live link down</span></div>` : ''}
+      ${gpsM ? `<div class="kv" style="justify-content:center;gap:8px;flex-wrap:wrap">
+        ${gpsSeen ? `<span class="muted" style="font-size:11px">Last seen ${esc(gpsSeen)}</span>` : ''}
+        ${gpsMapHref ? `<a class="gps-maplink" href="${gpsMapHref}" target="_blank" rel="noopener">${esc(gpsM.address || 'View on map')}</a>` : ''}
+        ${badge(gpsM.engineOn ? 'Engine On' : 'Engine Off', gpsM.engineOn ? 'green' : 'gray')}
+      </div>` : ''}
+      ${gpsMapped ? `<div class="kv"><span class="v muted" style="font-size:11px">${esc(u.gpsProvider)} · ${esc(u.gpsDeviceId)}</span>${ghostPill('Reconnect', { js: 'js-gps-connect', data: { rec: u.unitId } })}</div>` : ''}
       ${efld('units', u, 'unitId', 'gpsType', 'GPS unit/type')}
       ${efld('units', u, 'unitId', 'gpsPlacement', 'Placement')}
+      ${gpsShutdownControl(u, gpsM)}
+      ${gpsMapped ? gpsFeedHtml(u) : ''}
     </div></div>`;
     /* COVERAGE — the yard's own equipment insurance on this unit (spec equipment-insurance
        Phase 1, Jac 2026-06-29). STATUS + riders are open to every role (a driver must know a
@@ -6453,6 +6791,16 @@ const DETAIL = {
     const invested = Number(u.trueCost) || Number(u.purchasePrice) || 0;
     const profit = totalRev - repair - invested;
     const roi = invested ? Math.round((profit / invested) * 100) : null;
+    /* Sell a unit (spec units-fleet D3): a dedicated capture flow instead of a bare
+       Sold flip — money-gated (D2: sale price is margin-sensitive), so a non-money
+       login sees fleet status but never the Sell action or a sale figure. Once sold,
+       the realized sale price/date show here in place of the Sell action. */
+    const sellAction = (canMoney() && u.fleetStatus !== 'Sold')
+      ? actionPill('commit', 'Sell', { js: 'js-open-sell', data: { rec: u.unitId } })
+      : '';
+    const soldInfo = (u.fleetStatus === 'Sold' && canMoney() && (u.salePrice != null || u.saleDate))
+      ? `${u.salePrice != null ? kv(money(u.salePrice), { pfx: 'Sale price', derived: true }) : ''}${u.saleDate ? kv(yr(u.saleDate), { pfx: 'Sale date', derived: true }) : ''}`
+      : '';
     const investment = `<div class="section"><h4>Investment</h4>
       <div class="split">
         <div class="side">
@@ -6460,6 +6808,7 @@ const DETAIL = {
           ${efld('units', u, 'unitId', 'purchaseDate', 'Purchase date', { type: 'date', sfx: 'purchased', fmt: yr })}
           ${efld('units', u, 'unitId', 'trueCost', 'True cost', { type: 'number', sfx: 'true cost', fmt: money, money: true })}
           ${efld('units', u, 'unitId', 'purchaseHours', 'Hours at purchase', { type: 'number', sfx: 'at purchase', fmt: (v) => num(v) + ' HRS' })}
+          ${soldInfo}
         </div>
         <div class="side r">
           ${kv(money(totalRev), { pfx: 'Total Revenue', derived: true })}
@@ -6468,7 +6817,7 @@ const DETAIL = {
           ${kv(`${money(profit)}${roi != null && canMoney() ? ` · (${roi}%)` : ''}`, { pfx: 'Profit', derived: true })}
         </div>
       </div>
-      <div style="display:flex;justify-content:flex-end;margin-top:8px">${gatePill('unitFleetStatus', u.fleetStatus, 'js-fleetstatus', { rec: u.unitId })}</div></div>`;
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px">${sellAction}${gatePill('unitFleetStatus', u.fleetStatus, 'js-fleetstatus', { rec: u.unitId })}</div></div>`;
     /* INSPECTION — live condition + wash toggles, timestamp in the header */
     const li2 = latestInspForUnit(u.unitId);
     const stampDate = u.condAt || li2?.date || '';
@@ -6495,6 +6844,7 @@ const DETAIL = {
         ${li2?.description ? `<div class="kv" style="justify-content:center"><span class="muted">Latest:</span> <span style="font-size:12.5px">${esc(li2.description)}</span></div>` : ''}
       </div>
     </div>`;
+    const svcSec = serviceTasksHtml(u);   // Shop retirement (Jac 2026-07-07): services live ON the unit
     const woSecs = openWOsForUnit(u.unitId).map(woSectionHtml).join('');
     const notes = notesSection('units', u, 'unitId');
     const hchips = [
@@ -6508,6 +6858,7 @@ const DETAIL = {
       <div class="detail-head"><span class="d-title">${esc(u.name)}</span></div>
       ${notes.top}
       ${inspSec}
+      ${svcSec}
       ${woSecs}
       <div class="add-row">${addBtn('Work Order', { js: 'js-new-wo-unit', link: true, data: { rec: u.unitId } })}</div>
       <div class="detail-cols">${specs}${gps}</div>
@@ -6720,7 +7071,7 @@ const DETAIL = {
     const actEntry = state.actOpen === c.customerId
       ? `<div class="act-entry"><input class="act-in js-act-in" data-rec="${c.customerId}" placeholder="${state.actMode === 'schedule' ? 'Schedule an action…' : 'Log an action…'}" /></div>`
       : '';
-    const hit = (a, strip) => `<div class="hitem"><span class="htime">${esc(fmtShortDate(a.when))}</span><span>${esc(strip ? a.text.replace(/^Scheduled:\s*/, '') : a.text)}</span></div>`;
+    const hit = (a, strip) => `<div class="hitem"><span class="htime">${esc(fmtShortDate(a.when))}</span><span>${esc(histText(strip ? a.text.replace(/^Scheduled:\s*/, '') : a.text))}</span></div>`;
     const acts = (c.activityLog || []).filter((a) => !/^Scheduled:/.test(a.text)).map((a) => hit(a)).join('');
     const scheds = (c.activityLog || []).filter((a) => /^Scheduled:/.test(a.text)).map((a) => hit(a, true)).join('');
     const activity = acts || scheds ? `<div class="act-cols"><div class="act-col">${acts}</div><div class="act-col">${scheds}</div></div>` : '';
@@ -6738,6 +7089,7 @@ const DETAIL = {
       ${activity}
       ${activeBar}
       ${account}
+      ${commsCustSectionHtml(c)}
       ${paymentMethodsSection(c)}
       ${notes.bottom}
       ${historySection('customers', c, cs)}
@@ -6771,6 +7123,25 @@ const DETAIL = {
       ${kv(`${num(st.avgHours)} HRS`, { sfx: 'avg hours', derived: true })}
       ${(c.lostDemand || []).length ? kv(`${(c.lostDemand || []).length}`, { sfx: 'lost-demand asks', derived: true }) : ''}
       ${c.description ? kv(c.description, { wrap: true }) : ''}
+    </div></div>`;
+    // MODELS (Jac 2026-07-07): the category derives which models a unit can pick —
+    // real per-model maintenance schedules live here, editable via the modelSchedule popup.
+    const catModels = (DATA.models || []).filter((mo) => mo.categoryId === c.categoryId);
+    // Duplicate (Jac 2026-07-07): a per-row R18 icon-only action reuses the SAME inline
+    // "+ Add Model" input below — js-model-dup just pre-arms it with a source to clone
+    // from (cs.dupFrom) rather than opening a separate popup.
+    const modelRows = catModels.map((mo) => `<div class="kv unit-line">${linkName(mo.name, { js: 'js-model-open', data: { rec: mo.modelId } })}${badge(mo.tasks.length + (mo.tasks.length === 1 ? ' task' : ' tasks'))}${ghostPill('Duplicate', { js: 'js-model-dup', data: { rec: mo.modelId }, icon: I.copy })}</div>`).join('');
+    const dupSrc = cs?.dupFrom ? IDX.model.get(cs.dupFrom) : null;
+    const addModelRow = cs?.addingModel
+      ? `<div class="kv pillrow" style="gap:7px">
+          ${dupSrc ? `<span class="muted" style="font-size:11px;width:100%">Duplicating ${esc(dupSrc.name)} — rename below</span>` : ''}
+          <input class="lf-in js-am-name" placeholder="Model name" style="flex:1" value="${dupSrc ? esc(dupSrc.name + ' copy') : ''}">
+          ${ghostPill('Cancel', { js: 'js-am-cancel' })}${actionPill('commit', 'Add', { js: 'js-am-save', data: { rec: c.categoryId } })}
+        </div>`
+      : kvPills(addBtn('Model', { line: true, js: 'js-add-model', h: 26, data: { rec: c.categoryId } }));
+    const models = `<div class="section"><h4>Models</h4><div class="fieldstack">
+      ${modelRows || '<span class="muted" style="font-size:12px">No models yet — units in this category use the generic service schedule.</span>'}
+      ${addModelRow}
     </div></div>`;
     // every unit in the category — R2 linked pill + R4 derived status pill (Jac 2026-06-12)
     const catUnits = DATA.units.filter((u) => u.categoryId === c.categoryId);
@@ -6806,6 +7177,7 @@ const DETAIL = {
       ${bars}
       ${notes.top}
       <div class="detail-cols">${pricing}${fleet}</div>
+      ${models}
       ${investment}
       ${notes.bottom}
       ${historySection('categories', c, cs)}
@@ -6950,26 +7322,11 @@ const DETAIL = {
        pill + hours live in the title; Reference moved into the completion popup). The
        STATUS pill gates the popup; each task shows its last service date+hours. ── */
   serviceOrders: (u, cs) => {
-    const all = unitServiceRows(u);
-    const wash = all.find((s) => s.taskId === 'svc-wash');     // Wash pinned to the top of the list
-    const rows = wash ? [wash, ...all.filter((s) => s.taskId !== 'svc-wash')] : all;
-    const top = topServiceForUnit(u) || rows[0];
+    // Shop retirement (Jac 2026-07-07): the task list now lives in serviceTasksHtml
+    // (shared with the unit detail). This renderer dies with the Shop card.
+    const top = topServiceForUnit(u) || unitServiceRows(u)[0];
     const ar = activeRentalForUnit(u.unitId);
-    const lastFor = (taskId) => { const ls = (u.serviceLog || []).filter((l) => l.taskId === taskId); return ls.length ? ls[ls.length - 1] : null; };
-    const list = rows.map((s) => {
-      const last = lastFor(s.taskId);
-      const washReq = s.taskId === 'svc-wash' && u.washRequested;
-      return `<div class="svc-task">
-        <div class="svc-task-top">
-          <button class="pill c-${washReq ? 'blue' : s.color} js-svc-complete" data-unit="${u.unitId}" data-task="${s.taskId}" data-tip="${washReq ? 'Log the wash as done' : 'Log a completion'}" style="min-width:78px;justify-content:center">${esc(washReq ? 'Wash Now' : getStatus('serviceStatus', s.status).label)}</button>
-          <span class="svc-name">${esc(s.name)}</span>
-          <span class="spacer"></span>
-          ${washReq ? `<span class="pill c-blue" data-r="R3b"><span class="t">Wash Requested</span></span>` : `<b>${esc(svcText(s))}</b>`}
-        </div>
-        <div class="svc-task-sub muted">Every ${s.intervalHours} HRS${last ? ` · last ${esc(fmtShortDate(last.date))} @ ${num(last.hours)} HRS` : ' · never serviced'}</div>
-      </div>`;
-    }).join('');
-    const tasks = `<div class="section"><h4>Service Tasks</h4><div class="hlog">${list}</div></div>`;
+    const tasks = serviceTasksHtml(u, { title: 'Service Tasks' });
     const headTop = top ? (top.washRequested ? `<span class="pill c-blue">Wash Requested</span>` : `<span class="pill c-${top.color}">${esc(getStatus('serviceStatus', top.status).label)}</span>`) : '';
     const notes = notesSection('units', u, 'unitId');
     return `<div class="detail">
@@ -7036,7 +7393,7 @@ function historySection(card, rec, cs, chips) {
   const q = (cs?.historySearch || '').trim().toLowerCase();
   const items = q ? base.filter((h) => (h.search || `${h.when} ${h.text}`).toLowerCase().includes(q)) : base;
   const log = items.length
-    ? items.map((h) => `<div class="hitem"><span class="htime">${esc(h.when)}</span>${h.pill || ''}<span>${esc(h.text)}</span>${h.by ? `<span class="hby">${esc(h.by)}</span>` : ''}</div>`).join('')
+    ? items.map((h) => `<div class="hitem"><span class="htime">${esc(h.when)}</span>${h.pill || ''}<span>${esc(histText(h.text))}</span>${h.by ? `<span class="hby">${esc(h.by)}</span>` : ''}</div>`).join('')
     : `<div class="muted" style="font-size:12px">${q || chip ? 'No matching history.' : 'No history yet.'}</div>`;
   const chipBar = chips?.length
     ? `<div class="hvals">${chips.map((c) => `<button class="hv ${c.cls || ''} ${cs?.histKind === c.kind ? 'on' : ''} js-hchip" data-card="${esc(card)}" data-kind="${esc(c.kind)}">${esc(c.label)}</button>`).join('')}</div>` : '';
@@ -7288,30 +7645,25 @@ function detailTitle(card, rec) {
 /* ════════════════════════════════════════════════════════════════════════
  * APP-18 · 3-COLUMN LAYOUT (display-only shell over the existing cards).
  * Each column paints ONE active "member" card; the rest are a tab/icon away.
- * The 3 shop members (inspections/serviceOrders/workOrders) still render via the
- * single 'shop' engine card with its segment pinned — NO engine/anchor/cascade
- * change. session.cols (set in freshSession) holds the active member per column.
+ * (Shop retirement, Jac 2026-07-07: the left column is Units + Categories —
+ * WO/service/inspection work lives inside each unit's detail view.)
+ * session.cols (set in freshSession) holds the active member per column.
  * ════════════════════════════════════════════════════════════════════════ */
 const GRID_CARD_BY_ID = Object.fromEntries(GRID_CARDS.map((c) => [c.id, c]));
 const MEMBER_TITLE = (() => {
-  const m = {}; GRID_CARDS.forEach((c) => { m[c.id] = c.title; });
-  SHOP_SEGMENTS.forEach((s) => { m[s.id] = s.label; }); m.calendar = 'Calendar'; return m;
+  const m = {}; GRID_CARDS.forEach((c) => { m[c.id] = c.title; }); m.calendar = 'Calendar'; return m;
 })();
 const memberIcon = (m) => (m === 'calendar' ? I.grid : (CARD_ICON[m] || ''));
 // Tab row count for a member (search-aware; mirrors the card's own count chip).
 function memberCount(member, session) {
   if (member === 'calendar') return dispatchEvents().length;
-  if (SHOP_TYPES.includes(member)) { try { return (shopItemsByType(session)[member] || []).length; } catch { return 0; } }
   try { let r = listFor(member, session); if (member === 'units') r = unitsVisible(r, session.cards.units); if (member === 'rentals') r = rentalsVisible(r, session, session.cards.rentals); return r.length; } catch { return 0; }
 }
-/** How many Shop items in this view NEED work — drives the red alert on the tab:
- *  pending inspections, open work orders, overdue/wash-requested services. */
-function shopAlertCount(member, session) {
-  let items = []; try { items = shopItemsByType(session)[member] || []; } catch { return 0; }
-  if (member === 'inspections') return items.filter((n) => !inspComplete(n)).length;
-  if (member === 'workOrders') return items.filter((w) => w.phase !== 'Complete' && !w.cancelled).length;
-  if (member === 'serviceOrders') return items.filter((u) => { const s = topServiceForUnit(u); return u.washRequested || (s && s.remaining < 0); }).length;
-  return 0;
+/** How many units NEED the crew — drives the red alert on the Units tab (the
+ *  retired Shop wrench's signal, moved home): Not Ready, wash requested, or a
+ *  past-due service on any Active unit. */
+function unitsAlertCount() {
+  try { return DATA.units.filter((u) => u.fleetStatus === 'Active' && (u.inspectionStatus === 'Not Ready' || u.washRequested || ((topServiceForUnit(u) || {}).remaining < 0))).length; } catch { return 0; }
 }
 /* ── Wave 2 (the modes died): the side lists stay FULL while the anchored
    Quote/invoice still needs links, so there's always something to DRAG on.
@@ -7375,38 +7727,28 @@ function colTabsEl(col, active, session) {
 /* The coltab buttons themselves (no wrapper) — shared by the desktop in-card tab row
    (colTabsEl) AND the phone footer (mobileDockEl), so a toggle looks identical in both. */
 function colTabButtonsHtml(col, active, session) {
-  // The 3 shop sub-types (inspections/workOrders/serviceOrders) fold into ONE wrench
-  // "Shop" toggle that opens the shop graph; the old Service-heart toggle + Not-Ready
-  // chip are absorbed into it (the graph's Services + Not Ready bars).
+  // Shop retirement: the wrench toggle is gone — the Units tab carries its red
+  // "needs attention" alert (unitsAlertCount) and the worklist graph lives on
+  // the Units card itself.
   const coltabBtn = (m, on, { alert = false, count = null } = {}) =>
     `<button class="coltab js-coltab${on ? ' on' : ''}${alert ? ' alert' : ''}" data-col="${col.id}" data-member="${m}" data-tip="${esc(MEMBER_TITLE[m] || m)}${alert ? ' — needs attention' : ''}">`
       + `<span class="ct-ico">${memberIcon(m)}</span>`
       + `<span class="ct-lbl">${esc(MEMBER_TITLE[m] || m)}</span>`
       + (count != null ? `<span class="ct-n">${count}</span>` : '')
       + `</button>`;
-  let out = col.members.filter((m) => !SHOP_TYPES.includes(m)).map((m) => coltabBtn(m, m === active, { count: memberCount(m, session) })).join('');
-  if (col.members.some((m) => SHOP_TYPES.includes(m))) {   // this column owns the shop → append the wrench Shop toggle
-    const shopActive = active === 'shop' || SHOP_TYPES.includes(active);
-    const alertN = SHOP_TYPES.reduce((a, ty) => a + shopAlertCount(ty, session), 0);   // total items needing the crew
-    out += coltabBtn('shop', shopActive, { alert: alertN > 0, count: alertN });
-  }
-  return out;
+  return col.members.map((m) => coltabBtn(m, m === active, { count: memberCount(m, session), alert: m === 'units' && unitsAlertCount() > 0 })).join('');
 }
 /* Jac 2026-06-12: the nav cluster (List / Anchor / New tab) rides the TOGGLE row,
    not the title row — the item header gets room to breathe and head gates align right. */
 function colActionsHtml(active, session) {
   if (active === 'calendar' || state.searchMode) return '';
-  const ec = SHOP_TYPES.includes(active) ? 'shop' : active;
-  const cs = session.cards[ec];
-  if (!cs || cs.mode !== 'standard' || cs.recId == null || (ec === 'shop' && !cs.recType)) return '';
-  const anchored = session.anchor?.card === ec;
-  const dt = ec === 'shop' ? ` data-type="${esc(cs.recType)}"` : '';
-  return `<div class="c-actions"><button class="hbtn js-tolist" data-tip="${anchored ? 'Browse list (pick another to anchor)' : 'Back to list'}">${I.list}</button><button class="hbtn js-anchor" data-rec="${esc(cs.recId)}"${dt} data-tip="Anchor (⊞)">${I.circle}</button><button class="hbtn js-newtab" data-rec="${esc(cs.recId)}"${dt} data-tip="New tab (+)">${I.plus}</button></div>`;
+  const cs = session.cards[active];
+  if (!cs || cs.mode !== 'standard' || cs.recId == null) return '';
+  const anchored = session.anchor?.card === active;
+  return `<div class="c-actions"><button class="hbtn js-tolist" data-tip="${anchored ? 'Browse list (pick another to anchor)' : 'Back to list'}">${I.list}</button><button class="hbtn js-anchor" data-rec="${esc(cs.recId)}" data-tip="Anchor (⊞)">${I.circle}</button><button class="hbtn js-newtab" data-rec="${esc(cs.recId)}" data-tip="New tab (+)">${I.plus}</button></div>`;
 }
 function memberCardEl(member, session) {
   if (member === 'calendar') return calendarCardEl(session);
-  if (member === 'shop') return shopCardEl({ id: 'shop', title: 'Shop' }, session);   // the wrench "Shop" member = the COMBINED view (segment bar + 3-bar front-page graph), no forcedSeg
-  if (SHOP_TYPES.includes(member)) return shopCardEl({ id: 'shop', title: MEMBER_TITLE[member] }, session, member);
   return cardEl(GRID_CARD_BY_ID[member], session);
 }
 function calendarCardEl(session) {
@@ -7421,7 +7763,6 @@ function calendarCardEl(session) {
 
 function cardEl(cardDef, session) {
   const card = cardDef.id;
-  if (card === 'shop') return shopCardEl(cardDef, session);   // merged WO + Service + Inspections
   const cs = session.cards[card];
   const anchored = session.anchor?.card === card;
   const node = el('div', 'card' + (anchored ? ' anchored' : '') + (state.searchMode ? ' search-glow' : '') + (state.focusedCard === card ? ' card-focus' : ''));
@@ -7490,7 +7831,8 @@ function listView(cardDef, session) {
   wrap.appendChild(bar);
   // §13.4 — Graph carousel: an interactive panel ABOVE the list (the list renders below,
   // filtered by the chart's g-tagged search terms). Legacy cards still full-replace the list.
-  if (cs.graphView && !state.searchMode && RUS_TABS[card]) { const g = el('div', 'rus'); g.innerHTML = rusHtml(card, card, cs); wrap.appendChild(g); }   // §13.7 gauge strip — this card's Round-Up charts, 25% of the column
+  if (cs.graphView && !state.searchMode && graphViewsFor(card)) { const g = el('div', 'gv-panel'); g.innerHTML = graphPanelHtml(card, card, cs); wrap.appendChild(g); }   // units → the stackbars worklist (mechanic front page, ex-Shop)
+  else if (cs.graphView && !state.searchMode && RUS_TABS[card]) { const g = el('div', 'rus'); g.innerHTML = rusHtml(card, card, cs); wrap.appendChild(g); }   // §13.7 gauge strip — this card's Round-Up charts, 25% of the column
   // Phase 4 — Units narrowed to an invoice's linked units (Invoice +WO) → removable chip
   if (card === 'units' && state.unitPick) {
     const n = state.unitPick.ids.length;
@@ -7569,202 +7911,7 @@ function listView(cardDef, session) {
 const PLUS_NEW = new Set(['rentals', 'invoices', 'customers']);
 
 /* ════════════════════════════════════════════════════════════════════════
-   APP-19 · §10 SHOP CARD — merged Work Orders + Service Orders + Inspections
-   ────────────────────────────────────────────────────────────────────────
-   ITERATE HERE: this whole block is the Shop card's presentation. The grid
-   plumbing (anchor/cascade/tabs/standard-mode) routes through it via the
-   `recType` thread, so alternate Shop layouts only need these functions.
-   ════════════════════════════════════════════════════════════════════════ */
-
-/** Active queue vs completed archive. Default = the work queue (pending
- *  inspections, open WOs, all services). The "Completed" sort flips to the
- *  archive: resolved inspections + completed WOs (services aren't archived here). */
-function shopItemMode(ty, rec, complete) {
-  if (ty === 'inspections') return complete ? inspComplete(rec) : !inspComplete(rec);
-  if (ty === 'workOrders') return complete ? (rec.phase === 'Complete' || rec.cancelled) : (rec.phase !== 'Complete' && !rec.cancelled);   // cancelled = terminal: lives in the "done" list (findable + reopenable), out of "open"
-  if (ty === 'serviceOrders') return !complete;
-  return true;
-}
-/** The in-scope records for each Shop sub-type (cascade subset / search / all),
- *  filtered to the active queue or the completed archive. */
-function shopItemsByType(session) {
-  const complete = session.cards.shop.sort.field === 'complete';
-  const out = {};
-  const q = state.query.trim().toLowerCase();
-  const browsing = session.anchor?.card === 'shop' && session.cards.shop.mode === 'list';   // js-tolist "browse"
-  for (const ty of SHOP_TYPES) {
-    let recs;
-    if (state.searchMode) {
-      const blobKey = ty === 'serviceOrders' ? 'units' : ty;
-      recs = collection(ty).filter((rec) => matchesSearch(IDX.search.get(blobKey + ':' + idOf(ty, rec))));
-    } else if (browsing) {
-      recs = collection(ty);
-    } else if (session.anchor && session.cascade) {
-      recs = session.cascade[ty] || [];
-    } else {
-      recs = collection(ty);
-    }
-    out[ty] = recs.filter((rec) => shopItemMode(ty, rec, complete));
-  }
-  return out;
-}
-/** Urgency score for the default Shop sort (higher = needs attention sooner). */
-function shopUrgency(it) {
-  const r = it.rec;
-  if (it.type === 'inspections') return r.checklist === 'Fail' ? 90 : 20;
-  if (it.type === 'workOrders') return r.phase === 'Complete' ? 10 : (r.woType === 'Failed' ? 95 : 60);
-  if (it.type === 'serviceOrders') { if (r.washRequested) return 85; const s = topServiceForUnit(r); return s ? (s.status === 'past-due' ? 100 : 70) : 5; }
-  return 0;
-}
-function shopSort(items, sort) {
-  const val = (it) => {
-    const r = it.rec;
-    switch (sort.field) {
-      case 'urgency': return shopUrgency(it);
-      case 'date': case 'complete': return parseISO(r.date)?.getTime() || 0;
-      case 'unit': return (IDX.unit.get(r.unitId)?.name || '').toLowerCase();
-      case 'type': return it.type;
-      default: return shopUrgency(it);
-    }
-  };
-  const dir = sort.dir === 'desc' ? -1 : 1;
-  return [...items].sort((a, b) => { const va = val(a), vb = val(b); return va < vb ? -dir : va > vb ? dir : 0; });
-}
-
-function shopCardEl(cardDef, session, forcedSeg) {
-  const cs = session.cards.shop;
-  const anchored = session.anchor?.card === 'shop';
-  const byType = shopItemsByType(session);
-  const total = forcedSeg ? (byType[forcedSeg] || []).length : SHOP_TYPES.reduce((a, ty) => a + byType[ty].length, 0);
-  const node = el('div', 'card' + (anchored ? ' anchored' : '') + (state.searchMode ? ' search-glow' : '') + (state.focusedCard === 'shop' ? ' card-focus' : ''));
-  node.dataset.card = 'shop';
-
-  const inStandard = !state.searchMode && cs.mode === 'standard' && cs.recId != null && cs.recType && !cs.graphView;
-  // List mode → no header (column tab names it). Standard → slim header: record name
-  // (hidden when anchored, since the item tab shows it) + actions. (#2.3)
-  if (inStandard) {
-    const rec = recOf(cs.recType, cs.recId);
-    const nm = rec ? esc(detailTitle(cs.recType, rec) || MEMBER_TITLE[cs.recType] || cardDef.title) : '';
-    const head = el('div', 'card-head');
-    head.innerHTML = `
-      <span class="c-titlecard"><span class="c-icon">${CARD_ICON[cs.recType] || CARD_ICON.shop}</span><span class="c-title">${nm}</span></span>`;
-    node.appendChild(head);
-  }
-
-  const body = el('div', 'card-body');
-  if (inStandard) {
-    const rec = recOf(cs.recType, cs.recId);
-    body.innerHTML = rec && DETAIL[cs.recType] ? DETAIL[cs.recType](rec, cs) : '<div class="empty">Record not found.</div>';
-  } else {
-    body.appendChild(shopListView(session, byType, forcedSeg));
-  }
-  node.appendChild(body);
-  return node;
-}
-
-// §13.4 — a shop row matches like rowMatches (col terms OR within a column, AND across
-// columns, NOT excludes) but resolves each item by its own shop type + the
-// serviceOrders→units search blob. Lets the graph carousel's col-tagged terms filter the
-// shop list (the old path was blob-only and ignored col terms).
-function shopItemMatches(it, query, terms) {
-  const card = it.type, rec = it.rec, terms2 = dateScopedTerms(card, terms || []);   // §5.4d per-type date scoping (Shop mixes WOs/inspections with date-less types)
-  const byCol = {};
-  for (const t of terms2) { if (!t.col) continue; if (t.neg) { if (totColMatch(card, rec, t.col, t.value)) return false; } else (byCol[t.col] = byCol[t.col] || []).push(t.value); }
-  for (const col in byCol) { if (!byCol[col].some((v) => totColMatch(card, rec, col, v))) return false; }
-  return blobMatches(IDX.search.get((card === 'serviceOrders' ? 'units' : card) + ':' + idOf(card, rec)), query, terms2.filter((t) => !t.col));
-}
-
-function shopListView(session, byType, forcedSeg) {
-  const cs = session.cards.shop;
-  const gsrc = forcedSeg || (cs.segment && cs.segment !== 'all' ? cs.segment : 'shop');   // §13.4 the view source: a pinned tab or the active segment ('shop' = combined 'all')
-  gvSyncClosed(gsrc, cs);   // graph closed but g-terms linger → save + drop before the bar's pills render
-  const wrap = el('div');
-  const counts = { all: SHOP_TYPES.reduce((a, ty) => a + byType[ty].length, 0) };
-  SHOP_TYPES.forEach((ty) => { counts[ty] = byType[ty].length; });
-
-  // segment control — hidden when the column already pins a single type via its tab
-  if (!forcedSeg) {
-    const segbar = el('div', 'shopbar');
-    segbar.innerHTML = SHOP_SEGMENTS.map((s) => `<button class="shop-seg ${cs.segment === s.id ? 'on' : ''} js-shopseg" data-seg="${s.id}">${esc(s.label)}<span class="seg-n">${counts[s.id] || 0}</span></button>`).join('');
-    wrap.appendChild(segbar);
-  }
-
-  // search + sort (reuses the standard list-bar chrome)
-  const sf = SORT_FIELDS.shop; const curField = sf.find((f) => f.field === cs.sort.field) || sf[0];
-  // a Shop sub-type maps straight to a CARD_COLUMNS entity, so its Board View just
-  // opens that entity ('all' has no single shape → default to Work Orders).
-  const boardCard = forcedSeg || (cs.segment !== 'all' ? cs.segment : 'workOrders');
-  const bar = el('div', 'listbar');
-  const sterms = cs.filterTerms || [];
-  bar.innerHTML = `
-    <button class="bv-btn js-cardgraph${cs.graphView ? ' on' : ''}" data-card="shop" data-src="${esc(gsrc)}" data-tip="${cs.graphView ? 'Back to list' : 'Graph view'}">${I.graph}</button>
-    <div class="mini-searchwrap${sterms.length ? ' has-terms' : ''}${cs.search.trim() || sterms.length ? ' has-query' : ''}">
-      ${sterms.map((ft, i) => filterTermPill(ft, i, 'shop')).join('')}
-      <input class="mini-search" placeholder="${sterms.length ? 'Add filter — Enter to pin…' : 'Search shop…'}" value="${esc(cs.search)}" data-card="shop" />
-    </div>
-    <div class="sort">
-      <button class="sortbtn js-sortmenu" data-card="shop">${esc(curField.label)} ${I.chev}</button>
-      <button class="dir js-sortdir" data-card="shop"><span class="${cs.sort.dir === 'asc' ? 'on' : ''}">▲</span><span class="${cs.sort.dir === 'desc' ? 'on' : ''}">▼</span></button>
-    </div>`;
-  wrap.appendChild(bar);
-
-  // §13.4 — Graph carousel. Segment tabs stay visible; a specific segment shows its
-  // interactive carousel ABOVE the list (list filters to the graph terms below); the
-  // 'all' overview (and column-pinned shop tabs) keep the legacy combined dashboard.
-  if (cs.graphView && !state.searchMode) {
-    if (graphViewsFor(gsrc)) { const g = el('div', 'gv-panel'); g.innerHTML = graphPanelHtml('shop', gsrc, cs); wrap.appendChild(g); }   // 'all' → the stackbars worklist (mechanic landing) — untouched
-    else if (RUS_TABS[gsrc]) { const g = el('div', 'rus'); g.innerHTML = rusHtml('shop', gsrc, cs); wrap.appendChild(g); }   // §13.7 — a segment's gauge strip
-    else { cs.graphView = false; gvStripTerms(cs); }
-  }
-
-  // items for the active segment (a column tab pins forcedSeg)
-  const segActive = forcedSeg || cs.segment;
-  let items = segActive === 'all'
-    ? SHOP_TYPES.flatMap((ty) => byType[ty].map((rec) => ({ type: ty, rec })))
-    : byType[segActive].map((rec) => ({ type: segActive, rec }));
-  if (cs.search.trim() || (cs.filterTerms || []).length) {
-    items = items.filter((it) => shopItemMatches(it, cs.search, cs.filterTerms));
-  }
-  items = shopSort(items, cs.sort);
-
-  const list = el('div', 'list');
-  if (!items.length) {
-    // creation lives in ONE place — the header + New menu (no per-card +New)
-    list.appendChild(el('div', 'empty', `No shop items${session.anchor ? ' related' : ' — use <b>+ New</b> above'}.`));
-  } else {
-    appendWindowed(list, items, cs, 'shop', (it) => list.appendChild(shopRowEl(it.type, it.rec)));
-  }
-  wrap.appendChild(list);
-  return wrap;
-}
-
-/** A Shop list row = the entity's own list row + a small type glyph on the left. */
-/** The status color that tints a Shop row, so the user sees at a glance what each
- *  item needs: inspection result (Not Ready=yellow…), WO phase/bottleneck (Part
- *  Ordered=blue…), or service urgency (past-due=red…). */
-function shopRowColor(type, rec) {
-  if (type === 'inspections') return inspResult(rec).color;
-  if (type === 'workOrders') return getStatus('woPhase', rec.phase).color;
-  if (type === 'serviceOrders') { if (rec.washRequested) return 'blue'; const s = topServiceForUnit(rec); return s ? s.color : 'green'; }
-  return 'gray';
-}
-function shopRowEl(type, rec) {
-  const id = idOf(type, rec);
-  const color = shopRowColor(type, rec);
-  const node = el('div', 'row shop-row');
-  node.dataset.card = 'shop'; node.dataset.type = type; node.dataset.rec = id;
-  node.innerHTML = `<div class="row-viz" style="background:linear-gradient(90deg, var(--${color}-bg), transparent 62%)"></div>
-    <div class="shop-type" style="color:var(--${color})" data-tip="${esc(SHOP_SEGMENTS.find((s) => s.id === type)?.label || type)}">${(type === 'inspections' && !inspComplete(rec)) ? CARD_ICON.inspectionsPending : CARD_ICON[type]}</div>
-    <div class="r-actions">
-      <button class="rbtn js-roweye${state.previewsOn ? '' : ' off'}" data-tip="${state.previewsOn ? 'Hover: preview · Click: previews OFF app-wide' : 'Previews are OFF — click to turn on'}">${state.previewsOn ? I.eye : I.eyeOff}</button>
-      <button class="rbtn js-newtab" data-type="${type}" data-rec="${id}" data-tip="Open in new tab (+)">${I.plus}</button>
-    </div>
-    <div class="row-content">${rowInnerHTML(type, rec)}</div>`;
-  return node;
-}
-
-/* ════════════════════════════════════════════════════════════════════════
-   APP-20 · §11 HEADER, KPI & BOTTOM BAR
+   APP-19 · §11 HEADER, KPI & BOTTOM BAR
    ════════════════════════════════════════════════════════════════════════ */
 /** Apple-style band coloring (§11): 0-25 red · 25-50 orange · 50-75 yellow ·
  *  75-100 green · 95-100 glowing green. */
@@ -7845,7 +7992,7 @@ function legacyKpiPct(roleId) {
     const scheduled = R.filter((r) => !['Quote', 'Cancelled', 'No Show'].includes(r.status)).length;
     const washes = N.filter((n) => n.wash === 'Yes').length;
     const washReq = N.filter((n) => n.wash === 'Yes' || n.wash === 'No').length;
-    return [pctOf(delivered, scheduled), pctOf(washes, washReq), null];        // Driving Score = GPS backend
+    return [pctOf(delivered, scheduled), pctOf(washes, washReq), drivingScoreValue()];   // Driving Score = fleet Bouncie safety score (null until loaded)
   }
   if (roleId === 'office') {
     const billed = INV.reduce((a, i) => a + invoiceTotals(i).total, 0);
@@ -7879,7 +8026,7 @@ const KPI_HELP = {
   'WO Rate (20% goal)':     'Progress toward the goal: 20% of the last 30 days’ inspections spawning a work order is healthy (catching problems). Full ring at 20%.',
   'On-Time':                'Rentals you actually delivered/handled ÷ rentals scheduled (excludes quotes, cancels, no-shows).',
   'Wash Completion':        'Of the units flagged for a wash, how many got washed (washed ÷ wash-requested).',
-  'Driving Score':          'Driving-safety score from the GPS backend — placeholder until that’s connected.',
+  'Driving Score':          'Fleet driving-safety score from Bouncie truck trips (hard braking/acceleration per mile + speeding) over the last few weeks — a team metric, 100 = clean. Blank until trips load or if no trucks report.',
   'Invoice Collection Rate':'Of all money invoiced, how much you’ve collected (dollars collected ÷ dollars billed).',
   'Show Rate':              'Of customers who reserved, how many actually showed up (not a No-Show).',
   'Reputation':             'Reputation score from customer email reviews — placeholder until the email backend is connected.',
@@ -7889,7 +8036,7 @@ const KPI_HELP = {
 };
 
 /* ════════════════════════════════════════════════════════════════════════
-   APP-21 · §11b KPI METRIC ENGINE — admin-definable KPIs (Settings → KPIs & Rings).
+   APP-20 · §11b KPI METRIC ENGINE — admin-definable KPIs (Settings → KPIs & Rings).
    A SAFE, declarative spec (no eval, Pages-public-safe): a metric is filters +
    an aggregate over an entity allowlist, evaluated by kpiEval(). The shipped 15
    KPIs route through kind:'builtin' (the legacy math above), so with no admin
@@ -8026,7 +8173,7 @@ function legacyKpiRaw(roleId) {
   const c = (v) => ({ v, unit: '' }), usd = (v) => ({ v, unit: '$' });
   if (roleId === 'mechanic') return [c(f.Ready + f['Not Ready']), c(W.filter((w) => w.phase === 'Complete').length), c(W.filter((w) => (w.lineItems || []).some((li) => (li.cost || 0) > 0 || (li.hours || 0) > 0) && w.billCustomer === 'Yes').length)];
   if (roleId === 'mtech') return [c(R.length - R.filter((r) => r.fieldCall).length), c(f.Ready), c(N.filter((n) => !n.woId).length)];
-  if (roleId === 'driver') return [c(R.filter((r) => ['On Rent', 'End Rent', 'Off Rent', 'Returned'].includes(r.status)).length), c(N.filter((n) => n.wash === 'Yes').length), c(0)];
+  if (roleId === 'driver') return [c(R.filter((r) => ['On Rent', 'End Rent', 'Off Rent', 'Returned'].includes(r.status)).length), c(N.filter((n) => n.wash === 'Yes').length), c(drivingScoreValue() || 0)];
   if (roleId === 'office') return [usd(INV.reduce((a, i) => a + invoiceTotals(i).paid - (Number(i.refundedAmount) || 0), 0)), c(R.filter((r) => ['On Rent', 'End Rent', 'Off Rent', 'Returned'].includes(r.status)).length), c(0)];
   if (roleId === 'sales') {
     const ym = TODAY_ISO.slice(0, 7);
@@ -8053,7 +8200,7 @@ function scorePop(roleId, ringIdx, delta, unit) {
   btn.appendChild(pop);                                            // floats up + fades (CSS), then removed
   setTimeout(() => pop.remove(), 760);
 }
-/* ════════════ APP-22 · COMING 2026 — the roadmap morale plate (Jac 2026-06-23) ════════
+/* ════════════ APP-21 · COMING 2026 — the roadmap morale plate (Jac 2026-06-23) ════════
    The KPI rings ride behind a blur (the metrics engine isn't wired up yet). Rather
    than leave dead frosted glass up top, the rings wear a "Coming 2026" data-plate
    that opens this roadmap — what's on the docket plus every area of the yard we're
@@ -8098,7 +8245,9 @@ function headerEl() {
   const nu = unseenNotifs();
   const notifBtn = `<button class="iconbtn js-notifications" data-tip="Notifications">${I.bell}${nu ? `<span class="bb-badge">${nu > 9 ? '9+' : nu}</span>` : ''}</button>`;
   const ruBtn = `<button class="iconbtn js-ru-open" data-tip="The Round-Up — the reports board">${I.graph}</button>`;
-  const topBar = `<div class="top-toolbar">${ruBtn}${notifBtn}${bottomBarInner()}</div>`;
+  const tn = visibleTransportAlerts().length;   // #515 transport reminders
+  const trBtn = `<button class="iconbtn js-transport-alerts" data-tip="Transports due — call the customer">${I.truck}${tn ? `<span class="bb-badge">${tn > 9 ? '9+' : tn}</span>` : ''}</button>`;
+  const topBar = `<div class="top-toolbar">${ruBtn}${trBtn}${notifBtn}${bottomBarInner()}</div>`;
   // Decluttered top: logo + rings on one row, the tool bar across the next.
   h.innerHTML = `
     <button class="logo js-logo" aria-label="Jac Rentals"></button>
@@ -8142,12 +8291,11 @@ function bottomBarInner(opts = {}) {
   // rules 5/6: LEFT = labeled actions (icon LEADS label, no "+"), Wash joins them;
   // RIGHT (after divider) = icon-only utilities. The +New collapse button is dropped (Jac).
   return `
+    ${commsChipsHtml()}
     <button class="iconbtn js-newitem" data-new="receipt">${CARD_ICON.expenses}Receipt</button>
     <span class="bb-sep"></span>
     <button class="iconbtn js-qr" data-tip="Share session (QR)">${I.qr}</button>
     <button class="iconbtn${state.previewsOn ? '' : ' off'} js-previews" data-tip="${state.previewsOn ? 'Hover previews: on' : 'Hover previews: off'}">${state.previewsOn ? I.eye : I.eyeOff}</button>
-    <button class="iconbtn js-chat-toggle${state.chat.open ? ' on' : ''}" data-tip="New team chat — flagged comments + tagged context">${I.chat}${(() => { const n = chatUnreadCount(); return n ? `<span class="bb-badge">${n > 9 ? '9+' : n}</span>` : ''; })()}</button>
-    <button class="iconbtn js-wrangler" data-tip="New chat with Mr. Wrangler — ask the yard AI, or report a bug" style="font-size:16px">🤠</button>
     ${opts.noInbox ? '' : `<button class="iconbtn js-requests" data-tip="Requests for your OK — review what Mr. Wrangler filed">${I.inbox}${wranglerRequests.length ? `<span class="bb-badge">${wranglerRequests.length > 9 ? '9+' : wranglerRequests.length}</span>` : ''}</button>`}
     <button class="iconbtn js-hotkeys" data-tip="Mouse &amp; keyboard shortcuts">${I.mouse}</button>
     ${devUnlocked() ? `<button class="iconbtn js-lint${document.body.classList.contains('rw-lint') ? ' on' : ''}" data-tip="Design lint — flash anything that bypassed the UI builders (R0)">${I.eye}</button>
@@ -8155,9 +8303,9 @@ function bottomBarInner(opts = {}) {
     <button class="iconbtn js-rulebook" data-tip="The R-Rulebook — visual design reference (SPEC v8)">${I.doc}</button>` : ''}
     ${adminUnlocked() ? `<button class="iconbtn js-photo-sweep" data-tip="Offload base64 photos to Drive — one-shot migration to de-bloat the payload">${I.camera}</button>` : ''}`;
 }
-// §18g/§17 — the bottom COMMS BAND: toolbar pinned left · the conversation rail
-// fills the middle (every Mr. Wrangler request + chat and every team thread is its
-// OWN tab, so nothing funnels into one session) · bell + inbox at the right.
+// §18g/§17/D9 — the bottom COMMS BAND: toolbar (with the four comms chips) pinned
+// left · the conversation rail fills the middle (idle = the actionable Mr. Wrangler
+// request tabs; a summoned category session otherwise) · the bell at the right.
 function bottomBarEl() {
   const bar = el('div', 'bottombar');
   bar.innerHTML = `<div class="bb-tools">${bottomBarInner({ noInbox: true })}</div>`
@@ -8172,93 +8320,68 @@ function bottomBarEl() {
 function commsUtilsEl() {
   const nu = unseenNotifs();
   const notifBadge = nu ? `<span class="fab-badge">${nu > 9 ? '9+' : nu}</span>` : '';
-  return `<button class="fab js-notifications" data-tip="Notifications — resolved fixes">${I.bell}${notifBadge}</button>`;
+  const tn = visibleTransportAlerts().length;
+  const trBadge = tn ? `<span class="fab-badge">${tn > 9 ? '9+' : tn}</span>` : '';   // #515 — deliveries/pickups due to call
+  return `<button class="fab js-transport-alerts" data-tip="Transports due — call the customer">${I.truck}${trBadge}</button>`
+    + `<button class="fab js-notifications" data-tip="Notifications — resolved fixes">${I.bell}${notifBadge}</button>`;
 }
-// The conversation rail: Wrangler + Team channels (split by a thin divider, no section
-// labels), each conversation a SEPARATE tab. 🤠 Wrangler — one tab per OPEN request
-// (needs-answer = red · needs-your-OK = yellow; both open the dock, which carries
-// Approve/Dismiss), the live chat, and every past chat. 💬 Team — one tab per active
-// thread. Tabs read as actionable via a STEADY tinted edge (no perpetual glow). The rail
-// REPLACES the old Requests inbox on desktop; each opens ONLY its own thread
-// (data-wrc-needs / data-wrc-open / data-team-open).
+// The conversation rail. Idle (no chip summoned) it carries ONLY the open Mr. Wrangler
+// REQUEST tabs (needs-answer = red · needs-your-OK = yellow; they replaced the desktop
+// Requests inbox — each opens its own conversation window with Approve/Dismiss). All
+// conversation tabs — Team, Texts, Email, Mr. Wrangler chats — ride the summoned
+// category session (D9; the old always-on team/wrangler tab groups retired).
 function commsRailEl() {
+  // D8/D9 THE COMMS RAIL — a summoned session takes the rail (one category at a time;
+  // a sibling chip or a re-click sweeps it clean). D9: ALL FOUR categories — Team and
+  // Mr. Wrangler chats now ride the same session-tab engine as Texts/Email (their old
+  // dock tab groups retired with the docks).
+  if (state.commsRail.cat) return commsSessTabsHtml();
   const trim = (t, n = 24) => { t = String(t || '').replace(/\s+/g, ' ').trim(); return esc(t.length > n ? t.slice(0, n - 1) + '…' : t); };
-  // ── 🤠 WRANGLER ── every open request is its own tab (the inbox lived here before)
+  // ── 🤠 WRANGLER REQUESTS ── every open request is its own tab (they replaced the
+  // desktop approval inbox, so they stay on the idle rail — actionable alerts, not chats).
   const reqStateKey = (rq) => { const L = rq.labels || []; return L.includes('wrangler-needs-jac') ? 'needs' : L.includes('wrangler-fix') ? 'building' : 'ok'; };
-  const open = (wranglerRequests || []);
-  const reqNums = new Set(open.map((rq) => rq.number));
   const wrOpen = state.wrangler.open;
-  const reqTabs = open.filter((rq) => reqStateKey(rq) !== 'building').map((rq) => {   // building = Mr. Wrangler working; not actionable, surfaces via the bell when done
+  const reqTabs = (wranglerRequests || []).filter((rq) => reqStateKey(rq) !== 'building').map((rq) => {   // building = Mr. Wrangler working; not actionable, surfaces via the bell when done
     const st = reqStateKey(rq), cls = st === 'needs' ? 'crail-needs' : 'crail-ok';
     const tip = st === 'needs' ? `Mr. Wrangler needs your answer — #${rq.number}` : `Needs your OK — #${rq.number}`;
     const active = wrOpen && (state.wrangler.reqNumber === rq.number || state.wrangler.id === 'req' + rq.number);
     return `<button class="crail-tab ${cls}${active ? ' is-active' : ''}" data-wrc-needs="${rq.number}" role="tab" aria-selected="${active}" data-tip="${tip}"><span class="crail-dot"></span><span class="crail-t">${trim(rq.title || ('Request #' + rq.number))}</span></button>`;
   }).join('');
-  // §18g A chat is "resolved" — take it off the rail — once the bug it filed is fixed/closed:
-  // it filed at least one issue (message m.issue) and NONE of those are still open. Guarded on a
-  // loaded requests list so a failed/empty fetch never hides live chats. Non-destructive — the chat
-  // stays in the store, it just leaves the tab bar (Jac 2026-07-03 — "take away the resolved ones").
-  const wrChatResolved = (c) => {
-    if (!reqLoaded) return false;
-    const filed = (c.messages || []).map((m) => m.issue).filter((n) => n != null);
-    return filed.length > 0 && filed.every((n) => !wranglerRequests.some((rq) => rq.number === n));
-  };
-  const snaps = (state.wranglerRail || []).filter((c) => !c.reqNumber && !wrChatResolved(c));
-  // the live chat first if it's a brand-new one not yet snapshotted onto the rail
-  let liveTab = '';
-  if (wrOpen && state.wrangler.id && !state.wrangler.reqNumber && !snaps.some((c) => c.id === state.wrangler.id) && (state.wrangler.messages || []).length) {
-    liveTab = `<button class="crail-tab is-active" data-wrc-open="${esc(state.wrangler.id)}" role="tab" aria-selected="true" data-tip="Current chat with Mr. Wrangler"><span class="crail-dot"></span><span class="crail-t">${trim(wranglerConvoTitle(state.wrangler) || 'New chat')}</span><span class="crail-x js-wrc-remove" data-wrc-rm="${esc(state.wrangler.id)}" aria-label="Remove this chat" data-tip="Remove this chat">×</span></button>`;
-  }
-  const snapTabs = snaps.map((c) => {
-    const active = wrOpen && state.wrangler.id === c.id;
-    return `<button class="crail-tab${active ? ' is-active' : ''}" data-wrc-open="${esc(c.id)}" role="tab" aria-selected="${active}" data-tip="Reopen this chat with Mr. Wrangler"><span class="crail-dot"></span><span class="crail-t">${trim(c.title || 'Chat')}</span><span class="crail-x js-wrc-remove" data-wrc-rm="${esc(c.id)}" aria-label="Remove this chat" data-tip="Remove this chat">×</span></button>`;
-  }).join('');
-  const wrTabs = reqTabs + liveTab + snapTabs;
-  // ── 💬 TEAM ──
-  const u = commentUserKey();
-  const teamChats = (state.chat.chats || []).filter((c) => c.participants.length && c.messages.length)
-    .sort((a, b) => Math.max(0, ...b.messages.map((m) => m.at || 0)) - Math.max(0, ...a.messages.map((m) => m.at || 0)));
-  const teamTabs = teamChats.map((c) => {
-    const active = state.chat.open && state.chat.activeId === c.id;
-    const unseen = c.messages.length && Math.max(...c.messages.map((m) => m.at || 0)) > (c.seen[u] || 0);
-    const tag = (c.tags && c.tags[0]) || null;
-    const label = (tag && tag.label) || 'Team chat';
-    return `<button class="crail-tab c-${(tag && tag.color) || 'gray'}${active ? ' is-active' : ''}${unseen ? ' is-unseen' : ''}" data-team-open="${esc(c.id)}" role="tab" aria-selected="${active}" data-tip="${esc(label)}"><span class="crail-dot"></span><span class="crail-t">${trim(label)}</span></button>`;
-  }).join('');
-  const groups = [];
-  if (wrTabs) groups.push(`<div class="crail-group">${wrTabs}</div>`);
-  if (teamTabs) groups.push(`<div class="crail-group">${teamTabs}</div>`);
-  return groups.length ? groups.join('<span class="crail-div" aria-hidden="true"></span>')
-    : '<span class="crail-empty">No conversations yet — start one from the tools on the left.</span>';
+  return reqTabs ? `<div class="crail-group">${reqTabs}</div>`
+    : '<span class="crail-empty">Quiet on the line — the chips at left round up a conversation.</span>';
+}
+// §18g A wrangler chat is "resolved" — take it off the rail — once the bug it filed is
+// fixed/closed: it filed at least one issue (message m.issue) and NONE of those are still
+// open. Guarded on a loaded requests list so a failed/empty fetch never hides live chats.
+// Non-destructive — the chat stays in the store, it just leaves the tab bar (Jac 2026-07-03).
+function wrChatResolved(c) {
+  if (!reqLoaded) return false;
+  const filed = (c.messages || []).map((m) => m.issue).filter((n) => n != null);
+  return filed.length > 0 && filed.every((n) => !wranglerRequests.some((rq) => rq.number === n));
 }
 // §M1 — phone-only per-column bottom strip: Yard→internal chat · Rentals→tool bar · Customers→external chats (shell).
 // §M1/§M3 — the active phone column's card id (state.cards key), for the grid Back/Fwd swipe.
 function activeMobileCard() {
   const colObj = COLUMNS[Math.max(0, Math.min(2, state.mobileCol))];
   const s = activeSession();
-  const member = (s.cols && s.cols[colObj.id]) || colObj.default;
-  return SHOP_TYPES.includes(member) ? 'shop' : member;
+  return (s.cols && s.cols[colObj.id]) || colObj.default;
 }
-// §M1 — the card the phone is currently showing (the active column's member). Fold the
-// shop sub-types to 'shop' (mirror activeMobileCard) so the footer toggle highlight + the
-// swipe-step index track the single Shop entry instead of failing to match.
+// §M1 — the card the phone is currently showing (the active column's member).
 function currentMobileMember() {
   const colObj = COLUMNS[Math.max(0, Math.min(2, state.mobileCol))];
   const s = activeSession();
-  const m = (s.cols && s.cols[colObj.id]) || colObj.default;
-  return SHOP_TYPES.includes(m) ? 'shop' : m;
+  return (s.cols && s.cols[colObj.id]) || colObj.default;
 }
-// §M1 — the flat card list the phone toggle bar offers. The 3 shop sub-types fold into one
-// 'shop' entry (the wrench), matching desktop; it opens the 3-bar shop graph.
-const MOBILE_CARDS = ['units', 'categories', 'shop', 'rentals', 'calendar', 'customers', 'invoices'];
+// §M1 — the flat card list the phone toggle bar offers. (Shop retirement: the wrench
+// entry is gone — the Units card carries the worklist graph.)
+const MOBILE_CARDS = ['units', 'categories', 'rentals', 'calendar', 'customers', 'invoices'];
 // §M1 — jump straight to a card (flattens the 3-column model on phones): set the column +
-// member, flip the visible column, and show that card's LIST (or, for Shop, its graph).
+// member, flip the visible column, and show that card's LIST.
 function goToCard(member) {
   const s = activeSession(); const col = COLUMN_OF[member];
   if (s.cols && col) s.cols[col] = member;
   const idx = COLUMNS.findIndex((c) => c.id === col); if (idx >= 0) state.mobileCol = idx;
-  if (member === 'shop') { const sc = s.cards.shop; if (sc) { sc.segment = 'all'; sc.graphView = true; sc.mode = 'list'; sc.recId = null; sc.recType = null; } }
-  else { const mc = s.cards[member]; if (mc) { mc.mode = 'list'; mc.recId = null; mc.recType = null; } }
+  const mc = s.cards[member]; if (mc) { mc.mode = 'list'; mc.recId = null; mc.recType = null; }
   render();
 }
 // §M1 phone footer — ONE card-toggle bar: every card collapsed to its icon, the SELECTED
@@ -8276,7 +8399,7 @@ function mobileDockEl() {
   return d;
 }
 /* ════════════════════════════════════════════════════════════════════════
-   APP-23 · §17 INTERNAL TEAM DOCK (Jac, Phase 7) — a bottom-bar chat built on the Phase-6
+   APP-22 · §17 INTERNAL TEAM DOCK (Jac, Phase 7) — a bottom-bar chat built on the Phase-6
    record comments: a live "what's flagged" feed, a rail of TAGGED elements
    (records / lines / pills / prices) shown as colored tabs you add + remove so a
    thread carries its own context, and role buttons that toggle who's included.
@@ -8291,33 +8414,79 @@ function chatComments() {
 function chatUnreadCount() { const u = commentUserKey(); return chatComments().filter((c) => !(c.ack || []).includes(u)).length; }
 const chatById = (id) => state.chat.chats.find((c) => c.id === id) || null;
 const activeChat = () => chatById(state.chat.activeId);
-function chatRoleOn(id) { const c = activeChat(); return !!c && c.participants.includes(id); }
 function chatsTagging(card, recId) { return state.chat.chats.filter((c) => (c.tags || []).some((t) => t.ref && t.ref.card === card && String(t.ref.recId) === String(recId))); }
-function chatMarkSeen() { const c = activeChat(); if (c) c.seen[commentUserKey()] = Date.now(); }
+function chatMarkSeen(chat) { const c = chat || activeChat(); if (c) c.seen[commentUserKey()] = Date.now(); }
 // an element re-flashes when ANY chat tagging it has messages this user hasn't seen (chats are never lost)
 function chatUnseenForRec(card, recId) {
   const u = commentUserKey();
   return chatsTagging(card, recId).some((c) => c.messages.length && Math.max(...c.messages.map((m) => m.at || 0)) > (c.seen[u] || 0));
 }
-function newChat(tag) {
-  const c = { id: 'CHAT' + (state.seq++), tags: tag ? [tag] : [], participants: ROLES.map((r) => r.id), messages: [], seen: { [commentUserKey()]: Date.now() } };
+// A team chat is now a user-created, TITLED thread with chosen MEMBERS (roster people,
+// default none) — see the 2026-07-08 comms-rail spec. `tags`/`participants` retired
+// (record context now rides in as pasted chips, §Copy/paste). Legacy chats normalize
+// in normalizeTeamChat() on load.
+function newChat(opts) {
+  opts = opts || {};
+  // Creator = admin (tracked by `by`) — that alone grants them visibility + control, so
+  // members starts empty ("default no one"); the admin adds people deliberately.
+  const c = { id: 'CHAT' + (state.seq++), title: opts.title || '', members: opts.members ? [...opts.members] : [], messages: [], seen: { [commentUserKey()]: Date.now() }, by: commentUserKey() };
   state.chat.chats.push(c); state.chat.activeId = c.id; pushChatsSoon(); return c;
 }
-// Reopen a dormant/existing chat through one of its tagged elements — the chat is never lost;
-// the current user rejoins (their role selected) and the dock opens to it.
+// ── Team-chat identity + ownership (2026-07-08) ──
+// The current user resolved to a roster person, by matching the typed login name to a
+// Settings → Team Roster entry (the pragmatic login↔roster bind). null = not on the
+// roster (a demo / un-rostered login) → treated as an unbound viewer below.
+function myRosterId() {
+  const me = (currentUser || '').trim().toLowerCase(); if (!me) return null;
+  const hit = ((state.settings && state.settings.employees) || []).find((e) => (e.name || '').trim().toLowerCase() === me);
+  return hit ? String(hit.id) : null;
+}
+// The chat's creator owns it: only they add/remove members or rename. Legacy chats with
+// no recorded creator stay openly editable (back-compat — they predate the model).
+function chatIsAdmin(c) { return !c || !c.by || c.by === commentUserKey(); }
+const chatAmMember = (c) => { const m = myRosterId(); return !!m && (c.members || []).map(String).includes(String(m)); };
+// Visibility: the admin and members see a chat; a bound non-member does not (Leave hides
+// it). An unbound login (not on the roster) sees all — so demo / un-rostered use isn't empty.
+function chatVisibleToMe(c) {
+  if (chatIsAdmin(c)) return true;
+  const mine = myRosterId();
+  return !mine || (c.members || []).map(String).includes(String(mine));
+}
+// Bring a legacy (participants/tags) or partial chat up to the {title,members} shape.
+// Non-destructive: keeps every message; synthesizes a title from the old first-tag label.
+function normalizeTeamChat(c) {
+  if (!c || typeof c !== 'object') return c;
+  if (c.title == null) c.title = (c.tags && c.tags[0] && c.tags[0].label) || '';
+  if (!Array.isArray(c.members)) c.members = [];
+  return c;
+}
+// Reopen an existing chat and land it on the rail. Membership is edited on the member
+// rail (default none), not auto-joined by role — so opening no longer mutates a roster.
 function openChat(id, msg) {
   const c = chatById(id); if (!c) return;
+  normalizeTeamChat(c);
   state.chat.activeId = id;
-  const myRole = currentRole && ROLES.some((r) => r.id === currentRole) ? currentRole : null;
-  if (myRole) { if (!c.participants.includes(myRole)) c.participants.push(myRole); }
-  else if (!c.participants.length) c.participants = ROLES.map((r) => r.id);   // demo (no role) → everyone rejoins
   c.seen[commentUserKey()] = Date.now();
-  pushChatsSoon();                                  // a rejoin/participant change syncs to the team
-  state.chat.open = true; render();
+  pushChatsSoon();
+  chatShow(); render();
   if (msg) toast(msg);
 }
-function chatFeed() {
-  const c = activeChat();
+/* D9 — the ONE way to surface the active team chat: phones keep the bottom-sheet dock;
+   desktop lands it on the comms rail as the Team session's SINGLE open window
+   (single-open law — summoning it closes whatever window was up). */
+function chatShow() {
+  if (document.body.classList.contains('is-phone')) { state.chat.open = true; return; }
+  const id = state.chat.activeId; if (!id) return;
+  commsUnend(id, 'team');                           // any open resurrects an ended chat
+  const rail = state.commsRail;
+  if (rail.cat !== 'team') { commsLeaveCat(rail.cat); rail.cat = 'team'; }
+  const s = rail.sessions.team;
+  s.lastOpen = String(id); s.menuOpen = false;
+  s.hidden = (s.hidden || []).filter((x) => String(x) !== String(id));
+  saveCommsRail();
+}
+function chatFeed(chat) {
+  const c = chat || activeChat();
   if (!c) return chatComments();   // no active chat → the global "what's flagged" overview
   const refs = (c.tags || []).map((t) => t.ref).filter(Boolean);
   const comments = chatComments().filter((cm) => refs.some((r) => r.card === cm.card && String(r.recId) === String(cm.recId)));
@@ -8326,25 +8495,91 @@ function chatFeed() {
 const CHAT_AV = ['blue', 'orange', 'green', 'purple', 'yellow', 'red'];
 function chatInitials(name) { return (String(name || '?').replace(/\(.*?\)/g, '').trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('') || '?').toUpperCase(); }
 function chatAvatarColor(name) { let h = 0; const s = String(name || ''); for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return `var(--${CHAT_AV[h % CHAT_AV.length]})`; }
+// A pasted element chip — a LIVE pointer. Reflects the record's current title; clicking
+// opens it for any member (reuses the data-chat-open path). A deleted record greys out.
+function chatRefChipHtml(r) {
+  const ec = r.card, rec = recOf(ec, r.recId);
+  if (!rec) return `<span class="chip-ref chip-gone" data-tip="This record was removed">${I.x}<span class="cr-t">No longer available</span></span>`;
+  const label = ROW_META[ec] ? ROW_META[ec](rec).title : String(r.recId);
+  return `<button class="chip-ref" data-chat-open="${esc(ec)}|${esc(r.recId)}" data-tip="Open ${esc(label)}"><span class="cr-i">${CARD_ICON[ec] || I.doc}</span><span class="cr-t">${esc(label)}</span><span class="cr-go">${I.chev}</span></button>`;
+}
+// A message bubble's inner content — text and/or pasted chips (a chips-only message reads
+// "shared an item").
+function chatBubbleInner(it) {
+  const t = it.text ? `<span class="cbub-t">${esc(it.text)}</span>` : '';
+  const refs = (it.refs || []).map(chatRefChipHtml).join('');
+  if (!t && !refs) return '<span class="cbub-t"></span>';
+  return t + (refs ? `<span class="cbub-refs">${refs}</span>` : '') + (!t && !refs ? '' : '');
+}
+// The chat title — editable (rename in place) for the creator, static for members.
+function chatTitleInputHtml(c) {
+  if (!chatIsAdmin(c)) return `<span class="cp-who chat-title-ro">${esc(commsTeamLabel(c))}</span>`;
+  return `<input class="chat-title-in" data-chat-title="${esc(c.id)}" value="${esc(c.title || '')}" placeholder="Name this chat…" aria-label="Chat title" maxlength="60" />`;
+}
+// The held element awaiting paste, shown in an internal composer; sends with the message.
+function chatHeldChipHtml() {
+  const h = state.held; if (!h) return '';
+  return `<span class="held-chip" data-tip="Attached — sends with your message"><span class="hc-i">${CARD_ICON[h.card] || I.doc}</span><span class="hc-t">${esc(h.label || 'Item')}</span><button class="hc-x" data-held-clear aria-label="Clear attachment">${I.x}</button></span>`;
+}
+/* Shared team-chat feed rows (dock + D9 rail window): messages as bubbles (mine ride
+   `me`, carrying text and/or pasted chips), flagged comments as tappable cflag rows. */
+function chatFeedRowsHtml(c) {
+  const u = commentUserKey();
+  return chatFeed(c).map((it) => {
+    if (it.kind === 'msg') {
+      if (it.by === u) return `<div class="cbub-row me"><div class="cbub me">${chatBubbleInner(it)}</div></div>`;
+      return `<div class="cbub-row"><span class="cav" style="--av:${chatAvatarColor(it.by)}">${esc(chatInitials(it.by))}</span><div class="cbub-wrap"><span class="cbub-name">${esc(it.by || 'Team')}</span><div class="cbub">${chatBubbleInner(it)}</div></div></div>`;
+    }
+    return `<button class="cflag" data-chat-open="${esc(it.card)}|${esc(it.recId)}"><span class="cmt-marker c-${it.color}"></span><span class="cflag-b"><span class="cflag-t">${esc(it.text)}</span><span class="cflag-m">flagged · on ${esc(it.recName)}</span></span></button>`;
+  }).join('') || `<div class="chat-empty">${c ? 'No messages yet — say something, or paste a record in.' : 'Flagged comments show up here. Start a chat from the + on the Team rail.'}</div>`;
+}
+// The member rail — who's in the chat. People come from the Settings → Team Roster
+// (settings.employees), grouped under their role heading; default NONE until added.
+// Tinted by the person's role color so a glance reads the crew mix.
+const ROLE_BY_LABEL = () => { const m = {}; ROLES.forEach((r) => { m[r.label] = r; m[r.id] = r; }); return m; };
+function chatMemberBarHtml(c) {
+  if (!c) return '';
+  const emps = (state.settings && state.settings.employees) || [];
+  const members = new Set((c.members || []).map(String));
+  const rmap = ROLE_BY_LABEL();
+  // ── Members can't edit the roster — they see who's in, and a Leave if they're in it. ──
+  if (!chatIsAdmin(c)) {
+    const empById = new Map(emps.map((e) => [String(e.id), e]));
+    const chips = [...members].map((id) => {
+      const em = empById.get(id); const nm = (em && em.name) || 'Member';
+      const rc = (em && rmap[em.role] && rmap[em.role].color) || 'gray';
+      return `<span class="rtab is-static" style="--rc:var(--${rc})" data-tip="${esc(nm)} — in the chat"><span class="rtab-dot"></span><span class="rtab-l">${esc(nm)}</span></span>`;
+    }).join('') || '<span class="mbar-hint">No members yet.</span>';
+    return `<div class="chat-rolebar chat-memberbar chat-memberbar-ro" role="group" aria-label="Chat members">${chips}</div>`;   // Leave lives in the gear menu now
+  }
+  // ── Admin (creator): the full editable roster, grouped by role; default none. ──
+  if (!emps.length) return `<div class="chat-rolebar chat-memberbar"><span class="mbar-hint">No crew on the roster yet — add hands in Settings → Team Roster.</span></div>`;
+  const byRole = new Map();
+  emps.forEach((em) => { const k = em.role || 'Crew'; if (!byRole.has(k)) byRole.set(k, []); byRole.get(k).push(em); });
+  const grps = [...byRole.entries()].map(([role, list]) => {
+    const rc = (rmap[role] && rmap[role].color) || 'gray';
+    const chips = list.map((em) => {
+      const on = members.has(String(em.id));
+      const nm = em.name || 'Hand';
+      return `<button class="rtab${on ? ' on' : ''}" data-chat-member="${esc(em.id)}" style="--rc:var(--${rc})" data-tip="${esc(nm)} — ${on ? 'in the chat (tap to remove)' : 'tap to add'}"><span class="rtab-dot"></span><span class="rtab-l">${esc(nm)}</span></button>`;
+    }).join('');
+    return `<div class="mrole-grp"><span class="mrole-h">${esc(role)}</span><div class="mrole-chips">${chips}</div></div>`;
+  }).join('');
+  return `<div class="chat-rolebar chat-memberbar" role="group" aria-label="Chat members — you're the creator">${grps}</div>`;
+}
 function chatDockEl() {
   chatMarkSeen();   // §17 — the open dock is "seen": clears the re-flash for this user
   const c = activeChat();
-  const u = commentUserKey();
-  // tagged-element rail at the very top (no header, per Jac) — close/back ride the rail's end
-  const tagsHtml = c ? c.tags.map((t) => `<span class="chat-tag c-${t.color || 'gray'}" data-tip="${esc(t.label)}"><span class="ct-dot"></span><span class="ct-lbl">${esc(t.label)}</span><button class="x" data-chat-untag="${esc(t.id)}" aria-label="Remove ${esc(t.label)}">${I.x}</button></span>`).join('') : '<span class="chat-rail-hint">No chat open — right-click / long-press a record, or drag one in</span>';
-  const rail = `<div class="chat-rail">${tagsHtml}<span class="rail-sp"></span>${c ? `<button class="rail-ico js-chat-back" aria-label="All flags" data-tip="All flags">${I.chevL}</button>` : ''}<button class="rail-ico js-chat-close" aria-label="Close chat" data-tip="Close">${I.x}</button></div>`;
-  const feed = chatFeed().map((it) => {
-    if (it.kind === 'msg') {
-      if (it.by === u) return `<div class="cbub-row me"><div class="cbub me">${esc(it.text)}</div></div>`;
-      return `<div class="cbub-row"><span class="cav" style="--av:${chatAvatarColor(it.by)}">${esc(chatInitials(it.by))}</span><div class="cbub-wrap"><span class="cbub-name">${esc(it.by || 'Team')}</span><div class="cbub">${esc(it.text)}</div></div></div>`;
-    }
-    return `<button class="cflag" data-chat-open="${esc(it.card)}|${esc(it.recId)}"><span class="cmt-marker c-${it.color}"></span><span class="cflag-b"><span class="cflag-t">${esc(it.text)}</span><span class="cflag-m">flagged · on ${esc(it.recName)}</span></span></button>`;
-  }).join('') || `<div class="chat-empty">${c ? 'No messages yet — say something.' : 'Flagged comments show up here. Start a chat from any record or element.'}</div>`;
-  const roles = c ? `<div class="chat-rolebar">${ROLES.map((r) => `<button class="rtab${chatRoleOn(r.id) ? ' on' : ''}" data-chat-role="${esc(r.id)}" style="--rc:var(--${r.color})" data-tip="${esc(r.label)} — ${chatRoleOn(r.id) ? 'in the chat' : 'left out'}"><span class="rtab-dot"></span><span class="rtab-l">${esc(r.label)}</span></button>`).join('')}</div>` : '';
+  if (!c) {
+    // no chat open → the flagged-comments overview (deferred: fate revisited later)
+    return `<div class="chat-rail"><span class="chat-rail-hint">No chat open — tap <b>+ New chat</b> on the Team rail.</span><span class="rail-sp"></span><button class="rail-ico js-chat-close" aria-label="Close" data-tip="Close">${I.x}</button></div>
+      <div class="chat-feed">${chatFeedRowsHtml(c)}</div>`;
+  }
+  const rail = `<div class="chat-rail chat-titlebar">${chatTitleInputHtml(c)}<span class="rail-sp"></span><button class="rail-ico js-chat-settings" aria-label="Chat settings" data-tip="Chat settings">${I.sliders}</button><button class="rail-ico js-chat-back" aria-label="All chats" data-tip="All chats">${I.chevL}</button><button class="rail-ico js-chat-close" aria-label="Close chat" data-tip="Close">${I.x}</button></div>`;
   return `${rail}
-    <div class="chat-feed">${feed}</div>
-    <div class="chat-compose"><input class="chat-input" placeholder="${c ? 'Message the team…' : 'Type to start a team chat…'}" value="${esc(state.chat.draft || '')}" aria-label="Message the team" /><button class="chat-send js-chat-send" aria-label="Send">${I.chev}</button></div>
-    ${roles}`;
+    <div class="chat-feed">${chatFeedRowsHtml(c)}</div>
+    <div class="chat-compose">${chatHeldChipHtml()}<input class="chat-input" placeholder="Message the team…" value="${esc(state.chat.draft || '')}" aria-label="Message the team" /><button class="chat-send js-chat-send" aria-label="Send">${I.chev}</button></div>
+    ${chatMemberBarHtml(c)}`;
 }
 // Render Mr. Wrangler's message text — escape FIRST (no HTML injection), then apply the light markdown the
 // model actually emits: **bold**, `code`, and newlines. Only safe <strong>/<code>/<br> tags are introduced.
@@ -8367,11 +8602,43 @@ function wrMsgStamp(at, prevAt) {
     : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   return day + ' · ' + time;
 }
-// §18 Mr. Wrangler dock — renders the floating dock HTML (mirrors wrangler overlay but as a dock).
+// §18 Mr. Wrangler dock — renders the floating dock HTML (mirrors wrangler overlay but as
+// a dock). D9: the dock survives on PHONES only; desktop renders the same BODY inside the
+// comms-rail window (commsWranglerPopupHtml) — one body builder, two shells.
 function wranglerDockEl() {
   const o = state.wrangler;
   const rec = (o.card && o.recId != null) ? recOf(entityCardOf(o.card, o.recType), o.recId) : null;
   const chip = rec ? `<span class="wr-chip">${CARD_ICON[entityCardOf(o.card, o.recType)] || ''}${esc(detailTitle(entityCardOf(o.card, o.recType), rec))}</span>` : '';
+  return `
+    <div class="wr-dock-head">
+      <span style="font-size:18px">🤠</span>
+      <span class="wr-dock-title">Mr. Wrangler</span>
+      ${chip}
+      <span class="spacer"></span>
+      <button class="iconbtn js-wr-min" aria-label="${o.min ? 'Expand' : 'Minimize'}" data-tip="${o.min ? 'Expand' : 'Minimize'}">${I.chev}</button>
+      <button class="iconbtn js-wr-close" aria-label="Close" data-tip="Close">×</button>
+    </div>
+    ${wranglerDockBodyHtml()}`;
+}
+// The wrangler conversation BODY — request bar, feed, error, attachments, composer.
+// Shared verbatim by the phone dock and the D9 rail window (the send/apply/attach
+// machinery keys off these classes: .js-wr-in, .js-wr-send, .wr-feed …).
+// The Wrangler composer's focus/paste row: a held element awaiting paste (becomes the
+// focus on send) + the currently-FOCUSED record (what Claude can see) with a clear ✕.
+// Pasting an element into Mr. Wrangler feeds him its data — he can't click a chip, so the
+// element rides in as context rather than a link (2026-07-08 rail spec, internal paste).
+function wranglerFocusRowHtml(o) {
+  const bits = [];
+  if (state.held) bits.push(chatHeldChipHtml());   // paste-ready — becomes the focus on send
+  if (o.card && o.recId != null) {
+    const ec = entityCardOf(o.card, o.recType), rec = recOf(ec, o.recId);
+    const label = rec ? (ROW_META[ec] ? ROW_META[ec](rec).title : String(o.recId)) : 'record removed';
+    bits.push(`<span class="wr-focus-chip${rec ? '' : ' chip-gone'}" data-tip="Mr. Wrangler is focused on this record — he can see its data"><span class="wf-i">${CARD_ICON[ec] || I.doc}</span><span class="wf-t">${esc(label)}</span><button class="wf-x" data-wr-unfocus aria-label="Clear focus" data-tip="Clear the focused record">${I.x}</button></span>`);
+  }
+  return bits.length ? `<div class="wr-focus-row">${bits.join('')}</div>` : '';
+}
+function wranglerDockBodyHtml() {
+  const o = state.wrangler;
   const turns = o.messages.length
     ? o.messages.map((m, i) => {
         let act = '';
@@ -8441,17 +8708,10 @@ function wranglerDockEl() {
       ${acts}</div>`;
   })();
   return `
-    <div class="wr-dock-head">
-      <span style="font-size:18px">🤠</span>
-      <span class="wr-dock-title">Mr. Wrangler</span>
-      ${chip}
-      <span class="spacer"></span>
-      <button class="iconbtn js-wr-min" aria-label="${o.min ? 'Expand' : 'Minimize'}" data-tip="${o.min ? 'Expand' : 'Minimize'}">${I.chev}</button>
-      <button class="iconbtn js-wr-close" aria-label="Close" data-tip="Close">×</button>
-    </div>
     ${reqBar}
     <div class="wr-feed">${turns}${o.busy ? '<div class="wr-msg assistant"><span class="wr-av">🤠</span><div class="wr-bub wr-think">…wrangling an answer</div></div>' : ''}</div>
     ${o.error ? `<div class="wr-err">${esc(o.error)}</div>` : ''}
+    ${wranglerFocusRowHtml(o)}
     ${attachRow}
     <div class="wr-compose"><label class="wr-attach js-wr-attach" data-r="R21" data-tip="Attach a screenshot or a CSV/text file"><input type="file" accept="image/*,.csv,.tsv,.txt,.md,.log,text/csv,text/plain" class="js-wr-file" hidden multiple>${I.paperclip || '📎'}</label><input class="wr-in js-wr-in" placeholder="Ask Mr. Wrangler, or tell him what's broken…" value="${esc(o.draft || '')}" ${o.busy ? 'disabled' : ''} /><button class="wr-send js-wr-send" data-r="R17" ${o.busy ? 'disabled' : ''} aria-label="Ask">${I.chev}</button></div>`;
 }
@@ -8733,67 +8993,114 @@ function openWranglerDock(opts) {
   if (opts.reqNumber !== undefined) w.reqNumber = opts.reqNumber;
   if (opts.reqTitle !== undefined) w.reqTitle = opts.reqTitle;
   if (opts.reqUrl !== undefined) w.reqUrl = opts.reqUrl;
+  // D9 — desktop has no floating dock anymore: the conversation lands on the comms
+  // rail as the Mr. Wrangler session's SINGLE open window (single-open law).
+  if (!document.body.classList.contains('is-phone')) {
+    const rail = state.commsRail;
+    if (rail.cat !== 'wrangler') { commsLeaveCat(rail.cat); rail.cat = 'wrangler'; }
+    const s = rail.sessions.wrangler;
+    s.lastOpen = String(w.id); s.menuOpen = false;
+    s.hidden = (s.hidden || []).filter((x) => String(x) !== String(w.id));
+    commsUnend(w.id, 'wrangler');                    // any open resurrects an ended chat
+    saveCommsRail();
+  }
   render();
   setTimeout(() => { const i = document.querySelector('.wrangler-dock .js-wr-in'); if (i) i.focus(); const f = document.querySelector('.wrangler-dock .wr-feed'); if (f) f.scrollTop = f.scrollHeight; }, 0);
 }
 function chatSend() {
   const inp = document.querySelector('.chat-input');
   const text = ((inp ? inp.value : state.chat.draft) || '').trim();
-  if (!text) { if (inp) inp.focus(); return; }
+  const held = state.held;
+  if (!text && !held) { if (inp) inp.focus(); return; }                 // nothing to send (no text, no pasted chip)
   let c = activeChat(); if (!c) c = newChat();                          // typing with no active chat opens one to the team
-  c.messages.push({ id: 'MSG' + (state.seq++), by: commentUserKey(), when: TODAY_ISO, at: Date.now(), text });
+  const msg = { id: 'MSG' + (state.seq++), by: commentUserKey(), when: TODAY_ISO, at: Date.now(), text };
+  if (held) { msg.refs = [{ card: held.card, recId: held.recId }]; state.held = null; }   // paste the held element as a live chip
+  c.messages.push(msg);
   c.seen[commentUserKey()] = Date.now();                                // author has seen their own update
+  commsUnend(c.id, 'team');                                             // D9: any new message resurrects an Ended chat
   state.chat.draft = ''; saveSoon(); pushChatsSoon(); haptic([12, 30, 12]); render();   // §M-touch — success tick on a posted message
   setTimeout(() => { const i = document.querySelector('.chat-input'); if (i) i.focus(); const f = document.querySelector('.chat-feed'); if (f) f.scrollTop = f.scrollHeight; }, 0);
 }
-function chatToggleRole(id) {
+function chatToggleMember(empId) {
   const c = activeChat(); if (!c) return;
-  c.participants = c.participants.includes(id) ? c.participants.filter((x) => x !== id) : [...c.participants, id];
-  // never deleted — at 0 participants the chat goes dormant; reopen it via a tagged element (Jac)
+  if (!chatIsAdmin(c)) { toast('Only the chat’s creator can change who’s in it.'); return; }   // members can leave, not add
+  const s = new Set((c.members || []).map(String)); const k = String(empId);
+  if (s.has(k)) s.delete(k); else s.add(k);
+  c.members = [...s];
   pushChatsSoon(); render();
 }
-// Right-click → Start chat: OPEN the element's existing chat (rejoin) if it has one, else start fresh.
-function startChatFromEl(el) {
+// A member removes THEMSELVES (voluntary exit). Drops the chat off their rail (visibility).
+function chatLeave() {
+  const c = activeChat(); if (!c) return;
+  const mine = myRosterId(); if (!mine) return;
+  c.members = (c.members || []).filter((x) => String(x) !== String(mine));
+  if (String(state.chat.activeId) === String(c.id)) state.chat.activeId = null;   // fall back to the overview; it's off your rail now
+  pushChatsSoon(); render();
+  toast('You left the chat.');
+}
+// Per-user mute — a muted chat never raises its status dot for you (still readable).
+function chatMuted(c) { return !!c && (c.muted || []).includes(commentUserKey()); }
+function chatToggleMute() {
+  const c = activeChat(); if (!c) return;
+  const me = commentUserKey(), s = new Set(c.muted || []);
+  const nowMuted = !s.has(me);
+  if (nowMuted) s.add(me); else s.delete(me);
+  c.muted = [...s];
+  pushChatsSoon(); render();
+  toast(nowMuted ? 'Muted — this chat won’t raise an alert.' : 'Unmuted.');
+}
+// The gear menu — classic chat settings. Everyone: mark read + mute. Creator: rename +
+// end. Member: leave. (Leave/End live here so they're a deliberate, tucked-away action.)
+function chatSettingsMenu(btn) {
+  const c = activeChat(); if (!c) return;
+  const muted = chatMuted(c), admin = chatIsAdmin(c);
+  let html = `<button class="dd-item js-chat-markread">${I.eye}<span>Mark as read</span></button>`;
+  html += `<button class="dd-item${muted ? ' on' : ''} js-chat-mute">${I.bell}<span>${muted ? 'Unmute notifications' : 'Mute notifications'}</span></button>`;
+  if (admin) {
+    html += `<button class="dd-item js-chat-rename">${I.sliders}<span>Rename chat</span></button>`;
+    html += `<div class="dd-sep" aria-hidden="true"></div>`;
+    html += `<button class="dd-item danger js-chat-end" data-chat="${esc(c.id)}">${I.x}<span>End chat</span></button>`;
+  } else if (chatAmMember(c)) {
+    html += `<div class="dd-sep" aria-hidden="true"></div>`;
+    html += `<button class="dd-item danger js-chat-leave">${I.x}<span>Leave chat</span></button>`;
+  }
+  openDropdown(btn, html, { align: 'right', cls: 'chat-settings-menu' });
+}
+const closeMenus = () => document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove());
+// Rename a chat (title input on the window header). Debounced-sync; no re-render so the
+// caret doesn't jump — the tab label refreshes on the next render.
+function chatSetTitle(id, title) {
+  const c = chatById(id); if (!c || !chatIsAdmin(c)) return;   // only the creator renames
+  c.title = title; pushChatsSoon();
+}
+// Right-click → Copy to chat: HOLD this element so it can be pasted into an internal
+// (Team / Mr. Wrangler) chat as a live, clickable chip. Replaces the retired
+// "start a chat seeded from this element" flow (2026-07-08 rail spec) — the copied
+// element travels into any conversation, and every member can click through it.
+function copyElement(el) {
   const hit = cardRecordAt(el);
-  if (!hit) { toast('Right-click a record to start or open its chat.'); return; }
+  if (!hit) { toast('Right-click a record to copy it into a chat.'); return; }
   const ec = entityCardOf(hit.card, hit.recType), rec = recOf(ec, hit.recId);
   if (!rec) { toast('Record not found.'); return; }
-  const existing = chatsTagging(ec, hit.recId)[0];
-  if (existing) return openChat(existing.id, `Reopened the chat on this ${SINGULAR[ec] || 'record'}.`);
   const label = ROW_META[ec] ? ROW_META[ec](rec).title : String(hit.recId);
-  const m = commentMarker(rec);
-  newChat({ id: 'TAG:' + ec + ':' + hit.recId, label, color: m ? m.color : 'gray', ref: { card: ec, recId: hit.recId } });
-  state.chat.open = true; render();
-  toast(`Started a chat from "${label}".`);
+  state.held = { card: ec, recId: hit.recId, label };
+  render();
+  toast(`Copied “${label}” — paste it into a Team or Mr. Wrangler chat.`);
 }
 // Resolve a dragged payload into a chat tag — label from the record, color inherited
 // from any flag it already carries (else neutral). Granular-element sources (line/pill/
 // price) ride the same path once they're wired as drag sources.
-function chatTagFromPayload(p) {
-  const rec = p.rec, ec = p.entity;
+// Dropping a record on the chat pad COPIES it (held) to paste into a Team / Mr. Wrangler
+// chat — the drag equivalent of right-click → Copy to chat. (Replaces the retired
+// drop-to-tag / drop-to-new-chat flows, 2026-07-08 rail spec.)
+function chatDropCopy(p) {
+  const ec = p.entity, rec = p.rec;
+  if (p.chatEl && p.chatEl.ref) { state.held = { card: p.chatEl.ref.card, recId: p.chatEl.ref.recId, label: p.chatEl.label || 'Item' }; render(); toast(`Copied “${p.chatEl.label || 'item'}” — paste it into a chat.`); return; }
+  if (!ec || rec == null) return;
   const label = ROW_META[ec] ? ROW_META[ec](rec).title : (idOf(ec, rec) || 'Item');
-  const m = commentMarker(rec);
-  chatAddTag({ id: 'TAG:' + ec + ':' + p.id, label, color: m ? m.color : 'gray', ref: { card: ec, recId: p.id } });
-  toast(`Tagged “${label}” into the team chat.`);
-}
-// Drop on the bottom-right pad → spin up a NEW chat seeded with the dragged thing
-// (a granular element OR a whole record).
-function chatStartFromDrop(p) {
-  let tag;
-  if (p.chatEl) tag = { id: p.chatEl.id || ('TAG' + (state.seq++)), label: p.chatEl.label, color: p.chatEl.color || 'gray', ref: p.chatEl.ref || null };
-  else { const ec = p.entity, rec = p.rec; const label = ROW_META[ec] ? ROW_META[ec](rec).title : (idOf(ec, rec) || 'Item'); const m = commentMarker(rec); tag = { id: 'TAG:' + ec + ':' + p.id, label, color: m ? m.color : 'gray', ref: { card: ec, recId: p.id } }; }
-  // Dedup like startChatFromEl: a record/element already has a chat → REOPEN it, never spin a duplicate thread.
-  if (tag.ref) { const existing = chatsTagging(tag.ref.card, tag.ref.recId)[0]; if (existing) return openChat(existing.id, `Reopened the chat on this ${SINGULAR[tag.ref.card] || 'record'}.`); }
-  newChat(tag); state.chat.open = true; render();
-  toast(`New chat started from “${tag.label}”.`);
-}
-// Tag an element into the chat (drag-drop) — records OR granular elements (line/pill/price).
-function chatAddTag(tag) {
-  if (!tag || !tag.label) return;
-  let c = activeChat(); if (!c) c = newChat();                          // dragging context in with no active chat opens one
-  if (tag.id && c.tags.some((t) => t.id === tag.id)) return;            // no dupes
-  c.tags.push({ id: tag.id || 'TAG' + (state.seq++), label: tag.label, color: tag.color || 'gray', ref: tag.ref || null });
-  state.chat.open = true; pushChatsSoon(); render();
+  state.held = { card: ec, recId: p.id, label };
+  render();
+  toast(`Copied “${label}” — paste it into a Team or Mr. Wrangler chat.`);
 }
 function tabStrip(tabs) {
   tabs = tabs || state.tabs;
@@ -9140,7 +9447,7 @@ function tabBadge(card, rec) {
 }
 
 /* ════════════════════════════════════════════════════════════════════════
-   APP-24 · §13.3 CARD GRAPH VIEW — RETIRED (2026-07-03). The per-card tile
+   APP-23 · §13.3 CARD GRAPH VIEW — RETIRED (2026-07-03). The per-card tile
    dashboard (pieSVG/gvBars tiles + unit roster) was replaced by the §13.6
    Round-Up reporting board; the chapter number is kept so later APP-NN
    banners keep their ids. See PR #460–#464 + the removal PR for history.
@@ -9183,7 +9490,7 @@ function gvBuckets(days) {
   return out;
 }
 /* ════════════════════════════════════════════════════════════════════════
-   APP-25 · §13.4 GRAPH CAROUSEL (Jac 2026-06-16) — the per-card Graph is a deck of
+   APP-24 · §13.4 GRAPH CAROUSEL (Jac 2026-06-16) — the per-card Graph is a deck of
    INTERACTIVE views stacked ABOVE the list. Chevrons cycle the view; clicking a
    slice / bar / row / number TOGGLES a search entry (the one filtering pathway),
    so the chart drives the rows. Same-column toggles OR together. Each view
@@ -9197,27 +9504,30 @@ function gvSmallest(view) { const live = (view.segs || []).filter((s) => s.count
 // A graph view = { key, title, kind:'pie'|'bars'|'lead'|'nums', color?, segs:[{col,value,label,count,color}] }.
 // Each seg's {col,value} is exactly a filter term, so a click maps straight to the list.
 function graphViewsFor(card) {
-  // §13.6 — per-card views retired; the Round-Up board took over. Only the Shop 'all'
-  // stackbars worklist (the mechanic landing front page) still renders in-column.
-  if (card === 'shop') {
-    // The Shop "front page" (wrench toggle): one stacked-bar view of what needs the
-    // crew's attention right now — Not Ready · Services · Work Orders.
+  // §13.6 — per-card views retired; the Round-Up board took over. Only the UNITS
+  // stackbars worklist (the mechanic landing front page — moved home from the retired
+  // Shop card, Jac 2026-07-07) still renders in-column.
+  if (card === 'units') {
+    // The yard "front page" (Units graph toggle): one stacked-bar view of what needs
+    // the crew's attention right now — Not Ready · Services · Work Orders. Every
+    // segment click filters THE UNITS LIST (g-tagged term), so the chart drives the rows.
     const notReady = DATA.units.filter((u) => u.inspectionStatus === 'Not Ready').length;
     let svcOver = 0, svcDue = 0;
     DATA.units.forEach((u) => { if (u.washRequested) return; const s = topServiceForUnit(u); if (!s) return; if (s.status === 'past-due') svcOver++; else if (s.status === 'due-soon') svcDue++; });
     const woByPhase = {}; DATA.workOrders.filter((w) => w.phase !== 'Complete' && !w.cancelled).forEach((w) => { const ph = w.phase || '—'; woByPhase[ph] = (woByPhase[ph] || 0) + 1; });
-    const woParts = Object.keys(STATUS.woPhase).filter((ph) => ph !== 'Complete' && woByPhase[ph]).map((ph) => ({ col: '__wophase', value: ph, label: getStatus('woPhase', ph).label || ph, count: woByPhase[ph], color: getStatus('woPhase', ph).color || 'gray' }));
+    const woParts = Object.keys(STATUS.woPhase).filter((ph) => ph !== 'Complete' && woByPhase[ph]).map((ph) => ({ col: '__wop', value: ph, label: getStatus('woPhase', ph).label || ph, count: woByPhase[ph], color: getStatus('woPhase', ph).color || 'gray' }));
     const bars = [
-      // Not Ready reuses the established js-notready affordance (route to the Units list,
-      // filtered to Not-Ready) rather than a graph filter — same behavior the old chip had.
-      { label: 'Not Ready', count: notReady, color: 'yellow', js: 'js-notready', tip: `${notReady} Not Ready — open the Units list` },
+      // Not Ready reuses the established js-notready affordance (adds the removable
+      // __cond pill to the Units search bar) rather than a graph filter — same behavior
+      // the old chip had.
+      { label: 'Not Ready', count: notReady, color: 'yellow', js: 'js-notready', tip: `${notReady} Not Ready — filter the list` },
       { label: 'Services', parts: [
         { col: '__svcstat', value: 'past-due', label: 'Overdue', count: svcOver, color: 'red' },
         { col: '__svcstat', value: 'due-soon', label: 'Due', count: svcDue, color: 'yellow' },
       ] },
       { label: 'Work Orders', parts: woParts },
     ];
-    return [{ key: 'shopfront', title: 'Shop', kind: 'stackbars', segs: bars }];
+    return [{ key: 'worklist', title: 'Worklist', kind: 'stackbars', segs: bars }];
   }
   return null;
 }
@@ -9323,7 +9633,7 @@ function uCutoff(p) {
 // compact money for bar tops ($12,345 → $12k) — the full figure rides the hover tip
 const uMoneyK = (v) => v >= 10000 ? '$' + Math.round(v / 1000) + 'k' : v >= 1000 ? '$' + (Math.round(v / 100) / 10) + 'k' : '$' + Math.round(v);
 
-/* §13.6 THE ROUND-UP (Jac 2026-07-03) — part of the APP-25 Graph chapter, not a new chapter.
+/* §13.6 THE ROUND-UP (Jac 2026-07-03) — part of the APP-24 Graph chapter, not a new chapter.
    The clean-sheet full-screen reporting board (spec:
    docs/superpowers/specs/2026-07-03-roundup-reporting-board-design.md). One overlay kind
    ('roundup'): a left TIME SPINE (Today/Wk/Mo/30/60/90/All + a Custom R22 date-range) scoping
@@ -9609,7 +9919,7 @@ function ruWoTrend(rg) {
   const bk = ruBuckets(rg);
   const W = DATA.workOrders.filter((w) => !w.cancelled);
   const vals = bk.map((b) => W.filter((w) => { const d = (w.date || '').slice(0, 10); return d >= b.a && d < b.b; }).length);
-  const rows = bk.map((b, i) => ({ card: 'shop', seg: 'workOrders', col: '__daterange', navValue: b.key, name: `${b.label} — ${vals[i]} opened`, tip: `${b.label} — ${vals[i]} WOs opened` }));
+  const rows = bk.map((b, i) => ({ card: 'units', col: '__worange', navValue: b.key, name: `${b.label} — ${vals[i]} opened`, tip: `${b.label} — ${vals[i]} WOs opened` }));   // Shop retirement: drill to Units with WOs in the bucket
   const chart = vals.some((v) => v > 0) ? ruWireNav(ruLineSVG({ bk, vals, color: '--yellow' }), rows, 'circle') : ruEmpty('No work orders in this window.');
   const open = W.filter((w) => w.phase !== 'Complete');
   const byPhase = {}; open.forEach((w) => { const ph = w.phase || '—'; byPhase[ph] = (byPhase[ph] || 0) + 1; });
@@ -9717,7 +10027,7 @@ function ruWoPhase() {   // open WOs by bottleneck phase — open = inherently c
 function ruSvcUrgency() {   // a unit's service urgency — snapshot by nature
   let over = 0, soon = 0, ok = 0, wash = 0;
   DATA.units.forEach((u) => { if (u.washRequested) { wash++; return; } const s = topServiceForUnit(u); if (!s) { ok++; return; } if (s.status === 'past-due') over++; else if (s.status === 'due-soon') soon++; else ok++; });
-  const mk = (v, lbl, count, color) => ({ name: lbl, count, color, card: 'shop', seg: 'serviceOrders', col: '__svcstat', navValue: v, tip: `${lbl} — ${count} units` });
+  const mk = (v, lbl, count, color) => ({ name: lbl, count, color, card: 'units', col: '__svcstat', navValue: v, tip: `${lbl} — ${count} units` });   // Shop retirement: service urgency filters the Units list
   const segs = [mk('past-due', 'Overdue', over, 'red'), mk('due-soon', 'Due Soon', soon, 'yellow'), mk('on-schedule', 'On Schedule', ok, 'green'), mk('wash', 'Wash', wash, 'blue')];
   if (!DATA.units.length) return ruEmpty('No units yet.');
   return ruDonutSVG({ segs, noun: 'UNITS' });
@@ -9825,7 +10135,7 @@ function ruBilledWos(rg) {   // N8 — WOs billed to a customer, per bucket (cou
   const rows = bk.map((b) => {
     const hit = W.filter((w) => { const d = (w.date || '').slice(0, 10); return d >= b.a && d < b.b; });
     const parts = hit.reduce((a, w) => a + (w.lineItems || []).reduce((x, li) => x + (Number(li.cost) || 0), 0), 0);
-    return { label: b.label, name: `${b.label} — ${hit.length} billed`, value: hit.length, fill: green, card: 'shop', seg: 'workOrders', col: '__daterange', navValue: b.key, tip: `${b.label} — ${hit.length} billed WO${hit.length === 1 ? '' : 's'} · ${money(parts)} in parts` };
+    return { label: b.label, name: `${b.label} — ${hit.length} billed`, value: hit.length, fill: green, card: 'units', col: '__worange', navValue: b.key, tip: `${b.label} — ${hit.length} billed WO${hit.length === 1 ? '' : 's'} · ${money(parts)} in parts` };
   });
   if (!rows.some((r2) => r2.value > 0)) return ruEmpty('No billed work orders in this window.');
   return ruWireNav(ruBarsSVG({ data: rows }), rows);
@@ -9839,8 +10149,8 @@ function ruWorkByRole(rg) {   // N10 — the manager's "Units of Work": complete
   const returned = DATA.rentals.filter((r2) => inR(r2.endDate) && rentalDisplayStatus(r2) === 'Returned').length;
   const collected = DATA.invoices.filter((inv) => inR(inv.date) && invoiceTotals(inv).status === 'Paid').length;
   const rows = [
-    { label: 'WOs Done', name: 'Work orders completed (Mechanic)', value: woDone, card: 'shop', seg: 'workOrders', col: '__wop', navValue: 'Complete', tip: `${woDone} WOs opened in range, now Complete — Mechanic` },
-    { label: 'Inspections', name: 'Inspections performed (M-Tech)', value: insp, card: 'shop', seg: 'inspections', col: '__daterange', navValue: 'range', tip: `${insp} inspections in range — M-Tech` },
+    { label: 'WOs Done', name: 'Work orders completed (Mechanic)', value: woDone, card: 'units', col: '__wop', navValue: 'Complete', tip: `${woDone} WOs opened in range, now Complete — Mechanic` },
+    { label: 'Inspections', name: 'Inspections performed (M-Tech)', value: insp, card: 'units', col: '__insprange', navValue: 'range', tip: `${insp} inspections in range — M-Tech` },
     { label: 'Delivered', name: 'Rentals put on rent (Driver/Yard)', value: delivered, card: 'rentals', col: '__rentrange', navValue: 'range', tip: `${delivered} rentals started in range that went out — Driver/Yard` },
     { label: 'Returned', name: 'Rentals returned (Driver/Yard)', value: returned, card: 'rentals', col: '__rentrange', navValue: 'range', tip: `${returned} rentals returned in range — Driver/Yard` },
     { label: 'Collected', name: 'Invoices collected (Office)', value: collected, card: 'invoices', col: 'invoice', navValue: 'Paid', tip: `${collected} invoices issued in range, paid in full — Office` },
@@ -9972,9 +10282,6 @@ const RUS_TABS = {
   rentals: [{ p: 'bookings', l: 'Bookings' }, { p: 'voided', l: 'Voided' }, { p: 'rev-status', l: 'Revenue' }, { p: 'inv-status', l: 'Invoices' }, { p: 'rent-tiles', l: '#s' }],
   customers: [{ p: 'accounts', l: 'Accounts' }, { p: 'cust-active', l: 'Active' }, { p: 'memberships', l: 'Members' }, { p: 'card-health', l: 'Cards' }, { p: 'top-spend', l: 'Top Spend' }],
   invoices: [{ p: 'balances', l: 'Balances' }, { p: 'net-sales', l: 'Net' }, { p: 'refunds', l: 'Refunds' }, { p: 'aging', l: 'Aging' }, { p: 'top-spend', l: 'Top Spend' }],
-  inspections: [{ p: 'insp-trend', l: 'Inspections' }],
-  workOrders: [{ p: 'wo-trend', l: 'Opened' }, { p: 'wo-phase', l: 'Bottleneck' }, { p: 'billed-wos', l: 'Billed' }],
-  serviceOrders: [{ p: 'svc-urgency', l: 'Urgency' }],
 };
 const RUS_PER_LABEL = { today: 'Td', wk: 'Wk', mo: 'Mo', 30: '30d', 60: '60d', 90: '90d', all: 'All' };
 function rusHtml(card, src, cs) {
@@ -10026,7 +10333,7 @@ function ruMountCharts() {
 }
 
 /* ════════════════════════════════════════════════════════════════════════
-   APP-26 · §12 OVERLAYS & BOARDS — renderOverlay kinds + back-office board popups
+   APP-25 · §12 OVERLAYS & BOARDS — renderOverlay kinds + back-office board popups
    ════════════════════════════════════════════════════════════════════════ */
 let _ovScroll = {}, _ovLastKind = null;   // keep a popup-body's scroll across its OWN re-renders (sign/selfie)
 let _popDrag = { x: 0, y: 0 }, _popDragKind = null;   // drag offset of the open popup; persists across its own re-renders, resets on kind change / close
@@ -10214,6 +10521,78 @@ function buildPopupEl(o, overlay, opts = {}) {
       foot: `${ghostPill('Cancel', { js: 'js-close' })}${actionPill(isMoney ? 'money' : 'commit', isMoney ? 'Confirm — bill it' : 'Confirm', { js: 'js-link-confirm' })}`,
     });
     overlay.appendChild(pop);
+  } else if (o.kind === 'gpsConnect') {
+    // §5a — the connect-a-device wizard: provider → identify the device → live
+    // first-contact poll → save. gpsProvider/gpsDeviceId are written to the unit ONLY
+    // once contact is confirmed (or an explicit "Save anyway" override) — never a
+    // hand-typed, unverified mapping. State lives on the overlay (o.step/o.provider/…);
+    // the async pieces (device-list load, the poll loop, the write) are gpsConnectLoadDevices
+    // / gpsConnectStartPoll+gpsConnectPollTick / gpsConnectSave, just above the GPS client.
+    const u = IDX.unit.get(o.unitId);
+    if (!u) { return false; }
+    o.step = o.step || 'provider'; o.provider = o.provider || 'Hapn';
+    const stepNum = { provider: 1, identify: 2, poll: 3 }[o.step] || 1;
+    const stepLbl = o.step === 'identify' ? (o.provider === 'Hapn' ? 'Identify the tracker' : 'Pick the machine') : (o.step === 'poll' ? 'Confirm signal' : 'Provider');
+    let body, foot;
+
+    if (o.step === 'provider') {
+      body = `
+        <div class="kpi-cap" style="margin-bottom:9px">${stepNum} · ${esc(stepLbl)}</div>
+        ${segCtl(GPS_PROVIDERS.map((p) => ({ label: p, js: 'js-gps-provider', data: { val: p }, on: o.provider === p ? 'orange' : '' })))}
+        <p class="set-note" style="margin-top:10px">${o.provider === 'Hapn'
+          ? 'Wrangle in a tracker by IMEI — read it off the hardware. It must already be activated on the Hapn account.'
+          : `Round up a machine already authorized on the ${esc(o.provider)} account — nothing to activate here.`}</p>`;
+      foot = `${ghostPill('Cancel', { js: 'js-close' })}${actionPill('commit', 'Continue', { js: 'js-gps-continue' })}`;
+    } else if (o.step === 'identify' && o.provider === 'Hapn') {
+      body = `
+        <div class="kpi-cap" style="margin-bottom:9px">${stepNum} · ${esc(stepLbl)}</div>
+        <input class="lf-in js-gps-imei-input" style="width:100%" placeholder="Tracker IMEI" value="${esc(o.imei || '')}">
+        <p class="set-note" style="margin-top:8px">Printed on the tracker — a technician reads it off the hardware.</p>`;
+      foot = `${ghostPill('Back', { js: 'js-gps-back' })}${actionPill('commit', 'Continue', { js: 'js-gps-identify-continue' })}`;
+    } else if (o.step === 'identify') {
+      const q = (o.deviceQuery || '').trim().toLowerCase();
+      const all = o.devices || [];
+      const list = q ? all.filter((raw) => `${gpsRawDeviceLabel(o.provider, raw)} ${gpsRawDeviceSub(o.provider, raw)}`.toLowerCase().includes(q)) : all;
+      const rows = list.map((raw) => {
+        const id = gpsRawDeviceId(o.provider, raw), label = gpsRawDeviceLabel(o.provider, raw), sub = gpsRawDeviceSub(o.provider, raw);
+        return `<button type="button" class="gps-dev-row js-gps-device-pick" data-r="R2" data-devid="${esc(id)}" data-devlabel="${esc(label)}">${CARD_ICON.units}<span class="gdr-name">${esc(label)}</span>${sub ? `<span class="gdr-sub">${esc(sub)}</span>` : ''}</button>`;
+      }).join('');
+      body = `
+        <div class="kpi-cap" style="margin-bottom:9px">${stepNum} · ${esc(stepLbl)}</div>
+        <div class="bv-searchwrap" style="width:100%;margin:0 0 10px"><span class="s-icon">${I.search}</span><input class="bv-query js-gps-search" placeholder="Search ${esc(o.provider)} machines…" value="${esc(o.deviceQuery || '')}"></div>
+        ${o.devicesLoading ? `<div class="set-loading" style="min-height:140px"><div class="set-loading-bar" aria-hidden="true"></div><div class="set-loading-lbl">Rounding up ${esc(o.provider)} machines…</div></div>`
+          : o.devicesError ? `<p class="set-err" style="text-align:left">${esc(o.devicesError)}</p>`
+          : list.length ? `<div class="gps-dev-list">${rows}</div>`
+          : `<p class="muted" style="font-size:12px">No ${q ? 'matching' : 'authorized'} machines${q ? ` for “${esc(o.deviceQuery)}”` : ' on this account yet'}.</p>`}`;
+      foot = ghostPill('Back', { js: 'js-gps-back' });
+    } else {   // 'poll' — the live first-contact confirmation (§5a step 3)
+      const UI = {
+        waiting:   { color: 'yellow', icon: I.search, label: 'Waiting for signal…' },
+        seen:      { color: 'yellow', icon: I.search, label: 'Device seen — confirming…' },
+        reporting: { color: 'green',  icon: '✓',       label: 'Reporting' },
+        timeout:   { color: 'red',    icon: I.alert,   label: 'Not responding yet' },
+      }[o.pollState] || { color: 'yellow', icon: I.search, label: 'Waiting for signal…' };
+      const sub = o.pollState === 'reporting' ? 'Live contact confirmed — ready to save.'
+        : o.pollState === 'timeout' ? 'Check the tracker’s power/signal — Save anyway if it may just be catching up.'
+        : `Attempt ${o.pollAttempt || 0} of ${o.pollMax || 8}`;
+      body = `
+        <div class="kpi-cap" style="margin-bottom:9px">${stepNum} · ${esc(stepLbl)}</div>
+        <div class="set-loading" style="min-height:160px">
+          <span class="gps-poll-ic c-${UI.color}">${UI.icon}</span>
+          ${(o.pollState === 'waiting' || o.pollState === 'seen') ? '<div class="set-loading-bar" aria-hidden="true"></div>' : ''}
+          <div class="set-loading-lbl">${esc(UI.label)}</div>
+          <p class="set-note">${esc(sub)}</p>
+        </div>`;
+      foot = o.pollState === 'reporting'
+        ? `${ghostPill('Back', { js: 'js-gps-back' })}${actionPill('commit', 'Save', { js: 'js-gps-save' })}`
+        : o.pollState === 'timeout'
+          ? `${ghostPill('Back', { js: 'js-gps-back' })}${ghostPill('Try again', { js: 'js-gps-poll-retry' })}${actionPill('danger', 'Save anyway', { js: 'js-gps-save-anyway' })}`
+          : ghostPill('Cancel', { js: 'js-close' });
+    }
+
+    const pop = el('div', 'popup'); pop.style.width = '400px';
+    pop.innerHTML = popupShell({ icon: CARD_ICON.units || '', title: 'Connect GPS Device', tag: `Unit · GPS · ${u.name}`, body, foot });
+    overlay.appendChild(pop);
   } else if (o.kind === 'rulebook') {
     // THE VISUAL RULEBOOK (SPEC v8) — every example is emitted by the REAL
     // builder, so this reference can never drift from the code.
@@ -10244,6 +10623,7 @@ function buildPopupEl(o, overlay, opts = {}) {
       R9b: flagsStack([flagEl('No Card', 'red', { alert: true })]),
       R22: dateField('exampleDate', ''),
       R24: closeX('', {}),
+      R26: sourceLinkBtn('#', 'Example — john deere 317g SERVICE SHEET.pdf, p.1'),
       R19: '<span class="pill c-blue" style="animation:attnGlow 1.1s ease-in-out infinite;border-radius:10px"><span class="t">+Card</span></span>',
       R20: '<div class="ctx-menu" style="position:static;display:inline-block;min-width:0;box-shadow:none;padding:4px"><button class="dd-item">📋 Copy</button><div class="menu-sep"></div><button class="dd-item">🤠 Ask Mr. Wrangler</button></div>',
       R23: '<span class="pill c-gray" data-tip="The one styled tip"><span class="t">hover me</span></span>',
@@ -10347,23 +10727,70 @@ function buildPopupEl(o, overlay, opts = {}) {
     // Part/Task popup (Jac 2026-06-11): photo + every field optional — anything
     // left empty gets filled by Mr. Wrangler (photo review · cost/url lookup ·
     // hours estimated from the category + industry install standards).
-    const w = IDX.wo.get(o.woId);
-    const li = o.idx != null ? (w?.lineItems || [])[o.idx] : null;
-    const ven = li?.vendorId ? DATA.vendors.find((v) => v.vendorId === li.vendorId) : null;
+    // Jac 2026-07-08 (service-detail-panel): ALSO doubles as the add/edit surface for a
+    // service task's partRefs (o.taskTarget = {unitId,taskId} instead of o.woId) — "this
+    // should nearly already exist because of Work Orders", so it's the same popup/fields,
+    // just saved to a model task's detail.partRefs instead of a WO's lineItems (see
+    // savePartForm). Hours doesn't apply to a parts/filters spec, so it's hidden there.
+    const forTask = !!o.taskTarget;
+    let li = null, pr = null, ven = null;
+    if (forTask) {
+      const tu = IDX.unit.get(o.taskTarget.unitId);
+      const { realTask } = svcRealTask(tu, { taskId: o.taskTarget.taskId });
+      pr = (o.idx != null && realTask?.detail?.partRefs) ? realTask.detail.partRefs[o.idx] : null;
+      ven = pr?.vendorId ? (IDX.vendor.get(pr.vendorId) || DATA.vendors.find((v) => v.vendorId === pr.vendorId)) : null;
+    } else {
+      const w = IDX.wo.get(o.woId);
+      li = o.idx != null ? (w?.lineItems || [])[o.idx] : null;
+      ven = li?.vendorId ? DATA.vendors.find((v) => v.vendorId === li.vendorId) : null;
+    }
+    const rec = pr || li;
     const pop = el('div', 'popup'); pop.style.width = '400px';
-    pop.innerHTML = popupShell({ icon: CARD_ICON.parts || CARD_ICON.workOrders, title: `${li ? 'Edit' : 'Add'} Part / Task`, tag: 'Work order · line',
-      foot: `${ghostPill('Cancel', { js: 'js-close' })}${actionPill('commit', li ? 'Save' : 'Add line', { js: 'js-pf2-save' })}`,
+    pop.innerHTML = popupShell({ icon: CARD_ICON.parts || CARD_ICON.workOrders, title: `${rec ? 'Edit' : 'Add'} Part${forTask ? '' : ' / Task'}`, tag: forTask ? 'Service · part' : 'Work order · line',
+      foot: `${ghostPill('Cancel', { js: 'js-close' })}${actionPill('commit', rec ? 'Save' : (forTask ? 'Add part' : 'Add line'), { js: 'js-pf2-save' })}`,
       body: `
-        ${fileDrop(state.partPhoto || li?.photo ? '✓ photo attached' : 'Add Photo (not required)', { js: 'js-pf2-file', capture: 'environment', done: !!(state.partPhoto || li?.photo), icon: I.camera })}
-        <p class="muted" style="text-align:center;font-size:11.5px;margin:7px 0 10px">✨ Mr. Wrangler will add the parts for you!</p>
-        <input class="lf-in js-pf2-desc" placeholder="Part/Task Name" value="${esc(li?.part || '')}" style="width:100%;margin-bottom:7px">
+        ${fileDrop(state.partPhoto || rec?.photo ? '✓ photo attached' : 'Add Photo (not required)', { js: 'js-pf2-file', capture: 'environment', done: !!(state.partPhoto || rec?.photo), icon: I.camera })}
+        ${forTask ? '' : `<p class="muted" style="text-align:center;font-size:11.5px;margin:7px 0 10px">✨ Mr. Wrangler will add the parts for you!</p>`}
+        <input class="lf-in js-pf2-desc" placeholder="Part/Task Name" value="${esc((forTask ? pr?.name : li?.part) || '')}" style="width:100%;margin-bottom:7px">
+        ${forTask && pr?.oem ? `<div class="muted" style="font-size:11px;margin:-3px 0 7px">OEM ${esc(pr.oem)} · from the manufacturer manual</div>` : ''}
         <div style="display:flex;gap:7px;margin-bottom:7px">
-          <input class="lf-in js-pf2-cost" type="number" min="0" placeholder="$Cost" value="${li?.cost ?? ''}" style="flex:1">
-          <input class="lf-in js-pf2-hours" type="number" min="0" step="0.5" placeholder="Hours" value="${li?.hours ?? ''}" style="flex:1">
+          <input class="lf-in js-pf2-cost" type="number" min="0" placeholder="$Cost" value="${(forTask ? pr?.cost : li?.cost) ?? ''}" style="flex:1">
+          ${forTask ? '' : `<input class="lf-in js-pf2-hours" type="number" min="0" step="0.5" placeholder="Hours" value="${li?.hours ?? ''}" style="flex:1">`}
         </div>
-        <input class="lf-in js-pf2-url" placeholder="URL link" value="${esc(li?.url || '')}" style="width:100%;margin-bottom:7px">
+        <input class="lf-in js-pf2-url" placeholder="URL link" value="${esc((forTask ? pr?.url : li?.url) || '')}" style="width:100%;margin-bottom:7px">
         <input class="lf-in js-pf2-vendor" placeholder="Vendor" value="${esc(ven?.name || '')}" style="width:100%;margin-bottom:4px">
-        <p class="muted" style="font-size:11px;margin:4px 0 4px">✨ Empty fields are filled by Mr. Wrangler after saving: the photo is reviewed for the description/cost/url, and hours are estimated from the category + industry standards.</p>` });
+        ${forTask ? '' : `<p class="muted" style="font-size:11px;margin:4px 0 4px">✨ Empty fields are filled by Mr. Wrangler after saving: the photo is reviewed for the description/cost/url, and hours are estimated from the category + industry standards.</p>`}` });
+    overlay.appendChild(pop);
+  } else if (o.kind === 'modelSchedule') {
+    // A model's real maintenance schedule (Jac 2026-07-07) — replaces the generic
+    // 250/500/1000hr placeholder for any unit that picks this model.
+    const mo = IDX.model.get(o.modelId);
+    // .woline is a fixed 3-col grid (name | nums | ✕) everywhere else in the app —
+    // the source link rides IN the 3rd cell alongside the ✕ (one wrapper = one
+    // grid child) rather than as a bare 4th child, so the row never wraps.
+    const rows = (mo?.tasks || []).map((t, idx) => `<div class="woline">
+        <span class="js-svctask-edit" data-rec="${esc(o.modelId)}" data-idx="${idx}" style="cursor:pointer">${esc(t.name)}</span>
+        <span class="nums"><b>${t.intervalHours != null ? t.intervalHours + 'h' : '—'}</b>${t.parts?.length ? `<span>${t.parts.length} part${t.parts.length === 1 ? '' : 's'}</span>` : ''}</span>
+        <span class="woline-acts">${sourceLinkBtn(t.sourceUrl, t.source)}${closeX('js-svctask-remove', { data: { rec: o.modelId, idx } })}</span>
+      </div>`).join('');
+    const pop = el('div', 'popup'); pop.style.width = '420px';
+    pop.innerHTML = popupShell({ icon: CARD_ICON.workOrders, title: mo?.name || 'Model schedule', tag: 'Category · model',
+      foot: `${ghostPill('Close', { js: 'js-close' })}`,
+      body: `
+        ${rows || '<p class="muted" style="font-size:12.5px;text-align:center;margin:6px 0 12px">No tasks yet — this model falls back to the generic schedule until you add some.</p>'}
+        <div class="wototals">${addBtn('Task', { anchor: true, js: 'js-add-svctask', h: 26, data: { rec: o.modelId } })}</div>` });
+    overlay.appendChild(pop);
+  } else if (o.kind === 'svctaskform') {
+    // Add/edit one maintenance-schedule task row on a model.
+    const mo = IDX.model.get(o.modelId);
+    const t = o.idx != null ? (mo?.tasks || [])[o.idx] : null;
+    const pop = el('div', 'popup'); pop.style.width = '380px';
+    pop.innerHTML = popupShell({ icon: CARD_ICON.workOrders, title: `${t ? 'Edit' : 'Add'} Task`, tag: 'Model · schedule',
+      foot: `${ghostPill('Cancel', { js: 'js-close' })}${actionPill('commit', t ? 'Save' : 'Add task', { js: 'js-svctaskform-save' })}`,
+      body: `
+        <input class="lf-in js-st-name" placeholder="Task name" value="${esc(t?.name || '')}" style="width:100%;margin-bottom:7px">
+        <input class="lf-in js-st-hours" type="number" min="0" placeholder="Interval (hours)" value="${t?.intervalHours ?? ''}" style="width:100%;margin-bottom:7px">
+        <input class="lf-in js-st-parts" placeholder="Parts (comma-separated, optional)" value="${esc((t?.parts || []).join(', '))}" style="width:100%">` });
     overlay.appendChild(pop);
   } else if (o.kind === 'receiptform') {
     // Receipt popup (Jac: "Receipts use popups and reconcile against parts") — the
@@ -10502,6 +10929,36 @@ function buildPopupEl(o, overlay, opts = {}) {
       headRight: `<button class="iconbtn js-notif-refresh" data-tip="Refresh">${I.refresh || '⟳'}</button>`,
       bodyClass: 'req-wrap', body: inner, foot });
     overlay.appendChild(pop);
+  } else if (o.kind === 'transport-alerts') {
+    // Scheduled Transport Reminder Alerts (#515) — the deliveries/pickups DUE in the window,
+    // one dismissible "call the customer" card per leg. Live from transportAlerts() (→
+    // dispatchEvents, the same source as the Office run) so it can't drift; the footer segment
+    // adjusts the window (today + N days). Delivery = blue · Pickup = brown, matching the
+    // dispatch cockpit's kind colors. Re-derived on every render — no reload to see a new one.
+    const days = tralertDays();
+    const list = visibleTransportAlerts();
+    const relDay = (d) => (d === TODAY_ISO ? 'Today' : d === addDaysISO(TODAY_ISO, 1) ? 'Tomorrow' : dispatchDayLabel(d));
+    const spanNote = days === 0 ? 'today' : days === 1 ? 'today or tomorrow' : `in the next ${days + 1} days`;
+    const inner = !list.length
+      ? `<div class="req-empty"><span class="req-empty-ic">🚚</span><p>All clear.</p><span>No deliveries or pickups due ${spanNote}. Newly scheduled transports show up here on their own — no refresh needed.</span></div>`
+      : list.map((a) => {
+          const when = `${relDay(a.date)}${a.time ? ' · ' + fmtClock(a.time) : ' · no set time'}`;
+          const where = [a.unitId ? unitPill(a.unitId) : esc(a.unit), a.address ? esc(a.address) : ''].filter(Boolean).join(' · ');
+          return `<div class="req-card">
+              <div class="req-head">${badge(a.type, a.color)}<span class="req-title">${esc(a.customer)}</span><span class="spacer"></span><span class="req-await">${esc(when)}</span></div>
+              <div class="req-text">${where}</div>
+              <div class="req-acts"><span class="spacer"></span>${actionPill('blue', 'Called', { js: 'js-tralert-called', data: { key: a.key } })}</div>
+            </div>`;
+        }).join('');
+    const winSeg = segCtl([
+      { label: 'Today', js: 'js-tralert-win', data: { days: 0 }, on: days === 0 ? 'blue' : undefined },
+      { label: '+ Tomorrow', js: 'js-tralert-win', data: { days: 1 }, on: days === 1 ? 'blue' : undefined },
+      { label: 'This week', js: 'js-tralert-win', data: { days: 6 }, on: days >= 6 ? 'blue' : undefined },
+    ]);
+    const foot = `${winSeg}<span class="spacer"></span>${list.length ? ghostPill('Mark all called', { js: 'js-tralert-allcalled', tip: 'Clear every reminder in this window' }) : ''}`;
+    const pop = el('div', 'popup'); pop.style.width = '460px';
+    pop.innerHTML = popupShell({ icon: I.truck, title: `Transports Due${list.length ? ` · ${list.length}` : ''}`, tag: 'Dispatch · call the customer', bodyClass: 'req-wrap', body: inner, foot });
+    overlay.appendChild(pop);
   } else if (o.kind === 'hotkeys') {
     const rows = [
       { d: 'click',    n: 'Click',              t: 'Open a record to view it — in its own card, nothing else moves.' },
@@ -10572,7 +11029,7 @@ function buildPopupEl(o, overlay, opts = {}) {
     } else {
     pop.innerHTML = `
       <div class="popup-head">${CARD_ICON[board.id] ? `<span class="c-icon" style="color:var(--accent);display:inline-flex">${CARD_ICON[board.id] || ''}</span>` : ''}<h3>${esc(board.title)}</h3><span class="c-count">${boardRows(board.id).length}</span>${board.id === 'files' ? addBtn('File', { link: true, js: 'js-file-add' }) : ''}${board.id === 'files' ? `<div class="bv-searchwrap"><span class="s-icon">${I.search}</span><input class="bv-query js-files-query" placeholder="Search files…" value="${esc(o.fileSearch || '')}" /></div>` : ''}<span class="spacer"></span><button class="x js-close">${I.x}</button></div>
-      <div class="popup-body board-body">${board.id === 'files' && o.fileForm ? `<div class="kv pillrow" style="gap:7px;margin:0 0 10px"><input class="lf-in js-ff-name" placeholder="File name" style="flex:2;min-width:140px"><input class="lf-in js-ff-link" placeholder="Link (URL)" style="flex:2;min-width:140px">${fileDrop(o.fileUpload ? '✓ ' + esc(o.fileUpload.name) : 'Upload photo / document', { js: 'js-ff-file', accept: 'image/*,application/pdf,.doc,.docx,.xls,.xlsx,.csv,.txt', done: !!o.fileUpload, icon: I.camera })}${ghostPill('Cancel', { js: 'js-ff-cancel' })}${actionPill('commit', 'Add file', { js: 'js-ff-save' })}</div>` : ''}${boardTable(board.id, o.fileSearch)}</div>`;
+      <div class="popup-body board-body">${o.pickTarget && board.id === 'parts' ? `<div class="muted board-pickhint">Tap <b>Attach</b> to add a catalog part to this service.</div>` : ''}${board.id === 'files' && o.fileForm ? `<div class="kv pillrow" style="gap:7px;margin:0 0 10px"><input class="lf-in js-ff-name" placeholder="File name" style="flex:2;min-width:140px"><input class="lf-in js-ff-link" placeholder="Link (URL)" style="flex:2;min-width:140px">${fileDrop(o.fileUpload ? '✓ ' + esc(o.fileUpload.name) : 'Upload photo / document', { js: 'js-ff-file', accept: 'image/*,application/pdf,.doc,.docx,.xls,.xlsx,.csv,.txt', done: !!o.fileUpload, icon: I.camera })}${ghostPill('Cancel', { js: 'js-ff-cancel' })}${actionPill('commit', 'Add file', { js: 'js-ff-save' })}</div>` : ''}${boardTable(board.id, o.fileSearch, o.pickTarget)}</div>`;
     }
     overlay.appendChild(pop);
   } else if (o.kind === 'roundup') {
@@ -10605,9 +11062,11 @@ function buildPopupEl(o, overlay, opts = {}) {
     // carries Requests, so we add the Notifications bell.
     const nu = unseenNotifs();
     const notifBtn = `<button class="iconbtn js-notifications" data-tip="Notifications">${I.bell}<span>Notifications</span>${nu ? `<span class="bb-badge">${nu > 9 ? '9+' : nu}</span>` : ''}</button>`;
+    const tn = visibleTransportAlerts().length;   // #515 transport reminders
+    const trBtn = `<button class="iconbtn js-transport-alerts" data-tip="Transports due — call the customer">${I.truck}<span>Transports Due</span>${tn ? `<span class="bb-badge">${tn > 9 ? '9+' : tn}</span>` : ''}</button>`;
     const pop = el('div', 'popup'); pop.style.width = '360px';
     pop.innerHTML = popupShell({ icon: I.sliders || I.menu || '', title: 'Tools', tag: 'Yard · toolbox',
-      body: `<div class="tools-tray">${notifBtn}${bottomBarInner()}</div>` });
+      body: `<div class="tools-tray">${trBtn}${notifBtn}${bottomBarInner()}</div>` });
     overlay.appendChild(pop);
   } else if (o.kind === 'settings') {
     o.config = o.config || { roles: {}, admin: '' };
@@ -10858,12 +11317,17 @@ function buildPopupEl(o, overlay, opts = {}) {
       foot: `<button class="pill ignition js-svc-save" data-r="R17" data-unit="${u.unitId}" data-task="${task.taskId}">Record completion</button>`,
       body: `
         <div class="pillrow" style="margin-bottom:12px">${unitPill(u.unitId)}<span class="pill c-${task.color}">${esc(task.name)}</span><span class="muted" style="font-size:12px;margin-left:auto">${esc(svcText(task))}</span></div>
-        <div class="svc-ref"><div class="svc-ref-head">Reference</div><div class="svc-ref-body">${task.parts && task.parts.length ? `Parts: ${esc(task.parts.join(' · '))}<br>` : ''}Filters · Hyperlinks · Instructions · Photo — set per-task in the backend (§7.7)</div></div>
+        <div class="svc-ref"><div class="svc-ref-head">What you need${sourceLinkBtn(task.sourceUrl, task.source)}</div><div class="svc-ref-body">${svcNeedHtml(u, task)}</div></div>
         <label class="svc-field"><span>Hours at completion</span><input type="number" class="js-svc-hours" value="${num(u.currentHours)}"></label>
         <label class="svc-field"><span>Date completed</span><input type="date" class="js-svc-date" value="${TODAY_ISO}"></label>
         ${media}
         <textarea class="insp-desc js-svc-notes" placeholder="Notes (parts used, observations)…"></textarea>` });
     overlay.appendChild(pop);
+    if (o.partRef && o.partRef.idx != null) {   // the part-detail side panel — rendered BESIDE the service popup (cardSub precedent, §14)
+      const partRefs = (task.detail && task.detail.partRefs) || [];
+      const pr = partRefs[o.partRef.idx];
+      if (pr) { overlay.appendChild(svcPartPanelEl(u, task, pr, o.partRef.idx)); }
+    }
   } else if (o.kind === 'schedule') {
     // §12.1 Schedule — a single date+time follow-up logged to the customer Activity Log
     const c = IDX.customer.get(o.customerId);
@@ -10875,6 +11339,23 @@ function buildPopupEl(o, overlay, opts = {}) {
       body: `
         <label class="svc-field"><span>Date &amp; time</span>${dateField('when', o.when, { withTime: true, time: o.whenTime })}</label>
         <textarea class="insp-desc js-sch-note" placeholder="What's the follow-up? (quote call, pickup, demo…)">${esc(o.note || '')}</textarea>` });
+    overlay.appendChild(pop);
+  } else if (o.kind === 'sellUnit') {
+    // Sell a unit (spec units-fleet D3): captures sale price + date, closes the unit's
+    // ROI out cleanly (see categoryStats' residual swap), and IS the accounting seam —
+    // the accounting area reads salePrice/saleDate off a Sold unit to book sale revenue;
+    // no parallel accounting record is created here. Money-gated (D2): canMoney() is
+    // re-checked here as defence-in-depth, same as every other money popup/action.
+    const u = IDX.unit.get(o.unitId);
+    if (!u || !canMoney()) { return false; }
+    if (o.saleDate === undefined) o.saleDate = TODAY_ISO;
+    const pop = el('div', 'popup'); pop.style.width = '360px';
+    pop.innerHTML = popupShell({ icon: CARD_ICON.units || '', title: `Sell — ${u.name}`, tag: 'Unit · sale',
+      foot: `<button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill ignition js-sell-save" data-r="R17" data-rec="${u.unitId}">Record sale</button>`,
+      body: `
+        <label class="svc-field"><span>Sale price</span><input type="number" class="js-sell-price" placeholder="$0" min="0" step="1"></label>
+        <label class="svc-field" style="margin-top:8px"><span>Sale date</span>${dateField('saleDate', o.saleDate)}</label>
+        <textarea class="insp-desc js-sell-note" placeholder="Buyer / notes (optional)…"></textarea>` });
     overlay.appendChild(pop);
   } else if (o.kind === 'splitUnit') {
     // §20 split — give one unit its own window on a NEW sibling rental, same invoice.
@@ -11004,7 +11485,7 @@ function buildPopupEl(o, overlay, opts = {}) {
   return true;
 }
 const openOverlay = (o) => { state.datepick = null; _ovScroll[o.kind] = 0; state.overlay = o; renderOverlay(); };   // fresh open starts at top
-/* ════════════ APP-27 · RB-WINDOWS catalog (Jac 2026-06-22) — the admin Rulebook's index of
+/* ════════════ APP-26 · RB-WINDOWS catalog (Jac 2026-06-22) — the admin Rulebook's index of
    EVERY popup window. One entry per renderOverlay kind so the "Windows" tab can list
    it and (on expand) show an inert live preview via buildPopupEl. sample() returns
    representative args from the demo seed (DATA.*); a kind whose record we don't have
@@ -11016,14 +11497,18 @@ const WINDOW_CATALOG = [
   { kind: 'migrateUnits',  label: 'Round up missing units',  tag: 'Units · migrate',          sample: () => ({ plan: [{ name: 'Sample Unit', action: 'create', unitId: 'U000', categoryId: ((DATA.categories || [])[0] || {}).categoryId, count: 1 }] }) },
   { kind: 'comment',       label: 'Comment note',            tag: 'Note · comment',           sample: () => ({ card: 'units', recId: ((DATA.units || [])[0] || {}).unitId, recType: null, color: 'yellow' }) },
   { kind: 'linkConfirm',   label: 'Confirm link',            tag: 'Link · confirm',           sample: () => ({ srcCard: 'rentals', srcId: ((DATA.rentals || [])[0] || {}).rentalId, targetCard: 'invoices', targetId: ((DATA.invoices || [])[0] || {}).invoiceId }) },
+  { kind: 'gpsConnect',    label: 'Connect GPS device',      tag: 'Unit · GPS',                sample: () => ({ unitId: ((DATA.units || [])[0] || {}).unitId, step: 'provider', provider: 'Hapn' }) },
   { kind: 'rulebook',      label: 'The R-Rulebook',          tag: 'SPEC v8 · design system',  sample: () => ({}) },
   { kind: 'partform',      label: 'Add / Edit Part · Task',  tag: 'Work order · line',         sample: () => ({ woId: ((DATA.workOrders || [])[0] || {}).woId }) },
+  { kind: 'modelSchedule', label: 'Model maintenance schedule', tag: 'Category · model',       sample: () => ({ modelId: ((DATA.models || [])[0] || {}).modelId }) },
+  { kind: 'svctaskform',   label: 'Add / Edit schedule task', tag: 'Model · schedule',          sample: () => ({ modelId: ((DATA.models || [])[0] || {}).modelId, idx: null }) },
   { kind: 'receiptform',   label: 'New / Edit Receipt',      tag: 'Expense · receipt',         sample: () => ({}) },
   { kind: 'capture',       label: 'Log yard journey',        tag: 'Yard journey · log',        sample: () => ({ rentalId: ((DATA.rentals || [])[0] || {}).rentalId, cap: 'start' }) },
   { kind: 'wodone',        label: 'Complete Work Order?',    tag: 'Work order · confirm',      sample: () => ({ woId: ((DATA.workOrders || [])[0] || {}).woId }) },
   { kind: 'role',          label: 'Role KPIs',               tag: 'Role · scorecard',          sample: () => ({ role: (ROLES[0] || {}).id }) },
   { kind: 'requests',      label: 'Requests inbox',          tag: 'Mr. Wrangler · approvals',  sample: () => ({}) },
   { kind: 'notifications', label: 'Notifications',           tag: 'Mr. Wrangler · resolved',   sample: () => ({}) },
+  { kind: 'transport-alerts', label: 'Transports Due',       tag: 'Dispatch · call the customer', sample: () => ({}) },
   { kind: 'hotkeys',       label: 'Mouse shortcuts',         tag: 'Operator · controls',       sample: () => ({}) },
   { kind: 'roadmap',       label: 'Coming in 2026',          tag: 'Roadmap · the docket',      sample: () => ({}) },
   { kind: 'feedback',      label: 'Report a bug or request', tag: 'Mr. Wrangler · report',     sample: () => ({}) },
@@ -11040,6 +11525,7 @@ const WINDOW_CATALOG = [
   { kind: 'inspection',    label: 'Failure report',          tag: 'Inspection · failure',      sample: () => ({ recId: ((DATA.inspections || [])[0] || {}).inspectionId }) },
   { kind: 'service',       label: 'Complete service',        tag: 'Service · complete',        sample: () => ({ unitId: ((DATA.units || [])[0] || {}).unitId, taskId: 'svc-wash' }) },
   { kind: 'schedule',      label: 'Schedule follow-up',      tag: 'Customer · follow-up',      sample: () => ({ customerId: ((DATA.customers || [])[0] || {}).customerId }) },
+  { kind: 'sellUnit',      label: 'Sell a unit',             tag: 'Unit · sale',               sample: () => ({ unitId: ((DATA.units || [])[0] || {}).unitId, saleDate: TODAY_ISO }) },
   { kind: 'splitUnit',     label: 'Different dates (split)',  tag: 'Rental · split window',     sample: () => ({ rentalId: ((DATA.rentals || [])[0] || {}).rentalId, unitId: ((DATA.units || [])[0] || {}).unitId }) },
   { kind: 'addCard',       label: 'Add card',                tag: 'Customer · card on file',   sample: () => ({ customerId: ((DATA.customers || [])[0] || {}).customerId }) },
   { kind: 'addAch',        label: 'Add bank account',        tag: 'Customer · ACH bank',       sample: () => ({ customerId: ((DATA.customers || [])[0] || {}).customerId }) },
@@ -11104,12 +11590,12 @@ async function sendFeedback() {
   } catch (e) { o.busy = false; o.error = 'Couldn’t send — check your connection and try again.'; renderOverlay(); }
 }
 /* ════════════════════════════════════════════════════════════════════════
-   APP-28 · §18 MR. WRANGLER — the in-app AI (Claude via the Apps Script backend).
+   APP-27 · §18 MR. WRANGLER — the in-app AI (Claude via the Apps Script backend).
    The API key NEVER touches this public repo: the frontend POSTs to BACKEND_URL
    (action 'wrangler'); Code.gs calls api.anthropic.com with the key from a Script
    Property. Carries a compact data digest + (when opened from a record) its detail.
    ════════════════════════════════════════════════════════════════════════ */
-const WRANGLER_SYSTEM = "You are Mr. Wrangler, the in-app AI for JacRentals — a heavy-equipment rental yard in Sulphur, Louisiana. You help the team make sense of their units, rentals, customers, invoices, work orders, and service, and you help triage bugs they report.\n\nSTYLE — keep it tight: answer in 1–3 sentences by default. Lead with the direct answer first; add at most one short supporting clause. Use a bullet list ONLY when enumerating multiple records, one line each. Don't restate the question, don't pad, and don't over-explain what you can't do — just answer.\n\nDATA — you have live read TOOLS that search the FULL records: find_customers, find_units, find_categories, find_vendors, find_rentals, find_invoices, find_work_orders, check_unit_availability, and price_rental. Use them to look up anything specific. Below is a short orientation only (today's date, the totals, and the categories with their rates) — not the full lists. Don't guess at a record you can look up, and only say a fact is missing after a tool comes back empty. Never invent records, names, or numbers.\n\nHELPING & FIXING — you're the assistant living inside the app (think Claude, but for this yard). The user might ask a question, describe a problem, or paste something — work out what they need and help. If they describe a BUG or glitch in the app itself (something not working, a dead control, a wrong layout or behavior), reproduce it in your head; if you're missing a detail, ask ONE quick follow-up (what they tapped + what they expected). Once you can state a clear repro, FILE A FIX by ending your reply with this exact fenced block:\n```wrangler-action\n{\"action\":\"fix\",\"title\":\"<short title>\",\"report\":\"<clear repro: steps, expected vs actual, any element involved>\"}\n```\nThat auto-ships obvious bugs (a dead control, a typo, a plainly wrong value).\nBut if it's a CHANGE or improvement (not an obvious bug), do NOT file it blind — talk it through first: lay out a SHORT, concrete PLAN of exactly what you'd change and where, then ask if that's good or needs adjusting. When you put a concrete plan on the table, end with:\n```wrangler-action\n{\"action\":\"plan\",\"title\":\"<short title>\",\"plan\":\"<numbered steps: what changes, where, and the resulting UX>\"}\n```\nJac reviews that plan and taps Build only when it's right — so take his tweaks and re-propose the plan until he's happy. Emit a block ONLY when ready — a clear repro for a fix, or a concrete plan for a change — never while still gathering detail; keep your visible words short and natural and never mention JSON, blocks, labels, or buttons.\n\nACTING ON DATA — you can DO things, not just answer. You can ADD (create), UPDATE, or BULK-IMPORT items for the user: customers, units, categories, vendors, parts, expenses, inspections, and work orders (and update notes/PO on rentals). Hard limits, always: NEVER hard-delete a record, NEVER charge a card or run an ACH, NEVER refund, NEVER touch a balance directly, NEVER change roles / permissions / passwords (security), and NEVER complete a work order. If the user asks to add/change something, or hands you lead/customer data to import (pasted rows, a list, a spreadsheet they paste in), DO IT — never say you can't or that Jac has to build it. Ask any quick follow-up you genuinely need first (which field, how their columns map, what membership stage), then end your reply with:\n```wrangler-action\n{\"action\":\"data\",\"title\":\"<what this does>\",\"ops\":[{\"op\":\"import\",\"entity\":\"customers\",\"rows\":[{\"firstName\":\"..\",\"lastName\":\"..\",\"phone\":\"..\",\"email\":\"..\",\"membershipStage\":\"..\"}]},{\"op\":\"create\",\"entity\":\"customers\",\"fields\":{}},{\"op\":\"update\",\"entity\":\"units\",\"id\":\"U003\",\"fields\":{\"notes\":\"..\"}}]}\n```\nA wrangler-action block is the ONLY thing that triggers a write, so whenever you add, update, or import you MUST end the reply with the block. Simple, single, safe edits (e.g. add one unit, fix a phone number) are applied AUTOMATICALLY the moment you emit the block — you may speak about those as done (e.g. say you added the unit Termite). Bigger or money-sensitive ones — bulk imports, rate/pricing changes, and invoicing a rental — instead show the user a preview to review and Apply first, so word THOSE as a preview (e.g. tell them to look over the import and tap Apply) and don't claim they're saved. When unsure which it'll be, describe the change plainly without promising either; the app shows the user the right control. Never claim a save without emitting the block. If the user PASTES a long list of rows (not a file) too big for one reply, import a smaller batch and tell them how many rows are still to send (but for an ATTACHED CSV file, never inline rows like this — always use the csv-import op described below, which expands every row locally with no size limit); never claim a save you didn't actually emit in a block. Map their funnel/membership words to one of: Inbound Lead, Outbound Lead, Contacted, Not A No!, Payment Discussed, Paid. Editable fields are name/contact/address/industry/notes/account-type/membership+sales stage (customers); name/category/mechanic/notes/specs/fleet-status (units); name/description/fuel + rental rates (member-daily, 1-day, 7-day, 4-week, weekend) (categories); name/phone/email/address/website/contact/type/notes (vendors); name/status/qty/website/order-email/product-number/notes (parts); notes/po (rentals); vendor/date/amount/category/method/notes (expenses); unit/date/wash/bill-customer/description (inspections); unit/customer/report/type/description/mechanic/eta/labor-hours (work orders — you can create or edit one but you can NEVER complete it or set its phase; only the Complete WO button does that; a work order is service on a UNIT, so if the user names only the customer just pass the customer and I'll attach their on-rent unit — I ask which only if they have none or several out) — anything else (used-sale prices, balances, payments/refunds, cards/ACH, roles/passwords) you must decline for now and explain you can't touch money movement or security yet. NAMES vs IDS — you can refer to any customer, unit, category, or vendor BY NAME (and a customer by phone), and the app resolves it to the right record; the find_* tools return each record's [id] if you want to be exact. When you set a unit's category (categoryId) or a part's vendor (vendorId), pass the category/vendor NAME or its [id] — but it must already exist (look it up with find_categories/find_vendors if unsure); if it's NEW, create that category/vendor FIRST (a separate action) so the link resolves, otherwise the link is dropped. If a name matches more than one record, ask which one rather than guessing. The find_* tools search the FULL records (not a list), so never refuse or demand an id just because a customer or unit isn't in the orientation — look it up by name or phone with a find_* tool and act on what it returns. If you can name who/what the user means, resolve it and proceed; the preview catches a true miss. Ask (with ask_user) only when a lookup is genuinely ambiguous — two real matches — or you have no name at all. You CAN invoice an EXISTING rental: emit an operate op `{\"op\":\"operate\",\"name\":\"billRental\",\"params\":{\"rentalId\":\"R-104\"}}` — this builds the invoice from the live pricing engine (you NEVER invent line items or amounts), and only works if that rental has a customer, dates, and units and isn't already invoiced. You may pass `\"customer\":\"<name>\"` instead of a rental id and I'll bill that customer's MOST RECENT un-invoiced rental — so just emit it with the customer name; do NOT ask for a rental id, even if you can't see the rental in the orientation (the engine searches the full records and the preview shows which one). You can also RECORD a CASH or CHECK payment on an invoice: emit `{\"op\":\"operate\",\"name\":\"recordPayment\",\"params\":{\"invoiceId\":\"INV-104\",\"method\":\"cash\"}}` — add \"amount\" to pay part of the balance (omit it to pay the balance in full), and for a check include \"checkNum\"; or pass \"customer\":\"<name>\" instead of an invoice id to pay that customer's one open invoice. You can NEVER charge a card or run an ACH, you cannot REFUND, and you cannot create a from-scratch/standalone invoice. You can PUT UNITS ON RENT for a customer (create a reserved booking): emit `{\"op\":\"operate\",\"name\":\"startRental\",\"params\":{\"customer\":\"Cameron Miller\",\"units\":[\"3in Trash Pump\"],\"startDate\":\"2026-06-30\",\"days\":1,\"startTime\":\"10:00 AM\"}}` — give startDate plus EITHER a duration (\"days\": 1 for a one-day rental, which runs to the next morning and bills as 1 day) OR an explicit \"endDate\" for a set range, and pass the pickup \"startTime\" (e.g. \"10:00 AM\") whenever the user gives a time. ALWAYS include the time and the duration when stated — a one-day 10am rental is startDate that morning, days 1, startTime 10:00 AM. Optional transport `\"transport\":{\"type\":\"Delivery\",\"miles\":10,\"address\":\"..\"}`. DON'T INTERROGATE — a salesperson should be able to reserve from one short line. From a message like \"Cameron Miller getting a jack hammer Tuesday for 3 days 8am\", just emit the booking: resolve the customer, treat \"3 days\" as days:3, use 8:00 AM, and if the unit name matches several units DON'T ask which — the app auto-picks an available one and the user sees it in the preview to swap. Don't quibble about end-of-day vs last-full-day, and don't make the user choose between interchangeable units. Ask a question ONLY when you truly can't proceed: no matching customer, or no available unit for that window. DATES — a weekday name (\"Wednesday\", \"Tuesday\") ALWAYS means the NEXT upcoming one (today or later), NEVER a date that already passed; resolve it to that date and book — do NOT ask \"did you mean this coming Wednesday?\". Don't ask the user to confirm an obvious date reading. It's priced automatically by the engine; the customer's agreement signature and the payment are SEPARATE steps you don't do. It's refused if a unit isn't Active, the customer is blacklisted, the dates are bad, or a unit is already booked for that window.\n\nLARGE CSV IMPORTS — when the user attaches a CSV file you will see a compact summary: column headers, up to 5 sample rows, and the total row count. For any attached CSV with 2 or more rows, ALWAYS use the csv-import op (never the inline import op) and DO NOT re-emit all the rows yourself — instead emit a csv-import op with just the column mapping. The app expands every row locally, so nothing gets cut off no matter how big the file:\n\`\`\`wrangler-action\n{\"action\":\"data\",\"title\":\"Import 234 customers from leads.csv\",\"ops\":[{\"op\":\"csv-import\",\"entity\":\"customers\",\"mapping\":{\"First Name\":\"firstName\",\"Last Name\":\"lastName\",\"Mobile\":\"phone\",\"E-mail\":\"email\"},\"skipIfEmpty\":[\"firstName\",\"lastName\"]}]}\n\`\`\`\nThe mapping keys are the CSV column headers EXACTLY as shown in the summary. The values are app field names (firstName, lastName, phone, email, company, address, industry, accountNotes, accountType, membershipStage, usedSalesStage for customers). Set skipIfEmpty to app fields that must not be blank. Map every column that clearly lines up with an app field even if the names differ (\"Mobile\" -> \"phone\"). If you are unsure about a column, ask first.\n\nA light wrangler/ranch flavor in voice is welcome — never campy.";
+const WRANGLER_SYSTEM = "You are Mr. Wrangler, the in-app AI for JacRentals — a heavy-equipment rental yard in Sulphur, Louisiana. You help the team make sense of their units, rentals, customers, invoices, work orders, and service, and you help triage bugs they report.\n\nSTYLE — keep it tight: answer in 1–3 sentences by default. Lead with the direct answer first; add at most one short supporting clause. Use a bullet list ONLY when enumerating multiple records, one line each. Don't restate the question, don't pad, and don't over-explain what you can't do — just answer.\n\nDATA — you have live read TOOLS that search the FULL records: find_customers, find_units, find_categories, find_vendors, find_rentals, find_transports, find_invoices, find_work_orders, check_unit_availability, and price_rental. Use them to look up anything specific. For \"what transports/deliveries/pickups are due today or tomorrow?\" use find_transports (it defaults to a today→tomorrow window and returns one leg per line — customer, unit, type, address, date, time); if it comes back empty, say plainly that nothing's due. Below is a short orientation only (today's date, the totals, and the categories with their rates) — not the full lists. Don't guess at a record you can look up, and only say a fact is missing after a tool comes back empty. Never invent records, names, or numbers.\n\nHELPING & FIXING — you're the assistant living inside the app (think Claude, but for this yard). The user might ask a question, describe a problem, or paste something — work out what they need and help. If they describe a BUG or glitch in the app itself (something not working, a dead control, a wrong layout or behavior), reproduce it in your head; if you're missing a detail, ask ONE quick follow-up (what they tapped + what they expected). Once you can state a clear repro, FILE A FIX by ending your reply with this exact fenced block:\n```wrangler-action\n{\"action\":\"fix\",\"title\":\"<short title>\",\"report\":\"<clear repro: steps, expected vs actual, any element involved>\"}\n```\nThat auto-ships obvious bugs (a dead control, a typo, a plainly wrong value).\nBut if it's a CHANGE or improvement (not an obvious bug), do NOT file it blind — talk it through first: lay out a SHORT, concrete PLAN of exactly what you'd change and where, then ask if that's good or needs adjusting. When you put a concrete plan on the table, end with:\n```wrangler-action\n{\"action\":\"plan\",\"title\":\"<short title>\",\"plan\":\"<numbered steps: what changes, where, and the resulting UX>\"}\n```\nJac reviews that plan and taps Build only when it's right — so take his tweaks and re-propose the plan until he's happy. Emit a block ONLY when ready — a clear repro for a fix, or a concrete plan for a change — never while still gathering detail; keep your visible words short and natural and never mention JSON, blocks, labels, or buttons.\n\nACTING ON DATA — you can DO things, not just answer. You can ADD (create), UPDATE, or BULK-IMPORT items for the user: customers, units, categories, vendors, parts, expenses, inspections, and work orders (and update notes/PO on rentals). Hard limits, always: NEVER hard-delete a record, NEVER charge a card or run an ACH, NEVER refund, NEVER touch a balance directly, NEVER change roles / permissions / passwords (security), and NEVER complete a work order. If the user asks to add/change something, or hands you lead/customer data to import (pasted rows, a list, a spreadsheet they paste in), DO IT — never say you can't or that Jac has to build it. Ask any quick follow-up you genuinely need first (which field, how their columns map, what membership stage), then end your reply with:\n```wrangler-action\n{\"action\":\"data\",\"title\":\"<what this does>\",\"ops\":[{\"op\":\"import\",\"entity\":\"customers\",\"rows\":[{\"firstName\":\"..\",\"lastName\":\"..\",\"phone\":\"..\",\"email\":\"..\",\"membershipStage\":\"..\"}]},{\"op\":\"create\",\"entity\":\"customers\",\"fields\":{}},{\"op\":\"update\",\"entity\":\"units\",\"id\":\"U003\",\"fields\":{\"notes\":\"..\"}}]}\n```\nA wrangler-action block is the ONLY thing that triggers a write, so whenever you add, update, or import you MUST end the reply with the block. Simple, single, safe edits (e.g. add one unit, fix a phone number) are applied AUTOMATICALLY the moment you emit the block — you may speak about those as done (e.g. say you added the unit Termite). Bigger or money-sensitive ones — bulk imports, rate/pricing changes, and invoicing a rental — instead show the user a preview to review and Apply first, so word THOSE as a preview (e.g. tell them to look over the import and tap Apply) and don't claim they're saved. When unsure which it'll be, describe the change plainly without promising either; the app shows the user the right control. Never claim a save without emitting the block. If the user PASTES a long list of rows (not a file) too big for one reply, import a smaller batch and tell them how many rows are still to send (but for an ATTACHED CSV file, never inline rows like this — always use the csv-import op described below, which expands every row locally with no size limit); never claim a save you didn't actually emit in a block. Map their funnel/membership words to one of: Inbound Lead, Outbound Lead, Contacted, Not A No!, Payment Discussed, Paid. Editable fields are name/contact/address/industry/notes/account-type/membership+sales stage (customers); name/category/mechanic/notes/specs/fleet-status (units); name/description/fuel + rental rates (member-daily, 1-day, 7-day, 4-week, weekend) (categories); name/phone/email/address/website/contact/type/notes (vendors); name/status/qty/website/order-email/product-number/notes (parts); notes/po (rentals); vendor/date/amount/category/method/notes (expenses); unit/date/wash/bill-customer/description (inspections); unit/customer/report/type/description/mechanic/eta/labor-hours (work orders — you can create or edit one but you can NEVER complete it or set its phase; only the Complete WO button does that; a work order is service on a UNIT, so if the user names only the customer just pass the customer and I'll attach their on-rent unit — I ask which only if they have none or several out) — anything else (used-sale prices, balances, payments/refunds, cards/ACH, roles/passwords) you must decline for now and explain you can't touch money movement or security yet. NAMES vs IDS — you can refer to any customer, unit, category, or vendor BY NAME (and a customer by phone), and the app resolves it to the right record; the find_* tools return each record's [id] if you want to be exact. When you set a unit's category (categoryId) or a part's vendor (vendorId), pass the category/vendor NAME or its [id] — but it must already exist (look it up with find_categories/find_vendors if unsure); if it's NEW, create that category/vendor FIRST (a separate action) so the link resolves, otherwise the link is dropped. If a name matches more than one record, ask which one rather than guessing. The find_* tools search the FULL records (not a list), so never refuse or demand an id just because a customer or unit isn't in the orientation — look it up by name or phone with a find_* tool and act on what it returns. If you can name who/what the user means, resolve it and proceed; the preview catches a true miss. Ask (with ask_user) only when a lookup is genuinely ambiguous — two real matches — or you have no name at all. You CAN invoice an EXISTING rental: emit an operate op `{\"op\":\"operate\",\"name\":\"billRental\",\"params\":{\"rentalId\":\"R-104\"}}` — this builds the invoice from the live pricing engine (you NEVER invent line items or amounts), and only works if that rental has a customer, dates, and units and isn't already invoiced. You may pass `\"customer\":\"<name>\"` instead of a rental id and I'll bill that customer's MOST RECENT un-invoiced rental — so just emit it with the customer name; do NOT ask for a rental id, even if you can't see the rental in the orientation (the engine searches the full records and the preview shows which one). You can also RECORD a CASH or CHECK payment on an invoice: emit `{\"op\":\"operate\",\"name\":\"recordPayment\",\"params\":{\"invoiceId\":\"INV-104\",\"method\":\"cash\"}}` — add \"amount\" to pay part of the balance (omit it to pay the balance in full), and for a check include \"checkNum\"; or pass \"customer\":\"<name>\" instead of an invoice id to pay that customer's one open invoice. You can NEVER charge a card or run an ACH, you cannot REFUND, and you cannot create a from-scratch/standalone invoice. You can PUT UNITS ON RENT for a customer (create a reserved booking): emit `{\"op\":\"operate\",\"name\":\"startRental\",\"params\":{\"customer\":\"Cameron Miller\",\"units\":[\"3in Trash Pump\"],\"startDate\":\"2026-06-30\",\"days\":1,\"startTime\":\"10:00 AM\"}}` — give startDate plus EITHER a duration (\"days\": 1 for a one-day rental, which runs to the next morning and bills as 1 day) OR an explicit \"endDate\" for a set range, and pass the pickup \"startTime\" (e.g. \"10:00 AM\") whenever the user gives a time. ALWAYS include the time and the duration when stated — a one-day 10am rental is startDate that morning, days 1, startTime 10:00 AM. Optional transport `\"transport\":{\"type\":\"Delivery\",\"miles\":10,\"address\":\"..\"}`. DON'T INTERROGATE — a salesperson should be able to reserve from one short line. From a message like \"Cameron Miller getting a jack hammer Tuesday for 3 days 8am\", just emit the booking: resolve the customer, treat \"3 days\" as days:3, use 8:00 AM, and if the unit name matches several units DON'T ask which — the app auto-picks an available one and the user sees it in the preview to swap. Don't quibble about end-of-day vs last-full-day, and don't make the user choose between interchangeable units. Ask a question ONLY when you truly can't proceed: no matching customer, or no available unit for that window. DATES — a weekday name (\"Wednesday\", \"Tuesday\") ALWAYS means the NEXT upcoming one (today or later), NEVER a date that already passed; resolve it to that date and book — do NOT ask \"did you mean this coming Wednesday?\". Don't ask the user to confirm an obvious date reading. It's priced automatically by the engine; the customer's agreement signature and the payment are SEPARATE steps you don't do. It's refused if a unit isn't Active, the customer is blacklisted, the dates are bad, or a unit is already booked for that window.\n\nLARGE CSV IMPORTS — when the user attaches a CSV file you will see a compact summary: column headers, up to 5 sample rows, and the total row count. For any attached CSV with 2 or more rows, ALWAYS use the csv-import op (never the inline import op) and DO NOT re-emit all the rows yourself — instead emit a csv-import op with just the column mapping. The app expands every row locally, so nothing gets cut off no matter how big the file:\n\`\`\`wrangler-action\n{\"action\":\"data\",\"title\":\"Import 234 customers from leads.csv\",\"ops\":[{\"op\":\"csv-import\",\"entity\":\"customers\",\"mapping\":{\"First Name\":\"firstName\",\"Last Name\":\"lastName\",\"Mobile\":\"phone\",\"E-mail\":\"email\"},\"skipIfEmpty\":[\"firstName\",\"lastName\"]}]}\n\`\`\`\nThe mapping keys are the CSV column headers EXACTLY as shown in the summary. The values are app field names (firstName, lastName, phone, email, company, address, industry, accountNotes, accountType, membershipStage, usedSalesStage for customers). Set skipIfEmpty to app fields that must not be blank. Map every column that clearly lines up with an app field even if the names differ (\"Mobile\" -> \"phone\"). If you are unsure about a column, ask first.\n\nA light wrangler/ranch flavor in voice is welcome — never campy.";
 // The digest is Mr. Wrangler's whole window into the yard, so it carries the ACTUAL
 // records (not just counts): category rates, each unit's type/status, each rental's
 // date window + customer, customer balances, and open invoices/WOs. Sections cap at
@@ -11267,7 +11753,7 @@ function wranglerErrMsg(reason) {
   return "Mr. Wrangler couldn't answer — check the connection / backend.";
 }
 
-/* Mr. Wrangler AGENTIC LOOP (Stage 1 — read tools) — part of APP-29 (Wrangler ACTS).
+/* Mr. Wrangler AGENTIC LOOP (Stage 1 — read tools) — part of APP-28 (Wrangler ACTS).
    Instead of one blind shot at a capped snapshot, Mr. Wrangler can LOOK THINGS UP: the
    backend `wrangler` action is now a generic Anthropic pass-through (Stage 0), so the
    whole tool catalog + the loop live here in app.js and ship via Pages — no clasp. Stage 1
@@ -11310,6 +11796,25 @@ const WR_TOOL_IMPL = {
     if (input.unit) { const u = wrResolveUnit(input.unit).rec; if (u) list = list.filter((r) => rentalUnitIds(r).includes(u.unitId)); }
     if (input.status) { const s = String(input.status).toLowerCase(); list = list.filter((r) => String(r.status || '').toLowerCase() === s); }
     return { count: list.length, rentals: list.slice(0, WR_TOOL_LIMIT).map((r) => ({ id: r.rentalId, label: rentalUnitsLabel(r) || r.rentalName || '', customer: (IDX.customer.get(r.customerId) || {}).name || '', window: fmtWindow(r.startDate, r.endDate), status: r.status || '', invoiced: !!r.invoiceId })) };
+  },
+  // Transports due — the scheduled delivery/pickup LEGS in a date window, straight from
+  // dispatchEvents() (the SAME source as the Office dispatch grid, so this never drifts from
+  // it): a Deliver leg on the rental's start date/time, a Pick up leg on its end date, per
+  // unit, skipping Cancelled/No-Show/Returned/Quote and Self-transport units. Default window
+  // is today→tomorrow so "what's due?" always covers same-day + next-day. `type` filters to
+  // 'Delivery' or 'Pickup'. One row per leg: customer, unit, type, address, date, time.
+  find_transports(input) {
+    const iso = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s || '');
+    let from = iso(input.from) ? input.from : TODAY_ISO;
+    let through = iso(input.through) ? input.through : addDaysISO(TODAY_ISO, 1);
+    if (from > through) { const t = from; from = through; through = t; }
+    const LEG = { Deliver: 'Delivery', 'Pick up': 'Pickup' };
+    const want = String(input.type || '').trim().toLowerCase();
+    let rows = dispatchEvents()
+      .filter((ev) => ev.date >= from && ev.date <= through)
+      .map((ev) => ({ rental: ev.rentalId, customer: ev.cust, unit: ev.unit, type: LEG[ev.task] || ev.task, address: ev.addr || '', date: ev.date, time: ev.time || '' }));
+    if (want) rows = rows.filter((r) => r.type.toLowerCase() === want);
+    return { count: rows.length, window: { from, through }, transports: rows.slice(0, WR_TOOL_LIMIT) };
   },
   find_invoices(input) {
     let list = DATA.invoices || [];
@@ -11364,6 +11869,7 @@ const WR_TOOLS = [
   { name: 'find_categories', description: 'Search equipment categories by name. Returns id, name, and all rental rates (memberDaily, rate1Day, rate7Day, rate4Wk, weekend).', input_schema: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } },
   { name: 'find_vendors', description: 'Search vendors by name. Returns id, name, phone, type.', input_schema: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } },
   { name: 'find_rentals', description: 'List rentals, filtered by customer (name/id), unit (name/id), and/or status. Returns id, units label, customer, window, status, and whether invoiced.', input_schema: { type: 'object', properties: { customer: { type: 'string' }, unit: { type: 'string' }, status: { type: 'string' } }, required: [] } },
+  { name: 'find_transports', description: 'List scheduled transport legs — deliveries and pickups DUE in a date window (the same dispatch data the Office run uses). Use this for "what transports are due today/tomorrow?", "any pickups today?", etc. Defaults to today through tomorrow when no dates are given, so it covers same-day + next-day together. Optionally filter by type ("Delivery" or "Pickup"). Dates are YYYY-MM-DD. Returns one row per leg: customer, unit, type, address, date, time.', input_schema: { type: 'object', properties: { type: { type: 'string', description: '"Delivery" or "Pickup" — omit for both' }, from: { type: 'string', description: 'window start YYYY-MM-DD (default today)' }, through: { type: 'string', description: 'window end YYYY-MM-DD (default tomorrow)' } }, required: [] } },
   { name: 'find_invoices', description: 'List invoices, optionally filtered by customer and/or onlyOpen=true. Returns id, customer, total, balance, status.', input_schema: { type: 'object', properties: { customer: { type: 'string' }, onlyOpen: { type: 'boolean' } }, required: [] } },
   { name: 'find_work_orders', description: 'List work orders, filtered by unit and/or customer. Returns id, unit, report, phase, type.', input_schema: { type: 'object', properties: { unit: { type: 'string' }, customer: { type: 'string' } }, required: [] } },
   { name: 'check_unit_availability', description: 'Check whether a unit is free for a date window. Returns available + any conflicting rentals. Dates are YYYY-MM-DD.', input_schema: { type: 'object', properties: { unit: { type: 'string' }, startDate: { type: 'string' }, endDate: { type: 'string' } }, required: ['unit', 'startDate', 'endDate'] } },
@@ -11372,7 +11878,7 @@ const WR_TOOLS = [
   { name: 'note_on_issue', description: 'Add a comment to an issue that has ALREADY been filed (one from the ALREADY FILED list) instead of filing a duplicate. Use ONLY after the user chooses "Add my note to #NNN" in the DUPLICATE CHECK. Pass the issue `number` and a one-paragraph `text` summarizing their new report. Does NOT create a new issue.', input_schema: { type: 'object', properties: { number: { type: 'number', description: 'the existing issue number to comment on' }, text: { type: 'string', description: "one-paragraph summary of the user's report to append" } }, required: ['number', 'text'] } },
   { name: 'apply_changes', description: "WRITE changes: create/update/import records or run an operation. Pass `ops` — the SAME op shapes documented above ({op:'create'|'update'|'import'|'csv-import', entity, fields|rows|id} and {op:'operate', name:'startRental'|'billRental'|'recordPayment', params}). It validates against the allowlist and the safety fences and RETURNS what resolved or got dropped, so if a link drops (e.g. a category that doesn't exist yet) you can create it first and call again. Safe single edits apply immediately; consequential ones (bulk, pricing, billing, payments, several records) are staged for the user to tap Apply — word those as a preview, never as saved. This is the ONLY write path — never charge a card/ACH, refund, touch a balance, change roles/passwords, hard-delete, or complete a WO.", input_schema: { type: 'object', properties: { title: { type: 'string', description: 'short label for the change' }, ops: { type: 'array', items: { type: 'object' }, description: 'the operations to apply' } }, required: ['ops'] } },
 ];
-const WR_TOOLS_NOTE = "\n\nLOOKING THINGS UP — you have live read-only tools (find_customers, find_units, find_categories, find_vendors, find_rentals, find_invoices, find_work_orders, check_unit_availability, price_rental) that query the FULL records, not just the snapshot. PREFER them: when the user names a customer/unit/rental, look it up to confirm it exists and get its id before you answer or emit an action; check availability before booking; quote with price_rental rather than guessing. Don't ask the user for something a tool can find. For WRITES, prefer the apply_changes tool: call it with the ops array (same shapes as the wrangler-action block) and it returns exactly what resolved or got dropped, so you can fix a dropped link and try again — much better than emitting a blind block. Safe single edits auto-apply; consequential ones come back staged for the user's Apply (word those as a preview). You may still emit a wrangler-action block as a fallback, but don't ALSO emit one for a write you already made with apply_changes. When you truly need to disambiguate before acting, call ask_user (with tappable options when the choice is between known records) instead of guessing or burying the question in prose — but only when a tool can't resolve it.";
+const WR_TOOLS_NOTE = "\n\nLOOKING THINGS UP — you have live read-only tools (find_customers, find_units, find_categories, find_vendors, find_rentals, find_transports, find_invoices, find_work_orders, check_unit_availability, price_rental) that query the FULL records, not just the snapshot. PREFER them: when the user names a customer/unit/rental, look it up to confirm it exists and get its id before you answer or emit an action; check availability before booking; quote with price_rental rather than guessing. Don't ask the user for something a tool can find. For WRITES, prefer the apply_changes tool: call it with the ops array (same shapes as the wrangler-action block) and it returns exactly what resolved or got dropped, so you can fix a dropped link and try again — much better than emitting a blind block. Safe single edits auto-apply; consequential ones come back staged for the user's Apply (word those as a preview). You may still emit a wrangler-action block as a fallback, but don't ALSO emit one for a write you already made with apply_changes. When you truly need to disambiguate before acting, call ask_user (with tappable options when the choice is between known records) instead of guessing or burying the question in prose — but only when a tool can't resolve it.";
 // The agent loop: send → if the model calls tools, run them locally and feed results back →
 // repeat until it answers in plain text. opts.call is injectable for offline tests; it defaults
 // to the live backend pass-through. Degrades to a single shot against a backend with no tools
@@ -11434,10 +11940,14 @@ async function wranglerSend() {
   const text = ((inp ? inp.value : o.draft) || '').trim();
   const imgs = (o.attach && o.attach.length) ? o.attach.slice() : null;
   const files = (o.files && o.files.length) ? o.files.slice() : null;
+  // A pasted element focuses the chat on that record (Claude reads its data via
+  // wranglerContext) — consumed here so it applies to this turn and stays as context.
+  const pastedFocus = state.held;
+  if (pastedFocus) { o.card = pastedFocus.card; o.recId = pastedFocus.recId; o.recType = null; state.held = null; }
   // A typed reply while Mr. Wrangler has a pending ask_user question ANSWERS it (resumes the loop),
   // rather than starting a fresh turn. Tapping an option chip resolves it the same way.
-  if (o.ask && o.ask.resolve) { if (!text) { if (inp) inp.focus(); return; } o.draft = ''; if (inp) inp.value = ''; o.ask.resolve(text); return; }
-  if ((!text && !imgs && !files) || o.busy) { if (inp) inp.focus(); return; }
+  if (o.ask && o.ask.resolve) { if (!text) { if (pastedFocus) render(); if (inp) inp.focus(); return; } o.draft = ''; if (inp) inp.value = ''; o.ask.resolve(text); return; }
+  if ((!text && !imgs && !files) || o.busy) { if (pastedFocus) render(); if (inp) inp.focus(); return; }   // pasting a focus with no message still updates the chip
   o.messages.push({ role: 'user', content: text, images: imgs, files, at: Date.now() });
   syncWranglerComment(o, 'user', text, imgs);   // §18e mirror the turn onto the issue thread
   wranglerClearNeedsAnswer(o.reqNumber);        // §18e answering a "Needs your answer" request clears it from the inbox
@@ -11563,7 +12073,7 @@ const stripWranglerAction = (text) => String(text || '')
   .replace(/```wrangler-action\s*[\s\S]*$/, '')   // #152 also drop a truncated, unclosed fence
   .trim();
 
-/* ════════════ APP-29 · Mr. Wrangler ACTS on your data (Jac 2026-06-16) ════════════════
+/* ════════════ APP-28 · Mr. Wrangler ACTS on your data (Jac 2026-06-16) ════════════════
    add / update / bulk-import items — NEVER delete, NEVER money/card/auth/WO. Only
    safe, allowlisted fields. Every op previews in the chat before it writes. */
 const WR_FUNNEL = ['Inbound Lead', 'Outbound Lead', "Don't Contact", 'Contacted', 'Not A No!', 'Payment Discussed', 'Paid'];
@@ -11615,7 +12125,7 @@ function wrPlanNeedsApply(plan) {
   }
   return records > 1;   // several records in one go → let the user review them together
 }
-const WR_IDX = { customers: () => IDX.customer, units: () => IDX.unit, categories: () => IDX.category, rentals: () => IDX.rental, vendors: () => IDX.vendor, parts: () => IDX.part, expenses: () => IDX.expense, inspections: () => IDX.insp, workOrders: () => IDX.wo };
+const WR_IDX = { customers: () => IDX.customer, units: () => IDX.unit, categories: () => IDX.category, rentals: () => IDX.rental, vendors: () => IDX.vendor, parts: () => IDX.part, expenses: () => IDX.expense, inspections: () => IDX.insp, workOrders: () => IDX.wo, models: () => IDX.model };
 const wrGet = (entity, id) => (WR_IDX[entity] ? WR_IDX[entity]().get(id) : null);
 // ── Name resolution (Jac 2026-06-26) — Mr. Wrangler talks in NAMES (the digest gives names), so the
 // operations + foreign-key fields resolve a human reference (id | name | phone-suffix for customers) to the
@@ -12031,8 +12541,8 @@ const WR_OPERATIONS = {
   },
 };
 // "Bring them to it" (Jac) — jump the user to whatever Wrangler just touched, for EVERY board: grid cards
-// focus in place, shop types anchor a tab, back-office boards open their detail popup. Best-effort, never throws.
-const WR_SHOP_TYPES = new Set(['inspections', 'workOrders', 'serviceOrders']);
+// focus in place, WO/inspection/service records open their owning UNIT (via pillTo — Shop retirement),
+// back-office boards open their detail popup. Best-effort, never throws.
 const WR_BOARD_TYPES = new Set(['vendors', 'parts', 'expenses', 'files']);
 function wrFocusRecord(entity, id) {
   if (!entity || !id) return;
@@ -12210,6 +12720,32 @@ function markNotifsSeen() { const mx = wranglerNotifs.reduce((a, n) => Math.max(
 function dismissNotif(num) { const s = loadDismissedNotifs(); s.add(num); saveDismissedNotifs(s); render(); if (state.overlay?.kind === 'notifications') renderOverlay(); }
 function dismissAllNotifs() { const s = loadDismissedNotifs(); wranglerNotifs.forEach((n) => s.add(n.number)); saveDismissedNotifs(s); render(); if (state.overlay?.kind === 'notifications') renderOverlay(); }
 function toggleNotifsMuted() { setNotifsMuted(!notifsMuted()); render(); if (state.overlay?.kind === 'notifications') renderOverlay(); }
+/* ── Scheduled Transport Reminder Alerts (#515) — the delivery/pickup LEGS due in the near
+   window, so the team calls the customer before the truck rolls. Derived LIVE from
+   dispatchEvents() (the SAME source as the Office dispatch grid + the find_transports tool,
+   so the reminder can't drift from the run) — every render re-derives, so a newly scheduled
+   transport shows without a reload. Window = today + N days ahead (default 1 = today→tomorrow,
+   matching the dispatch run), adjustable per-device. A "Called" dismiss clears one leg so it
+   won't nag again (§246 idiom), keyed per leg+date so a RESCHEDULE surfaces a fresh reminder;
+   the store self-prunes past-window keys so it can't grow forever. */
+const TRALERT_DAYS_KEY = 'jactec.transportAlertDays';       // per-device window: today + N days ahead
+const TRALERT_CALLED_KEY = 'jactec.transportAlertsCalled';  // leg keys the team has dismissed ("Called")
+const tralertDays = () => { try { const n = parseInt(localStorage.getItem(TRALERT_DAYS_KEY), 10); return Number.isFinite(n) ? Math.max(0, Math.min(6, n)) : 1; } catch (e) { return 1; } };
+const setTralertDays = (n) => { try { localStorage.setItem(TRALERT_DAYS_KEY, String(Math.max(0, Math.min(6, n)))); } catch (e) {} };
+const loadCalledAlerts = () => { try { return new Set(JSON.parse(localStorage.getItem(TRALERT_CALLED_KEY) || '[]')); } catch (e) { return new Set(); } };
+const saveCalledAlerts = (set) => { try { localStorage.setItem(TRALERT_CALLED_KEY, JSON.stringify([...set].filter((k) => String(k).split('|').pop() >= TODAY_ISO))); } catch (e) {} };
+const tralertKey = (ev) => `${ev.rentalId}|${ev.unitId || ''}|${ev.task}|${ev.date}`;   // per leg + date — a reschedule = a fresh reminder
+const TRALERT_LEG = { Deliver: 'Delivery', 'Pick up': 'Pickup' };
+function transportAlerts() {
+  const from = TODAY_ISO, through = addDaysISO(TODAY_ISO, tralertDays());
+  return dispatchEvents()
+    .filter((ev) => ev.date >= from && ev.date <= through)
+    .map((ev) => ({ key: tralertKey(ev), rentalId: ev.rentalId, unitId: ev.unitId, customer: ev.cust, unit: ev.unit,
+      type: TRALERT_LEG[ev.task] || ev.task, color: ev.color === 'blue' ? 'blue' : 'brown', address: ev.addr || '', date: ev.date, time: ev.time || '' }));
+}
+const visibleTransportAlerts = () => { const called = loadCalledAlerts(); return transportAlerts().filter((a) => !called.has(a.key)); };
+function callTransportAlert(key) { const s = loadCalledAlerts(); s.add(key); saveCalledAlerts(s); render(); if (state.overlay?.kind === 'transport-alerts') renderOverlay(); }
+function callAllTransportAlerts() { const s = loadCalledAlerts(); transportAlerts().forEach((a) => s.add(a.key)); saveCalledAlerts(s); render(); if (state.overlay?.kind === 'transport-alerts') renderOverlay(); }
 async function refreshWranglerNotifications() {
   if (typeof backendPassword === 'undefined' || !backendPassword || notifLoading) return;   // demo/offline → no feed
   notifLoading = true;
@@ -12418,7 +12954,7 @@ function setupSignaturePad() {
     cv.addEventListener('pointerleave', stash);
   });
 }
-const closeOverlay = () => { destroyCardElement(); stopAgCam(); try { if (_sigWin && !_sigWin.closed) _sigWin.close(); } catch (e) {} _sigWin = null; state.datepick = null; state.overlay = null; renderOverlay(); };
+const closeOverlay = () => { destroyCardElement(); stopAgCam(); try { if (_sigWin && !_sigWin.closed) _sigWin.close(); } catch (e) {} _sigWin = null; clearTimeout(_gpsPollTimer); state.datepick = null; state.overlay = null; renderOverlay(); };
 
 /* ── Back-office boards (§7.9–7.12): spreadsheet-style tables ─────────────── */
 function vendorTotals(vendorId) {
@@ -12466,23 +13002,29 @@ const BOARD_DEF = {
     row: (f) => [f.link ? linkName(f.name, { js: 'js-open-link', data: { url: /^https?:\/\//i.test(f.link) ? f.link : 'https://' + f.link } }) : esc(f.name), statusPill('companyFileType', f.type), esc(f.group || '—'), f.reviewByDate ? esc(fmtShortDate(f.reviewByDate)) + (reviewState(f.reviewByDate) ? ' ' + reviewState(f.reviewByDate) : '') : '—'],
   },
 };
-function boardTable(boardId, query) {
+function boardTable(boardId, query, pickTarget) {
   const def = BOARD_DEF[boardId]; let rows = boardRows(boardId);
   if (!def) return '<p class="muted">—</p>';
   const q = (query || '').trim().toLowerCase();
   if (q) rows = rows.filter((r) => Object.values(r).some((v) => v != null && String(v).toLowerCase().includes(q)));
-  const head = `<tr>${def.cols.map((c) => `<th>${esc(c)}</th>`).join('')}</tr>`;
+  // Parts-picker mode (Jac 2026-07-08): opened from a service task with pickTarget=
+  // {unitId,taskId}, each part row grows a blue Attach commit pill that stamps the
+  // catalog part onto the model task's detail.partRefs (see attachCatalogPart). The
+  // row still opens its detail on the name; Attach stopsPropagation so it doesn't.
+  const picking = boardId === 'parts' && pickTarget;
+  const head = `<tr>${def.cols.map((c) => `<th>${esc(c)}</th>`).join('')}${picking ? '<th></th>' : ''}</tr>`;
   // §7.10–§7.13 v2 — every board row opens the record's detail inside the popup
   const ROW_ID = { vendors: 'vendorId', expenses: 'expenseId', parts: 'partId', files: 'fileId' };
   const rowAttr = ROW_ID[boardId] ? (r) => ` class="js-board-row" data-rec="${esc(String(r[ROW_ID[boardId]]))}"` : () => '';
-  const body = rows.map((r) => `<tr${rowAttr(r)}>${def.row(r).map((c) => `<td>${c}</td>`).join('')}</tr>`).join('');
+  const pickCell = picking ? (r) => `<td class="board-pickcell">${actionPill('commit', 'Attach', { js: 'js-svc-pick-part', data: { part: r.partId, unit: pickTarget.unitId, task: pickTarget.taskId }, h: 24 })}</td>` : () => '';
+  const body = rows.map((r) => `<tr${rowAttr(r)}>${def.row(r).map((c) => `<td>${c}</td>`).join('')}${pickCell(r)}</tr>`).join('');
   return `<table class="board-table"><thead>${head}</thead><tbody>${body}</tbody></table>`;
 }
 
 /* ── §13.2 BOARD VIEW — a per-card spreadsheet popup (sortable columns, search,
    a highlighted summary footer with switchable Sum/Avg/…, plus Add-Column /
    Add-Row scratch space for formulas). Driven by the CARD_COLUMNS registry. ── */
-function boardEntity(card, session) { return card === 'shop' ? boardSegmentFor(session) : card; }
+function boardEntity(card, session) { return card === 'shop' ? boardSegmentFor(session) : card; }   // 'shop' = stale saved Board Views only (card retired) → resolves to workOrders
 const ENTITY_LABEL = { inspections: 'Inspections', workOrders: 'Work Orders', serviceOrders: 'Service', units: 'Units', customers: 'Customers', rentals: 'Rentals', categories: 'Categories', invoices: 'Invoices' };
 function boardViewTitle(card, session) {
   if (card === 'shop') return ENTITY_LABEL[boardSegmentFor(session)] || 'Shop';
@@ -12638,7 +13180,7 @@ function bvCustomizePanel(card) {
 }
 
 /* ════════════════════════════════════════════════════════════════════════
-   APP-30 · §13 DROPDOWNS — openDropdown + status/fleet/funnel/sort menus
+   APP-29 · §13 DROPDOWNS — openDropdown + status/fleet/funnel/sort menus
    ════════════════════════════════════════════════════════════════════════ */
 /** Shared floating dropdown (matches board chrome) — used by the status pill
  *  dropdown and the in-card Sort menu. */
@@ -12828,7 +13370,7 @@ function addInterestedCategory(custId, catId) {
 // A view captures search + pinned chips + SORT (D1). The old shared-set localStorage
 // mirror seeds the personal set on first run (nothing is lost in the switch).
 const VIEWS_LS_ALL = 'jactec.views.all';
-const VIEW_CARDS = ['units', 'categories', 'rentals', 'customers', 'invoices', 'shop', 'expenses'];
+const VIEW_CARDS = ['units', 'categories', 'rentals', 'customers', 'invoices', 'expenses'];   // Shop retirement: 'shop' dropped
 let GLOBAL_VIEWS = null;
 function _viewsMap() {
   if (GLOBAL_VIEWS) return GLOBAL_VIEWS;
@@ -12903,7 +13445,7 @@ function setFocusedCard(cardId) {
 }
 
 /* ════════════════════════════════════════════════════════════════════════
-   APP-31 · §14 RENDER PIPELINE + toast
+   APP-30 · §14 RENDER PIPELINE + toast
    ════════════════════════════════════════════════════════════════════════ */
 let renderCount = 0;
 const scrollMemo = {};   // persistent scroll positions, keyed `card|view` (list vs which record)
@@ -12972,15 +13514,18 @@ function render() {
   // §M3 — lock the column scroll behind any open sheet/overlay/dock on phones
   document.body.classList.toggle('sheet-open', !!(state.overlay || state.datesearch || state.chat.open || (state.wrangler.open && !state.wrangler.min)));   // a MINIMIZED Wrangler dock is a slim in-flow bar — it must NOT lock the page scroll (Jac, mobile)
   syncBackGuard();   // §M3 — keep the Android back-button guard in step with what's open
-  // §17 — the internal team dock floats bottom-right above the bar when open
-  if (state.chat.open) { const d = el('div', 'chat-dock', ''); d.dataset.drop = 'chat'; d.innerHTML = chatDockEl(); $('#app').appendChild(d); }
-  // §18 — Mr. Wrangler dock floats alongside the team chat (or alone at bottom-right)
-  if (state.wrangler.open) { const d = el('div', 'wrangler-dock' + (state.chat.open ? ' wr-beside-chat' : '') + (state.wrangler.min ? ' wr-min' : '')); d.innerHTML = wranglerDockEl(); $('#app').appendChild(d); }
+  // §17/§18 — the team + wrangler DOCKS are PHONE-only bottom sheets now (D9): desktop
+  // retired both surfaces onto the comms rail (their machinery is shared, not the shell).
+  const _phoneDocks = document.body.classList.contains('is-phone');
+  if (_phoneDocks && state.chat.open) { const d = el('div', 'chat-dock', ''); d.dataset.drop = 'chat'; d.innerHTML = chatDockEl(); $('#app').appendChild(d); }
+  if (_phoneDocks && state.wrangler.open) { const d = el('div', 'wrangler-dock' + (state.chat.open ? ' wr-beside-chat' : '') + (state.wrangler.min ? ' wr-min' : '')); d.innerHTML = wranglerDockEl(); $('#app').appendChild(d); }
+  mountCommsPops();   // D8/D9 comms rail — the session's single open window floats above its own tab
   // §18e/§17 — the bell + Requests inbox now live in the bottom comms band (bb-utils),
   // always visible; the docks float above it. (The old floating fab-stack is retired.)
   mountTransportEditor();   // inline transport editor: mount the live map + wire the address field
   mountWranglerDock();   // §18 wire paste + drag-drop image input on the wrangler dock after each render
   mountDispatchMap();   // §2.3 office cockpit: re-parent the singleton dispatch map + refresh pins/route/truck
+  renderSchedBanner();   // R27 — top "Due Today" scheduled-actions band (lives on <body>, survives the #app swap)
   ruMountStrips();   // §13.7 gauge strips — build each open strip's chart into its measured 25% box
   applyTitles();   // full text on hover wherever we truncate (custom ~0.5s tooltip)
   scoreTick();     // §11 gamification — pop +X over any ring whose metric just rose
@@ -13095,11 +13640,11 @@ function toast(msg) {
 }
 
 /* ════════════════════════════════════════════════════════════════════════
-   APP-32 · §15 EVENT HANDLERS — onClick/onInput/onChange (single listener tree)
+   APP-31 · §15 EVENT HANDLERS — onClick/onInput/onChange (single listener tree)
    ⚠ §16 ACTIONS/MUTATIONS interleave from here to §17 — see the SPEC v8 map
    ════════════════════════════════════════════════════════════════════════ */
 /* ════════════════════════════════════════════════════════════════════════
-   APP-33 · §15c DRAG & DROP LINK ENGINE (DRAGDROP-DESIGN.md) — custom pointer engine.
+   APP-32 · §15c DRAG & DROP LINK ENGINE (DRAGDROP-DESIGN.md) — custom pointer engine.
    Native HTML5 DnD rejected: the mid-drag column swap re-renders the source
    row, which silently kills native drags (and draggable breaks inline-edit).
    Everything drag-critical (ghost chip + cancel arc) lives in #drag-layer on
@@ -13274,10 +13819,10 @@ function initDrag() {
   dragLayer.id = 'drag-layer';
   dragArc = el('div', 'cancel-arc', '<div class="ca-inner"><svg class="ca-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h9a6 6 0 1 1 0 12H7"/><path d="M8 5 4 9l4 4"/></svg><span class="ca-label">Cancel</span></div>');
   dragLayer.appendChild(dragArc);
-  // §17 — "drop to start a chat" pad: a cancel-arc sibling pinned to the bottom-right
-  // footer. Appears during any drag; release a record OR a granular element on it to
-  // spin up a brand-new chat seeded with that thing.
-  chatDropPad = el('div', 'chat-drop', '<div class="cd-inner"><svg class="cd-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg><span class="cd-label">Drop to start a chat</span></div>');
+  // §17 — "drop to copy" pad: a cancel-arc sibling pinned to the bottom-right footer.
+  // Appears during any drag; release a record on it to COPY it (held) for pasting into a
+  // Team / Mr. Wrangler chat (2026-07-08 rail spec — replaces the old drop-to-new-chat).
+  chatDropPad = el('div', 'chat-drop', '<div class="cd-inner"><svg class="cd-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg><span class="cd-label">Drop to copy into a chat</span></div>');
   dragLayer.appendChild(chatDropPad);
   // §M2 — phone "zip zones": edge rails of valid drop-target cards. Dragging onto one
   // jumps to that card's column mid-drag (drag stays live), then you drop on the row.
@@ -13382,7 +13927,6 @@ function dragSourceAt(target) {
   const row = target.closest('.row');                                   // .rtl rentals rows still carry card/rec on the .row wrapper
   if (row && row.dataset.rec != null) {
     let rc = row.dataset.card;
-    if (rc === 'shop') { const seg = activeSession().cards.shop?.segment; rc = (seg && seg !== 'all') ? seg : null; }   // §17 — a shop row resolves to its pinned segment (serviceOrders/workOrders/inspections)
     if (rc && DRAG_SOURCES.has(rc)) return { card: rc, rec: row.dataset.rec };
   }
   const cardNode = target.closest('.card[data-card]');
@@ -13481,7 +14025,7 @@ function dropTargetAt(x, y, under) {
   if (!n || !n.closest) return null;
   if (n.closest('.winpicker-float, .overlay, .dropdown-menu, .ctx-menu')) return null;   // floaters are dead zones
   // §17 — dropping ANY dragged element into the team dock (or its launcher) tags it
-  const chatHit = n.closest('.chat-dock, .js-chat-toggle');
+  const chatHit = n.closest('.chat-dock, .comms-pop.team-pop, .js-comms-chip[data-cat="team"]');   // D8/D9: the Team chip + rail window replaced the old js-chat-toggle launcher/dock
   if (chatHit) return { chat: true, node: chatHit };
   if (DRAG.payload.chatEl) return null;                                  // a granular chat-element only drops on chat zones (pad/dock)
   const accept = DROP_MATRIX[DRAG.payload.entity] || {};
@@ -13612,7 +14156,7 @@ function zipToCard(entity) {
   if (idx < 0) return;
   if (s.cols) s.cols[COLUMNS[idx].id] = entity;
   state.mobileCol = idx;
-  const mc = s.cards[SHOP_TYPES.includes(entity) ? 'shop' : entity];
+  const mc = s.cards[entity];
   if (mc) { mc.mode = 'list'; mc.recId = null; mc.recType = null; }   // list mode → rows to drop on
   render();   // §15c hook re-stamps drop decor + rebuilds the zip rails for the new column
 }
@@ -13669,8 +14213,7 @@ function endDrag({ rerender } = {}) {
    R19-flash the newly linked pill on whatever card shows it (row/card fallback). ── */
 function dropFlash(sel, fallbackSel) { if (document.querySelector(sel)) attnFlash(sel); else if (fallbackSel && document.querySelector(fallbackSel)) attnFlash(fallbackSel); }
 function dispatchDrop(p, t) {
-  if (t.newChat) return chatStartFromDrop(p);                        // §17 — bottom-right pad = start a NEW chat
-  if (t.chat) return p.chatEl ? chatAddTag({ ...p.chatEl }) : chatTagFromPayload(p);   // dock = tag into the active chat
+  if (t.newChat || t.chat) return chatDropCopy(p);                   // §17 — drop on the chat pad = COPY the element to paste into a chat
   const pair = `${p.entity}>${t.entity}`;
   // UNIT ↔ RENTAL — ADD the unit to the rental (a Rental is an EVENT, §20);
   // gates fire per unit inside linkUnitToRental.
@@ -13767,6 +14310,9 @@ function onClick(e) {
     const all = rec ? recComments(rec) : []; const last = all.length ? all[all.length - 1] : null;
     return openOverlay({ kind: 'comment', card: hit.card, recId: hit.recId, recType: hit.recType, color: (last && last.color) || 'yellow', text: last ? last.text : '' });
   }
+
+  // R26 — dismiss the top "Due Today" scheduled-actions band (manual X only; sticks for the session)
+  if (closest('.js-sched-dismiss')) { e.stopPropagation(); dismissSchedBanner(); return; }
 
   // clicked card → orange-border focus (§0.1 visual feedback; applied immediately,
   // independent of whatever else this click does — anchor stays a separate action)
@@ -13913,7 +14459,7 @@ function onClick(e) {
   if (closest('.js-card-default')) { e.stopPropagation(); const b = closest('.js-card-default'); return setCardDefault(b.dataset.rec, b.dataset.card); }
   if (closest('.js-card-remove')) { e.stopPropagation(); const b = closest('.js-card-remove'); return removeCard(b.dataset.rec, b.dataset.card); }
   if (closest('.js-pm-tab')) { e.stopPropagation(); state.pmTab = closest('.js-pm-tab').dataset.tab; return render(); }   // §14b Cards | ACH toggle
-  if (closest('.js-add-ach')) { e.stopPropagation(); return openAddBank(closest('.js-add-ach').dataset.rec); }
+  if (closest('.js-add-ach')) { e.stopPropagation(); if (!canMoney()) { toast('Bank accounts on file are Office/Admin only.'); return; } return openAddBank(closest('.js-add-ach').dataset.rec); }   // §14 same gate as js-add-card (canMoney)
   if (closest('.js-bank-default')) { e.stopPropagation(); const b = closest('.js-bank-default'); return setBankDefault(b.dataset.rec, b.dataset.bank); }
   if (closest('.js-bank-remove')) { e.stopPropagation(); const b = closest('.js-bank-remove'); return removeBank(b.dataset.rec, b.dataset.bank); }
   if (closest('.js-card-save')) { e.stopPropagation(); return saveCardFlow(closest('.js-card-save')); }
@@ -13927,7 +14473,8 @@ function onClick(e) {
   if (closest('.js-charge-invoice')) { e.stopPropagation(); return chargeInvoiceFlow(closest('.js-charge-invoice').dataset.rec); }
   if (closest('.js-record-payment')) { e.stopPropagation(); return recordManualPayment(closest('.js-record-payment').dataset.rec); }
   if (closest('.js-print-invoice')) { e.stopPropagation(); return printInvoice(closest('.js-print-invoice').dataset.rec); }
-  if (closest('.js-send-email')) { e.stopPropagation(); return sendInvoiceEmail(closest('.js-send-email').dataset.rec); }
+  if (closest('.js-send-email')) { e.stopPropagation(); const b = closest('.js-send-email'); return sendInvoiceEmail(b.dataset.rec, b); }   // anchor rides along for the D7 FROM dropdown
+  if (closest('.js-email-from-pick')) { e.stopPropagation(); const b = closest('.js-email-from-pick'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return emailQuoteSend(b.dataset.rec, b.dataset.from); }
   if (closest('.js-send-text')) { e.stopPropagation(); return sendInvoiceText(closest('.js-send-text').dataset.rec); }
   if (closest('.js-pay-addcard')) { e.stopPropagation(); const b = closest('.js-pay-addcard'); return openAddCard(b.dataset.rec, { returnTo: 'payment', invoiceId: b.dataset.inv }); }
   if (closest('.js-refund-invoice')) { e.stopPropagation(); if (state.overlay) { state.overlay.confirmRefund = true; state.overlay.error = ''; renderOverlay(); } return; }
@@ -14071,14 +14618,36 @@ function onClick(e) {
   if (closest('.js-mtools')) { e.stopPropagation(); return openOverlay({ kind: 'tools' }); }   // §M1 phone footer → the global tool tray as a sheet
   if (closest('[data-gocard]')) { e.stopPropagation(); return goToCard(closest('[data-gocard]').dataset.gocard); }   // §M1 footer card-toggle bar → jump to that card
   if (closest('.js-ext-chat')) { e.stopPropagation(); return toast('External customer & vendor chats arrive with the messaging backend.'); }
-  if (closest('.js-chat-toggle')) { e.stopPropagation(); state.chat.open = !state.chat.open; return render(); }
   if (closest('.js-chat-close')) { e.stopPropagation(); state.chat.open = false; return render(); }
   if (closest('.js-chat-back')) { e.stopPropagation(); state.chat.activeId = null; return render(); }   // back to the all-flags overview (chat persists)
   if (closest('.js-chat-send')) { e.stopPropagation(); return chatSend(); }
   if (closest('[data-chat-untag]')) { e.stopPropagation(); const id = closest('[data-chat-untag]').dataset.chatUntag; const c = activeChat(); if (c) c.tags = c.tags.filter((t) => t.id !== id); pushChatsSoon(); return render(); }
   if (closest('[data-chat-role]')) { e.stopPropagation(); return chatToggleRole(closest('[data-chat-role]').dataset.chatRole); }
-  if (closest('[data-chat-open]')) { e.stopPropagation(); const [card, recId] = closest('[data-chat-open]').dataset.chatOpen.split('|'); return anchorRecord(SHOP_TYPES.includes(card) ? 'shop' : card, recId, SHOP_TYPES.includes(card) ? card : null); }
+  if (closest('[data-chat-open]')) { e.stopPropagation(); const [card, recId] = closest('[data-chat-open]').dataset.chatOpen.split('|'); return SHOP_TYPES.includes(card) ? anchorRecord('units', unitOfShopRec(card, recId)) : anchorRecord(card, recId, null); }   // Shop retirement: chat flags on WO/insp/svc land on the owning unit
   if (closest('[data-team-open]')) { e.stopPropagation(); return openChat(closest('[data-team-open]').dataset.teamOpen); }   // §17 comms rail: open a team thread in its own tab
+  if (closest('[data-held-clear]')) { e.stopPropagation(); state.held = null; return render(); }   // drop the pasted-element attachment before sending
+  if (closest('.js-chat-settings')) { e.stopPropagation(); return chatSettingsMenu(closest('.js-chat-settings')); }   // the gear menu
+  if (closest('.js-chat-leave')) { e.stopPropagation(); closeMenus(); return chatLeave(); }   // voluntary exit — drops the chat off your rail
+  if (closest('.js-chat-mute')) { e.stopPropagation(); closeMenus(); return chatToggleMute(); }
+  if (closest('.js-chat-markread')) { e.stopPropagation(); closeMenus(); const c = activeChat(); if (c) { chatMarkSeen(c); pushChatsSoon(); } return render(); }
+  if (closest('.js-chat-rename')) { e.stopPropagation(); closeMenus(); setTimeout(() => { const i = document.querySelector('.chat-title-in'); if (i) { i.focus(); i.select(); } }, 0); return; }
+  if (closest('.js-chat-end')) { e.stopPropagation(); closeMenus(); return commsEndConv(closest('.js-chat-end').dataset.chat, 'team'); }   // admin ends the chat (phone-safe: cat pinned)
+  if (closest('[data-chat-member]')) { e.stopPropagation(); return chatToggleMember(closest('[data-chat-member]').dataset.chatMember); }
+  // D8/D9 THE COMMS RAIL — toolbar chips · session tabs · the single window · ALL menu
+  if (closest('.js-comms-chip')) { e.stopPropagation(); return commsToggleCat(closest('.js-comms-chip').dataset.cat); }
+  if (closest('.js-comms-new')) { e.stopPropagation(); return commsNewChat(); }   // D9 ALL menu: + New chat (team → newChat(), wrangler → wranglerNewChat())
+  if (closest('[data-comms-hide]')) { e.stopPropagation(); return commsHideTab(closest('[data-comms-hide]').dataset.commsHide); }   // ✕ hides from the rail only — never ends
+  if (closest('.js-comms-all')) { e.stopPropagation(); const s = commsSess(); if (s) { s.menuOpen = !s.menuOpen; saveCommsRail(); } return render(); }
+  if (closest('.js-comms-menu-x')) { e.stopPropagation(); const s = commsSess(); if (s) { s.menuOpen = false; saveCommsRail(); } return render(); }
+  if (closest('[data-comms-tab]')) { e.stopPropagation(); return commsToggleTab(closest('[data-comms-tab]').dataset.commsTab); }
+  if (closest('.js-comms-end')) { e.stopPropagation(); closeMenus(); return commsEndConv(closest('.js-comms-end').dataset.cust); }
+  if (closest('.js-comms-mopen')) { e.stopPropagation(); return commsOpenConv(state.commsRail.cat, closest('.js-comms-mopen').dataset.cust); }
+  if (closest('.js-comms-mend')) { e.stopPropagation(); return commsEndConv(closest('.js-comms-mend').dataset.cust); }
+  if (closest('.js-comms-send')) { e.stopPropagation(); return commsSend(closest('.js-comms-send').dataset.cust); }
+  if (closest('.js-comms-from')) { e.stopPropagation(); return commsFromMenu(closest('.js-comms-from')); }
+  if (closest('.js-comms-from-pick')) { e.stopPropagation(); const b = closest('.js-comms-from-pick'); commsFromSel.set(String(b.dataset.cust), b.dataset.from); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return render(); }
+  if (closest('.js-comms-copen')) { e.stopPropagation(); const b = closest('.js-comms-copen'); return commsOpenConv(commsCatOfChannel(b.dataset.channel), b.dataset.cust); }   // customer profile → Open
+  if (closest('.js-comms-cend')) { e.stopPropagation(); const b = closest('.js-comms-cend'); return commsEndConv(b.dataset.cust, commsCatOfChannel(b.dataset.channel)); }     // customer profile → End
   if (closest('.js-fb-type')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'feedback') { const ta = document.querySelector('.overlay .js-fb-text'); if (ta) o.text = ta.value; o.fbType = closest('.js-fb-type').dataset.val; renderOverlay(); } return; }
   if (closest('.js-fb-shot-x')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'feedback') { const ta = document.querySelector('.overlay .js-fb-text'); if (ta) o.text = ta.value; o.shot = ''; renderOverlay(); } return; }
   if (closest('[data-cmt-color]')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'comment') { const ta = document.querySelector('.overlay .js-cmt-text'); if (ta) o.text = ta.value; o.color = closest('[data-cmt-color]').dataset.cmtColor; renderOverlay(); } return; }
@@ -14093,22 +14662,31 @@ function onClick(e) {
   if (closest('.js-wr-goto')) { e.stopPropagation(); const b = closest('.js-wr-goto'); wrFocusRecord(b.dataset.ent, b.dataset.id); state.wrangler.min = true; return render(); }   // the clickable "Open →" link → jump to the record + collapse the dock so it's revealed (esp. on mobile)   // Mr. Wrangler applies the previewed add/update/import; a failed async op (e.g. a payment that didn't go through) un-files so the user can retry
   if (closest('.js-wr-kpi-lock')) { e.stopPropagation(); lockKpiFromWrangler(Number(closest('.js-wr-kpi-lock').dataset.mi)); return; }   // Mr. Wrangler locks in an authored KPI ring
   if (closest('.js-wr-unattach')) { e.stopPropagation(); const o = state.wrangler; if (o.open && o.attach) { o.attach.splice(Number(closest('.js-wr-unattach').dataset.i), 1); render(); } return; }   // §18d drop a pending image attachment
+  if (closest('[data-wr-unfocus]')) { e.stopPropagation(); const o = state.wrangler; o.card = null; o.recId = null; o.recType = null; return render(); }   // clear the focused record (paste context)
   if (closest('.js-wr-unfile')) { e.stopPropagation(); const o = state.wrangler; if (o.open && o.files) { o.files.splice(Number(closest('.js-wr-unfile').dataset.i), 1); render(); } return; }   // §18d drop a pending file attachment
-  if (closest('.js-wrangler')) { e.stopPropagation(); if (state.wrangler.open) { wranglerRailSnapshot(); state.wrangler.open = false; return render(); } return wranglerNewChat(); }   // §18 toggle Mr. Wrangler dock — opening always starts a fresh chat (the last one waits on the §18g rail)
-  if (closest('.js-wrc-remove')) { e.stopPropagation(); return wrRailRemove(closest('.js-wrc-remove').dataset.wrcRm); }   // §18g rail: the × on a chat tab → REMOVE that conversation (not just close it)
-  if (closest('[data-wrc-needs]')) { e.stopPropagation(); return openWranglerFromRequest(Number(closest('[data-wrc-needs]').dataset.wrcNeeds)); }   // §18g rail: a flashing "needs you" chat → reopen it seeded from the request
-  if (closest('[data-wrc-open]')) { e.stopPropagation(); return wranglerRailOpen(closest('[data-wrc-open]').dataset.wrcOpen); }   // §18g rail: reopen a stored conversation
+  if (closest('[data-wrc-needs]')) { e.stopPropagation(); return openWranglerFromRequest(Number(closest('[data-wrc-needs]').dataset.wrcNeeds)); }   // §18g rail: a flashing "needs you" request → reopen it seeded from the request (D9: lands on the rail window)
   if (closest('.js-notifications')) { e.stopPropagation(); openOverlay({ kind: 'notifications' }); markNotifsSeen(); refreshWranglerNotifications(); return; }   // §18f notification bell — in-app resolved-fix feed
   if (closest('.js-notif-refresh')) { e.stopPropagation(); return refreshWranglerNotifications(); }
   if (closest('.js-notif-dismiss')) { e.stopPropagation(); return dismissNotif(Number(closest('.js-notif-dismiss').dataset.num)); }   // §246 clear one
   if (closest('.js-notif-dismissall')) { e.stopPropagation(); return dismissAllNotifs(); }   // §246 clear all
   if (closest('.js-notif-mute')) { e.stopPropagation(); return toggleNotifsMuted(); }   // §246 mute/unmute the badge
+  if (closest('.js-transport-alerts')) { e.stopPropagation(); return openOverlay({ kind: 'transport-alerts' }); }   // #515 transport reminders — deliveries/pickups due
+  if (closest('.js-tralert-called')) { e.stopPropagation(); return callTransportAlert(closest('.js-tralert-called').dataset.key); }   // #515 dismiss one leg ("Called")
+  if (closest('.js-tralert-allcalled')) { e.stopPropagation(); return callAllTransportAlerts(); }   // #515 clear the whole window
+  if (closest('.js-tralert-win')) { e.stopPropagation(); setTralertDays(Number(closest('.js-tralert-win').dataset.days)); render(); renderOverlay(); return; }   // #515 adjust the window
   if (closest('.js-requests')) { e.stopPropagation(); openOverlay({ kind: 'requests' }); refreshWranglerRequests(); return; }   // §18e approval inbox
   if (closest('.js-req-refresh')) { e.stopPropagation(); return refreshWranglerRequests(); }
   if (closest('.js-req-chat')) { e.stopPropagation(); return openWranglerFromRequest(Number(closest('.js-req-chat').dataset.n)); }   // §18e continue the conversation
   if (closest('.js-req-approve')) { e.stopPropagation(); return approveRequest(Number(closest('.js-req-approve').dataset.n)); }
   if (closest('.js-req-dismiss')) { e.stopPropagation(); return dismissRequest(Number(closest('.js-req-dismiss').dataset.n)); }
-  if (closest('.js-open-link')) { e.stopPropagation(); const url = closest('.js-open-link').dataset.url || ''; if (/^(https?:\/\/|mailto:)/i.test(url)) window.open(url, '_blank', 'noopener'); return; }
+  if (closest('.js-open-link')) { e.stopPropagation(); const url = closest('.js-open-link').dataset.url || ''; if (/^(https?:\/\/|mailto:|tel:)/i.test(url)) window.open(url, '_blank', 'noopener'); return; }
+  if (closest('.js-svc-part')) { e.stopPropagation(); const b = closest('.js-svc-part'); const o = state.overlay; if (o?.kind === 'service') { o.partRef = { idx: Number(b.dataset.idx) }; renderOverlay(); } return; }   // service popup — click a part chip to open its vendor/cost side panel
+  if (closest('.js-svc-part-close')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'service') { o.partRef = null; renderOverlay(); } return; }
+  if (closest('.js-svc-part-remove')) { e.stopPropagation(); const b = closest('.js-svc-part-remove'); return removeSvcPartRef(b.dataset.unit, b.dataset.task, Number(b.dataset.idx)); }
+  if (closest('.js-svc-addpart')) { const b = closest('.js-svc-addpart'); e.stopPropagation(); state.partPhoto = null; return openOverlay({ kind: 'partform', taskTarget: { unitId: b.dataset.unit, taskId: b.dataset.task }, idx: null }); }
+  if (closest('.js-svc-partedit')) { const b = closest('.js-svc-partedit'); e.stopPropagation(); state.partPhoto = null; return openOverlay({ kind: 'partform', taskTarget: { unitId: b.dataset.unit, taskId: b.dataset.task }, idx: Number(b.dataset.idx) }); }
+  if (closest('.js-svc-browseparts')) { const b = closest('.js-svc-browseparts'); e.stopPropagation(); return openOverlay({ kind: 'board', board: 'parts', pickTarget: { unitId: b.dataset.unit, taskId: b.dataset.task } }); }   // "Browse catalog" → the parts board in pick mode, to attach an existing part
+  if (closest('.js-svc-pick-part')) { const b = closest('.js-svc-pick-part'); e.stopPropagation(); return attachCatalogPart(b.dataset.unit, b.dataset.task, b.dataset.part); }   // Attach a catalog part onto a service task (must run BEFORE js-board-row so it doesn't also open detail)
   if (closest('.js-board')) { const b = closest('.js-board'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return openOverlay({ kind: 'board', board: b.dataset.board }); }
   if (closest('.js-vendor-open')) { e.stopPropagation(); return openOverlay({ kind: 'board', board: 'vendors', recId: closest('.js-vendor-open').dataset.rec }); }   // WO-line vendor names → vendor detail in the board popup
   if (closest('.js-expense-open')) { e.stopPropagation(); return openOverlay({ kind: 'board', board: 'expenses', recId: closest('.js-expense-open').dataset.rec }); }   // part-detail receipt link → expense detail in the board popup
@@ -14146,10 +14724,9 @@ function onClick(e) {
   if (closest('.js-coltab')) {
     const ct = closest('.js-coltab'); e.stopPropagation();
     const cs = activeSession(); if (cs.cols) cs.cols[ct.dataset.col] = ct.dataset.member;
-    if (ct.dataset.member === 'shop') { const sc = cs.cards.shop; if (sc) { sc.segment = 'all'; sc.graphView = true; sc.mode = 'list'; sc.recId = null; sc.recType = null; } }   // wrench Shop → the combined 3-bar graph front page
     // §M1 — on phones the footer toggle is the primary nav (no in-card List button): tapping a
     // card shows its LIST (the back chevron returns from a record). Desktop keeps per-member state.
-    else if (document.body.classList.contains('is-phone')) { const mc = cs.cards[ct.dataset.member]; if (mc) { mc.mode = 'list'; mc.recId = null; mc.recType = null; } }
+    if (document.body.classList.contains('is-phone')) { const mc = cs.cards[ct.dataset.member]; if (mc) { mc.mode = 'list'; mc.recId = null; mc.recType = null; } }
     return render();
   }
   // §2.3 dispatch timeline — day nav + open a stop's rental (Phase 6)
@@ -14202,6 +14779,7 @@ function onClick(e) {
   if (closest('.js-setintcat')) { const b = closest('.js-setintcat'); e.stopPropagation(); return addInterestedCategory(b.dataset.rec, b.dataset.val); }
   if (closest('.js-act-open')) { const b = closest('.js-act-open'); e.stopPropagation(); state.actMode = b.dataset.val; state.actOpen = b.dataset.rec; const rec = b.dataset.rec; render(); document.querySelector(`.js-act-in[data-rec="${rec}"]`)?.focus(); return; }
   if (closest('.js-schedule-save')) { const b = closest('.js-schedule-save'); e.stopPropagation(); const o = state.overlay; const root = b.closest('.popup'); const c = IDX.customer.get(b.dataset.rec); const date = o?.when, time = o?.whenTime || '09:00'; const note = (root.querySelector('.js-sch-note')?.value || '').trim(); if (!c || !date) { flashOr('.datefield', 'Pick a date first.'); return; } c.activityLog = c.activityLog || []; c.activityLog.push({ when: date, text: `Scheduled: ${note || 'follow-up'} @ ${date} ${to12(time)}` }); reindex('customers', c); toast('Scheduled — added to the Activity Log.'); state.datepick = null; closeOverlay(); render(); }
+  if (closest('.js-sell-save')) { const b = closest('.js-sell-save'); e.stopPropagation(); const o = state.overlay; const root = b.closest('.popup'); const price = root.querySelector('.js-sell-price')?.value; const date = o?.saleDate; const note = (root.querySelector('.js-sell-note')?.value || '').trim(); if (!date) { flashOr('.datefield', 'Pick a sale date first.'); return; } if (!price || Number(price) <= 0) { flashOr('.js-sell-price', 'Enter a sale price first.'); return; } return sellUnit(b.dataset.rec, price, date, note); }
   // Wave 2 — empty slots on a Quote/invoice: the UNIT slot points you at the
   // Units list (drag IS the link path); the CUSTOMER slot opens quick-add-link.
   if (closest('.js-slot-unit')) {
@@ -14224,6 +14802,18 @@ function onClick(e) {
   if (closest('.js-bill-wo')) { e.stopPropagation(); return billWOToInvoice(closest('.js-bill-wo').dataset.rec); }
   if (closest('.js-wo-bill')) { const b = closest('.js-wo-bill'); e.stopPropagation(); const w = IDX.wo.get(b.dataset.rec); if (w) { w.billCustomer = w.billCustomer === 'Yes' ? 'No' : 'Yes'; reindex('workOrders', w); logAction(w, `Bill customer → ${w.billCustomer}`); render(); } return; }
   if (closest('.js-svc-complete')) { const b = closest('.js-svc-complete'); e.stopPropagation(); state.svcPhoto = null; return openOverlay({ kind: 'service', unitId: b.dataset.unit, taskId: b.dataset.task }); }
+  // SNOOZE (backlog #43): quiet one task's alarm for a while — 7/14/30 days, or wake it
+  if (closest('.js-svc-snooze')) {
+    const b = closest('.js-svc-snooze'); e.stopPropagation();
+    const mk = (days, lbl) => `<button class="dd-item js-svc-snooze-pick" data-rec="${esc(b.dataset.rec)}" data-task="${esc(b.dataset.task)}" data-days="${days}">${lbl}</button>`;
+    return openDropdown(b, (b.dataset.snoozed === '1' ? mk('', 'Wake now — alarm live') : '') + mk('7', 'Snooze 7 days') + mk('14', 'Snooze 14 days') + mk('30', 'Snooze 30 days'), { align: 'right' });
+  }
+  if (closest('.js-svc-snooze-pick')) {
+    const b = closest('.js-svc-snooze-pick'); e.stopPropagation();
+    document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove());
+    return snoozeService(b.dataset.rec, b.dataset.task, b.dataset.days === '' ? null : Number(b.dataset.days));
+  }
+  if (closest('.js-svc-expand')) { const b = closest('.js-svc-expand'); e.stopPropagation(); state.svcExpand = state.svcExpand === b.dataset.rec ? null : b.dataset.rec; return render(); }
   if (closest('.js-svc-save')) { const b = closest('.js-svc-save'); e.stopPropagation(); if (!state.svcPhoto) { flashOr('.overlay .insp-photo, .overlay .insp-rephoto, .overlay .cap-drop', 'Photo proof is required to complete a service.'); return; } const root = b.closest('.popup'); return recordServiceCompletion(b.dataset.unit, b.dataset.task, root.querySelector('.js-svc-hours')?.value, root.querySelector('.js-svc-date')?.value, root.querySelector('.js-svc-notes')?.value, state.svcPhoto); }
   // invoice line-item add buttons → point at the card to DRAG FROM (Wave 2)
   if (closest('.js-add-line')) {
@@ -14256,6 +14846,16 @@ function onClick(e) {
   if (closest('.js-pf2-save')) { e.stopPropagation(); return savePartForm(); }
   if (closest('.js-part-save')) { const b = closest('.js-part-save'); e.stopPropagation(); const root = b.closest('.lineform'); const part = root.querySelector('.js-pf-part')?.value; const cost = Number(root.querySelector('.js-pf-cost')?.value) || 0; const hours = Number(root.querySelector('.js-pf-hours')?.value) || 0; state.woPartForm = null; return addPartToWO(b.dataset.rec, part || 'Part', cost, hours); }
   if (closest('.js-part-cancel')) { e.stopPropagation(); state.woPartForm = null; return render(); }
+  // MODELS (Jac 2026-07-07): category-scoped models + their editable maintenance schedules.
+  if (closest('.js-add-model')) { e.stopPropagation(); activeSession().cards.categories.addingModel = true; return render(); }
+  if (closest('.js-model-dup')) { const b = closest('.js-model-dup'); e.stopPropagation(); const cs = activeSession().cards.categories; cs.dupFrom = b.dataset.rec; cs.addingModel = true; return render(); }
+  if (closest('.js-am-cancel')) { e.stopPropagation(); const cs = activeSession().cards.categories; cs.addingModel = false; cs.dupFrom = null; return render(); }
+  if (closest('.js-am-save')) { const b = closest('.js-am-save'); e.stopPropagation(); return saveNewModel(b.dataset.rec); }
+  if (closest('.js-model-open')) { const b = closest('.js-model-open'); e.stopPropagation(); return openOverlay({ kind: 'modelSchedule', modelId: b.dataset.rec }); }
+  if (closest('.js-add-svctask')) { const b = closest('.js-add-svctask'); e.stopPropagation(); return openOverlay({ kind: 'svctaskform', modelId: b.dataset.rec, idx: null }); }
+  if (closest('.js-svctask-edit')) { const b = closest('.js-svctask-edit'); e.stopPropagation(); return openOverlay({ kind: 'svctaskform', modelId: b.dataset.rec, idx: Number(b.dataset.idx) }); }
+  if (closest('.js-svctask-remove')) { const b = closest('.js-svctask-remove'); e.stopPropagation(); return removeSvcTask(b.dataset.rec, Number(b.dataset.idx)); }
+  if (closest('.js-svctaskform-save')) { e.stopPropagation(); return saveSvcTaskForm(); }
   // inspection gated flow (§9): Wash → Checklist → result
   if (closest('.js-open-insp')) { e.stopPropagation(); return openOverlay({ kind: 'inspection', recId: closest('.js-open-insp').dataset.rec }); }
   if (closest('[data-ctx]')) return runCtxAction(closest('[data-ctx]').dataset.ctx);   // R20 context menu
@@ -14293,7 +14893,7 @@ function onClick(e) {
   if (closest('.js-migrate-go')) { const o = state.overlay; if (!o || o.kind !== 'migrateUnits') return; const res = applyUnitMigration(o.plan); state.overlay = null; renderOverlay(); render(); toast(`Rounded up ${res.created} unit${res.created === 1 ? '' : 's'} and linked ${res.linked} rental${res.linked === 1 ? '' : 's'}.`); return; }
   if (closest('.js-split-open')) { const b = closest('.js-split-open'); e.stopPropagation(); const r = IDX.rental.get(b.dataset.rec); if (r) openOverlay({ kind: 'splitUnit', rentalId: b.dataset.rec, unitId: b.dataset.unit, splitStart: r.startDate, splitEnd: r.endDate }); return; }
   if (closest('.js-split-go')) { const o = state.overlay; if (!o || o.kind !== 'splitUnit') return; const sib = splitUnitToNewRental(o.rentalId, o.unitId, o.splitStart, o.splitEnd); if (sib) { closeOverlay(); try { anchorRecord('rentals', sib.rentalId); } catch (err) { render(); } } return; }
-  if (closest('.js-hchip')) { const b = closest('.js-hchip'); const o = state.overlay; if (o?.kind === 'board') { o.histKind = o.histKind === b.dataset.kind ? null : b.dataset.kind; return renderOverlay(); } const session = activeSession(); const cs = session.cards[b.dataset.card] || session.cards.shop; cs.histKind = cs.histKind === b.dataset.kind ? null : b.dataset.kind; return render(); }
+  if (closest('.js-hchip')) { const b = closest('.js-hchip'); const o = state.overlay; if (o?.kind === 'board') { o.histKind = o.histKind === b.dataset.kind ? null : b.dataset.kind; return renderOverlay(); } const session = activeSession(); const cs = session.cards[b.dataset.card] || session.cards.units; cs.histKind = cs.histKind === b.dataset.kind ? null : b.dataset.kind; return render(); }
   // .js-complete-rental / .js-cancel-rental RETIRED (Jac 2026-07-03) — terminal gates
   // on every unit are the completion; rentals clear from the default list on their own.
   if (closest('.js-insp-wash')) { const b = closest('.js-insp-wash'); e.stopPropagation(); return setInspWash(b.dataset.rec, b.dataset.val); }
@@ -14305,6 +14905,7 @@ function onClick(e) {
   if (closest('.js-unit-status')) { const b = closest('.js-unit-status'); e.stopPropagation(); return openUnitStatusDropdown(b.dataset.rec, b.dataset.unit, b); }
   if (closest('.js-fleetstatus')) { const b = closest('.js-fleetstatus'); e.stopPropagation(); return openFleetDropdown(b.dataset.rec, b); }
   if (closest('.js-setfleet')) { const b = closest('.js-setfleet'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return setUnitFleet(b.dataset.rec, b.dataset.val); }
+  if (closest('.js-open-sell')) { e.stopPropagation(); if (!canMoney()) { toast('Selling a unit is Office/Admin only.'); return; } return openOverlay({ kind: 'sellUnit', unitId: closest('.js-open-sell').dataset.rec, saleDate: TODAY_ISO }); }   // D2 money-gate, re-checked as defence-in-depth
   if (closest('.js-wophase')) { const b = closest('.js-wophase'); e.stopPropagation(); return openWoPhaseDropdown(b.dataset.rec, b, null); }
   if (closest('.js-wophase-line')) { const b = closest('.js-wophase-line'); e.stopPropagation(); return openWoPhaseDropdown(b.dataset.rec, b, Number(b.dataset.idx)); }
   if (closest('.js-setwophase')) { const b = closest('.js-setwophase'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return setWoPhase(b.dataset.rec, b.dataset.val); }
@@ -14363,7 +14964,6 @@ function onClick(e) {
   if (xEl) { e.stopPropagation(); return handlePillX(xEl); }
 
   // shop segment switch — clicking the active segment toggles back to All
-  if (closest('.js-shopseg')) { const seg = closest('.js-shopseg').dataset.seg; const cs = activeSession().cards.shop; const next = (cs.segment === seg) ? 'all' : seg; if (cs.graphView) gvStripTerms(cs);   /* §13.7 — the strip (or 'all' worklist) stays open across a segment switch */ cs.segment = next; cs.listLimit = undefined; return render(); }
 
   // row / header action buttons (anchor / new tab) — recType is set for Shop items
   const anchorBtn = closest('.js-anchor');
@@ -14417,6 +15017,69 @@ function onClick(e) {
   }
   if (closest('.js-link-confirm')) { e.stopPropagation(); return doLinkConfirm(); }
 
+  // §5a — the connect-a-device wizard (gpsConnect popup)
+  if (closest('.js-gps-connect')) {
+    e.stopPropagation();
+    const uid = closest('.js-gps-connect').dataset.rec;
+    const u = IDX.unit.get(uid); if (!u) return;
+    return openOverlay({ kind: 'gpsConnect', unitId: uid, step: 'provider', provider: u.gpsProvider || 'Hapn',
+      imei: '', deviceQuery: '', devices: null, devicesLoading: false, devicesError: '',
+      deviceId: '', deviceLabel: '', pollState: 'idle', pollAttempt: 0, pollMax: 8, pollMachine: null, pollError: '' });
+  }
+  if (closest('.js-gps-provider')) {
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'gpsConnect') return;
+    const p = closest('.js-gps-provider').dataset.val; if (!p || p === o.provider) return;
+    o.provider = p; o.devices = null; o.devicesError = ''; o.deviceQuery = ''; o.imei = ''; o.deviceId = ''; o.deviceLabel = '';
+    return renderOverlay();
+  }
+  if (closest('.js-gps-continue')) {
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'gpsConnect') return;
+    o.step = 'identify';
+    renderOverlay();
+    if (o.provider !== 'Hapn') gpsConnectLoadDevices(o);   // fire-and-forget — self-guards on state.overlay
+    return;
+  }
+  if (closest('.js-gps-identify-continue')) {
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'gpsConnect') return;
+    const input = document.querySelector('.overlay .js-gps-imei-input');
+    const imei = ((input ? input.value : o.imei) || '').trim();
+    if (!imei) return flashOr('.overlay .js-gps-imei-input', 'Enter the tracker IMEI first.');
+    o.imei = imei; o.deviceId = imei; o.deviceLabel = imei; o.step = 'poll';
+    renderOverlay();
+    gpsConnectStartPoll(o);
+    return;
+  }
+  if (closest('.js-gps-device-pick')) {
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'gpsConnect') return;
+    const btn = closest('.js-gps-device-pick');
+    const devId = btn.dataset.devid || ''; if (!devId) return;
+    o.deviceId = devId; o.deviceLabel = btn.dataset.devlabel || devId; o.step = 'poll';
+    renderOverlay();
+    gpsConnectStartPoll(o);
+    return;
+  }
+  if (closest('.js-gps-back')) {
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'gpsConnect') return;
+    clearTimeout(_gpsPollTimer);
+    if (o.step === 'poll') { o.step = 'identify'; o.pollState = 'idle'; o.pollAttempt = 0; o.pollMachine = null; o.pollError = ''; }
+    else if (o.step === 'identify') { o.step = 'provider'; }
+    return renderOverlay();
+  }
+  if (closest('.js-gps-poll-retry')) { e.stopPropagation(); const o = state.overlay; if (!o || o.kind !== 'gpsConnect') return; return gpsConnectStartPoll(o); }
+  if (closest('.js-gps-save')) { e.stopPropagation(); return gpsConnectSave(false); }
+  if (closest('.js-gps-save-anyway')) { e.stopPropagation(); return gpsConnectSave(true); }
+  if (closest('.js-gps-events-refresh')) { e.stopPropagation(); const u = IDX.unit.get(closest('.js-gps-events-refresh').dataset.rec); if (u) { invalidateGpsEvents(u); render(); } return; }   // §6a — re-pull the device history feed
+  // §6/§7 — remote shutdown (Hapn starter-interrupt). Arm → confirm; role-gated + audited.
+  if (closest('.js-gps-arm')) { e.stopPropagation(); if (!canGpsShutdown()) return; const b = closest('.js-gps-arm'); return gpsArmShutdown(b.dataset.rec, b.dataset.dev); }
+  if (closest('.js-gps-disarm')) { e.stopPropagation(); return gpsDisarm(); }
+  if (closest('.js-gps-kill-confirm')) { e.stopPropagation(); if (!canGpsShutdown()) return; const b = closest('.js-gps-kill-confirm'); if (!_gpsArmed || _gpsArmed.unitId !== b.dataset.rec) return gpsDisarm(); return gpsFireShutdown(b.dataset.rec, b.dataset.dev, false); }   // enable=false → immobilize
+  if (closest('.js-gps-restore')) { e.stopPropagation(); if (!canGpsShutdown()) return; const b = closest('.js-gps-restore'); return gpsFireShutdown(b.dataset.rec, b.dataset.dev, true); }   // enable=true → restore
+
   // universal pill rule — single-click navigates; double-click anchors; ctrl+click = new
   // tab (handled by the early hotkey branch). Same discriminator as rows (#1).
   const pill = closest('[data-pill-card]');
@@ -14425,7 +15088,7 @@ function onClick(e) {
     if (state.overlay?.kind === 'board') closeOverlay();   // a link pill inside the board popup navigates the grid — close the popup first
     const pc = pill.dataset.pillCard, prec = castId(pc, pill.dataset.pillRec);
     const psect = pill.dataset.sect;
-    const anchor = SHOP_TYPES.includes(pc) ? { card: 'shop', recId: prec, recType: pc } : { card: pc, recId: prec, recType: null };
+    const anchor = SHOP_TYPES.includes(pc) ? { card: 'units', recId: unitOfShopRec(pc, prec), recType: null } : { card: pc, recId: prec, recType: null };   // Shop retirement: WO/insp/svc pills anchor their owning unit
     return deferOrAnchor('pill:' + pc + ':' + prec, () => { pillTo(pc, prec); if (psect) scrollToSect(pc, psect); }, anchor);
   }
 
@@ -14447,8 +15110,8 @@ function castId(card, raw) { return raw; }   // all our IDs are strings
 
 function handlePillX(xEl) {
   const kind = xEl.dataset.x;
-  // operate on the record open in the card that contains this pill. The Shop card
-  // holds 3 entity types, so resolve through its recType (recOf('shop',…) fails).
+  // operate on the record open in the card that contains this pill (recType resolves
+  // any legacy multi-entity card state via entityCardOf).
   const cardNode = xEl.closest('.card');
   const card = cardNode?.dataset.card;
   const session = activeSession();
@@ -14560,6 +15223,49 @@ function startInlineEdit(span) {
     span.replaceWith(sel); sel.focus();
     sel.addEventListener('change', commitCat);
     sel.addEventListener('blur', commitCat);
+    return;
+  } else if (kind === 'unitModel') {
+    // Category-scoped model link for a unit (Jac 2026-07-07): a <select> of the
+    // unit's OWN category's models, plus a "+ Add new model…" sentinel that swaps
+    // to a plain text input (find-or-create, mirrors savePartForm's idiom). A unit
+    // with no category yet can't pick a model — the category derives the options.
+    const u = IDX.unit.get(recId);
+    if (!u || !u.categoryId) { toast('Set a category first.'); render(); return; }
+    const opts2 = (DATA.models || []).filter((mo) => mo.categoryId === u.categoryId);
+    const sel = el('select', 'inline-input');
+    sel.innerHTML = ['<option value="">— No model —</option>']
+      .concat(opts2.map((mo) => `<option value="${esc(mo.modelId)}"${u.modelId === mo.modelId ? ' selected' : ''}>${esc(mo.name)}</option>`))
+      .concat(['<option value="__new__">+ Add new model…</option>'])
+      .join('');
+    const commitModel = () => {
+      if (done) return; done = true;
+      if (u) { const old = u.modelId; const v = sel.value || null; if ((old || '') !== (v || '')) { u.modelId = v; reindex('units', u); logAction(u, `Model: ${auditVal(IDX.model.get(old)?.name || '')} → ${auditVal(IDX.model.get(v)?.name || '')}`); } }
+      render();
+    };
+    sel.addEventListener('change', () => {
+      if (sel.value !== '__new__') return commitModel();
+      // swap the select for a name input; committing creates the model then assigns it
+      done = true;
+      const input = el('input', 'inline-input'); input.placeholder = 'New model name';
+      let idone = false;
+      const commitNew = () => {
+        if (idone) return; idone = true;
+        const name = input.value.trim();
+        if (name && u) {
+          const mo = { modelId: 'MOD-C' + (state.seq++), categoryId: u.categoryId, name, tasks: [], mock: true };
+          DATA.models.push(mo); IDX.model.set(mo.modelId, mo); reindex('models', mo);
+          logAction(mo, `Model added to ${IDX.category.get(u.categoryId)?.name || 'category'}`);
+          const old = u.modelId; u.modelId = mo.modelId; reindex('units', u);
+          logAction(u, `Model: ${auditVal(IDX.model.get(old)?.name || '')} → ${auditVal(mo.name)}`);
+        }
+        render();
+      };
+      sel.replaceWith(input); input.focus();
+      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); commitNew(); } else if (e.key === 'Escape') { idone = true; render(); } });
+      input.addEventListener('blur', commitNew);
+    });
+    span.replaceWith(sel); sel.focus();
+    sel.addEventListener('blur', commitModel);
     return;
   } else { return; }
   if (kind === 'field' && span.dataset.dot === '1') {
@@ -14758,7 +15464,7 @@ function clearFieldCall(rentalId) {
 }
 
 /* ════════════════════════════════════════════════════════════════════════
-   APP-34 · §16 ACTIONS / MUTATIONS — every state change funnels through here
+   APP-33 · §16 ACTIONS / MUTATIONS — every state change funnels through here
    (status setters, drag links, Quotes, captures, site, WO/invoice lines, +New)
    ════════════════════════════════════════════════════════════════════════ */
 /* ── v2 BUILD actions: condition/wash segs · yard captures · site popup · WO complete ── */
@@ -14817,6 +15523,26 @@ function setUnitWash(unitId, val) {
   logAction(u, val === 'Wash' ? 'Wash requested' : 'Marked: don’t wash');
   toast(val === 'Wash' ? 'Wash queued — shows in the Wash list.' : 'Don’t wash — request cleared.');
   reanchorRender();
+}
+/* Sell a unit (spec units-fleet D3): sets the unit Sold + records the sale terms —
+   the SOURCE OF TRUTH the accounting area reads (unit.salePrice/saleDate on a Sold
+   unit) to book sale revenue; this is the whole integration seam, no parallel
+   accounting/expense record is written here. Money-gated (D2) — re-checked as
+   defence-in-depth even though the popup that calls this already gates canMoney(). */
+function sellUnit(unitId, price, date, note) {
+  if (!canMoney()) return;
+  const u = IDX.unit.get(unitId); if (!u) return;
+  const p = Number(price);
+  if (!(p > 0) || !date) return;
+  u.fleetStatus = 'Sold';
+  u.salePrice = p;
+  u.saleDate = date;
+  if (note) u.soldNote = note;
+  reindex('units', u);
+  logAction(u, `Sold for ${money(p)} on ${fmtShortDate(date)}`);
+  closeOverlay();
+  toast('Unit sold — ROI closed out.');
+  render();
 }
 /* yard journey: +Start/+Log Delivery and +End/+Log Recovery are the SAME capture
    either way (one event, shared video); +FC = markFieldCall. Popup gates every log. */
@@ -15018,12 +15744,48 @@ async function autofillPartLine(w, li, photo) {
   toast('✨ Mr. Wrangler filled in the part.');
 }
 
+/** Name-match or create a vendor by typed name — the idiom shared by the WO part
+ *  line, the service-task part ref, and the receipt form. Returns the vendorId, or
+ *  null if no name was typed. */
+function resolveOrCreateVendorByName(name) {
+  if (!name) return null;
+  let v = DATA.vendors.find((x) => (x.name || '').toLowerCase() === name.toLowerCase());
+  if (!v) { v = { vendorId: 'VEN-C' + (state.seq++), name, mock: true }; DATA.vendors.push(v); reindex('vendors', v); }
+  return v.vendorId;
+}
 function savePartForm() {
   const o = state.overlay; if (!o || o.kind !== 'partform') return;
-  const w = IDX.wo.get(o.woId); if (!w) return closeOverlay();
   const g = (c) => (document.querySelector(c)?.value || '').trim();
-  const desc = g('.js-pf2-desc'), cost = g('.js-pf2-cost'), hours = g('.js-pf2-hours'), url = g('.js-pf2-url'), vendor = g('.js-pf2-vendor');
+  const desc = g('.js-pf2-desc'), cost = g('.js-pf2-cost'), url = g('.js-pf2-url'), vendor = g('.js-pf2-vendor');
   if (!desc && !state.partPhoto) return attnFlash('.js-pf2-desc, .file-drop');   // R19: need a name OR a photo for the AI
+  if (o.taskTarget) {
+    // Service-task part ref (Jac 2026-07-08): same popup/fields as the WO part line,
+    // saved onto the REAL model task's detail.partRefs (unitServiceRows' rows are a
+    // derived copy — mutating those wouldn't persist), via the same reindex('models', …)
+    // idiom the model-schedule editors use (saveSvcTaskForm/removeSvcTask).
+    const { unitId, taskId } = o.taskTarget;
+    const u = IDX.unit.get(unitId); if (!u) return closeOverlay();
+    const { mo, realTask } = svcRealTask(u, { taskId });
+    if (!realTask) { toast('No editable schedule for this unit.'); return closeOverlay(); }
+    realTask.detail = realTask.detail || {};
+    realTask.detail.partRefs = realTask.detail.partRefs || [];
+    const pr = o.idx != null ? realTask.detail.partRefs[o.idx] : null;
+    const rec = pr || { name: '', oem: '' };
+    rec.name = desc || rec.name || 'Part';
+    if (cost !== '') rec.cost = Number(cost) || 0;
+    if (url) rec.url = url;
+    const vendorId = resolveOrCreateVendorByName(vendor);
+    if (vendorId) rec.vendorId = vendorId;
+    if (state.partPhoto) rec.photo = state.partPhoto;
+    if (o.idx == null) realTask.detail.partRefs.push(rec);
+    reindex('models', mo); logAction(mo, `${o.idx != null ? 'Edited' : 'Added'} part ${auditVal(rec.name)} on ${realTask.name}`);
+    state.partPhoto = null;
+    toast('Part saved.');
+    state.overlay = { kind: 'service', unitId, taskId };
+    return renderOverlay();
+  }
+  const w = IDX.wo.get(o.woId); if (!w) return closeOverlay();
+  const hours = g('.js-pf2-hours');
   w.lineItems = w.lineItems || [];
   const li = o.idx != null ? w.lineItems[o.idx] : { phase: 'Part Needed?', eta: '' };
   if (!li) return closeOverlay();                  // stale edit index — the line was removed after the popup opened
@@ -15033,11 +15795,8 @@ function savePartForm() {
   li.url = url || li.url || '';
   if (state.partPhoto) li.photo = state.partPhoto;
   li.aiPending = !desc || cost === '' || hours === '';
-  if (vendor) {
-    let v = DATA.vendors.find((x) => (x.name || '').toLowerCase() === vendor.toLowerCase());
-    if (!v) { v = { vendorId: 'VEN-C' + (state.seq++), name: vendor, mock: true }; DATA.vendors.push(v); reindex('vendors', v); }
-    li.vendorId = v.vendorId;
-  }
+  const liVendorId = resolveOrCreateVendorByName(vendor);
+  if (liVendorId) li.vendorId = liVendorId;
   if (desc) {
     let p = li.partId ? DATA.parts.find((r) => r.partId === li.partId) : null;   // the li↔part link (stamped below) survives renames
     if (!p) p = DATA.parts.find((r) => (r.name || '').toLowerCase() === desc.toLowerCase());
@@ -15067,6 +15826,55 @@ function savePartForm() {
   // in-memory base64 FIRST, so chain the offload after the autofill resolves.
   const offloadLinePhoto = () => { if (photo) offloadPhoto(li, 'photo', 'wopart_' + w.woId + '_' + lineKey(li), w, 'workOrders'); };
   if (willFill) autofillPartLine(w, li, photo).then(offloadLinePhoto, offloadLinePhoto); else offloadLinePhoto();   // §18g fire-and-forget photo autofill (offload even if the AI read fails)
+}
+/* MODELS (Jac 2026-07-07): a category derives which models a unit can pick; each
+   model carries its own real maintenance-schedule task list (service-countdown.js
+   shape: {taskId,name,intervalHours,parts}), editable here, replacing the generic
+   placeholder for any unit that picks it (see unitServiceRows). */
+function saveNewModel(categoryId) {
+  const cs = activeSession().cards.categories;
+  const name = (document.querySelector('.js-am-name')?.value || '').trim();
+  if (!name) return attnFlash('.js-am-name');   // R19: need a name
+  // Duplicate (Jac 2026-07-07): cs.dupFrom names a source model to clone tasks from —
+  // a shallow per-task clone ({...t}) is enough since task fields are primitives/string
+  // arrays; taskIds are reused verbatim (they only need to be unique within a unit's
+  // own service-completion bookkeeping, not globally).
+  const dupSrc = cs.dupFrom ? IDX.model.get(cs.dupFrom) : null;
+  const tasks = dupSrc ? dupSrc.tasks.map((t) => ({ ...t })) : [];
+  const mo = { modelId: 'MOD-C' + (state.seq++), categoryId, name, tasks, mock: true };
+  DATA.models.push(mo); IDX.model.set(mo.modelId, mo); reindex('models', mo);
+  logAction(mo, dupSrc ? `Model duplicated from ${dupSrc.name}` : `Model added to ${IDX.category.get(categoryId)?.name || 'category'}`);
+  cs.addingModel = false; cs.dupFrom = null;
+  toast(dupSrc
+    ? `${name} added — duplicated ${tasks.length} ${tasks.length === 1 ? 'task' : 'tasks'} from ${dupSrc.name}.`
+    : `${name} added — open it to build its maintenance schedule.`);
+  render();
+}
+function removeSvcTask(modelId, idx) {
+  const mo = IDX.model.get(modelId); if (!mo || !mo.tasks[idx]) return;
+  const [gone] = mo.tasks.splice(idx, 1);
+  reindex('models', mo); logAction(mo, `Removed task: ${auditVal(gone.name)}`);
+  toast('Task removed.'); renderOverlay();
+}
+function saveSvcTaskForm() {
+  const o = state.overlay; if (!o || o.kind !== 'svctaskform') return;
+  const mo = IDX.model.get(o.modelId); if (!mo) return closeOverlay();
+  const g = (c) => (document.querySelector(c)?.value || '').trim();
+  const name = g('.js-st-name'), hours = g('.js-st-hours'), partsRaw = g('.js-st-parts');
+  if (!name) return attnFlash('.js-st-name');   // R19: a task needs a name
+  mo.tasks = mo.tasks || [];
+  const parts = partsRaw ? partsRaw.split(',').map((p) => p.trim()).filter(Boolean) : [];
+  if (o.idx != null) {
+    const t = mo.tasks[o.idx]; if (!t) return closeOverlay();   // stale edit index — removed after the popup opened
+    t.name = name; t.intervalHours = hours !== '' ? Number(hours) || 0 : null; t.parts = parts;
+    logAction(mo, `Edited task: ${auditVal(name)}`);
+  } else {
+    mo.tasks.push({ taskId: 'svc-c' + (state.seq++), name, intervalHours: hours !== '' ? Number(hours) || 0 : null, parts, source: 'Added in-app' });
+    logAction(mo, `Added task: ${auditVal(name)}`);
+  }
+  reindex('models', mo);
+  state.overlay = { kind: 'modelSchedule', modelId: o.modelId };   // back to the list, not fully closed
+  toast('Schedule saved.'); renderOverlay();
 }
 /* Receipt popup save (§7.11): creates/updates the expense; vendor name-match or
    auto-create (the savePartForm idiom); empty AI-fillable fields flag aiPending ✨;
@@ -15206,7 +16014,17 @@ function onInput(e) {
   if (e.target.classList.contains('js-fb-text')) { if (state.overlay?.kind === 'feedback') state.overlay.text = e.target.value; return; }
   if (e.target.classList.contains('js-cmt-text')) { if (state.overlay?.kind === 'comment') state.overlay.text = e.target.value; return; }
   if (e.target.classList.contains('js-wr-in')) { if (state.wrangler.open) state.wrangler.draft = e.target.value; return; }
+  if (e.target.classList.contains('chat-title-in')) { chatSetTitle(e.target.dataset.chatTitle, e.target.value); return; }   // rename in place, no re-render (caret stays put)
+  // §5a connect wizard — Hapn IMEI (store only, no re-render; committed on Continue).
+  if (e.target.classList.contains('js-gps-imei-input')) { if (state.overlay?.kind === 'gpsConnect') state.overlay.imei = e.target.value; return; }
+  // §5a connect wizard — live device-list filter (re-render + restore caret, like js-files-query).
+  if (e.target.classList.contains('js-gps-search')) {
+    const o = state.overlay;
+    if (o?.kind === 'gpsConnect') { o.deviceQuery = e.target.value; const sel = e.target.selectionStart; renderOverlay(); const q = document.querySelector('.overlay .js-gps-search'); if (q) { q.focus(); q.setSelectionRange(sel, sel); } }
+    return;
+  }
   if (e.target.classList.contains('chat-input')) { state.chat.draft = e.target.value; return; }
+  if (e.target.classList.contains('js-comms-in')) { commsDrafts.set(state.commsRail.cat + '|' + e.target.dataset.cust, e.target.value); return; }   // D8 window composer — draft survives re-renders
   // Company Files live search → re-render the board popup and restore the caret.
   if (e.target.classList.contains('js-files-query')) {
     if (state.overlay?.kind === 'board') { state.overlay.fileSearch = e.target.value; const sel = e.target.selectionStart; renderOverlay(); const q = document.querySelector('.js-files-query'); if (q) { q.focus(); q.setSelectionRange(sel, sel); } }
@@ -15705,7 +16523,7 @@ function saveNewCustomer() {
   else { anchorRecord('customers', id); toast(`${c.name} added.`); }
 }
 /* ════════════════════════════════════════════════════════════════════════
- * APP-35 · §17 STRIPE / PAYMENTS — card-on-file + invoice charging (client side).
+ * APP-34 · §17 STRIPE / PAYMENTS — card-on-file + invoice charging (client side).
  * Card data is entered ONLY in Stripe's iframe (Card Element) and tokenized in
  * the browser; raw PAN/CVC never touches our code or the backend. The backend
  * owns the money math — the client never sends an amount.
@@ -15770,7 +16588,7 @@ function friendlyPayErr(r) {
 }
 
 async function openAddCard(customerId, opts) { if (!canMoney()) { toast('Cards on file are Office/Admin only.'); return; } await ensurePubKey(); openOverlay({ kind: 'addCard', customerId, returnTo: (opts && opts.returnTo) || '', invoiceId: (opts && opts.invoiceId) || '' }); }
-async function openAddBank(customerId, opts) { await ensurePubKey(); openOverlay({ kind: 'addAch', customerId, returnTo: (opts && opts.returnTo) || '', invoiceId: (opts && opts.invoiceId) || '' }); }
+async function openAddBank(customerId, opts) { if (!canMoney()) { toast('Bank accounts on file are Office/Admin only.'); return; } await ensurePubKey(); openOverlay({ kind: 'addAch', customerId, returnTo: (opts && opts.returnTo) || '', invoiceId: (opts && opts.invoiceId) || '' }); }
 async function openVerifyBank(customerId, bankId) { await ensurePubKey(); openOverlay({ kind: 'verifyAch', customerId, bankId }); }
 async function openPayInvoice(invoiceId) { await ensurePubKey(); openOverlay({ kind: 'payment', invoiceId, busy: false, error: '' }); }
 
@@ -16245,48 +17063,186 @@ async function recordManualPayment(invoiceId) {
     if (live()) { o.busy = false; o.error = (e && e.rwTimeout) ? 'Timed out — try again.' : ((e && e.message) || 'Network error — try again.'); renderOverlay(); }
   }
 }
-// Print / PDF a customer-facing invoice (#109) — a clean white document (not the dark
-// yard UI) rendered into #print-root; the @media print rules hide everything else and
-// the browser's print dialog handles paper or "Save as PDF".
+// ── Invoice "Yard Log" PRINT / PDF (#109; reshaped to a kraft yard-log page 2026-07-08).
+// A customer-facing document rendered into #print-root: line items GROUPED by rental
+// (recent→oldest window), each group stamped with its window · duration · merge/extension
+// provenance · per-rental subtotal; a grand subtotal; a machine glyph per unit line; a red
+// BALANCE DUE + PAID stamp; a signature block; and a customer-safe Amendments log. The
+// @media print rules swap the dark yard UI out and the browser dialog handles "Save as PDF".
+
+/** "2 Days" · "2 Weeks" · "1 Month" from a day count (28d = 1 Month, matching the 4-Week
+ *  rate; falls back to whole weeks then days). */
+function prDuration(days) {
+  if (days % 28 === 0) { const m = days / 28; return `${m} Month${m === 1 ? '' : 's'}`; }
+  if (days % 7 === 0)  { const w = days / 7;  return `${w} Week${w === 1 ? '' : 's'}`; }
+  return `${days} Day${days === 1 ? '' : 's'}`;
+}
+/** Provenance stamp for a rental group: "Merged from 216i" (lines carry a `fromInv` tag
+ *  stamped at merge time) · "Extension of 216i" (a line's "Ext of NNN" tail, or the invoice's
+ *  contOf when this is the covered rental) · "Extension" (a grow-in-place extension line). */
+function prGroupProvenance(inv, r, gl) {
+  const merged = gl.find((li) => li.fromInv);
+  if (merged) return `Merged from ${invoiceShort(merged.fromInv)}`;
+  for (const li of gl) { const m = /·\s*Ext of\s+(\S+)\s*$/i.exec(li.label || ''); if (m) return `Extension of ${m[1]}`; }
+  if (inv.contOf && r && inv.covOf === r.rentalId) return `Extension of ${invoiceShort(inv.contOf)}`;
+  if (gl.some((li) => li.kind === 'extension')) return 'Extension';
+  return '';
+}
+/** Group an invoice's line items by rental, newest window first (manual / unlinked lines
+ *  fall to a trailing "Additional charges" group). */
+function invoicePrintGroups(inv) {
+  const map = new Map(), order = [];
+  (inv.lineItems || []).forEach((li) => {
+    const r = li.ref ? IDX.rental.get(li.ref) : null;
+    const key = r ? r.rentalId : '__other';
+    if (!map.has(key)) { map.set(key, { r, key, lines: [] }); order.push(key); }
+    map.get(key).lines.push(li);
+  });
+  const groups = order.map((key) => {
+    const g = map.get(key), r = g.r;
+    const start = r ? r.startDate : '', end = r ? r.endDate : '';   // unlinked "Additional charges" get no window/duration
+    const days = (parseISO(start) && parseISO(end)) ? Math.max(1, dayDiff(parseISO(start), parseISO(end))) : 0;
+    return {
+      key, r, isOther: key === '__other', start,
+      title: (key === '__other') ? 'Other' : 'Rental',
+      window: (start && end) ? `${fmtShortDate(start)} – ${fmtShortDate(end)}` : '',
+      dur: days ? prDuration(days) : '',
+      prov: (key === '__other') ? '' : prGroupProvenance(inv, r, g.lines),
+      subtotal: g.lines.reduce((a, li) => a + (Number(li.amount) || 0), 0),
+      lines: g.lines,
+    };
+  });
+  groups.sort((a, b) => a.isOther ? 1 : b.isOther ? -1 : (a.start < b.start ? 1 : a.start > b.start ? -1 : 0));
+  return groups;
+}
+/** One printed line row → { icon, name, cat, meta }. A unit line shows its glyph + name +
+ *  CATEGORY only (the per-day rate/qty is dropped — the card header now carries the window +
+ *  duration). Transport keeps its leg descriptor; a manual line shows its plain label. */
+function prLineParts(li) {
+  let rest = String(li.label || '').replace(/\s*·\s*Ext of\s+\S+\s*$/i, '').replace(/\s*·\s*Extension\s*→.*$/i, '');
+  if (li.kind === 'transport') {
+    const r = li.ref ? IDX.rental.get(li.ref) : null;
+    const eu = (r && li.unitId) ? unitEntry(r, li.unitId) : null;
+    const type = (eu && eu.transportType) || (r && r.transportType) || rest.replace(/^Transport\s*·\s*/i, '');
+    const addr = (eu && eu.deliveryAddress) || (r && r.deliveryAddress) || '';
+    const miles = Number((eu && eu.transportMiles) || (r && r.transportMiles) || 0);
+    return { icon: I.truck, name: 'Transport', cat: '', meta: [type, addr, miles ? `${miles} mi` : ''].filter(Boolean).join(' · ') };
+  }
+  const u = li.unitId ? IDX.unit.get(li.unitId) : null;
+  if (u) {
+    const cat = IDX.category.get(u.categoryId);
+    return { icon: categoryIconFor(cat && cat.name), name: u.name, cat: (cat && cat.name) || '', meta: '' };
+  }
+  return { icon: '', name: rest, cat: '', meta: '' };
+}
+/** Customer-safe amendment logs — SEPARATED: { invoiceLog, rentalLog }. Each is the record's
+ *  actions scrubbed of internal ops detail (staff names via `by`, pricing locks, Mr. Wrangler,
+ *  card/ACH, mechanic/GPS), internal-but-relevant wording translated to plain language, sorted
+ *  MOST RECENT → oldest. rentalLog entries carry the rental name (which unit(s)). */
+function invoiceAmendments(inv) {
+  const DENY = /pricing (un)?locked|mr\.?\s*wrangler|added by|••|\bach\b|\bcard\b|mechanic|assigned|\bgps\b|\bhours\b/i;
+  const scrub = (a, rname) => {
+    let text = String(a.text || '');
+    if (!text || DENY.test(text)) return null;
+    text = text
+      .replace(/Merged in invoice\s+\S+.*$/i, 'Combined with a prior ticket')
+      .replace(/Continuation (of|invoice)\b.*$/i, 'Continued on a new ticket (28-day billing)')
+      .replace(/Transport type →/i, 'Transport set to');
+    return { when: a.when, clock: a.clock || '', seq: a.seq || 0, text, rname: rname || '' };
+  };
+  const recent = (x, y) => (x.when < y.when ? 1 : x.when > y.when ? -1 : (y.seq - x.seq));   // most recent → oldest
+  const invoiceLog = (inv.actions || []).map((a) => scrub(a)).filter(Boolean).sort(recent);
+  const rentalLog = [];
+  (inv.rentalIds || []).map((id) => IDX.rental.get(id)).filter(Boolean).forEach((r) => {
+    const rname = rentalUnitsLabel(r) || r.rentalName || '';
+    (r.actions || []).forEach((a) => { const s = scrub(a, rname); if (s) rentalLog.push(s); });
+  });
+  rentalLog.sort(recent);
+  return { invoiceLog, rentalLog };
+}
+/** Invoice status → the print doc's accent state: green (paid), yellow (open / not yet due),
+ *  red (past due). Drives the date stamp, hazard stripe, Balance Due and the Paid stamp. */
+function prInvoiceInk(inv, t) {
+  if ((t || invoiceTotals(inv)).balance <= 0.005) return 'is-paid';
+  return /^(Late|Collections)/.test((t || invoiceTotals(inv)).status) ? 'is-due' : 'is-open';
+}
 function printInvoice(invoiceId) {
   const inv = IDX.invoice.get(invoiceId); if (!inv) return;
   const t = invoiceTotals(inv);
   const cust = inv.customerId ? IDX.customer.get(inv.customerId) : null;
-  const rows = (inv.lineItems || []).map((li) => `<tr><td>${esc(li.label)}</td><td class="r">${money2(Number(li.amount) || 0)}</td></tr>`).join('')
-    || '<tr><td colspan="2" class="pr-empty">No line items.</td></tr>';
+  const groups = invoicePrintGroups(inv);
+  const paid = t.balance <= 0.005 && t.total > 0;
+  const ink = prInvoiceInk(inv, t);   // is-paid (green) / is-open (yellow) / is-due (red)
+  const bigDate = (fmtShortDate(inv.date) || '').toUpperCase();
+  const brandName = companyName().replace(/([a-z])([A-Z])/g, '$1 $2');   // "JacRentals" → "Jac Rentals" (proper case, spaced)
+  const custPhoto = cust ? latestCustomerSelfie(cust) : '';
+
+  // Each rental → a soft card with a single-line header: the bold title FIRST, then its window ·
+  // duration · provenance, and the per-rental subtotal pinned right; the unit lines sit inside.
+  const cardHtml = (g) => {
+    const lines = g.lines.map((li) => {
+      const p = prLineParts(li);
+      return `<div class="pr-line"><span class="pr-desc">${p.icon ? `<span class="pr-ic">${p.icon}</span>` : '<span class="pr-ic"></span>'}<span class="pr-txt"><span class="pr-nm">${esc(p.name)}</span>${p.cat ? `<span class="pr-cat">${esc(p.cat)}</span>` : ''}${p.meta ? `<span class="pr-mt">${esc(p.meta)}</span>` : ''}</span></span><span class="pr-amt">${money2(Number(li.amount) || 0)}</span></div>`;
+    }).join('');
+    const meta = `${g.window ? `<span>${esc(g.window)}</span>` : ''}${g.dur ? `<span>${esc(g.dur)}</span>` : ''}${g.prov ? `<span class="pr-prov">${esc(g.prov)}</span>` : ''}`;
+    return `<section class="pr-card">
+      <header class="pr-card-h"><span class="pr-card-t">${esc(g.title)}</span>${meta ? `<span class="pr-card-m">${meta}</span>` : ''}<span class="pr-card-sub">${money2(g.subtotal)}</span></header>
+      <div class="pr-card-lines">${lines}</div>
+    </section>`;
+  };
+  const groupsHtml = groups.length ? groups.map(cardHtml).join('') : '<div class="pr-empty">No line items.</div>';
+
+  const paymentRows = (inv.payments || []).length
+    ? (inv.payments || []).map((pmt) => {
+        const when = pmt.at ? esc(fmtShortDate(pmt.at)) : '';
+        const method = pmt.type === 'cash' ? 'Cash'
+          : pmt.type === 'check' ? ('Check' + (pmt.checkNum ? ' #' + esc(String(pmt.checkNum)) : ''))
+          : pmt.type === 'ach-pending' ? 'ACH (pending)'
+          : pmt.type === 'charge' ? 'Card'
+          : esc(String(pmt.type || 'Payment'));
+        return `<div><span>Paid${when ? ' · ' + when : ''} · ${method}</span><span>${money2((Number(pmt.amountCents) || 0) / 100)}</span></div>`;
+      }).join('')
+    : (t.paid ? `<div><span>Paid${inv.paymentMethod ? ' · ' + esc(inv.paymentMethod) : ''}</span><span>${money2(t.paid)}</span></div>` : '');
+
+  const { invoiceLog, rentalLog } = invoiceAmendments(inv);
+  const logRow = (a, withName) => `<div class="pr-am-row"><span class="pr-am-when">${esc(fmtShortDate(a.when))}${a.clock ? ' · ' + esc(a.clock) : ''}</span><span class="pr-am-tx">${esc(a.text)}${withName && a.rname ? ` <em>· ${esc(a.rname)}</em>` : ''}</span></div>`;
+  const logCol = (title, items, withName) => `<div class="pr-log"><div class="pr-log-h">${title}</div>${items.length ? items.map((a) => logRow(a, withName)).join('') : '<div class="pr-am-empty">No entries.</div>'}</div>`;
+
   let host = document.getElementById('print-root');
   if (!host) { host = document.createElement('div'); host.id = 'print-root'; document.body.appendChild(host); }
   host.innerHTML = `
-    <div class="pr-doc">
-      <div class="pr-head"><div class="pr-brand">${esc(companyName())}</div><div class="pr-sub">${esc(companyTagline())}</div></div>
+    <div class="pr-doc ${ink}">
+      <div class="pr-head">
+        <div class="pr-brandwrap"><img class="pr-logo" src="assets/jac-rentals-logo.jpg" alt="${esc(brandName)}" /><div><div class="pr-brand">${esc(brandName)}</div><div class="pr-sub">${esc(companyTagline())}</div></div></div>
+        <div class="pr-datestamp">${esc(bigDate)}</div>
+      </div>
+      <div class="pr-hazard" aria-hidden="true"></div>
       <div class="pr-meta">
         <div><span class="pr-k">Invoice</span><span class="pr-v">${esc(inv.invoiceId)}</span></div>
         <div><span class="pr-k">Bill to</span><span class="pr-v">${esc(cust ? cust.name : '—')}</span></div>
-        <div><span class="pr-k">Date</span><span class="pr-v">${esc(fmtShortDate(inv.date) || '—')}</span></div>
+        <div><span class="pr-k">Created</span><span class="pr-v">${esc(fmtShortDate(inv.date) || '—')}</span></div>
         <div><span class="pr-k">Due</span><span class="pr-v">${esc(inv.dueDate ? fmtShortDate(inv.dueDate) : '—')}</span></div>
         ${inv.po ? `<div><span class="pr-k">PO</span><span class="pr-v">${esc(inv.po)}</span></div>` : ''}
-        ${inv.covStart && inv.covEnd ? `<div><span class="pr-k">Rental period</span><span class="pr-v">${esc(fmtShortDate(inv.covStart))} – ${esc(fmtShortDate(inv.covEnd))}</span></div>` : ''}
         ${inv.contOf ? `<div><span class="pr-k">Continuation of</span><span class="pr-v">${esc(invoiceShort(inv.contOf))} (28-day billing split)</span></div>` : ''}
       </div>
-      <table class="pr-lines"><thead><tr><th>Description</th><th class="r">Amount</th></tr></thead><tbody>${rows}</tbody></table>
-      <div class="pr-tot">
-        <div><span>Subtotal</span><span>${money2(t.subtotal)}</span></div>
-        <div><span>Tax${t.exempt ? ' (exempt)' : ` (${(TAX_RATE * 100).toFixed(2)}%)`}</span><span>${t.exempt ? '—' : money2(t.tax)}</span></div>
-        <div class="pr-big"><span>Total</span><span>${money2(t.total)}</span></div>
-        ${(inv.payments || []).length
-          ? (inv.payments || []).map((p) => {
-              const when = p.at ? esc(fmtShortDate(p.at)) : '';
-              const method = p.type === 'cash' ? 'Cash'
-                : p.type === 'check' ? ('Check' + (p.checkNum ? ' #' + esc(String(p.checkNum)) : ''))
-                : p.type === 'ach-pending' ? 'ACH (pending)'
-                : p.type === 'charge' ? 'Card'
-                : esc(String(p.type || 'Payment'));
-              return `<div><span>Paid${when ? ' · ' + when : ''} · ${method}</span><span>${money2((Number(p.amountCents) || 0) / 100)}</span></div>`;
-            }).join('')
-          : (t.paid ? `<div><span>Paid${inv.paymentMethod ? ' · ' + esc(inv.paymentMethod) : ''}</span><span>${money2(t.paid)}</span></div>` : '')}
-        <div class="pr-due"><span>Balance due</span><span>${money2(t.balance)}</span></div>
+      <div class="pr-groups">${groupsHtml}</div>
+      <div class="pr-summary">
+        <div class="pr-cust">
+          ${custPhoto ? `<img class="pr-cust-photo" src="${esc(custPhoto)}" alt="" />` : ''}
+          ${paid ? `<div class="pr-stamp${custPhoto ? ' on-photo' : ''}" aria-hidden="true">Paid in Full</div>` : ''}
+        </div>
+        <div class="pr-tot">
+          <div><span>Grand Subtotal</span><span>${money2(t.subtotal)}</span></div>
+          <div><span>Tax${t.exempt ? ' (exempt)' : ` (${(TAX_RATE * 100).toFixed(2)}%)`}</span><span>${t.exempt ? '—' : money2(t.tax)}</span></div>
+          <div class="pr-big"><span>Total</span><span>${money2(t.total)}</span></div>
+          ${paymentRows}
+          <div class="pr-due"><span>Balance Due</span><span>${money2(t.balance)}</span></div>
+        </div>
       </div>
-      <div class="pr-foot">Thank you for your business — much obliged. Questions on this ticket? Give the yard a holler.</div>
+      <div class="pr-logs">
+        ${logCol('Invoice Log', invoiceLog, false)}
+        ${logCol('Rental Log', rentalLog, true)}
+      </div>
     </div>`;
   document.body.classList.add('printing');
   const cleanup = () => { document.body.classList.remove('printing'); window.removeEventListener('afterprint', cleanup); };
@@ -16308,32 +17264,97 @@ function invoiceQuoteSummary(inv) {
     'Thank you for your business — much obliged.',
   ].join('\n');
 }
-// Open the device's mail client pre-filled to the customer with the quote inlined, then
-// stamp a timestamped "Emailed" note on the invoice history (logAction → §R13).
-function sendInvoiceEmail(invoiceId) {
+// Email a quote — SERVER send through the comms pipe (spec D6), with the D7 FROM picker:
+// when the shop has more than one connected address (send-as aliases, enumerated server-
+// side), the operator picks which one it goes out as; the server validates the choice.
+// Demo/#local (no backend password) keeps the old mailto: deep-link.
+let _commsAliases = null;   // fetched once per session; server-authoritative
+async function commsAliasList() {
+  if (_commsAliases) return _commsAliases;
+  try { const r = await backendCall('commsAliases'); if (r && r.ok && Array.isArray(r.aliases) && r.aliases.length) _commsAliases = r.aliases; } catch (e) {}
+  return _commsAliases || [];
+}
+async function emailQuoteSend(invoiceId, from) {
+  const inv = IDX.invoice.get(invoiceId); if (!inv) return;
+  toast('Sending email…');
+  let r; try { r = await backendCall('sendCustomerMessage', { channel: 'email', entity: 'invoice', recId: inv.invoiceId, customerId: inv.customerId, template: 'quote', from: from || '' }); }
+  catch (e) { r = { ok: false, reason: 'network' }; }
+  if (r && r.ok) {
+    logAction(inv, `Emailed quote to ${r.maskedTo || 'customer'}${r.fromUsed ? ` (from ${r.fromUsed})` : ''}`);
+    render();
+    toast(`Quote emailed to ${r.maskedTo || 'the customer'}.`);
+    return;
+  }
+  const why = {
+    'no-email': 'No email on file — add one on the account.',
+    'opted-out': 'This customer has opted out of email — hard stop.',
+    'cap': 'Daily send cap reached — raise SMS_DAILY_CAP if this run is legit.',
+    'isolation': 'Record/customer mismatch — reload and try again.',
+    'provider': 'The mail send failed server-side — if this is the first email ever, the backend still needs its one-time Gmail permission (editor → Run → authorize).',
+    'network': 'Couldn’t reach the backend — try again.',
+  }[r && r.reason] || 'Email didn’t send — try again.';
+  toast(why);
+}
+async function sendInvoiceEmail(invoiceId, anchorEl) {
   const inv = IDX.invoice.get(invoiceId); if (!inv) return;
   const cust = inv.customerId ? IDX.customer.get(inv.customerId) : null;
   if (!cust || !cust.email) { toast('No email on file for this customer.'); return; }   // guard — button is disabled, this is belt-and-suspenders
-  const subject = `Quote from ${companyName()} – ${inv.invoiceId}`;
-  window.location.href = `mailto:${encodeURIComponent(cust.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(invoiceQuoteSummary(inv))}`;
-  logAction(inv, `Emailed quote to ${cust.email}`);
-  render();
-  toast(`Opening email to ${cust.email}…`);
+  if (!backendPassword) {   // demo/offline — the pre-pipe mailto path, unchanged
+    const subject = `Quote from ${companyName()} – ${inv.invoiceId}`;
+    window.location.href = `mailto:${encodeURIComponent(cust.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(invoiceQuoteSummary(inv))}`;
+    logAction(inv, `Emailed quote to ${cust.email}`);
+    render();
+    toast(`Opening email to ${cust.email}…`);
+    return;
+  }
+  const aliases = await commsAliasList();
+  if (aliases.length > 1 && anchorEl && document.contains(anchorEl)) {   // D7 — pick which connected address it goes out as
+    const html = aliases.map((a) => `<button class="dd-item js-email-from-pick" data-rec="${esc(invoiceId)}" data-from="${esc(a)}">${esc(a)}</button>`).join('');
+    openDropdown(anchorEl, html, { align: 'left' });
+    return;
+  }
+  return emailQuoteSend(invoiceId, aliases[0] || '');
 }
-// Open the device's SMS app pre-filled to the customer, then stamp a "Texted" note.
-function sendInvoiceText(invoiceId) {
+// Text a quote — SERVER send via the comms pipe (spec comms D1/D2: sendCustomerMessage →
+// Mocean adapter; recipient/body/gates all resolved server-side — the client passes only
+// ids + a template name, never a `to` or a body). Demo/#local mode (no backend password)
+// keeps the old device deep-link so offline demos still work.
+async function sendInvoiceText(invoiceId) {
   const inv = IDX.invoice.get(invoiceId); if (!inv) return;
   const cust = inv.customerId ? IDX.customer.get(inv.customerId) : null;
   if (!cust || !cust.phone) { toast('No phone on file for this customer.'); return; }
-  const t = invoiceTotals(inv);
-  const first = cust.firstName || (cust.name || '').trim().split(/\s+/)[0] || 'there';
-  const yard = companyPhone();
-  const msg = `Hi ${first}, your quote from ${companyName()} is ready – ${money2(t.total)} – reply or call us${yard ? ' at ' + yard : ''}.`;
-  const tel = String(cust.phone).replace(/[^0-9+]/g, '');
-  window.location.href = `sms:${tel}?&body=${encodeURIComponent(msg)}`;   // `?&body=` is the cross-platform (iOS + Android) separator
-  logAction(inv, `Texted quote to ${cust.phone}`);
-  render();
-  toast(`Opening text to ${cust.phone}…`);
+  if (!backendPassword) {   // demo/offline — the pre-pipe deep-link path, unchanged
+    const t = invoiceTotals(inv);
+    const first = cust.firstName || (cust.name || '').trim().split(/\s+/)[0] || 'there';
+    const yard = companyPhone();
+    const msg = `Hi ${first}, your quote from ${companyName()} is ready – ${money2(t.total)} – reply or call us${yard ? ' at ' + yard : ''}.`;
+    const tel = String(cust.phone).replace(/[^0-9+]/g, '');
+    window.location.href = `sms:${tel}?&body=${encodeURIComponent(msg)}`;   // `?&body=` is the cross-platform (iOS + Android) separator
+    logAction(inv, `Texted quote to ${cust.phone}`);
+    render();
+    toast(`Opening text to ${cust.phone}…`);
+    return;
+  }
+  toast('Sending text…');
+  let r; try { r = await backendCall('sendCustomerMessage', { entity: 'invoice', recId: inv.invoiceId, customerId: inv.customerId, template: 'quote' }); }
+  catch (e) { r = { ok: false, reason: 'network' }; }
+  if (r && r.ok) {
+    logAction(inv, `SMS quote sent to ${r.maskedTo || 'customer'}`);
+    render();
+    toast(`Quote texted to ${r.maskedTo || 'the customer'}.`);
+    return;
+  }
+  const why = {   // server refusal → say what's wrong and where to fix it (R19 voice)
+    'no-phone': 'No phone on file — add one on the account.',
+    'opted-out': 'This customer has opted out of texts — hard stop.',
+    'not-configured': 'SMS isn’t wired yet — Mocean keys go in the backend Script Properties.',
+    'cap': 'Daily text cap reached — raise SMS_DAILY_CAP if this run is legit.',
+    'quiet-hours': 'Quiet hours (8pm–8am) — the message can go out in the morning.',
+    'isolation': 'Record/customer mismatch — reload and try again.',
+    'provider': 'Mocean rejected the send — check the number and Mocean balance.',
+    'network': 'Couldn’t reach the backend — try again.',
+  }[r && r.reason] || 'Text didn’t send — try again.';
+  toast(why);
 }
 // Lock (seal pricing) or unlock an invoice via the backend (Office/Admin).
 async function lockInvoiceFlow(invoiceId, lock) {
@@ -16358,7 +17379,7 @@ function startNewInspection(unitId) {
   const draft = { inspectionId: id, unitId: u.unitId, date: TODAY_ISO, wash: '', checklist: '', billCustomer: 'No', customerId: null, woId: null, photo: '', description: '', mock: true };
   DATA.inspections.push(draft); IDX.insp.set(id, draft); reindex('inspections', draft);
   logAction(draft, 'Inspection created');
-  anchorRecord('shop', id, 'inspections');
+  anchorRecord('units', u.unitId);   // Shop retirement: the unit detail's Inspection section drives the flow
   toast(`New inspection for ${u.name} — run Wash → Checklist.`);
 }
 function startNewWorkOrder(unitId) {
@@ -16486,6 +17507,10 @@ function logAction(rec, text) { if (!rec) return; rec.actions = rec.actions || [
 // Humanize a field key + format a value for an audit line ("Phone: (337)… → (337)…").
 const humanizeField = (f) => ({ po: 'PO', eta: 'ETA', 'insurance.policyRef': 'Policy #', 'insurance.effective': 'Coverage effective', 'insurance.expires': 'Coverage expires', 'insurance.insuredValue': 'Insured value', 'insurance.premium': 'Premium', accountNotes: 'Notes', assignedMechanic: 'Mechanic', gpsType: 'GPS type', gpsPlacement: 'GPS placement', purchasePrice: 'Purchase price', purchaseDate: 'Purchase date', trueCost: 'True cost', purchaseHours: 'Hours at purchase', currentHours: 'Hours', startHours: 'Start hours', returnHours: 'Return hours', rentalName: 'Name', woReport: 'Report', firstName: 'First name', lastName: 'Last name' }[f] || (f.charAt(0).toUpperCase() + f.slice(1).replace(/([A-Z])/g, ' $1')));
 const auditVal = (v) => { const s = String(v ?? '').trim(); return s ? (s.length > 28 ? s.slice(0, 28) + '…' : s) : '(empty)'; };
+/* Margin gate (units-fleet, Jac 2026-07-08): non-money roles never see dollar
+   amounts in the History/audit log — a client-side DISPLAY redaction only (the raw
+   action text still stores & syncs), same philosophy as the D1 bottomDollar gate. */
+function histText(t) { return canMoney() ? String(t) : String(t).replace(/\$\d[\d,]*(?:\.\d{1,2})?/g, '$•••'); }
 
 /* §12.6 — WO phase changes (header pill + per-line journey pills) via a woPhase
    dropdown; reaching Complete reverts a Failed unit to Not Ready (§9). */
@@ -16758,7 +17783,7 @@ function winPickerEl(r) {
 }
 
 /* ════════════════════════════════════════════════════════════════════════
-   APP-36 · §5.4d — DATE SEARCH PICKER. A standalone calendar that REUSES the rental
+   APP-35 · §5.4d — DATE SEARCH PICKER. A standalone calendar that REUSES the rental
    window-picker's look (.winpicker/.wp-*) but none of its rental/availability
    coupling. Type "date"/"dates"→Enter (or click a date chip) to open; tap one
    day or two to set a range; Done pins a `__date` filter term on the scope.
@@ -16876,7 +17901,9 @@ function recordServiceCompletion(unitId, taskId, hours, date, note, photo) {
   u.serviceLog = u.serviceLog || [];
   u.serviceLog.push({ taskId, hours: Number(hours) || 0, date: when, note: note || '', photo: photo || '' });
   if (taskId === 'svc-wash') u.washRequested = false;   // a logged wash clears the request + resets the 100-HR countdown
-  const tn = UNIT_SVC_TASKS.find((x) => x.taskId === taskId);
+  if (u.serviceSnoozes && u.serviceSnoozes[taskId]) delete u.serviceSnoozes[taskId];   // completing wakes the alarm (backlog #43)
+  // name from the unit's REAL schedule first (per-model tasks aren't in the generic list)
+  const tn = unitServiceRows(u).find((x) => x.taskId === taskId) || UNIT_SVC_TASKS.find((x) => x.taskId === taskId);
   logAction(u, `Serviced: ${tn?.name || taskId} @ ${num(hours)} HRS (${fmtShortDate(when)})`);
   toast(taskId === 'svc-wash' ? 'Wash logged — countdown reset.' : 'Service completed — countdown reset.');
   state.overlay = null;
@@ -17181,10 +18208,11 @@ function mergeInvoiceInto(keepId, absorbId) {
   if (!invoiceMergeable(src)) { toast(`Blocked: invoice ${invoiceShort(absorbId)} has a payment or lock — refund/unlock it before merging.`); return; }
   if (keep.customerId !== src.customerId) { toast('Blocked: those invoices belong to different customers.'); return; }
   // move every line over, re-minting lids so allocations can never collide on the keeper.
-  // Each moved line is stamped with its ORIGIN invoice (spec collections D3, Jac 2026-06-29) so a
-  // merged invoice stays auditable back to every source — the prerequisite for placing a merged
-  // debt stack with a collections agency. An existing originInvoiceId (a re-merge) is preserved.
-  const moved = (src.lineItems || []).map((li) => Object.assign({}, li, { lid: lineLid(), originInvoiceId: li.originInvoiceId || absorbId }));
+  // Stamp the absorbed invoice id as `fromInv` (kept if a line was already merged once, so
+  // the earliest source sticks) — the print doc reads it for the "Merged from" group stamp;
+  // also the provenance field spec collections D3 (Jac 2026-06-29) needs for a future merged
+  // debt-stack audit trail back to every source invoice.
+  const moved = (src.lineItems || []).map((li) => Object.assign({}, li, { lid: lineLid(), fromInv: li.fromInv || absorbId }));
   moved.forEach((li) => keep.lineItems.push(li));
   // union rentalIds + relink the absorbed invoice's rentals to the keeper (§7.5: one invoice per rental)
   (src.rentalIds || []).forEach((rid) => {
@@ -17208,16 +18236,16 @@ function mergeInvoiceInto(keepId, absorbId) {
 }
 
 /* ════════════════════════════════════════════════════════════════════════
-   APP-37 · §18 PERSISTENCE & BOOT
+   APP-36 · §18 PERSISTENCE & BOOT
    ════════════════════════════════════════════════════════════════════════ */
 /* ════════════════════════════════════════════════════════════════════════
-   APP-38 · §18b BACKEND SYNC — Google Sheets via the Apps Script web app
+   APP-37 · §18b BACKEND SYNC — Google Sheets via the Apps Script web app
    ════════════════════════════════════════════════════════════════════════
    The app loads its data from the Sheet on sign-in, seeds the Sheet from the
    demo data on first run, and auto-saves (debounced) after every change.
    Single shared password (sent with every call; the URL alone is useless). */
 const BACKEND_URL = 'https://script.google.com/macros/s/AKfycbzHahzgJqOYe9o4GKlRVGh-A7USRn1k4Dvyy4ajLh8EYCqVxofouM28qs8trNlObZw/exec';
-const PERSIST_KEYS = ['categories', 'units', 'customers', 'invoices', 'rentals', 'workOrders', 'inspections', 'vendors', 'parts', 'companyFiles', 'expenses'];
+const PERSIST_KEYS = ['categories', 'units', 'customers', 'invoices', 'rentals', 'workOrders', 'inspections', 'vendors', 'parts', 'companyFiles', 'expenses', 'models'];
 let backendPassword = sessionStorage.getItem('jactec.pw') || '';
 let booting = true;                       // suppresses saves during initial load
 let saveTimer = null, saving = false, savePending = false;
@@ -17242,6 +18270,578 @@ async function backendCall(action, extra) {
   if (!res.ok && body && body.ok === undefined) body = { ok: false, error: 'http-' + res.status };
   return body;
 }
+
+/* ── GPS BACKEND CLIENT (WranglerGPS integration · spec docs/superpowers/specs/
+   2026-07-07-wrangler-gps-integration-design.md) ───────────────────────────────
+   Talks DIRECTLY to our own redeploy of the forked WranglerGPS telematics service
+   (GPS_BACKEND_URL — Node/Express + Postgres on Railway), NOT through the Apps
+   Script backend above: live location + ignition need real-time round-trips, and
+   proxying them through GAS would add latency and burn its URL-fetch quota (spec §4).
+   Separate service, separate auth (team password → x-auth-token, cached in memory).
+   Every call degrades gracefully — a GPS outage must never break the rest of the
+   app; the unit card still renders, just without live telemetry.
+
+   The four-provider fleet merge MIRRORS the fork's frontend hooks/useFleet.js so the
+   normalized machine shape stays identical to that already-debugged code — canonical
+   shape in docs/handoffs/wrangler-gps-backend-handoff.md §1. This is a sub-section of
+   the BACKEND SYNC chapter (backend I/O), not its own APP-NN chapter. */
+let gpsToken = '';                                        // in-memory session token; never persisted
+const gpsBase = () => (GPS_BACKEND_URL || '').replace(/\/$/, '');
+const gpsConfigured = () => !!gpsBase();
+
+/* One authed round-trip to the GPS backend. JSON in/out, 30s timeout (reuses
+   withTimeout). Throws a tagged Error on non-2xx (callers decide how to degrade);
+   never returns a failure disguised as success. */
+async function gpsFetch(path, opts = {}) {
+  if (!gpsConfigured()) throw new Error('gps-not-configured');
+  const headers = Object.assign({ 'x-auth-token': gpsToken }, opts.headers || {});
+  if (opts.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
+  const res = await withTimeout(fetch(gpsBase() + path, Object.assign({}, opts, { headers })), 30000, 'GPS backend');
+  const text = await res.text();
+  let body = null; try { body = JSON.parse(text); } catch {}
+  if (!res.ok) { const e = new Error('gps-http-' + res.status); e.status = res.status; e.body = body; throw e; }
+  return body;
+}
+
+/* Silent login on Rental Wrangler sign-in — same team password, token cached for the
+   session. Best-effort + never throws: a GPS-login failure must NOT block main login. */
+async function gpsLogin(pw) {
+  gpsToken = '';
+  try {
+    if (!gpsConfigured()) return false;
+    const res = await withTimeout(
+      fetch(gpsBase() + '/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: pw }) }),
+      15000, 'GPS login');
+    const b = await res.json().catch(() => null);
+    if (res.ok && b && b.token) { gpsToken = b.token; return true; }
+  } catch (e) { logErr('gps', 'login: ' + ((e && e.message) || e)); }
+  return false;
+}
+
+/* Hapn responses arrive in a few possible envelopes — same defensive unwrap useFleet
+   uses so a shape tweak upstream doesn't silently empty the fleet. */
+function gpsUnwrap(d) {
+  if (Array.isArray(d)) return d;
+  return (d && (d.result?.items || d.items || d.devices)) || [];
+}
+
+/* Normalize one provider's raw record into the canonical machine shape (useFleet.js
+   §1). `extra` carries cross-call context (Hapn's status row + starter states). */
+function gpsNormalize(source, raw, extra = {}) {
+  if (source === 'hapn') {
+    const st = extra.status || {};
+    const lat = st.latitude ?? st.lat ?? null, lng = st.longitude ?? st.lng ?? null;
+    const speed = parseFloat(st.speed ?? 0) || 0;
+    const ap = raw.assetProfile || {};
+    return {
+      id: String(raw.imei || raw.id), source: 'hapn', imei: raw.imei ? String(raw.imei) : null,
+      name: String(raw.name || raw.imei || 'Unknown'),
+      make: ap.make ? String(ap.make) : null,
+      model: ap.model ? String(ap.model) : (raw.model?.name ? String(raw.model.name) : null),
+      lat: lat != null ? parseFloat(lat) : null, lng: lng != null ? parseFloat(lng) : null,
+      speed, moving: speed > 0, engineOn: st.reportType !== '0' && !!st.sendTime,
+      lastSeen: st.sendTime ?? st.timestamp ?? raw.modified ?? null,
+      engineHours: st.hoursOfOperation ? parseFloat(st.hoursOfOperation) : null,
+      address: st.address ? String(st.address) : null,
+      battery: st.externalVoltage ?? st.battery ?? null,
+      starterEnabled: (extra.starterStates && raw.imei in extra.starterStates) ? extra.starterStates[raw.imei] : true,
+    };
+  }
+  if (source === 'deere') {
+    return {
+      id: String(raw.id || raw.principalId), source: 'deere', principalId: String(raw.principalId),
+      imei: null, name: String(raw.name || raw.serialNumber || 'JD Machine'),
+      make: raw.make ?? null, model: raw.model ?? null,
+      lat: raw.location?.lat ?? null, lng: raw.location?.lon ?? null,
+      speed: null, moving: false, engineOn: raw.engineState === 1,
+      lastSeen: raw.lastContact ?? null, engineHours: raw.engineHours ?? null,
+      battery: raw.batteryVoltage ?? null, address: null,
+    };
+  }
+  if (source === 'yanmar') {
+    return {
+      id: String(raw.id), source: 'yanmar', contractId: raw.contractId != null ? String(raw.contractId) : null,
+      imei: null, name: raw.name || 'Yanmar Machine', make: 'YANMAR', model: raw.model || null,
+      lat: raw.lat ?? null, lng: raw.lng ?? null, speed: null, moving: false,
+      engineOn: raw.engineOn ?? false, lastSeen: raw.lastSeen ?? null,
+      engineHours: raw.engineHours ?? null, address: raw.address ?? null,
+    };
+  }
+  if (source === 'bouncie') {
+    const stats = raw.stats || {}, loc = stats.location || {};
+    return {
+      id: String(raw.imei), source: 'bouncie', imei: String(raw.imei),
+      name: raw.nickName || `${raw.model?.year || ''} ${raw.model?.make || ''} ${raw.model?.name || ''}`.trim() || 'Vehicle',
+      make: raw.model?.make ?? null, model: raw.model?.name ?? null,
+      lat: loc.lat ?? null, lng: loc.lon ?? null, speed: stats.speed ?? null,
+      moving: (stats.speed ?? 0) > 0, engineOn: stats.isRunning ?? false,
+      lastSeen: stats.lastUpdated ?? null, engineHours: null, address: loc.address ?? null,
+      mil: stats.mil ?? null, odometer: stats.odometer ?? null, fuelLevel: stats.fuelLevel ?? null,
+    };
+  }
+  return null;
+}
+
+/* Full four-provider fleet snapshot, merged client-side (mirrors useFleet.js).
+   Partial-failure tolerant via allSettled — one provider down still returns the rest.
+   Returns a flat array of normalized machines; callers key by id/imei to drive the
+   real gpsStatus pill (spec §5). Deere/Yanmar/Bouncie machine lists are only fetched
+   when their status reports `authenticated` (matches useFleet's two-phase pattern). */
+async function gpsFleetStatus() {
+  const [devicesR, statusR, deereR, starterR, yanmarR, bouncieR] = await Promise.allSettled([
+    gpsFetch('/api/hapn/devices'),
+    gpsFetch('/api/hapn/fleet-status'),
+    gpsFetch('/api/deere/status'),
+    gpsFetch('/api/hapn/starter-status'),
+    gpsFetch('/api/yanmar/status'),
+    gpsFetch('/api/bouncie/status'),
+  ]);
+  const val = (r) => (r.status === 'fulfilled' ? r.value : null);
+  const out = [];
+
+  // Hapn
+  const starterStates = val(starterR)?.result?.states || {};
+  const statusMap = {};
+  gpsUnwrap(val(statusR)).forEach((s) => { if (s?.imei) statusMap[s.imei] = s; });
+  gpsUnwrap(val(devicesR)).forEach((d) => out.push(gpsNormalize('hapn', d, { status: statusMap[d.imei] || {}, starterStates })));
+
+  // Deere / Yanmar / Bouncie — only when authenticated (second-phase machine lists)
+  const phase2 = [];
+  if (val(deereR)?.authenticated)  phase2.push(gpsFetch('/api/deere/machines').then((d) => (d?.values || []).map((m) => gpsNormalize('deere', m))).catch(() => []));
+  if (val(yanmarR)?.authenticated) phase2.push(gpsFetch('/api/yanmar/machines').then((d) => (d?.machines || []).map((m) => gpsNormalize('yanmar', m))).catch(() => []));
+  if (val(bouncieR)?.authenticated) phase2.push(gpsFetch('/api/bouncie/vehicles').then((d) => (d?.vehicles || []).map((m) => gpsNormalize('bouncie', m))).catch(() => []));
+  (await Promise.all(phase2)).forEach((list) => list.forEach((m) => m && out.push(m)));
+
+  return out.filter(Boolean);
+}
+
+/* Live detail for ONE mapped device (the enriched GPS section, on popup open, spec §5).
+   Hapn has a direct per-device status endpoint; the others come from their machine
+   list filtered to the mapped id. Returns a normalized machine or null. */
+async function gpsUnitStatus(provider, deviceId) {
+  const p = String(provider || '').toLowerCase(); const key = String(deviceId || '');
+  if (!p || !key) return null;
+  if (p === 'hapn') {
+    const [devR, stR, starterR] = await Promise.allSettled([
+      gpsFetch(`/api/hapn/device/${encodeURIComponent(key)}/status`),
+      gpsFetch('/api/hapn/fleet-status'),
+      gpsFetch('/api/hapn/starter-status'),
+    ]);
+    const dev = (devR.status === 'fulfilled' && devR.value) ? devR.value : { imei: key };
+    const status = gpsUnwrap(stR.status === 'fulfilled' ? stR.value : null).find((s) => s?.imei === key) || (devR.status === 'fulfilled' ? devR.value : {}) || {};
+    const starterStates = (starterR.status === 'fulfilled' ? starterR.value : null)?.result?.states || {};
+    return gpsNormalize('hapn', dev.imei ? dev : { imei: key }, { status, starterStates });
+  }
+  const list = await gpsProviderDevices(p).catch(() => []);
+  const match = list.find((m) => String(m.id ?? m.principalId ?? m.contractId ?? m.imei) === key);
+  return match ? gpsNormalize(p, match) : null;
+}
+
+/* Provider machine/vehicle lists — powers the connect-wizard picker (spec §5a step 2)
+   for Deere/Yanmar/Bouncie, and gpsUnitStatus above. Raw provider records (the wizard
+   presents id + name for the operator to pick). */
+async function gpsProviderDevices(provider) {
+  switch (String(provider || '').toLowerCase()) {
+    case 'hapn':    return gpsUnwrap(await gpsFetch('/api/hapn/devices'));
+    case 'deere':   return (await gpsFetch('/api/deere/machines'))?.values || [];
+    case 'yanmar':  return (await gpsFetch('/api/yanmar/machines'))?.machines || [];
+    case 'bouncie': return (await gpsFetch('/api/bouncie/vehicles'))?.vehicles || [];
+    default: return [];
+  }
+}
+
+/* ── CONNECT-A-DEVICE WIZARD (spec §5a) — the gpsConnect popup's control layer.
+   The popup markup lives in buildPopupEl (o.kind === 'gpsConnect'); the pieces below
+   are the async/stateful bits a pure render function can't own: loading a provider's
+   device list, running the live first-contact poll, and the confirmed write to the
+   unit. Every async step re-checks `state.overlay === o` before touching it or
+   scheduling more work, so a closed/switched popup can never keep ticking. */
+const GPS_PROVIDERS = ['Hapn', 'Deere', 'Yanmar', 'Bouncie'];
+let _gpsPollTimer = null;   // module-level so closeOverlay/back-nav can always cancel it
+
+/* Pull an id/label/sub-line out of ONE provider's raw record shape (§5a step 2 — Hapn:
+   .imei/.name · Deere: .principalId/.name/.serialNumber · Yanmar: .id/.name · Bouncie:
+   .imei/.nickName/.model). Kept separate from gpsNormalize (which needs a live status
+   call too) so the picker list renders instantly off the device list alone. */
+function gpsRawDeviceId(provider, raw) {
+  switch (provider) {
+    case 'Deere':   return String(raw.principalId ?? raw.id ?? '');
+    case 'Yanmar':  return String(raw.id ?? '');
+    case 'Bouncie': return String(raw.imei ?? '');
+    default:        return String(raw.imei ?? raw.id ?? '');   // Hapn
+  }
+}
+function gpsRawDeviceLabel(provider, raw) {
+  switch (provider) {
+    case 'Deere':   return raw.name || raw.serialNumber || 'JD Machine';
+    case 'Yanmar':  return raw.name || 'Yanmar Machine';
+    case 'Bouncie': return raw.nickName || raw.model || 'Vehicle';
+    default:        return raw.name || raw.imei || 'Unnamed tracker';   // Hapn
+  }
+}
+function gpsRawDeviceSub(provider, raw) {
+  switch (provider) {
+    case 'Deere':   return raw.serialNumber ? `S/N ${raw.serialNumber}` : '';
+    case 'Bouncie': return raw.model ? String(raw.model) : '';
+    case 'Hapn':    return raw.imei ? `IMEI ${raw.imei}` : '';
+    default:        return '';
+  }
+}
+/* Load the searchable picker list for Deere/Yanmar/Bouncie (§5a step 2). Fire-and-
+   forget from the click handler that advances into the identify step; guards every
+   write behind `state.overlay === o` so a Back/close mid-flight can't stomp a newer
+   popup state. */
+async function gpsConnectLoadDevices(o) {
+  o.devicesLoading = true; o.devicesError = ''; o.devices = null; renderOverlay();
+  let list = [];
+  try { list = await gpsProviderDevices(String(o.provider || '').toLowerCase()); }
+  catch (e) {
+    if (state.overlay !== o) return;
+    o.devicesLoading = false; o.devicesError = 'Couldn’t reach the GPS backend — check the connection and try again.';
+    return renderOverlay();
+  }
+  if (state.overlay !== o) return;
+  o.devicesLoading = false; o.devices = Array.isArray(list) ? list : [];
+  renderOverlay();
+}
+/* Start (or restart) the live first-contact poll (§5a step 3): every 3s, up to
+   o.pollMax attempts. States: waiting → seen (first contact) → reporting (a SECOND
+   consecutive contacted poll — avoids confirming on a single flaky ping) → timeout
+   (cap hit, never confirmed twice). Always terminates — never a silent hang. */
+function gpsConnectStartPoll(o) {
+  clearTimeout(_gpsPollTimer);
+  o.pollState = 'waiting'; o.pollAttempt = 0; o.pollMachine = null; o.pollError = '';
+  renderOverlay();
+  gpsConnectPollTick(o);
+}
+async function gpsConnectPollTick(o) {
+  if (state.overlay !== o || o.step !== 'poll') return;   // popup closed/backed-out — self-cancel
+  o.pollAttempt += 1;
+  let machine = null;
+  try { machine = await gpsUnitStatus(String(o.provider || '').toLowerCase(), o.deviceId); }
+  catch (e) { o.pollError = (e && e.message) || 'gps-error'; }
+  if (state.overlay !== o || o.step !== 'poll') return;   // changed while the call was in flight
+  const contacted = !!(machine && (machine.lastSeen != null || (machine.lat != null && machine.lng != null)));
+  const wasSeen = o.pollState === 'seen';
+  o.pollMachine = machine;
+  if (contacted && wasSeen) { o.pollState = 'reporting'; return renderOverlay(); }   // 2nd consecutive contact — confirmed
+  if (o.pollAttempt >= o.pollMax) { o.pollState = 'timeout'; return renderOverlay(); }   // cap hit, never confirmed
+  o.pollState = contacted ? 'seen' : 'waiting';
+  renderOverlay();
+  _gpsPollTimer = setTimeout(() => gpsConnectPollTick(o), 3000);
+}
+/* Write gpsProvider/gpsDeviceId to the unit — ONLY on confirmed contact (pollState
+   'reporting') or an explicit "Save anyway" override (§5a step 4). */
+function gpsConnectSave(anyway) {
+  const o = state.overlay; if (!o || o.kind !== 'gpsConnect') return;
+  if (o.pollState !== 'reporting' && !anyway) return;
+  const u = IDX.unit.get(o.unitId); if (!u) return closeOverlay();
+  u.gpsProvider = o.provider; u.gpsDeviceId = o.deviceId;
+  reindex('units', u);
+  logAction(u, `GPS → ${o.provider} · ${o.deviceId}${o.pollState === 'reporting' ? ' (confirmed reporting)' : ' (saved without confirmed contact)'}`);
+  clearTimeout(_gpsPollTimer);
+  closeOverlay();
+  toast(o.pollState === 'reporting' ? `GPS connected — ${u.name} is reporting. ✓` : `GPS mapped — ${u.name} saved without confirmed signal yet.`);
+}
+
+/* Hapn starter-interrupt (the remote-shutdown relay, spec §6/§7). Cuts the STARTER so
+   the engine can't be RE-STARTED — it does NOT kill a running engine. Polarity matches
+   the original app (LiveTracking.jsx): `enabled:false` CUTS the starter (immobilize);
+   `enabled:true` RESTORES it. `by` = the acting role, recorded in the audit trail.
+   Hapn-only; the backend logs every attempt server-side (device_events, plan A3c). */
+async function gpsStarterInterrupt(imei, enabled, by) {
+  return gpsFetch(`/api/hapn/device/${encodeURIComponent(imei)}/starter-interrupt`, {
+    method: 'POST', body: JSON.stringify({ enabled: !!enabled, by: by || undefined }),
+  });
+}
+
+/* GPS status & alert history feed source (spec §6a). Reads the per-device event log
+   (plan A3c — the device_events table + route). Until A3c ships on the backend this
+   throws gps-http-404; callers render an empty/"history unavailable" state. */
+async function gpsDeviceEvents(source, key) {
+  return gpsFetch(`/api/device/${encodeURIComponent(source)}/${encodeURIComponent(key)}/events`);
+}
+
+/* ── LIVE gpsStatus (spec §5 step 3) ──────────────────────────────────────────
+   One fleet snapshot per app load (refreshGpsLive) → an in-memory map keyed by every
+   provider id type. `unitGpsStatus(u)` derives the DISPLAYED status from it (freshness
+   of the tracker's last ping), falling back to the STORED u.gpsStatus only when the
+   backend never answered — never presenting stale data as live without saying so.
+   No telemetry is copied into Sheets (spec §4): this map is memory-only, per session.
+   Thresholds are tracker-health, not machine-usage — a healthy tracker still sends
+   position pings (Hapn GTFRI) with the engine off, so a long silence = the tracker,
+   not the machine, is dark. Tunable. */
+const GPS_FRESH_MS = 6 * 3600 * 1000;    // last ping < 6h  → Reporting
+const GPS_STALE_MS = 72 * 3600 * 1000;   // < 72h → Verify; older/none → Not Reporting
+let gpsLive = null;      // Map(deviceKey → normalized machine) from the last good snapshot
+let gpsLiveAt = 0;       // ms of the last SUCCESSFUL snapshot (0 = never fetched)
+let gpsLiveErr = false;  // most recent refresh failed (we keep the last good map)
+
+async function refreshGpsLive() {
+  if (!gpsConfigured()) return;
+  let list;
+  try { list = await gpsFleetStatus(); }
+  catch (e) { gpsLiveErr = true; logErr('gps', 'fleet-status: ' + ((e && e.message) || e)); return; }
+  const map = new Map();
+  for (const m of (list || [])) {
+    if (!m) continue;
+    for (const k of [m.id, m.imei, m.principalId, m.contractId]) if (k != null) map.set(String(k), m);
+  }
+  gpsLive = map; gpsLiveAt = Date.now(); gpsLiveErr = false;
+  if (!booting) render();   // live data landed → refresh the pills
+}
+
+/** The live machine for a mapped unit, or null. */
+function unitGpsLiveMachine(u) {
+  if (!gpsLive || !u.gpsDeviceId) return null;
+  return gpsLive.get(String(u.gpsDeviceId)) || null;
+}
+/** Displayed GPS status: { status, live, asOf, mapped, machine? } or null (untracked).
+ *  live=true → derived from the fleet snapshot; live=false → stored-field fallback. */
+function unitGpsStatus(u) {
+  const mapped = !!(u.gpsProvider && u.gpsDeviceId);
+  if (mapped && gpsLiveAt > 0) {
+    const m = unitGpsLiveMachine(u);
+    if (!m) return { status: 'Not Reporting', live: true, asOf: gpsLiveAt, mapped: true };   // tracker absent from the snapshot
+    const t = m.lastSeen ? new Date(m.lastSeen).getTime() : NaN;
+    let status;
+    if (!Number.isNaN(t)) {
+      const age = Date.now() - t;
+      status = age < GPS_FRESH_MS ? 'Reporting' : age < GPS_STALE_MS ? 'Verify' : 'Not Reporting';
+    } else {
+      status = (m.lat != null && m.lng != null) ? 'Verify' : 'Not Reporting';   // seen once, no timestamp
+    }
+    return { status, live: true, asOf: gpsLiveAt, mapped: true, machine: m };
+  }
+  // backend never answered (or the unit isn't mapped) → fall back to the stored field
+  if (u.gpsStatus) return { status: u.gpsStatus, live: false, asOf: gpsLiveAt, mapped };
+  return null;
+}
+
+/* Short relative time for the "last seen" line (§5 step 4). */
+function gpsRelTime(ts) {
+  const t = ts ? new Date(ts).getTime() : NaN;
+  if (Number.isNaN(t)) return '';
+  const s = Math.max(0, Math.round((Date.now() - t) / 1000));
+  if (s < 60) return 'just now';
+  const m = Math.round(s / 60); if (m < 60) return `${m}m ago`;
+  const h = Math.round(m / 60); if (h < 24) return `${h}h ago`;
+  return `${Math.round(h / 24)}d ago`;
+}
+
+/* Live refresh while VIEWING a mapped unit (§5 step 4). One global 30s tick that only
+   hits the backend when a mapped unit is the active tab's anchor — so it's scoped to
+   "you're looking at it," not an always-on fleet poll, and there's no per-popup interval
+   to leak (the tick self-checks). refreshGpsLive is one consolidated call for all four
+   providers, so this stays a single request, not N per-unit polls. */
+let _gpsViewTimer = null;
+function startGpsViewPoll() {
+  clearInterval(_gpsViewTimer);
+  _gpsViewTimer = setInterval(() => {
+    const a = activeSession() && activeSession().anchor;
+    if (!a || a.card !== 'units') return;                 // only while a unit is open
+    const u = IDX.unit.get(a.recId);
+    if (!u || !u.gpsProvider || !u.gpsDeviceId) return;   // ...and it's mapped to a tracker
+    refreshGpsLive();                                     // re-renders when the snapshot lands
+  }, 30000);
+}
+
+/* ── GPS STATUS & ALERT HISTORY FEED (spec §6a) ───────────────────────────────
+   A read-only, chat-feed-styled timeline in a mapped unit's GPS section, fetched
+   from the device_events log (backend plan A3c) lazily on first render and cached
+   per device. Degrades gracefully — until A3c is deployed, gpsDeviceEvents 404s and
+   the feed shows "history unavailable," never an error. Shows shutdown commands (the
+   safety audit) today; provider alerts + status transitions accrue as those writers
+   land. Cache is invalidated after a shutdown command so the audit shows immediately. */
+const _gpsEvents = new Map();   // key `${provider}:${deviceId}` → { state, events, at, error }
+const gpsEventsKey = (u) => `${String(u.gpsProvider || '').toLowerCase()}:${u.gpsDeviceId}`;
+function ensureGpsEvents(u) {
+  if (!u.gpsProvider || !u.gpsDeviceId || !gpsConfigured()) return null;
+  const key = gpsEventsKey(u);
+  const hit = _gpsEvents.get(key);
+  if (hit) return hit;
+  const entry = { state: 'loading', events: [], at: 0, error: '' };
+  _gpsEvents.set(key, entry);
+  gpsDeviceEvents(String(u.gpsProvider).toLowerCase(), u.gpsDeviceId)
+    .then((r) => { entry.state = 'loaded'; entry.events = (r && r.events) || []; entry.at = Date.now(); })
+    .catch((e) => { entry.state = 'error'; entry.error = (e && e.status === 404) ? 'notdeployed' : 'error'; })
+    .finally(() => render());   // async — safe; re-renders once the fetch settles
+  return entry;
+}
+function invalidateGpsEvents(u) { if (u && u.gpsProvider && u.gpsDeviceId) _gpsEvents.delete(gpsEventsKey(u)); }
+
+/* One event → its feed row (icon + text + timestamp, colored by severity). */
+function gpsEventRow(ev) {
+  const d = ev.detail || {};
+  let icon, color, text;
+  if (ev.type === 'shutdown_command') {
+    const failed = d.outcome === 'failed';
+    const immob = d.action === 'immobilize' || d.enabled === false;   // enabled:false = starter cut
+    icon = failed ? I.alert : (immob ? I.lock : I.lockOpen);
+    color = failed ? 'red' : (immob ? 'red' : 'green');
+    text = `${immob ? 'Starter cut — immobilized' : 'Starter restored'}${failed ? ' · FAILED' : ''}${ev.actor ? ` · ${esc(ev.actor)}` : ''}`;
+  } else if (ev.type === 'alert') {
+    icon = I.alert; color = d.severity === 'critical' ? 'red' : 'yellow';
+    text = esc(d.message || d.text || 'Alert');
+  } else {   // status_change
+    const to = d.to || d.status || '';
+    color = (getStatus('gpsStatus', to) || {}).color || 'gray';
+    icon = I.bell; text = `Status → ${esc(to)}`;
+  }
+  return `<div class="gps-feed-row"><span class="gfr-ic c-${color}">${icon}</span><span class="gfr-txt">${text}</span><span class="gfr-ts">${esc(gpsEventTime(ev.at))}</span></div>`;
+}
+function gpsEventTime(at) {
+  const d = at ? new Date(at) : null;
+  if (!d || Number.isNaN(d.getTime())) return '';
+  const hh = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  return `${fmtShortDate(d.toISOString())} · ${fmtClock(hh)}`;
+}
+/* LIVE alert rows merged into the feed from the current fleet snapshot (§6a). Today:
+   Bouncie check-engine (mil/DTCs) — the one provider-alert shape we have cleanly. Hapn
+   `/device/:imei/alerts` + Yanmar `/machine/:id/alerts` live-fetch merge is a follow-up
+   (their response shapes need real samples to normalize safely). */
+function gpsLiveAlertRows(u) {
+  const m = unitGpsLiveMachine(u);
+  if (!m) return [];
+  const rows = [];
+  if (m.source === 'bouncie' && m.mil && m.mil.milOn) {
+    const dtcs = m.mil.qualifiedDtcList || [];
+    const at = m.mil.lastUpdated || null;
+    if (dtcs.length) {
+      dtcs.forEach((d) => {
+        const name = Array.isArray(d.name) ? d.name.join(', ') : (d.name || 'Check engine');
+        rows.push(gpsEventRow({ type: 'alert', at, detail: { severity: 'critical', message: `Check engine · ${d.code || ''} ${name}`.replace(/\s+/g, ' ').trim() } }));
+      });
+    } else {
+      rows.push(gpsEventRow({ type: 'alert', at, detail: { severity: 'critical', message: 'Check engine light on' } }));
+    }
+  }
+  return rows;
+}
+
+/* The whole feed block for a mapped unit's GPS section — live alerts on top of the
+   durable device_events history. */
+function gpsFeedHtml(u) {
+  const e = ensureGpsEvents(u);
+  if (!e) return '';   // unmapped or GPS not configured
+  const head = `<div class="gps-feed-head"><span class="gfh-lbl">GPS History</span>${ghostPill('Refresh', { js: 'js-gps-events-refresh', data: { rec: u.unitId } })}</div>`;
+  const liveRows = gpsLiveAlertRows(u).join('');
+  const evRows = (e.state === 'loaded') ? e.events.map(gpsEventRow).join('') : '';
+  const note = e.state === 'loading' ? 'Reading signal history…'
+    : e.state === 'error' ? (e.error === 'notdeployed' ? 'History not available yet.' : 'Couldn’t load history — try Refresh.')
+      : '';
+  const body = (liveRows || evRows)
+    ? liveRows + evRows + (note ? `<div class="gps-feed-empty">${note}</div>` : '')
+    : `<div class="gps-feed-empty">${note || 'No GPS events yet.'}</div>`;
+  return `<div class="gps-feed-wrap">${head}<div class="gps-feed">${body}</div></div>`;
+}
+
+/* ── REMOTE SHUTDOWN (Hapn starter-interrupt · spec §6/§7) ────────────────────
+   Authority (Jac 2026-07-07): Owner/Admin + Manager + Mechanic/M.Tech ONLY. The
+   control is ABSENT from the DOM for every other role (D5 omit-don't-hide), never
+   merely disabled. IMPORTANT — this is a CLIENT-side gate + a server-side AUDIT (who
+   did it), NOT a server-ENFORCED per-role permission: the GPS backend authenticates
+   one shared team token and can't tell Rental Wrangler roles apart. So it's an
+   accountability control among trusted internal staff, not a boundary against an
+   untrusted actor — a truly enforced gate needs per-role backend auth (follow-up).
+   Immobilize is a two-step ARM → CONFIRM (auto-disarms) so it can't fire by accident;
+   restore is the safe direction, one deliberate tap. */
+const GPS_SHUTDOWN_ROLES = ['owner', 'admin', 'manager', 'mechanic', 'mtech'];
+function canGpsShutdown() { return GPS_SHUTDOWN_ROLES.includes(String(currentRole || '').toLowerCase()); }
+
+let _gpsArmed = null;      // { unitId, deviceId } — the currently ARMED immobilize
+let _gpsArmTimer = null;
+function gpsArmShutdown(unitId, deviceId) {
+  clearTimeout(_gpsArmTimer);
+  _gpsArmed = { unitId, deviceId };
+  render();
+  _gpsArmTimer = setTimeout(() => { _gpsArmed = null; render(); }, 4000);   // auto-disarm after 4s
+}
+function gpsDisarm() { clearTimeout(_gpsArmTimer); _gpsArmed = null; render(); }
+/* enable=false → CUT the starter (immobilize); enable=true → RESTORE. Explicit
+   success/failure toast, no auto-retry; the backend audits both outcomes. */
+async function gpsFireShutdown(unitId, deviceId, enable) {
+  clearTimeout(_gpsArmTimer); _gpsArmed = null;
+  const u = IDX.unit.get(unitId);
+  const nm = u ? u.name : deviceId;
+  try {
+    await gpsStarterInterrupt(deviceId, enable, currentRole || 'operator');
+    toast(enable ? `Starter restored — ${nm} can start.` : `Starter CUT — ${nm} immobilized.`);
+  } catch (e) {
+    toast(`Shutdown command FAILED — no change to ${nm}. (${(e && e.message) || 'error'})`);
+  }
+  if (u) invalidateGpsEvents(u);   // refresh the audit feed (success AND failure were logged)
+  refreshGpsLive();                // pull the new starter state
+  render();
+}
+
+/* The shutdown control for a mapped Hapn unit — Hapn-only + role-gated (absent for
+   others). `machine` = the live machine (for the current starter state), may be null. */
+function gpsShutdownControl(u, machine) {
+  if (u.gpsProvider !== 'Hapn' || !u.gpsDeviceId || !canGpsShutdown()) return '';
+  const dev = esc(u.gpsDeviceId);
+  const immobilized = machine && machine.starterEnabled === false;   // starterEnabled:false = starter cut
+  if (immobilized) {   // safe direction — one deliberate tap
+    return `<div class="kv" style="justify-content:center">${actionPill('commit', 'Restore starter', { js: 'js-gps-restore', data: { rec: u.unitId, dev: u.gpsDeviceId } })}</div>`;
+  }
+  const armed = _gpsArmed && _gpsArmed.unitId === u.unitId;
+  return `<div class="gps-hazard${armed ? ' hot' : ''}">
+    <div class="gh-cap"></div>
+    <div class="gh-row">
+      ${armed
+    ? `${actionPill('danger', 'Confirm — cut starter', { js: 'js-gps-kill-confirm', data: { rec: u.unitId, dev: u.gpsDeviceId } })}${ghostPill('Disarm', { js: 'js-gps-disarm' })}`
+    : actionPill('danger', 'Immobilize', { js: 'js-gps-arm', data: { rec: u.unitId, dev: u.gpsDeviceId } })}
+    </div>
+    <div class="gh-note">${armed ? 'Cuts the starter — the engine can’t be re-started. Auto-disarms.' : 'Owner/Manager/Mechanic only · cuts the starter (not a running engine)'}</div>
+  </div>`;
+}
+
+/* ── FLEET DRIVING SCORE (spec §5 step 7) ─────────────────────────────────────
+   Lights the driver scorecard's stubbed "Driving Score" ring with real Bouncie
+   trip data. It's a FLEET/TEAM metric (like the other two driver rings — delivery
+   rate, wash rate — which are also fleet-wide, not per-individual): telematics is
+   per-truck and Rental Wrangler has no driver↔trip attribution, so a per-DRIVER
+   score isn't honestly computable — a fleet safety score is. 100 = clean driving;
+   we penalize hard-braking + hard-acceleration per 100 mi and a speeding-trip share.
+   Weights are a conservative, TUNABLE v1 (Jac's to adjust). null until loaded / when
+   there are no Bouncie trucks or trips — never a faked number. */
+const DS_PENALTY_PER_100MI = 4;    // each hard event per 100 mi ≈ −4 pts
+const DS_SPEEDING_MPH = 80;        // a trip whose maxSpeed exceeds this counts as speeding
+const DS_SPEEDING_WEIGHT = 20;     // up to −20 pts for an all-speeding record
+const DS_WINDOW_DAYS = 21;         // rolling window of trips to score
+let _drivingScore = null;          // 0–100 fleet score, or null (unknown/unavailable)
+let _drivingScoreAt = 0;
+const drivingScoreValue = () => _drivingScore;
+
+async function refreshDrivingScore() {
+  if (!gpsConfigured()) return;
+  try {
+    const vehicles = await gpsProviderDevices('bouncie').catch(() => []);
+    if (!vehicles.length) { _drivingScore = null; _drivingScoreAt = Date.now(); return; }
+    const sinceISO = new Date(Date.now() - DS_WINDOW_DAYS * 86400000).toISOString();
+    const untilISO = new Date().toISOString();
+    let hard = 0, miles = 0, trips = 0, speeding = 0;
+    for (const v of vehicles) {
+      const imei = v.imei || v.id; if (!imei) continue;
+      let r; try {
+        r = await gpsFetch(`/api/bouncie/vehicle/${encodeURIComponent(imei)}/trips?starts-after=${encodeURIComponent(sinceISO)}&ends-before=${encodeURIComponent(untilISO)}`);
+      } catch { continue; }   // one truck's failure never poisons the fleet score
+      for (const t of ((r && r.trips) || [])) {
+        trips++;
+        hard += (Number(t.hardBrakingCount ?? t.hardBrakingCounts) || 0) + (Number(t.hardAccelerationCount ?? t.hardAccelerationCounts) || 0);
+        miles += Number(t.distance ?? t.tripDistance) || 0;
+        if ((Number(t.maxSpeed) || 0) > DS_SPEEDING_MPH) speeding++;
+      }
+    }
+    if (!trips || miles <= 0) { _drivingScore = null; _drivingScoreAt = Date.now(); return; }   // no data → honest null, not 0
+    const hardPer100 = (hard / miles) * 100;
+    const speedShare = speeding / trips;
+    _drivingScore = Math.max(0, Math.min(100, Math.round(100 - hardPer100 * DS_PENALTY_PER_100MI - speedShare * DS_SPEEDING_WEIGHT)));
+    _drivingScoreAt = Date.now();
+  } catch (e) { logErr('gps', 'driving-score: ' + ((e && e.message) || e)); }
+  if (!booting) render();
+}
+
 const dataSnapshot = () => { const s = {}; PERSIST_KEYS.forEach((k) => { s[k] = DATA[k] || []; }); return s; };
 async function loadFromBackend() {
   const r = await backendCall('load');
@@ -17266,7 +18866,7 @@ async function loadFromBackend() {
 // a snapshot of what the backend last held and, on each flush, send only the
 // records that changed (upserts) or vanished (deletes). A one-field edit becomes
 // a few-hundred-byte, sub-second call.
-const PERSIST_ID = { categories: 'categoryId', units: 'unitId', customers: 'customerId', invoices: 'invoiceId', rentals: 'rentalId', workOrders: 'woId', inspections: 'inspectionId', vendors: 'vendorId', parts: 'partId', companyFiles: 'fileId', expenses: 'expenseId' };
+const PERSIST_ID = { categories: 'categoryId', units: 'unitId', customers: 'customerId', invoices: 'invoiceId', rentals: 'rentalId', workOrders: 'woId', inspections: 'inspectionId', vendors: 'vendorId', parts: 'partId', companyFiles: 'fileId', expenses: 'expenseId', models: 'modelId' };
 let lastSaved = null;   // { entity: Map(id → JSON) } — the last successfully-persisted state
 function snapshotSaved() {
   lastSaved = {};
@@ -17290,7 +18890,7 @@ function computeChanges() {
 // other user reloaded). Poll the backend and adopt remote changes for records the
 // local user HASN'T touched (clean === lastSaved); keep in-progress local edits;
 // NEVER delete on refresh (a transient blip can't wipe data).
-const IDX_MAP = { categories: 'category', units: 'unit', customers: 'customer', invoices: 'invoice', rentals: 'rental', workOrders: 'wo', inspections: 'insp', vendors: 'vendor', parts: 'part', companyFiles: 'file', expenses: 'expense' };
+const IDX_MAP = { categories: 'category', units: 'unit', customers: 'customer', invoices: 'invoice', rentals: 'rental', workOrders: 'wo', inspections: 'insp', vendors: 'vendor', parts: 'part', companyFiles: 'file', expenses: 'expense', models: 'model' };
 let refreshing = false, refreshTimer = null;
 async function refreshFromBackend() {
   if (refreshing || booting || !backendPassword || saving || savePending || !lastSaved) return;
@@ -17320,11 +18920,12 @@ async function refreshFromBackend() {
     });
     // also pull the shared team-chat threads so messages from other users land live
     try {
-      const cr = await backendCall('getChats');
+      const cr = await backendCall('getChats', chatSyncIdentity());
       if (cr && cr.ok && Array.isArray(cr.chats)) {
         const m = mergeChats(cr.chats);
+        const pruned = reconcileScopedChats(cr.chats);
         if (m.localAhead) pushChats(); else lastChatsJson = JSON.stringify(state.chat.chats);
-        if (m.changed) applied++;
+        if (m.changed || pruned) applied++;
       }
     } catch (e) { /* chat sync is best-effort */ }
     loadWranglerRail();   // also pull this role's Mr. Wrangler rail (cross-device) — best-effort, self-renders
@@ -17341,50 +18942,84 @@ function startRefreshPoll() { clearInterval(refreshTimer); refreshTimer = setInt
 // and pull in the refresh poll. Threads AND messages UNION by id, so two people
 // posting to the same thread never clobber each other (matches "chats are never lost").
 let chatPushTimer = null, lastChatsJson = null;
-function normalizeChat(c) { return { id: c.id, tags: c.tags || [], participants: c.participants || [], messages: c.messages || [], seen: c.seen || {} }; }
+// Preserve the {title, members} shape through sync; keep legacy tags/participants as
+// passthrough so a mixed old/new client fleet never loses data.
+function normalizeChat(c) {
+  return normalizeTeamChat({ id: c.id, title: c.title, members: Array.isArray(c.members) ? c.members : [], muted: Array.isArray(c.muted) ? c.muted : [], messages: c.messages || [], seen: c.seen || {}, by: c.by, tags: c.tags || [], participants: c.participants || [] });
+}
+const sameMembers = (a, b) => { a = (a || []).map(String).slice().sort(); b = (b || []).map(String).slice().sort(); return a.length === b.length && a.every((x, i) => x === b[i]); };
 function mergeChats(remoteChats) {
   if (!Array.isArray(remoteChats)) return { changed: false, localAhead: false };
   let changed = false, localAhead = false;
   const remoteById = new Map(remoteChats.filter((c) => c && c.id).map((c) => [c.id, c]));
   const localById = new Map(state.chat.chats.map((c) => [c.id, c]));
+  // The last snapshot we successfully synced — used to tell an UNPUSHED local edit
+  // (a rename/add/leave in flight) from a field we can safely adopt from the server.
+  const pushedById = new Map();
+  try { (JSON.parse(lastChatsJson || '[]') || []).forEach((c) => { if (c && c.id) pushedById.set(String(c.id), c); }); } catch (e) {}
   remoteChats.forEach((rc) => {
     if (!rc || !rc.id) return;
     const lc = localById.get(rc.id);
     if (!lc) { state.chat.chats.push(normalizeChat(rc)); changed = true; return; }   // a whole thread from another user
+    normalizeTeamChat(lc);
     const haveMsg = new Set((lc.messages || []).map((m) => m.id));
-    (rc.messages || []).forEach((m) => { if (m && m.id && !haveMsg.has(m.id)) { lc.messages.push(m); changed = true; } });
+    (rc.messages || []).forEach((m) => { if (m && m.id && !haveMsg.has(m.id)) { lc.messages.push(m); changed = true; } });   // messages UNION (never lose one)
     lc.messages.sort((a, b) => (a.at || 0) - (b.at || 0));
+    // `title` + `members` are ADMIN-authoritative, not union fields — the server holds the
+    // canonical set. Adopt the server's value UNLESS we hold an unpushed local edit (else a
+    // poll clobbers an in-flight rename / member-add / self-leave). This is the fix for the
+    // "Leave gets reverted" + "kicks/renames don't propagate live" races.
+    const pushed = pushedById.get(String(rc.id));
+    const titleDirty = pushed && (lc.title || '') !== (pushed.title || '');
+    if (!titleDirty && (lc.title || '') !== (rc.title || '')) { lc.title = rc.title || ''; changed = true; }
+    const membersDirty = pushed && !sameMembers(lc.members, pushed.members);
+    if (!membersDirty && !sameMembers(lc.members, rc.members)) { lc.members = (rc.members || []).map(String); changed = true; }
+    if (rc.by && lc.by == null) lc.by = rc.by;
     const haveTag = new Set((lc.tags || []).map((t) => t.id));
-    (rc.tags || []).forEach((t) => { if (t && t.id && !haveTag.has(t.id)) { lc.tags.push(t); changed = true; } });
-    (rc.participants || []).forEach((p) => { if (!lc.participants.includes(p)) { lc.participants.push(p); changed = true; } });
+    (rc.tags || []).forEach((t) => { if (t && t.id && !haveTag.has(t.id)) { (lc.tags = lc.tags || []).push(t); changed = true; } });   // legacy passthrough
     Object.keys(rc.seen || {}).forEach((k) => { if ((rc.seen[k] || 0) > (lc.seen[k] || 0)) lc.seen[k] = rc.seen[k]; });   // latest-seen wins (view state)
   });
-  state.chat.chats.forEach((lc) => {   // does local hold anything the server lacks? → we should push
+  state.chat.chats.forEach((lc) => {   // does local hold an unpushed edit the server lacks? → push
     const rc = remoteById.get(lc.id);
     if (!rc) { localAhead = true; return; }
     const rMsg = new Set((rc.messages || []).map((m) => m.id));
     if ((lc.messages || []).some((m) => !rMsg.has(m.id))) localAhead = true;
-    const rTag = new Set((rc.tags || []).map((t) => t.id));
-    if ((lc.tags || []).some((t) => !rTag.has(t.id))) localAhead = true;
-    if ((lc.participants || []).some((p) => !(rc.participants || []).includes(p))) localAhead = true;
+    if (!sameMembers(lc.members, rc.members)) localAhead = true;
+    if ((lc.title || '') !== (rc.title || '')) localAhead = true;
   });
   return { changed, localAhead };
 }
+// After a SCOPED load, drop local chats the server no longer returns for me (I was removed
+// or left) so they leave the rail live, not just on reload. Guards: only for a bound user
+// (unbound sees all → never prune); never drop a chat I own or the one I just created; a
+// no-op against an old backend that returns everything.
+function reconcileScopedChats(returnedChats) {
+  const mine = myRosterId(); if (!mine) return false;
+  const keep = new Set((returnedChats || []).map((c) => String(c.id)));
+  const before = state.chat.chats.length;
+  state.chat.chats = state.chat.chats.filter((c) => chatIsAdmin(c) || String(c.id) === String(state.chat.activeId) || keep.has(String(c.id)));
+  return state.chat.chats.length !== before;
+}
+// Identity sent with team-chat sync so the backend can scope a caller to THEIR chats
+// (admin + members). Self-asserted, gated behind the team password — a real server-side
+// filter for normal use, not a crypto boundary. Old backends ignore it (fully back-compat).
+const chatSyncIdentity = () => ({ me: commentUserKey(), rosterId: myRosterId() });
 async function pushChats() {
   if (!backendPassword) return;
   const js = JSON.stringify(state.chat.chats);
   if (js === lastChatsJson) return;                 // nothing new since the last successful push
-  try { const r = await backendCall('setChats', { chats: state.chat.chats }); if (r && r.ok) lastChatsJson = js; } catch (e) { /* offline → retries on next change/poll */ }
+  try { const r = await backendCall('setChats', { chats: state.chat.chats, ...chatSyncIdentity() }); if (r && r.ok) lastChatsJson = js; } catch (e) { /* offline → retries on next change/poll */ }
 }
 function pushChatsSoon() { if (booting || !backendPassword) return; clearTimeout(chatPushTimer); chatPushTimer = setTimeout(pushChats, 1200); }
 async function loadChats() {
   if (!backendPassword) return;
   try {
-    const r = await backendCall('getChats');
+    const r = await backendCall('getChats', chatSyncIdentity());
     if (!r || !r.ok || !Array.isArray(r.chats)) return;
     const { changed, localAhead } = mergeChats(r.chats);
+    const pruned = reconcileScopedChats(r.chats);
     if (localAhead) pushChats(); else lastChatsJson = JSON.stringify(state.chat.chats);   // mark synced (or send local-only threads up)
-    if (changed) render();
+    if (changed || pruned) render();
   } catch (e) { /* offline → the refresh poll retries */ }
 }
 // ── Cross-device Mr. Wrangler rail sync (per ROLE; mirrors team-chat sync) ──
@@ -17553,6 +19188,75 @@ function renderSyncBanner() {
   document.body.classList.add('sync-failing');
   requestAnimationFrame(() => el.classList.add('show'));
 }
+
+/* ── R26 — "Due Today" scheduled-actions banner (#517) ────────────────────────
+   Scheduled actions are customer.activityLog entries stamped `Scheduled: <note> @
+   <date> <time>` (see the schedule popup save). On the day of the action (from
+   midnight / app-open, since TODAY_ISO is fixed at load) we surface every one due
+   today as a dismissible top band — the reminder Jac asked for. Manual X only:
+   it NEVER auto-clears when the time passes or the action is logged. The dismiss
+   sticks for the browser session (sessionStorage, keyed to today's set) so a
+   refresh can't ghost it back, but a fresh app-open shows it again. Lives on
+   <body>, outside #app, like the R25 sync band. */
+function parseSchedText(text) {
+  const body = String(text || '').replace(/^Scheduled:\s*/, '');
+  // the popup appends " @ YYYY-MM-DD H:MM AM" — anchor on that tail so a note that
+  // itself contains "@" is never mistaken for the separator.
+  const m = /\s*@\s*\d{4}-\d{2}-\d{2}\s+(\d{1,2}:\d{2}\s*[AP]M)\s*$/i.exec(body);
+  return { note: (m ? body.slice(0, m.index) : body).trim() || 'Follow-up', time: m ? m[1].replace(/\s+/g, ' ').toUpperCase() : '' };
+}
+function schedActionsDueToday() {
+  const out = [];
+  (DATA.customers || []).forEach((c) => {
+    (c.activityLog || []).forEach((a) => {
+      if (a && a.when === TODAY_ISO && /^Scheduled:/.test(a.text || '')) {
+        const p = parseSchedText(a.text);
+        out.push({ customerId: c.customerId, name: fullName(c) || c.company || 'Customer', note: p.note, time: p.time });
+      }
+    });
+  });
+  return out.sort((a, b) => (timeToMin(a.time) ?? 1e9) - (timeToMin(b.time) ?? 1e9));   // earliest first, untimed last
+}
+const SCHED_DISMISS_KEY = 'jactec.schedBannerDismissed';
+const schedBannerSig = (items) => TODAY_ISO + '|' + items.map((i) => `${i.customerId}:${i.note}@${i.time}`).sort().join('~');
+function dismissSchedBanner() {
+  try { sessionStorage.setItem(SCHED_DISMISS_KEY, schedBannerSig(schedActionsDueToday())); } catch (e) {}
+  renderSchedBanner();
+}
+function renderSchedBanner() {
+  const items = schedActionsDueToday();
+  const sig = schedBannerSig(items);
+  let dismissed = false; try { dismissed = sessionStorage.getItem(SCHED_DISMISS_KEY) === sig; } catch (e) {}
+  let node = document.getElementById('sched-banner');
+  if (!items.length || dismissed) {   // nothing due, or the operator dismissed today's set
+    if (node) node.remove();
+    document.body.classList.remove('sched-due');
+    document.body.style.removeProperty('--sched-band');
+    return;
+  }
+  if (node && node.dataset.sig === sig) return;   // same set already on screen → don't thrash
+  const rows = items.map((i) =>
+    `<div class="scb-row">`
+    + `<span class="pill ref link scb-cust" data-r="R2" data-pill-card="customers" data-pill-rec="${esc(i.customerId)}" data-tip="${esc(i.name)}">${CARD_ICON.customers}${esc(i.name)}</span>`
+    + `<span class="scb-note">${esc(i.note)}</span>`
+    + (i.time ? `<span class="scb-time">${esc(i.time)}</span>` : `<span class="scb-time scb-anytime">Any time</span>`)
+    + `</div>`).join('');
+  const html = `<span class="scb-stripe" aria-hidden="true"></span>`
+    + `<div class="scb-plate"><span class="scb-stamp">${I.bell}<span>Due Today</span></span><span class="scb-count">${items.length}</span></div>`
+    + `<div class="scb-list">${rows}</div>`
+    + closeX('js-sched-dismiss');
+  if (!node) {
+    node = document.createElement('div');
+    node.id = 'sched-banner'; node.dataset.r = 'R26';
+    node.setAttribute('role', 'status'); node.setAttribute('aria-live', 'polite');
+    document.body.appendChild(node);
+  }
+  node.dataset.sig = sig;
+  node.innerHTML = html;
+  document.body.classList.add('sched-due');
+  // reserve the exact band height so the banner never covers the yard/header (variable rows)
+  requestAnimationFrame(() => { const n = document.getElementById('sched-banner'); if (n) document.body.style.setProperty('--sched-band', n.offsetHeight + 'px'); });
+}
 // Safety net: a debounced save that hasn't flushed yet — or a large bulk-import sync
 // still in flight — would be lost silently if the page closes/reloads first (#164).
 // If anything is still un-persisted, kick a final flush and let the browser show its
@@ -17564,6 +19268,7 @@ window.addEventListener('beforeunload', (e) => {
   e.preventDefault(); e.returnValue = '';
 });
 function renderLogin(msg) {
+  if (state.commsRail) { state.commsRail.cat = null; state.commsRail.sessions && Object.values(state.commsRail.sessions).forEach((s) => { s.menuOpen = false; }); }   // D8 — clock-in = an EMPTY rail (sessions persist per device, nothing summons itself)
   $('#app').innerHTML = `<div class="login-screen"><video id="login-video" class="login-video" src="assets/login-intro.mp4?v=20260702a" muted loop playsinline preload="auto" aria-hidden="true"></video><form class="login-box" id="login-form">
     <span class="rivet tl"></span><span class="rivet tr"></span><span class="rivet bl"></span><span class="rivet br"></span>
     <div class="login-plate">
@@ -17595,6 +19300,7 @@ function finishLoad() {
   wranglerRailLoad();                                           // load the Mr. Wrangler rail from IndexedDB (+ one-time localStorage migration)
   refreshWranglerRequests();                                    // §18e populate the approval-inbox badge
   refreshWranglerNotifications();                               // §18f populate the notification-bell badge
+  refreshCommsThreads();                                        // D8 comms rail — the chips wear their worst-of-category dots from clock-in (the rail itself stays empty)
   startRefreshPoll();                                           // live multi-user: poll for others' changes (§ refreshFromBackend)
   if (migrationDirty) { migrationDirty = false; saveSoon(); }   // push parsed first/last names up to the Sheet
   // #edit=<id> — desktop→phone handoff opens that customer's account form (§7.1).
@@ -17631,14 +19337,15 @@ async function shareSession() {
     caption: tabs.length ? `Scan to open your ${tabs.length} open tab${tabs.length === 1 ? '' : 's'} on another device — sign in with the shared password.`
       : 'Scan to open Rental Wrangler on another device — sign in with the shared password.' });
 }
-// Shop roles (Mechanic / M.Tech) get the Shop card + its 3-bar graph as the landing view
-// — quick access to the crew's worklist. A default only; they can navigate anywhere after.
+// Shop roles (Mechanic / M.Tech) land on the UNITS card with the service lens open —
+// the stackbars worklist graph + Service-Due sort (Shop retirement, Jac 2026-07-07).
+// A default only; they can navigate anywhere after.
 function applyShopRoleLanding() {
   if (currentRole !== 'mechanic' && currentRole !== 'mtech') return;
   const s = activeSession(); if (!s) return;
-  if (s.cols) s.cols.left = 'shop';
-  const sc = s.cards.shop; if (sc) { sc.segment = 'all'; sc.graphView = true; sc.mode = 'list'; sc.recId = null; sc.recType = null; }
-  const li = COLUMNS.findIndex((c) => c.id === 'left'); if (li >= 0) state.mobileCol = li;   // phone: make the Shop column the active one
+  if (s.cols) s.cols.left = 'units';
+  const uc = s.cards.units; if (uc) { uc.graphView = true; uc.mode = 'list'; uc.recId = null; uc.recType = null; uc.sort = { field: 'countdown', dir: 'asc' }; }
+  const li = COLUMNS.findIndex((c) => c.id === 'left'); if (li >= 0) state.mobileCol = li;   // phone: make the Units column the active one
   render();
 }
 async function attemptLogin() {
@@ -17668,9 +19375,10 @@ async function attemptLogin() {
     try { localStorage.setItem('jactec.user', name); } catch {}
     try { sessionStorage.setItem('jactec.role', role); } catch {}
     sessionStorage.setItem('jactec.pw', pw);
+    gpsLogin(pw).then((ok) => { if (ok) { refreshGpsLive(); startGpsViewPoll(); refreshDrivingScore(); } });   // silent GPS login (§5) → live snapshot (step 3) + view-scoped refresh (step 4) + fleet driving score (step 7); fire-and-forget, never blocks main login
     await loadFromBackend();
     finishLoad();
-    applyShopRoleLanding();   // shop roles (Mechanic / M.Tech) land on the Shop graph
+    applyShopRoleLanding();   // shop roles (Mechanic / M.Tech) land on the Units service lens
   } catch (e) {
     backendPassword = ''; sessionStorage.removeItem('jactec.pw'); sessionStorage.removeItem('jactec.role');
     renderLogin(/unauthorized/i.test(String(e && e.message)) ? 'That password wasn’t recognized.' : "Couldn't reach the database. Check your connection and try again.");
@@ -17940,6 +19648,7 @@ function boot() {
     if (e.target.classList.contains('nc-in') && e.key === 'Enter' && e.target.tagName !== 'SELECT') { e.preventDefault(); return saveNewCustomer(); }
     if (e.target.classList.contains('js-wr-in') && e.key === 'Enter') { e.preventDefault(); return wranglerSend(); }   // §18
     if (e.target.classList.contains('chat-input') && e.key === 'Enter') { e.preventDefault(); return chatSend(); }
+    if (e.target.classList.contains('js-comms-in') && e.key === 'Enter') { e.preventDefault(); return commsSend(e.target.dataset.cust); }   // D8 — Enter fires the ignition Send
     // §M3 — one predictable back/dismiss chain (shared with the Android back button):
     // winpicker → overlay → Mr. Wrangler dock → team chat dock.
     if (e.key === 'Escape') dismissTopSheet();
@@ -18072,8 +19781,8 @@ function exposeTestApi() {
       latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore, wranglerRailLoad, wrOffloadChatImages, wrEvictChatBlobs, driveViewUrl, mergeWranglerRails,
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
-      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, setFunnelStage, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, addMonthsISO, openMembershipEnroll, membershipEnrollCommit, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, getEntityColor, getEntityFlags, isEmptyMockDraft, sweepEmptyDrafts, createInvoiceForRental, syncRentalLines, rentalLineItems, salePriceSuggest, salePricingCfg, categoryCostBasis, driverRoster, driverName, legDriverField, dispatchEvents, setRole: (r) => { currentRole = r || ''; render(); },
-      openCustomerForm, renderOverlay, render, cardComplete, cardCaptureState, cardHasSelfie, cardHasSignature, captureSelfie, captureSignature, __state: state };   // UI drivers for headless screenshot/e2e tests
+      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, setFunnelStage, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, addMonthsISO, openMembershipEnroll, membershipEnrollCommit, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, getEntityColor, getEntityFlags, isEmptyMockDraft, sweepEmptyDrafts, createInvoiceForRental, syncRentalLines, rentalLineItems, salePriceSuggest, salePricingCfg, categoryCostBasis, driverRoster, driverName, legDriverField, dispatchEvents, applyShopRoleLanding, topServiceForUnit, snoozeService, svcSnoozedUntil, unitServiceRows, recordServiceCompletion, sellUnit, categoryStats, setRole: (r) => { currentRole = r || ''; render(); }, histText, canMoney,
+      openCustomerForm, renderOverlay, render, printInvoice, invoicePrintGroups, invoiceAmendments, cardComplete, cardCaptureState, cardHasSelfie, cardHasSignature, captureSelfie, captureSignature, __state: state };   // UI drivers for headless screenshot/e2e tests
 
   } catch (e) { /* no window (non-browser) */ }
 }
@@ -18186,6 +19895,541 @@ async function reseedFromFile() {
     renderLogin('Reseed failed — live data unchanged.');
   }
 }
+/* ════════════════════════════════════════════════════════════════════════
+   APP-38 · D8/D9 THE COMMS RAIL (spec comms-notifications D8 + D9, Jac
+   2026-07-07) — the four-category comms surface on the bottom bar: Team ·
+   Texts · Email · Mr. Wrangler as glyph chips (bottom-left, saddle-stitch
+   divider), each summoning its category's LAST SESSION of conversation tabs
+   onto the rail (one category at a time; login = empty rail). D9 SINGLE-OPEN
+   LAW: at most ONE conversation window is open at any time across ALL
+   categories — every open path closes whatever was up first; a session
+   remembers only its LAST-open conversation. The dashed blue ALL tab lists
+   every un-ended conversation with Open / End (+ New chat for Team/Wrangler).
+   ALL FOUR categories are live: Texts + Email ride commsThreads / messagesFor
+   / sendCustomerMessage (Phase 2a backend); Team rides the APP-23 chat store
+   (chatSend/chatMarkSeen — its dock is phone-only now); Mr. Wrangler rides
+   the §18 machinery (wranglerSend/wranglerRail — its dock is phone-only now).
+   Chips wear their category's WORST status dot (red Unseen · yellow Reply? ·
+   green quiet). Open / End language everywhere — never "Close".
+   ════════════════════════════════════════════════════════════════════════ */
+const COMMS_CAT_META = {
+  team:     { label: 'Team',        icon: () => I.users,         channel: null,    tip: 'Team — the shop-floor chat' },
+  text:     { label: 'Texts',       icon: () => I.messageSquare, channel: 'sms',   tip: 'Texts — customer SMS threads' },
+  email:    { label: 'Email',       icon: () => I.mail,          channel: 'email', tip: 'Email — customer email threads' },
+  wrangler: { label: 'Mr. Wrangler', icon: () => I.lasso,        channel: null,    tip: 'Mr. Wrangler — ask the yard AI, or report a bug' },
+};
+const commsOnline = () => typeof backendPassword !== 'undefined' && !!backendPassword;
+const commsSess = () => (state.commsRail.cat ? state.commsRail.sessions[state.commsRail.cat] : null);
+const commsCatOfChannel = (channel) => (channel === 'email' ? 'email' : 'text');
+/* ── live thread data (Phase 2a backend) ─────────────────────────────────── */
+let commsThreads = null;            // [{ customerId, count, lastWhen, lastChannel, lastDirection, lastSnippet, lastStatus, channels? }]
+let commsThreadsAt = 0, commsThreadsLoading = false;
+function refreshCommsThreads(force) {
+  if (!commsOnline()) return;                       // demo/#local — chips render, sessions show the connect note
+  if (commsThreadsLoading || (!force && Date.now() - commsThreadsAt < 30000)) return;
+  commsThreadsLoading = true;
+  backendCall('commsThreads').then((r) => {
+    commsThreadsLoading = false;
+    if (r && r.ok && Array.isArray(r.threads)) { commsThreads = r.threads; commsThreadsAt = Date.now(); render(); }
+  }).catch(() => { commsThreadsLoading = false; });
+}
+/* A thread's presence in ONE channel. Backend ≥v75 sends a per-channel `channels`
+   rollup (the same customer can be a conversation in BOTH Texts and Email); the
+   v74 shape only carries the LAST message's channel — fall back to that. */
+function commsThreadChannel(t, channel) {
+  if (t && t.channels && typeof t.channels === 'object') return t.channels[channel] || null;
+  return t && t.lastChannel === channel ? t : null;
+}
+function commsThreadsFor(cat) {
+  const channel = COMMS_CAT_META[cat] && COMMS_CAT_META[cat].channel;
+  if (!channel || !commsThreads) return [];
+  const ended = commsEndedSet();
+  return commsThreads.filter((t) => commsThreadChannel(t, channel) && !ended.has(String(t.customerId) + '|' + channel));
+}
+/* Status grammar (registry semantics, spec D8): red = Unseen · yellow = Reply? ·
+   green = Replied. v1 has no inbound pipe yet, so: last outbound landed = green,
+   failed send = red. `lastDirection === 'inbound'` is already honored (red) so the
+   Phase-B inbound webhook flips statuses with no client change. */
+function commsConvStatus(t, channel) {
+  const ch = commsThreadChannel(t, channel);
+  if (!ch) return 'gray';                          // no history yet (fresh conversation off the R20 menu)
+  if (ch.lastDirection === 'inbound') return 'red';
+  return ch.lastStatus === 'failed' ? 'red' : 'green';
+}
+const COMMS_ST_RANK = { red: 0, yellow: 1, green: 2, gray: 3 };
+/* D9 — the chip's WORST-of-category dot, same registry grammar everywhere:
+   red = Unseen · yellow = Reply? (last word isn't yours) · green = all quiet. */
+function commsCatWorst(cat) {
+  if (cat === 'team') return commsTeamWorst();
+  if (cat === 'wrangler') return commsWranglerWorst();
+  const list = commsThreadsFor(cat);
+  let worst = null;
+  list.forEach((t) => { const s = commsConvStatus(t, COMMS_CAT_META[cat].channel); if (!worst || COMMS_ST_RANK[s] < COMMS_ST_RANK[worst]) worst = s; });
+  return (!worst || worst === 'gray') ? 'green' : worst;   // nothing waiting = green (quiet line)
+}
+/* ── Team category (D9) — conversations derive from the APP-23 chat store ── */
+const commsChatLastAt = (c) => Math.max(0, ...(c.messages || []).map((m) => m.at || 0));
+function commsTeamChats() {   // every un-ended team chat, newest first (End resurrects on a newer message)
+  return (state.chat.chats || [])
+    .map(normalizeTeamChat)
+    // a chat shows once it has messages, members, OR is the one you're in (a just-created blank)
+    .filter((c) => (c.messages || []).length || (c.members || []).length || String(c.id) === String(state.chat.activeId))
+    .filter((c) => chatVisibleToMe(c))   // admin + members only (a bound non-member who left drops off the rail)
+    .filter((c) => !commsIsEnded(c.id, 'team', commsChatLastAt(c)))
+    .sort((a, b) => commsChatLastAt(b) - commsChatLastAt(a));
+}
+const commsTeamLabel = (c) => ((c.title || '').trim() || (c.tags && c.tags[0] && c.tags[0].label) || 'Untitled chat');
+function commsTeamStatus(c) {
+  const msgs = c.messages || [];
+  if (!msgs.length) return 'gray';                                   // fresh chat — nothing said yet
+  if (chatMuted(c)) return 'green';                                  // muted → never raises an alert dot
+  const u = commentUserKey();
+  if (commsChatLastAt(c) > (c.seen[u] || 0)) return 'red';           // unseen
+  const last = msgs[msgs.length - 1];
+  return last.by !== u ? 'yellow' : 'green';                         // their word last = Reply?
+}
+function commsTeamWorst() {
+  if (chatUnreadCount() > 0) return 'red';                           // unacked flagged comments count as unseen
+  let worst = null;
+  commsTeamChats().forEach((c) => { const s = commsTeamStatus(c); if (!worst || COMMS_ST_RANK[s] < COMMS_ST_RANK[worst]) worst = s; });
+  return (!worst || worst === 'gray') ? 'green' : worst;
+}
+/* ── Mr. Wrangler category (D9) — conversations derive from the §18g rail store
+   (snapshots) + the live state.wrangler chat; request-linked chats surface via the
+   idle rail's request tabs instead. ── */
+function commsWranglerConvs() {
+  const w = state.wrangler, out = [];
+  if (w.id && (w.open || (w.messages || []).length)) out.push({ id: String(w.id), title: wranglerConvoTitle(w), ts: Date.now(), live: true });
+  (state.wranglerRail || []).forEach((c) => {
+    if (String(c.id) === String(w.id)) return;                       // the live copy wins
+    if (c.reqNumber || wrChatResolved(c)) return;
+    out.push({ id: String(c.id), title: c.title || 'Chat', ts: c.ts || 0, live: false, snap: c });
+  });
+  return out.filter((x) => !commsIsEnded(x.id, 'wrangler', x.ts));
+}
+function commsWranglerStatus(x) {
+  if (x.live && state.wrangler.ask) return 'red';                    // Mr. Wrangler is waiting on your answer
+  const msgs = x.live ? (state.wrangler.messages || []) : ((x.snap && x.snap.messages) || []);
+  const last = msgs[msgs.length - 1];
+  if (!last) return 'gray';
+  return last.role === 'assistant' ? 'yellow' : 'green';             // his word last = Reply?
+}
+function commsWranglerWorst() {
+  if ((wranglerRequests || []).some((rq) => (rq.labels || []).includes('wrangler-needs-jac'))) return 'red';
+  if (state.wrangler.ask) return 'red';
+  let worst = null;
+  commsWranglerConvs().forEach((x) => { const s = commsWranglerStatus(x); if (!worst || COMMS_ST_RANK[s] < COMMS_ST_RANK[worst]) worst = s; });
+  return (!worst || worst === 'gray') ? 'green' : worst;
+}
+/* ── per-customer thread messages (messagesFor — bodies + maskedTo + fromUsed) ── */
+const commsMsgs = new Map();        // customerId -> { loading, at, messages }
+function commsFetchMsgs(customerId, force) {
+  if (!commsOnline()) return null;
+  let entry = commsMsgs.get(String(customerId));
+  if (entry && (entry.loading || (!force && Date.now() - entry.at < 30000))) return entry;
+  entry = { loading: true, at: entry ? entry.at : 0, messages: entry ? entry.messages : null };
+  commsMsgs.set(String(customerId), entry);
+  backendCall('messagesFor', { customerId }).then((r) => {
+    entry.loading = false;
+    if (r && r.ok && Array.isArray(r.messages)) { entry.messages = r.messages; entry.at = Date.now(); render(); }
+  }).catch(() => { entry.loading = false; });
+  return entry;
+}
+const commsDrafts = new Map();      // `${cat}|${customerId}` -> composer draft (survives re-renders)
+const commsSending = new Set();     // in-flight send keys (disables the ignition)
+const commsFromSel = new Map();     // customerId -> chosen FROM alias (D7 picker)
+let commsAliasesKicked = false;
+function commsAliasesEnsure() {     // lazy one-shot alias fetch for the email FROM picker
+  if (commsAliasesKicked || !commsOnline()) return;
+  commsAliasesKicked = true;
+  commsAliasList().then((a) => { if (a && a.length) render(); });
+}
+/* ── the four toolbar chips (bottom-left, before the tool buttons) ────────── */
+function commsChipsHtml() {
+  const phone = document.body.classList.contains('is-phone');
+  const chip = (cat) => {
+    const meta = COMMS_CAT_META[cat];
+    // phones have no rail — the team/wrangler chips still bridge to their bottom-sheet docks there
+    const on = phone
+      ? (cat === 'team' ? state.chat.open : cat === 'wrangler' ? (state.wrangler.open && !state.wrangler.min) : state.commsRail.cat === cat)
+      : state.commsRail.cat === cat;
+    const worst = commsCatWorst(cat);
+    return `<button class="iconbtn comms-chip js-comms-chip${on ? ' on' : ''}" data-cat="${cat}" data-tip="${esc(meta.tip)}" aria-pressed="${on}">${meta.icon()}${worst ? `<span class="cc-dot c-${worst}" aria-hidden="true"></span>` : ''}</button>`;
+  };
+  return `<span class="comms-chips" role="group" aria-label="Comms — Team, Texts, Email, Mr. Wrangler">${COMMS_CATS.map(chip).join('')}</span><span class="bb-sep bb-stitch" aria-hidden="true"></span>`;
+}
+/* ── the summoned session's tabs on the rail (ALL first, then conversations).
+   D9: one builder, four categories — a tab's is-active means "this is THE open
+   window" (single-open). The ✕ hides from the rail only, never ends. ── */
+function commsSessTabsHtml() {
+  const cat = state.commsRail.cat, meta = COMMS_CAT_META[cat], sess = state.commsRail.sessions[cat];
+  if (meta.channel && !commsOnline()) return '<span class="crail-empty">Connect to the backend to wrangle customer threads.</span>';
+  const hidden = new Set((sess.hidden || []).map(String));
+  const tab = (id, name, st) => {
+    const open = String(sess.lastOpen) === String(id);
+    return `<button class="crail-tab comms-tab st-${st}${open ? ' is-active' : ''}" data-comms-tab="${esc(id)}" role="tab" aria-selected="${open}" data-tip="${esc(name)} — ${open ? 'tuck the window away' : 'open the window'}"><span class="crail-t">${esc(name)}</span><span class="crail-x" data-comms-hide="${esc(id)}" role="button" aria-label="Hide from the rail — does NOT end it" data-tip="Hide from the rail — does NOT end it">×</span></button>`;
+  };
+  let count = 0, tabs = '';
+  if (cat === 'team') {
+    const chats = commsTeamChats(); count = chats.length;
+    tabs = chats.filter((c) => !hidden.has(String(c.id))).map((c) => tab(c.id, commsTeamLabel(c), commsTeamStatus(c))).join('');
+  } else if (cat === 'wrangler') {
+    const convs = commsWranglerConvs(); count = convs.length;
+    tabs = convs.filter((x) => !hidden.has(x.id)).map((x) => tab(x.id, x.title, commsWranglerStatus(x))).join('');
+  } else {
+    const threads = commsThreadsFor(cat); count = threads.length;
+    const byId = new Map(threads.map((t) => [String(t.customerId), t]));
+    const ended = commsEndedSet();
+    tabs = sess.tabs.filter((id) => !ended.has(String(id) + '|' + meta.channel)).map((id) => {
+      const c = IDX.customer.get(id);
+      return tab(id, (c && fullName(c)) || String(id), commsConvStatus(byId.get(String(id)) || null, meta.channel));
+    }).join('');
+  }
+  const all = `<button class="crail-tab comms-all js-comms-all${sess.menuOpen ? ' is-active' : ''}" role="tab" aria-selected="${sess.menuOpen}" data-tip="Every un-ended ${meta.label} conversation — Open / End"><span class="crail-t">All · ${count}</span></button>`;
+  return `<div class="crail-group comms-group">${all}${tabs}</div>`;
+}
+/* ── Messenger-style conversation window (above its own tab) ─────────────── */
+function commsPopupHtml(cat, t, id) {
+  const meta = COMMS_CAT_META[cat];
+  const c = IDX.customer.get(id);
+  const name = (c && fullName(c)) || String(id);
+  const st = commsConvStatus(t, meta.channel);
+  const entry = commsFetchMsgs(id);
+  const msgs = ((entry && entry.messages) || []).filter((m) => m.channel === meta.channel)
+    .sort((a, b) => String(a.when || '').localeCompare(String(b.when || '')));
+  const stamp = (m) => { const d = m.when ? new Date(m.when) : null; return (d && !isNaN(d)) ? d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''; };
+  const rows = msgs.map((m) => {
+    const me = m.direction !== 'inbound';
+    const metaLine = me
+      ? [m.status === 'failed' ? '✕ Failed' : 'Sent', m.maskedTo || '', m.fromUsed ? 'from ' + m.fromUsed : '', stamp(m)].filter(Boolean).join(' · ')
+      : [name, stamp(m)].filter(Boolean).join(' · ');
+    return `<div class="cp-row${me ? ' me' : ''}"><div class="cp-cell"><div class="cp-bub${me ? ' me' : ''}${m.status === 'failed' ? ' failed' : ''}">${esc(m.body || m.subject || '(no text)')}</div><div class="cp-meta">${esc(metaLine)}</div></div></div>`;
+  }).join('') || `<div class="cp-empty">${entry && entry.loading ? 'Rounding up the thread…' : 'No messages yet — say the word.'}</div>`;
+  // D7 FROM picker — only for email, only when the shop has >1 connected alias
+  let fromRow = '';
+  if (meta.channel === 'email') {
+    commsAliasesEnsure();
+    const aliases = _commsAliases || [];
+    if (aliases.length > 1) {
+      const sel = commsFromSel.get(String(id)) || aliases[0];
+      fromRow = `<div class="cp-fromrow"><button class="cp-from js-comms-from" data-cust="${esc(id)}" data-tip="Which connected address this goes out as">from ${esc(sel)}${I.chev}</button></div>`;
+    }
+  }
+  const key = cat + '|' + id;
+  const sending = commsSending.has(key);
+  const first = ((c && (c.firstName || fullName(c))) || '').trim().split(/\s+/)[0] || 'them';
+  return `<div class="cp-cap" aria-hidden="true"></div>
+    <div class="cp-head"><span class="cp-dot c-${st}" aria-hidden="true"></span><span class="cp-cat">${esc(meta.label)}</span><span class="cp-who">${esc(name)}</span><span class="spacer"></span>${ghostPill('End', { js: 'js-comms-end', data: { cust: id }, tip: 'End the conversation — the history stays on the profile' })}</div>
+    <div class="cp-feed">${rows}</div>
+    ${fromRow}
+    <div class="cp-compose"><input class="cp-in js-comms-in" data-cust="${esc(id)}" placeholder="${meta.channel === 'sms' ? 'Text' : 'Email'} ${esc(first)}…" aria-label="Message ${esc(name)}" value="${esc(commsDrafts.get(key) || '')}" maxlength="600" /><button class="cp-send js-comms-send" data-cust="${esc(id)}"${sending ? ' disabled' : ''}>${sending ? 'Sending…' : 'Send'}</button></div>`;
+}
+/* ── D9 Team window — the APP-23 chat riding the rail shell: same store, same
+   bubbles (yours ride blue up here; the orange pair stays customer-only), same
+   composer classes so chatSend / the Enter handler / drafts keep working. ── */
+function commsTeamPopupHtml(id) {
+  const c = chatById(String(id)); if (!c) return '';
+  normalizeTeamChat(c);
+  chatMarkSeen(c);   // the open window is "seen" — clears the re-flash, mirrors the dock
+  return `<div class="cp-cap" aria-hidden="true"></div>
+    <div class="cp-head"><span class="cp-dot c-${commsTeamStatus(c)}" aria-hidden="true"></span><span class="cp-cat">Team</span>${chatTitleInputHtml(c)}<span class="spacer"></span><button class="cp-gear js-chat-settings" aria-label="Chat settings" data-tip="Chat settings">${I.sliders}</button></div>
+    <div class="cp-feed chat-feed">${chatFeedRowsHtml(c)}</div>
+    <div class="chat-compose">${chatHeldChipHtml()}<input class="chat-input" placeholder="Message the team…" value="${esc(state.chat.draft || '')}" aria-label="Message the team" /><button class="chat-send js-chat-send" aria-label="Send">${I.chev}</button></div>
+    ${chatMemberBarHtml(c)}`;
+}
+/* ── D9 Mr. Wrangler window — the §18 conversation riding the rail shell: the
+   node ALSO wears .wrangler-dock so wranglerSend / paste / drag-drop / focus all
+   find their selectors untouched; only the chrome changed (dock head → cp-head). ── */
+function commsWranglerPopupHtml() {
+  const o = state.wrangler;
+  const st = commsWranglerStatus({ id: String(o.id), live: true });
+  return `<div class="cp-cap" aria-hidden="true"></div>
+    <div class="cp-head"><span class="cp-dot c-${st}" aria-hidden="true"></span><span class="cp-cat">Mr. Wrangler</span><span class="cp-who">${esc(wranglerConvoTitle(o))}</span><span class="spacer"></span>${ghostPill('End', { js: 'js-comms-end', data: { cust: o.id }, tip: 'End the conversation — the transcript stays stored' })}</div>
+    ${wranglerDockBodyHtml()}`;
+}
+/* ── the ALL menu: every un-ended conversation, Open / End per row (D9: Team and
+   Mr. Wrangler list their chats too, with a + New chat at the foot) ────────── */
+function commsMenuHtml(cat) {
+  const meta = COMMS_CAT_META[cat];
+  const row = (id, name, st, snip) => `<div class="cm-row"><span class="cp-dot c-${st}" aria-hidden="true"></span><span class="cm-who">${esc(name)}</span><span class="cm-snip">${esc(snip)}</span>${actionPill('commit', 'Open', { js: 'js-comms-mopen', h: 22, data: { cust: id } })}${ghostPill('End', { js: 'js-comms-mend', data: { cust: id }, tip: cat === 'team' || cat === 'wrangler' ? 'End it — the history stays stored' : 'End it — the history stays on the profile' })}</div>`;
+  let rows = '', empty = 'Nothing on the line — right-click a customer to start one.', newRow = '';
+  if (cat === 'team') {
+    rows = commsTeamChats().map((c) => {
+      const last = (c.messages || [])[c.messages.length - 1];
+      return row(c.id, commsTeamLabel(c), commsTeamStatus(c), last ? `${last.by === commentUserKey() ? 'you' : (last.by || 'them')}: ${last.text || ''}` : 'No messages yet');
+    }).join('');
+    empty = 'No team chats yet — saddle one up below.';
+    newRow = `<div class="cm-row cm-new">${addBtn('New chat', { js: 'js-comms-new', link: true })}</div>`;
+  } else if (cat === 'wrangler') {
+    rows = commsWranglerConvs().map((x) => {
+      const msgs = x.live ? (state.wrangler.messages || []) : ((x.snap && x.snap.messages) || []);
+      const last = msgs[msgs.length - 1];
+      return row(x.id, x.title, commsWranglerStatus(x), last ? `${last.role === 'assistant' ? '🤠' : 'you'}: ${(last.content || '').replace(/\s+/g, ' ')}` : 'No messages yet');
+    }).join('');
+    empty = 'Nothing on the line — ask Mr. Wrangler anything below.';
+    newRow = `<div class="cm-row cm-new">${addBtn('New chat', { js: 'js-comms-new', link: true })}</div>`;
+  } else {
+    rows = commsThreadsFor(cat).map((t) => {
+      const id = String(t.customerId), c = IDX.customer.get(id);
+      const ch = commsThreadChannel(t, meta.channel) || t;
+      return row(id, (c && fullName(c)) || id, commsConvStatus(t, meta.channel), (ch.lastDirection === 'inbound' ? 'them: ' : 'you: ') + (ch.lastSnippet || ''));
+    }).join('');
+  }
+  return `<div class="cp-cap" aria-hidden="true"></div>
+    <div class="cp-head"><span class="cp-cat">${esc(meta.label)}</span><span class="cp-who">Open &amp; un-ended</span><span class="spacer"></span><button class="cp-x js-comms-menu-x" aria-label="Tuck the list away" data-tip="Tuck away — nothing ends">${I.x}</button></div>
+    <div class="cp-feed cp-list">${rows || `<div class="cp-empty">${empty}</div>`}${newRow}</div>`;
+}
+/* Mount THE open window ABOVE its own tab (Messenger metaphor, D9 single-open: at
+   most one conversation window across all categories — the session's lastOpen) —
+   called at the end of render() while a session is summoned. Desktop-only
+   (phones have no rail; the D8 mobile bottom-sheet reflow rides later). */
+function mountCommsPops() {
+  const cat = state.commsRail.cat;
+  if (!cat || document.body.classList.contains('is-phone')) return;
+  const sess = state.commsRail.sessions[cat];
+  const bar = document.querySelector('.bottombar');
+  if (!bar) return;
+  const host = el('div', 'comms-pops');
+  $('#app').appendChild(host);
+  const bottom = Math.max(56, Math.round(window.innerHeight - bar.getBoundingClientRect().top) + 8);
+  let lastRight = 0;   // the window + the ALL menu would stack — nudge each clear of the previous
+  const place = (node, anchor, w) => {
+    const r = anchor.getBoundingClientRect();
+    let left = Math.max(8, Math.min(r.left - 30, window.innerWidth - w - 8));
+    if (left < lastRight + 8) left = Math.min(lastRight + 8, window.innerWidth - w - 8);
+    lastRight = left + w;
+    node.style.left = left + 'px';
+    node.style.bottom = bottom + 'px';
+  };
+  const id = sess.lastOpen != null ? String(sess.lastOpen) : null;
+  const tb = id ? document.querySelector(`.comms-rail [data-comms-tab="${id}"]`) : null;   // no tab (hidden/ended) → no window
+  if (id && tb) {
+    let html = '', w = 300, cls = 'comms-pop';
+    if (cat === 'team') { html = commsTeamPopupHtml(id); w = 340; cls += ' team-pop'; }
+    else if (cat === 'wrangler') {
+      // the window renders the LIVE chat only — every open path loads a snapshot into
+      // state.wrangler first (wranglerRailOpen), so a mismatch just means "not loaded yet"
+      if (state.wrangler.open && String(state.wrangler.id) === id) { html = commsWranglerPopupHtml(); w = 380; cls += ' wrangler-dock wr-pop'; }
+    } else {
+      const t = commsThreadsFor(cat).find((x) => String(x.customerId) === id) || null;
+      html = commsPopupHtml(cat, t, id);
+    }
+    if (html) {
+      const node = el('div', cls);
+      node.innerHTML = html;
+      if (cat === 'team') node.dataset.drop = 'chat';   // drag a record in = tag it into the chat (dock parity)
+      host.appendChild(node); place(node, tb, w);
+      const feed = node.querySelector('.cp-feed, .wr-feed'); if (feed) feed.scrollTop = feed.scrollHeight;
+    }
+  }
+  if (sess.menuOpen && (!COMMS_CAT_META[cat].channel || commsOnline())) {
+    const at = document.querySelector('.comms-rail .js-comms-all');
+    if (at) { const node = el('div', 'comms-pop comms-menu'); node.innerHTML = commsMenuHtml(cat); host.appendChild(node); place(node, at, 340); }
+  }
+}
+/* ── actions ─────────────────────────────────────────────────────────────── */
+/* Sweep a category's window off the rail when the rail leaves it (chip re-click,
+   sibling chip, or any cross-category open — the single-open law's broom). */
+function commsLeaveCat(cat) {
+  if (cat === 'wrangler' && state.wrangler.open && !document.body.classList.contains('is-phone')) {
+    wranglerRailSnapshot(); state.wrangler.open = false; state.wrangler.min = false;
+  }
+}
+function commsToggleCat(cat) {
+  const phone = document.body.classList.contains('is-phone');
+  if (phone && (cat === 'team' || cat === 'wrangler')) {
+    // phones have no rail — these chips keep bridging to the bottom-sheet docks (mobile reflow rides later)
+    if (cat === 'team') { state.chat.open = !state.chat.open; return render(); }
+    if (state.wrangler.open) { wranglerRailSnapshot(); state.wrangler.open = false; return render(); }
+    return wranglerNewChat();
+  }
+  const rail = state.commsRail;
+  if (rail.cat === cat) {                                // same chip again → sweep the rail clean
+    rail.cat = null; commsLeaveCat(cat);
+    saveCommsRail(); return render();
+  }
+  const prev = rail.cat;
+  rail.cat = cat; if (prev) commsLeaveCat(prev);
+  if (COMMS_CAT_META[cat].channel) refreshCommsThreads();
+  // summon the last session — its remembered LAST-open conversation is the ONE window restored
+  const s = rail.sessions[cat];
+  if (cat === 'team' && s.lastOpen) {
+    const c = chatById(String(s.lastOpen));
+    if (c && !commsIsEnded(c.id, 'team', commsChatLastAt(c))) state.chat.activeId = c.id;
+    else s.lastOpen = null;
+  }
+  if (cat === 'wrangler' && s.lastOpen) {
+    const idw = String(s.lastOpen);
+    if (String(state.wrangler.id) === idw) state.wrangler.open = true;
+    else if ((state.wranglerRail || []).some((c) => String(c.id) === idw)) { saveCommsRail(); return wranglerRailOpen(idw); }
+    else s.lastOpen = null;
+  }
+  saveCommsRail(); render();
+}
+function commsToggleTab(id) {
+  const cat = state.commsRail.cat, s = commsSess(); if (!s) return;
+  id = String(id);
+  if (String(s.lastOpen) === id) {                       // the open window's tab → tuck it away
+    s.lastOpen = null;
+    if (cat === 'wrangler') commsLeaveCat('wrangler');
+    saveCommsRail(); return render();
+  }
+  if (cat === 'team') return openChat(id);               // rejoin + seen + rail routing, one funnel
+  if (cat === 'wrangler') return commsOpenWrangler(id);
+  s.lastOpen = id; commsFetchMsgs(id);
+  saveCommsRail(); render();
+}
+function commsHideTab(id) {   // the tab ✕ HIDES from the rail only — it never ends a conversation
+  const cat = state.commsRail.cat, s = commsSess(); if (!s) return;
+  id = String(id);
+  if (COMMS_CAT_META[cat].channel) s.tabs = s.tabs.filter((x) => String(x) !== id);
+  else { s.hidden = s.hidden || []; if (!s.hidden.includes(id)) s.hidden.push(id); }   // team/wrangler tabs derive from their stores — hide per device
+  if (String(s.lastOpen) === id) { s.lastOpen = null; if (cat === 'wrangler') commsLeaveCat('wrangler'); }
+  saveCommsRail(); render();
+}
+/* Open (or resurrect — conversations never really end) a conversation onto the rail
+   in the right category, window up. Entry: the R20 menu, the ALL list, the customer
+   profile's Comms section, and the team/wrangler tab clicks. Single-open: landing
+   here closes whatever window was up (lastOpen replaces; category switch sweeps). */
+function commsOpenConv(cat, id) {
+  if (cat === 'team') return openChat(String(id));
+  if (cat === 'wrangler') return commsOpenWrangler(String(id));
+  const meta = COMMS_CAT_META[cat]; if (!meta || !meta.channel) return;
+  commsUnend(id, meta.channel);                          // any new open resurrects an ended thread (phone-contact model)
+  const rail = state.commsRail;
+  if (rail.cat !== cat) { commsLeaveCat(rail.cat); rail.cat = cat; }
+  const s = rail.sessions[cat];
+  if (!s.tabs.some((x) => String(x) === String(id))) s.tabs.push(String(id));
+  s.lastOpen = String(id); s.menuOpen = false;
+  saveCommsRail(); refreshCommsThreads(); commsFetchMsgs(id); render();
+  if (!commsOnline()) toast('Connect to the backend to wrangle customer threads.');
+}
+// Open/resurrect a Mr. Wrangler conversation onto the rail (live chat or a §18g snapshot).
+function commsOpenWrangler(id) {
+  id = String(id);
+  commsUnend(id, 'wrangler');
+  if (String(state.wrangler.id) === id) {
+    const rail = state.commsRail;
+    if (rail.cat !== 'wrangler') { commsLeaveCat(rail.cat); rail.cat = 'wrangler'; }
+    const s = rail.sessions.wrangler;
+    state.wrangler.open = true;
+    s.lastOpen = id; s.menuOpen = false;
+    s.hidden = (s.hidden || []).filter((x) => String(x) !== id);
+    saveCommsRail(); return render();
+  }
+  wranglerRailOpen(id);                                  // loads the snapshot → openWranglerDock routes it onto the rail
+}
+// The ALL menu's + New chat (D9): team reuses newChat(), wrangler reuses wranglerNewChat().
+function commsNewChat() {
+  const cat = state.commsRail.cat;
+  if (cat === 'team') { const c = newChat(); return openChat(c.id); }
+  if (cat === 'wrangler') return wranglerNewChat();
+}
+function commsEndConv(id, cat) {
+  cat = cat || state.commsRail.cat;
+  id = String(id);
+  const s = state.commsRail.sessions[cat];
+  if (cat === 'team') {
+    commsEnd(id, 'team');                                // client-side, per device — a newer message resurrects
+    if (String(s.lastOpen) === id) s.lastOpen = null;
+    if (String(state.chat.activeId) === id) state.chat.activeId = null;
+    saveCommsRail(); render();
+    toast('Chat ended — a new message rounds it back up.');
+    return;
+  }
+  if (cat === 'wrangler') {
+    const w = state.wrangler;
+    if (String(w.id) === id) {                           // snapshot FIRST, then end (ended-at > snapshot ts keeps it ended)
+      wranglerRailSnapshot();
+      w.open = false; w.min = false; w.id = null; w.messages = []; w.reqNumber = null; w.reqTitle = null; w.reqUrl = null;
+    }
+    commsEnd(id, 'wrangler');
+    if (String(s.lastOpen) === id) s.lastOpen = null;
+    saveCommsRail(); render();
+    toast('Conversation ended — the transcript stays stored.');
+    return;
+  }
+  const meta = COMMS_CAT_META[cat]; if (!meta || !meta.channel) return;
+  commsEnd(id, meta.channel);                            // client-side v1 — the server 'ended' flag is Phase B
+  s.tabs = s.tabs.filter((x) => String(x) !== id);
+  if (String(s.lastOpen) === id) s.lastOpen = null;
+  saveCommsRail(); render();
+  toast('Conversation ended — the history stays on the profile.');
+}
+function commsFromMenu(btn) {   // D7 — pick which connected address the email goes out as
+  const id = btn.dataset.cust, aliases = _commsAliases || [];
+  const sel = commsFromSel.get(String(id)) || aliases[0] || '';
+  openDropdown(btn, aliases.map((a) => `<button class="dd-item js-comms-from-pick${a === sel ? ' on' : ''}" data-cust="${esc(id)}" data-from="${esc(a)}">${esc(a)}</button>`).join(''), { align: 'left' });
+}
+async function commsSend(customerId) {
+  const cat = state.commsRail.cat;
+  const meta = COMMS_CAT_META[cat]; if (!meta || !meta.channel) return;
+  const key = cat + '|' + customerId;
+  const text = (commsDrafts.get(key) || '').trim();
+  if (!text || commsSending.has(key)) return;
+  if (!commsOnline()) { toast('Connect to the backend to wrangle customer threads.'); return; }
+  const cust = IDX.customer.get(customerId);
+  const from = meta.channel === 'email' ? (commsFromSel.get(String(customerId)) || ((_commsAliases || [])[0] || '')) : '';
+  commsSending.add(key); render();
+  let r; try { r = await backendCall('sendCustomerMessage', { channel: meta.channel, entity: 'customer', recId: customerId, customerId, template: 'freeform', text, from }); }
+  catch (e) { r = { ok: false, reason: 'network' }; }
+  commsSending.delete(key);
+  if (r && r.ok) {
+    commsDrafts.delete(key);
+    // optimistic feed + thread rollup; the next commsThreads poll re-truths it from the server log
+    const now = new Date().toISOString();
+    const entry = commsMsgs.get(String(customerId));
+    if (entry && Array.isArray(entry.messages)) entry.messages.push({ msgId: r.msgId, channel: meta.channel, direction: 'outbound', status: 'sent', when: now, body: text, maskedTo: r.maskedTo || '', fromUsed: r.fromUsed || '' });
+    if (commsThreads) {
+      let t = commsThreads.find((x) => String(x.customerId) === String(customerId));
+      if (!t) { t = { customerId: String(customerId), count: 0 }; commsThreads.push(t); }
+      t.count = (t.count || 0) + 1;
+      t.lastWhen = now; t.lastChannel = meta.channel; t.lastDirection = 'outbound'; t.lastSnippet = text.slice(0, 80); t.lastStatus = 'sent';
+      if (t.channels && t.channels[meta.channel]) { const ch = t.channels[meta.channel]; ch.lastWhen = now; ch.lastDirection = 'outbound'; ch.lastSnippet = text.slice(0, 80); ch.lastStatus = 'sent'; }
+      else if (t.channels) t.channels[meta.channel] = { lastWhen: now, lastDirection: 'outbound', lastSnippet: text.slice(0, 80), lastStatus: 'sent' };
+    }
+    if (cust) logAction(cust, `${meta.channel === 'sms' ? 'Texted' : 'Emailed'} ${r.maskedTo || 'customer'}`);   // History stays stamped, masked (spec Q-8b)
+    refreshCommsThreads(true);
+    haptic([12, 30, 12]);
+    render();
+    return;
+  }
+  render();
+  const why = {   // server refusal → say what's wrong and where to fix it (R19 voice)
+    'no-phone': 'No phone on file — add one on the account.',
+    'no-email': 'No email on file — add one on the account.',
+    'opted-out': `This customer has opted out of ${meta.channel === 'sms' ? 'texts' : 'email'} — hard stop.`,
+    'not-configured': 'SMS isn’t wired yet — Mocean keys go in the backend Script Properties.',
+    'cap': 'Daily send cap reached — raise SMS_DAILY_CAP if this run is legit.',
+    'quiet-hours': 'Quiet hours (8pm–8am) — the message can go out in the morning.',
+    'isolation': 'Record/customer mismatch — reload and try again.',
+    'provider': 'The send failed server-side — check the line and try again.',
+    'empty': 'Nothing to send — type a message first.',
+    'network': 'Couldn’t reach the backend — try again.',
+  }[r && r.reason] || 'Didn’t send — try again.';
+  toast(why);
+}
+/* ── customer profile: the compact Comms section (one row per channel) ────── */
+function commsCustSectionHtml(c) {
+  if (!commsOnline() || !c || !c.customerId) return '';
+  const entry = commsFetchMsgs(c.customerId);           // lazy fetch when the card opens; 30s cache per render cycle
+  const msgs = (entry && entry.messages) || [];
+  if (!msgs.length) return '';
+  const ended = commsEndedSet();
+  const row = (channel) => {
+    const list = msgs.filter((m) => m.channel === channel);
+    if (!list.length) return '';
+    const last = list.reduce((a, b) => (String(a.when || '') > String(b.when || '') ? a : b));
+    const me = last.direction !== 'inbound';
+    const st = me ? (last.status === 'failed' ? 'red' : 'green') : 'red';
+    const isEnded = ended.has(String(c.customerId) + '|' + channel);
+    return `<div class="kv comms-line"><span class="cp-dot c-${st}" aria-hidden="true"></span>${badge(channel === 'sms' ? 'Text' : 'Email', 'gray')}<span class="comms-snip">${esc((me ? 'you: ' : 'them: ') + (last.body || last.subject || ''))}</span>${actionPill('commit', 'Open', { js: 'js-comms-copen', h: 24, data: { cust: c.customerId, channel } })}${isEnded ? '' : ghostPill('End', { js: 'js-comms-cend', data: { cust: c.customerId, channel }, tip: 'End it — the history stays right here' })}</div>`;
+  };
+  const rows = row('sms') + row('email');
+  return rows ? `<div class="section comms-sec"><h4>Comms</h4><div class="fieldstack">${rows}</div></div>` : '';
+}
+
+
 boot();
 
 // expose for console/debugging + future DATA WIRING
