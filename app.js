@@ -1030,7 +1030,7 @@ function createContinuationInvoice(r, covStart, covEnd) {
  *  full-window − billedSeries), so an already-billed — even PAID — sub-tier day counts toward
  *  the blended rate instead of being re-billed. Positive only (refund-first: a paid chunk is
  *  never reduced). Without fullWin the added segment is priced standalone (OFF path, #444). */
-function billChunkUnits(inv, r, ns, ne, prevEnd, retro, kind, contInvId, fullWin) {
+function billChunkUnits(inv, r, ns, ne, prevEnd, retro, kind, contInvId, fullWin, emitZero) {
   let delta = 0, count = 0;
   rentalUnits(r).forEach((eu) => {
     if (unitVoided(r, eu)) return;
@@ -1050,7 +1050,11 @@ function billChunkUnits(inv, r, ns, ne, prevEnd, retro, kind, contInvId, fullWin
       const d = unitExtensionDelta(inv, r, eu, ns, ne, prevEnd, retro);
       amount = d.amount; rate = d.rate;
     }
-    if (amount > 0.005) {
+    // Extension/continuation deltas only post when they actually charge (>0). But on the INITIAL
+    // multi-chunk build (emitZero — createInvoiceForRental) always emit one line per unit even at
+    // $0, matching the ≤28-day single-chunk rentalLineItems path — else a >28-day rental whose units
+    // sit on an unpriced category (catRatesUnset) creates a completely empty invoice (#537).
+    if (amount > 0.005 || (emitZero && amount > -0.005)) {
       const tail = kind === 'extension' ? ` · Extension → ${fmtShortDate(ne)}` : (contInvId ? ` · Ext of ${invoiceShort(contInvId)}` : '');
       inv.lineItems.push({ kind, ref: r.rentalId, unitId: eu.unitId, lid: lineLid(), label: `${u.name} · ${rate}${tail}`, amount });
       delta += amount; count++;
@@ -16189,7 +16193,7 @@ function createInvoiceForRental(rentalId) {
     if (ch.idx === 0) { id = cid; r.invoiceId = cid; }
     else inv.contOf = id;
     if (chunks.length === 1) { rentalLineItems(r).forEach((li) => inv.lineItems.push(li)); }   // unchanged single-invoice path
-    else billChunkUnits(inv, r, ch.start, ch.end, ch.start, retroPricingOn(), 'rental', ch.idx === 0 ? null : id);   // per-chunk rental line(s)
+    else billChunkUnits(inv, r, ch.start, ch.end, ch.start, retroPricingOn(), 'rental', ch.idx === 0 ? null : id, null, true);   // per-chunk rental line(s) — emitZero: one line per unit even at $0 (#537)
     if (ch.idx === 0) {   // transport + Rental Protection surcharge (F4b) billed once, on the primary chunk
       transportLineItems(r).forEach((li) => inv.lineItems.push(li));
       protectionLineItems(r).forEach((li) => inv.lineItems.push(li));
