@@ -1,5 +1,29 @@
 # Backend deploy queue — ready the moment auth is unblocked (2026-07-06)
 
+## ⛔ STAGED, NOT DEPLOYED — SMS keyword auto-reply (2026-07-08, A2P/10DLC compliance)
+- **What:** inbound Twilio webhook handler (`smsInbound_`) so a real customer STOP/START/HELP
+  text actually flips `commsConsent.sms` on the customer record (the campaign registration
+  *declares* these keywords; this is what *handles* them). STOP/STOPALL/UNSUBSCRIBE/CANCEL/
+  END/QUIT → `commsConsent.sms = 'opted-out'`; START/YES/UNSTOP/SUBSCRIBE/JOIN/BEGIN/RESUME/
+  OPTIN → `'opted-in'`; HELP/INFO → info reply only. Any other inbound text is logged to the
+  customer's thread, not auto-replied to. Replies to the keyword itself go out via a direct
+  Twilio call (intentionally bypassing `sendCustomerMessage_`'s opt-out hard-block — the STOP/
+  START confirmation IS the compliance mechanism, not a message subject to consent).
+- **Source:** `docs/handoffs/sms-keyword-autoreply-backend.gs`. Depends on the already-live
+  Phase-1 SMS pipe (`customer-sms-backend.gs`, shipped 2026-07-06) for `smsNormalizePhone_` /
+  `messagesSheet_`.
+- **Wire-up:** `// Router: if (action === 'inboundSms' || e.parameter.MessageSid) return smsInbound_(e);`
+  (placed ahead of the JSON-body action switch — Twilio POSTs form-urlencoded). Needs a NEW
+  Script Property `TWILIO_INBOUND_TOKEN` (shared-secret webhook token — GAS can't read the
+  `X-Twilio-Signature` header, see the file's assumption #2) and the Twilio number's "A message
+  comes in" webhook pointed at the exec URL with that token in the query string. Also flip on
+  Twilio's "send opt-out keywords to my application" (Advanced Opt-Out) setting, or Twilio
+  intercepts STOP/START at the carrier level and this handler never fires.
+- **Consent field written:** `customer.commsConsent.sms` (shallow-merged; `email`/other keys
+  untouched) — matches the exact shape `sendCustomerMessage_` already reads for its hard-block.
+  See the file header for the full assumption if the live shape has drifted since 2026-07-06.
+- **Status:** staged, not deployed — **STOP-gated** (Jac's explicit go before any `/clasp` deploy).
+
 ## ✅ DEPLOYED — team-chat privacy (2026-07-08, Jac editor deploy)
 - **What:** `getChats_` / `setChats_` replaced with scoped + authorized versions (+ helpers
   `chatCanSee_` / `chatMergeMsgs_` / `chatMergeSeen_` / `chatAuthorizeWrite_`). Team-chat
@@ -84,6 +108,7 @@ https://script.google.com/d/1hw9A7Id3YIoiSCBkNFeDaKGRv-VtljFFIuBdQG5QULrgS0DjQhQ
 |---|---|---|---|---|
 | 1 | **perfReport** — Web-Vitals sink → `_perf` tab (5k-row FIFO, metrics-only by construction) | `perf-report-backend.gs` | `if (action === 'perfReport') return json(perfReport_(body));` (wrap in `json()` — `handle()` must return a ContentService output, not the bare `{ok:true}` the source's comment shows) | ✅ DEPLOYED @62 (2026-07-06) |
 | 2 | **unitDaily snapshots (M4)** — daily unit hours/fleet-status history | `unit-daily-snapshots.gs` | router line per that file + run `installUnitDailyTrigger()` ONCE | ✅ Already live @57 (2026-07-03) |
+| 3 | **SMS keyword auto-reply** — inbound Twilio STOP/START/HELP webhook (A2P/10DLC compliance) | `sms-keyword-autoreply-backend.gs` | `if (action === 'inboundSms' \|\| e.parameter.MessageSid) return smsInbound_(e);` (before the JSON-body switch — Twilio posts form fields) + new Script Property `TWILIO_INBOUND_TOKEN` + Twilio console webhook config | ⛔ staged, not deployed — STOP-gated |
 
 Deploy flow (same deployment id, same exec URL). **`push` via the API, then deploy from the
 EDITOR** — the API `deploy` breaks anonymous access (see the ⛔ section above):
