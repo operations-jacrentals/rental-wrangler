@@ -1613,6 +1613,33 @@ try {
       T.__state.overlay = null;
     }
 
+    // === units-fleet D3 — Sell a unit: sellUnit() sets the sale terms, and a SOLD
+    // unit's ACTUAL salePrice replaces the assumed bottomDollar residual in
+    // categoryStats' lifetime-ROI math (unsold units keep the assumed residual) ===
+    {
+      const cat = { categoryId: 'CAT-SELL-TEST', name: 'Sell Test Cat', bottomDollar: 1000 };
+      const uA = { unitId: 'U-SELL-A', categoryId: 'CAT-SELL-TEST', name: 'Unit A', trueCost: 5000, fleetStatus: 'Active' };
+      const uB = { unitId: 'U-SELL-B', categoryId: 'CAT-SELL-TEST', name: 'Unit B', trueCost: 5000, fleetStatus: 'Active' };
+      T.DATA.categories.push(cat); T.IDX.category.set('CAT-SELL-TEST', cat);
+      T.DATA.units.push(uA, uB); T.IDX.unit.set('U-SELL-A', uA); T.IDX.unit.set('U-SELL-B', uB);
+
+      // both unsold: no revenue/repair, $10,000 trueCost, residual = 2 × $1,000 bottomDollar → ROI -80%
+      const before = T.categoryStats(cat);
+      ok(before.roi === -80, `categoryStats: unsold units both use the assumed bottomDollar residual (roi=${before.roi}, expected -80)`);
+
+      T.sellUnit('U-SELL-B', '4000', '2026-07-01', 'Test buyer');
+      ok(uB.fleetStatus === 'Sold' && uB.salePrice === 4000 && uB.saleDate === '2026-07-01' && uB.soldNote === 'Test buyer', 'sellUnit: sets fleetStatus/salePrice/saleDate/soldNote on the unit');
+
+      // Unit B's residual is now its REAL $4,000 sale price (not the $1,000 assumed bottomDollar);
+      // Unit A (still unsold) keeps the assumed residual → total residual $5,000 → ROI -50%
+      const after = T.categoryStats(cat);
+      ok(after.roi === -50 && after.roi !== before.roi, `categoryStats: a Sold unit's ACTUAL salePrice replaces its assumed residual (roi=${after.roi}, expected -50)`);
+
+      T.DATA.units = T.DATA.units.filter((u) => u.unitId !== 'U-SELL-A' && u.unitId !== 'U-SELL-B');
+      T.DATA.categories = T.DATA.categories.filter((c) => c.categoryId !== 'CAT-SELL-TEST');
+      T.IDX.unit.delete('U-SELL-A'); T.IDX.unit.delete('U-SELL-B'); T.IDX.category.delete('CAT-SELL-TEST');
+    }
+
     return out;
   });
 

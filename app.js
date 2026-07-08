@@ -2053,7 +2053,11 @@ function categoryStats(cat) {
   // Without a purchase cost (units with no trueCost/purchasePrice), revenue ÷ repair-only
   // explodes to absurd %. Gate on `trueCost` (matches the §12.4 unit-level `invested ?`
   // guard) so a category with no acquisition cost reads '—', not a fake 900,000%.
-  const lifetimeRoi = trueCost ? ((totalRev + (cat.bottomDollar || 0) * us.length) - denom) / denom : null;
+  // D3 sell-a-unit (units-fleet spec): a SOLD unit's REALIZED salePrice replaces the
+  // assumed bottomDollar residual for that one unit; every still-unsold unit keeps the
+  // existing assumed-residual behavior. Surgical — only this one term changed.
+  const residual = us.reduce((a, u) => a + (u.fleetStatus === 'Sold' && Number(u.salePrice) ? Number(u.salePrice) : (cat.bottomDollar || 0)), 0);
+  const lifetimeRoi = trueCost ? ((totalRev + residual) - denom) / denom : null;
   const roi = lifetimeRoi != null ? Math.round(lifetimeRoi * (365 / avgDaysOwned) * 100) : null;
   return {
     count: us.length,
@@ -6681,6 +6685,16 @@ const DETAIL = {
     const invested = Number(u.trueCost) || Number(u.purchasePrice) || 0;
     const profit = totalRev - repair - invested;
     const roi = invested ? Math.round((profit / invested) * 100) : null;
+    /* Sell a unit (spec units-fleet D3): a dedicated capture flow instead of a bare
+       Sold flip — money-gated (D2: sale price is margin-sensitive), so a non-money
+       login sees fleet status but never the Sell action or a sale figure. Once sold,
+       the realized sale price/date show here in place of the Sell action. */
+    const sellAction = (canMoney() && u.fleetStatus !== 'Sold')
+      ? actionPill('commit', 'Sell', { js: 'js-open-sell', data: { rec: u.unitId } })
+      : '';
+    const soldInfo = (u.fleetStatus === 'Sold' && canMoney() && (u.salePrice != null || u.saleDate))
+      ? `${u.salePrice != null ? kv(money(u.salePrice), { pfx: 'Sale price', derived: true }) : ''}${u.saleDate ? kv(yr(u.saleDate), { pfx: 'Sale date', derived: true }) : ''}`
+      : '';
     const investment = `<div class="section"><h4>Investment</h4>
       <div class="split">
         <div class="side">
@@ -6688,6 +6702,7 @@ const DETAIL = {
           ${efld('units', u, 'unitId', 'purchaseDate', 'Purchase date', { type: 'date', sfx: 'purchased', fmt: yr })}
           ${efld('units', u, 'unitId', 'trueCost', 'True cost', { type: 'number', sfx: 'true cost', fmt: money, money: true })}
           ${efld('units', u, 'unitId', 'purchaseHours', 'Hours at purchase', { type: 'number', sfx: 'at purchase', fmt: (v) => num(v) + ' HRS' })}
+          ${soldInfo}
         </div>
         <div class="side r">
           ${kv(money(totalRev), { pfx: 'Total Revenue', derived: true })}
@@ -6696,7 +6711,7 @@ const DETAIL = {
           ${kv(`${money(profit)}${roi != null && canMoney() ? ` · (${roi}%)` : ''}`, { pfx: 'Profit', derived: true })}
         </div>
       </div>
-      <div style="display:flex;justify-content:flex-end;margin-top:8px">${gatePill('unitFleetStatus', u.fleetStatus, 'js-fleetstatus', { rec: u.unitId })}</div></div>`;
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px">${sellAction}${gatePill('unitFleetStatus', u.fleetStatus, 'js-fleetstatus', { rec: u.unitId })}</div></div>`;
     /* INSPECTION — live condition + wash toggles, timestamp in the header */
     const li2 = latestInspForUnit(u.unitId);
     const stampDate = u.condAt || li2?.date || '';
@@ -10935,6 +10950,23 @@ function buildPopupEl(o, overlay, opts = {}) {
         <label class="svc-field"><span>Date &amp; time</span>${dateField('when', o.when, { withTime: true, time: o.whenTime })}</label>
         <textarea class="insp-desc js-sch-note" placeholder="What's the follow-up? (quote call, pickup, demo…)">${esc(o.note || '')}</textarea>` });
     overlay.appendChild(pop);
+  } else if (o.kind === 'sellUnit') {
+    // Sell a unit (spec units-fleet D3): captures sale price + date, closes the unit's
+    // ROI out cleanly (see categoryStats' residual swap), and IS the accounting seam —
+    // the accounting area reads salePrice/saleDate off a Sold unit to book sale revenue;
+    // no parallel accounting record is created here. Money-gated (D2): canMoney() is
+    // re-checked here as defence-in-depth, same as every other money popup/action.
+    const u = IDX.unit.get(o.unitId);
+    if (!u || !canMoney()) { return false; }
+    if (o.saleDate === undefined) o.saleDate = TODAY_ISO;
+    const pop = el('div', 'popup'); pop.style.width = '360px';
+    pop.innerHTML = popupShell({ icon: CARD_ICON.units || '', title: `Sell — ${u.name}`, tag: 'Unit · sale',
+      foot: `<button class="pill ghost js-close" data-r="R18">Cancel</button><button class="pill ignition js-sell-save" data-r="R17" data-rec="${u.unitId}">Record sale</button>`,
+      body: `
+        <label class="svc-field"><span>Sale price</span><input type="number" class="js-sell-price" placeholder="$0" min="0" step="1"></label>
+        <label class="svc-field" style="margin-top:8px"><span>Sale date</span>${dateField('saleDate', o.saleDate)}</label>
+        <textarea class="insp-desc js-sell-note" placeholder="Buyer / notes (optional)…"></textarea>` });
+    overlay.appendChild(pop);
   } else if (o.kind === 'splitUnit') {
     // §20 split — give one unit its own window on a NEW sibling rental, same invoice.
     const r = IDX.rental.get(o.rentalId), u = IDX.unit.get(o.unitId);
@@ -11101,6 +11133,7 @@ const WINDOW_CATALOG = [
   { kind: 'inspection',    label: 'Failure report',          tag: 'Inspection · failure',      sample: () => ({ recId: ((DATA.inspections || [])[0] || {}).inspectionId }) },
   { kind: 'service',       label: 'Complete service',        tag: 'Service · complete',        sample: () => ({ unitId: ((DATA.units || [])[0] || {}).unitId, taskId: 'svc-wash' }) },
   { kind: 'schedule',      label: 'Schedule follow-up',      tag: 'Customer · follow-up',      sample: () => ({ customerId: ((DATA.customers || [])[0] || {}).customerId }) },
+  { kind: 'sellUnit',      label: 'Sell a unit',             tag: 'Unit · sale',               sample: () => ({ unitId: ((DATA.units || [])[0] || {}).unitId, saleDate: TODAY_ISO }) },
   { kind: 'splitUnit',     label: 'Different dates (split)',  tag: 'Rental · split window',     sample: () => ({ rentalId: ((DATA.rentals || [])[0] || {}).rentalId, unitId: ((DATA.units || [])[0] || {}).unitId }) },
   { kind: 'addCard',       label: 'Add card',                tag: 'Customer · card on file',   sample: () => ({ customerId: ((DATA.customers || [])[0] || {}).customerId }) },
   { kind: 'addAch',        label: 'Add bank account',        tag: 'Customer · ACH bank',       sample: () => ({ customerId: ((DATA.customers || [])[0] || {}).customerId }) },
@@ -14271,6 +14304,7 @@ function onClick(e) {
   if (closest('.js-setintcat')) { const b = closest('.js-setintcat'); e.stopPropagation(); return addInterestedCategory(b.dataset.rec, b.dataset.val); }
   if (closest('.js-act-open')) { const b = closest('.js-act-open'); e.stopPropagation(); state.actMode = b.dataset.val; state.actOpen = b.dataset.rec; const rec = b.dataset.rec; render(); document.querySelector(`.js-act-in[data-rec="${rec}"]`)?.focus(); return; }
   if (closest('.js-schedule-save')) { const b = closest('.js-schedule-save'); e.stopPropagation(); const o = state.overlay; const root = b.closest('.popup'); const c = IDX.customer.get(b.dataset.rec); const date = o?.when, time = o?.whenTime || '09:00'; const note = (root.querySelector('.js-sch-note')?.value || '').trim(); if (!c || !date) { flashOr('.datefield', 'Pick a date first.'); return; } c.activityLog = c.activityLog || []; c.activityLog.push({ when: date, text: `Scheduled: ${note || 'follow-up'} @ ${date} ${to12(time)}` }); reindex('customers', c); toast('Scheduled — added to the Activity Log.'); state.datepick = null; closeOverlay(); render(); }
+  if (closest('.js-sell-save')) { const b = closest('.js-sell-save'); e.stopPropagation(); const o = state.overlay; const root = b.closest('.popup'); const price = root.querySelector('.js-sell-price')?.value; const date = o?.saleDate; const note = (root.querySelector('.js-sell-note')?.value || '').trim(); if (!date) { flashOr('.datefield', 'Pick a sale date first.'); return; } if (!price || Number(price) <= 0) { flashOr('.js-sell-price', 'Enter a sale price first.'); return; } return sellUnit(b.dataset.rec, price, date, note); }
   // Wave 2 — empty slots on a Quote/invoice: the UNIT slot points you at the
   // Units list (drag IS the link path); the CUSTOMER slot opens quick-add-link.
   if (closest('.js-slot-unit')) {
@@ -14396,6 +14430,7 @@ function onClick(e) {
   if (closest('.js-unit-status')) { const b = closest('.js-unit-status'); e.stopPropagation(); return openUnitStatusDropdown(b.dataset.rec, b.dataset.unit, b); }
   if (closest('.js-fleetstatus')) { const b = closest('.js-fleetstatus'); e.stopPropagation(); return openFleetDropdown(b.dataset.rec, b); }
   if (closest('.js-setfleet')) { const b = closest('.js-setfleet'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return setUnitFleet(b.dataset.rec, b.dataset.val); }
+  if (closest('.js-open-sell')) { e.stopPropagation(); if (!canMoney()) { toast('Selling a unit is Office/Admin only.'); return; } return openOverlay({ kind: 'sellUnit', unitId: closest('.js-open-sell').dataset.rec, saleDate: TODAY_ISO }); }   // D2 money-gate, re-checked as defence-in-depth
   if (closest('.js-wophase')) { const b = closest('.js-wophase'); e.stopPropagation(); return openWoPhaseDropdown(b.dataset.rec, b, null); }
   if (closest('.js-wophase-line')) { const b = closest('.js-wophase-line'); e.stopPropagation(); return openWoPhaseDropdown(b.dataset.rec, b, Number(b.dataset.idx)); }
   if (closest('.js-setwophase')) { const b = closest('.js-setwophase'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return setWoPhase(b.dataset.rec, b.dataset.val); }
@@ -14950,6 +14985,26 @@ function setUnitWash(unitId, val) {
   logAction(u, val === 'Wash' ? 'Wash requested' : 'Marked: don’t wash');
   toast(val === 'Wash' ? 'Wash queued — shows in the Wash list.' : 'Don’t wash — request cleared.');
   reanchorRender();
+}
+/* Sell a unit (spec units-fleet D3): sets the unit Sold + records the sale terms —
+   the SOURCE OF TRUTH the accounting area reads (unit.salePrice/saleDate on a Sold
+   unit) to book sale revenue; this is the whole integration seam, no parallel
+   accounting/expense record is written here. Money-gated (D2) — re-checked as
+   defence-in-depth even though the popup that calls this already gates canMoney(). */
+function sellUnit(unitId, price, date, note) {
+  if (!canMoney()) return;
+  const u = IDX.unit.get(unitId); if (!u) return;
+  const p = Number(price);
+  if (!(p > 0) || !date) return;
+  u.fleetStatus = 'Sold';
+  u.salePrice = p;
+  u.saleDate = date;
+  if (note) u.soldNote = note;
+  reindex('units', u);
+  logAction(u, `Sold for ${money(p)} on ${fmtShortDate(date)}`);
+  closeOverlay();
+  toast('Unit sold — ROI closed out.');
+  render();
 }
 /* yard journey: +Start/+Log Delivery and +End/+Log Recovery are the SAME capture
    either way (one event, shared video); +FC = markFieldCall. Popup gates every log. */
@@ -18272,7 +18327,7 @@ function exposeTestApi() {
       latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore, wranglerRailLoad, wrOffloadChatImages, wrEvictChatBlobs, driveViewUrl, mergeWranglerRails,
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
-      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, setFunnelStage, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, addMonthsISO, openMembershipEnroll, membershipEnrollCommit, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, getEntityColor, getEntityFlags, isEmptyMockDraft, sweepEmptyDrafts, createInvoiceForRental, syncRentalLines, rentalLineItems, salePriceSuggest, salePricingCfg, categoryCostBasis, driverRoster, driverName, legDriverField, dispatchEvents, applyShopRoleLanding, topServiceForUnit, snoozeService, svcSnoozedUntil, unitServiceRows, recordServiceCompletion, setRole: (r) => { currentRole = r || ''; render(); },
+      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, setFunnelStage, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, addMonthsISO, openMembershipEnroll, membershipEnrollCommit, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, getEntityColor, getEntityFlags, isEmptyMockDraft, sweepEmptyDrafts, createInvoiceForRental, syncRentalLines, rentalLineItems, salePriceSuggest, salePricingCfg, categoryCostBasis, driverRoster, driverName, legDriverField, dispatchEvents, applyShopRoleLanding, topServiceForUnit, snoozeService, svcSnoozedUntil, unitServiceRows, recordServiceCompletion, sellUnit, categoryStats, setRole: (r) => { currentRole = r || ''; render(); },
       openCustomerForm, renderOverlay, render, cardComplete, cardCaptureState, cardHasSelfie, cardHasSignature, captureSelfie, captureSignature, __state: state };   // UI drivers for headless screenshot/e2e tests
 
   } catch (e) { /* no window (non-browser) */ }
