@@ -4579,6 +4579,95 @@ function sourceLinkBtn(url, cite) {
   const tip = (cite && cite.length <= 140) ? cite : 'View in manual';
   return `<a class="icon-link" data-r="R26" href="${esc(url)}" target="_blank" rel="noopener" data-tip="${esc(tip)}">${I.linkOut}</a>`;
 }
+/* SERVICE DETAIL PANEL (Jac 2026-07-08 — "REALLY hold their hands"): a service task's
+ * optional `detail` object (fluidType/fluidCapacity/partRefs/notes) drives the "What
+ * you need" block in the service-completion popup. Parts are editable IN PLACE — they
+ * reuse the exact WO Work-Order line idiom (.woline row + closeX remove + the partform
+ * popup for add/edit) rather than inventing a parallel parts UI, per Jac's "this should
+ * nearly already exist because of Work Orders" note. Edits write to the REAL model task
+ * (unitServiceRows returns a merged/derived copy), never the copy — see
+ * removeSvcPartRef / savePartForm's taskTarget branch. */
+function svcRealTask(u, task) {
+  const mo = u && u.modelId ? IDX.model.get(u.modelId) : null;
+  return mo ? { mo, realTask: (mo.tasks || []).find((t) => t.taskId === task.taskId) || null } : { mo: null, realTask: null };
+}
+function svcNeedHtml(u, task) {
+  const { realTask } = svcRealTask(u, task);
+  const editable = !!realTask;
+  const d = task.detail || null;
+  if (!d) {
+    return (task.parts && task.parts.length)
+      ? `Parts: ${esc(task.parts.join(' · '))}`
+      : '<span class="muted">No detailed spec on file for this task yet.</span>';
+  }
+  const partRefs = d.partRefs || [];
+  const fluidHtml = (d.fluidType || d.fluidCapacity) ? `<div class="svc-fluid">${I.droplet}<span class="svc-fluid-txt">${d.fluidCapacity ? `<b>${esc(d.fluidCapacity)}</b>` : ''}${d.fluidCapacity && d.fluidType ? ' · ' : ''}${d.fluidType ? esc(d.fluidType) : ''}</span></div>` : '';
+  const notesHtml = d.notes ? `<div class="muted svc-notes">${esc(d.notes)}</div>` : '';
+  const rows = partRefs.map((pr, idx) => `
+    <div class="woline">
+      <span class="js-svc-part" data-idx="${idx}" style="cursor:pointer">${esc(pr.name || 'Part')}</span>
+      <span class="nums">${pr.cost != null ? `<b>${money(pr.cost)}</b>` : ''}<span>${esc(pr.oem || '—')}</span></span>
+      <span class="woline-acts">${editable ? closeX('js-svc-part-remove', { data: { unit: u.unitId, task: task.taskId, idx } }) : ''}</span>
+    </div>`).join('');
+  const partsBlock = (partRefs.length || editable) ? `
+    <div class="svc-parts-head">Parts / filters${editable ? '<span class="svc-editnote"> · edits this model’s schedule</span>' : ''}</div>
+    ${rows}
+    ${editable ? `<div class="svc-partadd">${addBtn('Part', { line: true, js: 'js-svc-addpart', h: 26, data: { unit: u.unitId, task: task.taskId } })}</div>` : ''}` : '';
+  return `${fluidHtml}${notesHtml}${partsBlock}` || '<span class="muted">No detailed spec on file for this task yet.</span>';
+}
+/** The part-detail side panel — a SECOND .popup appended to the same overlay (the
+ * cardSub / newCustomer §14 side-by-side precedent), showing a clicked partRef's
+ * vendor/cost. Prefers values the mechanic already entered directly on the partRef
+ * (via partform); falls back to a DATA.parts catalog match by OEM/productNumber;
+ * an honest "not in catalog yet" when neither is on file. */
+function svcPartPanelEl(u, task, pr, idx) {
+  const norm = (s) => String(s || '').trim().toLowerCase();
+  const catalogPart = pr.oem ? DATA.parts.find((p) => p.productNumber && norm(p.productNumber) === norm(pr.oem)) : null;
+  const vendor = (pr.vendorId && (IDX.vendor.get(pr.vendorId) || DATA.vendors.find((v) => v.vendorId === pr.vendorId)))
+    || (catalogPart && catalogPart.vendorId && (IDX.vendor.get(catalogPart.vendorId) || DATA.vendors.find((v) => v.vendorId === catalogPart.vendorId))) || null;
+  const cost = pr.cost != null ? pr.cost : (catalogPart ? catalogPart.priceEach : null);
+  const url = pr.url || (catalogPart ? catalogPart.website : '');
+  const img = pr.photo || (catalogPart ? catalogPart.imageUrl : '');
+  const enriched = !!(vendor || cost != null || url || catalogPart);
+  const webUrl = (w) => (/^https?:\/\//i.test(w) ? w : 'https://' + w);
+  const vendorBlock = vendor ? `
+      <div class="svc-ref-head" style="margin-top:14px">Vendor</div>
+      <div class="svc-vendor-block">
+        <div class="svc-vendor-name">${esc(vendor.name || '')}</div>
+        ${vendor.primaryContact ? `<div class="muted" style="font-size:11.5px">${esc(vendor.primaryContact)}</div>` : ''}
+        ${vendor.phone ? linkName(vendor.phone, { js: 'js-open-link', data: { url: 'tel:' + String(vendor.phone).replace(/[^\d+]/g, '') } }) : ''}
+        ${vendor.email ? linkName(vendor.email, { js: 'js-open-link', data: { url: 'mailto:' + vendor.email } }) : ''}
+        ${vendor.website ? linkName(vendor.website, { js: 'js-open-link', data: { url: webUrl(vendor.website) } }) : ''}
+      </div>` : (enriched ? '' : `
+      <p class="muted" style="font-size:12px;margin-top:8px">Not in the parts catalog yet.</p>
+      <div class="svc-part-row">${linkName('Search this part number ↗', { js: 'js-open-link', data: { url: 'https://www.google.com/search?q=' + encodeURIComponent(pr.oem || pr.name || '') } })}</div>`);
+  const pp = el('div', 'popup svc-part-popup'); pp.style.width = '300px';
+  pp.innerHTML = popupShell({
+    icon: CARD_ICON.parts || '', title: pr.name || 'Part',
+    tag: catalogPart ? 'Parts catalog · match' : (enriched ? 'Service · part' : 'Parts catalog · not on file'),
+    closeJs: 'js-svc-part-close',
+    body: `
+      ${img ? `<img class="insp-thumb" src="${esc(img)}" alt="${esc(pr.name || 'part')}">` : ''}
+      <div class="muted" style="font-size:11px;margin-bottom:8px">OEM ${esc(pr.oem || '—')}${catalogPart ? ` · Catalog ${esc(catalogPart.productNumber || '')}` : ''}</div>
+      ${cost != null ? kv(money(cost), { pfx: 'Cost', derived: pr.cost == null }) : ''}
+      ${catalogPart && catalogPart.qtyOnHand != null ? kv(catalogPart.qtyOnHand + ' on hand', { pfx: 'Stock', derived: true }) : ''}
+      ${url ? `<div class="svc-part-row">${linkName(url.length > 30 ? 'Order / info ↗' : url, { js: 'js-open-link', data: { url: webUrl(url) } })}</div>` : ''}
+      ${vendorBlock}`,
+    foot: `${ghostPill('Close', { js: 'js-svc-part-close' })}${actionPill('commit', 'Edit', { js: 'js-svc-partedit', data: { unit: u.unitId, task: task.taskId, idx } })}`,
+  });
+  return pp;
+}
+function removeSvcPartRef(unitId, taskId, idx) {
+  const u = IDX.unit.get(unitId); if (!u) return;
+  const { mo, realTask } = svcRealTask(u, { taskId });
+  if (!realTask || !realTask.detail || !Array.isArray(realTask.detail.partRefs) || !realTask.detail.partRefs[idx]) return;
+  const [gone] = realTask.detail.partRefs.splice(idx, 1);
+  reindex('models', mo); logAction(mo, `Removed part ${auditVal(gone.name)} from ${realTask.name}`);
+  const o = state.overlay;
+  if (o && o.kind === 'service' && o.partRef && o.partRef.idx === idx) o.partRef = null;
+  else if (o && o.kind === 'service' && o.partRef && o.partRef.idx > idx) o.partRef.idx -= 1;   // keep pointing at the same part after the array shifts
+  toast('Part removed.'); renderOverlay();
+}
 /** R6: required-until-entered — white bg + dark ink, stays loud until satisfied. */
 function reqBtn(label, { js, data, icon } = {}) {
   return `<button class="req${js ? ' ' + js : ''}" data-r="R6"${dataAttrs(data)}>${icon || ''}${esc(label)}</button>`;
@@ -10227,23 +10316,39 @@ function buildPopupEl(o, overlay, opts = {}) {
     // Part/Task popup (Jac 2026-06-11): photo + every field optional — anything
     // left empty gets filled by Mr. Wrangler (photo review · cost/url lookup ·
     // hours estimated from the category + industry install standards).
-    const w = IDX.wo.get(o.woId);
-    const li = o.idx != null ? (w?.lineItems || [])[o.idx] : null;
-    const ven = li?.vendorId ? DATA.vendors.find((v) => v.vendorId === li.vendorId) : null;
+    // Jac 2026-07-08 (service-detail-panel): ALSO doubles as the add/edit surface for a
+    // service task's partRefs (o.taskTarget = {unitId,taskId} instead of o.woId) — "this
+    // should nearly already exist because of Work Orders", so it's the same popup/fields,
+    // just saved to a model task's detail.partRefs instead of a WO's lineItems (see
+    // savePartForm). Hours doesn't apply to a parts/filters spec, so it's hidden there.
+    const forTask = !!o.taskTarget;
+    let li = null, pr = null, ven = null;
+    if (forTask) {
+      const tu = IDX.unit.get(o.taskTarget.unitId);
+      const { realTask } = svcRealTask(tu, { taskId: o.taskTarget.taskId });
+      pr = (o.idx != null && realTask?.detail?.partRefs) ? realTask.detail.partRefs[o.idx] : null;
+      ven = pr?.vendorId ? (IDX.vendor.get(pr.vendorId) || DATA.vendors.find((v) => v.vendorId === pr.vendorId)) : null;
+    } else {
+      const w = IDX.wo.get(o.woId);
+      li = o.idx != null ? (w?.lineItems || [])[o.idx] : null;
+      ven = li?.vendorId ? DATA.vendors.find((v) => v.vendorId === li.vendorId) : null;
+    }
+    const rec = pr || li;
     const pop = el('div', 'popup'); pop.style.width = '400px';
-    pop.innerHTML = popupShell({ icon: CARD_ICON.parts || CARD_ICON.workOrders, title: `${li ? 'Edit' : 'Add'} Part / Task`, tag: 'Work order · line',
-      foot: `${ghostPill('Cancel', { js: 'js-close' })}${actionPill('commit', li ? 'Save' : 'Add line', { js: 'js-pf2-save' })}`,
+    pop.innerHTML = popupShell({ icon: CARD_ICON.parts || CARD_ICON.workOrders, title: `${rec ? 'Edit' : 'Add'} Part${forTask ? '' : ' / Task'}`, tag: forTask ? 'Service · part' : 'Work order · line',
+      foot: `${ghostPill('Cancel', { js: 'js-close' })}${actionPill('commit', rec ? 'Save' : (forTask ? 'Add part' : 'Add line'), { js: 'js-pf2-save' })}`,
       body: `
-        ${fileDrop(state.partPhoto || li?.photo ? '✓ photo attached' : 'Add Photo (not required)', { js: 'js-pf2-file', capture: 'environment', done: !!(state.partPhoto || li?.photo), icon: I.camera })}
-        <p class="muted" style="text-align:center;font-size:11.5px;margin:7px 0 10px">✨ Mr. Wrangler will add the parts for you!</p>
-        <input class="lf-in js-pf2-desc" placeholder="Part/Task Name" value="${esc(li?.part || '')}" style="width:100%;margin-bottom:7px">
+        ${fileDrop(state.partPhoto || rec?.photo ? '✓ photo attached' : 'Add Photo (not required)', { js: 'js-pf2-file', capture: 'environment', done: !!(state.partPhoto || rec?.photo), icon: I.camera })}
+        ${forTask ? '' : `<p class="muted" style="text-align:center;font-size:11.5px;margin:7px 0 10px">✨ Mr. Wrangler will add the parts for you!</p>`}
+        <input class="lf-in js-pf2-desc" placeholder="Part/Task Name" value="${esc((forTask ? pr?.name : li?.part) || '')}" style="width:100%;margin-bottom:7px">
+        ${forTask && pr?.oem ? `<div class="muted" style="font-size:11px;margin:-3px 0 7px">OEM ${esc(pr.oem)} · from the manufacturer manual</div>` : ''}
         <div style="display:flex;gap:7px;margin-bottom:7px">
-          <input class="lf-in js-pf2-cost" type="number" min="0" placeholder="$Cost" value="${li?.cost ?? ''}" style="flex:1">
-          <input class="lf-in js-pf2-hours" type="number" min="0" step="0.5" placeholder="Hours" value="${li?.hours ?? ''}" style="flex:1">
+          <input class="lf-in js-pf2-cost" type="number" min="0" placeholder="$Cost" value="${(forTask ? pr?.cost : li?.cost) ?? ''}" style="flex:1">
+          ${forTask ? '' : `<input class="lf-in js-pf2-hours" type="number" min="0" step="0.5" placeholder="Hours" value="${li?.hours ?? ''}" style="flex:1">`}
         </div>
-        <input class="lf-in js-pf2-url" placeholder="URL link" value="${esc(li?.url || '')}" style="width:100%;margin-bottom:7px">
+        <input class="lf-in js-pf2-url" placeholder="URL link" value="${esc((forTask ? pr?.url : li?.url) || '')}" style="width:100%;margin-bottom:7px">
         <input class="lf-in js-pf2-vendor" placeholder="Vendor" value="${esc(ven?.name || '')}" style="width:100%;margin-bottom:4px">
-        <p class="muted" style="font-size:11px;margin:4px 0 4px">✨ Empty fields are filled by Mr. Wrangler after saving: the photo is reviewed for the description/cost/url, and hours are estimated from the category + industry standards.</p>` });
+        ${forTask ? '' : `<p class="muted" style="font-size:11px;margin:4px 0 4px">✨ Empty fields are filled by Mr. Wrangler after saving: the photo is reviewed for the description/cost/url, and hours are estimated from the category + industry standards.</p>`}` });
     overlay.appendChild(pop);
   } else if (o.kind === 'modelSchedule') {
     // A model's real maintenance schedule (Jac 2026-07-07) — replaces the generic
@@ -10769,12 +10874,17 @@ function buildPopupEl(o, overlay, opts = {}) {
       foot: `<button class="pill ignition js-svc-save" data-r="R17" data-unit="${u.unitId}" data-task="${task.taskId}">Record completion</button>`,
       body: `
         <div class="pillrow" style="margin-bottom:12px">${unitPill(u.unitId)}<span class="pill c-${task.color}">${esc(task.name)}</span><span class="muted" style="font-size:12px;margin-left:auto">${esc(svcText(task))}</span></div>
-        <div class="svc-ref"><div class="svc-ref-head">Reference</div><div class="svc-ref-body">${task.parts && task.parts.length ? `Parts: ${esc(task.parts.join(' · '))}<br>` : ''}Filters · Hyperlinks · Instructions · Photo — set per-task in the backend (§7.7)</div></div>
+        <div class="svc-ref"><div class="svc-ref-head">What you need${sourceLinkBtn(task.sourceUrl, task.source)}</div><div class="svc-ref-body">${svcNeedHtml(u, task)}</div></div>
         <label class="svc-field"><span>Hours at completion</span><input type="number" class="js-svc-hours" value="${num(u.currentHours)}"></label>
         <label class="svc-field"><span>Date completed</span><input type="date" class="js-svc-date" value="${TODAY_ISO}"></label>
         ${media}
         <textarea class="insp-desc js-svc-notes" placeholder="Notes (parts used, observations)…"></textarea>` });
     overlay.appendChild(pop);
+    if (o.partRef && o.partRef.idx != null) {   // the part-detail side panel — rendered BESIDE the service popup (cardSub precedent, §14)
+      const partRefs = (task.detail && task.detail.partRefs) || [];
+      const pr = partRefs[o.partRef.idx];
+      if (pr) { overlay.appendChild(svcPartPanelEl(u, task, pr, o.partRef.idx)); }
+    }
   } else if (o.kind === 'schedule') {
     // §12.1 Schedule — a single date+time follow-up logged to the customer Activity Log
     const c = IDX.customer.get(o.customerId);
@@ -14012,7 +14122,12 @@ function onClick(e) {
   if (closest('.js-req-chat')) { e.stopPropagation(); return openWranglerFromRequest(Number(closest('.js-req-chat').dataset.n)); }   // §18e continue the conversation
   if (closest('.js-req-approve')) { e.stopPropagation(); return approveRequest(Number(closest('.js-req-approve').dataset.n)); }
   if (closest('.js-req-dismiss')) { e.stopPropagation(); return dismissRequest(Number(closest('.js-req-dismiss').dataset.n)); }
-  if (closest('.js-open-link')) { e.stopPropagation(); const url = closest('.js-open-link').dataset.url || ''; if (/^(https?:\/\/|mailto:)/i.test(url)) window.open(url, '_blank', 'noopener'); return; }
+  if (closest('.js-open-link')) { e.stopPropagation(); const url = closest('.js-open-link').dataset.url || ''; if (/^(https?:\/\/|mailto:|tel:)/i.test(url)) window.open(url, '_blank', 'noopener'); return; }
+  if (closest('.js-svc-part')) { e.stopPropagation(); const b = closest('.js-svc-part'); const o = state.overlay; if (o?.kind === 'service') { o.partRef = { idx: Number(b.dataset.idx) }; renderOverlay(); } return; }   // service popup — click a part chip to open its vendor/cost side panel
+  if (closest('.js-svc-part-close')) { e.stopPropagation(); const o = state.overlay; if (o?.kind === 'service') { o.partRef = null; renderOverlay(); } return; }
+  if (closest('.js-svc-part-remove')) { e.stopPropagation(); const b = closest('.js-svc-part-remove'); return removeSvcPartRef(b.dataset.unit, b.dataset.task, Number(b.dataset.idx)); }
+  if (closest('.js-svc-addpart')) { const b = closest('.js-svc-addpart'); e.stopPropagation(); state.partPhoto = null; return openOverlay({ kind: 'partform', taskTarget: { unitId: b.dataset.unit, taskId: b.dataset.task }, idx: null }); }
+  if (closest('.js-svc-partedit')) { const b = closest('.js-svc-partedit'); e.stopPropagation(); state.partPhoto = null; return openOverlay({ kind: 'partform', taskTarget: { unitId: b.dataset.unit, taskId: b.dataset.task }, idx: Number(b.dataset.idx) }); }
   if (closest('.js-board')) { const b = closest('.js-board'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return openOverlay({ kind: 'board', board: b.dataset.board }); }
   if (closest('.js-vendor-open')) { e.stopPropagation(); return openOverlay({ kind: 'board', board: 'vendors', recId: closest('.js-vendor-open').dataset.rec }); }   // WO-line vendor names → vendor detail in the board popup
   if (closest('.js-expense-open')) { e.stopPropagation(); return openOverlay({ kind: 'board', board: 'expenses', recId: closest('.js-expense-open').dataset.rec }); }   // part-detail receipt link → expense detail in the board popup
@@ -14989,12 +15104,48 @@ async function autofillPartLine(w, li, photo) {
   toast('✨ Mr. Wrangler filled in the part.');
 }
 
+/** Name-match or create a vendor by typed name — the idiom shared by the WO part
+ *  line, the service-task part ref, and the receipt form. Returns the vendorId, or
+ *  null if no name was typed. */
+function resolveOrCreateVendorByName(name) {
+  if (!name) return null;
+  let v = DATA.vendors.find((x) => (x.name || '').toLowerCase() === name.toLowerCase());
+  if (!v) { v = { vendorId: 'VEN-C' + (state.seq++), name, mock: true }; DATA.vendors.push(v); reindex('vendors', v); }
+  return v.vendorId;
+}
 function savePartForm() {
   const o = state.overlay; if (!o || o.kind !== 'partform') return;
-  const w = IDX.wo.get(o.woId); if (!w) return closeOverlay();
   const g = (c) => (document.querySelector(c)?.value || '').trim();
-  const desc = g('.js-pf2-desc'), cost = g('.js-pf2-cost'), hours = g('.js-pf2-hours'), url = g('.js-pf2-url'), vendor = g('.js-pf2-vendor');
+  const desc = g('.js-pf2-desc'), cost = g('.js-pf2-cost'), url = g('.js-pf2-url'), vendor = g('.js-pf2-vendor');
   if (!desc && !state.partPhoto) return attnFlash('.js-pf2-desc, .file-drop');   // R19: need a name OR a photo for the AI
+  if (o.taskTarget) {
+    // Service-task part ref (Jac 2026-07-08): same popup/fields as the WO part line,
+    // saved onto the REAL model task's detail.partRefs (unitServiceRows' rows are a
+    // derived copy — mutating those wouldn't persist), via the same reindex('models', …)
+    // idiom the model-schedule editors use (saveSvcTaskForm/removeSvcTask).
+    const { unitId, taskId } = o.taskTarget;
+    const u = IDX.unit.get(unitId); if (!u) return closeOverlay();
+    const { mo, realTask } = svcRealTask(u, { taskId });
+    if (!realTask) { toast('No editable schedule for this unit.'); return closeOverlay(); }
+    realTask.detail = realTask.detail || {};
+    realTask.detail.partRefs = realTask.detail.partRefs || [];
+    const pr = o.idx != null ? realTask.detail.partRefs[o.idx] : null;
+    const rec = pr || { name: '', oem: '' };
+    rec.name = desc || rec.name || 'Part';
+    if (cost !== '') rec.cost = Number(cost) || 0;
+    if (url) rec.url = url;
+    const vendorId = resolveOrCreateVendorByName(vendor);
+    if (vendorId) rec.vendorId = vendorId;
+    if (state.partPhoto) rec.photo = state.partPhoto;
+    if (o.idx == null) realTask.detail.partRefs.push(rec);
+    reindex('models', mo); logAction(mo, `${o.idx != null ? 'Edited' : 'Added'} part ${auditVal(rec.name)} on ${realTask.name}`);
+    state.partPhoto = null;
+    toast('Part saved.');
+    state.overlay = { kind: 'service', unitId, taskId };
+    return renderOverlay();
+  }
+  const w = IDX.wo.get(o.woId); if (!w) return closeOverlay();
+  const hours = g('.js-pf2-hours');
   w.lineItems = w.lineItems || [];
   const li = o.idx != null ? w.lineItems[o.idx] : { phase: 'Part Needed?', eta: '' };
   if (!li) return closeOverlay();                  // stale edit index — the line was removed after the popup opened
@@ -15004,11 +15155,8 @@ function savePartForm() {
   li.url = url || li.url || '';
   if (state.partPhoto) li.photo = state.partPhoto;
   li.aiPending = !desc || cost === '' || hours === '';
-  if (vendor) {
-    let v = DATA.vendors.find((x) => (x.name || '').toLowerCase() === vendor.toLowerCase());
-    if (!v) { v = { vendorId: 'VEN-C' + (state.seq++), name: vendor, mock: true }; DATA.vendors.push(v); reindex('vendors', v); }
-    li.vendorId = v.vendorId;
-  }
+  const liVendorId = resolveOrCreateVendorByName(vendor);
+  if (liVendorId) li.vendorId = liVendorId;
   if (desc) {
     let p = li.partId ? DATA.parts.find((r) => r.partId === li.partId) : null;   // the li↔part link (stamped below) survives renames
     if (!p) p = DATA.parts.find((r) => (r.name || '').toLowerCase() === desc.toLowerCase());

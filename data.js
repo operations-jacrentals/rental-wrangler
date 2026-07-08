@@ -201,7 +201,21 @@ const models = [
       // header note + CLAUDE.md) — NOT real Drive links. The rest of MOD001's tasks are
       // left without one on purpose, to also prove the link is absent when there's no source.
       { taskId: "svc-air", name: "Clean Dust Unloader Valve", intervalHours: 50, parts: [], source: "john deere 317g SERVICE SHEET.pdf, p.1 -- interval grid highlighted at every 50hr column across all four blocks", sourceUrl: "https://drive.google.com/file/d/DEMO_317G_MANUAL/view#page=1" },
-      { taskId: "svc-oil", name: "Change Engine Oil/Filter", intervalHours: 500, parts: [], source: "john deere 317g SERVICE SHEET.pdf, p.1 -- highlighted only at 500/1000/1500/2000hr columns", sourceUrl: "https://drive.google.com/file/d/DEMO_317G_MANUAL/view" },
+      { taskId: "svc-oil", name: "Change Engine Oil/Filter", intervalHours: 500, parts: [], source: "john deere 317g SERVICE SHEET.pdf, p.1 -- highlighted only at 500/1000/1500/2000hr columns", sourceUrl: "https://drive.google.com/file/d/DEMO_317G_MANUAL/view",
+        // demo `detail` (Jac 2026-07-08 — service-detail-panel): real production models get this
+        // loaded separately for all 63 models; this is a local-seed stand-in so the "hold their
+        // hands" service popup + part-detail side panel are exercisable in the #local demo. One
+        // partRef's oem MATCHES a DATA.parts.productNumber (OIL-1540) to exercise the catalog-
+        // match path; the other (a real-looking Deere filter P/N) does NOT, to exercise the
+        // "not in catalog yet" path.
+        detail: {
+          fluidType: "SAE 15W-40 (API CJ-4)",
+          fluidCapacity: "6.7 L (7.1 US qt)",
+          partRefs: [
+            { name: "Engine Oil, 15W-40 (bulk)", oem: "OIL-1540" },
+            { name: "Engine oil filter, John Deere OEM", oem: "RE504836" },
+          ],
+        } },
       { taskId: "svc-fuel", name: "Replace Fuel Filter & Water Separator", intervalHours: 500, parts: [], source: "john deere 317g SERVICE SHEET.pdf, p.1 -- highlighted only at 500/1000/1500/2000hr columns" },
       { taskId: "svc-fuel-tank-drain", name: "Drain Fuel Tank", intervalHours: 500, parts: [], source: "john deere 317g SERVICE SHEET.pdf, p.1 -- highlighted only at 500/1000/1500/2000hr columns" },
       { taskId: "svc-hydraulic", name: "Drain Hydraulic Oil & Change Filter", intervalHours: 1000, parts: [], source: "john deere 317g SERVICE SHEET.pdf, p.1 -- row only present in 1000hr/2000hr blocks, highlighted at 1000hr/2000hr" },
