@@ -3047,6 +3047,9 @@ body { font-variant-numeric: tabular-nums; }
 .kchip.due .kc-v { color: var(--red); }
 .kchip.paid .kc-v { color: var(--green); }
 .inv-scroll { max-height: 340px; overflow: auto; padding-right: 3px; display: flex; flex-direction: column; gap: 7px; }
+/* When an invoice is expanded, drop the list's inner scroll so the whole invoice shows in
+   normal flow and pushes the sections below (History, etc.) down — Jac 2026-07-08. */
+.inv-scroll.expanded { max-height: none; overflow: visible; }
 .inv-empty { font-size: 12px; padding: 4px 0; }
 
 .inv-row { display: flex; align-items: center; gap: 10px; padding: 10px 11px; border: 1px solid var(--line); border-radius: 11px;
