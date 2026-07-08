@@ -1643,6 +1643,31 @@ try {
           [{ id: 'dw', source: 'hapn', name: 'Highrise scissor' }]);
         ok(r.proposals.length === 1 && r.proposals[0].tier === 'look', 'gps M4: weak name-contains → NEEDS-A-LOOK');
       }
+
+      // regression #3 — a coincidental serial SUBSTRING (+70) must NOT reach the auto-trust 'confident' tier
+      {
+        const r = T.gpsMatchFleet(
+          [mk('U-SS', { name: 'X', make: 'JCB', model: '512-56', serial: '2024000123456' })],
+          [{ id: 'dss', source: 'hapn', make: 'JCB', model: '512-56', serialNumber: '123456', name: 'Tracker' }]);
+        const p = r.proposals[0];
+        ok(p && p.serialExact === false && p.tier !== 'confident', 'gps M4: substring-serial match is NOT auto-trusted (only an exact serial → confident)');
+      }
+
+      // regression #2 — a genuine two-free-unit tie for a device is flagged CONFLICT even when a
+      // HIGHER stale claim from an already-assigned unit sits above it (stale-claim blindness fix)
+      {
+        const r = T.gpsMatchFleet(
+          [mk('U1', { name: 'One', make: 'JCB', model: 'X99', serial: 'EXACTSER1' }),
+           mk('U2', { name: 'One', make: 'JCB' }),
+           mk('U3', { name: 'One', make: 'JCB' })],
+          [{ id: 'G', source: 'hapn', make: 'JCB', serialNumber: 'EXACTSER1', name: 'Gee' },
+           { id: 'D', source: 'hapn', make: 'JCB', model: 'X99', name: 'One' }]);
+        const u1 = r.proposals.find((p) => p.unitId === 'U1');
+        const dProp = r.proposals.find((p) => p.deviceId === 'D');
+        ok(u1 && u1.deviceId === 'G' && u1.tier === 'confident', 'gps M4: exact-serial winner stays confident despite a higher stale claim on another device');
+        ok(dProp && dProp.tier === 'conflict', 'gps M4: genuine tie for a device → CONFLICT even under a higher stale claim (regression)');
+        ok(r.unmatchedUnits.length === 1, 'gps M4: the losing tied unit falls to unmatchedUnits (1:1)');
+      }
     }
 
     // === GPS M5 — "Round Up Trackers" bulk Apply write path (gpsApplyMappings /
@@ -1687,6 +1712,17 @@ try {
         ok(uA.gpsDeviceId === 'shared-dev' && !uB.gpsDeviceId, 'gps M5: only the first claimant actually gets the device — the second stays unmapped, not silently paired');
         T.IDX.unit.delete('U-RU4'); T.IDX.unit.delete('U-RU5');
         ['U-RU4', 'U-RU5'].forEach((id) => { const i = T.DATA.units.findIndex((u) => u.unitId === id); if (i >= 0) T.DATA.units.splice(i, 1); });
+      }
+
+      // regression #6 — a device already bound to a DIFFERENT existing unit is refused (never
+      // re-point a live starter relay from one machine to another; U-RU3 holds 'existing-dev')
+      {
+        const uNew = mkU('U-RU6', { name: 'Wants existing dev' });
+        T.DATA.units.push(uNew); T.IDX.unit.set('U-RU6', uNew);
+        const r4 = T.gpsApplyMappings([{ unitId: 'U-RU6', deviceId: 'existing-dev', provider: 'hapn' }]);
+        ok(r4.results[0].ok === false, 'gps M5: apply refuses a device already assigned to a DIFFERENT existing unit (regression #6)');
+        ok(!uNew.gpsDeviceId && uMapped.gpsDeviceId === 'existing-dev', 'gps M5: that tracker stays on its original unit — never re-pointed to another machine');
+        T.IDX.unit.delete('U-RU6'); const i = T.DATA.units.findIndex((u) => u.unitId === 'U-RU6'); if (i >= 0) T.DATA.units.splice(i, 1);
       }
 
       // (c) never touches a work order — the bulk write only ever sets unit fields

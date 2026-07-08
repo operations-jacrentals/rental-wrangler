@@ -17944,6 +17944,9 @@ function gpsUnwrap(d) {
   return (d && (d.result?.items || d.items || d.devices)) || [];
 }
 
+/* Coerce a provider's raw coordinate to a finite number or null — provider lat/lng are
+   untrusted strings/values; a non-numeric one must never reach a map href or marker. */
+const gpsNum = (v) => { const n = Number(v); return Number.isFinite(n) ? n : null; };
 /* Normalize one provider's raw record into the canonical machine shape (useFleet.js
    §1). `extra` carries cross-call context (Hapn's status row + starter states). */
 function gpsNormalize(source, raw, extra = {}) {
@@ -17964,7 +17967,7 @@ function gpsNormalize(source, raw, extra = {}) {
       engineHours: st.hoursOfOperation ? parseFloat(st.hoursOfOperation) : null,
       address: st.address ? String(st.address) : null,
       battery: st.externalVoltage ?? st.battery ?? null,
-      starterEnabled: (extra.starterStates && raw.imei in extra.starterStates) ? extra.starterStates[raw.imei] : true,
+      starterEnabled: (extra.starterStates && raw.imei in extra.starterStates) ? extra.starterStates[raw.imei] : null,   // null = UNKNOWN (not "startable") — an unknown state must not hide the Restore control (§7)
     };
   }
   if (source === 'deere') {
@@ -17973,7 +17976,7 @@ function gpsNormalize(source, raw, extra = {}) {
       imei: null, name: String(raw.name || raw.serialNumber || 'JD Machine'),
       serialNumber: raw.serialNumber ?? null,   // M3 — matcher key
       make: raw.make ?? null, model: raw.model ?? null,
-      lat: raw.location?.lat ?? null, lng: raw.location?.lon ?? null,
+      lat: gpsNum(raw.location?.lat), lng: gpsNum(raw.location?.lon),
       speed: null, moving: false, engineOn: raw.engineState === 1,
       lastSeen: raw.lastContact ?? null, engineHours: raw.engineHours ?? null,
       battery: raw.batteryVoltage ?? null, address: null,
@@ -17984,7 +17987,7 @@ function gpsNormalize(source, raw, extra = {}) {
       id: String(raw.id), source: 'yanmar', contractId: raw.contractId != null ? String(raw.contractId) : null,
       imei: null, name: raw.name || 'Yanmar Machine', make: 'YANMAR', model: raw.model || null,
       serialNumber: raw.serialNumber || null,   // M3 — matcher key
-      lat: raw.lat ?? null, lng: raw.lng ?? null, speed: null, moving: false,
+      lat: gpsNum(raw.lat), lng: gpsNum(raw.lng), speed: null, moving: false,
       engineOn: raw.engineOn ?? false, lastSeen: raw.lastSeen ?? null,
       engineHours: raw.engineHours ?? null, address: raw.address ?? null,
     };
@@ -17996,7 +17999,7 @@ function gpsNormalize(source, raw, extra = {}) {
       name: raw.nickName || `${raw.model?.year || ''} ${raw.model?.make || ''} ${raw.model?.name || ''}`.trim() || 'Vehicle',
       serialNumber: null,   // M3 — Bouncie is VIN/IMEI-keyed, exposes no equipment serial; matcher falls back to name/make for these
       make: raw.model?.make ?? null, model: raw.model?.name ?? null,
-      lat: loc.lat ?? null, lng: loc.lon ?? null, speed: stats.speed ?? null,
+      lat: gpsNum(loc.lat), lng: gpsNum(loc.lon), speed: stats.speed ?? null,
       moving: (stats.speed ?? 0) > 0, engineOn: stats.isRunning ?? false,
       lastSeen: stats.lastUpdated ?? null, engineHours: null, address: loc.address ?? null,
       mil: stats.mil ?? null, odometer: stats.odometer ?? null, fuelLevel: stats.fuelLevel ?? null,
@@ -18092,7 +18095,7 @@ function gpsMakeFamily(make) {
     ['kubota', /kubota/], ['jcb', /jcb/], ['caterpillar', /(caterpillar|^cat[0-9]*$|^cat$)/],
     ['case', /(caseih|^case)/], ['newholland', /newholland/], ['takeuchi', /takeuchi/],
     ['komatsu', /komatsu/], ['volvo', /volvo/], ['ford', /ford/],
-    ['gm', /(chevrolet|chevy|gmc|^gm$)/], ['ram', /(^ram|dodge)/], ['toyota', /toyota/],
+    ['gm', /(chevrolet|chevy|gmc|^gm$)/], ['ram', /(^ram$|ramtruck|dodge)/], ['toyota', /toyota/],   // ^ram$ so heavy-equip brands like 'Rammer' don't fold into the Ram/Dodge truck family
     ['genie', /genie/], ['jlg', /jlg/], ['ditchwitch', /ditchwitch/],
     ['wacker', /(wacker|neuson)/], ['toro', /toro/],
   ];
@@ -18119,11 +18122,11 @@ const gpsDevKey = (d) => String((d && (d.id ?? d.imei ?? d.principalId ?? d.cont
 function gpsMatchScore(unit, dev) {
   const uFam = gpsMakeFamily(unit && unit.make), dFam = gpsDeviceFamily(dev);
   if (uFam && dFam && uFam !== dFam) return null;                     // HARD veto
-  let score = 0, serial = false; const reasons = [];
+  let score = 0, serial = false, serialExact = false; const reasons = [];
   const uSer = gpsNormTok(unit.serial), dSer = gpsNormTok(dev.serialNumber);
   if (uSer && dSer) {                                                 // serial — the strong key
-    if (uSer === dSer) { score += 100; serial = true; reasons.push('serial'); }
-    else if (uSer.length >= 6 && dSer.length >= 6 && (uSer.includes(dSer) || dSer.includes(uSer))) { score += 70; serial = true; reasons.push('serial~'); }
+    if (uSer === dSer) { score += 100; serial = true; serialExact = true; reasons.push('serial'); }
+    else if (uSer.length >= 6 && dSer.length >= 6 && (uSer.includes(dSer) || dSer.includes(uSer))) { score += 70; serial = true; reasons.push('serial~'); }  // substring only — NOT exact, so it can't reach the auto-trust 'confident' tier
   }
   if (uFam && dFam && uFam === dFam) { score += 20; reasons.push('make'); }
   const uMod = gpsNormTok(unit.model);
@@ -18137,7 +18140,7 @@ function gpsMatchScore(unit, dev) {
     if (dName === uName || dNick === uName) { score += 30; reasons.push('name'); }
     else if ((dName && dName.includes(uName)) || (dNick && dNick.includes(uName))) { score += 12; reasons.push('name~'); }
   }
-  return score > 0 ? { score, serial, reasons } : null;
+  return score > 0 ? { score, serial, serialExact, reasons } : null;
 }
 
 /* Match a whole fleet. Greedy best-first with 1:1 enforcement + a runner-up margin, and
@@ -18154,36 +18157,31 @@ function gpsMatchFleet(units, devices, opts = {}) {
   const pairs = [];
   for (const u of openUnits) for (const d of devs) {
     const sc = gpsMatchScore(u, d);
-    if (sc) pairs.push({ unitId: u.unitId, dk: gpsDevKey(d), device: d, score: sc.score, serial: sc.serial, reasons: sc.reasons });
+    if (sc) pairs.push({ unitId: u.unitId, dk: gpsDevKey(d), device: d, score: sc.score, serial: sc.serial, serialExact: sc.serialExact, reasons: sc.reasons });
   }
   pairs.sort((a, b) => b.score - a.score);
 
-  // per-unit top-two (unit-side margin) and per-device claim scores (contested detection)
-  const bestByUnit = {}, claimsByDev = {};
-  for (const p of pairs) {
-    (bestByUnit[p.unitId] = bestByUnit[p.unitId] || []).push(p);
-    (claimsByDev[p.dk] = claimsByDev[p.dk] || []).push(p.score);
-  }
-  const devContested = (dk, winnerScore) => {
-    // two units within the margin of each other for the SAME device → human splits it
-    const others = (claimsByDev[dk] || []).slice().sort((a, b) => b - a);
-    return others.length > 1 && (others[0] - others[1]) < CONFLICT_MARGIN && others[0] === winnerScore;
-  };
+  // Index each unit's and each device's candidate pairs, already in global score order.
+  const byUnit = {}, byDev = {};
+  for (const p of pairs) { (byUnit[p.unitId] = byUnit[p.unitId] || []).push(p); (byDev[p.dk] = byDev[p.dk] || []).push(p); }
 
   const takenUnit = new Set(), takenDev = new Set(); const proposals = [];
   for (const p of pairs) {
     if (takenUnit.has(p.unitId) || takenDev.has(p.dk)) continue;
-    const mine = bestByUnit[p.unitId] || [p];
-    const runnerUp = mine[1] ? mine[1].score : 0;
-    const margin = p.score - runnerUp;
-    const contested = devContested(p.dk, p.score);
+    // Runner-up + contested reasoned over the LIVE still-free state (never stale claims from
+    // an already-assigned unit/device — that blinded the old top-two check to genuine ties).
+    const runnerUp = (byUnit[p.unitId] || []).find((q) => q.dk !== p.dk && !takenDev.has(q.dk));   // this unit's best OTHER still-free device
+    const runnerScore = runnerUp ? runnerUp.score : 0;
+    const margin = p.score - runnerScore;
+    const rival = (byDev[p.dk] || []).find((q) => q.unitId !== p.unitId && !takenUnit.has(q.unitId));   // another still-free unit wanting THIS device
+    const contested = !!(rival && (p.score - rival.score) < CONFLICT_MARGIN);
     let tier;
     if (contested) tier = 'conflict';
-    else if (p.serial && p.score >= 100 && margin >= 30) tier = 'confident';
+    else if (p.serialExact && p.score >= 100 && margin >= 30) tier = 'confident';   // ONLY an exact serial earns auto-trust
     else if (p.score >= 45 && margin >= 20) tier = 'probable';
     else tier = 'look';
     proposals.push({ unitId: p.unitId, deviceId: p.dk, provider: p.device.source, device: p.device,
-      score: p.score, serial: p.serial, margin, contested, tier, reasons: p.reasons, runnerUp });
+      score: p.score, serial: p.serial, serialExact: p.serialExact, margin, contested, tier, reasons: p.reasons, runnerUp: runnerScore });
     takenUnit.add(p.unitId); takenDev.add(p.dk);
   }
 
@@ -18256,7 +18254,7 @@ async function gpsConnectLoadDevices(o) {
    (cap hit, never confirmed twice). Always terminates — never a silent hang. */
 function gpsConnectStartPoll(o) {
   clearTimeout(_gpsPollTimer);
-  o.pollState = 'waiting'; o.pollAttempt = 0; o.pollMachine = null; o.pollError = '';
+  o.pollState = 'waiting'; o.pollAttempt = 0; o.pollMax = o.pollMax || 8; o.pollMachine = null; o.pollError = '';   // cap must be set here — the roundup caller never sets pollMax, so an unset cap = infinite poll
   renderOverlay();
   gpsConnectPollTick(o);
 }
@@ -18357,6 +18355,10 @@ function gpsRoundupRows(o) {
    caller can never report "done" on a partial batch. Never touches DATA.workOrders. */
 function gpsApplyMappings(proposals) {
   const results = []; const usedDevices = new Set();
+  // Devices already bound to a DIFFERENT existing unit — refuse to re-point a live starter
+  // relay from one machine to another (the in-batch check below only guards within this call).
+  const deviceOwner = new Map();
+  for (const eu of (DATA.units || [])) if (eu.gpsDeviceId) deviceOwner.set(String(eu.gpsDeviceId), eu.unitId);
   for (const p of (proposals || [])) {
     const u = IDX.unit.get(p.unitId);
     if (!u) { results.push({ unitId: p.unitId, ok: false, reason: 'Unit not found' }); continue; }
@@ -18364,6 +18366,8 @@ function gpsApplyMappings(proposals) {
     if (u.gpsProvider && u.gpsDeviceId) { results.push({ unitId: p.unitId, name: u.name, ok: false, reason: 'Already mapped to a tracker — skipped' }); continue; }
     if (!p.deviceId) { results.push({ unitId: p.unitId, name: u.name, ok: false, reason: 'No device selected' }); continue; }
     if (usedDevices.has(p.deviceId)) { results.push({ unitId: p.unitId, name: u.name, ok: false, reason: 'That device is already assigned to another unit in this batch' }); continue; }
+    const owner = deviceOwner.get(String(p.deviceId));
+    if (owner && owner !== p.unitId) { results.push({ unitId: p.unitId, name: u.name, ok: false, reason: 'That tracker is already on another unit — unmap it there first' }); continue; }
     const provider = gpsCanonProvider(p.provider);
     const prevProvider = u.gpsProvider || '', prevDeviceId = u.gpsDeviceId || '';
     u.gpsProvider = provider; u.gpsDeviceId = p.deviceId;
@@ -18520,7 +18524,11 @@ const gpsProvLabel = (p) => GPS_PROV_LABEL[String(p || '').toLowerCase()] || (p 
    snapshot the roster renders, no extra backend round-trip. */
 function gpsRosterCsv() {
   const rows = gpsFleetRoster();
-  const cell = (v) => { const s = String(v == null ? '' : v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  const cell = (v) => {
+    let s = String(v == null ? '' : v);
+    if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;   // neutralize spreadsheet formula injection — device names/serials are untrusted provider data
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  };
   const head = ['Provider', 'Device', 'Serial', 'Status', 'Engine', 'Last Seen', 'Mapped Unit'];
   const lines = [head.join(',')].concat(rows.map((r) => [gpsProvLabel(r.provider), r.name, r.serial || '', r.status, r.engineOn ? 'On' : 'Off', r.lastSeen || '', r.unit ? r.unit.name : ''].map(cell).join(',')));
   try {
@@ -18536,7 +18544,7 @@ function gpsRosterCsv() {
    mountTransportEditor pattern) so it never reloads/flickers — only markers refresh.
    Degrades exactly like those: if !mapsReady() this just returns and the popup's own
    markup already shows the roster-only placeholder, no live/offline branching needed here. */
-let _gpsFleetMap = null, _gpsFleetMarkers = [];
+let _gpsFleetMap = null, _gpsFleetMarkers = [], _gpsFleetView = null, _gpsFleetSel = null;
 function mountGpsFleetMap(o) {
   const mount = document.querySelector('.js-gpsfm-map'); if (!mount) return;
   if (!mapsReady()) {
@@ -18547,9 +18555,16 @@ function mountGpsFleetMap(o) {
     return;
   }
   try {
+    // renderOverlay rebuilds the popup DOM, so the mount is a fresh node each render — build a
+    // map into it, but RESTORE the user's pan/zoom (persisted on 'idle') so a re-render / the
+    // 30s live refresh never snaps the view back. Fit-to-fleet happens ONLY the first time we
+    // ever mount (before a saved view exists) — mirrors the dispatch map's _dispView pattern.
+    let freshFit = false;
     if (!mount.querySelector('.gm-style')) {
-      _gpsFleetMap = new google.maps.Map(mount, { center: YARD_CENTER, zoom: 10, disableDefaultUI: true, zoomControl: true, gestureHandling: 'greedy', clickableIcons: false });
-      const repaint = () => { try { google.maps.event.trigger(_gpsFleetMap, 'resize'); } catch (e2) {} };   // first-open 0×0 paint fix (same as the dispatch/transport maps)
+      freshFit = !_gpsFleetView;
+      _gpsFleetMap = new google.maps.Map(mount, { center: (_gpsFleetView && _gpsFleetView.center) || YARD_CENTER, zoom: (_gpsFleetView && _gpsFleetView.zoom) || 10, disableDefaultUI: true, zoomControl: true, gestureHandling: 'greedy', clickableIcons: false });
+      _gpsFleetMap.addListener('idle', () => { const c = _gpsFleetMap.getCenter(); if (c) _gpsFleetView = { center: { lat: c.lat(), lng: c.lng() }, zoom: _gpsFleetMap.getZoom() }; });
+      const repaint = () => { try { google.maps.event.trigger(_gpsFleetMap, 'resize'); } catch (e2) {} };   // first-open 0×0 paint fix
       requestAnimationFrame(repaint); setTimeout(repaint, 250);
     }
     if (!_gpsFleetMap) return;
@@ -18572,8 +18587,11 @@ function mountGpsFleetMap(o) {
       _gpsFleetMarkers.push(mk);
       bounds.extend(pos); placed++;
     });
-    if (selPos) { _gpsFleetMap.panTo(selPos); if (_gpsFleetMap.getZoom() < 14) _gpsFleetMap.setZoom(14); }
-    else if (placed) _gpsFleetMap.fitBounds(bounds, 46);   // only fit once a real device is located (single-point fit zooms absurdly)
+    // Pan to a NEWLY-selected device; otherwise fit only on the very first mount — never on a
+    // plain re-render, which would fight the user's pan/zoom (the reported bug).
+    const selChanged = !!o.sel && o.sel !== _gpsFleetSel; _gpsFleetSel = o.sel || null;
+    if (selPos && selChanged) { _gpsFleetMap.panTo(selPos); if (_gpsFleetMap.getZoom() < 14) _gpsFleetMap.setZoom(14); }
+    else if (placed && freshFit) _gpsFleetMap.fitBounds(bounds, 46);   // only fit once a real device is located (single-point fit zooms absurdly)
   } catch (e) { /* never strand the popup on a half-mounted map — the sidebar roster still renders */ }
 }
 
@@ -18696,7 +18714,7 @@ async function gpsFireShutdown(unitId, deviceId, enable) {
   const u = IDX.unit.get(unitId);
   const nm = u ? u.name : deviceId;
   try {
-    await gpsStarterInterrupt(deviceId, enable, currentRole || 'operator');
+    await gpsStarterInterrupt(deviceId, enable, `${currentUser || 'unknown'} · ${currentRole || 'operator'}`);   // audit WHO (person) fired the starter cut, not just the shared role
     toast(enable ? `Starter restored — ${nm} can start.` : `Starter CUT — ${nm} immobilized.`);
   } catch (e) {
     toast(`Shutdown command FAILED — no change to ${nm}. (${(e && e.message) || 'error'})`);
@@ -18710,8 +18728,9 @@ async function gpsFireShutdown(unitId, deviceId, enable) {
    others). `machine` = the live machine (for the current starter state), may be null. */
 function gpsShutdownControl(u, machine) {
   if (u.gpsProvider !== 'Hapn' || !u.gpsDeviceId || !canGpsShutdown()) return '';
-  const dev = esc(u.gpsDeviceId);
-  const immobilized = machine && machine.starterEnabled === false;   // starterEnabled:false = starter cut
+  const state = machine ? machine.starterEnabled : undefined;   // true = startable · false = cut · null/undefined = unknown
+  const immobilized = state === false;
+  const unknown = state == null;
   if (immobilized) {   // safe direction — one deliberate tap
     return `<div class="kv" style="justify-content:center">${actionPill('commit', 'Restore starter', { js: 'js-gps-restore', data: { rec: u.unitId, dev: u.gpsDeviceId } })}</div>`;
   }
@@ -18723,7 +18742,8 @@ function gpsShutdownControl(u, machine) {
     ? `${actionPill('danger', 'Confirm — cut starter', { js: 'js-gps-kill-confirm', data: { rec: u.unitId, dev: u.gpsDeviceId } })}${ghostPill('Disarm', { js: 'js-gps-disarm' })}`
     : actionPill('danger', 'Immobilize', { js: 'js-gps-arm', data: { rec: u.unitId, dev: u.gpsDeviceId } })}
     </div>
-    <div class="gh-note">${armed ? 'Cuts the starter — the engine can’t be re-started. Auto-disarms.' : 'Owner/Manager/Mechanic only · cuts the starter (not a running engine)'}</div>
+    ${unknown && !armed ? `<div class="kv" style="justify-content:center;margin-top:2px">${ghostPill('Restore starter', { js: 'js-gps-restore', data: { rec: u.unitId, dev: u.gpsDeviceId } })}</div>` : ''}
+    <div class="gh-note">${armed ? 'Cuts the starter — the engine can’t be re-started. Auto-disarms.' : (unknown ? 'Live starter state unknown — Immobilize, or Restore if it may already be cut.' : 'Owner/Manager/Mechanic only · cuts the starter (not a running engine)')}</div>
   </div>`;
 }
 
