@@ -3229,34 +3229,35 @@ body.is-phone .card[data-card="units"] .list { grid-template-columns: repeat(2, 
 .catr-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .catr-cat { flex: 0 0 auto; width: 18px; height: 18px; color: var(--txt-2); display: flex; align-items: center; justify-content: center; }
 .catr-cat svg { width: 17px; height: 17px; display: block; }
-/* ── CATEGORY GLYPH HOVER MOTION (Jac, 2026-07-03) — hovering the unit row (.ur) or the
+/* ── CATEGORY GLYPH HOVER MOTION (Jac, 2026-07-03; extended to unit mini-cards
+   2026-07-07) — hovering the unit row (.ur), the unit mini-card (.ucard), or the
    category mini-card (.catr) nudges its category icon with a short, per-family CSS-only
    move (one crisp beat, no bounce/loop — same .12s control timing as the rest of the
    system). `mo-none` (the box/unmatched fallback) is deliberately inert. ── */
 .cat-glyph { display: inline-flex; transition: transform .12s cubic-bezier(.2,.7,.2,1), color .12s ease; }
-.ur:hover .mo-dig,     .catr:hover .mo-dig     { transform: translateY(1.5px) rotate(-8deg); }
-.ur:hover .mo-chop,    .catr:hover .mo-chop    { transform: rotate(-14deg); }
-.ur:hover .mo-spin,    .catr:hover .mo-spin    { transform: rotate(80deg); }
-.ur:hover .mo-raise,   .catr:hover .mo-raise   { transform: translateY(-1.5px) rotate(7deg); }
-.ur:hover .mo-snap,    .catr:hover .mo-snap    { transform: scale(1.14); }
-.ur:hover .mo-press,   .catr:hover .mo-press   { transform: translateY(2px) scale(.94); }
-.ur:hover .mo-roll,    .catr:hover .mo-roll    { transform: translateX(2px) rotate(14deg); }
-.ur:hover .mo-spark,   .catr:hover .mo-spark   { transform: scale(1.16); }
-.ur:hover .mo-puff,    .catr:hover .mo-puff    { transform: translateX(2px) scale(1.06); }
-.ur:hover .mo-drip,    .catr:hover .mo-drip    { transform: translateY(2px) scale(.92); }
-.ur:hover .mo-slosh,   .catr:hover .mo-slosh   { transform: rotate(-9deg); }
-.ur:hover .mo-flicker, .catr:hover .mo-flicker { transform: scale(1.1) rotate(-5deg); }
-.ur:hover .mo-pulse,   .catr:hover .mo-pulse   { transform: scale(1.12); }
-.ur:hover .mo-none,    .catr:hover .mo-none    { transform: none; }
+.ur:hover .mo-dig,     .ucard:hover .mo-dig,     .catr:hover .mo-dig     { transform: translateY(1.5px) rotate(-8deg); }
+.ur:hover .mo-chop,    .ucard:hover .mo-chop,    .catr:hover .mo-chop    { transform: rotate(-14deg); }
+.ur:hover .mo-spin,    .ucard:hover .mo-spin,    .catr:hover .mo-spin    { transform: rotate(80deg); }
+.ur:hover .mo-raise,   .ucard:hover .mo-raise,   .catr:hover .mo-raise   { transform: translateY(-1.5px) rotate(7deg); }
+.ur:hover .mo-snap,    .ucard:hover .mo-snap,    .catr:hover .mo-snap    { transform: scale(1.14); }
+.ur:hover .mo-press,   .ucard:hover .mo-press,   .catr:hover .mo-press   { transform: translateY(2px) scale(.94); }
+.ur:hover .mo-roll,    .ucard:hover .mo-roll,    .catr:hover .mo-roll    { transform: translateX(2px) rotate(14deg); }
+.ur:hover .mo-spark,   .ucard:hover .mo-spark,   .catr:hover .mo-spark   { transform: scale(1.16); }
+.ur:hover .mo-puff,    .ucard:hover .mo-puff,    .catr:hover .mo-puff    { transform: translateX(2px) scale(1.06); }
+.ur:hover .mo-drip,    .ucard:hover .mo-drip,    .catr:hover .mo-drip    { transform: translateY(2px) scale(.92); }
+.ur:hover .mo-slosh,   .ucard:hover .mo-slosh,   .catr:hover .mo-slosh   { transform: rotate(-9deg); }
+.ur:hover .mo-flicker, .ucard:hover .mo-flicker, .catr:hover .mo-flicker { transform: scale(1.1) rotate(-5deg); }
+.ur:hover .mo-pulse,   .ucard:hover .mo-pulse,   .catr:hover .mo-pulse   { transform: scale(1.12); }
+.ur:hover .mo-none,    .ucard:hover .mo-none,    .catr:hover .mo-none    { transform: none; }
 @media (prefers-reduced-motion: reduce) {
   .cat-glyph { transition: color .12s ease; }
-  .ur:hover .cat-glyph, .catr:hover .cat-glyph { transform: none !important; }
+  .ur:hover .cat-glyph, .ucard:hover .cat-glyph, .catr:hover .cat-glyph { transform: none !important; }
 }
 
 /* ── ANIMATED CATEGORY GLYPHS (Jac, 2026-07-03) — the excavator / boom-lift / skid-steer
    families render CATEGORY_ANIM loops (icons-anim.js, converted from Jac's supplied
-   Lottie artwork). PAUSED at the rest pose until the parent row/card (.ur/.catr) is
-   hovered (Jac, 2026-07-03: icons should NOT move until hovered, and never tint orange);
+   Lottie artwork). PAUSED at the rest pose until the parent row/card (.ur/.ucard/.catr)
+   is hovered (Jac, 2026-07-03: icons should NOT move until hovered, and never tint orange);
    currentColor strokes (.k2 = dimmed secondary); pivots work because the SVG nests
    translate(p) › animated group › translate(-a) at each Lottie anchor.
    Reduced-motion keeps them frozen entirely. ── */
@@ -3286,6 +3287,7 @@ body.is-phone .card[data-card="units"] .list { grid-template-columns: repeat(2, 
    shorthand resets play-state to running, so declaration order is load-bearing. */
 .catanim [class*="bl-"], .catanim [class*="sk-"] { animation-play-state: paused; }
 .ur:hover .catanim [class*="bl-"], .ur:hover .catanim [class*="sk-"],
+.ucard:hover .catanim [class*="bl-"], .ucard:hover .catanim [class*="sk-"],
 .catr:hover .catanim [class*="bl-"], .catr:hover .catanim [class*="sk-"] { animation-play-state: running; }
 @media (prefers-reduced-motion: reduce) {
   .catanim *, .catanim { animation: none !important; }
@@ -3835,3 +3837,46 @@ body.dragging .row.drop-ok { opacity: 1; }
 body.sync-failing #app { padding-top: 40px; }
 @media (prefers-reduced-motion: reduce) { #sync-banner { transition: none; } }
 @media (max-width: 560px) { #sync-banner .sb-sub { display: none; } }   /* keep the stamp + Retry on phones */
+
+/* ── R26 — "Due Today" scheduled-actions banner (#517) ─────────────────────────
+   Top-of-screen reminder band. Caution-YELLOW hazard stripe (the app's default
+   signature — NOT the red danger variant the R25 sync band reserves, NOT the
+   reserved orange accent) says "heads-up", not "emergency". Body-level like R25 so
+   render()'s #app swap can't wipe it; reserves its own top band via
+   body.sched-due so it never covers the yard. Themes off the tokens for free. */
+#sched-banner {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 9500;
+  display: flex; align-items: flex-start; gap: 14px;
+  padding: 10px 12px 9px 18px;
+  background: var(--panel); border-bottom: 1px solid var(--line); box-shadow: var(--shadow);
+  max-height: 42vh; overflow-y: auto;
+}
+body.sync-failing #sched-banner { top: 40px; }   /* an active R25 sync band outranks us — sit under it */
+#sched-banner .scb-stripe {
+  position: absolute; top: 0; left: 0; right: 0; height: 4px;
+  background: repeating-linear-gradient(135deg, var(--yellow) 0 13px, #14181d 13px 26px);
+}
+#sched-banner .scb-plate { display: flex; align-items: center; gap: 8px; flex-shrink: 0; padding-top: 2px; }
+#sched-banner .scb-stamp {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase;
+  letter-spacing: 1.4px; font-weight: 800; font-size: 14px; color: var(--yellow); white-space: nowrap;
+}
+#sched-banner .scb-stamp svg { width: 15px; height: 15px; }
+#sched-banner .scb-count {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 19px; height: 19px; padding: 0 5px; border-radius: 9px;
+  background: var(--yellow); color: #1a1205;
+  font-family: 'Saira Condensed', system-ui, sans-serif; font-weight: 800; font-size: 12px;
+}
+#sched-banner .scb-list { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; padding-top: 1px; }
+#sched-banner .scb-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12.5px; }
+#sched-banner .scb-note { color: var(--txt); min-width: 0; }
+#sched-banner .scb-time {
+  font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase;
+  letter-spacing: .8px; font-weight: 700; font-size: 11.5px; color: var(--yellow); white-space: nowrap;
+}
+#sched-banner .scb-time.scb-anytime { color: var(--txt-3); }
+#sched-banner .close-x { flex-shrink: 0; margin-top: 1px; }
+body.sched-due #app { padding-top: var(--sched-band, 46px); }
+body.sync-failing.sched-due #app { padding-top: calc(40px + var(--sched-band, 46px)); }
