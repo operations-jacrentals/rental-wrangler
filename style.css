@@ -3050,6 +3050,18 @@ body { font-variant-numeric: tabular-nums; }
 /* When an invoice is expanded, drop the list's inner scroll so the whole invoice shows in
    normal flow and pushes the sections below (History, etc.) down — Jac 2026-07-08. */
 .inv-scroll.expanded { max-height: none; overflow: visible; }
+/* SALES card — "coming soon" placeholder holding the retired invoice-card slot (PR 2). */
+.sales-soon { display: flex; align-items: center; justify-content: center; min-height: 320px; padding: 24px; }
+.soon-plate { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; max-width: 260px;
+  padding: 26px 22px; border: 1px dashed var(--tan); border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--panel-2), var(--panel)); box-shadow: var(--chip-shadow); }
+.soon-ico { width: 34px; height: 34px; color: var(--tan); opacity: .85; }
+.soon-ico svg { width: 100%; height: 100%; }
+.soon-title { font-family: 'Saira Condensed', sans-serif; text-transform: uppercase; letter-spacing: 2px; font-weight: 800; font-size: 20px; color: var(--txt); }
+.soon-tag { font-family: 'Saira Condensed', sans-serif; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 700; font-size: 10px;
+  color: var(--tan-deep); background: color-mix(in srgb, var(--tan) 16%, transparent); border: 1px solid color-mix(in srgb, var(--tan) 45%, transparent);
+  border-radius: 999px; padding: 3px 10px; }
+.soon-sub { font-size: 12px; color: var(--txt-3); line-height: 1.5; }
 .inv-empty { font-size: 12px; padding: 4px 0; }
 
 .inv-row { display: flex; align-items: center; gap: 10px; padding: 10px 11px; border: 1px solid var(--line); border-radius: 11px;

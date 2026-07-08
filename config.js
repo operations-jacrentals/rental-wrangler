@@ -384,11 +384,11 @@ export const BACKOFFICE_BOARDS = [
 export const COLUMNS = [
   { id: 'left',   default: 'units',     members: ['units', 'categories', 'inspections', 'serviceOrders', 'workOrders'] },
   { id: 'middle', default: 'rentals',   members: ['rentals', 'calendar'] },
-  { id: 'right',  default: 'customers', members: ['customers'] },   // invoices retired as a standalone card (2026-07-08) — its list is embedded in Customer Details; data model + DETAIL.invoices kept
+  { id: 'right',  default: 'customers', members: ['customers', 'sales'] },   // invoices retired (embedded in Customer Details); 2nd slot reserved for the upcoming 'sales' card ("coming soon" placeholder until PR 2)
 ];
 export const COLUMN_OF = {
   units: 'left', categories: 'left', inspections: 'left', serviceOrders: 'left', workOrders: 'left', shop: 'left',
-  rentals: 'middle', customers: 'right',   // no 'invoices' — links route via openInvoice() into Customer Details, never revealCol('invoices')
+  rentals: 'middle', customers: 'right', sales: 'right',   // no 'invoices' — links route via openInvoice() into Customer Details; 'sales' is a bespoke card (like 'calendar'), not in GRID_CARDS
 };
 
 /* ── In-card sort fields (SPEC §12 locked table) ─────────────────────────── */
