@@ -11,7 +11,7 @@
 
 - **D1 — Send-to-Collections gate = manager-tier + a SECOND approver (OQ-3 = YES).** The placement action requires manager-tier AND a second manager's password to confirm (the dual-approver pattern). Ship a **Settings → Company "Require a second approver to send to collections"** toggle, **default ON**. Collections is the first area to actually implement dual-approver (the refund second-approver is still a spec decision, not shipped) — so it builds the pattern. Both `placedBy` and `approvedBy` are stamped on the placement (§4.1). The outbound `collectionsSend` still stays **blocked until `backend-data` server-tier trust (OQ-1) lands** — a dual-approver gate that the server can't verify is theatre; the second approver's password must be a *server-re-validated* second credential (§5.2).
 - **D2 — Placement AUTO-blacklists the account (OQ-5 changed).** Sending an invoice to collections **automatically sets `accountType: 'Blacklisted'`** (blocks new rentals) — not the draft's decoupled-with-prompt. The send confirm still shows what's happening ("This also blacklists the account"), and the existing blacklist audit trail (`customers-crm` D3) + a `'Sent to Collections & blacklisted by <role>'` `activityLog` entry record it. A **Recall** (§7.5) should prompt to lift the blacklist (since the chase is back in-house) — flag that reciprocal as a build detail.
-- **D3 — One invoice per placement; multi-invoice debt is handled by INVOICE MERGE first (OQ-9).** Keep placement to a single invoice for clean money math. To place a customer's whole stack, the office **merges the open invoices into one** *before* placing it — and **the merge MUST carry line items that reference their origin invoices** (so the merged invoice is auditable back to each source). **Confirmed 2026-06-29 (code investigation):** invoice merge **IS built and shipped** — `mergeInvoiceInto(keepId, absorbId)` (`app.js:15598`), `invoiceMergeable(i)` (`app.js:15593`, requires a customer, not locked/refunded/ACH-processing, and `amountPaid === 0`), UI `mergePicker` (`app.js:6262`), gated `canMoney()`. It is **hard-constrained to a single customer** (`app.js:15603` rejects a cross-customer merge). **BUT the one gap is exactly the origin reference Jac required:** merged line items are copied with only a freshly-minted `lid` (`app.js:15605`) and **carry NO `originInvoiceId`** — so a merged invoice is not auditable back to its source invoices. **Action item (prerequisite for the "place a whole customer's debt" workflow): add an `originInvoiceId` (and ideally `originInvoiceLabel`) field to each line item moved by `mergeInvoiceInto`**, so the merged-then-placed invoice traces to each source. This is a small, additive change to one function. Cross-customer placement stays hard-rejected (`cross-customer`). `invoicing-payments` invoice-merge is thus a **dependency** of the multi-invoice collections workflow, **with one origin-reference enhancement to build.**
+- **D3 — One invoice per placement; multi-invoice debt is handled by INVOICE MERGE first (OQ-9).** Keep placement to a single invoice for clean money math. To place a customer's whole stack, the office **merges the open invoices into one** *before* placing it — and **the merge MUST carry line items that reference their origin invoices** (so the merged invoice is auditable back to each source). **Confirmed 2026-06-29 (code investigation):** invoice merge **IS built and shipped** — `mergeInvoiceInto(keepId, absorbId)` (`app.js:15598`), `invoiceMergeable(i)` (`app.js:15593`, requires a customer, not locked/refunded/ACH-processing, and `amountPaid === 0`), UI `mergePicker` (`app.js:6262`), gated `canMoney()`. It is **hard-constrained to a single customer** (`app.js:15603` rejects a cross-customer merge). **The origin reference Jac required is now SHIPPED (staging, 2026-07-08):** each line moved by `mergeInvoiceInto` is stamped `fromInv` — the id of the invoice it came from, earliest-source-sticky (`fromInv: li.fromInv || absorbId`, so a re-merge keeps the original source) — so a merged invoice traces back to each source invoice. It arrived via the `invoicing-payments` invoice Print/PDF redesign, which also reads `fromInv` for the print doc's "Merged from" group stamp; that one field doubles as this collections audit-trail reference. **NOTE:** the field is named **`fromInv`**, not the `originInvoiceId` this spec originally proposed — build the collections placement against `fromInv`. Cross-customer placement stays hard-rejected (`cross-customer`). `invoicing-payments` invoice-merge is thus a **satisfied dependency** of the multi-invoice collections workflow — the origin-reference enhancement is built.
 - **D4 — Adopt the conservative drafts for the rest:** Phase 1 ships the **local "queue for collections"** (no outbound, no secret) so a dead invoice leaves active aging safely even while OQ-1 is open; outbound integration is **Phase 2, hard-blocked on `backend-data` OQ-1** (OQ-1). Status sync = **pull/poll**, no inbound webhook (OQ-4). Placement **idempotency nonce** = yes (OQ-8). Queue surface **folds into the existing back-office board** catalog entry, no new popup (OQ-10). A placed invoice **refuses office payment/refund** — recovery only via the agency remit (OQ-11 refuse-and-redirect). **No app-sent customer collections notice** in v1 — the agency owns debtor contact; minimal PII allowlist, `idNumber` never sent (OQ-7, legal = Jac's counsel). Placement is **suggested at the 120-day threshold, never auto-placed** (OQ-12). Accounting treatment (contra-revenue vs reserve, tax-on-recovery, fee-as-expense) stays the **load-bearing `accounting` co-owned fork (OQ-2)** — nothing books a recovery before it resolves. Vendor choice + remittance model (net vs gross+fee-invoice) confirmed before Phase 2/3 (OQ-13/OQ-14). Mr. Wrangler **can never** send/recall/book-recovery (§3.6 AI fence).
 
 ## 0. How this area was born (provenance)
@@ -58,7 +58,7 @@ JacRentals is a heavy-equipment yard in Sulphur, LA. A $9,000 unpaid invoice tha
 | **Role tiers** | `ROLE_TIERS` `config.js:326`, `tierRank` `config.js:334`, `BUILTIN_ROLE_TIERS` `config.js:340` | `staff(1) < money(2) < manager(3) < admin(4) < developer(5)` — the ladder a "manager-tier to send" gate keys off. |
 | **Customer standing** | `customerAccountType` registry incl. `Blacklisted` `config.js:113`; blacklist decision in customers-crm D3 | The customer-facing side: a sent-to-collections customer's standing (§3.4, §7.6). |
 | **Single `backendCall` entry point** | `app.js:15650` (`backend-data` §2.1) | Every new outbound action is **additive** here; the agency token rides server-side only. |
-| **WINDOW_CATALOG / R-rulebook** | `WINDOW_CATALOG` `app.js:9796`; highest stamp today `R25` | New popups + controls must register (§6, §9). |
+| **WINDOW_CATALOG / R-rulebook** | `WINDOW_CATALOG` `app.js:9796`; highest stamp today `R27` (R26 = manual-link `sourceLinkBtn`, R27 = Due-Today banner, both shipped 2026-07-08) | New popups + controls must register (§6, §9). |
 | **Dual-approver pattern** | invoicing-payments D2 (refund second-approver Settings toggle — a SPEC decision, **not yet in shipped code**: the refund flow ships with `refundAllocations`/`recordManualRefund`/`stripeRefundInvoice` `app.js:5535`/`14186`-area, but no second-approver gate exists today) | The "two-person, both-responsible" control Jac likes — a candidate gate for the send action (§3, OQ-3). Collections would be the **first** area to actually implement it, so its design can't lean on a shipped reference; it builds the pattern. |
 
 ### 2.2 What does NOT exist (this spec proposes all of it)
@@ -266,13 +266,13 @@ No new Stripe surface; no QuickBooks (that's accounting). The agency is the **on
 
 All new/changed UI runs through the **`jactec-ui` skill** in the **yard data-plate** language: dark steel panels (`linear-gradient(180deg,#1b2129,#0c0e11)`), **one** safety-orange `--accent #ff7a1a` accent reserved for the primary/ignition action, hi-vis **hazard stripe** for danger/abort (here: the **red** variant on the irreversible *Send to Collections* confirm), corner **rivets**, **Saira Condensed** stamped uppercase labels (~2px tracking), **Geist** body, light **ranch-twist** voice in copy. Spend boldness in ONE place; respect reduced-motion + visible focus. **Self-screenshot + critique before showing Jac.**
 
-Every new element needs a **`data-r="Rxx"` stamp** (regenerate `rule-usage.js` via `ci/gen-rule-usage.mjs`, drop `--check`); every **new popup** needs a **`WINDOW_CATALOG`** entry (`app.js:9796`) or `ci/check-window-catalog.mjs` fails CI. **Highest stamp today is `R25`** — new controls start at **R26+**.
+Every new element needs a **`data-r="Rxx"` stamp** (regenerate `rule-usage.js` via `ci/gen-rule-usage.mjs`, drop `--check`); every **new popup** needs a **`WINDOW_CATALOG`** entry (`app.js:9796`) or `ci/check-window-catalog.mjs` fails CI. **Highest stamp today is `R27`** (R26 = manual-link `sourceLinkBtn`, R27 = Due-Today banner, both shipped to staging 2026-07-08) — new controls start at **R28+**.
 
 ### 6.1 The "Send to Collections" action (on the invoice detail / payment popup)
 
 Where the office decides an invoice is uncollectable. Lives in the invoice money-actions area (`app.js:9729` payment region), rendered **only** for `collections.status` absent AND the invoice is in a red aging tier (`Late+…`/`Collections`).
 
-- A **danger-styled** control (red **hazard-stripe** variant, NOT the orange ignition accent — orange stays for *taking* money) labeled **"Wrangle to Collections"** (ranch voice; double-meaning of rounding up a stray debt). Proposed stamp **`R26`**.
+- A **danger-styled** control (red **hazard-stripe** variant, NOT the orange ignition accent — orange stays for *taking* money) labeled **"Wrangle to Collections"** (ranch voice; double-meaning of rounding up a stray debt). Proposed stamp **`R28`**.
 - Tapping opens the **Send-to-Collections confirm popup** (new — §6.2).
 
 ### 6.2 NEW popup: "Send to Collections" confirm (`kind:'collectionsSend'`)
@@ -284,10 +284,10 @@ A red-hazard-stripe steel plate (the irreversible-act treatment, like customers-
 │  Bamba Construction · INV.04.12.26.003               │
 │  Balance handed over:  $ 9,000.00   (137 days past)  │
 │  ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ (saddle-stitch tan) ─ ─ │
-│  Reason  [ Uncollectable in-house  ▾ ]  + note…      │  ← structured reason (R27)
-│  ☐ Also blacklist this account (blocks new rentals)  │  ← OQ-5 decoupled prompt (R28)
+│  Reason  [ Uncollectable in-house  ▾ ]  + note…      │  ← structured reason (R29)
+│  ☐ Also blacklist this account (blocks new rentals)  │  ← OQ-5 decoupled prompt (R30)
 │  ───────────────────────────────────────────────────│
-│  Second approver (manager+):  [ password ]           │  ← dual-approver, if ON (R29)
+│  Second approver (manager+):  [ password ]           │  ← dual-approver, if ON (R31)
 │  This hands the debt to <Agency>. It leaves active   │
 │  aging and can't be un-sent without a Recall.        │
 │        [ Cancel ]            [ ▞ Send to Collections ]│  ← red hazard primary
@@ -297,7 +297,7 @@ A red-hazard-stripe steel plate (the irreversible-act treatment, like customers-
 - **WINDOW_CATALOG entry (new):** `{ kind:'collectionsSend', label:'Send to Collections', tag:'Invoice · collections', sample:()=>({ invoiceId:((DATA.invoices||[])[0]||{}).invoiceId }) }`.
 - **Gate:** the popup early-returns / refuses to open below **manager-tier** (gate at the open path, like accounting's P&L popup `!canMoney()` guard, accounting §6.1) — and the server re-checks (§3.2).
 - **States:** busy ("Placing…", disabled), error (`collections-not-configured` → "The collections agency isn't connected yet."; `forbidden`; `agency-unreachable`), success toast ("Sent to Collections — INV… is off the active books.").
-- **Stamps:** confirm primary `R26`-adjacent (or its own), reason select `R27`, blacklist checkbox `R28`, approver field `R29`.
+- **Stamps:** confirm primary `R28`-adjacent (or its own), reason select `R29`, blacklist checkbox `R30`, approver field `R31`.
 
 ### 6.3 NEW: a Collections queue/board (back-office)
 
@@ -307,7 +307,7 @@ A **back-office board** (reuse the `BACKOFFICE_BOARDS` + `boardTable` pattern, a
 
 ### 6.4 NEW: recovery on the invoice detail
 
-When `collections.status` is `PartiallyRecovered`/`Recovered`, the invoice detail shows a **"Book recovery"** action (money-tier, orange-ignition since it's a money-in) that routes through `collectionsRecovery` → the payment popup's Record mode (reuse, not a new money primitive). The recovered amount appears in the existing ledger block and `payments[]` history with a `collections-recovery` label. New stamp for the action (R30-ish); **no new popup** (reuses `payment`).
+When `collections.status` is `PartiallyRecovered`/`Recovered`, the invoice detail shows a **"Book recovery"** action (money-tier, orange-ignition since it's a money-in) that routes through `collectionsRecovery` → the payment popup's Record mode (reuse, not a new money primitive). The recovered amount appears in the existing ledger block and `payments[]` history with a `collections-recovery` label. New stamp for the action (R32-ish, after the §6.2 reserved block); **no new popup** (reuses `payment`).
 
 ### 6.5 Status surfacing on the pill + preview
 
@@ -422,7 +422,7 @@ In scope: `collectionsRecovery` through the payment path (§7.4), the agency con
 | AC5 | The outbound placement payload contains **only** the §3.3 allowlist fields — never `stripeId`/`cards`/selfies/`idNumber`/cost/margin. Server assembles it; a crafted client cannot widen it. | manual/integration over the server payload; a **string-scan** asserting no forbidden field name in any client→server collections payload builder. |
 | AC6 | No agency token, agency URL, or secret appears in any committed file (repo public via Pages). | grep/secret-scan guard + review (mirrors accounting AC9 / backend-data A7). |
 | AC7 | A placed invoice cannot be refunded and cannot take a normal office payment (`in-collections` / refund-rejected). | `ci/logic-test.mjs`. |
-| AC8 | New popup(s) appear in `WINDOW_CATALOG`; every new control carries a unique `data-r` stamp (R26+). | `ci/check-window-catalog.mjs`, `ci/gen-rule-usage.mjs --check`. |
+| AC8 | New popup(s) appear in `WINDOW_CATALOG`; every new control carries a unique `data-r` stamp (R28+). | `ci/check-window-catalog.mjs`, `ci/gen-rule-usage.mjs --check`. |
 | AC9 | New/changed UI passes `node ci/smoke.mjs` (no console errors, renders), reduced-motion + visible-focus floor; the hazard stripe doesn't animate under `prefers-reduced-motion`. | `ci/smoke.mjs`. |
 | AC10 | Any new/moved/retitled chapter banner regenerates the Code Atlas clean. | `node tools/gen-code-map.mjs --check`. |
 | AC11 | Mr. Wrangler cannot send/recall/book a recovery (AI fence, §3.6). | `ci/logic-test.mjs` over the `apply_changes` allowlist (mirrors invoicing-payments AC7). |
@@ -500,7 +500,7 @@ Standard gate run (port 8000 reserved → swap to **9147** first, then `git chec
 | **`customers-crm`** | Customer standing (audit log entry; optional blacklist coupling, D3); the customer fields the allowlist forwards. | Read + additive audit entry. |
 | **`comms-notifications`** | Any customer-facing collections notice (legally sensitive; agency usually owns it). | Only if OQ-7(b) ever says the app notifies — not v1. |
 | **`financials-kpi`** | Aging/AR KPIs must drop placed invoices from "overdue AR." | Read-only constraint (Phase 1). |
-| **`design-system`** | Yard data-plate language, R-rulebook stamps (R26+), WINDOW_CATALOG, flag-color treatment via `jactec-ui`. | Concurrent. |
+| **`design-system`** | Yard data-plate language, R-rulebook stamps (R28+), WINDOW_CATALOG, flag-color treatment via `jactec-ui`. | Concurrent. |
 
 **Sequencing.** Phase 1 (local queue + status + accounting revenue-exclusion) ships against today's shipped invoicing/accounting with **only additive invoice fields** — fastest trustworthy win, **safe even with `backend-data` OQ-1 open** (no outbound action surface). Phase 2 (the agency integration) is **hard-blocked on `backend-data` OQ-1 (server-side tier trust)** and OQ-3 (dual-approver) — no outbound-PII action ships until the server can verify the caller. Phase 3 (recovery booking + fee accounting + true bad-debt close) is blocked on **OQ-2** (the accounting treatment) and coordinates with the `accounting` spec.
 

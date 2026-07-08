@@ -58,7 +58,7 @@ This area is **shipped and deeply enforced**. Everything below is live on `main`
 
 Light theme (`[data-theme="light"]`) overrides the **same names** with darker, saturated status hues so pill text still reads on the soft `-bg` fills. The page frame: `html` scrolls horizontally / never vertically; `body` holds a `min-width:1180px` desktop floor (`style.css:64–77`).
 
-### 2.2 The R0–R25 stamped rulebook + one builder per rule ✅
+### 2.2 The R0–R27 stamped rulebook + one builder per rule ✅
 
 **`APP-10 · §5 UI Builders** (`app.js:3897`+). The law: every lint-family UI element is produced by exactly ONE builder function that stamps `data-r="Rxx"`. You extend the builder; you never hand-roll the markup. Debug language is rule-first: *"that pill violates R4 — fix `dPill`."*
 
@@ -92,8 +92,10 @@ Light theme (`[data-theme="light"]`) overrides the **same names** with darker, s
 | R23 | Tooltip | `data-tip` attribute | Every hover hint goes through `data-tip`; a native `title=` is an R0 violation. |
 | R24 | Close ✕ | `closeX` | Red circle · white ✕ — the deliberate close/remove; hover-reveal variant on tabs. |
 | R25 | Sync banner | `renderSyncBanner` / `#sync-banner` | The persistent "Not saving" plate — red hazard-stripe danger cap; the ONE non-toast alert; lives on `<body>` outside `#app`. |
+| R26 | Manual link | `sourceLinkBtn` | Ghost-circle external-link icon beside a service task — opens its cited OEM manual page (`task.sourceUrl`) in a new tab; renders only when the task carries one. (units-fleet, shipped 2026-07-08.) |
+| R27 | Due-Today banner | `renderSchedBanner` / `#sched-banner` | Top-of-screen reminder plate — caution-YELLOW hazard-stripe cap; lists the scheduled actions due today; manual-X dismiss (session-sticky). Lives on `<body>` outside `#app`, like R25. (invoicing-payments, shipped 2026-07-08.) |
 
-`RULE_META` (`app.js:4351–4383`) is the machine-readable mirror of this table; the in-app Rulebook + Design Inspector render from it. **Note:** the roadmap/CLAUDE.md still say "R0–R24"; the live `RULE_META` now carries **R25** (sync banner). This drift between docs and code is logged as an Open Question (§11 Q1).
+`RULE_META` (`app.js:4351–4383`) is the machine-readable mirror of this table; the in-app Rulebook + Design Inspector render from it. **Note:** the roadmap/CLAUDE.md still say "R0–R24"; the live `RULE_META` now carries through **R27** (R25 sync banner, R26 manual-link, R27 Due-Today banner — the last two promoted to staging 2026-07-08). This drift between docs and code is logged as an Open Question (§11 Q1); whether R25+ "count" as per-element stamps is the same open debate.
 
 ### 2.3 The flag-driven color engine ✅
 
