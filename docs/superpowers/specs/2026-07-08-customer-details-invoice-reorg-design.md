@@ -14,7 +14,7 @@ Three related changes to the Customer Details surface, shipped as **two PRs**:
 - **PR 1 (this branch):**
   1. **Retire the standalone Invoice card.** Convert its list into a scrollable **Invoices section inside Customer Details**, filtered to that customer. Clicking an invoice **expands it in place** (accordion) into an improved, interactive version of the print invoice.
   2. **Redirect every cross-link** that pointed at the old Invoice card so it lands inside Customer Details, scrolled to and expanding the target invoice.
-  3. **Fold Membership + Used Sales into one "Programs" section** with a segmented toggle (off-tab keeps its count), and give **each funnel a dated "Next Action"** (red/yellow/green by date) that **replaces the existing schedule feature**.
+  3. **Fold Membership + Used Sales into one section** where **the segmented toggle is the header** (no "Programs" label; off-tab keeps its count), give **each funnel a running list of dated "Next Actions"** (red/yellow/green by date, with a "＋ Action" pill) that **replaces the existing schedule feature**, and **move the membership lifecycle pills to Account · Agreement**.
 - **PR 2 (separate, later):** add a **Sales card** in the slot the Invoice card vacated — a dashboard/work-manager card modeled on the driver Calendar card (bespoke body, no list→detail drill-down). Out of scope here except to confirm PR 1 leaves a clean slot for it.
 
 **Why now:** the Invoice card duplicates data that only ever matters *per customer*, and the print invoice we built is currently a dead-end (print-only). Embedding makes invoices live where they belong and turns the pretty sheet into an interactive view.
@@ -72,7 +72,7 @@ Clicking a row expands it **accordion-style, one open at a time** (matches the a
 
 - **A single-row control header** (yard chrome) — kept deliberately minimal (Jac, 2026-07-08 redline):
   - left: invoice id + month pill;
-  - right: **one status/action control** — the hazard-stripe **status pill doubles as the action menu**. Its fill communicates payment state (solid green = paid, yellow hazard-stripe = partial, red hazard-stripe = due); clicking it opens a small menu: **Pay · Print · Send · Refund**.
+  - right: **one status/action control** — the hazard-stripe **status pill doubles as the action menu**. Its fill communicates payment state (solid green = paid, yellow hazard-stripe = partial, red hazard-stripe = due); **while its menu is open the pill goes solid** (drops the stripe) as active-state feedback. Clicking it opens a small menu: **Pay · Print · Send · Refund**.
     - **Pay** → existing catalogued `payment` window (`app.js:10868`), unchanged.
     - **Print** → existing `printInvoice(id)`, unchanged.
     - **Send** → send the invoice to the customer (SMS/email) — reuses the comms path in `area/comms-notifications` (new wiring; see risk R6).
@@ -102,31 +102,42 @@ This means **one interception point** (`pillTo`, `app.js:2527`) redirects all th
 
 ### 3.5 Membership / Used Sales toggle
 
-Fold the two `.detail-cols` halves into one **"Programs"** section with a segmented switch (`.seg`, reusing the R14 segmented-control language):
-- Two tabs: **Membership** | **Used Sales**. Active tab renders its existing body (`membershipSectionHtml(c)` / the Used-Sales block) — we're **re-parenting** them under a toggle, not rewriting their internals (except §3.6).
+Fold the two `.detail-cols` halves into one section with a segmented switch (`.seg`, reusing the R14 segmented-control language):
+- **No section title** (Jac, 2026-07-08): the "Programs" label is redundant — **the segmented switch IS the header** (the active-member selector). Drop the `h4`.
+- Two tabs: **Membership** | **Used Sales**. Active tab renders its existing body (`membershipSectionHtml(c)` / the Used-Sales block) — we're **re-parenting** them under a toggle, not rewriting their internals (except §3.6 / §3.7).
 - **Off-tab shows its count/status** (`Used Sales · 2`) so a lead/enrollment is never invisible.
 - Default tab: **Membership** (the higher-frequency surface).
 - Toggle state is view-local (mirror `session.cols` pattern — in-memory, snapshotted), **not** persisted to localStorage; resets to Membership on a fresh customer open.
 - Frees a full column of width → room for the Invoices section.
 
-### 3.6 Next Action — replaces the schedule feature (Jac, 2026-07-08)
+### 3.6 Next Actions — a per-funnel list that replaces the schedule feature (Jac, 2026-07-08)
 
-Drop the static badge chips (the earlier "Transport waived / Auto-renew" idea). Instead, **each funnel owns one dated "Next Action"** — the single most-pressing forward step for that relationship — rendered with the **red/yellow/green urgency system keyed off its date**, the same visual language as the invoice status and rental flags.
+Drop the static badge chips (the earlier "Transport waived / Auto-renew" idea). Instead, **each funnel keeps a running LIST of dated "Next Actions"** — the scheduled steps a rep wants to track for that relationship — rendered with the **red/yellow/green urgency system keyed off each action's date**, the same visual language as the invoice status and rental flags. This is effectively the schedule feature re-homed inline, per funnel.
 
-- **Render:** a `.nextact` row inside each funnel body (Membership and Used Sales), with a left rail + dot colored by urgency: **green** = comfortably ahead, **yellow** = due soon (within threshold), **red** = due today / overdue. Empty state = a dashed "＋ set next action". Clicking the row edits/completes it.
+- **Render:** a `.na-list` inside each funnel body; each entry is a **single-row** `.nextact` — `[dot] [date chip, FIRST] [action text, one line ellipsized] [done ○]` — with a left rail + dot colored by urgency: **green** = comfortably ahead, **yellow** = due soon, **red** = due today / overdue. The **date sits in front of the text** (not a stacked label + second line). No "NEXT ACTION" stamp label on each row.
+- **Add more:** a secondary **blue "＋ Action" pill** (`.na-addbtn`, add-blue language) sits **under the last row**. Clicking it adds another dated action → the list grows into a per-relationship to-do set. Empty list = just the "＋ Action" pill.
+- **Complete:** the done ○ (or clicking the row → complete) checks an action off; completing **logs a normal activity entry** so history is preserved.
 - **Urgency tiers:** reuse the existing date-proximity → severity machinery rather than inventing a helper — `dayDiff(TODAY, when)` (`app.js:4185`) feeding the same red/yellow thresholds the flag system uses (`config.js:225-229`, `getEntityFlags` `app.js:4240`). Thresholds finalized at build; start from: red ≤ 0 days, yellow ≤ 2 days, else green.
 - **This replaces the "schedule feature."** Today's schedule is the right-hand half of the **Action Board** in `DETAIL.customers` (`app.js:6569-6579`): a "Schedule Actions" button → schedule popup (`openOverlay{kind:'schedule'}`, `app.js:10690-10701`) → writes `{when, text:'Scheduled: …'}` into the customer's `activityLog` (`app.js:13983`), and feeds the "Due Today" banner (`schedActionsDueToday`, `app.js:17344-17362`).
-  - **Remove:** the "Schedule Actions" button + the scheduled column of the Action Board. **Keep:** the logged-actions column (the activity log of what happened) — only the *forward-looking* scheduling moves to Next Action.
-  - **Storage (recommended, flag for review):** keep persisting to `activityLog` — no new backend columns, and the Due-Today banner keeps working — but **tag scheduled entries by funnel** (e.g. a `scope:'membership'|'usedSales'` field, or a text-prefix convention consistent with the existing `Scheduled:` parse). Each funnel's **Next Action = its soonest open scheduled entry**; completing it logs a normal activity entry. Setting/editing reuses the existing schedule popup, now scoped to the funnel it was opened from.
+  - **Remove:** the "Schedule Actions" button + the scheduled column of the Action Board. **Keep:** the logged-actions column (the activity log of what happened) — only the *forward-looking* scheduling moves into the funnel Next-Action lists.
+  - **Storage (recommended, flag for review):** keep persisting each action to `activityLog` — no new backend columns, and the Due-Today banner keeps working — but **tag scheduled entries by funnel** (a `scope:'membership'|'usedSales'` field, or a text-prefix convention consistent with the existing `Scheduled:` parse). Each funnel's list = **all its open scheduled entries**, sorted by date; completing one logs a normal activity entry. Adding/editing reuses the existing schedule popup, now scoped to the funnel it was opened from.
   - **Rewire the Due-Today banner** (`schedActionsDueToday`) to read the funnel-scoped Next Actions so it stays accurate after the Action Board's schedule column is gone.
 
-> **Open decision (was headed for a popup, tool was down):** the funnel-tagged-`activityLog` storage above vs. dedicated `membershipNextAction`/`usedSalesNextAction` record fields. Recommending the `activityLog` reuse (preserves Due-Today + history, no schema change). Flagged for Jac at spec review.
+> **Open decision (AskUserQuestion tool was down):** funnel-tagged-`activityLog` storage above vs. dedicated per-funnel record fields. Recommending the `activityLog` reuse (preserves Due-Today + history, no schema change, and naturally supports a *list*). Flagged for Jac at spec review.
+
+### 3.7 Membership lifecycle actions move to Account · Agreement (Jac, 2026-07-08)
+
+The three membership lifecycle pills currently in `membershipSectionHtml` (`app.js:3500-3512`) — **Take Renewal**, **Print/Transfer Agreement**, **Cancel Membership** — **do not belong in the funnel/Programs section**. Move them **down to the account level, beside the agreement** (the account block + agreement pill R3, `app.js:6527`, in `DETAIL.customers` `app.js:6584-6596`).
+
+- The Membership funnel body then shows only: the toggle header, the funnel status pill, the meta lines, and its Next-Action list — no lifecycle buttons.
+- Relocate the *existing* action handlers/pills; don't reimplement. **Take Renewal is a money action** — it keeps its `canMoney` gate and price-lock/HMAC path intact at the new location (security-sensitive; keep on the main session, per R3 risk).
+- **Label to confirm:** Jac said "transfer agreement"; the current pill is "Print Agreement." Mockup shows "Transfer / Print Agreement" pending Jac's word on whether this is a rename or a new action.
 
 ---
 
 ## 4. R-Rulebook & WINDOW_CATALOG
 
-- **New UI elements get `data-r` stamps** (run through `/jactec-ui` at build). Candidates: the Programs segmented toggle, the per-funnel Next Action row, the invoices summary strip, invoice rows, the expand control header, the status/action menu. Regenerate `rule-usage.js` (`node ci/gen-rule-usage.mjs`, `--check` in CI).
+- **New UI elements get `data-r` stamps** (run through `/jactec-ui` at build). Candidates: the funnel segmented toggle (now the header), the per-funnel Next-Action rows + "＋ Action" pill, the relocated Account·Agreement action pills, the invoices summary strip, invoice rows, the expand control header, the status/action menu (incl. its solid open-state). Regenerate `rule-usage.js` (`node ci/gen-rule-usage.mjs`, `--check` in CI).
 - **WINDOW_CATALOG:** the inline expanded invoice and the status/action menu are **section/menu state, not popups** — they open in place, no shell/overlay — so they need **no** `WINDOW_CATALOG` entry (consistent with `printInvoice` already bypassing the popup system). The **Pay** action triggers the *already-catalogued* `payment` window (`app.js:10868`) — unchanged. **If the Send action introduces a send-confirm popup**, that popup gets a `WINDOW_CATALOG` entry (and `ci/check-window-catalog.mjs` will enforce it); if Send fires inline without a shell, no entry needed. The schedule popup (`openOverlay{kind:'schedule'}`) is **retained** (now funnel-scoped for Next Action), so its catalog entry stays. Net: no *removals*; a possible single *addition* for Send-confirm.
 - If the Sales card (PR 2) introduces any popup, that PR owns its catalog entry.
 
@@ -140,7 +151,7 @@ Drop the static badge chips (the earlier "Transport waived / Auto-renew" idea). 
 3. Build `customerInvoicesSection` + accordion expand + control bar inside `DETAIL.customers`.
 4. Redirect: `pillTo` special-case + `openInvoice` + row-expand-on-arrival.
 5. Programs toggle (re-parent membership/used-sales).
-6. Next Action (§3.6): add the per-funnel `.nextact` row with RYG tiers; remove the Action Board's schedule column + "Schedule Actions" button; funnel-scope scheduled `activityLog` entries; rewire `schedActionsDueToday`.
+6. Next Actions (§3.6): add the per-funnel `.na-list` (single-row, date-first entries, RYG tiers) + "＋ Action" pill + done/complete; remove the Action Board's schedule column + "Schedule Actions" button; funnel-scope scheduled `activityLog` entries; rewire `schedActionsDueToday`. Then §3.7: relocate the three membership lifecycle pills to Account · Agreement (preserve `canMoney`/HMAC on Take Renewal).
 7. `/jactec-ui` pass: stamp `data-r`, self-critique screenshot, verify tokens/focus/reduced-motion.
 8. Gates: `node ci/gen-rule-usage.mjs --check`, `node ci/check-window-catalog.mjs`, `node ci/logic-test.mjs`, `node ci/smoke.mjs`, `node tools/gen-code-map.mjs --check` (regenerate if a chapter banner moves).
 
@@ -153,7 +164,7 @@ Drop the static badge chips (the earlier "Transport waived / Auto-renew" idea). 
 - **R6 — Send action crosses into comms.** "Send invoice" is new and touches `area/comms-notifications` (SMS/email templates, consent, delivery). *Mitigation:* if the comms send path isn't ready, ship the menu with **Send disabled/"coming soon"** rather than a half-wired send; the customer-facing send is not a blocker for the embed/toggle work. Keep any consent/opt-in gate intact — do not send without it.
 - **R7 — schedule → Next Action migration.** Existing customers already have `Scheduled:` entries in `activityLog` with no funnel scope. *Mitigation:* untagged legacy scheduled entries surface under a sensible default (e.g. Membership, or a general bucket) and are never dropped; the Due-Today banner rewrite must still count them. Verify with a customer that has pre-existing scheduled entries.
 
-**Testing:** area-level local serve (`localhost:9147`, log in with `$RW_PW`), exercise: open a customer with mixed invoice states → scroll section → expand one → open the status-pill menu → Pay → Print → verify print matches the inline sheet → click a rental's invoice pill from the Rentals card and confirm it lands + expands inside Customer Details → flip the Programs toggle both ways → confirm off-tab count → set a Next Action on each funnel and confirm the RYG tier matches the date (past = red, ≤2d = yellow, else green) → confirm the Due-Today banner still fires → open a customer with a pre-existing legacy scheduled entry (R7).
+**Testing:** area-level local serve (`localhost:9147`, log in with `$RW_PW`), exercise: open a customer with mixed invoice states → scroll section → expand one → open the status-pill menu → Pay → Print → verify print matches the inline sheet → click a rental's invoice pill from the Rentals card and confirm it lands + expands inside Customer Details → flip the Programs toggle both ways → confirm off-tab count → add several Next Actions on each funnel via "＋ Action", confirm each row's RYG tier matches its date (past = red, ≤2d = yellow, else green) and the date sits in front of the text → complete one and confirm it logs to activity → confirm the Due-Today banner still fires → confirm Take Renewal / Agreement / Cancel now live at Account · Agreement and Take Renewal keeps its money gate → open a customer with a pre-existing legacy scheduled entry (R7).
 
 ---
 
