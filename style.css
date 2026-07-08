@@ -3103,8 +3103,28 @@ body { font-variant-numeric: tabular-nums; }
 .im-item.danger { color: var(--red); } .im-item.danger .im-ic { color: var(--red); }
 .im-sep { height: 1px; background: var(--line); margin: 4px 6px; }
 /* the white print sheet hosted inside the dark card */
-.io-sheet-wrap { padding: 13px; background: repeating-linear-gradient(135deg, rgba(255,255,255,.015) 0 8px, transparent 8px 16px), var(--bg-2); }
+.io-sheet-wrap { padding: 13px; background: repeating-linear-gradient(135deg, rgba(255,255,255,.015) 0 8px, transparent 8px 16px), var(--bg-2); container-type: inline-size; }
 .io-sheet-wrap .pr-doc { max-width: none; border-radius: 8px; padding: 20px 22px; box-shadow: 0 10px 30px -12px rgba(0,0,0,.8); }
+/* Narrow-embed reflow (mobile / narrow column): the pretty invoice was laid out for a wide
+   printed page; on a narrow inline sheet the wordmark, big datestamp, 300px totals block and
+   2-col meta/logs overflow. Scale + stack them here ONLY — print and the wide desktop column
+   keep the approved layout (scoped to the embed via the io-sheet-wrap container, never
+   #print-root). */
+@container (max-width: 440px) {
+  .io-sheet-wrap .pr-doc { padding: 15px; }
+  .io-sheet-wrap .pr-head { gap: 10px; align-items: center; }
+  .io-sheet-wrap .pr-brandwrap { gap: 8px; min-width: 0; }
+  .io-sheet-wrap .pr-logo { width: 38px; height: 38px; flex-basis: 38px; }
+  .io-sheet-wrap .pr-brand { font-size: 21px; letter-spacing: .3px; }
+  .io-sheet-wrap .pr-sub { font-size: 9.5px; letter-spacing: 1px; }
+  .io-sheet-wrap .pr-datestamp { font-size: 22px; letter-spacing: .5px; }
+  .io-sheet-wrap .pr-meta { grid-template-columns: 1fr; gap: 0; }
+  .io-sheet-wrap .pr-summary { flex-direction: column; align-items: stretch; gap: 12px; }
+  .io-sheet-wrap .pr-cust { margin-right: 0; justify-content: center; }
+  .io-sheet-wrap .pr-cust-photo { width: 84px; height: 84px; }
+  .io-sheet-wrap .pr-tot { flex-basis: auto; width: 100%; }
+  .io-sheet-wrap .pr-logs { grid-template-columns: 1fr; gap: 12px; }
+}
 /* on-sheet affordances (white-document colors — fixed like the rest of .pr-doc) */
 .pr-line-src { display: inline-flex; align-items: center; gap: 3px; font-size: 10px; color: #1864d6; font-weight: 700;
   border: 1px solid #b9d2f7; background: #eef4fe; border-radius: 6px; padding: 0 5px; margin-left: 5px; cursor: pointer; }
