@@ -1,5 +1,23 @@
 # Backend deploy queue — ready the moment auth is unblocked (2026-07-06)
 
+## ⛔ PENDING — team-chat privacy (2026-07-08, awaiting Jac's OK)
+- **What:** replace `getChats_` / `setChats_` with the scoped + authorized versions in
+  `docs/handoffs/team-chat-privacy-backend.gs`. Makes team-chat membership a real
+  server-side boundary (reads scoped to admin+members; writes authorized so a non-member
+  can't inject/tamper, only self-leave). **Back-compat:** an absent `body.me` = old client
+  → prior behavior, so it's safe to deploy against the current frontend and safe to ship
+  the new frontend against the current backend (deploy order doesn't matter).
+- **Client side:** already shipped on `claude/internal-chat-updates-vq6p7b` (sends
+  `me`/`rosterId` with getChats/setChats; prunes scoped-out chats live).
+- **STOP — do NOT auto-deploy.** This is a server-side auth gate; per `/clasp` it needs
+  Jac's explicit confirmation, and the deploy MUST use the **editor New-version** step
+  (the REST API `deploy` breaks anonymous access — see below). Splice the two function
+  bodies into `Code.gs`, `push` content, then redeploy from the editor.
+- **Caveat to tell Jac:** identity is client-asserted (gated behind the team password), a
+  real filter for normal use but not a crypto boundary; true per-person privacy needs
+  per-user auth. Live-session note: a removed member's rail clears on the next poll (the
+  frontend prune) or reload.
+
 ## ✅ STATUS 2026-07-06: queue DEPLOYED (prod version 62)
 - **perfReport** — DEPLOYED. Router + `perfReport_` handler live; verified end-to-end (a
   synthetic POST landed a `_perf` row with the correct 11 columns). Client flush still lives

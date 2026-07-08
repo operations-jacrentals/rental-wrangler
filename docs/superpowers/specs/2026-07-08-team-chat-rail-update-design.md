@@ -49,6 +49,8 @@ Non-goals this pass: reworking Texts/Email/Wrangler categories; changing the log
 
 **Membership & visibility (shipped).** Identity binds the free-text login name (`currentUser`) to a roster person by **case-insensitive name match** (`myRosterId()`). A team chat is visible to its **admin + members**; a bound non-member does not see it (so *Leave* actually hides it). An **unbound login** (name not on the roster, e.g. demo) sees all as a safe fallback so the rail is never mysteriously empty. `commentUserKey()` (= `currentUser || currentRole || 'me'`) remains the message-author / seen key.
 
+**Server-side privacy (client shipped, backend staged).** Client-side filtering alone isn't a boundary — the sync shipped every chat to every client. The client now sends its identity (`me`/`rosterId`) with `getChats`/`setChats` and prunes scoped-out chats live (`reconcileScopedChats`). The backend counterpart (`docs/handoffs/team-chat-privacy-backend.gs`) scopes reads to admin+members and authorizes writes (a non-member can only self-leave, never inject/tamper); it's **back-compatible** (absent `me` = old client → prior behavior) and **STOP-gated** for a Jac-confirmed `/clasp` editor deploy. Identity is client-asserted behind the team password — a real filter, not a crypto boundary; true per-person privacy would need per-user auth.
+
 **Gear settings menu.** Classic chat controls live behind a gear (`I.sliders`) in the window header: **Mark as read** and **Mute notifications** (per-user; a muted chat never raises its status dot) for everyone; **Rename** + **End chat** for the admin; **Leave chat** for a member.
 
 **Status per Team tab** (mirrors the Texts/Email session status the rail already computes):

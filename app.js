@@ -17618,11 +17618,12 @@ async function refreshFromBackend() {
     });
     // also pull the shared team-chat threads so messages from other users land live
     try {
-      const cr = await backendCall('getChats');
+      const cr = await backendCall('getChats', chatSyncIdentity());
       if (cr && cr.ok && Array.isArray(cr.chats)) {
         const m = mergeChats(cr.chats);
+        const pruned = reconcileScopedChats(cr.chats);
         if (m.localAhead) pushChats(); else lastChatsJson = JSON.stringify(state.chat.chats);
-        if (m.changed) applied++;
+        if (m.changed || pruned) applied++;
       }
     } catch (e) { /* chat sync is best-effort */ }
     loadWranglerRail();   // also pull this role's Mr. Wrangler rail (cross-device) — best-effort, self-renders
@@ -17673,21 +17674,37 @@ function mergeChats(remoteChats) {
   });
   return { changed, localAhead };
 }
+// After a SCOPED load, drop local chats the server no longer returns for me (I was removed
+// or left) so they leave the rail live, not just on reload. Guards: only for a bound user
+// (unbound sees all → never prune); never drop a chat I own or the one I just created; a
+// no-op against an old backend that returns everything.
+function reconcileScopedChats(returnedChats) {
+  const mine = myRosterId(); if (!mine) return false;
+  const keep = new Set((returnedChats || []).map((c) => String(c.id)));
+  const before = state.chat.chats.length;
+  state.chat.chats = state.chat.chats.filter((c) => chatIsAdmin(c) || String(c.id) === String(state.chat.activeId) || keep.has(String(c.id)));
+  return state.chat.chats.length !== before;
+}
+// Identity sent with team-chat sync so the backend can scope a caller to THEIR chats
+// (admin + members). Self-asserted, gated behind the team password — a real server-side
+// filter for normal use, not a crypto boundary. Old backends ignore it (fully back-compat).
+const chatSyncIdentity = () => ({ me: commentUserKey(), rosterId: myRosterId() });
 async function pushChats() {
   if (!backendPassword) return;
   const js = JSON.stringify(state.chat.chats);
   if (js === lastChatsJson) return;                 // nothing new since the last successful push
-  try { const r = await backendCall('setChats', { chats: state.chat.chats }); if (r && r.ok) lastChatsJson = js; } catch (e) { /* offline → retries on next change/poll */ }
+  try { const r = await backendCall('setChats', { chats: state.chat.chats, ...chatSyncIdentity() }); if (r && r.ok) lastChatsJson = js; } catch (e) { /* offline → retries on next change/poll */ }
 }
 function pushChatsSoon() { if (booting || !backendPassword) return; clearTimeout(chatPushTimer); chatPushTimer = setTimeout(pushChats, 1200); }
 async function loadChats() {
   if (!backendPassword) return;
   try {
-    const r = await backendCall('getChats');
+    const r = await backendCall('getChats', chatSyncIdentity());
     if (!r || !r.ok || !Array.isArray(r.chats)) return;
     const { changed, localAhead } = mergeChats(r.chats);
+    const pruned = reconcileScopedChats(r.chats);
     if (localAhead) pushChats(); else lastChatsJson = JSON.stringify(state.chat.chats);   // mark synced (or send local-only threads up)
-    if (changed) render();
+    if (changed || pruned) render();
   } catch (e) { /* offline → the refresh poll retries */ }
 }
 // ── Cross-device Mr. Wrangler rail sync (per ROLE; mirrors team-chat sync) ──
