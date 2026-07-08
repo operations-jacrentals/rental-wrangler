@@ -4612,7 +4612,7 @@ function svcNeedHtml(u, task) {
   const partsBlock = (partRefs.length || editable) ? `
     <div class="svc-parts-head">Parts / filters${editable ? '<span class="svc-editnote"> · edits this model’s schedule</span>' : ''}</div>
     ${rows}
-    ${editable ? `<div class="svc-partadd">${addBtn('Part', { line: true, js: 'js-svc-addpart', h: 26, data: { unit: u.unitId, task: task.taskId } })}</div>` : ''}` : '';
+    ${editable ? `<div class="svc-partadd">${addBtn('Part', { line: true, js: 'js-svc-addpart', h: 26, data: { unit: u.unitId, task: task.taskId } })}${actionPill('commit', 'Browse catalog', { js: 'js-svc-browseparts', data: { unit: u.unitId, task: task.taskId }, h: 26 })}</div>` : ''}` : '';
   return `${fluidHtml}${notesHtml}${partsBlock}` || '<span class="muted">No detailed spec on file for this task yet.</span>';
 }
 /** The part-detail side panel — a SECOND .popup appended to the same overlay (the
@@ -4667,6 +4667,36 @@ function removeSvcPartRef(unitId, taskId, idx) {
   if (o && o.kind === 'service' && o.partRef && o.partRef.idx === idx) o.partRef = null;
   else if (o && o.kind === 'service' && o.partRef && o.partRef.idx > idx) o.partRef.idx -= 1;   // keep pointing at the same part after the array shifts
   toast('Part removed.'); renderOverlay();
+}
+/** Attach an EXISTING catalog part (DATA.parts) onto a service task's detail.partRefs —
+ * the "selection" half of the parts UX (Jac 2026-07-08), paired with the partform
+ * "create" half. Opened from the parts board in pick mode (js-svc-pick-part). Writes to
+ * the REAL model task (svcRealTask + reindex('models',…)), the same idiom as
+ * removeSvcPartRef / savePartForm's taskTarget branch — never the unitServiceRows copy.
+ * Only carries fields the catalog actually has (undefined, not '', so svcPartPanelEl's
+ * "not in catalog yet" fallback still behaves). Dedupes by OEM (when present) or name. */
+function attachCatalogPart(unitId, taskId, partId) {
+  const u = IDX.unit.get(unitId); if (!u) return;
+  const p = DATA.parts.find((x) => x.partId === partId); if (!p) return;
+  const { mo, realTask } = svcRealTask(u, { taskId });
+  if (!realTask) { toast('No editable schedule for this unit.'); return; }
+  realTask.detail = realTask.detail || {};
+  realTask.detail.partRefs = realTask.detail.partRefs || [];
+  const norm = (s) => String(s || '').trim().toLowerCase();
+  const oem = p.productNumber || '';
+  const dupe = realTask.detail.partRefs.some((pr) => (oem && pr.oem && norm(pr.oem) === norm(oem)) || (norm(pr.name) && norm(pr.name) === norm(p.name)));
+  if (dupe) { toast('Already on this service'); return; }
+  const rec = { name: p.name };
+  if (oem) rec.oem = oem;
+  if (p.priceEach != null) rec.cost = p.priceEach;
+  if (p.vendorId) rec.vendorId = p.vendorId;
+  if (p.website) rec.url = p.website;
+  if (p.imageUrl) rec.photo = p.imageUrl;
+  realTask.detail.partRefs.push(rec);
+  reindex('models', mo); logAction(mo, `Attached catalog part ${auditVal(p.name)} to ${realTask.name}`);
+  toast('Part attached.');
+  state.overlay = { kind: 'service', unitId, taskId };
+  renderOverlay();
 }
 /** R6: required-until-entered — white bg + dark ink, stays loud until satisfied. */
 function reqBtn(label, { js, data, icon } = {}) {
@@ -10588,7 +10618,7 @@ function buildPopupEl(o, overlay, opts = {}) {
     } else {
     pop.innerHTML = `
       <div class="popup-head">${CARD_ICON[board.id] ? `<span class="c-icon" style="color:var(--accent);display:inline-flex">${CARD_ICON[board.id] || ''}</span>` : ''}<h3>${esc(board.title)}</h3><span class="c-count">${boardRows(board.id).length}</span>${board.id === 'files' ? addBtn('File', { link: true, js: 'js-file-add' }) : ''}${board.id === 'files' ? `<div class="bv-searchwrap"><span class="s-icon">${I.search}</span><input class="bv-query js-files-query" placeholder="Search files…" value="${esc(o.fileSearch || '')}" /></div>` : ''}<span class="spacer"></span><button class="x js-close">${I.x}</button></div>
-      <div class="popup-body board-body">${board.id === 'files' && o.fileForm ? `<div class="kv pillrow" style="gap:7px;margin:0 0 10px"><input class="lf-in js-ff-name" placeholder="File name" style="flex:2;min-width:140px"><input class="lf-in js-ff-link" placeholder="Link (URL)" style="flex:2;min-width:140px">${fileDrop(o.fileUpload ? '✓ ' + esc(o.fileUpload.name) : 'Upload photo / document', { js: 'js-ff-file', accept: 'image/*,application/pdf,.doc,.docx,.xls,.xlsx,.csv,.txt', done: !!o.fileUpload, icon: I.camera })}${ghostPill('Cancel', { js: 'js-ff-cancel' })}${actionPill('commit', 'Add file', { js: 'js-ff-save' })}</div>` : ''}${boardTable(board.id, o.fileSearch)}</div>`;
+      <div class="popup-body board-body">${o.pickTarget && board.id === 'parts' ? `<div class="muted board-pickhint">Tap <b>Attach</b> to add a catalog part to this service.</div>` : ''}${board.id === 'files' && o.fileForm ? `<div class="kv pillrow" style="gap:7px;margin:0 0 10px"><input class="lf-in js-ff-name" placeholder="File name" style="flex:2;min-width:140px"><input class="lf-in js-ff-link" placeholder="Link (URL)" style="flex:2;min-width:140px">${fileDrop(o.fileUpload ? '✓ ' + esc(o.fileUpload.name) : 'Upload photo / document', { js: 'js-ff-file', accept: 'image/*,application/pdf,.doc,.docx,.xls,.xlsx,.csv,.txt', done: !!o.fileUpload, icon: I.camera })}${ghostPill('Cancel', { js: 'js-ff-cancel' })}${actionPill('commit', 'Add file', { js: 'js-ff-save' })}</div>` : ''}${boardTable(board.id, o.fileSearch, o.pickTarget)}</div>`;
     }
     overlay.appendChild(pop);
   } else if (o.kind === 'roundup') {
@@ -12489,16 +12519,22 @@ const BOARD_DEF = {
     row: (f) => [f.link ? linkName(f.name, { js: 'js-open-link', data: { url: /^https?:\/\//i.test(f.link) ? f.link : 'https://' + f.link } }) : esc(f.name), statusPill('companyFileType', f.type), esc(f.group || '—'), f.reviewByDate ? esc(fmtShortDate(f.reviewByDate)) + (reviewState(f.reviewByDate) ? ' ' + reviewState(f.reviewByDate) : '') : '—'],
   },
 };
-function boardTable(boardId, query) {
+function boardTable(boardId, query, pickTarget) {
   const def = BOARD_DEF[boardId]; let rows = boardRows(boardId);
   if (!def) return '<p class="muted">—</p>';
   const q = (query || '').trim().toLowerCase();
   if (q) rows = rows.filter((r) => Object.values(r).some((v) => v != null && String(v).toLowerCase().includes(q)));
-  const head = `<tr>${def.cols.map((c) => `<th>${esc(c)}</th>`).join('')}</tr>`;
+  // Parts-picker mode (Jac 2026-07-08): opened from a service task with pickTarget=
+  // {unitId,taskId}, each part row grows a blue Attach commit pill that stamps the
+  // catalog part onto the model task's detail.partRefs (see attachCatalogPart). The
+  // row still opens its detail on the name; Attach stopsPropagation so it doesn't.
+  const picking = boardId === 'parts' && pickTarget;
+  const head = `<tr>${def.cols.map((c) => `<th>${esc(c)}</th>`).join('')}${picking ? '<th></th>' : ''}</tr>`;
   // §7.10–§7.13 v2 — every board row opens the record's detail inside the popup
   const ROW_ID = { vendors: 'vendorId', expenses: 'expenseId', parts: 'partId', files: 'fileId' };
   const rowAttr = ROW_ID[boardId] ? (r) => ` class="js-board-row" data-rec="${esc(String(r[ROW_ID[boardId]]))}"` : () => '';
-  const body = rows.map((r) => `<tr${rowAttr(r)}>${def.row(r).map((c) => `<td>${c}</td>`).join('')}</tr>`).join('');
+  const pickCell = picking ? (r) => `<td class="board-pickcell">${actionPill('commit', 'Attach', { js: 'js-svc-pick-part', data: { part: r.partId, unit: pickTarget.unitId, task: pickTarget.taskId }, h: 24 })}</td>` : () => '';
+  const body = rows.map((r) => `<tr${rowAttr(r)}>${def.row(r).map((c) => `<td>${c}</td>`).join('')}${pickCell(r)}</tr>`).join('');
   return `<table class="board-table"><thead>${head}</thead><tbody>${body}</tbody></table>`;
 }
 
@@ -14128,6 +14164,8 @@ function onClick(e) {
   if (closest('.js-svc-part-remove')) { e.stopPropagation(); const b = closest('.js-svc-part-remove'); return removeSvcPartRef(b.dataset.unit, b.dataset.task, Number(b.dataset.idx)); }
   if (closest('.js-svc-addpart')) { const b = closest('.js-svc-addpart'); e.stopPropagation(); state.partPhoto = null; return openOverlay({ kind: 'partform', taskTarget: { unitId: b.dataset.unit, taskId: b.dataset.task }, idx: null }); }
   if (closest('.js-svc-partedit')) { const b = closest('.js-svc-partedit'); e.stopPropagation(); state.partPhoto = null; return openOverlay({ kind: 'partform', taskTarget: { unitId: b.dataset.unit, taskId: b.dataset.task }, idx: Number(b.dataset.idx) }); }
+  if (closest('.js-svc-browseparts')) { const b = closest('.js-svc-browseparts'); e.stopPropagation(); return openOverlay({ kind: 'board', board: 'parts', pickTarget: { unitId: b.dataset.unit, taskId: b.dataset.task } }); }   // "Browse catalog" → the parts board in pick mode, to attach an existing part
+  if (closest('.js-svc-pick-part')) { const b = closest('.js-svc-pick-part'); e.stopPropagation(); return attachCatalogPart(b.dataset.unit, b.dataset.task, b.dataset.part); }   // Attach a catalog part onto a service task (must run BEFORE js-board-row so it doesn't also open detail)
   if (closest('.js-board')) { const b = closest('.js-board'); document.querySelectorAll('.dropdown-menu').forEach((n) => n.remove()); return openOverlay({ kind: 'board', board: b.dataset.board }); }
   if (closest('.js-vendor-open')) { e.stopPropagation(); return openOverlay({ kind: 'board', board: 'vendors', recId: closest('.js-vendor-open').dataset.rec }); }   // WO-line vendor names → vendor detail in the board popup
   if (closest('.js-expense-open')) { e.stopPropagation(); return openOverlay({ kind: 'board', board: 'expenses', recId: closest('.js-expense-open').dataset.rec }); }   // part-detail receipt link → expense detail in the board popup
