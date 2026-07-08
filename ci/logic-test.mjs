@@ -868,6 +868,17 @@ try {
     m = T.mergeWranglerRails([], [C, B]);
     ok(m.merged.map((c) => c.id).join(',') === 'c,b' && m.changed === true, 'mergeWranglerRails: empty local → adopts remote, sorted newest-first');
 
+    // 18b) dismissal tombstone — a chat the operator removed HERE must never be resurrected by the
+    // cross-device merge, even though the backend copy still holds it (the reported bug: dismissed
+    // chats reappear on every login). wrRailRemove records the id in localStorage; the merge drops it.
+    try { localStorage.setItem('jactec.wranglerRailDismissed', JSON.stringify(['b'])); } catch (e) {}
+    m = T.mergeWranglerRails([], [B]);              // backend still serves the dismissed chat 'b'
+    ok(m.merged.length === 0, 'mergeWranglerRails: a dismissed chat is NOT resurrected from the backend');
+    ok(m.changed === false && m.localAhead === true, 'mergeWranglerRails: a dismissed remote chat flags a corrective push instead of re-adding');
+    m = T.mergeWranglerRails([A], [A2, B]);         // 'b' dismissed → dropped; live 'a' merges as usual
+    ok(!m.merged.some((c) => c.id === 'b') && !!m.merged.find((c) => c.id === 'a' && c.ts === 20), 'mergeWranglerRails: dismissal drops only the tombstoned chat, others merge normally');
+    try { localStorage.removeItem('jactec.wranglerRailDismissed'); } catch (e) {}
+
     // 19) KPIs & RINGS — admin-definable metric engine (step 1: defaults === today + DSL correctness)
     const ROLE_IDS = ['mechanic', 'mtech', 'driver', 'office', 'sales'];
     let kpiMatch = true, kpiRawMatch = true;

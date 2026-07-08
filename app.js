@@ -8502,7 +8502,8 @@ async function wranglerRailLoad() {
   }
   try {
     const all = await wrStore.listChats();
-    state.wranglerRail = (all || []).sort((a, b) => (b.ts || 0) - (a.ts || 0));
+    const dismissed = loadDismissedChats();
+    state.wranglerRail = (all || []).filter((c) => c && !dismissed.has(c.id)).sort((a, b) => (b.ts || 0) - (a.ts || 0));   // never re-show a dismissed chat (defense-in-depth vs a cached remote winner)
     await wrPruneOldChats();   // §18g auto-janitor: drop plain chats past the retention window
     if (state.wranglerRail.length) render();
   } catch (e) { toast('⚠ Couldn’t load chat history — ' + ((e && e.message) || 'storage error')); }
@@ -8529,15 +8530,24 @@ function wranglerRailSnapshot() {
 function wranglerNewChat(seed) {
   openWranglerDock(Object.assign({ messages: [], draft: '', attach: [], files: [], card: null, recId: null, recType: null, reqNumber: null, reqTitle: null, reqUrl: null, id: wranglerNewId() }, seed || {}));
 }
+// §18g dismissal tombstones — the rail syncs cross-device (setWranglerRail / getWranglerRail),
+// so removing a chat from local state + IndexedDB alone lets the union-merge (mergeWranglerRails)
+// pull it straight back from the backend on the next login. This device-local set records what
+// the operator dismissed here so a stale or remote copy can never resurrect it. (Mirrors §246.)
+const WR_DISMISS_KEY = 'jactec.wranglerRailDismissed';
+const loadDismissedChats = () => { try { return new Set(JSON.parse(localStorage.getItem(WR_DISMISS_KEY) || '[]')); } catch (e) { return new Set(); } };
+const saveDismissedChats = (set) => { try { localStorage.setItem(WR_DISMISS_KEY, JSON.stringify([...set].slice(-500))); } catch (e) {} };   // ids only; cap the tail so it stays tiny
 // §18g REMOVE a Mr. Wrangler conversation entirely (the × on its rail tab) — closing the dock
 // only snapshots a chat back onto the rail, so this is the only way to actually clear one. If the
 // chat is the one open in the dock, close the dock WITHOUT re-snapshotting it.
 function wrRailRemove(id) {
   if (!id) return;
+  const s = loadDismissedChats(); s.add(id); saveDismissedChats(s);   // tombstone the dismissal so a cross-device merge can't bring it back
   const o = state.wrangler;
   if (o.id === id) { o.open = false; o.min = false; o.id = null; o.messages = []; o.reqNumber = null; o.reqTitle = null; o.reqUrl = null; }   // drop the live one; cleared so it isn't re-snapshotted on the next open
   state.wranglerRail = (state.wranglerRail || []).filter((c) => c.id !== id);
   try { wrStore.delChat(id); } catch (e) {}   // also from IndexedDB so it doesn't reload next boot
+  pushWranglerRailSoon();                      // propagate the removal to the backend rail, else getWranglerRail re-serves it on the next login
   render();
 }
 // Re-open a stored conversation from the rail.
@@ -17149,17 +17159,19 @@ async function loadChats() {
 // localAhead. The caller applies it to state + the IndexedDB cache.
 let railPushTimer = null, lastRailJson = null;
 function mergeWranglerRails(local, remote) {
-  const byId = new Map((local || []).map((c) => [c.id, c]));
+  const dismissed = loadDismissedChats();                                   // chats the operator dismissed on THIS device — never resurrect them
+  const byId = new Map((local || []).filter((c) => c && !dismissed.has(c.id)).map((c) => [c.id, c]));
   let changed = false, localAhead = false;
   (remote || []).forEach((rc) => {
     if (!rc || !rc.id) return;
+    if (dismissed.has(rc.id)) { localAhead = true; return; }                // dismissed here → drop it and flag a corrective push to clean the backend rail
     const lc = byId.get(rc.id);
     if (!lc) { byId.set(rc.id, rc); changed = true; }                       // a chat from another device
     else if ((rc.ts || 0) > (lc.ts || 0)) { byId.set(rc.id, rc); changed = true; }   // remote is newer → wins
     else if ((lc.ts || 0) > (rc.ts || 0)) { localAhead = true; }            // we're newer → push up
   });
   const remoteIds = new Set((remote || []).map((c) => c && c.id));
-  if ((local || []).some((c) => c && !remoteIds.has(c.id))) localAhead = true;   // a local-only chat → push up
+  if ((local || []).some((c) => c && !dismissed.has(c.id) && !remoteIds.has(c.id))) localAhead = true;   // a local-only chat → push up
   const merged = [...byId.values()].sort((a, b) => (b.ts || 0) - (a.ts || 0));
   return { merged, changed, localAhead };
 }
@@ -17176,11 +17188,12 @@ async function loadWranglerRail() {
   try {
     const r = await backendCall('getWranglerRail');
     if (!r || !r.ok || !Array.isArray(r.chats)) return;
+    const dismissed = loadDismissedChats();
     const localBefore = state.wranglerRail;
     const { merged, changed, localAhead } = mergeWranglerRails(localBefore, r.chats);
     if (changed) {
       const beforeById = new Map(localBefore.map((c) => [c.id, c]));
-      for (const rc of r.chats) { const lc = beforeById.get(rc.id); if (rc && rc.id && (!lc || (rc.ts || 0) > (lc.ts || 0))) { try { await wrStore.putChat(rc); } catch (e) {} } }   // cache the remote winners
+      for (const rc of r.chats) { const lc = beforeById.get(rc.id); if (rc && rc.id && !dismissed.has(rc.id) && (!lc || (rc.ts || 0) > (lc.ts || 0))) { try { await wrStore.putChat(rc); } catch (e) {} } }   // cache the remote winners (never a dismissed one)
       state.wranglerRail = merged; render();
     }
     if (localAhead) pushWranglerRailSoon(); else lastRailJson = JSON.stringify(state.wranglerRail);
