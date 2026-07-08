@@ -19890,9 +19890,15 @@ function mountGpsFleetMap(o) {
     if (!_gpsFleetMap) return;
     _gpsFleetMarkers.forEach((m) => m.setMap(null)); _gpsFleetMarkers = [];
     const roster = gpsConfigured() ? gpsFleetRoster() : [];
+    // Narrow the plotted pins to the SAME search + running/stopped filter the sidebar uses (#552-r13),
+    // so filtering/searching the list narrows the map too instead of always plotting the full roster.
+    const q = (o.q || '').trim().toLowerCase();
+    const matchRow = (r) => !q || `${r.name} ${r.serial || ''} ${gpsProvLabel(r.provider)} ${r.unit ? r.unit.name : ''}`.toLowerCase().includes(q);
+    const matchFilter = (r) => !o.filter || o.filter === 'all' || (o.filter === 'running' ? r.engineOn : !r.engineOn);
+    const shown = roster.filter(matchRow).filter(matchFilter);
     const onColor = ruColor('--green'), offColor = ruColor('--gray'), ink = ruColor('--on-orange'), accent = ruColor('--accent');
     const bounds = new google.maps.LatLngBounds(); let placed = 0, selPos = null;
-    roster.forEach((r) => {
+    shown.forEach((r) => {
       const m = r.machine;
       if (!m || m.lat == null || m.lng == null) return;
       const pos = { lat: m.lat, lng: m.lng };
