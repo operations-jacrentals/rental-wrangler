@@ -45,7 +45,11 @@ Non-goals this pass: reworking Texts/Email/Wrangler categories; changing the log
 - A **member picker** — the roster (§3.2), people grouped under their role heading (honors the "rail of roles" instinct while selecting individuals). Tap to add; **none selected by default**.
 - **Start chat** (ignition-orange). Creates the chat, drops it onto the Team rail as the open tab.
 
-**Membership & visibility.** A signed-in user sees a chat when they are one of its `members`. Identity today is a free-text login name (`currentUser`) + a role; `commentUserKey()` = `currentUser || currentRole || 'me'`. We resolve `currentUser` to a roster person (match by roster-person id; the login name maps to exactly one roster entry). A user whose login doesn't match any roster person is in **no** chats until an admin adds them — consistent with default-none. *(Detail to settle in the plan: how login name binds to a roster id — by exact name match, or by later letting login pick a roster person.)*
+**Ownership (creator = admin).** The person who creates a chat owns it (stored as `by`). **Only the admin adds/removes members or renames**; everyone else sees a read-only member list. **Members default to none** — being admin already grants the creator visibility + control, so `members` starts empty. A member can **voluntarily leave** (removes their own roster id), which drops the chat off their rail. Non-admins cannot add themselves or anyone else.
+
+**Membership & visibility (shipped).** Identity binds the free-text login name (`currentUser`) to a roster person by **case-insensitive name match** (`myRosterId()`). A team chat is visible to its **admin + members**; a bound non-member does not see it (so *Leave* actually hides it). An **unbound login** (name not on the roster, e.g. demo) sees all as a safe fallback so the rail is never mysteriously empty. `commentUserKey()` (= `currentUser || currentRole || 'me'`) remains the message-author / seen key.
+
+**Gear settings menu.** Classic chat controls live behind a gear (`I.sliders`) in the window header: **Mark as read** and **Mute notifications** (per-user; a muted chat never raises its status dot) for everyone; **Rename** + **End chat** for the admin; **Leave chat** for a member.
 
 **Status per Team tab** (mirrors the Texts/Email session status the rail already computes):
 - **red — unseen:** messages from others newer than this user's `seen`.
@@ -118,10 +122,15 @@ The old `chatRoleBarHtml` (role-participant toggles, everyone-in-by-default) bec
 ## 7. Open / deferred
 
 - **Flagged-comments feed** — deferred by decision. Revisit: move to Notifications (it's really alerts, not chat), keep as a Team landing view, or drop.
-- **Login ↔ roster binding** — exact-name match vs. letting login pick a roster person; settle in the plan.
-- **Legacy chat migration** — existing `state.chat.chats` carry role `participants` + `tags`, not `title`/`members`. Proposed default: preserve messages, synthesize a `title` from the first tag label (or "Team chat"), open membership until an admin curates, and convert any tagged element into a pasted chip on display. Confirm at plan time.
+- **Mr. Wrangler paste** — shipped as a record *focus* (feeds `wranglerContext`), not a clickable chip, since the AI can't click. Team paste = clickable chip; Wrangler paste = focus. Both internal-only.
+- ~~**Login ↔ roster binding**~~ — RESOLVED: bind by case-insensitive name match (`myRosterId`); unbound logins see all as a fallback.
+- **Texts/Email plain-text paste** — a copied element pasting its *text* into a customer text/email is not yet wired (held chips simply don't surface in customer composers, so nothing leaks). Low priority.
 
-## 8. Code anchors (for the plan)
+## 8. Legacy migration (shipped)
+
+Existing `state.chat.chats` carried role `participants` + `tags`, not `title`/`members`. `normalizeTeamChat()` runs on load + sync: it synthesizes a `title` from the old first-tag label (else "Untitled chat"), ensures a `members` array, and leaves legacy `tags` as harmless passthrough (a legacy chat with no `by` stays openly editable for back-compat). The sync layer (`normalizeChat`/`mergeChats`) preserves + unions `title`, `members`, and `muted`.
+
+## 9. Code anchors (for the plan)
 
 - Team chat / §17: `newChat`, `openChat`, `chatShow`, `chatFeed`, `chatFeedRowsHtml`, `chatRoleBarHtml`, `chatDockEl`, `chatComments`, `chatUnreadCount` (`APP-23`, ~`app.js:8100+` on `dock-threads`).
 - Rail engine: `commsRailEl`, `commsSessTabsHtml`, `state.commsRail`, `COMMS_CATS`, `loadCommsRail`/`saveCommsRail`, `commsFreshSessions`.
