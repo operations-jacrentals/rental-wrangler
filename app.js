@@ -8305,6 +8305,7 @@ function bottomBarInner(opts = {}) {
     <button class="iconbtn js-gps-fleet" data-tip="Fleet Map — every GPS tracker on a live map">${I.grid}</button>
     <button class="iconbtn js-gps-roundup" data-tip="Round Up Trackers — bulk-match the fleet to live GPS devices">${I.list}</button>
     <button class="iconbtn js-gps-issues" data-tip="GPS Issues — every tracker that needs attention">${I.alert}</button>
+    <button class="iconbtn js-gps-utilization" data-tip="Fleet Utilization — real hours/miles per unit, from the trackers">${I.graph}</button>
     <button class="iconbtn js-hotkeys" data-tip="Mouse &amp; keyboard shortcuts">${I.mouse}</button>
     ${devUnlocked() ? `<button class="iconbtn js-lint${document.body.classList.contains('rw-lint') ? ' on' : ''}" data-tip="Design lint — flash anything that bypassed the UI builders (R0)">${I.eye}</button>
     <button class="iconbtn js-inspect${state.inspect ? ' on' : ''}" data-tip="Design Inspector — hover names the rule, click copies the reference">${I.search}</button>
@@ -10967,6 +10968,82 @@ function buildPopupEl(o, overlay, opts = {}) {
     const pop = el('div', 'popup gpsru-popup');
     pop.innerHTML = popupShell({ icon: I.list || '', title: 'Round Up Trackers', tag: 'Fleet · GPS onboarding', body, foot });
     overlay.appendChild(pop);
+  } else if (o.kind === 'gpsUtilization') {
+    // Phase 4 — FLEET UTILIZATION: real, provider-sourced actual-usage rollup (hours/miles
+    // a mapped unit ACTUALLY ran, over a selectable window). Pure visibility — no target
+    // hrs/day, no over/under-capacity math (that data doesn't exist yet). gpsUtilScan does
+    // the I/O (fans gpsUsageDaily across every mapped unit); gpsUtilRollup (PURE) turns the
+    // result into the two tables rendered below.
+    o.days = o.days || 30;
+    const dayCtl = segCtl([
+      { label: '7d', js: 'js-gpsu-days', data: { val: 7 }, on: o.days === 7 ? 'orange' : '' },
+      { label: '30d', js: 'js-gpsu-days', data: { val: 30 }, on: o.days === 30 ? 'orange' : '' },
+      { label: '90d', js: 'js-gpsu-days', data: { val: 90 }, on: o.days === 90 ? 'orange' : '' },
+    ]);
+
+    let body;
+    if (!o.scanned) {
+      body = `<div class="gpsu-cta">
+        <p class="gpsu-cta-txt">Pull real hours/miles for every GPS-mapped unit over the last ${o.days} days, straight from the trackers — no targets, just what actually ran.</p>
+        <div class="gpsu-cta-days">${dayCtl}</div>
+        ${o.scanError ? `<p class="set-err">${esc(o.scanError)}</p>` : ''}
+        ${actionPill('commit', 'Scan Usage', { js: 'js-gpsu-scan' })}
+      </div>`;
+    } else if (o.scanning) {
+      body = `<div class="set-loading" style="min-height:220px">
+        <div class="set-loading-bar" aria-hidden="true"></div>
+        <div class="set-loading-lbl">Pulling usage history…</div>
+        <p class="set-note">Querying every mapped tracker's daily usage for the last ${o.days} days.</p>
+      </div>`;
+    } else if (!gpsConfigured() || o.scanError) {
+      body = `<div class="gpsu-banner">${esc(o.scanError || 'GPS backend isn’t configured (GPS_BACKEND_URL).')}</div>
+        <div class="gpsu-cta"><p class="gpsu-cta-txt">Once the backend’s reachable, scan again to pull real usage.</p>${actionPill('commit', 'Try Again', { js: 'js-gpsu-scan' })}</div>`;
+    } else {
+      const roll = o.roll || { perUnit: [], perCategory: [], unmappedCount: 0 };
+      const anyMiles = roll.perUnit.some((r) => r.miles > 0.005);
+      const nMapped = roll.perUnit.length;
+      const catRow = (c) => `<div class="gpsu-cat-row">
+        <span class="gpsu-cat-name">${esc(c.name)}</span>
+        <span class="gpsu-cat-count muted">${c.unitCount} unit${c.unitCount === 1 ? '' : 's'}</span>
+        <span class="gpsu-cat-hrs">${c.totalHours.toFixed(1)} hrs</span>
+        <span class="gpsu-cat-avg muted">${c.avgHoursPerDayPerUnit.toFixed(2)} hrs/day/unit</span>
+      </div>`;
+      const unitRow = (r) => `<div class="gpsu-row${r.failed ? ' failed' : ''}">
+        <span class="gpsu-u-name">${refPill('units', r.unitId, r.name)}</span>
+        <span class="gpsu-u-prov">${badge(gpsProvLabel(r.provider))}</span>
+        <span class="gpsu-u-cat muted">${esc(r.categoryName)}</span>
+        ${r.failed
+          ? `<span class="gpsu-u-fail">${badge('Couldn’t load', 'yellow')}</span><span></span><span></span>`
+          : `<span class="gpsu-u-hrs">${r.hours.toFixed(1)} hrs</span>
+             <span class="gpsu-u-hpd muted">${r.hoursPerDay.toFixed(2)} hrs/day</span>
+             ${anyMiles ? `<span class="gpsu-u-mi muted">${r.miles > 0.005 ? r.miles.toFixed(1) + ' mi' : '—'}</span>` : '<span></span>'}`}
+      </div>`;
+      body = `
+        <div class="gpsu-head">
+          <div class="gpsu-counts"><span class="gpsu-big">${nMapped}</span> mapped unit${nMapped === 1 ? '' : 's'} · last ${o.days} days</div>
+          <div class="gpsu-tools">
+            ${dayCtl}
+            <button class="iconbtn iconbtn-bare js-gpsu-scan" data-tip="Re-scan usage">${I.refresh || '⟳'}</button>
+          </div>
+        </div>
+        ${nMapped === 0 ? `<div class="gpsu-empty">No GPS-mapped units yet — nothing to show usage for. Round up trackers first, then scan again.</div>` : `
+          <div class="gpsu-section">
+            <div class="gpsu-section-lbl">By category · busiest first</div>
+            ${roll.perCategory.length ? roll.perCategory.map(catRow).join('') : `<div class="gpsu-empty">No usage reported for any mapped unit in this window.</div>`}
+          </div>
+          <div class="gpsu-section">
+            <div class="gpsu-section-lbl">By unit</div>
+            <div class="gpsu-table">${roll.perUnit.map(unitRow).join('')}</div>
+          </div>
+        `}
+        ${roll.unmappedCount ? `<div class="gpsu-foot-note">
+          <span>${roll.unmappedCount} unit${roll.unmappedCount === 1 ? ' isn’t' : 's aren’t'} mapped to a tracker yet.</span>
+          ${ghostPill('Round Up Trackers', { js: 'js-gpsu-goto-roundup' })}
+        </div>` : ''}`;
+    }
+    const pop = el('div', 'popup gpsu-popup');
+    pop.innerHTML = popupShell({ icon: I.graph || '', title: 'Fleet Utilization', tag: 'Fleet · GPS usage', body });
+    overlay.appendChild(pop);
   } else if (o.kind === 'rulebook') {
     // THE VISUAL RULEBOOK (SPEC v8) — every example is emitted by the REAL
     // builder, so this reference can never drift from the code.
@@ -11876,6 +11953,7 @@ const WINDOW_CATALOG = [
   { kind: 'gpsFleet',      label: 'Fleet Map',               tag: 'Fleet · GPS map',           sample: () => ({ q: '', filter: 'all', sel: '' }) },
   { kind: 'gpsRoundup',    label: 'Round Up Trackers',       tag: 'Fleet · GPS onboarding',    sample: () => ({ scanned: false }) },
   { kind: 'gpsIssues',     label: 'GPS Issues',              tag: 'Fleet · GPS alerts',        sample: () => ({ q: '' }) },
+  { kind: 'gpsUtilization', label: 'Fleet Utilization',      tag: 'Fleet · GPS usage',         sample: () => ({ days: 30, scanned: false }) },
   { kind: 'rulebook',      label: 'The R-Rulebook',          tag: 'SPEC v8 · design system',  sample: () => ({}) },
   { kind: 'partform',      label: 'Add / Edit Part · Task',  tag: 'Work order · line',         sample: () => ({ woId: ((DATA.workOrders || [])[0] || {}).woId }) },
   { kind: 'modelSchedule', label: 'Model maintenance schedule', tag: 'Category · model',       sample: () => ({ modelId: ((DATA.models || [])[0] || {}).modelId }) },
@@ -15413,6 +15491,26 @@ function onClick(e) {
     return openOverlay({ kind: 'gpsIssues', q: '' });
   }
   if (closest('.js-gpsi-refresh')) { e.stopPropagation(); if (gpsConfigured()) refreshGpsLive(); return; }
+
+  // Phase 4 — Fleet Utilization (real provider-sourced actual-usage rollup)
+  if (closest('.js-gps-utilization')) {
+    e.stopPropagation();
+    return openOverlay({ kind: 'gpsUtilization', days: 30, scanned: false, scanning: false, scanError: '', roll: null });
+  }
+  if (closest('.js-gpsu-scan')) { e.stopPropagation(); const o = state.overlay; if (!o || o.kind !== 'gpsUtilization') return; return gpsUtilizationScan(o); }
+  if (closest('.js-gpsu-days')) {
+    e.stopPropagation();
+    const o = state.overlay; if (!o || o.kind !== 'gpsUtilization') return;
+    const days = Number(closest('.js-gpsu-days').dataset.val) || 30;
+    if (days === o.days) return;
+    o.days = days; return gpsUtilizationScan(o);
+  }
+  if (closest('.js-gpsu-goto-roundup')) {
+    e.stopPropagation();
+    return openOverlay({ kind: 'gpsRoundup', scanned: false, scanning: false, scanError: '', match: null, devices: null,
+      q: '', sel: {}, overrideDevice: {}, confirmed: {}, expandedUnitId: null, expandedMode: 'confirm',
+      swapProvider: 'Hapn', swapQuery: '', applyResult: null, lastApply: null });
+  }
 
   // Phase 2 M1 — Fleet Map (every GPS tracker on a live map, mapping-independent)
   if (closest('.js-gps-fleet')) {
@@ -19509,6 +19607,127 @@ function gpsRosterCsv() {
   } catch (e) { toast('Could not build the CSV.'); }
 }
 
+/* ── FLEET UTILIZATION (Phase 4) — REAL, provider-sourced actual-usage rollup. Pure
+   visibility only: hours/miles a mapped unit ACTUALLY ran over a selectable window,
+   rolled up per category. Deliberately does NOT compute a target-hrs/day comparison or
+   over/under-capacity — that data doesn't exist yet, so we show only what the telematics
+   actually say. gpsUsageDaily is the one-device I/O call; gpsUtilScan fans it out across
+   every mapped unit (partial-failure tolerant, mirrors gpsFleetStatus/gpsRoundupScan —
+   one dead device must never blank the whole report); gpsUtilRollup is the PURE brain
+   (no fetch/DOM) that turns a units array + a pre-fetched usage map into the two rollup
+   tables the popup renders. Unit-tested in ci/logic-test.mjs; exposed on window.__rw. */
+
+/* One device's daily usage over [startISO, endISO) from the backend's already-populated
+   history (Hapn: engine_sessions DB table, hourly cron-backfilled; Deere/Yanmar: live
+   provider history APIs; Bouncie: live trip history, currently 0 for both linked trucks —
+   a known gap, not something to work around here). Lets it throw on failure — callers
+   (gpsUtilScan) handle partial failure via allSettled, same idiom as gpsFleetStatus. */
+async function gpsUsageDaily(provider, deviceId, startISO, endISO) {
+  return gpsFetch('/api/usage/daily?source=' + encodeURIComponent(String(provider || '').toLowerCase())
+    + '&key=' + encodeURIComponent(deviceId) + '&start=' + encodeURIComponent(startISO) + '&end=' + encodeURIComponent(endISO));
+}
+
+/* THE PURE ROLLUP. `units` = RW units array; `usageByUnitId` = a plain object/Map of
+   {unitId: {hours, miles, days, failed}} the caller already fetched — no I/O in here;
+   `windowDays` = the size (in days) of the window that usage was fetched over (default
+   30, matching gpsUtilScan's default). Only units with BOTH gpsProvider and gpsDeviceId
+   are counted toward perUnit/perCategory (an unmapped unit only bumps unmappedCount); a
+   Sold unit is excluded even if mapped — it's not fleet capacity, mirroring the same
+   exclusion gpsMatchFleet/gpsApplyMappings apply. `hoursPerDay` divides by the requested
+   WINDOW length, never by the count of days that actually had data — "how hard is this
+   thing really running" needs the full-window denominator, not a nonzero-days one (a
+   unit idle 29 of 30 days should read ~0.33 hrs/day, not inflate off the one day it
+   moved). A FAILED fetch (usage.failed) still gets a perUnit row (failed:true) so a
+   human can see the gap, but its hours are EXCLUDED from the category sum — a silent 0
+   would read as "this thing never runs" when really we just couldn't ask it; a missing
+   data point must never quietly become a zero. */
+function gpsUtilRollup(units, usageByUnitId, windowDays = 30) {
+  const usage = usageByUnitId instanceof Map
+    ? (id) => usageByUnitId.get(id)
+    : (id) => (usageByUnitId || {})[id];
+  windowDays = Math.max(1, Number(windowDays) || 30);
+
+  const perUnit = [];
+  const catAgg = new Map();   // categoryId → { categoryId, name, unitCount, totalHours, totalMiles }
+  let unmappedCount = 0;
+
+  for (const u of (units || [])) {
+    if (u.fleetStatus === 'Sold') continue;   // Sold equipment isn't fleet capacity — never rolled up
+    if (!(u.gpsProvider && u.gpsDeviceId)) { unmappedCount++; continue; }
+
+    const cat = IDX.category ? IDX.category.get(u.categoryId) : null;
+    const categoryId = u.categoryId || '';
+    const categoryName = (cat && cat.name) || 'Uncategorized';
+    const rec = usage(u.unitId) || null;
+    const failed = !!(rec && rec.failed);
+    const hours = failed ? 0 : Number((rec && rec.hours) || 0);
+    const miles = failed ? 0 : Number((rec && rec.miles) || 0);
+
+    perUnit.push({
+      unitId: u.unitId, name: u.name, categoryId, categoryName,
+      provider: gpsCanonProvider(u.gpsProvider), hours, miles,
+      hoursPerDay: failed ? 0 : hours / windowDays, failed,
+    });
+
+    if (failed) continue;   // gap, not a real zero — excluded from the category sum (still listed above)
+    if (!catAgg.has(categoryId)) catAgg.set(categoryId, { categoryId, name: categoryName, unitCount: 0, totalHours: 0, totalMiles: 0 });
+    const c = catAgg.get(categoryId);
+    c.unitCount += 1; c.totalHours += hours; c.totalMiles += miles;
+  }
+
+  const perCategory = [...catAgg.values()]
+    .map((c) => ({ ...c, avgHoursPerDayPerUnit: c.unitCount ? (c.totalHours / windowDays) / c.unitCount : 0 }))
+    .sort((a, b) => b.totalHours - a.totalHours);
+
+  return { perUnit, perCategory, unmappedCount };
+}
+
+/* THE I/O SCAN. Computes the ISO window from `days`, fires gpsUsageDaily for every
+   mapped + non-Sold unit via allSettled (one dead device must never blank the report),
+   then hands the built usage map to the pure rollup above. A failed fetch never silently
+   becomes a zero — it's recorded with failed:true so gpsUtilRollup can exclude it from
+   the category sum while still surfacing the gap per-unit. */
+async function gpsUtilScan(days) {
+  const win = Math.max(1, Number(days) || 30);
+  const endD = new Date(TODAY_ISO + 'T00:00:00');
+  const startD = new Date(endD.getTime() - win * 86400000);
+  const startISO = startD.toISOString().slice(0, 10), endISO = endD.toISOString().slice(0, 10);
+
+  const mapped = (DATA.units || []).filter((u) => u.gpsProvider && u.gpsDeviceId && u.fleetStatus !== 'Sold');
+  const results = await Promise.allSettled(mapped.map((u) => gpsUsageDaily(u.gpsProvider, u.gpsDeviceId, startISO, endISO)));
+
+  const usageByUnitId = {};
+  mapped.forEach((u, i) => {
+    const r = results[i];
+    if (r.status === 'fulfilled' && r.value) {
+      usageByUnitId[u.unitId] = { hours: Number(r.value.hours) || 0, miles: Number(r.value.miles) || 0, days: r.value.days || [], failed: false };
+    } else {
+      usageByUnitId[u.unitId] = { hours: 0, miles: 0, days: [], failed: true };
+    }
+  });
+
+  return gpsUtilRollup(DATA.units, usageByUnitId, win);
+}
+
+/* Popup-state driver for gpsUtilScan (mirrors gpsRoundupScan's shape) — sets the
+   loading state, runs the scan, and re-checks state.overlay === o before writing back
+   so a closed/switched popup can never keep ticking. */
+async function gpsUtilizationScan(o) {
+  if (!o || o.kind !== 'gpsUtilization') return;
+  if (!gpsConfigured()) { o.scanned = true; o.scanning = false; o.scanError = 'GPS backend isn’t configured (GPS_BACKEND_URL).'; o.roll = null; return renderOverlay(); }
+  o.scanning = true; o.scanError = ''; renderOverlay();
+  let roll = null;
+  try { roll = await gpsUtilScan(o.days); }
+  catch (e) {
+    if (state.overlay !== o) return;
+    o.scanning = false; o.scanned = true; o.scanError = 'Couldn’t reach the GPS backend — check the connection and try again.'; o.roll = null;
+    return renderOverlay();
+  }
+  if (state.overlay !== o) return;   // popup closed mid-fetch
+  o.roll = roll; o.scanned = true; o.scanning = false;
+  renderOverlay();
+}
+
 /* ── FLEET MAP (Phase 2 M1) — every GPS tracker plotted on a live Google map, mapping-
    INDEPENDENT (same gpsFleetRoster() source as Tracker Health). Singleton map, re-parented
    into the fresh .js-gpsfm-map mount point each render (the proven mountDispatchMap /
@@ -20703,7 +20922,7 @@ function exposeTestApi() {
       latestCustomerSelfie, woBackdrop, offloadPhotoNow, base64PhotoTargets, wrStore, wranglerRailLoad, wrOffloadChatImages, wrEvictChatBlobs, driveViewUrl, mergeWranglerRails,
       recordDateMatch, dateTermHits, rowMatches,
       kpiFor, kpiRaw, kpiEval, legacyKpiPct, legacyKpiRaw, KPI_DEFAULTS, wrValidateKpi, roleRings,
-      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, setFunnelStage, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, addMonthsISO, openMembershipEnroll, membershipEnrollCommit, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, getEntityColor, getEntityFlags, isEmptyMockDraft, sweepEmptyDrafts, createInvoiceForRental, syncRentalLines, rentalLineItems, salePriceSuggest, salePricingCfg, categoryCostBasis, driverRoster, driverName, legDriverField, dispatchEvents, applyShopRoleLanding, topServiceForUnit, snoozeService, svcSnoozedUntil, unitServiceRows, recordServiceCompletion, sellUnit, categoryStats, gpsMatchFleet, gpsMatchScore, gpsMakeFamily, gpsDeviceFamily, gpsApplyMappings, gpsUndoMappings, gpsRoundupRows, gpsCanonProvider, reindex, logAction, setRole: (r) => { currentRole = r || ''; render(); }, histText, canMoney,
+      companyRevenueGoal, companyName, companyTagline, membershipPricing, membershipFee, membershipStatus, isActiveMember, rentalPrice, setFunnelStage, markMembershipSigned, rentalProtectionRate, rentalProtectionAmount, protectionLineItems, syncProtectionLine, membershipEconomics, membershipFeeRevenue, membershipSectionHtml, membershipCancel, membershipReactivate, membershipCancellationInvoice, addMonthsISO, openMembershipEnroll, membershipEnrollCommit, rentalRuleBlock, dueForCustomer, customFieldsFor, checklistFor, checklistRequired, inspFamilyKey, inspKeyOfCat, inspItemFails, inspItemUnanswered, inspItemType, inspEvidenceMissing, applySettings, getStatus, pageDefaultSlice, previewOverlayFor, WINDOW_CATALOG, unitCoverage, fleetInsuredValue, fleetPremiumMonthly, insuranceTypeCatalog, invoiceCollectionsActive, getEntityColor, getEntityFlags, isEmptyMockDraft, sweepEmptyDrafts, createInvoiceForRental, syncRentalLines, rentalLineItems, salePriceSuggest, salePricingCfg, categoryCostBasis, driverRoster, driverName, legDriverField, dispatchEvents, applyShopRoleLanding, topServiceForUnit, snoozeService, svcSnoozedUntil, unitServiceRows, recordServiceCompletion, sellUnit, categoryStats, gpsMatchFleet, gpsMatchScore, gpsMakeFamily, gpsDeviceFamily, gpsApplyMappings, gpsUndoMappings, gpsRoundupRows, gpsCanonProvider, gpsUtilRollup, reindex, logAction, setRole: (r) => { currentRole = r || ''; render(); }, histText, canMoney,
       openCustomerForm, renderOverlay, render, printInvoice, invoicePrintGroups, invoiceAmendments, cardComplete, cardCaptureState, cardHasSelfie, cardHasSignature, captureSelfie, captureSignature, __state: state };   // UI drivers for headless screenshot/e2e tests
 
   } catch (e) { /* no window (non-browser) */ }

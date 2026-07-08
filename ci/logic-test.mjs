@@ -1816,6 +1816,65 @@ try {
       ['U-RU1', 'U-RU2', 'U-RU3'].forEach((id) => { const i = T.DATA.units.findIndex((u) => u.unitId === id); if (i >= 0) T.DATA.units.splice(i, 1); });
     }
 
+    // === GPS M6 — Fleet Utilization pure rollup (gpsUtilRollup) — the testable brain of
+    // the "actual usage only, no targets" view. PURE: fixture units + a fixture
+    // usageByUnitId map, no network. Verifies the hoursPerDay denominator (window length,
+    // not days-with-data), the Sold/unmapped exclusions (mirroring the M4/M5 matcher's own
+    // exclusions), the failed-fetch "never a silent 0" rule, and the category sum. ===
+    {
+      // gpsUtilRollup takes `units` as an explicit array argument (not T.DATA.units), so
+      // this fixture stays fully ISOLATED from the demo fleet's own units — no need to
+      // push these into T.DATA.units/T.IDX.unit at all, only the category has to be real
+      // (gpsUtilRollup resolves categoryName off the module-level IDX.category internally).
+      const cat = { categoryId: 'CAT-UTIL-X', name: 'Util Test Cat' };
+      T.IDX.category.set(cat.categoryId, cat);
+      const mkU = (id, extra) => ({ unitId: id, fleetStatus: 'Active', categoryId: cat.categoryId, gpsProvider: '', gpsDeviceId: '', ...extra });
+      const uOpen1 = mkU('U-UTL1', { name: 'Util Mapped 1', gpsProvider: 'hapn', gpsDeviceId: 'dev1' });   // lowercase provider — must canonicalize
+      const uUnmapped = mkU('U-UTL2', { name: 'Util Unmapped' });                                          // no gpsProvider/gpsDeviceId
+      const uSold = mkU('U-UTL3', { name: 'Util Sold', fleetStatus: 'Sold', gpsProvider: 'Hapn', gpsDeviceId: 'dev3' });   // mapped BUT Sold
+      const uFailed = mkU('U-UTL4', { name: 'Util Failed', gpsProvider: 'Deere', gpsDeviceId: 'dev4' });    // mapped, fetch failed
+      const uOpen2 = mkU('U-UTL5', { name: 'Util Mapped 2', gpsProvider: 'Hapn', gpsDeviceId: 'dev5' });    // same category as U-UTL1 — sum check
+      const fixtureUnits = [uOpen1, uUnmapped, uSold, uFailed, uOpen2];
+
+      const windowDays = 30;
+      const usageByUnitId = {
+        'U-UTL1': { hours: 15, miles: 0, days: Array(3).fill({}), failed: false },   // only 3 days had data, but a 30-day window
+        'U-UTL4': { hours: 0, miles: 0, days: [], failed: true },
+        'U-UTL5': { hours: 9, miles: 42.5, days: Array(30).fill({}), failed: false },
+      };
+      const roll = T.gpsUtilRollup(fixtureUnits, usageByUnitId, windowDays);
+
+      // (a) a mapped unit with real usage rolls up correctly; hoursPerDay uses the WINDOW
+      // length (30), not the count of days that actually had data (3) — 15/30, not 15/3.
+      const p1 = roll.perUnit.find((r) => r.unitId === 'U-UTL1');
+      ok(!!p1 && p1.hours === 15 && p1.miles === 0 && Math.abs(p1.hoursPerDay - 0.5) < 1e-9, 'gps M6: perUnit hours/miles/hoursPerDay match the fixture (15/30 = 0.5, not 15/3)');
+      ok(p1.provider === 'Hapn', 'gps M6: perUnit canonicalizes a lowercase gpsProvider (hapn → Hapn)');
+      ok(p1.categoryId === cat.categoryId && p1.categoryName === cat.name, 'gps M6: perUnit carries the unit\'s real category id + name');
+
+      // (b) an unmapped unit is excluded from perUnit/perCategory and counted in unmappedCount
+      ok(!roll.perUnit.some((r) => r.unitId === 'U-UTL2'), 'gps M6: an unmapped unit never appears in perUnit');
+      ok(roll.unmappedCount === 1, 'gps M6: exactly the one truly-unmapped unit is counted in unmappedCount');
+
+      // (c) a Sold unit is excluded even though it's mapped (mirrors the M4/M5 Sold
+      // exclusion — Sold equipment isn't fleet capacity) — and it does NOT inflate unmappedCount either.
+      ok(!roll.perUnit.some((r) => r.unitId === 'U-UTL3'), 'gps M6: a Sold-but-mapped unit is excluded from perUnit');
+
+      // (d) a failed-fetch unit shows in perUnit with failed:true, but its hours are NOT
+      // silently counted as 0 toward the category total — a gap must stay a gap, not a zero.
+      const pf = roll.perUnit.find((r) => r.unitId === 'U-UTL4');
+      ok(!!pf && pf.failed === true && pf.hours === 0 && pf.hoursPerDay === 0, 'gps M6: a failed-fetch unit is listed per-unit with failed:true (never silently 0-as-real)');
+
+      // (e) category rollup sums correctly across the two REAL (non-failed, non-Sold) units
+      // sharing CAT-UTIL-X: totalHours = 15 + 9 = 24, unitCount = 2 (U-UTL3/U-UTL4 excluded).
+      const c1 = roll.perCategory.find((c2) => c2.categoryId === cat.categoryId);
+      ok(!!c1 && c1.unitCount === 2 && Math.abs(c1.totalHours - 24) < 1e-9 && Math.abs(c1.totalMiles - 42.5) < 1e-9, 'gps M6: category rollup sums hours/miles across multiple units, excluding the failed + Sold ones');
+      ok(Math.abs(c1.avgHoursPerDayPerUnit - (24 / 30 / 2)) < 1e-9, 'gps M6: avgHoursPerDayPerUnit = totalHours/windowDays/unitCount');
+
+      // cleanup — only IDX.category was touched (the fixture units were never added to
+      // T.DATA.units/T.IDX.unit, since gpsUtilRollup takes its own units array)
+      T.IDX.category.delete(cat.categoryId);
+    }
+
     return out;
   });
 
