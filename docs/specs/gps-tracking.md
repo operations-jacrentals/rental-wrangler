@@ -19,7 +19,7 @@ We integrated a friend's standalone fleet-telematics app (**WranglerGPS**) inste
 
 ### Architecture (what changed vs. the GPSWOX design below)
 - **Provider(s):** FOUR, not one — **Hapn** (small equipment, ignition-based engine hours, starter-interrupt relay), **John Deere** Operations Center, **Yanmar** SmartAssist, **Bouncie** (OBD trucks). All connected live.
-- **Backend:** a **separate Node/Express + Postgres service** (the forked WranglerGPS, on Railway) — NOT an Apps Script `gpsPoll` action. The browser talks to it **directly** over HTTPS (`GPS_BACKEND_URL` in `config.js`), authed by the team password → an `x-auth-token`. Apps Script/Sheets stays the system of record only for the unit↔tracker **mapping**; no telemetry is copied into Sheets.
+- **Backend:** a **separate Node/Express + Postgres service** (the forked WranglerGPS, on Railway) — NOT an Apps Script `gpsPoll` action. The browser talks to it **directly** over HTTPS (`GPS_BACKEND_URL` in `config.js`) for all telemetry reads/writes, authed by an `x-auth-token`. **Auth is brokered server-side (see the 2026-07-08 note below): the browser never holds the GPS team password.** Apps Script/Sheets stays the system of record only for the unit↔tracker **mapping**; no telemetry is copied into Sheets.
 - **Status source:** `gpsStatus` is derived client-side from the live fleet snapshot's tracker-ping freshness (`<6h` Reporting · `<72h` Verify · older/absent Not Reporting), falling back to the stored field when the backend is unreachable ("Last known — live link down"). The `gps-offline`/`gps-verify` flags became truthful with zero flag-code change, exactly as the GPSWOX design intended — just a different source.
 
 ### What Phase 1 shipped (all on `area/wrangler-gps`, rental-wrangler #508)
@@ -30,6 +30,30 @@ We integrated a friend's standalone fleet-telematics app (**WranglerGPS**) inste
 5. **Status & alert history feed** — chat-feed-styled per-unit timeline from the backend `device_events` log, with live Bouncie check-engine (mil/DTC) alerts merged in.
 6. **Remote engine shutdown** — Hapn starter-interrupt, a two-step arm→confirm hazard control, **role-gated to Owner/Admin + Manager + Mechanic/M.Tech** (absent from the DOM for others), audited on every attempt. Polarity: `enabled:false` = immobilize.
 7. **Driving Score KPI** — the Driver ring lit with a **fleet** safety score from Bouncie trips (hard-braking/accel per mile + speeding); null (never faked) when no data; tunable weights.
+
+### 🔑 2026-07-08 — GPS login moved server-side (auth-architecture fix)
+Phase 1 shipped `gpsLogin` sending the **RW user's typed password** straight to the GPS
+service's `/auth/login`. That was broken: the GPS backend authenticates against a **single
+`DASHBOARD_PASSWORD`** that **no RW user types** (Jac signs in with his own password; each
+role has its own), so `/auth/login` 401'd for everyone → empty token → **no unit ever showed
+live GPS**, independent of the (also-missing) unit↔tracker mappings. Putting that one shared
+password in `config.js` was rejected — the repo is **public via Pages** and the token can
+drive **remote engine shutdown** (a `curl` bypasses any client gate).
+
+**Fix (shipped):** the GPS password now lives **only** in an Apps Script **Script Property**
+(`GPS_DASHBOARD_PASSWORD`), server-side. A new **additive** GAS action **`gpsToken`** verifies
+the caller is an authenticated RW role (`roleForPassword`), logs into the GPS service
+server-side, and returns **only** the `x-auth-token` (never the password, never the upstream
+error body). `app.js` `gpsLogin()` now calls `backendCall('gpsToken')` instead of posting the
+role password to the GPS service. Any signed-in role gets a token (GPS viewing is app-wide);
+per-role shutdown gating stays a client gate + server audit (unchanged limitation). Optional
+`GPS_BACKEND_URL` Script Property overrides the default endpoint.
+- **Deploy (backend):** `gpsToken` is additive to `Code.js` — pushed to HEAD via the service
+  account; **go-live is Jac's Apps Script editor New-version deploy** (STOP-gate). Jac must
+  also set the `GPS_DASHBOARD_PASSWORD` Script Property. Until both are done, `gpsToken`
+  returns `gps-not-configured`/`unknown action` and `gpsLogin` degrades silently (no regression).
+- **Deploy (frontend):** `app.js` changed → the `?v=` cache-bust token MUST be bumped on any
+  area→staging→main promotion (see the STAGING/DEPLOY NOTE above).
 
 ### Backend addition (fork `wranglergps#2`)
 `device_events` table (`source, device_key, type[status_change|alert|shutdown_command], detail, actor, at`) + `GET /api/device/:source/:key/events` + a shutdown-command audit write on every starter-interrupt. Additive; deploys via Railway on merge.

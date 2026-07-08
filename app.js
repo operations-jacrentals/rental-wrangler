@@ -17427,17 +17427,21 @@ async function gpsFetch(path, opts = {}) {
   return body;
 }
 
-/* Silent login on Rental Wrangler sign-in — same team password, token cached for the
-   session. Best-effort + never throws: a GPS-login failure must NOT block main login. */
-async function gpsLogin(pw) {
+/* Silent GPS login on Rental Wrangler sign-in. The GPS team password NEVER touches the
+   public Pages client (config.js is world-readable and the GPS token can drive remote
+   engine shutdown) — instead our own Apps Script backend holds it in a Script Property,
+   logs in server-side, and hands back ONLY the token, which we cache in memory for the
+   session. Any signed-in role gets a token; per-role shutdown gating is enforced in the
+   UI + audited server-side (spec §7). Best-effort + never throws: a GPS-login failure
+   must NOT block main login. Requires GPS_BACKEND_URL (client, for the live data calls)
+   AND the GAS GPS_DASHBOARD_PASSWORD Script Property (server, for auth). */
+async function gpsLogin() {
   gpsToken = '';
   try {
-    if (!gpsConfigured()) return false;
-    const res = await withTimeout(
-      fetch(gpsBase() + '/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: pw }) }),
-      15000, 'GPS login');
-    const b = await res.json().catch(() => null);
-    if (res.ok && b && b.token) { gpsToken = b.token; return true; }
+    if (!gpsConfigured()) return false;                 // no client GPS URL → no live data path → skip
+    const r = await backendCall('gpsToken');            // GAS proxy: password stays server-side, returns { ok, token }
+    if (r && r.ok && r.token) { gpsToken = r.token; return true; }
+    if (r && r.error && r.error !== 'gps-not-configured') logErr('gps', 'login: ' + r.error);   // property-unset is an expected pre-config state, not an error
   } catch (e) { logErr('gps', 'login: ' + ((e && e.message) || e)); }
   return false;
 }
@@ -18392,7 +18396,7 @@ async function attemptLogin() {
     try { localStorage.setItem('jactec.user', name); } catch {}
     try { sessionStorage.setItem('jactec.role', role); } catch {}
     sessionStorage.setItem('jactec.pw', pw);
-    gpsLogin(pw).then((ok) => { if (ok) { refreshGpsLive(); startGpsViewPoll(); refreshDrivingScore(); } });   // silent GPS login (§5) → live snapshot (step 3) + view-scoped refresh (step 4) + fleet driving score (step 7); fire-and-forget, never blocks main login
+    gpsLogin().then((ok) => { if (ok) { refreshGpsLive(); startGpsViewPoll(); refreshDrivingScore(); } });   // silent GPS login (§5, via GAS token proxy) → live snapshot (step 3) + view-scoped refresh (step 4) + fleet driving score (step 7); fire-and-forget, never blocks main login
     await loadFromBackend();
     finishLoad();
     applyShopRoleLanding();   // shop roles (Mechanic / M.Tech) land on the Shop graph
