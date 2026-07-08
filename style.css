@@ -1522,6 +1522,48 @@ select.lf-in { appearance: none; cursor: pointer; }
 .rtab.on .rtab-dot { opacity: 1; box-shadow: 0 0 9px 0 var(--rc); }
 .rtab.on .rtab-l { color: var(--rc); }
 .rtab:hover { background: rgba(255,255,255,.05); }
+/* ── Team chat 2026-07-08 rail spec: editable title · member rail · pasted chips ── */
+.chat-title-in { flex: 1 1 auto; min-width: 0; background: transparent; border: none; color: var(--txt);
+  font-family: var(--font); font-weight: 700; font-size: 13px; padding: 3px 5px; border-radius: 6px;
+  overflow: hidden; text-overflow: ellipsis; }
+.chat-title-in::placeholder { color: var(--txt-3); font-weight: 600; font-style: italic; }
+.chat-title-in:hover { background: rgba(255,255,255,.05); }
+.chat-title-in:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; background: rgba(0,0,0,.25); }
+.chat-titlebar { padding: 8px 10px; }
+.cp-head .chat-title-in { font-size: 13px; }
+/* member rail — roster people grouped under their role heading; default none */
+.chat-memberbar { flex-wrap: wrap; gap: 7px 12px; align-items: flex-start; padding: 7px 9px 9px; }
+.chat-memberbar .mrole-grp { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.chat-memberbar .mrole-h { font-family: 'Saira Condensed', system-ui, sans-serif; text-transform: uppercase;
+  letter-spacing: 1px; font-size: 9px; font-weight: 800; color: var(--txt-3); padding: 0 2px; }
+.chat-memberbar .mrole-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.chat-memberbar .rtab { flex: 0 0 auto; flex-direction: row; gap: 5px; padding: 4px 10px 4px 8px;
+  border: 1px solid var(--line); border-radius: 999px; }
+.chat-memberbar .rtab .rtab-l { max-width: 132px; font-size: 10.5px; }
+.chat-memberbar .rtab.on { border-color: var(--rc); background: rgba(255,255,255,.05); }
+.mbar-hint { font-size: 11px; color: var(--txt-3); font-style: italic; padding: 4px 4px; }
+/* a pasted element chip inside a bubble — a live pointer; deleted → greyed */
+.cbub-refs { display: flex; flex-direction: column; gap: 5px; margin-top: 6px; }
+.chip-ref { display: inline-flex; align-items: center; gap: 7px; max-width: 100%; padding: 5px 9px; border-radius: 9px;
+  border: 1px solid var(--line); background: rgba(0,0,0,.2); color: var(--txt); cursor: pointer; font: inherit; text-align: left; }
+.cbub.me .chip-ref { background: rgba(0,0,0,.16); border-color: rgba(0,0,0,.22); color: #1a1205; }
+.chip-ref .cr-i, .chip-ref .cr-go { display: inline-flex; flex: 0 0 auto; }
+.chip-ref .cr-i { color: var(--accent); } .cbub.me .chip-ref .cr-i { color: #1a1205; }
+.chip-ref .cr-i svg { width: 15px; height: 15px; }
+.chip-ref .cr-t { font-weight: 700; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip-ref .cr-go { margin-left: auto; opacity: .55; } .chip-ref .cr-go svg { width: 13px; height: 13px; }
+.chip-ref:hover { border-color: var(--accent); }
+.chip-ref:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.chip-ref.chip-gone { cursor: default; color: var(--txt-3); border-style: dashed; opacity: .75; }
+.chip-ref.chip-gone svg { width: 13px; height: 13px; }
+/* the paste-ready held chip in the composer (saddle-stitch tan) */
+.chat-compose .held-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 6px 4px 9px; border-radius: 999px;
+  border: 1px dashed var(--tan); background: rgba(194,146,90,.14); color: var(--txt-2); flex: 0 0 auto; max-width: 48%; align-self: center; }
+.held-chip .hc-i { flex: 0 0 auto; color: var(--tan); display: inline-flex; } .held-chip .hc-i svg { width: 14px; height: 14px; }
+.held-chip .hc-t { font-size: 11px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.held-chip .hc-x { display: inline-flex; align-items: center; border: none; background: none; color: var(--txt-3); cursor: pointer; padding: 0; }
+.held-chip .hc-x:hover { color: var(--red); } .held-chip .hc-x svg { width: 12px; height: 12px; }
+.held-chip .hc-x:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
 .chat-dock.drop-hot { outline: 2px dashed var(--accent); outline-offset: -4px; }
 /* "drop to start a chat" pad — a cancel-arc sibling pinned bottom-right (Jac) */
 .chat-drop { position: fixed; right: 16px; bottom: 64px; width: 190px; height: 116px; z-index: 9400;

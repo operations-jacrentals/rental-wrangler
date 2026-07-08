@@ -2133,7 +2133,8 @@ const state = {
   availWin: null,      // §10 persistent window scope for the "available" search (set by the picker; outlives it)
   filterTerms: [],            // §5.4 — AND-narrowing filter terms (type + Enter)
   unitPick: null,             // { ids, from } — Invoice +WO narrows the Units list to the invoice's linked units (Phase 4)
-  chat: { open: false, activeId: null, draft: '', chats: [] },   // §17 internal team dock (Phase 7): PERSISTENT chats (never deleted). Each = { id, tags, participants, messages, seen{userKey:lastViewedAt} }. Empty participants = dormant; reopen via a tagged element.
+  chat: { open: false, activeId: null, draft: '', chats: [] },   // §17 team chats (2026-07-08 rail spec): PERSISTENT titled threads (never deleted). Each = { id, title, members[personId], messages[{…,refs?}], seen{userKey:at}, by }. Members default none; visibility ungated pending the login↔roster bind (spec §7).
+  held: null,   // Copy→paste: the ONE held element awaiting paste into an internal (Team / Mr. Wrangler) chat — { card, recId, label }. Not persisted (cleared on refresh).
   wrangler: { open: false, min: false, id: null, messages: [], busy: false, error: '', draft: '', attach: [], files: [], card: null, recId: null, recType: null, reqNumber: null, reqTitle: null, reqUrl: null },   // §18 Mr. Wrangler dock — id ties the live chat to its §18g rail snapshot; min collapses it to the header bar; survives minimize, restores conversation on reopen
   mobileCol: 0,               // §M1 — which column the phone shows (0 Yard · 1 Rentals · 2 Customers); drives swipe position + the per-column bottom strip
   woPartForm: null,           // woId whose "+ Add Part/Labor" inline form is open
@@ -4665,7 +4666,7 @@ function openCtxMenu(e, hit) {
     '<div class="menu-sep"></div>',
     item('search', '🔎 Search'), item('gsearch', '🌐 Global Search'), item('replace', '✏️ Replace'),
     '<div class="menu-sep"></div>',
-    item('comment', '💬 Add Comment'), item('startchat', '🧵 Start chat'), item('wrangler', '🤠 Ask Mr. Wrangler'),
+    item('comment', '💬 Add Comment'), item('copyel', '📋 Copy to chat'), item('wrangler', '🤠 Ask Mr. Wrangler'),
   ].join('');
   document.body.appendChild(m);
   m.style.left = Math.min(e.clientX, window.innerWidth - 205) + 'px';
@@ -4765,7 +4766,7 @@ function runCtxAction(act) {
     if (!hit) { toast('Right-click a record (or open one) to comment.'); return; }
     return openOverlay({ kind: 'comment', card: hit.card, recId: hit.recId, recType: hit.recType, color: 'yellow' });
   }
-  if (act === 'startchat') return startChatFromEl(el);   // §17 — start a team chat seeded from this element
+  if (act === 'copyel') return copyElement(el);   // §17 — copy this element; paste it into a Team / Mr. Wrangler chat as a live chip
   if (act === 'wrangler') {
     const hit = cardRecordAt(el);   // §18 — open Mr. Wrangler dock, record-aware when a record is under the cursor
     return openWranglerDock({ messages: [], draft: '', attach: [], card: hit ? hit.card : null, recId: hit ? hit.recId : null, recType: hit ? hit.recType : null, reqNumber: null, reqTitle: null, reqUrl: null });
@@ -8333,7 +8334,7 @@ function chatComments() {
 function chatUnreadCount() { const u = commentUserKey(); return chatComments().filter((c) => !(c.ack || []).includes(u)).length; }
 const chatById = (id) => state.chat.chats.find((c) => c.id === id) || null;
 const activeChat = () => chatById(state.chat.activeId);
-function chatRoleOn(id) { const c = activeChat(); return !!c && c.participants.includes(id); }
+function chatRoleOn(id) { const c = activeChat(); return !!c && (c.members || []).includes(id); }
 function chatsTagging(card, recId) { return state.chat.chats.filter((c) => (c.tags || []).some((t) => t.ref && t.ref.card === card && String(t.ref.recId) === String(recId))); }
 function chatMarkSeen(chat) { const c = chat || activeChat(); if (c) c.seen[commentUserKey()] = Date.now(); }
 // an element re-flashes when ANY chat tagging it has messages this user hasn't seen (chats are never lost)
@@ -8341,20 +8342,31 @@ function chatUnseenForRec(card, recId) {
   const u = commentUserKey();
   return chatsTagging(card, recId).some((c) => c.messages.length && Math.max(...c.messages.map((m) => m.at || 0)) > (c.seen[u] || 0));
 }
-function newChat(tag) {
-  const c = { id: 'CHAT' + (state.seq++), tags: tag ? [tag] : [], participants: ROLES.map((r) => r.id), messages: [], seen: { [commentUserKey()]: Date.now() } };
+// A team chat is now a user-created, TITLED thread with chosen MEMBERS (roster people,
+// default none) — see the 2026-07-08 comms-rail spec. `tags`/`participants` retired
+// (record context now rides in as pasted chips, §Copy/paste). Legacy chats normalize
+// in normalizeTeamChat() on load.
+function newChat(opts) {
+  opts = opts || {};
+  const c = { id: 'CHAT' + (state.seq++), title: opts.title || '', members: opts.members ? [...opts.members] : [], messages: [], seen: { [commentUserKey()]: Date.now() }, by: commentUserKey() };
   state.chat.chats.push(c); state.chat.activeId = c.id; pushChatsSoon(); return c;
 }
-// Reopen a dormant/existing chat through one of its tagged elements — the chat is never lost;
-// the current user rejoins (their role selected) and the dock opens to it.
+// Bring a legacy (participants/tags) or partial chat up to the {title,members} shape.
+// Non-destructive: keeps every message; synthesizes a title from the old first-tag label.
+function normalizeTeamChat(c) {
+  if (!c || typeof c !== 'object') return c;
+  if (c.title == null) c.title = (c.tags && c.tags[0] && c.tags[0].label) || '';
+  if (!Array.isArray(c.members)) c.members = [];
+  return c;
+}
+// Reopen an existing chat and land it on the rail. Membership is edited on the member
+// rail (default none), not auto-joined by role — so opening no longer mutates a roster.
 function openChat(id, msg) {
   const c = chatById(id); if (!c) return;
+  normalizeTeamChat(c);
   state.chat.activeId = id;
-  const myRole = currentRole && ROLES.some((r) => r.id === currentRole) ? currentRole : null;
-  if (myRole) { if (!c.participants.includes(myRole)) c.participants.push(myRole); }
-  else if (!c.participants.length) c.participants = ROLES.map((r) => r.id);   // demo (no role) → everyone rejoins
   c.seen[commentUserKey()] = Date.now();
-  pushChatsSoon();                                  // a rejoin/participant change syncs to the team
+  pushChatsSoon();
   chatShow(); render();
   if (msg) toast(msg);
 }
@@ -8382,32 +8394,79 @@ function chatFeed(chat) {
 const CHAT_AV = ['blue', 'orange', 'green', 'purple', 'yellow', 'red'];
 function chatInitials(name) { return (String(name || '?').replace(/\(.*?\)/g, '').trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('') || '?').toUpperCase(); }
 function chatAvatarColor(name) { let h = 0; const s = String(name || ''); for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return `var(--${CHAT_AV[h % CHAT_AV.length]})`; }
+// A pasted element chip — a LIVE pointer. Reflects the record's current title; clicking
+// opens it for any member (reuses the data-chat-open path). A deleted record greys out.
+function chatRefChipHtml(r) {
+  const ec = r.card, rec = recOf(ec, r.recId);
+  if (!rec) return `<span class="chip-ref chip-gone" data-tip="This record was removed">${I.x}<span class="cr-t">No longer available</span></span>`;
+  const label = ROW_META[ec] ? ROW_META[ec](rec).title : String(r.recId);
+  return `<button class="chip-ref" data-chat-open="${esc(ec)}|${esc(r.recId)}" data-tip="Open ${esc(label)}"><span class="cr-i">${CARD_ICON[ec] || I.doc}</span><span class="cr-t">${esc(label)}</span><span class="cr-go">${I.chev}</span></button>`;
+}
+// A message bubble's inner content — text and/or pasted chips (a chips-only message reads
+// "shared an item").
+function chatBubbleInner(it) {
+  const t = it.text ? `<span class="cbub-t">${esc(it.text)}</span>` : '';
+  const refs = (it.refs || []).map(chatRefChipHtml).join('');
+  if (!t && !refs) return '<span class="cbub-t"></span>';
+  return t + (refs ? `<span class="cbub-refs">${refs}</span>` : '') + (!t && !refs ? '' : '');
+}
+// The editable chat title (rename in place — its input carries data-chat-title).
+function chatTitleInputHtml(c) {
+  return `<input class="chat-title-in" data-chat-title="${esc(c.id)}" value="${esc(c.title || '')}" placeholder="Name this chat…" aria-label="Chat title" maxlength="60" />`;
+}
+// The held element awaiting paste, shown in an internal composer; sends with the message.
+function chatHeldChipHtml() {
+  const h = state.held; if (!h) return '';
+  return `<span class="held-chip" data-tip="Attached — sends with your message"><span class="hc-i">${CARD_ICON[h.card] || I.doc}</span><span class="hc-t">${esc(h.label || 'Item')}</span><button class="hc-x" data-held-clear aria-label="Clear attachment">${I.x}</button></span>`;
+}
 /* Shared team-chat feed rows (dock + D9 rail window): messages as bubbles (mine ride
-   `me`), flagged comments as tappable cflag rows. */
+   `me`, carrying text and/or pasted chips), flagged comments as tappable cflag rows. */
 function chatFeedRowsHtml(c) {
   const u = commentUserKey();
   return chatFeed(c).map((it) => {
     if (it.kind === 'msg') {
-      if (it.by === u) return `<div class="cbub-row me"><div class="cbub me">${esc(it.text)}</div></div>`;
-      return `<div class="cbub-row"><span class="cav" style="--av:${chatAvatarColor(it.by)}">${esc(chatInitials(it.by))}</span><div class="cbub-wrap"><span class="cbub-name">${esc(it.by || 'Team')}</span><div class="cbub">${esc(it.text)}</div></div></div>`;
+      if (it.by === u) return `<div class="cbub-row me"><div class="cbub me">${chatBubbleInner(it)}</div></div>`;
+      return `<div class="cbub-row"><span class="cav" style="--av:${chatAvatarColor(it.by)}">${esc(chatInitials(it.by))}</span><div class="cbub-wrap"><span class="cbub-name">${esc(it.by || 'Team')}</span><div class="cbub">${chatBubbleInner(it)}</div></div></div>`;
     }
     return `<button class="cflag" data-chat-open="${esc(it.card)}|${esc(it.recId)}"><span class="cmt-marker c-${it.color}"></span><span class="cflag-b"><span class="cflag-t">${esc(it.text)}</span><span class="cflag-m">flagged · on ${esc(it.recName)}</span></span></button>`;
-  }).join('') || `<div class="chat-empty">${c ? 'No messages yet — say something.' : 'Flagged comments show up here. Start a chat from any record or element.'}</div>`;
+  }).join('') || `<div class="chat-empty">${c ? 'No messages yet — say something, or paste a record in.' : 'Flagged comments show up here. Start a chat from the + on the Team rail.'}</div>`;
 }
-// The role tab-bar — who's in the chat (shared: dock + rail window).
-function chatRoleBarHtml(c) {
-  return c ? `<div class="chat-rolebar">${ROLES.map((r) => `<button class="rtab${c.participants.includes(r.id) ? ' on' : ''}" data-chat-role="${esc(r.id)}" style="--rc:var(--${r.color})" data-tip="${esc(r.label)} — ${c.participants.includes(r.id) ? 'in the chat' : 'left out'}"><span class="rtab-dot"></span><span class="rtab-l">${esc(r.label)}</span></button>`).join('')}</div>` : '';
+// The member rail — who's in the chat. People come from the Settings → Team Roster
+// (settings.employees), grouped under their role heading; default NONE until added.
+// Tinted by the person's role color so a glance reads the crew mix.
+const ROLE_BY_LABEL = () => { const m = {}; ROLES.forEach((r) => { m[r.label] = r; m[r.id] = r; }); return m; };
+function chatMemberBarHtml(c) {
+  if (!c) return '';
+  const emps = (state.settings && state.settings.employees) || [];
+  if (!emps.length) return `<div class="chat-rolebar chat-memberbar"><span class="mbar-hint">No crew on the roster yet — add hands in Settings → Team Roster.</span></div>`;
+  const members = new Set((c.members || []).map(String));
+  const rmap = ROLE_BY_LABEL();
+  const byRole = new Map();
+  emps.forEach((em) => { const k = em.role || 'Crew'; if (!byRole.has(k)) byRole.set(k, []); byRole.get(k).push(em); });
+  const grps = [...byRole.entries()].map(([role, list]) => {
+    const rc = (rmap[role] && rmap[role].color) || 'gray';
+    const chips = list.map((em) => {
+      const on = members.has(String(em.id));
+      const nm = em.name || 'Hand';
+      return `<button class="rtab${on ? ' on' : ''}" data-chat-member="${esc(em.id)}" style="--rc:var(--${rc})" data-tip="${esc(nm)} — ${on ? 'in the chat (tap to remove)' : 'tap to add'}"><span class="rtab-dot"></span><span class="rtab-l">${esc(nm)}</span></button>`;
+    }).join('');
+    return `<div class="mrole-grp"><span class="mrole-h">${esc(role)}</span><div class="mrole-chips">${chips}</div></div>`;
+  }).join('');
+  return `<div class="chat-rolebar chat-memberbar" role="group" aria-label="Chat members">${grps}</div>`;
 }
 function chatDockEl() {
   chatMarkSeen();   // §17 — the open dock is "seen": clears the re-flash for this user
   const c = activeChat();
-  // tagged-element rail at the very top (no header, per Jac) — close/back ride the rail's end
-  const tagsHtml = c ? c.tags.map((t) => `<span class="chat-tag c-${t.color || 'gray'}" data-tip="${esc(t.label)}"><span class="ct-dot"></span><span class="ct-lbl">${esc(t.label)}</span><button class="x" data-chat-untag="${esc(t.id)}" aria-label="Remove ${esc(t.label)}">${I.x}</button></span>`).join('') : '<span class="chat-rail-hint">No chat open — right-click / long-press a record, or drag one in</span>';
-  const rail = `<div class="chat-rail">${tagsHtml}<span class="rail-sp"></span>${c ? `<button class="rail-ico js-chat-back" aria-label="All flags" data-tip="All flags">${I.chevL}</button>` : ''}<button class="rail-ico js-chat-close" aria-label="Close chat" data-tip="Close">${I.x}</button></div>`;
+  if (!c) {
+    // no chat open → the flagged-comments overview (deferred: fate revisited later)
+    return `<div class="chat-rail"><span class="chat-rail-hint">No chat open — tap <b>+ New chat</b> on the Team rail.</span><span class="rail-sp"></span><button class="rail-ico js-chat-close" aria-label="Close" data-tip="Close">${I.x}</button></div>
+      <div class="chat-feed">${chatFeedRowsHtml(c)}</div>`;
+  }
+  const rail = `<div class="chat-rail chat-titlebar">${chatTitleInputHtml(c)}<span class="rail-sp"></span><button class="rail-ico js-chat-back" aria-label="All chats" data-tip="All chats">${I.chevL}</button><button class="rail-ico js-chat-close" aria-label="Close chat" data-tip="Close">${I.x}</button></div>`;
   return `${rail}
     <div class="chat-feed">${chatFeedRowsHtml(c)}</div>
-    <div class="chat-compose"><input class="chat-input" placeholder="${c ? 'Message the team…' : 'Type to start a team chat…'}" value="${esc(state.chat.draft || '')}" aria-label="Message the team" /><button class="chat-send js-chat-send" aria-label="Send">${I.chev}</button></div>
-    ${chatRoleBarHtml(c)}`;
+    <div class="chat-compose">${chatHeldChipHtml()}<input class="chat-input" placeholder="Message the team…" value="${esc(state.chat.draft || '')}" aria-label="Message the team" /><button class="chat-send js-chat-send" aria-label="Send">${I.chev}</button></div>
+    ${chatMemberBarHtml(c)}`;
 }
 // Render Mr. Wrangler's message text — escape FIRST (no HTML injection), then apply the light markdown the
 // model actually emits: **bold**, `code`, and newlines. Only safe <strong>/<code>/<br> tags are introduced.
@@ -8823,33 +8882,43 @@ function openWranglerDock(opts) {
 function chatSend() {
   const inp = document.querySelector('.chat-input');
   const text = ((inp ? inp.value : state.chat.draft) || '').trim();
-  if (!text) { if (inp) inp.focus(); return; }
+  const held = state.held;
+  if (!text && !held) { if (inp) inp.focus(); return; }                 // nothing to send (no text, no pasted chip)
   let c = activeChat(); if (!c) c = newChat();                          // typing with no active chat opens one to the team
-  c.messages.push({ id: 'MSG' + (state.seq++), by: commentUserKey(), when: TODAY_ISO, at: Date.now(), text });
+  const msg = { id: 'MSG' + (state.seq++), by: commentUserKey(), when: TODAY_ISO, at: Date.now(), text };
+  if (held) { msg.refs = [{ card: held.card, recId: held.recId }]; state.held = null; }   // paste the held element as a live chip
+  c.messages.push(msg);
   c.seen[commentUserKey()] = Date.now();                                // author has seen their own update
   commsUnend(c.id, 'team');                                             // D9: any new message resurrects an Ended chat
   state.chat.draft = ''; saveSoon(); pushChatsSoon(); haptic([12, 30, 12]); render();   // §M-touch — success tick on a posted message
   setTimeout(() => { const i = document.querySelector('.chat-input'); if (i) i.focus(); const f = document.querySelector('.chat-feed'); if (f) f.scrollTop = f.scrollHeight; }, 0);
 }
-function chatToggleRole(id) {
+function chatToggleMember(empId) {
   const c = activeChat(); if (!c) return;
-  c.participants = c.participants.includes(id) ? c.participants.filter((x) => x !== id) : [...c.participants, id];
-  // never deleted — at 0 participants the chat goes dormant; reopen it via a tagged element (Jac)
+  const s = new Set((c.members || []).map(String)); const k = String(empId);
+  if (s.has(k)) s.delete(k); else s.add(k);
+  c.members = [...s];
   pushChatsSoon(); render();
 }
-// Right-click → Start chat: OPEN the element's existing chat (rejoin) if it has one, else start fresh.
-function startChatFromEl(el) {
+// Rename a chat (title input on the window header). Debounced-sync; no re-render so the
+// caret doesn't jump — the tab label refreshes on the next render.
+function chatSetTitle(id, title) {
+  const c = chatById(id); if (!c) return;
+  c.title = title; pushChatsSoon();
+}
+// Right-click → Copy to chat: HOLD this element so it can be pasted into an internal
+// (Team / Mr. Wrangler) chat as a live, clickable chip. Replaces the retired
+// "start a chat seeded from this element" flow (2026-07-08 rail spec) — the copied
+// element travels into any conversation, and every member can click through it.
+function copyElement(el) {
   const hit = cardRecordAt(el);
-  if (!hit) { toast('Right-click a record to start or open its chat.'); return; }
+  if (!hit) { toast('Right-click a record to copy it into a chat.'); return; }
   const ec = entityCardOf(hit.card, hit.recType), rec = recOf(ec, hit.recId);
   if (!rec) { toast('Record not found.'); return; }
-  const existing = chatsTagging(ec, hit.recId)[0];
-  if (existing) return openChat(existing.id, `Reopened the chat on this ${SINGULAR[ec] || 'record'}.`);
   const label = ROW_META[ec] ? ROW_META[ec](rec).title : String(hit.recId);
-  const m = commentMarker(rec);
-  newChat({ id: 'TAG:' + ec + ':' + hit.recId, label, color: m ? m.color : 'gray', ref: { card: ec, recId: hit.recId } });
-  chatShow(); render();
-  toast(`Started a chat from "${label}".`);
+  state.held = { card: ec, recId: hit.recId, label };
+  render();
+  toast(`Copied “${label}” — paste it into a Team or Mr. Wrangler chat.`);
 }
 // Resolve a dragged payload into a chat tag — label from the record, color inherited
 // from any flag it already carries (else neutral). Granular-element sources (line/pill/
@@ -14140,8 +14209,9 @@ function onClick(e) {
   if (closest('.js-chat-close')) { e.stopPropagation(); state.chat.open = false; return render(); }
   if (closest('.js-chat-back')) { e.stopPropagation(); state.chat.activeId = null; return render(); }   // back to the all-flags overview (chat persists)
   if (closest('.js-chat-send')) { e.stopPropagation(); return chatSend(); }
+  if (closest('[data-held-clear]')) { e.stopPropagation(); state.held = null; return render(); }   // drop the pasted-element attachment before sending
   if (closest('[data-chat-untag]')) { e.stopPropagation(); const id = closest('[data-chat-untag]').dataset.chatUntag; const c = activeChat(); if (c) c.tags = c.tags.filter((t) => t.id !== id); pushChatsSoon(); return render(); }
-  if (closest('[data-chat-role]')) { e.stopPropagation(); return chatToggleRole(closest('[data-chat-role]').dataset.chatRole); }
+  if (closest('[data-chat-member]')) { e.stopPropagation(); return chatToggleMember(closest('[data-chat-member]').dataset.chatMember); }
   if (closest('[data-chat-open]')) { e.stopPropagation(); const [card, recId] = closest('[data-chat-open]').dataset.chatOpen.split('|'); return anchorRecord(SHOP_TYPES.includes(card) ? 'shop' : card, recId, SHOP_TYPES.includes(card) ? card : null); }
   // D8/D9 THE COMMS RAIL — toolbar chips · session tabs · the single window · ALL menu
   if (closest('.js-comms-chip')) { e.stopPropagation(); return commsToggleCat(closest('.js-comms-chip').dataset.cat); }
@@ -15287,6 +15357,7 @@ function onInput(e) {
   if (e.target.classList.contains('js-fb-text')) { if (state.overlay?.kind === 'feedback') state.overlay.text = e.target.value; return; }
   if (e.target.classList.contains('js-cmt-text')) { if (state.overlay?.kind === 'comment') state.overlay.text = e.target.value; return; }
   if (e.target.classList.contains('js-wr-in')) { if (state.wrangler.open) state.wrangler.draft = e.target.value; return; }
+  if (e.target.classList.contains('chat-title-in')) { chatSetTitle(e.target.dataset.chatTitle, e.target.value); return; }   // rename in place, no re-render (caret stays put)
   if (e.target.classList.contains('chat-input')) { state.chat.draft = e.target.value; return; }
   if (e.target.classList.contains('js-comms-in')) { commsDrafts.set(state.commsRail.cat + '|' + e.target.dataset.cust, e.target.value); return; }   // D8 window composer — draft survives re-renders
   // Company Files live search → re-render the board popup and restore the caret.
@@ -17484,7 +17555,11 @@ function startRefreshPoll() { clearInterval(refreshTimer); refreshTimer = setInt
 // and pull in the refresh poll. Threads AND messages UNION by id, so two people
 // posting to the same thread never clobber each other (matches "chats are never lost").
 let chatPushTimer = null, lastChatsJson = null;
-function normalizeChat(c) { return { id: c.id, tags: c.tags || [], participants: c.participants || [], messages: c.messages || [], seen: c.seen || {} }; }
+// Preserve the {title, members} shape through sync; keep legacy tags/participants as
+// passthrough so a mixed old/new client fleet never loses data.
+function normalizeChat(c) {
+  return normalizeTeamChat({ id: c.id, title: c.title, members: Array.isArray(c.members) ? c.members : [], messages: c.messages || [], seen: c.seen || {}, by: c.by, tags: c.tags || [], participants: c.participants || [] });
+}
 function mergeChats(remoteChats) {
   if (!Array.isArray(remoteChats)) return { changed: false, localAhead: false };
   let changed = false, localAhead = false;
@@ -17494,12 +17569,14 @@ function mergeChats(remoteChats) {
     if (!rc || !rc.id) return;
     const lc = localById.get(rc.id);
     if (!lc) { state.chat.chats.push(normalizeChat(rc)); changed = true; return; }   // a whole thread from another user
+    normalizeTeamChat(lc);
     const haveMsg = new Set((lc.messages || []).map((m) => m.id));
     (rc.messages || []).forEach((m) => { if (m && m.id && !haveMsg.has(m.id)) { lc.messages.push(m); changed = true; } });
     lc.messages.sort((a, b) => (a.at || 0) - (b.at || 0));
+    if ((rc.title || '').trim() && !(lc.title || '').trim()) { lc.title = rc.title; changed = true; }   // adopt a title if we have none
+    (rc.members || []).forEach((p) => { if (!lc.members.includes(p)) { lc.members.push(p); changed = true; } });   // union members (never lose a member)
     const haveTag = new Set((lc.tags || []).map((t) => t.id));
-    (rc.tags || []).forEach((t) => { if (t && t.id && !haveTag.has(t.id)) { lc.tags.push(t); changed = true; } });
-    (rc.participants || []).forEach((p) => { if (!lc.participants.includes(p)) { lc.participants.push(p); changed = true; } });
+    (rc.tags || []).forEach((t) => { if (t && t.id && !haveTag.has(t.id)) { (lc.tags = lc.tags || []).push(t); changed = true; } });   // legacy passthrough
     Object.keys(rc.seen || {}).forEach((k) => { if ((rc.seen[k] || 0) > (lc.seen[k] || 0)) lc.seen[k] = rc.seen[k]; });   // latest-seen wins (view state)
   });
   state.chat.chats.forEach((lc) => {   // does local hold anything the server lacks? → we should push
@@ -17507,9 +17584,8 @@ function mergeChats(remoteChats) {
     if (!rc) { localAhead = true; return; }
     const rMsg = new Set((rc.messages || []).map((m) => m.id));
     if ((lc.messages || []).some((m) => !rMsg.has(m.id))) localAhead = true;
-    const rTag = new Set((rc.tags || []).map((t) => t.id));
-    if ((lc.tags || []).some((t) => !rTag.has(t.id))) localAhead = true;
-    if ((lc.participants || []).some((p) => !(rc.participants || []).includes(p))) localAhead = true;
+    if ((lc.members || []).some((p) => !(rc.members || []).includes(p))) localAhead = true;
+    if ((lc.title || '') !== (rc.title || '')) localAhead = true;
   });
   return { changed, localAhead };
 }
@@ -18394,11 +18470,13 @@ function commsCatWorst(cat) {
 const commsChatLastAt = (c) => Math.max(0, ...(c.messages || []).map((m) => m.at || 0));
 function commsTeamChats() {   // every un-ended team chat, newest first (End resurrects on a newer message)
   return (state.chat.chats || [])
-    .filter((c) => (c.messages || []).length || (c.participants || []).length)
+    .map(normalizeTeamChat)
+    // a chat shows once it has messages, members, OR is the one you're in (a just-created blank)
+    .filter((c) => (c.messages || []).length || (c.members || []).length || String(c.id) === String(state.chat.activeId))
     .filter((c) => !commsIsEnded(c.id, 'team', commsChatLastAt(c)))
     .sort((a, b) => commsChatLastAt(b) - commsChatLastAt(a));
 }
-const commsTeamLabel = (c) => ((c.tags && c.tags[0] && c.tags[0].label) || 'Team chat');
+const commsTeamLabel = (c) => ((c.title || '').trim() || (c.tags && c.tags[0] && c.tags[0].label) || 'Untitled chat');
 function commsTeamStatus(c) {
   const msgs = c.messages || [];
   if (!msgs.length) return 'gray';                                   // fresh chat — nothing said yet
@@ -18548,16 +18626,13 @@ function commsPopupHtml(cat, t, id) {
    composer classes so chatSend / the Enter handler / drafts keep working. ── */
 function commsTeamPopupHtml(id) {
   const c = chatById(String(id)); if (!c) return '';
+  normalizeTeamChat(c);
   chatMarkSeen(c);   // the open window is "seen" — clears the re-flash, mirrors the dock
-  const tags = (c.tags || []).length
-    ? `<div class="chat-rail">${c.tags.map((t) => `<span class="chat-tag c-${t.color || 'gray'}" data-tip="${esc(t.label)}"><span class="ct-dot"></span><span class="ct-lbl">${esc(t.label)}</span><button class="x" data-chat-untag="${esc(t.id)}" aria-label="Remove ${esc(t.label)}">${I.x}</button></span>`).join('')}</div>`
-    : '';
   return `<div class="cp-cap" aria-hidden="true"></div>
-    <div class="cp-head"><span class="cp-dot c-${commsTeamStatus(c)}" aria-hidden="true"></span><span class="cp-cat">Team</span><span class="cp-who">${esc(commsTeamLabel(c))}</span><span class="spacer"></span>${ghostPill('End', { js: 'js-comms-end', data: { cust: c.id }, tip: 'End the chat — a new message rounds it back up' })}</div>
-    ${tags}
+    <div class="cp-head"><span class="cp-dot c-${commsTeamStatus(c)}" aria-hidden="true"></span><span class="cp-cat">Team</span>${chatTitleInputHtml(c)}<span class="spacer"></span>${ghostPill('End', { js: 'js-comms-end', data: { cust: c.id }, tip: 'End the chat — a new message rounds it back up' })}</div>
     <div class="cp-feed chat-feed">${chatFeedRowsHtml(c)}</div>
-    <div class="chat-compose"><input class="chat-input" placeholder="Message the team…" value="${esc(state.chat.draft || '')}" aria-label="Message the team" /><button class="chat-send js-chat-send" aria-label="Send">${I.chev}</button></div>
-    ${chatRoleBarHtml(c)}`;
+    <div class="chat-compose">${chatHeldChipHtml()}<input class="chat-input" placeholder="Message the team…" value="${esc(state.chat.draft || '')}" aria-label="Message the team" /><button class="chat-send js-chat-send" aria-label="Send">${I.chev}</button></div>
+    ${chatMemberBarHtml(c)}`;
 }
 /* ── D9 Mr. Wrangler window — the §18 conversation riding the rail shell: the
    node ALSO wears .wrangler-dock so wranglerSend / paste / drag-drop / focus all
