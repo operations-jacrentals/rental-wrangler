@@ -8181,6 +8181,7 @@ function bottomBarInner(opts = {}) {
     <button class="iconbtn js-gps-health" data-tip="Tracker Health — every GPS device across the fleet">${I.truck}</button>
     <button class="iconbtn js-gps-fleet" data-tip="Fleet Map — every GPS tracker on a live map">${I.grid}</button>
     <button class="iconbtn js-gps-roundup" data-tip="Round Up Trackers — bulk-match the fleet to live GPS devices">${I.list}</button>
+    <button class="iconbtn js-gps-issues" data-tip="GPS Issues — every tracker that needs attention">${I.alert}</button>
     <button class="iconbtn js-hotkeys" data-tip="Mouse &amp; keyboard shortcuts">${I.mouse}</button>
     ${devUnlocked() ? `<button class="iconbtn js-lint${document.body.classList.contains('rw-lint') ? ' on' : ''}" data-tip="Design lint — flash anything that bypassed the UI builders (R0)">${I.eye}</button>
     <button class="iconbtn js-inspect${state.inspect ? ' on' : ''}" data-tip="Design Inspector — hover names the rule, click copies the reference">${I.search}</button>
@@ -10355,6 +10356,55 @@ function buildPopupEl(o, overlay, opts = {}) {
     const pop = el('div', 'popup gpsh-popup'); pop.style.width = '620px';
     pop.innerHTML = popupShell({ icon: I.truck || '', title: 'Tracker Health', tag: 'Fleet · GPS roster', body });
     overlay.appendChild(pop);
+  } else if (o.kind === 'gpsIssues') {
+    // Phase 3 — GPS ISSUES / ALERTS: the fault/connectivity complement to Tracker Health
+    // (gpsHealth, same roster source — gpsFleetRoster(), mapping-independent). Instead of
+    // every device, this view DERIVES an issues list and shows only devices that need
+    // attention — a clean fleet renders empty, that's the point. Only flags signals that
+    // actually exist on the normalized machine (gpsNormalize): mil (Bouncie check-engine),
+    // status from gpsDeviceFresh (Not Reporting/Verify), and battery voltage (Hapn external
+    // voltage / Deere batteryVoltage — guarded to a plausible 12V range so a percentage or
+    // null never misreads as low). Same degraded/canary banner language as gpsHealth.
+    o.q = o.q || '';
+    const roster = gpsConfigured() ? gpsFleetRoster() : [];
+    const withIssues = roster.map((r) => ({ r, issues: gpsRowIssues(r) })).filter((x) => x.issues.length);
+    const q = o.q.trim().toLowerCase();
+    const matchRow = (x) => !q || `${x.r.name} ${x.r.serial || ''} ${gpsProvLabel(x.r.provider)} ${x.r.unit ? x.r.unit.name : ''}`.toLowerCase().includes(q);
+    const rowSev = (x) => x.issues.reduce((m, i) => Math.max(m, i.sev), 0);
+    const shown = withIssues.filter(matchRow)
+      .sort((a, b) => (rowSev(b) - rowSev(a)) || gpsProvLabel(a.r.provider).localeCompare(gpsProvLabel(b.r.provider)) || a.r.name.localeCompare(b.r.name));
+    const nAll = withIssues.length;
+
+    const rowHtml = (x) => { const r = x.r; return `<div class="gpsi-row">
+      <span class="gpsi-prov">${badge(gpsProvLabel(r.provider))}</span>
+      <span class="gpsi-name">${esc(r.name)}${r.serial ? `<span class="gpsi-ser">${esc(r.serial)}</span>` : ''}</span>
+      <span class="gpsi-issues">${x.issues.map((i) => badge(i.label, i.color)).join('')}</span>
+      <span class="gpsi-seen muted">${r.lastSeen ? esc(gpsRelTime(r.lastSeen)) : '—'}</span>
+      <span class="gpsi-map">${r.unit ? refPill('units', r.unit.unitId, r.unit.name) : badge('Unmapped', 'yellow')}</span>
+    </div>`; };
+
+    const degraded = !gpsConfigured() ? 'GPS backend isn’t configured (GPS_BACKEND_URL).'
+      : gpsLiveErr ? 'Live link down — showing the last good snapshot.'
+      : (gpsLiveAt === 0) ? 'No snapshot yet — the fleet is still checking in (or GPS login hasn’t returned a token).'
+      : '';
+    const emptyMsg = !roster.length
+      ? 'No trackers reporting on any provider account yet. If the GPS login was just deployed, sign out and back in; otherwise check the provider connections on the backend.'
+      : (nAll === 0 ? 'No GPS issues — every reporting tracker looks healthy.' : 'No issues match that search.');
+    const body = `
+      <div class="gpsi-head">
+        <div class="gpsi-counts"><span class="gpsi-big">${nAll}</span> ${nAll === 1 ? 'device needs' : 'devices need'} attention</div>
+        <div class="gpsi-tools">
+          <div class="bv-searchwrap gpsi-search"><span class="s-icon">${I.search}</span><input class="bv-query js-gpsi-search" placeholder="Find a tracker…" value="${esc(o.q)}"></div>
+          <button class="iconbtn iconbtn-bare js-gpsi-refresh" data-tip="Refresh the snapshot">${I.refresh || '⟳'}</button>
+        </div>
+      </div>
+      ${degraded ? `<div class="gpsi-banner">${esc(degraded)}</div>` : ''}
+      <div class="gpsi-list">
+        ${shown.length ? shown.map(rowHtml).join('') : `<div class="gpsi-empty">${esc(emptyMsg)}</div>`}
+      </div>`;
+    const pop = el('div', 'popup gpsi-popup'); pop.style.width = '620px';
+    pop.innerHTML = popupShell({ icon: I.alert || '', title: 'GPS Issues', tag: 'Fleet · GPS alerts', body });
+    overlay.appendChild(pop);
   } else if (o.kind === 'gpsFleet') {
     // Phase 2 M1 — FLEET MAP: every GPS tracker plotted on a live Google map, mapping-
     // independent (same gpsFleetRoster() source as Tracker Health). Wide two-pane popup —
@@ -11427,6 +11477,7 @@ const WINDOW_CATALOG = [
   { kind: 'gpsHealth',     label: 'Tracker Health',          tag: 'Fleet · GPS roster',        sample: () => ({ q: '', bucket: 'all' }) },
   { kind: 'gpsFleet',      label: 'Fleet Map',               tag: 'Fleet · GPS map',           sample: () => ({ q: '', filter: 'all', sel: '' }) },
   { kind: 'gpsRoundup',    label: 'Round Up Trackers',       tag: 'Fleet · GPS onboarding',    sample: () => ({ scanned: false }) },
+  { kind: 'gpsIssues',     label: 'GPS Issues',              tag: 'Fleet · GPS alerts',        sample: () => ({ q: '' }) },
   { kind: 'rulebook',      label: 'The R-Rulebook',          tag: 'SPEC v8 · design system',  sample: () => ({}) },
   { kind: 'partform',      label: 'Add / Edit Part · Task',  tag: 'Work order · line',         sample: () => ({ woId: ((DATA.workOrders || [])[0] || {}).woId }) },
   { kind: 'receiptform',   label: 'New / Edit Receipt',      tag: 'Expense · receipt',         sample: () => ({}) },
@@ -14839,6 +14890,14 @@ function onClick(e) {
   if (closest('.js-gpsh-refresh')) { e.stopPropagation(); if (gpsConfigured()) refreshGpsLive(); return; }
   if (closest('.js-gpsh-csv')) { e.stopPropagation(); return gpsRosterCsv(); }
 
+  // Phase 3 — GPS Issues (fault/connectivity complement to Tracker Health)
+  if (closest('.js-gps-issues')) {
+    e.stopPropagation();
+    if (gpsConfigured() && (gpsLiveAt === 0 || Date.now() - gpsLiveAt > 60000)) refreshGpsLive();   // freshen on open — re-renders when the snapshot lands
+    return openOverlay({ kind: 'gpsIssues', q: '' });
+  }
+  if (closest('.js-gpsi-refresh')) { e.stopPropagation(); if (gpsConfigured()) refreshGpsLive(); return; }
+
   // Phase 2 M1 — Fleet Map (every GPS tracker on a live map, mapping-independent)
   if (closest('.js-gps-fleet')) {
     e.stopPropagation();
@@ -15827,6 +15886,12 @@ function onInput(e) {
   if (e.target.classList.contains('js-gpsh-search')) {
     const o = state.overlay;
     if (o?.kind === 'gpsHealth') { o.q = e.target.value; const sel = e.target.selectionStart; renderOverlay(); const q = document.querySelector('.overlay .js-gpsh-search'); if (q) { q.focus(); q.setSelectionRange(sel, sel); } }
+    return;
+  }
+  // Phase 3 — GPS Issues live filter (same caret-restore pattern)
+  if (e.target.classList.contains('js-gpsi-search')) {
+    const o = state.overlay;
+    if (o?.kind === 'gpsIssues') { o.q = e.target.value; const sel = e.target.selectionStart; renderOverlay(); const q = document.querySelector('.overlay .js-gpsi-search'); if (q) { q.focus(); q.setSelectionRange(sel, sel); } }
     return;
   }
   // Phase 2 M1 — Fleet Map live filter (same caret-restore pattern)
@@ -18519,6 +18584,34 @@ function gpsFleetRoster() {
 }
 const GPS_PROV_LABEL = { hapn: 'Hapn', deere: 'John Deere', yanmar: 'Yanmar', bouncie: 'Bouncie' };
 const gpsProvLabel = (p) => GPS_PROV_LABEL[String(p || '').toLowerCase()] || (p ? String(p) : 'GPS');
+
+/* ── GPS ISSUES (Phase 3) — derive a device's fault/connectivity issue chips from ONLY
+   the fields gpsNormalize actually carries. Not-Reporting/Verify come straight off
+   gpsDeviceFresh's own status (same freshness thresholds as everywhere else); the
+   >7-day case is folded INTO that same connectivity chip (never a second one — the
+   72h "Not Reporting" threshold is always crossed before the 7-day one, so they'd
+   always co-occur) with the day count as extra info. Battery is only ever flagged
+   when it's a plausible 12V-system reading — Hapn externalVoltage / Deere
+   batteryVoltage, both may be null — so a percentage or missing value never misreads
+   as low. mil (check-engine) only exists on Bouncie. Returns [] for a healthy device
+   (gpsIssues excludes those — the point of that view is "what needs attention"). */
+function gpsRowIssues(r) {
+  const issues = [];
+  const m = r.machine || {};
+  if (m.mil) issues.push({ label: 'Check Engine', color: 'red', sev: 3 });
+  let days = null;
+  if (r.lastSeen) { const t = new Date(r.lastSeen).getTime(); if (!Number.isNaN(t)) days = Math.floor((Date.now() - t) / 86400000); }
+  if (r.status === 'Not Reporting') {
+    issues.push({ label: (days != null && days >= 7) ? `Disconnected ${days}d` : 'Not Reporting', color: 'red', sev: 3 });
+  } else if (r.status === 'Verify') {
+    issues.push({ label: 'Verify', color: 'yellow', sev: 2 });
+  }
+  const batt = m.battery;
+  if (batt != null && Number(batt) > 5 && Number(batt) < 11.8) {
+    issues.push({ label: `Low Battery ${Number(batt).toFixed(1)}V`, color: 'yellow', sev: 2 });
+  }
+  return issues;
+}
 
 /* Export the roster as CSV (Tracker Health · M2). Client-side Blob download — the same
    snapshot the roster renders, no extra backend round-trip. */
